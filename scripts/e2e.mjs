@@ -347,6 +347,8 @@ try {
     const pad = (n) => String(n).padStart(3, '0');
     const okSeqs = (done1.items ?? []).filter((i) => i.status === 'success').map((i) => i.seq);
     const failSeqs = (done1.items ?? []).filter((i) => i.status === 'failed').map((i) => i.seq);
+    // 定义在这里而不是 D5 段：D3d 之后的几条（D3f–D3h）都要用，放在下面会踩 TDZ
+    const failSeq = failSeqs[0];
 
     check(
       'D3a',
@@ -357,20 +359,71 @@ try {
       `成功 ${okSeqs.length} 张全部成对；失败 ${failSeqs.length} 张（seq ${failSeqs.join(',') || '—'}）无译文；目录共 ${files.length} 个文件`,
     );
 
-    // 失败页在磁盘上**一个文件都不留** —— 这条决定了库里那张卡该显示「缺页」还是「待译」：
-    // 「有原图、缺译文」是「待译」（能续做），「连原图都没有」是「缺页」（没得救）。
+    // G-11（用户裁定 A，2026-10-03）：失败页的**原图也要落盘**。
+    // 「有原图、缺译文」是「待译」（能续做），「连原图都没有」是「缺页」（没得救）——
+    // 失败页属于前者，所以库里该显示「待译」而不是「缺页」。
     //
-    // 注意：这是在**固化现状**，不是在为一个已定的语义背书 —— 「失败即把原图丢掉」
-    // 让该页既不可续做、又被库报成「缺页」（读起来像用户没给过这一页）。
-    // 文档并未规定这一格，故已记为 **G-11 待裁定**（`docs/spec-notes.md`）。
-    // 若裁定改为「失败也落盘原图」，这条与 D5c 都要反过来断言。
-    const failedWithFile = failSeqs.filter((s) => files.some((f) => f.startsWith(pad(s))));
+    // 这条与 D5c 原先是**反着**断言的（那时固化的是「失败即把原图丢掉」）。裁定落地后
+    // 一起翻了过来 —— 两条互为对方的反证：谁把语义改回去，这两条立刻变红。
+    const failedNoOriginal = failSeqs.filter((s) => !files.includes(`${pad(s)}.png`));
     check(
       'D3d',
-      `失败项在磁盘上不留任何文件（原图也没有）—— 故库里判「缺页」而非「待译」（现状；语义待 G-11 裁定）`,
-      failSeqs.length > 0 && failedWithFile.length === 0,
-      `失败 ${failSeqs.length} 页（${failSeqs.join(',')}），其中有残留文件的：${failedWithFile.join(',') || '无'}`,
+      '失败项留有原图、但不留译文 —— 故库里判「待译」（可续做）而非「缺页」',
+      failSeqs.length > 0 &&
+        failedNoOriginal.length === 0 &&
+        failSeqs.every((s) => !files.includes(`${pad(s)}_translated.png`)),
+      `失败 ${failSeqs.length} 页（${failSeqs.join(',')}），其中缺原图的：${failedNoOriginal.join(',') || '无'}`,
     );
+
+    // 这条就是当初发现 G-11 的那次数数：31 张原图 + 30 张译文 = **61** 个文件。
+    // 旧行为下是 60（= 30 对）—— 差的那一个正是失败页自己，它的原图被连带丢掉了。
+    // 数字型断言必须把**应当是多少**写出来，否则「60 == 30×2」看着永远自洽。
+    check(
+      'D3e',
+      '目录内应恰有 31 原 + 30 译 = 61 个文件（旧行为下是 60，失败页的原图丢了）',
+      files.length === okSeqs.length + okSeqs.length + failSeqs.length,
+      `${files.length} 个文件（成功 ${okSeqs.length} / 失败 ${failSeqs.length}）`,
+    );
+
+    // 「可续做」不能只是个说法：失败页必须真的出现在该漫画的续做清单里，
+    // 否则库里那张卡只是**看着**像「待译」，点「继续翻译」却无事发生。
+    const plan = json(await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, { token: TOKEN }));
+    check(
+      'D3f',
+      `续做清单列出失败页 [${failSeqs.join(',')}] —— 这是 G-11 裁 A 的实际用途`,
+      JSON.stringify((plan?.pendings ?? []).map((p) => p.seq)) === JSON.stringify([...failSeqs].sort((a, b) => a - b)),
+      `pendingCount=${plan?.pendingCount} pendings=[${(plan?.pendings ?? []).map((p) => p.seq).join(',')}]`,
+    );
+
+    // 队列屏「重试」按钮走的就是这条 POST /resume（App.tsx），不是重新上传。
+    // 旧语义下它**点了会报错**：失败页没有原图 → 续做清单为空 → 404「无可续做页」，
+    // 而按钮明明长在一条 partial_failed 的任务行上。这条断言把那条用户路径闭上。
+    // 带上 X-Box-Client：真实应用是经 Rust 层转发的，那层给每个请求都打这个头
+    // （`app/src-tauri/src/commands.rs`），故「来源」列才会显示「本机投放」。
+    // 不带的话截图里会是一条「—」，看起来像缺陷，其实只是用例没照抄真实请求形状。
+    const rs = await request(PORT, 'POST', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, {
+      token: TOKEN,
+      headers: { 'Content-Type': 'application/json', 'X-Box-Client': 'box-desktop/0.1.0' },
+      body: Buffer.from('{}'),
+    });
+    const rsJson = json(rs);
+    check(
+      'D3g',
+      `队列屏「重试」在 partial_failed 任务上真的可用：POST /resume 建单 201 并指向失败页 seq=${failSeq}`,
+      rs.status === 201 && !!rsJson?.taskId,
+      `${rs.status} ${JSON.stringify(rsJson?.error ?? rsJson?.taskId)}`,
+    );
+    if (rsJson?.taskId) {
+      const retry = await waitTask(PORT, TOKEN, rsJson.taskId);
+      const retried = (retry.items ?? []).map((i) => i.seq);
+      check(
+        'D3h',
+        `重试的任务只含失败页 [${failSeq}]，且原因是 engine_*（说明原图真读到了，不是 original_missing）`,
+        JSON.stringify(retried) === JSON.stringify([failSeq]) &&
+          /^engine_/.test((retry.items ?? [])[0]?.reason ?? ''),
+        `items=[${retried.join(',')}] reason=${(retry.items ?? [])[0]?.reason}`,
+      );
+    }
 
     const lib = json(await request(PORT, 'GET', '/api/v1/library', { token: TOKEN }));
     const comic = (lib?.comics ?? []).find((c) => c.dirName === dirName);
@@ -401,7 +454,6 @@ try {
     // 这组必须用**真实失败注入**来测，而且失败页必须落在**中间**（seq=3）：
     // 「哪一页已译」如果只靠 translatedCount，`seq <= translatedCount` 会把第 3 页
     // 说成已译 —— 代理指标只在「尾部缺页」时碰巧对，在「中间缺页」时必错。
-    const failSeq = failSeqs[0];
     const sortedOk = [...okSeqs].sort((a, b) => a - b);
     check(
       'D5a',
@@ -417,10 +469,12 @@ try {
         failSeq <= comic.translatedCount,
       `代理说「已译」（${failSeq} <= ${comic?.translatedCount}），事实是没有译文；两集合差集 = [${failSeq}]`,
     );
+    // G-11 裁定 A 之后失败页的原图在磁盘上，故 missingSeqs 应当**为空**；
+    // 若它又把失败页报进来，说明扫描或落盘有一侧退回了旧行为（库会显示「缺页」= 像用户没给过这页）。
     check(
       'D5c',
-      `missingSeqs 精确等于失败页 [${failSeq}] —— 失败项落盘时一个文件都不留，所以它是「缺页」而非「待译」（现状；语义待 G-11 裁定）`,
-      JSON.stringify(comic?.missingSeqs ?? []) === JSON.stringify([failSeq]),
+      'missingSeqs 为空 —— 失败页的原图在磁盘上，故库里是「待译」而不是「缺页」',
+      Array.isArray(comic?.missingSeqs) && comic.missingSeqs.length === 0,
       JSON.stringify(comic?.missingSeqs),
     );
 
