@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "喵坞桌面端默认能力：核心事件 + 文件/目录选择对话框",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:default"]
+}

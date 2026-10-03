@@ -1,0 +1,25 @@
+[package]
+name = "miao-dock"
+version = "0.1.0"
+description = "喵坞 MiaoDock · Box 桌面端（漫画翻译）"
+edition = "2021"
+rust-version = "1.77"
+
+# 桌面端单目标：逻辑全在 src/main.rs（无移动端目标，不需要 lib.rs 那套 [lib] 配置）
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 只走 http://127.0.0.1，不需要 TLS → 关掉默认 features，省掉 openssl/rustls 的编译成本
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "multipart"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

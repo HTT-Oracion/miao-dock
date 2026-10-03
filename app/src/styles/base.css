@@ -1,0 +1,94 @@
+/*
+ * 基础层：重置 + 排版基座。
+ *
+ * 设计令牌**不在这里硬编码**——它们由 `src/theme/apply.ts` 用 `cssVars(mode)` 写进
+ * `document.documentElement` 的 style。这样「深色模式只换变量、不换结构」（《01》§9）
+ * 成为**结构性事实**：要换主题只能改变量，没有第二处可以偷偷写死颜色。
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--md-board);
+  color: var(--md-ink);
+  font-family: var(--md-font-body);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  /* 桌面应用：禁掉整页拖选与橡皮筋滚动，文字仍可局部选中 */
+  -webkit-user-select: none;
+  user-select: none;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+input,
+textarea {
+  font: inherit;
+}
+
+/* 应用内所有可滚动区域统一细滚动条 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--md-line);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--md-muted);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 数字一律走 Inter（《02》§5.8 中英混排） */
+.num {
+  font-family: var(--md-font-numeric);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.title-face {
+  font-family: var(--md-font-display);
+  font-weight: 700;
+}
+
+/* 键盘可达性：焦点环用品牌 pink，不用浏览器默认蓝 */
+:focus-visible {
+  outline: 2px solid var(--md-pink);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

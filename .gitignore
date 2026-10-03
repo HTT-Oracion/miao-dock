@@ -1,24 +1,14 @@
 # 依赖与构建产物
 node_modules/
-app/node_modules/
-service/node_modules/
-engine/node_modules/
-
-# Tauri / Rust
+dist/
 app/src-tauri/target/
-app/dist/
-Cargo.lock
-**/*.rs.bk
 
-# 运行期状态（服务自建）
-.runtime/
-service/.runtime/
-engine/.runtime/
+# Tauri 生成的 schema / 清单缓存（构建期自动产出，不入库）
+app/src-tauri/gen/schemas/
 
-# 验收临时目录与截图
-e2e/.out/
+# 本机验收用的临时落盘目录（MIAO_ROOT 覆盖时可能落在仓库内）
 tmp-*/
-*.log
 
-# macOS
+# 系统与编辑器噪声
 .DS_Store
+*.log
