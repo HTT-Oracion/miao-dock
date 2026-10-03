@@ -16,6 +16,7 @@ import { ApiError, errorEnvelope, permissionDenied } from './errors.mjs';
 import { probeEngine } from './engine-client.mjs';
 import { allFieldStrings, firstField, groupParts, parseMultipartEx } from './multipart.mjs';
 import { normalizeComicName, isSafeDirName } from './names.mjs';
+import { watchParent } from './parent-watch.mjs';
 import { Store } from './store.mjs';
 import { HEARTBEAT_MS, SSE_HEADERS, writeComment } from './sse.mjs';
 
@@ -673,6 +674,9 @@ async function listenWithProbe(handler) {
   throw new Error(
     `端口 ${range} 全部被占用，box-service 启动失败（不静默换到段外）。最后错误：${lastErr && lastErr.message}`);
 }
+
+// 父进程（Box 壳）若崩溃 / 被强杀，本进程自行退出，避免孤儿占住端口（契约 B4）
+watchParent();
 
 const { server, port } = await listenWithProbe(createHandler());
 store.port = port;

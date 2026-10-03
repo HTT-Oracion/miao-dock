@@ -16,6 +16,8 @@ import { encodePng } from '../../engine/src/png.mjs';
 const ROOT = path.resolve(import.meta.dirname, '..'); // .../service
 const SERVICE_ENTRY = path.join(ROOT, 'src', 'server.mjs');
 const ENGINE_ENTRY = path.resolve(ROOT, '..', 'engine', 'src', 'server.mjs');
+/** 「假父进程」外壳：A18 要强杀一个父进程，不能拿自测自己冒险 */
+const HARNESS = path.join(ROOT, 'scripts', '_parent-harness.mjs');
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-service-selftest-'));
 
@@ -149,8 +151,8 @@ async function waitTask(port, token, taskId, timeoutMs = 30_000) {
 
 // ------------------------------------------------------------------ 进程管理
 
-function spawnProc(entry, env, tag) {
-  const child = spawn(process.execPath, [entry], {
+function spawnProc(entry, env, tag, extraArgv = []) {
+  const child = spawn(process.execPath, [entry, ...extraArgv], {
     env: { ...process.env, ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -175,6 +177,22 @@ async function waitReady(state, timeoutMs = 15_000) {
 
 function killProc(state) {
   if (state && state.child && state.child.exitCode === null) state.child.kill('SIGTERM');
+}
+
+/**
+ * 端口是否可连。
+ * A18 必须用它而不是 `child.exitCode` 来判断存活：那里的 child 是「假父进程」，
+ * 而我们要观察的是父进程死后、**另一个进程**（服务）是否还在监听。
+ */
+function portOpen(port, timeoutMs = 400) {
+  return new Promise((resolve) => {
+    const sock = net.connect({ host: '127.0.0.1', port });
+    const done = (v) => { sock.destroy(); resolve(v); };
+    sock.setTimeout(timeoutMs);
+    sock.once('connect', () => done(true));
+    sock.once('error', () => done(false));
+    sock.once('timeout', () => done(false));
+  });
 }
 
 function listenOccupied(port) {
@@ -848,6 +866,56 @@ try {
     const r = await submit(info.port, TOKEN, 'A14b', [{ filename: '001.png', contentType: 'image/png', data: pngBytes(40, 60, 1) }]);
     check('A14b 未就绪时提交 → 503 UNAVAILABLE', r.status === 503 && r.json?.error?.code === 'UNAVAILABLE', r.json);
     killProc(down);
+  }
+
+  // ================================================================ A18 父进程看守
+  console.log('A18 父进程看守：主进程被强杀后子进程自救（契约 B4 的异常分支）');
+  {
+    // 为什么需要这个用例：ServiceManager 只在**正常退出**路径调 stop()。
+    // 主进程崩溃 / 被活动监视器强制退出时是 SIGKILL —— 不可捕获，Rust 侧没有机会清理。
+    // 此前只能指望 stdout 管道破裂（EPIPE）的副作用，若无日志写入则进程会赖着占端口。
+    const WATCH_PORT = 5189;
+    const h = spawnProc(HARNESS, {
+      MIAO_PORT: String(WATCH_PORT),
+      MIAO_ROOT: path.join(TMP, 'root-watch'),
+      MIAO_STATE_DIR: path.join(TMP, 'state-watch'),
+      MIAO_TOKEN: TOKEN,
+      MIAO_HARNESS_LOG: path.join(TMP, 'watch-service.log'),
+    }, 'service-watch', [SERVICE_ENTRY]);
+    let svcPid = null;
+    try {
+      // 直接探测端口，不解析就绪行：本用例刻意让服务的 stdout 走**文件**而非管道，
+      // 以免 EPIPE 冒充「看守生效」把用例变成假阳性（见 _parent-harness.mjs 的说明）
+      let up = false;
+      for (let i = 0; i < 50 && !up; i++) {
+        up = await portOpen(WATCH_PORT);
+        if (!up) await sleep(200);
+      }
+      check('A18 前置：经「假父进程」拉起的服务就绪', up, `端口 ${WATCH_PORT} 不可达`);
+
+      // 跨过 2 个看守周期（intervalMs = 2000）再确认一次：看守不能误杀
+      await sleep(2600);
+      check('A18 父进程健在 → 服务持续存活（看守不误杀）',
+        await portOpen(WATCH_PORT), `端口 ${WATCH_PORT} 不可达`);
+
+      const pidMatch = /HARNESS_CHILD_PID (\d+)/.exec(h.out);
+      svcPid = pidMatch ? Number(pidMatch[1]) : null;
+
+      h.child.kill('SIGKILL'); // 只杀「假父进程」，服务应自行退出
+      const until = Date.now() + 8000;
+      let stillUp = true;
+      while (Date.now() < until) {
+        if (!(await portOpen(WATCH_PORT))) { stillUp = false; break; }
+        await sleep(200);
+      }
+      check('A18 强杀父进程后服务自行退出（不残留孤儿占住端口）',
+        !stillUp, stillUp ? `仍在监听 ${WATCH_PORT}，看守失效` : '');
+    } finally {
+      // 无论断言结果如何都要收拾干净：否则残留进程会污染后续运行
+      if (svcPid) { try { process.kill(svcPid, 'SIGKILL'); } catch { /* 已退出 */ } }
+      if (h.child.exitCode === null) h.child.kill('SIGKILL');
+      await sleep(250);
+    }
   }
 } catch (err) {
   console.error('\n[selftest] 运行期异常：', err);

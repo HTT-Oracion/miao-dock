@@ -13,6 +13,7 @@
 import http from 'node:http';
 
 import { readImageSize, sniffImageType } from './image.mjs';
+import { watchParent } from './parent-watch.mjs';
 import { renderTranslatedPage } from './render.mjs';
 
 const HOST = '127.0.0.1';
@@ -146,6 +147,9 @@ for (let p = PORT_START; p <= PORT_END; p += 1) {
 if (!server) {
   throw new Error(`端口 ${PORT_START}–${PORT_END} 全部被占用，模拟引擎启动失败。最后错误：${lastErr && lastErr.message}`);
 }
+
+// 父进程（Box 壳）若崩溃 / 被强杀，本进程自行退出，避免孤儿占住端口
+watchParent();
 
 log('============== mangatranslator-mock 已启动 ==============');
 log(`监听地址 : http://${HOST}:${port}`);

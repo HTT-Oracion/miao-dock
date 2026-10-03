@@ -133,6 +133,7 @@ Vite + React 18 + TypeScript，样式用**原生 CSS + CSS 变量**（`cssVars(m
 | A15 | 任务列表（**契约外增量**） | `GET /tasks` 返回 running → queued → 终态（`finishedAt` 倒序）；终态行**留在列表里**（X-C1 的历史行来源）；来源归因取 `X-Box-Client`（`extension/*`→`extension`／`box-desktop/*`→`desktop`／缺省→`unknown`）；`status`/`limit` 过滤正确且 `limit=0 → 400`；**新增端点不得污染 `/queue` 语义**、不得改变 §5.2 响应形状；跨重启靠 `STATE_DIR/tasks/*.json` 恢复。依据见 `docs/spec-notes.md` G-04 |
 | A16 | 漫画库 | `GET /library` 逐漫画给出 `imageCount`/`translatedCount`/`byteSize`，且 `byteSize` **等于目录内所有文件字节数之和**（G-01 口径，与磁盘实测一致）；顶层 `totalImages`/`totalBytes` 为全库聚合；原/译文件流同 `seq` 可用；不存在的 `seq` → `404`（不返回空文件）；`reveal` 返回实际目录；受鉴权保护 |
 | A17 | 本地续做（**契约外增量**） | `GET /library/{name}/resume` 只列出「有原图、缺译文」的页；`POST` 建单后进入**同一条**串行队列；**不新增原图编号、不改动已存在原图的字节**（§7.2 永不覆盖）；无缺页 / 指定已有译文的页 → `404`；`seqs` 非数组 → `400`；受鉴权保护。依据见 `docs/spec-notes.md` G-07 |
+| A18 | 子进程守护（**契约 B4 的异常分支**） | 父进程被 SIGKILL（不可捕获）后，子进程仍自行退出、端口释放；父进程健在时**不误杀**（跨 2 个看守周期）。harness 刻意让子进程 stdout 走**文件**而非管道，避免 EPIPE 冒充「看守生效」（反证：`MIAO_NO_PARENT_WATCH=1` 时该断言必失败）。依据见 `docs/spec-notes.md` D-12 |
 
 ### B. 服务生命周期
 
@@ -142,6 +143,7 @@ Vite + React 18 + TypeScript，样式用**原生 CSS + CSS 变量**（`cssVars(m
 | B2 | 托盘常驻 | 托盘图标在；状态点反映 `running/starting/stopped/error` 四态 |
 | B3 | 退出确认 | 托盘退出 → 二次确认，文案含「退出后浏览器插件将无法提交翻译任务」 |
 | B4 | 退出清理 | 退出后 `5180` 端口释放、子进程无残留（`ps` 无 `box-service`） |
+| B5 | 异常退出清理（**易漏**） | 主进程**被强杀 / 崩溃**（SIGKILL 不可捕获）后，子进程仍能自行退出、`5180`/`5003` 释放。依据见 `docs/spec-notes.md` D-12；自测 A18 覆盖 |
 
 ### C. UI 规格（像素级）
 
