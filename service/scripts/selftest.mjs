@@ -675,6 +675,58 @@ try {
       exitCode !== 0 && exitCode !== 'timeout' && /黑名单/.test(bad.err + bad.out), { exitCode, err: bad.err.trim().split('\n')[0] });
   }
 
+  // ================================================================ A16 库扫描（X-D1 的数据面）
+  // 契约 §5.8 只说 `GET /library`「扫描落盘根目录返回漫画列表」，未固化字段，
+  // 故容量口径（G-01）与聚合字段由实现决定，这里把口径钉成断言。
+  console.log('A16 漫画库：容量口径（G-01）与文件流');
+  {
+    const name = 'A16 库扫描';
+    const imgs = Array.from({ length: 2 }, (_, i) => ({
+      filename: `${String(i + 1).padStart(3, '0')}.png`, contentType: 'image/png', data: pngBytes(48, 64, i + 4),
+    }));
+    const r = await submit(port, TOKEN, name, imgs, { headers: { 'X-Box-Client': 'box-desktop/0.1.0' } });
+    const dirName = r.json.normalizedComicName;
+    await waitTask(port, TOKEN, r.json.taskId, 60_000);
+
+    const lib = json(await request(port, 'GET', '/api/v1/library', { token: TOKEN }));
+    const comic = (lib?.comics || []).find((c) => c.comicName === dirName);
+    check('A16 库中能找到刚翻译完的漫画', !!comic, (lib?.comics || []).map((c) => c.comicName));
+    check('A16 imageCount / translatedCount 各为 2（原译成对）',
+      comic?.imageCount === 2 && comic?.translatedCount === 2, comic);
+
+    // G-01 口径：目录内所有文件字节数之和
+    const dir = path.join(rootDir, dirName);
+    const onDisk = fs.readdirSync(dir).reduce((n, f) => {
+      const st = fs.statSync(path.join(dir, f));
+      return st.isFile() ? n + st.size : n;
+    }, 0);
+    check('A16 byteSize === 目录内所有文件字节数之和（G-01 口径）',
+      comic?.byteSize === onDisk && onDisk > 0, { byteSize: comic?.byteSize, onDisk });
+
+    check('A16 totalImages / totalBytes 为全库聚合，且 totalBytes >= 本漫画容量',
+      (lib?.totalImages || 0) >= 2 && (lib?.totalBytes || 0) >= (comic?.byteSize || 0),
+      { totalImages: lib?.totalImages, totalBytes: lib?.totalBytes });
+
+    const trans = await request(port, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/files/1?variant=translated`, { token: TOKEN });
+    check('A16 译文文件流：200 + image/png + 非空', trans.status === 200 && trans.headers['content-type'] === 'image/png' && trans.body.length > 0,
+      { status: trans.status, ct: trans.headers['content-type'], len: trans.body.length });
+    const orig = await request(port, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/files/1?variant=original`, { token: TOKEN });
+    check('A16 原图文件流同 seq 可用（对照页 X-D2 依赖）', orig.status === 200 && orig.body.length > 0, orig.status);
+
+    const missing = await request(port, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/files/9?variant=translated`, { token: TOKEN });
+    check('A16 不存在的 seq → 404 TASK_NOT_FOUND（不返回空文件）',
+      missing.status === 404 && json(missing)?.error?.code === 'TASK_NOT_FOUND', json(missing));
+
+    const reveal = await request(port, 'POST', `/api/v1/library/${encodeURIComponent(dirName)}/reveal`, { token: TOKEN });
+    // 服务端把 root 做了 realpath 规范化（macOS 上 /var → /private/var），故断言用 realpath 对齐
+    check('A16 reveal 返回目录路径（由 Box 侧唤起访达）',
+      reveal.status === 200 && json(reveal)?.ok === true && json(reveal)?.path === fs.realpathSync(dir),
+      { got: json(reveal)?.path, want: fs.realpathSync(dir) });
+
+    const libNoToken = await request(port, 'GET', '/api/v1/library');
+    check('A16 /library 同样受鉴权保护', libNoToken.status === 403, libNoToken.status);
+  }
+
   // ================================================================ A14（补充）sidecar 未就绪
   console.log('A14b sidecar 未就绪 → 503 UNAVAILABLE');
   {

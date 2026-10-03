@@ -352,12 +352,19 @@ function scanLibrary() {
     const originals = new Set();
     const translated = new Set();
     let modifiedMs = 0;
+    // G-01 口径：容量 = 该漫画目录内**所有文件**字节数之和（含原图、译文与残留的临时文件），
+    // 不含子目录递归 —— 落盘结构是单层目录（契约 §7.1），递归只会把异常结构悄悄算进来。
+    let byteSize = 0;
     try {
       for (const f of fs.readdirSync(dir)) {
         let m = ORIGINAL_SCAN_RE.exec(f);
         if (m) originals.add(Number(m[1]));
         m = TRANSLATED_SCAN_RE.exec(f);
         if (m) translated.add(Number(m[1]));
+        try {
+          const st = fs.statSync(path.join(dir, f));
+          if (st.isFile()) byteSize += st.size;
+        } catch { /* 单个文件读不到则不计入 */ }
       }
       modifiedMs = fs.statSync(dir).mtimeMs;
     } catch { /* ignore */ }
@@ -368,6 +375,7 @@ function scanLibrary() {
       outputDir: dir,
       imageCount: originals.size,
       translatedCount: translated.size,
+      byteSize,
       seqMax,
       nextSeq: seqMax + 1,
       modifiedAt: modifiedMs ? new Date(modifiedMs).toISOString().replace(/\.\d{3}Z$/, 'Z') : null,
@@ -377,6 +385,8 @@ function scanLibrary() {
   return {
     root,
     count: comics.length,
+    totalImages: comics.reduce((n, c) => n + c.imageCount, 0),
+    totalBytes: comics.reduce((n, c) => n + c.byteSize, 0),
     comics,
     updatedAt: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
   };
