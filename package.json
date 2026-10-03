@@ -1,0 +1,19 @@
+{
+  "name": "miao-dock",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "喵坞 MiaoDock · Box 桌面端（漫画翻译模块 ver1.0）",
+  "scripts": {
+    "service": "node service/src/server.mjs",
+    "engine": "node engine/src/server.mjs",
+    "selftest:service": "node service/scripts/selftest.mjs",
+    "selftest:engine": "node engine/scripts/selftest.mjs",
+    "selftest": "npm run selftest:engine && npm run selftest:service",
+    "app": "npm --prefix app run tauri dev",
+    "app:build": "npm --prefix app run tauri build"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
