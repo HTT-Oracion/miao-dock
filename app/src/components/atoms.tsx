@@ -102,6 +102,53 @@ export const IconSettings = () => (
   </svg>
 );
 
+/**
+ * 应用层图标：漫画翻译 / 音乐（《09》§3.1）。
+ *
+ * 刻意沿用既有 24×24 网格 + 1.7 描边这套规格 —— 侧栏里这三个应用入口图标
+ * 必须等重，「漫画翻译」用两三个图形拼出来才不会显得比邻居复杂。
+ * 不复用 IconQueue/IconLibrary：它们是**视图**图标（已下沉为 Tab），
+ * 拿来当**应用**图标会把两级层级在视觉上抹平。
+ */
+export const IconTranslate = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" {...stroke}>
+    <rect x="3.5" y="4.5" width="11" height="15" rx="1.8" />
+    <path d="M17 9l3.5 3.5L17 16" />
+    <path d="M6.5 9h5M6.5 12.5h5M6.5 16h3" />
+  </svg>
+);
+
+export const IconMusic = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" {...stroke}>
+    <path d="M9 18V6.5l10-2V16" />
+    <circle cx="6.5" cy="18" r="2.6" />
+    <circle cx="16.5" cy="16" r="2.6" />
+  </svg>
+);
+
+/** Tab 行专用：与上面同规格但 18px —— Tab 是二级导航，权重低于侧栏应用入口 */
+export const IconTabDrop = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" {...stroke}>
+    <path d="M12 16V5" />
+    <path d="M8 9l4-4 4 4" />
+    <path d="M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3" />
+  </svg>
+);
+
+export const IconTabQueue = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" {...stroke}>
+    <path d="M4 7h16M4 12h16M4 17h9" />
+  </svg>
+);
+
+export const IconTabLibrary = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" {...stroke}>
+    <rect x="4" y="4" width="7" height="16" rx="1.6" />
+    <rect x="13" y="4" width="7" height="9" rx="1.6" />
+    <path d="M13 17h7" />
+  </svg>
+);
+
 export const IconFolder = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
     <path d="M3 7.5A1.5 1.5 0 014.5 6h4l2 2.4h7A1.5 1.5 0 0119 10v7a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 013 17V7.5z" />

@@ -1,179 +1,30 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ServiceStatus } from '../ipc';
-import { runSpecCheck, type SpecResult } from '../spec-check';
 import type { ThemeMode } from '../theme/tokens';
-import { LIBRARY, QUEUE_TABLE } from '../theme/tokens';
-import type { TaskRow } from '../types';
-import { STATUS_DOT_VAR, STATUS_LABEL, SOURCE_LABEL } from '../types';
-import { Btn, Dot, MagicCircle } from '../components/atoms';
-import { QuitConfirm } from '../components/QuitConfirm';
-
-const noop = () => {};
-
-/** 离屏样张用的假数据：四条覆盖到 C3 要求的四种状态点色相 */
-const SAMPLE_ROWS: TaskRow[] = [
-  {
-    taskId: 'sample-running',
-    comicName: '第12话 · 学园祭',
-    source: 'extension',
-    status: 'running',
-    queuePosition: 0,
-    progress: { total: 20, done: 12, failed: 0, current: 13 },
-    outputDir: '/示例/第12话 · 学园祭',
-    createdAt: new Date().toISOString(),
-    finishedAt: null,
-  },
-  {
-    taskId: 'sample-queued',
-    comicName: 'C97 同人本 · 第 3 册',
-    source: 'desktop',
-    status: 'queued',
-    queuePosition: 1,
-    progress: { total: 6, done: 0, failed: 0, current: 0 },
-    outputDir: '/示例/C97 同人本 · 第 3 册',
-    createdAt: new Date().toISOString(),
-    finishedAt: null,
-  },
-  {
-    taskId: 'sample-partial',
-    comicName: '第08话 · 海边',
-    source: 'extension',
-    status: 'partial_failed',
-    queuePosition: 0,
-    progress: { total: 20, done: 19, failed: 1, current: 0 },
-    outputDir: '/示例/第08话 · 海边',
-    createdAt: new Date().toISOString(),
-    finishedAt: new Date().toISOString(),
-  },
-  {
-    taskId: 'sample-done',
-    comicName: '第07话 · 文化祭',
-    source: 'desktop',
-    status: 'done',
-    queuePosition: 0,
-    progress: { total: 2, done: 2, failed: 0, current: 0 },
-    outputDir: '/示例/第07话 · 文化祭',
-    createdAt: new Date().toISOString(),
-    finishedAt: new Date().toISOString(),
-  },
-  {
-    taskId: 'sample-failed',
-    comicName: '第03话 · 转学生',
-    source: 'unknown',
-    status: 'failed',
-    queuePosition: 0,
-    progress: { total: 3, done: 0, failed: 3, current: 0 },
-    outputDir: '/示例/第03话 · 转学生',
-    createdAt: new Date().toISOString(),
-    finishedAt: new Date().toISOString(),
-  },
-];
+import { SETTINGS } from '../theme/tokens';
+import { SETTINGS_SECTIONS, parseSection, sectionItemCount } from './settings/catalog';
+import type { SectionId } from './settings/catalog';
+import { SECTION_ICON } from './settings/icons';
+import { SpecFixtureHost } from './settings/SpecCheck';
+import { AboutSection, GeneralSection, MediaSection, ResourceSection, TranslateSection } from './settings/sections';
 
 /**
- * 规格样张 —— 以离屏方式渲染一份队列表、空态与漫画库几何件。
+ * 设置页 —— 两栏壳 + 5 分组 26 项（《09》§4.1 / §4.2）。
  *
- * 必须真的**参与布局**（不能用 `display:none`），否则 `getBoundingClientRect` 全是 0，
- * 自检会退化成永远失败。用 `position:fixed; left:-10000px` 让它布局但不可见。
- */
-function SpecFixture() {
-  return (
-    <div
-      style={{ position: 'fixed', left: -10000, top: 0, width: 900, pointerEvents: 'none', opacity: 0 }}
-      aria-hidden="true"
-    >
-      <div className="queue">
-        <div className="qt-head">
-          <div className="qt-name">任务 / 漫画名</div>
-          <div className="qt-c-source" style={{ width: QUEUE_TABLE.colSource }}>
-            来源
-          </div>
-          <div className="qt-c-progress" style={{ width: QUEUE_TABLE.colProgress }}>
-            进度
-          </div>
-          <div className="qt-c-status" style={{ width: QUEUE_TABLE.colStatus }}>
-            状态
-          </div>
-          <div className="qt-c-action" style={{ width: QUEUE_TABLE.colAction }}>
-            操作
-          </div>
-        </div>
-        <div className="qt-body">
-          {SAMPLE_ROWS.map((t) => (
-            <div
-              key={t.taskId}
-              className={t.status === 'running' ? 'qt-row is-running' : 'qt-row'}
-              style={{ height: QUEUE_TABLE.rowHeight }}
-            >
-              <div className="qt-name">
-                <div className="qt-name-main">{t.comicName}</div>
-                <div className="qt-name-sub">{SOURCE_LABEL[t.source]}</div>
-              </div>
-              <div className="qt-c-source" style={{ width: QUEUE_TABLE.colSource }}>
-                {SOURCE_LABEL[t.source]}
-              </div>
-              <div className="qt-c-progress" style={{ width: QUEUE_TABLE.colProgress }}>
-                <span className="num">{t.progress.done}</span>
-                <span> / </span>
-                <span className="num">{t.progress.total}</span>
-                <div className="bar">
-                  <i style={{ width: '50%' }} />
-                </div>
-              </div>
-              <div className="qt-c-status" style={{ width: QUEUE_TABLE.colStatus }}>
-                <Dot colorVar={STATUS_DOT_VAR[t.status]} />
-                <span>{STATUS_LABEL[t.status]}</span>
-              </div>
-              <div className="qt-c-action" style={{ width: QUEUE_TABLE.colAction }}>
-                {t.status === 'running' || t.status === 'queued' ? (
-                  <span className="btn btn-danger btn-sm">取消</span>
-                ) : t.status === 'failed' || t.status === 'partial_failed' ? (
-                  <span className="btn btn-primary btn-sm">重试</span>
-                ) : (
-                  <span className="btn btn-ghost btn-sm">查看</span>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="empty" style={{ height: 320 }}>
-        <MagicCircle />
-      </div>
-
-      <div className="lib" style={{ height: 260 }}>
-        <aside className="lib-left" style={{ width: LIBRARY.leftColumnWidth, flexBasis: LIBRARY.leftColumnWidth }}>
-          <div className="lib-left-list" />
-        </aside>
-        <section className="lib-right">
-          <div className="lib-grid">
-            <div
-              className="grid-card"
-              style={{ width: LIBRARY.card.w, height: LIBRARY.card.h, borderRadius: LIBRARY.card.radius }}
-            />
-          </div>
-        </section>
-      </div>
-
-      {/*
-        退出确认层（B3）。它内部是 position:fixed 的遮罩 —— 若直接放进这个 left:-10000 的
-        容器里，fixed 会以**视口**为包含块，遮罩就盖住整屏了（虽然 opacity:0，但已不再是「离屏」）。
-        给中间这层加 transform，遮罩的包含块就变成它，才真正停在离屏位置。
-        刻意放在队列**之后**：C3c 取的是 root 里第一个 .btn-danger（队列行的「取消」），
-        顺序一变它就会误取到这里的「退出喵坞」。
-      */}
-      <div style={{ transform: 'translateZ(0)' }}>
-        <QuitConfirm onStay={noop} onQuit={noop} />
-      </div>
-    </div>
-  );
-}
-
-/**
- * 设置页 —— 令牌配对（F-09）+ 外观 + 生命周期说明 + 规格自检。
+ * ## 为什么从「单页平铺」改成两栏
  *
- * 规格自检放在这里而不是单独的调试页，是因为它要回答的正是用户/评审最关心的那句话：
- * 「界面跟方案文档对得上吗？」—— 那就让它和设置放在一起，随时能点。
+ * ver1.0 把服务状态、令牌、外观、生命周期、规格自检一路铺下来，读起来是"五种互不相干的
+ * 提示堆在一页"。26 项若继续平铺会变成两屏半，而且**用户要什么就找什么**这件事
+ * 彻底做不到 —— 令牌在第 7 行、模型目录在第 30 行，谁记得住。
+ *
+ * 两栏 + 单组渲染解决的是这个：一次只展示一组，左栏给出全部 5 个分组的入口与项数。
+ * 项数写出来是有意的 —— 用户能立刻看出"音乐那 5 项还没接"，而不是以为设置页就这些。
+ *
+ * ## 一次只渲染一个分组（不是全部平铺）
+ *
+ * 这是刻意的，与"左栏导航"是两件不同的事。左栏只负责切换，右栏**只挂载当前组**。
+ * 若把 5 组都渲染出来再靠 CSS 隐藏，DOM 里仍有 40 多个待接入项的说明文字，
+ * 读屏会念出一大段与当前画面无关的内容 —— 视觉上隐藏 ≠ 对辅助技术隐藏。
  */
 export function SettingsScreen({
   status,
@@ -186,176 +37,106 @@ export function SettingsScreen({
   onMode: (m: ThemeMode) => void;
   onToast: (text: string, kind?: 'info' | 'good' | 'bad') => void;
 }) {
-  const fixture = useRef<HTMLDivElement>(null);
-  const [results, setResults] = useState<SpecResult[] | null>(null);
-  const [revealed, setRevealed] = useState(false);
+  // 深链 `?section=general|translate|media|resource|about`（托盘「检查更新」直达⑤）
+  //
+  // 用 `window.location.search` 而非 react-router：这个页面没有别的路由，
+  // 为了一个 query 参数引入路由库不划算（且是新增依赖，本轮禁止）。
+  const [section, setSection] = useState<SectionId>(() => parseSection(readSectionParam()));
 
-  const failed = useMemo(() => (results ?? []).filter((r) => !r.ok).length, [results]);
+  /**
+   * 离屏样张的 ref 在**壳层**创建并常驻。
+   *
+   * 刻意不放进①通用组里：那一支切组时会卸载，样张跟着卸载后用户切回来点自检，
+   * 量到的全是 0（假失败）。挂载责任归壳，别的组管不着。
+   */
+  const fixtureRef = useRef<HTMLDivElement>(null);
 
-  const copyToken = async () => {
-    if (!status?.token) return;
-    try {
-      await navigator.clipboard.writeText(status.token);
-      onToast('令牌已复制，粘到插件设置里即可配对', 'good');
-    } catch {
-      onToast('复制失败，请手动选中复制', 'bad');
-    }
-  };
+  useEffect(() => {
+    // 切换后写回地址栏，让"当前在哪个分组"可被分享/刷新保持。
+    // `replaceState` 而非 `pushState`：切分组是"看同一页的不同部分"，
+    // 不是"去了一个新地方"，不该在窗口历史里堆 5 条记录让返回键失效。
+    const url = new URL(window.location.href);
+    url.searchParams.set('section', section);
+    window.history.replaceState(null, '', url.toString());
+  }, [section]);
 
-  const run = () => {
-    if (!fixture.current) return;
-    void (async () => {
-      // 等字体真正加载完再量 —— 否则 C7b「字体是否加载成功」会在首次运行时误报
-      try {
-        await document.fonts?.ready;
-      } catch {
-        /* 浏览器不支持则跳过等待 */
-      }
-      // 样张必须先完成布局，否则 getBoundingClientRect 全是 0。
-      //
-      // 但**不能只靠 `requestAnimationFrame` 等这一帧**：窗口被遮挡或屏幕锁屏时
-      // rAF 根本不触发（WKWebView 会把合成/动画整块挂起），于是自检结果永远不 setState ——
-      // 表现就是「点运行自检没反应」，而且只在锁屏/后台复现，白天手点一切正常。
-      // 真正需要的是「布局已就绪」，而 `getBoundingClientRect` 自己就会强制同步布局，
-      // 所以补一个定时器兜底：谁先到谁生效，语义等价，且后台不再静默不跑。
-      let fired = false;
-      const fire = () => {
-        if (fired) return;
-        fired = true;
-        if (!fixture.current) return;
-        setRevealed(true);
-        setResults(runSpecCheck(fixture.current, mode));
-      };
-      requestAnimationFrame(fire);
-      setTimeout(fire, 120);
-    })();
-  };
+  // 浏览器前进/后退后同步分组（深链的另一半；不做的话地址栏与画面会各说各话）
+  useEffect(() => {
+    const onPop = () => setSection(parseSection(readSectionParam()));
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  const active = SETTINGS_SECTIONS.find((s) => s.id === section) ?? SETTINGS_SECTIONS[0];
 
   return (
-    <div className="settings">
-      {/* 离屏样张：始终挂载，保证「点自检」时布局已就绪 */}
-      <div ref={fixture}>
-        <SpecFixture />
-      </div>
+    <>
+      {/*
+        离屏样张：常驻挂载（切分组不卸载），保证「点自检」时布局已就绪。
 
-      <section className="card section">
-        <div className="section-title">本地服务</div>
-        <div className="kv">
-          <b>状态</b>
-          <span>{status ? STATUS_TEXT[status.state] : '读取中…'}</span>
-        </div>
-        <div className="kv">
-          <b>服务端口</b>
-          <code>{status?.port ?? '—'}</code>
-        </div>
-        <div className="kv">
-          <b>引擎端口</b>
-          <code>{status?.sidecar_port ?? '—'}</code>
-        </div>
-        <div className="kv">
-          <b>落盘根目录</b>
-          <code>{status?.root_dir ?? '—'}</code>
-        </div>
-        {status?.last_error ? (
-          <div className="notice is-bad">最近一次错误：{status.last_error}</div>
-        ) : null}
-      </section>
+        刻意放在两栏壳**外面**：`SpecFixtureHost` 自身是个普通 div（fixed 的是它内部的样张），
+        若把它放进 `display:flex` 的 `.settings` 里，它就成了一个 0 宽的 flex item ——
+        而壳上有 `gap:26px`，于是左栏会被硬生生右推 26+26，左栏 180 的断言当场不成立。
+        这种错位在任何截图里都只看得出"好像歪了一点"，很难定位到 gap 上。
+      */}
+      <SpecFixtureHost fixtureRef={fixtureRef} />
 
-      <section className="card section">
-        <div className="section-title">令牌配对（浏览器插件）</div>
-        <div className="notice">
-          插件靠这个令牌提交翻译任务。令牌由本机生成、权限 0600，只存在这台机器上，
-          不会上传到任何远端；换令牌等于让旧令牌立即失效。
-        </div>
-        <div className="kv">
-          <b>X-Box-Token</b>
-          <code>{status?.token ?? '—'}</code>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Btn kind="primary" disabled={!status?.token} onClick={() => void copyToken()}>
-            复制令牌
-          </Btn>
-        </div>
-      </section>
-
-      <section className="card section">
-        <div className="section-title">外观</div>
-        <button
-          type="button"
-          className={mode === 'dark' ? 'switch is-on' : 'switch'}
-          onClick={() => onMode(mode === 'dark' ? 'light' : 'dark')}
+      <div className="settings">
+        <nav
+          className="settings-nav"
+          aria-label="设置分组"
+          style={{ flex: `0 0 ${SETTINGS.navWidth}px`, top: SETTINGS.navStickyTop }}
         >
-          <span className="switch-track">
-            <i />
-          </span>
-          <span>深色模式（只换令牌变量，不换结构）</span>
-        </button>
-      </section>
-
-      <section className="card section">
-        <div className="section-title">生命周期</div>
-        <div className="notice">
-          关闭窗口只是把窗口收起来 —— 本地服务继续跑，浏览器插件照样能提交翻译任务，
-          托盘图标常驻。要真正退出请用托盘菜单里的「退出喵坞…」，届时会有二次确认。
-        </div>
-      </section>
-
-      <section className="card section">
-        <div className="section-title">规格自检（C1–C7）</div>
-        <div className="notice">
-          对离屏样张量实际渲染尺寸与颜色，跟 design token 常量逐一比对。
-          CSS 里改错了数值，这里会立刻报红 —— 让「界面与方案文档对得上」变成一条可复核的断言，
-          而不是一句主观评价。
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Btn kind="primary" onClick={run}>
-            运行自检
-          </Btn>
-          {results ? (
-            <span style={{ fontSize: 11.5 }} className={failed ? 'muted' : 'muted'}>
-              通过 <span className="num">{results.length - failed}</span> /{' '}
-              <span className="num">{results.length}</span>
-              {failed ? (
-                <>
-                  {' · '}
-                  <span style={{ color: 'var(--md-error)' }}>
-                    失败 <span className="num">{failed}</span>
-                  </span>
-                </>
-              ) : null}
-            </span>
-          ) : null}
-          {revealed ? null : (
-            <span className="muted" style={{ fontSize: 11 }}>
-              （首次运行会先让样张完成布局）
-            </span>
-          )}
-        </div>
-
-        {results ? (
-          <div className="spec-list">
-            {results.map((r) => (
-              <div key={r.id} className={r.ok ? 'spec-row is-ok' : 'spec-row is-bad'}>
-                <i>{r.ok ? '✓' : '✗'}</i>
-                <span>
-                  <b>{r.id}</b> {r.label}
-                  <br />
-                  <span className="muted" style={{ fontSize: 10.5 }}>
-                    {r.detail}
-                  </span>
+          {SETTINGS_SECTIONS.map((s) => {
+            const Icon = SECTION_ICON[s.id];
+            const on = s.id === active.id;
+            return (
+              <button
+                key={s.id}
+                type="button"
+                className={on ? 'set-nav-item is-active' : 'set-nav-item'}
+                style={{
+                  padding: `${SETTINGS.navItemPadding.y}px ${SETTINGS.navItemPadding.x}px`,
+                  gap: SETTINGS.navItemGap,
+                }}
+                aria-current={on ? 'page' : undefined}
+                onClick={() => setSection(s.id)}
+              >
+                <span
+                  className="set-nav-icon"
+                  style={{ width: SETTINGS.navItemIcon, height: SETTINGS.navItemIcon }}
+                >
+                  <Icon />
                 </span>
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </section>
-    </div>
+                <span className="set-nav-label">{s.name}</span>
+                <span className="set-nav-count">{sectionItemCount(s)}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="settings-main">
+          <header className="settings-head">
+            <div className="settings-title" style={{ fontSize: SETTINGS.pageTitleSize }}>
+              {active.name}
+            </div>
+            <div className="settings-blurb">{active.blurb}</div>
+          </header>
+
+          {active.id === 'general' ? (
+            <GeneralSection mode={mode} onMode={onMode} fixtureRef={fixtureRef} />
+          ) : null}
+          {active.id === 'translate' ? <TranslateSection status={status} onToast={onToast} /> : null}
+          {active.id === 'media' ? <MediaSection /> : null}
+          {active.id === 'resource' ? <ResourceSection /> : null}
+          {active.id === 'about' ? <AboutSection /> : null}
+        </div>
+      </div>
+    </>
   );
 }
 
-const STATUS_TEXT: Record<ServiceStatus['state'], string> = {
-  stopped: '未启动',
-  starting: '启动中',
-  running: '运行中',
-  error: '异常',
-};
+function readSectionParam(): string | null {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get('section');
+}

@@ -13,7 +13,14 @@
   height: 100%;
 }
 
-/* 侧边导航：宽 78（《02》§5.1） */
+/*
+ * 侧边导航：宽 78（《02》§5.1）。
+ *
+ * 纵向排列 + 水平居中是**两级结构的载体**，不是排版偏好：
+ * 纵向 = 层级（应用层在上、全局层在下），居中 = 同一光学轴，
+ * 于是「分隔线以上是应用、以下是全局」在几何上与在 DOM 上一致，C8 才量得出来。
+ * 侧栏不是可滚动区，故不必给 min-height:0。
+ */
 .sidebar {
   flex: 0 0 78px;
   width: 78px;
@@ -26,9 +33,12 @@
   border-right: 1px solid var(--md-line);
 }
 
+/* 徽标 40×40。`flex: 0 0 auto` 与下面各级同理：它有确定高度，
+   一旦被压扁，徽标与首个应用入口就贴在一起，「两级结构」读作一级。 */
 .sidebar-logo {
   width: 40px;
   height: 40px;
+  flex: 0 0 auto;
   border-radius: var(--md-radius-md);
   display: grid;
   place-items: center;
@@ -41,9 +51,17 @@
   display: block;
 }
 
+/*
+ * 导航项基类：只放**两级共用**的视觉，尺寸一律不进这里。
+ *
+ * 尺寸放到 `.is-app` / `.is-global` 是刻意的 —— 58×52 与 44×44 是两级各自的判据，
+ * 留在基类会让「全局设置也是 58×52」看起来像是规格，回头改一个就静默改坏另一个。
+ *
+ * `flex: 0 0 auto`：侧栏是 column flex 且高度受限，缺了它导航项会被压扁，
+ * 而高度正是 C8 量出来的东西 —— 压扁的 52 读不出「应用入口 58×52」。
+ */
 .nav-item {
-  width: 58px;
-  height: 52px;
+  flex: 0 0 auto;
   border-radius: var(--md-radius-sm);
   display: flex;
   flex-direction: column;
@@ -53,6 +71,11 @@
   font-size: 10px;
   color: var(--md-muted);
   transition: background 0.15s, color 0.15s;
+}
+/* 应用层入口 58×52（《09》§3.1 / SIDEBAR.appItem） */
+.nav-item.is-app {
+  width: 58px;
+  height: 52px;
 }
 .nav-item:hover {
   background: var(--md-surface-2);
@@ -67,12 +90,40 @@
   display: block;
 }
 
-.sidebar-spacer {
-  flex: 1;
+/*
+ * 全局层设置：**纯方形 44×44**，不是应用层的 58×52。
+ *
+ * 去掉了文字，所以尺寸必须自己站得住：方形是「这里没有第二行标签」的几何表态，
+ * 沿用 58×52 会在侧栏底部留出一个空行框，读起来像漏了字而不是刻意降权。
+ *
+ * 去文字的代价是可发现性，用两处补回：hover 背景（上面 `.nav-item:hover` 已给）
+ * 与组件里的 `title` + `aria-label`。
+ */
+.nav-item.is-global {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--md-radius-sm);
 }
 
-/* 服务状态点：色相承载状态，标题文字给出文字版 */
+/*
+ * 分隔线 34×1：应用层与全局层的分界，断言 C8 的判据之一，勿删。
+ *
+ * `flex: 0 0 auto` 是必需项而非微调 —— 它只有 1px 高，column flex 里
+ * 缺了 `flex-shrink: 0` 会被邻居挤成 0（甚至被 `gap` 吃掉），分界就消失了。
+ * 34 宽是刻意短于 58：通栏线读作「页面分区」，短横线才读作「同列分组」。
+ */
+.sidebar-divider {
+  width: 34px;
+  height: 1px;
+  flex: 0 0 auto;
+  background: var(--md-line);
+  border-radius: 1px;
+  margin: 6px 0;
+}
+
+/* 服务状态点：色相承载状态，文字同步给出（颜色不作唯一信息载体） */
 .sidebar-status {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -841,12 +892,254 @@
 
 /* ================================================================ 设置页 */
 
+/*
+ * 设置页两栏壳（《09》§4.1）。宽度与 sticky 偏移由组件从 `SETTINGS` 常量以
+ * 内联样式注入，这里只给不依赖常量的部分 —— 单一事实源在 tokens.ts。
+ *
+ * 横向 flex + `align-items: flex-start`：右栏内容通常比视口高，左栏若stretch 会
+ * 跟着长高，sticky 就失去意义（要相对自身盒子滚动才生效）。
+ */
 .settings {
+  display: flex;
+  align-items: flex-start;
+  gap: 26px;
+  min-height: 100%;
+}
+
+/* 左栏：分组导航。`flex:0 0 180px` 与 `position:sticky; top:26px` 由组件内联注入 */
+.settings-nav {
+  position: sticky;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 180px;
+}
+
+/* 分组项：18px 图标 + 名称 + 项数。padding 9/12 与 gap 2 由组件内联注入 */
+.set-nav-item {
+  display: flex;
+  align-items: center;
+  border-radius: var(--md-radius-sm);
+  background: transparent;
+  font-size: 12.5px;
+  color: var(--md-ink-2);
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+.set-nav-item:hover {
+  background: var(--md-surface-2);
+}
+.set-nav-item.is-active {
+  background: var(--md-pink-soft);
+  color: var(--md-ink);
+  font-weight: 500;
+}
+.set-nav-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+.set-nav-icon svg {
+  display: block;
+}
+.set-nav-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/*
+ * 项数：写出来是刻意的（见 SettingsScreen 头部注释）。
+ * 用 tabular 数字免得 5 个数宽度不一，读起来像没对齐。
+ */
+.set-nav-count {
+  flex: 0 0 auto;
+  font-family: var(--md-font-numeric);
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+.set-nav-item.is-active .set-nav-count {
+  color: var(--md-pink);
+}
+
+/* 右栏：`min-width:0` 必写 —— 落盘根目录 / 令牌都是长路径，
+   缺了它这一列会把 flex 容器撑破，整页出现横向滚动 */
+.settings-main {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-width: 760px;
 }
+
+.settings-head {
+  margin-bottom: 20px;
+}
+.settings-title {
+  font-family: var(--md-font-display);
+  font-weight: 700;
+  line-height: 1.3;
+}
+.settings-blurb {
+  margin-top: 4px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--md-muted);
+}
+
+/* 组级说明：解释这一组为什么有这么多「待接入」 */
+.set-note {
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--md-ink-2);
+  padding: 9px 11px;
+  border-radius: var(--md-radius-sm);
+  border: 1px solid var(--md-line-soft);
+  background: var(--md-surface);
+}
+
+.set-group {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 小节标题 10.5/700/uppercase/.05em（大小与字距由组件按 SETTINGS 注入）。
+   组内分层的唯一手段（C11 判据），不可省 */
+.set-subtitle {
+  font-family: var(--md-font-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--md-muted);
+  margin-bottom: 2px;
+}
+
+/*
+ * 行：`min-height:50 / padding:10 0` 由组件按 SETTINGS 注入。
+ *
+ * 分隔线只画**顶**线，且排除"小节标题后的第一行"与"组内第一行" ——
+ * 靠相邻选择器而不是给每行画上下边框，于是小节之间天然断开，
+ * 不必再回头抹掉最后一行的底线（那种写法在加小节时必漏）。
+ */
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-top: 1px solid var(--md-line-soft);
+}
+.set-group > .set-row:first-child,
+.set-group > .set-subtitle + .set-row {
+  border-top: 0;
+}
+
+.set-row-label {
+  flex: 1;
+  min-width: 0;
+}
+.set-row-title {
+  font-size: 12.5px;
+  color: var(--md-ink);
+}
+/* 未实现项：标题降权但不加删除线 —— 它是计划中的项，不是被废弃的项 */
+.set-row.is-pending .set-row-title {
+  color: var(--md-muted);
+}
+.set-row-why {
+  margin-top: 3px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--md-muted);
+}
+
+.set-row-ctl {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 只读值：端口 / 目录 / 版本号 */
+.set-ro {
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  background: var(--md-surface-2);
+  border: 1px solid var(--md-line-soft);
+  border-radius: var(--md-radius-xs);
+  padding: 2px 7px;
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* 服务状态：色相只在点上，文字同步给出（颜色不作唯一信息载体） */
+.set-state {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.set-state-text {
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  color: var(--md-ink);
+}
+
+.set-token {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 0 10px;
+  font-size: 11px;
+}
+.set-token code {
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  background: var(--md-surface-2);
+  border: 1px solid var(--md-line-soft);
+  border-radius: var(--md-radius-xs);
+  padding: 4px 8px;
+  word-break: break-all;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* 行下通栏附注：接在某一行的 1px 分隔线之下，读作"这一行的补充" */
+.set-row-note {
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--md-muted);
+  padding: 0 0 10px;
+}
+.set-row-note code {
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+}
+/* 自检说明与运行器之间的分隔：这里不是"某行的补充"，要自己起一条线 */
+.set-row-note-body {
+  padding-bottom: 8px;
+}
+
+.set-spec {
+  padding: 0 0 12px;
+}
+.set-spec-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+.set-spec-count {
+  font-size: 11.5px;
+}
+.set-spec-hint {
+  font-size: 11px;
+}
+.set-spec-failed {
+  color: var(--md-error);
+}
+
 .section {
   padding: 14px;
   display: flex;
@@ -1015,4 +1308,61 @@
 .toast.is-good {
   border-color: var(--md-success);
   color: var(--md-success);
+}
+
+/* ================================================================ ver2.0 · 视图 Tab 行 */
+
+/* 翻译应用内的二级导航（44px，《09》§3.2）。
+   与工具条之间**不另加边框** —— 二者同属「顶部导航带」，再加一条线会把 62+44
+   切成两个不相干的区域，层级反而更乱。 */
+.viewtabs {
+  flex: 0 0 44px;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 26px;
+  background: var(--md-surface);
+  border-bottom: 1px solid var(--md-line);
+}
+
+.viewtab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--md-muted);
+  position: relative;
+  transition: color 0.15s;
+}
+.viewtab:hover {
+  color: var(--md-ink-2);
+}
+.viewtab.is-active {
+  color: var(--md-ink);
+  font-weight: 500;
+}
+/* active 用下划线而非底色块：侧栏应用层已经用了 pink-soft 底色，
+   Tab 再用同一套底色会把两级导航压平成一级。下划线是更轻的二级信号。 */
+.viewtab.is-active::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--md-pink);
+}
+.viewtab svg {
+  display: block;
+}
+
+/* ================================================================ ver2.0 · 音乐占位屏 */
+
+.music-placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 760px;
 }

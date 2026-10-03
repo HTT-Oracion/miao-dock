@@ -1,30 +1,39 @@
 import type { ReactElement } from 'react';
 import type { ServiceState } from '../ipc';
-import { SHELL } from '../theme/tokens';
-import { Dot, IconDrop, IconLibrary, IconQueue, IconSettings } from './atoms';
+import { SHELL, SIDEBAR } from '../theme/tokens';
+import { Dot, IconMusic, IconSettings, IconTranslate } from './atoms';
 import logo from '../assets/brand/miao-logo.svg';
+import { APP_LABEL, stateView, type AppId, type Screen } from '../nav';
 
-export type Screen = 'queue' | 'library' | 'drop' | 'settings';
-
-const NAV: { id: Screen; label: string; icon: () => ReactElement }[] = [
-  { id: 'queue', label: '队列', icon: IconQueue },
-  { id: 'library', label: '漫画库', icon: IconLibrary },
-  { id: 'drop', label: '投放', icon: IconDrop },
+/** 应用层入口（《09》§3.1）—— 恒为 2 项。C8 断言的判据之一，故不在别处重复定义。 */
+const APPS: { id: AppId; label: string; icon: () => ReactElement }[] = [
+  { id: 'translate', label: APP_LABEL.translate, icon: IconTranslate },
+  { id: 'music', label: APP_LABEL.music, icon: IconMusic },
 ];
 
-/** 服务四态 → 文字 + 色相令牌（《02》§2.1 的四态机；颜色只由点承载，文字同步给出） */
-const STATE_VIEW: Record<ServiceState, { text: string; colorVar: string }> = {
-  stopped: { text: '服务未启动', colorVar: '--md-muted' },
-  starting: { text: '启动中', colorVar: '--md-blue' },
-  running: { text: '服务运行中', colorVar: '--md-success' },
-  error: { text: '服务异常', colorVar: '--md-error' },
-};
-
-export function stateView(s: ServiceState) {
-  return STATE_VIEW[s];
-}
-
-/** 侧边导航：宽 78（《02》§5.1）—— 徽标 40 + 应用入口 + 服务状态点 + 设置 */
+/**
+ * 侧边导航 —— ver2.0 改为**两级结构**（《09》§3.1）。
+ *
+ * ```
+ * ┌─────────┐
+ * │  ◉ 徽标  │ 40×40
+ * │ 漫画翻译 │ ← 应用层 58×52（active = pink-soft）
+ * │  音乐    │ ← 应用层 58×52
+ * │  ────    │ ← 分隔线 34×1（居中短横线，非通栏）
+ * │  ◍ 状态点 │ ← 全局层
+ * │   ⚙      │ ← 全局层（纯图标 44×44，去文字）
+ * └─────────┘
+ * ```
+ *
+ * 与 ver1.0 的差异只有一处，但它改变的是**分类学**：原来「队列/漫画库/投放」与
+ * 「音乐」平级，会读成「音乐是翻译的第四步」。现在应用层只有两项，
+ * 翻译的三个视图下沉为 Tab（见 `TRANSLATE_VIEWS`）。
+ *
+ * ⚠️ 状态点与设置都在**分隔线以下** —— 这不是装饰，是断言 C8 的判据：
+ * 分隔线是「应用 / 全局」的分界，跨层放置会让两级结构失去意义。
+ * 也因此这里**不再有把全局层顶到底部的撑高元素**（ver1.0 用 `.sidebar-spacer`
+ * 把设置压在底缘）：一旦垫高，全局层就与分隔线脱开，「以下即全局」不再成立。
+ */
 export function Sidebar({
   screen,
   onScreen,
@@ -41,32 +50,55 @@ export function Sidebar({
         <img src={logo} alt="喵坞" width={30} height={30} />
       </div>
 
-      {NAV.map((n) => (
+      {/* ── 应用层 ──
+          `aria-current="page"` 而非 `aria-selected`：后者属于 tablist/option 语义，
+          侧栏是导航（nav landmark）不是选项组。少了它读屏用户无法判断自己在哪一屏，
+          而「当前屏」正是两级结构里唯一需要被感知的信息。 */}
+      {APPS.map((a) => (
         <button
-          key={n.id}
+          key={a.id}
           type="button"
-          className={screen === n.id ? 'nav-item is-active' : 'nav-item'}
-          onClick={() => onScreen(n.id)}
+          className={screen === a.id ? 'nav-item is-app is-active' : 'nav-item is-app'}
+          style={{ width: SIDEBAR.appItem.w, height: SIDEBAR.appItem.h }}
+          aria-current={screen === a.id ? 'page' : undefined}
+          title={a.label}
+          onClick={() => onScreen(a.id)}
         >
-          <n.icon />
-          <span>{n.label}</span>
+          <a.icon />
+          <span>{a.label}</span>
         </button>
       ))}
 
-      <div className="sidebar-spacer" />
+      {/* ── 分隔线：应用层与全局层的分界 ──
+          纯装饰（aria-hidden）：它不表达任何可操作语义，念出来只会是噪声。 */}
+      <div
+        className="sidebar-divider"
+        style={{ width: SIDEBAR.divider.w, height: SIDEBAR.divider.h }}
+        aria-hidden="true"
+      />
 
+      {/* ── 全局层 ── */}
       <div className="sidebar-status" title={v.text}>
         <Dot colorVar={v.colorVar} pulse={state === 'starting'} />
         <span>{v.text}</span>
       </div>
 
+      {/*
+       * 全局层设置：去掉了文字，所以 `title` 不是锦上添花而是唯一的可发现性线索。
+       * 但 `title` 单独兜不住无障碍 —— 它不进可访问名称的计算优先级前列，
+       * 读屏与键盘焦点都可能读不出「这是什么按钮」。故 `aria-label` 给名称、
+       * `title` 给鼠标悬停提示，两者是分工不是重复。
+       */}
       <button
         type="button"
-        className={screen === 'settings' ? 'nav-item is-active' : 'nav-item'}
+        className={screen === 'settings' ? 'nav-item is-global is-active' : 'nav-item is-global'}
+        style={{ width: SIDEBAR.globalItem.w, height: SIDEBAR.globalItem.h }}
+        aria-current={screen === 'settings' ? 'page' : undefined}
+        aria-label="设置"
+        title="设置"
         onClick={() => onScreen('settings')}
       >
         <IconSettings />
-        <span>设置</span>
       </button>
     </nav>
   );

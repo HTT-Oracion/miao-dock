@@ -5,26 +5,38 @@ import { initialMode, persistMode, useThemeTokens } from './theme/apply';
 import type { ThemeMode } from './theme/tokens';
 import { Badge, Btn, Pill } from './components/atoms';
 import { QuitConfirm } from './components/QuitConfirm';
-import { Sidebar, stateView, type Screen } from './components/Sidebar';
+import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
+import { ViewTabs } from './components/ViewTabs';
 import { QueueEmpty, QueueTable } from './screens/QueueScreen';
 import { NotReadyScreen } from './screens/NotReadyScreen';
 import { LibraryScreen } from './screens/LibraryScreen';
 import { DropScreen } from './screens/DropScreen';
+import { MusicScreen } from './screens/MusicScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
+import {
+  isBlockedWhenNotReady,
+  stateView,
+  type Screen,
+  type TranslateView,
+} from './nav';
 import type { CancelResponse, LibraryResponse, TaskRow } from './types';
 import { formatBytes } from './util';
 
 /**
- * 喵坞应用外壳（《02》§5.1）：侧栏 78 + 工具条 62 + 应用区。
+ * 喵坞应用外壳（《02》§5.1 / 《09》§3）：侧栏 78 + 工具条 62 + 应用区。
  *
- * 一处刻意的取舍：**服务未就绪时，设置页仍可进**。
- * 队列/漫画库/投放三屏在服务没起来时没有任何意义（数据全在服务里），故统一让位给 X-C3；
- * 但设置页承载着「看日志、重启服务、复制令牌、切主题、跑规格自检」——
- * 恰恰是服务出问题时最需要用到的那一屏，把它一起挡掉只会让人更没辙。
+ * ## 一处刻意的取舍：服务未就绪时，哪些屏让位
+ *
+ * 让位：翻译三视图（数据全在服务里，没服务毫无意义）→ 让位给 X-C3。
+ * 不让位：设置页（承载「看状态、重启服务、复制令牌、切主题、跑规格自检」，
+ * 恰恰是服务出问题时最需要用到的那一屏，挡掉只会让人更没辙）；音乐屏
+ * （ver2.0 起为独立应用，与翻译引擎无依赖关系）。
+ * 判定集中在 `isBlockedWhenNotReady` 一处，避免拦截纪律散落到多处失效。
  */
 export function App() {
-  const [screen, setScreen] = useState<Screen>('queue');
+  const [screen, setScreen] = useState<Screen>('translate');
+  const [view, setView] = useState<TranslateView>('drop');
   const [mode, setMode] = useState<ThemeMode>(() => initialMode());
   const [quitOpen, setQuitOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -95,8 +107,8 @@ export function App() {
   };
 
   const blocked = !running;
-  // 设置页不受阻断：服务出问题时它正是唯一有用的那一屏
-  const showNotReady = blocked && screen !== 'settings';
+  // 哪些屏在服务未就绪时让位，判定集中在 nav.ts 一处（设置页与音乐屏有例外）
+  const showNotReady = blocked && isBlockedWhenNotReady(screen);
 
   const libSummary = useMemo(() => {
     const l = lib as LibraryResponse | null;
@@ -112,7 +124,19 @@ export function App() {
         actions: <ServicePill status={status?.state ?? 'starting'} />,
       };
     }
-    switch (screen) {
+    // 音乐屏不随翻译服务状态变化：它的标题恒定，占位内容自己说明进度
+    if (screen === 'music') {
+      return {
+        title: '音乐',
+        subtitle: '本地音乐与在线音源 · ver2.0 新增应用（播放内核待实现）',
+        actions: null,
+      };
+    }
+    if (screen === 'settings') {
+      return { title: '设置', subtitle: '令牌配对 · 外观 · 规格自检', actions: null };
+    }
+    // 翻译应用内：工具条随视图切换（与 ver1.0 同一套文案，只是判定源从 screen 变成 view）
+    switch (view) {
       case 'library':
         return {
           title: '本地漫画库',
@@ -122,7 +146,7 @@ export function App() {
               <Btn kind="ghost" onClick={() => openPath(libRoot).catch((e: unknown) => push(errorText(e), 'bad'))}>
                 打开根目录
               </Btn>
-              <Btn kind="primary" onClick={() => setScreen('drop')}>
+              <Btn kind="primary" onClick={() => setView('drop')}>
                 继续翻译
               </Btn>
             </>
@@ -134,8 +158,6 @@ export function App() {
           subtitle: '拖入图片或文件夹 · 与插件共用同一条队列',
           actions: <Badge>单次上限 20 张</Badge>,
         };
-      case 'settings':
-        return { title: '设置', subtitle: '令牌配对 · 外观 · 规格自检', actions: null };
       default:
         return {
           title: '任务队列',
@@ -148,7 +170,10 @@ export function App() {
           ),
         };
     }
-  }, [libRoot, libSummary, push, queueDepth, screen, showNotReady, status?.state]);
+  }, [libRoot, libSummary, push, queueDepth, screen, showNotReady, status?.state, view]);
+
+  // 翻译应用的视图 Tab 行；音乐屏不加（《09》§3.3），设置页是全局页也不加
+  const showViewTabs = !showNotReady && screen === 'translate';
 
   return (
     <div className="shell">
@@ -156,6 +181,8 @@ export function App() {
 
       <div className="main">
         <Toolbar title={toolbar.title} subtitle={toolbar.subtitle} actions={toolbar.actions} />
+
+        {showViewTabs ? <ViewTabs view={view} onView={setView} /> : null}
 
         <div className="content">
           {ipcError ? (
@@ -166,21 +193,25 @@ export function App() {
 
           {showNotReady ? (
             <NotReadyScreen status={status} onRestart={() => void restart()} />
-          ) : screen === 'queue' ? (
-            hasRows ? (
-              <QueueTable rows={rows} onCancel={cancel} onRetry={retry} onOpen={openTaskDir} />
+          ) : screen === 'music' ? (
+            <MusicScreen />
+          ) : screen === 'translate' ? (
+            view === 'queue' ? (
+              hasRows ? (
+                <QueueTable rows={rows} onCancel={cancel} onRetry={retry} onOpen={openTaskDir} />
+              ) : (
+                <QueueEmpty onGoPlugin={() => setScreen('settings')} onGoDrop={() => setView('drop')} />
+              )
+            ) : view === 'library' ? (
+              <LibraryScreen lib={lib} onRefresh={refreshAll} onToast={push} refreshKey={refreshKey} />
             ) : (
-              <QueueEmpty onGoPlugin={() => setScreen('settings')} onGoDrop={() => setScreen('drop')} />
+              <DropScreen
+                rootDir={status?.root_dir ?? null}
+                onSubmitted={refreshAll}
+                onToast={push}
+                onGoLibrary={() => setView('library')}
+              />
             )
-          ) : screen === 'library' ? (
-            <LibraryScreen lib={lib} onRefresh={refreshAll} onToast={push} refreshKey={refreshKey} />
-          ) : screen === 'drop' ? (
-            <DropScreen
-              rootDir={status?.root_dir ?? null}
-              onSubmitted={refreshAll}
-              onToast={push}
-              onGoLibrary={() => setScreen('library')}
-            />
           ) : (
             <SettingsScreen status={status} mode={mode} onMode={setTheme} onToast={push} />
           )}

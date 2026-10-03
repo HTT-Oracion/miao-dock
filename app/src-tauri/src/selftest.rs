@@ -209,12 +209,25 @@ fn submit_and_wait(base: &str, token: &str) -> (bool, String) {
 const SPEC_DRIVER_JS: &str = r#"
 (async function () {
   function put(v) { location.hash = 'miaospec=' + encodeURIComponent(v); }
+  function nameOf(b) {
+    // 可访问名称：aria-label 优先，其次可见文字，最后 title。
+    // ver2.0 把设置入口改成**纯图标**（无可见文字），所以只认 textContent 会找不到它
+    // —— 那不是实现坏了，是断言的定位方式跟不上设计。所以这里三种都认。
+    return (b.getAttribute('aria-label') || b.textContent || b.getAttribute('title') || '').trim();
+  }
   try {
     var nav = Array.prototype.slice.call(document.querySelectorAll('.nav-item'))
-      .filter(function (b) { return (b.textContent || '').indexOf('设置') >= 0; })[0];
+      .filter(function (b) { return nameOf(b).indexOf('设置') >= 0; })[0];
     if (!nav) { put('NO_SETTINGS_NAV'); return; }
     nav.click();
     await new Promise(function (r) { setTimeout(r, 400); });
+
+    // 规格自检在①通用组里。ver2.0 起设置页是两栏壳 + 5 分组，当前分组由
+    // 深链 ?section= 决定 —— 若上一步把分组停在别的组上，「运行自检」就不在屏上。
+    // 这里显式回到①通用组，避免「断言因分组不对而误报」。
+    var general = Array.prototype.slice.call(document.querySelectorAll('.set-nav-item'))
+      .filter(function (b) { return nameOf(b).indexOf('通用') >= 0; })[0];
+    if (general) { general.click(); await new Promise(function (r) { setTimeout(r, 400); }); }
 
     var btn = Array.prototype.slice.call(document.querySelectorAll('button'))
       .filter(function (b) { return (b.textContent || '').trim() === '运行自检'; })[0];
@@ -223,7 +236,7 @@ const SPEC_DRIVER_JS: &str = r#"
     await new Promise(function (r) { setTimeout(r, 2200); });
 
     var rows = Array.prototype.slice.call(document.querySelectorAll('.spec-row'));
-    var bad = rows.filter(function (r) { return r.classList.contains('is-bad'); })
+    var bad = rows.filter(function (r) { r.classList.contains('is-bad'); })
       .map(function (r) { return (r.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 70); });
     put('SPEC total=' + rows.length + ' failed=' + bad.length + (bad.length ? ' | ' + bad.join(' ; ') : ''));
   } catch (e) { put('EXC ' + String(e)); }
