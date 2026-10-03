@@ -773,6 +773,58 @@ try {
     check('A16 /library 同样受鉴权保护', libNoToken.status === 403, libNoToken.status);
   }
 
+  // ================================================================ A16b 逐页集合（spec-notes.md G-10）
+  // 缺陷形状：只给 `translatedCount` 时，客户端只能拿 `seq <= translatedCount` 当代理指标。
+  // 这个代理**只在「缺页全在尾部」时碰巧对**；缺页一旦落在中间，它会把后面每一页的判定
+  // 整体前移 —— 没有译文的页被说成「已译」，真正有译文的尾页被说成「待译」，**两个方向同时错**。
+  //
+  // 本块的编号布局：提交 4 张，而自测引擎注入了 seq=3 失败（见 A11 的启动参数），
+  // 于是磁盘上 003 两侧都没有 → 天然一个**中间缺页**；再把 002 的译文删掉，
+  // 得到「有原图、缺译文」的中间页 —— 这两种中间缺口的语义不同，前端要分别渲染。
+  console.log('A16b 漫画库：中间缺口时逐页集合必须精确（「数量代理」在此双向必错）');
+  {
+    const name = 'A16b 中间缺口';
+    const imgs = Array.from({ length: 4 }, (_, i) => ({
+      filename: `${String(i + 1).padStart(3, '0')}.png`, contentType: 'image/png', data: pngBytes(48, 64, i + 20),
+    }));
+    const r = await submit(port, TOKEN, name, imgs);
+    const dirName = r.json.normalizedComicName;
+    const t = await waitTask(port, TOKEN, r.json.taskId, 60_000);
+
+    const dir = path.join(rootDir, dirName);
+    const onDisk = fs.readdirSync(dir).sort();
+    check('A16b 前置：seq=3 失败（引擎注入）→ 磁盘只有 001/002/004 三对，没有 003',
+      JSON.stringify(onDisk) === '["001.png","001_translated.png","002.png","002_translated.png","004.png","004_translated.png"]',
+      `任务 ${t.status}；items=${JSON.stringify((t.items || []).map((it) => `${it.seq}:${it.status}`))}；磁盘 ${JSON.stringify(onDisk)}`);
+
+    // 让「有原图、缺译文」的缺口也落在中间（002 是中间页）
+    fs.rmSync(path.join(dir, '002_translated.png'));
+
+    const lib = json(await request(port, 'GET', '/api/v1/library', { token: TOKEN }));
+    const comic = (lib?.comics || []).find((c) => c.comicName === dirName);
+    check('A16b 张数仍是「译了几页」口径：原图 3 / 译文 2（张数本身不表达是哪几页）',
+      comic?.imageCount === 3 && comic?.translatedCount === 2,
+      `imageCount=${comic?.imageCount} translatedCount=${comic?.translatedCount}`);
+
+    check('A16b translatedSeqs 逐页精确 = [1,4]（**不是**用张数推出来的 [1,2]）',
+      JSON.stringify(comic?.translatedSeqs) === '[1,4]', JSON.stringify(comic?.translatedSeqs));
+    check('A16b missingSeqs 精确列出编号段内没有原图的页 = [3]（seq=3 失败留下的洞）',
+      JSON.stringify(comic?.missingSeqs) === '[3]', JSON.stringify(comic?.missingSeqs));
+    check('A16b 出现中间缺口后 seqMax 仍为 4（编号段不因缺口被截断）',
+      comic?.seqMax === 4, comic?.seqMax);
+
+    // 反证：把旧实现（数量代理）与新实现（逐页集合）逐个 seq 的结论摆在一起比。
+    // 若哪天有人图省事退回张数口径，这条会红；若逐页集合算错了，这条也会红。
+    const naive = (s) => s <= comic.translatedCount; // 旧前端：seq <= translatedCount
+    const truth = new Set(comic?.translatedSeqs);
+    const naiveSet = [];
+    for (let s = 1; s <= comic.seqMax; s += 1) if (naive(s)) naiveSet.push(s);
+    check('A16b 反证：旧的「数量代理」给出 [1,2]，事实是 [1,4] —— 第 2 页被误判为已译、第 4 页被误判为待译',
+      naive(2) === true && truth.has(2) === false && naive(4) === false && truth.has(4) === true,
+      `代理 [${naiveSet.join(',')}] vs 事实 {${(comic?.translatedSeqs || []).join(',')}}；`
+      + `第 2 页 代理说已译/事实说没有，第 4 页 代理说待译/事实说有`);
+  }
+
   // ================================================================ A17 本地续做（X-D1「继续翻译」）
   // 契约 §5.8 未定义「哪几页还没翻」，而 X-D1 的「继续翻译」需要它 → 新增 resume 端点（spec-notes.md G-07）。
   // 核心风险是「续做会不会重复原图 / 覆盖原图」，故这两条必须钉死。

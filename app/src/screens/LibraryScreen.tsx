@@ -11,44 +11,74 @@ function filePath(comicName: string, seq: number, variant: 'original' | 'transla
   return `/library/${encodeURIComponent(comicName)}/files/${seq}?variant=${variant}`;
 }
 
+/** blob 取图的结果：`missing` = 文件不存在（含未发起请求），与 `loading` 必须分开 */
+type BlobState = { kind: 'loading' } | { kind: 'ready'; url: string } | { kind: 'missing' };
+
 /**
  * 取库内图片并转成 blob URL。
  *
  * 必须 revoke —— 一屏 20 张图、来回翻页会很快把内存吃满。
+ *
+ * 返回**三态**而不是 `string | null`：`null` 同时表达了「还在取」和「取不到」，
+ * 调用方无从区分，于是只能一律显示「加载中…」—— 文件根本不存在时就会**永远**停在加载中。
  */
-function useBlobUrl(path: string | null): string | null {
-  const [url, setUrl] = useState<string | null>(null);
+function useBlobUrl(path: string | null): BlobState {
+  const [state, setState] = useState<BlobState>({ kind: 'loading' });
   useEffect(() => {
     if (!path) {
-      setUrl(null);
+      setState({ kind: 'missing' });
       return;
     }
     let alive = true;
     let created: string | null = null;
+    setState({ kind: 'loading' });
     apiBytes(path)
       .then((buf) => {
         if (!alive) return;
         created = URL.createObjectURL(new Blob([buf], { type: sniffMime(buf) }));
-        setUrl(created);
+        setState({ kind: 'ready', url: created });
       })
       .catch(() => {
-        if (alive) setUrl(null);
+        if (alive) setState({ kind: 'missing' });
       });
     return () => {
       alive = false;
       if (created) URL.revokeObjectURL(created);
     };
   }, [path]);
-  return url;
+  return state;
 }
 
-function Thumb({ comicName, seq }: { comicName: string; seq: number }) {
-  const url = useBlobUrl(filePath(comicName, seq, 'translated'));
-  return url ? (
-    <img className="grid-thumb" src={url} alt={`第 ${seq} 页译文`} draggable={false} />
-  ) : (
-    <div className="grid-placeholder">加载中…</div>
-  );
+/**
+ * 网格卡三态 —— 判定依据是 `/library` 给出的**逐页**集合（`translatedSeqs` / `missingSeqs`），
+ * 不是张数。张数只能回答「译了几页」，回答不了「译了哪几页」；缺页落在中间时，
+ * 用张数推出来的结论会把后面每一页整体前移一位，见 spec-notes G-10。
+ */
+type GridState = 'done' | 'pending' | 'missing';
+
+const GRID_LABEL: Record<GridState, string> = { done: '已译', pending: '待译', missing: '缺页' };
+
+/**
+ * 网格缩略图。三态必须分开，且**只在确实有译文时才发请求** ——
+ * 对已知没有译文的页仍去取一次、失败后显示「加载中…」，是把「不存在」伪装成「还没到」。
+ */
+function Thumb({ comicName, seq, state }: { comicName: string; seq: number; state: GridState }) {
+  // hooks 不能条件调用，故把「要不要取」编码进 path（null = 不取）
+  const blob = useBlobUrl(state === 'done' ? filePath(comicName, seq, 'translated') : null);
+  if (state === 'done') {
+    if (blob.kind === 'loading') return <div className="grid-placeholder">加载中…</div>;
+    if (blob.kind === 'ready') {
+      return <img className="grid-thumb" src={blob.url} alt={`第 ${seq} 页译文`} draggable={false} />;
+    }
+    // 库扫描说这页有译文、文件却取不到 —— 不装作没事
+    return (
+      <div className="grid-placeholder is-bad" title="库里有这一页的译文记录，但文件读不出来">
+        读取失败
+      </div>
+    );
+  }
+  if (state === 'missing') return <div className="grid-placeholder">缺页</div>;
+  return <div className="grid-placeholder">待译</div>;
 }
 
 function Pane({
@@ -60,7 +90,7 @@ function Pane({
   seq: number;
   variant: 'original' | 'translated';
 }) {
-  const url = useBlobUrl(filePath(comicName, seq, variant));
+  const blob = useBlobUrl(filePath(comicName, seq, variant));
   const label = variant === 'original' ? '原图' : '译文';
   const file = `${String(seq).padStart(3, '0')}${variant === 'translated' ? '_translated' : ''}.png`;
   return (
@@ -72,11 +102,12 @@ function Pane({
         </span>
       </div>
       <div className="pane-body">
-        {url ? (
-          <img src={url} alt={`第 ${seq} 页${label}`} draggable={false} />
+        {blob.kind === 'ready' ? (
+          <img src={blob.url} alt={`第 ${seq} 页${label}`} draggable={false} />
         ) : (
+          // 取图中 / 确实没有，是两件事：前者会换成图，后者不会
           <span className="muted" style={{ fontSize: 11 }}>
-            该侧文件缺失
+            {blob.kind === 'loading' ? '加载中…' : '该侧文件缺失'}
           </span>
         )}
       </div>
@@ -169,6 +200,11 @@ export function LibraryScreen({
 
   const comics = lib?.comics ?? [];
   const current = comics.find((c) => c.comicName === active) ?? comics[0] ?? null;
+
+  // 逐页判定用集合，不用张数（G-10）。`?? []` 只是防御：服务由本应用自己拉起，
+  // 正常情况下这两个字段一定在；真缺了也只是退化成「全部待译」，不会白屏。
+  const translatedSeqs = new Set(current?.translatedSeqs ?? []);
+  const missingSeqs = new Set(current?.missingSeqs ?? []);
 
   // 切库或刷新后，若当前选中的漫画没了就回到第一本
   useEffect(() => {
@@ -283,26 +319,49 @@ export function LibraryScreen({
 
         <div className="card lib-grid-wrap">
           <div className="lib-grid">
-            {Array.from({ length: current.seqMax }, (_, i) => i + 1).map((seq) => (
-              <button
-                key={seq}
-                type="button"
-                className="grid-card"
-                style={{
-                  width: LIBRARY.card.w,
-                  height: LIBRARY.card.h,
-                  borderRadius: LIBRARY.card.radius,
-                }}
-                onClick={() => setCompareSeq(seq)}
-                title={`第 ${seq} 页`}
-              >
-                <Thumb comicName={current.comicName} seq={seq} />
-                <span className="grid-foot">
-                  <span className="num">{String(seq).padStart(3, '0')}</span>
-                  <span>{seq <= current.translatedCount ? '已译' : '待译'}</span>
-                </span>
-              </button>
-            ))}
+            {Array.from({ length: current.seqMax }, (_, i) => i + 1).map((seq) => {
+              const state: GridState = missingSeqs.has(seq)
+                ? 'missing'
+                : translatedSeqs.has(seq)
+                  ? 'done'
+                  : 'pending';
+              return (
+                <button
+                  key={seq}
+                  type="button"
+                  className="grid-card"
+                  style={{
+                    width: LIBRARY.card.w,
+                    height: LIBRARY.card.h,
+                    borderRadius: LIBRARY.card.radius,
+                  }}
+                  disabled={state === 'missing'}
+                  onClick={() => setCompareSeq(seq)}
+                  title={
+                    state === 'missing'
+                      ? `第 ${seq} 页在本机没有原图，无法对照`
+                      : `第 ${seq} 页 · 点开看原文 / 译文对照`
+                  }
+                >
+                  <Thumb comicName={current.comicName} seq={seq} state={state} />
+                  <span className="grid-foot">
+                    <span className="num">{String(seq).padStart(3, '0')}</span>
+                    <span
+                      className={state === 'missing' ? 'is-bad' : undefined}
+                      title={
+                        state === 'done'
+                          ? `第 ${seq} 页：本地已有译文`
+                          : state === 'pending'
+                            ? `第 ${seq} 页：有原图、缺译文 —— 点「继续翻译」可以补`
+                            : `第 ${seq} 页：本机没有这一页`
+                      }
+                    >
+                      {GRID_LABEL[state]}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 

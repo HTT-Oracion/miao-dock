@@ -74,6 +74,14 @@ export interface ComicEntry {
   byteSize: number;
   seqMax: number;
   nextSeq: number;
+  /**
+   * 已译页码（升序）。**判定「哪一页已译」必须用它，不能用 `translatedCount`** ——
+   * 缺页落在中间时（如 seq=3 翻译失败），`seq <= translatedCount` 会把后面每一页
+   * 整体前移一位，把没译文的页标成「已译」。见 spec-notes G-10。
+   */
+  translatedSeqs: number[];
+  /** 1..seqMax 内**没有原图**的页码（正常为空数组）—— 任务中途被取消会留下这种洞 */
+  missingSeqs: number[];
   modifiedAt: string | null;
 }
 

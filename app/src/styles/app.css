@@ -614,6 +614,13 @@
 .grid-card:hover {
   border-color: var(--md-pink);
 }
+/* 缺页卡：不可点，也不该给「可点」的悬停反馈 */
+.grid-card:disabled {
+  cursor: default;
+}
+.grid-card:disabled:hover {
+  border-color: var(--md-line);
+}
 .grid-thumb {
   flex: 1;
   min-height: 0;
@@ -640,6 +647,10 @@
   place-items: center;
   font-size: 10px;
   color: var(--md-muted);
+}
+.grid-placeholder.is-bad,
+.grid-foot .is-bad {
+  color: var(--md-error);
 }
 .lib-foot-note {
   font-size: 11px;

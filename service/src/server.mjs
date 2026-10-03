@@ -370,6 +370,16 @@ function scanLibrary() {
       modifiedMs = fs.statSync(dir).mtimeMs;
     } catch { /* ignore */ }
     const seqMax = originals.size ? Math.max(...originals) : 0;
+    // 「哪一页已译」必须**逐页**给出，不能只给张数。
+    // 只给 translatedCount 时，客户端只能拿 `seq <= count` 当代理指标 —— 缺页一旦落在
+    // 中间（例如 seq=3 的译文失败），代理指标就会把后面每一页的判定整体前移一位，
+    // 于是「没有译文的页」被标成「已译」，而真正有译文的尾页被标成「待译」。
+    // 扫描时本来就有这个集合，之前没暴露出去，客户端只好退而求其次。
+    const translatedSeqs = [...translated].sort((a, b) => a - b);
+    // 编号段内有原图缺失的页（正常情况为空数组）。单独给「洞」而不是给完整的原图集合，
+    // 是因为前者通常为空、几乎不占体积，而原图集合是 1..seqMax 的等长副本。
+    const missingSeqs = [];
+    for (let s = 1; s <= seqMax; s += 1) if (!originals.has(s)) missingSeqs.push(s);
     comics.push({
       comicName: entry.name,
       dirName: entry.name,
@@ -379,6 +389,8 @@ function scanLibrary() {
       byteSize,
       seqMax,
       nextSeq: seqMax + 1,
+      translatedSeqs,
+      missingSeqs,
       modifiedAt: modifiedMs ? new Date(modifiedMs).toISOString().replace(/\.\d{3}Z$/, 'Z') : null,
     });
   }
