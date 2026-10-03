@@ -16,6 +16,12 @@
 //! from display with rect`），而同期的 `-x`（全屏）会「成功」但截出一张**纯黑图** ——
 //! 后者是静默失败，四张全黑的「取证图」照样能进仓、没人看得出。所以这里做空屏检测，
 //! 并且调用方（`scripts/capture.mjs`）在拉起应用前先 `caffeinate` 把显示器顶住。
+//!
+//! 第三个陷阱，同样是「图是真的、但内容不是它声称的那个」：**主题会串轮次**。
+//! 主题持久化在前端 `localStorage`，于是上一轮把深色存下来、这一轮 01–03 就跟着变深色，
+//! 而第 4 步那次点击反而把深色切回浅色 —— 产出的 `04-settings-dark.png` 是浅色的。
+//! 两道处置：① 开跑先钉回浅色并重载，四个屏都从已知状态出发；
+//! ② 每张截完**回读主题自证**，与文件名不符即判 ✗（`capture.mjs` 会因此整批不入库）。
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -32,6 +38,46 @@ const MIN_PLAUSIBLE_BYTES: u64 = 8_000;
 
 /// 等服务起来、前端挂上、漫画库拿到数据（应用启动 + 探端口段 + 一次库扫描）
 const BOOT_WAIT: Duration = Duration::from_secs(9);
+
+/// 强制回浅色并重载（重载本身也要时间）。
+///
+/// 主题是**持久化**的（前端 `localStorage: miao.theme`），所以「上一次跑到哪儿」会决定
+/// 「这一次拍到什么」：若上一轮把 `dark` 存了下来，这一轮 01–03 会全是深色，
+/// 而第 4 步那次点击反把它切回浅色（于是 `04-settings-dark.png` 是浅的）。
+/// 取证必须与上一轮无关 —— 所以先钉回浅色再重载，让四个屏都从已知状态出发。
+const FORCE_LIGHT_JS: &str =
+    "try{localStorage.setItem('miao.theme','light');}catch(e){};location.reload();";
+const RELOAD_WAIT: Duration = Duration::from_secs(2);
+
+/// 把当前主题经 `document.title` 与 `location.hash` **两条通道**回传
+/// （与 `selftest.rs` 同一套机制：这两条在不同平台上可靠性不同，双发才稳）。
+const PROBE_THEME_JS: &str = "var __m=document.documentElement.dataset.theme||'?';\
+     document.title='MIAOCAP:'+__m;\
+     location.hash='miaocap='+__m;";
+/// 回读完成后把标题还原，免得探针的字样留在窗口标题里影响后续截图
+const RESTORE_TITLE_JS: &str = "document.title='喵坞 MiaoDock';";
+
+const LIBRARY_NAV_JS: &str =
+    "var n=[].slice.call(document.querySelectorAll('.nav-item')).filter(function(b){return (b.textContent||'').indexOf('漫画库')>=0;})[0];if(n)n.click();";
+
+const COMPARE_JS: &str = "var c=document.querySelector('.grid-card');if(c)c.click();";
+
+/// 切到设置页并把深色打开。
+///
+/// **不能「点一次就走」**：原先固定等 350ms 就 `querySelector('.switch')`，
+/// 若设置页那一刻还没挂上 DOM，取到 null、点击静默落空 —— 截出来的
+/// `04-settings-dark.png` 仍是浅色，**文件名却在说谎**。现在先轮询等 `.switch` 真的出现
+/// 再点，并且切完还要回读主题自证（见 `read_theme`）；只有 `is-on` 才停手，
+/// 因此重复调用是幂等的 —— 万一启动时本来就是深色，也不会被这次点击反而切回浅色。
+const TOGGLE_DARK_JS: &str = "(function(){\
+     var nav=Array.prototype.slice.call(document.querySelectorAll('.nav-item')).filter(function(b){return (b.textContent||'').indexOf('设置')>=0;})[0];\
+     if(nav)nav.click();\
+     var n=0;var t=setInterval(function(){\
+     n++;var s=document.querySelector('.switch');\
+     if(s){clearInterval(t);if(!s.classList.contains('is-on'))s.click();return;}\
+     if(n>=40)clearInterval(t);\
+     },50);\
+     })()";
 
 pub fn dir() -> Option<PathBuf> {
     std::env::var(CAPTURE_DIR_ENV).ok().filter(|s| !s.trim().is_empty()).map(PathBuf::from)
@@ -102,49 +148,93 @@ fn shoot(app: &AppHandle, out: &Path) -> Result<String, String> {
     Ok(format!("{}（{logical}，{bytes} 字节）", out.display()))
 }
 
+/// 读回当前主题（`document.documentElement.dataset.theme`），经标题与 hash 两条通道。
+///
+/// 这是「让这张图自证」的那一步：`04-settings-dark.png` 声称深色，就必须真的是深色。
+/// 否则一次「点击落空」会安静地产出一张**名不副实的证据**（正是踩过的坑）。
+fn read_theme(app: &AppHandle) -> Option<String> {
+    let w = app.get_webview_window("main")?;
+    let _ = w.eval(PROBE_THEME_JS);
+    std::thread::sleep(Duration::from_millis(400));
+
+    let (title, frag) = on_main(app, |a| {
+        let w = a.get_webview_window("main");
+        let title = w.as_ref().and_then(|w| w.title().ok()).unwrap_or_default();
+        let frag = w
+            .as_ref()
+            .and_then(|w| w.url().ok())
+            .and_then(|u| u.fragment().map(str::to_string))
+            .unwrap_or_default();
+        (title, frag)
+    })
+    .unwrap_or_default();
+
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.eval(RESTORE_TITLE_JS);
+    }
+
+    let from_title = title.strip_prefix("MIAOCAP:").unwrap_or("").to_string();
+    let from_hash = frag.strip_prefix("miaocap=").unwrap_or("").to_string();
+    let got = if !from_title.is_empty() { from_title } else { from_hash };
+    (!got.is_empty()).then_some(got)
+}
+
 pub fn spawn(app: AppHandle) {
     std::thread::spawn(move || {
         let Some(dir) = dir() else { return };
         let _ = std::fs::create_dir_all(&dir);
         std::thread::sleep(BOOT_WAIT);
 
-        let steps: [(&str, Option<&str>, u64, &str); 4] = [
+        // 先把主题钉回浅色再重载 —— 让这四张图与「上一轮存了什么主题」无关
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.eval(FORCE_LIGHT_JS);
+        }
+        std::thread::sleep(RELOAD_WAIT);
+
+        // 每步都带上**预期主题**：截完立刻回读自证，不符就判 ✗（整批不入库，见 capture.mjs）
+        let steps: [(&str, Option<&str>, u64, &str, &str); 4] = [
             // 队列屏是启动默认屏，直接截
-            ("01-queue.png", None, 400, "任务队列"),
+            ("01-queue.png", None, 400, "任务队列", "light"),
             (
                 "02-library.png",
-                Some(
-                    "var n=[].slice.call(document.querySelectorAll('.nav-item')).filter(function(b){return (b.textContent||'').indexOf('漫画库')>=0;})[0];if(n)n.click();",
-                ),
+                Some(LIBRARY_NAV_JS),
                 1500,
                 "本地漫画库（真实数据：上一轮 D 组端到端跑出来的落盘产物）",
+                "light",
             ),
             (
                 "03-compare.png",
-                Some(
-                    "var c=document.querySelector('.grid-card');if(c)c.click();",
-                ),
+                Some(COMPARE_JS),
                 2200,
                 "原译对照（等图片解码完再截）",
+                "light",
             ),
             (
                 "04-settings-dark.png",
-                Some(
-                    "var n=[].slice.call(document.querySelectorAll('.nav-item')).filter(function(b){return (b.textContent||'').indexOf('设置')>=0;})[0];if(n)n.click();setTimeout(function(){var s=document.querySelector('.switch');if(s)s.click();},350);",
-                ),
+                Some(TOGGLE_DARK_JS),
                 1600,
                 "设置页（深色模式）",
+                "dark",
             ),
         ];
 
         let mut lines: Vec<String> = Vec::new();
-        for (file, js, wait_ms, label) in steps {
+        for (file, js, wait_ms, label, want_theme) in steps {
             if let Some(js) = js {
                 drive(&app, js);
             }
             std::thread::sleep(Duration::from_millis(wait_ms));
             let out = dir.join(file);
-            match shoot(&app, &out) {
+            let res: Result<String, String> = shoot(&app, &out).and_then(|detail| {
+                match read_theme(&app) {
+                    Some(got) if got == want_theme => Ok(format!("{detail}；主题={got}")),
+                    other => Err(format!(
+                        "主题应为 {want_theme}，实际读到「{}」—— 这张图与文件名不符，拒收（{detail}）",
+                        other.unwrap_or_else(|| "读不到".into())
+                    )),
+                }
+            });
+            match res {
                 Ok(detail) => lines.push(format!("✓ {file} — {label}；{detail}")),
                 Err(e) => lines.push(format!("✗ {file} — {label}；{e}")),
             }
