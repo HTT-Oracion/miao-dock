@@ -66,6 +66,7 @@ fn main() {
             commands::quit_app,
             commands::hide_window,
             commands::show_window,
+            commands::set_theme,
             commands::api_get,
             commands::api_post,
             commands::api_post_multipart,

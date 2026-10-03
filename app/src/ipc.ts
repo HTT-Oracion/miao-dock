@@ -48,6 +48,12 @@ export const serviceRestart = () => invoke<ServiceStatus>('service_restart');
 export const quitApp = () => invoke<void>('quit_app');
 export const hideWindow = () => invoke<void>('hide_window');
 export const showWindow = () => invoke<void>('show_window');
+/**
+ * 把主题同步给原生窗口（标题栏 / 红绿灯按钮配色）。
+ * `mode` 为 `'light' | 'dark' | null`，null 表示跟随系统。
+ */
+export const setWindowTheme = (mode: 'light' | 'dark' | null) =>
+  invoke<void>('set_theme', { mode });
 
 // ------------------------------------------------------------------ 契约端点代理
 

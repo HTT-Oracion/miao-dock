@@ -122,6 +122,24 @@ pub fn show_window(app: AppHandle) {
     }
 }
 
+/// 把主题同步给原生窗口（G-14）。
+///
+/// 前端主题是「换 CSS 变量」实现的，只改 WebView 内容区；macOS 的原生标题栏
+/// （含红绿灯按钮所在的那条 bar）不会跟着变，导致暗色时「顶部一条白、下面一片黑」。
+/// 这里用 `set_theme` 让窗口本身跟随 —— 标题栏底色与红绿灯按钮的配色随之对齐。
+/// 入参用 `Option<Theme>`，`None` 表示跟随系统。
+#[tauri::command]
+pub fn set_theme(app: AppHandle, mode: Option<String>) {
+    let theme = match mode.as_deref() {
+        Some("dark") => Some(tauri::Theme::Dark),
+        Some("light") => Some(tauri::Theme::Light),
+        _ => None,
+    };
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_theme(theme);
+    }
+}
+
 // ------------------------------------------------------------------ 契约端点代理
 
 #[tauri::command]
