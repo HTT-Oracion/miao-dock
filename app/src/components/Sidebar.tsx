@@ -31,8 +31,8 @@ const APPS: { id: AppId; label: string; icon: () => ReactElement }[] = [
  *
  * ⚠️ 状态点与设置都在**分隔线以下** —— 这不是装饰，是断言 C8 的判据：
  * 分隔线是「应用 / 全局」的分界，跨层放置会让两级结构失去意义。
- * 也因此这里**不再有把全局层顶到底部的撑高元素**（ver1.0 用 `.sidebar-spacer`
- * 把设置压在底缘）：一旦垫高，全局层就与分隔线脱开，「以下即全局」不再成立。
+ * 全局层通过 `.sidebar-status` 的 `margin-top: auto` 贴到侧栏底部 —— 这只是
+ * 撑开分隔线以下的空隙，分隔线仍在应用层之下、全局层之上，C8c 不受影响。
  */
 export function Sidebar({
   screen,

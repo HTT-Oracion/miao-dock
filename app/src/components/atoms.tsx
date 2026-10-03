@@ -97,8 +97,12 @@ export const IconDrop = () => (
 
 export const IconSettings = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" {...stroke}>
-    <circle cx="12" cy="12" r="3" />
-    <path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6" />
+    <path d="M4 7h16" />
+    <circle cx="15" cy="7" r="2.2" />
+    <path d="M4 12h16" />
+    <circle cx="9" cy="12" r="2.2" />
+    <path d="M4 17h16" />
+    <circle cx="17" cy="17" r="2.2" />
   </svg>
 );
 
@@ -109,12 +113,16 @@ export const IconSettings = () => (
  * 必须等重，「漫画翻译」用两三个图形拼出来才不会显得比邻居复杂。
  * 不复用 IconQueue/IconLibrary：它们是**视图**图标（已下沉为 Tab），
  * 拿来当**应用**图标会把两级层级在视觉上抹平。
+ *
+ * 漫画翻译图标 = 带折角的漫画页 + 页内两行文字 + 右下翻译折角箭头：
+ * 页与文字说「漫画」，折角箭头说「翻译」，合起来才是「漫画翻译」这个应用。
  */
 export const IconTranslate = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" {...stroke}>
-    <rect x="3.5" y="4.5" width="11" height="15" rx="1.8" />
-    <path d="M17 9l3.5 3.5L17 16" />
-    <path d="M6.5 9h5M6.5 12.5h5M6.5 16h3" />
+    <path d="M6 3.5h8.5l3.5 3.5V20.5H6z" />
+    <path d="M14.5 3.5V7h3.5" />
+    <path d="M8.5 9.5h6M8.5 13h3.5" />
+    <path d="M14 16.5l2.5 2.5-2.5 2.5" />
   </svg>
 );
 
