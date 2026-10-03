@@ -211,12 +211,23 @@ export function SettingsScreen({
       } catch {
         /* 浏览器不支持则跳过等待 */
       }
-      // 样张必须先完成布局，否则 getBoundingClientRect 全是 0
-      requestAnimationFrame(() => {
+      // 样张必须先完成布局，否则 getBoundingClientRect 全是 0。
+      //
+      // 但**不能只靠 `requestAnimationFrame` 等这一帧**：窗口被遮挡或屏幕锁屏时
+      // rAF 根本不触发（WKWebView 会把合成/动画整块挂起），于是自检结果永远不 setState ——
+      // 表现就是「点运行自检没反应」，而且只在锁屏/后台复现，白天手点一切正常。
+      // 真正需要的是「布局已就绪」，而 `getBoundingClientRect` 自己就会强制同步布局，
+      // 所以补一个定时器兜底：谁先到谁生效，语义等价，且后台不再静默不跑。
+      let fired = false;
+      const fire = () => {
+        if (fired) return;
+        fired = true;
         if (!fixture.current) return;
         setRevealed(true);
         setResults(runSpecCheck(fixture.current, mode));
-      });
+      };
+      requestAnimationFrame(fire);
+      setTimeout(fire, 120);
     })();
   };
 
