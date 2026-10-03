@@ -20,6 +20,6 @@ vite.config.ts.timestamp-*.mjs
 .tmp-selftest/
 .tmp-e2e/
 
-# 参考实现 参考源码（GPL-3.0，开发期只读参考，不入库）
+# 音乐参考源码（GPL-3.0，开发期只读参考，不入库）
 # 移植产物在 app/src-tauri/src/music/，详见 vendor/music-reference/README.md
 vendor/
