@@ -359,10 +359,15 @@ try {
 
     // 失败页在磁盘上**一个文件都不留** —— 这条决定了库里那张卡该显示「缺页」还是「待译」：
     // 「有原图、缺译文」是「待译」（能续做），「连原图都没有」是「缺页」（没得救）。
+    //
+    // 注意：这是在**固化现状**，不是在为一个已定的语义背书 —— 「失败即把原图丢掉」
+    // 让该页既不可续做、又被库报成「缺页」（读起来像用户没给过这一页）。
+    // 文档并未规定这一格，故已记为 **G-11 待裁定**（`docs/spec-notes.md`）。
+    // 若裁定改为「失败也落盘原图」，这条与 D5c 都要反过来断言。
     const failedWithFile = failSeqs.filter((s) => files.some((f) => f.startsWith(pad(s))));
     check(
       'D3d',
-      '失败项在磁盘上不留任何文件（原图也没有）—— 故库里应判「缺页」而非「待译」',
+      `失败项在磁盘上不留任何文件（原图也没有）—— 故库里判「缺页」而非「待译」（现状；语义待 G-11 裁定）`,
       failSeqs.length > 0 && failedWithFile.length === 0,
       `失败 ${failSeqs.length} 页（${failSeqs.join(',')}），其中有残留文件的：${failedWithFile.join(',') || '无'}`,
     );
@@ -414,7 +419,7 @@ try {
     );
     check(
       'D5c',
-      `missingSeqs 精确等于失败页 [${failSeq}] —— 失败项在磁盘上不留任何文件，所以它是「缺页」而非「待译」`,
+      `missingSeqs 精确等于失败页 [${failSeq}] —— 失败项落盘时一个文件都不留，所以它是「缺页」而非「待译」（现状；语义待 G-11 裁定）`,
       JSON.stringify(comic?.missingSeqs ?? []) === JSON.stringify([failSeq]),
       JSON.stringify(comic?.missingSeqs),
     );
