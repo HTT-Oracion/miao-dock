@@ -10,6 +10,7 @@ import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { encodePng } from '../../engine/src/png.mjs';
 
@@ -499,6 +500,13 @@ try {
     check('A10 磁盘账目自洽：原图数 == 成功 + 失败（失败页的原图由 G-11 保下来）',
       origCount === doneCount + failedCount,
       { origCount, doneCount, failedCount, files: files.length });
+
+    // G-12：取消还要把**暂存区**一起收干净。未处理页的字节到此彻底作废，
+    // 留着只会变成「没人认领的孤儿」躺在 state 里；而它们**绝不能**被搬进漫画目录
+    // —— 那正是 §4.3「避免只有原图没有译文的残缺目录」要防的事。
+    const stageDir = path.join(stateDir, 'pending', r.json.taskId);
+    check('A10 取消后该任务的暂存区被清干净（未处理页的字节不留孤儿）',
+      !fs.existsSync(stageDir), fs.existsSync(stageDir) ? fs.readdirSync(stageDir) : '已清空');
   }
 
   // ================================================================ A13 队列
@@ -999,6 +1007,249 @@ try {
       { status: it?.status, reason: it?.reason, seq: it?.seq });
     check('A19 续做未改动原图字节（§7.2 永不覆盖）',
       fs.readFileSync(path.join(dir, '003.png')).equals(original3Before));
+  }
+
+  // ================================================================ A20 上传字节暂存（spec-notes.md G-12，裁定 B）
+  // G-12 的病灶：上传字节原先只活在服务进程的内存里（`store.blobs`），进程一崩就全丢 ——
+  // 不只是「正在翻译那一张」，而是**所有尚未落盘的页**（实测：5 张里 4 张永久消失，
+  // 且库里的张数会静默缩水、点「重试」还会被回一句「该漫画已全部翻译完成」）。
+  // 修法：上传即把字节落一份到 `state/pending/<taskId>/`（**漫画目录之外** —— 见下），
+  // 某页原图确认进漫画目录后再撤掉那一份；取消则整批丢弃。
+  //
+  // 本段要钉死三件事：① 修复没有破坏《02》§4.3 / 契约 §4.1（漫画目录不得提前出现）；
+  // ② 崩溃重启后未落盘的页确实被救回（库里「待译」、清单可续做、原图能送到引擎）；
+  // ③ **反证**：把暂存偷走再走一遍，必须救不回来 —— 否则「救回」可能另有来源。
+  console.log('A20 上传字节暂存：崩溃重启后未落盘的原图仍能救回，取消则不留痕');
+  {
+    const g12Root = path.join(TMP, 'g12-root');
+    const g12State = path.join(TMP, 'g12-state');
+    const stageDirOf = (taskId) => path.join(g12State, 'pending', taskId);
+    const filesIn = (d) => { try { return fs.readdirSync(d).sort(); } catch { return null; } };
+
+    /*
+     * 「假引擎」：`/ready` 立刻回 200（否则服务的 sidecar 门禁会把提交挡成 503，
+     * 见 server.mjs::assertSidecarReady），但 `/translate` **收下请求后永不回应**。
+     *
+     * 为什么非要用它、而不是「没人监听的端口」：后者会立刻 ECONNREFUSED，第一张
+     * 瞬间失败并落盘，「还有几页没落盘」的窗口根本不存在，整段测试就变成看运气。
+     * 用「只连不答」才让每张都卡在超时上（MIAO_ENGINE_TIMEOUT_MS），窗口稳定可复现。
+     */
+    const fakeEngine = http.createServer((req, res) => {
+      if (req.url === '/ready') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', service: 'mangatranslator', engine: 'fake-silent' }));
+        return;
+      }
+      req.resume(); // /translate：把 body 吃掉，然后装作在思考
+    });
+    let fakePort = 0;
+    for (let p = 5301; p <= 5311 && !fakePort; p += 1) {
+      const ok = await new Promise((resolve) => {
+        const onErr = () => resolve(false);
+        fakeEngine.once('error', onErr);
+        fakeEngine.listen(p, '127.0.0.1', () => { fakeEngine.off('error', onErr); resolve(true); });
+      });
+      if (ok) fakePort = p;
+    }
+    check('A20 前置：假引擎就绪（/ready 答 200，/translate 永不回应）', fakePort > 0, fakePort);
+
+    const g12Env = {
+      MIAO_ROOT: g12Root,
+      MIAO_STATE_DIR: g12State,
+      MIAO_TOKEN: TOKEN,
+      MIAO_ENGINE_PORT: String(fakePort),
+      MIAO_ENGINE_TIMEOUT_MS: '700',
+    };
+    const imgs = Array.from({ length: 4 }, (_, i) => ({
+      filename: `${String(i + 1).padStart(3, '0')}.png`, contentType: 'image/png', data: pngBytes(40, 60, i + 21),
+    }));
+    /** 死等第 1 张进入 translating（此后它卡在引擎超时上，给我们一个稳定窗口） */
+    const waitFirstTranslating = async (p, taskId) => {
+      const until = Date.now() + 8000;
+      for (;;) {
+        const d = json(await request(p, 'GET', `/api/v1/tasks/${taskId}`, { token: TOKEN }));
+        if (d?.items?.[0]?.status === 'translating') return true;
+        if (Date.now() > until) return false;
+        await sleep(25);
+      }
+    };
+    const waitPortGone = async (p) => {
+      const until = Date.now() + 8000;
+      while (await portOpen(p)) { if (Date.now() > until) return false; await sleep(40); }
+      return true;
+    };
+
+    let g12svc = spawnProc(SERVICE_ENTRY, g12Env, 'service-g12');
+    try {
+      let g12port = (await waitReady(g12svc)).port;
+
+      // ---- ① 建单后：字节进了暂存区，而漫画目录**仍不存在** ----
+      const r = await submit(g12port, TOKEN, 'A20 崩溃', imgs);
+      const taskId = r.json.taskId;
+      const dirName = r.json.normalizedComicName;
+      const comicDir = path.join(g12Root, dirName);
+
+      const staged = filesIn(stageDirOf(taskId));
+      check('A20 建单后 4 份字节已落 state 暂存区（活得过进程）',
+        staged !== null && staged.length === 4, staged);
+      check('A20 且漫画目录尚未创建 —— §4.1 目录惰性创建 / §4.3 不提前留痕未被破坏',
+        !fs.existsSync(comicDir), fs.existsSync(comicDir) ? filesIn(comicDir) : '不存在');
+
+      // ---- ② 冻结进程再观察，然后强杀 ----
+      // 先 SIGSTOP 再断言，是为了让「观察」与「杀」之间**没有时间窗口**：
+      // 否则暂停的这一瞬它可能刚好把第 1 张落盘，断言就成了看运气。
+      check('A20 前置：第 1 张已进入 translating', await waitFirstTranslating(g12port, taskId));
+      g12svc.child.kill('SIGSTOP');
+      await sleep(120);
+      check('A20 打断前：漫画目录里一张都没有（这一轮丢的就是它们）',
+        !fs.existsSync(comicDir), fs.existsSync(comicDir) ? filesIn(comicDir) : '不存在');
+      check('A20 打断前：暂存区仍有 4 份（这是唯一的字节副本）',
+        (filesIn(stageDirOf(taskId)) || []).length === 4, filesIn(stageDirOf(taskId)));
+
+      g12svc.child.kill('SIGKILL'); // 模拟崩溃：不可捕获、没有清理机会
+      check('A20 SIGKILL 后端口释放（确认它真死了，下面的重启才有意义）', await waitPortGone(g12port));
+
+      // ---- ③ 原地重启（同一 root + state）：未落盘的原图应当被搬回漫画目录 ----
+      g12svc = spawnProc(SERVICE_ENTRY, g12Env, 'service-g12b');
+      g12port = (await waitReady(g12svc)).port;
+
+      const after = filesIn(comicDir);
+      check('A20 重启后：4 张原图全部被搬回漫画目录（修复前它们永久消失）',
+        after !== null && after.length === 4 && after.every((f) => /^\d{3}\.png$/.test(f)), after);
+      check('A20 重启后：没有任何译文（一张也没翻成，故库里的正确说法是「待译」而非「已译完」）',
+        !(after || []).some((f) => /_translated\./.test(f)), after);
+      check('A20 重启后：暂存区已被收干净（搬空即删，不留孤儿）',
+        filesIn(stageDirOf(taskId)) === null, filesIn(stageDirOf(taskId)));
+
+      const detail = json(await request(g12port, 'GET', `/api/v1/tasks/${taskId}`, { token: TOKEN }));
+      check('A20 任务仍按 failed(service_restarted) 收尾 —— 姿态是「不做后台自动续做，由用户触发」',
+        detail?.status === 'failed' &&
+        (detail?.items || []).every((it) => it.status === 'failed' && it.reason === 'service_restarted'),
+        { status: detail?.status, items: FailedItemsSummary(detail?.items || []) });
+
+      const lib = json(await request(g12port, 'GET', '/api/v1/library', { token: TOKEN }));
+      const comic = (lib?.comics || []).find((c) => c.comicName === dirName);
+      check('A20 库里这本是 4 页、seqMax=4（修复前会静默缩水成 1 页，连「缺页」都显示不出来）',
+        comic?.imageCount === 4 && comic?.seqMax === 4,
+        comic && { imageCount: comic.imageCount, seqMax: comic.seqMax });
+      check('A20 逐页集合：4 页都在「待译」位置，没有一页落进「缺页」',
+        JSON.stringify(comic?.translatedSeqs) === '[]' && JSON.stringify(comic?.missingSeqs) === '[]',
+        comic && { translatedSeqs: comic.translatedSeqs, missingSeqs: comic.missingSeqs });
+
+      const plan = json(await request(g12port, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, { token: TOKEN }));
+      check('A20 4 页全部进入「继续翻译」清单（修复前清单为空 → 点重试必 404）',
+        plan?.pendingCount === 4 && (plan?.pendings || []).map((p) => p.seq).join(',') === '1,2,3,4',
+        plan && { pendingCount: plan.pendingCount, seqs: (plan.pendings || []).map((p) => p.seq) });
+
+      const rs = await request(g12port, 'POST', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, {
+        token: TOKEN, headers: { 'Content-Type': 'application/json' }, body: Buffer.from('{}'),
+      });
+      check('A20 点「继续翻译」真的建出任务（201，不再是一句「已全部翻译完成」）',
+        rs.status === 201 && !!json(rs)?.taskId, { status: rs.status, body: json(rs) });
+      const rsDone = await waitTask(g12port, TOKEN, json(rs).taskId, 60_000);
+      check('A20 续做时送进引擎的是**恢复出来的原图**（失败原因是 engine_*，不是 original_missing）',
+        (rsDone.items || []).length === 4 && rsDone.items.every((it) => /^engine_/.test(String(it.reason))),
+        FailedItemsSummary(rsDone.items || []));
+
+      // ---- ④ 反证：把暂存偷走再走一遍，必须**救不回来** ----
+      // 排除「救回是别的东西顺带完成的」这种解释：字节当时只存在于内存与暂存两处，
+      // 内存随进程消失，于是唯一可能的来源就是暂存 —— 拿掉它，救回必须随之消失。
+      const r2 = await submit(g12port, TOKEN, 'A20 反证', imgs);
+      const taskId2 = r2.json.taskId;
+      const comicDir2 = path.join(g12Root, r2.json.normalizedComicName);
+      check('A20 反证前置：第 2 条任务也卡在 translating', await waitFirstTranslating(g12port, taskId2));
+      g12svc.child.kill('SIGSTOP');
+      await sleep(120);
+      const stolen = (filesIn(stageDirOf(taskId2)) || []).length;
+      fs.rmSync(stageDirOf(taskId2), { recursive: true, force: true }); // 把唯一的字节副本偷走
+      g12svc.child.kill('SIGKILL');
+      await waitPortGone(g12port);
+
+      g12svc = spawnProc(SERVICE_ENTRY, g12Env, 'service-g12c');
+      g12port = (await waitReady(g12svc)).port;
+      check('A20 反证：偷走暂存后重启，漫画目录**依旧不存在** —— 救回确实来自暂存，不是别的东西',
+        stolen === 4 && !fs.existsSync(comicDir2),
+        { stolen, exists: fs.existsSync(comicDir2), files: filesIn(comicDir2) });
+      const plan2 = await request(g12port, 'GET', `/api/v1/library/${encodeURIComponent(r2.json.normalizedComicName)}/resume`, { token: TOKEN });
+      check('A20 反证：这本漫画连库里的条目都不存在 —— 「静默缩水」正是 G-12 的病灶本身',
+        plan2.status === 404 && json(plan2)?.error?.code === 'TASK_NOT_FOUND',
+        { status: plan2.status, body: json(plan2) });
+    } finally {
+      if (g12svc?.child && g12svc.child.exitCode === null) g12svc.child.kill('SIGKILL');
+      await new Promise((resolve) => fakeEngine.close(resolve));
+      await sleep(200);
+    }
+  }
+
+  // ================================================================ A21 落盘根目录可写性（契约 §2.2 DISK_FULL）
+  // §2.2 要求「创建任务前探测一次根目录可写性；不可写 → 507 DISK_FULL」。这一段把它钉住，
+  // 并且双向钉住 —— 因为「507」的文案是「**磁盘满或权限不足**」，那是一句会让人去清磁盘的话：
+  //   ① 真的文件系统错误（带 errno）→ 必须是 507，且原因要带得出来；
+  //   ② **不带 errno** 的错误（来自别处，不是文件系统）→ **不得**伪装成 507。
+  // ② 不是假想的：本机实测踩过一次 —— 运行时策略层拦下一次探测写入，磁盘明明还剩 58 GB，
+  // 服务却回了一句 507 DISK_FULL，而 details 里连个 errno 都没有，完全无从判断。
+  console.log('A21 落盘根目录可写性：真 fs 错误 → 507；非文件系统错误不得伪装成 507');
+  {
+    // ---- ① 根目录只读 → 507 DISK_FULL，且 details.reason 必须带得出原因 ----
+    const roRoot = path.join(TMP, 'ro-root');
+    const roSvc = spawnProc(SERVICE_ENTRY, {
+      MIAO_ROOT: roRoot, MIAO_STATE_DIR: path.join(TMP, 'ro-state'),
+      MIAO_TOKEN: TOKEN, MIAO_ENGINE_PORT: String(eng.port),
+    }, 'service-ro');
+    try {
+      const roPort = (await waitReady(roSvc)).port;
+      fs.chmodSync(roRoot, 0o500); // 去掉写位：这是 spec-notes D-10 一直在用的可注入条件
+      const res = await submit(roPort, TOKEN, 'A21 只读', [
+        { filename: '001.png', contentType: 'image/png', data: pngBytes(40, 60, 31) },
+      ]);
+      const body = res.json; // 注意：不是 json(res) —— submit 返回的是 {status, json, raw}
+      check('A21 根目录不可写 → 507 DISK_FULL（§2.2）',
+        res.status === 507 && body?.error?.code === 'DISK_FULL', { status: res.status, body });
+      check('A21 details.reason 带得出 errno —— 原先只回 err.code，遇到无 errno 的错误就成了「（undefined）」',
+        body?.error?.details?.reason === 'EACCES', body?.error?.details);
+      check('A21 探测失败不留 probe 残留文件',
+        !fs.readdirSync(roRoot).some((f) => f.startsWith('.write-probe-')),
+        fs.readdirSync(roRoot));
+    } finally {
+      try { fs.chmodSync(roRoot, 0o700); } catch { /* ignore */ }
+      killProc(roSvc);
+      await sleep(200);
+    }
+
+    // ---- ② 注入一个**刻意不带 errno** 的探测写入错误 → 必须是 500，不能是 507 ----
+    // 手段：`NODE_OPTIONS=--import` 给服务进程挂一个钩子，只让探测写入抛一个没有 code 的 Error。
+    // 这是唯一能稳定构造这个形状的办法 —— 真实环境里它由运行时策略层抛出，无法从外部按需触发。
+    const hook = path.join(TMP, 'inject-probe-error.mjs');
+    fs.writeFileSync(hook, [
+      "import fs from 'node:fs';",
+      'const orig = fs.writeFileSync;',
+      'fs.writeFileSync = function (p, ...rest) {',
+      "  if (String(p).includes('.write-probe-')) {",
+      "    throw new Error('injected: 写入被外部策略层拦下（刻意不带 errno）');",
+      '  }',
+      '  return orig.call(fs, p, ...rest);',
+      '};',
+    ].join('\n'));
+    const injSvc = spawnProc(SERVICE_ENTRY, {
+      MIAO_ROOT: path.join(TMP, 'inj-root'), MIAO_STATE_DIR: path.join(TMP, 'inj-state'),
+      MIAO_TOKEN: TOKEN, MIAO_ENGINE_PORT: String(eng.port),
+      NODE_OPTIONS: `--import ${pathToFileURL(hook).href}`,
+    }, 'service-inj');
+    try {
+      const injPort = (await waitReady(injSvc)).port;
+      const res = await submit(injPort, TOKEN, 'A21 注入', [
+        { filename: '001.png', contentType: 'image/png', data: pngBytes(40, 60, 32) },
+      ]);
+      const body = res.json; // 同上：submit 的返回值里已带解析好的 json
+      check('A21 非文件系统错误不得被伪装成 507「磁盘满或权限不足」',
+        res.status !== 507 && body?.error?.code === 'INTERNAL',
+        { status: res.status, code: body?.error?.code, details: body?.error?.details });
+      check('A21 该错误的原因留在 details.reason 里（可查），而不是被吞掉',
+        /injected/.test(String(body?.error?.details?.reason || '')), body?.error?.details);
+    } finally {
+      killProc(injSvc);
+      await sleep(200);
+    }
   }
 
   // ================================================================ A14（补充）sidecar 未就绪
