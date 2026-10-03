@@ -6,6 +6,7 @@
 //   · 托盘常驻；「退出喵坞」需二次确认（确认文案由前端给出，见 §2.1）
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod capture;
 mod commands;
 mod selftest;
 mod service;
@@ -104,6 +105,10 @@ fn main() {
             // ---- M3 生命周期验收（B1–B3）：程序化跑，不需要人点 ----
             if selftest::enabled() {
                 selftest::spawn(app.handle().clone());
+            }
+            // ---- M5 截图取证：依次切屏并各截一张 ----
+            if capture::enabled() {
+                capture::spawn(app.handle().clone());
             }
             Ok(())
         })

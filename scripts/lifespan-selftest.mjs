@@ -14,17 +14,16 @@
  * 此时仍然全绿，就说明它测的不是「关窗仅隐藏」。反向那轮必须失败，正向才算数。
  * 见 ~/.workbuddy/skills/falsifiable-verification。
  */
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import net from 'node:net';
 import path from 'node:path';
 import process from 'node:process';
+
+import { ensureDevServer, portOpen } from './_devserver.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const APP = path.join(ROOT, 'app');
 const BIN = path.join(APP, 'src-tauri', 'target', 'debug', 'miao-dock');
-const VITE = path.join(APP, 'node_modules', '.bin', 'vite');
-const DEV_PORT = 1420;
 /// 落盘根目录与状态目录都指到仓库内的临时目录：既别碰用户的 ~/Pictures/Box 漫画，
 /// 也让每次自检从空目录开始（否则续做/编号会受上一轮残留影响）。
 const TMP = path.join(ROOT, '.tmp-selftest');
@@ -34,40 +33,6 @@ const ENGINE_PORT = 5003;
 
 const refute = process.argv.includes('--refute');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-function portOpen(port, timeout = 500) {
-  return new Promise((resolve) => {
-    const sock = net.connect({ host: '127.0.0.1', port });
-    const done = (v) => {
-      sock.destroy();
-      resolve(v);
-    };
-    sock.setTimeout(timeout);
-    sock.once('connect', () => done(true));
-    sock.once('timeout', () => done(false));
-    sock.once('error', () => done(false));
-  });
-}
-
-/** 等 dev server 就绪；顺带返回「这个 vite 是不是我起的」 */
-async function ensureDevServer() {
-  if (await portOpen(DEV_PORT)) return null;
-  if (!existsSync(VITE)) {
-    console.error(`找不到 vite：${VITE}\n先在 app/ 下 npm install`);
-    process.exit(2);
-  }
-  const child = spawn(VITE, ['--port', String(DEV_PORT), '--strictPort'], {
-    cwd: APP,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  for (let i = 0; i < 60; i++) {
-    await sleep(250);
-    if (await portOpen(DEV_PORT)) return child;
-  }
-  child.kill('SIGTERM');
-  console.error(`dev server 未在 15s 内就绪（端口 ${DEV_PORT}）`);
-  process.exit(2);
-}
 
 function runApp() {
   return new Promise((resolve) => {
@@ -108,6 +73,28 @@ function parseResult(out) {
   }
 }
 
+/**
+ * 谁占着这个端口 —— 只在 B4 判红时调用，用来把「仍被占用：5180」变成可行动的线索。
+ *
+ * 加它的直接原因：一次验收里 5180 报红，实际坐的是**上一轮截图失败留下的 service 残留**
+ * （所以 M3 自己的 service 才升到 5181）。光看「5180 被占」会怀疑本轮代码；
+ * 报出占用者是谁、什么进程，就不用再查一轮。取不到就算了，绝不让它影响断言本身。
+ */
+function whoHolds(port) {
+  try {
+    const out = execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-F', 'pcn'], {
+      encoding: 'utf8',
+      timeout: 3000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const pid = /^p(\d+)/m.exec(out)?.[1];
+    const cmd = /^c(.+)$/m.exec(out)?.[1];
+    return pid ? `${cmd || '?'}(pid ${pid})` : null;
+  } catch {
+    return null;
+  }
+}
+
 /** 等这些端口全部释放（B4：退出后不留孤儿占着 5180 / 5003） */
 async function waitPortsFreed(ports, timeoutMs = 12_000) {
   const busyNow = async () => {
@@ -124,7 +111,7 @@ async function waitPortsFreed(ports, timeoutMs = 12_000) {
   return { ok: busy.length === 0, busy };
 }
 
-const startedVite = await ensureDevServer();
+const startedVite = await ensureDevServer({ root: ROOT });
 let failed = 0;
 try {
   const { out } = await runApp();
@@ -134,7 +121,12 @@ try {
   const freed = await waitPortsFreed([...SERVICE_PORTS, ENGINE_PORT]);
   const freedDetail = freed.ok
     ? '5180–5190 / 5003 均已释放，无孤儿进程'
-    : `仍被占用：${freed.busy.join(', ')}`;
+    : `仍被占用：${freed.busy
+        .map((p) => {
+          const holder = whoHolds(p);
+          return holder ? `${p}（${holder}）` : String(p);
+        })
+        .join('、')}`;
 
   if (refute) {
     // 反证：关窗即退进程 ⇒ 自检根本走不到打印那一步

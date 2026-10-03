@@ -102,7 +102,7 @@ fn report(items: &[(String, bool, String)]) {
 // ------------------------------------------------------------------ 主线程调度
 
 /// 在主线程跑一段闭包并把结果拿回来（窗口 API 必须在主线程调用）
-fn on_main<T, F>(app: &AppHandle, f: F) -> Option<T>
+pub(crate) fn on_main<T, F>(app: &AppHandle, f: F) -> Option<T>
 where
     T: Send + 'static,
     F: FnOnce(&AppHandle) -> T + Send + 'static,

@@ -9,9 +9,13 @@ app/src-tauri/gen/schemas/
 # 本机验收用的临时落盘目录（MIAO_ROOT 覆盖时可能落在仓库内）
 tmp-*/
 
+# vite 每次热重启都会把 vite.config.ts 转译到这个时间戳文件里，是纯噪声
+vite.config.ts.timestamp-*.mjs
+
 # 系统与编辑器噪声
 .DS_Store
 *.log
 
 # 生命周期自检的临时落盘根目录
 .tmp-selftest/
+.tmp-e2e/

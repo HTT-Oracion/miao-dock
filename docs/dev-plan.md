@@ -104,7 +104,7 @@ Vite + React 18 + TypeScript，样式用**原生 CSS + CSS 变量**（`cssVars(m
 | **M2** | 模拟引擎 sidecar | `engine/`：HTTP 边界 + 端口自动探测 + 单张耗时仿真 + 可控失败注入 | 独立自测脚本通过；能被 box-service 拉起 | `feat(engine)` |
 | **M3** | Tauri 壳与服务管理 | 窗口策略（close→hide）/ 托盘 + 状态点 / 退出二次确认 / ServiceManager 四态 / 拉起并守护两个子进程 | B1–B4 全绿；`npm run dev` 可启动 | `feat(shell)` |
 | **M4** | 应用外壳与四屏 | 侧栏 78 / 工具条 62 / X-C1 / X-C2 / X-C3 / X-D1 / X-D2 / X-B1 / 深色模式 | C1–C7 像素级断言全绿 | `feat(ui)` |
-| **M5** | 端到端验收 | 真实进程 + 真实落盘 + 与插件联调（同一契约）；回归基线固化 | D1–D4 全绿；截图取证 | `test(e2e)` |
+| **M5** | 端到端验收 | 真实进程 + 真实落盘 + 与插件联调（同一契约）；回归基线固化 | D1–D5 全绿；截图取证 | `test(e2e)` |
 
 每个里程碑**独立提交**，提交信息说明该节点内容；跨里程碑的修正另起 `fix(...)` 提交，不混入。
 
@@ -132,6 +132,7 @@ Vite + React 18 + TypeScript，样式用**原生 CSS + CSS 变量**（`cssVars(m
 | A14 | 安全 | 路径三次校验任一失败 → 403 + 安全日志；伪造 `filename="evil.png"` 但字节是 WEBP → 落盘扩展名取**嗅探结果**；根目录黑名单（`/`、`C:\`、家目录本身、`/tmp`、系统目录）拒绝 |
 | A15 | 任务列表（**契约外增量**） | `GET /tasks` 返回 running → queued → 终态（`finishedAt` 倒序）；终态行**留在列表里**（X-C1 的历史行来源）；来源归因取 `X-Box-Client`（`extension/*`→`extension`／`box-desktop/*`→`desktop`／缺省→`unknown`）；`status`/`limit` 过滤正确且 `limit=0 → 400`；**新增端点不得污染 `/queue` 语义**、不得改变 §5.2 响应形状；跨重启靠 `STATE_DIR/tasks/*.json` 恢复。依据见 `docs/spec-notes.md` G-04 |
 | A16 | 漫画库 | `GET /library` 逐漫画给出 `imageCount`/`translatedCount`/`byteSize`，且 `byteSize` **等于目录内所有文件字节数之和**（G-01 口径，与磁盘实测一致）；顶层 `totalImages`/`totalBytes` 为全库聚合；原/译文件流同 `seq` 可用；不存在的 `seq` → `404`（不返回空文件）；`reveal` 返回实际目录；受鉴权保护 |
+| A16b | 漫画库·逐页集合（**契约外增量**） | `translatedSeqs` / `missingSeqs` **逐页精确**，且**双向反证**成立：中间缺口下旧的「`seq <= translatedCount`」代理给出 `[1,2]`、事实是 `[1,4]`（第 2 页误判已译、第 4 页误判待译）；`seqMax` 不因缺口被截断。依据见 `docs/spec-notes.md` G-10 |
 | A17 | 本地续做（**契约外增量**） | `GET /library/{name}/resume` 只列出「有原图、缺译文」的页；`POST` 建单后进入**同一条**串行队列；**不新增原图编号、不改动已存在原图的字节**（§7.2 永不覆盖）；无缺页 / 指定已有译文的页 → `404`；`seqs` 非数组 → `400`；受鉴权保护。依据见 `docs/spec-notes.md` G-07 |
 | A18 | 子进程守护（**契约 B4 的异常分支**） | 父进程被 SIGKILL（不可捕获）后，子进程仍自行退出、端口释放；父进程健在时**不误杀**（跨 2 个看守周期）。harness 刻意让子进程 stdout 走**文件**而非管道，避免 EPIPE 冒充「看守生效」（反证：`MIAO_NO_PARENT_WATCH=1` 时该断言必失败）。依据见 `docs/spec-notes.md` D-12 |
 
@@ -188,6 +189,25 @@ B1–B3 原本只能靠人点，而本机未授予「自动化」权限（`osasc
 | D2 | 本机投放同队列 | 投放 21 张 → 进入**同一条**串行队列；>20 → 同一 `BATCH_LIMIT_EXCEEDED` |
 | D3 | 落盘可见 | 翻译完成后 `~/Pictures/Box 漫画/<漫画名>/` 出现成对的 `NNN.png` + `NNN_translated.png`；漫画库能看到；对照页可左右翻页；「打开目录」能唤起访达 |
 | D4 | 时效 | 模拟引擎下 20 张在 30 秒内完成，进度与 SSE 一致 |
+| D5 | 漫画库逐页判定（**缺陷回归**） | 中间缺页时 `translatedSeqs` **精确**、且与旧的「张数代理」结论**相反**（双向反证）；失败页不得被判成「已译」、也不得永远停在「加载中…」。依据见 `docs/spec-notes.md` G-10 |
+
+**怎么跑（一条命令）**
+
+```bash
+npm run e2e        # D1–D5：起真实 engine + 真实 service，真提交、真落盘
+npm run capture    # 截图取证（需屏幕解锁，见下）
+```
+
+`e2e` 与 `capture` 共用 `MIAO_E2E_TMP`（默认项目内 `.tmp-e2e/`）：端到端那轮的落盘产物
+**故意保留**，正是截图要拍的真数据 —— 清理只发生在**下一次运行的开头**，所以先 `e2e` 再 `capture`。
+
+`capture` 有三个环境前提，都不在方案文档里、各踩过一次（`docs/spec-notes.md` D-15、D-16）：
+显示器**唤醒**、屏幕**解锁**、两个脚本的临时路径**一致**。任一不满足时它会**拒绝出图并退出 2**，
+而不是交出一批看起来「有产物」的假证据。
+
+`selftest:app` 也一度要求屏幕解锁（规格自检里的 `requestAnimationFrame` 在窗口被遮挡时不触发，
+结果静默归零）—— 那条已改成定时器兜底，现在**锁屏下也能跑出 12/12**，见 `docs/spec-notes.md` D-17。
+**验收不该因为没人看着就悄悄降级。**
 
 ---
 
