@@ -229,6 +229,22 @@ function parseUploadRequest(req, body) {
   return { payload, images, imageOrder: allFieldStrings(fields, 'imageOrder') };
 }
 
+/**
+ * 「来源」归因。
+ *
+ * 契约 §2 把 `X-Box-Client` 定义为**可选头，用于日志归因**，而 X-C1 队列页有一列「来源」
+ * （示例值「来自浏览器插件」），但契约请求体里没有该字段、也不该为它新增字段。
+ * 于是复用这个既有可选头做归因：插件端本就发 `extension/x.y.z`，桌面端发
+ * `box-desktop/x.y.z`。**请求体零改动、契约零改动**，只是把它同时用于列表视图。
+ * 未带该头（或值不认识）的任务归为 `unknown`——不猜，宁可显示「—」。
+ */
+function sourceOf(req) {
+  const c = String(req.headers['x-box-client'] || '').toLowerCase();
+  if (c.startsWith('extension/')) return 'extension';
+  if (c.startsWith('box-desktop/')) return 'desktop';
+  return 'unknown';
+}
+
 function handleCreateTask(req, res, cors) {
   return readBody(req).then(async (body) => {
     await assertSidecarReady();
@@ -240,7 +256,9 @@ function handleCreateTask(req, res, cors) {
     assertRootWritable(); // §2.2 DISK_FULL(507)：请求级落盘不可用
     payload.__normalizedName = norm.name;
 
-    const { task, replay } = store.createTask({ payload, images, imageOrder });
+    const { task, replay } = store.createTask({
+      payload, images, imageOrder, source: sourceOf(req),
+    });
     const view = store.createView(task);
     // IDEMPOTENT_REPLAY：HTTP 200（重放）vs 201（新建），响应体不做任何额外标注
     sendJson(res, replay ? 200 : 201, view, cors);
@@ -295,6 +313,28 @@ async function handleCancel(req, res, cors, taskId) {
 
 function handleQueue(req, res, cors) {
   sendJson(res, 200, store.queueSnapshot(), cors);
+}
+
+/**
+ * `GET /tasks` —— 队列页的列表数据源（**契约外增量端点**，见 docs/spec-notes.md G-04）。
+ *
+ * 契约 §5.7 的 `/queue` 只覆盖 running + queued，而 X-C1 的表格要同时渲染
+ * 「已完成 / 部分失败 / 失败 / 已取消」的历史行。为不动契约已有端点的语义，
+ * 这里**新增**一个只读端点，不改 `/queue` 一个字。
+ *
+ * 查询参数：`status`（默认 `all`，可逗号分隔多个）、`limit`（正整数）。
+ */
+function handleTaskList(req, res, cors, url) {
+  const status = url.searchParams.get('status') || 'all';
+  const limitText = url.searchParams.get('limit');
+  let limit;
+  if (limitText !== null) {
+    limit = Number.parseInt(limitText, 10);
+    if (!Number.isFinite(limit) || limit <= 0) {
+      throw new ApiError('INVALID_IMAGE', 'limit 必须是正整数', { limit: limitText });
+    }
+  }
+  sendJson(res, 200, store.taskListView({ status, limit }), cors);
 }
 
 // ------------------------------------------------------------------ 库与导出
@@ -457,6 +497,7 @@ async function route(req, res, cors, url) {
   // /tasks
   if (p.length === 1 && p[0] === 'tasks') {
     if (method === 'POST') return handleCreateTask(req, res, cors);
+    if (method === 'GET') return handleTaskList(req, res, cors, url);
     throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
   }
   // /tasks/{taskId}

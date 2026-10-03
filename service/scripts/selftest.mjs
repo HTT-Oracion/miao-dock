@@ -119,7 +119,10 @@ async function submit(port, token, comicName, images, extra = {}) {
   const body = buildMultipart({ payload: { comicName, idempotencyKey: extra.idempotencyKey || crypto.randomUUID(), ...extra.payload }, images });
   const res = await request(port, 'POST', '/api/v1/tasks', {
     token,
-    headers: { 'Content-Type': `multipart/form-data; boundary=${body.boundary}` },
+    headers: {
+      'Content-Type': `multipart/form-data; boundary=${body.boundary}`,
+      ...(extra.headers || {}),
+    },
     body: body.body,
   });
   return { status: res.status, json: json(res), raw: res };
@@ -476,6 +479,93 @@ try {
     await waitTask(port, TOKEN, b.json.taskId, 60_000);
     const q2 = json(await request(port, 'GET', '/api/v1/queue', { token: TOKEN }));
     check('A13 队列清空后 running=null / queued=[]', q2?.running === null && q2?.queued?.length === 0, q2);
+  }
+
+  // ================================================================ A15 任务列表（列表端点 + 来源归因）
+  // 覆盖 dev-plan.md §4 的 G-04 增量：X-C1 队列页需要「已完成 / 部分失败 / 失败」历史行，
+  // 而契约 §5.7 的 /queue 只给 running+queued，故新增只读端点 GET /tasks（docs/spec-notes.md G-04）。
+  console.log('A15 任务列表：跨状态汇总、排序、来源归因');
+  {
+    // 用 2 张图（引擎对 seq=3 恒失败，这里要的是「全部成功 → done」，便于断言 progress）
+    const imgs = (n) => Array.from({ length: n }, (_, i) => ({
+      filename: `${String(i + 1).padStart(3, '0')}.png`, contentType: 'image/png', data: pngBytes(40, 60, i),
+    }));
+
+    const desk = await submit(port, TOKEN, 'A15 本机投放', imgs(2), { headers: { 'X-Box-Client': 'box-desktop/0.1.0' } });
+    const ext = await submit(port, TOKEN, 'A15 插件来源', imgs(2), { headers: { 'X-Box-Client': 'extension/2.3.0' } });
+    const anon = await submit(port, TOKEN, 'A15 无来源头', imgs(2));
+    // 刻意不 sleep：要在「第一个任务仍在跑」的窗口内验证排序（引擎每张 60ms）
+
+    const live = json(await request(port, 'GET', '/api/v1/tasks', { token: TOKEN }));
+    const rows0 = live?.tasks || [];
+    const liveById = new Map(rows0.map((t) => [t.taskId, t]));
+    const idxOf = (id) => rows0.findIndex((t) => t.taskId === id);
+
+    check('A15 列表含刚创建的三个任务',
+      [desk, ext, anon].every((r) => liveById.has(r.json.taskId)), live?.count);
+    check('A15 排序：A15 三行按「运行中 → 排队 → 排队」出现，位次即提交序',
+      idxOf(desk.json.taskId) < idxOf(ext.json.taskId) &&
+      idxOf(ext.json.taskId) < idxOf(anon.json.taskId) &&
+      liveById.get(desk.json.taskId)?.status === 'running' &&
+      liveById.get(ext.json.taskId)?.status === 'queued' &&
+      liveById.get(anon.json.taskId)?.status === 'queued',
+      rows0.map((t) => t.status));
+    {
+      // 全局次序：非终态（running/queued）在前，终态在后且不再夹带非终态
+      const TERM = ['done', 'partial_failed', 'failed', 'canceled'];
+      const firstTerm = rows0.findIndex((t) => TERM.includes(t.status));
+      check('A15 排序：运行中与排队中一律排在终态之前',
+        firstTerm >= 0 && rows0.slice(0, firstTerm).every((t) => t.status === 'running' || t.status === 'queued') &&
+        rows0.slice(firstTerm).every((t) => TERM.includes(t.status)),
+        { firstTerm, statuses: rows0.map((t) => t.status) });
+    }
+    check('A15 来源归因：X-Box-Client=box-desktop/* → desktop',
+      liveById.get(desk.json.taskId)?.source === 'desktop', liveById.get(desk.json.taskId)?.source);
+    check('A15 来源归因：X-Box-Client=extension/* → extension',
+      liveById.get(ext.json.taskId)?.source === 'extension', liveById.get(ext.json.taskId)?.source);
+    check('A15 来源归因：无该头 → unknown（不猜）',
+      liveById.get(anon.json.taskId)?.source === 'unknown', liveById.get(anon.json.taskId)?.source);
+    check('A15 归因不改契约请求体：createView 仍是 §5.2 形状（无 source 字段）',
+      !Object.prototype.hasOwnProperty.call(desk.json, 'source'), Object.keys(desk.json));
+
+    for (const r of [desk, ext, anon]) await waitTask(port, TOKEN, r.json.taskId, 60_000);
+    await sleep(250);
+
+    const list2 = json(await request(port, 'GET', '/api/v1/tasks', { token: TOKEN }));
+    const after = new Map((list2?.tasks || []).map((t) => [t.taskId, t]));
+    const ours = [desk, ext, anon].map((r) => after.get(r.json.taskId));
+    check('A15 终态行仍留在列表里（X-C1 的历史行来源）',
+      ours.every((t) => t && t.status === 'done'), ours.map((t) => t && t.status));
+    check('A15 行内带 progress 与 outputDir（进度列 /「打开目录」依赖）',
+      ours.every((t) => t.progress && Number.isFinite(t.progress.total) && typeof t.outputDir === 'string'),
+      ours[0]);
+    check('A15 全部成功 → progress.done === total === 2',
+      ours.every((t) => t.progress.total === 2 && t.progress.done === 2), ours.map((t) => t.progress));
+
+    const fin = (list2?.tasks || []).filter((t) => t.finishedAt).map((t) => Date.parse(t.finishedAt));
+    check('A15 终态按 finishedAt 倒序（最新的在最上）',
+      fin.every((v, i) => i === 0 || fin[i - 1] >= v), fin.length);
+
+    const doneOnly = json(await request(port, 'GET', '/api/v1/tasks?status=done', { token: TOKEN }));
+    check('A15 status=done 只返回已完成，且 total 反映过滤后全集',
+      (doneOnly?.tasks || []).length > 0 && (doneOnly?.tasks || []).every((t) => t.status === 'done') &&
+      doneOnly.total === doneOnly.tasks.length, [doneOnly?.count, doneOnly?.total]);
+
+    const limited = json(await request(port, 'GET', '/api/v1/tasks?limit=2', { token: TOKEN }));
+    check('A15 limit 截断 tasks 但 total 仍为全集（前端可据此分页）',
+      limited?.tasks?.length === 2 && limited.count === 2 && limited.total > 2, [limited?.count, limited?.total]);
+
+    const badLimit = await request(port, 'GET', '/api/v1/tasks?limit=0', { token: TOKEN });
+    check('A15 limit=0 → 400 且走契约 §2.2 错误信封',
+      badLimit.status === 400 && typeof json(badLimit)?.error?.code === 'string', json(badLimit));
+
+    const q3 = json(await request(port, 'GET', '/api/v1/queue', { token: TOKEN }));
+    check('A15 新增端点未污染 /queue 语义（仍严格只含 running+queued，此刻皆空）',
+      q3?.running === null && q3?.queued?.length === 0, q3);
+
+    const noTokenList = await request(port, 'GET', '/api/v1/tasks');
+    check('A15 列表端点同样受鉴权保护（缺令牌 → 403）',
+      noTokenList.status === 403, noTokenList.status);
   }
 
   // ================================================================ A12 SSE

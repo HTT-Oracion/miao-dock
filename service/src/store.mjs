@@ -150,7 +150,7 @@ export class Store {
    * POST /tasks
    * @param {object} input { payload, images:[{filename,data}], imageOrder }
    */
-  createTask({ payload, images, imageOrder }) {
+  createTask({ payload, images, imageOrder, source }) {
     const key = payload && payload.idempotencyKey;
     const replay = this._idempotencyHit(key);
     if (replay) {
@@ -176,6 +176,8 @@ export class Store {
       lang: (payload && payload.lang) || { from: 'ja', to: 'zh' },
       translator: (payload && payload.translator) || 'sakura',
       clientTaskRef: (payload && payload.clientTaskRef) || null,
+      // 来源归因：由 server 层按契约 §2 的可选头 `X-Box-Client` 判定（见 spec-notes G-04）
+      source: source || 'unknown',
       idempotencyKey: key || null,
       createdAt: nowIso(),
       finishedAt: null,
@@ -705,6 +707,60 @@ export class Store {
     };
   }
 
+  /** 队列页的一行（列表端点专用，非契约端点；见 docs/spec-notes.md G-04） */
+  listView(task) {
+    return {
+      taskId: task.taskId,
+      comicName: task.comicName,
+      source: task.source || 'unknown',
+      status: task.status,
+      queuePosition: task.queuePosition,
+      progress: this.progressOf(task),
+      outputDir: task.outputDir,
+      createdAt: task.createdAt,
+      finishedAt: task.finishedAt,
+    };
+  }
+
+  /**
+   * 任务列表：运行中 → 排队中 → 终态（终态按 finishedAt 倒序，最新在上）。
+   *
+   * 数据源是 `this.tasks`：`init()` 已把 `STATE_DIR/tasks/*.json` 的清单全部恢复进来，
+   * 所以这张列表**天然跨重启**——用户在队列页看到的已完成/失败行，正是上次会话留下的
+   * 真实记录，而不是内存里的残影。契约 §5.7 的 `/queue` 只给 running+queued，
+   * 无法承载 X-C1 的「已完成 / 部分失败 / 失败」行（见 spec-notes G-04）。
+   */
+  taskListView({ status, limit } = {}) {
+    const all = [...this.tasks.values()];
+
+    const running = all.filter((t) => t.status === 'running');
+    const queued = this.queue.slice(); // 数组顺序即 queuePosition
+    const seen = new Set(queued.map((t) => t.taskId));
+    for (const t of all) {
+      if (t.status === 'queued' && !seen.has(t.taskId)) queued.push(t); // 兜底，理论不触发
+    }
+    const terminal = all
+      .filter((t) => TASK_TERMINAL.has(t.status))
+      .sort((a, b) => tsOf(b.finishedAt || b.createdAt) - tsOf(a.finishedAt || a.createdAt));
+
+    let rows = [...running, ...queued, ...terminal];
+    if (status && status !== 'all') {
+      const want = new Set(String(status).split(',').map((s) => s.trim()).filter(Boolean));
+      rows = rows.filter((t) => want.has(t.status));
+    }
+    const total = rows.length;
+    const limited = Number.isInteger(limit) && limit > 0 ? rows.slice(0, limit) : rows;
+
+    return {
+      count: limited.length,
+      total,
+      running: running.length,
+      queued: queued.length,
+      tasks: limited.map((t) => this.listView(t)),
+      updatedAt: nowIso(),
+    };
+  }
+
   // ---------------------------------------------------------------- eta
 
   _recordDuration(ms) {
@@ -844,6 +900,7 @@ export class Store {
       lang: task.lang,
       translator: task.translator,
       clientTaskRef: task.clientTaskRef,
+      source: task.source || 'unknown',
       idempotencyKey: task.idempotencyKey,
       createdAt: task.createdAt,
       finishedAt: task.finishedAt,
@@ -886,6 +943,12 @@ export class Store {
 }
 
 // ------------------------------------------------------------------ 纯函数
+
+/** ISO 时间 → 毫秒；缺失/非法一律 0（排序时排到最后） */
+function tsOf(iso) {
+  const t = Date.parse(iso || '');
+  return Number.isFinite(t) ? t : 0;
+}
 
 function batchBrief(b) {
   return {
