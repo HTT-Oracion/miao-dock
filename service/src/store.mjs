@@ -545,6 +545,14 @@ export class Store {
             item.status = 'failed';
             item.saved = false;
             item.reason = 'internal_error';
+            // G-11 的口径是「**已处理**的页一律保原图」，异常路径也是失败的一种，
+            // 不能因为异常是从别处抛上来的就漏掉这一页 —— 那正是它最需要被续做的时候。
+            // 进过 _processItem 的页，原图字节此刻还在内存 blobs 里，取现成的一份即可。
+            const lastBytes = this.blobs.get(`${task.taskId}:${item.seq}`);
+            if (lastBytes) {
+              // 已经在错误路径上了，这里**绝不能再抛**（否则会把一条错误变成两条）
+              try { this._keepOriginalOnFailure(task, item, lastBytes); } catch { /* 见 _keepOriginalOnFailure */ }
+            }
             this._emitItemStatus(task, batch, item);
           }
         }
@@ -631,6 +639,16 @@ export class Store {
       item.errorMessage = lastErr ? String(lastErr.message || lastErr) : null;
       item.durationMs = Date.now() - t0;
       this._recordDuration(item.durationMs);
+      // G-11（用户裁定 A，2026-10-03）：失败页的**原图也要落盘**。
+      // 不落的话该页会同时丢掉三件事：
+      //   ① 不可续做 —— /library/{name}/resume 只挑「有原图、缺译文」的页，它永远不在清单里；
+      //   ② 库里的说法是错的 —— 它落进 missingSeqs 显示「缺页」（读起来像用户没给过这页），
+      //      而队列屏同一条记录写的是「1 张失败」，同一张图两屏两个故事；
+      //   ③ 契约 §4.3「单图重跑」与插件《README》「重新翻译」都假定服务端还拿得到原图，
+      //      不落盘就等于承诺了一个做不到的动作。
+      // 语义边界：约束的是「**已处理但失败**」的页。用户主动取消、从未处理的页仍不落盘
+      //（_skipAllPending 根本不进 _processItem），「避免残缺目录」那条设计意图不受影响。
+      this._keepOriginalOnFailure(task, item, bytes);
       this.blobs.delete(blobKey);
       this._emitItemStatus(task, batch, item);
       this._syncBatchStatuses(task);
@@ -674,11 +692,37 @@ export class Store {
   }
 
   /**
-   * 落盘：惰性 mkdir + 三次安全校验 + 独占写入。
-   * 原图扩展名取**上传字节的嗅探结果**（item.ext）；译文扩展名取**引擎返回字节的嗅探结果**
-   * —— 两侧都不信任任何自带声明（契约 §7.2）。
+   * 落盘：原图 + 译文。
+   *
+   * 两个文件名的校验都放在**创建目录之前**（先算译文名 —— 它只依赖引擎返回字节，
+   * 不需要目录存在），这样任一侧名字不合法时都不会留下一个空目录。
    */
   async _writeItem(task, item, originalBytes, translated) {
+    // 译文的扩展名由引擎返回字节决定；极端情况下引擎改换了容器格式也不会写出错误扩展名的文件
+    const translatedExt = sniffImageType(translated.bytes) || item.ext;
+    const translatedName = `${seq3(item.seq)}_translated.${translatedExt}`;
+    if (!FILE_NAME_RE.test(translatedName)) {
+      throw new ApiError('PERMISSION_DENIED', '服务端生成的文件名不合法', { translated: translatedName });
+    }
+
+    this._writeOriginal(task, item, originalBytes);
+
+    const dir = this.taskDir(task);
+    fs.writeFileSync(path.join(dir, translatedName), translated.bytes, { flag: 'wx', mode: 0o600 });
+    item.outputFile = translatedName;
+    item.sha256 = sha256(translated.bytes);
+  }
+
+  /**
+   * 只把**原图**写下去：惰性 mkdir + 三次安全校验 + 独占写入，永不覆盖。
+   * 扩展名取**上传字节的嗅探结果**（`item.ext`，创建时已校验非空）——
+   * 不信任任何自带声明（契约 §7.2）。
+   *
+   * 单独成一个方法是因为它现在有**两个调用点**：成功路径（原图 + 译文）与
+   * 失败路径（G-11：失败页也保原图）。两处必须走**同一套**安全校验，
+   * 不能各写一份 —— 那种重复迟早会漂移成「一个路径有校验、另一个没有」。
+   */
+  _writeOriginal(task, item, bytes) {
     if (!isSafeDirName(task.dirName)) {
       throw new ApiError('PERMISSION_DENIED', '漫画名含路径成分，拒绝落盘', { dirName: task.dirName });
     }
@@ -690,14 +734,10 @@ export class Store {
     }
     const dir = this.taskDir(task);
     const original = `${seq3(item.seq)}.${item.ext}`;
-
-    // 译文的扩展名由引擎返回字节决定；极端情况下引擎改换了容器格式也不会写出错误扩展名的文件
-    const translatedExt = sniffImageType(translated.bytes) || item.ext;
-    const translatedName = `${seq3(item.seq)}_translated.${translatedExt}`;
-
-    if (!FILE_NAME_RE.test(original) || !FILE_NAME_RE.test(translatedName)) {
-      throw new ApiError('PERMISSION_DENIED', '服务端生成的文件名不合法', { original, translated: translatedName });
+    if (!FILE_NAME_RE.test(original)) {
+      throw new ApiError('PERMISSION_DENIED', '服务端生成的文件名不合法', { original });
     }
+
     // 校验点 3：拼接后前缀（创建目录前）
     assertInsideRoot(this.root, path.join(dir, original));
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); // 目录惰性创建
@@ -712,20 +752,37 @@ export class Store {
        *    用户的第 N 页被悄悄替换成别的图，故宁可报 409 让上层显式处理。
        */
       const onDisk = fs.readFileSync(originalPath);
-      if (!onDisk.equals(originalBytes)) {
+      if (!onDisk.equals(bytes)) {
         throw new ApiError('SEQUENCE_OVERFLOW',
           `序号 ${seq3(item.seq)} 已被另一张原图占用（内容不一致），拒绝覆盖`,
-          { seq: item.seq, dirName: task.dirName, onDiskBytes: onDisk.length, newBytes: originalBytes.length });
+          { seq: item.seq, dirName: task.dirName, onDiskBytes: onDisk.length, newBytes: bytes.length });
       }
-      item.originalFile = original;
     } else {
-      fs.writeFileSync(originalPath, originalBytes, { flag: 'wx', mode: 0o600 });
-      item.originalFile = original;
+      fs.writeFileSync(originalPath, bytes, { flag: 'wx', mode: 0o600 });
     }
+    item.originalFile = original;
+  }
 
-    fs.writeFileSync(path.join(dir, translatedName), translated.bytes, { flag: 'wx', mode: 0o600 });
-    item.outputFile = translatedName;
-    item.sha256 = sha256(translated.bytes);
+  /**
+   * G-11：失败页保原图的**降级纪律**。
+   *
+   * 只用同一套「可降级」判据（`DEGRADABLE_WRITE_ERRNOS`）：该页**本来就是失败的**，
+   * 不能因为「顺手留个原图」也失败，就把整条任务从 `partial_failed` 升级成 `failed`
+   * —— 那是把损失的**范围**放大了，与 §4.2「落盘失败不阻断主路径」同一条纪律。
+   * 但 §8.2 的路径/安全类 `ApiError` 仍**向上抛**：那是必须让人看见的拒绝，不是可降级的噪声。
+   *
+   * 失败时**不改 `item.reason`** —— 它记的是「这张图为什么没译出来」，比「原图也没留下」
+   * 更值得保留；后一件事由日志与磁盘实况承载（reason 被覆盖会把主因抹掉）。
+   */
+  _keepOriginalOnFailure(task, item, bytes) {
+    try {
+      this._writeOriginal(task, item, bytes);
+    } catch (err) {
+      const degradable = !(err instanceof ApiError) && DEGRADABLE_WRITE_ERRNOS.has(err && err.code);
+      if (!degradable) throw err;
+      item.originalFile = null;
+      console.warn(`[G-11] seq ${item.seq} 翻译失败且原图未能保存（${err && err.code}）：该页将不可续做`);
+    }
   }
 
   // ---------------------------------------------------------------- 终态

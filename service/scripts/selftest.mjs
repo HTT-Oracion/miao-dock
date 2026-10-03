@@ -480,8 +480,25 @@ try {
     const dir = path.join(rootDir, 'A10 取消');
     const files = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
     const origCount = files.filter((f) => /^\d{3}\.(png|jpg|jpeg|webp)$/.test(f)).length;
-    check('A10 「只有原图没有译文」的残缺目录不存在（原图数 == 译文数）',
-      origCount === t.items.filter((it) => it.status === 'success').length, { origCount, files: files.length });
+    const failedCount = t.items.filter((it) => it.status === 'failed').length;
+
+    /*
+     * 这里原先断言的是「原图数 == 译文数」（即『不存在只有原图没有译文的残缺目录』）。
+     * G-11 裁定 A 之后那个等式**不再是正确的不变量**：「已处理但失败」的页会合法地
+     * 留下一张单独的原图，那正是它能被续做的原因。但它想守的东西没变，只是要收窄到
+     * 它真正管的那一格 —— **用户没轮到的页不该在磁盘上留下任何东西**。
+     */
+    const skippedSeqs = skipped.map((it) => it.seq);
+    const leftover = files.filter((f) => skippedSeqs.some((s) => f.startsWith(String(s).padStart(3, '0'))));
+    check('A10 未开始的页在磁盘上一张文件都不留（取消不产生残缺目录）',
+      skippedSeqs.length > 0 && leftover.length === 0,
+      `skipped ${skippedSeqs.length} 页 [${skippedSeqs.join(',')}]；残留：${leftover.join(',') || '无'}`);
+
+    // 账目自洽：每张原图都对得上一个「真的处理过」的 item（成功或失败），不多不少。
+    // 多出来 → 有页没被记账（幽灵文件）；少了 → 某张的原图在异常路径上丢了（正是 G-11 要防的）。
+    check('A10 磁盘账目自洽：原图数 == 成功 + 失败（失败页的原图由 G-11 保下来）',
+      origCount === doneCount + failedCount,
+      { origCount, doneCount, failedCount, files: files.length });
   }
 
   // ================================================================ A13 队列
@@ -773,14 +790,18 @@ try {
     check('A16 /library 同样受鉴权保护', libNoToken.status === 403, libNoToken.status);
   }
 
-  // ================================================================ A16b 逐页集合（spec-notes.md G-10）
+  // ================================================================ A16b 逐页集合（spec-notes.md G-10 + G-11）
   // 缺陷形状：只给 `translatedCount` 时，客户端只能拿 `seq <= translatedCount` 当代理指标。
-  // 这个代理**只在「缺页全在尾部」时碰巧对**；缺页一旦落在中间，它会把后面每一页的判定
+  // 这个代理**只在「缺口全在尾部」时碰巧对**；缺口一旦落在中间，它会把后面每一页的判定
   // 整体前移 —— 没有译文的页被说成「已译」，真正有译文的尾页被说成「待译」，**两个方向同时错**。
   //
-  // 本块的编号布局：提交 4 张，而自测引擎注入了 seq=3 失败（见 A11 的启动参数），
-  // 于是磁盘上 003 两侧都没有 → 天然一个**中间缺页**；再把 002 的译文删掉，
-  // 得到「有原图、缺译文」的中间页 —— 这两种中间缺口的语义不同，前端要分别渲染。
+  // 本块的编号布局：提交 4 张，而自测引擎注入了 seq=3 失败（见 A11 的启动参数）。
+  // G-11 裁定 A 之后，这一页在磁盘上是「**有原图、缺译文**」的中间缺口 —— 不再需要手工伪造
+  // （以前要额外删掉一张译文才凑得出这个形状）。这比伪造更强：缺口来自**真实失败**。
+  //
+  // 块尾再手工删掉一张**原图**，把另一种缺口补上：「连原图都没有」= 库里该显示「缺页」。
+  // 引擎失败已经不再产生这种页（那正是 G-11 裁 A 的效果），但外部流程仍可能造成
+  // ——用户自己删了文件、目录没拷全——所以这条路径必须继续被覆盖。
   console.log('A16b 漫画库：中间缺口时逐页集合必须精确（「数量代理」在此双向必错）');
   {
     const name = 'A16b 中间缺口';
@@ -793,23 +814,21 @@ try {
 
     const dir = path.join(rootDir, dirName);
     const onDisk = fs.readdirSync(dir).sort();
-    check('A16b 前置：seq=3 失败（引擎注入）→ 磁盘只有 001/002/004 三对，没有 003',
-      JSON.stringify(onDisk) === '["001.png","001_translated.png","002.png","002_translated.png","004.png","004_translated.png"]',
+    check('A16b 前置：4 原 + 3 译 = 7 个文件，缺口落在**中间**（003 有原图、无译文）',
+      JSON.stringify(onDisk) === '["001.png","001_translated.png","002.png","002_translated.png","003.png","004.png","004_translated.png"]',
       `任务 ${t.status}；items=${JSON.stringify((t.items || []).map((it) => `${it.seq}:${it.status}`))}；磁盘 ${JSON.stringify(onDisk)}`);
-
-    // 让「有原图、缺译文」的缺口也落在中间（002 是中间页）
-    fs.rmSync(path.join(dir, '002_translated.png'));
 
     const lib = json(await request(port, 'GET', '/api/v1/library', { token: TOKEN }));
     const comic = (lib?.comics || []).find((c) => c.comicName === dirName);
-    check('A16b 张数仍是「译了几页」口径：原图 3 / 译文 2（张数本身不表达是哪几页）',
-      comic?.imageCount === 3 && comic?.translatedCount === 2,
+    check('A16b 张数仍是「译了几页」口径：原图 4 / 译文 3（张数本身不表达是哪几页）',
+      comic?.imageCount === 4 && comic?.translatedCount === 3,
       `imageCount=${comic?.imageCount} translatedCount=${comic?.translatedCount}`);
 
-    check('A16b translatedSeqs 逐页精确 = [1,4]（**不是**用张数推出来的 [1,2]）',
-      JSON.stringify(comic?.translatedSeqs) === '[1,4]', JSON.stringify(comic?.translatedSeqs));
-    check('A16b missingSeqs 精确列出编号段内没有原图的页 = [3]（seq=3 失败留下的洞）',
-      JSON.stringify(comic?.missingSeqs) === '[3]', JSON.stringify(comic?.missingSeqs));
+    check('A16b translatedSeqs 逐页精确 = [1,2,4]（**不是**用张数推出来的 [1,2,3]）',
+      JSON.stringify(comic?.translatedSeqs) === '[1,2,4]', JSON.stringify(comic?.translatedSeqs));
+    check('A16b missingSeqs 为空 —— 失败页的原图在磁盘上（G-11 裁 A），它不是「缺页」',
+      Array.isArray(comic?.missingSeqs) && comic.missingSeqs.length === 0,
+      JSON.stringify(comic?.missingSeqs));
     check('A16b 出现中间缺口后 seqMax 仍为 4（编号段不因缺口被截断）',
       comic?.seqMax === 4, comic?.seqMax);
 
@@ -819,10 +838,27 @@ try {
     const truth = new Set(comic?.translatedSeqs);
     const naiveSet = [];
     for (let s = 1; s <= comic.seqMax; s += 1) if (naive(s)) naiveSet.push(s);
-    check('A16b 反证：旧的「数量代理」给出 [1,2]，事实是 [1,4] —— 第 2 页被误判为已译、第 4 页被误判为待译',
-      naive(2) === true && truth.has(2) === false && naive(4) === false && truth.has(4) === true,
+    check('A16b 反证：旧的「数量代理」给出 [1,2,3]，事实是 [1,2,4] —— 第 3 页被误判为已译、第 4 页被误判为待译',
+      // 一个方向是假阳性（没有译文的说成已译），另一个方向是假阴性（有译文的说成待译）——
+      // 必须**两个方向同时**断言，否则只测出「代理偏保守」或只测出「代理偏激进」都能骗过这条。
+      naive(3) === true && truth.has(3) === false &&
+      naive(4) === false && truth.has(4) === true &&
+      naiveSet.length === 3,
       `代理 [${naiveSet.join(',')}] vs 事实 {${(comic?.translatedSeqs || []).join(',')}}；`
-      + `第 2 页 代理说已译/事实说没有，第 4 页 代理说待译/事实说有`);
+      + `第 3 页 代理说已译/事实说没有（3 <= ${comic?.translatedCount}），`
+      + `第 4 页 代理说待译/事实说有（4 > ${comic?.translatedCount}）`);
+
+    // 「缺页」态仍须可达且精确：手工删掉一张原图（模拟用户自己删了文件 / 目录没拷全）。
+    // 引擎失败已经不再产生这种页，但扫描逻辑不能因此就丢掉这条分支 —— 库里那张卡
+    // 必须能把「用户根本没给过这一页」和「给了但没译成」如实分开（前者在 GridState 里是「缺页」）。
+    fs.rmSync(path.join(dir, '002.png'));
+    const lib2 = json(await request(port, 'GET', '/api/v1/library', { token: TOKEN }));
+    const c2 = (lib2?.comics || []).find((x) => x.comicName === dirName);
+    check('A16b 外部删掉一张原图后 missingSeqs = [2]（「缺页」态仍可达且精确）',
+      JSON.stringify(c2?.missingSeqs) === '[2]', JSON.stringify(c2?.missingSeqs));
+    check('A16b 缺页不影响译文集合：translatedSeqs 仍为 [1,2,4]',
+      JSON.stringify(c2?.translatedSeqs) === '[1,2,4]', JSON.stringify(c2?.translatedSeqs));
+    check('A16b 出现缺页后 seqMax 仍为 4（编号段不因缺页被截断）', c2?.seqMax === 4, c2?.seqMax);
   }
 
   // ================================================================ A17 本地续做（X-D1「继续翻译」）
@@ -899,6 +935,70 @@ try {
 
     const resumeNoToken = await request(port, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/resume`);
     check('A17 续做端点同样受鉴权保护', resumeNoToken.status === 403, resumeNoToken.status);
+  }
+
+  // ================================================================ A19 失败页保原图（spec-notes.md G-11，裁定 A）
+  // 自测引擎固定注入 seq=3 必然失败（MIAO_ENGINE_FAIL_SEQ），故提交 3 张即可造出
+  // 一个「**已处理但没译出来**」的页 —— 这正是 G-11 要管的那一格（区别于用户主动取消、从未处理的页）。
+  //
+  // 旧行为下该页**原图也不落盘**，于是同时丢掉三件事：① 不可续做（/resume 只挑「有原图、缺译文」的页）；
+  // ② 库扫描把它算进 missingSeqs → 卡片显示「缺页」（读起来像用户没给过这页），而队列屏写的是
+  // 「1 张失败」—— 同一张图两屏两个故事；③ 契约 §4.3「单图重跑」变成做不到的动作。
+  console.log('A19 失败页保原图：可续做，且库里如实显示「待译」而不是「缺页」');
+  {
+    const name = 'A19 失败保原图';
+    const imgs = Array.from({ length: 3 }, (_, i) => ({
+      filename: `${String(i + 1).padStart(3, '0')}.png`, contentType: 'image/png', data: pngBytes(48, 64, i + 40),
+    }));
+    const r = await submit(port, TOKEN, name, imgs);
+    const dirName = r.json.normalizedComicName;
+    const done = await waitTask(port, TOKEN, r.json.taskId, 60_000);
+    check('A19 前置：3 张里恰有 1 张失败（引擎注入 seq=3），任务判 partial_failed',
+      done.status === 'partial_failed' && done.progress?.failed === 1,
+      { status: done.status, progress: done.progress });
+
+    const dir = path.join(rootDir, dirName);
+    const files = fs.readdirSync(dir).sort();
+    // 旧行为 4 个文件（2 原 + 2 译）；新行为 5 个（3 原 + 2 译）—— 差的那一个就是 003.png 自己。
+    check('A19 失败页的原图也在磁盘上（3 原 + 2 译 = 5 个，而非 4 个）',
+      files.length === 5 && files.includes('003.png'), files);
+    check('A19 失败页不留译文（003_translated.* 不存在）',
+      !files.some((f) => f.startsWith('003_translated')), files);
+
+    const lib = json(await request(port, 'GET', '/api/v1/library', { token: TOKEN }));
+    const comic = (lib?.comics || []).find((c) => c.comicName === dirName);
+    check('A19 库里该页进「待译」：translatedSeqs = [1,2]、missingSeqs 为空',
+      JSON.stringify(comic?.translatedSeqs) === '[1,2]' &&
+      Array.isArray(comic?.missingSeqs) && comic.missingSeqs.length === 0,
+      { translatedSeqs: comic?.translatedSeqs, missingSeqs: comic?.missingSeqs, imageCount: comic?.imageCount, translatedCount: comic?.translatedCount });
+
+    // 反证：这是 G-11 两个选项**唯一的可见差别**。若哪天真退回「失败不落原图」，
+    // missingSeqs 会变成 [3]（库把该页报成「缺页」），这条立刻变红。
+    check('A19 反证：该页不落进 missingSeqs（落进去就意味着库里报「缺页」）',
+      !(comic?.missingSeqs || []).includes(3), JSON.stringify(comic?.missingSeqs));
+
+    const plan = json(await request(port, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, { token: TOKEN }));
+    check('A19 该页出现在「继续翻译」清单里（旧行为下清单为空 → 根本不可续做）',
+      plan?.pendingCount === 1 && plan?.pendings?.[0]?.seq === 3,
+      plan && { imageCount: plan.imageCount, translatedCount: plan.translatedCount, pendingCount: plan.pendingCount, pendings: plan.pendings });
+
+    // 续做一次：关键是**失败原因**。失败注入是永久的，所以它还会失败，但
+    //   engine_*          → 原图读到了、真的把这张图送进引擎了（「可续做」成立）
+    //   original_missing  → 原图不在，续做是句空话（旧行为）
+    const original3Before = fs.readFileSync(path.join(dir, '003.png'));
+    const rs = await request(port, 'POST', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, {
+      token: TOKEN,
+      headers: { 'Content-Type': 'application/json' },
+      body: Buffer.from(JSON.stringify({ seqs: [3] })),
+    });
+    const rsJson = json(rs);
+    const retry = await waitTask(port, TOKEN, rsJson.taskId, 60_000);
+    const it = (retry.items || [])[0];
+    check('A19 续做真能拿到原图送去引擎（失败原因是 engine_*，不是 original_missing）',
+      /^engine_/.test(it?.reason || ''),
+      { status: it?.status, reason: it?.reason, seq: it?.seq });
+    check('A19 续做未改动原图字节（§7.2 永不覆盖）',
+      fs.readFileSync(path.join(dir, '003.png')).equals(original3Before));
   }
 
   // ================================================================ A14（补充）sidecar 未就绪
