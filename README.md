@@ -41,6 +41,15 @@ cd app && npm install
 cd .. && npm run app
 ```
 
+> **若 `npm run app` 报 `failed to run 'cargo metadata' ... No such file or directory (os error 2)`**，
+> 说明 `cargo` 不在 PATH —— 工具链装在 `~/.cargo/bin` 但 shell 没加载它。修一次即可永久生效：
+>
+> ```bash
+> echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+> ```
+>
+> 验证：`cargo --version` 能打出版本号即可。Rust 另需 Node ≥ 18（`node -v`）。
+
 > 环境变量 `MIAO_ROOT` 可覆盖落盘根目录（验收用临时目录），默认 `~/Pictures/Box 漫画`。
 > 运行期状态在平台应用数据目录下的 `Box/state/`（`MIAO_STATE_DIR` 可覆盖）：
 > `tasks/` 任务清单、`pending/` **上传字节暂存区**、`token`、`idempotency.json`。
