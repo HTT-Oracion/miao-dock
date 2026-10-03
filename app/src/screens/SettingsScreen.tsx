@@ -6,6 +6,9 @@ import { LIBRARY, QUEUE_TABLE } from '../theme/tokens';
 import type { TaskRow } from '../types';
 import { STATUS_DOT_VAR, STATUS_LABEL, SOURCE_LABEL } from '../types';
 import { Btn, Dot, MagicCircle } from '../components/atoms';
+import { QuitConfirm } from '../components/QuitConfirm';
+
+const noop = () => {};
 
 /** 离屏样张用的假数据：四条覆盖到 C3 要求的四种状态点色相 */
 const SAMPLE_ROWS: TaskRow[] = [
@@ -150,6 +153,17 @@ function SpecFixture() {
             />
           </div>
         </section>
+      </div>
+
+      {/*
+        退出确认层（B3）。它内部是 position:fixed 的遮罩 —— 若直接放进这个 left:-10000 的
+        容器里，fixed 会以**视口**为包含块，遮罩就盖住整屏了（虽然 opacity:0，但已不再是「离屏」）。
+        给中间这层加 transform，遮罩的包含块就变成它，才真正停在离屏位置。
+        刻意放在队列**之后**：C3c 取的是 root 里第一个 .btn-danger（队列行的「取消」），
+        顺序一变它就会误取到这里的「退出喵坞」。
+      */}
+      <div style={{ transform: 'translateZ(0)' }}>
+        <QuitConfirm onStay={noop} onQuit={noop} />
       </div>
     </div>
   );

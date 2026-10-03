@@ -183,6 +183,25 @@
   border-color: var(--md-error);
   color: var(--md-error);
 }
+/*
+ * 退出确认层里的破坏性主动作。
+ *
+ * 不复用上面那套描边次按钮样式：`.btn-danger` 的上文是**行内次动作**（队列行的「取消」），
+ * 而确认层这里是**主动作** —— 「留在后台」是安全出口、「退出喵坞」是破坏性动作，
+ * 两个灰描边按钮并排时用户得读两遍字才分得清哪个是哪个。破坏性动作要有自己的重量。
+ *
+ * 仍守《02》§5.2 的禁则：破坏性动作不穿主推进的 pink，走 error。
+ */
+.modal-actions .btn-danger {
+  border-color: transparent;
+  background: var(--md-error);
+  color: var(--md-on-accent);
+}
+.modal-actions .btn-danger:hover {
+  border-color: transparent;
+  color: var(--md-on-accent);
+  filter: brightness(1.05);
+}
 .btn-sm {
   height: 24px;
   padding: 0 9px;

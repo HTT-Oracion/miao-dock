@@ -1,5 +1,5 @@
 /**
- * 规格自检 —— 把 dev-plan.md §4 的 C1–C7 从「肉眼看」变成「当场量」。
+ * 规格自检 —— 把 dev-plan.md §4 的 C1–C7 与 B3 从「肉眼看」变成「当场量」。
  *
  * 做法：在设置页挂一份**离屏样张**（队列表 + 空态魔法阵 + 漫画库左栏与网格卡），
  * 然后对实际渲染出来的 DOM 取 `getBoundingClientRect` / `getComputedStyle`，
@@ -17,6 +17,8 @@ import {
   COLOR_TOKENS_LIGHT,
   type ThemeMode,
 } from './theme/tokens';
+import type { ServiceState } from './ipc';
+import { stateView } from './components/Sidebar';
 
 export interface SpecResult {
   id: string;
@@ -28,13 +30,22 @@ export interface SpecResult {
 const near = (a: number, b: number, tol = 0.5) => Math.abs(a - b) <= tol;
 
 /**
- * 颜色相等判定。
+ * 把两种颜色写法归一到可比的形式。
  *
- * 必须**忽略大小写**：design token 里写的是 `#C9B5FF`，而 `getComputedStyle` 一律回小写
- * `rgb(201, 181, 255)` → `#c9b5ff`。直接字符串相等会让全部颜色断言恒假 —— 这种「自检自己错了」
- * 的假失败比不检查更糟，因为它会训练人忽略红色。
+ * 这是本文件唯一一处「必须记得做」的转换，所以把它收进 `sameColor` 自己身上，
+ * 而不是指望每个调用点都记得先 toHex。原因：
+ *   · token 里写的是 `#C9B5FF`
+ *   · `getComputedStyle` 回来的**一律是** `rgb(255, 143, 191)`，而且是小写
+ * 直接字符串相比**永远不相等** → `sameColor(a,b)` 恒假、`!sameColor(a,b)` 恒真。
+ * 后者更危险：它把「没检查」伪装成「检查通过」。这个坑在本文件里已经踩过两回。
  */
-const sameColor = (a: string, b: string) => String(a).toLowerCase() === String(b).toLowerCase();
+function normColor(c: string): string {
+  const s = String(c).trim();
+  return s.startsWith('rgb') ? toHex(s) : s.toLowerCase();
+}
+
+/** 颜色相等判定（格式无关：hex / rgb 都能比） */
+const sameColor = (a: string, b: string) => normColor(a) === normColor(b);
 
 function px(v: string): number {
   return Number.parseFloat(v) || 0;
@@ -151,12 +162,15 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     );
     add('C3b', '状态文字一律 ink（色相只由状态点承载）', textOk, pairs.map((p) => p.text).join(' · '));
 
+    // 注意：`getComputedStyle` 回的是 `rgb(...)`，token 是 `#RRGGBB` —— **必须先 toHex 再比**。
+    // 这里曾经漏了转换：C3c 用 `!sameColor(...)` 于是恒真（假通过），C3d 用 `sameColor(...)`
+    // 于是恒假（假失败）。两条都骗人，而假通过更坏 —— 它让人以为检查过了。
     const danger = q<HTMLElement>(root, '.btn-danger');
     const dc = danger ? getComputedStyle(danger) : null;
     add(
       'C3c',
       '「取消」为破坏性次按钮，不得用 pink',
-      !!dc && !sameColor(dc.color, tokens.pink) && !sameColor(dc.backgroundColor, tokens.pink),
+      !!dc && !sameColor(toHex(dc.color), tokens.pink) && !sameColor(toHex(dc.backgroundColor), tokens.pink),
       dc ? `文字 ${toHex(dc.color)} / 底 ${toHex(dc.backgroundColor)}` : '未渲染',
     );
 
@@ -165,8 +179,8 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     add(
       'C3d',
       '「重试」等主推进动作用 pink',
-      !!pc && sameColor(pc.backgroundColor, tokens.pink),
-      pc ? toHex(pc.backgroundColor) : '未渲染',
+      !!pc && sameColor(toHex(pc.backgroundColor), tokens.pink),
+      pc ? `实际 ${toHex(pc.backgroundColor)} / 期望 ${tokens.pink}` : '未渲染',
     );
   }
 
@@ -282,13 +296,72 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
       loaded.map((x) => `${x.f.replace(/"/g, '')} ${x.ok ? '✓' : '✗'}`).join(' · '),
     );
 
-    const prog = q<HTMLElement>(root, '.qt-c-progress');
+    // 必须限定在 `.qt-row` 内：表头也有一个 `.qt-c-progress`（写着「进度」两个字），
+    // 它本来就没有计数节点，不限定就会取到它、数字节点数为 0。
+    const prog = q<HTMLElement>(root, '.qt-row .qt-c-progress');
     const numNodes = prog ? prog.querySelectorAll(':scope > .num').length : 0;
     add(
       'C7c',
       '「N / M」计数拆两个文本节点（数字 Inter、其余 Noto）',
       numNodes >= 2,
       prog ? `数字节点 ${numNodes} 个` : '未渲染',
+    );
+  }
+
+  // ---------------------------------------------------------------- B3 退出确认层
+  {
+    // 文档原文**独立抄录**，刻意不从 QuitConfirm.tsx import QUIT_CONFIRM_COPY ——
+    // 那样就变成「常量等于自己」，自证而已。这里比的是一边文档、一边真实渲染出的 DOM 文本。
+    // 出处：《02-Box-技术方案-ver1.0.md》§2.1
+    //   | 真正退出 | 托盘菜单 → 退出 Box，需二次确认，文案：「退出后浏览器插件将无法提交翻译任务」 |
+    const DOC_COPY = '退出后浏览器插件将无法提交翻译任务';
+
+    const body = q<HTMLElement>(root, '.modal-body');
+    // 规范化空白：模板里的缩进与换行不该影响文案判等
+    const shown = body ? (body.textContent ?? '').replace(/\s+/g, '') : '';
+    const want = DOC_COPY.replace(/\s+/g, '');
+    add(
+      'B3a',
+      '退出确认层主文案**逐字**含《02》§2.1 的规定文案（引号内是字面量，不是「意思到位」）',
+      !!body && shown.includes(want),
+      body ? (shown.includes(want) ? '逐字命中' : `实际：${shown.slice(0, 60)}…`) : '未渲染',
+    );
+
+    const actions = Array.from(root.querySelectorAll('.modal-actions .btn'));
+    const labels = actions.map((b) => (b.textContent ?? '').trim());
+    add(
+      'B3b',
+      '两个动作：「留在后台」（非破坏）与「退出喵坞」（破坏性）',
+      labels.includes('留在后台') && labels.includes('退出喵坞'),
+      labels.join(' / ') || '未渲染',
+    );
+
+    const danger = q<HTMLElement>(root, '.modal-actions .btn-danger');
+    const dc = danger ? getComputedStyle(danger) : null;
+    add(
+      'B3c',
+      '「退出喵坞」用 error 破坏色（不用 pink —— pink 是推进色，不用在破坏动作上）',
+      !!dc && sameColor(dc.backgroundColor, tokens.error) && !sameColor(dc.backgroundColor, tokens.pink),
+      dc ? `底 ${toHex(dc.backgroundColor)}` : '未渲染',
+    );
+  }
+
+  // ---------------------------------------------------------------- B2 服务状态点四态
+  {
+    // B2 的判据是「托盘图标在；**状态点反映 running/starting/stopped/error 四态**」。
+    // 前半条由 Rust 自检覆盖（托盘与菜单项），后半条是纯前端映射，这里直接断言。
+    const states: ServiceState[] = ['stopped', 'starting', 'running', 'error'];
+    const views = states.map((s) => ({ s, ...stateView(s) }));
+    const knownVars = new Set(Object.keys(tokens).map((k) => `--md-${k}`));
+
+    add(
+      'B2d',
+      '服务状态点四态：色相互异、文案互异，且只取既有令牌（不新增颜色）',
+      views.every((v) => knownVars.has(v.colorVar)) &&
+        new Set(views.map((v) => v.colorVar)).size === 4 &&
+        views.every((v) => v.text.length > 0) &&
+        new Set(views.map((v) => v.text)).size === 4,
+      views.map((v) => `${v.s}→${v.text}/${v.colorVar}`).join(' · '),
     );
   }
 

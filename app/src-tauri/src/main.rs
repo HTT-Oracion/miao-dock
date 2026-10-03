@@ -7,16 +7,53 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod selftest;
 mod service;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{Emitter, Manager, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
 use service::ServiceManager;
 
 /// 托盘请求退出 —— 前端弹二次确认（文案见契约 §2.1）
 const QUIT_REQUESTED_EVENT: &str = "miao://quit-requested";
+
+/// 托盘菜单项的 `id=文本` 快照，供自检读取。
+///
+/// 为什么要有它：Tauri 的 `TrayIcon` 只有 `set_menu`、**没有**读取菜单的 getter，
+/// 自检无法在事后回头看托盘上到底挂了什么。这里在 `TrayIconBuilder::build()` **成功之后**
+/// 紧贴着存一份快照 —— 构建失败就不会填值，所以「快照存在」本身就蕴含「托盘建起来了」。
+pub(crate) static TRAY_MENU_SNAPSHOT: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
+/// 托盘菜单的行为。
+///
+/// 抽成独立函数是为了让自检能调到**同一个**实现（而不是另写一份仿的）——
+/// 自检与真实点击走同一条路径，断言才算数。
+pub(crate) fn tray_action(app: &AppHandle, id: &str) {
+    let mgr = app.state::<ServiceManager>();
+    match id {
+        "show" => {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }
+        "restart" => {
+            mgr.stop();
+            mgr.start(app);
+        }
+        "quit" => {
+            // 二次确认由前端弹层给出（主文案 = 契约 §2.1 的字面量，见 components/QuitConfirm.tsx）
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+            let _ = app.emit(QUIT_REQUESTED_EVENT, ());
+        }
+        _ => {}
+    }
+}
 
 fn main() {
     tauri::Builder::default()
@@ -49,40 +86,34 @@ fn main() {
                 .tooltip("喵坞 · 本地翻译服务常驻中")
                 .icon(app.default_window_icon().cloned().ok_or("缺少应用图标")?)
                 .on_menu_event(|app, event| {
-                    let mgr = app.state::<ServiceManager>();
-                    match event.id.as_ref() {
-                        "show" => {
-                            if let Some(w) = app.get_webview_window("main") {
-                                let _ = w.show();
-                                let _ = w.set_focus();
-                            }
-                        }
-                        "restart" => {
-                            mgr.stop();
-                            mgr.start(app);
-                        }
-                        "quit" => {
-                            // 二次确认由前端弹层给出（文案需含「退出后浏览器插件将无法提交翻译任务」）
-                            if let Some(w) = app.get_webview_window("main") {
-                                let _ = w.show();
-                                let _ = w.set_focus();
-                            }
-                            let _ = app.emit(QUIT_REQUESTED_EVENT, ());
-                        }
-                        _ => {}
-                    }
+                    tray_action(app, event.id.as_ref());
                 })
                 .build(app)?;
+
+            let _ = TRAY_MENU_SNAPSHOT.set(vec![
+                format!("{}={}", show.id().as_ref(), show.text().unwrap_or_default()),
+                format!("{}={}", restart.id().as_ref(), restart.text().unwrap_or_default()),
+                format!("{}={}", quit.id().as_ref(), quit.text().unwrap_or_default()),
+            ]);
 
             // ---- 启动服务（先引擎后服务） ----
             let handle = app.handle().clone();
             let mgr = app.state::<ServiceManager>();
             mgr.start(&handle);
+
+            // ---- M3 生命周期验收（B1–B3）：程序化跑，不需要人点 ----
+            if selftest::enabled() {
+                selftest::spawn(app.handle().clone());
+            }
             Ok(())
         })
         // 关闭窗口 = 仅隐藏，**不退出进程**（契约 §2.1）
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
+                // 反证开关：让关窗真的退进程。若这组断言在此时仍全绿，说明它没测到该测的东西。
+                if selftest::close_quits() {
+                    std::process::exit(0);
+                }
                 api.prevent_close();
                 let _ = window.hide();
             }

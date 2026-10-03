@@ -4,6 +4,7 @@ import { useLibrary, useQuitRequest, useService, useTasks, useToasts } from './h
 import { initialMode, persistMode, useThemeTokens } from './theme/apply';
 import type { ThemeMode } from './theme/tokens';
 import { Badge, Btn, Pill } from './components/atoms';
+import { QuitConfirm } from './components/QuitConfirm';
 import { Sidebar, stateView, type Screen } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { QueueEmpty, QueueTable } from './screens/QueueScreen';
@@ -190,25 +191,7 @@ export function App() {
       </div>
 
       {quitOpen ? (
-        <div className="modal-mask" onClick={() => setQuitOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">退出喵坞？</div>
-            <div className="modal-body">
-              退出后本地翻译服务会一起停掉，<b>浏览器插件将无法提交翻译任务</b>，直到你再次打开喵坞。
-              <br />
-              <br />
-              只是想收起窗口的话，点「留在后台」—— 服务会继续跑，托盘图标常驻。
-            </div>
-            <div className="modal-actions">
-              <Btn kind="ghost" onClick={() => setQuitOpen(false)}>
-                留在后台
-              </Btn>
-              <Btn kind="danger" onClick={() => void quitApp()}>
-                退出喵坞
-              </Btn>
-            </div>
-          </div>
-        </div>
+        <QuitConfirm onStay={() => setQuitOpen(false)} onQuit={() => void quitApp()} />
       ) : null}
 
       <div className="toasts">

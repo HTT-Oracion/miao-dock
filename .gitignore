@@ -12,3 +12,6 @@ tmp-*/
 # 系统与编辑器噪声
 .DS_Store
 *.log
+
+# 生命周期自检的临时落盘根目录
+.tmp-selftest/
