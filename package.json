@@ -13,6 +13,7 @@
     "selftest:app": "node scripts/lifespan-selftest.mjs",
     "selftest:app:refute": "node scripts/lifespan-selftest.mjs --refute",
     "e2e": "node scripts/e2e.mjs",
+    "check:tls": "node scripts/tls-check.mjs",
     "capture": "node scripts/capture.mjs",
     "probe:png": "node scripts/make-probe-png.mjs",
     "app": "npm --prefix app run tauri dev",
