@@ -7,7 +7,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 import {
   BATCH_LIMIT, ETA_SAMPLE_WINDOW, MAX_SEQ, FILE_NAME_RE, ORIGINAL_SCAN_RE,
-  TRANSLATED_SCAN_RE, TASKS_STATE_DIR, IDEMPOTENCY_FILE,
+  TRANSLATED_SCAN_RE, TASKS_STATE_DIR, IDEMPOTENCY_FILE, PENDING_DIR,
   assertInsideRoot, canonicalize, config, seq3,
 } from './config.mjs';
 import { ApiError } from './errors.mjs';
@@ -34,6 +34,14 @@ const MAX_EVENT_LOG = 20000;
 const DEGRADABLE_WRITE_ERRNOS = new Set(['ENOSPC', 'EDQUOT', 'EROFS', 'EMFILE', 'ENFILE', 'EEXIST']);
 
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+/**
+ * taskId 由服务端生成（`tsk_` + 26 位 Crockford ULID），此处**再断言一次**。
+ * 它现在会参与暂存区的目录名拼接（`state/pending/<taskId>/`），
+ * 所以适用与 §8.2 校验点 2 同一套纪律：凡是拼进路径的东西都要能自证形状，
+ * 不能因为「它是我们自己造的」就免检。
+ */
+const TASK_ID_RE = /^tsk_[0-9A-HJKMNP-TV-Z]{26}$/;
 
 function ulid() {
   let ts = Date.now();
@@ -96,7 +104,12 @@ export class Store {
         task.clients = new Set();
         task.cancelRequested = false;
         if (!TASK_TERMINAL.has(task.status)) {
-          // 重启后内存中的原图字节已丢失，无法续做：按失败收尾（见交付说明中的歧义处置）
+          // G-12（用户裁定 B ＋「只标为待译、由用户点继续翻译」，2026-10-03）：
+          // **先把上传时暂存的原图搬回漫画目录**，再按老规矩把这条任务标失败收尾。
+          // 搬回来之后这几页就是普通的「有原图、缺译文」——库里显示「待译」、
+          // `/resume` 列得出来、用户点「继续翻译」即可。**不做任何后台自动续做**（用户裁定）。
+          // 修之前这里只能写「重启后内存中的原图字节已丢失，无法续做」，那些页永久消失。
+          const moved = this._materializeStaged(task);
           for (const batch of task.batches || []) {
             for (const item of batch.items || []) {
               if (!ITEM_TERMINAL.has(item.status)) {
@@ -108,12 +121,80 @@ export class Store {
           task.status = 'failed';
           aborted++;
           this._persistNow(task);
+          this._sweepStaged(task.taskId); // 搬空的目录顺手收掉；没搬动的会被保留并告警
+          if (moved > 0) {
+            console.log(`[G-12] 任务 ${task.taskId}：已把 ${moved} 张暂存原图搬回漫画目录，可在「继续翻译」里补译文`);
+          }
         }
         this.tasks.set(task.taskId, task);
         restored++;
       } catch { /* 单个任务文件损坏则跳过 */ }
     }
-    return { restored, aborted };
+    const swept = this._sweepOrphanStaging();
+    return { restored, aborted, swept };
+  }
+
+  /**
+   * 把**暂存区**里属于该任务的字节搬进漫画目录（G-12 的重启恢复）。
+   *
+   * 只搬「任务被打断时**还没处理完**」的页（item 状态非终态）。已终态的页一律不看：
+   *  · `success` 的原图早已落盘；
+   *  · `failed` 的按 G-11 也已经落过原图（若当时落盘被降级，暂存那份会被刻意留下）；
+   *  · `skipped` 属**取消**语义 —— 不问自取就正好违反了《02》§4.3「未开始的 item 原图不落盘」。
+   * 这也顺手挡掉了「已取消、但清单上的状态没来得及落」那个窄窗口：那种任务里
+   * 未处理的页都已是 `skipped`，一张也不会被搬。
+   */
+  _materializeStaged(task) {
+    let moved = 0;
+    for (const batch of task.batches || []) {
+      for (const item of batch.items || []) {
+        if (ITEM_TERMINAL.has(item.status)) continue;
+        const bytes = this._readStagedBytes(task.taskId, item.seq);
+        if (!bytes) continue; // 该页从没上传过字节（续做路径 fromDisk），或已落盘撤过暂存
+        try {
+          this._writeOriginal(task, item, bytes); // 内部顺带撤该页的暂存
+          moved++;
+        } catch (err) {
+          // 搬不动就把它留在暂存区（`_sweepStaged` 会告警），
+          // 但**绝不能因此让服务起不来**：单页的落盘问题不该升级成启动失败。
+          const why = (err && err.code) || (err && err.message) || String(err);
+          console.warn(`[G-12] seq ${item.seq} 的暂存原图搬回失败（${why}）：保留在暂存区`);
+        }
+      }
+    }
+    return moved;
+  }
+
+  /**
+   * 启动时的暂存区清扫（G-12）。只删**空**目录。
+   *
+   * 空目录只有一个来源：上一次收尾（`_sweepStaged`）或建单回滚跑了一半就被打断 ——
+   * 里面已经没有任何字节，删掉不丢东西，留着却会逐年累积。
+   * **非空的一律保留并告警**：那里面是某页原图**仅存的一份**（或一份没人认领的孤本），
+   * 删掉就是把「可能还有救」变成「彻底没有」。与 `_sweepStaged` 是同一条纪律：
+   * **宁可留一个目录，让它出现在日志里。**
+   *
+   * 仍在跑的任务（非终态）绝不碰 —— 那是它们唯一的字节来源。
+   */
+  _sweepOrphanStaging() {
+    let dirs = [];
+    try { dirs = fs.readdirSync(PENDING_DIR); } catch { return 0; } // 首次启动无该目录
+    let removed = 0;
+    for (const d of dirs) {
+      const p = path.join(PENDING_DIR, d);
+      try { if (!fs.statSync(p).isDirectory()) continue; } catch { continue; }
+      const task = this.tasks.get(d);
+      if (task && !TASK_TERMINAL.has(task.status)) continue;
+      let entries = [];
+      try { entries = fs.readdirSync(p); } catch { continue; }
+      if (entries.length === 0) {
+        try { fs.rmdirSync(p); removed++; } catch { /* ignore */ }
+      } else {
+        console.warn(`[G-12] 暂存目录 ${d} 里还有 ${entries.length} 份字节且没有对应的在跑任务：`
+          + '保留不删（可能是某页原图仅存的一份），请人工确认后清理');
+      }
+    }
+    return removed;
   }
 
   // ---------------------------------------------------------------- 查询工具
@@ -183,8 +264,7 @@ export class Store {
       clientTaskRef: payload && payload.clientTaskRef,
       idempotencyKey: key,
     });
-    for (const item of items) this.blobs.set(`${task.taskId}:${item.seq}`, item.__bytes);
-    for (const item of items) delete item.__bytes;
+    this._adoptBytes(task.taskId, items);
 
     this.tasks.set(task.taskId, task);
     if (key) this._rememberIdempotency(key, task.taskId, 1);
@@ -248,8 +328,7 @@ export class Store {
       idempotencyKey: key || null,
       items,
     });
-    for (const item of items) this.blobs.set(`${task.taskId}:${item.seq}`, item.__bytes);
-    for (const item of items) delete item.__bytes;
+    this._adoptBytes(task.taskId, items);
 
     if (key) this._rememberIdempotency(key, task.taskId, batchIndex);
     this._persistNow(task);
@@ -548,7 +627,8 @@ export class Store {
             // G-11 的口径是「**已处理**的页一律保原图」，异常路径也是失败的一种，
             // 不能因为异常是从别处抛上来的就漏掉这一页 —— 那正是它最需要被续做的时候。
             // 进过 _processItem 的页，原图字节此刻还在内存 blobs 里，取现成的一份即可。
-            const lastBytes = this.blobs.get(`${task.taskId}:${item.seq}`);
+            const lastBytes = this.blobs.get(`${task.taskId}:${item.seq}`)
+              || this._readStagedBytes(task.taskId, item.seq);
             if (lastBytes) {
               // 已经在错误路径上了，这里**绝不能再抛**（否则会把一条错误变成两条）
               try { this._keepOriginalOnFailure(task, item, lastBytes); } catch { /* 见 _keepOriginalOnFailure */ }
@@ -571,6 +651,104 @@ export class Store {
     return null;
   }
 
+  // ------------------------------------------------- 上传字节暂存区（G-12）
+
+  /**
+   * 上传字节的**暂存目录**：`state/pending/<taskId>/`，每页一份 `<seq>.bin`。
+   *
+   * 为什么需要它（G-12，用户裁定 **B**，2026-10-03）：
+   * 字节原先只活在内存（`this.blobs`），进程一崩就全丢 —— 不只是「正在翻译那一张」，
+   * 而是**所有尚未落盘的页**。而它又**不能**提前写进漫画目录：
+   * 《02》§4.3 + 契约 §4.1 明令「未开始的 item 原图不落盘」（取消不得留下残缺目录）。
+   * 于是唯一能同时满足两条明文条款的位置，是**漫画目录之外的某处** —— 就是这里。
+   * 与契约 §7.5 把任务清单放 state 区是同一套理由（「不放漫画目录内」）。
+   *
+   * **只存字节、不存文件名**：漫画目录里的名字始终由服务端按 `item.ext` 现算再校验
+   * （§8.2 校验点 2「绝不取自用户输入」），暂存文件名因此不含任何外部信息。
+   */
+  _stageDir(taskId) {
+    if (!TASK_ID_RE.test(String(taskId))) {
+      throw new ApiError('PERMISSION_DENIED', 'taskId 形状不合法，拒绝用于暂存路径', { taskId });
+    }
+    return path.join(PENDING_DIR, taskId);
+  }
+
+  _stagePath(taskId, seq) {
+    return path.join(this._stageDir(taskId), `${seq3(seq)}.bin`);
+  }
+
+  /**
+   * 建单 / 追加批次的**唯一**字节落点：同一份字节**同时**放进内存与暂存区。
+   *
+   * 两处都由这一个方法写，是为了不出现「内存有、暂存没有」这种**只在崩溃时才会暴露**
+   * 的半成品状态 —— 那种状态恰恰是这次要修的缺陷本身。任一步失败即回滚**本次新落的那几份**
+   * （刻意**不用** `_dropStaged` 整目录删：追加批次时那会连带抹掉**前几批尚未落盘**的暂存字节）。
+   * （`createResumeTask` **不走这里**：续做路径的原图本来就在磁盘上，`fromDisk:true`。）
+   */
+  _adoptBytes(taskId, items) {
+    const staged = [];
+    try {
+      for (const item of items) {
+        this._stageBytes(taskId, item.seq, item.__bytes);
+        staged.push(item.seq);
+      }
+    } catch (err) {
+      for (const seq of staged) this._unstageBytes(taskId, seq);
+      throw err;
+    }
+    for (const item of items) this.blobs.set(`${taskId}:${item.seq}`, item.__bytes);
+    for (const item of items) delete item.__bytes;
+  }
+
+  _stageBytes(taskId, seq, bytes) {
+    fs.mkdirSync(this._stageDir(taskId), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(this._stagePath(taskId, seq), bytes, { flag: 'wx', mode: 0o600 });
+  }
+
+  _readStagedBytes(taskId, seq) {
+    try { return fs.readFileSync(this._stagePath(taskId, seq)); } catch { return null; }
+  }
+
+  /**
+   * 撤掉某一页的暂存 —— 调用时机**只有一个**：「该页原图已确认落在漫画目录」。
+   * 放在 `_writeOriginal` 内部正是为了让这个时机只存在一处定义（见那里的注释）。
+   */
+  _unstageBytes(taskId, seq) {
+    try { fs.rmSync(this._stagePath(taskId, seq), { force: true }); } catch { /* ignore */ }
+  }
+
+  /** 丢弃整条任务的暂存（**取消**专用：漫画目录不得因未处理的页留下任何痕迹，《02》§4.3） */
+  _dropStaged(taskId) {
+    let dir;
+    try { dir = this._stageDir(taskId); } catch { return; }
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+
+  /**
+   * **正常终态**的收尾：此刻暂存目录**应当已空** —— 每一页都按各自规则落了盘
+   * （成功写原图+译文，失败按 G-11 保原图）。空则删目录，非空则**留着并告警**：
+   * 非空意味着某页的落盘被降级过（`saved:false`），那一份就是它还剩下的唯一字节，
+   * 删掉等于把「还有救」变成「彻底没有」。宁可留一个目录，让它出现在日志里。
+   */
+  _sweepStaged(taskId) {
+    let left = [];
+    try { left = fs.readdirSync(this._stageDir(taskId)); } catch { return; }
+    if (left.length === 0) { this._dropStaged(taskId); return; }
+    console.warn(`[G-12] 任务 ${taskId} 收尾时暂存区仍剩 ${left.length} 份字节（${left.join(', ')}）：`
+      + '对应页的原图不在漫画目录里，保留以免彻底丢失');
+  }
+
+  /**
+   * 与暂存区**成对**清理的内存侧。同一份字节有了两个存放处，就不能只清一个 ——
+   * 漏掉哪一边，那一边的残留都会在下次崩溃 / 收尾时冒出来（而这种漂移只有崩溃才照得出）。
+   */
+  _forgetBlobs(taskId) {
+    const prefix = `${taskId}:`;
+    for (const key of [...this.blobs.keys()]) {
+      if (key.startsWith(prefix)) this.blobs.delete(key);
+    }
+  }
+
   // ---------------------------------------------------------------- 单图处理
 
   async _processItem(task, batch, item) {
@@ -584,6 +762,10 @@ export class Store {
       item.saved = true;
       item.outputFile = this._findTranslatedName(dir, item.seq);
       this.blobs.delete(blobKey);
+      // G-12：这一页已有译文，暂存那份通常就没用了 —— 但**前提是原图确实在磁盘上**。
+      // 若原图缺失（例如有人手删过原图，A16b 造的就是这个形状），暂存那份就是该页
+      // 原图的**唯一一份**，此时必须留下，否则这一页会变成「只有译文没有原图」。
+      if (this._findOriginalName(dir, item.seq)) this._unstageBytes(task.taskId, item.seq);
       this._emitItemStatus(task, batch, item);
       this._syncBatchStatuses(task);
       await this._persist(task);
@@ -595,10 +777,13 @@ export class Store {
     this._syncBatchStatuses(task);
 
     const t0 = Date.now();
-    // 字节来源二选一：上传路径在内存（this.blobs），续做路径在磁盘（原图早已落盘）
-    const bytes = item.fromDisk ? this._readOriginalFromDisk(task, item.seq) : this.blobs.get(blobKey);
+    // 字节来源三选一：内存（`this.blobs`，快路径）→ **暂存区**（G-12 的持久副本，活得过进程）
+    // → 磁盘（续做路径，原图早已落盘）。内存那份是缓存，暂存那份才是崩溃时的唯一依据。
+    const bytes = item.fromDisk
+      ? this._readOriginalFromDisk(task, item.seq)
+      : (this.blobs.get(blobKey) || this._readStagedBytes(task.taskId, item.seq));
     if (!bytes) {
-      if (!item.fromDisk) throw new Error('原图字节已丢失（服务可能重启过）');
+      if (!item.fromDisk) throw new Error('原图字节已丢失（内存与暂存区均无）');
       // 续做时原图不见了：单张失败，不中断任务（其余页照常续做）
       item.status = 'failed';
       item.reason = 'original_missing';
@@ -691,6 +876,17 @@ export class Store {
     return null;
   }
 
+  /** 与 `_findTranslatedName` 对称：该 seq 的原图在不在磁盘上（G-12 判「暂存处不处理」） */
+  _findOriginalName(dir, seq) {
+    try {
+      for (const f of fs.readdirSync(dir)) {
+        const m = ORIGINAL_SCAN_RE.exec(f);
+        if (m && Number(m[1]) === seq) return f;
+      }
+    } catch { /* 目录不存在 */ }
+    return null;
+  }
+
   /**
    * 落盘：原图 + 译文。
    *
@@ -718,9 +914,12 @@ export class Store {
    * 扩展名取**上传字节的嗅探结果**（`item.ext`，创建时已校验非空）——
    * 不信任任何自带声明（契约 §7.2）。
    *
-   * 单独成一个方法是因为它现在有**两个调用点**：成功路径（原图 + 译文）与
-   * 失败路径（G-11：失败页也保原图）。两处必须走**同一套**安全校验，
-   * 不能各写一份 —— 那种重复迟早会漂移成「一个路径有校验、另一个没有」。
+   * 单独成一个方法是因为它现在有**三个调用点**：成功路径（原图 + 译文）、
+   * 失败路径（G-11：失败页也保原图）、以及**启动时把暂存的原图搬回漫画目录**（G-12）。
+   * 三处必须走**同一套**安全校验，不能各写一份 —— 那种重复迟早会漂移成
+   * 「一个路径有校验、另一个没有」。
+   *
+   * 它同时是**撤暂存的唯一时机**（末尾那行）：见那里的注释。
    */
   _writeOriginal(task, item, bytes) {
     if (!isSafeDirName(task.dirName)) {
@@ -761,6 +960,10 @@ export class Store {
       fs.writeFileSync(originalPath, bytes, { flag: 'wx', mode: 0o600 });
     }
     item.originalFile = original;
+    // G-12：到这一行为止，该页的原图已**确认**在漫画目录里 —— 暂存那份的使命结束。
+    // 这个「只有原图真的落了盘才撤暂存」的时机刻意只在这里定义一处：
+    // 降级路径（ENOSPC 等抛出）会跳过它，于是暂存那份**被留下**，正是我们想要的兜底。
+    this._unstageBytes(task.taskId, item.seq);
   }
 
   /**
@@ -811,6 +1014,14 @@ export class Store {
     this._syncBatchStatuses(task);
     this._emitTaskStatus(task);
     this._persistNow(task);
+    // G-12 的两种终态收尾（放在 persist **之后**：先让「任务已结束」落到清单上，
+    // 中途被打断也只会留下一个空目录，而下一次启动会把它扫掉 —— 见 _sweepOrphanStaging）：
+    //  · 取消 → **丢弃全部暂存**：未处理的页不得在漫画目录留下任何痕迹（《02》§4.3），
+    //           而它们的字节也就此作废，留着只会变成孤儿；
+    //  · 其余终态 → **清扫**：此时每页都已按各自规则落盘，暂存目录理应已空。
+    if (status === 'canceled') this._dropStaged(task.taskId);
+    else this._sweepStaged(task.taskId);
+    this._forgetBlobs(task.taskId);
     if (task._settleResolve) {
       task._settleResolve();
       task._settleResolve = null;

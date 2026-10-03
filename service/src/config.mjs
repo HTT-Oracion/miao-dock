@@ -85,6 +85,17 @@ export const IDEMPOTENCY_FILE = path.join(STATE_DIR, 'idempotency.json');
 export const TOKEN_FILE = path.join(STATE_DIR, 'token');
 
 /**
+ * 上传字节的**暂存区**（G-12，用户裁定 B，2026-10-03）。
+ *
+ * 为什么必须有这么个东西：上传的原图原先只活在服务进程的内存里（`store.blobs`），
+ * 进程一崩就全丢 —— 未落盘的页永久不可恢复。而它**不能**放在漫画目录里：
+ * 《02》§4.3 + 契约 §4.1 明令「未开始的 item 原图不落盘」（取消不得留下残缺目录）。
+ * 于是只剩下「漫画目录之外的某处」，也就是这里 —— 与契约 §7.5 把任务清单
+ * 放在 state 区（理由：「不放漫画目录内，否则会被库扫描误读为用户内容」）是同一套道理。
+ */
+export const PENDING_DIR = path.join(STATE_DIR, 'pending');
+
+/**
  * 落盘根目录（契约 §7.1 默认值，可在设置中修改）。
  * 支持 `MIAO_ROOT` 覆盖——用于验收与自动化测试，避免写用户真实图片目录（见 spec-notes D-10）。
  */

@@ -77,9 +77,18 @@ function assertRootWritable() {
     fs.unlinkSync(probe);
   } catch (err) {
     try { fs.unlinkSync(probe); } catch { /* 尽力清理 */ }
-    securityLog(`落盘根目录不可写（DISK_FULL）：${store.root}（${err && err.code}）`);
+    // `err.code` 不足以定位问题：**不是所有错误都带 errno**（调用参数类型错、或被运行时
+    // 策略层拦下时抛出的包装错误都没有），只报 code 会得到一句「（undefined）」，无从下手。
+    // 两样都带上，代价只是一个字符串。
+    const why = (err && err.code) || (err && err.message) || String(err);
+    // 只有**文件系统类**错误才是「落盘不可用」（§2.2 要的就是这个）。没有 errno 的错误
+    // 来自别处 —— 把它报成 507「磁盘满或权限不足」是**把一句假话讲给用户听**：用户会去清磁盘，
+    // 而问题根本不在磁盘（本项目实测踩过一次：被运行时的删除守卫拦下，磁盘明明还剩 58 GB）。
+    // 这类错误照常向上抛，由兜底变成 500 INTERNAL、并把原因留在 details.reason 里，便于查。
+    if (!(err && err.code)) throw err;
+    securityLog(`落盘根目录不可写（DISK_FULL）：${store.root}（${why}）`);
     throw new ApiError('DISK_FULL', '落盘根目录不可写（磁盘满或权限不足），无法创建任务',
-      { root: store.root, reason: err && err.code });
+      { root: store.root, reason: why });
   }
 }
 
@@ -708,8 +717,12 @@ serverLog(`sidecar    : ${sidecar.state} port=${sidecar.port ?? '-'} engine=${si
 serverLog(`失败注入   : FAIL_SEQ=[${[...config.failSeqs].join(',')}] ITEM_FAIL_RATE=${config.itemFailRate} `
   + `DISK_FULL=${config.diskFull} SIDECAR_DOWN=${config.sidecarDown} SKIP_EXISTING=${config.skipExisting}`);
 if (restore.restored > 0) {
-  serverLog(`任务清单恢复：${restore.restored} 个（其中 ${restore.aborted} 个非终态任务已按 failed 收尾）`);
+  // G-12：中断的任务仍以 failed 收尾，但**它们未落盘的原图会先被搬回漫画目录**，
+  // 于是在库里显示「待译」、可经「继续翻译」补译文 —— 所以这里不能再只说「已按 failed 收尾」。
+  serverLog(`任务清单恢复：${restore.restored} 个（其中 ${restore.aborted} 个非终态任务已收尾；`
+    + `其未落盘的原图已搬回漫画目录，可在「继续翻译」里补译文）`);
 }
+if (restore.swept > 0) serverLog(`暂存区清扫：删除 ${restore.swept} 个空目录`);
 // 机器可读的就绪行：桌面端 Rust 层据此拿到端口与令牌，不必去猜端口段或读文件
 serverLog(`MIAO_READY ${JSON.stringify({ port, token: config.token, rootDir: store.root })}`);
 serverLog('=========================================================');
