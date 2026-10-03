@@ -59,6 +59,25 @@ type GridState = 'done' | 'pending' | 'missing';
 const GRID_LABEL: Record<GridState, string> = { done: '已译', pending: '待译', missing: '缺页' };
 
 /**
+ * 左栏每部漫画的状态短语。
+ *
+ * 原先这里只写 `缺 ${imageCount - translatedCount}`，而那个数其实是**没有译文的**页数
+ * —— 于是同一屏上冒出两个含义相反的「缺」：左栏说「缺 1」（那一页其实有原图，只是待译），
+ * 网格卡说「缺页」（专指**没有原图**）。字面同源、意思不同，正是 G-11 里
+ * 「同一张图、两屏两个故事」的翻版。逐页集合（G-10）已经能分开算，就没理由继续含糊。
+ */
+function progressLabel(c: ComicEntry): string {
+  if (c.imageCount === 0) return '空目录';
+  const missing = c.missingSeqs.length;
+  const pending = c.imageCount - c.translatedCount - missing;
+  if (pending <= 0 && missing <= 0) return '已译完';
+  const parts: string[] = [];
+  if (pending > 0) parts.push(`待译 ${pending}`);
+  if (missing > 0) parts.push(`缺页 ${missing}`);
+  return parts.join(' · ');
+}
+
+/**
  * 网格缩略图。三态必须分开，且**只在确实有译文时才发请求** ——
  * 对已知没有译文的页仍去取一次、失败后显示「加载中…」，是把「不存在」伪装成「还没到」。
  */
@@ -277,7 +296,7 @@ export function LibraryScreen({
               </span>
               <span className="lib-item-meta">
                 <span className="num">{c.imageCount}</span> 张 ·{' '}
-                {c.translatedCount === c.imageCount ? '已译完' : `缺 ${c.imageCount - c.translatedCount}`}
+                {progressLabel(c)}
               </span>
             </button>
           ))}

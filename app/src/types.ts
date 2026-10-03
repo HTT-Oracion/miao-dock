@@ -80,7 +80,11 @@ export interface ComicEntry {
    * 整体前移一位，把没译文的页标成「已译」。见 spec-notes G-10。
    */
   translatedSeqs: number[];
-  /** 1..seqMax 内**没有原图**的页码（正常为空数组）—— 任务中途被取消会留下这种洞 */
+  /**
+   * 1..seqMax 内**没有原图**的页码（正常为空数组）。
+   * 引擎失败**不会**产生这种洞 —— 那些页的原图照落盘（G-11），它们属于「有原图、缺译文」，
+   * 在网格卡上显示为「待译」。真正的来源是外部把文件拿掉了：用户自己删、目录没拷全。
+   */
   missingSeqs: number[];
   modifiedAt: string | null;
 }
