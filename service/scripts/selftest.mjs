@@ -134,8 +134,15 @@ async function waitTask(port, token, taskId, timeoutMs = 30_000) {
   for (;;) {
     const res = await request(port, 'GET', `/api/v1/tasks/${taskId}`, { token });
     const task = json(res);
-    if (task && ['done', 'partial_failed', 'failed', 'canceled'].includes(task.status)) return task;
-    if (Date.now() > until) throw new Error(`任务 ${taskId} 未在 ${timeoutMs}ms 内结束（当前 ${task && task.status}）`);
+    // 非 200 不静默吞掉：否则「服务不可用 / 任务被清理」会被误读成「还没到终态」，
+    // 现场信息全丢，排查时只能靠猜。
+    if (res.status !== 200 || !task || !task.taskId) {
+      throw new Error(
+        `任务详情读取失败 taskId=${taskId} status=${res.status} body=${res.body.toString('utf8').slice(0, 200)}`,
+      );
+    }
+    if (['done', 'partial_failed', 'failed', 'canceled'].includes(task.status)) return task;
+    if (Date.now() > until) throw new Error(`任务 ${taskId} 未在 ${timeoutMs}ms 内结束（当前 ${task.status}）`);
     await sleep(120);
   }
 }
@@ -486,17 +493,30 @@ try {
   // 而契约 §5.7 的 /queue 只给 running+queued，故新增只读端点 GET /tasks（docs/spec-notes.md G-04）。
   console.log('A15 任务列表：跨状态汇总、排序、来源归因');
   {
-    // 用 2 张图（引擎对 seq=3 恒失败，这里要的是「全部成功 → done」，便于断言 progress）
     const imgs = (n) => Array.from({ length: n }, (_, i) => ({
       filename: `${String(i + 1).padStart(3, '0')}.png`, contentType: 'image/png', data: pngBytes(40, 60, i),
     }));
 
-    const desk = await submit(port, TOKEN, 'A15 本机投放', imgs(2), { headers: { 'X-Box-Client': 'box-desktop/0.1.0' } });
+    /*
+     * 排序用例要求「存在一个正在运行的任务」，这本身是个**瞬时状态**。
+     * 不能让断言去赌窗口：让首个任务足够长（20 张 × 60ms ≈ 1.2s，远超几次 HTTP 往返），
+     * 再**轮询到 running 出现**才断言 —— 这样在负载毛刺下也不会假失败。
+     * （20 张含 seq=3，引擎对该 seq 恒失败，故它最终是 partial_failed，后面按此断言。）
+     */
+    const desk = await submit(port, TOKEN, 'A15 本机投放', imgs(20), { headers: { 'X-Box-Client': 'box-desktop/0.1.0' } });
     const ext = await submit(port, TOKEN, 'A15 插件来源', imgs(2), { headers: { 'X-Box-Client': 'extension/2.3.0' } });
     const anon = await submit(port, TOKEN, 'A15 无来源头', imgs(2));
-    // 刻意不 sleep：要在「第一个任务仍在跑」的窗口内验证排序（引擎每张 60ms）
 
-    const live = json(await request(port, 'GET', '/api/v1/tasks', { token: TOKEN }));
+    const snapshot = async () => json(await request(port, 'GET', '/api/v1/tasks', { token: TOKEN }));
+    let live = await snapshot();
+    {
+      const until = Date.now() + 8000;
+      while (Date.now() < until &&
+             (live?.tasks || []).find((t) => t.taskId === desk.json.taskId)?.status !== 'running') {
+        await sleep(40);
+        live = await snapshot();
+      }
+    }
     const rows0 = live?.tasks || [];
     const liveById = new Map(rows0.map((t) => [t.taskId, t]));
     const idxOf = (id) => rows0.findIndex((t) => t.taskId === id);
@@ -534,13 +554,20 @@ try {
     const list2 = json(await request(port, 'GET', '/api/v1/tasks', { token: TOKEN }));
     const after = new Map((list2?.tasks || []).map((t) => [t.taskId, t]));
     const ours = [desk, ext, anon].map((r) => after.get(r.json.taskId));
-    check('A15 终态行仍留在列表里（X-C1 的历史行来源）',
-      ours.every((t) => t && t.status === 'done'), ours.map((t) => t && t.status));
+    const byId2 = (id) => after.get(id);
+    check('A15 终态行仍留在列表里，且各自状态正确（X-C1 的历史行来源）',
+      byId2(desk.json.taskId)?.status === 'partial_failed' &&
+      byId2(ext.json.taskId)?.status === 'done' &&
+      byId2(anon.json.taskId)?.status === 'done',
+      ours.map((t) => t && t.status));
     check('A15 行内带 progress 与 outputDir（进度列 /「打开目录」依赖）',
       ours.every((t) => t.progress && Number.isFinite(t.progress.total) && typeof t.outputDir === 'string'),
       ours[0]);
-    check('A15 全部成功 → progress.done === total === 2',
-      ours.every((t) => t.progress.total === 2 && t.progress.done === 2), ours.map((t) => t.progress));
+    check('A15 完成度如实反映：2 张全成 → done/done，20 张含 1 张失败 → 19/20',
+      byId2(ext.json.taskId)?.progress.done === 2 && byId2(ext.json.taskId)?.progress.total === 2 &&
+      byId2(desk.json.taskId)?.progress.done === 19 && byId2(desk.json.taskId)?.progress.total === 20 &&
+      byId2(desk.json.taskId)?.progress.failed === 1,
+      ours.map((t) => t.progress));
 
     const fin = (list2?.tasks || []).filter((t) => t.finishedAt).map((t) => Date.parse(t.finishedAt));
     check('A15 终态按 finishedAt 倒序（最新的在最上）',
@@ -649,7 +676,8 @@ try {
     const spoof = await submit(port, TOKEN, 'A14 魔数', [{ filename: 'evil.png', contentType: 'image/png', data: webpBytes() }]);
     check('A14 伪造 filename=evil.png 但字节是 WEBP → 请求被接受', spoof.status === 201, spoof.json);
     const t = await waitTask(port, TOKEN, spoof.json.taskId);
-    const dir = path.join(rootDir, 'A14 魔数');
+    // 目录名取服务端回传的规范化结果，不在测试里复述一遍归一化规则
+    const dir = path.join(rootDir, t.normalizedComicName);
     const files = fs.existsSync(dir) ? fs.readdirSync(dir).sort() : [];
     check('A14 原图扩展名取嗅探结果（001.webp，而非声明的 .png）', files.includes('001.webp'), files);
     check('A14 译文扩展名取引擎返回字节的嗅探结果（001_translated.png）——同一 seq 两侧各自独立嗅探',
@@ -725,6 +753,82 @@ try {
 
     const libNoToken = await request(port, 'GET', '/api/v1/library');
     check('A16 /library 同样受鉴权保护', libNoToken.status === 403, libNoToken.status);
+  }
+
+  // ================================================================ A17 本地续做（X-D1「继续翻译」）
+  // 契约 §5.8 未定义「哪几页还没翻」，而 X-D1 的「继续翻译」需要它 → 新增 resume 端点（spec-notes.md G-07）。
+  // 核心风险是「续做会不会重复原图 / 覆盖原图」，故这两条必须钉死。
+  console.log('A17 本地续做：按已有原图补译文，不新增编号、不覆盖原图');
+  {
+    const name = 'A17 续做';
+    const imgs = Array.from({ length: 2 }, (_, i) => ({
+      filename: `${String(i + 1).padStart(3, '0')}.png`, contentType: 'image/png', data: pngBytes(48, 64, i + 9),
+    }));
+    const r = await submit(port, TOKEN, name, imgs, { headers: { 'X-Box-Client': 'box-desktop/0.1.0' } });
+    const dirName = r.json.normalizedComicName;
+    await waitTask(port, TOKEN, r.json.taskId, 60_000);
+
+    const dir = path.join(rootDir, dirName);
+    const original2Before = fs.readFileSync(path.join(dir, '002.png'));
+    const origCountBefore = fs.readdirSync(dir).filter((f) => /^\d{3}\.(png|jpg|jpeg|webp)$/.test(f)).length;
+
+    // 模拟「第 2 页没翻成」：删掉它的译文
+    const t2 = fs.readdirSync(dir).find((f) => /^002_translated\./.test(f));
+    check('A17 前置：002 的译文存在（准备删除以构造缺页）', !!t2, fs.readdirSync(dir));
+    fs.unlinkSync(path.join(dir, t2));
+
+    const plan = json(await request(port, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, { token: TOKEN }));
+    check('A17 续做清单只列出缺译文的页',
+      plan?.imageCount === 2 && plan?.translatedCount === 1 && plan?.pendingCount === 1 &&
+      plan?.pendings?.[0]?.seq === 2, plan && { i: plan.imageCount, t: plan.translatedCount, p: plan.pendings });
+
+    const rs = await request(port, 'POST', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, {
+      token: TOKEN,
+      headers: { 'Content-Type': 'application/json', 'X-Box-Client': 'box-desktop/0.1.0' },
+      body: Buffer.from(JSON.stringify({})),
+    });
+    const rsJson = json(rs);
+    check('A17 续做建单返回 201 且来源归因为 desktop',
+      rs.status === 201 && rsJson?.taskId && rsJson?.normalizedComicName === dirName, rsJson);
+
+    const done = await waitTask(port, TOKEN, rsJson.taskId, 60_000);
+    check('A17 续做任务终态为 done（1 张成功）',
+      done.status === 'done' && done.progress.total === 1 && done.progress.done === 1, done.progress);
+
+    // 关键回归 ①：不新增原图 —— 否则每次续做都会把整本漫画重下一遍
+    const origCountAfter = fs.readdirSync(dir).filter((f) => /^\d{3}\.(png|jpg|jpeg|webp)$/.test(f)).length;
+    check('A17 续做不新增原图（编号未被重排）',
+      origCountAfter === origCountBefore && origCountAfter === 2, { before: origCountBefore, after: origCountAfter });
+
+    // 关键回归 ②：原图字节不变 —— 契约 §7.2「永不覆盖」
+    check('A17 续做不改动已存在的原图字节（永不覆盖）',
+      fs.readFileSync(path.join(dir, '002.png')).equals(original2Before));
+
+    const retrans = fs.readdirSync(dir).find((f) => /^002_translated\./.test(f));
+    check('A17 译文已补齐（002_translated.*）', !!retrans, fs.readdirSync(dir));
+
+    const plan2 = json(await request(port, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, { token: TOKEN }));
+    check('A17 补齐后清单为空，前端据此把「继续翻译」置灰', plan2?.pendingCount === 0, plan2);
+
+    const again = await request(port, 'POST', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, {
+      token: TOKEN, headers: { 'Content-Type': 'application/json' }, body: Buffer.from('{}'),
+    });
+    check('A17 无可续做页时 → 404（不静默建出空任务）',
+      again.status === 404 && json(again)?.error?.code === 'TASK_NOT_FOUND', json(again));
+
+    const wrongSeq = await request(port, 'POST', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, {
+      token: TOKEN, headers: { 'Content-Type': 'application/json' }, body: Buffer.from(JSON.stringify({ seqs: [1] })),
+    });
+    check('A17 显式指定已有译文的页 → 404（不做无意义的重译）',
+      wrongSeq.status === 404, json(wrongSeq));
+
+    const badSeqs = await request(port, 'POST', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, {
+      token: TOKEN, headers: { 'Content-Type': 'application/json' }, body: Buffer.from(JSON.stringify({ seqs: 'two' })),
+    });
+    check('A17 seqs 非数组 → 400', badSeqs.status === 400 && json(badSeqs)?.error?.code === 'INVALID_IMAGE', json(badSeqs));
+
+    const resumeNoToken = await request(port, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/resume`);
+    check('A17 续做端点同样受鉴权保护', resumeNoToken.status === 403, resumeNoToken.status);
   }
 
   // ================================================================ A14（补充）sidecar 未就绪

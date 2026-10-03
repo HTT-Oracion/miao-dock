@@ -478,6 +478,46 @@ function handleReveal(req, res, cors, rawName) {
   sendJson(res, 200, { ok: true, path: dir, comicName: name }, cors);
 }
 
+/**
+ * `GET /library/{comicName}/resume` —— 该漫画「有原图、缺译文」的页清单
+ * （**契约外增量端点**，见 docs/spec-notes.md G-07）。
+ *
+ * X-D1 的「继续翻译」按钮需要知道还有几页没翻，以及没有可续做的页时不该让按钮可点。
+ * 契约 §5.8 只给了张数汇总，故这里补一个只读的清单端点；不维护第二份索引，
+ * 直接读目录 —— 落盘仍是唯一真源。
+ */
+function handleResumePlan(req, res, cors, rawName) {
+  const { name } = resolveComicDir(rawName);
+  sendJson(res, 200, store.resumePlan(name), cors);
+}
+
+/**
+ * `POST /library/{comicName}/resume` —— 为缺译文的页补译文，进入**同一条**串行队列。
+ *
+ * body（可选）：`{ "seqs": [12, 13] }`；省略则续做全部缺页。
+ * 单次上限沿用契约 §5.2 的 20 —— 续做同样是一次 ≤20 张的提交，只是字节来自磁盘。
+ */
+function handleResume(req, res, cors, rawName) {
+  return readBody(req).then(async (body) => {
+    await assertSidecarReady();
+    const { name } = resolveComicDir(rawName);
+    let seqs;
+    if (body && body.length) {
+      let parsedBody = null;
+      try { parsedBody = JSON.parse(body.toString('utf8')); } catch { /* 允许空体 */ }
+      if (parsedBody && parsedBody.seqs !== undefined) {
+        if (!Array.isArray(parsedBody.seqs)) {
+          throw new ApiError('INVALID_IMAGE', 'seqs 必须是数组', { seqs: parsedBody.seqs });
+        }
+        seqs = parsedBody.seqs;
+      }
+    }
+    assertRootWritable(); // §2.2 DISK_FULL(507)：请求级落盘不可用
+    const { task } = store.createResumeTask(name, { seqs, source: sourceOf(req) });
+    sendJson(res, 201, store.createView(task), cors);
+  });
+}
+
 // ------------------------------------------------------------------ 路由
 
 function splitPath(pathname) {
@@ -539,6 +579,12 @@ async function route(req, res, cors, url) {
   // /library/{comicName}/reveal
   if (p.length === 3 && p[0] === 'library' && p[2] === 'reveal' && method === 'POST') {
     return handleReveal(req, res, cors, p[1]);
+  }
+  // /library/{comicName}/resume
+  if (p.length === 3 && p[0] === 'library' && p[2] === 'resume') {
+    if (method === 'GET') return handleResumePlan(req, res, cors, p[1]);
+    if (method === 'POST') return handleResume(req, res, cors, p[1]);
+    throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
   }
 
   throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });

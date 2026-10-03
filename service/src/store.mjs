@@ -165,22 +165,10 @@ export class Store {
     this._assertSeqRange(seqFrom, count, dirName);
 
     const items = this._buildItems(seqFrom, images, imageOrder);
-    const task = {
-      taskId: `tsk_${ulid()}`,
+    const task = this._newTask({
       comicName,
-      normalizedComicName: dirName,
       dirName,
-      outputDir: path.join(this.root, dirName),
-      status: 'queued',
-      queuePosition: 0,
-      lang: (payload && payload.lang) || { from: 'ja', to: 'zh' },
-      translator: (payload && payload.translator) || 'sakura',
-      clientTaskRef: (payload && payload.clientTaskRef) || null,
-      // 来源归因：由 server 层按契约 §2 的可选头 `X-Box-Client` 判定（见 spec-notes G-04）
-      source: source || 'unknown',
-      idempotencyKey: key || null,
-      createdAt: nowIso(),
-      finishedAt: null,
+      source,
       batches: [{
         batchIndex: 1,
         count,
@@ -190,10 +178,11 @@ export class Store {
         idempotencyKey: key || null,
         items,
       }],
-      events: [],
-      clients: new Set(),
-      cancelRequested: false,
-    };
+      lang: payload && payload.lang,
+      translator: payload && payload.translator,
+      clientTaskRef: payload && payload.clientTaskRef,
+      idempotencyKey: key,
+    });
     for (const item of items) this.blobs.set(`${task.taskId}:${item.seq}`, item.__bytes);
     for (const item of items) delete item.__bytes;
 
@@ -202,6 +191,31 @@ export class Store {
     this._persistNow(task);
     this._enqueueOrStart(task);
     return { task, replay: false };
+  }
+
+  /** 组装 Task 的三层模型骨架（建单与本地续做共用，避免两处字面量走偏） */
+  _newTask({ comicName, dirName, source, batches, lang, translator, clientTaskRef, idempotencyKey }) {
+    return {
+      taskId: `tsk_${ulid()}`,
+      comicName,
+      normalizedComicName: dirName,
+      dirName,
+      outputDir: path.join(this.root, dirName),
+      status: 'queued',
+      queuePosition: 0,
+      lang: lang || { from: 'ja', to: 'zh' },
+      translator: translator || 'sakura',
+      clientTaskRef: clientTaskRef || null,
+      // 来源归因：由 server 层按契约 §2 的可选头 `X-Box-Client` 判定（见 spec-notes G-04）
+      source: source || 'unknown',
+      idempotencyKey: idempotencyKey || null,
+      createdAt: nowIso(),
+      finishedAt: null,
+      batches,
+      events: [],
+      clients: new Set(),
+      cancelRequested: false,
+    };
   }
 
   /** POST /tasks/{taskId}/batches */
@@ -300,6 +314,136 @@ export class Store {
         `该漫画名页数已达上限（${MAX_SEQ}），请另存为新目录`,
         { limit: MAX_SEQ, seqFrom, seqTo: seqFrom + count - 1, normalizedComicName: dirName });
     }
+  }
+
+  // ---------------------------------------------------------------- 本地续做
+
+  /**
+   * 扫描目录，找出「有原图、缺译文」的页。
+   *
+   * 契约 §5.8 的 `GET /library` 只给张数汇总，没有「哪几页还没翻」这一信息；
+   * 而 X-D1 的「继续翻译」按钮要的正是这个集合（spec-notes.md G-07）。
+   * 这里**不维护第二份索引**——直接读目录，落盘依旧是唯一真源。
+   */
+  resumePlan(dirName) {
+    const dir = path.join(this.root, dirName);
+    const originals = new Map(); // seq → { ext, byteSize, name }
+    const translated = new Set();
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir);
+    } catch {
+      throw new ApiError('TASK_NOT_FOUND', '漫画目录不存在', { comicName: dirName, outputDir: dir });
+    }
+    for (const f of entries) {
+      let m = ORIGINAL_SCAN_RE.exec(f);
+      if (m) {
+        let byteSize = 0;
+        try { byteSize = fs.statSync(path.join(dir, f)).size; } catch { /* ignore */ }
+        originals.set(Number(m[1]), { ext: f.split('.').pop().toLowerCase(), byteSize, name: f });
+        continue;
+      }
+      m = TRANSLATED_SCAN_RE.exec(f);
+      if (m) translated.add(Number(m[1]));
+    }
+    const pendings = [...originals.entries()]
+      .filter(([seq]) => !translated.has(seq))
+      .map(([seq, meta]) => ({ seq, ext: meta.ext, byteSize: meta.byteSize, originalFile: meta.name }))
+      .sort((a, b) => a.seq - b.seq);
+    return {
+      comicName: dirName,
+      dirName,
+      outputDir: dir,
+      imageCount: originals.size,
+      translatedCount: translated.size,
+      pendingCount: pendings.length,
+      pendings,
+    };
+  }
+
+  /**
+   * 本地续做：为目录中「有原图、缺译文」的页补译文。
+   *
+   * 与 `POST /tasks` 的两处关键差异，都是为了「不重复、不覆盖」：
+   *  · **不新增编号**：item.seq 沿用磁盘上原图的序号 —— 续做是在补同一本漫画缺的那几页，
+   *    不是往里追加新页。若走 `_nextSeqFor`，会产生与既有原图重复的第二份原图。
+   *  · **不重写原图**：只有译文落盘（原图已存在，契约 §7.2「永不覆盖」）。
+   *
+   * 单次上限沿用契约 §5.2 的 20 —— 续做同样是一批 ≤20 张的提交，只是字节来源不同。
+   */
+  createResumeTask(dirName, { seqs, source } = {}) {
+    const plan = this.resumePlan(dirName);
+    const want = seqs && seqs.length ? new Set(seqs.map(Number)) : null;
+    const pendings = want ? plan.pendings.filter((p) => want.has(p.seq)) : plan.pendings;
+
+    if (pendings.length === 0) {
+      throw new ApiError('TASK_NOT_FOUND',
+        plan.imageCount === plan.translatedCount
+          ? '该漫画已全部翻译完成，没有待续做的页'
+          : '指定的页不存在或已有译文',
+        { comicName: dirName, imageCount: plan.imageCount, translatedCount: plan.translatedCount });
+    }
+    if (pendings.length > BATCH_LIMIT) {
+      throw new ApiError('BATCH_LIMIT_EXCEEDED',
+        `待续做 ${pendings.length} 张，超过单次上限 ${BATCH_LIMIT} 张；请分批续做`,
+        { limit: BATCH_LIMIT, submitted: pendings.length, seqs: pendings.map((p) => p.seq) });
+    }
+
+    const items = pendings.map((p) => ({
+      seq: p.seq,
+      ext: p.ext,
+      mime: p.ext === 'jpg' ? 'image/jpeg' : `image/${p.ext}`,
+      byteSize: p.byteSize,
+      /** 提示 worker：原图从磁盘读，内存里没有上传字节 */
+      fromDisk: true,
+      status: 'pending',
+      saved: false,
+      outputFile: null,
+      originalFile: p.originalFile,
+      sha256: null,
+      durationMs: null,
+      retryCount: 0,
+      reason: null,
+    }));
+
+    const seqFrom = pendings[0].seq;
+    const seqTo = pendings[pendings.length - 1].seq;
+    const task = this._newTask({
+      comicName: dirName,
+      dirName,
+      source,
+      batches: [{
+        batchIndex: 1,
+        count: items.length,
+        seqFrom,
+        seqTo,
+        status: 'queued',
+        idempotencyKey: null,
+        items,
+      }],
+      idempotencyKey: null,
+    });
+
+    this.tasks.set(task.taskId, task);
+    this._persistNow(task);
+    this._enqueueOrStart(task);
+    return { task, replay: false };
+  }
+
+  /** 读磁盘上已有的原图字节（续做路径专用）；找不到返回 null，由调用方按失败收尾 */
+  _readOriginalFromDisk(task, seq) {
+    const dir = this.taskDir(task);
+    try {
+      for (const f of fs.readdirSync(dir)) {
+        const m = ORIGINAL_SCAN_RE.exec(f);
+        if (m && Number(m[1]) === seq) {
+          const p = path.join(dir, f);
+          assertInsideRoot(this.root, p); // 与上传路径同一套校验，不多不少
+          return fs.readFileSync(p);
+        }
+      }
+    } catch { /* 落到调用方的 null 分支 */ }
+    return null;
   }
 
   /** nextSeq = max(目录内 ^(\d{3})\.(png|jpg|jpeg|webp)$ 的 N) + 1 */
@@ -443,8 +587,19 @@ export class Store {
     this._syncBatchStatuses(task);
 
     const t0 = Date.now();
-    const bytes = this.blobs.get(blobKey);
-    if (!bytes) throw new Error('原图字节已丢失（服务可能重启过）');
+    // 字节来源二选一：上传路径在内存（this.blobs），续做路径在磁盘（原图早已落盘）
+    const bytes = item.fromDisk ? this._readOriginalFromDisk(task, item.seq) : this.blobs.get(blobKey);
+    if (!bytes) {
+      if (!item.fromDisk) throw new Error('原图字节已丢失（服务可能重启过）');
+      // 续做时原图不见了：单张失败，不中断任务（其余页照常续做）
+      item.status = 'failed';
+      item.reason = 'original_missing';
+      item.durationMs = Date.now() - t0;
+      this._emitItemStatus(task, batch, item);
+      this._syncBatchStatuses(task);
+      await this._persist(task);
+      return;
+    }
 
     // 失败注入（覆盖 failed / partial_failed / 重试路径）；真实失败来自引擎
     const forceFail = config.failSeqs.has(item.seq) ||
@@ -548,8 +703,25 @@ export class Store {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); // 目录惰性创建
     assertInsideRoot(this.root, path.join(dir, original)); // 校验点 3：打开文件前
 
-    fs.writeFileSync(path.join(dir, original), originalBytes, { flag: 'wx', mode: 0o600 });
-    item.originalFile = original;
+    const originalPath = path.join(dir, original);
+    if (fs.existsSync(originalPath)) {
+      /*
+       * 原图已在磁盘上：**永不覆盖**（契约 §7.2）。
+       *  · 续做路径（item.fromDisk）下这是正常情形 —— 我们本来就是来补译文的。
+       *  · 但「已存在」必须是**同一份字节**；内容不同意味着 seq 撞号，此时静默跳过会让
+       *    用户的第 N 页被悄悄替换成别的图，故宁可报 409 让上层显式处理。
+       */
+      const onDisk = fs.readFileSync(originalPath);
+      if (!onDisk.equals(originalBytes)) {
+        throw new ApiError('SEQUENCE_OVERFLOW',
+          `序号 ${seq3(item.seq)} 已被另一张原图占用（内容不一致），拒绝覆盖`,
+          { seq: item.seq, dirName: task.dirName, onDiskBytes: onDisk.length, newBytes: originalBytes.length });
+      }
+      item.originalFile = original;
+    } else {
+      fs.writeFileSync(originalPath, originalBytes, { flag: 'wx', mode: 0o600 });
+      item.originalFile = original;
+    }
 
     fs.writeFileSync(path.join(dir, translatedName), translated.bytes, { flag: 'wx', mode: 0o600 });
     item.outputFile = translatedName;
@@ -916,6 +1088,7 @@ export class Store {
           seq: i.seq,
           ext: i.ext,
           byteSize: i.byteSize,
+          fromDisk: !!i.fromDisk,
           status: i.status,
           saved: i.saved,
           originalFile: i.originalFile,

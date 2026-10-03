@@ -131,6 +131,8 @@ Vite + React 18 + TypeScript，样式用**原生 CSS + CSS 变量**（`cssVars(m
 | A13 | 队列 | 纯 FIFO 无插队；`GET /queue` 是位次与 eta 的**唯一来源**（客户端不估算） |
 | A14 | 安全 | 路径三次校验任一失败 → 403 + 安全日志；伪造 `filename="evil.png"` 但字节是 WEBP → 落盘扩展名取**嗅探结果**；根目录黑名单（`/`、`C:\`、家目录本身、`/tmp`、系统目录）拒绝 |
 | A15 | 任务列表（**契约外增量**） | `GET /tasks` 返回 running → queued → 终态（`finishedAt` 倒序）；终态行**留在列表里**（X-C1 的历史行来源）；来源归因取 `X-Box-Client`（`extension/*`→`extension`／`box-desktop/*`→`desktop`／缺省→`unknown`）；`status`/`limit` 过滤正确且 `limit=0 → 400`；**新增端点不得污染 `/queue` 语义**、不得改变 §5.2 响应形状；跨重启靠 `STATE_DIR/tasks/*.json` 恢复。依据见 `docs/spec-notes.md` G-04 |
+| A16 | 漫画库 | `GET /library` 逐漫画给出 `imageCount`/`translatedCount`/`byteSize`，且 `byteSize` **等于目录内所有文件字节数之和**（G-01 口径，与磁盘实测一致）；顶层 `totalImages`/`totalBytes` 为全库聚合；原/译文件流同 `seq` 可用；不存在的 `seq` → `404`（不返回空文件）；`reveal` 返回实际目录；受鉴权保护 |
+| A17 | 本地续做（**契约外增量**） | `GET /library/{name}/resume` 只列出「有原图、缺译文」的页；`POST` 建单后进入**同一条**串行队列；**不新增原图编号、不改动已存在原图的字节**（§7.2 永不覆盖）；无缺页 / 指定已有译文的页 → `404`；`seqs` 非数组 → `400`；受鉴权保护。依据见 `docs/spec-notes.md` G-07 |
 
 ### B. 服务生命周期
 
