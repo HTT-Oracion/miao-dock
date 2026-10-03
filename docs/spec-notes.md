@@ -699,3 +699,18 @@ MIAO_E2E_TMP="$(node -e 'console.log(require("os").tmpdir())')/miao-e2e" npm run
 | G-13 | 《02》§2 部署形态 | **打包分发本轮未做**：`tauri.conf.json` 的 `bundle.resources` 为空、无 `externalBin`、`build.rs` 也没拷贝步骤，而 `service.rs::resolve_entry` 是从可执行文件向上找 6 层 —— 所以 `npm run app:build` 装出来的 `.app` 里**没有** `service/` 与 `engine/`，起不来服务。当前只有开发态（`npm run app:dev` / debug 二进制） | **本轮裁定不做**（用户 2026-10-03）。它**独立于**「自带 Node 运行时」（后者按 R-b 属 v2）：即使继续用系统 `node`，也要先把两个脚本目录打进包内、并把入口解析改成 `resource_dir()`。已在 `README.md` 写明，避免有人以为现有构建产物可分发 |
 | G-14 | 设计稿 × 深色模式（§9「只换变量不换结构」未覆盖原生窗口） | **macOS 原生标题栏（含红绿灯按钮那条 bar）不跟随前端主题**：主题是「换 CSS 变量」实现的，只作用于 WebView 内容区，窗口标题栏一直是系统浅色 → 暗色时「顶部一条白、下面一片黑」 | **已修复**（用户 2026-10-03）：前端 `useThemeTokens` 里随主题调用新命令 `set_theme`，Rust 侧用 `Window::set_theme(Option<Theme>)` 同步给窗口，标题栏与红绿灯配色随之对齐；`None` 表示跟随系统。这是原生窗口的**系统级**表现，无法用前端像素断言覆盖（WebView 看不到标题栏），以「Rust 编译通过 + 前端类型检查通过」为准 |
 | G-18 | G-14 的**修正**（原「已修复」结论被证伪） | 用户实测反馈：**`set_theme` 生效了，但顶部与主体的主题仍不一致**。根因是 `Window::set_theme` 只把「**模式**」（dark/light）告诉系统，系统**自选**一个它认为合适的标题栏底色 —— 而 macOS 那份深色是 `#1E1E1E` 一类的**中性灰**，与设计令牌 `board` 的 `#140F29`（带紫调）天然对不上。所以 G-14 修的是「模式没同步」，**没修「颜色没同步」**，而用户要的是后者 | **已修复**：① `tauri.conf.json` 加 `titleBarStyle: "Transparent"`（tao 的 `setTitlebarAppearsTransparent`）—— 标题栏底色即窗口底色；② 加 `backgroundColor: "#FAFAFF"` 作初值；③ `set_theme` 命令里补 `Window::set_background_color`，把底色**钉死成 `board` 令牌**（浅 `#FAFAFF` / 深 `#140F29`，与 `body` 背景同一个令牌）。**关键：`decorations` 保持原生** —— 不画自绘按钮、不加 `data-tauri-drag-region`，于是原生标题栏 / 原生红绿灯 / 原生拖拽全部保留，上一轮丢掉的那批系统行为一个不丢。✅ **用户已确认视觉达标（2026-10-04，macOS 深色）**。⚠️ 遗留：Windows 无 `Transparent` 等价物（本机改走 `backgroundColor`，浅色下 `board` 接近白、差异可忽略），**未装机验证** |
+
+---
+
+## ver2.0 开发决策（PD 系列 · 2026-10-04）
+
+> 完整裁定见 `/Users/doro/WorkBuddy/Claw/插件与box ver2.0/08-产品决策记录-ver2.0.md`。
+> 效力高于 00–07 各方案文档。以下只记**代码层面必须遵守的**部分。
+
+| 编号 | 事项 | 结论 |
+|---|---|---|
+| **D-21** | 参考实现 源码获取与授权 | 仓库 `参考实现` **公开可 clone**（首次 404 是代理缓存，重试 200 —— 用已知可访问的私有仓库做对照组才定位到这点）。许可证 **GPL-3.0**：约束分发不约束自用，**个人自用不触发开源义务**（已由项目所有者裁定不管法务）。⚠️ 若将来对外分发（免费也算），GPL-3.0 传染性会要求整个项目开源；届时若不愿开源必须**重写**。故移植代码**集中在 `app/src-tauri/src/music/` 单一目录**做物理隔离，将来抽离是删目录，不与自研逻辑纠缠 |
+| **D-22** | 音乐模块实现策略：**逻辑搬、界面重写** | 参考实现 音乐模块实测 **Rust 16,193 行 / 前端 11,532 行 / 106 条 Tauri 命令**，含五平台接口完整实现。上一轮「五平台需逆向」的核心判断**作废** —— 不再从零逆向，改为移植。分层：**Rust 侧近乎直接搬**（纯逻辑、无 UI、实测跨平台）；**前端不可逐字搬**（`MusicPage.tsx` 含 **376 处 Chakra UI**，与 Box 令牌体系冲突，设计稿已定不迁 Chakra），按设计稿重写。⚠️ 这条推翻《06》「从零实现五平台接口」的整个工作量估算，排期须按新策略重估 |
+| **D-23** | 平台耦合实测：几乎为零 | 全模块仅 **2 处 Windows-only**，都在 `qishui.rs`（`std::os::windows::process::CommandExt`）。**核心能力（网易云/酷狗/QQ/咪咕 + 代理 + 加密 + 歌词）纯跨平台**，依赖（reqwest/axum/aes/sha1/base64）全跨平台。而汽水正是《06》拍板「不做」的 —— **砍掉它平台耦合即归零**。故汽水由「不做」改为**延后**（代码保留，不排首批） |
+| **D-24** | 首个验证平台是 **Windows 而非 macOS** | 与 Box 现状相反（当前 macOS 优先）。理由：参考实现 是 Windows-only 项目，其五平台接口只在 Windows 上被验证过 —— **在原生环境验问题最少**，先在 macOS 验反而会把「参考实现 本身没验过的问题」误判成「移植引入的问题」 |
+| **M-0**（已完成） | 参考源码落盘 `vendor/music-reference/` | 只取音乐相关部分（174M → **1.3M**），非编译依赖、不入库（`.gitignore` 加 `vendor/`）。`README.md` 记录来源、commit、许可影响、文件清单与使用纪律。⚠️ 参考文件**保持原样不改**，改动全在 `app/src-tauri/src/music/` 侧，便于 diff「移植的」vs「Box 特有的」 |
