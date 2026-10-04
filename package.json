@@ -24,7 +24,8 @@
     "capture": "node scripts/capture.mjs",
     "probe:png": "node scripts/make-probe-png.mjs",
     "app": "npm --prefix app run tauri dev",
-    "app:build": "npm --prefix app run tauri build"
+    "app:build": "npm --prefix app run tauri build",
+    "check:docs": "node scripts/docs-consistency-check.mjs"
   },
   "engines": {
     "node": ">=20"

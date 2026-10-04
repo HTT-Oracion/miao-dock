@@ -58,9 +58,9 @@ npm run selftest:app[:refute] # B 组应用生命周期 12 条（含反证）
 npm run e2e                   # D 组端到端
 npm run check:ia              # IA 结构 24 条
 npm run check:tls             # TLS 依赖链 14 条（三层）
-npm run check:music[:refute]  # 音乐模块平台覆盖 63 条 / 反证 16 条
-npm run check:settings[:refute] # 设置页「播放·媒体」68 条 / 反证 15 条
-npm run check:units[:refute]  # 前端分层 / hooks 收口 / 路径别名 / 状态管理 27 条 / 反证 33 条
+npm run check:music[:refute]  # 音乐平台 / 心动模式 / 桌面歌词 102 条 / 反证 55 条
+npm run check:settings[:refute] # 设置页「播放·媒体」72 条 / 反证 15 条
+npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 32 条 / 反证 38 条
 cd app && npx tsc --noEmit && npx vite build   # 前端类型与构建
 cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 ```

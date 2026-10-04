@@ -69,9 +69,9 @@ npm run capture               # 截图取证（需屏幕解锁；不满足条件
 # 结构断言（每条都带反证轮，见 docs/spec-notes.md 与 AGENTS.md §3）
 npm run check:ia              # IA 结构 24 条（侧栏两级 / 视图 Tab / 设置两栏壳 / 小节分层）
 npm run check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
-npm run check:music           # 音乐模块四平台覆盖 63 条（反证：check:music:refute）
-npm run check:settings        # 设置页「播放·媒体」裁定结果 68 条（反证：check:settings:refute）
-npm run check:units           # 前端分层 / hooks 收口 / 路径别名 / 状态管理 27 条（反证：check:units:refute）
+npm run check:music           # 音乐平台 / 心动模式 / 桌面歌词 102 条（反证：check:music:refute）
+npm run check:settings        # 设置页「播放·媒体」裁定结果 72 条（反证：check:settings:refute）
+npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动岛 32 条（反证：check:units:refute）
 ```
 
 各组判据与「为什么这么测」见 `docs/dev-plan.md` §4；一路踩过的环境陷阱见 `docs/spec-notes.md`。
