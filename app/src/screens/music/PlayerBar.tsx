@@ -3,6 +3,7 @@ import {
   MonitorSpeaker,
   Pause,
   Play,
+  Settings,
   SkipBack,
   SkipForward,
   Volume2,
@@ -13,11 +14,17 @@ import { useState } from 'react';
 import { QUALITY_OPTIONS } from '@music/player-options';
 import { fmtTime, qualityLabel, useMusicStore } from '@music/store';
 import { IconButton, PlayModeButton, Select } from '@components/units';
+import { DesktopLyricsSettingsModal } from '@screens/music/DesktopLyricsSettingsModal';
 
 /**
  * 底部播放条。
  * 控制组用 `position:absolute; left:50%; translateX(-50%)` 相对整条居中（设计稿明确注的排版），
- * 刻意不用 flex 居中 —— flex 会被左右两侧（封面/歌名、音量）的宽度带偏，两端不等宽时按设计稿就不在正中。
+ * 刻意不用 flex 居中 —— flex 会被左右两侧（封面/歌名、右侧控件组）的宽度带偏，两端不等宽时按设计稿就不在正中。
+ *
+ * 分区照参考实现：**中间只放「上一首 / 播放暂停 / 下一首 / 播放模式」这组传输控件**
+ * （参考里居中组恰是这四个），音质、音量、桌面歌词、队列、关闭播放都归**右侧组**。
+ * 早先我们把队列/桌面歌词/关闭播放塞在居中组里，结果是「中间一坨、右边空着」，
+ * 与参考的构图不一致 —— 这次按参考把非传输控件整体挪到右侧。
  *
  * onSeek 由 MusicScreen 注入（转发 `store.seek`）：改 store 进度与挪 `<audio>.currentTime`
  * 两件事已收进 store action 内 —— 早先它由音乐屏自己拿着 audioRef 做，
@@ -31,6 +38,8 @@ import { IconButton, PlayModeButton, Select } from '@components/units';
  * store action，两处不会各持一份状态）。窗口的生死归主窗管：歌词窗自己的关闭按钮
  * 调的是 Rust 的 `close_lyrics_window`，不直接改 store，所以这个开关是「意图」的表达，
  * 详见 store 里 `lyricsWindowOpen` 的注释。
+ * 它右侧的「桌面歌词设置」（参考实现用的 Settings 图标）只负责打开弹窗；
+ * 弹窗内容项由后续任务补齐，这里不重复持有偏好。
  */
 export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hidden?: boolean }) {
   const currentSong = useMusicStore((s) => s.currentSong);
@@ -57,6 +66,9 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
   const setQueueOpen = useMusicStore((s) => s.setQueueOpen);
   const setExpanded = useMusicStore((s) => s.setExpanded);
   const setLyricsWindowOpen = useMusicStore((s) => s.setLyricsWindowOpen);
+
+  /** 桌面歌词设置弹窗的开合（纯 UI 状态，不落 store：它没有需要跨屏/跨窗共享的语义） */
+  const [dlSettingsOpen, setDlSettingsOpen] = useState(false);
 
   /**
    * 进度条的「拖拽会话」状态：非 null 表示用户正在拖/敲键盘，界面显示 dragMs；null 表示跟随 store 的实时进度。
@@ -87,15 +99,18 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
   return (
     <div className="music-player">
       <div className="music-player-row">
-        <div className="music-pb-cover" onClick={() => setExpanded(true)} title="展开播放器">
-          {currentSong?.cover ? <img src={currentSong.cover} alt="" /> : null}
-        </div>
-        <div className="music-pb-tx" onClick={() => setExpanded(true)} title="展开播放器">
-          <b>{currentSong?.name ?? '未在播放'}</b>
-          <span>{currentSong?.artist ?? '从左侧歌单或搜索结果里选一首'}</span>
+        {/* 左侧：封面 + 歌名/歌手（固定不收缩，标题内部再截断） */}
+        <div className="music-pb-l">
+          <div className="music-pb-cover" onClick={() => setExpanded(true)} title="展开播放器">
+            {currentSong?.cover ? <img src={currentSong.cover} alt="" /> : null}
+          </div>
+          <div className="music-pb-tx" onClick={() => setExpanded(true)} title="展开播放器">
+            <b>{currentSong?.name ?? '未在播放'}</b>
+            <span>{currentSong?.artist ?? '从左侧歌单或搜索结果里选一首'}</span>
+          </div>
         </div>
 
-        {/* 绝对居中的控制组 */}
+        {/* 中间：绝对居中的传输控制组（上一首 / 播放暂停 / 下一首 / 播放模式） */}
         <div className="music-ctrl">
           <IconButton title="上一首" onClick={() => prev()}>
             <SkipBack size={17} />
@@ -107,9 +122,40 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
             <SkipForward size={17} />
           </IconButton>
           <PlayModeButton mode={playMode} onCycle={() => cycleMode()} />
-          <IconButton title="播放队列" onClick={() => setQueueOpen(true)}>
-            <ListMusic size={16} />
-          </IconButton>
+        </div>
+
+        {/* 右侧：音质（档位文字）+ 音量 + 桌面歌词 + 桌面歌词设置 + 播放队列 + 关闭播放 */}
+        <div className="music-pb-r">
+          {/* 音质档位下拉（要的档位）：触发器显示档位名（如「无损」），不是图标。setPlaybackQuality 是 async，用 void 显式忽略 Promise */}
+          <Select
+            className="music-q-sel"
+            label="音质档位"
+            value={playbackQuality}
+            options={QUALITY_OPTIONS}
+            onChange={(v) => void setPlaybackQuality(v)}
+          />
+          <div
+            className="music-vol"
+            /*
+             * 滚轮调音量：仅改数值，不拦默认事件。
+             * 不调 e.preventDefault()：React 的 wheel 监听是被动（passive）的，调用无效且会在控制台刷警告；
+             * 本容器位于播放条内、外层并不滚动，也就没有需要拦截的默认滚动行为。
+             */
+            onWheel={(e) => stepVolume(e.deltaY < 0 ? 0.05 : -0.05)}
+          >
+            {/* 静音是「不改音量值」的正交状态，图标随 muted 切换，文案也一并切换 */}
+            <IconButton title={muted ? '取消静音' : '静音'} onClick={() => toggleMute()}>
+              {muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+            </IconButton>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={volume}
+              onChange={(e) => setVolume(Number(e.target.value))}
+            />
+          </div>
           {/* 桌面歌词：独立置顶小窗。title 随状态切换，让同一个按钮的「下一步」始终明确 ——
               开着时看到「关闭桌面歌词」比看到「桌面歌词」更能说明再点一下会发生什么。
               active 走 IconButton 自带的 is-on，与旁边按钮的激活态同一套视觉。 */}
@@ -120,33 +166,17 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
           >
             <MonitorSpeaker size={16} />
           </IconButton>
+          {/* 桌面歌词设置：打开独立弹窗（内容项后续任务补，这里只给入口） */}
+          <IconButton title="桌面歌词设置" onClick={() => setDlSettingsOpen(true)}>
+            <Settings size={16} />
+          </IconButton>
+          <IconButton title="播放队列" onClick={() => setQueueOpen(true)}>
+            <ListMusic size={16} />
+          </IconButton>
           {/* 「关闭播放」= 停下当前这首（保留队列），与上面的「播放队列」（清空列表）是两件事 */}
           <IconButton title="关闭播放" onClick={() => closePlayback()}>
             <X size={15} />
           </IconButton>
-        </div>
-
-        <div
-          className="music-vol"
-          /*
-           * 滚轮调音量：仅改数值，不拦默认事件。
-           * 不调 e.preventDefault()：React 的 wheel 监听是被动（passive）的，调用无效且会在控制台刷警告；
-           * 本容器位于播放条内、外层并不滚动，也就没有需要拦截的默认滚动行为。
-           */
-          onWheel={(e) => stepVolume(e.deltaY < 0 ? 0.05 : -0.05)}
-        >
-          {/* 静音是「不改音量值」的正交状态，图标随 muted 切换，文案也一并切换 */}
-          <IconButton title={muted ? '取消静音' : '静音'} onClick={() => toggleMute()}>
-            {muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
-          </IconButton>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={volume}
-            onChange={(e) => setVolume(Number(e.target.value))}
-          />
         </div>
       </div>
 
@@ -178,15 +208,9 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
             {currentBitrate > 0 ? ` ${Math.round(currentBitrate / 1000)}kbps` : ''}
           </span>
         ) : null}
-        {/* 音质档位下拉（要的档位）；setPlaybackQuality 是 async，用 void 显式忽略 Promise */}
-        <Select
-          className="music-q-sel"
-          label="音质档位"
-          value={playbackQuality}
-          options={QUALITY_OPTIONS}
-          onChange={(v) => void setPlaybackQuality(v)}
-        />
       </div>
+
+      <DesktopLyricsSettingsModal open={dlSettingsOpen} onClose={() => setDlSettingsOpen(false)} />
     </div>
   );
 }

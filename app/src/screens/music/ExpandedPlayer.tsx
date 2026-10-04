@@ -1,10 +1,31 @@
-import { ChevronLeft, Pause, Play, SkipBack, SkipForward, Volume2 } from 'lucide-react';
+import {
+  Aperture,
+  AudioWaveform,
+  ChevronLeft,
+  Disc3,
+  Droplets,
+  Film,
+  Heart,
+  Image as ImageIcon,
+  ListMusic,
+  MonitorSpeaker,
+  Palette,
+  Pause,
+  Play,
+  SkipBack,
+  SkipForward,
+  Volume2,
+  VolumeX,
+  Waves,
+  type LucideIcon,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { capsOf } from '@music/platform';
-import { SKINS } from '@music/player-options';
+import { LYRICS_SIZE, QUALITY_OPTIONS, SKINS, STYLE_PREVIEW_ORDER } from '@music/player-options';
 import { coverProxyUrl, fmtTime, lyricIndexAt, songKey, useMusicStore } from '@music/store';
+import type { PlayerSkin } from '@music/store';
 import type { MusicComment } from '@music/types';
-import { Empty, IconButton, PlayModeButton } from '@components/units';
+import { ColorPicker, Empty, IconButton, PlayModeButton, Select, Switch } from '@components/units';
 import { useCoverColor } from '@hooks/useCoverColor';
 
 /**
@@ -13,6 +34,16 @@ import { useCoverColor } from '@hooks/useCoverColor';
  * 精确描述「所有以 -- 开头的字符串键」，既不用 any 糊，也不丢类型检查。
  */
 type CSSVarStyle = React.CSSProperties & Record<`--${string}`, string | number>;
+
+/** 「切换样式」触发器上的图标：按当前皮肤换图标（照参考实现 1746–1759 的映射） */
+const STYLE_ICON: Record<PlayerSkin, LucideIcon> = {
+  glass: Droplets,
+  modern: Palette,
+  spectrum: AudioWaveform,
+  vinyl: Disc3,
+  cover: ImageIcon,
+  immersive: Waves,
+};
 
 function CommentRow({ c }: { c: MusicComment }) {
   return (
@@ -34,6 +65,13 @@ function CommentRow({ c }: { c: MusicComment }) {
  * 歌词区上下边缘用 mask 渐隐；当前行按 progressMs 定位并滚动到中央。
  * 「歌词 / 评论」Tab：评论只在 `capsOf(playbackSource).comments` 为真（网易云）时出现；
  * 若因为切平台导致评论 Tab 仍处于选中态，正文会兜底显示「当前平台暂不支持评论」，不留白。
+ *
+ * 底部控制栏照参考实现分**左中右三区**（左/右两区绝对定位贴边，中区绝对居中）：
+ *  · 左：红心（仅登录）、碟片模式、切换样式（带 NEW 角标）、动态开关（仅「现代」）；
+ *  · 中：播放模式 + 上一首/播放暂停/下一首 + 音量（hover 向右展开滑块）；
+ *  · 右：歌词高亮色、歌词字号、音质、桌面歌词、播放队列。
+ * 采用绝对定位而非 flex 均分，是因为左右两侧控件数量会随皮肤/登录态增减——
+ * 只有让中区脱离文档流，两侧怎么变它都还在正中（与参考同款做法）。
  */
 export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const expanded = useMusicStore((s) => s.expanded);
@@ -43,6 +81,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const progressMs = useMusicStore((s) => s.progressMs);
   const durationMs = useMusicStore((s) => s.durationMs);
   const volume = useMusicStore((s) => s.volume);
+  const muted = useMusicStore((s) => s.muted);
   const playMode = useMusicStore((s) => s.playMode);
   const skin = useMusicStore((s) => s.skin);
   const parsedLyrics = useMusicStore((s) => s.parsedLyrics);
@@ -58,6 +97,12 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const lyricsHighlightColor = useMusicStore((s) => s.lyricsHighlightColor);
   const vinylColorMode = useMusicStore((s) => s.vinylColorMode);
   const vinylCustomColor = useMusicStore((s) => s.vinylCustomColor);
+  // ---- 底部右区/左区要用的播放与账号状态 ----
+  const playbackQuality = useMusicStore((s) => s.playbackQuality);
+  const lyricsWindowOpen = useMusicStore((s) => s.lyricsWindowOpen);
+  const queueOpen = useMusicStore((s) => s.queueOpen);
+  const loginInfo = useMusicStore((s) => s.loginInfo);
+  const likedSongIds = useMusicStore((s) => s.likedSongIds);
 
   const setSkin = useMusicStore((s) => s.setSkin);
   // 收起走 store 的 closeExpanded（带电）—— 直接 setExpanded(false) 会跳过退场动画
@@ -67,10 +112,22 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const prev = useMusicStore((s) => s.prev);
   const cycleMode = useMusicStore((s) => s.cycleMode);
   const setVolume = useMusicStore((s) => s.setVolume);
+  const stepVolume = useMusicStore((s) => s.stepVolume);
+  const toggleMute = useMusicStore((s) => s.toggleMute);
   const setCommentTab = useMusicStore((s) => s.setCommentTab);
   const loadComments = useMusicStore((s) => s.loadComments);
+  const toggleLike = useMusicStore((s) => s.toggleLike);
+  const setDiscMode = useMusicStore((s) => s.setDiscMode);
+  const setDynamicEnabled = useMusicStore((s) => s.setDynamicEnabled);
+  const setLyricsFontSize = useMusicStore((s) => s.setLyricsFontSize);
+  const setLyricsHighlightColor = useMusicStore((s) => s.setLyricsHighlightColor);
+  const setVinylColorMode = useMusicStore((s) => s.setVinylColorMode);
+  const setVinylCustomColor = useMusicStore((s) => s.setVinylCustomColor);
+  const setPlaybackQuality = useMusicStore((s) => s.setPlaybackQuality);
+  const setLyricsWindowOpen = useMusicStore((s) => s.setLyricsWindowOpen);
+  const setQueueOpen = useMusicStore((s) => s.setQueueOpen);
 
-  const [skinOpen, setSkinOpen] = useState(false);
+  const [styleMenuOpen, setStyleMenuOpen] = useState(false);
   const activeRef = useRef<HTMLDivElement>(null);
   const loadedKeyRef = useRef('');
 
@@ -78,6 +135,13 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const skinMeta = SKINS.find((s) => s.id === skin) ?? SKINS[0];
   const activeLine = lyricIndexAt(parsedLyrics, progressMs / 1000);
   const curKey = currentSong ? songKey(currentSong) : '';
+
+  // ---- 样式分支：哪些控件按皮肤显隐，全在这里判定（见下方各条注释） ----
+  const isModern = skin === 'modern';
+  const isImmersive = skin === 'immersive';
+  const isSpectrum = skin === 'spectrum';
+  const isVinyl = skin === 'vinyl';
+  const isCover = skin === 'cover';
 
   // ---- 偏好落地的派生值 ----
   // 动态背景：只有 modern/immersive 两种皮肤有可流动的渐变（见 app.css 的 is-dynamic 说明）
@@ -95,6 +159,32 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
 
   // 彩胶底色：custom 用用户固定色，auto 用本地取到的封面主色（取不到时 hook 已回落默认色）
   const vinylAccent = vinylColorMode === 'custom' ? vinylCustomColor : coverColor.hex;
+
+  const isLiked = !!currentSong && likedSongIds.has(currentSong.id);
+  const logged = !!loginInfo?.logged_in;
+  // 「切换样式」按钮的图标随当前皮肤切换（表里查不到时兜底 Waves）
+  const StyleIcon = STYLE_ICON[skin] ?? Waves;
+
+  /**
+   * 歌词高亮色控件的当前值。
+   * 透明彩胶下它改的其实是**胶片色**（参考实现同款语义联动）：
+   * auto 模式显示提取出的封面色，custom 模式显示用户固定色；其余皮肤就是歌词高亮色。
+   */
+  const highlightValue = isVinyl
+    ? vinylColorMode === 'custom'
+      ? vinylCustomColor
+      : vinylAccent
+    : lyricsHighlightColor;
+
+  const onHighlightChange = (c: string) => {
+    // 彩胶下选色 = 固定为手动色（置 custom），并同时写进胶片色；其余皮肤只改歌词高亮色
+    if (isVinyl) {
+      setVinylCustomColor(c);
+      setVinylColorMode('custom');
+    } else {
+      setLyricsHighlightColor(c);
+    }
+  };
 
   // 根节点类名：皮肤 + 浅色 + 动态背景 + 碟片模式（暂停时唱片停转）+ 退场中
   const rootClass = [
@@ -136,6 +226,10 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   if (!expanded) return null;
 
   const showComments = commentTab === 'comments';
+  // 「切换样式」弹层的卡片顺序照参考 STYLE_PREVIEWS：从皮肤表按顺序取元信息
+  const styleCards = STYLE_PREVIEW_ORDER.map((id) => SKINS.find((s) => s.id === id)).filter(
+    (s): s is (typeof SKINS)[number] => !!s,
+  );
 
   return (
     <div className={rootClass} style={rootStyle}>
@@ -216,35 +310,178 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
 
       <div className="music-exp-bottom">
         <div className="music-exp-brow">
-          <div className="music-exp-l">
-            <button type="button" className="music-exp-chip" onClick={() => setSkinOpen((v) => !v)}>
-              皮肤：{skinMeta.label}
-            </button>
+          {/* ── 左区（绝对贴左）────────────────────────────────────────── */}
+          <div className="music-exp-bl">
+            {/* 红心：仅登录后显示（未登录点了也写不进去），已红心时填充红色 */}
+            {logged ? (
+              <IconButton
+                title={isLiked ? '取消红心' : '红心'}
+                onClick={() => {
+                  if (currentSong) void toggleLike(currentSong);
+                }}
+              >
+                <Heart
+                  size={20}
+                  color={isLiked ? '#e53e3e' : undefined}
+                  fill={isLiked ? '#e53e3e' : 'none'}
+                />
+              </IconButton>
+            ) : null}
+
+            {/* 碟片模式：沉浸/音域回响（全屏场景无封面）、透明彩胶（自带胶片）与封面渐染
+                （左侧已是满铺封面）下**隐藏** —— 这四种样式里封面本就不是「一张方图」，
+                再叠一层碟片模式要么无意义、要么与样式自身的封面处理冲突（彩胶自己就是唱片）。
+                只有「现代 / 通透」这种标准方形封面才需要它。 */}
+            {!isImmersive && !isSpectrum && !isVinyl && !isCover ? (
+              <IconButton
+                title={discMode ? '关闭碟片模式' : '开启碟片模式'}
+                active={discMode}
+                onClick={() => setDiscMode(!discMode)}
+              >
+                <Film size={18} />
+              </IconButton>
+            ) : null}
+
+            {/* 切换样式：触发器是**带文字标签的按钮**（不是图标按钮），点击打开图片预览弹层 */}
+            <div className="music-exp-stylewrap">
+              <button
+                type="button"
+                className="music-exp-stylebtn"
+                title="切换样式"
+                onClick={() => setStyleMenuOpen((v) => !v)}
+              >
+                <StyleIcon size={16} />
+                <span>{skinMeta.label}</span>
+                <span className="music-exp-new">NEW</span>
+              </button>
+
+              {styleMenuOpen ? (
+                <>
+                  {/* 点弹层外部关闭（铺满一层透明遮罩，避免依赖全局 click 监听） */}
+                  <div className="music-style-backdrop" onClick={() => setStyleMenuOpen(false)} />
+                  <div className="music-style-pop">
+                    {styleCards.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className={s.id === skin ? 'music-style-card is-on' : 'music-style-card'}
+                        onClick={() => {
+                          // 点击即切换并关闭弹层（不是单击循环切换）
+                          setSkin(s.id);
+                          setStyleMenuOpen(false);
+                        }}
+                      >
+                        <img className="music-style-thumb" src={s.preview} alt={s.label} />
+                        <span className="music-style-lb">{s.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            {/* 动态开关：仅「现代」样式显示 —— 动态渐变背景目前只有现代/沉浸两套皮肤有，
+                但沉浸下背景已由 --vinyl-accent/固定渐变主导，用户可感的可调项只有现代，
+                所以入口只在现代出现（参考实现同款条件）。 */}
+            {isModern ? (
+              <div className="music-exp-dyn">
+                <span>动态</span>
+                <Switch on={dynamicEnabled} onToggle={() => setDynamicEnabled(!dynamicEnabled)} label="动态背景" />
+              </div>
+            ) : null}
           </div>
+
+          {/* ── 中区（绝对居中）──────────────────────────────────────── */}
           <div className="music-ctrl">
+            <PlayModeButton mode={playMode} onCycle={() => cycleMode()} size={20} />
             <IconButton title="上一首" onClick={() => prev()}>
-              <SkipBack size={17} />
+              <SkipBack size={22} />
             </IconButton>
             <IconButton title={isPlaying ? '暂停' : '播放'} primary onClick={() => togglePlay()}>
-              {isPlaying ? <Pause size={15} /> : <Play size={15} />}
+              {isPlaying ? <Pause size={20} /> : <Play size={20} />}
             </IconButton>
             <IconButton title="下一首" onClick={() => next()}>
-              <SkipForward size={17} />
+              <SkipForward size={22} />
             </IconButton>
-            <PlayModeButton mode={playMode} onCycle={() => cycleMode()} />
+            {/* 音量：图标常显，hover 时右侧展开滑块（宽度/透明度过渡，见 app.css 的 .music-exp-volwrap） */}
+            <div
+              className="music-exp-volwrap"
+              onWheel={(e) => stepVolume(e.deltaY < 0 ? 0.05 : -0.05)}
+            >
+              <IconButton title={muted ? '取消静音' : '静音'} onClick={() => toggleMute()}>
+                {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+              </IconButton>
+              <input
+                className="music-exp-vol-slider"
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={volume}
+                onChange={(e) => setVolume(Number(e.target.value))}
+              />
+            </div>
           </div>
-          <div className="music-exp-vol">
-            <Volume2 size={15} />
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={volume}
-              onChange={(e) => setVolume(Number(e.target.value))}
+
+          {/* ── 右区（绝对贴右）──────────────────────────────────────── */}
+          <div className="music-exp-br">
+            {/* 歌词颜色 / 字号在「沉浸 / 音域回响」下隐藏 —— 这两种样式是整屏视觉主导
+                （沉浸＝背景随歌流动、音域回响＝频谱），屏上没有传统歌词区可调，
+                留着两个调了也看不见的滑块只会让人以为坏了。 */}
+            {!isImmersive && !isSpectrum ? (
+              <>
+                {/* 歌词高亮色：色块形态。透明彩胶下语义联动为「胶片/歌词颜色」（见 onHighlightChange） */}
+                <ColorPicker
+                  label={isVinyl ? '胶片/歌词颜色' : '歌词高亮颜色'}
+                  value={highlightValue}
+                  onChange={onHighlightChange}
+                />
+                {/* 透明彩胶：手动色模式下额外给一个「跟随封面颜色」，一键切回 auto */}
+                {isVinyl && vinylColorMode === 'custom' ? (
+                  <IconButton title="跟随封面颜色" onClick={() => setVinylColorMode('auto')}>
+                    <Aperture size={16} />
+                  </IconButton>
+                ) : null}
+                {/* 歌词字号：文字「A」+ 滑块，范围与步进取自 LYRICS_SIZE（17–48，step 1） */}
+                <span className="music-exp-alf">A</span>
+                <input
+                  className="music-exp-size"
+                  type="range"
+                  min={LYRICS_SIZE.min}
+                  max={LYRICS_SIZE.max}
+                  step={LYRICS_SIZE.step}
+                  value={lyricsFontSize}
+                  onChange={(e) => setLyricsFontSize(Number(e.target.value))}
+                  title={`歌词字号: ${lyricsFontSize}px`}
+                />
+              </>
+            ) : null}
+
+            {/* 音质：触发器显示档位文字（同播放条）。setPlaybackQuality 是 async，void 收口 */}
+            <Select
+              className="music-q-sel"
+              label="音质档位"
+              value={playbackQuality}
+              options={QUALITY_OPTIONS}
+              onChange={(v) => void setPlaybackQuality(v)}
             />
+
+            {/* 桌面歌词窗口开关 */}
+            <IconButton
+              title={lyricsWindowOpen ? '关闭桌面歌词' : '开启桌面歌词'}
+              active={lyricsWindowOpen}
+              onClick={() => void setLyricsWindowOpen(!lyricsWindowOpen)}
+            >
+              <MonitorSpeaker size={19} />
+            </IconButton>
+
+            {/* 播放队列（已打开时禁用，参考同款） */}
+            <IconButton title="播放队列" disabled={queueOpen} onClick={() => setQueueOpen(true)}>
+              <ListMusic size={19} />
+            </IconButton>
           </div>
         </div>
+
         <div className="music-prog">
           <span className="music-prog-t">{fmtTime(progressMs)}</span>
           <input
@@ -259,28 +496,6 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
           <span className="music-prog-t">{fmtTime(durationMs)}</span>
         </div>
       </div>
-
-      {skinOpen ? (
-        <div className="music-skin-picker">
-          <div className="music-skin-hd">选择皮肤</div>
-          <div className="music-skins">
-            {SKINS.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                className={skin === s.id ? 'music-skin is-on' : 'music-skin'}
-                onClick={() => {
-                  setSkin(s.id);
-                  setSkinOpen(false);
-                }}
-              >
-                <span className={`music-skin-thumb ${s.cls}`} />
-                <span className="music-skin-lb">{s.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
