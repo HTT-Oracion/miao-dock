@@ -1,7 +1,12 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+import * as RSelect from '@radix-ui/react-select';
+import { Check, ChevronDown } from 'lucide-react';
 import { SETTINGS } from '../../theme/tokens';
 import { Badge } from '../../components/atoms';
 import type { SettingItem } from './catalog';
+
+/** 允许在 style 里写自定义属性（`--x`）：`CSSProperties` 只覆盖标准属性 */
+type CSSVarStyle = CSSProperties & Record<`--${string}`, string>;
 
 /**
  * 设置页的**排版件**（《09》§4.1）—— 只有几何与语义，没有一项具体能力。
@@ -135,6 +140,10 @@ export function Switch({
  *
  * 泛型钉住 `value`/`options`/`onChange` 三者同一个联合类型 —— 选项表张冠李戴
  * （比如把皮肤选项喂给音质）会在编译期报错，而不是运行期静默写坏偏好。
+ *
+ * 交互与无障碍交给 Radix（`@radix-ui/react-select`）：键盘 ↑↓/Home/End、typeahead、
+ * 读屏 listbox 语义、焦点归还、滚动跟随都是它的事；外观仍全部走项目令牌（app.css），
+ * 所以它长得跟这个页面里其它控件一样，而不是"装了个 UI 库"。
  */
 export function Select<T extends string>({
   value,
@@ -147,23 +156,49 @@ export function Select<T extends string>({
   onChange: (v: T) => void;
   label: string;
 }) {
+  /*
+   * 显式算 label 而不是把回显全交给 `<Select.Value />`：
+   * Radix 的 Value 靠 ItemText 测量回显，而弹层从未打开时 Content 还没挂载 ——
+   * 首次渲染（以及刷新后直接进设置页）会显示成空白。我们本就有 options 表，
+   * 自己算一次就永远有正确回显，也少一次对这个内部机制的依赖。
+   */
+  const current = options.find((o) => o.value === value);
+
   return (
-    <select
-      className="set-select"
-      value={value}
-      aria-label={label}
-      onChange={(e) => onChange(e.target.value as T)}
-    >
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+    <RSelect.Root value={value} onValueChange={(v) => onChange(v as T)}>
+      <RSelect.Trigger className="set-select" aria-label={label}>
+        <RSelect.Value>{current?.label ?? value}</RSelect.Value>
+        <RSelect.Icon className="set-select-ico">
+          <ChevronDown size={13} />
+        </RSelect.Icon>
+      </RSelect.Trigger>
+      <RSelect.Portal>
+        {/* popper + sideOffset：贴着触发按钮展开；align 与按钮左缘对齐（设置页右列右对齐，左对齐更稳） */}
+        <RSelect.Content className="set-select-menu" position="popper" sideOffset={4} align="start">
+          <RSelect.Viewport>
+            {options.map((o) => (
+              <RSelect.Item key={o.value} value={o.value} className="set-select-item">
+                {/* 命中项才渲染 indicator；未渲染时靠 Item 的左侧 padding 占位，文本不会左右跳 */}
+                <RSelect.ItemIndicator className="set-select-ok">
+                  <Check size={12} />
+                </RSelect.ItemIndicator>
+                <RSelect.ItemText>{o.label}</RSelect.ItemText>
+              </RSelect.Item>
+            ))}
+          </RSelect.Viewport>
+        </RSelect.Content>
+      </RSelect.Portal>
+    </RSelect.Root>
   );
 }
 
-/** 滑杆 + 右侧数值读数：读数与滑杆同源于 `value`，不可能显示成两个数 */
+/**
+ * 滑杆 + 右侧数值读数：读数与滑杆同源于 `value`，不可能显示成两个数。
+ *
+ * 已填充比例由这里算好后写成 CSS 变量 `--set-range-fill`：
+ * 百分比取决于「值落在区间的哪儿」，CSS 算不出来（轨道宽度本身还是弹性的），
+ * 只能由持有 `value` 的组件给出；样式侧只负责按这个比例画两种底色。
+ */
 export function Range({
   min,
   max,
@@ -181,11 +216,15 @@ export function Range({
   label: string;
   suffix?: string;
 }) {
+  const pct = max > min ? ((value - min) / (max - min)) * 100 : 0;
+  const fill: CSSVarStyle = { '--set-range-fill': `${pct}%` };
+
   return (
     <>
       <input
         type="range"
         className="set-range"
+        style={fill}
         min={min}
         max={max}
         step={step}

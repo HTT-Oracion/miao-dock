@@ -1064,32 +1064,156 @@
   gap: 8px;
 }
 
-/* ---- 设置页控件原语（③ 播放·媒体 用；几何与 .set-ro 同高，一行里不打架）---- */
-/* 下拉：与 .set-ro 同高 24、同圆角，避免一行里出现三种高度 */
+/* ---- 设置页控件原语（③ 播放·媒体 用；几何与 .set-ro 同高，一行里不打架）----
+ *
+ * 外观一律自绘，不用系统原生外观。理由不是审美偏好：原生 select / range 的高度、
+ * 圆角、箭头形状、拇指尺寸都由系统（且随系统版本）决定，而设置页右列是 24px 的行内控件
+ * —— 系统控件放进这一行，会与同行的 .set-ro / .switch 凑出三种高度、两套圆角、两套配色，
+ * 读起来像"别的应用塞进来的控件"。所有几何与颜色只来自设计令牌，
+ * 深色模式因此自动跟随，不需要第二套样式。
+ *
+ * 下拉的行为（键盘、typeahead、读屏、焦点）不由这里实现 —— 那是 Radix 的事，
+ * 见 `parts.tsx`；本节只描述它长什么样。
+ */
+
+/*
+ * 触发按钮 —— 类名仍是 .set-select：与 .set-ro 同高 24、同圆角，
+ * min-width 让三个下拉的左边缘对齐成一条。
+ *
+ * 文本与箭头用 flex 两端对齐（`justify-content: space-between`），
+ * 于是选项文字长短不同时箭头仍钉在同一列 —— 这是原生 select 做不到的
+ * （它的箭头位置由系统画，宽度变化时会跟着文字跑）。
+ */
 .set-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   height: 24px;
-  padding: 0 6px;
+  min-width: 132px;
+  padding: 0 7px 0 9px;
   font-family: var(--md-font-body);
   font-size: 11.5px;
+  line-height: 1;
   color: var(--md-ink);
   background: var(--md-surface);
   border: 1px solid var(--md-line);
   border-radius: var(--md-radius-xs);
   cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
-.set-select:focus { outline: none; border-color: var(--md-pink); }
-/* 滑杆：只做「一行内可用」的窄条，右侧配数值读数 */
+/* hover 走 surface-2（与 .btn-ghost 同一语汇）；pink 只留给"打开 / 聚焦" ——
+   焦点用「pink 边框 + pink-soft ring」，与 .set-swatch.is-on 同一套形状语汇，
+   于是"被选中"和"被聚焦"在全页只表达成一种样子 */
+.set-select:hover { background: var(--md-surface-2); }
+.set-select:focus { outline: none; }
+.set-select:focus-visible,
+.set-select[data-state='open'] {
+  border-color: var(--md-pink);
+  box-shadow: 0 0 0 2px var(--md-pink-soft);
+}
+/* 箭头随展开翻转 —— 打开的方向要看得出来，否则点了没点的区别只剩边框颜色 */
+.set-select-ico {
+  display: inline-flex;
+  color: var(--md-muted);
+  transition: transform 0.15s;
+}
+.set-select[data-state='open'] .set-select-ico { transform: rotate(180deg); }
+
+/*
+ * 选项弹层：走 Portal 挂到 body，所以这里的变量解析仍取自 :root（apply.ts 把令牌
+ * 写在 documentElement 上），深色模式无需另写一套。
+ * 浮层语汇与 .toast / .music-skin-picker 一致：surface 底 + line 描边 + 轻阴影。
+ */
+.set-select-menu {
+  z-index: 60; /* 高于页面内容与 toast(50)，低于模态层(80+)：菜单不该盖住确认对话框 */
+  min-width: var(--radix-select-trigger-width); /* Radix 注入：与触发按钮同宽 */
+  padding: 4px;
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-sm);
+  box-shadow: 0 8px 22px rgba(20, 15, 41, 0.14);
+  font-family: var(--md-font-body);
+  font-size: 11.5px;
+  color: var(--md-ink);
+  overflow: hidden;
+}
+
+/*
+ * 单个选项。左侧 22px 是对勾位 —— 选中的项才渲染 indicator，
+ * 靠这段固定的左内边距占位，勾出现/消失时选项文字不会左右跳。
+ */
+.set-select-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 8px 0 22px;
+  border-radius: var(--md-radius-xs);
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+/* data-highlighted 由 Radix 给（鼠标悬停与键盘 ↑↓ 是同一个状态）——
+   自己写 :hover 会让键盘操作时没有高亮 */
+.set-select-item[data-highlighted] { background: var(--md-surface-2); }
+.set-select-item[data-state='checked'] { color: var(--md-pink); }
+.set-select-ok {
+  position: absolute;
+  left: 6px;
+  display: inline-flex;
+  color: var(--md-pink);
+}
+
+/*
+ * 滑杆：轨道 5px / 圆角 3 / 11×11 粉圆拇指 —— 与音乐屏的 .music-prog-bar、.music-vol
+ * **逐值一致**。同一个应用里不该出现两种滑条，所以几何直接沿用，不另起一套。
+ *
+ * 唯一多出来的是「已填充」（--set-range-fill 由组件按 value 注入）：
+ * 音乐屏的滑条自带时间语义（左右两端就是曲子的首尾，位置一眼可读），
+ * 而设置页的滑条只是"在一个区间里取值"，没有端点作参照 ——
+ * 光看右侧数字读不出"现在偏哪边"，所以补一段底色。
+ * 填充用 --md-pink-soft 而非 pink：拇指已经是 pink，同色会糊成一块。
+ *
+ * input 高度给 12 而不是轨道那 5：拇指 11px 比轨道高，容器太扁会把拇指裁掉。
+ */
 .set-range {
+  -webkit-appearance: none;
+  appearance: none;
   width: 116px;
-  height: 4px;
-  accent-color: var(--md-pink);
+  height: 12px;
+  background: transparent;
+  accent-color: var(--md-pink); /* 自绘未生效时的兜底，不是主样式 */
   cursor: pointer;
 }
+.set-range::-webkit-slider-runnable-track {
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    var(--md-pink-soft) 0 var(--set-range-fill, 0%),
+    var(--md-line) var(--set-range-fill, 0%) 100%
+  );
+}
+.set-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  margin-top: -3px; /* (11 - 5) / 2：让拇指在轨道上居中 */
+  border-radius: 50%;
+  background: var(--md-pink);
+  transition: transform 0.12s;
+}
+.set-range:hover::-webkit-slider-thumb { transform: scale(1.1); }
+.set-range:active::-webkit-slider-thumb { transform: scale(1.18); }
 .set-range:disabled { cursor: default; opacity: 0.45; }
+.set-range:disabled::-webkit-slider-thumb { background: var(--md-muted); }
 .set-range-val {
   min-width: 38px;
   font-family: var(--md-font-numeric);
   font-size: 11px;
+  font-variant-numeric: tabular-nums; /* 数字等宽，拖动时读数不会左右跳 */
   color: var(--md-ink-2);
   text-align: right;
 }
@@ -1102,7 +1226,9 @@
   border: 1px solid var(--md-line);
   border-radius: 50%;
   cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s;
 }
+.set-swatch:hover { transform: scale(1.12); }
 .set-swatch.is-on { box-shadow: 0 0 0 2px var(--md-pink-soft), 0 0 0 1px var(--md-pink); }
 /* 取色器：原生 input[type=color] 各平台外观差异大，统一压成 24×24 方块 */
 .set-color {
@@ -1111,8 +1237,15 @@
   padding: 0;
   border: 1px solid var(--md-line);
   border-radius: var(--md-radius-xs);
-  background: none;
+  background: var(--md-surface-2); /* 色块外留一圈衬底，边缘不再与背景直接相接 */
   cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.set-color:hover:not(:disabled) { border-color: var(--md-pink); }
+.set-color:focus-visible {
+  outline: none;
+  border-color: var(--md-pink);
+  box-shadow: 0 0 0 2px var(--md-pink-soft);
 }
 .set-color:disabled { cursor: default; opacity: 0.45; }
 .set-color::-webkit-color-swatch-wrapper { padding: 2px; }
