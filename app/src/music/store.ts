@@ -363,6 +363,108 @@ function writeLS(key: string, value: unknown): void {
   }
 }
 
+// ------------------------------------------------------------------ 启动恢复快照
+
+const LS_SNAPSHOT = 'miaodock.music.resumeSnapshot';
+
+/**
+ * 快照的版本号。**结构一变就必须 +1**。
+ *
+ * 为什么需要它：localStorage 是**外部可改且跨版本存活**的边界 ——
+ * 老版本存下的结构会被新版本读到。不带版本号的话，恢复流程会拿着
+ * 缺字段 / 字段名已改的对象继续跑，故障表现为"恢复了但队列是空的"
+ * 或"恢复出上次的幽灵歌曲"，且不报错。判版本不匹配就直接当"没有快照"，
+ * 行为退化成与现在一致（不显示播放条）—— 这是最安全的降级。
+ */
+const SNAPSHOT_VERSION = 1;
+
+/** 队列持久化上限（Q3 拍板：200 首）。 */
+const SNAPSHOT_MAX_QUEUE = 200;
+
+/**
+ * 兜底存快照的间隔（毫秒）。
+ * 理由见 MusicKernel 里那个定时器的注释；导出成常量是为了让"节奏"可被断言盯住，
+ * 而不是散落成一个裸数字。
+ */
+export const SNAPSHOT_PERSIST_INTERVAL_MS = 30_000;
+
+/**
+ * 启动恢复用的播放快照。
+ *
+ * ## 为什么存**完整** Song 而不是一个 id
+ * 恢复时要重新解析播放地址，而各平台解析 URL 依赖的字段各不相同且很偏：
+ * 酷狗要 `hash`、QQ 要 `qq_song_id`、咪咕要 `content_id`、网易云要 `mid`。
+ * 只存 `{provider, id}` 就得再写一套"按 id 回查全字段"的接口（现在没有），
+ * 而漏掉任何一个字段都会变成"恢复出来播不了"。裁字段省下的那点体积
+ * 远不值得换一个"静默不可播"的故障面。
+ */
+export interface ResumeSnapshot {
+  /** 结构版本，见 SNAPSHOT_VERSION */
+  v: number;
+  /** 上次退出时**正在播放的平台**（恢复时只校验这一个平台的登录态） */
+  provider: MusicProvider;
+  /** 队列（已按 SNAPSHOT_MAX_QUEUE 截断） */
+  queue: Song[];
+  /** 当前歌曲在 queue 里的下标（截断后**重新计算**，不是原值） */
+  index: number;
+  /** 播放位置（毫秒） */
+  progressMs: number;
+  /** 保存时刻（毫秒时间戳），仅供排查 */
+  savedAt: number;
+}
+
+/**
+ * 队列过长时按窗口截断，**且保证当前歌曲仍在窗口内**。
+ *
+ * ## 为什么不能简单取前 N 首
+ * 那样会把"当前正在听的那首"截掉，恢复后停在一首完全不同的歌上 ——
+ * 而用户看到的播放条里正是那首歌（它来自 currentSong），点播放才会跳走。
+ * 以当前歌为中心开窗口，把新下标一并返回，是唯一自洽的做法。
+ */
+export function truncateQueueForSnapshot(
+  queue: Song[],
+  index: number,
+  max = SNAPSHOT_MAX_QUEUE,
+): { queue: Song[]; index: number } {
+  if (queue.length <= max) return { queue, index };
+  const half = Math.floor(max / 2);
+  // start 要同时满足：① 0 ≤ start ② start ≤ index ③ start + max ≤ queue.length
+  const start = Math.max(0, Math.min(index - half, queue.length - max));
+  return { queue: queue.slice(start, start + max), index: index - start };
+}
+
+/** 从 localStorage 读快照；**任何**不符（缺 key / 版本不符 / 结构不对）都当"没有" */
+export function readResumeSnapshot(): ResumeSnapshot | null {
+  const raw = readLS<unknown>(LS_SNAPSHOT, null);
+  if (!raw || typeof raw !== 'object') return null;
+  const s = raw as Partial<ResumeSnapshot>;
+  if (s.v !== SNAPSHOT_VERSION) return null;
+  if (typeof s.provider !== 'string') return null;
+  if (!Array.isArray(s.queue) || s.queue.length === 0) return null;
+  // index 越界说明快照与队列不自洽（例如被手改过）——同样当"没有"，不做强行夹紧
+  if (typeof s.index !== 'number' || s.index < 0 || s.index >= s.queue.length) return null;
+  return {
+    v: s.v,
+    provider: s.provider as MusicProvider,
+    queue: s.queue,
+    index: s.index,
+    progressMs: typeof s.progressMs === 'number' && s.progressMs > 0 ? s.progressMs : 0,
+    savedAt: typeof s.savedAt === 'number' ? s.savedAt : 0,
+  };
+}
+
+export function writeResumeSnapshot(s: ResumeSnapshot): void {
+  writeLS(LS_SNAPSHOT, s);
+}
+
+export function clearResumeSnapshot(): void {
+  try {
+    localStorage.removeItem(LS_SNAPSHOT);
+  } catch {
+    /* 隐私模式下删不掉：读侧会因版本/结构不符而自行失效 */
+  }
+}
+
 /**
  * 合并式写入偏好：每项只改自己那个键。
  * 为什么用合并而不是整份覆盖 —— 各项分别由不同的 setter 写入，整份覆盖会把
@@ -413,6 +515,15 @@ let playSeq = 0;
 // ------------------------------------------------------------------ 状态定义
 
 interface Prefs {
+  /**
+   * 上次使用的播放平台。
+   *
+   * ⚠️ 这一项**以前根本没持久化**（store 初始值硬编码 `'netease'`），
+   * 于是重启后播放平台恒为网易云，即使用户上次用的是 QQ —— 而
+   * 「启动恢复上次播放」要求"按**上次那个**平台校验登录态"，
+   * 连"上次是哪个平台"都不知道。补上这一项是该功能的必要前提。
+   */
+  playbackSource: MusicProvider;
   playbackQuality: PlaybackQuality;
   volume: number;
   playMode: PlayMode;
@@ -671,6 +782,20 @@ interface MusicState {
   appendToQueue: (songs: Song[]) => void;
   removeFromQueue: (index: number) => void;
   clearQueue: () => void;
+  /**
+   * 把当前播放态写进「启动恢复快照」（localStorage）。
+   *
+   * ## 调用时机（少一个就丢一类场景）
+   *   · 切歌成功后 —— 换歌后立刻退出，进度是 0 但歌与队列要对
+   *   · 暂停时 —— 覆盖"听完暂停、第二天再开"这个主场景
+   *   · MusicKernel 的低频定时器 —— 兜底"听着直接退出"
+   *
+   * **不在每次 progress 变化时写**：进度每秒变几十次，
+   * 而快照序列化 200 首歌约几十 KB —— 那是持续 I/O。
+   */
+  persistSnapshot: () => void;
+  /** 清掉快照（明确清空播放、或恢复时判定"不该恢复"） */
+  clearSnapshot: () => void;
   setQueueOpen: (open: boolean) => void;
 
   // 播放历史
@@ -1017,7 +1142,19 @@ export const useMusicStore = create<MusicState>((set, get) => ({
      * 于是卡片按歌词态渲染却拿到空分支。枚举型偏好一律白名单收口。
      */
     const islandView: IslandView = prefs.islandView === 'lyrics' ? 'lyrics' : 'play';
+    /*
+     * 播放平台：同样白名单收口。
+     * 脏值（手改 / 旧版本残留 / 日后新增平台后被删）一律回落 'netease' ——
+     * 平台 id 是**四处**的键（后端命令派发、登录态表、快照校验、URL 解析），
+     * 放过一个不认识的 id 会让恢复流程按它去查登录态，拿到必然是
+     * 「探测失败」，于是每次都判成断网、永远不恢复。
+     */
+    const ALL_PROVIDERS: readonly MusicProvider[] = ['netease', 'kugou', 'qqmusic', 'migu'];
+    const playbackSource: MusicProvider = ALL_PROVIDERS.includes(prefs.playbackSource as MusicProvider)
+      ? (prefs.playbackSource as MusicProvider)
+      : 'netease';
     set({
+      playbackSource,
       volume,
       playMode,
       skin,
@@ -1210,6 +1347,8 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     // 不推的话桌面歌词会停在那首歌的暂停态，直到用户手动暂停/播放一次才恢复。
     void get().pushLyricsState();
     get().recordPlayHistory(song, opts?.fromHistory);
+    // 切歌后立刻存快照：此刻进度是 0，但「换了哪首、队列长什么样」必须立刻落盘
+    get().persistSnapshot();
   },
 
   playQueue: async (songs, startIndex, opts) => {
@@ -1223,6 +1362,9 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   togglePlay: () => {
     set((s) => ({ isPlaying: !s.isPlaying }));
     void get().pushLyricsState();
+    // **暂停时**存快照 —— 这是"听完暂停、第二天再打开"这个主场景的落盘点。
+    // （继续播放时不存：进度每秒都在变，交给 MusicKernel 的低频定时器。）
+    if (!get().isPlaying) get().persistSnapshot();
   },
 
   next: () => {
@@ -1574,7 +1716,39 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     set({ queue: [], currentSong: null, playUrl: '', isPlaying: false, currentIndex: 0 });
     // 同上：清空队列后没有当前歌曲了，推一次空状态让桌面歌词归位
     void get().pushLyricsState();
+    // 队列空了就不该留快照 —— 否则下次启动会恢复出一个"用户刚清掉的队列"
+    clearResumeSnapshot();
   },
+
+  persistSnapshot: () => {
+    const { queue, currentIndex, currentSong, playbackSource, progressMs } = get();
+    if (!currentSong || queue.length === 0) {
+      clearResumeSnapshot();
+      return;
+    }
+    // 下标以 currentSong **反查**为准，而不是直接信 currentIndex：
+    // 两者在 playSong 里同步设置，但"从播放历史点歌"等路径可能让它们短暂不一致，
+    // 写错下标会让恢复后停在一首完全不同的歌上（播放条却显示 currentSong，自相矛盾）。
+    const found = queue.findIndex((s) => songKey(s) === songKey(currentSong));
+    const index = found >= 0 ? found : currentIndex;
+    if (index < 0 || index >= queue.length) {
+      clearResumeSnapshot();
+      return;
+    }
+    const { queue: q, index: idx } = truncateQueueForSnapshot(queue, index);
+    writeResumeSnapshot({
+      v: SNAPSHOT_VERSION,
+      provider: playbackSource,
+      // sanitizeForStorage 清掉 data URL 封面（base64 可能上百 KB，
+      // 200 首塞进 localStorage 会直接触发配额失败）
+      queue: q.map(sanitizeForStorage),
+      index: idx,
+      progressMs: Math.max(0, Math.round(progressMs)),
+      savedAt: Date.now(),
+    });
+  },
+
+  clearSnapshot: () => clearResumeSnapshot(),
 
   setQueueOpen: (open) => set({ queueOpen: open }),
 
@@ -1611,8 +1785,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       playbackSource: p,
       loginInfo: get().loginInfos[p] ?? null,
       // 切换平台立即清空旧平台数据，避免残留闪烁
-      userPlaylists: [],
-      userPlaylistsError: '',
+      userPlaylists: [],      userPlaylistsError: '',
       officialCharts: [],
       recommendPlaylists: [],
       dailySongs: [],
@@ -1627,6 +1800,9 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       searchHasMore: false,
       comments: null,
     });
+    // 平台选择是**用户偏好**，必须落盘：恢复流程要按"上次那个平台"校验登录态，
+    // 而这一项此前没持久化 → 重启后 playbackSource 恒为初始的 'netease'。
+    savePrefs({ playbackSource: p });
     try {
       await ipc.musicSwitchProvider(p);
     } catch {

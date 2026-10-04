@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { ensureAudioContextActive, isGraphAttached, markNotWirable, setGraphVolume } from '@music/audioGraph';
 import type { LyricsControlPayload } from '@music/ipc';
-import { registerAudioElement, useMusicStore } from '@music/store';
+import { registerAudioElement, SNAPSHOT_PERSIST_INTERVAL_MS, useMusicStore } from '@music/store';
 
 /**
  * 音乐播放内核 —— **应用级常驻组件**。
@@ -104,6 +104,30 @@ export function MusicKernel() {
   useEffect(() => {
     registerAudioElement(audioRef.current);
     return () => registerAudioElement(null);
+  }, []);
+
+  /**
+   * 兜底存「启动恢复快照」，30 秒一次。
+   *
+   * ## 为什么需要它（切歌 / 暂停已经写过了）
+   * 那两个时机覆盖的是"换歌后退出""暂停后退出"，剩下的是**正听着直接退出应用**——
+   * Tauri 没有可靠的 `beforeunload`，所以只能靠低频轮询把进度落盘。
+   *
+   * ## 为什么 30 秒而不是更短
+   * 快照序列化 200 首歌约几十 KB（`sanitizeForStorage` 已清掉 base64 封面）。
+   * 更短的间隔是为了几秒的进度精度去付持续的 JSON 序列化 + localStorage 写入，
+   * 不划算；而**用户听 30 秒以上再关掉的场景本来就覆盖了绝大多数**。
+   *
+   * 只在"有歌且正在播"时才写：暂停态的进度不会再变（暂停时已写过），
+   * 空转只是白费 I/O。
+   */
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const s = useMusicStore.getState();
+      if (!s.isPlaying || !s.currentSong) return;
+      s.persistSnapshot();
+    }, SNAPSHOT_PERSIST_INTERVAL_MS);
+    return () => window.clearInterval(id);
   }, []);
 
   // 音量与静音同步。
