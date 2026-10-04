@@ -14,9 +14,16 @@
  * 拼接顺序若与 `index.scss` 不一致，判据就可能在"错误的规则"上取块。
  * 所以唯一事实源是 `index.scss`，本模块只忠实执行它的声明顺序。
  *
- * ## 为什么读不到就抛，而不是返回空串
- * 断言读到空串时，绝大多数判据会给出「缺 xxx」——看起来像真回归，其实是分片没接上。
- * 抛错能让这类"环境没配好"当场暴露成技术错误，不会被误读成产品缺陷。
+ * ## 缺文件时为什么不抛错（这一条改过一次，别改回去）
+ * 初版对「分片缺失」直接抛错，理由是"空串会被误读成产品缺陷"。**错的** ——
+ * 抛错有两个实际后果：① 诊断信息被抹掉，明明 `STYLE.shardsRegistered` 能精确报出
+ * 「index.scss @use 了 'base.css'，但 styles/ 下没有 base.css」，却只剩一句
+ * 文件不存在；② 反证轮会**整体崩溃**（`STYLE.entryIsScss` 那条反证就是故意把
+ * 入口指回 .css 来验证它会变红，抛错直接让 refute 轮带着 Exception 收场，
+ * 分母都没机会被核对）。
+ * 所以：**入口缺失才抛错**（那是环境没配好，断言无意义），**分片缺失只留哨兵**
+ * （哨兵是注释，stripComments 后不留痕迹，不会让别的断言误判），
+ * 真正的诊断交给 `STYLE.shardsRegistered`。
  */
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
@@ -56,6 +63,9 @@ export function styleEntryOrder(stylesDir) {
 /**
  * 按 index.scss 声明顺序拼接全部样式分片，返回单一文本。
  *
+ * 缺的分片用**哨兵注释**占位而不是抛错（理由见文件头）：哨兵会被判据的
+ * stripComments 剥掉，不会让无关断言误判；真正该报红的是 STYLE.shardsRegistered。
+ *
  * @param {string} stylesDir 绝对路径，例：`<repo>/app/src/styles`
  * @returns {string} 拼接结果；各分片之间以换行分隔（避免末行注释粘连到下一段选择器）
  */
@@ -64,10 +74,8 @@ export function readStyleSource(stylesDir) {
   for (const rel of styleEntryOrder(stylesDir)) {
     const file = path.join(stylesDir, rel);
     if (!existsSync(file)) {
-      throw new Error(
-        `index.scss 声明了 '${rel}'，但该文件不存在：${file}\n`
-        + '分片被删/改名而入口没跟上，是迁移期最容易犯的错。',
-      );
+      parts.push(`/* __MISSING_SHARD__ ${rel} —— 由 STYLE.shardsRegistered 报红 */`);
+      continue;
     }
     parts.push(readFileSync(file, 'utf8'));
   }

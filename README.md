@@ -71,7 +71,7 @@ npm run check:ia              # IA 结构 24 条（侧栏两级 / 视图 Tab / �
 npm run check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
 npm run check:music           # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 音频图 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 172 条（反证：check:music:refute）
 npm run check:settings        # 设置页「播放·媒体」裁定结果 72 条（反证：check:settings:refute）
-npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动岛 32 条（反证：check:units:refute）
+npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条（反证：check:units:refute）
 ```
 
 各组判据与「为什么这么测」见 `docs/dev-plan.md` §4；一路踩过的环境陷阱见 `docs/spec-notes.md`。

@@ -354,6 +354,16 @@ function loadSources() {
   // 全分片拼接（顺序 = index.scss 的 @use 顺序 = 层叠顺序）。
   // app.css 已按模块拆成六个分片，读单文件会集体变红（读不到 ≠ 真回归），故走拼接。
   s.appCss = readStyleSource(F.stylesDir);
+  // STYLE（样式分层）：入口的 @use 声明 + 各分片剥注释后的代码 + 目录里实际存在的分片
+  s.styleIndex = readMaybe(path.join(F.stylesDir, "index.scss"));
+  s.styleShards = listFiles(F.stylesDir)
+    .filter((f) => f.endsWith(".scss") && f !== "index.scss")
+    .map((f) => f.replace(/\.scss$/, ""))
+    .sort();
+  s.styleShardCode = {};
+  for (const f of listFiles(F.stylesDir).filter((f) => f.endsWith(".scss"))) {
+    s.styleShardCode[f] = stripComments(readMaybe(path.join(F.stylesDir, f)));
+  }
   // ALIAS（D-40）：两处别名声明 + 全 src 的"相对上跳"引用
   s.viteConfig = readMaybe(F.viteConfig);
   s.tsconfig = readMaybe(F.tsconfig);
@@ -910,6 +920,114 @@ add('ISLAND.idleRendersNothing', 'ISLAND', (s) => {
   return { ok: true, detail: '' };
 });
 
+// ══════════════════════════════════════════════════════════════════════════
+// STYLE —— 样式分层（app.css 拆成 base/app/manga/settings/components/music 六个分片）
+// ══════════════════════════════════════════════════════════════════════════
+// 这一组防的是「样式慢慢又长回一个文件 / 放错分片 / 开始用 SCSS 语法」这三类退化。
+// 之所以要有它们：app.css 曾是 3716 行单文件，拆完之后**没有任何机制**阻止它重新膨胀 ——
+// 没人会主动去翻六个文件看新样式该放哪，于是默认答案永远是"加到最大的那个文件里"。
+//
+// 判据一律先 stripComments：本组多条规则在注释里主动写出了被禁的写法
+// （如 index.scss 解释「不用 SCSS 嵌套」时提到 mixin 与 &，components.scss 注释里
+// 提到 .set-row），不剥注释会恒红 —— 而恒红比恒绿更隐蔽（它看起来像"覆盖到位"）。
+
+/** 约定的 @use 顺序。**顺序即层叠**：同特异性下靠后定义者胜，改它等于改视觉结果。 */
+const STYLE_USE_ORDER = ["base", "app", "manga", "settings", "components", "music"];
+
+/** 从 index.scss 取出 @use 目标（去扩展名），剥注释以免举例被当真声明 */
+function useList(indexSrc) {
+  const code = stripComments(indexSrc || "");
+  return [...code.matchAll(/@use\s+['"]([^'"]+)['"]/g)].map((m) => m[1].replace(/\.scss$/, ""));
+}
+
+add("STYLE.shardsRegistered", "STYLE", (s) => {
+  // 双向一致：目录里存在的分片必须被 @use；@use 声明的也必须真实存在。
+  // 只查单向会漏 ——「新建了分片但忘了在入口注册」是**最可能发生的错**（文件在、样式不生效），
+  // 而「注册了但文件不存在」连构建都过不了，readStyleSource 也会当场抛错。
+  const declared = useList(s.styleIndex);
+  const onDisk = s.styleShards || [];
+  const missing = [];
+  for (const f of onDisk) {
+    if (!declared.includes(f)) missing.push(`${f}.scss 未在 index.scss 的 @use 里注册（文件在、样式不生效）`);
+  }
+  for (const d of declared) {
+    if (!onDisk.includes(d)) missing.push(`index.scss @use 了 '${d}'，但 styles/ 下没有 ${d}.scss`);
+  }
+  return { ok: missing.length === 0, detail: missing.length ? missing.join("；") : "" };
+});
+
+add("STYLE.useOrder", "STYLE", (s) => {
+  // @use 顺序必须等于约定顺序。这条是**层叠正确性**的守卫：当前顺序与拆分前
+  // app.css 的分区顺序逐段对齐，所以拆分不改变层叠语义；一旦调换，语义即变。
+  const declared = useList(s.styleIndex);
+  if (declared.length !== STYLE_USE_ORDER.length || declared.some((d, i) => d !== STYLE_USE_ORDER[i])) {
+    return {
+      ok: false,
+      detail: `@use 顺序被改：实际 ${declared.join(" → ")}，约定 ${STYLE_USE_ORDER.join(" → ")}（顺序即层叠）`,
+    };
+  }
+  return { ok: true, detail: "" };
+});
+
+add("STYLE.entryIsScss", "STYLE", (s) => {
+  // 入口只许 @use .scss。旧 app.css / base.css 若复活并被引回入口，分层就名存实亡。
+  const code = stripComments(s.styleIndex || "");
+  const bad = [...code.matchAll(/@use\s+['"]([^'"]+)['"]/g)].map((m) => m[1]).filter((t) => !t.endsWith(".scss"));
+  return {
+    ok: bad.length === 0,
+    detail: bad.length ? `index.scss 引用了非 .scss：${bad.join("、")}（旧的 app.css/base.css 不该复活）` : "",
+  };
+});
+
+add("STYLE.shardOwnership", "STYLE", (s) => {
+  // 单向禁列表：某分片里**绝不该出现**别的模块的强专属前缀。
+  // 为什么只禁这几个、且只单向：既有实现里存在合法跨模块组合 ——
+  // music.scss 有 `.di-… .ui-cbtn`（灵动岛里的公共按钮）、components.scss 有
+  // `.set-row / .set-state`（设置页专用但由 units 组件实现）。双向禁会误报它们。
+  // 反向自查已验证：把另一分片喂进来均会报红，判据确实能抓住放错。
+  const FORBID = {
+    "manga.scss": [/\.music-/, /\.di-/, /\.pf-/, /\.ac-/, /\.sk-/, /\.skin-/, /\.kara-/, /\.viewtab/],
+    "music.scss": [/\.qt-/, /\.lib-/, /\.notready/, /\.logbox/, /\.magic-/, /\.compare-/, /\.dropzone/, /\.filelist/],
+    "settings.scss": [/\.music-/, /\.di-/, /\.qt-/, /\.lib-/, /\.viewtab/],
+    "app.scss": [/\.music-/, /\.di-/, /\.qt-/, /\.lib-/, /\.set-/, /\.settings/],
+    "components.scss": [/\.music-/, /\.di-/, /\.qt-/, /\.lib-/],
+  };
+  const hits = [];
+  for (const [file, pats] of Object.entries(FORBID)) {
+    const code = (s.styleShardCode || {})[file];
+    if (code === undefined) {
+      hits.push(`${file} 不存在（分片缺失）`);
+      continue;
+    }
+    for (const p of pats) {
+      const m = code.match(p);
+      if (m) {
+        const line = code.slice(0, code.indexOf(m[0])).split("\n").length;
+        hits.push(`${file}:${line} 含他模块选择器 ${m[0]}`);
+      }
+    }
+  }
+  return { ok: hits.length === 0, detail: hits.length ? hits.join("；") : "" };
+});
+
+add("STYLE.noScssSyntax", "STYLE", (s) => {
+  // 分片内保持**扁平写法**：本阶段不用 SCSS 语法糖。
+  // 理由不是审美，是断言：本仓检查脚本大量用 `[^}]*` 取块，嵌套会改变块结构 →
+  // 判据静默失效或恒红。（开 nesting 的前置条件是给脚本装 SCSS AST 解析器，
+  //  留待后续单独评估 —— 见 docs/style-scss-plan.md。）
+  // 同时禁 SCSS 变量承载颜色：令牌只走 var(--md-*)，否则「深色模式只换变量」不成立。
+  const hits = [];
+  for (const [file, code] of Object.entries(s.styleShardCode || {})) {
+    const mixin = code.match(/@(mixin|include)\b/g);
+    if (mixin) hits.push(`${file} 用了 @${mixin[0].slice(1)}`);
+    const svar = code.match(/\$[a-zA-Z_][\w-]*\s*:/g);
+    if (svar) hits.push(`${file} 用了 SCSS 变量 ${svar[0].trim()}（令牌只走 var(--md-*)）`);
+    const amp = code.match(/(^|[{,\n])\s*&(?![\w-])/m);
+    if (amp) hits.push(`${file} 用了嵌套选择器 &`);
+  }
+  return { ok: hits.length === 0, detail: hits.length ? hits.join("；") : "" };
+});
+
 // ── 执行器 ────────────────────────────────────────────────────────────────
 function runAll(s) {
   const res = {};
@@ -924,7 +1042,7 @@ function runAll(s) {
   return res;
 }
 
-const GROUPS = ["LAYOUT", "PURITY", "NAMING", "CALLERS", "KEEP", "HOOKS", "ALIAS", "STATE", "ISLAND"];
+const GROUPS = ["LAYOUT", "PURITY", "NAMING", "CALLERS", "KEEP", "HOOKS", "ALIAS", "STATE", "ISLAND", "STYLE"];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -1197,6 +1315,55 @@ const MUTATIONS = [
     find: "  if (!toast && !hasQueue) return null;",
     replace: "  // 反证：空闲态不再早退",
     expect: ["ISLAND.idleRendersNothing"],
+  },
+
+  // ── STYLE（样式分层）─────────────────────────────────────────────────────
+  // 这一组反证守的是「拆完之后没人守规矩，样式又长回一个文件 / 放错分片 /
+  // 开始用 SCSS 语法」。没有它们，分层只是目录 aesthetics。
+  {
+    // 新建了分片却忘了在入口注册 —— 文件在、样式不生效，且**不会报任何错**
+    name: "从 index.scss 删掉 manga 的 @use（分片存在但没注册 → 整模块样式不生效）",
+    file: path.join(F.stylesDir, "index.scss"),
+    find: "@use 'manga.scss';\n",
+    replace: "",
+    expect: ["STYLE.shardsRegistered"],
+  },
+  {
+    // 顺序即层叠：调换 base/app 就可能改变同特异性规则的胜负
+    name: "把 @use 顺序里的 music 提到 manga 之前（顺序即层叠，被悄悄改掉）",
+    file: path.join(F.stylesDir, "index.scss"),
+    find: "@use 'manga.scss';\n@use 'settings.scss';\n@use 'components.scss';\n@use 'music.scss';",
+    replace: "@use 'music.scss';\n@use 'manga.scss';\n@use 'settings.scss';\n@use 'components.scss';",
+    expect: ["STYLE.useOrder"],
+  },
+  {
+    name: "把入口的 @use 指回 .css（旧 app.css/base.css 复活，分层名存实亡）",
+    file: path.join(F.stylesDir, "index.scss"),
+    find: "@use 'base.scss';",
+    replace: "@use 'base.css';",
+    expect: ["STYLE.entryIsScss"],
+  },
+  {
+    // 放错分片的真实动机是「懒得翻文件」，所以反证就模拟这个动作
+    name: "把音乐的选择器塞进 manga.scss（模块私有样式放错分片）",
+    file: path.join(F.stylesDir, "manga.scss"),
+    find: "/* ================================================================ X-C1 任务队列 */",
+    replace: ".music-queue-fake { color: red; }\n/* ================================================================ X-C1 任务队列 */",
+    expect: ["STYLE.shardOwnership"],
+  },
+  {
+    name: "在分片里用 SCSS 变量承载颜色（令牌只走 var(--md-*)，否则深色模式就不成立了）",
+    file: path.join(F.stylesDir, "music.scss"),
+    find: "/* ================================================================ 音乐屏",
+    replace: "$brand: #ffe066;\n/* ================================================================ 音乐屏",
+    expect: ["STYLE.noScssSyntax"],
+  },
+  {
+    name: "在分片里写嵌套选择器（会改块结构 → 检查脚本的正则取块判据失效）",
+    file: path.join(F.stylesDir, "music.scss"),
+    find: "/* ================================================================ 音乐屏",
+    replace: ".music-exp { &:hover { color: red; } }\n/* ================================================================ 音乐屏",
+    expect: ["STYLE.noScssSyntax"],
   },
 ];
 

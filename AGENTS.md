@@ -60,7 +60,7 @@ npm run check:ia              # IA 结构 24 条
 npm run check:tls             # TLS 依赖链 14 条（三层）
 npm run check:music[:refute]  # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 音频图 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 172 条 / 反证 127 条
 npm run check:settings[:refute] # 设置页「播放·媒体」72 条 / 反证 15 条
-npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 32 条 / 反证 38 条
+npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条 / 反证 44 条
 cd app && npx tsc --noEmit && npx vite build   # 前端类型与构建
 cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 ```
