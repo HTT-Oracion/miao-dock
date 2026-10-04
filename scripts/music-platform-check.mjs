@@ -518,6 +518,30 @@ add('STORE.switchClears', 'STORE', (s) => {
 
 // ============================ UI ============================
 const uiNote = (s, extra) => `${UI_GAP}${extra ? '；' + extra : ''}${s.uiDirMissing ? '（目录确实不存在）' : ''}`;
+add('UI.drawerAboveExpanded', 'UI', (s) => {
+  // 播放队列的入口同时存在于**展开播放器内部**（右下角），而展开播放器是
+  // `fixed z-index:70` 的整屏覆盖层 —— 抽屉若低于 70 就被整个盖住，
+  // 用户点了「播放队列」什么都不会出现，**且不报任何错**（曾如此）。
+  // 判据直接比两者的 z-index：改任何一个都要重新确认这个不等式。
+  const css = stripComments(s.css ?? '');
+  const pickZ = (sel) => {
+    const m = css.match(new RegExp(sel + "\\s*\\{([^}]*)\\}"));
+    if (!m) return null;
+    const z = m[1].match(/z-index:\s*(\d+)/);
+    return z ? Number(z[1]) : null;
+  };
+  const exp = pickZ('\\.music-exp');
+  const drawer = pickZ('\\.music-drawer');
+  if (exp === null || drawer === null)
+    return { ok: false, detail: '未解析到 .music-exp / .music-drawer 的 z-index（选择器或写法变了）' };
+  return {
+    ok: drawer > exp,
+    detail:
+      drawer > exp
+        ? ''
+        : `播放队列(z)=\${drawer} 被展开播放器(z)=\${exp} 盖住 —— 点「播放队列」会看不到任何东西`,
+  };
+});
 add('UI.platformSwitch', 'UI', (s) => ({
   ok: /\bPLATFORMS\b/.test(s.uiSource),
   detail: uiNote(s, '未读到平台切换 UI（PLATFORMS）'),
@@ -2406,6 +2430,13 @@ const MUTATIONS = [
     find: "      onEnded={() => handleTrackEnded()}",
     replace: "      onEnded={() => void 0}",
     expect: ["AUDIO.trackEndedOne"],
+  },
+  {
+    name: "把播放队列的 z-index 降回展开播放器之下（点「播放队列」看不到东西）",
+    file: "app/src/styles/app.css",
+    find: "  flex-direction: column;\n  z-index: 72;\n}",
+    replace: "  flex-direction: column;\n  z-index: 60;\n}",
+    expect: ["UI.drawerAboveExpanded"],
   },
 ];
 

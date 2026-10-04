@@ -2634,7 +2634,11 @@
   position: fixed;
   inset: 0;
   background: rgba(30, 24, 52, 0.28);
-  z-index: 55;
+  /* 71 / 72 这一对值是被下面这件事定死的：**展开播放器是 fixed z-index:70 的整屏覆盖层**，
+     而播放队列的入口同时存在于展开播放器里（右下角「播放队列」）。
+     抽屉若低于 70 就被它整个盖住 —— 用户点了"播放队列"却什么都没出现（曾如此）。
+     取 71/72：高于展开播放器，仍低于 Radix 弹层（80），弹层不会反过来被抽屉盖住。 */
+  z-index: 71;
 }
 .music-drawer {
   position: fixed;
@@ -2646,7 +2650,7 @@
   border-left: 1px solid var(--md-line);
   display: flex;
   flex-direction: column;
-  z-index: 60;
+  z-index: 72;
 }
 .music-drawer-hd {
   display: flex;
