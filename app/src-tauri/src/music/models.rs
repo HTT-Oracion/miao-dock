@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 /// 统一歌曲结构
@@ -144,6 +146,37 @@ pub struct Lyrics {
     pub roma: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub yrc: Option<String>,
+}
+
+/// 单个平台的缓存占用
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CacheProviderStat {
+    /// 歌词部分字节数
+    pub lyric_bytes: u64,
+    /// 音频部分字节数
+    pub audio_bytes: u64,
+}
+
+/// 音乐缓存总体统计
+///
+/// `providers` 的键恒定为 `netease` / `qqmusic` / `kugou` / `migu` 四个，
+/// 无缓存的平台值为 0 而不是缺键 —— 前端可以省掉判空。
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CacheStats {
+    /// 全部平台合计字节数
+    pub total: u64,
+    /// 歌词合计字节数
+    pub lyric_bytes: u64,
+    /// 音频合计字节数
+    pub audio_bytes: u64,
+    /// 缓存根目录绝对路径（拿不到时为空串，前端据此禁用「打开目录」）
+    pub root: String,
+    /// 歌词容量上限字节数
+    pub limit_lyric: u64,
+    /// 音频容量上限字节数
+    pub limit_audio: u64,
+    /// 按平台的占用明细
+    pub providers: HashMap<String, CacheProviderStat>,
 }
 
 /// 评论

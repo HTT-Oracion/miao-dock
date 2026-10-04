@@ -13,8 +13,10 @@
  *
  * 播放地址解析：
  * - 本地歌曲：`convertFileSrc(绝对路径)` 转 asset 协议，WebView 内可直接播放；
- * - 在线歌曲：先按平台调 song_url 拿真实 URL，再走音频代理
- *   `http://127.0.0.1:{port}/audio?url=...`（加 Referer/CORS/流式，Range 透传）。
+ * - 在线歌曲：**先查本地整首音频缓存**（命中直接播本地、不回源），
+ *   未命中再按平台调 song_url 拿真实 URL、走音频代理
+ *   `http://127.0.0.1:{port}/audio?url=...`（加 Referer/CORS/流式，Range 透传），
+ *   并在**后台**预热整首缓存（不阻塞播放、失败不打断播放）；
  * - 封面：`http://127.0.0.1:{port}/cover?url=...`（见 coverProxyUrl）。
  *
  * 持久化：播放历史、本地曲库、播放偏好（音质/音量/皮肤/播放模式）存 WebView localStorage。
@@ -977,11 +979,131 @@ interface MusicState {
 
 // ------------------------------------------------------------------ 内部辅助
 
-/** 按平台解析在线播放地址（song_url → 音频代理） */
+/**
+ * 一首歌在**音频缓存**里的稳定主键（逐平台）。
+ *
+ * ⚠️ 必须与 `platform.songUrl` / `platform.lyric` 取 id 的口径对齐，
+ * 否则会出现「按A 的 key 存了 B 的歌」这种错位 —— 症状是**别的歌的音频**，
+ * 且全程不报错。
+ *
+ * ## 为什么用 `||` 而不是 `??`
+ *
+ * `kugou.rs` 会把空 hash 序列化成 `Some("")`（不是 `None`），
+ * 而 `??` 只对 `null` / `undefined` 回落 ⇒ 空串会原样传下去。
+ * 于是所有空 hash 的酷狗歌会共用同一个 key，表现为「A 歌的音频出现在 B 歌上」。
+ * `||` 对空串也回落，比 `??` 严格更安全。QQ 的 `mid` 同理。
+ */
+function audioCacheId(provider: MusicProvider, song: Song): string {
+  switch (provider) {
+    case 'kugou':
+      return song.hash || song.id;
+    case 'qqmusic':
+      return song.mid || song.id;
+    // 咪咕的 `Song.id` 存的是 copyrightId（主键）；`content_id` 只是
+    // `listen_url` 的另一个必填查询参数，**别把它当主键**。
+    default:
+      return song.id;
+  }
+}
+
+/**
+ * 查整首音频缓存，命中返回**可直接播放的 asset URL**，未命中返回 `null`。
+ *
+ * ## ⚠️ 为什么不直接把结果交给上层而不在这里转 `convertFileSrc`
+ *
+ * 命中返回的是**绝对路径**，而 `<audio>` 在 Tauri 下不能直接吃 `file://`
+ * （被跨源策略挡），必须经 `convertFileSrc` 转 `asset://` ——
+ * 与本地歌曲（`resolvePlayUrl` 对 `song._localPath` 的处理）完全同一条路。
+ * 转换放在这里，是为了让本函数的契约是「返回能播的 URL」而不是「返回路径」，
+ * 调用方不必知道缓存命中拿到的是什么东西。
+ *
+ * ## 为什么吞掉异常
+ *
+ * 缓存是**优化**。查缓存失败（命令未注册 / 缓存目录不可读）时，
+ * 正确反应是「当它不存在」—— 走原来的代理路径在线播。
+ * 一旦让异常冒泡，`playSong` 会把它当成"解析播放地址失败"，
+ * 弹「播放失败」并**自动跳下一首** —— 症状是"缓存坏了就放不出歌"，
+ * 而缓存本该是可有可无的。
+ */
+async function lookupAudioCache(
+  song: Song,
+  provider: MusicProvider,
+  quality: string,
+): Promise<string | null> {
+  /**
+   * 本地歌曲**不入缓存链**。
+   *
+   * 两个理由：① 它走 `asset://` 直接播，文件本就在本地，再问一遍缓存是多余的系统调用；
+   * ② 它是用户自己导入的文件，计入「音乐缓存」统计会让设置页的占用数字失真
+   * （用户会看到"缓存占了 1.2GB"，其实全是自己的歌）。
+   *
+   * 这道闸放在**缓存链的入口**而不是调用点：将来多一个调用方也不会漏掉。
+   */
+  if (song._localPath) return null;
+  try {
+    const hit = await ipc.musicAudioCached(provider, audioCacheId(provider, song), quality);
+    return hit ? convertFileSrc(hit) : null;
+  } catch {
+    // 见上方注释：查不到就当没缓存，绝不影响播放
+    return null;
+  }
+}
+
+/**
+ * 后台整首下载落盘。**绝不阻塞播放，也绝不打断播放。**
+ *
+ * 调用点必须放在「播放地址已经拿到」之后（它需要源站真实 URL），
+ * 且以 `void` 发出、不 `await`。
+ *
+ * ## 为什么失败可以完全静默
+ *
+ * 下载失败对用户而言**与「没缓存」完全等价** —— 歌已经在放了，缓存只是让它下次更快。
+ * 所以这里既不弹提示也不重试：任何"下载缓存失败"的打扰都是净损失。
+ * 静默放弃的是**这一次**缓存机会，不是播放。
+ */
+function prefetchAudioCache(
+  song: Song,
+  provider: MusicProvider,
+  quality: string,
+  url: string,
+): void {
+  if (song._localPath) return;
+  // `void` 明确表达"发出即弃"，`.catch` 保证拒绝不会变成未处理的 Promise
+  void ipc.musicCacheDownload(provider, audioCacheId(provider, song), quality, url).catch(() => {});
+}
+
+/** 按平台解析在线播放地址（本地音频缓存 → song_url → 音频代理） */
 async function resolveOnlineUrl(song: Song): Promise<string> {
   const state = useMusicStore.getState();
   const provider = song.provider as MusicProvider;
-  const r = await platform.songUrl(provider, song, state.playbackQuality);
+  /**
+   * ⚠️ 缓存 key 里的 quality **只能是这个值**（5 值枚举的请求档位），
+   * 绝不能是 `r.quality` / `r.level` —— 四平台那两个字段值域互不相同
+   * （网易云是中文 label、QQ 是英文 label、咪咕是 `PQ`/`SQ`/`ZQ`），
+   * 拿它们当 key 会让同一首歌每次 key 都不同 ⇒ **缓存永不命中且不报错**。
+   *
+   * 它也天然**非空**（`PlaybackQuality` 是不含空串的联合类型，
+   * 水合处有 `?? 'hires'` 兜底）。Rust 侧对空档位判为"无法寻址"直接不下缓存，
+   * 那里也**刻意没有**默认成 `standard` —— 宁可无缓存，也不能让用户
+   * 以为听到了自己选的高音质。
+   */
+  const quality = state.playbackQuality;
+
+  // 先查缓存：命中就直接播本地文件，**不再回源**（省掉一次取流地址的网络往返）
+  const cached = await lookupAudioCache(song, provider, quality);
+  if (cached) {
+    /**
+     * 命中时拿不到"实际码率"（没调 `songUrl`），所以 `currentBitrate` 置 0 ——
+     * UI 侧只在 `> 0` 时显示码率（`PlayerBar`），置 0 等于"不谎报"。
+     * ⚠️ 不能留着上一首的值：那样播放条会显示**上一首**的码率。
+     * `currentQuality` 填请求档位是诚实的 —— 这个文件本就是按该档位的 key 存的
+     *（源站当时是否降级无从得知，不谎报具体码率）。
+     */
+    useMusicStore.setState({ currentQuality: quality, currentBitrate: 0 });
+    return cached;
+  }
+
+  const r = await platform.songUrl(provider, song, quality);
   if (!r?.url) return '';
   let port = state.proxyPort;
   if (!port) {
@@ -997,6 +1119,8 @@ async function resolveOnlineUrl(song: Song): Promise<string> {
     currentQuality: r.quality || r.level || '',
     currentBitrate: r.br || 0,
   });
+  // 播放地址已就绪 → 这时才后台预热。`void` 不阻塞，且失败不打断播放。
+  prefetchAudioCache(song, provider, quality, r.url);
   return `http://127.0.0.1:${port}/audio?url=${encodeURIComponent(r.url)}`;
 }
 

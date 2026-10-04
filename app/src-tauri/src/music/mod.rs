@@ -1,8 +1,11 @@
+pub mod audio_cache;
 pub mod audio_proxy;
+pub mod cache_store;
 pub mod cookie;
 pub mod crypto;
 pub mod kugou;
 pub mod local;
+pub mod lyric_cache;
 pub mod migu;
 pub mod models;
 pub mod netease;
@@ -151,10 +154,18 @@ pub async fn music_playlist_subscribe(id: String, subscribe: bool) -> Result<(),
     netease::playlist_subscribe(&id, subscribe, &app_cookie).await
 }
 
+/// 网易云歌词：命中本地缓存则不回源。
+///
+/// ⚠️ `app: AppHandle` 是缓存目录的来源。**前端不需要传** —— Tauri 为
+/// `AppHandle` 实现了专用的 `CommandArg`，直接从 invoke 消息解析，不读 payload
+/// （与已有的 `qq_lyric` / `migu_lyric` 同一形态）。
 #[tauri::command]
-pub async fn music_lyric(id: String) -> Result<Lyrics, String> {
+pub async fn music_lyric(app: AppHandle, id: String) -> Result<Lyrics, String> {
     let app_cookie = get_app_cookie().await;
-    netease::lyric(&id, &app_cookie).await
+    lyric_cache::fetch_and_cache(&app, "netease", &id, || {
+        netease::lyric(&id, &app_cookie)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -295,13 +306,32 @@ pub async fn kugou_song_url(
     .await
 }
 
+/// 酷狗歌词：命中本地缓存则不回源。
+///
+/// ⚠️ `hash` 可能为空串（见 `lyric_cache` 模块头「酷狗空 hash 隐患」）。
+/// 这里把它**如实**当作缓存 key 传下去，由缓存层统一判定「空 id 不缓存」——
+/// 四个平台的行为必须一致，若只在这一处做 `if hash.is_empty()` 特判，
+/// 下一个人改回别的平台时就会漏掉。
+///
+/// 缓存 key 只用 `hash`（= 前端 `song.hash || song.id` 的结果），
+/// 不掺 `album_audio_id` / `duration`：后两者是取词请求的辅助参数
+/// （歌词内容仍由 hash 唯一决定），掺进来会让同一首歌因「同一个 hash
+/// 出现在不同专辑的曲库里」而缓存两份。
 #[tauri::command]
 pub async fn kugou_lyric(
+    app: AppHandle,
     hash: String,
     album_audio_id: Option<String>,
     duration: Option<u64>,
 ) -> Result<Lyrics, String> {
-    kugou::lyric(&hash, &album_audio_id.unwrap_or_default(), duration.unwrap_or(0)).await
+    // 先把 Option 落成有名字的值再进闭包：`unwrap_or_default()` 产生的是临时值，
+    // 直接写在闭包里会让闭包捕获一个「已被借走的临时」，编译不过
+    let album_id = album_audio_id.unwrap_or_default();
+    let secs = duration.unwrap_or(0);
+    lyric_cache::fetch_and_cache(&app, "kugou", &hash, || {
+        kugou::lyric(&hash, &album_id, secs)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -401,10 +431,27 @@ pub async fn qq_song_url(
     qqmusic::song_url(&mid, &media_mid.unwrap_or_default(), &quality.unwrap_or_else(|| "hires".into()), &cookie).await
 }
 
+/// QQ 歌词：命中本地缓存则不回源。
+///
+/// 缓存 key 与前端 `platform.ts` 的实参顺序保持一致 —— `mid` 优先、
+/// `mid` 为空时回落到 `id`（数字 songid 的字符串）。
+/// ⚠️ 这里用的是 **`is_empty` 而不是「空才回落」的隐式约定**：
+/// 前端写的是 `song.mid ?? song.id`，`??` 只对 `null`/`undefined` 回落，
+/// 空串不会回落。Rust 侧统一按「空串视为缺失」处理，两端语义才对得上。
 #[tauri::command]
 pub async fn qq_lyric(app: AppHandle, mid: String, id: Option<String>) -> Result<Lyrics, String> {
     let cookie = load_provider_cookie(&app, "qqmusic").await;
-    qqmusic::lyric(&mid, &id.unwrap_or_default(), &cookie).await
+    let song_id = id.unwrap_or_default();
+    // 不克隆：`stable_id` 只是给缓存层寻址用的借用，回源仍用原始 `mid`
+    let stable_id = if mid.trim().is_empty() {
+        song_id.as_str()
+    } else {
+        mid.as_str()
+    };
+    lyric_cache::fetch_and_cache(&app, "qqmusic", stable_id, || {
+        qqmusic::lyric(&mid, &song_id, &cookie)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -545,11 +592,23 @@ pub async fn migu_song_url(
     .await
 }
 
+/// 咪咕歌词：命中本地缓存则不回源。
+///
+/// ⚠️ 缓存 key 是 `copyright_id`，**不是** `content_id` —— 前端 `Song.id`
+/// 存的就是 copyrightId（`migu.rs` 里 `id: copyright_id`），
+/// 两个字段是同一次 `listen_url` 请求的**两个必填参数**，不是「主键 + 备胎」。
+/// 用错的话，key 会随 contentId 的取值变化而漂移，缓存永不命中。
+///
+/// 这里的参数顺序与前端 `ipc.miguLyric(contentId, copyrightId)` 一致，
+/// **别写反**：反了会导致「用 contentId 当缓存 key」，看起来能跑、命中率极低。
 #[tauri::command]
 pub async fn migu_lyric(app: AppHandle, content_id: String, copyright_id: String) -> Result<Lyrics, String> {
     let cookie = load_provider_cookie(&app, "migu").await;
     let uid = load_migu_uid(&app).await;
-    migu::lyric(&cookie, &uid, &content_id, &copyright_id).await
+    lyric_cache::fetch_and_cache(&app, "migu", &copyright_id, || {
+        migu::lyric(&cookie, &uid, &content_id, &copyright_id)
+    })
+    .await
 }
 
 #[tauri::command]

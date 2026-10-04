@@ -182,6 +182,12 @@ fn main() {
             music::local::delete_cover_cache_files,
             // ── 音乐模块（音频代理）──
             music::audio_proxy::cmd_get_proxy_port,
+            // ── 音乐模块（缓存：歌词/音频共用内核）──
+            // 歌词缓存不暴露命令：它在四个聚合歌词命令内部生效，前端零改动。
+            music::audio_cache::music_audio_cached,
+            music::audio_cache::music_cache_download,
+            music::audio_cache::music_cache_stats,
+            music::audio_cache::music_cache_clear,
         ])
         .setup(|app| {
             // ---- 托盘：常驻 + 状态点由前端窗口承载（托盘菜单反映服务状态文案） ----

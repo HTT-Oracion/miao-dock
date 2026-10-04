@@ -11,6 +11,7 @@ import { useMusicStore } from '@music/store';
 import { ABOUT, GENERAL, MEDIA, RESOURCE, TRANSLATE } from '@screens/settings/catalog';
 import type { SettingGroup, SettingItem } from '@screens/settings/catalog';
 import { SpecCheckBlock, useSpecCheck } from '@screens/settings/SpecCheck';
+import { CacheBlock } from '@screens/settings/CacheBlock';
 
 const STATUS_TEXT: Record<ServiceStatus['state'], string> = {
   stopped: '未启动',
@@ -41,6 +42,15 @@ function Group({
         // 没给 render 的组就是"整组待接入"（③/④）。这里不做兜底渲染控件 ——
         // 想要控件就在 render 里显式写，写漏了只会看到 PendingRow，不会静默出假控件。
         if (item.state === 'pending' || !render) return <PendingRow key={item.id} item={item} />;
+        /*
+         * `layout: 'block'` 的项走通栏：内容自带完整布局（如「音乐缓存」的四格），
+         * 再套一层 `Row` 就会多出一截标题 + 一个窄控件列，把它压成一条细缝。
+         *
+         * 这里仍然要求它有 `label` —— 由渲染方自己画（`CacheBlock` 的第一格就是它）。
+         * 之所以不在 `Row` 里复用 `label`，是因为 `Row` 的语义是"标题左 / 控件右"，
+         * 而通栏块里标题的位置由内容自己定，强行塞进去只会多一层嵌套。
+         */
+        if (item.layout === 'block') return <div key={item.id}>{render(item)}</div>;
         return <Row key={item.id} item={item}>{render(item)}</Row>;
       })}
     </div>
@@ -225,7 +235,7 @@ function writeLyricsLocked(locked: boolean): void {
   }
 }
 
-/** ③ 播放·媒体 —— 10 项全部接真实能力，横跨「播放 / 歌词 / 透明彩胶」三小节 */
+/** ③ 播放·媒体 —— 11 项全部接真实能力，横跨「播放 / 歌词 / 透明彩胶」三小节 */
 export function MediaSection() {
   /*
    * 全部偏好都从音乐模块的全局 store 读，setter 回写同一份。
@@ -293,6 +303,10 @@ export function MediaSection() {
         );
       case 'disc-mode':
         return <Switch on={discMode} onToggle={() => setDiscMode(!discMode)} label={item.label} />;
+      case 'music-cache':
+        // 四格块，自身带标题/说明/统计/按钮，所以不需要 Row 的标题列
+        // （`Group` 见到 layout:'block' 也不会包 Row，见 Group 里的注释）
+        return <CacheBlock />;
       case 'lyrics-size':
         return (
           <Range

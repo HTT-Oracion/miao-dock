@@ -1,5 +1,5 @@
 /**
- * 音乐模块 IPC 层 —— 封装 Rust `music/` 模块的 90 条 Tauri 命令。
+ * 音乐模块 IPC 层 —— 封装 Rust `music/` 模块的 98 条 Tauri 命令。
  *
  * 与 `../ipc.ts`（翻译服务的 IPC）同源：`invoke` 走 Tauri 的 IPC 通道，
  * 参数/返回值与 Rust `#[tauri::command]` 的签名一一对应。这里只做类型化封装，
@@ -10,6 +10,7 @@ import type {
   Album,
   Artist,
   ArtistDetail,
+  CacheStats,
   CommentPage,
   LocalSongInfo,
   LoginInfo,
@@ -421,3 +422,67 @@ export const lyricsControl = (payload: LyricsControlPayload) =>
 
 /** 获取音频代理端口（未启动则启动），返回 127.0.0.1 上的监听端口 */
 export const getProxyPort = () => invoke<number>('cmd_get_proxy_port');
+
+// ------------------------------------------------------------------ 音乐缓存
+
+/**
+ * 查本地是否已有**整首**音频缓存。
+ *
+ * 命中返回**绝对路径**，未命中返回 `null`。
+ *
+ * ## 为什么是 `string | null` 而不是抛错
+ *
+ * `null` 同时覆盖「没缓存」与「缓存不可用」（磁盘满 / 权限不足 / 目录被清）。
+ * 这两种情况下调用方的正确反应**完全相同** —— 走原来的代理路径在线播。
+ * 缓存是优化，它坏掉不该让用户看到一个错误弹窗。
+ *
+ * ## ⚠️ `quality` 必须传 `state.playbackQuality`，不能传 `SongUrlResult.quality`
+ *
+ * 查缓存发生在 `songUrl()` **之前**，那一刻只有「用户请求的档位」已知。
+ * 而四个平台返回的 `quality` / `level` **既不同名也不同值域**：
+ * 网易云的 `quality` 是中文 label（`高清臻音`）、QQ 是英文 label（`Hi-Res FLAC`）、
+ * 咪咕的 `level` 干脆是 `PQ`/`HQ`/`SQ`/`ZQ` 这种音质等级而非档位名。
+ * 拿它们当 key 会导致同一首歌每次算出的 key 都不同 ⇒ **缓存永不命中**，
+ * 且全程不报错（用户只会觉得"缓存好像没起作用"）。
+ *
+ * 空 `quality` 会被 Rust 侧判为「无法寻址」→ 永远不命中，这是**刻意**的：
+ * 宁可不下缓存，也不能猜错音质（猜错＝用户以为在听高音质，实际是标准音质）。
+ */
+export const musicAudioCached = (provider: string, id: string, quality: string) =>
+  invoke<string | null>('music_audio_cached', { provider, id, quality });
+
+/**
+ * 整首下载落盘（用于后台预热）。成功返回绝对路径，**任何失败返回 `null`**。
+ *
+ * ## 调用纪律：绝不能 await 它
+ *
+ * 它是**后台优化**，不是播放的前置条件。必须在拿到播放地址之后
+ * 以 `void ... .catch(() => {})` 的形式 fire-and-forget：
+ * 一旦 `await`，慢网下整首歌要等几十秒才响 —— 而下载失败若被 `throw` 到
+ * 播放链路上，用户会看到"播放失败"并被自动跳到下一首，
+ * 症状是「网络不好的时候歌放不出来」，而根因只是个可有可无的缓存。
+ *
+ * `url` 传**源站真实地址**（`SongUrlResult.url`），不是代理地址 ——
+ * Rust 侧自己带 UA/Referer 直连源站。
+ */
+export const musicCacheDownload = (provider: string, id: string, quality: string, url: string) =>
+  invoke<string | null>('music_cache_download', { provider, id, quality, url });
+
+/**
+ * 缓存统计（只读，不触发清理）。
+ *
+ * 给设置页「音乐缓存」用：显示占用、按平台下拉清除、打开缓存目录。
+ * ⚠️ 容量上限（`limit_lyric` / `limit_audio`）由 Rust 给出，
+ * **不要在前端写死 100MB / 1GB** —— 改了 Rust 那边就会与显示不符。
+ */
+export const musicCacheStats = () => invoke<CacheStats>('music_cache_stats');
+
+/**
+ * 清缓存。`provider` 为空 ⇒ 全平台清。
+ *
+ * ⚠️ Rust 侧返回 `()` 而不是 `Result`：清缓存失败对用户没有可执行的下一步，
+ * 弹错误框只会让人困惑；且它只删**目录内容**、保留目录本身，
+ * 所以清完之后「打开缓存目录」按钮依然可用（不会变成"刚做完的操作把自己的按钮弄坏"）。
+ */
+export const musicCacheClear = (provider?: string) =>
+  invoke<void>('music_cache_clear', { provider: provider ?? null });

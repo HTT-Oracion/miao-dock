@@ -46,6 +46,9 @@ const F = {
   expanded: path.join(APP, 'src', 'screens', 'music', 'ExpandedPlayer.tsx'),
   musicScreen: path.join(APP, 'src', 'screens', 'MusicScreen.tsx'),
   main: path.join(APP, 'src', 'main.tsx'),
+  // 「音乐缓存」通栏四格的实现（放 screens/settings/ 而非 components/units/ ——
+  // 后者的文件清单被 units-structure-check 的 MANIFEST 锁死为 11 个，多一个即红）
+  cacheBlock: path.join(APP, 'src', 'screens', 'settings', 'CacheBlock.tsx'),
   // 断言读到的 css 是全分片拼接（见 loadSources）；本组无 css 反证条目，
   // 故无需指到具体分片 —— 留 stylesDir 供将来新增反证时定位。
   stylesDir: path.join(APP, 'src', 'styles'),
@@ -62,9 +65,10 @@ const EXCLUDED = [
   { id: 'audio-cache', label: '音频缓存目录' },
 ];
 
-/** ② MEDIA 组里必须存在且为 live 的 10 项（id ↔ 中文标签）
+/** ② MEDIA 组里必须存在且为 live 的 11 项（id ↔ 中文标签）
  *  后两项是桌面歌词（P3 落地后恢复）—— 此前它们以"需独立置顶窗口，延后"为由被剔除，
- *  该前提已不成立（《09》§5.6 第 1 项拍板要做独立窗口），故恢复。 */
+ *  该前提已不成立（《09》§5.6 第 1 项拍板要做独立窗口），故恢复。
+ *  末项「音乐缓存」是通栏四格（`layout: 'block'`），不是标准两栏行。 */
 const ADDED = [
   { id: 'quality', label: '音质档位' },
   { id: 'skin', label: '展开播放器皮肤' },
@@ -76,14 +80,16 @@ const ADDED = [
   { id: 'lyrics-locked', label: '锁定歌词窗口' },
   { id: 'vinyl-color-mode', label: '彩胶配色' },
   { id: 'vinyl-color', label: '彩胶自定义色' },
+  { id: 'music-cache', label: '音乐缓存' },
 ];
 
 /** ③ MEDIA 的三小节 id（顺序即渲染顺序） */
 const MEDIA_GROUPS = ['playback', 'lyrics', 'vinyl'];
 
 /** ③ 全表项数自校常量应等于的合计
- *  26（初版）→ 29（③ 组 5 项 pending → 8 项 live）→ **31**（P3 桌面歌词恢复 2 项） */
-const SPEC_TOTAL = 31;
+ *  26（初版）→ 29（③ 组 5 项 pending → 8 项 live）→ 31（P3 桌面歌词恢复 2 项）
+ *  → **32**（加「音乐缓存」1 项） */
+const SPEC_TOTAL = 32;
 
 /** ④ 设置页必须真正取用的 store setter（逐项对应的控件回写） */
 const MEDIA_SETTERS = [
@@ -123,6 +129,7 @@ function loadSources() {
     expanded: readMaybe(F.expanded),
     musicScreen: readMaybe(F.musicScreen),
     main: readMaybe(F.main),
+    cacheBlock: readMaybe(F.cacheBlock),
     // 全分片拼接（顺序 = index.scss 的 @use 顺序 = 层叠顺序），
     // 不是读单个 app.css —— 样式已按模块拆分，读单文件会集体变红（读不到 ≠ 真回归）
     css: readStyleSource(F.stylesDir),
@@ -266,11 +273,29 @@ function methodBody(src, name) {
   return null;
 }
 
-/** 取 `export function <name>(…) { … }` 的函数体 */
+/**
+ * 取 `function <name>(…) { … }` 的函数体。
+ *
+ * 两处必须讲究，否则判据会**恒红或恒绿**：
+ *
+ * ① `export` 前缀可选：屏内私有件（`Group` / `formatBytes`）本来就不导出，
+ *    而判据要看的恰恰是它们。强制 `export` 会让断言找不到函数体。
+ *    可选化不改变已有用法的结果：`export function X` 仍先于 `function X` 匹配。
+ *
+ * ② **必须先跳过形参表再找 `{`**：`Group({ group, render }: { … })` 的第一个
+ *    `{` 是**解构模式**，不是函数体。从它开始数括号会得到"形参解构"这一段，
+ *    于是函数体判据全部落空（表现为"分支不存在"的假红）。
+ */
 function fnBody(src, name) {
-  const m = new RegExp(`export function ${esc(name)}\\b`).exec(src);
+  const m = new RegExp(`(?:export\\s+)?function\\s+${esc(name)}\\b`).exec(src);
   if (!m) return null;
-  const start = src.indexOf('{', m.index);
+  // 形参表：从函数名之后第一个 `(` 起做括号配对（跳过字符串与注释）
+  const parenAt = src.indexOf('(', m.index + m[0].length);
+  if (parenAt < 0) return null;
+  const params = readBalanced(src, parenAt);
+  if (!params) return null;
+  // 形参表之后（可能隔着返回类型标注）的第一个 `{` 才是函数体
+  const start = src.indexOf('{', parenAt + params.length);
   if (start < 0) return null;
   let depth = 0;
   for (let i = start; i < src.length; i++) {
@@ -559,6 +584,194 @@ add('OPTIONS.sectionsImportsSkins', 'OPTIONS', (ctx) => {
   return { ok, detail: ok ? '' : 'sections.tsx 未从 player-options 引入 SKINS（设置页也应共用同一份）' };
 });
 
+// ============================ ⑧ CACHE（「音乐缓存」通栏四格） ============================
+/*
+ * 这一组守的是**通栏形态**这条新分支。
+ *
+ * 为什么它需要自己的断言组（而不是并进 WIRING）：`WIRING.item.<id>` 判的是
+ * 「sections.tsx 里有产出控件的 case」—— 它**不关心**这一项最终被不被 `Row` 包住。
+ * 而「音乐缓存」存在的全部理由就是「塞不进 `Row` 的窄右列」：
+ * 哪天有人把 `layout:'block'` 删掉、或者把 `Group` 里那条新分支删了，
+ * WIRING 全绿、项数全对，而页面上那一项被压成一条读不了的细缝 —— 四格没了，
+ * 断言却说什么都没发生。所以形态本身必须被钉住。
+ */
+add('CACHE.layoutFlag', 'CACHE', (ctx) => {
+  const { cat } = ctx;
+  const dataErr = CAT_ERR(cat);
+  if (dataErr) return { ok: false, detail: dataErr };
+  const hit = flatItems(cat.mod.MEDIA).find((i) => i.id === 'music-cache');
+  if (!hit) return { ok: false, detail: 'MEDIA 里缺项 id=music-cache' };
+  return {
+    ok: hit.layout === 'block',
+    detail:
+      hit.layout === 'block'
+        ? ''
+        : `music-cache 的 layout=${JSON.stringify(hit.layout)}，应为 'block'` +
+          '（否则会被包进 Row 的窄右列，四格被压扁）',
+  };
+});
+add('CACHE.groupSkipsRow', 'CACHE', (ctx) => {
+  // Group 里那条新分支：见到 layout==='block' 直接渲染 children，不包 Row。
+  // 判据锚在 `item.layout === 'block'` 上 —— 只查"出现了 block 字样"会被注释骗过。
+  const body = fnBody(ctx.s.sections, 'Group');
+  if (!body) return { ok: false, detail: 'sections.tsx 里找不到 Group 的实现体' };
+  const branch = /item\.layout\s*===\s*['"]block['"]/.test(body);
+  // 且这条分支必须**在 Row 之前 return**，否则包 Row 的那行会先执行
+  const layoutAt = body.search(/item\.layout\s*===\s*['"]block['"]/);
+  const rowAt = body.search(/<Row\b/);
+  const ordered = layoutAt >= 0 && rowAt >= 0 && layoutAt < rowAt;
+  return {
+    ok: branch && ordered,
+    detail: !branch
+      ? "Group 里没有 layout==='block' 的分支（通栏项会被包进 Row）"
+      : !ordered
+        ? "Group 的 block 分支排在 <Row 之后（包 Row 的分支会先执行，四格失效）"
+        : '',
+  };
+});
+add('CACHE.blockRendersFourCells', 'CACHE', (ctx) => {
+  /*
+   * 四格的四个格子必须都在：文案 / 目录路径 / 总大小 / 两个按钮。
+   *
+   * 判据取 `CacheBlock` 的**组件源码**并数关键类名 —— 而不是查 `sections.tsx`
+   * 里有没有那几段文字：组件搬文件时引用关系会变，源码里的类名不会。
+   */
+  const src = ctx.s.cacheBlock;
+  if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx（四格实现不在预期位置）' };
+  const need = [
+    'set-cache-name',
+    'set-cache-path',
+    'set-cache-total',
+    'set-cache-acts',
+  ];
+  const missing = need.filter((n) => !new RegExp(`${q(n)}`).test(src));
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `四格里缺：${missing.join('、')}（少一格就不是规格里的四格）` : '',
+  };
+});
+add('CACHE.openDirGuarded', 'CACHE', (ctx) => {
+  /*
+   * 「打开目录」必须有存在性守卫。
+   *
+   * `open_path` 会先判 `p.exists()`，不存在直接 `Err`（`commands.rs`）——
+   * 而「全部清除」只删目录内容、保留根目录，所以正常流程下不会踩到；
+   * 但目录被手工删掉 / 换机迁移后就会。**症状是点一下报错**，
+   * 所以必须判「按钮被禁用」或「调用有兜底」，二者至少居其一。
+   */
+  const src = ctx.s.cacheBlock;
+  if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx' };
+  const disabled = /disabled=\{[^}]*root/.test(src);
+  const caught = /openPath\([^)]*\)[\s\S]{0,120}?\.catch\(/.test(src);
+  return {
+    ok: disabled && caught,
+    detail: !disabled
+      ? '「打开目录」没有按 root 禁用（路径不可用时点了只会报错）'
+      : !caught
+        ? 'openPath 没有 .catch（目录被手工删掉时用户只看到一次报错，且不知道发生了什么）'
+        : '',
+  };
+});
+add('CACHE.confirmBeforeClear', 'CACHE', (ctx) => {
+  /*
+   * 清缓存不可撤销 ⇒ 必须有二次确认，且确认必须**先于**清除动作。
+   *
+   * 判据取「确认弹层的组件」与「调用清除的位置」两处：
+   * 只有弹层没有确认、或有确认但清除绕过了它，都判红。
+   */
+  const src = ctx.s.cacheBlock;
+  if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx' };
+  const hasDialog = /className="modal-mask"/.test(src) && /role="dialog"/.test(src);
+  const clearAt = src.indexOf('musicCacheClear(');
+  // 确认状态必须是清除的前置：pending 非空时才渲染弹层，点确认后才调清除
+  const gateByPending = /pending\s*\?/.test(src) && /setPending\(/.test(src);
+  return {
+    ok: hasDialog && clearAt > 0 && gateByPending,
+    detail: !hasDialog
+      ? '没有二次确认弹层（清缓存不可撤销）'
+      : clearAt <= 0
+        ? '找不到 musicCacheClear 调用'
+        : !gateByPending
+          ? '清除动作没有经过确认状态门控'
+          : '',
+  };
+});
+add('CACHE.reloadAfterClear', 'CACHE', (ctx) => {
+  /*
+   * 清完必须重拉统计。
+   *
+   * `music_cache_clear` 返回 `()`（Rust 侧刻意不抛：清缓存失败没有可执行的下一步），
+   * 所以前端**不能靠 catch 判断成败**，只能靠"清完再读一次数字看它变没变"。
+   * 漏了这一步的症状是：清除确实发生了，但界面上的大小纹丝不动 —— 用户会以为没生效。
+   */
+  const body = fnBody(ctx.s.cacheBlock, 'CacheBlock') ?? '';
+  const clearAt = body.indexOf('musicCacheClear');
+  const reloadAfter = clearAt >= 0 && body.indexOf('reload()', clearAt) > clearAt;
+  return {
+    ok: reloadAfter,
+    detail: !reloadAfter ? '清除后没有再次拉统计（数字不会变化，用户以为清除没生效）' : '',
+  };
+});
+add('CACHE.unitsBase1024', 'CACHE', (ctx) => {
+  /*
+   * 容量换算必须是 **1024 进制 + 2 位小数**（拍板规格）。
+   *
+   * 判据盯三件事，各有其失效形态：
+   *   ① 换算基数是 1024 而不是 1000 —— 否则"缓存 1.5 M"与系统显示的量对不上；
+   *   ② `toFixed(2)` 存在 —— 否则 `1.5 M` 与 `1.00 M` 宽度不一，且丢掉两位精度；
+   *   ③ 单位阶梯爬到 G —— 只有 K/M 两级时 1G 以上的缓存会被显示成 `1024.00 M`。
+   *
+   * ⚠️ 刻意**不数 1024 出现了几次**：多级换算可以写成递归、循环或查表，
+   * 次数与正确性无关（第一版判据说"至少两处"就误报了一个正确的循环实现）。
+   * 真正要钉的是"基数是 1024"与"格式是两位小数"这两件**规格事实**。
+   */
+  const src = ctx.s.cacheBlock;
+  if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx' };
+  const body = fnBody(src, 'formatBytes') ?? '';
+  const base1024 = /\b1024\b/.test(body);
+  const notBase1000 = !/\b1000\b/.test(body);
+  const fixed2 = /\.toFixed\(\s*2\s*\)/.test(body);
+  const hasG = /['"]G['"]/.test(body);
+  return {
+    ok: base1024 && notBase1000 && fixed2 && hasG,
+    detail: !base1024
+      ? 'formatBytes 没有 1024 进制（规格要求 1024，与系统容量口径一致）'
+      : !notBase1000
+        ? 'formatBytes 出现了 1000（规格是 1024 进制，用 1000 会与系统显示的量对不上）'
+        : !fixed2
+          ? 'formatBytes 没有 toFixed(2)（规格要求保留 2 位小数，如 1.50 M）'
+          : !hasG
+            ? "formatBytes 的单位阶梯里没有 'G'（超过 1G 的缓存会被显示成 1024.00 M）"
+            : '',
+  };
+});
+add('CACHE.providerLabelMap', 'CACHE', (ctx) => {
+  // 四个平台的中文名映射。写错一个，用户就会看到「清除XX音乐」这种占位名。
+  const src = ctx.s.cacheBlock ?? '';
+  const missing = ['netease', 'kugou', 'qqmusic', 'migu'].filter(
+    (k) => !new RegExp(`${k}\\s*:\\s*['"][^'"]+['"]`).test(src),
+  );
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `平台中文名映射缺：${missing.join('、')}` : '',
+  };
+});
+add('CACHE.zeroDisabled', 'CACHE', (ctx) => {
+  /*
+   * 某平台 0 缓存时该项必须**置灰不可点**（拍板规格）。
+   *
+   * 只查"有 disabled"会假绿：整体禁用或按钮禁用都能骗过它。
+   * 所以要求 disabled 的判据表达式里**出现该项的字节数变量**，
+   * 即"这个平台的字节数为 0 时才禁"。
+   */
+  const src = ctx.s.cacheBlock ?? '';
+  const ok = /disabled=\{\s*bytes\s*<=\s*0\s*\}/.test(src);
+  return {
+    ok,
+    detail: ok ? '' : '某平台 0 缓存时没有置灰（无可删之物却给可点的入口，点了像坏了）',
+  };
+});
+
 // ── 执行器 ────────────────────────────────────────────────────────────────
 async function runAll() {
   const s = loadSources();
@@ -576,7 +789,7 @@ async function runAll() {
   return res;
 }
 
-const GROUPS = ['EXCLUDED', 'ADDED', 'COUNT', 'WIRING', 'STORE', 'PLAYER', 'OPTIONS'];
+const GROUPS = ['EXCLUDED', 'ADDED', 'COUNT', 'WIRING', 'STORE', 'PLAYER', 'OPTIONS', 'CACHE'];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -620,9 +833,9 @@ const MUTATIONS = [
   {
     name: '把项数自校常量改成 26（模拟自校常量漂移）',
     file: F.catalog,
-    // ⚠️ 锚点必须与 catalog 的真实字节一致 —— 常量从 29 变 31 后不同步，
+    // ⚠️ 锚点必须与 catalog 的真实字节一致 —— 常量从 29 变 31、再变 32 后不同步，
     // 这条会退化成「锚点未找到 / 跳过」，看起来仍是全绿（跳过 ≠ 通过）
-    find: 'export const SPEC_ITEM_TOTAL = 31;',
+    find: 'export const SPEC_ITEM_TOTAL = 32;',
     replace: 'export const SPEC_ITEM_TOTAL = 26;',
     expect: ['COUNT.specMatches'],
   },
@@ -706,6 +919,47 @@ const MUTATIONS = [
     replace: 'void 0;',
     expect: ['STORE.hydrate.atBoot'],
   },
+  /*
+   * 以下三条守「音乐缓存」这一项。
+   *
+   * 为什么要单独守：它是**通栏四格**（`layout: 'block'`），走的是 `Group` 里
+   * 一条**新分支**。新分支最典型的失效是「catalog 里写了项、脚本数得出，
+   * 但渲染时被 Row 压扁 / 压根没渲染」—— 而这正是它当初要脱离 `Row` 的理由。
+   */
+  {
+    name: '把「音乐缓存」项整条从 catalog 里删掉（模拟「加了项但忘了算进项数」）',
+    file: F.catalog,
+    // 整条（含 id/label/state/layout）一起删 —— 只改 id 的话项还在，
+    // COUNT.total 仍然对得上（那是**正确**的行为，不是假阳性）。
+    // 判据是「真的导入 catalog 求和」，所以只有项真的少了它才会红。
+    find:
+      "        {\n" +
+      "          id: 'music-cache',\n" +
+      "          label: '音乐缓存',\n" +
+      "          state: 'live',\n" +
+      "          // 四格块：塞不进 Row 的窄右列（见 SettingItem.layout 的注释）\n" +
+      "          layout: 'block',\n" +
+      "          why:\n" +
+      "            '在线播放的歌词与整首歌会落盘缓存，这里能看占用、按平台清除、打开缓存目录。' +\n" +
+      "            '只统计**在线歌曲**的缓存 —— 你自己导入的本地文件不在其中。',\n" +
+      "        },\n",
+    replace: '',
+    expect: ['ADDED.music-cache', 'COUNT.total'],
+  },
+  {
+    name: '把「音乐缓存」的 layout 形态字段去掉（会被 Row 压成两栏窄列，四格失效）',
+    file: F.catalog,
+    find: "          // 四格块：塞不进 Row 的窄右列（见 SettingItem.layout 的注释）\n          layout: 'block',\n",
+    replace: '',
+    expect: ['CACHE.layoutFlag'],
+  },
+  {
+    name: "把 sections.tsx 里 music-cache 的 case 改错（四格块不会被渲染）",
+    file: F.sections,
+    find: "      case 'music-cache':",
+    replace: "      case 'music-cache-off':",
+    expect: ['WIRING.item.music-cache'],
+  },
 ];
 
 // ── 主流程 ────────────────────────────────────────────────────────────────
@@ -713,7 +967,7 @@ const refute = process.argv.includes('--refute');
 
 console.log('设置页 · ③ 播放·媒体「能实现/不能实现」重新裁定断言' + (refute ? ' · 反证轮' : ''));
 console.log(`根目录：${ROOT}`);
-console.log(`断言总数：${A.length}（EXCLUDED/ADDED/COUNT/WIRING/STORE/PLAYER/OPTIONS）`);
+console.log(`断言总数：${A.length}（EXCLUDED/ADDED/COUNT/WIRING/STORE/PLAYER/OPTIONS/CACHE）`);
 
 if (!refute) {
   const res = await runAll();

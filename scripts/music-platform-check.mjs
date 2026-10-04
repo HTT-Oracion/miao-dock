@@ -126,6 +126,16 @@ const CONTRACT = {
 };
 const PLATFORM_KEYS = ['netease', 'kugou', 'qqmusic', 'migu'];
 
+/**
+ * 音乐缓存的 4 条新命令（Rust `music/audio_cache.rs`，前端在 `ipc.ts` 封装）。
+ *
+ * ⚠️ 这份清单**独立于**上面的 `CONTRACT`：那份是负责人冻结的平台能力清单，
+ * 它的判据是"命令名必须出现在 ipc.ts"，而缓存命令是后加的 —— 不进 `CONTRACT`
+ * 就意味着漏接线不会让任何一条断言变红（这是本组存在的全部理由）。
+ * 所以这里单独列出，并在 `CACHE.ipcWrapped` 里**同时**判 Rust 侧的 `main.rs` 注册。
+ */
+const CACHE_CMDS = ['music_audio_cached', 'music_cache_download', 'music_cache_stats', 'music_cache_clear'];
+
 /** 派发函数 → 其函数体里**必须出现**的平台分支标识（netease 走 default 的用 netease 显式标注） */
 const DISPATCH = {
   search: ['kugou', 'qqmusic', 'migu'],
@@ -290,6 +300,125 @@ function fnBodyAny(src, name) {
     }
   }
   return null;
+}
+
+/**
+ * 取 `anchor` 之后**紧邻的 `{...}` 块**（按花括号配对），用于把判据限定在
+ * 某个类型/接口**体内部**。
+ *
+ * ## 为什么需要
+ *
+ * 只判「字段名在文件里出现过」是这一类断言最常见的假绿来源：
+ * 字段名会**复用**。本脚本第一次栽在这里 —— `CacheStats` 与
+ * `CacheProviderStat` 都有 `audio_bytes`，把 `CacheStats.audio_bytes` 改错后，
+ * "全文搜 `audio_bytes`" 仍能命中另一个接口里的同名字段 ⇒ 断言恒绿。
+ * 只有把判据钉在**这一个块的体内**，改名才会真的变红。
+ */
+function braceBlock(src, anchor) {
+  const at = src.indexOf(anchor);
+  if (at < 0) return null;
+  const open = src.indexOf('{', at + anchor.length);
+  if (open < 0) return null;
+  const end = matchBracket(src, open);
+  return end < 0 ? null : src.slice(open + 1, end);
+}
+
+/** 第 occurrence（0 起）次出现 needle 的下标；不足则 -1 */
+function nthIndex(src, needle, occurrence) {
+  let from = 0;
+  let idx = -1;
+  for (let n = 0; n <= occurrence; n++) {
+    idx = src.indexOf(needle, from);
+    if (idx < 0) return -1;
+    from = idx + needle.length;
+  }
+  return idx;
+}
+
+/** 从 `openIdx` 处的左括号开始配对，返回闭合括号下标（跳过字符串字面量）；找不到返回 -1 */
+function matchBracket(src, openIdx) {
+  let depth = 0;
+  for (let i = openIdx; i < src.length; i++) {
+    const c = src[i];
+    // 跳过字符串：否则字面量里的括号会提前截断
+    if (c === "'" || c === '"' || c === '`') {
+      const q = c;
+      i++;
+      while (i < src.length && src[i] !== q) {
+        if (src[i] === '\\') i++;
+        i++;
+      }
+      continue;
+    }
+    if (c === '(' || c === '[' || c === '{') depth++;
+    else if (c === ')' || c === ']' || c === '}') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * 取某次**函数调用的实参表**（按顶层逗号切分，跳过嵌套括号与字符串）。
+ *
+ * ## 为什么必须有这个辅助函数（本项目栽过 9 次的坑的正解）
+ *
+ * 「参数有没有传」这类判据，用正则写只有两种写法，**都不可靠**：
+ *   · `fn(...quality)` —— 一旦调用改成多行/换顺序就假红；
+ *   · `fn\([\s\S]*?quality\)` —— 跨语句匹配，会把**后面另一个调用**里的
+ *     `quality` 算作本次的实参。于是「删掉 quality」这个破坏**不会变红**，
+ *     而断言看着是绿的 —— 即 D-31 说的"该红没红"的假阳性。
+ *
+ * 括号配对 + 顶层逗号切分是唯一能把判据**钉死在单次调用**上的做法：
+ * 它只看这一次调用的实参个数与内容，别的调用怎么改都不影响。
+ */
+function callArgs(src, callee, occurrence = 0) {
+  const idx = nthIndex(src, callee + '(', occurrence);
+  if (idx < 0) return null;
+  const open = idx + callee.length;
+  const end = matchBracket(src, open);
+  if (end < 0) return null;
+  const args = [];
+  let depth = 0;
+  let cur = '';
+  for (let i = open + 1; i < end; i++) {
+    const c = src[i];
+    if (c === "'" || c === '"' || c === '`') {
+      const q = c;
+      cur += c;
+      i++;
+      while (i < end && src[i] !== q) {
+        if (src[i] === '\\') { cur += src[i] + (src[i + 1] ?? ''); i += 2; continue; }
+        cur += src[i];
+        i++;
+      }
+      cur += q;
+      continue;
+    }
+    if (c === '(' || c === '[' || c === '{') { depth++; cur += c; continue; }
+    if (c === ')' || c === ']' || c === '}') { depth--; cur += c; continue; }
+    if (c === ',' && depth === 0) { args.push(cur.trim()); cur = ''; continue; }
+    cur += c;
+  }
+  if (cur.trim()) args.push(cur.trim());
+  return args;
+}
+
+/**
+ * 取某次调用**闭合右括号之后**的那一小段文本（用于判"链式调用了什么"）。
+ *
+ * 为什么需要：`.catch()` 跟在**整个实参表之后**，而实参表里必然含嵌套调用
+ * （如 `audioCacheId(provider, song)`），所以"调用点之后紧跟什么"不能用
+ * `indexOf(callee + '(')` 取子串来判 —— 那样拿到的还是实参表内部，判据错位
+ * （实测踩过：`.catch` 判据因此恒红）。这里做括号配对，精确落在闭合括号之后。
+ */
+function afterCall(src, callee, occurrence = 0, len = 48) {
+  const idx = nthIndex(src, callee + '(', occurrence);
+  if (idx < 0) return null;
+  const end = matchBracket(src, idx + callee.length);
+  if (end < 0) return null;
+  return src.slice(end + 1, end + 1 + len);
 }
 
 /**
@@ -908,11 +1037,18 @@ add('PLAYER.bar.dragSession', 'PLAYER', (s) => {
 });
 add('PLAYER.resolveWrites', 'PLAYER', (s) => {
   // D 组防回归：resolveOnlineUrl 此前从不写 currentQuality/currentBitrate → 播放条音质标签是假 UI
+  //
+  // ⚠️ 判据必须钉在「**平台返回值的**那一次写入」上，不能只判字段名出现过。
+  // 接入音频缓存后 resolveOnlineUrl 里有**两处**写 currentBitrate：
+  // 缓存命中写 0（拿不到真实码率，不谎报），未命中写 `r.br`（真拿到的码率）。
+  // 只判"出现过 currentBitrate"的话，删掉 `r.br` 那次断言仍绿 ——
+  // 而那正是这条断言声称守护的东西（音质标签变假 UI）。
   const body = fnBodyAny(stripComments(s.store), 'resolveOnlineUrl');
   if (body == null) return { ok: false, detail: 'store.ts 未定义 resolveOnlineUrl' };
   const missing = [];
-  if (!/\bcurrentQuality\b/.test(body)) missing.push('currentQuality 未写回');
-  if (!/\bcurrentBitrate\b/.test(body)) missing.push('currentBitrate 未写回');
+  // 取流地址成功后的回写：两个字段都必须来自 `r`（平台返回值），缺一就是假 UI
+  if (!/currentQuality:\s*r\.quality/.test(body)) missing.push('currentQuality 未按 r.quality 回写');
+  if (!/currentBitrate:\s*r\.br/.test(body)) missing.push('currentBitrate 未按 r.br 回写');
   return {
     ok: missing.length === 0,
     detail: missing.length
@@ -1328,6 +1464,223 @@ add('AUDIO.singleEntry', 'AUDIO', (s) => {
       ok: false,
       detail: `createMediaElementSource 应只在 audioGraph 出现 1 次，实际全文 ${hits} 次 / audioGraph ${inGraph} 次`,
     };
+  return { ok: true, detail: '' };
+});
+
+// ============================ CACHE（音乐缓存接线）============================
+// 这一组防的是**「不报错但功能等于没接」**的一类失效。
+//
+// Rust 侧的命令早已实现，但 `check:music` 原先只判「冻结清单里的命令名必须
+// 出现在 ipc.ts」—— 新增的 4 个缓存命令不在那份清单里，于是**漏接线不会变红**。
+// 后果不是崩溃，而是下面这四条，每一条用户都察觉不到、只会觉得"这功能有点怪"：
+//   ① 缓存 key 漏了 quality → 切档位后命中上次的文件，界面显示新档位、实际播旧码率；
+//   ② quality 传了 `r.quality` → 四平台值域不同，同一首歌每次 key 都不同，缓存永不命中；
+//   ③ 本地歌曲被算进缓存 → 设置页占用数字失真，且多一次无谓的系统调用；
+//   ④ 下载 await 住播放 / 失败抛到播放链路 → 慢网时"缓存失败"变成"歌放不出来"。
+
+add('CACHE.ipcWrapped', 'CACHE', (s) => {
+  // 四个新命令必须在 ipc.ts 各自有封装。没封装 → 设置页与播放链路直接调不到。
+  // ⚠️ 判据钉在「命令名作为 invoke 的**字符串字面量实参**」这一条语句上，
+  // 不能只判"文件里出现过这个名字" —— 注释里写一遍就能骗过。
+  const ipc = stripComments(s.ipc ?? '');
+  const missing = CACHE_CMDS.filter((c) => !new RegExp(`invoke<[^>]*>\\(\\s*'${c}'`).test(ipc));
+  if (missing.length)
+    return { ok: false, detail: `ipc.ts 缺封装：${missing.join('、')}（Rust 已实现但前端调不到）` };
+  // 反向：Rust 侧实现了却没在 main.rs 注册 → 运行时 "command not found"。
+  // 注册这一环同样零覆盖（冻结清单不含新命令），必须单独判。
+  const main = stripComments(s.rustMain ?? '');
+  const notReg = CACHE_CMDS.filter((c) => !main.includes(`music::audio_cache::${c}`));
+  if (notReg.length)
+    return { ok: false, detail: `main.rs 未注册：${notReg.join('、')}（定义存在但运行时找不到命令）` };
+  return { ok: true, detail: '' };
+});
+
+add('CACHE.keyHasQuality', 'CACHE', (s) => {
+  // ⭐ 本组最关键的一条：缓存 key **必须含 quality**。
+  //
+  // 漏掉它是功能性 bug 级：用户从「极高」切到「无损」，会命中上次的文件 ——
+  // 界面显示新档位、实际播旧码率，**用户完全无法察觉**（播放器不会校验码率）。
+  // 这条是"音质设置形同虚设"的唯一守护。
+  //
+  // 判据用 callArgs 钉死**单次调用的实参个数**，不用 `[\s\S]*?`：
+  // 后者会把后续调用里的 quality 也算进来，删掉实参后断言仍绿（假阳性）。
+  const store = stripComments(s.store ?? '');
+  const body = fnBodyAny(store, 'lookupAudioCache') || '';
+  const args = callArgs(body, 'ipc.musicAudioCached');
+  if (!args) return { ok: false, detail: 'lookupAudioCache 里取不到 ipc.musicAudioCached 的调用' };
+  // 实参必须恰好三个：provider / id / quality。少一个就是漏传。
+  if (args.length !== 3)
+    return {
+      ok: false,
+      detail: `musicAudioCached 应传 3 个实参（provider/id/quality），实为 ${args.length} 个：${args.join('、')}`,
+    };
+  if (!/\bquality\b/.test(args[2]))
+    return { ok: false, detail: `缓存 key 的第三段不是 quality（实参是「${args[2]}」）—— 漏掉音质即"切档位播旧码率"` };
+  return { ok: true, detail: '' };
+});
+
+add('CACHE.qualityFromState', 'CACHE', (s) => {
+  // quality 必须来自 `state.playbackQuality`（5 值枚举），
+  // **绝不能**来自 `SongUrlResult.quality` / `.level`。
+  //
+  // 四个平台那两个字段既不同名也不同值域：网易云 quality 是中文 label（高清臻音）、
+  // QQ 是英文 label（Hi-Res FLAC）、咪咕的 level 干脆是 PQ/SQ/ZQ 这种音质等级。
+  // 拿它们当 key ⇒ 同一首歌每次算出的 key 都不同 ⇒ **缓存永不命中，且全程不报错**。
+  const store = stripComments(s.store ?? '');
+  const body = fnBodyAny(store, 'resolveOnlineUrl') || '';
+  if (!body) return { ok: false, detail: 'store.ts 未定义 resolveOnlineUrl' };
+  const missing = [];
+  // 取档位的那一行必须读 state.playbackQuality
+  if (!/const\s+quality\s*=\s*state\.playbackQuality/.test(body))
+    missing.push('resolveOnlineUrl 没有从 state.playbackQuality 取档位');
+  // 传给 songUrl 的也必须是同一个 quality 变量（而不是 r.quality）
+  const songUrlArgs = callArgs(body, 'platform.songUrl');
+  if (!songUrlArgs) missing.push('取不到 platform.songUrl 的调用');
+  else if (songUrlArgs[2] !== 'quality')
+    missing.push(`songUrl 的档位实参是「${songUrlArgs[2]}」而不是 quality`);
+  // 反向判据：整个 resolveOnlineUrl 里不得出现"拿返回值当 key"的写法。
+  // 只判"用了 state.playbackQuality"不够 —— 那是读档位，回写仍可能用 r.quality。
+  if (/musicAudioCached\([^)]*r\.(quality|level)/.test(body) || /musicCacheDownload\([^)]*r\.(quality|level)/.test(body))
+    missing.push('缓存调用把 r.quality / r.level 当成了 key（四平台值域不同 ⇒ 永不命中）');
+  return { ok: missing.length === 0, detail: missing.length ? `档位来源：${missing.join('、')}` : '' };
+});
+
+add('CACHE.noQualityFallback', 'CACHE', (s) => {
+  // quality **不能为空、也不能默认成 standard**。
+  //
+  // 默认成 standard 的后果：参数传漏时静默命中标准音质文件，
+  // 用户以为听到了自己选的高音质 —— 比不缓存坏得多。
+  // 判据钉在"quality 的取值语句"上：不允许出现 `|| 'standard'` 这类兜底。
+  const store = stripComments(s.store ?? '');
+  const body = fnBodyAny(store, 'resolveOnlineUrl') || '';
+  const decl = /const\s+quality\s*=\s*([^;]+);/.exec(body);
+  if (!decl) return { ok: false, detail: 'resolveOnlineUrl 里取不到 quality 的声明语句' };
+  if (/standard/.test(decl[1]))
+    return { ok: false, detail: `quality 被默认成 standard（实参「${decl[1].trim()}」）—— 会让用户以为在听高音质` };
+  // audioCacheId 也不能把空 id 悄悄换成固定值（那会让不同歌撞同一个 key）
+  const idBody = fnBodyAny(store, 'audioCacheId') || '';
+  if (!idBody) return { ok: false, detail: 'store.ts 未定义 audioCacheId' };
+  if (/standard/.test(idBody)) return { ok: false, detail: 'audioCacheId 里出现了 standard 兜底' };
+  return { ok: true, detail: '' };
+});
+
+add('CACHE.localSongExcluded', 'CACHE', (s) => {
+  // 本地歌曲（`song._localPath`）**不入缓存链**。
+  //
+  // 两个理由：① 它走 asset:// 直接播，文件本就在本地，再问一遍缓存是多余的系统调用；
+  // ② 计入「音乐缓存」统计会让设置页占用数字失真。
+  // 判据钉在两个函数各自的**入口那条 if** 上（两处都要有，漏一处就有一条路径没排掉）。
+  const store = stripComments(s.store ?? '');
+  const missing = [];
+  for (const fn of ['lookupAudioCache', 'prefetchAudioCache']) {
+    const body = fnBodyAny(store, fn);
+    if (!body) { missing.push(`store.ts 未定义 ${fn}`); continue; }
+    if (!/if\s*\(\s*song\._localPath\s*\)\s*return/.test(body))
+      missing.push(`${fn} 没有排除本地歌曲`);
+  }
+  return { ok: missing.length === 0, detail: missing.length ? `本地歌曲隔离：${missing.join('、')}` : '' };
+});
+
+add('CACHE.hitSkipsSongUrl', 'CACHE', (s) => {
+  // 命中缓存时**不能**再调 `platform.songUrl` ——
+  // 那次调用是网络往返（还可能触发一次降级重试），命中缓存的意义正是省掉它。
+  //
+  // 判据用 indexOf 比顺序：查缓存必须在取流地址**之前**，
+  // 且命中分支必须在取流地址**之前** return。顺序反了就是"先回源再查缓存"，
+  // 缓存命中与否根本不影响这次网络请求 —— 判据若只判"两个都存在"会假绿。
+  const store = stripComments(s.store ?? '');
+  const body = fnBodyAny(store, 'resolveOnlineUrl') || '';
+  if (!body) return { ok: false, detail: 'store.ts 未定义 resolveOnlineUrl' };
+  const iLookup = body.indexOf('lookupAudioCache(');
+  const iSongUrl = body.indexOf('platform.songUrl(');
+  if (iLookup < 0) return { ok: false, detail: 'resolveOnlineUrl 里没有查缓存（缓存接线漏了）' };
+  if (iSongUrl < 0) return { ok: false, detail: 'resolveOnlineUrl 里没有 platform.songUrl 调用' };
+  if (iLookup > iSongUrl)
+    return { ok: false, detail: '查缓存排在取流地址之后（先回源再查缓存 ⇒ 命中也省不掉这次网络往返）' };
+  // 命中分支必须真的 return 出去
+  const iRet = body.indexOf('return cached;');
+  if (iRet < 0) return { ok: false, detail: '缓存命中后没有 return（会继续往下走，等于没接）' };
+  if (iRet > iSongUrl)
+    return { ok: false, detail: '缓存命中的 return 排在 platform.songUrl 之后（命中了还会回源）' };
+  return { ok: true, detail: '' };
+});
+
+add('CACHE.hitUsesConvertFileSrc', 'CACHE', (s) => {
+  // 命中返回的是**绝对路径**，交给 <audio> 必须经 `convertFileSrc` 转 asset://。
+  // 漏了它：Tauri 下 `file://` 直连会被跨源策略挡住 → **加载失败、播不出来**，
+  // 而且报错发生在 audio 元素上，看不出跟缓存有关。
+  // 判据钉在 lookupAudioCache 里"把命中结果 return 出去"那一句上。
+  const store = stripComments(s.store ?? '');
+  const body = fnBodyAny(store, 'lookupAudioCache') || '';
+  if (!body) return { ok: false, detail: 'store.ts 未定义 lookupAudioCache' };
+  // 命中路径的三种合理写法都接受：convertFileSrc(hit) / 直接 return convertFileSrc(...)
+  if (!/convertFileSrc\(\s*hit\s*\)/.test(body))
+    return { ok: false, detail: '缓存命中路径没有 convertFileSrc（绝对路径直喂 audio 会被跨源挡住 → 播不出声）' };
+  return { ok: true, detail: '' };
+});
+
+add('CACHE.downloadNonBlocking', 'CACHE', (s) => {
+  // 下载**不能阻塞播放**：必须 `void` 发出、不 await。
+  //
+  // 一旦 await，慢网下点歌要等整首下载完才响（无损大碟几十秒起步）；
+  // 而下载失败若被 throw 到播放链路，用户会看到"播放失败"并被自动跳下一首 ——
+  // 症状是"网络不好时歌放不出来"，根因却只是个可有可无的缓存。
+  const store = stripComments(s.store ?? '');
+  const body = fnBodyAny(store, 'prefetchAudioCache') || '';
+  if (!body) return { ok: false, detail: 'store.ts 未定义 prefetchAudioCache' };
+  const missing = [];
+  const call = /void\s+ipc\.musicCacheDownload\(/.test(body);
+  if (!call) missing.push('下载没有以 `void` 发出（会被当成需要等待的工作）');
+  if (/\bawait\s+ipc\.musicCacheDownload\(/.test(body)) missing.push('下载被 await（阻塞播放）');
+  // 调用点也必须不在播放关键路径上：它只能出现在 return 之前、且不带 await
+  const main = fnBodyAny(store, 'resolveOnlineUrl') || '';
+  const at = main.indexOf('prefetchAudioCache(');
+  if (at < 0) missing.push('resolveOnlineUrl 没有触发预热（缓存永远只有查、没有写）');
+  else if (/await\s+prefetchAudioCache\(/.test(main)) missing.push('预热被 await（播放要等下载完）');
+  return { ok: missing.length === 0, detail: missing.length ? `后台预热：${missing.join('、')}` : '' };
+});
+
+add('CACHE.downloadFailureSilent', 'CACHE', (s) => {
+  // 下载失败**绝不能打断播放**：必须挂 `.catch` 且不上抛。
+  // 判据钉在"下载调用之后紧跟的链式调用"上 —— 只判"函数里有个 catch"会假绿
+  // （那可能是别的 try/catch，与下载无关）。
+  const store = stripComments(s.store ?? '');
+  const body = fnBodyAny(store, 'prefetchAudioCache') || '';
+  if (!body) return { ok: false, detail: 'store.ts 未定义 prefetchAudioCache' };
+  const args = callArgs(body, 'ipc.musicCacheDownload');
+  if (!args) return { ok: false, detail: 'prefetchAudioCache 里取不到 ipc.musicCacheDownload 的调用' };
+  if (args.length !== 4)
+    return { ok: false, detail: `musicCacheDownload 应传 4 个实参（provider/id/quality/url），实为 ${args.length} 个` };
+  // 调用之后必须紧跟 .catch(...)。
+  // ⚠️ 用 afterCall 做括号配对取"闭合括号之后"的文本，而不是 `indexOf` 取子串 ——
+  // 实参表里有嵌套调用（audioCacheId(...)），按子串判会错位（实测恒红）。
+  const after = afterCall(body, 'ipc.musicCacheDownload');
+  if (after == null) return { ok: false, detail: 'prefetchAudioCache 里取不到 ipc.musicCacheDownload 的调用' };
+  if (!/^\s*\.catch\(/.test(after))
+    return { ok: false, detail: `下载调用之后没有 .catch（实参之后是「${after.trim().slice(0, 24)}」）—— 失败会变成未处理的 Promise，抛到播放链路就是"播放失败"` };
+  // 也不能在下载函数里 throw —— 静默放弃缓存，不静默放弃播放
+  if (/\bthrow\b/.test(body))
+    return { ok: false, detail: '预热函数里有 throw（下载失败不该打断播放）' };
+  return { ok: true, detail: '' };
+});
+
+add('CACHE.statsShapeForSettings', 'CACHE', (s) => {
+  // 设置页要靠 CacheStats 渲染占用与限额，所以**字段名必须与 Rust 侧逐字一致**。
+  // 改名/拼错在前端是**静默**的：`stats.providers.netease.audio_bytes` 读出 undefined，
+  // 而 `undefined` 在累加里不报错 → 显示 0 —— 症状是"缓存统计永远是 0"，
+  // 看起来像功能没做，而不是像字段名拼错了。
+  //
+  // ⚠️ 判据限定在 **CacheStats 接口体内部**（braceBlock），不扫全文：
+  // `CacheProviderStat` 里也有 `audio_bytes`，全文匹配的话改错 CacheStats 的字段
+  // 仍能命中另一个接口的同名字段 ⇒ 恒绿（实测踩过：这条第一版就是这么写的，
+  // 反证轮报"该红没红"）。
+  const types = stripComments(s.types ?? '');
+  const block = braceBlock(types, 'interface CacheStats');
+  if (!block) return { ok: false, detail: 'types.ts 里取不到 CacheStats 接口体' };
+  const need = ['total', 'lyric_bytes', 'audio_bytes', 'root', 'limit_lyric', 'limit_audio', 'providers'];
+  const missing = need.filter((k) => !new RegExp(`\\b${k}\\s*[?]?\\s*:`).test(block));
+  if (missing.length)
+    return { ok: false, detail: `CacheStats 缺字段：${missing.join('、')}（与 Rust models.rs 不一致 ⇒ 设置页读到 undefined 显示 0）` };
   return { ok: true, detail: '' };
 });
 
@@ -2147,7 +2500,7 @@ function runAll(s) {
   return res;
 }
 
-const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS', 'AUDIO', 'SKIN', 'QUEUE', 'MENU', 'ISLANDV', 'RESTORE'];
+const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS', 'AUDIO', 'CACHE', 'SKIN', 'QUEUE', 'MENU', 'ISLANDV', 'RESTORE'];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -3461,6 +3814,110 @@ const MUTATIONS = [
     find: '    if (get().restoreAttempted) return;',
     replace: '    // 反证：无闸',
     expect: ['RESTORE.onlyOnce'],
+  },
+
+  // ── CACHE（音乐缓存接线）─────────────────────────────────────────────────
+  // 这组反证针对的都是「漏接线/接错」——**编译全绿、功能静默失效**。
+  // 每条破坏都对应一个具体的用户可见后果，故注释里写明后果而非只写"破坏"。
+  {
+    // ⭐ 最关键的一条：删掉 quality 实参。命中缓存时与"按请求档位命中"不可区分，
+    // 后果是用户切到「无损」后播的仍是上次的「极高」文件，界面显示新档位 —— 察觉不到。
+    // 这条反证同时证明 CACHE.keyHasQuality 不是恒绿。
+    name: '查缓存时删掉 quality 实参（⇒ 切档位后命中上次文件，界面显示新档位实际播旧码率）',
+    file: F.store,
+    find: 'ipc.musicAudioCached(provider, audioCacheId(provider, song), quality)',
+    replace: 'ipc.musicAudioCached(provider, audioCacheId(provider, song))',
+    expect: ['CACHE.keyHasQuality'],
+  },
+  {
+    name: '把查缓存的档位换成 r.quality（四平台值域不同 ⇒ 同一首歌每次 key 都不同 ⇒ 永不命中）',
+    file: F.store,
+    find: '  const quality = state.playbackQuality;',
+    replace: "  const quality = String((await platform.songUrl(provider, song, 'standard')).quality || '');",
+    expect: ['CACHE.qualityFromState'],
+  },
+  {
+    name: '把档位默认成 standard（参数传漏时静默命中标准音质 ⇒ 用户以为在听高音质）',
+    file: F.store,
+    find: '  const quality = state.playbackQuality;',
+    replace: "  const quality = state.playbackQuality || 'standard';",
+    expect: ['CACHE.noQualityFallback'],
+  },
+  {
+    name: '本地歌曲不再排除（用户导入的文件被计入「音乐缓存」统计 ⇒ 设置页占用数字失真）',
+    file: F.store,
+    find: '  if (song._localPath) return null;\n',
+    replace: '  // 反证：本地歌曲也入缓存链\n',
+    expect: ['CACHE.localSongExcluded'],
+  },
+  {
+    name: '预热不再排除本地歌曲（本地文件被重复问一次缓存，且计入音乐缓存统计）',
+    file: F.store,
+    find: '  if (song._localPath) return;\n',
+    replace: '  // 反证：预热不排除本地\n',
+    expect: ['CACHE.localSongExcluded'],
+  },
+  {
+    name: '把查缓存挪到取流地址之后（先回源再查 ⇒ 命中也省不掉这次网络往返，白接缓存）',
+    file: F.store,
+    find: '  const cached = await lookupAudioCache(song, provider, quality);\n',
+    replace: '  // 反证：不查缓存\n',
+    expect: ['CACHE.hitSkipsSongUrl'],
+  },
+  {
+    name: '缓存命中后不 return（命中了还会继续往下调 songUrl ⇒ 缓存等于没接）',
+    file: F.store,
+    find: '    return cached;\n',
+    replace: '    // 反证：命中不返回\n',
+    expect: ['CACHE.hitSkipsSongUrl'],
+  },
+  {
+    // 这一条是**跨语言契约**的守护：Rust 改名 → 前端读到 undefined → 累加不报错 → 显示 0，
+    // 症状是"缓存统计永远是 0"，看起来像功能没做，而不像字段名拼错。
+    // ⚠️ 锚点必须**只命中 CacheStats**：字段名会复用（`CacheProviderStat` 也有
+    // `audio_bytes`，且它同样以 `audio_bytes: number;\n}` 结尾）⇒ 用那一行做锚点
+    // 会改到另一个接口上，CacheStats 纹丝不动，断言恒绿（反证轮已实测报出这条假阳性）。
+    // `limit_audio` 全文件只出现一次，是唯一安全锚点。
+    name: '把 CacheStats 的 limit_audio 字段名改错（与 Rust models.rs 不一致 ⇒ 设置页读到 undefined 显示 0）',
+    file: F.types,
+    find: '  limit_audio: number;',
+    replace: '  limitAudio: number;',
+    expect: ['CACHE.statsShapeForSettings'],
+  },
+  {
+    name: '把 ipc.ts 的 music_audio_cached 命令名写错一个字（tsc 全绿，运行时才发现命令不存在）',
+    file: F.ipc,
+    find: "'music_audio_cached'",
+    replace: "'music_audio_cached_typo'",
+    expect: ['CACHE.ipcWrapped'],
+  },
+  {
+    name: '从 main.rs 的 generate_handler! 里摘掉 music_cache_stats 注册（定义仍在）',
+    file: F.rustMain,
+    find: '            music::audio_cache::music_cache_stats,\n',
+    replace: '',
+    expect: ['CACHE.ipcWrapped'],
+  },
+  {
+    name: '缓存命中路径不走 convertFileSrc（绝对路径直喂 <audio> 被跨源挡住 ⇒ 命中反而播不出声）',
+    file: F.store,
+    find: '    return hit ? convertFileSrc(hit) : null;',
+    replace: '    return hit || null;',
+    expect: ['CACHE.hitUsesConvertFileSrc'],
+  },
+  {
+    name: '把预热 await 住（慢网下点歌要等整首下载完才响；下载失败还会被当成"播放失败"跳歌）',
+    file: F.store,
+    find: '  void ipc.musicCacheDownload(provider, audioCacheId(provider, song), quality, url).catch(() => {});',
+    replace: "  await ipc.musicCacheDownload(provider, audioCacheId(provider, song), quality, url);",
+    expect: ['CACHE.downloadNonBlocking', 'CACHE.downloadFailureSilent'],
+  },
+  {
+    name: '下载失败不上抛（未处理的 Promise 拒绝会中断播放链路 ⇒ 缓存失败变成歌放不出来）',
+    file: F.store,
+    find: '  void ipc.musicCacheDownload(provider, audioCacheId(provider, song), quality, url).catch(() => {});',
+    replace: '  void ipc.musicCacheDownload(provider, audioCacheId(provider, song), quality, url);',
+    expect: ['CACHE.downloadFailureSilent'],
   },
 ];
 

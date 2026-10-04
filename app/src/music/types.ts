@@ -176,3 +176,39 @@ export interface ProviderInfo {
   name: string;
   color: string;
 }
+
+/** 单个平台的缓存占用（字节） */
+export interface CacheProviderStat {
+  lyric_bytes: number;
+  audio_bytes: number;
+}
+
+/**
+ * 音乐缓存统计（Rust `models.rs` 的 `CacheStats` 逐字镜像）。
+ *
+ * 字段名用 **snake_case** 而非本仓惯例的 camelCase：这是 serde 序列化出来的
+ * 跨语言契约，改名会让前端读到 `undefined` —— 而 `undefined` 在
+ * `providers.netease.audio_bytes` 这种链式取值上不报错，只会显示 0，
+ * 症状是「缓存统计永远是 0」，看起来像功能没做。
+ *
+ * `providers` 的四个键**恒定存在**（无缓存时为 0 而非缺键），前端可省掉判空。
+ */
+export interface CacheStats {
+  /** 全部平台合计字节数 */
+  total: number;
+  lyric_bytes: number;
+  audio_bytes: number;
+  /**
+   * 缓存根目录绝对路径。
+   *
+   * 为空串时**必须禁用**「打开缓存目录」按钮 —— `open_path` 会先判 `p.exists()`，
+   * 不存在直接返回 `Err`（见 `commands.rs` 的 `open_path`）。
+   * 清空缓存后目录仍在（`clear` 只删内容不删目录），所以正常用不会变空串。
+   */
+  root: string;
+  /** 歌词容量上限字节数（100MB）—— 别在前端写死，与 `QUALITY_OPTIONS` 同纪律 */
+  limit_lyric: number;
+  /** 音频容量上限字节数（1GB） */
+  limit_audio: number;
+  providers: Record<MusicProvider, CacheProviderStat>;
+}
