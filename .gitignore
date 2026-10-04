@@ -26,3 +26,5 @@ vendor/
 
 # 编辑器本地历史（VS Code Local History 插件产物，纯本机噪声）
 .history/
+
+test-music/
