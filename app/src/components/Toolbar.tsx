@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { SHELL } from '../theme/tokens';
+import { SHELL } from '@/theme/tokens';
 
 /**
  * 工具条：高 62（《02》§5.1）—— 标题组（标题 + 副标题）+ 弹性占位 + 右侧操作组。

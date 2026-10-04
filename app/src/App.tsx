@@ -1,27 +1,27 @@
 import { useCallback, useMemo, useState } from 'react';
-import { apiPost, errorText, isApiError, openPath, quitApp, serviceRestart } from './ipc';
-import { useLibrary, useQuitRequest, useService, useTasks, useToasts } from './hooks';
-import { initialMode, persistMode, useThemeTokens } from './theme/apply';
-import type { ThemeMode } from './theme/tokens';
-import { Badge, Btn, Pill } from './components/units';
-import { QuitConfirm } from './components/QuitConfirm';
-import { Sidebar } from './components/Sidebar';
-import { Toolbar } from './components/Toolbar';
-import { ViewTabs } from './components/ViewTabs';
-import { QueueEmpty, QueueTable } from './screens/QueueScreen';
-import { NotReadyScreen } from './screens/NotReadyScreen';
-import { LibraryScreen } from './screens/LibraryScreen';
-import { DropScreen } from './screens/DropScreen';
-import { MusicScreen } from './screens/MusicScreen';
-import { SettingsScreen } from './screens/SettingsScreen';
+import { apiPost, errorText, isApiError, openPath, quitApp, serviceRestart } from '@/ipc';
+import { useLibrary, useQuitRequest, useService, useTasks, useToasts } from '@hooks';
+import { initialMode, persistMode, useThemeTokens } from '@/theme/apply';
+import type { ThemeMode } from '@/theme/tokens';
+import { Badge, Btn, Pill } from '@components/units';
+import { QuitConfirm } from '@components/QuitConfirm';
+import { Sidebar } from '@components/Sidebar';
+import { Toolbar } from '@components/Toolbar';
+import { ViewTabs } from '@components/ViewTabs';
+import { QueueEmpty, QueueTable } from '@screens/QueueScreen';
+import { NotReadyScreen } from '@screens/NotReadyScreen';
+import { LibraryScreen } from '@screens/LibraryScreen';
+import { DropScreen } from '@screens/DropScreen';
+import { MusicScreen } from '@screens/MusicScreen';
+import { SettingsScreen } from '@screens/SettingsScreen';
 import {
   isBlockedWhenNotReady,
   stateView,
   type Screen,
   type TranslateView,
-} from './nav';
-import type { CancelResponse, LibraryResponse, TaskRow } from './types';
-import { formatBytes } from './util';
+} from '@/nav';
+import type { CancelResponse, LibraryResponse, TaskRow } from '@/types';
+import { formatBytes } from '@/util';
 
 /**
  * 喵坞应用外壳（《02》§5.1 / 《09》§3）：侧栏 78 + 工具条 62 + 应用区。

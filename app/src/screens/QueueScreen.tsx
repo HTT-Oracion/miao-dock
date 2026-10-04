@@ -1,7 +1,7 @@
-import { QUEUE_TABLE } from '../theme/tokens';
-import { STATUS_DOT_VAR, STATUS_LABEL, SOURCE_LABEL, type TaskRow, type TaskStatus } from '../types';
-import { relativeTime } from '../util';
-import { Btn, Dot, MagicCircle } from '../components/units';
+import { QUEUE_TABLE } from '@/theme/tokens';
+import { STATUS_DOT_VAR, STATUS_LABEL, SOURCE_LABEL, type TaskRow, type TaskStatus } from '@/types';
+import { relativeTime } from '@/util';
+import { Btn, Dot, MagicCircle } from '@components/units';
 
 /** 进度列的中文后缀（《02》§5.2 行内容示例：「12 / 20 · 进行中」） */
 function progressLabel(t: TaskRow): string {

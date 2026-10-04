@@ -1,8 +1,8 @@
 import { Plus, Trash2, X } from 'lucide-react';
-import { providerColor } from '../../music/platform';
-import { coverProxyUrl, songKey, useMusicStore } from '../../music/store';
-import { Empty, IconButton, VirtualList } from '../../components/units';
-import { SongRow, providerName, relTime } from './shared';
+import { providerColor } from '@music/platform';
+import { coverProxyUrl, songKey, useMusicStore } from '@music/store';
+import { Empty, IconButton, VirtualList } from '@components/units';
+import { SongRow, providerName, relTime } from '@screens/music/shared';
 
 /**
  * 播放历史 —— 跨平台同一条时间线（网易云/酷狗/QQ/咪咕/本地各一条混排）。

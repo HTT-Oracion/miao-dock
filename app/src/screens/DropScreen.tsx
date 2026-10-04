@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { open } from '@tauri-apps/plugin-dialog';
-import { apiPostMultipart, errorText, expandPaths } from '../ipc';
-import type { CreateTaskResponse } from '../types';
-import { splitBatches, uuid } from '../util';
-import { Btn } from '../components/units';
+import { apiPostMultipart, errorText, expandPaths } from '@/ipc';
+import type { CreateTaskResponse } from '@/types';
+import { splitBatches, uuid } from '@/util';
+import { Btn } from '@components/units';
 import { Upload } from 'lucide-react';
 
 const BATCH_LIMIT = 20; // 契约 §5.2 单次上限

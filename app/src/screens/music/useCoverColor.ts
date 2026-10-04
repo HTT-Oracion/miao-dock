@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { VINYL_COLOR_DEF } from '../../music/player-options';
+import { VINYL_COLOR_DEF } from '@music/player-options';
 
 /** 取色结果：hex 供 CSS 变量用，isLight 供后续文字对比用 */
 export interface CoverColor {

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useMusicStore } from '../../music/store';
+import { useMusicStore } from '@music/store';
 
 /** 音乐模块轻提示：读 musicToast，展示 2.5s 后自动清空（清空走 store action，不额外留本地态） */
 export function Toast() {

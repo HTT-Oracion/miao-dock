@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ServiceStatus } from '../ipc';
-import type { ThemeMode } from '../theme/tokens';
-import { SETTINGS } from '../theme/tokens';
-import { SETTINGS_SECTIONS, parseSection, sectionItemCount } from './settings/catalog';
-import type { SectionId } from './settings/catalog';
-import { SECTION_ICON } from './settings/icons';
-import { SpecFixtureHost } from './settings/SpecCheck';
-import { AboutSection, GeneralSection, MediaSection, ResourceSection, TranslateSection } from './settings/sections';
+import type { ServiceStatus } from '@/ipc';
+import type { ThemeMode } from '@/theme/tokens';
+import { SETTINGS } from '@/theme/tokens';
+import { SETTINGS_SECTIONS, parseSection, sectionItemCount } from '@screens/settings/catalog';
+import type { SectionId } from '@screens/settings/catalog';
+import { SECTION_ICON } from '@screens/settings/icons';
+import { SpecFixtureHost } from '@screens/settings/SpecCheck';
+import { AboutSection, GeneralSection, MediaSection, ResourceSection, TranslateSection } from '@screens/settings/sections';
 
 /**
  * 设置页 —— 两栏壳 + 5 分组 26 项（《09》§4.1 / §4.2）。

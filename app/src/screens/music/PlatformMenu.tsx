@@ -1,8 +1,8 @@
 import { LogOut, X } from 'lucide-react';
-import { PLATFORMS, providerLabel } from '../../music/platform';
-import { useMusicStore } from '../../music/store';
-import type { MusicProvider } from '../../music/platform';
-import { IconButton, useEsc } from '../../components/units';
+import { PLATFORMS, providerLabel } from '@music/platform';
+import { useMusicStore } from '@music/store';
+import type { MusicProvider } from '@music/platform';
+import { IconButton, useEsc } from '@components/units';
 
 /**
  * 平台相关的两个浮层：

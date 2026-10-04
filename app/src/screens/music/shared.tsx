@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
-import { fmtTime } from '../../music/store';
-import { providerLabel } from '../../music/platform';
-import type { Song } from '../../music/types';
+import { fmtTime } from '@music/store';
+import { providerLabel } from '@music/platform';
+import type { Song } from '@music/types';
 
 /**
  * 音乐屏共享小组件 —— 只放**音乐语义**的东西。

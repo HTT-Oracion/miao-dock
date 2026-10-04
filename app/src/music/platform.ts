@@ -12,7 +12,7 @@
  * ⚠️ 参数名必须与 Rust `#[tauri::command]` 签名逐字对齐（Tauri v2 按参数名注入）：
  * 例如 kugou/qq/migu 的 song_url 是**字段展开**（hash / mid / content_id），不是 Song 对象。
  */
-import * as ipc from './ipc';
+import * as ipc from '@music/ipc';
 import type {
   Album,
   Artist,
@@ -24,7 +24,7 @@ import type {
   Playlist,
   Song,
   SongUrlResult,
-} from './types';
+} from '@music/types';
 
 /** 便捷再导出：调用方从 platform 一处拿到平台类型与能力，不必再 import types */
 export type { MusicProvider };

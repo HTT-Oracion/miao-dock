@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
-import type { ServiceStatus } from '../../ipc';
-import type { ThemeMode } from '../../theme/tokens';
-import { stateView } from '../../nav';
-import { ColorPicker, Dot, Range, Select, Swatches, Switch } from '../../components/units';
-import { CtlNote, GroupNote, PendingRow, ReadOnly, Row, RowNote, SubTitle } from './parts';
-import { SKINS, QUALITY_OPTIONS, LYRICS_SIZE, LYRICS_COLORS } from '../../music/player-options';
-import { useMusicStore } from '../../music/store';
-import { ABOUT, GENERAL, MEDIA, RESOURCE, TRANSLATE } from './catalog';
-import type { SettingGroup, SettingItem } from './catalog';
-import { SpecCheckBlock, useSpecCheck } from './SpecCheck';
+import type { ServiceStatus } from '@/ipc';
+import type { ThemeMode } from '@/theme/tokens';
+import { stateView } from '@/nav';
+import { ColorPicker, Dot, Range, Select, Swatches, Switch } from '@components/units';
+import { CtlNote, GroupNote, PendingRow, ReadOnly, Row, RowNote, SubTitle } from '@screens/settings/parts';
+import { SKINS, QUALITY_OPTIONS, LYRICS_SIZE, LYRICS_COLORS } from '@music/player-options';
+import { useMusicStore } from '@music/store';
+import { ABOUT, GENERAL, MEDIA, RESOURCE, TRANSLATE } from '@screens/settings/catalog';
+import type { SettingGroup, SettingItem } from '@screens/settings/catalog';
+import { SpecCheckBlock, useSpecCheck } from '@screens/settings/SpecCheck';
 
 const STATUS_TEXT: Record<ServiceStatus['state'], string> = {
   stopped: '未启动',

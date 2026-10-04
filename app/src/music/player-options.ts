@@ -6,8 +6,8 @@
  * 属于「可实现的媒体设置」的完整清单 —— 已剔除的部分（桌面歌词、媒体键、
  * 音频输出、均衡器、音频缓存）见 `screens/settings/catalog.ts` 的 MEDIA 注释。
  */
-import type { PlayerSkin } from './store';
-import type { PlaybackQuality } from './types';
+import type { PlayerSkin } from '@music/store';
+import type { PlaybackQuality } from '@music/types';
 
 /** 展开播放器六皮肤（参考实现 `expandedStyle`）—— `cls` 是 app.css 里的皮肤类名 */
 export const SKINS: { id: PlayerSkin; label: string; cls: string; light?: boolean }[] = [

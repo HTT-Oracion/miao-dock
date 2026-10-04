@@ -1,7 +1,7 @@
 import { LoaderCircle, X } from 'lucide-react';
-import { IconButton } from '../../components/units';
-import { providerLabel } from '../../music/platform';
-import { useMusicStore } from '../../music/store';
+import { IconButton } from '@components/units';
+import { providerLabel } from '@music/platform';
+import { useMusicStore } from '@music/store';
 
 /**
  * 登录弹窗。

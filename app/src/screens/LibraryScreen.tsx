@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
-import { apiBytes, apiGet, apiPost, errorText, isApiError, openPath } from '../ipc';
-import { LIBRARY } from '../theme/tokens';
-import type { ComicEntry, LibraryResponse } from '../types';
-import { formatBytes, sniffMime } from '../util';
-import { Btn } from '../components/units';
+import { apiBytes, apiGet, apiPost, errorText, isApiError, openPath } from '@/ipc';
+import { LIBRARY } from '@/theme/tokens';
+import type { ComicEntry, LibraryResponse } from '@/types';
+import { formatBytes, sniffMime } from '@/util';
+import { Btn } from '@components/units';
 import { FolderUp } from 'lucide-react';
 
 /** 库内文件路径（`GET /library/{comicName}/files/{seq}?variant=…`） */

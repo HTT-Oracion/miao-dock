@@ -1,4 +1,4 @@
-import { Btn } from './units';
+import { Btn } from '@components/units';
 
 /**
  * 退出二次确认层（契约《02》§2.1）。

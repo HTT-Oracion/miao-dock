@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
-import { SETTINGS } from '../../theme/tokens';
-import { Badge } from '../../components/units';
-import type { SettingItem } from './catalog';
+import { SETTINGS } from '@/theme/tokens';
+import { Badge } from '@components/units';
+import type { SettingItem } from '@screens/settings/catalog';
 
 /**
  * 设置页的**排版件**（《09》§4.1）—— 只有几何与语义，没有一项具体能力。

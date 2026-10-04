@@ -11,7 +11,7 @@
  * 刻意**不新增 Screen 枚举值**去承载三个视图 —— 它们不是屏，是 Tab。
  * 这样 `showNotReady` 只需在一处判定（App.tsx），也避免"拦截纪律"散落到多处失效。
  */
-import type { ServiceState } from './ipc';
+import type { ServiceState } from '@/ipc';
 
 /** 应用层：两个独立应用。顺序即侧栏渲染顺序。 */
 export type AppId = 'translate' | 'music';

@@ -23,10 +23,10 @@
  */
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { create } from 'zustand';
-import * as ipc from './ipc';
-import { LYRICS_COLOR_DEF, LYRICS_SIZE, VINYL_COLOR_DEF } from './player-options';
-import * as platform from './platform';
-import type { MusicProvider } from './platform';
+import * as ipc from '@music/ipc';
+import { LYRICS_COLOR_DEF, LYRICS_SIZE, VINYL_COLOR_DEF } from '@music/player-options';
+import * as platform from '@music/platform';
+import type { MusicProvider } from '@music/platform';
 import type {
   Artist,
   CommentPage,
@@ -37,7 +37,7 @@ import type {
   PlayMode,
   PlaybackQuality,
   Song,
-} from './types';
+} from '@music/types';
 
 // ------------------------------------------------------------------ 常量 / 工具
 

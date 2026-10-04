@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import type { RefObject } from 'react';
-import { runSpecCheck, type SpecResult } from '../../spec-check';
-import type { ThemeMode } from '../../theme/tokens';
-import { LIBRARY, QUEUE_TABLE } from '../../theme/tokens';
-import type { TaskRow } from '../../types';
-import { STATUS_DOT_VAR, STATUS_LABEL, SOURCE_LABEL } from '../../types';
-import { Dot, MagicCircle } from '../../components/units';
-import { QuitConfirm } from '../../components/QuitConfirm';
+import { runSpecCheck, type SpecResult } from '@/spec-check';
+import type { ThemeMode } from '@/theme/tokens';
+import { LIBRARY, QUEUE_TABLE } from '@/theme/tokens';
+import type { TaskRow } from '@/types';
+import { STATUS_DOT_VAR, STATUS_LABEL, SOURCE_LABEL } from '@/types';
+import { Dot, MagicCircle } from '@components/units';
+import { QuitConfirm } from '@components/QuitConfirm';
 
 const noop = () => {};
 

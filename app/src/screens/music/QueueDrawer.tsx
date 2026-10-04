@@ -1,6 +1,6 @@
 import { ListMusic, Trash2, X } from 'lucide-react';
-import { fmtTime, songKey, useMusicStore } from '../../music/store';
-import { Empty, IconButton, VirtualList } from '../../components/units';
+import { fmtTime, songKey, useMusicStore } from '@music/store';
+import { Empty, IconButton, VirtualList } from '@components/units';
 
 /**
  * 播放队列抽屉（右侧 340px）。

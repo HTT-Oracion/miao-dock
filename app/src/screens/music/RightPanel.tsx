@@ -1,10 +1,10 @@
 import { ChevronLeft, Heart, Play, Plus, RefreshCw, Search, X } from 'lucide-react';
-import { PLATFORMS, capsOf, providerLabel } from '../../music/platform';
-import { coverProxyUrl, songKey, useMusicStore } from '../../music/store';
-import type { Song } from '../../music/types';
-import { Charts } from './Charts';
-import { Empty, IconButton, VirtualList } from '../../components/units';
-import { Cover, SongRow } from './shared';
+import { PLATFORMS, capsOf, providerLabel } from '@music/platform';
+import { coverProxyUrl, songKey, useMusicStore } from '@music/store';
+import type { Song } from '@music/types';
+import { Charts } from '@screens/music/Charts';
+import { Empty, IconButton, VirtualList } from '@components/units';
+import { Cover, SongRow } from '@screens/music/shared';
 
 /**
  * 右栏「发现」。

@@ -8,7 +8,7 @@
  * 沿用同一套 24×24 网格 + 1.6 描边，只改画布尺寸 —— 于是同一枚图标在
  * 两个层级里形状完全一致，读者只会读到"大小不同"这个刻意的层级差。
  */
-import type { SectionId } from './catalog';
+import type { SectionId } from '@screens/settings/catalog';
 import { FolderKanban, Info, Languages, Activity, SlidersHorizontal } from 'lucide-react';
 
 const stroke = {

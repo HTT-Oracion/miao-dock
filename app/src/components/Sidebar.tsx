@@ -1,9 +1,9 @@
 import type { ReactElement } from 'react';
-import type { ServiceState } from '../ipc';
-import { SHELL, SIDEBAR } from '../theme/tokens';
-import { Dot } from './units';
-import logo from '../assets/brand/miao-logo.svg';
-import { APP_LABEL, stateView, type AppId, type Screen } from '../nav';
+import type { ServiceState } from '@/ipc';
+import { SHELL, SIDEBAR } from '@/theme/tokens';
+import { Dot } from '@components/units';
+import logo from '@/assets/brand/miao-logo.svg';
+import { APP_LABEL, stateView, type AppId, type Screen } from '@/nav';
 import { Languages, Music4, Settings } from 'lucide-react';
 
 /** 应用层入口（《09》§3.1）—— 恒为 2 项。C8 断言的判据之一，故不在别处重复定义。 */

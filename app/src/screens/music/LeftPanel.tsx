@@ -1,11 +1,11 @@
 import { ChevronLeft, Play } from 'lucide-react';
-import { providerLabel } from '../../music/platform';
-import { coverProxyUrl, songKey, useMusicStore } from '../../music/store';
-import type { LeftView } from '../../music/store';
-import { HistoryView } from './HistoryView';
-import { LocalView } from './LocalView';
-import { Empty, VirtualList } from '../../components/units';
-import { Cover, SongRow } from './shared';
+import { providerLabel } from '@music/platform';
+import { coverProxyUrl, songKey, useMusicStore } from '@music/store';
+import type { LeftView } from '@music/store';
+import { HistoryView } from '@screens/music/HistoryView';
+import { LocalView } from '@screens/music/LocalView';
+import { Empty, VirtualList } from '@components/units';
+import { Cover, SongRow } from '@screens/music/shared';
 
 const TABS: { id: LeftView; label: string }[] = [
   { id: 'playlists', label: '我的歌单' },

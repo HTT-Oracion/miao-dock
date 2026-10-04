@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useMusicStore } from '../music/store';
-import { ExpandedPlayer } from './music/ExpandedPlayer';
-import { LeftPanel } from './music/LeftPanel';
-import { LoginModal } from './music/LoginModal';
-import { PlayerBar } from './music/PlayerBar';
-import { QueueDrawer } from './music/QueueDrawer';
-import { RightPanel } from './music/RightPanel';
-import { Toast } from './music/Toast';
-import { TopBar } from './music/TopBar';
+import { useMusicStore } from '@music/store';
+import { ExpandedPlayer } from '@screens/music/ExpandedPlayer';
+import { LeftPanel } from '@screens/music/LeftPanel';
+import { LoginModal } from '@screens/music/LoginModal';
+import { PlayerBar } from '@screens/music/PlayerBar';
+import { QueueDrawer } from '@screens/music/QueueDrawer';
+import { RightPanel } from '@screens/music/RightPanel';
+import { Toast } from '@screens/music/Toast';
+import { TopBar } from '@screens/music/TopBar';
 
 /**
  * 音乐屏 —— 只做**组合**与**播放内核挂载**，各区域实现在 ./music/ 下：

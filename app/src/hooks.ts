@@ -7,8 +7,8 @@ import {
   onServiceState,
   serviceStatus,
   type ServiceStatus,
-} from './ipc';
-import type { LibraryResponse, TaskListResponse } from './types';
+} from '@/ipc';
+import type { LibraryResponse, TaskListResponse } from '@/types';
 
 // ------------------------------------------------------------------ 服务状态
 

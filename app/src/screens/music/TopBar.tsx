@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { providerLabel } from '../../music/platform';
-import { useMusicStore } from '../../music/store';
-import { AccountMenu, PlatformPicker } from './PlatformMenu';
+import { providerLabel } from '@music/platform';
+import { useMusicStore } from '@music/store';
+import { AccountMenu, PlatformPicker } from '@screens/music/PlatformMenu';
 
 /**
  * 顶行：标题 +「当前平台」Badge（点开平台切换弹窗）+ 右侧登录区。

@@ -19,7 +19,7 @@ import type {
   QrCheckResult,
   Song,
   SongUrlResult,
-} from './types';
+} from '@music/types';
 
 // ------------------------------------------------------------------ 网易云
 
