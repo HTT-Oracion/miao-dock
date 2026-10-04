@@ -1249,6 +1249,89 @@ add('AUDIO.singleEntry', 'AUDIO', (s) => {
   return { ok: true, detail: '' };
 });
 
+// ── 桌面歌词：状态补拉 / 控制桥 ─────────────────────────────────────────────
+// 这一组防的都是**跨窗口且不报错**的失效：事件丢了、指令没人接、命令没注册 ——
+// 症状统一是"点了没反应 / 一打开是空的"，而日志干干净净。
+
+add('LYRICS.stateBackfill', 'LYRICS', (s) => {
+  // 防「刚打开桌面歌词时歌词区是空的，暂停再播放才正常」回归。
+  // 根因：主窗建窗后**立刻**推送，而那一刻歌词窗的 `listen` 尚未注册，
+  // 那条事件必然丢失（Tauri 事件不缓存、不回放）。
+  // 修法三环节缺任一，症状都会原样复现：
+  //   Rust 缓存 → get_lyrics_state 命令 → **在 main.rs 注册** → 歌词窗挂载后补拉
+  const rust = stripComments(s.rustLyrics ?? '');
+  const dl = stripComments(s.desktopLyrics ?? '');
+  const main = stripComments(s.rustMain ?? '');
+  const missing = [];
+  // ⚠️ 判据必须精确到"**写入**那一步"，不能只查标识符存在：
+  // 把 `*g = Some(payload.clone())` 删掉（缓存永不写入＝机制等于没有）断言仍会绿；
+  // 把变量改名成 `LAST_LYRICS_X` 也一样（子串仍匹配）。本项目已因此栽过 5 次。
+  if (!/LAST_LYRICS\s*\.\s*lock\(\)[\s\S]{0,160}?payload\s*\.\s*clone\(\)/.test(rust))
+    missing.push('Rust 未把载荷写入缓存');
+  if (!/fn\s+get_lyrics_state/.test(rust)) missing.push('缺 get_lyrics_state 命令');
+  // 定义了但没注册 → 调用时报"命令不存在"（且被 catch 吞掉），是经典的不报错失效
+  if (!/get_lyrics_state/.test(main)) missing.push('get_lyrics_state 未在 main.rs 注册');
+  if (!/get_lyrics_state/.test(dl)) missing.push('歌词窗未补拉（挂载后仍是空的）');
+  // 顺序：**先 listen 再补拉**。反过来的话，注册与拉取之间的事件会漏掉。
+  const iListen = dl.indexOf("listen<LyricsPayload | LyricsPrefsPayload>('lyrics://state'");
+  const iPull = dl.indexOf('get_lyrics_state');
+  if (iListen >= 0 && iPull >= 0 && iPull < iListen)
+    missing.push('顺序错：先补拉后注册 listen（中间会漏事件）');
+  return { ok: missing.length === 0, detail: missing.length ? `状态补拉：${missing.join('、')}` : '' };
+});
+
+add('LYRICS.controlBridge', 'LYRICS', (s) => {
+  // 桌面歌词控制栏是**跨窗口**的：歌词窗点按钮 → Rust 转发 → 主窗执行。
+  // 四环节任一缺失，症状都是「点了没反应」且**不报任何错**：
+  //   ① 歌词窗没发指令 ② Rust 没定义命令 ③ 定义了没注册 ④ 主窗没监听
+  const dl = stripComments(s.desktopLyrics ?? '');
+  const rust = stripComments(s.rustLyrics ?? '');
+  const main = stripComments(s.rustMain ?? '');
+  const kernel = stripComments(s.kernel ?? '');
+  const missing = [];
+  if (!/lyrics_control/.test(dl)) missing.push('歌词窗未发控制指令');
+  if (!/fn\s+lyrics_control/.test(rust)) missing.push('Rust 缺 lyrics_control 命令');
+  if (!/lyrics_control/.test(main)) missing.push('lyrics_control 未在 main.rs 注册');
+  if (!/lyrics:\/\/control/.test(rust)) missing.push('Rust 未 emit lyrics://control');
+  if (!/listen<LyricsControlPayload>\(\s*'lyrics:\/\/control'/.test(kernel))
+    missing.push('主窗未监听 lyrics://control');
+  // 四个动作都要有分支：只实现一半 = 有一半按钮点了没反应。
+  // ⚠️ 判据用 `case 'xxx'` 而不是裸字符串 —— 裸子串会命中注释、类型联合等无关处
+  //（例如 `'unused-next'` 里含 `next`），属于同类的宽判据陷阱。
+  for (const a of ['toggle-play', 'prev', 'next', 'cycle-mode']) {
+    if (!kernel.includes(`case '${a}'`)) missing.push(`主窗未处理动作 ${a}`);
+  }
+  return { ok: missing.length === 0, detail: missing.length ? `控制桥：${missing.join('、')}` : '' };
+});
+
+add('LYRICS.modeIconSync', 'LYRICS', (s) => {
+  // `cycleMode` 自身**不推送**（它原本只服务主窗 UI）→ 歌词窗的播放模式图标会停在旧值，
+  // 用户看到的是"点了没反应"。所以主窗执行完必须补推一次。
+  const kernel = stripComments(s.kernel ?? '');
+  if (!/case 'cycle-mode':[\s\S]{0,500}?pushLyricsState\(\)/.test(kernel))
+    return { ok: false, detail: 'cycle-mode 分支未补推状态（歌词窗模式图标会滞后，像点了没反应）' };
+  return { ok: true, detail: '' };
+});
+
+add('LYRICS.playModeContract', 'LYRICS', (s) => {
+  // playMode 三处必须对齐：ipc 载荷声明 → store 推送时带上 → 歌词窗类型能接。
+  // 缺任一处都不报错，只是歌词窗永远显示默认模式（"切了没反应"）。
+  // ⚠️ 三条判据都**限定到声明/构造处**，不能只查标识符存在：
+  // `playMode` 在 store 里出现很多次（解构、savePrefs、order 数组……），
+  // 只查"出现过"的话，把推送那一处的 `playMode,` 删掉断言仍是绿的 ——
+  // 反证轮实测抓到过这个假阳性（本项目同类问题第 6 次）。
+  const ipc = stripComments(s.ipc ?? '');
+  const store = stripComments(s.store ?? '');
+  const dl = stripComments(s.desktopLyrics ?? '');
+  const missing = [];
+  if (!/playMode\s*:\s*PlayMode\s*;/.test(ipc)) missing.push('ipc 的推送载荷缺 playMode 字段');
+  // 限定在 payload 字面量内：以 `sentAtEpoch: Date.now()` 为起点向后找
+  if (!/sentAtEpoch\s*:\s*Date\.now\(\)[\s\S]{0,240}?playMode/.test(store))
+    missing.push('store 推送时未带 playMode');
+  if (!/playMode\?:/.test(dl)) missing.push('歌词窗载荷类型缺 playMode');
+  return { ok: missing.length === 0, detail: missing.length ? `模式契约：${missing.join('、')}` : '' };
+});
+
 add('LYRICS.closeViaRust', 'LYRICS', (s) => {
   // 关闭必须走 Rust 命令，不能 window.close()：后者绕过主窗状态，
   // 开关会显示成"还开着"（子 agent 主动做了这个选择，锁住它）
@@ -1802,6 +1885,48 @@ const MUTATIONS = [
     find: "      const got = await attachAnalyser(findAudioElement());",
     replace: "      const got = await attachAnalyser(findAudioElement());\n      const __probe = (window as unknown as { createMediaElementSource?: unknown })\n        .createMediaElementSource;\n      void __probe;",
     expect: ["AUDIO.singleEntry"],
+  },
+  {
+    name: "Rust 不再把载荷写入缓存（歌词窗补拉永远拿到空 → 打开还是没歌词）",
+    file: "app/src-tauri/src/lyrics_window.rs",
+    find: "        *g = Some(payload.clone());",
+    replace: "        let _ = &mut g;",
+    expect: ["LYRICS.stateBackfill"],
+  },
+  {
+    name: "歌词窗去掉挂载后的补拉（回到\"暂停再播放才显示\"）",
+    file: "app/src/screens/lyrics/DesktopLyrics.tsx",
+    find: "        const cached = await invoke<LyricsPayload | LyricsPrefsPayload | null>('get_lyrics_state');",
+    replace: "        const cached = null as LyricsPayload | LyricsPrefsPayload | null;",
+    expect: ["LYRICS.stateBackfill"],
+  },
+  {
+    name: "main.rs 不注册 lyrics_control（调用报\"命令不存在\"，被 catch 吞掉）",
+    file: "app/src-tauri/src/main.rs",
+    find: "            lyrics_window::lyrics_control,",
+    replace: "            // lyrics_window::lyrics_control,",
+    expect: ["LYRICS.controlBridge"],
+  },
+  {
+    name: "主窗不处理 next 动作（该按钮点了没反应）",
+    file: "app/src/components/MusicKernel.tsx",
+    find: "            case 'next':\n              s.next();\n              break;",
+    replace: "            case 'unused-next':\n              break;",
+    expect: ["LYRICS.controlBridge"],
+  },
+  {
+    name: "cycle-mode 后不补推状态（歌词窗模式图标滞后，像点了没反应）",
+    file: "app/src/components/MusicKernel.tsx",
+    find: "              void s.pushLyricsState();",
+    replace: "              void 0;",
+    expect: ["LYRICS.modeIconSync"],
+  },
+  {
+    name: "store 推送时不带 playMode（歌词窗永远显示默认模式）",
+    file: "app/src/music/store.ts",
+    find: "      // 播放模式要跟着走：歌词窗的控制栏靠它显示正确的模式图标（两窗 store 互不可见）\n      playMode,",
+    replace: "      // 反证：不带 playMode",
+    expect: ["LYRICS.playModeContract"],
   },
 ];
 

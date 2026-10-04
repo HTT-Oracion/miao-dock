@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { ensureAudioContextActive, markNotWirable } from '@music/audioGraph';
+import type { LyricsControlPayload } from '@music/ipc';
 import { registerAudioElement, useMusicStore } from '@music/store';
 
 /**
@@ -145,6 +147,63 @@ export function MusicKernel() {
     a.load();
     if (useMusicStore.getState().isPlaying) void a.play().catch(() => undefined);
   }, [corsMode, playUrl]);
+
+  /**
+   * 接收**桌面歌词窗**发来的播放控制。
+   *
+   * 为什么必须在这里监听、而不是歌词窗自己处理：两个窗口是独立的 WebView，
+   * 各自的 JS 堆互不可见 —— 歌词窗里的 store 是另一个实例（只有 localStorage 共享，
+   * 那是磁盘态不是内存态）。所以那边点"下一首"只能经 Rust 的 `lyrics://control`
+   * 转发过来，由主窗真正执行。
+   *
+   * 挂在 MusicKernel（应用级常驻组件）上：它本来就管"播放"这件事，
+   * 且生命周期与 App 一致，不会因为切屏而漏掉事件。
+   */
+  useEffect(() => {
+    let disposed = false;
+    let un: (() => void) | undefined;
+    void (async () => {
+      try {
+        const off = await listen<LyricsControlPayload>('lyrics://control', (e) => {
+          if (disposed) return;
+          const s = useMusicStore.getState();
+          switch (e.payload?.action) {
+            case 'toggle-play':
+              s.togglePlay();
+              break;
+            case 'prev':
+              s.prev();
+              break;
+            case 'next':
+              s.next();
+              break;
+            case 'cycle-mode':
+              s.cycleMode();
+              /**
+               * ⚠️ `cycleMode` 自己**不推送**（它原本只服务主窗 UI）——
+               * 这里必须补一次，否则歌词窗的播放模式图标会停在旧值，
+               * 用户看到的现象是"点了没反应"。
+               */
+              void s.pushLyricsState();
+              break;
+            case 'volume':
+              if (typeof e.payload.value === 'number') s.setVolume(e.payload.value);
+              break;
+            default:
+              break;
+          }
+        });
+        if (disposed) off();
+        else un = off;
+      } catch {
+        /* 无 Tauri 桥（浏览器里直开主窗）：忽略 */
+      }
+    })();
+    return () => {
+      disposed = true;
+      un?.();
+    };
+  }, []);
 
   /* playUrl 为空时不设 src（否则 WebView 会对空地址报错） */
   return (

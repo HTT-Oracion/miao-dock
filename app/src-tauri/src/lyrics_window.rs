@@ -30,10 +30,26 @@
 //!    在文档与 UI 文案里**不承诺未实测的能力**。
 
 use serde::Serialize;
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// 桌面歌词窗口的固定 label（见本文件 ②）
 pub const LYRICS_WINDOW: &str = "desktop-lyrics";
+
+/// 最后一次推给歌词窗的载荷（**只存不发**，供窗口挂载后补拉）。
+///
+/// ## 为什么必须有这份缓存（这是"刚打开没歌词"的真正原因）
+///
+/// 建窗与推送是**两步且异步**的：主窗调用 `open_lyrics_window` 之后**立刻**推送状态，
+/// 而此刻歌词窗的 WebView 还在加载 HTML —— React 尚未挂载、`listen` 尚未注册，
+/// **这条事件必然丢失**（Tauri 的事件不缓存、不回放）。
+///
+/// 症状极具误导性：**刚打开时歌词区空着，暂停再播放（触发第二次推送）就正常了** ——
+/// 看起来像"歌词加载有问题"，实际是第一条推送发早了一步。
+///
+/// 有了缓存，歌词窗挂载后主动 `get_lyrics_state` 拉一次即可，
+/// **不依赖两个 WebView 的加载时序**（靠睡眠/重试去赌时序是治不好的）。
+static LAST_LYRICS: Mutex<Option<serde_json::Value>> = Mutex::new(None);
 
 /// 窗口尺寸（**逻辑像素**，与 `position()` 同一单位体系）。
 /// 做成常量是为了让"写死的尺寸"只有一个来源 —— 摆位计算要用它们，
@@ -247,9 +263,40 @@ pub fn save_lyrics_window_state(app: AppHandle, state: LyricsWindowState) -> Res
 /// 本地计时推进进度 —— 前提是歌词窗能自己走表（它能：WebView 的定时器不受主窗影响）。
 #[tauri::command]
 pub fn lyrics_push(app: AppHandle, payload: serde_json::Value) -> Result<(), String> {
+    // ⚠️ **先写缓存、再 emit**，顺序不能反（见 `LAST_LYRICS` 的注释）：
+    // 歌词窗挂载后补拉的就是这里存下的这份。反过来的话，窗口在"emit 完、还没写缓存"
+    // 之间挂载 → 事件错过了、缓存又是空的 → 表现为"刚打开没歌词"原地复现。
+    if let Ok(mut g) = LAST_LYRICS.lock() {
+        *g = Some(payload.clone());
+    }
+
     let Some(w) = app.get_webview_window(LYRICS_WINDOW) else {
         return Ok(());
     };
     w.emit("lyrics://state", payload)
         .map_err(|e| format!("推送歌词状态失败：{e}"))
+}
+
+/// 歌词窗挂载后**主动补拉**最后一次状态（解决"刚打开没歌词"，见 `LAST_LYRICS`）。
+///
+/// 返回 `null` 表示主窗还没推过任何东西（例如"先开窗口、后播歌"）——
+/// 歌词窗据此保持待播放态，等 `lyrics://state` 事件即可，不需要重试。
+#[tauri::command]
+pub fn get_lyrics_state() -> Option<serde_json::Value> {
+    LAST_LYRICS.lock().ok().and_then(|g| g.clone())
+}
+
+/// 歌词窗 → 主窗：控制播放（播放/暂停、上一首、下一首、播放模式、音量、锁定）。
+///
+/// ## 为什么必须经 Rust 转发
+/// 两个窗口是**独立的 WebView**，各自的 JS 堆互不可见 —— 歌词窗里的 zustand store
+/// 是另一个实例（只有 localStorage 共享，那是磁盘态不是内存态）。所以"在歌词窗点下一首"
+/// 没法直接改主窗的 store，必须走 Rust 的 `emit` 让主窗收到后执行。
+///
+/// 载荷原样转发（Rust 不解析），与 `lyrics_push` 的方向相反、形状对称 ——
+/// 两端各加一个字段都不需要改这里。
+#[tauri::command]
+pub fn lyrics_control(app: AppHandle, payload: serde_json::Value) -> Result<(), String> {
+    app.emit("lyrics://control", payload)
+        .map_err(|e| format!("转发歌词窗控制指令失败：{e}"))
 }

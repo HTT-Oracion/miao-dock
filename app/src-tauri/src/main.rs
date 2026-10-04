@@ -73,6 +73,8 @@ fn main() {
             lyrics_window::lyrics_window_open,
             lyrics_window::save_lyrics_window_state,
             lyrics_window::lyrics_push,
+            lyrics_window::get_lyrics_state,
+            lyrics_window::lyrics_control,
             lyrics_window::resize_lyrics_window,
             commands::hide_window,
             commands::show_window,

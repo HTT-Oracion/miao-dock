@@ -1877,7 +1877,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   },
 
   pushLyricsState: async () => {
-    const { currentSong, parsedLyrics, isPlaying, progressMs, durationMs } = get();
+    const { currentSong, parsedLyrics, isPlaying, progressMs, durationMs, playMode } = get();
     // `songId` 用 `songKey`（provider:id）而不是裸 `song.id`：四个平台的 id 各自独立，
     // 裸 id 跨平台会撞车，歌词窗就无法区分"换歌了"与"还是同一首"。
     const payload: ipc.LyricsPushPayload = {
@@ -1891,6 +1891,8 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       startedAtMs: progressMs,
       durationMs,
       sentAtEpoch: Date.now(),
+      // 播放模式要跟着走：歌词窗的控制栏靠它显示正确的模式图标（两窗 store 互不可见）
+      playMode,
       // 完整推送也带上偏好：新开的窗口首帧就能拿到正确外观，
       // 不必等用户去动一次设置（那样新窗口会先按默认值闪一下再跳成用户的值）。
       desktopLyrics: dlPrefsOf(get()),

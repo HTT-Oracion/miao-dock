@@ -25,7 +25,18 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Lock, X } from 'lucide-react';
+import {
+  HeartPulse,
+  Lock,
+  Pause,
+  Play,
+  Repeat,
+  Repeat1,
+  Shuffle,
+  SkipBack,
+  SkipForward,
+  X,
+} from 'lucide-react';
 import {
   DL_BASE_COLOR_DEF,
   DL_HIGHLIGHT_COLOR_DEF,
@@ -82,6 +93,14 @@ export interface LyricsPayload {
   /** 主窗侧「推送时的墙上时钟」，用于校正两窗时钟漂移 */
   sentAtEpoch: number;
   /**
+   * 当前播放模式 —— 控制栏的图标靠它选。
+   *
+   * 标成可选是为了**向后兼容**（旧主窗不推这个字段时不该崩）；缺省按列表循环显示。
+   * 取值与主窗 `types.ts` 的 `PlayMode` 逐字一致（本窗不 import 那个模块，
+   * 免得把整个音乐业务层拖进这个只负责画歌词的小页面）。
+   */
+  playMode?: 'list' | 'heartbeat' | 'shuffle' | 'one';
+  /**
    * 桌面歌词的独立偏好。完整推送总会带上（新开的窗口首帧就有正确外观）；
    * 标成可选是为了**兼容缺失** —— 缺了就一直用本窗已经读到的值，而不是回默认值。
    */
@@ -106,6 +125,22 @@ export interface LyricsPrefsPayload {
 function isPrefsOnly(p: LyricsPayload | LyricsPrefsPayload): p is LyricsPrefsPayload {
   return (p as LyricsPrefsPayload).prefsOnly === true;
 }
+
+/** 控制栏能发给主窗的动作。名字与主窗 `ipc.ts` 的 `LyricsControlPayload` 逐字一致 */
+type LyricsControlAction = 'toggle-play' | 'prev' | 'next' | 'cycle-mode';
+
+/**
+ * 播放模式 → 图标与文案。
+ *
+ * 「上一句 / 下一句」在歌词语境下就是**切上一首 / 下一首**（参考实现的控制栏同此义）——
+ * 桌面歌词带的是整条播放条语义，而不是"在歌词行之间移动光标"。
+ */
+const MODE_META: Record<string, { icon: typeof Repeat; label: string }> = {
+  list: { icon: Repeat, label: '列表循环' },
+  one: { icon: Repeat1, label: '单曲循环' },
+  shuffle: { icon: Shuffle, label: '随机播放' },
+  heartbeat: { icon: HeartPulse, label: '心动模式' },
+};
 
 /** 主窗写偏好用的 localStorage 键（与主窗同 origin，实测共享 —— 台账 D-47） */
 const LS_PREFS = 'miaodock.music.prefs';
@@ -222,6 +257,15 @@ export function DesktopLyrics() {
   const [hint, setHint] = useState<string | null>(null);
 
   /**
+   * 是否**已经收到过一份带歌词行的状态**（事件或补拉都算）。
+   *
+   * 只给补拉当守卫用：补拉与事件是两条并发的来路，顺序不保证 ——
+   * 若不加这道判断，可能出现"补拉返回的旧载荷覆盖掉刚通过事件收到的新载荷"。
+   * ⚠️ 偏好载荷（`prefsOnly`）**不算**：它不含歌词行与进度，不能作为"已收到状态"的依据。
+   */
+  const stateReceivedRef = useRef(false);
+
+  /**
    * 桌面歌词的独立偏好。
    *
    * 初值走 localStorage（首屏就得有正确外观，见 `readPrefs`），之后由主窗推送更新 ——
@@ -287,6 +331,7 @@ export function DesktopLyrics() {
     basePerfRef.current = performance.now();
     playingRef.current = p.playing;
     linesRef.current = p.lines ?? [];
+    stateReceivedRef.current = true;
     setPayload(p);
     setIdx(indexAt(linesRef.current, baseMsRef.current));
     idxRef.current = indexAt(linesRef.current, baseMsRef.current);
@@ -320,6 +365,26 @@ export function DesktopLyrics() {
         });
         if (disposed) off();
         else un = off;
+
+        /**
+         * 注册完成后**主动补拉**最后一次状态。
+         *
+         * ## 为什么非补不可
+         * 主窗建窗之后**立刻**推送，而那一刻本窗的 WebView 还在加载 HTML ——
+         * 组件未挂载、`listen` 尚未注册，**那条事件已经丢了**（Tauri 的事件不缓存、不回放）。
+         * 症状极具误导性：**刚打开桌面歌词时歌词区是空的，暂停再播放就正常了**
+         *（第二次推送赶上了）。靠"延迟几百毫秒再推"去赌时序治不好这个病，
+         * 所以 Rust 侧缓存一份载荷，这里补拉。
+         *
+         * ## 顺序与守卫
+         * **先 listen、再补拉**：反过来的话，拉取与事件注册之间会漏掉事件。
+         * 再加一道 `stateReceivedRef` 守卫 —— 若期间已通过事件收到状态，就丢弃补拉结果，
+         * 避免用较旧的载荷覆盖较新的。
+         */
+        const cached = await invoke<LyricsPayload | LyricsPrefsPayload | null>('get_lyrics_state');
+        if (disposed || !cached || stateReceivedRef.current) return;
+        if (isPrefsOnly(cached)) applyPrefsOnly(cached);
+        else applyPayload(cached);
       } catch {
         /* 无 Tauri 桥：保持「待播放」静态态 */
       }
@@ -518,10 +583,33 @@ export function DesktopLyrics() {
     });
   }, []);
 
+  // ---- 播放控制（转给主窗执行）-------------------------------------------
+  /**
+   * 发一条控制指令给主窗。
+   *
+   * ⚠️ 为什么不能在本窗直接改状态：两个窗口是**独立的 WebView**，各自的 JS 堆互不可见 ——
+   * 本窗的 zustand store 是另一个实例（只有 localStorage 共享，那是磁盘态、不是内存态）。
+   * 所以"在歌词窗点下一首"必须经 Rust 转发（`lyrics://control`）由主窗执行。
+   *
+   * 失败一律静默：主窗没开（理论上不会）、非 Tauri 环境（浏览器直开本页调试）都可能失败，
+   * 而这类旁路能力的问题不该在歌词窗上弹错误。
+   */
+  const sendControl = useCallback((action: LyricsControlAction) => {
+    void invoke('lyrics_control', { payload: { action } }).catch(() => {
+      /* 忽略：见上 */
+    });
+  }, []);
+
   // ---- 降级态 ------------------------------------------------------------
   const hasSong = payload !== null && payload.songId !== null;
   const lines = payload?.lines ?? [];
   const noLyrics = hasSong && lines.length === 0;
+  /** 控制栏上的播放/暂停图标取决于主窗推来的播放态 */
+  const isPlaying = payload?.playing ?? false;
+  /** 播放模式（主窗推来的；缺省按列表循环，见 LyricsPayload.playMode 的兼容说明） */
+  const modeMeta = MODE_META[payload?.playMode ?? 'list'] ?? MODE_META.list;
+  // JSX 里 `<modeMeta.icon />` 会被当成小写 DOM 标签，必须先取成大写变量
+  const ModeIcon = modeMeta.icon;
 
   /**
    * 「还没到第一句」（idx === -1）。
@@ -619,15 +707,78 @@ export function DesktopLyrics() {
           </>
         )}
 
-        <button className="dl-close" onClick={onClose} title="关闭桌面歌词" aria-label="关闭桌面歌词">
-          <X size={13} strokeWidth={2.4} />
-        </button>
+        {/*
+          控制栏：**未锁定时 hover 显示**，锁定时整体换成一个小锁标记。
 
+          为什么做成"一整条"而不是单个关闭圆点：参考实现里桌面歌词的控制是一整组
+          （上一句 / 播放暂停 / 下一句 / 播放模式 ｜ 锁定 ｜ 关闭）。
+          原先只有一个孤零零的半透明圆点浮在歌词上，既看不出是什么、也不好按。
+        */}
         {locked ? (
-          <span className="dl-lock" title="已锁定（双击解锁）">
+          <span className="dl-lock" title="已锁定（双击歌词条解锁）">
             <Lock size={11} strokeWidth={2.4} />
           </span>
-        ) : null}
+        ) : (
+          <div className="dl-ctrl">
+            <button
+              type="button"
+              className="dl-cbtn"
+              onClick={() => sendControl('prev')}
+              title="上一首"
+              aria-label="上一首"
+            >
+              <SkipBack size={13} strokeWidth={2.2} />
+            </button>
+            <button
+              type="button"
+              className="dl-cbtn"
+              onClick={() => sendControl('toggle-play')}
+              title={isPlaying ? '暂停' : '播放'}
+              aria-label={isPlaying ? '暂停' : '播放'}
+            >
+              {isPlaying ? <Pause size={13} strokeWidth={2.2} /> : <Play size={13} strokeWidth={2.2} />}
+            </button>
+            <button
+              type="button"
+              className="dl-cbtn"
+              onClick={() => sendControl('next')}
+              title="下一首"
+              aria-label="下一首"
+            >
+              <SkipForward size={13} strokeWidth={2.2} />
+            </button>
+            <button
+              type="button"
+              className="dl-cbtn"
+              onClick={() => sendControl('cycle-mode')}
+              title={`播放模式：${modeMeta.label}`}
+              aria-label={`播放模式：${modeMeta.label}`}
+            >
+              <ModeIcon size={13} strokeWidth={2.2} />
+            </button>
+            {/* 分隔线把「播放控制」与「窗口控制（锁定/关闭）」分开 —— 两者都是圆形小图标，
+                相邻且同为中性色时极易误点关闭 */}
+            <span className="dl-cdiv" />
+            <button
+              type="button"
+              className="dl-cbtn"
+              onClick={toggleLock}
+              title="锁定（锁定后不可拖动）"
+              aria-label="锁定桌面歌词"
+            >
+              <Lock size={13} strokeWidth={2.2} />
+            </button>
+            <button
+              type="button"
+              className="dl-cbtn is-close"
+              onClick={onClose}
+              title="关闭桌面歌词"
+              aria-label="关闭桌面歌词"
+            >
+              <X size={13} strokeWidth={2.4} />
+            </button>
+          </div>
+        )}
       </div>
 
       {hint ? <div className="dl-hint">{hint}</div> : null}
@@ -796,24 +947,63 @@ const WINDOW_CSS = `
 }
 
 /* 关闭按钮：常驻极低透明度，hover 才显现 —— 常显会抢歌词的注意力 */
-.dl-close {
+/*
+  控制栏 —— **未锁定时 hover 显示**（锁定时整体换成 .dl-lock 的小锁标记）。
+  做成"一整条"而不是单个关闭圆点：参考实现里桌面歌词的控制是一整组
+  （上一句 / 播放暂停 / 下一句 / 播放模式 ｜ 锁定 ｜ 关闭）。
+  默认 opacity:0 且 pointer-events:none —— 不可见时**不能**挡住歌词条的双击锁定手势。
+*/
+.dl-ctrl {
   position: absolute;
   top: 6px;
-  right: 6px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(18, 14, 32, 0.74);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.dl-bar:hover .dl-ctrl {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+/* 按钮：统一 24px 圆形命中区 + 中性色。所有按钮**同形同色** ——
+   只把关闭按钮单独染红会让它在一条中性色控制栏里显得突兀（这正是用户反馈的问题之一） */
+.dl-cbtn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
-  color: rgba(245, 242, 255, 0.32);
-  opacity: 0.55;
-  transition: opacity 140ms ease, background 140ms ease, color 140ms ease;
+  color: rgba(245, 242, 255, 0.78);
+  transition: background 140ms ease, color 140ms ease;
 }
-.dl-bar:hover .dl-close { opacity: 1; }
-.dl-close:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(245, 242, 255, 0.92);
+.dl-cbtn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+/* 关闭是唯一带"破坏性"语义的动作，只在 hover 时才显红 —— 静态时与兄弟按钮一致 */
+.dl-cbtn.is-close:hover {
+  background: rgba(239, 68, 68, 0.85);
+  color: #fff;
+}
+
+/* 分隔线：把「播放控制」与「窗口控制（锁定/关闭）」分开，降低误点关闭的概率 */
+.dl-cdiv {
+  width: 1px;
+  height: 14px;
+  margin: 0 4px;
+  background: rgba(255, 255, 255, 0.16);
 }
 
 /* 锁定标记：小锁 + 低透明度，出现在右下，与关闭按钮分开占位 */

@@ -15,6 +15,7 @@ import type {
   LoginInfo,
   Lyrics,
   Mv,
+  PlayMode,
   Playlist,
   QrCheckResult,
   Song,
@@ -331,6 +332,14 @@ export interface LyricsPushPayload {
   durationMs: number;
   /** 推送时的墙上时钟（`Date.now()`），供歌词窗校正两窗时钟漂移 */
   sentAtEpoch: number;
+  /**
+   * 当前播放模式。
+   *
+   * 为什么必须推：歌词窗的控制栏要显示**正确的模式图标**（列表循环 / 单曲 / 随机 / 心动），
+   * 而两个窗口的 store 互不可见（独立 WebView）—— 不推的话图标永远停在初始值，
+   * 用户在主窗切了模式，歌词窗上还是旧的，看起来像"点不动"。
+   */
+  playMode: PlayMode;
   /** 桌面歌词的当前偏好（每次完整推送都带上，新开的窗口首帧就拿到正确外观） */
   desktopLyrics: DesktopLyricsPrefs;
 }
@@ -357,6 +366,26 @@ export interface LyricsPrefsPayload {
   desktopLyrics: DesktopLyricsPrefs;
 }
 
+/**
+ * 歌词窗 → 主窗：控制播放的指令。
+ *
+ * ## 为什么需要一条反方向的通道
+ *
+ * 两个窗口是**独立的 WebView**，JS 堆互不可见 —— 歌词窗里的 store 是另一个实例
+ *（只有 localStorage 共享，那是磁盘态）。所以歌词窗控制栏上的「下一首」按不动主窗的歌，
+ * 必须发一条指令让主窗执行。Rust 只做转发（`lyrics://control`），不解析载荷。
+ *
+ * ## 动作表为什么是这几个
+ * 对齐参考实现的控制栏构成：上一句 / 播放暂停 / 下一句 / 播放模式 / 音量。
+ * 「上一句/下一句」在歌词语境下就是**切上一首/下一首**（参考实现同此义）。
+ * 锁定与关闭不走这里 —— 它们只影响歌词窗自身，本地就能处理。
+ */
+export interface LyricsControlPayload {
+  action: 'toggle-play' | 'prev' | 'next' | 'cycle-mode' | 'volume';
+  /** 仅 `volume` 用：0..1 */
+  value?: number;
+}
+
 /** 打开桌面歌词窗口；已存在则聚焦（幂等） */
 export const openLyricsWindow = () => invoke<void>('open_lyrics_window');
 
@@ -373,6 +402,20 @@ export const lyricsWindowOpen = () => invoke<boolean>('lyrics_window_open');
  */
 export const lyricsPush = (payload: LyricsPushPayload | LyricsPrefsPayload) =>
   invoke<void>('lyrics_push', { payload });
+
+/**
+ * 歌词窗挂载后**主动补拉**最后一次状态（Rust 侧缓存的那份）。
+ *
+ * 解决的是「刚打开桌面歌词没歌词、暂停再播放才正常」：主窗建窗后立刻推送，
+ * 而那一刻歌词窗的 `listen` 还没注册，事件必然丢失（Rust 侧事件不缓存、不回放）。
+ * 返回 `null` = 主窗还没推过任何东西（先开窗口后播歌），此时等事件即可。
+ */
+export const getLyricsState = () =>
+  invoke<LyricsPushPayload | LyricsPrefsPayload | null>('get_lyrics_state');
+
+/** 歌词窗 → 主窗：发一条播放控制指令（Rust 转发 `lyrics://control`） */
+export const lyricsControl = (payload: LyricsControlPayload) =>
+  invoke<void>('lyrics_control', { payload });
 
 // ------------------------------------------------------------------ 音频代理
 
