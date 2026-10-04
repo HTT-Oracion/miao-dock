@@ -7,11 +7,12 @@ import { fmtTime, useMusicStore } from '../music/store';
  *
  * 结构：顶行（标题 + 当前平台）→ 左右 50/50（左「我的音乐」/ 右「搜索」）→ 底部播放条。
  *
- * 本轮范围（可验收的 MVP，PD-1「界面重写」的第一步）：
+ * 本轮范围（可验收的 MVP，PD-1「界面重写」）：
  * - 本地导入（多选文件 / 文件夹）→ 本地歌单 → 点击播放
  * - 网易云搜索 → 结果列表 → 点击播放（在线，走音频代理）
+ * - 推荐歌单（musicPersonalized）→ 点击加载歌单曲目 → 播放
  * - 底部播放条：播放/暂停、上一首/下一首、进度条、音量、播放模式
- * 后续（遗留）：在线账号登录/歌单/榜单/推荐、展开播放器六皮肤、队列抽屉、桌面歌词。
+ * 后续（遗留）：在线账号扫码登录、官方榜单、展开播放器六皮肤、队列抽屉、桌面歌词。
  *
  * 关键排版（设计稿注）：播放条控制组相对整条**绝对居中**（left:50% + translateX(-50%)），
  * 不随左右两侧宽度偏移 —— 这里沿用该布局，而非 flex 自动分配。
@@ -34,6 +35,11 @@ export function MusicScreen() {
     searchResults,
     searching,
     searchError,
+    recommendPlaylists,
+    loadingRecommend,
+    currentPlaylist,
+    loadingPlaylist,
+    loginInfo,
     importLocal,
     importFolder,
     playQueue,
@@ -47,7 +53,17 @@ export function MusicScreen() {
     setSearchText,
     setProgress,
     setDuration,
+    loadRecommend,
+    openPlaylist,
+    closePlaylist,
+    loadLoginStatus,
   } = useMusicStore();
+
+  // ---- 挂载时加载推荐歌单 + 登录状态 ----
+  useEffect(() => {
+    void loadRecommend();
+    void loadLoginStatus();
+  }, [loadRecommend, loadLoginStatus]);
 
   // ---- 同步 store → <audio>：源、播放态、音量 ----
   useEffect(() => {
@@ -116,11 +132,21 @@ export function MusicScreen() {
 
   return (
     <div className="music">
-      {/* 顶行：标题 + 当前平台 */}
+      {/* 顶行：标题 + 当前平台 + 登录状态 */}
       <div className="music-top">
         <div className="music-top-l">
           <span className="music-title">音乐播放器</span>
           <span className="music-plat">当前平台：网易云音乐</span>
+        </div>
+        <div className="music-top-r">
+          {loginInfo ? (
+            <>
+              <span className="music-ava">{loginInfo.avatar ? <img src={loginInfo.avatar} alt="" /> : loginInfo.nickname?.slice(0, 1)}</span>
+              <span className="music-nick">{loginInfo.nickname}</span>
+            </>
+          ) : (
+            <span className="music-nick muted">未登录</span>
+          )}
         </div>
       </div>
 
@@ -164,42 +190,110 @@ export function MusicScreen() {
           )}
         </section>
 
-        {/* 右：搜索 */}
+        {/* 右：搜索 + 推荐 / 歌单曲目 */}
         <section className="music-card">
-          <div className="music-search-row">
-            <input
-              className="music-search"
-              placeholder="搜索歌曲、歌手、歌单…（回车查看全部）"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              onKeyDown={onSearchKey}
-            />
-            <button type="button" className="music-btn pri" onClick={() => void search(searchText)} disabled={searching}>
-              {searching ? '搜索中…' : '搜索'}
-            </button>
-          </div>
-
-          {searchError ? <div className="music-empty is-bad">搜索失败：{searchError}</div> : null}
-
-          {searchResults.length > 0 ? (
-            <div className="music-list">
-              {searchResults.map((s) => (
-                <div
-                  key={s.id}
-                  className={currentSong?.id === s.id ? 'music-row is-hot' : 'music-row'}
-                  onClick={() => void playQueue(searchResults, searchResults.indexOf(s))}
-                >
-                  <div className="music-cover">{s.cover ? <img src={s.cover} alt="" /> : null}</div>
-                  <div className="music-row-tx">
-                    <b>{s.name}</b>
-                    <span>{s.artist} · {s.album || '网易云音乐'}</span>
-                  </div>
-                  <span className="music-dur">{s.duration ? fmtTime(s.duration * 1000) : ''}</span>
+          {currentPlaylist ? (
+            <>
+              <div className="music-card-hd">
+                <button type="button" className="music-btn out" onClick={closePlaylist}>
+                  ← 返回
+                </button>
+                <span className="music-card-title">{currentPlaylist.playlist.name}</span>
+                <span className="music-card-sub">{currentPlaylist.songs.length} 首</span>
+                <div className="grow" />
+                <button type="button" className="music-btn pri" onClick={() => void playQueue(currentPlaylist.songs, 0)}>
+                  播放全部
+                </button>
+              </div>
+              {loadingPlaylist ? (
+                <div className="music-empty">加载歌单曲目中…</div>
+              ) : currentPlaylist.songs.length === 0 ? (
+                <div className="music-empty">歌单是空的。</div>
+              ) : (
+                <div className="music-list">
+                  {currentPlaylist.songs.map((s) => (
+                    <div
+                      key={s.id}
+                      className={currentSong?.id === s.id ? 'music-row is-hot' : 'music-row'}
+                      onClick={() => void playQueue(currentPlaylist.songs, currentPlaylist.songs.indexOf(s))}
+                    >
+                      <div className="music-cover">{s.cover ? <img src={s.cover} alt="" /> : null}</div>
+                      <div className="music-row-tx">
+                        <b>{s.name}</b>
+                        <span>{s.artist} · {s.album || '网易云音乐'}</span>
+                      </div>
+                      <span className="music-dur">{s.duration ? fmtTime(s.duration * 1000) : ''}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           ) : (
-            !searching && <div className="music-empty">输入关键词回车，搜网易云音乐（歌曲 / 歌手 / 歌单）。</div>
+            <>
+              <div className="music-search-row">
+                <input
+                  className="music-search"
+                  placeholder="搜索歌曲、歌手、歌单…（回车查看全部）"
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  onKeyDown={onSearchKey}
+                />
+                <button type="button" className="music-btn pri" onClick={() => void search(searchText)} disabled={searching}>
+                  {searching ? '搜索中…' : '搜索'}
+                </button>
+              </div>
+
+              {searchError ? <div className="music-empty is-bad">搜索失败：{searchError}</div> : null}
+
+              {searchResults.length > 0 ? (
+                <div className="music-list">
+                  {searchResults.map((s) => (
+                    <div
+                      key={s.id}
+                      className={currentSong?.id === s.id ? 'music-row is-hot' : 'music-row'}
+                      onClick={() => void playQueue(searchResults, searchResults.indexOf(s))}
+                    >
+                      <div className="music-cover">{s.cover ? <img src={s.cover} alt="" /> : null}</div>
+                      <div className="music-row-tx">
+                        <b>{s.name}</b>
+                        <span>{s.artist} · {s.album || '网易云音乐'}</span>
+                      </div>
+                      <span className="music-dur">{s.duration ? fmtTime(s.duration * 1000) : ''}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <>
+                  <div className="music-card-hd">
+                    <span className="music-card-title">推荐歌单</span>
+                    <div className="grow" />
+                    <button type="button" className="music-btn out" onClick={() => void loadRecommend()}>
+                      刷新
+                    </button>
+                  </div>
+                  {loadingRecommend ? (
+                    <div className="music-empty">加载推荐歌单中…</div>
+                  ) : recommendPlaylists.length === 0 ? (
+                    <div className="music-empty">
+                      暂无推荐歌单（可能需要登录或网络）。可直接在搜索框搜歌曲播放。
+                    </div>
+                  ) : (
+                    <div className="music-list">
+                      {recommendPlaylists.map((p) => (
+                        <div key={p.id} className="music-row" onClick={() => void openPlaylist(p)}>
+                          <div className="music-cover">{p.cover ? <img src={p.cover} alt="" /> : null}</div>
+                          <div className="music-row-tx">
+                            <b>{p.name}</b>
+                            <span>{p.track_count} 首</span>
+                          </div>
+                          <span className="music-dur">›</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </>
           )}
         </section>
       </div>

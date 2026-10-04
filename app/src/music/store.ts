@@ -12,7 +12,7 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { create } from 'zustand';
 import * as ipc from './ipc';
-import type { LocalSongInfo, PlayMode, Song } from './types';
+import type { LocalSongInfo, LoginInfo, Playlist, PlayMode, Song } from './types';
 
 /** 本地导入的 LocalSongInfo → 可播放的统一 Song（provider = "local"） */
 export function localToSong(info: LocalSongInfo): Song {
@@ -79,6 +79,13 @@ interface MusicState {
   searchResults: Song[];
   searching: boolean;
   searchError: string;
+  // 发现（右栏推荐歌单 + 歌单曲目）
+  recommendPlaylists: Playlist[];
+  loadingRecommend: boolean;
+  currentPlaylist: { playlist: Playlist; songs: Song[] } | null;
+  loadingPlaylist: boolean;
+  // 登录状态（网易云）
+  loginInfo: LoginInfo | null;
 
   importLocal: (paths: string[]) => Promise<void>;
   importFolder: (folder: string) => Promise<void>;
@@ -94,6 +101,10 @@ interface MusicState {
   setSearchText: (t: string) => void;
   setProgress: (ms: number) => void;
   setDuration: (ms: number) => void;
+  loadRecommend: () => Promise<void>;
+  openPlaylist: (p: Playlist) => Promise<void>;
+  closePlaylist: () => void;
+  loadLoginStatus: () => Promise<void>;
 }
 
 export const useMusicStore = create<MusicState>((set, get) => ({
@@ -111,6 +122,11 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   searchResults: [],
   searching: false,
   searchError: '',
+  recommendPlaylists: [],
+  loadingRecommend: false,
+  currentPlaylist: null,
+  loadingPlaylist: false,
+  loginInfo: null,
 
   importLocal: async (paths) => {
     try {
@@ -206,6 +222,38 @@ export const useMusicStore = create<MusicState>((set, get) => ({
 
   setProgress: (ms) => set({ progressMs: ms }),
   setDuration: (ms) => set({ durationMs: ms }),
+
+  loadRecommend: async () => {
+    set({ loadingRecommend: true });
+    try {
+      const list = await ipc.musicPersonalized();
+      set({ recommendPlaylists: list, loadingRecommend: false });
+    } catch {
+      set({ loadingRecommend: false });
+    }
+  },
+
+  openPlaylist: async (p) => {
+    set({ loadingPlaylist: true });
+    try {
+      const [playlist, songs] = await ipc.musicPlaylistTracks(p.id);
+      set({ currentPlaylist: { playlist, songs }, loadingPlaylist: false });
+    } catch {
+      set({ loadingPlaylist: false });
+    }
+  },
+
+  closePlaylist: () => set({ currentPlaylist: null }),
+
+  loadLoginStatus: async () => {
+    try {
+      const statuses = await ipc.musicGetLoginStatuses();
+      const info = statuses['netease'];
+      set({ loginInfo: info && info.logged_in ? info : null });
+    } catch {
+      // 静默：未登录 / 网络未就绪不打扰用户
+    }
+  },
 }));
 
 /** 格式化毫秒 → m:ss（播放条时间显示） */
