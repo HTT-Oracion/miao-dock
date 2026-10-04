@@ -1,6 +1,7 @@
 import { Maximize2, Music, Pause, Play, SkipBack, SkipForward, X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { IconButton } from '@components/units/IconButton';
+import { attachAnalyser, findAudioElement, isAudioContextRunning, readLevels } from '@music/audioGraph';
 import { coverProxyUrl, fmtTime, useMusicStore } from '@music/store';
 import type { Song } from '@music/types';
 import { toastBus, useToastsFromBus, type ToastKind } from '@/toastBus';
@@ -630,109 +631,13 @@ function MusicProgress() {
 /* ================================================================== */
 
 /**
- * ⚠️ `createMediaElementSource` 对**同一个 <audio> 元素只能调用一次**，
- * 第二次会抛 InvalidStateError。所以这里用模块级缓存记住"已经接管过的元素"，
- * 并且整个建图过程包在 try/catch 里（audio 还没加载 / WebView 不支持时都会抛）。
+ * 波形：连真实音频电平，拿不到就降级成 CSS 动画。
  *
- * ⚠️ 建图成功后**必须把 analyser 接回 destination**：
- * `createMediaElementSource` 会把该元素的音频输出"接管"进音频图，
- * 只连 analyser 不连 destination 的话，声音会当场消失。
- */
-interface AnalyserBundle {
-  node: AnalyserNode;
-  ctx: AudioContext;
-}
-
-/**
- * 单独成函数（而不是直接写 `ctx.state === 'running'`）：
- * 直接比较时 TS 会把 `state` 按上一条 if 收窄，await 之后那次判断会被判成
- * "两个类型没有重叠"。走一遍带类型的形参就绕开了这个收窄。
- */
-function isRunning(ctx: AudioContext): boolean {
-  return ctx.state === 'running';
-}
-
-let audioCtx: AudioContext | null = null;
-let analyserNode: AnalyserNode | null = null;
-let sourceEl: HTMLAudioElement | null = null;
-let sourceNode: MediaElementAudioSourceNode | null = null;
-let audioWired = false;
-/** 硬失败（浏览器不支持 / 元素已被别人接管）—— 粘住，不再重试 */
-let audioUnavailable = false;
-/** 建图中的 Promise：并发调用共用同一次建图，避免对同一元素 createMediaElementSource 两次 */
-let attachInFlight: Promise<AnalyserBundle | null> | null = null;
-
-async function doAttach(): Promise<AnalyserBundle | null> {
-  if (audioUnavailable) return null;
-  if (analyserNode && audioCtx) return { node: analyserNode, ctx: audioCtx };
-  try {
-    // 音频元素住在 MusicKernel.tsx 里（display:none 的 <audio>），
-    // 本组件不去改它、也不引 store 的内部实现 —— 直接按 DOM 约定找它。
-    const el = document.querySelector('audio');
-    if (!el) return null;
-    const Ctor =
-      window.AudioContext ??
-      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctor) {
-      audioUnavailable = true;
-      return null;
-    }
-    const ctx = audioCtx ?? new Ctor();
-    audioCtx = ctx;
-    /**
-     * ⚠️ 关键顺序：**先确认上下文在跑，再接管音频元素**。
-     * `createMediaElementSource` 会把元素的输出从"直接出声"改成"必须经音频图回 destination"，
-     * 一旦上下文处于 suspended，接管后就是彻底的静音 —— 这比"没有波形"严重得多。
-     * 所以这里先 resume（播放由用户点击触发，此时恢复是允许的）；起不来就当场放弃、
-     * 退回 CSS 动画波形，**绝不接管**。
-     */
-    if (!isRunning(ctx)) {
-      await ctx.resume();
-      // 重新判一次：await 期间上下文可能已经恢复（起不来的话下面会当场放弃）
-      if (!isRunning(ctx)) return null;
-    }
-    if (sourceEl !== el || !sourceNode) {
-      sourceNode = ctx.createMediaElementSource(el);
-      sourceEl = el;
-      audioWired = false;
-    }
-    if (!analyserNode) {
-      analyserNode = ctx.createAnalyser();
-      analyserNode.fftSize = 64;
-      analyserNode.smoothingTimeConstant = 0.72;
-    }
-    if (!audioWired) {
-      sourceNode.connect(analyserNode);
-      analyserNode.connect(ctx.destination); // 不接回 destination = 静音
-      audioWired = true;
-    }
-    return { node: analyserNode, ctx };
-  } catch {
-    // 兜底：万一在"已经接管、还没接回 destination"这一步失败，必须补上，
-    // 否则用户会以为"播放坏了"（实际是音频被路由走了没连出口）
-    try {
-      if (sourceNode && audioCtx) sourceNode.connect(audioCtx.destination);
-    } catch {
-      // 忽略：此时确实无能为力，交给 CSS 波形降级
-    }
-    audioUnavailable = true;
-    return null;
-  }
-}
-
-function attachAnalyser(): Promise<AnalyserBundle | null> {
-  if (analyserNode && audioCtx) return Promise.resolve({ node: analyserNode, ctx: audioCtx });
-  if (attachInFlight) return attachInFlight;
-  attachInFlight = doAttach().finally(() => {
-    attachInFlight = null;
-  });
-  return attachInFlight;
-}
-
-/**
- * 返回 5 根柱子的电平（0..1）。取不到音频上下文时 `real=false`，
- * 由 CSS 动画画"正在出声"的波形（不白屏、也不假装有数据）。
- * 暂停时电平归零 → 波形静止。
+ * ⚠️ 接管 `<audio>` 有一串各自都能**让声音消失**的坑：跨域资源 + 非 CORS 模式输出静音、
+ * 上下文 suspended 时接管即静音、建了图没接回 destination……所以这些判断
+ * **全部收口在 `@music/audioGraph`**（全项目唯一的接管入口）。
+ * 本组件只做两件事：拿 AnalyserNode、把电平画出来。拿不到就 `real=false` 退回 CSS 动画 ——
+ * 宁可没有真实波形，也**绝不能没声音**。
  */
 function useWaveform(playing: boolean, bars: number): { levels: number[]; real: boolean } {
   const [levels, setLevels] = useState<number[]>(() => new Array(bars).fill(0));
@@ -748,30 +653,21 @@ function useWaveform(playing: boolean, bars: number): { levels: number[]; real: 
     let cancelled = false;
     let raf = 0;
     void (async () => {
-      const got = await attachAnalyser();
+      const got = await attachAnalyser(findAudioElement());
       if (cancelled) return;
       if (!got) {
         setReal(false); // 降级：CSS 动画波形
         return;
       }
-      const buf = new Uint8Array(got.node.frequencyBinCount);
-      const step = Math.max(1, Math.floor(buf.length / bars));
       const tick = () => {
         if (cancelled) return;
-        // 上下文被系统挂起时数据恒为 0，且 getByteFrequencyData 无意义 → 回落 CSS 动画
-        if (!isRunning(got.ctx)) {
+        // 上下文被系统挂起时数据恒为 0，读它没有意义 → 回落 CSS 动画
+        if (!isAudioContextRunning(got.ctx)) {
           setReal(false);
           return;
         }
         setReal(true);
-        got.node.getByteFrequencyData(buf);
-        const next: number[] = [];
-        for (let i = 0; i < bars; i++) {
-          let sum = 0;
-          for (let j = 0; j < step; j++) sum += buf[i * step + j] ?? 0;
-          next.push(Math.max(0.06, Math.min(1, sum / step / 255)));
-        }
-        setLevels(next);
+        setLevels(readLevels(got.node, bars));
         raf = requestAnimationFrame(tick);
       };
       raf = requestAnimationFrame(tick);

@@ -56,6 +56,8 @@ const F = {
   musicScreen: path.join(APP, 'src', 'screens', 'MusicScreen.tsx'),
   app: path.join(APP, 'src', 'App.tsx'),
   kernel: path.join(APP, 'src', 'components', 'MusicKernel.tsx'),
+  island: path.join(APP, 'src', 'components', 'DynamicIsland.tsx'),
+  audioGraph: path.join(APP, 'src', 'music', 'audioGraph.ts'),
   playerBar: path.join(APP, 'src', 'screens', 'music', 'PlayerBar.tsx'),
   expanded: path.join(APP, 'src', 'screens', 'music', 'ExpandedPlayer.tsx'),
   musicUiDir: path.join(APP, 'src', 'screens', 'music'),
@@ -161,6 +163,10 @@ function loadSources() {
     musicScreen: readMaybe(F.musicScreen),
     app: readMaybe(F.app),
     kernel: readMaybe(F.kernel),
+    island: readMaybe(F.island),
+    audioGraph: readMaybe(F.audioGraph),
+    // 全前端源码拼接：用于「某个调用只允许存在一处」型断言（如 createMediaElementSource）
+    srcAll: walkText(F.srcDir, ['.ts', '.tsx']),
     playerBar: readMaybe(F.playerBar),
     expanded: readMaybe(F.expanded),
     css: readMaybe(F.css),
@@ -1182,6 +1188,67 @@ add('LYRICS.windowAutoHeight', 'LYRICS', (s) => {
     detail: missing.length ? `窗口自适应：${missing.join('、')}` : '',
   };
 });
+// ============================ AUDIO（音频图 / CORS）============================
+// 这一组防的是「波形还在、声音没了」。三个环节任一错，症状都是**完全没声音**，
+// 而且 Web Audio 的静音是**沉默的** —— 不抛错、不报错日志，最难定位。
+// 用户报的第 4 条（网络歌曲播放没声音）就是其中之一。
+
+add('AUDIO.corsMode', 'AUDIO', (s) => {
+  // 音频图接管 <audio> 后，跨域资源在**非 CORS 模式**下输出恒为静音（Web Audio 安全规则）。
+  // 本地歌曲走 asset://（带 CORS 头）不受影响 → 表现为"本地有声、网络无声"。
+  const k = stripComments(s.kernel);
+  const missing = [];
+  if (!/crossOrigin=/.test(k)) missing.push('<audio> 未声明 crossOrigin');
+  else if (!/crossOrigin=\{[^}]*'anonymous'/.test(k)) missing.push("crossOrigin 未取 'anonymous'");
+  return { ok: missing.length === 0, detail: missing.length ? `CORS 模式：${missing.join('、')}` : '' };
+});
+
+add('AUDIO.fallback', 'AUDIO', (s) => {
+  // 声明 CORS 模式后，不带 CORS 头的音源会**加载失败**（比静音更糟：歌直接播不了）。
+  // 所以必须有回退：标记该元素不可接管 + 摘掉 crossOrigin 重载。
+  // ⚠️ 顺序必须"先标记、后切模式"：反过来的话，两次操作之间存在一帧窗口，
+  // 音频图可能在非 CORS 模式下接管 —— 那一帧就够让这首歌彻底没声。
+  const k = stripComments(s.kernel);
+  const missing = [];
+  if (!/markNotWirable\(/.test(k)) missing.push('未标记不可接管（回退后会静音）');
+  if (!/setCorsMode\(false\)/.test(k)) missing.push('未降级 CORS 模式（该音源将一直加载失败）');
+  const iMark = k.indexOf('markNotWirable(');
+  const iMode = k.indexOf('setCorsMode(false)');
+  if (iMark >= 0 && iMode >= 0 && iMark > iMode) missing.push('顺序错：先切模式后标记（中间有一帧可被接管）');
+  return { ok: missing.length === 0, detail: missing.length ? `CORS 回退：${missing.join('、')}` : '' };
+});
+
+add('AUDIO.refuseNonCors', 'AUDIO', (s) => {
+  // 模块层再兜一道：非 CORS 模式的元素**一律拒绝接管**。
+  // 防的是"未来有人把 crossOrigin 去掉之后，波形还在、声音却没了"。
+  const g = stripComments(s.audioGraph ?? '');
+  if (!/crossOrigin === 'anonymous'/.test(g))
+    return { ok: false, detail: 'audioGraph 未拒绝非 CORS 模式的元素（去掉 crossOrigin 后会静默丢声音）' };
+  return { ok: true, detail: '' };
+});
+
+add('AUDIO.connectDestination', 'AUDIO', (s) => {
+  // 建了图不接回 destination = 静音（接管把输出改道进音频图，图没有出口）。
+  const g = stripComments(s.audioGraph ?? '');
+  if (!/analyser\.connect\([^)]*destination/.test(g))
+    return { ok: false, detail: 'analyser 未接回 destination（接管即静音）' };
+  return { ok: true, detail: '' };
+});
+
+add('AUDIO.singleEntry', 'AUDIO', (s) => {
+  // createMediaElementSource 对同一元素**只能调一次**，第二个调用方必然抛错，
+  // 且错法是"波形不出来"这种不指向真因的现象 → 全前端只允许一处（audioGraph）。
+  const all = stripComments(s.srcAll ?? '');
+  const hits = (all.match(/createMediaElementSource/g) || []).length;
+  const inGraph = (stripComments(s.audioGraph ?? '').match(/createMediaElementSource/g) || []).length;
+  if (hits !== 1 || inGraph !== 1)
+    return {
+      ok: false,
+      detail: `createMediaElementSource 应只在 audioGraph 出现 1 次，实际全文 ${hits} 次 / audioGraph ${inGraph} 次`,
+    };
+  return { ok: true, detail: '' };
+});
+
 add('LYRICS.closeViaRust', 'LYRICS', (s) => {
   // 关闭必须走 Rust 命令，不能 window.close()：后者绕过主窗状态，
   // 开关会显示成"还开着"（子 agent 主动做了这个选择，锁住它）
@@ -1207,7 +1274,7 @@ function runAll(s) {
   return res;
 }
 
-const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS'];
+const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS', 'AUDIO'];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -1700,6 +1767,41 @@ const MUTATIONS = [
     find: '        let _ = w.set_position(tauri::LogicalPosition::new(x, new_y));',
     replace: '        let _ = (x, new_y);',
     expect: ['LYRICS.windowAutoHeight'],
+  },
+  {
+    name: "去掉 <audio> 的 crossOrigin（网络歌曲被音频图接管后静音）",
+    file: "app/src/components/MusicKernel.tsx",
+    find: "      crossOrigin={corsMode ? 'anonymous' : undefined}",
+    replace: "      crossOrigin={undefined}",
+    expect: ["AUDIO.corsMode"],
+  },
+  {
+    name: "去掉 CORS 回退里的 markNotWirable 标记（回退后在非 CORS 下被接管 → 静音）",
+    file: "app/src/components/MusicKernel.tsx",
+    find: "          markNotWirable(a);",
+    replace: "          void a;",
+    expect: ["AUDIO.fallback"],
+  },
+  {
+    name: "让 isWirable 不再检查 CORS 模式（非 CORS 元素也会被接管）",
+    file: "app/src/music/audioGraph.ts",
+    find: "  return el.crossOrigin === 'anonymous';",
+    replace: "  return true;",
+    expect: ["AUDIO.refuseNonCors"],
+  },
+  {
+    name: "去掉 analyser → destination 的连接（接管即静音）",
+    file: "app/src/music/audioGraph.ts",
+    find: "      analyser.connect(ctx.destination); // 不接回 destination = 静音",
+    replace: "      void ctx; // 反证：不接回出口",
+    expect: ["AUDIO.connectDestination"],
+  },
+  {
+    name: "在灵动岛里再建一次音频图（第二个调用方会抛 InvalidStateError）",
+    file: "app/src/components/DynamicIsland.tsx",
+    find: "      const got = await attachAnalyser(findAudioElement());",
+    replace: "      const got = await attachAnalyser(findAudioElement());\n      const __probe = (window as unknown as { createMediaElementSource?: unknown })\n        .createMediaElementSource;\n      void __probe;",
+    expect: ["AUDIO.singleEntry"],
   },
 ];
 
