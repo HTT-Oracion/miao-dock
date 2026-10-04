@@ -1205,3 +1205,73 @@ Tauri v2 官方默认 `assetProtocol.enable = false`（已核文档）。
 - ⚠️ 过程记录：我第一版"元信息是否被吞"的检测用了 `^(ar|ti|al|id|length)`，
   被歌词 `"All I know is you've shown me"`（以 `Al` 开头）误判为命中 →
   **改精确判据**（文本是否恰等于元信息值）后确认无误。**判据粗糙会自造假阳性。**
+
+---
+
+## D-54 · 用户报的 4 个问题：根因与修法（c90cbca / 758fd1c / 40f938c / 8526aad）
+
+### ① 网络歌曲「播放没声音」—— Web Audio 的 CORS 静音（本轮最有价值的一条）
+**根因**：`<audio>` 未被以 **CORS 模式**加载时，跨域媒体被 `createMediaElementSource`
+接管后输出**恒为静音**（Web Audio 安全规则）。
+P3 的灵动岛波形接管了 `<audio>`（做法本身对），但元素**没声明 `crossOrigin`** →
+网络歌曲（第三方 CDN，跨域）一律静音；本地歌曲走 `asset://`（Tauri 的 asset 协议带 CORS 头）不受影响。
+**"本地有声、网络无声"这个现象只有这一种解释。**
+⚠️ 这类故障**不抛错、不打日志** —— 静音是沉默的。
+
+**修法**（`c90cbca`）：新建 `app/src/music/audioGraph.ts` 作**全项目唯一接管入口**
+（`createMediaElementSource` 对同一元素只能调一次，第二个调用方抛 `InvalidStateError`
+且现象是"波形不出来"），并在其中**拒绝接管非 CORS 模式的元素**；
+`MusicKernel` 声明 `crossOrigin="anonymous"` + **加载失败回退**
+（不带 CORS 头的音源会**加载失败**，比静音更糟；回退顺序必须"**先标记不可接管、再摘属性**"，
+反过来会留一帧窗口让音频图在非 CORS 下接管）。回退结果按**域名**记住，同平台后续歌曲不再重复失败。
+
+### ② 桌面歌词「刚打开没歌词、暂停再播放才正常」—— 跨窗口事件竞态
+**根因**：主窗 `open_lyrics_window` 后**立刻**推送状态，而那一刻歌词窗的 WebView 还在加载 HTML
+—— 组件未挂载、`listen` 尚未注册，**那条事件必然丢失**（Tauri 事件不缓存、不回放）。
+暂停再播放触发第二次推送，这次赶上 → 看起来"自己好了"。
+
+**修法**：不靠时序，两条路都走 —— Rust 侧 `LAST_LYRICS` 缓存（**先写缓存再 emit**）
++ `get_lyrics_state` 命令；歌词窗**先注册 listen、再补拉**，并用守卫避免旧载荷覆盖新载荷。
+> **"靠延迟几百毫秒再推"治不好这个病** —— 它在赌时序，而竞态的定义就是时序不保证。
+
+### ③ 桌面歌词「关闭按钮样式很奇怪」
+原实现只有一个 20px、默认 `opacity:0.55` 的半透明圆点。
+参考是一整组控制栏（上一句 / 播放暂停 / 下一句 / 播放模式 ｜ 锁定 ｜ 关闭）。
+**这需要一条新的反向通道**：两窗是独立 WebView、JS 堆互不可见
+（只有 localStorage 共享，那是磁盘态不是内存态）→
+`歌词窗 invoke('lyrics_control')` → Rust `emit('lyrics://control')` → 主窗 listen 执行。
+⚠️ `cycleMode` 自身**不推送**（原本只服务主窗 UI）→ 主窗执行后必须补推，否则模式图标滞后。
+
+### ④ 歌词没有逐字高亮 —— 数据在手边没用
+两层原因：① 后端**早就返回 yrc**（`netease.rs` / `qqmusic.rs`），前端 `loadLyrics`
+**只取了 `l.lyric`**；② 即便有数据也没渲染方案（`parseLrc` 只出 `{time, text}`，行内无跨度）。
+修法（`40f938c`）：`parseYrc`（绝对/相对时间戳归一）+ **`finalizeLineDurations` 行级插值**
+（yrc 是少数派，绝大多数歌只有行级 LRC —— 没有 duration 就等于"整行一次点亮"，
+**而所有断言照样全绿**）+ 双层 `width%` 裁切渲染（不用 `background-clip: text`：
+那要把进度写进 gradient/`calc()`，而皮肤会覆盖派生变量 → 解析不稳）。
+
+### ⑤ 切换样式「效果没跟参考一致」—— 六套皮肤只有一行 background
+参考里每套皮肤是**一整套不同视觉**，且四种**依赖封面取色**
+（现代 = 主色 + ×0.25 暗色；沉浸 = 主色映射柔和色板；封面渐染 = **右缘**主色；彩胶 = 主色经 HSV 钳制）。
+这些只能在运行时取色 → JS 算 CSS 变量 → 注入根节点。
+修法（`8526aad`）：`useCoverColor` / `useCoverEdgeColor` / `makeVividColor` + 六套各自的背景/布局分支
+（沉浸隐藏封面、音域回响不渲歌词、彩胶旋转唱片且暂停停转、封面渐染右缘取色 + 满铺羽化）。
+**偏离**：音域回响不做 3D（参考是 three.js + GLSL 909 行）→ 改 2D Canvas 频谱，
+复用 `audioGraph` 的 `attachAnalyser/readLevels`，降级 CSS 动画柱。
+
+### ⚠️ 验收时纠正的一处「重复实现」
+取色基础设施被写了**两份**：`src/hooks/useCoverColor.ts`（D-41 收口过去的，已成孤儿）
+与 `screens/music/coverColor.ts`（**靠改文件名绕过 `HOOKS.noMisplacedUse` 命名门禁**）。
+后者是"形式上合规、实质上制造重复"的典型 —— 门禁按文件名判，改名就能绕。
+→ 已合并回 `hooks/useCoverColor.ts`，删第二份，并给 `SKIN.colorHook` 加了 import 来源判据。
+> **教训**：命名门禁只能防"文件放错地方"，防不住"同一件事写两遍"。
+> **靠改名字让断言变绿，是把门禁当形式而不是当信号。**
+
+### 断言：check:music 105 → 136（反证 61 → 90），新增 3 组
+`AUDIO`（5）· `LYRICS` 续（4）· `SKIN`（18）。
+### 反证轮抓到 4 个假阳性（同类第 6–8 次 + 1）
+`playMode,` 在 store 里多处出现 · `'next'` 命中 `'unused-next'` ·
+`kara-over` 命中 `kara-over-disabled` · `animationPlayState` 两层同形 ·
+`SKIN.spectrumAudio` 锚点在 JSDoc 里也出现。
+> **全部靠反证轮暴露。** 纪律不变：**判据涉及"某写法可能出现多处/子串"时，
+> 一律限定作用域、加词边界、或数出现次数。**
