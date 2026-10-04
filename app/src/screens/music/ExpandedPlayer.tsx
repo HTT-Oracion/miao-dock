@@ -1,7 +1,7 @@
 import {
   Aperture,
   AudioWaveform,
-  ChevronLeft,
+  ChevronDown,
   Disc3,
   Droplets,
   Film,
@@ -413,7 +413,12 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
 
       <div className="music-exp-topbar">
         <IconButton title="收起" onClick={() => closeExpanded()}>
-          <ChevronLeft size={18} />
+          {/*
+            收起用 ChevronDown（向下）而不是 ChevronLeft —— 展开播放器是从**底部上滑**铺满的，
+            "收起"对应的是**向下**退回去；向左的箭头会让人以为"返回上一页"。
+            与参考实现的形态也一致（`ChevronDown size={24}`）。
+          */}
+          <ChevronDown size={22} />
         </IconButton>
       </div>
 

@@ -2878,8 +2878,10 @@
   mask-image: linear-gradient(to bottom, transparent 0%, #000 14%, #000 86%, transparent 100%);
 }
 /* 歌词字号与高亮色走 CSS 变量（设置页「歌词」两项）：
-   --lyr-size / --lyr-hl 由 ExpandedPlayer 以内联 style 注入，缺省时回落到原设计值。
-   注意**不再**按浅色皮肤覆盖 is-on 的颜色 —— 高亮色是用户选的，皮肤不该把它改掉。 */
+   --lyr-size / --lyr-hl 由 ExpandedPlayer 以内联 style 注入。
+   回落到 `#ffe066`（= player-options 的 `LYRICS_COLOR_DEF`）而**不是** `var(--md-yellow)`——
+   后者在本项目里**只被引用、从未定义**（同 `--md-pink-soft` 等一批），拿它当回落值等于**没有回落**：
+   变量缺失时整条 color 声明会失效，当前行就继承正文色，看起来正是"高亮没生效"。 */
 .music-lyr-line {
   font-size: var(--lyr-size, 16px);
   opacity: 0.5;
@@ -2892,9 +2894,18 @@
   font-size: calc(var(--lyr-size, 16px) + 3px);
   font-weight: 700;
   opacity: 1;
-  color: var(--lyr-hl, var(--md-yellow));
+  color: var(--lyr-hl, #ffe066);
 }
-.music-exp.is-light .music-lyr-line { color: var(--md-ink); }
+/*
+  ⚠️ 这里原本有一条 `.music-exp.is-light .music-lyr-line { color: var(--md-ink); }`，**已删除**。
+  它有两个问题，任一都足以让「歌词高亮色」失效：
+  ① **优先级反了**：3 个类（0,3,0）压过上面 `.music-lyr-line.is-on`（0,2,0），
+     于是用户选的 `--lyr-hl` 在「通透 / 透明彩胶 / 封面渐染」三种浅色皮肤下**被覆盖成深色** ——
+     现象就是"改了高亮色但没反应"，而它旁边那句注释写的恰恰是"皮肤不该把高亮色改掉"。注释与代码矛盾。
+  ② **它已冗余**：浅色皮肤的正文色现在由 `--lyr-text`（ExpandedPlayer 按皮肤算好）注入，
+     这里再按 `.is-light` 写一次等于同一件事有两个 owner。
+  留此说明以免被"顺手加回来"。
+*/
 /* 左对齐歌词（透明彩胶 / 封面渐染）：整行靠左，容器不居中 */
 .music-exp-lyr-box.is-left .music-lyr-line { text-align: left; }
 /* 沉浸：歌词放大居中（字号在用户设定值上整体放大约 1.6 倍） */
@@ -2918,7 +2929,7 @@
 }
 /* 底层：未唱部分。用高亮色压低透明度 —— 与顶层同色系，过渡时不会有色相跳变 */
 .kara-under {
-  color: var(--lyr-hl, var(--md-yellow));
+  color: var(--lyr-hl, #ffe066);
   opacity: 0.32;
 }
 /* 顶层：已唱部分。width 由 RAF 逐帧写入；overflow:hidden 让 width 成为"裁切"。
@@ -2930,7 +2941,7 @@
   width: 0%;
   overflow: hidden;
   white-space: nowrap;
-  color: var(--lyr-hl, var(--md-yellow));
+  color: var(--lyr-hl, #ffe066);
   will-change: width;
 }
 /* 当前行整行：nowrap 后超长部分会溢出，这里裁掉，避免撑出横向滚动条 */

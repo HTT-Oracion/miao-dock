@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { ensureAudioContextActive, markNotWirable } from '@music/audioGraph';
+import { ensureAudioContextActive, isGraphAttached, markNotWirable, setGraphVolume } from '@music/audioGraph';
 import type { LyricsControlPayload } from '@music/ipc';
 import { registerAudioElement, useMusicStore } from '@music/store';
 
@@ -101,12 +101,25 @@ export function MusicKernel() {
     return () => registerAudioElement(null);
   }, []);
 
-  // 音量与静音同步。静音走 `muted` 属性、**不动 volume 值** —— 取消静音才回得到原音量
+  // 音量与静音同步。
+  //
+  // ⚠️ **接管前后走两条不同的路**（见 `audioGraph` 的搬运注释）：
+  // 音频图接管 `<audio>` 后，元素的 `volume` 是否还生效**取决于平台实现**
+  //（WKWebView 上有失灵的情况，表现就是"拖音量滑块没反应"）。
+  // 所以接管后音量归图上的 gain 管，元素归一到 1 —— 否则元素与 gain 双重作用会变成 v²。
+  // 两个分支互斥且各自自洽；接管那一刻 `audioGraph` 自己会把元素当时的音量搬进 gain，
+  // 所以这里不需要感知"attach 何时完成"。
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
-    a.volume = volume;
-    a.muted = muted;
+    if (isGraphAttached()) {
+      a.volume = 1;
+      a.muted = false;
+      setGraphVolume(muted ? 0 : volume);
+    } else {
+      a.volume = volume;
+      a.muted = muted;
+    }
   }, [volume, muted]);
 
   // 播放/暂停同步（playUrl 变化时也要重试 play —— 新音频需重新触发播放）

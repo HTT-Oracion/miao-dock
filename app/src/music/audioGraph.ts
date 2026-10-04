@@ -46,7 +46,11 @@ interface AudioGraph {
 
 let audioCtx: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
+let gain: GainNode | null = null;
 let graph: AudioGraph | null = null;
+
+/** 图上的音量（0..1）。接管后音量控制权归它 —— 见 `doAttach` 里"搬运"的注释 */
+let graphVolume = 1;
 
 /** 已接管的元素。`createMediaElementSource` 一次性的约束靠它兜住 */
 let sourceEl: HTMLAudioElement | null = null;
@@ -160,10 +164,34 @@ async function doAttach(el: HTMLAudioElement): Promise<AudioGraph | null> {
     analyser = analyser ?? ctx.createAnalyser();
     analyser.fftSize = FFT_SIZE;
     analyser.smoothingTimeConstant = 0.78;
+    gain = gain ?? ctx.createGain();
 
     if (!wired) {
+      /**
+       * 链路：`source → analyser → gain → destination`
+       *
+       * ## 为什么把 gain 放在 analyser **之后**
+       * 波形要反映"音频里有没有声音"，而不是"用户把音量拧到了多少"。
+       * 若 gain 在 analyser 之前，音量调小时波形也跟着变小 —— 看起来像没在播。
+       *
+       * ## 为什么需要 gain（而不是继续用元素的 `volume`）
+       * `<audio>` 一旦被 `createMediaElementSource` 接管，音频输出就改道进了音频图。
+       * 此时**元素的 `volume` 是否仍生效，取决于平台实现**（WKWebView 上实测有失灵的情况）——
+       * 而失灵的表现正是"**拖音量滑块没反应**"。
+       *
+       * ## 搬运（这一步是自洽的关键）
+       * 接管这一刻，元素的 `volume` / `muted` 就是"当前应有的音量" —— 把它搬进 gain，
+       * 然后把元素归一到 `volume=1 / muted=false`（**否则元素与 gain 双重作用，音量会变成 v²**）。
+       * 此后音量只由 `setGraphVolume` 管，与"元素属性在某平台是否生效"彻底解耦。
+       */
+      gain.gain.value = el.muted ? 0 : Math.max(0, Math.min(1, el.volume));
+      graphVolume = gain.gain.value;
+      el.volume = 1;
+      el.muted = false;
+
       sourceNode.connect(analyser);
-      analyser.connect(ctx.destination); // 不接回 destination = 静音
+      analyser.connect(gain);
+      gain.connect(ctx.destination); // 唯一出口：不接回 destination = 静音
       wired = true;
     }
     graph = { node: analyser, ctx };
@@ -179,6 +207,20 @@ async function doAttach(el: HTMLAudioElement): Promise<AudioGraph | null> {
     hardFailed = true;
     return null;
   }
+}
+
+/** 音频图是否已接管（接管后音量归 `setGraphVolume` 管，元素 `volume` 不再参与） */
+export function isGraphAttached(): boolean {
+  return graph !== null;
+}
+
+/**
+ * 设置图上的音量（0..1）。**接管前调用也是安全的** —— 值会被记住，
+ * 建图时用它作为 gain 的初值（避免接管瞬间音量跳一下）。
+ */
+export function setGraphVolume(v: number): void {
+  graphVolume = Math.max(0, Math.min(1, v));
+  if (gain) gain.gain.value = graphVolume;
 }
 
 /** 建图（并发调用共用同一次） */

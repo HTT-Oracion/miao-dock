@@ -1238,11 +1238,19 @@ add('AUDIO.refuseNonCors', 'AUDIO', (s) => {
 });
 
 add('AUDIO.connectDestination', 'AUDIO', (s) => {
-  // 建了图不接回 destination = 静音（接管把输出改道进音频图，图没有出口）。
+  // 建了图必须接回 destination（接管把输出改道进音频图，图没有出口＝静音）。
+  // ⚠️ 判据**不能只认** `analyser.connect(destination)`：音量改由图上的 gain 管之后，
+  // 链路是 `source → analyser → gain → destination`。只认旧写法会误红 ——
+  // 这是"让断言跟上实现"，而不是"为了让断言变绿而放宽它"（下面那条是新加的更严判据）。
   const g = stripComments(s.audioGraph ?? '');
-  if (!/analyser\.connect\([^)]*destination/.test(g))
-    return { ok: false, detail: 'analyser 未接回 destination（接管即静音）' };
-  return { ok: true, detail: '' };
+  const missing = [];
+  if (!/\.connect\([^)]*destination\s*\)/.test(g))
+    missing.push('音频图未接回 destination（接管即静音）');
+  // 而且链路必须经过 GainNode —— 没有它，「接管后元素 volume 在部分平台失效」
+  // 就会表现为用户报的"拖音量滑块没反应"。
+  if (!/createGain\(/.test(g)) missing.push('未建 GainNode（音量将依赖元素 volume，部分平台会失效）');
+  if (!/gain\s*\.\s*connect\(/.test(g)) missing.push('GainNode 未接入链路');
+  return { ok: missing.length === 0, detail: missing.length ? `音频图出口：${missing.join('、')}` : '' };
 });
 
 add('AUDIO.singleEntry', 'AUDIO', (s) => {
@@ -2180,10 +2188,10 @@ const MUTATIONS = [
     expect: ["AUDIO.refuseNonCors"],
   },
   {
-    name: "去掉 analyser → destination 的连接（接管即静音）",
+    name: "去掉 gain → destination 的连接（接管即静音）",
     file: "app/src/music/audioGraph.ts",
-    find: "      analyser.connect(ctx.destination); // 不接回 destination = 静音",
-    replace: "      void ctx; // 反证：不接回出口",
+    find: "      gain.connect(ctx.destination); // 唯一出口：不接回 destination = 静音",
+    replace: "      void gain; // 反证：不接回出口",
     expect: ["AUDIO.connectDestination"],
   },
   {
@@ -2368,6 +2376,13 @@ const MUTATIONS = [
     find: "import { makeVividColor, useCoverColor, useCoverEdgeColor } from '@hooks/useCoverColor';",
     replace: "import { makeVividColor, useCoverEdgeColor } from '@hooks/useCoverColor';",
     expect: ['SKIN.colorHook'],
+  },
+  {
+    name: "从音频图里去掉 GainNode（音量退回依赖元素 volume，部分平台会失效）",
+    file: "app/src/music/audioGraph.ts",
+    find: "    gain = gain ?? ctx.createGain();",
+    replace: "    gain = gain ?? null;",
+    expect: ["AUDIO.connectDestination"],
   },
 ];
 
