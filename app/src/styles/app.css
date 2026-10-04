@@ -1537,9 +1537,15 @@
 
 /* ====================================================== 灵动岛（拍板第 4 项方案 B）
  *
- * 形态：**Mac 式顶部胶囊**，浮在顶栏之上。参考实现的组件本体没随切片带过来
- * （`@/components/ui/dynamic-island` 不在 vendor 里），能取到的只有行为契约，
- * 故视觉按"顶部胶囊 + 播放卡片 + 轻提示"这一形态自建（台账 D-50）。
+ * 形态：**Mac 式灵动岛**，浮在顶栏之上，三态形变：
+ *   圆形 30×30（只有语义点）→ 胶囊（音乐 200×30 / 普通提示自适应宽×30）→ 大卡 320×150（音乐）。
+ * 尺寸常量与参考实现（vendor 里的 dynamic-island）**逐值一致**。
+ *
+ * ## 形变为什么是「内联宽高 + CSS transition」而不是关键帧
+ * 参考实现用 framer-motion 的 `controls.start({width,height})` 直接写数值。
+ * 换成 CSS 的关键是：**宽高必须是可补间的数值**（`auto` 补间不了）——
+ * 所以普通提示的"自适应宽"要先在 TS 里量出自然宽，再以内联 `width: 302px` 形式写入。
+ * 形变时长（0.32s）与 TS 侧的 `MORPH_MS` 同源；改一处必须改另一处。
  *
  * ## 位置为什么从右下角挪到顶部
  * 原 `.toasts` 在右下角。灵动岛是 Mac 交互语言里"从顶部落下"的形态，
@@ -1560,151 +1566,323 @@
   z-index: 55;
   pointer-events: none; /* 容器不拦点击，只有胶囊自己能点 */
 }
+
+/* 胶囊本体：三态共用同一个元素，形变全靠内联 width/height 补间。
+   ⚠️ transition 里**第一段**是 transform/opacity 0.26s —— 这是"退场时长"，
+   与 DynamicIsland.tsx 里 requestClose 的 setTimeout 260ms 必须一致
+   （check:units 的 ISLAND.leaveDurationSync 会双向比对这两个数，改一处必须改另一处）。
+   宽高 0.32s 与 TS 侧 MORPH_MS 同源；圆角一起过渡，大卡才不是椭圆。 */
 .di-capsule {
   pointer-events: auto;
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-width: 260px;
-  max-width: 460px;
-  height: 38px;
+  overflow: hidden;
   margin-top: 10px;
-  padding: 0 12px;
-  /* 胶囊底色比 --md-surface 更"浮"一点：轻微透明 + 背景模糊，
-     让它读成"悬在上层"而不是"贴在页面上的一块 UI" */
+  /* 底色比 --md-surface 更"浮"一点，读成"悬在上层"而不是"贴在页面上的一块 UI" */
   background: var(--md-surface);
   border: 1px solid var(--md-line);
   border-radius: 999px; /* 胶囊 = 全圆角，与项目既有 .pill / .magic 同一套语汇 */
   box-shadow: 0 10px 28px rgba(20, 15, 41, 0.2);
   font-size: 12px;
   color: var(--md-ink);
-  animation: di-in 0.26s cubic-bezier(0.2, 0.9, 0.3, 1);
+  cursor: pointer;
   transition:
     transform 0.26s cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity 0.26s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.32s cubic-bezier(0.22, 0.61, 0.36, 1),
+    height 0.32s cubic-bezier(0.22, 0.61, 0.36, 1),
+    border-radius 0.32s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
-@keyframes di-in {
-  from {
-    transform: translateY(-14px) scale(0.96);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0) scale(1);
-    opacity: 1;
-  }
+/* 大卡不再用全圆角：320×150 若还是 999 半径会变成"跑道形"，读不出卡片感。
+   展开态收成 20（大卡）/18（单行长条）。 */
+.di-capsule.is-expanded.is-music {
+  border-radius: 20px;
 }
-/* 退场：往上收 + 淡出。⚠️ 时长 0.26s 与 DynamicIsland.tsx 里 requestClose 的
-   260ms 必须一致 —— 早退看不见收尾，晚退则胶囊悬着不走。 */
+.di-capsule.is-expanded.is-toast {
+  border-radius: 18px;
+}
+/* 退场：往上收 + 淡出。透明度由 TS 侧内联控制（内联优先于类），这里只给位移。
+   ⚠️ 0.26s 与 requestClose 的 260ms 必须一致 —— 早退看不见收尾，晚退则胶囊悬着不走。 */
 .di-capsule.is-leaving {
   transform: translateY(-10px) scale(0.97);
-  opacity: 0;
 }
 
-/* 文字区：单行截断，避免长歌名把胶囊撑破 */
-.di-text {
-  min-width: 0;
-  flex: 1;
+/* 普通提示的一行内容。折叠态必须 width:max-content —— 它的自然宽会被 TS 侧
+   量出来写进胶囊的 width（只有这样宽度才可补间）；展开态改成铺满，让文字拿到更多宽度。 */
+.di-row {
+  flex: 0 0 auto;
+  width: max-content;
   display: flex;
-  flex-direction: column;
-  line-height: 1.25;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 4px;
+}
+.di-capsule.is-expanded .di-row {
+  flex: 1 1 auto;
+  width: 100%;
+  padding: 0 12px 0 6px;
+}
+/* 语义点占一个 22px 的方框：圆形阶段它和参考实现的图标一样是"居中的那一个元素"，
+   若让 7px 的点自己当首元素，它会被左边距顶到角落。 */
+.di-lead {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .di-title {
-  font-size: 12px;
-  font-weight: 500;
+  min-width: 0;
+  max-width: 176px;
+  font-size: 11.5px;
+  font-weight: 600;
   color: var(--md-ink);
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+  transition: opacity 0.16s; /* 文字"浮现"（透明度由 TS 侧按形变阶段切） */
 }
-.di-sub {
-  font-size: 10.5px;
-  color: var(--md-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.di-capsule.is-expanded .di-title {
+  max-width: 236px;
+  font-size: 12px;
+}
+/* 溢出时右端渐隐，不用省略号 —— 省略号会把"还有多少"藏起来，
+   渐隐则暗示"文字还在继续"。遮罩由 TS 侧量出 scrollWidth > clientWidth 后开启。 */
+.di-title.is-clip {
+  -webkit-mask-image: linear-gradient(to right, #000 88%, transparent 100%);
+  mask-image: linear-gradient(to right, #000 88%, transparent 100%);
+}
+.di-close {
+  flex: 0 0 auto;
+  display: flex;
+  transition: opacity 0.18s;
+}
+/* 关闭键压到 22px：胶囊本身只有 30 高，30px 的圆按钮会顶满上下、没有余量。
+   作用域限定在提示态，免得把大卡里的传输控件一起缩小。 */
+.di-capsule.is-toast .di-close .ui-cbtn {
+  width: 22px;
+  height: 22px;
 }
 
-/* 轻提示态：状态点 + 文字（不用图标 —— 圆点读作"语气"更轻，图标会与文字抢注意力） */
+/* 轻提示态：状态点 + 文字（不用图标 —— 圆点读作"语气"更轻，图标会与文字抢注意力）
+   六态语义色，与参考实现的 IslandStatus 对齐：
+   总线旧名 good→success / bad→error / info→info，另加 warning / loading / blue。 */
 .di-dot {
-  flex: 0 0 auto;
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--md-muted);
 }
-.di-dot-good {
+.di-dot-info {
+  background: var(--md-pink); /* info 用品牌色（参考实现里 info 取主题色） */
+}
+.di-dot-success {
   background: var(--md-success);
 }
-.di-dot-bad {
+.di-dot-error {
   background: var(--md-error);
 }
+.di-dot-warning {
+  background: var(--md-warning);
+}
+.di-dot-blue {
+  background: var(--md-blue);
+}
+/* loading：7px 的实心点转起来看不出在转，必须换成环 */
+.di-dot-loading {
+  width: 11px;
+  height: 11px;
+  background: transparent;
+  border: 1.6px solid var(--md-blue);
+  border-top-color: transparent;
+  animation: di-spin 0.8s linear infinite;
+}
+@keyframes di-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
-/* 播放态封面位：先用一个粉底 + 均衡器条占位。
-   ⚠️ 这里刻意**不放真实封面图** —— 灵动岛是常驻浮层，拉一张图就多一次网络/解码，
-   而 38px 高看不清差别；用色块 + 均衡器表达"正在出声"更省也更稳。
-   若日后要放封面，这里换成 background-image 即可，不要改结构。 */
-.di-cover {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 2px;
-  width: 22px;
-  height: 22px;
-  padding-bottom: 5px;
-  border-radius: var(--md-radius-xs);
-  background: var(--md-pink);
-}
-/* 均衡器：播放中才起伏，暂停时静止（与"正在出声"的语义一致） */
-.di-eq {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  width: 10px;
-  height: 9px;
-}
-.di-eq::before,
-.di-eq::after {
-  content: '';
+/* 音乐卡容器：铺满胶囊（折叠 200×30 / 展开 320×150），内部元素全部绝对定位，
+   于是它们不参与"胶囊宽高变了就重排"——折叠↔展开只是各自 transform 的补间。 */
+.di-music {
+  position: relative;
   flex: 1;
-  height: 40%;
-  border-radius: 1px;
-  background: #fff;
+  min-width: 0;
+  align-self: stretch;
 }
-.di-eq[data-on='1']::before {
-  animation: di-eq-a 0.9s ease-in-out infinite;
+
+/* 单一共享封面：折叠 = 24px 在 (10,3)、展开 = 48px 在 (16,12)。
+   ⚠️ 位置/大小都用 transform（translate+scale）而不是改 left/top/width/height：
+   只有 transform 才能平滑补间，且不触发布局。与参考实现对 x/y/scale 插值等价。
+   折叠态下它超出 30px 胶囊的部分被 overflow 裁掉 —— 这正是"圆形阶段看不全封面"的效果。 */
+.di-cover {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 48px;
+  height: 48px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--md-pink); /* 无封面 / 加载失败时的占位底 */
+  color: #fff;
+  transform-origin: left top;
+  pointer-events: none;
+  transform: translate(10px, 3px) scale(0.5);
+  transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
-.di-eq[data-on='1']::after {
-  animation: di-eq-b 0.9s ease-in-out infinite;
+.di-capsule.is-expanded .di-cover {
+  transform: translate(16px, 12px) scale(1);
 }
-@keyframes di-eq-a {
+.di-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* 单一共享歌名：折叠 ≈11px 在 (44,8)、展开 15px 在 (74,12)。
+   歌名保持省略号（参考实现如此）：这里没有"右端渐隐"的语义需求，
+   长歌名截断后仍需一眼看出是同一首。 */
+.di-name {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  max-width: 118px;
+  font-size: 15px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--md-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform-origin: left top;
+  pointer-events: none;
+  transform: translate(44px, 8px) scale(0.73);
+  transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.di-capsule.is-expanded .di-name {
+  max-width: 224px;
+  transform: translate(74px, 12px) scale(1);
+}
+
+/* 波形：只在折叠态出现（展开态由大卡里的进度条取代）。
+   柱高由 TS 侧真实频谱写内联高度；`is-css` 是**降级档**——
+   拿不到音频上下文时用 CSS 动画画"正在出声"，暂停（data-on=0）时完全静止。 */
+.di-wave {
+  position: absolute;
+  right: 10px;
+  top: 7px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 2.5px;
+  height: 16px;
+  pointer-events: none;
+  transition: opacity 0.18s;
+}
+.di-wave i {
+  display: block;
+  width: 2.5px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--md-ink);
+  opacity: 0.85;
+  transition: height 90ms linear;
+}
+.di-wave.is-css[data-on='1'] i {
+  animation: di-wave 0.9s ease-in-out infinite;
+}
+.di-wave.is-css[data-on='1'] i:nth-child(2) {
+  animation-delay: 0.1s;
+}
+.di-wave.is-css[data-on='1'] i:nth-child(3) {
+  animation-delay: 0.2s;
+}
+.di-wave.is-css[data-on='1'] i:nth-child(4) {
+  animation-delay: 0.3s;
+}
+.di-wave.is-css[data-on='1'] i:nth-child(5) {
+  animation-delay: 0.4s;
+}
+@keyframes di-wave {
   0%,
   100% {
-    height: 35%;
+    height: 3px;
   }
   50% {
-    height: 100%;
-  }
-}
-@keyframes di-eq-b {
-  0%,
-  100% {
-    height: 80%;
-  }
-  50% {
-    height: 30%;
+    height: 13px;
   }
 }
 
-/* 「打开播放器」的箭头：纯 CSS 画的，理由同 app.css 里 set-select 的箭头
-   —— 内联 SVG data URI 引不到 CSS 变量，颜色写死会在深色模式下偏亮 */
-.di-open {
+/* 展开大卡：绝对铺满，与折叠内容重叠，靠透明度交叉切换（无位移）。
+   32px 上内边距是给"共享封面/歌名"让位 —— 它们在展开态也占着上半部分。 */
+.di-card {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 32px 16px 12px;
+  opacity: 0;
+  transition: opacity 0.18s;
+}
+.di-artist {
+  margin-left: 60px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--md-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.di-prog {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.di-time {
+  min-width: 26px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--md-muted);
+  font-variant-numeric: tabular-nums;
+}
+.di-prog .di-time:last-child {
+  text-align: right;
+}
+.di-bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--md-line);
+  overflow: hidden;
+}
+.di-bar i {
   display: block;
-  width: 6px;
-  height: 6px;
-  border-top: 1.4px solid currentColor;
-  border-right: 1.4px solid currentColor;
-  transform: rotate(45deg) translate(-1px, 1px);
+  height: 100%;
+  border-radius: 999px;
+  background: var(--md-pink);
+  transition: width 0.2s;
+}
+/* 传输控件整宽居中；「打开播放器」钉在右下角（对齐参考实现的排版） */
+.di-ctl {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+}
+.di-open {
+  position: absolute;
+  right: 0;
+  display: flex;
 }
 
 /* ================================================================ ver2.0 · 视图 Tab 行 */

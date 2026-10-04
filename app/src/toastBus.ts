@@ -23,7 +23,18 @@
  */
 import { useEffect, useState } from 'react';
 
-export type ToastKind = 'info' | 'good' | 'bad';
+/**
+ * 吐司语义色（**六态**，对齐参考实现的 `IslandStatus`）。
+ *
+ * ## 为什么保留 `good` / `bad` 两个旧名，而不是直接改名
+ * 全仓有 6 处业务在用 `push(text, 'good' | 'bad' | 'info')`
+ * （服务重启 / 漫画库 / 打开目录 / 设置页 / music/Toast 转发器）。
+ * 直接改名会让这 6 处一起变红，且改动会溢出灵动岛以外 —— 越界。
+ * 所以：**旧名保留、只做映射**（good→success、bad→error、info→info），
+ * 再**新增**参考实现里另有语义的 `warning` / `loading` / `blue`。
+ * 映射表落在渲染侧（`DynamicIsland.tsx` 的 `KIND_TO_STATUS`），总线只负责搬运。
+ */
+export type ToastKind = 'info' | 'good' | 'bad' | 'warning' | 'loading' | 'blue';
 
 export interface BusToast {
   id: number;
