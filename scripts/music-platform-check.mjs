@@ -1713,6 +1713,23 @@ add('SKIN.vinylLayoutLeftAlign', 'SKIN', (s) => {
   return { ok: missing.length === 0, detail: missing.length ? `左对齐歌词：${missing.join('、')}` : '' };
 });
 
+add('SKIN.lyrNoFlexShrink', 'SKIN', (s) => {
+  // 当前句整行消失的根因修复守护（不报错型故障，现象极具迷惑性）：
+  // `.music-exp-lyr-box` 是 flex column + 固定高 + overflow:auto，整首歌词必然溢出，
+  // 行作为 flex item 默认 flex-shrink:1 被分配收缩。普通行 overflow 为 visible，
+  // `min-height:auto` 有 min-content 下限，只是行距被压紧；**当前句**带
+  // `.kara-line-on { overflow:hidden }` —— overflow 非 visible 的 flex item 其
+  // `min-height:auto` 解析为 0，被压扁到 0 高、内容再被自己的 overflow 裁光，
+  // 症状正是「当前句完全不显示、换句后上一句突然出现」。规则被删即回归。
+  // 判据用 stripComments：下方注释文本里就写着 flex-shrink 等字样，不剥会恒绿。
+  const css = stripComments(s.css ?? '');
+  const missing = [];
+  if (!/\.music-exp-lyr-box\s+\.music-lyr-line\s*\{[^}]*flex-shrink:\s*0/.test(css)) {
+    missing.push('app.css 缺歌词行 flex-shrink:0（当前句会被 flex 收缩压扁到整行消失）');
+  }
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
 // ============================ ISLANDV（灵动岛第 4 态 · 歌词卡）============================
 // 这一组防的是「歌词卡看着能跑、实际是空壳」这类**不报错**的故障：
 //   · 偏好没写 savePrefs            → 切到歌词卡后重开就回到播放卡（"切了没记住"）；
@@ -2873,6 +2890,13 @@ const MUTATIONS = [
     find: "import { makeVividColor, useCoverColor, useCoverEdgeColor } from '@hooks/useCoverColor';",
     replace: "import { makeVividColor, useCoverEdgeColor } from '@hooks/useCoverColor';",
     expect: ['SKIN.colorHook'],
+  },
+  {
+    name: '歌词行 flex-shrink:0 被删（当前句被 flex 收缩压扁 → 整行消失、换句后上一句才出现）',
+    file: F.css,
+    find: '.music-exp-lyr-box .music-lyr-line { flex-shrink: 0; }',
+    replace: '.music-exp-lyr-box .music-lyr-line { /* removed */ }',
+    expect: ['SKIN.lyrNoFlexShrink'],
   },
   {
     name: "从音频图里去掉 GainNode（音量退回依赖元素 volume，部分平台会失效）",

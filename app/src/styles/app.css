@@ -2963,6 +2963,16 @@
   -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 14%, #000 86%, transparent 100%);
   mask-image: linear-gradient(to bottom, transparent 0%, #000 14%, #000 86%, transparent 100%);
 }
+/* ⚠️ 歌词行禁止被 flex 收缩（flex-shrink:0）。这是「当前句整行消失」的真因：
+   本容器是 flex column + 固定高 + overflow:auto 的滚动列表，整首歌词几十行必然溢出，
+   行作为 flex item 默认 flex-shrink:1 会被分配收缩。普通行 overflow 为 visible，
+   `min-height:auto` 取 min-content 下限（一行字高），只是行距被压紧；
+   而**当前句**带 `.kara-line-on { overflow:hidden }` —— flex 规范里 overflow 非
+   visible 的 item 其 `min-height:auto` 解析为 **0**，于是被压扁到高度 0，
+   内容再被自己的 overflow:hidden 裁光 → 症状正是「当前句完全不显示，
+   换到下一句后上一句突然出现、新的当前句又消失」。滚动列表的行本就不该被压缩，
+   溢出交给 overflow:auto 滚动 —— 这才是正确语义（灵动岛 2 行窗口无收缩压力，所以一直正常）。 */
+.music-exp-lyr-box .music-lyr-line { flex-shrink: 0; }
 /* 歌词字号与高亮色走 CSS 变量（设置页「歌词」两项）：
    --lyr-size / --lyr-hl 由 ExpandedPlayer 以内联 style 注入。
    回落到 `#ffe066`（= player-options 的 `LYRICS_COLOR_DEF`）而**不是** `var(--md-yellow)`——
