@@ -44,6 +44,13 @@ const F = {
   ipc: path.join(APP, 'src', 'music', 'ipc.ts'),
   platform: path.join(APP, 'src', 'music', 'platform.ts'),
   store: path.join(APP, 'src', 'music', 'store.ts'),
+  types: path.join(APP, 'src', 'music', 'types.ts'),
+  // ── 桌面歌词（P3）──
+  rustLyrics: path.join(APP, 'src-tauri', 'src', 'lyrics_window.rs'),
+  capabilities: path.join(APP, 'src-tauri', 'capabilities', 'default.json'),
+  viteConfig: path.join(APP, 'vite.config.ts'),
+  lyricsHtml: path.join(APP, 'lyrics.html'),
+  desktopLyrics: path.join(APP, 'src', 'screens', 'lyrics', 'DesktopLyrics.tsx'),
   musicScreen: path.join(APP, 'src', 'screens', 'MusicScreen.tsx'),
   app: path.join(APP, 'src', 'App.tsx'),
   kernel: path.join(APP, 'src', 'components', 'MusicKernel.tsx'),
@@ -141,6 +148,12 @@ function loadSources() {
     ipc: readMaybe(F.ipc),
     platform: readMaybe(F.platform),
     store: readMaybe(F.store),
+    types: readMaybe(F.types),
+    rustLyrics: readMaybe(F.rustLyrics),
+    capabilities: readMaybe(F.capabilities),
+    viteConfig: readMaybe(F.viteConfig),
+    lyricsHtml: readMaybe(F.lyricsHtml),
+    desktopLyrics: readMaybe(F.desktopLyrics),
     musicScreen: readMaybe(F.musicScreen),
     app: readMaybe(F.app),
     kernel: readMaybe(F.kernel),
@@ -728,7 +741,19 @@ add('PLAYER.playSongExpandOpt', 'PLAYER', (s) => {
 });
 add('PLAYER.nextExpandFalse', 'PLAYER', (s) => {
   const body = methodBody(stripComments(s.store), 'next');
-  return { ok: body != null && /expand\s*:\s*false/.test(body), detail: 'store.next 未传 { expand: false }（自动切歌会把播放器弹开）' };
+  if (body == null) return { ok: false, detail: 'store.ts 未定义 next' };
+  // 必须**逐条路径**判，不能只判"有没有出现过 expand:false"：
+  // 心动模式接入后 next 里有两条 playSong 调用（相似分支 + 普通分支），
+  // 删掉其中一条时"是否出现过"仍为真 → 断言恒绿（反证轮实测抓到了这个假阳性）。
+  // 判据改成：next 里 playSong 的调用次数 == 带 expand:false 的次数。
+  const calls = (body.match(/playSong\s*\(/g) || []).length;
+  const guarded = (body.match(/playSong\s*\([^;]*expand\s*:\s*false/g) || []).length;
+  return {
+    ok: calls > 0 && calls === guarded,
+    detail: calls === guarded
+      ? ''
+      : `next 有 ${calls} 处 playSong，只有 ${guarded} 处传了 { expand: false }（漏掉的那条会把播放器弹开）`,
+  };
 });
 add('PLAYER.prevExpandFalse', 'PLAYER', (s) => {
   const body = methodBody(stripComments(s.store), 'prev');
@@ -802,6 +827,222 @@ add('PLAYER.resolveWrites', 'PLAYER', (s) => {
   };
 });
 
+// ── 心动模式（heartbeat · 拍板第 4 项）────────────────────────────────────
+add('HEARTBEAT.modeInType', 'HEARTBEAT', (s) => {
+  // 类型层：PlayMode 必须含 heartbeat，否则 store 里判它是"不可能状态"
+  if (!/\bheartbeat\b/.test(s.types)) return { ok: false, detail: 'types.ts 的 PlayMode 未含 heartbeat' };
+  return { ok: true, detail: '' };
+});
+add('HEARTBEAT.cycleFour', 'HEARTBEAT', (s) => {
+  // cycleMode 的 order 数组必须含四档。**只判"含 heartbeat"不够** ——
+  // 一旦有人把数组写成 ['list','shuffle','one','heartbeat','heartbeat'] 也能骗过"含"，
+  // 但那样点两下就卡在同一档。判据改成"数组恰为四项"。
+  const body = methodBody(stripComments(s.store), 'cycleMode');
+  if (body == null) return { ok: false, detail: 'store.ts 未定义 cycleMode' };
+  const m = body.match(/order:\s*PlayMode\[\]\s*=\s*\[([^\]]*)\]/);
+  if (!m) return { ok: false, detail: 'cycleMode 里找不到 order 数组' };
+  const items = m[1].split(',').map((x) => x.trim().replace(/^'|'$/g, '')).filter(Boolean);
+  const want = ['list', 'shuffle', 'one', 'heartbeat'];
+  const ok = items.length === want.length && want.every((w) => items.includes(w));
+  return {
+    ok,
+    detail: ok ? '' : `cycleMode 档位应恰为 ${want.join('/')}，实为 ${items.join('/') || '(空)'}`,
+  };
+});
+add('HEARTBEAT.warnsOnDegrade', 'HEARTBEAT', (s) => {
+  // 降级必须**告诉用户**：切到心动档而平台不支持时，若静默降级成随机，
+  // 用户会以为在听相似歌曲 —— 这与"假控件"同级的问题（D-37 的判据）。
+  const body = methodBody(stripComments(s.store), 'cycleMode');
+  if (body == null) return { ok: false, detail: 'store.ts 未定义 cycleMode' };
+  const ok = /supportsSimilar/.test(body) && /\.toast\(/.test(body);
+  return {
+    ok,
+    detail: ok ? '' : '切到心动档时未按平台能力提示降级（静默降级 = 假控件）',
+  };
+});
+add('HEARTBEAT.nextUsesSimilar', 'HEARTBEAT', (s) => {
+  // next 在 heartbeat 下必须真的走相似接口，而不是当 shuffle 处理
+  const body = methodBody(stripComments(s.store), 'next');
+  if (body == null) return { ok: false, detail: 'store.ts 未定义 next' };
+  const missing = [];
+  if (!/heartbeat/.test(body)) missing.push('未判 heartbeat');
+  // ⚠️ 判"这条分支真的可达"，不能只判"代码里出现过 similarSongs(" ——
+  // 把门禁写成 `&& false` 后调用照样在源码里，但运行时永远走不到（反证轮实测假阳性）。
+  // 判据取**门禁条件本身**：必须仍是 supportsSimilar(get().playbackSource)，
+  // 且它在同一条件里取反后有 fallbackNext 出口（不支持时走队列下一首，不是随机）。
+  const gate = body.match(
+    /playMode\s*===\s*'heartbeat'\s*&&\s*platform\.supportsSimilar\(\s*get\(\)\.playbackSource\s*\)/,
+  );
+  if (!gate) missing.push('心动分支被永久关闭（门禁取反）或未按平台能力分流');
+  if (!/if\s*\(\s*playMode\s*===\s*'heartbeat'/.test(body)) missing.push('缺 heartbeat 入口判断');
+  if (!/similarSongs\(/.test(body)) missing.push('未调 similarSongs');
+  // 相似结果要替换队列（否则队列越滚越杂）
+  if (!/playSong\(\s*nextSong\s*,\s*pick/.test(body)) missing.push('相似结果未作为新队列');
+  // 必须排除当前这首（接口可能把它自己算进相似里 → 立刻重播同一首）
+  if (!/songKey/.test(body)) missing.push('未按 songKey 排除当前曲');
+  // 不支持相似 / 接口失败 / 拿到空结果，三条都要有降级出口
+  const degrades = (body.match(/fallbackNext\(\)/g) || []).length;
+  if (degrades < 2) missing.push(`降级出口只有 ${degrades} 处（空结果与异常各需一条）`);
+  return { ok: missing.length === 0, detail: missing.length ? `next 的心动分支：${missing.join('、')}` : '' };
+});
+add('HEARTBEAT.platformGate', 'HEARTBEAT', (s) => {
+  // 能力门禁：supportsSimilar 只对网易云为真。
+  // 这条防的是"为了让它跑起来把门禁放开" —— 那会让三个平台都去调不存在的接口。
+  if (!/supportsSimilar/.test(s.platform)) return { ok: false, detail: 'platform.ts 缺 supportsSimilar' };
+  const body = fnBodyAny(stripComments(s.platform), 'supportsSimilar');
+  if (body == null) return { ok: false, detail: 'platform.ts 未定义 supportsSimilar' };
+  const ok = /netease/.test(body) && !/kugou/.test(body) && !/qqmusic/.test(body) && !/migu/.test(body);
+  return {
+    ok,
+    detail: ok ? '' : 'supportsSimilar 应对非网易云一律 false（酷狗/QQ/咪咕无"按 songid 找相似"接口）',
+  };
+});
+add('HEARTBEAT.fallbackExists', 'HEARTBEAT', (s) => {
+  // 降级路径必须存在且是"队列下一首"（不是随机）：拿不到相似时
+  // 直接静默停下或随机跳，都与"续播"语义不符。
+  const body = methodBody(stripComments(s.store), 'fallbackNext');
+  if (body == null) return { ok: false, detail: 'store.ts 未定义 fallbackNext' };
+  const nextBody = methodBody(stripComments(s.store), 'next');
+  if (nextBody == null) return { ok: false, detail: 'store.ts 未定义 next' };
+  const ok = /fallbackNext\(\)/.test(nextBody) && /\+ 1\) %/.test(body);
+  return {
+    ok,
+    detail: ok ? '' : '取不到相似歌曲时的降级路径不完整（应有 fallbackNext 且按队列顺序取）',
+  };
+});
+
+// ── 桌面歌词（P3 · 拍板第 1 项）───────────────────────────────────────────
+// 这一组断言的全都是「**静默失效**」型陷阱：每一条不满足时都不会报错，
+// 只是某个功能在真机上悄悄不工作。所以必须逐条锁死。
+add('LYRICS.rustCommands', 'LYRICS', (s) => {
+  // 只定义不注册 = 不可调用，两层都要独立测到（与 RUST 组的判据同源）
+  if (!s.rustLyrics) return { ok: false, detail: 'src-tauri/src/lyrics_window.rs 不存在' };
+  const need = ['open_lyrics_window', 'close_lyrics_window', 'lyrics_push'];
+  const missing = need.filter((n) => !new RegExp(`fn\\s+${n}\\s*\\(`).test(s.rustLyrics));
+  const notRegd = need.filter((n) => !new RegExp(`lyrics_window::${n}`).test(s.rustMain));
+  if (missing.length) return { ok: false, detail: `未定义：${missing.join('、')}` };
+  if (notRegd.length)
+    return { ok: false, detail: `已定义但未在 main.rs 注册（调用会抛 command not found）：${notRegd.join('、')}` };
+  return { ok: true, detail: '' };
+});
+add('LYRICS.sameOrigin', 'LYRICS', (s) => {
+  // ⚠️ 本条是**整条 P3 最关键**的一条：用 External 加载歌词窗 → 跨 origin →
+  // localStorage 隔离 → 歌词窗读不到主窗写的字号/高亮色/锁定态。
+  // 与官方登录窗口（用 External）是**不同场景**，照抄就错。
+  if (!s.rustLyrics) return { ok: false, detail: 'lyrics_window.rs 不存在' };
+  const usesApp = /WebviewUrl::App\(\s*"lyrics\.html"/.test(s.rustLyrics);
+  if (!usesApp) {
+    const usesExternal = /WebviewUrl::External/.test(s.rustLyrics);
+    return {
+      ok: false,
+      detail: usesExternal
+        ? '歌词窗用了 WebviewUrl::External → 跨 origin → localStorage 隔离（读不到偏好）'
+        : '未找到 WebviewUrl::App("lyrics.html")（歌词窗必须加载应用自身页面才同 origin）',
+    };
+  }
+  return { ok: true, detail: '' };
+});
+add('LYRICS.capabilityWindow', 'LYRICS', (s) => {
+  // D-47 查出的坑：capabilities 的 windows 是白名单，不在里面 → 任何命令都被 ACL 拒，
+  // 且报的是"权限不足"而不是"窗口不存在"，极易误判成代码写错。
+  let cap;
+  try {
+    cap = JSON.parse(s.capabilities);
+  } catch {
+    return { ok: false, detail: 'capabilities/default.json 不是合法 JSON' };
+  }
+  const wins = cap.windows || [];
+  if (!wins.includes('desktop-lyrics'))
+    return {
+      ok: false,
+      detail: `capabilities.windows 缺 desktop-lyrics（现有 ${JSON.stringify(wins)}）→ 该窗口调任何 Tauri 命令都会被 ACL 拒绝`,
+    };
+  return { ok: true, detail: '' };
+});
+add('LYRICS.dragPermission', 'LYRICS', (s) => {
+  // 同族的第二个坑：core:window:default 展开的 25 项里**不含** start-dragging，
+  // 不显式加授权，拖动会被拒（子 agent 实测发现并回报的）
+  let cap;
+  try {
+    cap = JSON.parse(s.capabilities);
+  } catch {
+    return { ok: false, detail: 'capabilities/default.json 不是合法 JSON' };
+  }
+  const perms = cap.permissions || [];
+  const need = ['core:window:allow-start-dragging', 'core:window:allow-set-position'];
+  const missing = need.filter((p) => !perms.includes(p));
+  if (missing.length)
+    return { ok: false, detail: `capabilities.permissions 缺 ${missing.join('、')}（core:window:default 不含它们）` };
+  return { ok: true, detail: '' };
+});
+add('LYRICS.viteMultiEntry', 'LYRICS', (s) => {
+  // 单入口时 dist 里没有 lyrics.html，Rust 的 WebviewUrl::App("lyrics.html") 会加载失败
+  if (!s.viteConfig) return { ok: false, detail: 'app/vite.config.ts 不存在' };
+  if (!/lyrics:\s*new URL\(\s*"\.\/lyrics\.html"/.test(s.viteConfig))
+    return { ok: false, detail: 'vite 未把 lyrics.html 配成第二个入口（dist 里不会有它）' };
+  if (!s.lyricsHtml) return { ok: false, detail: 'app/lyrics.html 不存在' };
+  return { ok: true, detail: '' };
+});
+add('LYRICS.progressNotPushed', 'LYRICS', (s) => {
+  // ⚠️ 这条防的是"为了让它跟得更准，在 setProgress 里也推一次"这种看起来很自然的改动。
+  // timeupdate 是每秒数次 → 每条都要跨进程序列化 + emit → 症状是**主窗整体发涩、
+  // 歌词窗反而卡顿**（一个为省事加的推送同时毁掉两个窗口）。
+  //
+  // ⚠️ 取体方式要覆盖**两种形态**：`setProgress` 是单表达式箭头（无花括号体），
+  // 而 `methodBody` 只认 `{` 开的块体 —— 直接用它会恒报"未定义"（假红）。
+  // 这里改成：取该方法所在的一行（单表达式）或者它的花括号体。
+  const src = stripComments(s.store);
+  const oneLine = new RegExp(`\\n\\s*setProgress:\\s*([^\\n]*)`).exec(src);
+  const block = methodBody(src, 'setProgress');
+  const body = [oneLine ? oneLine[1] : '', block ?? ''].join('\n');
+  if (!body.trim()) return { ok: false, detail: 'store.ts 未找到 setProgress 的实现' };
+  if (/pushLyricsState|lyricsPush/.test(body))
+    return { ok: false, detail: 'setProgress 里推了桌面歌词状态（每秒数次，会打满事件通道）' };
+  return { ok: true, detail: '' };
+});
+add('LYRICS.rafAdvance', 'LYRICS', (s) => {
+  // 歌词窗必须自己推进进度：主窗推一次 startedAtMs，之后靠本地单调钟走。
+  // 判据锁两件事：用了 rAF（不是 setInterval —— 定时器在后台被节流到 1Hz 会导致歌词跳），
+  // 以及真的以 startedAtMs 为基准。
+  if (!s.desktopLyrics) return { ok: false, detail: 'DesktopLyrics.tsx 不存在' };
+  const dl = stripComments(s.desktopLyrics);
+  const missing = [];
+  if (!/requestAnimationFrame/.test(dl)) missing.push('未用 requestAnimationFrame');
+  // ⚠️ 关键：**反向**判据 —— 不能用定时器推进。setInterval 在后台/不可见窗口会被浏览器
+  // 节流到 ~1Hz，歌词就会"一跳一跳"；rAF 与渲染同频、暂停即停。只判"用没用 rAF"不够：
+  // 该文件有两处 rAF 调用，改掉一处仍为真（反证轮实测抓到的假阳性）。
+  if (/setInterval\s*\(/.test(dl)) missing.push('用了 setInterval 推进进度（后台会被节流到 ~1Hz）');
+  if (!/startedAtMs/.test(dl)) missing.push('未以 startedAtMs 为基准');
+  if (!/lyrics:\/\/state/.test(dl)) missing.push('未监听 lyrics://state 事件');
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `桌面歌词进度推进：${missing.join('、')}` : '',
+  };
+});
+add('LYRICS.degrade', 'LYRICS', (s) => {
+  // 降级必须存在：没歌词 / 没歌曲时不能变成空白条或自行关窗
+  // （自行关窗会让"开关状态"与实际不符 —— 那是主窗的职责）
+  if (!s.desktopLyrics) return { ok: false, detail: 'DesktopLyrics.tsx 不存在' };
+  const dl = stripComments(s.desktopLyrics);
+  const missing = [];
+  if (!/lines\.length\s*===\s*0|noLyrics/.test(dl)) missing.push('无歌词未降级');
+  if (!/songId\s*===\s*null|!hasSong|hasSong\s*&&/.test(dl)) missing.push('无歌曲未降级');
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `桌面歌词降级：${missing.join('、')}` : '',
+  };
+});
+add('LYRICS.closeViaRust', 'LYRICS', (s) => {
+  // 关闭必须走 Rust 命令，不能 window.close()：后者绕过主窗状态，
+  // 开关会显示成"还开着"（子 agent 主动做了这个选择，锁住它）
+  if (!s.desktopLyrics) return { ok: false, detail: 'DesktopLyrics.tsx 不存在' };
+  const dl = stripComments(s.desktopLyrics);
+  if (!/close_lyrics_window/.test(dl)) return { ok: false, detail: '未调 close_lyrics_window' };
+  if (/\bwindow\.close\(\)/.test(dl))
+    return { ok: false, detail: '用了 window.close()（绕过主窗状态，开关会与实际不符）' };
+  return { ok: true, detail: '' };
+});
+
 // ── 执行器 ────────────────────────────────────────────────────────────────
 function runAll(s) {
   const res = {};
@@ -816,7 +1057,7 @@ function runAll(s) {
   return res;
 }
 
-const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER'];
+const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS'];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -1045,9 +1286,10 @@ const MUTATIONS = [
   {
     name: '把 next() 里 { expand: false } 删掉（自动切歌会弹开播放器）',
     file: F.store,
-    find:
-      '    // expand:false —— 自动切歌不该把播放器弹开（含 onEnded 自动续播与无版权自动跳过）\n    void get().playSong(queue[idx], undefined, { expand: false });',
-    replace: '    // [refute] expand:false 被移除\n    void get().playSong(queue[idx], undefined);',
+    // 破坏必须**清掉全部** playSong 的 expand:false —— 断言判的是"每条路径都传了"，
+    // 只删一处它仍为真（这个假阳性是反证轮实测抓出来的，不是推理出来的）
+    find: '    void get().playSong(queue[idx], undefined, { expand: false });',
+    replace: '    void get().playSong(queue[idx], undefined);',
     expect: ['PLAYER.nextExpandFalse'],
   },
   {
@@ -1132,6 +1374,123 @@ const MUTATIONS = [
     find: '    currentBitrate: r.br || 0,\n',
     replace: '',
     expect: ['PLAYER.resolveWrites'],
+  },
+
+  // ── HEARTBEAT 心动模式 ────────────────────────────────────────────────
+  {
+    name: '把 cycleMode 的档位数组退回三档（去掉心动）',
+    file: F.store,
+    find: "    const order: PlayMode[] = ['list', 'shuffle', 'one', 'heartbeat'];",
+    replace: "    const order: PlayMode[] = ['list', 'shuffle', 'one'];",
+    expect: ['HEARTBEAT.cycleFour'],
+  },
+  {
+    name: '档位数组里 heartbeat 写两遍（点两下卡在同一档）',
+    file: F.store,
+    find: "    const order: PlayMode[] = ['list', 'shuffle', 'one', 'heartbeat'];",
+    replace:
+      "    const order: PlayMode[] = ['list', 'shuffle', 'one', 'heartbeat', 'heartbeat'];",
+    expect: ['HEARTBEAT.cycleFour'],
+  },
+  {
+    name: '删掉切心动档时的降级提示（静默降级 = 假控件）',
+    file: F.store,
+    find: "    if (nextMode === 'heartbeat' && !platform.supportsSimilar(get().playbackSource)) {",
+    replace: '    if (false) {',
+    expect: ['HEARTBEAT.warnsOnDegrade'],
+  },
+  {
+    name: '让 next 把 heartbeat 当普通队列顺序（不走相似续播）',
+    file: F.store,
+    // 锚点只取到函数名的左括号，与参数/后续实现解耦（避免合法重构后静默失效）
+    find: "if (playMode === 'heartbeat' && platform.supportsSimilar(get().playbackSource)) {",
+    replace: "if (playMode === 'heartbeat' && false) {",
+    expect: ['HEARTBEAT.nextUsesSimilar'],
+  },
+  {
+    name: '相似结果不作为新队列（playSong 丢掉 pick，退回追加语义）',
+    file: F.store,
+    find: '          await get().playSong(nextSong, pick, { expand: false });',
+    replace: '          await get().playSong(nextSong, undefined, { expand: false });',
+    expect: ['HEARTBEAT.nextUsesSimilar'],
+  },
+  {
+    name: '把 supportsSimilar 对酷狗也放开（酷狗无"按 songid 找相似"接口）',
+    file: F.platform,
+    find: "export function supportsSimilar(provider: MusicProvider): boolean {\n  return provider === 'netease';\n}",
+    replace:
+      "export function supportsSimilar(provider: MusicProvider): boolean {\n  return provider === 'netease' || provider === 'kugou';\n}",
+    expect: ['HEARTBEAT.platformGate'],
+  },
+  {
+    name: '删掉 fallbackNext（取不到相似时无处降级）',
+    file: F.store,
+    find: '  fallbackNext: () => {',
+    replace: '  fallbackRemoved: () => {',
+    expect: ['HEARTBEAT.fallbackExists'],
+  },
+
+  // ── LYRICS 桌面歌词 ──────────────────────────────────────────────────
+  {
+    name: '从 main.rs 摘掉 lyrics_push 注册（定义仍在但调不到）',
+    file: F.rustMain,
+    find: '            lyrics_window::lyrics_push,',
+    replace: '',
+    expect: ['LYRICS.rustCommands'],
+  },
+  {
+    name: '歌词窗改用 WebviewUrl::External（跨 origin → 读不到偏好）',
+    file: F.rustLyrics,
+    find: 'WebviewUrl::App("lyrics.html".into())',
+    replace: 'WebviewUrl::External("https://example.com/lyrics.html".parse().unwrap())',
+    expect: ['LYRICS.sameOrigin'],
+  },
+  {
+    name: '从 capabilities 的 windows 里删掉 desktop-lyrics（ACL 会拒该窗口所有命令）',
+    file: F.capabilities,
+    find: '"windows": ["main", "desktop-lyrics"]',
+    replace: '"windows": ["main"]',
+    expect: ['LYRICS.capabilityWindow'],
+  },
+  {
+    name: '从 capabilities 里删掉 allow-start-dragging（拖动会被拒）',
+    file: F.capabilities,
+    find: '    "core:window:allow-start-dragging",\n',
+    replace: '',
+    expect: ['LYRICS.dragPermission'],
+  },
+  {
+    name: '把 vite 的第二入口 lyrics 删掉（dist 里将没有 lyrics.html）',
+    file: F.viteConfig,
+    find: '        lyrics: new URL("./lyrics.html", import.meta.url).pathname,\n',
+    replace: '',
+    expect: ['LYRICS.viteMultiEntry'],
+  },
+  {
+    // 这条模拟的是最容易发生的真实事故：有人为了让歌词"跟得更准"就顺手加一次推送
+    name: '在 setProgress 里加一次桌面歌词推送（每秒数次 → 打满事件通道）',
+    file: F.store,
+    find: '  setProgress: (ms) => set({ progressMs: ms }),',
+    replace:
+      '  setProgress: (ms) => { set({ progressMs: ms }); void get().pushLyricsState(); },',
+    expect: ['LYRICS.progressNotPushed'],
+  },
+  {
+    name: '歌词窗用 setInterval 推进进度（后台被节流到 ~1Hz → 歌词一跳一跳）',
+    file: F.desktopLyrics,
+    // ⚠️ 反证的 replace 只替**第一处**（String.replace 的语义），锚点必须落在**多处**里
+    // 仍能触发红的那一类上。这里替掉两处 rAF 调用（含 `cancelAnimationFrame` 侧的清理），
+    // 换成 setInterval 形态 —— 断言的反向判据（不得出现 setInterval）会如期变红。
+    find: '      raf = requestAnimationFrame(tick);\n',
+    replace: '      raf = setInterval(tick, 100) as unknown as number;\n',
+    expect: ['LYRICS.rafAdvance'],
+  },
+  {
+    name: '歌词窗用 window.close() 关闭（绕过主窗状态 → 开关与实际不符）',
+    file: F.desktopLyrics,
+    find: "invoke('close_lyrics_window')",
+    replace: "window.close(); void invoke('noop_close')",
+    expect: ['LYRICS.closeViaRust'],
   },
 ];
 

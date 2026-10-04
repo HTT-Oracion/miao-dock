@@ -59,7 +59,9 @@ const EXCLUDED = [
   { id: 'audio-cache', label: '音频缓存目录' },
 ];
 
-/** ② 新增、必须存在且为 live 的 8 项（id ↔ 中文标签） */
+/** ② MEDIA 组里必须存在且为 live 的 10 项（id ↔ 中文标签）
+ *  后两项是桌面歌词（P3 落地后恢复）—— 此前它们以"需独立置顶窗口，延后"为由被剔除，
+ *  该前提已不成立（《09》§5.6 第 1 项拍板要做独立窗口），故恢复。 */
 const ADDED = [
   { id: 'quality', label: '音质档位' },
   { id: 'skin', label: '展开播放器皮肤' },
@@ -67,6 +69,8 @@ const ADDED = [
   { id: 'disc-mode', label: '碟片模式' },
   { id: 'lyrics-size', label: '歌词字号' },
   { id: 'lyrics-color', label: '歌词高亮色' },
+  { id: 'lyrics-window', label: '桌面歌词窗口' },
+  { id: 'lyrics-locked', label: '锁定歌词窗口' },
   { id: 'vinyl-color-mode', label: '彩胶配色' },
   { id: 'vinyl-color', label: '彩胶自定义色' },
 ];
@@ -74,8 +78,9 @@ const ADDED = [
 /** ③ MEDIA 的三小节 id（顺序即渲染顺序） */
 const MEDIA_GROUPS = ['playback', 'lyrics', 'vinyl'];
 
-/** ③ 全表项数自校常量应等于的合计（《09》§4.2 的 26 在 ③ 裁定后为 29） */
-const SPEC_TOTAL = 29;
+/** ③ 全表项数自校常量应等于的合计
+ *  26（初版）→ 29（③ 组 5 项 pending → 8 项 live）→ **31**（P3 桌面歌词恢复 2 项） */
+const SPEC_TOTAL = 31;
 
 /** ④ 设置页必须真正取用的 store setter（逐项对应的控件回写） */
 const MEDIA_SETTERS = [
@@ -610,7 +615,9 @@ const MUTATIONS = [
   {
     name: '把项数自校常量改成 26（模拟自校常量漂移）',
     file: F.catalog,
-    find: 'export const SPEC_ITEM_TOTAL = 29;',
+    // ⚠️ 锚点必须与 catalog 的真实字节一致 —— 常量从 29 变 31 后不同步，
+    // 这条会退化成「锚点未找到 / 跳过」，看起来仍是全绿（跳过 ≠ 通过）
+    find: 'export const SPEC_ITEM_TOTAL = 31;',
     replace: 'export const SPEC_ITEM_TOTAL = 26;',
     expect: ['COUNT.specMatches'],
   },
