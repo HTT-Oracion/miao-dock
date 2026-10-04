@@ -62,7 +62,12 @@ export function MusicKernel() {
   const clearResumeAt = useMusicStore((s) => s.clearResumeAt);
   const setProgress = useMusicStore((s) => s.setProgress);
   const setDuration = useMusicStore((s) => s.setDuration);
-  const next = useMusicStore((s) => s.next);
+  /**
+   * 播完分流 —— **不要改回 `onEnded={() => next()}`**：
+   * 那样「单曲循环」会在播完时切歌（`next()` 的 `one` 分支就是"顺序下一首"），
+   * 于是这个档位形同虚设。分流逻辑在 store 的 `handleTrackEnded` 里。
+   */
+  const handleTrackEnded = useMusicStore((s) => s.handleTrackEnded);
   const toast = useMusicStore((s) => s.toast);
 
   /**
@@ -234,7 +239,7 @@ export function MusicKernel() {
         const d = e.currentTarget.duration;
         setDuration(Number.isFinite(d) ? d * 1000 : 0);
       }}
-      onEnded={() => next()}
+      onEnded={() => handleTrackEnded()}
       onError={() => {
         if (!playUrl) return;
         const a = audioRef.current;

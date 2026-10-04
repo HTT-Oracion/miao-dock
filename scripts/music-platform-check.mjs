@@ -1228,6 +1228,22 @@ add('AUDIO.fallback', 'AUDIO', (s) => {
   return { ok: missing.length === 0, detail: missing.length ? `CORS 回退：${missing.join('、')}` : '' };
 });
 
+add('AUDIO.trackEndedOne', 'AUDIO', (s) => {
+  // 「单曲循环」曾经是坏的：onEnded 直接调 next()，而 next() 里 one 档落在
+  // "顺序下一首"分支 → 播完就切歌，档位形同虚设（而且不报错，只是行为不对）。
+  // 三条判据缺一不可：少任一条都可能出现"看着实现了、实际没接上"。
+  const store = stripComments(s.store ?? '');
+  const kernel = stripComments(s.kernel ?? '');
+  const missing = [];
+  if (!/handleTrackEnded\s*:\s*\(\)\s*=>/.test(store)) missing.push('store 缺 handleTrackEnded');
+  // 单曲循环分支必须真的**重播当前曲**（把播放位置归零），而不是又走 next
+  if (!/playMode === 'one'[\s\S]{0,400}?currentTime = 0/.test(store))
+    missing.push('单曲循环分支未重播当前曲（播完仍会切歌）');
+  // 组件侧必须调它 —— 改回 next() 就前功尽弃
+  if (!/onEnded=\{\(\) => handleTrackEnded\(\)\}/.test(kernel))
+    missing.push('MusicKernel 的 onEnded 未接 handleTrackEnded（单曲循环会失效）');
+  return { ok: missing.length === 0, detail: missing.length ? `播完分流：${missing.join('、')}` : '' };
+});
 add('AUDIO.refuseNonCors', 'AUDIO', (s) => {
   // 模块层再兜一道：非 CORS 模式的元素**一律拒绝接管**。
   // 防的是"未来有人把 crossOrigin 去掉之后，波形还在、声音却没了"。
@@ -2383,6 +2399,13 @@ const MUTATIONS = [
     find: "    gain = gain ?? ctx.createGain();",
     replace: "    gain = gain ?? null;",
     expect: ["AUDIO.connectDestination"],
+  },
+  {
+    name: "把 onEnded 改回直接调 next()（单曲循环失效）",
+    file: "app/src/components/MusicKernel.tsx",
+    find: "      onEnded={() => handleTrackEnded()}",
+    replace: "      onEnded={() => void 0}",
+    expect: ["AUDIO.trackEndedOne"],
   },
 ];
 

@@ -597,6 +597,14 @@ interface MusicState {
   togglePlay: () => void;
   next: () => void;
   prev: () => void;
+  /**
+   * 一首**自然播完**时的分流。
+   *
+   * 单独成一个 action（而不是让组件直接调 `next()`）的原因：
+   * 「单曲循环」只在**自动播完**时重播，而**手动点下一首**必须换歌 ——
+   * 这两条路的差异没法塞进 `next()` 里（它两种调用都要服务）。
+   */
+  handleTrackEnded: () => void;
   /** 心动模式取不到相似歌曲时的降级：按队列顺序取下一首（不随机） */
   fallbackNext: () => void;
   seek: (ms: number) => void;
@@ -1183,6 +1191,35 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     }
     // expand:false —— 自动切歌不该把播放器弹开（含 onEnded 自动续播与无版权自动跳过）
     void get().playSong(queue[idx], undefined, { expand: false });
+  },
+
+  /**
+   * 一首**自然播完**时的分流。
+   *
+   * ## 为什么必须在这里分流，而不是让 `onEnded` 直接调 `next()`
+   *
+   * 「单曲循环」的语义是：**自动播完重播当前曲**，但**手动点「下一首」要换歌**。
+   * `next()` 同时服务这两条路，没法在里面区分 —— 所以此前 `one` 档
+   * 落进了 `next()` 的"顺序下一首"分支，**单曲循环实际是坏的**（播完就切歌）。
+   *
+   * ## 为什么是"定位回 0"而不是重新 `playSong`
+   * 重新播要走完整的取 URL 流程（网络歌要重新解析、可能还要等代理），
+   * 单曲循环会因此每轮卡一下。直接 `currentTime = 0` 是即时的。
+   */
+  handleTrackEnded: () => {
+    const { playMode } = get();
+    if (playMode === 'one') {
+      set({ progressMs: 0, isPlaying: true });
+      const a = audioEl;
+      if (a) {
+        a.currentTime = 0;
+        void a.play().catch(() => undefined);
+      }
+      // 歌词窗自己按 startedAtMs 走表，重播必须补推一次，否则它会继续按上一轮的基准往前跑
+      void get().pushLyricsState();
+      return;
+    }
+    get().next();
   },
 
   /**
