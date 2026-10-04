@@ -1,58 +1,296 @@
-import { Badge } from '../components/atoms';
+import { useEffect, useRef } from 'react';
+import { open } from '@tauri-apps/plugin-dialog';
+import { fmtTime, useMusicStore } from '../music/store';
 
 /**
- * 音乐应用占位屏 —— ver2.0 新增，**当前不实现播放功能**。
+ * 音乐应用屏 —— ver2.0 第二个独立应用，按设计稿《音乐模块-设计稿-ver2.0》M1 实现。
  *
- * ## 为什么先立一个诚实的占位屏
+ * 结构：顶行（标题 + 当前平台）→ 左右 50/50（左「我的音乐」/ 右「搜索」）→ 底部播放条。
  *
- * 侧栏加了「音乐」入口后，它必须**立刻有落点**。若做成空按钮或点了没反应，
- * 用户会以为应用坏了 —— 一个坏掉的入口比没有入口更伤。占位屏把三件事说清楚：
- * 做什么、现在到哪了、什么时候能听。
+ * 本轮范围（可验收的 MVP，PD-1「界面重写」的第一步）：
+ * - 本地导入（多选文件 / 文件夹）→ 本地歌单 → 点击播放
+ * - 网易云搜索 → 结果列表 → 点击播放（在线，走音频代理）
+ * - 底部播放条：播放/暂停、上一首/下一首、进度条、音量、播放模式
+ * 后续（遗留）：在线账号登录/歌单/榜单/推荐、展开播放器六皮肤、队列抽屉、桌面歌词。
  *
- * ## 刻意不做的事
- *
- * - **不加 Tab**：音乐 1:1 还原参考实现，内部本就是「顶行 + 左右 50/50 + 底部播放条」
- *   自成一个工作区（《09》§3.3）。加 Tab 会与左栏 4 视图 / 右栏 3 视图的层级打架。
- * - **不预置假数据**：不放假的歌曲列表。占位就是占位，列一堆假歌比空页更像在开发。
- * - **不接服务**：音乐走 Rust 音乐模块（网易云/酷狗/QQ/咪咕 + 本地代理），
- *   那是 M1 之后的事。此屏不发起任何网络请求。
- *
- * ## 重要：不受服务未就绪拦截
- *
- * 翻译引擎未就绪时，音乐屏**照常可用**（`isBlockedWhenNotReady` 里音乐屏开例外）。
- * 引擎是翻译的专属依赖，与音乐无关 —— 这正是把 IA 拆成两级要换来的独立性。
+ * 关键排版（设计稿注）：播放条控制组相对整条**绝对居中**（left:50% + translateX(-50%)），
+ * 不随左右两侧宽度偏移 —— 这里沿用该布局，而非 flex 自动分配。
  */
+
+/** 本地导入的 LocalSongInfo → 可播放的统一 Song（provider = "local"） */
 export function MusicScreen() {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const {
+    localSongs,
+    localQueue,
+    currentSong,
+    isPlaying,
+    playUrl,
+    progressMs,
+    durationMs,
+    volume,
+    playMode,
+    searchText,
+    searchResults,
+    searching,
+    searchError,
+    importLocal,
+    importFolder,
+    playQueue,
+    togglePlay,
+    next,
+    prev,
+    seek,
+    setVolume,
+    cycleMode,
+    search,
+    setSearchText,
+    setProgress,
+    setDuration,
+  } = useMusicStore();
+
+  // ---- 同步 store → <audio>：源、播放态、音量 ----
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (a.src !== playUrl) {
+      a.src = playUrl;
+      a.load();
+    }
+  }, [playUrl]);
+
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    a.volume = volume;
+  }, [volume]);
+
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (isPlaying) void a.play().catch(() => {});
+    else a.pause();
+  }, [isPlaying, playUrl]);
+
+  // ---- <audio> 事件 → store：进度 / 时长 / 播完自动下一首 ----
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    const onTime = () => setProgress(a.currentTime * 1000);
+    const onMeta = () => setDuration(a.duration * 1000);
+    const onEnded = () => next();
+    a.addEventListener('timeupdate', onTime);
+    a.addEventListener('loadedmetadata', onMeta);
+    a.addEventListener('ended', onEnded);
+    return () => {
+      a.removeEventListener('timeupdate', onTime);
+      a.removeEventListener('loadedmetadata', onMeta);
+      a.removeEventListener('ended', onEnded);
+    };
+  }, [next, setProgress, setDuration]);
+
+  // ---- 本地导入：多选文件 / 文件夹 ----
+  const pickFiles = async () => {
+    const picked = await open({
+      multiple: true,
+      directory: false,
+      filters: [{ name: '音频', extensions: ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'opus', 'wma', 'aiff', 'ape'] }],
+    });
+    if (Array.isArray(picked) && picked.length > 0) await importLocal(picked);
+  };
+
+  const pickFolder = async () => {
+    const picked = await open({ multiple: false, directory: true });
+    if (typeof picked === 'string') await importFolder(picked);
+  };
+
+  const onSeek = (v: number) => {
+    seek(v);
+    const a = audioRef.current;
+    if (a) a.currentTime = v / 1000;
+  };
+
+  const onSearchKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') void search(searchText);
+  };
+
   return (
-    <div className="music-placeholder">
-      <div className="card section">
-        <div className="section-title">音乐 · ver2.0 新增应用</div>
-        <div className="notice">
-          这一层是 ver2.0 的第二个独立应用 —— 侧栏把它与「漫画翻译」平级放置，
-          而不再作为翻译流程里的一步。设计上 1:1 还原参考实现：左栏「我的音乐」四视图、
-          右栏推荐/榜单三视图、底部常驻播放条、展开播放器六款皮肤。
-        </div>
-        <div className="notice">
-          <b>当前状态：</b>播放内核尚未开始实现（M1 起）。这一屏是占位，
-          不联网、不读本地音频、不展示任何假数据。
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Badge>本地播放</Badge>
-          <Badge>网易云</Badge>
-          <Badge>酷狗</Badge>
-          <Badge>QQ</Badge>
-          <Badge>咪咕</Badge>
+    <div className="music">
+      {/* 顶行：标题 + 当前平台 */}
+      <div className="music-top">
+        <div className="music-top-l">
+          <span className="music-title">音乐播放器</span>
+          <span className="music-plat">当前平台：网易云音乐</span>
         </div>
       </div>
 
-      <div className="card section">
-        <div className="section-title">与翻译服务的关系</div>
-        <div className="notice">
-          <b>互不阻塞。</b>音乐屏不受翻译引擎的就绪状态影响 —— 即使引擎未启动，
-          切换到音乐这一屏依然照常显示。反过来也一样：音乐播放不会占用翻译队列。
-          这正是把信息架构从「平级四入口」拆成「两级」换来的东西。
+      {/* 左右 50/50 */}
+      <div className="music-cols">
+        {/* 左：我的音乐（本地） */}
+        <section className="music-card">
+          <div className="music-card-hd">
+            <span className="music-card-title">我的音乐</span>
+            <span className="music-card-sub">{localSongs.length} 首</span>
+            <div className="grow" />
+            <button type="button" className="music-btn pri" onClick={() => void pickFiles()}>
+              本地导入
+            </button>
+            <button type="button" className="music-btn out" onClick={() => void pickFolder()}>
+              导入文件夹
+            </button>
+          </div>
+
+          {localSongs.length === 0 ? (
+            <div className="music-empty">
+              还没有本地歌曲 —— 点「本地导入」选几首 mp3/flac，或「导入文件夹」整夹导入。
+            </div>
+          ) : (
+            <div className="music-list">
+              {localQueue.map((s) => (
+                <div
+                  key={s.id}
+                  className={currentSong?.id === s.id ? 'music-row is-hot' : 'music-row'}
+                  onClick={() => void playQueue(localQueue, localQueue.indexOf(s))}
+                >
+                  <div className="music-cover">{s.cover ? <img src={s.cover} alt="" /> : null}</div>
+                  <div className="music-row-tx">
+                    <b>{s.name}</b>
+                    <span>{s.artist}</span>
+                  </div>
+                  <span className="music-dur">{s.duration ? fmtTime(s.duration * 1000) : ''}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* 右：搜索 */}
+        <section className="music-card">
+          <div className="music-search-row">
+            <input
+              className="music-search"
+              placeholder="搜索歌曲、歌手、歌单…（回车查看全部）"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              onKeyDown={onSearchKey}
+            />
+            <button type="button" className="music-btn pri" onClick={() => void search(searchText)} disabled={searching}>
+              {searching ? '搜索中…' : '搜索'}
+            </button>
+          </div>
+
+          {searchError ? <div className="music-empty is-bad">搜索失败：{searchError}</div> : null}
+
+          {searchResults.length > 0 ? (
+            <div className="music-list">
+              {searchResults.map((s) => (
+                <div
+                  key={s.id}
+                  className={currentSong?.id === s.id ? 'music-row is-hot' : 'music-row'}
+                  onClick={() => void playQueue(searchResults, searchResults.indexOf(s))}
+                >
+                  <div className="music-cover">{s.cover ? <img src={s.cover} alt="" /> : null}</div>
+                  <div className="music-row-tx">
+                    <b>{s.name}</b>
+                    <span>{s.artist} · {s.album || '网易云音乐'}</span>
+                  </div>
+                  <span className="music-dur">{s.duration ? fmtTime(s.duration * 1000) : ''}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            !searching && <div className="music-empty">输入关键词回车，搜网易云音乐（歌曲 / 歌手 / 歌单）。</div>
+          )}
+        </section>
+      </div>
+
+      {/* 底部播放条 */}
+      <div className="music-player">
+        <div className="music-player-row">
+          <div className="music-pb-cover">{currentSong?.cover ? <img src={currentSong.cover} alt="" /> : null}</div>
+          <div className="music-pb-tx">
+            <b>{currentSong?.name ?? '未在播放'}</b>
+            <span>{currentSong?.artist ?? '从左侧歌单或搜索结果选一首'}</span>
+          </div>
+
+          {/* 绝对居中控制组 */}
+          <div className="music-ctrl">
+            <button type="button" className="music-cbtn" title="播放模式" onClick={cycleMode}>
+              {playMode === 'one' ? '🔂' : playMode === 'shuffle' ? '🔀' : '🔁'}
+            </button>
+            <button type="button" className="music-cbtn" title="上一首" onClick={prev}>
+              <PrevIcon />
+            </button>
+            <button type="button" className="music-cbtn main" title={isPlaying ? '暂停' : '播放'} onClick={togglePlay}>
+              {isPlaying ? <PauseIcon /> : <PlayIcon />}
+            </button>
+            <button type="button" className="music-cbtn" title="下一首" onClick={next}>
+              <NextIcon />
+            </button>
+          </div>
+
+          <div className="music-vol">
+            <span className="music-vol-icon">🔊</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={volume}
+              onChange={(e) => setVolume(Number(e.target.value))}
+            />
+          </div>
+        </div>
+
+        {/* 进度条 */}
+        <div className="music-prog">
+          <span className="music-prog-t">{fmtTime(progressMs)}</span>
+          <input
+            type="range"
+            className="music-prog-bar"
+            min={0}
+            max={Math.max(durationMs, 1)}
+            step={1000}
+            value={Math.min(progressMs, durationMs)}
+            onChange={(e) => onSeek(Number(e.target.value))}
+          />
+          <span className="music-prog-t">{fmtTime(durationMs)}</span>
         </div>
       </div>
+
+      <audio ref={audioRef} style={{ display: 'none' }} />
     </div>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M8 5q-1-1-2 0v14q1 1 2 0l11-6q1-1 0-2z" />
+    </svg>
+  );
+}
+function PauseIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+      <rect x="6" y="4" width="4" height="16" rx="2" />
+      <rect x="14" y="4" width="4" height="16" rx="2" />
+    </svg>
+  );
+}
+function PrevIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinejoin="round">
+      <rect x="4" y="5" width="3" height="14" rx="1.5" fill="currentColor" stroke="none" />
+      <path d="M17 6L8 12 17 18" />
+    </svg>
+  );
+}
+function NextIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinejoin="round">
+      <path d="M7 6L16 12 7 18" />
+      <rect x="17" y="5" width="3" height="14" rx="1.5" fill="currentColor" stroke="none" />
+    </svg>
   );
 }

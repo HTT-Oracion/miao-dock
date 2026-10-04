@@ -1372,3 +1372,309 @@
   gap: 14px;
   max-width: 760px;
 }
+
+/* ================================================================ 音乐屏
+   ver2.0 第 2 个独立应用（设计稿《音乐模块-设计稿-ver2.0》M1）。
+   布局：顶行 → 左右 50/50 双卡 → 底部播放条。令牌沿用 ver1.0，不新增颜色。 */
+
+.music {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  gap: 12px;
+}
+.music .grow { flex: 1; }
+
+/* 顶行：标题 + 当前平台 */
+.music-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+}
+.music-top-l {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.music-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--md-ink);
+}
+.music-plat {
+  border: 1px solid var(--md-line);
+  background: var(--md-surface-2);
+  border-radius: var(--md-radius-xs);
+  padding: 3px 9px;
+  font-size: 11px;
+  color: var(--md-ink-2);
+}
+
+/* 左右 50/50 */
+.music-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+.music-card {
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-lg);
+  padding: 13px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.music-card-hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin-bottom: 9px;
+}
+.music-card-title {
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--md-ink);
+}
+.music-card-sub {
+  font-size: 11px;
+  color: var(--md-muted);
+}
+
+/* 按钮（音乐屏内自足，不依赖全局 .btn 系列） */
+.music-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 5px 11px;
+  font-size: 11.5px;
+  font-family: var(--font-body);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.music-btn.pri { background: var(--md-pink); color: #fff; }
+.music-btn.out { background: transparent; border: 1px solid var(--md-pink); color: var(--md-pink); }
+.music-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* 空态 / 错误 */
+.music-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--md-muted);
+  text-align: center;
+  padding: 20px;
+  line-height: 1.6;
+}
+.music-empty.is-bad { color: var(--md-error); }
+
+/* 搜索框行 */
+.music-search-row {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin-bottom: 8px;
+}
+.music-search {
+  flex: 1;
+  border: 1px solid var(--md-line);
+  border-radius: 999px;
+  padding: 7px 13px;
+  font-size: 12px;
+  color: var(--md-ink);
+  background: var(--md-surface);
+  font-family: var(--font-body);
+}
+.music-search::placeholder { color: var(--md-muted); }
+.music-search:focus { outline: none; border-color: var(--md-pink); }
+
+/* 歌曲列表 */
+.music-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+.music-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: var(--md-radius-sm);
+  cursor: pointer;
+}
+.music-row:hover { background: var(--md-surface-2); }
+.music-row.is-hot { background: var(--md-pink-soft); }
+.music-row.is-hot .music-row-tx b { color: var(--md-pink); font-weight: 700; }
+.music-cover {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--md-radius-xs);
+  flex-shrink: 0;
+  background: linear-gradient(140deg, var(--md-lavender), var(--md-blue));
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.music-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.music-row-tx { flex: 1; min-width: 0; }
+.music-row-tx b {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--md-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.music-row-tx span {
+  font-size: 10.5px;
+  color: var(--md-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+.music-dur {
+  font-size: 10.5px;
+  color: var(--md-muted);
+  flex-shrink: 0;
+  font-family: var(--font-num);
+}
+
+/* 底部播放条 */
+.music-player {
+  flex: 0 0 auto;
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-lg);
+  padding: 9px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.music-player-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  position: relative;
+}
+.music-pb-cover {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--md-radius-xs);
+  background: linear-gradient(140deg, var(--md-pink), var(--md-lavender));
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.music-pb-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.music-pb-tx { min-width: 0; max-width: 200px; }
+.music-pb-tx b {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--md-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.music-pb-tx span { font-size: 10.5px; color: var(--md-muted); }
+
+/* 控制组：相对整条绝对居中（设计稿注：left:50% + translateX(-50%)） */
+.music-ctrl {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.music-cbtn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--md-ink-2);
+  cursor: pointer;
+}
+.music-cbtn:hover { background: var(--md-surface-2); }
+.music-cbtn.main {
+  background: var(--md-pink);
+  color: #fff;
+  width: 32px;
+  height: 32px;
+}
+.music-cbtn.main:hover { filter: brightness(1.05); }
+
+/* 音量（右侧） */
+.music-vol {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.music-vol-icon { font-size: 13px; }
+.music-vol input[type='range'] {
+  width: 60px;
+  height: 5px;
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 3px;
+  background: var(--md-line);
+}
+.music-vol input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--md-pink);
+}
+
+/* 进度条 */
+.music-prog {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.music-prog-t {
+  font-size: 10px;
+  color: var(--md-muted);
+  width: 34px;
+  text-align: center;
+  font-family: var(--font-num);
+  flex-shrink: 0;
+}
+.music-prog-bar {
+  flex: 1;
+  height: 5px;
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 3px;
+  background: var(--md-line);
+}
+.music-prog-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--md-pink);
+}
