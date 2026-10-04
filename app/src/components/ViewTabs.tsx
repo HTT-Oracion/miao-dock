@@ -1,12 +1,20 @@
+/*
+ * @Author: lvjinbin lvjinbin@skieer.com
+ * @Date: 2026-10-04 03:47:27
+ * @LastEditors: lvjinbin lvjinbin@skieer.com
+ * @LastEditTime: 2026-10-04 13:18:16
+ * @FilePath: /miao-dock/app/src/components/ViewTabs.tsx
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ */
 import { VIEW_TABS } from '../theme/tokens';
-import { IconTabDrop, IconTabLibrary, IconTabQueue } from './atoms';
+import { ListMinus, BookText, FolderUp } from 'lucide-react';
 import { TRANSLATE_VIEWS, type TranslateView } from '../nav';
 
 /** 每个视图一个图标（顺序与 `TRANSLATE_VIEWS` 一致，不在这里另定一套） */
 const ICONS: Record<TranslateView, () => React.ReactElement> = {
-  drop: IconTabDrop,
-  queue: IconTabQueue,
-  library: IconTabLibrary,
+  drop: () => <FolderUp size={16} />,
+  queue: () => <ListMinus size={16} />,
+  library: () => <BookText size={16} />,
 };
 
 /**

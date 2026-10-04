@@ -106,7 +106,7 @@ export function SettingsScreen({
                   className="set-nav-icon"
                   style={{ width: SETTINGS.navItemIcon, height: SETTINGS.navItemIcon }}
                 >
-                  <Icon />
+                  <Icon size={14} />
                 </span>
                 <span className="set-nav-label">{s.name}</span>
                 <span className="set-nav-count">{sectionItemCount(s)}</span>

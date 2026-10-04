@@ -5,6 +5,7 @@ import { LIBRARY } from '../theme/tokens';
 import type { ComicEntry, LibraryResponse } from '../types';
 import { formatBytes, sniffMime } from '../util';
 import { Btn, IconFolder } from '../components/atoms';
+import { FolderUp } from 'lucide-react';
 
 /** 库内文件路径（`GET /library/{comicName}/files/{seq}?variant=…`） */
 function filePath(comicName: string, seq: number, variant: 'original' | 'translated'): string {
@@ -323,7 +324,7 @@ export function LibraryScreen({
               openPath(current.outputDir).catch((e: unknown) => onToast(errorText(e), 'bad'))
             }
           >
-            <IconFolder />
+            <FolderUp size={14} />
             打开目录
           </Btn>
           <Btn

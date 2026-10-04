@@ -1,14 +1,15 @@
 import type { ReactElement } from 'react';
 import type { ServiceState } from '../ipc';
 import { SHELL, SIDEBAR } from '../theme/tokens';
-import { Dot, IconMusic, IconSettings, IconTranslate } from './atoms';
+import { Dot } from './atoms';
 import logo from '../assets/brand/miao-logo.svg';
 import { APP_LABEL, stateView, type AppId, type Screen } from '../nav';
+import { Languages, Music4, Settings } from 'lucide-react';
 
 /** 应用层入口（《09》§3.1）—— 恒为 2 项。C8 断言的判据之一，故不在别处重复定义。 */
 const APPS: { id: AppId; label: string; icon: () => ReactElement }[] = [
-  { id: 'translate', label: APP_LABEL.translate, icon: IconTranslate },
-  { id: 'music', label: APP_LABEL.music, icon: IconMusic },
+  { id: 'translate', label: APP_LABEL.translate, icon: () => <Languages size={20} /> },
+  { id: 'music', label: APP_LABEL.music, icon: () => <Music4 size={20} /> },
 ];
 
 /**
@@ -98,7 +99,7 @@ export function Sidebar({
         title="设置"
         onClick={() => onScreen('settings')}
       >
-        <IconSettings />
+        <Settings size={20} />
       </button>
     </nav>
   );

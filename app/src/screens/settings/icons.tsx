@@ -9,6 +9,7 @@
  * 两个层级里形状完全一致，读者只会读到"大小不同"这个刻意的层级差。
  */
 import type { SectionId } from './catalog';
+import { FolderKanban, Info, Languages, Activity, SlidersHorizontal } from 'lucide-react';
 
 const stroke = {
   fill: 'none',
@@ -72,10 +73,10 @@ export const IconSectionAbout = () =>
     </>,
   );
 
-export const SECTION_ICON: Record<SectionId, () => React.ReactElement> = {
-  general: IconSectionGeneral,
-  translate: IconSectionTranslate,
-  media: IconSectionMedia,
-  resource: IconSectionResource,
-  about: IconSectionAbout,
+export const SECTION_ICON: Record<SectionId, (props?: any) => React.ReactElement> = {
+  general: (props) => <SlidersHorizontal {...(props || {}) } />,
+  translate: (props) => <Languages {...(props || {}) } />,
+  media: (props) => <Activity {...(props || {}) } />,
+  resource: (props) => <FolderKanban {...(props || {}) } />,
+  about: (props) => <Info {...(props || {}) } />,
 };
