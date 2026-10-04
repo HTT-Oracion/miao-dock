@@ -61,11 +61,16 @@ const F = {
   hooksDir: path.join(SRC, "hooks"),
   hooksFile: path.join(SRC, "hooks.ts"),
   hooksIndex: path.join(SRC, "hooks", "index.ts"),
-  platformMenu: path.join(SRC, "screens", "music", "PlatformMenu.tsx"),
+  platformMenu: path.join(SRC, 'screens', 'music', 'PlatformMenu.tsx'),
+  // ── 灵动岛（拍板第 4 项）
+  island: path.join(SRC, 'components', 'DynamicIsland.tsx'),
+  toastBus: path.join(SRC, 'toastBus.ts'),
+  musicToast: path.join(SRC, 'screens', 'music', 'Toast.tsx'),
+  css: path.join(SRC, 'styles', 'app.css'),
 };
 
 // ── 冻结的契约（负责人冻结，本脚本照抄，不改口径） ────────────────────────
-/** units 目录应恰有的 10 个文件（多一个/少一个都判红；useEsc 已迁 src/hooks，D-41） */
+/** units 目录应恰有的 11 个文件（多一个/少一个都判红；useEsc 已迁 src/hooks，D-41） */
 const MANIFEST = [
   "atoms.tsx",
   "Select.tsx",
@@ -74,6 +79,7 @@ const MANIFEST = [
   "Swatches.tsx",
   "ColorPicker.tsx",
   "IconButton.tsx",
+  "PlayModeButton.tsx",
   "Empty.tsx",
   "VirtualList.tsx",
   "index.ts",
@@ -336,6 +342,11 @@ function loadSources() {
   s.hooksFileExists = existsSync(F.hooksFile);
   s.hooksIndex = readMaybe(F.hooksIndex);
   s.platformMenu = readMaybe(F.platformMenu);
+  // 灵动岛（拍板第 4 项）
+  s.island = readMaybe(F.island);
+  s.toastBus = readMaybe(F.toastBus);
+  s.musicToast = readMaybe(F.musicToast);
+  s.appCss = readMaybe(F.css);
   // ALIAS（D-40）：两处别名声明 + 全 src 的"相对上跳"引用
   s.viteConfig = readMaybe(F.viteConfig);
   s.tsconfig = readMaybe(F.tsconfig);
@@ -818,6 +829,80 @@ add("STATE.zustandInUse", "STATE", (s) => {
   };
 });
 
+// ============================ ISLAND（灵动岛 · 拍板第 4 项）============================
+// 灵动岛要防的是「两套提示并存」与「退场动画时长两处不一致」——
+// 两者都不报错，只是用户看到同一条提示出现两次或胶囊突然消失。
+/** App.tsx 原文（多处断言要用，故提到组级作用域） */
+const appSourceOf = (s) => stripComments(s.callers['App.tsx'] ?? '');
+
+add('ISLAND.mountedAtRoot', 'ISLAND', (s) => {
+  if (!s.island) return { ok: false, detail: 'components/DynamicIsland.tsx 不存在' };
+  const appSrc = appSourceOf(s);
+  // ⚠️ 必须判「**真的渲染了**」，不能只判「出现过 DynamicIsland」——
+  // 只判字面量时，删掉 JSX 节点但留着 import 行仍为真（反证轮实测假阳性）。
+  // 判据取 JSX 自闭合标签形态 `<DynamicIsland` + `/>`。
+  if (!/<DynamicIsland\s*\/>/.test(appSrc))
+    return { ok: false, detail: 'App.tsx 未真正渲染 <DynamicIsland />（可能只剩 import）' };
+  return { ok: true, detail: '' };
+});
+add('ISLAND.singleSource', 'ISLAND', (s) => {
+  // ⚠️ 本条是本组最关键的一条：原先 App 与 MusicScreen 各有一份 toast 队列
+  //（useState 每次调用各得一份），灵动岛只订阅其中一份 → 另一份推的提示永远收不到。
+  // 反过来若两处都自己渲染，同一条提示会**出现两次**。
+  if (!s.toastBus) return { ok: false, detail: 'src/toastBus.ts 不存在' };
+  const bus = stripComments(s.toastBus);
+  const hooks = stripComments(s.hooksIndex);
+  const missing = [];
+  if (!/toastBus/.test(hooks)) missing.push('hooks/useToasts 未转发到 toastBus');
+  // 旧的两处渲染层必须都已撤掉
+  if (/className="toasts"/.test(appSourceOf(s)))
+    missing.push('App 仍在渲染 .toasts（旧层未撤）');
+  if (/<div className=\{musicToast/.test(stripComments(s.musicToast ?? '')))
+    missing.push('music/Toast 仍在自己渲染（会与灵动岛重复）');
+  // 反向兜底：总线必须真的只有一个队列实现（防止有人另起一套 state 又忘了接）。
+  // ⚠️ 判据不锁 `const`/`let` —— 单例队列需要**可变**绑定，写成 `const queue` 会在
+  // 合法实现（`let queue`）上误红。与变量声明形式解耦，只认"有队列 + 有订阅"。
+  if (!/\bqueue\b\s*(:|=)/.test(bus) || !/\bsubscribe\b/.test(bus))
+    missing.push('toastBus 不是单例队列实现（缺少队列或 subscribe）');
+  return { ok: missing.length === 0, detail: missing.length ? `吐司单一事实源：${missing.join('、')}` : '' };
+});
+add('ISLAND.musicToastForwards', 'ISLAND', (s) => {
+  // 音乐屏那套必须**转发**并清空源 store，否则同一条被灵动岛与它各渲染一次
+  if (!s.musicToast) return { ok: false, detail: 'screens/music/Toast.tsx 不存在' };
+  const t = stripComments(s.musicToast);
+  const missing = [];
+  if (!/toastBus/.test(t)) missing.push('未转发到 toastBus');
+  if (!/clearToast/.test(t)) missing.push('转发后未清空 musicToast（会重复渲染）');
+  if (/<div/.test(t)) missing.push('仍在渲染 DOM');
+  return { ok: missing.length === 0, detail: missing.length ? `music/Toast 转发：${missing.join('、')}` : '' };
+});
+add('ISLAND.leaveDurationSync', 'ISLAND', (s) => {
+  // 退场时长两处必须一致：CSS 的 .di-capsule.is-leaving 0.26s ↔ TS 的 setTimeout 260ms。
+  // 早退 → 看不见收尾；晚退 → 胶囊悬着不走。
+  const css = stripComments(s.appCss ?? '');
+  const ts = stripComments(s.island ?? '');
+  // ⚠️ 时长写在 **.di-capsule 的 transition 简写里**，不在 .is-leaving 块内
+  //（.is-leaving 只改 transform/opacity）。所以要从 .di-capsule 上取。
+  const mCss = css.match(/\.di-capsule\s*\{[^}]*?transition:[^;]*?(\d*\.?\d+)s/);
+  const mTs = ts.match(/setTimeout\([\s\S]*?,\s*(\d+)\s*\)/);
+  if (!mCss) return { ok: false, detail: 'app.css 找不到 .di-capsule.is-leaving 的 transition 时长' };
+  if (!mTs) return { ok: false, detail: 'DynamicIsland.tsx 找不到退场的 setTimeout' };
+  const cssS = Math.round(parseFloat(mCss[1]) * 1000);
+  const tsMs = Number(mTs[1]);
+  return {
+    ok: cssS === tsMs,
+    detail: cssS === tsMs ? '' : `退场时长不一致：CSS ${mCss[1]}s(${cssS}ms) ↔ TS ${tsMs}ms`,
+  };
+});
+add('ISLAND.idleRendersNothing', 'ISLAND', (s) => {
+  // 无提示且无播放时**不占位** —— 空气里挂个空胶囊比不显示更怪
+  if (!s.island) return { ok: false, detail: 'DynamicIsland.tsx 不存在' };
+  const isl = stripComments(s.island);
+  if (!/if \(!toast && !hasQueue\) return null/.test(isl))
+    return { ok: false, detail: '空闲态未早退（会一直挂着一个空胶囊）' };
+  return { ok: true, detail: '' };
+});
+
 // ── 执行器 ────────────────────────────────────────────────────────────────
 function runAll(s) {
   const res = {};
@@ -832,7 +917,7 @@ function runAll(s) {
   return res;
 }
 
-const GROUPS = ["LAYOUT", "PURITY", "NAMING", "CALLERS", "KEEP", "HOOKS", "ALIAS", "STATE"];
+const GROUPS = ["LAYOUT", "PURITY", "NAMING", "CALLERS", "KEEP", "HOOKS", "ALIAS", "STATE", "ISLAND"];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -1066,6 +1151,46 @@ const MUTATIONS = [
     replace: "from 'zustand-gone';",
     expect: ["STATE.zustandInUse"],
   },
+
+  // ── ISLAND 灵动岛（拍板第 4 项）──────────────────────────────────────
+  {
+    name: "把 App.tsx 里的 <DynamicIsland /> 删掉（实现了但没人挂）",
+    file: F.app,
+    find: "      <DynamicIsland />",
+    replace: "      {null /* 反证：灵动岛未挂载 */}",
+    expect: ["ISLAND.mountedAtRoot"],
+  },
+  {
+    name: "把 App 里的灵动岛换回旧的 .toasts 渲染层（两套并存 → 同一条提示出现两次）",
+    file: F.app,
+    find: "      <DynamicIsland />",
+    replace: '      <div className="toasts" />',
+    expect: ["ISLAND.singleSource"],
+  },
+  {
+    name: "让 music/Toast 重新自己渲染（与灵动岛重复显示同一条提示）",
+    file: F.musicToast,
+    // 锚点用 `return null;`（转发器不渲染任何 DOM）→ 改成一个 div。
+    // 不用"删掉转发代码"当破坏：那会让本组另一条断言先红，掩盖要测的东西。
+    find: "  return null;\n}",
+    replace: '  return <div className="music-toast">x</div>;\n}',
+    expect: ["ISLAND.musicToastForwards"],
+  },
+  {
+    name: "把退场时长改成 CSS 0.4s ↔ TS 260ms 不一致（胶囊提前消失 / 悬着不走）",
+    file: F.css,
+    // 锚点取 transition 里的第一个时长（0.26s）。判据取的是同一处，故改它必然触发红
+    find: "    transform 0.26s cubic-bezier(0.4, 0, 0.2, 1),",
+    replace: "    transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),",
+    expect: ["ISLAND.leaveDurationSync"],
+  },
+  {
+    name: "去掉灵动岛的空闲态早退（会一直挂着一个空胶囊）",
+    file: F.island,
+    find: "  if (!toast && !hasQueue) return null;",
+    replace: "  // 反证：空闲态不再早退",
+    expect: ["ISLAND.idleRendersNothing"],
+  },
 ];
 
 // ── 主流程 ────────────────────────────────────────────────────────────────
@@ -1075,7 +1200,7 @@ console.log(
   "公共组件抽离（components/units）结构断言" + (refute ? " · 反证轮" : ""),
 );
 console.log(`根目录：${ROOT}`);
-console.log(`断言总数：${A.length}（LAYOUT/PURITY/NAMING/CALLERS/KEEP/HOOKS/ALIAS/STATE）`);
+console.log(`断言总数：${A.length}（LAYOUT/PURITY/NAMING/CALLERS/KEEP/HOOKS/ALIAS/STATE/ISLAND）`);
 
 if (!refute) {
   const res = runAll(loadSources());

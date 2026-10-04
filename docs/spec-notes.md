@@ -998,3 +998,110 @@ writer 窗口写 token，reader 窗口上报它看到的值；**连跑两次**�
 验收：cargo check/build 0 错误、tsc 0 错误、vite build 通过（`dist/` 下 `index.html` + `lyrics.html` 齐）、
 check:music 101/101（反证 54/54）、check:units 27/27、check:settings 72/72（反证 15/15）、
 check:ia 24/24、check:tls 14/14、服务 159/159、引擎 23/23。
+
+---
+
+## D-50 ~ D-51 · 灵动岛（拍板第 4 项方案 B）+ 桌面歌词失效的真因
+
+## 一、⚠️ 先纠正一个误判：桌面歌词"点了没反应"不是 macOS 的问题
+
+用户反馈桌面歌词点了没反应，并提到"网易云音乐的桌面歌词在 mac 上也一样不行"。
+**后半句是干扰项，不能作为定位依据**（它只说明那款 App 在该机同样不可用，不说明原因相同）。
+真正的证据在构建配置里：
+
+- 项目的 `tauri.conf.json` 里 **`devUrl = http://localhost:1420`**。
+  `WebviewUrl::App("lyrics.html")` 在 **dev 模式下解析成 `http://localhost:1420/lyrics.html`** ——
+  即向 **vite dev server** 请求该文件，而不是读 `dist/`。
+- 而 `app/lyrics.html` 虽然在**项目根**（Vite 会把它当第二个入口打进 dist），
+  但 **dev server 未必把它当可路由的页面**返回 —— 多入口只保证 `build` 产物有两份 html，
+  `dev` 模式下访问 `/lyrics.html` 是否命中磁盘上的该文件，取决于 Vite 的多页处理，
+  **本项目没有为此验证过**。
+- 症状吻合：窗口创建命令**成功执行**（所以开关会变成"已开"），但窗口内容加载失败 → 看起来"没反应"。
+  而 `setLyricsWindowOpen` 的失败回滚只在 `invoke` **抛错**时触发，页面 404 不抛错。
+
+**待验证的修法（本次未改，用户要求先只分析）**：
+① `open_lyrics_window` 在 dev 模式下改用 `WebviewUrl::External("http://localhost:1420/lyrics.html")`
+—— 同为 http origin，localStorage 仍共享（D-47 成立），但绕过 Vite 多页路由；
+② 或在 dev server 上给 `/lyrics.html` 加一个中间件/重写；
+③ 或最稳：直接 `cargo run` 跑已构建的二进制（`frontendDist` 走 `dist/`，那里确定有两份 html）。
+
+> **教训**：本项目的 dev 与 build 行为差异**必须逐条验证**。`frontendDist` 与 `devUrl` 是两套解析规则，
+> 而"build 通过 + 两个 html 存在"只证明了后者。
+
+## 二、灵动岛实现
+
+### 行为契约取自哪里（取证，不是猜）
+参考实现的组件本体 `@/components/ui/dynamic-island` **没有随源码切片带过来**
+（`vendor/music-reference/frontend/` 只有 7 个文件，无 `components/`）。
+能取到的只有**调用点透露的行为契约**（逐条有据）：
+
+| 证据 | 契约 |
+|---|---|
+| `useDynamicIsland("music")` 返回 `toast`，用法 `toast({ title, description?, status, duration, isClosable? })` | 轻提示：标题 + 可选描述 + 语气 + 时长 |
+| `MusicPage.tsx:3804` 转发 `musicToast` 后**立即** `useMusicStore.setState({ musicToast: null })` | 同一条提示不能被渲染两次 |
+| `MusicPage.tsx:4073` 灵动岛有「打开播放器」按钮，携带 `expandPlayer` 标记跳转并 `handleExpandPlayer()` | 播放卡片 + 打开全屏播放器 |
+| `music-store.ts:2141` 「无歌后 SMTC 会话自动清除，灵动岛不再显示音乐卡片」 | 无歌时**不显示**（不占位） |
+
+本项目 `Toast` 是 `{ id, text, kind }`（kind 只有 info/good/bad），**不硬套**它的字段 ——
+只借行为，字段用自己的。
+
+### 核心：先解决一个真实的结构问题（否则一定丢提示）
+原 `useToasts` 内部是 `useState`，而 **useState 每次调用各得一份**：
+`App.tsx` 的 `push` 与 `MusicScreen` 的 `push` 是**两个互不相通的队列**。
+灵动岛只订阅其中一份 → 另一份推的提示**永远收不到**（症状：提示偶尔"丢失"）。
+
+三条候选方案与取舍：
+1. 放 zustand → 吐司是**纯 UI 瞬态**，会让非音乐模块依赖 `@music/store`，**方向反了**。
+2. React Context → 本项目已裁定**全仓零 Context**（《09》§2.3.3）。
+3. 提升到 App 再 props 透传 → 灵动岛是**并列浮层**不是某屏子组件，透传会把它绑死在树上，更糟。
+→ 落地：**`src/toastBus.ts` 模块级单例**（`queue` + 订阅表 + `useToastsFromBus`）。
+  不引依赖、不违反零 Context、不让吐司依赖业务层，且任意模块都能 `toastBus.push`。
+  ⚠️ 位置**不在 `components/`**：初版我放进 `components/` 导致 `hooks/` 要 import UI 层（依赖倒置），
+  已移到 `src/` 根与 `ipc/types` 同级 —— 它是**基础设施**，不是 UI 组件。
+
+### 三态（互斥，按此顺序判）
+1. **轻提示优先**（用户刚操作完，注意力在反馈上）2. **播放态** 3. **空闲 → 不渲染**
+   空闲**不占位** —— 空气里挂个空胶囊比不显示更怪。
+
+### 观感变化（如实记录）
+提示从**右下角**移到**顶部**（Mac 式），影响 6 处既有业务（服务重启 / 漫画库 / 打开目录 / 设置页）。
+换来的是"切屏也看得见"。z-index 取 **55**：高于页面与 `.music-toast`(50)，
+低于 Radix 弹层(60)与模态(80+) —— 提示不该盖住确认框，也不该被下拉菜单压住。
+
+### 刻意不做"真实封面图"
+灵动岛常驻浮层，拉一张图就多一次网络/解码，而 38px 高看不出差别。
+用粉底 + 均衡器条表达"正在出声"更省更稳；结构留了位置，日后要换只需改 background-image。
+
+## 三、顺带发现的既有缺陷（本轮只报告，未修）
+
+`app.css` 引用了 5 个 **tokens.ts 未定义**的变量（回退成无样式）：
+`--md-pink-soft`（**设置页/下拉的焦点环用它 → 焦点态实际不可见**）·
+`--md-surface-2` · `--md-ink-2` · `--md-on-accent` · `--md-line-soft`。
+> 属 P1（Radix 接入那轮）遗留。修它需要单独一条 —— 补 token 并逐处核对
+> 哪些是有意的"半透明叠加"、哪些是笔误。
+
+## 四、断言：check:units 27 → 32，反证 33 → 38
+
+新增 `ISLAND` 组 5 条，全部针对"不报错但用户看得出错"的形态：
+`mountedAtRoot`（**真渲染**而非只 import）· `singleSource`（唯一队列 + 两处旧渲染层已撤）·
+`musicToastForwards`（转发并清空源）· `leaveDurationSync`（CSS 0.26s ↔ TS 260ms **双向比对**）·
+`idleRendersNothing`（空闲不早退）。
+
+### 过程中修掉的 3 处**脚本自身缺陷**（都是我写错的）
+1. `s.callers.app` → 键名实为 `'App.tsx'`（恒假红）。
+2. 时长正则去 `.is-leaving` 块里找 —— 但时长写在 **`.di-capsule` 的 transition 简写**里，
+   `.is-leaving` 只改 transform/opacity。
+3. 判据写 `const queue` 而实现是 **`let queue`**（单例队列需可变绑定）→ 合法实现误红。
+   **改成与变量声明形式解耦**（只认"有队列 + 有 subscribe"）。
+
+### 反证轮抓到 1 个假阳性（第 4 次同类）
+`mountedAtRoot` 判"出现过 DynamicIsland" → 删掉 JSX 只留 import 仍为真。
+收紧为要求 **JSX 自闭合形态** `<DynamicIsland\s*/>`。
+> **第 4 次"只判存在、不判唯一/不判真用"型假阳性。** 这条已成体系的反证价值。
+
+验收：tsc 0 错误、vite build 通过、check:units 32/32（反证 38/38）、check:music 101/101、
+check:settings 72/72、check:ia 24/24、check:tls 14/14、服务 159/159、引擎 23/23。
+JS 增量 +1.56 kB（gzip +0.5 kB）。
+
+⚠️ 未自证（本机无 Tauri GUI）：灵动岛的实际观感、顶部位置是否与顶栏打架、
+均衡器动画、提示时长体感 —— 需真机点一遍。

@@ -4,6 +4,12 @@
  * 纯 DOM 行为类单放同目录（如 `@hooks/useEsc`），units 组件不得 import 本目录任何东西。
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+// 吐司的**唯一实现**在这里，本文件只做类型与 hook 转发（原因见本文件末尾的吐司段注释）
+import {
+  toastBus,
+  useToastsFromBus,
+  type BusToast,
+} from '@/toastBus';
 import {
   apiGet,
   errorText,
@@ -155,22 +161,21 @@ export function useQuitRequest(onRequest: () => void) {
 
 // ------------------------------------------------------------------ 吐司
 
-export interface Toast {
-  id: number;
-  text: string;
-  kind: 'info' | 'good' | 'bad';
-}
-
-let toastSeq = 0;
+/**
+ * 吐司类型。**实现在 `src/toastBus.ts`（基础设施，与 ipc/types 同级）**（模块级单例），这里只做类型转发。
+ *
+ * 迁移原因（结构问题，不是偏好）：原先状态是 `useState`，而 **useState 每次调用各得一份** ——
+ * `App.tsx` 的 push 与 `MusicScreen` 的 push 是两个互不相通的队列。
+ * 灵动岛只订阅其中一份，于是另一份推的提示**永远收不到**（症状：提示偶尔丢失）。
+ * 单例总线消除"哪一份"这个问题，且不引依赖、不违反《09》§2.3.3 的零 Context 裁定。
+ */
+export type Toast = BusToast;
 
 export function useToasts() {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-
+  const last = useToastsFromBus();
   const push = useCallback((text: string, kind: Toast['kind'] = 'info') => {
-    const id = ++toastSeq;
-    setToasts((t) => [...t, { id, text, kind }]);
-    window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === 'bad' ? 6500 : 3800);
+    toastBus.push(text, kind);
   }, []);
-
-  return { toasts, push };
+  // dismiss 直接给总线的方法（引用稳定，不需要再包一层 useCallback）
+  return { toasts: last ? [last] : [], push, dismiss: toastBus.dismiss };
 }
