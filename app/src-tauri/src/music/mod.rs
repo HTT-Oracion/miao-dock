@@ -601,7 +601,36 @@ pub async fn migu_recommend_playlists() -> Result<Vec<Playlist>, String> {
 //  Tauri Commands - 多平台管理
 // ============================================================
 
-/// 获取所有平台登录状态 (并行执行，避免酷狗/VIP等慢速接口阻塞整体登录)
+/// 「本地即可判定未登录」时的返回值：**不是 `None`**。
+///
+/// 存在的唯一理由是让批量登录态的 `None` 只表示"探测失败"，
+/// 从而与"明确未登录"区分开 —— 详见 [`music_get_login_statuses`] 的文档注释。
+fn offline_login_info(provider: &str) -> Option<LoginInfo> {
+    Some(LoginInfo {
+        provider: provider.to_string(),
+        ..Default::default()
+    })
+}
+
+/// 读取所有平台登录状态 (并行执行，避免酷狗/VIP等慢速接口阻塞整体登录)
+///
+/// ## 「没有 cookie」为什么返回 `Some(logged_in: false)` 而不是 `None`
+/// 本函数的返回类型是 `HashMap<String, LoginInfo>`，**只有 `Some` 才会 `insert` key**
+/// （见下方 `if let Some(info) = …`）。若 cookie 为空也返回 `None`，它就会同时表示
+/// 两件性质完全不同的事：
+///   · cookie 为空 —— **明确未登录**（本地即可判定，不需要网络）
+///   · cookie 有但探测失败（`.ok()` 把 `Err` 吞成 `None`）—— **无法判定**
+/// 前端拿到的都是 `null`，两者不可区分。而「启动恢复上次播放」必须区分：
+/// **明确未登录**要清掉用户的播放快照，**探测失败**（断网）必须保留 ——
+/// 否则用户一断网就丢播放进度。故空 cookie 走 [`offline_login_info`]。
+///
+/// 单平台路径（`music_login_status`）没有这个问题：它直接返回
+/// `Result<LoginInfo, String>`，未登录是 `Ok(logged_in:false)`、失败是 `Err`。
+/// 本函数是对齐那条路径的语义，让前端的 `loginInfos[p]` 三态可判定：
+///   `null` → 探测失败 ／ `{logged_in:false}` → 明确未登录 ／ `{logged_in:true}` → 有效
+///
+/// 对 UI 零影响：所有读取点都是 `loginInfos[p]?.logged_in`，
+/// 没有一处判 `if (!info)`，所以「未登录」两种表示的渲染结果完全一致。
 #[tauri::command]
 pub async fn music_get_login_statuses(app: AppHandle) -> Result<HashMap<String, LoginInfo>, String> {
     let netease_cookie = load_provider_cookie(&app, "netease").await;
@@ -613,22 +642,30 @@ pub async fn music_get_login_statuses(app: AppHandle) -> Result<HashMap<String, 
         async {
             if !netease_cookie.is_empty() {
                 netease::login_status(&netease_cookie).await.ok()
-            } else { None }
+            } else {
+                offline_login_info("netease")
+            }
         },
         async {
             if !kugou_cookie.is_empty() {
                 kugou::login_info(&kugou_cookie).await.ok()
-            } else { None }
+            } else {
+                offline_login_info("kugou")
+            }
         },
         async {
             if !qq_cookie.is_empty() {
                 qqmusic::login_info(&qq_cookie).await.ok()
-            } else { None }
+            } else {
+                offline_login_info("qqmusic")
+            }
         },
         async {
             if !migu_cookie.is_empty() {
                 migu::login_info(&migu_cookie).await.ok()
-            } else { None }
+            } else {
+                offline_login_info("migu")
+            }
         },
     );
 

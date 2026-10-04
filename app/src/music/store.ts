@@ -826,6 +826,33 @@ function mergeLogin(state: MusicState, provider: MusicProvider, info: LoginInfo 
   };
 }
 
+/**
+ * 登录态的**三态**判定（不是布尔）。
+ *
+ * ## 为什么必须分三态
+ * 「明确未登录」与「探测失败」必须区别对待：断网时四个平台全都探不动，
+ * 若一律当成"未登录"就清掉用户的播放快照，**用户一断网就丢播放进度**。
+ *
+ * ## 三态怎么从 `loginInfos` 里读出来
+ * 这个区分是 Rust 侧刻意对齐出来的（见 `music_get_login_statuses` 的文档注释）：
+ *   · `loginInfos[p] === null` —— 批量探测时该平台**探测失败**（网络/服务未就绪）。
+ *     Rust 只在 `Some(info)` 时才 insert key，而 `.ok()` 把探测的 `Err` 吞成了 `None`。
+ *   · `loginInfos[p]?.logged_in === false` —— **明确未登录**。
+ *     cookie 为空或没有登录标记时，Rust 返回 `Ok(LoginInfo{logged_in:false})`。
+ *   · `loginInfos[p]?.logged_in === true` —— 有效。
+ *
+ * ⚠️ 既有 13 处读取点全是 `loginInfos[p]?.logged_in`（布尔判据，**一个字都不该动**）；
+ * 三态只在本函数与「启动恢复」流程里使用。两者并存是有意的：UI 只关心"能不能播"，
+ * 而恢复流程要关心"是不是真的登出了"。
+ */
+export type LoginVerdict = 'valid' | 'logged_out' | 'probe_failed';
+
+export function loginVerdict(infos: Record<MusicProvider, LoginInfo | null>, p: MusicProvider): LoginVerdict {
+  const info = infos?.[p];
+  if (info === null || info === undefined) return 'probe_failed';
+  return info.logged_in ? 'valid' : 'logged_out';
+}
+
 // ------------------------------------------------------------------ store
 
 /**
