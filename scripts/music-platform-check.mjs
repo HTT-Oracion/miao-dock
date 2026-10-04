@@ -39,6 +39,7 @@ const APP = path.join(ROOT, 'app');
 
 const F = {
   rustMod: path.join(APP, 'src-tauri', 'src', 'music', 'mod.rs'),
+  rustModels: path.join(APP, 'src-tauri', 'src', 'music', 'models.rs'),
   rustMain: path.join(APP, 'src-tauri', 'src', 'main.rs'),
   ipc: path.join(APP, 'src', 'music', 'ipc.ts'),
   platform: path.join(APP, 'src', 'music', 'platform.ts'),
@@ -424,6 +425,90 @@ add('UI.virtualListUsed', 'UI', (s) => {
   };
 });
 
+// ============================ 时长单位（DUR） ============================
+/**
+ * Song.duration 的单位契约是**毫秒**（四个平台在 Rust 侧各自归一：网易云 dt 本就是 ms、
+ * 酷狗 Duration×1000、QQ interval×1000、咪咕本就是 ms）。
+ * 前端曾把它当秒再乘一次 1000（4:29 显示成 4483:20），所以这里既断言契约被写明、
+ * 也断言前端**没有再乘** —— 单测「文档写了」不够，得防住复发。
+ */
+add('DUR.msContract', 'DUR', (s) => {
+  const models = readMaybe(F.rustModels);
+  const documented = /单位.{0,4}毫秒/.test(models);
+  const sources = { 'store.ts': s.store, 'platform.ts': s.platform, 'ui': `${s.musicUi}\n${s.musicScreen}` };
+  const offenders = Object.entries(sources)
+    .filter(([, src]) => /\.duration\s*\*\s*1000/.test(src))
+    .map(([f]) => f);
+  const detail = [
+    documented ? '' : 'Rust models.rs 未写明 duration 的单位是毫秒',
+    offenders.length ? `前端又把 duration 当秒乘了 1000：${offenders.join('、')}` : '',
+  ]
+    .filter(Boolean)
+    .join('；');
+  return { ok: !detail, detail };
+});
+
+// ============================ 搜索分页（SEARCH） ============================
+/**
+ * 上游参考（含 Rust 与前端）**都没有**搜索分页：四个 search 函数的签名只有 limit，
+ * 内部页码/offset 写死为 1 / 0，前端也没有任何分页状态。
+ * 这里断言我们把它补齐了，且补在四层上（Rust 签名 → platform 透传 → store 状态机 → UI 触发）。
+ */
+const SEARCH_CMDS = ['music_search', 'kugou_search', 'qq_search', 'migu_search'];
+add('SEARCH.rustOffset', 'SEARCH', (s) => {
+  const missing = SEARCH_CMDS.filter(
+    (n) => !new RegExp(`pub async fn ${esc(n)}\\([^)]*offset`).test(s.rustMod),
+  );
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `这些 Rust 搜索命令没有 offset 参数：${missing.join(', ')}` : '',
+  };
+});
+add('SEARCH.platformOffset', 'SEARCH', (s) => {
+  const missing = [];
+  if (!/export function search\([\s\S]{0,160}offset/.test(s.platform)) missing.push('search 未接收 offset');
+  if (!/searchPageSize/.test(s.platform)) missing.push('缺少 searchPageSize（各平台页大小不同）');
+  if (!/offset\s*\)/.test(s.platform)) missing.push('未把 offset 透传给各平台 IPC');
+  return { ok: missing.length === 0, detail: missing.length ? `platform 层：${missing.join('、')}` : '' };
+});
+add('SEARCH.storePaging', 'SEARCH', (s) => {
+  const first = methodBody(s.store, 'search');
+  const more = methodBody(s.store, 'loadMoreSearch');
+  const missing = [];
+  if (first == null) missing.push('search 实现');
+  else if (!/searchHasMore/.test(first)) missing.push('首屏 search 未设置 searchHasMore');
+  if (more == null) missing.push('loadMoreSearch 实现');
+  else {
+    if (!/searchResults\.length/.test(more)) missing.push('loadMoreSearch 未以已加载条数作为 offset');
+    if (!/searchHasMore/.test(more)) missing.push('loadMoreSearch 未更新 searchHasMore');
+  }
+  return { ok: missing.length === 0, detail: missing.length ? `store 层缺：${missing.join('、')}` : '' };
+});
+add('SEARCH.uiWire', 'SEARCH', (s) => {
+  const rp = readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx'));
+  const missing = [];
+  if (!/loadMoreSearch/.test(rp)) missing.push('未接 loadMoreSearch');
+  if (!/searchHasMore/.test(rp)) missing.push('未用 searchHasMore 判断是否还能加载');
+  if (!/onNearEnd/.test(rp)) missing.push('未用 VirtualList 的 onNearEnd 触发');
+  return { ok: missing.length === 0, detail: missing.length ? `搜索结果未接分页：${missing.join('、')}` : '' };
+});
+
+// 播放条显隐 + 一屏定高布局：两者是一件事的两半 —— 播放条要「恒贴底部」，
+// 前提是外层的 .content 不再产生页面级滚动（那会把播放条推到视口之外）。
+add('UI.playerBarRule', 'UI', (s) => {
+  const pb = readMaybe(path.join(F.musicUiDir, 'PlayerBar.tsx'));
+  const missing = [];
+  if (!/if\s*\(hidden\)\s*return\s+null/.test(pb)) missing.push('PlayerBar 未实现 hidden 时早退（队列为空不渲染）');
+  if (!/hidden=\{[^}]*queue[^}]*\}/.test(s.musicScreen)) missing.push('MusicScreen 未按队列长度决定播放条显隐');
+  const block = (s.css.match(/\.music\s*\{([^}]*)\}/) || [, ''])[1];
+  if (!/(^|\n)\s*height:\s*100%/.test(block)) missing.push('app.css 的 .music 未改成定高（仍是 min-height:100%，会撑出页面级滚动）');
+  const cols = (s.css.match(/\.music-cols\s*\{([^}]*)\}/) || [, ''])[1];
+  if (!/grid-template-rows\s*:\s*minmax\(\s*0\s*,/.test(cols)) {
+    missing.push('.music-cols 未固定行高（缺 grid-template-rows: minmax(0, 1fr)，卡片会被内容撑开、失去内部滚动）');
+  }
+  return { ok: missing.length === 0, detail: missing.length ? `播放条/定高布局缺：${missing.join('、')}` : '' };
+});
+
 // ── 执行器 ────────────────────────────────────────────────────────────────
 function runAll(s) {
   const res = {};
@@ -438,7 +523,7 @@ function runAll(s) {
   return res;
 }
 
-const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'UI'];
+const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI'];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -468,7 +553,9 @@ const MUTATIONS = [
   {
     name: '删掉 platform.ts 里 search 的 migu 分支',
     file: F.platform,
-    find: "    case 'migu':\n      return ipc.miguSearch(keywords, limit);\n",
+    // 锚点含 offset：签名变过一次（未分页 → 分页），锚点跟着更新，
+    // 否则会静默退化成「无法反证」（见脚本底部的分母守卫）
+    find: "    case 'migu':\n      return ipc.miguSearch(keywords, limit, offset);\n",
     replace: '',
     expect: ['PLATFORM.dispatch.search'],
   },
@@ -543,6 +630,41 @@ const MUTATIONS = [
     find: '<VirtualList',
     replace: '<QueueList',
     expect: ['UI.virtualListUsed'],
+  },
+  {
+    name: '把 QueueDrawer 的时长又当成秒（duration * 1000，复现时间显示异常）',
+    file: path.join(F.musicUiDir, 'QueueDrawer.tsx'),
+    find: '{fmtTime(s.duration)}',
+    replace: '{fmtTime(s.duration * 1000)}',
+    expect: ['DUR.msContract'],
+  },
+  {
+    name: '把 music_search 的 offset 参数摘掉（搜索退回不可分页）',
+    file: F.rustMod,
+    find: 'pub async fn music_search(keywords: String, limit: Option<u32>, offset: Option<u32>)',
+    replace: 'pub async fn music_search(keywords: String, limit: Option<u32>)',
+    expect: ['SEARCH.rustOffset'],
+  },
+  {
+    name: '把 store 的 loadMoreSearch 改名（模拟漏实现续拉）',
+    file: F.store,
+    find: '  loadMoreSearch: async (',
+    replace: '  loadMoreSearchDisabled: async (',
+    expect: ['SEARCH.storePaging'],
+  },
+  {
+    name: '把 RightPanel 搜索结果的分页接线拆掉',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    find: 'const loadMore = useMusicStore((s) => s.loadMoreSearch);',
+    replace: 'const loadMore = () => {};',
+    expect: ['SEARCH.uiWire'],
+  },
+  {
+    name: '把播放条改成恒显（队列为空也显示）',
+    file: F.musicScreen,
+    find: 'hidden={queueLength === 0}',
+    replace: 'hidden={false}',
+    expect: ['UI.playerBarRule'],
   },
 ];
 
