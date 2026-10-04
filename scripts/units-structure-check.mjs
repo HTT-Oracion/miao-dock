@@ -22,7 +22,7 @@
  *   它测的不是它声称的东西（D-31：假阳性比没测试更危险）。
  *
  * 用法：
- *   node scripts/units-structure-check.mjs            正向跑（期望 LAYOUT/PURITY/NAMING/CALLERS/KEEP 全绿）
+ *   node scripts/units-structure-check.mjs            正向跑（期望 LAYOUT/PURITY/NAMING/CALLERS/KEEP/HOOKS/ALIAS/STATE 全绿）
  *   node scripts/units-structure-check.mjs --refute   反证轮（破坏源文件 → 断言必须变红 → 按字节恢复）
  *
  * 约束：纯 Node、零依赖；只读 `app/src/**`（--refute 轮临时破坏并保证按字节还原）。
@@ -46,6 +46,8 @@ const F = {
   units: path.join(SRC, "components", "units"),
   components: path.join(SRC, "components"),
   app: path.join(SRC, "App.tsx"),
+  viteConfig: path.join(APP, "vite.config.ts"),
+  tsconfig: path.join(APP, "tsconfig.json"),
   queueScreen: path.join(SRC, "screens", "QueueScreen.tsx"),
   rightPanel: path.join(SRC, "screens", "music", "RightPanel.tsx"),
   queueDrawer: path.join(SRC, "screens", "music", "QueueDrawer.tsx"),
@@ -56,10 +58,14 @@ const F = {
   loginModal: path.join(SRC, "screens", "music", "LoginModal.tsx"),
   legacyAtoms: path.join(SRC, "components", "atoms.tsx"),
   legacyVirtualList: path.join(SRC, "screens", "music", "VirtualList.tsx"),
+  hooksDir: path.join(SRC, "hooks"),
+  hooksFile: path.join(SRC, "hooks.ts"),
+  hooksIndex: path.join(SRC, "hooks", "index.ts"),
+  platformMenu: path.join(SRC, "screens", "music", "PlatformMenu.tsx"),
 };
 
 // ── 冻结的契约（负责人冻结，本脚本照抄，不改口径） ────────────────────────
-/** units 目录应恰有的 11 个文件（多一个/少一个都判红） */
+/** units 目录应恰有的 10 个文件（多一个/少一个都判红；useEsc 已迁 src/hooks，D-41） */
 const MANIFEST = [
   "atoms.tsx",
   "Select.tsx",
@@ -70,10 +76,9 @@ const MANIFEST = [
   "IconButton.tsx",
   "Empty.tsx",
   "VirtualList.tsx",
-  "useEsc.ts",
   "index.ts",
 ];
-/** 桶文件应统一出口的名字 */
+/** 桶文件应统一出口的名字（useEsc 的出口在 @hooks/useEsc，不再经 units 桶） */
 const BARREL_EXPORTS = [
   "Badge",
   "Btn",
@@ -90,7 +95,16 @@ const BARREL_EXPORTS = [
   "ROW_GAP",
   "ROW_H",
   "VirtualList",
-  "useEsc",
+];
+/** src/hooks/ 应恰有的文件（hooks 唯一收口，D-41） */
+const HOOKS_MANIFEST = ["index.ts", "useEsc.ts", "useCoverColor.ts"];
+/** hooks/index.ts 业务桶应出口的业务 hook 名 */
+const HOOKS_BARREL_EXPORTS = [
+  "useService",
+  "useTasks",
+  "useLibrary",
+  "useQuitRequest",
+  "useToasts",
 ];
 /** 允许被 units import 的裸包（其余裸包一律判红：新依赖需负责人确认） */
 const PKG_ALLOW = [/^react(\/.+)?$/, /^react-dom(\/.+)?$/, /^lucide-react$/];
@@ -317,6 +331,48 @@ function loadSources() {
   s.componentsFiles = listFiles(F.components);
   s.legacyAtomsExists = existsSync(F.legacyAtoms);
   s.legacyVirtualListExists = existsSync(F.legacyVirtualList);
+  // hooks 收口（D-41）：目录清单 + 旧单文件必须不存在 + 业务桶原文
+  s.hooksDirFiles = listFiles(F.hooksDir);
+  s.hooksFileExists = existsSync(F.hooksFile);
+  s.hooksIndex = readMaybe(F.hooksIndex);
+  s.platformMenu = readMaybe(F.platformMenu);
+  // ALIAS（D-40）：两处别名声明 + 全 src 的"相对上跳"引用
+  s.viteConfig = readMaybe(F.viteConfig);
+  s.tsconfig = readMaybe(F.tsconfig);
+  s.srcRelativeUp = [];
+  // STATE（D-42）：全 src 的 React Context 用法
+  s.srcReactContext = [];
+  // ALIAS：误用 @tauri/… 别名的 import（前端不该 import src-tauri；多为把 @tauri-apps/* 写错）
+  s.srcTauriAliasSpecs = [];
+  // STATE：zustand 引用（证明状态库确实是 zustand，而不是"没 Context 也没 store"）
+  s.srcZustandImports = [];
+  // HOOKS：全 src 里 use* 命名的文件若不在 hooks/ 内即违规（D-41）
+  s.srcMisplacedHooks = [];
+  // 需要全量扫描的三件事：旧位置深引 useEsc / 相对上跳引用 / React Context
+  s.srcUnitsEscImports = [];
+  const walk = (dir) => {
+    if (!existsSync(dir)) return;
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(ts|tsx)$/.test(e.name)) {
+        const rel = path.relative(ROOT, p);
+        const st = stripComments(readMaybe(p));
+        for (const spec of importSpecifiers(st)) {
+          if (/units\/useEsc$/.test(spec)) s.srcUnitsEscImports.push(`${rel} → ${spec}`);
+          // 相对上跳：'..' 或 '../...'。同目录 './x' 是允许的（见《09》§2.3.1）
+          if (/^\.\.(\/|$)/.test(spec)) s.srcRelativeUp.push(`${rel} → ${spec}`);
+          // 注意正则：'@tauri-apps/…' 不含 '@tauri/'，故不会误报（npm 包与别名必须区分开）
+          if (/^@tauri\//.test(spec)) s.srcTauriAliasSpecs.push(`${rel} → ${spec}`);
+          if (spec === "zustand") s.srcZustandImports.push(rel);
+        }
+        if (/\b(?:createContext|useContext)\s*\(/.test(st)) s.srcReactContext.push(rel);
+        // use* 命名的文件必须住在 src/hooks/ 内（否则 D-41 只是句口号）
+        if (/^use[A-Z]/.test(e.name) && path.basename(dir) !== 'hooks') s.srcMisplacedHooks.push(rel);
+      }
+    }
+  };
+  walk(SRC);
   return s;
 }
 
@@ -563,6 +619,205 @@ add("KEEP.appComponents", "KEEP", (s) => {
   };
 });
 
+// ============================ HOOKS（src/hooks 唯一收口，D-41） ============================
+add("HOOKS.layout", "HOOKS", (s) => {
+  if (!existsSync(F.hooksDir))
+    return { ok: false, detail: "src/hooks/ 目录不存在" };
+  const got = new Set(s.hooksDirFiles);
+  const want = new Set(HOOKS_MANIFEST);
+  const missing = HOOKS_MANIFEST.filter((n) => !got.has(n));
+  const extra = s.hooksDirFiles.filter((n) => !want.has(n));
+  const legacy = s.hooksFileExists
+    ? "src/hooks.ts 旧单文件仍存在 —— 与 hooks/ 并存时 TS/Vite 的模块解析会静默二选一"
+    : "";
+  return {
+    ok: missing.length === 0 && extra.length === 0 && !s.hooksFileExists,
+    detail: [
+      missing.length ? `缺件：${missing.join(", ")}` : "",
+      extra.length ? `多余：${extra.join(", ")}` : "",
+      legacy,
+    ]
+      .filter(Boolean)
+      .join("；"),
+  };
+});
+
+add("HOOKS.barrelExports", "HOOKS", (s) => {
+  const st = stripComments(s.hooksIndex);
+  const missing = HOOKS_BARREL_EXPORTS.filter((n) => !exportsName(st, n));
+  return {
+    ok: missing.length === 0,
+    detail: missing.length
+      ? `hooks/index.ts 业务桶丢了 hook：${missing.join(", ")}（App.tsx 在 import，丢了编译才炸）`
+      : "",
+  };
+});
+
+add("HOOKS.callers", "HOOKS", (s) => {
+  const st = stripComments(s.platformMenu);
+  const okImport = /from\s+['"]@hooks\/useEsc['"]/.test(st);
+  const stale = s.srcUnitsEscImports;
+  return {
+    ok: okImport && stale.length === 0,
+    detail: [
+      okImport ? "" : "PlatformMenu 未从 @hooks/useEsc 引 useEsc",
+      stale.length ? `仍有文件从旧位置深引 useEsc：${stale.join("；")}` : "",
+    ]
+      .filter(Boolean)
+      .join("；"),
+  };
+});
+
+add("HOOKS.noMisplacedUse", "HOOKS", (s) => {
+  // 判据：文件名以 use + 大写字母开头的文件必须住在 src/hooks/ 内。
+  // 这条是**补出来**的 —— 上一轮收口只迁了 useEsc，漏了 screens/music/useCoverColor.ts，
+  // 而原有三条 HOOKS 断言只认"已迁移的那个"，对新长出来的 hook 完全失明。
+  const bad = s.srcMisplacedHooks;
+  return {
+    ok: bad.length === 0,
+    detail: bad.length
+      ? `这些 use* 文件不在 src/hooks/ 内：${bad.join("、")}（D-41：use* 一律住 hooks，否则同一个概念会被两处持有）`
+      : "",
+  };
+});
+
+// ============================ ALIAS（路径别名与引用规范，D-40） ============================
+/**
+ * 从 `vite.config.ts` 抽别名键 —— 形如 `"@hooks": aliasPath("./src/hooks")`。
+ *
+ * 为什么用正则而不是 eval/import 配置：配置是 TS，脚本要零依赖、且不该执行构建配置。
+ * 正则只认"键 + aliasPath(" 这一种写法 —— 换写法会让断言变红（提示同步脚本），
+ * 这比"静默漏检"好：**断言宁可因为写法变化而红，也不要因为认不出而绿**。
+ */
+function viteAliasKeys(text) {
+  return [
+    ...new Set(
+      [...stripComments(text).matchAll(/["'](@[a-zA-Z0-9_-]*)["']\s*:\s*aliasPath\(/g)].map(
+        (m) => m[1],
+      ),
+    ),
+  ];
+}
+
+/** 从 `tsconfig.json` 的 compilerOptions.paths 抽键并归一化（`@x/*` 与 `@x` 是同一别名） */
+function tsAliasKeys(text) {
+  const block = text.match(/"paths"\s*:\s*\{([\s\S]*?)\n\s*\}/);
+  if (!block) return [];
+  return [
+    ...new Set(
+      [...block[1].matchAll(/["'](@[a-zA-Z0-9_/-]*)["']\s*:/g)].map((m) => m[1].replace(/\/\*$/, "")),
+    ),
+  ];
+}
+
+/** 契约：六个别名（《09》§2.3.1） */
+const ALIAS_KEYS = ["@", "@tauri", "@components", "@screens", "@music", "@hooks"];
+
+add("ALIAS.keysComplete", "ALIAS", (s) => {
+  const vite = viteAliasKeys(s.viteConfig);
+  const ts = tsAliasKeys(s.tsconfig);
+  const missV = ALIAS_KEYS.filter((k) => !vite.includes(k));
+  const missT = ALIAS_KEYS.filter((k) => !ts.includes(k));
+  return {
+    ok: missV.length === 0 && missT.length === 0,
+    detail: [
+      missV.length ? `vite.config.ts 缺：${missV.join("、")}` : "",
+      missT.length ? `tsconfig.json 缺：${missT.join("、")}` : "",
+    ]
+      .filter(Boolean)
+      .join("；"),
+  };
+});
+
+add("ALIAS.twoPlaceSync", "ALIAS", (s) => {
+  const vite = new Set(viteAliasKeys(s.viteConfig));
+  const ts = new Set(tsAliasKeys(s.tsconfig));
+  const onlyVite = [...vite].filter((k) => !ts.has(k));
+  const onlyTs = [...ts].filter((k) => !vite.has(k));
+  return {
+    ok: onlyVite.length === 0 && onlyTs.length === 0,
+    detail:
+      onlyVite.length || onlyTs.length
+        ? `两处不同步 —— 仅 vite 有：${onlyVite.join("、") || "无"}；仅 tsconfig 有：${onlyTs.join("、") || "无"}（少改一处是**静默漂移**：dev 能跑 build 报错，或编辑器报红但能跑）`
+        : "",
+  };
+});
+
+add("ALIAS.subPathMaps", "ALIAS", (s) => {
+  /*
+   * 每个别名在 tsconfig 里必须**同时**声明 `@x` 与 `@x/*` 两条：
+   * 只有精确项 → `@music/store` 解析不到；只有通配项 → 裸 `@music` 解析不到。
+   * 缺哪条都要等某处 import 恰好踩中才暴露，故静态断死。
+   *
+   * 这条是**反证轮逼出来的**：原本设计的破坏是"删 tsconfig 的 `@music/*` 一行"，
+   * 结果两条断言都没红 —— 因为 `@music` 精确项还在，别名确实仍存在。
+   * 那次"假阳性"不是断言错，而是**破坏没做到位**；但它顺带暴露了真实缺口：
+   * 只删通配项这种**配置退化**当时无人拦（要等 tsc 才炸）。于是补上本条。
+   *
+   * ⚠️ vite 侧不需要对应断言：vite 的 alias 是**前缀匹配**，天然覆盖子路径；
+   * 而 TS 的 `paths` 是**逐条精确匹配**，必须两条都写。这个差异是别名最容易踩的坑。
+   */
+  const block = s.tsconfig.match(/"paths"\s*:\s*\{([\s\S]*?)\n\s*\}/);
+  if (!block) return { ok: false, detail: "tsconfig.json 里找不到 compilerOptions.paths" };
+  const hits = [...block[1].matchAll(/["'](@[a-zA-Z0-9_-]*)(\/\*)?["']\s*:/g)];
+  const exact = new Set(hits.filter((m) => !m[2]).map((m) => m[1]));
+  const wild = new Set(hits.filter((m) => m[2]).map((m) => m[1]));
+  const missing = ALIAS_KEYS.filter((k) => !exact.has(k) || !wild.has(k));
+  return {
+    ok: missing.length === 0,
+    detail: missing.length
+      ? `这些别名在 tsconfig 里缺项：${missing
+          .map((k) => `${k}${exact.has(k) ? "" : "（缺精确项）"}${wild.has(k) ? "" : "（缺 @${k.slice(1)}/* 通配项）"}`)
+          .join("、")} —— 缺哪一侧，那一类 import 就解析不到`
+      : "",
+  };
+});
+
+add("ALIAS.noRelativeUp", "ALIAS", (s) => {
+  const bad = s.srcRelativeUp;
+  return {
+    ok: bad.length === 0,
+    detail: bad.length
+      ? `app/src 内仍有相对上跳引用（应写别名；同目录 './' 允许）：${bad.slice(0, 5).join("；")}${bad.length > 5 ? ` …共 ${bad.length} 处` : ""}`
+      : "",
+  };
+});
+
+add("ALIAS.pkgNotShadowed", "ALIAS", (s) => {
+  // 别名 `@tauri`（→ src-tauri，预留）与 npm 包 `@tauri-apps/*` 字形极近。
+  // 判据刻意不用"包引用数 > 0"：那种只数总量，单个文件被改错时测不出来。
+  // 改为——**前端不得出现 `@tauri/…` 的 import**：它要么是把 `@tauri-apps/api/core`
+  // 误写成 `@tauri/api/core`，要么是前端越界 import Rust 目录，两种都是错的。
+  const bad = s.srcTauriAliasSpecs;
+  return {
+    ok: bad.length === 0,
+    detail: bad.length
+      ? `前端出现了 @tauri/… 的 import：${bad.join("；")} —— 别名 @tauri 指向 src-tauri（前端不该 import 它）；是不是把 npm 包 @tauri-apps/* 写错了？`
+      : "",
+  };
+});
+
+// ============================ STATE（状态管理统一 zustand，D-42） ============================
+add("STATE.noReactContext", "STATE", (s) => {
+  const bad = s.srcReactContext;
+  return {
+    ok: bad.length === 0,
+    detail: bad.length
+      ? `这些文件用了 React Context：${bad.join("、")} —— 跨组件共享状态一律 zustand（Context 里的 state 在 provider 之外读不到，而播放内核/IPC 回调都在组件树外改状态）`
+      : "",
+  };
+});
+
+add("STATE.zustandInUse", "STATE", (s) => {
+  // 反向兜底：只断言"没有 Context"是不够的 —— 把 store 换成别的东西（或删掉）
+  // 也会让上一条变绿，而"统一 zustand"这条规则其实已经不成立。
+  const n = s.srcZustandImports.length;
+  return {
+    ok: n > 0,
+    detail: n ? "" : "全 src 未发现 zustand 引用 —— 状态管理约定（D-42）已不成立",
+  };
+});
+
 // ── 执行器 ────────────────────────────────────────────────────────────────
 function runAll(s) {
   const res = {};
@@ -577,7 +832,7 @@ function runAll(s) {
   return res;
 }
 
-const GROUPS = ["LAYOUT", "PURITY", "NAMING", "CALLERS", "KEEP"];
+const GROUPS = ["LAYOUT", "PURITY", "NAMING", "CALLERS", "KEEP", "HOOKS", "ALIAS", "STATE"];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -727,6 +982,90 @@ const MUTATIONS = [
     replace: '<span className="ui-pill">',
     expect: ["NAMING.neutralKept"],
   },
+  {
+    name: "把 src/hooks/useEsc.ts 改名（模拟收口缺件）",
+    from: F.hooksDir + "/useEsc.ts",
+    to: F.hooksDir + "/useEsc.bak",
+    expect: ["HOOKS.layout"],
+  },
+  {
+    name: "复活 src/hooks.ts 旧单文件（模拟 hooks.ts 与 hooks/ 并存）",
+    create: F.hooksFile,
+    content: "export {};\n",
+    expect: ["HOOKS.layout"],
+  },
+  {
+    name: "把 src/hooks/index.ts 的 useToasts 改名（模拟业务 hook 丢失）",
+    file: F.hooksDir + "/index.ts",
+    find: "export function useToasts()",
+    replace: "export function useToastsGone()",
+    expect: ["HOOKS.barrelExports"],
+  },
+  {
+    name: "把 PlatformMenu 的 useEsc 引用改回旧位置（@components/units/useEsc）",
+    file: F.platformMenu,
+    // 锚点必须与 PlatformMenu.tsx 当前的真实字节一致：本项目**统一单引号**，
+    // 编辑器保存时的重排会把引号换成双引号（纯噪声），此时锚点失配 ——
+    // 后果不是变红而是本条被静默跳过，故回退噪声时**必须同步锚点**（本仓库踩过这个坑）。
+    find: "from '@hooks/useEsc';",
+    replace: "from '@components/units/useEsc';",
+    expect: ["HOOKS.callers"],
+  },
+  {
+    name: "把 hooks/useCoverColor.ts 移回 screens/music（模拟 use* 未收口）",
+    from: F.hooksDir + "/useCoverColor.ts",
+    to: path.join(SRC, "screens", "music", "useCoverColor.ts"),
+    expect: ["HOOKS.noMisplacedUse"],
+  },
+  {
+    name: "从 vite.config.ts 删掉 @hooks 别名（模拟两处漏改一处）",
+    file: F.viteConfig,
+    find: '      "@hooks": aliasPath("./src/hooks"),\n',
+    replace: "",
+    expect: ["ALIAS.keysComplete", "ALIAS.twoPlaceSync"],
+  },
+  {
+    name: "从 tsconfig.json 删掉 @music 别名（两条一起删，反向漂移：tsc 不认识而 vite 认识）",
+    file: F.tsconfig,
+    find: '      "@music": ["src/music"],\n      "@music/*": ["src/music/*"],\n',
+    replace: "",
+    expect: ["ALIAS.keysComplete", "ALIAS.twoPlaceSync"],
+  },
+  {
+    name: "只删 tsconfig 的 @music/* 通配项（配置退化：别名还在，但 @music/store 解析不到）",
+    file: F.tsconfig,
+    find: '      "@music/*": ["src/music/*"],\n',
+    replace: "",
+    expect: ["ALIAS.subPathMaps"],
+  },
+  {
+    name: "把 RightPanel 的一处别名引用改回相对上跳",
+    file: F.rightPanel,
+    find: "from '@components/units';",
+    replace: "from '../../components/units';",
+    expect: ["ALIAS.noRelativeUp"],
+  },
+  {
+    name: "把 ipc.ts 的 npm 包 @tauri-apps/api/core 误写成别名 @tauri/api/core",
+    file: path.join(SRC, "ipc.ts"),
+    find: "from '@tauri-apps/api/core';",
+    replace: "from '@tauri/api/core';",
+    expect: ["ALIAS.pkgNotShadowed"],
+  },
+  {
+    name: "往 parts.tsx 塞一个 React Context（模拟绕过 zustand）",
+    file: F.parts,
+    find: "import type { ReactNode } from 'react';",
+    replace: "import type { ReactNode } from 'react';\nconst Ctx = createContext(null);\n",
+    expect: ["STATE.noReactContext"],
+  },
+  {
+    name: "把 store.ts 的 zustand 依赖换掉（模拟状态库不再是 zustand）",
+    file: path.join(SRC, "music", "store.ts"),
+    find: "from 'zustand';",
+    replace: "from 'zustand-gone';",
+    expect: ["STATE.zustandInUse"],
+  },
 ];
 
 // ── 主流程 ────────────────────────────────────────────────────────────────
@@ -736,7 +1075,7 @@ console.log(
   "公共组件抽离（components/units）结构断言" + (refute ? " · 反证轮" : ""),
 );
 console.log(`根目录：${ROOT}`);
-console.log(`断言总数：${A.length}（LAYOUT/PURITY/NAMING/CALLERS/KEEP）`);
+console.log(`断言总数：${A.length}（LAYOUT/PURITY/NAMING/CALLERS/KEEP/HOOKS/ALIAS/STATE）`);
 
 if (!refute) {
   const res = runAll(loadSources());
