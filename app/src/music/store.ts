@@ -19,6 +19,10 @@
  *
  * 持久化：播放历史、本地曲库、播放偏好（音质/音量/皮肤/播放模式）存 WebView localStorage。
  *
+ * 桌面歌词：独立窗口（label 固定 `desktop-lyrics`），主窗通过 `pushLyricsState`
+ * 按「状态跳变」推送（换歌 / 歌词就绪 / 播放态切换 / 拖动进度 / 开窗），
+ * 进度**不推** —— 歌词窗自己按 `startedAtMs` + 本地单调钟推进。详见 `pushLyricsState` 注释。
+ *
  * ## 为什么用 localStorage 而不是 Tauri Store（已实测，不是推测）
  * 参考实现用 tauri-plugin-store，理由是**桌面歌词独立窗口需跨进程共享**。
  * 2026-10-04 实测（本机双窗口探针，连跑两次，8/8 全绿）确认：
@@ -334,6 +338,18 @@ interface MusicState {
   loadingComments: boolean;
   commentTab: CommentTab;
 
+  // ---- 桌面歌词（独立窗口）----
+  /**
+   * 桌面歌词窗是否开着。
+   *
+   * 它是**主窗侧对窗口存在性的认知**，不是窗口自己上报的实时状态：
+   * 歌词窗右上角的关闭按钮直接调 Rust 的 `close_lyrics_window`（窗口的生死归主窗管），
+   * 不会回头改这个字段。所以用户从歌词窗内部关掉窗口后，这里会**短暂偏乐观**，
+   * 再点一次开关即自愈（幂等调用 + 重新置位）。要彻底消除这个偏差需要 Rust 侧
+   * 在窗口关闭时 emit 一个事件，那是改动冻结侧的事，本轮不做。
+   */
+  lyricsWindowOpen: boolean;
+
   // ---- UI ----
   queueOpen: boolean;
   expanded: boolean;
@@ -462,6 +478,36 @@ interface MusicState {
   setCommentTab: (t: CommentTab) => void;
   loadComments: (song: Song) => Promise<void>;
 
+  // 桌面歌词
+  /**
+   * 开关桌面歌词窗。
+   *
+   * 打开时**立即推一次状态**：窗口刚建好时还没有任何 payload，
+   * 不推的话它会一直停在「待播放」，直到下一次换歌/播放态变化才显示内容。
+   */
+  setLyricsWindowOpen: (open: boolean) => Promise<void>;
+  /**
+   * 把当前播放状态推给桌面歌词窗（换歌 / 歌词就绪 / 播放态变化 / 开窗时调用）。
+   *
+   * ## 推送判据：推"状态突变"，不推"连续量"
+   *
+   * 只有**用户能感知到的状态跳变**才推：换歌、歌词解析完、播放/暂停切换、拖动进度（去抖后）、开关窗口。
+   * 这些事件每秒最多几次，事件通道扛得住。
+   *
+   * ⚠️ **绝不在 `setProgress` 里推** —— 它由 `<audio>.timeupdate` 驱动，**每秒数次**。
+   * 那个频率下每条都要跨进程序列化 + emit，事件通道会被打爆，
+   * 表现出来是「主窗操作发涩、歌词窗反而卡」。歌词窗也不需要这么高频率：
+   * 它收到一次 payload 后按 `startedAtMs` + 本地单调钟自己往前走（见 DesktopLyrics
+   * 的「进度推进」段）。**加这条推送前先想清楚这一点，别顺手补上。**
+   *
+   * 同理，`seek`（拖动进度）走的是**去抖后**推一次，不逐次推 —— 理由同上，
+   * 详见 `seek` 实现处的注释。
+   *
+   * 无当前歌曲时**照样推**（`songId: null`）：不推的话歌词窗会一直显示上一首，
+   * 变成「主窗已停、桌面还挂着别人的歌词」。
+   */
+  pushLyricsState: () => Promise<void>;
+
   // UI
   setExpanded: (open: boolean) => void;
   /** 收起动画进行中：展开播放器据此加 `.is-closing` 播退场动画 */
@@ -541,6 +587,17 @@ export function registerAudioElement(el: HTMLAudioElement | null): void {
 
 /** 收起播放器的退场定时器。留着它才能在"退场途中又被点开"时取消关闭（见 setExpanded） */
 let closeExpandedTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * 拖动进度条后、真正推给歌词窗之前的去抖定时器。
+ *
+ * 为什么需要：展开播放器的进度条 `onChange` 直连 `seek`，拖动时每秒几十次；
+ * 不去抖就等于把 `setProgress` 那种频率从另一个入口灌进事件通道。
+ * 120ms 是"手还在动就别推、停下来就推一次"的取舍 —— 短到察觉不出延迟，
+ * 长到足以把一次拖动的几十次调用压成一次。
+ */
+const SEEK_PUSH_DEBOUNCE_MS = 120;
+let seekPushTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useMusicStore = create<MusicState>((set, get) => ({
   // ---- 播放 ----
@@ -623,6 +680,10 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   comments: null,
   loadingComments: false,
   commentTab: 'lyric',
+
+  // ---- 桌面歌词 ----
+  // 冷启动时窗口一定不存在（窗口不跨进程重启保留），所以初值 false 是事实而非猜测
+  lyricsWindowOpen: false,
 
   // ---- UI ----
   queueOpen: false,
@@ -777,6 +838,9 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     });
     // 歌词与 URL 获取并行（不阻塞播放）
     void get().loadLyrics(song);
+    // 换歌即刻推一次（此刻歌词多半还没到，歌词窗会先显示歌名/纯音乐提示，
+    // 歌词解析完后再由 loadLyrics 补推一次）。不推的话换歌后桌面会停留在上一首。
+    void get().pushLyricsState();
 
     let url = '';
     try {
@@ -809,6 +873,9 @@ export const useMusicStore = create<MusicState>((set, get) => ({
 
     isAutoSkipping = false;
     set({ playUrl: url, isPlaying: true });
+    // 「取到地址、真正开始播」是第二次状态跳变（上面那次推的时候还没在播）。
+    // 不推的话桌面歌词会停在那首歌的暂停态，直到用户手动暂停/播放一次才恢复。
+    void get().pushLyricsState();
     get().recordPlayHistory(song, opts?.fromHistory);
   },
 
@@ -818,7 +885,12 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     await get().playSong(song, songs, opts);
   },
 
-  togglePlay: () => set((s) => ({ isPlaying: !s.isPlaying })),
+  // 播放/暂停切换必须推：歌词窗收到 playing=false 才会真的停住走表，
+  // 否则暂停期间歌词会继续往前爬（这是最容易被当成"歌词乱跳"的故障）。
+  togglePlay: () => {
+    set((s) => ({ isPlaying: !s.isPlaying }));
+    void get().pushLyricsState();
+  },
 
   next: () => {
     const { queue, currentIndex, playMode } = get();
@@ -897,6 +969,19 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     // 只改 currentTime 则进度条与音频不同步。两件事放在同一处做，才不会被人只做一半。
     const a = audioEl;
     if (a) a.currentTime = ms / 1000;
+    // 拖动进度是**不连续跳变**：歌词窗靠自己走表，拖过之后它的基准就错了
+    // （会一直按旧位置往下算），所以必须重推一次对齐。
+    //
+    // ⚠️ 但这里**必须去抖**，不能一调就推：展开播放器的进度条是
+    // `onChange` 直连 seek（`ExpandedPlayer.tsx`），拖动过程中每秒能触发几十次 ——
+    // 那就是「setProgress 那种频率」换个入口又灌进来一遍，把事件通道打爆。
+    // 去抖后一次拖动只推一次（停手 120ms 后），既对齐了位置又压住了频率。
+    // 播放条那条路径本身有拖拽会话（松手才提交），经过这里也只剩一次。
+    if (seekPushTimer) clearTimeout(seekPushTimer);
+    seekPushTimer = setTimeout(() => {
+      seekPushTimer = null;
+      void get().pushLyricsState();
+    }, SEEK_PUSH_DEBOUNCE_MS);
   },
 
   setVolume: (v) => {
@@ -923,6 +1008,8 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       currentQuality: '',
       currentBitrate: 0,
     });
+    // 必须推一次空状态：否则桌面歌词会一直挂着刚停掉那首的歌词
+    void get().pushLyricsState();
   },
 
   cycleMode: () => {
@@ -955,6 +1042,8 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       // 期间又切歌了 → 放弃本次换档，避免把旧歌的地址盖到新歌上
       if (get().currentSong !== currentSong) return;
       set({ playUrl: url, resumeAtMs: progressMs, isPlaying: true });
+      // 换档后音频从 resumeAtMs 续播，播放位置对歌词窗来说是一次跳变 —— 重推对齐
+      void get().pushLyricsState();
     } catch {
       get().toast('切换音质失败，已保持原音质');
     }
@@ -992,6 +1081,20 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     savePrefs({ vinylCustomColor: color });
   },
 
+  /**
+   * 逐帧推进播放进度（由 `<audio>.timeupdate` 驱动，**每秒数次**）。
+   *
+   * ⚠️⚠️ **这里绝对不要加 `pushLyricsState()`** —— 请先读下面这段再改：
+   *
+   * 桌面歌词窗收到一次 payload 后，会按 `startedAtMs` + 自己的单调钟**继续往前走**，
+   * 所以它不需要主窗逐帧喂进度。真正的风险在另一头：`timeupdate` 是每秒数次的事件，
+   * 在这里推意味着每秒数次跨进程序列化 + emit，事件通道会被打满，症状是
+   * **主窗整体操作发涩、歌词窗反而卡顿**（一个为省事加的推送，同时毁掉两个窗口）。
+   *
+   * 「用户拖了进度条怎么办」不构成在这里推的理由 —— 拖动是**不连续跳变**，
+   * 已经在 `seek` 里推了一次（那里才是它该待的地方）。
+   * 需要桌面歌词跟着走的"状态跳变"清单，见 `pushLyricsState` 的注释。
+   */
   setProgress: (ms) => set({ progressMs: ms }),
   setDuration: (ms) => set({ durationMs: ms }),
 
@@ -1013,6 +1116,8 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     const nextQ = queue.filter((_, i) => i !== index);
     if (nextQ.length === 0) {
       set({ queue: [], currentSong: null, playUrl: '', isPlaying: false, currentIndex: 0 });
+      // 队列空了 = 没有当前歌曲了，桌面歌词要跟着清空（否则停在最后一首）
+      void get().pushLyricsState();
       return;
     }
     set({ queue: nextQ, currentIndex: Math.min(index, nextQ.length - 1) });
@@ -1021,7 +1126,11 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     void currentSong; // 保留引用，避免未使用告警
   },
 
-  clearQueue: () => set({ queue: [], currentSong: null, playUrl: '', isPlaying: false, currentIndex: 0 }),
+  clearQueue: () => {
+    set({ queue: [], currentSong: null, playUrl: '', isPlaying: false, currentIndex: 0 });
+    // 同上：清空队列后没有当前歌曲了，推一次空状态让桌面歌词归位
+    void get().pushLyricsState();
+  },
 
   setQueueOpen: (open) => set({ queueOpen: open }),
 
@@ -1599,6 +1708,53 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       set({ parsedLyrics: parseLrc(raw) });
     } catch {
       if (get().currentSong && songKey(get().currentSong as Song) === songKey(song)) set({ parsedLyrics: [] });
+    }
+    // 歌词是**异步**取回来的：playSong 那次推送发出时 lines 往往还是空的。
+    // 这里补推一次，歌词窗才真的显示出词。
+    await get().pushLyricsState();
+  },
+
+  // ================================================================ 桌面歌词
+
+  setLyricsWindowOpen: async (open) => {
+    // 先改状态再调命令：让 UI 立刻响应，不被 IPC 往返卡住。
+    // 失败时回滚 —— 否则会留下"开关显示已开、窗口却没起来"的假状态。
+    const prev = get().lyricsWindowOpen;
+    set({ lyricsWindowOpen: open });
+    try {
+      if (open) await ipc.openLyricsWindow();
+      else await ipc.closeLyricsWindow();
+    } catch (e) {
+      set({ lyricsWindowOpen: prev });
+      get().toast(`桌面歌词窗口${open ? '打开' : '关闭'}失败：${String(e)}`);
+      return;
+    }
+    // 开窗后立即推一次：新建的窗口手里没有任何状态，
+    // 不推它就停在「待播放」，要等下次换歌才显示内容。
+    if (open) await get().pushLyricsState();
+  },
+
+  pushLyricsState: async () => {
+    const { currentSong, parsedLyrics, isPlaying, progressMs, durationMs } = get();
+    // `songId` 用 `songKey`（provider:id）而不是裸 `song.id`：四个平台的 id 各自独立，
+    // 裸 id 跨平台会撞车，歌词窗就无法区分"换歌了"与"还是同一首"。
+    const payload: ipc.LyricsPushPayload = {
+      songId: currentSong ? songKey(currentSong) : null,
+      songName: currentSong?.name ?? '',
+      artist: currentSong?.artist ?? '',
+      // 契约要的是**毫秒**，而 `parseLrc` 产出的 `time` 是**秒** —— 这里必须换算，
+    // 漏了会让整首歌的歌词都挤在开头几秒内（症状：歌词瞬间刷完然后不动）。
+      lines: parsedLyrics.map((l) => ({ ms: Math.round(l.time * 1000), text: l.text })),
+      playing: isPlaying,
+      startedAtMs: progressMs,
+      durationMs,
+      sentAtEpoch: Date.now(),
+    };
+    try {
+      // 窗口不存在时 Rust 侧静默成功，所以这里不需要先判断开没开
+      await ipc.lyricsPush(payload);
+    } catch {
+      // 推失败不能影响播放：桌面歌词是旁路能力，窗口侧的问题不该阻断主流程
     }
   },
 

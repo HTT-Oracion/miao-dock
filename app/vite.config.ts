@@ -35,5 +35,16 @@ export default defineConfig({
     target: "safari15",
     minify: "esbuild",
     sourcemap: false,
+    rollupOptions: {
+      // 多入口：桌面歌词是**独立窗口**，有自己的 HTML（lyrics.html）。
+      // 单入口时它无法被单独加载 —— 只能靠主页面里判 URL 再切换，那是"在一个窗口里假装两个窗口"，
+      // 既做不到置顶，也做不到跟随播放。
+      // ⚠️ 两个入口必须落在**同一 origin**（同一 dist 目录）—— 跨 origin 会让 localStorage 隔离，
+      // 歌词窗就读不到主窗写的偏好（实测结论见 spec-notes D-47）。
+      input: {
+        main: new URL("./index.html", import.meta.url).pathname,
+        lyrics: new URL("./lyrics.html", import.meta.url).pathname,
+      },
+    },
   },
 });

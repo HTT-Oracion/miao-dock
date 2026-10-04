@@ -276,6 +276,54 @@ export const verifyLocalCovers = (songs: { id: string; path: string; cover_path:
 export const deleteCoverCacheFiles = (paths: string[]) =>
   invoke<void>('delete_cover_cache_files', { paths });
 
+// ------------------------------------------------------------------ 桌面歌词窗口
+
+/**
+ * 主窗 → 歌词窗的推送载荷（**跨窗口冻结契约**）。
+ *
+ * ## 为什么类型定义在这里而不是歌词窗那边
+ *
+ * 歌词窗（`screens/lyrics/`）是**已完成的独立窗口**，本轮只消费、不改它；
+ * 而这一层是"主窗发出侧"的唯一出口，类型与 `invoke` 写在一起才读得懂
+ * 「这条命令到底带什么」。两侧字段名必须逐字一致 —— 改名等于两个窗口讲两种话，
+ * 症状是「推了但什么都不显示」，且极难查。
+ */
+export interface LyricsPushLine {
+  /** 该行的**起始**毫秒（不是结束），升序 */
+  ms: number;
+  text: string;
+}
+
+export interface LyricsPushPayload {
+  /** null = 无当前歌曲（**必须推**，否则歌词窗会一直显示上一首） */
+  songId: string | null;
+  songName: string;
+  artist: string;
+  /** 已解析歌词行；空数组 = 无歌词 */
+  lines: LyricsPushLine[];
+  playing: boolean;
+  /**
+   * 推送时的播放进度（毫秒）。歌词窗以它为基准 + 本地计时自己往前走，
+   * 之后不再指望主窗推进度（`timeupdate` 每秒数次，事件扛不住这个频率）。
+   */
+  startedAtMs: number;
+  durationMs: number;
+  /** 推送时的墙上时钟（`Date.now()`），供歌词窗校正两窗时钟漂移 */
+  sentAtEpoch: number;
+}
+
+/** 打开桌面歌词窗口；已存在则聚焦（幂等） */
+export const openLyricsWindow = () => invoke<void>('open_lyrics_window');
+
+/** 关闭桌面歌词窗口；不存在时静默成功（幂等） */
+export const closeLyricsWindow = () => invoke<void>('close_lyrics_window');
+
+/** 桌面歌词窗当前是否开着（只答"开没开"，不含锁定态） */
+export const lyricsWindowOpen = () => invoke<boolean>('lyrics_window_open');
+
+/** 主窗 → 歌词窗推状态；窗口不存在时 Rust 侧静默成功，不报错 */
+export const lyricsPush = (payload: LyricsPushPayload) => invoke<void>('lyrics_push', { payload });
+
 // ------------------------------------------------------------------ 音频代理
 
 /** 获取音频代理端口（未启动则启动），返回 127.0.0.1 上的监听端口 */

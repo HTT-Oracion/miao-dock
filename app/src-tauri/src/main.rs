@@ -8,6 +8,7 @@
 
 mod capture;
 mod commands;
+mod lyrics_window;
 mod music;
 mod selftest;
 mod service;
@@ -66,6 +67,12 @@ fn main() {
             commands::service_status,
             commands::service_restart,
             commands::quit_app,
+            // ── 桌面歌词（独立窗口）──
+            lyrics_window::open_lyrics_window,
+            lyrics_window::close_lyrics_window,
+            lyrics_window::lyrics_window_open,
+            lyrics_window::save_lyrics_window_state,
+            lyrics_window::lyrics_push,
             commands::hide_window,
             commands::show_window,
             commands::set_theme,

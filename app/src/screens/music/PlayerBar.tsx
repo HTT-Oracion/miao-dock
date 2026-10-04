@@ -1,4 +1,14 @@
-import { ListMusic, Pause, Play, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
+import {
+  ListMusic,
+  MonitorSpeaker,
+  Pause,
+  Play,
+  SkipBack,
+  SkipForward,
+  Volume2,
+  VolumeX,
+  X,
+} from 'lucide-react';
 import { useState } from 'react';
 import { QUALITY_OPTIONS } from '@music/player-options';
 import { fmtTime, qualityLabel, useMusicStore } from '@music/store';
@@ -16,6 +26,11 @@ import { IconButton, PlayModeButton, Select } from '@components/units';
  *
  * hidden：播放队列为空时整条不渲染。判断写成 prop（而不是让调用方 `{x > 0 ? <PlayerBar/> : null}`）
  * 是为了把「什么时候该出现」这条规则留在组件自己身上，避免以后又多一处调用点各自判断。
+ *
+ * 控制组里的桌面歌词开关是**主窗侧唯一的窗口入口**（设置页那一项与它共用同一个
+ * store action，两处不会各持一份状态）。窗口的生死归主窗管：歌词窗自己的关闭按钮
+ * 调的是 Rust 的 `close_lyrics_window`，不直接改 store，所以这个开关是「意图」的表达，
+ * 详见 store 里 `lyricsWindowOpen` 的注释。
  */
 export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hidden?: boolean }) {
   const currentSong = useMusicStore((s) => s.currentSong);
@@ -28,6 +43,7 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
   const playbackQuality = useMusicStore((s) => s.playbackQuality);
   const currentQuality = useMusicStore((s) => s.currentQuality);
   const currentBitrate = useMusicStore((s) => s.currentBitrate);
+  const lyricsWindowOpen = useMusicStore((s) => s.lyricsWindowOpen);
 
   const togglePlay = useMusicStore((s) => s.togglePlay);
   const next = useMusicStore((s) => s.next);
@@ -40,6 +56,7 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
   const setPlaybackQuality = useMusicStore((s) => s.setPlaybackQuality);
   const setQueueOpen = useMusicStore((s) => s.setQueueOpen);
   const setExpanded = useMusicStore((s) => s.setExpanded);
+  const setLyricsWindowOpen = useMusicStore((s) => s.setLyricsWindowOpen);
 
   /**
    * 进度条的「拖拽会话」状态：非 null 表示用户正在拖/敲键盘，界面显示 dragMs；null 表示跟随 store 的实时进度。
@@ -92,6 +109,16 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
           <PlayModeButton mode={playMode} onCycle={() => cycleMode()} />
           <IconButton title="播放队列" onClick={() => setQueueOpen(true)}>
             <ListMusic size={16} />
+          </IconButton>
+          {/* 桌面歌词：独立置顶小窗。title 随状态切换，让同一个按钮的「下一步」始终明确 ——
+              开着时看到「关闭桌面歌词」比看到「桌面歌词」更能说明再点一下会发生什么。
+              active 走 IconButton 自带的 is-on，与旁边按钮的激活态同一套视觉。 */}
+          <IconButton
+            title={lyricsWindowOpen ? '关闭桌面歌词' : '桌面歌词'}
+            active={lyricsWindowOpen}
+            onClick={() => void setLyricsWindowOpen(!lyricsWindowOpen)}
+          >
+            <MonitorSpeaker size={16} />
           </IconButton>
           {/* 「关闭播放」= 停下当前这首（保留队列），与上面的「播放队列」（清空列表）是两件事 */}
           <IconButton title="关闭播放" onClick={() => closePlayback()}>
