@@ -3,7 +3,7 @@ import { apiPost, errorText, isApiError, openPath, quitApp, serviceRestart } fro
 import { useLibrary, useQuitRequest, useService, useTasks, useToasts } from './hooks';
 import { initialMode, persistMode, useThemeTokens } from './theme/apply';
 import type { ThemeMode } from './theme/tokens';
-import { Badge, Btn, Pill } from './components/atoms';
+import { Badge, Btn, Pill } from './components/units';
 import { QuitConfirm } from './components/QuitConfirm';
 import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';

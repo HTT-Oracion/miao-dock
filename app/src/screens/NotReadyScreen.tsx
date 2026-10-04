@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ServiceStatus } from '../ipc';
-import { Btn } from '../components/atoms';
+import { Btn } from '../components/units';
 
 /**
  * L1–L4 启动分层（《02》§2.2）。

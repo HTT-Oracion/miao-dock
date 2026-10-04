@@ -3,7 +3,7 @@ import type { WheelEvent } from 'react';
 import { capsOf } from '../../music/platform';
 import { coverProxyUrl, useMusicStore } from '../../music/store';
 import type { Playlist } from '../../music/types';
-import { Empty } from './shared';
+import { Empty } from '../../components/units';
 
 /**
  * 官方榜单区。两种形态由能力矩阵决定（不在 UI 里写 if(provider===...)）：

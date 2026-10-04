@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import type { ServiceState } from '../ipc';
 import { SHELL, SIDEBAR } from '../theme/tokens';
-import { Dot } from './atoms';
+import { Dot } from './units';
 import logo from '../assets/brand/miao-logo.svg';
 import { APP_LABEL, stateView, type AppId, type Screen } from '../nav';
 import { Languages, Music4, Settings } from 'lucide-react';

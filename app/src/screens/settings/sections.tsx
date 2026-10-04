@@ -4,25 +4,12 @@ import { getVersion } from '@tauri-apps/api/app';
 import type { ServiceStatus } from '../../ipc';
 import type { ThemeMode } from '../../theme/tokens';
 import { stateView } from '../../nav';
-import { Dot } from '../../components/atoms';
+import { ColorPicker, Dot, Range, Select, Swatches, Switch } from '../../components/units';
+import { CtlNote, GroupNote, PendingRow, ReadOnly, Row, RowNote, SubTitle } from './parts';
 import { SKINS, QUALITY_OPTIONS, LYRICS_SIZE, LYRICS_COLORS } from '../../music/player-options';
 import { useMusicStore } from '../../music/store';
 import { ABOUT, GENERAL, MEDIA, RESOURCE, TRANSLATE } from './catalog';
 import type { SettingGroup, SettingItem } from './catalog';
-import {
-  ColorPicker,
-  CtlNote,
-  GroupNote,
-  PendingRow,
-  Range,
-  ReadOnly,
-  Row,
-  RowNote,
-  Select,
-  SubTitle,
-  Swatches,
-  Switch,
-} from './parts';
 import { SpecCheckBlock, useSpecCheck } from './SpecCheck';
 
 const STATUS_TEXT: Record<ServiceStatus['state'], string> = {

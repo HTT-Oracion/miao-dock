@@ -1,5 +1,14 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { QUEUE_EMPTY } from '../theme/tokens';
+import { QUEUE_EMPTY } from '../../theme/tokens';
+
+/*
+ * 原子件（通用单元）—— 最早沉淀下来的一批"界面最小积木"。
+ *
+ * 原文件在 `components/atoms.tsx`，2026-10-04 按《09》§2.2 的抽离规则移入 `units/`：
+ * 判据是「**不依赖业务数据层**」（不 import store / ipc / types / platform），
+ * 与"有多少个调用点"无关 —— 后者是收益，前者才是归属。
+ * 本文件不 import 任何业务模块，改动时请守住这一条（有断言盯着）。
+ */
 
 // ------------------------------------------------------------------ 状态点
 
@@ -71,6 +80,9 @@ export function Btn({
  * 四道同心环（lavender / blue 交替）+ 五芒星（pink）+ 中心星核（yellow），
  * 底轨用 `line-soft`；四色全部取自既有令牌，**不新增令牌**。
  * 旋转 8s linear infinite；`prefers-reduced-motion` 下由 base.css 统一降级为静态。
+ *
+ * 它为什么算"通用单元"而不是业务组件：只读令牌常量、不碰任何业务数据
+ * （用途是队列空态，但组件本身对队列一无所知），符合《09》§2.2 的判据。
  */
 export function MagicCircle() {
   const s = QUEUE_EMPTY.magicCircle;

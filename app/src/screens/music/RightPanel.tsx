@@ -3,8 +3,8 @@ import { PLATFORMS, capsOf, providerLabel } from '../../music/platform';
 import { coverProxyUrl, songKey, useMusicStore } from '../../music/store';
 import type { Song } from '../../music/types';
 import { Charts } from './Charts';
-import { VirtualList } from './VirtualList';
-import { Cover, Empty, IconButton, SongRow } from './shared';
+import { Empty, IconButton, VirtualList } from '../../components/units';
+import { Cover, SongRow } from './shared';
 
 /**
  * 右栏「发现」。

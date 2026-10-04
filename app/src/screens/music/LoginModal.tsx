@@ -1,4 +1,5 @@
 import { LoaderCircle, X } from 'lucide-react';
+import { IconButton } from '../../components/units';
 import { providerLabel } from '../../music/platform';
 import { useMusicStore } from '../../music/store';
 
@@ -21,9 +22,9 @@ export function LoginModal() {
       <div className="music-login" onClick={(e) => e.stopPropagation()}>
         <div className="music-login-hd">
           <span className="music-card-title">登录 {providerLabel(loginProvider)}</span>
-          <button type="button" className="music-cbtn" title="关闭" onClick={closeLogin}>
+          <IconButton title="关闭" onClick={closeLogin}>
             <X size={15} />
-          </button>
+          </IconButton>
         </div>
 
         <div className="music-login-body">

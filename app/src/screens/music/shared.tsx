@@ -1,24 +1,15 @@
-import { useEffect } from 'react';
-import type { MouseEvent, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { fmtTime } from '../../music/store';
 import { providerLabel } from '../../music/platform';
 import type { Song } from '../../music/types';
 
 /**
- * 音乐屏共享小组件 —— 只放**多处复用**的东西；一次性结构一律写在各自文件里，
- * 免得这里长成一个什么都塞的杂物间。
+ * 音乐屏共享小组件 —— 只放**音乐语义**的东西。
+ *
+ * 分界线（《09》§2.2）：凡是与 `Song` / 平台概念绑定的，留在这里；
+ * 与音乐无关的通用件（`IconButton` / `Empty` / `useEsc`）已移到
+ * `components/units/`，需要时从那里引 —— 不要让"音乐屏共享件"重新长成杂物间。
  */
-
-/** Esc 关闭某个浮层（弹窗/菜单各自挂一个，互不干扰） */
-export function useEsc(onEsc: () => void) {
-  useEffect(() => {
-    const fn = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onEsc();
-    };
-    window.addEventListener('keydown', fn);
-    return () => window.removeEventListener('keydown', fn);
-  }, [onEsc]);
-}
 
 /**
  * 相对时间（播放历史时间线）。
@@ -55,57 +46,8 @@ export function Cover({ url, className }: { url: string; className?: string }) {
   );
 }
 
-/** 空态 / 提示（is-inline 用于夹在内容流里的短提示，不吃 flex:1） */
-export function Empty({
-  children,
-  bad,
-  inline,
-}: {
-  children: ReactNode;
-  bad?: boolean;
-  inline?: boolean;
-}) {
-  const cls = ['music-empty', bad ? 'is-bad' : '', inline ? 'is-inline' : ''].filter(Boolean).join(' ');
-  return <div className={cls}>{children}</div>;
-}
-
 /**
- * 圆形图标按钮（播放条、展开播放器、行内操作共用一套热区）。
- * onClick 收事件对象：行内的操作按钮需要 stopPropagation，避免顺带触发整行点击；
- * primary 给播放/暂停这个实心主按钮用。
- */
-export function IconButton({
-  title,
-  onClick,
-  disabled,
-  active,
-  primary,
-  children,
-}: {
-  title: string;
-  onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
-  disabled?: boolean;
-  active?: boolean;
-  primary?: boolean;
-  children: ReactNode;
-}) {
-  const cls = ['music-cbtn', primary ? 'main' : '', active ? 'is-on' : ''].filter(Boolean).join(' ');
-  return (
-    <button
-      type="button"
-      className={cls}
-      title={title}
-      aria-label={title}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
-}
-
-/**
- * 通用歌曲行。
+ * 通用歌曲行（音乐语义 —— 参数是 `Song`，所以留在这里而不是 units）。
  * leading 给「序号 / 平台来源点」；meta 覆盖副标题（默认歌手）；actions 放右侧操作按钮，
  * 由调用方在小按钮上自行 stopPropagation —— 这里不替调用方假设哪些点击要冒泡。
  */

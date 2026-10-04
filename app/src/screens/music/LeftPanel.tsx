@@ -4,8 +4,8 @@ import { coverProxyUrl, songKey, useMusicStore } from '../../music/store';
 import type { LeftView } from '../../music/store';
 import { HistoryView } from './HistoryView';
 import { LocalView } from './LocalView';
-import { VirtualList } from './VirtualList';
-import { Cover, Empty, SongRow } from './shared';
+import { Empty, VirtualList } from '../../components/units';
+import { Cover, SongRow } from './shared';
 
 const TABS: { id: LeftView; label: string }[] = [
   { id: 'playlists', label: '我的歌单' },

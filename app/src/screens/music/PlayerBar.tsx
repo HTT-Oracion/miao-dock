@@ -1,6 +1,6 @@
 import { ListMusic, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Volume2 } from 'lucide-react';
 import { fmtTime, qualityLabel, useMusicStore } from '../../music/store';
-import { IconButton } from './shared';
+import { IconButton } from '../../components/units';
 
 /**
  * 底部播放条。

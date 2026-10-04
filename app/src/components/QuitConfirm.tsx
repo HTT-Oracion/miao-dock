@@ -1,4 +1,4 @@
-import { Btn } from './atoms';
+import { Btn } from './units';
 
 /**
  * 退出二次确认层（契约《02》§2.1）。

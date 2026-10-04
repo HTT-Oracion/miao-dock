@@ -1064,27 +1064,36 @@
   gap: 8px;
 }
 
-/* ---- 设置页控件原语（③ 播放·媒体 用；几何与 .set-ro 同高，一行里不打架）----
- *
- * 外观一律自绘，不用系统原生外观。理由不是审美偏好：原生 select / range 的高度、
- * 圆角、箭头形状、拇指尺寸都由系统（且随系统版本）决定，而设置页右列是 24px 的行内控件
- * —— 系统控件放进这一行，会与同行的 .set-ro / .switch 凑出三种高度、两套圆角、两套配色，
- * 读起来像"别的应用塞进来的控件"。所有几何与颜色只来自设计令牌，
- * 深色模式因此自动跟随，不需要第二套样式。
- *
- * 下拉的行为（键盘、typeahead、读屏、焦点）不由这里实现 —— 那是 Radix 的事，
- * 见 `parts.tsx`；本节只描述它长什么样。
- */
+/* ======================================================== 公共组件（components/units）
+
+   本分区是 `app/src/components/units/` 各单元的**唯一样式来源**：类名一律 `ui-` 前缀，
+   只依赖设计令牌 —— 于是深色模式自动跟随，不需要第二套样式。
+   规则与判据见《09-技术方案-ver2.0-最终版》§2.2；`npm run check:units` 会核查命名与依赖。
+
+   外观一律自绘，不用系统原生外观：原生 select / range 的高度、圆角、箭头形状、拇指尺寸
+   都由系统（且随系统版本）决定，塞进行内 24px 的控件位会与同行的 .set-ro / .switch
+   凑出三种高度、两套圆角、两套配色。下拉的行为（键盘、typeahead、读屏、焦点）不在 CSS 里
+   —— 那是 Radix 的事，见 `units/Select.tsx`；这里只描述它长什么样。
+
+   刻意留在别处的两类（样式必须贴着上下文才读得懂，故不随组件搬过来）：
+   · `.music-exp .ui-cbtn` / `.music-exp .ui-empty` —— 展开播放器的深色皮肤覆盖；
+   · `.ui-vlist.is-drawer` —— 队列抽屉的行容器留白。 */
+
+/* ---- ① 下拉（Select）----
+ * 触发按钮与 .set-ro 同高 24、同圆角。min-width 132px 是**设置页右列**的取值：
+ * 别处需要不同宽度时由调用方传 className 覆盖，不要改这里（会连带动设置页）。
+ * 文本与箭头用 flex 两端对齐，于是选项文字长短不同时箭头仍钉在同一列
+ * —— 原生 select 做不到（它的箭头位置由系统画，宽度变化时会跟着文字跑）。 */
 
 /*
- * 触发按钮 —— 类名仍是 .set-select：与 .set-ro 同高 24、同圆角，
+ * 触发按钮 —— 类名仍是 .ui-select：与 .set-ro 同高 24、同圆角，
  * min-width 让三个下拉的左边缘对齐成一条。
  *
  * 文本与箭头用 flex 两端对齐（`justify-content: space-between`），
  * 于是选项文字长短不同时箭头仍钉在同一列 —— 这是原生 select 做不到的
  * （它的箭头位置由系统画，宽度变化时会跟着文字跑）。
  */
-.set-select {
+.ui-select {
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
@@ -1103,29 +1112,29 @@
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 /* hover 走 surface-2（与 .btn-ghost 同一语汇）；pink 只留给"打开 / 聚焦" ——
-   焦点用「pink 边框 + pink-soft ring」，与 .set-swatch.is-on 同一套形状语汇，
+   焦点用「pink 边框 + pink-soft ring」，与 .ui-swatch.is-on 同一套形状语汇，
    于是"被选中"和"被聚焦"在全页只表达成一种样子 */
-.set-select:hover { background: var(--md-surface-2); }
-.set-select:focus { outline: none; }
-.set-select:focus-visible,
-.set-select[data-state='open'] {
+.ui-select:hover { background: var(--md-surface-2); }
+.ui-select:focus { outline: none; }
+.ui-select:focus-visible,
+.ui-select[data-state='open'] {
   border-color: var(--md-pink);
   box-shadow: 0 0 0 2px var(--md-pink-soft);
 }
 /* 箭头随展开翻转 —— 打开的方向要看得出来，否则点了没点的区别只剩边框颜色 */
-.set-select-ico {
+.ui-select-ico {
   display: inline-flex;
   color: var(--md-muted);
   transition: transform 0.15s;
 }
-.set-select[data-state='open'] .set-select-ico { transform: rotate(180deg); }
+.ui-select[data-state='open'] .ui-select-ico { transform: rotate(180deg); }
 
 /*
  * 选项弹层：走 Portal 挂到 body，所以这里的变量解析仍取自 :root（apply.ts 把令牌
  * 写在 documentElement 上），深色模式无需另写一套。
  * 浮层语汇与 .toast / .music-skin-picker 一致：surface 底 + line 描边 + 轻阴影。
  */
-.set-select-menu {
+.ui-select-menu {
   z-index: 60; /* 高于页面内容与 toast(50)，低于模态层(80+)：菜单不该盖住确认对话框 */
   min-width: var(--radix-select-trigger-width); /* Radix 注入：与触发按钮同宽 */
   padding: 4px;
@@ -1143,7 +1152,7 @@
  * 单个选项。左侧 22px 是对勾位 —— 选中的项才渲染 indicator，
  * 靠这段固定的左内边距占位，勾出现/消失时选项文字不会左右跳。
  */
-.set-select-item {
+.ui-select-item {
   position: relative;
   display: flex;
   align-items: center;
@@ -1156,9 +1165,9 @@
 }
 /* data-highlighted 由 Radix 给（鼠标悬停与键盘 ↑↓ 是同一个状态）——
    自己写 :hover 会让键盘操作时没有高亮 */
-.set-select-item[data-highlighted] { background: var(--md-surface-2); }
-.set-select-item[data-state='checked'] { color: var(--md-pink); }
-.set-select-ok {
+.ui-select-item[data-highlighted] { background: var(--md-surface-2); }
+.ui-select-item[data-state='checked'] { color: var(--md-pink); }
+.ui-select-ok {
   position: absolute;
   left: 6px;
   display: inline-flex;
@@ -1169,7 +1178,7 @@
  * 滑杆：轨道 5px / 圆角 3 / 11×11 粉圆拇指 —— 与音乐屏的 .music-prog-bar、.music-vol
  * **逐值一致**。同一个应用里不该出现两种滑条，所以几何直接沿用，不另起一套。
  *
- * 唯一多出来的是「已填充」（--set-range-fill 由组件按 value 注入）：
+ * 唯一多出来的是「已填充」（--ui-range-fill 由组件按 value 注入）：
  * 音乐屏的滑条自带时间语义（左右两端就是曲子的首尾，位置一眼可读），
  * 而设置页的滑条只是"在一个区间里取值"，没有端点作参照 ——
  * 光看右侧数字读不出"现在偏哪边"，所以补一段底色。
@@ -1177,7 +1186,7 @@
  *
  * input 高度给 12 而不是轨道那 5：拇指 11px 比轨道高，容器太扁会把拇指裁掉。
  */
-.set-range {
+.ui-range {
   -webkit-appearance: none;
   appearance: none;
   width: 116px;
@@ -1186,16 +1195,16 @@
   accent-color: var(--md-pink); /* 自绘未生效时的兜底，不是主样式 */
   cursor: pointer;
 }
-.set-range::-webkit-slider-runnable-track {
+.ui-range::-webkit-slider-runnable-track {
   height: 5px;
   border-radius: 3px;
   background: linear-gradient(
     to right,
-    var(--md-pink-soft) 0 var(--set-range-fill, 0%),
-    var(--md-line) var(--set-range-fill, 0%) 100%
+    var(--md-pink-soft) 0 var(--ui-range-fill, 0%),
+    var(--md-line) var(--ui-range-fill, 0%) 100%
   );
 }
-.set-range::-webkit-slider-thumb {
+.ui-range::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 11px;
@@ -1205,11 +1214,11 @@
   background: var(--md-pink);
   transition: transform 0.12s;
 }
-.set-range:hover::-webkit-slider-thumb { transform: scale(1.1); }
-.set-range:active::-webkit-slider-thumb { transform: scale(1.18); }
-.set-range:disabled { cursor: default; opacity: 0.45; }
-.set-range:disabled::-webkit-slider-thumb { background: var(--md-muted); }
-.set-range-val {
+.ui-range:hover::-webkit-slider-thumb { transform: scale(1.1); }
+.ui-range:active::-webkit-slider-thumb { transform: scale(1.18); }
+.ui-range:disabled { cursor: default; opacity: 0.45; }
+.ui-range:disabled::-webkit-slider-thumb { background: var(--md-muted); }
+.ui-range-val {
   min-width: 38px;
   font-family: var(--md-font-numeric);
   font-size: 11px;
@@ -1218,8 +1227,8 @@
   text-align: right;
 }
 /* 预设色点：选中态用 ring 而不是换颜色 —— 色点本身的颜色就是信息，不能再被选中态覆盖 */
-.set-swatches { display: flex; align-items: center; gap: 5px; }
-.set-swatch {
+.ui-swatches { display: flex; align-items: center; gap: 5px; }
+.ui-swatch {
   width: 16px;
   height: 16px;
   padding: 0;
@@ -1228,10 +1237,10 @@
   cursor: pointer;
   transition: transform 0.12s, box-shadow 0.12s;
 }
-.set-swatch:hover { transform: scale(1.12); }
-.set-swatch.is-on { box-shadow: 0 0 0 2px var(--md-pink-soft), 0 0 0 1px var(--md-pink); }
+.ui-swatch:hover { transform: scale(1.12); }
+.ui-swatch.is-on { box-shadow: 0 0 0 2px var(--md-pink-soft), 0 0 0 1px var(--md-pink); }
 /* 取色器：原生 input[type=color] 各平台外观差异大，统一压成 24×24 方块 */
-.set-color {
+.ui-color {
   width: 24px;
   height: 24px;
   padding: 0;
@@ -1241,15 +1250,63 @@
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-.set-color:hover:not(:disabled) { border-color: var(--md-pink); }
-.set-color:focus-visible {
+.ui-color:hover:not(:disabled) { border-color: var(--md-pink); }
+.ui-color:focus-visible {
   outline: none;
   border-color: var(--md-pink);
   box-shadow: 0 0 0 2px var(--md-pink-soft);
 }
-.set-color:disabled { cursor: default; opacity: 0.45; }
-.set-color::-webkit-color-swatch-wrapper { padding: 2px; }
-.set-color::-webkit-color-swatch { border: none; border-radius: 3px; }
+.ui-color:disabled { cursor: default; opacity: 0.45; }
+.ui-color::-webkit-color-swatch-wrapper { padding: 2px; }
+.ui-color::-webkit-color-swatch { border: none; border-radius: 3px; }
+/* ---- ② 图标按钮（IconButton）---- */
+.ui-cbtn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--md-ink-2);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ui-cbtn:hover { background: var(--md-surface-2); }
+.ui-cbtn.main { background: var(--md-pink); color: #fff; width: 32px; height: 32px; }
+.ui-cbtn.main:hover { filter: brightness(1.05); }
+.ui-cbtn.is-on { color: var(--md-pink); }
+.ui-cbtn:disabled { opacity: 0.45; cursor: default; }
+
+/* ---- ③ 空态 / 短提示（Empty）---- */
+/* 空态 / 错误 / 行内提示 */
+.ui-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--md-muted);
+  text-align: center;
+  padding: 20px;
+  line-height: 1.6;
+}
+.ui-empty.is-bad { color: var(--md-error); }
+.ui-empty.is-inline { flex: 0 0 auto; padding: 12px; }
+
+/* ---- ④ 定高虚拟列表（VirtualList）---- */
+/* 定高虚拟列表（components/units/VirtualList.tsx）：只渲染视口内的行。
+   行高/间距默认与歌曲行一致（52 + 2，可经 props 覆盖），改用绝对定位复现 gap 的行奏，
+   因此不能再依赖 flex gap —— 撑高交给 .ui-vlist-inner。 */
+.ui-vlist {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  position: relative;
+}
+.ui-vlist-inner { position: relative; width: 100%; }
+.ui-vlist-item { position: absolute; left: 0; right: 0; }
 /* 控件旁的小字注解（例如「仅在固定颜色时生效」） */
 .set-ctl-note { font-size: 10.5px; color: var(--md-muted); }
 
@@ -1738,20 +1795,6 @@
 .music-btn.out { background: transparent; border: 1px solid var(--md-pink); color: var(--md-pink); }
 .music-btn:disabled { opacity: 0.5; cursor: default; }
 
-/* 空态 / 错误 / 行内提示 */
-.music-empty {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  color: var(--md-muted);
-  text-align: center;
-  padding: 20px;
-  line-height: 1.6;
-}
-.music-empty.is-bad { color: var(--md-error); }
-.music-empty.is-inline { flex: 0 0 auto; padding: 12px; }
 .music-hint { flex: 0 0 auto; font-size: 10.5px; color: var(--md-muted); padding: 0 8px 6px; }
 .music-inline-err { flex: 0 0 auto; font-size: 11px; color: var(--md-error); padding: 2px 2px 6px; }
 .music-more { flex: 0 0 auto; text-align: center; font-size: 10.5px; color: var(--md-muted); padding: 8px; }
@@ -1836,19 +1879,8 @@
   flex: 1;
   min-height: 0;
 }
-/* 定高虚拟列表（screens/music/VirtualList.tsx）：只渲染视口内的行。
-   行高/间距与 .music-row 一致（52 + 2），改用绝对定位复现 gap 的行奏，
-   因此不能再依赖 flex gap —— 撑高交给 .music-vlist-inner。 */
-.music-vlist {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  position: relative;
-}
-.music-vlist-inner { position: relative; width: 100%; }
-.music-vlist-item { position: absolute; left: 0; right: 0; }
 /* 队列抽屉的行容器自带上下留白（等价原 .music-drawer-list 的 padding: 6px 0） */
-.music-vlist.is-drawer { padding: 6px 0; }
+.ui-vlist.is-drawer { padding: 6px 0; }
 .music-row {
   display: flex;
   align-items: center;
@@ -2036,25 +2068,6 @@
   align-items: center;
   gap: 4px;
 }
-.music-cbtn {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: none;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--md-ink-2);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.music-cbtn:hover { background: var(--md-surface-2); }
-.music-cbtn.main { background: var(--md-pink); color: #fff; width: 32px; height: 32px; }
-.music-cbtn.main:hover { filter: brightness(1.05); }
-.music-cbtn.is-on { color: var(--md-pink); }
-.music-cbtn:disabled { opacity: 0.45; cursor: default; }
-
 /* 音量（右侧） */
 .music-vol {
   display: flex;
@@ -2317,13 +2330,13 @@
   z-index: 3;
 }
 /* 深色皮肤下控制按钮取白色；浅色皮肤（.is-light）再翻回深色 */
-.music-exp .music-cbtn { color: rgba(255, 255, 255, 0.9); }
-.music-exp .music-cbtn:hover { background: rgba(255, 255, 255, 0.16); }
-.music-exp .music-cbtn.main { color: #fff; }
-.music-exp .music-cbtn.main:hover { background: var(--md-pink); }
-.music-exp.is-light .music-cbtn { color: var(--md-ink-2); }
-.music-exp.is-light .music-cbtn:hover { background: rgba(59, 51, 82, 0.1); }
-.music-exp.is-light .music-cbtn.main { color: #fff; }
+.music-exp .ui-cbtn { color: rgba(255, 255, 255, 0.9); }
+.music-exp .ui-cbtn:hover { background: rgba(255, 255, 255, 0.16); }
+.music-exp .ui-cbtn.main { color: #fff; }
+.music-exp .ui-cbtn.main:hover { background: var(--md-pink); }
+.music-exp.is-light .ui-cbtn { color: var(--md-ink-2); }
+.music-exp.is-light .ui-cbtn:hover { background: rgba(59, 51, 82, 0.1); }
+.music-exp.is-light .ui-cbtn.main { color: #fff; }
 
 .music-exp-body {
   flex: 1;
@@ -2460,8 +2473,8 @@
 }
 .music-exp.is-light .music-lyr-line { color: var(--md-ink); }
 
-.music-exp .music-empty { color: rgba(255, 255, 255, 0.5); }
-.music-exp.is-light .music-empty { color: var(--md-muted); }
+.music-exp .ui-empty { color: rgba(255, 255, 255, 0.5); }
+.music-exp.is-light .ui-empty { color: var(--md-muted); }
 
 /* 评论列表 */
 .music-exp-comments {

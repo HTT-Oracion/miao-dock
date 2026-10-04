@@ -4,7 +4,7 @@ import { capsOf } from '../../music/platform';
 import { SKINS } from '../../music/player-options';
 import { coverProxyUrl, fmtTime, lyricIndexAt, songKey, useMusicStore } from '../../music/store';
 import type { MusicComment } from '../../music/types';
-import { Empty, IconButton } from './shared';
+import { Empty, IconButton } from '../../components/units';
 import { useCoverColor } from './useCoverColor';
 
 /**

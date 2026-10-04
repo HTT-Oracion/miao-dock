@@ -1,8 +1,8 @@
 import { open } from '@tauri-apps/plugin-dialog';
 import { FolderOpen, FolderPlus, Trash2 } from 'lucide-react';
 import { songKey, useMusicStore } from '../../music/store';
-import { VirtualList } from './VirtualList';
-import { Empty, IconButton, SongRow } from './shared';
+import { Empty, IconButton, VirtualList } from '../../components/units';
+import { SongRow } from './shared';
 
 /** 与 Rust 侧解析器支持的扩展名保持一致（多列无害，选不中会被后端忽略） */
 const AUDIO_EXT = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'opus', 'wma', 'aiff', 'ape'];

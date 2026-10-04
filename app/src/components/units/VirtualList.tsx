@@ -1,27 +1,36 @@
 /**
- * 定高虚拟列表（windowed rendering）—— 只渲染视口内的行。
+ * 定高虚拟列表（通用单元，windowed rendering）—— 只渲染视口内的行。
  *
- * 为什么自己写而不是引库：本项目约定「不引入未经确认的新依赖」，而音乐模块所有列表行
- * 都是**定高**（`.music-row` = 40px 封面 + 上下各 6px padding = 52px；`.music-qrow`
- * 显式 52px），定高场景的窗口化只有几十行代码，引 react-window / react-virtual 不划算。
+ * ## 为什么自己写而不是引库
+ * 定高场景的窗口化只有几十行代码，而引 react-window / react-virtual 要新增一层依赖
+ * 与一套自己的 API 约定。真需要"不定高 + 自动测量"时再评估引库（届时判据是
+ * 《09》§2.2 的"新依赖需负责人确认"）。
  *
- * 为什么必须虚拟化：一个歌单动辄上千首，全量 DOM 会让首次渲染和滚动都明显卡顿
- * （每行含封面 img，浏览器要维护上千个节点与图片解码任务），而这正是「歌单分页」
- * 想解决的问题的反面 —— 分页只减少了**首屏数据量**，没减少**节点数**。
+ * ## 为什么必须虚拟化
+ * 一个歌单动辄上千首，全量 DOM 会让首次渲染和滚动都明显卡顿（每行含封面 img，
+ * 浏览器要维护上千个节点与图片解码任务）。而这正是"分页"解决不了的部分 ——
+ * **分页只减少首屏数据量，不减少节点数**。
  *
- * 与分页的配合：`onNearEnd` 在「距底两行」时触发，把下一片的网络耗时藏在滚动里
+ * ## 与分页的配合
+ * `onNearEnd` 在「距底两行」时触发，把下一片的网络耗时藏在滚动里
  * （等价于原先 `scrollTop + clientHeight >= scrollHeight - 60` 的阈值，只是改成按行高算）。
  *
- * 两个容易踩的点，都已在下面处理：
- * 1. **切歌单必须复位滚动**：沿用旧 scrollTop 会显示到新列表的中段（`resetKey`）。
- * 2. **首片撑不满视口时要续拉**：否则用户看到一片空白且永远不会滚动、也就永远不会触发加载。
+ * ## 两个容易踩的点（都已处理）
+ * 1. **换列表必须复位滚动**：沿用旧 scrollTop 会显示到新列表的中段（`resetKey`）。
+ * 2. **首片撑不满视口时要续拉**：否则用户看不到滚动条、也就永远不会触发加载，
+ *    分页会停在第一页。
+ *
+ * ## 行高为什么有默认值
+ * `ROW_H = 52` 是当前所有调用点的行几何（40px 封面 + 上下各 6px padding）。
+ * 行高不是本组件的私事：**调用方的行必须真的是这个高度**，否则滚动会跳
+ * —— 换行高时由调用方显式传 `itemHeight`，不要偷偷改默认值。
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode, UIEvent } from 'react';
 
-/** 与 `.music-row` 几何一致：40px 封面 + 上下各 6px padding */
+/** 默认行高 52：40px 封面 + 上下各 6px padding（与列表行几何一致） */
 export const ROW_H = 52;
-/** 原 `.music-list { gap: 2px }` 的行间距 —— 虚拟列表用 top 定位复现同样的视觉节奏 */
+/** 默认行间距 2 —— 与静态列表的 `gap: 2px` 一致，用 top 定位复现同样的视觉节奏 */
 export const ROW_GAP = 2;
 
 interface VirtualListProps<T> {
@@ -74,7 +83,7 @@ export function VirtualList<T>({
     return () => ro.disconnect();
   }, []);
 
-  // 换歌单 / 换视图复位到顶
+  // 换列表 / 换视图复位到顶
   useLayoutEffect(() => {
     const el = outerRef.current;
     if (!el) return;
@@ -125,21 +134,13 @@ export function VirtualList<T>({
   const end = Math.min(items.length, Math.ceil((scrollTop + viewportH) / pitch) + overscan);
 
   return (
-    <div
-      ref={outerRef}
-      className={className ? `music-vlist ${className}` : 'music-vlist'}
-      onScroll={onScroll}
-    >
+    <div ref={outerRef} className={className ? `ui-vlist ${className}` : 'ui-vlist'} onScroll={onScroll}>
       {/* 撑高元素：让滚动条长度与真实内容一致 */}
-      <div className="music-vlist-inner" style={{ height: total }}>
+      <div className="ui-vlist-inner" style={{ height: total }}>
         {items.slice(start, end).map((item, k) => {
           const i = start + k;
           return (
-            <div
-              key={itemKey(item, i)}
-              className="music-vlist-item"
-              style={{ top: i * pitch, height: itemHeight }}
-            >
+            <div key={itemKey(item, i)} className="ui-vlist-item" style={{ top: i * pitch, height: itemHeight }}>
               {renderItem(item, i)}
             </div>
           );
