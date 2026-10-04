@@ -860,3 +860,141 @@ writer 窗口写 token，reader 窗口上报它看到的值；**连跑两次**�
 - 遗留：跨窗口**实时性**（主窗口改偏好 → 歌词窗口是否立即生效）本探针未覆盖 ——
   localStorage 的 `storage` 事件在同 origin 不同 WebView 间**不保证**触发（WKWebView 已知差异）。
   正确做法是走 Tauri 事件（主窗口 emit → 歌词窗口 listen），不依赖 `storage` 事件。
+
+---
+
+## D-48 · 心动模式（拍板第 4 项，已实现）
+
+`PlayMode` 类型里 `'heartbeat'` 早就存在（`types.ts:163`），但 `cycleMode` 的档位数组一直只有三档 ——
+即"类型预留了、功能没接线"。本条把它接通。
+
+### 能力边界（先取证再实现，结论与 G-16 一致）
+
+`music_simi_song`（网易云 `/api/v1/discovery/simiSong`）三层早已齐备（Rust 定义 + `main.rs` 注册 +
+`ipc.ts` 封装），**只缺 `platform.ts` 派发与 store 接线**。其余三平台**没有**"传入 songid 返回相似歌曲"
+的接口（酷狗 `guess_like` 是全站个人 FM、**不接收 songid**）⇒ 门禁为假时降级为**随机**。
+
+### 三条设计判断（都不是"能跑就行"）
+
+1. **切换到心动档时必须提示降级**（`cycleMode` 里判 `supportsSimilar`）。
+   静默降级与"假控件"同级：用户以为在听相似歌曲，实际听的是随机。宁可多一次提示。
+2. **相似结果**替换**队列**（`playSong(nextSong, pick, …)`），不是追加。
+   心动模式的语义是"顺着这首歌往下听"，追加会让队列越滚越杂；替换后队列恒为"一串相似歌"。
+3. **必须按 `songKey` 排除当前这首** —— 接口可能把它自己算进"相似"里，
+   不排除就会立刻重播同一首（用户看到"点了下一首还是这首"）。
+
+### 降级路径要显式（`fallbackNext`）
+
+相似接口返回空 / 抛错时走 `fallbackNext()`（按**队列顺序**取下一首，不是随机 ——
+此时"续播"语义应当是队列的下一首）。单独成 action 而非给 `next` 加参数：
+让"我要队列下一首"在代码里一眼可辨，而不是 `next(false)` 这种需要读参数含义的写法。
+
+### 顺带抽离：`PlayModeButton` 进 units
+
+`PlayerBar` 与 `ExpandedPlayer` 此前各写一份**字面量完全相同**的 modeIcon 三元表达式
+（后者连 modeTitle 都没有，恒显示"播放模式"）—— 改一个档位要改两处，漏一处就出现
+"展开播放器显示随机、播放条显示列表"。判据符合《09》§2.2（两处复用 + 不依赖业务层）：
+传 `mode` / `onCycle` 两个 prop 而非内部 `useMusicStore` —— 后者会让 units 破掉"不依赖业务数据"。
+断言 `LAYOUT.files` 当场变红（清单未登记新成员），已同步 MANIFEST。
+
+### 断言（check:music 86 → 92，反证 39 → 46）
+
+新增 `HEARTBEAT` 组 6 条：`modeInType`（类型含 heartbeat）· `cycleFour`（数组**恰为四项** ——
+只判"含 heartbeat"会漏掉 `heartbeat` 写两遍、点两下卡同一档）· `warnsOnDegrade`（降级必须提示）·
+`nextUsesSimilar` · `platformGate`（门禁只对网易云为真）· `fallbackExists`。
+
+## 反证轮抓到的两个假阳性（都是"断言测写法不是测行为"）
+
+1. **`PLAYER.nextExpandFalse`**：原判据是"next 里出现过 `expand: false`"。
+   心动模式接入后 `next` 有**两条** `playSong` 调用，破坏只删一条时该判据仍为真 → 恒绿。
+   改为**数次数**：`playSong` 调用数 == 带 `expand:false` 的次数（漏掉的那条会把播放器弹开）。
+   反证的破坏也相应改成"清掉全部"（原先只删一条，与新判据不匹配）。
+2. **`HEARTBEAT.nextUsesSimilar`**：原判据只查"代码里出现过 `similarSongs(`"——
+   把门禁写成 `&& false` 后调用照样在源码里，但运行时永远走不到。
+   改为**判门禁条件本身**（必须仍是 `supportsSimilar(get().playbackSource)`）
+   并要求 `fallbackNext` 出口 ≥2 处（空结果与异常各一条）。
+
+> 这两条都不是推理出来的，是反证轮**实测报红**后回查才发现的。
+> 与 D-45 同源：**"断言变绿"不等于"事情做对了"，得先确认它测的是不是同一件事。**
+
+---
+
+## D-49 · 桌面歌词独立窗口（拍板第 1 项，已实现）
+
+前置（D-47）已实测清除：同 origin 两窗共享 localStorage，**不需要切 Tauri Store**。
+
+## 架构：三条同步通道（频率不同，机制就不同）
+
+| 数据 | 频率 | 通道 | 为什么 |
+|---|---|---|---|
+| 歌词行内容 | 换歌时 | Tauri 事件 `lyrics://state` | 几十行，一次发全量比发增量简单且不易错位 |
+| 播放/暂停、换歌、seek | 低频 | 同上 | 状态跳变才是事件该承载的东西 |
+| **播放进度** | **每秒数次** | **不推** —— 歌词窗自己走表 | 每条都要跨进程序列化 + emit，**一个为省事加的推送会同时毁掉两个窗口**（主窗发涩、歌词窗卡顿） |
+
+歌词窗收到 payload 后以 `startedAtMs` + 自己的 `performance.now()` 推进，并用 `sentAtEpoch`
+校正两窗时钟漂移。推进用 **`requestAnimationFrame` 而非 `setInterval`** ——
+后者在后台/不可见窗口被浏览器节流到 ~1Hz，歌词会"一跳一跳"。
+
+## 三个静默失效的坑（都不报错，只是功能在真机上悄悄不工作）
+
+1. **必须 `WebviewUrl::App`（同 origin），不能用 `External`**。用 External 会跨 origin →
+   localStorage 隔离 → 歌词窗读不到主窗写的字号/高亮色/锁定态。
+   ⚠️ 现有 5 处 `WebviewWindowBuilder`（官方登录窗口）**全用 `External`**，
+   那是另一类场景，**照抄就错**。
+2. **`capabilities.windows` 是白名单**：不在里面 → 该窗口任何 Tauri 命令都被 ACL 拒，
+   且报的是"权限不足"**而不是"窗口不存在"**，极易误判成代码写错。已加 `desktop-lyrics`。
+3. **`core:window:default` 不含 `allow-start-dragging` / `allow-set-position`**
+   （已核 `gen/schemas/acl-manifests.json`：default 展开 25 项里确实没有）。
+   不显式授权则拖动被拒 —— 这条是子 agent 实测发现回报的，不是我预想到的。
+   已加 `core:window:allow-start-dragging` + `allow-set-position`。
+
+## 契约错误一处（我给子 agent 的规格写错了，已纠正）
+
+我告诉它 `ParsedLyricLine` 的时间字段是 `ms`，**实际是 `time` 且单位是秒**。
+子 agent 独立发现并做了 `×1000` 换算 —— 若没发现，整首歌的歌词会挤在开头几秒。
+**教训**：给子 agent 写"已冻结契约"时，字段名与单位必须**先回读代码**再写，
+凭印象写等于把错误放大到别人必须去纠正。
+
+## 平台限制：不承诺做不到的事
+
+- `startDragging()` 在 macOS 上**必须在按下事件里直接调**，不能 await 之后再调（失效是**静默忽略**）。
+- **锁定不承诺"点击穿透"**：macOS 无对应能力（`WS_EX_TRANSPARENT` 是 Windows 的），
+  所以锁定只做"不可拖动 + 半透明 + 锁标记"。承诺做不到的事等于埋一个更坏的坑。
+- 关闭必须走 Rust 的 `close_lyrics_window` 而非 `window.close()` ——
+  后者绕过主窗状态，开关会显示成"还开着"（自愈要再点一次，彻底消除需 Rust 侧 emit）。
+
+## 设置项恢复（此前被剔除的两项）
+
+`lyrics-window`（开关）与 `lyrics-locked`（锁定）。剔除理由"需独立置顶窗口，延后"**已失效**，
+故改写 `note`（不删 —— 那里还记着其它 4 项的剔除理由）。
+`SPEC_ITEM_TOTAL` 29 → **31**（用类型擦除真导入 catalog 求和验证，非手算）。
+
+「锁定」项做成 **"如实显示状态 + 切到锁定/解锁 + 注明下次打开时生效"**，
+不用 `save_lyrics_window_state`（那条命令要求连 `y` 一起写，主窗不知道窗口被拖到哪，
+写 `y: 0` 会把用户拖好的位置弹回左上角）。锁定态走 localStorage（两窗同源共享，D-47）。
+**不做成"看起来立刻生效、实际不生效"的开关** —— 假控件比缺控件更伤（D-37 的判据继续适用）。
+
+## 已知偏差（如实记录，未修）
+
+歌词窗内部点关闭后，主窗的开关会短暂"偏乐观"（歌词窗调 Rust 关窗但不回头改 store）。
+再点一次即自愈。彻底消除需 Rust 侧在窗口关闭时 emit 事件。
+
+## 断言：check:music 92 → 101，反证 46 → 54
+
+新增 `LYRICS` 组 9 条，全部针对"静默失效"：`rustCommands`（定义**且**注册，两层分别测）·
+`sameOrigin`（**最关键**一条）· `capabilityWindow` · `dragPermission` · `viteMultiEntry` ·
+`progressNotPushed` · `rafAdvance` · `degrade` · `closeViaRust`。
+
+### 反证轮又抓到 1 个假阳性（第 3 次同类）
+`rafAdvance` 原判据"用没用 rAF"，但该文件有**两处** rAF 调用，改一处仍为真。
+收紧为**反向判据**：不得出现 `setInterval(`。
+> 这已是本项目第 3 次"只判存在、不判唯一"型假阳性（D-48 两条 + 这条）——
+> **凡是有多处写法的判据，一律改成"该出现的不该出现的都不许出现"或数次数。**
+
+### 一处脚本自身缺陷
+`setProgress` 是**单表达式箭头**（无花括号体），`methodBody` 只认 `{` 开的块体 →
+恒报"未定义"（假红）。改为"取该行 + 取块体，两处合并后判定"。
+
+验收：cargo check/build 0 错误、tsc 0 错误、vite build 通过（`dist/` 下 `index.html` + `lyrics.html` 齐）、
+check:music 101/101（反证 54/54）、check:units 27/27、check:settings 72/72（反证 15/15）、
+check:ia 24/24、check:tls 14/14、服务 159/159、引擎 23/23。
