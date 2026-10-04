@@ -1,10 +1,10 @@
 import { ChevronLeft, Play } from 'lucide-react';
-import type { UIEvent } from 'react';
 import { providerLabel } from '../../music/platform';
 import { coverProxyUrl, songKey, useMusicStore } from '../../music/store';
 import type { LeftView } from '../../music/store';
 import { HistoryView } from './HistoryView';
 import { LocalView } from './LocalView';
+import { VirtualList } from './VirtualList';
 import { Cover, Empty, SongRow } from './shared';
 
 const TABS: { id: LeftView; label: string }[] = [
@@ -84,9 +84,12 @@ function PlaylistsView() {
           刷新
         </button>
       </div>
-      <div className="music-list">
-        {userPlaylists.map((pl) => (
-          <div key={pl.id} className="music-row" onClick={() => void openLeftPlaylist(pl)}>
+      <VirtualList
+        items={userPlaylists}
+        resetKey={`left-playlists:${playbackSource}`}
+        itemKey={(pl) => pl.id}
+        renderItem={(pl) => (
+          <div className="music-row" onClick={() => void openLeftPlaylist(pl)}>
             <Cover url={coverProxyUrl(pl.cover, proxyPort)} />
             <div className="music-row-tx">
               <b>{pl.name}</b>
@@ -95,15 +98,16 @@ function PlaylistsView() {
               </span>
             </div>
           </div>
-        ))}
-      </div>
+        )}
+      />
     </div>
   );
 }
 
 /**
- * 歌单曲目：滚动到底自动续拉下一页（loadMoreLeft）。
- * 触发阈值取「距底 60px」而不是「到底」—— 到底才触发会白等一个 RTT，用阈值把网络耗时藏在滚动里。
+ * 歌单曲目：定高虚拟列表 + 滚动接近底部自动续拉下一页（loadMoreLeft）。
+ * 触发交给 VirtualList 的 onNearEnd（距底两行）—— 到底才触发会白等一个 RTT，
+ * 用阈值把网络耗时藏在滚动里；分页仍由 store 负责（本组件只负责「什么时候要」）。
  */
 function LeftTracksView() {
   const meta = useMusicStore((s) => s.leftPlaylistMeta);
@@ -115,11 +119,6 @@ function LeftTracksView() {
   const playQueue = useMusicStore((s) => s.playQueue);
   const currentSong = useMusicStore((s) => s.currentSong);
   const proxyPort = useMusicStore((s) => s.proxyPort);
-
-  const onScroll = (e: UIEvent<HTMLDivElement>) => {
-    const el = e.currentTarget;
-    if (!loadingMore && el.scrollTop + el.clientHeight >= el.scrollHeight - 60) void loadMore();
-  };
 
   const total = meta?.track_count ?? 0;
 
@@ -151,17 +150,20 @@ function LeftTracksView() {
         <Empty>这个歌单是空的</Empty>
       ) : (
         <>
-          <div className="music-list" onScroll={onScroll}>
-            {tracks.map((s, i) => (
+          <VirtualList
+            items={tracks}
+            resetKey={meta?.id ?? 'left-tracks'}
+            itemKey={(s, i) => `${s.provider}:${s.id}:${i}`}
+            onNearEnd={loadingMore ? undefined : () => void loadMore()}
+            renderItem={(s, i) => (
               <SongRow
-                key={`${s.provider}:${s.id}:${i}`}
                 song={s}
                 cover={coverProxyUrl(s.cover, proxyPort)}
                 active={currentSong ? songKey(currentSong) === songKey(s) : false}
                 onClick={() => void playQueue(tracks, i)}
               />
-            ))}
-          </div>
+            )}
+          />
           {total > 0 && tracks.length < total ? (
             <div className="music-more">{loadingMore ? '加载中…' : '上滑加载更多'}</div>
           ) : null}

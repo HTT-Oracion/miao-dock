@@ -1,9 +1,9 @@
 import { ChevronLeft, Heart, Play, Plus, RefreshCw, Search, X } from 'lucide-react';
-import type { UIEvent } from 'react';
 import { PLATFORMS, capsOf, providerLabel } from '../../music/platform';
 import { coverProxyUrl, songKey, useMusicStore } from '../../music/store';
 import type { Song } from '../../music/types';
 import { Charts } from './Charts';
+import { VirtualList } from './VirtualList';
 import { Cover, Empty, IconButton, SongRow } from './shared';
 
 /**
@@ -90,6 +90,7 @@ function SearchCaps() {
 function SearchResults() {
   const results = useMusicStore((s) => s.searchResults);
   const searchProvider = useMusicStore((s) => s.searchProvider);
+  const searchText = useMusicStore((s) => s.searchText);
   const likedByProvider = useMusicStore((s) => s.likedByProvider);
   const proxyPort = useMusicStore((s) => s.proxyPort);
   const currentSong = useMusicStore((s) => s.currentSong);
@@ -116,55 +117,59 @@ function SearchResults() {
   };
 
   return (
-    <div className="music-list">
+    <>
       <div className="music-hint">
         在 {providerLabel(searchProvider)} 找到 {results.length} 首
       </div>
-      {results.map((s, i) => {
-        const liked = likedSet.has(s.id);
-        return (
-          <SongRow
-            key={`${s.provider}:${s.id}:${i}`}
-            song={s}
-            cover={coverProxyUrl(s.cover, proxyPort)}
-            active={currentSong ? songKey(currentSong) === songKey(s) : false}
-            onClick={() => void playQueue(results, i)}
-            actions={
-              <>
-                <IconButton
-                  title="加入队列"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    appendToQueue([s]);
-                  }}
-                >
-                  <Plus size={13} />
-                </IconButton>
-                <IconButton
-                  title={liked ? '取消红心' : '红心'}
-                  active={liked}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onLike(s as Song);
-                  }}
-                >
-                  <Heart size={13} fill={liked ? 'currentColor' : 'none'} />
-                </IconButton>
-                <IconButton
-                  title="播放"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void playQueue(results, i);
-                  }}
-                >
-                  <Play size={13} />
-                </IconButton>
-              </>
-            }
-          />
-        );
-      })}
-    </div>
+      <VirtualList
+        items={results}
+        resetKey={`search:${searchProvider}:${searchText}`}
+        itemKey={(s, i) => `${s.provider}:${s.id}:${i}`}
+        renderItem={(s, i) => {
+          const liked = likedSet.has(s.id);
+          return (
+            <SongRow
+              song={s}
+              cover={coverProxyUrl(s.cover, proxyPort)}
+              active={currentSong ? songKey(currentSong) === songKey(s) : false}
+              onClick={() => void playQueue(results, i)}
+              actions={
+                <>
+                  <IconButton
+                    title="加入队列"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      appendToQueue([s]);
+                    }}
+                  >
+                    <Plus size={13} />
+                  </IconButton>
+                  <IconButton
+                    title={liked ? '取消红心' : '红心'}
+                    active={liked}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onLike(s as Song);
+                    }}
+                  >
+                    <Heart size={13} fill={liked ? 'currentColor' : 'none'} />
+                  </IconButton>
+                  <IconButton
+                    title="播放"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void playQueue(results, i);
+                    }}
+                  >
+                    <Play size={13} />
+                  </IconButton>
+                </>
+              }
+            />
+          );
+        }}
+      />
+    </>
   );
 }
 
@@ -199,12 +204,15 @@ function Recommendations() {
               <RefreshCw size={12} /> {loading ? '刷新中…' : '刷新'}
             </button>
           </div>
-          <div className="music-list">
-            {recommendPlaylists.length === 0 ? (
-              <Empty inline>{loading ? '加载推荐歌单中…' : '暂无推荐歌单（可能需要登录或网络）'}</Empty>
-            ) : (
-              recommendPlaylists.map((pl) => (
-                <div key={pl.id} className="music-row" onClick={() => void openRightPlaylist(pl)}>
+          {recommendPlaylists.length === 0 ? (
+            <Empty inline>{loading ? '加载推荐歌单中…' : '暂无推荐歌单（可能需要登录或网络）'}</Empty>
+          ) : (
+            <VirtualList
+              items={recommendPlaylists}
+              resetKey={`recommend:${playbackSource}`}
+              itemKey={(pl) => pl.id}
+              renderItem={(pl) => (
+                <div className="music-row" onClick={() => void openRightPlaylist(pl)}>
                   <Cover url={coverProxyUrl(pl.cover, proxyPort)} />
                   <div className="music-row-tx">
                     <b>{pl.name}</b>
@@ -213,9 +221,9 @@ function Recommendations() {
                     </span>
                   </div>
                 </div>
-              ))
-            )}
-          </div>
+              )}
+            />
+          )}
         </>
       ) : null}
     </>
@@ -233,11 +241,6 @@ function RightTracksView() {
   const playQueue = useMusicStore((s) => s.playQueue);
   const currentSong = useMusicStore((s) => s.currentSong);
   const proxyPort = useMusicStore((s) => s.proxyPort);
-
-  const onScroll = (e: UIEvent<HTMLDivElement>) => {
-    const el = e.currentTarget;
-    if (!loadingMore && el.scrollTop + el.clientHeight >= el.scrollHeight - 60) void loadMore();
-  };
 
   const total = meta?.track_count ?? 0;
 
@@ -266,17 +269,20 @@ function RightTracksView() {
         <Empty>没有拿到曲目</Empty>
       ) : (
         <>
-          <div className="music-list" onScroll={onScroll}>
-            {tracks.map((s, i) => (
+          <VirtualList
+            items={tracks}
+            resetKey={meta?.id ?? 'right-tracks'}
+            itemKey={(s, i) => `${s.provider}:${s.id}:${i}`}
+            onNearEnd={loadingMore ? undefined : () => void loadMore()}
+            renderItem={(s, i) => (
               <SongRow
-                key={`${s.provider}:${s.id}:${i}`}
                 song={s}
                 cover={coverProxyUrl(s.cover, proxyPort)}
                 active={currentSong ? songKey(currentSong) === songKey(s) : false}
                 onClick={() => void playQueue(tracks, i)}
               />
-            ))}
-          </div>
+            )}
+          />
           {total > 0 && tracks.length < total ? (
             <div className="music-more">{loadingMore ? '加载中…' : '上滑加载更多'}</div>
           ) : null}
@@ -319,17 +325,19 @@ function DailyView() {
       ) : songs.length === 0 ? (
         <Empty>暂无每日推荐（可能需要登录网易云）</Empty>
       ) : (
-        <div className="music-list">
-          {songs.map((s, i) => (
+        <VirtualList
+          items={songs}
+          resetKey="daily"
+          itemKey={(s, i) => `${s.provider}:${s.id}:${i}`}
+          renderItem={(s, i) => (
             <SongRow
-              key={`${s.provider}:${s.id}:${i}`}
               song={s}
               cover={coverProxyUrl(s.cover, proxyPort)}
               active={currentSong ? songKey(currentSong) === songKey(s) : false}
               onClick={() => void playQueue(songs, i)}
             />
-          ))}
-        </div>
+          )}
+        />
       )}
     </div>
   );

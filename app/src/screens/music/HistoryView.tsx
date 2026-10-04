@@ -1,6 +1,7 @@
 import { Plus, Trash2, X } from 'lucide-react';
 import { providerColor } from '../../music/platform';
 import { coverProxyUrl, songKey, useMusicStore } from '../../music/store';
+import { VirtualList } from './VirtualList';
 import { Empty, IconButton, SongRow, providerName, relTime } from './shared';
 
 /**
@@ -31,12 +32,14 @@ export function HistoryView() {
       {history.length === 0 ? (
         <Empty>还没有播放记录 —— 播一首歌就会记在这里（跨平台同一条时间线）。</Empty>
       ) : (
-        <div className="music-list">
-          {history.map((entry) => {
+        <VirtualList
+          items={history}
+          resetKey="history"
+          itemKey={(entry) => `${entry.song.provider}:${entry.song.id}`}
+          renderItem={(entry) => {
             const s = entry.song;
             return (
               <SongRow
-                key={`${s.provider}:${s.id}`}
                 song={s}
                 cover={coverProxyUrl(s.cover, proxyPort)}
                 active={currentSong ? songKey(currentSong) === songKey(s) : false}
@@ -73,8 +76,8 @@ export function HistoryView() {
                 }
               />
             );
-          })}
-        </div>
+          }}
+        />
       )}
     </div>
   );

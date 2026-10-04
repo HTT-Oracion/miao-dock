@@ -45,6 +45,7 @@ const F = {
   store: path.join(APP, 'src', 'music', 'store.ts'),
   musicScreen: path.join(APP, 'src', 'screens', 'MusicScreen.tsx'),
   musicUiDir: path.join(APP, 'src', 'screens', 'music'),
+  virtualList: path.join(APP, 'src', 'screens', 'music', 'VirtualList.tsx'),
   css: path.join(APP, 'src', 'styles', 'app.css'),
   srcDir: path.join(APP, 'src'),
   rustSrcDir: path.join(APP, 'src-tauri', 'src'),
@@ -390,6 +391,39 @@ add('UI.loadMore', 'UI', (s) => ({
   detail: uiNote(s, '未读到歌单滚动加载（loadMoreLeft/loadMoreRight）'),
 }));
 
+/** 需要走虚拟滚动的长列表（行数无上界：歌单曲目可上千首、队列上限 2000） */
+const ROW_LISTS = {
+  'LeftPanel.tsx': '左栏「我的歌单 / 歌单曲目」',
+  'RightPanel.tsx': '右栏「搜索结果 / 推荐歌单 / 曲目 / 每日推荐」',
+  'HistoryView.tsx': '播放历史',
+  'LocalView.tsx': '本地曲库',
+  'QueueDrawer.tsx': '播放队列',
+};
+
+// 只断言「窗口化」的两条本质特征，不锁 rAF / ResizeObserver 这些优化手法 ——
+// 后者被替换掉不影响「是否虚拟滚动」这个事实，锁死它们只会让断言在合法重构时误红。
+add('UI.virtualList', 'UI', (s) => {
+  const v = readMaybe(F.virtualList);
+  if (!v) return { ok: false, detail: uiNote(s, '未读到 app/src/screens/music/VirtualList.tsx') };
+  const need = [
+    [/items\.slice\(/, '按窗口切片渲染（items.slice）'],
+    [/music-vlist-inner/, '撑高元素（否则滚动条长度不反映真实内容）'],
+  ];
+  const missing = need.filter(([re]) => !re.test(v)).map(([, n]) => n);
+  return { ok: missing.length === 0, detail: missing.length ? `虚拟列表缺：${missing.join('、')}` : '' };
+});
+add('UI.virtualListUsed', 'UI', (s) => {
+  const missing = [];
+  for (const [file, label] of Object.entries(ROW_LISTS)) {
+    const src = readMaybe(path.join(F.musicUiDir, file));
+    if (!/<VirtualList/.test(src)) missing.push(`${file}（${label}）`);
+  }
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `这些长列表未接虚拟滚动：${missing.join('、')}` : '',
+  };
+});
+
 // ── 执行器 ────────────────────────────────────────────────────────────────
 function runAll(s) {
   const res = {};
@@ -495,6 +529,20 @@ const MUTATIONS = [
     find: "'kugou_rank_list'",
     replace: "'kugou_rank_list_broken'",
     expect: ['IPC.kugou'],
+  },
+  {
+    name: '把 VirtualList 的窗口切片去掉（改成全量渲染，退化成非虚拟列表）',
+    file: F.virtualList,
+    find: 'items.slice(start, end)',
+    replace: 'items',
+    expect: ['UI.virtualList'],
+  },
+  {
+    name: '把 QueueDrawer 的虚拟列表换回普通列表（模拟漏接某个长列表）',
+    file: path.join(F.musicUiDir, 'QueueDrawer.tsx'),
+    find: '<VirtualList',
+    replace: '<QueueList',
+    expect: ['UI.virtualListUsed'],
   },
 ];
 

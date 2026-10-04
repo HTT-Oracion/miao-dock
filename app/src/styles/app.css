@@ -1637,6 +1637,19 @@
   flex: 1;
   min-height: 0;
 }
+/* 定高虚拟列表（screens/music/VirtualList.tsx）：只渲染视口内的行。
+   行高/间距与 .music-row 一致（52 + 2），改用绝对定位复现 gap 的行奏，
+   因此不能再依赖 flex gap —— 撑高交给 .music-vlist-inner。 */
+.music-vlist {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  position: relative;
+}
+.music-vlist-inner { position: relative; width: 100%; }
+.music-vlist-item { position: absolute; left: 0; right: 0; }
+/* 队列抽屉的行容器自带上下留白（等价原 .music-drawer-list 的 padding: 6px 0） */
+.music-vlist.is-drawer { padding: 6px 0; }
 .music-row {
   display: flex;
   align-items: center;

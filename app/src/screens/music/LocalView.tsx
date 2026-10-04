@@ -1,6 +1,7 @@
 import { open } from '@tauri-apps/plugin-dialog';
 import { FolderOpen, FolderPlus, Trash2 } from 'lucide-react';
 import { songKey, useMusicStore } from '../../music/store';
+import { VirtualList } from './VirtualList';
 import { Empty, IconButton, SongRow } from './shared';
 
 /** 与 Rust 侧解析器支持的扩展名保持一致（多列无害，选不中会被后端忽略） */
@@ -59,13 +60,15 @@ export function LocalView() {
       ) : localSongs.length === 0 ? (
         <Empty>还没有本地歌曲 —— 点「选择文件」选几首 mp3/flac，或「选择文件夹」整夹导入。</Empty>
       ) : (
-        <div className="music-list">
-          {localSongs.map((info, i) => {
+        <VirtualList
+          items={localSongs}
+          resetKey="local"
+          itemKey={(info) => info.id}
+          renderItem={(info, i) => {
             const s = localQueue[i];
             if (!s) return null; // 理论上同序等长；不同步时跳过而不是崩
             return (
               <SongRow
-                key={info.id}
                 song={s}
                 cover={s.cover}
                 active={currentSong ? songKey(currentSong) === songKey(s) : false}
@@ -83,8 +86,8 @@ export function LocalView() {
                 }
               />
             );
-          })}
-        </div>
+          }}
+        />
       )}
     </div>
   );

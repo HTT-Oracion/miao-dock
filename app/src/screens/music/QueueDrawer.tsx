@@ -1,5 +1,6 @@
 import { ListMusic, Trash2, X } from 'lucide-react';
 import { fmtTime, songKey, useMusicStore } from '../../music/store';
+import { VirtualList } from './VirtualList';
 import { Empty, IconButton } from './shared';
 
 /**
@@ -38,10 +39,13 @@ export function QueueDrawer() {
         {queue.length === 0 ? (
           <Empty>队列是空的</Empty>
         ) : (
-          <div className="music-drawer-list">
-            {queue.map((s, i) => (
+          <VirtualList
+            className="is-drawer"
+            items={queue}
+            resetKey="queue"
+            itemKey={(s, i) => `${songKey(s)}:${i}`}
+            renderItem={(s, i) => (
               <div
-                key={`${songKey(s)}:${i}`}
                 className={i === currentIndex ? 'music-qrow is-hot' : 'music-qrow'}
                 onClick={() => void playSong(s)}
               >
@@ -61,8 +65,8 @@ export function QueueDrawer() {
                   <X size={13} />
                 </IconButton>
               </div>
-            ))}
-          </div>
+            )}
+          />
         )}
       </div>
     </>
