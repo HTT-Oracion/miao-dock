@@ -19,6 +19,8 @@
     "check:music:refute": "node scripts/music-platform-check.mjs --refute",
     "check:settings": "node scripts/settings-media-check.mjs",
     "check:settings:refute": "node scripts/settings-media-check.mjs --refute",
+    "check:units": "node scripts/units-structure-check.mjs",
+    "check:units:refute": "node scripts/units-structure-check.mjs --refute",
     "capture": "node scripts/capture.mjs",
     "probe:png": "node scripts/make-probe-png.mjs",
     "app": "npm --prefix app run tauri dev",

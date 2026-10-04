@@ -46,7 +46,7 @@ const F = {
   store: path.join(APP, 'src', 'music', 'store.ts'),
   musicScreen: path.join(APP, 'src', 'screens', 'MusicScreen.tsx'),
   musicUiDir: path.join(APP, 'src', 'screens', 'music'),
-  virtualList: path.join(APP, 'src', 'screens', 'music', 'VirtualList.tsx'),
+  virtualList: path.join(APP, 'src', 'components', 'units', 'VirtualList.tsx'),
   css: path.join(APP, 'src', 'styles', 'app.css'),
   srcDir: path.join(APP, 'src'),
   rustSrcDir: path.join(APP, 'src-tauri', 'src'),
@@ -405,10 +405,10 @@ const ROW_LISTS = {
 // 后者被替换掉不影响「是否虚拟滚动」这个事实，锁死它们只会让断言在合法重构时误红。
 add('UI.virtualList', 'UI', (s) => {
   const v = readMaybe(F.virtualList);
-  if (!v) return { ok: false, detail: uiNote(s, '未读到 app/src/screens/music/VirtualList.tsx') };
+  if (!v) return { ok: false, detail: uiNote(s, '未读到 app/src/components/units/VirtualList.tsx') };
   const need = [
     [/items\.slice\(/, '按窗口切片渲染（items.slice）'],
-    [/music-vlist-inner/, '撑高元素（否则滚动条长度不反映真实内容）'],
+    [/ui-vlist-inner/, '撑高元素（否则滚动条长度不反映真实内容）'],
   ];
   const missing = need.filter(([re]) => !re.test(v)).map(([, n]) => n);
   return { ok: missing.length === 0, detail: missing.length ? `虚拟列表缺：${missing.join('、')}` : '' };
