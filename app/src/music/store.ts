@@ -591,6 +591,28 @@ interface MusicState {
    */
   resumeAtMs: number;
 
+  // ---- 启动恢复（restoreSession）----
+  /**
+   * 本次会话**是否正在恢复**上次播放。
+   *
+   * 作用是给「恢复态」专有的行为开闸，最主要是**加载失败自动切下一首**：
+   * 恢复时队列里可能有失效的本地文件 / 下架的专辑，遍历到第一首能播的为止。
+   * 这个开关只在恢复期间为真 —— 平时播放失败仍走原有的「提示 + 停」，
+   * 否则一次网络抖动就会把用户的队列清空。
+   */
+  restoring: boolean;
+  /**
+   * 本次会话**是否已经尝试过恢复**（Q6：只跑一次）。
+   *
+   * 为什么需要：切走音乐屏再切回会重跑 `init()`，而恢复挂在音乐屏上；
+   * 没有这个闸就会每次进屏都恢复一次，并覆盖用户刚做的操作。
+   *
+   * ⚠️ 登录态**探针失败**时会把它退回 `false`（允许下次重试）——
+   * 否则断网时第一次进屏就把闸关死，网络恢复后用户永远等不到恢复。
+   * 那种情况下"没恢复"的表现是自然的（播放条不出现，与现在一致），不该有任何提示。
+   */
+  restoreAttempted: boolean;
+
   // ---- 播放/媒体的持久化偏好（设置页「播放·媒体」）----
   lyricsFontSize: number;
   lyricsHighlightColor: string;
@@ -718,10 +740,51 @@ interface MusicState {
   // 播放
   /**
    * 播放一首歌。
+   *
    * `opts.expand`：播放后是否展开播放器（即"详情"，《09》§5.6 第 3 项）。
    * **默认 true**（调用点绝大多数是"用户点了某一首"）；自动续播/切歌传 false。
+   *
+   * `opts.autoplay`：**默认 true**。传 false 时取到地址后停在暂停态 ——
+   * 这是「启动恢复上次播放」唯一需要的形态（需求原话："显示播放条、定位到时间，
+   * 但**暂停**"）。不复用这条路径就得把 playSong 的全套逻辑（队列设置、歌词加载、
+   * URL 解析、无版权跳歌、playSeq 竞态保护）**再写一遍**，那是必然走偏的第二份实现。
+   *
+   * `opts.resumeAtMs`：起始播放位置（毫秒）。与 `resumeAtMs` 状态字段配合：
+   * 冷启动是**全新加载**，`src` 刚变时设 `currentTime` 会被浏览器忽略，
+   * 所以这里只**记录意图**，真正的 seek 交给播放内核在 `loadedmetadata` 之后做
+   * （见 MusicKernel）。传 0 表示从头开始。
    */
-  playSong: (song: Song, queue?: Song[], opts?: { fromHistory?: boolean; expand?: boolean }) => Promise<void>;
+  playSong: (
+    song: Song,
+    queue?: Song[],
+    opts?: { fromHistory?: boolean; expand?: boolean; autoplay?: boolean; resumeAtMs?: number },
+  ) => Promise<void>;
+  /**
+   * 启动恢复上次播放（Q6：本次会话只跑一次）。
+   *
+   * 完整判据链见实现处。三个要点：
+   *   · **没有快照 → 什么都不做**（与现在行为完全一致：不显示播放条）
+   *   · **明确未登录 → 清快照**；**探针失败 → 保留快照且不恢复**（Q1）
+   *   · 恢复出来的歌**停在暂停态**，定位到快照里的进度
+   */
+  restoreSession: () => Promise<void>;
+  /**
+   * 恢复成功：这首歌**真的加载出来了** → 关掉恢复态。
+   *
+   * 为什么必须有这一步（`restoring` 只会开不会关的话就是个缺陷）：
+   * 闸一直开着的话，用户之后正常播放遇到一次网络失败，也会走"静默 + 遍历整个队列"，
+   * 一次抖动就把队列清空。判据用**音频真的开始加载**（`loadedmetadata`），
+   * 而不是"URL 解析成功" —— 地址拿到了不等于这歌能播。
+   */
+  finishRestore: () => void;
+  /**
+   * 恢复态下这首歌加载失败（Q4）→ 换下一首继续试。
+   *
+   * 遍历到队列尽头 = 这次恢复彻底失败 → 清空播放条（队列空 → 播放条自动隐藏）。
+   * 恢复态**不弹提示**：用户还没做任何操作，一串 toast 是纯噪音；
+   * 而"播放条没出现"与"从来没恢复过"在视觉上无法区分，也不该区分。
+   */
+  handleRestoreFailed: () => void;
   playQueue: (songs: Song[], startIndex: number, opts?: { expand?: boolean }) => Promise<void>;
   /**
    * 「下一首播放」：把这首歌插到**当前播放的下一首**位置。
@@ -1029,6 +1092,9 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   proxyPort: 0,
   playHistoryList: [],
   resumeAtMs: 0,
+  // 启动恢复：默认都不在恢复态
+  restoring: false,
+  restoreAttempted: false,
 
   // ---- 播放/媒体的持久化偏好 ----
   lyricsFontSize: LYRICS_SIZE.def,
@@ -1203,6 +1269,83 @@ export const useMusicStore = create<MusicState>((set, get) => ({
 
   setProxyPort: (p) => set({ proxyPort: p }),
 
+  /**
+   * 启动恢复上次播放（Q6：本次会话只跑一次）。
+   *
+   * ## 为什么不挂在 `init` 里
+   * `init` 挂在音乐屏且**没有防重入守卫** —— 切走再切回会重跑。恢复挂在它里面
+   * 就会变成"每次进屏都恢复一次"，并覆盖用户刚做的操作。所以它有独立的闸。
+   *
+   * ## 判据链（顺序不能换）
+   *   1. 闸 + 快照：没快照 → 直接返回，**与现在行为完全一致**（不显示播放条）
+   *   2. 探一次目标平台的登录态 —— 必须**自己探**：`loginInfos` 初值全是 `null`，
+   *      分不清"没探过"与"探过但失败"，不能靠"看现成的"来判断
+   *   3. Q1 三态分流：
+   *        明确未登录 → **清快照**（用户的登录都没了，恢复出来也是播不了）
+   *        探针失败   → **保留快照、本次不恢复**，并把闸退回 false 允许下次重试
+   *        有效       → 恢复
+   *   4. 恢复：装载队列 + 停在**暂停态** + 定位到快照里的进度（Q2）
+   */
+  restoreSession: async () => {
+    if (get().restoreAttempted) return;
+    set({ restoreAttempted: true });
+
+    const snap = readResumeSnapshot();
+    if (!snap) return;
+
+    // 队列/下标已在 readResumeSnapshot 里做过结构校验，这里仍要防一手：
+    // 快照是外部可改的边界，不假设"读出来就一定自洽"
+    const song = snap.queue[snap.index];
+    if (!song) {
+      clearResumeSnapshot();
+      return;
+    }
+
+    await get().loadLoginStatus(snap.provider);
+    const verdict = loginVerdict(get().loginInfos, snap.provider);
+    if (verdict === 'logged_out') {
+      // Q1①：明确未登录 → 清掉快照，下次不再尝试
+      clearResumeSnapshot();
+      return;
+    }
+    if (verdict === 'probe_failed') {
+      // Q1②：探不动（断网 / 服务未就绪）**不等于**登出。保留快照，把闸退回，
+      // 用户下次进屏、网络也好了，会自然恢复。静默——「没恢复」的表现与现在一致，
+      // 不该弹任何提示。
+      set({ restoreAttempted: false });
+      return;
+    }
+
+    // Q1③：有效 → 恢复。restoring 打开失败切歌通道，并让静默失败继续走
+    set({ restoring: true });
+    await get().playSong(song, snap.queue, {
+      autoplay: false,
+      expand: false,
+      resumeAtMs: snap.progressMs,
+    });
+  },
+
+  finishRestore: () => {
+    // 已经离开恢复态就别覆盖（比如用户在恢复过程中自己点了别的歌）
+    if (get().restoring) set({ restoring: false });
+  },
+
+  handleRestoreFailed: () => {
+    if (!get().restoring) return;
+    const { queue, currentIndex } = get();
+    // 下一首还有 → 继续试。**带上 autoplay:true**：Q4 拍板「切到第一首能播的就
+    // 自动播放」—— 恢复的头一首保持暂停（那是需求要的），一旦因为它失败而换了歌，
+    // 就已经进入"找一首能播的"这条路了，此时静默自动播才对。
+    if (currentIndex + 1 < queue.length) {
+      const nextSong = queue[currentIndex + 1];
+      void get().playSong(nextSong, queue, { autoplay: true, expand: false });
+      return;
+    }
+    // 整条队列都试过了 → 这次恢复失败：清空（clearQueue 内会清快照）
+    get().clearQueue();
+    set({ restoring: false });
+  },
+
   // ================================================================ 本地
 
   loadLocalSongs: () => {
@@ -1296,9 +1439,15 @@ export const useMusicStore = create<MusicState>((set, get) => ({
 
     if (!isAutoSkipping) unplayableSkipCount = 0;
 
+    // 恢复态：进度**先显示**到快照里的位置。
+    // 为什么 display 值要先给：真实 seek 要等 loadedmetadata（见 MusicKernel），
+    // 两者之间有几百毫秒到几秒；这段时间播放条若停在 0:00，定位完成后会"跳一下"，
+    // 看起来就像 bug（评估稿 §1.4 记的正是这个）。先给目标值，跳动就发生在
+    // 同一个组件的同一次渲染里，肉眼几乎看不出。
+    const startAt = Math.max(0, opts?.resumeAtMs ?? 0);
     set({
       currentSong: song,
-      progressMs: 0,
+      progressMs: startAt,
       durationMs: song.duration || 0,
       isPlaying: false,
       // 「详情」= 展开播放器（《09》§5.6 第 3 项）。用户主动点一首歌就展开它；
@@ -1306,6 +1455,10 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       // 默认展开，因为调用点绝大多数是"用户点了某一首"。
       ...(opts?.expand === false ? {} : { expanded: true }),
     });
+    // 把 seek 意图交给播放内核：它在 loadedmetadata 之后才真正设 currentTime。
+    // 必须在换歌前清掉旧的 resumeAtMs，否则上一首残留的位置会作用到这一首。
+    if (startAt > 0) set({ resumeAtMs: startAt });
+    else if (get().resumeAtMs !== 0) set({ resumeAtMs: 0 });
     // 歌词与 URL 获取并行（不阻塞播放）
     void get().loadLyrics(song);
     // 换歌即刻推一次（此刻歌词多半还没到，歌词窗会先显示歌名/纯音乐提示，
@@ -1324,25 +1477,44 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     if (mySeq !== playSeq) return;
 
     if (!url) {
-      // 无版权 / 需会员：提示后自动跳下一首（连跳上限 10 首，防止整队列全不可播时无限跳）
+      // 无版权 / 需会员：提示后自动跳下一首
+      //
+      // ⚠️ **两条路的跳数上限不同，这是刻意的**：
+      //   · 平时（用户自己点的歌）：上限 10 首。整队列全不可播时停下来，
+      //     免得一路跳下去让界面疯转 —— 平时用户在场，看得见发生了什么。
+      //   · 恢复态（Q4 拍板）：上限 = 队列长度，**遍历到有一首能播的为止**。
+      //     恢复时用户什么都还没做，队列里混着被移走的本地文件 / 已下架的专辑
+      //     是常态；停在"全都不行"等于恢复失败（播放条空着、用户一脸茫然）。
+      //     全部失败才落到 clearQueue（见 handleRestoreFailed）。
+      const restoring = get().restoring;
+      const skipLimit = restoring ? Math.max(1, get().queue.length) : 10;
       set({ isPlaying: false });
-      if (unplayableSkipCount < 10) {
+      if (unplayableSkipCount < skipLimit) {
         unplayableSkipCount += 1;
         isAutoSkipping = true;
-        get().toast('该歌曲无版权或需会员，已自动跳过');
+        // 恢复态**不弹提示**：用户还没做任何操作，一串"该歌曲无版权"是纯噪音
+        if (!restoring) get().toast('该歌曲无版权或需会员，已自动跳过');
         setTimeout(() => {
           if (get().queue.length > 1) get().next();
         }, 800);
       } else {
         isAutoSkipping = false;
         unplayableSkipCount = 0;
+        // 恢复态走到这里 = 整个队列都试过了（Q4）→ 清空，播放条随之隐藏
+        if (restoring) {
+          get().clearQueue();
+          return;
+        }
         get().toast('当前队列中多首歌曲无法播放，已停止自动切换');
       }
       return;
     }
 
     isAutoSkipping = false;
-    set({ playUrl: url, isPlaying: true });
+    // autoplay:false（恢复）→ 停在暂停态，但**地址照样挂上**：
+    // 播放条要显示歌曲信息、进度条要显示定位后的位置，而音频元素必须真的
+    // 加载到那首歌（否则 onError 永远不会触发，Q4 的"失败切下一首"无从判断）。
+    set({ playUrl: url, isPlaying: opts?.autoplay !== false });
     // 「取到地址、真正开始播」是第二次状态跳变（上面那次推的时候还没在播）。
     // 不推的话桌面歌词会停在那首歌的暂停态，直到用户手动暂停/播放一次才恢复。
     void get().pushLyricsState();

@@ -62,6 +62,10 @@ export function MusicKernel() {
   const clearResumeAt = useMusicStore((s) => s.clearResumeAt);
   const setProgress = useMusicStore((s) => s.setProgress);
   const setDuration = useMusicStore((s) => s.setDuration);
+  /** 启动恢复态：这一首真的加载出来了就关掉（见 store 的 finishRestore） */
+  const finishRestore = useMusicStore((s) => s.finishRestore);
+  /** 恢复态下这首歌加载失败 → 换下一首（Q4） */
+  const handleRestoreFailed = useMusicStore((s) => s.handleRestoreFailed);
   /**
    * 播完分流 —— **不要改回 `onEnded={() => next()}`**：
    * 那样「单曲循环」会在播完时切歌（`next()` 的 `one` 分支就是"顺序下一首"），
@@ -152,14 +156,14 @@ export function MusicKernel() {
   }, [volume, muted]);
 
   // 播放/暂停同步（playUrl 变化时也要重试 play —— 新音频需重新触发播放）
-  // resumeAtMs：换音质会重新取地址、音频从 0 起播，这里把进度补回去再播
+  // 播放/暂停同步（playUrl 变化时也要重试 play —— 新音频需重新触发播放）
+  //
+  // ⚠️ **这里不再设 currentTime**，seek 已挪到 `onLoadedMetadata`（见那里注释）。
+  // 冷启动恢复是**全新加载**（`src` 刚变），此刻元数据还没到，
+  // 设 `currentTime` 会被浏览器**静默忽略**（表现为"定位没生效、从 0 开始"）。
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
-    if (resumeAtMs > 0) {
-      a.currentTime = resumeAtMs / 1000;
-      clearResumeAt();
-    }
     if (isPlaying) {
       /**
        * 播放动作是**用户手势链**上的一环，是唯一可靠的 resume 时机。
@@ -260,14 +264,44 @@ export function MusicKernel() {
       src={playUrl || undefined}
       onTimeUpdate={(e) => setProgress(e.currentTarget.currentTime * 1000)}
       onLoadedMetadata={(e) => {
-        const d = e.currentTarget.duration;
+        const a = e.currentTarget;
+        const d = a.duration;
         setDuration(Number.isFinite(d) ? d * 1000 : 0);
+        /**
+         * 续播 / 恢复定位：**必须等元数据就绪**才能设 `currentTime`。
+         *
+         * 冷启动恢复是全新加载（`src` 刚变、readyState 还是 0），
+         * 此刻设 currentTime 会被浏览器**静默忽略** —— 症状是"定位没生效、
+         * 从 0 开始"，而且不报错。换音质那条路以前能用，只是因为同一首歌的
+         * 音频**已经加载过**；放在这里对两者都正确。
+         *
+         * 顺带在这关掉恢复态：这首歌能读到元数据 = 真的能播，
+         * 之后的失败就该走正常逻辑（提示 + 停），不该再遍历整个队列。
+         */
+        if (resumeAtMs > 0) {
+          a.currentTime = resumeAtMs / 1000;
+          clearResumeAt();
+        }
+        finishRestore();
       }}
       onEnded={() => handleTrackEnded()}
       onError={() => {
         if (!playUrl) return;
         const a = audioRef.current;
-        if (corsMode && a) {
+        /**
+         * **本地文件不走 CORS 降级**（这是恢复态能收敛的前提）。
+         *
+         * 本地歌的地址是 `asset://`（Tauri 的 asset 协议**带 CORS 头**），
+         * 它加载失败只有一个原因：**文件被移动/删除**。走降级路径会有两个坏处：
+         *   ① 白白多一轮 `load()` 重载 —— 而重载同样会失败；
+         *   ② 更糟：降级路径会 `markNotWirable(a)`，把当前 audio 元素**永久**
+         *      标记为不可接管（音量随即改由 gain 失效、真实波形消失）。
+         *      那个元素是常驻的，标记一次就再也回不来。
+         * 判据用 `currentSong._localPath` 而不是 URL 前缀 —— 语义更准，
+         * 不依赖地址格式（网络歌走的是本地代理 `http://127.0.0.1:…`，不是 asset）。
+         */
+        const isLocalFile = !!useMusicStore.getState().currentSong?._localPath;
+        if (corsMode && a && !isLocalFile) {
           /**
            * 首轮失败：判为"该音源不接受 CORS" → 降级重载。
            *
@@ -280,7 +314,13 @@ export function MusicKernel() {
           setCorsMode(false);
           return;
         }
-        // 兼容模式下仍失败：这次是真失败了（链接失效 / 网络异常），如实告知
+        // 兼容模式下仍失败：这次是真失败了（链接失效 / 网络异常 / 本地文件被移走）
+        if (useMusicStore.getState().restoring) {
+          // 恢复态（Q4）：换下一首继续试，直到有一首能播；整条队列都试完由
+          // handleRestoreFailed 负责清空。静默，不弹 toast。
+          handleRestoreFailed();
+          return;
+        }
         toast('音频加载失败：链接可能已失效或网络异常');
       }}
     />

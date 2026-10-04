@@ -30,14 +30,26 @@ export function MusicScreen() {
   const queueLength = useMusicStore((s) => s.queue.length);
 
   const init = useMusicStore((s) => s.init);
+  const restoreSession = useMusicStore((s) => s.restoreSession);
   const seek = useMusicStore((s) => s.seek);
   const closeExpanded = useMusicStore((s) => s.closeExpanded);
   const setQueueOpen = useMusicStore((s) => s.setQueueOpen);
 
-  // 只挂载一次：init 内部恢复偏好、拉四平台登录态与首屏发现数据
+  /*
+   * 启动恢复上次播放（进音乐模块时跑，见《09》§5.6 拍板口径与 store 的 restoreSession）。
+   *
+   * ① 为什么**串在 init 之后**而不是并行：init 里的 `loadAllLoginStatuses` 会探四个平台
+   *    的登录态。串行能复用它探到的结果；并行等于同一时间发两次同样的探测请求。
+   * ② 为什么**不在** main.tsx 里做：恢复要显示播放条，而播放条属于音乐屏。
+   *    放 main.tsx 会在用户还没进音乐屏时就发网络请求、动播放内核。
+   * ③ `restoreSession` 自带只跑一次的闸（Q6），所以切走再切回不会重复恢复。
+   */
   useEffect(() => {
-    void init();
-  }, [init]);
+    void (async () => {
+      await init();
+      await restoreSession();
+    })();
+  }, [init, restoreSession]);
 
   // Esc 关闭展开播放器 / 队列抽屉（只在本屏存在时有意义，故留在本屏）
   useEffect(() => {
