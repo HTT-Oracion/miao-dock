@@ -139,8 +139,25 @@ try {
   await sleep(300);
 
   console.log('③ 就绪延迟（覆盖 Service 的 starting 态）');
-  const early = await req(5003, 'GET', '/ready');
-  check('预热中 /ready → 503 starting', early.status === 503 && JSON.parse(early.body).status === 'starting', early.status);
+  // 端口开始监听要等进程启动 + 模块加载，实测 ~385ms（机器负载高时更久）。
+  // 原先固定 sleep(300) 再探，会在「绑定晚于 300ms」时直接抛 ECONNREFUSED，
+  // 把「预热中」误报成运行期异常 —— 这个红绿取决于机器忙不忙，不可信。
+  // 改成轮询到「首次有应答」为止（上限 900ms，仍远早于 1200ms 的就绪时刻），
+  // 断言语义不变：**首次**应答必须是 503 starting。
+  let early = null;
+  for (let i = 0; i < 30; i++) {
+    try {
+      early = await req(5003, 'GET', '/ready');
+      break;
+    } catch {
+      await sleep(30); // 还没绑定，连接被拒：继续等
+    }
+  }
+  check(
+    '预热中 /ready → 503 starting',
+    !!early && early.status === 503 && JSON.parse(early.body).status === 'starting',
+    early ? early.status : '端口在 900ms 内未开始监听',
+  );
 
   await sleep(1400);
   const ready = await req(5003, 'GET', '/ready');
