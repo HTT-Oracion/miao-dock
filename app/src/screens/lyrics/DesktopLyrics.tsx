@@ -118,14 +118,16 @@ function indexAt(lines: LyricsLine[], nowMs: number): number {
 /**
  * 窗口状态（Rust 侧 `LyricsWindowState` 的前端形状）。
  *
- * ⚠️ 字段名必须与 Rust 侧**逐字一致**：`y`（不是 `offset_y`）。
- * Rust 用 serde 反序列化，字段对不上会**整条命令失败** —— 而失败被 `.catch()` 静默吞掉，
- * 症状是"拖动后位置不记忆"，没有任何报错指向真因（这个坑真踩过：D-49 改口径时漏改了前端）。
- * 口径同样必须是**屏幕 y 坐标**而不是"距底距离"：两者差一个屏幕高度，换算只在
- * 一处做的话必然对不上。
+ * ⚠️ 字段名与个数必须与 Rust 侧**逐字一致**（含 `x`）。Rust 用 serde 反序列化，
+ * 对不上会**整条命令失败** —— 而失败被 `.catch()` 静默吞掉，症状只是"位置不记忆"。
+ * 这条契约由断言 `LYRICS.stateFieldMatch` 守着（它会从 Rust 结构体解析字段名来比对）。
+ *
+ * 口径同样是**屏幕坐标 + 逻辑像素**（不是"距底距离"，不是物理像素）。
  */
 interface WindowState {
-  /** 窗口顶边的屏幕 y 坐标（逻辑像素）；Rust 侧 -1 表示"未记录" */
+  /** 窗口左上角的屏幕 x 坐标（逻辑像素）；-1 = 未记录 */
+  x: number;
+  /** 窗口左上角的屏幕 y 坐标（逻辑像素）；-1 = 未记录 */
   y: number;
   locked: boolean;
 }
@@ -251,10 +253,26 @@ export function DesktopLyrics() {
     }
   }, []);
 
+  /**
+   * 已记录的位置（本地缓存）。
+   *
+   * ⚠️ 存在的理由：Rust 侧的 `save_lyrics_window_state` 是**全量覆盖**，
+   * 而本组件有两种调用场景 —— ① 拖完存位置 ② 切锁定时只改 `locked`。
+   * 若第 ② 种也照直传 `{ locked }`，`x`/`y` 会以默认值 `-1` 覆盖掉用户拖好的位置
+   * （症状：一锁定，下次打开就回到默认位置）。所以这里缓存已知值做**部分更新**。
+   */
+  const posRef = useRef<{ x: number; y: number }>({ x: -1, y: -1 });
+
   const persist = useCallback(
-    (next: { y?: number; locked?: boolean }) => {
+    (next: { x?: number; y?: number; locked?: boolean }) => {
+      const known = posRef.current;
+      // 只更新调用方显式给出的字段，其余沿用已记录值 —— 见 posRef 的注释
+      if (next.x !== undefined) known.x = next.x;
+      if (next.y !== undefined) known.y = next.y;
+
       const state: WindowState = {
-        y: next.y ?? -1,
+        x: known.x,
+        y: known.y,
         locked: next.locked ?? locked,
       };
       // 位置存 Rust（跨进程重启保留，配置文件比 localStorage 稳），
@@ -327,11 +345,12 @@ export function DesktopLyrics() {
     if (!win) return;
     try {
       const [pos, scale] = await Promise.all([win.outerPosition(), win.scaleFactor()]);
-      // ⚠️ 这里**直接存窗口顶边的屏幕 y**，不做"距底距离"换算 ——
-      // Rust 侧的字段就是 y，换算等于引入第二套口径（两者差一个屏幕高度）。
-      // 只需要除以 scaleFactor 把物理像素换成逻辑像素（Retina 上不除会飘一倍）。
-      const y = pos.y / scale;
-      persist({ y: Math.round(y) });
+      // ⚠️ 存**窗口左上角的屏幕坐标**（x 与 y 都要，只存 y 会让水平位置丢失），
+      // 不做"距底距离"换算 —— Rust 侧的字段就是坐标，换算等于引入第二套口径。
+      // 唯一需要的换算是除以 scaleFactor：outerPosition() 返回**物理像素**，
+      // 而 Rust 的 position() 收**逻辑像素**（Retina 上不除会飘一倍）。
+      const scaleSafe = scale > 0 ? scale : 1;
+      persist({ x: Math.round(pos.x / scaleSafe), y: Math.round(pos.y / scaleSafe) });
     } catch {
       /* 读位置失败：跳过持久化 */
     }

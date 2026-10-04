@@ -4,7 +4,7 @@
 //! 桌面歌词的定义就是"浮在所有应用之上、跟随播放" —— 它必须能在用户切到别的应用时继续显示，
 //! 这在同一个 WebView 里做不到（切走就被盖住 / 失去焦点）。参考实现也是独立窗口。
 //!
-//! ## 三个容易踩的点（都已处理，勿改回去）
+//! ## 四个容易踩的点（都已处理，勿改回去）
 //!
 //! ① **必须用 `WebviewUrl::App`（同 origin），不能用 `External`** ——
 //!    localStorage 按 origin 隔离。用 `External` 的话歌词窗读不到主窗写的偏好，
@@ -16,16 +16,32 @@
 //!    才能调 Tauri 命令。动态 label 每次都调不到权限，而且报错是"权限不足"、
 //!    **不是"窗口不存在"**，极易误判成代码写错。
 //!
-//! ③ **置顶窗口在 macOS 上要单独处理** —— `always_on_top` 在 Tauri 里跨平台可用，
-//!    但点击穿透（锁定）是平台能力：macOS 只能"浮在上面"，不能真正点击穿透。
-//!    因此 `locked` 状态只做**视觉**（去掉可交互手势 + 半透明提示），
-//!    不承诺"鼠标穿透" —— 承诺做不到的事等于埋一个更坏的坑。
+//! ③ **窗口坐标：物理像素与逻辑像素必须显式换算**（本文件最坑的一处，真踩过）——
+//!    `Monitor::size()` 报**物理像素**（Retina 2×），`position()` 收**逻辑像素**。
+//!    混用不报错，只是窗口被放到可视区外：症状是"点了没反应"而**日志干净**。
+//!    统一走 `monitor_logical_size()` 换算，不要在别处再算一次。
+//!
+//! ④ **点击穿透在 macOS 上可用**（此前注释写"macOS 做不到"是**错的**，已更正）——
+//!    Tauri 的 `set_ignore_cursor_events` 在各平台都有实现
+//!    （macOS 走 `NSWindow.ignoresMouseEvents`）。参考实现锁定后即用该 API 做穿透。
+//!    ⚠️ 但"能用"与"体验好"是两件事：锁定后的**解锁入口**若依赖穿透区判定，
+//!    需要平台级鼠标钩子（参考实现用 Rust 钩子 + `get_cursor_position`），成本高；
+//!    本项目当前降级为「双击歌词条解锁」，**待真机确认后再决定是否上穿透**。
+//!    在文档与 UI 文案里**不承诺未实测的能力**。
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// 桌面歌词窗口的固定 label（见本文件 ②）
 pub const LYRICS_WINDOW: &str = "desktop-lyrics";
+
+/// 窗口尺寸（**逻辑像素**，与 `position()` 同一单位体系）。
+/// 做成常量是为了让"写死的尺寸"只有一个来源 —— 摆位计算要用它们，
+/// 分成两处写迟早会出现"挪了窗口尺寸忘了改贴底偏移"。
+const WIN_W: f64 = 520.0;
+const WIN_H: f64 = 160.0;
+/// 贴底时留出的下边距，避免歌词紧贴屏幕底边（视觉上像被裁掉）
+const BOTTOM_MARGIN: f64 = 80.0;
 
 /// 位置/锁定等窗口状态。存在 Rust 侧而非 localStorage 的理由：
 /// 窗口位置必须**跨进程重启**保留，而 localStorage 是同 origin 的 WebView 存储 ——
@@ -36,11 +52,17 @@ pub const LYRICS_WINDOW: &str = "desktop-lyrics";
 /// Tauri 要求入参类型实现 `CommandArg`（内部需要反序列化）。只写 `Serialize` 编译不过。
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct LyricsWindowState {
-    /// 窗口顶边的**屏幕 y 坐标**（逻辑像素）。
+    /// 窗口左上角的**屏幕 x 坐标**（逻辑像素）。`-1.0` = 未记录（首次打开走底部居中）。
+    pub x: f64,
+    /// 窗口左上角的**屏幕 y 坐标**（逻辑像素）。`-1.0` = 未记录（首次打开走贴底）。
     ///
-    /// ⚠️ 口径必须是「y 坐标」而不是「距底距离」—— 两者差一个屏幕高度，换算只在
-    /// 某一处做的话必然有对不上的可能（实现时真的踩了这个坑）。
-    /// `-1.0` = 未记录（首次打开走"贴屏幕底部"的默认摆位）。
+    /// ⚠️ 口径必须是「坐标」而不是「距底距离」—— 两者差一个屏幕高度，
+    /// 换算只在某一处做的话必然有对不上的时候（实现时真的踩了这个坑）。
+    ///
+    /// ⚠️⚠️ 单位必须是**逻辑像素**：`Monitor::size()` 报的是**物理像素**（Retina 上 2×），
+    /// 而 `position()` 收的是逻辑像素。混用会让窗口落到屏幕外 ——
+    /// 症状是"点了没反应"、**且没有任何报错**（窗口其实建出来了，只是在可视区外）。
+    /// 真踩过：`1964 − 160 − 80 = 1724` 交给逻辑坐标，而屏幕逻辑高只有 982。
     pub y: f64,
     /// 用户是否锁定（不可拖动）。
     pub locked: bool,
@@ -48,7 +70,7 @@ pub struct LyricsWindowState {
 
 impl Default for LyricsWindowState {
     fn default() -> Self {
-        Self { y: -1.0, locked: false }
+        Self { x: -1.0, y: -1.0, locked: false }
     }
 }
 
@@ -84,37 +106,59 @@ pub fn open_lyrics_window(app: AppHandle) -> Result<(), String> {
 
     let st = load_state(&app);
 
-    // 摆位：已拖过就用记录的 y；首次打开贴当前屏幕底部。
-    // 「贴底」要拿屏幕高度算一次（窗口高 160，减去一点边距）——
-    // 写死 0 会让窗口开在屏幕顶端，用户会以为功能坏了（预期它在底部飘着）。
-    let y = if st.y >= 0.0 {
-        st.y
-    } else {
-        let h = app
-            .primary_monitor()
-            .ok()
-            .flatten()
-            .map(|m| f64::from(m.size().height as i32) as f64)
-            .unwrap_or(1080.0);
-        (h - 160.0 - 80.0).max(0.0)
-    };
+    // ── 首次摆位：贴屏幕底部 + 水平居中 ────────────────────────────────────
+    //
+    // ⚠️⚠️ 这段唯一的坑是**单位**，而且错了不报错（实测踩过，症状是"点了没反应"）：
+    //   · `Monitor::size()`     → **物理像素**（Retina 上 2×，如 1964）
+    //   · `Monitor::scale_factor()` → 物理/逻辑 的倍率（如 2.0）
+    //   · `WebviewWindowBuilder::position()` → **逻辑像素**
+    // 直接拿物理像素当逻辑像素用，会算出 `1964−160−80=1724`，而屏幕逻辑高只有 982
+    // → 窗口被放到可视区之外，用户看不到任何东西，也没有任何报错。
+    //
+    // 为什么不干脆「不设 position」（参考实现的做法）：那样窗口会开在系统默认位置，
+    // 而桌面歌词的预期位置是**底部居中**。这里自己算，但换算做对。
+    let (screen_w, screen_h) = monitor_logical_size(&app);
 
-    // 窗口本体只做一条极简歌词：宽 520、高 160、无边框、始终置顶、跳过任务栏。
+    let win_w = WIN_W;
+    let win_h = WIN_H;
+    // `>= 0.0` 判"是否已记录"：-1.0 是"未记录"的哨兵值（见 LyricsWindowState 注释）
+    let x = if st.x >= 0.0 { st.x } else { ((screen_w - win_w) / 2.0).max(0.0) };
+    let y = if st.y >= 0.0 { st.y } else { (screen_h - win_h - BOTTOM_MARGIN).max(0.0) };
+
+    // 窗口本体只做一条极简歌词：无边框、始终置顶、跳过任务栏。
     // 尺寸刻意小 —— 桌面歌词是"一条浮在桌面上的文字"，做成半屏会变成第二个播放器。
     WebviewWindowBuilder::new(&app, LYRICS_WINDOW, WebviewUrl::App("lyrics.html".into()))
         .title("桌面歌词")
-        .inner_size(520.0, 160.0)
+        .inner_size(win_w, win_h)
         .decorations(false)
         .transparent(true)
         .shadow(false)
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)
-        .position(y, 0.0)
+        .position(x, y)
         .build()
         .map_err(|e| format!("创建桌面歌词窗口失败：{e}"))?;
 
     Ok(())
+}
+
+/// 主显示器的**逻辑**尺寸（宽, 高）。
+///
+/// 单独成函数是为了让「物理 → 逻辑」这一步在**全项目只有一处**：
+/// 两个窗口都用它，就不会出现"一个算了、一个忘了"的不一致。
+fn monitor_logical_size(app: &AppHandle) -> (f64, f64) {
+    app.primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| {
+            let scale = m.scale_factor();
+            let size = m.size();
+            // 兜底 scale=1.0：极小概率下拿不到缩放比时，宁可位置略有偏差也不要除零
+            let s = if scale > 0.0 { scale } else { 1.0 };
+            (f64::from(size.width) / s, f64::from(size.height) / s)
+        })
+        .unwrap_or((1440.0, 900.0))
 }
 
 /// 关闭桌面歌词窗口（不存在时静默成功 —— 幂等）。

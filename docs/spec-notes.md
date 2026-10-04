@@ -1162,3 +1162,46 @@ Rust 用 serde 反序列化前端传的结构体，字段名对不上 → **整�
 
 > **教训**：上一轮我用的是"读配置 + 推理"，这轮先 `curl` 一下就得到相反结论。
 > **配置能推出结论时也要实测** —— 尤其当结论要写进台账并作为"暂不修"的依据时。
+
+---
+
+## D-53 · 对照参考实现逐项核对：两个确定性缺陷 + 参考源码补全
+
+完整核对表与分阶段计划见 **`docs/ui-parity-plan.md`**（本文只记结论与坑）。
+
+### 参考源码此前只切了部分（补全）
+`vendor/music-reference/` 原有 21 个文件（Rust 侧为主），**前端组件目录缺失** ——
+这正是此前"找不到 `components/ui/dynamic-island`"的原因，不是它不存在。
+本轮补全到 `upstream-v10/`（21 个文件）：`dynamic-island.tsx`(77KB) ·
+`MusicPage.tsx`(6644 行，含 PlayerBar 2184-2468 / ExpandedPlayer 826-2076) ·
+`music-store.ts`(135KB) · `DesktopLyricsSettingsModal.tsx` · `desktop-lyrics/*` ·
+`island_window.rs` · 6 张样式预览图。已**脱敏**（7 个文件里的产品名 → `upstream`）。
+
+### D1 · 桌面歌词窗口位置算错 → 窗口落在屏幕外
+`lyrics_window.rs` 用 `Monitor::size().height`（**物理像素**，Retina 2×）算出 y，
+再交给 `.position()`（期望**逻辑像素**）：`1964−160−80 = 1724` ≫ 屏幕逻辑高 982。
+**症状完全吻合**：无任何报错、窗口已创建、开关变「已开」，但屏幕上没有。
+> 参考实现**不设 position**，位置交给前端 `restoreWindowPosition()` + Rust `clampToWorkArea()`
+> 钳制到工作区 —— 天然兼容多屏与分辨率变化。
+**修法**：A（推荐）不设 position；B 除以 `scale_factor()`。
+
+### D2 · `assetProtocol` 未启用 → 本地歌曲必然播不了
+`tauri.conf.json` 的 `app.security` 只有 `csp: null`，**没有 `assetProtocol`**；
+Tauri v2 官方默认 `assetProtocol.enable = false`（已核文档）。
+而 `store.ts:557` 用 `convertFileSrc(_localPath)` 生成 `asset://` URL → 被 WebView 拒绝。
+> 导入能成功（只读文件系统），**播放必然失败** —— 这是"半可用"状态，最容易误判成"播放器坏了"。
+**修法**：`security.assetProtocol = { enable: true, scope: ["$HOME/**"] }`。
+
+### ⚠️ 修正我此前的一处错误陈述（P3 遗留）
+`lyrics_window.rs` 的注释里写了「macOS 无点击穿透能力（那是 Windows 的）」——
+**不准确**。Tauri 的 `set_ignore_cursor_events` 在 macOS 有对应实现
+（`NSWindow.ignoresMouseEvents`），参考实现用的正是该 API。
+该注释待 P0 一并修正；**在文案里不承诺未实测的能力**这一条仍然成立。
+
+### test-music 验证结果
+- **歌词解析 ✅ 通过**：71 行 → 53 行，首行 `{time:3.24}`，时间单调递增，
+  元信息（`[ar:] [ti:] [al:] [id:] [length:]`）**全部正确跳过**
+- **本地播放 ❌ 失败** → 即 D2
+- ⚠️ 过程记录：我第一版"元信息是否被吞"的检测用了 `^(ar|ti|al|id|length)`，
+  被歌词 `"All I know is you've shown me"`（以 `Al` 开头）误判为命中 →
+  **改精确判据**（文本是否恰等于元信息值）后确认无误。**判据粗糙会自造假阳性。**

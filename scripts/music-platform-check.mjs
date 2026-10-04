@@ -48,6 +48,8 @@ const F = {
   // ── 桌面歌词（P3）──
   rustLyrics: path.join(APP, 'src-tauri', 'src', 'lyrics_window.rs'),
   capabilities: path.join(APP, 'src-tauri', 'capabilities', 'default.json'),
+  tauriConf: path.join(APP, 'src-tauri', 'tauri.conf.json'),
+  cargoToml: path.join(APP, 'src-tauri', 'Cargo.toml'),
   viteConfig: path.join(APP, 'vite.config.ts'),
   lyricsHtml: path.join(APP, 'lyrics.html'),
   desktopLyrics: path.join(APP, 'src', 'screens', 'lyrics', 'DesktopLyrics.tsx'),
@@ -151,6 +153,8 @@ function loadSources() {
     types: readMaybe(F.types),
     rustLyrics: readMaybe(F.rustLyrics),
     capabilities: readMaybe(F.capabilities),
+    tauriConf: readMaybe(F.tauriConf),
+    cargoToml: readMaybe(F.cargoToml),
     viteConfig: readMaybe(F.viteConfig),
     lyricsHtml: readMaybe(F.lyricsHtml),
     desktopLyrics: readMaybe(F.desktopLyrics),
@@ -1056,6 +1060,67 @@ add('LYRICS.stateFieldMatch', 'LYRICS', (s) => {
       : '',
   };
 });
+add('LYRICS.assetProtocol', 'LYRICS', (s) => {
+  // ⚠️ 本地歌曲播放需要**两处同时配置**，缺任何一处都是「静默失败」——
+  //   ① `Cargo.toml` 的 tauri feature `protocol-asset`
+  //      → 已核 tauri 2.12.1 源码：`manager/webview.rs` 里 asset 协议的注册被
+  //        `#[cfg(feature = "protocol-asset")]` 门禁，**不加则协议根本不注册**，
+  //        此时 conf 里写 `enable: true` 会被完全忽略。
+  //      → 该 feature 展开为 `["http-range"]`，顺带带来 Range 支持。
+  //   ② `tauri.conf.json` 的 `app.security.assetProtocol`（enable + 非空 scope）
+  //      → Tauri v2 默认 `enable: false`（已核官方文档）。
+  //
+  // 症状（真踩过）：**导入本地歌成功、播放必然失败** —— 一个"半可用"状态，
+  // 最容易被误判成"播放器坏了"。而两处缺任意一处，编译/构建/断言当时**全绿**。
+  const missing = [];
+
+  // ① Cargo feature
+  const cargo = s.cargoToml || '';
+  // 只在 tauri 依赖那一行里找 feature，避免命中注释或其它 crate
+  const tauriLine = cargo.split('\n').find((l) => /^\s*tauri\s*=/.test(l)) || '';
+  if (!/protocol-asset/.test(tauriLine)) {
+    missing.push('Cargo.toml 的 tauri 依赖缺 `protocol-asset` feature（asset 协议不注册）');
+  }
+
+  // ② conf 配置
+  let conf;
+  try {
+    conf = JSON.parse(s.tauriConf);
+  } catch {
+    return { ok: false, detail: 'tauri.conf.json 不是合法 JSON 或不存在' };
+  }
+  const ap = conf?.app?.security?.assetProtocol;
+  if (!ap) {
+    missing.push('缺 app.security.assetProtocol（Tauri v2 默认 enable:false）');
+  } else {
+    if (ap.enable !== true) missing.push('assetProtocol.enable 不为 true');
+    const scope = Array.isArray(ap.scope) ? ap.scope : [];
+    if (scope.length === 0) missing.push('assetProtocol.scope 为空（enable 了但谁都不放行）');
+  }
+
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? missing.join('；') : 'Cargo feature + conf 两处齐全',
+  };
+});
+add('LYRICS.coordUnit', 'LYRICS', (s) => {
+  // ⚠️ 本条防的是 D-53 缺陷 ①：窗口坐标的**单位混用**。
+  // `Monitor::size()` 报**物理像素**（Retina 2×），`position()` 收**逻辑像素** ——
+  // 混用会让窗口落到可视区外：症状是"点了没反应"而**日志干净**（真踩过：
+  // 1964−160−80=1724 交给逻辑坐标，而屏幕逻辑高只有 982）。
+  // 判据锁三件事：有统一换算函数 / 里面有 scale_factor / 摆位处确实走它。
+  if (!s.rustLyrics) return { ok: false, detail: 'lyrics_window.rs 不存在' };
+  const rust = stripComments(s.rustLyrics);
+  const missing = [];
+  if (!/fn\s+monitor_logical_size/.test(rust))
+    missing.push('缺统一换算入口 monitor_logical_size（换算散落多处迟早漏一处）');
+  if (!/scale_factor\s*\(\s*\)/.test(rust)) missing.push('未调用 scale_factor()（物理→逻辑没换算）');
+  if (!/monitor_logical_size\s*\(/.test(rust)) missing.push('摆位处未使用换算函数');
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `窗口坐标单位：${missing.join('、')}` : '',
+  };
+});
 add('LYRICS.closeViaRust', 'LYRICS', (s) => {
   // 关闭必须走 Rust 命令，不能 window.close()：后者绕过主窗状态，
   // 开关会显示成"还开着"（子 agent 主动做了这个选择，锁住它）
@@ -1521,9 +1586,43 @@ const MUTATIONS = [
     // 漏改前端 → serde 反序列化失败 → 命令静默失效。tsc/vite/cargo 全都测不到。
     name: '把前端 WindowState 的字段名改回 offset_y（与 Rust 的 y 对不上）',
     file: F.desktopLyrics,
-    find: '        y: next.y ?? -1,',
-    replace: '        offset_y: next.y ?? -1,',
+    // ⚠️ 锚点必须跟着实现走：persist 改为「部分更新」后，字段来源从 `next.y` 变成了 `known.y`。
+    // 锚点一旦漂移，这条反证会退化成「锚点未找到 / 跳过」—— 跳过 ≠ 通过。
+    find: '        y: known.y,',
+    replace: '        offset_y: known.y,',
     expect: ['LYRICS.stateFieldMatch'],
+  },
+  {
+    // 模拟 D-53 缺陷 ②：关掉 assetProtocol → 本地歌曲静默播不了
+    name: '把 assetProtocol 的 enable 关掉（本地歌曲 asset:// 会被拒）',
+    file: F.tauriConf,
+    find: '        "enable": true,\n',
+    replace: '        "enable": false,\n',
+    expect: ['LYRICS.assetProtocol'],
+  },
+  {
+    // 模拟 D-53 缺陷 ② 的**另一半**：conf 配了但 Cargo feature 没开 →
+    // asset 协议根本不注册，`enable: true` 被静默忽略（这一处比 conf 更隐蔽）
+    name: '从 Cargo.toml 摘掉 protocol-asset feature（协议不注册，conf 被忽略）',
+    file: F.cargoToml,
+    find: 'tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }',
+    replace: 'tauri = { version = "2", features = ["tray-icon"] }',
+    expect: ['LYRICS.assetProtocol'],
+  },
+  {
+    // 模拟 D-53 缺陷 ①：去掉物理→逻辑换算 → 窗口落到屏幕外
+    name: '在坐标换算里去掉 scale_factor（物理像素当逻辑像素用）',
+    file: F.rustLyrics,
+    find: '            let scale = m.scale_factor();',
+    replace: '            let scale = 1.0;',
+    expect: ['LYRICS.coordUnit'],
+  },
+  {
+    name: '把统一换算函数 monitor_logical_size 改掉（换算散落多处）',
+    file: F.rustLyrics,
+    find: 'fn monitor_logical_size(app: &AppHandle) -> (f64, f64) {',
+    replace: 'fn ad_hoc_screen_size(app: &AppHandle) -> (f64, f64) {',
+    expect: ['LYRICS.coordUnit'],
   },
 ];
 
