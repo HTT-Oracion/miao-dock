@@ -3,6 +3,9 @@
  *
  * 与主窗的契约（**已冻结，本文件只消费，不改字段名**）：
  * - 主窗 `emit('lyrics://state', payload)` → 本窗 `listen` 接收，形状见 `LyricsPayload`。
+ *   ⚠️ 该事件上有**两种**载荷：完整状态（`LyricsPayload`）与只带偏好的轻量载荷
+ *   （`LyricsPrefsPayload`，用户改字号/颜色/行数时发）。靠 `prefsOnly` 判别，
+ *   判别字段名必须与主窗 `music/ipc.ts` 逐字一致（两侧刻意各自声明类型，见 ②）。
  * - 需要写回窗口状态时调 Rust 的 `save_lyrics_window_state` / `close_lyrics_window`。
  *
  * ## 这个窗口和主窗的三个根本差异
@@ -23,7 +26,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Lock, X } from 'lucide-react';
-import { LYRICS_COLOR_DEF, LYRICS_SIZE } from '@music/player-options';
+import {
+  DL_BASE_COLOR_DEF,
+  DL_HIGHLIGHT_COLOR_DEF,
+  DL_LINE_COUNT,
+  DL_LYRICS_SIZE,
+} from '@music/player-options';
 
 // ------------------------------------------------------------------ 契约类型
 
@@ -31,6 +39,26 @@ import { LYRICS_COLOR_DEF, LYRICS_SIZE } from '@music/player-options';
 export interface LyricsLine {
   ms: number;
   text: string;
+}
+
+/**
+ * 桌面歌词的**独立**偏好。字段名与主窗 `music/ipc.ts` 的 `DesktopLyricsPrefs`
+ * **逐字一致**（本窗刻意不 import 主窗类型，见文件头 ②）。
+ *
+ * 为什么是独立的一套而不是复用主窗的 `lyricsFontSize`：展开播放器可铺满整屏，
+ * 本窗只有 160px 高且不可缩放（`resizable(false)`，几何在 Rust 侧）。
+ * 共用一个字号时，用户为详情页调到 48 会把本窗撑爆 ——
+ * 两个窗口的可用空间差一个量级，偏好就不该是同一个。
+ */
+export interface DesktopLyricsPrefs {
+  /** 当前（高亮）行字号，px */
+  fontSize: number;
+  /** 当前行颜色 */
+  highlightColor: string;
+  /** 其余（未高亮）行颜色 */
+  baseColor: string;
+  /** 一次显示几行（含当前行，当前行在最下方） */
+  lineCount: number;
 }
 
 /**
@@ -53,6 +81,30 @@ export interface LyricsPayload {
   durationMs: number;
   /** 主窗侧「推送时的墙上时钟」，用于校正两窗时钟漂移 */
   sentAtEpoch: number;
+  /**
+   * 桌面歌词的独立偏好。完整推送总会带上（新开的窗口首帧就有正确外观）；
+   * 标成可选是为了**兼容缺失** —— 缺了就一直用本窗已经读到的值，而不是回默认值。
+   */
+  desktopLyrics?: DesktopLyricsPrefs;
+}
+
+/**
+ * 「只带偏好」的轻量载荷：用户拖字号滑杆 / 点色点时会连发几十条这样的消息。
+ *
+ * 为什么要能和完整载荷共用同一个事件：Rust 的 `lyrics_push` 收的是
+ * `serde_json::Value` 并原样 emit，不解析结构，所以多一种载荷形状**不必改 Rust**。
+ * 本窗据此**不重置进度基准**（只改外观）—— 否则每拖一下字号，歌词都会按
+ * 那一次推送的进度重新对齐，drag 过程中会看到歌词轻微抖动。
+ */
+export interface LyricsPrefsPayload {
+  /** 判别字段：true 表示这条只带偏好、不含歌词行与进度。名字与主窗 ipc.ts 逐字一致 */
+  prefsOnly: true;
+  desktopLyrics: DesktopLyricsPrefs;
+}
+
+/** 判别：是不是「只带偏好」的轻量载荷 */
+function isPrefsOnly(p: LyricsPayload | LyricsPrefsPayload): p is LyricsPrefsPayload {
+  return (p as LyricsPrefsPayload).prefsOnly === true;
 }
 
 /** 主窗写偏好用的 localStorage 键（与主窗同 origin，实测共享 —— 台账 D-47） */
@@ -61,35 +113,61 @@ const LS_PREFS = 'miaodock.music.prefs';
 /** 本窗自己写的一个键：记住用户上次锁没锁（Rust 侧也存了一份，但读回来要过命令） */
 const LS_LOCKED = 'miaodock.lyrics.locked';
 
-interface Prefs {
-  lyricsFontSize?: number;
-  lyricsHighlightColor?: string;
+/** localStorage 里那四项的原始形状（读进来的是未知类型，逐项校验后再用） */
+interface StoredPrefs {
+  desktopLyricsFontSize?: unknown;
+  desktopLyricsHighlightColor?: unknown;
+  desktopLyricsBaseColor?: unknown;
+  desktopLyricsLineCount?: unknown;
+}
+
+/** 夹到区间内的整数；拿不到有效数字就用默认值（偏好被外部写坏时不能让本窗崩） */
+function clampInt(v: unknown, min: number, max: number, def: number): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return def;
+  return Math.max(min, Math.min(max, Math.round(v)));
 }
 
 /**
- * 读主窗的歌词偏好。
+ * 把任意来源的偏好（localStorage / 推送载荷）规整成合法值。
  *
- * ⚠️ 只在**首屏读一次**，刻意不做实时同步：`localStorage` 的 `storage` 事件在
- * 同 origin 的不同 WebView 间**不保证触发**（WKWebView 已知差异）—— 依赖它做实时同步
- * 会得到「有时生效有时不生效」的幽灵行为，比「改了字号要重开窗口才生效」更难排查。
- * 用户改字号后重开歌词窗即可生效。
+ * ⚠️ 两个入口都要过这一道：推送里若混进越界值（旧版本存的 48、被手改过的
+ * localStorage），字号会把浮条撑出窗口、行数会渲染出 9 行 —— 而这类
+ * 「看起来像渲染 bug」的现象最难联想到这里。区间常量是唯一权威（player-options）。
+ */
+function normalizePrefs(p: Partial<DesktopLyricsPrefs> | null | undefined): DesktopLyricsPrefs {
+  return {
+    fontSize: clampInt(p?.fontSize, DL_LYRICS_SIZE.min, DL_LYRICS_SIZE.max, DL_LYRICS_SIZE.def),
+    highlightColor: p?.highlightColor || DL_HIGHLIGHT_COLOR_DEF,
+    baseColor: p?.baseColor || DL_BASE_COLOR_DEF,
+    lineCount: clampInt(p?.lineCount, DL_LINE_COUNT.min, DL_LINE_COUNT.max, DL_LINE_COUNT.def),
+  };
+}
+
+/**
+ * 读主窗写的偏好（**只覆盖 localStorage 那一路**；实时那一路见 applyPayload）。
  *
- * 同理每次读都走 try/catch：JSON 可能被外部写坏（用户手改、别的版本残留），
+ * 首屏读 localStorage 是必需的：窗口是"先建好、再推状态"的，而用户从头到尾没改过
+ * 设置时，主窗的完整推送也不会带新值 —— 不读这一下，用户上次调好的外观就丢了。
+ *
+ * ⚠️ 刻意**不依赖 `storage` 事件**做实时同步：它在同 origin 的不同 WebView 间
+ * **不保证触发**（WKWebView 已知差异），依赖它会得到「有时生效有时不生效」的幽灵行为。
+ *
+ * 每次读都走 try/catch：JSON 可能被外部写坏（用户手改、别的版本残留），
  * 读失败就用默认值，不能让一个偏好把整个歌词窗拖崩。
  */
-function readPrefs(): Required<Prefs> {
-  const fallback = { lyricsFontSize: LYRICS_SIZE.def, lyricsHighlightColor: LYRICS_COLOR_DEF };
+function readPrefs(): DesktopLyricsPrefs {
   try {
     const raw = localStorage.getItem(LS_PREFS);
-    if (!raw) return fallback;
-    const p = JSON.parse(raw) as Prefs;
-    return {
-      lyricsFontSize:
-        typeof p.lyricsFontSize === 'number' ? p.lyricsFontSize : fallback.lyricsFontSize,
-      lyricsHighlightColor: p.lyricsHighlightColor || fallback.lyricsHighlightColor,
-    };
+    if (!raw) return normalizePrefs(null);
+    const p = JSON.parse(raw) as StoredPrefs;
+    return normalizePrefs({
+      fontSize: p.desktopLyricsFontSize as number | undefined,
+      highlightColor: p.desktopLyricsHighlightColor as string | undefined,
+      baseColor: p.desktopLyricsBaseColor as string | undefined,
+      lineCount: p.desktopLyricsLineCount as number | undefined,
+    });
   } catch {
-    return fallback;
+    return normalizePrefs(null);
   }
 }
 
@@ -143,7 +221,14 @@ export function DesktopLyrics() {
   /** 拖动 / 锁定失败时的可见提示（只作告知，不阻断） */
   const [hint, setHint] = useState<string | null>(null);
 
-  const prefs = useMemo(readPrefs, []);
+  /**
+   * 桌面歌词的独立偏好。
+   *
+   * 初值走 localStorage（首屏就得有正确外观，见 `readPrefs`），之后由主窗推送更新 ——
+   * 两条路都过 `normalizePrefs`，所以不变量是"state 里永远是合法值"。
+   * 用 useState 而不是 useMemo(readPrefs)：它**会被推送改写**，不是一次性的派生值。
+   */
+  const [prefs, setPrefs] = useState<DesktopLyricsPrefs>(readPrefs);
 
   // ---- 进度推进（核心）----------------------------------------------------
   //
@@ -172,6 +257,8 @@ export function DesktopLyrics() {
   const idxRef = useRef(-1);
 
   const applyPayload = useCallback((p: LyricsPayload) => {
+    // 偏好跟着完整推送一起来：先落外观，再走进度基准（两者互不影响）
+    if (p.desktopLyrics) setPrefs(normalizePrefs(p.desktopLyrics));
     const drift = p.sentAtEpoch ? Date.now() - p.sentAtEpoch : 0;
     const clamped = Math.max(-2000, Math.min(2000, drift));
     baseMsRef.current = p.startedAtMs + clamped;
@@ -184,6 +271,17 @@ export function DesktopLyrics() {
     setFresh(true);
   }, []);
 
+  /**
+   * 只应用偏好，**不碰进度基准**。
+   *
+   * 用户拖字号滑杆时会连发几十条 prefsOnly 载荷；若每条都走 `applyPayload`，
+   * 歌词会被反复按"那一条推送里的进度"重新对齐 —— drag 过程中能看到歌词轻微抖动，
+   * 而这不是任何人的意图。偏好与进度是正交的，就分开处理。
+   */
+  const applyPrefsOnly = useCallback((p: LyricsPrefsPayload) => {
+    setPrefs(normalizePrefs(p.desktopLyrics));
+  }, []);
+
   // 订阅主窗推送。
   // ⚠️ 必须用 try/catch 包住 listen：非 Tauri 环境（直接在浏览器里开 lyrics.html 调试）
   // 没有事件桥，listen 会 reject，不兜住的话整个模块白屏、连静态降级态都看不到。
@@ -192,8 +290,11 @@ export function DesktopLyrics() {
     let un: (() => void) | undefined;
     void (async () => {
       try {
-        const off = await listen<LyricsPayload>('lyrics://state', (e) => {
-          if (!disposed) applyPayload(e.payload);
+        const off = await listen<LyricsPayload | LyricsPrefsPayload>('lyrics://state', (e) => {
+          if (disposed) return;
+          // 两种载荷共用同一个事件，靠 prefsOnly 判别（见 isPrefsOnly 的注释）
+          if (isPrefsOnly(e.payload)) applyPrefsOnly(e.payload);
+          else applyPayload(e.payload);
         });
         if (disposed) off();
         else un = off;
@@ -205,7 +306,7 @@ export function DesktopLyrics() {
       disposed = true;
       un?.();
     };
-  }, [applyPayload]);
+  }, [applyPayload, applyPrefsOnly]);
 
   // rAF 推进循环。playing === false 时**不推进**（暂停必须真的停住）——
   // 暂停若还在走表，歌词会在暂停期间继续往前爬，这是最容易被当成「歌词乱跳」的 bug。
@@ -400,14 +501,11 @@ export function DesktopLyrics() {
   const lines = payload?.lines ?? [];
   const noLyrics = hasSong && lines.length === 0;
 
-  const cur = idx >= 0 ? lines[idx] : null;
-  const prev = idx > 0 ? lines[idx - 1] : null;
-
   /**
    * 「还没到第一句」（idx === -1）。
    *
    * 契约要求的降级文案是「纯音乐」提示，这里照办：idx 为 -1 时当前行确实**没有歌词可显示**，
-   * 而桌面歌词只有两行的空间，塞别的内容会把双行形态撑变形。
+   * 而桌面歌词只有少数几行的空间，塞别的内容会把浮条形态撑变形。
    * 需要说明的边界：这一档同时覆盖「这歌没歌词」和「有歌词但还在首字前的间奏」，
    * 后者说「纯音乐」严格讲不准确（间奏确实是纯器乐，措辞成立），但它无法与前者区分 ——
    * 歌词窗拿不到「这歌到底有没有词」之外的额外信息。
@@ -415,18 +513,39 @@ export function DesktopLyrics() {
    */
   const beforeFirst = hasSong && idx < 0;
 
-  const size = prefs.lyricsFontSize;
-  const curSize = Math.round(size * 1.15);
+  /**
+   * 可见的歌词行：**当前行在最下方**，往上回溯 `lineCount - 1` 行。
+   *
+   * 为什么当前行排在最后一行而不是居中：改造前就是「上一行 + 当前行」（当前行在下），
+   * 这是最小惊讶的推广 —— `lineCount === 2` 时与改造前逐像素等价。
+   * 元素为 `null` 表示"那一格还没有词"（开头几句之前）：仍然渲染成等高空行，
+   * 否则行数一变整条浮条的高度与位置就会跳。
+   */
+  const rows: (LyricsLine | null)[] = [];
+  for (let k = prefs.lineCount - 1; k >= 0; k -= 1) {
+    rows.push(idx - k >= 0 ? lines[idx - k] : null);
+  }
 
   return (
     <div
       className={`dl-root${locked ? ' is-locked' : ''}`}
       onPointerDown={onPointerDown}
       onDoubleClick={onDoubleClick}
+      /* 行数写到 DOM 上：CSS 据此在行数多时收紧浮条上下内边距（见 WINDOW_CSS）。
+         用属性而不是多个类名 —— 行数是连续量，类名会退化成 dl-lines-4 / -5 的枚举。 */
+      data-lines={prefs.lineCount}
       role="status"
       aria-label="桌面歌词"
     >
-      <div className={`dl-bar${fresh ? ' is-fresh' : ''}`}>
+      {/*
+        字号注入在**浮条**上（而不是逐行写 px）：
+        `.dl-side` 用 0.86em、`.dl-cur` 用 1em 相对它换算 —— 逐行写死 px 就没法
+        让副行随主行等比缩放，改字号时两行的比例会散架。
+      */}
+      <div
+        className={`dl-bar${fresh ? ' is-fresh' : ''}`}
+        style={{ fontSize: `${prefs.fontSize}px` }}
+      >
         {!hasSong ? (
           // 无歌曲：窗口**保持存在**，只显示极简待播放态。
           // ⚠️ 绝不 `window.close()` —— 那是主窗的职责（它调 close_lyrics_window）。
@@ -445,23 +564,36 @@ export function DesktopLyrics() {
           </div>
         ) : (
           <>
-            {/* 上一行：低透明度。桌面歌词的经典双行形态 —— 上一句留在视野里，
-                眼睛不用来回扫。min-height 固定，防止长/短句切换时整条浮条高度跳动。 */}
-            <div className="dl-line dl-prev">{prev?.text ?? ''}</div>
-            {cur ? (
-              <div
-                className="dl-line dl-cur"
-                style={{ fontSize: `${curSize}px`, color: prefs.lyricsHighlightColor }}
-              >
-                {cur.text}
-              </div>
-            ) : (
-              // 还没到第一句：给「纯音乐」提示，不留空白（空白浮条是半成品）。
-              // 提示用弱化色而非高亮色 —— 它不是正在唱的词，不该抢焦点。
-              <div className="dl-line dl-cur dl-wait" style={{ fontSize: `${curSize}px` }}>
-                {beforeFirst ? '♪ 纯音乐，请欣赏' : ''}
-              </div>
-            )}
+            {rows.map((line, i) => {
+              const isCur = i === rows.length - 1;
+              if (isCur) {
+                return line ? (
+                  // 当前行：用用户配的高亮色。大小差异已由 .dl-cur 的 1em 承担，
+                  // 颜色差异由这里的 inline color 承担 —— 两级焦点，不再叠「×1.15」的放大。
+                  <div key={`cur-${idx}`} className="dl-line dl-cur" style={{ color: prefs.highlightColor }}>
+                    {line.text}
+                  </div>
+                ) : (
+                  // 还没到第一句：给「纯音乐」提示，不留空白（空白浮条是半成品）。
+                  // ⚠️ 提示色**不跟**用户配的「未高亮行颜色」走 —— 它不是歌词，
+                  // 用副行色会让人以为那是一句词。
+                  <div key="cur-wait" className="dl-line dl-cur dl-wait">
+                    {beforeFirst ? '♪ 纯音乐，请欣赏' : ''}
+                  </div>
+                );
+              }
+              // 其余行（上一句及更早）：用用户配的底色。桌面歌词的经典形态 ——
+              // 前几句留在视野里，眼睛不用来回扫。
+              return (
+                <div
+                  key={`side-${i}-${idx}`}
+                  className="dl-line dl-side"
+                  style={{ color: prefs.baseColor }}
+                >
+                  {line?.text ?? ''}
+                </div>
+              );
+            })}
           </>
         )}
 
@@ -538,6 +670,17 @@ const WINDOW_CSS = `
   cursor: grab;
 }
 
+/* 行数多时收紧上下内边距。
+   窗口是 160px 高且 resizable(false)（几何写死在 Rust 的 WIN_H，本窗改不了），
+   所以能做的只有"让内容自己挤进去"：默认字号下 5 行 ≈ 155px，正好卡在窗口内；
+   若不收这 6px，5 行会被 overflow:hidden 裁掉一条边。
+   这只是兜底 —— 大字号 + 多行的组合仍会溢出（见弹窗里的说明与交付报告的"未验证"项）。 */
+.dl-root[data-lines='4'] .dl-bar,
+.dl-root[data-lines='5'] .dl-bar {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
 /* 锁定：降不透明度 + 换光标。macOS 上没有点击穿透，所以**不承诺**穿透，
    这里只表达「这条不会再被拖走了」。 */
 .dl-root.is-locked .dl-bar {
@@ -558,30 +701,35 @@ const WINDOW_CSS = `
   to   { opacity: 1; }
 }
 
-/* 两行歌词。min-height 固定成 1.4em：短句（如「嗯」）不写 min-height 会让
-   整条浮条随内容上下跳，视觉上像在抽搐。 */
+/* 歌词行。min-height 固定成 1.3em：短句（如「嗯」）不写 min-height 会让
+   整条浮条随内容上下跳，视觉上像在抽搐；行数可调之后，固定的 min-height
+   还额外保证"行数切换时整条浮条的高度是 N×固定值"，不会忽高忽低。
+   1.3 而不是 1.4 是为了让 5 行的默认组合能塞进 160px 的窗口。 */
 .dl-line {
-  min-height: 1.4em;
-  line-height: 1.4;
+  min-height: 1.3em;
+  line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  /* 当前行用大小 + 颜色两级焦点，不靠加粗：19px 上下加粗在中文小字号下发糊。 */
+  /* 焦点只由「大小 + 颜色」两级表达，不靠加粗：22px 上下加粗在中文小字号下发糊。 */
   font-weight: 400;
   letter-spacing: 0.01em;
   text-align: center;
   transition: opacity 200ms ease;
 }
-.dl-prev {
-  font-size: 0.92em;
-  /* 上一行低透明度：留住上一句，但明确让位给当前行 */
-  color: rgba(245, 242, 255, 0.42);
+/* 当前（高亮）行：字号 = 浮条字号（1em），颜色由组件用用户配的高亮色 inline 注入。
+   刻意不在 CSS 里写死颜色 —— 写死就会出现"用户在弹窗选的红，窗里还是黄"。 */
+.dl-cur {
+  font-size: 1em;
+}
+/* 其余（未高亮）行：0.86em 相对浮条字号缩小，颜色由组件用用户配的底色 inline 注入。
+   em 而非 px：换字号时主副两行等比缩放，比例不会散架。 */
+.dl-side {
+  font-size: 0.86em;
   margin-bottom: 2px;
 }
-.dl-cur {
-  color: #ffe066;
-}
-/* 未到第一句时的「纯音乐」提示：弱化色，不抢「正在唱的词」的焦点 */
+/* 未到第一句时的「纯音乐」提示：固定弱化色（**不跟**用户配的底色走 ——
+   它不是一句歌词，用了副行色会让人以为那是一句词）。 */
 .dl-wait {
   color: rgba(245, 242, 255, 0.66);
 }

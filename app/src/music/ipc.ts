@@ -294,6 +294,27 @@ export interface LyricsPushLine {
   text: string;
 }
 
+/**
+ * 桌面歌词的**独立**偏好（与展开播放器的 `lyricsFontSize` / `lyricsHighlightColor`
+ * 分开存、分开调；理由见 player-options 的 DL_* 段）。
+ *
+ * 为什么要跟着推送一起过去、而不是只靠 localStorage：
+ * 两个窗口虽然共享同一份 `miaodock.music.prefs`（台账 D-47），但**同 origin 的不同
+ * WebView 之间 `storage` 事件不保证触发**（WKWebView 已知差异）—— 靠它做实时同步
+ * 会得到"有时生效有时不生效"的幽灵行为。所以实时生效走事件通道，localStorage
+ * 只负责**新开的窗口首屏**拿到值。
+ */
+export interface DesktopLyricsPrefs {
+  /** 当前（高亮）行字号，px */
+  fontSize: number;
+  /** 当前行颜色 */
+  highlightColor: string;
+  /** 其余（未高亮）行颜色 */
+  baseColor: string;
+  /** 一次显示几行（含当前行，当前行在最下方） */
+  lineCount: number;
+}
+
 export interface LyricsPushPayload {
   /** null = 无当前歌曲（**必须推**，否则歌词窗会一直显示上一首） */
   songId: string | null;
@@ -310,6 +331,30 @@ export interface LyricsPushPayload {
   durationMs: number;
   /** 推送时的墙上时钟（`Date.now()`），供歌词窗校正两窗时钟漂移 */
   sentAtEpoch: number;
+  /** 桌面歌词的当前偏好（每次完整推送都带上，新开的窗口首帧就拿到正确外观） */
+  desktopLyrics: DesktopLyricsPrefs;
+}
+
+/**
+ * 「只带偏好」的轻量推送 —— 用户拖字号滑杆 / 换颜色时走这条。
+ *
+ * ## 为什么必须单独一条，而不是复用 `LyricsPushPayload`
+ *
+ * 拖一次滑杆会在一次拖动里触发几十次 `onChange`。若每次都发完整载荷，就得把
+ * **整首歌词行**（几十到一两百行）重新序列化一遍跨进程送过去 —— 正是 store 里
+ * `setProgress` 注释警告的那种"事件通道被打爆"的打法，只是换了个触发点。
+ * 偏好推送只带 4 个字段，代价恒定。
+ *
+ * ## 为什么能和完整载荷共用同一个事件
+ *
+ * Rust 侧 `lyrics_push` 收的是 `serde_json::Value` 并原样 emit（见 lyrics_window.rs），
+ * 不解析结构，所以多一种载荷形状**不需要改 Rust**。两侧靠 `prefsOnly` 这个
+ * 判别字段区分（见协议处理处 `isPrefsOnly`）—— 名字必须与歌词窗逐字一致。
+ */
+export interface LyricsPrefsPayload {
+  /** 判别字段：true 表示这条只带偏好、不含歌词行与进度 */
+  prefsOnly: true;
+  desktopLyrics: DesktopLyricsPrefs;
 }
 
 /** 打开桌面歌词窗口；已存在则聚焦（幂等） */
@@ -321,8 +366,13 @@ export const closeLyricsWindow = () => invoke<void>('close_lyrics_window');
 /** 桌面歌词窗当前是否开着（只答"开没开"，不含锁定态） */
 export const lyricsWindowOpen = () => invoke<boolean>('lyrics_window_open');
 
-/** 主窗 → 歌词窗推状态；窗口不存在时 Rust 侧静默成功，不报错 */
-export const lyricsPush = (payload: LyricsPushPayload) => invoke<void>('lyrics_push', { payload });
+/**
+ * 主窗 → 歌词窗推状态。两种载荷共用这一条命令与 `lyrics://state` 事件：
+ * 完整载荷（`LyricsPushPayload`）与只带偏好的轻量载荷（`LyricsPrefsPayload`）。
+ * 窗口不存在时 Rust 侧静默成功，不报错。
+ */
+export const lyricsPush = (payload: LyricsPushPayload | LyricsPrefsPayload) =>
+  invoke<void>('lyrics_push', { payload });
 
 // ------------------------------------------------------------------ 音频代理
 

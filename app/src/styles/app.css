@@ -3202,6 +3202,9 @@
 .music-dlset {
   width: 100%;
   max-width: 360px;
+  /* 内容比窗口高时只让 body 滚，头部标题与底部动作始终留在视野里 */
+  max-height: 82vh;
+  overflow: hidden;
   background: var(--md-surface);
   border: 1px solid var(--md-line);
   border-radius: var(--md-radius-lg);
@@ -3226,9 +3229,128 @@
   font-weight: 700;
   color: var(--md-ink);
 }
-.music-dlset-body { padding: 8px 0 4px; }
-/* 占位说明：本阶段不含具体设置项（理由见组件注释），这里只是一句引导 */
-.music-dlset-note { font-size: 12.5px; color: var(--md-ink-2); text-align: center; line-height: 1.6; }
+/* 弹窗主体：可滚动（设置项比窗口高时）。min-height:0 是 flex 子项能滚的必要条件 ——
+   少了它，子项的最小高度默认是内容高度，滚动条永远不会出现。 */
+.music-dlset-body {
+  padding: 2px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* 开篇一句：这批设置作用于"哪一个窗口"必须先说清。
+   设置页里也有同名项（歌词字号 / 歌词高亮色），不点明作用对象的话用户一定以为改的是同一个。 */
+.music-dlset-lead {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--md-ink-2);
+}
+.music-dlset-lead b {
+  color: var(--md-ink);
+  font-weight: 700;
+}
+
+/* 即时小样：用控件正在编辑的同一份值渲染。
+   底色刻意做成与桌面歌词窗同款的深色玻璃 —— 在浅色的设置页里，用户配的浅色歌词
+   直接画在白底上会看不出效果（白字白底），样张必须自带正确的衬底。 */
+.music-dlset-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--md-radius-sm);
+  background: linear-gradient(180deg, rgba(38, 33, 64, 0.92), rgba(20, 15, 41, 0.9));
+  overflow: hidden;
+}
+.music-dlset-pv-line {
+  max-width: 100%;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 一项一行：标签 / 控件 / 说明三段竖排。控件在标签下方而不是右侧 ——
+   滑杆与色点组横着需要宽度，360px 的弹窗塞不下"标签 + 控件"并排。 */
+.music-dlset-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.music-dlset-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--md-ink);
+}
+.music-dlset-ctl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* 滑杆占满剩余宽度：Range 是"输入框 + 读数"两个节点，让输入框吃掉弹性空间 */
+.music-dlset-ctl > .ui-range {
+  flex: 1 1 140px;
+}
+.music-dlset-hint {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--md-ink-2);
+}
+.music-dlset-hint b {
+  color: var(--md-ink-2);
+  font-weight: 700;
+}
+
+/* 行数选择：一排小方块（2 / 3 / 4 / 5）。
+   没做成下拉是因为候选只有 4 个且都要一眼看到 —— 下拉会把它藏起来。 */
+.music-dlset-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.music-dlset-segbtn {
+  min-width: 30px;
+  height: 24px;
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-xs);
+  background: var(--md-surface);
+  color: var(--md-ink-2);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.music-dlset-segbtn:hover {
+  border-color: var(--md-pink);
+  color: var(--md-ink);
+}
+.music-dlset-segbtn.is-on {
+  border-color: var(--md-pink);
+  background: var(--md-pink-soft);
+  color: var(--md-ink);
+  font-weight: 700;
+}
+
+/* 底部动作条：左「恢复默认」右「完成」，与头部关闭按钮一起构成三条关闭路径
+   （Esc / 点遮罩 / 右上角 X），这里再加一条最符合直觉的「完成」。 */
+.music-dlset-ft {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+/* 收尾说明：改动何时可见 */
+.music-dlset-note {
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+  text-align: center;
+  line-height: 1.6;
+}
 
 /* ---------------------------------------------------------------- 轻提示 */
 .music-toast {

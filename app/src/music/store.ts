@@ -37,7 +37,15 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { create } from 'zustand';
 import * as ipc from '@music/ipc';
-import { LYRICS_COLOR_DEF, LYRICS_SIZE, VINYL_COLOR_DEF } from '@music/player-options';
+import {
+  DL_BASE_COLOR_DEF,
+  DL_HIGHLIGHT_COLOR_DEF,
+  DL_LINE_COUNT,
+  DL_LYRICS_SIZE,
+  LYRICS_COLOR_DEF,
+  LYRICS_SIZE,
+  VINYL_COLOR_DEF,
+} from '@music/player-options';
 import * as platform from '@music/platform';
 import type { MusicProvider } from '@music/platform';
 import type {
@@ -204,6 +212,32 @@ function savePrefs(patch: Partial<Prefs>): void {
   writeLS(LS_PREFS, { ...readLS<Partial<Prefs>>(LS_PREFS, {}), ...patch });
 }
 
+/** 取整并夹到 [min, max]。用于把外部存进来的数值偏好收进合法区间（见 hydratePrefs） */
+function clampInRange(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Math.round(v)));
+}
+
+/**
+ * 把 store 状态里的桌面歌词偏好拼成推送形状。
+ *
+ * 单独抽出来是为了让"字段名映射"只有一处：`pushLyricsState`（完整推送）与
+ * `pushLyricsPrefs`（轻量推送）都要用它，两处各拼一遍迟早会出现"一条通道多带一个
+ * 字段、另一条忘了"的不一致，而症状是**外观偶尔回退**，很难联想到这里。
+ */
+function dlPrefsOf(s: {
+  desktopLyricsFontSize: number;
+  desktopLyricsHighlightColor: string;
+  desktopLyricsBaseColor: string;
+  desktopLyricsLineCount: number;
+}): ipc.DesktopLyricsPrefs {
+  return {
+    fontSize: s.desktopLyricsFontSize,
+    highlightColor: s.desktopLyricsHighlightColor,
+    baseColor: s.desktopLyricsBaseColor,
+    lineCount: s.desktopLyricsLineCount,
+  };
+}
+
 /** 读取历史时剔除带 base64 data URL 封面的条目，避免历史把存储撑爆 */
 function sanitizeForStorage(song: Song): Song {
   return song.cover && song.cover.startsWith('data:') ? { ...song, cover: '' } : song;
@@ -227,6 +261,17 @@ interface Prefs {
   lyricsFontSize: number;
   /** 展开播放器歌词高亮色 */
   lyricsHighlightColor: string;
+  /**
+   * 桌面歌词的**独立**偏好 —— 与上面两条分开存、分开调。
+   *
+   * 为什么必须独立（不是"多一个字段好看"）：展开播放器可以铺满整屏、桌面歌词窗
+   * 只有 160px 高。共用一个 `lyricsFontSize` 时，用户为详情页调到 48 会把桌面歌词
+   * 撑成两行巨字 —— 这是真实回归，不是假想。参考实现也是两套字段。
+   */
+  desktopLyricsFontSize: number;
+  desktopLyricsHighlightColor: string;
+  desktopLyricsBaseColor: string;
+  desktopLyricsLineCount: number;
   /** 动态背景：modern/immersive 皮肤的渐变缓慢流动 */
   dynamicEnabled: boolean;
   /** 碟片模式：展开播放器的封面变成旋转唱片 */
@@ -270,6 +315,14 @@ interface MusicState {
   // ---- 播放/媒体的持久化偏好（设置页「播放·媒体」）----
   lyricsFontSize: number;
   lyricsHighlightColor: string;
+  /**
+   * 桌面歌词的独立偏好（设置项在「桌面歌词设置」弹窗里，不在设置页的歌词小节）。
+   * 与上面两条全局歌词偏好分开，理由见 `Prefs` 接口里的注释。
+   */
+  desktopLyricsFontSize: number;
+  desktopLyricsHighlightColor: string;
+  desktopLyricsBaseColor: string;
+  desktopLyricsLineCount: number;
   dynamicEnabled: boolean;
   discMode: boolean;
   vinylColorMode: 'auto' | 'custom';
@@ -410,6 +463,16 @@ interface MusicState {
   setPlaybackQuality: (q: PlaybackQuality) => Promise<void>;
   setLyricsFontSize: (px: number) => void;
   setLyricsHighlightColor: (color: string) => void;
+  /** 桌面歌词独立字号（px，当前行）。与 `setLyricsFontSize` 不是同一件事 */
+  setDesktopLyricsFontSize: (px: number) => void;
+  /** 桌面歌词当前行颜色 */
+  setDesktopLyricsHighlightColor: (color: string) => void;
+  /** 桌面歌词未高亮行的颜色 */
+  setDesktopLyricsBaseColor: (color: string) => void;
+  /** 桌面歌词显示行数（含当前行） */
+  setDesktopLyricsLineCount: (n: number) => void;
+  /** 桌面歌词四项偏好一起恢复出厂值（弹窗里的「恢复默认」） */
+  resetDesktopLyricsPrefs: () => void;
   setDynamicEnabled: (on: boolean) => void;
   setDiscMode: (on: boolean) => void;
   setVinylColorMode: (mode: 'auto' | 'custom') => void;
@@ -507,6 +570,18 @@ interface MusicState {
    * 变成「主窗已停、桌面还挂着别人的歌词」。
    */
   pushLyricsState: () => Promise<void>;
+  /**
+   * 只把桌面歌词的**偏好**推给歌词窗（不带歌词行、不带进度）。
+   *
+   * 为什么单独一条而不是复用 `pushLyricsState`：用户拖字号滑杆 / 连点色点会在
+   * 一次操作里触发几十次 setter，每次发完整载荷就要把整首歌词行重新序列化一遍 ——
+   * 那是把事件通道打爆的另一种写法（`setProgress` 注释里警告的是同一个坑）。
+   * 偏好推送只带 4 个字段，代价恒定。
+   *
+   * 这条**不算**"污染进度通道"：它不推进度、频率由用户手势决定（秒级），
+   * 与 `timeupdate` 每秒数次的连续量不是一回事。
+   */
+  pushLyricsPrefs: () => Promise<void>;
 
   // UI
   setExpanded: (open: boolean) => void;
@@ -621,6 +696,10 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   // ---- 播放/媒体的持久化偏好 ----
   lyricsFontSize: LYRICS_SIZE.def,
   lyricsHighlightColor: LYRICS_COLOR_DEF,
+  desktopLyricsFontSize: DL_LYRICS_SIZE.def,
+  desktopLyricsHighlightColor: DL_HIGHLIGHT_COLOR_DEF,
+  desktopLyricsBaseColor: DL_BASE_COLOR_DEF,
+  desktopLyricsLineCount: DL_LINE_COUNT.def,
   dynamicEnabled: false,
   discMode: false,
   vinylColorMode: 'auto',
@@ -707,6 +786,17 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     const playbackQuality: PlaybackQuality = prefs.playbackQuality ?? 'hires';
     const lyricsFontSize =
       typeof prefs.lyricsFontSize === 'number' ? prefs.lyricsFontSize : LYRICS_SIZE.def;
+    /*
+     * 桌面歌词的两项数值偏好在这里夹到常量区间内。
+     *
+     * localStorage 是**外部可改的边界**（用户手改、旧版本残留、日后收紧量程后的老值），
+     * 越界值会让设置页的滑杆与桌面歌词窗显示成两个数 —— 歌词窗那边本来就会夹
+     * （见其 normalizePrefs），这里不夹就等于"两个窗口各说各话"。
+     */
+    const dlFontSize =
+      typeof prefs.desktopLyricsFontSize === 'number' ? prefs.desktopLyricsFontSize : DL_LYRICS_SIZE.def;
+    const dlLineCount =
+      typeof prefs.desktopLyricsLineCount === 'number' ? prefs.desktopLyricsLineCount : DL_LINE_COUNT.def;
     set({
       volume,
       playMode,
@@ -714,6 +804,10 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       playbackQuality,
       lyricsFontSize,
       lyricsHighlightColor: prefs.lyricsHighlightColor ?? LYRICS_COLOR_DEF,
+      desktopLyricsFontSize: clampInRange(dlFontSize, DL_LYRICS_SIZE.min, DL_LYRICS_SIZE.max),
+      desktopLyricsHighlightColor: prefs.desktopLyricsHighlightColor ?? DL_HIGHLIGHT_COLOR_DEF,
+      desktopLyricsBaseColor: prefs.desktopLyricsBaseColor ?? DL_BASE_COLOR_DEF,
+      desktopLyricsLineCount: clampInRange(dlLineCount, DL_LINE_COUNT.min, DL_LINE_COUNT.max),
       dynamicEnabled: prefs.dynamicEnabled === true,
       discMode: prefs.discMode === true,
       vinylColorMode: prefs.vinylColorMode === 'custom' ? 'custom' : 'auto',
@@ -1059,6 +1153,54 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   setLyricsHighlightColor: (color) => {
     set({ lyricsHighlightColor: color });
     savePrefs({ lyricsHighlightColor: color });
+  },
+
+  /*
+   * 下面四个 setter 的形态一致：改内存 → 写偏好 → **推给歌词窗**。
+   *
+   * 第三条是「实时预览」的全部实现：偏好只写 localStorage 是不够的 ——
+   * 两个 WebView 之间 `storage` 事件不保证触发（见 ipc.ts 的注释），
+   * 所以必须显式走事件通道。用 pushLyricsPrefs（轻量）而不是 pushLyricsState，
+   * 理由见 `pushLyricsPrefs` 的注释（拖滑杆会连发几十次）。
+   *
+   * 窗口没开时 Rust 侧静默成功，所以不必先判断开没开。
+   */
+  setDesktopLyricsFontSize: (px) => {
+    set({ desktopLyricsFontSize: px });
+    savePrefs({ desktopLyricsFontSize: px });
+    void get().pushLyricsPrefs();
+  },
+
+  setDesktopLyricsHighlightColor: (color) => {
+    set({ desktopLyricsHighlightColor: color });
+    savePrefs({ desktopLyricsHighlightColor: color });
+    void get().pushLyricsPrefs();
+  },
+
+  setDesktopLyricsBaseColor: (color) => {
+    set({ desktopLyricsBaseColor: color });
+    savePrefs({ desktopLyricsBaseColor: color });
+    void get().pushLyricsPrefs();
+  },
+
+  setDesktopLyricsLineCount: (n) => {
+    set({ desktopLyricsLineCount: n });
+    savePrefs({ desktopLyricsLineCount: n });
+    void get().pushLyricsPrefs();
+  },
+
+  resetDesktopLyricsPrefs: () => {
+    // 四项作为一个 patch 一次写完：分四次 set+savePrefs+push 会连推四遍，
+    // 而"恢复默认"在用户眼里是一次操作，一次推完即可。
+    const patch = {
+      desktopLyricsFontSize: DL_LYRICS_SIZE.def,
+      desktopLyricsHighlightColor: DL_HIGHLIGHT_COLOR_DEF,
+      desktopLyricsBaseColor: DL_BASE_COLOR_DEF,
+      desktopLyricsLineCount: DL_LINE_COUNT.def,
+    };
+    set(patch);
+    savePrefs(patch);
+    void get().pushLyricsPrefs();
   },
 
   setDynamicEnabled: (on) => {
@@ -1749,12 +1891,27 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       startedAtMs: progressMs,
       durationMs,
       sentAtEpoch: Date.now(),
+      // 完整推送也带上偏好：新开的窗口首帧就能拿到正确外观，
+      // 不必等用户去动一次设置（那样新窗口会先按默认值闪一下再跳成用户的值）。
+      desktopLyrics: dlPrefsOf(get()),
     };
     try {
       // 窗口不存在时 Rust 侧静默成功，所以这里不需要先判断开没开
       await ipc.lyricsPush(payload);
     } catch {
       // 推失败不能影响播放：桌面歌词是旁路能力，窗口侧的问题不该阻断主流程
+    }
+  },
+
+  pushLyricsPrefs: async () => {
+    const payload: ipc.LyricsPrefsPayload = {
+      prefsOnly: true,
+      desktopLyrics: dlPrefsOf(get()),
+    };
+    try {
+      await ipc.lyricsPush(payload);
+    } catch {
+      // 窗口没开时 Rust 静默成功；非 Tauri 环境（浏览器里直接开主窗）则忽略
     }
   },
 
