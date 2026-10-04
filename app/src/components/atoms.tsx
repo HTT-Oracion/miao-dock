@@ -63,16 +63,6 @@ export function Btn({
   );
 }
 
-// ------------------------------------------------------------------ 图标
-
-const stroke = {
-  fill: 'none',
-  stroke: 'currentColor',
-  strokeWidth: 1.6,
-  strokeLinecap: 'round' as const,
-  strokeLinejoin: 'round' as const,
-};
-
 // ------------------------------------------------------------------ X-C2 魔法阵
 
 /**

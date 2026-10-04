@@ -4,7 +4,7 @@ import { apiBytes, apiGet, apiPost, errorText, isApiError, openPath } from '../i
 import { LIBRARY } from '../theme/tokens';
 import type { ComicEntry, LibraryResponse } from '../types';
 import { formatBytes, sniffMime } from '../util';
-import { Btn, IconFolder } from '../components/atoms';
+import { Btn } from '../components/atoms';
 import { FolderUp } from 'lucide-react';
 
 /** 库内文件路径（`GET /library/{comicName}/files/{seq}?variant=…`） */
