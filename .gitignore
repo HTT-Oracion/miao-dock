@@ -23,3 +23,6 @@ vite.config.ts.timestamp-*.mjs
 # 音乐参考源码（GPL-3.0，开发期只读参考，不入库）
 # 移植产物在 app/src-tauri/src/music/，详见 vendor/music-reference/README.md
 vendor/
+
+# 编辑器本地历史（VS Code Local History 插件产物，纯本机噪声）
+.history/
