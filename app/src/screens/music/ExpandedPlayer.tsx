@@ -19,14 +19,18 @@ import {
   Waves,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { capsOf } from '@music/platform';
 import { LYRICS_SIZE, QUALITY_OPTIONS, SKINS, STYLE_PREVIEW_ORDER } from '@music/player-options';
 import { coverProxyUrl, fmtTime, songKey, useMusicStore } from '@music/store';
 import type { PlayerSkin } from '@music/store';
 import type { MusicComment } from '@music/types';
 import { ColorPicker, Empty, IconButton, PlayModeButton, Select, Switch } from '@components/units';
-import { useCoverColor } from '@hooks/useCoverColor';
+// 六皮肤的封面取色基础设施（useCoverColor / useCoverEdgeColor / makeVividColor）。
+// 注意：按本项目 D-41 收口，use* 命名的文件必须住 src/hooks/，故该模块文件名为 coverColor.ts。
+import { makeVividColor, useCoverColor, useCoverEdgeColor } from '@hooks/useCoverColor';
+import { SpectrumScene } from '@screens/music/SpectrumScene';
+import { VinylDisc } from '@screens/music/VinylDisc';
 // 逐字歌词渲染组件（双层叠加 + RAF 推进）。歌词的"定位当前行 / 滚动跟随 / 逐字进度"
 // 全部由它内部承担 —— 所以本文件不再自己算 activeLine、不再持有 activeRef。
 import { KaraokeLyrics } from '@screens/music/KaraokeLyrics';
@@ -64,16 +68,29 @@ function CommentRow({ c }: { c: MusicComment }) {
 }
 
 /**
- * 展开播放器（全屏）。
- * 歌词区上下边缘用 mask 渐隐；当前行按 progressMs 定位并滚动到中央。
- * 「歌词 / 评论」Tab：评论只在 `capsOf(playbackSource).comments` 为真（网易云）时出现；
- * 若因为切平台导致评论 Tab 仍处于选中态，正文会兜底显示「当前平台暂不支持评论」，不留白。
+ * 展开播放器（全屏）。六皮肤**各自的背景 / 文字色 / 专属视觉分支**都在这一个组件里落地。
  *
- * 底部控制栏照参考实现分**左中右三区**（左/右两区绝对定位贴边，中区绝对居中）：
+ * ## 为什么背景与文字色用 JS 算、用 CSS 变量注入，而不是写死在 app.css
+ *
+ * 参考实现里「现代 / 沉浸 / 封面渐染 / 透明彩胶」的背景与文字色**都由封面派生**：
+ * 现代 = 封面主色 + 其 0.25 暗色；沉浸 = 封面主色映射到柔和色板；封面渐染 = 封面**右缘**主色；
+ * 彩胶 = 封面主色经 HSV 钳制。封面色**运行时才知道**，CSS 里表达不了 ——
+ * 所以必须由组件算出一组 `--skin-*` / `--vinyl-accent` / `--lyr-*` 变量注入根节点，
+ * CSS 只负责消费。`.sk-*` 类名退化为"结构性差异"的表达（哪些元素隐藏/变形/换成专属组件）。
+ *
+ * ## 只有「通透」用毛玻璃
+ *
+ * 参考实现里 `backdropFilter` 仅通透取 `blur(20px)`，其余五种一律 `none`
+ * —— 因为毛玻璃会把背后内容糊掉，只有"半透明浅底"的通透需要它来降噪；
+ * 给不透明背景加 blur 既无效果又白耗一次合成。本实现用 `--skin-blur` 表达，只有 glass 分支给它值。
+ *
+ * 歌词区上下边缘用 mask 渐隐；「歌词 / 评论」Tab 只在「现代 / 通透」出现。
+ *
+ * 底部控制栏分**左中右三区**（左/右两区绝对定位贴边，中区绝对居中）：
  *  · 左：红心（仅登录）、碟片模式、切换样式（带 NEW 角标）、动态开关（仅「现代」）；
  *  · 中：播放模式 + 上一首/播放暂停/下一首 + 音量（hover 向右展开滑块）；
  *  · 右：歌词高亮色、歌词字号、音质、桌面歌词、播放队列。
- * 采用绝对定位而非 flex 均分，是因为左右两侧控件数量会随皮肤/登录态增减——
+ * 采用绝对定位而非 flex 均分，是因为左右两侧控件数量会随皮肤/登录态增减 ——
  * 只有让中区脱离文档流，两侧怎么变它都还在正中（与参考同款做法）。
  */
 export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
@@ -137,45 +154,50 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const skinMeta = SKINS.find((s) => s.id === skin) ?? SKINS[0];
   const curKey = currentSong ? songKey(currentSong) : '';
 
-  // ---- 样式分支：哪些控件按皮肤显隐，全在这里判定（见下方各条注释） ----
+  // ---- 样式分支：哪些控件按皮肤显隐、哪些布局分支走哪条，全在这里判定 ----
   const isModern = skin === 'modern';
   const isImmersive = skin === 'immersive';
   const isSpectrum = skin === 'spectrum';
   const isVinyl = skin === 'vinyl';
   const isCover = skin === 'cover';
+  // 「现代 / 通透」保留标准"左封面 + 右歌词 Tab"布局；其余四种各自走专属布局
+  const isPlainLayout = !isImmersive && !isSpectrum && !isVinyl && !isCover;
 
   // ---- 偏好落地的派生值 ----
   // 动态背景：只有 modern/immersive 两种皮肤有可流动的渐变（见 app.css 的 is-dynamic 说明）
   const dynamicOn = dynamicEnabled && (skin === 'modern' || skin === 'immersive');
 
   /**
-   * 是否真的需要跑封面取色。
-   * 只有「透明彩胶」皮肤会消费 --vinyl-accent（app.css：.sk-vinyl .music-exp-cover），
-   * 且只有 auto 模式才用它 —— custom 模式直接用用户固定色。
-   * 碟片模式（discMode）不加进来：它给封面套的是深色唱片径向渐变，同样不读 --vinyl-accent。
-   * 收起了播放器（!expanded）更不必解码：画面根本不存在。
+   * 封面 URL（走本地音频代理，带 CORS 头，画布可读）。
+   * 显示与取色共用同一个 URL —— 与参考实现一致（它显示/取色都走 coverProxyUrl）。
    */
-  const needCoverColor = expanded && skin === 'vinyl' && vinylColorMode === 'auto';
-  const coverColor = useCoverColor(needCoverColor ? coverProxyUrl(currentSong?.cover ?? '', proxyPort) : '');
+  const coverUrl = currentSong?.cover ? coverProxyUrl(currentSong.cover, proxyPort) : '';
+
+  /**
+   * 是否真的需要跑封面取色。
+   * 只有会消费封面色/右缘色的皮肤才解码：现代/沉浸/彩胶用主色，封面渐染用右缘色，音域回响用主色派生冷暖双色。
+   * 通透（半透明浅底，纯主题色）与收起的播放器都不必解码。
+   */
+  const needsCoverColor = expanded && (isModern || isImmersive || isVinyl || isCover || isSpectrum);
+  const coverColor = useCoverColor(needsCoverColor ? coverUrl : '');
+  // 封面渐染专用：只有该皮肤才有必要取"右缘主色"（取不到时 hook 已回落默认色）
+  const edgeColor = useCoverEdgeColor(expanded && isCover && coverUrl ? coverUrl : '');
+
+  // 沉浸柔和色板：把封面色相映射到固定深色板，供沉浸背景 + 音域回响冷暖双色共用
+  const vivid = useMemo(
+    () => makeVividColor(coverColor.rgb[0], coverColor.rgb[1], coverColor.rgb[2]),
+    [coverColor.rgb],
+  );
 
   // 彩胶底色：custom 用用户固定色，auto 用本地取到的封面主色（取不到时 hook 已回落默认色）
   const vinylAccent = vinylColorMode === 'custom' ? vinylCustomColor : coverColor.hex;
-
-  const isLiked = !!currentSong && likedSongIds.has(currentSong.id);
-  const logged = !!loginInfo?.logged_in;
-  // 「切换样式」按钮的图标随当前皮肤切换（表里查不到时兜底 Waves）
-  const StyleIcon = STYLE_ICON[skin] ?? Waves;
 
   /**
    * 歌词高亮色控件的当前值。
    * 透明彩胶下它改的其实是**胶片色**（参考实现同款语义联动）：
    * auto 模式显示提取出的封面色，custom 模式显示用户固定色；其余皮肤就是歌词高亮色。
    */
-  const highlightValue = isVinyl
-    ? vinylColorMode === 'custom'
-      ? vinylCustomColor
-      : vinylAccent
-    : lyricsHighlightColor;
+  const highlightValue = isVinyl ? vinylAccent : lyricsHighlightColor;
 
   const onHighlightChange = (c: string) => {
     // 彩胶下选色 = 固定为手动色（置 custom），并同时写进胶片色；其余皮肤只改歌词高亮色
@@ -187,11 +209,109 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
     }
   };
 
+  // ---- 每套皮肤的「背景 / 文字 / 悬停 / 毛玻璃」派生（全部依赖封面，故在 JS 里算） ----
+  const [cr, cg, cb] = coverColor.rgb;
+  // 现代：封面主色 + 其 0.25 暗色拼斜向渐变；开「动态」时改成 45° 三段渐变交给 CSS 平移流动
+  const modernSolid = coverColor.hex;
+  const modernDark = `rgb(${Math.round(cr * 0.25)},${Math.round(cg * 0.25)},${Math.round(cb * 0.25)})`;
+  const modernBg = dynamicEnabled
+    ? `linear-gradient(45deg, ${modernSolid}, ${modernDark}, ${modernSolid})`
+    : `linear-gradient(135deg, ${modernSolid} 0%, ${modernSolid} 40%, ${modernDark} 100%)`;
+  // 现代/封面渐染的文字色按封面明暗二选一；音域回响固定亮色；彩胶固定深灰
+  const onLightText = '#1a1a2e';
+  const onLightSub = '#4a4a5e';
+  const onLightHover = 'rgba(0,0,0,0.06)';
+  const onDarkText = '#f0f0f0';
+  const onDarkSub = '#b0b0b0';
+  const onDarkHover = 'rgba(255,255,255,0.12)';
+  const modernText = coverColor.isLight ? onLightText : onDarkText;
+  const modernSub = coverColor.isLight ? onLightSub : onDarkSub;
+  const modernHover = coverColor.isLight ? onLightHover : onDarkHover;
+  // 沉浸：封面色相 → 柔和色板的「左深右浅」三段渐变
+  const immersiveBg = `linear-gradient(90deg, ${vivid.deep} 0%, ${vivid.hex} 50%, ${vivid.light} 100%)`;
+  // 封面渐染：右侧背景 = 封面右缘主色；文字色按右缘色的明暗二选一
+  const coverBg = coverUrl ? edgeColor.hex : modernBg;
+  const coverText = edgeColor.isLight ? onLightText : onDarkText;
+  const coverSub = edgeColor.isLight ? onLightSub : onDarkSub;
+  const coverHover = edgeColor.isLight ? onLightHover : onDarkHover;
+
+  let skinBg: string;
+  let skinText: string;
+  let skinSub: string;
+  let skinHover: string;
+  let skinBlur = 'none';
+  // 歌词正文色（未高亮那几行）：默认跟随皮肤文字色，彩胶用参考实现的中性深灰
+  let lyrText = '#f0f0f0';
+  switch (skin) {
+    case 'glass':
+      // 通透：唯一用毛玻璃的皮肤（半透明白 + blur(20px)），文字取主题深色
+      skinBg = 'rgba(255,255,255,0.25)';
+      skinText = 'var(--md-ink)';
+      skinSub = 'rgba(59,51,82,0.7)';
+      skinHover = 'rgba(59,51,82,0.1)';
+      skinBlur = 'blur(20px)';
+      lyrText = 'var(--md-ink)';
+      break;
+    case 'modern':
+      skinBg = modernBg;
+      skinText = modernText;
+      skinSub = modernSub;
+      skinHover = modernHover;
+      lyrText = modernText;
+      break;
+    case 'immersive':
+      skinBg = immersiveBg;
+      skinText = onDarkText;
+      skinSub = 'rgba(255,255,255,0.72)';
+      skinHover = onDarkHover;
+      lyrText = onDarkText;
+      break;
+    case 'spectrum':
+      // 音域回响：近黑底（频谱场景自带底色，这里兜底同色）
+      skinBg = '#05070c';
+      skinText = onDarkText;
+      skinSub = 'rgba(255,255,255,0.6)';
+      skinHover = onDarkHover;
+      lyrText = onDarkText;
+      break;
+    case 'vinyl':
+      // 透明彩胶：浅灰胶底 + 固定深灰字（胶片色只作强调，不改文字色）
+      skinBg = 'linear-gradient(160deg, #dfdfe2 0%, #d8d8dc 55%, #d1d1d6 100%)';
+      skinText = '#333338';
+      skinSub = 'rgba(51,51,56,0.55)';
+      skinHover = 'rgba(0,0,0,0.07)';
+      lyrText = '#45454c';
+      break;
+    case 'cover':
+    default:
+      skinBg = coverBg;
+      skinText = coverText;
+      skinSub = coverSub;
+      skinHover = coverHover;
+      lyrText = coverText;
+      break;
+  }
+
+  // 浅色皮肤（图标/控件要翻深色）：通透、彩胶恒定；现代/封面渐染跟随封面明暗
+  const skinIsLight = isModern
+    ? coverColor.isLight
+    : isCover
+      ? edgeColor.isLight
+      : !!skinMeta.light;
+
+  // 封面渐染的上下压暗/提亮罩色，保证悬浮图标可读（浅缘配白雾、深缘配黑雾）
+  const coverScrim = edgeColor.isLight ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.32)';
+
+  const isLiked = !!currentSong && likedSongIds.has(currentSong.id);
+  const logged = !!loginInfo?.logged_in;
+  // 「切换样式」按钮的图标随当前皮肤切换（表里查不到时兜底 Waves）
+  const StyleIcon = STYLE_ICON[skin] ?? Waves;
+
   // 根节点类名：皮肤 + 浅色 + 动态背景 + 碟片模式（暂停时唱片停转）+ 退场中
   const rootClass = [
     'music-exp',
     skinMeta.cls,
-    skinMeta.light ? 'is-light' : '',
+    skinIsLight ? 'is-light' : '',
     dynamicOn ? 'is-dynamic' : '',
     discMode ? 'is-disc' : '',
     // is-paused 只在「碟片模式」下有视觉含义（暂停时停转），且随 isPlaying 实时变化
@@ -203,14 +323,32 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
     .filter(Boolean)
     .join(' ');
 
-  // 根节点注入彩胶底色 + 歌词字号/高亮色。
-  // 歌词两项仍**由本文件注入**（挂在 .music-exp 根上，靠 CSS 变量继承一路传到歌词行）：
+  // 主体容器类名：给四种专属布局各自的微调钩子（隐藏左封面 / 歌词占满 / 侧栏宽度）
+  const bodyClass = [
+    'music-exp-body',
+    isImmersive ? 'is-immersive' : '',
+    isSpectrum ? 'is-spectrum' : '',
+    isVinyl ? 'is-vinyl' : '',
+    isCover ? 'is-cover' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  // 根节点注入：六皮肤变量 + 彩胶底色 + 歌词字号/高亮色。
+  // 说明（重要）：这些值都依赖封面（运行时才知道），写死在 CSS 里做不到，故由 JS 注入。
+  // 歌词两项（--lyr-size / --lyr-hl）仍**由本文件注入**（挂在 .music-exp 根上，靠继承传到歌词行）：
   // 这是设置页「播放·媒体」断言的既定契约（注入必须落在被 style={…} 消费的对象上），
   // 逐字组件只负责按 var(--lyr-*) 渲染，不再自己重复注入，避免两个 owner。
   const rootStyle: CSSVarStyle = {
     '--vinyl-accent': vinylAccent,
+    '--skin-bg': skinBg,
+    '--skin-text': skinText,
+    '--skin-sub': skinSub,
+    '--skin-hover': skinHover,
+    '--skin-blur': skinBlur,
+    '--lyr-text': lyrText,
     '--lyr-size': `${lyricsFontSize}px`,
-    '--lyr-hl': lyricsHighlightColor,
+    '--lyr-hl': highlightValue,
   };
 
   // 评论懒加载：切到评论 Tab 或评论 Tab 下换歌时，按歌曲拉一次
@@ -223,7 +361,9 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
 
   if (!expanded) return null;
 
-  const showComments = commentTab === 'comments';
+  // 评论 Tab 只在「现代 / 通透」有意义（其余四种皮肤没有传统歌词面板）
+  const showTabs = isPlainLayout;
+  const showComments = showTabs && commentTab === 'comments';
   // 「切换样式」弹层的卡片顺序照参考 STYLE_PREVIEWS：从皮肤表按顺序取元信息
   const styleCards = STYLE_PREVIEW_ORDER.map((id) => SKINS.find((s) => s.id === id)).filter(
     (s): s is (typeof SKINS)[number] => !!s,
@@ -231,72 +371,134 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
 
   return (
     <div className={rootClass} style={rootStyle}>
+      {/* ── 全屏场景层（z=1）：各皮肤专属视觉，铺在顶栏/控制栏之下 ───────── */}
+      {/* 沉浸：多层径向扩散的波纹（简化版，纯 CSS 动画） */}
+      {isImmersive ? (
+        <div
+          className="skin-ripple-layer"
+          style={{ '--ripple-c': vivid.deep } as CSSVarStyle}
+          aria-hidden
+        >
+          <span className="skin-ripple" />
+          <span className="skin-ripple" />
+          <span className="skin-ripple" />
+        </div>
+      ) : null}
+      {/* 透明彩胶：右上角伸出的旋转唱片（暂停即停转） */}
+      {isVinyl ? (
+        <VinylDisc isPlaying={isPlaying} accentColor={vinylAccent} coverUrl={coverUrl} />
+      ) : null}
+      {/* 封面渐染：左侧满铺封面原图（伸到顶/底栏下方），右缘羽化融入右缘主色背景 */}
+      {isCover && coverUrl ? (
+        <div className="skin-cover-bleed" aria-hidden>
+          <img src={coverUrl} alt="" draggable={false} />
+          <div
+            className="skin-cover-scrim skin-cover-scrim-top"
+            style={{ background: `linear-gradient(180deg, ${coverScrim} 0%, transparent 100%)` }}
+          />
+          <div
+            className="skin-cover-scrim skin-cover-scrim-bottom"
+            style={{ background: `linear-gradient(0deg, ${coverScrim} 0%, transparent 100%)` }}
+          />
+        </div>
+      ) : null}
+      {/* 音域回响：全屏频谱场景（真实频谱，取不到音频图时降级为 CSS 动画）。
+          非该皮肤时组件内部直接 return null，不渲染也不跑 RAF。 */}
+      <SpectrumScene
+        active={isSpectrum}
+        isPlaying={isPlaying}
+        deep={vivid.deep}
+        light={vivid.light}
+      />
+
       <div className="music-exp-topbar">
         <IconButton title="收起" onClick={() => closeExpanded()}>
           <ChevronLeft size={18} />
         </IconButton>
       </div>
 
-      <div className="music-exp-body">
-        <div className="music-exp-left">
-          <div className="music-exp-cover">
-            {currentSong?.cover ? <img src={currentSong.cover} alt="" /> : null}
+      <div className={bodyClass}>
+        {/* 左侧封面区：只有「现代 / 通透」保留标准方图（其余四种的封面各有专属呈现） */}
+        {isPlainLayout ? (
+          <div className="music-exp-left">
+            <div className="music-exp-cover">
+              {coverUrl ? <img src={coverUrl} alt="" /> : null}
+            </div>
+            <div className="music-exp-info">
+              <b>{currentSong?.name ?? '未在播放'}</b>
+              <span>{currentSong?.artist ?? ''}</span>
+              <em>{currentSong?.album || ''}</em>
+            </div>
           </div>
-          <div className="music-exp-info">
-            <b>{currentSong?.name ?? '未在播放'}</b>
-            <span>{currentSong?.artist ?? ''}</span>
-            <em>{currentSong?.album || ''}</em>
-          </div>
-        </div>
+        ) : null}
 
-        <div className="music-exp-lyrics">
-          <div className="music-exp-ltabs">
-            <button
-              type="button"
-              className={showComments ? 'music-exp-ltab' : 'music-exp-ltab is-on'}
-              onClick={() => setCommentTab('lyric')}
-            >
-              歌词
-            </button>
-            {caps.comments ? (
-              <button
-                type="button"
-                className={showComments ? 'music-exp-ltab is-on' : 'music-exp-ltab'}
-                onClick={() => setCommentTab('comments')}
-              >
-                评论
-              </button>
+        {/* 歌词 / 评论面板：音域回响时不渲染（该皮肤整屏是频谱，参考实现同样不显示歌词） */}
+        {!isSpectrum ? (
+          <div className="music-exp-lyrics">
+            {/* 彩胶 / 封面渐染：左上角歌名 + 歌手（参考实现同款），压在封面羽化区/胶片之上 */}
+            {isVinyl || isCover ? (
+              <div className="music-exp-title">
+                <b>{currentSong?.name ?? ''}</b>
+                <span>{currentSong?.artist ?? ''}</span>
+              </div>
             ) : null}
-          </div>
 
-          {!showComments ? (
-            parsedLyrics.length === 0 ? (
+            {/* Tab 只在「现代 / 通透」出现 */}
+            {showTabs ? (
+              <div className="music-exp-ltabs">
+                <button
+                  type="button"
+                  className={showComments ? 'music-exp-ltab' : 'music-exp-ltab is-on'}
+                  onClick={() => setCommentTab('lyric')}
+                >
+                  歌词
+                </button>
+                {caps.comments ? (
+                  <button
+                    type="button"
+                    className={showComments ? 'music-exp-ltab is-on' : 'music-exp-ltab'}
+                    onClick={() => setCommentTab('comments')}
+                  >
+                    评论
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {showComments ? (
+              !caps.comments ? (
+                <Empty>当前平台暂不支持评论</Empty>
+              ) : loadingComments ? (
+                <Empty>加载评论中…</Empty>
+              ) : !comments || (comments.comments.length === 0 && comments.hot_comments.length === 0) ? (
+                <Empty>暂无评论</Empty>
+              ) : (
+                <div className="music-exp-comments">
+                  {comments.hot_comments.length > 0 ? <div className="music-exp-cm-sec">热门评论</div> : null}
+                  {comments.hot_comments.map((c) => (
+                    <CommentRow key={`h${c.comment_id}`} c={c} />
+                  ))}
+                  {comments.comments.length > 0 ? <div className="music-exp-cm-sec">最新评论</div> : null}
+                  {comments.comments.map((c) => (
+                    <CommentRow key={`n${c.comment_id}`} c={c} />
+                  ))}
+                </div>
+              )
+            ) : parsedLyrics.length === 0 ? (
               <Empty>暂无歌词</Empty>
             ) : (
               // 逐字歌词：组件自己承担"定位当前行 / 滚动跟随 / RAF 逐字推进"，
               // 并复用 .music-exp-lyr-box 的上下 edge mask 与 .music-lyr-line 的字号/暗色语汇。
               // 字号/高亮色经根节点注入的 --lyr-size / --lyr-hl 继承进来，故无需再传。
-              <KaraokeLyrics lines={parsedLyrics} fontPx={lyricsFontSize} />
-            )
-          ) : !caps.comments ? (
-            <Empty>当前平台暂不支持评论</Empty>
-          ) : loadingComments ? (
-            <Empty>加载评论中…</Empty>
-          ) : !comments || (comments.comments.length === 0 && comments.hot_comments.length === 0) ? (
-            <Empty>暂无评论</Empty>
-          ) : (
-            <div className="music-exp-comments">
-              {comments.hot_comments.length > 0 ? <div className="music-exp-cm-sec">热门评论</div> : null}
-              {comments.hot_comments.map((c) => (
-                <CommentRow key={`h${c.comment_id}`} c={c} />
-              ))}
-              {comments.comments.length > 0 ? <div className="music-exp-cm-sec">最新评论</div> : null}
-              {comments.comments.map((c) => (
-                <CommentRow key={`n${c.comment_id}`} c={c} />
-              ))}
-            </div>
-          )}
-        </div>
+              // align：彩胶/封面渐染左对齐（参考实现同款），其余居中。
+              <KaraokeLyrics
+                lines={parsedLyrics}
+                fontPx={lyricsFontSize}
+                align={isVinyl || isCover ? 'left' : 'center'}
+              />
+            )}
+          </div>
+        ) : null}
       </div>
 
       <div className="music-exp-bottom">
@@ -323,7 +525,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
                 （左侧已是满铺封面）下**隐藏** —— 这四种样式里封面本就不是「一张方图」，
                 再叠一层碟片模式要么无意义、要么与样式自身的封面处理冲突（彩胶自己就是唱片）。
                 只有「现代 / 通透」这种标准方形封面才需要它。 */}
-            {!isImmersive && !isSpectrum && !isVinyl && !isCover ? (
+            {isPlainLayout ? (
               <IconButton
                 title={discMode ? '关闭碟片模式' : '开启碟片模式'}
                 active={discMode}
@@ -372,8 +574,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
             </div>
 
             {/* 动态开关：仅「现代」样式显示 —— 动态渐变背景目前只有现代/沉浸两套皮肤有，
-                但沉浸下背景已由 --vinyl-accent/固定渐变主导，用户可感的可调项只有现代，
-                所以入口只在现代出现（参考实现同款条件）。 */}
+                但沉浸下背景已由柔和色板主导，用户可感的可调项只有现代，所以入口只在现代出现。 */}
             {isModern ? (
               <div className="music-exp-dyn">
                 <span>动态</span>
@@ -417,7 +618,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
           {/* ── 右区（绝对贴右）──────────────────────────────────────── */}
           <div className="music-exp-br">
             {/* 歌词颜色 / 字号在「沉浸 / 音域回响」下隐藏 —— 这两种样式是整屏视觉主导
-                （沉浸＝背景随歌流动、音域回响＝频谱），屏上没有传统歌词区可调，
+                （沉浸＝文字放大居中、音域回响＝频谱），屏上没有传统歌词区可调，
                 留着两个调了也看不见的滑块只会让人以为坏了。 */}
             {!isImmersive && !isSpectrum ? (
               <>

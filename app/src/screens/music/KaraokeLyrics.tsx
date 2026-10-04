@@ -52,6 +52,12 @@ interface KaraokeLyricsProps {
    * 字号与高亮色的真正落地走 CSS 变量（ExpandedPlayer 注入的 --lyr-size / --lyr-hl）。
    */
   fontPx: number;
+  /**
+   * 歌词整体对齐（可选，默认居中）。
+   * 「透明彩胶 / 封面渐染」两套皮肤按参考实现是**左对齐**的歌词列表，
+   * 其余皮肤居中。这里只切一个根类名（is-left），不改动画/双层渲染逻辑。
+   */
+  align?: 'center' | 'left';
 }
 
 /**
@@ -101,7 +107,7 @@ function getLineProgress(
   return smoothstep(prog);
 }
 
-export function KaraokeLyrics({ lines, fontPx }: KaraokeLyricsProps) {
+export function KaraokeLyrics({ lines, fontPx, align = 'center' }: KaraokeLyricsProps) {
   const [activeIndex, setActiveIndex] = useState(-1);
   /** 当前行顶层（已唱）文字的容器：RAF 只改它的 width */
   const overlayRef = useRef<HTMLSpanElement | null>(null);
@@ -182,7 +188,7 @@ export function KaraokeLyrics({ lines, fontPx }: KaraokeLyricsProps) {
   // 字号与高亮色（--lyr-size / --lyr-hl）由 ExpandedPlayer 注入在 .music-exp 根上，
   // 靠 CSS 变量继承传到这里 —— 本组件不重复注入，避免两个 owner 各写一份。
   return (
-    <div className="music-exp-lyr-box">
+    <div className={align === 'left' ? 'music-exp-lyr-box is-left' : 'music-exp-lyr-box'}>
       {lines.map((line, i) => {
         const isActive = i === activeIndex;
         if (!isActive) {

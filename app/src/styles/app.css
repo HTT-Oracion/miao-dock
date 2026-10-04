@@ -2685,7 +2685,16 @@
   z-index: 70;
   display: flex;
   flex-direction: column;
-  color: #fff;
+  /* 六皮肤的背景 / 文字 / 毛玻璃全部由 ExpandedPlayer 注入的 CSS 变量驱动 ——
+     原因：这些值依赖**封面**（现代=封面主色+暗色、沉浸=封面映射色板、封面渐染=右缘色、
+     彩胶=封面色钳制），封面是运行时才知道的，写死在 CSS 里做不到。
+     .sk-* 类名只表达"结构性差异"（隐藏/变形/换专属组件），不再承担配色。 */
+  background: var(--skin-bg, #1a1a2e);
+  color: var(--skin-text, #fff);
+  /* 毛玻璃：**只有「通透」**注入 blur(20px)，其余五种 --skin-blur=none。
+     为什么不给不透明背景的皮肤也加 blur：糊背景无视觉收益，只白费一次合成。 */
+  backdrop-filter: var(--skin-blur, none);
+  -webkit-backdrop-filter: var(--skin-blur, none);
   overflow: hidden;
   /* 进场即播：从底部上滑铺满（《09》§5.6 第 3 项 —— "详情"= 展开播放器从底部上滑铺满全屏）。
      退场见下方 .is-closing：组件在收起后会 return null，没有那个状态就播不出退场动画。 */
@@ -2733,6 +2742,9 @@
   gap: 34px;
   padding: 54px 44px 14px;
   align-items: stretch;
+  /* 主体浮在"专属场景层"（波纹/唱片/满铺封面/频谱，z=1）之上 */
+  position: relative;
+  z-index: 2;
 }
 .music-exp-left {
   width: 280px;
@@ -2798,9 +2810,10 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--skin-text, #fff);
 }
-.music-exp-info span { font-size: 12.5px; display: block; color: rgba(255, 255, 255, 0.72); margin-top: 3px; }
-.music-exp-info em { font-size: 11.5px; font-style: normal; color: rgba(255, 255, 255, 0.55); }
+.music-exp-info span { font-size: 12.5px; display: block; color: var(--skin-sub, rgba(255, 255, 255, 0.72)); margin-top: 3px; }
+.music-exp-info em { font-size: 11.5px; font-style: normal; color: var(--skin-sub, rgba(255, 255, 255, 0.55)); }
 .music-exp.is-light .music-exp-info span,
 .music-exp.is-light .music-exp-info em { color: rgba(59, 51, 82, 0.7); }
 
@@ -2810,6 +2823,27 @@
   display: flex;
   flex-direction: column;
 }
+/* 透明彩胶 / 封面渐染：文字栏只占一侧 —— 另一侧留给唱片（右上）/ 满铺封面（左侧） */
+.music-exp-body.is-vinyl .music-exp-lyrics { width: 52%; flex: 0 0 auto; }
+.music-exp-body.is-cover .music-exp-lyrics { width: 50%; flex: 0 0 auto; margin-left: auto; padding-right: 4vw; }
+/* 沉浸：左封面隐藏后歌词占满整屏并放大居中（参考实现同款"全屏歌词可视化"的简化版） */
+.music-exp-body.is-immersive { padding: 40px 8vw 8px; }
+.music-exp-body.is-immersive .music-exp-lyrics { align-items: center; }
+.music-exp-body.is-immersive .music-exp-lyr-box { justify-content: center; width: 100%; }
+/* 彩胶/封面渐染的歌名 + 歌手（左上角，参考实现同款） */
+.music-exp-title { flex: 0 0 auto; margin-bottom: 16px; }
+.music-exp-title b {
+  display: block;
+  font-family: var(--md-font-display);
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1.25;
+  color: var(--skin-text, #fff);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.music-exp-title span { display: block; margin-top: 4px; font-size: 13px; color: var(--skin-sub, rgba(255,255,255,0.7)); }
 .music-exp-ltabs {
   display: flex;
   gap: 6px;
@@ -2823,8 +2857,8 @@
   font-size: 11.5px;
   font-family: var(--md-font-body);
   border: none;
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.7);
+  background: var(--skin-hover, rgba(255, 255, 255, 0.12));
+  color: var(--skin-sub, rgba(255, 255, 255, 0.7));
   cursor: pointer;
 }
 .music-exp-ltab.is-on { background: var(--md-pink); color: #fff; font-weight: 700; }
@@ -2850,7 +2884,8 @@
   font-size: var(--lyr-size, 16px);
   opacity: 0.5;
   text-align: center;
-  color: #fff;
+  /* 正文色由 --lyr-text 注入：现代/封面渐染跟随封面明暗、彩胶固定深灰，避免"亮底黑字看不清" */
+  color: var(--lyr-text, #fff);
   transition: all 0.2s;
 }
 .music-lyr-line.is-on {
@@ -2860,6 +2895,11 @@
   color: var(--lyr-hl, var(--md-yellow));
 }
 .music-exp.is-light .music-lyr-line { color: var(--md-ink); }
+/* 左对齐歌词（透明彩胶 / 封面渐染）：整行靠左，容器不居中 */
+.music-exp-lyr-box.is-left .music-lyr-line { text-align: left; }
+/* 沉浸：歌词放大居中（字号在用户设定值上整体放大约 1.6 倍） */
+.music-exp-body.is-immersive .music-lyr-line { font-size: calc(var(--lyr-size, 16px) * 1.6); text-align: center; }
+.music-exp-body.is-immersive .music-lyr-line.is-on { font-size: calc(var(--lyr-size, 16px) * 1.9); }
 
 /* ── 逐字歌词（卡拉OK）：双层叠加 + width 裁切 ─────────────────────────────
    为什么用双层而不是 background-clip:text 见 KaraokeLyrics.tsx 头部注释；
@@ -2902,7 +2942,7 @@
   .kara-over { will-change: auto; }
 }
 
-.music-exp .ui-empty { color: rgba(255, 255, 255, 0.5); }
+.music-exp .ui-empty { color: var(--skin-sub, rgba(255, 255, 255, 0.5)); }
 .music-exp.is-light .ui-empty { color: var(--md-muted); }
 
 /* 评论列表 */
@@ -2926,11 +2966,11 @@
 .music-exp.is-light .music-exp-cm { background: rgba(59, 51, 82, 0.06); }
 .music-exp-cm-body { flex: 1; min-width: 0; }
 .music-exp-cm-hd { display: flex; align-items: center; gap: 8px; font-size: 11px; }
-.music-exp-cm-hd b { font-size: 12px; color: #fff; }
+.music-exp-cm-hd b { font-size: 12px; color: var(--skin-text, #fff); }
 .music-exp.is-light .music-exp-cm-hd b { color: var(--md-ink); }
-.music-exp-cm-hd span { font-size: 10px; color: rgba(255, 255, 255, 0.5); }
+.music-exp-cm-hd span { font-size: 10px; color: var(--skin-sub, rgba(255, 255, 255, 0.5)); }
 .music-exp.is-light .music-exp-cm-hd span { color: var(--md-muted); }
-.music-exp-cm-txt { font-size: 12px; margin-top: 4px; color: rgba(255, 255, 255, 0.85); }
+.music-exp-cm-txt { font-size: 12px; margin-top: 4px; color: var(--skin-text, rgba(255, 255, 255, 0.85)); }
 .music-exp.is-light .music-exp-cm-txt { color: var(--md-ink-2); }
 
 .music-exp-bottom {
@@ -2939,6 +2979,9 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* 控制栏浮在场景层（z=1）之上 —— 音域回响/沉浸下频谱、波纹要铺到控制栏背后 */
+  position: relative;
+  z-index: 2;
 }
 /* 三区都是绝对定位，brow 自身不产生高度 —— 显式给 min-height，
    否则 top:50% 没有参照高度，左右两区会贴到顶。高度取最大圆按钮（36–40px）的净高。 */
@@ -2966,12 +3009,12 @@
   border-radius: var(--md-radius-lg);
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--skin-text, rgba(255, 255, 255, 0.92));
   font-size: 12px;
   font-family: var(--md-font-body);
   cursor: pointer;
 }
-.music-exp-stylebtn:hover { background: rgba(255, 255, 255, 0.16); }
+.music-exp-stylebtn:hover { background: var(--skin-hover, rgba(255, 255, 255, 0.16)); }
 .music-exp.is-light .music-exp-stylebtn { color: var(--md-ink-2); }
 .music-exp.is-light .music-exp-stylebtn:hover { background: rgba(59, 51, 82, 0.1); }
 /* NEW 角标：右上角红色小标签（照参考 top:-6 / right:-11 / 9px / full 圆角） */
@@ -3097,7 +3140,7 @@
   gap: 8px;
 }
 /* 歌词字号：文字「A」+ 滑块 */
-.music-exp-alf { font-size: 12px; font-weight: 700; color: rgba(255, 255, 255, 0.6); flex-shrink: 0; }
+.music-exp-alf { font-size: 12px; font-weight: 700; color: var(--skin-sub, rgba(255, 255, 255, 0.6)); flex-shrink: 0; }
 .music-exp.is-light .music-exp-alf { color: var(--md-muted); }
 .music-exp-size {
   width: 60px;
@@ -3119,36 +3162,142 @@
 /* 展开播放器里的音质下拉：沿用播放条的胶囊外观，深色底上略放高一点 */
 .music-exp .music-q-sel { height: 24px; }
 /* 展开播放器内的进度条配色（深/浅皮肤各一套） */
-.music-exp .music-prog-t { color: rgba(255, 255, 255, 0.6); }
+.music-exp .music-prog-t { color: var(--skin-sub, rgba(255, 255, 255, 0.6)); }
 .music-exp.is-light .music-prog-t { color: var(--md-muted); }
 .music-exp .music-prog-bar { background: rgba(255, 255, 255, 0.28); }
 .music-exp.is-light .music-prog-bar { background: var(--md-line); }
 
-/* 六皮肤背景（全部 CSS 渐变，不做 WebGL） */
-.sk-modern { background: linear-gradient(135deg, #7e356e 0%, #7e356e 40%, #3f1a37 100%); }
-.sk-glass { background: linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(201, 181, 255, 0.5)); }
-.sk-immersive { background: linear-gradient(90deg, #126d83, #17869f, #126d83); }
-.sk-spectrum { background: linear-gradient(180deg, #05070c, #0b1424); }
-.sk-vinyl { background: linear-gradient(160deg, #e6e6ea, #cfcfd6); }
-/* 透明彩胶的唱片底色 = --vinyl-accent（设置项「彩胶配色」）：
-   auto → 封面主色（ExpandedPlayer 本地取色），custom → 用户固定色。
-   封面缩成中心「片芯」，整体读起来就是一张彩色唱片。 */
-.sk-vinyl .music-exp-cover {
-  border-radius: 50%;
-  background: var(--vinyl-accent, #e8b04b);
-  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.3);
-  position: relative;
-}
-.sk-vinyl .music-exp-cover img {
-  width: 44%;
-  height: 44%;
-  border-radius: 50%;
+/* ---------------------------------------------------------------- 六皮肤专属视觉
+   配色（背景/文字/毛玻璃）由 JS 注入的 CSS 变量承担（见 .music-exp 上方注释）；
+   下面这些 .sk-*/skin-* 规则只负责**结构性差异**与专属组件外观。 */
+
+/* 透明彩胶：统一从 --vinyl-accent（设置项「彩胶配色」，JS 注入）派生胶片强调色 */
+.sk-vinyl { --disc-accent: var(--vinyl-accent, #e8b04b); }
+
+/* 沉浸：全屏径向扩散波纹（简化版，纯 CSS 动画；参考实现是逐帧生成的多层径向渐变） */
+.skin-ripple-layer {
   position: absolute;
-  left: 28%;
-  top: 28%;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
 }
-.sk-cover { background: linear-gradient(120deg, #c9a2ff 0%, #f0e6ff 62%, #efe7fb 100%); }
+.skin-ripple {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 42vmax;
+  height: 42vmax;
+  margin: -21vmax 0 0 -21vmax;
+  border-radius: 50%;
+  border: 2px solid var(--ripple-c, #fff);
+  opacity: 0;
+  animation: skin-ripple-out 6s ease-out infinite;
+}
+.skin-ripple:nth-child(2) { animation-delay: 2s; }
+.skin-ripple:nth-child(3) { animation-delay: 4s; }
+@keyframes skin-ripple-out {
+  0% { transform: scale(0.22); opacity: 0.26; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+
+/* 封面渐染：左侧满铺封面原图（伸到顶/底栏下方），右缘用 mask 羽化融入右缘主色背景 */
+.skin-cover-bleed {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 58vw;
+  z-index: 1;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(90deg, #000 78%, transparent 98%);
+  mask-image: linear-gradient(90deg, #000 78%, transparent 98%);
+}
+.skin-cover-bleed img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.skin-cover-scrim { position: absolute; left: 0; right: 0; }
+.skin-cover-scrim-top { top: 0; height: 110px; }
+.skin-cover-scrim-bottom { bottom: 0; height: 130px; }
+
+/* 透明彩胶：右上角伸出的半透明彩色唱片（尺寸由组件注入的 --disc 决定） */
+.skin-vinyl-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; }
+.skin-vinyl-glow {
+  position: absolute;
+  width: calc(var(--disc) * 1.7);
+  height: calc(var(--disc) * 1.7);
+  top: calc(var(--disc) * -0.67);
+  right: calc(var(--disc) * -0.71);
+  border-radius: 50%;
+  animation: skin-vinyl-glow 5s ease-in-out infinite;
+}
+.skin-vinyl-disc-wrap {
+  position: absolute;
+  width: var(--disc);
+  height: var(--disc);
+  top: calc(var(--disc) * -0.3);
+  right: calc(var(--disc) * -0.34);
+  animation: skin-vinyl-in 0.7s cubic-bezier(0.25, 0.8, 0.35, 1);
+}
+/* 旋转层：background / box-shadow 由组件按胶片色内联；这里只管旋转与形态。
+   暂停即停转由组件的 animationPlayState 控制（见 VinylDisc）。 */
+.skin-vinyl-disc { position: absolute; inset: 0; border-radius: 50%; animation: skin-vinyl-spin 24s linear infinite; }
+.skin-vinyl-label {
+  position: absolute;
+  width: 70%;
+  height: 70%;
+  top: 15%;
+  left: 15%;
+  border-radius: 50%;
+  overflow: hidden;
+  /* 片芯外圈用胶片色描一道细彩环 —— 让「彩胶」的彩在盘面正中可见 */
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3), 0 0 0 3px var(--disc-accent, #e8b04b), 0 6px 30px rgba(0, 0, 0, 0.18);
+}
+.skin-vinyl-label img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.skin-vinyl-label-empty { width: 100%; height: 100%; }
+/* 高光层：conic 反光固定不随盘旋转（反光属于环境光，不该跟着转） */
+.skin-vinyl-sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 215deg at 50% 50%, rgba(255,255,255,0) 0deg, rgba(255,255,255,0.15) 34deg, rgba(255,255,255,0.04) 72deg, rgba(255,255,255,0) 118deg, rgba(255,255,255,0) 242deg, rgba(255,255,255,0.10) 292deg, rgba(255,255,255,0) 338deg);
+}
+@keyframes skin-vinyl-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes skin-vinyl-glow { 0%, 100% { transform: scale(1); opacity: 0.85; } 50% { transform: scale(1.06); opacity: 1; } }
+@keyframes skin-vinyl-in {
+  from { transform: translate(6%, -6%) scale(0.94); opacity: 0; }
+  to { transform: translate(0%, 0%) scale(1); opacity: 1; }
+}
+
+/* 音域回响：全屏频谱场景层（canvas 或降级 CSS 动画） */
+.skin-spectrum-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  background: #05070c;
+}
+.skin-spectrum-canvas { width: 100%; height: 100%; display: block; }
+.skin-spectrum-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.5%;
+  padding: 0 5vw 22vh;
+}
+.skin-spectrum-fbar {
+  flex: 1;
+  max-width: 12px;
+  height: 26%;
+  border-radius: 4px 4px 0 0;
+  transform-origin: bottom;
+  animation: skin-spectrum-pulse 1.1s ease-in-out infinite;
+}
+@keyframes skin-spectrum-pulse {
+  0%, 100% { transform: scaleY(0.22); opacity: 0.7; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
 
 /* 皮肤选择弹层 */
 .music-skin-picker {

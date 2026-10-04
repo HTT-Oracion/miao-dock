@@ -62,6 +62,10 @@ const F = {
   expanded: path.join(APP, 'src', 'screens', 'music', 'ExpandedPlayer.tsx'),
   // 逐字歌词渲染组件（逐字高亮任务新增）
   karaoke: path.join(APP, 'src', 'screens', 'music', 'KaraokeLyrics.tsx'),
+  // 六皮肤专属模块（展开播放器换肤任务新增）
+  coverColor: path.join(APP, 'src', 'hooks', 'useCoverColor.ts'),
+  vinylDisc: path.join(APP, 'src', 'screens', 'music', 'VinylDisc.tsx'),
+  spectrumScene: path.join(APP, 'src', 'screens', 'music', 'SpectrumScene.tsx'),
   musicUiDir: path.join(APP, 'src', 'screens', 'music'),
   virtualList: path.join(APP, 'src', 'components', 'units', 'VirtualList.tsx'),
   css: path.join(APP, 'src', 'styles', 'app.css'),
@@ -172,6 +176,9 @@ function loadSources() {
     playerBar: readMaybe(F.playerBar),
     expanded: readMaybe(F.expanded),
     karaoke: readMaybe(F.karaoke),
+    coverColor: readMaybe(F.coverColor),
+    vinylDisc: readMaybe(F.vinylDisc),
+    spectrumScene: readMaybe(F.spectrumScene),
     css: readMaybe(F.css),
   };
   s.musicUi = walkText(F.musicUiDir, ['.tsx', '.ts', '.css']);
@@ -1442,6 +1449,207 @@ add('LYRICS.karaTimeSource', 'LYRICS', (s) => {
   return { ok: missing.length === 0, detail: missing.length ? `逐字时间来源：${missing.join('、')}` : '' };
 });
 
+// ============================ SKIN（展开播放器六皮肤）============================
+// 六皮肤必须各自是一整套视觉（背景/文字/专属组件/布局分支），而不是"只换一行 background"。
+// 这一组的判据全部**限定作用域**（只看 ExpandedPlayer / 三个专属模块 / app.css 音乐区段），
+// 对"可能在多处出现的词"一律用计数或精确 token —— 本仓库已因"只判存在、不判唯一/子串匹配"栽过 7 次。
+
+add('SKIN.colorHook', 'SKIN', (s) => {
+  // 取色基础设施必须存在，且被展开播放器**真正引用**（只在别处定义、播放器没 import 也算失败）。
+  const cc = stripComments(s.coverColor ?? '');
+  if (!cc) return { ok: false, detail: '未读到 hooks/useCoverColor.ts（封面取色基础设施）' };
+  const missing = [];
+  if (!/export function useCoverColor\b/.test(cc)) missing.push('缺 useCoverColor');
+  if (!/export function useCoverEdgeColor\b/.test(cc)) missing.push('缺 useCoverEdgeColor（封面渐染用右缘色）');
+  if (!/export function makeVividColor\b/.test(cc)) missing.push('缺 makeVividColor（沉浸柔和色板）');
+  // 限定在 ExpandedPlayer 的 import 语句里查三个名字
+  // ⚠️ 取色基础设施必须住 `src/hooks/`（D-41 收口，`HOOKS.noMisplacedUse` 按文件名守着），
+  // 且 ExpandedPlayer 必须**从该处**引入 —— 曾经在 screens/music/ 下被写过第二份实现，
+  // 所以这里除了查三个导出，还要查 import 的来源路径。
+  const imp = /import\s*\{([^}]*)\}\s*from\s*['"][^'"]*\/useCoverColor['"]/.exec(stripComments(s.expanded ?? ''));
+  const names = imp ? imp[1] : '';
+  for (const n of ['useCoverColor', 'useCoverEdgeColor', 'makeVividColor'])
+    if (!new RegExp(`\\b${n}\\b`).test(names)) missing.push(`ExpandedPlayer 未从 @hooks/useCoverColor 引用 ${n}`);
+  return { ok: missing.length === 0, detail: missing.length ? `取色基础设施：${missing.join('、')}` : '' };
+});
+
+add('SKIN.derivedNotHardcoded', 'SKIN', (s) => {
+  // 背景/文字/毛玻璃必须由 JS 派生的 CSS 变量注入（依赖封面，写死 CSS 做不到），且 CSS 消费。
+  const e = stripComments(s.expanded ?? '');
+  // 变量在 style 对象里以带引号的键出现（'--skin-bg': …），故正则要容忍可选引号
+  const missing = ['--skin-bg', '--skin-text', '--skin-sub', '--skin-hover', '--skin-blur']
+    .filter((v) => !new RegExp(`['"]?${esc(v)}['"]?\\s*:`).test(e));
+  const css = s.css ?? '';
+  if (!/background:\s*var\(--skin-bg/.test(css)) missing.push('app.css 未消费 --skin-bg');
+  if (!/backdrop-filter:\s*var\(--skin-blur/.test(css)) missing.push('app.css 未消费 --skin-blur');
+  return { ok: missing.length === 0, detail: missing.length ? `变量注入/消费：${missing.join('、')}` : '' };
+});
+
+add('SKIN.bgGlass', 'SKIN', (s) => {
+  const e = stripComments(s.expanded ?? '');
+  const ok = /rgba\(255,\s*255,\s*255,\s*0\.25\)/.test(e);
+  return { ok, detail: ok ? '' : '通透皮肤缺半透明白底（rgba(255,255,255,0.25)）' };
+});
+
+add('SKIN.bgModern', 'SKIN', (s) => {
+  // 现代：封面主色 + 其 0.25 暗色拼的 135° 渐变；开「动态」时改 45° 三段渐变交给 CSS 平移
+  const e = stripComments(s.expanded ?? '');
+  const missing = [];
+  if (!/135deg/.test(e)) missing.push('缺 135deg 渐变');
+  if (!/\*\s*0\.25\b/.test(e)) missing.push('缺「封面色 × 0.25」暗色端点');
+  if (!/linear-gradient\(\s*45deg/.test(e)) missing.push('缺「动态」用的 45deg 流动渐变');
+  return { ok: missing.length === 0, detail: missing.length ? `现代皮肤：${missing.join('、')}` : '' };
+});
+
+add('SKIN.bgImmersive', 'SKIN', (s) => {
+  // 沉浸：makeVividColor 派生的 deep/hex/light 三段 90° 渐变 + 波纹层
+  const e = stripComments(s.expanded ?? '');
+  const missing = [];
+  if (!/makeVividColor\s*\(/.test(e)) missing.push('未用 makeVividColor 派生柔和色板');
+  if (!/linear-gradient\(\s*90deg/.test(e)) missing.push('缺 90deg 三段背景');
+  if (!/vivid\.deep/.test(e) || !/vivid\.light/.test(e)) missing.push('背景未用 deep/light 端点');
+  // 词边界：`skin-ripple-layer-off` 含 `skin-ripple-layer` 子串，裸子串匹配会把"改坏类名"判成绿
+  if (!/(?<![\w-])skin-ripple-layer(?![\w-])/.test(e)) missing.push('缺波纹层 skin-ripple-layer');
+  return { ok: missing.length === 0, detail: missing.length ? `沉浸皮肤：${missing.join('、')}` : '' };
+});
+
+add('SKIN.bgSpectrum', 'SKIN', (s) => {
+  const e = stripComments(s.expanded ?? '');
+  const missing = [];
+  if (!/'#05070c'/.test(e)) missing.push('缺近黑底 #05070c');
+  if (!/<SpectrumScene\b/.test(e)) missing.push('未渲染 <SpectrumScene>');
+  if (!/active=\{isSpectrum\}/.test(e)) missing.push('SpectrumScene 的 active 未接 isSpectrum（非该皮肤会白跑 RAF）');
+  return { ok: missing.length === 0, detail: missing.length ? `音域回响皮肤：${missing.join('、')}` : '' };
+});
+
+add('SKIN.bgVinyl', 'SKIN', (s) => {
+  const e = stripComments(s.expanded ?? '');
+  const missing = [];
+  if (!/#dfdfe2/.test(e) || !/#d1d1d6/.test(e)) missing.push('缺浅灰胶底渐变（#dfdfe2 → #d1d1d6）');
+  if (!/<VinylDisc\b/.test(e)) missing.push('未渲染 <VinylDisc>');
+  if (!/'#333338'/.test(e)) missing.push('缺固定深灰文字色 #333338');
+  return { ok: missing.length === 0, detail: missing.length ? `透明彩胶皮肤：${missing.join('、')}` : '' };
+});
+
+add('SKIN.bgCover', 'SKIN', (s) => {
+  // 封面渐染：背景 = 封面**右缘**主色 + 左侧满铺封面层
+  const e = stripComments(s.expanded ?? '');
+  const missing = [];
+  if (!/edgeColor\.hex/.test(e)) missing.push('背景未用封面右缘色（edgeColor.hex）');
+  if (!/useCoverEdgeColor\s*\(/.test(e)) missing.push('未调用 useCoverEdgeColor');
+  if (!/skin-cover-bleed/.test(e)) missing.push('缺满铺封面层 skin-cover-bleed');
+  return { ok: missing.length === 0, detail: missing.length ? `封面渐染皮肤：${missing.join('、')}` : '' };
+});
+
+add('SKIN.blurOnlyGlass', 'SKIN', (s) => {
+  // 只有「通透」用毛玻璃：全文件 blur(20px) 恰好 1 次，且落在 glass 分支内。
+  // 计数 + 分段限定 —— 破坏为 0 次（改成 none）或 2 次（给别的皮肤也加）都必须变红。
+  const e = stripComments(s.expanded ?? '');
+  const n = (e.match(/blur\(20px\)/g) || []).length;
+  if (n !== 1) return { ok: false, detail: `blur(20px) 应恰好 1 次（仅通透），实际 ${n} 次` };
+  const gStart = e.indexOf("case 'glass'");
+  const gEnd = gStart >= 0 ? e.indexOf('break;', gStart) : -1;
+  if (gStart < 0 || gEnd <= gStart || !e.slice(gStart, gEnd).includes('blur(20px)'))
+    return { ok: false, detail: 'blur(20px) 不在 glass 分支内（被别的皮肤用了）' };
+  return { ok: true, detail: '' };
+});
+
+add('SKIN.textColors', 'SKIN', (s) => {
+  // 文字色系：现代/封面渐染按封面明暗二选一；两端色 #1a1a2e / #f0f0f0
+  const e = stripComments(s.expanded ?? '');
+  const missing = [];
+  if (!/'#1a1a2e'/.test(e) || !/'#f0f0f0'/.test(e)) missing.push('缺明暗二选一的两端色（#1a1a2e / #f0f0f0）');
+  if (!/coverColor\.isLight/.test(e)) missing.push('现代未按 coverColor.isLight 选文字色');
+  if (!/edgeColor\.isLight/.test(e)) missing.push('封面渐染未按 edgeColor.isLight 选文字色');
+  return { ok: missing.length === 0, detail: missing.length ? `文字色：${missing.join('、')}` : '' };
+});
+
+add('SKIN.vinylSpin', 'SKIN', (s) => {
+  // 唱片旋转：app.css 有 skin-vinyl-spin keyframes 且盘体引用了它，转满 360°
+  const css = s.css ?? '';
+  const missing = [];
+  if (!/@keyframes\s+skin-vinyl-spin\b/.test(css)) missing.push('缺 skin-vinyl-spin keyframes');
+  if (!/animation:\s*skin-vinyl-spin\b[^;]*linear[^;]*infinite/.test(css)) missing.push('盘体未引用旋转动画');
+  if (!/rotate\(360deg\)/.test(css)) missing.push('旋转未到 360deg');
+  return { ok: missing.length === 0, detail: missing.length ? `唱片旋转：${missing.join('、')}` : '' };
+});
+
+add('SKIN.vinylPause', 'SKIN', (s) => {
+  // 暂停即停转：**每一处** animationPlayState 都必须跟随 isPlaying（任一处写成常量 ⇒ 该层暂停仍在转）。
+  // 用「出现次数 == 条件式次数」而非「至少一处条件式」—— 后者在两层里只改一层时会假绿。
+  const v = stripComments(s.vinylDisc ?? '');
+  const all = (v.match(/animationPlayState/g) || []).length;
+  const cond = (v.match(/animationPlayState:\s*isPlaying\s*\?\s*'running'\s*:\s*'paused'/g) || []).length;
+  if (all === 0) return { ok: false, detail: '唱片未设 animationPlayState（暂停不会停转）' };
+  if (cond === 0) return { ok: false, detail: 'animationPlayState 未按 isPlaying 取 running/paused' };
+  if (all !== cond) return { ok: false, detail: `有 ${all - cond} 处 animationPlayState 未跟随 isPlaying（该层暂停仍在转）` };
+  return { ok: true, detail: '' };
+});
+
+add('SKIN.spectrumNoLyrics', 'SKIN', (s) => {
+  // 音域回响激活时**不渲染歌词**（参考实现如此）：歌词面板被 !isSpectrum 守卫
+  const e = stripComments(s.expanded ?? '');
+  if (!/<KaraokeLyrics\b/.test(e)) return { ok: false, detail: '未渲染 <KaraokeLyrics>' };
+  if (!/\{!isSpectrum\s*\?/.test(e)) return { ok: false, detail: '歌词面板未被 !isSpectrum 守卫（音域回响下仍会显示歌词）' };
+  return { ok: true, detail: '' };
+});
+
+add('SKIN.spectrumAudio', 'SKIN', (s) => {
+  // 音域回响必须走 audioGraph 的唯一入口，且**不得**自己 createMediaElementSource（二次建图必抛 + 静音）
+  const sp = stripComments(s.spectrumScene ?? '');
+  if (!sp) return { ok: false, detail: '未读到 SpectrumScene.tsx' };
+  const missing = [];
+  if (!/attachAnalyser\s*\(/.test(sp)) missing.push('未用 attachAnalyser（应走唯一音频图入口）');
+  if (!/readLevels\s*\(/.test(sp)) missing.push('未用 readLevels 读频谱');
+  if (!/findAudioElement\s*\(/.test(sp)) missing.push('未用 findAudioElement');
+  if (/createMediaElementSource/.test(sp)) missing.push('自行 createMediaElementSource（违 AUDIO.singleEntry）');
+  return { ok: missing.length === 0, detail: missing.length ? `音域回响音频接线：${missing.join('、')}` : '' };
+});
+
+add('SKIN.spectrumFallback', 'SKIN', (s) => {
+  // 拿不到音频图必须降级为 CSS 动画（不能白屏/报错）
+  const sp = stripComments(s.spectrumScene ?? '');
+  const missing = [];
+  if (!/setFallback\(/.test(sp)) missing.push('无降级状态');
+  if (!/skin-spectrum-fallback/.test(sp)) missing.push('无 CSS 降级视图');
+  if (!/@keyframes\s+skin-spectrum-pulse\b/.test(s.css ?? '')) missing.push('app.css 缺降级动画 keyframes');
+  return { ok: missing.length === 0, detail: missing.length ? `音域回响降级：${missing.join('、')}` : '' };
+});
+
+add('SKIN.coverColorFallback', 'SKIN', (s) => {
+  // 取色失败必须回落（跨域污染 getImageData 会抛 SecurityError）：try/catch + 默认色
+  const cc = stripComments(s.coverColor ?? '');
+  const missing = [];
+  if (!/getImageData\s*\(/.test(cc)) missing.push('未读像素（getImageData）');
+  // 本项目 catch 多为 `catch {`（无参），故不能只认 `catch (` —— 用 [{(] 兼容两种写法
+  if (!/catch\s*[{(]/.test(cc)) missing.push('缺 try/catch 兜底（跨域污染会抛 SecurityError）');
+  if (!/'#1a1a2e'/.test(cc)) missing.push('缺默认回落色 #1a1a2e');
+  if (!/DEFAULT_COLOR/.test(cc)) missing.push('缺统一默认色常量');
+  return { ok: missing.length === 0, detail: missing.length ? `取色失败回落：${missing.join('、')}` : '' };
+});
+
+add('SKIN.immersiveLayout', 'SKIN', (s) => {
+  // 沉浸布局：左封面区不渲染（isPlainLayout 守卫）+ 歌词放大居中
+  const e = stripComments(s.expanded ?? '');
+  const css = s.css ?? '';
+  const missing = [];
+  if (!/isPlainLayout/.test(e)) missing.push('未按皮肤区分是否渲染左封面区');
+  if (!/\.music-exp-body\.is-immersive\s+\.music-lyr-line\b/.test(css)) missing.push('app.css 缺沉浸放大歌词规则');
+  if (!/\.music-exp-body\.is-immersive\s+\.music-exp-lyr-box\b/.test(css)) missing.push('app.css 缺沉浸居中规则');
+  return { ok: missing.length === 0, detail: missing.length ? `沉浸布局：${missing.join('、')}` : '' };
+});
+
+add('SKIN.vinylLayoutLeftAlign', 'SKIN', (s) => {
+  // 彩胶/封面渐染：歌词左对齐（KaraokeLyrics 新增 align prop 只切类名，不改动画/双层逻辑）
+  const css = s.css ?? '';
+  const kara = stripComments(s.karaoke ?? '');
+  const missing = [];
+  if (!/align/.test(kara)) missing.push('KaraokeLyrics 未新增 align prop');
+  if (!/is-left/.test(kara)) missing.push('KaraokeLyrics 未按 align 切 is-left 类名');
+  if (!/\.music-exp-lyr-box\.is-left\s+\.music-lyr-line\b/.test(css)) missing.push('app.css 缺左对齐歌词规则');
+  return { ok: missing.length === 0, detail: missing.length ? `左对齐歌词：${missing.join('、')}` : '' };
+});
+
 // ── 执行器 ────────────────────────────────────────────────────────────────
 function runAll(s) {
   const res = {};
@@ -1456,7 +1664,7 @@ function runAll(s) {
   return res;
 }
 
-const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS', 'AUDIO'];
+const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS', 'AUDIO', 'SKIN'];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -2087,6 +2295,80 @@ const MUTATIONS = [
     replace: '      const el = null as HTMLAudioElement | null;',
     expect: ['LYRICS.karaTimeSource'],
   },
+
+  // ── SKIN 六皮肤 ──────────────────────────────────────────────────────
+  {
+    name: '通透皮肤的 blur 改成 none（不再是唯一毛玻璃皮肤）',
+    file: F.expanded,
+    find: "      skinBlur = 'blur(20px)';",
+    replace: "      skinBlur = 'none';",
+    expect: ['SKIN.blurOnlyGlass'],
+  },
+  {
+    name: '给「现代」也加 blur（毛玻璃不再唯一 → 计数变 2）',
+    file: F.expanded,
+    find: '      skinBg = modernBg;',
+    replace: "      skinBg = modernBg;\n      skinBlur = 'blur(20px)';",
+    expect: ['SKIN.blurOnlyGlass'],
+  },
+  {
+    name: '现代暗色端点写死成封面色（丢掉 ×0.25 暗化）',
+    file: F.expanded,
+    find: '  const modernDark = `rgb(${Math.round(cr * 0.25)},${Math.round(cg * 0.25)},${Math.round(cb * 0.25)})`;',
+    replace: '  const modernDark = `rgb(${Math.round(cr * 1)},${Math.round(cg * 1)},${Math.round(cb * 1)})`;',
+    expect: ['SKIN.bgModern'],
+  },
+  {
+    name: '封面渐染改用封面主色代替右缘色（背景与封面右缘不再相融）',
+    file: F.expanded,
+    find: '  const coverBg = coverUrl ? edgeColor.hex : modernBg;',
+    replace: '  const coverBg = coverUrl ? modernSolid : modernBg;',
+    expect: ['SKIN.bgCover'],
+  },
+  {
+    name: '沉浸不再用 makeVividColor 派生色板（退回硬编码渐变）',
+    file: F.expanded,
+    find: 'makeVividColor(coverColor.rgb[0], coverColor.rgb[1], coverColor.rgb[2])',
+    replace: '(() => ({ hex: "#126d83", deep: "#126d83", light: "#126d83", rgb: [18, 109, 131] }))()',
+    expect: ['SKIN.bgImmersive'],
+  },
+  {
+    name: '音域回响下不再隐藏歌词（去掉 !isSpectrum 守卫）',
+    file: F.expanded,
+    find: '        {!isSpectrum ? (',
+    replace: '        {true ? (',
+    expect: ['SKIN.spectrumNoLyrics'],
+  },
+  {
+    name: '唱片的 animationPlayState 写成常量（暂停仍在转）',
+    file: F.vinylDisc,
+    find: '            boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.28), inset 0 0 60px ${hexToRgba(accentColor, 0.35)}`,\n            animationPlayState: isPlaying ? \'running\' : \'paused\',',
+    replace: '            boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.28), inset 0 0 60px ${hexToRgba(accentColor, 0.35)}`,\n            animationPlayState: \'running\',',
+    expect: ['SKIN.vinylPause'],
+  },
+  {
+    name: '波纹层类名改坏（沉浸专属视觉丢失）',
+    file: F.expanded,
+    find: '          className="skin-ripple-layer"',
+    replace: '          className="skin-ripple-layer-off"',
+    expect: ['SKIN.bgImmersive'],
+  },
+  {
+    name: '音域回响自建音频图（绕过 audioGraph 唯一入口）',
+    file: F.spectrumScene,
+    // 锚点带 `void ` 前缀：组件注释里也写了 attachAnalyser(findAudioElement())，
+    // 不带前缀的话 String.replace 会先改到注释那处，代码仍在 → 断言不红（假阳性）。
+    find: '    void attachAnalyser(findAudioElement()).then((g) => {',
+    replace: '    void Promise.resolve(null).then((g) => {',
+    expect: ['SKIN.spectrumAudio'],
+  },
+  {
+    name: 'ExpandedPlayer 不再引用 useCoverColor（取色基础设施悬空）',
+    file: F.expanded,
+    find: "import { makeVividColor, useCoverColor, useCoverEdgeColor } from '@hooks/useCoverColor';",
+    replace: "import { makeVividColor, useCoverEdgeColor } from '@hooks/useCoverColor';",
+    expect: ['SKIN.colorHook'],
+  },
 ];
 
 // ── 主流程 ────────────────────────────────────────────────────────────────
@@ -2094,7 +2376,7 @@ const refute = process.argv.includes('--refute');
 
 console.log('音乐模块 · 四平台接通断言' + (refute ? ' · 反证轮' : ''));
 console.log(`根目录：${ROOT}`);
-console.log(`断言总数：${A.length}（RUST/IPC/PLATFORM/STORE/DUR/SEARCH/UI/PLAYER）`);
+console.log(`断言总数：${A.length}（${GROUPS.join('/')}）`);
 
 if (!refute) {
   const res = runAll(loadSources());
