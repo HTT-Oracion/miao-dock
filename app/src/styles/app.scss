@@ -1,0 +1,329 @@
+/*
+ * 应用外壳与各画面的样式。
+ *
+ * 几何取自《02》§5.1 / §5.2 / §5.5，数值与 `src/theme/tokens.ts` 的 SHELL / QUEUE_TABLE /
+ * LIBRARY 常量**必须一致**——`src/spec-check.ts` 会把实际渲染尺寸与常量比对，
+ * 不一致即在设置页的「规格自检」里报红。所以这里改数值必须同步改常量。
+ */
+
+/* ================================================================ 应用外壳 */
+
+.shell {
+  display: flex;
+  height: 100%;
+}
+
+/*
+ * 侧边导航：宽 78（《02》§5.1）。
+ *
+ * 纵向排列 + 水平居中是**两级结构的载体**，不是排版偏好：
+ * 纵向 = 层级（应用层在上、全局层在下），居中 = 同一光学轴，
+ * 于是「分隔线以上是应用、以下是全局」在几何上与在 DOM 上一致，C8 才量得出来。
+ * 侧栏不是可滚动区，故不必给 min-height:0。
+ */
+.sidebar {
+  flex: 0 0 78px;
+  width: 78px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 0 12px;
+  background: var(--md-surface);
+  border-right: 1px solid var(--md-line);
+}
+
+/* 徽标 40×40。`flex: 0 0 auto` 与下面各级同理：它有确定高度，
+   一旦被压扁，徽标与首个应用入口就贴在一起，「两级结构」读作一级。 */
+.sidebar-logo {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border-radius: var(--md-radius-md);
+  display: grid;
+  place-items: center;
+  background: var(--md-pink-soft);
+  margin-bottom: 6px;
+}
+.sidebar-logo img {
+  width: 30px;
+  height: 30px;
+  display: block;
+}
+
+/*
+ * 导航项基类：只放**两级共用**的视觉，尺寸一律不进这里。
+ *
+ * 尺寸放到 `.is-app` / `.is-global` 是刻意的 —— 58×52 与 44×44 是两级各自的判据，
+ * 留在基类会让「全局设置也是 58×52」看起来像是规格，回头改一个就静默改坏另一个。
+ *
+ * `flex: 0 0 auto`：侧栏是 column flex 且高度受限，缺了它导航项会被压扁，
+ * 而高度正是 C8 量出来的东西 —— 压扁的 52 读不出「应用入口 58×52」。
+ */
+.nav-item {
+  flex: 0 0 auto;
+  border-radius: var(--md-radius-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--md-muted);
+  transition: background 0.15s, color 0.15s;
+}
+/* 应用层入口 58×52（《09》§3.1 / SIDEBAR.appItem） */
+.nav-item.is-app {
+  width: 58px;
+  height: 52px;
+}
+.nav-item:hover {
+  background: var(--md-surface-2);
+  color: var(--md-ink-2);
+}
+.nav-item.is-active {
+  background: var(--md-pink-soft);
+  color: var(--md-ink);
+  font-weight: 500;
+}
+.nav-item svg {
+  display: block;
+}
+
+/*
+ * 全局层设置：**纯方形 44×44**，不是应用层的 58×52。
+ *
+ * 去掉了文字，所以尺寸必须自己站得住：方形是「这里没有第二行标签」的几何表态，
+ * 沿用 58×52 会在侧栏底部留出一个空行框，读起来像漏了字而不是刻意降权。
+ *
+ * 去文字的代价是可发现性，用两处补回：hover 背景（上面 `.nav-item:hover` 已给）
+ * 与组件里的 `title` + `aria-label`。
+ */
+.nav-item.is-global {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--md-radius-sm);
+}
+
+/*
+ * 分隔线 34×1：应用层与全局层的分界，断言 C8 的判据之一，勿删。
+ *
+ * `flex: 0 0 auto` 是必需项而非微调 —— 它只有 1px 高，column flex 里
+ * 缺了 `flex-shrink: 0` 会被邻居挤成 0（甚至被 `gap` 吃掉），分界就消失了。
+ * 34 宽是刻意短于 58：通栏线读作「页面分区」，短横线才读作「同列分组」。
+ */
+.sidebar-divider {
+  width: 34px;
+  height: 1px;
+  flex: 0 0 auto;
+  background: var(--md-line);
+  border-radius: 1px;
+  margin: 6px 0;
+}
+
+/* 服务状态点：色相承载状态，文字同步给出（颜色不作唯一信息载体）
+ *
+ * `margin-top: auto` 把全局层（状态点 + 设置按钮）压到侧栏底部 —— 这是刻意
+ * 恢复 ver1.0 的「全局层贴底」布局。分隔线仍夹在应用层与全局层之间不动，
+ * C8c 的判据（应用恒在上、全局恒在下）不受影响：auto margin 只是把全局层
+ * 与分隔线之间的空隙撑开，不改变二者的上下顺序。 */
+.sidebar-status {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--md-muted);
+  padding: 6px 0;
+  margin-top: auto;
+}
+
+/* ================================================================ 工具条 */
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--md-board);
+}
+
+/* 工具条：高 62（《02》§5.1） */
+.toolbar {
+  flex: 0 0 62px;
+  height: 62px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 26px;
+  background: var(--md-surface);
+  border-bottom: 1px solid var(--md-line);
+}
+
+.toolbar-titles {
+  min-width: 0;
+}
+.toolbar-title {
+  font-family: var(--md-font-display);
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.toolbar-sub {
+  font-size: 11px;
+  color: var(--md-muted);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 62vw;
+}
+.toolbar-spacer {
+  flex: 1;
+}
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 应用区：内边距 26 / 26 / 22 / 24（《02》§5.1） */
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 26px 26px 22px 24px;
+}
+
+/* ================================================================ 原子件 */
+
+.btn {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--md-radius-sm);
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+/* 主推进：pink（《02》§5.2 操作列语义） */
+.btn-primary {
+  background: var(--md-pink);
+  color: var(--md-on-accent);
+}
+.btn-primary:hover {
+  filter: brightness(1.05);
+}
+/* 中性次按钮：1px line 描边 + surface */
+.btn-ghost {
+  border: 1px solid var(--md-line);
+  background: var(--md-surface);
+  color: var(--md-ink);
+}
+.btn-ghost:hover {
+  background: var(--md-surface-2);
+}
+/*
+ * 破坏性动作（取消）：次按钮描边 + 文字 ink-2，hover 转 error。
+ * 《02》§5.2 **明确禁止用 pink** —— 破坏性动作不能穿主推进的衣服。
+ */
+.btn-danger {
+  border: 1px solid var(--md-line);
+  background: var(--md-surface);
+  color: var(--md-ink-2);
+}
+.btn-danger:hover {
+  border-color: var(--md-error);
+  color: var(--md-error);
+}
+/*
+ * 退出确认层里的破坏性主动作。
+ *
+ * 不复用上面那套描边次按钮样式：`.btn-danger` 的上文是**行内次动作**（队列行的「取消」），
+ * 而确认层这里是**主动作** —— 「留在后台」是安全出口、「退出喵坞」是破坏性动作，
+ * 两个灰描边按钮并排时用户得读两遍字才分得清哪个是哪个。破坏性动作要有自己的重量。
+ *
+ * 仍守《02》§5.2 的禁则：破坏性动作不穿主推进的 pink，走 error。
+ */
+.modal-actions .btn-danger {
+  border-color: transparent;
+  background: var(--md-error);
+  color: var(--md-on-accent);
+}
+.modal-actions .btn-danger:hover {
+  border-color: transparent;
+  color: var(--md-on-accent);
+  filter: brightness(1.05);
+}
+.btn-sm {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: var(--md-radius-xs);
+  font-size: 11px;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 上限徽章：pink-soft 底 + pink 文字（《02》§5.2） */
+.badge {
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  background: var(--md-pink-soft);
+  color: var(--md-pink);
+}
+
+/* 服务药丸：状态点 + 文案 */
+.pill {
+  height: 26px;
+  padding: 0 11px 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--md-line);
+  background: var(--md-surface);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--md-ink-2);
+}
+
+/* 状态点：色相的唯一承载处（无障碍：颜色不作唯一信息载体，旁边必有文字） */
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 8px;
+  background: var(--md-muted);
+}
+.dot-pulse {
+  animation: dot-breathe 1.6s ease-in-out infinite;
+}
+@keyframes dot-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.card {
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-lg);
+}
+
+.muted {
+  color: var(--md-muted);
+}
+

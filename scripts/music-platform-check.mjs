@@ -9,7 +9,7 @@
  *     IPC      app/src/music/ipc.ts 的 invoke('<command>') 封装
  *     PLATFORM app/src/music/platform.ts 的能力矩阵 + 派发分支
  *     STORE    app/src/music/store.ts 的平台感知状态与 action
- *     UI       app/src/screens/MusicScreen.tsx + screens/music/* + styles/app.css
+ *     UI       app/src/screens/MusicScreen.tsx + screens/music/* + styles/*.scss
  *
  *   这五层的静默失败各不相同、互不覆盖：
  *     · Rust 命令**定义了但漏注册** → 编译全绿，运行时才报 "command not found"。
@@ -77,10 +77,13 @@ const F = {
   localView: path.join(APP, 'src', 'screens', 'music', 'LocalView.tsx'),
   historyView: path.join(APP, 'src', 'screens', 'music', 'HistoryView.tsx'),
   virtualList: path.join(APP, 'src', 'components', 'units', 'VirtualList.tsx'),
-  // ⚠️ `css` 仍指 app.css 本身，**只给反证机制用**（它要按 file 路径临时改源文件）。
-  // 断言读到的 `s.css` 是 `readStyleSource` 按 index.scss 顺序拼出的全分片文本 ——
-  // 样式已按模块拆成六个分片，读单文件会集体变红（读不到 ≠ 真回归），故走拼接。
-  css: path.join(APP, 'src', 'styles', 'app.css'),
+  // 断言读到的 `s.css` 是 `readStyleSource` 按 index.scss 顺序拼出的**全分片**文本。
+  // 下面这个 musicScss **只给反证机制用** —— 它要按 file 路径临时改源文件。
+  // 为什么反证全落在 music.scss：本组 9 条 css 反证的锚点（keyframes music-exp-* /
+  // .music-exp 动画 / 队列抽屉 z-index / 右键菜单 z-index / 灵动岛退场时长 / 歌词
+  // flex-shrink）经逐条核对**唯一**命中 music.scss，其余分片无同文本 —— 唯一性是
+  // 反证能生效的前提，若同一文本在两个分片出现，改一个另一个仍在，断言就不会变红。
+  musicScss: path.join(APP, 'src', 'styles', 'music.scss'),
   stylesDir: path.join(APP, 'src', 'styles'),
   srcDir: path.join(APP, 'src'),
   rustSrcDir: path.join(APP, 'src-tauri', 'src'),
@@ -701,7 +704,7 @@ add('UI.playerBarRule', 'UI', (s) => {
   if (!/if\s*\(hidden\)\s*return\s+null/.test(pb)) missing.push('PlayerBar 未实现 hidden 时早退（队列为空不渲染）');
   if (!/hidden=\{[^}]*queue[^}]*\}/.test(s.musicScreen)) missing.push('MusicScreen 未按队列长度决定播放条显隐');
   const block = (s.css.match(/\.music\s*\{([^}]*)\}/) || [, ''])[1];
-  if (!/(^|\n)\s*height:\s*100%/.test(block)) missing.push('app.css 的 .music 未改成定高（仍是 min-height:100%，会撑出页面级滚动）');
+  if (!/(^|\n)\s*height:\s*100%/.test(block)) missing.push('样式的 .music 未改成定高（仍是 min-height:100%，会撑出页面级滚动）');
   const cols = (s.css.match(/\.music-cols\s*\{([^}]*)\}/) || [, ''])[1];
   if (!/grid-template-rows\s*:\s*minmax\(\s*0\s*,/.test(cols)) {
     missing.push('.music-cols 未固定行高（缺 grid-template-rows: minmax(0, 1fr)，卡片会被内容撑开、失去内部滚动）');
@@ -785,15 +788,15 @@ add('PLAYER.audioElNotInState', 'PLAYER', (s) => {
 });
 add('PLAYER.animKeyframes', 'PLAYER', (s) => {
   const missing = ['@keyframes music-exp-up', '@keyframes music-exp-down'].filter((k) => !s.css.includes(k));
-  return { ok: missing.length === 0, detail: missing.length ? `app.css 缺进场/退场关键帧：${missing.join('、')}` : '' };
+  return { ok: missing.length === 0, detail: missing.length ? `样式缺进场/退场关键帧：${missing.join('、')}` : '' };
 });
 add('PLAYER.animEnter', 'PLAYER', (s) => {
   const rule = (s.css.match(/(?:^|\n)\.music-exp\s*\{([^}]*)\}/) || [, ''])[1];
-  return { ok: /animation\s*:\s*music-exp-up/.test(rule), detail: 'app.css 的 .music-exp 未自带进场动画 music-exp-up' };
+  return { ok: /animation\s*:\s*music-exp-up/.test(rule), detail: '样式的 .music-exp 未自带进场动画 music-exp-up' };
 });
 add('PLAYER.animClosing', 'PLAYER', (s) => {
   const rule = (s.css.match(/\.music-exp\.is-closing\s*\{([^}]*)\}/) || [, ''])[1];
-  return { ok: /animation\s*:\s*music-exp-down/.test(rule), detail: 'app.css 的 .music-exp.is-closing 未播退场动画 music-exp-down' };
+  return { ok: /animation\s*:\s*music-exp-down/.test(rule), detail: '样式的 .music-exp.is-closing 未播退场动画 music-exp-down' };
 });
 add('PLAYER.durationSync', 'PLAYER', (s) => {
   // 双向：CSS 的退场时长 ↔ store 的延时，两个数都取出来比对 —— 改一处忘另一处 = 动画没播完就消失
@@ -801,7 +804,7 @@ add('PLAYER.durationSync', 'PLAYER', (s) => {
   const cssM = /animation\s*:\s*music-exp-down\s+([\d.]+)s/.exec(rule);
   const body = methodBody(stripComments(s.store), 'closeExpanded');
   const msM = body && /\}\s*,\s*(\d+)\s*\)\s*;/.exec(body);
-  if (!cssM) return { ok: false, detail: 'app.css 未取到 .music-exp.is-closing 的退场时长（0.Ns）' };
+  if (!cssM) return { ok: false, detail: '样式里取不到 .music-exp.is-closing 的退场时长（0.Ns）' };
   if (!msM) return { ok: false, detail: 'store.closeExpanded 未取到退场延时（setTimeout 的毫秒数）' };
   const cssSec = parseFloat(cssM[1]);
   const ms = Number(msM[1]);
@@ -1520,7 +1523,7 @@ add('LYRICS.karaTimeSource', 'LYRICS', (s) => {
 
 // ============================ SKIN（展开播放器六皮肤）============================
 // 六皮肤必须各自是一整套视觉（背景/文字/专属组件/布局分支），而不是"只换一行 background"。
-// 这一组的判据全部**限定作用域**（只看 ExpandedPlayer / 三个专属模块 / app.css 音乐区段），
+// 这一组的判据全部**限定作用域**（只看 ExpandedPlayer / 三个专属模块 / 拼接后的样式全文），
 // 对"可能在多处出现的词"一律用计数或精确 token —— 本仓库已因"只判存在、不判唯一/子串匹配"栽过 7 次。
 
 add('SKIN.colorHook', 'SKIN', (s) => {
@@ -1549,8 +1552,8 @@ add('SKIN.derivedNotHardcoded', 'SKIN', (s) => {
   const missing = ['--skin-bg', '--skin-text', '--skin-sub', '--skin-hover', '--skin-blur']
     .filter((v) => !new RegExp(`['"]?${esc(v)}['"]?\\s*:`).test(e));
   const css = s.css ?? '';
-  if (!/background:\s*var\(--skin-bg/.test(css)) missing.push('app.css 未消费 --skin-bg');
-  if (!/backdrop-filter:\s*var\(--skin-blur/.test(css)) missing.push('app.css 未消费 --skin-blur');
+  if (!/background:\s*var\(--skin-bg/.test(css)) missing.push('样式未消费 --skin-bg');
+  if (!/backdrop-filter:\s*var\(--skin-blur/.test(css)) missing.push('样式未消费 --skin-blur');
   return { ok: missing.length === 0, detail: missing.length ? `变量注入/消费：${missing.join('、')}` : '' };
 });
 
@@ -1634,7 +1637,7 @@ add('SKIN.textColors', 'SKIN', (s) => {
 });
 
 add('SKIN.vinylSpin', 'SKIN', (s) => {
-  // 唱片旋转：app.css 有 skin-vinyl-spin keyframes 且盘体引用了它，转满 360°
+  // 唱片旋转：样式里有 skin-vinyl-spin keyframes 且盘体引用了它，转满 360°
   const css = s.css ?? '';
   const missing = [];
   if (!/@keyframes\s+skin-vinyl-spin\b/.test(css)) missing.push('缺 skin-vinyl-spin keyframes');
@@ -1681,7 +1684,7 @@ add('SKIN.spectrumFallback', 'SKIN', (s) => {
   const missing = [];
   if (!/setFallback\(/.test(sp)) missing.push('无降级状态');
   if (!/skin-spectrum-fallback/.test(sp)) missing.push('无 CSS 降级视图');
-  if (!/@keyframes\s+skin-spectrum-pulse\b/.test(s.css ?? '')) missing.push('app.css 缺降级动画 keyframes');
+  if (!/@keyframes\s+skin-spectrum-pulse\b/.test(s.css ?? '')) missing.push('样式缺降级动画 keyframes');
   return { ok: missing.length === 0, detail: missing.length ? `音域回响降级：${missing.join('、')}` : '' };
 });
 
@@ -1703,8 +1706,8 @@ add('SKIN.immersiveLayout', 'SKIN', (s) => {
   const css = s.css ?? '';
   const missing = [];
   if (!/isPlainLayout/.test(e)) missing.push('未按皮肤区分是否渲染左封面区');
-  if (!/\.music-exp-body\.is-immersive\s+\.music-lyr-line\b/.test(css)) missing.push('app.css 缺沉浸放大歌词规则');
-  if (!/\.music-exp-body\.is-immersive\s+\.music-exp-lyr-box\b/.test(css)) missing.push('app.css 缺沉浸居中规则');
+  if (!/\.music-exp-body\.is-immersive\s+\.music-lyr-line\b/.test(css)) missing.push('样式缺沉浸放大歌词规则');
+  if (!/\.music-exp-body\.is-immersive\s+\.music-exp-lyr-box\b/.test(css)) missing.push('样式缺沉浸居中规则');
   return { ok: missing.length === 0, detail: missing.length ? `沉浸布局：${missing.join('、')}` : '' };
 });
 
@@ -1715,7 +1718,7 @@ add('SKIN.vinylLayoutLeftAlign', 'SKIN', (s) => {
   const missing = [];
   if (!/align/.test(kara)) missing.push('KaraokeLyrics 未新增 align prop');
   if (!/is-left/.test(kara)) missing.push('KaraokeLyrics 未按 align 切 is-left 类名');
-  if (!/\.music-exp-lyr-box\.is-left\s+\.music-lyr-line\b/.test(css)) missing.push('app.css 缺左对齐歌词规则');
+  if (!/\.music-exp-lyr-box\.is-left\s+\.music-lyr-line\b/.test(css)) missing.push('样式缺左对齐歌词规则');
   return { ok: missing.length === 0, detail: missing.length ? `左对齐歌词：${missing.join('、')}` : '' };
 });
 
@@ -1731,7 +1734,7 @@ add('SKIN.lyrNoFlexShrink', 'SKIN', (s) => {
   const css = stripComments(s.css ?? '');
   const missing = [];
   if (!/\.music-exp-lyr-box\s+\.music-lyr-line\s*\{[^}]*flex-shrink:\s*0/.test(css)) {
-    missing.push('app.css 缺歌词行 flex-shrink:0（当前句会被 flex 收缩压扁到整行消失）');
+    missing.push('样式缺歌词行 flex-shrink:0（当前句会被 flex 收缩压扁到整行消失）');
   }
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
 });
@@ -1858,7 +1861,7 @@ add('ISLANDV.pureMusic', 'ISLANDV', (s) => {
   const css = s.css ?? '';
   const missing = [];
   if (!/♪ 纯音乐，请欣赏/.test(isl)) missing.push('歌词卡缺纯音乐降级文案');
-  if (!/\.di-lyr-empty\s*\{/.test(css)) missing.push('app.css 缺 .di-lyr-empty 样式');
+  if (!/\.di-lyr-empty\s*\{/.test(css)) missing.push('样式缺 .di-lyr-empty 样式');
   // 文案必须挂在「无歌词」分支**里**：无条件渲染会与真歌词叠在一起（两行字糊在一块）
   if (!/lines\.length\s*>\s*0\s*\?[\s\S]*?♪ 纯音乐，请欣赏/.test(isl))
     missing.push('降级文案不在「无歌词」分支里');
@@ -2208,13 +2211,13 @@ add('MENU.css', 'MENU', (s) => {
   const i = css.indexOf('.music-menu {');
   const block = i < 0 ? '' : css.slice(i, css.indexOf('}', i));
   const missing = [];
-  if (!block) missing.push('app.css 缺 .music-menu 规则');
+  if (!block) missing.push('样式缺 .music-menu 规则');
   else {
     if (!/z-index:\s*\d+/.test(block)) missing.push('.music-menu 没有 z-index（会被抽屉/展开播放器压住）');
     const tokens = (block.match(/var\(--md-/g) || []).length;
     if (tokens < 3) missing.push(`.music-menu 只用了 ${tokens} 个设计令牌（深色模式不跟随）`);
   }
-  if (!/\.music-menu-item\s*\{/.test(css)) missing.push('app.css 缺 .music-menu-item 规则');
+  if (!/\.music-menu-item\s*\{/.test(css)) missing.push('样式缺 .music-menu-item 规则');
   return { ok: missing.length === 0, detail: missing.length ? `菜单样式：${missing.join('、')}` : '' };
 });
 
@@ -2392,28 +2395,28 @@ const MUTATIONS = [
   // ── PLAYER · B 展开动画 + 点歌自动展开 ────────────────────────────────
   {
     name: '把 @keyframes music-exp-down 改名（退场动画关键帧丢失）',
-    file: F.css,
+    file: F.musicScss,
     find: '@keyframes music-exp-down {',
     replace: '@keyframes music-exp-gone {',
     expect: ['PLAYER.animKeyframes'],
   },
   {
     name: '把 .music-exp 的进场动画那行删掉',
-    file: F.css,
+    file: F.musicScss,
     find: '  animation: music-exp-up 0.34s cubic-bezier(0.4, 0, 0.2, 1);\n',
     replace: '',
     expect: ['PLAYER.animEnter'],
   },
   {
     name: '把 .is-closing 的退场动画指向 music-exp-up（不再下播）',
-    file: F.css,
+    file: F.musicScss,
     find: 'animation: music-exp-down 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;',
     replace: 'animation: music-exp-up 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;',
     expect: ['PLAYER.animClosing'],
   },
   {
     name: '把 CSS 里 .is-closing 的 0.3s 改成 0.5s（退场时长两处不一致）',
-    file: F.css,
+    file: F.musicScss,
     find: 'animation: music-exp-down 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;',
     replace: 'animation: music-exp-down 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;',
     expect: ['PLAYER.durationSync'],
@@ -2899,7 +2902,7 @@ const MUTATIONS = [
   },
   {
     name: '歌词行 flex-shrink:0 被删（当前句被 flex 收缩压扁 → 整行消失、换句后上一句才出现）',
-    file: F.css,
+    file: F.musicScss,
     find: '.music-exp-lyr-box .music-lyr-line { flex-shrink: 0; }',
     replace: '.music-exp-lyr-box .music-lyr-line { /* removed */ }',
     expect: ['SKIN.lyrNoFlexShrink'],
@@ -2920,7 +2923,7 @@ const MUTATIONS = [
   },
   {
     name: "把播放队列的 z-index 降回展开播放器之下（点「播放队列」看不到东西）",
-    file: "app/src/styles/app.css",
+    file: F.musicScss,
     find: "  flex-direction: column;\n  z-index: 72;\n}",
     replace: "  flex-direction: column;\n  z-index: 60;\n}",
     expect: ["UI.drawerAboveExpanded"],
@@ -3066,7 +3069,7 @@ const MUTATIONS = [
   },
   {
     name: '菜单去掉 z-index（被队列抽屉 / 展开播放器压住看不见）',
-    file: 'app/src/styles/app.css',
+    file: F.musicScss,
     find: '  position: fixed;\n  z-index: 78;\n  min-width: 148px;',
     replace: '  position: fixed;\n  min-width: 148px;',
     expect: ['MENU.css'],
@@ -3166,7 +3169,7 @@ const MUTATIONS = [
   },
   {
     name: '歌词卡字号接回 --lyr-size（跟随用户 17–48 的量程 → 320px 卡片被撑爆）',
-    file: 'app/src/styles/app.css',
+    file: F.musicScss,
     find: '.di-card .di-lyr .music-lyr-line {\n  font-size: var(--di-lyr-size, 12px);',
     replace: '.di-card .di-lyr .music-lyr-line {\n  font-size: var(--lyr-size, 12px);',
     expect: ['ISLANDV.fontSizeLocal'],

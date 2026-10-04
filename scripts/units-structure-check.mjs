@@ -67,9 +67,10 @@ const F = {
   island: path.join(SRC, 'components', 'DynamicIsland.tsx'),
   toastBus: path.join(SRC, 'toastBus.ts'),
   musicToast: path.join(SRC, 'screens', 'music', 'Toast.tsx'),
-  // `css` 仍指 app.css 本身，**只给反证机制用**（按 file 路径临时改源文件）；
-  // 断言读到的 s.appCss 是全分片拼接（见下方 readStyleSource 调用处）。
-  css: path.join(SRC, 'styles', 'app.css'),
+  // 断言读到的 s.appCss 是全分片拼接（见下方 readStyleSource 调用处）；
+  // 下面这个 musicScss **只给反证机制用**（按 file 路径临时改源文件）。
+  // 灵动岛的样式在 music.scss 里（.di-capsule 等），故反证指向它。
+  musicScss: path.join(SRC, 'styles', 'music.scss'),
   stylesDir: path.join(SRC, 'styles'),
 };
 
@@ -891,7 +892,7 @@ add('ISLAND.leaveDurationSync', 'ISLAND', (s) => {
   //（.is-leaving 只改 transform/opacity）。所以要从 .di-capsule 上取。
   const mCss = css.match(/\.di-capsule\s*\{[^}]*?transition:[^;]*?(\d*\.?\d+)s/);
   const mTs = ts.match(/setTimeout\([\s\S]*?,\s*(\d+)\s*\)/);
-  if (!mCss) return { ok: false, detail: 'app.css 找不到 .di-capsule.is-leaving 的 transition 时长' };
+  if (!mCss) return { ok: false, detail: '样式里找不到 .di-capsule.is-leaving 的 transition 时长' };
   if (!mTs) return { ok: false, detail: 'DynamicIsland.tsx 找不到退场的 setTimeout' };
   const cssS = Math.round(parseFloat(mCss[1]) * 1000);
   const tsMs = Number(mTs[1]);
@@ -1184,7 +1185,7 @@ const MUTATIONS = [
   },
   {
     name: "把退场时长改成 CSS 0.4s ↔ TS 260ms 不一致（胶囊提前消失 / 悬着不走）",
-    file: F.css,
+    file: F.musicScss,
     // 锚点取 transition 里的第一个时长（0.26s）。判据取的是同一处，故改它必然触发红
     find: "    transform 0.26s cubic-bezier(0.4, 0, 0.2, 1),",
     replace: "    transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),",

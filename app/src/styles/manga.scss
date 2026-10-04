@@ -1,0 +1,569 @@
+/* ================================================================ X-C1 任务队列 */
+
+.queue {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 表头列宽 弹性 / 120 / 160 / 150 / 90；行高 58（《02》§5.2） */
+.qt-head,
+.qt-row {
+  display: flex;
+  align-items: center;
+}
+.qt-head {
+  height: 42px;
+  padding: 0 14px;
+  border-radius: var(--md-radius-md);
+  background: var(--md-surface-2);
+  border: 1px solid var(--md-line);
+  font-size: 11px;
+  color: var(--md-muted);
+}
+.qt-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.qt-row {
+  height: 58px;
+  padding: 0 14px;
+  border-radius: var(--md-radius-sm);
+  border: 1px solid transparent;
+}
+.qt-row:hover {
+  background: var(--md-surface-2);
+}
+/*
+ * 当前运行行：surface 底 + line 描边（《02》§5.2）。
+ * 表格整体浮在 board 上，只有运行行被「抬」到 surface —— 这是该规格唯一自洽的读法，
+ * 否则表面底与描边都无法与普通行区隔。已记入 docs/spec-notes.md G-06。
+ */
+.qt-row.is-running {
+  background: var(--md-surface);
+  border-color: var(--md-line);
+}
+
+.qt-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.qt-name-main {
+  font-size: 12.5px;
+  color: var(--md-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qt-name-sub {
+  font-size: 10.5px;
+  color: var(--md-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qt-c-source {
+  flex: 0 0 120px;
+  width: 120px;
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+}
+.qt-c-progress {
+  flex: 0 0 160px;
+  width: 160px;
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+}
+.qt-c-status {
+  flex: 0 0 150px;
+  width: 150px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* 状态文字一律 ink，色相由状态点承载（《02》§5.2） */
+  color: var(--md-ink);
+  font-size: 11.5px;
+}
+.qt-c-action {
+  flex: 0 0 90px;
+  width: 90px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* 进度条：服务端给的 done/total，前端不自行估算 */
+.bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--md-line-soft);
+  overflow: hidden;
+  margin-top: 4px;
+}
+.bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--md-blue);
+  transition: width 0.35s ease;
+}
+.bar.is-done > i {
+  background: var(--md-success);
+}
+.bar.is-bad > i {
+  background: var(--md-warning);
+}
+
+/* ================================================================ X-C2 队列空态 */
+
+.empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding-bottom: 40px;
+}
+.empty-title {
+  font-family: var(--md-font-display);
+  font-weight: 700;
+  font-size: 15px;
+  margin-top: 10px;
+}
+.empty-sub {
+  font-size: 12px;
+  color: var(--md-muted);
+  margin-bottom: 14px;
+}
+.empty-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* 魔法阵 160×160：同心环 + 五芒星 + 星核（《02》§5.3） */
+.magic {
+  display: block;
+}
+.magic-spin {
+  animation: magic-rotate 8s linear infinite;
+  transform-origin: 50% 50%;
+}
+@keyframes magic-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ================================================================ X-C3 服务未就绪 */
+
+.notready {
+  max-width: 560px;
+  margin: 20px auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.stage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--md-radius-sm);
+  border: 1px solid var(--md-line-soft);
+  background: var(--md-surface);
+}
+.stage.is-current {
+  border-color: var(--md-pink);
+}
+.stage-idx {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  background: var(--md-line-soft);
+  color: var(--md-ink-2);
+}
+.stage.is-current .stage-idx {
+  background: var(--md-pink-soft);
+  color: var(--md-pink);
+}
+.stage-text {
+  font-size: 12px;
+}
+.stage-note {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--md-muted);
+}
+.logbox {
+  max-height: 168px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: var(--md-radius-sm);
+  background: var(--md-surface-2);
+  border: 1px solid var(--md-line-soft);
+  font-family: var(--md-font-numeric);
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--md-ink-2);
+  white-space: pre-wrap;
+  word-break: break-all;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ================================================================ X-D1 本地漫画库 */
+
+.lib {
+  display: flex;
+  gap: 14px;
+  height: 100%;
+  min-height: 0;
+}
+/* 左栏 260（《02》§5.5） */
+.lib-left {
+  flex: 0 0 260px;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-lg);
+  overflow: hidden;
+}
+.lib-left-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px;
+}
+.lib-item {
+  width: 100%;
+  text-align: left;
+  padding: 8px 9px;
+  border-radius: var(--md-radius-xs);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lib-item:hover {
+  background: var(--md-surface-2);
+}
+.lib-item.is-active {
+  background: var(--md-pink-soft);
+}
+.lib-item-name {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lib-item-meta {
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+.lib-left-foot {
+  border-top: 1px solid var(--md-line-soft);
+  padding: 9px 12px;
+  font-size: 11px;
+  color: var(--md-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lib-right {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+.lib-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.lib-head-titles {
+  min-width: 0;
+  flex: 1;
+}
+.lib-head-name {
+  font-family: var(--md-font-display);
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lib-head-path {
+  font-size: 10.5px;
+  color: var(--md-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.lib-grid-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+.lib-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+/* 网格卡 110×165 r12（《02》§5.5） */
+.grid-card {
+  width: 110px;
+  height: 165px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--md-line);
+  background: var(--md-surface-2);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.grid-card:hover {
+  border-color: var(--md-pink);
+}
+/* 缺页卡：不可点，也不该给「可点」的悬停反馈 */
+.grid-card:disabled {
+  cursor: default;
+}
+.grid-card:disabled:hover {
+  border-color: var(--md-line);
+}
+.grid-thumb {
+  flex: 1;
+  min-height: 0;
+  display: block;
+  width: 100%;
+  object-fit: cover;
+  background: var(--md-line-soft);
+}
+.grid-foot {
+  height: 22px;
+  flex: 0 0 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 7px;
+  font-size: 10px;
+  color: var(--md-muted);
+  background: var(--md-surface);
+  border-top: 1px solid var(--md-line-soft);
+}
+.grid-placeholder {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  color: var(--md-muted);
+}
+.grid-placeholder.is-bad,
+.grid-foot .is-bad {
+  color: var(--md-error);
+}
+.lib-foot-note {
+  font-size: 11px;
+  color: var(--md-muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* ================================================================ X-D2 原文 / 译文对照 */
+
+.compare {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+}
+.compare-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+}
+.compare-seq {
+  font-size: 12.5px;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.compare-panes {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 14px;
+}
+.pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-lg);
+  overflow: hidden;
+}
+.pane-title {
+  height: 34px;
+  flex: 0 0 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+  border-bottom: 1px solid var(--md-line-soft);
+}
+.pane-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  background: var(--md-surface-2);
+}
+.pane-body img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--md-radius-xs);
+  box-shadow: 0 6px 18px rgba(59, 51, 82, 0.12);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* ================================================================ X-B1 本机投放 */
+
+.drop {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 720px;
+}
+.dropzone {
+  border: 2px dashed var(--md-line);
+  border-radius: var(--md-radius-lg);
+  background: var(--md-surface);
+  padding: 26px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.dropzone.is-over {
+  border-color: var(--md-pink);
+  background: var(--md-pink-soft);
+}
+.dropzone-title {
+  font-family: var(--md-font-display);
+  font-weight: 700;
+  font-size: 13.5px;
+  margin-top: 8px;
+}
+.dropzone-sub {
+  font-size: 11.5px;
+  color: var(--md-muted);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field-label {
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+}
+.field-hint {
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+.input {
+  height: 34px;
+  padding: 0 11px;
+  border-radius: var(--md-radius-sm);
+  border: 1px solid var(--md-line);
+  background: var(--md-surface);
+  color: var(--md-ink);
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.input:focus {
+  border-color: var(--md-pink);
+}
+
+.pathpreview {
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  color: var(--md-ink-2);
+  background: var(--md-surface-2);
+  border: 1px solid var(--md-line-soft);
+  border-radius: var(--md-radius-sm);
+  padding: 9px 11px;
+  word-break: break-all;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.filelist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 190px;
+  overflow: auto;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.filelist-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: var(--md-radius-xs);
+  background: var(--md-surface-2);
+}
+.filelist-row span:last-child {
+  margin-left: auto;
+  color: var(--md-muted);
+}
+
+.notice {
+  font-size: 11.5px;
+  padding: 9px 11px;
+  border-radius: var(--md-radius-sm);
+  border: 1px solid var(--md-line);
+  background: var(--md-surface-2);
+  color: var(--md-ink-2);
+}
+.notice.is-bad {
+  border-color: var(--md-error);
+  color: var(--md-error);
+  background: var(--md-surface);
+}
+

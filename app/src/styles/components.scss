@@ -1,0 +1,471 @@
+/* ======================================================== 公共组件（components/units）
+
+   本分区是 `app/src/components/units/` 各单元的**唯一样式来源**：类名一律 `ui-` 前缀，
+   只依赖设计令牌 —— 于是深色模式自动跟随，不需要第二套样式。
+   规则与判据见《09-技术方案-ver2.0-最终版》§2.2；`npm run check:units` 会核查命名与依赖。
+
+   外观一律自绘，不用系统原生外观：原生 select / range 的高度、圆角、箭头形状、拇指尺寸
+   都由系统（且随系统版本）决定，塞进行内 24px 的控件位会与同行的 .set-ro / .switch
+   凑出三种高度、两套圆角、两套配色。下拉的行为（键盘、typeahead、读屏、焦点）不在 CSS 里
+   —— 那是 Radix 的事，见 `units/Select.tsx`；这里只描述它长什么样。
+
+   刻意留在别处的两类（样式必须贴着上下文才读得懂，故不随组件搬过来）：
+   · `.music-exp .ui-cbtn` / `.music-exp .ui-empty` —— 展开播放器的深色皮肤覆盖；
+   · `.ui-vlist.is-drawer` —— 队列抽屉的行容器留白。 */
+
+/* ---- ① 下拉（Select）----
+ * 触发按钮与 .set-ro 同高 24、同圆角。min-width 132px 是**设置页右列**的取值：
+ * 别处需要不同宽度时由调用方传 className 覆盖，不要改这里（会连带动设置页）。
+ * 文本与箭头用 flex 两端对齐，于是选项文字长短不同时箭头仍钉在同一列
+ * —— 原生 select 做不到（它的箭头位置由系统画，宽度变化时会跟着文字跑）。 */
+
+/*
+ * 触发按钮 —— 类名仍是 .ui-select：与 .set-ro 同高 24、同圆角，
+ * min-width 让三个下拉的左边缘对齐成一条。
+ *
+ * 文本与箭头用 flex 两端对齐（`justify-content: space-between`），
+ * 于是选项文字长短不同时箭头仍钉在同一列 —— 这是原生 select 做不到的
+ * （它的箭头位置由系统画，宽度变化时会跟着文字跑）。
+ */
+.ui-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 24px;
+  min-width: 132px;
+  padding: 0 7px 0 9px;
+  font-family: var(--md-font-body);
+  font-size: 11.5px;
+  line-height: 1;
+  color: var(--md-ink);
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-xs);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+/* hover 走 surface-2（与 .btn-ghost 同一语汇）；pink 只留给"打开 / 聚焦" ——
+   焦点用「pink 边框 + pink-soft ring」，与 .ui-swatch.is-on 同一套形状语汇，
+   于是"被选中"和"被聚焦"在全页只表达成一种样子 */
+.ui-select:hover { background: var(--md-surface-2); }
+.ui-select:focus { outline: none; }
+.ui-select:focus-visible,
+.ui-select[data-state='open'] {
+  border-color: var(--md-pink);
+  box-shadow: 0 0 0 2px var(--md-pink-soft);
+}
+/* 箭头随展开翻转 —— 打开的方向要看得出来，否则点了没点的区别只剩边框颜色 */
+.ui-select-ico {
+  display: inline-flex;
+  color: var(--md-muted);
+  transition: transform 0.15s;
+}
+.ui-select[data-state='open'] .ui-select-ico { transform: rotate(180deg); }
+
+/*
+ * 选项弹层：走 Portal 挂到 body，所以这里的变量解析仍取自 :root（apply.ts 把令牌
+ * 写在 documentElement 上），深色模式无需另写一套。
+ * 浮层语汇与 .toast / .music-skin-picker 一致：surface 底 + line 描边 + 轻阴影。
+ */
+.ui-select-menu {
+  /* 高于页面内容、toast(50)、队列抽屉(60) 与展开播放器(70)；
+     低于模态层(80+)：菜单可以盖住播放器，但不该盖住确认对话框。
+     取 75 而不是 60，是因为"音质档位"下拉要放在播放条里，而展开播放器是 fixed z-index:70 —— 60 会被它压住。 */
+  z-index: 75;
+  min-width: var(--radix-select-trigger-width); /* Radix 注入：与触发按钮同宽 */
+  padding: 4px;
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-sm);
+  box-shadow: 0 8px 22px rgba(20, 15, 41, 0.14);
+  font-family: var(--md-font-body);
+  font-size: 11.5px;
+  color: var(--md-ink);
+  overflow: hidden;
+}
+
+/*
+ * 单个选项。左侧 22px 是对勾位 —— 选中的项才渲染 indicator，
+ * 靠这段固定的左内边距占位，勾出现/消失时选项文字不会左右跳。
+ */
+.ui-select-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 8px 0 22px;
+  border-radius: var(--md-radius-xs);
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+/* data-highlighted 由 Radix 给（鼠标悬停与键盘 ↑↓ 是同一个状态）——
+   自己写 :hover 会让键盘操作时没有高亮 */
+.ui-select-item[data-highlighted] { background: var(--md-surface-2); }
+.ui-select-item[data-state='checked'] { color: var(--md-pink); }
+.ui-select-ok {
+  position: absolute;
+  left: 6px;
+  display: inline-flex;
+  color: var(--md-pink);
+}
+
+/*
+ * 滑杆：轨道 5px / 圆角 3 / 11×11 粉圆拇指 —— 与音乐屏的 .music-prog-bar、.music-vol
+ * **逐值一致**。同一个应用里不该出现两种滑条，所以几何直接沿用，不另起一套。
+ *
+ * 唯一多出来的是「已填充」（--ui-range-fill 由组件按 value 注入）：
+ * 音乐屏的滑条自带时间语义（左右两端就是曲子的首尾，位置一眼可读），
+ * 而设置页的滑条只是"在一个区间里取值"，没有端点作参照 ——
+ * 光看右侧数字读不出"现在偏哪边"，所以补一段底色。
+ * 填充用 --md-pink-soft 而非 pink：拇指已经是 pink，同色会糊成一块。
+ *
+ * input 高度给 12 而不是轨道那 5：拇指 11px 比轨道高，容器太扁会把拇指裁掉。
+ */
+.ui-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 116px;
+  height: 12px;
+  background: transparent;
+  accent-color: var(--md-pink); /* 自绘未生效时的兜底，不是主样式 */
+  cursor: pointer;
+}
+.ui-range::-webkit-slider-runnable-track {
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    var(--md-pink-soft) 0 var(--ui-range-fill, 0%),
+    var(--md-line) var(--ui-range-fill, 0%) 100%
+  );
+}
+.ui-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  margin-top: -3px; /* (11 - 5) / 2：让拇指在轨道上居中 */
+  border-radius: 50%;
+  background: var(--md-pink);
+  transition: transform 0.12s;
+}
+.ui-range:hover::-webkit-slider-thumb { transform: scale(1.1); }
+.ui-range:active::-webkit-slider-thumb { transform: scale(1.18); }
+.ui-range:disabled { cursor: default; opacity: 0.45; }
+.ui-range:disabled::-webkit-slider-thumb { background: var(--md-muted); }
+.ui-range-val {
+  min-width: 38px;
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums; /* 数字等宽，拖动时读数不会左右跳 */
+  color: var(--md-ink-2);
+  text-align: right;
+}
+/* 预设色点：选中态用 ring 而不是换颜色 —— 色点本身的颜色就是信息，不能再被选中态覆盖 */
+.ui-swatches { display: flex; align-items: center; gap: 5px; }
+.ui-swatch {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--md-line);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.ui-swatch:hover { transform: scale(1.12); }
+.ui-swatch.is-on { box-shadow: 0 0 0 2px var(--md-pink-soft), 0 0 0 1px var(--md-pink); }
+/* 取色器：原生 input[type=color] 各平台外观差异大，统一压成 24×24 方块 */
+.ui-color {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-xs);
+  background: var(--md-surface-2); /* 色块外留一圈衬底，边缘不再与背景直接相接 */
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.ui-color:hover:not(:disabled) { border-color: var(--md-pink); }
+.ui-color:focus-visible {
+  outline: none;
+  border-color: var(--md-pink);
+  box-shadow: 0 0 0 2px var(--md-pink-soft);
+}
+.ui-color:disabled { cursor: default; opacity: 0.45; }
+.ui-color::-webkit-color-swatch-wrapper { padding: 2px; }
+.ui-color::-webkit-color-swatch { border: none; border-radius: 3px; }
+/* ---- ② 图标按钮（IconButton）---- */
+.ui-cbtn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--md-ink-2);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ui-cbtn:hover { background: var(--md-surface-2); }
+.ui-cbtn.main { background: var(--md-pink); color: #fff; width: 32px; height: 32px; }
+.ui-cbtn.main:hover { filter: brightness(1.05); }
+.ui-cbtn.is-on { color: var(--md-pink); }
+.ui-cbtn:disabled { opacity: 0.45; cursor: default; }
+
+/* ---- ③ 空态 / 短提示（Empty）---- */
+/* 空态 / 错误 / 行内提示 */
+.ui-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--md-muted);
+  text-align: center;
+  padding: 20px;
+  line-height: 1.6;
+}
+.ui-empty.is-bad { color: var(--md-error); }
+.ui-empty.is-inline { flex: 0 0 auto; padding: 12px; }
+
+/* ---- ④ 定高虚拟列表（VirtualList）---- */
+/* 定高虚拟列表（components/units/VirtualList.tsx）：只渲染视口内的行。
+   行高/间距默认与歌曲行一致（52 + 2，可经 props 覆盖），改用绝对定位复现 gap 的行奏，
+   因此不能再依赖 flex gap —— 撑高交给 .ui-vlist-inner。 */
+.ui-vlist {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  position: relative;
+}
+.ui-vlist-inner { position: relative; width: 100%; }
+.ui-vlist-item { position: absolute; left: 0; right: 0; }
+/* 控件旁的小字注解（例如「仅在固定颜色时生效」） */
+.set-ctl-note { font-size: 10.5px; color: var(--md-muted); }
+
+/* 只读值：端口 / 目录 / 版本号 */
+.set-ro {
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  background: var(--md-surface-2);
+  border: 1px solid var(--md-line-soft);
+  border-radius: var(--md-radius-xs);
+  padding: 2px 7px;
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* 服务状态：色相只在点上，文字同步给出（颜色不作唯一信息载体） */
+.set-state {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.set-state-text {
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  color: var(--md-ink);
+}
+
+.set-token {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 0 10px;
+  font-size: 11px;
+}
+.set-token code {
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  background: var(--md-surface-2);
+  border: 1px solid var(--md-line-soft);
+  border-radius: var(--md-radius-xs);
+  padding: 4px 8px;
+  word-break: break-all;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* 行下通栏附注：接在某一行的 1px 分隔线之下，读作"这一行的补充" */
+.set-row-note {
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--md-muted);
+  padding: 0 0 10px;
+}
+.set-row-note code {
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+}
+/* 自检说明与运行器之间的分隔：这里不是"某行的补充"，要自己起一条线 */
+.set-row-note-body {
+  padding-bottom: 8px;
+}
+
+.set-spec {
+  padding: 0 0 12px;
+}
+.set-spec-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+.set-spec-count {
+  font-size: 11.5px;
+}
+.set-spec-hint {
+  font-size: 11px;
+}
+.set-spec-failed {
+  color: var(--md-error);
+}
+
+.section {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.section-title {
+  font-family: var(--md-font-display);
+  font-weight: 700;
+  font-size: 13px;
+}
+.kv {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+}
+.kv > b {
+  font-weight: 500;
+  color: var(--md-muted);
+  flex: 0 0 96px;
+}
+.kv > code {
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  background: var(--md-surface-2);
+  border: 1px solid var(--md-line-soft);
+  border-radius: var(--md-radius-xs);
+  padding: 2px 7px;
+  word-break: break-all;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.spec-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.spec-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 11px;
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--md-line-soft);
+}
+.spec-row > i {
+  font-style: normal;
+  flex: 0 0 14px;
+}
+.spec-row.is-ok > i {
+  color: var(--md-success);
+}
+.spec-row.is-bad > i {
+  color: var(--md-error);
+}
+.spec-row.is-bad {
+  color: var(--md-error);
+}
+.spec-row > em {
+  font-style: normal;
+  margin-left: auto;
+  color: var(--md-muted);
+  font-family: var(--md-font-numeric);
+  font-size: 10.5px;
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+}
+.switch-track {
+  width: 34px;
+  height: 19px;
+  border-radius: 999px;
+  background: var(--md-line);
+  position: relative;
+  transition: background 0.15s;
+}
+.switch-track > i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--md-surface);
+  box-shadow: 0 1px 3px rgba(59, 51, 82, 0.25);
+  transition: transform 0.15s;
+}
+.switch.is-on .switch-track {
+  background: var(--md-pink);
+}
+.switch.is-on .switch-track > i {
+  transform: translateX(15px);
+}
+
+/* ================================================================ 弹层 */
+
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 15, 41, 0.42);
+  display: grid;
+  place-items: center;
+  z-index: 40;
+}
+.modal {
+  width: 400px;
+  max-width: calc(100vw - 48px);
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-lg);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 18px 48px rgba(20, 15, 41, 0.22);
+}
+.modal-title {
+  font-family: var(--md-font-display);
+  font-weight: 700;
+  font-size: 14px;
+}
+.modal-body {
+  font-size: 12px;
+  color: var(--md-ink-2);
+  line-height: 1.65;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+

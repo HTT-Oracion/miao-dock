@@ -46,8 +46,8 @@ const F = {
   expanded: path.join(APP, 'src', 'screens', 'music', 'ExpandedPlayer.tsx'),
   musicScreen: path.join(APP, 'src', 'screens', 'MusicScreen.tsx'),
   main: path.join(APP, 'src', 'main.tsx'),
-  // `css` 仍指 app.css 本身，**只给反证机制用**（按 file 路径临时改源文件）
-  css: path.join(APP, 'src', 'styles', 'app.css'),
+  // 断言读到的 css 是全分片拼接（见 loadSources）；本组无 css 反证条目，
+  // 故无需指到具体分片 —— 留 stylesDir 供将来新增反证时定位。
   stylesDir: path.join(APP, 'src', 'styles'),
 };
 
@@ -535,7 +535,7 @@ add('PLAYER.cssConsumes', 'PLAYER', (ctx) => {
   const missing = need.filter((n) => !ctx.s.css.includes(n));
   return {
     ok: missing.length === 0,
-    detail: missing.length ? `app.css 未消费这些注入：${missing.join('、')}（注入了却没样式消费 = 不生效）` : '',
+    detail: missing.length ? `样式未消费这些注入：${missing.join('、')}（注入了却没样式消费 = 不生效）` : '',
   };
 });
 
