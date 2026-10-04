@@ -37,6 +37,7 @@ function CommentRow({ c }: { c: MusicComment }) {
  */
 export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const expanded = useMusicStore((s) => s.expanded);
+  const expandedClosing = useMusicStore((s) => s.expandedClosing);
   const currentSong = useMusicStore((s) => s.currentSong);
   const isPlaying = useMusicStore((s) => s.isPlaying);
   const progressMs = useMusicStore((s) => s.progressMs);
@@ -59,7 +60,8 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const vinylCustomColor = useMusicStore((s) => s.vinylCustomColor);
 
   const setSkin = useMusicStore((s) => s.setSkin);
-  const setExpanded = useMusicStore((s) => s.setExpanded);
+  // 收起走 store 的 closeExpanded（带电）—— 直接 setExpanded(false) 会跳过退场动画
+  const closeExpanded = useMusicStore((s) => s.closeExpanded);
   const togglePlay = useMusicStore((s) => s.togglePlay);
   const next = useMusicStore((s) => s.next);
   const prev = useMusicStore((s) => s.prev);
@@ -94,7 +96,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   // 彩胶底色：custom 用用户固定色，auto 用本地取到的封面主色（取不到时 hook 已回落默认色）
   const vinylAccent = vinylColorMode === 'custom' ? vinylCustomColor : coverColor.hex;
 
-  // 根节点类名：皮肤 + 浅色 + 动态背景 + 碟片模式（暂停时唱片停转）
+  // 根节点类名：皮肤 + 浅色 + 动态背景 + 碟片模式（暂停时唱片停转）+ 退场中
   const rootClass = [
     'music-exp',
     skinMeta.cls,
@@ -103,6 +105,9 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
     discMode ? 'is-disc' : '',
     // is-paused 只在「碟片模式」下有视觉含义（暂停时停转），且随 isPlaying 实时变化
     discMode && !isPlaying ? 'is-paused' : '',
+    // 退场中：由 app.css 的 .music-exp.is-closing 播下滑动画。
+    // 组件本身要等 store 延时置 expanded=false 才消失，所以这期间画面还在、动画播得完。
+    expandedClosing ? 'is-closing' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -138,7 +143,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   return (
     <div className={rootClass} style={rootStyle}>
       <div className="music-exp-topbar">
-        <IconButton title="收起" onClick={() => setExpanded(false)}>
+        <IconButton title="收起" onClick={() => closeExpanded()}>
           <ChevronLeft size={18} />
         </IconButton>
       </div>

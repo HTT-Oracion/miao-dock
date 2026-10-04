@@ -18,8 +18,11 @@
  * - 封面：`http://127.0.0.1:{port}/cover?url=...`（见 coverProxyUrl）。
  *
  * 持久化：播放历史、本地曲库、播放偏好（音质/音量/皮肤/播放模式）存 WebView localStorage。
- * 参考实现用 tauri-plugin-store（因桌面歌词独立窗口需跨进程共享），本移植**无桌面歌词窗口**
- * （已裁定延后），故用 localStorage 即可，不额外引入前端插件依赖。
+ * 参考实现用 tauri-plugin-store，理由是**桌面歌词独立窗口需跨进程共享**；
+ * 本移植当时没有桌面歌词窗口，故用 localStorage 即可，不引插件依赖。
+ * ⚠️ 2026-10-04 拍板**要做桌面歌词独立窗口**（《09》§5.6 第 1 项）—— 该前提已变：
+ * 落地前必须先验证「两个 WebviewWindow 是否共享同一 localStorage」，
+ * 不共享则须切到 Tauri Store（或等价 IPC 通道）。见《09》§10 待确认项 1。
  */
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { create } from 'zustand';
@@ -232,6 +235,14 @@ interface MusicState {
   progressMs: number;
   durationMs: number;
   volume: number;
+  /**
+   * 静音。
+   *
+   * 与 `volume` **分开存**：静音时若把音量值改成 0，「取消静音」就回不到原来的音量
+   * （用户只是临时静一下，不该丢掉他的音量设置）。落到 audio 元素上就是 `muted` 属性，
+   * 完全不必动 volume —— 两者本来就该是正交的。
+   */
+  muted: boolean;
   playMode: PlayMode;
   playUrl: string;
   playbackQuality: PlaybackQuality;
@@ -349,13 +360,27 @@ interface MusicState {
   clearLocalSongs: () => void;
 
   // 播放
-  playSong: (song: Song, queue?: Song[], opts?: { fromHistory?: boolean }) => Promise<void>;
-  playQueue: (songs: Song[], startIndex: number) => Promise<void>;
+  /**
+   * 播放一首歌。
+   * `opts.expand`：播放后是否展开播放器（即"详情"，《09》§5.6 第 3 项）。
+   * **默认 true**（调用点绝大多数是"用户点了某一首"）；自动续播/切歌传 false。
+   */
+  playSong: (song: Song, queue?: Song[], opts?: { fromHistory?: boolean; expand?: boolean }) => Promise<void>;
+  playQueue: (songs: Song[], startIndex: number, opts?: { expand?: boolean }) => Promise<void>;
   togglePlay: () => void;
   next: () => void;
   prev: () => void;
   seek: (ms: number) => void;
   setVolume: (v: number) => void;
+  /** 静音/取消静音（不改 volume，见 `muted` 字段注释） */
+  toggleMute: () => void;
+  /** 滚轮调音量：按**步长**增减并夹到 [0,1]（滚轮是一串离散事件，用步长比按 delta 直接赋值稳） */
+  stepVolume: (delta: number) => void;
+  /**
+   * 关闭播放：清掉当前歌曲与进度，**保留队列**。
+   * 与 `clearQueue` 的分工：那是清空列表，这是「停下这一首」。
+   */
+  closePlayback: () => void;
   cycleMode: () => void;
   /** 换音质：更新偏好，并在**正在播放**时重取地址续播（保住当前进度） */
   setPlaybackQuality: (q: PlaybackQuality) => Promise<void>;
@@ -431,6 +456,18 @@ interface MusicState {
 
   // UI
   setExpanded: (open: boolean) => void;
+  /** 收起动画进行中：展开播放器据此加 `.is-closing` 播退场动画 */
+  expandedClosing: boolean;
+  /**
+   * 收起展开播放器（**带动画**）。
+   *
+   * 所有收起入口都走这里 —— 若各处直接 `setExpanded(false)`，动画会被跳过，
+   * 于是"点按钮收得起劲、按 Esc 唰地消失"这种不一致就会冒出来。
+   *
+   * 延时长度必须与 app.css `.music-exp.is-closing` 的动画时长一致（0.3s）；
+   * 改一处必须改另一处（断言 `ANIM.durationSync` 盯着这两个数）。
+   */
+  closeExpanded: () => void;
   setSkin: (s: PlayerSkin) => void;
   toast: (message: string, type?: 'warning' | 'success') => void;
   clearToast: () => void;
@@ -449,6 +486,15 @@ async function resolveOnlineUrl(song: Song): Promise<string> {
     port = await ipc.getProxyPort();
     useMusicStore.setState({ proxyPort: port });
   }
+  // 回写「实际拿到的音质与码率」。
+  // 这两个字段在 store 里定义了却**一直没有被赋值**（播放条上那个音质标签因此从来不显示）
+  // —— 档位是**要的**、这两个是**真拿到的**，平台降级时两者不一致；
+  // 只显示档位等于把降级藏了起来。
+  // `br` 单位是 bps（网易云/QQ 原样透传；咪咕恒为 0），故 UI 侧只在 >0 时显示。
+  useMusicStore.setState({
+    currentQuality: r.quality || r.level || '',
+    currentBitrate: r.br || 0,
+  });
   return `http://127.0.0.1:${port}/audio?url=${encodeURIComponent(r.url)}`;
 }
 
@@ -468,6 +514,26 @@ function mergeLogin(state: MusicState, provider: MusicProvider, info: LoginInfo 
 
 // ------------------------------------------------------------------ store
 
+/**
+ * 播放内核登记进来的 <audio> 元素。
+ *
+ * **刻意不放进 zustand state**：它是 DOM 引用、不是可渲染数据，放进 state 只会让
+ * 每次登记都惊动所有订阅者。它唯一的作用是让 `seek` 能在**同一处**同时改
+ * 「store.progressMs」与「audio.currentTime」—— 这两件事分开做必然被漏掉一件。
+ *
+ * 为什么需要这条通道：`<audio>` 住在组件里（`components/MusicKernel.tsx`，挂应用根常驻），
+ * 而 seek 是 store action。没有它，就得把 audio 的 ref 一路当 prop 传进每个进度条。
+ */
+let audioEl: HTMLAudioElement | null = null;
+
+/** 播放内核在挂载 / 卸载时登记与注销 audio 元素 */
+export function registerAudioElement(el: HTMLAudioElement | null): void {
+  audioEl = el;
+}
+
+/** 收起播放器的退场定时器。留着它才能在"退场途中又被点开"时取消关闭（见 setExpanded） */
+let closeExpandedTimer: ReturnType<typeof setTimeout> | null = null;
+
 export const useMusicStore = create<MusicState>((set, get) => ({
   // ---- 播放 ----
   currentSong: null,
@@ -477,6 +543,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   progressMs: 0,
   durationMs: 0,
   volume: 0.8,
+  muted: false,
   playMode: 'list',
   playUrl: '',
   playbackQuality: 'hires',
@@ -552,6 +619,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   // ---- UI ----
   queueOpen: false,
   expanded: false,
+  expandedClosing: false,
   skin: 'modern',
   loginOpen: false,
   loginProvider: 'netease',
@@ -689,7 +757,16 @@ export const useMusicStore = create<MusicState>((set, get) => ({
 
     if (!isAutoSkipping) unplayableSkipCount = 0;
 
-    set({ currentSong: song, progressMs: 0, durationMs: song.duration || 0, isPlaying: false });
+    set({
+      currentSong: song,
+      progressMs: 0,
+      durationMs: song.duration || 0,
+      isPlaying: false,
+      // 「详情」= 展开播放器（《09》§5.6 第 3 项）。用户主动点一首歌就展开它；
+      // **自动续播/切歌不展开**（否则听歌时会被不断弹开）—— 由 next/prev 传 expand:false 表达。
+      // 默认展开，因为调用点绝大多数是"用户点了某一首"。
+      ...(opts?.expand === false ? {} : { expanded: true }),
+    });
     // 歌词与 URL 获取并行（不阻塞播放）
     void get().loadLyrics(song);
 
@@ -727,10 +804,10 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     get().recordPlayHistory(song, opts?.fromHistory);
   },
 
-  playQueue: async (songs, startIndex) => {
+  playQueue: async (songs, startIndex, opts) => {
     const song = songs[startIndex];
     if (!song) return;
-    await get().playSong(song, songs);
+    await get().playSong(song, songs, opts);
   },
 
   togglePlay: () => set((s) => ({ isPlaying: !s.isPlaying })),
@@ -744,7 +821,8 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     } else {
       idx = (currentIndex + 1) % queue.length;
     }
-    void get().playSong(queue[idx]);
+    // expand:false —— 自动切歌不该把播放器弹开（含 onEnded 自动续播与无版权自动跳过）
+    void get().playSong(queue[idx], undefined, { expand: false });
   },
 
   prev: () => {
@@ -756,14 +834,41 @@ export const useMusicStore = create<MusicState>((set, get) => ({
           ? 0
           : Math.floor(Math.random() * queue.length)
         : (currentIndex - 1 + queue.length) % queue.length;
-    void get().playSong(queue[idx]);
+    void get().playSong(queue[idx], undefined, { expand: false });
   },
 
-  seek: (ms) => set({ progressMs: ms }),
+  seek: (ms) => {
+    set({ progressMs: ms });
+    // 必须**同时**挪 audio.currentTime：只改 store 是进度条动、声音不动；
+    // 只改 currentTime 则进度条与音频不同步。两件事放在同一处做，才不会被人只做一半。
+    const a = audioEl;
+    if (a) a.currentTime = ms / 1000;
+  },
 
   setVolume: (v) => {
-    set({ volume: v });
+    // 调音量即「想听见」：若正静音则顺带解除，否则拖/滚了半天毫无反馈
+    set(v > 0 ? { volume: v, muted: false } : { volume: v });
     savePrefs({ volume: v });
+  },
+
+  toggleMute: () => set((s) => ({ muted: !s.muted })),
+
+  stepVolume: (delta) => {
+    const v = Math.min(1, Math.max(0, get().volume + delta));
+    get().setVolume(v);
+  },
+
+  closePlayback: () => {
+    // 只停这一首，队列原样留着（下一首还能接着播）
+    set({
+      currentSong: null,
+      playUrl: '',
+      isPlaying: false,
+      progressMs: 0,
+      durationMs: 0,
+      currentQuality: '',
+      currentBitrate: 0,
+    });
   },
 
   cycleMode: () => {
@@ -1453,7 +1558,25 @@ export const useMusicStore = create<MusicState>((set, get) => ({
 
   // ================================================================ UI
 
-  setExpanded: (open) => set({ expanded: open }),
+  setExpanded: (open) => {
+    // 展开时若退场动画正在播，必须**取消那次关闭** ——
+    // 否则定时器到点仍会把 expanded 置 false，表现成"点开反而关了"。
+    if (open && closeExpandedTimer) {
+      clearTimeout(closeExpandedTimer);
+      closeExpandedTimer = null;
+    }
+    set(open ? { expanded: true, expandedClosing: false } : { expanded: open });
+  },
+
+  closeExpanded: () => {
+    if (!get().expanded || get().expandedClosing) return;
+    set({ expandedClosing: true });
+    // 300ms 对应 app.css `.music-exp.is-closing` 的 0.3s（断言 ANIM.durationSync 双向盯着）
+    closeExpandedTimer = setTimeout(() => {
+      closeExpandedTimer = null;
+      set({ expandedClosing: false, expanded: false });
+    }, 300);
+  },
 
   setSkin: (s) => {
     set({ skin: s });

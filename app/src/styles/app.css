@@ -1135,7 +1135,10 @@
  * 浮层语汇与 .toast / .music-skin-picker 一致：surface 底 + line 描边 + 轻阴影。
  */
 .ui-select-menu {
-  z-index: 60; /* 高于页面内容与 toast(50)，低于模态层(80+)：菜单不该盖住确认对话框 */
+  /* 高于页面内容、toast(50)、队列抽屉(60) 与展开播放器(70)；
+     低于模态层(80+)：菜单可以盖住播放器，但不该盖住确认对话框。
+     取 75 而不是 60，是因为"音质档位"下拉要放在播放条里，而展开播放器是 fixed z-index:70 —— 60 会被它压住。 */
+  z-index: 75;
   min-width: var(--radix-select-trigger-width); /* Radix 注入：与触发按钮同宽 */
   padding: 4px;
   background: var(--md-surface);
@@ -2092,6 +2095,31 @@
   background: var(--md-pink);
 }
 
+/* 音质档位下拉：复用 units 的 Select（Radix），只把它的方形外观压成播放条里的胶囊。
+   放在播放条而不是展开播放器，是因为 Radix 弹层走 Portal 到 body —— 而展开播放器是
+   fixed z-index:70 的覆盖层，弹层必须比它更高才看得见（见 .ui-select-menu 的 75）。 */
+.music-q-sel {
+  height: 20px;
+  min-width: 0; /* 覆盖 .ui-select 的 132px：播放条里放不下，宽度交给内容 */
+  padding: 0 18px 0 8px; /* 右侧留给下拉箭头 */
+  font-size: 10px;
+  line-height: 18px;
+  border-radius: 999px;
+  border-color: transparent;
+  background: var(--md-pink-soft);
+  color: var(--md-pink);
+}
+.music-q-sel:hover { border-color: var(--md-line); }
+/* 实际码率（kbps）。与"档位"分开显示：档位是**要的**，码率是**实际拿到的** ——
+   平台降级时这两个值会不一致，只显示档位等于把降级藏了起来。 */
+.music-br {
+  font-size: 10px;
+  color: var(--md-muted);
+  font-family: var(--md-font-numeric);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 /* 进度条 + 音质标签 */
 .music-prog {
   display: flex;
@@ -2322,6 +2350,29 @@
   flex-direction: column;
   color: #fff;
   overflow: hidden;
+  /* 进场即播：从底部上滑铺满（《09》§5.6 第 3 项 —— "详情"= 展开播放器从底部上滑铺满全屏）。
+     退场见下方 .is-closing：组件在收起后会 return null，没有那个状态就播不出退场动画。 */
+  animation: music-exp-up 0.34s cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes music-exp-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes music-exp-down {
+  from { transform: translateY(0); }
+  to { transform: translateY(100%); }
+}
+.music-exp.is-closing {
+  animation: music-exp-down 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  /* 退场途中不接点击：否则"收起动画还没播完又被点开"，状态会与画面对不上 */
+  pointer-events: none;
+}
+/* 系统开了"减少动态效果"就不做位移，只做瞬时切换（前庭敏感用户不该被整屏滑动影响） */
+@media (prefers-reduced-motion: reduce) {
+  .music-exp,
+  .music-exp.is-closing {
+    animation-duration: 0.001s;
+  }
 }
 .music-exp-topbar {
   position: absolute;

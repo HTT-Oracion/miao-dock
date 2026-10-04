@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useMusicStore } from '@music/store';
 import { ExpandedPlayer } from '@screens/music/ExpandedPlayer';
 import { LeftPanel } from '@screens/music/LeftPanel';
@@ -10,36 +10,28 @@ import { Toast } from '@screens/music/Toast';
 import { TopBar } from '@screens/music/TopBar';
 
 /**
- * 音乐屏 —— 只做**组合**与**播放内核挂载**，各区域实现在 ./music/ 下：
+ * 音乐屏 —— 只做**组合**，各区域实现在 ./music/ 下：
  *   TopBar（顶行+平台弹窗）/ LeftPanel（我的音乐四视图）/ RightPanel（发现+搜索）
  *   PlayerBar（底部播放条）/ QueueDrawer（队列）/ ExpandedPlayer（展开播放器）
  *   LoginModal（登录）/ Toast（轻提示）
  *
- * 播放内核：唯一一个 <audio> 挂在这里，store 持有状态（playUrl/isPlaying/progress）。
- * 进度条拖动的落点必须同时改 store 与 audio.currentTime —— 只改 store 不会真的定位，
- * 所以通过 onSeek 一路传给 PlayerBar / ExpandedPlayer。
+ * ## 播放内核**不在这里**（2026-10-04 移出）
+ *
+ * 唯一一个 `<audio>` 挂在应用层常驻的 `components/MusicKernel.tsx`。
+ * 原先它挂在本屏内 —— 本屏会在切到设置页时卸载，`<audio>` 随之销毁，**播放当场中断**。
+ * 所以本屏现在只剩 UI 组合，以及两条**本屏级**副作用（首屏数据 init、Esc 关闭浮层）。
+ *
+ * 判据很简单：**离开本屏之后还该继续存在的，就不能住在本屏里。**
  */
 export function MusicScreen() {
-  const audioRef = useRef<HTMLAudioElement>(null);
-
-  const playUrl = useMusicStore((s) => s.playUrl);
-  const isPlaying = useMusicStore((s) => s.isPlaying);
-  const volume = useMusicStore((s) => s.volume);
   // 播放队列为空时整条播放条不出现（没有内容可播时它只是一条占位）；
   // 有歌时它是 .music 的最后一个 flex 子项 + flex:0 0 auto，恒贴在本屏底部
   // （外层的 .content 不再滚动，见 app.css 的 .music height:100%）。
   const queueLength = useMusicStore((s) => s.queue.length);
-  /** 换音质后续播位置（毫秒，0=无）；消费后清零 */
-  const resumeAtMs = useMusicStore((s) => s.resumeAtMs);
-  const clearResumeAt = useMusicStore((s) => s.clearResumeAt);
 
   const init = useMusicStore((s) => s.init);
-  const setProgress = useMusicStore((s) => s.setProgress);
-  const setDuration = useMusicStore((s) => s.setDuration);
-  const next = useMusicStore((s) => s.next);
   const seek = useMusicStore((s) => s.seek);
-  const toast = useMusicStore((s) => s.toast);
-  const setExpanded = useMusicStore((s) => s.setExpanded);
+  const closeExpanded = useMusicStore((s) => s.closeExpanded);
   const setQueueOpen = useMusicStore((s) => s.setQueueOpen);
 
   // 只挂载一次：init 内部恢复偏好、拉四平台登录态与首屏发现数据
@@ -47,45 +39,27 @@ export function MusicScreen() {
     void init();
   }, [init]);
 
-  // 音量同步
-  useEffect(() => {
-    const a = audioRef.current;
-    if (a) a.volume = volume;
-  }, [volume]);
-
-  // 播放/暂停同步（playUrl 变化时也要重试 play —— 新音频需重新触发播放）
-  // resumeAtMs：换音质会重新取地址、音频从 0 起播，这里把进度补回去再播
-  useEffect(() => {
-    const a = audioRef.current;
-    if (!a) return;
-    if (resumeAtMs > 0) {
-      a.currentTime = resumeAtMs / 1000;
-      clearResumeAt();
-    }
-    if (isPlaying) void a.play().catch(() => undefined);
-    else a.pause();
-  }, [clearResumeAt, isPlaying, playUrl, resumeAtMs]);
-
-  // Esc 关闭展开播放器 / 队列抽屉
+  // Esc 关闭展开播放器 / 队列抽屉（只在本屏存在时有意义，故留在本屏）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setExpanded(false);
+        // 收起走 closeExpanded（带动画）—— 与点「收起」按钮是同一条路径，
+        // 否则 Esc 会绕过退场动画，两处手感不一致
+        closeExpanded();
         setQueueOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setExpanded, setQueueOpen]);
+  }, [closeExpanded, setQueueOpen]);
 
-  const onSeek = useCallback(
-    (ms: number) => {
-      seek(ms);
-      const a = audioRef.current;
-      if (a) a.currentTime = ms / 1000;
-    },
-    [seek],
-  );
+  /**
+   * 进度条定位。
+   * 现在只是 `seek` 的转发：改 store 进度与挪 `<audio>.currentTime` 两件事
+   * 已收进 store action 内（它通过 `registerAudioElement` 拿得到元素）。
+   * 保留这条 prop 是为了不让三个调用点各自去认 store。
+   */
+  const onSeek = useCallback((ms: number) => seek(ms), [seek]);
 
   return (
     <div className="music">
@@ -102,22 +76,6 @@ export function MusicScreen() {
       <ExpandedPlayer onSeek={onSeek} />
       <LoginModal />
       <Toast />
-
-      {/* 播放内核：playUrl 为空时不设 src（否则 WebView 会对空地址报错） */}
-      <audio
-        ref={audioRef}
-        className="music-audio"
-        src={playUrl || undefined}
-        onTimeUpdate={(e) => setProgress(e.currentTarget.currentTime * 1000)}
-        onLoadedMetadata={(e) => {
-          const d = e.currentTarget.duration;
-          setDuration(Number.isFinite(d) ? d * 1000 : 0);
-        }}
-        onEnded={() => next()}
-        onError={() => {
-          if (playUrl) toast('音频加载失败：链接可能已失效或网络异常');
-        }}
-      />
     </div>
   );
 }

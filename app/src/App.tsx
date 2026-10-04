@@ -4,6 +4,7 @@ import { useLibrary, useQuitRequest, useService, useTasks, useToasts } from '@ho
 import { initialMode, persistMode, useThemeTokens } from '@/theme/apply';
 import type { ThemeMode } from '@/theme/tokens';
 import { Badge, Btn, Pill } from '@components/units';
+import { MusicKernel } from '@components/MusicKernel';
 import { QuitConfirm } from '@components/QuitConfirm';
 import { Sidebar } from '@components/Sidebar';
 import { Toolbar } from '@components/Toolbar';
@@ -220,6 +221,14 @@ export function App() {
           {libError ? <div className="notice is-bad">漫画库读取失败：{libError}</div> : null}
         </div>
       </div>
+
+      {/*
+        音乐播放内核：挂在**应用根**，不随屏切换卸载 ——
+        这是"播放中切到设置页音乐不断播"的全部机制（原先 <audio> 在 MusicScreen 内，
+        切屏即销毁音频元素）。它只渲染一个 display:none 的 <audio>，不参与布局；
+        放在 shell 末尾，是为了让"它不属于任何一屏"这件事在代码顺序上也读得出来。
+      */}
+      <MusicKernel />
 
       {quitOpen ? (
         <QuitConfirm onStay={() => setQuitOpen(false)} onQuit={() => void quitApp()} />
