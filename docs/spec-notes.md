@@ -767,3 +767,96 @@ MIAO_E2E_TMP="$(node -e 'console.log(require("os").tmpdir())')/miao-e2e" npm run
 | 编号 | 事项 | 结论 |
 |---|---|---|
 | **G-15** | 前端目录结构够清晰吗？还该动什么？ | **结论：分层已经够清晰，不建议再做目录搬迁。** 现状规模：`components/`（4 应用级件）+ `components/units/`（10 通用单元）+ `screens/`（6 屏入口）+ `screens/music/`（14）+ `screens/settings/`（5）+ `music/`（5 领域态）+ `hooks/`（3）+ `theme/`（2）+ `styles/`（2）+ 根 8 个散文件；前端约 7.9k 行、Rust 音乐模块 10 个文件。**判断依据**：每一层的归属判据都已写成**可核查断言**（units 的依赖纯净性、`use*` 收口到 hooks、别名双处同步 + `@x`/`@x/*` 齐备、零 React Context）—— "东西该放哪"不再依赖人的记忆，这才是"结构清晰"的实质，目录长得整齐只是副产品。**四点可选改进（按性价比排序，均未实施）**：① `src/music/`（领域态）与 `src/screens/music/`（界面）同名易混 —— 别名已在机器层面消除歧义（`@music/store` vs `@screens/music/RightPanel`），人类阅读仍可能顿一下；若要改可更名 `src/domains/music/`，代价是 21 处引用 + 断言 + 四处别名同步，**收益低于代价，暂不动**。② 根目录 8 个散文件（`App`/`main`/`ipc`/`nav`/`types`/`util`/`spec-check`/`vite-env`）：其中 `ipc`/`types`/`util`/`nav` 是领域无关基础设施，可收进 `src/core/`；当前 8 个文件的规模不足以 pay off，**触发条件：根目录 > 12 个文件时再动**。③ `styles/app.css` 2600+ 行：已按分区注释组织（含「公共组件」分区），暂不拆 —— 拆分会让"唯一事实源"分散，而 vite 最终本就会合并；**触发条件：> 3000 行，或需要独立主题包时，按 `units`/`music`/`settings` 拆分并用 `@import` 归并**。④ `scripts/` 11 个脚本平铺、内部库用 `_` 前缀标注（`_devserver.mjs`/`_e2e-paths.mjs`）：可接受，暂不动。 |
+
+---
+
+## ver2.0 播放器还原（D-43~D-46 · G-16 · 2026-10-04 夜段）
+
+> 产品对四项待定内容的拍板见《09》§5.6（桌面歌词独立窗口 / 灵动岛承接轻提示 /
+> 详情=展开播放器从底部上滑铺满 / 心动模式要做）。本段记录落地与取证。
+
+| 编号 | 事项 | 结论 |
+|---|---|---|
+| **D-43** | 播放内核必须住在应用层（修复"切到设置页就断播"） | 根因：`<audio>` 原先挂在 `MusicScreen` 内 —— 切到设置页时该屏卸载，音频元素被销毁，播放随之中断。参考实现把内核放在应用根的 **Context Provider** 里；本移植按《09》§2.3.3（统一 zustand、零 Context）改为**状态在 store、DOM 在应用层常驻组件**：新建 `components/MusicKernel.tsx`（应用级，不入 units —— 它依赖 store），挂在 `App.tsx`。两者靠新增的 `registerAudioElement()` 打通 —— store 拿到元素后，`seek` 才能在**同一处**同时改 `progressMs` 与 `audio.currentTime`（此前这两件事由音乐屏自己配对，内核搬走后那条路断了）。那条 DOM 引用**刻意不进 zustand state**（进了会让每次登记都惊动所有订阅者）。**判据**：*离开本屏之后还该继续存在的，就不能住在本屏里*。 |
+| **D-44** | 展开播放器的动画：退场必须有状态驱动，且收起入口只能有一个 | 取证先行：`.music-exp` **早已是** `position:fixed; inset:0` —— "铺满全屏"本来就成立，实际只缺动画与"点歌自动展开"；故**未**照搬参考实现的 `pageFullscreen`（那是"保留页面结构的前提下全屏"，与 fixed 覆盖层两条路，重复做等于无用功）。做法：`@keyframes music-exp-up/down`，进场由 `.music-exp` 自带 animation 自动播；**退场必须由 `.is-closing` 状态驱动** —— 组件收起后 `return null`，没有那个状态就永远播不出动画。为此 store 加 `expandedClosing` + `closeExpanded()`，**所有收起入口统一到它**（顶栏按钮 + Esc），否则会出现"点按钮收得起劲、按 Esc 唰地消失"。**两处易漏**：① 退场时长 CSS `0.3s` ↔ store `300ms` 必须一致（断言 `ANIM.durationSync` **双向**比对）；② 退场途中又被点开，`setExpanded(true)` 要 `clearTimeout` 取消那次关闭，否则定时器到点仍置 false，表现成"点开反而关了"。点歌自动展开：`playSong` 新增 `opts.expand`（**默认 true**），`next`/`prev` 显式传 `false` —— 自动续播（含 `onEnded` 与无版权自动跳过）不该把播放器弹开。 |
+| **D-45** | ⚠️ **修正我上一轮的一个错误判断**：进度写 store 在 zustand 下**不是**性能问题 | 上一轮我称"`setProgress` 每秒数次写 store → 全树重渲染"，并把它列为性能债。**这是错的**：参考实现需要"进度用本地 state、不进 store"，是因为它用 **React Context**（value 变化惊动所有消费者，注释里那句"搜索框等组件完全不受播放影响"正是在躲这个）。而本项目是 **zustand 选择器订阅**（已取证：4.5.7、全仓**零整店订阅**）—— `setProgress` 只会让订阅了 `progressMs` 的那两个组件重渲染，而那恰恰是必须重渲染的地方。**同一个写法在 Context 下是问题、在 zustand 下不是。** 本轮因此**没有**做"进度不进 store"（那会是无用功），只做了真正有问题的**进度条拖拽会话**（`onChange` 逐格提交 → 拖动中音频不断跳转、卡顿/爆音；改为拖动期间只改本地 `dragMs`，`pointerup`/`keyup`/`blur` 三处收尾才提交）。**教训**：判断"这是不是问题"要判到**机制**上，而不是把 A 实现的做法与结论直接套到 B 实现。 |
+| **D-46** | 播放条补全 + 修掉一处**假 UI**（定义了却从未赋值的字段） | 播放条补 5 项：静音（`muted` 与 `volume` **正交** —— 静音不改音量值，取消静音才回得到原音量；落到 audio 上就是 `muted` 属性）、滚轮调音量（`stepVolume`；**不调 `preventDefault`** —— React wheel 是被动监听，调了无效且告警，而容器外层本就不滚动）、音质档位下拉（复用 units 的 `Select`）、实际音质/码率显示、关闭播放（`closePlayback` 只停这一首、**保留队列**，与 `clearQueue` 分工不同）。**顺带修掉一处既有缺陷**：`currentQuality` / `currentBitrate` 在 store 里定义了却**从未被赋值** —— `resolveOnlineUrl` 拿到 `SongUrlResult` 后只取了 `url`，把 `quality`/`br` 丢了，于是播放条上那个音质标签**从来不显示**（一个永远为空的假 UI）。这是"**假控件比缺控件更伤**"的又一例：它不在设置页，而在播放条。断言 `PLAYER.resolveWrites` 防回归。 |
+| **G-16** | 心动模式（拍板第 4 项）：接口**仅网易云可得**，后端零改动 | 取证：`music_simi_song`（网易云相似歌曲 `/api/v1/discovery/simiSong`）在本项目 `music/mod.rs` **已定义**、`main.rs` 的 `generate_handler!` **已注册**、`ipc.ts` **已封装** —— 三处齐全，**只是 store 未接线**。酷狗/QQ/咪咕在参考实现里**没有**"传入歌曲 id 返回相似歌曲"的接口（酷狗 `guess_like` 是"全站个人 FM"，不接收歌曲 id，语义不同）。结论：**网易云走原生相似续播；其余三平台按不可用降级为随机**（与参考实现的门禁一致），**不**拿"同歌手/同歌单/每日推荐"冒充"相似"（会退化成歌手循环或歌单循环）。改动量约 **+50~70 行**，集中在 `store.ts`；Rust 与 IPC 不动。**尚未实现**。 |
+
+### 本轮验收集（新增）
+`check:music` **63 → 86 条**，反证 **16 → 39 条**（新增 `PLAYER` 组 23 条，覆盖内核位置/动画时长双处一致/收起路径/点歌展开规则/播放条 5 项接线/实际音质回写）。
+子任务在其中自查出 **5 处脚本自身的假绿**（模块级声明的类型冒号被当成 state 属性、注释里的 `expand:false` 被一并读入、`import` 行让名字断言恒绿、子串 `/music-br/` 命中 `music-br-removed`……）——全部**收紧**而非放宽，并因此补出 `stripComments`（带字符串状态机）与 `fnBodyAny`。这再次印证：**"断言变绿"不等于"事情做对了"，得先确认它测的是不是同一件事。**
+
+### 后续排期（尚未开工）
+| 顺序 | 内容 | 前置 |
+|---|---|---|
+| ~~P0~~ | 播放内核常驻 | ✅ 本段完成 |
+| ~~P1~~ | 展开播放器动画 + 播放条补全 | ✅ 本段完成 |
+| **P2** | 心动模式（网易云原生；他平台降级） | 无（接口已就绪，见 G-16） |
+| **P3** | 桌面歌词（**独立窗口**） | ⚠️ **必须先验证两个 WebviewWindow 是否共享 localStorage**（《09》§10 项 1） |
+| **P4** | 灵动岛（播放态 + 承接轻提示） | 需先定"接管哪一套 toast"（音乐屏 `musicToast` vs 应用级 `useToasts` 是两套） |
+
+> ⚠️ **未自证**（本机无 Tauri 运行环境，只能人工确认）：切屏不断播的实际表现、上滑/下滑观感、
+> 拖动进度的手感、滚轮调音量手感、Radix 弹层在播放条里的定位。
+
+---
+
+## D-47 · 跨窗口 localStorage 实测（P3 桌面歌词的前置验证 · 2026-10-04）
+
+《09》§10 待确认项 1 的答案。**结论：共享，P3 不需要切 Tauri Store。**
+
+### 实测（不是读文档推断）
+
+新建一次性探针工程 `lsm-probe/`（**放在工作区、不入产品仓库**），复刻产品同款条件：
+同 origin、第二个窗口用 `WebviewWindowBuilder` 于运行时创建（600ms 后，晚于写入）。
+writer 窗口写 token，reader 窗口上报它看到的值；**连跑两次**（第二次才能证明跨进程持久）。
+
+| 判据 | 结果 |
+|---|---|
+| 跨窗口共享：`reader.seen === writer.token` | ✓ 两次均成立 |
+| 同窗口写后读回一致 | ✓ |
+| 运行序号递增（真持久化，非内存） | ✓ 3→4→5 |
+| 跨进程持久：`run2.before === run1.token` | ✓ |
+| reader 也能读到上个进程留下的值 | ✓ |
+
+**8/8 全绿，脚本化判定**（`node -e` 比对两次日志的 JSON，非眼看）。
+
+### 机制依据（为什么必然共享）
+
+- wry **0.57.0**（`Cargo.lock` 实证）macOS 分支 `wkwebview/mod.rs:228-246`：
+  未指定 `data_store_identifier` 时走 `WKWebsiteDataStore::defaultDataStore(mtm)` ——
+  macOS 上**所有 WebView 共享的默认持久化存储**。
+- 本项目**未使用** `with_data_store_identifier`（已 grep 确认），故落在 default 分支。
+- 反向条件：指定 identifier（macOS 14/17+）会各自独立成 store；incognito 则用 nonPersistent。
+  本项目两条都不满足。
+
+### 两个必须记住的前提（改变任一则结论作废）
+
+1. **同 origin** —— localStorage 按 origin 隔离。桌面歌词窗口必须加载**应用自身页面**
+   （`WebviewUrl::App`），**不能**用 `External`。
+   ⚠️ 现有 5 处 `WebviewWindowBuilder`（`music/mod.rs` 官方登录窗口）全用 `External`，
+   那是另一类场景，**不可照抄**。
+2. **不得引入 data store 隔离** —— 别为了"多窗口隔离"加 `with_data_store_identifier`。
+
+### 顺带查出的一个坑（P3 落地时必踩）
+
+`capabilities/default.json` 的 `windows` 只有 `["main"]`。Tauri v2 里
+**运行时创建的窗口若不在该列表，任何 Tauri 命令调用都会被 ACL 拒绝**（且不报"窗口不存在"，
+只报权限不足，极易误判为"代码写错了"）。现有登录窗口不受影响是因为它加载外部 origin、
+本来就不调 Tauri 命令 —— **但桌面歌词窗口要读偏好、要响应播放事件，必须加进 `windows`**。
+建议届时用固定的 label（如 `desktop-lyrics`）而非动态 label。
+
+### 修正：tauri-plugin-store 的注册状态
+
+我此前判断"`tauri-plugin-store` 在 Cargo.toml 里但未注册"—— **错**，
+`main.rs:63` 早已 `.plugin(tauri_plugin_store::Builder::default().build())`。
+只是前端未装 `@tauri-apps/plugin-store`、capabilities 也未授 `store:default`，故从未被用到。
+（前缀是 `tauri_plugin_store`，我那次 grep 找的是带连字符的形式，被 zsh 吃了。）
+
+### 对 P3 的影响（可以开工了）
+
+- 偏好**继续走 localStorage**，不迁 Tauri Store（省掉一层跨进程同步与一次持久化迁移）。
+- 桌面歌词窗口：固定 label + `WebviewUrl::App` + 权限加 `windows` + 走事件接收播放状态。
+- 遗留：跨窗口**实时性**（主窗口改偏好 → 歌词窗口是否立即生效）本探针未覆盖 ——
+  localStorage 的 `storage` 事件在同 origin 不同 WebView 间**不保证**触发（WKWebView 已知差异）。
+  正确做法是走 Tauri 事件（主窗口 emit → 歌词窗口 listen），不依赖 `storage` 事件。

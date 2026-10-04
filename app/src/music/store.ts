@@ -18,11 +18,17 @@
  * - 封面：`http://127.0.0.1:{port}/cover?url=...`（见 coverProxyUrl）。
  *
  * 持久化：播放历史、本地曲库、播放偏好（音质/音量/皮肤/播放模式）存 WebView localStorage。
- * 参考实现用 tauri-plugin-store，理由是**桌面歌词独立窗口需跨进程共享**；
- * 本移植当时没有桌面歌词窗口，故用 localStorage 即可，不引插件依赖。
- * ⚠️ 2026-10-04 拍板**要做桌面歌词独立窗口**（《09》§5.6 第 1 项）—— 该前提已变：
- * 落地前必须先验证「两个 WebviewWindow 是否共享同一 localStorage」，
- * 不共享则须切到 Tauri Store（或等价 IPC 通道）。见《09》§10 待确认项 1。
+ *
+ * ## 为什么用 localStorage 而不是 Tauri Store（已实测，不是推测）
+ * 参考实现用 tauri-plugin-store，理由是**桌面歌词独立窗口需跨进程共享**。
+ * 2026-10-04 实测（本机双窗口探针，连跑两次，8/8 全绿）确认：
+ * **同 origin 的两个 WebviewWindow 共享同一份 localStorage，且跨进程重启持久。**
+ * 机制依据：wry 0.57 未用 `with_data_store_identifier` 隔离 → 走
+ * `WKWebsiteDataStore::defaultDataStore`（macOS 上所有 WebView 共享的默认持久化存储）。
+ * 因此桌面歌词窗口**可以继续用 localStorage**，不必切 Tauri Store。
+ * ⚠️ 两条前提若改变需重测：① 给窗口加了 `with_data_store_identifier`（会各自分配独立 store）；
+ * ② 桌面歌词窗口若加载**外部 origin**（localStorage 按 origin 隔离，就不共享了）。
+ * 实测记录：lsm-probe（工作区内，2026-10-04）；台账见 docs/spec-notes.md D-47。
  */
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { create } from 'zustand';
