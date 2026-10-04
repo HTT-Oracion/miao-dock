@@ -22,11 +22,14 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { capsOf } from '@music/platform';
 import { LYRICS_SIZE, QUALITY_OPTIONS, SKINS, STYLE_PREVIEW_ORDER } from '@music/player-options';
-import { coverProxyUrl, fmtTime, lyricIndexAt, songKey, useMusicStore } from '@music/store';
+import { coverProxyUrl, fmtTime, songKey, useMusicStore } from '@music/store';
 import type { PlayerSkin } from '@music/store';
 import type { MusicComment } from '@music/types';
 import { ColorPicker, Empty, IconButton, PlayModeButton, Select, Switch } from '@components/units';
 import { useCoverColor } from '@hooks/useCoverColor';
+// 逐字歌词渲染组件（双层叠加 + RAF 推进）。歌词的"定位当前行 / 滚动跟随 / 逐字进度"
+// 全部由它内部承担 —— 所以本文件不再自己算 activeLine、不再持有 activeRef。
+import { KaraokeLyrics } from '@screens/music/KaraokeLyrics';
 
 /**
  * 允许在 style 里写 CSS 自定义属性（--x）的写法。
@@ -128,12 +131,10 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const setQueueOpen = useMusicStore((s) => s.setQueueOpen);
 
   const [styleMenuOpen, setStyleMenuOpen] = useState(false);
-  const activeRef = useRef<HTMLDivElement>(null);
   const loadedKeyRef = useRef('');
 
   const caps = capsOf(playbackSource);
   const skinMeta = SKINS.find((s) => s.id === skin) ?? SKINS[0];
-  const activeLine = lyricIndexAt(parsedLyrics, progressMs / 1000);
   const curKey = currentSong ? songKey(currentSong) : '';
 
   // ---- 样式分支：哪些控件按皮肤显隐，全在这里判定（见下方各条注释） ----
@@ -202,18 +203,15 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
     .filter(Boolean)
     .join(' ');
 
-  // 根节点注入彩胶底色；歌词区注入字号与高亮色（app.css 里 var(--lyr-size/--lyr-hl) 消费）
-  const rootStyle: CSSVarStyle = { '--vinyl-accent': vinylAccent };
-  const lyricStyle: CSSVarStyle = {
+  // 根节点注入彩胶底色 + 歌词字号/高亮色。
+  // 歌词两项仍**由本文件注入**（挂在 .music-exp 根上，靠 CSS 变量继承一路传到歌词行）：
+  // 这是设置页「播放·媒体」断言的既定契约（注入必须落在被 style={…} 消费的对象上），
+  // 逐字组件只负责按 var(--lyr-*) 渲染，不再自己重复注入，避免两个 owner。
+  const rootStyle: CSSVarStyle = {
+    '--vinyl-accent': vinylAccent,
     '--lyr-size': `${lyricsFontSize}px`,
     '--lyr-hl': lyricsHighlightColor,
   };
-
-  // 当前行滚到中间（切歌/进度跳动都跟随；activeRef 只在命中行上挂载）
-  useEffect(() => {
-    if (!expanded) return;
-    activeRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [activeLine, expanded]);
 
   // 评论懒加载：切到评论 Tab 或评论 Tab 下换歌时，按歌曲拉一次
   useEffect(() => {
@@ -275,17 +273,10 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
             parsedLyrics.length === 0 ? (
               <Empty>暂无歌词</Empty>
             ) : (
-              <div className="music-exp-lyr-box" style={lyricStyle}>
-                {parsedLyrics.map((line, i) => (
-                  <div
-                    key={i}
-                    ref={i === activeLine ? activeRef : undefined}
-                    className={i === activeLine ? 'music-lyr-line is-on' : 'music-lyr-line'}
-                  >
-                    {line.text}
-                  </div>
-                ))}
-              </div>
+              // 逐字歌词：组件自己承担"定位当前行 / 滚动跟随 / RAF 逐字推进"，
+              // 并复用 .music-exp-lyr-box 的上下 edge mask 与 .music-lyr-line 的字号/暗色语汇。
+              // 字号/高亮色经根节点注入的 --lyr-size / --lyr-hl 继承进来，故无需再传。
+              <KaraokeLyrics lines={parsedLyrics} fontPx={lyricsFontSize} />
             )
           ) : !caps.comments ? (
             <Empty>当前平台暂不支持评论</Empty>

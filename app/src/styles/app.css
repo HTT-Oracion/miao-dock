@@ -2861,6 +2861,47 @@
 }
 .music-exp.is-light .music-lyr-line { color: var(--md-ink); }
 
+/* ── 逐字歌词（卡拉OK）：双层叠加 + width 裁切 ─────────────────────────────
+   为什么用双层而不是 background-clip:text 见 KaraokeLyrics.tsx 头部注释；
+   简言之：background-clip 依赖把进度写进 gradient/calc()，本项目皮肤会覆盖
+   这些变量导致派生值解析不稳，且强依赖 -webkit- 前缀、与皮肤滤镜会串味。
+   双层方案只动一个 width 百分比，RAF 里只写这一个属性，最稳也最快。
+   样式一律用 kara- 前缀，便于与既有歌词类名区分。 */
+.kara-dup {
+  /* 顶层用 absolute 定位，基准必须是这个 relative 的包裹层；
+     inline-block 让包裹层宽度 = 文本宽度，width% 才是相对整行文字的比例。
+     nowrap 是 width 裁切的前提：换行会让顶层按更窄的盒宽重新折行，
+     裁切位置与底层对不上（见交付报告「超长行取舍」）。 */
+  position: relative;
+  display: inline-block;
+  white-space: nowrap;
+}
+/* 底层：未唱部分。用高亮色压低透明度 —— 与顶层同色系，过渡时不会有色相跳变 */
+.kara-under {
+  color: var(--lyr-hl, var(--md-yellow));
+  opacity: 0.32;
+}
+/* 顶层：已唱部分。width 由 RAF 逐帧写入；overflow:hidden 让 width 成为"裁切"。
+   注意：本元素**不设** transition —— width 必须即时跟随，加过渡会拖出残影。 */
+.kara-over {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0%;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--lyr-hl, var(--md-yellow));
+  will-change: width;
+}
+/* 当前行整行：nowrap 后超长部分会溢出，这里裁掉，避免撑出横向滚动条 */
+.kara-line-on {
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kara-over { will-change: auto; }
+}
+
 .music-exp .ui-empty { color: rgba(255, 255, 255, 0.5); }
 .music-exp.is-light .ui-empty { color: var(--md-muted); }
 

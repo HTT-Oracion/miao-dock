@@ -60,6 +60,8 @@ const F = {
   audioGraph: path.join(APP, 'src', 'music', 'audioGraph.ts'),
   playerBar: path.join(APP, 'src', 'screens', 'music', 'PlayerBar.tsx'),
   expanded: path.join(APP, 'src', 'screens', 'music', 'ExpandedPlayer.tsx'),
+  // 逐字歌词渲染组件（逐字高亮任务新增）
+  karaoke: path.join(APP, 'src', 'screens', 'music', 'KaraokeLyrics.tsx'),
   musicUiDir: path.join(APP, 'src', 'screens', 'music'),
   virtualList: path.join(APP, 'src', 'components', 'units', 'VirtualList.tsx'),
   css: path.join(APP, 'src', 'styles', 'app.css'),
@@ -169,6 +171,7 @@ function loadSources() {
     srcAll: walkText(F.srcDir, ['.ts', '.tsx']),
     playerBar: readMaybe(F.playerBar),
     expanded: readMaybe(F.expanded),
+    karaoke: readMaybe(F.karaoke),
     css: readMaybe(F.css),
   };
   s.musicUi = walkText(F.musicUiDir, ['.tsx', '.ts', '.css']);
@@ -1343,6 +1346,102 @@ add('LYRICS.closeViaRust', 'LYRICS', (s) => {
   return { ok: true, detail: '' };
 });
 
+// ── 逐字歌词（卡拉OK）──────────────────────────────────────────────────────
+// 这一组防的都是「看着像做了、其实没做」的静默降级：逐字高亮的四个环节
+//（yrc 接进来 / 无 yrc 时行级插值 / 双层渲染 / 平滑时间源）任一缺失，
+// 页面都能正常显示歌词，只是**没有逐字推进** —— 不报错、不空白，最难被察觉。
+
+add('LYRICS.parseYrcUsed', 'LYRICS', (s) => {
+  // 防「只定义不用」：parseYrc 定义了但 loadLyrics 没调它 → 逐字高亮等于没接。
+  // ⚠️ 判据必须**限定作用域 + 数出现次数**，不能只查标识符出现过：
+  // 把 loadLyrics 里那次调用删掉（只留定义）、或复制出第二个同名函数，都曾让
+  // 同类断言保持全绿（本项目已栽过多次，D-31）。
+  const store = stripComments(s.store ?? '');
+  const missing = [];
+  // ① 定义唯一
+  const defs = (store.match(/export function parseYrc\b/g) || []).length;
+  if (defs !== 1) missing.push(`parseYrc 定义应恰好 1 处，实际 ${defs}`);
+  // ② loadLyrics **实现体**里必须真的调用它，且保留 LRC 退化分支
+  const body = methodBody(store, 'loadLyrics');
+  if (body == null) missing.push('store.ts 未找到 loadLyrics 实现');
+  else {
+    if (!/parseYrc\s*\(/.test(body)) missing.push('loadLyrics 未调用 parseYrc（逐字歌词没接进来）');
+    if (!/\.yrc\b/.test(body)) missing.push('loadLyrics 未读取 l.yrc');
+    if (!/parseLrc\s*\(/.test(body)) missing.push('loadLyrics 缺 LRC 退化分支');
+  }
+  return { ok: missing.length === 0, detail: missing.length ? `逐字歌词接入：${missing.join('、')}` : '' };
+});
+
+add('LYRICS.lineInterpolation', 'LYRICS', (s) => {
+  // ⚠️ 本任务**最重要**的一条：平台绝大多数歌只有行级 LRC、没有 yrc。
+  // 若 duration 不被推断/夹紧，"无逐字数据"的歌在渲染层就没有可插值的跨度 →
+  // 效果与"没做逐字高亮"一模一样，而 parseYrc / 双层结构那几条断言**依然全绿**。
+  // 所以必须单独把这条退化路径锁死。
+  const store = stripComments(s.store ?? '');
+  const kara = stripComments(s.karaoke ?? '');
+  const missing = [];
+  // ① finalizeLineDurations 存在，且被 parseLrc / parseYrc **两条路径**都调用
+  const fin = fnBodyAny(store, 'finalizeLineDurations');
+  if (fin == null) missing.push('缺 finalizeLineDurations');
+  const lrcBody = fnBody(store, 'parseLrc');
+  const yrcBody = fnBody(store, 'parseYrc');
+  if (lrcBody == null) missing.push('取不到 parseLrc 实现体');
+  else if (!/finalizeLineDurations\s*\(/.test(lrcBody)) missing.push('parseLrc 未补 duration（LRC 退化路径断头）');
+  if (yrcBody == null) missing.push('取不到 parseYrc 实现体');
+  else if (!/finalizeLineDurations\s*\(/.test(yrcBody)) missing.push('parseYrc 未走同一收尾');
+  // ② 推断规则：相邻行时间差 + [0.45, 12] 夹紧
+  if (fin != null) {
+    if (!/next\.time\s*-\s*lines\[i\]\.time/.test(fin)) missing.push('未用相邻行时间差推断 duration');
+    if (!/Math\.max\(\s*0\.45\s*,/.test(fin)) missing.push('duration 未钳下限 0.45s');
+    if (!/Math\.min\(\s*12\s*,/.test(fin)) missing.push('duration 未钳上限 12s');
+  }
+  // ③ 渲染层必须有**无逐字**的行级插值分支（smoothstep），否则退化路径到不了画面
+  if (!kara) missing.push('未读到 KaraokeLyrics.tsx');
+  else if (!/\bsmoothstep\b/.test(kara)) missing.push('渲染层缺无逐字的行级插值（smoothstep）分支');
+  return { ok: missing.length === 0, detail: missing.length ? `行级插值退化路径：${missing.join('、')}` : '' };
+});
+
+add('LYRICS.karaRender', 'LYRICS', (s) => {
+  // 渲染层三要素：双层叠加 + RAF 驱动 + mask 柔边 + width 裁切。
+  // 任缺其一，卡拉OK效果不成立，但页面照常显示歌词（静默降级）。
+  const kara = stripComments(s.karaoke ?? '');
+  if (!kara) return { ok: false, detail: '未读到 KaraokeLyrics.tsx' };
+  const missing = [];
+  // ① 双层：同一行文本渲染两次，且两层 class 齐全。
+  // ⚠️ 类名判据必须**排除子串**：`kara-over` 是 `kara-over-disabled` 的子串，
+  // 用裸子串匹配的话，把顶层类名改坏（导致双层退化成单层）断言仍会绿 ——
+  // 反证轮实测抓到了这个假阳性，故改用「前后不得紧跟 \w 或 -」的精确词边界。
+  if (!/(?<![\w-])kara-under(?![\w-])/.test(kara)) missing.push('缺底层（未唱）元素 kara-under');
+  if (!/(?<![\w-])kara-over(?![\w-])/.test(kara)) missing.push('缺顶层（已唱）元素 kara-over');
+  const textRenders = (kara.match(/\{line\.text\}/g) || []).length;
+  if (textRenders < 2) missing.push(`同一行文本只渲染了 ${textRenders} 次（双层需 ≥2 次）`);
+  // ② RAF 推进，且**不得**用 setInterval（后台被节流到 ~1Hz → 推进一跳一跳）
+  if (!/requestAnimationFrame\s*\(/.test(kara)) missing.push('未用 requestAnimationFrame');
+  if (!/cancelAnimationFrame\s*\(/.test(kara)) missing.push('未清理 RAF（cancelAnimationFrame）');
+  if (/setInterval\s*\(/.test(kara)) missing.push('用了 setInterval（后台节流 → 推进一跳一跳）');
+  // ③ width 裁切 + mask 柔边（含 -webkit- 前缀）
+  if (!/style\.width\s*=/.test(kara)) missing.push('未用 width 裁切驱动顶层');
+  if (!/maskImage/.test(kara) || !/linear-gradient/.test(kara)) missing.push('缺顶层 mask 渐变（裁切边会是硬线）');
+  if (!/WebkitMaskImage/.test(kara)) missing.push('缺 -webkit- mask 前缀');
+  return { ok: missing.length === 0, detail: missing.length ? `逐字渲染层：${missing.join('、')}` : '' };
+});
+
+add('LYRICS.karaTimeSource', 'LYRICS', (s) => {
+  // 时间来源：优先 findAudioElement().currentTime（本项目唯一的 <audio> 入口），
+  // 且必须有 store progressMs + performance.now 的**降级外推** ——
+  // 拿不到元素时若直接用 4Hz 的 progressMs，推进会一跳一跳；完全不降级则歌词不动。
+  const kara = stripComments(s.karaoke ?? '');
+  if (!kara) return { ok: false, detail: '未读到 KaraokeLyrics.tsx' };
+  const missing = [];
+  if (!/findAudioElement\s*\(/.test(kara)) missing.push('未用 findAudioElement（应走唯一 audio 入口）');
+  if (!/\.currentTime/.test(kara)) missing.push('未读音频真实 currentTime');
+  if (!/progressMs/.test(kara)) missing.push('缺 progressMs 降级基准');
+  if (!/performance\.now\s*\(/.test(kara)) missing.push('降级外推未用 performance.now（单调钟）');
+  // 不得自行 querySelector('audio') 绕过唯一入口（audioGraph 的收口约束）
+  if (/querySelector\(\s*['"]audio['"]\s*\)/.test(kara)) missing.push("自行 querySelector('audio')（应经 audioGraph 入口）");
+  return { ok: missing.length === 0, detail: missing.length ? `逐字时间来源：${missing.join('、')}` : '' };
+});
+
 // ── 执行器 ────────────────────────────────────────────────────────────────
 function runAll(s) {
   const res = {};
@@ -1927,6 +2026,66 @@ const MUTATIONS = [
     find: "      // 播放模式要跟着走：歌词窗的控制栏靠它显示正确的模式图标（两窗 store 互不可见）\n      playMode,",
     replace: "      // 反证：不带 playMode",
     expect: ["LYRICS.playModeContract"],
+  },
+
+  // ── LYRICS 逐字歌词（卡拉OK）────────────────────────────────────────
+  {
+    name: '把 parseYrc 改名（模拟"定义了但没接进来"）',
+    file: F.store,
+    find: 'export function parseYrc(yrc: string): ParsedLyricLine[] {',
+    replace: 'export function parseYrcDisabled(yrc: string): ParsedLyricLine[] {',
+    expect: ['LYRICS.parseYrcUsed'],
+  },
+  {
+    // 模拟"只留定义、删掉调用"—— 这是「只查标识符存在」型断言最经典的漏网方式
+    name: 'loadLyrics 不再调用 parseYrc（只走 LRC，逐字高亮静默失效）',
+    file: F.store,
+    find: "        lines = l.yrc ? parseYrc(l.yrc) : parseLrc(l.lyric || '');\n",
+    replace: "        lines = parseLrc(l.lyric || '');\n",
+    expect: ['LYRICS.parseYrcUsed'],
+  },
+  {
+    // 本任务最关键的反证：破坏「无 yrc 时的行级插值」—— 绝大多数歌走的就是这条路
+    name: 'finalizeLineDurations 去掉 [0.45, 12] 夹紧（退化路径失去边界保护）',
+    file: F.store,
+    find: '    lines[i].duration = Math.max(0.45, Math.min(12, lines[i].duration as number));\n',
+    replace: '    lines[i].duration = lines[i].duration as number;\n',
+    expect: ['LYRICS.lineInterpolation'],
+  },
+  {
+    name: 'parseLrc 不再补 duration（LRC 退化路径断头 → 无 yrc 的歌没有推进跨度）',
+    file: F.store,
+    find: '  // ⚠️ LRC **只有行级时间**，没有逐字数据 —— 必须在这里补出行持续时长，\n  // 否则「无 yrc 的歌」在渲染层没有可插值的跨度，逐字推进会整体失效。\n  return finalizeLineDurations(lines);',
+    replace: '  return lines;',
+    expect: ['LYRICS.lineInterpolation'],
+  },
+  {
+    name: '渲染层去掉顶层高亮元素（kara-over → 双层退化为单层，无逐字效果）',
+    file: F.karaoke,
+    find: 'className="kara-over"',
+    replace: 'className="kara-over-disabled"',
+    expect: ['LYRICS.karaRender'],
+  },
+  {
+    name: '渲染层去掉 mask 渐变（顶层裁切边变成硬线）',
+    file: F.karaoke,
+    find: 'style={{ maskImage: maskGradient, WebkitMaskImage: maskGradient }}',
+    replace: 'style={{}}',
+    expect: ['LYRICS.karaRender'],
+  },
+  {
+    name: '渲染层用 setInterval 代替 RAF（后台被节流 → 推进一跳一跳）',
+    file: F.karaoke,
+    find: '    raf = requestAnimationFrame(tick);\n    return () => cancelAnimationFrame(raf);',
+    replace: '    raf = setInterval(tick, 100) as unknown as number;\n    return () => clearInterval(raf);',
+    expect: ['LYRICS.karaRender'],
+  },
+  {
+    name: '渲染层不再读音频真实时间（拿不到平滑时间 → 只能靠 4Hz progressMs 一跳一跳）',
+    file: F.karaoke,
+    find: '      const el = findAudioElement();',
+    replace: '      const el = null as HTMLAudioElement | null;',
+    expect: ['LYRICS.karaTimeSource'],
   },
 ];
 
