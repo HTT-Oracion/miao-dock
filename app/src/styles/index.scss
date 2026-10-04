@@ -20,5 +20,5 @@
  *
  * 规则详见《09》§2.4「样式分层与维护规则」；实施方案与阶段划分见 docs/style-scss-plan.md。
  */
-@use 'base.css';
+@use 'base.scss';
 @use 'app.css';

@@ -216,7 +216,7 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     add(
       'C4c',
       `空态动效 rotate ${QUEUE_EMPTY.rotateSeconds}s linear infinite（减弱动效时停转）`,
-      // 系统开启「减弱动效」时 base.css 会把时长压到 0.001ms —— 那正是期望行为
+      // 系统开启「减弱动效」时 base.scss 会把时长压到 0.001ms —— 那正是期望行为
       reduced ? dur <= 0.01 || dur === -1 : dur === QUEUE_EMPTY.rotateSeconds && iters === 'infinite',
       `时长 ${sc?.animationDuration ?? '-'} / 次数 ${iters} / 减弱动效 ${reduced ? '开' : '关'}`,
     );

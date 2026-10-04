@@ -79,7 +79,7 @@ export function Btn({
  *
  * 四道同心环（lavender / blue 交替）+ 五芒星（pink）+ 中心星核（yellow），
  * 底轨用 `line-soft`；四色全部取自既有令牌，**不新增令牌**。
- * 旋转 8s linear infinite；`prefers-reduced-motion` 下由 base.css 统一降级为静态。
+ * 旋转 8s linear infinite；`prefers-reduced-motion` 下由 base.scss 统一降级为静态。
  *
  * 它为什么算"通用单元"而不是业务组件：只读令牌常量、不碰任何业务数据
  * （用途是队列空态，但组件本身对队列一无所知），符合《09》§2.2 的判据。
