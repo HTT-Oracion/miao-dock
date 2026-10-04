@@ -1,4 +1,4 @@
-import { ListMusic, Maximize2, Music, Pause, Play, SkipBack, SkipForward, X } from 'lucide-react';
+import { ListMusic, Maximize2, Music, Pause, Play, SkipBack, SkipForward, X, AudioLines } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { IconButton } from '@components/units/IconButton';
@@ -707,7 +707,7 @@ function MusicCard({
               title={view === 'lyrics' ? '播放' : '歌词'}
               onClick={stop(onToggleView)}
             >
-              {view === 'lyrics' ? <Play size={15} /> : <ListMusic size={15} />}
+              {view === 'lyrics' ? <AudioLines size={15} /> : <ListMusic size={15} />}
             </IconButton>
           </span>
           <span className="di-open">
