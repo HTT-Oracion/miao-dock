@@ -1,0 +1,172 @@
+import { ChevronLeft, Play } from 'lucide-react';
+import type { UIEvent } from 'react';
+import { providerLabel } from '../../music/platform';
+import { coverProxyUrl, songKey, useMusicStore } from '../../music/store';
+import type { LeftView } from '../../music/store';
+import { HistoryView } from './HistoryView';
+import { LocalView } from './LocalView';
+import { Cover, Empty, SongRow } from './shared';
+
+const TABS: { id: LeftView; label: string }[] = [
+  { id: 'playlists', label: '我的歌单' },
+  { id: 'local', label: '本地' },
+  { id: 'history', label: '播放历史' },
+];
+
+/**
+ * 左栏「我的音乐」—— 三个 Tab 承载四个视图：
+ * playlists / local / history 各一个 Tab；`tracks`（歌单曲目）是 playlists 的下钻态，
+ * 所以它高亮的是「我的歌单」Tab，返回也走 backToPlaylists。
+ */
+export function LeftPanel() {
+  const leftView = useMusicStore((s) => s.leftView);
+  const setLeftView = useMusicStore((s) => s.setLeftView);
+  const backToPlaylists = useMusicStore((s) => s.backToPlaylists);
+
+  const active: LeftView = leftView === 'tracks' ? 'playlists' : leftView;
+
+  return (
+    <section className="music-card">
+      <div className="ltabs">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={active === t.id ? 'ltab is-on' : 'ltab'}
+            onClick={() => {
+              // 点「我的歌单」时若正处在曲目下钻态，要一路退回去，不能只切高亮
+              if (t.id === 'playlists') backToPlaylists();
+              else setLeftView(t.id);
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {leftView === 'playlists' ? (
+        <PlaylistsView />
+      ) : leftView === 'tracks' ? (
+        <LeftTracksView />
+      ) : leftView === 'local' ? (
+        <LocalView />
+      ) : (
+        <HistoryView />
+      )}
+    </section>
+  );
+}
+
+/** 我的歌单：未登录是空态（store 不会去拉），登录后列出当前平台账号的歌单 */
+function PlaylistsView() {
+  const playbackSource = useMusicStore((s) => s.playbackSource);
+  const loginInfos = useMusicStore((s) => s.loginInfos);
+  const userPlaylists = useMusicStore((s) => s.userPlaylists);
+  const loading = useMusicStore((s) => s.loadingUserPlaylists);
+  const error = useMusicStore((s) => s.userPlaylistsError);
+  const proxyPort = useMusicStore((s) => s.proxyPort);
+  const openLeftPlaylist = useMusicStore((s) => s.openLeftPlaylist);
+  const loadUserPlaylists = useMusicStore((s) => s.loadUserPlaylists);
+
+  const logged = !!loginInfos[playbackSource]?.logged_in;
+
+  if (!logged) return <Empty>登录后查看我的歌单</Empty>;
+  if (error) return <Empty bad>歌单读取失败：{error}</Empty>;
+  if (loading && userPlaylists.length === 0) return <Empty>加载歌单中…</Empty>;
+  if (userPlaylists.length === 0) return <Empty>这个平台账号下还没有歌单</Empty>;
+
+  return (
+    <div className="music-body">
+      <div className="music-card-hd">
+        <span className="music-card-sub">{userPlaylists.length} 个歌单</span>
+        <div className="grow" />
+        <button type="button" className="music-btn out" disabled={loading} onClick={() => void loadUserPlaylists()}>
+          刷新
+        </button>
+      </div>
+      <div className="music-list">
+        {userPlaylists.map((pl) => (
+          <div key={pl.id} className="music-row" onClick={() => void openLeftPlaylist(pl)}>
+            <Cover url={coverProxyUrl(pl.cover, proxyPort)} />
+            <div className="music-row-tx">
+              <b>{pl.name}</b>
+              <span>
+                {pl.track_count} 首 · {providerLabel(pl.provider)}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 歌单曲目：滚动到底自动续拉下一页（loadMoreLeft）。
+ * 触发阈值取「距底 60px」而不是「到底」—— 到底才触发会白等一个 RTT，用阈值把网络耗时藏在滚动里。
+ */
+function LeftTracksView() {
+  const meta = useMusicStore((s) => s.leftPlaylistMeta);
+  const tracks = useMusicStore((s) => s.leftPlaylistTracks);
+  const loading = useMusicStore((s) => s.loadingLeftTracks);
+  const loadingMore = useMusicStore((s) => s.loadingMoreLeft);
+  const loadMore = useMusicStore((s) => s.loadMoreLeft);
+  const back = useMusicStore((s) => s.backToPlaylists);
+  const playQueue = useMusicStore((s) => s.playQueue);
+  const currentSong = useMusicStore((s) => s.currentSong);
+  const proxyPort = useMusicStore((s) => s.proxyPort);
+
+  const onScroll = (e: UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (!loadingMore && el.scrollTop + el.clientHeight >= el.scrollHeight - 60) void loadMore();
+  };
+
+  const total = meta?.track_count ?? 0;
+
+  return (
+    <div className="music-body">
+      <div className="music-card-hd">
+        <button type="button" className="music-btn out" onClick={back}>
+          <ChevronLeft size={12} /> 返回
+        </button>
+        <span className="music-card-title">{meta?.name ?? '歌单'}</span>
+        <span className="music-card-sub">
+          {tracks.length}
+          {total ? ` / ${total}` : ''} 首
+        </span>
+        <div className="grow" />
+        <button
+          type="button"
+          className="music-btn pri"
+          disabled={tracks.length === 0}
+          onClick={() => void playQueue(tracks, 0)}
+        >
+          <Play size={12} /> 播放全部
+        </button>
+      </div>
+
+      {loading ? (
+        <Empty>加载曲目中…</Empty>
+      ) : tracks.length === 0 ? (
+        <Empty>这个歌单是空的</Empty>
+      ) : (
+        <>
+          <div className="music-list" onScroll={onScroll}>
+            {tracks.map((s, i) => (
+              <SongRow
+                key={`${s.provider}:${s.id}:${i}`}
+                song={s}
+                cover={coverProxyUrl(s.cover, proxyPort)}
+                active={currentSong ? songKey(currentSong) === songKey(s) : false}
+                onClick={() => void playQueue(tracks, i)}
+              />
+            ))}
+          </div>
+          {total > 0 && tracks.length < total ? (
+            <div className="music-more">{loadingMore ? '加载中…' : '上滑加载更多'}</div>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}

@@ -128,7 +128,7 @@ export function App() {
     if (screen === 'music') {
       return {
         title: '音乐',
-        subtitle: '本地音乐与在线音源 · ver2.0 新增应用（播放内核待实现）',
+        subtitle: '本地音乐与在线音源 · 网易云 / 酷狗 / QQ / 咪咕四平台（汽水延后）',
         actions: null,
       };
     }
