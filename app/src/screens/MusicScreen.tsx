@@ -410,6 +410,23 @@ export function MusicScreen() {
   );
 }
 
+// ------------------------------------------------------------------ 评论行
+
+function CommentRow({ c }: { c: { nickname: string; avatar: string; content: string; liked_count: number } }) {
+  return (
+    <div className="music-exp-cm">
+      <span className="music-ava">{c.avatar ? <img src={c.avatar} alt="" /> : c.nickname?.slice(0, 1)}</span>
+      <div className="music-exp-cm-body">
+        <div className="music-exp-cm-hd">
+          <b>{c.nickname}</b>
+          <span>{c.liked_count} 赞</span>
+        </div>
+        <div className="music-exp-cm-txt">{c.content}</div>
+      </div>
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ 扫码登录
 
 function LoginModal() {
@@ -525,8 +542,12 @@ function ExpandedPlayer() {
     setVolume,
     cycleMode,
     parsedLyrics,
+    comments,
+    loadingComments,
+    loadComments,
   } = useMusicStore();
   const [skinPickerOpen, setSkinPickerOpen] = useState(false);
+  const [tab, setTab] = useState<'lyrics' | 'comments'>('lyrics');
   const skinMeta = SKINS.find((s) => s.id === skin) ?? SKINS[0];
   const activeLine = lyricIndexAt(parsedLyrics, progressMs / 1000);
   const modeIcon = playMode === 'one' ? <Repeat1 size={15} /> : playMode === 'shuffle' ? <Shuffle size={15} /> : <Repeat size={15} />;
@@ -547,14 +568,49 @@ function ExpandedPlayer() {
           <em>{currentSong?.album || ''}</em>
         </div>
         <div className="music-exp-lyrics">
-          {parsedLyrics.length === 0 ? (
-            <div className="music-exp-lyr-empty">暂无歌词</div>
+          <div className="music-exp-ltabs">
+            <button type="button" className={tab === 'lyrics' ? 'music-exp-ltab is-on' : 'music-exp-ltab'} onClick={() => setTab('lyrics')}>
+              歌词
+            </button>
+            <button
+              type="button"
+              className={tab === 'comments' ? 'music-exp-ltab is-on' : 'music-exp-ltab'}
+              onClick={() => {
+                setTab('comments');
+                if (currentSong && !comments) void loadComments(currentSong);
+              }}
+            >
+              评论
+            </button>
+          </div>
+
+          {tab === 'lyrics' ? (
+            parsedLyrics.length === 0 ? (
+              <div className="music-exp-lyr-empty">暂无歌词</div>
+            ) : (
+              <div className="music-exp-lyr-box">
+                {parsedLyrics.map((line, i) => (
+                  <div key={i} className={i === activeLine ? 'music-lyr-line is-on' : 'music-lyr-line'}>
+                    {line.text}
+                  </div>
+                ))}
+              </div>
+            )
+          ) : currentSong?.provider !== 'netease' ? (
+            <div className="music-exp-lyr-empty">当前平台暂不支持评论</div>
+          ) : loadingComments ? (
+            <div className="music-exp-lyr-empty">加载评论中…</div>
+          ) : !comments || (comments.comments.length === 0 && comments.hot_comments.length === 0) ? (
+            <div className="music-exp-lyr-empty">暂无评论</div>
           ) : (
-            <div className="music-exp-lyr-box">
-              {parsedLyrics.map((line, i) => (
-                <div key={i} className={i === activeLine ? 'music-lyr-line is-on' : 'music-lyr-line'}>
-                  {line.text}
-                </div>
+            <div className="music-exp-comments">
+              {comments.hot_comments.length > 0 && <div className="music-exp-cm-sec">热门评论</div>}
+              {comments.hot_comments.map((c) => (
+                <CommentRow key={c.comment_id} c={c} />
+              ))}
+              {comments.comments.length > 0 && <div className="music-exp-cm-sec">最新评论</div>}
+              {comments.comments.map((c) => (
+                <CommentRow key={c.comment_id} c={c} />
               ))}
             </div>
           )}

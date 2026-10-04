@@ -12,7 +12,7 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { create } from 'zustand';
 import * as ipc from './ipc';
-import type { LocalSongInfo, LoginInfo, Playlist, PlayMode, Song } from './types';
+import type { CommentPage, LocalSongInfo, LoginInfo, Playlist, PlayMode, Song } from './types';
 
 /** 展开播放器皮肤（设计稿 M5 六皮肤；spectrum 为 CSS 近似，不做 WebGL） */
 export type PlayerSkin = 'modern' | 'glass' | 'immersive' | 'spectrum' | 'vinyl' | 'cover';
@@ -135,6 +135,9 @@ interface MusicState {
   qrLoading: boolean;
   // 歌词
   parsedLyrics: ParsedLyricLine[];
+  // 评论（网易云）
+  comments: CommentPage | null;
+  loadingComments: boolean;
 
   importLocal: (paths: string[]) => Promise<void>;
   importFolder: (folder: string) => Promise<void>;
@@ -163,6 +166,7 @@ interface MusicState {
   openLogin: () => Promise<void>;
   closeLogin: () => void;
   loadLyrics: (song: Song) => Promise<void>;
+  loadComments: (song: Song) => Promise<void>;
 }
 
 export const useMusicStore = create<MusicState>((set, get) => ({
@@ -195,6 +199,8 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   qrStatus: '',
   qrLoading: false,
   parsedLyrics: [],
+  comments: null,
+  loadingComments: false,
 
   importLocal: async (paths) => {
     try {
@@ -419,6 +425,20 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       set({ parsedLyrics: parseLrc(raw) });
     } catch {
       set({ parsedLyrics: [] });
+    }
+  },
+
+  loadComments: async (song) => {
+    if (song.provider !== 'netease') {
+      set({ comments: null });
+      return;
+    }
+    set({ loadingComments: true });
+    try {
+      const c = await ipc.musicSongComments(song.id, 1, 20);
+      set({ comments: c, loadingComments: false });
+    } catch {
+      set({ comments: null, loadingComments: false });
     }
   },
 }));

@@ -2033,3 +2033,70 @@
 .sk-glass .music-lyr-line.is-on,
 .sk-vinyl .music-lyr-line.is-on,
 .sk-cover .music-lyr-line.is-on { color: var(--md-pink); }
+
+/* 展开播放器歌词/评论 Tab */
+.music-exp-ltabs {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex: 0 0 auto;
+  margin-bottom: 6px;
+}
+.music-exp-ltab {
+  padding: 4px 13px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+}
+.music-exp-ltab.is-on { background: var(--md-pink); color: #fff; }
+.sk-glass .music-exp-ltab,
+.sk-vinyl .music-exp-ltab,
+.sk-cover .music-exp-ltab { color: rgba(59, 51, 82, 0.6); }
+.sk-glass .music-exp-ltab.is-on,
+.sk-vinyl .music-exp-ltab.is-on,
+.sk-cover .music-exp-ltab.is-on { background: var(--md-pink); color: #fff; }
+
+/* 评论列表 */
+.music-exp-comments {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px;
+}
+.music-exp-cm-sec {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--md-pink);
+}
+.music-exp-cm {
+  display: flex;
+  gap: 8px;
+  padding: 7px;
+  border-radius: var(--md-radius-sm);
+  background: rgba(255, 255, 255, 0.06);
+}
+.sk-glass .music-exp-cm,
+.sk-vinyl .music-exp-cm,
+.sk-cover .music-exp-cm { background: rgba(59, 51, 82, 0.06); }
+.music-exp-cm-body { flex: 1; min-width: 0; }
+.music-exp-cm-hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+.music-exp-cm-hd b { font-size: 12px; color: #fff; }
+.sk-glass .music-exp-cm-hd b,
+.sk-vinyl .music-exp-cm-hd b,
+.sk-cover .music-exp-cm-hd b { color: var(--md-ink); }
+.music-exp-cm-hd span { font-size: 10px; color: rgba(255, 255, 255, 0.5); }
+.music-exp-cm-txt { font-size: 12px; margin-top: 4px; color: rgba(255, 255, 255, 0.85); }
+.sk-glass .music-exp-cm-txt,
+.sk-vinyl .music-exp-cm-txt,
+.sk-cover .music-exp-cm-txt { color: var(--md-ink-2); }
