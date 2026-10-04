@@ -1470,7 +1470,11 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       url = await resolvePlayUrl(song);
     } catch (e) {
       if (mySeq !== playSeq) return;
-      set({ isPlaying: false });
+      // ⚠️ 这里的 `restoring: false` 不是顺手写的：解析抛错是**唯一一条
+      // playUrl 永远不会被设置**的失败路径 ⇒ 不会有 loadedmetadata 来关恢复态的闸。
+      // 闸漏在这里的后果：用户之后正常播放遇到一次网络失败，也会静默遍历整个队列
+      // 并清空播放条（一次抖动把队列丢光）。
+      set({ isPlaying: false, restoring: false });
       get().toast(`播放失败：${String(e)}`);
       return;
     }
@@ -1495,7 +1499,19 @@ export const useMusicStore = create<MusicState>((set, get) => ({
         // 恢复态**不弹提示**：用户还没做任何操作，一串"该歌曲无版权"是纯噪音
         if (!restoring) get().toast('该歌曲无版权或需会员，已自动跳过');
         setTimeout(() => {
-          if (get().queue.length > 1) get().next();
+          if (get().queue.length > 1) {
+            get().next();
+          } else if (get().restoring) {
+            /**
+             * 队列只有一首歌，而它恰好也失败 —— 没有"下一首"可跳，恢复到此为止。
+             * 不清的话 `restoring` 会一直开着（下面那个 else 分支只在"跳够次数"时才到），
+             * 于是用户之后正常播放遇到一次失败也会遍历整个队列并清空。
+             * 在回调里**重新读** restoring 而不是用闭包里那份：800ms 里用户可能
+             * 已经点了别的歌（那时不该由这一条定时器去清他的队列）。
+             */
+            get().clearQueue();
+            set({ restoring: false });
+          }
         }, 800);
       } else {
         isAutoSkipping = false;

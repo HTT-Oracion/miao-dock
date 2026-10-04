@@ -1945,6 +1945,194 @@ add('ISLANDV.desktopLyricsKept', 'ISLANDV', (s) => {
   return { ok: missing.length === 0, detail: missing.length ? `桌面歌词仍在（未提前删）：${missing.join('、')}` : '' };
 });
 
+// ============================ RESTORE（启动恢复上次播放）============================
+// 这一组防的是「恢复功能被改坏后**不报错、只是默默做错」**。恢复链路上每一步都
+// 有静默失效的形态：快照没存 → 重开是空的（与"从没存过"无法区分）；版本没校验 →
+// 拿着旧结构继续跑；三态判错 → 断网就丢队列；seek 时序错 → "定位没生效"；
+// 闸漏不关 → 用户正常播放遇到一次抖动就把队列清空。
+//
+// ⚠️ 判据一律先 stripComments：本组代码的注释里**主动写出了被禁的写法**
+// （如「不设 autoplay:false」「restoring 一直开着」），不剥注释会恒绿。
+
+/** 数一个片段在文本里出现几次（用于"数次数"型判据，避免"只判存在"） */
+const occurrences = (src, needle) => src.split(needle).length - 1;
+
+add('RESTORE.snapshotPersisted', 'RESTORE', (s) => {
+  // 写入时机三处：切歌后 · 暂停时 · MusicKernel 的低频定时器兜底。
+  // 少一处就丢一类场景（"正听着直接退出"全靠定时器），故**数次数**而不只判存在。
+  const store = stripComments(s.store ?? '');
+  const kernel = stripComments(s.kernel ?? '');
+  const missing = [];
+  if (!hasMethodImpl(store, 'persistSnapshot')) missing.push('store 的 persistSnapshot 实现没了');
+  const inStore = occurrences(store, 'get().persistSnapshot()');
+  if (inStore < 2) missing.push(`store 里 persistSnapshot 只被调 ${inStore} 次（应 ≥2：切歌后 / 暂停时）`);
+  if (!/s\.persistSnapshot\(\)/.test(kernel)) missing.push('MusicKernel 没有兜底定时器存快照（正听着直接退出会丢进度）');
+  if (!/SNAPSHOT_PERSIST_INTERVAL_MS/.test(kernel)) missing.push('MusicKernel 的定时器没���用导出的间隔常量');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+add('RESTORE.snapshotVersioned', 'RESTORE', (s) => {
+  // 版本校验：localStorage 跨版本存活，不校验就会拿着旧结构继续跑
+  // （症状"恢复了但队列是空的"，且不报错）。
+  const body = fnBodyAny(stripComments(s.store ?? ''), 'readResumeSnapshot') || '';
+  const missing = [];
+  if (!/SNAPSHOT_VERSION/.test(body)) missing.push('readResumeSnapshot 不认版本号');
+  if (!/s\.v\s*!==\s*SNAPSHOT_VERSION/.test(body)) missing.push('readResumeSnapshot 没有「版本不符即当没有」的判据');
+  if (!/index\s*>=\s*s\.queue\.length/.test(body)) missing.push('readResumeSnapshot 没有校验下标越界');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+add('RESTORE.truncateKeepsCurrent', 'RESTORE', (s) => {
+  // 队列截断到 200（Q3）时**必须保证当前歌仍在窗口内**并返回新下标。
+  // 直接取前 N 首会让恢复后停在一首完全不同的歌上，而播放条显示的正是那首。
+  //
+  // ⚠️ 这里**不用 fnBodyAny 取函数体**：该函数签名带内联对象返回类型
+  // `): { queue: Song[]; index: number } {`，取体工具会把**类型注解里的 `{`**
+  // 当成函数体起点（已实测取空 → 判据恒红）。改用两条实现细节上**唯一**的锚点。
+  const store = stripComments(s.store ?? '');
+  const missing = [];
+  if (!/index:\s*index\s*-\s*start/.test(store)) missing.push('截断后没有重算 index（当前歌会被截出窗口）');
+  if (!/queue\.slice\(start,\s*start\s*\+\s*max\)/.test(store)) missing.push('截断不是按 start 窗口切');
+  if (!/SNAPSHOT_MAX_QUEUE\s*=\s*200/.test(store)) missing.push('队列上限不是 200（Q3 拍板）');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+add('RESTORE.playbackSourcePersisted', 'RESTORE', (s) => {
+  // 播放平台此前**根本没持久化**（硬编码 'netease'）。没有它就不知道该按哪个平台
+  // 校验登录态，恢复永远判成"不是上次那个平台"。
+  const store = stripComments(s.store ?? '');
+  const missing = [];
+  if (!/savePrefs\(\{\s*playbackSource:\s*p\s*\}\)/.test(store)) missing.push('切平台时没存 playbackSource 偏好');
+  if (!/ALL_PROVIDERS\.includes\(prefs\.playbackSource/.test(store)) missing.push('hydratePrefs 没有对 playbackSource 做白名单收口');
+  if (!/playbackSource:\s*'netease'/.test(store)) missing.push('playbackSource 初值不再是默认netease');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+add('RESTORE.verdictThreeStates', 'RESTORE', (s) => {
+  // 三态映射：null → 探测失败（**不是**未登录！）／ logged_in → 有效 ／ 否则未登录。
+  // 判错的后果不对称：把"探测失败"当"未登录"→ 用户一断网就丢播放进度。
+  const body = fnBodyAny(stripComments(s.store ?? ''), 'loginVerdict') || '';
+  const missing = [];
+  if (!body) missing.push('loginVerdict 没了');
+  else {
+    if (!/===\s*null\s*\|\|\s*info\s*===\s*undefined/.test(body)) missing.push('没把「null / undefined」判为 probe_failed');
+    if (!/return\s+'probe_failed'/.test(body)) missing.push('缺 probe_failed 返回值');
+    if (!/\.logged_in\s*\?\s*'valid'\s*:\s*'logged_out'/.test(body)) missing.push('logged_in 没有二分映射到 valid / logged_out');
+  }
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+add('RESTORE.restoredPaused', 'RESTORE', (s) => {
+  // 恢复出来的歌必须**停在暂停态**（需求原话）且**不展开播放器**（恢复不是"用户点了它"）。
+  const body = methodBody(stripComments(s.store ?? ''), 'restoreSession') || '';
+  const missing = [];
+  if (!body) missing.push('restoreSession 实现没了');
+  else {
+    if (!/autoplay:\s*false/.test(body)) missing.push('恢复时没传 autoplay:false（会直接自动播放）');
+    if (!/expand:\s*false/.test(body)) missing.push('恢复时没传 expand:false（会弹出展开播放器）');
+    if (!/resumeAtMs:\s*snap\.progressMs/.test(body)) missing.push('恢复时没有把快照进度传给 playSong');
+  }
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+add('RESTORE.probeFailKeepsSnapshot', 'RESTORE', (s) => {
+  // Q1 的核心：探针失败**保留快照**且把闸退回允许重试；明确未登录才清。
+  // 两个动作都不可省：只保留不退回 → 断网时第一次进屏就把闸关死，网络好了也永不再试。
+  const body = methodBody(stripComments(s.store ?? ''), 'restoreSession') || '';
+  const missing = [];
+  if (!body) missing.push('restoreSession 实现没了');
+  else {
+    const loggedOutBranch = body.split("'logged_out'")[1]?.split('}')[0] ?? '';
+    if (!/clearResumeSnapshot\(\)/.test(loggedOutBranch)) missing.push('明确未登录时没有清快照');
+    const probeBranch = body.split("'probe_failed'")[1]?.split('return')[0] ?? '';
+    if (!/restoreAttempted:\s*false/.test(probeBranch)) missing.push('探针失败时没有把闸退回 false（之后永不再试）');
+    if (/clearResumeSnapshot\(\)/.test(probeBranch)) missing.push('探针失败时错误地清了快照（断网会丢播放进度）');
+  }
+  if (!/if\s*\(!snap\)\s*return;/.test(body)) missing.push('没有快照时直接返回（不该做任何恢复动作）');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+add('RESTORE.restoringClosed', 'RESTORE', (s) => {
+  // 恢复态的闸 `restoring` **必须每条路径都关**：
+  //   ① 音频真的加载出来（loadedmetadata，在 kernel 里）
+  //   ② URL 解析抛错（playUrl 永不设置 ⇒ 没有 loadedmetadata 来关）
+  //   ③ 恢复中队列只剩一首歌且它也失败（没有"下一首"可跳）
+  //   ④ 整条队列都试完（handleRestoreFailed）
+  // 漏任一条的后果：用户之后正常播放遇到一次网络抖动，就会静默遍历整个队列并清空播放条。
+  const store = stripComments(s.store ?? '');
+  const kernel = stripComments(s.kernel ?? '');
+  const missing = [];
+  // 四条关闭路径各有**唯一**的实现锚点（数次数不够 —— 四处任意一处被删都要能抓到）
+  if (!/if\s*\(get\(\)\.restoring\)\s*set\(\{\s*restoring:\s*false\s*\}\)/.test(store)) {
+    missing.push('finishRestore 没有关闸（音频加载成功时闸会一直开着）');
+  }
+  if (!/set\(\{\s*isPlaying:\s*false,\s*restoring:\s*false\s*\}\)/.test(store)) {
+    missing.push('playSong 的 URL 解析抛错路径没有关闸（该路径 playUrl 永不设置，没有 loadedmetadata 来关）');
+  }
+  if (occurrences(store, 'get().clearQueue();\n            set({ restoring: false });') < 1) {
+    missing.push('恢复中队列只剩一首歌且它也失败时没有关闸（没有"下一首"可跳）');
+  }
+  if (occurrences(store, 'get().clearQueue();\n    set({ restoring: false });') < 1) {
+    missing.push('整条队列都试完时没有关闸');
+  }
+  if (!/finishRestore/.test(kernel)) missing.push('kernel 没有在加载成功时调 finishRestore');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+add('RESTORE.seekAfterMetadata', 'RESTORE', (s) => {
+  // 定位必须等 loadedmetadata：冷启动是全新加载（readyState=0），此刻设
+  // currentTime 会被浏览器**静默忽略**，症状"定位没生效、从 0 开始"且不报错。
+  const kernel = stripComments(s.kernel ?? '');
+  const missing = [];
+  const onMeta = kernel.split('onLoadedMetadata')[1]?.slice(0, 900) ?? '';
+  if (!/currentTime\s*=\s*resumeAtMs\s*\/\s*1000/.test(onMeta)) missing.push('onLoadedMetadata 里没有设 currentTime（定位会静默失效）');
+  if (!/clearResumeAt\(\)/.test(onMeta)) missing.push('onLoadedMetadata 里没有清 resumeAtMs（会重复定位）');
+  // 反向：playUrl 变化的 effect 里**不能**再设 currentTime（那是未加载完时就设）
+  const playEffect = kernel.split('播放/暂停同步')[1]?.split('}, [')[0] ?? '';
+  if (/currentTime\s*=/.test(playEffect)) missing.push('播放同步 effect 里仍在设 currentTime（未加载完，浏览器会忽略）');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+add('RESTORE.localSkipsCorsFallback', 'RESTORE', (s) => {
+  // 本地文件被移走时**不能**走 CORS 降级：那条路径会 markNotWirable(a)，
+  // 把常驻 audio 元素永久标记为不可接管（音量失效 + 真实波形消失）。
+  // 本地歌走 asset://（Tauri 的 asset 协议带 CORS 头），本就不需要降级。
+  const kernel = stripComments(s.kernel ?? '');
+  const missing = [];
+  if (!/isLocalFile/.test(kernel)) missing.push('onError 没有区分本地文件');
+  if (!/_localPath/.test(kernel)) missing.push('本地判定没有用 currentSong._localPath（用 URL 前缀会误判网络歌走本地代理）');
+  if (!/corsMode\s*&&\s*a\s*&&\s*!isLocalFile/.test(kernel)) missing.push('CORS 降级条件没有排除本地文件');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+add('RESTORE.skipLimitRestoring', 'RESTORE', (s) => {
+  // Q4：恢复态的「无版权/加载失败跳下一首」上限必须是**队列长度**（遍历到有一首能播），
+  // 平时仍是 10 首（不动既有体验）。写死 10 会让"全部失败"永远走不到清空那一步。
+  const store = stripComments(s.store ?? '');
+  const missing = [];
+  if (!/restoring\s*\?\s*Math\.max\(1,\s*get\(\)\.queue\.length\)\s*:\s*10/.test(store)) {
+    missing.push('跳歌上限没有「恢复态用队列长度、平时 10 首」的分流');
+  }
+  if (!/if\s*\(!restoring\)\s*get\(\)\.toast\(/.test(store)) missing.push('恢复态仍在弹「无版权已跳过」提示（用户还没操作，是噪音）');
+  if (!/restoring[\s\S]{0,400}clearQueue\(\)/.test(store)) missing.push('恢复态遍历完没有清空队列（播放条不会隐藏）');
+  if (!hasMethodImpl(store, 'handleRestoreFailed')) missing.push('handleRestoreFailed 实现没了');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+add('RESTORE.onlyOnce', 'RESTORE', (s) => {
+  // Q6：只跑一次。init 无防重入守卫、切屏会重跑 MusicScreen，所以闸必须独立存在。
+  const store = stripComments(s.store ?? '');
+  const screen = stripComments(s.musicScreen ?? '');
+  const missing = [];
+  if (!/restoreAttempted:\s*boolean/.test(store)) missing.push('store 没有 restoreAttempted 闸字段');
+  const body = methodBody(store, 'restoreSession') || '';
+  if (!/if\s*\(get\(\)\.restoreAttempted\)\s*return;/.test(body)) missing.push('restoreSession 入口没有闸（切屏会重复恢复并覆盖用户操作）');
+  if (!/restoreSession/.test(screen)) missing.push('MusicScreen 没有调用 restoreSession');
+  // 必须挂在音乐屏（恢复要显示播放条），且不能放进 init（init 会重跑）
+  if (/init:\s*[\s\S]{0,600}restoreSession\(\)/.test(store)) missing.push('恢复被塞进 init 里（切屏重跑会重复恢复）');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
 // ── 执行器 ────────────────────────────────────────────────────────────────
 function runAll(s) {
   const res = {};
@@ -1959,7 +2147,7 @@ function runAll(s) {
   return res;
 }
 
-const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS', 'AUDIO', 'SKIN', 'QUEUE', 'MENU', 'ISLANDV'];
+const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS', 'AUDIO', 'SKIN', 'QUEUE', 'MENU', 'ISLANDV', 'RESTORE'];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -3180,6 +3368,99 @@ const MUTATIONS = [
     find: '  pushLyricsState: async () => {',
     replace: '  pushLyricsStateRemoved: async () => {',
     expect: ['ISLANDV.desktopLyricsKept'],
+  },
+
+  // ── RESTORE（启动恢复）──────────────────────────────────────────────────
+  // 每条断言都配一条反证。恢复链路的失效形态全是**静默**的（重开是空的、
+  // 定位没生效、队列被清空），没有反证就分不清"功能坏了"和"从没实现过"。
+  {
+    name: '暂停时不再存快照（"听完暂停、第二天再开"丢进度）',
+    file: F.store,
+    find: '    if (!get().isPlaying) get().persistSnapshot();',
+    replace: '    // 反证：暂停不存快照',
+    expect: ['RESTORE.snapshotPersisted'],
+  },
+  {
+    name: '快照不校验版本号（拿旧结构继续跑 → "恢复了但队列是空的"且不报错）',
+    file: F.store,
+    find: 'if (s.v !== SNAPSHOT_VERSION) return null;',
+    replace: '// 反证：不校验版本',
+    expect: ['RESTORE.snapshotVersioned'],
+  },
+  {
+    name: '截断队列时不重算 index（当前歌被截出窗口 → 恢复后停在一首无关的歌上）',
+    file: F.store,
+    find: 'return { queue: queue.slice(start, start + max), index: index - start };',
+    replace: 'return { queue: queue.slice(start, start + max), index };',
+    expect: ['RESTORE.truncateKeepsCurrent'],
+  },
+  {
+    name: '切平台时不存 playbackSource（重启后恒为网易云 → 恢复按错平台校验登录态）',
+    file: F.store,
+    find: '    savePrefs({ playbackSource: p });',
+    replace: '    // 反证：不存平台偏好',
+    expect: ['RESTORE.playbackSourcePersisted'],
+  },
+  {
+    // 这一条是 Q1 的核心：把「探不动」当「登出」→ 用户一断网就丢播放进度
+    name: '把「探测失败」也判成明确未登录（断网即清快照，Q1 语义反了）',
+    file: F.store,
+    find: "  if (info === null || info === undefined) return 'probe_failed';",
+    replace: "  if (info === null || info === undefined) return 'logged_out';",
+    expect: ['RESTORE.verdictThreeStates'],
+  },
+  {
+    name: '恢复时不传 autoplay:false（重开应用直接自动播放，违背需求）',
+    file: F.store,
+    find: '      autoplay: false,\n      expand: false,\n      resumeAtMs: snap.progressMs,',
+    replace: '      expand: false,\n      resumeAtMs: snap.progressMs,',
+    expect: ['RESTORE.restoredPaused'],
+  },
+  {
+    // 只保留快照不退回闸：断网时第一次进屏就把闸关死，网络好了也永不再试
+    name: '探针失败时不把「只跑一次」的闸退回 false（断网一次 → 恢复功能永久失效）',
+    file: F.store,
+    find: '      set({ restoreAttempted: false });',
+    replace: '      // 反证：不退回闸',
+    expect: ['RESTORE.probeFailKeepsSnapshot'],
+  },
+  {
+    // 闸只开不关：用户之后正常播放遇到一次网络抖动，就会静默遍历整个队列并清空
+    name: 'URL 解析抛错时不关恢复态（playUrl 永不设置 → 没有任何路径会关闸）',
+    file: F.store,
+    find: '      set({ isPlaying: false, restoring: false });',
+    replace: '      set({ isPlaying: false });',
+    expect: ['RESTORE.restoringClosed'],
+  },
+  {
+    name: '不在 loadedmetadata 后定位（全新加载时设 currentTime 会被静默忽略 → 从 0 开始）',
+    file: F.kernel,
+    find: '          a.currentTime = resumeAtMs / 1000;\n',
+    replace: '          // 反证：不定位\n',
+    expect: ['RESTORE.seekAfterMetadata'],
+  },
+  {
+    // 本地文件被移走时若走 CORS 降级，会 markNotWirable → 常驻 audio 元素永久失去音频图
+    name: '本地文件也走 CORS 降级（文件被移走时会把 audio 永久标记为不可接管 → 音量失效）',
+    file: F.kernel,
+    find: 'if (corsMode && a && !isLocalFile) {',
+    replace: 'if (corsMode && a) {',
+    expect: ['RESTORE.localSkipsCorsFallback'],
+  },
+  {
+    // Q4：写死 10 → 恢复时"整条队列都失败"永远走不到清空那一步
+    name: '恢复态的跳歌上限写死 10 首（遍历不完就停 → 该清的队列没清）',
+    file: F.store,
+    find: 'const skipLimit = restoring ? Math.max(1, get().queue.length) : 10;',
+    replace: 'const skipLimit = 10;',
+    expect: ['RESTORE.skipLimitRestoring'],
+  },
+  {
+    name: '去掉「本次会话只恢复一次」的闸（切走再切回会重复恢复并覆盖用户的操作）',
+    file: F.store,
+    find: '    if (get().restoreAttempted) return;',
+    replace: '    // 反证：无闸',
+    expect: ['RESTORE.onlyOnce'],
   },
 ];
 
