@@ -15,6 +15,8 @@
     "e2e": "node scripts/e2e.mjs",
     "check:tls": "node scripts/tls-check.mjs",
     "check:ia": "node scripts/ia-structure-check.mjs",
+    "check:music": "node scripts/music-platform-check.mjs",
+    "check:music:refute": "node scripts/music-platform-check.mjs --refute",
     "capture": "node scripts/capture.mjs",
     "probe:png": "node scripts/make-probe-png.mjs",
     "app": "npm --prefix app run tauri dev",
