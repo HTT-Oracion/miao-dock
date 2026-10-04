@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { fmtTime } from '@music/store';
 import { providerLabel } from '@music/platform';
 import type { Song } from '@music/types';
+import { useSongMenu } from '@screens/music/SongMenu';
 
 /**
  * 音乐屏共享小组件 —— 只放**音乐语义**的东西。
@@ -50,6 +51,13 @@ export function Cover({ url, className }: { url: string; className?: string }) {
  * 通用歌曲行（音乐语义 —— 参数是 `Song`，所以留在这里而不是 units）。
  * leading 给「序号 / 平台来源点」；meta 覆盖副标题（默认歌手）；actions 放右侧操作按钮，
  * 由调用方在小按钮上自行 stopPropagation —— 这里不替调用方假设哪些点击要冒泡。
+ *
+ * ## `onPlay` 为什么与 `onClick` 分开给（而不是让右键菜单直接复用 onClick）
+ * 两个参数**通常指向同一个回调**，但语义不同：`onClick` 是"左键点这一行"，
+ * `onPlay` 是"菜单里选播放"。分开的意义在于——宿主不传 `onPlay` 时，
+ * 菜单要退回 `playSong(song)`，而不是去猜行点击的语义（有些列表的行点击是下钻，
+ * 比如歌单行点击=打开歌单，那时候 onPlay 就绝不能等于 onClick）。
+ * 所以这里只做一件事：宿主给了就原样用，没给就走兜底。
  */
 export function SongRow({
   song,
@@ -59,6 +67,7 @@ export function SongRow({
   meta,
   actions,
   onClick,
+  onPlay,
   showCover = true,
   duration,
 }: {
@@ -69,13 +78,20 @@ export function SongRow({
   meta?: ReactNode;
   actions?: ReactNode;
   onClick?: () => void;
+  onPlay?: () => void;
   showCover?: boolean;
   duration?: number;
 }) {
+  // 菜单由行自己持有：一行一个菜单实例，互不干扰；开关与定位的机制在 useSongMenu 里只有一份
+  const menu = useSongMenu();
   // Song.duration 的单位是**毫秒**（与 Rust models.rs 的契约一致），不要再乘 1000
   const durMs = duration ?? song.duration;
   return (
-    <div className={active ? 'music-row is-hot' : 'music-row'} onClick={onClick}>
+    <div
+      className={active ? 'music-row is-hot' : 'music-row'}
+      onClick={onClick}
+      onContextMenu={(e) => menu.open(e, song, onPlay)}
+    >
       {leading}
       {showCover ? <Cover url={cover ?? ''} /> : null}
       <div className="music-row-tx">
@@ -84,6 +100,8 @@ export function SongRow({
       </div>
       {durMs ? <span className="music-dur">{fmtTime(durMs)}</span> : null}
       {actions ? <div className="music-row-act">{actions}</div> : null}
+      {/* 菜单 portal 到 body（列表是滚动容器，挂在行内会被裁掉）—— 放这里只为复用同一份开关逻辑 */}
+      {menu.node}
     </div>
   );
 }

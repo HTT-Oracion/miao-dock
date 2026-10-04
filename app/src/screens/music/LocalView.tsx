@@ -67,12 +67,15 @@ export function LocalView() {
           renderItem={(info, i) => {
             const s = localQueue[i];
             if (!s) return null; // 理论上同序等长；不同步时跳过而不是崩
+            // 本地曲库：把整份本地列表设为队列（与左键点行同一个回调）
+            const play = () => void playQueue(localQueue, i);
             return (
               <SongRow
                 song={s}
                 cover={s.cover}
                 active={currentSong ? songKey(currentSong) === songKey(s) : false}
-                onClick={() => void playQueue(localQueue, i)}
+                onClick={play}
+                onPlay={play}
                 actions={
                   <IconButton
                     title="从本地曲库移除"

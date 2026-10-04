@@ -3573,3 +3573,52 @@
 }
 .music-toast.is-warning { background: var(--md-warning); }
 .music-toast.is-success { background: var(--md-success); color: var(--md-on-accent); }
+
+/* ---------------------------------------------------------------- 歌曲右键菜单 */
+/*
+ * 视觉语汇**逐值照抄** .ui-select-menu（surface 底 + line 描边 + 同一道阴影 +
+ * radius-sm + 11.5px）：同一个应用里不该出现两种弹层，下拉与右键菜单是同一种东西。
+ *
+ * 位置由 JS 按光标算好后写进 inline style（left/top），所以这里只声明 `fixed` ——
+ * 菜单 portal 到 body，坐标系就是视口，不受任何滚动容器的 transform/overflow 影响。
+ *
+ * z-index 78：必须高于队列抽屉（72）与展开播放器（70），否则在抽屉里右键看不到菜单；
+ * 又必须低于模态层（80），菜单不该盖住确认对话框。
+ */
+.music-menu {
+  position: fixed;
+  z-index: 78;
+  min-width: 148px;
+  padding: 4px;
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-sm);
+  box-shadow: 0 8px 22px rgba(20, 15, 41, 0.14);
+  font-family: var(--md-font-body);
+  font-size: 11.5px;
+  color: var(--md-ink);
+  overflow: hidden;
+}
+/* 菜单项一律用 button：自带键盘可达与焦点环，且不会继承行的点击行为。
+   高度 26 / 圆角 / hover 底色都与 .ui-select-item 对齐。 */
+.music-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--md-radius-xs);
+  background: transparent;
+  color: var(--md-ink);
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.music-menu-item:hover {
+  background: var(--md-surface-2);
+  color: var(--md-pink);
+}

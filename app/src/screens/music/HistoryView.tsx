@@ -38,6 +38,8 @@ export function HistoryView() {
           itemKey={(entry) => `${entry.song.provider}:${entry.song.id}`}
           renderItem={(entry) => {
             const s = entry.song;
+            // 历史里点一首 = 单曲播放并标记来源（不带队列，故不能是 playQueue）
+            const play = () => void playSong(s, undefined, { fromHistory: true });
             return (
               <SongRow
                 song={s}
@@ -51,7 +53,8 @@ export function HistoryView() {
                   </span>
                 }
                 meta={`${s.artist} · ${relTime(entry.playedAt)}`}
-                onClick={() => void playSong(s, undefined, { fromHistory: true })}
+                onClick={play}
+                onPlay={play}
                 actions={
                   <>
                     <IconButton

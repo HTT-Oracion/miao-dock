@@ -137,12 +137,15 @@ function SearchResults() {
         onNearEnd={hasMore && !loadingMore ? () => void loadMore() : undefined}
         renderItem={(s, i) => {
           const liked = likedSet.has(s.id);
+          // 搜索结果里点一首 = 把整个结果集设为队列（与左键点行同一个回调）
+          const play = () => void playQueue(results, i);
           return (
             <SongRow
               song={s}
               cover={coverProxyUrl(s.cover, proxyPort)}
               active={currentSong ? songKey(currentSong) === songKey(s) : false}
-              onClick={() => void playQueue(results, i)}
+              onClick={play}
+              onPlay={play}
               actions={
                 <>
                   <IconButton
@@ -168,7 +171,7 @@ function SearchResults() {
                     title="播放"
                     onClick={(e) => {
                       e.stopPropagation();
-                      void playQueue(results, i);
+                      play();
                     }}
                   >
                     <Play size={13} />
@@ -285,14 +288,19 @@ function RightTracksView() {
             resetKey={meta?.id ?? 'right-tracks'}
             itemKey={(s, i) => `${s.provider}:${s.id}:${i}`}
             onNearEnd={loadingMore ? undefined : () => void loadMore()}
-            renderItem={(s, i) => (
-              <SongRow
-                song={s}
-                cover={coverProxyUrl(s.cover, proxyPort)}
-                active={currentSong ? songKey(currentSong) === songKey(s) : false}
-                onClick={() => void playQueue(tracks, i)}
-              />
-            )}
+            renderItem={(s, i) => {
+              // 榜单/歌单曲目：把整张单子设为队列
+              const play = () => void playQueue(tracks, i);
+              return (
+                <SongRow
+                  song={s}
+                  cover={coverProxyUrl(s.cover, proxyPort)}
+                  active={currentSong ? songKey(currentSong) === songKey(s) : false}
+                  onClick={play}
+                  onPlay={play}
+                />
+              );
+            }}
           />
           {total > 0 && tracks.length < total ? (
             <div className="music-more">{loadingMore ? '加载中…' : '上滑加载更多'}</div>
@@ -340,14 +348,19 @@ function DailyView() {
           items={songs}
           resetKey="daily"
           itemKey={(s, i) => `${s.provider}:${s.id}:${i}`}
-          renderItem={(s, i) => (
-            <SongRow
-              song={s}
-              cover={coverProxyUrl(s.cover, proxyPort)}
-              active={currentSong ? songKey(currentSong) === songKey(s) : false}
-              onClick={() => void playQueue(songs, i)}
-            />
-          )}
+          renderItem={(s, i) => {
+            // 每日推荐：把推荐列表设为队列
+            const play = () => void playQueue(songs, i);
+            return (
+              <SongRow
+                song={s}
+                cover={coverProxyUrl(s.cover, proxyPort)}
+                active={currentSong ? songKey(currentSong) === songKey(s) : false}
+                onClick={play}
+                onPlay={play}
+              />
+            );
+          }}
         />
       )}
     </div>

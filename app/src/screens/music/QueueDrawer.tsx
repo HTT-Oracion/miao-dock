@@ -1,13 +1,20 @@
 import { ListMusic, Trash2, X } from 'lucide-react';
 import { fmtTime, songKey, useMusicStore } from '@music/store';
 import { Empty, IconButton, VirtualList } from '@components/units';
+import { useSongMenu } from '@screens/music/SongMenu';
 
 /**
  * 播放队列抽屉（右侧 340px）。
  * 当前项用 currentIndex 高亮 —— 不比较歌曲对象：队列里可能有同 id 多次出现的场景，
  * 下标才是「正在播哪一行」的唯一答案。Esc 关闭由 MusicScreen 统一挂（避免每个浮层各挂一个监听）。
+ *
+ * 行上的右键菜单与歌曲行走同一套 `useSongMenu`，但**不给 onPlay**：
+ * 队列行的左键语义是 `playSong(s)`（不带队列 = 在现有队列里定位），
+ * 菜单的「播放」必须和它一致，所以让菜单走兜底的 `playSong(song)`。
  */
 export function QueueDrawer() {
+  // hook 必须在组件顶层调用：renderItem 是回调，放进去会随渲染行数变化破坏 hook 顺序
+  const menu = useSongMenu();
   const queueOpen = useMusicStore((s) => s.queueOpen);
   const queue = useMusicStore((s) => s.queue);
   const currentIndex = useMusicStore((s) => s.currentIndex);
@@ -47,6 +54,7 @@ export function QueueDrawer() {
               <div
                 className={i === currentIndex ? 'music-qrow is-hot' : 'music-qrow'}
                 onClick={() => void playSong(s)}
+                onContextMenu={(e) => menu.open(e, s)}
               >
                 <span className="music-qrow-ix">{i === currentIndex ? '♪' : i + 1}</span>
                 <div className="music-row-tx">
@@ -68,6 +76,8 @@ export function QueueDrawer() {
           />
         )}
       </div>
+      {/* 菜单 portal 到 body —— 队列列表自身是滚动容器，挂在行内会被裁掉 */}
+      {menu.node}
     </>
   );
 }

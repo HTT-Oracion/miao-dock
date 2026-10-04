@@ -155,14 +155,20 @@ function LeftTracksView() {
             resetKey={meta?.id ?? 'left-tracks'}
             itemKey={(s, i) => `${s.provider}:${s.id}:${i}`}
             onNearEnd={loadingMore ? undefined : () => void loadMore()}
-            renderItem={(s, i) => (
-              <SongRow
-                song={s}
-                cover={coverProxyUrl(s.cover, proxyPort)}
-                active={currentSong ? songKey(currentSong) === songKey(s) : false}
-                onClick={() => void playQueue(tracks, i)}
-              />
-            )}
+            renderItem={(s, i) => {
+              // 「播放」在歌单曲目里的语义是"把整个歌单设为队列并从这一首开始" ——
+              // 左键点行与右键菜单的「播放」必须是同一个回调，否则两处行为会各走各的
+              const play = () => void playQueue(tracks, i);
+              return (
+                <SongRow
+                  song={s}
+                  cover={coverProxyUrl(s.cover, proxyPort)}
+                  active={currentSong ? songKey(currentSong) === songKey(s) : false}
+                  onClick={play}
+                  onPlay={play}
+                />
+              );
+            }}
           />
           {total > 0 && tracks.length < total ? (
             <div className="music-more">{loadingMore ? '加载中…' : '上滑加载更多'}</div>
