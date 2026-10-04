@@ -299,6 +299,26 @@ export function dailySongs(provider: MusicProvider): Promise<Song[]> {
   return Promise.resolve([]);
 }
 
+/**
+ * 相似歌曲（心动模式的续播来源）。
+ *
+ * **仅网易云可得**：它的 `/api/v1/discovery/simiSong` 支持"传入 songid 返回相似歌曲"。
+ * 酷狗的 `guess_like` 是"全站个人 FM"、**不接收 songid**；QQ / 咪咕无对应接口。
+ * 所以其余平台返回空数组，由调用方**降级为随机**。
+ *
+ * ⚠️ 不要用「同歌手 / 同歌单 / 每日推荐」冒充"相似" —— 那是歌手循环或歌单循环，
+ * 语义完全不同，用户点开就知道不对。
+ */
+export function similarSongs(provider: MusicProvider, songId: string, limit = 20): Promise<Song[]> {
+  if (provider === 'netease') return ipc.musicSimiSong(songId, limit);
+  return Promise.resolve([]);
+}
+
+/** 该平台是否支持"按歌曲取相似"（UI 据此提示用户，不做无声降级） */
+export function supportsSimilar(provider: MusicProvider): boolean {
+  return provider === 'netease';
+}
+
 // ------------------------------------------------------------------ 账号 / 登录
 
 export function userPlaylists(provider: MusicProvider): Promise<Playlist[]> {

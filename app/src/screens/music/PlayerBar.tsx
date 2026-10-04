@@ -1,8 +1,8 @@
-import { ListMusic, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
+import { ListMusic, Pause, Play, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
 import { useState } from 'react';
 import { QUALITY_OPTIONS } from '@music/player-options';
 import { fmtTime, qualityLabel, useMusicStore } from '@music/store';
-import { IconButton, Select } from '@components/units';
+import { IconButton, PlayModeButton, Select } from '@components/units';
 
 /**
  * 底部播放条。
@@ -50,10 +50,6 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
    */
   const [dragMs, setDragMs] = useState<number | null>(null);
 
-  const modeTitle = playMode === 'one' ? '单曲循环' : playMode === 'shuffle' ? '随机播放' : '列表循环';
-  const modeIcon =
-    playMode === 'one' ? <Repeat1 size={16} /> : playMode === 'shuffle' ? <Shuffle size={16} /> : <Repeat size={16} />;
-
   // 拖拽中显示本地值，否则显示 store 的实时进度；同时夹住上界，避免 duration 尚未就绪时滑块越界。
   const shownMs = dragMs ?? Math.min(progressMs, Math.max(durationMs, 1));
 
@@ -93,9 +89,7 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
           <IconButton title="下一首" onClick={() => next()}>
             <SkipForward size={17} />
           </IconButton>
-          <IconButton title={modeTitle} onClick={() => cycleMode()}>
-            {modeIcon}
-          </IconButton>
+          <PlayModeButton mode={playMode} onCycle={() => cycleMode()} />
           <IconButton title="播放队列" onClick={() => setQueueOpen(true)}>
             <ListMusic size={16} />
           </IconButton>

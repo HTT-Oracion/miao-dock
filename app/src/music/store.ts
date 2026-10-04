@@ -376,6 +376,8 @@ interface MusicState {
   togglePlay: () => void;
   next: () => void;
   prev: () => void;
+  /** 心动模式取不到相似歌曲时的降级：按队列顺序取下一首（不随机） */
+  fallbackNext: () => void;
   seek: (ms: number) => void;
   setVolume: (v: number) => void;
   /** 静音/取消静音（不改 volume，见 `muted` 字段注释） */
@@ -821,13 +823,59 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   next: () => {
     const { queue, currentIndex, playMode } = get();
     if (queue.length === 0) return;
+
+    // 心动模式：播完当前这首后，按它找相似歌曲续播，**并把相似结果替换成新队列**。
+    // 为什么替换而不是追加：心动模式是"顺着当前这首歌往下听"，队列会越滚越杂；
+    // 而每次替换都让队列变成"这一串都是相似歌"，语义与体验都更稳。
+    // 降级：非网易云无"按 songid 找相似"接口 → 退化为随机（与 shuffle 同语义），
+    // **不拿同歌手/同歌单冒充相似**。切换该档时已提示过用户，这里不再重复弹提示。
+    if (playMode === 'heartbeat' && platform.supportsSimilar(get().playbackSource)) {
+      const cur = queue[currentIndex];
+      if (!cur) {
+        get().toast('心动模式需要先有一首歌在播');
+        return;
+      }
+      void (async () => {
+        try {
+          const similar = await platform.similarSongs(get().playbackSource, cur.id, 20);
+          // 排除当前这首与空结果：接口可能把它自己也算进"相似"里
+          const pick = similar.filter((s) => songKey(s) !== songKey(cur));
+          if (pick.length === 0) {
+            get().toast('没有找到相似歌曲，已切回队列下一首');
+            get().fallbackNext();
+            return;
+          }
+          const nextSong = pick[0];
+          // 用相似列表当新队列，并跳到第一首；expand:false —— 自动续播不该弹开播放器
+          await get().playSong(nextSong, pick, { expand: false });
+        } catch (e) {
+          get().toast(`找相似歌曲失败：${String(e)}`);
+          get().fallbackNext();
+        }
+      })();
+      return;
+    }
+
     let idx = currentIndex;
-    if (playMode === 'shuffle') {
+    if (playMode === 'shuffle' || playMode === 'heartbeat') {
+      // heartbeat 走到这里 = 平台不支持相似（已提示过），按随机处理
       idx = queue.length === 1 ? 0 : Math.floor(Math.random() * queue.length);
     } else {
       idx = (currentIndex + 1) % queue.length;
     }
     // expand:false —— 自动切歌不该把播放器弹开（含 onEnded 自动续播与无版权自动跳过）
+    void get().playSong(queue[idx], undefined, { expand: false });
+  },
+
+  /**
+   * 按现有队列顺序取下一首 —— 供"心动模式拿不到相似歌曲"时降级调用。
+   * 单独成 action 而不是给 next 加参数：调用点（相似接口失败）需要明确表达
+   * "我不是要随机，我要队列的下一首"，让降级路径在代码里一眼可辨。
+   */
+  fallbackNext: () => {
+    const { queue, currentIndex } = get();
+    if (queue.length === 0) return;
+    const idx = (currentIndex + 1) % queue.length;
     void get().playSong(queue[idx], undefined, { expand: false });
   },
 
@@ -878,11 +926,19 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   },
 
   cycleMode: () => {
-    // 心动模式（heartbeat）需相似歌曲续播，本轮未接；顺序：列表 → 随机 → 单曲
-    const order: PlayMode[] = ['list', 'shuffle', 'one'];
+    // 四档循环：列表 → 随机 → 单曲 → 心动 → 列表
+    // ⚠️ 心动模式（heartbeat）的语义是"按当前歌曲找相似续播"，**仅网易云可得**。
+    // 其余平台会降级为随机（见 next 的 heartbeat 分支），所以切换到心动档时
+    // 必须提示用户，否则他会以为在听"相似歌曲"、实际听的是随机 —— 这与假控件同级的问题。
+    const order: PlayMode[] = ['list', 'shuffle', 'one', 'heartbeat'];
     const nextMode = order[(order.indexOf(get().playMode) + 1) % order.length];
     set({ playMode: nextMode });
     savePrefs({ playMode: nextMode });
+    if (nextMode === 'heartbeat' && !platform.supportsSimilar(get().playbackSource)) {
+      get().toast(
+        `${platform.providerLabel(get().playbackSource)} 没有"按歌曲找相似"的能力，已降级为随机播放`,
+      );
+    }
   },
 
   setPlaybackQuality: async (q) => {

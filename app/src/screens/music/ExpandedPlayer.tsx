@@ -1,10 +1,10 @@
-import { ChevronLeft, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Volume2 } from 'lucide-react';
+import { ChevronLeft, Pause, Play, SkipBack, SkipForward, Volume2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { capsOf } from '@music/platform';
 import { SKINS } from '@music/player-options';
 import { coverProxyUrl, fmtTime, lyricIndexAt, songKey, useMusicStore } from '@music/store';
 import type { MusicComment } from '@music/types';
-import { Empty, IconButton } from '@components/units';
+import { Empty, IconButton, PlayModeButton } from '@components/units';
 import { useCoverColor } from '@hooks/useCoverColor';
 
 /**
@@ -135,9 +135,6 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
 
   if (!expanded) return null;
 
-  const modeIcon =
-    playMode === 'one' ? <Repeat1 size={16} /> : playMode === 'shuffle' ? <Shuffle size={16} /> : <Repeat size={16} />;
-
   const showComments = commentTab === 'comments';
 
   return (
@@ -234,9 +231,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
             <IconButton title="下一首" onClick={() => next()}>
               <SkipForward size={17} />
             </IconButton>
-            <IconButton title="播放模式" onClick={() => cycleMode()}>
-              {modeIcon}
-            </IconButton>
+            <PlayModeButton mode={playMode} onCycle={() => cycleMode()} />
           </div>
           <div className="music-exp-vol">
             <Volume2 size={15} />

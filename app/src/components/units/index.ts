@@ -22,6 +22,7 @@ export { Badge, Btn, Dot, MagicCircle, Pill } from '@components/units/atoms';
 export { ColorPicker } from '@components/units/ColorPicker';
 export { Empty } from '@components/units/Empty';
 export { IconButton } from '@components/units/IconButton';
+export { PlayModeButton } from '@components/units/PlayModeButton';
 export { Range } from '@components/units/Range';
 export { Select } from '@components/units/Select';
 export { Swatches } from '@components/units/Swatches';
