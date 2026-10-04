@@ -594,6 +594,11 @@ interface MusicState {
    */
   playSong: (song: Song, queue?: Song[], opts?: { fromHistory?: boolean; expand?: boolean }) => Promise<void>;
   playQueue: (songs: Song[], startIndex: number, opts?: { expand?: boolean }) => Promise<void>;
+  /**
+   * 「下一首播放」：把这首歌插到**当前播放的下一首**位置。
+   * 与 `appendToQueue`（加进队尾）是两种不同的用户意图，所以刻意分成两个 action。
+   */
+  playNext: (song: Song) => void;
   togglePlay: () => void;
   next: () => void;
   prev: () => void;
@@ -1074,8 +1079,26 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       const idx = queue.findIndex((s) => songKey(s) === songKey(song));
       set({ queue, currentIndex: idx >= 0 ? idx : 0 });
     } else {
+      /**
+       * 没给队列 → 在**现有队列**里移动指针。
+       *
+       * ⚠️ 找不到时**不能什么都不做**（这里曾是一个真实缺陷）：
+       * 从「播放历史」点一首不在当前队列里的歌，`findIndex` 返回 -1，
+       * 于是队列与 currentIndex 都不动 —— 结果 `currentSong` 是这首歌、
+       * 而 `queue[currentIndex]` 指向**另一首**：点「下一首」从错误位置往后走，
+       * 队列抽屉高亮的也不是正在播的那首。**自相矛盾的状态，且不报错。**
+       * 对齐网易云的做法：把这首歌**接进队列**。
+       */
       const idx = get().queue.findIndex((s) => songKey(s) === songKey(song));
-      if (idx >= 0) set({ currentIndex: idx });
+      if (idx >= 0) {
+        set({ currentIndex: idx });
+      } else {
+        // 队列满（2000 首，极少见）时退化成"以这首歌开一个新队列"，
+        // 而不是静默丢弃 —— 用户点了播放却什么都没发生是最难解释的行为。
+        const cur = get().queue;
+        const next = cur.length >= MAX_PLAY_QUEUE ? [song] : [...cur, song];
+        set({ queue: next, currentIndex: next.length - 1 });
+      }
     }
 
     if (!isAutoSkipping) unplayableSkipCount = 0;
@@ -1438,6 +1461,33 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     if (unique.length === 0) return;
     const remaining = MAX_PLAY_QUEUE - queue.length;
     set({ queue: [...queue, ...unique.slice(0, Math.max(0, remaining))] });
+  },
+
+  playNext: (song) => {
+    const { queue, currentSong } = get();
+    const key = songKey(song);
+
+    // 边界 ①：这首歌**就是正在播的那首**。
+    // 不能按常规流程"摘掉再插" —— 摘掉会把当前项从队列里删掉，于是 `currentSong` 在播、
+    // 队列里却找不到它（自相矛盾，且 `removeFromQueue` 那类逻辑会开始出错）。
+    if (currentSong && songKey(currentSong) === key) {
+      get().toast('这首歌正在播放');
+      return;
+    }
+
+    // 边界 ②：这首歌**已在队列里** → 先摘掉再插，否则队列里会出现两份。
+    // 注意这一步会让当前歌之后的所有项前移一位，所以**不能**用 `currentIndex + 1` 推插入点。
+    const without = queue.filter((s) => songKey(s) !== key);
+    const at = currentSong ? without.findIndex((s) => songKey(s) === songKey(currentSong)) : -1;
+    const insertAt = at >= 0 ? at + 1 : 0;
+    const next = [...without.slice(0, insertAt), song, ...without.slice(insertAt)];
+    set({ queue: next });
+    // 同理，currentIndex 也必须**按当前歌重新定位**，不能沿用旧值（那是位置漂移的来源）
+    if (currentSong) {
+      const idx = next.findIndex((s) => songKey(s) === songKey(currentSong));
+      if (idx >= 0) set({ currentIndex: idx });
+    }
+    get().toast('已添加到下一首播放');
   },
 
   removeFromQueue: (index) => {

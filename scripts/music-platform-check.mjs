@@ -1712,7 +1712,7 @@ function runAll(s) {
   return res;
 }
 
-const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS', 'AUDIO', 'SKIN'];
+const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS', 'AUDIO', 'SKIN', 'QUEUE'];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -1738,6 +1738,58 @@ function printGrouped(res) {
 }
 
 // ── 反证用例：{name, file, find, replace, expect:[断言 id]} ──────────────────
+// ============================ QUEUE（播放队列语义）============================
+// 这一组防的是「currentSong 与 queue[currentIndex] 不是同一首」这类
+// **不报错但状态自相矛盾**的故障：点「下一首」会从错误位置往后走、
+// 队列抽屉高亮的也不是正在播的那首 —— 用户只会觉得"有点怪"，说不出哪里错。
+//
+// ⚠️ 判据一律用 `methodBody` 取函数体再匹配：全文扫 `queue` / `filter` 这类词
+// 会被 store 里几十处其它代码命中（本项目已多次栽在"只判存在、不判作用域"）。
+
+add('QUEUE.adoptOutOfQueue', 'QUEUE', (s) => {
+  const body = methodBody(stripComments(s.store ?? ''), 'playSong');
+  if (!body) return { ok: false, detail: 'store 里取不到 playSong 的实现体' };
+  const missing = [];
+  // 不传 queue 的分支：在现有队列里找；**找不到必须把这首歌接进队列**。
+  // 此前此处"什么都不做"，于是从播放历史点一首队列外的歌会造成状态矛盾。
+  if (!/findIndex/.test(body)) missing.push('未在现有队列里查找');
+  // 只认 `set({ queue:` 这种**显式改队列**的写法：if 分支用的是 `queue,` 缩写，不会误命中
+  if (!/set\(\{[^}]*queue:/.test(body))
+    missing.push('不在队列时未写入 queue（currentSong 会与队列项不一致）');
+  if (!/MAX_PLAY_QUEUE/.test(body)) missing.push('未处理队列已满的边界');
+  return { ok: missing.length === 0, detail: missing.length ? `队列接纳：${missing.join('、')}` : '' };
+});
+
+add('QUEUE.playNextInsert', 'QUEUE', (s) => {
+  const body = methodBody(stripComments(s.store ?? ''), 'playNext');
+  if (!body) return { ok: false, detail: 'store 没有 playNext（右键「下一首播放」依赖它）' };
+  const missing = [];
+  // 已在队列里 → 必须先摘掉再插，否则同一首在队列里出现两份
+  if (!/filter\(\(s\)\s*=>\s*songKey\(s\)\s*!==\s*key\)/.test(body))
+    missing.push('未去重（同一首会在队列里出现两次）');
+  // 插入点必须"按当前歌在新数组里的位置 +1"算 —— 不能用 currentIndex + 1 推：
+  // 摘掉一项会让后面的项前移，那正是位置漂移的来源
+  if (!/at\s*>=\s*0\s*\?\s*at\s*\+\s*1\s*:\s*0/.test(body))
+    missing.push('插入点不是按当前歌重新算的（摘掉一项会让它漂移）');
+  if (!/currentIndex:\s*idx/.test(body)) missing.push('插完未重新定位 currentIndex');
+  return { ok: missing.length === 0, detail: missing.length ? `下一首播放：${missing.join('、')}` : '' };
+});
+
+add('QUEUE.playNextNoSelfRemove', 'QUEUE', (s) => {
+  const body = methodBody(stripComments(s.store ?? ''), 'playNext');
+  if (!body) return { ok: false, detail: 'store 没有 playNext' };
+  const guard = 'songKey(currentSong) === key';
+  const iGuard = body.indexOf(guard);
+  const iFilter = body.indexOf('filter(');
+  // 若对"正在播的那首"照常摘掉再插，会把当前项从队列里删掉
+  // → currentSong 在播、队列里却找不到它（与 adoptOutOfQueue 是同一类矛盾）
+  const ok = iGuard >= 0 && /return;/.test(body) && iGuard < iFilter;
+  return {
+    ok,
+    detail: ok ? '' : '未先判「这首歌正在播」就 return（会把当前项从队列里摘掉）',
+  };
+});
+
 const MUTATIONS = [
   {
     name: '删掉 platform.ts 里 search 的 migu 分支',
@@ -2437,6 +2489,27 @@ const MUTATIONS = [
     find: "  flex-direction: column;\n  z-index: 72;\n}",
     replace: "  flex-direction: column;\n  z-index: 60;\n}",
     expect: ["UI.drawerAboveExpanded"],
+  },
+  {
+    name: "不在队列的歌不接进队列（历史点歌会与 currentIndex 不一致）",
+    file: "app/src/music/store.ts",
+    find: "        set({ queue: next, currentIndex: next.length - 1 });",
+    replace: "        set({ currentIndex: next.length - 1 });",
+    expect: ["QUEUE.adoptOutOfQueue"],
+  },
+  {
+    name: "playNext 不去重（同一首会在队列里出现两次）",
+    file: "app/src/music/store.ts",
+    find: "    const without = queue.filter((s) => songKey(s) !== key);",
+    replace: "    const without = queue;",
+    expect: ["QUEUE.playNextInsert"],
+  },
+  {
+    name: "playNext 不判「正在播」就摘掉重插（把当前项从队列里删掉）",
+    file: "app/src/music/store.ts",
+    find: "      get().toast('这首歌正在播放');\n      return;",
+    replace: "      get().toast('这首歌正在播放');",
+    expect: ["QUEUE.playNextNoSelfRemove"],
   },
 ];
 
