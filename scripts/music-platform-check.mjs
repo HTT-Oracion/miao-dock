@@ -1713,6 +1713,212 @@ add('SKIN.vinylLayoutLeftAlign', 'SKIN', (s) => {
   return { ok: missing.length === 0, detail: missing.length ? `左对齐歌词：${missing.join('、')}` : '' };
 });
 
+// ============================ ISLANDV（灵动岛第 4 态 · 歌词卡）============================
+// 这一组防的是「歌词卡看着能跑、实际是空壳」这类**不报错**的故障：
+//   · 偏好没写 savePrefs            → 切到歌词卡后重开就回到播放卡（"切了没记住"）；
+//   · 没开唱时 activeIndex=-1       → 窗口切成空区间 → 卡片一片空白，而其它断言全绿；
+//   · 在灵动岛里又写一份逐字实现     → 两份推进逻辑迟早对不上（本项目明确禁止）；
+//   · 顺手把桌面歌词删了            → 砍桌面歌词是**独立一步**，由负责人真机确认后再做。
+//
+// ⚠️ 判据一律先 `stripComments`：本任务的注释里主动写出了被禁/被替代的写法
+// （如注释里提到 `lyricsFontSize`、桌面歌词提示文案），不剥注释会恒绿。
+// 判据涉及"某写法可能多处出现"时，一律限定作用域（methodBody / 指定文件），不全文扫。
+
+/** 灵动岛 / 逐字组件 / 主窗样式（本组多处要用，提到组级作用域） */
+const islSrc = (s) => stripComments(s.island ?? '');
+const karaSrc = (s) => stripComments(s.karaoke ?? '');
+
+add('ISLANDV.pref.type', 'ISLANDV', (s) => {
+  const store = stripComments(s.store ?? '');
+  // 必须是两个字面量的联合 —— 写成 `type IslandView = string` 等于没约束，
+  // localStorage 里的 'xxx' 会一路带进渲染层（枚举型偏好一律在类型层就收口）
+  const ok = /export type IslandView\s*=\s*'play'\s*\|\s*'lyrics'\s*;/.test(store);
+  return { ok, detail: ok ? '' : "store 没有 IslandView = 'play' | 'lyrics' 的联合类型" };
+});
+
+add('ISLANDV.pref.default', 'ISLANDV', (s) => {
+  const store = stripComments(s.store ?? '');
+  // 初值必须是 'play'（歌词卡是"用户自己切过去"的视图，不该是默认态）。
+  // 判据取状态对象里的形态 `  islandView: 'play',`（interface 声明以 `;` 结尾、不会命中）
+  const ok = /^ {2}islandView: 'play',$/m.test(store);
+  return { ok, detail: ok ? '' : "store 初始状态里 islandView 的默认值不是 'play'" };
+});
+
+add('ISLANDV.pref.hydrate', 'ISLANDV', (s) => {
+  const body = methodBody(stripComments(s.store ?? ''), 'hydratePrefs');
+  if (!body) return { ok: false, detail: 'store 里取不到 hydratePrefs 的实现体' };
+  const missing = [];
+  // 脏值回落：localStorage 里是 'xxx' 也必须落到 'play' ——
+  // 写成 `?? 'play'` 会把脏值原样读进内存，卡片按歌词态渲染却拿到空分支。
+  if (!/prefs\.islandView === 'lyrics' \? 'lyrics' : 'play'/.test(body))
+    missing.push('hydratePrefs 未把 islandView 收进白名单（脏值不回落）');
+  // `prefs.islandView ?? 'play'` 会把 'xxx' 这类脏值原样读进内存 —— 它不抛错，
+  // 只是卡片按歌词态渲染却拿到错误分支，是最难联想起因的一类故障
+  if (/islandView\s*\?\?/.test(body)) missing.push('islandView 用了 ?? 兜底（脏值会进内存）');
+  if (!/\bislandView,/.test(body)) missing.push('hydratePrefs 未把 islandView 写回 state');
+  return { ok: missing.length === 0, detail: missing.length ? `偏好水合：${missing.join('、')}` : '' };
+});
+
+add('ISLANDV.pref.persist', 'ISLANDV', (s) => {
+  const body = methodBody(stripComments(s.store ?? ''), 'setIslandView');
+  if (!body) return { ok: false, detail: 'store 没有 setIslandView 的实现体（只有 interface 声明不算）' };
+  // patch 键必须就是这个字段：既证明调了 savePrefs，也证明写对了键
+  const ok = /savePrefs\(\s*\{\s*islandView\s*:/.test(body);
+  return { ok, detail: ok ? '' : 'setIslandView 未调用 savePrefs({ islandView: … })（切了不记住）' };
+});
+
+add('ISLANDV.reuseKaraoke', 'ISLANDV', (s) => {
+  const isl = islSrc(s);
+  const missing = [];
+  if (!/import \{ KaraokeLyrics \} from '@screens\/music\/KaraokeLyrics';/.test(isl))
+    missing.push('灵动岛未 import KaraokeLyrics');
+  if (!/<KaraokeLyrics\b/.test(isl)) missing.push('灵动岛未渲染 <KaraokeLyrics>');
+  // 反向判据：灵动岛里**不得**出现逐字实现的内部件 —— 出现即说明又写了第二份
+  for (const bad of ['getLineProgress', 'lyricIndexAt', 'kara-over']) {
+    if (new RegExp(`\\b${esc(bad)}\\b`).test(isl))
+      missing.push(`灵动岛里出现了逐字实现的内部件 ${bad}（= 第二份逐字实现）`);
+  }
+  return { ok: missing.length === 0, detail: missing.length ? `复用逐字实现：${missing.join('、')}` : '' };
+});
+
+add('ISLANDV.windowMode', 'ISLANDV', (s) => {
+  const kara = karaSrc(s);
+  const missing = [];
+  // 两个参数都得是**可选**（默认 undefined / true = 展开播放器的既有行为不变）
+  if (!/windowSize\?: number;/.test(kara)) missing.push('KaraokeLyrics 没有 windowSize 可选参数');
+  if (!/scroll\?: boolean;/.test(kara)) missing.push('KaraokeLyrics 没有 scroll 开关');
+  // 只断言"参数存在"不够：定义了却没用等于没有 —— 判据要落到使用点
+  if (!/const winStart = windowSize && windowSize > 0 \?/.test(kara))
+    missing.push('windowSize 未参与渲染区间的计算');
+  if (!/if \(!scroll\) return;/.test(kara)) missing.push('scroll 未作用于 scrollIntoView');
+  return { ok: missing.length === 0, detail: missing.length ? `窗口模式：${missing.join('、')}` : '' };
+});
+
+add('ISLANDV.windowIdleStart', 'ISLANDV', (s) => {
+  // ★ 本组最关键的一条：还没唱到第一句（前奏 / 间奏 / 刚起播）时 `activeIndex === -1`，
+  // 窗口起点若直接取它，切片拿到的是 `[-1, 1)` 这样的**空区间** —— 歌词卡一片空白，
+  // 而「有 windowSize 参数」「引用了 KaraokeLyrics」这些断言**全部照样绿**。
+  const kara = karaSrc(s);
+  const m = /const winStart\s*=\s*([^;]+);/.exec(kara);
+  if (!m) return { ok: false, detail: 'KaraokeLyrics 里取不到 winStart 的计算（窗口模式没实现）' };
+  // 必须把负的 activeIndex 夹回 0（两种等价写法都接受，避免把判据绑死在某一种实现上）
+  const expr = m[1];
+  const clamped = /Math\.max\(0,\s*activeIndex\)/.test(expr) || /activeIndex\s*<\s*0\s*\?\s*0/.test(expr);
+  if (!clamped)
+    return { ok: false, detail: `winStart 未把 -1 夹回 0（未开唱时歌词卡会是空的）：${expr.trim()}` };
+  // 终点也要夹住，否则最后一句之后会越界（同样是不报错、只是少一行）
+  const mEnd = /const winEnd\s*=\s*([^;]+);/.exec(kara);
+  if (!mEnd || !/Math\.min\(lines\.length/.test(mEnd[1]))
+    return { ok: false, detail: 'winEnd 未夹到 lines.length（末尾会越界）' };
+  return { ok: true, detail: '' };
+});
+
+add('ISLANDV.twoRows', 'ISLANDV', (s) => {
+  const isl = islSrc(s);
+  // 卡片只有 150 高，窗口行数写大就装不下
+  if (!/const ISLAND_LYR_WINDOW = 2;/.test(isl))
+    return { ok: false, detail: '灵动岛歌词窗口不是 2 行（150px 高的卡片装不下更多）' };
+  // ⚠️ 作用域限定在 `<KaraokeLyrics … />` 这**一段**：只判"文件里出现过 windowSize"
+  // 会被 KaraokeLyrics 自己的 props 声明喂成假绿（灵动岛其实根本没传）。
+  const call = /<KaraokeLyrics[\s\S]*?\/>/.exec(isl);
+  if (!call) return { ok: false, detail: '灵动岛里取不到 <KaraokeLyrics … /> 的调用段' };
+  const tag = call[0];
+  const missing = [];
+  if (!/windowSize=\{/.test(tag)) missing.push('灵动岛未传 windowSize');
+  // 关掉滚动：小盒子里 scrollIntoView 会把布局顶歪
+  if (!/scroll=\{false\}/.test(tag)) missing.push('歌词卡未关闭 scrollIntoView');
+  return { ok: missing.length === 0, detail: missing.length ? `歌词两行：${missing.join('、')}` : '' };
+});
+
+add('ISLANDV.pureMusic', 'ISLANDV', (s) => {
+  const isl = islSrc(s);
+  const css = s.css ?? '';
+  const missing = [];
+  if (!/♪ 纯音乐，请欣赏/.test(isl)) missing.push('歌词卡缺纯音乐降级文案');
+  if (!/\.di-lyr-empty\s*\{/.test(css)) missing.push('app.css 缺 .di-lyr-empty 样式');
+  // 文案必须挂在「无歌词」分支**里**：无条件渲染会与真歌词叠在一起（两行字糊在一块）
+  if (!/lines\.length\s*>\s*0\s*\?[\s\S]*?♪ 纯音乐，请欣赏/.test(isl))
+    missing.push('降级文案不在「无歌词」分支里');
+  return { ok: missing.length === 0, detail: missing.length ? `纯音乐降级：${missing.join('、')}` : '' };
+});
+
+add('ISLANDV.toggleBothWays', 'ISLANDV', (s) => {
+  const isl = islSrc(s);
+  const missing = [];
+  // 双向：歌词态要能回播放卡，播放态要能进歌词卡 —— 只做一个方向 = 进去出不来
+  if (!/title=\{view === 'lyrics' \? '播放' : '歌词'\}/.test(isl))
+    missing.push('切换键的 title 不是双向的');
+  if (!/view === 'lyrics' \? <Play[\s\S]{0,60}?:\s*<ListMusic/.test(isl))
+    missing.push('切换键的图标不是双向的（歌词态→播放、播放态→歌词）');
+  if (!/onToggleView=\{toggleIslandView\}/.test(isl)) missing.push('切换键未接回写偏好的 action');
+  return { ok: missing.length === 0, detail: missing.length ? `视图切换：${missing.join('、')}` : '' };
+});
+
+add('ISLANDV.cardSize', 'ISLANDV', (s) => {
+  const isl = islSrc(s);
+  const missing = [];
+  // 歌词卡与大卡共用同一组常量（320×150）：另立一套尺寸会让 hover 收展的形变对不上
+  if (!/const EXPANDED_WIDTH = 320;/.test(isl)) missing.push('展开宽不是 320');
+  if (!/const MUSIC_EXPANDED_HEIGHT = 150;/.test(isl)) missing.push('音乐卡展开高不是 150');
+  // 高度分支必须仍取这个常量（常量改了而计算式没跟上、或反过来，都会给出第三个尺寸）
+  if (!/\? MUSIC_EXPANDED_HEIGHT/.test(isl))
+    missing.push('音乐卡展开高度不再取 MUSIC_EXPANDED_HEIGHT');
+  return { ok: missing.length === 0, detail: missing.length ? `歌词卡尺寸：${missing.join('、')}` : '' };
+});
+
+add('ISLANDV.hlVarInjected', 'ISLANDV', (s) => {
+  // 高亮色/正文色/字号必须**在灵动岛自己注入一遍**：展开播放器把它们注入在 .music-exp
+  // 根上靠继承下传，而灵动岛挂在主窗根上、不在那棵子树里 —— 不注入就全走回落值
+  // （--lyr-text 的回落是 #fff，浅色主题下 = 白字白底看不见）。
+  const isl = islSrc(s);
+  const missing = [];
+  // 高亮色要**真的取自 store**：用户选的颜色应当处处生效（含灵动岛）
+  if (!/s\) => s\.lyricsHighlightColor/.test(isl))
+    missing.push('灵动岛未读 lyricsHighlightColor（用户选的颜色不生效）');
+  if (!/'--lyr-hl'/.test(isl)) missing.push('歌词卡未注入 --lyr-hl（用户选的高亮色不生效）');
+  if (!/'--lyr-text'/.test(isl)) missing.push('歌词卡未注入 --lyr-text（浅色主题下是白字白底）');
+  return { ok: missing.length === 0, detail: missing.length ? `歌词变量注入：${missing.join('、')}` : '' };
+});
+
+add('ISLANDV.fontSizeLocal', 'ISLANDV', (s) => {
+  // 字号**故意**不跟随 lyricsFontSize（设置页那条 17–48 的量程是给铺满整屏的展开播放器的，
+  // 320px 宽的卡片套 48px 一行放不下几个字）。所以这里既断言"用了卡片自己的值"，
+  // 也**反向**断言"没接回 --lyr-size"。
+  const isl = islSrc(s);
+  const css = s.css ?? '';
+  const missing = [];
+  // 注入的值必须来自卡片自己的常量，不能是写死的魔法数字
+  if (!/--di-lyr-size': `\$\{ISLAND_LYR_SIZE_NEXT\}px`/.test(isl))
+    missing.push('注入的字号不是卡片自己的常量');
+  if (!/\.di-card \.di-lyr \.music-lyr-line \{[^}]*var\(--di-lyr-size/.test(css))
+    missing.push('下一句字号未用 --di-lyr-size');
+  if (!/\.di-card \.di-lyr \.music-lyr-line\.is-on \{[^}]*var\(--di-lyr-on-size/.test(css))
+    missing.push('当前句字号未用 --di-lyr-on-size');
+  const back = (css.match(/\.di-card \.di-lyr[^{]*\{[^}]*var\(--lyr-size/g) || []).length;
+  if (back > 0) missing.push('歌词卡字号又接回 --lyr-size（会跟随用户 17–48 的量程）');
+  return { ok: missing.length === 0, detail: missing.length ? `歌词卡字号：${missing.join('、')}` : '' };
+});
+
+add('ISLANDV.desktopLyricsKept', 'ISLANDV', (s) => {
+  // 「只做加法、不删桌面歌词」的守卫。砍桌面歌词是**独立一步**，由负责人在真机
+  // 确认新态观感之后执行 —— 在此之前任一层被提前删掉都判红。
+  const missing = [];
+  if (!existsSync(F.desktopLyrics) || !/export function DesktopLyrics\b/.test(stripComments(s.desktopLyrics ?? '')))
+    missing.push('screens/lyrics/DesktopLyrics.tsx 不在或没了 DesktopLyrics');
+  if (!existsSync(F.rustLyrics) || !/open_lyrics_window/.test(s.rustLyrics ?? ''))
+    missing.push('src-tauri/src/lyrics_window.rs 不在或没了 open_lyrics_window');
+  if (!existsSync(F.lyricsHtml)) missing.push('app/lyrics.html 不在');
+  const store = stripComments(s.store ?? '');
+  if (!hasMethodImpl(store, 'pushLyricsState')) missing.push('store 的 pushLyricsState 实现没了');
+  if (!/\bdesktopLyricsFontSize\b/.test(store)) missing.push('desktopLyrics* 偏好没了');
+  if (!/export const openLyricsWindow\b/.test(stripComments(s.ipc ?? '')))
+    missing.push('ipc 的 openLyricsWindow 没了');
+  // 主窗侧唯一的窗口入口（设置页那一项与它共用同一个 store action）
+  if (!/lyricsWindowOpen \? '关闭桌面歌词' : '桌面歌词'/.test(stripComments(s.playerBar ?? '')))
+    missing.push('PlayerBar 的桌面歌词开关没了');
+  return { ok: missing.length === 0, detail: missing.length ? `桌面歌词仍在（未提前删）：${missing.join('、')}` : '' };
+});
+
 // ── 执行器 ────────────────────────────────────────────────────────────────
 function runAll(s) {
   const res = {};
@@ -1727,7 +1933,7 @@ function runAll(s) {
   return res;
 }
 
-const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS', 'AUDIO', 'SKIN', 'QUEUE', 'MENU'];
+const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS', 'AUDIO', 'SKIN', 'QUEUE', 'MENU', 'ISLANDV'];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -2834,6 +3040,113 @@ const MUTATIONS = [
     find: '  position: fixed;\n  z-index: 78;\n  min-width: 148px;',
     replace: '  position: fixed;\n  min-width: 148px;',
     expect: ['MENU.css'],
+  },
+
+  // ── ISLANDV 灵动岛第 4 态（歌词卡）──────────────────────────────────────
+  {
+    name: 'islandView 的默认值改成 lyrics（首次使用就落在歌词卡）',
+    file: 'app/src/music/store.ts',
+    find: "  islandView: 'play',\n",
+    replace: "  islandView: 'lyrics',\n",
+    expect: ['ISLANDV.pref.default'],
+  },
+  {
+    name: 'IslandView 放宽成 string（localStorage 里的脏值能一路流到渲染层）',
+    file: 'app/src/music/store.ts',
+    find: "export type IslandView = 'play' | 'lyrics';",
+    replace: 'export type IslandView = string;',
+    expect: ['ISLANDV.pref.type'],
+  },
+  {
+    name: 'islandView 改用 ?? 回落（脏值 \'xxx\' 会被原样读进内存）',
+    file: 'app/src/music/store.ts',
+    find: "    const islandView: IslandView = prefs.islandView === 'lyrics' ? 'lyrics' : 'play';",
+    replace: "    const islandView: IslandView = (prefs.islandView ?? 'play') as IslandView;",
+    expect: ['ISLANDV.pref.hydrate'],
+  },
+  {
+    name: 'hydratePrefs 恢复时漏掉 islandView（冷启动回到默认值）',
+    file: 'app/src/music/store.ts',
+    find: '      islandView,\n',
+    replace: '',
+    expect: ['ISLANDV.pref.hydrate'],
+  },
+  {
+    name: 'setIslandView 不写 savePrefs（切到歌词卡后重开就回到播放卡）',
+    file: 'app/src/music/store.ts',
+    find: '    savePrefs({ islandView: v });\n',
+    replace: '    // [refute] 偏好未持久化\n',
+    expect: ['ISLANDV.pref.persist'],
+  },
+  {
+    name: '灵动岛不复用 KaraokeLyrics（自己再写一份逐字实现）',
+    file: F.island,
+    find: "import { KaraokeLyrics } from '@screens/music/KaraokeLyrics';\n",
+    replace: '',
+    expect: ['ISLANDV.reuseKaraoke'],
+  },
+  {
+    name: 'KaraokeLyrics 去掉 scroll 开关（小卡片里 scrollIntoView 会把布局顶歪）',
+    file: F.karaoke,
+    find: '  scroll?: boolean;\n',
+    replace: '',
+    expect: ['ISLANDV.windowMode'],
+  },
+  {
+    name: '窗口起点不兜底 -1（没开唱时歌词卡一片空白，而其它断言全绿）',
+    file: F.karaoke,
+    find: '  const winStart = windowSize && windowSize > 0 ? Math.max(0, activeIndex) : 0;',
+    replace: '  const winStart = windowSize && windowSize > 0 ? activeIndex : 0;',
+    expect: ['ISLANDV.windowIdleStart'],
+  },
+  {
+    name: '歌词窗口改成 6 行（150px 高的卡片装不下）',
+    file: F.island,
+    find: 'const ISLAND_LYR_WINDOW = 2;',
+    replace: 'const ISLAND_LYR_WINDOW = 6;',
+    expect: ['ISLANDV.twoRows'],
+  },
+  {
+    name: '纯音乐降级文案改掉（无歌词时卡片不是约定的提示）',
+    file: F.island,
+    find: '♪ 纯音乐，请欣赏',
+    replace: '暂无歌词',
+    expect: ['ISLANDV.pureMusic'],
+  },
+  {
+    name: '切换键只留一个方向（进了歌词卡出不来）',
+    file: F.island,
+    find: "              title={view === 'lyrics' ? '播放' : '歌词'}",
+    replace: '              title="歌词"',
+    expect: ['ISLANDV.toggleBothWays'],
+  },
+  {
+    name: '歌词卡另立高度（大卡常量被改成 170，形变对不上）',
+    file: F.island,
+    find: 'const MUSIC_EXPANDED_HEIGHT = 150;',
+    replace: 'const MUSIC_EXPANDED_HEIGHT = 170;',
+    expect: ['ISLANDV.cardSize'],
+  },
+  {
+    name: '歌词卡不注入 --lyr-hl（用户选的高亮色在灵动岛不生效）',
+    file: F.island,
+    find: "    '--lyr-hl': highlight,\n",
+    replace: '',
+    expect: ['ISLANDV.hlVarInjected'],
+  },
+  {
+    name: '歌词卡字号接回 --lyr-size（跟随用户 17–48 的量程 → 320px 卡片被撑爆）',
+    file: 'app/src/styles/app.css',
+    find: '.di-card .di-lyr .music-lyr-line {\n  font-size: var(--di-lyr-size, 12px);',
+    replace: '.di-card .di-lyr .music-lyr-line {\n  font-size: var(--lyr-size, 12px);',
+    expect: ['ISLANDV.fontSizeLocal'],
+  },
+  {
+    name: '提前删掉桌面歌词的状态推送（本轮红线：只加不删）',
+    file: 'app/src/music/store.ts',
+    find: '  pushLyricsState: async () => {',
+    replace: '  pushLyricsStateRemoved: async () => {',
+    expect: ['ISLANDV.desktopLyricsKept'],
   },
 ];
 

@@ -58,6 +58,20 @@ interface KaraokeLyricsProps {
    * 其余皮肤居中。这里只切一个根类名（is-left），不改动画/双层渲染逻辑。
    */
   align?: 'center' | 'left';
+  /**
+   * 窗口模式：只渲染「当前句起」的 N 行（默认 `undefined` = 全部，即展开播放器的既有行为）。
+   *
+   * 为什么必须有它：灵动岛歌词卡只有 320×150，整首几十行塞进去既装不下，
+   * 也会让 `.music-exp-lyr-box` 的滚动定位在小盒子里来回跳。
+   * ⚠️ 它**只切渲染区间的起止下标**，双层结构与 RAF 逐字推进**一行都不改** ——
+   * 逐字实现全项目只有这一份（第二份实现是本项目明确禁止的）。
+   */
+  windowSize?: number;
+  /**
+   * 是否把当前行 `scrollIntoView`（默认 true = 展开播放器的既有行为）。
+   * 灵动岛传 `false`：卡片里只有两行，"滚动"既无意义也会顶掉整窗布局。
+   */
+  scroll?: boolean;
 }
 
 /**
@@ -107,7 +121,13 @@ function getLineProgress(
   return smoothstep(prog);
 }
 
-export function KaraokeLyrics({ lines, fontPx, align = 'center' }: KaraokeLyricsProps) {
+export function KaraokeLyrics({
+  lines,
+  fontPx,
+  align = 'center',
+  windowSize,
+  scroll = true,
+}: KaraokeLyricsProps) {
   const [activeIndex, setActiveIndex] = useState(-1);
   /** 当前行顶层（已唱）文字的容器：RAF 只改它的 width */
   const overlayRef = useRef<HTMLSpanElement | null>(null);
@@ -178,18 +198,36 @@ export function KaraokeLyrics({ lines, fontPx, align = 'center' }: KaraokeLyrics
   // 当前行滚到容器中央（与改造前的观感一致；切歌/换行/拖动进度都跟随）
   useEffect(() => {
     if (activeIndex < 0) return;
+    if (!scroll) return; // 窗口模式（灵动岛）：只有两行，滚动既不必要也会顶掉布局
     activeRowRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [activeIndex]);
+  }, [activeIndex, scroll]);
+
+  /*
+   * 窗口区间的起点。
+   *
+   * ⚠️ `activeIndex === -1`（还没唱到第一句：前奏/间奏/刚起播）必须回落到 **0**：
+   * 若按 -1 起算，切片会拿到 `lines[-1..1)` 这样的空区间 —— 卡片上就是一片空白，
+   * 而此时所有断言照样全绿（它不报错，只是"没开唱时歌词卡是空的"）。
+   * 从头显示开头几行的好处是：用户还能提前看到即将唱什么。
+   */
+  const winStart = windowSize && windowSize > 0 ? Math.max(0, activeIndex) : 0;
+  const winEnd = windowSize && windowSize > 0 ? Math.min(lines.length, winStart + windowSize) : lines.length;
+  // 非窗口模式下直接用原数组（不 slice），避免每帧多产一个新数组
+  const viewLines = winStart === 0 && winEnd === lines.length ? lines : lines.slice(winStart, winEnd);
 
   // mask 渐变宽度随字号缩放：小字号时固定 18px 会把整行都遮上，导致底层透出
   const maskFade = Math.min(18, Math.max(6, fontPx * 0.7));
   const maskGradient = `linear-gradient(90deg, #000 0%, #000 calc(100% - ${maskFade}px), rgba(0,0,0,0.3) 100%)`;
 
-  // 字号与高亮色（--lyr-size / --lyr-hl）由 ExpandedPlayer 注入在 .music-exp 根上，
-  // 靠 CSS 变量继承传到这里 —— 本组件不重复注入，避免两个 owner 各写一份。
+  // 字号与高亮色（--lyr-size / --lyr-hl / --lyr-text）由**宿主**注入：
+  // 展开播放器注入在 .music-exp 根上、灵动岛注入在歌词卡根节点上，都靠 CSS 变量继承传下来。
+  // 本组件不自己注入 —— 否则同一份"取色/取字号"会有第三个 owner。
+  // ⚠️ 灵动岛**不在** .music-exp 子树里，所以它必须自己注入一遍（见 DynamicIsland 的注释）。
   return (
     <div className={align === 'left' ? 'music-exp-lyr-box is-left' : 'music-exp-lyr-box'}>
-      {lines.map((line, i) => {
+      {viewLines.map((line, k) => {
+        // 窗口模式下 k 是「窗口内下标」，判定是否当前行必须用**整首里的绝对下标**
+        const i = winStart + k;
         const isActive = i === activeIndex;
         if (!isActive) {
           // 非当前行：普通一行（沿用 .music-lyr-line 的暗色语汇）

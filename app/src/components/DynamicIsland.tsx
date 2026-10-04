@@ -1,9 +1,12 @@
-import { Maximize2, Music, Pause, Play, SkipBack, SkipForward, X } from 'lucide-react';
+import { ListMusic, Maximize2, Music, Pause, Play, SkipBack, SkipForward, X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { IconButton } from '@components/units/IconButton';
 import { attachAnalyser, findAudioElement, isAudioContextRunning, readLevels } from '@music/audioGraph';
 import { coverProxyUrl, fmtTime, useMusicStore } from '@music/store';
+import type { IslandView, ParsedLyricLine } from '@music/store';
 import type { Song } from '@music/types';
+import { KaraokeLyrics } from '@screens/music/KaraokeLyrics';
 import { toastBus, useToastsFromBus, type ToastKind } from '@/toastBus';
 
 /**
@@ -47,6 +50,27 @@ const MORPH_MS = 320;
 const FADE_MS = 260;
 /** 波形柱数量（对齐参考实现折叠态的 5 根） */
 const WAVE_BARS = 5;
+
+/**
+ * 歌词卡的歌词窗口行数：当前句 + 下一句。
+ *
+ * 两行的排法与**桌面歌词刻意相反**：桌面歌词窗在屏幕底部、可以放 3~5 行，
+ * 按"当前句在最下、往上回溯"排（唱过的往上走，符合它自下而上的阅读方向）；
+ * 而灵动岛在屏幕**顶部**且只有两行 —— 用户看它是"往下扫一眼"，
+ * 把"即将唱什么"放在下面才是有信息的那一半，"已经唱过什么"在顶部的两行里意义不大。
+ * 所以这里：当前句在上（高亮 + 逐字推进）、下一句在下（暗色小一号）。
+ */
+const ISLAND_LYR_WINDOW = 2;
+/**
+ * 歌词卡的字号（当前句 / 下一句，px）—— **卡片自己的固定值，不跟随 `lyricsFontSize`**。
+ *
+ * 为什么不跟随用户偏好：设置页那条量程是 17–48，服务的是"展开播放器铺满整屏"的场景。
+ * 卡片只有 320px 宽，48px 一行放不下几个字，而 17px 又会让两行把 150px 高撑满 ——
+ * 两端都不成立，所以这里按卡片自己的可用空间定死。
+ * 高亮色则**跟随** `lyricsHighlightColor`：那是"用户选的颜色"，应当处处生效。
+ */
+const ISLAND_LYR_SIZE = 14;
+const ISLAND_LYR_SIZE_NEXT = 12;
 
 /** 参考实现的 `IslandStatus`（六态） */
 type IslandStatus = 'success' | 'error' | 'info' | 'warning' | 'loading' | 'blue';
@@ -95,6 +119,13 @@ export function DynamicIsland() {
   const prevTrack = useMusicStore((s) => s.prev);
   const nextTrack = useMusicStore((s) => s.next);
   const setPlayerExpanded = useMusicStore((s) => s.setExpanded);
+  // 歌词卡：视图（播放卡 / 歌词卡）是**持久化偏好** —— hover 是"临时看一眼"，
+  // 用户切过一次就该记住（见 store 里 IslandView 的注释）
+  const islandView = useMusicStore((s) => s.islandView);
+  const setIslandView = useMusicStore((s) => s.setIslandView);
+  const lyrics = useMusicStore((s) => s.parsedLyrics);
+  /** 用户选的歌词高亮色：灵动岛也要用（详见下面歌词卡根节点的变量注入） */
+  const lyricsHighlight = useMusicStore((s) => s.lyricsHighlightColor);
 
   // 渲染用状态
   const [displayed, setDisplayed] = useState<Shown | null>(null);
@@ -303,6 +334,12 @@ export function DynamicIsland() {
 
   const openPlayer = useCallback(() => setPlayerExpanded(true), [setPlayerExpanded]);
 
+  /** 切换歌词卡 ⇄ 播放卡；选择写回偏好，下次 hover 展开直接进这个视图 */
+  const toggleIslandView = useCallback(
+    () => setIslandView(islandView === 'lyrics' ? 'play' : 'lyrics'),
+    [islandView, setIslandView],
+  );
+
   /* ---------------- 目标内容 → 驱动动画 ---------------- */
 
   // 目标内容：轻提示优先（用户刚操作完，注意力在反馈上），其次播放卡。
@@ -474,6 +511,10 @@ export function DynamicIsland() {
             onNext={() => nextTrack()}
             onToggle={() => togglePlay()}
             onOpen={openPlayer}
+            view={islandView}
+            lines={lyrics}
+            highlight={lyricsHighlight}
+            onToggleView={toggleIslandView}
           />
         ) : (
           <div className="di-row" ref={rowRef}>
@@ -510,11 +551,13 @@ export function DynamicIsland() {
 }
 
 /**
- * 音乐卡：折叠态 = 封面 + 歌名 + 波形；展开态 = 歌手 + 进度 + 传输控件。
+ * 音乐卡：折叠态 = 封面 + 歌名 + 波形；展开态 = 播放卡（歌手 + 进度 + 传输控件）
+ * 或**歌词卡**（两行歌词 + 传输控件），由 `view` 决定。
  *
  * 封面与歌名是**单一共享元素**：折叠/展开靠 transform 的 x/y/scale 补间到两个位置
  * （等价于参考实现用 framer-motion 对 x/y/scale 做数值插值），而不是两套元素互相淡入淡出 ——
  * 后者在切换瞬间会看到"两个封面"，前者是同一个封面在长/挪。
+ * 两个视图共用这一个封面/歌名，所以切视图时不会"闪一下"。
  */
 function MusicCard({
   song,
@@ -524,9 +567,13 @@ function MusicCard({
   cardOn,
   levels,
   real,
+  view,
+  lines,
+  highlight,
   onPrev,
   onNext,
   onToggle,
+  onToggleView,
   onOpen,
 }: {
   song: Song;
@@ -536,9 +583,14 @@ function MusicCard({
   cardOn: boolean;
   levels: number[];
   real: boolean;
+  view: IslandView;
+  lines: ParsedLyricLine[];
+  /** 用户选的歌词高亮色（store 的 lyricsHighlightColor） */
+  highlight: string;
   onPrev: () => void;
   onNext: () => void;
   onToggle: () => void;
+  onToggleView: () => void;
   onOpen: () => void;
 }) {
   const [coverFailed, setCoverFailed] = useState(false);
@@ -551,6 +603,25 @@ function MusicCard({
       e.stopPropagation(); // 否则会冒泡到胶囊，被当成"点击岛体 → 收起"
       fn();
     };
+
+  /*
+   * 歌词卡根节点要**自己注入一遍**歌词变量（--lyr-hl / --lyr-text / 字号）。
+   *
+   * 为什么不能靠继承：展开播放器把它们注入在 `.music-exp` 根上，靠 CSS 变量往下传；
+   * 而灵动岛挂在主窗根上、**不在 .music-exp 子树里** —— 不注入就会全部走回落值
+   * （`--lyr-text` 的回落是 #fff，卡片底色却是浅色/深色跟随主题的 --md-surface，
+   *   浅色主题下就是"白字白底 = 完全看不见"）。
+   * 所以取色/取字号的 owner 是"每个宿主各注入自己子树的那一份"，不是"谁抢到算谁的"。
+   *
+   * 高亮色跟随 `lyricsHighlightColor`（用户选的颜色应当处处生效）；
+   * 字号用卡片固定值，不跟随 `lyricsFontSize`（理由见文件头的 ISLAND_LYR_SIZE 注释）。
+   */
+  const lyrStyle = {
+    '--lyr-hl': highlight,
+    '--lyr-text': 'var(--md-ink)',
+    '--di-lyr-size': `${ISLAND_LYR_SIZE_NEXT}px`,
+    '--di-lyr-on-size': `${ISLAND_LYR_SIZE}px`,
+  } as CSSProperties;
 
   return (
     <div className="di-music">
@@ -581,11 +652,43 @@ function MusicCard({
       </div>
 
       <div
-        className="di-card"
+        className={view === 'lyrics' ? 'di-card is-lyr' : 'di-card'}
         style={{ opacity: cardOn ? 1 : 0, pointerEvents: cardOn ? 'auto' : 'none' }}
       >
-        <div className="di-artist">{song.artist || '未知歌手'}</div>
-        <MusicProgress />
+        {view === 'lyrics' ? (
+          /**
+           * 歌词区：只渲染「当前句 + 下一句」两行，当前句在上。
+           * 复用 `KaraokeLyrics`（逐字推进的唯一实现），只把窗口调到 2 行、关掉滚动 ——
+           * 小卡片里再写一份逐字实现是本项目明确禁止的（同一件事两份实现）。
+           *
+           * ⚠️ 整块 `onClick` 只 `stopPropagation`、不做别的事：胶囊自身的 onClick 是
+           * "展开态点击 → 收起"，歌词区占了卡片一半面积，不拦住就会一点歌词就收回去。
+           */
+          <div className="di-lyr" style={lyrStyle} onClick={(e) => e.stopPropagation()}>
+            {/*
+             * ⚠️ `cardOn` 必须参与条件：`.di-card` 是**常驻渲染**的（折叠态只是 opacity:0），
+             * 若只看 `lines.length`，逐字歌词的 RAF 循环会在胶囊折叠时也一直跑
+             * —— 每帧读 `audio.currentTime` + 写一次 width，而用户此刻根本看不到卡片。
+             * 挂在"大卡真正可见"时才渲染，RAF 就只在它有用时才存在。
+             */}
+            {cardOn && lines.length > 0 ? (
+              <KaraokeLyrics
+                lines={lines}
+                fontPx={ISLAND_LYR_SIZE}
+                windowSize={ISLAND_LYR_WINDOW}
+                scroll={false}
+              />
+            ) : (
+              // 纯音乐 / 歌词还没到：给固定文案，**不留空白**（空白卡片像半成品）
+              <div className="di-lyr-empty">♪ 纯音乐，请欣赏</div>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="di-artist">{song.artist || '未知歌手'}</div>
+            <MusicProgress />
+          </>
+        )}
         <div className="di-ctl">
           <IconButton title="上一曲" onClick={stop(onPrev)}>
             <SkipBack size={20} />
@@ -596,6 +699,17 @@ function MusicCard({
           <IconButton title="下一曲" onClick={stop(onNext)}>
             <SkipForward size={20} />
           </IconButton>
+          {/* 视图切换键：歌词态→"播放"、播放态→"歌词"，两个方向都要有
+              （只做一个方向 = 进了歌词卡出不来）。包一层 .di-toggle 是为了在视觉上
+              与上面的传输控件区分开 —— 它切的是"看什么"，不是"播什么"。 */}
+          <span className="di-toggle">
+            <IconButton
+              title={view === 'lyrics' ? '播放' : '歌词'}
+              onClick={stop(onToggleView)}
+            >
+              {view === 'lyrics' ? <Play size={15} /> : <ListMusic size={15} />}
+            </IconButton>
+          </span>
           <span className="di-open">
             <IconButton title="打开播放器" onClick={stop(onOpen)}>
               <Maximize2 size={16} />

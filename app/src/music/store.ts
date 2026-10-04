@@ -113,6 +113,14 @@ export interface LyricWord {
  * `finalizeLineDurations` 补一个由相邻行时间差推断的值 —— 这是「无 yrc 也能逐字推进」
  * 的前提（没有它，没有逐字数据的歌就退化成"整行高亮、毫无推进感"）。
  */
+/**
+ * 灵动岛展开态的视图：`play` = 播放卡（歌手/进度/传输控件）、`lyrics` = 歌词卡。
+ *
+ * 为什么要**持久化**（而不是组件内的 useState）：hover 展开是"临时看一眼"的动作，
+ * 用户一旦切到歌词卡，下次展开还该是歌词卡 —— 不记住就等于每次都要再点一次切换键。
+ */
+export type IslandView = 'play' | 'lyrics';
+
 export interface ParsedLyricLine {
   time: number;
   text: string;
@@ -431,6 +439,14 @@ interface Prefs {
   /** 透明彩胶配色：auto=跟随封面主色 / custom=固定色 */
   vinylColorMode: 'auto' | 'custom';
   vinylCustomColor: string;
+  /**
+   * 灵动岛展开后进哪个视图（播放卡 / 歌词卡）。
+   *
+   * ⚠️ 这是**唯一一次**为灵动岛新增的偏好：歌词字号/高亮色一律**不新增** ——
+   * 高亮色复用 `lyricsHighlightColor`（用户选的颜色应当三处一致），字号用卡片自己的
+   * 固定值（设置页那条 17–48 的量程给 320px 宽的卡片用会一行放不下几个字）。
+   */
+  islandView: IslandView;
 }
 
 interface MusicState {
@@ -479,6 +495,8 @@ interface MusicState {
   discMode: boolean;
   vinylColorMode: 'auto' | 'custom';
   vinylCustomColor: string;
+  /** 灵动岛视图（见 `Prefs.islandView` 的注释：为什么必须持久化） */
+  islandView: IslandView;
 
   // ---- 本地 ----
   localSongs: LocalSongInfo[];
@@ -642,6 +660,8 @@ interface MusicState {
   setDiscMode: (on: boolean) => void;
   setVinylColorMode: (mode: 'auto' | 'custom') => void;
   setVinylCustomColor: (color: string) => void;
+  /** 切灵动岛展开态的视图（播放卡 ⇄ 歌词卡），并记住这次选择 */
+  setIslandView: (v: IslandView) => void;
   /** 播放内核消费完续播位置后清零 */
   clearResumeAt: () => void;
   setProgress: (ms: number) => void;
@@ -869,6 +889,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   discMode: false,
   vinylColorMode: 'auto',
   vinylCustomColor: VINYL_COLOR_DEF,
+  islandView: 'play',
 
   // ---- 本地 ----
   localSongs: [],
@@ -962,6 +983,13 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       typeof prefs.desktopLyricsFontSize === 'number' ? prefs.desktopLyricsFontSize : DL_LYRICS_SIZE.def;
     const dlLineCount =
       typeof prefs.desktopLyricsLineCount === 'number' ? prefs.desktopLyricsLineCount : DL_LINE_COUNT.def;
+    /*
+     * 灵动岛视图：只认两个字面量，其余一律回落 'play'。
+     * 为什么不能写 `prefs.islandView ?? 'play'` —— localStorage 是外部可改的边界
+     * （旧版本残留、手改、日后改名），`'xxx'` 这类脏值会被原样读进内存，
+     * 于是卡片按歌词态渲染却拿到空分支。枚举型偏好一律白名单收口。
+     */
+    const islandView: IslandView = prefs.islandView === 'lyrics' ? 'lyrics' : 'play';
     set({
       volume,
       playMode,
@@ -977,6 +1005,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       discMode: prefs.discMode === true,
       vinylColorMode: prefs.vinylColorMode === 'custom' ? 'custom' : 'auto',
       vinylCustomColor: prefs.vinylCustomColor ?? VINYL_COLOR_DEF,
+      islandView,
     });
   },
 
@@ -1433,6 +1462,13 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   setVinylCustomColor: (color) => {
     set({ vinylCustomColor: color });
     savePrefs({ vinylCustomColor: color });
+  },
+
+  setIslandView: (v) => {
+    // 与其它偏好 setter 同形：改内存 → 写偏好。少了 savePrefs 这一步，
+    // 用户切到歌词卡后重开应用会回到播放卡（"切了没记住"）。
+    set({ islandView: v });
+    savePrefs({ islandView: v });
   },
 
   /**

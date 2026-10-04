@@ -1885,6 +1885,88 @@
   display: flex;
 }
 
+/* ── 歌词卡（第 4 态 · 只做加法）───────────────────────────────────────────
+   展开态的第二种内容：两行歌词 + 传输控件。卡片尺寸**仍是 320×150**（与大卡同一组常量），
+   所以形变、圆角、hover 收展、退场时长全部无需改动。
+
+   ## 为什么歌词区在封面**下方**（而不是右侧让位）
+   共享封面（折叠/展开同一个元素）在展开态占着 (16,12)-(64,60)。若让歌词贴着顶部、
+   靠 `padding-left` 绕开封面，歌词会被挤到 230px 宽且整体偏离卡片中线；
+   而把歌词整块放到封面下方（top: 62px）、铺满 288px，两行居中且不与封面打架 ——
+   竖向空间是够的（150 - 62 - 26(控件) - 6 - 8 = 48px，两行 14/12 约 43px）。
+   代价是控件行略收紧（30 → 26），只作用于歌词卡，不动播放卡。 */
+.di-card.is-lyr {
+  padding: 62px 16px 8px;
+  gap: 6px;
+}
+.di-card.is-lyr .di-ctl .ui-cbtn {
+  width: 26px;
+  height: 26px;
+}
+
+/* 视图切换键（歌词 ⇄ 播放）：给淡底 + 小圆角，读作"切视图"而不是"第四个传输键"。
+   ⚠️ 它旁边就是播放/暂停的 Play 图标（歌词态下两个三角同时在），靠这个底色区分开。 */
+.di-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 9px;
+  background: var(--md-pink-soft);
+}
+.di-toggle .ui-cbtn {
+  width: 26px;
+  height: 26px;
+  color: var(--md-pink);
+}
+
+/* 歌词区：吃掉"歌手 + 进度"那一段的竖向空间（flex:1），两行在剩余高度里居中 */
+.di-lyr {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  cursor: default;
+}
+/* 复用 KaraokeLyrics 的容器类 `.music-exp-lyr-box`（逐字推进只有一份实现），
+   在这里只做"小卡片适配"三件事：
+   ① overflow:auto → hidden：两行不需要滚动条，滚动还会把布局顶歪；
+   ② 关掉上下渐隐 mask：那个 mask 是为"整首长列表向两端淡出"设计的，
+      两行时 14%/86% 的渐隐区间会把两行都糊掉；
+   ③ gap / padding 收紧，让两行在剩余高度里真正居中。 */
+.di-lyr .music-exp-lyr-box {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  gap: 8px;
+  padding: 0;
+  justify-content: center;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+/* 字号：卡片自己的固定值，由 DynamicIsland 注入 --di-lyr-size / --di-lyr-on-size。
+   ⚠️ **不跟随** --lyr-size（设置页那条 17–48 的量程是给铺满整屏的展开播放器的，
+      320px 宽的卡片套 48px 一行放不下几个字）。选择器带 .di-card 是为了压过
+      同为 0,2,0 的 `.music-lyr-line.is-on`（后者在文件更靠后，靠特异性取胜）。 */
+.di-card .di-lyr .music-lyr-line {
+  font-size: var(--di-lyr-size, 12px);
+  line-height: 1.35;
+}
+.di-card .di-lyr .music-lyr-line.is-on {
+  font-size: var(--di-lyr-on-size, 14px);
+  line-height: 1.35;
+}
+/* 纯音乐 / 歌词未就绪：给固定文案，不留空白（空白卡片像半成品） */
+.di-lyr-empty {
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--md-muted);
+}
+
 /* ================================================================ ver2.0 · 视图 Tab 行 */
 
 /* 翻译应用内的二级导航（44px，《09》§3.2）。
