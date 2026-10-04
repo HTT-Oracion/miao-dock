@@ -1032,6 +1032,30 @@ add('LYRICS.degrade', 'LYRICS', (s) => {
     detail: missing.length ? `桌面歌词降级：${missing.join('、')}` : '',
   };
 });
+add('LYRICS.stateFieldMatch', 'LYRICS', (s) => {
+  // ⚠️ 本条防的是**跨语言契约漂移**：Rust 用 serde 反序列化前端传的结构体，
+  // 字段名对不上就**整条命令失败** —— 而失败通常被 .catch() 静默吞掉，
+  // 症状只是"拖动后位置不记忆"，没有任何报错指向真因（D-49 踩过：口径改了漏改前端）。
+  // 这类缺陷 tsc / vite / cargo **全都测不到**（两端各自合法，只是对不上）。
+  if (!s.rustLyrics) return { ok: false, detail: 'lyrics_window.rs 不存在' };
+  const rust = stripComments(s.rustLyrics);
+  const dl = stripComments(s.desktopLyrics ?? '');
+  // 取 Rust 结构体里定义的字段名
+  const st = rust.match(/pub struct LyricsWindowState\s*\{([\s\S]*?)\n\}/);
+  if (!st) return { ok: false, detail: 'Rust 侧找不到 LyricsWindowState 定义' };
+  const fields = [...st[1].matchAll(/pub\s+(\w+)\s*:/g)].map((m) => m[1]);
+  if (fields.length === 0) return { ok: false, detail: 'LyricsWindowState 没解析出字段' };
+  // 前端构造的对象字面量里必须带齐这些字段
+  const obj = dl.match(/const state\s*:\s*WindowState\s*=\s*\{([\s\S]*?)\n\s*\};/);
+  if (!obj) return { ok: false, detail: 'DesktopLyrics 里找不到构造 WindowState 的对象字面量' };
+  const missing = fields.filter((f) => !new RegExp('\\b' + f + '\\s*:').test(obj[1]));
+  return {
+    ok: missing.length === 0,
+    detail: missing.length
+      ? `前端 WindowState 缺 Rust 要求的字段：${missing.join('、')}（serde 会反序列化失败，命令静默失效）`
+      : '',
+  };
+});
 add('LYRICS.closeViaRust', 'LYRICS', (s) => {
   // 关闭必须走 Rust 命令，不能 window.close()：后者绕过主窗状态，
   // 开关会显示成"还开着"（子 agent 主动做了这个选择，锁住它）
@@ -1491,6 +1515,15 @@ const MUTATIONS = [
     find: "invoke('close_lyrics_window')",
     replace: "window.close(); void invoke('noop_close')",
     expect: ['LYRICS.closeViaRust'],
+  },
+  {
+    // 这条反证模拟的**正是本轮真实发生的缺陷**：我改了 Rust 的字段口径（offset_y → y），
+    // 漏改前端 → serde 反序列化失败 → 命令静默失效。tsc/vite/cargo 全都测不到。
+    name: '把前端 WindowState 的字段名改回 offset_y（与 Rust 的 y 对不上）',
+    file: F.desktopLyrics,
+    find: '        y: next.y ?? -1,',
+    replace: '        offset_y: next.y ?? -1,',
+    expect: ['LYRICS.stateFieldMatch'],
   },
 ];
 

@@ -21,7 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { getCurrentWindow, currentMonitor } from '@tauri-apps/api/window';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Lock, X } from 'lucide-react';
 import { LYRICS_COLOR_DEF, LYRICS_SIZE } from '@music/player-options';
 
@@ -115,10 +115,18 @@ function indexAt(lines: LyricsLine[], nowMs: number): number {
   return idx;
 }
 
-/** 窗口状态（Rust 侧 LyricsWindowState 的前端形状） */
+/**
+ * 窗口状态（Rust 侧 `LyricsWindowState` 的前端形状）。
+ *
+ * ⚠️ 字段名必须与 Rust 侧**逐字一致**：`y`（不是 `offset_y`）。
+ * Rust 用 serde 反序列化，字段对不上会**整条命令失败** —— 而失败被 `.catch()` 静默吞掉，
+ * 症状是"拖动后位置不记忆"，没有任何报错指向真因（这个坑真踩过：D-49 改口径时漏改了前端）。
+ * 口径同样必须是**屏幕 y 坐标**而不是"距底距离"：两者差一个屏幕高度，换算只在
+ * 一处做的话必然对不上。
+ */
 interface WindowState {
-  /** 距屏幕底部的像素（负值 = 贴底） */
-  offset_y: number;
+  /** 窗口顶边的屏幕 y 坐标（逻辑像素）；Rust 侧 -1 表示"未记录" */
+  y: number;
   locked: boolean;
 }
 
@@ -244,9 +252,9 @@ export function DesktopLyrics() {
   }, []);
 
   const persist = useCallback(
-    (next: { offset_y?: number; locked?: boolean }) => {
+    (next: { y?: number; locked?: boolean }) => {
       const state: WindowState = {
-        offset_y: next.offset_y ?? 0,
+        y: next.y ?? -1,
         locked: next.locked ?? locked,
       };
       // 位置存 Rust（跨进程重启保留，配置文件比 localStorage 稳），
@@ -318,24 +326,12 @@ export function DesktopLyrics() {
   const savePosition = useCallback(async () => {
     if (!win) return;
     try {
-      const [pos, size, scale] = await Promise.all([
-        win.outerPosition(),
-        win.outerSize(),
-        win.scaleFactor(),
-      ]);
-      // 契约是「距屏幕底部的像素（负值 = 贴底）」，故用 屏幕高 - 窗口底边。
-      // 取不到显示器高度时退回 0：宁可不完美也不要失败。
-      let screenH = 0;
-      try {
-        // currentMonitor 是模块级函数（不是 Window 实例方法）——
-        // 它报的是「光标当前所在的那个显示器」，多屏场景下正是歌词窗所在屏。
-        const mon = await currentMonitor();
-        if (mon) screenH = mon.size.height / scale;
-      } catch {
-        screenH = 0;
-      }
-      const bottomGap = screenH > 0 ? screenH - (pos.y / scale + size.height / scale) : 0;
-      persist({ offset_y: Math.round(bottomGap) });
+      const [pos, scale] = await Promise.all([win.outerPosition(), win.scaleFactor()]);
+      // ⚠️ 这里**直接存窗口顶边的屏幕 y**，不做"距底距离"换算 ——
+      // Rust 侧的字段就是 y，换算等于引入第二套口径（两者差一个屏幕高度）。
+      // 只需要除以 scaleFactor 把物理像素换成逻辑像素（Retina 上不除会飘一倍）。
+      const y = pos.y / scale;
+      persist({ y: Math.round(y) });
     } catch {
       /* 读位置失败：跳过持久化 */
     }
