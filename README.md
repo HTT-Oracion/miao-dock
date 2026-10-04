@@ -5,6 +5,7 @@
 - 依据：《00-决策纪要》《02-Box-技术方案-ver1.0》《03-翻译服务接口契约-ver1.0》
 - 开发方案与验收标准：`docs/dev-plan.md`
 - 偏离与裁定留痕：`docs/spec-notes.md`
+- **AI 协作上下文入口：`AGENTS.md`**（任何 AI 工具进入本仓库先读它；Trae 另见 `.trae/rules/project_rules.md`）
 
 ## 与插件端的关系
 
@@ -64,6 +65,13 @@ npm run selftest:app          # B1–B5 应用生命周期（程序化，不依�
 npm run selftest:app:refute   # 上一项的反证——它必须**变红**，绿的那轮才作数
 npm run e2e                   # D1–D5 端到端（真实 engine + 真实 service，真落盘）
 npm run capture               # 截图取证（需屏幕解锁；不满足条件会拒绝出图而非交假证据）
+
+# 结构断言（每条都带反证轮，见 docs/spec-notes.md 与 AGENTS.md §3）
+npm run check:ia              # IA 结构 24 条（侧栏两级 / 视图 Tab / 设置两栏壳 / 小节分层）
+npm run check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
+npm run check:music           # 音乐模块四平台覆盖 63 条（反证：check:music:refute）
+npm run check:settings        # 设置页「播放·媒体」裁定结果 68 条（反证：check:settings:refute）
+npm run check:units           # 前端目录分层与公共单元 16 条（反证：check:units:refute）
 ```
 
 各组判据与「为什么这么测」见 `docs/dev-plan.md` §4；一路踩过的环境陷阱见 `docs/spec-notes.md`。
