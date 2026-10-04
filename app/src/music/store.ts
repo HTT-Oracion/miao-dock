@@ -14,6 +14,9 @@ import { create } from 'zustand';
 import * as ipc from './ipc';
 import type { LocalSongInfo, LoginInfo, Playlist, PlayMode, Song } from './types';
 
+/** 展开播放器皮肤（设计稿 M5 六皮肤；spectrum 为 CSS 近似，不做 WebGL） */
+export type PlayerSkin = 'modern' | 'glass' | 'immersive' | 'spectrum' | 'vinyl' | 'cover';
+
 /** 本地导入的 LocalSongInfo → 可播放的统一 Song（provider = "local"） */
 export function localToSong(info: LocalSongInfo): Song {
   return {
@@ -84,8 +87,20 @@ interface MusicState {
   loadingRecommend: boolean;
   currentPlaylist: { playlist: Playlist; songs: Song[] } | null;
   loadingPlaylist: boolean;
+  // 官方榜单（网易云硬编码榜单 ID）
+  officialCharts: Playlist[];
+  loadingCharts: boolean;
   // 登录状态（网易云）
   loginInfo: LoginInfo | null;
+  // UI：队列抽屉 + 展开播放器
+  queueOpen: boolean;
+  expanded: boolean;
+  skin: PlayerSkin;
+  // 扫码登录（网易云）
+  loginOpen: boolean;
+  qrUrl: string;
+  qrStatus: string;
+  qrLoading: boolean;
 
   importLocal: (paths: string[]) => Promise<void>;
   importFolder: (folder: string) => Promise<void>;
@@ -105,6 +120,14 @@ interface MusicState {
   openPlaylist: (p: Playlist) => Promise<void>;
   closePlaylist: () => void;
   loadLoginStatus: () => Promise<void>;
+  loadCharts: () => Promise<void>;
+  setQueueOpen: (open: boolean) => void;
+  setExpanded: (open: boolean) => void;
+  setSkin: (s: PlayerSkin) => void;
+  removeFromQueue: (index: number) => void;
+  clearQueue: () => void;
+  openLogin: () => Promise<void>;
+  closeLogin: () => void;
 }
 
 export const useMusicStore = create<MusicState>((set, get) => ({
@@ -126,7 +149,16 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   loadingRecommend: false,
   currentPlaylist: null,
   loadingPlaylist: false,
+  officialCharts: [],
+  loadingCharts: false,
   loginInfo: null,
+  queueOpen: false,
+  expanded: false,
+  skin: 'modern',
+  loginOpen: false,
+  qrUrl: '',
+  qrStatus: '',
+  qrLoading: false,
 
   importLocal: async (paths) => {
     try {
@@ -245,6 +277,32 @@ export const useMusicStore = create<MusicState>((set, get) => ({
 
   closePlaylist: () => set({ currentPlaylist: null }),
 
+  loadCharts: async () => {
+    // 网易云官方榜单：硬编码榜单 ID（参考实现同款），用 music_playlist_detail 并行加载
+    const CHART_IDS: [string, string][] = [
+      ['3778678', '热歌榜'],
+      ['19723756', '飙升榜'],
+      ['3779629', '新歌榜'],
+      ['2884035', '原创榜'],
+      ['112504', '抖音排行榜'],
+    ];
+    set({ loadingCharts: true });
+    try {
+      const results = await Promise.all(
+        CHART_IDS.map(async ([id, name]) => {
+          try {
+            return await ipc.musicPlaylistDetail(id);
+          } catch {
+            return { provider: 'netease', id, name, cover: '', track_count: 0, creator: '网易云音乐', subscribed: false } as Playlist;
+          }
+        }),
+      );
+      set({ officialCharts: results, loadingCharts: false });
+    } catch {
+      set({ loadingCharts: false });
+    }
+  },
+
   loadLoginStatus: async () => {
     try {
       const statuses = await ipc.musicGetLoginStatuses();
@@ -254,6 +312,60 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       // 静默：未登录 / 网络未就绪不打扰用户
     }
   },
+
+  setQueueOpen: (open) => set({ queueOpen: open }),
+
+  setExpanded: (open) => set({ expanded: open }),
+
+  setSkin: (s) => set({ skin: s }),
+
+  removeFromQueue: (index) => {
+    const { queue, currentSong } = get();
+    if (index < 0 || index >= queue.length) return;
+    const next = queue.filter((_, i) => i !== index);
+    set({ queue: next });
+    // 移除的是当前播放，且队列还有剩 → 播下一首
+    if (queue[index] === currentSong && next.length > 0) {
+      void get().playQueue(next, Math.min(index, next.length - 1));
+    }
+  },
+
+  clearQueue: () => set({ queue: [], currentSong: null, playUrl: '', isPlaying: false }),
+
+  openLogin: async () => {
+    set({ loginOpen: true, qrLoading: true, qrStatus: '' });
+    try {
+      const key = await ipc.musicLoginQrKey();
+      const url = await ipc.musicLoginQrCreate(key);
+      set({ qrUrl: url, qrLoading: false, qrStatus: '请用网易云音乐 App 扫码登录' });
+      // 轮询扫码状态（801=等待 / 802=待确认 / 803=成功 / 800=过期）
+      const poll = async () => {
+        if (!get().loginOpen) return;
+        try {
+          const r = await ipc.musicLoginQrCheck(key);
+          if (r.code === 803) {
+            set({ loginOpen: false, qrStatus: '登录成功' });
+            await get().loadLoginStatus();
+            return;
+          }
+          if (r.code === 800) {
+            set({ qrStatus: '二维码已过期，重新获取…' });
+            await get().openLogin();
+            return;
+          }
+          if (r.code === 802) set({ qrStatus: '已扫码，请在手机上确认' });
+        } catch {
+          // 网络抖动忽略，下轮重试
+        }
+        setTimeout(poll, 2000);
+      };
+      setTimeout(poll, 2000);
+    } catch (e) {
+      set({ qrLoading: false, qrStatus: `二维码获取失败：${String(e)}` });
+    }
+  },
+
+  closeLogin: () => set({ loginOpen: false, qrUrl: '', qrStatus: '' }),
 }));
 
 /** 格式化毫秒 → m:ss（播放条时间显示） */
