@@ -2001,3 +2001,35 @@
   min-height: 18px;
   text-align: center;
 }
+
+/* 展开播放器歌词 */
+.music-exp-lyr-box {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  padding: 8px 4px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 13%, #000 87%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 13%, #000 87%, transparent 100%);
+}
+.music-lyr-line {
+  font-size: 16px;
+  opacity: 0.5;
+  text-align: center;
+  color: #fff;
+  transition: all 0.2s;
+}
+.music-lyr-line.is-on {
+  font-size: 19px;
+  font-weight: 700;
+  opacity: 1;
+  color: var(--md-yellow);
+}
+.sk-glass .music-lyr-line,
+.sk-vinyl .music-lyr-line,
+.sk-cover .music-lyr-line { color: var(--md-ink); }
+.sk-glass .music-lyr-line.is-on,
+.sk-vinyl .music-lyr-line.is-on,
+.sk-cover .music-lyr-line.is-on { color: var(--md-pink); }

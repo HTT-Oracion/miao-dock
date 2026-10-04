@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { QRCodeSVG } from 'qrcode.react';
-import { fmtTime, useMusicStore, type PlayerSkin } from '../music/store';
+import { fmtTime, lyricIndexAt, useMusicStore, type PlayerSkin } from '../music/store';
 
 /**
  * 音乐应用屏 —— ver2.0 第二个独立应用，按设计稿《音乐模块-设计稿-ver2.0》实现。
@@ -524,9 +524,11 @@ function ExpandedPlayer() {
     seek,
     setVolume,
     cycleMode,
+    parsedLyrics,
   } = useMusicStore();
   const [skinPickerOpen, setSkinPickerOpen] = useState(false);
   const skinMeta = SKINS.find((s) => s.id === skin) ?? SKINS[0];
+  const activeLine = lyricIndexAt(parsedLyrics, progressMs / 1000);
   const modeIcon = playMode === 'one' ? <Repeat1 size={15} /> : playMode === 'shuffle' ? <Shuffle size={15} /> : <Repeat size={15} />;
 
   return (
@@ -545,7 +547,17 @@ function ExpandedPlayer() {
           <em>{currentSong?.album || ''}</em>
         </div>
         <div className="music-exp-lyrics">
-          <div className="music-exp-lyr-empty">暂无歌词</div>
+          {parsedLyrics.length === 0 ? (
+            <div className="music-exp-lyr-empty">暂无歌词</div>
+          ) : (
+            <div className="music-exp-lyr-box">
+              {parsedLyrics.map((line, i) => (
+                <div key={i} className={i === activeLine ? 'music-lyr-line is-on' : 'music-lyr-line'}>
+                  {line.text}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

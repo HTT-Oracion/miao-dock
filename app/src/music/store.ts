@@ -17,6 +17,38 @@ import type { LocalSongInfo, LoginInfo, Playlist, PlayMode, Song } from './types
 /** 展开播放器皮肤（设计稿 M5 六皮肤；spectrum 为 CSS 近似，不做 WebGL） */
 export type PlayerSkin = 'modern' | 'glass' | 'immersive' | 'spectrum' | 'vinyl' | 'cover';
 
+/** 解析后的歌词行（LRC 时间戳 + 文本） */
+export interface ParsedLyricLine {
+  time: number;
+  text: string;
+}
+
+/** 解析 LRC 歌词文本 → 带时间戳的行（按时间排序，过滤空行与元信息标签） */
+export function parseLrc(lrc: string): ParsedLyricLine[] {
+  const lines: ParsedLyricLine[] = [];
+  for (const line of lrc.split('\n')) {
+    const m = line.match(/\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]/);
+    if (!m) continue;
+    const min = Number(m[1]);
+    const sec = Number(m[2]);
+    const ms = m[3] ? Number(m[3].padEnd(3, '0')) : 0;
+    const text = line.replace(/\[[^\]]*\]/g, '').trim();
+    if (text) lines.push({ time: min * 60 + sec + ms / 1000, text });
+  }
+  lines.sort((a, b) => a.time - b.time);
+  return lines;
+}
+
+/** 根据当前播放秒数定位高亮歌词行索引（-1 表示尚未到第一句） */
+export function lyricIndexAt(lines: ParsedLyricLine[], seconds: number): number {
+  let idx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].time <= seconds) idx = i;
+    else break;
+  }
+  return idx;
+}
+
 /** 本地导入的 LocalSongInfo → 可播放的统一 Song（provider = "local"） */
 export function localToSong(info: LocalSongInfo): Song {
   return {
@@ -101,6 +133,8 @@ interface MusicState {
   qrUrl: string;
   qrStatus: string;
   qrLoading: boolean;
+  // 歌词
+  parsedLyrics: ParsedLyricLine[];
 
   importLocal: (paths: string[]) => Promise<void>;
   importFolder: (folder: string) => Promise<void>;
@@ -128,6 +162,7 @@ interface MusicState {
   clearQueue: () => void;
   openLogin: () => Promise<void>;
   closeLogin: () => void;
+  loadLyrics: (song: Song) => Promise<void>;
 }
 
 export const useMusicStore = create<MusicState>((set, get) => ({
@@ -159,6 +194,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   qrUrl: '',
   qrStatus: '',
   qrLoading: false,
+  parsedLyrics: [],
 
   importLocal: async (paths) => {
     try {
@@ -203,6 +239,8 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       durationMs: song.duration || 0,
       isPlaying: true,
     });
+    // 播放即拉歌词（本地读 .lrc / 在线走 music_lyric）
+    void get().loadLyrics(song);
   },
 
   togglePlay: () => set((s) => ({ isPlaying: !s.isPlaying })),
@@ -366,6 +404,23 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   },
 
   closeLogin: () => set({ loginOpen: false, qrUrl: '', qrStatus: '' }),
+
+  loadLyrics: async (song) => {
+    set({ parsedLyrics: [] });
+    try {
+      let raw = '';
+      if (song._localPath) {
+        // 本地：读同目录 .lrc/.txt
+        raw = await ipc.getLocalLyric(song._localPath);
+      } else {
+        const l = await ipc.musicLyric(song.id);
+        raw = l.lyric || '';
+      }
+      set({ parsedLyrics: parseLrc(raw) });
+    } catch {
+      set({ parsedLyrics: [] });
+    }
+  },
 }));
 
 /** 格式化毫秒 → m:ss（播放条时间显示） */
