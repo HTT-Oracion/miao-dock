@@ -525,8 +525,13 @@ if (!refute) {
 
   let total = 0;
   let red = 0;
+  let skipped = 0;
   const falsePositives = [];
   const restored = new Map(); // file -> original Buffer（最终整批校验）
+  // 分母固定：应执行的破坏条数在脚本里写死，少执行一条即判红。
+  // 理由——比率型指标会吞掉分母变化：「9/9」和「8/8」在肉眼看来都是全绿，
+  // 而后者已经永久少了一条覆盖（锚点随被测代码重构漂移时会这样静默降级）。
+  const expectedTotal = MUTATIONS.reduce((n, m) => n + m.expect.length, 0);
 
   console.log('\n破坏源文件 → 断言必须变红 → 恢复\n');
   for (const mut of MUTATIONS) {
@@ -538,6 +543,7 @@ if (!refute) {
       if (!txt.includes(mut.find)) {
         console.log(`⚠ ${mut.name}\n    破坏锚点未找到（源文件已变？）—— 本条无法反证`);
         okApply = false;
+        skipped += mut.expect.length;
       } else {
         writeFileSync(mut.file, txt.replace(mut.find, mut.replace));
       }
@@ -574,8 +580,10 @@ if (!refute) {
   }
 
   console.log('\n' + '─'.repeat(56));
-  console.log(`REFUTE: ${red}/${total} 条按预期变红`);
+  console.log(`REFUTE: ${red}/${total} 条按预期变红（应执行 ${expectedTotal} 条）`);
+  if (skipped) console.log(`✗ 有 ${skipped} 条未能反证（破坏锚点未找到）—— 跳过 ≠ 通过`);
   if (restoreFail) console.log(`✗ 有 ${restoreFail} 个文件未恢复到原始字节`);
   if (falsePositives.length) console.log(`✗ 假阳性：${falsePositives.join(', ')}`);
-  process.exitCode = red === total && restoreFail === 0 ? 0 : 1;
+  process.exitCode =
+    red === total && total === expectedTotal && skipped === 0 && restoreFail === 0 ? 0 : 1;
 }
