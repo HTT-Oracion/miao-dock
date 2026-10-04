@@ -45,6 +45,10 @@ const F = {
   platform: path.join(APP, 'src', 'music', 'platform.ts'),
   store: path.join(APP, 'src', 'music', 'store.ts'),
   musicScreen: path.join(APP, 'src', 'screens', 'MusicScreen.tsx'),
+  app: path.join(APP, 'src', 'App.tsx'),
+  kernel: path.join(APP, 'src', 'components', 'MusicKernel.tsx'),
+  playerBar: path.join(APP, 'src', 'screens', 'music', 'PlayerBar.tsx'),
+  expanded: path.join(APP, 'src', 'screens', 'music', 'ExpandedPlayer.tsx'),
   musicUiDir: path.join(APP, 'src', 'screens', 'music'),
   virtualList: path.join(APP, 'src', 'components', 'units', 'VirtualList.tsx'),
   css: path.join(APP, 'src', 'styles', 'app.css'),
@@ -138,6 +142,10 @@ function loadSources() {
     platform: readMaybe(F.platform),
     store: readMaybe(F.store),
     musicScreen: readMaybe(F.musicScreen),
+    app: readMaybe(F.app),
+    kernel: readMaybe(F.kernel),
+    playerBar: readMaybe(F.playerBar),
+    expanded: readMaybe(F.expanded),
     css: readMaybe(F.css),
   };
   s.musicUi = walkText(F.musicUiDir, ['.tsx', '.ts', '.css']);
@@ -204,6 +212,94 @@ function methodBody(src, name) {
  */
 function hasMethodImpl(src, name) {
   return new RegExp(`\\n\\s*${esc(name)}:\\s*(?:async\\s*)?\\([^)]*\\)\\s*=>\\s*\\{`).test(src);
+}
+
+/**
+ * 取模块级 `[export] [async] function <name>(...) {...}` 的函数体（含未 export 的，如 resolveOnlineUrl）。
+ * 与 fnBody 的区别：fnBody 只认 `export function`，而 resolveOnlineUrl 是模块内私有 async 函数。
+ */
+function fnBodyAny(src, name) {
+  const m = new RegExp(`(?:^|\\n)\\s*(?:export\\s+)?(?:async\\s+)?function\\s+${esc(name)}\\s*\\(`).exec(src);
+  if (!m) return null;
+  const start = src.indexOf('{', m.index);
+  if (start < 0) return null;
+  let depth = 0;
+  for (let i = start; i < src.length; i++) {
+    const c = src[i];
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) return src.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * 去掉行注释与块注释（带字符串状态机）——**判据必须先剥注释再匹配**。
+ *
+ * 本轮多处**注释里主动写出了被禁的写法**，直接扫全文会被注释喂成假绿或假红：
+ *   · PlayerBar 注释写「不调 e.preventDefault()」→ 不剥注释，"不得出现 preventDefault" 会**误报**；
+ *   · MusicScreen 注释写 `<audio>`、store/ExpandedPlayer 注释写 `setExpanded(false)`
+ *     → 不剥注释，"已搬走/未直接调用"这些判据会**恒绿**（该红没红）。
+ * 本仓库历史上正是栽在"注释让断言误判"上（D-31），故此处一律先剥。
+ */
+function stripComments(src) {
+  let out = '';
+  let state = 'code';
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    const c2 = src[i + 1];
+    if (state === 'code') {
+      if (c === '/' && c2 === '*') {
+        state = 'block';
+        out += '  ';
+        i++;
+        continue;
+      }
+      if (c === '/' && c2 === '/') {
+        state = 'line';
+        out += '  ';
+        i++;
+        continue;
+      }
+      if (c === "'") state = 'sq';
+      else if (c === '"') state = 'dq';
+      else if (c === '`') state = 'tpl';
+      out += c;
+      continue;
+    }
+    if (state === 'block') {
+      if (c === '*' && c2 === '/') {
+        state = 'code';
+        out += '  ';
+        i++;
+        continue;
+      }
+      out += c === '\n' ? '\n' : ' ';
+      continue;
+    }
+    if (state === 'line') {
+      if (c === '\n') {
+        state = 'code';
+        out += '\n';
+        continue;
+      }
+      out += ' ';
+      continue;
+    }
+    // 字符串内：转义后整体保留
+    if (c === '\\') {
+      out += c + (c2 ?? '');
+      i++;
+      continue;
+    }
+    if (state === 'sq' && c === "'") state = 'code';
+    else if (state === 'dq' && c === '"') state = 'code';
+    else if (state === 'tpl' && c === '`') state = 'code';
+    out += c;
+  }
+  return out;
 }
 
 /** 解析 PLATFORM_CAPS 里每个平台的能力布尔值 */
@@ -509,6 +605,203 @@ add('UI.playerBarRule', 'UI', (s) => {
   return { ok: missing.length === 0, detail: missing.length ? `播放条/定高布局缺：${missing.join('、')}` : '' };
 });
 
+// ============================ 播放器还原（PLAYER） ============================
+/**
+ * 本轮「音乐播放器还原」的四类契约，逐条对应一次**用户能感知**的故障：
+ *   A 播放内核常驻   —— 切到设置页就断播（<audio> 原在 MusicScreen 内，切屏即销毁）
+ *   B 展开动画+点歌自动展开 —— 退场时长两处不一致 = 动画没播完就消失；自动切歌弹开播放器
+ *   C 播放条补全     —— 静音/滚轮调音量/音质下拉/码率显示/关闭播放/进度条拖拽会话
+ *   D 实际音质回写   —— resolveOnlineUrl 从不写 currentQuality/currentBitrate，音质标签是假 UI
+ *
+ * ⚠️ 判据一律先 stripComments 再匹配：本轮多处注释**主动写出了被禁的写法**（见 stripComments 注释）。
+ */
+add('PLAYER.kernelExists', 'PLAYER', (s) => {
+  const k = stripComments(s.kernel);
+  if (!k) return { ok: false, detail: '未读到 app/src/components/MusicKernel.tsx' };
+  const missing = [];
+  if (!/<audio\b/.test(k)) missing.push('未持有 <audio> 元素');
+  if (!/\buseMusicStore\b/.test(k)) missing.push('未接 store（useMusicStore）');
+  return { ok: missing.length === 0, detail: missing.length ? `播放内核缺：${missing.join('、')}` : '' };
+});
+add('PLAYER.kernelAtRoot', 'PLAYER', (s) => ({
+  ok: /<MusicKernel\b/.test(stripComments(s.app)),
+  detail: '<MusicKernel /> 未挂在 App.tsx 应用根（实现了但没人挂 = 切屏照样断播）',
+}));
+add('PLAYER.audioLeftScreen', 'PLAYER', (s) => {
+  const ms = stripComments(s.musicScreen);
+  const hit = [];
+  if (/<audio\b/.test(ms)) hit.push('<audio>');
+  if (/\baudioRef\b/.test(ms)) hit.push('audioRef');
+  if (/\bonTimeUpdate\b/.test(ms)) hit.push('onTimeUpdate');
+  return {
+    ok: hit.length === 0,
+    detail: hit.length
+      ? `MusicScreen.tsx 仍持有播放内核残留：${hit.join('、')}（内核必须整体住在 MusicKernel —— 两边各留一半正是"切屏断播"的温床）`
+      : '',
+  };
+});
+add('PLAYER.registerApi', 'PLAYER', (s) => ({
+  ok: /export function registerAudioElement\s*\(/.test(stripComments(s.store)),
+  detail: 'store.ts 未导出 registerAudioElement（播放内核无处把 DOM 引用交给 store）',
+}));
+add('PLAYER.kernelRegisters', 'PLAYER', (s) => {
+  const k = stripComments(s.kernel);
+  const missing = [];
+  // 「登记」= 传入一个非 null 的元素。负向先行断言把 `registerAudioElement(null)`（注销）排除掉，
+  // 否则删掉挂载时那次调用、只留卸载时的 null，这条会**该红没红**（本脚本第一版正是如此）。
+  if (!/\bregisterAudioElement\s*\(\s*(?!null\b)/.test(k)) missing.push('挂载时未登记 audio 元素（未调用 registerAudioElement(元素)）');
+  if (!/\bregisterAudioElement\s*\(\s*null\s*\)/.test(k)) missing.push('卸载时未传 null 注销');
+  return { ok: missing.length === 0, detail: missing.length ? `播放内核登记/注销：${missing.join('、')}` : '' };
+});
+add('PLAYER.seekMovesAudio', 'PLAYER', (s) => {
+  // 一律在**剥注释后**的源码上取实现体：本仓库的实现体里本就夹着注释，
+  // 反证注入的说明注释又常写出被禁的写法（如 "expand:false 被移除"），不剥注释会喂成假绿。
+  const body = methodBody(stripComments(s.store), 'seek');
+  if (body == null) return { ok: false, detail: 'store.ts 未定义 seek' };
+  const missing = [];
+  if (!/progressMs/.test(body)) missing.push('未写 progressMs');
+  if (!/\.currentTime\s*=/.test(body)) missing.push('未挪 audio.currentTime（退化成"只动进度条、不动声音"）');
+  return { ok: missing.length === 0, detail: missing.length ? `seek 实现缺：${missing.join('、')}` : '' };
+});
+add('PLAYER.audioElNotInState', 'PLAYER', (s) => {
+  const st = stripComments(s.store);
+  const hasRef = /\blet\s+audioEl\b/.test(st);
+  // 模块级 `let audioEl: HTMLAudioElement | null = null;` 自身带类型冒号，先把它剔除，
+  // 再看是否还残留 `audioEl: ...`（那才是"被塞进 interface / create 初始 state"的形态）。
+  const withoutDecl = st.replace(/let\s+audioEl\b[^;]*;/, '');
+  const inState = /\baudioEl\s*:/.test(withoutDecl);
+  return {
+    ok: hasRef && !inState,
+    detail: !hasRef
+      ? 'store.ts 未以模块级 let 持有 audioEl'
+      : inState
+        ? 'audioEl 被塞进了 zustand state（DOM 引用不该进 state：每次登记会惊动所有订阅者）'
+        : '',
+  };
+});
+add('PLAYER.animKeyframes', 'PLAYER', (s) => {
+  const missing = ['@keyframes music-exp-up', '@keyframes music-exp-down'].filter((k) => !s.css.includes(k));
+  return { ok: missing.length === 0, detail: missing.length ? `app.css 缺进场/退场关键帧：${missing.join('、')}` : '' };
+});
+add('PLAYER.animEnter', 'PLAYER', (s) => {
+  const rule = (s.css.match(/(?:^|\n)\.music-exp\s*\{([^}]*)\}/) || [, ''])[1];
+  return { ok: /animation\s*:\s*music-exp-up/.test(rule), detail: 'app.css 的 .music-exp 未自带进场动画 music-exp-up' };
+});
+add('PLAYER.animClosing', 'PLAYER', (s) => {
+  const rule = (s.css.match(/\.music-exp\.is-closing\s*\{([^}]*)\}/) || [, ''])[1];
+  return { ok: /animation\s*:\s*music-exp-down/.test(rule), detail: 'app.css 的 .music-exp.is-closing 未播退场动画 music-exp-down' };
+});
+add('PLAYER.durationSync', 'PLAYER', (s) => {
+  // 双向：CSS 的退场时长 ↔ store 的延时，两个数都取出来比对 —— 改一处忘另一处 = 动画没播完就消失
+  const rule = (s.css.match(/\.music-exp\.is-closing\s*\{([^}]*)\}/) || [, ''])[1];
+  const cssM = /animation\s*:\s*music-exp-down\s+([\d.]+)s/.exec(rule);
+  const body = methodBody(stripComments(s.store), 'closeExpanded');
+  const msM = body && /\}\s*,\s*(\d+)\s*\)\s*;/.exec(body);
+  if (!cssM) return { ok: false, detail: 'app.css 未取到 .music-exp.is-closing 的退场时长（0.Ns）' };
+  if (!msM) return { ok: false, detail: 'store.closeExpanded 未取到退场延时（setTimeout 的毫秒数）' };
+  const cssSec = parseFloat(cssM[1]);
+  const ms = Number(msM[1]);
+  const ok = Math.abs(cssSec * 1000 - ms) < 0.5;
+  return { ok, detail: ok ? '' : `退场时长两处不一致：CSS ${cssSec}s ↔ store ${ms}ms（改一处必须改另一处）` };
+});
+add('PLAYER.closePath', 'PLAYER', (s) => {
+  const ep = stripComments(s.expanded);
+  const missing = [];
+  if (!/closeExpanded\s*\(\s*\)/.test(ep)) missing.push('收起按钮未走 closeExpanded()');
+  if (/setExpanded\s*\(\s*false\s*\)/.test(ep)) missing.push('仍直接 setExpanded(false)（会跳过退场动画）');
+  return { ok: missing.length === 0, detail: missing.length ? `ExpandedPlayer 收起入口：${missing.join('、')}` : '' };
+});
+add('PLAYER.escPath', 'PLAYER', (s) => {
+  const ms = stripComments(s.musicScreen);
+  const missing = [];
+  if (!/closeExpanded\s*\(\s*\)/.test(ms)) missing.push('Esc 分支未走 closeExpanded()');
+  if (/setExpanded\s*\(\s*false\s*\)/.test(ms)) missing.push('仍直接 setExpanded(false)');
+  return { ok: missing.length === 0, detail: missing.length ? `MusicScreen Esc 收起：${missing.join('、')}` : '' };
+});
+add('PLAYER.playSongExpandOpt', 'PLAYER', (s) => {
+  const body = methodBody(stripComments(s.store), 'playSong');
+  if (body == null) return { ok: false, detail: 'store.ts 未定义 playSong' };
+  const missing = [];
+  if (!/opts\?\.\s*expand\s*===\s*false/.test(body)) missing.push('未按 opts?.expand === false 判定');
+  if (!/expanded\s*:\s*true/.test(body)) missing.push('未设置 expanded: true');
+  return { ok: missing.length === 0, detail: missing.length ? `playSong 自动展开：${missing.join('、')}` : '' };
+});
+add('PLAYER.nextExpandFalse', 'PLAYER', (s) => {
+  const body = methodBody(stripComments(s.store), 'next');
+  return { ok: body != null && /expand\s*:\s*false/.test(body), detail: 'store.next 未传 { expand: false }（自动切歌会把播放器弹开）' };
+});
+add('PLAYER.prevExpandFalse', 'PLAYER', (s) => {
+  const body = methodBody(stripComments(s.store), 'prev');
+  return { ok: body != null && /expand\s*:\s*false/.test(body), detail: 'store.prev 未传 { expand: false }' };
+});
+add('PLAYER.bar.mute', 'PLAYER', (s) => {
+  const pb = stripComments(s.playerBar);
+  const missing = [];
+  if (!/toggleMute\s*\(\s*\)/.test(pb)) missing.push('未接 toggleMute()');
+  if (!/\bVolumeX\b/.test(pb) || !/\bVolume2\b/.test(pb)) missing.push('静音图标未随 muted 在 VolumeX/Volume2 间切换');
+  return { ok: missing.length === 0, detail: missing.length ? `播放条静音：${missing.join('、')}` : '' };
+});
+add('PLAYER.bar.wheelVolume', 'PLAYER', (s) => {
+  const pb = stripComments(s.playerBar);
+  const missing = [];
+  if (!/\bonWheel\b/.test(pb)) missing.push('缺 onWheel');
+  if (!/\bstepVolume\s*\(/.test(pb)) missing.push('未调 stepVolume(');
+  if (/\bpreventDefault\b/.test(pb)) missing.push('出现 preventDefault（React wheel 是被动监听，调用无效且刷警告）');
+  return { ok: missing.length === 0, detail: missing.length ? `播放条滚轮调音量：${missing.join('、')}` : '' };
+});
+add('PLAYER.bar.qualitySelect', 'PLAYER', (s) => {
+  const pb = stripComments(s.playerBar);
+  const missing = [];
+  if (!/\bSelect\b/.test(pb)) missing.push('未用 units 的 Select');
+  // 必须看**接线**（options={QUALITY_OPTIONS}），不能只看名字：import 行里也有 QUALITY_OPTIONS，
+  // 只按名字匹配时「把 options 清空」测不出来（本脚本第一版正是如此）。
+  if (!/\boptions\s*=\s*\{\s*QUALITY_OPTIONS\s*\}/.test(pb)) missing.push('Select 未接 options={QUALITY_OPTIONS}');
+  if (!/\bsetPlaybackQuality\b/.test(pb)) missing.push('未接 setPlaybackQuality');
+  if (!/music-q-sel/.test(pb)) missing.push('缺容器类名 music-q-sel');
+  return { ok: missing.length === 0, detail: missing.length ? `播放条音质下拉：${missing.join('、')}` : '' };
+});
+add('PLAYER.bar.bitrate', 'PLAYER', (s) => {
+  const pb = stripComments(s.playerBar);
+  const missing = [];
+  if (!/\bcurrentQuality\b/.test(pb)) missing.push('未用 currentQuality');
+  if (!/\bcurrentBitrate\b/.test(pb)) missing.push('未用 currentBitrate');
+  if (!/\bqualityLabel\s*\(/.test(pb)) missing.push('未用 qualityLabel(');
+  // 类名要求"到边界为止"：/music-br/ 会命中 music-br-removed，改类名测不出来
+  if (!/music-br(?=["'\s])/.test(pb)) missing.push('缺类名 music-br');
+  return { ok: missing.length === 0, detail: missing.length ? `播放条实际音质/码率显示：${missing.join('、')}` : '' };
+});
+add('PLAYER.bar.closePlayback', 'PLAYER', (s) => ({
+  ok: /closePlayback\s*\(\s*\)/.test(stripComments(s.playerBar)),
+  detail: '播放条未接 closePlayback()（关闭播放）',
+}));
+add('PLAYER.bar.dragSession', 'PLAYER', (s) => {
+  // 进度条拖拽会话：拖动只改本地 dragMs，松手/抬键才提交一次。
+  // 「onChange 里不得直接调 onSeek」是这条的本质 —— 否则退回"每动一格提交一次"（卡顿/爆音）。
+  const pb = stripComments(s.playerBar);
+  const missing = [];
+  if (!/\buseState\b/.test(pb)) missing.push('未用 useState 保存拖拽会话');
+  if (!/\bdragMs\b/.test(pb) || !/\bsetDragMs\s*\(/.test(pb)) missing.push('缺本地拖拽状态 dragMs');
+  if (!/onChange=\{[^}]*setDragMs\s*\(/.test(pb)) missing.push('onChange 未只做 setDragMs(');
+  if (/onChange=\{[^}]*onSeek\s*\(/.test(pb)) missing.push('onChange 里直接调 onSeek(（退回逐帧提交）');
+  if (!/\bonPointerUp\s*=/.test(pb)) missing.push('缺 onPointerUp 提交');
+  if (!/\bonKeyUp\s*=/.test(pb)) missing.push('缺 onKeyUp 提交');
+  return { ok: missing.length === 0, detail: missing.length ? `播放条进度条拖拽会话：${missing.join('、')}` : '' };
+});
+add('PLAYER.resolveWrites', 'PLAYER', (s) => {
+  // D 组防回归：resolveOnlineUrl 此前从不写 currentQuality/currentBitrate → 播放条音质标签是假 UI
+  const body = fnBodyAny(stripComments(s.store), 'resolveOnlineUrl');
+  if (body == null) return { ok: false, detail: 'store.ts 未定义 resolveOnlineUrl' };
+  const missing = [];
+  if (!/\bcurrentQuality\b/.test(body)) missing.push('currentQuality 未写回');
+  if (!/\bcurrentBitrate\b/.test(body)) missing.push('currentBitrate 未写回');
+  return {
+    ok: missing.length === 0,
+    detail: missing.length
+      ? `resolveOnlineUrl 缺回写：${missing.join('、')}（字段定义了却永远是空 —— 播放条音质标签是假 UI）`
+      : '',
+  };
+});
+
 // ── 执行器 ────────────────────────────────────────────────────────────────
 function runAll(s) {
   const res = {};
@@ -523,7 +816,7 @@ function runAll(s) {
   return res;
 }
 
-const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI'];
+const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER'];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -666,6 +959,180 @@ const MUTATIONS = [
     replace: 'hidden={false}',
     expect: ['UI.playerBarRule'],
   },
+
+  // ── PLAYER · A 播放内核常驻 ────────────────────────────────────────────
+  {
+    name: '把 MusicKernel.tsx 里的 <audio> 元素删掉（模拟内核搬走/未实现）',
+    file: F.kernel,
+    // 锚点带上后续属性行：文件注释里也出现过 `<audio>`，只写 `<audio` 会 replace 到注释上（改了没生效）
+    find: '    <audio\n      ref={audioRef}',
+    replace: '    <audioGone\n      ref={audioRef}',
+    expect: ['PLAYER.kernelExists'],
+  },
+  {
+    name: '把 App.tsx 里的 <MusicKernel /> 删掉（实现了但没挂）',
+    file: F.app,
+    find: '      <MusicKernel />\n',
+    replace: '',
+    expect: ['PLAYER.kernelAtRoot'],
+  },
+  {
+    name: '把 <audio> 挪回 screens/MusicScreen.tsx',
+    file: F.musicScreen,
+    find: '    <div className="music">',
+    replace: '    <audio />\n    <div className="music">',
+    expect: ['PLAYER.audioLeftScreen'],
+  },
+  {
+    name: '把 store.ts 的 registerAudioElement 改名（模拟内核拿不到登记通道）',
+    file: F.store,
+    find: 'export function registerAudioElement(el: HTMLAudioElement | null): void {',
+    replace: 'export function registerAudioElementGone(el: HTMLAudioElement | null): void {',
+    expect: ['PLAYER.registerApi'],
+  },
+  {
+    name: '把 MusicKernel 挂载时的 registerAudioElement 调用去掉',
+    file: F.kernel,
+    find: '    registerAudioElement(audioRef.current);',
+    replace: '    /* [refute] 未登记 audio 元素 */',
+    expect: ['PLAYER.kernelRegisters'],
+  },
+  {
+    name: '把 seek 里的 audioEl.currentTime 那行删掉（退回"只改进度不动音频"）',
+    file: F.store,
+    // 锚点不含变量名：`currentTime = ms / 1000` 是全局唯一片段，变量改名也不会让这条静默失效
+    find: 'currentTime = ms / 1000',
+    replace: 'currentTimeMoved = ms / 1000',
+    expect: ['PLAYER.seekMovesAudio'],
+  },
+  {
+    name: '把 audioEl 塞进 zustand state（DOM 引用进了 state）',
+    file: F.store,
+    find: '  currentBitrate: 0,\n',
+    replace: '  currentBitrate: 0,\n  audioEl: null,\n',
+    expect: ['PLAYER.audioElNotInState'],
+  },
+
+  // ── PLAYER · B 展开动画 + 点歌自动展开 ────────────────────────────────
+  {
+    name: '把 @keyframes music-exp-down 改名（退场动画关键帧丢失）',
+    file: F.css,
+    find: '@keyframes music-exp-down {',
+    replace: '@keyframes music-exp-gone {',
+    expect: ['PLAYER.animKeyframes'],
+  },
+  {
+    name: '把 .music-exp 的进场动画那行删掉',
+    file: F.css,
+    find: '  animation: music-exp-up 0.34s cubic-bezier(0.4, 0, 0.2, 1);\n',
+    replace: '',
+    expect: ['PLAYER.animEnter'],
+  },
+  {
+    name: '把 .is-closing 的退场动画指向 music-exp-up（不再下播）',
+    file: F.css,
+    find: 'animation: music-exp-down 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;',
+    replace: 'animation: music-exp-up 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;',
+    expect: ['PLAYER.animClosing'],
+  },
+  {
+    name: '把 CSS 里 .is-closing 的 0.3s 改成 0.5s（退场时长两处不一致）',
+    file: F.css,
+    find: 'animation: music-exp-down 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;',
+    replace: 'animation: music-exp-down 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;',
+    expect: ['PLAYER.durationSync'],
+  },
+  {
+    name: '把 next() 里 { expand: false } 删掉（自动切歌会弹开播放器）',
+    file: F.store,
+    find:
+      '    // expand:false —— 自动切歌不该把播放器弹开（含 onEnded 自动续播与无版权自动跳过）\n    void get().playSong(queue[idx], undefined, { expand: false });',
+    replace: '    // [refute] expand:false 被移除\n    void get().playSong(queue[idx], undefined);',
+    expect: ['PLAYER.nextExpandFalse'],
+  },
+  {
+    name: '把 prev() 里 { expand: false } 删掉',
+    file: F.store,
+    find:
+      '        : (currentIndex - 1 + queue.length) % queue.length;\n    void get().playSong(queue[idx], undefined, { expand: false });',
+    replace:
+      '        : (currentIndex - 1 + queue.length) % queue.length;\n    void get().playSong(queue[idx], undefined);',
+    expect: ['PLAYER.prevExpandFalse'],
+  },
+  {
+    name: '把 playSong 的 opts?.expand 判定去掉（永远展开）',
+    file: F.store,
+    find: '      ...(opts?.expand === false ? {} : { expanded: true }),',
+    replace: '      expanded: true,',
+    expect: ['PLAYER.playSongExpandOpt'],
+  },
+  {
+    name: '把 ExpandedPlayer 的收起按钮改回 setExpanded(false)',
+    file: F.expanded,
+    find: 'onClick={() => closeExpanded()}',
+    replace: 'onClick={() => setExpanded(false)}',
+    expect: ['PLAYER.closePath'],
+  },
+  {
+    name: '把 MusicScreen 的 Esc 分支改回 setExpanded(false)',
+    file: F.musicScreen,
+    find: '        closeExpanded();',
+    replace: '        setExpanded(false);',
+    expect: ['PLAYER.escPath'],
+  },
+
+  // ── PLAYER · C 播放条补全 ─────────────────────────────────────────────
+  {
+    name: '把 PlayerBar 的静音按钮接线拆掉',
+    file: F.playerBar,
+    find: 'onClick={() => toggleMute()}',
+    replace: 'onClick={() => undefined}',
+    expect: ['PLAYER.bar.mute'],
+  },
+  {
+    name: '把 PlayerBar 的 onWheel 那行删掉（滚轮调音量失效）',
+    file: F.playerBar,
+    find: '          onWheel={(e) => stepVolume(e.deltaY < 0 ? 0.05 : -0.05)}\n',
+    replace: '',
+    expect: ['PLAYER.bar.wheelVolume'],
+  },
+  {
+    name: '把 PlayerBar 音质下拉的选项清空（QUALITY_OPTIONS 丢失）',
+    file: F.playerBar,
+    find: 'options={QUALITY_OPTIONS}',
+    replace: 'options={[]}',
+    expect: ['PLAYER.bar.qualitySelect'],
+  },
+  {
+    name: '把 PlayerBar 的 music-br 码率块类名改掉（实际音质显示丢失）',
+    file: F.playerBar,
+    find: 'className="music-br"',
+    replace: 'className="music-br-removed"',
+    expect: ['PLAYER.bar.bitrate'],
+  },
+  {
+    name: '把 PlayerBar 的关闭播放按钮接线拆掉',
+    file: F.playerBar,
+    find: 'onClick={() => closePlayback()}',
+    replace: 'onClick={() => undefined}',
+    expect: ['PLAYER.bar.closePlayback'],
+  },
+  {
+    name: '把 PlayerBar 的 onChange 改回 onSeek(...)（退回逐帧提交）',
+    file: F.playerBar,
+    find: 'onChange={(e) => setDragMs(Number(e.target.value))}',
+    replace: 'onChange={(e) => onSeek(Number(e.target.value))}',
+    expect: ['PLAYER.bar.dragSession'],
+  },
+
+  // ── PLAYER · D 实际音质回写 ───────────────────────────────────────────
+  {
+    name: '把 resolveOnlineUrl 里 currentBitrate 的写入删掉（音质标签变假 UI）',
+    file: F.store,
+    find: '    currentBitrate: r.br || 0,\n',
+    replace: '',
+    expect: ['PLAYER.resolveWrites'],
+  },
 ];
 
 // ── 主流程 ────────────────────────────────────────────────────────────────
@@ -673,7 +1140,7 @@ const refute = process.argv.includes('--refute');
 
 console.log('音乐模块 · 四平台接通断言' + (refute ? ' · 反证轮' : ''));
 console.log(`根目录：${ROOT}`);
-console.log(`断言总数：${A.length}（RUST/IPC/PLATFORM/STORE/UI）`);
+console.log(`断言总数：${A.length}（RUST/IPC/PLATFORM/STORE/DUR/SEARCH/UI/PLAYER）`);
 
 if (!refute) {
   const res = runAll(loadSources());
