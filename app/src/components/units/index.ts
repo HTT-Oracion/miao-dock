@@ -27,4 +27,3 @@ export { Select } from '@components/units/Select';
 export { Swatches } from '@components/units/Swatches';
 export { Switch } from '@components/units/Switch';
 export { ROW_GAP, ROW_H, VirtualList } from '@components/units/VirtualList';
-export { useEsc } from '@components/units/useEsc';

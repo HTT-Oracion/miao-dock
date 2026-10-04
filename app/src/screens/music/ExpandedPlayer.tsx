@@ -5,7 +5,7 @@ import { SKINS } from '@music/player-options';
 import { coverProxyUrl, fmtTime, lyricIndexAt, songKey, useMusicStore } from '@music/store';
 import type { MusicComment } from '@music/types';
 import { Empty, IconButton } from '@components/units';
-import { useCoverColor } from '@screens/music/useCoverColor';
+import { useCoverColor } from '@hooks/useCoverColor';
 
 /**
  * 允许在 style 里写 CSS 自定义属性（--x）的写法。

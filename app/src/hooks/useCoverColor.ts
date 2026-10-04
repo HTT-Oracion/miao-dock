@@ -16,6 +16,14 @@ const LIGHT_LUMA = 160;
 /**
  * 本地取封面主色（不联网、不引依赖）。
  *
+ * 归属（2026-10-04 收口）：`use*` 命名的 hook 一律住 `src/hooks/`（spec-notes D-41）。
+ * 本 hook 住在 `screens/music/` 时是收口的漏网之鱼 —— 而漏的原因很典型：
+ * 收口时只迁了"当时唯一那个无业务依赖的 hook"（useEsc），
+ * 判断依据是"纯不纯"，而不是"名字是不是 use 开头"。
+ * 现在由 `HOOKS.noMisplacedUse` 断言按**文件名**判，不再依赖人对"纯不纯"的判断。
+ * （注意：hooks 目录**允许**依赖业务模块 —— 它本身就是业务 hook 的家；
+ * 禁止依赖业务的是 `components/units`。）
+ *
  * 做法：`<img crossOrigin="anonymous">` 载入封面 → 画到 16×16 的小 canvas →
  * 对像素求平均色 → 返回 `{ hex, isLight }`。
  *

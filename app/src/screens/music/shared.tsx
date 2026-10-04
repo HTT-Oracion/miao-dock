@@ -7,8 +7,8 @@ import type { Song } from '@music/types';
  * 音乐屏共享小组件 —— 只放**音乐语义**的东西。
  *
  * 分界线（《09》§2.2）：凡是与 `Song` / 平台概念绑定的，留在这里；
- * 与音乐无关的通用件（`IconButton` / `Empty` / `useEsc`）已移到
- * `components/units/`，需要时从那里引 —— 不要让"音乐屏共享件"重新长成杂物间。
+ * 与音乐无关的通用件（`IconButton` / `Empty`）从 `@components/units` 引，
+ * 通用 hook（`useEsc`）从 `@hooks/useEsc` 引 —— 不要让"音乐屏共享件"重新长成杂物间。
  */
 
 /**

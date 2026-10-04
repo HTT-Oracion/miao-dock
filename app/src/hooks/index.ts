@@ -1,3 +1,8 @@
+/**
+ * hooks 唯一收口的**业务桶**（spec-notes D-41）：服务状态 / 任务列表 / 漫画库 / 托盘退出 / 吐司。
+ * `use*` 命名的 hook 一律住 `src/hooks/`：业务数据类进本桶（经 `@hooks` 引入），
+ * 纯 DOM 行为类单放同目录（如 `@hooks/useEsc`），units 组件不得 import 本目录任何东西。
+ */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   apiGet,
