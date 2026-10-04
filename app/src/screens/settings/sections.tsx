@@ -1,13 +1,28 @@
 import { useEffect, useState } from 'react';
-import type { RefObject } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import type { ServiceStatus } from '../../ipc';
 import type { ThemeMode } from '../../theme/tokens';
 import { stateView } from '../../nav';
 import { Dot } from '../../components/atoms';
+import { SKINS, QUALITY_OPTIONS, LYRICS_SIZE, LYRICS_COLORS } from '../../music/player-options';
+import { useMusicStore } from '../../music/store';
 import { ABOUT, GENERAL, MEDIA, RESOURCE, TRANSLATE } from './catalog';
 import type { SettingGroup, SettingItem } from './catalog';
-import { GroupNote, PendingRow, ReadOnly, Row, RowNote, SubTitle, Switch } from './parts';
+import {
+  ColorPicker,
+  CtlNote,
+  GroupNote,
+  PendingRow,
+  Range,
+  ReadOnly,
+  Row,
+  RowNote,
+  Select,
+  SubTitle,
+  Swatches,
+  Switch,
+} from './parts';
 import { SpecCheckBlock, useSpecCheck } from './SpecCheck';
 
 const STATUS_TEXT: Record<ServiceStatus['state'], string> = {
@@ -190,12 +205,126 @@ export function TranslateSection({
   );
 }
 
-/** ③ 播放·媒体 —— 5 项全部待接入；迁往音乐屏的说明在 catalog 的 `note` 里 */
+/** ③ 播放·媒体 —— 8 项全部接真实能力，横跨「播放 / 歌词 / 透明彩胶」三小节 */
 export function MediaSection() {
+  /*
+   * 全部偏好都从音乐模块的全局 store 读，setter 回写同一份。
+   *
+   * 为什么视图直接读 store 而不是接 props：播放器（screens/music）与设置页读写的是
+   * **同一份偏好**，两边各持一份就会长出"设置页说高清、播放器放标准"的两套事实。
+   * store 的 setter 自己负责持久化，本组件不缓存、不落盘。
+   */
+  const quality = useMusicStore((s) => s.playbackQuality);
+  const setQuality = useMusicStore((s) => s.setPlaybackQuality);
+  const skin = useMusicStore((s) => s.skin);
+  const setSkin = useMusicStore((s) => s.setSkin);
+  const dynamicEnabled = useMusicStore((s) => s.dynamicEnabled);
+  const setDynamicEnabled = useMusicStore((s) => s.setDynamicEnabled);
+  const discMode = useMusicStore((s) => s.discMode);
+  const setDiscMode = useMusicStore((s) => s.setDiscMode);
+  const lyricsFontSize = useMusicStore((s) => s.lyricsFontSize);
+  const setLyricsFontSize = useMusicStore((s) => s.setLyricsFontSize);
+  const lyricsHighlightColor = useMusicStore((s) => s.lyricsHighlightColor);
+  const setLyricsHighlightColor = useMusicStore((s) => s.setLyricsHighlightColor);
+  const vinylColorMode = useMusicStore((s) => s.vinylColorMode);
+  const setVinylColorMode = useMusicStore((s) => s.setVinylColorMode);
+  const vinylCustomColor = useMusicStore((s) => s.vinylCustomColor);
+  const setVinylCustomColor = useMusicStore((s) => s.setVinylCustomColor);
+
+  /** 按 id 分派控件。id 对不上 = catalog 与本组件不同步，明确抛错而非渲染成空行 */
+  const render = (item: SettingItem): ReactNode => {
+    switch (item.id) {
+      case 'quality':
+        return (
+          <Select
+            label={item.label}
+            value={quality}
+            options={QUALITY_OPTIONS}
+            // setPlaybackQuality 是 async（会当场重取地址续播），void 收口避免未处理 Promise
+            onChange={(q) => void setQuality(q)}
+          />
+        );
+      case 'skin':
+        return (
+          <Select
+            label={item.label}
+            value={skin}
+            options={SKINS.map((s) => ({ value: s.id, label: s.label }))}
+            onChange={setSkin}
+          />
+        );
+      case 'dynamic-bg':
+        return (
+          <Switch on={dynamicEnabled} onToggle={() => setDynamicEnabled(!dynamicEnabled)} label={item.label} />
+        );
+      case 'disc-mode':
+        return <Switch on={discMode} onToggle={() => setDiscMode(!discMode)} label={item.label} />;
+      case 'lyrics-size':
+        return (
+          <Range
+            label={item.label}
+            min={LYRICS_SIZE.min}
+            max={LYRICS_SIZE.max}
+            step={LYRICS_SIZE.step}
+            value={lyricsFontSize}
+            suffix="px"
+            onChange={setLyricsFontSize}
+          />
+        );
+      case 'lyrics-color':
+        // 预设色点 + 取色器：两者写同一个 store 字段，取色器让用户能挑预设之外的颜色
+        return (
+          <>
+            <Swatches
+              label={item.label}
+              colors={LYRICS_COLORS}
+              value={lyricsHighlightColor}
+              onPick={setLyricsHighlightColor}
+            />
+            <ColorPicker
+              label={`${item.label}（自定义）`}
+              value={lyricsHighlightColor}
+              onChange={setLyricsHighlightColor}
+            />
+          </>
+        );
+      case 'vinyl-color-mode':
+        return (
+          <Select
+            label={item.label}
+            value={vinylColorMode}
+            options={[
+              { value: 'auto', label: '跟随封面' },
+              { value: 'custom', label: '固定颜色' },
+            ]}
+            onChange={setVinylColorMode}
+          />
+        );
+      case 'vinyl-color':
+        // 跟随封面主色时本项无意义 → 置灰而非隐藏（可见性由 catalog 决定，藏了行数就对不上）
+        return (
+          <>
+            <ColorPicker
+              label={item.label}
+              value={vinylCustomColor}
+              disabled={vinylColorMode !== 'custom'}
+              onChange={setVinylCustomColor}
+            />
+            {vinylColorMode !== 'custom' ? <CtlNote>跟随封面主色时不可用</CtlNote> : null}
+          </>
+        );
+      default:
+        throw new Error(`[settings] ③ 播放·媒体 有未接线的项：${item.id} —— catalog 与本组件不同步`);
+    }
+  };
+
   return (
     <>
       <GroupNote>{MEDIA.note as string}</GroupNote>
-      <Group group={MEDIA.groups[0]} />
+      {/* 按 catalog 的 groups 顺序渲染三小节：写死第一组会静默漏掉「歌词 / 透明彩胶」 */}
+      {MEDIA.groups.map((g) => (
+        <Group key={g.id} group={g} render={render} />
+      ))}
     </>
   );
 }

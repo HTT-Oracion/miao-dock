@@ -120,3 +120,152 @@ export function Switch({
     </button>
   );
 }
+
+/*
+ * 下面五个是 ③ 播放·媒体 专用的**控件原语**（《09》§4.1）。
+ *
+ * 它们与能力无关，只把「一个真的能改 store 的控件长什么样」收敛到一处：
+ * 用受控 `value` + `onChange` 直连调用方的 setter，组件本身**不持状态、不做持久化**
+ * —— 因为 store 的 setter 已经负责持久化（见 store.ts），这里再存一份就是第二个事实源。
+ * 多一个「看起来能改、实际没接线」的中间层，正是设置页最容易长出的假控件。
+ */
+
+/**
+ * 下拉选择：选项由调用方按「值 → 中文标签」给出，本组件不认任何具体档位。
+ *
+ * 泛型钉住 `value`/`options`/`onChange` 三者同一个联合类型 —— 选项表张冠李戴
+ * （比如把皮肤选项喂给音质）会在编译期报错，而不是运行期静默写坏偏好。
+ */
+export function Select<T extends string>({
+  value,
+  options,
+  onChange,
+  label,
+}: {
+  value: T;
+  options: readonly { value: T; label: string }[];
+  onChange: (v: T) => void;
+  label: string;
+}) {
+  return (
+    <select
+      className="set-select"
+      value={value}
+      aria-label={label}
+      onChange={(e) => onChange(e.target.value as T)}
+    >
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** 滑杆 + 右侧数值读数：读数与滑杆同源于 `value`，不可能显示成两个数 */
+export function Range({
+  min,
+  max,
+  step,
+  value,
+  onChange,
+  label,
+  suffix,
+}: {
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  onChange: (v: number) => void;
+  label: string;
+  suffix?: string;
+}) {
+  return (
+    <>
+      <input
+        type="range"
+        className="set-range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        aria-label={label}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+      <span className="set-range-val">
+        {value}
+        {suffix ?? ''}
+      </span>
+    </>
+  );
+}
+
+/**
+ * 预设色点组：`value` 命中的那个加 `is-on`（CSS 用 ring 标选中，不覆盖色点本身的颜色）。
+ *
+ * `title` / `aria-label` 都写颜色值 —— 色点的信息就是"它是什么颜色"，
+ * 只靠视觉传达会让色觉障碍用户与读屏用户拿不到任何信息。
+ */
+export function Swatches({
+  colors,
+  value,
+  onPick,
+  label,
+}: {
+  colors: readonly string[];
+  value: string;
+  onPick: (c: string) => void;
+  label: string;
+}) {
+  const cur = value.toLowerCase();
+  return (
+    <div className="set-swatches" role="group" aria-label={label}>
+      {colors.map((c) => {
+        const on = c.toLowerCase() === cur;
+        return (
+          <button
+            key={c}
+            type="button"
+            className={on ? 'set-swatch is-on' : 'set-swatch'}
+            style={{ background: c }}
+            title={c}
+            aria-label={c}
+            aria-pressed={on}
+            onClick={() => onPick(c)}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/** 原生取色器：`value` 始终回显当前色，`disabled` 是「有真实理由的状态」而非占位 */
+export function ColorPicker({
+  value,
+  onChange,
+  label,
+  disabled,
+}: {
+  value: string;
+  onChange: (c: string) => void;
+  label: string;
+  disabled?: boolean;
+}) {
+  return (
+    <input
+      type="color"
+      className="set-color"
+      value={value}
+      disabled={disabled}
+      aria-label={label}
+      title={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+
+/** 控件旁的一行小字注解：解释"为什么这个控件此刻是灰的 / 只在这档生效" */
+export function CtlNote({ children }: { children: string }) {
+  return <span className="set-ctl-note">{children}</span>;
+}

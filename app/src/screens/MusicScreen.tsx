@@ -29,6 +29,9 @@ export function MusicScreen() {
   // 有歌时它是 .music 的最后一个 flex 子项 + flex:0 0 auto，恒贴在本屏底部
   // （外层的 .content 不再滚动，见 app.css 的 .music height:100%）。
   const queueLength = useMusicStore((s) => s.queue.length);
+  /** 换音质后续播位置（毫秒，0=无）；消费后清零 */
+  const resumeAtMs = useMusicStore((s) => s.resumeAtMs);
+  const clearResumeAt = useMusicStore((s) => s.clearResumeAt);
 
   const init = useMusicStore((s) => s.init);
   const setProgress = useMusicStore((s) => s.setProgress);
@@ -51,12 +54,17 @@ export function MusicScreen() {
   }, [volume]);
 
   // 播放/暂停同步（playUrl 变化时也要重试 play —— 新音频需重新触发播放）
+  // resumeAtMs：换音质会重新取地址、音频从 0 起播，这里把进度补回去再播
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
+    if (resumeAtMs > 0) {
+      a.currentTime = resumeAtMs / 1000;
+      clearResumeAt();
+    }
     if (isPlaying) void a.play().catch(() => undefined);
     else a.pause();
-  }, [isPlaying, playUrl]);
+  }, [clearResumeAt, isPlaying, playUrl, resumeAtMs]);
 
   // Esc 关闭展开播放器 / 队列抽屉
   useEffect(() => {

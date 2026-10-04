@@ -1,20 +1,18 @@
 import { ChevronLeft, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Volume2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { capsOf } from '../../music/platform';
-import { fmtTime, lyricIndexAt, songKey, useMusicStore } from '../../music/store';
-import type { PlayerSkin } from '../../music/store';
+import { SKINS } from '../../music/player-options';
+import { coverProxyUrl, fmtTime, lyricIndexAt, songKey, useMusicStore } from '../../music/store';
 import type { MusicComment } from '../../music/types';
 import { Empty, IconButton } from './shared';
+import { useCoverColor } from './useCoverColor';
 
-/** 六皮肤（均为 CSS 渐变，不做 WebGL）；light 标记浅色皮肤，用于把文字切换成深色 */
-const SKINS: { id: PlayerSkin; label: string; cls: string; light?: boolean }[] = [
-  { id: 'modern', label: '现代', cls: 'sk-modern' },
-  { id: 'glass', label: '通透', cls: 'sk-glass', light: true },
-  { id: 'immersive', label: '沉浸', cls: 'sk-immersive' },
-  { id: 'spectrum', label: '音域回响', cls: 'sk-spectrum' },
-  { id: 'vinyl', label: '透明彩胶', cls: 'sk-vinyl', light: true },
-  { id: 'cover', label: '封面渐染', cls: 'sk-cover', light: true },
-];
+/**
+ * 允许在 style 里写 CSS 自定义属性（--x）的写法。
+ * React.CSSProperties 不含 `--*` 键，直接写会报 TS 错；这里用模板字面量索引签名
+ * 精确描述「所有以 -- 开头的字符串键」，既不用 any 糊，也不丢类型检查。
+ */
+type CSSVarStyle = React.CSSProperties & Record<`--${string}`, string | number>;
 
 function CommentRow({ c }: { c: MusicComment }) {
   return (
@@ -51,6 +49,14 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const loadingComments = useMusicStore((s) => s.loadingComments);
   const commentTab = useMusicStore((s) => s.commentTab);
   const playbackSource = useMusicStore((s) => s.playbackSource);
+  const proxyPort = useMusicStore((s) => s.proxyPort);
+  // ---- 设置页「播放·媒体」里需要在这里落地的偏好 ----
+  const dynamicEnabled = useMusicStore((s) => s.dynamicEnabled);
+  const discMode = useMusicStore((s) => s.discMode);
+  const lyricsFontSize = useMusicStore((s) => s.lyricsFontSize);
+  const lyricsHighlightColor = useMusicStore((s) => s.lyricsHighlightColor);
+  const vinylColorMode = useMusicStore((s) => s.vinylColorMode);
+  const vinylCustomColor = useMusicStore((s) => s.vinylCustomColor);
 
   const setSkin = useMusicStore((s) => s.setSkin);
   const setExpanded = useMusicStore((s) => s.setExpanded);
@@ -70,6 +76,43 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const skinMeta = SKINS.find((s) => s.id === skin) ?? SKINS[0];
   const activeLine = lyricIndexAt(parsedLyrics, progressMs / 1000);
   const curKey = currentSong ? songKey(currentSong) : '';
+
+  // ---- 偏好落地的派生值 ----
+  // 动态背景：只有 modern/immersive 两种皮肤有可流动的渐变（见 app.css 的 is-dynamic 说明）
+  const dynamicOn = dynamicEnabled && (skin === 'modern' || skin === 'immersive');
+
+  /**
+   * 是否真的需要跑封面取色。
+   * 只有「透明彩胶」皮肤会消费 --vinyl-accent（app.css：.sk-vinyl .music-exp-cover），
+   * 且只有 auto 模式才用它 —— custom 模式直接用用户固定色。
+   * 碟片模式（discMode）不加进来：它给封面套的是深色唱片径向渐变，同样不读 --vinyl-accent。
+   * 收起了播放器（!expanded）更不必解码：画面根本不存在。
+   */
+  const needCoverColor = expanded && skin === 'vinyl' && vinylColorMode === 'auto';
+  const coverColor = useCoverColor(needCoverColor ? coverProxyUrl(currentSong?.cover ?? '', proxyPort) : '');
+
+  // 彩胶底色：custom 用用户固定色，auto 用本地取到的封面主色（取不到时 hook 已回落默认色）
+  const vinylAccent = vinylColorMode === 'custom' ? vinylCustomColor : coverColor.hex;
+
+  // 根节点类名：皮肤 + 浅色 + 动态背景 + 碟片模式（暂停时唱片停转）
+  const rootClass = [
+    'music-exp',
+    skinMeta.cls,
+    skinMeta.light ? 'is-light' : '',
+    dynamicOn ? 'is-dynamic' : '',
+    discMode ? 'is-disc' : '',
+    // is-paused 只在「碟片模式」下有视觉含义（暂停时停转），且随 isPlaying 实时变化
+    discMode && !isPlaying ? 'is-paused' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  // 根节点注入彩胶底色；歌词区注入字号与高亮色（app.css 里 var(--lyr-size/--lyr-hl) 消费）
+  const rootStyle: CSSVarStyle = { '--vinyl-accent': vinylAccent };
+  const lyricStyle: CSSVarStyle = {
+    '--lyr-size': `${lyricsFontSize}px`,
+    '--lyr-hl': lyricsHighlightColor,
+  };
 
   // 当前行滚到中间（切歌/进度跳动都跟随；activeRef 只在命中行上挂载）
   useEffect(() => {
@@ -93,7 +136,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const showComments = commentTab === 'comments';
 
   return (
-    <div className={`music-exp ${skinMeta.cls}${skinMeta.light ? ' is-light' : ''}`}>
+    <div className={rootClass} style={rootStyle}>
       <div className="music-exp-topbar">
         <IconButton title="收起" onClick={() => setExpanded(false)}>
           <ChevronLeft size={18} />
@@ -136,7 +179,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
             parsedLyrics.length === 0 ? (
               <Empty>暂无歌词</Empty>
             ) : (
-              <div className="music-exp-lyr-box">
+              <div className="music-exp-lyr-box" style={lyricStyle}>
                 {parsedLyrics.map((line, i) => (
                   <div
                     key={i}

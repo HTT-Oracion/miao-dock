@@ -24,6 +24,7 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { create } from 'zustand';
 import * as ipc from './ipc';
+import { LYRICS_COLOR_DEF, LYRICS_SIZE, VINYL_COLOR_DEF } from './player-options';
 import * as platform from './platform';
 import type { MusicProvider } from './platform';
 import type {
@@ -181,6 +182,15 @@ function writeLS(key: string, value: unknown): void {
   }
 }
 
+/**
+ * 合并式写入偏好：每项只改自己那个键。
+ * 为什么用合并而不是整份覆盖 —— 各项分别由不同的 setter 写入，整份覆盖会把
+ * 「同时改两项」编排成互相覆盖（后写的赢），是一个只在特定操作序列下复现的 bug。
+ */
+function savePrefs(patch: Partial<Prefs>): void {
+  writeLS(LS_PREFS, { ...readLS<Partial<Prefs>>(LS_PREFS, {}), ...patch });
+}
+
 /** 读取历史时剔除带 base64 data URL 封面的条目，避免历史把存储撑爆 */
 function sanitizeForStorage(song: Song): Song {
   return song.cover && song.cover.startsWith('data:') ? { ...song, cover: '' } : song;
@@ -200,6 +210,17 @@ interface Prefs {
   volume: number;
   playMode: PlayMode;
   skin: PlayerSkin;
+  /** 展开播放器歌词字号（px） */
+  lyricsFontSize: number;
+  /** 展开播放器歌词高亮色 */
+  lyricsHighlightColor: string;
+  /** 动态背景：modern/immersive 皮肤的渐变缓慢流动 */
+  dynamicEnabled: boolean;
+  /** 碟片模式：展开播放器的封面变成旋转唱片 */
+  discMode: boolean;
+  /** 透明彩胶配色：auto=跟随封面主色 / custom=固定色 */
+  vinylColorMode: 'auto' | 'custom';
+  vinylCustomColor: string;
 }
 
 interface MusicState {
@@ -218,6 +239,20 @@ interface MusicState {
   currentBitrate: number;
   proxyPort: number;
   playHistoryList: PlayHistoryEntry[];
+  /**
+   * 换音质时的**续播位置**（毫秒，0 表示无需续播）。
+   * 换档必须重新取一次音频地址，`<audio>` 因此会从 0 重新起播 ——
+   * 这个字段把「换档前的进度」交给播放内核，让它在新地址上先 seek 再播。
+   */
+  resumeAtMs: number;
+
+  // ---- 播放/媒体的持久化偏好（设置页「播放·媒体」）----
+  lyricsFontSize: number;
+  lyricsHighlightColor: string;
+  dynamicEnabled: boolean;
+  discMode: boolean;
+  vinylColorMode: 'auto' | 'custom';
+  vinylCustomColor: string;
 
   // ---- 本地 ----
   localSongs: LocalSongInfo[];
@@ -295,6 +330,15 @@ interface MusicState {
 
   // ---- Actions ----
   init: () => Promise<void>;
+  /**
+   * 只把**持久化偏好**读回内存（纯 localStorage，无网络/无副作用）。
+   *
+   * 为什么单独抽一个：`init()` 会拉登录态与首屏数据，只在音乐屏挂载时跑。
+   * 而设置页「播放·媒体」也要读这些偏好 —— 冷启动后直接进设置页时若不水合，
+   * 控件会显示默认值而不是上次存的值（同一个偏好出现两个事实）。
+   * 所以由应用启动时调一次（见 main.tsx）。
+   */
+  hydratePrefs: () => void;
   setProxyPort: (p: number) => void;
 
   // 本地
@@ -313,7 +357,16 @@ interface MusicState {
   seek: (ms: number) => void;
   setVolume: (v: number) => void;
   cycleMode: () => void;
-  setPlaybackQuality: (q: PlaybackQuality) => void;
+  /** 换音质：更新偏好，并在**正在播放**时重取地址续播（保住当前进度） */
+  setPlaybackQuality: (q: PlaybackQuality) => Promise<void>;
+  setLyricsFontSize: (px: number) => void;
+  setLyricsHighlightColor: (color: string) => void;
+  setDynamicEnabled: (on: boolean) => void;
+  setDiscMode: (on: boolean) => void;
+  setVinylColorMode: (mode: 'auto' | 'custom') => void;
+  setVinylCustomColor: (color: string) => void;
+  /** 播放内核消费完续播位置后清零 */
+  clearResumeAt: () => void;
   setProgress: (ms: number) => void;
   setDuration: (ms: number) => void;
 
@@ -431,6 +484,15 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   currentBitrate: 0,
   proxyPort: 0,
   playHistoryList: [],
+  resumeAtMs: 0,
+
+  // ---- 播放/媒体的持久化偏好 ----
+  lyricsFontSize: LYRICS_SIZE.def,
+  lyricsHighlightColor: LYRICS_COLOR_DEF,
+  dynamicEnabled: false,
+  discMode: false,
+  vinylColorMode: 'auto',
+  vinylCustomColor: VINYL_COLOR_DEF,
 
   // ---- 本地 ----
   localSongs: [],
@@ -500,14 +562,31 @@ export const useMusicStore = create<MusicState>((set, get) => ({
 
   // ================================================================ init
 
-  init: async () => {
-    // 恢复偏好
+  hydratePrefs: () => {
     const prefs = readLS<Partial<Prefs>>(LS_PREFS, {});
     const volume = typeof prefs.volume === 'number' ? prefs.volume : 0.8;
     const playMode: PlayMode = prefs.playMode ?? 'list';
     const skin: PlayerSkin = prefs.skin ?? 'modern';
     const playbackQuality: PlaybackQuality = prefs.playbackQuality ?? 'hires';
-    set({ volume, playMode, skin, playbackQuality });
+    const lyricsFontSize =
+      typeof prefs.lyricsFontSize === 'number' ? prefs.lyricsFontSize : LYRICS_SIZE.def;
+    set({
+      volume,
+      playMode,
+      skin,
+      playbackQuality,
+      lyricsFontSize,
+      lyricsHighlightColor: prefs.lyricsHighlightColor ?? LYRICS_COLOR_DEF,
+      dynamicEnabled: prefs.dynamicEnabled === true,
+      discMode: prefs.discMode === true,
+      vinylColorMode: prefs.vinylColorMode === 'custom' ? 'custom' : 'auto',
+      vinylCustomColor: prefs.vinylCustomColor ?? VINYL_COLOR_DEF,
+    });
+  },
+
+  init: async () => {
+    // 恢复偏好（与启动时那次水合是同一份实现，重复调用无副作用）
+    get().hydratePrefs();
 
     // 恢复播放历史 + 本地曲库
     const history = readLS<PlayHistoryEntry[]>(LS_HISTORY, []);
@@ -684,8 +763,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
 
   setVolume: (v) => {
     set({ volume: v });
-    const prefs = readLS<Partial<Prefs>>(LS_PREFS, {});
-    writeLS(LS_PREFS, { ...prefs, volume: v });
+    savePrefs({ volume: v });
   },
 
   cycleMode: () => {
@@ -693,14 +771,58 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     const order: PlayMode[] = ['list', 'shuffle', 'one'];
     const nextMode = order[(order.indexOf(get().playMode) + 1) % order.length];
     set({ playMode: nextMode });
-    const prefs = readLS<Partial<Prefs>>(LS_PREFS, {});
-    writeLS(LS_PREFS, { ...prefs, playMode: nextMode });
+    savePrefs({ playMode: nextMode });
   },
 
-  setPlaybackQuality: (q) => {
+  setPlaybackQuality: async (q) => {
     set({ playbackQuality: q });
-    const prefs = readLS<Partial<Prefs>>(LS_PREFS, {});
-    writeLS(LS_PREFS, { ...prefs, playbackQuality: q });
+    savePrefs({ playbackQuality: q });
+
+    // 正在播放时换档必须重取地址，否则「换了音质」要等下一首才生效。
+    // 重取会让 <audio> 从 0 起播，所以把当前进度交给播放内核去续播（resumeAtMs）。
+    const { currentSong, playUrl, progressMs } = get();
+    if (!currentSong || !playUrl) return;
+    try {
+      const url = await resolvePlayUrl(currentSong);
+      if (!url) return;
+      // 期间又切歌了 → 放弃本次换档，避免把旧歌的地址盖到新歌上
+      if (get().currentSong !== currentSong) return;
+      set({ playUrl: url, resumeAtMs: progressMs, isPlaying: true });
+    } catch {
+      get().toast('切换音质失败，已保持原音质');
+    }
+  },
+
+  clearResumeAt: () => set({ resumeAtMs: 0 }),
+
+  setLyricsFontSize: (px) => {
+    set({ lyricsFontSize: px });
+    savePrefs({ lyricsFontSize: px });
+  },
+
+  setLyricsHighlightColor: (color) => {
+    set({ lyricsHighlightColor: color });
+    savePrefs({ lyricsHighlightColor: color });
+  },
+
+  setDynamicEnabled: (on) => {
+    set({ dynamicEnabled: on });
+    savePrefs({ dynamicEnabled: on });
+  },
+
+  setDiscMode: (on) => {
+    set({ discMode: on });
+    savePrefs({ discMode: on });
+  },
+
+  setVinylColorMode: (mode) => {
+    set({ vinylColorMode: mode });
+    savePrefs({ vinylColorMode: mode });
+  },
+
+  setVinylCustomColor: (color) => {
+    set({ vinylCustomColor: color });
+    savePrefs({ vinylCustomColor: color });
   },
 
   setProgress: (ms) => set({ progressMs: ms }),
@@ -1335,8 +1457,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
 
   setSkin: (s) => {
     set({ skin: s });
-    const prefs = readLS<Partial<Prefs>>(LS_PREFS, {});
-    writeLS(LS_PREFS, { ...prefs, skin: s });
+    savePrefs({ skin: s });
   },
 
   toast: (message, type = 'warning') => set({ musicToast: { type, message } }),

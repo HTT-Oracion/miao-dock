@@ -1064,6 +1064,62 @@
   gap: 8px;
 }
 
+/* ---- 设置页控件原语（③ 播放·媒体 用；几何与 .set-ro 同高，一行里不打架）---- */
+/* 下拉：与 .set-ro 同高 24、同圆角，避免一行里出现三种高度 */
+.set-select {
+  height: 24px;
+  padding: 0 6px;
+  font-family: var(--md-font-body);
+  font-size: 11.5px;
+  color: var(--md-ink);
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-xs);
+  cursor: pointer;
+}
+.set-select:focus { outline: none; border-color: var(--md-pink); }
+/* 滑杆：只做「一行内可用」的窄条，右侧配数值读数 */
+.set-range {
+  width: 116px;
+  height: 4px;
+  accent-color: var(--md-pink);
+  cursor: pointer;
+}
+.set-range:disabled { cursor: default; opacity: 0.45; }
+.set-range-val {
+  min-width: 38px;
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  color: var(--md-ink-2);
+  text-align: right;
+}
+/* 预设色点：选中态用 ring 而不是换颜色 —— 色点本身的颜色就是信息，不能再被选中态覆盖 */
+.set-swatches { display: flex; align-items: center; gap: 5px; }
+.set-swatch {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--md-line);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.set-swatch.is-on { box-shadow: 0 0 0 2px var(--md-pink-soft), 0 0 0 1px var(--md-pink); }
+/* 取色器：原生 input[type=color] 各平台外观差异大，统一压成 24×24 方块 */
+.set-color {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-xs);
+  background: none;
+  cursor: pointer;
+}
+.set-color:disabled { cursor: default; opacity: 0.45; }
+.set-color::-webkit-color-swatch-wrapper { padding: 2px; }
+.set-color::-webkit-color-swatch { border: none; border-radius: 3px; }
+/* 控件旁的小字注解（例如「仅在固定颜色时生效」） */
+.set-ctl-note { font-size: 10.5px; color: var(--md-muted); }
+
 /* 只读值：端口 / 目录 / 版本号 */
 .set-ro {
   font-family: var(--md-font-numeric);
@@ -2163,6 +2219,43 @@
   flex-shrink: 0;
 }
 .music-exp-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* 碟片模式（设置项 disc-mode）：封面显示成旋转唱片。
+   播放时转、暂停时用 is-paused 停住 —— 唱片静止是"暂停"的通用视觉语言。 */
+.music-exp.is-disc .music-exp-cover {
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, #2a2a33 0%, #15151b 55%, #0d0d12 100%);
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  animation: music-disc-spin 9s linear infinite;
+  position: relative;
+}
+.music-exp.is-disc .music-exp-cover img {
+  /* 封面缩成唱片中心的「片芯」 */
+  width: 46%;
+  height: 46%;
+  border-radius: 50%;
+  position: absolute;
+  left: 27%;
+  top: 27%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+.music-exp.is-disc.is-paused .music-exp-cover { animation-play-state: paused; }
+@keyframes music-disc-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 动态背景（设置项 dynamic-bg）：只有「现代 / 沉浸」有可流动的渐变，
+   做法是把渐变放大到 200% 再平移 background-position —— 不重排、纯合成层。 */
+.music-exp.is-dynamic {
+  background-size: 200% 200%;
+  animation: music-exp-flow 8s ease-in-out infinite;
+}
+@keyframes music-exp-flow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
 .music-exp-info { text-align: center; min-width: 0; max-width: 100%; }
 .music-exp-info b {
   font-family: var(--md-font-display);
@@ -2216,16 +2309,23 @@
   -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 14%, #000 86%, transparent 100%);
   mask-image: linear-gradient(to bottom, transparent 0%, #000 14%, #000 86%, transparent 100%);
 }
+/* 歌词字号与高亮色走 CSS 变量（设置页「歌词」两项）：
+   --lyr-size / --lyr-hl 由 ExpandedPlayer 以内联 style 注入，缺省时回落到原设计值。
+   注意**不再**按浅色皮肤覆盖 is-on 的颜色 —— 高亮色是用户选的，皮肤不该把它改掉。 */
 .music-lyr-line {
-  font-size: 16px;
+  font-size: var(--lyr-size, 16px);
   opacity: 0.5;
   text-align: center;
   color: #fff;
   transition: all 0.2s;
 }
-.music-lyr-line.is-on { font-size: 19px; font-weight: 700; opacity: 1; color: var(--md-yellow); }
+.music-lyr-line.is-on {
+  font-size: calc(var(--lyr-size, 16px) + 3px);
+  font-weight: 700;
+  opacity: 1;
+  color: var(--lyr-hl, var(--md-yellow));
+}
 .music-exp.is-light .music-lyr-line { color: var(--md-ink); }
-.music-exp.is-light .music-lyr-line.is-on { color: var(--md-pink); }
 
 .music-exp .music-empty { color: rgba(255, 255, 255, 0.5); }
 .music-exp.is-light .music-empty { color: var(--md-muted); }
@@ -2311,6 +2411,24 @@
 .sk-immersive { background: linear-gradient(90deg, #126d83, #17869f, #126d83); }
 .sk-spectrum { background: linear-gradient(180deg, #05070c, #0b1424); }
 .sk-vinyl { background: linear-gradient(160deg, #e6e6ea, #cfcfd6); }
+/* 透明彩胶的唱片底色 = --vinyl-accent（设置项「彩胶配色」）：
+   auto → 封面主色（ExpandedPlayer 本地取色），custom → 用户固定色。
+   封面缩成中心「片芯」，整体读起来就是一张彩色唱片。 */
+.sk-vinyl .music-exp-cover {
+  border-radius: 50%;
+  background: var(--vinyl-accent, #e8b04b);
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+  position: relative;
+}
+.sk-vinyl .music-exp-cover img {
+  width: 44%;
+  height: 44%;
+  border-radius: 50%;
+  position: absolute;
+  left: 28%;
+  top: 28%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
 .sk-cover { background: linear-gradient(120deg, #c9a2ff 0%, #f0e6ff 62%, #efe7fb 100%); }
 
 /* 皮肤选择弹层 */
