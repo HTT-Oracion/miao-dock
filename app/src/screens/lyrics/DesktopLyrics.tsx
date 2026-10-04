@@ -230,6 +230,28 @@ export function DesktopLyrics() {
    */
   const [prefs, setPrefs] = useState<DesktopLyricsPrefs>(readPrefs);
 
+  /**
+   * 窗口高度随「行数 × 字号」自适应。
+   *
+   * 为什么必须做：窗口固定 160px 高，而用户在设置里能把行数调到 5、字号调到 40 ——
+   * 不调整高度的话，**底部若干行会被窗口裁掉**（`overflow:hidden` 下是静默裁掉，不是滚动）。
+   *
+   * 为什么交给 Rust 而不是前端直接 `setSize`：窗口几何（尺寸 / 坐标 / 贴底 / 物理→逻辑换算）
+   * 全部集中在 `lyrics_window.rs`。前端再算一遍 = 把同一套几何写到第二处，
+   * 下次改尺寸必然漏一处。所以这里只报「几行、多大字」，几何仍由 Rust 算。
+   *
+   * ⚠️ Rust 侧会**同时上移 y**以保持底边不动 —— 只改高度会让窗口往屏幕下方长出去，
+   * 那正是 D-53 缺陷① 的同类后果（窗口跑到可视区外，用户看到的是"设置不生效"）。
+   */
+  useEffect(() => {
+    void invoke('resize_lyrics_window', {
+      lines: prefs.lineCount,
+      fontSize: prefs.fontSize,
+    }).catch(() => {
+      /* 非 Tauri 环境或窗口已销毁：静默 —— 尺寸不变只影响多行时的裁切，不该阻断本窗显示 */
+    });
+  }, [prefs.lineCount, prefs.fontSize]);
+
   // ---- 进度推进（核心）----------------------------------------------------
   //
   // 判据：**不准依赖主窗再推**。所以本窗收到 payload 时记下两个基准：

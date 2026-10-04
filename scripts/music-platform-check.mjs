@@ -253,6 +253,32 @@ function fnBodyAny(src, name) {
 }
 
 /**
+ * 取 **Rust** 函数体（配对花括号）。
+ *
+ * 为什么必须单独有一个：`methodBody` / `fnBodyAny` 只认 JS 的写法
+ * （`name: (…) => {` / `function name(`），而 Rust 是 `fn name(args) -> T {`。
+ * 拿 JS 取体器去取 Rust 会**恒返 null** → 断言恒红 ——
+ * 比恒绿更隐蔽：反证轮里任何破坏都"变红"，看着 100% 覆盖，其实是空转。
+ * 实测踩过：`LYRICS.coordUnit` 第一版就是用它取 Rust 函数体，结果正向红、反证假通过。
+ */
+function rustFnBody(src, name) {
+  const m = new RegExp(`(?:^|\\n)\\s*(?:pub\\s+)?(?:async\\s+)?fn\\s+${esc(name)}\\s*[(<]`).exec(src);
+  if (!m) return null;
+  const start = src.indexOf('{', m.index);
+  if (start < 0) return null;
+  let depth = 0;
+  for (let i = start; i < src.length; i++) {
+    const c = src[i];
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) return src.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+/**
  * 去掉行注释与块注释（带字符串状态机）——**判据必须先剥注释再匹配**。
  *
  * 本轮多处**注释里主动写出了被禁的写法**，直接扫全文会被注释喂成假绿或假红：
@@ -1114,11 +1140,46 @@ add('LYRICS.coordUnit', 'LYRICS', (s) => {
   const missing = [];
   if (!/fn\s+monitor_logical_size/.test(rust))
     missing.push('缺统一换算入口 monitor_logical_size（换算散落多处迟早漏一处）');
-  if (!/scale_factor\s*\(\s*\)/.test(rust)) missing.push('未调用 scale_factor()（物理→逻辑没换算）');
+  // ⚠️ 判据必须落在**换算函数体内部**，不能只扫全文 ——
+  // `scale_factor()` 在文件里出现多次（新增的 resize_lyrics_window 里也有），
+  // 只扫全文时"去掉换算函数里的那次调用"仍能匹配到别处 → 断言恒绿（反证轮实测抓到）。
+  // 这是本项目第 5 次「只判存在、不判唯一」型假阳性。
+  const conv = rustFnBody(rust, 'monitor_logical_size');
+  if (conv == null) {
+    missing.push('取不到 monitor_logical_size 的函数体');
+  } else if (!/scale_factor\s*\(\s*\)/.test(conv)) {
+    missing.push('换算函数内未调用 scale_factor()（物理→逻辑没换算）');
+  }
   if (!/monitor_logical_size\s*\(/.test(rust)) missing.push('摆位处未使用换算函数');
   return {
     ok: missing.length === 0,
     detail: missing.length ? `窗口坐标单位：${missing.join('、')}` : '',
+  };
+});
+add('LYRICS.windowAutoHeight', 'LYRICS', (s) => {
+  // 窗口高度必须随「行数 × 字号」自适应。
+  // 起因：窗口固定 160px 高，而设置里能把行数调到 5、字号调到 40 ——
+  // 不调整高度就会**底部几行被静默裁掉**（`overflow:hidden` 下不是滚动，是消失）。
+  //
+  // 判据锁五件事（每一条都对应一个真实会出错的点）：
+  //  · Rust 有命令且**已注册**（只定义不注册 = 调不到）
+  //  · 有**单一**高度公式函数（几何散落多处必然漏改）
+  //  · **限了上限**（无上限时 5 行 + 最大字号会变成一块大面板，与"一条浮在桌面上的文字"相悖）
+  //  · **同时调整位置**（只改高度会让窗口往屏幕下方长出去 —— D-53 缺陷① 的同类后果）
+  //  · 前端**真的调用**了它（设置改了也不生效等于没做）
+  if (!s.rustLyrics) return { ok: false, detail: 'lyrics_window.rs 不存在' };
+  const rust = stripComments(s.rustLyrics);
+  const dl = stripComments(s.desktopLyrics ?? '');
+  const missing = [];
+  if (!/fn\s+resize_lyrics_window/.test(rust)) missing.push('Rust 缺 resize_lyrics_window');
+  if (!/lyrics_window::resize_lyrics_window/.test(s.rustMain)) missing.push('main.rs 未注册');
+  if (!/fn\s+window_height_for_lines/.test(rust)) missing.push('缺高度公式函数');
+  if (!/MAX_H/.test(rust)) missing.push('高度未限上限');
+  if (!/set_position/.test(rust)) missing.push('未同时调整位置（变高会往屏幕下方溢出）');
+  if (!/resize_lyrics_window/.test(dl)) missing.push('桌面歌词窗未调用（改设置不生效）');
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `窗口自适应：${missing.join('、')}` : '',
   };
 });
 add('LYRICS.closeViaRust', 'LYRICS', (s) => {
@@ -1623,6 +1684,22 @@ const MUTATIONS = [
     find: 'fn monitor_logical_size(app: &AppHandle) -> (f64, f64) {',
     replace: 'fn ad_hoc_screen_size(app: &AppHandle) -> (f64, f64) {',
     expect: ['LYRICS.coordUnit'],
+  },
+  {
+    // 模拟"设置改了不生效"：Rust 有命令但前端没调
+    name: '从桌面歌词窗摘掉 resize_lyrics_window 调用（改行数不生效）',
+    file: F.desktopLyrics,
+    find: "    void invoke('resize_lyrics_window', {",
+    replace: "    void invoke('noop_resize_disabled', {",
+    expect: ['LYRICS.windowAutoHeight'],
+  },
+  {
+    // 模拟"变高后往屏幕下方溢出"：只改尺寸不调位置
+    name: '从 resize_lyrics_window 里去掉 set_position（变高会溢出屏幕下方）',
+    file: F.rustLyrics,
+    find: '        let _ = w.set_position(tauri::LogicalPosition::new(x, new_y));',
+    replace: '        let _ = (x, new_y);',
+    expect: ['LYRICS.windowAutoHeight'],
   },
 ];
 

@@ -161,6 +161,63 @@ fn monitor_logical_size(app: &AppHandle) -> (f64, f64) {
         .unwrap_or((1440.0, 900.0))
 }
 
+/// 桌面歌词窗口随「行数 × 字号」**自适应高度**（用户在设置里调行数/字号后调用）。
+///
+/// ## 为什么放在 Rust 而不是前端
+/// 窗口几何（尺寸、坐标、贴底、换算）**全部集中在本文件**。前端直接 `setSize` 等于
+/// 把同一套几何写到第二处 —— 下次改窗口尺寸时必然漏一处。所以前端只报"几行、多大字"，
+/// 几何仍由这里算。
+///
+/// ## 两个必须一起处理的点
+/// ① **底边不能动**：窗口变高时若不调整 y，它会往屏幕**下方**长出去 ——
+///    那正是 D-53 缺陷 ① 的同类后果（窗口在可视区外，用户看到的是"设置不生效"）。
+///    所以高度增加多少，y 就上移多少。
+/// ② **必须限高**：无上限的话，5 行 + 最大字号会变成一块大面板，
+///    与"桌面歌词是一条浮在桌面上的文字"（520×160 的定位）相悖。
+#[tauri::command]
+pub fn resize_lyrics_window(app: AppHandle, lines: u32, font_size: f64) -> Result<(), String> {
+    let Some(w) = app.get_webview_window(LYRICS_WINDOW) else {
+        return Ok(());
+    };
+    let scale = w.scale_factor().unwrap_or(1.0);
+    let scale = if scale > 0.0 { scale } else { 1.0 };
+
+    // 记旧几何（逻辑像素）—— 用于"保持底边不动"
+    let old_h = w.outer_size().map(|s| f64::from(s.height) / scale).unwrap_or(WIN_H);
+    let old_pos = w
+        .outer_position()
+        .ok()
+        .map(|p| (f64::from(p.x) / scale, f64::from(p.y) / scale));
+
+    let h = window_height_for_lines(lines, font_size);
+
+    w.set_size(tauri::LogicalSize::new(WIN_W, h))
+        .map_err(|e| format!("调整桌面歌词窗口尺寸失败：{e}"))?;
+
+    if let Some((x, y)) = old_pos {
+        // 变高则 y 减小（上移），保持底边位置不变；夹到 0 避免把窗口顶出屏幕上边
+        let new_y = (y - (h - old_h)).max(0.0);
+        let _ = w.set_position(tauri::LogicalPosition::new(x, new_y));
+    }
+
+    Ok(())
+}
+
+/// 高度公式：以「2 行 = 基准高（`WIN_H`）」为锚，按 `(行数 - 2) × 单行高` 线性扩展。
+///
+/// 单行高**跟随字号**：字号调大时每一行本身也变高，不跟就会行间重叠。
+/// `1.35` 与 `DesktopLyrics.tsx` 里 `.dl-line` 的行高保持一致 —— 两处不一致会累积成可见的重叠/空隙。
+fn window_height_for_lines(lines: u32, font_size: f64) -> f64 {
+    const LINE_RATIO: f64 = 1.35;
+    // 上限：再高就变成"第二个播放器"了，与桌面歌词的定位相悖
+    const MAX_H: f64 = 1000.0;
+    const MIN_FONT: f64 = 12.0;
+
+    let extra = lines.saturating_sub(2) as f64;
+    let line_h = font_size.max(MIN_FONT) * LINE_RATIO;
+    (WIN_H + extra * line_h).min(MAX_H)
+}
+
 /// 关闭桌面歌词窗口（不存在时静默成功 —— 幂等）。
 #[tauri::command]
 pub fn close_lyrics_window(app: AppHandle) -> Result<(), String> {
