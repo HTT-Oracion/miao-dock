@@ -136,7 +136,8 @@ export function localToSong(info: LocalSongInfo): Song {
     artist: info.artist || '未知艺术家',
     album: info.album,
     cover: info.cover_path ? convertFileSrc(info.cover_path) : '',
-    duration: Math.round(info.duration_ms / 1000),
+    // Song.duration 全链路单位是毫秒（含本地导入），这里不做换算
+    duration: Math.round(info.duration_ms),
     fee: 0,
     playable: true,
     language: 0,
@@ -233,6 +234,9 @@ interface MusicState {
   searchText: string;
   searchTab: SearchTab;
   searchResults: Song[];
+  /** 搜索结果是否还有下一页（由「本页是否被填满」推断，各平台页大小不同见 platform.searchPageSize） */
+  searchHasMore: boolean;
+  loadingMoreSearch: boolean;
   playlistSearchResults: Playlist[];
   artistSearchResults: Artist[];
   searching: boolean;
@@ -338,6 +342,8 @@ interface MusicState {
   setSearchText: (t: string) => void;
   setSearchTab: (t: SearchTab) => void;
   search: (kw?: string) => Promise<void>;
+  /** 搜索结果触底续拉下一页（offset = 已加载条数） */
+  loadMoreSearch: () => Promise<void>;
   searchArtists: (kw?: string) => Promise<void>;
   searchPlaylists: (kw?: string) => Promise<void>;
   clearSearch: () => void;
@@ -441,6 +447,8 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   searchText: '',
   searchTab: 'song',
   searchResults: [],
+  searchHasMore: false,
+  loadingMoreSearch: false,
   playlistSearchResults: [],
   artistSearchResults: [],
   searching: false,
@@ -774,6 +782,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       rightPlaylistMeta: null,
       likedSongIds: get().likedByProvider[p] ?? new Set<string>(),
       searchResults: [],
+      searchHasMore: false,
       comments: null,
     });
     try {
@@ -790,7 +799,14 @@ export const useMusicStore = create<MusicState>((set, get) => ({
 
   setSearchProvider: (p) => {
     if (get().searchProvider === p) return;
-    set({ searchProvider: p, searchResults: [], playlistSearchResults: [], artistSearchResults: [], searchError: '' });
+    set({
+      searchProvider: p,
+      searchResults: [],
+      searchHasMore: false,
+      playlistSearchResults: [],
+      artistSearchResults: [],
+      searchError: '',
+    });
   },
 
   loadAllLoginStatuses: async () => {
@@ -875,20 +891,51 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   search: async (kw) => {
     const keywords = (kw ?? get().searchText).trim();
     if (!keywords) {
-      set({ searchResults: [], searchError: '' });
+      set({ searchResults: [], searchError: '', searchHasMore: false });
       return;
     }
     const provider = get().searchProvider;
-    set({ searching: true, searchError: '', searchText: keywords });
+    const pageSize = platform.searchPageSize(provider);
+    // 清掉上一轮结果：否则「搜索中」会与旧关键词的结果混在一起
+    set({ searching: true, searchError: '', searchText: keywords, searchResults: [], searchHasMore: false });
     try {
-      const results = await platform.search(provider, keywords, 30);
+      const results = await platform.search(provider, keywords, pageSize, 0);
       // 切了搜索平台就不要旧结果，避免串台
       if (get().searchProvider !== provider) return;
-      set({ searchResults: results, searchTab: 'song' });
+      set({ searchResults: results, searchTab: 'song', searchHasMore: results.length >= pageSize });
     } catch (e) {
       set({ searchResults: [], searchError: String(e) });
     } finally {
       set({ searching: false });
+    }
+  },
+
+  loadMoreSearch: async () => {
+    const { searchText, searchProvider, searchResults, searchHasMore, loadingMoreSearch, searching } = get();
+    const keywords = searchText.trim();
+    if (!keywords || !searchHasMore || loadingMoreSearch || searching) return;
+    const provider = searchProvider;
+    const pageSize = platform.searchPageSize(provider);
+    set({ loadingMoreSearch: true });
+    try {
+      const more = await platform.search(provider, keywords, pageSize, searchResults.length);
+      // 期间换了平台或改了关键词 → 丢弃这一页
+      if (get().searchProvider !== provider || get().searchText.trim() !== keywords) return;
+      set((s) => {
+        const seen = new Set(s.searchResults.map(songKey));
+        const unique = more.filter((x) => !seen.has(songKey(x)));
+        return {
+          searchResults: [...s.searchResults, ...unique],
+          // 「本页被填满 且 有新增」才认为还有下一页：返回空页或整页重复都算到底，
+          // 否则会在同一页上无限续拉
+          searchHasMore: more.length >= pageSize && unique.length > 0,
+        };
+      });
+    } catch {
+      // 这一页失败就停在当前位置，不反复重试同一页
+      set({ searchHasMore: false });
+    } finally {
+      set({ loadingMoreSearch: false });
     }
   },
 
@@ -925,7 +972,14 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   },
 
   clearSearch: () =>
-    set({ searchText: '', searchResults: [], playlistSearchResults: [], artistSearchResults: [], searchError: '' }),
+    set({
+      searchText: '',
+      searchResults: [],
+      searchHasMore: false,
+      playlistSearchResults: [],
+      artistSearchResults: [],
+      searchError: '',
+    }),
 
   // ================================================================ 左栏
 

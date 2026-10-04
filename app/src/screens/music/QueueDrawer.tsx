@@ -54,7 +54,7 @@ export function QueueDrawer() {
                   <b>{s.name}</b>
                   <span>{s.artist}</span>
                 </div>
-                {s.duration ? <span className="music-dur">{fmtTime(s.duration * 1000)}</span> : null}
+                {s.duration ? <span className="music-dur">{fmtTime(s.duration)}</span> : null}
                 <IconButton
                   title="从队列移除"
                   onClick={(e) => {

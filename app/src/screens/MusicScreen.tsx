@@ -25,6 +25,10 @@ export function MusicScreen() {
   const playUrl = useMusicStore((s) => s.playUrl);
   const isPlaying = useMusicStore((s) => s.isPlaying);
   const volume = useMusicStore((s) => s.volume);
+  // 播放队列为空时整条播放条不出现（没有内容可播时它只是一条占位）；
+  // 有歌时它是 .music 的最后一个 flex 子项 + flex:0 0 auto，恒贴在本屏底部
+  // （外层的 .content 不再滚动，见 app.css 的 .music height:100%）。
+  const queueLength = useMusicStore((s) => s.queue.length);
 
   const init = useMusicStore((s) => s.init);
   const setProgress = useMusicStore((s) => s.setProgress);
@@ -84,7 +88,7 @@ export function MusicScreen() {
         <RightPanel />
       </div>
 
-      <PlayerBar onSeek={onSeek} />
+      <PlayerBar onSeek={onSeek} hidden={queueLength === 0} />
 
       <QueueDrawer />
       <ExpandedPlayer onSeek={onSeek} />

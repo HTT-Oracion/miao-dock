@@ -400,8 +400,10 @@ pub async fn login_info(cookie: &str) -> Result<LoginInfo, String> {
 
 /// 歌曲搜索 (对照 musiche search)
 /// GET https://app.u.nf.migu.cn/pc/resource/song/item/search/v1.0
-pub async fn search(keywords: &str, limit: u32, _cookie: &str) -> Result<Vec<Song>, String> {
-    search_page(keywords, 1, limit.clamp(1, 50)).await
+pub async fn search(keywords: &str, limit: u32, offset: u32, _cookie: &str) -> Result<Vec<Song>, String> {
+    // 咪咕接口按「页码」分页（pageNo）：把统一的 offset 换算成页码，口径与酷狗/QQ 一致
+    let page_size = limit.clamp(1, 50);
+    search_page(keywords, offset / page_size + 1, page_size).await
 }
 
 /// 歌曲搜索 (带页码)

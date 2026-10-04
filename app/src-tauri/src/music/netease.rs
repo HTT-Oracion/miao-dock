@@ -270,15 +270,18 @@ fn map_song_record(s: &Value) -> Song {
 }
 
 /// 搜索歌曲
-pub async fn search(keywords: &str, limit: u32, cookie: &str) -> Result<Vec<Song>, String> {
+pub async fn search(keywords: &str, limit: u32, offset: u32, cookie: &str) -> Result<Vec<Song>, String> {
     let client = build_client();
 
     // 参考 NeteaseCloudMusicApi: 用普通 POST 请求 (带 Cookie), 不用 EAPI 加密
     let url = "https://music.163.com/api/cloudsearch/get/web";
+    // offset 由调用方给（0 起）。网易云 /cloudsearch 原生支持 offset，
+    // 上游实现把它写死为 0，等于放弃了翻页能力（详见 docs/spec-notes.md D-33）。
     let body = format!(
-        "s={}&type=1&limit={}&offset=0",
+        "s={}&type=1&limit={}&offset={}",
         urlencoding::encode(keywords),
-        limit
+        limit,
+        offset
     );
 
     let resp = client

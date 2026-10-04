@@ -9,8 +9,11 @@ import { IconButton } from './shared';
  *
  * onSeek 由 MusicScreen 注入：只改 store.progressMs 不会真的挪动 <audio> 的 currentTime，
  * 必须在同一处把两者一起改。
+ *
+ * hidden：播放队列为空时整条不渲染。判断写成 prop（而不是让调用方 `{x > 0 ? <PlayerBar/> : null}`）
+ * 是为了把「什么时候该出现」这条规则留在组件自己身上，避免以后又多一处调用点各自判断。
  */
-export function PlayerBar({ onSeek }: { onSeek: (ms: number) => void }) {
+export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hidden?: boolean }) {
   const currentSong = useMusicStore((s) => s.currentSong);
   const isPlaying = useMusicStore((s) => s.isPlaying);
   const progressMs = useMusicStore((s) => s.progressMs);
@@ -30,6 +33,8 @@ export function PlayerBar({ onSeek }: { onSeek: (ms: number) => void }) {
   const modeTitle = playMode === 'one' ? '单曲循环' : playMode === 'shuffle' ? '随机播放' : '列表循环';
   const modeIcon =
     playMode === 'one' ? <Repeat1 size={16} /> : playMode === 'shuffle' ? <Shuffle size={16} /> : <Repeat size={16} />;
+
+  if (hidden) return null;
 
   return (
     <div className="music-player">

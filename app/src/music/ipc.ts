@@ -23,8 +23,9 @@ import type {
 
 // ------------------------------------------------------------------ 网易云
 
-export const musicSearch = (keywords: string, limit?: number) =>
-  invoke<Song[]>('music_search', { keywords, limit: limit ?? null });
+/** offset 为 0 起的偏移量（分页）；null 表示不分页（等价 offset=0） */
+export const musicSearch = (keywords: string, limit?: number, offset?: number) =>
+  invoke<Song[]>('music_search', { keywords, limit: limit ?? null, offset: offset ?? null });
 
 export const musicSongUrl = (id: string, quality?: string) =>
   invoke<SongUrlResult>('music_song_url', { id, quality: quality ?? null });
@@ -103,8 +104,8 @@ export const musicMvUrl = (mvId: string, resolution?: number) =>
 
 // ------------------------------------------------------------------ 酷狗
 
-export const kugouSearch = (keywords: string, limit?: number) =>
-  invoke<Song[]>('kugou_search', { keywords, limit: limit ?? null });
+export const kugouSearch = (keywords: string, limit?: number, offset?: number) =>
+  invoke<Song[]>('kugou_search', { keywords, limit: limit ?? null, offset: offset ?? null });
 
 export const kugouArtistSearch = (keywords: string, limit?: number) =>
   invoke<Artist[]>('kugou_artist_search', { keywords, limit: limit ?? null });
@@ -165,8 +166,8 @@ export const kugouLikedHashes = () => invoke<string[]>('kugou_liked_hashes');
 
 // ------------------------------------------------------------------ QQ 音乐
 
-export const qqSearch = (keywords: string, limit?: number) =>
-  invoke<Song[]>('qq_search', { keywords, limit: limit ?? null });
+export const qqSearch = (keywords: string, limit?: number, offset?: number) =>
+  invoke<Song[]>('qq_search', { keywords, limit: limit ?? null, offset: offset ?? null });
 
 export const qqSongUrl = (mid: string, mediaMid?: string, quality?: string) =>
   invoke<SongUrlResult>('qq_song_url', { mid, media_mid: mediaMid ?? null, quality: quality ?? null });
@@ -209,8 +210,8 @@ export const qqLikeToggle = (song: Song, like: boolean) => invoke<boolean>('qq_l
 
 // ------------------------------------------------------------------ 咪咕
 
-export const miguSearch = (keywords: string, limit?: number) =>
-  invoke<Song[]>('migu_search', { keywords, limit: limit ?? null });
+export const miguSearch = (keywords: string, limit?: number, offset?: number) =>
+  invoke<Song[]>('migu_search', { keywords, limit: limit ?? null, offset: offset ?? null });
 
 export const miguPlaylistSearch = (keywords: string, limit?: number) =>
   invoke<Playlist[]>('migu_playlist_search', { keywords, limit: limit ?? null });

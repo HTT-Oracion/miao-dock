@@ -21,9 +21,9 @@ use models::*;
 // ============================================================
 
 #[tauri::command]
-pub async fn music_search(keywords: String, limit: Option<u32>) -> Result<Vec<Song>, String> {
+pub async fn music_search(keywords: String, limit: Option<u32>, offset: Option<u32>) -> Result<Vec<Song>, String> {
     let app_cookie = get_app_cookie().await;
-    netease::search(&keywords, limit.unwrap_or(30), &app_cookie).await
+    netease::search(&keywords, limit.unwrap_or(30), offset.unwrap_or(0), &app_cookie).await
 }
 
 #[tauri::command]
@@ -247,9 +247,9 @@ pub async fn music_mv_url(mv_id: String, resolution: Option<u32>) -> Result<Stri
 // ============================================================
 
 #[tauri::command]
-pub async fn kugou_search(app: AppHandle, keywords: String, limit: Option<u32>) -> Result<Vec<Song>, String> {
+pub async fn kugou_search(app: AppHandle, keywords: String, limit: Option<u32>, offset: Option<u32>) -> Result<Vec<Song>, String> {
     let cookie = load_provider_cookie(&app, "kugou").await;
-    kugou::search(&keywords, limit.unwrap_or(30), &cookie).await
+    kugou::search(&keywords, limit.unwrap_or(30), offset.unwrap_or(0), &cookie).await
 }
 
 #[tauri::command]
@@ -385,9 +385,9 @@ pub async fn kugou_liked_hashes(app: AppHandle) -> Result<Vec<String>, String> {
 // ============================================================
 
 #[tauri::command]
-pub async fn qq_search(app: AppHandle, keywords: String, limit: Option<u32>) -> Result<Vec<Song>, String> {
+pub async fn qq_search(app: AppHandle, keywords: String, limit: Option<u32>, offset: Option<u32>) -> Result<Vec<Song>, String> {
     let cookie = load_provider_cookie(&app, "qqmusic").await;
-    qqmusic::search(&keywords, limit.unwrap_or(30), &cookie).await
+    qqmusic::search(&keywords, limit.unwrap_or(30), offset.unwrap_or(0), &cookie).await
 }
 
 #[tauri::command]
@@ -505,9 +505,9 @@ pub async fn qq_like_toggle(app: AppHandle, song: Song, like: bool) -> Result<bo
 // ============================================================
 
 #[tauri::command]
-pub async fn migu_search(app: AppHandle, keywords: String, limit: Option<u32>) -> Result<Vec<Song>, String> {
+pub async fn migu_search(app: AppHandle, keywords: String, limit: Option<u32>, offset: Option<u32>) -> Result<Vec<Song>, String> {
     let cookie = load_provider_cookie(&app, "migu").await;
-    migu::search(&keywords, limit.unwrap_or(30), &cookie).await
+    migu::search(&keywords, limit.unwrap_or(30), offset.unwrap_or(0), &cookie).await
 }
 
 #[tauri::command]

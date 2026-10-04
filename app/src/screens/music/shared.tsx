@@ -130,7 +130,8 @@ export function SongRow({
   showCover?: boolean;
   duration?: number;
 }) {
-  const sec = duration ?? song.duration;
+  // Song.duration 的单位是**毫秒**（与 Rust models.rs 的契约一致），不要再乘 1000
+  const durMs = duration ?? song.duration;
   return (
     <div className={active ? 'music-row is-hot' : 'music-row'} onClick={onClick}>
       {leading}
@@ -139,7 +140,7 @@ export function SongRow({
         <b>{song.name}</b>
         <span>{meta ?? song.artist}</span>
       </div>
-      {sec ? <span className="music-dur">{fmtTime(sec * 1000)}</span> : null}
+      {durMs ? <span className="music-dur">{fmtTime(durMs)}</span> : null}
       {actions ? <div className="music-row-act">{actions}</div> : null}
     </div>
   );

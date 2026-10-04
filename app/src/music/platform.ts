@@ -145,16 +145,42 @@ export function capsOf(p: MusicProvider): PlatformCaps {
 
 // ------------------------------------------------------------------ 搜索
 
-export function search(provider: MusicProvider, keywords: string, limit = 30): Promise<Song[]> {
+/**
+ * 各平台搜索接口的**单页上限** —— 取 Rust 侧各自 clamp 之后的真实生效值。
+ *
+ * 为什么需要这张表：判断「还有没有下一页」只能靠「本页是否被填满」，
+ * 而四个平台的上限并不一样（酷狗 20 / 咪咕 50）。若统一按 30 判，
+ * 酷狗会被误判成「已到底」而提前停止分页。
+ * Rust 侧对应位置：`kugou.rs limit.clamp(1,20)` / `qqmusic.rs clamp(1,30)` /
+ * `migu.rs clamp(1,50)` / 网易云不 clamp（沿用调用方给的 limit）。
+ */
+export const SEARCH_PAGE_SIZE: Record<MusicProvider, number> = {
+  netease: 30,
+  kugou: 20,
+  qqmusic: 30,
+  migu: 50,
+};
+
+export function searchPageSize(p: MusicProvider): number {
+  return SEARCH_PAGE_SIZE[p] ?? 30;
+}
+
+/** offset 为 0 起的偏移量（分页） */
+export function search(
+  provider: MusicProvider,
+  keywords: string,
+  limit = 30,
+  offset = 0,
+): Promise<Song[]> {
   switch (provider) {
     case 'kugou':
-      return ipc.kugouSearch(keywords, limit);
+      return ipc.kugouSearch(keywords, limit, offset);
     case 'qqmusic':
-      return ipc.qqSearch(keywords, limit);
+      return ipc.qqSearch(keywords, limit, offset);
     case 'migu':
-      return ipc.miguSearch(keywords, limit);
+      return ipc.miguSearch(keywords, limit, offset);
     default:
-      return ipc.musicSearch(keywords, limit);
+      return ipc.musicSearch(keywords, limit, offset);
   }
 }
 
@@ -365,7 +391,8 @@ export function likeToggle(provider: MusicProvider, song: Song, like: boolean): 
 export function lyric(provider: MusicProvider, song: Song): Promise<Lyrics> {
   switch (provider) {
     case 'kugou':
-      return ipc.kugouLyric(song.hash ?? song.id, song.album_audio_id, song.duration);
+      // 酷狗歌词接口的 duration 参数是**秒**，而 Song.duration 是毫秒 → 这里换算
+      return ipc.kugouLyric(song.hash ?? song.id, song.album_audio_id, Math.round(song.duration / 1000));
     case 'qqmusic':
       return ipc.qqLyric(song.mid ?? song.id, song.id);
     case 'migu':

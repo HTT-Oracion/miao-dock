@@ -19,9 +19,10 @@ export function RightPanel() {
   const clearSearch = useMusicStore((s) => s.clearSearch);
   const searching = useMusicStore((s) => s.searching);
   const searchError = useMusicStore((s) => s.searchError);
-  const searchResults = useMusicStore((s) => s.searchResults);
 
-  const hasResults = searchText.trim().length > 0 && searchResults.length > 0;
+  // 只要有关键词就进「搜索」态（而不是要求已有结果）：
+  // 否则「搜索中」和「搜到 0 首」都会掉回发现页，用户会以为刚才那次搜索没发生
+  const searchActive = searchText.trim().length > 0;
 
   return (
     <section className="music-card">
@@ -50,7 +51,7 @@ export function RightPanel() {
       {searchError ? <div className="music-inline-err">搜索失败：{searchError}</div> : null}
 
       <div className="music-rightbody">
-        {hasResults ? <SearchResults /> : <Discover />}
+        {searchActive ? <SearchResults /> : <Discover />}
       </div>
     </section>
   );
@@ -86,11 +87,15 @@ function SearchCaps() {
   );
 }
 
-/** 搜索结果（单曲）：每行右侧「加入队列 / 红心 / 播放」 */
+/** 搜索结果（单曲）：每行右侧「加入队列 / 红心 / 播放」；触底续拉下一页 */
 function SearchResults() {
   const results = useMusicStore((s) => s.searchResults);
   const searchProvider = useMusicStore((s) => s.searchProvider);
   const searchText = useMusicStore((s) => s.searchText);
+  const searching = useMusicStore((s) => s.searching);
+  const hasMore = useMusicStore((s) => s.searchHasMore);
+  const loadingMore = useMusicStore((s) => s.loadingMoreSearch);
+  const loadMore = useMusicStore((s) => s.loadMoreSearch);
   const likedByProvider = useMusicStore((s) => s.likedByProvider);
   const proxyPort = useMusicStore((s) => s.proxyPort);
   const currentSong = useMusicStore((s) => s.currentSong);
@@ -116,15 +121,20 @@ function SearchResults() {
     void toggleLike(song);
   };
 
+  if (searching && results.length === 0) return <Empty>搜索中…</Empty>;
+  if (results.length === 0) return <Empty>没找到「{searchText}」相关的歌曲</Empty>;
+
   return (
     <>
       <div className="music-hint">
         在 {providerLabel(searchProvider)} 找到 {results.length} 首
+        {hasMore ? ' · 向下滚动加载更多' : ''}
       </div>
       <VirtualList
         items={results}
         resetKey={`search:${searchProvider}:${searchText}`}
         itemKey={(s, i) => `${s.provider}:${s.id}:${i}`}
+        onNearEnd={hasMore && !loadingMore ? () => void loadMore() : undefined}
         renderItem={(s, i) => {
           const liked = likedSet.has(s.id);
           return (
@@ -169,6 +179,7 @@ function SearchResults() {
           );
         }}
       />
+      {hasMore ? <div className="music-more">{loadingMore ? '加载中…' : '上滑加载更多'}</div> : null}
     </>
   );
 }

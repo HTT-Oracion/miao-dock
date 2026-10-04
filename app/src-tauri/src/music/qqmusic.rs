@@ -926,7 +926,7 @@ async fn song_detail(mid: &str, fallback: &Song) -> Song {
 }
 
 /// 搜索 (对照 handleQQSearch)
-pub async fn search(keywords: &str, limit: u32, _cookie: &str) -> Result<Vec<Song>, String> {
+pub async fn search(keywords: &str, limit: u32, offset: u32, _cookie: &str) -> Result<Vec<Song>, String> {
     let kw = keywords.trim();
     if kw.is_empty() {
         return Ok(vec![]);
@@ -934,7 +934,8 @@ pub async fn search(keywords: &str, limit: u32, _cookie: &str) -> Result<Vec<Son
     let limit = limit.clamp(1, 30);
 
     let mut base = Vec::new();
-    match full_song_search(kw, limit, 0).await {
+    // offset 直接透传（full_song_search 内部按 page = offset / limit + 1 换算页码）
+    match full_song_search(kw, limit, offset).await {
         Ok(results) => base = results,
         Err(e) => log::warn!("[QQSearch] full search failed: {e}"),
     }

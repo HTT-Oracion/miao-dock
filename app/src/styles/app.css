@@ -1382,10 +1382,15 @@
    不存在的 --font-display 等，声明被浏览器整条丢弃 —— 这里一并纠正）。
    平台品牌色只出现在「来源圆点」与平台弹窗的色块上，不参与主题。 */
 
+/* 音乐屏整体是**一屏定高**的纵向布局：顶行 / 左右双卡 / 播放条全部在一屏内，
+   内部各自滚动。**不使用 min-height:100%** —— 那会让内容把它撑高、由外层 .content
+   产生页面级滚动条，播放条于是被推到视口之外（滚动才看得到），
+   与「播放条恒贴底部」的要求冲突。 */
 .music {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
   gap: 12px;
 }
 .music .grow { flex: 1; }
@@ -1466,9 +1471,14 @@
 }
 
 /* ---------------------------------------------------------------- 左右 50/50 */
+/* 左右双卡：两个关键约束保证「卡片高度固定、内部滚动」——
+   `grid-template-rows: minmax(0, 1fr)` 让这一行撑满剩余高度（而不是被内容撑开），
+   `minmax(0, …)` 的 0 是关键：默认 min-content 会让卡片拒绝收缩、把列表顶出去。
+   `.music-cols` 本身不再产生滚动，滚动都发生在卡片内部的列表里。 */
 .music-cols {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  grid-template-rows: minmax(0, 1fr);
   gap: 12px;
   flex: 1;
   min-height: 0;

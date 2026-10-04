@@ -1394,10 +1394,12 @@ async fn public_special_tracks_paged(
     Ok((playlist, songs))
 }
 
-pub async fn search(keywords: &str, limit: u32, cookie: &str) -> Result<Vec<Song>, String> {
+pub async fn search(keywords: &str, limit: u32, offset: u32, cookie: &str) -> Result<Vec<Song>, String> {
     let auth = extract_kugou_auth(cookie);
     let page_size = limit.clamp(1, 20);
-    let page = 1u32;
+    // 酷狗接口按「页码」分页（不是 offset）：把统一的 offset 换算成页码，
+    // 口径与 QQ 的 full_song_search 一致（page = offset / limit + 1）。
+    let page = offset / page_size + 1;
 
     let mut url = url::Url::parse(KUGOU_SEARCH_URL).map_err(|e| e.to_string())?;
     url.query_pairs_mut()
