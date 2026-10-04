@@ -33,6 +33,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { readStyleSource } from './_styles-source.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const APP = path.join(ROOT, 'app');
@@ -45,7 +46,9 @@ const F = {
   expanded: path.join(APP, 'src', 'screens', 'music', 'ExpandedPlayer.tsx'),
   musicScreen: path.join(APP, 'src', 'screens', 'MusicScreen.tsx'),
   main: path.join(APP, 'src', 'main.tsx'),
+  // `css` 仍指 app.css 本身，**只给反证机制用**（按 file 路径临时改源文件）
   css: path.join(APP, 'src', 'styles', 'app.css'),
+  stylesDir: path.join(APP, 'src', 'styles'),
 };
 
 // ── 冻结的契约（负责人冻结，本脚本照抄，不改口径） ──────────────────────────
@@ -120,7 +123,9 @@ function loadSources() {
     expanded: readMaybe(F.expanded),
     musicScreen: readMaybe(F.musicScreen),
     main: readMaybe(F.main),
-    css: readMaybe(F.css),
+    // 全分片拼接（顺序 = index.scss 的 @use 顺序 = 层叠顺序），
+    // 不是读单个 app.css —— 样式已按模块拆分，读单文件会集体变红（读不到 ≠ 真回归）
+    css: readStyleSource(F.stylesDir),
   };
 }
 

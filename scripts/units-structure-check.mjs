@@ -37,6 +37,7 @@ import {
   unlinkSync,
 } from "node:fs";
 import path from "node:path";
+import { readStyleSource } from "./_styles-source.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const APP = path.join(ROOT, "app");
@@ -66,7 +67,10 @@ const F = {
   island: path.join(SRC, 'components', 'DynamicIsland.tsx'),
   toastBus: path.join(SRC, 'toastBus.ts'),
   musicToast: path.join(SRC, 'screens', 'music', 'Toast.tsx'),
+  // `css` 仍指 app.css 本身，**只给反证机制用**（按 file 路径临时改源文件）；
+  // 断言读到的 s.appCss 是全分片拼接（见下方 readStyleSource 调用处）。
   css: path.join(SRC, 'styles', 'app.css'),
+  stylesDir: path.join(SRC, 'styles'),
 };
 
 // ── 冻结的契约（负责人冻结，本脚本照抄，不改口径） ────────────────────────
@@ -346,7 +350,9 @@ function loadSources() {
   s.island = readMaybe(F.island);
   s.toastBus = readMaybe(F.toastBus);
   s.musicToast = readMaybe(F.musicToast);
-  s.appCss = readMaybe(F.css);
+  // 全分片拼接（顺序 = index.scss 的 @use 顺序 = 层叠顺序）。
+  // app.css 已按模块拆成六个分片，读单文件会集体变红（读不到 ≠ 真回归），故走拼接。
+  s.appCss = readStyleSource(F.stylesDir);
   // ALIAS（D-40）：两处别名声明 + 全 src 的"相对上跳"引用
   s.viteConfig = readMaybe(F.viteConfig);
   s.tsconfig = readMaybe(F.tsconfig);

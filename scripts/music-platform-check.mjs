@@ -33,6 +33,7 @@
  */
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { readStyleSource } from './_styles-source.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const APP = path.join(ROOT, 'app');
@@ -76,7 +77,11 @@ const F = {
   localView: path.join(APP, 'src', 'screens', 'music', 'LocalView.tsx'),
   historyView: path.join(APP, 'src', 'screens', 'music', 'HistoryView.tsx'),
   virtualList: path.join(APP, 'src', 'components', 'units', 'VirtualList.tsx'),
+  // ⚠️ `css` 仍指 app.css 本身，**只给反证机制用**（它要按 file 路径临时改源文件）。
+  // 断言读到的 `s.css` 是 `readStyleSource` 按 index.scss 顺序拼出的全分片文本 ——
+  // 样式已按模块拆成六个分片，读单文件会集体变红（读不到 ≠ 真回归），故走拼接。
   css: path.join(APP, 'src', 'styles', 'app.css'),
+  stylesDir: path.join(APP, 'src', 'styles'),
   srcDir: path.join(APP, 'src'),
   rustSrcDir: path.join(APP, 'src-tauri', 'src'),
 };
@@ -187,7 +192,8 @@ function loadSources() {
     coverColor: readMaybe(F.coverColor),
     vinylDisc: readMaybe(F.vinylDisc),
     spectrumScene: readMaybe(F.spectrumScene),
-    css: readMaybe(F.css),
+    // 全分片拼接（顺序 = index.scss 的 @use 顺序 = 层叠顺序），不是读单个 app.css
+    css: readStyleSource(F.stylesDir),
     songMenu: readMaybe(F.songMenu),
     songRowShared: readMaybe(F.songRowShared),
     queueDrawer: readMaybe(F.queueDrawer),
