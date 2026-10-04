@@ -9,8 +9,9 @@ import '@fontsource/zen-maru-gothic/700.css';
 import '@fontsource/noto-sans-sc/400.css';
 import '@fontsource/noto-sans-sc/500.css';
 
-import '@/styles/base.css';
-import '@/styles/app.css';
+// 样式**只经 index.scss 一个入口**（《09》§2.4）：分片清单、层叠顺序与新增模块的规矩
+// 都写在那个文件里，这里不再逐个 import —— 绕过入口就绕过了顺序约定。
+import '@/styles/index.scss';
 
 import { App } from '@/App';
 import { useMusicStore } from '@music/store';
