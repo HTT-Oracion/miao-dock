@@ -38,6 +38,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { readStyleSource } from "./_styles-source.mjs";
+import { cachedReadText, cachedReadBytes, overrideFile, clearOverrides } from "./_file-cache.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const APP = path.join(ROOT, "app");
@@ -159,8 +160,8 @@ const CALLER_IMPORT_FILES = {
 };
 
 // ── 读文件 ───────────────────────────────────────────────────────────────
-const readMaybe = (p) => (existsSync(p) ? readFileSync(p, "utf8") : "");
-const readBytes = (p) => (existsSync(p) ? readFileSync(p) : null);
+const readMaybe = cachedReadText;
+const readBytes = cachedReadBytes;
 const listFiles = (dir) =>
   existsSync(dir)
     ? readdirSync(dir, { withFileTypes: true })
@@ -1029,9 +1030,10 @@ add("STYLE.noScssSyntax", "STYLE", (s) => {
 });
 
 // ── 执行器 ────────────────────────────────────────────────────────────────
-function runAll(s) {
+function runAll(s, ids) {
   const res = {};
   for (const a of A) {
+    if (ids && !ids.includes(a.id)) continue;
     try {
       const r = a.run(s);
       res[a.id] = { ok: !!r.ok, detail: r.detail || "" };
@@ -1452,13 +1454,13 @@ if (!refute) {
             skipped += mut.expect.length;
           } else {
             record = { kind: "edit", file: mut.file, original };
-            writeFileSync(mut.file, txt.replace(mut.find, mut.replace));
+            overrideFile(mut.file, txt.replace(mut.find, mut.replace)); // 内存破坏，不写磁盘
           }
         }
       }
 
       if (okApply) {
-        const res = runAll(loadSources());
+        const res = runAll(loadSources(), mut.expect);
         console.log(`🔴 ${mut.name}`);
         for (const id of mut.expect) {
           total++;
@@ -1484,7 +1486,7 @@ if (!refute) {
         else if (record.kind === "create" && existsSync(record.file))
           unlinkSync(record.file);
         else if (record.kind === "edit")
-          writeFileSync(record.file, record.original);
+          overrideFile(record.file, null); // 清除内存覆盖（磁盘从未被写）
         applied.push(record);
       }
     }
@@ -1495,14 +1497,14 @@ if (!refute) {
   let restoreFail = 0;
   for (const r of applied) {
     if (r.kind === "edit") {
-      const back = readBytes(r.file);
+      const back = existsSync(r.file) ? readFileSync(r.file) : null; // 直接读磁盘，确认从未被污染
       const same = back != null && back.equals(r.original);
       if (!same) restoreFail++;
       console.log(
         `  ${same ? "✓" : "✗"} ${path.relative(ROOT, r.file)} 字节${same ? "一致" : "不一致！"}`,
       );
     } else if (r.kind === "rename") {
-      const back = readBytes(r.from);
+      const back = existsSync(r.from) ? readFileSync(r.from) : null;
       const same = back != null && back.equals(r.original) && !existsSync(r.to);
       if (!same) restoreFail++;
       console.log(

@@ -31,9 +31,10 @@
  * 禁止事项：本脚本刻意**不写出**某个历史品牌标识的字面量（见下方 BANNED 的拆分构造），
  * 因为该标识本身就在被 forbid 的清单里，脚本自身也不得命中它。
  */
-import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { readStyleSource } from './_styles-source.mjs';
+import { cachedReadText, cachedReadBytes, overrideFile, clearOverrides } from './_file-cache.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const APP = path.join(ROOT, 'app');
@@ -160,8 +161,8 @@ const DISPATCH = {
 };
 
 // ── 读文件 ───────────────────────────────────────────────────────────────
-const readMaybe = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : '');
-const readBytes = (p) => (existsSync(p) ? readFileSync(p) : null);
+const readMaybe = cachedReadText;
+const readBytes = cachedReadBytes;
 
 /** 递归拼接某目录下所有指定后缀文件（缺目录 → 空串，不抛） */
 function walkText(dir, exts) {
@@ -173,7 +174,7 @@ function walkText(dir, exts) {
     for (const e of readdirSync(d, { withFileTypes: true })) {
       const p = path.join(d, e.name);
       if (e.isDirectory()) stack.push(p);
-      else if (exts.some((x) => e.name.endsWith(x))) out.push(readFileSync(p, 'utf8'));
+      else if (exts.some((x) => e.name.endsWith(x))) out.push(readMaybe(p));
     }
   }
   return out.join('\n');
@@ -2490,9 +2491,10 @@ add('RESTORE.onlyOnce', 'RESTORE', (s) => {
 });
 
 // ── 执行器 ────────────────────────────────────────────────────────────────
-function runAll(s) {
+function runAll(s, ids) {
   const res = {};
   for (const a of A) {
+    if (ids && !ids.includes(a.id)) continue;
     try {
       const r = a.run(s);
       res[a.id] = { ok: !!r.ok, detail: r.detail || '' };
@@ -4444,8 +4446,11 @@ if (!refute) {
 
   console.log('\n破坏源文件 → 断言必须变红 → 恢复\n');
   for (const mut of MUTATIONS) {
-    const original = readBytes(mut.file);
-    restored.set(mut.file, original);
+    // 统一绝对路径：mutation 的 file 既有绝对路径（F.xxx）也有相对路径字面量，
+    // override 层用路径作 key，两者不归一就会「破坏写了相对路径、断言查绝对路径」→ 假阴性
+    const file = path.resolve(ROOT, mut.file);
+    const original = readBytes(file);
+    restored.set(file, original);
     let okApply = true;
     try {
       const txt = original.toString('utf8');
@@ -4454,10 +4459,11 @@ if (!refute) {
         okApply = false;
         skipped += mut.expect.length;
       } else {
-        writeFileSync(mut.file, txt.replace(mut.find, mut.replace));
+        // 内存破坏：只写 override 层（不写磁盘），断言经缓存读到的就是破坏后内容
+        overrideFile(file, txt.replace(mut.find, mut.replace));
       }
       if (okApply) {
-        const res = runAll(loadSources());
+        const res = runAll(loadSources(), mut.expect);
         console.log(`🔴 ${mut.name}`);
         for (const id of mut.expect) {
           total++;
@@ -4473,16 +4479,17 @@ if (!refute) {
         }
       }
     } finally {
-      if (original != null) writeFileSync(mut.file, original); // 精确按字节恢复
+      overrideFile(file, null); // 清除本条覆盖（磁盘从未被写，无需字节恢复）
     }
   }
+  clearOverrides(); // 兜底清空覆盖层，防任何残留影响后续读
 
   // 恢复校验：所有被改文件必须与原始字节完全一致
   console.log('\n恢复校验');
   let restoreFail = 0;
   for (const [file, original] of restored) {
     if (original == null) continue;
-    const back = readBytes(file);
+    const back = existsSync(file) ? readFileSync(file) : null; // 直接读磁盘，确认从未被污染
     const same = back != null && back.equals(original);
     if (!same) restoreFail++;
     console.log(`  ${same ? '✓' : '✗'} ${path.relative(ROOT, file)} 字节${same ? '一致' : '不一致！'}`);

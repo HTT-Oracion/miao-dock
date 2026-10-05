@@ -25,8 +25,9 @@
  * （哨兵是注释，stripComments 后不留痕迹，不会让别的断言误判），
  * 真正的诊断交给 `STYLE.shardsRegistered`。
  */
-import { readFileSync, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { cachedReadText } from './_file-cache.mjs';
 
 /** styles 目录（三个脚本各自的路径不同，故由调用方传入） */
 export const STYLES_DIR = path.join('app', 'src', 'styles');
@@ -47,7 +48,7 @@ export function styleEntryOrder(stylesDir) {
       + '请同步改本模块的 ENTRY 与三个检查脚本的引用。',
     );
   }
-  const src = readFileSync(entry, 'utf8');
+  const src = cachedReadText(entry);
   // 剥注释，避免注释里举例用的 @use 被当成真声明
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   const out = [];
@@ -77,7 +78,7 @@ export function readStyleSource(stylesDir) {
       parts.push(`/* __MISSING_SHARD__ ${rel} —— 由 STYLE.shardsRegistered 报红 */`);
       continue;
     }
-    parts.push(readFileSync(file, 'utf8'));
+    parts.push(cachedReadText(file));
   }
   return parts.join('\n');
 }
