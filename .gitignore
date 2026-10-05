@@ -19,6 +19,8 @@ vite.config.ts.timestamp-*.mjs
 # 生命周期自检的临时落盘根目录
 .tmp-selftest/
 .tmp-e2e/
+# 模型下载器验收的临时落盘根目录（夹具源 + 夹具文件）
+.tmp-models/
 
 # 音乐参考源码（GPL-3.0，开发期只读参考，不入库）
 # 移植产物在 app/src-tauri/src/music/，详见 vendor/music-reference/README.md

@@ -69,6 +69,7 @@ npm run selftest:app:e11      # E11 三进程树回收（mock）：SIGKILL 主�
 npm run selftest:app:e11:real # 同上但真进程（python+执行器+llama-server）；分钟级，按需手动跑
 npm run check:launch-plan     # S2 启动配方契约 22 条
 npm run check:child-watch     # 外部二进制父死看守的双向取证（反证：check:child-watch:refute）
+npm run fetch:models          # S3 模型下载器（--check 只校验不联网 / --link 只重建引擎树里的链接；反证：check:models:refute）
 npm run e2e                   # D1–D5 端到端（真实 engine + 真实 service，真落盘）
 npm run capture               # 截图取证（需屏幕解锁；不满足条件会拒绝出图而非交假证据）
 
@@ -76,6 +77,7 @@ npm run capture               # 截图取证（需屏幕解锁；不满足条件
 npm run check:ia              # IA 结构 24 条（侧栏两级 / 视图 Tab / 设置两栏壳 / 小节分层）
 npm run check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
 npm run check:engine-client   # 翻译引擎适配层 32 条 / 反证 5 条（真协议用 openapi 快照「假引擎」，秒级可复跑）
+npm run check:models          # S3 模型下载器 32 条 / 反证 5 条（本地 Range 夹具源：中断续传 / 篡改一字节 / 换版本重链，秒级）
 npm run check:music           # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 215 条（反证：check:music:refute）
 npm run check:settings        # 设置页「播放·媒体」裁定结果 90 条（反证：check:settings:refute）
 npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条（反证：check:units:refute）

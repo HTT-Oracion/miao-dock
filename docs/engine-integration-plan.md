@@ -428,11 +428,34 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
 本机无 Windows，标记 `unverified`。`MIAO_NO_TREE_KILL=1` 这条反证在 mock 下**咬不到东西**
 （mock 没有孙进程），只有真模式才有效。
 
-### S3 · 模型管理
+### S3 · 模型管理 —— ✅ **已完成（见 D-72）**
 
 下载器（HTTPS 官方源 + 断点续传 + **逐文件 SHA256** + 失败单文件重下 + `.ready` 幂等标记 + 逐文件进度 + 可暂停/恢复）。**模型目录独立于 `app/`**，引擎换版本不触发模型重下。
 
 **验收**：E7（下载中断后续传成功；篡改一字节 → SHA256 失败 → 自动重下）。
+
+**落地**：
+- 清单 `engine/models.manifest.json`（**版本控制**，取代此前散在 `tmp-engine-test/`（被 `.gitignore` 忽略）的取物脚本）：
+  6 条资产 = 4 视觉模型 + Sakura 权重 + llama.cpp 归档，逐条带 `url` / `sources` / `sha256` / `sizeBytes`。
+- 内核 `engine/model-store.mjs`（`ensureModels` / `verifyModels` / `linkModels`）；CLI `engine/scripts/fetch-models.mjs`。
+- 🔴 **「引擎换版本不重下模型」不是靠摆放位置就能成立的** —— 回读源码：`utils/inference.py:94`
+  `_MODEL_DIR = join(BASE_PATH,'models')`、`utils/generic.py:24-25` 推出 `BASE_PATH = <引擎>/src`，
+  且 `server/args.py` **没有** `--model-dir`（只有 `manga_translator.py:298-299` 的 `params['model_dir']` 运行期钩子）
+  ⇒ 视觉模型**必须**出现在 `<引擎>/src/models/<子目录>/`，而 `src/` 一换版本就会连模型一起被删。
+  ⇒ 解法：**权威副本在 `models-store/`，引擎树里那几份是硬链接**；换版本后 `--link` 零网络恢复。
+- 三个"看起来能用、其实会静默出错"的点已在代码里显式处理（Range 不回 206 ⇒ 必须重新计而不是追加；
+  `Content-Length` 在续传时是"剩余长度"不是"总长度"；校验失败只许自动重下**一次**）。
+
+**实测（2026-10-05）**：
+- `npm run check:models` —— **32/32**；`check:models:refute` —— 反证 **5/5** 按预期变红。
+- 真实清单：`fetch-models.mjs --check` → **6/6 通过**（含 3.3 GB Sakura 权重的 sha256 全部与盘上字节一致）；
+  `--link` 幂等（第二次「新建 0 / 已是 4」）。
+- 迁移取证：`src/models/` 里 4 份与 `models-store/` 里对应文件的 **inode 完全相同**（68779986 / 68780091 两两相同）⇒ 是真硬链接不是复制。
+- 真引擎加载（迁移后必须重验 —— 迁的就是引擎按硬编码路径要加载的文件）：
+  以 `translator=none` 跑 `manga_translator local`，**1.1 分钟**跑完整条流水线并出图到
+  `out-linkcheck/test_0.webp`（EXIT=0）：`DefaultDetector` 检测 → `Model48pxOCR` **21 个文本框**
+  （识别出真实日文）→ 掩码细化 → `LamaLarge` 擦除 1128×1600 → 渲染落盘
+  ⇒ 三个被迁移的模型都从**硬链接路径**成功加载，迁移没有破坏引擎。
 
 ### S4 · 档位 / 加速 / 降档 / 空闲卸载
 

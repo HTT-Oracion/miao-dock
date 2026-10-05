@@ -2140,3 +2140,120 @@ WebView 走 `::1` —— 强行只绑 IPv4 会把 WebView 弄坏。
 
 **本节新增/修改的文件**：本文件（D-63 措辞 + 本节）。
 
+## D-72 · S3 模型管理：下载器 + 🔴「引擎换版本不重下模型」为什么**不能只靠摆放位置**（2026-10-05）
+
+### 交付
+
+- **清单** `engine/models.manifest.json`（**入库**）：6 条资产 = 4 视觉模型 + Sakura 权重 + llama.cpp 归档，
+  逐条带 `url`（规范地址/溯源）+ `sources`（本机实测可用通道，按序回退）+ `sha256` + `sizeBytes`。
+  它**取代**了此前散在 `tmp-engine-test/s0-fetch-and-run.sh` 的取物逻辑 —— 那个目录被 `tmp-*/` 忽略、
+  **不在版本控制里**，即"唯一的获取配方"是仓库外的东西。这本身就是个隐患：换个会话/换台机器就丢了。
+- **内核** `engine/model-store.mjs`：`ensureModels()`（下载+校验+幂等）/ `verifyModels()`（纯离线校验）/
+  `linkModels()`（把 store 链进引擎树）。**CLI** `engine/scripts/fetch-models.mjs`
+  （`--check` 只校验 · `--link` 零网络重建链接 · `--set/--id/--extract/--integrity`）。
+- **验收**：`npm run check:models` **32/32**；`check:models:refute` 反证 **5/5** 按预期变红。
+
+### 🔴 三个"看起来能用、其实静默出错"的点（都在代码里显式处理）
+
+1. **发了 `Range` 而对方回 200** —— 这是**合法**行为（服务器可以忽略 Range 给全量）。
+   若按"续传"处理把它**追加**到 `.part` 后面，会得到一个"大小 2×、哈希永远不对"的文件，
+   而且错误现场离原因很远。⇒ 必须判 **206 才追加，200 就截断重来**。断言：`C2`（大小不得被追加成 2×）。
+2. **续传时 `Content-Length` 是"剩余长度"不是"总长度"** —— 进度要用 `Content-Range` 的 total
+   （`bytes a-b/total`），否则进度条走满 100% 而实际只下了半截。
+3. **校验失败只许自动重下一次** —— 无限重试在"源本身就是坏的"时会变成**不报错的死循环**
+   （表现为"一直在下载"而不是"失败"）。⇒ 超限即抛 `MODEL_SHA256_MISMATCH`，并把期望/实际哈希带出来。
+   断言：`E2`（重试次数 = 1 + `REDOWNLOAD_LIMIT`）、`E3`（失败时不留半好文件）。
+
+### 🔴 关键发现：模型被放在**引擎源码树里** ⇒ 计划那句「引擎换版本不触发模型重下」不成立
+
+计划 §S3 写着「模型目录独立于 `app/`，引擎换版本不触发模型重下」。前半句成立（确实不在 `app/` 下），
+**后半句不成立**。回读源码（不是凭印象）：
+
+- `manga_translator/utils/inference.py:94` → `_MODEL_DIR = os.path.join(BASE_PATH, 'models')`
+- `manga_translator/utils/generic.py:24-25` → `MODULE_PATH = dirname(dirname(realpath(utils/generic.py)))`，
+  `BASE_PATH = dirname(MODULE_PATH)` ⇒ 换成绝对路径就是 **`<引擎>/src`**
+- `manga_translator/utils/inference.py:114` → `model_dir = join(_MODEL_DIR, _MODEL_SUB_DIR)`
+  （子类给 `'detection'` / `'inpainting'` / `'ocr'`）
+- `server/args.py` **没有** `--model-dir`（实测只有 `--models-ttl`）；全树唯一的覆盖钩子是
+  `manga_translator.py:298-299` 的 `params['model_dir']` —— 运行期改类属性，且服务端没有 CLI 入口。
+
+⇒ 视觉模型**必须**出现在 `<引擎>/src/models/<子目录>/`。既然 `src/` 就是引擎版本的载体，
+**"删掉旧 src 再解包新 src"这种换版本方式会把 4 GB 模型一起带走** —— 那时唯一的恢复手段就是重下。
+
+**解法：权威副本与"引擎要看到的路径"分离。**
+- 权威副本只存一份：`runtimes/manga-translator/models-store/<子目录>/`（manifest 的 `dest`）。
+- 引擎树里那几份是**硬链接**（manifest 的 `linkTo`，相对链接基准 `<模型根>/src`）。
+- 换版本后 `npm run fetch:models -- --link` ⇒ **毫秒级、零网络**恢复。
+- **为什么用硬链接而不是符号链接**：Python 侧对符号链接有一堆额外语义（`realpath`、`os.replace`、
+  "写入跟随目标"），而硬链接在文件系统层面**就是一个普通文件** —— 引擎的 `os.path.exists` 与读取路径
+  完全无感。跨设备/不支持链接时**退化为复制**，但**如实记账**（`copied` 与 `linked` 分开报，不假装是链接）。
+- ⚠️ **已知边界（写下来而不是装作没有）**：硬链接与 store 共享 inode ⇒ 若引擎在"文件已存在"时仍去写
+  这个路径，会连带改到权威副本。本项目的预置策略（`_check_downloaded_map()` **只判文件存在**）使它
+  不会去写；安全网是 `verifyModels()` —— 它能在任何时候回答"盘上那份还是不是好的"。
+
+### 反证轮的设计：正反**共用同一套事实函数与谓词**
+
+`scn*()` 只负责产出**事实**（`{ hashOk, rangedRequests, resumedFrom, ... }`），`PRED` 是一组谓词，
+正向轮用它打 `add()`，反证轮用**同一个谓词**判断"这条会不会变红"。若反证另写一遍实现，
+它证明的就是另一件事了（D-68 那次假绿的教训）。
+
+另外一个细节：谓词用 `P(name)` 取，名字拼错**立刻抛错**（而不是 `undefined` 被调用后崩在别处，
+或更糟——静默跳过）。这是"分母必须写死并断言"的同一条纪律在代码层的落法。
+
+5 条反证：`MIAO_NO_MODEL_VERIFY`（打两条**互相独立**的判据：检出篡改 / 坏源必须报错）·
+`MIAO_NO_RESUME`（不许从断点接 ⇒ 断言"发过 Range"必须变红）· `MIAO_NO_READY`（不写 `.ready`）·
+`MIAO_NO_LINK`（不建链 ⇒ 断言"换版本后重链即恢复"必须变红）。
+> ⚠️ `MIAO_NO_MODEL_VERIFY` 同时打两条判据 **不等于** §5.1-L2 说的"两条反证共用一条断言"：
+> 后者是**一条断言**被两处破坏互相掩盖；这里是**一个开关的两处作用面**、两条判据各自独立变红。
+
+### 实测（2026-10-05）
+
+- `check:models` **32/32**；`check:models:refute` **5/5** 变红。
+- 真实清单：`fetch-models.mjs --check` → **6/6 通过**（含 3.3 GB Sakura 权重的 sha256 与盘上字节一致）。
+- 迁移取证：`src/models/` 与 `models-store/` 里对应文件的 **inode 完全相同**
+  （`68779986` / `68780091` 两两相同）⇒ 硬链接成立，不是复制。`--link` 幂等（第二次「新建 0 / 已是 4」）。
+- **迁移后真引擎加载复验**（迁的就是引擎按硬编码路径要加载的文件，不验就是"未验证"）：
+  `translator=none` 跑 `manga_translator local`，**1.1 分钟**跑完整条流水线并出图
+  （`DefaultDetector` → `Model48pxOCR` **21 个文本框** → 掩码细化 → `LamaLarge` 1128×1600 → 渲染落盘），EXIT=0。
+
+**复现配方（写在这里，因为配置文件本身落在 `runtimes/`，那个目录在 `.gitignore` 里）**：
+`translator=none` 是为了绕开 `llama-server`，正好只压到被迁移的那三个视觉模型。
+
+```
+# runtimes/manga-translator/linkcheck.config.json
+{"translator":{"translator":"none","target_lang":"CHS"},
+ "detector":{"detector":"default"},
+ "inpainter":{"inpainter":"lama_large"},
+ "ocr":{"ocr":"48px"}}
+
+cd runtimes/manga-translator/src          # ⚠️ 必须在 src/ 下：包是 src/manga_translator，换 cwd 会 No module named
+../venv/bin/python -m manga_translator local \
+  -i <含一张真实漫画页的目录>              # ⚠️ -i 收的是**目录**，不是单个文件
+  -o ../../out-linkcheck \
+  --config-file ../linkcheck.config.json  # local 子命令**没有** --translator/--target-lang，只能走 config 注入
+```
+（参数以上为 `local --help` 实测回读，不是照抄文档；`-i/--input` 描述即 "Path to an image folder"。）
+> 这条复现配方落在被忽略的目录里，正是本节开头批评的那种隐患 —— 所以配方记在这里，
+> `runtimes/` 里那份配置只是临时件，丢了不影响复现。
+
+### 未做 / 边界（如实登记）
+
+- **⚠️ 验收脚本的临时根必须按模式分家**：`check:models` 与 `check:models:refute` 原先共用
+  `.tmp-models/`，而每轮都会 `freshRoot()` 掉同名子目录 ⇒ **两轮并行跑会互删对方落盘**。
+  症状极具误导性：正向轮在【B】报 `ENOENT .../.tmp-models/resume/big.bin`，
+  看着像"续传实现坏了"，实际是另一轮把它删了。已改为 `.tmp-models/pos` 与 `.tmp-models/refute`
+  （修复后并行复跑双绿，修复前必挂 —— 这就是它的反证）。
+
+- **`params['model_dir']` 这条运行期钩子没有采用**：它改的是类属性（全局副作用），且要先确认
+  服务端的请求配置能否把它透传下来。硬链接方案**不动上游一行代码**即可达成同样目的，故本轮不引入。
+- **Windows 的硬链接/符号链接语义未验**（本机无 Windows）：`fs.link` 在 NTFS 上需要权限、
+  且跨卷会失败 —— 代码已退化为复制，但**这条分支在本机验不了**，标记 `unverified`。
+- `check:models` **未加入** `check:docs` 的 `SUITES` 条数对账：它的分母在脚本内已写死并断言
+  （`EXPECTED_TOTAL = 32`），加进去只会多一处需要手工同步的耦合；理由同 D-63 对 `check:engine-client` 的处理。
+
+**本节新增/修改的文件**：`engine/models.manifest.json`（新）· `engine/model-store.mjs`（新）·
+`engine/scripts/fetch-models.mjs`（新）· `engine/scripts/model-store-check.mjs`（新）·
+`package.json`（+3 命令）· `.gitignore`（+`.tmp-models/`）· 本文件 ·
+`docs/engine-integration-plan.md`（§S3）· `docs/engine-integration-delivery-plan.md`（M4 / §4.1）·
+`AGENTS.md` · `README.md`。
+

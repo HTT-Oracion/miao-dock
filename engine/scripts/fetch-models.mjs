@@ -1,0 +1,135 @@
+#!/usr/bin/env node
+/**
+ * fetch-models.mjs —— S3 模型下载器的命令行入口
+ * =============================================================================
+ * 用法：
+ *   node engine/scripts/fetch-models.mjs                      # 拉全套（visual + llm + runtime）
+ *   node engine/scripts/fetch-models.mjs --set visual         # 只拉视觉模型（默认流水线必需）
+ *   node engine/scripts/fetch-models.mjs --id ocr_48px        # 只拉一个
+ *   node engine/scripts/fetch-models.mjs --check              # 只校验、不联网（诊断口径）
+ *   node engine/scripts/fetch-models.mjs --set runtime --extract   # 拉 llama.cpp 并解包
+ *   node engine/scripts/fetch-models.mjs --integrity cached   # 应用启动口径（命中 .ready 就不重算哈希）
+ *   node engine/scripts/fetch-models.mjs --link               # **只重建引擎树里的链接**（零网络）
+ *   node engine/scripts/fetch-models.mjs --no-link            # 拉完不建链
+ *
+ * 🔴 `--link` 是「引擎换版本」后的收尾动作：权威副本在 store（models-store/），
+ *    引擎源码树 `src/models/` 里那几份只是硬链接；`src/` 被换掉后跑这一条即可恢复，
+ *    **不需要重下几个 GB**（依据与理由见 manifest 的 linkNote）。
+ *
+ * 环境变量：MIAO_MODEL_ROOT 覆盖模型根目录（默认 runtimes/manga-translator/）
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+
+import { ensureModels, verifyModels, linkModels, ModelStoreError } from '../model-store.mjs';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO = path.resolve(HERE, '..', '..');
+const MANIFEST = path.join(REPO, 'engine', 'models.manifest.json');
+const ROOT = process.env.MIAO_MODEL_ROOT || path.join(REPO, 'runtimes', 'manga-translator');
+
+function parseArgs(argv) {
+  const out = { ids: [], set: null, integrity: 'cached', check: false, extract: false, linkOnly: false, noLink: false };
+  for (let i = 0; i < argv.length; i += 1) {
+    const a = argv[i];
+    if (a === '--set') out.set = argv[++i];
+    else if (a === '--id') out.ids.push(argv[++i]);
+    else if (a === '--integrity') out.integrity = argv[++i];
+    else if (a === '--check') out.check = true;
+    else if (a === '--extract') out.extract = true;
+    else if (a === '--link') out.linkOnly = true;
+    else if (a === '--no-link') out.noLink = true;
+    else if (a === '-h' || a === '--help') { out.help = true; }
+    else throw new Error(`未知参数：${a}`);
+  }
+  return out;
+}
+
+const human = (n) => {
+  if (n == null) return '?';
+  const u = ['B', 'KB', 'MB', 'GB'];
+  let i = 0; let v = n;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i += 1; }
+  return `${v.toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
+};
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.help) {
+    console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('*/')[0]);
+    return 0;
+  }
+
+  const manifest = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
+  const scope = args.ids.length ? `id=${args.ids.join(',')}` : (args.set ? `set=${args.set}` : '全部');
+  console.log(`模型根目录：${ROOT}`);
+  console.log(`清单：v${manifest.manifestVersion} · 引擎 commit ${manifest.engineCommit.slice(0, 12)} · 范围：${scope}`);
+
+  if (args.check) {
+    const r = await verifyModels(manifest, { rootDir: ROOT, ids: args.ids, set: args.set });
+    console.log(`校验：通过 ${r.ok.length} / 不符 ${r.bad.length} / 缺失 ${r.missing.length}（共 ${r.total}）`);
+    for (const b of r.bad) console.log(`  ✗ ${b.id}：盘上 ${b.actual.slice(0, 12)}… ≠ 清单 ${b.expected.slice(0, 12)}…`);
+    for (const m of r.missing) console.log(`  ✗ ${m}：缺失`);
+    return r.bad.length || r.missing.length ? 1 : 0;
+  }
+
+  // —— 只重建链接（引擎换版本后的收尾动作，零网络）
+  if (args.linkOnly) {
+    const l = await linkModels(manifest, {
+      rootDir: ROOT, ids: args.ids, set: args.set, logger: (m) => console.log(m),
+    });
+    console.log(`链接基准：${l.base}`);
+    console.log(`链接：新建 ${l.linked.length} · 已是 ${l.already.length} · 复制 ${l.copied.length} · 跳过 ${l.skipped.length}（共 ${l.total}）`);
+    if (l.skipped.length) {
+      console.log('✗ 有跳过项 ⇒ store 里还缺资产，先跑一次下载。');
+      return 1;
+    }
+    return 0;
+  }
+
+  let last = '';
+  const r = await ensureModels(manifest, {
+    rootDir: ROOT,
+    ids: args.ids,
+    set: args.set,
+    integrity: args.integrity,
+    logger: (m) => console.log(m),
+    onProgress: (p) => {
+      const line = `${p.id} ${p.phase} ${human(p.received)}/${human(p.total)}`;
+      if (line !== last) { last = line; process.stdout.write(`\r${line.padEnd(60)}`); }
+    },
+  });
+  process.stdout.write(`\r${' '.repeat(60)}\r`);
+  console.log(`复用 ${r.reused.length} · 下载 ${r.downloaded.length} · 因校验重下 ${r.redownloaded.length} · 传输 ${human(r.bytes)}`);
+  for (const [id, from] of Object.entries(r.resumeFrom)) {
+    if (from > 0) console.log(`  续传：${id} 从 ${human(from)} 接着下`);
+  }
+
+  // —— 把 store 里的权威副本链进引擎源码树（视觉模型必须出现在 <引擎>/src/models/ 下）
+  if (!args.noLink) {
+    const l = await linkModels(manifest, { rootDir: ROOT, ids: args.ids, set: args.set });
+    console.log(`链接：新建 ${l.linked.length} · 已是 ${l.already.length} · 复制 ${l.copied.length} · 跳过 ${l.skipped.length}`);
+  }
+
+  if (args.extract) {
+    const entry = (manifest.files || []).find((f) => f.id === 'llama_cpp_macos_arm64');
+    if (!entry) throw new Error('清单里没有 llama_cpp_macos_arm64，无法解包');
+    const tarAbs = path.join(ROOT, entry.dest);
+    const outDir = path.join(path.dirname(tarAbs), 'llama');
+    fs.rmSync(outDir, { recursive: true, force: true });
+    fs.mkdirSync(outDir, { recursive: true });
+    const rc = spawnSync('tar', ['-xzf', tarAbs, '-C', outDir], { stdio: 'inherit' });
+    if (rc.status !== 0) throw new Error(`解包失败：${tarAbs}`);
+    console.log(`已解包到 ${outDir}`);
+  }
+  return 0;
+}
+
+main().then((code) => process.exit(code)).catch((err) => {
+  if (err instanceof ModelStoreError) console.error(`\n✗ [${err.code}] ${err.message}`);
+  else console.error(`\n✗ ${err.stack || err.message}`);
+  process.exit(1);
+});

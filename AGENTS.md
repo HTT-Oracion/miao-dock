@@ -63,6 +63,8 @@ npm run e2e                   # D 组端到端
 npm run check:ia              # IA 结构 24 条
 npm run check:tls             # TLS 依赖链 14 条（三层）
 npm run check:engine-client[:refute] # 翻译引擎适配层 32 条 / 反证 5 条（真协议用 openapi 快照「假引擎」，秒级）
+npm run check:models[:refute] # S3 模型下载器 E7：32 条 / 反证 5 条（本地 Range 夹具源，秒级，不碰真权重）
+npm run fetch:models          # S3 模型下载器 CLI：--check 只校验 / --link 只重建引擎树里的链接（零网络）
 npm run check:music[:refute]  # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 215 条 / 反证 180 条
 npm run check:settings[:refute] # 设置页「播放·媒体」90 条 / 反证 24 条
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条 / 反证 44 条
@@ -77,8 +79,16 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 
 - ver1.0（漫画翻译）**已完成**；ver2.0（设置页重构 + IA + 音乐模块）进行中，音乐模块四平台已接通。
 - **翻译引擎接入进度**：S0 环境闸门（G1 ✅）· **S1 适配层对齐**（D-62）· **S2 三进程生命周期已完成，
-  macOS 侧过 G2**（D-64…D-70）。`ServiceManager` 现管 `Children{service, engine, llm}`，
+  macOS 侧过 G2**（D-64…D-70）· **S3 模型管理已完成**（D-72）。
+  `ServiceManager` 现管 `Children{service, engine, llm}`，
   就绪是**三重判定**（进程存活 + 端口 + HTTP），五态机 `stopped→starting(L1–L3)→running→stopping→stopped`。
+- **模型资产管理（S3）**：`engine/models.manifest.json`（版本控制）是唯一清单 —— 来源 / sha256 / 大小；
+  `engine/model-store.mjs` 负责下载（断点续传 / 逐文件 SHA256 / 失败单文件重下 / `.ready` 幂等 / 可暂停），
+  `npm run fetch:models` 是 CLI。
+  🔴 **权威副本在 `runtimes/manga-translator/models-store/`，引擎源码树 `src/models/` 里那几份只是硬链接** ——
+  因为引擎把模型路径硬编码在自己源码树里（`utils/inference.py:94` + `utils/generic.py:24-25`，且
+  `server/args.py` 没有 `--model-dir`）⇒ **换引擎版本后跑 `npm run fetch:models -- --link` 即可零网络恢复**，
+  不必重下几个 GB。链接只占一份盘。
 - 🔴 **一条容易说错的现状**：引擎栈模式由 `MIAO_ENGINE_PROTOCOL` 决定，**默认 `real`** ——
   也就是说 `npm run app` 起的**已经是真引擎**（`python main.py` + `llama-server`），
   模拟引擎只在测试里被显式注入（`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs`）。
