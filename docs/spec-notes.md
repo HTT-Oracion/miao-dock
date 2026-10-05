@@ -1949,8 +1949,8 @@ A+B 合起来才证明**预算确实随基准缩放**（即旋钮真的接管了
 **修法**：字符类补 `-` → `/npm run ([a-z0-9:-]+)/g`（已落地，并加注释说明为什么必须含 `-`）。
 
 **反证（必须做，否则"改断言让它变绿"就是最省事的错答案）**：往 `AGENTS.md` 临时塞一条
-`npm run check:no-such-command-x` ⇒ 该条**确实变红**（`[不存在：check:no-such-command-x]`）⇒
-证明修的是"解析器太窄"，**没有把断言改废**；随后按字节校验 `AGENTS.md` 已还原。
+**杜撰的 `npm run` 命令**（名字**故意不写字面量**，理由见 D-71）⇒ 该条**确实变红**
+（报 `[不存在：那个杜撰名]`）⇒ 证明修的是"解析器太窄"，**没有把断言改废**；随后按字节校验 `AGENTS.md` 已还原。
 
 > ⚠️ **这是"假红"而不是"假绿"，但危险同源**：假红会诱使人**去动文档/收窄现实**来迁就脚本。
 > 判据：断言报"某东西不存在"时，先确认**它是不是把名字读错了**，再动被报的东西。
@@ -1961,4 +1961,182 @@ A+B 合起来才证明**预算确实随基准缩放**（即旋钮真的接管了
 从"纯静态对账"变成**环境相关**。⇒ 保持 `check:docs` 只对账 3 个纯静态套件。
 
 **本节新增/修改的文件**：`scripts/docs-consistency-check.mjs`（正则 + 注释）· 本文件。
+
+---
+
+## D-64 · S2 三进程生命周期：就绪判据从「读 stdout 就绪行」换成**三重判定**
+
+**改了什么**：`app/src-tauri/src/service.rs` 从「两个子进程（服务 + 引擎）」升级为
+`Children{service, engine, llm}`；四态机 `stopped/starting/running/error` → 五态机
+`stopped → starting(L1/L2/L3) → running → stopping → stopped`。
+
+**核心判断：stdout 就绪行是"数据通道"，不是"就绪判据"。**
+旧实现把「服务打印了 `{port,token,rootDir}` 那一行」当作 running 的依据。问题是这一行**只能证明
+日志打出来了**：worker 挂了、端口被占、`/health` 返 500 —— 那行照样可能已经打出去。
+新实现把三件事拆开，**各自独立超时**：
+1. **进程存活**（`Child::try_wait()` 为 `None`）；
+2. **端口监听**（TCP connect）；
+3. **HTTP 真应答**（真发一次请求，看状态码）。
+三重全过才是 `running`。就绪行仍然要读，但它只用来拿**动态端口与令牌**（服务的端口在
+5180–5190 里挑、令牌只在那行里）——拿不到这两样就构造不出探针，如此而已。
+
+**五态机的 L1–L3 是什么**（每一步都是外部可观测量，不是"内部标志位"）：
+- `L1 环境就绪` = 三个进程都 spawn 出来且都活着；
+- `L2 模型就绪` = 所有 TCP 探针都在听；
+- `L3 预热`   = 所有 HTTP 探针都真应答。
+（自检 `S2a` 断言 `starting→L1→L2→L3→running` 这条轨迹真的被走到。）
+
+**L4「首图惰性初始化」不在启动期**（对计划的**有意偏离**，记在这里）：
+它发生在**首次翻译请求**时、只存在于引擎侧（模型到设备的那一步）。
+《03》§4.5 已定「引擎的准备/卸载/降档都不新增客户端状态机节点」⇒ Box 侧**不**为它加节点，
+只保留一个"首张会慢"的 UI 提示（S6）。把它塞进 `starting` 会让状态机在"已可用但首张慢"时
+显示成"还在启动"，反而更不准。
+
+## D-65 · 启动配方由 JS 给，Rust 只管"拉起与回收"
+
+**问题**：S2 要求 Rust 按**进程类型**分派 spawn（Node / Python 可执行 / llama-server）。
+而"拼哪条命令、cwd 是哪个目录、按什么探针判就绪"**全是引擎侧细节**，
+已经集中在 `service/src/engine-client.mjs`（唯一耦合点，《04》§3.3）。
+若在 Rust 里再写一份，换引擎版本时**必然漏改一处**，且两个地方谁说了算说不清。
+
+**做法**：新增 `service/scripts/print-launch-plan.mjs <real|mock>`，把配方打成 JSON 给 Rust：
+`{mode, serviceEnv, llm:{cmd,cwd,env,probes,watch,probe_timeout_ms}, engine:{…}}`。
+Rust 启动时问一次，然后按 `probes` 做三重判定。**"怎么拼"留在 JS，"怎么管"留在 Rust。**
+
+**副作用要防**：该脚本 import `config.mjs`，而它在模块顶层 `ensureToken()` **会写 `state/token`**。
+打印配方是只读操作 ⇒ 脚本顶部先 `process.env.MIAO_TOKEN ||= '0'.repeat(64)`，
+让 `ensureToken()` 走 override 分支不碰磁盘（断言 `P-15` 用一个全新空 state 目录取证）。
+
+**契约面要断言**：`service/scripts/launch-plan-check.mjs`，22 条（`npm run check:launch-plan`）。
+其中两条值得单独说：
+- **同源断言**：real 的 engine 探针必须**恰好**是 `tcp(port) + POST /queue-size + tcp(port+1)`
+  —— 与 `probeEngine()` 的三重判定同源。否则 Rust 的"就绪"与适配层的"就绪"会各说各话，
+  而**缺 `tcp(port+1)` 恰好会把"模型还在加载"误判成 running**（M1 已踩）。
+- **预算断言**：真引擎探针预算必须 ≥120s（实际 240s/180s）。python 要 import torch 全家桶、
+  llama-server 要读几 GB 权重，默认 20s 会把"还在加载"直接判成"起不来"
+  —— 而这恰恰最容易被误读成"引擎坏了"。
+
+## D-66 · E11 的手段：父死看门狗**分两层**；为什么别的机制都不行
+
+**判据原文（《04》E11）**：主进程 SIGKILL 后，②③ 均自行退出、端口释放。
+SIGKILL 不可捕获、也不跑 atexit ⇒ **父进程里没有任何代码会执行**。能自救的只有还活着的进程。
+
+**先排除的三个"看起来能用"的机制**：
+- **进`stdin` EOF**：要求子进程真的去读 stdin；上游 `llama-server` / `python` 不读。
+- **进程组**：macOS 上"组长死亡"**不会**连带组员（那是 Windows Job Object 的语义）。
+  ⇒ 进程组只能用于**回收**（D-67 的树杀），不能用于"父死自退"。
+- **捕获 SIGTERM**：SIGKILL 根本不发信号。
+
+**两层做法**（各自解决一类进程）：
+1. **我们自己的 Node 子进程**：`service/src/parent-watch.mjs` / `engine/src/parent-watch.mjs`
+   （ver1.0 `c4dfe44` 已落地）——进程内轮询 `process.ppid`，变了就退出。零额外进程。
+2. **外部二进制**（真模式的 `python main.py` / `llama-server`）：改不了它们 ⇒ 新增
+   `engine/scripts/child-watch.mjs` 包一层。看守盯 ppid，被看守进程放进**独立进程组**，
+   父死时 `kill(-pid, TERM→KILL)` 带走**整棵子树**（含引擎自己拉的执行器）。
+   ⇒ Rust 侧多一个字段 `watch`（由配方给出），由 Rust 在 spawn 时包一层，
+   **配方里的 `cmd` 仍是"真正要跑的东西"**（断言 P-real-9/14 不受影响）。
+
+**为什么 mock 侧也要三进程**：mock 原先只有 ①②。若只在真模式才凑齐三个，
+「三进程可拉起/可回收」「③挂=仅翻译阶段失败」这两条在**秒级可反证**的回路里就**根本走不到**，
+只能靠分钟级 + 几 GB 权重的真引擎去验 ⇒ 新增 `engine/src/mock-llm.mjs`
+（只实现就绪探针用到的那一个端点 `GET /v1/models`，其余一律 404 —— 假装得越像越危险）。
+
+**证据**：
+- `npm run selftest:app:e11` —— mock 三进程，SIGKILL 主进程后 13 个端口（5180–5190/5003/8080）全释放；
+- `npm run selftest:app:e11:refute` —— 加 `MIAO_NO_PARENT_WATCH=1` ⇒ 5180/5003/8080 全被孤儿占住，
+  **断言确实作用在看守机制上**（随后自动清理残留）；
+- `npm run check:child-watch` / `:refute` —— 把 child-watch 这条（真模式唯一依赖）在**秒级**钉死，
+  见 D-68。
+
+## D-67 · 回收：先礼后兵 + **对进程组**发信号（不是为了好看，是因为孙进程）
+
+**为什么不能只 `Child::kill()`**：真引擎会自己再拉起一个执行器子进程（`main.py:244`，
+端口固定 `port+1`）。SIGKILL 引擎主进程 ⇒ 执行器被 reparent 到 launchd、继续占住 8001。
+**只杀直接子进程 = 必然漏一个。**
+
+**做法**：每个子进程 spawn 时 `process_group(0)`（进自己的进程组），回收时
+① `SIGTERM` 整组 → ② 等 `STOP_GRACE=3s` → ③ `SIGKILL` 整组 + reap 僵尸。
+unix 用 `libc::kill(-pgid, sig)`（故新增 `[target.'cfg(unix)'.dependencies] libc`）——
+std 没有"对进程组发信号"的接口。
+
+**Windows 分支已写、标 `unverified`**（G2 ④）：`taskkill /PID <pid> /T [/F]` +
+spawn 时加 `CREATE_NEW_PROCESS_GROUP`。**本机无法验证** ⇒ 不写"已完成"，
+`selftest.rs` 的 `kill_child()` 在非 unix 上直接返回 `false`，让相关断言**判红**而不是假装通过。
+
+**反证开关 `MIAO_NO_TREE_KILL=1`**：只杀直接子进程。⚠️ 它在 mock 模式下**咬不到东西**
+（mock 两侧没有孙进程）—— 这条反证要等真模式 E11（有执行器那个孙进程）才有效。**已登记。**
+
+## D-68 · 🔴 child-watch 的「出生即孤儿」缺口 + 一次**反证轮的假绿**
+
+**正向轮与反证轮给出了同一个结果 ⇒ 先怀疑共同前提。**
+`check:child-watch` 第一版跑出来：正向轮「目标进程仍在跳（看守没生效）」，反证轮「✓ 反证成立」。
+**两个相反预期同时"成立"**，唯一自洽的解释是：**看守压根没装**，
+反证轮的 ✓ 是为错的理由通过的。这与"判据读的是注释"是同一族（见 AGENTS §2-3）。
+
+**真因（两层，都要记）**：
+1. **产品侧确有缺口**：测试里父进程 spawn 完立刻退出，child-watch 还没 exec 完 `ppid` 已是 1。
+   旧写法 `if (bootPpid > 1) { 装看守 }` 在这种情形下**静默地不装** ⇒ 整棵子树变孤儿，
+   而且看起来"跑得好好的"。⇒ 补上「出生即孤儿」分支：`ppid ≤ 1` 直接 `shutdown()`。
+   （这个窗口在生产里真实存在：spawn 与 exec 之间父进程死掉。）
+2. **测试侧时序错**：采样窗口落在看守**已杀掉目标之后**，两次采样值相同 ⇒
+   被 `beating()` 判成"目标没起来"。⇒ 改成"**父进程活着时**先采样证明它在跳 → 再等父退出 → 再采样"，
+   并把父进程存活时长拉到明显长于一次采样窗口。
+
+**顺带一条清理纪律**：`cleanup()` 只杀目标进程是不够的 —— "父进程"与看守还带着同一个心跳路径赖着，
+下一轮的 `ps` 线索里就混进上一轮的进程，把"本轮为什么失败"搅浑（实测就被搅过一次）。
+心跳路径每次运行唯一 ⇒ 按它 `pkill -f` 既精确又不误伤。
+
+## D-69 · 🔴 `_devserver.mjs` 只探 `127.0.0.1`，而 vite 5 + Node 22 只绑 `::1`
+
+**症状极具误导性**：`npm run selftest:app` 报「dev server 未在 15s 内就绪（端口 1420）」——
+看着像"vite 起不来"。实测 `lsof` 显示 vite **在听**，只是绑在 `[::1]:1420`（IPv6），
+而 `scripts/_devserver.mjs` 的 `portOpen` 只连 `127.0.0.1`（IPv4）⇒ 恒失败。
+`curl 127.0.0.1:1420` → 000；`curl [::1]:1420` → 200。Node ≥17 起 `localhost` 优先解析 `::1`，
+vite 默认 `host: 'localhost'` ⇒ 只绑 IPv6。
+
+**修法**：`portOpen` 改成**双栈**（先 IPv4，不通再 IPv6）。
+**不**改 vite 的 `--host`：`tauri.conf.json` 的 `devUrl` 是 `http://localhost:1420`，
+WebView 走 `::1` —— 强行只绑 IPv4 会把 WebView 弄坏。
+端口没人听时 `connect` 立刻 ECONNREFUSED，双探几乎不增加开销。
+**影响面**：`selftest:app` / `capture` 两条链路此前在本机**都跑不起来**（不是本轮引入）。
+
+## D-70 · 引擎端口**按协议分档**（real=8000 / mock=5003）
+
+`config.enginePort` 原为单一默认 5003（ver1.0 mock 的水位）。真引擎走 uvicorn，
+沿用 mock 的水位在语义上是错的，且 `engine/scripts/s1-real-engine-check.mjs` 一直用的就是 8000。
+⇒ 与同文件里 `engineTimeoutMs` 一样**按协议分档**：`real → 8000`、`mock → 5003`。
+`print-launch-plan.mjs` 必须**在 import config 之前**把 `MIAO_ENGINE_PROTOCOL` 钉成请求的那个模式，
+否则 mock 配方会拿到 8000（实测踩到，见 P-mock-3/P-mock-8 的断言值）。
+
+**本节新增/修改的文件**：`app/src-tauri/src/service.rs`（重写）· `app/src-tauri/src/selftest.rs`（+S2 组）·
+`app/src-tauri/Cargo.toml`（+libc）· `service/src/engine-client.mjs`（+`resolveLlmLaunch`、`label`/`probes`）·
+`service/src/config.mjs`（端口分档）· `service/scripts/print-launch-plan.mjs`（新）·
+`service/scripts/launch-plan-check.mjs`（新）· `engine/src/mock-llm.mjs`（新）·
+`engine/scripts/child-watch.mjs`（新）· `scripts/child-watch-check.mjs`（新）·
+`scripts/lifespan-selftest.mjs`（+E11 / +`--mode`）· `scripts/_devserver.mjs`（双栈）· `package.json`。
+
+## D-71 · 🔴 台账**自己**成了 `check:docs` 的恒红：被扫描的文档里**不得写不存在命令的字面量**（2026-10-05）
+
+**现象**：S2 收口跑全量门时 `check:docs` 报 **13/1**（此前记录为 14/0）：
+`docs/spec-notes.md 引用的 npm 命令都存在 [不存在：check:no-such-command-x]`。
+
+**根因（两个各自都合理的改动叠加）**：
+① D-63 记录反证时，把那句杜撰命令**按字面量**写进了本文件（当时本文件**不在** `ALL_DOCS` 里，无害）；
+② 后来 `scripts/docs-consistency-check.mjs` 的 `ALL_DOCS = [...DOCS, 'docs/spec-notes.md']`
+把台账也纳入**命令存在性**检查（台账**不参与条数比对**，但参与这一项）⇒ 台账里那句历史记录**变成恒红**。
+
+**判据（为什么定位成"文档错"而不是"断言太宽"）**：
+`git show HEAD:docs/spec-notes.md` 里该行**同样存在**，且脚本本次**未被修改**（不在 diff 里）
+⇒ 这是**既有红**、非本轮引入；且"引用一个真实存在的命令"才是这条断言的本意，
+台账举例用的是**杜撰命令**，属于文档写得歧义 ⇒ **该改文档，不该放宽断言**。
+
+**修法**：把字面量改成**不可被正则捕获**的写法（`npm run` + 文字描述，不给出命令名）。
+⚠️ **在本仓写"演示/反证用的假命令"时，一律不要拼出完整字面量** ——
+`/npm run ([a-z0-9:-]+)/g` 会把它当成真引用，而台账是被扫描的。
+
+> 与 D-63 同源的第 2 种表现：D-63 是"**解析器太窄**把真命令读错"（假红，该修脚本），
+> D-71 是"**文档里真有假命令**"（真红，该修文档）。**两者症状一样，修法相反**
+> ⇒ 判据是「那个命令**在 package.json 里真的该有吗**」，而不是「断言红了就动断言」。
+
+**本节新增/修改的文件**：本文件（D-63 措辞 + 本节）。
 

@@ -54,7 +54,11 @@
 
 ```bash
 npm run selftest              # A 组服务契约 159 条 + 引擎自测 23 条
-npm run selftest:app[:refute] # B 组应用生命周期 12 条（含反证）
+npm run selftest:app[:refute] # B 组应用生命周期 16 条（含 S2a–S2d：五态轨迹 / E1 参数快照 / 三子进程 / 崩溃分级；含反证）
+npm run selftest:app:e11[:refute]     # E11 三进程树回收（mock，秒级）：SIGKILL 主进程 → 13 端口全释放
+npm run selftest:app:e11:real         # 同上但**真进程**（python+执行器+llama-server，14 端口）· 分钟级
+npm run check:launch-plan     # S2 启动配方契约 22 条（print-launch-plan.mjs → Rust，含与 probeEngine 同源断言）
+npm run check:child-watch[:refute]   # 外部二进制父死看守的双向取证（秒级；真模式 E11 的唯一依赖）
 npm run e2e                   # D 组端到端
 npm run check:ia              # IA 结构 24 条
 npm run check:tls             # TLS 依赖链 14 条（三层）
@@ -72,12 +76,16 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 ## 4. 当前状态与已知缺口
 
 - ver1.0（漫画翻译）**已完成**；ver2.0（设置页重构 + IA + 音乐模块）进行中，音乐模块四平台已接通。
-- **翻译引擎接入进度**：S0 环境闸门（G1 ✅）与 **S1 适配层对齐已完成**（`service/src/engine-client.mjs`
-  已按 `openapi.engine.json` 重写，真引擎实测出真译文，D-62）。⚠️ **但产品链路仍未接真引擎** ——
-  `app/src-tauri/src/service.rs` 起的是**模拟引擎**（三处显式注入 `MIAO_ENGINE_PROTOCOL=mock`），
-  切真引擎属 **S2 / M3**；在那之前"翻译可用"只有开发态证据。
-- **未做**：打包分发（`bundle.resources` 为空，装出来的 `.app` 起不了服务，G-13）· S2 三进程生命周期
-  （`engine/` 现仍是模拟实现 sidecar，D-09）· 歌手详情 4 标签 / 评论翻页 / 卡拉OK YRC / 桌面歌词（PD-1 延后）。
+- **翻译引擎接入进度**：S0 环境闸门（G1 ✅）· **S1 适配层对齐**（D-62）· **S2 三进程生命周期已完成，
+  macOS 侧过 G2**（D-64…D-70）。`ServiceManager` 现管 `Children{service, engine, llm}`，
+  就绪是**三重判定**（进程存活 + 端口 + HTTP），五态机 `stopped→starting(L1–L3)→running→stopping→stopped`。
+- 🔴 **一条容易说错的现状**：引擎栈模式由 `MIAO_ENGINE_PROTOCOL` 决定，**默认 `real`** ——
+  也就是说 `npm run app` 起的**已经是真引擎**（`python main.py` + `llama-server`），
+  模拟引擎只在测试里被显式注入（`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs`）。
+  ⇒ **本机没拉引擎（`runtimes/` 不在）时，产品链路起不来**，这是 G-13（打包分发）未做的一部分。
+- **未做**：打包分发（`bundle.resources` 为空，装出来的 `.app` 起不了服务，G-13）· **S3 模型管理 / S4 档位加速 /
+  S5 契约增量 / S6 诊断 UI / S7 真机 E1–E11 全表 / S8 插件串联**（M4–M9）· Windows 侧三项（`unverified`）·
+  歌手详情 4 标签 / 评论翻页 / 卡拉OK YRC / 桌面歌词（PD-1 延后）。
 - **未做真机验证**的项在台账里逐条标注（如 Radix 弹层观感、音频代理播放、皮肤观感）—— 别把
   "类型检查 + 断言通过"当成"功能可用"。
 - 本仓库曾出现**同仓库并发写入**（另一个会话/窗口在改同一批文件，甚至把编辑器格式化后的引号风格一起提交）。

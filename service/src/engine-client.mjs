@@ -45,6 +45,7 @@
 //     这些是测试专用能力，不该进生产契约面。测试起的是它，就显式声明 `mock`。
 import http from 'node:http';
 import net from 'node:net';
+import path from 'node:path';
 
 import { config } from './config.mjs';
 import { sniffImageType } from './image.mjs';
@@ -347,6 +348,48 @@ export async function probeEngine() {
  * 消费方是 S2 的 `ServiceManager`；S1 只交付这个纯函数 + 断言。
  * @returns {{cmd:string[], cwd:string, env:object, executorPort:number}}
  */
+/** `runtimes/manga-translator/`（`engineDir` 是它下面的 `src/`） */
+const ENGINE_RT = path.resolve(config.engineDir, '..');
+
+/**
+ * 引擎③（LLM / llama-server）的启动配方 —— **只有 real 协议**才有这么一个独立进程。
+ *
+ * 为什么放在本文件：本文件是「box-service ↔ 引擎」的**唯一耦合点**（见文件头）。
+ * llama.cpp 的版本目录名、权重文件名、上下文长度、卸载层数**全是引擎侧细节**；
+ * 一旦在 Rust 的 ServiceManager 里再写一份，换版本时就必然漏改一处（两个地方谁说了算？）。
+ * 所以 Rust 只负责「拿到配方 → 拉起 → 回收」，**怎么拼由这里说了算**。
+ *
+ * ⚠️ 路径默认值对应 `engine/VERSIONS.lock` §3 锁定的 llama.cpp 构建与 §4 的 Sakura 权重。
+ *    换版本 = 改 VERSIONS.lock + 改这里（同一处评审），不允许"顺手升级"。
+ */
+export function resolveLlmLaunch(overrides = {}) {
+  const {
+    bin = process.env.MIAO_LLM_BIN || path.resolve(ENGINE_RT, 'bin', 'llama', 'llama-b11417', 'llama-server'),
+    model = process.env.MIAO_LLM_MODEL
+      || path.resolve(ENGINE_RT, 'models', 'sakura', 'sakura-1.5b-qwen2.5-v1.0-fp16.gguf'),
+    port = envIntLocal('MIAO_LLM_PORT', 8080),
+    ctx = envIntLocal('MIAO_LLM_CTX', 4096),
+    ngl = envIntLocal('MIAO_LLM_NGL', 99),
+  } = overrides || {};
+
+  return {
+    label: 'llm',
+    cmd: [bin, '-m', model, '--port', String(port), '-c', String(ctx), '-ngl', String(ngl)],
+    cwd: null,
+    env: {},
+    // 就绪探针：`llama-server` 的 HTTP 面就是 OpenAI 兼容的 `/v1/models`（M1/S1 实测用它判就绪）
+    probes: [
+      { kind: 'tcp', port },
+      { kind: 'http', port, method: 'GET', path: '/v1/models', expect: 200 },
+    ],
+  };
+}
+
+function envIntLocal(name, def) {
+  const n = Number.parseInt(process.env[name] || '', 10);
+  return Number.isFinite(n) && n > 0 ? n : def;
+}
+
 export function resolveEngineLaunch(overrides = {}) {
   const {
     pythonBin = config.enginePython,
@@ -364,6 +407,7 @@ export function resolveEngineLaunch(overrides = {}) {
   if (nonce) cmd.push('--nonce', nonce);
 
   return {
+    label: 'engine',
     cmd,
     cwd: config.engineServerDir,
     env: {
@@ -374,5 +418,13 @@ export function resolveEngineLaunch(overrides = {}) {
       ...(nonce ? { MT_WEB_NONCE: nonce } : {}),
     },
     executorPort: port + 1,
+    // 就绪探针 —— 与 `realProbe()` 的三重判定**同源**（不是另写一份）：
+    //   ① uvicorn 在听（TCP 8000）② 存活探针应答（POST /queue-size，**POST 不是 GET**）
+    //   ③ **执行器端口在听**（TCP 8001）—— 缺 ③ 会把"模型还在加载"误判成 running。
+    probes: [
+      { kind: 'tcp', port },
+      { kind: 'http', port, method: 'POST', path: '/queue-size', expect: 200 },
+      { kind: 'tcp', port: port + 1 },
+    ],
   };
 }

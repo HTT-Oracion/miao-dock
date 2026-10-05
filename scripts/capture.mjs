@@ -109,6 +109,9 @@ const child = spawn(BIN, [], {
   cwd: path.join(ROOT, 'app', 'src-tauri'),
   env: {
     ...process.env,
+    // 截图是**表现层**取证，不该被引擎栈拖住：不显式声明时 Rust 侧默认 `real`，
+    // 会去起 Python + 几 GB 权重（分钟级），截图任务会因此超时/失败。
+    MIAO_ENGINE_PROTOCOL: 'mock',
     MIAO_CAPTURE_DIR: STAGE,
     MIAO_ROOT: rootDir,
     MIAO_STATE_DIR: stateDir,

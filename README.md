@@ -23,7 +23,7 @@
 miao-dock/
 ├── docs/         开发方案、验收标准、裁定留痕
 ├── service/      box-service（Node，127.0.0.1:5180–5190）—— 唯一翻译入口、队列、编号、落盘
-├── engine/       mangatranslator 模拟引擎 sidecar（127.0.0.1:5003）—— 真实模型就绪前顶替
+├── engine/       引擎侧：真引擎的版本锁与放置位；`src/` 是**测试替身**（模拟引擎 + 模拟 LLM）
 ├── app/          Tauri v2 桌面端（Rust 壳 + Vite/React 前端）
 └── scripts/      验收脚本（契约自测 / 生命周期 / 端到端 / 截图取证）
 ```
@@ -34,10 +34,12 @@ miao-dock/
 # 服务层（可独立启动，不依赖桌面端）
 node service/src/server.mjs
 
-# 模拟引擎
+# 测试替身（模拟引擎 + 模拟 LLM）—— 只有测试用，产品走真引擎
 node engine/src/server.mjs
 
-# 桌面端（需 Rust 工具链）；它会自己拉起上面两个子进程
+# 桌面端（需 Rust 工具链）；它会自己拉起**三个**子进程：服务 + 引擎 + LLM
+#   默认 real ⇒ 引擎栈 = python main.py(8000) + 执行器(8001) + llama-server(8080)，需要 runtimes/
+#   想跑替身快回路：MIAO_ENGINE_PROTOCOL=mock npm run app
 cd app && npm install
 cd .. && npm run app
 ```
@@ -61,8 +63,12 @@ cd .. && npm run app
 
 ```bash
 npm run selftest              # A 组服务契约 + 引擎自测
-npm run selftest:app          # B1–B5 应用生命周期（程序化，不依赖人点）
+npm run selftest:app          # B 组应用生命周期 16 条（程序化，不依赖人点；含 S2 五态轨迹/参数快照/崩溃分级）
 npm run selftest:app:refute   # 上一项的反证——它必须**变红**，绿的那轮才作数
+npm run selftest:app:e11      # E11 三进程树回收（mock）：SIGKILL 主进程 → 13 端口全释放
+npm run selftest:app:e11:real # 同上但真进程（python+执行器+llama-server）；分钟级，按需手动跑
+npm run check:launch-plan     # S2 启动配方契约 22 条
+npm run check:child-watch     # 外部二进制父死看守的双向取证（反证：check:child-watch:refute）
 npm run e2e                   # D1–D5 端到端（真实 engine + 真实 service，真落盘）
 npm run capture               # 截图取证（需屏幕解锁；不满足条件会拒绝出图而非交假证据）
 
@@ -89,5 +95,12 @@ npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动�
 > 所以装出来的应用起不了服务。打包分发本轮**未做**（见 `docs/spec-notes.md` G-13）。
 
 > **翻译引擎接入进行中**：适配层（`service/src/engine-client.mjs`）已按真引擎协议重写并在真引擎上
-> 出过真译文（S1 / D-62），但**产品链路仍起模拟引擎**（`app/src-tauri/src/service.rs` 显式注入
-> `MIAO_ENGINE_PROTOCOL=mock`）；切真引擎属 S2。在那之前，"翻译可用"只有开发态证据。
+> 出过真译文（S1 / D-62）；**S2 三进程生命周期已完成、macOS 侧过 G2**（D-64…D-70）——
+> `ServiceManager` 管 `Children{service, engine, llm}`，就绪是**三重判定**（进程存活 + 端口 + HTTP），
+> 真模式 E11 已实测（SIGKILL 主进程 → 真引擎/执行器/llama-server 全自退、14 端口释放）。
+>
+> 🔴 **引擎栈模式默认 `real`**：`npm run app` 起的**已经是真引擎**（`python main.py` + `llama-server`，
+> 需要 `runtimes/`，见 `engine/VERSIONS.lock`）。模拟引擎只在测试里被显式注入
+> （`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs`）。
+> **未做**：模型下载器 / 档位加速 / 诊断 UI / 插件串联（S3–S8）· Windows 侧（`unverified`）·
+> 打包分发（G-13：装出来的 `.app` 里不含 `service/` 与 `engine/`，起不了服务）。

@@ -183,7 +183,10 @@ export const config = {
   // **默认 real**：生产必须走真实引擎；测试起的是模拟引擎，就显式声明 mock（诚实标注，
   // 不是"忘记切换"）。适配层内部按此分支，见 engine-client.mjs。
   engineProtocol: ENGINE_PROTOCOL,
-  enginePort: envInt('MIAO_ENGINE_PORT', 5003),
+  // 引擎端口**按协议分开**（同一个数字套两种引擎是错的）：
+  //   mock —— 5003（ver1.0 起的水位，模拟引擎还在此起连续 8 个端口里挑）
+  //   real —— 8000（uvicorn 默认水位；执行器固定占 port+1，见 `resolveEngineLaunch`）
+  enginePort: envInt('MIAO_ENGINE_PORT', ENGINE_PROTOCOL === 'real' ? 8000 : 5003),
   engineHost: '127.0.0.1',
 
   // 单张翻译超时。**按协议给不同默认值**（同一个数字套两种引擎是错的）：

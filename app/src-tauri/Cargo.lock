@@ -2100,6 +2100,7 @@ dependencies = [
  "futures-util",
  "hex",
  "image",
+ "libc",
  "lofty",
  "log",
  "md-5",

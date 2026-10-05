@@ -125,6 +125,23 @@ fn port_open(port: u16) -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(800)).is_ok()
 }
 
+/// 从**外部**给子进程发 SIGTERM —— 用来制造「③ 挂了」这个事件。
+///
+/// 为什么要自己发信号、而不是让被测进程"报告自己挂了"：后者是被测方自证，不构成证据。
+/// 「外部制造事件 → 回读状态」才是崩溃分级这类**机制类**断言的正确取证方式。
+/// ⚠️ Windows 分支本机无法验证（G2 ④）⇒ 返回 false 让该条判红，**不假装通过**。
+fn kill_child(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        unsafe { libc::kill(pid as i32, libc::SIGTERM) == 0 }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
 /// 关窗后**真的提交一次翻译任务**并等它跑完。
 ///
 /// 这是 B1 的后半条：契约判据写的是「窗口隐藏；进程存活；**此时用插件/curl 提交任务仍成功执行**」。
@@ -342,8 +359,40 @@ pub fn spawn(app: AppHandle) {
                 }
             }
 
-            // 供后台线程做 HTTP 探活
+            // ---- S2：三进程生命周期（五态机 / E1 生效参数快照 / 三重就绪）----
+            // 取的都是**运行时可观测量**：状态机真实轨迹、日志里真的打出来的参数快照、
+            // 三个子进程的真实 pid —— 不是回头读一遍自己的源码（那只能证明"写了"）。
             let mgr = a.state::<ServiceManager>();
+            let st = mgr.status();
+            let has = |k: &str| st.transitions.iter().any(|t| t == k);
+            c.add(
+                "S2a",
+                has("starting") && has("L1") && has("L2") && has("L3") && has("running"),
+                format!("五态机轨迹：{}", st.transitions.join("→")),
+            );
+            let snap: Vec<String> = st
+                .log
+                .iter()
+                .filter(|l| l.contains("② engine") || l.contains("③ llm") || l.contains("① service"))
+                .cloned()
+                .collect();
+            c.add(
+                "S2b",
+                st.log.iter().any(|l| l.contains("生效参数快照")) && snap.len() == 3,
+                format!("E1 生效参数快照 {} 行：{}", snap.len(), snap.join(" ／ ")),
+            );
+            let pids: Vec<String> = st
+                .children
+                .iter()
+                .map(|x| format!("{}={:?}", x.name, x.pid))
+                .collect();
+            c.add(
+                "S2c",
+                st.children.len() == 3 && st.children.iter().all(|x| x.pid.is_some() && x.alive),
+                format!("mode={} 子进程：{}", st.mode, pids.join(" ")),
+            );
+
+            // 供后台线程做 HTTP 探活
             (c.items, mgr.base_url(), mgr.token())
         });
 
@@ -506,6 +555,29 @@ pub fn spawn(app: AppHandle) {
                 all.push(("B1d".into(), false, "服务未启动，取不到 base/token".into()));
                 all.push(("B1e".into(), false, "服务未启动，无法提交".into()));
             }
+        }
+
+        // ---- S2d 崩溃分级：从**外面**杀掉 ③ LLM ----
+        // 判据是「① 仍 running（服务没跟着塌）+ degraded 翻真（不静默）」。
+        // 反证开关 `MIAO_NO_CRASH_MONITOR=1` 关掉看护后，degraded 不会翻转 ⇒ 这条必红。
+        {
+            let pid = on_main(&app, |a| a.state::<ServiceManager>().child_pid("llm")).flatten();
+            let killed = pid.map(kill_child).unwrap_or(false);
+            std::thread::sleep(Duration::from_millis(2600)); // 看护每 1s 巡一次，留两轮余量
+            let (state, degraded, err) = on_main(&app, |a| {
+                let st = a.state::<ServiceManager>().status();
+                (
+                    format!("{:?}", st.state).to_lowercase(),
+                    st.degraded,
+                    st.last_error.clone().unwrap_or_default(),
+                )
+            })
+            .unwrap_or_else(|| ("?".into(), false, "主线程调度失败".into()));
+            all.push((
+                "S2d".into(),
+                killed && state == "running" && degraded,
+                format!("外部杀掉 ③(pid={pid:?}) 后 state={state} degraded={degraded} {err}"),
+            ));
         }
 
         // 退出前把子进程收干净，免得留下孤儿占端口

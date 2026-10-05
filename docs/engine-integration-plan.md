@@ -393,15 +393,40 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
 **实测结果**：`npm run check:engine-client` **32/0** · `--refute` **5/5 变红** ·
 真引擎 `engine/scripts/s1-real-engine-check.mjs` 出真译文（12.4 s / 11 区域 / 三态时间线 `stopped(1 ms)→starting(4.5 s)→running(7.9 s)`）。
 
-### S2 · 三进程生命周期
+### S2 · 三进程生命周期 —— ✅ **已完成（macOS 侧；见 D-64…D-70）**
 
-- `ServiceManager`：`Children{service, engine, llm}`；按进程类型分派 spawn（Node / Python 可执行 / llama-server）。
-- 就绪探测从"读 stdout 就绪行"改 **三重判定**（进程存活 + 端口监听 + HTTP 应答），各自独立超时。
-- 五态机 `stopped → starting → running → stopping → stopped`，`starting` 细分 **L1 环境就绪 / L2 模型就绪 / L3 预热 / L4 首图惰性初始化**。
-- **跨端进程树回收**：macOS 信号传播；Windows Job Object / `taskkill /T /F`。**已拍板（§7-⑤）：Windows 分支本轮就写**，用 `#[cfg(windows)]` 隔离，**验收标记 `unverified`** —— 本机验不了，不得在完成度里算作"已验"。
-- 崩溃影响分级：② 挂 ⇒ 任务失败 + `degraded`；③ 挂 ⇒ 仅翻译阶段失败（视觉流水线继续）。
+- ✅ `ServiceManager`：`Children{service, engine, llm}`；按进程类型分派 spawn（Node / Python 可执行 / llama-server）。
+  ⚠️ **启动配方不在 Rust 里拼**：Rust 启动时问 `service/scripts/print-launch-plan.mjs` 要 JSON
+  （`cmd/cwd/env/probes/watch/探针预算`）—— 引擎侧细节必须留在唯一耦合点（D-65）。
+- ✅ 就绪探测 **三重判定**（进程存活 + 端口监听 + HTTP 应答），各自独立超时。
+  **stdout 就绪行保留，但降级为"数据通道"**（拿动态端口与令牌），**不再是就绪判据**（D-64）。
+- ✅ 五态机 `stopped → starting(L1/L2/L3) → running → stopping → stopped`。
+  ⚠️ **`L4 首图惰性初始化` 不属启动期**（对本文初稿的**有意偏离**）：它发生在首次翻译请求时、
+  由引擎侧表达；《03》§4.5 已定「引擎的准备/卸载/降档都不新增客户端状态机节点」⇒ 见 D-64。
+- ✅ **跨端进程树回收**：unix 每个子进程进自己的**进程组**，退出时 SIGTERM 整组 → 3s → SIGKILL 整组；
+  Windows `taskkill /T /F` + `CREATE_NEW_PROCESS_GROUP`。**已拍板（§7-⑤）：Windows 分支已写**，
+  用 `#[cfg(windows)]` 隔离，**标记 `unverified`** —— 本机验不了，不得算作"已验"（G2 ④）。
+- ✅ 崩溃影响分级：② 挂 ⇒ 任务失败 + `degraded`；③ 挂 ⇒ 仅翻译阶段失败。① 挂 ⇒ 整体 `error`。
+  （后台看护线程每 1s 巡一次；**不静默**，两条路都写日志。）
+- ✅ **E11 的手段**：父死看门狗**分两层** —— 我们自己的 Node 子进程在进程内装看管；
+  外部二进制（python / llama-server）由 `engine/scripts/child-watch.mjs` 包一层。
+  先排除的三个"看起来能用"的机制（stdin EOF / 进程组 / SIGTERM）见 D-66。
 
-**验收**：E1（可拉起 + 日志打印生效参数快照）、E11（主进程 SIGKILL 后 ②③ 自行退出、端口释放；Windows 无孤儿 —— **本机只能验 macOS 一半**）。
+**验收（原文不变）**：E1（可拉起 + 日志打印生效参数快照）、E11（主进程 SIGKILL 后 ②③ 自行退出、
+端口释放；Windows 无孤儿 —— **本机只能验 macOS 一半**）。
+
+**实测结果**：
+- `npm run selftest:app` —— **16/16**（含 `S2a` 轨迹 `starting→L1→L2→L3→running`、`S2b` 生效参数快照、
+  `S2c` 三子进程 pid 齐备、`S2d` 外部杀掉 ③ 后 `state=running degraded=true`、`B4` 端口全释放）；
+- `npm run selftest:app:e11` —— mock 三进程，SIGKILL 主进程后 **13 个端口**（5180–5190/5003/8080）全释放；
+- `npm run selftest:app:e11:real` —— **真进程**：服务 + `python main.py`(8000) + 执行器(8001) + `llama-server`(8080)，
+  SIGKILL 后 **14 个端口**全部释放、无孤儿；同一轮从应用 stdout 读回 E1 生效参数快照（真命令）。
+- 反证：`selftest:app:e11:refute`（`MIAO_NO_PARENT_WATCH=1`）⇒ 三进程全成孤儿（断言变红）；
+  `MIAO_NO_CRASH_MONITOR=1` ⇒ `S2d` 变红；`check:child-watch` / `:refute` 秒级双向钉死看守机制。
+
+**未验（明确登记）**：Windows 三项（Job Object / `taskkill /T /F` / 无孤儿 `llama-server.exe`）——
+本机无 Windows，标记 `unverified`。`MIAO_NO_TREE_KILL=1` 这条反证在 mock 下**咬不到东西**
+（mock 没有孙进程），只有真模式才有效。
 
 ### S3 · 模型管理
 

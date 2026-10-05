@@ -11,18 +11,29 @@ import path from 'node:path';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * 「这个端口在 localhost 上有人听吗」—— **必须双栈探测**。
+ *
+ * 踩过的坑（2026-10-05 实测）：vite 5.x + Node ≥ 17 把 `localhost` 解析到 `::1`，
+ * 于是**只绑 IPv6**；而本函数原先只连 `127.0.0.1` ⇒ 明明起来了却报
+ * 「dev server 未在 15s 内就绪」，把环境问题伪装成"vite 起不来"。
+ * 两个栈都要试：先 IPv4，不通再 IPv6（端口没人听时 `connect` 会立刻 ECONNREFUSED，
+ * 不会各等满 timeout，所以双探几乎不增加开销）。
+ */
 export function portOpen(port, timeout = 500) {
-  return new Promise((resolve) => {
-    const sock = net.connect({ host: '127.0.0.1', port });
-    const done = (v) => {
-      sock.destroy();
-      resolve(v);
-    };
-    sock.setTimeout(timeout);
-    sock.once('connect', () => done(true));
-    sock.once('timeout', () => done(false));
-    sock.once('error', () => done(false));
-  });
+  const probe = (host) =>
+    new Promise((resolve) => {
+      const sock = net.connect({ host, port });
+      const done = (v) => {
+        sock.destroy();
+        resolve(v);
+      };
+      sock.setTimeout(timeout);
+      sock.once('connect', () => done(true));
+      sock.once('timeout', () => done(false));
+      sock.once('error', () => done(false));
+    });
+  return probe('127.0.0.1').then((v) => (v ? true : probe('::1')));
 }
 
 /**

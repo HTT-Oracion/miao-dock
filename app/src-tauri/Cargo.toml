@@ -47,6 +47,14 @@ urlencoding = "2"                  # QQ/酷狗 搜索参数编码
 encoding_rs = "0.8"                # QQ 音乐 GB18030 解码
 uuid = { version = "1", features = ["v4"] }  # 咪咕 cookie id
 
+# ── S2 三进程生命周期：进程**组**信号（`kill(-pgid, …)`）──
+# 为什么需要：回收时必须连孙进程一起带走（真引擎会自拉一个执行器子进程，
+# SIGKILL 主进程后它会被 reparent 到 launchd 并继续占住 port+1）。std 的
+# `Child::kill()` 只打直接子进程，没有"对进程组发信号"的接口 ⇒ 用 libc。
+# 仅 unix 需要；Windows 分支走 `taskkill /T /F`，不依赖它。
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 
 [profile.release]
 codegen-units = 1
