@@ -58,6 +58,7 @@ npm run selftest:app[:refute] # B 组应用生命周期 12 条（含反证）
 npm run e2e                   # D 组端到端
 npm run check:ia              # IA 结构 24 条
 npm run check:tls             # TLS 依赖链 14 条（三层）
+npm run check:engine-client[:refute] # 翻译引擎适配层 32 条 / 反证 5 条（真协议用 openapi 快照「假引擎」，秒级）
 npm run check:music[:refute]  # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 215 条 / 反证 180 条
 npm run check:settings[:refute] # 设置页「播放·媒体」90 条 / 反证 24 条
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条 / 反证 44 条
@@ -71,8 +72,12 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 ## 4. 当前状态与已知缺口
 
 - ver1.0（漫画翻译）**已完成**；ver2.0（设置页重构 + IA + 音乐模块）进行中，音乐模块四平台已接通。
-- **未做**：打包分发（`bundle.resources` 为空，装出来的 `.app` 起不了服务，G-13）· 真实 `mangatranslator` 接入
-  （现为模拟引擎，D-09）· 歌手详情 4 标签 / 评论翻页 / 卡拉OK YRC / 桌面歌词（PD-1 延后）。
+- **翻译引擎接入进度**：S0 环境闸门（G1 ✅）与 **S1 适配层对齐已完成**（`service/src/engine-client.mjs`
+  已按 `openapi.engine.json` 重写，真引擎实测出真译文，D-62）。⚠️ **但产品链路仍未接真引擎** ——
+  `app/src-tauri/src/service.rs` 起的是**模拟引擎**（三处显式注入 `MIAO_ENGINE_PROTOCOL=mock`），
+  切真引擎属 **S2 / M3**；在那之前"翻译可用"只有开发态证据。
+- **未做**：打包分发（`bundle.resources` 为空，装出来的 `.app` 起不了服务，G-13）· S2 三进程生命周期
+  （`engine/` 现仍是模拟实现 sidecar，D-09）· 歌手详情 4 标签 / 评论翻页 / 卡拉OK YRC / 桌面歌词（PD-1 延后）。
 - **未做真机验证**的项在台账里逐条标注（如 Radix 弹层观感、音频代理播放、皮肤观感）—— 别把
   "类型检查 + 断言通过"当成"功能可用"。
 - 本仓库曾出现**同仓库并发写入**（另一个会话/窗口在改同一批文件，甚至把编辑器格式化后的引号风格一起提交）。

@@ -27,6 +27,13 @@ export const MAX_SEQ = 999;
 // eta 采样窗口：近 N 张已完成 item 的耗时
 export const ETA_SAMPLE_WINDOW = 20;
 
+/**
+ * 引擎协议（`MIAO_ENGINE_PROTOCOL`，见 config.engineProtocol 处注释）。
+ * **默认 `real`** —— 生产走真实引擎；测试显式声明 `mock`。
+ */
+const ENGINE_PROTOCOLS = new Set(['real', 'mock']);
+const ENGINE_PROTOCOL = envEnum('MIAO_ENGINE_PROTOCOL', ENGINE_PROTOCOLS, 'real');
+
 const SRC_DIR = import.meta.dirname; // .../service/src
 export const PKG_DIR = path.resolve(SRC_DIR, '..'); // .../service
 
@@ -41,6 +48,23 @@ function envBool(name, def = false) {
   const raw = process.env[name];
   if (raw === undefined || raw === '') return def;
   return !['0', 'false', 'no', 'off'].includes(String(raw).toLowerCase());
+}
+
+/**
+ * 枚举型环境变量：**取值非法直接抛错，不静默回退**。
+ *
+ * 为什么不用 envBool 那套"读不出来就用默认"：协议这种开关一旦静默回退，
+ * 「以为在测 mock、其实走了 real」（或反过来）就会变成最难查的假绿
+ * —— 断言全绿而测的是另一个东西（AGENTS.md §2-3）。
+ */
+function envEnum(name, allowed, def) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return def;
+  const value = String(raw).trim().toLowerCase();
+  if (!allowed.has(value)) {
+    throw new Error(`${name} 取值非法：${JSON.stringify(raw)}（可选：${[...allowed].join(' | ')}）`);
+  }
+  return value;
 }
 
 /** 解析 MIAO_FAIL_SEQ=3,5 形式的 seq 列表 */
@@ -101,6 +125,10 @@ export const PENDING_DIR = path.join(STATE_DIR, 'pending');
  */
 export const ROOT_DIR = path.resolve(process.env.MIAO_ROOT || defaultRootDir());
 
+/** 引擎源码根（`src/`）。`engineServerDir` 由它派生，避免 `MIAO_ENGINE_DIR` 覆盖后两者走散。 */
+const ENGINE_DIR = process.env.MIAO_ENGINE_DIR
+  || path.resolve(PKG_DIR, '..', 'runtimes', 'manga-translator', 'src');
+
 // ------------------------------------------------------------------ 令牌（契约 §2.1）
 
 /**
@@ -147,11 +175,69 @@ export const config = {
   // 强制落盘失败，用于验证 saved:false / DISK_FULL 路径
   diskFull: envBool('MIAO_DISK_FULL'),
 
-  // sidecar（引擎）地址：契约 §1「端口自动探测，默认 5003」
+  // ---------------------------------------------------------------- 引擎（sidecar）
+  //
+  // 协议（docs/spec-notes.md D-62）：
+  //   real —— 真实 manga-image-translator（`python main.py`，FastAPI `/translate/image`）
+  //   mock —— 仓内模拟引擎（`engine/src/server.mjs`，ver1.0 起沿用的测试替身）
+  // **默认 real**：生产必须走真实引擎；测试起的是模拟引擎，就显式声明 mock（诚实标注，
+  // 不是"忘记切换"）。适配层内部按此分支，见 engine-client.mjs。
+  engineProtocol: ENGINE_PROTOCOL,
   enginePort: envInt('MIAO_ENGINE_PORT', 5003),
   engineHost: '127.0.0.1',
-  // 单张翻译超时（引擎无响应时按失败处理，避免任务卡死）
-  engineTimeoutMs: envInt('MIAO_ENGINE_TIMEOUT_MS', 60_000),
+
+  // 单张翻译超时。**按协议给不同默认值**（同一个数字套两种引擎是错的）：
+  //   real —— 10 min。依据：M1/G1 实测 CPU 单张 1.6 min（模型已加载，`out-first`）；
+  //           首张还要叠加模型到设备的加载（《04》§5.3「首图惰性初始化」是常态）。
+  //           10 min ≈ 6× 余量；S7 用实测首张耗时校准（未校准前宁可等，不可错杀）。
+  //   mock —— 60 s（原值不变；A20 用例注入 700ms 覆盖）。
+  engineTimeoutMs: envInt('MIAO_ENGINE_TIMEOUT_MS', ENGINE_PROTOCOL === 'real' ? 600_000 : 60_000),
+  // 探测超时（TCP 握手 / HTTP 探测）——**必须与单张超时分开**：探测不能等 10 分钟，
+  // 否则每次 /health 都卡死；而单张超时也不能缩到探测量级，否则真推理必被错杀。
+  engineProbeMs: envInt('MIAO_ENGINE_PROBE_MS', 800),
+
+  // 每次请求注入给真实引擎的 Config（《04》§4.2「参数基线」）。
+  // 🔴 注意：服务端**没有 `--config-file`**（实测 `server/args.py` 无此参数，与《04》§4.2/§4.3 的
+  // 示意不符）⇒ 策略改为**按请求**经 `TranslateRequest.config` 注入（`request_extraction.py:18-23`）。
+  // 取值 = M1/G1 实测通过的那份（`runtimes/manga-translator/sakura-chs.config.json`），
+  // **不写文档示意值**——实测值才是证据（AGENTS.md §2-2）。
+  engineConfig: {
+    translator: {
+      translator: process.env.MIAO_ENGINE_TRANSLATOR || 'sakura',
+      target_lang: process.env.MIAO_ENGINE_TARGET_LANG || 'CHS',
+    },
+    detector: { detector: process.env.MIAO_ENGINE_DETECTOR || 'default' },
+    inpainter: { inpainter: process.env.MIAO_ENGINE_INPAINTER || 'lama_large' },
+    ocr: { ocr: process.env.MIAO_ENGINE_OCR || '48px' },
+  },
+
+  // 启动参数拼装用（S2 的 ServiceManager 消费；S1 只做纯函数 + 断言）。
+  // 路径是**开发态布局**（G-13 打包分发未做，见 spec-notes）。可用 env 覆盖。
+  engineDir: ENGINE_DIR,
+  // 🔴 引擎主进程的 cwd 必须是 `src/server`（不是 `src/`）—— `main.py` 的
+  // `if __name__ == '__main__':` 块里是 `from args import parse_arguments`（**平级相对导入**），
+  // 只有 `python main.py`（脚本目录进 `sys.path[0]`）才找得到；`python -m server.main`
+  // 会以 `ModuleNotFoundError: No module named 'args'` 退出（实测，见台账 D-62）。
+  // 上游 README 写的也是 `$ python main.py --use-gpu`。
+  engineServerDir: process.env.MIAO_ENGINE_SERVER_DIR || path.join(ENGINE_DIR, 'server'),
+  enginePython: process.env.MIAO_ENGINE_PYTHON
+    || path.resolve(PKG_DIR, '..', 'runtimes', 'manga-translator', 'venv', 'bin', 'python'),
+  engineUseGpu: envBool('MIAO_ENGINE_USE_GPU', true),
+  // Tier 2 空闲卸载（《04》§9.1）：引擎自带 `--models-ttl 1800`（30 min）
+  engineModelsTtl: envInt('MIAO_ENGINE_MODELS_TTL', 1800),
+  // nonce：用于「引擎主进程 ↔ 执行器」与 `/register` 的鉴权。
+  // 🔴 **必须是字符串 `"None"`（默认值）**，不是"没设"：
+  //    ① `manga_translator/mode/share.py:52-57` 只在 `params['nonce'] == "None"` 时把它转成
+  //       Python `None` ⇒ `if self.nonce:` 为假 ⇒ **跳过校验**；传空串反而会**生成随机 nonce**。
+  //    ② 而主进程侧 `server/sent_data_internal.py:24-36` 调执行器时**从不带 `X-Nonce` 头**
+  //       ⇒ 只要执行器 nonce 非空，这张图**必然** 401 `Nonce does not match`（实测）。
+  //    ⇒ 这版上游里「开启 nonce」与「单图翻译可用」互斥。代价是把引擎的访问控制降级为
+  //      **只监听 127.0.0.1**（`--host` 固定本机），不用 nonce 兜底。S2/S4 若要恢复 nonce，
+  //      需给上游打补丁或在适配层前加一层仅本机可访问的代理。
+  //    ⚠️ 覆盖成别的值 = 功能必坏（保留此开关只为上游修好后复用）。
+  engineNonce: process.env.MIAO_ENGINE_NONCE || 'None',
+  // 引擎③（Sakura LLM）地址：`translators/keys.py` 的 `SAKURA_API_BASE` 默认值即此
+  engineSakuraBase: process.env.SAKURA_API_BASE || 'http://127.0.0.1:8080/v1',
 };
 
 // ------------------------------------------------------------------ 路径安全工具（契约 §8.2）

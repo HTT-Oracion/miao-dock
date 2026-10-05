@@ -1834,3 +1834,131 @@ A+B 合起来才证明**预算确实随基准缩放**（即旋钮真的接管了
 `docs/refs/manga-ocr/01-full-page-ab.png`、`02-typeset-regression.png`（证据图）。
 未采纳 ⇒ `engine/VERSIONS.lock` 暂不新增条目；拍板后再补。
 
+> ⬆️ **本条已排除**：用户拍板**不采纳** manga-ocr 方案，S1 维持 48px OCR（见 D-62）。
+
+---
+
+## D-62 · S1 适配层对齐完成（`engine-client.mjs` 换真协议）+ 四条实测坑 + 一条新的「假绿」形态（2026-10-05）
+
+**S1 验收原文**：① `translateImage()` 对**真实引擎**返回**真译文**；② `probeEngine()` 在
+引擎未启动 / 启动中 / 就绪三态下分别返回 `stopped` / `starting` / `running`（**三条都要有反证**）。
+
+### 一、真引擎与《04》不合的四处（全部实测，不是推演）
+
+1. **启动形式是 `python main.py`，不是 `python -m server.main`。**
+   `main.py` 的 `__main__` 块是平级相对导入 `from args import parse_arguments`；`-m` 模式下
+   `sys.path[0]` 是 cwd ⇒ `ModuleNotFoundError: No module named 'args'`。
+   ⇒ 引擎的 cwd 必须是 `<engineDir>/server`，而**执行器的 cwd 是 `src/`**（`main.py` 里
+   `Popen(..., cwd=src)` 写死）—— **两者不能想当然用同一个**。
+2. **存活探针是 `POST /queue-size`，不是 GET。** `server/main.py:161` 是 `@app.post("/queue-size")`。
+   写成 GET 得 **405**，而 405 与"引擎尚未就绪"**表现一致** ⇒ 极易误判成"没起来"。
+   ⇒ 新增断言 **R12**：适配层发出的**每个 `(method, path)` 必须出现在 `openapi.engine.json` 快照里**，
+   把"凭印象写协议"从人为纪律变成**机器可拦**。
+3. **`--nonce` 必须是字面串 `"None"`。** `share.py:111-115` 校验 `X-Nonce`，而主进程侧的
+   `sent_data_internal.fetch_data` **从不带这个头** ⇒ 传真值必 **401**；传空串会随机生成 nonce（同样 401）。
+   `share.py:55` 把字符串 `"None"` 转成 Python `None` ⇒ 跳过校验。**默认值锁 `'None'`。**
+4. **`POST /translate/image` 在这一版上游必然 500** ⇒ 改走 **`POST /translate/image/stream`**。
+   非流式链路 = `myqueue.py:125` → `ExecutorInstance.sent` → `sent_data_internal.fetch_data`
+   用 `json.loads(await response.text())` 解析，而执行器 `/simple_execute/{m}` 返回的是
+   **原始 pickle 字节**（`share.py:150` `media_type="application/octet-stream"`）⇒
+   `'utf-8' codec can't decode byte 0x80`。
+   流式两端是同版本配套实现（`fetch_data_stream.process_stream` ↔ `share.py:100-106`）。
+   **代价**：**HTTP 状态码恒 200，错误藏在流里**（`code 2`）⇒ 必须自实现帧解析
+   （`parseResultStream`：`1 字节 code + 4 字节大端长度 + 数据`）。
+
+> 另两条与《04》§4.3 的偏差已由 L2 断言钉死：服务端**没有** `--config-file` / `--model-dir`
+> 两个参数（`shared` 生产模式的 config 是**按请求**传的，见 D-61）；档位选择不能靠启动参数。
+
+### 二、就绪必须**三层**（HTTP 200 ≠ 能干活）
+
+`TCP(port)` → `POST /queue-size` 200 → **`TCP(port + 1)` 执行器端口在听**。
+缺第三层会把"模型还在加载"报成 `running`，**第一张必挂**。反证 **B** 即砍掉第三层 → `P4` 变红。
+
+### 三、断言成果
+
+`service/scripts/engine-client-check.mjs`：**正向 32 条 / 反证 5 条**
+（`npm run check:engine-client[:refute]`）。真协议一侧用**假引擎**（按 `openapi.engine.json` 快照回话，
+未列出的 method 一律回 405），**秒级、可反复跑、可反证**；mock 协议仍走仓内模拟引擎。
+
+- 分组：`R` real 调用 **14** · `P` 三态 **4** · `L` 启动参数 **8** · `D` 默认值 **3** · `M` mock 冒烟 **3**。
+- 反证（分母写死 5）：**A** data-URI mime 写死成 png · **B** 砍掉执行器端口层 · **C** 默认协议改回 mock ·
+  **D** 探针改回 `GET /queue-size` · **E** 结果流"整包当图"（不按 5 字节帧解析）。
+  实测 **5/5 变红**，每轮后按字节校验源文件已还原。
+
+### 四、真引擎实测（「功能通」取证；`engine/scripts/s1-real-engine-check.mjs`）
+
+与 `engine-client-check` 的分工**不许混为一谈**（计划 §7-R7）：前者证明**管路通**，本步证明**功能通**。
+
+- **三态时间线实测**：`stopped(1 ms) → starting(4.5 s) → running(7.9 s)`（引擎进程 + 执行器真起来；
+  第三层判定在真进程上确实经历了 `starting` 阶段）。
+- 送 `test-manga/test_0.webp`（291,828 B）→ **12.4 s** 出真译文
+  `tmp-engine-test/s1-real/server-mode.png`（1,371,924 B，sha256 `49de704e…`）；
+  输入 / 输出同为 **1125×1600**，**2.93%** 像素被改动（对照本地模式 4.34%）。
+- 引擎侧日志：**11 个区域**、页面级目标语言比率校验通过、mask 21 块、`LamaLarge` 修复、渲染 11/11。
+- 🔎 **副产品（值得单独记）**：**跑通这件事本身就证明了真响应是「分帧」的** ——
+  若引擎返回的是裸 PNG，首个字节 `0x89` 会被当成 code、紧随的 4 字节会被读成天文数字长度 ⇒
+  解析必判 `truncated`、得"无结果帧"。能取出正确 PNG ⇒ 帧解析在真引擎上真的生效。
+- ⚠️ **本次没有复现 M1 那次 `404 File Not Found`**（D-60 §五-1）：那次是"行数不匹配 → 触发重译 →
+  重译那次 404 → 降级为逐行"。本次页面级校验**一次通过、没走重译路径**。
+  ⇒ **该 404 成因仍未定位**，仍是 S2 的观察项（一旦走重译就会踩到）。
+- 1.5B 档译文质量与 D-60 / D-61 一致（`野バト`→"野兔"、`いらっしゃい`→"真让人不爽"）⇒ 属**产品选型**问题。
+
+### 五、🔴 新的「假绿」形态：**断言脚本被未捕获异常打死 ≠ 断言变红**
+
+反证 **E** 第一次跑报的是「**子进程没有结果行**」，**看上去像"破坏没生效"**。
+实测（独立复现）：`parseResultStream` 其实**正确抛了** `ENGINE_BAD_OUTPUT`，
+但断言脚本里那处 `await translateImage(...)` **没有保护** ⇒ 未捕获异常把整个子进程带走
+⇒ 反证轮根本没机会看到 `R4` / `R14` 变红。
+
+- **判据（写进肌肉记忆）**：反证轮报「没有结果行 / 无输出」时，先分清是
+  「**断言炸了**」还是「**断言没变红**」—— 二者对"这条判据到底测没测"的含义**完全相反**。
+- **修法（已落地）**：① 产品调用统一走 `attempt()`（抛错转成**可记录的失败**，`errText()` 带上 `code`）；
+  ② 入口加兜底 `try/catch`，**即使真崩了也照常吐 `[RESULT]` 行**（记一条红 `RUN` 断言）。
+- 与 AGENTS §2-3「假阳性比没测试更危险」同源：**脚本崩掉 = 判据空转**，比恒绿**更难发现**。
+
+### 六、本节新增 / 修改的文件
+
+`service/src/engine-client.mjs`（**重写**：real/mock 双协议 + 帧解析 + 三重判定 + `resolveEngineLaunch`）·
+`service/src/config.mjs`（`MIAO_ENGINE_PROTOCOL` 枚举校验、引擎端口/目录/探针超时/超时分档/nonce/env）·
+`service/src/server.mjs`（`sidecarState()` 只挑 ver1.0 三字段内传，避免未经评审的契约变更；启动日志加 `protocol=`）·
+`service/scripts/engine-client-check.mjs`（**新**，正向 32 + 反证 5）·
+`engine/scripts/s1-real-engine-check.mjs`（**新**）·
+`service/scripts/selftest.mjs`、`scripts/e2e.mjs`、`app/src-tauri/src/service.rs`（显式注入 `MIAO_ENGINE_PROTOCOL=mock`；
+**S2 改起真引擎时必须删这三行**）· `package.json`（`check:engine-client[:refute]`）·
+`AGENTS.md` / `README.md`（验收命令）· 本文件。
+
+**未做（明确登记，不得写成"已完成"）**：**产品链路仍未接真引擎** —— `app/src-tauri/src/service.rs`
+起的是**模拟引擎**；切真引擎属 **S2 / M3**（G2 闸门）。Windows 分支仍未写。
+
+---
+
+## D-63 · 陷阱：`check:docs` 的命令名正则不吃连字符 ⇒ **新增带 `-` 的 npm 命令会误报"命令不存在"**（2026-10-05）
+
+**现象**：S1 收口时把 `check:engine-client` 写进 AGENTS.md / README.md，
+`check:docs` 立刻从 **14/14 掉到 11/3**，三条都报「不存在：**check:engine**」。
+
+**根因（不是文档写错，是解析器自己太窄）**：
+`scripts/docs-consistency-check.mjs:124` 的命令名正则是 `/npm run ([a-z0-9:]+)/g` ——
+**字符类里没有 `-`**，于是 `check:engine-client` 被截成 `check:engine` 再去 package.json 里查 ⇒ 必然不存在。
+
+**为什么一直没暴露**：在这之前全仓的 npm 命令**恰好都不带连字符**
+（`selftest` / `e2e` / `check:ia` / `check:tls` / `check:music` / `check:units` / `check:settings`）——
+`selftest:app[:refute]` 里那个 `app` 也不带。**这是它们中的第一个。**
+⇒ 一条断言长期全绿，不代表它测对了；它可能只是**从没遇到过会暴露它的输入**（与 AGENTS §2-3 同源）。
+
+**修法**：字符类补 `-` → `/npm run ([a-z0-9:-]+)/g`（已落地，并加注释说明为什么必须含 `-`）。
+
+**反证（必须做，否则"改断言让它变绿"就是最省事的错答案）**：往 `AGENTS.md` 临时塞一条
+`npm run check:no-such-command-x` ⇒ 该条**确实变红**（`[不存在：check:no-such-command-x]`）⇒
+证明修的是"解析器太窄"，**没有把断言改废**；随后按字节校验 `AGENTS.md` 已还原。
+
+> ⚠️ **这是"假红"而不是"假绿"，但危险同源**：假红会诱使人**去动文档/收窄现实**来迁就脚本。
+> 判据：断言报"某东西不存在"时，先确认**它是不是把名字读错了**，再动被报的东西。
+
+**未采纳的一个方案（记录理由）**：曾考虑把 `check:engine-client` 也加进 `SUITES` 做条数对账，
+但其断言 **L4 依赖 `runtimes/manga-translator/src/server/main.py` 真实存在**
+（要核 cwd 拼得对不对）⇒ 在**没有拉引擎的机器**上它会红 ⇒ 会让 `check:docs`
+从"纯静态对账"变成**环境相关**。⇒ 保持 `check:docs` 只对账 3 个纯静态套件。
+
+**本节新增/修改的文件**：`scripts/docs-consistency-check.mjs`（正则 + 注释）· 本文件。
+

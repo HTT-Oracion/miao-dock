@@ -121,7 +121,10 @@ const scripts = pkg.scripts || {};
 for (const doc of ALL_DOCS) {
   const text = read(path.join(ROOT, doc));
   if (!text) continue;
-  const cmds = [...new Set([...text.matchAll(/npm run ([a-z0-9:]+)/g)].map((m) => m[1]))];
+  // ⚠️ 命令名字符类**必须含 `-`**：`check:engine-client` 是全仓第一个带连字符的 npm 命令，
+  //    而本行原先只写 `[a-z0-9:]` ⇒ 把它截成 `check:engine` ⇒ 误报「命令不存在」。
+  //    这类"解析器自己太窄"的假红，最容易的错反应是**把文档改短去迁就脚本**。
+  const cmds = [...new Set([...text.matchAll(/npm run ([a-z0-9:-]+)/g)].map((m) => m[1]))];
   const missing = cmds.filter((c) => !Object.prototype.hasOwnProperty.call(scripts, c));
   add(
     'PKG',

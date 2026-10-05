@@ -33,6 +33,12 @@ const ROOT_DIR = e2eRoot();
 const STATE_DIR = e2eState();
 const BATCH_LIMIT = 20;
 
+// 🔴 本套用例起的是**模拟引擎**（`engine/src/server.mjs`）——ver1.0 的自定义协议，
+// **不是真实引擎协议**（`/translate/image` + JSON/data URI）。故**强制**声明 `mock`：
+// 起的是替身就老实说，否则「以为在测 real、其实 mock」会是最难查的假绿。
+// 生产默认值仍是 `real`（`service/src/config.mjs`）。真实协议由 engine-client-check + S1 实测覆盖。
+process.env.MIAO_ENGINE_PROTOCOL = 'mock';
+
 // ------------------------------------------------------------------ D4 时效的「时间口径」（D-0.8）
 // ⚠️ 旧写法把预算**写死成 30s** —— 那是**模拟引擎**的口径（单张 300ms，`MIAO_ENGINE_ITEM_MS` 默认值）。
 // 真实引擎是**秒级/张**：20 张可达 1 分钟以上。接入真引擎那天该断言必红，

@@ -69,6 +69,7 @@ npm run capture               # 截图取证（需屏幕解锁；不满足条件
 # 结构断言（每条都带反证轮，见 docs/spec-notes.md 与 AGENTS.md §3）
 npm run check:ia              # IA 结构 24 条（侧栏两级 / 视图 Tab / 设置两栏壳 / 小节分层）
 npm run check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
+npm run check:engine-client   # 翻译引擎适配层 32 条 / 反证 5 条（真协议用 openapi 快照「假引擎」，秒级可复跑）
 npm run check:music           # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 215 条（反证：check:music:refute）
 npm run check:settings        # 设置页「播放·媒体」裁定结果 90 条（反证：check:settings:refute）
 npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条（反证：check:units:refute）
@@ -86,3 +87,7 @@ npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动�
 > **当前只有开发态**：`npm run app:build` 产出的 `.app` 里**不含** `service/` 与 `engine/`
 > （`tauri.conf.json` 的 `bundle.resources` 为空，`resolve_entry` 也从可执行文件向上找不到它们），
 > 所以装出来的应用起不了服务。打包分发本轮**未做**（见 `docs/spec-notes.md` G-13）。
+
+> **翻译引擎接入进行中**：适配层（`service/src/engine-client.mjs`）已按真引擎协议重写并在真引擎上
+> 出过真译文（S1 / D-62），但**产品链路仍起模拟引擎**（`app/src-tauri/src/service.rs` 显式注入
+> `MIAO_ENGINE_PROTOCOL=mock`）；切真引擎属 S2。在那之前，"翻译可用"只有开发态证据。

@@ -176,6 +176,12 @@ impl ServiceManager {
         if let Some(p) = sidecar_port {
             envs.push(("MIAO_ENGINE_PORT".into(), p.to_string()));
         }
+        // 🔴 上面起的是**模拟引擎**（`engine/src/server.mjs`，ver1.0 自定义协议），而
+        // `service/src/config.mjs` 的默认协议是 `real`（真实 manga-image-translator）。
+        // 起的是替身就必须显式声明 —— 否则适配层会拿真实协议去打模拟引擎，探测恒 `starting`、
+        // 提交恒 503，且**看不出根因**。
+        // ⚠️ S2（三进程生命周期）改为起真实引擎时，**必须删掉这一行**（`real` 才是生产默认）。
+        envs.push(("MIAO_ENGINE_PROTOCOL".into(), "mock".into()));
         let (child, ready_rx) = match spawn_node(&service_entry, &envs, &log) {
             Ok(v) => v,
             Err(e) => {

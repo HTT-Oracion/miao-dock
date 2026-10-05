@@ -14,6 +14,12 @@ import { pathToFileURL } from 'node:url';
 
 import { encodePng } from '../../engine/src/png.mjs';
 
+// 🔴 本套用例起的是**模拟引擎**（`../engine/src/server.mjs`）——它实现的是 ver1.0 的自定义协议
+// （`/ready` + 字节式 `/translate`），**不是真实引擎协议**（`/translate/image` + JSON/data URI）。
+// 所以这里**强制**声明 `mock`：起的是替身，就老实说。生产默认值仍是 `real`（见 config.mjs）。
+// 真实协议路径的断言在 `service/scripts/engine-client-check.mjs`（真协议假引擎 + S1 真引擎实测）。
+process.env.MIAO_ENGINE_PROTOCOL = 'mock';
+
 const ROOT = path.resolve(import.meta.dirname, '..'); // .../service
 const SERVICE_ENTRY = path.join(ROOT, 'src', 'server.mjs');
 const ENGINE_ENTRY = path.resolve(ROOT, '..', 'engine', 'src', 'server.mjs');

@@ -349,8 +349,8 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
 
 | 阶段 | 名称 | 依赖 | 闸门 |
 |---|---|---|---|
-| **S0** | **环境闸门**：引擎装通 + 取证 | — | ✅ **不过则整体重估，不进 S1** |
-| S1 | 适配层对齐（`engine-client` 换真实协议） | S0 | 单图真翻译可跑通 |
+| **S0** | **环境闸门**：引擎装通 + 取证 | — | ✅ **通过（G1）** |
+| **S1** | 适配层对齐（`engine-client` 换真实协议） | S0 | ✅ **通过**：单图真翻译可跑通（断言 32 + 反证 5/5，D-62） |
 | S2 | 三进程生命周期 + 就绪探测 | S1 | 三进程可拉起/回收 |
 | S3 | 模型管理（下载/续传/SHA256） | S0 | 断点续传 + 校验失败重下 |
 | S4 | 档位 / 加速后端 / 降档重试 / 空闲卸载 | S2 | E5/E6 可验 |
@@ -380,13 +380,18 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
 - [ ] 单张耗时 / 峰值内存 / 首次安装磁盘占用 → 回填《04》§11.4
 - [ ] MPS 是否全算子支持（有无 CPU 回退）→ 结论写进文档
 
-### S1 · 适配层对齐
+### S1 · 适配层对齐 —— ✅ **已完成（见 D-62）**
 
 - 重写 `service/src/engine-client.mjs`：`translateImage` 签名**不变**，内部按快照对真实端点/字段映射；错误归一为 `EngineError{code}`；输出仍走 magic number 嗅探。
-- `probeEngine()` **形状扩展**为 8 字段（`state/tier/accel/warmed/llm/model/engineVersion/port`）。
-- 启动参数拼装（host/port/config-file/model-dir/nonce/models-ttl/use-gpu）。
+- `probeEngine()` **形状扩展**为 **9 字段**（`state/port/engine/engineVersion/tier/accel/warmed/llm/model`，S1 阶段后 6 个恒 `null` = "位置占好"，非"已实现"）。
+- 启动参数拼装 —— ⚠️ **本节初稿的两处说法已被实测推翻**：
+  ① 服务端**没有** `--config-file` / `--model-dir` 这两个参数（`shared` 生产模式的 config **按请求**传，见 D-61/D-62）；
+  ② 启动形式是 **`python main.py` 且 cwd = `<engineDir>/server`**，**不是** `-m server.main`；执行器的 cwd 才是 `src/`。
+  实际拼装 = `python main.py --host --port [--use-gpu] [--models-ttl N] [--nonce None]` + `SAKURA_API_BASE` 环境变量。
 
-**验收**：`translateImage()` 对真实引擎返回真译文；`probeEngine()` 在引擎未启动/启动中/就绪三态下分别返回 `stopped` / `starting` / `running`（**三条都要有反证**）。
+**验收（原文不变）**：`translateImage()` 对真实引擎返回真译文；`probeEngine()` 在引擎未启动/启动中/就绪三态下分别返回 `stopped` / `starting` / `running`（**三条都要有反证**）。
+**实测结果**：`npm run check:engine-client` **32/0** · `--refute` **5/5 变红** ·
+真引擎 `engine/scripts/s1-real-engine-check.mjs` 出真译文（12.4 s / 11 区域 / 三态时间线 `stopped(1 ms)→starting(4.5 s)→running(7.9 s)`）。
 
 ### S2 · 三进程生命周期
 

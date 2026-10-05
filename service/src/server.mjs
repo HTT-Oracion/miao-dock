@@ -46,7 +46,11 @@ async function sidecarState() {
   if (config.sidecarDown) return { state: 'down', port: null, engine: null };
   const now = Date.now();
   if (sidecarProbe.value && now - sidecarProbe.at < SIDECAR_CACHE_MS) return sidecarProbe.value;
-  const value = await probeEngine();
+  const full = await probeEngine();
+  // `probeEngine()` 的形状已在 S1 扩展为「3 + 6 预留槽位」（见 engine-client.mjs）。
+  // **这里只挑 ver1.0 的三个字段**：`/health` 的 sidecar 契约面到 S5 才扩（新增字段属契约变更，
+  // 需回写《03》并经评审）。提前透传 6 个恒为 null 的槽位 = 未经评审的契约变更。
+  const value = { state: full.state, port: full.port, engine: full.engine };
   sidecarProbe = { at: now, value };
   return value;
 }
@@ -713,7 +717,8 @@ serverLog(`令牌       : ${config.token}`);
 serverLog(`令牌文件   : ${TOKEN_FILE}`);
 serverLog(`落盘根目录 : ${store.root}`);
 serverLog(`状态目录   : ${STATE_DIR}`);
-serverLog(`sidecar    : ${sidecar.state} port=${sidecar.port ?? '-'} engine=${sidecar.engine ?? '-'}`);
+serverLog(`sidecar    : ${sidecar.state} port=${sidecar.port ?? '-'} engine=${sidecar.engine ?? '-'} `
+  + `protocol=${config.engineProtocol}`);
 serverLog(`失败注入   : FAIL_SEQ=[${[...config.failSeqs].join(',')}] ITEM_FAIL_RATE=${config.itemFailRate} `
   + `DISK_FULL=${config.diskFull} SIDECAR_DOWN=${config.sidecarDown} SKIP_EXISTING=${config.skipExisting}`);
 if (restore.restored > 0) {
