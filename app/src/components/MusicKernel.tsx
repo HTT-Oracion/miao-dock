@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { useMusicHotkeys } from '@hooks/useMusicHotkeys';
 import { ensureAudioContextActive, isGraphAttached, markNotWirable, setGraphVolume } from '@music/audioGraph';
 import type { LyricsControlPayload } from '@music/ipc';
 import { registerAudioElement, SNAPSHOT_PERSIST_INTERVAL_MS, useMusicStore } from '@music/store';
@@ -48,9 +49,30 @@ import { registerAudioElement, SNAPSHOT_PERSIST_INTERVAL_MS, useMusicStore } fro
  *
  * 它依赖 store，因此**不进 `components/units/`**（units 的判据是不依赖业务层），
  * 而是应用级组件（同 Sidebar / Toolbar / QuitConfirm）。
+ *
+ * ## 为什么键盘快捷键也挂在**这里**（而不是 MusicScreen）
+ *
+ * 判据与 `<audio>` 同源，但**理由不同**，别混为一谈：
+ * `<audio>` 挂这里是因为"元素随宿主卸载即销毁"；
+ * 快捷键挂这里是因为**需求本身就是"跨屏常驻"** ——
+ * 用户离开音乐屏去设置页/漫画页，音乐仍在放，快捷键也必须照样能暂停、切歌。
+ *
+ * ⚠️ 对照 `MusicScreen.tsx` 里那条**刻意留在本屏**的 Esc 监听：
+ * 那个之所以不住常驻层，是因为 Esc 的语义**只在音乐屏成立**
+ * （收起展开播放器 / 关队列抽屉，在别的屏按 Esc 没有意义）。
+ * 两者判断标准是同一条：**「离开音乐屏之后还该继续生效的，就不能住在音乐屏里」**。
+ * MusicScreen 是条件渲染（切屏即卸载），快捷键挂那里 ⇒ 一离开音乐屏就失效，
+ * 直接违背"打开过就一直生效"。
  */
 export function MusicKernel() {
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  /**
+   * 键盘快捷键（`Space` / `⌘←` / `⌘→` / `↑` / `↓`）。
+   * 挂载点理由见文件头；键位与让位判据见 `hooks/useMusicHotkeys.ts`。
+   * 它自己取 store（`getState()`），所以这里不需要额外订阅任何状态。
+   */
+  useMusicHotkeys();
 
   const playUrl = useMusicStore((s) => s.playUrl);
   const isPlaying = useMusicStore((s) => s.isPlaying);

@@ -67,6 +67,8 @@ const F = {
   coverColor: path.join(APP, 'src', 'hooks', 'useCoverColor.ts'),
   vinylDisc: path.join(APP, 'src', 'screens', 'music', 'VinylDisc.tsx'),
   spectrumScene: path.join(APP, 'src', 'screens', 'music', 'SpectrumScene.tsx'),
+  // 音乐快捷键 hook（挂载点判据在 MusicKernel.tsx 上，本文件判键位与让位判据）
+  hotkeys: path.join(APP, 'src', 'hooks', 'useMusicHotkeys.ts'),
   musicUiDir: path.join(APP, 'src', 'screens', 'music'),
   // ── 歌曲右键菜单（MENU 组）── 逐文件判定，避免"某个写法在别的文件里也有"造成假绿
   songMenu: path.join(APP, 'src', 'screens', 'music', 'SongMenu.tsx'),
@@ -205,6 +207,7 @@ function loadSources() {
     coverColor: readMaybe(F.coverColor),
     vinylDisc: readMaybe(F.vinylDisc),
     spectrumScene: readMaybe(F.spectrumScene),
+    hotkeys: readMaybe(F.hotkeys),
     // 全分片拼接（顺序 = index.scss 的 @use 顺序 = 层叠顺序），不是读单个 app.css
     css: readStyleSource(F.stylesDir),
     songMenu: readMaybe(F.songMenu),
@@ -2500,7 +2503,7 @@ function runAll(s) {
   return res;
 }
 
-const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS', 'AUDIO', 'CACHE', 'SKIN', 'QUEUE', 'MENU', 'ISLANDV', 'RESTORE'];
+const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS', 'AUDIO', 'CACHE', 'SKIN', 'QUEUE', 'MENU', 'ISLANDV', 'RESTORE', 'KEYS'];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -2760,6 +2763,375 @@ add('MENU.css', 'MENU', (s) => {
   }
   if (!/\.music-menu-item\s*\{/.test(css)) missing.push('样式缺 .music-menu-item 规则');
   return { ok: missing.length === 0, detail: missing.length ? `菜单样式：${missing.join('、')}` : '' };
+});
+
+// ============================ KEYS（音乐快捷键）============================
+// 这一组防的是「快捷键**看起来装上了、实际不响或不敢响**」这一族静默失败。
+// 快捷键层没有编译期保障：少写一个 `preventDefault`、判据少写一个标签、���抖键位
+// 多包了一层，全都是**编译绿、tsc绿、界面正常，只有真按键盘才知道对不对**。
+//
+// 三条最容易假绿的地方，本组逐条钉死：
+//  ① 让位判据**只用 tagName**⇒ 焦点落在 IconButton 内部的 <svg>/<path> 上时判不出来
+//     ⇒「按空格暂停」变成「按空格点了静音」；
+//  ② `preventDefault` 写在去抖**之后** ⇒ 连按 ⌘+← 时浏览器原生"后退"跟着一起触发；
+//  ③ 去抖时间戳**全键共用一个**⇒ 「⌘+→ 连按两下再按 ⌘+←」时后者被吃掉，上一首按不动。
+//
+// ⚠️ 本组判据一律先 `stripComments`：hook 的注释里**主动写出了被判的写法**
+// （如 `preventDefault` 在去抖之前的说明、`Record<string, number>`、
+// `contenteditable="false"`），不剥注释会恒绿（该红没红）。
+// ⚠️ 凡"某写法可能出现多处"（`stepVolume` / `preventDefault` / `closest(`）一律**数次数或限定作用域**。
+
+/**
+ * 取 `switch (e.key)` 里某个 `case '<key>': { … }` 的**花括号块**。
+ *
+ * ## 为什么必须按 case 块限定作用域
+ *
+ * `preventDefault()` / `stepVolume()` / `!mod` 这些写法在 hook 里都出现多次
+ * （5 个 case 各一份）。只判「文件里存在」⇒ 改掉其中任何一个 case，断言仍绿
+ * （本项目第9 次「只判存在不判唯一」家族）。按 case 取块后，
+ * 判据只落在那一个 case 的体内，改哪一格就红哪一格。
+ */
+function caseBlock(src, key) {
+  const at = src.indexOf(`case '${key}': {`);
+  if (at < 0) return null;
+  const open = src.indexOf('{', at);
+  if (open < 0) return null;
+  const end = matchBracket(src, open);
+  return end < 0 ? null : src.slice(open, end + 1);
+}
+
+/** 取模块级 `const NAME = [ … ].join(…)` 的数组块（判据限定在选择器名单体内） */
+function constArrayBlock(src, name) {
+  const at = src.indexOf(`const ${name} = [`);
+  if (at < 0) return null;
+  const end = src.indexOf('].join(', at);
+  return end < 0 ? null : src.slice(at, end);
+}
+
+/**
+ * 取 `const <name> = ( … )… => { … }` 这个**箭头 const 函数**的函数体。
+ *
+ * ## 为什么不能复用 fnBodyAny
+ *
+ * fnBodyAny 只认 `function name(` 的写法（带 `function` 关键字），
+ * 而 hook 里的 `trackSwitchBlocked` / `onKeyDown` 都是
+ * `const x = (…) => {…}` 这种**箭头 const** 形态 —— 用 fnBodyAny 会恒返空，
+ * 而空串会被判据读成"什么都没找到"⇒ 断言恒红（比恒绿更隐蔽：
+ * 反证轮里任何破坏都"变红"，看着 100% 覆盖，其实是空转）。
+ *
+ * 要求 `=>` 与 `{` 之间只有类型注解/空白，避免把 `=> ({…})` 这类返回对象字面量的
+ * 形态误当成函数体（取体起点必须是那个 `{`）。
+ */
+function arrowConstBody(src, name) {
+  // ⚠️ 返回类型标注里也有 `{`（如 `(key: string): boolean => {`）。
+  // 用 `[^=]*` 匹配标注会被 `{` 匹配掉（`{` 不是 `=`）⇒ `start` 落到**类型标注的 `{`**，
+  // 而 `matchBracket` 从那里起算会立刻在标注末尾的 `}` 处闭合 ⇒ 取到的是空壳/半截函数体
+  // ⇒ 判据读不到真正要判的那几行。
+  // 正确做法：只允许标注里出现**不含 `{` 的字符**，让它一路吃到箭头前的 `=>`。
+  const re = new RegExp(`\\n\\s*const ${esc(name)}\\s*=\\s*\\([^)]*\\)\\s*(?::[^{}=]*)?=>\\s*\\{`);
+  const m = re.exec(src);
+  if (!m) return null;
+  const start = src.indexOf('{', m.index + m[0].length - 1);
+  if (start < 0) return null;
+  const end = matchBracket(src, start);
+  return end < 0 ? null : src.slice(start, end + 1);
+}
+
+// ── ① 常驻性：挂在 MusicKernel（App.tsx 的 shell 常驻层），不是 MusicScreen ──
+add('KEYS.mountedInKernel', 'KEYS', (s) => {
+  // 需求是「打开过就一直生效（跨屏也有效）」。MusicScreen 是**条件渲染**、
+  // 切屏即卸载 ⇒ 挂那里用户一切到设置页快捷键就静默失效。
+  // 判据钉在 MusicKernel.tsx 确实调用了 useMusicHotkeys()。
+  const kernel = stripComments(s.kernel ?? '');
+  const screen = stripComments(s.musicScreen ?? '');
+  const missing = [];
+  if (!/from '@hooks\/useMusicHotkeys'/.test(kernel)) missing.push('MusicKernel 没有引入 useMusicHotkeys');
+  // 调用点：必须是 `useMusicHotkeys();` 这样的**调用**，而不是只import
+  if (!/^\s*useMusicHotkeys\(\);\s*$/m.test(kernel)) missing.push('MusicKernel 没有实际调用 useMusicHotkeys()（只 import 不调用 = 快捷键永不生效）');
+  // 钉死"只此一处"：kernel 里出现两次调用就意味着重复注册监听器
+  const calls = occurrences(kernel, 'useMusicHotkeys();');
+  if (calls !== 1) missing.push(`MusicKernel 里 useMusicHotkeys() 出现 ${calls} 次（应恰为 1 次：重复调用 = 监听器重复注册，一次按键触发多次）`);
+  // 反向：MusicScreen 里绝不能有（搬过去就等于前功尽弃）
+  if (/useMusicHotkeys\(\)/.test(screen)) missing.push('MusicScreen 里也调了 useMusicHotkeys()（条件渲染，切屏即卸载 ⇒ 快捷键失效）');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+// ── ② 五个键位映射：四个 store action 都被调到，stepVolume 带 ±0.05 ──
+add('KEYS.fiveKeyMapping', 'KEYS', (s) => {
+  const hk = stripComments(s.hotkeys ?? '');
+  const missing = [];
+  if (!hk) return { ok: false, detail: '找不到 hooks/useMusicHotkeys.ts' };
+  // 裸空格 → 播放/暂停。限定在 case ' ' 块内，避免与别的 case 的调用串味
+  const sp = caseBlock(hk, ' ') || '';
+  if (!/s\.togglePlay\(\)/.test(sp)) missing.push(`裸空格没有调 s.togglePlay()（case ' ' 块内）`);
+  // ⌘/Ctrl + ← → 上一首；⌘/Ctrl + → → 下一首。同样按 case 块限定
+  const left = caseBlock(hk, 'ArrowLeft') || '';
+  if (!/s\.prev\(\)/.test(left)) missing.push('⌘/Ctrl + ← 没有调 s.prev()（case ArrowLeft 块内）');
+  const right = caseBlock(hk, 'ArrowRight') || '';
+  if (!/s\.next\(\)/.test(right)) missing.push('⌘/Ctrl + → 没有调 s.next()（case ArrowRight 块内）');
+  // 音量两个方向：按**实参**判，不按 `stepVolume(` 出现与否判
+  const up = caseBlock(hk, 'ArrowUp') || '';
+  const down = caseBlock(hk, 'ArrowDown') || '';
+  const upArgs = /s\.stepVolume\(([^)]*)\)/.exec(up)?.[1]?.trim() ?? null;
+  const downArgs = /s\.stepVolume\(([^)]*)\)/.exec(down)?.[1]?.trim() ?? null;
+  if (upArgs === null) missing.push('↑ 没有调 s.stepVolume(...)（case ArrowUp 块内）');
+  else if (upArgs !== '0.05') missing.push(`↑ 的步长实参是 ${upArgs}，应为 0.05（与滚轮调音量同口径）`);
+  if (downArgs === null) missing.push('↓ 没有调 s.stepVolume(...)（case ArrowDown 块内）');
+  else if (downArgs !== '-0.05') missing.push(`↓ 的步长实参是 ${downArgs}，应为 -0.05`);
+  // 数次数：stepVolume 在本hook 里应恰有 2 个调用点（↑/↓ 各一）。
+  // 多一处意味着某个 case 之外又调了一次（可能重复调音量）
+  const n = occurrences(hk, 's.stepVolume(');
+  if (n !== 2) missing.push(`s.stepVolume( 在 hook 里出现 ${n} 次（应恰为 2 次：↑ 与 ↓ 各一）`);
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+// ── ③ 焦点让位判据完整：input / textarea / select / contenteditable(排除 false) / button ──
+add('KEYS.yieldSelectors', 'KEYS', (s) => {
+  const hk = stripComments(s.hotkeys ?? '');
+  const blk = constArrayBlock(hk, 'INTERACTIVE_SELECTOR');
+  if (!blk) return { ok: false, detail: '找不到 INTERACTIVE_SELECTOR 选择器名单' };
+  const missing = [];
+  // 每项都要求**带引号的精确条目**（'input' 这种），而不是子串命中
+  if (!/^\s*'input',?\s*$/m.test(blk)) missing.push(`判据缺 'input'（打字；音量滑块本身就是 input[type=range]，抢过来会让同一控件有两套步长）`);
+  if (!/^\s*'textarea',?\s*$/m.test(blk)) missing.push(`判据缺 'textarea'`);
+  if (!/^\s*'select',?\s*$/m.test(blk)) missing.push(`判据缺 'select'`);
+  // contenteditable 必须**排除**显式 "false"：那是"不可编辑"的声明
+  if (!/\[contenteditable\]:not\(\[contenteditable="false"\]\)/.test(blk)) missing.push('判据缺 [contenteditable]:not([contenteditable="false"])（必须排除显式 false —— 那恰恰是不可编辑的声明）');
+  if (!/^\s*'button',?\s*$/m.test(blk)) missing.push(`判据缺 'button'（空格在按钮上的原生行为是点它；播放条上排着一排 IconButton）`);
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+// ── ④ 用 closest 而非只比 tagName（本组最致命的一条）──
+add('KEYS.usesClosest', 'KEYS', (s) => {
+  // IconButton 内部包着 lucide 的 <svg>/<path>，焦点落在它们上面时
+  // e.target.tagName 是 'svg'/'path' ⇒ 只比 tagName 会**误劫持**：
+  // 用户按空格想暂停，结果触发了那个按钮。
+  // 判据：让位函数里必须有 closest( 调用。
+  const hk = stripComments(s.hotkeys ?? '');
+  const body = fnBodyAny(hk, 'shouldYieldToNative') || '';
+  const missing = [];
+  if (!body) missing.push('找不到 shouldYieldToNative 函数');
+  else {
+    if (!/\.closest\(/.test(body)) missing.push('shouldYieldToNative 没有用 closest()（焦点落在 IconButton 内的 <svg>/<path> 上时只比 tagName 会误劫持：按空格变成点那个按钮）');
+    // 反向：closest 必须真的被用来产��判据，而不是判了等于没判
+    if (!/closest\([^)]*\)\s*!==\s*null/.test(body)) missing.push('closest() 的结果没有与 null 比较（判据写出来但没用于判断 = 等于没判）');
+  }
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+// ── ⑤ preventDefault 存在，且位置在去抖判断之前 ──
+add('KEYS.preventDefaultBeforeDebounce', 'KEYS', (s) => {
+  const hk = stripComments(s.hotkeys ?? '');
+  const missing = [];
+  // 逐个 case 判：被去抖丢弃的按键**仍然属于本快捷键**（不是让位给原生），
+  // 所以照样要拦默认行为 —— 否则连按 ⌘+← 时浏览器原生"后退"会跟着触发。
+  for (const key of ['ArrowLeft', 'ArrowRight']) {
+    const blk = caseBlock(hk, key);
+    if (!blk) { missing.push(`case ${key} 块没找到`); continue; }
+    const iPd = blk.indexOf('e.preventDefault()');
+    const iDb = blk.indexOf('autoRepeatBlocked(');
+    if (iPd < 0) missing.push(`case ${key} 没有 preventDefault（方向键的原生默认行为是滚动页面，不拦就是"切歌的同时页面滚一下"）`);
+    else if (iDb < 0) missing.push(`case ${key} 没有合并调用（${key} 应走 autoRepeatBlocked）`);
+    // 位置判据：两个下标都在同一块内，比大小即可（不跨语句，故不受邻居改动影响）
+    else if (iPd > iDb) missing.push(`case ${key} 的 preventDefault 写在去抖判断**之后**（被去抖丢弃的按键仍属本快捷键，连按时原生"后退"/滚动会跟着一起触发）`);
+  }
+  // 空格与音量两个方向：preventDefault 必须各自在本 case 内（滚动是它们的默认行为）
+  for (const key of [' ', 'ArrowUp', 'ArrowDown']) {
+    const blk = caseBlock(hk, key) || '';
+    if (!/e\.preventDefault\(\)/.test(blk)) missing.push(`case '${key}' 没有 preventDefault（会带着页面滚动一起触发）`);
+  }
+  // 数次数：全文应恰有 5 处 preventDefault（5 个 case 各一）。
+  // 多一处 ⇒ 某个让位路径也拦了默认行为（会把输入框/按钮的原生行为一起废掉）
+  const n = occurrences(hk, 'e.preventDefault()');
+  if (n !== 5) missing.push(`e.preventDefault() 在 hook 里出现 ${n} 次（应恰为 5 次：五个键各一；多出来的那处会把让位元素的原生行为也废掉）`);
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+// ── ⑥ ⌘/Ctrl 双平台等价：不按平台分叉 ──
+add('KEYS.metaCtrlEquivalent', 'KEYS', (s) => {
+  // 判据钉在 `const mod = e.metaKey || e.ctrlKey;` 这一句上：
+  // 两个平台等价 ⇒ 不该出现 navigator.platform / isMac 之类分叉。
+  const hk = stripComments(s.hotkeys ?? '');
+  const missing = [];
+  if (!/const mod = e\.metaKey \|\| e\.ctrlKey;/.test(hk)) missing.push('没有 `const mod = e.metaKey || e.ctrlKey;`（⌘ 与 Ctrl 必须等价合成一个判据）');
+  // 反向：不得按平台分叉（win 用 Ctrl、mac 用 ⌘ 的写法会让另一个平台整体失灵）
+  for (const bad of ['navigator.platform', 'navigator.userAgent', 'isMac', 'isWindows']) {
+    if (hk.includes(bad)) missing.push(`出现了按平台分叉的判据 ${bad}（应统一用 mod，双平台等价）`);
+  }
+  // mod 必须真的被两个方向键用上（否则就是"定义了但没人用"）
+  for (const key of ['ArrowLeft', 'ArrowRight']) {
+    const blk = caseBlock(hk, key) || '';
+    if (!/\bmod\b/.test(blk)) missing.push(`case ${key} 没有用到 mod（裸方向键必须靠 mod 守卫才不回���）`);
+  }
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+// ── ⑦ 裸方向键不被响应（不劫持漫画对照视图翻页的唯一保证）──
+add('KEYS.bareArrowsIgnored', 'KEYS', (s) => {
+  // LibraryScreen 的 Compare 监听**裸** ArrowLeft/ArrowRight 翻页（全局 window 监听）。
+  // 本 hook 若认裸方向键，就是在别的屏抢别人的键 ⇒ 翻页翻不动、音乐那边也没发生。
+  const hk = stripComments(s.hotkeys ?? '');
+  const missing = [];
+  for (const key of ['ArrowLeft', 'ArrowRight']) {
+    const blk = caseBlock(hk, key);
+    if (!blk) { missing.push(`case ${key} 块没找到`); continue; }
+    // 必须是「无修饰键则 return」这类**提前退出**，且必须出现在调用 prev/next 之前
+    const guardAt = blk.search(/if\s*\(\s*!mod/);
+    if (guardAt < 0) missing.push(`case ${key} 没有「无修饰键则不处理」的守卫（裸方向键会劫持漫画对照视图翻页）`);
+    const callAt = blk.search(/s\.(prev|next)\(\)/);
+    if (guardAt >= 0 && callAt >= 0 && guardAt > callAt) missing.push(`case ${key} 的守卫写在 ${key === 'ArrowLeft' ? 'prev()' : 'next()'} 调用之后（顺序颠倒 = 守卫无效）`);
+    // 守卫必须以 return 收尾（只是标记一个布尔、不退出的话裸键仍会走下去）
+    if (guardAt >= 0 && !/return;/.test(blk.slice(guardAt, guardAt + 80))) missing.push(`case ${key} 的守卫没有 return（只判不退出 = 裸方向键照样被处理）`);
+  }
+  // 反向：全文不得出现"裸方向键调进度"的写法（本项目明确不做，Progress 由别处负责）
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+// ── ⑧ 只有切歌去抖、音量不去抖 ──
+add('KEYS.manualRepeatOnly', 'KEYS', (s) => {
+  // ⚠️ 独立于 KEYS.manualPressNotMerged：那条守的是「放行分支的**位置**」，
+  // 这条守的是「放行分支**存在且形态正确**」。
+  // 拆成两条的原因见 manualPressNotMerged 的注释：**反证必须一对一**。
+  //
+  // ⚠️ 判据**不用 arrowConstBody 取体**，改为在剥注释后的全文里找唯一多行锚点。
+  // 取体器在本文件上不可靠：`stripComments` 后仍有注释残片，`matchBracket`
+  // 遇到残留的 `{` 会提前闭合 ⇒ 返回空壳 `{ }`，而 `indexOf` 在空壳里"命中"了
+  // 别处的同名文本 → **判据读的一直是注释**，判绿也不代表代码对。
+  // 这是本项目"注释吞掉判据"老坑的第 N 次变种。
+  const hk = stripComments(s.hotkeys ?? '');
+  const missing = [];
+  // 同样**不用单行锚点**（注释里就写着 `if (!e.repeat) return false;`，
+  // `stripComments` 只删注释标记、保留文字 ⇒ 单行匹配会被注释冒充）。
+  // 要求「放行分支紧跟取时刻」这两行**连续**出现 —— 注释冒充不了连续两行。
+  const ok = /if\s*\(\s*!\s*e\.repeat\s*\)\s*return false;\s*\n\s*const now = performance\.now\(\);/.test(hk);
+  if (!ok) {
+    missing.push('autoRepeatBlocked 里「放行分支 → 取时刻」两行不连续或缺失（一律合并会让手动连点少跳一首）');
+  }
+  // 反向：该函数必须真的存在（否则上面那句可能在别处出现而误判为通过）
+  if (!/const\s+autoRepeatBlocked\s*=/.test(hk)) missing.push('找不到 autoRepeatBlocked（切歌的自动重复合并没了）');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+add('KEYS.manualPressNotMerged', 'KEYS', (s) => {
+  // ⚠️ 这条**只**守「放行分支的**位置**」——即它必须在更新时间戳之前。
+  // 「放行分支存在且形态正确」由 KEYS.manualRepeatOnly 独立守护。
+  // 拆成两条的原因见那条断言的注释：**反证必须一对一**，两条反证共用一条断言时
+  // 两处破坏会在同一次基线比对里互相掩盖，反证轮会报"该红没红"的假阳性。
+  //
+  // 背景：本轮实测出的真实缺陷 —— 原先用"一律去抖 250ms"来防连按刷请求，
+  // 结果把**手动连点**和**按住不放**混为一谈：手速 150ms 连点 3 下（想跳 3 首）
+  // 只跳 2 首，看起来就是"按了没反应"，比多发几次请求更糟。
+  // 正确形态：**只拦 `e.repeat === true`**（系统按住不放产生的自动重复）。
+  const hk = stripComments(s.hotkeys ?? '');
+  const missing = [];
+  // ⚠️ 判据**不用取体器、也不用单行锚点**。
+  // ① 取体器（arrowConstBody）在本文件上返回空壳：`stripComments` 只删注释**标记**、
+  //    保留文字，所以注释里出现的 `{` 仍在文本里，`matchBracket` 提前闭合 ⇒ 取到 `{}`，
+  //    而 `indexOf` 在空壳里"命中"了别处 → **判据一直在读注释**（这是假绿的真因）。
+  // ② 单行锚点也不可靠：注释里就写着 `if (!e.repeat) return false;`。
+  // 可靠做法：**要求多行连续**。注释不可能恰好连续复制这五行代码，
+  // 实测「这五行」与「反序五行」在文件里各唯一命中一次。
+  const ORDERED = 'if (!e.repeat) return false;\n        const now = performance.now();\n        const prevAt = lastAt.current[key] ?? -Infinity;\n        if (now - prevAt < TRACK_SWITCH_REPEAT_GUARD_MS) return true;\n        lastAt.current[key] = now;';
+  const SWAPPED = 'const now = performance.now();\n        const prevAt = lastAt.current[key] ?? -Infinity;\n        if (now - prevAt < TRACK_SWITCH_REPEAT_GUARD_MS) return true;\n        if (!e.repeat) return false;\n        lastAt.current[key] = now;';
+  if (hk.includes(SWAPPED)) {
+    missing.push('放行分支写在更新时间戳**之后**（长按后紧接着的一次手动点击会被吃掉）');
+  } else if (!hk.includes(ORDERED)) {
+    missing.push('autoRepeatBlocked 里「放行分支 → 取时刻 → 比较 → 写回」这五行的顺序不对或缺失（手动连点会被合并掉）');
+  }
+  // ③ ⚠️ 判据必须与 `manualRepeatOnly` 一样**对称**：
+  // 原来这里写的是「旧名 TRACK_SWITCH_DEBOUNCE_MS 不应残留」，那只覆盖了"改名"这一个破坏形态，
+  // 改成"新名必须存在"才能覆盖"整个常量被删掉" ⇒ 否则反证轮报"该红没红"的假阳性。
+  // 一条反证只破坏一个判据、且该判据必须真能因这个破坏而红。
+  if (!/TRACK_SWITCH_REPEAT_GUARD_MS\s*=\s*250/.test(hk)) {
+    missing.push('合并窗口常量不是 TRACK_SWITCH_REPEAT_GUARD_MS = 250（合并窗口没落住，合并形同虚设或退回旧语义）');
+  }
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+add('KEYS.shiftLeftToSystem', 'KEYS', (s) => {
+  // 带 Shift 的组合键（Shift+↑/↓ 之类）应留给系统与窗口管理器。
+  // ⚠️ 这是本轮实测发现的第二个缺陷：注释写着"带修饰键一律不抢"，
+  // 但判据只把 metaKey/ctrlKey/altKey 算进去，漏了 Shift ⇒ Shift+↑ 会一边被系统
+  // 处理、一边又把音量调了。**判据与注释不一致 = 注释说了但代码没做**。
+  const hk = stripComments(s.hotkeys ?? '');
+  const missing = [];
+  // ① shift 必须被提取成变量（否则各 case 只能重复写 e.shiftKey，容易漏）
+  if (!/const\s+shift\s*=\s*e\.shiftKey\s*;/.test(hk)) {
+    missing.push('没有提取 const shift = e.shiftKey（各 case 分散判断容易漏掉 Shift）');
+  }
+  // ② 五个 case 全部必须把 shift 列入"不处理"条件。数次数：应恰 5 处。
+  //    ⚠️ 数次数而不是"存在即过" —— 漏一个键就是漏一条让位路径（本项目已犯 3 次）。
+  const n = occurrences(hk, '|| shift) return;');
+  if (n !== 5) {
+    missing.push(`"|| shift) return;" 出现 ${n} 次（应恰为 5 次：空格/↑/↓/←/→ 五个 case 各一；漏一个键就是漏一条让位路径）`);
+  }
+  // ③ 音量与空格的裸键条件也必须含 shift（这四处是"裸键才生效"的收窄）
+  for (const key of [' ', 'ArrowUp', 'ArrowDown']) {
+    const blk = caseBlock(hk, key) || '';
+    if (blk && !/e\.altKey\s*\|\|\s*shift\s*\)\s*return;/.test(blk)) {
+      missing.push(`case '${key}' 的裸键条件漏了 shift（Shift+该键会同时被系统与应用处理）`);
+    }
+  }
+  // ④ 切歌两处守卫也要含 shift
+  for (const key of ['ArrowLeft', 'ArrowRight']) {
+    const blk = caseBlock(hk, key) || '';
+    if (blk && !/e\.altKey\s*\|\|\s*shift\s*\)\s*return;/.test(blk)) {
+      missing.push(`case ${key} 的守卫漏了 shift`);
+    }
+  }
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+add('KEYS.debounceTrackSwitchOnly', 'KEYS', (s) => {
+  // 合并自动重复的目的是压住"按住不放时连续发副作用"，而音量恰恰相反：
+  // ↑ 是**连续动作**（20%→60% 就是按 8 次）。给音量套上合并，快速连按只生效一次，音量爬不上去。
+  const hk = stripComments(s.hotkeys ?? '');
+  const missing = [];
+  // 两个音量 case 的块内**不得**出现合并调用
+  for (const key of ['ArrowUp', 'ArrowDown']) {
+    const blk = caseBlock(hk, key) || '';
+    if (/autoRepeatBlocked\(/.test(blk)) missing.push(`case ${key}（音量）被合并逻辑包裹了（音量必须每次都生效，否则快速连按爬不上去）`);
+    // 反向：音量 case 必须真的调到了 stepVolume（否则"不合并"就变成了"不处理"）
+    if (!/s\.stepVolume\(/.test(blk)) missing.push(`case ${key} 没有调 s.stepVolume(...)（音量键位丢失）`);
+  }
+  // 反向：切歌两个 case 必须**确实**在合并（否则本组变成"都没合并"也算过）
+  for (const key of ['ArrowLeft', 'ArrowRight']) {
+    const blk = caseBlock(hk, key) || '';
+    if (!/autoRepeatBlocked\(/.test(blk)) missing.push(`case ${key}（切歌）没有走合并（心动模式下 next() 会发网络请求，按住不放就是刷接口）`);
+  }
+  // 数次数：合并函数应恰有 2 个调用点（prev/next 各一）。多出第三处 = 又有键被合并了。
+  // ⚠️ 锚点是 `autoRepeatBlocked(`（带左括号）—— 定义处写的是 `autoRepeatBlocked =`，
+  // 不带括号，所以这里数到的**只有调用点**，不需要为定义处额外 +1。
+  const n = occurrences(hk, 'autoRepeatBlocked(');
+  if (n !== 2) missing.push(`autoRepeatBlocked( 在 hook 里出现 ${n} 次（应恰为 2 次：prev/next 各一；多出来的那处说明又有键被合并了）`);
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+// ── ⑨ 去抖按键独立计时（不能全键共用一个时间戳）──
+add('KEYS.debouncePerKey', 'KEYS', (s) => {
+  // ⚠️ 这是"只判存在不判结构"的典型形态：若lastAt 是单一数字，
+  // 「⌘+→ 连按两下再立刻 ⌘+←」会让第二次 ⌘+← 被上一串的窗口吃掉
+  // ⇒ 变成"上一首按不动"，比原来的连发问题更糟。
+  const hk = stripComments(s.hotkeys ?? '');
+  const missing = [];
+  // 必须是按 key 索引的结构
+  if (!/useRef<Record<string, number>>/.test(hk)) missing.push('lastAt 不是 Record<string, number>（各键共用一个时间戳 ⇒ 连按 ⌘+→ 后再按 ⌘+← 会被吃掉，上一首按不动）');
+  // 实际取上一时刻时必须**带下标**
+  const body = arrowConstBody(hk, 'autoRepeatBlocked');
+  if (!body) {
+    missing.push('找不到 autoRepeatBlocked 函数（切歌的自动重复合并没了）');
+  } else {
+  // 实际取上一时刻时必须**带下标**。⚠️ 同样**不用取体器**（在本文件上会返回空壳，
+  // 判据会读到注释里去），直接在剥注释后的全文里判 —— 这条判据读的是唯一的赋值形态。
+  if (!/lastAt\.current\[key\]\s*=\s*now/.test(hk)) missing.push('没有按 key 写 lastAt.current[key]（共用时间戳 ⇒ 上一首会被上一首的窗口吃掉）');
+  if (!/lastAt\.current\[key\]\s*\?\?\s*-Infinity/.test(hk)) missing.push('没有按 key 读 lastAt.current[key]');
+  }
+  // 两个切歌键必须传**不同的** key 名（共用同一个名字就等于共用一个窗口）
+  const keys = [...hk.matchAll(/autoRepeatBlocked\('([^']+)'\)/g)].map((m) => m[1]);
+  const uniq = new Set(keys);
+  if (uniq.size !== keys.length) missing.push(`切歌两键传了同一个合并 key（${keys.join('/')}）⇒ 等于共用一个窗口，其中一键会按不动`);
+  if (keys.length !== 2) missing.push(`autoRepeatBlocked 的调用点数是 ${keys.length}（应恰为 2：prev/next 各一）`);
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
 });
 
 const MUTATIONS = [
@@ -3918,6 +4290,120 @@ const MUTATIONS = [
     find: '  void ipc.musicCacheDownload(provider, audioCacheId(provider, song), quality, url).catch(() => {});',
     replace: '  void ipc.musicCacheDownload(provider, audioCacheId(provider, song), quality, url);',
     expect: ['CACHE.downloadFailureSilent'],
+  },
+
+  // ── KEYS · 音乐快捷键 ──────────────────────────────────────────────────
+  // 这一组每条反证对应上面 KEYS 组的 9 条断言，逐条单点破坏。
+  // ⚠️ 锚点一律要求**唯一命中**：本组判据大量涉及"多处出现的写法"
+  // （preventDefault / stepVolume / trackSwitchBlocked / !mod），锚点若不唯一，
+  // 破坏会打到邻居语句上 ⇒ 断言该红没红（本项目栽过 3 次）。
+  {
+    name: '把 MusicKernel 里的 useMusicHotkeys() 调用删掉（快捷键永不生效）',
+    file: F.kernel,
+    // 锚点带缩进与分号：文件里还有 import 行与注释都含useMusicHotkeys，
+    // 只写函数名会 replace 到 import 上（改了没生效）
+    find: '  useMusicHotkeys();\n',
+    replace: '',
+    expect: ['KEYS.mountedInKernel'],
+  },
+  {
+    name: '把 ↑ 的步长从 0.05 改成 0.5（音量步长与滚轮/滑块口径不一致）',
+    file: F.hotkeys,
+    find: 's.stepVolume(0.05);',
+    replace: 's.stepVolume(0.5);',
+    expect: ['KEYS.fiveKeyMapping'],
+  },
+  {
+    name: '把让位判据里的 textarea 删掉（在备注/歌词输入框里按空格会被劫持）',
+    file: F.hotkeys,
+    find: "  'textarea',\n",
+    replace: '',
+    expect: ['KEYS.yieldSelectors'],
+  },
+  {
+    name: '把让位判据从 closest() 退化成只比 tagName（焦点落在 IconButton 内的 svg 上时误劫持）',
+    file: F.hotkeys,
+    // 这一条同时打掉 KEYS.usesClosest；顺带确认 KEYS.yieldSelectors 不受影响
+    // （选择器名单本身没动，改的只是怎么用它）
+    find: '  return target.closest(INTERACTIVE_SELECTOR) !== null;',
+    replace: "  return ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName);",
+    expect: ['KEYS.usesClosest'],
+  },
+  {
+    name: '把 ⌘+← 的 preventDefault 挪到合并判断之后（连按时原生「后退」跟着一起触发）',
+    file: F.hotkeys,
+    // 锚点含紧邻两行：只替换 `e.preventDefault();` 会打到 Space/↑/↓ 那一处（邻居语句）。
+    // ⚠️ 锚点必须与实现**当前**的形态一致 —— 实现把合并函数改名成 autoRepeatBlocked
+    // 之后，这里若还锚 trackSwitchBlocked 就会"锚点未找到 → 静默跳过"（假覆盖）。
+    find: "          e.preventDefault();\n          if (autoRepeatBlocked('prev')) return;\n",
+    replace: "          if (autoRepeatBlocked('prev')) return;\n          e.preventDefault();\n",
+    expect: ['KEYS.preventDefaultBeforeDebounce'],
+  },
+  {
+    name: '把 ⌘/Ctrl 双平台等价改成只认 metaKey（Windows/Linux 整体失灵）',
+    file: F.hotkeys,
+    find: '      const mod = e.metaKey || e.ctrlKey;',
+    replace: '      const mod = e.metaKey;',
+    expect: ['KEYS.metaCtrlEquivalent'],
+  },
+  {
+    name: '去掉裸方向键的守卫（裸 ←/→ 也切歌 ⇒ 劫持漫画对照视图翻页）',
+    file: F.hotkeys,
+    // 锚点带上 ArrowLeft 的那行注释，保证只打到 ArrowLeft 那一处
+    // （守卫行 `if (!mod || e.altKey || shift) return;` 在文件里出现两次）
+    find: '          // ⚠️ **必须带 ⌘/Ctrl**：裸 ← 归漫画对照视图翻页（见文件头）\n          if (!mod || e.altKey || shift) return;\n',
+    replace: '          // ⚠️ **必须带 ⌘/Ctrl**：裸 ← 归漫画对照视图翻页（见文件头）\n',
+    expect: ['KEYS.bareArrowsIgnored'],
+  },
+  {
+    name: '给音量 ↑ 也套上合并（快速连按只生效一次，音量爬不上去）',
+    file: F.hotkeys,
+    find: '          s.stepVolume(0.05);\n',
+    replace: "          if (autoRepeatBlocked('vol')) return;\n          s.stepVolume(0.05);\n",
+    expect: ['KEYS.debounceTrackSwitchOnly'],
+  },
+  {
+    name: '把去抖改成全键共用一个时间戳（⌘+→ 连按后按 ⌘+← 会被吃掉，上一首按不动）',
+    file: F.hotkeys,
+    // 锚点含 ref 声明 + 读写两行，一次改成"单一数值"形态
+    find: '  const lastAt = useRef<Record<string, number>>({});',
+    replace: '  const lastAt = useRef<number>(0);',
+    expect: ['KEYS.debouncePerKey'],
+  },
+  {
+    name: '删掉"手动按键无条件放行"（回到一律合并 ⇒ 手速快点 3 下只跳 2 首，看起来像按了没反应）',
+    file: F.hotkeys,
+    find: '        if (!e.repeat) return false;\n',
+    replace: '',
+    expect: ['KEYS.manualRepeatOnly'],
+  },
+  {
+    name: '把放行分支挪到更新时间戳之后（长按后紧接着的一次手动点击会被误判成还在自动重复而吃掉）',
+    file: F.hotkeys,
+    find: '        if (!e.repeat) return false;\n        const now = performance.now();\n        const prevAt = lastAt.current[key] ?? -Infinity;\n        if (now - prevAt < TRACK_SWITCH_REPEAT_GUARD_MS) return true;\n        lastAt.current[key] = now;\n        return false;',
+    replace: '        const now = performance.now();\n        const prevAt = lastAt.current[key] ?? -Infinity;\n        if (now - prevAt < TRACK_SWITCH_REPEAT_GUARD_MS) return true;\n        if (!e.repeat) return false;\n        lastAt.current[key] = now;\n        return false;',
+    expect: ['KEYS.manualPressNotMerged'],
+  },
+  {
+    name: '把常量名退回 TRACK_SWITCH_DEBOUNCE_MS（一律合并的旧语义复活，注释与代码分叉）',
+    file: F.hotkeys,
+    find: 'const TRACK_SWITCH_REPEAT_GUARD_MS = 250;',
+    replace: 'const TRACK_SWITCH_DEBOUNCE_MS = 250;',
+    expect: ['KEYS.manualPressNotMerged'],
+  },
+  {
+    name: '把 Shift 漏出裸键条件（Shift+↑ 会一边被系统处理、一边又把音量调了 —— 注释写着"带修饰键不抢"但代码没做）',
+    file: F.hotkeys,
+    find: '          if (e.metaKey || e.ctrlKey || e.altKey || shift) return;\n          e.preventDefault();\n          /**',
+    replace: '          if (e.metaKey || e.ctrlKey || e.altKey) return;\n          e.preventDefault();\n          /**',
+    expect: ['KEYS.shiftLeftToSystem'],
+  },
+  {
+    name: '删掉 const shift = e.shiftKey（各 case 只能分散判 e.shiftKey，必然漏一个）',
+    file: F.hotkeys,
+    find: '      const shift = e.shiftKey;\n',
+    replace: '',
+    expect: ['KEYS.shiftLeftToSystem'],
   },
 ];
 
