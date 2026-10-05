@@ -76,10 +76,11 @@ npm run capture               # 截图取证（需屏幕解锁；不满足条件
 # 结构断言（每条都带反证轮，见 docs/spec-notes.md 与 AGENTS.md §3）
 npm run check:ia              # IA 结构 24 条（侧栏两级 / 视图 Tab / 设置两栏壳 / 小节分层）
 npm run check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
-npm run check:engine-client   # 翻译引擎适配层 32 条 / 反证 5 条（真协议用 openapi 快照「假引擎」，秒级可复跑）
+npm run check:engine-client   # 翻译引擎适配层 42 条 / 反证 8 条（真协议用 openapi 快照「假引擎」，秒级可复跑）
 npm run check:models          # S3 模型下载器 32 条 / 反证 5 条（本地 Range 夹具源：中断续传 / 篡改一字节 / 换版本重链，秒级）
 npm run check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）42 条 / 反证 13 条（起真进程，约 10s）
 npm run check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，13 条 / 逃生开关反证 2 条（约 25s）
+npm run check:contract        # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status 77 条（反证：check:contract:refute）
 npm run check:music           # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 215 条（反证：check:music:refute）
 npm run check:settings        # 设置页「播放·媒体」裁定结果 90 条（反证：check:settings:refute）
 npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条（反证：check:units:refute）
@@ -105,9 +106,12 @@ npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动�
 > **S3 模型管理已完成**（D-72：清单固化 / 断点续传下载器 / store + 硬链接，换引擎版本不重下模型）。
 > **S4 档位 / 加速后端 / 降档重试 / 两级空闲卸载已完成**（D-73）：③ 的归属权从 Rust 移交给
 > box-service（`service/src/llm-supervisor.mjs`），真 ③ 冷启动实测 1.0–2.8s、Tier1 占用 2.09–2.77 GB。
+> **S5 契约增量已完成**（D-74）：`/health.sidecar` 扩到 **9 键**（含 `engineVersion` = 引擎 commit 短 sha）、
+> 三个 503 严格分开（`UNAVAILABLE` 进程不在 / `ENGINE_NOT_READY` 进程在但未就绪 / `MODEL_DOWNLOAD_FAILED` 模型没了）、
+> 新增需鉴权的诊断视图 `GET /engine/status`。
 >
 > 🔴 **引擎栈模式默认 `real`**：`npm run app` 起的**已经是真引擎**（`python main.py` + `llama-server`，
 > 需要 `runtimes/`，见 `engine/VERSIONS.lock`）。模拟引擎只在测试里被显式注入
-> （`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs` / `check:e5e6`）。
-> **未做**：契约增量 / 诊断 UI / 插件串联（S5–S8）· Windows 侧（`unverified`）·
+> （`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs` / `check:e5e6` / `check:contract`）。
+> **未做**：诊断 UI / 插件串联（S6–S8）· Windows 侧（`unverified`）·
 > 打包分发（G-13：装出来的 `.app` 里不含 `service/` 与 `engine/`，起不了服务）。

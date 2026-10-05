@@ -350,11 +350,11 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
 | 阶段 | 名称 | 依赖 | 闸门 |
 |---|---|---|---|
 | **S0** | **环境闸门**：引擎装通 + 取证 | — | ✅ **通过（G1）** |
-| **S1** | 适配层对齐（`engine-client` 换真实协议） | S0 | ✅ **通过**：单图真翻译可跑通（断言 32 + 反证 5/5，D-62） |
+| **S1** | 适配层对齐（`engine-client` 换真实协议） | S0 | ✅ **通过**：单图真翻译可跑通（当时断言 32 + 反证 5/5，D-62；S5 扩到 **42 + 反证 8/8**） |
 | S2 | 三进程生命周期 + 就绪探测 | S1 | 三进程可拉起/回收 |
 | S3 | 模型管理（下载/续传/SHA256） | S0 | 断点续传 + 校验失败重下 |
-| S4 | 档位 / 加速后端 / 降档重试 / 空闲卸载 | S2 | E5/E6 可验 |
-| S5 | 契约增量（2 错误码 + `/health` 扩展 + `/engine/status`） | S2 | 契约断言全绿 |
+| S4 | 档位 / 加速后端 / 降档重试 / 空闲卸载 | S2 | ✅ **通过**：E5/E6 可验（判定层 42 + 反证 13/13 · 端到端 13 + 反证 2/2，D-73） |
+| S5 | 契约增量（2 错误码 + `/health` 扩展 + `/engine/status`） | S2 | ✅ **通过**：契约断言 77/0 + 反证 4/4（D-74） |
 | S6 | Box UI（设置② 10 项 + 引擎诊断 + 准备中/首张稍慢） | S5 | 视觉对齐设计稿 |
 | S7 | 真机端到端 E1–E11 | S2–S6 | 见 §5.8 |
 | S8 | 插件串联（P-1…P-4） | S7 | 插件在真引擎下复跑 D1 |
@@ -471,15 +471,22 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
 ✅ `npm run check:e5e6` **13/0**；逃生开关反证 **2/2**（关掉降档 / 关掉空闲卸载，对应断言必红）。
 判定层 `npm run check:profile` **42/0** + 反证 **13/13**。真机数字见 `node service/scripts/llm-real-timing.mjs`。
 
-### S5 · 契约增量
+### S5 · 契约增量 ✅ 已完成（D-74）
 
-- 新增错误码 `ENGINE_NOT_READY(503)`：引擎 `starting/prewarming/downloading` 时收到任务 → **不建单、不分配序号**（与 `UNAVAILABLE` 严格区分：后者是**进程不在**）。
-- 新增 `MODEL_DOWNLOAD_FAILED(503)`。
-- `/health` 的 `sidecar` 扩到 8 字段（**向后兼容**：新增字段仅供 Box，插件不依赖）。
-- 新增 `GET /engine/status`（**需鉴权**，插件不用）→ `{engine, llm, tier, accel, warmed, config, models, recentStageLog}`。
-- **引擎的"准备/卸载/降档"都不新增客户端状态机节点**（《03》§4.5）。
+- 新增错误码 `ENGINE_NOT_READY(503)`：引擎 `starting/prewarming/downloading` 时收到任务 → **不建单、不分配序号**（与 `UNAVAILABLE` 严格区分：后者是**进程不在**）。✅
+- 新增 `MODEL_DOWNLOAD_FAILED(503)`（模型缺失 / 校验失败 → 引导**重下**，而不是引导**重启**）。✅
+- `/health` 的 `sidecar` 扩到 **9 字段**（**向后兼容**：新增字段仅供 Box，插件不依赖）。✅
+  ⚠️ 本节原写"8 字段" —— 逐数《03》§5.1 是 **9 个**顶层键：`state` / `port` / `engine` /
+  **`engineVersion`** / `tier` / `model` / `accel` / `warmed` / `llm{state,port}`。缺的那个正是
+  S5 才补上的 `engineVersion`（安装事实：`models.manifest.json:engineCommit` 短 sha）。
+- 新增 `GET /engine/status`（**需鉴权**，插件不用）→ `{engine, llm, tier, accel, warmed, config, models, recentStageLog}`。✅
+- **引擎的"准备/卸载/降档"都不新增客户端状态机节点**（《03》§4.5）。✅
 
 **验收**：契约自测新增条目 + **反证**（把 `ENGINE_NOT_READY` 改成 `UNAVAILABLE` → 断言必须变红）。
+✅ `npm run check:contract` **77/0**（8 个实例场景 A–H，真服务 + 按状态构造的假引擎）；
+`check:contract:refute` **4/4** 逃生开关按预期变红。
+配套 `npm run check:engine-client` 由 32 条扩到 **42/0**、反证 5→**8/8**（新增 C 组 4 条配置快照、
+V 组 2 条阶段日志、P3b/P3c「安装事实 ≠ 进程事实」、P4b「uvicorn 未接客」）。
 
 ### S6 · Box UI
 
@@ -512,7 +519,7 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
 1. `npm run selftest` / `check:ia` / `check:tls` / `check:music:refute` / `check:settings:refute` / `check:units:refute` / `check:docs` 全绿；
 2. **改 `scripts/e2e.mjs:492` 的 D4a 口径**（R6，早在 S1 就要做，不要留到 S7）；
 3. 条数一变同步 `AGENTS.md` / `README.md`（`check:docs` 会对账，漂移即红）；
-4. 台账回写 `docs/spec-notes.md`（D-xx 续号，当前到 D-56）；
+4. 台账回写 `docs/spec-notes.md`（D-xx 续号，当前到 D-74）；
 5. 每个"机制类"断言配反证轮，**反证变红才算数**。
 
 ---

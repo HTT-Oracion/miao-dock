@@ -2406,3 +2406,171 @@ mock 档的替身是我们自己的 Node 进程，内部已装 `engine/src/paren
 `engine/src/server.mjs` · `app/src-tauri/src/service.rs` · `app/src-tauri/src/selftest.rs` ·
 `package.json` · 本文件 · `docs/engine-integration-plan.md`（§5 S4）·
 `docs/engine-integration-delivery-plan.md`（M5 / §4.1）· `AGENTS.md` · `README.md`。
+
+---
+
+## D-74 · S5 契约增量：9 键 `sidecar` / 三个 503 的分流 / 诊断视图 `GET /engine/status`（2026-10-05）
+
+### 交付
+
+| 文件 | 作用 |
+|---|---|
+| `service/src/model-status.mjs`（新） | `/engine/status` 的 `models` 块：`visualReady` / `sakuraReady` / `lastVerifiedAt`。**只做 `stat`**（在位 + 大小与清单一致），**不做哈希** —— 哈希是下载器的职责（S3），诊断视图每次刷新都算几 GB 的 sha256 是不可接受的 |
+| `service/scripts/contract-delta-check.mjs`（新） | S5 契约增量的端到端验收：**8 个实例场景 A–H**（每个都起真服务 + 按状态构造的假引擎）+ 断言 **77 条**；反证轮 4 个逃生开关（各另起子进程） |
+| 改动 | `service/src/errors.mjs`（新增 `ENGINE_NOT_READY` / `MODEL_DOWNLOAD_FAILED`）· `service/src/config.mjs`（`detector` 段改为"只在显式配置时才下发" + `contractRefute` 四个逃生开关集中一处）· `service/src/server.mjs`（`composeSidecar()` 拆成"引擎握手 + 服务级事实"两层 / `assertSidecarReady()` 三支 / `healthStatus()` / `engineStatusView()` / `/engine/status` 路由与鉴权 / `listenWithProbe` 挪到末尾）· `service/src/engine-client.mjs`（`ENGINE_VERSION` / `engineConfigSnapshot()` / 阶段日志环 / 结果流 code 1–2 帧带 `text` / ③ 就绪细分出 `prewarming`）· `service/scripts/engine-client-check.mjs`（32→**42** 条，反证 5→**8**）· `package.json` |
+
+### 🔴 决策 1：`tierCtl.currentTier` 少写一对括号 ⇒ **静默丢键**，6 条断言一次全红
+
+`tier-downgrade.mjs` 暴露的是**取值函数**（`currentTier: () => current`），而 `composeSidecar()` 里写成了
+`const tier = tierCtl.currentTier;` —— 不报错、不抛异常，只是把一个**函数**塞进返回对象，`JSON.stringify`
+静默丢掉函数成员 ⇒ `/health.sidecar` 与 `/engine/status` 都**少一个 `tier` 键**。
+
+症状分布很迷惑：实例 A/C/D/H（引擎在跑 ⇒ `up === true`）红；E/F（引擎不在 ⇒ 走 `tier: null` 字面量那一支）**绿**。
+也就是说，**红的恰好都是"引擎正常跑着"的实例** —— 与"tier 取值本身有问题"这个真相**看起来最不像**。
+
+这正是 **9 键形状断言**（`S5.1`）存在的理由：断言写成
+`keys.every((k) => k in sc) && Object.keys(sc).length === keys.length`，
+而不是"几个关键字段有值"。后者放行这条缺陷，一直躺到 S6 的 UI 去读 `sidecar.tier` 才发作。
+
+> ⚠️ 泛化：**"键少了"与"值错了"是两类缺陷，前者更容易静默**。凡把对象投影成 JSON 的地方，
+> 都要有"键集相等"级别的断言，而不是只断言几个字段的值。
+
+### 🔴 决策 2：引擎②的「版本」只能是 commit 短 sha —— 报 `0.1.0` 才是失真
+
+回读三处：`pyproject.toml` 是占位 `0.1.0`；`CHANGELOG.md` 停在 2022 年 beta-0.3；`VERSIONS.lock §1` 明写**锁 commit 不锁 tag**。
+⇒ `engineVersion` 取 `engine/models.manifest.json:engineCommit` 的短 sha（当前 `441d07c`）；mock 档报字面量 `'mock'`（起的是替身就老实说）。
+
+🔴 关键区分：**安装事实 vs 进程事实**。
+`sidecar.engine`（进程事实）在 `stopped` 时是 `null`（**没有哪台引擎在跑**）；
+`engineVersion`（安装事实）**始终有值**（**我们接的是哪一版**）。
+诊断视图的用途正是"起不来时告诉你它本该是哪一版" —— 所以这两格不能同生共死。断言 `P3b`/`P3c` 把这条钉住。
+
+### 🔴 决策 3：三个 503 的**判定顺序**是有意的
+
+`assertSidecarReady()` 三支：**先说"还在准备"、再说"没有引擎"、最后说"模型没了"**。
+
+- `ENGINE_NOT_READY` 与 `MODEL_DOWNLOAD_FAILED` 都可能出现在"引擎不在"时，但**用户要做的动作不同**：
+  引擎在启动中 ⇒ **等**；引擎压根不在且模型也没了 ⇒ **重下**（下完还得启动，但"下"是他此刻能做的第一件事）。
+- 反过来先说"模型没了"，会把一个**正在正常启动**的引擎报成故障。
+- 《03》§2.3 的边界铁律：`UNAVAILABLE` = **进程不在**（用户要启动 Box）/ `ENGINE_NOT_READY` = **进程在但未就绪**（只需等待）/
+  `MODEL_DOWNLOAD_FAILED` = **模型没了**（需重下）。**混用不是文案瑕疵，是把一句假话讲给用户听。**
+
+### 🔴 决策 4：`engine.pid` 恒为 `null`，**不是没实现，是归属使然**
+
+引擎② 由 Rust 的 `ServiceManager` spawn（S2），box-service 是它的**兄弟进程**、拿不到它的 pid。
+三处可选做法都不如 `null`：
+
+1. 用 `lsof`/`ps` 反查监听端口的进程 —— 平台相关（Windows 上 `lsof` 不存在），且"查到的那个"
+   未必是这条链路里的那个（端口可以被别人占）；
+2. 编一个（比如报自己的 pid）—— 那是**谎**；
+3. 报 `null`，让 Box 用它**自己已经持有的**进程表填（Rust 侧 `ChildView` 里就有）。
+
+⇒ 用 ③。对照：`llm.pid` **有真值**（③ 的归属方就是本进程）。`S5.7g` / `S5.14d` 成对断言。
+
+### 🔴 决策 5：`warmed` 不是 `state` 的复读（§9.4「卸载 ≠ 未就绪」）
+
+`warmed = (引擎②三重就绪) && (③ 在跑)`。实例 **C**（③ 停着）`state=running` 而 `warmed=false`；
+实例 **H**（③ 在跑）`warmed=true` —— **成对**才证明这个字段确实在表达"要不要等"。
+
+并且 **「③ 没在跑」不算 `degraded`**：§9.4 明说空闲卸载是**设计行为**。
+报 degraded 会让 Box 在用户啥也没干时亮告警点 —— 那是**把正常态报成异常态**。
+只有「GPU 回退 CPU」（§7.4-3 不静默）与「③ 真的 error」算 degraded。
+⇒ `degraded` 由 env 驱动（`MIAO_ENGINE_USE_GPU=0` ⇒ 硬件推荐 GPU 而实际未启用）：
+Rust 侧一旦检测到 GPU 启动失败并这样重拉，`composeSidecar()` 自动就报 degraded，**不需要谁额外来通知"刚才回退了"**。
+
+### 🔴 决策 6：「不下发 `detection_size`」与「下发 2048」**不是一回事**
+
+- **不下发** ⇒ 用引擎**自己**的默认值（上游改默认时我们跟着变；`config.py:276` 现在是 `2048`）；
+- **下发 2048** ⇒ 把当前默认值**钉死**在我们的请求体里（上游改了也不知道）。
+
+⇒ `config.mjs` 只在 `MIAO_ENGINE_DETECTION_SIZE` 存在时才下发；而 `/engine/status` 的 `config.detectionSize`
+回落到 `ENGINE_DEFAULT_DETECTION_SIZE`（= 引擎默认值）—— 两处从**一份**派生。
+断言 `C3`（未下发时报引擎默认）/ `C4`（显式下发跟变）分开钉住；反证 `G` 专门把"不下发"改成"写死 2048"。
+
+### 🔴 决策 7：跨层字段名漂移 —— `config` 用 camelCase，发给引擎的是 snake_case
+
+《03》§5.2 的 JSON 示例是 **camelCase**（`targetLang` / `detectionSize`），而发给引擎的请求体是 **snake_case**
+（`target_lang` / `detection_size`）。挡板只留一处：`engineConfigSnapshot()`。
+断言 `C1` 验"是 camelCase 且**没有** snake_case 键"；反证 `F` 把快照改回 snake_case。
+这属于"假绿家族第 5 类"的近亲：**两处各说一套时只有一条断言会红**，所以必须单独一条咬它。
+
+### 🔴 决策 8：阶段日志**不做改名映射**，存引擎原话
+
+`recentStageLog` 里的字符串就是引擎 `_report_progress(state)` 的**原话**（`detection` / `检测中…` / `inpainting`…），
+不做任何改名。理由：映射了就**永远说旧名**，而引擎改阶段名时**看不出哪里不对**。
+反证 `H` 把 `pushStage(seq, f.text)` 换成 `pushStage(seq, 'detect')` 来咬这一条。
+
+⚠️ `recentStageLog` **不进插件契约**（《00》分歧 2），只满足 Box 诊断。
+H 实例（mock 档）的阶段日志**如实的空** —— ver1.0 自定义协议是单包响应、没有阶段帧。
+断言 `S5.14e` 把"空"写成"如实"而不是"没实现"。
+
+### 🔴 决策 9：`'down'` 这个取值从枚举里删掉
+
+原先 `config.sidecarDown` 时 `sidecarState()` 直接返回 `{state:'down'}` —— 一个**只在注入故障时出现、
+契约 §5.1 的 8 值枚举里查不到**的取值。Rust / B 端一旦按枚举写 `switch`，默认支就会撞上它。
+⇒ 删掉短路，交给 `probeEngine()` 返回枚举内的 `stopped`；`probeEngineCached()` 只缓存"引擎握手"，
+`sidecarDown` **不再参与缓存短路**。
+
+### 🔴 决策 10：`listenWithProbe` 挪到文件末尾 —— 消除 TDZ 窗口
+
+`http.createServer` 一开始接客，**任何一个请求**都可能打到 `/health → sidecarState() → composeSidecar()`，
+而它要读 `llm` 与 `tierCtl`。原先"能跑"依赖"启动日志在 `listen` 之后"的**时序巧合**；
+现在把 `listen` 放到所有依赖建好之后，TDZ 窗口**结构上不存在**。
+
+### 反证轮的设计：`--refute-child` 子进程 + 逃生开关
+
+- `config.mjs` 在**模块顶层**读 env（`contractRefute` 组），进程内**无法回滚** ⇒ 每个开关**另起一个子进程**，
+  用 `--refute-child` 区分入口（不复用 `--refute`，否则它会自己也开一轮反证、递归下去）。
+- 4 个开关（分母写死 `EXPECTED_SWITCHES = 4`）：`MIAO_NOT_READY_AS_UNAVAILABLE` / `MIAO_SIDECAR_LEGACY3` /
+  `MIAO_ENGINE_STATUS_OPEN` / `MIAO_WARMED_ALWAYS` —— **全部集中在 `config.mjs` 的 `contractRefute` 一处**，一次 grep 可全见。
+- 除了"指定断言必须红"，还检查**"只红这些"**：多红说明这个开关顺带打坏了别的东西，结论就不能归给这一条机制。
+- 反证轮只跑 **A/C 两个实例**（不起其余 6 个无关实例）：少起 6 个 = 反证轮快数倍，
+  且不会被无关实例的偶发 flake 污染结论。
+- `MIAO_SIDECAR_LEGACY3` 一条开关**同时**咬 6 条断言（`S5.1`/`S5.1b`/`S5.1c`/`S5.9`/`S5.9b`/`S5.9c`）——
+  这是**允许**的：它破坏的是"扩展面整体消失"，被破坏的事实本来就有 6 个侧面。
+  与"两条反证共用一条断言"（假绿家族第 5 类）不同：**一个破坏 → 多条断言**是正常的，
+  **多个破坏 → 同一条断言**才危险。
+
+### 关键取证：`assertNotReady()` 的**双取证**（§2.3「不建单、不分配序号」）
+
+只断言"返回了 503"是不够的 —— **先建单再报错**也满足它。
+⇒ 拒绝前后各查一次 `/queue` 与 `/tasks`，两者必须**逐字节相同**（`JSON.stringify` 全等）。
+这是本脚本里最容易写成假绿的一条，故单独记。
+
+### 脚手架坑（都是"加断言时才会撞到"的）
+
+- **端口不能共用**：`freePorts(start, n)` 取**连续 n 个**空闲端口 —— 引擎端口 / 执行器端口 / 服务端口
+  **三者必须互不相同**。第一版把 `MIAO_ENGINE_PORT` 与 `MIAO_PORT` 写成同一个数，
+  症状是 `service-A-5600 未就绪：端口 5600 被占用`（**不报端口冲突，报"服务没起来"**）。
+- **macOS 没有 `timeout`**：`timeout 300 npm run …` 会 `command not found: timeout`。直接跑。
+- **`node --check` 会咬反引号**：断言文案里用反引号包字段名（`` `targetLang` ``）会把**模板字符串提前闭合**，
+  报 `missing ) after argument list`。⇒ 断言 id 里一律**不写反引号**。
+
+### 实测（2026-10-05）
+
+- `npm run check:contract` **77/0**（8 个实例 A–H，`real` 2.60s）；`check:contract:refute` **4/4**（2.04s）。
+- `npm run check:engine-client` **42/0**（含新增 `C` 组 4 条 / `V` 组 2 条 / `P3b` / `P3c` / `P4b`，「③ 就绪」由 `starting` 细分出 `prewarming`）；`:refute` **8/8**。
+- 全量门（12 个 suite）：`selftest`（服务 159 + 引擎 23）· `selftest:app` 16 · `e11` · `check:ia` 24 ·
+  `check:tls` 14 · `check:docs` 14 · `check:launch-plan` 22 · `check:profile` 42 · `check:e5e6` 13 ·
+  `check:models` 32 · `check:settings` 90 · `check:units` 37 · `check:music` 215 ·
+  `tsc --noEmit` 与 `cargo check` 0 错。
+  ⚠️ 唯一红条是 `check:music` 的 **既有红** `ISLANDV.toggleBothWays`（215 分之 1，与本次改动无关，见 AGENTS.md §4）。
+
+### 未做 / 边界（如实登记）
+
+- **真档下"引擎真的在冷启动"这一步没有现场**：A/B 两个实例的 `starting` / `prewarming` 是
+  **按状态构造的假引擎**给出的（uvicorn 未接客 / 执行器端口未监听）。真 python 冷启动那 8–30s 的现场
+  属 S7 真机项 ⇒ 标记 `unverified`。
+- **`MODEL_DOWNLOAD_FAILED` 走的是夹具清单**：F 实例把 `MIAO_MODEL_MANIFEST` / `MIAO_MODEL_ROOT`
+  指向临时目录、再删掉其中一份权重 —— **没有动仓库里的真权重**（3.5 GB 且要重下）。
+  ⇒ "判据正确"有证据，"真删了真权重之后的行为"仍属 `unverified`。
+- **模型诊断只在 `real` 档生效**（G 实例钉住）：替身没有模型需求。不加这道门槛，
+  任何没装过 `runtimes/` 的机器跑 mock 档都会得到 `MODEL_DOWNLOAD_FAILED`。
+- **Windows 侧未验**（本机无 Windows），沿用 S2 的 `unverified`。
+- `MIAO_MODEL_ROOT` / `MIAO_MODEL_MANIFEST` 是**验收夹具接缝** —— 不改清单内容就没法在
+  "模型齐 / 模型缺"两种盘况间切换，而这两条分支各对应一个不同的 503。不作为用户可见配置。
+
+**本节新增/修改的文件**：`service/src/model-status.mjs`（新）· `service/scripts/contract-delta-check.mjs`（新）·
+`service/src/errors.mjs` · `service/src/config.mjs` · `service/src/server.mjs` · `service/src/engine-client.mjs` ·
+`service/scripts/engine-client-check.mjs` · `package.json` · 本文件 ·
+`docs/engine-integration-plan.md`（§5 阶段总览 / S1 / S5）· `AGENTS.md` · `README.md`。

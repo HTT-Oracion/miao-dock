@@ -238,7 +238,17 @@ export const config = {
       translator: process.env.MIAO_ENGINE_TRANSLATOR || 'sakura',
       target_lang: process.env.MIAO_ENGINE_TARGET_LANG || 'CHS',
     },
-    detector: { detector: process.env.MIAO_ENGINE_DETECTOR || 'default' },
+    detector: {
+      detector: process.env.MIAO_ENGINE_DETECTOR || 'default',
+      // 只在**显式配置时**才下发 `detection_size`。
+      // 🔴 「不下发」与「下发 2048」不是一回事：前者用引擎自己的默认值（上游改默认时会跟着变），
+      //    后者把当前默认值**钉死**在我们的请求体里（上游改了也不知道）。
+      //    `/engine/status` 的 `config.detectionSize` 因此要在两种情况下报不同的东西 ——
+      //    见 `engine-client.mjs` 的 `engineConfigSnapshot()`。
+      ...(process.env.MIAO_ENGINE_DETECTION_SIZE
+        ? { detection_size: Number(process.env.MIAO_ENGINE_DETECTION_SIZE) }
+        : {}),
+    },
     inpainter: { inpainter: process.env.MIAO_ENGINE_INPAINTER || 'lama_large' },
     ocr: { ocr: process.env.MIAO_ENGINE_OCR || '48px' },
   },
@@ -296,6 +306,26 @@ export const config = {
   // 验收夹具若只关心任务/队列契约、又可能与其他实例抢 8080，可置 `MIAO_NO_LLM_AUTOSTART=1` 退出
   // —— 这个开关是**给夹具用的**，不是给产品的；产品路径永远走预拉起。
   llmAutostart: !envBool('MIAO_NO_LLM_AUTOSTART'),
+
+  // ---------------------------------------------------------------- 契约面反证开关（S5）
+  //
+  // 与上面的 `noIdleUnload` / `noTierDowngrade` 同族，但**专门针对 S5 的契约增量**：
+  // 每个开关都把"新契约"退回成"旧契约"、或把"两态"压成一态，用来证明断言测的**确实是
+  // 新增的那条规则**，而不是"新增前后都恰好绿"。
+  //
+  // 🔴 只被 `service/scripts/contract-delta-check.mjs --refute` 设置；产品路径永不设置。
+  //    集中放在一处（而不是散在用它各自的代码旁），是为了让"这个仓库里有哪些反证开关"
+  //    能一次 grep 到 —— 散着放的下场是：反证跑绿了，但没人说得清它到底关掉了什么。
+  contractRefute: {
+    /** `ENGINE_NOT_READY` 退回 `UNAVAILABLE`（§2.3 边界消失 ⇒ 「准备中」与「不可用」不可分） */
+    notReadyAsUnavailable: envBool('MIAO_NOT_READY_AS_UNAVAILABLE'),
+    /** `/health` 的 `sidecar` 退回 ver1.0 的 3 字段（§5.1 扩展面消失） */
+    sidecarLegacy3: envBool('MIAO_SIDECAR_LEGACY3'),
+    /** `/engine/status` 免除鉴权（§5.2「不是免鉴权例外」被破坏） */
+    engineStatusOpen: envBool('MIAO_ENGINE_STATUS_OPEN'),
+    /** `warmed` 恒 true（§9.4「卸载 ≠ 未就绪」在字段层面不可见） */
+    warmedAlways: envBool('MIAO_WARMED_ALWAYS'),
+  },
 
   // 引擎③（Sakura LLM）地址：`translators/keys.py` 的 `SAKURA_API_BASE` 默认值即此
   engineSakuraBase: process.env.SAKURA_API_BASE || 'http://127.0.0.1:8080/v1',

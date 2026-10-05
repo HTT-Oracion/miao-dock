@@ -151,7 +151,7 @@ function listen(server, port) {
 function createFakeEngine() {
   const state = {
     hits: [],            // { method, path, body }
-    mode: 'ok',          // 'ok' | 'hang' | 'http-status' | 'garbage-result' | 'stream-error'
+    mode: 'ok',          // 'ok' | 'hang' | 'http-status' | 'garbage-result' | 'stream-error' | 'queue-not-ready'
     status: 500,
     detail: 'injected',
     /** 结果帧前是否插进度帧 —— 用来证明解析器**按帧**走，不是"整包当图" */
@@ -195,6 +195,9 @@ function createFakeEngine() {
       if (!entry[method]) return replyJson(405, { detail: 'Method Not Allowed' });
 
       if (state.mode === 'http-status') return replyJson(state.status, { detail: state.detail });
+
+      // uvicorn 还没接客：端口在听、HTTP 层答不上（`P4b` 用它验 `state=starting`）
+      if (pathname === '/queue-size' && state.mode === 'queue-not-ready') return replyJson(503, { detail: 'starting up' });
 
       if (pathname === '/queue-size') return replyJson(200, 0);
 
@@ -242,6 +245,8 @@ if (MOCK_CHILD) {
   const probe = await probeEngine();
   check('M1 mock 协议：probeEngine 为 running（起的是真正的模拟引擎）',
     probe.state === 'running', JSON.stringify(probe));
+  check('M1b mock 协议：engineVersion 报 `mock` —— 起的是替身就老实说，绝不冒充上游 commit',
+    probe.engineVersion === 'mock', String(probe.engineVersion));
 
   const res = await translateImage(pngBytes(40, 60, 9), { seq: 1, mime: 'image/png' });
   const isPng = Buffer.isBuffer(res.bytes) && res.bytes.length > 8
@@ -267,7 +272,10 @@ async function runPositive() {
   process.env.MIAO_STATE_DIR = path.join(TMP, 'state'); // 别碰用户真实 token 文件
 
   const mod = await import(pathToFileURL(ENGINE_CLIENT).href);
-  const { translateImage, probeEngine, resolveEngineLaunch, EngineError } = mod;
+  const {
+    translateImage, probeEngine, resolveEngineLaunch, EngineError,
+    recentStageLog, engineConfigSnapshot, ENGINE_VERSION, ENGINE_DEFAULT_DETECTION_SIZE,
+  } = mod;
   const { config } = await import(pathToFileURL(CONFIG_FILE).href);
 
   const fake = createFakeEngine();
@@ -410,15 +418,31 @@ async function runPositive() {
     const pRunning = await probeEngine();
     check('P2 裸 HTTP 在 + 执行器端口在 → state=running',
       pRunning.state === 'running' && pRunning.port === enginePort, JSON.stringify(pRunning));
-    check('P3 probeEngine 形状已扩展：8 个约定字段齐（S1 阶段后 6 个为 null，是"位置占好"不是"已实现"）',
-      ['state', 'port', 'tier', 'accel', 'warmed', 'llm', 'model', 'engineVersion'].every((k) => k in pRunning),
+    check('P3 probeEngine 形状：9 个契约字段齐（§5.1）。⚠️ 其中 tier/accel/warmed/llm/model 恒为 null —— 它们是**服务级**事实，由 server.mjs 的 composeSidecar() 合成，本文件不持有它们',
+      ['state', 'port', 'engine', 'engineVersion', 'tier', 'accel', 'warmed', 'llm', 'model']
+        .every((k) => k in pRunning)
+        && ['tier', 'accel', 'warmed', 'llm', 'model'].every((k) => pRunning[k] === null),
       Object.keys(pRunning).join(','));
+    check(`P3b engineVersion 非空且等于清单里锁定的 commit 短 sha（real 档；上游没有可用版本号，见 ENGINE_VERSION 注释）`,
+      pRunning.engineVersion === ENGINE_VERSION && /^[0-9a-f]{7}$/.test(String(ENGINE_VERSION)),
+      `ENGINE_VERSION=${ENGINE_VERSION} probe=${pRunning.engineVersion}`);
+    check('P3c engineVersion 是**安装事实**：引擎停下（端口不通）时它仍然答得出来，而 `engine` 变 null（进程事实）',
+      p0.engineVersion === ENGINE_VERSION && p0.engine === null,
+      `stopped: ${JSON.stringify({ engine: p0.engine, engineVersion: p0.engineVersion })}`);
 
     await new Promise((resolve) => { executor.close(resolve); executorUp = false; });
     await sleep(50);
     const pStarting = await probeEngine();
-    check('P4 HTTP 在、**执行器端口未监听** → state=starting（只看 HTTP 会把"模型还在加载"误判成 running，第一张必挂）',
-      pStarting.state === 'starting' && pStarting.port === enginePort, JSON.stringify(pStarting));
+    check('P4 HTTP 在、**执行器端口未监听** → state=prewarming（= L3 预热：执行器在加载 torch/模型）。只看 HTTP 会把"模型还在加载"误判成 running，第一张必挂',
+      pStarting.state === 'prewarming' && pStarting.port === enginePort, JSON.stringify(pStarting));
+
+    // uvicorn 还没接客：端口在听、HTTP 层答不上 ⇒ starting。与 prewarming **必须分得开**：
+    // §10.2 把两者并列写成 `starting/prewarming`，而本探测能分辨，就没有理由合报成一个词。
+    fake.state.mode = 'queue-not-ready';
+    const pUvicorn = await probeEngine();
+    check('P4b 端口在听但 /queue-size 答不上（uvicorn 启动中）→ state=starting，与 prewarming 分开',
+      pUvicorn.state === 'starting', JSON.stringify(pUvicorn));
+    fake.state.mode = 'ok';
 
     // ---------------------------------------------------------- 快照一致性（防"按记忆写协议"）
     const snapViolations = fake.state.hits.filter((h) => {
@@ -456,6 +480,39 @@ async function runPositive() {
     check('L8 默认 nonce 是**字面串** `"None"`（=禁用鉴权）—— 传空串会生成随机 nonce，传真值则主进程调执行器必 401（上游 `fetch_data` 不带 `X-Nonce`）',
       nIdx > -1 && defaultLaunch.cmd[nIdx + 1] === 'None',
       defaultLaunch.cmd.join(' '));
+
+    // ---------------------------------------------------------- C · 生效参数快照（§5.2 的 `config` 块）
+    const snap = engineConfigSnapshot();
+    check('C1 `config` 是 **camelCase** 的 6 键（`targetLang` / `detectionSize`）—— 发出去的是 snake_case、报出来的是 camelCase，两个形状必须出自同一处（跨层字段名漂移的挡板）',
+      ['translator', 'targetLang', 'detector', 'detectionSize', 'ocr', 'inpainter'].every((k) => k in snap)
+      && !('target_lang' in snap) && !('detection_size' in snap),
+      JSON.stringify(snap));
+    check('C2 快照值与 `config.engineConfig`（真发给引擎的那份）**逐项一致** —— 不是另抄一遍字面量（抄两遍 = 等它们走散）',
+      snap.translator === config.engineConfig.translator.translator
+      && snap.targetLang === config.engineConfig.translator.target_lang
+      && snap.detector === config.engineConfig.detector.detector
+      && snap.ocr === config.engineConfig.ocr.ocr
+      && snap.inpainter === config.engineConfig.inpainter.inpainter,
+      JSON.stringify({ snap, sent: config.engineConfig }));
+    check('C3 未显式下发 `detection_size` 时，报的是**引擎默认值** 2048（`manga_translator/config.py:276`）—— 而不是"我们设的 2048"',
+      config.engineConfig.detector.detection_size === undefined
+      && snap.detectionSize === ENGINE_DEFAULT_DETECTION_SIZE,
+      `detectionSize=${snap.detectionSize} default=${ENGINE_DEFAULT_DETECTION_SIZE}`);
+    // 显式下发 ⇒ 快照跟着变。**另起进程**：env 在 `config.mjs` 顶层读，本进程改不动它。
+    const cExplicit = spawnSync(process.execPath, ['-e',
+      `import(${JSON.stringify(pathToFileURL(ENGINE_CLIENT).href)}).then(m=>console.log('DS='+JSON.stringify(m.engineConfigSnapshot().detectionSize))).catch(e=>console.log('ERR='+e.message));`,
+    ], { env: { ...process.env, MIAO_ENGINE_DETECTION_SIZE: '1024' }, encoding: 'utf8' });
+    check('C4 显式下发 `MIAO_ENGINE_DETECTION_SIZE=1024` ⇒ 快照报 1024（"不下发=用引擎默认"与"下发一个值"是两回事）',
+      /DS=1024/.test(cExplicit.stdout), cExplicit.stdout.trim() || cExplicit.stderr.trim());
+
+    // ---------------------------------------------------------- V · 阶段日志（§5.2 的 recentStageLog）
+    // 假引擎在每个结果帧前发一条 code 1 进度帧（`检测中…`），等价于真引擎
+    // `_report_progress('detection'|'ocr'|'inpainting'…)` 送出的阶段名。
+    const stage = recentStageLog(50);
+    check('V1 结果流里的 code 1 进度帧被记进 recentStageLog，格式 `seq N: <引擎原话>`（**不做改名映射** —— 映射了就会在引擎改阶段名时继续说旧名）',
+      stage.includes('seq 7: 检测中…'), JSON.stringify(stage.slice(-5)));
+    check('V2 记的是**服务端**的 seq 而不是引擎的序号，且每行都是 `seq N: …` 形状（同一张图的多个阶段各自一行）',
+      stage.length > 0 && stage.every((l) => /^seq \d+: \S/.test(l)), JSON.stringify(stage.slice(-3)));
 
     // ---------------------------------------------------------- D · 默认值与取值校验
     // 必须**另起进程**且**不带** MIAO_ENGINE_PROTOCOL：本进程已把它设成 real，测不出默认值
@@ -514,19 +571,23 @@ async function runPositive() {
         mPass = parsed.pass;
         mFail = parsed.fail;
         const m1 = matchById(parsed.results, 'M1');
+        const m1b = matchById(parsed.results, 'M1b');
         const m2 = matchById(parsed.results, 'M2');
         check('M1 mock 协议：probeEngine 为 running（起的是真正的模拟引擎）', !!m1?.ok, m1?.detail);
+        check('M1b mock 协议：engineVersion 报 `mock`（不冒充上游 commit）', !!m1b?.ok, m1b?.detail);
         check('M2 mock 协议：translateImage 返回可识别译文图（嗅探 ext=png）', !!m2?.ok, m2?.detail);
       } else {
         check('M1 mock 协议：probeEngine 为 running（起的是真正的模拟引擎）', false, '子进程未产出结果行');
+        check('M1b mock 协议：engineVersion 报 `mock`（不冒充上游 commit）', false, '子进程未产出结果行');
         check('M2 mock 协议：translateImage 返回可识别译文图（嗅探 ext=png）', false, child.stdout?.slice(-200));
       }
-      check('M3 mock 子进程自报分母（2 条全绿）',
-        mPass + mFail === 2 && mFail === 0, `${mPass}/${mPass + mFail}`);
+      check('M3 mock 子进程自报分母（3 条全绿）',
+        mPass + mFail === 3 && mFail === 0, `${mPass}/${mPass + mFail}`);
     } else {
       check('M1 mock 协议：probeEngine 为 running（起的是真正的模拟引擎）', false, mDetail);
+      check('M1b mock 协议：engineVersion 报 `mock`（不冒充上游 commit）', false, mDetail);
       check('M2 mock 协议：translateImage 返回可识别译文图（嗅探 ext=png）', false, mDetail);
-      check('M3 mock 子进程自报分母（2 条全绿）', false, mDetail);
+      check('M3 mock 子进程自报分母（3 条全绿）', false, mDetail);
     }
     try { mockChild.kill('SIGTERM'); } catch { /* ignore */ }
   } finally {
@@ -578,9 +639,30 @@ const MUTATIONS = [
     replace: '    if (code === 0) result = body;',
     expect: ['R4', 'R14'],
   },
+  {
+    name: 'F · 参数快照报回 snake_case（跨层字段名漂移：诊断视图报 `target_lang`，契约 §5.2 要的是 `targetLang`）',
+    file: ENGINE_CLIENT,
+    find: '    targetLang: c.translator?.target_lang ?? null,',
+    replace: '    target_lang: c.translator?.target_lang ?? null,',
+    expect: ['C1', 'C2'],
+  },
+  {
+    name: 'G · `detectionSize` 忽略下发值、写死引擎默认（"不下发"与"下发 2048"被混为一谈）',
+    file: ENGINE_CLIENT,
+    find: '    detectionSize: c.detector?.detection_size ?? ENGINE_DEFAULT_DETECTION_SIZE,',
+    replace: '    detectionSize: ENGINE_DEFAULT_DETECTION_SIZE,',
+    expect: ['C4'],
+  },
+  {
+    name: 'H · 阶段日志做改名映射（记 `detect` 而不是引擎原话 `检测中…`）',
+    file: ENGINE_CLIENT,
+    find: '  for (const f of frames) if (f.code === 1 && f.text) pushStage(seq, f.text);',
+    replace: "  for (const f of frames) if (f.code === 1 && f.text) pushStage(seq, 'detect');",
+    expect: ['V1'],
+  },
 ];
 
-const EXPECTED_MUTATIONS = 5; // 分母写死
+const EXPECTED_MUTATIONS = 8; // 分母写死
 
 function sha(p) {
   return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
@@ -677,6 +759,6 @@ if (REFUTE) {
   } catch (err) {
     check('RUN 断言脚本未预期崩溃（视为失败：脚本崩溃 ≠ 断言通过）', false, errText(err));
   }
-  printResults('汇总（R real调用 · P 就绪三态 · L 启动参数 · D 默认值 · M mock冒烟）');
+  printResults('汇总（R real调用 · P 就绪三态 · L 启动参数 · C 参数快照 · V 阶段日志 · D 默认值 · M mock冒烟）');
   process.exitCode = out.fail === 0 ? 0 : 1;
 }

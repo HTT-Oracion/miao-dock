@@ -26,6 +26,8 @@
     "check:profile:refute": "node service/scripts/engine-profile-check.mjs --refute",
     "check:e5e6": "node service/scripts/e5-e6-check.mjs",
     "check:e5e6:refute": "node service/scripts/e5-e6-check.mjs --refute",
+    "check:contract": "node service/scripts/contract-delta-check.mjs",
+    "check:contract:refute": "node service/scripts/contract-delta-check.mjs --refute",
     "fetch:models": "node engine/scripts/fetch-models.mjs",
     "e2e": "node scripts/e2e.mjs",
     "check:tls": "node scripts/tls-check.mjs",

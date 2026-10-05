@@ -13,6 +13,16 @@ export const CODES = {
   PERMISSION_DENIED: 403,
   UNAVAILABLE: 503,
   INTERNAL: 500,
+  // ---------------------------------------------------------------- ver2.0 新增 2 条（契约 §2.3）
+  //
+  // 🔴 这两个码与 `UNAVAILABLE` **不可混用**（§2.3 的「边界」原文）：
+  //    · `UNAVAILABLE`         = **进程不在**      ⇒ 用户要做的是"启动 Box"
+  //    · `ENGINE_NOT_READY`    = **进程在但未就绪** ⇒ 用户要做的是"等一会儿"
+  //    · `MODEL_DOWNLOAD_FAILED` = 模型缺失/校验失败 ⇒ 用户要做的是"重新下载模型"
+  //    混用不是文案瑕疵，而是**把一句假话讲给用户听**：说"服务未就绪"会把人的动作
+  //    引向重启，而真正该做的是等待或重下。
+  ENGINE_NOT_READY: 503,
+  MODEL_DOWNLOAD_FAILED: 503,
 };
 
 export class ApiError extends Error {

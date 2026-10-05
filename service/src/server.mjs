@@ -13,10 +13,14 @@ import {
   TOKEN_FILE, assertInsideRoot, config, validateRoot,
 } from './config.mjs';
 import { ApiError, errorEnvelope, permissionDenied } from './errors.mjs';
-import { probeEngine, resolveLlmLaunch, availableTiers, TIER_LLM_MODELS } from './engine-client.mjs';
+import {
+  ENGINE_VERSION, engineConfigSnapshot, probeEngine, recentStageLog, resolveLlmLaunch,
+  availableTiers, TIER_LLM_MODELS,
+} from './engine-client.mjs';
 import { probeHardware } from './engine-profile.mjs';
 import { createIdleWatcher } from './idle-policy.mjs';
 import { LlmSupervisor } from './llm-supervisor.mjs';
+import { modelStatus } from './model-status.mjs';
 import { createTierDowngrade } from './tier-downgrade.mjs';
 import { allFieldStrings, firstField, groupParts, parseMultipartEx } from './multipart.mjs';
 import { normalizeComicName, isSafeDirName } from './names.mjs';
@@ -42,21 +46,75 @@ store.startedAt = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 const bootedAt = Date.now();
 
 // sidecar（引擎）状态 —— **真实探测**，不再是计时器模拟
-// 带 2s 缓存：插件端口探测（5180→5190）会高频打 /health，无需每次都做一次引擎握手
+//
+// 🔴 分两层，别合并（S5 的关键结构）：
+//   ① `probeEngineCached()` —— **只**缓存"不必 2 秒内再和引擎握一次手"。插件端口探测
+//      （5180→5190）会高频打 `/health`，每次握手都要 TCP + HTTP + 执行器端口三连。
+//   ② `composeSidecar()` —— 把 5 个**服务级**字段（tier/accel/warmed/llm/model）当场合成。
+//      这 5 个**绝不能跟着缓存**：③ 被空闲卸载后，若 `/health` 拿的是 2 秒前的快照，
+//      就会出现「说 ③ 在跑、其实刚停」的假象 —— 而 §9.4（卸载 ≠ 未就绪）要的恰恰是
+//      在这一刻分得清。缓存"引擎握手"是省开销，缓存"③ 的进程态"是说谎。
 const SIDECAR_CACHE_MS = 2000;
 let sidecarProbe = { at: 0, value: null };
 
-async function sidecarState() {
-  if (config.sidecarDown) return { state: 'down', port: null, engine: null };
+async function probeEngineCached() {
+  // ⚠️`config.sidecarDown` 不再在这里短路：`probeEngine()` 内部已处理，且它会返回
+  //   `stopped`（§5.1 枚举内的值）。原先这里返回的 `'down'` **不在枚举里** ——
+  //   一个只在"注入故障"时才出现、且契约里查不到的状态值，是给下游埋雷。
   const now = Date.now();
   if (sidecarProbe.value && now - sidecarProbe.at < SIDECAR_CACHE_MS) return sidecarProbe.value;
-  const full = await probeEngine();
-  // `probeEngine()` 的形状已在 S1 扩展为「3 + 6 预留槽位」（见 engine-client.mjs）。
-  // **这里只挑 ver1.0 的三个字段**：`/health` 的 sidecar 契约面到 S5 才扩（新增字段属契约变更，
-  // 需回写《03》并经评审）。提前透传 6 个恒为 null 的槽位 = 未经评审的契约变更。
-  const value = { state: full.state, port: full.port, engine: full.engine };
+  const value = await probeEngine();
   sidecarProbe = { at: now, value };
   return value;
+}
+
+/**
+ * 合成 `sidecar` 的 9 个契约字段（《03》§5.1 / §5.2）。
+ *
+ * 这是**唯一**一处把「引擎侧事实」与「服务级事实」拼在一起的地方 —— 两侧各自的
+ * 权威分别在 `probeEngine()` 与 (`llm` / `hardware` / `tierCtl`)，谁都不去改对方的状态。
+ */
+function composeSidecar(probe) {
+  const snap = llm.snapshot();
+  // §7.4-3：指定了 GPU 后端却**实际跑在 CPU 上** ⇒ 状态升级为 `degraded`（"不静默"）。
+  // 判据两边都在本进程可观测（硬件推荐什么 / 我们实际让引擎用了什么），
+  // 不需要谁额外来通知我们"刚才回退了"——这正是把回退**做成可由 env 驱动**的好处：
+  // Rust 侧一旦检测到 GPU 启动失败并改用 `MIAO_ENGINE_USE_GPU=0` 重拉，这里自动就报 degraded。
+  const accelDegraded = hardwareAccel !== 'cpu' && !config.engineUseGpu;
+  const state = accelDegraded && probe.state === 'running' ? 'degraded' : probe.state;
+  const up = state !== 'stopped' && state !== 'error' && state !== 'downloading';
+  // ⚠️ `currentTier` 是**取值函数**（`tier-downgrade.mjs` 暴露的是 `currentTier: () => current`），
+  //    少写这对括号不会报错 —— 只是把一个函数塞进 JSON，`JSON.stringify` 静默丢掉该键，
+  //    于是 `/health.sidecar` 与 `/engine/status` 都**少一个 `tier` 键**。
+  //    这类"键少了但没人喊"的缺陷正是 9 键形状断言的存在理由。
+  const tier = tierCtl.currentTier();
+  return {
+    state,
+    port: probe.port,
+    engine: probe.engine,
+    engineVersion: probe.engineVersion ?? null,
+    // 档位 / 模型是**引擎侧才有的概念**：引擎都不在时报一个档位只会误导
+    //（用户会以为"跑着的引擎是 tiny"，而事实是"没有引擎在跑"）。
+    tier: up ? tier : null,
+    model: up ? (snap.model ?? TIER_LLM_MODELS[tier] ?? null) : null,
+    // 实际生效的后端（§7.4-3 的"记录实际生效后端"）。GPU 被关掉时报 `cpu`，
+    // **不报"本该是什么"** —— `/engine/status` 的用途就是拿界面和事实对账。
+    accel: accelDegraded ? 'cpu' : hardwareAccel,
+    // 🔴 `warmed` = 「现在提交任务能不能全速开工」= 引擎② 三重就绪 **且** ③ 在跑。
+    //    它与 `state` **不冗余**，正是 §9.4「卸载 ≠ 未就绪」在字段层面的体现：
+    //    ③ 被空闲卸载后 `state` 仍是 `running`（进程在），但 `warmed` 转 false ⇒
+    //    客户端据此提示「首张稍慢」（实测重新拉起 1.0–2.8s），而不是提示「引擎没起来」。
+    warmed: config.contractRefute.warmedAlways
+      ? true
+      : (probe.state === 'running' && snap.state === 'running'),
+    // `llm.port` 的 null 口径由 `LlmSupervisor.snapshot()` 统一决定（stopped ⇒ null），不在这里二次加工
+    llm: { state: snap.state, port: snap.port },
+  };
+}
+
+/** 完整 sidecar 视图（9 键）。`/health` 与 `/engine/status` 共用 */
+async function sidecarState() {
+  return composeSidecar(await probeEngineCached());
 }
 
 const serverLog = (msg) => console.log(`[box-service] ${msg}`);
@@ -100,13 +158,78 @@ function assertRootWritable() {
   }
 }
 
-/** sidecar 未就绪 → 503 UNAVAILABLE（契约 §2.2） */
+/**
+ * `sidecar.state` 里表示「引擎正在准备」的取值（《03》§2.3 / §10.3）。
+ * 这三个的共同点是：**用户只需等待**，不需要做任何操作。
+ */
+const PREPARING_STATES = new Set(['starting', 'prewarming', 'downloading']);
+
+/** 可翻译的状态：`running` 之外，`degraded`（GPU 回退 CPU，§7.4-3）**依然能跑**，只是慢 */
+const AVAILABLE_STATES = new Set(['running', 'degraded']);
+
+/** 模型根目录 / 清单 —— 与 `engine/scripts/fetch-models.mjs` 用同一套取值规则（含 env 覆盖） */
+const MODEL_ROOT = process.env.MIAO_MODEL_ROOT || path.resolve(config.engineDir, '..');
+// `MIAO_MODEL_MANIFEST` 是**验收夹具的接缝**：不改清单内容就没法在"模型齐 / 模型缺"两种
+// 盘况之间切换，而这两条分支各对应一个不同的 503 错误码（要分别断言）。
+// ⚠️ 与 `MIAO_MODEL_ROOT` 成对使用；产品路径不设置它（清单永远是入库的那一份）。
+const MODEL_MANIFEST = process.env.MIAO_MODEL_MANIFEST
+  || path.join(path.resolve(import.meta.dirname, '..', '..'), 'engine', 'models.manifest.json');
+
+/**
+ * sidecar 未就绪 → 503（契约 §2.2 `UNAVAILABLE` / §2.3 `ENGINE_NOT_READY` / `MODEL_DOWNLOAD_FAILED`）。
+ *
+ * 🔴 三条分支**必须分开**，因为「用户该做什么」不同（§2.3 的「边界」原文）：
+ *   · `ENGINE_NOT_READY`      进程在、正在准备 ⇒ **等待**（面板切「准备中」，不排队、不缓存）
+ *   · `UNAVAILABLE`           进程不在         ⇒ **启动 Box**
+ *   · `MODEL_DOWNLOAD_FAILED` 模型不在盘上     ⇒ **重新下载模型**
+ * 把它们合成一句「服务未就绪」= 把人的动作引向重启，而重启恰好修不好后两种。
+ *
+ * ⚠️ 判定顺序是**有意的**（先说"还在准备"、再说"没有引擎"、最后说"模型没了"）：
+ *    引擎在 `downloading/starting/prewarming` 时模型**本来就还没齐**，此时报
+ *    `MODEL_DOWNLOAD_FAILED` 会把"正在下"说成"下坏了" —— 让用户去点一个毫无用处的重下按钮。
+ */
 async function assertSidecarReady() {
-  const { state } = await sidecarState();
-  if (state !== 'running') {
-    throw new ApiError('UNAVAILABLE', `翻译引擎（sidecar）未就绪：state=${state}`,
-      { sidecar: { state, port: config.enginePort } });
+  const sc = await sidecarState();
+  if (AVAILABLE_STATES.has(sc.state)) return;
+
+  if (PREPARING_STATES.has(sc.state) && !config.contractRefute.notReadyAsUnavailable) {
+    throw new ApiError('ENGINE_NOT_READY',
+      `翻译引擎正在准备（state=${sc.state}），请稍候 —— 任务未创建，无需重试`,
+      { sidecar: { state: sc.state, port: sc.port } });
   }
+
+  // 到这里 = 引擎没在跑。区分「进程不在」与「模型不在」——后者重下模型才有用。
+  // ⚠️ 只在 real 协议下做这个诊断：模型是**真引擎**的概念，替身没有模型需求。
+  //    不加这道门槛的话，任何一台没装过 runtimes/ 的机器跑 mock 档都会得到
+  //    `MODEL_DOWNLOAD_FAILED`，而它其实只是"引擎没起来"。
+  if (config.engineProtocol === 'real') {
+    const m = await modelStatus({ manifestPath: MODEL_MANIFEST, rootDir: MODEL_ROOT });
+    if (!m.visualReady || !m.sakuraReady) {
+      throw new ApiError('MODEL_DOWNLOAD_FAILED',
+        `翻译模型不完整（视觉就绪=${m.visualReady} / Sakura 就绪=${m.sakuraReady}）——请重新下载模型`,
+        { models: m, modelRoot: MODEL_ROOT, sidecar: { state: sc.state } });
+    }
+  }
+
+  throw new ApiError('UNAVAILABLE', `翻译引擎（sidecar）不可用：state=${sc.state}`,
+    { sidecar: { state: sc.state, port: sc.port } });
+}
+
+/**
+ * `/health` 顶层 `status`（§5.1：`ok` | `degraded` | `starting`）。
+ *
+ * 🔴 「③ 没在跑」**不等于** `degraded`：§9.4 明说"卸载 ≠ 未就绪"，而空闲卸载是**设计行为**
+ *    （实测重新拉起 1.0–2.8s）。若把它报成 degraded，Box 会在用户啥也没干的时候亮一个告警点
+ *    —— 那不是"如实上报"，是**把正常态报成异常态**。
+ *    所以只有两种情况算 degraded：① 引擎回退到 CPU（§7.4-3）；② ③ 真的 `error`。
+ *    而"③ 现在没在跑"这件事由 `sidecar.warmed === false` 表达：粒度更准 ——
+ *    它答的是"这张要不要等"，不是"系统坏没坏"。
+ */
+function healthStatus(sc) {
+  if (PREPARING_STATES.has(sc.state)) return 'starting';
+  if (sc.state === 'degraded') return 'degraded';
+  if (sc.state === 'running') return sc.llm.state === 'error' ? 'degraded' : 'ok';
+  return 'degraded'; // stopped / error / 其它：确实不可用
 }
 
 // ------------------------------------------------------------------ CORS / 鉴权
@@ -180,15 +303,65 @@ async function readBody(req) {
 
 async function healthView() {
   const sidecar = await sidecarState();
-  const status = sidecar.state === 'running' ? 'ok' : (sidecar.state === 'starting' ? 'starting' : 'degraded');
   return {
-    status,
+    status: healthStatus(sidecar),
     service: SERVICE_NAME,
     version: SERVICE_VERSION,
     apiVersion: API_VERSION,
-    sidecar: { state: sidecar.state, port: sidecar.port, engine: sidecar.engine },
+    // `sidecar` 9 键（§5.1）。**向后兼容**：插件端口探测只认 `service === "box-service"`，
+    // 不依赖任何新增字段（§5.1 明写）。反证开关可把它退回 ver1.0 的 3 键，
+    // 用来证明"9 键"这条断言咬的确实是新增的那 6 个字段（见 config.contractRefute.sidecarLegacy3）。
+    sidecar: config.contractRefute.sidecarLegacy3
+      ? { state: sidecar.state, port: sidecar.port, engine: sidecar.engine }
+      : sidecar,
     rootDir: store.root,
     startedAt: store.startedAt,
+  };
+}
+
+/**
+ * `GET /engine/status` —— Box 的「引擎诊断视图」数据源（§5.2，**Box 专用、需鉴权**）。
+ *
+ * 与 `/health` 的分工：`/health` 是**心跳**（高频、字段少、免鉴权），这里是**体检报告**
+ * （低频、字段多、要令牌）。所以这里可以放心做几件"不适合放进心跳"的事：
+ *   · 现读盘上的模型就绪态（几次 `stat`）
+ *   · 带上 `config` 生效参数快照与 `recentStageLog` 阶段日志
+ * 🔴 `recentStageLog` **不进插件契约**（《00》分歧 2）—— 它是给 Box 诊断用的原始阶段名
+ *    （引擎 `_report_progress` 的原话，如 `detection` / `inpainting`），不做任何改名映射。
+ */
+async function engineStatusView() {
+  const sc = await sidecarState();
+  const models = await modelStatus({ manifestPath: MODEL_MANIFEST, rootDir: MODEL_ROOT });
+  return {
+    engine: {
+      state: sc.state,
+      // 报的是**安装版本**（我们接的是哪一版），与 `state` 无关 —— 引擎没起来时也得答得出来
+      version: ENGINE_VERSION,
+      port: sc.port,
+      // 🔴 `pid` 恒为 `null`，**不是没实现，是归属使然**：引擎② 由 Rust 的 `ServiceManager`
+      //    spawn（S2），box-service 是它的**兄弟进程**、拿不到它的 pid。三处可选做法都不如 null：
+      //      ① 用 `lsof`/`ps` 反查监听端口的进程 —— 平台相关（Windows 上 `lsof` 不存在），
+      //         且"查到的那个"未必是我们这条链路里的那个（端口可以被别人占）；
+      //      ② 编一个（比如报自己的 pid）—— 那是谎；
+      //      ③ 报 null，让 Box 用它**自己**已经持有的进程表填（Rust 侧 `ChildView` 里就有）。
+      //    ⇒ 用 ③。Box 的引擎诊断视图把这一格显示为「—（由 Box 壳持有）」。
+      pid: null,
+    },
+    llm: {
+      state: sc.llm.state,
+      model: sc.model,
+      port: sc.llm.port,
+      // ③ 的归属方就是本进程（《04》§9.1），所以这个 pid 我们**真的有**
+      pid: llm.pid ?? null,
+    },
+    tier: sc.tier,
+    accel: sc.accel,
+    warmed: sc.warmed,
+    // 🔴 形状与 §5.2 的 JSON 示例**逐字一致**（camelCase）。发给引擎的那份是 snake_case
+    //    （`config.engineConfig`）—— 两个形状由 `engineConfigSnapshot()` 一处派生，见那里的注释。
+    config: engineConfigSnapshot(),
+    models,
+    recentStageLog: recentStageLog(20),
   };
 }
 
@@ -598,6 +771,11 @@ async function route(req, res, cors, url) {
     return handleQueue(req, res, cors);
   }
 
+  // /engine/status —— Box 诊断视图（§5.2）。**受 X-Box-Token 保护，不是免鉴权例外**
+  if (p.length === 2 && p[0] === 'engine' && p[1] === 'status' && method === 'GET') {
+    return sendJson(res, 200, await engineStatusView(), cors);
+  }
+
   // /library
   if (p.length === 1 && p[0] === 'library' && method === 'GET') {
     return sendJson(res, 200, scanLibrary(), cors);
@@ -629,6 +807,10 @@ function createHandler() {
     const cors = corsHeaders(origin.allow);
     const client = req.headers['x-box-client'] || '-';
     const isHealth = /^\/(api\/v1\/)?health$/.test(url.pathname);
+    // 🔴 反证开关：`MIAO_ENGINE_STATUS_OPEN=1` 让 `/engine/status` 也免鉴权。
+    //    只为了让「无令牌 → 403」这条断言**咬得住**（证明它测的确实是鉴权，
+    //    而不是"这个端点在别处本来就通"）。产品路径绝不设置它。
+    const refuteOpen = config.contractRefute.engineStatusOpen && /\/engine\/status$/.test(url.pathname);
 
     try {
       // 1) Origin 校验（含 Origin 才校验）
@@ -642,7 +824,7 @@ function createHandler() {
         return res.end();
       }
       // 3) 鉴权（/health 豁免）
-      if (!isHealth && !tokenMatches(req.headers['x-box-token'])) {
+      if (!isHealth && !refuteOpen && !tokenMatches(req.headers['x-box-token'])) {
         securityLog(`令牌校验失败：${req.method} ${url.pathname}；client=${client}`);
         throw permissionDenied();
       }
@@ -707,9 +889,6 @@ async function listenWithProbe(handler) {
 // 父进程（Box 壳）若崩溃 / 被强杀，本进程自行退出，避免孤儿占住端口（契约 B4）
 watchParent();
 
-const { server, port } = await listenWithProbe(createHandler());
-store.port = port;
-
 // ---------------------------------------------------------------- 档位与引擎③的生命周期
 //
 // ③ 的归属权在 S4 从 Rust 的 `ServiceManager` 移交到这里（《04》§9.1：Tier1 空闲卸载的实现方是
@@ -734,6 +913,13 @@ function clampTierToAvailable(desired) {
 }
 
 const hardware = probeHardware();
+/**
+ * 硬件**推荐**的加速后端（§7.4-1 的探测顺序产物）。
+ * ⚠️ 与"实际生效"分开：`composeSidecar()` 用 `config.engineUseGpu` 判断实际是不是 CPU。
+ *    两者合成一处（不在各处各自判断）是因为「推荐 mps / 实际 cpu」这个组合必须**能被看见** ——
+ *    它正是 §7.4-3 的 `degraded`，也是"设置页说 MPS、日志说 CPU"这类矛盾唯一的源头。
+ */
+const hardwareAccel = hardware.accel;
 const desiredTier = config.engineTier || hardware.recommendedTier;
 const effectiveTier = clampTierToAvailable(desiredTier);
 
@@ -784,6 +970,14 @@ if (config.unloadNever || config.noIdleUnload) {
   idleWatcher.start();
 }
 
+// 🔴 **监听放在最后**：`http.createServer` 一旦开始接客，任何一个请求都可能打到
+//    `/health` → `sidecarState()` → `composeSidecar()`，而它要读 `llm` 与 `tierCtl`。
+//    在此之前开门，撞上的就是 TDZ `ReferenceError`（"Cannot access 'llm' before initialization"）
+//    —— 一个只在**启动那一瞬**偶发、且表现为 500 的错误，是最难复盘的一类。
+//    移到这里的实际收益：`server` 开始监听之前，所有依赖都已建好，**结构上不可能有这个窗口**。
+const { server, port } = await listenWithProbe(createHandler());
+store.port = port;
+
 const heartbeatTimer = setInterval(() => store.broadcastHeartbeat(), HEARTBEAT_MS);
 heartbeatTimer.unref?.();
 
@@ -804,7 +998,9 @@ serverLog(`引擎③ LLM : 归属=box-service model=${llm.model ?? '-'} port=${l
 serverLog(`档位       : 生效=${effectiveTier}（硬件推荐=${hardware.recommendedTier} `
   + `配置=${config.engineTier ?? '未指定'} 可用权重档=${availableTiers().join('/') || '无'}）`
   + `${effectiveTier === desiredTier ? '' : ' ⚠ 已夹取'}`);
-serverLog(`加速后端   : ${hardware.accel}（gpu=${hardware.gpu.kind} ram=${hardware.totalRamGb}GB）`
+serverLog(`加速后端   : ${hardwareAccel === 'cpu' || config.engineUseGpu ? hardwareAccel : 'cpu'}`
+  + `（推荐=${hardwareAccel} gpu=${hardware.gpu.kind} ram=${hardware.totalRamGb}GB`
+  + `${hardwareAccel !== 'cpu' && !config.engineUseGpu ? ' ⚠ 已回退 CPU ⇒ sidecar.state=degraded' : ''}）`
   + ` 降档=${config.noTierDowngrade ? '关闭（反证开关）' : '启用（仅一次，服务级）'}`);
 serverLog(`失败注入   : FAIL_SEQ=[${[...config.failSeqs].join(',')}] ITEM_FAIL_RATE=${config.itemFailRate} `
   + `DISK_FULL=${config.diskFull} SIDECAR_DOWN=${config.sidecarDown} SKIP_EXISTING=${config.skipExisting}`);

@@ -43,12 +43,20 @@
 //   mock —— 仓内模拟引擎（`engine/src/server.mjs`，ver1.0 起沿用的测试替身）
 //     GET  /ready / POST /translate（自定义协议）。**仅供测试**：它提供可控耗时与失败注入，
 //     这些是测试专用能力，不该进生产契约面。测试起的是它，就显式声明 `mock`。
+import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 
 import { config } from './config.mjs';
 import { sniffImageType } from './image.mjs';
+
+/**
+ * 仓库根 —— `engine/` 与 `service/` 都在它下面。
+ * 放在文件顶部（而不是原先"启动配方"那一节里）是因为 `ENGINE_VERSION` 在模块初始化时
+ * 就要用它去读清单：const 有 TDZ，靠"反正调用得晚"是**时序巧合**，不是结构保证。
+ */
+const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 
 /** 引擎错误：带 code 便于上层区分「引擎不可用」与「单图翻译失败」 */
 export class EngineError extends Error {
@@ -149,9 +157,111 @@ function normalizeHttpError(status, body) {
   return new EngineError(code, `引擎返回 ${status}${detail ? `：${detail}` : ''}`, { status, detail });
 }
 
-/** 形状扩展里"位置占好、S1 还没值"的槽位（见 probeEngine 注释） */
+/**
+ * 所有返回 `sidecar` 形状的地方都必须带上 `engineVersion`。
+ *
+ * 它有别于 `engine`：`engineVersion` 是**安装事实**（我们接的是哪一版引擎，来自入库的
+ * version lock），`engine` 是**进程事实**（`stopped` 时它是 `null` —— 那时并没有哪台引擎在跑）。
+ * 两者口径不同是故意的：版本号在引擎没起来时也答得出来，而且**答得出来才有用**
+ * （诊断视图正是要在"起不来"的时候告诉你它本该是哪一版）。
+ */
 function placeholderFields() {
-  return { engineVersion: null, tier: null, accel: null, warmed: null, llm: null, model: null };
+  return { tier: null, accel: null, warmed: null, llm: null, model: null };
+}
+
+// ================================================================ 引擎身份 / 参数快照
+//
+// 这两块都喂 `/health` 的 `sidecar`（§5.1）与 `/engine/status`（§5.2）。
+
+/** 清单路径（`engine/models.manifest.json`，入库、可版本控制） */
+const MANIFEST_PATH = path.join(REPO_ROOT, 'engine', 'models.manifest.json');
+
+/**
+ * 引擎② 的版本标识（`sidecar.engineVersion` / `/engine/status` 的 `engine.version`）。
+ *
+ * 真档 = `models.manifest.json:engineCommit` 的**短 sha**。
+ *   🔴 上游**没有可用的版本号**：`pyproject.toml` 是 `0.1.0`（占位值，不是发布号）、
+ *      `CHANGELOG.md` 停在 2022 年的 beta-0.3，而 `VERSIONS.lock §1` 明确"锁 commit、不锁 tag"。
+ *      ⇒ 唯一对得上的东西就是那个 commit。报 `0.1.0` 才是失真（它既不是发布号，
+ *      也不随代码变），而 commit 短 sha 能真回答"我跑的是哪一版源码"。
+ *   ⚠️ 读的是**版本控制内的清单**（不是运行期问引擎）—— 真实引擎**没有版本端点**（见文件头）。
+ *  mock 档 = `'mock'`（起的是替身就老实说；与 `probeEngine` 里 `engine` 字段同一姿态）。
+ *  读不到清单 → `null`（=未知，**不编一个假版本号**）。
+ */
+function readEngineCommit() {
+  try {
+    const m = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8'));
+    const c = String(m.engineCommit || '').trim();
+    return /^[0-9a-f]{7,40}$/i.test(c) ? c.slice(0, 7) : null;
+  } catch {
+    return null;
+  }
+}
+
+export const ENGINE_VERSION = config.engineProtocol === 'mock' ? 'mock' : readEngineCommit();
+
+/**
+ * 引擎侧对 `detection_size` 的默认值（我们**不指定**它，所以它生效）。
+ * 出处：`runtimes/manga-translator/src/manga_translator/config.py:276`
+ *   `class DetectorConfig: detection_size: int = 2048`
+ * 我们只按请求注入 `detector.detector`，其余字段留空 ⇒ pydantic 用默认值补齐。
+ * 若将来开始显式下发（`MIAO_ENGINE_DETECTION_SIZE`），`engineConfigSnapshot()` 会自动跟着变，
+ * 不再是"引擎默认值"——所以这里不需要第二个开关去记得改文案。
+ */
+export const ENGINE_DEFAULT_DETECTION_SIZE = 2048;
+
+/**
+ * **生效参数快照**（《03》§5.2 的 `config` 块）—— 供 Box 做「界面与文档对账」。
+ *
+ * 🔴 跨层字段名漂移陷阱，这份映射就是它的挡板：
+ *      **发给引擎的是 snake_case**（`config.engineConfig`，引擎 pydantic 认得）
+ *      **报给 Box 的是 camelCase**（§5.2 的 JSON 逐字如此：`targetLang` / `detectionSize`）
+ *    两边必须从**同一处**派生。若这里重抄一遍字面量，将来改参数只改了发给引擎的那边，
+ *    诊断视图就会继续展示旧值 —— 一个"界面与事实不一致、且谁也不报错"的偏差。
+ */
+export function engineConfigSnapshot() {
+  const c = config.engineConfig || {};
+  return {
+    translator: c.translator?.translator ?? null,
+    targetLang: c.translator?.target_lang ?? null,
+    detector: c.detector?.detector ?? null,
+    detectionSize: c.detector?.detection_size ?? ENGINE_DEFAULT_DETECTION_SIZE,
+    ocr: c.ocr?.ocr ?? null,
+    inpainter: c.inpainter?.inpainter ?? null,
+  };
+}
+
+// ================================================================ 阶段日志（§5.2 recentStageLog）
+//
+// 来源是**引擎自己**：`manga_translator.py` 的 `_report_progress(state, ...)` 把阶段名
+// （`detection` / `ocr` / `textline_merge` / `translating` / `inpainting` / `rendering` …）
+// 经 progress hook → 执行器 → 结果流 **code 1 帧**送出来（`mode/share.py:64-70`）。
+// 所以这里存的是**引擎的原话**，不做改名、不做翻译 —— 一旦我们自作主张映射成
+// `detect/ocr/inpaint`，将来引擎改阶段名时日志会继续显示旧名，而且看不出哪里不对。
+//
+// ⚠️ mock 档没有阶段帧（ver1.0 的自定义协议是单包响应）⇒ 该档下 `recentStageLog` 恒空。
+//    这是**如实的空**，不是"没实现"：诊断视图会显示"(本次运行尚无阶段日志)"。
+
+/** 环形缓冲上限。50 条 ≈ 4–5 张图的量，够看清"卡在哪一阶段" */
+const STAGE_LOG_MAX = 50;
+const STAGE_LOG = [];
+
+/** 记一条阶段（`seq` 是**服务端**的图片序号，不是引擎的） */
+export function pushStage(seq, text) {
+  const line = String(text ?? '').trim();
+  if (!line) return;
+  STAGE_LOG.push(`seq ${seq}: ${line.slice(0, 120)}`);
+  if (STAGE_LOG.length > STAGE_LOG_MAX) STAGE_LOG.splice(0, STAGE_LOG.length - STAGE_LOG_MAX);
+}
+
+/** 取尾部 `n` 条（新的在后）；`n <= 0` 取全部。给 `/engine/status` 用 */
+export function recentStageLog(n = 20) {
+  return n > 0 ? STAGE_LOG.slice(-n) : [...STAGE_LOG];
+}
+
+/** 清空。**只给验收夹具用**：让"这段日志确实来自本次请求"可被取证，而不是撞上上一轮的残留 */
+export function clearStageLog() {
+  STAGE_LOG.length = 0;
 }
 
 /**
@@ -173,10 +283,19 @@ function parseResultStream(body) {
     const code = body[off];
     const size = body.readUInt32BE(off + 1);
     if (off + 5 + size > body.length) { frames.push({ code, size, truncated: true }); break; }
-    frames.push({ code, size });
+    // 帧对象带 `text`：code 1/2 的载荷就是文本（阶段名 / 错误说明）。
+    // 只留 `{code,size}` 会让"进度帧"变成不可解释的计数 —— 而它是诊断视图里
+    // 「卡在哪一阶段」的唯一来源（§5.2 的 `recentStageLog`）。
+    // ⚠️ 截断到 200 字符：这些帧会随错误详情（`details.frames`）一起进响应体，
+    //    不设上限时一个话多的引擎能把错误回包撑到几百 KB。
+    const frame = { code, size };
     const data = body.subarray(off + 5, off + 5 + size);
     if (code === 0) result = data;
-    else if (code === 2) error = data.toString('utf8');
+    else if (code === 1 || code === 2) {
+      frame.text = data.toString('utf8').slice(0, 200);
+      if (code === 2) error = frame.text;
+    }
+    frames.push(frame);
     off += 5 + size;
   }
   return { result, error, frames };
@@ -202,6 +321,9 @@ async function realTranslateImage(bytes, opts) {
   if (res.status !== 200) throw normalizeHttpError(res.status, res.body);
 
   const { result, error, frames } = parseResultStream(res.body);
+  // 先记阶段、再判成败 —— 失败路径恰恰**最需要**知道"卡在哪个阶段"。
+  // 反过来写（成功才记）会让诊断视图在真正出问题的那张图上恰好是空的。
+  for (const f of frames) if (f.code === 1 && f.text) pushStage(seq, f.text);
   if (!result) {
     if (error) throw new EngineError('ENGINE_ERROR', `引擎报告：${error}`, { seq, frames });
     throw new EngineError('ENGINE_BAD_OUTPUT', '结果流里没有结果帧（code 0）', { seq, frames });
@@ -219,12 +341,16 @@ async function realTranslateImage(bytes, opts) {
 /**
  * 就绪**三重判定**（《04》§2.4 口径）：
  *   ① TCP 引擎端口在听            —— 否则 `stopped`（进程不在）
- *   ② HTTP `GET /queue-size` 200  —— 否则 `starting`（进程在、HTTP 层还没接客）
- *   ③ **执行器端口**（`port+1`）在听 —— 否则 `starting`（HTTP 在、翻译能力还没接客）
+ *   ② HTTP `POST /queue-size` 200 —— 否则 `starting`（进程在、HTTP 层还没接客）
+ *   ③ **执行器端口**（`port+1`）在听 —— 否则 `prewarming`（HTTP 在、翻译能力还没接客 = L3 预热）
  *
  * 为什么必须有 ③：`server/main.py:288` spawn 执行器时用 `args.port + 1`，而 `:270`
  * **spawn 后立即注册实例、不等端口就绪** ⇒ 只看 ①② 会把"执行器还在起"（torch 加载中，
  * 真机可达数十秒）误判成 `running`，于是**第一张必挂**。
+ *
+ * ③ 落在 §5.1 `sidecar.state` 的哪个枚举值上：`prewarming`（而非 `starting`）。
+ * 依据是《04》§10.2 映射表把"引擎启动中 / 加载模型"并列写成 `starting/prewarming`，
+ * 而这两件事在本探测里**分得开**，就没有理由合报成一个词。
  */
 async function realProbe() {
   const host = config.engineHost;
@@ -233,7 +359,7 @@ async function realProbe() {
   const EMPTY = placeholderFields();
 
   if (!(await probeTcp(host, port, probeMs))) {
-    return { state: 'stopped', port: null, engine: null, ...EMPTY };
+    return { state: 'stopped', port: null, engine: null, engineVersion: ENGINE_VERSION, ...EMPTY };
   }
 
   let httpOk = false;
@@ -242,13 +368,22 @@ async function realProbe() {
     const res = await requestOnce('/queue-size', { method: 'POST', timeoutMs: probeMs });
     httpOk = res.status === 200;
   } catch { /* 端口在听但还不接客（uvicorn 启动中）→ starting */ }
-  if (!httpOk) return { state: 'starting', port, engine: 'manga-image-translator', ...EMPTY };
+  if (!httpOk) {
+    // 进程在、HTTP 层还没接客 = uvicorn 启动中（§6.1 的 L1 之后、接客之前）
+    return { state: 'starting', port, engine: 'manga-image-translator', engineVersion: ENGINE_VERSION, ...EMPTY };
+  }
 
+  // ③ 未就绪**不等于**引擎未就绪（§10.2 把两者分别映射到「面板准备中，不报错」与「可翻译」）。
+  // 这里把"HTTP 已接客、执行器端口还没起"单列成 `prewarming`（§5.1 的枚举值）：
+  // 它对应的正是 §6.1 的 **L3 预热**——执行器在加载 torch/模型，真机可达数十秒。
+  // ⚠️ 报 `starting` 也不算谎，但会把"整个引擎还没起"和"就差最后一哆嗦"显示成同一句话；
+  //    而这两者对用户的意义不同（前者要等更久）。能分开就分开。
   const executorUp = await probeTcp(host, port + 1, probeMs);
   return {
-    state: executorUp ? 'running' : 'starting',
+    state: executorUp ? 'running' : 'prewarming',
     port,
     engine: 'manga-image-translator',
+    engineVersion: ENGINE_VERSION,
     ...EMPTY,
   };
 }
@@ -294,13 +429,14 @@ async function mockTranslateImage(bytes, opts) {
 
 async function mockProbe() {
   const EMPTY = placeholderFields();
+  const id = { engineVersion: ENGINE_VERSION };
   try {
     const res = await requestOnce('/ready', { method: 'GET', timeoutMs: config.engineProbeMs });
-    if (res.status !== 200) return { state: 'starting', port: config.enginePort, engine: null, ...EMPTY };
+    if (res.status !== 200) return { state: 'starting', port: config.enginePort, engine: null, ...id, ...EMPTY };
     const parsed = JSON.parse(res.body.toString('utf8'));
-    return { state: 'running', port: config.enginePort, engine: parsed.engine || null, ...EMPTY };
+    return { state: 'running', port: config.enginePort, engine: parsed.engine || null, ...id, ...EMPTY };
   } catch {
-    return { state: 'stopped', port: null, engine: null, ...EMPTY };
+    return { state: 'stopped', port: null, engine: null, ...id, ...EMPTY };
   }
 }
 
@@ -322,16 +458,20 @@ export async function translateImage(bytes, opts) {
 /**
  * sidecar 就绪探测（契约 §5.1 的 `sidecar.state`）：**不抛错**，只回答状态。
  *
- * 返回**形状扩展**（《04》§4.5）：`state/port/engine` 是 ver1.0 就有的（`/health` 的契约面
- * 到 S5 才扩字段，故 `server.mjs` 仍只挑这三个对外）；其余 6 个是**为 S2–S4 预留的槽位**：
- *   `engineVersion` ← S0 锁定的 commit（S2 从 `engine/VERSIONS.lock` 注入）
- *   `tier` / `accel` ← S4 硬件探测与加速后端
- *   `warmed` ← S2 预热状态   `llm` ← S2 llama-server 进程   `model` ← S3 模型就绪
- * **S1 阶段这 6 个一律为 `null`** —— 不是"已实现"，是"位置占好了"。
+ * 返回 **9 字段**（《03》§5.1 / §5.2 的 `sidecar` 契约面），其中：
+ *   · `state` / `port` / `engine` —— 进程事实（ver1.0 就有）
+ *   · `engineVersion`              —— **安装事实**（S5 起有值；S1 时是占位 null）
+ *   · `tier` / `accel` / `warmed` / `llm` / `model` —— **仍然恒为 null**
+ *     🔴 这 5 个是**服务级**事实（档位控制器 / 硬件探测 / ③ 的进程），只存在于 `server.mjs`。
+ *        它们**不在本文件里凑齐**，而是在 `server.mjs` 的 `composeSidecar()` 里合成 ——
+ *        本文件是「box-service ↔ 引擎」的耦合点，不该反过来持有 llama-server 的进程句柄。
+ *        把 5 个 null 从这里"顺手填上"会让两台机器（服务与引擎）的状态互相污染。
+ *
+ * ⚠️ 因此本函数**只回答引擎侧**的问题。要完整的 9 字段请走 `server.mjs` 的 `sidecarState()`。
  */
 export async function probeEngine() {
   if (config.sidecarDown) {
-    return { state: 'stopped', port: null, engine: null, ...placeholderFields() };
+    return { state: 'stopped', port: null, engine: null, engineVersion: ENGINE_VERSION, ...placeholderFields() };
   }
   return config.engineProtocol === 'mock' ? mockProbe() : realProbe();
 }
@@ -350,8 +490,6 @@ export async function probeEngine() {
  */
 /** `runtimes/manga-translator/`（`engineDir` 是它下面的 `src/`） */
 const ENGINE_RT = path.resolve(config.engineDir, '..');
-/** 仓库根 —— mock 侧的替身脚本在 `engine/src/` 下 */
-const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 
 /**
  * 引擎③（LLM）的**归属方** —— 《04》§9.1 规定 Tier1 空闲卸载「实现方 = box-service
