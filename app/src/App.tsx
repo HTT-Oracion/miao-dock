@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { apiPost, errorText, isApiError, openPath, quitApp, serviceRestart } from '@/ipc';
+import type { ServiceState } from '@/ipc';
 import { useLibrary, useQuitRequest, useService, useTasks, useToasts } from '@hooks';
 import { initialMode, persistMode, useThemeTokens } from '@/theme/apply';
 import type { ThemeMode } from '@/theme/tokens';
@@ -194,7 +195,7 @@ export function App() {
           ) : null}
 
           {showNotReady ? (
-            <NotReadyScreen status={status} onRestart={() => void restart()} />
+            <NotReadyScreen status={status} onRestart={() => void restart()} onToast={push} />
           ) : screen === 'music' ? (
             <MusicScreen />
           ) : screen === 'translate' ? (
@@ -250,7 +251,11 @@ export function App() {
   );
 }
 
-function ServicePill({ status }: { status: 'stopped' | 'starting' | 'running' | 'error' }) {
+/**
+ * 状态胶囊。参数类型直接用 `ServiceState`（而不是再抄一份字面量联合）——
+ * 抄一份的代价是 Rust 加第五态 `stopping` 时这里静默漏掉，`tsc` 反而报不出来。
+ */
+function ServicePill({ status }: { status: ServiceState }) {
   const v = stateView(status);
   return <Pill colorVar={v.colorVar}>{v.text}</Pill>;
 }

@@ -20,8 +20,10 @@ import os from 'node:os';
 
 /** 档位枚举（顺序 = 设置页展示顺序，由低到高） */
 export const TIERS = ['tiny', 'small', 'medium'];
-/** 实际生效的加速后端枚举（《03》§5.1 `sidecar.accel`） */
+/** 加速后端枚举（《03》§5.1 `sidecar.accel`） */
 export const ACCELS = ['cuda', 'mps', 'cpu'];
+/** 用户可选清单的完整取值（含 `auto`）—— 只在反证开关下会全量出现 */
+export const ACCELS_WITH_AUTO = ['auto', 'cuda', 'mps', 'cpu'];
 /** GPU 种类（《04》§7.1 `GpuKind`） */
 export const GPU_KINDS = ['cuda', 'metal', 'cpu'];
 
@@ -100,6 +102,76 @@ export function detectAccel(gpu) {
 export function accelLaunchFlags(accel) {
   const onCpu = accel === 'cpu';
   return { engineUseGpu: !onCpu, llmGpuLayers: onCpu ? 0 : -1 };
+}
+
+/** 加速后端的中文名（设置页与诊断视图共用一处文案，避免两处各写一套对不上） */
+export const ACCEL_LABELS = {
+  auto: '自动',
+  cuda: 'CUDA',
+  mps: 'MPS（Metal）',
+  cpu: 'CPU',
+};
+
+/**
+ * 解析**实际生效**的加速后端（S6 设置页「加速后端」的落地处）。
+ *
+ * ## 为什么不能"用户选什么就报什么"
+ * `sidecar.accel` 的用途是"让界面和事实对账"。若用户在 Metal 机器上选了 `cuda` 而我们如实
+ * 报 `cuda`，那就是**用一个假字段配一个假控件**：界面说 CUDA，实际跑的是 MPS，而两边都"绿"。
+ * 所以这里把"用户想选的"与"硬件能给的"合成一个**只能有一个答案**的结论，并且
+ * **把不一致显式报出来**（`mismatch`）—— 界面据此显示「已请求 CUDA，本机为 MPS」。
+ *
+ * ⚠️ 与 §7.4-3 的 `degraded` 是**两件事**，不要合并：
+ *    · `resolveAccel` 管的是"**后端选谁**"（静态，启动时定）；
+ *    · `degraded` 管的是"选了 GPU 却**实际回退到 CPU**"（动态，意味着性能下降 ⇒ 要告警）。
+ *    把"用户选了 cpu"也报成 degraded，会让人以为出故障了，而那是他自己选的。
+ *
+ * @param {{choice?:string, hardwareAccel?:string, useGpu?:boolean}} p
+ * @returns {{accel:string, degraded:boolean, mismatch:string|null, reason:string}}
+ */
+export function resolveAccel({ choice = 'auto', hardwareAccel = 'cpu', useGpu = true } = {}) {
+  // 「不许用 GPU」这一支优先：`accel=cpu`（用户设置）或 `MIAO_ENGINE_USE_GPU=0`（注入）都落这
+  if (useGpu === false) {
+    // 硬件本来是能跑 GPU 的 ⇒ 这是一次**回退**，§7.4-3 要求"不静默"，故 degraded
+    return {
+      accel: 'cpu',
+      degraded: hardwareAccel !== 'cpu',
+      mismatch: null,
+      reason: hardwareAccel === 'cpu' ? '硬件本就无 GPU' : `已回退 CPU（硬件推荐 ${hardwareAccel}）`,
+    };
+  }
+  if (choice === 'auto' || choice === hardwareAccel) {
+    return { accel: hardwareAccel, degraded: false, mismatch: null, reason: choice === 'auto' ? '按硬件探测' : '用户指定' };
+  }
+  // 用户指定了一个本机没有的后端。**不假装它生效**，也不静默丢掉 —— 报硬件事实 + 记下不一致。
+  return {
+    accel: hardwareAccel,
+    degraded: false,
+    mismatch: `已请求 ${choice}，本机可用后端为 ${hardwareAccel}`,
+    reason: '用户指定的后端在本机不可用，按硬件探测值执行',
+  };
+}
+
+/**
+ * 加速后端**候选项**（《02》§5：下拉「自动 / CUDA / MPS / CPU」，默认自动）。
+ *
+ * 「物理不可行的档位不出现」这条纪律同样适用于后端：Metal 机器上不列 CUDA
+ * —— 列出来就等于给一个点了不会有任何作用的选项（假控件比缺控件更伤）。
+ * `cpu` 恒在（它是唯一在任何机器上都成立的兜底）。
+ *
+ * @param {string} hardwareAccel 硬件探测出的后端
+ * @param {{all?:boolean}} [opts] `all` = **反证开关**：把四个都列出来（用来证明上面那条
+ *   筛选真的在起作用，而不是"恰好本机只有三项"）。
+ */
+export function accelOptions(hardwareAccel, { all = false } = {}) {
+  const order = all ? ACCELS_WITH_AUTO : ['auto', ...(hardwareAccel === 'cpu' ? [] : [hardwareAccel]), 'cpu'];
+  const labels = {
+    auto: `按硬件探测（本机 → ${ACCEL_LABELS[hardwareAccel] || hardwareAccel}）`,
+    cuda: 'NVIDIA 显卡（CUDA）',
+    mps: 'Apple Metal（MPS）',
+    cpu: '强制 CPU（最慢，但兼容性最好）',
+  };
+  return order.map((value) => ({ value, label: ACCEL_LABELS[value] || value, detail: labels[value] }));
 }
 
 /**

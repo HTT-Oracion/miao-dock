@@ -1,10 +1,15 @@
 #!/usr/bin/env node
 /**
- * 设置页「③ 播放·媒体」按「能实现 / 不能实现」重新裁定的**验收断言** —— 且必须**可反证**。
+ * 设置页的**验收断言**（设置页是唯一一屏"服务没起来也照常显示"的界面，见《09》§3.2）——
+ * 且必须**可反证**。
+ *
+ * 覆盖两组，因为它们的失效形态是同一类（**编译得过、不抛错、界面就是不对**）：
+ *   ③ 播放·媒体 ——「能实现 / 不能实现」重新裁定（EXCLUDED…CACHE 八组）
+ *   ② 翻译服务 —— 十项全部接真实能力 + 引擎诊断视图（ENGINE 一组）
  *
  * ## 为什么需要它
  *
- * 这次改动的本质是「把 5 项做不到的剔除、把 8 项能做到的补全」，它同时横跨五层，
+ * ③ 那次改动的本质是「把 5 项做不到的剔除、把 8 项能做到的补全」，它同时横跨五层，
  * 每层的静默失败各不相同：
  *
  *   CATALOG  app/src/screens/settings/catalog.ts        数据源（剔除了吗 / 补进了吗 / 项数对得上吗）
@@ -23,6 +28,13 @@
  * （「剔除『音频输出』：…」），这是文档而非数据。所以剔除判据落在「**设置项条目**」
  * 上（迭代出来的 `items[].id/label` 与引号包裹的 id/label 字面量），
  * 不会把 note 里那句说明误判成「剔除项又回来了」。
+ *
+ * ## ENGINE 组的两条通用手法（新增判据时优先复用）
+ *   · `stripComments()`：注释里能写、代码里不能写（或反过来）的判据必须先剥注释。
+ *     本仓注释密度高且大量引用类名/组件名，不剥会把"说明"当成"违规"（假红），
+ *     也会把注释里的举例当成实现（假绿）。
+ *   · **反向**取类名：从组件源码里抽出用到的类，逐个要求样式里有规则 ——
+ *     正向写清单测不到"组件用了新类但忘了写 CSS"，而那正是新增一整块 UI 时的常见空缺。
  *
  * 用法：
  *   node scripts/settings-media-check.mjs            正向跑（期望全绿）
@@ -47,8 +59,22 @@ const F = {
   musicScreen: path.join(APP, 'src', 'screens', 'MusicScreen.tsx'),
   main: path.join(APP, 'src', 'main.tsx'),
   // 「音乐缓存」通栏四格的实现（放 screens/settings/ 而非 components/units/ ——
-  // 后者的文件清单被 units-structure-check 的 MANIFEST 锁死为 11 个，多一个即红）
+  // 后者的文件清单被 units-structure-check 的 MANIFEST 锁死为 12 个，多一个即红）
   cacheBlock: path.join(APP, 'src', 'screens', 'settings', 'CacheBlock.tsx'),
+  // ② 翻译服务（S6）的四个新文件 + 两个被它复用的排版件
+  engineApi: path.join(APP, 'src', 'screens', 'settings', 'engine-api.ts'),
+  engineState: path.join(APP, 'src', 'screens', 'settings', 'engine-state.ts'),
+  engineDiag: path.join(APP, 'src', 'screens', 'settings', 'EngineDiag.tsx'),
+  modelManage: path.join(APP, 'src', 'screens', 'settings', 'ModelManageBlock.tsx'),
+  numberInput: path.join(APP, 'src', 'components', 'units', 'NumberInput.tsx'),
+  parts: path.join(APP, 'src', 'screens', 'settings', 'parts.tsx'),
+  specCheck: path.join(APP, 'src', 'screens', 'settings', 'SpecCheck.tsx'),
+  settingsScreen: path.join(APP, 'src', 'screens', 'SettingsScreen.tsx'),
+  // X-C3「准备中」屏（S6 的「L1–L4 文案 + 首张稍慢」）。它不在设置页里，
+  // 但它与设置页共享同一条事实源（Rust 的 StatusView），所以放同一轮断言。
+  notReady: path.join(APP, 'src', 'screens', 'NotReadyScreen.tsx'),
+  ipc: path.join(APP, 'src', 'ipc.ts'),
+  nav: path.join(APP, 'src', 'nav.ts'),
   // 断言读到的 css 是全分片拼接（见 loadSources）；本组无 css 反证条目，
   // 故无需指到具体分片 —— 留 stylesDir 供将来新增反证时定位。
   stylesDir: path.join(APP, 'src', 'styles'),
@@ -134,6 +160,17 @@ function loadSources() {
     musicScreen: readMaybe(F.musicScreen),
     main: readMaybe(F.main),
     cacheBlock: readMaybe(F.cacheBlock),
+    engineApi: readMaybe(F.engineApi),
+    engineState: readMaybe(F.engineState),
+    engineDiag: readMaybe(F.engineDiag),
+    modelManage: readMaybe(F.modelManage),
+    numberInput: readMaybe(F.numberInput),
+    parts: readMaybe(F.parts),
+    specCheck: readMaybe(F.specCheck),
+    settingsScreen: readMaybe(F.settingsScreen),
+    notReady: readMaybe(F.notReady),
+    ipc: readMaybe(F.ipc),
+    nav: readMaybe(F.nav),
     // 全分片拼接（顺序 = index.scss 的 @use 顺序 = 层叠顺序），
     // 不是读单个 app.css —— 样式已按模块拆分，读单文件会集体变红（读不到 ≠ 真回归）
     css: readStyleSource(F.stylesDir),
@@ -209,6 +246,45 @@ function skipLineComment(src, i) {
 function skipBlockComment(src, i) {
   const n = src.indexOf('*/', i + 2);
   return n < 0 ? src.length - 1 : n + 1;
+}
+
+/**
+ * 剥掉注释，保留其余字节 —— 用于「**注释里能写、代码里不能写**」这类判据。
+ *
+ * 为什么需要它：本仓的注释密度很高（每个非显然的决定都带一段说明），于是
+ * 「源码里出现过 xxx」这种判据会被注释里的举例骗过（假绿），
+ * 而「源码里不许出现 xxx」又会被注释里的引用误伤（假红）。
+ * 两个方向都有真实案例，所以需要一个**按语法剥注释**的版本，而不是用正则凑合。
+ *
+ * 字符串内容**保留**（不剥）：JSX 里 `{'**'}` 与属性值同样会渲染到界面上，
+ * 它们和裸文本一样属于"用户看得见的地方"。
+ *
+ * 实现直接复用上面的 `skipString` / `skipLineComment` / `skipBlockComment` ——
+ * 三份扫描逻辑若有分歧，判据就会在"某一种注释"上开始漂移。
+ */
+function stripComments(src) {
+  let out = '';
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '"' || c === "'" || c === '`') {
+      const j = skipString(src, i);
+      out += src.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
+    if (c === '/' && src[i + 1] === '/') {
+      i = skipLineComment(src, i); // 停在 `\n` 上，下一轮把它原样收进去
+      continue;
+    }
+    if (c === '/' && src[i + 1] === '*') {
+      i = skipBlockComment(src, i) + 1;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
 }
 
 /** 取 `const|let|var <name> = <{...}|[...]>` 的初始化区（对象/数组字面量） */
@@ -776,6 +852,595 @@ add('CACHE.zeroDisabled', 'CACHE', (ctx) => {
   };
 });
 
+// ============================ ⑨ ENGINE（② 翻译服务：推理引擎 / 模型与诊断） ============================
+/*
+ * 这一组守的是 ② 翻译服务**十项全部接真实能力**（《09》§4.3 / 《02》§5）
+ * 与「引擎诊断视图」（《09》§6.2）。
+ *
+ * 为什么它值得一整组断言：这十项的失效形态**全都不会报错** ——
+ *   · catalog 里标了 `live`、sections.tsx 里也写了控件，但控件绑的不是服务端字段
+ *     （渲染出来永远停在"读取中…"，或显示一个前端自己编的默认值）；
+ *   · 「已配置」与「已生效」被合成一个值（保存成功后下拉跳回旧值，用户只能得出"没存上"）；
+ *   · 数字框逐字符提交（想把 5 改成 30，中途那一下会先写成 3 —— 那是**真实生效**的写入）；
+ *   · 诊断面板的内部小标题复用了 `.set-subtitle`（规格自检 C11 的"恰好 3 个"从
+ *     "3"变成"3+5"，那条断言红得莫名其妙，等于废掉）；
+ *   · JSX 文本里漏出 markdown 的 `**`（界面上原样显示两个星号）。
+ * 每一条都编译得过、类型检查过、不抛错。只能靠断言钉住。
+ */
+
+/** ② 的三小节 id（顺序即渲染顺序，也是 C11 判据「恰 3 个 `.set-subtitle`」的来源） */
+const ENGINE_GROUPS = ['pairing', 'inference', 'model'];
+/** 三小节标题字面量 —— C11 同时校验文字，这里必须逐字同源 */
+const ENGINE_SUBTITLES = ['服务与配对', '推理引擎', '模型与诊断'];
+/** 面板内四个区块标题（第五个"操作"区由 `.set-diag-ops` 承载，它不是一个 DiagSection） */
+const DIAG_SECTIONS = ['进程状态', '生效配置', '模型状态', '最近阶段日志'];
+/** 诊断面板的三个操作按钮文案 */
+const DIAG_OPS = ['重启引擎', '重新下载模型', '强制释放模型'];
+
+/** 取 ② 的十项（真实数据结构，不是字符串） */
+function translateItems(ctx) {
+  const err = CAT_ERR(ctx.cat);
+  if (err) return { err, items: null, sec: null };
+  const sec = ctx.cat.mod.TRANSLATE;
+  return { err: null, items: flatItems(sec), sec };
+}
+
+add('ENGINE.items.tenAllLive', 'ENGINE', (ctx) => {
+  const { err, items, sec } = translateItems(ctx);
+  if (err) return { ok: false, detail: err };
+  const per = (sec.groups ?? []).map((g) => `${g.id}=${(g.items ?? []).length}`);
+  const problems = [];
+  if (items.length !== 10) problems.push(`项数 ${items.length}，应为 10（${per.join(', ')}）`);
+  // 每项都必须 live —— 十项里剩一项 pending，就意味着《09》§4.3 的"10 项"没落地
+  const notLive = items.filter((i) => i.state !== 'live').map((i) => i.id);
+  if (notLive.length) problems.push(`仍是 pending/其它态：${notLive.join(', ')}`);
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('ENGINE.groups.order', 'ENGINE', (ctx) => {
+  const { err, sec } = translateItems(ctx);
+  if (err) return { ok: false, detail: err };
+  const ids = (sec.groups ?? []).map((g) => g.id);
+  const exact = ids.length === ENGINE_GROUPS.length && ENGINE_GROUPS.every((g, i) => ids[i] === g);
+  const titles = (sec.groups ?? []).map((g) => g.title);
+  const titlesOk = ENGINE_SUBTITLES.every((t, i) => titles[i] === t);
+  return {
+    ok: exact && titlesOk,
+    detail: !exact
+      ? `② 小节应为 [${ENGINE_GROUPS.join(', ')}]（按此顺序），实为 [${ids.join(', ')}]`
+      : !titlesOk
+        ? `小节标题应为 [${ENGINE_SUBTITLES.join(' / ')}]，实为 [${titles.join(' / ')}]（C11 校验文字，须逐字一致）`
+        : '',
+  };
+});
+for (const [id, group] of [['ENGINE.layout.manageBlock', 'model-manage'], ['ENGINE.layout.diagBlock', 'engine-diag']]) {
+  add(id, 'ENGINE', (ctx) => {
+    const { err, items } = translateItems(ctx);
+    if (err) return { ok: false, detail: err };
+    const hit = items.find((i) => i.id === group);
+    if (!hit) return { ok: false, detail: `② 里缺项 id=${group}` };
+    return {
+      ok: hit.layout === 'block',
+      detail:
+        hit.layout === 'block'
+          ? ''
+          : `${group} 的 layout=${JSON.stringify(hit.layout)}，应为 'block'（否则会被包进 Row 的窄右列）`,
+    };
+  });
+}
+
+// —— 接线：sections.tsx 的 TranslateSection ——
+const tsBody = (ctx) => fnBody(ctx.s.sections, 'TranslateSection');
+
+add('ENGINE.wiring.threeSubTitles', 'ENGINE', (ctx) => {
+  const body = tsBody(ctx);
+  if (!body) return { ok: false, detail: 'sections.tsx 里找不到 TranslateSection 的实现体' };
+  const n = (body.match(/<SubTitle>/g) ?? []).length;
+  if (n !== 3) return { ok: false, detail: `TranslateSection 里有 ${n} 个 <SubTitle>，应恰为 3（C11 判据）` };
+  const missing = ENGINE_SUBTITLES.filter((t) => !body.includes(`<SubTitle>${t}</SubTitle>`));
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `小节标题缺字面量：${missing.join('、')}（C11 按文字校验）` : '',
+  };
+});
+add('ENGINE.wiring.tierConfiguredVsEffective', 'ENGINE', (ctx) => {
+  const body = tsBody(ctx) ?? '';
+  const problems = [];
+  // 控件显示的是**已配置**（用户在这里改"下次启动用哪档"）
+  if (!/tier\.configured/.test(body)) problems.push('没读 tier.configured（控件会显示不出已配置的那一档）');
+  // 旁边小字报的是**已生效**（引擎此刻在跑哪档）
+  if (!/tier\.effective/.test(body)) problems.push('没读 tier.effective（用户看不到改动是否已生效）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('ENGINE.wiring.tierKeepsConfigured', 'ENGINE', (ctx) => {
+  const body = tsBody(ctx) ?? '';
+  /*
+   * 判据是「已配置档**即使不在候选清单里也必须出现在选项里**」这条兜底分支。
+   * 只查"有 tierValue"会假绿 —— 兜底写了但没人用、或用了但没推进 options，都测不到。
+   * 这里锚在**渲染出来的那句标注**上（它同时也是用户能看见的证据）。
+   */
+  const ok = /tierOptions\.push\(/.test(body) && body.includes('（当前配置');
+  return {
+    ok,
+    detail: ok ? '' : '缺「已配置档不在清单里也要出现在选项里」的兜底（控件会显示成空白/裸 id）',
+  };
+});
+add('ENGINE.wiring.tierWarnFromServer', 'ENGINE', (ctx) => {
+  const body = tsBody(ctx) ?? '';
+  // 强警告条的**文案本身**必须来自服务端（`tierInfo.warning`），不是前端另编一句
+  const ok = body.includes('set-warn') && /tierInfo\.warning/.test(body);
+  return {
+    ok,
+    detail: ok ? '' : '「不推荐」档缺通栏强警告条，或警告文案不是取服务端的 `tierInfo.warning`',
+  };
+});
+add('ENGINE.wiring.accelMismatch', 'ENGINE', (ctx) => {
+  const body = tsBody(ctx) ?? '';
+  const ok = body.includes('accel.mismatch') && /notice is-bad/.test(body) && /accel\.reason/.test(body);
+  return {
+    ok,
+    detail: ok
+      ? ''
+      : '「用户指定的后端本机没有」没显示（或没说清实际按什么在跑）—— 用户会以为选的 CUDA 真的生效了',
+  };
+});
+add('ENGINE.wiring.idleNumberInputs', 'ENGINE', (ctx) => {
+  const body = tsBody(ctx) ?? '';
+  const n = (body.match(/<NumberInput/g) ?? []).length;
+  const problems = [];
+  if (n !== 2) problems.push(`<NumberInput> 有 ${n} 个，应为 2（两个空闲卸载阈值）`);
+  if (!/idleLlmMin:/.test(body)) problems.push('没有一项写 idleLlmMin');
+  if (!/idleVisionMin:/.test(body)) problems.push('没有一项写 idleVisionMin');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('ENGINE.wiring.idleNeverUnload', 'ENGINE', (ctx) => {
+  const body = tsBody(ctx) ?? '';
+  // 「0 = 从不卸载」这一条**两档都要写**：只写一处，另一处遇到 0 用户会以为是 bug
+  const n = (body.match(/从不卸载/g) ?? []).length;
+  return { ok: n >= 2, detail: n >= 2 ? '' : `「0 = 从不卸载」只出现 ${n} 处，两档都要写明` };
+});
+add('ENGINE.wiring.visionNeedsRestart', 'ENGINE', (ctx) => {
+  const body = tsBody(ctx) ?? '';
+  // 两档待遇不同（LLM 即时 / 视觉需重启）必须**在界面上说出来**，否则用户无法理解为何只有一条提示
+  const ok = body.includes('必须重启引擎');
+  return { ok, detail: ok ? '' : '视觉档没写明「必须重启引擎才生效」（与 LLM 档待遇不同，必须说出来）' };
+});
+add('ENGINE.wiring.restartHint', 'ENGINE', (ctx) => {
+  const body = tsBody(ctx) ?? '';
+  const ok = /<RestartHint\b/.test(body) && /set-hint/.test(ctx.s.sections);
+  return { ok, detail: ok ? '' : '缺「改完要重启」提示条（《09》§4.3 末句要求小节下方给提示）' };
+});
+add('ENGINE.wiring.modelDirGuarded', 'ENGINE', (ctx) => {
+  const body = tsBody(ctx) ?? '';
+  const disabled = /disabled=\{!o\.modelDir\.exists\}/.test(body);
+  const caught = /openPath\([^)]*\)[\s\S]{0,120}?\.catch\(/.test(ctx.s.sections);
+  return {
+    ok: disabled && caught,
+    detail: !disabled
+      ? '「打开」按钮没按 modelDir.exists 禁用（路径不存在时点了只会报错）'
+      : !caught
+        ? 'openPath 没有 .catch（失败时用户只看到一次静默的报错）'
+        : '',
+  };
+});
+add('ENGINE.wiring.accelLabelFallback', 'ENGINE', (ctx) => {
+  const body = tsBody(ctx) ?? '';
+  // 后端候选缺失时也要能显示已配置的那一个，不能露出 `mps` 这种裸 id
+  const ok = /ACCEL_LABEL\[/.test(body);
+  return { ok, detail: ok ? '' : '后端显示没有 ACCEL_LABEL 兜底（候选缺失时会露出 mps/cuda 这种裸 id）' };
+});
+add('ENGINE.wiring.failLoud', 'ENGINE', (ctx) => {
+  const body = tsBody(ctx) ?? '';
+  // catalog 与本组件不同步时必须抛错，而不是静默渲染成空行
+  const ok = /itemOf\(/.test(body);
+  return { ok, detail: ok ? '' : 'TranslateSection 未经 itemOf 取项（id 写错会静默渲染成空行）' };
+});
+
+// —— 接口收口 engine-api.ts ——
+add('ENGINE.api.sixEndpoints', 'ENGINE', (ctx) => {
+  const src = ctx.s.engineApi;
+  const need = [
+    '/engine/options',
+    '/engine/status',
+    '/engine/settings',
+    '/engine/unload',
+    '/engine/models/verify',
+    '/engine/models/download',
+  ];
+  const missing = need.filter((p) => !src.includes(`'${p}'`));
+  return { ok: missing.length === 0, detail: missing.length ? `② 的端点缺：${missing.join(', ')}` : '' };
+});
+
+// —— 数据源 hook engine-state.ts ——
+const hookBody = (ctx) => fnBody(ctx.s.engineState, 'useEngineState');
+
+add('ENGINE.hook.clearsOnError', 'ENGINE', (ctx) => {
+  const body = hookBody(ctx);
+  if (!body) return { ok: false, detail: 'engine-state.ts 里找不到 useEngineState 的实现体' };
+  const problems = [];
+  /*
+   * 拉取失败时必须把**两份数据都清成 null**。这是本项目典型的静默假绿：
+   * 服务重启的瞬间留着旧值，界面会显示"引擎 running"，而事实是服务都连不上 ——
+   * 用户对着一份过期快照排查，比什么都不显示更糟。
+   */
+  if (!/setOptions\(null\)/.test(body)) problems.push('失败时没 setOptions(null)（会显示上一次的旧值）');
+  if (!/setStatus\(null\)/.test(body)) problems.push('失败时没 setStatus(null)（会显示上一次的旧值）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('ENGINE.hook.pollOnlyWhenDownloading', 'ENGINE', (ctx) => {
+  const body = hookBody(ctx) ?? '';
+  const guarded = /if\s*\(\s*!downloadRunning\s*\)\s*return\b/.test(body);
+  const hasInterval = /setInterval\(/.test(body) && /clearInterval\(/.test(body);
+  return {
+    ok: guarded && hasInterval,
+    detail: !hasInterval
+      ? '下载进度不会自动刷新（没有 setInterval/clearInterval）'
+      : !guarded
+        ? '轮询没有「只在下载中」的守卫 —— 会常挂一个 2s 定时器（风扇转起来而用户不知道为什么）'
+        : '',
+  };
+});
+add('ENGINE.hook.verifyNotFailedWhenNotOk', 'ENGINE', (ctx) => {
+  const src = ctx.s.engineState;
+  const problems = [];
+  // `ok:false` 是"校验完成、发现不符"，不是操作失败 ⇒ 文案必须区分
+  if (!src.includes('校验完成')) problems.push('没有「校验完成」这一类文案（ok:false 会被说成失败）');
+  if (src.includes('校验失败')) problems.push('engine-state.ts 里出现了「校验失败」（该措辞属于 verifyError 分支）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+// —— 诊断面板 EngineDiag.tsx ——
+add('ENGINE.diag.notSubTitle', 'ENGINE', (ctx) => {
+  /*
+   * 面板内部小标题**不能**复用 `.set-subtitle` / `SubTitle`：
+   * 那个类名是规格自检 C11 数"② 有几个小节"的判据（恰 3 个）。
+   * ⚠️ 必须先剥注释再判 —— 本文件的注释里**就在讨论这件事**（写着 `SubTitle` 与 `.set-subtitle`），
+   * 直接搜字面量会把说明当成违规（而且删掉说明才能变绿，正好把判据引向错误的方向）。
+   */
+  const code = stripComments(ctx.s.engineDiag);
+  const problems = [];
+  if (code.includes('set-subtitle')) problems.push('面板里用了 .set-subtitle（C11 的"恰 3 个"会失效）');
+  if (/\bSubTitle\b/.test(code)) problems.push('面板里用了 SubTitle 组件');
+  if (!code.includes('set-diag-h')) problems.push('面板内部标题没有用 .set-diag-h');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('ENGINE.diag.fiveBlocksAndOps', 'ENGINE', (ctx) => {
+  const src = ctx.s.engineDiag;
+  const problems = [];
+  const missingSections = DIAG_SECTIONS.filter((t) => !src.includes(`<DiagSection title="${t}"`));
+  if (missingSections.length) problems.push(`区块缺：${missingSections.join('、')}`);
+  if (!src.includes('set-diag-ops')) problems.push('缺操作区（.set-diag-ops）');
+  const missingOps = DIAG_OPS.filter((t) => !src.includes(t));
+  if (missingOps.length) problems.push(`操作缺：${missingOps.join('、')}`);
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('ENGINE.diag.restartIsServiceRestart', 'ENGINE', (ctx) => {
+  const src = ctx.s.engineDiag;
+  /*
+   * 「重启引擎」必须真的调 `service_restart`（整条 ①②③ 链路），
+   * 不能是一个"只改状态/只刷界面"的假动作。② 由 Box 壳 spawn，
+   * box-service 是兄弟进程管不到它 —— 所以这个动作诚实的表述就是"重启整条链路"。
+   */
+  const ok = /await\s+serviceRestart\(\)/.test(src);
+  return { ok, detail: ok ? '' : '「重启引擎」没有调用 serviceRestart()（那就是一个点了不出事的假按钮）' };
+});
+add('ENGINE.diag.downloadDisabled', 'ENGINE', (ctx) => {
+  const src = ctx.s.engineDiag;
+  const ok = /scriptExists\s*===\s*false/.test(src) && /disabled=/.test(src);
+  return {
+    ok,
+    detail: ok ? '' : '「重新下载模型」没按 scriptExists===false 置灰（脚本不在盘上时点了只会换一条报错）',
+  };
+});
+add('ENGINE.diag.unknownStateSafe', 'ENGINE', (ctx) => {
+  const src = ctx.s.engineDiag;
+  /*
+   * ②/③ 的 state 是**引擎自己**报的字符串，四态机之外迟早会多出第五种。
+   * 若直接把它喂给 nav.ts 的 `stateView()`（签名收 `ServiceState`），
+   * 遇到未知态会返回 `undefined` ⇒ 读 `view.colorVar` 直接把整块面板渲染崩。
+   * 诊断视图崩在"最需要它的时候"是不可接受的，所以这里必须显式容忍未知态。
+   */
+  const mapped = /Record<string,\s*\{[^}]*colorVar[^}]*\}\s*\|\s*undefined>/.test(src);
+  const safe = /view\?\.text\s*\?\?\s*state/.test(src);
+  return {
+    ok: mapped && safe,
+    detail:
+      !mapped
+        ? '进程态映射表没有显式声明"可能不认识"（Record<string, … | undefined>）'
+        : !safe
+          ? '未知进程态回了 undefined 兜底（`view?.text ?? state` 缺失 ⇒ 遇到第五种态会整块崩）'
+          : '',
+  };
+});
+add('ENGINE.diag.stageLogReversed', 'ENGINE', (ctx) => {
+  const src = ctx.s.engineDiag;
+  const ok = /\[\.\.\.s\.recentStageLog\]\.reverse\(\)/.test(src);
+  return { ok, detail: ok ? '' : '阶段日志没逆序（最新的应该在最上面，否则用户要滚到底才看见刚发生的事）' };
+});
+
+// —— 模型管理块 ModelManageBlock.tsx ——
+add('ENGINE.manage.notOkNotFailed', 'ENGINE', (ctx) => {
+  const src = ctx.s.modelManage;
+  const problems = [];
+  /*
+   * 三句话必须分得开：
+   *   `v.ok`       → 「校验通过」
+   *   `!v.ok`      → 「校验完成：不符 X · 缺失 Y」（**调用成功**，是模型有问题）
+   *   verifyError  → 「校验失败」（这才是调用失败）
+   * 把前两者合成一句红色的"操作失败"，用户会去查网络与权限，而该做的是点「重新下载模型」。
+   */
+  if (!/\{v\.ok\s*\?/.test(src)) problems.push('没有按 v.ok 分支（发现不符会被当成操作失败）');
+  if (!src.includes('校验通过')) problems.push('缺「校验通过」文案');
+  if (!src.includes('校验完成')) problems.push('缺「校验完成」文案（ok:false 会被说成失败）');
+  if (!/校验失败：\{eng\.verifyError\}/.test(src)) problems.push('「校验失败」没有与 verifyError 绑定');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('ENGINE.manage.downloadDisabled', 'ENGINE', (ctx) => {
+  const src = ctx.s.modelManage;
+  const ok = /scriptExists\s*===\s*false/.test(src);
+  return { ok, detail: ok ? '' : '「重新下载模型」没按 scriptExists===false 置灰' };
+});
+add('ENGINE.manage.listCapped', 'ENGINE', (ctx) => {
+  const src = ctx.s.modelManage;
+  const capped = /slice\(0,\s*8\)/.test(src);
+  const restShown = /还有\s*\{rest\}\s*条/.test(src);
+  return {
+    ok: capped && restShown,
+    detail: !capped
+      ? '校验结果清单没有截断（几十行会把这一项撑成一整屏，把「引擎诊断」挤出视口）'
+      : !restShown
+        ? '清单截断后没告诉用户"还有 N 条"（看起来像结果就这么点）'
+        : '',
+  };
+});
+
+// —— 通用单元 NumberInput.tsx ——
+add('ENGINE.num.textNotNumber', 'ENGINE', (ctx) => {
+  /*
+   * ⚠️ 必须剥注释再判：`NumberInput.tsx` 的文件头**正在讨论**为什么不用
+   * `<input type="number">`，直接搜字面量会把这段说明当成违规（假红）——
+   * 而解红的方式竟是"把说明删掉"，那正好把判据引向最坏的方向。
+   */
+  const src = stripComments(ctx.s.numberInput);
+  if (src.includes('type="number"')) {
+    return { ok: false, detail: '用了 <input type="number">：空值会被读成 0（= 从不卸载），且箭头宽度平台相关' };
+  }
+  const ok = src.includes('type="text"') && src.includes('inputMode="numeric"');
+  return { ok, detail: ok ? '' : '不是 type="text" + inputMode="numeric"（见该文件头 ①②③）' };
+});
+add('ENGINE.num.rejectsEmpty', 'ENGINE', (ctx) => {
+  const src = ctx.s.numberInput;
+  /*
+   * `Number('')` 是 **0**，而 0 在本项目的语义是「从不卸载」。
+   * 所以空串必须**单独挡掉** —— 这是这个组件存在的首要理由。
+   */
+  const ok = /trim\(\)\s*!==\s*''/.test(src);
+  return { ok, detail: ok ? '' : '没有显式挡掉空串（把框清空会被读成"设为 0 = 从不卸载"，且无任何提示）' };
+});
+add('ENGINE.num.commitOnBlurOrEnter', 'ENGINE', (ctx) => {
+  const src = ctx.s.numberInput;
+  const onBlur = /onBlur=\{commit\}/.test(src);
+  const onEnter = /'Enter'/.test(src) && /commit\(\)/.test(src);
+  // 逐字符提交会让「5 → 30」的中途真的写成 3 分钟 —— 一次真实生效的写入
+  const perChar = /onChange=\{commit\}/.test(src);
+  const problems = [];
+  if (!onBlur) problems.push('没有 onBlur 提交');
+  if (!onEnter) problems.push('回车不提交');
+  if (perChar) problems.push('逐字符提交（改 5→30 会先写成 3，那是真实生效的写入）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+// —— 样式：组件用到的每个 set-diag-*/set-manage-*/set-warn/set-hint 类都必须有规则 ——
+add('ENGINE.css.classes', 'ENGINE', (ctx) => {
+  /*
+   * 反向判据：**从组件里把类名抽出来**，逐个要求样式里有对应规则。
+   * 正向（写一份清单去查）测不到"组件用了新类但忘了写 CSS" —— 而那正是
+   * 新增一整块 UI 时最常见的空缺，症状是元素照常渲染、只是完全没有样式。
+   */
+  const srcs = [ctx.s.sections, ctx.s.engineDiag, ctx.s.modelManage, ctx.s.parts].join('\n');
+  const used = new Set();
+  for (const m of srcs.matchAll(/\bset-(?:diag|manage|warn|hint)[a-z0-9-]*/g)) used.add(m[0]);
+  const css = ctx.s.css;
+  const missing = [...used].filter((c) => !css.includes(`.${c}`));
+  const problems = missing.map((c) => `.${c}`);
+  // `is-pending` 是状态修饰符，不在上面的前缀里，单独钉住
+  if (!css.includes('.set-hint.is-pending')) problems.push('.set-hint.is-pending');
+  return {
+    ok: problems.length === 0,
+    detail: problems.length ? `样式缺规则：${problems.join('、')}（元素会渲染成没有样式的裸文本）` : '',
+  };
+});
+
+// —— markdown 强调标记：必须被解析，且 JSX 裸文本里不许出现 ——
+add('ENGINE.emphasis.impl', 'ENGINE', (ctx) => {
+  const body = fnBody(ctx.s.parts, 'emphasis');
+  if (!body) return { ok: false, detail: 'parts.tsx 里找不到 emphasis 的实现体（catalog 文案里的 `**` 会被原样显示）' };
+  const problems = [];
+  if (!/split\('\*\*'\)/.test(body)) problems.push("没有按 '**' 分割");
+  // 成对的 `**` 才构成重点：落单时**原样保留**，不做"补一个"的猜测
+  if (!/%\s*2\s*===\s*0/.test(body)) problems.push('没有"落单 ** 原样保留"的奇偶校验（会把后半句整段加粗）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('ENGINE.emphasis.renderPoints', 'ENGINE', (ctx) => {
+  /*
+   * catalog 的 `note` / `why` / `blurb`、spec-check 的 `label` / `detail`
+   * 全都是**给用户看的文案**，全都含 `**` 标记。
+   * 只做解析器、不把渲染点全接上，等于什么都没修（而且更糟：以为修好了）。
+   * 所以要逐个渲染点断言它真的走了 `emphasis`。
+   */
+  const points = [
+    ['组级说明（note）', fnBody(ctx.s.parts, 'GroupNote'), 'emphasis(children)'],
+    ['标准行（why）', fnBody(ctx.s.parts, 'Row'), 'emphasis(item.why)'],
+    ['待接入行（why）', fnBody(ctx.s.parts, 'PendingRow'), 'emphasis(item.why)'],
+    ['通栏块（why）', ctx.s.modelManage, 'emphasis(item.why)'],
+    ['组标题下的 blurb', ctx.s.settingsScreen, 'emphasis(active.blurb)'],
+    ['规格自检 label/detail', ctx.s.specCheck, 'emphasis(r.label)'],
+  ];
+  const missing = points.filter(([, src, needle]) => !src || !src.includes(needle)).map(([n]) => n);
+  const specOk = /emphasis\(r\.detail\)/.test(ctx.s.specCheck);
+  if (!specOk) missing.push('规格自检 detail');
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `这些渲染点没走 emphasis：${missing.join('、')}` : '',
+  };
+});
+add('ENGINE.md.noRawAsterisks', 'ENGINE', (ctx) => {
+  /*
+   * JSX **裸文本**里没法经过 `emphasis`（它是散文，不是一整个字符串），
+   * 所以只能靠"不许出现"来守。判据必须先剥注释 —— 本仓注释里大量引用 `**`,
+   * 直接搜字面量会全红，而那种红是假红（会把真正的漏出埋在噪声里）。
+   */
+  const files = [
+    ['sections.tsx', ctx.s.sections],
+    ['EngineDiag.tsx', ctx.s.engineDiag],
+    ['ModelManageBlock.tsx', ctx.s.modelManage],
+    ['CacheBlock.tsx', ctx.s.cacheBlock],
+  ];
+  const hits = [];
+  for (const [name, src] of files) {
+    const code = stripComments(src);
+    code.split('\n').forEach((line, i) => {
+      if (line.includes('**')) hits.push(`${name}:${i + 1} ${line.trim().slice(0, 60)}`);
+    });
+  }
+  return {
+    ok: hits.length === 0,
+    detail: hits.length ? `JSX 裸文本里漏出 markdown 的 **（界面上会显示两个星号）：\n      ${hits.join('\n      ')}` : '',
+  };
+});
+
+// ================================================================ X-C3「准备中」
+//
+// 守 S6 的「L1–L4 文案 + 首张稍慢」（《02》§3/§4、《09》§6.1）。
+// 这一屏不在设置页里，但它和设置页共享**同一条事实源**：Rust 的 `StatusView`
+// （`phase` / `mode` / `children` / `degraded`）—— 所以放同一轮断言，
+// 免得"Rust 加了字段、TS 类型没跟"这类缺口两边都漏。
+
+/** 《02》§3 与《09》§6.1 两张表里**逐字一致**的四句用户感知文案 */
+const NOTREADY_TEXTS = [
+  ['L1', '正在检查运行环境'],
+  ['L2', '正在准备翻译模型'],
+  ['L3', '正在预热'],
+  ['L4', '首张稍慢，后续加快'],
+];
+
+add('NOTREADY.stages.texts', 'NOTREADY', (ctx) => {
+  const src = ctx.s.notReady;
+  const missing = NOTREADY_TEXTS.filter(([, t]) => !src.includes(`text: '${t}'`)).map(([id]) => id);
+  const at = NOTREADY_TEXTS.map(([id]) => src.indexOf(`id: '${id}'`));
+  const ordered = at.every((v, i) => v >= 0 && (i === 0 || v > at[i - 1]));
+  const problems = [];
+  if (missing.length) problems.push(`文案与方案表不一致（或缺失）：${missing.join('、')}`);
+  if (!ordered) problems.push('四段顺序不是 L1→L2→L3→L4');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+add('NOTREADY.stages.phaseDriven', 'NOTREADY', (ctx) => {
+  /*
+   * 这一条盯着本轮真实修掉的缺陷：早先进度是 `sidecar_port ? 2 : 1` —— 拿"引擎端口在不在"
+   * 猜阶段。两处必错：① 端口先于阶段就绪时把 L1 显示成 L2；② ② 已起但 ③ 还没答 HTTP 时
+   * L3 永远点不亮，用户看到的是"卡在第二段"。判据里必须**同时**有"读了 phase"与
+   * "旧写法已消失"，只判前者会让旧写法以旁路形式留下来。
+   */
+  const code = stripComments(ctx.s.notReady);
+  const problems = [];
+  if (!/status\?\.phase\s*\?/.test(code)) problems.push('没有读 status.phase');
+  if (!code.includes('PHASE_INDEX')) problems.push('没有 L1/L2/L3 → 阶段下标的映射表');
+  if (/sidecar_port\s*\?\s*2\s*:\s*1/.test(code)) {
+    problems.push('仍在用 sidecar_port 猜阶段（端口在听 ≠ 阶段已过）');
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+add('NOTREADY.l4.notStartup', 'NOTREADY', (ctx) => {
+  /*
+   * L4 不属启动期（《04》§4.5：引擎的准备/卸载/降档都不新增客户端状态机节点）。
+   * 它单列一支状态词「首图时完成」；沿用「待开始」会让用户以为卡在最后一段、
+   * 一直在等一段永远不会自己走完的进度。
+   */
+  const code = stripComments(ctx.s.notReady);
+  const problems = [];
+  if (!code.includes("STAGES[i]?.id === 'L4' ? '首图时完成' : '待开始'")) {
+    problems.push('L4 的状态词没有单列一支（会沿用「待开始」）');
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+add('NOTREADY.state.fiveStates', 'NOTREADY', (ctx) => {
+  /*
+   * Rust 的 `ServiceState` 是**五态**（S2 加了 `stopping`）。TS 侧漏同步的症状不是编译错，
+   * 而是运行期 `stateView()` 返回 `undefined`、调用方取 `.text` 直接崩 —— 且崩之前
+   * 表现为"状态点不显示"。所以两头都断言：类型定义与 `STATE_VIEW` 映射表。
+   */
+  const ipc = stripComments(ctx.s.ipc);
+  const nav = stripComments(ctx.s.nav);
+  const want = ['stopped', 'starting', 'running', 'stopping', 'error'];
+  const problems = [];
+  const m = ipc.match(/export type ServiceState\s*=\s*([^;]+);/);
+  if (!m) problems.push('ipc.ts 找不到 ServiceState 定义');
+  else {
+    const missing = want.filter((w) => !m[1].includes(`'${w}'`));
+    if (missing.length) problems.push(`ServiceState 缺：${missing.join('、')}`);
+  }
+  const missNav = want.filter((w) => !nav.includes(`${w}: { text:`));
+  if (missNav.length) problems.push(`nav.ts 的 STATE_VIEW 缺：${missNav.join('、')}`);
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+add('NOTREADY.wiring.modeDegraded', 'NOTREADY', (ctx) => {
+  /*
+   * 「以为在跑真引擎、其实跑的替身」是本项目最难查的一类故障（`mode` 存在的唯一理由）。
+   * 三进程 pid/alive 与 degraded 同理：状态屏的价值就是把它们摆到明面上。
+   */
+  const src = ctx.s.notReady;
+  const problems = [];
+  if (!src.includes('status?.mode')) problems.push('没有显示 status.mode');
+  if (!src.includes('status?.degraded')) problems.push('没有显示 degraded');
+  if (!src.includes('status?.children')) problems.push('没有显示三进程 pid/alive');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+add('NOTREADY.retry.byPhase', 'NOTREADY', (ctx) => {
+  /* 《02》§4「按失败阶段提供『重试当前阶段』（L2 失败给『重新下载模型』）」 */
+  const code = stripComments(ctx.s.notReady);
+  const problems = [];
+  if (!/failed\s*&&\s*status\?\.phase === 'L2'/.test(code)) {
+    problems.push("没有按失败阶段分派重试（L2 失败应给「重新下载模型」）");
+  }
+  if (!code.includes('downloadEngineModels')) problems.push('没有真正调用下载端点（按钮会是个摆设）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+add('NOTREADY.detail.noFabricatedProgress', 'NOTREADY', (ctx) => {
+  /*
+   * X-C3 只在 **box-service 自己没起来**时出现 —— 此刻没有任何 HTTP 通道可读下载进度。
+   * 所以"L1/L2 显示可量化进度"只能由**真实来源**满足：谁真的在打进度行，那一行就原样显示。
+   * 判据是"不许出现硬编码的字节/百分比字面量"，而不是"必须有进度" —— 后者会逼出编造。
+   */
+  const code = stripComments(ctx.s.notReady);
+  const problems = [];
+  if (!/lastLogLine\(status\?\.log\)/.test(code)) problems.push('L2 明细不是取自真实日志');
+  const fake = code.match(/['"][^'"]*?(?:\d[\d.]*\s*(?:GB|MB|KB)|[\d.]+\s*%)[^'"]*?['"]/g);
+  if (fake) problems.push(`出现了硬编码的进度数字：${fake.join('、')}`);
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+add('NOTREADY.css.classes', 'NOTREADY', (ctx) => {
+  /*
+   * 反向判据：从组件里把类名抽出来，逐个要求在样式表里有规则（同 ENGINE.css.classes 的理由）。
+   * ⚠️ 后缀必须吃 `[a-z0-9-]*`：只匹配到 `stage-meta` 的话，把类名改成
+   * `stage-meta-item-v2` 会**仍然命中**（`stage-meta` 前缀还在），反证就成了假反证。
+   */
+  const src = ctx.s.notReady;
+  const used = new Set();
+  for (const m of src.matchAll(/\bstage-(?:hint|detail|meta|meta-item)[a-z0-9-]*/g)) used.add(m[0]);
+  if (src.includes("'stage is-current'") || src.includes('is-failed')) used.add('stage.is-failed');
+  const missing = [...used].filter((c) => !ctx.s.css.includes(`.${c}`));
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `样式缺规则：${missing.map((c) => `.${c}`).join('、')}` : '',
+  };
+});
+
 // ── 执行器 ────────────────────────────────────────────────────────────────
 async function runAll() {
   const s = loadSources();
@@ -793,7 +1458,7 @@ async function runAll() {
   return res;
 }
 
-const GROUPS = ['EXCLUDED', 'ADDED', 'COUNT', 'WIRING', 'STORE', 'PLAYER', 'OPTIONS', 'CACHE'];
+const GROUPS = ['EXCLUDED', 'ADDED', 'COUNT', 'WIRING', 'STORE', 'PLAYER', 'OPTIONS', 'CACHE', 'ENGINE', 'NOTREADY'];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -1001,14 +1666,316 @@ const MUTATIONS = [
     replace: '  lyricsMode: undefined,',
     expect: ['STORE.default.lyricsMode'],
   },
+
+  /*
+   * ============================ ② 翻译服务（S6） ============================
+   *
+   * ② 这十项的失效形态全都**不报错**：编译过、类型过、页面照常渲染，只是内容不对。
+   * 所以每一条正向断言都必须配一次"把它破坏掉、看它变红"，否则正向断言本身
+   * 是不是有效（会不会恒绿）无从得知。
+   */
+  {
+    name: '把 ② 的「翻译档位」改成 pending（模拟十项里有一项没落地）',
+    file: F.catalog,
+    find: "          id: 'tier',\n          label: '翻译档位',\n          state: 'live',\n",
+    replace: "          id: 'tier',\n          label: '翻译档位',\n          state: 'pending',\n",
+    expect: ['ENGINE.items.tenAllLive'],
+  },
+  {
+    name: '把 ② 第三小节 id 改错（小节结构被破坏，C11 的"恰 3 个"会跟着失守）',
+    file: F.catalog,
+    find: "      id: 'model',\n",
+    replace: "      id: 'modelx',\n",
+    expect: ['ENGINE.groups.order'],
+  },
+  {
+    name: '把「模型管理」的 layout 字段去掉（会被 Row 压成两栏窄列）',
+    file: F.catalog,
+    find: '          // 通栏块：校验结果是一份"哪几个不符/缺失"的清单，塞不进 Row 的窄右列\n          layout: \'block\',\n',
+    replace: '',
+    expect: ['ENGINE.layout.manageBlock'],
+  },
+  {
+    name: '把「引擎诊断」的 layout 字段去掉（一整块面板会被压成一行）',
+    file: F.catalog,
+    find: '          // 通栏块：进程表 / 参数 / 模型 / 阶段日志 / 三个操作，是一整块面板而非一行\n          layout: \'block\',\n',
+    replace: '',
+    expect: ['ENGINE.layout.diagBlock'],
+  },
+  {
+    name: '删掉「模型与诊断」小节标题（C11 的小节数不再对得上）',
+    file: F.sections,
+    find: '        <SubTitle>模型与诊断</SubTitle>\n',
+    replace: '',
+    expect: ['ENGINE.wiring.threeSubTitles'],
+  },
+  {
+    name: '把「引擎此刻在跑哪档」改成读已配置的值（已配置与已生效被合成一个）',
+    file: F.sections,
+    /*
+     * ⚠️ 反证必须打在**数据绑定**上，不能打在文案上。
+     * 第一版写成把 `引擎正在跑：` 换个说法 —— 那句话变了，但 `tier.effective` 还在，
+     * 断言照旧是绿的，于是这条反证成了**假反证**（看起来覆盖到了，其实什么都没测到）。
+     * `all` 是必须的：`o.tier.effective` 在相等/不相等两个分支里各出现一次，
+     * 只改第一处，另一处仍然是 effective ⇒ 仍然绿。
+     */
+    find: 'o.tier.effective',
+    replace: 'o.tier.configured',
+    all: true,
+    expect: ['ENGINE.wiring.tierConfiguredVsEffective'],
+  },
+  {
+    name: '删掉「已配置档也要出现在选项里」的兜底（控件会显示成空白/裸 id）',
+    file: F.sections,
+    find: '（当前配置',
+    replace: '（不在清单',
+    expect: ['ENGINE.wiring.tierKeepsConfigured'],
+  },
+  {
+    name: '让「不推荐」档的强警告不取服务端文案（前端另编一句）',
+    file: F.sections,
+    find: 'tierInfo.warning',
+    replace: 'tierInfo.tier',
+    expect: ['ENGINE.wiring.tierWarnFromServer'],
+  },
+  {
+    name: '删掉「用户指定的后端本机没有」的红条（用户会以为选的 CUDA 真的在跑）',
+    file: F.sections,
+    find: 'accel.mismatch',
+    replace: 'accel.effective',
+    all: true,
+    expect: ['ENGINE.wiring.accelMismatch'],
+  },
+  {
+    name: '把视觉档的空闲卸载也写成即时生效（两档待遇被混同）',
+    file: F.sections,
+    find: '必须重启引擎',
+    replace: '保存后即生效',
+    expect: ['ENGINE.wiring.visionNeedsRestart'],
+  },
+  {
+    name: '删掉两处「0 = 从不卸载」的说明（0 会被当成 bug 而不是设计）',
+    file: F.sections,
+    find: '从不卸载',
+    replace: '空闲即释放',
+    all: true,
+    expect: ['ENGINE.wiring.idleNeverUnload'],
+  },
+  {
+    name: '删掉「改完要重启」的提示条（《09》§4.3 末句要求小节下方给提示）',
+    file: F.sections,
+    find: '<RestartHint title="推理引擎"',
+    replace: '<RestartHint2 title="推理引擎"',
+    expect: ['ENGINE.wiring.restartHint'],
+  },
+  {
+    name: '去掉「打开模型目录」的存在性守卫（路径不存在时点了只会报错）',
+    file: F.sections,
+    find: 'disabled={!o.modelDir.exists}',
+    replace: 'disabled={false}',
+    expect: ['ENGINE.wiring.modelDirGuarded'],
+  },
+  {
+    name: '从 engine-api 里摘掉一个端点（形状收口不再完整）',
+    file: F.engineApi,
+    find: "'/engine/unload'",
+    replace: "'/engine/unload-v2'",
+    expect: ['ENGINE.api.sixEndpoints'],
+  },
+  {
+    name: '拉取失败时不再清空旧值（界面会显示一份过期快照）',
+    file: F.engineState,
+    find: '      setStatus(null);',
+    replace: '      void 0;',
+    expect: ['ENGINE.hook.clearsOnError'],
+  },
+  {
+    name: '去掉下载轮询的「只在下载中」守卫（会常挂一个 2s 定时器）',
+    file: F.engineState,
+    find: '    if (!downloadRunning) return undefined;',
+    replace: '    if (false) return undefined;',
+    expect: ['ENGINE.hook.pollOnlyWhenDownloading'],
+  },
+  {
+    name: '把「校验完成（发现不符）」说成「校验失败」（用户会去查网络而不是点重下）',
+    file: F.engineState,
+    find: '校验完成',
+    replace: '校验失败',
+    all: true,
+    expect: ['ENGINE.hook.verifyNotFailedWhenNotOk'],
+  },
+  {
+    name: '把诊断面板的内部小标题换成 SubTitle（C11 的"恰 3 个"会失效）',
+    file: F.engineDiag,
+    find: '<div className="set-diag-h">{title}</div>',
+    replace: '<SubTitle>{title}</SubTitle>',
+    expect: ['ENGINE.diag.notSubTitle'],
+  },
+  {
+    name: '把「重启引擎」改成只刷界面（一个点了不出事的假按钮）',
+    file: F.engineDiag,
+    find: 'await serviceRestart();',
+    replace: 'await eng.reload();',
+    expect: ['ENGINE.diag.restartIsServiceRestart'],
+  },
+  {
+    name: '去掉「重新下载模型」的置灰（脚本不在盘上时点了只换一条报错）',
+    file: F.engineDiag,
+    find: 's?.modelDownload?.scriptExists === false',
+    replace: 'false',
+    all: true,
+    expect: ['ENGINE.diag.downloadDisabled'],
+  },
+  {
+    name: '让诊断面板在遇到未知进程态时直接崩（引擎报第五种态就白屏）',
+    file: F.engineDiag,
+    find: '{view?.text ?? state}',
+    replace: '{view.text}',
+    expect: ['ENGINE.diag.unknownStateSafe'],
+  },
+  {
+    name: '去掉阶段日志的逆序（最新一条沉到最下面）',
+    file: F.engineDiag,
+    find: '[...s.recentStageLog].reverse()',
+    replace: 's.recentStageLog',
+    expect: ['ENGINE.diag.stageLogReversed'],
+  },
+  {
+    name: '把「校验通过」与「校验完成」合成一句（模型有问题会被当成操作失败）',
+    file: F.modelManage,
+    /*
+     * ⚠️ 锚点必须是 `v.ok` 而不是 `v.ok ?` —— 后者只覆盖**其中一处**：
+     * 两处判据在源码里长得不一样（`className={v.ok ? …}` 与换行后的 `{v.ok\n ? …}`），
+     * 而断言判的是 `\{v\.ok\s*\?`（`\s` 含换行，两处都算）。
+     * 只改一处 ⇒ 另一处仍然命中 ⇒ 断言照旧绿 ⇒ **假反证**。
+     * 教训：破坏锚点要覆盖"让断言为真的**全部**来源"，不是"最像的那个"。
+     */
+    find: 'v.ok',
+    replace: 'true',
+    all: true,
+    expect: ['ENGINE.manage.notOkNotFailed'],
+  },
+  {
+    name: '去掉校验结果清单的截断（几十行会把这一项撑成一整屏）',
+    file: F.modelManage,
+    find: 'v?.problems.slice(0, 8) ?? []',
+    replace: 'v?.problems ?? []',
+    expect: ['ENGINE.manage.listCapped'],
+  },
+  {
+    name: '把数字框换回 <input type="number">（空值会被读成 0 = 从不卸载）',
+    file: F.numberInput,
+    // `all`：文件头**正在讨论**这件事，注释里也写着 `type="text"`；只改第一处会改到注释上
+    find: 'type="text"',
+    replace: 'type="number"',
+    all: true,
+    expect: ['ENGINE.num.textNotNumber'],
+  },
+  {
+    name: '去掉空串守卫（把框清空 = 设为 0 = 从不卸载，且无任何提示）',
+    file: F.numberInput,
+    find: "draft.trim() !== '' && ",
+    replace: '',
+    expect: ['ENGINE.num.rejectsEmpty'],
+  },
+  {
+    name: '把提交改成逐字符（改 5→30 的中途会真的写成 3 分钟）',
+    file: F.numberInput,
+    find: 'onBlur={commit}',
+    replace: 'onChange={commit}',
+    expect: ['ENGINE.num.commitOnBlurOrEnter'],
+  },
+  {
+    name: '让诊断面板用一个不存在的样式类（元素照常渲染，只是没有样式）',
+    file: F.engineDiag,
+    find: 'className="set-diag-ops"',
+    replace: 'className="set-diag-ops-v2"',
+    expect: ['ENGINE.css.classes'],
+  },
+  {
+    name: '去掉 emphasis 的奇偶校验（落单的 ** 会把后半句整段加粗）',
+    file: F.parts,
+    find: '  if (parts.length % 2 === 0) return text;\n',
+    replace: '',
+    expect: ['ENGINE.emphasis.impl'],
+  },
+  {
+    name: '让组级说明（note）不走 emphasis（界面上会原样显示两个星号）',
+    file: F.parts,
+    find: 'return <div className="set-note">{emphasis(children)}</div>;',
+    replace: 'return <div className="set-note">{children}</div>;',
+    expect: ['ENGINE.emphasis.renderPoints'],
+  },
+  {
+    name: '在 JSX 裸文本里塞回一个 markdown 粗体（这是本轮真实修掉的那个缺陷）',
+    file: F.sections,
+    find: '          0 = <b>从不卸载</b>。这一档由 box-service 自己看护，保存后<b>立刻生效</b>，不需要重启。',
+    replace: '          0 = **从不卸载**。这一档由 box-service 自己看护，保存后<b>立刻生效</b>，不需要重启。',
+    expect: ['ENGINE.md.noRawAsterisks'],
+  },
+
+  // —— X-C3「准备中」 ——
+  {
+    name: '给 L2 编一个字节进度（X-C3 此刻读不到任何 HTTP，编出来的数字就是撒谎）',
+    file: F.notReady,
+    find: "{ id: 'L2', text: '正在准备翻译模型' },",
+    replace: "{ id: 'L2', text: '正在准备翻译模型 · 2.1/4.6 GB' },",
+    expect: ['NOTREADY.detail.noFabricatedProgress'],
+  },
+  {
+    name: '退回用 sidecar_port 猜阶段（端口先于阶段就绪时 L1 会显示成 L2）',
+    file: F.notReady,
+    find: "  const reached = state === 'running' ? STAGES.length : idx;",
+    replace: "  const reached = state === 'running' ? STAGES.length : status?.sidecar_port ? 2 : 1;",
+    expect: ['NOTREADY.stages.phaseDriven'],
+  },
+  {
+    name: 'L4 的状态词退回「待开始」（用户会以为卡在最后一段、一直在等它走完）',
+    file: F.notReady,
+    find: "STAGES[i]?.id === 'L4' ? '首图时完成' : '待开始'",
+    replace: "'待开始'",
+    expect: ['NOTREADY.l4.notStartup'],
+  },
+  {
+    name: 'TS 侧把第五态 stopping 删掉（Rust 已是五态；stateView() 会返回 undefined 而崩）',
+    file: F.ipc,
+    find: "export type ServiceState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error';",
+    replace: "export type ServiceState = 'stopped' | 'starting' | 'running' | 'error';",
+    expect: ['NOTREADY.state.fiveStates'],
+  },
+  {
+    name: '重试不再按失败阶段分派（L2 失败时用户只会把同一件坏掉的事重做一遍）',
+    file: F.notReady,
+    // `all`：主按钮的渲染条件与它的 kind 两处都写了这个判据，只改一处仍是绿的
+    find: "failed && status?.phase === 'L2'",
+    replace: 'false',
+    all: true,
+    expect: ['NOTREADY.retry.byPhase'],
+  },
+  {
+    name: '不显示 status.mode（"以为在跑真引擎、其实跑的替身"重新变成查不出来的事）',
+    file: F.notReady,
+    find: "status?.mode ?? '—'",
+    replace: "'—'",
+    expect: ['NOTREADY.wiring.modeDegraded'],
+  },
+  {
+    name: '让状态屏用一个不存在的样式类（元素照常渲染，只是没有样式）',
+    file: F.notReady,
+    // `all`：五个 meta 项共用同一个类名，只改一处仍然命中样式表
+    find: '<span className="stage-meta-item">',
+    replace: '<span className="stage-meta-item-v2">',
+    all: true,
+    expect: ['NOTREADY.css.classes'],
+  },
 ];
 
 // ── 主流程 ────────────────────────────────────────────────────────────────
 const refute = process.argv.includes('--refute');
 
-console.log('设置页 · ③ 播放·媒体「能实现/不能实现」重新裁定断言' + (refute ? ' · 反证轮' : ''));
+console.log('设置页断言（③ 播放·媒体「能实现/不能实现」重新裁定 + ② 翻译服务十项与引擎诊断）' + (refute ? ' · 反证轮' : ''));
 console.log(`根目录：${ROOT}`);
-console.log(`断言总数：${A.length}（EXCLUDED/ADDED/COUNT/WIRING/STORE/PLAYER/OPTIONS/CACHE）`);
+console.log(`断言总数：${A.length}（EXCLUDED/ADDED/COUNT/WIRING/STORE/PLAYER/OPTIONS/CACHE/ENGINE/NOTREADY）`);
 
 if (!refute) {
   const res = await runAll();
@@ -1046,7 +2013,14 @@ if (!refute) {
         okApply = false;
         skipped += mut.expect.length;
       } else {
-        writeFileSync(mut.file, txt.replace(mut.find, mut.replace));
+        /*
+         * `all: true` 用于「同一处改错在代码里天然出现两遍」的情形
+         * （例如两个分支里各写了一遍同样的文案、或注释里也引用了同一段示例）。
+         * 此时只改第一处是不够的：断言仍然绿，于是这条反证变成**假反证** ——
+         * 它看起来覆盖到了，其实什么都没测到。这类"看起来做了反证"比不做更危险。
+         */
+        const next = mut.all ? txt.split(mut.find).join(mut.replace) : txt.replace(mut.find, mut.replace);
+        writeFileSync(mut.file, next);
       }
       if (okApply) {
         const res = await runAll();

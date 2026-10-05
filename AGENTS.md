@@ -70,7 +70,7 @@ npm run check:e5e6[:refute]    # S4 端到端 E5/E6：真服务 + 真引擎 + �
 npm run check:contract[:refute] # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status，77 条（8 个实例场景 A–H）/ 逃生开关反证 4 条（各约 3s / 2s）
 node service/scripts/llm-real-timing.mjs  # 真 ③（llama-server）冷启动与内存实测（**真权重，分钟级，不进常规门**）
 npm run check:music[:refute]  # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 215 条 / 反证 180 条
-npm run check:settings[:refute] # 设置页「播放·媒体」90 条 / 反证 24 条
+npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ X-C3「准备中」134 条 / 反证 62 条
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条 / 反证 44 条
 cd app && npx tsc --noEmit && npx vite build   # 前端类型与构建
 cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）

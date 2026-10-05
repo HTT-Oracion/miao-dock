@@ -82,7 +82,7 @@ npm run check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲
 npm run check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，13 条 / 逃生开关反证 2 条（约 25s）
 npm run check:contract        # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status 77 条（反证：check:contract:refute）
 npm run check:music           # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 215 条（反证：check:music:refute）
-npm run check:settings        # 设置页「播放·媒体」裁定结果 90 条（反证：check:settings:refute）
+npm run check:settings        # 设置页「播放·媒体」+「翻译服务」+ X-C3 裁定结果 134 条（反证：check:settings:refute，62 条）
 npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条（反证：check:units:refute）
 ```
 

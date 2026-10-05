@@ -5,6 +5,7 @@ import { SETTINGS } from '@/theme/tokens';
 import { SETTINGS_SECTIONS, parseSection, sectionItemCount } from '@screens/settings/catalog';
 import type { SectionId } from '@screens/settings/catalog';
 import { SECTION_ICON } from '@screens/settings/icons';
+import { emphasis } from '@screens/settings/parts';
 import { SpecFixtureHost } from '@screens/settings/SpecCheck';
 import { AboutSection, GeneralSection, MediaSection, ResourceSection, TranslateSection } from '@screens/settings/sections';
 
@@ -120,7 +121,7 @@ export function SettingsScreen({
             <div className="settings-title" style={{ fontSize: SETTINGS.pageTitleSize }}>
               {active.name}
             </div>
-            <div className="settings-blurb">{active.blurb}</div>
+            <div className="settings-blurb">{emphasis(active.blurb)}</div>
           </header>
 
           {active.id === 'general' ? (

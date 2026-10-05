@@ -3,21 +3,24 @@
 // 与 `miao-trans/mock-service` 同源（同契约）：差异集中在「真实化」——
 // 令牌 CSPRNG、落盘根目录归位、sidecar 由真实探测（而非计时器模拟）、翻译走引擎。
 import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 
 import {
-  API_VERSION, BASE_PATH, BATCH_LIMIT, ORIGINAL_SCAN_RE, ROOT_DIR,
+  API_VERSION, BASE_PATH, BATCH_LIMIT, ENGINE_SETTINGS_FILE, ORIGINAL_SCAN_RE, ROOT_DIR,
   SERVICE_NAME, SERVICE_VERSION, STATE_DIR, TASKS_STATE_DIR, TRANSLATED_SCAN_RE,
-  TOKEN_FILE, assertInsideRoot, config, validateRoot,
+  TOKEN_FILE, assertInsideRoot, config, engineSettingsFile,
+  readIdleSettings, validateRoot,
 } from './config.mjs';
 import { ApiError, errorEnvelope, permissionDenied } from './errors.mjs';
 import {
   ENGINE_VERSION, engineConfigSnapshot, probeEngine, recentStageLog, resolveLlmLaunch,
   availableTiers, TIER_LLM_MODELS,
 } from './engine-client.mjs';
-import { probeHardware } from './engine-profile.mjs';
+import { EngineSettingsError, RESTART_REQUIRED_KEYS, assertPatch, readEngineSettings, writeEngineSettings } from './engine-settings.mjs';
+import { ACCEL_LABELS, TIERS as TIERS_ALL, TIER_PEAK_GB, accelOptions, probeHardware, resolveAccel, tierOptions } from './engine-profile.mjs';
 import { createIdleWatcher } from './idle-policy.mjs';
 import { LlmSupervisor } from './llm-supervisor.mjs';
 import { modelStatus } from './model-status.mjs';
@@ -80,7 +83,16 @@ function composeSidecar(probe) {
   // 判据两边都在本进程可观测（硬件推荐什么 / 我们实际让引擎用了什么），
   // 不需要谁额外来通知我们"刚才回退了"——这正是把回退**做成可由 env 驱动**的好处：
   // Rust 侧一旦检测到 GPU 启动失败并改用 `MIAO_ENGINE_USE_GPU=0` 重拉，这里自动就报 degraded。
-  const accelDegraded = hardwareAccel !== 'cpu' && !config.engineUseGpu;
+  //
+  // S6：后端从"硬件探测的产物"升级为"用户选择 ⊕ 硬件事实"的合成结果（`resolveAccel`）。
+  // 合成放在这里而不是启动时算一次，是因为 `/health` 每条都要它 —— 而它是一次纯计算，
+  // 比"记住一个可能过期的模块级变量"更不易错（`/engine/options` 用的是同一个函数，两边不可能分叉）。
+  const accelEff = resolveAccel({
+    choice: config.engineAccel,
+    hardwareAccel,
+    useGpu: config.engineUseGpu,
+  });
+  const accelDegraded = accelEff.degraded;
   const state = accelDegraded && probe.state === 'running' ? 'degraded' : probe.state;
   const up = state !== 'stopped' && state !== 'error' && state !== 'downloading';
   // ⚠️ `currentTier` 是**取值函数**（`tier-downgrade.mjs` 暴露的是 `currentTier: () => current`），
@@ -99,7 +111,7 @@ function composeSidecar(probe) {
     model: up ? (snap.model ?? TIER_LLM_MODELS[tier] ?? null) : null,
     // 实际生效的后端（§7.4-3 的"记录实际生效后端"）。GPU 被关掉时报 `cpu`，
     // **不报"本该是什么"** —— `/engine/status` 的用途就是拿界面和事实对账。
-    accel: accelDegraded ? 'cpu' : hardwareAccel,
+    accel: accelEff.accel,
     // 🔴 `warmed` = 「现在提交任务能不能全速开工」= 引擎② 三重就绪 **且** ③ 在跑。
     //    它与 `state` **不冗余**，正是 §9.4「卸载 ≠ 未就绪」在字段层面的体现：
     //    ③ 被空闲卸载后 `state` 仍是 `running`（进程在），但 `warmed` 转 false ⇒
@@ -167,13 +179,155 @@ const PREPARING_STATES = new Set(['starting', 'prewarming', 'downloading']);
 /** 可翻译的状态：`running` 之外，`degraded`（GPU 回退 CPU，§7.4-3）**依然能跑**，只是慢 */
 const AVAILABLE_STATES = new Set(['running', 'degraded']);
 
-/** 模型根目录 / 清单 —— 与 `engine/scripts/fetch-models.mjs` 用同一套取值规则（含 env 覆盖） */
-const MODEL_ROOT = process.env.MIAO_MODEL_ROOT || path.resolve(config.engineDir, '..');
+/**
+ * 模型根目录 / 清单 —— 与 `engine/scripts/fetch-models.mjs` 用**同一套取值规则**。
+ *
+ * S6 起由 `config.engineModelDir` 唯一给出（env `MIAO_MODEL_ROOT` → 设置文件 `modelDir`
+ * → 引擎源码树上一级）。这里**不再自己拼一份**：以前是本文件内联
+ * `process.env.MIAO_MODEL_ROOT || path.resolve(config.engineDir, '..')`，
+ * 一旦设置页可改模型目录，那份内联就会和 config 各说各话（服务读 A、诊断显示 B）。
+ */
+const MODEL_ROOT = config.engineModelDir;
 // `MIAO_MODEL_MANIFEST` 是**验收夹具的接缝**：不改清单内容就没法在"模型齐 / 模型缺"两种
 // 盘况之间切换，而这两条分支各对应一个不同的 503 错误码（要分别断言）。
 // ⚠️ 与 `MIAO_MODEL_ROOT` 成对使用；产品路径不设置它（清单永远是入库的那一份）。
 const MODEL_MANIFEST = process.env.MIAO_MODEL_MANIFEST
   || path.join(path.resolve(import.meta.dirname, '..', '..'), 'engine', 'models.manifest.json');
+
+/**
+ * 「重新下载模型」的执行体（《02》§5 模型管理的两个动作之一）。
+ *
+ * ## 为什么必须是一条**真的**任务，而不是一个"点了就转圈"的按钮
+ * `POST /engine/models/verify` 几分钟就能回来（读完 5–8 GB 的哈希），但**下载**动辄
+ * 十几分钟到几十分钟 —— 让 HTTP 请求一直挂着有三个后果：代理/客户端先超时、
+ * 界面无法显示进度、服务端无法回答"它还在跑吗"。所以这里做成
+ * **一次性启动 + 状态可查**：POST 立即返回，进度从 `/engine/status.modelDownload` 读。
+ *
+ * ## 为什么单飞（同一时刻只允许一个）
+ * `model-store.mjs` 的续传靠 `<dest>.part` 文件。两个下载同时跑会往同一批 `.part`
+ * 里写、互相截断；**失败形态是"下完了、哈希不对"**，而它看起来像"网络坏了"。
+ * 与其事后归因，不如在入口 409 掉。
+ *
+ * ## 夹具接缝
+ * `MIAO_MODEL_DOWNLOAD_SCRIPT` 覆盖被执行的脚本 —— 与 `MIAO_MODEL_MANIFEST` 同一手法。
+ * 没有它，验收就得**真下几个 GB**（依赖网络、十几分钟、且不可重放）。产品路径不设置它。
+ */
+const MODEL_DOWNLOAD_SCRIPT = path.resolve(
+  process.env.MIAO_MODEL_DOWNLOAD_SCRIPT
+  || path.join(import.meta.dirname, '..', '..', 'engine', 'scripts', 'fetch-models.mjs'),
+);
+/** 输出尾巴保留多少行 —— 够看清"卡在哪一步/报了什么错"，又不至于把内存当日志盘 */
+const MODEL_DOWNLOAD_TAIL_MAX = 40;
+/** 整任务上限。真算 5–8 GB 在慢盘上可以很久，但**必须有个头**，否则界面永远转圈且无人知道 */
+const MODEL_DOWNLOAD_TIMEOUT_MS = 60 * 60_000;
+
+const modelDownload = {
+  state: 'idle', // idle | running | done | error
+  startedAt: null,
+  finishedAt: null,
+  exitCode: null,
+  timedOut: false,
+  /** 子进程输出（stdout + stderr 合流，按行）。**进度行也在里面**，不另做结构化解析 */
+  tail: [],
+};
+let modelDownloadChild = null;
+let modelDownloadTimer = null;
+
+function modelDownloadView() {
+  return {
+    state: modelDownload.state,
+    running: modelDownload.state === 'running',
+    startedAt: modelDownload.startedAt,
+    finishedAt: modelDownload.finishedAt,
+    exitCode: modelDownload.exitCode,
+    timedOut: modelDownload.timedOut,
+    tail: [...modelDownload.tail],
+    rootDir: MODEL_ROOT,
+    manifest: MODEL_MANIFEST,
+    script: MODEL_DOWNLOAD_SCRIPT,
+    /**
+     * 脚本在不在盘上。界面据此**禁用按钮**（而不是让用户点一下换一条报错）——
+     * 与「打开目录」按 `root` 禁用是同一条纪律。
+     */
+    scriptExists: fs.existsSync(MODEL_DOWNLOAD_SCRIPT),
+  };
+}
+
+/**
+ * 启动「重新下载模型」。返回后任务在后台跑，进度看 `modelDownloadView()`。
+ *
+ * 为什么走 `fetch-models.mjs` 而**不**自己实现下载：那个脚本是 S3 的交付物
+ * （断点续传 + 逐文件 SHA256 + `.ready` 幂等 + 校验不符自动重下 + 建链），
+ * 在这里复制一份等于让"下载"这件事有两处实现。
+ * 它默认 `--integrity cached`：已就绪的文件按 (sha256,size,mtime) 复用，
+ * **不会**把 8 GB 重新下一遍 —— 这正是「重新下载」应有的语义（补齐坏的、不折腾好的）。
+ */
+function startModelDownload() {
+  if (modelDownload.state === 'running' && !config.settingsRefute.downloadOpen) {
+    throw new ApiError('DOWNLOAD_IN_PROGRESS',
+      '模型下载已在进行中 —— 同一时刻只允许一个下载任务（并发会互相截断续传文件）',
+      { startedAt: modelDownload.startedAt, tail: modelDownload.tail.slice(-5) });
+  }
+  if (!fs.existsSync(MODEL_DOWNLOAD_SCRIPT)) {
+    throw new ApiError('INTERNAL', `模型下载脚本不存在：${MODEL_DOWNLOAD_SCRIPT}`,
+      { script: MODEL_DOWNLOAD_SCRIPT });
+  }
+
+  modelDownload.state = 'running';
+  modelDownload.startedAt = new Date().toISOString();
+  modelDownload.finishedAt = null;
+  modelDownload.exitCode = null;
+  modelDownload.timedOut = false;
+  modelDownload.tail = [];
+  serverLog(`模型下载已启动：${MODEL_DOWNLOAD_SCRIPT} → ${MODEL_ROOT}`);
+
+  const child = spawn(process.execPath, [MODEL_DOWNLOAD_SCRIPT], {
+    env: { ...process.env, MIAO_MODEL_ROOT: MODEL_ROOT },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  modelDownloadChild = child;
+
+  const push = (chunk) => {
+    // 按行拆（`fetch-models` 的进度用的是 `\r` 覆盖式输出，故三种换行都算分隔符），
+    // 空行丢弃 —— 尾巴里最有价值的是**有内容的那几行**，不是进度刷屏的残渣。
+    for (const line of chunk.toString('utf8').split(/\r\n|\r|\n/)) {
+      const t = line.trim();
+      if (!t) continue;
+      modelDownload.tail.push(t);
+      if (modelDownload.tail.length > MODEL_DOWNLOAD_TAIL_MAX) modelDownload.tail.shift();
+    }
+  };
+  child.stdout.on('data', push);
+  child.stderr.on('data', push);
+
+  const settle = (code, { timedOut = false } = {}) => {
+    clearTimeout(modelDownloadTimer);
+    modelDownloadTimer = null;
+    modelDownloadChild = null;
+    modelDownload.exitCode = code;
+    modelDownload.timedOut = timedOut;
+    modelDownload.finishedAt = new Date().toISOString();
+    modelDownload.state = code === 0 && !timedOut ? 'done' : 'error';
+    serverLog(`模型下载结束：state=${modelDownload.state} exitCode=${code}${timedOut ? '（超时被杀）' : ''}`);
+  };
+
+  child.on('error', (err) => {
+    modelDownload.tail.push(`✗ 无法启动下载进程：${err.message}`);
+    settle(-1);
+  });
+  child.on('close', (code, signal) => {
+    if (modelDownload.state === 'running') settle(code === null ? -1 : code, { timedOut: signal === 'SIGKILL' });
+  });
+
+  modelDownloadTimer = setTimeout(() => {
+    // 超时**必须真杀**：只改状态不杀的话，那个进程会一直在后台写盘，
+    // 而界面上写着"已失败"——用户下次点重下就会和它撞在一起。
+    try { child.kill('SIGKILL'); } catch { /* 已在退出 */ }
+    modelDownload.tail.push(`✗ 下载超时（${Math.round(MODEL_DOWNLOAD_TIMEOUT_MS / 60_000)} min），已终止`);
+  }, MODEL_DOWNLOAD_TIMEOUT_MS);
+
+  return modelDownloadView();
+}
 
 /**
  * sidecar 未就绪 → 503（契约 §2.2 `UNAVAILABLE` / §2.3 `ENGINE_NOT_READY` / `MODEL_DOWNLOAD_FAILED`）。
@@ -362,7 +516,441 @@ async function engineStatusView() {
     config: engineConfigSnapshot(),
     models,
     recentStageLog: recentStageLog(20),
+    /**
+     * 「重新下载模型」的**任务实况**（S6 新增第 9 键）。
+     *
+     * 🔴 为什么它属于 `/engine/status` 而不是 `/engine/options`：`options` 是**选项清单**
+     *    （用户能选什么），而这是一段**正在发生的进程状态** —— 与 `llm.state` 同类。
+     *    诊断视图（也是「模型管理」那一项）要回答的是"它还在跑吗、跑到哪了"，
+     *    这正是体检报告该答的问题。
+     * ⚠️ 它与 `models`（几秒前的磁盘就绪态）**不是一回事**：下载跑着的时候
+     *    `models.sakuraReady` 仍是 false，把两者混起来看会以为"点了没反应"。
+     */
+    modelDownload: modelDownloadView(),
   };
+}
+
+// ================================================================ S6 · 设置页数据源
+//
+// 这四个端点都是 **Box 专用**（不在插件契约里，`GET /engine/status` 同理）：
+// 它们是"设置页要显示什么、能改什么"的**唯一服务端事实**。放在同一个文件、挨着写，
+// 是因为它们共享同一份"硬件 ⊕ 用户设置 ⊕ 进程实况"的合成 —— 拆开就会各拼一遍。
+//
+// 🔴 一条贯穿的纪律：**绝不摆一个点了不会有作用的控件**。
+//    所以「候选」与「能不能选」是两件事，服务端两个都要给：
+//      · `options` —— 可选清单（含"为什么不推荐"）
+//      · `blockedReason` / 写路径的**拒绝** —— 不可选的项，点了必须报错而不是静默无效
+//    《02》§5「物理不可行档位不出现」是这条纪律在档位上的具体化；
+//    加速后端、模型目录是同一把尺子。
+
+/** 空闲阈值视图：毫秒是事实，分钟是界面单位 —— 两者都给，并标出"分钟是四舍五入来的" */
+function idleView(ms) {
+  const exact = ms % 60_000 === 0;
+  return { ms, min: Math.round(ms / 60_000), minIsExact: exact };
+}
+
+/**
+ * 「已配置 vs 已生效」这一对，是 `/engine/options` 存在的理由。
+ *
+ * 🔴 `/engine/options` 不能直接用 `config.engineTier` / `config.idleLlmMs` —— 那些是
+ *    **进程启动那一刻**冻住的常量。用户刚在设置页保存了"空闲 7 分钟"，而 options 还回 5 分钟，
+ *    界面会立刻显示回旧值，用户只能得出"没保存上"的结论。
+ *    （这正是"界面与事实不一致、且谁也不报错"的典型形态。）
+ * ⇒ 分工：**"生效中"**（引擎此刻在跑的档位 / 后端 / 模型目录）从 `config` 与引擎实况读；
+ *    **"已配置"**（保存后要等重启的那一类）从盘上现读 —— 用 `readIdleSettings()`，
+ *    也就是顶层那两个阈值常量用的**同一个函数**（不存在第二份回退逻辑）。
+ */
+
+/**
+ * `GET /engine/options` —— 设置页「推理引擎 / 模型与诊断」两小节的**全部取值来源**。
+ *
+ * 与 `/engine/status` 的分工：那个是**体检报告**（引擎现在怎么样），这个是**选项清单**
+ * （用户能选什么、选完会发生什么）。两者都读同一份 `resolveAccel()` / `tierOptions()`，
+ * 所以不可能出现"诊断说 mps、设置页说 cuda"。
+ */
+/**
+ * `/health` 之外的引擎读取入口**不在这里**：那是 `probeEngineCached()` 的活。
+ * 本函数只做一件事：把"设置页要显示什么"合成出来。
+ */
+async function engineOptionsView() {
+  const sc = await sidecarState();
+  const models = await modelStatus({ manifestPath: MODEL_MANIFEST, rootDir: MODEL_ROOT });
+  const weightsAvailable = availableTiers();
+  const accelEff = resolveAccel({
+    choice: config.engineAccel, hardwareAccel, useGpu: config.engineUseGpu,
+  });
+
+  // 档位候选：先按**硬件可行性**筛（《02》§5「物理不可行档位不出现」），
+  // 再叠加**权重在不在**（那是另一回事：硬件吃得住 ≠ 我们手上有那份权重）。
+  // 两者混为一谈会出现"界面上 Small 可点、点了之后被静默夹回 tiny"——最坏的一种失败。
+  //
+  // 反证开关 `tierAll` 去掉硬件可行性筛选（`G3` 应红：16GB Mac 上冒出 Medium）。
+  const feasibleList = config.settingsRefute.tierAll
+    ? TIERS_ALL.map((tier) => ({
+        tier, peakGb: tierOptions(hardware).find((o) => o.tier === tier)?.peakGb ?? null,
+        recommended: tier === hardware.recommendedTier, warning: null,
+      }))
+    : tierOptions(hardware);
+  const tierList = feasibleList.map((o) => {
+    const ready = weightsAvailable.includes(o.tier);
+    return {
+      ...o,
+      weightsReady: ready,
+      blockedReason: ready
+        ? null
+        : `该档位的权重尚未纳入 models.manifest.json（当前可下载：${weightsAvailable.join(' / ') || '无'}）`,
+    };
+  });
+
+  // 空闲阈值：**现读盘现算**，而不是用启动时冻住的那两个常量。
+  //
+  // 🔴 S6 修正：`config.idleLlmMs` 是进程启动那一刻的值。用户刚保存 7 分钟，
+  //    options 若还回 5 分钟，界面会立刻跳回旧值 —— 用户只能得出"没保存上"。
+  //    `readIdleSettings()` 就是顶层那两个常量用的**同一个函数**（cfg 里 `IDLE.*`），
+  //    所以这里不存在"另一份回退逻辑"（那种第二份实现正是走散的起点）。
+  const savedIdle = readIdleSettings();
+  const llmIdle = idleView(savedIdle.llmMs);
+  const visionIdle = idleView(savedIdle.visionSec * 1000);
+  // 与 `config` 同一次合并的口径：`settings` / `sources` 都是"盘上那份 + env 覆盖"的现读结果
+  const saved = savedIdle;
+  const fileState = readEngineSettings({ file: ENGINE_SETTINGS_FILE });
+
+  return {
+    protocol: config.engineProtocol,
+    hardware: {
+      platform: hardware.platform,
+      arch: hardware.arch,
+      totalRamGb: hardware.totalRamGb,
+      gpuKind: hardware.gpu.kind,
+      gpuName: hardware.gpu.name,
+      accel: hardware.accel,
+    },
+    tier: {
+      /** 当前**实际生效**档位（引擎不在时是 null —— 与 `sidecar.tier` 同口径） */
+      effective: sc.tier,
+      /**
+       * **已配置**的档位（盘上那份，现读）；null = 未指定（按硬件推荐）。
+       * 🔴 与 `effective` 分开是这一格的要点：改档位要重启才生效，所以
+       *    「保存成功」与「已经用上」是两个时刻。只给一个字段的话，界面只能二选一：
+       *    要么显示旧档（用户以为没保存上），要么显示新档（用户以为已经在跑 7B 了）。
+       */
+      configured: saved.settings.tier ?? null,
+      /** 这个值谁定的（`env` / `file` / `hardware`）—— 用户改不动的控件必须说清是谁压着它 */
+      source: saved.sources.tier ?? 'hardware',
+      hardwareRecommended: hardware.recommendedTier,
+      weightsAvailable,
+      options: tierList,
+    },
+    accel: {
+      /** 实际生效（`sidecar.accel` 同源） */
+      effective: accelEff.accel,
+      /** 已配置的选择（盘上那份，现读；`auto` = 按硬件探测） */
+      choice: saved.settings.accel ?? config.engineAccel,
+      source: saved.sources.accel ?? 'default',
+      hardwareRecommended: hardware.accel,
+      /** 用户指定了本机没有的后端时非 null —— 界面要把它显示出来，不能装作已生效 */
+      mismatch: accelEff.mismatch,
+      reason: accelEff.reason,
+      // 反证开关 `accelOpen` 让候选不再按硬件筛（`G5` 应红：Metal 机上出现 CUDA）
+      options: accelOptions(hardware.accel, { all: config.settingsRefute.accelOpen }),
+    },
+    idle: {
+      // Tier1（③ LLM）由本进程自持 ⇒ 保存后重建看护即**立刻生效**（`appliesAfterRestart:false`）。
+      // Tier2（视觉模型）由引擎自带的 `--models-ttl` 执行，那个数字在拉进程时就固化了
+      // ⇒ **必须重启**（`appliesAfterRestart:true`）。同一小节的两个数字待遇不同，
+      //   界面据此分别给"已生效"/"重启后生效"（《09》§4.3 末句的提示条）。
+      llm: {
+        ...llmIdle,
+        appliesAfterRestart: false,
+        source: saved.sources.idleLlmMin ?? (process.env.MIAO_IDLE_LLM_MS ? 'env' : 'default'),
+      },
+      vision: {
+        ...visionIdle,
+        appliesAfterRestart: true,
+        source: saved.sources.idleVisionMin ?? (process.env.MIAO_ENGINE_MODELS_TTL ? 'env' : 'default'),
+      },
+      neverUnload: saved.settings.idleLlmMin === 0 || config.unloadNever,
+    },
+    modelDir: {
+      /** 服务**当前正在用**的目录（进程启动时定，改了要重启） */
+      current: MODEL_ROOT,
+      /** 已配置的值（盘上那份，现读）；null = 未指定（用 defaultDir） */
+      configured: saved.settings.modelDir ?? null,
+      /** 未配置时会落到哪（给"恢复默认"用，也让用户看清默认是哪里） */
+      defaultDir: path.resolve(config.engineDir, '..'),
+      source: saved.sources.modelDir ?? 'default',
+      exists: fs.existsSync(MODEL_ROOT),
+    },
+    models,
+    /** 哪些键改完要重启引擎（《09》§4.3）。界面据它决定亮不亮那条提示条 */
+    restartRequiredKeys: [...RESTART_REQUIRED_KEYS],
+    /**
+     * 设置文件状态 —— **现读**，不用启动时那份快照。
+     * 文件可能在服务活着的时候被手工改坏（或另一个版本写进来），诊断视图要看到的是**现在**。
+     */
+    settingsFile: {
+      path: ENGINE_SETTINGS_FILE,
+      keys: engineSettingsFile.keys,
+      exists: fileState.exists,
+      corrupt: fileState.corrupt,
+      reason: fileState.reason,
+      ignoredKeys: fileState.unknownKeys,
+      invalidValues: fileState.invalid,
+    },
+  };
+}
+
+/**
+ * 写设置前的**能力裁决** —— 这是本端点最有价值的一段。
+ *
+ * 为什么不在 `engine-settings.mjs` 里做：那个模块是"取值合不合法"（纯语法/单位），
+ * 对硬件与权重一无所知。把硬件判据塞进去，它就得 import 引擎层 —— 一个纯粹为了
+ * 持久化而存在的模块忽然要认识 GPU，之后就没人敢复用它了。
+ * ⇒ 分工：**格式**归 `engine-settings`，**能力**归这里。
+ *
+ * 每条拒绝都必须给出「**可选什么**」—— 只说"不支持"等于把用户留在原地。
+ */
+function guardEngineSettings(patch) {
+  const reject = (message, details) => {
+    throw new ApiError('INVALID_SETTING', message, details);
+  };
+
+  if (patch.tier !== undefined) {
+    const weights = availableTiers();
+    if (!weights.includes(patch.tier)) {
+      reject(`档位 ${patch.tier} 的权重尚未纳入 models.manifest.json（当前可用：${weights.join(' / ') || '无'}）`
+        + ' —— 先在「模型管理」里补齐权重，或改选可用档位', { key: 'tier', value: patch.tier, available: weights });
+    }
+    // 反证开关 `tierAll` 去掉这条可行性裁决（`S4` 应红：Medium 被接受）
+    if (!config.settingsRefute.tierAll) {
+      const opt = tierOptions(hardware);
+      if (!opt.some((o) => o.tier === patch.tier)) {
+        // ⚠️ 峰值取 `TIER_PEAK_GB`（全表），**不是**从 `opt` 里找 —— `opt` 只含**可行**档位，
+        //    而被拒的这个档位按定义不在里面，从它那里取会得到 `?`。
+        //    一句「该档预估峰值 ? GB」比不写更糟：它看起来像"算不出来"，而其实我们算得出来。
+        reject(`档位 ${patch.tier} 在本机物理不可行（本机内存 ${hardware.totalRamGb} GB，`
+          + `该档预估峰值 ${TIER_PEAK_GB[patch.tier] ?? '?'} GB）`
+          + `—— 可选：${opt.map((o) => o.tier).join(' / ')}`,
+        { key: 'tier', value: patch.tier, totalRamGb: hardware.totalRamGb });
+      }
+    }
+  }
+
+  if (patch.accel !== undefined) {
+    // 与 `engineOptionsView()` 用**同一个** `accelOptions()`：两处若各筛一遍，
+    // 就会出现"界面不列 CUDA、但接口收 CUDA"——一个只能通过手写请求撞见的漏洞。
+    const allowed = accelOptions(hardware.accel, { all: config.settingsRefute.accelOpen }).map((o) => o.value);
+    if (!allowed.includes(patch.accel)) {
+      reject(`加速后端 ${patch.accel} 在本机不可用（硬件探测为 ${ACCEL_LABELS[hardware.accel] || hardware.accel}）`
+        + `—— 可选：${allowed.join(' / ')}`, { key: 'accel', value: patch.accel, allowed });
+    }
+  }
+
+  if (patch.modelDir !== undefined) {
+    let st = null;
+    try { st = fs.statSync(patch.modelDir); } catch { st = null; }
+    if (st && !st.isDirectory()) {
+      reject(`模型目录 ${patch.modelDir} 是一个文件，不是目录`, { key: 'modelDir', value: patch.modelDir });
+    }
+    if (!st) {
+      // 允许"新建一个叶子目录"（父目录得在）—— 否则打错一层路径就会静默建出一棵深树，
+      // 而权重会真的下到那里（5–8 GB），等到发现时已经写下去了。
+      const parent = path.dirname(patch.modelDir);
+      if (!fs.existsSync(parent)) {
+        reject(`模型目录 ${patch.modelDir} 不存在，且其上级 ${parent} 也不存在 —— 请先创建上级目录`,
+          { key: 'modelDir', value: patch.modelDir, parent });
+      }
+    }
+  }
+}
+
+/**
+ * `POST /engine/settings` —— 保存设置（白名单校验 → 写盘 → 报"要不要重启"）。
+ *
+ * 返回里三项都要有，缺一项界面就没法诚实：
+ *   · `changed`         —— 这次真改了哪几个键（"保存成功"不该是一个不说明改了什么的消息）
+ *   · `restartRequired` —— 改了要重启才生效的键 ⇒ 界面亮提示条（《09》§4.3）
+ *   · `appliedNow`      —— 改完**立刻**生效的键（只有空闲卸载 LLM 属此列，见 RESTART_REQUIRED_KEYS）
+ */
+function handleEngineSettings(req, res, cors) {
+  return readBody(req).then((body) => {
+    let patch;
+    try {
+      patch = body.length ? JSON.parse(body.toString('utf8')) : {};
+    } catch (err) {
+      throw new ApiError('INVALID_SETTING', `请求体不是合法 JSON：${err.message}`, { bytes: body.length });
+    }
+
+    // 🔴 **先格式、后能力**，顺序不能反。
+    //    反了的话，`{"tier":"large"}` 会先撞上能力裁决，得到一句
+    //    「档位 large 的权重尚未纳入 models.manifest.json」—— 一个把**拼错的值**
+    //    说成"缺权重"的错误提示，用户会跑去点「校验完整性」，而真正该做的是改掉这个值。
+    //    `assertPatch` 是唯一做取值域校验的地方（白名单 + 每键取值规则），放最前面。
+    let clean;
+    try {
+      clean = assertPatch(patch, { allowUnknown: config.settingsRefute.noWhitelist });
+    } catch (err) {
+      if (err instanceof EngineSettingsError) throw new ApiError('INVALID_SETTING', err.message, err.details);
+      throw err;
+    }
+
+    guardEngineSettings(clean); // 能力裁决（抛 ApiError 400）
+
+    let result;
+    try {
+      result = writeEngineSettings({ file: ENGINE_SETTINGS_FILE }, clean,
+        { allowUnknown: config.settingsRefute.noWhitelist });
+    } catch (err) {
+      // 把持久化层的错误码翻译成契约错误信封；**不吞**其它异常（那是 500）
+      if (err instanceof EngineSettingsError) {
+        throw new ApiError('INVALID_SETTING', err.message, err.details);
+      }
+      throw err;
+    }
+
+    // 🔴 即时生效的那一档：**重建空闲看护**（`idleMs` 是构造参数，改不了就换一个）。
+    //    为什么值得专门写这几行：不重建的话，界面上「空闲卸载 LLM」改完显示新值、
+    //    看护仍按旧值走 —— 一个界面上完全看不出来的偏差。视觉那一档不在此列（见 RESTART_REQUIRED_KEYS）。
+    const appliedNow = [];
+    if (result.changed.includes('idleLlmMin')) {
+      const next = readIdleSettings();
+      idleWatcher.stop();
+      restartIdleWatcher(next.llmMs, next.settings.idleLlmMin === 0 || config.unloadNever);
+      appliedNow.push('idleLlmMin');
+      serverLog(`空闲卸载 LLM 阈值已更新为 ${Math.round(next.llmMs / 60_000)} min（看护已重建，即时生效）`);
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      settings: result.settings,
+      changed: result.changed,
+      restartRequired: result.restartRequired,
+      restartRequiredKeys: result.changed.filter((k) => RESTART_REQUIRED_KEYS.has(k)),
+      appliedNow,
+    }, cors);
+  });
+}
+
+/**
+ * `POST /engine/unload` —— 强制释放 ③ LLM（《09》§6.2 的三个操作之一）。
+ *
+ * ⚠️ 它**不是**"重启"也不是"停止服务"：③ 的归属方是 box-service（《04》§9.1），
+ *    所以这件事我们真的做得到、也真的只影响 ③。② 与 ① 一根毫毛都不动
+ *    —— 这正是它能在翻译中途之外随时点、且不该有二次确认的原因。
+ * ③ 本来就没在跑 ⇒ **不是错误**（§9.4 空闲卸载是设计行为），如实报 `unloaded:false` + 原因。
+ */
+function handleEngineUnload(req, res, cors) {
+  return (async () => {
+    const before = llm.snapshot();
+    if (before.state !== 'running') {
+      return sendJson(res, 200, {
+        ok: true, unloaded: false, reason: `③ 当前未在运行（state=${before.state}），无需释放`, state: before.state,
+      }, cors);
+    }
+    await llm.stop({ reason: '用户在诊断视图里强制释放' });
+    const after = llm.snapshot();
+    sendJson(res, 200, { ok: true, unloaded: after.state !== 'running', state: after.state }, cors);
+  })();
+}
+
+/**
+ * `POST /engine/models/verify` —— 「校验完整性」（《02》§5 模型管理的两个动作之一）。
+ *
+ * 🔴 它做的是**真算 sha256**，不是"看一眼文件在不在"：
+ *    调用 `engine/scripts/fetch-models.mjs --check`，那个脚本走 `verifyModels()`
+ *    —— `--check` 分支**不联网、不删任何东西**（见该脚本的用法注释）。
+ *    这是"校验完整性"唯一诚实的实现：一个只判存在的校验会给用户"没问题"的假结论，
+ *    而模型恰好是"存在但坏掉"最常见的一类资产（下到一半、被同步盘截断）。
+ *
+ * ⚠️ 为什么另开一个端点而不是复用 `/engine/status` 的 `models`：
+ *    那段只做 `stat`（在位 + 大小对得上），是**心跳级**开销。哈希要读完整的 5–8 GB，
+ *    必须由用户显式触发（一次几分钟），绝不能挂在任何一个会被轮询的端点上。
+ *
+ * 返回 `{ ok:false, ... }` 而非 HTTP 错误：**"校验完成，发现不符"是一次成功调用**，
+ * 用 4xx/5xx 表达会让界面把它显示成"操作失败"，而用户真正需要看到的是那份不符清单。
+ */
+function handleModelsVerify(req, res, cors) {
+  return readBody(req).then(async () => {
+    const script = path.resolve(import.meta.dirname, '..', '..', 'engine', 'scripts', 'fetch-models.mjs');
+    const started = Date.now();
+    const { code, stdout, stderr, timeout } = await runVerifyChild(script, {
+      MIAO_MODEL_ROOT: MODEL_ROOT,
+      // 与 `engine-client.mjs` 无关：这个脚本自己读清单路径，固定为仓内那份
+    });
+    const text = `${stdout}\n${stderr}`;
+    const m = /校验：通过 (\d+) \/ 不符 (\d+) \/ 缺失 (\d+)（共 (\d+)）/.exec(text);
+    const problems = text.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('✗'));
+
+    if (!m) {
+      // 连那句汇总都没打出来 ⇒ 脚本没跑到校验段（解释器错、脚本被改、路径不对……）
+      // 这时**绝不能**报"通过 0/不符 0/缺失 0 ⇒ 一切正常"。如实报"没跑起来"。
+      throw new ApiError('INTERNAL', '模型校验脚本未产出结果（可能是脚本缺失或运行环境异常）',
+        { exitCode: code, timeout, tail: text.split('\n').slice(-8).join('\n') });
+    }
+    const [pass, bad, missing, total] = [m[1], m[2], m[3], m[4]].map(Number);
+    sendJson(res, 200, {
+      ok: bad === 0 && missing === 0,
+      pass, bad, missing, total,
+      problems,
+      rootDir: MODEL_ROOT,
+      exitCode: code,
+      timeout,
+      elapsedMs: Date.now() - started,
+      /** 校验用的到底是哪份清单 —— 不报这一行的话，"通过"可能是拿一份被裁过的清单比出来的 */
+      manifest: MODEL_MANIFEST,
+    }, cors);
+  });
+}
+
+/**
+ * `POST /engine/models/download` —— 「重新下载模型」（《02》§5 模型管理的另一个动作）。
+ *
+ * 语义是**启动**而非**等待**：立即返回 `{ ok, download }`，进度看 `/engine/status`。
+ * 为什么这样做见 `MODEL_DOWNLOAD_SCRIPT` 上方的注释（下载要十几分钟，HTTP 挂不住）。
+ *
+ * 🔴 已经在跑 ⇒ **409**（`DOWNLOAD_IN_PROGRESS`），不返回 200「已经在下了」：
+ *    后者让界面以为这次点击生效了，而用户真正需要知道的是"我这次什么都没触发"。
+ */
+function handleModelsDownload(req, res, cors) {
+  return readBody(req).then(() => {
+    const view = startModelDownload();
+    sendJson(res, 200, { ok: true, started: true, download: view }, cors);
+  });
+}
+
+/**
+ * 跑 `fetch-models --check` 子进程。
+ *
+ * `maxBuffer` 用**行收集**而不是 `execFile` 的默认 1 MB：模型清单里有几十项，
+ * 全不符时会打几十行 —— 撞上 maxBuffer 的失败形态是 `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`，
+ * 一个与"模型坏了"毫无关系、却同样表现为"校验失败"的错误。手写收集就没有这个上限。
+ * `timeoutMs` 给 15 min：真算 5–8 GB 的 sha256 在机械盘上可以很慢，但它**必须有个头**，
+ * 否则界面会永远转圈（且没有任何东西会告诉用户它卡住了）。
+ */
+function runVerifyChild(script, extraEnv, { timeoutMs = 900_000 } = {}) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [script, '--check'], {
+      env: { ...process.env, ...extraEnv },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    let timeout = false;
+    const timer = setTimeout(() => {
+      timeout = true;
+      try { child.kill('SIGKILL'); } catch { /* 已在退出 */ }
+    }, timeoutMs);
+    child.stdout.on('data', (d) => { stdout += d.toString('utf8'); });
+    child.stderr.on('data', (d) => { stderr += d.toString('utf8'); });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({ code: -1, stdout, stderr: `${stderr}\n${err.message}`, timeout: false });
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code, stdout, stderr, timeout });
+    });
+  });
 }
 
 /** 解析 multipart 表单：payload + images[] + imageOrder[] */
@@ -775,6 +1363,26 @@ async function route(req, res, cors, url) {
   if (p.length === 2 && p[0] === 'engine' && p[1] === 'status' && method === 'GET') {
     return sendJson(res, 200, await engineStatusView(), cors);
   }
+  // /engine/options —— 设置页的取值来源（S6）。与 status 一样属**Box 专用**，同样要令牌。
+  if (p.length === 2 && p[0] === 'engine' && p[1] === 'options' && method === 'GET') {
+    return sendJson(res, 200, await engineOptionsView(), cors);
+  }
+  // /engine/settings —— 保存设置（S6）
+  if (p.length === 2 && p[0] === 'engine' && p[1] === 'settings' && method === 'POST') {
+    return handleEngineSettings(req, res, cors);
+  }
+  // /engine/unload —— 强制释放 ③（S6，诊断视图操作之一）
+  if (p.length === 2 && p[0] === 'engine' && p[1] === 'unload' && method === 'POST') {
+    return handleEngineUnload(req, res, cors);
+  }
+  // /engine/models/verify —— 校验完整性：真算 sha256（S6，诊断视图操作之一）
+  if (p.length === 3 && p[0] === 'engine' && p[1] === 'models' && p[2] === 'verify' && method === 'POST') {
+    return handleModelsVerify(req, res, cors);
+  }
+  // /engine/models/download —— 重新下载模型：起一个后台任务，立即返回（S6，模型管理 + 诊断视图）
+  if (p.length === 3 && p[0] === 'engine' && p[1] === 'models' && p[2] === 'download' && method === 'POST') {
+    return handleModelsDownload(req, res, cors);
+  }
 
   // /library
   if (p.length === 1 && p[0] === 'library' && method === 'GET') {
@@ -955,20 +1563,36 @@ store.tierDowngrade = tierCtl;
 
 // 空闲卸载看护（《04》§9.1 Tier1）。Tier2（视觉模型 30 min）由**引擎自带**的
 // `--models-ttl` 负责，box-service 不动作 —— 这里只把阈值留在同一处展示（见 config）。
-const idleWatcher = createIdleWatcher({
-  store,
-  supervisor: llm,
-  log: (m) => serverLog(m),
-  idleMs: config.idleLlmMs,
-  intervalMs: config.idleTickMs,
-  neverUnload: config.unloadNever,
-  disabled: config.noIdleUnload,
-});
-if (config.unloadNever || config.noIdleUnload) {
-  serverLog(`空闲卸载：${config.unloadNever ? '用户选择「从不卸载」（两级都关）' : '被 MIAO_NO_IDLE_UNLOAD=1 关掉（反证用）'}`);
-} else {
-  idleWatcher.start();
+//
+// 🔴 S6 起它必须是**可重建的**：设置页改「空闲卸载 LLM」要立刻生效，而 `idleMs` 是构造参数。
+//    写成 `const idleWatcher = …` 就只剩"重启服务"一条路 —— 那会让一个纯策略数字
+//    需要一次几十秒的引擎冷启动，用户看到的是"改了没反应"。
+//    重建而不是"加一个可变引用"：看护内部没有任何持有旧阈值的异步任务（`tick()` 是纯同步判定），
+//    所以停掉旧的、起一个新的，**不存在**两个看护同时在跑或"旧阈值还在途"的窗口。
+let idleWatcher = null;
+
+function restartIdleWatcher(idleMs, neverUnload) {
+  if (idleWatcher) idleWatcher.stop();
+  idleWatcher = createIdleWatcher({
+    store,
+    supervisor: llm,
+    log: (m) => serverLog(m),
+    idleMs,
+    intervalMs: config.idleTickMs,
+    neverUnload,
+    disabled: config.noIdleUnload,
+  });
+  if (neverUnload || config.noIdleUnload) {
+    serverLog(`空闲卸载：${neverUnload ? '用户选择「从不卸载」（两级都关）' : '被 MIAO_NO_IDLE_UNLOAD=1 关掉（反证用）'}`);
+  } else {
+    serverLog(`空闲卸载：LLM 空闲 ${Math.round(idleMs / 60_000)} min 后释放（Tier1）`
+      + `／视觉 ${Math.round(config.idleVisionMs / 60_000)} min（Tier2，由引擎 --models-ttl=${config.engineModelsTtl}s 执行）`);
+    idleWatcher.start();
+  }
+  return idleWatcher;
 }
+
+restartIdleWatcher(config.idleLlmMs, config.unloadNever);
 
 // 🔴 **监听放在最后**：`http.createServer` 一旦开始接客，任何一个请求都可能打到
 //    `/health` → `sidecarState()` → `composeSidecar()`，而它要读 `llm` 与 `tierCtl`。
@@ -1019,7 +1643,7 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
     serverLog(`收到 ${sig}，关闭中…`);
     clearInterval(heartbeatTimer);
-    idleWatcher.stop();
+    idleWatcher?.stop();
     // 先等 ③ 真的退出再退自己 —— 否则 8080 会短暂留给孤儿，而 E11 的外部观察者正是去抓它。
     // 加 finally 兜底：③ 的收尾失败不该让服务关不掉（Rust 侧超时后会 SIGKILL，反而更难诊断）。
     let done = false;

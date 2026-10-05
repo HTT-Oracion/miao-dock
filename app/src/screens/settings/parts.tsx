@@ -37,9 +37,36 @@ export function SubTitle({ children }: { children: string }) {
   );
 }
 
+/**
+ * 把 `**重点**` 渲染成 `<b>` —— catalog 文案里的强调标记。
+ *
+ * ## 为什么必须有个解析器
+ * `catalog.ts` 的 `note` / `why` / `blurb` 是**产品文案**，作者一直按 markdown 的写法
+ * 用 `**` 标重点（全表 100+ 处）。但 React 不解析字符串里的 markdown：
+ * 把字符串直接塞进 JSX 的结果是**界面上原样显示两个星号** ——
+ * `本组 10 项**全部接真实能力**`。它编译得过、类型检查过、断言也抓不到，
+ * 只有人眼看得见（这一类"沉默的显示错误"正是本项目最防的一类）。
+ *
+ * ## 为什么是"加解析"而不是"把 `**` 删掉"
+ * 删掉等于**连重点标记的意图一起删掉**：哪些是重点、哪些是正文区分不出来了。
+ * 而这里十来行就能让**已有的写法真正生效** —— 100+ 处文案一个字都不用动，
+ * 也不会出现"某个作者忘了这里不能用 md"的新坑。
+ *
+ * ## 只支持这一种标记，且不做通用 markdown
+ * 多支持一种语法就多一类能出错的地方；而这里的输入**全部来自本仓的 catalog 常量**，
+ * 不是在渲染用户内容。落单的 `**`（奇数个）**原样保留**，不做"补一个"的猜测 ——
+ * 宁可看见两个星号，也不要把后半句整段加粗（那等于替作者虚构了一个重点）。
+ */
+export function emphasis(text: string): ReactNode {
+  const parts = text.split('**');
+  // 成对的 `**` 才构成重点 ⇒ 分割后段数必为奇数（n 对 ⇒ 2n+1 段）
+  if (parts.length % 2 === 0) return text;
+  return parts.map((seg, i) => (i % 2 === 1 ? <b key={i}>{seg}</b> : seg));
+}
+
 /** 组级说明：解释这一组为什么有这么多"待接入"（对应 catalog 的 `note`） */
 export function GroupNote({ children }: { children: string }) {
-  return <div className="set-note">{children}</div>;
+  return <div className="set-note">{emphasis(children)}</div>;
 }
 
 /**
@@ -53,7 +80,7 @@ export function Row({ item, children }: { item: SettingItem; children?: ReactNod
     <div className="set-row" style={{ minHeight: SETTINGS.rowMinHeight, padding: `${SETTINGS.rowPaddingY}px 0` }}>
       <div className="set-row-label">
         <div className="set-row-title">{item.label}</div>
-        {item.why ? <div className="set-row-why">{item.why}</div> : null}
+        {item.why ? <div className="set-row-why">{emphasis(item.why)}</div> : null}
       </div>
       {children ? <div className="set-row-ctl">{children}</div> : null}
     </div>
@@ -75,7 +102,7 @@ export function PendingRow({ item }: { item: SettingItem }) {
     >
       <div className="set-row-label">
         <div className="set-row-title">{item.label}</div>
-        {item.why ? <div className="set-row-why">{item.why}</div> : null}
+        {item.why ? <div className="set-row-why">{emphasis(item.why)}</div> : null}
       </div>
       <div className="set-row-ctl">
         <Badge>待接入</Badge>

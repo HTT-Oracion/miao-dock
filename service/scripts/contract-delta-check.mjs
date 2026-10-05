@@ -254,8 +254,12 @@ async function assertEngineStatus(port, label, expectState) {
 
   const res = await httpReq(port, 'GET', '/api/v1/engine/status', { token: TOKEN });
   const v = jsonOf(res);
-  const topKeys = ['engine', 'llm', 'tier', 'accel', 'warmed', 'config', 'models', 'recentStageLog'];
-  check(`S5.7 /engine/status 带令牌 → 200 且顶层 8 键齐（§5.2）（${label}）`,
+  // S6 起多一个 `modelDownload`（「重新下载模型」的任务实况）⇒ 8 → **9 键**。
+  // 它同样属"Box 专用、不进插件契约"那一类（§5.2 与 `recentStageLog` 同性质）。
+  // ⚠️ 这条断言的**精确等值**（不是"包含"）是刻意的：`tier` 少键那次事故就是它抓到的
+  //    （见 `composeSidecar` 里 `currentTier()` 的注释）。改这条必须同时改这里的期望值。
+  const topKeys = ['engine', 'llm', 'tier', 'accel', 'warmed', 'config', 'models', 'recentStageLog', 'modelDownload'];
+  check(`S5.7 /engine/status 带令牌 → 200 且顶层 9 键齐（§5.2 + S6 的 modelDownload）（${label}）`,
     res.status === 200 && v && topKeys.every((k) => k in v) && Object.keys(v).length === topKeys.length,
     res.status === 200 ? Object.keys(v || {}).join(',') : `status=${res.status} body=${res.body.toString('utf8').slice(0, 200)}`);
   check(`S5.7b engine 是 {state, version, port, pid}；version 非空且 state=${expectState}（${label}）`,

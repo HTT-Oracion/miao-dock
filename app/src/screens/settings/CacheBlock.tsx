@@ -285,7 +285,7 @@ function ClearConfirm({
       <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <div className="modal-title">确认清除{what}？</div>
         <div className="modal-body">
-          清除后本地缓存的文件会被删除，**无法恢复**。
+          清除后本地缓存的文件会被删除，<b>无法恢复</b>。
           正在播放的歌会自动重新联网加载，不会中断，只是首次播放要多等一会儿。
         </div>
         <div className="modal-actions">

@@ -311,3 +311,270 @@
   color: var(--md-muted);
 }
 
+/* ================================================================ ② 翻译服务：推理引擎 / 模型与诊断 */
+
+/*
+ * 「不推荐」档位的**强警告**通栏条（《02》§5：Small 保留但标注不推荐，选中时强警告）。
+ *
+ * 用 `--md-warning` 而不是 `--md-error`：这一档**能跑**，只是吃内存 ——
+ * 画成红色错误会让人以为"选了就坏"，于是去点别的档位，而正确的动作其实是
+ * "知道代价之后自己决定"。用通栏条而不是挤进右列：右列是 `flex:0 0 auto` 的窄列，
+ * 一句带数字的警告塞进去会把同一个下拉挤歪（同 `.set-cache` 脱离 `Row` 的理由）。
+ */
+.set-warn {
+  font-size: 11.5px;
+  line-height: 1.7;
+  margin-bottom: 10px;
+  padding: 9px 11px;
+  border-radius: var(--md-radius-sm);
+  border: 1px solid var(--md-warning);
+  background: var(--md-surface);
+  color: var(--md-ink-2);
+}
+
+/*
+ * 「改完要重启引擎」的提示条（《09》§4.3 末句）。
+ *
+ * 常态是**中性**的：它在陈述一类键的性质，用户动手前就该知道，不是出事了。
+ * `is-pending` 才转 warning —— 那时含义变了，是"你已经存了，但引擎还在按旧值跑，
+ * 现在就得重启，否则刚才那次保存白改"。两者共用一条规则、只换颜色，
+ * 是为了让"同一句话的两种语气"在视觉上只差一个信号，而不是两条不相干的条。
+ */
+.set-hint {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-radius: var(--md-radius-sm);
+  border: 1px solid var(--md-line-soft);
+  background: var(--md-surface-2);
+  color: var(--md-muted);
+  font-size: 10.5px;
+  line-height: 1.7;
+}
+.set-hint b {
+  color: var(--md-ink-2);
+  font-weight: 600;
+}
+.set-hint.is-pending {
+  border-color: var(--md-warning);
+  background: var(--md-surface);
+  color: var(--md-ink-2);
+}
+.set-hint.is-pending b {
+  color: var(--md-warning);
+}
+
+/*
+ * 「模型管理」通栏块（catalog 里 `layout: 'block'`）。
+ *
+ * 与 `.set-cache` 用同一条骨架（顶线 + 上下 10px），于是"通栏项"在设置页里
+ * 看起来始终是同一类东西。这里不加底色卡片 —— 一屏里出现两个嵌套卡片
+ * （「模型管理」+「引擎诊断」）会把分组的层数读乱。
+ */
+.set-manage {
+  border-top: 1px solid var(--md-line-soft);
+  padding: 10px 0;
+}
+.set-manage-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.set-manage-label {
+  flex: 1;
+  min-width: 0;
+}
+/* 字号与 `.set-row-title` 对齐：这一项看起来仍是"设置页的一行"，只是宽了 */
+.set-manage-name {
+  font-size: 12.5px;
+  color: var(--md-ink);
+}
+.set-manage-why {
+  margin-top: 3px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--md-muted);
+}
+.set-manage-acts {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* 校验结论 / 「尚未校验」提示。`is-bad` 表示"发现不符"，不是"操作失败" */
+.set-manage-state {
+  margin-top: 9px;
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--md-muted);
+}
+.set-manage-state.is-bad {
+  color: var(--md-error);
+}
+/*
+ * 不符 / 缺失清单。限高 160 + 自身滚动：一份几十行的清单会把这一项撑成一整屏，
+ * 把下面的「引擎诊断」挤出视口 —— 而诊断面板恰恰是出问题时最该被看见的东西。
+ */
+.set-manage-list {
+  margin-top: 7px;
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  border-radius: var(--md-radius-xs);
+  border: 1px solid var(--md-line-soft);
+  background: var(--md-surface-2);
+}
+.set-manage-list-line {
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+  line-height: 1.75;
+  color: var(--md-muted);
+  word-break: break-all;
+}
+
+/*
+ * 「引擎诊断»面板（《09》§6.2）。
+ *
+ * ⚠️ 内部小标题用 `.set-diag-h`，**不能**用 `.set-subtitle` —— 后者是规格自检 C11
+ * 数「② 这一组有几个小节」的判据（恰 3 个）。面板里再有 5 个 `.set-subtitle`，
+ * C11 会变红，而红的原因不再是它要守的东西，那条断言也就废了。
+ */
+.set-diag {
+  border-top: 1px solid var(--md-line-soft);
+  padding: 10px 0;
+}
+.set-diag-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.set-diag-name {
+  font-size: 12.5px;
+  color: var(--md-ink);
+}
+.set-diag-why {
+  margin-top: 3px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--md-muted);
+}
+.set-diag-acts {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.set-diag-note {
+  margin-top: 7px;
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--md-muted);
+}
+.set-diag-note code {
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+}
+/* 五个区块之间用一条细线分开：区块数是规格钉死的 5，视觉上就该数得出来 */
+.set-diag-sec {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--md-line-soft);
+}
+/* 面板内小标题：11/600/ink-2 —— 比 `.set-subtitle` 弱一档（那是设置项层级），
+   又比正文强一档，读得出"这是一个区块的名字" */
+.set-diag-h {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--md-ink-2);
+}
+/* 键值对换行排：`flex-wrap` 是因为引擎上报的键会随版本增减，横排写死列数会挤爆 */
+.set-diag-kv {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 8px;
+}
+.set-diag-kv-item {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+.set-diag-k {
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+.set-diag-v {
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  color: var(--md-ink);
+}
+/* 进程状态三行：名称 / 状态 / 端口 / pid 四列对齐，扫一眼就能看出是哪一环不在 */
+.set-diag-proc {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 7px;
+  font-size: 11px;
+}
+.set-diag-proc-name {
+  flex: 0 0 96px;
+  color: var(--md-ink-2);
+}
+.set-diag-proc-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 92px;
+  color: var(--md-ink);
+}
+.set-diag-proc-num {
+  font-family: var(--md-font-numeric);
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+/* 版本 / 模型名推到最右：它是补充信息，不该跟端口挤在一起比宽度 */
+.set-diag-proc-extra {
+  margin-left: auto;
+  font-family: var(--md-font-numeric);
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+/* 阶段日志 / 下载输出：等宽 + 自身滚动。原样转发引擎输出，不做结构化解析 */
+.set-diag-log {
+  margin-top: 8px;
+  max-height: 168px;
+  overflow-y: auto;
+  padding: 7px 9px;
+  border-radius: var(--md-radius-xs);
+  border: 1px solid var(--md-line-soft);
+  background: var(--md-surface-2);
+}
+.set-diag-log-line {
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+  line-height: 1.75;
+  color: var(--md-muted);
+  word-break: break-all;
+}
+.set-diag-dl {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: var(--md-radius-xs);
+  border: 1px solid var(--md-line-soft);
+  background: var(--md-surface-2);
+}
+.set-diag-dl.is-bad {
+  border-color: var(--md-error);
+}
+.set-diag-dl-head {
+  font-size: 11px;
+  color: var(--md-ink-2);
+}
+.set-diag-ops {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--md-line-soft);
+}
+

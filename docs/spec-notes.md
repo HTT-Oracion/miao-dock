@@ -2574,3 +2574,143 @@ H 实例（mock 档）的阶段日志**如实的空** —— ver1.0 自定义协
 `service/src/errors.mjs` · `service/src/config.mjs` · `service/src/server.mjs` · `service/src/engine-client.mjs` ·
 `service/scripts/engine-client-check.mjs` · `package.json` · 本文件 ·
 `docs/engine-integration-plan.md`（§5 阶段总览 / S1 / S5）· `AGENTS.md` · `README.md`。
+
+---
+
+## D-75 · S6 · Box UI：②翻译服务 10 项 + 引擎诊断视图 + X-C3「准备中」（2026-10-06）
+
+### 交付
+
+| 文件 | 作用 |
+|---|---|
+| `app/src/screens/settings/engine-api.ts`（新） | 六个 **Box 专用**端点的形状与调用收口（`/engine/options` · `/engine/status` · `PUT /engine/settings` · `/engine/unload` · `/engine/models/verify` · `/engine/models/download`）。**每个字段都标了 `\| null`** —— 服务端"答不出来"和"答了 null"是两件事，界面必须两者都能表达 |
+| `app/src/screens/settings/engine-state.ts`（新） | `useEngineState()`：`options` / `status` 的加载与动作；**只在 `status.modelDownload.running` 时每 2s 轮询**（其余时候不挂定时器）；失败时把两份数据**都清成 `null`**，不留旧值 |
+| `app/src/screens/settings/EngineDiag.tsx`（新） | 引擎诊断面板（《09》§6.2）：进程状态 / 生效配置 / 模型状态 + 下载实况 / 最近阶段日志 / 三个操作 |
+| `app/src/screens/settings/ModelManageBlock.tsx`（新） | 「模型管理」通栏块：重新下载 + 校验完整性 + 逐条不符清单（只列前 8 条） |
+| `app/src/components/units/NumberInput.tsx`（新） | 带提交语义的窄数字框（**不用 `<input type="number">`**，理由见决策 5） |
+| 改动 | `service/src/server.mjs`（模型下载后台任务 + `/engine/models/download` 路由 + `engineStatusView()` 第 9 键 `modelDownload`）· `service/src/errors.mjs`（`DOWNLOAD_IN_PROGRESS: 409`）· `service/src/config.mjs`（第 5 个逃生开关 `downloadOpen`）· `app/src/screens/settings/{catalog,sections,parts,CacheBlock,SpecCheck}.tsx` · `app/src/screens/{SettingsScreen,NotReadyScreen,App}.tsx` · `app/src/{ipc,nav}.ts` · `app/src/styles/{components,settings,manga}.scss` · `service/scripts/{contract-delta-check,engine-settings-check}.mjs` · `scripts/{settings-media-check,units-structure-check}.mjs` · `AGENTS.md` · `README.md` |
+
+### 🔴 决策 1：「**已配置**」与「**已生效**」是两个值，不能合成一个
+
+`.miao/engine-settings.json` 里那一份是**盘上的意图**；引擎进程参数是**此刻的事实**。两件事在
+"改了但还没重启"期间会**长期不一致**，而用户最需要知道的恰恰是"我改的算数了没有"。
+
+⇒ `/engine/options` 的 `tier` 给两个字段：`configured`（盘上那份，`null` = 从未改过）与
+`effective`（引擎此刻在跑的，引擎不在时 `null`）；界面照抄两个值，不去推导。
+
+🔴 **由此引出一条实现纪律**：`/engine/options` **必须每次现读盘**（`readIdleSettings()`），
+**不得**用启动时冻结的 `config.*`。冻结那份在"用户改完 → 界面刷新"这一轮会**把用户刚写的值读成旧值**
+—— 而那正是用户唯一会盯着看的时刻。
+
+### 🔴 决策 2：两档空闲卸载的**生效时机不同**，是刻意的
+
+`RESTART_REQUIRED_KEYS = { tier, accel, modelDir, idleVisionMin }`（4 个，`G8` 钉住"恰为这四个"）：
+
+- `idleLlmMin` **不在**其中 —— ③ 的归属方是 **box-service**（《04》§9.1），改完重建看护即**即时生效**；
+- `idleVisionMin` **在**其中 —— 这一档由**引擎自带的 `--models-ttl`** 执行，参数在拉开进程时就固化 ⇒ **必须重启**。
+
+⇒ 界面上这两个数字框长得一样、下方提示条却必须不一样。把它们合成一句"改设置需重启"，
+用户会为一个**根本不需要重启**的改动去重启一次引擎（白等十几秒），或者反过来以为视觉卸载即时生效了。
+
+### 🔴 决策 3：模型下载是**任务**，不是一次同步 HTTP
+
+十几分钟到几十分钟的下载挂在一个 HTTP 请求上必然超时。"启动即返回"只是必要条件，
+真正需要钉住的是**单飞**：`model-store.mjs` 的断点续传靠 `<dest>.part`，
+两个并发下载会同时往同一批 `.part` 里写、互相截断 —— 这类损坏**在成功之后**才表现为
+"文件在、SHA256 不对"，归因极难。
+
+⇒ 重复发起报 **`DOWNLOAD_IN_PROGRESS: 409`**，而**不是** 200「已在下载中」：
+后者会让界面以为"这次点击也生效了"，用户看不出自己其实什么都没触发（`D3` 钉住 409 + 带出首次启动时刻）。
+
+### 🔴 决策 4：X-C3 **不显示字节进度**，因为它此刻**读不到**
+
+方案要「L1/L2 显示可量化进度（文件数 / 字节数）」。但 X-C3 只在 **box-service 自己没起来**时出现
+—— 此刻没有任何 HTTP 通道可读下载进度。所以判据只能反过来写：**不许出现硬编码的进度字面量**
+（`NOTREADY.detail.noFabricatedProgress`），而"可量化进度"由**真实来源**满足 ——
+谁真的在打进度行（`fetch-models` / uvicorn / llama-server 的 stdout 都经 Rust 的 LogBuffer 汇聚），
+那一行就原样出现在 L2 明细里；**没有就不显示，不补一个占位数字。**
+
+### 🔴 决策 5：数字框**故意不用** `<input type="number">`
+
+三条各自独立、且都指向同一个后果「用户以为自己设了 5 分钟、其实设成了 0（= 从不卸载）」：
+
+1. `Number('')` 是 **0** ⇒ "清空重打"会被读成"设为 0"，而 0 在本语义里是**从不卸载**；
+2. 箭头宽度**平台相关**，会撑歪固定窄列（这一列要跟其它控件对齐）；
+3. `e` / `+` / `-` 被吞掉却**不报错**，用户输入被静默丢弃。
+
+⇒ `type="text"` + `inputMode="numeric"`；**blur / Enter 才提交**（逐字符提交会让 `5→30` 的中途真的写成 3 分钟）；
+非法输入**可见地退回上一个合法值**（不 clamp —— clamp 会悄悄给出一个用户没要求过的数）；Esc 放弃。
+
+### 🔴 决策 6：L4 不属启动期（沿用 D-64，本轮落到界面上）
+
+`STAGES` 是四段（方案表是四行），但 **L4 永远不会被点亮成「进行中」**：
+它的状态词是**「首图时完成」**而不是「待开始」。
+用「待开始」会让用户以为卡在最后一段、一直在等一段**永远不会自己走完**的进度。
+
+### 🔴 决策 7：本轮真实修掉的**可见缺陷** —— catalog 里 108 处 `**` 被原样渲染
+
+`catalog.ts` 的 `note` / `why` / `blurb` 与 `spec-check.ts` 的 `label` / `detail` 都用 `**重点**`
+写文案，而它们全部**直接进 DOM** —— 界面上显示的是字面的两个星号。这是**本轮之前就存在**的缺陷，
+不在原计划里，是 S6 把 10 项文案全量重写时才暴露的（新写的文案里星号更密）。
+
+修法两道：
+1. `parts.tsx` 加**唯一**的解析器 `emphasis()`：按 `'**'` 分割、**成对才加粗**，
+   落单的 `**` **原样保留**（不做"补一个"的猜测 —— 猜错会把后半句整段加粗）；
+2. **逐个渲染点接上**（`GroupNote` / `Row` / `PendingRow` / `ModelManageBlock` / `SettingsScreen` 的 `blurb` /
+   `SpecCheck` 的 label+detail）—— 只做解析器而不接渲染点等于没修，而且**更糟**：以为修好了。
+
+JSX **裸文本**里没法经过 `emphasis`（它是散文，不是一整个字符串），所以另加一条"不许出现"的断言
+（`ENGINE.md.noRawAsterisks`，先剥注释再搜 —— 本仓注释里大量引用 `**`，直接搜会全红，
+而那种红是**假红**：会把真正的漏出埋在噪声里）。
+
+### 🔴 决策 8：`mode` / `degraded` / 三进程 pid 必须出现在状态屏上
+
+「以为在跑真引擎、其实跑的替身」是本项目**最难查**的一类故障（`mode` 存在的唯一理由）。
+X-C3 与引擎诊断视图都把 `mode` 摆在明面上；`degraded` 同理 —— 它表达的是
+"服务能应答、翻译会失败"，正需要一句人话（而不是让用户从"任务一直失败"里自己猜）。
+
+### 断言（这是本轮的主证据）
+
+- `scripts/settings-media-check.mjs` 新增 **`NOTREADY` 组 8 条**（`check:settings` 126 → **134**）：
+  四段文案与顺序、`phase` 驱动（含"旧写法已消失"）、L4 状态词单列、**五态**在 `ipc.ts` 与 `nav.ts` 两处齐、
+  `mode`/`degraded`/`children` 三样都渲染、重试按阶段分派、**无硬编码进度**、样式类齐。
+- 反证由 55 → **62** 条，各条影响面单独核过（本轮新增 7 条，逐条只红它声称捕捉的那一条）。
+- 服务端 `check:engine-settings` 50 → **61/0**（新增 D 组 11 条）；`:refute` 4 → **5/5**。
+- `check:contract` 的 `S5.7` 顶层键断言 **8 → 9**（`S6` 起多一个 `modelDownload`）—— 77/0。
+
+### 脚手架坑（本轮撞到的）
+
+- **反证锚点要覆盖"让断言为真的**全部**来源"**：`v.ok ?` 只覆盖两处判据里的一处、`引擎正在跑：` 在
+  "相等 / 不相等"两个分支里各写了一遍 —— 只改一处 ⇒ 断言照旧绿 ⇒ **假反证**（看起来覆盖到了，其实什么都没测）。
+  ⇒ 反证器加 `all` 选项（同一处改错在代码里天然出现多遍时按字面量全替换）。
+- **类名抽取的正则要吃到后缀**：`\bstage-(?:…|meta)\b` 会把 `stage-meta-item-v2` 截成 `stage-meta`（前缀仍命中）
+  ⇒ 反证不变红。必须写 `[a-z0-9-]*`。
+- `old_string` 给注释块时必须连首行 `/**` 一起给 —— 只给尾行会留下孤立的 `*/`（`SyntaxError: Unexpected token '*'`）。
+
+### 实测（2026-10-06）
+
+- `check:settings` **134/0** · `check:settings:refute` **62/62** · `check:units` **37/0** ·
+  `check:units:refute` **44/44** · `check:ia` **24/0** · `check:docs` **14/0** ·
+  `check:contract` **77/0** · `check:engine-settings` **61/0** · `check:engine-settings:refute` **5/5** ·
+  `check:tls` **14/0** · `check:music` **215/1**（1 条为**既有红** `ISLANDV.toggleBothWays`）·
+  `check:music:refute` **180/180** · `selftest` **服务 159 + 引擎 23** ·
+  `tsc --noEmit` 与 `cargo check` 0 错。
+
+### 未做 / 边界（如实登记）
+
+- **真机视觉未核**：本轮只到"编译过 + 断言过"。X-C3 与②翻译服务在**真引擎冷启动**下的观感
+  （包括 L2 明细那一行到底会不会出现、`prewarming` 期间界面停在哪一段）属 S7 真机项 ⇒ `unverified`。
+- **`GET /engine/status` 的第 9 键只在 Box 内可见**：`modelDownload` **不进插件契约**（插件不需要，
+  也就不该为此增加一个必须永远兼容的字段）。
+- **模型下载的 5–8 GB 真实耗时**仍未实测（S3 起就登记着）：夹具下载器只睡 700ms，
+  它验的是**任务语义**（启动即返回 / 409 / 终态 / tail / 可重试），不是**速度**。
+- **Windows 侧未验**，沿用 S2/S5 的 `unverified`。
+
+**本节新增/修改的文件**：`app/src/screens/settings/{engine-api.ts, engine-state.ts, EngineDiag.tsx, ModelManageBlock.tsx}`（新）·
+`app/src/components/units/NumberInput.tsx`（新）· `service/src/{server.mjs, errors.mjs, config.mjs}` ·
+`service/scripts/{contract-delta-check.mjs, engine-settings-check.mjs}` ·
+`app/src/screens/settings/{catalog.ts, sections.tsx, parts.tsx, CacheBlock.tsx, SpecCheck.tsx}` ·
+`app/src/screens/{SettingsScreen.tsx, NotReadyScreen.tsx}` · `app/src/App.tsx` · `app/src/{ipc.ts, nav.ts}` ·
+`app/src/components/units/index.ts` · `app/src/styles/{components.scss, settings.scss, manga.scss}` ·
+`scripts/{settings-media-check.mjs, units-structure-check.mjs}` · `package.json` · 本文件 ·
+`docs/engine-integration-plan.md`（§5 阶段总览 / S6）· `AGENTS.md` · `README.md`。

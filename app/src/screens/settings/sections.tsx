@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
+import { errorText, openPath } from '@/ipc';
 import type { ServiceStatus } from '@/ipc';
 import type { ThemeMode } from '@/theme/tokens';
 import { stateView } from '@/nav';
-import { Btn, ColorPicker, Dot, Range, Select, Swatches, Switch } from '@components/units';
+import { Btn, ColorPicker, Dot, NumberInput, Range, Select, Swatches, Switch } from '@components/units';
 import { CtlNote, GroupNote, PendingRow, ReadOnly, Row, RowNote, SubTitle } from '@screens/settings/parts';
 import { SKINS, QUALITY_OPTIONS, LYRICS_SIZE, LYRICS_COLORS, LYRICS_MODE_OPTIONS } from '@music/player-options';
 import { useMusicStore } from '@music/store';
@@ -12,11 +13,17 @@ import { ABOUT, GENERAL, MEDIA, RESOURCE, TRANSLATE } from '@screens/settings/ca
 import type { SettingGroup, SettingItem } from '@screens/settings/catalog';
 import { SpecCheckBlock, useSpecCheck } from '@screens/settings/SpecCheck';
 import { CacheBlock } from '@screens/settings/CacheBlock';
+import { EngineDiag } from '@screens/settings/EngineDiag';
+import { ModelManageBlock } from '@screens/settings/ModelManageBlock';
+import { useEngineState } from '@screens/settings/engine-state';
+import { ACCEL_LABEL } from '@screens/settings/engine-api';
+import type { EngineAccel, EngineOptions, EngineTier } from '@screens/settings/engine-api';
 
 const STATUS_TEXT: Record<ServiceStatus['state'], string> = {
   stopped: '未启动',
   starting: '启动中',
   running: '运行中',
+  stopping: '正在停止',
   error: '异常',
 };
 
@@ -123,8 +130,16 @@ export function GeneralSection({
 /**
  * ② 翻译服务 —— 10 项 · 三小节（《09》§4.3）。
  *
- * 小节标题是这一组的**唯一分层手段**，也是 C11 的判据，所以标题写在 catalog 里、
- * 本组件只负责按 `groups` 顺序渲染 —— 少一组小节会直接体现为少一个 SubTitle。
+ * 小节标题是这一组的**唯一分层手段**，也是 C11 的判据（它数 `.set-subtitle` 恰为 3 个），
+ * 所以标题写在 catalog 里、本组件按 `groups` 顺序渲染 —— 少一组会直接体现为少一个 SubTitle。
+ *
+ * ## 这十项的取值来自**两个**服务端视角（不是一处冗余）
+ *   · `GET /engine/options` —— 选项清单：能选什么、选完何时生效、哪些键要重启
+ *   · `GET /engine/status`  —— 体检报告：进程此刻什么样、下载任务跑到哪了
+ * 详见 `useEngineState` 的文件头。这里只说一件界面上必须守住的事：
+ * **「已配置」与「已生效」要分别显示**。档位下拉显示的是**已配置**（用户在这里改的是
+ * "下次启动用哪档"），旁边那句小字才报当前引擎在跑哪档。反过来的话，用户刚保存完
+ * 就会看到下拉跳回旧值，只能得出"没存上"的结论。
  */
 export function TranslateSection({
   status,
@@ -133,6 +148,8 @@ export function TranslateSection({
   status: ServiceStatus | null;
   onToast: (t: string, k?: 'info' | 'good' | 'bad') => void;
 }) {
+  const eng = useEngineState(onToast);
+
   const copyToken = async () => {
     if (!status?.token) return;
     try {
@@ -144,13 +161,46 @@ export function TranslateSection({
   };
 
   const pairing = TRANSLATE.groups.find((x) => x.id === 'pairing') as SettingGroup;
+  const inference = TRANSLATE.groups.find((x) => x.id === 'inference') as SettingGroup;
+  const model = TRANSLATE.groups.find((x) => x.id === 'model') as SettingGroup;
   const state = status ? stateView(status.state) : null;
+
+  const o = eng.options;
+  const busy = eng.action !== null;
+
+  /** 档位下拉的取值 = **已配置**（盘上那份）；没配过就回落到硬件推荐档 */
+  const tierValue: EngineTier = o?.tier.configured ?? o?.tier.hardwareRecommended ?? 'tiny';
+  const tierFeasible = o?.tier.options ?? [];
+  const tierSelectable = tierFeasible.filter((t) => t.weightsReady);
+  /*
+   * 权重未纳入清单的档位**不出现**（与"物理不可行的档位不出现"同一把尺子：
+   * 列出来就是给一个点了不会有作用的选项）。但**当前已配置的那个必须出现** ——
+   * 否则控件会显示成空白/裸 id，用户看不出自己现在配的是哪档。
+   */
+  const tierOptions: { value: EngineTier; label: string }[] = tierSelectable.map((t) => ({
+    value: t.tier,
+    // 非推荐档在**选项文字**里就标出来（不必等选中才看见警示）
+    label: t.recommended ? `${TIER_LABEL[t.tier]}（推荐）` : `${TIER_LABEL[t.tier]}（不推荐）`,
+  }));
+  if (!tierOptions.some((t) => t.value === tierValue)) {
+    tierOptions.push({ value: tierValue, label: `${TIER_LABEL[tierValue]}（当前配置 · 权重不在清单）` });
+  }
+  /** 当前配的那档的可行性信息 —— 「不推荐」的强警告与预估内存都从这里来 */
+  const tierInfo = tierFeasible.find((t) => t.tier === tierValue) ?? null;
+
+  const accelValue: EngineAccel = o?.accel.choice ?? 'auto';
+
+  /** 值 → 中文名（后端候选缺失时也要能显示已配置的那一个，不能露出 `mps` 这种裸 id） */
+  const accelLabel = (v: EngineAccel) =>
+    o?.accel.options.find((x) => x.value === v)?.label ?? ACCEL_LABEL[v];
+
+  const pending = pendingRestart(o);
 
   return (
     <>
       <GroupNote>{TRANSLATE.note as string}</GroupNote>
 
-      {/* 小节一：服务与配对（3）—— 本组唯一接了真实能力的小节 */}
+      {/* 小节一：服务与配对（3） */}
       <div className="set-group">
         <SubTitle>服务与配对</SubTitle>
 
@@ -195,12 +245,227 @@ export function TranslateSection({
         </Row>
       </div>
 
-      {/* 小节二、三：整组待接入。刻意不预置任何控件 */}
-      <Group group={TRANSLATE.groups.find((x) => x.id === 'inference') as SettingGroup} />
-      <Group group={TRANSLATE.groups.find((x) => x.id === 'model') as SettingGroup} />
+      {/* 小节二：推理引擎（4）—— 档位 / 后端 / 两个空闲卸载阈值 */}
+      <div className="set-group">
+        <SubTitle>推理引擎</SubTitle>
+        {eng.loadError ? (
+          <div className="notice is-bad set-row-note">
+            读不到引擎选项：{eng.loadError}
+          </div>
+        ) : null}
+
+        <Row item={itemOf(inference, 'tier')}>
+          {o ? (
+            <>
+              <Select
+                label={itemOf(inference, 'tier').label}
+                value={tierValue}
+                options={tierOptions}
+                onChange={(v) => {
+                  // 选中的就是当前值 ⇒ 不必发一次"什么都没改"的写请求
+                  if (v === tierValue) return;
+                  void eng.save({ tier: v });
+                }}
+              />
+              <CtlNote>
+                {o.tier.effective === null
+                  ? '引擎未在运行，无法报出当前档位'
+                  : o.tier.effective === tierValue
+                    ? `引擎正在跑：${TIER_LABEL[o.tier.effective]}`
+                    : `引擎正在跑：${TIER_LABEL[o.tier.effective]}（改动需重启才生效）`}
+              </CtlNote>
+            </>
+          ) : (
+            <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
+          )}
+        </Row>
+        {/*
+          「不推荐」档的**强警告**（《02》§5：Small 保留但标注不推荐，选中时强警告）。
+          用通栏条而不是挤在右列 —— 右列是 `flex:0 0 auto` 的窄列，
+          一句带数字的警告塞进去会把同一个下拉挤歪。
+        */}
+        {tierInfo && !tierInfo.recommended ? (
+          <div className="set-warn">
+            {TIER_LABEL[tierInfo.tier]} 不建议：{tierInfo.warning}
+            {o ? `（该档预估峰值约 ${tierInfo.peakGb} GB，本机 ${o.hardware.totalRamGb} GB）` : ''}
+            。机器内存吃紧时翻译会明显变卡，甚至被系统换页拖慢整机。
+          </div>
+        ) : null}
+        {tierSelectable.length < tierFeasible.length ? (
+          <RowNote>
+            另有 {tierFeasible.length - tierSelectable.length} 个物理可行的档位未列出：
+            它们的权重还没纳入模型清单，选了也下不到。同一把尺子 —— 不摆点了没作用的选项。
+          </RowNote>
+        ) : null}
+
+        <Row item={itemOf(inference, 'backend')}>
+          {o ? (
+            <>
+              <Select
+                label={itemOf(inference, 'backend').label}
+                value={accelValue}
+                options={o.accel.options.map((x) => ({ value: x.value as EngineAccel, label: x.label }))}
+                onChange={(v) => {
+                  if (v === accelValue) return;
+                  void eng.save({ accel: v });
+                }}
+              />
+              <CtlNote>{`实际生效：${accelLabel(o.accel.effective as EngineAccel)}`}</CtlNote>
+            </>
+          ) : (
+            <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
+          )}
+        </Row>
+        {/*
+          「用户指定的后端本机没有」必须显示出来（服务端为此专门给了 `mismatch`）。
+          服务端的写路径会拒绝这种值，所以它只可能来自 env 或手工改过的设置文件 ——
+          越是这样越要说清楚，否则用户会以为自己选的 CUDA 真的在跑。
+        */}
+        {o?.accel.mismatch ? (
+          <div className="notice is-bad set-row-note">
+            {o.accel.mismatch} —— 已按硬件探测值执行（{o.accel.reason}）
+          </div>
+        ) : null}
+
+        <Row item={itemOf(inference, 'idle-llm')}>
+          {o ? (
+            <NumberInput
+              label={itemOf(inference, 'idle-llm').label}
+              value={o.idle.llm.min}
+              min={0}
+              max={IDLE_MIN_MAX}
+              suffix="分钟"
+              disabled={busy}
+              onChange={(v) => void eng.save({ idleLlmMin: v })}
+            />
+          ) : (
+            <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
+          )}
+        </Row>
+        <RowNote>
+          0 = <b>从不卸载</b>。这一档由 box-service 自己看护，保存后<b>立刻生效</b>，不需要重启。
+          {o && !o.idle.llm.minIsExact
+            ? `（当前阈值 ${o.idle.llm.ms} 毫秒 —— 不是整分钟，界面显示的是四舍五入后的分钟数，由环境变量覆盖所致）`
+            : ''}
+        </RowNote>
+
+        <Row item={itemOf(inference, 'idle-vision')}>
+          {o ? (
+            <NumberInput
+              label={itemOf(inference, 'idle-vision').label}
+              value={o.idle.vision.min}
+              min={0}
+              max={IDLE_MIN_MAX}
+              suffix="分钟"
+              disabled={busy}
+              onChange={(v) => void eng.save({ idleVisionMin: v })}
+            />
+          ) : (
+            <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
+          )}
+        </Row>
+        <RowNote>
+          0 = 从不卸载。这一档由引擎自带的 <code>--models-ttl</code> 执行，参数在拉开进程时就固化了
+          —— <b>必须重启引擎</b>才生效（与上面那一档待遇不同，这是刻意的）。
+        </RowNote>
+
+        <RestartHint title="推理引擎" keys={['翻译档位', '加速后端', '空闲卸载视觉']} pending={pending} />
+      </div>
+
+      {/* 小节三：模型与诊断（3） */}
+      <div className="set-group">
+        <SubTitle>模型与诊断</SubTitle>
+
+        <Row item={itemOf(model, 'model-dir')}>
+          {o ? (
+            <>
+              <ReadOnly title={o.modelDir.current}>{o.modelDir.current}</ReadOnly>
+              <Btn
+                size="sm"
+                // 路径不存在时禁用并说明原因（`open_path` 会先判 exists，点了只会报错）
+                disabled={!o.modelDir.exists}
+                title={o.modelDir.exists ? '在系统文件管理器里打开模型目录' : '模型目录当前不存在'}
+                onClick={() => {
+                  openPath(o.modelDir.current).catch((e: unknown) => onToast(errorText(e), 'bad'));
+                }}
+              >
+                打开
+              </Btn>
+            </>
+          ) : (
+            <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
+          )}
+        </Row>
+        {o ? (
+          <RowNote>
+            默认位置 <code>{o.modelDir.defaultDir}</code>；本值来自
+            {o.modelDir.source === 'env' ? '环境变量（压过设置文件）' : o.modelDir.source === 'file' ? '设置文件' : '默认值'}。
+            {o.modelDir.configured && o.modelDir.configured !== o.modelDir.current
+              ? ` 已配置 ${o.modelDir.configured}，但服务当前仍在用上面这个目录 —— 需重启才切换。`
+              : ''}
+          </RowNote>
+        ) : null}
+
+        {/* 通栏块（catalog 里 layout:'block'）：校验结果是清单，塞不进右列 */}
+        <ModelManageBlock item={itemOf(model, 'model-manage')} eng={eng} />
+
+        {/* 通栏块：诊断面板（《09》§6.2，默认可见不折叠） */}
+        <EngineDiag eng={eng} service={status} onToast={onToast} />
+      </div>
     </>
   );
 }
+
+/**
+ * 「改完要重启引擎」的提示条（《09》§4.3 末句）。
+ *
+ * 两个状态，刻意分开说：
+ *   · 常态 —— 陈述这一类键**改了要重启**（用户动手前就该知道）；
+ *   · `pending` 非空 —— 已经存了、但引擎还在按旧值跑。这时要指名道姓地说出是哪几项，
+ *     否则用户看到"需重启才生效"会以为系统在提醒他"待会儿记得重启"，
+ *     而事实是**他现在就该重启**，否则刚才那次保存白改。
+ */
+function RestartHint({ title, keys, pending }: { title: string; keys: string[]; pending: string[] }) {
+  const hit = keys.filter((k) => pending.includes(k));
+  return (
+    <div className={hit.length ? 'set-hint is-pending' : 'set-hint'}>
+      <b>{title}</b>：改 {keys.join(' / ')} 需<b>重启引擎</b>才生效 ——
+      这些值在拉开引擎进程时就定下了。
+      {hit.length ? (
+        <>
+          <br />
+          已保存、尚未生效：<b>{hit.join('、')}</b>。现在重启即生效。
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * 哪些「要重启才生效」的键**已经存了但还没生效**（《09》§4.3）。
+ *
+ * ⚠️ 「空闲卸载视觉」**判不出来**，这里刻意不猜：`options.idle.vision` 报的是
+ * **现读盘**的已配置值，而引擎实际用的那个 `--models-ttl` 没有任何接口报出来
+ * （它是拉开进程时的参数，引擎没把「我现在用的 ttl 是多少」暴露出来）。
+ * 猜错的代价比不猜大：界面若说"这项过期了"而其实没有，用户会去点重启 ——
+ * 一次几十秒的冷启动，为的是一件并不存在的问题。
+ */
+function pendingRestart(o: EngineOptions | null): string[] {
+  if (!o) return [];
+  const out: string[] = [];
+  if (o.tier.configured && o.tier.effective && o.tier.configured !== o.tier.effective) out.push('翻译档位');
+  // `choice` 是"用户选的"，`effective` 是"实际跑的"；硬件探测（auto）之外的不一致就是没生效
+  if (o.accel.choice !== 'auto' && o.accel.choice !== o.accel.effective) out.push('加速后端');
+  if (o.modelDir.configured && o.modelDir.configured !== o.modelDir.current) out.push('模型目录');
+  return out;
+}
+
+/** 档位的中文名（catalog 用 Tiny/Small/Medium 的写法，这里只做一处映射，不散落字面量） */
+const TIER_LABEL: Record<EngineTier, string> = { tiny: 'Tiny', small: 'Small', medium: 'Medium' };
+
+/** 空闲卸载阈值的上限（与服务端 `IDLE_MIN_MAX` 同值：24h；再大就不像"空闲卸载"而像输错了） */
+const IDLE_MIN_MAX = 1440;
+
 
 /**
  * 桌面歌词「锁定」在**主窗侧读写的那个 localStorage 键**。

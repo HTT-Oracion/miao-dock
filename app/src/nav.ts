@@ -51,11 +51,18 @@ export const APP_VIEWS: Record<AppId, TranslateView[] | null> = {
   music: null,
 };
 
-/** 服务四态 → 文字 + 色相令牌（《02》§2.1 的四态机；颜色只由点承载，文字同步给出） */
+/**
+ * 服务五态 → 文字 + 色相令牌（《02》§2.1 的五态机；颜色只由点承载，文字同步给出）。
+ *
+ * ⚠️ `stopping` 必须在这里出现，且**不是**可省项：`Record<ServiceState, …>` 是穷尽映射，
+ * 少一个键 TS 就报错（这正是当初能挡住"Rust 加了状态、TS 没跟"的原因）；
+ * 运行时若拿到未知值，`stateView()` 会返回 `undefined`，调用方取 `.text` 即崩。
+ */
 const STATE_VIEW: Record<ServiceState, { text: string; colorVar: string }> = {
   stopped: { text: '服务未启动', colorVar: '--md-muted' },
   starting: { text: '启动中', colorVar: '--md-blue' },
   running: { text: '服务运行中', colorVar: '--md-success' },
+  stopping: { text: '正在停止', colorVar: '--md-muted' },
   error: { text: '服务异常', colorVar: '--md-error' },
 };
 

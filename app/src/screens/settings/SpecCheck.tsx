@@ -7,6 +7,7 @@ import type { TaskRow } from '@/types';
 import { STATUS_DOT_VAR, STATUS_LABEL, SOURCE_LABEL } from '@/types';
 import { Dot, MagicCircle } from '@components/units';
 import { QuitConfirm } from '@components/QuitConfirm';
+import { emphasis } from '@screens/settings/parts';
 
 const noop = () => {};
 
@@ -263,10 +264,13 @@ export function SpecCheckBlock({
             <div key={r.id} className={r.ok ? 'spec-row is-ok' : 'spec-row is-bad'}>
               <i>{r.ok ? '✓' : '✗'}</i>
               <span>
-                <b>{r.id}</b> {r.label}
+                {/* `label` 与 `detail` 都是**给用户看的文案**（`spec-check.ts` 里写的），
+                    同样含 `**重点**` 标记 —— 不走 emphasis 就会原样显示两个星号。
+                    与 catalog 的 note/why 是同一类缺陷，所以共用同一个解析器。 */}
+                <b>{r.id}</b> {emphasis(r.label)}
                 <br />
                 <span className="muted" style={{ fontSize: 10.5 }}>
-                  {r.detail}
+                  {emphasis(r.detail)}
                 </span>
               </span>
             </div>

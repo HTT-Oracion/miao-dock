@@ -163,6 +163,44 @@
   color: var(--md-ink-2);
   text-align: right;
 }
+
+/*
+ * 数字输入框（`.ui-num`）—— 与 `.ui-select` / `.set-ro` 同高 24、同圆角、同描边，
+ * 于是「下拉 / 只读值 / 数字框」在设置页右列里是同一排对齐的三个东西。
+ *
+ * 宽度 64：够放 `1440`（分钟上限）与光标，又不至于让标题列被挤窄。
+ * `text-align: right` + `tabular-nums`：数字右对齐才好比较量级，且改位时不会左右抖。
+ * 刻意**不画**上下箭头（见 NumberInput 的文件头）：箭头宽度是平台相关的，
+ * 会在固定窄列里造成漂移，而键盘 ↑↓ 已经给了同样的能力。
+ */
+.ui-num {
+  width: 64px;
+  height: 24px;
+  padding: 0 7px 0 9px;
+  font-family: var(--md-font-numeric);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--md-ink);
+  text-align: right;
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-xs);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.ui-num:hover { background: var(--md-surface-2); }
+.ui-num:focus { outline: none; }
+/* 焦点与 `.ui-select[data-state='open']` 用同一套「pink 边框 + pink-soft ring」语汇 */
+.ui-num:focus-visible {
+  border-color: var(--md-pink);
+  box-shadow: 0 0 0 2px var(--md-pink-soft);
+}
+.ui-num:disabled { cursor: default; opacity: 0.45; }
+/* 单位（如「分钟」）跟在本框右侧，比读数浅一档以示它不是可编辑内容 */
+.ui-num-suffix {
+  font-size: 11px;
+  color: var(--md-muted);
+}
 /* 预设色点：选中态用 ring 而不是换颜色 —— 色点本身的颜色就是信息，不能再被选中态覆盖 */
 .ui-swatches { display: flex; align-items: center; gap: 5px; }
 .ui-swatch {

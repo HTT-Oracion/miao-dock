@@ -12,6 +12,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import {
+  ENGINE_SETTINGS_KEYS, envVisionTtlSec, mergeWithEnv, readEngineSettings,
+} from './engine-settings.mjs';
+
 export const SERVICE_NAME = 'box-service';
 export const SERVICE_VERSION = '1.2.0';
 export const API_VERSION = 'v1';
@@ -49,6 +53,52 @@ function envBool(name, def = false) {
   if (raw === undefined || raw === '') return def;
   return !['0', 'false', 'no', 'off'].includes(String(raw).toLowerCase());
 }
+
+/**
+ * 「**没设**返回 null」的整数环境变量。
+ *
+ * 与 `envInt` 的区别是那句"没设"：`envInt` 读不出来就用默认值，于是**无法区分**
+ * 「用户没配」与「用户配了但配错了」。而下面这些阈值要做"env → 用户设置文件 → 出厂默认"
+ * 的三级回退 —— 若这里也静默回退，`MIAO_ENGINE_MODELS_TTL=abc` 会悄悄落到用户配置上，
+ * 表现为"我明明关了空闲卸载，它还是卸"（或反过来）。
+ */
+function envIntOrNull(name) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return null;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0) {
+    throw new Error(`${name} 取值非法：${JSON.stringify(raw)}（应为 ≥0 的整数）`);
+  }
+  return n;
+}
+
+/**
+ * S6 契约面反证开关（与 `contractRefute` 同族，见那处注释）。
+ *
+ * 🔴 只被 `service/scripts/engine-settings-check.mjs --refute` 设置；产品路径永不设置。
+ * 集中一处（不散在用它各自的代码旁）的理由与 S5 那次相同：散着放的下场是
+ * 「反证跑绿了，但没人说得清它到底关掉了什么」。
+ *
+ * ⚠️ 必须在 `readIdleSettings()` **之前**求值：那个函数要用 `envLast`
+ *   （否则会出现 "Cannot access 'config' before initialization"）。
+ */
+const SETTINGS_REFUTE = {
+  /** 写路径不再校验白名单 ⇒ 未知键被**静默丢弃**（`S1` 应红） */
+  noWhitelist: envBool('MIAO_SETTINGS_NO_WHITELIST'),
+  /** 合并优先级倒过来（文件压 env）⇒ 「env 优先」不可见（`R2` 应红） */
+  envLast: envBool('MIAO_SETTINGS_ENV_LAST'),
+  /** 加速后端候选不再按硬件筛 ⇒ Metal 机上出现 CUDA（`G5`/`S5` 应红） */
+  accelOpen: envBool('MIAO_SETTINGS_ACCEL_OPEN'),
+  /** 档位候选不再按内存可行性筛 ⇒ 16GB Mac 上出现 Medium（`G3`/`S4` 应红） */
+  tierAll: envBool('MIAO_SETTINGS_TIER_ALL'),
+  /**
+   * 模型下载的**单飞守卫**被摘掉 ⇒ 并发第二个请求不再 409（`D3` 应红）。
+   *
+   * 为什么这条需要反证：单飞守卫的失效形态是"看起来更宽容了"（第二次点击也返回 200），
+   * 不打开这个开关就没法证明 `D3` 咬的确实是守卫本身，而不是"恰好第一次还没进 running"。
+   */
+  downloadOpen: envBool('MIAO_SETTINGS_DOWNLOAD_OPEN'),
+};
 
 /**
  * 枚举型环境变量：**取值非法直接抛错，不静默回退**。
@@ -109,6 +159,58 @@ export const IDEMPOTENCY_FILE = path.join(STATE_DIR, 'idempotency.json');
 export const TOKEN_FILE = path.join(STATE_DIR, 'token');
 
 /**
+ * 用户可调引擎设置的落盘位置（`state/engine-settings.json`）。
+ *
+ * 放 `STATE_DIR` 而不是漫画目录：与 `token` / `idempotency.json` 同一套理由
+ * （契约 §7.5 —— 「不放漫画目录内，否则会被库扫描误读为用户内容」）。
+ */
+export const ENGINE_SETTINGS_FILE = path.join(STATE_DIR, 'engine-settings.json');
+
+/**
+ * 「盘上的用户设置」+「环境变量」合并后的**生效设置**（`engine-settings.mjs` 的唯一调用点）。
+ *
+ * 🔴 这里是「谁说了算」的**唯一一处**实现。`print-launch-plan.mjs` 通过 import 本文件
+ *    自动拿到同一份合并结果 —— 它不需要知道设置文件在哪，也就没有第二处可以走散。
+ *
+ * ⚠️ 读盘**不写盘**：坏文件只是被标记成 `corrupt`（`readEngineSettings` 里原地保留），
+ *    这里的处置是**喊一声然后退回默认**。为什么不"顺手删掉那个坏文件"：
+ *    本文件被所有只读脚手架（打印配方、各验收脚本）在模块顶层 import，
+ *    在顶层做**破坏性文件操作**会让"跑一条只读命令"变成一次不可预期的数据变更。
+ */
+const ENGINE_SETTINGS_READ = readEngineSettings({ file: ENGINE_SETTINGS_FILE });
+const ENGINE_SETTINGS_MERGED = mergeWithEnv({
+  env: process.env,
+  fileSettings: ENGINE_SETTINGS_READ.settings,
+  envLast: SETTINGS_REFUTE.envLast,
+});
+
+/** 生效的引擎设置（已含 env 覆盖） */
+export const engineSettings = ENGINE_SETTINGS_MERGED.settings;
+
+/**
+ * 生效设置的**来源**（`env` / `file`）—— 给 `/engine/options` 回答"这个值谁定的"。
+ * 一个用户改不动的控件，若界面上不说清是谁压着它，用户只会以为坏了。
+ */
+export const engineSettingSources = ENGINE_SETTINGS_MERGED.sources;
+
+/** 设置文件本身的状态（路径 / 是否坏 / 坏在哪 / 解析时丢弃了什么）—— 诊断视图要显示 */
+export const engineSettingsFile = {
+  path: ENGINE_SETTINGS_FILE,
+  keys: [...ENGINE_SETTINGS_KEYS],
+  exists: ENGINE_SETTINGS_READ.exists,
+  corrupt: ENGINE_SETTINGS_READ.corrupt,
+  reason: ENGINE_SETTINGS_READ.reason,
+  ignoredKeys: ENGINE_SETTINGS_READ.unknownKeys,
+  invalidValues: ENGINE_SETTINGS_READ.invalid,
+};
+
+if (ENGINE_SETTINGS_READ.corrupt) {
+  // ⚠️ 只喊不删（理由见上）。这句话必须显眼：否则用户看到的是"我的设置全没了"，却查不出为什么。
+  console.warn(`[box-service] ⚠ 引擎设置文件损坏，已退回默认值（文件原地保留）：`
+    + `${ENGINE_SETTINGS_FILE} —— ${ENGINE_SETTINGS_READ.reason}`);
+}
+
+/**
  * 上传字节的**暂存区**（G-12，用户裁定 B，2026-10-03）。
  *
  * 为什么必须有这么个东西：上传的原图原先只活在服务进程的内存里（`store.blobs`），
@@ -155,17 +257,54 @@ export function ensureToken() {
 }
 
 /**
+ * 两级空闲卸载阈值的**唯一**求解处（可反复调用）。
+ *
+ * 抽成函数而不是就地在顶层算成两个 const，是因为 S6 起「空闲卸载 LLM」能在设置页改
+ * 且**改完立刻生效** ⇒ 写完盘必须能**重算一次**。若顶层是 const、另写一份重算逻辑，
+ * 两份逻辑就会走散（改了一处忘另一处），而它们的失败形态尤其恶劣：
+ * 界面显示 5 分钟、看护实际按 30 分钟走 —— 两边都不报错。
+ *
+ * 回退链（三级，env 优先）：
+ *   Tier1 `llmMs` ：`MIAO_IDLE_LLM_MS`（毫秒，夹具要秒级短回路）
+ *                   → `MIAO_IDLE_LLM_MIN` → 文件 `idleLlmMin` → 出厂 5 min
+ *   Tier2 `visionSec`：`MIAO_ENGINE_MODELS_TTL`（**秒**，历史单位）
+ *                   → 文件 `idleVisionMin` → 出厂 1800 s（30 min）
+ *
+ * @returns {{llmMs:number, visionSec:number, settings:object, sources:object}}
+ */
+export function readIdleSettings() {
+  const fresh = readEngineSettings({ file: ENGINE_SETTINGS_FILE });
+  const merged = mergeWithEnv({
+    env: process.env,
+    fileSettings: fresh.settings,
+    envLast: SETTINGS_REFUTE.envLast,
+  });
+
+  const llmMs = envIntOrNull('MIAO_IDLE_LLM_MS')
+    ?? (merged.settings.idleLlmMin === undefined ? 5 * 60_000 : merged.settings.idleLlmMin * 60_000);
+
+  const sec = envVisionTtlSec(process.env);
+  const visionSec = sec !== null
+    ? sec
+    : (merged.settings.idleVisionMin === undefined ? 1800 : merged.settings.idleVisionMin * 60);
+
+  return { llmMs, visionSec, settings: merged.settings, sources: merged.sources };
+}
+
+const IDLE = readIdleSettings();
+
+/**
  * Tier2 空闲卸载阈值（**秒**）—— 引擎 `--models-ttl` 与设置页「空闲卸载视觉」**同一个数字**。
  * 抬到对象外，是为了让 `engineModelsTtl`（秒，发给引擎）与 `idleVisionMs`（毫秒，对外展示）
  * 由**同一处**派生，而不是抄两遍（抄两遍就是在等它们走散）。
  */
-const ENGINE_MODELS_TTL_SEC = envInt('MIAO_ENGINE_MODELS_TTL', 1800);
+const ENGINE_MODELS_TTL_SEC = IDLE.visionSec;
 
 /**
  * Tier1 空闲卸载阈值（《04》§9.1：停 ③ Sakura LLM，默认 5 min）。
  * **实现方 = box-service 自己**（③ 不在引擎 TTL 范围内）⇒ 这个阈值只有 box-service 认。
  */
-const IDLE_LLM_MS = envInt('MIAO_IDLE_LLM_MS', 5 * 60_000);
+const IDLE_LLM_MS = IDLE.llmMs;
 
 /**
  * 「从不卸载」（《04》§9.3 末句：「用户配置『从不卸载』→ 两级都关闭」）。
@@ -264,7 +403,14 @@ export const config = {
   engineServerDir: process.env.MIAO_ENGINE_SERVER_DIR || path.join(ENGINE_DIR, 'server'),
   enginePython: process.env.MIAO_ENGINE_PYTHON
     || path.resolve(PKG_DIR, '..', 'runtimes', 'manga-translator', 'venv', 'bin', 'python'),
-  engineUseGpu: envBool('MIAO_ENGINE_USE_GPU', true),
+  // 模型根目录（`models/` 的父目录）。三级回退（S6）：
+  //   `MIAO_MODEL_ROOT`（env）→ 设置文件 `modelDir` → 引擎源码树上一级（= `runtimes/manga-translator/`）
+  // ⚠️ 与 `engine/scripts/fetch-models.mjs` 的 `ROOT` 必须**同源**：那个脚本自己读
+  //    `process.env.MIAO_MODEL_ROOT`，所以下发给它的时候要**显式带 env**（见 server.mjs 的
+  //    校验端点），否则会出现"服务读 A 目录、校验脚本读 B 目录"——而两边都会报成功。
+  engineModelDir: path.resolve(
+    engineSettings.modelDir || path.resolve(ENGINE_DIR, '..'),
+  ),
   // Tier 2 空闲卸载（《04》§9.1）：引擎自带 `--models-ttl 1800`（30 min）。
   // 「从不卸载」⇒ 归零，`resolveEngineLaunch` 便不再下发该参数（见 UNLOAD_NEVER 处注释）。
   engineModelsTtl: UNLOAD_NEVER ? 0 : ENGINE_MODELS_TTL_SEC,
@@ -279,13 +425,24 @@ export const config = {
   //      需给上游打补丁或在适配层前加一层仅本机可访问的代理。
   //    ⚠️ 覆盖成别的值 = 功能必坏（保留此开关只为上游修好后复用）。
   engineNonce: process.env.MIAO_ENGINE_NONCE || 'None',
-  // ---------------------------------------------------------------- 档位与空闲卸载（S4）
+  // ---------------------------------------------------------------- 档位与空闲卸载（S4 / S6）
   //
   // 生效档位（《04》§7.2 / §8.3）。`null` = **按硬件探测推荐**（`engine-profile.mjs` 的
   // `mapTier`），只有用户在设置页显式改过才非 null —— 这样"换了台机器"不会被一份陈旧的
   // 写死值覆盖（§8.3：降档只在本运行期有效，关闭后回到用户配置档位）。
-  // 取值非法**启动即抛错**（envEnum 的既定行为，不静默回退）。
-  engineTier: envEnum('MIAO_ENGINE_TIER', new Set(['tiny', 'small', 'medium']), null),
+  // 取值非法**启动即抛错**（`mergeWithEnv` 的既定行为，不静默回退）。
+  // S6：来源从"MIAO_ENGINE_TIER 一个"扩成"env → 设置文件 → 硬件探测"三级（见 engineSettings）。
+  engineTier: engineSettings.tier ?? null,
+  // 加速后端（《02》§5：下拉「自动 / CUDA / MPS / CPU」，默认自动）。
+  // `auto` = 按《04》§7.4 顺序探测（= `engine-profile.mjs` 的 `detectAccel`）。
+  engineAccel: engineSettings.accel ?? 'auto',
+  // 这一组里真正被引擎消费的那个布尔量（`resolveEngineLaunch` 按它决定加不加 `--use-gpu`）。
+  // 🔴 两个来源取**与**，不是二选一：
+  //    · `accel === 'cpu'` —— 用户在界面上明确选了 CPU（设置页）；
+  //    · `MIAO_ENGINE_USE_GPU=0` —— S4 起就存在的注入开关，验收用它造"GPU 回退 CPU"现场
+  //      （`contract-delta-check` 的实例 D、以及 Rust 侧检测到 GPU 启动失败后的重拉）。
+  //    只认其中一边，都会让另一边"设置了却没用"，而那正是最难查的一类。
+  engineUseGpu: engineSettings.accel === 'cpu' ? false : envBool('MIAO_ENGINE_USE_GPU', true),
   // Tier1 空闲卸载阈值（定义与「从不卸载」的口径见 `IDLE_LLM_MS` / `UNLOAD_NEVER` 处）
   idleLlmMs: IDLE_LLM_MS,
   // 空闲看护的**巡检周期**（不是策略，是"多久看一眼"）。默认 5s：相对 5 min 的阈值而言
@@ -306,6 +463,12 @@ export const config = {
   // 验收夹具若只关心任务/队列契约、又可能与其他实例抢 8080，可置 `MIAO_NO_LLM_AUTOSTART=1` 退出
   // —— 这个开关是**给夹具用的**，不是给产品的；产品路径永远走预拉起。
   llmAutostart: !envBool('MIAO_NO_LLM_AUTOSTART'),
+
+  // ---------------------------------------------------------------- 契约面反证开关（S6）
+  //
+  // 与 `contractRefute` 同族（见 S5 那一组的注释），只是换成了 S6 的设置面。
+  // 只被 `service/scripts/engine-settings-check.mjs --refute` 设置；产品路径永不设置。
+  settingsRefute: SETTINGS_REFUTE,
 
   // ---------------------------------------------------------------- 契约面反证开关（S5）
   //
