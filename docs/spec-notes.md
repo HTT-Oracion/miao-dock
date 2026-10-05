@@ -1791,3 +1791,46 @@ A+B 合起来才证明**预算确实随基准缩放**（即旋钮真的接管了
 `runtimes/manga-translator/out-first/test_0.webp`（新，G1 产物）·
 `docs/engine-integration-plan.md` · `docs/engine-integration-delivery-plan.md`（M1 状态回填）。
 
+---
+
+## D-61 · 调研：manga-ocr 作为 OCR 后端（**未采纳，仅留痕**）（2026-10-05）
+
+**问题**：用户问「若要使用 `kha-white/manga-ocr`，当前方案要怎么调整、跟现状什么区别」。
+
+**结论一（省掉一整条重做路）：引擎本来就内置它，属公开契约。**
+`Ocr.mocr` 已注册（`ocr/__init__.py:15`，枚举 `config.py:108`），`manga-ocr` 本来就在上游
+`requirements.txt:49` ⇒ 我们的 venv 里早就装了（`manga_ocr 0.1.16`）。
+更关键的是**我们已导出的 `openapi.engine.json` 里就有 `mocr` 与 `use_mocr_merge`**。
+⇒ 改动量 = **一个 config 字段 + 一个环境变量**，**引擎源码一行不用改**。
+
+**结论二（机制，决定"换了到底变什么"）：mocr 是**并联**不是替换。**
+`model_manga_ocr.py` 里 48px AR 模型**照跑**（提供 prob 与前景/背景取色），
+只有**文本**改由 `MangaOcr` 产出（`:162`），且置信度闸门 `:191` 用的仍是 **48px 的 prob**。
+⇒ 已预置的 `ocr_ar_48px.ckpt` 仍然必需。
+⇒ 且 `use_mocr_merge`（默认 `false`）**没有 CLI 参数**：不开它，manga-ocr"整气泡一次读"的卖点用不上。
+
+**结论三（实测，5 臂 / 唯一变量 = `ocr` 段）**：
+- 分块：48px **21 块**（一句话被切成 3 段分别翻译）→ mocr+合并 **11 块**（完整句）。
+- 耗时（Sakura 1.5B/CHS，端到端）：48px 1.8 min → mocr+合并 **1.6 min**（识别块少了，翻译调用少一半，反而更快）。
+- 新增体量：模型 **424 MiB**（`pytorch_model.bin`，hf-mirror 16 s）；依赖已在，不算新增。
+- 离线可用已验：`HF_HOME` 指预置缓存 + `HF_HUB_OFFLINE=1` 加载成功，官方 4 张示例图**逐字全中（4/4）**。
+
+**🔴 结论四（阻塞项，未解决）**：`use_mocr_merge=true` 时**渲染回归** ——
+合并后的气泡被排成**巨型字号并截断**。已做两条反证，**都被推翻**：
+`render.direction=vertical` 无效、`render.font_size=22` 无效 ⇒ 杠杆在**合并框的几何**
+（`merge_bboxes` 的 `minimum_rotated_rectangle`），修它要改上游 vendored 源码，属独立立项。
+
+**两条认知纠正（对 S1 有用）**：
+1. **`shared`（生产）模式没有 `--config-file`** —— config 是**按请求**传的
+   （`server/request_extraction.py:18-23` 的 `TranslateRequest.config`，或 form 端点的 `config` 字段）。
+   即 OCR/翻译档位由**我们每次请求**给出，不是引擎启动参数。
+2. `MangaOcr()` **自己选设备**（CUDA>MPS>CPU），**不看引擎的 `--use-gpu`**；
+   macOS 上会永远走 MPS，`force_cpu` 未暴露 ⇒ 与 llama-server 有争 Metal 显存的风险。
+
+**影响面**：仅"若采纳"时才动 `engine-client.mjs`（config）、引擎进程 env（`HF_HOME`）、
+`VERSIONS.lock`（新增一节）、以及一个新的阻塞项（排版）。**本轮不改任何默认值。**
+
+**回写落点**：本文件 + `docs/manga-ocr-ocr-backend-assessment.md`（**完整报告**）+
+`docs/refs/manga-ocr/01-full-page-ab.png`、`02-typeset-regression.png`（证据图）。
+未采纳 ⇒ `engine/VERSIONS.lock` 暂不新增条目；拍板后再补。
+
