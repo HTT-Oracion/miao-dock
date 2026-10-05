@@ -158,6 +158,16 @@ struct LaunchSpec {
     /// 我们自己的 Node 子进程（服务 / mock 替身）内部已装父死看管，无需再包（会多一层进程）。
     #[serde(default)]
     watch: bool,
+    /// **归属方**（S4 起新增）。`None` / `"manager"` ⇒ 本 Manager 负责 spawn（沿 S2 行为）；
+    /// `"service"` ⇒ 由 **box-service** 自己拉起，本 Manager **只打印不 spawn**。
+    ///
+    /// 为什么需要它：《04》§9.1 规定 Tier1 空闲卸载（停 ③ Sakura LLM）的实现方是 box-service
+    /// （③ 不在引擎 TTL 范围内）。若 Rust 照旧 spawn，就会与 box-service spawn 的那个
+    /// **抢同一个 8080** —— 而"两个 llama-server 互相踩"的报错离根因极远。
+    /// 保留这条 spec 而不是直接给 `llm: null`，是为了 E1 的「生效参数快照」仍然逐条列出
+    /// **真正会被执行的东西**（包括 ③ 的完整命令行）；删掉它等于让快照悄悄少一块。
+    #[serde(default)]
+    owner: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -377,7 +387,13 @@ impl ServiceManager {
         say(&log, &format!("MIAO_LAUNCH_PLAN mode={}", plan.mode));
         say(&log, "──────────── 生效参数快照（E1）────────────");
         if let Some(llm) = &plan.llm {
-            say(&log, &format!("[miao-dock] ③ llm    : {}", cmd_line(&llm.cmd)));
+            // S4：③ 的归属权可以是 box-service（`owner == "service"`）。快照照常打出**完整命令**，
+            // 并注明执行者 —— 不然读日志的人会以为 Rust 该为 8080 负责（它不再负责了）。
+            let by = match llm.owner.as_deref() {
+                Some("service") => "（由 box-service 拉起，见《04》§9.1 Tier1）",
+                _ => "",
+            };
+            say(&log, &format!("[miao-dock] ③ llm    : {}{}", cmd_line(&llm.cmd), by));
         } else {
             say(&log, "[miao-dock] ③ llm    : （本模式无独立 LLM 进程）");
         }
@@ -403,7 +419,17 @@ impl ServiceManager {
 
         // ---- 1) 拉起 ③ ② ① ----
         let mut spawn_errs: Vec<String> = Vec::new();
-        if let Some(spec) = &plan.llm {
+        // ③ 的归属方可能是 **box-service**（S4 起，见 `LaunchSpec.owner` 注释）：那种情况下
+        // 本 Manager **只打印不 spawn**，否则两个 llama-server 会抢同一个 8080。
+        let llm_owned_by_service = plan
+            .llm
+            .as_ref()
+            .and_then(|s| s.owner.as_deref())
+            .map(|o| o == "service")
+            .unwrap_or(false);
+        if llm_owned_by_service {
+            say(&log, "[miao-dock] ③ LLM 归属 box-service —— 本进程不 spawn（8080 由它负责）");
+        } else if let Some(spec) = &plan.llm {
             match spawn_spec(spec, &log) {
                 Ok(p) => {
                     let port = first_port(&p.probes);
@@ -437,6 +463,8 @@ impl ServiceManager {
             probes: Vec::new(),
             probe_timeout_ms: None,
             watch: false,
+            // ① 由本 Manager 亲自拉起（它是"最后一道防线"，不能交给别人）
+            owner: None,
         };
         match spawn_spec_with_ready(&service_spec, &log) {
             Ok((p, rx)) => {

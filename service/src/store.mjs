@@ -13,6 +13,7 @@ import {
 import { ApiError } from './errors.mjs';
 import { sniffImageType } from './image.mjs';
 import { translateImage, EngineError } from './engine-client.mjs';
+import { isOomError } from './tier-downgrade.mjs';
 import { isSafeDirName } from './names.mjs';
 import { writeSseEvent } from './sse.mjs';
 
@@ -77,6 +78,17 @@ export class Store {
     /** idempotencyKey → { taskId, batchIndex, at } */
     this.idempotency = new Map();
     this.startedAt = nowIso();
+    /**
+     * 翻译前的**懒加载恢复**钩子（《04》§9.3）：③ 被空闲卸载后再来任务时，先拉起它。
+     * 由 server.mjs 在装配阶段注入（`store.ensureLlm = () => supervisor.start()`）。
+     * 缺省 `null` ⇒ 纯 Store 场景（单测/自检）行为完全不变。
+     */
+    this.ensureLlm = null;
+    /**
+     * 档位降档控制器（《04》§8）。由 server.mjs 注入（进程级单例 ⇒ 天然是"服务级"作用域）。
+     * 缺省 `null` ⇒ 纯 Store 场景（单测/自检）不做降档，行为完全不变。
+     */
+    this.tierDowngrade = null;
   }
 
   // ---------------------------------------------------------------- 启动恢复
@@ -798,6 +810,14 @@ export class Store {
     const forceFail = config.failSeqs.has(item.seq) ||
       (config.itemFailRate > 0 && Math.random() < config.itemFailRate);
 
+    // 《04》§9.3 懒加载恢复：③ LLM 可能已被空闲卸载（§9.1 Tier1）。任务到来时先把它拉回来，
+    // 再走正常链路 —— 对用户表现为「这张稍慢」，而**不是失败**（§9.4：卸载 ≠ 未就绪）。
+    // ⚠️ 必须放在**重试循环之外**：③ 没起来时每一张都会失败，把它放进循环里只会把 3 次重试
+    //    浪费在同一次等待上（而且三次都是同一个原因失败，看着像"引擎坏了"）。
+    if (typeof this.ensureLlm === 'function') {
+      try { await this.ensureLlm(); } catch { /* 起不来就照常往下走 —— 真正的失败原因由 translateImage 给出 */ }
+    }
+
     let attempt = 0;
     let translated = null;
     let lastErr = null;
@@ -809,6 +829,18 @@ export class Store {
         break;
       } catch (err) {
         lastErr = err;
+        // 《04》§8.2：OOM ⇒ 降一档重试**一次**，且**不叠加** item 级重试 —— 所以这里把
+        // attempt 回退一格再重试（一次 OOM 只算降档那一次，不额外吃掉 item 的重试预算）。
+        // 降档是**服务级**的：`this.tierDowngrade` 是进程级单例，降完之后后续所有 item 都走新档。
+        // ⚠️ 不会打转：闩落下后再 OOM，`tryDowngrade()` 返回 `already-downgraded` ⇒ 落到下面的
+        //    常规重试/失败分支（§8.2 底线「已是最低档仍 OOM ⇒ 任务 failed」）。
+        if (this.tierDowngrade && isOomError(err)) {
+          const r = await this.tierDowngrade.tryDowngrade();
+          if (r.downgraded) {
+            attempt -= 1;
+            continue;
+          }
+        }
         if (attempt >= MAX_ATTEMPTS) break;
         await sleep(RETRY_BACKOFF_MS);
       }

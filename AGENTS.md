@@ -57,7 +57,7 @@ npm run selftest              # A 组服务契约 159 条 + 引擎自测 23 条
 npm run selftest:app[:refute] # B 组应用生命周期 16 条（含 S2a–S2d：五态轨迹 / E1 参数快照 / 三子进程 / 崩溃分级；含反证）
 npm run selftest:app:e11[:refute]     # E11 三进程树回收（mock，秒级）：SIGKILL 主进程 → 13 端口全释放
 npm run selftest:app:e11:real         # 同上但**真进程**（python+执行器+llama-server，14 端口）· 分钟级
-npm run check:launch-plan     # S2 启动配方契约 22 条（print-launch-plan.mjs → Rust，含与 probeEngine 同源断言）
+npm run check:launch-plan     # S2 启动配方契约 24 条（print-launch-plan.mjs → Rust，含与 probeEngine 同源断言 + ③ 归属移交的 P-llm-* ）
 npm run check:child-watch[:refute]   # 外部二进制父死看守的双向取证（秒级；真模式 E11 的唯一依赖）
 npm run e2e                   # D 组端到端
 npm run check:ia              # IA 结构 24 条
@@ -65,6 +65,9 @@ npm run check:tls             # TLS 依赖链 14 条（三层）
 npm run check:engine-client[:refute] # 翻译引擎适配层 32 条 / 反证 5 条（真协议用 openapi 快照「假引擎」，秒级）
 npm run check:models[:refute] # S3 模型下载器 E7：32 条 / 反证 5 条（本地 Range 夹具源，秒级，不碰真权重）
 npm run fetch:models          # S3 模型下载器 CLI：--check 只校验 / --link 只重建引擎树里的链接（零网络）
+npm run check:profile[:refute] # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）42 条 / 反证 13 条（起真进程，约 10s）
+npm run check:e5e6[:refute]    # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，13 条 / 逃生开关反证 2 条（约 25s）
+node service/scripts/llm-real-timing.mjs  # 真 ③（llama-server）冷启动与内存实测（**真权重，分钟级，不进常规门**）
 npm run check:music[:refute]  # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 215 条 / 反证 180 条
 npm run check:settings[:refute] # 设置页「播放·媒体」90 条 / 反证 24 条
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条 / 反证 44 条
@@ -79,9 +82,13 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 
 - ver1.0（漫画翻译）**已完成**；ver2.0（设置页重构 + IA + 音乐模块）进行中，音乐模块四平台已接通。
 - **翻译引擎接入进度**：S0 环境闸门（G1 ✅）· **S1 适配层对齐**（D-62）· **S2 三进程生命周期已完成，
-  macOS 侧过 G2**（D-64…D-70）· **S3 模型管理已完成**（D-72）。
-  `ServiceManager` 现管 `Children{service, engine, llm}`，
+  macOS 侧过 G2**（D-64…D-70）· **S3 模型管理已完成**（D-72）· **S4 档位/加速/降档/空闲卸载已完成**（D-73）。
+  `ServiceManager` 现管 `Children{service, engine}`，
   就绪是**三重判定**（进程存活 + 端口 + HTTP），五态机 `stopped→starting(L1–L3)→running→stopping→stopped`。
+- 🔴 **③（Sakura LLM）的归属权在 S4 从 Rust 移交给了 box-service**（《04》§9.1：Tier1 空闲卸载的实现方
+  必须是持有任务队列的那一侧）。`print-launch-plan.mjs` 因此**不再输出 `llm` 条目**，
+  Rust 只从配方里取命令文本用于**打印**（E1 参数快照），拉起/停止由 `service/src/llm-supervisor.mjs` 负责。
+  E11（不留孤儿）靠 `child-watch.mjs` 包一层保住 —— **改这段前先读 D-73 决策 1**，漏改一处就是"两个 llama-server 抢 8080"。
 - **模型资产管理（S3）**：`engine/models.manifest.json`（版本控制）是唯一清单 —— 来源 / sha256 / 大小；
   `engine/model-store.mjs` 负责下载（断点续传 / 逐文件 SHA256 / 失败单文件重下 / `.ready` 幂等 / 可暂停），
   `npm run fetch:models` 是 CLI。
@@ -93,8 +100,8 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
   也就是说 `npm run app` 起的**已经是真引擎**（`python main.py` + `llama-server`），
   模拟引擎只在测试里被显式注入（`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs`）。
   ⇒ **本机没拉引擎（`runtimes/` 不在）时，产品链路起不来**，这是 G-13（打包分发）未做的一部分。
-- **未做**：打包分发（`bundle.resources` 为空，装出来的 `.app` 起不了服务，G-13）· **S3 模型管理 / S4 档位加速 /
-  S5 契约增量 / S6 诊断 UI / S7 真机 E1–E11 全表 / S8 插件串联**（M4–M9）· Windows 侧三项（`unverified`）·
+- **未做**：打包分发（`bundle.resources` 为空，装出来的 `.app` 起不了服务，G-13）· **S5 契约增量 /
+  S6 诊断 UI / S7 真机 E1–E11 全表 / S8 插件串联**（M6–M9）· Windows 侧三项（`unverified`）·
   歌手详情 4 标签 / 评论翻页 / 卡拉OK YRC / 桌面歌词（PD-1 延后）。
 - **未做真机验证**的项在台账里逐条标注（如 Radix 弹层观感、音频代理播放、皮肤观感）—— 别把
   "类型检查 + 断言通过"当成"功能可用"。

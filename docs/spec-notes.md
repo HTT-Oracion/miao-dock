@@ -2257,3 +2257,152 @@ cd runtimes/manga-translator/src          # ⚠️ 必须在 src/ 下：包是 s
 `docs/engine-integration-plan.md`（§S3）· `docs/engine-integration-delivery-plan.md`（M4 / §4.1）·
 `AGENTS.md` · `README.md`。
 
+
+## D-73 · S4 档位 / 加速后端 / 降档重试 / 两级空闲卸载（2026-10-05）
+
+### 交付
+
+| 文件 | 作用 |
+|---|---|
+| `service/src/engine-profile.mjs`（新） | §7.1/§7.2/§7.3 的**纯判定**：`probeHardware`（真读 `hw.memsize` / `arch` / GPU 型号，依赖可注入）/ `mapTier`（§7.2 映射表逐行）/ `detectAccel`（CUDA→MPS→CPU）/ `accelLaunchFlags`（cpu ⇒ 不加 `--use-gpu` 且 LLM 层数 0）/ `feasibleTiers`+`tierOptions`（**物理不可行档位不出现**、Small 标「不推荐」+强警告） |
+| `service/src/llm-supervisor.mjs`（新） | ③（Sakura LLM）的**生命周期持有者**：`start/stop/restart/switchTier/snapshot` + `_serial` 串行化 |
+| `service/src/tier-downgrade.mjs`（新） | §8 降档：OOM 多签名识别 / **仅降一次**的幂等闩 / 最低档底线 / 服务级 history + 留痕 |
+| `service/src/idle-policy.mjs`（新） | §9 空闲卸载的判定：`decideUnloadLlm` / `queueFacts` / `lastActivityAt` / `createIdleWatcher`（可注入时钟，`tick()` 手动步进） |
+| `service/scripts/engine-profile-check.mjs`（新） | 判定层断言 **42 条**（H/A/T/D/I/L/R 七组）+ 反证 **13 条** |
+| `service/scripts/e5-e6-check.mjs`（新） | **端到端** E5/E6 断言 **13 条**（真服务 + 真引擎 + 真 ③）+ 反证 **2 条**（逃生开关） |
+| `service/scripts/llm-real-timing.mjs`（新） | 真 ③（`llama-server`）冷启动耗时与内存实测 —— 走**产品路径**（`LlmSupervisor` + child-watch） |
+| 改动 | `service/src/server.mjs`（装配 ③ 与看护 / 退出时先停 ③）、`service/src/store.mjs`（§9.3 懒加载钩子 + §8 OOM 降档接线）、`service/src/config.mjs`（档位 / 两级阈值 / 巡检周期 / 两个反证开关）、`service/src/engine-client.mjs`（`resolveLlmLaunch` 按协议分两支 + `availableTiers` 协议感知）、`service/scripts/print-launch-plan.mjs`（**摘掉 `llm` 条目**）、`app/src-tauri/src/service.rs` + `selftest.rs`（③ 归属移交后的三处调整）、`engine/src/mock-llm.mjs`（替身认档位）、`engine/src/server.mjs`（OOM 注入）、`service/scripts/selftest.mjs`（夹具显式退出预拉起） |
+
+### 🔴 决策 1：③ 的归属权从 Rust 移交到 box-service（《04》§9.1 与 S2 现状的冲突）
+
+《04》§9.1 规定 Tier1 空闲卸载「**实现方 = box-service**」，理由是「③ 不在引擎 TTL 范围内」。
+但 S2 落地时 ③ 是 **Rust `ServiceManager` 的第三个子进程** —— 若维持原样，box-service 既不知道 ③ 的 pid、
+也没有拉起它的能力，**Tier1 根本无法实现**（而判据「队列空闲吗」只存在于 box-service，Rust 侧拿不到）。
+
+**解法**（三处都要动，只改一处就会留下"两个 llama-server 抢 8080"）：
+
+1. `print-launch-plan.mjs` **不再向 Rust 提供 `llm` 条目**——Rust 侧 `plan.llm: Option<LaunchSpec>` 本就能优雅处理 `None`（`service.rs` 的 `if let Some(llm) = &plan.llm { … } else { "（本模式无独立 LLM 进程）" }`），故这是**被支持的路径**；
+2. **配方仍由 `engine-client.mjs` 唯一给出**（`resolveLlmLaunch()`），Rust 只拿到配方文本用于**打印**（E1 的参数快照不能缩水）——新增 `LLM_OWNER = 'service'` 常量，Rust 的 `LaunchSpec.owner` / `print-launch-plan` / `llm-supervisor` 三处认同一个值。散着写三个字面量，将来改归属必漏一处；
+3. box-service 在装配期**就把它拉起来**（不是等到第一个任务）—— 因为 E11 的外部观察者要等 **8080（真档）/ MIAO_LLM_PORT** 起来才判"三进程已拉起"，晚拉会让 E11 退化成"两进程 + 一个还没起的"。
+
+**E11（不留孤儿）靠什么保住**：真档用 `engine/scripts/child-watch.mjs` 把 `llama-server` 包一层
+（外部二进制改不了、指望不上它自己看住 ppid），child-watch 盯的是**它的父进程 = box-service**；
+mock 档的替身是我们自己的 Node 进程，内部已装 `engine/src/parent-watch.mjs`（少一层进程）。
+⚠️ 两条路都依赖 `MIAO_NO_PARENT_WATCH` —— E11 的反证开关正是靠它**同时**关掉这两层。
+断言 `L3`（父死传播：另起一个 harness 子进程持有 ③ → SIGKILL harness → ③ 与端口一起消失）用的就是这个。
+
+> 为什么 `L3` 不直接用 `ps -o ppid=`：本机沙箱下 `spawnSync ps` 曾 `EPERM`（时好时坏）。
+> **父死传播其实是更强的证据** —— 它同时回答"③ 的父进程是承载看守的那个进程"与"E11 在归属移交后仍成立"。
+> （后来 `ps` 又能用了，见决策 4 的实测脚本；但断言不再依赖它，避免环境相关的假红。）
+
+### 🔴 决策 2：`stop()` 的 `await` 期间插进 `start()` ⇒ 会造出"状态说没有、实际有"的孤儿
+
+`_doStop()` 里有 await（等进程退出、等端口释放，真实场景可达数秒）。若这期间来了一个
+`start()`（§9.3 懒加载恢复：任务到来 → `store.ensureLlm()` → `llm.start()`），两段代码**交错**，
+`_doStop()` 的收尾会把**新进程**的状态抹掉（`state='stopped'`、`pid=null`），而新 ③ 还在跑。
+
+⇒ 给 `LlmSupervisor` 加 `_serial(fn)`：所有会改进程状态的操作按 FIFO 串起来。
+`switchTier()`（降档的 stop→换配方→start）也做成**一次原子操作**，否则中间那两步 await 之间
+任何外来操作都会让"配方的档位"与"实际跑着的权重"分家。
+
+**这条同时解释了 `idle-policy.mjs` 里为什么"没有"复判**：原本我在卸载前写了一次"再判一遍队列"，
+但 `queueFacts()` 到 `stop()` 之间**没有 await**，Node 单线程下这段是原子的，复判是**死代码**。
+留一段"看起来在防守、实际没防"的代码比不写更糟 ⇒ 删掉，并把这句说明留在原地。
+
+### 🔴 决策 3：「0 = 从不卸载」是**产品口径**，必须钉在策略里而不是只放在 config
+
+《02》§5 把这一项写成 **数字（分钟）**，`0 = 从不卸载`（不是另一个复选框）。而 `0 分钟` 与
+`立刻卸载` 在数学上**只差一个比较符**——少写这一句，用户把阈值填 0 得到的正是他想要的**反面**
+（刚跑完就卸）。故判据落在 `decideUnloadLlm` 里：`if (neverUnload || !(idleMs > 0))`，
+用 `!(idleMs > 0)` 而不是 `=== 0`，让 NaN/负值这类"配错了"也走最保守的一支。断言 `I9`，反证 `M`。
+
+`UNLOAD_NEVER` 仍有两个来源（取**或**）：阈值 `MIAO_IDLE_LLM_MS=0`（产品口径，S6 走它）
+与显式开关 `MIAO_UNLOAD_NEVER=1`（给脚本用 —— 命令行里"把阈值填 0"读起来像笔误）。
+
+### 🔴 决策 4：`reason` 字段把「机器可读令牌」与「中文文案」混在一起 ⇒ 7 条断言全红
+
+`decideUnloadLlm()` 最初直接返回中文（`busyQueued: '有任务在排队'`），断言里写的是键名
+⇒ **第一批 7 条断言全红**，而这 7 条红**与被测逻辑无关**，纯粹是"取值口径"没定。
+取值一旦被断言依赖，它就是一个**契约**，不该同时兼任给人看的文案。
+⇒ 拆成 `UNLOAD_REASONS`（snake_case 令牌：`busy_queued` / `not_idle_enough` / …）
++ `describeUnloadReason()`（中文，日志用），并加断言 `I0` 钉住七个令牌与唯一性。
+
+同类坑还有两个，都是"取证比事实早一拍"，已记入断言注释：
+- **端口先通、日志后写** —— `③ LLM 就绪（pid=…）` 是在探针返回 true 之后才打的，
+  所以"端口通了就读 stdout"会读到**上一轮**的行数（症状：`pidBefore=NaN`，或把上一代 ③ 的 pid 当前一代）。
+  ⇒ 一律用 `waitLog()` 等，而不是 sleep 固定毫秒。
+- **`pgrep -f llama-server` 会多匹配一个 node 进程** —— child-watch 那层 Node 的**命令行里也含**
+  `llama-server`（它是被包装的目标）。⇒ 按 `ps -o comm=` 的 basename 精确挑。
+- **macOS 的 `ps -o rss=` 单位是 KB** —— 当 MB 读会得到"3 万 MB 内存"这种一眼假的数字。
+
+### 🔴 决策 5：mock 档的 `availableTiers()` 是**三档**（否则 §8/§9 的关键回路在快速回路里永远走不到）
+
+`availableTiers()` 原按 `TIER_LLM_MODELS`（只有 Tiny 有权重）过滤。若 mock 档也照此夹回 Tiny，
+则「降档」「卸载后换档重启」这两条回路**在 mock 档永远无法触发**，只能靠分钟级、几 GB 权重的真档去验
+—— 等于"平时不验、换版本才验"。故按协议分义：`real` 由「权重在不在」决定；`mock` 三档皆可
+（替身只认 `--model <tier>` 这个名字，没有权重可读）。这与 `mock-llm.mjs` 文件头写下的理由是**同一条**。
+
+### 真机实测：真 ③ 的冷启动与内存（`node service/scripts/llm-real-timing.mjs`）
+
+走的是**产品路径**（`LlmSupervisor` + `child-watch` + 真 `llama-server`），不是另起一个旁路脚本：
+
+| 指标 | 实测 | 说明 |
+|---|---|---|
+| 冷启动到 `/v1/models` 200 | **2.8s**（首次，页缓存冷）/ **1.0s**（复测，页缓存热） | 权重 3.56 GB fp16，`-ngl 99` 走 MPS |
+| 系统可用内存下降（= Tier1 占用） | **2.09–2.77 GB**（两次） | 与《04》§9.1「Tiny ≈ 1.5–2 GB」同量级 |
+| `llama-server` 的 `ps` RSS | **266 MB** | 🔴 **不能拿它当 Tier1 释放量**：权重是 mmap 的、Metal buffer 不进 RSS |
+| 停止耗时（优雅退出 + 端口释放） | **0.1s** | `portFreed=true` |
+| 停止后残留 `llama-server` | **0 个** | child-watch 的子树回收生效 |
+
+### ✅ 由此关闭 §7-③ 的开放项（「从不卸载」要不要暴露）
+
+§7-③ (b) 的判据是：「**恢复快（几秒）⇒ 该选项是多余复杂度，不做；恢复慢（十几秒）⇒ 值得暴露**」。
+实测**几秒**（1.0–2.8s）⇒ 落在"不做"那一支。
+
+**落实方式**（两处文档读法的取齐，写清楚以免被当成漏做）：
+- 机制层**保留** `阈值 0 = 从不卸载`（《02》§5 写明它是该行的取值语义，且零额外实现成本）；
+- **不为它新增独立控件**（§7-③ 要排除的正是那份复杂度）；
+- S6 的那一行照《02》§5 做成**数字（分钟）**，说明文字用实测数字写清代价（"下次翻译多等约 1–3 秒"），
+  而不是含糊的"稍慢"。
+- ⚠️ **实测只覆盖 Tiny**：Small/Medium 的权重尚未固化（`TIER_LLM_MODELS` 里是 `null`，选择时会显式抛错
+  而不是回落成 1.5B），故"重载要多久"在 7B/13B 上没有数据。若将来补上权重并实测到"十几秒"，
+  §7-③ 的结论应当按同一条判据**重新过一遍**。
+
+### 未做 / 边界（如实登记）
+
+- **真档的降档与空闲卸载未实测**：`MIAO_ENGINE_TIER=small` 在 real 档会因
+  `TIER_LLM_MODELS.small === null` 而**抛错**（这是有意为之，见 D-72 同族理由：绝不静默回落成 1.5B）。
+  本轮 E5/E6 的端到端在 **mock 档**验证（真服务 + 真引擎 + 真 ③ 进程 + 真端口），
+  而**真档的 ③ 启停**由 `llm-real-timing.mjs` 单独实测过 ⇒ "机制"与"真二进制"两头都有证据，
+  但"真档下 OOM 触发降档"这一条**没有现场**（注入 OOM 只能改引擎源码，不可接受）⇒ 标记为结构性未验。
+- **Tier2（视觉模型 30 min）的「0 = 从不卸载」未验**：它是引擎自带的 `--models-ttl`，box-service 只负责
+  在下发参数时归零（`engineModelsTtl: UNLOAD_NEVER ? 0 : …`）。**引擎对 `0` 的语义没有实测过**
+  ⇒ 若引擎把 0 理解为"立刻释放"，这条就反了，标记 `unverified`。
+- **Windows 侧未验**（本机无 Windows）：`_serial` / 进程回收 / 端口释放都是跨平台 Node API，
+  但 `taskkill`、Job Object 那条路不受本轮改动影响，仍按 S2 的 `unverified` 处理。
+- **`MIAO_IDLE_TICK_MS`（巡检周期）是给夹具用的旋钮**：产品默认 5s。它与
+  `MIAO_NO_LLM_AUTOSTART` 一样属于"夹具开关"，不作为用户可见配置。
+
+### 断言与反证（分母写死）
+
+- `npm run check:profile` **42/0**；`check:profile:refute` **13/13** 按预期变红。
+  ⚠️ 反证 `H`（把 OOM 签名放宽成"什么都算"）**只**该打红 `D3`；`J`（删掉排队保护）**同时**打红 `I2` 与 `I8`
+  —— 两条 `expect` 互不相同是刻意的：两条破坏命中同一条断言时，它们会在各自的基线比对里互相掩盖（假绿家族第 5 类）。
+- `npm run check:e5e6` **13/0**；`check:e5e6:refute` **2/2**。反证用的是**逃生开关**
+  （`MIAO_NO_TIER_DOWNGRADE` / `MIAO_NO_IDLE_UNLOAD`）而不是改源码 —— 关掉的是**产品里真实存在的开关**，
+  比"改一行源码"更贴近"这个机制真的在起作用吗"这个问题。
+- E5 的关键取证：③ 的**档位**不是读日志，而是直接打它自己的 `GET /v1/models`
+  读 model id（`sakura-mock:<tier>`）—— 那是该进程**真实启动参数**的投影；
+  加上"pid 换了 + 端口没换"两条，降档落到引擎这件事有三条独立证据。
+- E6 的关键取证：卸载后 ③ 端口不通，**同时** `/health` 仍 200 且 `sidecar.state === 'running'`
+  —— 这正是 §9.4「卸载 ≠ 未就绪」那条铁律的可执行形式。
+
+**本节新增/修改的文件**：`service/src/engine-profile.mjs`（新）· `service/src/llm-supervisor.mjs`（新）·
+`service/src/tier-downgrade.mjs`（新）· `service/src/idle-policy.mjs`（新）·
+`service/scripts/engine-profile-check.mjs`（新）· `service/scripts/e5-e6-check.mjs`（新）·
+`service/scripts/llm-real-timing.mjs`（新）· `service/src/server.mjs` · `service/src/store.mjs` ·
+`service/src/config.mjs` · `service/src/engine-client.mjs` · `service/scripts/print-launch-plan.mjs` ·
+`service/scripts/launch-plan-check.mjs` · `service/scripts/selftest.mjs` · `engine/src/mock-llm.mjs` ·
+`engine/src/server.mjs` · `app/src-tauri/src/service.rs` · `app/src-tauri/src/selftest.rs` ·
+`package.json` · 本文件 · `docs/engine-integration-plan.md`（§5 S4）·
+`docs/engine-integration-delivery-plan.md`（M5 / §4.1）· `AGENTS.md` · `README.md`。

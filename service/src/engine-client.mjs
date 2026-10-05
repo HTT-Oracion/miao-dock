@@ -350,34 +350,133 @@ export async function probeEngine() {
  */
 /** `runtimes/manga-translator/`（`engineDir` 是它下面的 `src/`） */
 const ENGINE_RT = path.resolve(config.engineDir, '..');
+/** 仓库根 —— mock 侧的替身脚本在 `engine/src/` 下 */
+const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 
 /**
- * 引擎③（LLM / llama-server）的启动配方 —— **只有 real 协议**才有这么一个独立进程。
+ * 引擎③（LLM）的**归属方** —— 《04》§9.1 规定 Tier1 空闲卸载「实现方 = box-service
+ * （③ 不在引擎 TTL 范围内）」，故 ③ 必须由 box-service 持有，Rust 侧只负责**打印配方**不负责拉起。
+ *
+ * 为什么把它写成常量并对外导出：这是一个**跨进程归属约定**，Rust（`LaunchSpec.owner`）、
+ * `print-launch-plan.mjs`、`llm-supervisor.mjs` 三处都要认同一个值。散着写三个字面量，
+ * 将来改归属就会漏掉一处 —— 而漏掉的表现是**两个 llama-server 抢 8080**，报错离根因极远。
+ */
+export const LLM_OWNER = 'service';
+
+/**
+ * 档位 → Sakura 权重文件名（《04》§6.3 量化档 / §7.2 档位映射）。
+ *
+ * 🔴 **只有 Tiny 的权重被固化进了 `engine/models.manifest.json`**（S3 的固化范围就是它 +
+ *    llama-server 二进制）。Small(7B) / Medium(13~14B) 的**文件名与校验值都还没有来源**
+ *    ⇒ 这里显式写 `null`，调用方必须**报错**，绝不允许"回落成 tiny 的文件"：
+ *    回落会让用户以为自己在跑 7B，实际跑的是 1.5B —— 质量差异被静默吞掉，
+ *    而"翻译变差了"这种反馈**根本追溯不到根因**。
+ *
+ * 补齐方式：先按 §6.3 选定量化档、把权重纳入 manifest 的 `llm` set（拿到真实文件名 + sha256），
+ * 再回来把这里的 `null` 换成文件名。见 `engine/VERSIONS.lock` §4。
+ */
+export const TIER_LLM_MODELS = {
+  tiny: 'sakura-1.5b-qwen2.5-v1.0-fp16.gguf',
+  small: null,
+  medium: null,
+};
+
+/** 档位对应的权重绝对路径；该档未声明权重时返回 `null`（**不是**回落成 tiny） */
+export function tierModelPath(tier) {
+  const name = TIER_LLM_MODELS[tier];
+  return name ? path.resolve(ENGINE_RT, 'models', 'sakura', name) : null;
+}
+
+/**
+ * **本进程能真跑的档位**（低 → 高）—— 供需"把期望档位夹到实际可用档位"时用。
+ *
+ * ⚠️ 两个协议下含义不同，这不是含糊，而是**两种模式的能力本来就不同**：
+ *   · `real`：可用性由「权重在不在」决定（`TIER_LLM_MODELS` 目前的固化范围只有 Tiny）。
+ *   · `mock`：替身只认 `--model <tier>` 这个**名字**，没有权重可读 ⇒ 三档都能"模拟"。
+ *     若这里也照 `TIER_LLM_MODELS` 夹回 Tiny，S4 的两条关键回路（§8 降档 / §9 卸载后换档重启）
+ *     **在 mock 档将永远无法触发** —— 只能靠分钟级、几 GB 权重的真档去验，
+ *     等于"平时不验、换版本才验"。这与 `mock-llm.mjs` 文件头写下的理由是同一条。
+ */
+export function availableTiers() {
+  if (config.engineProtocol === 'mock') return ['tiny', 'small', 'medium'];
+  return Object.keys(TIER_LLM_MODELS).filter((t) => TIER_LLM_MODELS[t]);
+}
+
+/**
+ * 引擎③（LLM / llama-server）的启动配方 —— 按协议分两支。
  *
  * 为什么放在本文件：本文件是「box-service ↔ 引擎」的**唯一耦合点**（见文件头）。
  * llama.cpp 的版本目录名、权重文件名、上下文长度、卸载层数**全是引擎侧细节**；
- * 一旦在 Rust 的 ServiceManager 里再写一份，换版本时就必然漏改一处（两个地方谁说了算？）。
- * 所以 Rust 只负责「拿到配方 → 拉起 → 回收」，**怎么拼由这里说了算**。
+ * 一旦在别处再写一份，换版本时就必然漏改一处（两个地方谁说了算？）。
+ * ⇒ 调用方（Rust 的 ServiceManager 只拿到配方文本用于打印；box-service 的 LlmSupervisor
+ *   真正按它拉起）**都不自己拼命令**。
  *
  * ⚠️ 路径默认值对应 `engine/VERSIONS.lock` §3 锁定的 llama.cpp 构建与 §4 的 Sakura 权重。
  *    换版本 = 改 VERSIONS.lock + 改这里（同一处评审），不允许"顺手升级"。
  */
 export function resolveLlmLaunch(overrides = {}) {
+  return config.engineProtocol === 'mock'
+    ? resolveMockLlmLaunch(overrides)
+    : resolveRealLlmLaunch(overrides);
+}
+
+/** 真档：`llama-server`（外部二进制） */
+function resolveRealLlmLaunch(overrides = {}) {
   const {
+    tier = 'tiny',
     bin = process.env.MIAO_LLM_BIN || path.resolve(ENGINE_RT, 'bin', 'llama', 'llama-b11417', 'llama-server'),
-    model = process.env.MIAO_LLM_MODEL
-      || path.resolve(ENGINE_RT, 'models', 'sakura', 'sakura-1.5b-qwen2.5-v1.0-fp16.gguf'),
     port = envIntLocal('MIAO_LLM_PORT', 8080),
     ctx = envIntLocal('MIAO_LLM_CTX', 4096),
     ngl = envIntLocal('MIAO_LLM_NGL', 99),
   } = overrides || {};
 
+  // 档位决定权重。**未声明权重的档位直接抛错**，不静默沿用 tiny 的文件（理由见 TIER_LLM_MODELS）。
+  const model = overrides.model || process.env.MIAO_LLM_MODEL || tierModelPath(tier);
+  if (!model) {
+    throw new EngineError(
+      'TIER_MODEL_UNDECLARED',
+      `档位 ${tier} 的权重尚未纳入 models.manifest.json（当前仅 ${availableTiers().join('/')} 可用）`,
+      { tier, available: availableTiers() },
+    );
+  }
+
   return {
     label: 'llm',
+    tier,
+    model,
     cmd: [bin, '-m', model, '--port', String(port), '-c', String(ctx), '-ngl', String(ngl)],
     cwd: null,
     env: {},
     // 就绪探针：`llama-server` 的 HTTP 面就是 OpenAI 兼容的 `/v1/models`（M1/S1 实测用它判就绪）
+    probes: [
+      { kind: 'tcp', port },
+      { kind: 'http', port, method: 'GET', path: '/v1/models', expect: 200 },
+    ],
+  };
+}
+
+/**
+ * mock 档：仓内替身 `engine/src/mock-llm.mjs`。
+ *
+ * 为什么 mock 也要有 ③：三进程的**结构性**东西（可拉起 / 可回收 / 崩溃分级 / 空闲卸载 /
+ * 降档重启）若只在真档才存在，就只能靠分钟级、几 GB 权重的回路去验 —— 那等于
+ * "平时不验、换版本才验"。（这也是 `mock-llm.mjs` 文件头写下的话。）
+ *
+ * ⚠️ 与真档不同：这里**不标** `watch`。替身是我们自己的 Node 进程，内部已装父死看管
+ *    （`engine/src/parent-watch.mjs`），再包一层 child-watch 只是多一层进程。
+ * ⚠️ 档位以 `--model <tier>` 透传给替身 —— 降档断言需要用**真进程的启动参数**取证
+ *    "它换的是另一档"，而不是读一句自报的日志。
+ */
+function resolveMockLlmLaunch(overrides = {}) {
+  const { port = envIntLocal('MIAO_LLM_PORT', 8080), tier = 'tiny' } = overrides || {};
+  return {
+    label: 'llm',
+    tier,
+    model: `sakura-mock:${tier}`,
+    cmd: [process.execPath, path.join(REPO_ROOT, 'engine', 'src', 'mock-llm.mjs'),
+      '--port', String(port), '--model', tier],
+    cwd: null,
+    env: {},
     probes: [
       { kind: 'tcp', port },
       { kind: 'http', port, method: 'GET', path: '/v1/models', expect: 200 },

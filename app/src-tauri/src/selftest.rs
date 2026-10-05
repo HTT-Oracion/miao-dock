@@ -125,7 +125,7 @@ fn port_open(port: u16) -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(800)).is_ok()
 }
 
-/// 从**外部**给子进程发 SIGTERM —— 用来制造「③ 挂了」这个事件。
+/// 从**外部**给子进程发 SIGTERM —— 用来制造「② 挂了」这个事件。
 ///
 /// 为什么要自己发信号、而不是让被测进程"报告自己挂了"：后者是被测方自证，不构成证据。
 /// 「外部制造事件 → 回读状态」才是崩溃分级这类**机制类**断言的正确取证方式。
@@ -386,10 +386,15 @@ pub fn spawn(app: AppHandle) {
                 .iter()
                 .map(|x| format!("{}={:?}", x.name, x.pid))
                 .collect();
+            // S4：③ 的归属权移交 box-service（《04》§9.1）⇒ 本 Manager 直接持有的子进程
+            // 从 3 个变成 **2 个**（① service + ② engine）。
+            // ⚠️ 必须同步改成 `== 2`，**不能放宽成 `>= 2`** —— 放宽会把"少起了一个进程"
+            //    变成永远看不见的失败，而这条断言的全部价值就在于"少一个就红"。
+            //    ③ 是否活着改由 box-service 的 `/health.sidecar.llm` 报告（S5）。
             c.add(
                 "S2c",
-                st.children.len() == 3 && st.children.iter().all(|x| x.pid.is_some() && x.alive),
-                format!("mode={} 子进程：{}", st.mode, pids.join(" ")),
+                st.children.len() == 2 && st.children.iter().all(|x| x.pid.is_some() && x.alive),
+                format!("mode={} 子进程（① ②；③ 归 box-service）：{}", st.mode, pids.join(" ")),
             );
 
             // 供后台线程做 HTTP 探活
@@ -557,11 +562,15 @@ pub fn spawn(app: AppHandle) {
             }
         }
 
-        // ---- S2d 崩溃分级：从**外面**杀掉 ③ LLM ----
+        // ---- S2d 崩溃分级：从**外面**杀掉 ② engine ----
         // 判据是「① 仍 running（服务没跟着塌）+ degraded 翻真（不静默）」。
         // 反证开关 `MIAO_NO_CRASH_MONITOR=1` 关掉看护后，degraded 不会翻转 ⇒ 这条必红。
+        // ⚠️ S4 起改杀 ② 而不是 ③：③ 的归属权已移交 box-service，本 Manager 的 `children`
+        //    里根本没有它（`child_pid("llm")` 恒为 None ⇒ 断言会**恒红**，看着像"机制坏了"
+        //    实则判据失效）。机制本身没变 —— 仍是"外部杀掉一个非 ① 的子进程 ⇒ 分级为
+        //    degraded 而非整体 error"。③ 挂掉的降级路径改由 box-service 的 `/health` 表达（S5）。
         {
-            let pid = on_main(&app, |a| a.state::<ServiceManager>().child_pid("llm")).flatten();
+            let pid = on_main(&app, |a| a.state::<ServiceManager>().child_pid("engine")).flatten();
             let killed = pid.map(kill_child).unwrap_or(false);
             std::thread::sleep(Duration::from_millis(2600)); // 看护每 1s 巡一次，留两轮余量
             let (state, degraded, err) = on_main(&app, |a| {
@@ -576,7 +585,7 @@ pub fn spawn(app: AppHandle) {
             all.push((
                 "S2d".into(),
                 killed && state == "running" && degraded,
-                format!("外部杀掉 ③(pid={pid:?}) 后 state={state} degraded={degraded} {err}"),
+                format!("外部杀掉 ②(pid={pid:?}) 后 state={state} degraded={degraded} {err}"),
             ));
         }
 

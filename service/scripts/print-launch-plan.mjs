@@ -13,6 +13,11 @@
  *   node service/scripts/print-launch-plan.mjs [real|mock]
  *   未给参数时读 `MIAO_ENGINE_PROTOCOL`（与 service 侧同一个开关，默认 real）。
  *
+ * ⚠️ S4 起 ③（LLM）的**归属权移交给了 box-service**（《04》§9.1：Tier1 空闲卸载的实现方是
+ *    box-service，③ 不在引擎 TTL 范围内）。本脚本仍**照常给出 ③ 的完整配方**，但会带上
+ *    `owner: "service"` —— Rust 只拿它**打印生效参数快照**（E1），不再据它 spawn，
+ *    真正的拉起由 `service/src/llm-supervisor.mjs` 按**同一份** `resolveLlmLaunch()` 执行。
+ *
  * ⚠️ 本脚本 import `config.mjs`，而它在模块顶层会 `ensureToken()` **写 state/token 文件**。
  *    打印配方是只读操作，不该有落盘副作用 ⇒ 先把 `MIAO_TOKEN` 置成固定值
  *    （`ensureToken()` 见到 override 会直接返回，不碰磁盘）。
@@ -37,7 +42,7 @@ process.env.MIAO_TOKEN ||= '0'.repeat(64);
 process.env.MIAO_ENGINE_PROTOCOL = raw;
 
 const { config } = await import('../src/config.mjs');
-const { resolveEngineLaunch, resolveLlmLaunch } = await import('../src/engine-client.mjs');
+const { resolveEngineLaunch, resolveLlmLaunch, LLM_OWNER } = await import('../src/engine-client.mjs');
 
 const ENGINE_PORT = config.enginePort;
 const LLM_PORT = Number.parseInt(process.env.MIAO_LLM_PORT || '8080', 10);
@@ -51,6 +56,31 @@ function envPatch(plan) {
   return out;
 }
 
+/**
+ * ③ 的条目：**只给 Rust 打印用，不给 Rust 拉起**（`owner: 'service'`）。
+ *
+ * 为什么保留这条条目而不是直接给 `null`：E1 的判据是「**日志打印生效参数快照**」——
+ * 快照本该逐条列出真正会被执行的东西。③ 仍然会被执行（只是执行者是 box-service），
+ * 把它从快照里删掉，等于让 E1 从"四条"退化成"三条"，**看着仍然绿，覆盖却悄悄少一块**。
+ *
+ * 为什么归属权要显式写在配方里：Rust 若照旧拉起 ③，就会和 box-service 拉起的那个
+ * **抢同一个 8080**（症状是两个 llama-server 互相踩、谁报错都看不出根因）。
+ * 把归属写成契约字段，是让"谁拉起"这件事**只能有一个答案**。
+ */
+function llmEntry() {
+  const llm = resolveLlmLaunch({ port: LLM_PORT });
+  return {
+    ...llm,
+    env: envPatch(llm),
+    owner: LLM_OWNER,
+    // 真档是外部二进制（改不了、指望不上自退）⇒ 由 box-service 用 child-watch 包一层，
+    // 保住 E11 的"主进程被强杀后不留孤儿"；mock 档是自家 Node 替身，内部已装父死看管。
+    watch: config.engineProtocol === 'real',
+    probes: llm.probes,
+    ...(config.engineProtocol === 'real' ? { probe_timeout_ms: 180_000 } : {}),
+  };
+}
+
 let plan;
 if (raw === 'mock') {
   // ── 模拟模式：两个 Node 替身（仓内 engine/src/*），用来在**秒级、可反证**的条件下
@@ -58,16 +88,7 @@ if (raw === 'mock') {
   plan = {
     mode: 'mock',
     serviceEnv: { MIAO_ENGINE_PROTOCOL: 'mock', MIAO_ENGINE_PORT: String(ENGINE_PORT) },
-    llm: {
-      label: 'llm',
-      cmd: [process.execPath, path.join(ROOT, 'engine', 'src', 'mock-llm.mjs'), '--port', String(LLM_PORT)],
-      cwd: null,
-      env: {},
-      probes: [
-        { kind: 'tcp', port: LLM_PORT },
-        { kind: 'http', port: LLM_PORT, method: 'GET', path: '/v1/models', expect: 200 },
-      ],
-    },
+    llm: llmEntry(),
     engine: {
       label: 'engine',
       cmd: [process.execPath, path.join(ROOT, 'engine', 'src', 'server.mjs')],
@@ -81,7 +102,6 @@ if (raw === 'mock') {
   };
 } else {
   const engine = resolveEngineLaunch();
-  const llm = resolveLlmLaunch({ port: LLM_PORT });
   plan = {
     mode: 'real',
     serviceEnv: {
@@ -89,16 +109,15 @@ if (raw === 'mock') {
       MIAO_ENGINE_PORT: String(ENGINE_PORT),
       SAKURA_API_BASE: `http://127.0.0.1:${LLM_PORT}/v1`,
     },
-    // `watch: true` ⇒ Rust 起这两个外部二进制时会用 `engine/scripts/child-watch.mjs` 包一层。
-    // 理由见该脚本头：python / llama-server 是外部二进制，改不了它们，指望不上"自退"；
-    // 主进程被 SIGKILL 后它们会成为占住 8000/8001/8080 的孤儿（E11 要消灭的正是这个）。
-    // mock 侧不需要：那两个替身是我们自己的 Node 进程，内部已装父死看管。
-    // 探针预算按**真实首启耗时**给：python 要 import torch 全家桶、llama-server 要读几 GB 权重，
-    // 默认的 20s 会把"还在加载"直接判成"起不来"（而这恰恰是最容易被误判成"引擎坏了"的场景）。
-    llm: { ...llm, env: envPatch(llm), watch: true, probes: llm.probes, probe_timeout_ms: 180_000 },
+    llm: llmEntry(),
     engine: {
       ...engine,
       env: envPatch(engine),
+      // `watch: true` ⇒ Rust 起 ② 时会用 `engine/scripts/child-watch.mjs` 包一层。
+      // 理由见该脚本头：python 是外部二进制，改不了、指望不上自退；主进程被 SIGKILL 后
+      // 它会连执行器（孙进程）一起变成占住 8000/8001 的孤儿（E11 要消灭的正是这个）。
+      // 探针预算按**真实首启耗时**给：python 要 import torch 全家桶，默认 20s 会把
+      // "还在加载"直接判成"起不来"（而这恰恰是最容易被误判成"引擎坏了"的场景）。
       watch: true,
       probes: engine.probes,
       probe_timeout_ms: 240_000,

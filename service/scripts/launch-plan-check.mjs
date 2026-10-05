@@ -132,6 +132,24 @@ check(
   `engine=${real.engine.probe_timeout_ms}ms llm=${real.llm.probe_timeout_ms}ms`,
 );
 
+// ---------------------------------------------------------------- S4：③ 的归属权
+//
+// S4 起 ③ 由 box-service 拉起（《04》§9.1：Tier1 空闲卸载的实现方是 box-service）。
+// 配方里仍带着 ③ 的完整命令（供 E1 打印快照），但**归属字段必须是 service** ——
+// 若它退回 `manager`/缺省，Rust 会照旧 spawn，于是两个 llama-server 抢同一个 8080。
+check(
+  'P-llm-1 ③ 的 `owner` 是 `service`（两种模式都是）—— 退回 manager 会让 Rust 与 box-service 抢 8080',
+  mock.llm.owner === 'service' && real.llm.owner === 'service',
+  `mock=${mock.llm.owner} real=${real.llm.owner}`,
+);
+check(
+  'P-llm-2 归属虽是 service，**配方本身仍完整**（cmd/probes/watch 一个不少）—— 少了它 E1 快照会悄悄缩水',
+  mock.llm.cmd?.length >= 2 && mock.llm.probes?.length >= 2
+    && real.llm.cmd?.length >= 2 && real.llm.probes?.length >= 2
+    && typeof real.llm.watch === 'boolean' && typeof mock.llm.watch === 'boolean',
+  `mock.cmd=${mock.llm.cmd?.length} mock.probes=${mock.llm.probes?.length} real.watch=${real.llm.watch}`,
+);
+
 // 顺带确认：打印配方**不该**顺手写 state/token（只读操作不该有落盘副作用）。
 // 用一个**全新的空 state 目录**取证：若脚本真的去 ensureToken()，那里就会多出 token 文件。
 // （目录建在系统临时区，不落仓库、不需要清理代码。）

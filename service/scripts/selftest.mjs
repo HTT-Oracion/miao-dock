@@ -19,6 +19,11 @@ import { encodePng } from '../../engine/src/png.mjs';
 // 所以这里**强制**声明 `mock`：起的是替身，就老实说。生产默认值仍是 `real`（见 config.mjs）。
 // 真实协议路径的断言在 `service/scripts/engine-client-check.mjs`（真协议假引擎 + S1 真引擎实测）。
 process.env.MIAO_ENGINE_PROTOCOL = 'mock';
+// 本套用例只关心**任务 / 队列 / 落盘 / 安全**契约，不验 ③ 的生命周期（那有自己的脚本：
+// `engine-profile-check.mjs`）。而本脚本会在 A1 里**反复起停** box-service 实例，
+// 每个实例都去抢 8080 会引入与代码无关的 flake（"上一实例的 ③ 还没退干净"）。
+// ⇒ 显式退出预拉起。**这是给夹具的开关，不是给产品的**（产品路径永远预拉起）。
+process.env.MIAO_NO_LLM_AUTOSTART = '1';
 
 const ROOT = path.resolve(import.meta.dirname, '..'); // .../service
 const SERVICE_ENTRY = path.join(ROOT, 'src', 'server.mjs');

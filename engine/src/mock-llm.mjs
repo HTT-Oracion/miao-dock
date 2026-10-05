@@ -29,6 +29,22 @@ function argPort() {
 const PORT = argPort();
 const log = (m) => console.log(`[sakura-mock-llm] ${m}`);
 
+/**
+ * 档位（`--model tiny|small|medium`）。
+ *
+ * 为什么替身也要认档位：降档重试（《04》§8）的判据是「③ 换成了**另一档**的权重」。
+ * 若替身对档位毫无反应，那条断言就只能读一句**自报的日志** —— 而日志是可以被写成
+ * "说降了但没降"的。让它出现在 `/v1/models` 里，外部观察者就能**从真实的进程参数**取证。
+ */
+function argModel() {
+  const i = process.argv.indexOf('--model');
+  if (i > -1 && process.argv[i + 1]) return String(process.argv[i + 1]);
+  return process.env.MIAO_LLM_TIER || 'tiny';
+}
+
+const TIER = argModel();
+const MODEL_ID = `sakura-mock:${TIER}`;
+
 const server = http.createServer((req, res) => {
   const { pathname } = new URL(req.url, `http://${HOST}:${PORT}`);
   const send = (code, body) => {
@@ -37,10 +53,10 @@ const server = http.createServer((req, res) => {
     res.end(buf);
   };
   if (req.method === 'GET' && pathname === '/v1/models') {
-    return send(200, { object: 'list', data: [{ id: 'sakura-mock', object: 'model' }] });
+    return send(200, { object: 'list', data: [{ id: MODEL_ID, object: 'model' }] });
   }
   if (req.method === 'GET' && pathname === '/health') {
-    return send(200, { status: 'ok', engine: 'sakura-mock-llm' });
+    return send(200, { status: 'ok', engine: 'sakura-mock-llm', model: MODEL_ID });
   }
   return send(404, { error: { code: 'NOT_FOUND', message: `${req.method} ${pathname}` } });
 });
@@ -53,13 +69,13 @@ server.on('error', (e) => {
 server.listen(PORT, HOST, () => {
   log('========================================================');
   log(`监听地址 : http://${HOST}:${PORT}`);
-  log('模型     : sakura-mock（1.5B 档的替身，不出译文，只证明"③ 这个进程在"）');
+  log(`模型     : ${MODEL_ID}（档位替身，不出译文，只证明"③ 这个进程在"、且处在哪一档）`);
   // 机器可读就绪行：与真实 llama-server 的 `/v1/models` 对应，供 Rust 层确认端口
-  log(`MIAO_LLM_READY ${JSON.stringify({ port: PORT, engine: 'sakura-mock-llm' })}`);
+  log(`MIAO_LLM_READY ${JSON.stringify({ port: PORT, engine: 'sakura-mock-llm', model: MODEL_ID })}`);
   log('========================================================');
 });
 
-// 父进程（Rust 壳）被强杀时自我退出，避免变成占住 8080 的孤儿（E11）
+// 父进程（S4 起是 **box-service**；此前是 Rust 壳）被强杀时自我退出，避免变成占住 8080 的孤儿（E11）
 watchParent();
 
 for (const sig of ['SIGINT', 'SIGTERM']) {

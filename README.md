@@ -67,7 +67,7 @@ npm run selftest:app          # B 组应用生命周期 16 条（程序化，不
 npm run selftest:app:refute   # 上一项的反证——它必须**变红**，绿的那轮才作数
 npm run selftest:app:e11      # E11 三进程树回收（mock）：SIGKILL 主进程 → 13 端口全释放
 npm run selftest:app:e11:real # 同上但真进程（python+执行器+llama-server）；分钟级，按需手动跑
-npm run check:launch-plan     # S2 启动配方契约 22 条
+npm run check:launch-plan     # S2 启动配方契约 24 条（含 ③ 归属移交后的 P-llm-* 断言）
 npm run check:child-watch     # 外部二进制父死看守的双向取证（反证：check:child-watch:refute）
 npm run fetch:models          # S3 模型下载器（--check 只校验不联网 / --link 只重建引擎树里的链接；反证：check:models:refute）
 npm run e2e                   # D1–D5 端到端（真实 engine + 真实 service，真落盘）
@@ -78,6 +78,8 @@ npm run check:ia              # IA 结构 24 条（侧栏两级 / 视图 Tab / �
 npm run check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
 npm run check:engine-client   # 翻译引擎适配层 32 条 / 反证 5 条（真协议用 openapi 快照「假引擎」，秒级可复跑）
 npm run check:models          # S3 模型下载器 32 条 / 反证 5 条（本地 Range 夹具源：中断续传 / 篡改一字节 / 换版本重链，秒级）
+npm run check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）42 条 / 反证 13 条（起真进程，约 10s）
+npm run check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，13 条 / 逃生开关反证 2 条（约 25s）
 npm run check:music           # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 215 条（反证：check:music:refute）
 npm run check:settings        # 设置页「播放·媒体」裁定结果 90 条（反证：check:settings:refute）
 npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条（反证：check:units:refute）
@@ -98,11 +100,14 @@ npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动�
 
 > **翻译引擎接入进行中**：适配层（`service/src/engine-client.mjs`）已按真引擎协议重写并在真引擎上
 > 出过真译文（S1 / D-62）；**S2 三进程生命周期已完成、macOS 侧过 G2**（D-64…D-70）——
-> `ServiceManager` 管 `Children{service, engine, llm}`，就绪是**三重判定**（进程存活 + 端口 + HTTP），
+> `ServiceManager` 管 `Children{service, engine}`，就绪是**三重判定**（进程存活 + 端口 + HTTP），
 > 真模式 E11 已实测（SIGKILL 主进程 → 真引擎/执行器/llama-server 全自退、14 端口释放）。
+> **S3 模型管理已完成**（D-72：清单固化 / 断点续传下载器 / store + 硬链接，换引擎版本不重下模型）。
+> **S4 档位 / 加速后端 / 降档重试 / 两级空闲卸载已完成**（D-73）：③ 的归属权从 Rust 移交给
+> box-service（`service/src/llm-supervisor.mjs`），真 ③ 冷启动实测 1.0–2.8s、Tier1 占用 2.09–2.77 GB。
 >
 > 🔴 **引擎栈模式默认 `real`**：`npm run app` 起的**已经是真引擎**（`python main.py` + `llama-server`，
 > 需要 `runtimes/`，见 `engine/VERSIONS.lock`）。模拟引擎只在测试里被显式注入
-> （`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs`）。
-> **未做**：模型下载器 / 档位加速 / 诊断 UI / 插件串联（S3–S8）· Windows 侧（`unverified`）·
+> （`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs` / `check:e5e6`）。
+> **未做**：契约增量 / 诊断 UI / 插件串联（S5–S8）· Windows 侧（`unverified`）·
 > 打包分发（G-13：装出来的 `.app` 里不含 `service/` 与 `engine/`，起不了服务）。

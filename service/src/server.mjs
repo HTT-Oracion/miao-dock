@@ -13,7 +13,11 @@ import {
   TOKEN_FILE, assertInsideRoot, config, validateRoot,
 } from './config.mjs';
 import { ApiError, errorEnvelope, permissionDenied } from './errors.mjs';
-import { probeEngine } from './engine-client.mjs';
+import { probeEngine, resolveLlmLaunch, availableTiers, TIER_LLM_MODELS } from './engine-client.mjs';
+import { probeHardware } from './engine-profile.mjs';
+import { createIdleWatcher } from './idle-policy.mjs';
+import { LlmSupervisor } from './llm-supervisor.mjs';
+import { createTierDowngrade } from './tier-downgrade.mjs';
 import { allFieldStrings, firstField, groupParts, parseMultipartEx } from './multipart.mjs';
 import { normalizeComicName, isSafeDirName } from './names.mjs';
 import { watchParent } from './parent-watch.mjs';
@@ -706,6 +710,80 @@ watchParent();
 const { server, port } = await listenWithProbe(createHandler());
 store.port = port;
 
+// ---------------------------------------------------------------- 档位与引擎③的生命周期
+//
+// ③ 的归属权在 S4 从 Rust 的 `ServiceManager` 移交到这里（《04》§9.1：Tier1 空闲卸载的实现方是
+// box-service）。**配方**仍由 `engine-client.mjs` 的 `resolveLlmLaunch()` 唯一给出，
+// 这里只是"按配方拉起 / 按策略停下 / 按 §8 降档"。详见 `llm-supervisor.mjs` 文件头。
+
+/** 档位由低到高（与 `engine-profile.mjs` 的 TIERS 同序） */
+const TIER_ORDER = ['tiny', 'small', 'medium'];
+
+/**
+ * 把"期望档位"夹到**实际具备权重的档位**上（只往低夹，从不往高抬）。
+ *
+ * 为什么要夹：档位映射（《04》§7.2）给的是"硬件能吃哪一档"，而能不能真跑还取决于
+ * **权重在不在**（`models.manifest.json` 目前只固化了 Tiny）。这两件事必须分开、
+ * 而且要**响**（夹取会打日志）—— 悄悄跑在低档上会让用户以为自己在跑 7B。
+ */
+function clampTierToAvailable(desired) {
+  const avail = availableTiers();
+  const idx = TIER_ORDER.indexOf(desired);
+  for (let i = idx; i >= 0; i -= 1) if (avail.includes(TIER_ORDER[i])) return TIER_ORDER[i];
+  return avail[0] || 'tiny';
+}
+
+const hardware = probeHardware();
+const desiredTier = config.engineTier || hardware.recommendedTier;
+const effectiveTier = clampTierToAvailable(desiredTier);
+
+const llm = new LlmSupervisor({
+  launch: resolveLlmLaunch({ tier: effectiveTier }),
+  log: (m) => serverLog(m),
+});
+
+if (config.llmAutostart) {
+  // ⚠️ **不 await**：真档下 llama-server 要读几 GB 权重，等它就绪会把服务自身的
+  // `MIAO_READY` 行推迟到分钟级 —— 而 Rust 侧等这行是有超时的（会把"服务起不来"报成
+  // 真正的启动失败）。③ 晚到不要紧：它在**翻译那一刻**才被用到，而那条路有懒加载兜底。
+  llm.start().catch((err) => serverLog(`③ LLM 启动失败（不阻断服务）：${err.message}`));
+  // 《04》§9.3 懒加载恢复：③ 被空闲卸载后再来任务 → 先拉起再继续（对用户表现为"这张稍慢"）。
+  store.ensureLlm = () => llm.start({ timeoutMs: 180_000 });
+}
+
+// 档位降档控制器（《04》§8）。**进程级单例 ⇒ 天然是"服务级"作用域**（§8.2：降档后
+// 后续所有 item 都用新档，不逐图降）。
+const tierCtl = createTierDowngrade({
+  tier: effectiveTier,
+  disabled: config.noTierDowngrade,
+  log: (m) => serverLog(m),
+  modelOf: (t) => TIER_LLM_MODELS[t],
+  apply: async (t) => {
+    // 降档落到引擎 = **停 ③ → 换配方 → 重新拉起**，三步是一次原子操作（`switchTier`）。
+    // ② 不依赖档位（策略参数是服务级、与档位无关），无需跟着重启 —— 少一次分钟级的 python 冷启动。
+    const snap = await llm.switchTier(t, { timeoutMs: 180_000 });
+    if (snap.state !== 'running') throw new Error(`降档后 ③ 未就绪（state=${snap.state}）`);
+  },
+});
+store.tierDowngrade = tierCtl;
+
+// 空闲卸载看护（《04》§9.1 Tier1）。Tier2（视觉模型 30 min）由**引擎自带**的
+// `--models-ttl` 负责，box-service 不动作 —— 这里只把阈值留在同一处展示（见 config）。
+const idleWatcher = createIdleWatcher({
+  store,
+  supervisor: llm,
+  log: (m) => serverLog(m),
+  idleMs: config.idleLlmMs,
+  intervalMs: config.idleTickMs,
+  neverUnload: config.unloadNever,
+  disabled: config.noIdleUnload,
+});
+if (config.unloadNever || config.noIdleUnload) {
+  serverLog(`空闲卸载：${config.unloadNever ? '用户选择「从不卸载」（两级都关）' : '被 MIAO_NO_IDLE_UNLOAD=1 关掉（反证用）'}`);
+} else {
+  idleWatcher.start();
+}
+
 const heartbeatTimer = setInterval(() => store.broadcastHeartbeat(), HEARTBEAT_MS);
 heartbeatTimer.unref?.();
 
@@ -719,6 +797,15 @@ serverLog(`落盘根目录 : ${store.root}`);
 serverLog(`状态目录   : ${STATE_DIR}`);
 serverLog(`sidecar    : ${sidecar.state} port=${sidecar.port ?? '-'} engine=${sidecar.engine ?? '-'} `
   + `protocol=${config.engineProtocol}`);
+// ③ 的归属方是**本进程**（不是 Rust）—— 这句日志是"谁该为 8080 负责"的现场凭证。
+serverLog(`引擎③ LLM : 归属=box-service model=${llm.model ?? '-'} port=${llm.port ?? '-'} `
+  + `autostart=${config.llmAutostart} 空闲卸载=${config.unloadNever ? '从不' : `${Math.round(config.idleLlmMs / 60_000)}min`}`);
+// 档位：把"硬件推荐 / 用户配置 / 实际可用"三者摊开写，夹取发生时一眼能看见（§7.2 + §8）
+serverLog(`档位       : 生效=${effectiveTier}（硬件推荐=${hardware.recommendedTier} `
+  + `配置=${config.engineTier ?? '未指定'} 可用权重档=${availableTiers().join('/') || '无'}）`
+  + `${effectiveTier === desiredTier ? '' : ' ⚠ 已夹取'}`);
+serverLog(`加速后端   : ${hardware.accel}（gpu=${hardware.gpu.kind} ram=${hardware.totalRamGb}GB）`
+  + ` 降档=${config.noTierDowngrade ? '关闭（反证开关）' : '启用（仅一次，服务级）'}`);
 serverLog(`失败注入   : FAIL_SEQ=[${[...config.failSeqs].join(',')}] ITEM_FAIL_RATE=${config.itemFailRate} `
   + `DISK_FULL=${config.diskFull} SIDECAR_DOWN=${config.sidecarDown} SKIP_EXISTING=${config.skipExisting}`);
 if (restore.restored > 0) {
@@ -736,8 +823,19 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
     serverLog(`收到 ${sig}，关闭中…`);
     clearInterval(heartbeatTimer);
-    server.close(() => process.exit(0));
-    // 兜底：SSE 长连接可能让 close 回调迟迟不触发
-    setTimeout(() => process.exit(0), 500).unref();
+    idleWatcher.stop();
+    // 先等 ③ 真的退出再退自己 —— 否则 8080 会短暂留给孤儿，而 E11 的外部观察者正是去抓它。
+    // 加 finally 兜底：③ 的收尾失败不该让服务关不掉（Rust 侧超时后会 SIGKILL，反而更难诊断）。
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      server.close(() => process.exit(0));
+      // 兜底：SSE 长连接可能让 close 回调迟迟不触发
+      setTimeout(() => process.exit(0), 500).unref();
+    };
+    llm.stop({ reason: `服务收到 ${sig}`, graceMs: 3000 }).catch(() => {}).finally(finish);
+    // 二次兜底：LLM 收尾本身也可能卡住（进程僵死 → kill 无响应）
+    setTimeout(finish, 6000).unref();
   });
 }

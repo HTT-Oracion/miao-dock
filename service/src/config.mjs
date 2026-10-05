@@ -154,6 +154,35 @@ export function ensureToken() {
   return token;
 }
 
+/**
+ * Tier2 空闲卸载阈值（**秒**）—— 引擎 `--models-ttl` 与设置页「空闲卸载视觉」**同一个数字**。
+ * 抬到对象外，是为了让 `engineModelsTtl`（秒，发给引擎）与 `idleVisionMs`（毫秒，对外展示）
+ * 由**同一处**派生，而不是抄两遍（抄两遍就是在等它们走散）。
+ */
+const ENGINE_MODELS_TTL_SEC = envInt('MIAO_ENGINE_MODELS_TTL', 1800);
+
+/**
+ * Tier1 空闲卸载阈值（《04》§9.1：停 ③ Sakura LLM，默认 5 min）。
+ * **实现方 = box-service 自己**（③ 不在引擎 TTL 范围内）⇒ 这个阈值只有 box-service 认。
+ */
+const IDLE_LLM_MS = envInt('MIAO_IDLE_LLM_MS', 5 * 60_000);
+
+/**
+ * 「从不卸载」（《04》§9.3 末句：「用户配置『从不卸载』→ 两级都关闭」）。
+ *
+ * 🔴 它必须**同时**关掉两级，而不是只关 box-service 那一级：
+ *   · Tier1（③ LLM）由 box-service 自己决定，看 `config.unloadNever`；
+ *   · Tier2（视觉模型）由**引擎自带**的 `--models-ttl` 决定 —— 所以这里必须把秒数**归零**，
+ *     连参数都不发（`resolveEngineLaunch` 对 `modelsTtl > 0` 才 push）。
+ *   只关一级的后果很隐蔽：UI 上写着「从不卸载」，引擎却仍会在 30 min 后把模型丢掉。
+ *
+ * ⚠️ 两个来源取**或**，不是二选一：
+ *   · `MIAO_IDLE_LLM_MS=0` —— 《02》§5 把这一项写成**阈值 0**（设置页是「数字（分钟）」，0 = 从不卸载），
+ *     这是**产品口径**，S6 的界面走的就是它；
+ *   · `MIAO_UNLOAD_NEVER=1` —— 显式开关，给脚本/验收用（"把阈值填 0"在命令行里读起来像笔误）。
+ */
+const UNLOAD_NEVER = IDLE_LLM_MS === 0 || envBool('MIAO_UNLOAD_NEVER');
+
 export const config = {
   token: ensureToken(),
   // 显式指定端口时不再探测（被占则启动失败）
@@ -226,8 +255,9 @@ export const config = {
   enginePython: process.env.MIAO_ENGINE_PYTHON
     || path.resolve(PKG_DIR, '..', 'runtimes', 'manga-translator', 'venv', 'bin', 'python'),
   engineUseGpu: envBool('MIAO_ENGINE_USE_GPU', true),
-  // Tier 2 空闲卸载（《04》§9.1）：引擎自带 `--models-ttl 1800`（30 min）
-  engineModelsTtl: envInt('MIAO_ENGINE_MODELS_TTL', 1800),
+  // Tier 2 空闲卸载（《04》§9.1）：引擎自带 `--models-ttl 1800`（30 min）。
+  // 「从不卸载」⇒ 归零，`resolveEngineLaunch` 便不再下发该参数（见 UNLOAD_NEVER 处注释）。
+  engineModelsTtl: UNLOAD_NEVER ? 0 : ENGINE_MODELS_TTL_SEC,
   // nonce：用于「引擎主进程 ↔ 执行器」与 `/register` 的鉴权。
   // 🔴 **必须是字符串 `"None"`（默认值）**，不是"没设"：
   //    ① `manga_translator/mode/share.py:52-57` 只在 `params['nonce'] == "None"` 时把它转成
@@ -239,6 +269,34 @@ export const config = {
   //      需给上游打补丁或在适配层前加一层仅本机可访问的代理。
   //    ⚠️ 覆盖成别的值 = 功能必坏（保留此开关只为上游修好后复用）。
   engineNonce: process.env.MIAO_ENGINE_NONCE || 'None',
+  // ---------------------------------------------------------------- 档位与空闲卸载（S4）
+  //
+  // 生效档位（《04》§7.2 / §8.3）。`null` = **按硬件探测推荐**（`engine-profile.mjs` 的
+  // `mapTier`），只有用户在设置页显式改过才非 null —— 这样"换了台机器"不会被一份陈旧的
+  // 写死值覆盖（§8.3：降档只在本运行期有效，关闭后回到用户配置档位）。
+  // 取值非法**启动即抛错**（envEnum 的既定行为，不静默回退）。
+  engineTier: envEnum('MIAO_ENGINE_TIER', new Set(['tiny', 'small', 'medium']), null),
+  // Tier1 空闲卸载阈值（定义与「从不卸载」的口径见 `IDLE_LLM_MS` / `UNLOAD_NEVER` 处）
+  idleLlmMs: IDLE_LLM_MS,
+  // 空闲看护的**巡检周期**（不是策略，是"多久看一眼"）。默认 5s：相对 5 min 的阈值而言
+  // 误差可忽略，而对 CPU 完全无感（一次纯判定）。验收夹具把它压到 250ms，好让
+  // "到点卸载"落在秒级 —— 与 `MIAO_IDLE_LLM_MS` 一起构成"可反证的短回路"。
+  idleTickMs: envInt('MIAO_IDLE_TICK_MS', 5_000),
+  // Tier2 空闲卸载（默认 30 min）：**实现方是引擎自带的 `--models-ttl`**，box-service 不动作。
+  // 从下面同一个数字派生，避免「秒」与「毫秒」两个副本走散。
+  idleVisionMs: ENGINE_MODELS_TTL_SEC * 1000,
+  // 「从不卸载」的口径见 `UNLOAD_NEVER` 处（两个来源取或：阈值 0 / 显式开关）
+  unloadNever: UNLOAD_NEVER,
+  // 反证开关（延续本项目 `MIAO_NO_*` 家族）：关掉机制本身，用来证明断言测的**确实是这个机制**，
+  // 而不是"碰巧绿"（关掉之后断言必须变红）。见 ~/.workbuddy/skills/falsifiable-verification。
+  noIdleUnload: envBool('MIAO_NO_IDLE_UNLOAD'),
+  noTierDowngrade: envBool('MIAO_NO_TIER_DOWNGRADE'),
+  // ③ 是否在 box-service 启动时**预拉起**（默认 true = 产品行为：《04》§9.1 的 Tier1 归属，
+  // 且 E11 的外部观察者要等 8080 起来才判"三进程已拉起"）。
+  // 验收夹具若只关心任务/队列契约、又可能与其他实例抢 8080，可置 `MIAO_NO_LLM_AUTOSTART=1` 退出
+  // —— 这个开关是**给夹具用的**，不是给产品的；产品路径永远走预拉起。
+  llmAutostart: !envBool('MIAO_NO_LLM_AUTOSTART'),
+
   // 引擎③（Sakura LLM）地址：`translators/keys.py` 的 `SAKURA_API_BASE` 默认值即此
   engineSakuraBase: process.env.SAKURA_API_BASE || 'http://127.0.0.1:8080/v1',
 };
