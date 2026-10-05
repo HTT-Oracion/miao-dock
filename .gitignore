@@ -28,3 +28,8 @@ vendor/
 .history/
 
 test-music/
+test-manga/
+
+# 真实翻译引擎的运行时（Python 解释器 + venv + 模型权重）——本机资产，体积大、按平台不同，不入库
+# 依据：docs/engine-integration-plan.md §S0 / §S3（模型目录必须独立于 app/，换版本不重下）
+runtimes/

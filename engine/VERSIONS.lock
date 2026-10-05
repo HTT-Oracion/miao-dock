@@ -1,0 +1,45 @@
+# VERSIONS.lock —— 真实翻译引擎的版本锁（miao-dock ver2.0）
+#
+# 依据：docs/engine-integration-plan.md §S0 / §S3（《04》§2 三层进程）
+# 目的：把「引擎源码 tag / Python / PyTorch / llama.cpp」四件事钉死。
+#       换版本 = 改这个文件 + 走 D-xx 评审，不允许"顺手升级"。
+# ⚠️ 本文件在仓库内（`engine/`），**可版本控制**。
+#    运行时本体在 `runtimes/`（已被 .gitignore 忽略，体积大、按平台不同）。
+#
+# 最后更新：2026-10-05（S0 开工第一次实测）
+
+## 1. 运行时（本机已实测 ✅）
+
+source       = python-build-standalone（astral-sh）
+source_url   = https://mirror.nju.edu.cn/github-release/astral-sh/python-build-standalone/20261003/cpython-3.12.15%2B20261003-aarch64-apple-darwin-install_only.tar.gz
+source_tag   = 20261003
+python       = 3.12.15
+platform     = macOS 15.1.1 / arm64
+install_to   = runtimes/manga-translator/python/
+venv         = runtimes/manga-translator/venv/
+# 为什么不用 Homebrew：本机沙箱内 `brew install` 在下载校验阶段失败
+# （sandbox-exec: sandbox_apply: Operation not permitted，非网络问题，见计划 R11）。
+# 且项目内运行时同时满足「独立于 app/」与后续打包需求。
+
+## 2. 已验证的依赖（本机实测 ✅，仅探针范围）
+
+torch        = 2.14.1          # cp312 / macosx_14_0_arm64
+numpy        = 2.5.3
+# 实测（tmp-engine-test/mps-probe.py）：
+#   mps.is_built() = True · mps.is_available() = True
+#   张量 matmul 结果与 CPU **逐位一致**（最大偏差 0.000e+00）
+#   conv2d 1024×1024×32ch：MPS ≈ 10.1 ms / CPU ≈ 342 ms（≈ 34×）
+#   mps 已分配 386 MB · driver 已分配 1032 MB
+# ⚠️ 这只是「torch+MPS 可用」的证明，**不是** manga-image-translator 装得起来的证明。
+
+## 3. 待定（尚未 checkout / 未实测 ❌）
+
+engine_tag   = 待定   # manga-image-translator 的 tag/commit —— S0 未完成
+llama_cpp    = 待定   # llama.cpp 的 release tag（按 {os}-{arch}-{backend} 选产物）
+sakura_model = 待定   # Tiny / Small 档位与 GGUF 文件名 —— 需走镜像（huggingface.co 本机不可达）
+
+## 4. 本机网络约束（影响获取路径，见计划 R9/R10）
+
+# pypi ✅ · pypi.tuna ✅ · hf-mirror.com ✅ · modelscope.cn ✅ · mirror.nju.edu.cn ✅
+# huggingface.co ❌（CONNECT tunnel failed）
+# github.com 根路径 200，但 **release 资产下载 502** ⇒ 二进制一律走镜像

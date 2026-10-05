@@ -1372,3 +1372,134 @@ store 的 `progressMs` 只是 `onTimeUpdate`（~4Hz）驱动的**降级兜底**�
   反证 173 → **180**，**180/180 全红、0 跳过、0 假阳性、全部文件字节恢复一致**。
 - `tsc --noEmit` 0 错误 · `check:settings` 90/0 · `check:units` 37/0 · `check:docs` 14/14。
 - **未动 Rust**（`cargo check` 无涉）；未碰 `DynamicIsland.tsx`（并发占用中）。
+
+---
+
+## D-57 · 翻译服务（真实引擎）接入：可行性判定 + 5 项拍板 + 组织与交付计划（2026-10-05）
+
+### 背景
+用户要求查阅技术方案中翻译服务的实现方案，评估可行性、确认跨端、梳理插件↔Box 的接口/数据流/依赖，
+并用 `test-manga/test_0.webp`（真实日文漫画页）实测，最后给开发计划。
+
+### 判"可行"要**拆成三问**（本轮最重要的方法论收获）
+| 问题 | 判定 |
+|---|---|
+| 架构自洽吗 | ✅ 自洽（三层进程 + 单点适配层 + 契约只做增量） |
+| 前提具备吗 | ❌ **全缺**：引擎源码 / Python 3.10–3.12 / torch / `llama-server` / 模型权重**一样都没有** |
+| 跨端成立吗 | ⚠️ **一半**：服务层已满足（路径与进程均已按 darwin/win32 分叉）；**引擎层是纸面** |
+
+> **三者答案可以互相矛盾。方案越自洽，越容易让人跳过第二、三问直接排期。**
+
+### 跨端：**必须逐层判**，不能因 Node 层跨平台就签"整条链路跨端"
+三个硬骨头：
+1. **依赖轮子按平台解析** —— PyTorch 的 MPS / CUDA / CPU 是**不同产物**，"一份 lock 走两端"不成立；
+2. **二进制按平台获取** —— llama.cpp 产物按 `{os}-{arch}-{backend}` 出，不是"下一个可执行文件"；
+3. **Windows 进程树回收** —— `Child::kill()` 在 Windows **只结束直接子进程**。**不能靠"子进程自看守父进程"替代**
+   （`parent-watch.mjs` 是 Node 实现，Python 侧无等价物）。必须 Job Object / `taskkill /PID /T /F`。
+
+### 另一个高危静默失效：就绪握手
+`ServiceManager` 现在的就绪判定靠**子进程往 stdout 打一行 JSON**。FastAPI 与 `llama-server` **都不会打这种行**
+⇒ 若沿用，真引擎将**永不就绪且不报错**。S2 必须改为**三重判定**（进程存活 + 端口监听 + HTTP 应答）。
+
+### 真实原图实测：**管路通 ✅ / 功能通 ❌**
+用真实图片 + 真实进程 + 真实磁盘跑通全链路（端口探测 → 令牌 → 建单 → 轮询 → 落盘 → `GET /queue`），
+**14/14 通过、575ms**；译文尺寸 **1125×1600** 反证了 WebP 头解析确实生效（未静默回退默认值）。
+**但产物是版式占位图（灰条 + 空白方框），一步真实翻译都没有发生。**
+→ 纪律：**报告必须分「管路」与「功能」两行写**，否则会被读成"翻译可用"。
+
+### 会因换实现而**必红**的既有断言（须先改口径）
+`scripts/e2e.mjs` 断言「20 张图 30 秒内完成」（模拟引擎 300ms/张）。真引擎是**秒级/张** ⇒ 必红。
+不在接入前改口径，接入成功那天会看到一片红并被误判成"接入失败"。
+
+### 5 项拍板（用户 2026-10-05 全部关闭）
+① 首发验证平台 **改 macOS**（PD-3 的理由来自音乐模块的上游参考实现，与引擎无关；macOS 是唯一可实测环境）；
+② **接受**首次安装 5–8 GB ⇒ S0 加磁盘预检 + 预留提示，模型目录与代码分离；
+> ⚠️ **同日实测更正**：拍板时引用的"`/` 仅剩 33 GB"是**错的** —— `df -h /` 读到的是 APFS 密封系统卷，
+> 受容器共享空间误导。数据卷 `df -h /System/Volumes/Data` 实测 **460Gi 总 / 354Gi 已用 / 89Gi 可用**。
+> **结论不变（接受安装），但"余量不宽裕"这个前提不成立** ⇒ 风险 R2 由「中」降为「低」。
+> 教训：**判磁盘余量不能用 `/`**（与项目既有的"记忆不能当证据"同源——判据本身要选对）。
+③ 两级空闲卸载**照搬《04》§9.1**（Tier1 LLM 空闲 5 min / Tier2 视觉 30 min）；
+**「从不卸载」选项走"先实测后定"** —— 由 S4 实测的"卸载后再加载耗时"决定是否暴露；
+④ 「准备中」**不给**下载百分比；
+⑤ Windows 侧代码**本轮就写、不验收**，`#[cfg(windows)]` 隔离 + 验收标记 `unverified`。
+
+### 交付物
+- `docs/engine-integration-plan.md`（技术方案与阶段划分，368 行）
+- `docs/engine-integration-delivery-plan.md`（**分工 / 里程碑 / 交付物 / 验收流程**，本次新增）
+- `tmp-engine-test/probe.mjs`（服务层探针，可复现；`tmp-*/` 已 gitignore，不写用户真实图片目录）
+
+### 事实性纠错（方案与仓库不符，实施前必须先纠正）
+1. 《01》§6 让改的 `src/panel/components/ServiceNotReady.tsx` **根本不存在**；
+   真实落点是 `panel/Panel.tsx` + `domain/clientState.ts`。照抄路径派活会去找不存在的文件。
+2. 插件侧"服务未就绪"路径的**真正开关**是 `domain/demoMode.ts` 的 `DEMO_BYPASS_SERVICE_READY = true` ——
+   **不删它，这条路径永远测不到**（看似"能跑"，实为"没测"）。
+
+---
+
+## D-58 · M1 开工首轮：环境闸门第 ① 颗钉子 + e2e 时效口径修正（2026-10-05）
+
+### 一、磁盘余量：我此前的读数是**错的**
+`df -h /` 读到"33 GB"是 **APFS 密封系统卷**的误导性读数。
+真实数据卷 `df -h /System/Volumes/Data` = **460Gi 总 / 354Gi 已用 / 89Gi 可用**。
+**结论不变（接受安装），但"余量不宽裕"这个前提不成立** ⇒ 风险 R2 由「中」降为「低」。
+**教训：判磁盘余量不能用 `/`。**
+
+### 二、网络：**"站点可达" ≠ "资产可达"**（本轮最值钱的一条）
+| 目标 | 结果 |
+|---|---|
+| `pypi` / `pypi.tuna` | ✅ |
+| `github.com` **根路径** | ✅ 200 |
+| `github.com` **release 资产下载** | ❌ **502**（同域名，路径被拦） |
+| `huggingface.co` | ❌ CONNECT tunnel failed |
+| `hf-mirror.com` / `modelscope.cn` | ✅ |
+| **`mirror.nju.edu.cn`**（含 python-build-standalone 全量） | ✅ |
+| `registry.npmmirror.com` | ✅ |
+
+**只看根路径会把"不可用"判成"可用"**，白排一轮。⇒ 二进制与权重**一律走镜像**；判可达性必须**请求真实资产**。
+
+### 三、`brew install` 在本机沙箱内不可用
+失败在下载校验阶段：`sandbox-exec: sandbox_apply: Operation not permitted`（**不是网络问题**）。
+⇒ 运行时改走**项目内** python-build-standalone（`runtimes/`），顺带满足"运行时独立于 `app/`"与后续打包。
+
+### 四、G1 第 ① 颗钉子：torch + MPS **实测通过**
+- Python **3.12.15**（python-build-standalone `20261003`，arm64，24MB，16.7MB/s）
+- torch **2.14.1**（`cp312`/`macosx_14_0_arm64`）+ numpy 2.5.3
+- `mps.is_built()`/`is_available()` = **True/True**
+- 张量 matmul 与 CPU **逐位一致（最大偏差 0.000e+00）**，且 `device.type == 'mps'`
+- conv2d 1024×1024×32ch：MPS **≈10.1ms** vs CPU **≈342ms**（**≈34×**）
+- MPS 已分配 386MB / driver 已分配 1032MB
+
+**风险 R1 由「高」降为「中」**（不归零：只测了 matmul/conv2d，引擎实际算子集仍可能踩 CPU 回退）。
+
+**过程抓到的真问题**：torch 装完**不带 numpy**，会打 `Failed to initialize NumPy` 警告。
+**"torch 的依赖" ≠ "引擎的依赖"** —— 别把"torch 装上了"当成"环境齐了"。
+产物：`engine/VERSIONS.lock`（**仓库内**，可版本控制；运行时本体在 gitignore 的 `runtimes/`）、
+探针 `tmp-engine-test/mps-probe.py`（可复现）。
+
+### 五、e2e 时效口径修正（D-0.8）——**同一个毛病有三处，不是一处**
+写死的超时都是**模拟引擎口径**（默认 300ms/张），真引擎是**秒级/张**，接入那天必红，
+且**会被误读成"接入失败"**：
+
+| # | 位置 | 旧 | 新 |
+|---|---|---|---|
+| ① | `e2e.mjs` D4a | `elapsed < 30` 写死 30s | 预算 = `MIAO_E2E_ITEM_MS` × 20 × 1.2 + 10s |
+| ② | `e2e.mjs` `waitTask` | 写死 `60_000` | `taskTimeoutFor(n)`，随基准缩放（下限仍 60s） |
+| ③ | `e2e.mjs` `collectEvents` | 写死 `60_000` | 同上（SSE 也要等到终态） |
+
+> ②是**反证轮自己撞出来的**：第一版反证把引擎放慢到 2000ms/张，结果**没打到 D4a**，
+> 而是先抛「未在 60000ms 内到终态」——**看起来像流程坏了，其实只是引擎慢**。
+> **反证轮不只验判据，还替我把同一类缺陷的第二、三处找了出来。**
+
+**验收**：正向 **23/23**；反证（引擎 900ms/张、预算基准不动）**22/23 —— 只 D4a 一条红**，
+明细自解释（`实测 21.9s / 预算 17.2s` + "若在跑真实引擎请设 `MIAO_E2E_ITEM_MS`"）。
+启动横幅现在自报预算口径，避免"红得莫名其妙"。
+
+**另记一处待办**：`service/src/config.mjs` 的 `engineTimeoutMs` 默认 **60s** 是单张请求上限，
+真引擎单张若逼近该值会以**超时错误**失败（看起来像引擎坏了）⇒ 列为风险 R12，S2 一并重估。
+
+### 六、本节新增/修改的文件
+`.gitignore`（+`test-manga/`、+`runtimes/`）· `engine/VERSIONS.lock`（新）·
+`scripts/e2e.mjs`（三处口径）· `docs/dev-plan.md`（D4 判据同步）·
+`docs/engine-integration-plan.md`（磁盘/网络/R1/R6/R9–R12/§4.5）·
+`docs/engine-integration-delivery-plan.md`（环境事实与 M1 进度）·
+`tmp-engine-test/mps-probe.py`（新，探针）。

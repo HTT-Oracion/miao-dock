@@ -33,6 +33,22 @@ const ROOT_DIR = e2eRoot();
 const STATE_DIR = e2eState();
 const BATCH_LIMIT = 20;
 
+// ------------------------------------------------------------------ D4 时效的「时间口径」（D-0.8）
+// ⚠️ 旧写法把预算**写死成 30s** —— 那是**模拟引擎**的口径（单张 300ms，`MIAO_ENGINE_ITEM_MS` 默认值）。
+// 真实引擎是**秒级/张**：20 张可达 1 分钟以上。接入真引擎那天该断言必红，
+// 而且会被误读成「接入失败」（见 `docs/engine-integration-plan.md` R6）。
+//
+// 现改为**预算由单张耗时推导**，接真引擎时只需给 `MIAO_E2E_ITEM_MS` 实测值，**不必改断言**：
+//     预算 = MIAO_E2E_ITEM_MS × BATCH_LIMIT × 抖动 + 管道余量
+//
+// ⚠️ 它**不是性能断言**，而是「管线没卡死」的冒烟闸门：引擎自身耗时尚在预算内，
+// 超出预算的那部分 = 队列 / 落盘 / SSE 的管道开销（或引擎比预期慢）。
+const BUDGET_ITEM_MS = Number.parseInt(process.env.MIAO_E2E_ITEM_MS || '300', 10);
+const ITEM_JITTER = 1.2; // 引擎侧 ±20% 抖动（`engine/src/server.mjs`）
+const PIPELINE_SLACK_S = 10; // 队列 / 落盘 / SSE 的管道开销余量
+const D4_BUDGET_S = (BUDGET_ITEM_MS * ITEM_JITTER * BATCH_LIMIT) / 1000 + PIPELINE_SLACK_S;
+const BUDGET_EXPLICIT = process.env.MIAO_E2E_ITEM_MS != null;
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
 const check = (id, label, ok, detail) => {
@@ -65,6 +81,28 @@ async function waitReady(state, re, timeoutMs = 20_000) {
 
 function killProc(state) {
   if (state && state.child && state.child.exitCode === null) state.child.kill('SIGTERM');
+}
+
+/**
+ * 失败时把两个子进程的最后若干行**回显出来**。
+ *
+ * 为什么必须有：`spawnProc` 一直把子进程输出收在 `state.out` 里，但**只在 `waitReady`
+ * 超时时才用**。于是流程跑到中段炸掉时，服务端真正的那句报错是**被丢掉的**，
+ * 报告里只剩一句「HTTP 500 / undefined」——**症状在服务端、证据在别处**，
+ * 谁接手都得重新起一遍进程手工复现（本项目实测踩过一次，查了一轮才定位）。
+ *
+ * 只回显**尾部**：这两条日志是「启动横幅 + 逐项进度」，中段之后的尾部才含失败上下文。
+ * ⚠️ 这是**取证**，不是断言 —— 它不参与判绿判红，加它不会让任何一条从红变绿。
+ */
+function dumpProcLogs() {
+  for (const st of [engine, service]) {
+    if (!st || !st.out.trim()) continue;
+    const lines = st.out.replace(/\s+$/, '').split('\n');
+    const TAIL = 30;
+    console.log(`\n──── ${st.tag} 日志尾部（共 ${lines.length} 行，显示最后 ${Math.min(TAIL, lines.length)} 行）────`);
+    console.log(lines.slice(-TAIL).join('\n'));
+    console.log(`──── /${st.tag} ────`);
+  }
 }
 
 // ------------------------------------------------------------------ HTTP
@@ -162,7 +200,14 @@ const detail = async (port, token, taskId) =>
 
 const TERMINAL = ['done', 'partial_failed', 'failed', 'canceled'];
 
-async function waitTask(port, token, taskId, timeoutMs = 60_000) {
+// 单个任务等到终态的默认上限：同样**随单张耗时基准缩放**，不再是写死的 60s。
+// 写死 60s 是模拟引擎口径；真引擎下 20 张就要 1 分钟以上，
+// 那时会先抛「未在 60000ms 内到终态」——**看起来像流程坏了，其实只是引擎慢**（D-0.8 的第二处口径）。
+const TASK_SLACK_MS = 30_000; // 队列排队 + 落盘 + 拉起引擎的余量
+const taskTimeoutFor = (n = BATCH_LIMIT) =>
+  Math.max(60_000, n * ITEM_JITTER * BUDGET_ITEM_MS + TASK_SLACK_MS);
+
+async function waitTask(port, token, taskId, timeoutMs = taskTimeoutFor()) {
   const until = Date.now() + timeoutMs;
   for (;;) {
     const t = await detail(port, token, taskId);
@@ -172,8 +217,10 @@ async function waitTask(port, token, taskId, timeoutMs = 60_000) {
   }
 }
 
-/** 订阅 SSE 直到终态，返回收到的事件序列（`{id, event, data}`） */
-function collectEvents(port, token, taskId, { timeoutMs = 60_000 } = {}) {
+/** 订阅 SSE 直到终态，返回收到的事件序列（`{id, event, data}`）
+ *  ⚠️ 默认超时同样**随单张耗时基准缩放**（第三处"写死的 60s"）：真引擎下 SSE 要等到任务终态，
+ *  写死 60s 会在引擎慢时提前 resolve / 判失败，症状与 `waitTask` 那条一模一样。 */
+function collectEvents(port, token, taskId, { timeoutMs = taskTimeoutFor() } = {}) {
   return new Promise((resolve) => {
     const events = [];
     let buf = '';
@@ -262,7 +309,13 @@ try {
   const svcInfo = await waitReady(service, /MIAO_READY (\{[^\n]*\})/);
   const PORT = svcInfo.port;
   const TOKEN = svcInfo.token;
-  console.log(`服务就绪 @${PORT}，落盘根目录 ${ROOT_DIR}\n`);
+  console.log(`服务就绪 @${PORT}，落盘根目录 ${ROOT_DIR}`);
+  console.log(
+    `D4 时效预算：${D4_BUDGET_S.toFixed(1)}s` +
+      `（基准 ${BUDGET_ITEM_MS}ms/张 × ${BATCH_LIMIT} 张 × ${ITEM_JITTER} + ${PIPELINE_SLACK_S}s）` +
+      (BUDGET_EXPLICIT ? '' : '  ⚠️ 基准为默认值：跑真实引擎时请设 MIAO_E2E_ITEM_MS=<实测单张耗时>'),
+  );
+  console.log('');
 
   // ================================================================ D1 与插件同契约联调
   {
@@ -481,7 +534,7 @@ try {
     await waitTask(PORT, TOKEN, d2id);
 
     // ============================================================== D4 时效 + SSE 一致
-    const d4imgs = makeImages(20);
+    const d4imgs = makeImages(BATCH_LIMIT);
     const t0 = Date.now();
     const d4 = await submit(PORT, TOKEN, 'D4 时效', d4imgs, { headers: PLUGIN });
     const d4id = d4.json?.taskId;
@@ -489,7 +542,16 @@ try {
     const done4 = await waitTask(PORT, TOKEN, d4id);
     const elapsed = (Date.now() - t0) / 1000;
 
-    check('D4a', '20 张在 30 秒内完成', elapsed < 30, `实测 ${elapsed.toFixed(1)}s（终态 ${done4.status}）`);
+    check(
+      'D4a',
+      `${BATCH_LIMIT} 张在时效预算内完成（预算由单张耗时推导，非写死 30s）`,
+      elapsed < D4_BUDGET_S,
+      `实测 ${elapsed.toFixed(1)}s / 预算 ${D4_BUDGET_S.toFixed(1)}s` +
+        `（基准 ${BUDGET_ITEM_MS}ms/张，终态 ${done4.status}）` +
+        (elapsed >= D4_BUDGET_S && !BUDGET_EXPLICIT
+          ? '；⚠️ 若正在跑真实引擎，请设 MIAO_E2E_ITEM_MS=<实测单张耗时>'
+          : ''),
+    );
 
     // 「进度与 SSE 一致」验的是：SSE 上逐条推来的完成项，与最后查询到的完成项**对得上**。
     // 这条比读一个进度数字更有意义 —— 少推 / 多推 / 重复推都会被它抓住。
@@ -524,6 +586,7 @@ try {
   }
 } catch (err) {
   check('FATAL', '端到端流程未跑完', false, err && err.message ? err.message : String(err));
+  dumpProcLogs();
 } finally {
   killProc(service);
   killProc(engine);
