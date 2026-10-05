@@ -65,15 +65,17 @@ const EXCLUDED = [
   { id: 'audio-cache', label: '音频缓存目录' },
 ];
 
-/** ② MEDIA 组里必须存在且为 live 的 11 项（id ↔ 中文标签）
+/** ② MEDIA 组里必须存在且为 live 的 12 项（id ↔ 中文标签）
  *  后两项是桌面歌词（P3 落地后恢复）—— 此前它们以"需独立置顶窗口，延后"为由被剔除，
  *  该前提已不成立（《09》§5.6 第 1 项拍板要做独立窗口），故恢复。
- *  末项「音乐缓存」是通栏四格（`layout: 'block'`），不是标准两栏行。 */
+ *  「音乐缓存」是通栏四格（`layout: 'block'`），不是标准两栏行。
+ *  「歌词高亮方式」是逐字/整行开关（本项目新增，参考实现无此开关），用 Select。 */
 const ADDED = [
   { id: 'quality', label: '音质档位' },
   { id: 'skin', label: '展开播放器皮肤' },
   { id: 'dynamic-bg', label: '动态背景' },
   { id: 'disc-mode', label: '碟片模式' },
+  { id: 'lyrics-mode', label: '歌词高亮方式' },
   { id: 'lyrics-size', label: '歌词字号' },
   { id: 'lyrics-color', label: '歌词高亮色' },
   { id: 'lyrics-window', label: '桌面歌词窗口' },
@@ -88,8 +90,8 @@ const MEDIA_GROUPS = ['playback', 'lyrics', 'vinyl'];
 
 /** ③ 全表项数自校常量应等于的合计
  *  26（初版）→ 29（③ 组 5 项 pending → 8 项 live）→ 31（P3 桌面歌词恢复 2 项）
- *  → **32**（加「音乐缓存」1 项） */
-const SPEC_TOTAL = 32;
+ *  → **32**（加「音乐缓存」1 项）→ **33**（加「歌词高亮方式」1 项） */
+const SPEC_TOTAL = 33;
 
 /** ④ 设置页必须真正取用的 store setter（逐项对应的控件回写） */
 const MEDIA_SETTERS = [
@@ -97,16 +99,18 @@ const MEDIA_SETTERS = [
   'setSkin',
   'setDynamicEnabled',
   'setDiscMode',
+  'setLyricsMode',
   'setLyricsFontSize',
   'setLyricsHighlightColor',
   'setVinylColorMode',
   'setVinylCustomColor',
 ];
 
-/** ⑤ store 侧六个偏好字段 ↔ 各自 setter（判据只认实现体，不认 interface 声明） */
+/** ⑤ store 侧七个偏好字段 ↔ 各自 setter（判据只认实现体，不认 interface 声明） */
 const STORE_FIELDS = [
   { field: 'lyricsFontSize', setter: 'setLyricsFontSize' },
   { field: 'lyricsHighlightColor', setter: 'setLyricsHighlightColor' },
+  { field: 'lyricsMode', setter: 'setLyricsMode' },
   { field: 'dynamicEnabled', setter: 'setDynamicEnabled' },
   { field: 'discMode', setter: 'setDiscMode' },
   { field: 'vinylColorMode', setter: 'setVinylColorMode' },
@@ -114,7 +118,7 @@ const STORE_FIELDS = [
 ];
 
 /** ⑦ 选项常量单一事实源应导出的常量 */
-const OPTION_EXPORTS = ['SKINS', 'QUALITY_OPTIONS', 'LYRICS_SIZE', 'LYRICS_COLORS', 'VINYL_COLOR_DEF', 'LYRICS_COLOR_DEF'];
+const OPTION_EXPORTS = ['SKINS', 'QUALITY_OPTIONS', 'LYRICS_SIZE', 'LYRICS_COLORS', 'LYRICS_MODE_OPTIONS', 'LYRICS_MODE_DEF', 'VINYL_COLOR_DEF', 'LYRICS_COLOR_DEF'];
 
 // ── 读文件 ───────────────────────────────────────────────────────────────
 const readMaybe = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : '');
@@ -833,9 +837,9 @@ const MUTATIONS = [
   {
     name: '把项数自校常量改成 26（模拟自校常量漂移）',
     file: F.catalog,
-    // ⚠️ 锚点必须与 catalog 的真实字节一致 —— 常量从 29 变 31、再变 32 后不同步，
+    // ⚠️ 锚点必须与 catalog 的真实字节一致 —— 常量从 29 变 31、再变 32、再变 33 后不同步，
     // 这条会退化成「锚点未找到 / 跳过」，看起来仍是全绿（跳过 ≠ 通过）
-    find: 'export const SPEC_ITEM_TOTAL = 32;',
+    find: 'export const SPEC_ITEM_TOTAL = 33;',
     replace: 'export const SPEC_ITEM_TOTAL = 26;',
     expect: ['COUNT.specMatches'],
   },
@@ -959,6 +963,43 @@ const MUTATIONS = [
     find: "      case 'music-cache':",
     replace: "      case 'music-cache-off':",
     expect: ['WIRING.item.music-cache'],
+  },
+  {
+    name: '把「歌词高亮方式」项整条从 catalog 里删掉（模拟「加了项但忘了算进项数」）',
+    file: F.catalog,
+    find:
+      "        {\n" +
+      "          id: 'lyrics-mode',\n" +
+      "          label: '歌词高亮方式',\n" +
+      "          state: 'live',\n" +
+      "          def: '逐字',\n" +
+      "          why:\n" +
+      "            '逐字＝有逐字数据（yrc/qrc）时精确到字、没有则整行从左到右渐进（默认）；' +\n" +
+      "            '整行＝唱到该句整行一次性点亮，不逐字也不渐变。作用于「展开播放器」与灵动岛歌词卡。',\n" +
+      "        },\n",
+    replace: '',
+    expect: ['ADDED.lyrics-mode', 'COUNT.total'],
+  },
+  {
+    name: "把 sections.tsx 里 lyrics-mode 的 case 改错（歌词高亮方式开关不渲染）",
+    file: F.sections,
+    find: "      case 'lyrics-mode':",
+    replace: "      case 'lyrics-mode-off':",
+    expect: ['WIRING.item.lyrics-mode'],
+  },
+  {
+    name: '把 store 的 setLyricsMode 里 savePrefs 键改错（歌词高亮方式偏好不持久化）',
+    file: F.store,
+    find: 'savePrefs({ lyricsMode:',
+    replace: 'savePrefs({ notLyricsMode:',
+    expect: ['STORE.setter.lyricsMode'],
+  },
+  {
+    name: '把 lyricsMode 的默认值改成 undefined（模拟默认值缺失）',
+    file: F.store,
+    find: '  lyricsMode: LYRICS_MODE_DEF,',
+    replace: '  lyricsMode: undefined,',
+    expect: ['STORE.default.lyricsMode'],
   },
 ];
 

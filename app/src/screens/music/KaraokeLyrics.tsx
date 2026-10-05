@@ -72,6 +72,12 @@ interface KaraokeLyricsProps {
    * 灵动岛传 `false`：卡片里只有两行，"滚动"既无意义也会顶掉整窗布局。
    */
   scroll?: boolean;
+  /**
+   * 是否在每行歌词下方显示翻译（默认 false = 不显示）。
+   * 展开播放器传 true；灵动岛**不传**（空间不够，翻译行会撑爆 320×150 的卡片）。
+   * ⚠️ 做成 prop 而非全局开关：灵动岛复用同一个 KaraokeLyrics，不能一开全开。
+   */
+  showTranslation?: boolean;
 }
 
 /**
@@ -127,6 +133,7 @@ export function KaraokeLyrics({
   align = 'center',
   windowSize,
   scroll = true,
+  showTranslation = false,
 }: KaraokeLyricsProps) {
   const [activeIndex, setActiveIndex] = useState(-1);
   /** 当前行顶层（已唱）文字的容器：RAF 只改它的 width */
@@ -138,6 +145,10 @@ export function KaraokeLyrics({
   const linesRef = useRef(lines);
   linesRef.current = lines;
   const idxRef = useRef(-1);
+  // 整行/逐字模式：整行模式下当前行直接满亮，不走逐字/行级渐进分支
+  const lyricsMode = useMusicStore((s) => s.lyricsMode);
+  const modeRef = useRef(lyricsMode);
+  modeRef.current = lyricsMode;
   // 降级外推用的基准：最近一次 progressMs 及其到达时刻（performance.now）
   const fallbackMsRef = useRef(0);
   const fallbackAtRef = useRef(0);
@@ -183,7 +194,8 @@ export function KaraokeLyrics({
         }
         const el = overlayRef.current;
         if (el && idx >= 0) {
-          const p = getLineProgress(ls[idx], ls[idx + 1], now);
+          // 整行模式：当前行满亮（100%）；逐字模式：走 getLineProgress 的逐字/行级渐进
+          const p = modeRef.current === 'line' ? 1 : getLineProgress(ls[idx], ls[idx + 1], now);
           el.style.width = `${(p * 100).toFixed(2)}%`;
         }
       }
@@ -234,6 +246,9 @@ export function KaraokeLyrics({
           return (
             <div key={i} className="music-lyr-line kara-line">
               {line.text}
+              {showTranslation && line.translation ? (
+                <span className="kara-trans">{line.translation}</span>
+              ) : null}
             </div>
           );
         }
@@ -250,6 +265,9 @@ export function KaraokeLyrics({
                 {line.text}
               </span>
             </span>
+            {showTranslation && line.translation ? (
+              <span className="kara-trans">{line.translation}</span>
+            ) : null}
           </div>
         );
       })}

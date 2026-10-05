@@ -162,6 +162,12 @@ export interface LocalSongInfo {
 /** 播放模式：list 列表循环 / heartbeat 心动模式 / shuffle 随机 / one 单曲循环 */
 export type PlayMode = 'list' | 'heartbeat' | 'shuffle' | 'one';
 
+/**
+ * 歌词高亮方式（设置页「播放·媒体 → 歌词」）：
+ * `word` = 逐字（有 yrc/qrc 词级数据时精确到字，无则行级渐进）；`line` = 整行一次性点亮。
+ */
+export type LyricsMode = 'word' | 'line';
+
 export type PlaybackQuality = 'jymaster' | 'hires' | 'lossless' | 'exhigh' | 'standard';
 
 /**

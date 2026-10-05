@@ -289,6 +289,15 @@ export const MEDIA: SettingSection = {
       title: '歌词',
       items: [
         {
+          id: 'lyrics-mode',
+          label: '歌词高亮方式',
+          state: 'live',
+          def: '逐字',
+          why:
+            '逐字＝有逐字数据（yrc/qrc）时精确到字、没有则整行从左到右渐进（默认）；' +
+            '整行＝唱到该句整行一次性点亮，不逐字也不渐变。作用于「展开播放器」与灵动岛歌词卡。',
+        },
+        {
           id: 'lyrics-size',
           label: '歌词字号',
           state: 'live',
@@ -448,12 +457,12 @@ export const SECTION_ITEM_TOTAL = SETTINGS_SECTIONS.reduce((n, s) => n + section
 
 /**
  * 本轮规格（《09》§4.2 为 26；③ 播放·媒体 经「能实现补齐/不能实现剔除」后为 29，
- * 再恢复桌面歌词 2 项后为 31，加「音乐缓存」1 项后为 **32**）。
+ * 再恢复桌面歌词 2 项后为 31，加「音乐缓存」1 项后为 32，加「歌词高亮方式」1 项后为 **33**）。
  *
  * ⚠️ 改这个数之前必须先核对 `SECTION_ITEM_TOTAL`（由数据算出，不手写）：
  * 两者不一致时下面的自校会报错 —— 那正是它存在的意义（防止"加了一项忘了改总数"）。
  */
-export const SPEC_ITEM_TOTAL = 32;
+export const SPEC_ITEM_TOTAL = 33;
 
 /**
  * 启动期自校：合计不等于 26 就在控制台报错。

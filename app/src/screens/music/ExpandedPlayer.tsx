@@ -492,15 +492,26 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
             ) : parsedLyrics.length === 0 ? (
               <Empty>暂无歌词</Empty>
             ) : (
-              // 逐字歌词：组件自己承担"定位当前行 / 滚动跟随 / RAF 逐字推进"，
-              // 并复用 .music-exp-lyr-box 的上下 edge mask 与 .music-lyr-line 的字号/暗色语汇。
-              // 字号/高亮色经根节点注入的 --lyr-size / --lyr-hl 继承进来，故无需再传。
-              // align：彩胶/封面渐染左对齐（参考实现同款），其余居中。
-              <KaraokeLyrics
-                lines={parsedLyrics}
-                fontPx={lyricsFontSize}
-                align={isVinyl || isCover ? 'left' : 'center'}
-              />
+              <>
+                {/* 演唱行：固定在歌词滚动区上方（所有皮肤统一，不随歌词滚动）。
+                    作词/作曲/编曲各平台数据不全故不做，只留演唱者（Song.artist 四平台现成）。 */}
+                {currentSong?.artist ? (
+                  <div className="music-exp-lyr-artist">
+                    <span className="music-exp-lyr-artist-label">演唱</span>
+                    <span>{currentSong.artist}</span>
+                  </div>
+                ) : null}
+                {/* 逐字歌词：组件自己承担"定位当前行 / 滚动跟随 / RAF 逐字推进"，
+                    并复用 .music-exp-lyr-box 的上下 edge mask 与 .music-lyr-line 的字号/暗色语汇。
+                    字号/高亮色经根节点注入的 --lyr-size / --lyr-hl 继承进来，故无需再传。
+                    align：彩胶/封面渐染左对齐（参考实现同款），其余居中。 */}
+                <KaraokeLyrics
+                  lines={parsedLyrics}
+                  fontPx={lyricsFontSize}
+                  align={isVinyl || isCover ? 'left' : 'center'}
+                  showTranslation
+                />
+              </>
             )}
           </div>
         ) : null}

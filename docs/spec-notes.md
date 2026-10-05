@@ -1275,3 +1275,33 @@ P3 的灵动岛波形接管了 `<audio>`（做法本身对），但元素**没�
 `SKIN.spectrumAudio` 锚点在 JSDoc 里也出现。
 > **全部靠反证轮暴露。** 纪律不变：**判据涉及"某写法可能出现多处/子串"时，
 > 一律限定作用域、加词边界、或数出现次数。**
+
+## D-55 · 三项歌词优化：逐字/整行开关 + 同步翻译 + 演唱行（2026-10-05）
+
+拍板（原文在本次对话）：
+1. 设置「播放·媒体 → 歌词」加「歌词高亮方式」开关：**逐字（默认）/ 整行一次性点亮**，用 `Select`。
+2. 同步翻译歌词：只在**展开播放器**显示，灵动岛**不显示**（320×150 卡片空间不够）。
+3. 展开播放器歌词区顶部固定插入「演唱: {artist}」；作词/作曲/编曲各平台数据不全**不做**。
+
+### 实现要点
+- **歌词模式全链路**：`types.ts` 加 `LyricsMode = 'word' | 'line'`；`player-options.ts` 加
+  `LYRICS_MODE_OPTIONS`（逐字/整行）+ `LYRICS_MODE_DEF = 'word'`（**单一事实源**，防设置页/播放器两套名）；
+  `store.ts` 加 `lyricsMode` 偏好（默认引用常量 + `hydratePrefs` 白名单收口 + `setLyricsMode` 持久化）；
+  `catalog.ts`/`sections.tsx` 用 `Select` 渲染。
+- **整行模式**：`KaraokeLyrics.tsx` RAF 里 `modeRef.current === 'line' ? 1 : getLineProgress(...)` ——
+  整行直接满亮，跳过逐字/行级渐进。逐字实现全项目仍只有这一份。
+- **翻译**：`ParsedLyricLine` 加 `translation?`；`mergeTranslation` 按时间精确匹配 + 0.5s 容差模糊匹配
+  （翻译行数常与原文不一致，**不能按 index 对齐**）；`loadLyrics` 调它。
+  `KaraokeLyrics` 加 `showTranslation?: boolean`（**默认 false**）+ `.kara-trans` 渲染；
+  `ExpandedPlayer` 传 `showTranslation`，`DynamicIsland` **不传**（保持默认 false）。
+  ⚠️ **做成 prop 而非全局开关**：灵动岛复用同一个 `KaraokeLyrics`，全局开关会一开全开。
+- **演唱行**：`ExpandedPlayer` 歌词区上方 `<div class="music-exp-lyr-artist">演唱 {artist}`（所有皮肤统一）；
+  `.music-exp-lyr-box` 顶部 padding 12→28、mask 顶部渐隐 14%→10% —— 解决「首行贴顶 + 被顶部渐隐裁淡」。
+
+### 断言
+- `check:music` 通过 205 → **211**（断言总数 206 → 212，含 1 条既有红 `ISLANDV.toggleBothWays`，非本轮引入）；
+  反证 167 → **173**。新增 6 条：`LYRICS.modeStoreChain` / `modeLineRender` / `translationMerge` /
+  `translationRender` / `artistLine` / `showTranslationWired`。
+- `check:settings` 83 → **90**（反证 19 → **24**）：`ADDED.lyrics-mode` + `SPEC_TOTAL` 32→33 +
+  `MEDIA_SETTERS`/`STORE_FIELDS`/`OPTION_EXPORTS` 各补 `lyricsMode` 相关项。
+- `tsc --noEmit` 0 错误；`check:docs` 14/14 全绿。

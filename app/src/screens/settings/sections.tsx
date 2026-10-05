@@ -6,7 +6,7 @@ import type { ThemeMode } from '@/theme/tokens';
 import { stateView } from '@/nav';
 import { Btn, ColorPicker, Dot, Range, Select, Swatches, Switch } from '@components/units';
 import { CtlNote, GroupNote, PendingRow, ReadOnly, Row, RowNote, SubTitle } from '@screens/settings/parts';
-import { SKINS, QUALITY_OPTIONS, LYRICS_SIZE, LYRICS_COLORS } from '@music/player-options';
+import { SKINS, QUALITY_OPTIONS, LYRICS_SIZE, LYRICS_COLORS, LYRICS_MODE_OPTIONS } from '@music/player-options';
 import { useMusicStore } from '@music/store';
 import { ABOUT, GENERAL, MEDIA, RESOURCE, TRANSLATE } from '@screens/settings/catalog';
 import type { SettingGroup, SettingItem } from '@screens/settings/catalog';
@@ -255,6 +255,8 @@ export function MediaSection() {
   const setDynamicEnabled = useMusicStore((s) => s.setDynamicEnabled);
   const discMode = useMusicStore((s) => s.discMode);
   const setDiscMode = useMusicStore((s) => s.setDiscMode);
+  const lyricsMode = useMusicStore((s) => s.lyricsMode);
+  const setLyricsMode = useMusicStore((s) => s.setLyricsMode);
   const lyricsFontSize = useMusicStore((s) => s.lyricsFontSize);
   const setLyricsFontSize = useMusicStore((s) => s.setLyricsFontSize);
   const lyricsHighlightColor = useMusicStore((s) => s.lyricsHighlightColor);
@@ -307,6 +309,15 @@ export function MediaSection() {
         // 四格块，自身带标题/说明/统计/按钮，所以不需要 Row 的标题列
         // （`Group` 见到 layout:'block' 也不会包 Row，见 Group 里的注释）
         return <CacheBlock />;
+      case 'lyrics-mode':
+        return (
+          <Select
+            label={item.label}
+            value={lyricsMode}
+            options={LYRICS_MODE_OPTIONS}
+            onChange={setLyricsMode}
+          />
+        );
       case 'lyrics-size':
         return (
           <Range

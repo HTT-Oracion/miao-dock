@@ -1878,6 +1878,106 @@ add('LYRICS.karaTimeSource', 'LYRICS', (s) => {
   return { ok: missing.length === 0, detail: missing.length ? `逐字时间来源：${missing.join('、')}` : '' };
 });
 
+// ============================ 歌词模式 / 翻译 / 演唱行（三项歌词优化）============================
+// 逐字/整行开关、同步翻译、演唱行。纪律同前：限定作用域、数出现次数、排除子串 ——
+// 本项目已因「只判存在、不判唯一」栽过多次，此处仍按此办理。
+
+add('LYRICS.modeStoreChain', 'LYRICS', (s) => {
+  // 歌词高亮方式全链路：类型 → store 默认值 → 水合白名单收口 → setter 持久化。
+  // 防「类型声明有、实现漏接」与「脏值未收口」两类静默失效。
+  const store = stripComments(s.store ?? '');
+  const types = stripComments(s.types ?? '');
+  const missing = [];
+  if (!/export\s+type\s+LyricsMode\s*=/.test(types)) missing.push('types.ts 缺 LyricsMode 联合类型');
+  // ① 默认值来自单一事实源常量（LYRICS_MODE_DEF），不是裸字面量 —— 裸字面量会让
+  //    "默认逐字"与 player-options 里的 LYRICS_MODE_DEF 漂移成两份事实
+  if (!/^\s+lyricsMode:\s*LYRICS_MODE_DEF,\s*$/m.test(store)) missing.push('store 默认值未引用 LYRICS_MODE_DEF');
+  // ② setter 实现体 + savePrefs 持久化
+  const setBody = methodBody(store, 'setLyricsMode');
+  if (setBody == null) missing.push('store 缺 setLyricsMode 实现');
+  else if (!/savePrefs\s*\(\s*\{\s*lyricsMode\s*:/.test(setBody)) missing.push('setLyricsMode 未持久化 lyricsMode');
+  // ③ 水合白名单收口（脏值一律回落 word）
+  const hyd = methodBody(store, 'hydratePrefs');
+  if (hyd == null) missing.push('store 缺 hydratePrefs 实现');
+  else if (!/prefs\.lyricsMode\s*===\s*['"]line['"]\s*\?\s*['"]line['"]\s*:\s*['"]word['"]/.test(hyd))
+    missing.push('hydratePrefs 未把 lyricsMode 白名单收口（脏值会原样进内存）');
+  return { ok: missing.length === 0, detail: missing.length ? `歌词模式全链路：${missing.join('、')}` : '' };
+});
+
+add('LYRICS.modeLineRender', 'LYRICS', (s) => {
+  // 整行模式：当前行满亮（p=1），不走逐字/行级渐进。判据锁在 RAF tick 里那一行三元上。
+  // 防「开关做了、渲染层没接」—— 那会让"整行"选项看起来没作用。
+  const kara = stripComments(s.karaoke ?? '');
+  if (!kara) return { ok: false, detail: '未读到 KaraokeLyrics.tsx' };
+  const missing = [];
+  if (!/useMusicStore\s*\(\s*\(?[^)]*\)?\s*=>\s*[A-Za-z_$][\w$]*\.lyricsMode\b/.test(kara))
+    missing.push('未从 store 读取 lyricsMode');
+  if (!/modeRef\.current\s*===\s*['"]line['"]\s*\?\s*1\s*:/.test(kara))
+    missing.push("整行模式未满亮（缺 modeRef.current==='line'?1: 分支）");
+  return { ok: missing.length === 0, detail: missing.length ? `整行模式渲染：${missing.join('、')}` : '' };
+});
+
+add('LYRICS.translationMerge', 'LYRICS', (s) => {
+  // 翻译合并：ParsedLyricLine 有 translation 字段 + mergeTranslation 函数 + loadLyrics 真调用。
+  // 防「字段/函数定义了但 loadLyrics 没接」—— 那会永远不显示翻译。
+  const store = stripComments(s.store ?? '');
+  const missing = [];
+  if (!/translation\?:\s*string/.test(store)) missing.push('ParsedLyricLine 缺 translation? 字段');
+  if (!/function\s+mergeTranslation\s*\(/.test(store)) missing.push('缺 mergeTranslation 函数');
+  const body = methodBody(store, 'loadLyrics');
+  if (body == null) missing.push('store 缺 loadLyrics 实现');
+  else if (!/mergeTranslation\s*\(\s*lines\s*,\s*l\.translation\s*\|\|\s*['"]['"]/.test(body))
+    missing.push("loadLyrics 未调用 mergeTranslation(lines, l.translation||'')");
+  return { ok: missing.length === 0, detail: missing.length ? `翻译合并：${missing.join('、')}` : '' };
+});
+
+add('LYRICS.translationRender', 'LYRICS', (s) => {
+  // showTranslation prop 默认 false + 翻译行渲染（kara-trans）。
+  // 默认 false 是"灵动岛不显示翻译"的关键：灵动岛不传该 prop，默认即不显示。
+  const kara = stripComments(s.karaoke ?? '');
+  if (!kara) return { ok: false, detail: '未读到 KaraokeLyrics.tsx' };
+  const missing = [];
+  if (!/showTranslation\?:\s*boolean/.test(kara)) missing.push('props 缺 showTranslation?: boolean');
+  if (!/showTranslation\s*=\s*false/.test(kara)) missing.push('showTranslation 默认值不是 false');
+  if (!/(?<![\w-])kara-trans(?![\w-])/.test(kara)) missing.push('缺翻译行 class kara-trans');
+  if (!/showTranslation\s*&&\s*line\.translation/.test(kara)) missing.push('翻译行未按 showTranslation && line.translation 条件渲染');
+  return { ok: missing.length === 0, detail: missing.length ? `翻译渲染：${missing.join('、')}` : '' };
+});
+
+add('LYRICS.artistLine', 'LYRICS', (s) => {
+  // 演唱行：展开播放器歌词区上方固定插入「演唱: {artist}」+ 样式 .music-exp-lyr-artist。
+  // 作词/作曲/编曲各平台数据不全故不做，只留演唱者（Song.artist 四平台现成）。
+  const exp = stripComments(s.expanded ?? '');
+  const css = s.css ?? '';
+  const missing = [];
+  if (!exp) missing.push('未读到 ExpandedPlayer.tsx');
+  else {
+    if (!/(?<![\w-])music-exp-lyr-artist(?![\w-])/.test(exp)) missing.push('ExpandedPlayer 缺演唱行元素 music-exp-lyr-artist');
+    if (!/currentSong\?\.artist/.test(exp)) missing.push('演唱行未读 currentSong.artist');
+  }
+  if (!/\.music-exp-lyr-artist\s*\{/.test(css)) missing.push('样式缺 .music-exp-lyr-artist');
+  return { ok: missing.length === 0, detail: missing.length ? `演唱行：${missing.join('、')}` : '' };
+});
+
+add('LYRICS.showTranslationWired', 'LYRICS', (s) => {
+  // showTranslation 接线：展开播放器**传 true**（翻译在详情页显示），灵动岛**不传**
+  // （默认 false，卡片空间不够）。防"改了 prop 但两处消费点没接对"。
+  const exp = stripComments(s.expanded ?? '');
+  const island = stripComments(s.island ?? '');
+  const missing = [];
+  if (!exp) missing.push('未读到 ExpandedPlayer.tsx');
+  else if (!/showTranslation/.test(exp)) missing.push('ExpandedPlayer 未给 KaraokeLyrics 传 showTranslation');
+  if (!island) missing.push('未读到 DynamicIsland.tsx');
+  else {
+    // 灵动岛的 KaraokeLyrics 调用片段不得出现 showTranslation
+    const m = /<KaraokeLyrics[\s\S]*?\/>/.exec(island);
+    const usage = m ? m[0] : '';
+    if (!usage) missing.push('DynamicIsland 里找不到 KaraokeLyrics 调用');
+    else if (/showTranslation/.test(usage)) missing.push('灵动岛不应传 showTranslation（翻译会撑爆 320×150 卡片）');
+  }
+  return { ok: missing.length === 0, detail: missing.length ? `showTranslation 接线：${missing.join('、')}` : '' };
+});
+
 // ============================ SKIN（展开播放器六皮肤）============================
 // 六皮肤必须各自是一整套视觉（背景/文字/专属组件/布局分支），而不是"只换一行 background"。
 // 这一组的判据全部**限定作用域**（只看 ExpandedPlayer / 三个专属模块 / 拼接后的样式全文），
@@ -4406,6 +4506,48 @@ const MUTATIONS = [
     find: '      const shift = e.shiftKey;\n',
     replace: '',
     expect: ['KEYS.shiftLeftToSystem'],
+  },
+  {
+    name: '把 store 的 lyricsMode 默认值改成裸字面量（与 LYRICS_MODE_DEF 漂移成两份事实）',
+    file: F.store,
+    find: '  lyricsMode: LYRICS_MODE_DEF,',
+    replace: "  lyricsMode: 'line',",
+    expect: ['LYRICS.modeStoreChain'],
+  },
+  {
+    name: '把整行模式的满亮值 1 改成 0（"整行"选项变成一行都不亮）',
+    file: F.karaoke,
+    find: "modeRef.current === 'line' ? 1 : getLineProgress(ls[idx], ls[idx + 1], now)",
+    replace: "modeRef.current === 'line' ? 0 : getLineProgress(ls[idx], ls[idx + 1], now)",
+    expect: ['LYRICS.modeLineRender'],
+  },
+  {
+    name: "删掉 loadLyrics 里的 mergeTranslation 调用（翻译歌词永远不显示）",
+    file: F.store,
+    find: "mergeTranslation(lines, l.translation || '');",
+    replace: 'void 0;',
+    expect: ['LYRICS.translationMerge'],
+  },
+  {
+    name: '把 showTranslation 默认值改成 true（灵动岛也会显示翻译，撑爆卡片）',
+    file: F.karaoke,
+    find: '  showTranslation = false,',
+    replace: '  showTranslation = true,',
+    expect: ['LYRICS.translationRender'],
+  },
+  {
+    name: '把展开播放器的演唱行类名改错（演唱行失去样式锚点）',
+    file: F.expanded,
+    find: '<div className="music-exp-lyr-artist">',
+    replace: '<div className="music-exp-lyr-artist-off">',
+    expect: ['LYRICS.artistLine'],
+  },
+  {
+    name: '删掉展开播放器给 KaraokeLyrics 传的 showTranslation（详情页不显示翻译）',
+    file: F.expanded,
+    find: 'showTranslation',
+    replace: '',
+    expect: ['LYRICS.showTranslationWired'],
   },
 ];
 

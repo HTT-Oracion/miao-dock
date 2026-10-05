@@ -10,7 +10,7 @@
  * 与**桌面歌词独立**的一组（DL_*）。两段刻意不共用常量，理由见 DL_* 段开头。
  */
 import type { PlayerSkin } from '@music/store';
-import type { PlaybackQuality } from '@music/types';
+import type { LyricsMode, PlaybackQuality } from '@music/types';
 
 /**
  * 展开播放器六皮肤（参考实现 `expandedStyle`）。
@@ -72,6 +72,17 @@ export const LYRICS_SIZE = { min: 17, max: 48, step: 1, def: 19 } as const;
 /** 歌词高亮色（参考实现 `lyricsHighlightColor`）—— 给几个常规色 + 允许自定义 */
 export const LYRICS_COLORS = ['#FFE066', '#FF8FBF', '#8FC7FF', '#70D9AD', '#C9B5FF'] as const;
 export const LYRICS_COLOR_DEF = '#FFE066';
+
+/**
+ * 歌词高亮方式（本项目新增，参考实现没有此开关）。
+ * `word` = 逐字（yrc 数据精确到字，无则行级渐进，即现状）；`line` = 整行一次性点亮。
+ * 与 `LYRICS_SIZE` 同纪律：设置页与展开播放器共读这一处，改这里两处一起变。
+ */
+export const LYRICS_MODE_OPTIONS: { value: LyricsMode; label: string }[] = [
+  { value: 'word', label: '逐字' },
+  { value: 'line', label: '整行' },
+];
+export const LYRICS_MODE_DEF: LyricsMode = 'word';
 
 /** 透明彩胶自定义色（参考实现 `vinylCustomColor`） */
 export const VINYL_COLOR_DEF = '#E8B04B';

@@ -45,6 +45,7 @@ import {
   DL_LINE_COUNT,
   DL_LYRICS_SIZE,
   LYRICS_COLOR_DEF,
+  LYRICS_MODE_DEF,
   LYRICS_SIZE,
   VINYL_COLOR_DEF,
 } from '@music/player-options';
@@ -55,6 +56,7 @@ import type {
   CommentPage,
   LocalSongInfo,
   LoginInfo,
+  LyricsMode,
   Playlist,
   PlayHistoryEntry,
   PlayMode,
@@ -132,6 +134,8 @@ export interface ParsedLyricLine {
   words?: LyricWord[];
   /** 是否含逐字数据（等价于 words 非空；显式写出便于渲染层直接判定，不必二次求长度） */
   hasKaraoke?: boolean;
+  /** 本行的翻译（外语歌的译文；`loadLyrics` 合并 `Lyrics.translation` 时按时间匹配填上，无翻译的歌缺省） */
+  translation?: string;
 }
 
 /** 平台音质 token → 中文档位名（认不出的原样显示，不猜） */
@@ -290,6 +294,42 @@ export function parseYrc(yrc: string): ParsedLyricLine[] {
   }
 
   return finalizeLineDurations(lines);
+}
+
+/**
+ * 把翻译 LRC 合并进解析后的歌词行（按时间精确匹配 + 0.5s 容差模糊匹配）。
+ *
+ * 参考实现 `buildKaraokeLines` 的合并逻辑：翻译 LRC 先解析成 `Map<时间,文本>`，
+ * 再对每行按时间匹配。为什么不能按 index 对齐 —— 翻译通常把重复句（副歌）合并成一行，
+ * 行数与原文不一致，按 index 会整体错位。0.5s 容差吸收平台间毫秒级抖动。
+ */
+function mergeTranslation(lines: ParsedLyricLine[], translationLrc: string): void {
+  if (!translationLrc || !translationLrc.trim()) return;
+  const transMap = new Map<number, string>();
+  for (const line of translationLrc.split('\n')) {
+    const m = line.match(/\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]/);
+    if (!m) continue;
+    const time = Number(m[1]) * 60 + Number(m[2]) + (m[3] ? Number(m[3].padEnd(3, '0')) / 1000 : 0);
+    const text = line.replace(/\[[^\]]*\]/g, '').trim();
+    if (text) transMap.set(time, text);
+  }
+  if (transMap.size === 0) return;
+  for (const line of lines) {
+    if (transMap.has(line.time)) {
+      line.translation = transMap.get(line.time);
+      continue;
+    }
+    let best: string | undefined;
+    let bestDiff = Infinity;
+    for (const [t, txt] of transMap) {
+      const diff = Math.abs(t - line.time);
+      if (diff < bestDiff && diff < 0.5) {
+        bestDiff = diff;
+        best = txt;
+      }
+    }
+    if (best) line.translation = best;
+  }
 }
 
 /** 根据当前播放秒数定位高亮歌词行索引（-1 表示尚未到第一句） */
@@ -534,6 +574,8 @@ interface Prefs {
   lyricsFontSize: number;
   /** 展开播放器歌词高亮色 */
   lyricsHighlightColor: string;
+  /** 歌词高亮方式：word 逐字 / line 整行一次性点亮 */
+  lyricsMode: LyricsMode;
   /**
    * 桌面歌词的**独立**偏好 —— 与上面两条分开存、分开调。
    *
@@ -618,6 +660,8 @@ interface MusicState {
   // ---- 播放/媒体的持久化偏好（设置页「播放·媒体」）----
   lyricsFontSize: number;
   lyricsHighlightColor: string;
+  /** 歌词高亮方式：word 逐字 / line 整行一次性点亮 */
+  lyricsMode: LyricsMode;
   /**
    * 桌面歌词的独立偏好（设置项在「桌面歌词设置」弹窗里，不在设置页的歌词小节）。
    * 与上面两条全局歌词偏好分开，理由见 `Prefs` 接口里的注释。
@@ -822,6 +866,7 @@ interface MusicState {
   setPlaybackQuality: (q: PlaybackQuality) => Promise<void>;
   setLyricsFontSize: (px: number) => void;
   setLyricsHighlightColor: (color: string) => void;
+  setLyricsMode: (mode: LyricsMode) => void;
   /** 桌面歌词独立字号（px，当前行）。与 `setLyricsFontSize` 不是同一件事 */
   setDesktopLyricsFontSize: (px: number) => void;
   /** 桌面歌词当前行颜色 */
@@ -1223,6 +1268,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   // ---- 播放/媒体的持久化偏好 ----
   lyricsFontSize: LYRICS_SIZE.def,
   lyricsHighlightColor: LYRICS_COLOR_DEF,
+  lyricsMode: LYRICS_MODE_DEF,
   desktopLyricsFontSize: DL_LYRICS_SIZE.def,
   desktopLyricsHighlightColor: DL_HIGHLIGHT_COLOR_DEF,
   desktopLyricsBaseColor: DL_BASE_COLOR_DEF,
@@ -1332,6 +1378,8 @@ export const useMusicStore = create<MusicState>((set, get) => ({
      * 于是卡片按歌词态渲染却拿到空分支。枚举型偏好一律白名单收口。
      */
     const islandView: IslandView = prefs.islandView === 'lyrics' ? 'lyrics' : 'play';
+    // 歌词高亮方式：同 islandView，枚举型偏好白名单收口，脏值一律回落 'word'
+    const lyricsMode: LyricsMode = prefs.lyricsMode === 'line' ? 'line' : 'word';
     /*
      * 播放平台：同样白名单收口。
      * 脏值（手改 / 旧版本残留 / 日后新增平台后被删）一律回落 'netease' ——
@@ -1351,6 +1399,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       playbackQuality,
       lyricsFontSize,
       lyricsHighlightColor: prefs.lyricsHighlightColor ?? LYRICS_COLOR_DEF,
+      lyricsMode,
       desktopLyricsFontSize: clampInRange(dlFontSize, DL_LYRICS_SIZE.min, DL_LYRICS_SIZE.max),
       desktopLyricsHighlightColor: prefs.desktopLyricsHighlightColor ?? DL_HIGHLIGHT_COLOR_DEF,
       desktopLyricsBaseColor: prefs.desktopLyricsBaseColor ?? DL_BASE_COLOR_DEF,
@@ -1875,6 +1924,11 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   setLyricsHighlightColor: (color) => {
     set({ lyricsHighlightColor: color });
     savePrefs({ lyricsHighlightColor: color });
+  },
+
+  setLyricsMode: (mode) => {
+    set({ lyricsMode: mode });
+    savePrefs({ lyricsMode: mode });
   },
 
   /*
@@ -2642,6 +2696,9 @@ export const useMusicStore = create<MusicState>((set, get) => ({
         // 兜底：yrc 字段非空但解析出来是空（格式异常/平台给了空骨架）时退回 LRC，
         // 避免"明明有词却显示暂无歌词"。
         if (l.yrc && lines.length === 0) lines = parseLrc(l.lyric || '');
+        // 合并翻译（仅网络歌曲；本地 .lrc 无 translation）—— 后端 netease/qqmusic 已返回
+        // `l.translation`，此前被整段丢弃。翻译行数常与原文不一致（重复句被合并），故按时间匹配。
+        mergeTranslation(lines, l.translation || '');
       }
       // 只应用当前歌曲的歌词，避免切歌后旧歌词覆盖
       if (get().currentSong && songKey(get().currentSong as Song) !== songKey(song)) return;
