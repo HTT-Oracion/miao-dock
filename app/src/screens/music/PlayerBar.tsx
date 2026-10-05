@@ -83,6 +83,19 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
   const shownMs = dragMs ?? Math.min(progressMs, Math.max(durationMs, 1));
 
   /**
+   * 进度条「已调节段」的填充百分比（0~100），注入 CSS 变量 `--fill`。
+   * 渐变本身写在 `.music-prog-bar`（见 music.scss）：已调节段取高亮色、未调节段取原轨道色。
+   * 用 `shownMs`（拖拽中含本地值）⇒ **拖动时填充同步跟随**，不必等松手。
+   * 除数复用上面那个 `Math.max(durationMs, 1)`，与 value 的上界保持同一口径。
+   */
+  const progFill = Math.max(0, Math.min(100, (shownMs / Math.max(durationMs, 1)) * 100));
+  /** 音量条填充百分比（0~100），同一套渐变口径。 */
+  const volFill = Math.max(0, Math.min(100, volume * 100));
+
+  /** 允许在 style 里写 CSS 自定义属性（--fill）的类型（React.CSSProperties 不含 `--*` 键） */
+  type FillStyle = React.CSSProperties & Record<'--fill', string>;
+
+  /**
    * 提交一次拖拽结果。
    * 闭包说明：本函数在每次渲染时重建，因此 `dragMs` 读到的总是「本次渲染」的值；
    * 而 onChange 的 setDragMs 会触发重渲染，pointerup/keyup 拿到的就是最新的那个闭包 —— 不会用到首次渲染的旧值。
@@ -153,6 +166,7 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
               max={1}
               step={0.01}
               value={volume}
+              style={{ '--fill': `${volFill.toFixed(2)}%` } as FillStyle}
               onChange={(e) => setVolume(Number(e.target.value))}
             />
           </div>
@@ -194,6 +208,7 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
           max={Math.max(durationMs, 1)}
           step={1000}
           value={shownMs}
+          style={{ '--fill': `${progFill.toFixed(2)}%` } as FillStyle}
           onChange={(e) => setDragMs(Number(e.target.value))}
           onPointerUp={commit}
           onKeyUp={commit}

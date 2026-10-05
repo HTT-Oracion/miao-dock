@@ -1305,3 +1305,70 @@ P3 的灵动岛波形接管了 `<audio>`（做法本身对），但元素**没�
 - `check:settings` 83 → **90**（反证 19 → **24**）：`ADDED.lyrics-mode` + `SPEC_TOTAL` 32→33 +
   `MEDIA_SETTERS`/`STORE_FIELDS`/`OPTION_EXPORTS` 各补 `lyricsMode` 相关项。
 - `tsc --noEmit` 0 错误；`check:docs` 14/14 全绿。
+
+## D-56 · 高亮严格同步 + 翻译同字号同高亮 + 演唱行入歌词流 + 进度/音量条填充色（2026-10-05）
+
+用户报的 4 个歌词问题 + 1 个滑块问题。**核心是第 3 点：高亮滞后必须先定位成因再改。**
+
+### 🔴 「高亮滞后」的真正成因（代码取证，不是"读 store 慢"）
+
+先否掉一个看似显然的猜测：**不是 RAF 读 store 造成的**。`KaraokeLyrics` 的 RAF 里
+`readNowSec()` 优先 `findAudioElement()?.currentTime`（`audioGraph.ts:258` →
+`document.querySelector('audio')`），拿到的是 `<audio>` 的**真实播放头**，每帧直读、不经 store。
+store 的 `progressMs` 只是 `onTimeUpdate`（~4Hz）驱动的**降级兜底**。
+
+真因是 `getLineProgress`（`KaraokeLyrics.tsx`）里两处**人为偏移**：
+1. **`smoothstep` 缓动**：`smoothstep(x)=x²(3−2x)`，行内进度 25% 时高亮只填 15.6%、
+   10% 时只填 2.8% ⇒ **每句开头高亮都追不上播放**，正是"高亮滞后"的观感来源。
+2. **视觉补偿 `+0.02s`**（无逐字）/ `+0.03s`（有逐字）：把每行高亮起点又推后 20~30ms。
+
+> **教训**：用户报"卡顿/滞后"时，先证明**不是**最容易被误认的那个原因（本例是"RAF 读
+> 低频 store"），再去数字里找偏移量。**缓动函数是"看起来平滑但与真实进度脱钩"的典型**——
+> 它让动画顺滑，却让高亮"慢半拍"。
+
+修法：无逐字分支改**线性**（严格跟随 `currentTime`）、去掉补偿；有 yrc 的精确路径不动。
+⚠️ 顺带修正 `LYRICS.lineInterpolation` 断言：它原本用"存在 smoothstep"当退化路径的判据，
+而 smoothstep 正是本轮要**去掉**的 ⇒ 判据必须改为"存在行级插值分支"（不限具体缓动函数），
+否则"修好滞后"会让断言变红。
+
+### 其余三点
+- **翻译同字号**：`.kara-trans` 由 `0.7×` 改 `var(--lyr-size)`，与原歌词一致。
+- **翻译同步高亮**：翻译行也走**双层叠加**（`.kara-under` + `.kara-over`），
+  与原歌词共用同一个 RAF 写入的 `width%` ⇒ 两者**严格同时点亮**。不是"只变色"。
+- **演唱行归入歌词流**：原先是歌词滚动容器 `.music-exp-lyr-box` **之外**的固定 `div`
+  ⇒ 不随歌词滚动。改为**第 0 帧**（首行之前、同一个滚动容器内），纳入同一套
+  高亮/滚动逻辑：给 `KaraokeLyrics` 传一个 `headerLine`，作为时间轴上"永远未唱到"的
+  第 0 行渲染（不进 `viewLines` 的 active 计算，但共享滚动与层级）。
+  ⚠️ **不能**把它塞进 `lines` 数组当普通行 —— 那样 `lyricIndexAt` 会把它当第一句，
+  没唱到它时 `activeIndex` 永远 −1，整列歌词都不高亮。
+
+### 滑块填充色
+进度条与音量条此前只有 `background: var(--md-line)` 的**纯色轨道**，没有"已调节/未调节"之分。
+改为 `linear-gradient` 按值切成两段：已调节段 = 高亮色（`--lyr-hl`，与歌词高亮同源），
+未调节段保持原轨道色。用 CSS 变量 `--fill`（百分比）由组件按值注入 ⇒ 拖动时实时更新。
+**不引入新的颜色口径**：高亮色复用歌词高亮色这条既有链路。
+
+### 🔴 反证轮抓到我自己的 6 条假阳性（第 8~9 次"只判存在、不判唯一/作用域"家族）
+
+本轮把**翻译也做成双层叠加**后，原先"全文搜 `kara-over`"的判据不再唯一 ——
+改坏原文顶层，翻译那份仍在兜底 ⇒ 断言恒绿。逐条修法：
+
+| 断言 | 假阳性成因 | 修法 |
+|---|---|---|
+| `LYRICS.karaRender` ×2 | 翻译也是 `kara-over`，全文搜命中两份 | 判据**限定在原文那一块**（`ref={overlayRef}` 附近 ±500 字符） |
+| `LYRICS.noLagOffset` | 判据只搜函数名 `smoothstep`，内联成 `prog*prog*(3-2*prog)` 抓不到 | 按**代数形状**判缓动 + 强制 `return prog;` 原样返回 |
+| `LYRICS.headerNotInLines` | 只判了 `.push(` 一种写法 | 覆盖 push / `time:` 同现 / 数组字面量三种，并**正向**要求独立条件渲染 |
+| `LYRICS.sliderFill` ×2 | 全文搜 `linear-gradient` 与 `'--fill'`（同文件有多处，一处坏另一处兜底） | 逐条轨道用 `selector\s*\{` + `matchBracket` 取**各自规则体**；逐个 `input` 取标签 |
+
+> **两个新踩到的具体坑**（都是"辅助函数用错"）：
+> ① `braceBlock(css, '.music-prog-bar {')` —— anchor 自带 `{` 时，它会越过规则体
+>    落到 `gradient()` 的括号上取到空壳；且 `indexOf('.music-prog-bar')` 会先命中
+>    `.music-prog-bar-t`（时间标签）。正解是**正则 `selector\s*\{` + `matchBracket`**。
+> ② 已写成正则字面量的 selector **不能再过 `esc()`** —— 会把反斜杠再转义一层，
+>    三个轨道一度全部"找不到规则"。
+
+### 验收
+- `check:music` 通过 211 → **215**（总数 212 → 216，含 1 条既有红 `ISLANDV.toggleBothWays`）；
+  反证 173 → **180**，**180/180 全红、0 跳过、0 假阳性、全部文件字节恢复一致**。
+- `tsc --noEmit` 0 错误 · `check:settings` 90/0 · `check:units` 37/0 · `check:docs` 14/14。
+- **未动 Rust**（`cargo check` 无涉）；未碰 `DynamicIsland.tsx`（并发占用中）。

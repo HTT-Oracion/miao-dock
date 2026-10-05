@@ -35,15 +35,6 @@ import { findAudioElement } from '@music/audioGraph';
 import { lyricIndexAt, useMusicStore } from '@music/store';
 import type { ParsedLyricLine } from '@music/store';
 
-/**
- * smoothstep 缓动（0→1）。行级插值用它替代线性：
- * 线性推进在行的首尾都显得"匀速而呆"，smoothstep 让起步与收尾更缓、中段更快，
- * 更接近"字被一个个唱出来"的观感。有逐字数据时不需要它（本来就走精确字符位置）。
- */
-function smoothstep(x: number): number {
-  return x * x * (3 - 2 * x);
-}
-
 interface KaraokeLyricsProps {
   /** 已解析歌词行（time 单位秒；含可选 duration / words） */
   lines: ParsedLyricLine[];
@@ -78,13 +69,34 @@ interface KaraokeLyricsProps {
    * ⚠️ 做成 prop 而非全局开关：灵动岛复用同一个 KaraokeLyrics，不能一开全开。
    */
   showTranslation?: boolean;
+  /**
+   * 歌词流**第 0 帧**：排在第一句歌词之前的一行（如「演唱：歌手」）。
+   *
+   * 为什么放进这个组件而不是留在 ExpandedPlayer 的滚动容器外面：
+   * 放在外面时它是**固定**的，不随歌词滚动，视觉上不属于歌词。
+   * 用户要求它"作为歌词内容的一部分、纳入同一套高亮与滚动逻辑"，
+   * 所以它必须渲染在**同一个滚动容器**（`.music-exp-lyr-box`）内、且在所有歌词行之前。
+   *
+   * ⚠️ **刻意不进 `lines` 数组**（不能当成 time=0 的普通歌词行）：
+   * 那样 `lyricIndexAt` 会把它当第一句 —— 还没唱到它时 `activeIndex` 恒为 −1，
+   * 整列歌词都不会高亮（"前奏期间整列不亮"这种回归）。
+   * 它只参与渲染与滚动，不参与 `activeIndex` / `getLineProgress` 的时间轴计算。
+   */
+  headerLine?: string;
 }
 
 /**
  * 计算某行的填充进度 (0~1)。
  *
  * - **有逐字数据**：遍历每个词，按「词起点 + 词时长」把进度精确定位到字符位置；
- * - **无逐字数据**：行级线性插值 + smoothstep 缓动（绝大多数歌走的是这一路）。
+ * - **无逐字数据**：行级**线性**插值（绝大多数歌走的是这一路）。
+ *
+ * ⚠️ 无逐字分支必须是**线性**、且**不做任何时间补偿**（曾用 `smoothstep` + `+0.02s`，均已移除）：
+ *   ① `smoothstep(x)=x²(3−2x)` 在行首段增长极慢 —— 行内进度 25% 时高亮只填 15.6%、
+ *      10% 时只填 2.8%，于是**每句开头高亮都追不上播放**（用户报"高亮明显滞后"）；
+ *   ② `+0.02s` 视觉补偿把每行高亮起点又整体推后 20ms。
+ *   缓动让动画"看起来平滑"，代价是与真实播放进度脱钩；这里要的是**严格同步、不早不晚**。
+ * 有 yrc 的精确分支本身逐词定位，不受这两点影响，保持原样。
  *
  * ⚠️ 无逐字分支不是"兜底的可选项"，而是**主路径**：平台绝大多数只给行级 LRC。
  * 它的跨度来自 `line.duration` / 下一行起点（由 store 的 finalizeLineDurations 保证有值），
@@ -98,8 +110,8 @@ function getLineProgress(
   if (!line) return 0;
 
   const hasWords = !!(line.words && line.words.length);
-  // 视觉补偿：让高亮略超前音频，抵消人眼感知与播放链路的滞后。有逐字数据时更小。
-  const now = nowSec + (hasWords ? 0.03 : 0.02);
+  // 严格同步：nowSec 就是音频元素的真实播放头（秒），**不加任何偏移**。
+  const now = nowSec;
 
   if (hasWords && line.text.length > 0) {
     const total = line.text.length;
@@ -118,13 +130,13 @@ function getLineProgress(
     return 1;
   }
 
-  // ── 无逐字数据：行级线性插值 + smoothstep 缓动 ──
+  // ── 无逐字数据：行级**线性**插值（严格跟随播放头，无缓动、无补偿）──
   const nextT =
     nextLine && nextLine.time > line.time ? nextLine.time : line.time + (line.duration || 4.8);
   // 跨度下限 0.75s：两行贴得极近时也能看清推进，不会被压缩成一闪
   const span = Math.max(0.75, nextT - line.time);
   const prog = Math.max(0, Math.min(1, (now - line.time) / span));
-  return smoothstep(prog);
+  return prog;
 }
 
 export function KaraokeLyrics({
@@ -134,10 +146,17 @@ export function KaraokeLyrics({
   windowSize,
   scroll = true,
   showTranslation = false,
+  headerLine,
 }: KaraokeLyricsProps) {
   const [activeIndex, setActiveIndex] = useState(-1);
   /** 当前行顶层（已唱）文字的容器：RAF 只改它的 width */
   const overlayRef = useRef<HTMLSpanElement | null>(null);
+  /**
+   * 当前行**翻译**的顶层（已唱）容器：RAF 与 `overlayRef` 写**同一个** width。
+   * 这就是"翻译与原歌词同步高亮"的实现 —— 不是给翻译另算一份进度，
+   * 而是两者共用同一份进度值，因此**不可能**出现"原文亮了、翻译还没亮"。
+   */
+  const transOverlayRef = useRef<HTMLSpanElement | null>(null);
   /** 当前行整行节点：用于滚动定位 */
   const activeRowRef = useRef<HTMLDivElement | null>(null);
 
@@ -196,7 +215,11 @@ export function KaraokeLyrics({
         if (el && idx >= 0) {
           // 整行模式：当前行满亮（100%）；逐字模式：走 getLineProgress 的逐字/行级渐进
           const p = modeRef.current === 'line' ? 1 : getLineProgress(ls[idx], ls[idx + 1], now);
-          el.style.width = `${(p * 100).toFixed(2)}%`;
+          const w = `${(p * 100).toFixed(2)}%`;
+          el.style.width = w;
+          // 翻译行写**同一个** w ⇒ 与原歌词严格同时点亮（共用一份进度，不可能分叉）
+          const tEl = transOverlayRef.current;
+          if (tEl) tEl.style.width = w;
         }
       }
       raf = requestAnimationFrame(tick);
@@ -237,6 +260,13 @@ export function KaraokeLyrics({
   // ⚠️ 灵动岛**不在** .music-exp 子树里，所以它必须自己注入一遍（见 DynamicIsland 的注释）。
   return (
     <div className={align === 'left' ? 'music-exp-lyr-box is-left' : 'music-exp-lyr-box'}>
+      {/*
+        歌词流**第 0 帧**：排在所有歌词行之前，与歌词同容器 ⇒ 随歌词一起滚动。
+        用 `kara-header` 独立类名（不挂 `is-on`）：它没有时间戳、永远不是"当前行"，
+        恒为未唱色。刻意不进 lines 数组（否则 lyricIndexAt 会把它当第一句，
+        前奏期间整列歌词都不高亮 —— 见 headerLine 的注释）。
+      */}
+      {headerLine ? <div className="music-lyr-line kara-line kara-header">{headerLine}</div> : null}
       {viewLines.map((line, k) => {
         // 窗口模式下 k 是「窗口内下标」，判定是否当前行必须用**整首里的绝对下标**
         const i = winStart + k;
@@ -266,7 +296,23 @@ export function KaraokeLyrics({
               </span>
             </span>
             {showTranslation && line.translation ? (
-              <span className="kara-trans">{line.translation}</span>
+              /*
+               * 翻译也走**同一套双层叠加**：底层未唱 + 顶层已唱。
+               * 顶层与原文的顶层由 RAF 写**同一个** width ⇒ 两者严格同时点亮。
+               * ⚠️ 不能只给翻译换颜色：那样整句翻译会在行首**整行**瞬间点亮，
+               * 与原文的逐字推进对不上（这正是用户报的"翻译没同步高亮"）。
+               * mask 渐变宽度沿用同一 maskFade（字号已与原文一致，见 .kara-trans）。
+               */
+              <span className="kara-dup kara-trans-dup">
+                <span className="kara-under">{line.translation}</span>
+                <span
+                  className="kara-over"
+                  ref={transOverlayRef}
+                  style={{ maskImage: maskGradient, WebkitMaskImage: maskGradient }}
+                >
+                  {line.translation}
+                </span>
+              </span>
             ) : null}
           </div>
         );

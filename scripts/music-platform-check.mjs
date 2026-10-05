@@ -1831,9 +1831,18 @@ add('LYRICS.lineInterpolation', 'LYRICS', (s) => {
     if (!/Math\.max\(\s*0\.45\s*,/.test(fin)) missing.push('duration 未钳下限 0.45s');
     if (!/Math\.min\(\s*12\s*,/.test(fin)) missing.push('duration 未钳上限 12s');
   }
-  // ③ 渲染层必须有**无逐字**的行级插值分支（smoothstep），否则退化路径到不了画面
+  // ③ 渲染层必须有**无逐字**的行级插值分支，否则退化路径到不了画面。
+  //    ⚠️ 判据只看"存在插值分支"，**不绑定具体缓动函数**（见下方 D-56 备注）：
+  //    这里曾经写死"必须出现 smoothstep"，而 smoothstep 恰恰是用户报的
+  //    「高亮滞后」的成因（行首段进度 25% 只填 15.6%），本轮已按用户要求改成**线性**。
+  //    写死缓动函数名 = 把"动画手感"当成契约，于是"修好滞后"反而让断言变红 ——
+  //    判据必须钉住**行为**（有插值、能到画面），不是钉住某个函数名。
   if (!kara) missing.push('未读到 KaraokeLyrics.tsx');
-  else if (!/\bsmoothstep\b/.test(kara)) missing.push('渲染层缺无逐字的行级插值（smoothstep）分支');
+  else {
+    // 存在"用行起点 + 跨度算进度"的插值表达式（线性或缓动都算，只要真的按播放位置插值）
+    if (!/\(now\s*-\s*line\.time\s*\)\s*\/\s*span/.test(kara) && !/\(now\s*-\s*line\.time\)/.test(kara))
+      missing.push('渲染层缺无逐字的行级插值分支（没有按播放位置对行起点做插值）');
+  }
   return { ok: missing.length === 0, detail: missing.length ? `行级插值退化路径：${missing.join('、')}` : '' };
 });
 
@@ -1844,21 +1853,29 @@ add('LYRICS.karaRender', 'LYRICS', (s) => {
   if (!kara) return { ok: false, detail: '未读到 KaraokeLyrics.tsx' };
   const missing = [];
   // ① 双层：同一行文本渲染两次，且两层 class 齐全。
-  // ⚠️ 类名判据必须**排除子串**：`kara-over` 是 `kara-over-disabled` 的子串，
-  // 用裸子串匹配的话，把顶层类名改坏（导致双层退化成单层）断言仍会绿 ——
-  // 反证轮实测抓到了这个假阳性，故改用「前后不得紧跟 \w 或 -」的精确词边界。
-  if (!/(?<![\w-])kara-under(?![\w-])/.test(kara)) missing.push('缺底层（未唱）元素 kara-under');
-  if (!/(?<![\w-])kara-over(?![\w-])/.test(kara)) missing.push('缺顶层（已唱）元素 kara-over');
+  // ⚠️ 判据必须**限定在原文那一块**（`ref={overlayRef}` 附近），不能全文搜 `kara-over`：
+  //   翻译行也是双层叠加（本轮 D-56 加的），全文搜会让"把原文顶层改坏"仍有翻译那份兜底 ⇒ 恒绿。
+  //   这正是本项目反复栽的"只判存在、不判作用域"（第 8 次），由反证轮实测抓出。
+  const ovAt = kara.search(/ref=\{overlayRef\}/);
+  const orig = ovAt >= 0 ? kara.slice(Math.max(0, ovAt - 500), ovAt + 500) : '';
+  if (ovAt < 0) {
+    missing.push('原文顶层没有 ref={overlayRef}（无法定位双层结构）');
+  } else {
+    // 原文的 kara-under / kara-over 必须在同一块里成对出现
+    if (!/(?<![\w-])kara-under(?![\w-])/.test(orig)) missing.push('原文缺底层（未唱）元素 kara-under');
+    if (!/(?<![\w-])kara-over(?![\w-])/.test(orig)) missing.push('原文缺顶层（已唱）元素 kara-over');
+    // mask 渐变（含 -webkit- 前缀）必须落在原文顶层上
+    if (!/maskImage/.test(orig) || !/WebkitMaskImage/.test(orig))
+      missing.push('原文顶层缺 mask 渐变 / -webkit- 前缀（裁切边会是硬线）');
+  }
   const textRenders = (kara.match(/\{line\.text\}/g) || []).length;
   if (textRenders < 2) missing.push(`同一行文本只渲染了 ${textRenders} 次（双层需 ≥2 次）`);
   // ② RAF 推进，且**不得**用 setInterval（后台被节流到 ~1Hz → 推进一跳一跳）
   if (!/requestAnimationFrame\s*\(/.test(kara)) missing.push('未用 requestAnimationFrame');
   if (!/cancelAnimationFrame\s*\(/.test(kara)) missing.push('未清理 RAF（cancelAnimationFrame）');
   if (/setInterval\s*\(/.test(kara)) missing.push('用了 setInterval（后台节流 → 推进一跳一跳）');
-  // ③ width 裁切 + mask 柔边（含 -webkit- 前缀）
+  // ③ width 裁切驱动顶层
   if (!/style\.width\s*=/.test(kara)) missing.push('未用 width 裁切驱动顶层');
-  if (!/maskImage/.test(kara) || !/linear-gradient/.test(kara)) missing.push('缺顶层 mask 渐变（裁切边会是硬线）');
-  if (!/WebkitMaskImage/.test(kara)) missing.push('缺 -webkit- mask 前缀');
   return { ok: missing.length === 0, detail: missing.length ? `逐字渲染层：${missing.join('、')}` : '' };
 });
 
@@ -1945,18 +1962,34 @@ add('LYRICS.translationRender', 'LYRICS', (s) => {
 });
 
 add('LYRICS.artistLine', 'LYRICS', (s) => {
-  // 演唱行：展开播放器歌词区上方固定插入「演唱: {artist}」+ 样式 .music-exp-lyr-artist。
-  // 作词/作曲/编曲各平台数据不全故不做，只留演唱者（Song.artist 四平台现成）。
+  // 演唱行：作为歌词流的**第 0 帧**（首行之前、同一个滚动容器内、随歌词滚动）。
+  //
+  // ⚠️ 判据随实现演进过一次（D-56）：原先它是歌词滚动容器**之外**的固定 div
+  // `music-exp-lyr-artist`，用户要求"作为歌词内容的一部分、纳入同一套高亮与滚动逻辑"
+  // ⇒ 改为经 `headerLine` prop 传进 KaraokeLyrics，由组件渲染成 `.kara-header` 首行。
+  // 断言跟着新契约走：ExpandedPlayer 传 headerLine、KaraokeLyrics 渲染 .kara-header 且
+  // **排在 viewLines 之前**、且 headerLine **不进 lines 数组**（否则 lyricIndexAt 会
+  // 把它当第一句，前奏期间整列歌词都不高亮）。
   const exp = stripComments(s.expanded ?? '');
+  const kara = stripComments(s.karaoke ?? '');
   const css = s.css ?? '';
   const missing = [];
   if (!exp) missing.push('未读到 ExpandedPlayer.tsx');
   else {
-    if (!/(?<![\w-])music-exp-lyr-artist(?![\w-])/.test(exp)) missing.push('ExpandedPlayer 缺演唱行元素 music-exp-lyr-artist');
+    if (!/headerLine=/.test(exp)) missing.push('ExpandedPlayer 未传 headerLine 给 KaraokeLyrics');
     if (!/currentSong\?\.artist/.test(exp)) missing.push('演唱行未读 currentSong.artist');
   }
-  if (!/\.music-exp-lyr-artist\s*\{/.test(css)) missing.push('样式缺 .music-exp-lyr-artist');
-  return { ok: missing.length === 0, detail: missing.length ? `演唱行：${missing.join('、')}` : '' };
+  if (!kara) missing.push('未读到 KaraokeLyrics.tsx');
+  else {
+    if (!/(?<![\w-])kara-header(?![\w-])/.test(kara)) missing.push('KaraokeLyrics 未渲染 .kara-header 演唱行');
+    // 必须排在歌词行之前（第 0 帧）：headerLine 的 JSX 要在 viewLines.map 之前
+    const headerAt = kara.search(/\{headerLine\s*\?/);
+    const mapAt = kara.search(/viewLines\.map\(/);
+    if (headerAt < 0) missing.push('headerLine 条件渲染缺失');
+    else if (mapAt >= 0 && headerAt > mapAt) missing.push('headerLine 渲染在歌词行之后（应为第 0 帧）');
+  }
+  if (!/\.kara-header\s*\{/.test(css)) missing.push('样式缺 .kara-header');
+  return { ok: missing.length === 0, detail: missing.length ? `演唱行（第 0 帧）：${missing.join('、')}` : '' };
 });
 
 add('LYRICS.showTranslationWired', 'LYRICS', (s) => {
@@ -1976,6 +2009,134 @@ add('LYRICS.showTranslationWired', 'LYRICS', (s) => {
     else if (/showTranslation/.test(usage)) missing.push('灵动岛不应传 showTranslation（翻译会撑爆 320×150 卡片）');
   }
   return { ok: missing.length === 0, detail: missing.length ? `showTranslation 接线：${missing.join('、')}` : '' };
+});
+
+// ============================ D-56：高亮同步 / 翻译高亮 / 第 0 帧 / 滑块填充 ============================
+// 本组四条各自防一个**用户报的现象**，判据都锚在"机制"而不是"某个数值/某个名字"上。
+
+add('LYRICS.noLagOffset', 'LYRICS', (s) => {
+  // 🔴 「高亮明显滞后」的守护：getLineProgress 里**不得**再有人为时间偏移或缓动。
+  // 曾经的病根：① smoothstep 缓动（行首段 25% 进度只填 15.6%，追不上播放）
+  //            ② +0.02s 视觉补偿（把每行高亮起点整体推后）。
+  // 两者都让"动画平滑"但与真实播放进度脱钩。修法：无逐字分支改**线性**、不加补偿。
+  // 判据：函数体内既不出现 smoothstep，也不对 nowSec 做 +偏移，且存在按 (now - line.time) 的线性插值。
+  const kara = stripComments(s.karaoke ?? '');
+  if (!kara) return { ok: false, detail: '未读到 KaraokeLyrics.tsx' };
+  const body = fnBodyAny(kara, 'getLineProgress');
+  if (!body) return { ok: false, detail: '取不到 getLineProgress 实现体' };
+  const missing = [];
+  // ⚠️ 判据按**形状**判"有没有缓动"，不能只搜函数名 `smoothstep`：
+  //   有人会把缓动内联成 `prog * prog * (3 - 2 * prog)`（不叫 smoothstep），
+  //   只判名字 ⇒ 这种改法照样绿（反证轮实测抓到：内联缓动让本条假阳性）。
+  if (/\bsmoothstep\b/.test(body)) missing.push('仍在用 smoothstep 缓动（行首段高亮追不上播放）');
+  // 缓动的代数形状：x²(3−2x) / x³ 之类 —— 线性结果一旦被二次加工就说明套了缓动
+  if (/prog\s*\*\s*prog|prog\s*\*\s*\(?\s*3\s*-\s*2\s*\*\s*prog|Math\.pow\s*\(\s*prog/.test(body))
+    missing.push('行级插值被套上缓动代数（高亮与播放进度脱钩 ⇒ 滞后）');
+  // nowSec + <数字> 形式的时间补偿（排除 nowSec 后接其它表达式的合法用法）
+  if (/nowSec\s*\+\s*[\d.]+/.test(body)) missing.push('仍在给 nowSec 加视觉补偿秒数（高亮起点被推后）');
+  if (/nowSec\s*-\s*[\d.]+/.test(body)) missing.push('nowSec 被减去固定秒数（高亮被人为提前）');
+  // 必须真的按"播放位置 - 行起点"做线性插值（否则去掉缓动后就没有进度了）
+  if (!/\(\s*now\s*-\s*line\.time\s*\)\s*\/\s*span/.test(body))
+    missing.push('缺按 (now - line.time)/span 的线性插值（去掉缓动后高亮不会推进）');
+  // 线性结果必须**原样返回**（return prog），不能被二次加工后才返回
+  if (!/return\s+prog\s*;/.test(body))
+    missing.push('行级插值结果没有原样返回（return 的不是 prog 本身）');
+  return { ok: missing.length === 0, detail: missing.length ? `高亮同步（无滞后）：${missing.join('、')}` : '' };
+});
+
+add('LYRICS.transHighlightSync', 'LYRICS', (s) => {
+  // 翻译与原歌词**同步高亮**：两者共用同一个 RAF 写入的 width%（transOverlayRef），
+  // 而不是给翻译另算一份进度或只换颜色。
+  // 防"翻译只变色不填充"——那样整句翻译会在行首整行瞬间点亮，与原文逐字推进对不上。
+  const kara = stripComments(s.karaoke ?? '');
+  if (!kara) return { ok: false, detail: '未读到 KaraokeLyrics.tsx' };
+  const missing = [];
+  // ① RAF 里两个 overlay 写同一个 width 变量（transOverlayRef 存在且被写 width）
+  if (!/transOverlayRef/.test(kara)) missing.push('缺 transOverlayRef（翻译没有独立的高亮层）');
+  else if (!/tEl\.style\.width\s*=\s*w/.test(kara) && !/transOverlayRef\.current[^\n]*style\.width/.test(kara))
+    missing.push('RAF 未给翻译顶层写 width（翻译不随原文推进）');
+  // ② 翻译的当前行也用双层叠加（kara-under + kara-over），不是单层变色
+  const transRender = /kara-trans-dup[\s\S]*?kara-under[\s\S]*?kara-over/.test(kara);
+  if (!transRender) missing.push('翻译当前行未走双层叠加（只变色会与原文不同步）');
+  return { ok: missing.length === 0, detail: missing.length ? `翻译同步高亮：${missing.join('、')}` : '' };
+});
+
+add('LYRICS.headerNotInLines', 'LYRICS', (s) => {
+  // headerLine（演唱行）**不得**混进 lines 数组参与时间轴。
+  // 若把它当 time=0 的普通歌词行，lyricIndexAt 会把它当第一句 ——
+  // 前奏期间（还没唱到第一句）activeIndex 恒为 -1，整列歌词都不高亮。
+  // 判据：渲染处只用 headerLine 条件单独渲染，不 push 进数组 / 不 map 进 viewLines 参与 active 判定。
+  const kara = stripComments(s.karaoke ?? '');
+  if (!kara) return { ok: false, detail: '未读到 KaraokeLyrics.tsx' };
+  const missing = [];
+  // ⚠️ 判据要覆盖**所有**"把 headerLine 塞进时间轴数组"的写法，不能只判某一种：
+  //   `lines.push(...)` / `lines = [{...}]` / `[header, ...lines]` 展开 —— 任一种都会让
+  //   lyricIndexAt 把它当第一句。写死一种判据 = 换个写法就恒绿（反证轮实测抓到）。
+  if (/headerLine[^\n]*\.push\s*\(/.test(kara)) missing.push('headerLine 被 push 进数组（会污染时间轴）');
+  // headerLine 与 time 出现在同一行 = 拼成了一条"歌词行"
+  if (/headerLine[^\n]*\btime\s*:|[^\n]*\btime\s*:[^\n]*headerLine/.test(kara))
+    missing.push('headerLine 被拼成带 time 的歌词行塞进时间轴（前奏期整列不高亮）');
+  // headerLine 出现在数组字面量里（[ ... headerLine ... ]）
+  if (/\[[^\]\n]*headerLine[^\]\n]*\]/.test(kara))
+    missing.push('headerLine 出现在数组字面量中（会进入 viewLines / 时间轴）');
+  // 正向：headerLine 必须走独立的条件渲染（证明它是"渲染出去"而不是"混进数组"）
+  if (!/\{headerLine\s*\?/.test(kara)) missing.push('headerLine 没有独立的条件渲染');
+  return { ok: missing.length === 0, detail: missing.length ? `第 0 帧不入时间轴：${missing.join('、')}` : '' };
+});
+
+add('LYRICS.sliderFill', 'LYRICS', (s) => {
+  // 进度条 / 音量条「已调节段」用高亮色填充：CSS 轨道规则里有 --fill 分界的 linear-gradient，
+  // 且组件**按值**给每个 range input 注入 --fill（否则渐变恒为 0% ⇒ 看不到填充）。
+  // 防三类半成品：① 改了 CSS 但没人注入 --fill ② 注入 --fill 但 CSS 没渐变
+  // ③ 只给一个 input 注入、另一个漏了（"进度条有填充、音量条没有"）。
+  //
+  // ⚠️ 判据必须**逐条轨道 / 逐个 input 限定作用域**（用 braceBlock 取各自规则体 / 各自标签）：
+  //   全文搜 `linear-gradient` 会让"改坏进度条、但音量条那份还在"照样绿；
+  //   全文搜 `'--fill'` 同理（PlayerBar 里有进度条与音量条两个 input，只注入一个也查不出来）。
+  //   这正是本项目反复栽的"只判存在、不判唯一/作用域"（第 9 次），由反证轮实测抓出。
+  const css = s.css ?? '';
+  const exp = stripComments(s.expanded ?? '');
+  const bar = stripComments(s.playerBar ?? '');
+  const missing = [];
+  // ① 逐条轨道：规则体**自身**必须有 linear-gradient + var(--fill)
+  //    ⚠️ selector 后面**必须紧跟 `{`** 才算这条规则：用 `indexOf('.music-prog-bar')`
+  //    会先命中 `.music-prog-bar-t`（时间标签，其规则体里没有渐变）⇒ 取错块。
+  //    这里用正则 `selector\s*\{` 精确定位，再借 matchBracket 取配对的规则体。
+  const cssRuleBody = (selector) => {
+    // selector 已是**正则字面量**（String.raw`\.foo`），不能再过 esc()：那会把反斜杠
+    // 再转义一层，匹配不到任何东西（实测三个轨道一度全部"找不到规则"）。
+    const re = new RegExp(`${selector}\\s*\\{`);
+    const m = re.exec(css);
+    if (!m) return null;
+    const open = css.indexOf('{', m.index);
+    const end = matchBracket(css, open);
+    return end < 0 ? null : css.slice(open + 1, end);
+  };
+  const tracks = [
+    { name: '进度条', selector: String.raw`\.music-prog-bar` },
+    { name: '播放条音量', selector: String.raw`\.music-vol input\[type='range'\]` },
+    { name: '展开播放器音量', selector: String.raw`\.music-exp-vol-slider` },
+  ];
+  for (const t of tracks) {
+    const blk = cssRuleBody(t.selector);
+    if (blk == null) missing.push(`样式里找不到 ${t.name} 轨道规则`);
+    else if (!/linear-gradient/.test(blk)) missing.push(`${t.name}轨道缺 linear-gradient 填充渐变`);
+    else if (!/var\(--fill/.test(blk)) missing.push(`${t.name}轨道的渐变未用 --fill 定分界`);
+  }
+  // ② 逐个 range input：其开始标签内必须注入 --fill
+  const needFill = (src, cls, label) => {
+    if (!src) { missing.push(`未读到 ${label}`); return; }
+    // 取该 class 的那个 <input ... /> 标签（到自闭合的 /> 为止）
+    const at = src.indexOf(cls);
+    if (at < 0) { missing.push(`${label} 找不到 ${cls}`); return; }
+    const tag = src.slice(at, src.indexOf('/>', at));
+    if (!/'--fill'/.test(tag)) missing.push(`${label} 的 ${cls} 未注入 --fill（填充永远为 0%）`);
+  };
+  needFill(bar, 'className="music-prog-bar"', 'PlayerBar 进度条');
+  needFill(bar, 'value={volume}', 'PlayerBar 音量条');
+  needFill(exp, 'className="music-prog-bar"', 'ExpandedPlayer 进度条');
+  needFill(exp, 'className="music-exp-vol-slider"', 'ExpandedPlayer 音量条');
+  return { ok: missing.length === 0, detail: missing.length ? `滑块填充色：${missing.join('、')}` : '' };
 });
 
 // ============================ SKIN（展开播放器六皮肤）============================
@@ -4536,10 +4697,10 @@ const MUTATIONS = [
     expect: ['LYRICS.translationRender'],
   },
   {
-    name: '把展开播放器的演唱行类名改错（演唱行失去样式锚点）',
+    name: '把展开播放器传给 KaraokeLyrics 的 headerLine 删掉（演唱行从歌词流消失）',
     file: F.expanded,
-    find: '<div className="music-exp-lyr-artist">',
-    replace: '<div className="music-exp-lyr-artist-off">',
+    find: '                  headerLine={currentSong?.artist ? `演唱：${currentSong.artist}` : undefined}\n',
+    replace: '',
     expect: ['LYRICS.artistLine'],
   },
   {
@@ -4548,6 +4709,56 @@ const MUTATIONS = [
     find: 'showTranslation',
     replace: '',
     expect: ['LYRICS.showTranslationWired'],
+  },
+  // ---- D-56 新增 4 条断言的反证：每条破坏对应机制，必须变红 ----
+  {
+    name: '把行级插值改回 smoothstep 缓动（高亮重新"追不上播放"）',
+    file: F.karaoke,
+    find: '  const prog = Math.max(0, Math.min(1, (now - line.time) / span));\n  return prog;',
+    replace: '  const prog = Math.max(0, Math.min(1, (now - line.time) / span));\n  return prog * prog * (3 - 2 * prog);',
+    expect: ['LYRICS.noLagOffset'],
+  },
+  {
+    name: '给 nowSec 加回 +0.02s 视觉补偿（每行高亮起点被推后 ⇒ 滞后）',
+    file: F.karaoke,
+    find: '  const now = nowSec;',
+    replace: '  const now = nowSec + 0.02;',
+    expect: ['LYRICS.noLagOffset'],
+  },
+  {
+    name: '删掉 RAF 给翻译顶层写 width 的那行（翻译不再随原文同步点亮）',
+    file: F.karaoke,
+    find: '          const tEl = transOverlayRef.current;\n          if (tEl) tEl.style.width = w;',
+    replace: '          const tEl = transOverlayRef.current;\n          if (tEl) tEl.style.width = "0%";',
+    expect: ['LYRICS.transHighlightSync'],
+  },
+  {
+    name: '把翻译的当前行从双层叠加退化成单层（只整行变色，与原文不同步）',
+    file: F.karaoke,
+    find: '              <span className="kara-dup kara-trans-dup">',
+    replace: '              <span className="kara-trans">',
+    expect: ['LYRICS.transHighlightSync'],
+  },
+  {
+    name: '把 headerLine 塞进 lines 数组当 time=0 的普通歌词行（前奏期整列不高亮）',
+    file: F.karaoke,
+    find: '  linesRef.current = lines;',
+    replace: '  linesRef.current = headerLine ? [{ time: 0, text: headerLine }, ...lines] : lines;',
+    expect: ['LYRICS.headerNotInLines'],
+  },
+  {
+    name: '把进度条轨道的渐变填充改回纯色（已调节段不再有高亮色）',
+    file: F.musicScss,
+    find: '  background: linear-gradient(\n    to right,\n    var(--fill-c) 0 var(--fill, 0%),\n    var(--track-c) var(--fill, 0%) 100%\n  );\n}\n.music-prog-bar::-webkit-slider-thumb',
+    replace: '  background: var(--md-line);\n}\n.music-prog-bar::-webkit-slider-thumb',
+    expect: ['LYRICS.sliderFill'],
+  },
+  {
+    name: '删掉 PlayerBar 注入的 --fill（渐变在但分界恒为 0% ⇒ 看不到填充）',
+    file: F.playerBar,
+    find: "style={{ '--fill': `${progFill.toFixed(2)}%` } as FillStyle}",
+    replace: "style={{} as FillStyle}",
+    expect: ['LYRICS.sliderFill'],
   },
 ];
 

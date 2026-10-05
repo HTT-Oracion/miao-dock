@@ -962,12 +962,19 @@
   color: var(--md-muted);
 }
 .music-vol input[type='range'] {
+  --fill-c: var(--md-pink);
+  --track-c: var(--md-line);
   width: 60px;
   height: 5px;
   -webkit-appearance: none;
   appearance: none;
   border-radius: 3px;
-  background: var(--md-line);
+  /* 已调节段 = 高亮色，未调节段 = 原轨道色；分界由组件按值注入的 --fill 决定 */
+  background: linear-gradient(
+    to right,
+    var(--fill-c) 0 var(--fill, 0%),
+    var(--track-c) var(--fill, 0%) 100%
+  );
 }
 .music-vol input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -1017,12 +1024,20 @@
   flex-shrink: 0;
 }
 .music-prog-bar {
+  --fill-c: var(--md-pink);
+  --track-c: var(--md-line);
   flex: 1;
   height: 5px;
   -webkit-appearance: none;
   appearance: none;
   border-radius: 3px;
-  background: var(--md-line);
+  /* 已调节段（已播放）= 高亮色，未调节段 = 原轨道色。
+     --fill 由组件按「当前值 / 最大值」注入，拖动与播放推进时实时更新。 */
+  background: linear-gradient(
+    to right,
+    var(--fill-c) 0 var(--fill, 0%),
+    var(--track-c) var(--fill, 0%) 100%
+  );
 }
 .music-prog-bar::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -1510,35 +1525,34 @@
 .kara-line-on {
   overflow: hidden;
 }
-/* 翻译行：每行歌词下方的小字（外语歌译文）。次级色 + 小字号；继承歌词行的
-   opacity（非当前行 0.5 / 当前行 1），此处不叠加，避免双重降透明度。 */
+/* 翻译行：每行歌词下方的译文。
+   ⚠️ 字号**与原歌词一致**（`var(--lyr-size)`，不再是 0.7×）—— 用户要求同字号并保持排版对齐。
+   次级色 + 常规字重用来区分主次，但尺寸对齐；继承歌词行的 opacity
+   （非当前行 0.5 / 当前行 1），此处不叠加，避免双重降透明度。 */
 .kara-trans {
   display: block;
   margin-top: 2px;
-  font-size: calc(var(--lyr-size, 16px) * 0.7);
+  font-size: var(--lyr-size, 16px);
   font-weight: 400;
   line-height: 1.4;
   color: var(--skin-sub, rgba(255, 255, 255, 0.7));
   white-space: normal;
 }
-/* 演唱行：固定在歌词滚动区上方（所有皮肤统一，不随歌词滚动）。
-   作词/作曲/编曲各平台数据不全故不做，只留演唱者（Song.artist 四平台现成）。 */
-.music-exp-lyr-artist {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px 14px;
-  font-size: 13px;
-  color: var(--skin-sub, rgba(255, 255, 255, 0.75));
+/* 当前行的翻译：与原文一样走双层叠加（.kara-under + .kara-over），
+   顶层的 width% 由 RAF 与原文顶层写**同一个值** ⇒ 两者严格同时点亮。
+   这里把整块撑成块级并允许换行，避免继承 .kara-dup 的 inline-block/nowrap。 */
+.kara-trans-dup {
+  display: block;
+  white-space: normal;
+  margin-top: 2px;
 }
-.music-exp-lyr-artist-label {
-  flex-shrink: 0;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: 11px;
+/* 演唱行：歌词流第 0 帧（首行之前，同容器内、随歌词滚动）。
+   恒为未唱色（不挂 is-on）：它没有时间戳，永远不是"当前行"。
+   字重稍轻 + 次级色，视觉上作为"标题行"而非可唱句子。 */
+.kara-header {
   font-weight: 600;
-  background: var(--skin-hover, rgba(255, 255, 255, 0.12));
   color: var(--skin-sub, rgba(255, 255, 255, 0.75));
+  opacity: 0.85;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1718,11 +1732,18 @@
   -webkit-appearance: none;
   appearance: none;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.28);
+  /* 与播放条音量条同一套填充口径：高亮色已调节段 + 原轨道色未调节段 */
+  --fill-c: var(--md-pink);
+  --track-c: rgba(255, 255, 255, 0.28);
+  background: linear-gradient(
+    to right,
+    var(--fill-c) 0 var(--fill, 0%),
+    var(--track-c) var(--fill, 0%) 100%
+  );
   cursor: pointer;
   transition: width 0.25s ease, opacity 0.2s ease, margin-left 0.25s ease;
 }
-.music-exp.is-light .music-exp-vol-slider { background: var(--md-line); }
+.music-exp.is-light .music-exp-vol-slider { --track-c: var(--md-line); }
 .music-exp-volwrap:hover .music-exp-vol-slider { width: 80px; opacity: 1; margin-left: 6px; }
 .music-exp-vol-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -1764,11 +1785,13 @@
 }
 /* 展开播放器里的音质下拉：沿用播放条的胶囊外观，深色底上略放高一点 */
 .music-exp .music-q-sel { height: 24px; }
-/* 展开播放器内的进度条配色（深/浅皮肤各一套） */
+/* 展开播放器内的进度条配色（深/浅皮肤各一套）
+   ⚠️ 只改**未调节段**的 --track-c：已调节段（--fill-c）的填充色由 .music-prog-bar
+   的渐变统一提供，这里若再写 `background:` 会整条覆盖掉渐变 ⇒ 填充效果消失。 */
 .music-exp .music-prog-t { color: var(--skin-sub, rgba(255, 255, 255, 0.6)); }
 .music-exp.is-light .music-prog-t { color: var(--md-muted); }
-.music-exp .music-prog-bar { background: rgba(255, 255, 255, 0.28); }
-.music-exp.is-light .music-prog-bar { background: var(--md-line); }
+.music-exp .music-prog-bar { --track-c: rgba(255, 255, 255, 0.28); }
+.music-exp.is-light .music-prog-bar { --track-c: var(--md-line); }
 
 /* ---------------------------------------------------------------- 六皮肤专属视觉
    配色（背景/文字/毛玻璃）由 JS 注入的 CSS 变量承担（见 .music-exp 上方注释）；

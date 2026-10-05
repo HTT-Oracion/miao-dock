@@ -193,6 +193,18 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const vinylAccent = vinylColorMode === 'custom' ? vinylCustomColor : coverColor.hex;
 
   /**
+   * 进度条 / 音量条的「已调节段」填充百分比（0~100），注入 CSS 变量 `--fill`。
+   * 渐变写在 `.music-prog-bar` / `.music-exp-vol-slider`（见 music.scss）：
+   * 已调节段取高亮色，未调节段保持原轨道色（各皮肤只覆盖 `--track-c`）。
+   * 除数与两个 input 的 `max` 同口径，避免填充比例与滑块位置对不上。
+   */
+  const progFill = Math.max(
+    0,
+    Math.min(100, (Math.min(progressMs, Math.max(durationMs, 1)) / Math.max(durationMs, 1)) * 100),
+  );
+  const volFill = Math.max(0, Math.min(100, volume * 100));
+
+  /**
    * 歌词高亮色控件的当前值。
    * 透明彩胶下它改的其实是**胶片色**（参考实现同款语义联动）：
    * auto 模式显示提取出的封面色，custom 模式显示用户固定色；其余皮肤就是歌词高亮色。
@@ -493,23 +505,18 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
               <Empty>暂无歌词</Empty>
             ) : (
               <>
-                {/* 演唱行：固定在歌词滚动区上方（所有皮肤统一，不随歌词滚动）。
-                    作词/作曲/编曲各平台数据不全故不做，只留演唱者（Song.artist 四平台现成）。 */}
-                {currentSong?.artist ? (
-                  <div className="music-exp-lyr-artist">
-                    <span className="music-exp-lyr-artist-label">演唱</span>
-                    <span>{currentSong.artist}</span>
-                  </div>
-                ) : null}
                 {/* 逐字歌词：组件自己承担"定位当前行 / 滚动跟随 / RAF 逐字推进"，
                     并复用 .music-exp-lyr-box 的上下 edge mask 与 .music-lyr-line 的字号/暗色语汇。
                     字号/高亮色经根节点注入的 --lyr-size / --lyr-hl 继承进来，故无需再传。
-                    align：彩胶/封面渐染左对齐（参考实现同款），其余居中。 */}
+                    align：彩胶/封面渐染左对齐（参考实现同款），其余居中。
+                    headerLine：「演唱: {artist}」作为歌词流**第 0 帧**渲染在同一个滚动容器内
+                    （此前是容器外的固定 div，不随歌词滚动）；作词/作曲/编曲各平台数据不全故不做。 */}
                 <KaraokeLyrics
                   lines={parsedLyrics}
                   fontPx={lyricsFontSize}
                   align={isVinyl || isCover ? 'left' : 'center'}
                   showTranslation
+                  headerLine={currentSong?.artist ? `演唱：${currentSong.artist}` : undefined}
                 />
               </>
             )}
@@ -626,6 +633,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
                 max={1}
                 step={0.01}
                 value={volume}
+                style={{ '--fill': `${volFill.toFixed(2)}%` } as CSSVarStyle}
                 onChange={(e) => setVolume(Number(e.target.value))}
               />
             </div>
@@ -699,6 +707,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
             max={Math.max(durationMs, 1)}
             step={1000}
             value={Math.min(progressMs, Math.max(durationMs, 1))}
+            style={{ '--fill': `${progFill.toFixed(2)}%` } as CSSVarStyle}
             onChange={(e) => onSeek(Number(e.target.value))}
           />
           <span className="music-prog-t">{fmtTime(durationMs)}</span>
