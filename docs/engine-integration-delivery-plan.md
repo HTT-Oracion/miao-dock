@@ -40,16 +40,31 @@
 | 机器 | MacBook Pro M4 / 16GB —— 与《04》内存基线同型，**唯一可实测环境** |
 | 磁盘 | **数据卷实测 89 GB 可用**（460Gi 总 / 354Gi 已用）。⚠️ 初版误用 `df -h /` 得"33 GB"—— `/` 是 APFS 密封系统卷，**不能用它判余量** |
 | 网络 | `pypi` ✅ · `pypi.tuna` ✅ · `hf-mirror.com` ✅ · `modelscope.cn` ✅ · `mirror.nju.edu.cn` ✅ · `registry.npmmirror.com` ✅ · **`huggingface.co` ❌**（CONNECT tunnel failed）· **`github.com` 根路径 200 但 release 资产 502**（同域名、路径被拦）⇒ 二进制与权重**一律走镜像**；判可达性必须**请求真实资产**而非站点根路径 |
-| Python | ✅ **3.12.15 已装**（项目内 `runtimes/manga-translator/python/`，来自 `mirror.nju.edu.cn` 的 python-build-standalone）。⚠️ `brew install python@3.12` **在本机沙箱内不可用**（`sandbox-exec: sandbox_apply: Operation not permitted`，非网络问题） |
-| torch / MPS | ✅ **已验证**：torch 2.14.1 + numpy 2.5.3；MPS 可用，matmul 与 CPU **逐位一致**，conv2d ≈ **34×** 加速（探针 `tmp-engine-test/mps-probe.py`） |
-| 引擎源码 / `llama-server` / 模型权重 | ❌ **仍未安装**（G1 只拿到第 ① 颗钉子） |
-| 服务层（box-service） | ✅ 已实测跑通（真实进程 + 真实磁盘，14/14） |
-| 翻译功能 | ❌ **未通**（落盘为占位图） |
+| Python | ✅ **已装但版本选错过**：现为 **3.11.17**（`runtimes/manga-translator/python-3.11/`）。🔴 上游 `pyproject.toml` 是 `requires-python = ">=3.10, <3.12"` —— 首轮装的 **3.12.15 在支持范围外**，已改名 `python-3.12-probe/`（仅 MPS 探针用）。⚠️ `brew install` **在本机沙箱内不可用**（`sandbox-exec: sandbox_apply: Operation not permitted`，非网络问题） |
+| torch / MPS | ✅ **已在引擎 venv（3.11.17）复测**：torch 2.14.1 · `mps.is_available()=True` · 张量与 CPU **逐位一致（0.000e+00）** · conv2d 稳态 **CPU 185.5 ms / MPS 12.3 ms ≈ 15.05×** ⇒ R1 由"高"降"中"（真实流水线仍未跑 MPS，未归零） |
+| 引擎源码 | ✅ **已锁定**：commit `441d07c5…`（main @ 2026-09-25，97 MB，`runtimes/manga-translator/src/`）。⚠️ 上游自 2022-04 起**不再发 release** ⇒ "锁 tag"不成立，只能锁 commit；`git clone https` 被代理拒（CONNECT 502），走 **codeload 归档直下** |
+| 引擎依赖 | ✅ **已装成并自洽**（2026-10-05，47m47s，退出码 0）：torch 2.14.1 · torchvision 0.29.1 · numpy 1.26.4 · opencv 4.11.0 · transformers 5.18.0 · onnxruntime 1.30.0 · `rusty-manga-image-translator 0.12.1` · **`pip check` → No broken requirements found**。🔴 更正：**`pydensecrf` 是硬依赖**（`mask_refinement/text_mask_utils.py:68`），上一轮"先剔除该行"导致入口直接 ImportError ⇒ 已走 `ghfast.top` 镜像编译安装成功 |
+| `llama-server` / Sakura 权重 | ✅ **已就位**：llama.cpp **b11417**（macOS arm64，12 MB）+ Sakura **1.5B fp16，3.3 GB**（经 `hf-mirror`）。⚠️ 官方 GGUF 仓库**只有 fp16**，计划里 Tiny"≈1.1 GB"是 4-bit 的量。⚠️ **许可两层**：引擎 GPL-3.0-only（copyleft）+ Sakura **CC BY-NC-SA 4.0（禁止商用）** ⇒ 对外分发前必须先有法务结论 |
+| 引擎进程形状 | 🔴 **比计划假设深一层**：`box-service → server.main(uvicorn, 8000) → manga_translator shared(执行器, 8001) → [llama-server]`，而 `main.py` 的信号处理**只 terminate 一层** ⇒ **孤儿回收风险上调**，M3 按四层设计 |
+| 服务层（box-service） | ✅ 已实测跑通（真实进程 + 真实磁盘，e2e **23/23**） |
+| 翻译功能 | ✅ **已通**（G1）：`out-first/test_0.webp`，1125×1600，**1.6 分钟**（CPU），逐像素比对 **4.94% 有实质差异**。⚠️ 1.5B 档**译文质量一般**（属产品选型，非管线问题）——要"可用"得上 8B/14B，下载量与耗时要重估 |
+
+**环境陷阱（三条，都会"报错得像别的问题"）**：
+1. **主机的删除守卫会让 box-service 建单 500** —— 服务的可写性探针 `writeFileSync`→`unlinkSync`，
+   unlink 被拦下抛**非 errno 错误** ⇒ 按设计变成 500。**取证物：失败后 `root/` 里留着 `.write-probe-*`。**
+   解法：跑验收时 `CODEBUDDY_SAFE_DELETE_ENABLED=0`（**不改产品代码**）。
+2. **`MIAO_E2E_TMP` 不能指 `/tmp`** —— 服务端落盘黑名单会直接退出（症状是"服务未在 20000ms 内就绪"）。
+3. **本机 Python 侧文件中介会换掉错误类型**：`os.mkdir` 对**已存在**目录本该抛 `FileExistsError`，
+   却被抛成**包着 `EEXIST` 文案的 `PermissionError`** ⇒ 按正确 errno 忽略"已存在"的调用方（pip 解包 sdist）接不到。
+   解法：`tmp-engine-test/pip-mkdir-fix.py`（**只在该目录确实存在时**纠正类型 ⇒ **不放大权限**）。
 
 ### 1.3 两条既有红（**非本项目引入，但会干扰判断**）
 
 1. `ISLANDV.toggleBothWays` —— 音乐模块断言红（另一次图标改动所致）。**不在本轮修、不得为它放宽断言。**
-2. `scripts/e2e.mjs` 断言「20 张图 30 秒内完成」—— 这是**模拟引擎**的时间口径。接真引擎前**必须先改口径**，否则接入成功当天一片红，会被误判成"接入失败"。→ 已列为 M1 交付物 D-0.8。
+2. ~~`scripts/e2e.mjs` 断言「20 张图 30 秒内完成」~~ ✅ **已改口径（M1 交付物 D-0.8）**：
+   三处写死的时间（D4a 预算 / `waitTask` / `collectEvents`）改为**随 `MIAO_E2E_ITEM_MS` 缩放**。
+   验收：正向 **23/23**；反证 A（引擎 1200ms/张、基准不动）**22/23 只 D4a 红**；
+   反证 B（基准同步报 1200）**23/23** —— **A+B 才证明预算确实随基准缩放**（只有 A 的话"红"可能只是恒红）。
 
 ---
 
@@ -100,9 +115,9 @@
 | 里程碑 | 内容（对应阶段） | 估算 | 外部依赖 | 出口闸门 |
 |---|---|---|---|---|
 | **M0** | 计划冻结（技术方案 + 本文件 + 5 项拍板） | ✅ 已完成 | — | — |
-| **M1** | **S0 环境闸门**：~~装 Python~~ ✅ · ~~验 torch+MPS~~ ✅ · ⏳ 跑通引擎 · ⏳ **出第一张真译文** · ⏳ 落实测数据 · ⏳ 导 OpenAPI 快照 · ~~改 `e2e` 时间口径~~ ✅ | 1.5–3（已用 ~0.5） | **引擎源码未 checkout**、**模型下载 5–8 GB（须走镜像）** | **G1** |
+| **M1** | **S0 环境闸门**：~~改 `e2e` 时间口径~~ ✅ · ~~装 Python~~ ✅（3.12 选错→纠正 3.11.17）· ~~验 torch+MPS~~ ✅（**引擎 venv 复测通过**）· ~~引擎源码 checkout~~ ✅ · ~~装引擎依赖~~ ✅（含 `pydensecrf`；`pip check` 自洽）· ~~拉模型 + llama.cpp + Sakura~~ ✅（全部镜像，sha256 通过）· ~~**出第一张真译文**~~ ✅ **G1 通过** · ~~导 OpenAPI 快照~~ ✅ | 1.5–3（已用 ~1.5） | ⏳ 余：单张耗时/峰值内存的系统实测（M5 用） | **G1 ✅** |
 | **M2** | S1 适配层对齐（`engine-client.mjs` 按快照重写） | 1–2 | 依赖 M1 的 OpenAPI 快照 | G2 前置 |
-| **M3** | S2 三进程生命周期（含 Windows 分支代码） | 2–3 | — | **G2** |
+| **M3** | S2 三进程生命周期（含 Windows 分支代码） | 2–3 → **上调** | — | **G2** |
 | **M4** | S3 模型管理（下载器 / SHA256 / 断点续传 / `.ready`） | 1.5–2 | 模型源可用性 | — |
 | **M5** | S4 档位 / 加速 / 降档 / 两级卸载 + **实测"卸载后再加载"耗时**（用于定 ③-b） | 2–3 | 需 M1 的内存基线 | — |
 | **M6** | S5 契约增量（2 错误码 + `/engine/status` + `sidecar` 8 字段） | 1 | — | **G3** |

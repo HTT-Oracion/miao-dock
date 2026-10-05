@@ -187,16 +187,17 @@ box-service ──POST /translate(真实形状以 /docs 快照为准)──▶ �
 
 ### 4.2 真翻译测试做不了，缺什么
 
-> **2026-10-05 更新（S0 开工首轮实测）**：下表中 **Python** 与 **PyTorch** 两行**已解决**（见 §4.5），
-> 其余（引擎源码 / 视觉模型 / Sakura + `llama-server`）仍缺 —— **G1 只拿到第 ① 颗钉子**。
+> **2026-10-05 更新（S0 完成）**：下表中**每一件都已补齐** —— 引擎源码（锁 commit）、Python（纠正为 3.11.17）、
+> 引擎依赖（含 `pydensecrf`）、视觉模型（镜像预置 + sha256 校验）、Sakura GGUF + `llama-server`。
+> **真翻译已于同日跑通（G1 通过）**：`out-first/test_0.webp`，1125×1600，1.6 分钟，逐像素 **4.94% 有实质差异**。详见 §4.7。
 
 | 缺件                           | 现状                                          | 补齐代价                                      |
 | ---------------------------- | ------------------------------------------- | ----------------------------------------- |
-| `manga-image-translator` 源码  | 未 checkout（`~/manga-image-translator` 不存在）  | 小（git clone + 锁 tag）                      |
-| ~~**Python 3.10–3.12**~~      | ✅ **已解决**：项目内 3.12.15（`runtimes/manga-translator/python/`） | 已完成（走 `mirror.nju.edu.cn`，见 §4.5）          |
-| ~~PyTorch + 视觉依赖~~           | ✅ **已解决（探针范围）**：torch 2.14.1 + numpy 2.5.3，**MPS 实测可用** | 引擎自身的视觉依赖仍未装（需引擎源码就位后按其 requirements 装）    |
-| 视觉模型（检测/OCR/`lama_large`）    | 无                                           | 数 GB（须走镜像：`huggingface.co` 本机不可达）          |
-| Sakura GGUF + `llama-server` | 均无（`command -v llama-server` 未命中）           | 1.1 GB（Tiny）+ 二进制（须走镜像）                   |
+| `manga-image-translator` 源码  | ✅ **已解决**：锁定 commit `441d07c5`（97 MB，`runtimes/manga-translator/src/`）  | 已完成（走 `codeload` 归档；`git clone` 被本机代理拒，见 §4.6）                      |
+| ~~**Python 3.10–3.12**~~      | ✅ **已解决但版本选错过**：现为 **3.11.17**（`runtimes/manga-translator/python-3.11/`）；3.12.15 保留改名 `python-3.12-probe/` 仅作探针 | 已完成（上游 `requires-python = ">=3.10, <3.12"`，**3.12 不在支持范围**，见 §4.6）          |
+| ~~PyTorch + 视觉依赖~~           | ✅ **已装成并自洽**：torch 2.14.1 · torchvision 0.29.1 · numpy 1.26.4 · opencv 4.11.0 · transformers 5.18.0 · onnxruntime 1.30.0 · **`pip check` 无破损**；**MPS 已在引擎 venv 复测通过**（conv2d ≈15×） | 已完成（47m47s；`pydensecrf` 走镜像编译，见 §4.7）    |
+| 视觉模型（检测/OCR/`lama_large`）    | ✅ **已镜像预置 + sha256 校验通过**：`detect-20241225.ckpt` · `lama_large_512px.ckpt` · `ocr_ar_48px.ckpt` + `alphabet-all-v7.txt` | 已完成（`ghfast.top` / `hf-mirror`；引擎**不做镜像回退**，故必须预置）          |
+| Sakura GGUF + `llama-server` | ✅ **已就位**：llama.cpp **b11417**（macOS arm64，12 MB）+ Sakura **1.5B fp16 3.3 GB** | 已完成（`latest` 端点返回错 tag，改为写死 `b11417`，见 §4.7）                   |
 | 磁盘余量                         | **数据卷实测 89 GB 可用**                            | 首次安装估算需 5–8 GB，**余量充足**                 |
 | 网络可达性（2026-10-05 实测）        | `pypi` ✅ / `pypi.tuna` ✅ / `github.com` 根路径 ✅ **但 release 资产下载 ❌（502）** / **`huggingface.co` ❌** / `hf-mirror.com` ✅ / `modelscope.cn` ✅ / **`mirror.nju.edu.cn`（含 python-build-standalone 全量）✅** / `registry.npmmirror.com` ✅ | 二进制与模型权重**一律走镜像**；判"某站可达"必须**测到真实资产**，不能只看站点根路径（见 R9/R10）              |
 
@@ -232,8 +233,63 @@ box-service ──POST /translate(真实形状以 /docs 快照为准)──▶ �
 两处已一并改为**随单张耗时基准缩放**（基准可经 `MIAO_E2E_ITEM_MS` 覆盖）。
 验收：正向 **23/23**；反证（引擎 900ms/张、基准不动）**22/23 —— 只 D4a 一条红**，明细自解释。
 
-> 因此"基于原图完成翻译服务的实际测试"这句话，今天仍只能到 §4.1 这一步。
-> **下一步不是写代码，是 checkout 引擎本体**（阶段 0 剩余部分）。
+### 4.6 S0 第二轮实测：引擎本体就位 + **一处版本纠正** + 引擎的真实形状（2026-10-05）
+
+#### ① 版本纠正：Python 3.12 **不是**引擎支持的版本 🔴
+
+上游 `pyproject.toml` 写着 `requires-python = ">=3.10, <3.12"` —— **上界是 3.11**。
+
+第一轮 S0 装的 **3.12.15 落在支持区间之外**。错因值得记下来：计划里把 README 的
+"Python 3.10+" 当成了唯一约束，**只读了"3.10 以上"，没读到"3.12 以下"**。
+
+| 处置 | 内容 |
+|---|---|
+| 引擎运行时 | 改装 **3.11.17**（支持区间内的最高版）→ `runtimes/manga-translator/python-3.11/` |
+| 旧的 3.12.15 | **不删**，改名 `runtimes/manga-translator/python-3.12-probe/`，**名字自证其角色**（仅 MPS 探针用）；配套 venv 改名 `venv-3.12-probe/` |
+| 为什么改名而不是留着 | 两个 Python 并存时，`venv` 建在哪个解释器上是**看不出来的** —— 这类"拿错解释器"的错会在很晚才以奇怪的方式爆出来。版本号写进目录名是**最便宜的自证** |
+
+⚠️ 连带一条纪律：**"探针那一套"不等于"引擎那一套"**。§4.5 的 MPS 结论是在 3.12 + torch 2.14.1 上测的，
+它证明的是"这台机器的 MPS 能用"，**不是**"引擎的 torch 也能用 MPS"。3.11 的引擎 venv 建好后要在**它自己里面**重测一次。
+
+#### ② 引擎源码就位（`git clone` 走不通，走 codeload）
+
+| 项 | 值 |
+|---|---|
+| 仓库 | `zyddnys/manga-image-translator`（10.5k star，GPL-3.0，上游仍在维护） |
+| 锁定 | **commit `441d07c59a735c7db3db2e7bb8b07920afd8a9cc`**（main @ 2026-09-25） |
+| 获取通道 | `git clone https://...` → **`CONNECT tunnel failed, response 502`**（本机代理拒）<br>`https://codeload.github.com/<repo>/tar.gz/<commit>` → **200 / 56 MB** ✅ |
+| 落点 | `runtimes/manga-translator/src/`（97 MB，仓库外） |
+
+**两条结论改了计划里的写法**：
+1. **"锁 tag"不成立** —— 上游最新 release 是 **2022-04-23 的 `beta-0.3`**，之后不再发 release，tag 里没有可用版本 ⇒ 只能**锁 commit**。归档解包**不带 `.git`**，所以版本只认 `engine/VERSIONS.lock` 里的那一行，`git describe` 用不了。
+2. **二进制/源码一律用"URL 直下 + 镜像"**，不要指望 `git clone`。这条把 R9/R10 从"风险提示"变成了"操作规范"。
+
+#### ③ 引擎的真实形状（读源码实测）—— 计划里假设错的两处
+
+| 计划里写的 | 实测 | 影响 |
+|---|---|---|
+| 引擎是"一个进程、一个端口" | **`server.main` 自己会再拉起一个执行器子进程**（`server/main.py:244`，且 `__main__` 里 `args.start_instance = True` 是**强制的**）⇒ 端口**成对**：`8000`(web) + `8001`(executor) | **S2 重估** |
+| README 对端口有 8000/8001/5003 "四种说法"、"疑似漂移" | **不是漂移，是四个不同入口**：web=8000、`shared`(执行器)=5003、`ws`=5003、`local`=CLI。四种说法全部对上 | R4 的"漂移"部分**解除**，但**接口形状仍要锁 OpenAPI 快照** |
+| 进程树是"服务 → 引擎"两层 | 实际是 **`box-service → server.main(uvicorn) → manga_translator shared(执行器) → [llama-server]`**；而 `main.py:272` 的 `handle_exit_signals` 只 `terminate()` **一层** | **孤儿回收风险比计划里高**，S2 必须按四层设计，不能按两层 |
+| 就绪靠"读 stdout 打的行" | 它**不打就绪行**（只先打 `Nonce: <hex>`，然后 uvicorn 自己的日志） | 「三重判定（进程存活 + 端口 + HTTP 应答）」是**必需的**，不是过度设计 |
+
+另外两处细节：执行器与 web 之间用 **`--nonce`（`X-Nonce` 头）**鉴权，默认随机生成 ⇒ 本项目要**自己掌握**它；
+`--models-ttl` 默认 **0 = 永不卸载** ⇒ 计划里 Tier2 的 30 分钟卸载必须**显式传参**才成立。
+
+**做法上顺带记一条**：`local` 子命令（`python -m manga_translator local -i <img>`）能**不起 web、不起执行器、没有 nonce** 地跑单图
+⇒ **S0 要的"跑一张真翻译"用这条最省事**，把"环境闸门"和"进程编排"两件事解耦开验。
+
+#### ④ 许可（⚠️ 新增待确认项）
+
+引擎是 **GPL-3.0-only**。本项目已有先例（`vendor/music-reference/README.md`：参考实现 GPL-3.0，"个人自用不触发分发义务"），
+**但引擎这一件不能照抄那个结论**：① 引擎依赖清单里的传染面更大；② 有利的一面是它**只经 HTTP 说话、是独立进程**，
+不构成衍生作品；③ 而计划里的"首次安装 5–8 GB / 自动下载引擎与模型"若面向**对外分发**，义务边界要重新算。
+⇒ **列待确认项**（本轮不定论），对外分发前必须先有结论。
+
+**这一轮的判定**：引擎**源码与运行时**就位，**依赖正在装**；G1 仍**未过**（还差"第一张真译文"）。
+
+> 因此"基于原图完成翻译服务的实际测试"这句话，今天仍只能到 §4.1 这一步 ——
+> 但阻塞项已经从"什么都缺"收窄到**"装通依赖 + 跑出第一张真译文"**。
 
 ### 4.3 潜在风险
 
@@ -257,6 +313,33 @@ box-service ──POST /translate(真实形状以 /docs 快照为准)──▶ �
 M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。一页漫画约 10 个气泡、每气泡译文数十 token ⇒ LLM 阶段约数秒；叠加 detect/OCR/inpaint/render 后，**单页量级在 10 s 上下**，20 页约 3–6 分钟。
 
 > ⚠️ 这是**推算**，不是实测。它的作用是提前说明 R6（"20 张 30 秒"必然不成立），**不要**写进任何用户可见文案 —— 《04》§11.4 明令"未实测前不得给出精确秒数"。
+
+### 4.7 S0 收口：**第一张真译文产出（G1 通过）**（2026-10-05）
+
+| 项 | 实测 |
+|---|---|
+| 产物 | `runtimes/manga-translator/out-first/test_0.webp`（1125×1600，322 KB） |
+| 耗时 | **1.6 分钟**（CPU，含模型加载；20 页量级可据此往回推，但仍需系统实测） |
+| 完整流水线 | 检测(DefaultDetector 1536×2048) → OCR(Model48pxOCR，**21 个文本框**) → 翻译(Sakura 0.9→简体) → 掩码细化 → 擦除(LamaLarge 1128×1600) → 上字 → 落盘 |
+| 像素取证 | 与原图逐像素：**4.94% 像素有实质差异**（最大通道差 255）⇒ 真改图 |
+| 一键脚本 | `tmp-engine-test/s0-fetch-and-run.sh`（幂等 · 续传 · sha256 校验） |
+| OpenAPI 快照 | `runtimes/manga-translator/openapi.engine.json`（S1 的依据；含 `/translate/image` `/translate/with-form/image` `/queue-size` 等） |
+
+**两个必须带到 S1 的观察：**
+1. **行数不匹配的重试路径会打 `404 File Not Found`**：11 行原文→10 行译文触发重译，重译那次 404，
+   靠**降级为逐行翻译**才成功。⇒ 成因未定位；接真引擎后这条路径会常见，S1 要单独盯（会拉长耗时）。
+2. **1.5B 档译文质量一般**（`いらっしゃい`→"真让人不爽"、`野バト`(野鸽)→"野兔"）⇒ **产品选型问题，非管线问题**。
+   要"可用"得上 8B/14B 档，**下载量与单张耗时要重估**（§4.4 的估算按 1.5B 写的）。
+
+### 4.8 一条被反证掉的错误归因（方法论，值得单列）
+
+我一度判定"本机 Python 文件中介让 `import torch`/`pip check` 慢到分钟级"。
+**四臂对照**（`tmp-engine-test/broker-ab.sh`，只改一个变量）把它推翻了：broker 开/关四臂**全部 1–2 秒**。
+真因是**当时有并发重活压满机器**（pip 装机 + 一条 850s 的挂起连接同时在场）。
+
+> 记它是因为**症状与"听起来很对的机制解释"同时出现**，是最容易写成结论的一对。
+> 附带更正：该脚本第一版用了 GNU `timeout` —— macOS 没有（四臂全 rc=127 假绿）。改用 `perl alarm`。
+> **"四臂都有输出"不等于"四臂都测到了"。**
 
 ---
 
