@@ -96,16 +96,30 @@ function requestOnce(pathname, { method = 'POST', headers = {}, body = null, tim
   const { engineHost: host, enginePort: port } = config;
   const limit = timeoutMs ?? config.engineTimeoutMs;
   return new Promise((resolve, reject) => {
+    // `chunks` / `received` 提到响应回调**之外**：超时那一刻也要能把已收到的字节交出去。
+    const chunks = [];
+    let received = 0;
     const req = http.request(
       { host, port, path: pathname, method, headers, timeout: limit },
       (res) => {
-        const chunks = [];
-        res.on('data', (c) => chunks.push(c));
+        res.on('data', (c) => { chunks.push(c); received += c.length; });
         res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
       },
     );
     req.on('timeout', () => {
-      req.destroy(new EngineError('ENGINE_TIMEOUT', `引擎响应超时（${limit}ms）`, { timeoutMs: limit }));
+      // 🔴 **超时必须带走"已经收到了什么"**。
+      // 只报一句"超时了"回答不了真正要问的问题：引擎是**在推理**（有进度帧）、
+      // 是**排不上队**（只有队列位次帧）、还是**完全没动静**（一个字节都没有）？
+      // U10② 的现场就死在"不可归因"上 —— 事后只剩"静默 17 分钟"，
+      // 谁也说不清卡在哪一层，于是只能登记成"偶发、成因待抓"。
+      // 把已收到的**部分字节**附上，上层就能解析出它最后在做什么（见 realTranslateImage）。
+      const err = new EngineError(
+        'ENGINE_TIMEOUT',
+        `引擎响应超时（${limit}ms 内没等到结帧；期间收到 ${received} 字节）`,
+        { timeoutMs: limit, receivedBytes: received },
+      );
+      err.partialBody = received > 0 ? Buffer.concat(chunks) : null;
+      req.destroy(err);
     });
     req.on('error', (err) => {
       if (err instanceof EngineError) return reject(err);
@@ -291,7 +305,11 @@ function parseResultStream(body) {
     const frame = { code, size };
     const data = body.subarray(off + 5, off + 5 + size);
     if (code === 0) result = data;
-    else if (code === 1 || code === 2) {
+    // code 3 的载荷是**队列位次**（`myqueue.py:99` 把 `str(queue_pos)` 编成 utf-8 发出来）。
+    // 🔴 它过去**不给 `text`**（只有 1/2 给）⇒ 位次在解析这一步就被丢掉了，
+    //    上层根本无从判断"引擎在排队"还是"引擎在推理"。见 `recordFrame`。
+    // code 4（等待翻译实例）的载荷为空，`text` 自然为 `''`。
+    else if (code === 1 || code === 2 || code === 3) {
       frame.text = data.toString('utf8').slice(0, 200);
       if (code === 2) error = frame.text;
     }
@@ -299,6 +317,25 @@ function parseResultStream(body) {
     off += 5 + size;
   }
   return { result, error, frames };
+}
+
+/**
+ * 把一帧记进阶段日志。
+ *
+ * 🔴 code 3/4（**队列位次** / **等待翻译实例**）过去是**被丢掉的** —— 只有 code 1 进日志。
+ * 而这两种帧恰恰是「引擎活着、但拿不到执行器」的**唯一直接证据**：
+ * 上游 `server/myqueue.py:100` 的判据是 `queue_pos < free_executors()`，而上游
+ * `instance.py:43` 的 `free_executors()` 数的是 `busy == False` 的实例 —— 一旦某次
+ * `sent_stream` 卡住不返回，那个实例**永远不会被释放**（`free_executor` 只在成功路径与
+ * `except` 路径上调用），此后所有请求都只会反复报 `排队位次 0` 然后静默。
+ * 没有这一条，诊断视图里就只剩"卡在某个阶段"，指不到"排队"这一层。
+ */
+function recordFrame(seq, frame) {
+  if (frame.code === 4) { pushStage(seq, '等待翻译实例'); return; }  // 载荷为空，先于 text 判断
+  if (!frame.text) return;
+  if (frame.code === 1) pushStage(seq, frame.text);
+  else if (frame.code === 3) pushStage(seq, `排队位次 ${frame.text}`);
+  else if (frame.code === 2) pushStage(seq, `引擎报错：${frame.text}`);
 }
 
 // ================================================================ real 协议
@@ -315,6 +352,19 @@ async function realTranslateImage(bytes, opts) {
   const res = await requestOnce('/translate/image/stream', {
     headers: { 'Content-Type': 'application/json', 'Content-Length': payload.length },
     body: payload,
+    // 由 store 的**单项总预算**下发（`store._processItem`）：重试只能吃剩下的时间。
+    timeoutMs: opts && opts.timeoutMs,
+  }).catch((err) => {
+    // 超时也要留下"它最后在做什么"：把已收到的部分字节解析成阶段，附进错误详情。
+    // 这是区分「引擎在推理」/「引擎排不上队」/「引擎完全没动静」的**唯一**证据，
+    // 也正是 U10② 那次"静默 17 分钟"事后无法归因的原因。
+    if (err instanceof EngineError && err.code === 'ENGINE_TIMEOUT' && err.partialBody) {
+      const { frames } = parseResultStream(err.partialBody);
+      for (const f of frames) recordFrame(seq, f);
+      err.detail = { ...(err.detail || {}), frames };
+      delete err.partialBody;
+    }
+    throw err;
   });
 
   // 流式端点的错误分两层：handler 之前的（422 等）走 HTTP 状态码；之后（推理失败）走流里的 code 2
@@ -323,7 +373,7 @@ async function realTranslateImage(bytes, opts) {
   const { result, error, frames } = parseResultStream(res.body);
   // 先记阶段、再判成败 —— 失败路径恰恰**最需要**知道"卡在哪个阶段"。
   // 反过来写（成功才记）会让诊断视图在真正出问题的那张图上恰好是空的。
-  for (const f of frames) if (f.code === 1 && f.text) pushStage(seq, f.text);
+  for (const f of frames) recordFrame(seq, f);
   if (!result) {
     if (error) throw new EngineError('ENGINE_ERROR', `引擎报告：${error}`, { seq, frames });
     throw new EngineError('ENGINE_BAD_OUTPUT', '结果流里没有结果帧（code 0）', { seq, frames });
@@ -405,6 +455,7 @@ async function mockTranslateImage(bytes, opts) {
       'X-Miao-To': to,
     },
     body: bytes,
+    timeoutMs: opts && opts.timeoutMs,
   });
 
   if (res.status !== 200) {
@@ -446,7 +497,11 @@ async function mockProbe() {
  * 单张翻译。**签名与 ver1.0 保持一致**（《04》§4.5）——`store.mjs` 不应感知引擎换代：
  * ver1.0 怎么调 mock 引擎，ver2.0 就以同样方式调真实引擎。
  * @param {Buffer} bytes 原图字节
- * @param {{seq:number, from?:string, to?:string, mime?:string}} opts
+ * @param {{seq:number, from?:string, to?:string, mime?:string, timeoutMs?:number}} opts
+ *   `timeoutMs` 缺省 `config.engineTimeoutMs`。由 `store` 下发
+ *   **`min(单项剩余预算, engineTimeoutMs)`** —— 前者管"整项还有多久"，后者管
+ *   "一次请求多久算没响应"，两者都要满足才不会出现「一次挂住吃掉整个预算」。
+ *   见 `store._processItem` 的 `deadline` / `attemptTimeoutMs`。
  * @returns {Promise<{bytes:Buffer, ext:string, mime:string}>}
  */
 export async function translateImage(bytes, opts) {

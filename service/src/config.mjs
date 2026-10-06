@@ -38,6 +38,25 @@ export const ETA_SAMPLE_WINDOW = 20;
 const ENGINE_PROTOCOLS = new Set(['real', 'mock']);
 const ENGINE_PROTOCOL = envEnum('MIAO_ENGINE_PROTOCOL', ENGINE_PROTOCOLS, 'real');
 
+/**
+ * 单次引擎请求 / 单项总预算的**共同默认值**（按协议分）。
+ * 提成常量而不是写两遍：`engineTimeoutMs` 与 `itemTimeoutMs` 必须是同一个量级，
+ * 两处各写一份 `600_000` 迟早会漂移成"预算比单次超时还短"这种自相矛盾的配置。
+ */
+const ENGINE_TIMEOUT_DEFAULT = ENGINE_PROTOCOL === 'real' ? 600_000 : 60_000;
+
+/**
+ * 单张请求超时的**实际值**（默认值 + `MIAO_ENGINE_TIMEOUT_MS` 覆盖）。
+ *
+ * 🔴 为什么提成常量而不是在 config 对象里写一遍：`itemTimeoutMs` 必须**跟着它走**
+ * （见下方 `itemTimeoutMs` 的注释）。两者各写一份默认值会漂移出一种自相矛盾的配置
+ * —— A20 用例把单张超时覆盖成 700ms，而单项预算仍是 mock 默认的 60s：
+ * 一次「只连不答」就吃掉整个预算的 60s，重试的语义还在，但**最坏静默**从
+ * 「一张的量级」悄悄变成「整个预算」，脚本的 60s 等待活不过它。
+ * （`envInt` 是函数声明，模块作用域内提升 —— 与上面 `envEnum` 同理。）
+ */
+const ENGINE_TIMEOUT_MS = envInt('MIAO_ENGINE_TIMEOUT_MS', ENGINE_TIMEOUT_DEFAULT);
+
 const SRC_DIR = import.meta.dirname; // .../service/src
 export const PKG_DIR = path.resolve(SRC_DIR, '..'); // .../service
 
@@ -362,7 +381,19 @@ export const config = {
   //           首张还要叠加模型到设备的加载（《04》§5.3「首图惰性初始化」是常态）。
   //           10 min ≈ 6× 余量；S7 用实测首张耗时校准（未校准前宁可等，不可错杀）。
   //   mock —— 60 s（原值不变；A20 用例注入 700ms 覆盖）。
-  engineTimeoutMs: envInt('MIAO_ENGINE_TIMEOUT_MS', ENGINE_PROTOCOL === 'real' ? 600_000 : 60_000),
+  engineTimeoutMs: ENGINE_TIMEOUT_MS,
+  // **单图总预算（含重试）**。为什么要与上面那个分开：
+  //   `engineTimeoutMs` 管的是「一次请求多久算没响应」，而**重试会把静默成倍放大**。
+  //   U10② 实测：引擎挂住时 = 600 s（首次超时）+ 600 s（重试）= **20 分钟完全静默**，
+  //   而中途不写任何状态、不打任何日志 ⇒ 从外面看与"引擎在慢慢想"完全一样，
+  //   连测试脚本的 15 分钟等待都活不过它（`failed:0`、磁盘无变化，看着像任务没跑）。
+  // 语义：整项的时间预算，**重试只能吃剩下的时间**（`store._processItem` 的 `deadline`）。
+  //   于是单项最坏 = 一次单张超时（而不是它的 N 倍），而「重试 N 次」的语义不变：
+  //   只有**快速失败**（几毫秒就回错的引擎错误）才留得下重试的余量。
+  // 默认 = `engineTimeoutMs` 的实际值（**含 `MIAO_ENGINE_TIMEOUT_MS` 的覆盖**）：
+  //   那个数字的余量论证（6× 单张实测耗时）本来就是按"整项"给的。跟着覆盖走是必须的
+  //   —— 测试把单张超时降到 700ms 时，预算要是还停在 60s，用例就得等 60s 才看得到终态。
+  itemTimeoutMs: envInt('MIAO_ITEM_TIMEOUT_MS', ENGINE_TIMEOUT_MS),
   // 探测超时（TCP 握手 / HTTP 探测）——**必须与单张超时分开**：探测不能等 10 分钟，
   // 否则每次 /health 都卡死；而单张超时也不能缩到探测量级，否则真推理必被错杀。
   engineProbeMs: envInt('MIAO_ENGINE_PROBE_MS', 800),

@@ -801,6 +801,12 @@ export class Store {
     item.status = 'translating';
     this._emitItemStatus(task, batch, item);
     this._syncBatchStatuses(task);
+    // 🔴 必须落盘。`_emitItemStatus` / `_syncBatchStatuses` 只改内存并发事件，
+    // 不写盘 —— 于是"这一页正在跑"在**磁盘上不存在**，落盘的永远是上一次终态。
+    // U10② 的现场就吃了这个亏：快照读到 `{total:13, done:8, failed:0, current:0}`，
+    // 看起来"什么都没在跑"，而实际有一页正卡在引擎里、连"它存在"都看不出来。
+    // 磁盘状态必须能回答"现在在跑哪一页"，否则崩溃/挂死现场一律无法归因。
+    await this._persist(task);
 
     const t0 = Date.now();
     // 字节来源三选一：内存（`this.blobs`，快路径）→ **暂存区**（G-12 的持久副本，活得过进程）
@@ -835,14 +841,44 @@ export class Store {
     let attempt = 0;
     let translated = null;
     let lastErr = null;
+    // 单项**总预算**（含所有重试）。见 config.itemTimeoutMs 的注释：
+    // 没有它，一次挂住 = 单次超时 × 重试次数 = **20 分钟完全静默**，
+    // 而且中途不写状态、不打日志 ⇒ 外部无法区分"在慢慢想"与"已经死了"。
+    const deadline = t0 + config.itemTimeoutMs;
     for (;;) {
       attempt++;
+      // 预算耗尽就**不再开新的一次尝试** —— 这条是"静默有上界"的承重点：
+      // 少了它，重试会把等待时间叠乘（`engineTimeoutMs × MAX_ATTEMPTS`）。
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        lastErr = new EngineError('ENGINE_TIMEOUT',
+          `单项总预算 ${config.itemTimeoutMs}ms 已耗尽（第 ${attempt} 次尝试开始前）`);
+        break;
+      }
+      // 每次尝试的**请求超时**取两者之小：剩余预算 × 「单次请求多久算没响应」。
+      // 少了后半截，只要有人把单项预算调大（`MIAO_ITEM_TIMEOUT_MS` > `MIAO_ENGINE_TIMEOUT_MS`），
+      // 一次挂住就能吃掉整个预算 —— 「单次请求上限」这个旋钮会形同虚设。
+      const attemptTimeoutMs = Math.min(remaining, config.engineTimeoutMs);
       try {
         if (forceFail) throw new EngineError('ENGINE_ERROR', 'injected_failure');
-        translated = await translateImage(bytes, { seq: item.seq, from: 'ja', to: 'zh', mime: item.mime });
+        translated = await translateImage(bytes, {
+          seq: item.seq, from: 'ja', to: 'zh', mime: item.mime, timeoutMs: attemptTimeoutMs,
+        });
         break;
       } catch (err) {
         lastErr = err;
+        // 🔴 **每一次尝试失败都留痕**。U10② 最致命的地方不是"超时了"，而是**超时了却没有任何输出**：
+        // 从外面看，它与"引擎正在慢慢推理"逐字节相同，于是只能登记成"偶发、成因待抓"。
+        // 这一行把三件事说清楚：第几次、已经花了多久、**引擎最后在做什么**
+        //（超时时 engine-client 会把已收到的帧解析成阶段附在 `detail.frames` 上）。
+        const stage = (err && err.detail && Array.isArray(err.detail.frames))
+          ? err.detail.frames.filter((f) => f.text || f.code === 4)
+            .slice(-3).map((f) => f.text || '等待翻译实例').join(' → ')
+          : '';
+        console.warn(`[item ${task.taskId}#${item.seq}] 第 ${attempt}/${MAX_ATTEMPTS} 次尝试失败：`
+          + `${(err && err.code) || 'internal_error'} · 已用 ${Date.now() - t0}ms`
+          + ` · 预算剩 ${Math.max(0, deadline - Date.now())}ms`
+          + (stage ? ` · 引擎阶段：${stage}` : ' · 引擎无阶段帧'));
         // 《04》§8.2：OOM ⇒ 降一档重试**一次**，且**不叠加** item 级重试 —— 所以这里把
         // attempt 回退一格再重试（一次 OOM 只算降档那一次，不额外吃掉 item 的重试预算）。
         // 降档是**服务级**的：`this.tierDowngrade` 是进程级单例，降完之后后续所有 item 都走新档。

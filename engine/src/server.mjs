@@ -47,6 +47,27 @@ const FAIL_RATE = Math.max(0, Math.min(1, Number(process.env.MIAO_ENGINE_FAIL_RA
 const OOM_TIMES = Math.max(0, Number.parseInt(process.env.MIAO_ENGINE_OOM_TIMES || '0', 10) || 0);
 let oomLeft = OOM_TIMES;
 
+/**
+ * **卡死注入**：这些 seq 的请求**永不返回**（既不回结果也不回错误，连响应头都不发）。
+ *
+ * 为什么需要它：U10② 是"真机长任务下引擎偶发停摆"——3 次运行复现 1 次，
+ * 且**只在真权重长任务上**出现，靠反复跑真机去等它复现，代价是每次十几分钟且不可控。
+ * 而这个缺陷真正要验的东西**与被测代码无关**，只与"引擎不回答"这一事实有关：
+ *   · 单项的等待时间是否有上界（= 不会变成 `超时 × 重试次数`）
+ *   · 挂住时**磁盘与日志是否留痕**（否则事后无法归因）
+ * 所以把它做成**可确定复现**的注入，测到的仍然是真实代码路径（`store._processItem` →
+ * `engine-client.requestOnce` → 超时 → 失败分支），不是造假。
+ *
+ * 与 `FAIL_SEQ` 的区别：那个**立刻**返回错误（覆盖 failed / 重试），
+ * 这个**永不返回**（覆盖"超时"这条路径 —— 它是唯一能照出"静默叠乘"形状的注入）。
+ */
+const STALL_SEQS = new Set(
+  String(process.env.MIAO_ENGINE_STALL_SEQ || '')
+    .split(',')
+    .map((s) => Number.parseInt(s.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n > 0),
+);
+
 const bootedAt = Date.now();
 const log = (msg) => console.log(`[mangatranslator-mock] ${msg}`);
 const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
@@ -107,6 +128,15 @@ const handler = async (req, res) => {
       const ext = sniffImageType(bytes);
       if (!ext) {
         return sendJson(res, 400, { error: { code: 'ENGINE_BAD_INPUT', message: '输入字节不是可识别图片' } });
+      }
+
+      // 卡死注入（见 STALL_SEQS 注释）：**什么都不回**，连响应头都不发。
+      // 客户端于是只能等到自己的超时 —— 这正是 U10② 的形状（引擎活着，这一张永不结束）。
+      // ⚠️ 挂住时**不要**注册定时器去"保活"：真实故障里不会有任何心跳，
+      //    注入一个心跳就把被测场景换掉了。
+      if (STALL_SEQS.has(seq)) {
+        log(`注入卡死（seq=${seq}，本请求永不返回）`);
+        return;
       }
 
       // 模拟推理耗时
@@ -182,7 +212,7 @@ log(`监听地址 : http://${HOST}:${port}`);
 log(`引擎     : sakura-mock（ja→zh）`);
 log(`单张耗时 : ${ITEM_MS}ms（±20% 抖动）`);
 log(`就绪延迟 : ${START_MS}ms`);
-log(`失败注入 : FAIL_SEQ=[${[...FAIL_SEQS].join(',')}] FAIL_RATE=${FAIL_RATE} OOM_TIMES=${OOM_TIMES}`);
+log(`失败注入 : FAIL_SEQ=[${[...FAIL_SEQS].join(',')}] FAIL_RATE=${FAIL_RATE} OOM_TIMES=${OOM_TIMES} STALL_SEQ=[${[...STALL_SEQS].join(',')}]`);
 // 机器可读就绪行：桌面端 Rust 层据此确认 sidecar 端口
 log(`MIAO_ENGINE_READY ${JSON.stringify({ port, engine: 'sakura-mock' })}`);
 log('========================================================');
