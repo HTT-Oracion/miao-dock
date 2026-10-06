@@ -74,6 +74,9 @@ npm run check:e4[:refute]     # E4 档位切换：生效档位 vs 配置档位 /
 npm run check:e7:real[:refute] # E7 模型续传与校验 · **真机半边**：3.6 GB 真权重的 sha256 跑得完 + 篡改必检出（约 30s）6 条 / 反证 3 条
 npm run check:e8[:refute]     # E8 加速后端：真机走 MPS / 真回退报 degraded / **用户自选 CPU 不算故障**（真服务 ×3 轮，秒级）6 条 / 反证 4 条
 npm run check:e10[:refute]    # E10 安全：只监听回环 / 非图片字节不进引擎 / 无令牌 403（秒级）7 条 / 反证 4 条
+# E9 与插件联调**不在本仓**：在 `miao-trans` 仓跑 `node e2e/e9-real-engine.mjs`（先构建扩展）——
+#   真实漫画站 31 张 + 真引擎，19 条断言，约 10 分钟；产物落该仓 `.temp-translate-test/`（已 gitignore）。
+#   脚本自己拉起并收尾 box-service / 引擎 / ③ / `:8001` 执行器。
 node service/scripts/llm-real-timing.mjs  # 真 ③（llama-server）冷启动与内存实测（**真权重，分钟级，不进常规门**）
 npm run check:music[:refute]  # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 215 条 / 反证 180 条
 npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ X-C3「准备中」135 条 / 反证 63 条

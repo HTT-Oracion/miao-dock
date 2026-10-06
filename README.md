@@ -86,6 +86,21 @@ npm run check:settings        # 设置页「播放·媒体」+「翻译服务」
 npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条（反证：check:units:refute）
 ```
 
+**S7 真机端到端 E1–E11**（逐项取证总表：`docs/engine-e2e-acceptance-report.md`）—— 这几条**不进常规门**，按需手动跑：
+
+```bash
+npm run check:e3:real            # E3  真引擎全链路 31 张              （真权重，分钟级）
+npm run check:e4[:refute]        # E4  档位：引擎真在用的那一档        6 条 / 反证 4 条
+npm run check:e7:real[:refute]   # E7  3.6 GB 真权重 sha256 + 篡改必检出 6 条 / 反证 3 条
+npm run check:e8[:refute]        # E8  加速后端 3 轮真服务             6 条 / 反证 4 条
+npm run check:e10[:refute]       # E10 安全：回环 / 非图片字节 / 403    7 条 / 反证 4 条
+npm run selftest:app:e11:real    # E11 三进程树回收 + E1 生效参数快照 （真进程，分钟级）
+```
+
+> **E9（与插件联调）不在本仓**：在 `miao-trans` 仓跑 `node e2e/e9-real-engine.mjs`（先构建扩展）——
+> 真实漫画站 31 张 + 真引擎，19 条断言，约 10 分钟；产物落该仓 `.temp-translate-test/`（已 gitignore）。
+> 脚本自己拉起并收尾 box-service / 引擎 / ③ / `:8001` 执行器（**孙进程**，漏杀会让下一轮全 `engine_engine_error`）。
+
 各组判据与「为什么这么测」见 `docs/dev-plan.md` §4；一路踩过的环境陷阱见 `docs/spec-notes.md`。
 
 > **在代理（沙箱）里跑 e2e 时，请把临时目录挪到系统临时区**：
