@@ -16,8 +16,8 @@
  *   R  真机自检（**非契约**：只把本机实际探测结果打印出来，供交叉核对）
  *
  * 用法：
- *   node service/scripts/engine-profile-check.mjs            正向跑
- *   node service/scripts/engine-profile-check.mjs --refute   反证轮（破坏源文件 → 断言必须变红 → 按字节恢复）
+ *   node e2e/service/engine-profile-check.mjs            正向跑
+ *   node e2e/service/engine-profile-check.mjs --refute   反证轮（破坏源文件 → 断言必须变红 → 按字节恢复）
  *
  * 约束：纯 Node、零依赖；不写用户目录；反证轮结束**必须**按字节还原。
  */
@@ -30,11 +30,12 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
-const SERVICE_SRC = path.resolve(import.meta.dirname, '..', 'src');
+const SERVICE_SRC = path.join(ROOT, 'service', 'src');
 const PROFILE_FILE = path.join(SERVICE_SRC, 'engine-profile.mjs');
 const SUPERVISOR_FILE = path.join(SERVICE_SRC, 'llm-supervisor.mjs');
 const DOWNGRADE_FILE = path.join(SERVICE_SRC, 'tier-downgrade.mjs');
 const IDLE_FILE = path.join(SERVICE_SRC, 'idle-policy.mjs');
+const STORE_FILE = path.join(SERVICE_SRC, 'store.mjs');
 
 const REFUTE = process.argv.includes('--refute');
 
@@ -443,6 +444,36 @@ async function runIdleUnit() {
   check('I8 §9.2 在**真实接线**上的执行点：有任务排队时看护不动作（空闲一个小时也不动）',
     busy.unload === false && busy.reason === R.busyQueued && stopped2.length === 0,
     `${busy.reason} stops=${stopped2.length}`);
+
+  // ---- I10 · 时间戳精度：判据两侧必须同精度 -------------------------------
+  //
+  // 🔴 这条是**从一个稳定的偶发红回填的**（`check:e5e6` 第 2~5 轮稳定 11/5、E6 整组红，
+  //    而 E5 全绿、第二个服务实例的 E6.7/E6.8 也绿）。现场取值：
+  //      下界 `runtimeStartedAtMs = 1791304803088`（毫秒）
+  //      任务 `createdAt` 截断成 `...803000`（秒）⇒ `803000 < 803088` ⇒ `la=null`
+  //      该轮 82 次巡检里 81 次 `never_ran` ⇒ 空闲卸载整轮不执行
+  //    根因是**精度错配**（`nowIso()` 截毫秒 vs `Date.now()` 不截），不是阈值/队列判定。
+  //
+  // ⚠️ 窗口是**强制构造**的，不靠碰运气：把下界钉在"本秒内偏后"的位置，于是"截到秒"的
+  //    时间戳必然落在下界之前 ≥ 600ms ⇒ 坏实现必红、好实现必绿，与机器快慢无关。
+  //    自旋是**按条件等**（等时钟走到该位置），不是 sleep 一个定值。
+  const { Store } = await import(pathToFileURL(STORE_FILE).href);
+  const precStore = new Store(path.join(TMP, 'idle-precision'));
+  while (Date.now() % 1000 < 600) { /* 等时钟进入本秒的后 400ms */ }
+  const lowerBound = Date.now();
+  precStore.runtimeStartedAtMs = lowerBound;
+  const freshTask = precStore._newTask({ comicName: 'precision', dirName: 'precision', batches: [] });
+  // 挂进 `tasks` 等价于 `createTask()` 的那一步，但避开它的落盘与起队列循环（本断言只问精度）
+  precStore.tasks.set(freshTask.taskId, freshTask);
+
+  check('I10 任务时间戳必须与 `runtimeStartedAtMs` **同精度**（两侧都带毫秒）：'
+    + '下界是毫秒、任务却被截到秒 ⇒ 「与 Store 构造同一秒内创建的任务」会被判成**上一轮的历史**而过滤掉 ⇒ '
+    + '本次运行永远 `neverRan` ⇒ 空闲卸载整轮不生效（③ LLM 常驻、不释放）。'
+    + '下界已强制钉在本秒内偏后位置，修好后这条任务仍须算作**本次运行的活动**',
+    /\.\d{3}Z$/.test(freshTask.createdAt)
+      && Date.parse(freshTask.createdAt) >= lowerBound
+      && lastActivityAt(precStore, lowerBound) === Date.parse(freshTask.createdAt),
+    `createdAt=${freshTask.createdAt} 下界=${lowerBound} la=${lastActivityAt(precStore, lowerBound)}`);
 }
 
 // ================================================================ 正向断言
@@ -674,9 +705,17 @@ const MUTATIONS = [
     replace: '  if (neverUnload) return { unload: false, reason: UNLOAD_REASONS.never, idleForMs };',
     expect: ['I9'],
   },
+  {
+    name: 'N · 任务时间戳退回**秒精度**（`nowIsoMs` → `nowIso`）'
+      + '⇒ 「与 Store 构造同一秒内创建的任务算本次运行的活动」必须变红（精度错配 = 空闲卸载整轮失效）',
+    file: STORE_FILE,
+    find: '      createdAt: nowIsoMs(),',
+    replace: '      createdAt: nowIso(),',
+    expect: ['I10'],
+  },
 ];
 
-const EXPECTED_MUTATIONS = 13; // 分母写死
+const EXPECTED_MUTATIONS = 14; // 分母写死
 
 function sha(p) { return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex'); }
 

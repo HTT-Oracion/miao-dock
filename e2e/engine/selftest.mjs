@@ -1,6 +1,6 @@
 // mangatranslator-mock 自测 —— 覆盖 dev-plan.md §3 M2 的出口条件
 //
-// 运行：node engine/scripts/selftest.mjs
+// 运行：node e2e/engine/selftest.mjs
 // 覆盖：① 渲染确定性与尺寸一致 ② 顶部色带 == (seq*47)%360（可像素级校验）
 //       ③ /ready 就绪延迟 ④ /translate 正常与失败注入 ⑤ 非图片输入拒绝 ⑥ 端口自动探测
 import { spawn } from 'node:child_process';
@@ -10,10 +10,10 @@ import net from 'node:net';
 import zlib from 'node:zlib';
 import path from 'node:path';
 
-import { encodePng, hslToRgb, hueForSeq } from '../src/png.mjs';
-import { renderTranslatedPage } from '../src/render.mjs';
+import { encodePng, hslToRgb, hueForSeq } from '../../engine/src/png.mjs';
+import { renderTranslatedPage } from '../../engine/src/render.mjs';
 
-const ENTRY = path.resolve(import.meta.dirname, '..', 'src', 'server.mjs');
+const ENTRY = path.resolve(import.meta.dirname, '..', '..', 'engine', 'src', 'server.mjs');
 
 let passed = 0;
 let failed = 0;

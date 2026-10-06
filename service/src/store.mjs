@@ -60,6 +60,25 @@ function ulid() {
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 
+/**
+ * 任务时间戳专用的 ISO（**保留毫秒**）。
+ *
+ * 🔴 为什么不复用上面那个 `nowIso()`：它截掉毫秒（给人看的字段够用），而
+ *   `createdAt` / `finishedAt` 会被 `idle-policy.lastActivityAt()` 拿去和
+ *   `store.runtimeStartedAtMs`（`Date.now()`，**毫秒**）比大小。两侧精度差最多 1 秒 ⇒
+ *   **与 Store 构造同一秒内创建的任务**，其 `Date.parse(createdAt)` 会落在下界**之前**，
+ *   于是被判成"上一轮的历史"过滤掉 ⇒ 本次运行永远落到 `neverRan`
+ *   ⇒ **这一轮的空闲卸载完全不生效**（③ LLM 常驻、不释放）。
+ *   实测（`check:e5e6` 第 2~5 轮稳定 11/5，E6 整组红）：下界 `1791304803088`，
+ *   任务 `createdAt` 截断成 `...803000` ⇒ `803000 < 803088` ⇒ `la=null`，
+ *   该轮 82 次巡检里 81 次是 `never_ran`。
+ *
+ * 🔴 为什么修**精度**而不是给比较**加松弛**（把下界也截到秒）：加松弛会把"上一轮刚结束"
+ *   的任务拉进同一秒、算成本次运行的**热态** —— 那正是 `runtimeStartedAtMs` 要挡的事
+ *   （E6.7「重启后 ③ 刚被拉起就被卸掉」）。flaky 只会从 E6.1 搬到 E6.7，白改。
+ */
+const nowIsoMs = () => new Date().toISOString();
+
 export class Store {
   /** @param {string} rootDir 落盘根目录（已校验） */
   constructor(rootDir) {
@@ -82,8 +101,11 @@ export class Store {
      * **本进程**的启动时刻（ms，毫秒精度）。
      *
      * 🔴 为什么必须单独存一个毫秒精度的字段，而不是复用上面的 `startedAt`：
-     *   1. `startedAt` 是给人看的 ISO（`nowIso()` **截掉了毫秒**），拿它与任务的
-     *      `Date.parse(createdAt)` 比大小会引入最多 1 s 的偏斜；
+     *   1. 参与比较的**两侧必须同精度**。`startedAt` 是给人看的 ISO（`nowIso()` **截掉了毫秒**），
+     *      拿它当比大小的下界就引入最多 1 s 的偏斜；而**任务侧**的 `createdAt` / `finishedAt`
+     *      一度也走 `nowIso()`（同样秒精度）—— 那边才是真正踩过的坑：与 Store 构造**同一秒内**
+     *      创建的任务会被判成"上一轮的历史"⇒ 本轮永远 `neverRan` ⇒ 空闲卸载整轮失效。
+     *      故本字段是毫秒精度，**任务侧改用 `nowIsoMs()`**，两侧对齐（见 `nowIsoMs()` 注释）。
      *   2. 更要紧的是它承载一条**语义边界**：`init()` 会把**上一轮**的终态任务从盘上
      *      恢复进 `this.tasks`（任务清单要显示历史），而 `idle-policy.mjs` 的
      *      `lastActivityAt()` 若把这些历史记录也算作"任务活动"，就会得出
@@ -315,7 +337,7 @@ export class Store {
       // 来源归因：由 server 层按契约 §2 的可选头 `X-Box-Client` 判定（见 spec-notes G-04）
       source: source || 'unknown',
       idempotencyKey: idempotencyKey || null,
-      createdAt: nowIso(),
+      createdAt: nowIsoMs(),
       finishedAt: null,
       batches,
       events: [],
@@ -1087,7 +1109,7 @@ export class Store {
 
   _finalize(task, status) {
     task.status = status;
-    task.finishedAt = nowIso();
+    task.finishedAt = nowIsoMs();
     task.queuePosition = 0;
     const idx = this.queue.indexOf(task);
     if (idx >= 0) this.queue.splice(idx, 1);

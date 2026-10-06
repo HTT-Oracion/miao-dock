@@ -7,8 +7,8 @@
  * 而窗口位置这件事，应用自己最清楚 —— 所以由应用算好区域后调 `screencapture -R`，
  * 只截自己那一块。
  *
- * 截图用的落盘目录是端到端那一轮的真实产物（默认 `.tmp-e2e/root`，可用 `MIAO_E2E_TMP` 覆盖，
- * 与 `scripts/e2e.mjs` 共用同一变量），所以漫画库里看到的是真数据、对照页里是真题，不是摆拍。
+ * 截图用的落盘目录是端到端那一轮的真实产物（默认 `.tmp/e2e/root`，可用 `MIAO_E2E_TMP` 覆盖，
+ * 与 `e2e/e2e.mjs` 共用同一变量），所以漫画库里看到的是真数据、对照页里是真题，不是摆拍。
  * **先跑 `npm run e2e` 再跑这个。**
  *
  * 两道闸，都为了同一件事：**别把假图当证据收进仓**。
@@ -16,7 +16,7 @@
  *   ② 各屏先落暂存区，**互不相同**且齐全才整批搬进 `docs/refs/e2e/`。
  * 任一不过就整批丢弃，仓里保持上一轮已验证的版本，不会被坏运行覆盖。
  *
- * 用法：node scripts/capture.mjs
+ * 用法：node e2e/capture.mjs
  */
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';

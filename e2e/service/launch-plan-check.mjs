@@ -10,7 +10,7 @@
  * 只断言**结构与同源关系**，不断言"文件在不在"（那属于环境就绪，归 S0/E1 管，
  * 且 `runtimes/` 在仓库外 —— 在这里断言存在会把"环境没装"伪装成"代码有 bug"）。
  *
- * 用法：node service/scripts/launch-plan-check.mjs
+ * 用法：node e2e/service/launch-plan-check.mjs
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';

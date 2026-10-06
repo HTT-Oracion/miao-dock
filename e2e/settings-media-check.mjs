@@ -37,8 +37,8 @@
  *     正向写清单测不到"组件用了新类但忘了写 CSS"，而那正是新增一整块 UI 时的常见空缺。
  *
  * 用法：
- *   node scripts/settings-media-check.mjs            正向跑（期望全绿）
- *   node scripts/settings-media-check.mjs --refute   反证轮（破坏源文件 → 断言必须变红 → 按字节还原）
+ *   node e2e/settings-media-check.mjs            正向跑（期望全绿）
+ *   node e2e/settings-media-check.mjs --refute   反证轮（破坏源文件 → 断言必须变红 → 按字节还原）
  *
  * 注意：本脚本禁止出现某个历史品牌标识的字面量（项目已清除该品牌词），需要提及时写「参考实现」。
  */

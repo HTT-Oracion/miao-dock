@@ -19,7 +19,7 @@
 | # | 验收项（《04》§14.2 原文） | 状态 | 取证命令 | 断言 / 反证 |
 |---|---|---|---|---|
 | **E1** | 引擎真实启动：锁定版本引擎可被拉起；`/health`/`/docs` 就绪；日志打印**生效参数快照** | ✅ | `npm run selftest:app:e11:real` | 快照 **6 行**（≥4 判据）· 外部读回 |
-| **E2** | 真实翻译目视：真日文漫画图 → `001_translated.png`，**肉眼可见中文译文** | ✅ | `node engine/scripts/s1-real-engine-check.mjs` | 自动化半边：`ok=true` / 1 371 745 B / sha256 / 21 个真文本框 |
+| **E2** | 真实翻译目视：真日文漫画图 → `001_translated.png`，**肉眼可见中文译文** | ✅ | `node e2e/engine/s1-real-engine-check.mjs` | 自动化半边：`ok=true` / 1 371 745 B / sha256 / 21 个真文本框 |
 | **E3** | 全链路：31 张 → 一个 Task 两个 Batch → 逐张翻译 → 落盘 → SSE 与落盘一致 | ✅ | `npm run check:e3:real` | **8/0**（真引擎，分钟级） |
 | **E4** | 档位切换：切 Tiny↔Small 后重启，`sidecar.tier` 与实际加载权重一致 | ✅⚠️ | `npm run check:e4[:refute]` | **6/0** · 反证 **4/4** |
 | **E5** | 降档重试：注入 OOM → 降一档重试一次 → 任务成功且日志留痕 | ✅ | `npm run check:e5e6[:refute]` | E5 共 7 条（含在 16/0 内）· 反证 **3/3** |
@@ -58,7 +58,7 @@ npm run check:e8:refute
 npm run check:e10                # E10 安全                    （秒级）
 npm run check:e10:refute
 npm run selftest:app:e11:real    # E1 + E11                    （分钟级）
-node engine/scripts/s1-real-engine-check.mjs   # E2 真译文 + 证据图
+node e2e/engine/s1-real-engine-check.mjs   # E2 真译文 + 证据图
 
 # 在 miao-trans 仓根目录（E9）
 npm run build && node e2e/e9-real-engine.mjs
@@ -128,7 +128,7 @@ cd app/src-tauri && cargo check
 **判据**：一张真日文漫画图 → 落盘 `001_translated.png`；**肉眼可见中文译文**（不再是伪随机版式图）；
 **反证**：`translator=none` 时译文 = 原文。
 
-**做法**：`engine/scripts/s1-real-engine-check.mjs` 拉起真 ② + 真 ③，送一张真日文漫画图，
+**做法**：`e2e/engine/s1-real-engine-check.mjs` 拉起真 ② + 真 ③，送一张真日文漫画图，
 把产物与启动配方一起落到 `docs/refs/engine/`。
 
 **实测**：
@@ -153,7 +153,7 @@ cd app/src-tauri && cargo check
 
 **判据**：提交 31 张 → 一个 Task 两个 Batch → 逐张翻译 → 落盘 → SSE 进度与落盘一致。
 
-**做法**：`engine/scripts/e3-real-full-chain-check.mjs`（`npm run check:e3:real`）—— **真 ② + 真 ③**，
+**做法**：`e2e/engine/e3-real-full-chain-check.mjs`（`npm run check:e3:real`）—— **真 ② + 真 ③**，
 提交 20 张建任务、再追加 11 张，全程用**适配层自己拼的启动参数**（不另写一份）。
 
 **实测 8/8**：
@@ -483,7 +483,7 @@ chapter-112 的**全 18 页** + chapter-113 的**前 13 页** = 31 张，**跨�
 **修**：还原一律进 `finally`；异常本身也算"本轮判红"（服务都起不来了，断言自无变绿可能），
 但**在输出里明说原因是异常**，不与"断言精准命中"混为一谈。
 
-> 🔴 **同一个错法在另一个脚本里还有一份**（S7 全量门照出）：`scripts/units-structure-check.mjs` 的反证轮
+> 🔴 **同一个错法在另一个脚本里还有一份**（S7 全量门照出）：`e2e/units-structure-check.mjs` 的反证轮
 > 还原**已经写在 `finally` 里**，但 `finally` 里**抛异常**同样会掀翻整轮（宿主的删除守卫 / 权限 / 文件被占用都会）。
 > 后果比"那条没跑"严重得多：(a) 后面所有改错**一条都不跑**；(b) 源码树留在**被改坏**状态
 > ⇒ **下一次正向轮**莫名其妙少一条（实测 `check:units` 37 → 36），而 `check:docs` 只会报
@@ -522,7 +522,7 @@ E11 用仓库内**固定**的 `.tmp-selftest`（注释写着"每次自检从空�
 - 逃生开关 `MIAO_IDLE_SCOPE=all` 恢复旧口径（`since = null`），供反证；
 - 假 store（无 `runtimeStartedAtMs`）⇒ 退回旧行为 ⇒ 既有纯函数断言**全部不受影响**。
 
-**修**（测试侧，`scripts/lifespan-selftest.mjs`）：`TMP` 从仓库内固定路径改成 `mkdtempSync`，
+**修**（测试侧，`e2e/lifespan-selftest.mjs`）：`TMP` 从仓库内固定路径改成 `mkdtempSync`，
 让"每次从空目录开始"**名副其实**。
 ⚠️ 但这条**只是测试卫生**，不是修复 —— 若只改它而不改产品，E11 会变绿而**真实用户重启 Box 后照样踩**。
 所以两条都做了，且第 3 件（反证）打在产品侧的行为上。

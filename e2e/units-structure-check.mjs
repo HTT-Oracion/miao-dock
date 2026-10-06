@@ -22,8 +22,8 @@
  *   它测的不是它声称的东西（D-31：假阳性比没测试更危险）。
  *
  * 用法：
- *   node scripts/units-structure-check.mjs            正向跑（期望 LAYOUT/PURITY/NAMING/CALLERS/KEEP/HOOKS/ALIAS/STATE 全绿）
- *   node scripts/units-structure-check.mjs --refute   反证轮（破坏源文件 → 断言必须变红 → 按字节恢复）
+ *   node e2e/units-structure-check.mjs            正向跑（期望 LAYOUT/PURITY/NAMING/CALLERS/KEEP/HOOKS/ALIAS/STATE 全绿）
+ *   node e2e/units-structure-check.mjs --refute   反证轮（破坏源文件 → 断言必须变红 → 按字节恢复）
  *
  * 约束：纯 Node、零依赖；只读 `app/src/**`（--refute 轮临时破坏并保证按字节还原）。
  * 本脚本源码里刻意**不出现**任何被禁的历史品牌标识（需要提及时一律写「参考实现」）。

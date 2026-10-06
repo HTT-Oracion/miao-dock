@@ -25,8 +25,8 @@
  *     且 `warmed=false` —— 这正是《04》§9.4「卸载 ≠ 未就绪」在字段层面的可见性。
  *
  * 用法：
- *   node service/scripts/contract-delta-check.mjs            正向
- *   node service/scripts/contract-delta-check.mjs --refute   反证轮（**逃生开关**→ 指定断言必须变红）
+ *   node e2e/service/contract-delta-check.mjs            正向
+ *   node e2e/service/contract-delta-check.mjs --refute   反证轮（**逃生开关**→ 指定断言必须变红）
  *
  * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（box-service 的段）。
  */
@@ -41,7 +41,7 @@ import path from 'node:path';
 import { encodePng } from '../../engine/src/png.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
-const SELF = path.join(ROOT, 'service', 'scripts', 'contract-delta-check.mjs');
+const SELF = path.join(ROOT, 'e2e', 'service', 'contract-delta-check.mjs');
 const SERVICE_ENTRY = path.join(ROOT, 'service', 'src', 'server.mjs');
 const MOCK_ENGINE = path.join(ROOT, 'engine', 'src', 'server.mjs');
 const TOKEN = 'c'.repeat(64);

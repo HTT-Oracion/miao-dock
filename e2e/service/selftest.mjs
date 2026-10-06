@@ -1,6 +1,6 @@
 // box-service 契约自测 —— 覆盖 dev-plan.md §4 验收表 A1–A14
 //
-// 运行：node service/scripts/selftest.mjs
+// 运行：node e2e/service/selftest.mjs
 // 原则：每个断言都对应契约里的一条明文规则，断言失败即契约不符合。
 // 全部 I/O 落在临时目录（MIAO_ROOT / MIAO_STATE_DIR），不触碰用户真实图片目录。
 import assert from 'node:assert/strict';
@@ -17,7 +17,7 @@ import { encodePng } from '../../engine/src/png.mjs';
 // 🔴 本套用例起的是**模拟引擎**（`../engine/src/server.mjs`）——它实现的是 ver1.0 的自定义协议
 // （`/ready` + 字节式 `/translate`），**不是真实引擎协议**（`/translate/image` + JSON/data URI）。
 // 所以这里**强制**声明 `mock`：起的是替身，就老实说。生产默认值仍是 `real`（见 config.mjs）。
-// 真实协议路径的断言在 `service/scripts/engine-client-check.mjs`（真协议假引擎 + S1 真引擎实测）。
+// 真实协议路径的断言在 `e2e/service/engine-client-check.mjs`（真协议假引擎 + S1 真引擎实测）。
 process.env.MIAO_ENGINE_PROTOCOL = 'mock';
 // 本套用例只关心**任务 / 队列 / 落盘 / 安全**契约，不验 ③ 的生命周期（那有自己的脚本：
 // `engine-profile-check.mjs`）。而本脚本会在 A1 里**反复起停** box-service 实例，
@@ -25,11 +25,11 @@ process.env.MIAO_ENGINE_PROTOCOL = 'mock';
 // ⇒ 显式退出预拉起。**这是给夹具的开关，不是给产品的**（产品路径永远预拉起）。
 process.env.MIAO_NO_LLM_AUTOSTART = '1';
 
-const ROOT = path.resolve(import.meta.dirname, '..'); // .../service
+const ROOT = path.resolve(import.meta.dirname, '..', '..', 'service'); // .../service
 const SERVICE_ENTRY = path.join(ROOT, 'src', 'server.mjs');
 const ENGINE_ENTRY = path.resolve(ROOT, '..', 'engine', 'src', 'server.mjs');
 /** 「假父进程」外壳：A18 要强杀一个父进程，不能拿自测自己冒险 */
-const HARNESS = path.join(ROOT, 'scripts', '_parent-harness.mjs');
+const HARNESS = path.join(import.meta.dirname, '_parent-harness.mjs');
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-service-selftest-'));
 

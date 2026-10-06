@@ -1,4 +1,4 @@
-// 文档 ↔ 实现 一致性自检（零依赖，用法：node scripts/docs-consistency-check.mjs）
+// 文档 ↔ 实现 一致性自检（零依赖，用法：node e2e/docs-consistency-check.mjs）
 //
 // ## 为什么需要它（真实事故驱动）
 // 2026-10-04 发生过两件同源的事：
@@ -33,9 +33,9 @@ const add = (group, name, ok, detail) => results.push({ group, name, ok, detail 
 // 辅助函数里批量注册），数出来会与实际条数不符（实测 61 vs 102）。
 // **以脚本自己打印的汇总为准**：那才是用户跑出来的数。
 const SUITES = [
-  { cmd: 'check:music', script: 'scripts/music-platform-check.mjs' },
-  { cmd: 'check:units', script: 'scripts/units-structure-check.mjs' },
-  { cmd: 'check:settings', script: 'scripts/settings-media-check.mjs' },
+  { cmd: 'check:music', script: 'e2e/music-platform-check.mjs' },
+  { cmd: 'check:units', script: 'e2e/units-structure-check.mjs' },
+  { cmd: 'check:settings', script: 'e2e/settings-media-check.mjs' },
 ];
 // 台账（spec-notes）**不参与**条数比对：它记录的是**历史**（"当时 86 条（反证 16）"
 // 恰恰是有价值的痕迹），拿它跟现状比会逼得人去改历史。
@@ -141,7 +141,9 @@ const banned = ['nex', 'box'].join('');
   const targets = [
     'app/src',
     'app/src-tauri/src',
-    'scripts',
+    'e2e',
+    'service/src',
+    'engine/src',
     'AGENTS.md',
     'README.md',
     'docs',

@@ -37,8 +37,8 @@
  *     验"超时必须带走已收到的帧"。
  *
  * 用法：
- *   node service/scripts/stall-guard-check.mjs            正向
- *   node service/scripts/stall-guard-check.mjs --refute   反证轮（去掉机制 → 断言必须变红）
+ *   node e2e/service/stall-guard-check.mjs            正向
+ *   node e2e/service/stall-guard-check.mjs --refute   反证轮（去掉机制 → 断言必须变红）
  *
  * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（那是 box-service 的段）。
  */
@@ -280,7 +280,7 @@ async function serviceRound({ stallSeq = null }) {
  * 环境变量只能在 import 之前生效。
  */
 function evidenceProbe(port) {
-  const mod = new URL('../src/engine-client.mjs', import.meta.url).href;
+  const mod = new URL('../../service/src/engine-client.mjs', import.meta.url).href;
   const js = `
     import http from 'node:http';
     import { translateImage, recentStageLog } from ${JSON.stringify(mod)};

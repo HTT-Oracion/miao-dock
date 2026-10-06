@@ -159,7 +159,7 @@ box-service ──POST /translate(真实形状以 /docs 快照为准)──▶ �
 
 **素材**：`test-manga/test_0.webp` —— 真实日文漫画单页，**1125×1600**，291,828 字节（`file` 判定 RIFF/WebP/VP8 lossy；页面本身含多处日文对白气泡，可肉眼确认是真实漫画页而非合成图）。
 
-**做法**（探针脚本 `tmp-engine-test/probe.mjs`，`tmp-*/` 已被 `.gitignore` 覆盖）：  
+**做法**（探针脚本 `.tmp/engine-test/probe.mjs`，`.tmp/` 已被 `.gitignore` 覆盖）：  
 起**真实的** `engine` + `service` 两个进程（与 Rust `ServiceManager` 同样的方式：先引擎后服务），`MIAO_ROOT` / `MIAO_STATE_DIR` 指向仓库内临时目录（**不写用户真实图片目录**），端口探测 → 读令牌 → 提交真实 webp → 轮询至终态 → 逐字节校验落盘产物。
 
 **结果：14/14 全绿**（`合计 14/14`，脚本退出码 0）
@@ -204,7 +204,7 @@ box-service ──POST /translate(真实形状以 /docs 快照为准)──▶ �
 ### 4.5 S0 开工首轮实测结果（2026-10-05）
 
 **动作**：装 Python（项目内）→ 建 venv → 装 torch → 跑 MPS 能力探针。
-**探针**：`tmp-engine-test/mps-probe.py`（可复现；`tmp-*/` 已 gitignore）  
+**探针**：`.tmp/engine-test/mps-probe.py`（可复现；`.tmp/` 已 gitignore）  
 **版本锁**：`engine/VERSIONS.lock`（仓库内、可版本控制）
 
 | 项 | 实测结果 |
@@ -228,7 +228,7 @@ box-service ──POST /translate(真实形状以 /docs 快照为准)──▶ �
    改用项目内 python-build-standalone ⇒ 顺带满足"运行时独立于 `app/`"与后续打包。
 
 **另一处"写死的模拟引擎口径"（D-0.8 的第二处）**：
-`scripts/e2e.mjs` 除了 D4a 写死 30s，`waitTask` 还写死了 **60s 单任务超时**。
+`e2e/e2e.mjs` 除了 D4a 写死 30s，`waitTask` 还写死了 **60s 单任务超时**。
 慢引擎下它会先抛"未在 60000ms 内到终态"，**看起来像流程坏了，其实只是引擎慢**。
 两处已一并改为**随单张耗时基准缩放**（基准可经 `MIAO_E2E_ITEM_MS` 覆盖）。
 验收：正向 **23/23**；反证（引擎 900ms/张、基准不动）**22/23 —— 只 D4a 一条红**，明细自解释。
@@ -300,7 +300,7 @@ box-service ──POST /translate(真实形状以 /docs 快照为准)──▶ �
 | R3 | **磁盘余量（实测 89 GB 可用）** | **低** | 数据卷 `df -h /System/Volumes/Data` 实测：460Gi 总 / 354Gi 已用 / 89Gi 可用。**⚠️ 初版误读 `df -h /` 得"33 GB"** —— `/` 是 APFS 密封系统卷，读数受容器共享空间误导，**不能用它判余量** | 仍做"安装前提示预留"；模型目录与代码分离（换版本不重下） |
 | R4 | 引擎 API 跨版本漂移 | 中 | 官方 README 自身对端口有 8000/8001/5003 四种说法（《04》§3.1） | 锁 tag + `openapi.snapshot.json` + 单点适配层 + 升级走评审 |
 | R5 | Windows 孤儿 `llama-server.exe` | 中 | `Child::kill()` 在 Windows 只杀直接子进程 | Job Object（§2.2-3）；**本机无法验证** |
-| R6 | 现有验收会被"真实引擎"打破 | ~~确定发生~~ → **已处置**（2026-10-05） | `scripts/e2e.mjs:492` 断言「20 张在 30 秒内完成」（`elapsed < 30`）；真实单张是**秒级**，该断言必红 | ✅ 已改为**随单张耗时基准缩放**（`MIAO_E2E_ITEM_MS` 可覆盖）；`waitTask` 写死的 60s 一并改（见 §4.5 末）。反证：慢引擎下 22/23，只 D4a 红 |
+| R6 | 现有验收会被"真实引擎"打破 | ~~确定发生~~ → **已处置**（2026-10-05） | `e2e/e2e.mjs:492` 断言「20 张在 30 秒内完成」（`elapsed < 30`）；真实单张是**秒级**，该断言必红 | ✅ 已改为**随单张耗时基准缩放**（`MIAO_E2E_ITEM_MS` 可覆盖）；`waitTask` 写死的 60s 一并改（见 §4.5 末）。反证：慢引擎下 22/23，只 D4a 红 |
 | R7 | 端口探测从"读就绪行"改"主动轮询"引入新竞态 | 中 | 现有 `wait_ready` 依赖 stdout `{...}` 行（`service.rs:324-341`），Python/llama-server 不打这种行 | 三重判定（进程存活 + 端口监听 + HTTP 应答），各自独立超时 |
 | R8 | 「先 box 后插件」被误解为"插件不用动" | 低 | 插件确有 4 处必改（§3.5） | 把 P-1…P-4 写进计划尾部，别漏 |
 | R9 | **模型权重源不可达** | 中 | 实测：`huggingface.co` **不通**（CONNECT tunnel failed / IPv4 超时）；而 `hf-mirror.com` 200 ✅、`modelscope.cn` 302 ✅、`pypi` 200 ✅ | 下载器**必须支持自定义 endpoint**（`HF_ENDPOINT` / ModelScope），并在失败时给出可操作的提示而非静默卡住 |
@@ -322,7 +322,7 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
 | 耗时 | **1.6 分钟**（CPU，含模型加载；20 页量级可据此往回推，但仍需系统实测） |
 | 完整流水线 | 检测(DefaultDetector 1536×2048) → OCR(Model48pxOCR，**21 个文本框**) → 翻译(Sakura 0.9→简体) → 掩码细化 → 擦除(LamaLarge 1128×1600) → 上字 → 落盘 |
 | 像素取证 | 与原图逐像素：**4.94% 像素有实质差异**（最大通道差 255）⇒ 真改图 |
-| 一键脚本 | `tmp-engine-test/s0-fetch-and-run.sh`（幂等 · 续传 · sha256 校验） |
+| 一键脚本 | `.tmp/engine-test/s0-fetch-and-run.sh`（幂等 · 续传 · sha256 校验） |
 | OpenAPI 快照 | `runtimes/manga-translator/openapi.engine.json`（S1 的依据；含 `/translate/image` `/translate/with-form/image` `/queue-size` 等） |
 
 **两个必须带到 S1 的观察：**
@@ -334,7 +334,7 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
 ### 4.8 一条被反证掉的错误归因（方法论，值得单列）
 
 我一度判定"本机 Python 文件中介让 `import torch`/`pip check` 慢到分钟级"。
-**四臂对照**（`tmp-engine-test/broker-ab.sh`，只改一个变量）把它推翻了：broker 开/关四臂**全部 1–2 秒**。
+**四臂对照**（`.tmp/engine-test/broker-ab.sh`，只改一个变量）把它推翻了：broker 开/关四臂**全部 1–2 秒**。
 真因是**当时有并发重活压满机器**（pip 装机 + 一条 850s 的挂起连接同时在场）。
 
 > 记它是因为**症状与"听起来很对的机制解释"同时出现**，是最容易写成结论的一对。
@@ -391,7 +391,7 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
 
 **验收（原文不变）**：`translateImage()` 对真实引擎返回真译文；`probeEngine()` 在引擎未启动/启动中/就绪三态下分别返回 `stopped` / `starting` / `running`（**三条都要有反证**）。
 **实测结果**：`npm run check:engine-client` **32/0** · `--refute` **5/5 变红** ·
-真引擎 `engine/scripts/s1-real-engine-check.mjs` 出真译文（12.4 s / 11 区域 / 三态时间线 `stopped(1 ms)→starting(4.5 s)→running(7.9 s)`）。
+真引擎 `e2e/engine/s1-real-engine-check.mjs` 出真译文（12.4 s / 11 区域 / 三态时间线 `stopped(1 ms)→starting(4.5 s)→running(7.9 s)`）。
 
 ### S2 · 三进程生命周期 —— ✅ **已完成（macOS 侧；见 D-64…D-70）**
 
@@ -435,7 +435,7 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
 **验收**：E7（下载中断后续传成功；篡改一字节 → SHA256 失败 → 自动重下）。
 
 **落地**：
-- 清单 `engine/models.manifest.json`（**版本控制**，取代此前散在 `tmp-engine-test/`（被 `.gitignore` 忽略）的取物脚本）：
+- 清单 `engine/models.manifest.json`（**版本控制**，取代此前散在 `.tmp/engine-test/`（被 `.gitignore` 忽略）的取物脚本）：
   6 条资产 = 4 视觉模型 + Sakura 权重 + llama.cpp 归档，逐条带 `url` / `sources` / `sha256` / `sizeBytes`。
 - 内核 `engine/model-store.mjs`（`ensureModels` / `verifyModels` / `linkModels`）；CLI `engine/scripts/fetch-models.mjs`。
 - 🔴 **「引擎换版本不重下模型」不是靠摆放位置就能成立的** —— 回读源码：`utils/inference.py:94`
@@ -469,7 +469,7 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
 
 **验收**：E5（注入 OOM → 降一档重试一次成功 + 日志留痕）、E6（空闲阈值 → LLM 退出且端口释放；再提交 → 自动拉起成功）。
 ✅ `npm run check:e5e6` **13/0**；逃生开关反证 **2/2**（关掉降档 / 关掉空闲卸载，对应断言必红）。
-判定层 `npm run check:profile` **42/0** + 反证 **13/13**。真机数字见 `node service/scripts/llm-real-timing.mjs`。
+判定层 `npm run check:profile` **43/0** + 反证 **14/14**。真机数字见 `node e2e/service/llm-real-timing.mjs`。
 
 ### S5 · 契约增量 ✅ 已完成（D-74）
 
@@ -538,7 +538,7 @@ V 组 2 条阶段日志、P3b/P3c「安装事实 ≠ 进程事实」、P4b「uvi
 ### 每个阶段收尾必做
 
 1. `npm run selftest` / `check:ia` / `check:tls` / `check:music:refute` / `check:settings:refute` / `check:units:refute` / `check:docs` 全绿；
-2. **改 `scripts/e2e.mjs:492` 的 D4a 口径**（R6，早在 S1 就要做，不要留到 S7）；
+2. **改 `e2e/e2e.mjs:492` 的 D4a 口径**（R6，早在 S1 就要做，不要留到 S7）；
 3. 条数一变同步 `AGENTS.md` / `README.md`（`check:docs` 会对账，漂移即红）；
 4. 台账回写 `docs/spec-notes.md`（D-xx 续号，当前到 D-74）；
 5. 每个"机制类"断言配反证轮，**反证变红才算数**。
@@ -553,7 +553,7 @@ V 组 2 条阶段日志、P3b/P3c「安装事实 ≠ 进程事实」、P4b「uvi
    → 这一步就能证伪 R1（最高风险），成本却是最小的。
 2. **拉 Sakura Tiny + `llama-server`，用 `test-manga/test_0.webp` 跑通一张真翻译**，测出**单张耗时 + 峰值内存 + 磁盘占用**。
    → 这三个数一出来，S2–S7 的估时才有依据，R2/R3 立刻从"担心"变成"数字"。
-3. **同步改 `scripts/e2e.mjs` 的 D4a**（把"20 张 30 秒"换成真实耗时区间）。
+3. **同步改 `e2e/e2e.mjs` 的 D4a**（把"20 张 30 秒"换成真实耗时区间）。
    → 避免换引擎那天，一条过时断言把正确改动报成失败（R6）。
 
 ---
@@ -597,9 +597,9 @@ V 组 2 条阶段日志、P3b/P3c「安装事实 ≠ 进程事实」、P4b「uvi
 ```bash
 cd /Users/doro/code/self/forFun/miao-dock
 pkill -f "engine/src/server.mjs"; pkill -f "service/src/server.mjs"
-node tmp-engine-test/probe.mjs     # 期望输出「合计 14/14」
+node .tmp/engine-test/probe.mjs     # 期望输出「合计 14/14」
 ```
 
-产物落在 `tmp-engine-test/`（`tmp-*/` 已在 `.gitignore`，不入库、不写用户真实图片目录）。
+产物落在 `.tmp/engine-test/`（`.tmp/` 已在 `.gitignore`，不入库、不写用户真实图片目录）。
 
 > **注意**：该探针验的是**服务层**。它跑绿**不代表**翻译可用 —— 落盘的译文是占位图（§4.1）。

@@ -22,8 +22,8 @@
  * 注入的是**可复现的内存不足**，被测的是 service 的降档判定与重启，链路本身没有被绕过。
  *
  * 用法：
- *   node service/scripts/e5-e6-check.mjs            正向跑
- *   node service/scripts/e5-e6-check.mjs --refute   反证轮（**逃生开关**：关掉机制 → 断言必须变红）
+ *   node e2e/service/e5-e6-check.mjs            正向跑
+ *   node e2e/service/e5-e6-check.mjs --refute   反证轮（**逃生开关**：关掉机制 → 断言必须变红）
  *
  * 约束：纯 Node、零第三方依赖；临时目录自建自清；不碰用户目录；不占 5180–5190（那是 box-service 的段）。
  */

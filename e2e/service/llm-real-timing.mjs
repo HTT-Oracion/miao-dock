@@ -13,7 +13,7 @@
  *   ② `child-watch.mjs` 包住外部二进制后，就绪探针（tcp + `GET /v1/models`）能正常通过；
  *   ③ `stop()` 之后**进程真的没了**（而不是只关了个句柄）—— 内存回落是它的外部证据。
  *
- * 用法：`node service/scripts/llm-real-timing.mjs`
+ * 用法：`node e2e/service/llm-real-timing.mjs`
  * 约束：只读本仓 `runtimes/` 下的二进制与权重；只绑 127.0.0.1；结束一定停进程。
  */
 import { execFileSync } from 'node:child_process';

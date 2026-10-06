@@ -27,7 +27,7 @@ use crate::service::ServiceManager;
 const SELFTEST_ENV: &str = "MIAO_SELFTEST";
 const CLOSE_QUITS_ENV: &str = "MIAO_CLOSE_QUITS";
 
-/// B1 后半条要用的样张：40×60 真 PNG（生成脚本 `scripts/make-probe-png.mjs`）。
+/// B1 后半条要用的样张：40×60 真 PNG（生成脚本 `e2e/make-probe-png.mjs`）。
 /// 必须是**真的** PNG —— 服务端有魔数嗅探（契约 §8.2），塞假字节只会得到 INVALID_IMAGE，
 /// 那样验出来的只是「校验还在」，不是「关窗后还能干活」。
 static PROBE_PNG: &[u8] = include_bytes!("../testdata/probe.png");

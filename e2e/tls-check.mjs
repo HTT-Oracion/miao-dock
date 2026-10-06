@@ -19,7 +19,7 @@
  *   若去掉后仍然全绿，说明它测的不是 TLS（测错了东西）。
  *
  * 用法：
- *   node scripts/tls-check.mjs            正常跑（期望全绿）
+ *   node e2e/tls-check.mjs            正常跑（期望全绿）
  *   npm run check:tls                     同上
  */
 import { execFileSync } from 'node:child_process';

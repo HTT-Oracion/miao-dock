@@ -1,7 +1,7 @@
 # 音乐模块键盘快捷键 —— 实现报告
 
 - **实现**：`app/src/hooks/useMusicHotkeys.ts`（新增） + `app/src/components/MusicKernel.tsx`（挂载调用）
-- **门禁同步**：`scripts/units-structure-check.mjs` 的 `HOOKS_MANIFEST` 补了一个文件名（原因见 §6）
+- **门禁同步**：`e2e/units-structure-check.mjs` 的 `HOOKS_MANIFEST` 补了一个文件名（原因见 §6）
 - **基线**：`8337a4b`，工作区干净，未 commit（按纪律交给负责人）
 
 ---
@@ -137,7 +137,7 @@
 
 ## 6. 门禁同步：`HOOKS_MANIFEST` 必须改（不是绕过断言）
 
-`check:units` 的 `HOOKS.layout` 是一条 **exact-list** 断言（`scripts/units-structure-check.mjs:651`），
+`check:units` 的 `HOOKS.layout` 是一条 **exact-list** 断言（`e2e/units-structure-check.mjs:651`），
 判 `src/hooks/` 下的文件**恰好**是清单里的那几个（多一个也判红）。
 新增 `useMusicHotkeys.ts` 会让它变红，因此**同步加了文件名**：
 
@@ -148,7 +148,7 @@
 
 这正是 AGENTS.md §3 那条纪律要求的（"改了断言覆盖的东西，就要同时更新断言"）——
 **留红不如同步清单**。改的是清单本身，不是判定逻辑。
-按要求**未动** `scripts/music-platform-check.mjs`（断言由另一位同事写）。
+按要求**未动** `e2e/music-platform-check.mjs`（断言由另一位同事写）。
 
 ---
 

@@ -1,11 +1,11 @@
 /**
  * M5 端到端与截图取证共用的临时路径。
  *
- * 为什么抽出来：`scripts/e2e.mjs` 跑完**故意不清理** —— 它落盘的那批漫画正是
- * `scripts/capture.mjs` 要截的取证素材（「截的是真数据、不是摆拍」）。于是清理只能发生在
+ * 为什么抽出来：`e2e/e2e.mjs` 跑完**故意不清理** —— 它落盘的那批漫画正是
+ * `e2e/capture.mjs` 要截的取证素材（「截的是真数据、不是摆拍」）。于是清理只能发生在
  * **下一次运行的开头**，那时目录里攒着上一次的全套产物（三五本漫画，几百个文件）。
  *
- * 默认位置仍是项目内的 `.tmp-e2e/`（可在 Finder 里直接翻，便于人工核对）；
+ * 默认位置仍是项目内的 `.tmp/e2e/`（可在 Finder 里直接翻，便于人工核对）；
  * 但允许用 `MIAO_E2E_TMP` 指到别处 —— CI 或不希望在工作区里反复做大目录清理的场景，
  * 指到系统临时目录即可。**两个脚本共用这一个解析**，否则 e2e 写在一处、capture 读到另一处。
  */
@@ -18,7 +18,7 @@ export const TMP_ENV = 'MIAO_E2E_TMP';
 /** 端到端那一轮的临时根目录 */
 export function e2eTmp() {
   const raw = (process.env[TMP_ENV] || '').trim();
-  return raw ? path.resolve(raw) : path.join(path.resolve(import.meta.dirname, '..'), '.tmp-e2e');
+  return raw ? path.resolve(raw) : path.join(path.resolve(import.meta.dirname, '..'), '.tmp', 'e2e');
 }
 
 /** 漫画落盘根目录（`MIAO_ROOT`）——`capture.mjs` 要把它喂给应用才能扫出真数据 */

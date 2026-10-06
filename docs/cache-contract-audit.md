@@ -315,7 +315,7 @@ default:
 | 位置 | 内容 |
 |---|---|
 | `app/src/screens/settings/catalog.ts:429` | `export const SPEC_ITEM_TOTAL = 31;`（手写自校常量；`:437-442` 与算出来的 `SECTION_ITEM_TOTAL` 不一致时 `console.error`） |
-| `scripts/settings-media-check.mjs:86` | `const SPEC_TOTAL = 31;`（注释在 `:85` 记着演进 26 → 29 → 31） |
+| `e2e/settings-media-check.mjs:86` | `const SPEC_TOTAL = 31;`（注释在 `:85` 记着演进 26 → 29 → 31） |
 | `settings-media-check.mjs:363-376` | `COUNT.total`：**真导入** `catalog.ts`（`:141-149` 的 `loadCatalog()` 用 `import(...?v=N)` 绕 ESM 缓存）后逐分组逐小节 `.reduce` 求和，与 `SPEC_TOTAL` 比 |
 | `settings-media-check.mjs:377-390` | `COUNT.specMatches`：拿 `catalog.mod.SPEC_ITEM_TOTAL` 与实际合计互校（抓自校常量漂移） |
 

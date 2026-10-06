@@ -13,7 +13,7 @@
  * 🔴 本脚本的核心纪律：正向与反证**共用同一套 `scn*` 事实函数与 `PRED` 谓词**。
  *    若反证另写一遍实现，它证明的就是另一件事了（本项目"两条反证共用一条断言"的变体）。
  *
- * 用法：node engine/scripts/model-store-check.mjs [--refute]
+ * 用法：node e2e/engine/model-store-check.mjs [--refute]
  */
 
 import fs from 'node:fs';
@@ -26,14 +26,14 @@ import { fileURLToPath } from 'node:url';
 import {
   ensureModels, verifyModels, linkModels, sha256File, readMarker, statSafe,
   ModelStoreError, REDOWNLOAD_LIMIT, READY_MARKER, PART_SUFFIX,
-} from '../model-store.mjs';
+} from '../../engine/model-store.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
 const REFUTE = process.argv.includes('--refute');
 // 临时根按模式分家：正向轮与反证轮会各自 freshRoot() 掉同名子目录，
 // 共用根目录时两轮并行跑会互删对方的落盘（症状：正向轮报 ENOENT .../resume/big.bin）。
-const TMP = path.join(REPO, '.tmp-models', REFUTE ? 'refute' : 'pos');
+const TMP = path.join(REPO, '.tmp', 'models', REFUTE ? 'refute' : 'pos');
 
 // ------------------------------------------------------------------ 断言收集
 

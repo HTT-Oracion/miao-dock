@@ -2,14 +2,14 @@
 /**
  * S1 适配层（`service/src/engine-client.mjs`）契约断言 —— **且必须可反证**。
  *
- * 为什么单独一个脚本：S1 换的是**引擎协议**，而 service 的日常自测（`service/scripts/selftest.mjs`）
+ * 为什么单独一个脚本：S1 换的是**引擎协议**，而 service 的日常自测（`e2e/service/selftest.mjs`）
  * 起的是**模拟引擎**（ver1.0 自定义协议）——两者协议不同。若只靠 selftest，`real` 分支
  * 一行都没被执行过，却会因为 selftest 全绿而"看着没问题"（假绿家族第 4 类：看着覆盖、实则空转）。
  *
  * 本脚本用**「真协议假引擎」**覆盖 real 分支：一个只实现真实引擎契约
  * （`POST /translate/image` + `GET /queue-size`）的极简 HTTP 服务，可控、可注入、秒级返回。
  * 它证明的是**「管路通」**（请求形状对不对、错误怎么归一、三态怎么判）；
- * **「功能通」**（真引擎真的吐出中文译文）由 `tmp-engine-test/` 的 S1 实测覆盖，
+ * **「功能通」**（真引擎真的吐出中文译文）由 `.tmp/engine-test/` 的 S1 实测覆盖，
  * 两者是两件事，报告里必须分开写（`docs/engine-integration-plan.md` R7）。
  *
  * 断言分组：
@@ -20,8 +20,8 @@
  *   M  mock 协议未被改坏（起真正的模拟引擎冒烟）
  *
  * 用法：
- *   node service/scripts/engine-client-check.mjs            正向跑
- *   node service/scripts/engine-client-check.mjs --refute   反证轮（破坏源文件 → 断言必须变红 → 按字节恢复）
+ *   node e2e/service/engine-client-check.mjs            正向跑
+ *   node e2e/service/engine-client-check.mjs --refute   反证轮（破坏源文件 → 断言必须变红 → 按字节恢复）
  *
  * 约束：纯 Node、零依赖；不写用户目录（临时文件落 os.tmpdir）；反证轮结束**必须**按字节还原。
  */
@@ -36,7 +36,7 @@ import { pathToFileURL } from 'node:url';
 
 import { encodePng } from '../../engine/src/png.mjs';
 
-const ROOT = path.resolve(import.meta.dirname, '..'); // .../service
+const ROOT = path.resolve(import.meta.dirname, '..', '..', 'service'); // .../service
 const REPO = path.resolve(ROOT, '..');
 const RT = path.join(REPO, 'runtimes', 'manga-translator');
 const SERVICE_SRC = path.join(ROOT, 'src');

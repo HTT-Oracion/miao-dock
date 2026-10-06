@@ -50,7 +50,7 @@ requirements = runtimes/manga-translator/src/requirements.txt（上游原样）
 requirements_used = runtimes/manga-translator/requirements.engine.txt（见下 ① 的绕法）
 install_log  = runtimes/manga-translator/pip-install4.log   # ✅ 成功那次（旧 pip-install.log 是失败尝试）
 index        = https://pypi.tuna.tsinghua.edu.cn/simple
-installer    = tmp-engine-test/pip-mkdir-fix.py（见下 ③；垫片日志：修正 3 次错报）
+installer    = .tmp/engine-test/pip-mkdir-fix.py（见下 ③；垫片日志：修正 3 次错报）
 
 # 关键版本（实测自安装输出）：
 torch        = 2.14.1          # 与 §4 探针同版
@@ -74,12 +74,12 @@ rusty-manga-image-translator = 0.12.1   # ← 来自 frederik-uni 额外索引
 #   ③ 🔴 **本机 Python 侧文件中介换掉了错误类型**：`os.mkdir` 对**已存在**目录本该抛
 #      `FileExistsError`，却被抛成**包着 `EEXIST` 文案的 `PermissionError`** ⇒ 按正确 errno
 #      忽略"已存在"的调用方（**pip 解包 sdist 就是**）接不到，报成"安装失败"。
-#      ⇒ 安装走 `tmp-engine-test/pip-mkdir-fix.py`（**只在该目录确实存在时**纠正类型；
+#      ⇒ 安装走 `.tmp/engine-test/pip-mkdir-fix.py`（**只在该目录确实存在时**纠正类型；
 #        不存在的路径**原样抛出** ⇒ 不放大任何权限）。详见 `docs/spec-notes.md` D-59 §5③。
 # ✅ 已补齐（2026-10-05）：
 #   · `pip check` → **No broken requirements found**（依赖自洽）
 #   · `pydensecrf 1.0` → **已编译安装成功**（cp311 macosx_11_0_arm64 wheel，222 KB）
-#     走 `ghfast.top` 镜像下 master.zip（2.2 MB）→ `tmp-engine-test/pip-mkdir-fix.py install <zip>`。
+#     走 `ghfast.top` 镜像下 master.zip（2.2 MB）→ `.tmp/engine-test/pip-mkdir-fix.py install <zip>`。
 #     ⚠️ 上一版本文件里写"pydensecrf 目前未安装"是**当时状态**；它是 `mask_refinement` 的**硬依赖**
 #        （`mask_refinement/text_mask_utils.py:68`），不装则 `python -m manga_translator` 一启动就
 #        `ModuleNotFoundError` —— **不是"命中才算"的可选项**，这里更正。
@@ -89,7 +89,7 @@ rusty-manga-image-translator = 0.12.1   # ← 来自 frederik-uni 额外索引
 torch        = 2.14.1          # cp312 / macosx_14_0_arm64
 numpy        = 2.5.3
 venv         = runtimes/manga-translator/venv-3.12-probe/
-probe        = tmp-engine-test/mps-probe.py
+probe        = .tmp/engine-test/mps-probe.py
 # 实测：mps.is_built()=True · mps.is_available()=True · 张量 matmul 与 CPU **逐位一致（偏差 0.000e+00）**
 #      conv2d 1024×1024×32ch：MPS ≈ 10.1 ms / CPU ≈ 342 ms（≈ 34×）· driver 已分配 1032 MB
 # ⚠️ 这一项是在 **Python 3.12 + torch 2.14.1** 上测的，**不能**当作"引擎的 torch 也能用 MPS"的证据。
@@ -114,7 +114,7 @@ probe        = tmp-engine-test/mps-probe.py
 # | inpainter | `Inpainter.lama_large` | `src/models/inpainting/lama_large_512px.ckpt` | huggingface（经 hf-mirror `/resolve`）| ✅ 已下+校验 |
 # | ocr | `Ocr.ocr48px` | `src/models/ocr/ocr_ar_48px.ckpt` + `alphabet-all-v7.txt` | GitHub release（经 ghfast.top）| ✅ 已下+校验 |
 #
-# 获取脚本（幂等 + 续传 + sha256 校验）：`tmp-engine-test/s0-fetch-and-run.sh`
+# 获取脚本（幂等 + 续传 + sha256 校验）：`.tmp/engine-test/s0-fetch-and-run.sh`
 # 通道实测记录：`runtimes/manga-translator/model-fetch-probe.log`
 #
 # 🔴 **两个源在本机都不可用**，所以"预置"是唯一办法（引擎下载逻辑**不做镜像回退**）：
@@ -215,7 +215,7 @@ local_entry  = `python -m manga_translator local -i <img>`       # **CLI 单图/
 
 ## 9. G1 验收记录：第一张真译文（✅ 2026-10-05 通过）
 
-# 命令（`tmp-engine-test/s0-fetch-and-run.sh translate`，CPU，无 --use-gpu）：
+# 命令（`.tmp/engine-test/s0-fetch-and-run.sh translate`，CPU，无 --use-gpu）：
 #   llama-server -m models/sakura/sakura-1.5b-qwen2.5-v1.0-fp16.gguf --port 8080 -c 4096 -ngl 99
 #   cd src && PYTHONPATH=src SAKURA_API_BASE=http://127.0.0.1:8080/v1 SAKURA_VERSION=0.9 \
 #     venv/bin/python -m manga_translator local \

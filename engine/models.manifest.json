@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "engineCommit": "441d07c59a735c7db3db2e7bb8b07920afd8a9cc",
   "updatedAt": "2026-10-05",
-  "purpose": "S3 模型管理：把引擎运行所需的全部外部资产（视觉模型 / LLM 权重 / 外部二进制）连同来源与校验值一起固化进版本控制，取代此前散落在 tmp-engine-test/（被 .gitignore 忽略、不入库）的取物脚本。",
+  "purpose": "S3 模型管理：把引擎运行所需的全部外部资产（视觉模型 / LLM 权重 / 外部二进制）连同来源与校验值一起固化进版本控制，取代此前散落在 .tmp/engine-test/（被 .gitignore 忽略、不入库）的取物脚本。",
   "rootNote": "所有 dest 均相对于模型根目录 runtimes/manga-translator/（可用 MIAO_MODEL_ROOT 覆盖）。该目录在 .gitignore 内 —— 资产本身不入库，只有本清单入库。",
   "linkNote": "🔴 引擎把模型路径**硬编码**在自己源码树里，所以「换引擎版本不重下模型」不是靠摆放位置就能保证的：manga_translator/utils/inference.py:94 是 _MODEL_DIR = os.path.join(BASE_PATH, 'models')，而 utils/generic.py:24-25 推出 BASE_PATH = <引擎>/src —— 即视觉模型**必须**出现在 <引擎>/src/models/<子目录>/。src/ 一换版本（删除后重解包）就会连模型一起没掉。server/args.py 也**没有** --model-dir（只有 --models-ttl），唯一能改的钩子是 manga_translator.py:298-299 的 params['model_dir']（运行期）。⇒ 本清单的做法：**权威副本一律放 store（dest），引擎树里那几份只是硬链接（linkTo）**；换版本后跑 `fetch-models.mjs --link` 即可在**零网络**下重建，不必重下 4 GB。",
   "urlNote": "url = 上游规范地址（用于标识与溯源，也是引擎自身 hash 校验所认的地址）；sources = 本机实测可用的下载通道，按顺序尝试。本机 huggingface.co 不可达、GitHub release 资产直连 502，故 sources 以镜像打头。见 engine/VERSIONS.lock §7。",

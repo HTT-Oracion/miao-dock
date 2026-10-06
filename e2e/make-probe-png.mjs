@@ -10,7 +10,7 @@
  * 尺寸取 40×60：够小（几百字节，可随源码提交），又够大，让引擎的译文渲染
  * （顶部 4px 标识色带 + 文本行 + 对话框）有正常发挥的余地。
  *
- * 用法：node scripts/make-probe-png.mjs
+ * 用法：node e2e/make-probe-png.mjs
  */
 import fs from 'node:fs';
 import path from 'node:path';

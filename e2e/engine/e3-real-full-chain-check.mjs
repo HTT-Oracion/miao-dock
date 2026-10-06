@@ -5,7 +5,7 @@
  * 判据原文：
  *   提交 31 张 → **一个 Task 两个 Batch** → 逐张翻译 → 落盘 → **SSE 进度与落盘一致**
  *
- * 与 D 组（`scripts/e2e.mjs`）的分工，别混为一谈：
+ * 与 D 组（`e2e/e2e.mjs`）的分工，别混为一谈：
  *   D 组  = **模拟引擎**（替身协议、合成 PNG），考「服务契约在真实组合场景下的行为」—— 秒级、进常规门
  *   本脚本 = **真引擎 + 真模型 + 真 Sakura + 真漫画图**，考「这条链在真货上跑得通」—— 分钟级、手动跑
  *
@@ -17,9 +17,9 @@
  * ⚠️ **不进常规门**：要几 GB 模型、分钟级耗时、真实 GPU。按需手动跑，同 `llm-real-timing.mjs`。
  *
  * 用法：
- *   node engine/scripts/e3-real-full-chain-check.mjs
- *   node engine/scripts/e3-real-full-chain-check.mjs --out <dir>   指定产物目录
- *   node engine/scripts/e3-real-full-chain-check.mjs --keep        跑完不杀进程
+ *   node e2e/engine/e3-real-full-chain-check.mjs
+ *   node e2e/engine/e3-real-full-chain-check.mjs --out <dir>   指定产物目录
+ *   node e2e/engine/e3-real-full-chain-check.mjs --keep        跑完不杀进程
  */
 import { spawn, spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -43,7 +43,7 @@ const outIdx = process.argv.indexOf('--out');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-e3-real-'));
 const ROOT_DIR = path.join(TMP, 'root');
 const STATE_DIR = path.join(TMP, 'state');
-const OUT = outIdx > -1 ? path.resolve(process.argv[outIdx + 1]) : path.join(ROOT, 'tmp-engine-test', 'e3-real');
+const OUT = outIdx > -1 ? path.resolve(process.argv[outIdx + 1]) : path.join(ROOT, '.tmp', 'engine-test', 'e3-real');
 
 const ENGINE_PORT = 8000;
 const EXECUTOR_PORT = ENGINE_PORT + 1;

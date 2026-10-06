@@ -2943,3 +2943,228 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 **本节新增/修改的文件**（`miao-trans` 仓）：`extension/src/{types/contract.ts,domain/clientState.ts,panel/*,adapters/boxServiceClient.ts,entrypoints/background.ts,types/messages.ts,store/translation/batchSlice.ts}` ·
 `extension/src/domain/demoMode.ts`（删）· `extension/tests/s8-engine-states.test.ts`（新）·
 `extension/e2e/noservice-probe.mjs`（新）· `e2e/e9-real-engine.mjs`（新）· `e2e/verify.mjs` · `.gitignore` · `README.md`。
+
+---
+
+## D-78 · U10②「引擎卡住」—— 静默的三条并发根因 + 「有上界 + 留痕」的修法与取证（2026-10-06）
+
+> **触发**：E9（与插件联调，本仓 D-76/§2.9）3 次运行里**复现 1 次**「引擎卡住」——落盘停在
+> `026_translated.png`（20:52:19），引擎与 llama 日志**同时**停在 `20:52:21`，而脚本 **21:09:54**
+> 才放弃 ⇒ 一次**静默 17.5 分钟**。脚本侧看到的是 `failed:0`、磁盘无变化，**像"任务没跑"**。
+> 这条登记在 D-76 的 unverified register 里（U10）；**本节把它关掉**。
+
+### 🔴 根因：不是"超时没生效"，而是三条并发的事实叠加
+
+**先排除一个错误假设**：传输层超时本身是**好的**。孤立实验（`http.request({timeout})` + `req.on('timeout')`）
+在三种形状下都**精确在 T+Δ 命中**：① 收一帧后静默；② 持续进度帧后静默；③ 连响应头都不发。
+⇒ 差异在传输层**之外**。
+
+| # | 根因 | 证据（代码位置 / 现场） |
+|---|---|---|
+| ① | **重试把静默叠乘** —— `store.mjs` 的 `MAX_ATTEMPTS = 2`，而超时被当普通瞬时错误重试 ⇒ 一次挂住 = 600s + 600s = **20 分钟完全静默** | 脚本的 15 分钟等待**活不过它**，于是 `failed:0`、磁盘无变化，外部无法与"引擎在慢慢想"区分 |
+| ② | **进行中的项在磁盘上不存在** —— `item.status='translating'` 之后**没有落盘** | 现场快照 `current:0`：明明有一页正在飞，磁盘状态却答不出"在跑哪一页" |
+| ③ | **超时丢弃已收到的字节**，且 `code 3`（队列位次）/ `code 4`（等待实例）帧**在解析阶段就被丢掉** | `parseResultStream` 只给 `code 1/2` 赋 `text` ⇒ 无法区分"在推理"/"排不上队"/"没动静" |
+
+**上游执行器语义**（回读 `runtimes/manga-translator`）：`notify(3, queue_pos)`（`myqueue.py:99`）、
+`notify(4, b"")`（`:111`）；`free_executor` **只在成功路径（`instance.py:127`）与 except 路径（`:136`）被调**
+⇒ `sent_stream` 一卡住，实例**永不释放**，此后所有请求反复报「排队位次 0」然后静默。
+**这正是 ③ 要能把 `code 3` 带出来的理由**：它把"引擎活着但拿不到执行器"与"引擎没动静"分开了。
+
+### 修法（三处实现，**不动任何断言**）
+
+| 位置 | 改动 |
+|---|---|
+| `service/src/store.mjs` | ① 单项**总预算** `deadline`：重试只能吃剩下的时间 ⇒ 单项最坏 = **一次**单张超时，而不是它的 N 倍；每次尝试失败**都留痕**一行：`第 N/M 次尝试失败：CODE · 已用 Xms · 预算剩 Yms · 引擎阶段：…` |
+| `service/src/store.mjs` | ② `translating` **落盘**（`_persist`）—— 磁盘状态必须能回答"现在在跑哪一页" |
+| `service/src/engine-client.mjs` | ③ 超时**带走已收到的字节**（`err.partialBody` + `detail.frames`）；`parseResultStream` 给 `code 3` 也赋 `text`；新增 `recordFrame` 把 3/4 记进阶段日志 |
+
+**两个旋钮的语义必须分开**（这是 U10② 的承重点）：
+`engineTimeoutMs`（**一次请求**多久算没响应）与 `itemTimeoutMs`（**整项**总预算）。
+- `itemTimeoutMs` 默认**跟随 `engineTimeoutMs` 的实际值（含 `MIAO_ENGINE_TIMEOUT_MS` 的覆盖）**，
+  而不是各自写一份协议常量 —— 否则会出现"单张超时被降到 700ms、预算却还是 mock 档的 60s"这种自相矛盾的配置；
+- 每次尝试下发的请求超时取 **`min(剩余预算, engineTimeoutMs)`**：少了后半截，把 `MIAO_ITEM_TIMEOUT_MS`
+  调大就能让一次挂住吃掉整个预算，「单次请求上限」这个旋钮**形同虚设**。
+> ⚠️ 上面这一条是**实测踩出来的**：第一版只做了"单项总预算"，`service/scripts/selftest.mjs` 的 A20 用例
+> （把 `MIAO_ENGINE_TIMEOUT_MS` 注入成 700ms）随即**红**——它等了 60s 也拿不到终态。
+> `MIAO_ITEM_TIMEOUT_MS` 的默认值没跟着覆盖走，正是**假绿的反面**：机制"在"，但它测的那条路径被拖死了。
+
+### 取证：`check:stall`（新，正向 **7/0** · 反证 **3/3**）
+
+**注入形状**：`engine/src/server.mjs` 加 `MIAO_ENGINE_STALL_SEQ=<seq>` —— mock 引擎对指定 seq
+**永不回包**（连响应头都不发）。它与被测代码无关，只与"引擎不回答"这一事实有关；而
+`MIAO_ENGINE_FAIL_SEQ` 是**立刻回错**，**照不出"静默叠乘"**。
+
+| 断言 | 钉住什么 |
+|---|---|
+| `S7` | **对照组**：不注入卡死时同参数下 3 张全部成功 —— 证明下面的失败**不是"恒红"** |
+| `S1` / `S3` | 卡死项落 `failed`（挂住 ≠ 永远进行中）；同批其余张照常成功（一页卡死不拖垮整批） |
+| `S2` | 卡死项等待 **≤ 预算×1.6 且严格 < 2×预算** —— "静默有上界"而不是"超时 × 重试次数" |
+| `S4` | 日志里有**明确一行**尝试失败（否则"超时了"与"慢慢推理中"逐字节相同） |
+| `S5` | **磁盘**状态文件里出现过 `translating`（进行中的项不再"在磁盘上不存在"） |
+| `S6` | 真协议超时**带上已收到的帧**：能读出「排队位次 0」（= 引擎活着但拿不到执行器） |
+
+**反证 3 条**（去掉预算 / 去掉进行中落盘 / 让超时不带走字节）各自**按预期变红**，并按**字节**还原。
+
+### 顺带发现（工具自身）
+
+- `check:stall:refute` 的 S2 破坏点必须写成 `remaining = config.engineTimeoutMs`（= 旧形状），
+  **不能**写成 `remaining = undefined` —— 后者会让 `Math.min(undefined, x)` 变成 `NaN`，
+  `http.request({timeout: NaN})` **等于没有超时**，反证会"变红"但红在一个与语义无关的地方（假红）。
+- `service/scripts/selftest.mjs` 的 A20 用例其实**同时**在守上面两个旋钮的关系 ——
+  它注入的是 `MIAO_ENGINE_TIMEOUT_MS` 而**不是** `MIAO_ITEM_TIMEOUT_MS`，恰好照出了"预算没跟着覆盖走"。
+
+**本节新增/修改的文件**：`service/src/{config,store,engine-client}.mjs` · `engine/src/server.mjs` ·
+`service/scripts/stall-guard-check.mjs`（新）· `package.json`（+`check:stall[:refute]`）· 本文件。
+
+---
+
+## D-79 · 目录重组：验收脚本收进 `e2e/`、临时目录收进 `.tmp/`（2026-10-06）
+
+> **触发**（用户要求）：① `service/` 与 `scripts/` 下的脚本过多，"用于测试的"集中到一个新建的 `e2e/`；
+> ② 仓库根攒了 4 个 `.tmp*`/`tmp*` 目录，统一迁移到 `.tmp/` 下并清理无用文件；
+> ③ `README.md` 要录入目录结构 + 每层职责，并且**后续新目录必须同步更新**。
+
+### 一、验收脚本 → `e2e/`（判据：**产品运行期会不会调它**）
+
+**判据不是"看起来像不像测试"，而是"产品代码在运行期会不会 fork 它"**：
+
+| 留下（**运行期**被调用，不属验收） | 谁在调 |
+|---|---|
+| `service/scripts/print-launch-plan.mjs` | Rust `ServiceManager` 启动时问它要**启动配方** JSON（`service.rs`） |
+| `engine/scripts/child-watch.mjs` | Rust 起外部二进制时包一层（`service.rs`）；`llm-supervisor.mjs` 也用它包 `llama-server` |
+| `engine/scripts/fetch-models.mjs` | `service/src/server.mjs` 的模型校验 / 下载走它（**产品路径**） |
+
+其余全部搬进 `e2e/`，**按来源分三个子目录**（`e2e/` · `e2e/service/` · `e2e/engine/`）——
+**目的是让每个脚本的相对深度不变**（`scripts/x.mjs` → `e2e/x.mjs`，`service/scripts/x.mjs` → `e2e/service/x.mjs`），
+于是 `import.meta.dirname/../..` 这类解析**一行都不用改**。
+
+🔴 **但"深度不变"不等于"一行不用改"**，实测有 4 类必须手工改（漏改的症状是**静默跳过或模块找不到**）：
+
+1. **以模块目录为锚的相对解析**：`path.resolve(import.meta.dirname, '..', 'src')` 原本指 `service/src`，
+   搬后指向 `e2e/src` ⇒ 改成显式的 `path.join(ROOT, 'service', 'src')`（`engine-profile-check.mjs`）
+   或 `path.resolve(dirname, '..', '..', 'service')`（`selftest.mjs` / `engine-client-check.mjs`）。
+2. **相对 import / `new URL('../src/…')`**：`e2e/engine/model-store-check.mjs` 的 `'../model-store.mjs'`
+   → `'../../engine/model-store.mjs'`；4 个 service 侧脚本的 `new URL('../src/engine-client.mjs')`
+   → `'../../service/src/engine-client.mjs'`。**这类错会直接抛 `ERR_MODULE_NOT_FOUND`（好抓）**。
+3. **脚本自己把自己写死的路径**：`engine-settings-check` / `contract-delta-check` 的
+   `SELF = path.join(ROOT, 'service', 'scripts', …)` → `'e2e', 'service', …`（反证轮靠它重跑自己）。
+4. **`e2e/docs-consistency-check.mjs` 自己**要改两处：`SUITES[].script` 的路径，以及「被禁标识」遍历的目录名。
+
+**同时**：`package.json` 全部命令改路径；`capture.rs` / `selftest.rs` / `render.mjs` 等处**注释里的路径**一并跟上。
+
+### 二、临时目录 → `.tmp/`（**全仓唯一**）
+
+| 原 | 现 |
+|---|---|
+| `.tmp-e2e/` | `.tmp/e2e/` |
+| `.tmp-selftest/` | `.tmp/selftest/` |
+| `.tmp-models/` | `.tmp/models/` |
+| `tmp-engine-test/` | `.tmp/engine-test/` |
+
+`MIAO_E2E_TMP`（`e2e/_e2e-paths.mjs`）· 生命周期自检 · `model-store-check` · `s1-real` / `e3-real` 的默认产物目录
+四处默认值同步；`.gitignore` 的 `tmp-*/` + `.tmp-selftest/` + `.tmp-e2e/` + `.tmp-models/` **四条合成一条 `.tmp/`**。
+
+**清理掉的**（判据：产物可被脚本重造、且不被任何**已提交**的文档/清单引用）：
+`.tmp/engine-test/` 下 4 个一次性 e2e 运行目录 + `root/`/`state/` · `ab-ocr/` 的 8 个 `out-*/` 与 7 张 `cmp-*.png`
+与 12 个 `*.log`（对照图**已入库**在 `docs/refs/manga-ocr/`，被 `manga-ocr-ocr-backend-assessment.md` 引用的是那两份）。
+
+**刻意保留**：`ab-ocr/` 的 `run-*.sh` + `cfg-*.json` + `in/test_0.webp`（调研文档给的**复现配方**要能跑）、
+`.tmp/engine-test/s1-real/`（`docs/refs/engine/01-real-translation.report.json` 的 `outPath` 指着它，
+且本台账记过它的 sha256 —— 删了这两处已提交记录**就再也核不了**）、11 个一次性探针脚本。
+
+> ⚠️ 搬进 `.tmp/engine-test/` 的两个探针（`probe.mjs` / `e2e-repro.mjs`）原本按"仓库根下的 depth-1 目录"
+> 算路径，搬后 `import.meta.dirname/..` 不再是仓库根 ⇒ 已改成 `'..','..'`。这类**一次性 scratch**
+> 从不受任何断言保护（`.tmp/` 不入库），搬它等于**手改一份没人替你验证的代码**：
+> 能不动就不动，非动不可时按本文这一条一处处核。
+
+### 三、文档策略：**台账不改历史，只加映射**
+
+`docs/spec-notes.md` 里几十处旧路径（`service/scripts/…` / `tmp-engine-test/…` / `.tmp-e2e/`）**一律不改** ——
+它们记录的是**当时的事实**；按本仓既有原则（`check:docs` 刻意不让台账参与现状比对），
+历史条目不该被现状反向改写。**读者按本节的两张表做映射即可。**
+
+会**真的被照着敲**的文档则全部改到位：`engine/VERSIONS.lock`（版本锁）· `engine/models.manifest.json` ·
+`docs/engine-integration-plan.md` · `docs/engine-integration-delivery-plan.md` · `docs/dev-plan.md` ·
+`docs/manga-ocr-ocr-backend-assessment.md`（复现配方）· `docs/engine-e2e-acceptance-report.md`（复现命令列）
+· `AGENTS.md` · `README.md` · 各脚本自己的用法注释。
+
+**本节新增/修改的文件**：`e2e/**`（`scripts/` 整体迁入 + `service/scripts/`、`engine/scripts/` 的验收件迁入）·
+`package.json` · `.gitignore` · `README.md`（新增「目录」一节 + 新增目录须同步的约定）· `AGENTS.md` ·
+`app/src-tauri/src/{capture,selftest}.rs`（注释）· `engine/{VERSIONS.lock,models.manifest.json,src/render.mjs}` ·
+`service/src/{config,engine-profile}.mjs`（注释）· `docs/` 若干 · `.trae/rules/project_rules.md`（§3 补目录约定）· 本文件。
+
+---
+
+## D-80 · 🔴 `check:e5e6` 的「E6 整组偶发红」不是 flake，是**时间戳精度错配**：`nowIso()` 截到秒 vs `Date.now()` 毫秒（2026-10-06）
+
+### 症状与它为什么极具误导性
+`npm run check:e5e6` 会**成串**地红：实测采样 `绿 红 红 红 红 绿`、`绿 红 红 红 红 绿`、
+另一组 `绿 红 红 红`。每次红的**恰好**是 E6 那 5 条（E6.1/E6.2/E6.3/E6.4/E6.6），
+而 E5 全绿、**第二个服务实例**的 E6.7/E6.8 也绿。失败详情长得像"看护没跑"：
+
+```
+✗ E6.1 端口 8900 20s 后仍在听，空闲卸载没发生
+✗ E6.3 卸载事件留痕：日志里有「空闲 … ⇒ 卸载 ③ LLM」  无
+```
+
+第一次归因写成"只在紧接 `check:profile` 的**同一批**运行里出现"——**这条归因是错的**，
+被自己的采样反证：单独连跑 6 轮一样成串红（绿红红红红绿）。
+
+### 取证（三次实验，逐次缩小范围）
+1. **采样**：`for i in 1..6; npm run check:e5e6` ⇒ 红不是随机的，是**成串**的。
+2. **排除自身改动**（关键）：把 `cd076fd^`（U10② 的 `config.mjs`/`store.mjs` 改动**之前**）
+   签出到独立 worktree `/tmp/miao-pre` 跑同一条命令 ⇒ 照样 `11/5 · 16/0 · 11/5`。
+   ⇒ **与 U10② 无关，也与 `e2e/` 搬迁无关**（搬迁对 `e5-e6-check.mjs` 只改了 1 行用法注释，
+   属确定性改动，不可能产生间歇红）。
+3. **诊断补丁**（另一个 worktree `/tmp/miao-diag`，**不进仓库**）：在 `idle-policy.mjs` 的
+   `tick()` 里加一路 `MIAO_IDLE_DEBUG` 日志，把每次巡检的 `reason` / `idleFor` / `la` /
+   `since` 打出来。⚠️ 第一次 dump 取错了实例——`service` 变量在 E6.7 处被重新赋值，
+   `finally` 里 dump 到的是**第二个**实例（它本来就绿）；要在 `killProc(service)` **之前**取。
+
+### 根因（现场数字）
+```
+[idle-debug] reason=never_ran idleFor=null la=null since=1791304803088 now=1791304803615 running=1
+…（82 次巡检里 81 次 never_ran）…
+[idle-debug] reason=busy_running idleFor=997 la=1791304823000 since=1791304803088 now=1791304823997 running=1
+```
+
+- 判据是 `never_ran` ⇒ `lastActivityAt()` 返回 `null` ⇒ 看护认定"**本次运行还没跑过任务**"。
+- 但 `running=1` 说明任务**确实在跑**；`la` 只在后面那次带**整秒结尾**（`…823000`）的值。
+- `service/src/store.mjs:61`：`const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')`
+  ⇒ 任务的 `createdAt` **被截到整秒**；而 `runtimeStartedAtMs = Date.now()` 是**毫秒**。
+- 于是「与 Store 构造**同一秒内**创建的任务」被判成**上一轮的历史**过滤掉：
+  `803000 < 803088`。该任务此后**永远**不可见（`createdAt` 是定值），整轮 `neverRan`。
+
+🔴 讽刺的是 `store.mjs:81-93` 的注释**已经点名了这个偏斜**（"最多 1 s"），却把它归给
+`startedAt`，于是用一个**毫秒精度**的下界去挡——而真正参与比较的**任务侧**也是秒精度。
+精度错配只是换了个方向回来。
+
+### 产品侧后果（不只是测试问题）
+用户启动 Box 后，**与 ③ 归属进程的 Store 构造落在同一秒内**创建的那批任务，
+对空闲看护是**不可见的**。若这一轮的任务都落在那个窗口里，③ LLM **整轮不会空闲卸载**。
+生产阈值是 5 min、窗口只有 ≤1 s，所以后果是"偶发地不释放内存"，不是"翻译不了"——
+这正是它能长期潜伏、只在秒级夹具上暴露的原因。
+
+### 修法：改**精度**，不是给比较加松弛
+`service/src/store.mjs` 新增 `nowIsoMs()`（保留毫秒），`createdAt` / `finishedAt` 改用它；
+`startedAt` / `updatedAt` 等**给人看**的字段继续用 `nowIso()`。
+
+- ❌ **不采用**"把下界也截到秒"或"给比较留 1 s 松弛"：那会把**上一轮刚结束**的任务拉进同一秒、
+  算成本次运行的**热态**——正是 `runtimeStartedAtMs` 要挡的那件事（E6.7「重启后 ③ 刚被拉起就被卸掉」）。
+  flaky 只会从 E6.1 **搬到** E6.7，等于白改。
+- ❌ **不采用**"把 E6.7 夹具拉开 2 s"：那是**放宽断言**去迁就一个精度缺陷，方向相反。
+
+### 断言 + 反证（`e2e/service/engine-profile-check.mjs`）
+- **I10**（新，`check:profile` 42 → **43**）：任务时间戳必须与 `runtimeStartedAtMs` **同精度**。
+  窗口是**强制构造**的——自旋等到"本秒内偏后"再钉下界，于是"截到秒"的时间戳必然落在下界之前
+  ≥600ms ⇒ 坏实现**必红**、好实现**必绿**，与机器快慢无关。
+  实测 `createdAt=2026-10-06T16:49:04.600Z`、下界 `1791305344600`，精确对齐。
+- **反证 N**（新，13 → **14** 条）：把 `createdAt: nowIsoMs()` 退回 `nowIso()` ⇒ **I10 变红**，
+  其余 13 条不回归（`check:profile:refute` **14/14**，按字节还原 + sha 校验）。
+- **端到端回归**：`check:e5e6` 修前 `绿红红红红绿`，修后 **连续 5 轮全 16/0**。
+
+### 本节新增/修改的文件
+`service/src/store.mjs`（`nowIsoMs()` + 两处时间戳 + 订正 §81-93 的注释口径）·
+`e2e/service/engine-profile-check.mjs`（I10 + 反证 N + `EXPECTED_MUTATIONS` 13→14）·
+`AGENTS.md` / `README.md` / `docs/engine-integration-plan.md`（`check:profile` 42→43、反证 13→14）· 本文件。
+

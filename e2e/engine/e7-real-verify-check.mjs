@@ -5,7 +5,7 @@
  * 判据原文：**下载中断后续传成功；篡改一个字节 → SHA256 校验失败 → 自动重下**
  *
  * ## 为什么还要一个脚本：`check:models` 已经验过了，但它用的是夹具
- * `engine/scripts/model-store-check.mjs` 用**夹具 HTTP 服务器**把 E7 的两件事都验了，
+ * `e2e/engine/model-store-check.mjs` 用**夹具 HTTP 服务器**把 E7 的两件事都验了，
  * 而且验得很实（真发 `Range` 请求、真算 sha256、真检出篡改 → 真重下）：
  *   · E7-1a…1d 续传：下成 / 确实发了 Range / 起点 = 已落盘字节数 / 断点不残留
  *   · E7-2a…2c 篡改：篡改一字节被检出 → 标记重下 → 重下后哈希恢复
@@ -26,8 +26,8 @@
  * `docs/engine-e2e-acceptance-report.md` 的 unverified register。
  *
  * 用法：
- *   node engine/scripts/e7-real-verify-check.mjs            正向
- *   node engine/scripts/e7-real-verify-check.mjs --refute    反证轮（改坏源文件 → 断言必须变红 → 按字节还原）
+ *   node e2e/engine/e7-real-verify-check.mjs            正向
+ *   node e2e/engine/e7-real-verify-check.mjs --refute    反证轮（改坏源文件 → 断言必须变红 → 按字节还原）
  *
  * 约束：纯 Node、零第三方依赖；**只读**真权重（绝不写 `runtimes/` 下的任何文件）；
  *       篡改实验一律在 `os.tmpdir()` 的副本上做，跑完自清。

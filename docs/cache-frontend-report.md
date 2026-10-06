@@ -15,7 +15,7 @@
 | `app/src/music/ipc.ts` | 修改 | 4 个缓存命令封装（+`CacheStats` 类型导入、头部命令数 94→98） |
 | `app/src/music/store.ts` | 修改 | 播放链路接入缓存查命中 + 后台预热（新增 3 个模块级私有函数） |
 | `app/src/music/types.ts` | 修改 | 新增 `CacheStats` / `CacheProviderStat`（Rust `models.rs` 的逐字镜像） |
-| `scripts/music-platform-check.mjs` | 修改 | 新增 `CACHE` 组 **10 条断言** + **13 条反证** + 3 个判据辅助函数 |
+| `e2e/music-platform-check.mjs` | 修改 | 新增 `CACHE` 组 **10 条断言** + **13 条反证** + 3 个判据辅助函数 |
 | `AGENTS.md` / `README.md` | 修改 | `check:music` 条数 184→193（对账用） |
 | `docs/cache-rust-report.md` | 修改 | **仅一行**：删掉报告自身写出的禁词字面量（见 §5.3） |
 

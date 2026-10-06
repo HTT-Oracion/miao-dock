@@ -17,9 +17,18 @@
 | 桌面壳 | Tauri v2（Rust） | `app/src-tauri/` |
 | 前端 | Vite + React 18 + TS，**原生 CSS + CSS 变量**（无 Tailwind；UI 库仅 `@radix-ui/react-select`） | `app/src/` |
 | 翻译服务 | Node（127.0.0.1:5180–5190） | `service/` |
-| 翻译引擎 | Node sidecar（默认 5003，**模拟实现**，真实模型未接） | `engine/` |
-| 验收脚本 | 纯 Node 零依赖 | `scripts/` |
+| 翻译引擎 | **接缝层**：真引擎装在 `runtimes/`（不在库），本目录放版本锁 `VERSIONS.lock` / 模型清单与下载器 / 子进程看守；`engine/src/` 是**测试替身**（mock 引擎 + mock LLM） | `engine/` |
+| 验收与取证脚本 | 纯 Node 零依赖（`e2e/service/`、`e2e/engine/` 按来源分） | `e2e/` |
 | 参考实现切片 | 只读参考，**保持原样不改** | `vendor/music-reference/`（不入库） |
+
+**目录约定（硬规则，全文与理由见 `README.md` §目录 · `docs/spec-notes.md` D-79）**：
+
+- **产品 / 验收分家**：判据不是"像不像测试"，而是**产品代码运行期会不会 fork 它**。会 fork 的三个
+  （`service/scripts/print-launch-plan.mjs` · `engine/scripts/child-watch.mjs` · `engine/scripts/fetch-models.mjs`）
+  留在原处，其余全部在 `e2e/`。搬迁脚本时**按来源分子目录**以保住相对深度（`service/scripts/x` → `e2e/service/x`）。
+- **临时产物一律写进 `.tmp/<用途>/`**（`e2e/` · `selftest/` · `models/` · `engine-test/`），**不得**在仓库根另起 `.tmp-xxx/` / `tmp-xxx/`。
+- **新增或搬迁目录后必须同步**：`README.md` 目录节（唯一入口）· 本节分层表 · `.trae/rules/project_rules.md` ·
+  `package.json` 命令 · **断言里写死的路径**（不同步的后果是**静默跳过**，不是变红）· 脚本自己的用法注释。
 
 **目录分层（硬规则，见《09》§2.2）**：
 
@@ -65,7 +74,7 @@ npm run check:tls             # TLS 依赖链 14 条（三层）
 npm run check:engine-client[:refute] # 翻译引擎适配层 42 条 / 反证 8 条（真协议用 openapi 快照「假引擎」，秒级）
 npm run check:models[:refute] # S3 模型下载器 E7：32 条 / 反证 5 条（本地 Range 夹具源，秒级，不碰真权重）
 npm run fetch:models          # S3 模型下载器 CLI：--check 只校验 / --link 只重建引擎树里的链接（零网络）
-npm run check:profile[:refute] # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）42 条 / 反证 13 条（起真进程，约 10s）
+npm run check:profile[:refute] # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）
 npm run check:e5e6[:refute]    # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run check:contract[:refute] # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status，77 条（8 个实例场景 A–H）/ 逃生开关反证 4 条（各约 3s / 2s）
 # —— S7 真机端到端 E1–E11（逐项取证；总表见 docs/engine-e2e-acceptance-report.md）——
@@ -77,7 +86,7 @@ npm run check:e10[:refute]    # E10 安全：只监听回环 / 非图片字节�
 # E9 与插件联调**不在本仓**：在 `miao-trans` 仓跑 `node e2e/e9-real-engine.mjs`（先构建扩展）——
 #   真实漫画站 31 张 + 真引擎，19 条断言，约 10 分钟；产物落该仓 `.temp-translate-test/`（已 gitignore）。
 #   脚本自己拉起并收尾 box-service / 引擎 / ③ / `:8001` 执行器。
-node service/scripts/llm-real-timing.mjs  # 真 ③（llama-server）冷启动与内存实测（**真权重，分钟级，不进常规门**）
+node e2e/service/llm-real-timing.mjs  # 真 ③（llama-server）冷启动与内存实测（**真权重，分钟级，不进常规门**）
 npm run check:music[:refute]  # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 215 条 / 反证 180 条
 npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ X-C3「准备中」135 条 / 反证 63 条
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条 / 反证 44 条
@@ -131,7 +140,7 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 - **cargo 在沙箱里删不掉构建产物**：报 `failed to remove file ... build-script-build`。
   做法：先 `rm -f app/src-tauri/target/debug/build/*/build-script-build`，再前台构建。
 - **`vite build` 需 `--no-emptyOutDir`**：本机沙箱拦截批量删 `dist/`（与代码无关）。
-- **跑 e2e 要把临时目录挪到系统临时区**（安全删除守卫会拦仓库内 `.tmp-e2e/`）：
+- **跑 e2e 要把临时目录挪到系统临时区**（安全删除守卫会拦仓库内 `.tmp/e2e/`）：
   `MIAO_E2E_TMP="$(node -e 'console.log(require("os").tmpdir())')/miao-e2e" npm run e2e`
 - **批量 `sed -i` 之后看 `git status`**：本机会留下 `xxx<随机后缀>` 的临时快照文件（未跟踪）。
 - **别用 shell `grep` 判"有没有"**：本机 zsh + BSD grep 在 `\|`、`--include=*.tsx` 这类写法上会**静默失配**

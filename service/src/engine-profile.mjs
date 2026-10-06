@@ -97,7 +97,7 @@ export function detectAccel(gpu) {
  *
  * ⚠️ `llmGpuLayers` 返回 **`-1`/`0` 的语义值**，不是命令行字符串。
  *   「-1 与 99 等价吗」这种细节不在这里猜 —— 由调用方（S4-b 的 LlmSupervisor）决定，
- *   并在那里用断言钉住（见 `service/scripts/engine-profile-check.mjs`）。
+ *   并在那里用断言钉住（见 `e2e/service/engine-profile-check.mjs`）。
  */
 export function accelLaunchFlags(accel) {
   const onCpu = accel === 'cpu';

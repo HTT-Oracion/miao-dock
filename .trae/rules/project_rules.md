@@ -34,6 +34,15 @@ alwaysApply: true
 - **按「依赖什么」定归属，不按「被用几次」**。新组件先看它 import 什么，再决定放哪。
 - 不要为了"复用"把绑定单屏几何/业务类型的件抽走（反面清单见 `docs/spec-notes.md` D-34）。
 
+**目录约定（硬规则，全文见 `README.md` §目录 · `docs/spec-notes.md` D-79）**：
+
+- **产品 / 验收分家**：验收脚本一律在 `e2e/`（按来源分子目录：`e2e/service/` · `e2e/engine/`）。
+  判据不是"像不像测试"，而是**产品代码运行期会不会 fork 它** —— 会 fork 的
+  （`service/scripts/print-launch-plan.mjs` · `engine/scripts/child-watch.mjs` · `engine/scripts/fetch-models.mjs`）留在原处。
+- **临时产物一律写进 `.tmp/<用途>/`**，**不得**在仓库根另起 `.tmp-xxx/` 或 `tmp-xxx/`。
+- **新增 / 搬迁目录后必须同步**：`README.md` 目录节（唯一入口）· 本文件 · `AGENTS.md` §1 · `package.json` 命令 ·
+  **断言里写死的路径**（不同步的后果是**静默跳过**，不是变红）· 脚本自己的用法注释。
+
 ## 4. 动手前后
 
 - 动手前：`git status` + `git log -1` 确认基线；本仓库出现过**同仓库并发写入**，改别人未提交的文件要用 `git stash`，不要 `git checkout --`（不可恢复）。

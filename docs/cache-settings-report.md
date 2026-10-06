@@ -16,7 +16,7 @@
 | `app/src/screens/settings/catalog.ts` | 修改 | `SettingItem` 加 `layout?: 'block'` 形态字段；`playback` 小节加 `music-cache` 项；`SPEC_ITEM_TOTAL` 31→32；`MEDIA.note` 补本项与「音频缓存目录」剔除口径的关系 |
 | `app/src/screens/settings/sections.tsx` | 修改 | `Group` 加 `layout==='block'` 分支（不包 `Row`）；`render` 加 `case 'music-cache'`；引入 `CacheBlock` |
 | `app/src/styles/settings.scss` | 修改 | 新增 `set-cache-*` 样式段（四格 / 下拉 / 菜单项） |
-| `scripts/settings-media-check.mjs` | 修改 | `SPEC_TOTAL` 31→32；反证锚点 31→32；`ADDED` 加 1 条；**新增 `CACHE` 组 9 条断言 + 3 条反证**；修 `fnBody`（见 §7.1） |
+| `e2e/settings-media-check.mjs` | 修改 | `SPEC_TOTAL` 31→32；反证锚点 31→32；`ADDED` 加 1 条；**新增 `CACHE` 组 9 条断言 + 3 条反证**；修 `fnBody`（见 §7.1） |
 | `AGENTS.md` / `README.md` | 修改 | `check:settings` 条数 72→**83**、反证 15→**19** |
 
 **未新增任何依赖**，未改 `package.json`。
@@ -131,9 +131,9 @@ title={bytes <= 0 ? `${PROVIDER_LABEL[p]}暂无缓存` : undefined}
 | # | 位置 | 原值 | 新值 | 说明 |
 |---|---|---|---|---|
 | 1 | `app/src/screens/settings/catalog.ts`（`SPEC_ITEM_TOTAL`） | `31` | **`32`** | 加 1 项后由 31 变 32；不与 `SECTION_ITEM_TOTAL` 一致会触发启动自校 `console.error` |
-| 2 | `scripts/settings-media-check.mjs:86`（`SPEC_TOTAL`） | `31` | **`32`** | 与 ① 是**两份独立手写**的同一数字（脚本读不到 catalog 的常量，只能自己抄）；不一致时 `COUNT.total` 红 |
-| 3 | `scripts/settings-media-check.mjs` 反证锚点（原 `:625`） | `'export const SPEC_ITEM_TOTAL = 31;'` | **`'export const SPEC_ITEM_TOTAL = 32;'`** | ⚠️ **漏改不会变红、只会「跳过」**，而脚本把 `skipped` 计入失败（`:793`）—— 看起来是"守住了一条"，实际那条已失效 |
-| 4 | `scripts/settings-media-check.mjs`（`ADDED`） | 10 条 | **11 条**（加 `{ id: 'music-cache', label: '音乐缓存' }`） | 这一步**连带自动多出 2 条断言**：`ADDED.music-cache` + `WIRING.item.music-cache` |
+| 2 | `e2e/settings-media-check.mjs:86`（`SPEC_TOTAL`） | `31` | **`32`** | 与 ① 是**两份独立手写**的同一数字（脚本读不到 catalog 的常量，只能自己抄）；不一致时 `COUNT.total` 红 |
+| 3 | `e2e/settings-media-check.mjs` 反证锚点（原 `:625`） | `'export const SPEC_ITEM_TOTAL = 31;'` | **`'export const SPEC_ITEM_TOTAL = 32;'`** | ⚠️ **漏改不会变红、只会「跳过」**，而脚本把 `skipped` 计入失败（`:793`）—— 看起来是"守住了一条"，实际那条已失效 |
+| 4 | `e2e/settings-media-check.mjs`（`ADDED`） | 10 条 | **11 条**（加 `{ id: 'music-cache', label: '音乐缓存' }`） | 这一步**连带自动多出 2 条断言**：`ADDED.music-cache` + `WIRING.item.music-cache` |
 | 5 | `AGENTS.md:62` | `72 条 / 反证 15 条` | **`83 条 / 反证 19 条`** | `check:docs` 比对的是**脚本自报的通过数**（断言条数），不是 `SPEC_ITEM_TOTAL` 的 32 |
 | 6 | `README.md:73` | `72 条` | **`83 条`** | 同上；两处文档都要改，脚本逐个文件比对 |
 
@@ -343,7 +343,7 @@ WIRING 全绿、项数全对，而页面上那一项被压成一条读不了的�
 （另一并发会话 `lvjinbin` 的图标改造）把切换图标从 `<Play>` 改成 `<AudioLines>`。
 按纪律**未动**：既没改这条断言，也没碰 `DynamicIsland.tsx`（别人的文件）。
 它是**基线自带**，与缓存改动无关。本轮**未对 `check:music` 做任何改动**
-（`scripts/music-platform-check.mjs` 不在本次改动清单内）。
+（`e2e/music-platform-check.mjs` 不在本次改动清单内）。
 
 ### 9.2 工作区改动范围
 

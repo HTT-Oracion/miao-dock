@@ -12,8 +12,8 @@
  * 而是**目标进程是否还在写心跳文件** —— 只由被看守的那个进程写，指向唯一。
  *
  * 用法：
- *   node scripts/child-watch-check.mjs            正向：父死 ⇒ 心跳停
- *   node scripts/child-watch-check.mjs --refute   反证：关掉看守（MIAO_NO_PARENT_WATCH=1）⇒ 心跳继续
+ *   node e2e/child-watch-check.mjs            正向：父死 ⇒ 心跳停
+ *   node e2e/child-watch-check.mjs --refute   反证：关掉看守（MIAO_NO_PARENT_WATCH=1）⇒ 心跳继续
  */
 import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';

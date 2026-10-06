@@ -22,8 +22,8 @@
  *   并配一次可反证的破坏轮：破坏后对应断言**必须变红**，否则它测的不是它声称的东西。
  *
  * 用法：
- *   node scripts/music-platform-check.mjs            正向跑（期望 RUST/IPC/PLATFORM/STORE 全绿）
- *   node scripts/music-platform-check.mjs --refute   反证轮（破坏源文件 → 断言必须变红 → 恢复）
+ *   node e2e/music-platform-check.mjs            正向跑（期望 RUST/IPC/PLATFORM/STORE 全绿）
+ *   node e2e/music-platform-check.mjs --refute   反证轮（破坏源文件 → 断言必须变红 → 恢复）
  *
  * 注意：UI 层由另一位同事并行重写，**尚未落地是已知真实缺口**。脚本对这一层
  * 不假绿 —— 缺片段就直接标 ✗ 并写明「UI 尚未落地/待负责人复核」，让负责人看得见。

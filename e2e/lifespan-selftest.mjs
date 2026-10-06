@@ -14,10 +14,10 @@
  * 配套反证开关 `MIAO_NO_PARENT_WATCH=1`（关掉子进程的父死看守）⇒ 必然出现孤儿 ⇒ 断言必须变红。
  *
  * 用法：
- *   node scripts/lifespan-selftest.mjs                 B 组（期望全绿）
- *   node scripts/lifespan-selftest.mjs --refute        B 组反证（期望**拿不到结果**）
- *   node scripts/lifespan-selftest.mjs --e11           E11（期望三进程全退、端口释放）
- *   node scripts/lifespan-selftest.mjs --e11 --refute  E11 反证（期望**端口不释放**）
+ *   node e2e/lifespan-selftest.mjs                 B 组（期望全绿）
+ *   node e2e/lifespan-selftest.mjs --refute        B 组反证（期望**拿不到结果**）
+ *   node e2e/lifespan-selftest.mjs --e11           E11（期望三进程全退、端口释放）
+ *   node e2e/lifespan-selftest.mjs --e11 --refute  E11 反证（期望**端口不释放**）
  *
  * 见 ~/.workbuddy/skills/falsifiable-verification。
  */

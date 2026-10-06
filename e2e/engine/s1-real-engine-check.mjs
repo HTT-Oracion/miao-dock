@@ -2,7 +2,7 @@
 /**
  * S1 真引擎实测 —— **「功能通」的取证**。
  *
- * 与 `service/scripts/engine-client-check.mjs` 的分工（计划 §7-R7：两者不许混为一谈）：
+ * 与 `e2e/service/engine-client-check.mjs` 的分工（计划 §7-R7：两者不许混为一谈）：
  *   engine-client-check  → **管路通**：请求形状 / 错误归一 / 三态判定（真协议**假引擎**，秒级、可反证）
  *   本脚本               → **功能通**：真引擎 + 真模型 + 真 Sakura，真的吐出一张中文译文
  *
@@ -17,9 +17,9 @@
  * 为什么不进 `npm run selftest`：它要几 GB 模型 + 分钟级耗时 + 真实 GPU。**按需手动跑**。
  *
  * 用法：
- *   node engine/scripts/s1-real-engine-check.mjs
- *   node engine/scripts/s1-real-engine-check.mjs --keep      跑完不杀进程（便于手工继续观察）
- *   node engine/scripts/s1-real-engine-check.mjs --out <dir> 指定产物目录
+ *   node e2e/engine/s1-real-engine-check.mjs
+ *   node e2e/engine/s1-real-engine-check.mjs --keep      跑完不杀进程（便于手工继续观察）
+ *   node e2e/engine/s1-real-engine-check.mjs --out <dir> 指定产物目录
  */
 import { spawn, spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -40,7 +40,7 @@ const G1_OUTPUT = path.join(RT, 'out-first', 'test_0.webp'); // M1 的 local 模
 
 const KEEP = process.argv.includes('--keep');
 const outIdx = process.argv.indexOf('--out');
-const OUT = outIdx > -1 ? path.resolve(process.argv[outIdx + 1]) : path.join(ROOT, 'tmp-engine-test', 's1-real');
+const OUT = outIdx > -1 ? path.resolve(process.argv[outIdx + 1]) : path.join(ROOT, '.tmp', 'engine-test', 's1-real');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-s1-real-'));
 
 const ENGINE_PORT = 8000;

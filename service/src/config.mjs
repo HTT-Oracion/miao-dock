@@ -94,7 +94,7 @@ function envIntOrNull(name) {
 /**
  * S6 契约面反证开关（与 `contractRefute` 同族，见那处注释）。
  *
- * 🔴 只被 `service/scripts/engine-settings-check.mjs --refute` 设置；产品路径永不设置。
+ * 🔴 只被 `e2e/service/engine-settings-check.mjs --refute` 设置；产品路径永不设置。
  * 集中一处（不散在用它各自的代码旁）的理由与 S5 那次相同：散着放的下场是
  * 「反证跑绿了，但没人说得清它到底关掉了什么」。
  *
@@ -504,7 +504,7 @@ export const config = {
   // ---------------------------------------------------------------- 契约面反证开关（S6）
   //
   // 与 `contractRefute` 同族（见 S5 那一组的注释），只是换成了 S6 的设置面。
-  // 只被 `service/scripts/engine-settings-check.mjs --refute` 设置；产品路径永不设置。
+  // 只被 `e2e/service/engine-settings-check.mjs --refute` 设置；产品路径永不设置。
   settingsRefute: SETTINGS_REFUTE,
 
   // ---------------------------------------------------------------- 契约面反证开关（S5）
@@ -513,7 +513,7 @@ export const config = {
   // 每个开关都把"新契约"退回成"旧契约"、或把"两态"压成一态，用来证明断言测的**确实是
   // 新增的那条规则**，而不是"新增前后都恰好绿"。
   //
-  // 🔴 只被 `service/scripts/contract-delta-check.mjs --refute` 设置；产品路径永不设置。
+  // 🔴 只被 `e2e/service/contract-delta-check.mjs --refute` 设置；产品路径永不设置。
   //    集中放在一处（而不是散在用它各自的代码旁），是为了让"这个仓库里有哪些反证开关"
   //    能一次 grep 到 —— 散着放的下场是：反证跑绿了，但没人说得清它到底关掉了什么。
   contractRefute: {

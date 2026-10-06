@@ -29,8 +29,8 @@
  * 本脚本要的是"**字节到没到引擎**"这种**跨进程取证**，需要会记账的假引擎 —— 夹具不同，别混。
  *
  * 用法：
- *   node service/scripts/e10-security-check.mjs            正向
- *   node service/scripts/e10-security-check.mjs --refute    反证轮（破坏源文件 → 断言必须变红 → 按字节还原）
+ *   node e2e/service/e10-security-check.mjs            正向
+ *   node e2e/service/e10-security-check.mjs --refute    反证轮（破坏源文件 → 断言必须变红 → 按字节还原）
  *
  * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（box-service 的段）。
  */
@@ -221,7 +221,7 @@ const closeAll = (servers) => Promise.all(servers.map((s) => new Promise((r) => 
  */
 function launchPlanCmd(port) {
   const js = `
-    const m = await import(${JSON.stringify(new URL('../src/engine-client.mjs', import.meta.url).href)});
+    const m = await import(${JSON.stringify(new URL('../../service/src/engine-client.mjs', import.meta.url).href)});
     const l = m.resolveEngineLaunch({ port: Number(process.argv[1]), useGpu: true, modelsTtl: 0 });
     process.stdout.write(JSON.stringify(l.cmd));
   `;

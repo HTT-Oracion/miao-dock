@@ -201,7 +201,7 @@ npm run e2e        # D1–D5：起真实 engine + 真实 service，真提交、�
 npm run capture    # 截图取证（需屏幕解锁，见下）
 ```
 
-`e2e` 与 `capture` 共用 `MIAO_E2E_TMP`（默认项目内 `.tmp-e2e/`）：端到端那轮的落盘产物
+`e2e` 与 `capture` 共用 `MIAO_E2E_TMP`（默认项目内 `.tmp/e2e/`）：端到端那轮的落盘产物
 **故意保留**，正是截图要拍的真数据 —— 清理只发生在**下一次运行的开头**，所以先 `e2e` 再 `capture`。
 
 `capture` 有三个环境前提，都不在方案文档里、各踩过一次（`docs/spec-notes.md` D-15、D-16）：

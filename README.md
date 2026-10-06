@@ -21,12 +21,39 @@
 
 ```
 miao-dock/
-├── docs/         开发方案、验收标准、裁定留痕
-├── service/      box-service（Node，127.0.0.1:5180–5190）—— 唯一翻译入口、队列、编号、落盘
-├── engine/       引擎侧：真引擎的版本锁与放置位；`src/` 是**测试替身**（模拟引擎 + 模拟 LLM）
-├── app/          Tauri v2 桌面端（Rust 壳 + Vite/React 前端）
-└── scripts/      验收脚本（契约自测 / 生命周期 / 端到端 / 截图取证）
+├── app/          Tauri v2 桌面端：Rust 壳（`app/src-tauri/`）+ Vite/React 前端（`app/src/`）
+├── service/      box-service —— **唯一翻译入口**：鉴权 / 串行队列 / 编号分配 / 落盘（Node，127.0.0.1:5180–5190）
+│   ├── src/        **产品代码**：`server.mjs` 路由 · `store.mjs` 队列与落盘 · `engine-client.mjs` 引擎适配（唯一耦合点）
+│   └── scripts/    **运行期**脚本（只剩一个）：`print-launch-plan.mjs` —— Rust 启动时问它要「启动配方」
+├── engine/       翻译引擎的**接缝层**（真引擎装在 `runtimes/`，不在库）
+│   ├── VERSIONS.lock         引擎 / 权重 / 外部二进制的**版本锁**（换版本照它来）
+│   ├── models.manifest.json  模型清单：来源 URL + sha256 + 字节数（权威副本在 `runtimes/…/models-store/`）
+│   ├── model-store.mjs       下载内核：断点续传 / 逐文件哈希 / `.ready` 幂等 / 硬链接
+│   ├── src/                  **测试替身**：模拟引擎 + 模拟 LLM（产品默认走真引擎 `MIAO_ENGINE_PROTOCOL=real`）
+│   └── scripts/              **运行期**脚本：`child-watch.mjs`（父死带走整棵子树）· `fetch-models.mjs`（CLI）
+├── e2e/          **全部验收与取证脚本**（纯 Node 零依赖；一条命令一组断言，正向与反证成对）
+│   ├── *.mjs                  生命周期 / 端到端 / 截图取证 / 文档与结构对账
+│   ├── service/               box-service 侧（`selftest.mjs` = A 组契约自测 · `stall-guard-check.mjs` = U10② 取证）
+│   └── engine/                引擎侧（引擎自测 / 真引擎全链路 / 真机 sha256 与断点续传）
+├── docs/         事实源与取证：`dev-plan.md`（方案与判据）· `spec-notes.md`（**台账：裁定与偏离留痕**）· `refs/`（入库的图与报告）
+├── test-manga/   本机验收素材：真实漫画（**不入库**）
+├── test-music/   本机验收素材：音乐（**不入库**）
+├── runtimes/     **真引擎本机资产**：Python venv + 模型权重 + llama.cpp（**不入库**，清单见 `engine/VERSIONS.lock`）
+├── vendor/       参考实现切片（只读，**不入库**）
+├── .tmp/         **全仓唯一的临时落盘目录**（**不入库**）：`e2e/` · `selftest/` · `models/` · `engine-test/`
+├── AGENTS.md     AI 协作上下文入口（任何工具进仓库先读它）
+└── README.md     本文件
 ```
+
+> **目录约定（动目录之前先读这三条）**
+>
+> 1. **产品 / 验收分家**：`service/src`、`engine/src`、`app/src` 是**产品**；`e2e/` 是**验收**。
+>    判据不是"像不像测试"，而是**产品代码在运行期会不会 fork 它** —— 会 fork 的
+>    （`print-launch-plan.mjs` / `child-watch.mjs` / `fetch-models.mjs`）留在各自模块的 `scripts/` 下，**不搬进 `e2e/`**。
+> 2. **临时产物一律写进 `.tmp/<用途>/`**，不要在仓库根另起 `.tmp-xxx/` 或 `tmp-xxx/`
+>    （历史上散着 `.tmp-e2e` / `.tmp-models` / `.tmp-selftest` / `tmp-engine-test` 四个，已合并 —— 见 `docs/spec-notes.md` D-79）。
+> 3. **新增 / 搬迁目录必须同步更新本节**。同时检查：`AGENTS.md` §1 的分层表 · `.trae/rules/project_rules.md` ·
+>    以及**断言里写死的路径** —— 路径不同步的后果不是变红，而是**静默跳过**。
 
 ## 开发
 
@@ -78,12 +105,15 @@ npm run check:ia              # IA 结构 24 条（侧栏两级 / 视图 Tab / �
 npm run check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
 npm run check:engine-client   # 翻译引擎适配层 42 条 / 反证 8 条（真协议用 openapi 快照「假引擎」，秒级可复跑）
 npm run check:models          # S3 模型下载器 32 条 / 反证 5 条（本地 Range 夹具源：中断续传 / 篡改一字节 / 换版本重链，秒级）
-npm run check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）42 条 / 反证 13 条（起真进程，约 10s）
+npm run check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）
 npm run check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run check:contract        # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status 77 条（反证：check:contract:refute）
 npm run check:music           # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 215 条（反证：check:music:refute）
 npm run check:settings        # 设置页「播放·媒体」+「翻译服务」+ X-C3 裁定结果 135 条（反证：check:settings:refute，63 条）
 npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条（反证：check:units:refute）
+npm run check:stall           # U10② 引擎卡死：「静默有上界 + 每次尝试留痕 + 进行中落盘」7 条 / 反证 3 条（mock 引擎对指定 seq「永不回包」）
+npm run check:engine-settings # S6 引擎设置面：档位 / 后端 / 空闲 / 模型目录 + 模型下载状态 61 条（反证：check:engine-settings:refute）
+npm run check:docs            # 文档 ↔ 实现一致性：条数对账 / 引用的命令存在 / 禁词 0 命中 / 分组覆盖 14 条
 ```
 
 **S7 真机端到端 E1–E11**（逐项取证总表：`docs/engine-e2e-acceptance-report.md`）—— 这几条**不进常规门**，按需手动跑：
@@ -107,7 +137,7 @@ npm run selftest:app:e11:real    # E11 三进程树回收 + E1 生效参数快�
 > ```bash
 > MIAO_E2E_TMP="$(node -e 'console.log(require("os").tmpdir())')/miao-e2e" npm run e2e
 > ```
-> 运行时的「安全删除守卫」会拦截仓库内 `.tmp-e2e/` 的批量删除（连开头那次清理都起不来），
+> 运行时的「安全删除守卫」会拦截仓库内 `.tmp/e2e/` 的批量删除（连开头那次清理都起不来），
 > 而它对系统临时目录下的路径整条绕过。一件事两样症状、排查全过程见 `docs/spec-notes.md` D-19。
 
 > **当前只有开发态**：`npm run app:build` 产出的 `.app` 里**不含** `service/` 与 `engine/`

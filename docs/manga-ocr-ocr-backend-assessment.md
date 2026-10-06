@@ -183,7 +183,7 @@
 
 ## 附：复现方式
 
-脚本在 `tmp-engine-test/ab-ocr/`（被 `.gitignore` 的 `tmp-*/` 忽略），均已跑通：
+脚本在 `.tmp/engine-test/ab-ocr/`（被 `.gitignore` 的 `.tmp/` 忽略），均已跑通：
 
 ```bash
 RT=runtimes/manga-translator
@@ -194,16 +194,16 @@ HF_HOME=$PWD/$RT/hf-cache HF_ENDPOINT=https://hf-mirror.com \
 
 # 1. 离线加载 + 官方示例图正确性核对（4/4）
 cd $RT && HF_HOME=$PWD/hf-cache HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 venv/bin/python \
-  ../../tmp-engine-test/ab-ocr/mocr-smoke.py
+  ../../.tmp/engine-test/ab-ocr/mocr-smoke.py
 
 # 2. 三臂对照（translator=none，隔离 OCR 阶段）
-tmp-engine-test/ab-ocr/run-ab.sh
+.tmp/engine-test/ab-ocr/run-ab.sh
 
 # 3. 三臂对照（Sakura / CHS，端到端；脚本内部自己拉 llama-server）
-tmp-engine-test/ab-ocr/run-ab-sakura.sh
-tmp-engine-test/ab-ocr/run-sakura-nomerge.sh     # mocr 不合并
-tmp-engine-test/ab-ocr/run-sakura-merge-v.sh     # 反证1：render.direction=vertical
-tmp-engine-test/ab-ocr/run-sakura-merge-fs.sh    # 反证2：render.font_size=22
+.tmp/engine-test/ab-ocr/run-ab-sakura.sh
+.tmp/engine-test/ab-ocr/run-sakura-nomerge.sh     # mocr 不合并
+.tmp/engine-test/ab-ocr/run-sakura-merge-v.sh     # 反证1：render.direction=vertical
+.tmp/engine-test/ab-ocr/run-sakura-merge-fs.sh    # 反证2：render.font_size=22
 ```
 
 > ⚠️ 两个脚本陷阱（本轮踩过）：

@@ -4,7 +4,7 @@
  *
  * 为什么不起 Tauri 壳：D1–D4 考的是**服务契约在真实组合场景下的行为**（跨批次的同一个 Task、
  * 同一条串行队列、成对落盘、时效与 SSE 一致），与外壳无关；外壳那一层（关窗仅隐藏、
- * 托盘常驻、退出清理）已经由 `scripts/lifespan-selftest.mjs` 用 B1–B4 覆盖。
+ * 托盘常驻、退出清理）已经由 `e2e/lifespan-selftest.mjs` 用 B1–B4 覆盖。
  * 这里起的是**真实的 `engine` 与 `service` 进程**（不是自测里的 in-process 替身），
  * 落盘也是真的写进磁盘。
  *
@@ -12,10 +12,10 @@
  *   A 组  = 逐条契约条款（端点形状、错误码、边界）—— 快、密、逐项对号
  *   D 组  = 端到端组合场景（31 张跨 2 批、与插件同请求形状、队列排布、真实落盘、时效）
  *
- * 用法：node scripts/e2e.mjs
+ * 用法：node e2e/e2e.mjs
  *
- * 落盘素材**故意留在原处**，因为紧接着的 `scripts/capture.mjs` 要拿它当截图取证的素材；
- * 清理放在**下一次运行的开头**。临时根目录默认 `.tmp-e2e/`，可用 `MIAO_E2E_TMP` 指到别处
+ * 落盘素材**故意留在原处**，因为紧接着的 `e2e/capture.mjs` 要拿它当截图取证的素材；
+ * 清理放在**下一次运行的开头**。临时根目录默认 `.tmp/e2e/`，可用 `MIAO_E2E_TMP` 指到别处
  * （例如系统临时目录：`MIAO_E2E_TMP=$(mktemp -d)`），两个脚本共用该变量。
  */
 import { spawn } from 'node:child_process';

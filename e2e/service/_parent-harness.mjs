@@ -12,7 +12,7 @@
 // 那样这个用例会变成**假阳性**：看着"看守生效"，实际只是管道破裂的副作用。
 // 契约 B4 要验的是看守本身，所以这里必须杜绝 EPIPE。
 //
-// 不参与生产路径，仅被 service/scripts/selftest.mjs 的 A18 用例使用。
+// 不参与生产路径，仅被 e2e/service/selftest.mjs 的 A18 用例使用。
 //
 // 用法：node _parent-harness.mjs <entry.mjs>
 import { spawn } from 'node:child_process';

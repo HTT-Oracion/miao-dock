@@ -32,8 +32,8 @@
  *     若它只判"文件在不在"，`total` 都会是 0 而不是"全部缺失"。
  *
  * 用法：
- *   node service/scripts/engine-settings-check.mjs            正向
- *   node service/scripts/engine-settings-check.mjs --refute   反证轮（逃生开关 → 指定断言必须变红）
+ *   node e2e/service/engine-settings-check.mjs            正向
+ *   node e2e/service/engine-settings-check.mjs --refute   反证轮（逃生开关 → 指定断言必须变红）
  *
  * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（box-service 的段）。
  */
@@ -45,7 +45,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
-const SELF = path.join(ROOT, 'service', 'scripts', 'engine-settings-check.mjs');
+const SELF = path.join(ROOT, 'e2e', 'service', 'engine-settings-check.mjs');
 const SERVICE_ENTRY = path.join(ROOT, 'service', 'src', 'server.mjs');
 const MOCK_ENGINE = path.join(ROOT, 'engine', 'src', 'server.mjs');
 const MOCK_LLM = path.join(ROOT, 'engine', 'src', 'mock-llm.mjs');
