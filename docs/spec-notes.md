@@ -3415,5 +3415,70 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 > （这次 `check:settings` 误报 163/1、`check:docs` 误报 12/2）。二者必须**串行**；反证轮自带的"22 文件按字节还原"
 > 也是并发跑时最容易被打乱的一环。
 
+---
+
+## D-85 · Windows 10 真引擎移植 —— **平台分叉一律只加分支（macOS 逐字节不变）** + 三个必踩坑 + 一个移动靶（2026-10-07）
+
+**诉求**：用户诉求「补全 Windows 10 上真实的漫画翻译引擎」。此前引擎接入 S0–S5（D-62…D-74）与真机 E1–E11（D-76）都在 macOS 上完成，Windows 侧三项长期标注 `unverified`。本条做到 **S1 真机（真权重 + 真 llama-server）出真译文**。
+
+> **是否提交的判据（用户给定）**：先确认"macOS 直接拉取本改动**有没有影响**" —— 无影响才提交。结论见 §七。
+
+### 一、总原则：**平台分叉 = 加分支，macOS 那一支逐字节不动**
+
+所有平台差异都写成 `process.platform === 'win32' ? <win> : <posix>`，且 **posix 分支与改动前逐字节等价**：
+
+| 位置 | 改动前（POSIX） | 改动后（POSIX 分支） |
+|---|---|---|
+| `service/src/config.mjs` `enginePython` | `…/venv/bin/python` | `defaultEnginePython()` 非 win32 分支返回的**仍是** `…/venv/bin/python` |
+| `service/src/engine-client.mjs` llama 二进制 | `…/bin/llama/llama-b11417/llama-server` | `defaultLlmServerBin()` 非 win32 分支返回**同一路径** |
+| `config.mjs` 落盘根黑名单 | 一份 Unix 名单 | `list` 原样 + **仅 win32** 追加 `C:\Users`（EXACT，否则挡掉合法落盘根）与 `C:\Windows` / `Program Files*` / `ProgramData`（PREFIX） |
+
+### 二、清单（`models.manifest.json`）：runtime 集**按平台分化**
+
+- 条目新增**可选**字段 `platform`（`darwin-arm64` / `win32-x64`）；**无该字段 = 平台无关，恒适用**。
+- `engine/model-store.mjs::selectFiles` 增 `matchesPlatform` 过滤，两条路径**刻意不同**：
+  - **有 `ids`（显式点名）⇒ 不按平台过滤** —— 跨平台取证（在 Mac 上验 Windows 条目的下载）需要它；
+  - `set` / 全量 ⇒ 按当前平台过滤（否则 Windows 会去下 `darwin-arm64` 的 llama.cpp）。
+- macos 条目**补 `extractTo`/`extractStrip`**；runtime 集新增两条 win 条目（llama-cuda-12.4 + cudart）。
+- 净效果（macOS arm64）：runtime 集此前只有那 1 条 macos 条目、现在仍只选它 ⇒ **与改动前一致**；模型权重条目无 `platform` 字段，不受影响。
+
+### 三、解包（`fetch-models.mjs --extract`）改成"按平台挑带 `extractTo` 的条目"
+
+归档一律 `tar -xf`（Windows 10 自带 bsdtar 能解 zip 与 tar.gz；macOS 的 bsdtar 也能 `-xf` 自动识别压缩）。macos 条目 `extractTo=bin/llama/llama-b11417` + `strip=1` ⇒ 落点与改动前（`bin/llama` 不 strip、归档顶层是 `llama-b11417/`）**最终路径相同**。
+
+### 四、新增两条装配脚本（+ 补上 venv 一步）
+
+| 脚本 | 干什么 | npm 别名 |
+|---|---|---|
+| `engine/scripts/setup-engine.mjs` | Python 3.11 运行时（python-build-standalone）+ **venv** + 引擎源码。venv 判据用「解释器文件存在」而非「目录非空」（目录残了也算缺） | `setup:engine` |
+| `engine/scripts/install-engine-deps.mjs` | **Windows 适配版**：拆两批装依赖 + 手动 MSVC 环境 + pydensecrf 兼容补丁 | `deps:engine` |
+
+> `install-engine-deps.mjs` 的报错文案原来就写着"先跑 setup-engine.mjs `--venv`"，但那个开关当时**并不存在**（venv 是手工建的）⇒ 本条补上 `--venv`，让文档流**可复现**（此前"照脚本做"做不到）。
+
+### 五、三个必踩坑 + 一个移动靶（Windows，本轮实测，非推测）
+
+1. **`vcvars64.bat` 不可用**：它靠 `reg.exe` 查注册表定位 SDK，本机 sandbox **拦 `reg.exe`** ⇒ 得到**缺 ucrt/um 头的残缺 INCLUDE**。处置：手动拼 `INCLUDE/LIB/PATH` + `DISTUTILS_USE_SDK=1`/`MSSdk=1`，**不 call vcvars**。
+2. **`rc.exe` 在 Windows SDK 的 `bin/<ver>/x64`**，不在 MSVC 目录；漏进 PATH 会在**链接**阶段炸 `LNK1158: 无法运行"rc.exe"`（报错点离根因很远）。
+3. **缺 `app/src-tauri/icons/icon.ico`** ⇒ tauri-build 在 Windows 编译失败；已补 ICO（PNG-compressed）并加进 `bundle.icon`。
+4. 移动靶：**pydensecrf master 把模块级常量迁进了枚举**（`dcrf.DIAG_KERNEL` → `dcrf.KernelType.DIAG_KERNEL`），引擎源码用旧写法 ⇒ **掩码细化**一步 `AttributeError`（检测/OCR/翻译都已跑完才炸，易误判成"翻译坏了"）。处置：**幂等兼容补丁**回填旧常量。⚠️ 未做：把 requirements 那行直链钉到具体 commit。
+
+### 六、验收（现场）
+
+- `node e2e/engine/s1-real-engine-check.mjs` **通过**：真 llama-server（Sakura 1.5B fp16）+ 真引擎 → 中文译文落盘 **289756 B / 12.2 s（GPU）**；输入输出同为 429×734，`changedPct=3.61%` / `maxChannelDiff=255`（确实重绘了文字，非原图回写）。
+- 译文抽样：`毎日新鮮な野ウサギをありがとうな` → 「每天都有新鲜的野兔哦。」
+- 版本落点与逐项踩坑另见 `engine/VERSIONS.lock` §6。
+
+### 七、macOS 兼容性复核（提交前**逐项回读源码**，非凭记忆）
+
+- `service/src/{config,engine-client}.mjs`：win32 分支**全是新增**，POSIX 取值与提交前逐字节相同。
+- `engine/model-store.mjs`：平台过滤对 macOS 是**空操作**（该平台相关条目只剩它自己；权重条目无 `platform`）。`e2e/engine/model-store-check.mjs` 用的是**合成夹具清单**（条目无 `platform`）⇒ 32 条断言不受影响；其"M 组·真实清单自洽"**不比对条数**，只查字段齐备。
+- 服务侧 `model-status.mjs` 只由 `visual`/`llm` 两个集推导就绪态，**不读 runtime 集** ⇒ `/engine/status` 输出不变。
+- `e2e/engine/{s1,e3}-*.mjs`：win32 分支为新增，POSIX 不变。
+- **结论：macOS 拉取本提交，行为不变。** 唯一边界：macOS **x64/Intel** 本就不在支持范围（清单只有 `darwin-arm64` 资产）—— 此前会下一个跑不起来的 arm64 二进制，现在 runtime 集直接过滤为空、失败更早更明确。
+
+### 八、改动文件
+
+`service/src/config.mjs` · `service/src/engine-client.mjs` · `engine/model-store.mjs` · `engine/models.manifest.json` · `engine/scripts/fetch-models.mjs` · `engine/scripts/setup-engine.mjs`（新）· `engine/scripts/install-engine-deps.mjs`（新）· `engine/VERSIONS.lock`（§6）· `e2e/engine/s1-real-engine-check.mjs` · `e2e/engine/e3-real-full-chain-check.mjs` · `app/src-tauri/tauri.conf.json` · `app/src-tauri/icons/icon.ico`（新）· `package.json`（`setup:engine` / `deps:engine` / `extract:models`）· 本文件。
+
 
 

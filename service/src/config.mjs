@@ -172,6 +172,20 @@ function defaultRootDir() {
   return path.join(os.homedir(), 'Pictures', 'Box 漫画');
 }
 
+/**
+ * 引擎 venv 里的 Python 解释器默认路径。
+ *
+ * 🔴 **venv 布局按平台分叉**：POSIX 是 `venv/bin/python`，Windows 是 `venv/Scripts/python.exe`。
+ *    写死其中一个会让另一平台的引擎**起不来**，而且症状是"python 找不到"这种离根因极远的报错
+ *    （`resolveEngineLaunch` 会拼出一条指向不存在文件的命令）。`MIAO_ENGINE_PYTHON` 可覆盖。
+ */
+function defaultEnginePython() {
+  const venv = path.resolve(PKG_DIR, '..', 'runtimes', 'manga-translator', 'venv');
+  return process.platform === 'win32'
+    ? path.join(venv, 'Scripts', 'python.exe')
+    : path.join(venv, 'bin', 'python');
+}
+
 export const STATE_DIR = path.resolve(process.env.MIAO_STATE_DIR || defaultStateDir());
 export const TASKS_STATE_DIR = path.join(STATE_DIR, 'tasks');
 export const IDEMPOTENCY_FILE = path.join(STATE_DIR, 'idempotency.json');
@@ -432,8 +446,7 @@ export const config = {
   // 会以 `ModuleNotFoundError: No module named 'args'` 退出（实测，见台账 D-62）。
   // 上游 README 写的也是 `$ python main.py --use-gpu`。
   engineServerDir: process.env.MIAO_ENGINE_SERVER_DIR || path.join(ENGINE_DIR, 'server'),
-  enginePython: process.env.MIAO_ENGINE_PYTHON
-    || path.resolve(PKG_DIR, '..', 'runtimes', 'manga-translator', 'venv', 'bin', 'python'),
+  enginePython: process.env.MIAO_ENGINE_PYTHON || defaultEnginePython(),
   // 模型根目录（`models/` 的父目录）。三级回退（S6）：
   //   `MIAO_MODEL_ROOT`（env）→ 设置文件 `modelDir` → 引擎源码树上一级（= `runtimes/manga-translator/`）
   // ⚠️ 与 `engine/scripts/fetch-models.mjs` 的 `ROOT` 必须**同源**：那个脚本自己读
@@ -561,7 +574,7 @@ export function canonicalize(p) {
 //  · PREFIX —— 连子路径一并拒绝。这些是真正的系统目录。
 const BLACKLIST_EXACT = () => {
   const home = os.homedir();
-  return [
+  const list = [
     path.parse(path.resolve('/')).root, // '/'（Windows 下为 'C:\\'）
     '/Users',                           // home 的父目录：本身不可作落盘根
     home,                               // 用户主目录本身（§8.2「用户主目录本身」）
@@ -569,11 +582,19 @@ const BLACKLIST_EXACT = () => {
     '/private/var',
     '/var',                             // → /private/var
   ];
+  if (process.platform === 'win32') {
+    // Windows：home 的父目录（`C:\Users`）本身不可作落盘根 —— 与 macOS 的 `/Users` 同义。
+    // 🔴 必须是 EXACT 而非 PREFIX：`C:\Users` 之下就是各用户目录，前缀拒绝会把
+    //    合法的 `C:\Users\<me>\Pictures\Box 漫画` 一并挡掉。
+    const homeParent = path.dirname(home);
+    if (homeParent && homeParent !== home) list.push(homeParent);
+  }
+  return list;
 };
 
 const BLACKLIST_PREFIX = () => {
   const home = os.homedir();
-  return [
+  const list = [
     '/tmp',                 // → /private/tmp
     '/private/tmp',
     '/private/var/tmp',
@@ -588,6 +609,18 @@ const BLACKLIST_PREFIX = () => {
     '/opt',
     path.join(home, 'Library'), // 修复原先「home/Library 精确相等」被 ~/Library/Caches/xxx 绕过
   ];
+  if (process.platform === 'win32') {
+    // 🔴 Windows 系统目录（原来的 Unix 名单在 Windows 上**一条都命中不了**，
+    //    等于这道校验在 Windows 下形同虚设 —— 用户可以把落盘根指到 C:\Windows）。
+    const sysRoot = `${process.env.SystemDrive || 'C:'}\\`;
+    list.push(
+      path.join(sysRoot, 'Windows'),
+      process.env.ProgramFiles || path.join(sysRoot, 'Program Files'),
+      process.env['ProgramFiles(x86)'] || path.join(sysRoot, 'Program Files (x86)'),
+      process.env.ProgramData || path.join(sysRoot, 'ProgramData'),
+    );
+  }
+  return list;
 };
 
 function blacklistHit(canonicalAbs) {

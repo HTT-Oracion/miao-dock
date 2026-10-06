@@ -92,6 +92,7 @@ export async function sha256File(file, { signal } = {}) {
 export function selectFiles(manifest, { ids, set } = {}) {
   const all = manifest.files || [];
   if (ids?.length) {
+    // 显式点名 id ⇒ **不做平台过滤**：跨平台取证（例如在 Mac 上验 Windows 条目的下载）需要它。
     const want = new Set(ids);
     const picked = all.filter((f) => want.has(f.id));
     const missing = [...want].filter((id) => !all.some((f) => f.id === id));
@@ -100,13 +101,30 @@ export function selectFiles(manifest, { ids, set } = {}) {
     }
     return picked;
   }
+  // `set` / 全量：**按当前平台过滤** —— 否则在 Windows 上会去下 macos-arm64 的 llama.cpp
+  // （平台相关的资产带上 `platform` 字段；无该字段 = 平台无关，恒适用）。
+  const key = platformKey();
   if (set) {
     const s = manifest.sets?.[set];
     if (!s) throw new ModelStoreError('MODEL_UNKNOWN_SET', `清单里没有 set「${set}」`, { set });
     const want = new Set(s.files);
-    return all.filter((f) => want.has(f.id));
+    return all.filter((f) => want.has(f.id) && matchesPlatform(f, key));
   }
-  return all;
+  return all.filter((f) => matchesPlatform(f, key));
+}
+
+/**
+ * 当前平台标识，形如 `win32-x64` / `darwin-arm64` —— 与 manifest 条目的 `platform` 字段对齐。
+ * 只区分 arm64 与 x64（其余架构原样透传，避免把未知架构误当成 x64）。
+ */
+export function platformKey(platform = process.platform, arch = process.arch) {
+  const a = arch === 'arm64' || arch === 'x64' ? arch : arch;
+  return `${platform}-${a}`;
+}
+
+/** 条目是否适用于给定平台（无 `platform` 字段 = 平台无关，恒适用）。 */
+export function matchesPlatform(file, key = platformKey()) {
+  return !file.platform || file.platform === key;
 }
 
 // ------------------------------------------------------------------ .ready 标记

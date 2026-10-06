@@ -32,8 +32,13 @@ import path from 'node:path';
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const RT = path.join(ROOT, 'runtimes', 'manga-translator');
 const SRC = path.join(RT, 'src');
-const VENV_PY = path.join(RT, 'venv', 'bin', 'python');
-const LLAMA_BIN = path.join(RT, 'bin', 'llama', 'llama-b11417', 'llama-server');
+// Windows 是 venv/Scripts/python.exe，POSIX 是 venv/bin/python
+const VENV_PY = process.platform === 'win32'
+  ? path.join(RT, 'venv', 'Scripts', 'python.exe')
+  : path.join(RT, 'venv', 'bin', 'python');
+// Windows 是 llama-server.exe，POSIX 是 llama-server
+const LLAMA_BIN = path.join(RT, 'bin', 'llama', 'llama-b11417',
+  process.platform === 'win32' ? 'llama-server.exe' : 'llama-server');
 const SAKURA_GGUF = path.join(RT, 'models', 'sakura', 'sakura-1.5b-qwen2.5-v1.0-fp16.gguf');
 const TEST_IMAGE = path.join(ROOT, 'test-manga', 'test_0.webp');
 const G1_OUTPUT = path.join(RT, 'out-first', 'test_0.webp'); // M1 的 local 模式产物

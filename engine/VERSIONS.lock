@@ -242,3 +242,72 @@ local_entry  = `python -m manga_translator local -i <img>`       # **CLI 单图/
 #      接真引擎时这条路径会被频繁走到，S1 要单独盯（可能拉长耗时）。
 #   ② **1.5B 档的译文质量明显一般**（`いらっしゃい` 译成"真让人不爽"是错的；`野バト`(野鸽) 被译成"野兔"）。
 #      ⇒ 这是**产品选型问题**，不是管线问题：Tiny 档只能验"通"，若要"可用"得上 8B/14B 档（下载量与耗时都要重估）。
+
+## 6. Windows 10 移植（✅ 2026-10-07 全链路真机跑通）
+
+# 平台 = Windows 10 · i5-12400 · RTX 4060 Ti 8GB · 15.7GB RAM
+# Python = 3.11.17（python-build-standalone win-x64，非 §3 的 aarch64-apple-darwin）
+
+### 6.1 实装落点（与 §3 的 macOS 布局逐项对照）
+# 解释器    = runtimes/manga-translator/python-3.11/python.exe
+# venv      = runtimes/manga-translator/venv/        ← **Windows 布局**：venv/Scripts/python.exe
+# site-pkgs = venv/Lib/site-packages                 ← macOS 是 venv/lib/python3.11/site-packages
+# torch     = 2.14.1+cu126 · torchvision 0.29.1+cu126（CUDA 12.6；cuda.is_available()=True，device=RTX 4060 Ti）
+#             ↑ 与 §3 的 2.14.1 **同版本号**，只是换成 cu126 构建 ⇒ 后端差异只在构建，不在版本
+# numpy     = 1.26.4（上游钉死。torchvision 会先拉 2.4.6，装 requirements 时被降回 1.26.4）
+# 其余      = transformers 5.19.0 · onnxruntime 1.30.0 · accelerate 1.15.0 · pydantic 2.5.0
+#             fastapi 0.125.0（回溯落点，与 §3 一致）· rusty-manga-image-translator 0.12.1 · manga-ocr 0.1.16
+# llama     = bin/llama/llama-b11417/llama-server.exe（win-cuda-12.4 + cudart；条目见 models.manifest.json）
+# 新增脚本  = engine/scripts/setup-engine.mjs（下 Python 运行时 + 引擎源码）
+#             engine/scripts/install-engine-deps.mjs（装 venv 依赖，Windows 适配版，见 §6.3）
+
+### 6.2 🔴 Windows 侧必踩的三个坑（本轮实测，非推测）
+# ① **`vcvars64.bat` 在本环境不可用**：它靠 `reg.exe` 查注册表定位 Windows SDK，而本机 sandbox **拦截 reg.exe**
+#    ⇒ 直接 call 它会拿到一份**缺 ucrt/um 头目录的残缺 INCLUDE**（编译时找不到 `io.h` 之类）。
+#    处置：install-engine-deps.mjs **不用 vcvars**，改为**手动拼 INCLUDE/LIB/PATH**
+#    （MSVC include + SDK ucrt/shared/um/winrt/cppwinrt），并设 `DISTUTILS_USE_SDK=1` + `MSSdk=1`
+#    让 setuptools/distutils **跳过 vcvarsall**、直接吃现成环境。
+# ② **`rc.exe` 不在 MSVC 目录，在 Windows SDK 的 `bin/<ver>/x64`**。漏进 PATH 会在**链接**阶段炸：
+#    `LINK : fatal error LNK1158: 无法运行"rc.exe"` —— 报错发生在 link、离"PATH 少了个 SDK bin"很远。
+# ③ `npm run app` 另外还因缺 `app/src-tauri/icons/icon.ico` 编译失败（tauri-build 的 Windows 资源文件）；
+#    已补（从 icon.png 转 PNG-compressed ICO）并把 `icon.ico` 加进 tauri.conf.json 的 `bundle.icon`。
+# 本机 MSVC/SDK 路径 = C:\VS2022BT\VC\Tools\MSVC\14.44.35207
+#                    + C:\Program Files (x86)\Windows Kits\10\{Include,Lib,bin}\10.0.22621.0
+
+### 6.3 依赖安装：**必须拆两批**
+# pydensecrf 在 PyPI **没有任何 Windows wheel**，只能源码编译。而 pip 是"先全部收集、最后统一安装"的**事务**：
+# 只要 pydensecrf 编译失败，整批 100+ 依赖会**一起回滚** ⇒ 全白装。故拆两批：
+#   批 A：requirements.txt **剔掉 pydensecrf 行** → 纯 wheel，一把装完
+#   批 B：`pip install --no-build-isolation <pydensecrf zip>` → 走 MSVC 编译
+# 网络：github 直连本机常被代理拦（502）；pydensecrf 改为**先经镜像下 zip 到本地**再装
+#   （`ghfast.top` / `gh-proxy.com` 前缀实测可通 —— 与 §3 记的 `ghfast.top` 同源）。
+
+### 6.4 🔴 pydensecrf 的 master 是**移动靶** —— 上游已改版 API
+# 上游把旧的**模块级常量**迁进了枚举，而引擎源码用的是旧写法：
+#   旧（引擎 `mask_refinement/text_mask_utils.py:84-90`）：`dcrf.DIAG_KERNEL` / `dcrf.NO_NORMALIZATION`
+#   新（master 现在导出）：`dcrf.KernelType.DIAG_KERNEL` / `dcrf.NormalizationType.NO_NORMALIZATION`
+# 取证：`master.zip` 体积从 §3 那轮的 **2.2 MB** 变成现在的 **2.3 MB** ⇒ 内容确实变了（不是"我们装错了"）。
+# 症状（真机实测）：`AttributeError: module 'pydensecrf.densecrf' has no attribute 'DIAG_KERNEL'`，
+#   出现在**掩码细化**一步 —— 检测/OCR/Sakura 翻译**都已跑完**才炸，很容易误判成"翻译坏了"。
+# ✅ 处置：install-engine-deps.mjs 加**幂等兼容补丁**（写进 venv 的 `pydensecrf/__init__.py`），
+#   把枚举成员回填成模块级同名常量 ⇒ 新旧 API 都能用。
+# ⚠️ 未做、建议后续：`requirements.txt` 那行直链 master 应**钉到具体 commit/tag**，否则每次重装都可能再变。
+
+### 6.5 ✅ 端到端验证（S1 真引擎 · `node e2e/engine/s1-real-engine-check.mjs`）
+# 链路   = llama-server(Sakura 1.5B fp16) → server.main(uvicorn:8000) → 执行器(:8001) → **经真实适配层**送图
+# 三态   = stopped → prewarming(7.8s) → running(15.8s)
+# 结果   = ✅ 译文落盘（289756 B，**12.2 s**，GPU）；输入/输出同为 429×734；
+#          逐像素 **changedPct=3.61%** · maxChannelDiff=255 ⇒ 确实重绘了文字（不是原图回写）
+# 译文抽样 = 毎日新鮮な野ウサギをありがとうな→"每天都有新鲜的野兔哦。"
+#            これ全部をきみひとりが…？→"这些全部都是你一个人……？"
+# 测试图  = test-manga/test_0.webp（429×734，从 docs/refs/manga-ocr/01-full-page-ab.png 的**左面板**裁出）
+#           ⚠️ 刻意取**原始日文页**而非已翻译页：拿已翻译页当输入会让"改图率"失去意义。
+# ⚠️ 1.5B 档译文质量一般（`いらっしゃい`→"直烦人"）—— 与本文档上面记的"1.5B 质量明显一般"是同一件事：
+#    是**产品选型**问题，不是 Windows 移植问题。
+
+### 6.6 e2e 脚本的 Windows 硬编码（已修）
+# `e2e/engine/{s1-real-engine-check,e3-real-full-chain-check}.mjs` 曾写死：
+#   · VENV_PY  = `<RT>/venv/bin/python`      → 应为 venv/Scripts/python.exe
+#   · LLAMA_BIN = `<RT>/bin/llama/.../llama-server`（无 .exe）
+# ⇒ 均改为按 `process.platform` 分叉。
+

@@ -547,6 +547,24 @@ export async function probeEngine() {
 const ENGINE_RT = path.resolve(config.engineDir, '..');
 
 /**
+ * llama.cpp 解包后的**版本目录名**。
+ * 🔴 它与 `engine/scripts/fetch-models.mjs --extract` 的落点、以及 `models.manifest.json`
+ *    里 runtime 条目的版本号**必须一致** —— 三处任一对不上，`resolveLlmLaunch` 给出的就是
+ *    一条指向不存在文件的命令（症状："llama-server 起不来"，而根因在一个目录名上）。
+ */
+export const LLAMA_VERSION_DIR = 'llama-b11417';
+
+/**
+ * `llama-server` 可执行文件的默认路径。**按平台分叉文件名后缀**：
+ * POSIX 是 `llama-server`，Windows 是 `llama-server.exe`。写死无后缀会在 Windows 上
+ * 拼出一条指向不存在文件的命令。`MIAO_LLM_BIN` 可覆盖。
+ */
+function defaultLlmServerBin() {
+  const name = process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
+  return path.resolve(ENGINE_RT, 'bin', 'llama', LLAMA_VERSION_DIR, name);
+}
+
+/**
  * 引擎③（LLM）的**归属方** —— 《04》§9.1 规定 Tier1 空闲卸载「实现方 = box-service
  * （③ 不在引擎 TTL 范围内）」，故 ③ 必须由 box-service 持有，Rust 侧只负责**打印配方**不负责拉起。
  *
@@ -617,7 +635,7 @@ export function resolveLlmLaunch(overrides = {}) {
 function resolveRealLlmLaunch(overrides = {}) {
   const {
     tier = 'tiny',
-    bin = process.env.MIAO_LLM_BIN || path.resolve(ENGINE_RT, 'bin', 'llama', 'llama-b11417', 'llama-server'),
+    bin = process.env.MIAO_LLM_BIN || defaultLlmServerBin(),
     port = envIntLocal('MIAO_LLM_PORT', 8080),
     ctx = envIntLocal('MIAO_LLM_CTX', 4096),
     ngl = envIntLocal('MIAO_LLM_NGL', 99),

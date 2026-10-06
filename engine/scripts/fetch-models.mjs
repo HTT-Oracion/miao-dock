@@ -24,7 +24,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-import { ensureModels, verifyModels, linkModels, ModelStoreError } from '../model-store.mjs';
+import { ensureModels, verifyModels, linkModels, matchesPlatform, ModelStoreError } from '../model-store.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
@@ -115,15 +115,26 @@ async function main() {
   }
 
   if (args.extract) {
-    const entry = (manifest.files || []).find((f) => f.id === 'llama_cpp_macos_arm64');
-    if (!entry) throw new Error('清单里没有 llama_cpp_macos_arm64，无法解包');
-    const tarAbs = path.join(ROOT, entry.dest);
-    const outDir = path.join(path.dirname(tarAbs), 'llama');
-    fs.rmSync(outDir, { recursive: true, force: true });
-    fs.mkdirSync(outDir, { recursive: true });
-    const rc = spawnSync('tar', ['-xzf', tarAbs, '-C', outDir], { stdio: 'inherit' });
-    if (rc.status !== 0) throw new Error(`解包失败：${tarAbs}`);
-    console.log(`已解包到 ${outDir}`);
+    // 按**当前平台**挑选带 `extractTo` 的 runtime 条目（Mac = macos tar.gz；Windows = win zip + cudart）。
+    // 归档都用 `tar -xf` 解（Windows 10 自带 bsdtar，能解 zip 与 tar.gz）。
+    const targets = (manifest.files || []).filter((f) => f.extractTo && matchesPlatform(f));
+    if (!targets.length) throw new Error('清单里没有适用于当前平台的可解包条目（需要 extractTo 字段）');
+    for (const entry of targets) {
+      const arcAbs = path.join(ROOT, entry.dest);
+      if (!fs.existsSync(arcAbs)) {
+        console.log(`  跳过 ${entry.id}：归档不在 ${arcAbs}（先跑一次下载）`);
+        continue;
+      }
+      const outDir = path.join(ROOT, entry.extractTo);
+      fs.mkdirSync(outDir, { recursive: true });
+      // 归档一般带一个顶层目录 ⇒ 默认 strip 掉第 1 层，让内容直接落在 outDir。
+      const strip = entry.extractStrip ?? 1;
+      const tarArgs = ['-xf', arcAbs, '-C', outDir];
+      if (strip > 0) tarArgs.push(`--strip-components=${strip}`);
+      const rc = spawnSync('tar', tarArgs, { stdio: 'inherit' });
+      if (rc.status !== 0) throw new Error(`解包失败（exit ${rc.status}）：${arcAbs}`);
+      console.log(`  已解包 ${entry.id} → ${outDir}`);
+    }
   }
   return 0;
 }
