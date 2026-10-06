@@ -34,17 +34,36 @@ const APPS: { id: AppId; label: string; icon: () => ReactElement }[] = [
  * 分隔线是「应用 / 全局」的分界，跨层放置会让两级结构失去意义。
  * 全局层通过 `.sidebar-status` 的 `margin-top: auto` 贴到侧栏底部 —— 这只是
  * 撑开分隔线以下的空隙，分隔线仍在应用层之下、全局层之上，C8c 不受影响。
+ *
+ * ## 应用入口的两种形态（台账 D-84，「侧栏图标标签」偏好）
+ *
+ * `labels` 为真 → 「图标 + 文字」58×52；为假 → 纯图标 44×44。
+ * 两套几何都来自 `SIDEBAR`，本组件不出现第二个数字。
+ *
+ * 🔴 **`aria-label` 是必须的，不是锦上添花**：关掉标签后按钮里就再没有可读文字，
+ * 而 `title` 单独兜不住无障碍（它不进可访问名称计算的前列，读屏与键盘焦点都可能读不出）。
+ * 这与下面「设置」按钮是同一条理由、同一套写法。
+ *
+ * 🔴 **几何必须跟着标签一起变**：关掉文字却仍留 58×52，会在每个入口下方多出一截
+ * 空白（读起来像"漏了字"，而不是"刻意只剩图标"）—— 这正是 `.nav-item.is-global`
+ * 的注释里说过的那个坑。所以尺寸与 `labels` 是**同一个判断**的两个输出，
+ * 不许分开写。
  */
 export function Sidebar({
   screen,
   onScreen,
   state,
+  labels,
 }: {
   screen: Screen;
   onScreen: (s: Screen) => void;
   state: ServiceState;
+  /** 是否显示应用入口的文字标签（`shell-prefs.ts` 的偏好，设置页①可改） */
+  labels: boolean;
 }) {
   const v = stateView(state);
+  // 尺寸与标签同源：一个 `labels` 同时决定"有没有 span"与"用哪套几何"
+  const appItem = labels ? SIDEBAR.appItem : SIDEBAR.iconOnlyItem;
   return (
     <nav className="sidebar" style={{ width: SHELL.sidebarWidth, flexBasis: SHELL.sidebarWidth }}>
       <div className="sidebar-logo" style={{ width: SHELL.logoSize, height: SHELL.logoSize }}>
@@ -60,13 +79,14 @@ export function Sidebar({
           key={a.id}
           type="button"
           className={screen === a.id ? 'nav-item is-app is-active' : 'nav-item is-app'}
-          style={{ width: SIDEBAR.appItem.w, height: SIDEBAR.appItem.h }}
+          style={{ width: appItem.w, height: appItem.h }}
           aria-current={screen === a.id ? 'page' : undefined}
+          aria-label={a.label}
           title={a.label}
           onClick={() => onScreen(a.id)}
         >
           <a.icon />
-          <span>{a.label}</span>
+          {labels ? <span>{a.label}</span> : null}
         </button>
       ))}
 

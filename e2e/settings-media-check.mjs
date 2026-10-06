@@ -86,6 +86,21 @@ const F = {
   // 反证要**定点破坏某条 CSS 规则**时必须有具体文件，`stylesDir` 是目录改不了。
   settingsStyle: path.join(APP, 'src', 'styles', 'settings.scss'),
   componentsStyle: path.join(APP, 'src', 'styles', 'components.scss'),
+  // D-84 · 功能梳理落地的四个接入点：
+  //   def 渲染（parts 的 DefaultChip）· 侧栏标签偏好（shell-prefs + Sidebar + App）
+  //   · 存储占用三行（StorageBlock）· 第三方许可（生成物 + 块 + 生成脚本）
+  shellPrefs: path.join(APP, 'src', 'shell-prefs.ts'),
+  sidebar: path.join(APP, 'src', 'components', 'Sidebar.tsx'),
+  tokens: path.join(APP, 'src', 'theme', 'tokens.ts'),
+  appMain: path.join(APP, 'src', 'App.tsx'),
+  storageBlock: path.join(APP, 'src', 'screens', 'settings', 'StorageBlock.tsx'),
+  licensesBlock: path.join(APP, 'src', 'screens', 'settings', 'LicensesBlock.tsx'),
+  licensesJson: path.join(APP, 'src', 'generated', 'licenses.json'),
+  genScript: path.join(APP, 'scripts', 'gen-licenses.mjs'),
+  // 生成物与来源文件的对账需要它们（同 `ROOT` 下的 package.json / app 下的 lock）
+  pkgJson: path.join(ROOT, 'package.json'),
+  npmLock: path.join(APP, 'package-lock.json'),
+  cargoLock: path.join(APP, 'src-tauri', 'Cargo.lock'),
 };
 
 // ── 冻结的契约（负责人冻结，本脚本照抄，不改口径） ──────────────────────────
@@ -190,6 +205,17 @@ function loadSources() {
     notReady: readMaybe(F.notReady),
     ipc: readMaybe(F.ipc),
     nav: readMaybe(F.nav),
+    shellPrefs: readMaybe(F.shellPrefs),
+    sidebar: readMaybe(F.sidebar),
+    tokens: readMaybe(F.tokens),
+    appMain: readMaybe(F.appMain),
+    storageBlock: readMaybe(F.storageBlock),
+    licensesBlock: readMaybe(F.licensesBlock),
+    licensesJson: readMaybe(F.licensesJson),
+    genScript: readMaybe(F.genScript),
+    pkgJson: readMaybe(F.pkgJson),
+    npmLock: readMaybe(F.npmLock),
+    cargoLock: readMaybe(F.cargoLock),
     // 全分片拼接（顺序 = index.scss 的 @use 顺序 = 层叠顺序），
     // 不是读单个 app.css —— 样式已按模块拆分，读单文件会集体变红（读不到 ≠ 真回归）
     css: readStyleSource(F.stylesDir),
@@ -2007,6 +2033,294 @@ add('SIMPLIFY.warn.unified', 'SIMPLIFY', (ctx) => {
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
+// ─────────────────────────────────────────────── D-84 · 功能梳理落地（四项） ───
+//
+// 对应《设置页文案与功能梳理》§2.4「可以直接做」的四项：
+//   ① 侧栏图标标签开关  ② 存储占用拆分版  ③ 第三方许可  ④ `def` 字段落点
+//
+// ⚠️ 另两项（临时文件 / 开源反馈）**仍在等外部条件**，本组因此还有一条
+// 「不该多的没多出来」：它们必须仍是 `pending` —— 那正是"文档说不能做就别硬做"
+// 这条纪律的可执行形式。
+
+/** 从导入的 catalog 里按 id 找项；找不到返回 null（判据自己决定怎么报） */
+function itemById(mod, id) {
+  for (const s of mod?.SETTINGS_SECTIONS ?? []) {
+    for (const g of s.groups) {
+      const hit = g.items.find((i) => i.id === id);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+// ④ `def` 字段：catalog 里一直填着值，但**从来没有组件渲染它**（注释自己都这么写）。
+//    本轮把它渲染成标题行内的一枚小字 —— 零高度成本，回答的是「我改过没有」。
+add('FEATURES.def.rendered', 'FEATURES', (ctx) => {
+  const parts = stripComments(ctx.s.parts);
+  const problems = [];
+  if (!/item\.def\s*\?\s*<DefaultChip/.test(parts)) problems.push('Row 没有按 item.def 渲染 DefaultChip');
+  if (!/默认：\{value\}/.test(parts)) problems.push('DefaultChip 没有写「默认：」前缀（只写值会被读成"你现在是这个"）');
+  if (!/title=\{[^}]*出厂默认/.test(parts)) problems.push('DefaultChip 没有说明"这不是你当前的设置"');
+  if (!/\.set-row-def\s*\{/.test(ctx.s.css)) problems.push('缺少 .set-row-def 样式');
+  if (!/\.set-row-def\s*\{[^}]*flex:\s*0 0 auto/.test(ctx.s.css))
+    problems.push('.set-row-def 没有 flex:0 0 auto（会被标题挤成省略号）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+add('FEATURES.def.commentSynced', 'FEATURES', (ctx) => {
+  // ⚠️ 这一条**刻意不剥注释**：被检查的就是注释本身。
+  // `def` 的字段注释曾写着「当前没有任何组件渲染它」—— 那是实现未变时的正确描述。
+  // 实现变了而注释没变，下一个人会据此把 `def` 当成死字段删掉。
+  const stale = '当前没有任何组件渲染它';
+  const hit = ctx.s.catalog.includes(stale);
+  return {
+    ok: !hit,
+    detail: hit ? `catalog 的 def 注释仍是旧口径（「${stale}」），而实现已经渲染它了` : '',
+  };
+});
+
+// ① 侧栏图标标签：一个偏好 + 一套几何分支，两处必须同源。
+add('FEATURES.shell.pref', 'FEATURES', (ctx) => {
+  const src = stripComments(ctx.s.shellPrefs);
+  const problems = [];
+  if (!/miao\.sidebar-labels/.test(src)) problems.push('偏好 key 不是 miao.sidebar-labels');
+  if (!/export function initialSidebarLabels/.test(src)) problems.push('缺少 initialSidebarLabels');
+  if (!/export function persistSidebarLabels/.test(src)) problems.push('缺少 persistSidebarLabels');
+  /*
+   * 默认值必须是「只有明确写过 '0' 才是关」。
+   * 写成 `=== '1'` 看似等价，实则把"没写过"也判成关 —— 老用户升级后侧栏凭空少一行字。
+   */
+  if (!/getItem\(STORAGE_KEY\)\s*!==\s*'0'/.test(src))
+    problems.push('初始值不是「只有显式 0 才关闭」（缺键必须回落到显示）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+add('FEATURES.shell.tokens', 'FEATURES', (ctx) => {
+  const src = stripComments(ctx.s.tokens);
+  const problems = [];
+  const a = src.match(/appItem:\s*\{\s*w:\s*(\d+),\s*h:\s*(\d+)/);
+  const b = src.match(/iconOnlyItem:\s*\{\s*w:\s*(\d+),\s*h:\s*(\d+)/);
+  if (!a) problems.push('tokens 里没有 appItem 几何');
+  if (!b) problems.push('tokens 里没有 iconOnlyItem 几何');
+  if (a && b && a[1] === b[1] && a[2] === b[2]) problems.push('两套几何完全相同（等于没切换）');
+  if (b && (Number(b[1]) < 44 || Number(b[2]) < 44)) problems.push('纯图标态小于 44（点击热区下限）');
+  if (a && (Number(a[1]) < 44 || Number(a[2]) < 44)) problems.push('图标 + 文字态小于 44（点击热区下限）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+add('FEATURES.shell.sidebarBranch', 'FEATURES', (ctx) => {
+  const src = stripComments(ctx.s.sidebar);
+  const problems = [];
+  if (!/labels\s*\?\s*SIDEBAR\.appItem\s*:\s*SIDEBAR\.iconOnlyItem/.test(src))
+    problems.push('几何没有随 labels 切换（appItem ↔ iconOnlyItem）');
+  if (!/\{labels\s*\?\s*<span>\{a\.label\}<\/span>\s*:\s*null\}/.test(src))
+    problems.push('「有没有文字」与「用哪套几何」不是同一个判断的两个输出');
+  if (!/aria-label=\{a\.label\}/.test(src))
+    problems.push('应用入口缺少 aria-label（关掉文字后它是唯一可读名称）');
+  // 几何必须来自 tokens：组件里出现裸数字就意味着有了第二个来源
+  const hard = src.match(/(?:width|height):\s*\d+px?/g) ?? [];
+  if (hard.length > 0) problems.push(`出现 ${hard.length} 处硬编码宽高（${hard[0]}…）`);
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+add('FEATURES.shell.wired', 'FEATURES', (ctx) => {
+  const app = stripComments(ctx.s.appMain);
+  const set = stripComments(ctx.s.settingsScreen);
+  const sec = stripComments(ctx.s.sections);
+  const problems = [];
+  if (!/useState\(\(\)\s*=>\s*initialSidebarLabels\(\)\)/.test(app))
+    problems.push('App 没有从偏好初始化侧栏标签');
+  if (!/persistSidebarLabels\(on\)/.test(app)) problems.push('App 没有持久化侧栏标签');
+  if (!/labels=\{sidebarLabels\}/.test(app)) problems.push('App 没有把 labels 传给 Sidebar');
+  if (!/sidebarLabels=\{sidebarLabels\}/.test(app)) problems.push('App 没有把 sidebarLabels 传给设置页');
+  if (!/onSidebarLabels=\{setLabels\}/.test(app)) problems.push('App 没有把 setLabels 传给设置页');
+  if (!/sidebarLabels=\{sidebarLabels\}/.test(set)) problems.push('设置页没有透传 sidebarLabels');
+  if (!/onSidebarLabels=\{onSidebarLabels\}/.test(set)) problems.push('设置页没有透传 onSidebarLabels');
+  if (!/on=\{sidebarLabels\}/.test(sec)) problems.push('① 通用组的开关没有读 sidebarLabels');
+  if (!/onToggle=\{\(\)\s*=>\s*onSidebarLabels\(!sidebarLabels\)\}/.test(sec))
+    problems.push('开关没有回写偏好');
+  // 接线了却仍渲染「待接入」= 一半改完
+  if (/PendingRow item=\{itemOf\(g, 'sidebar-labels'\)\}/.test(sec))
+    problems.push('sidebar-labels 仍渲染成待接入行');
+  const item = itemById(ctx.cat.mod, 'sidebar-labels');
+  if (!item) problems.push('catalog 里找不到 sidebar-labels');
+  else if (item.state !== 'live') problems.push(`catalog 里 sidebar-labels 仍是 ${item.state}`);
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+// ② 存储占用：三行分列、**不合计**。
+add('FEATURES.storage.rows', 'FEATURES', (ctx) => {
+  const src = stripComments(ctx.s.storageBlock);
+  const problems = [];
+  const rows = (src.match(/className="set-storage-row"/g) ?? []).length;
+  if (rows !== 3) problems.push(`三行分列应有 3 个 .set-storage-row，实际 ${rows} 个`);
+  for (const k of ['译文库', '音频缓存', '模型']) {
+    if (!src.includes(k)) problems.push(`缺少「${k}」那一行`);
+  }
+  if (!src.includes('不合计')) problems.push('没有把"不合计"这条立场说出来');
+  /*
+   * 不得求和 —— 有人会顺手 `.reduce((a, b) => a + b.total, 0)` 造一个"总占用"，
+   * 那等于把**没有接口的那一处**当成 0 算进去。这条断言就是拦它的。
+   */
+  if (/reduce\(/.test(src)) problems.push('源码里出现了求和（合计会把没有接口的那一处当成 0）');
+  if (!src.includes('未统计')) problems.push('模型那一行没有如实标「未统计」');
+  if (!src.includes('缺少接口')) problems.push('模型那一行没有说明缺的是哪条接口');
+  if (!/musicCacheStats/.test(src)) problems.push('音频缓存没有走 musicCacheStats（会变成第二套口径）');
+  if (!/lib\.totalBytes/.test(src)) problems.push('译文库没有用传进来的 lib.totalBytes');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+add('FEATURES.storage.wired', 'FEATURES', (ctx) => {
+  const set = stripComments(ctx.s.settingsScreen);
+  const sec = stripComments(ctx.s.sections);
+  const app = stripComments(ctx.s.appMain);
+  const problems = [];
+  if (!/lib: LibraryResponse \| null/.test(set) && !/lib:\s*LibraryResponse\s*\|\s*null/.test(set))
+    problems.push('设置页没有声明 lib prop（译文库占用要由它传进来）');
+  if (!/<ResourceSection lib=\{lib\}/.test(set)) problems.push('设置页没有把 lib 传给④资源与投放');
+  if (!/lib=\{lib\}/.test(app)) problems.push('App 没有把 lib 传给设置页');
+  if (!/StorageBlock item=\{item\} lib=\{lib\}/.test(sec)) problems.push('④ 组没有把 lib 交给 StorageBlock');
+  /*
+   * storage-usage 自己必须是 live —— 否则「三行分列做了、却仍标待接入」能蒙过去。
+   * 这一句与下面那个循环方向相反：那两个**必须仍是 pending**，这一个**必须是 live**。
+   * 早先只查了下面两个、漏了它自己，反证轮里「把 storage-usage 退回 pending」那一条
+   * 便退化成假阳性（破坏做了、断言不红）。别再把它并进下面那个循环。
+   */
+  const usage = itemById(ctx.cat.mod, 'storage-usage');
+  if (!usage) problems.push('catalog 里找不到 storage-usage');
+  else if (usage.state !== 'live')
+    problems.push(`storage-usage 仍是 ${usage.state}（三行分列已接真实能力，不该再标待接入）`);
+  for (const id of ['temp-files', 'oss-feedback']) {
+    const it = itemById(ctx.cat.mod, id);
+    if (!it) problems.push(`catalog 里找不到 ${id}`);
+    else if (it.state !== 'pending')
+      problems.push(`${id} 不该变成 ${it.state}（服务端接口 / 公开发布这两件事都还不存在）`);
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+// ③ 第三方许可：生成物 + 块 + 生成脚本。
+add('FEATURES.licenses.generated', 'FEATURES', (ctx) => {
+  let data;
+  try {
+    data = JSON.parse(ctx.s.licensesJson);
+  } catch (e) {
+    return { ok: false, detail: `licenses.json 读不到或不是合法 JSON（跑 npm run gen:licenses）：${e.message}` };
+  }
+  const problems = [];
+  if (!data.disclaimer || !String(data.disclaimer).trim())
+    problems.push('缺少免责声明 —— 清单是"包自己说的"，不写这句会被读成"我们核准过了"');
+  for (const side of ['npm', 'rust']) {
+    const s = data[side];
+    if (!s) {
+      problems.push(`缺少 ${side} 段`);
+      continue;
+    }
+    for (const k of ['total', 'withLicense', 'unknown', 'byLicense', 'packages']) {
+      if (s[k] === undefined) problems.push(`${side}.${k} 缺失`);
+    }
+    if (!Array.isArray(s.packages)) {
+      problems.push(`${side}.packages 不是数组`);
+      continue;
+    }
+    if (s.packages.length !== s.total)
+      problems.push(`${side}: packages 有 ${s.packages.length} 条，与 total ${s.total} 不一致`);
+    const nulls = s.packages.filter((p) => !p.license).length;
+    if (nulls !== s.unknown) problems.push(`${side}: 无声明 ${nulls} 条，与 unknown ${s.unknown} 不一致`);
+    if (s.withLicense + s.unknown !== s.total)
+      problems.push(`${side}: withLicense + unknown ≠ total`);
+  }
+  if (!data.inputs) problems.push('缺少 inputs（生成物与来源文件对账的依据）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+add('FEATURES.licenses.fresh', 'FEATURES', (ctx) => {
+  /*
+   * 生成物**会过期**：`npm install` 之后依赖变了而没重跑 `gen:licenses`，
+   * 界面上那份清单就与真实依赖对不上 —— 而它看起来完全正常。
+   *
+   * ⚠️ 只对账**由仓库里的来源文件决定**的量（lock 里有多少包）。
+   * 不对账"本机 registry 里解包了多少"：那个量每台机器都不一样，
+   * 拿它做判据会在别人的机器上无条件变红（假红比假绿更消耗信任）。
+   */
+  let data;
+  try {
+    data = JSON.parse(ctx.s.licensesJson);
+  } catch {
+    return { ok: false, detail: 'licenses.json 不可解析' };
+  }
+  const problems = [];
+  let lock;
+  try {
+    lock = JSON.parse(ctx.s.npmLock);
+  } catch (e) {
+    return { ok: false, detail: `package-lock.json 不可解析：${e.message}` };
+  }
+  const prod = Object.entries(lock.packages ?? {}).filter(
+    ([k, v]) => k.startsWith('node_modules/') && v.dev !== true && v.link !== true,
+  ).length;
+  if (data.inputs?.npmProdPackages !== prod)
+    problems.push(
+      `npm 生产依赖数已变：清单里 ${data.inputs?.npmProdPackages}，实际 ${prod} —— 重跑 npm run gen:licenses`,
+    );
+  const third = ctx.s.cargoLock
+    .split('[[package]]')
+    .slice(1)
+    .filter((b) => /^\s*source\s*=/m.test(b)).length;
+  if (data.inputs?.rustLockCrates !== third)
+    problems.push(
+      `Cargo.lock 的第三方 crate 数已变：清单里 ${data.inputs?.rustLockCrates}，实际 ${third} —— 重跑 npm run gen:licenses`,
+    );
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+add('FEATURES.licenses.ui', 'FEATURES', (ctx) => {
+  const src = stripComments(ctx.s.licensesBlock);
+  const sec = stripComments(ctx.s.sections);
+  const problems = [];
+  /*
+   * 「渲染了 {DATA.disclaimer}」与「来源 JSON 里真的有 disclaimer 这个字段」是两件事，
+   * 必须分开判。只测前者时，把 licenses.json 里这个字段改名 ⇒ 界面渲染的是 undefined、
+   * 实际什么都不显示，而断言照绿 —— D-83 学到的老教训的又一次应用。
+   */
+  const raw = JSON.parse(ctx.s.licensesJson);
+  if (typeof raw.disclaimer !== 'string' || raw.disclaimer.length === 0)
+    problems.push('licenses.json 里没有 disclaimer 字段（免责声明会渲染成空）');
+  if (!/\{DATA\.disclaimer\}/.test(src))
+    problems.push('免责声明没有被渲染（只写"第三方许可"会读成"我们查过了、没问题"）');
+  if (!/s\.withLicense\}/.test(src) || !/s\.total\}/.test(src))
+    problems.push('没有显示覆盖数（N / M）—— 凑不齐这件事必须看得见');
+  if (!src.includes('未取到声明')) problems.push('缺少「未取到声明」的呈现');
+  if (/\.filter\(\s*\(\s*p\s*\)\s*=>\s*p\.license\s*\)/.test(src))
+    problems.push('把没有声明的包过滤掉了（缺口会因此看不见）');
+  const item = itemById(ctx.cat.mod, 'licenses');
+  if (!item) problems.push('catalog 里找不到 licenses');
+  else if (item.state !== 'live') problems.push(`catalog 里 licenses 仍是 ${item.state}`);
+  if (!/<LicensesBlock/.test(sec)) problems.push('AboutSection 没有渲染 LicensesBlock');
+  if (/PendingRow item=\{itemOf\(g, 'licenses'\)\}/.test(sec))
+    problems.push('AboutSection 仍把 licenses 当待接入项渲染');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+add('FEATURES.gen.script', 'FEATURES', (ctx) => {
+  const problems = [];
+  const script = stripComments(ctx.s.genScript);
+  if (!script) problems.push('缺少 app/scripts/gen-licenses.mjs');
+  let scripts = {};
+  try {
+    scripts = JSON.parse(ctx.s.pkgJson).scripts ?? {};
+  } catch (e) {
+    problems.push(`package.json 不可解析：${e.message}`);
+  }
+  if (!scripts['gen:licenses']) problems.push('package.json 没有注册 gen:licenses');
+  else if (!/gen-licenses\.mjs/.test(scripts['gen:licenses']))
+    problems.push('gen:licenses 指向的不是那个脚本');
+  // 必须真的从两处来源读 —— 否则就是"手写一份清单假装是枚举出来的"
+  if (!/Cargo\.lock/.test(script)) problems.push('生成脚本没有读 Cargo.lock');
+  if (!/package-lock\.json/.test(script)) problems.push('生成脚本没有读 package-lock.json');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
 // ── 执行器 ────────────────────────────────────────────────────────────────
 async function runAll() {
   const s = loadSources();
@@ -2024,7 +2338,7 @@ async function runAll() {
   return res;
 }
 
-const GROUPS = ['EXCLUDED', 'RETIRED', 'ADDED', 'COUNT', 'NOTE', 'WIRING', 'STORE', 'PLAYER', 'OPTIONS', 'CACHE', 'ENGINE', 'NOTREADY', 'SIMPLIFY'];
+const GROUPS = ['EXCLUDED', 'RETIRED', 'ADDED', 'COUNT', 'NOTE', 'WIRING', 'STORE', 'PLAYER', 'OPTIONS', 'CACHE', 'ENGINE', 'NOTREADY', 'SIMPLIFY', 'FEATURES'];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -2631,7 +2945,15 @@ const MUTATIONS = [
   {
     name: '把 RESOURCE 的一行摘要删掉（组说明退回铺满 6 行的老样子）',
     file: F.catalog,
-    find: "  noteSummary: '本组 2 项都卡在磁盘口径上 · 原先的「缓存清理」已删除',\n",
+    /*
+     * ⚠️ 锚点里带着 RESOURCE 的**摘要原文**，因此摘要每改一次就要同步一次。
+     * D-84 把这一组的 noteSummary 从「本组 2 项都卡在磁盘口径上 · 原先的「缓存清理」已删除」
+     * 重写成现在这句，锚点没跟着走 ⇒ 这条当场退化成「锚点未找到 ⇒ 跳过」。
+     * 好在分母是写死的（expectedTotal），跳过会被 `✗ 有 N 条未能反证` 抓住、不会静默变绿；
+     * 但每次动这几组的 note/noteSummary，仍应顺手 `grep` 一下本文件里的旧文案。
+     */
+    find:
+      "  noteSummary:\n    '本组 2 项 · 存储占用已接真实能力（拆三行分列，其中「模型」那一行目前无接口，如实标未统计） · 「临时文件」仍缺服务侧「列举 / 清理上传暂存」两条接口',\n",
     replace: '',
     expect: ['SIMPLIFY.notesummary.verbatim'],
   },
@@ -2704,10 +3026,12 @@ const MUTATIONS = [
   {
     name: '让「关于」里留着已删项的引用（渲染到那一组直接抛错，且五道门都看不见）',
     file: F.sections,
-    find: "        <PendingRow item={itemOf(g, 'licenses')} />",
+    // ⚠️ 锚点随实现迁移过一次：`licenses` 从 PendingRow 变成了 LicensesBlock（D-84）。
+    // 锚点若不同步，这条会退化成「锚点未找到 ⇒ 跳过」，而输出里**看起来仍是全绿**。
+    find: "        <LicensesBlock item={itemOf(g, 'licenses')} />",
     replace:
       "        <PendingRow item={itemOf(g, 'check-update')} />\n" +
-      "        <PendingRow item={itemOf(g, 'licenses')} />",
+      "        <LicensesBlock item={itemOf(g, 'licenses')} />",
     expect: ['WIRING.itemRefs.exist'],
   },
   {
@@ -2716,6 +3040,129 @@ const MUTATIONS = [
     find: '<div className="set-diag-why">{emphasis(item.why)}</div>',
     replace: '<div className="set-diag-why">{"进程、参数的现场。"}</div>',
     expect: ['ENGINE.diag.fromCatalog', 'ENGINE.emphasis.renderPoints'],
+  },
+
+  // ── D-84 · 功能梳理落地（四项）各自的破坏 ──────────────────────────────
+  {
+    name: '把 Row 里的 def 渲染删掉（def 又变回"填了没人看"的死字段）',
+    file: F.parts,
+    find: '          {item.def ? <DefaultChip value={item.def} /> : null}\n',
+    replace: '',
+    expect: ['FEATURES.def.rendered'],
+  },
+  {
+    name: '把 def 的字段注释改回旧口径（「当前没有任何组件渲染它」—— 实现已变，注释没变）',
+    file: F.catalog,
+    find: "   * 只在 `Row`（`live` 项）渲染；`pending` 项不显示它（还没有能力，谈默认值没有对象）。",
+    replace:
+      "   * 只在 `Row`（`live` 项）渲染；`pending` 项不显示它（还没有能力，谈默认值没有对象）。\n" +
+      '   * 当前没有任何组件渲染它。',
+    expect: ['FEATURES.def.commentSynced'],
+  },
+  {
+    name: '把侧栏标签偏好的默认值写反（`!== \'0\'` → `=== \'1\'`：没写过的老用户被当成"关"）',
+    file: F.shellPrefs,
+    find: "  return localStorage.getItem(STORAGE_KEY) !== '0';",
+    replace: "  return localStorage.getItem(STORAGE_KEY) === '1';",
+    expect: ['FEATURES.shell.pref'],
+  },
+  {
+    name: '把侧栏几何分支去掉（关掉标签却仍用 58×52，入口下方多出一截空行框）',
+    file: F.sidebar,
+    find: '  const appItem = labels ? SIDEBAR.appItem : SIDEBAR.iconOnlyItem;',
+    replace: '  const appItem = SIDEBAR.appItem;',
+    expect: ['FEATURES.shell.sidebarBranch'],
+  },
+  {
+    name: '把应用入口的 aria-label 删掉（纯图标态下再没有任何可读名称）',
+    file: F.sidebar,
+    find: '          aria-label={a.label}\n',
+    replace: '',
+    expect: ['FEATURES.shell.sidebarBranch'],
+  },
+  {
+    name: '把 iconOnlyItem 改成与 appItem 同尺寸（"切换偏好"其实没换几何）',
+    file: F.tokens,
+    find: '  iconOnlyItem: { w: 44, h: 44 },',
+    replace: '  iconOnlyItem: { w: 58, h: 52 },',
+    expect: ['FEATURES.shell.tokens'],
+  },
+  {
+    name: '把①组开关的回写断掉（拨了开关只改一半，偏好不落盘）',
+    file: F.sections,
+    find: '            onToggle={() => onSidebarLabels(!sidebarLabels)}',
+    replace: '            onToggle={() => undefined}',
+    expect: ['FEATURES.shell.wired'],
+  },
+  {
+    name: '把 catalog 的 sidebar-labels 退回 pending（接线了却仍标"待接入"）',
+    file: F.catalog,
+    find: "          label: '侧栏图标标签',\n          state: 'live',",
+    replace: "          label: '侧栏图标标签',\n          state: 'pending',",
+    expect: ['FEATURES.shell.wired'],
+  },
+  {
+    name: '把「不合计」这条立场从存储占用块里去掉（用户会本能地去做加法）',
+    file: F.storageBlock,
+    find: '        <div className="set-storage-rule">三处分开列 · 不合计</div>',
+    replace: '        <div className="set-storage-rule">三处分开列</div>',
+    expect: ['FEATURES.storage.rows'],
+  },
+  {
+    name: '把模型那一行的「未统计」改成 0 B（把"没有接口"谎报成"精确测得是 0"）',
+    file: F.storageBlock,
+    find: '          <span className="set-storage-v is-unknown">未统计</span>',
+    replace: '          <span className="set-storage-v">0 B</span>',
+    expect: ['FEATURES.storage.rows'],
+  },
+  {
+    name: '把 storage-usage 退回 pending（三行分列做了却仍标"待接入"）',
+    file: F.catalog,
+    find: "          id: 'storage-usage',\n          label: '存储占用',\n          state: 'live',",
+    replace: "          id: 'storage-usage',\n          label: '存储占用',\n          state: 'pending',",
+    expect: ['FEATURES.storage.wired'],
+  },
+  {
+    name: '把「开源反馈」硬做成 live（它缺的是"项目已公开发布"这个外部事实）',
+    file: F.catalog,
+    find: "          id: 'oss-feedback',\n          label: '开源反馈',\n          state: 'pending',",
+    replace: "          id: 'oss-feedback',\n          label: '开源反馈',\n          state: 'live',",
+    expect: ['FEATURES.storage.wired'],
+  },
+  {
+    name: '把许可清单的免责声明字段改名（清单会被读成"我们核准过了"）',
+    file: F.licensesJson,
+    find: '"disclaimer":',
+    replace: '"disclaimerMoved":',
+    expect: ['FEATURES.licenses.generated', 'FEATURES.licenses.ui'],
+  },
+  {
+    name: '把生成物的 inputs 字段改名（依赖变了也不会再有人发现清单过期）',
+    file: F.licensesJson,
+    find: '"inputs":',
+    replace: '"inputsMoved":',
+    expect: ['FEATURES.licenses.generated', 'FEATURES.licenses.fresh'],
+  },
+  {
+    name: '把没有声明的包从清单里过滤掉（缺口从此在界面上看不见）',
+    file: F.licensesBlock,
+    find: '{DATA.rust.packages.map((p) => (',
+    replace: '{DATA.rust.packages.filter((p) => p.license).map((p) => (',
+    expect: ['FEATURES.licenses.ui'],
+  },
+  {
+    name: '把「关于」里的许可块换回「待接入」行（实现了却当作没做）',
+    file: F.sections,
+    find: "        <LicensesBlock item={itemOf(g, 'licenses')} />",
+    replace: "        <PendingRow item={itemOf(g, 'licenses')} />",
+    expect: ['FEATURES.licenses.ui'],
+  },
+  {
+    name: '把 gen:licenses 脚本从 package.json 摘掉（生成物从此无法重跑）',
+    file: F.pkgJson,
+    find: '    "gen:licenses": "node app/scripts/gen-licenses.mjs",\n',
+    replace: '',
+    expect: ['FEATURES.gen.script'],
   },
 ];
 

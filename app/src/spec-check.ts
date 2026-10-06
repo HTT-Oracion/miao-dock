@@ -383,12 +383,24 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     const globalItems = Array.from(sidebar?.querySelectorAll('.nav-item.is-global') ?? []);
     const divider = sidebar?.querySelector('.sidebar-divider') as HTMLElement | null;
 
-    const labels = appItems.map((e) => (e.querySelector('span')?.textContent ?? '').trim());
+    /*
+     * C8a 的判据源是**可访问名称**（`aria-label` 优先、回落 `title`），不是按钮里的
+     * `<span>` 文字。
+     *
+     * 为什么必须换成它：应用入口现在有两种形态（「图标 + 文字」58×52 / 纯图标 44×44，
+     * 由「侧栏图标标签」偏好决定，台账 D-84）。判据若读 `<span>`，纯图标态下这一串
+     * 恒为空 ⇒ C8a 无条件变红 —— 那是把"用户主动关掉了标签"误报成"侧栏结构坏了"。
+     * 而结构（恒 2 项、顺序「漫画翻译 → 音乐」）与有没有文字是**两件事**，本该分开判。
+     * 换成可访问名称后，两种形态下判据都成立，口径也与读屏一致。
+     */
+    const names = appItems.map((e) =>
+      (e.getAttribute('aria-label') ?? e.getAttribute('title') ?? '').trim(),
+    );
     add(
       'C8a',
-      '侧栏应用层恒为 2 项且顺序为「漫画翻译 → 音乐」',
-      appItems.length === 2 && labels[0] === APP_LABEL.translate && labels[1] === APP_LABEL.music,
-      `实际 ${appItems.length} 项：${labels.join(' / ') || '无'}`,
+      '侧栏应用层恒为 2 项且顺序为「漫画翻译 → 音乐」（按可访问名称判，与是否显示文字无关）',
+      appItems.length === 2 && names[0] === APP_LABEL.translate && names[1] === APP_LABEL.music,
+      `实际 ${appItems.length} 项：${names.join(' / ') || '无'}`,
     );
 
     // 纯图标 = 没有可见文字。判据取「文字节点为空」，不是「宽度小于某个值」——
@@ -424,6 +436,42 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     } else {
       add('C8c', '分隔线位于应用层与全局层之间', false, divider ? '侧栏未找到' : '未找到 .sidebar-divider');
     }
+
+    /*
+     * C8d：**几何必须与"有没有标签"同时变**（台账 D-84）。
+     *
+     * 单看"尺寸等于某一套常量"是不够的 —— 真正会出错的是**只改了一半**：
+     * 关掉文字却留着 58×52，每个入口下方多出一截空白，读起来像"漏了字"而不是
+     * "刻意只剩图标"（`.nav-item.is-global` 的注释里记过同一个坑）。
+     * 所以判据成对：**有没有 span** ⇒ **量到的宽高必须是那套常量**。
+     *
+     * 第二条（两套常量都不小于 44）是**点击热区下限**：将来想再瘦一点时，
+     * 这里会先红，而不是等用户点不中才发现。
+     */
+    const geoms = appItems.map((e) => {
+      const r = e.getBoundingClientRect();
+      const hasText = (e.querySelector('span')?.textContent ?? '').trim().length > 0;
+      const want = hasText ? SIDEBAR.appItem : SIDEBAR.iconOnlyItem;
+      return {
+        hasText,
+        w: r.width,
+        h: r.height,
+        ok: near(r.width, want.w) && near(r.height, want.h),
+      };
+    });
+    const minTouch = 44;
+    add(
+      'C8d',
+      `应用入口几何与标签形态一致（图标+文字 ${SIDEBAR.appItem.w}×${SIDEBAR.appItem.h} / 纯图标 ${SIDEBAR.iconOnlyItem.w}×${SIDEBAR.iconOnlyItem.h}），且两套都不小于 ${minTouch}`,
+      geoms.length > 0 &&
+        geoms.every((g) => g.ok) &&
+        [SIDEBAR.appItem, SIDEBAR.iconOnlyItem].every((s) => s.w >= minTouch && s.h >= minTouch),
+      geoms.length > 0
+        ? geoms
+            .map((g) => `${g.hasText ? '图标+文字' : '纯图标'} ${g.w.toFixed(0)}×${g.h.toFixed(0)}${g.ok ? '' : ' ← 与形态不符'}`)
+            .join(' / ')
+        : '未找到应用入口',
+    );
   }
 
   // ---------------------------------------------------------------- C9 视图 Tab 顺序

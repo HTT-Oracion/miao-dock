@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ServiceStatus } from '@/ipc';
+import type { LibraryResponse } from '@/types';
 import type { ThemeMode } from '@/theme/tokens';
 import { SETTINGS } from '@/theme/tokens';
 import { SETTINGS_SECTIONS, parseSection, sectionItemCount } from '@screens/settings/catalog';
@@ -31,11 +32,25 @@ export function SettingsScreen({
   status,
   mode,
   onMode,
+  sidebarLabels,
+  onSidebarLabels,
+  lib,
   onToast,
 }: {
   status: ServiceStatus | null;
   mode: ThemeMode;
   onMode: (m: ThemeMode) => void;
+  /** 侧栏标签偏好（真值来自 `App` 的 state，这里只透传给①通用组） */
+  sidebarLabels: boolean;
+  onSidebarLabels: (on: boolean) => void;
+  /**
+   * 漫画库盘点（译文库占用）。
+   *
+   * ⚠️ 它是**详情页已在用**的同一份数据（`App` 的 `useLibrary`），从这里透传给④资源与投放；
+   * 刻意不让设置页自己再拉一次 —— 两处各拉一次会出现"详情页说 1.2 GB、设置页说 1.1 GB"，
+   * 而两边都没错，只是取数时刻不同。同一份数据只有一个来源。
+   */
+  lib: LibraryResponse | null;
   onToast: (text: string, kind?: 'info' | 'good' | 'bad') => void;
 }) {
   // 深链 `?section=general|translate|media|resource|about`
@@ -125,11 +140,17 @@ export function SettingsScreen({
           </header>
 
           {active.id === 'general' ? (
-            <GeneralSection mode={mode} onMode={onMode} fixtureRef={fixtureRef} />
+            <GeneralSection
+              mode={mode}
+              onMode={onMode}
+              sidebarLabels={sidebarLabels}
+              onSidebarLabels={onSidebarLabels}
+              fixtureRef={fixtureRef}
+            />
           ) : null}
           {active.id === 'translate' ? <TranslateSection status={status} onToast={onToast} /> : null}
           {active.id === 'media' ? <MediaSection /> : null}
-          {active.id === 'resource' ? <ResourceSection /> : null}
+          {active.id === 'resource' ? <ResourceSection lib={lib} /> : null}
           {active.id === 'about' ? <AboutSection /> : null}
         </div>
       </div>

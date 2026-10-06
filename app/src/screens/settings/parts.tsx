@@ -128,7 +128,10 @@ export function Row({ item, children }: { item: SettingItem; children?: ReactNod
   return (
     <div className="set-row" style={{ minHeight: SETTINGS.rowMinHeight, padding: `${SETTINGS.rowPaddingY}px 0` }}>
       <div className="set-row-label">
-        <div className="set-row-title">{item.label}</div>
+        <div className="set-row-title">
+          <span className="set-row-name">{item.label}</span>
+          {item.def ? <DefaultChip value={item.def} /> : null}
+        </div>
         {item.why ? (
           /* `is-one`：行内只占一行（`title` 悬停可读全文）—— 见 `PendingRow` 的同一处 */
           <div className="set-row-why is-one" title={plain(item.why)}>
@@ -138,6 +141,33 @@ export function Row({ item, children }: { item: SettingItem; children?: ReactNod
       </div>
       {children ? <div className="set-row-ctl">{children}</div> : null}
     </div>
+  );
+}
+
+/**
+ * 出厂默认值（catalog 的 `SettingItem.def`）—— 标题行内的一枚浅色小字。
+ *
+ * ## 为什么挂在标题行内，而不是另起一行
+ *
+ * 另起一行会让行从「标题 + why」长成三行：`SETTINGS.rowMinHeight` 是 50，
+ * 三行实际量出来 70+。而这一页刚做完一轮"把 why 压回一行"的简化 —— 再往回长是自相矛盾。
+ * 标题行右侧本来就是空的（标题很少占满整列），这枚小字因此是**零高度成本**的。
+ *
+ * ## 🔴 必须带「默认」二字，且 `title` 要说清它不是当前值
+ *
+ * `def` 是**出厂默认**，不随用户改动而变（改过的值在右侧控件里）。只写 `浅色`
+ * 会被读成"你现在是浅色" —— 那正好是它要回答的那个问题的反面。
+ * 所以：文字写「默认：X」，悬停再补一句"不是你当前的设置"。
+ *
+ * ## 只在 `Row` 用，`PendingRow` 刻意不用
+ * `pending` 项**还没有能力**，谈"出厂默认"没有对象 —— 给一个尚未存在的功能
+ * 标一个默认值，读起来像它已经能配了。等它转 `live` 那天自然就带上了。
+ */
+function DefaultChip({ value }: { value: string }) {
+  return (
+    <span className="set-row-def" title={`出厂默认：${value} —— 这不是你当前的设置`}>
+      默认：{value}
+    </span>
   );
 }
 

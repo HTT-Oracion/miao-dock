@@ -3334,4 +3334,77 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 
 > ⚠️ **未提交**：两仓改动仍按用户裁定攒批（见 D-82 末）。
 
+---
+
+## D-84 · 设置页功能梳理落地：侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / `def` 行内落点 + **两条假阳性反证的根因是一个"着力点错了一层"**（2026-10-07）
+
+**诉求**：用户诉求④「设置页功能梳理落地」，依据仓库外 `设置页文案与功能梳理.md` 第二部分（§2.1 总览 / §2.2 未接入项逐条裁定 / §2.3 冗余项 / §2.4 结论速览）。该文件自己的结论是：**7 项待接入里 4 项其实能立刻做**（1 / 2 / 6 / R3），1 项冗余（R1 与「音乐缓存」重复），2 项真的在等外部条件（5 / 7）。本条目做的就是那 4 项。
+
+> 前置：诉求①②③⑤ 已按用户裁定攒批提交（`miao-dock` **`70e2844`** / `miao-trans` **`8313b9f`**），本条改动**仍留工作区**。
+
+### 一、落地四项（外加两项必须仍是 `pending`）
+
+| # | 项 | 实现 | 关键取舍 |
+|---|---|---|---|
+| 1 | ① **侧栏图标标签** | 新增 `app/src/shell-prefs.ts`（`initialSidebarLabels()` / `persistSidebarLabels()`，`localStorage` 键 `miao.sidebar-labels`）；`Sidebar.tsx` 收 `labels` prop，按它切 `SIDEBAR.appItem`（58×52）与**新增的** `SIDEBAR.iconOnlyItem`（44×44）；`App.tsx` 持 state，`SettingsScreen` → `GeneralSection` 透传 | 存 `'1'`/`'0'` 而非 JSON；**缺键必须回落到"显示"**（`!== '0'`）—— 它决定老用户升级后的观感。单开一个文件而不塞 `theme/apply.ts`（那是颜色令牌的家）或 music store（那是音乐域）。**几何必须跟形态一起变**，且两套都 ≥44（点击热区下限） |
+| 2 | ④ **存储占用** | 新增 `StorageBlock.tsx`（`layout: 'block'`）：三行分列 —— 译文库（`lib.totalBytes` + `lib.count`/`lib.totalImages`）/ 音频缓存（`musicCacheStats()`）/ 模型（**写死「未统计」**）；行首一行 `三处分开列 · 不合计` | **不合计**是硬立场，且**写进断言**（源码里出现 `.reduce(` 即判红）—— 合计等于把"没有接口的那一处"当成 0 算进去。三处「没有值」**分开说**（`读取中…` / `无` / `未统计`），因为它们是三件不同的事 |
+| 6 | ⑤ **第三方许可** | 新增 `app/scripts/gen-licenses.mjs`（`npm run gen:licenses`）枚举 npm 与 Rust 两侧，产出 `app/src/generated/licenses.json` 入库；新增 `LicensesBlock.tsx` 渲染：两段 `Scope`（覆盖数 `withLicense / total`）+ 免责声明 + 「查看清单 / 收起清单」 | 覆盖数**必须看得见**（实跑 **npm 57 / 57**、**Rust 342 / 516**）；`未取到声明` 的包**不得被过滤掉**（缺口要留在界面上）；`disclaimer` 必须渲染 —— 「包自己声明的」不等于「我们核准过的」 |
+| R3 | `SettingItem.def` | `parts.tsx` 新增 `DefaultChip`，挂在 `Row` 的**标题行内**（`.set-row-title` 改 flex + baseline + wrap） | **不另起一行**：另起一行会把 50px 行高顶到 70+，而这条信息是"出厂默认"，不是主要信息。文案必须带「默认」二字（否则被读成"你现在是这个"）。**只在 `Row` 用，`PendingRow` 刻意不用**（待接入项没有"当前值"可言） |
+| 4 | ④ 临时文件 | **不动**，仍 `pending` | 缺服务侧 `GET/DELETE /staging` 两条接口（低优先级） |
+| 7 | ⑤ 开源反馈 | **不动**，仍 `pending` | 缺一个真实可打开的仓库地址（项目未公开发布）—— 给一个打不开的链接不如不给 |
+
+**项数不变**：全表仍 **31 项**（`SPEC_ITEM_TOTAL` / `SPEC_TOTAL` 都未动），改的是**能力状态** —— live 26 → **29**、pending 5 → **2**（只剩上面那两个）。
+
+### 二、断言：`check:settings` **152 → 164**（+`FEATURES` 12 条）· `check:ia` **24 → 32**
+
+新组 **`FEATURES`**（12 条，与 `SIMPLIFY` 一样独立成组 —— 它守的是"这四项功能真的接上了"，不是"话变短了"）：
+
+`def.rendered`（`Row` 渲染 `item.def`）/ `def.commentSynced`（`def` 字段的注释不再是"当前没有任何组件渲染它"—— 这条**刻意不剥注释**，查的就是注释口径）/ `shell.pref`（缺键回落"显示"**且**写入用 `'1'`/`'0'`）/ `shell.tokens`（两套几何都存在且各自 ≥44）/ `shell.sidebarBranch`（按 `labels` 分支，**并另类判 `width|height:\s*\d+px?` 拦硬编码宽高**）/ `shell.wired`（App → SettingsScreen → ① 组的整条接线 + `aria-label` 在）/ `storage.rows`（恰 3 行、三个名称齐、有「不合计」、无 `.reduce(`、模型行「未统计」+「缺少接口」、音频缓存走 `musicCacheStats`、译文库用 `lib.totalBytes`）/ `storage.wired`（`lib` 一路透传 + **`storage-usage` 必须 `live`** + 两个待接入项**必须仍 `pending`**）/ `licenses.generated`（生成物结构 + `withLicense + unknown === total`）/ `licenses.fresh`（生成物与来源 lock 对账）/ `licenses.ui`（**来源 JSON 里有 `disclaimer` 字段** + 界面渲染它 + 覆盖数 + 不过滤无声明的包 + `catalog` 里 `licenses` 是 `live` + `AboutSection` 渲染的是 `LicensesBlock` 而非 `PendingRow`）/ `gen.script`（`package.json` 里有 `gen:licenses`）。
+
+**`check:ia` 的 C8d**（新增）：侧栏应用层两套几何**成对**比较（`hasText ? appItem : iconOnlyItem`），**且两套都不小于 44**。同轮把 `C8a` 的判据从"按钮里的 span 文字"改成**可访问名称**（`aria-label ?? title`）—— 否则纯图标态下 C8a 会随文字一起消失，把"改成图标态"误判成"侧栏坏了"。反证脚本 `e2e/ia-structure-check.mjs` 同步：`num('appItem')` 的失效抽取换成 `pair(k)`（**NaN 防空转 + `process.exit(1)`**），`dom()` 支持 `sidebarLabels` / `appGeomMismatch` / `dropAppAria`，并加两条基线（图标+文字 / 纯图标）与两条反证。
+
+**一条既有反证锚点随实现迁移**：`check-update` 那条的 `find` 原锚在 `licenses` 的 `PendingRow` 上，`licenses` 改成 `LicensesBlock` 后锚点失效 ⇒ 已在源码里连同"锚点不同步会退化成跳过、而输出看起来仍全绿"的说明一起改掉。
+
+### 三、🔴 本轮最有价值的发现：**两条假阳性 + 一条锚点失效，根因是同一个 —— "断言的着力点错了一层"**
+
+反证轮第一次跑出 `REFUTE: 100/102`、**2 个假阳性**、`✗ 有 1 条未能反证（应执行 103 条）`。
+
+| 条目 | 根因 | 修法 |
+|---|---|---|
+| `FEATURES.storage.wired` | 破坏是"把 `storage-usage` 退回 `pending`"，而断言的 for 循环只查了 `temp-files` / `oss-feedback` 两项的 state —— **没查它自己** | 单独加一句"`storage-usage` 必须是 `live`"，并在注释里写明它与下面那个循环**方向相反**（那两个必须仍 `pending`），**不许**并进同一个循环 |
+| `FEATURES.licenses.ui` | 破坏是"把 `licenses.json` 的 `disclaimer` 字段改名"，而断言只测了"界面渲染 `{DATA.disclaimer}`" —— **渲染的是 `undefined` 也照样"渲染了"** | 解析来源 JSON，断言 `disclaimer` 是**非空字符串**。把「**渲染了 X**」与「**X 的来源里真的有这个字段**」拆成两句 |
+| `把 RESOURCE 的一行摘要删掉` | 锚点里带着 RESOURCE 的 `noteSummary` **原文**，本轮把这句话重写了，锚点没跟着走 ⇒ 退化成"锚点未找到 ⇒ 跳过" | 同步锚点；并在注释里写明"摘要每改一次就要同步一次"。**这次是分母救回来的** —— `expectedTotal` 写死，跳过被 `✗ 有 1 条未能反证` 抓住，没有静默变绿 |
+
+修后 **`REFUTE: 103/103`，无跳过、无假阳性，22 个文件按字节还原**。
+
+> 教训（已同步进 `falsifiable-verification` 技能）：D-83 那条教训是"**判据的来源不止一处**"，本轮是它的**下一层** —— "**判据的着力点错了一层**"。`includes('渲染了 X')` 与 `includes('X 的定义')` 是两句不同的话；`for (id of ['a','b'])` 里漏掉 `'c'` 时，破坏改 `'c'` 就永远不会红，而**分母照样是满的**（因为 `expect` 数组没少）。加断言时除了问"这条判据在代码里有几处能让我为真"，还要问"**破坏会落在哪一层，我的断言测的是不是同一层**"。
+
+同轮另一类值得记的**假红**（首跑就报红、但红的原因在断言自己）：`FEATURES.shell.wired` 写成 `/sidebarLabels=\{sidebarLabels\}/`，而 `sections.tsx` 里真实的接线是 `<Switch on={sidebarLabels} …>`（prop 名与变量名同名 ⇒ 串不同）。**断言找的串不存在，并不等于实现没做**；这时要改的是断言，不是实现。
+
+### 四、顺手踩到并写进注释的一个坑
+
+**块注释里写 `node_modules/**/package.json` 会提前结束注释** —— glob 通配里的 `*` `/` 连写正好是 `*/`。`LicensesBlock.tsx` 的文件头注释里写了它，`tsc` 当场报 40 个错（TS1443 / TS1005 / TS1160，最后一条还是 `Unterminated template literal`，把定位引向完全错误的方向）。改成中文描述（「`node_modules` 下各级 `package.json`」）后正常，并把这个坑写进了注释本身。同轮 `gen-licenses.mjs` 因用正则字符串（`/^\s*name\s*=\s*"([^"]+)"/`）而天然避开。
+
+### 五、验收实测（现场）
+
+- `check:settings` **164 / 0**（原 152）· 反证 **103 / 103**（原 84）
+- `check:ia` **32 / 0**（原 24）
+- `check:docs` **14 / 0** · `check:units` **37 / 0** · `check:tls` **14 / 0** · `check:contract` **77 / 0** · `check:engine-settings` **61 / 0** · `check:engine-client` **42 / 0**
+- `check:music` **215 / 1** —— 唯一红是**既有**的 `ISLANDV.toggleBothWays`，与本轮无关（提交 `70e2844` 时即是同一状态）
+- `cd app && npx tsc --noEmit` **0 错** · `npx vite build` 通过（sass 全量编译）
+- `npm run gen:licenses` 实跑：npm 生产依赖 **57**（跳 dev 167，全部有声明）· Rust 第三方 crate **516**，取到声明 **342**、缺 **174** · 产出 `licenses.json` 38609 字节
+
+### 六、规格回写（**不改写历史、不动编号**）
+
+- 仓库外《09》**§4.2 表后**加「2026-10-07 状态变更（台账 D-84）」：项数不变（31），记明 ①②③ 三项 `pending → live`、`def` 接上落点、**live 29 / pending 2**，并把两项仍 pending 的**具体缺口**写清。
+- 仓库外 `设置页文案与功能梳理.md` 末尾加 **§2.5 执行追注**：先说明**本文件 §2.1 的表写于 D-81 之前、项数 33 / pending 7 已过时**（R1 / R2 在 D-81 已删，全表收到 31），再逐条对照 §2.4 的结论记落地情况。**不改写上文的历史分析**。
+- `catalog.ts` 的口径同步：`def` 字段注释（"当前没有任何组件渲染它" → 描述渲染落点 + "它不是当前值"）、`GENERAL` / `RESOURCE` / `ABOUT` 三组的 `note` 与 `noteSummary`（摘要每一段仍须能在 `note` 原文里逐字找到，`SIMPLIFY.notesummary.verbatim` 守着）。
+
+### 七、改动文件
+
+`app/src/shell-prefs.ts`（新）· `app/src/screens/settings/StorageBlock.tsx`（新）· `app/src/screens/settings/LicensesBlock.tsx`（新）· `app/scripts/gen-licenses.mjs`（新）· `app/src/generated/licenses.json`（新，入库）· `catalog.ts`（三项 `pending → live` + `def` 注释 + 三组 `note`/`noteSummary`）· `parts.tsx`（`DefaultChip` + `.set-row-title` 结构）· `sections.tsx`（① 组接开关 · ④ 组接 `StorageBlock` · ⑤ 组接 `LicensesBlock`）· `Sidebar.tsx`（`labels` prop + 两套几何 + `aria-label`）· `tokens.ts`（`SIDEBAR.iconOnlyItem`）· `App.tsx` / `SettingsScreen.tsx`（偏好 state 与 `lib` 透传）· `styles/app.scss`（删掉 `.nav-item.is-app` 的第二份宽高）· `styles/settings.scss`（`.set-row-def` / `.set-storage*` / `.set-lic*`）· `spec-check.ts`（C8a 改可访问名称 + 新增 C8d）· `e2e/ia-structure-check.mjs`（`pair()` + 两条基线两条反证）· `e2e/settings-media-check.mjs`（新组 `FEATURES` 12 条 + **19 条新反证** + 1 条既有反证锚点迁移）· `package.json`（`gen:licenses`）· `AGENTS.md` / `README.md`（`check:settings` 152→**164**、反证 84→**103**；`check:ia` 24→**32**）· 仓库外《09》§4.2 追注 · 仓库外 `设置页文案与功能梳理.md` §2.5 · 本文件。
+
+> ⚠️ **本条改动未提交**（两仓已提交的那两笔见本条目开头）。
+
+
 

@@ -3,6 +3,7 @@ import { apiPost, errorText, isApiError, openPath, quitApp, serviceRestart } fro
 import type { ServiceState } from '@/ipc';
 import { useLibrary, useQuitRequest, useService, useTasks, useToasts } from '@hooks';
 import { initialMode, persistMode, useThemeTokens } from '@/theme/apply';
+import { initialSidebarLabels, persistSidebarLabels } from '@/shell-prefs';
 import type { ThemeMode } from '@/theme/tokens';
 import { Badge, Btn, Pill } from '@components/units';
 import { DynamicIsland } from '@components/DynamicIsland';
@@ -41,6 +42,14 @@ export function App() {
   const [screen, setScreen] = useState<Screen>('translate');
   const [view, setView] = useState<TranslateView>('drop');
   const [mode, setMode] = useState<ThemeMode>(() => initialMode());
+  /**
+   * 侧栏是否显示文字标签（`shell-prefs.ts`）。
+   *
+   * 与 `mode` 一样是**壳层偏好**：值的家（localStorage + 回落规则）在偏好模块里，
+   * 这里只持有"当前这一份"。`Sidebar` 与设置页①读的是**同一个 state** ——
+   * 设置页一拨开关，侧栏同帧就变，不存在"存了但界面没跟"。
+   */
+  const [sidebarLabels, setSidebarLabels] = useState(() => initialSidebarLabels());
   const [quitOpen, setQuitOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -57,6 +66,12 @@ export function App() {
   const setTheme = useCallback((m: ThemeMode) => {
     setMode(m);
     persistMode(m);
+  }, []);
+
+  /** 侧栏标签开关：先改 state（界面立刻变），再落盘 —— 顺序与 `setTheme` 一致 */
+  const setLabels = useCallback((on: boolean) => {
+    setSidebarLabels(on);
+    persistSidebarLabels(on);
   }, []);
 
   const refreshAll = useCallback(() => {
@@ -180,7 +195,12 @@ export function App() {
 
   return (
     <div className="shell">
-      <Sidebar screen={screen} onScreen={setScreen} state={status?.state ?? 'starting'} />
+      <Sidebar
+        screen={screen}
+        onScreen={setScreen}
+        state={status?.state ?? 'starting'}
+        labels={sidebarLabels}
+      />
 
       <div className="main">
         <Toolbar title={toolbar.title} subtitle={toolbar.subtitle} actions={toolbar.actions} />
@@ -216,7 +236,15 @@ export function App() {
               />
             )
           ) : (
-            <SettingsScreen status={status} mode={mode} onMode={setTheme} onToast={push} />
+            <SettingsScreen
+              status={status}
+              mode={mode}
+              onMode={setTheme}
+              sidebarLabels={sidebarLabels}
+              onSidebarLabels={setLabels}
+              lib={lib}
+              onToast={push}
+            />
           )}
 
           {tasksError ? <div className="notice is-bad">任务列表读取失败：{tasksError}</div> : null}

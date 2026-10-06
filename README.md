@@ -101,7 +101,7 @@ npm run e2e                   # D1–D5 端到端（真实 engine + 真实 servi
 npm run capture               # 截图取证（需屏幕解锁；不满足条件会拒绝出图而非交假证据）
 
 # 结构断言（每条都带反证轮，见 docs/spec-notes.md 与 AGENTS.md §3）
-npm run check:ia              # IA 结构 24 条（侧栏两级 / 视图 Tab / 设置两栏壳 / 小节分层）
+npm run check:ia              # IA 结构 32 条（侧栏两级 / 视图 Tab / 设置两栏壳 / 小节分层 / 侧栏两套几何 C8d）
 npm run check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
 npm run check:engine-client   # 翻译引擎适配层 42 条 / 反证 8 条（真协议用 openapi 快照「假引擎」，秒级可复跑）
 npm run check:models          # S3 模型下载器 32 条 / 反证 5 条（本地 Range 夹具源：中断续传 / 篡改一字节 / 换版本重链，秒级）
@@ -109,7 +109,7 @@ npm run check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲
 npm run check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run check:contract        # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status 77 条（反证：check:contract:refute）
 npm run check:music           # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 215 条（反证：check:music:refute）
-npm run check:settings        # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + X-C3 裁定结果 152 条（反证：check:settings:refute，84 条）
+npm run check:settings        # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + X-C3 裁定结果 + ④ 功能梳理（侧栏标签 / 存储占用 / 第三方许可 / def）164 条（反证：check:settings:refute，103 条）
 npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条（反证：check:units:refute）
 npm run check:stall           # U10② 引擎卡死：「静默有上界 + 每次尝试留痕 + 进行中落盘」7 条 / 反证 3 条（mock 引擎对指定 seq「永不回包」）
 npm run check:engine-settings # S6 引擎设置面：档位 / 后端 / 空闲 / 模型目录 + 模型下载状态 61 条（反证：check:engine-settings:refute）

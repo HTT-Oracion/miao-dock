@@ -15,6 +15,9 @@ import { SpecCheckBlock, useSpecCheck } from '@screens/settings/SpecCheck';
 import { CacheBlock } from '@screens/settings/CacheBlock';
 import { EngineDiag } from '@screens/settings/EngineDiag';
 import { ModelManageBlock } from '@screens/settings/ModelManageBlock';
+import { StorageBlock } from '@screens/settings/StorageBlock';
+import { LicensesBlock } from '@screens/settings/LicensesBlock';
+import type { LibraryResponse } from '@/types';
 import { useEngineState } from '@screens/settings/engine-state';
 import { ACCEL_LABEL } from '@screens/settings/engine-api';
 import type { EngineAccel, EngineOptions, EngineTier } from '@screens/settings/engine-api';
@@ -65,18 +68,22 @@ function Group({
 }
 
 /**
- * ① 通用 —— 4 项。
+ * ① 通用 —— 4 项，**全部 live**（台账 D-84）。
  *
- * live：深色模式（真切换 `onMode`）· 关闭窗口行为（真行为：收起到托盘）· 规格自检（C 组断言）
- * pending：侧栏图标标签（要改 Sidebar.tsx 的渲染分支，不在本轮范围）
+ * 深色模式（真切换 `onMode`）· 关闭窗口行为（真行为：收起到托盘）· 规格自检（C 组断言）·
+ * 侧栏图标标签（壳层偏好，真切换 `Sidebar` 的两种形态 —— 值住在 `shell-prefs.ts`）。
  */
 export function GeneralSection({
   mode,
   onMode,
+  sidebarLabels,
+  onSidebarLabels,
   fixtureRef,
 }: {
   mode: ThemeMode;
   onMode: (m: ThemeMode) => void;
+  sidebarLabels: boolean;
+  onSidebarLabels: (on: boolean) => void;
   fixtureRef: RefObject<HTMLDivElement>;
 }) {
   const spec = useSpecCheck(fixtureRef, mode);
@@ -106,7 +113,7 @@ export function GeneralSection({
 
         {/*
           规格自检：标题走 Row（与其它项对齐），运行器与结果走通栏。
-          不塞进 Row 的右列 —— 34 条结果列表挤在控件列里没法读。
+          不塞进 Row 的右列 —— 35 条结果列表挤在控件列里没法读。
         */}
         <Row item={specItem} />
         <div className="set-row-note set-row-note-body">
@@ -121,7 +128,18 @@ export function GeneralSection({
           onRun={spec.run}
         />
 
-        <PendingRow item={itemOf(g, 'sidebar-labels')} />
+        {/*
+          侧栏图标标签：**同一个 state 同时驱动两处**（`App` 的 `sidebarLabels`）——
+          拨开关时侧栏同帧变，不需要重载、也不需要把偏好写进 DOM 再让 Sidebar 去读。
+          这里刻意不自己读 localStorage：那样会造出第二个真值来源。
+        */}
+        <Row item={itemOf(g, 'sidebar-labels')}>
+          <Switch
+            on={sidebarLabels}
+            onToggle={() => onSidebarLabels(!sidebarLabels)}
+            label="侧栏图标标签"
+          />
+        </Row>
       </div>
     </>
   );
@@ -779,22 +797,43 @@ export function MediaSection() {
   );
 }
 
-/** ④ 资源与投放 —— 3 项全部待接入 */
-export function ResourceSection() {
+/**
+ * ④ 资源与投放 —— 2 项。
+ *
+ * live：存储占用（三行分列，**不合计**）· pending：临时文件（等服务侧两条接口）。
+ *
+ * `render` 用 `switch` 而不是"给谁都渲染同一个块"：将来这一组再加一个 live 项时，
+ * 忘记接线会**抛错**，而不是静默渲染成一块长得像那么回事的东西。
+ */
+export function ResourceSection({ lib }: { lib: LibraryResponse | null }) {
+  const render = (item: SettingItem) => {
+    switch (item.id) {
+      case 'storage-usage':
+        return <StorageBlock item={item} lib={lib} />;
+      default:
+        throw new Error(`[settings] ④ 资源与投放 有未接线的项：${item.id} —— catalog 与本组件不同步`);
+    }
+  };
   return (
     <>
       <GroupNote summary={RESOURCE.noteSummary}>{RESOURCE.note as string}</GroupNote>
-      <Group group={RESOURCE.groups[0]} />
+      <Group group={RESOURCE.groups[0]} render={render} />
     </>
   );
 }
 
 /**
- * ⑤ 关于 —— 4 项。版本号是本组唯一 live 项。
+ * ⑤ 关于 —— 3 项。
+ *
+ * live：版本号（Tauri `getVersion()`）· 第三方许可（枚举清单，台账 D-84）
+ * pending：开源反馈（缺一个真实可打开的仓库地址）
  *
  * 版本号取 Tauri 的 `getVersion()`（构建时的真实版本），不是手写常量。
  * 拿不到就明说"读取失败"，**不退回硬编码字符串** —— 一个与实际构建无关的
  * 版本号比没有版本号更糟：它会让人以为看的是当前这个包。
+ *
+ * 本组与①通用一样**手工渲染**（不用 `Group`）：版本号那一行下面要跟一条条件附注，
+ * 而"附注紧跟它所属的那一行"这件事只有手写位置才能保证。
  */
 export function AboutSection() {
   const [ver, setVer] = useState<string | null>(null);
@@ -834,7 +873,7 @@ export function AboutSection() {
         {/* 原先这里还有一行「检查更新」—— 该项目已整条删除（缺的是更新源这个外部事实，
             且托盘上从来没有这一项）。留着它会让本组在渲染时直接抛错：`itemOf` 找不到项就
             抛 —— 那道守卫是对的，错的是没跟着删的这行引用。 */}
-        <PendingRow item={itemOf(g, 'licenses')} />
+        <LicensesBlock item={itemOf(g, 'licenses')} />
         <PendingRow item={itemOf(g, 'oss-feedback')} />
       </div>
     </>

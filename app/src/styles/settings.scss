@@ -204,6 +204,31 @@
 .set-row-title {
   font-size: 12.5px;
   color: var(--md-ink);
+  /*
+   * 标题行做成一列 flex：为了把「默认：X」这枚小字**挂在同一行**的右端。
+   * `baseline` 而非 `center` —— 两者字号不同（12.5 / 11），居中对齐会让小字
+   * 看起来比标题高一点点；`wrap` 兜住窄窗：实在放不下时小字落到第二行，
+   * 总比被压成省略号强。
+   */
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.set-row-name {
+  /* 标题本身可被压缩、小字不压 —— 长标题先让位，别把「默认：」挤成「默…」 */
+  min-width: 0;
+}
+/*
+ * 出厂默认值（catalog 的 `def`）。刻意比 `why` 还浅一档、且不加背景 ——
+ * 它是一条**参考信息**，不是状态、更不是控件；加个底色就会读成一枚可点的标签。
+ */
+.set-row-def {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--md-muted);
+  white-space: nowrap;
 }
 /* 未实现项：标题降权但不加删除线 —— 它是计划中的项，不是被废弃的项 */
 .set-row.is-pending .set-row-title {
@@ -807,5 +832,207 @@
 .settings-main .notice.is-bad::before {
   content: '×';
   background: var(--md-error);
+}
+
+/* ================================================================ ④ 资源与投放：存储占用（三行分列） */
+/*
+ * 骨架与 `.set-cache` 同源（通栏块从一条 border-top 起行），但里面**没有合计行** ——
+ * 那是本项的立场而不是遗漏：三处口径不同，凑总数会把"没有接口的那一处"当 0 算进去。
+ * 详见 `StorageBlock.tsx` 的文件头。
+ */
+.set-storage {
+  border-top: 1px solid var(--md-line-soft);
+  padding: 10px 0;
+}
+.set-group > .set-storage:first-child {
+  border-top: 0;
+}
+
+.set-storage-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.set-storage-name {
+  font-size: 12.5px;
+  color: var(--md-ink);
+}
+/* 「三处分开列 · 不合计」：一句立场说明，与标题同行、比标题浅一档 */
+.set-storage-rule {
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+
+/*
+ * 三行网格：名称 / 值 / 来源。
+ *
+ * 列宽用 `auto auto 1fr` 而不是三等分 —— 值的长短差得很远（`1.2 GB` 与 `未统计`），
+ * 等分会让"来源"那一列被挤到和值一样窄，三列看起来像互不相干的三个字段，
+ * 而这恰恰是"值属于哪一处"这件事要一眼看清的地方。
+ */
+.set-storage-rows {
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 3px 12px;
+}
+.set-storage-k {
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+}
+.set-storage-v {
+  font-family: var(--md-font-numeric);
+  font-size: 11.5px;
+  color: var(--md-ink);
+  text-align: right;
+}
+/*
+ * 「未统计」**不是一个测出来的数**，所以不复用等宽数字字体 ——
+ * 等宽 + 右对齐会让它读起来像"某个统计结果就是 0 字节"，而真相是没有接口。
+ */
+.set-storage-v.is-unknown {
+  font-family: var(--md-font-body);
+  color: var(--md-muted);
+}
+.set-storage-src {
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--md-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ================================================================ ⑤ 关于：第三方许可（聚合 + 可展开清单） */
+.set-lic {
+  border-top: 1px solid var(--md-line-soft);
+  padding: 10px 0;
+}
+.set-group > .set-lic:first-child {
+  border-top: 0;
+}
+.set-lic-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+/* 与 `.set-cache-name` / `.set-storage-name` 同一字号 —— 通栏块的标题都长得一样 */
+.set-lic-name {
+  font-size: 12.5px;
+  color: var(--md-ink);
+}
+/* 「查看清单」：与「为什么 ?」/「展开 ▾」同一枚药丸 —— 折叠动作全页只有一种形状 */
+.set-lic-fold {
+  flex: 0 0 auto;
+  font-family: var(--md-font-body);
+  font-size: 10.5px;
+  color: var(--md-muted);
+  border: 1px solid var(--md-line);
+  background: transparent;
+  border-radius: 999px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.set-lic-fold:hover {
+  background: var(--md-surface);
+  color: var(--md-ink-2);
+}
+
+.set-lic-scopes {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* 两侧各占一格：`1fr` 而不是 `auto` —— 窄窗下让它们等分，而不是把数字挤到右缘 */
+.set-lic-scope {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.set-lic-scope-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.set-lic-scope-name {
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+}
+/* 覆盖数 `342 / 516` 走等宽：它是本块最该被看清的一组数（"有没有凑齐"） */
+.set-lic-scope-num {
+  font-family: var(--md-font-numeric);
+  font-size: 11.5px;
+  color: var(--md-ink);
+}
+.set-lic-sum {
+  margin-top: 2px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--md-muted);
+}
+/* 免责声明复用 `.notice` 的形状，只补一处外边距（它不是行内脚注，是效力边界） */
+.set-lic-note {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+/*
+ * 展开后的完整清单：**限高滚动**而不是整段铺开 ——
+ * 五百多行若全高渲染，这一组会长到十几屏，把「关于」变成一份依赖表。
+ */
+.set-lic-list {
+  margin-top: 8px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--md-line-soft);
+  border-radius: var(--md-radius-sm);
+  padding: 6px 10px;
+}
+.set-lic-list-head {
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--md-muted);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--md-line-soft);
+}
+.set-lic-list-title {
+  margin-top: 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--md-muted);
+}
+.set-lic-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+/* 包名单行省略：`@scope/name@1.2.3` 可以很长，而许可名短且必须完整——先让包名让位 */
+.set-lic-pkg {
+  min-width: 0;
+  font-family: var(--md-font-numeric);
+  color: var(--md-ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.set-lic-val {
+  flex: 0 0 auto;
+  font-family: var(--md-font-numeric);
+  color: var(--md-muted);
+}
+/* 「未取到声明」——与「未统计」同理：它不是一种许可，别让它长得像许可名 */
+.set-lic-val.is-unknown {
+  font-family: var(--md-font-body);
 }
 

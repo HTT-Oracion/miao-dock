@@ -72,11 +72,17 @@
   color: var(--md-muted);
   transition: background 0.15s, color 0.15s;
 }
-/* 应用层入口 58×52（《09》§3.1 / SIDEBAR.appItem） */
-.nav-item.is-app {
-  width: 58px;
-  height: 52px;
-}
+/*
+ * 应用层入口的宽高**不在这里** —— 由行内 style 给：
+ * `tokens.ts` 的 `SIDEBAR.appItem`（58×52，图标 + 文字）或 `SIDEBAR.iconOnlyItem`
+ * （44×44，纯图标），取哪套取决于「侧栏图标标签」偏好（台账 D-84）。
+ *
+ * 刻意**不留**一份 CSS 数字。写在这里就是第二个来源：行内 style 永远优先，
+ * CSS 那份是死代码 —— 但后来者会以为改这里有用，于是界面在"纯图标"态下错了
+ * 而没有任何一道门能发现（这条路径上没有任何断言会去读 CSS 里的 58）。
+ * `.nav-item.is-global` 的 44×44 则留在 CSS 里：那个按钮**恒为**纯图标，
+ * 只有一种形态，也就不存在"两处数字对不上"的可能。
+ */
 .nav-item:hover {
   background: var(--md-surface-2);
   color: var(--md-ink-2);

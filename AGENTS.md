@@ -69,7 +69,7 @@ npm run selftest:app:e11:real         # 同上但**真进程**（python+执行�
 npm run check:launch-plan     # S2 启动配方契约 24 条（print-launch-plan.mjs → Rust，含与 probeEngine 同源断言 + ③ 归属移交的 P-llm-* ）
 npm run check:child-watch[:refute]   # 外部二进制父死看守的双向取证（秒级；真模式 E11 的唯一依赖）
 npm run e2e                   # D 组端到端
-npm run check:ia              # IA 结构 24 条
+npm run check:ia              # IA 结构 32 条（含 C8d：侧栏两套几何 58×52 / 44×44 随标签形态成对切换）
 npm run check:tls             # TLS 依赖链 14 条（三层）
 npm run check:engine-client[:refute] # 翻译引擎适配层 42 条 / 反证 8 条（真协议用 openapi 快照「假引擎」，秒级）
 npm run check:models[:refute] # S3 模型下载器 E7：32 条 / 反证 5 条（本地 Range 夹具源，秒级，不碰真权重）
@@ -88,7 +88,7 @@ npm run check:e10[:refute]    # E10 安全：只监听回环 / 非图片字节�
 #   脚本自己拉起并收尾 box-service / 引擎 / ③ / `:8001` 执行器。
 node e2e/service/llm-real-timing.mjs  # 真 ③（llama-server）冷启动与内存实测（**真权重，分钟级，不进常规门**）
 npm run check:music[:refute]  # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 215 条 / 反证 180 条
-npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+「② 分组简洁化」+ X-C3「准备中」时间线 152 条 / 反证 84 条
+npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+「② 分组简洁化」+ X-C3「准备中」时间线 + ④ 功能梳理（侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / 行内 def） 164 条 / 反证 103 条
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条 / 反证 44 条
 cd app && npx tsc --noEmit && npx vite build   # 前端类型与构建
 cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
