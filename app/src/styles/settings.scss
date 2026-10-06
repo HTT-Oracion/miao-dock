@@ -96,7 +96,15 @@
   color: var(--md-muted);
 }
 
-/* 组级说明：解释这一组为什么有这么多「待接入」 */
+/*
+ * 组级说明（catalog 的 `note` / `noteSummary`）。
+ *
+ * 默认是**折叠态**：一行摘要 + 「为什么 ?」。摘要是 `note` 的抽句，全文一字不删地
+ * 留在展开态里 —— 收起的不是信息，是"6 行背景论证常年占着首屏"这件事。
+ *
+ * 折叠与否由 catalog 给不给 `noteSummary` 决定（组件里不按字符数猜阈值）：
+ * 没给就是不折叠，此时 `.set-note-row` 不存在、规则也退化成"铺一段文字"。
+ */
 .set-note {
   font-size: 11.5px;
   line-height: 1.7;
@@ -105,6 +113,55 @@
   border-radius: var(--md-radius-sm);
   border: 1px solid var(--md-line-soft);
   background: var(--md-surface);
+}
+
+/* 折叠/展开两种形态共用的那一行：摘要（或全文）在左，「为什么 ?」在最右 */
+.set-note-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* 展开态要读长文 ⇒ 顶部对齐，别让按钮跟着基线漂到中间 */
+.set-note.is-open .set-note-row {
+  align-items: flex-start;
+}
+
+/*
+ * 摘要：**单行**（超出省略）。多行摘要会把折叠的意义抹掉 —— 那说明该往 catalog 里
+ * 再抽掉一句，而不是让 CSS 多放几行。悬停有 `title` 兜底可读全文。
+ */
+.set-note-sum {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--md-ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 展开态：换回正常换行，行高抬到 1.75（长文按 1.6 排会挤） */
+.set-note-sum.is-full {
+  white-space: normal;
+  line-height: 1.75;
+}
+
+/* 「为什么 ?」/「收起」—— 一枚小药丸按钮，不抢摘要的宽度 */
+.set-note-more {
+  flex: 0 0 auto;
+  font-family: var(--md-font-body);
+  font-size: 10.5px;
+  color: var(--md-muted);
+  border: 1px solid var(--md-line);
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: var(--md-surface-2);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.set-note-more:hover {
+  background: var(--md-surface);
+  color: var(--md-ink-2);
 }
 
 .set-group {
@@ -157,6 +214,22 @@
   font-size: 10.5px;
   line-height: 1.6;
   color: var(--md-muted);
+}
+
+/*
+ * 行内说明**只占一行**（`Row` 与 `PendingRow` 都挂这个修饰符）。
+ *
+ * 为什么：7 项的 `why` 各 2 行左右，把行高从冻结的 50 顶到 70~80 ——
+ * 而这两行里真正改变用户动作的只有前半句（"改它要重启引擎才生效"），
+ * 后半句是设计规则的自述。截成一行、`title` 悬停可读全文，原文完整保留在组抽屉里。
+ *
+ * ⚠️ 用 `nowrap + ellipsis` 而不是 `-webkit-line-clamp`：前者**必然**是一行，
+ * 后者在容器够宽时仍可能放两行，那就又回到"有的行 50、有的行 76"的老问题。
+ */
+.set-row-why.is-one {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .set-row-ctl {
@@ -463,6 +536,39 @@
   align-items: center;
   gap: 8px;
 }
+
+/*
+ * 折叠态的**摘要行** —— 三枚进程 chip（①②③）。
+ *
+ * 它承担的事：不点开就回答「是没起来 / 在准备 / 还是在跑但没预热」。
+ * 用了 `.set-state.is-chip` 与配对行**同一枚语汇**（同高同圆角）—— 同一页里
+ * "一个进程的状态"只该有一种长相，否则用户会以为这是两回事。
+ * `flex-wrap` 是必须的：窄窗下三枚 chip 并排会溢出，换行比截断好。
+ */
+.set-diag-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* 「展开 ▾ / 收起 ꜛ」—— 与 `.set-note-more`（组说明抽屉）同一枚药丸语汇 */
+.set-diag-fold {
+  font-family: var(--md-font-body);
+  font-size: 10.5px;
+  color: var(--md-muted);
+  border: 1px solid var(--md-line);
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: var(--md-surface-2);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.set-diag-fold:hover {
+  background: var(--md-surface);
+  color: var(--md-ink-2);
+}
 .set-diag-note {
   margin-top: 7px;
   font-size: 10.5px;
@@ -576,5 +682,130 @@
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid var(--md-line-soft);
+}
+
+/* ================================================================ ② 推理引擎：空闲卸载合卡 */
+
+/*
+ * 两个空闲卸载阈值**合成一张卡**（R3）。
+ *
+ * 之前是两行 + 两段 `.set-row-note`，把"待遇不同"讲了两遍 —— 而两项唯一的区别
+ * 就是**何时生效**。合成一卡后那个区别变成右端两枚对齐的 chip（`.set-idle-tag`），
+ * 一眼能横着比；散文写法要读完两段才能比出来。
+ *
+ * 骨架沿用 `.set-cache` / `.set-manage`（顶线 + 上下 10px）：设置页里的"通栏块"
+ * 看起来始终是同一类东西，不再多一种形状。
+ * ⚠️ 卡内标题是 `.set-idle-name`，**不是** `.set-subtitle` —— ② 的「恰 3 个小节」
+ * 是 C11 逐字盯着的判据。
+ */
+.set-idle {
+  border-top: 1px solid var(--md-line-soft);
+  padding: 10px 0;
+}
+.set-group > .set-idle:first-child {
+  border-top: 0;
+}
+.set-idle-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.set-idle-name {
+  font-size: 12.5px;
+  color: var(--md-ink);
+}
+/* 「0 = 从不卸载」是**卡片级**说明（写在两个阈值之前，对两行都成立） */
+.set-idle-sub {
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+.set-idle-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 7px;
+}
+/* 40px 定宽：两行的输入框因此左边缘对齐，读起来是一张表而不是两句话 */
+.set-idle-k {
+  flex: 0 0 40px;
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+}
+/*
+ * 「何时生效」chip：`margin-left:auto` 把它推到最右，于是两枚**右端对齐**、可直接横比。
+ * 这正是"两句话改成两枚 chip"的全部理由 —— 差别从需要阅读变成需要扫一眼。
+ * `nowrap` 必须写：这两枚的文案长度不同（7 字 / 6 字），换行会把对齐毁掉。
+ */
+.set-idle-tag {
+  margin-left: auto;
+  font-size: 10.5px;
+  border-radius: 999px;
+  padding: 2px 9px;
+  border: 1px solid var(--md-line);
+  background: var(--md-surface-2);
+  color: var(--md-muted);
+  white-space: nowrap;
+}
+.set-idle-tag.is-now {
+  border-color: var(--md-success);
+  color: var(--md-success);
+}
+.set-idle-tag.is-restart {
+  border-color: var(--md-warning);
+  color: var(--md-warning);
+}
+/* 两档待遇差异的共用注解（原来两段散文各讲一遍，现在只剩这一处） */
+.set-idle-foot {
+  margin-top: 8px;
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--md-muted);
+}
+.set-idle-foot b {
+  color: var(--md-ink-2);
+}
+.set-idle-foot code {
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+}
+
+/* ================================================================ ② 警告：一种形状（R5） */
+
+/*
+ * 设置页里的三处提示原来是**三种形状**：`.set-warn`（档位不推荐）、两处
+ * `.notice.is-bad`（后端不符清单 / 最近一次错误）。形状不同会让"哪句更要紧"
+ * 变成一道形状题 —— 用户得先学会两套语汇才分得清。
+ *
+ * 统一成一条：**左侧一枚圆形色块 + 一行文字**，轻重只由颜色表达
+ * （warning = "知道代价之后自己决定"，error = "现在就得看"）。
+ *
+ * ⚠️ 只覆盖**设置页作用域内**的用法，**不动 `.notice` 的全局定义** ——
+ * `.notice` 在别的屏也在用（manga.scss 里那份），改它等于替所有屏改版。
+ */
+.settings-main .set-warn,
+.settings-main .notice.is-bad {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+.settings-main .set-warn::before,
+.settings-main .notice.is-bad::before {
+  content: '!';
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: var(--md-warning);
+  color: #fff;
+  font-family: var(--md-font-numeric);
+  font-size: 9px;
+  line-height: 14px;
+  text-align: center;
+}
+/* error 那一枚换成 ×：同形状、同位置，只换颜色与符号 —— 这是"只靠颜色分轻重"的落点 */
+.settings-main .notice.is-bad::before {
+  content: '×';
+  background: var(--md-error);
 }
 

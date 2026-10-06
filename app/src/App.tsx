@@ -136,7 +136,7 @@ export function App() {
       };
     }
     if (screen === 'settings') {
-      return { title: '设置', subtitle: '令牌配对 · 外观 · 规格自检', actions: null };
+      return { title: '设置', subtitle: '应用外观、翻译服务、媒体与资源', actions: null };
     }
     // 翻译应用内：工具条随视图切换（与 ver1.0 同一套文案，只是判定源从 screen 变成 view）
     switch (view) {
@@ -159,7 +159,7 @@ export function App() {
         return {
           title: '本机投放',
           subtitle: '拖入图片或文件夹 · 与插件共用同一条队列',
-          actions: <Badge>单次上限 20 张</Badge>,
+          actions: <Badge>每批 20 张 · 自动排队</Badge>,
         };
       default:
         return {
@@ -167,7 +167,7 @@ export function App() {
           subtitle: `串行执行 · 同一时刻只跑 1 个任务 · 队内 ${queueDepth} 个`,
           actions: (
             <>
-              <Badge>单次上限 20 张</Badge>
+              <Badge>每批 20 张 · 自动排队</Badge>
               <ServicePill status={status?.state ?? 'starting'} />
             </>
           ),
@@ -203,7 +203,7 @@ export function App() {
               hasRows ? (
                 <QueueTable rows={rows} onCancel={cancel} onRetry={retry} onOpen={openTaskDir} />
               ) : (
-                <QueueEmpty onGoPlugin={() => setScreen('settings')} onGoDrop={() => setView('drop')} />
+                <QueueEmpty onGoSettings={() => setScreen('settings')} onGoDrop={() => setView('drop')} />
               )
             ) : view === 'library' ? (
               <LibraryScreen lib={lib} onRefresh={refreshAll} onToast={push} refreshKey={refreshKey} />

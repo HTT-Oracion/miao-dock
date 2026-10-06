@@ -61,3 +61,25 @@ export function overrideFile(p, text) {
 export function clearOverrides() {
   overrides.clear();
 }
+
+/**
+ * 清空文本 / 字节缓存（**不动覆盖层**）。
+ *
+ * 给「反证轮**直接改盘**、而不是走 overrideFile」的脚本用 —— 目前是
+ * `settings-media-check.mjs`（music / units 两个脚本走 overrideFile，不需要这个）。
+ *
+ * 为什么非清不可：该脚本的 `readMaybe` 自己就是无缓存的 `readFileSync`，但**样式全文**
+ * 走的是本模块的 `cachedReadText`（经 `_styles-source.mjs` 按 index.scss 顺序拼接）。
+ * 缓存从第一次读就一直有效、**没有任何失效时机** ⇒ 改盘之后仍读到改前内容 ⇒
+ * 任何"破坏 CSS 规则"的反证都退化成**假阳性**（它看起来覆盖到了，其实什么都没测到）。
+ *
+ * 实测（2026-10-07）：给 `NOTREADY.timeline.explicitLoading` 配的 css 侧反证
+ * ——摘掉 manga.scss 里 `animation: tlspin …`——该红没红，报 **69/70 假阳性**。
+ * 修法就是在每次 `runAll()` 之前调本函数。**加新脚本时注意：凡直接改盘的反证轮都要清。**
+ *
+ * 覆盖层语义不受影响：`cachedReadText` 仍优先命中 override。
+ */
+export function clearFileCache() {
+  textCache.clear();
+  bytesCache.clear();
+}

@@ -10,12 +10,12 @@ import { SpecFixtureHost } from '@screens/settings/SpecCheck';
 import { AboutSection, GeneralSection, MediaSection, ResourceSection, TranslateSection } from '@screens/settings/sections';
 
 /**
- * 设置页 —— 两栏壳 + 5 分组 26 项（《09》§4.1 / §4.2）。
+ * 设置页 —— 两栏壳 + 5 分组 31 项（《09》§4.1 / §4.2）。
  *
  * ## 为什么从「单页平铺」改成两栏
  *
  * ver1.0 把服务状态、令牌、外观、生命周期、规格自检一路铺下来，读起来是"五种互不相干的
- * 提示堆在一页"。26 项若继续平铺会变成两屏半，而且**用户要什么就找什么**这件事
+ * 提示堆在一页"。31 项若继续平铺会变成两屏半，而且**用户要什么就找什么**这件事
  * 彻底做不到 —— 令牌在第 7 行、模型目录在第 30 行，谁记得住。
  *
  * 两栏 + 单组渲染解决的是这个：一次只展示一组，左栏给出全部 5 个分组的入口与项数。
@@ -24,7 +24,7 @@ import { AboutSection, GeneralSection, MediaSection, ResourceSection, TranslateS
  * ## 一次只渲染一个分组（不是全部平铺）
  *
  * 这是刻意的，与"左栏导航"是两件不同的事。左栏只负责切换，右栏**只挂载当前组**。
- * 若把 5 组都渲染出来再靠 CSS 隐藏，DOM 里仍有 40 多个待接入项的说明文字，
+ * 若把 5 组都渲染出来再靠 CSS 隐藏，DOM 里仍有 5 个待接入项的说明文字，
  * 读屏会念出一大段与当前画面无关的内容 —— 视觉上隐藏 ≠ 对辅助技术隐藏。
  */
 export function SettingsScreen({
@@ -38,7 +38,7 @@ export function SettingsScreen({
   onMode: (m: ThemeMode) => void;
   onToast: (text: string, kind?: 'info' | 'good' | 'bad') => void;
 }) {
-  // 深链 `?section=general|translate|media|resource|about`（托盘「检查更新」直达⑤）
+  // 深链 `?section=general|translate|media|resource|about`
   //
   // 用 `window.location.search` 而非 react-router：这个页面没有别的路由，
   // 为了一个 query 参数引入路由库不划算（且是新增依赖，本轮禁止）。

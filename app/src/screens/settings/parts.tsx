@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { SETTINGS } from '@/theme/tokens';
 import { Badge } from '@components/units';
@@ -64,9 +65,57 @@ export function emphasis(text: string): ReactNode {
   return parts.map((seg, i) => (i % 2 === 1 ? <b key={i}>{seg}</b> : seg));
 }
 
-/** 组级说明：解释这一组为什么有这么多"待接入"（对应 catalog 的 `note`） */
-export function GroupNote({ children }: { children: string }) {
-  return <div className="set-note">{emphasis(children)}</div>;
+/**
+ * 纯文本化：去掉 `**` 强调标记。
+ *
+ * 给 `title` 这类**只能收字符串**的属性用 —— 那里没法渲染 JSX，
+ * 而把带 `**` 的原文直接塞进去，用户悬停会看见一串星号。
+ */
+export function plain(text: string): string {
+  return text.replace(/\*\*/g, '');
+}
+
+/**
+ * 组级说明：**一行摘要 + 「为什么」抽屉**（catalog 的 `note` / `noteSummary`）。
+ *
+ * ## 折叠的不是信息，是占位
+ * `note` 是写给维护者的 —— 两个服务端视角为何缺一不可、两个阈值待遇为何不同。
+ * 它对用户的任务只有一条：**告诉他改哪些要重启**。这一段的默认形态是 6 行，
+ * 于是三小节的标题与主要控件被顶出首屏。折叠后默认只显示 `noteSummary` 那一行，
+ * 全文**一字不删**地留在抽屉里。
+ *
+ * ## 折叠与否由**数据**决定，不在这里猜长度
+ * 给了 `noteSummary` 才折叠；没给就原样铺全文（`note` 本来就短，加个抽屉只多一次点击）。
+ * 按字符数猜阈值是"没人能解释、也没法被断言"的写法，所以阈值留在 catalog。
+ *
+ * ## `emphasis(children)` 只在展开态求值
+ * 折叠态显示的是 `summary`（纯文本，按 catalog 的硬约束它不含标记）；
+ * 全文始终走 `emphasis()` —— 它是 `**` 唯一的渲染点之一。
+ */
+export function GroupNote({ children, summary }: { children: string; summary?: string }) {
+  const [open, setOpen] = useState(false);
+  if (!summary) return <div className="set-note">{emphasis(children)}</div>;
+  return (
+    <div className={open ? 'set-note is-open' : 'set-note'}>
+      <div className="set-note-row">
+        <div
+          className={open ? 'set-note-sum is-full' : 'set-note-sum'}
+          // 折叠态悬停可读全文：摘要是一行的下限，不是唯一入口
+          title={open ? undefined : plain(children)}
+        >
+          {open ? emphasis(children) : summary}
+        </div>
+        <button
+          type="button"
+          className="set-note-more"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          {open ? '收起' : '为什么 ?'}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -80,7 +129,12 @@ export function Row({ item, children }: { item: SettingItem; children?: ReactNod
     <div className="set-row" style={{ minHeight: SETTINGS.rowMinHeight, padding: `${SETTINGS.rowPaddingY}px 0` }}>
       <div className="set-row-label">
         <div className="set-row-title">{item.label}</div>
-        {item.why ? <div className="set-row-why">{emphasis(item.why)}</div> : null}
+        {item.why ? (
+          /* `is-one`：行内只占一行（`title` 悬停可读全文）—— 见 `PendingRow` 的同一处 */
+          <div className="set-row-why is-one" title={plain(item.why)}>
+            {emphasis(item.why)}
+          </div>
+        ) : null}
       </div>
       {children ? <div className="set-row-ctl">{children}</div> : null}
     </div>
@@ -102,7 +156,15 @@ export function PendingRow({ item }: { item: SettingItem }) {
     >
       <div className="set-row-label">
         <div className="set-row-title">{item.label}</div>
-        {item.why ? <div className="set-row-why">{emphasis(item.why)}</div> : null}
+        {item.why ? (
+          /*
+           * 与 `Row` 用同一条规则（live / pending 的 why 高度必须一致，否则两种行
+           * 摆在一起会读成两种层级）。注意 `is-pending` 的降权只改颜色、不改高度。
+           */
+          <div className="set-row-why is-one" title={plain(item.why)}>
+            {emphasis(item.why)}
+          </div>
+        ) : null}
       </div>
       <div className="set-row-ctl">
         <Badge>待接入</Badge>

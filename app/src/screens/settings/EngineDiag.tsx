@@ -6,21 +6,30 @@ import type { ServiceStatus } from '@/ipc';
 import { configPairs } from '@screens/settings/engine-state';
 import type { EngineState } from '@screens/settings/engine-state';
 import type { ModelDownloadView } from '@screens/settings/engine-api';
+import { emphasis } from '@screens/settings/parts';
+import type { SettingItem } from '@screens/settings/catalog';
 
 /**
- * 「服务四态机」的文案与色点（《02》§2.1）。
+ * **服务五态机**的诊断侧映射（与 `nav.ts` 同一集：`ipc.ts` 的 `ServiceState` 就是
+ * `stopped | starting | running | stopping | error`）。
  *
  * 本文件自带一份、**不复用** `nav.ts` 的 `stateView()`，原因只有一个：那个函数
  * 的签名是 `(s: ServiceState) => {text,colorVar}` —— 传进去一个它不认识的字符串时
  * 会返回 `undefined`，调用方（这里）读 `view.colorVar` 就会把整块面板渲染崩。
- * ②/③ 的 state 是**引擎自己**报出来的字符串，将来多出第五种是迟早的事，
+ * ②/③ 的 state 是**引擎自己**报出来的字符串，多出第六种是迟早的事，
  * 而"诊断视图在最需要它的时候白屏"是不可接受的。所以这里用 `Record<string, …|undefined>`
  * 显式表达"可能不认识"，不认识就原样报出来。
+ *
+ * ⚠️ 五个键**一个都不能少**：漏一个不会编译报错，只会把**英文裸 id** 漏到界面上
+ * （取值取不到时会回落到原始字符串，那就是用户看到的 `stopping`）。S2 给服务端加
+ * `stopping` 时这里就漏过一次 —— `check:settings` 的 `NOTREADY.state.fiveStates`
+ * 现在按本表的五个键逐一断言，就是要让这种漏同步当场变红。
  */
 const STATE_VIEW: Record<string, { text: string; colorVar: string } | undefined> = {
   stopped: { text: '未启动', colorVar: '--md-muted' },
   starting: { text: '启动中', colorVar: '--md-blue' },
   running: { text: '运行中', colorVar: '--md-success' },
+  stopping: { text: '正在停止', colorVar: '--md-muted' },
   error: { text: '异常', colorVar: '--md-error' },
 };
 
@@ -29,14 +38,34 @@ const STATE_VIEW: Record<string, { text: string; colorVar: string } | undefined>
  *
  * ## 它不是调试后门
  * 《02》§5 的定位写得很清楚：这是「用户能自己回答『为什么这次翻译这么慢』」的正当入口。
- * 所以它**默认对普通用户可见、不折叠**（已拍板，《02》§10-2），五个区块一个不少：
- * 进程状态 / 生效配置 / 模型状态 / 最近阶段日志 / 操作。
+ * 它**仍然对普通用户可见**，五个区块一个不少：进程状态 / 生效配置 / 模型状态 /
+ * 最近阶段日志 / 操作。
+ *
+ * ## 标题与 why 都从 catalog 的那一项来（不在这里硬写）
+ * 原先 `.set-diag-name` 与 why 是本文件里的两个字符串，而 catalog 的 `engine-diag` 项
+ * 自己也带一份 label/why —— **同一件事两处写，且那一份从来不渲染**（本组件当时不收 item）。
+ * 于是"改口径"要改两处、漏一处没人发现。现在与兄弟块 `ModelManageBlock` 同一惯用法：
+ * `item.label` + `emphasis(item.why)`，catalog 是唯一事实源。
+ *
+ * ## 默认**折叠**（方案 B，2026-10-07 拍板，替代《02》§10-2 原先的"不折叠"）
+ * 原先默认展开 ≈ 170px（常态）到 500px+（带下载日志），把 ② 的三小节标题与主要控件
+ * 顶出首屏。折叠后摘要行 = 标题 + 一句 why + **三枚进程状态 chip** + 「展开」。
+ * 被收起来的**不是诊断能力，是低频细节**（生效配置键值、模型路径与下载任务、阶段日志）；
+ * 最高频那一问（**是没起来 / 在准备 / 还是在跑但没预热**）由摘要行的三枚 chip 直接回答 ——
+ * 不点开就看得见。展开后仍是完整 5 区块 + 3 个操作。
+ *
+ * ## 🔴 ③ 那枚 chip 不能无条件报「运行中」
+ * ③ Sakura 被空闲卸载后，**进程态仍是 running**，只有 `warmed` 转 false。
+ * 摘要行若照着 state 直译成「运行中」，用户看到的是"一切正常"，而真相是
+ * 「首张要等一次冷启动」—— 这是整块摘要唯一能骗人的地方，也最容易骗过肉眼。
+ * 所以 `running && !warmed` 一律报**「未预热」**。
  *
  * ## 🔴 内部小标题**不能**复用 `SubTitle`
  * ② 那一组的「三小节」是被规格自检 C11 精确盯着的：它数 `settings-main` 里的
  * `.set-subtitle`，要求**恰好 3 个**且文字是「服务与配对 / 推理引擎 / 模型与诊断」。
  * 这里再有 5 个 `.set-subtitle`，C11 会立刻变红 —— 而那不是误报，是真的分不清
- * "这一组有几层结构"了。所以面板内一律用 `.set-diag-h`（同字号语汇，另一个层级）。
+ * "这一组有几层结构"了。所以面板内一律用 `.set-diag-h`（同字号语汇，另一个层级），
+ * **折叠态与展开态都必须如此**。
  *
  * ## 每一个"读不到"都如实说
  * `/engine/status` 和 `/engine/options` 失败时（服务刚重启、引擎没起来）本组件
@@ -44,16 +73,24 @@ const STATE_VIEW: Record<string, { text: string; colorVar: string } | undefined>
  * "显示一份看起来正常的快照"，那会让人对着过期的数字排查。
  */
 export function EngineDiag({
+  item,
   eng,
   service,
   onToast,
 }: {
+  /** catalog 的 `engine-diag` 项 —— 标题与 why 都从它来（单一事实源，见下方文件头） */
+  item: SettingItem;
   eng: EngineState;
   /** ① box-service 自己的状态 —— 它不在 `/engine/status` 里（那是引擎的视角），得从 Rust 侧拿 */
   service: ServiceStatus | null;
   onToast: (t: string, k?: 'info' | 'good' | 'bad') => void;
 }) {
   const [restarting, setRestarting] = useState(false);
+  /**
+   * 折叠态。默认收起（方案 B）；`false` 初值即"默认折叠"这件事本身，
+   * 不需要额外读偏好 —— 面板是**出问题时才要展开**的东西。
+   */
+  const [open, setOpen] = useState(false);
   const s = eng.status;
   const o = eng.options;
   const busy = eng.action !== null;
@@ -83,22 +120,64 @@ export function EngineDiag({
     }
   };
 
+  /*
+   * 摘要行的三枚 chip —— **每一枚分别取自它自己那个进程的 state**，不共用一份映射：
+   *   ① 从 Rust 侧的 `ServiceStatus`（服务五态机）
+   *   ② / ③ 从 `/engine/status`（引擎自己报的字符串，可能多出第六种）
+   * ③ 再叠一条 `warmed` 的修正（见上方文件头）。
+   */
+  const chipText = (state: string | null | undefined): { text: string; colorVar: string } => {
+    const view = state ? STATE_VIEW[state] : null;
+    return { text: view?.text ?? state ?? '—', colorVar: view?.colorVar ?? '--md-muted' };
+  };
+  const llmBase = chipText(s?.llm?.state);
+  const llmChip =
+    s?.llm?.state === 'running' && !s.warmed
+      ? { text: '未预热', colorVar: '--md-warning' }
+      : llmBase;
+
   return (
     <div className="set-diag">
       <div className="set-diag-top">
         <div>
-          <div className="set-diag-name">引擎诊断视图</div>
-          <div className="set-diag-why">
-            进程、参数、模型与阶段日志的现场。翻译慢或失败时，先看这里 ——
-            它能回答「是没起来、在准备、还是在跑但没预热」。
-          </div>
+          <div className="set-diag-name">{item.label}</div>
+          {item.why ? <div className="set-diag-why">{emphasis(item.why)}</div> : null}
         </div>
         <div className="set-diag-acts">
           <Btn size="sm" disabled={busy || restarting} onClick={() => void eng.reload()}>
             刷新
           </Btn>
+          <button
+            type="button"
+            className="set-diag-fold"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            {open ? '收起 ꜛ' : '展开 ▾'}
+          </button>
         </div>
       </div>
+
+      {/*
+        摘要行：折叠态**唯一**要回答的问题就是这三枚 chip。
+        展开后不再重复（展开态的「进程状态」区块报得更细），所以只在收起时渲染。
+      */}
+      {open ? null : (
+        <div className="set-diag-strip">
+          <span className="set-state is-chip">
+            <Dot colorVar={chipText(service?.state).colorVar} />
+            <span className="set-state-text">① {chipText(service?.state).text}</span>
+          </span>
+          <span className="set-state is-chip">
+            <Dot colorVar={chipText(s?.engine?.state).colorVar} />
+            <span className="set-state-text">② {chipText(s?.engine?.state).text}</span>
+          </span>
+          <span className="set-state is-chip">
+            <Dot colorVar={llmChip.colorVar} />
+            <span className="set-state-text">③ {llmChip.text}</span>
+          </span>
+        </div>
+      )}
 
       {eng.loadError ? (
         <div className="notice is-bad set-diag-note">
@@ -108,117 +187,122 @@ export function EngineDiag({
         </div>
       ) : null}
 
-      <DiagSection title="进程状态">
-        <ProcRow
-          label="① box-service"
-          state={service?.state ?? null}
-          port={service?.port ?? null}
-          // ① 的 pid 面向前端的接口里没有（有也不该给：它在同一个进程组里，pid 无排障价值）
-          pidNote="—"
-        />
-        <ProcRow
-          label="② 翻译引擎"
-          state={s?.engine?.state ?? null}
-          port={s?.engine?.port ?? null}
-          // `/engine/status.engine.pid` 恒为 null：② 由 Box 壳 spawn，box-service 是兄弟进程
-          pidNote="由 Box 壳持有"
-          extra={s?.engine?.version ? `版本 ${s.engine.version}` : null}
-        />
-        <ProcRow
-          label="③ Sakura LLM"
-          state={s?.llm?.state ?? null}
-          port={s?.llm?.port ?? null}
-          pid={s?.llm?.pid ?? null}
-          extra={s?.llm?.model ?? null}
-        />
-        <div className="set-diag-note">
-          「已预热」= {s ? (s.warmed ? '是' : '否') : '—'} —— ③ 被空闲卸载后进程态仍是 running，
-          但这一项会转 false，所以它不是「引擎没起来」，而是「首张稍慢」。
-        </div>
-      </DiagSection>
+      {/* 展开态：5 个区块 + 3 个操作**一个不少**（折叠只是默认收起，不是删内容） */}
+      {open ? (
+        <>
+          <DiagSection title="进程状态">
+            <ProcRow
+              label="① box-service"
+              state={service?.state ?? null}
+              port={service?.port ?? null}
+              // ① 的 pid 面向前端的接口里没有（有也不该给：它在同一个进程组里，pid 无排障价值）
+              pidNote="—"
+            />
+            <ProcRow
+              label="② 翻译引擎"
+              state={s?.engine?.state ?? null}
+              port={s?.engine?.port ?? null}
+              // `/engine/status.engine.pid` 恒为 null：② 由 Box 壳 spawn，box-service 是兄弟进程
+              pidNote="由 Box 壳持有"
+              extra={s?.engine?.version ? `版本 ${s.engine.version}` : null}
+            />
+            <ProcRow
+              label="③ Sakura LLM"
+              state={s?.llm?.state ?? null}
+              port={s?.llm?.port ?? null}
+              pid={s?.llm?.pid ?? null}
+              extra={s?.llm?.model ?? null}
+            />
+            <div className="set-diag-note">
+              「已预热」= {s ? (s.warmed ? '是' : '否') : '—'} —— ③ 被空闲卸载后进程态仍是 running，
+              但这一项会转 false，所以它不是「引擎没起来」，而是「首张稍慢」。
+            </div>
+          </DiagSection>
 
-      <DiagSection title="生效配置">
-        <div className="set-diag-kv">
-          {configPairs(s?.config).map((p) => (
-            <span key={p.k} className="set-diag-kv-item">
-              <span className="set-diag-k">{p.k}</span>
-              <span className="set-diag-v">{p.v}</span>
-            </span>
-          ))}
-        </div>
-        <div className="set-diag-note">
-          这是<b>每次请求下发</b>给引擎的那一份（服务端没有 <code>--config-file</code> 这个开关，实测确认）。
-          它与设置页里的档位/后端是两件事：那些是进程参数，这些是每单的翻译参数。
-        </div>
-      </DiagSection>
+          <DiagSection title="生效配置">
+            <div className="set-diag-kv">
+              {configPairs(s?.config).map((p) => (
+                <span key={p.k} className="set-diag-kv-item">
+                  <span className="set-diag-k">{p.k}</span>
+                  <span className="set-diag-v">{p.v}</span>
+                </span>
+              ))}
+            </div>
+            <div className="set-diag-note">
+              这是<b>每次请求下发</b>给引擎的那一份（服务端没有 <code>--config-file</code> 这个开关，实测确认）。
+              它与设置页里的档位/后端是两件事：那些是进程参数，这些是每单的翻译参数。
+            </div>
+          </DiagSection>
 
-      <DiagSection title="模型状态">
-        <div className="set-diag-kv">
-          <span className="set-diag-kv-item">
-            <span className="set-diag-k">视觉模型</span>
-            <span className="set-diag-v">{readyText(s?.models?.visualReady)}</span>
-          </span>
-          <span className="set-diag-kv-item">
-            <span className="set-diag-k">Sakura 权重</span>
-            <span className="set-diag-v">{readyText(s?.models?.sakuraReady)}</span>
-          </span>
-          <span className="set-diag-kv-item">
-            <span className="set-diag-k">上次校验</span>
-            <span className="set-diag-v">{s?.models?.lastVerifiedAt ?? '未校验过'}</span>
-          </span>
-        </div>
-        <div className="set-diag-note">
-          路径 <code className="set-ro">{o?.modelDir?.current ?? '—'}</code>
-        </div>
-        <DownloadState view={s?.modelDownload} />
-      </DiagSection>
+          <DiagSection title="模型状态">
+            <div className="set-diag-kv">
+              <span className="set-diag-kv-item">
+                <span className="set-diag-k">视觉模型</span>
+                <span className="set-diag-v">{readyText(s?.models?.visualReady)}</span>
+              </span>
+              <span className="set-diag-kv-item">
+                <span className="set-diag-k">Sakura 权重</span>
+                <span className="set-diag-v">{readyText(s?.models?.sakuraReady)}</span>
+              </span>
+              <span className="set-diag-kv-item">
+                <span className="set-diag-k">上次校验</span>
+                <span className="set-diag-v">{s?.models?.lastVerifiedAt ?? '未校验过'}</span>
+              </span>
+            </div>
+            <div className="set-diag-note">
+              路径 <code className="set-ro">{o?.modelDir?.current ?? '—'}</code>
+            </div>
+            <DownloadState view={s?.modelDownload} />
+          </DiagSection>
 
-      <DiagSection title="最近阶段日志">
-        {s && s.recentStageLog.length > 0 ? (
-          <div className="set-diag-log">
-            {[...s.recentStageLog].reverse().map((line, i) => (
-              // 引擎原始阶段名（`seq N: 原话`）—— **不做改名映射**：
-              // 映射了就会在引擎改阶段名之后继续说旧名字
-              <div key={`${i}-${line}`} className="set-diag-log-line">{line}</div>
-            ))}
+          <DiagSection title="最近阶段日志">
+            {s && s.recentStageLog.length > 0 ? (
+              <div className="set-diag-log">
+                {[...s.recentStageLog].reverse().map((line, i) => (
+                  // 引擎原始阶段名（`seq N: 原话`）—— **不做改名映射**：
+                  // 映射了就会在引擎改阶段名之后继续说旧名字
+                  <div key={`${i}-${line}`} className="set-diag-log-line">{line}</div>
+                ))}
+              </div>
+            ) : (
+              <div className="set-diag-note">
+                {s
+                  ? '当前没有阶段记录：替身（mock）引擎是单包响应、没有阶段帧，此时为空是如实的空；真引擎翻译时会逐条写入。可对照上方「引擎模式」确认现在跑的是哪一个。'
+                  : '读不到（见上方）'}
+              </div>
+            )}
+          </DiagSection>
+
+          <div className="set-diag-ops">
+            <Btn size="sm" disabled={busy || restarting} onClick={() => void restart()}>
+              {restarting ? '重启中…' : '重启引擎'}
+            </Btn>
+            <Btn
+              size="sm"
+              // 脚本不在盘上时按钮必须**是灰的**（服务端 `scriptExists` 就是给这一格用的）
+              disabled={busy || s?.modelDownload?.scriptExists === false || s?.modelDownload?.running === true}
+              title={
+                s?.modelDownload?.scriptExists === false
+                  ? '模型下载脚本不在盘上'
+                  : s?.modelDownload?.running
+                    ? '已有下载任务在跑'
+                    : undefined
+              }
+              onClick={() => void eng.download()}
+            >
+              重新下载模型
+            </Btn>
+            <Btn size="sm" disabled={busy || restarting} onClick={() => void eng.unload()}>
+              强制释放模型
+            </Btn>
           </div>
-        ) : (
           <div className="set-diag-note">
-            {s
-              ? '当前没有阶段记录。ver1.0 自定义协议的替身引擎是单包响应、没有阶段帧，此时为空是如实的空；真引擎在翻译时才会逐条写入。'
-              : '读不到（见上方）'}
+            「重启引擎」重启的是<b>整条本地链路（①②③）</b>：② 由 Box 壳拉开，box-service 管不到它，
+            所以做不到「只重启 ②」。「强制释放模型」只停 ③ —— ② 与 ① 一根毫毛都不动，
+            这是它不需要二次确认的原因（③ 不在跑时它也只是如实告诉你「无需释放」）。
           </div>
-        )}
-      </DiagSection>
-
-      <div className="set-diag-ops">
-        <Btn size="sm" disabled={busy || restarting} onClick={() => void restart()}>
-          {restarting ? '重启中…' : '重启引擎'}
-        </Btn>
-        <Btn
-          size="sm"
-          // 脚本不在盘上时按钮必须**是灰的**（服务端 `scriptExists` 就是给这一格用的）
-          disabled={busy || s?.modelDownload?.scriptExists === false || s?.modelDownload?.running === true}
-          title={
-            s?.modelDownload?.scriptExists === false
-              ? '模型下载脚本不在盘上'
-              : s?.modelDownload?.running
-                ? '已有下载任务在跑'
-                : undefined
-          }
-          onClick={() => void eng.download()}
-        >
-          重新下载模型
-        </Btn>
-        <Btn size="sm" disabled={busy || restarting} onClick={() => void eng.unload()}>
-          强制释放模型
-        </Btn>
-      </div>
-      <div className="set-diag-note">
-        「重启引擎」重启的是<b>整条本地链路（①②③）</b>：② 由 Box 壳拉开，box-service 管不到它，
-        所以做不到「只重启 ②」。「强制释放模型」只停 ③ —— ② 与 ① 一根毫毛都不动，
-        这是它不需要二次确认的原因（③ 不在跑时它也只是如实告诉你「无需释放」）。
-      </div>
+        </>
+      ) : null}
     </div>
   );
 }

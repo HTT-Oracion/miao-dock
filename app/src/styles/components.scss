@@ -307,29 +307,82 @@
   align-items: center;
   gap: 7px;
 }
+/*
+ * 状态 chip：把「运行中」这一枚从"一串不可断的文本"里拆出来独立成 pill。
+ *
+ * 原来整行是 `● 运行中 · 服务 :5180 · 引擎 :8001` —— `·` 前后无空格，整串当一个词排，
+ * 在窄的控件列里只能整体溢出或被截。拆开后每枚能独立换行，且状态色只在圆点上。
+ */
+.set-state.is-chip {
+  gap: 6px;
+  border: 1px solid var(--md-line);
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: var(--md-surface);
+}
 .set-state-text {
   font-family: var(--md-font-numeric);
   font-size: 11px;
   color: var(--md-ink);
 }
+/* 端口 chip：与状态 chip 同高同形状，数字走等宽 —— 纵向对齐可扫 */
+.set-pnum {
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  color: var(--md-ink-2);
+  background: var(--md-surface-2);
+  border: 1px solid var(--md-line);
+  border-radius: 999px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
 
+/*
+ * 令牌字段：**只读输入框**（`X-Box-Token` + `<input readOnly>` + 「只读」标）。
+ *
+ * 为什么不是 `<code>`：行内元素超长会**折行**（`word-break` 一开就断在任意字符处），
+ * 而且周围没有任何"这是一份可选中复制的值"的暗示。输入框给到单行不折 + 一次点击全选
+ * + 形状本身在说"这是一份值"。
+ * ⚠️ 组件侧必须是 `readOnly` 而非 `disabled` —— `disabled` 的输入框不可选中/复制，
+ * 那就把"让用户看得见还能拿走"做反了（详见 sections.tsx 的注释）。
+ */
 .set-token {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 9px;
   padding: 0 0 10px;
   font-size: 11px;
 }
-.set-token code {
+.set-token-k {
+  flex: 0 0 auto;
+  font-family: var(--md-font-numeric);
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+.set-token-in {
+  flex: 1;
+  min-width: 0;
+  background: var(--md-surface-2);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-xs);
+  padding: 5px 9px;
   font-family: var(--md-font-numeric);
   font-size: 11px;
-  background: var(--md-surface-2);
-  border: 1px solid var(--md-line-soft);
-  border-radius: var(--md-radius-xs);
-  padding: 4px 8px;
-  word-break: break-all;
-  -webkit-user-select: text;
-  user-select: text;
+  color: var(--md-ink-2);
+  letter-spacing: 0.02em;
+}
+/* 选中态用蓝底：默认的系统蓝在这套浅紫语汇里显得像另一个应用的控件 */
+.set-token-in::selection {
+  background: var(--md-blue-soft);
+}
+.set-token-ro {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--md-muted);
+  border: 1px solid var(--md-line);
+  border-radius: 999px;
+  padding: 1px 7px;
+  background: var(--md-surface);
 }
 
 /* 行下通栏附注：接在某一行的 1px 分隔线之下，读作"这一行的补充" */

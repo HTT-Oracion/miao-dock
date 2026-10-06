@@ -181,12 +181,16 @@ export function QueueTable({
  * 画面 X-C2 · 队列空态（《02》§5.3）。
  *
  * **仅队列为空时渲染** —— 有任务时整块隐藏，不与任务列表争夺注意力。
+ *
+ * ⚠️ 按钮文案必须与动作一致：Box 是桌面端，**打不开浏览器里的插件面板** ——
+ * 「去插件选图」这种说法兑现不了。这里给一条真能走通的路：跳到设置页的
+ * 「令牌配对」（插件连不上、没配对的用户，要去的就是那里）。
  */
 export function QueueEmpty({
-  onGoPlugin,
+  onGoSettings,
   onGoDrop,
 }: {
-  onGoPlugin: () => void;
+  onGoSettings: () => void;
   onGoDrop: () => void;
 }) {
   return (
@@ -195,8 +199,8 @@ export function QueueEmpty({
       <div className="empty-title">还没有翻译任务</div>
       <div className="empty-sub">在漫画页用插件提交，或把图片拖进这个窗口</div>
       <div className="empty-actions">
-        <Btn kind="ghost" onClick={onGoPlugin}>
-          去插件选图
+        <Btn kind="ghost" onClick={onGoSettings}>
+          去设置里配对插件
         </Btn>
         <Btn kind="primary" onClick={onGoDrop}>
           本机投放

@@ -161,77 +161,206 @@
 
 /* ================================================================ X-C3 服务未就绪 */
 
+/* 时间线是"一条线"，铺满 900+ 宽会散掉 —— 430 刚好让最长的一步标题与状态词同行不折 */
 .notready {
-  max-width: 560px;
-  margin: 20px auto 0;
+  max-width: 430px;
+  margin: 26px auto 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
 }
-.stage {
+
+/* ① 一行摘要：原「提示条」与「当前阶段句」说的是同一件事，合并成一行 */
+.nr-sum {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: var(--md-radius-sm);
-  border: 1px solid var(--md-line-soft);
-  background: var(--md-surface);
+  align-items: flex-start;
+  gap: 9px;
+  padding-bottom: 16px;
 }
-.stage.is-current {
-  border-color: var(--md-pink);
-}
-/* 失败阶段：与「进行中」同一个位置，但必须一眼分开 —— 否则用户会继续等 */
-.stage.is-failed {
-  border-color: var(--md-error);
-}
-.stage-idx {
-  width: 22px;
-  height: 22px;
+.nr-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  margin-top: 5px;
   border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 10px;
-  background: var(--md-line-soft);
-  color: var(--md-ink-2);
+  background: var(--md-blue);
 }
-.stage.is-current .stage-idx {
-  background: var(--md-pink-soft);
-  color: var(--md-pink);
+.nr-sum.is-bad .nr-dot {
+  background: var(--md-error);
 }
-.stage.is-failed .stage-idx {
-  background: transparent;
-  border: 1px solid var(--md-error);
+.nr-sum-t {
+  font-family: var(--md-font-display);
+  font-size: 14.5px;
+  font-weight: 700;
+}
+.nr-sum.is-bad .nr-sum-t {
   color: var(--md-error);
 }
-.stage-text {
-  font-size: 12px;
-}
-/* 阶段明细：真实日志原文（等宽、可换行），不是设计好的数字 */
-.stage-detail {
+.nr-sum-d {
   margin-top: 3px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--md-muted);
+}
+
+/* ② 时间线：节点 + 连线 + 状态词（步数与序号由 STAGES 单源派生） */
+.tl-step {
+  display: flex;
+  align-items: stretch;
+  gap: 11px;
+}
+.tl-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 22px;
+  flex: 0 0 22px;
+}
+.tl-node {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--md-line);
+  border-radius: 50%;
+  background: var(--md-surface);
+  color: var(--md-muted);
+  font-size: 11px;
+}
+.tl-node.is-done {
+  border-color: var(--md-success);
+  background: var(--md-success);
+  color: #fff;
+}
+.tl-node.is-loading {
+  position: relative;
+  border-color: var(--md-blue);
+  background: var(--md-blue-soft);
+  color: var(--md-blue);
+}
+/* loading 外圈：只留一段弧 + 匀速旋转 —— 加减速的圈在低帧率下看着像卡住 */
+.tl-node.is-loading::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  border-top-color: var(--md-blue);
+  animation: tlspin 900ms linear infinite;
+}
+@keyframes tlspin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.tl-node.is-failed {
+  border-color: var(--md-error);
+  background: var(--md-error);
+  color: #fff;
+}
+.tl-line {
+  flex: 1;
+  width: 1.5px;
+  min-height: 10px;
+  margin: 4px 0;
+  background: var(--md-line);
+}
+/* 最后一步不画下行连线，否则时间线会拖出一条到屏幕底 */
+.tl-step:last-child .tl-line {
+  display: none;
+}
+/* 着色的连线段 = "走到哪了"，不用再加进度条 */
+.tl-step.is-done-step .tl-line {
+  background: var(--md-success);
+  opacity: 0.45;
+}
+.tl-body {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 15px;
+}
+.tl-step:last-child .tl-body {
+  padding-bottom: 0;
+}
+.tl-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.tl-title {
+  font-size: 12.5px;
+  color: var(--md-muted);
+}
+.tl-step.is-done-step .tl-title {
+  color: var(--md-ink);
+}
+.tl-step.is-current .tl-title {
+  color: var(--md-ink);
+}
+.tl-step.is-failed .tl-title {
+  color: var(--md-ink);
+}
+.tl-state {
+  margin-left: auto;
+  font-size: 10.5px;
+  white-space: nowrap;
+  color: var(--md-muted);
+}
+.tl-step.is-done-step .tl-state {
+  color: var(--md-success);
+}
+.tl-step.is-current .tl-state {
+  color: var(--md-blue);
+  font-weight: 500;
+}
+.tl-step.is-failed .tl-state {
+  color: var(--md-error);
+  font-weight: 500;
+}
+/* 阶段明细：真实日志末行原文（等宽、过长截断）—— 不是设计好的数字 */
+.tl-detail {
+  margin-top: 5px;
+  padding: 4px 7px;
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-xs);
+  background: var(--md-surface-2);
   font-family: var(--md-font-numeric);
   font-size: 10.5px;
   color: var(--md-muted);
-  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.stage-note {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--md-muted);
-}
-.stage-hint {
-  font-size: 11.5px;
-  color: var(--md-ink-2);
-}
-.stage-meta {
+
+/* ③ 一行 meta：正常时它是"都活着"，不值得占三行；异常时才转红 */
+.nr-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
-  font-size: 10.5px;
-  color: var(--md-muted);
+  gap: 6px;
+  padding-top: 16px;
 }
-.stage-meta-item {
+.mchip {
+  padding: 3px 9px;
+  border: 1px solid var(--md-line);
+  border-radius: 999px;
+  background: var(--md-surface);
+  font-family: var(--md-font-numeric);
+  font-size: 10.5px;
+  color: var(--md-ink-2);
   white-space: nowrap;
+}
+.mchip.is-bad {
+  border-color: var(--md-error);
+  background: var(--md-surface-2);
+  color: var(--md-error);
+}
+
+/* ④ 一行动作 */
+.nr-acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 14px;
 }
 .logbox {
   max-height: 168px;

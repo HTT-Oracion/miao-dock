@@ -162,7 +162,7 @@ export function DropScreen({
         <Upload size={20} />
         <div className="dropzone-title">把图片或文件夹拖进这里</div>
         <div className="dropzone-sub">
-          支持 png / jpg / jpeg / webp；单次提交上限 {BATCH_LIMIT} 张，超出的部分会自动分批
+          支持 png / jpg / jpeg / webp；服务端每批 {BATCH_LIMIT} 张，超出的部分会自动排队（序号连续，不需要你分批）
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
           <Btn kind="ghost" onClick={() => void pickFiles()}>

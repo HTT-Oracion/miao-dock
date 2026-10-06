@@ -3168,3 +3168,170 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 `e2e/service/engine-profile-check.mjs`（I10 + 反证 N + `EXPECTED_MUTATIONS` 13→14）·
 `AGENTS.md` / `README.md` / `docs/engine-integration-plan.md`（`check:profile` 42→43、反证 13→14）· 本文件。
 
+
+## D-81 · 设置页文案清理 + 整条删除两项（缓存清理 / 检查更新）（2026-10-07）
+
+### 改了什么
+
+- **A 类真缺陷 3 条**
+  - ① `EngineDiag.tsx` 自带的 `STATE_VIEW` 只映射 4 个键，服务处于 `stopping` 时把**英文裸 id** 直接显示给用户（同一状态在设置页状态行是「正在停止」⇒ 一处状态两处两译）—— 补第 5 个键。
+  - ② 队列空态按钮写「去插件选图」而动作是 `setScreen('settings')`，且 Box 是桌面端、**打不开浏览器插件** —— 改名「去设置里配对插件」，prop 由 `onGoPlugin` 改为 `onGoSettings`。
+  - ③ `sidebar-labels.why` 把"已经在渲染的能力"说成"还没做" —— 改成"缺的是一个「图标 / 图标 + 文字」切换偏好"（长句说的 `Sidebar.tsx` 里早就是 `<a.icon />` + `<span>{a.label}</span>`）。
+- **B 类数字口径 7 条**：`SettingsScreen.tsx` / `catalog.ts` 的项数（29 / 26 / 「40 多个待接入」）→ 实测值；`sections.tsx` 的「26 条结果列表」→ **34 条**（`spec-check.ts` 实算）；`temp-files.why` 与诊断日志空态去掉 "ver1.0"（真引擎已接入，S7 已验收）；`MEDIA.note` 的「本组 11 项 / 共 11 项」→ **12**。
+- **删两项**（用户拍板，33 → **31**）：④「缓存清理」（与 ③「音乐缓存」是同一件事的两处入口，后者早已能用）· ⑤「检查更新」（缺的是**更新源**这个外部事实；且三处互相引用的文案共同维持着"托盘有检查更新"的假象 —— `main.rs:194-196` 只建了显示/重启/退出，`tray_action` 的 `_ => {}` 会静默吞掉其它 id）。
+- **D 类投放口径**（与插件 `miao-trans` 的 **D-07** 同批）：`RESOURCE.blurb`、投放屏徽标、投放屏副行统一为「每批 20 张 · 自动排队」。**刻意不给 Box 加 50 张选择上限**：Box 本机投放本来不设上限、由 `DropScreen` 自动分批，加 50 反而是**新增限制**（插件那边 50 是"选择"上限，两边概念不同）。
+
+### 新增断言（`check:settings` 135 → **138**，反证 63 → **66**）
+
+- `RETIRED.cache-clean` / `RETIRED.check-update`：删掉的项**不得回到** `SETTINGS_SECTIONS`。判据是**真的导入数据**，不是查字符串。与 `EXCLUDED` 的区别：`EXCLUDED` = "参考实现里有、我们没移植"；`RETIRED` = "我们列过、后经拍板删掉"。
+- `NOTE.count`：各组 `note` 里的「本组 N 项」「共 N 项」必须等于**数据实算**的项数。**这条是补上一个真缺陷** —— `MEDIA.note` 长期写「本组 11 项 / 共 11 项」而数据实为 **12**，左栏由数据算出的计数就显示 12 ⇒ **同一屏两个数字互相打架，用户不读源码就能看见**。
+- `NOTREADY.state.fiveStates` **扩到三头**：原先只断言 `ipc.ts` 的类型 + `nav.ts` 的映射，**漏了 `EngineDiag.tsx` 自带的那一份** —— 那正是 `stopping` 漏同步能活下来的原因。
+- 反证三条：加回「缓存清理」⇒ `RETIRED.cache-clean` 红；`MEDIA.note` 改回 11 ⇒ `NOTE.count` 红；删掉 `EngineDiag` 的 `stopping` 键 ⇒ `NOTREADY.state.fiveStates` 红。**实测 66/66 全红、无假阳性、无跳过、按字节还原。**
+
+### 一个自己制造、又自己抓到的坑（值得记）
+
+给 `EngineDiag` 补 `stopping` 时，我在上方注释里**原样引用了 `view?.text ?? state`** 这个表达式。而反证用例的 `find:` 找的正是它，`String.replace` 只替换**第一处** ⇒ 它改到了注释、没改到代码 ⇒ 该条反证退化成**假阳性**（65/66，`ENGINE.diag.unknownStateSafe` 该红没红）。修法：**别在注释里照抄会被反证锚定的代码字面**。
+
+### 新增 / 修改的文件
+
+`app/src/screens/settings/catalog.ts` · `EngineDiag.tsx` · `app/src/screens/SettingsScreen.tsx` · `sections.tsx` · `app/src/screens/QueueScreen.tsx` · `App.tsx` · `DropScreen.tsx` · `e2e/settings-media-check.mjs`（`SPEC_TOTAL` 33→31、`RETIRED`/`NOTE` 两组、`fiveStates` 扩三头、3 条反证、`GROUPS` 与那行写死的分组名改由 `GROUPS` 生成）· `AGENTS.md` / `README.md`（`check:settings` 135→138、反证 63→66）· 本文件。
+
+
+## D-82 · 画面 X-C3 重做：一行摘要 / 时间线 / 补显式 loading 态（2026-10-07）
+
+需求来自用户诉求②「翻译服务连接状态 UI 重新设计，信息尽量精简，在现有 4 个状态基础上**补充 loading 状态**，用**时间线 / 步骤**形式呈现」。规格落点 = ver2.0《02》§4（画面 X-C3）。
+
+### 改了什么
+
+- **整屏收成四段**：一行摘要 → **时间线** → 一行 meta → 一行动作。原先 7 段竖排堆叠（提示条 / 当前阶段句 / 四行独立列表 / meta / 动作 / 日志）压成 4 段。理由：用户此刻只关心三件事 —— **卡在哪一步、是不是坏了、我该点什么**。
+- **4 个状态 → 时间线 5 种节点形态**。用户说的「4 个状态」是**阶段状态词**（已完成 / 进行中 / 失败 / 待开始 / 首图时完成）—— 补的「进行中」这一支就是新增的**显式 loading**：
+  ```scss
+  .tl-node.is-loading::after { … border-top-color: var(--md-blue); animation: tlspin 900ms linear infinite; }
+  @keyframes tlspin { to { transform: rotate(360deg); } }
+  ```
+  这是用户区分「在动」与「卡住了」的**唯一**信号 —— 静止的「进行中」与卡死视觉上无法区分，这正是本次要补 loading 的根因。
+- **状态词 → 形态收进一处**（`NODE_KIND`）：不会出现「状态写着进行中、圈却不转」这种自相矛盾的画法。
+- **序号由下标派生**（`return i + 1;`），不是写死 1/2/3/4 —— 时间线的步数由 `STAGES` **单源**决定。
+- **四句 L1–L4 文案一字未动**（`STAGES` 逐字取自《02》§3 表格）。
+- **日志默认收起，失败自动展开**（`const logOpen = userLog ?? failed;`，`userLog: boolean | null` 表示"用户没点过就跟随默认"）—— 本屏"信息精简"的唯一行为性改动，但不牺牲「把卡在哪儿说清楚」这个立意。
+- **meta 一行**用同一类名 `mchip` 排 5 个 chip（引擎模式 / 三进程 / 服务口 / 引擎口 / ③ 口），`degraded` 时才转红。
+
+### 一条自己推出来的结构保证：`STARTUP_COUNT` 取代 `STAGES.length`
+
+设计稿只说「L4 那行的特判必须保留」，照搬会把 `reached` 写成 `state === 'running' ? STAGES.length : idx`。而 L4 不属启动期（《04》§4.5：引擎的准备/卸载/降档不新增客户端状态机节点）—— 那样 **running 时 L4 会被点亮成「已完成」**，用户于是以为最后一段也在启动流程里、还要等它。
+
+改成 `const STARTUP_COUNT = STAGES.length - 1;` 当 `reached` 的**上界**：第 4 段既不可能 `i < reached`、也不可能 `i === reached` ⇒ **拿不到进行中 / 已完成是结构性保证**，不靠特判守。配了专门断言 `NOTREADY.l4.noLoading` 盯这条结构（与既有的 `l4.notStartup` 互补：那条盯文案三元，这条盯上界）。
+
+### 两处落点纠正（我做的判断，不是用户明说的）
+
+1. **样式进 `manga.scss`，不进 `settings.scss`**：设计稿 §5 写的落点（`styles/app.scss`）不准。X-C3 是整屏接管、已有的 `.stage*` 规则就在 `manga.scss`；`STYLE.shardOwnership` 的 `FORBID` 也不禁 `tl-` / `nr-` / `mchip`，放这里安全。
+2. **断言进门槛脚本，不进 `SpecCheck.tsx`**：设计稿写「规格自检 `spec-check.ts` 新增一条」，但 `F.specCheck` 指的是**应用内自检面板 `SpecCheck.tsx`**；真正决定照设计稿意图办、但落在正确位置 —— 门槛断言在 `e2e/settings-media-check.mjs`。
+
+### 新增断言（`check:settings` 138 → **141**，NOTREADY 组 8 → 11；反证 66 → **70**）
+
+- `NOTREADY.timeline.derivedFromStages`：恰 4 步（数 `id: 'L\d'`）+ `STAGES.map(` + `i + 1` 三项同现。
+- `NOTREADY.timeline.explicitLoading`：**两侧都查** —— 组件侧 `/进行中:\s*'is-loading'/`，样式侧 `.tl-node.is-loading {` + `::after` 带 `tlspin` + `@keyframes tlspin {`。
+- `NOTREADY.l4.noLoading`：`reached` 定义含 `STARTUP_COUNT`、**不含** `STAGES.length`，且存在 `i < STARTUP_COUNT`。
+- `NOTREADY.css.classes` 的抽取表**老写法一并保留**（`stage-*` 与新 `tl-*` / `nr-*` / `mchip` 同表）—— 否则重构等于把判据整体关掉：新类名抽不到 ⇒ `used` 空集 ⇒ 恒绿。"删掉旧结构"这件事必须**由新断言的正向判据表达**，不能靠抽取表自然失配。
+- 反证 4 条：① 序号写死 `return i + 1;`→`return 1;` ⇒ `derivedFromStages` 红；② `进行中: 'is-loading',`→`进行中: '',` ⇒ `explicitLoading` 红；③ 摘掉 `animation: tlspin 900ms linear infinite;`（`file: F.mangaStyle`）⇒ `explicitLoading` 红；④ `STARTUP_COUNT`→`STAGES.length` ⇒ `l4.noLoading` 红。
+- **实测：`141/0` · 反证 `70/70` 全红、无假阳性、无跳过、14 个文件按字节还原。**
+
+### 🔴 本批最有价值的发现：反证"该红没红"，报 69/70 假阳性
+
+- **现象**：反证③（摘掉 `animation: tlspin`）跑完 `timeline.explicitLoading` **没红**。
+- **根因**：`settings-media-check.mjs` 的反证轮是**直接 `writeFileSync` 改盘**（与 `music-platform-check.mjs` / `units-structure-check.mjs` 走 `overrideFile` **内存覆盖层**不同）；而样式全文经 `_styles-source.mjs` → `cachedReadText` 读入，那个缓存**从第一次读就永不失效** ⇒ 改盘后仍读到**改前的 `manga.scss`**，破坏对断言不可见。
+- **为什么长期潜伏**：`F.stylesDir` 上方老注释写着「本组无 css 反证条目」，这条路径从没被走过。`_file-cache.mjs` 的文件头**早已警告**过这个前提（"若某条断言直接 readFileSync 绕过缓存，override 破坏对它不可见"）—— 只是**直接改盘的脚本**没被覆盖到。
+- **修法**：`e2e/_file-cache.mjs` 新增 `clearFileCache()`（只清 `textCache` / `bytesCache`，**不动 overrides**）；`settings-media-check.mjs` 反证主循环的 `if (okApply)` 分支里 `clearFileCache()` 后 `await runAll()`。附注：`readMaybe` 自己就是无缓存的 `readFileSync` ⇒「组件侧」那条反证②一直有效，**只有样式侧漏**。
+- **教训**：**"看得出来做了反证"比不做更危险** —— 一条永远不会红的反证会让整套反向验证的结论一起失真。
+
+### 给规格文档补的边界说明（**不改写历史、不动编号**）
+
+- ver2.0《02》**§4 末尾**加「实现边界（台账 D-82）」7 条：形态 / 显式 loading / L4 不属启动期 / L2 不编进度数字 / 四句文案未动 / 日志默认收起 / meta 一行。
+- ver2.0《02》**§3 表格后**加「表格口径说明」：L2 那栏「· 2.1/4.6 GB」是**举例**不是实现 —— X-C3 出现时 box-service 尚在、没有 HTTP 通道可读下载进度，实现只挂**真实日志末行原样**。这条是**规格自身的过时**，用追注表达而非改写单元格。
+
+### 新增 / 修改的文件
+
+`app/src/screens/NotReadyScreen.tsx`（整文件重写）· `app/src/styles/manga.scss`（X-C3 区块第 162 行起整段替换）· `e2e/settings-media-check.mjs`（`F.mangaStyle` + `NOTREADY.css.classes` 抽取表重写 + 3 组新断言 + 4 条反证 + 反证锚点同步）· `e2e/_file-cache.mjs`（`clearFileCache()`）· `AGENTS.md` / `README.md`（`check:settings` 138→**141**、反证 66→**70**）· 仓库外 `/Users/doro/WorkBuddy/Claw/插件与box ver2.0/02-Box-技术方案-ver2.0.md`（§3 追注 + §4 边界块）· 本文件。
+
+> 附：本轮同期还落了 D-81 之后的一批（用户诉求① 文案清理 + 诉求⑤ 选图 50 → 分批排队），其中「选图 50」见 `miao-trans` 的 **D-07**（50 = 20 + 20 + 10，末批不满是要求的一部分；Box 侧刻意不加 50 上限）。
+
+---
+
+## D-83 · 设置页 ②「翻译服务」分组简洁化 + 三项既有拍板落地 + **四条假阳性反证的根因**（2026-10-07）
+
+**诉求**：用户诉求③「对当前翻译服务设置页面进行界面优化，整体风格尽量简洁」（落点是仓库外 `翻译服务-设置页-设计稿.html`），外加三项早前已拍板但未落代码的口径。
+
+### 一、改了什么（**全是减法 + 形态收敛**）
+
+| # | 项 | 之前 | 之后 |
+|---|---|---|---|
+| R1 | 组级说明 | `note` 全文（② 约 700 字 / ③ 约 1000 字）默认铺满 | **一行摘要 + 「为什么 ?」抽屉**；全文**一字不删**，收进抽屉 |
+| R2 | 行内 `why` | 7 项各 2 行，把 50px 行高顶到 70~80 | 压**必然一行**（`nowrap + ellipsis`），全文挂 `title`；**只砍 why，不动 `CtlNote`** |
+| R3 | 两个空闲卸载阈值 | 两行 + 两段 `RowNote`，把"待遇不同"讲两遍 | **合成一张卡**（`.set-idle`），差异变成右端两枚对齐 chip；两项**仍是两个数据项** |
+| R4 | 服务状态行 | 一串不可断文本 `运行中 · 服务 :5180 · 引擎 :8001` | 三枚可独立换行的 chip（状态点 + 两枚等宽端口） |
+| R5 | 三处提示 | 三种形状（`.set-warn` + 两处 `.notice.is-bad`） | **同一条规则**（圆色块 + 一行文字），轻重只由颜色与符号表达；只覆盖 `.settings-main` 作用域 |
+| R6 | 引擎诊断视图 | 默认展开（≈170px~500px+） | **默认折叠（方案 B）**：摘要行 = 标题 + why + **三枚进程态 chip** + 「展开」 |
+| — | ① 令牌值 | `<code>`（行内、超长折行、无"可复制"暗示） | `<input readOnly>`（单行不折 + 聚焦全选 + 形状即语义） |
+| — | ② 档位 / 后端 | 下拉在说明之前 | **说明在前、下拉贴最右**（两行右边缘对齐） |
+
+**R6 的连带结论**：折叠收起来的是**低频细节**（生效配置键值 / 模型路径与下载任务 / 阶段日志），**不是诊断能力** —— 五个区块与三个操作一个不少，最高频那一问（没起来 / 在准备 / 还是在跑但没预热）由摘要行的三枚 chip 直接回答。规格侧同步见下（§5 追注 / §10-2 追注）。
+
+### 二、规格与注释的口径同步（**不改写历史、不动编号**）
+
+- ver2.0《02》**§5 定位段后**加「§5 追注（D-83 · 方案 B）」：可见性结论不变，改的是默认形态；并重申折叠/展开两态下内层标题都必须是 `.set-diag-h`（**不得**改 `.set-subtitle`，否则 C11 失效）。
+- ver2.0《02》**§10 表后**加「§10-2 追注（D-83 · 方案 B）」+ 一句口径统一（表中「默认可见」一律理解为"**对普通用户可见，默认收起**"）。
+- `catalog.ts` 的 `engine-diag.why` 原写「**默认可见、不折叠**（《02》§10-2 已拍板）」—— 这条是**规格自身那处过时的镜像**，本轮改成折叠口径（设计稿 §677 把它列为"必须回写"第②条）。
+- `EngineDiag.tsx` 文件头同步改口径（同一决策的第③处引用）。
+
+### 三、新增断言 11 条（`check:settings` **141 → 152**）；两条既有断言**改口径**
+
+新组 **`SIMPLIFY`**（9 条）—— 与 `ENGINE` 分开：ENGINE 那 20 余条守「十项接真实能力」，这 9 条守「同一批能力换了一种更短的说法」；混在一起回归时分不清是"能力掉了"还是"话又变长了"。
+
+- `notesummary.verbatim`：摘要按 ` · ` 切段，**每段去掉空白与 `**` 后必须能在 `note` 原文里逐字找到** —— 这是"**摘要不得成为新的承诺**"的可执行形式（摘要写了原文没有的话 / note 改了摘要没跟 / 摘要空转，三类同时变红）；分母写死 5 组。
+- `notesummary.wired`：数据有摘要 ≠ 界面会折叠 —— 逐个 `<GroupNote>` 标签要求带 `summary={X.noteSummary}`，且组件必须有 `if (!summary)` 退路。
+- `why.oneLine`：`Row` / `PendingRow` 都挂 `is-one` **且**全文仍在 `title` 上（防"把 why 直接截短"这种真删内容的做法）；样式必须是 `nowrap + ellipsis`（**不许** `line-clamp`：宽容器下仍可能两行）；同时要求 `CtlNote` 仍在（R2 的边界）。
+- `idle.card`：`idle-llm` / `idle-vision` 两项**必须仍在 catalog**（渲染分组 ≠ 合并数据项），卡内恰 2 行、两枚 tag（`is-now` / `is-restart`）、且"必须重启引擎"仍说出来。
+- `state.chip`：状态 chip 存在 **且端口 chip 恰 2 枚**（只查"有 chip"会漏掉"少一个端口"）。
+- `token.readonly`：令牌是 `<input readOnly>`、**同时确认不是 `disabled`**、聚焦全选。判据只取输入框那一小段窗口（全组件到处都有别人的 `disabled`，全局搜是假红）。
+- `select.pulledRight`：按**位置**判 —— 每枚 `<Select` 之前必须已出现过一枚 `<CtlNote>`。
+- `diag.foldedByDefault`：**锚在折叠开关自己那一枚** `const [open, setOpen] = useState(false)`（搜全局 `useState(false)` 会被 `restarting` 那一枚撑着 → 假阳性，实测），加 `set-diag-fold` + `aria-expanded` + 展开体被 `open` 门住 + chip 条只在收起时渲染 + 恰 3 枚 chip。
+- `warn.unified`：`.settings-main .set-warn` 与 `.settings-main .notice.is-bad` 必须**写在同一条规则组**里、共用同一枚 `::before`。
+
+另 2 条：
+
+- `WIRING.itemRefs.exist`：`sections.tsx` 里每一处 `itemOf(<组>, '<id>')` 指向的 id 必须在 catalog 里真的存在（**见下"真 bug"**）。
+- `ENGINE.diag.fromCatalog`：面板标题与 why 取自 `item.label` / `emphasis(item.why)`，且 `sections.tsx` 真的把 `item={itemOf(model, 'engine-diag')}` 传进去。
+
+**两条既有断言改口径**（不是放宽，是形态变了）：
+
+- `ENGINE.wiring.threeSubTitles`：**先剥注释再数**。合卡那段注释里写了「卡内标题**不用** `<SubTitle>`」，字面量被计成第 4 个 ⇒ 报"有 4 个"，而组件里真的只有 3 个。那是**假红**，而最快的解红办法是删掉那段注释 —— 也就是把"为什么不能用"这条说明删掉，判据反而把维护者引向最坏方向。
+- `ENGINE.wiring.idleNeverUnload`：原来是「两处都要写」（`≥2`），R3 合卡后这一句升成**卡片级共用说明**（写一遍）。判据改为锚在 `.set-idle-sub` 元素上并先剥注释 —— 旧写法在新形态下只有靠**注释里的引用**才能凑够 2 次（注释里正好引了这句），即"判据被注释撑着，真实文案删了它也照绿"。
+
+### 四、🔴 本轮最有价值的发现：**四条假阳性 + 一条锚点失效**
+
+反证轮第一次跑出 `REFUTE: 76/80`、4 个假阳性、1 条"锚点未找到"。逐条根因（**全部是"断言/破坏锚点的来源不止一处"**，与新功能无关）：
+
+| 条目 | 根因 | 修法 |
+|---|---|---|
+| `ENGINE.emphasis.renderPoints` | `GroupNote` 折叠改版后 `emphasis(children)` 有**两处**（非摘要支 + 展开支）；破坏只改第一处 | 破坏锚点改 `emphasis(children)` + `all: true` |
+| `ENGINE.diag.unknownStateSafe` | 摘要 chip 引入后 `view?.text` 有**两处**；只改展开态那处 | 锚点改裸 `view?.text ?? state` + `all`；**判据也加严**成"每一处都必须带 `?? state` 兜底" |
+| `ENGINE.wiring.visionNeedsRestart` | "必须重启引擎"在**注释 + 代码**里各一次；只改第一处（注释） | 断言先剥注释；锚点加 `all: true` |
+| `ENGINE.emphasis.renderPoints`（第二次） | 我给 `EngineDiag` 写的文件头注释里**引用了** `emphasis(item.why)` 这个写法，`includes` 被注释满足 | 该断言对每个 `src` 统一 `stripComments()` 后再 `includes` |
+| `ENGINE.md.noRawAsterisks` 锚点失效 | 原锚点是 R3 合卡**删掉**的那两行 `RowNote` 文案（`0 = <b>从不卸载</b>…`）⇒ 退化成"跳过" | 换成稳定锚点（`RestartHint` 那一行 JSX 裸文本） |
+
+修后 **`REFUTE: 84/84`，无跳过、无假阳性、16 个文件按字节还原**。
+
+> 教训（已同步进 `falsifiable-verification` 技能）：**改动一旦给某条判据增加第二个来源，"只改第一处"的破坏锚点就静默退化成假反证** —— 数字仍然漂亮，整套反向验证的结论已经失真。加断言时同步问一句「这条判据在代码里现在有几处能让我为真」。
+
+### 五、顺手抓到并修掉的两个真 bug（都不是本轮引入的形态，但都是本轮才照出来）
+
+1. **`AboutSection` 留着已删项的引用** —— 拍板删掉「检查更新」后，`<PendingRow item={itemOf(g, 'check-update')} />` 留了整整一轮：`itemOf` 查不到就**抛错**（守卫是对的），于是**点开「关于」即白屏**，而 `check:settings` / `check:docs` / `check:ia` / `tsc` / `sass` **五道门全绿**。已删该行，并补 `WIRING.itemRefs.exist` 把这一类堵住。
+2. **JSX 子节点里写了裸块注释** —— `/* … */` 在 JSX children 位置**不是注释**，里面的 `<code>` 被当成真元素 ⇒ `tsc` 一堆 `JSX expressions must have one parent element`。写成 `{/* … */}` 即好。（附带认知：这块文字对 `stripComments` 与正则类判据都"隐身"，只有 `tsc` 抓得到。）
+
+### 六、改动文件
+
+`app/src/screens/settings/catalog.ts`（`noteSummary` 5 组 + `engine-diag.why` 口径 + 注释）+ `parts.tsx`（`GroupNote` 折叠 / `Row`+`PendingRow` 的 `is-one`）+ `sections.tsx`（5 处 `<GroupNote>` 接摘要、状态行 chip、令牌只读输入框、两处下拉贴最右、空闲卸载合卡、`EngineDiag` 传 `item`、删残留引用、修裸注释）+ `EngineDiag.tsx`（折叠态 + chip 摘要行 + 标题/why 取自 catalog）+ `app/src/styles/settings.scss`（`.set-note*` / `.set-idle*` / `.set-diag-strip` / `.set-diag-fold` / 三处提示统一）+ `app/src/styles/components.scss`（`.set-state.is-chip` / `.set-pnum` / `.set-token*`）+ `e2e/settings-media-check.mjs`（新组 `SIMPLIFY` 9 条 + `WIRING.itemRefs.exist` + `ENGINE.diag.fromCatalog` + 2 条改口径 + **13 条新反证** + 5 条反证锚点修复）+ `AGENTS.md` / `README.md`（`check:settings` 141→**152**、反证 70→**84**）· 仓库外 `02-Box-技术方案-ver2.0.md`（§5 追注 + §10-2 追注）· 本文件。
+
+> ⚠️ **未提交**：两仓改动仍按用户裁定攒批（见 D-82 末）。
+
+

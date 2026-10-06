@@ -86,7 +86,7 @@ export function GeneralSection({
 
   return (
     <>
-      <GroupNote>{GENERAL.note as string}</GroupNote>
+      <GroupNote summary={GENERAL.noteSummary}>{GENERAL.note as string}</GroupNote>
       <div className="set-group">
         <Row item={darkItem}>
           <Switch
@@ -106,7 +106,7 @@ export function GeneralSection({
 
         {/*
           规格自检：标题走 Row（与其它项对齐），运行器与结果走通栏。
-          不塞进 Row 的右列 —— 26 条结果列表挤在控件列里没法读。
+          不塞进 Row 的右列 —— 34 条结果列表挤在控件列里没法读。
         */}
         <Row item={specItem} />
         <div className="set-row-note set-row-note-body">
@@ -198,7 +198,7 @@ export function TranslateSection({
 
   return (
     <>
-      <GroupNote>{TRANSLATE.note as string}</GroupNote>
+      <GroupNote summary={TRANSLATE.noteSummary}>{TRANSLATE.note as string}</GroupNote>
 
       {/* 小节一：服务与配对（3） */}
       <div className="set-group">
@@ -206,13 +206,22 @@ export function TranslateSection({
 
         <Row item={itemOf(pairing, 'service-endpoint')}>
           {state ? (
-            <span className="set-state">
-              <Dot colorVar={state.colorVar} pulse={status?.state === 'starting'} />
-              <span className="set-state-text">
-                {STATUS_TEXT[status?.state ?? 'stopped']} · 服务 :{status?.port ?? '—'} · 引擎 :
-                {status?.sidecar_port ?? '—'}
+            /*
+             * R4：原来是一串**不可断**的文本「运行中 · 服务 :5180 · 引擎 :8001」
+             * （`·` 前后无空格，整串当一个词排）。右列是 `flex:0 0 auto` 的窄列，
+             * 窄窗下它要么整体溢出、要么被截 —— 而且状态与两个端口挤在一串里，
+             * 分不清哪一段是"怎么了"、哪一段是"在哪答"。
+             * 拆成三枚可独立换行的 chip 后，端口数字走等宽、纵向对齐可扫。
+             * 状态色只落在 chip 的圆点上（文字同步给出，颜色不作唯一信息载体）。
+             */
+            <>
+              <span className="set-state is-chip">
+                <Dot colorVar={state.colorVar} pulse={status?.state === 'starting'} />
+                <span className="set-state-text">{STATUS_TEXT[status?.state ?? 'stopped']}</span>
               </span>
-            </span>
+              <span className="set-pnum">服务 :{status?.port ?? '—'}</span>
+              <span className="set-pnum">引擎 :{status?.sidecar_port ?? '—'}</span>
+            </>
           ) : (
             <ReadOnly>读取中…</ReadOnly>
           )}
@@ -231,9 +240,31 @@ export function TranslateSection({
             复制令牌
           </button>
         </Row>
+        {/*
+          令牌值渲染成**只读输入框**（拍板：原先是 `<code>`）。
+         *
+         * `<code>` 是行内元素：超长令牌到容器边缘会**折行成两行**（`word-break` 一开
+         * 就断在任意字符处），而它周围没有任何"这是一份可选中复制的值"的暗示 ——
+         * 用户只能靠手动拖选去拿它。输入框补上三件行内文本给不了的事：
+         * ① 单行不折（超长走横向滚动）；② 一次点击即全选（`onFocus` 里 `select()`）；
+         * ③ 形状本身就在说"这是一份值"。
+         *
+         * 🔴 必须是 `readOnly` 而**不是** `disabled` —— `disabled` 的输入框不可选中、
+         * 不可复制，那就把"让用户看得见还能拿走"这件事做反了，而且它会变灰得像一个
+         * 坏掉的控件。右侧「复制令牌」按钮**保留**（主路径），输入框是兜底路径
+         * （让用户能只选一段、或自己拿去做别的）。
+         */}
         <div className="set-token">
-          <span className="muted">X-Box-Token</span>
-          <code>{status?.token ?? '—'}</code>
+          <span className="set-token-k">X-Box-Token</span>
+          <input
+            className="set-token-in"
+            readOnly
+            value={status?.token ?? ''}
+            aria-label="X-Box-Token"
+            title={status?.token ?? undefined}
+            onFocus={(e) => e.currentTarget.select()}
+          />
+          <span className="set-token-ro">只读</span>
         </div>
         <RowNote>
           插件靠这个令牌提交翻译任务。令牌由本机生成、权限 0600，只存在这台机器上，
@@ -256,7 +287,23 @@ export function TranslateSection({
 
         <Row item={itemOf(inference, 'tier')}>
           {o ? (
+            /*
+             * 顺序：**说明在前、下拉贴最右**（拍板）。两行的下拉因此右边缘对齐，
+             * 与本组其它行的控件落在同一条竖线上 —— 控件列读起来是一个"操作列"，
+             * 而不是每行各自为政。
+             *
+             * ⚠️ 只换了顺序，「引擎正在跑：X」这句一个字没删：它和下拉显示的值
+             * 一起构成**「已配置 vs 已生效」唯一的区分点**（用户刚改完档位时，
+             * 下拉显示新值、这句仍报旧值 —— 少了它，用户只能以为"没存上"）。
+             */
             <>
+              <CtlNote>
+                {o.tier.effective === null
+                  ? '引擎未在运行，无法报出当前档位'
+                  : o.tier.effective === tierValue
+                    ? `引擎正在跑：${TIER_LABEL[o.tier.effective]}`
+                    : `引擎正在跑：${TIER_LABEL[o.tier.effective]}（改动需重启才生效）`}
+              </CtlNote>
               <Select
                 label={itemOf(inference, 'tier').label}
                 value={tierValue}
@@ -267,13 +314,6 @@ export function TranslateSection({
                   void eng.save({ tier: v });
                 }}
               />
-              <CtlNote>
-                {o.tier.effective === null
-                  ? '引擎未在运行，无法报出当前档位'
-                  : o.tier.effective === tierValue
-                    ? `引擎正在跑：${TIER_LABEL[o.tier.effective]}`
-                    : `引擎正在跑：${TIER_LABEL[o.tier.effective]}（改动需重启才生效）`}
-              </CtlNote>
             </>
           ) : (
             <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
@@ -300,7 +340,9 @@ export function TranslateSection({
 
         <Row item={itemOf(inference, 'backend')}>
           {o ? (
+            // 与「翻译档位」同一顺序：说明在前、下拉贴最右（两行右边缘对齐）
             <>
+              <CtlNote>{`实际生效：${accelLabel(o.accel.effective as EngineAccel)}`}</CtlNote>
               <Select
                 label={itemOf(inference, 'backend').label}
                 value={accelValue}
@@ -310,7 +352,6 @@ export function TranslateSection({
                   void eng.save({ accel: v });
                 }}
               />
-              <CtlNote>{`实际生效：${accelLabel(o.accel.effective as EngineAccel)}`}</CtlNote>
             </>
           ) : (
             <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
@@ -327,47 +368,77 @@ export function TranslateSection({
           </div>
         ) : null}
 
-        <Row item={itemOf(inference, 'idle-llm')}>
-          {o ? (
-            <NumberInput
-              label={itemOf(inference, 'idle-llm').label}
-              value={o.idle.llm.min}
-              min={0}
-              max={IDLE_MIN_MAX}
-              suffix="分钟"
-              disabled={busy}
-              onChange={(v) => void eng.save({ idleLlmMin: v })}
-            />
-          ) : (
-            <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
-          )}
-        </Row>
-        <RowNote>
-          0 = <b>从不卸载</b>。这一档由 box-service 自己看护，保存后<b>立刻生效</b>，不需要重启。
-          {o && !o.idle.llm.minIsExact
-            ? `（当前阈值 ${o.idle.llm.ms} 毫秒 —— 不是整分钟，界面显示的是四舍五入后的分钟数，由环境变量覆盖所致）`
-            : ''}
-        </RowNote>
+        {/*
+         * R3：两个空闲卸载阈值**合成一张卡**。
+         *
+         * 原来是两行 + 两段 `RowNote`，把"待遇不同"这件事讲了两遍；而两项唯一的区别
+         * 就是**何时生效**。合成一卡后，那个区别变成右端两枚对齐的 chip —— 一眼能横着比，
+         * 不必读完两段散文再自己比出来。
+         *
+         * ⚠️ 两项在 catalog 里**各自还在**（`idle-llm` / `idle-vision`）：这是**渲染分组**，
+         * 不是合并数据项，项数合计因此不变（动它 C10 会红）。
+         * ⚠️ 卡内标题**不用** `<SubTitle>`：② 的「恰 3 个小节」是 C11 逐字盯着的判据，
+         * 这里再加一个 `.set-subtitle` 会让那条断言从 3 变 4、彻底失效。
+         */}
+        <div className="set-idle">
+          <div className="set-idle-head">
+            <span className="set-idle-name">空闲卸载</span>
+            {/*
+              两档**共用**这一句「0 = 从不卸载」—— 它是卡片级的说明（排在两个阈值之前），
+              而不是某一行的附注。分开在两行各写一遍，正是 R3 要收掉的那份重复。
+            */}
+            <span className="set-idle-sub">0 = 从不卸载</span>
+          </div>
 
-        <Row item={itemOf(inference, 'idle-vision')}>
-          {o ? (
-            <NumberInput
-              label={itemOf(inference, 'idle-vision').label}
-              value={o.idle.vision.min}
-              min={0}
-              max={IDLE_MIN_MAX}
-              suffix="分钟"
-              disabled={busy}
-              onChange={(v) => void eng.save({ idleVisionMin: v })}
-            />
-          ) : (
-            <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
-          )}
-        </Row>
-        <RowNote>
-          0 = 从不卸载。这一档由引擎自带的 <code>--models-ttl</code> 执行，参数在拉开进程时就固化了
-          —— <b>必须重启引擎</b>才生效（与上面那一档待遇不同，这是刻意的）。
-        </RowNote>
+          <div className="set-idle-line">
+            <span className="set-idle-k">LLM</span>
+            {o ? (
+              <NumberInput
+                label={itemOf(inference, 'idle-llm').label}
+                value={o.idle.llm.min}
+                min={0}
+                max={IDLE_MIN_MAX}
+                suffix="分钟"
+                disabled={busy}
+                onChange={(v) => void eng.save({ idleLlmMin: v })}
+              />
+            ) : (
+              <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
+            )}
+            <span className="set-idle-tag is-now">保存后立刻生效</span>
+          </div>
+
+          <div className="set-idle-line">
+            <span className="set-idle-k">视觉</span>
+            {o ? (
+              <NumberInput
+                label={itemOf(inference, 'idle-vision').label}
+                value={o.idle.vision.min}
+                min={0}
+                max={IDLE_MIN_MAX}
+                suffix="分钟"
+                disabled={busy}
+                onChange={(v) => void eng.save({ idleVisionMin: v })}
+              />
+            ) : (
+              <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
+            )}
+            <span className="set-idle-tag is-restart">需重启引擎</span>
+          </div>
+
+          {/*
+            两档待遇差异的**共用注解**（原来两段散文各讲一遍）。「必须重启引擎」五个字
+            必须留着 —— 它是这两档唯一的区别在界面上的落点。
+          */}
+          <div className="set-idle-foot">
+            LLM 档由 box-service 自己看护（<b>即时</b>）；视觉档由引擎自带的{' '}
+            <code>--models-ttl</code> 执行，参数在拉开进程时就固化（<b>必须重启引擎</b>）。
+            这是刻意的差别，不是遗漏。
+            {o && !o.idle.llm.minIsExact
+              ? `（当前 LLM 阈值 ${o.idle.llm.ms} 毫秒 —— 不是整分钟，界面显示的是四舍五入后的分钟数，由环境变量覆盖所致）`
+              : ''}
+          </div>
+        </div>
 
         <RestartHint title="推理引擎" keys={['翻译档位', '加速后端', '空闲卸载视觉']} pending={pending} />
       </div>
@@ -409,8 +480,13 @@ export function TranslateSection({
         {/* 通栏块（catalog 里 layout:'block'）：校验结果是清单，塞不进右列 */}
         <ModelManageBlock item={itemOf(model, 'model-manage')} eng={eng} />
 
-        {/* 通栏块：诊断面板（《09》§6.2，默认可见不折叠） */}
-        <EngineDiag eng={eng} service={status} onToast={onToast} />
+        {/*
+          通栏块：诊断面板（《09》§6.2）。
+          **默认折叠**（方案 B，2026-10-07 拍板，替代《02》§10-2 原先的"不折叠"）：
+          展开态 170~500px 会把上面三小节的标题与控件顶出首屏。收起后摘要行仍给
+          三枚进程 chip —— 「是没起来 / 在准备 / 还是在跑但没预热」不点开就看得见。
+        */}
+        <EngineDiag item={itemOf(model, 'engine-diag')} eng={eng} service={status} onToast={onToast} />
       </div>
     </>
   );
@@ -694,7 +770,7 @@ export function MediaSection() {
 
   return (
     <>
-      <GroupNote>{MEDIA.note as string}</GroupNote>
+      <GroupNote summary={MEDIA.noteSummary}>{MEDIA.note as string}</GroupNote>
       {/* 按 catalog 的 groups 顺序渲染三小节：写死第一组会静默漏掉「歌词 / 透明彩胶」 */}
       {MEDIA.groups.map((g) => (
         <Group key={g.id} group={g} render={render} />
@@ -707,7 +783,7 @@ export function MediaSection() {
 export function ResourceSection() {
   return (
     <>
-      <GroupNote>{RESOURCE.note as string}</GroupNote>
+      <GroupNote summary={RESOURCE.noteSummary}>{RESOURCE.note as string}</GroupNote>
       <Group group={RESOURCE.groups[0]} />
     </>
   );
@@ -744,7 +820,7 @@ export function AboutSection() {
 
   return (
     <>
-      <GroupNote>{ABOUT.note as string}</GroupNote>
+      <GroupNote summary={ABOUT.noteSummary}>{ABOUT.note as string}</GroupNote>
       <div className="set-group">
         <Row item={versionItem}>
           <ReadOnly>{failed ? '读取失败' : (ver ?? '读取中…')}</ReadOnly>
@@ -755,7 +831,9 @@ export function AboutSection() {
             刻意不填一个手写版本号顶上 —— 那会让你以为看的是当前这个包。
           </RowNote>
         ) : null}
-        <PendingRow item={itemOf(g, 'check-update')} />
+        {/* 原先这里还有一行「检查更新」—— 该项目已整条删除（缺的是更新源这个外部事实，
+            且托盘上从来没有这一项）。留着它会让本组在渲染时直接抛错：`itemOf` 找不到项就
+            抛 —— 那道守卫是对的，错的是没跟着删的这行引用。 */}
         <PendingRow item={itemOf(g, 'licenses')} />
         <PendingRow item={itemOf(g, 'oss-feedback')} />
       </div>
