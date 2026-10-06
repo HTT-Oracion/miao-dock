@@ -127,7 +127,8 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
   模拟引擎只在测试里被显式注入（`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs`）。
   ⇒ **本机没拉引擎（`runtimes/` 不在）时，产品链路起不来**，这是 G-13（打包分发）未做的一部分。
 - **未做**：打包分发（`bundle.resources` 为空，装出来的 `.app` 起不了服务，G-13）· **S6 诊断 UI /
-  S7 真机 E1–E11 全表 / S8 插件串联**（M7–M9）· Windows 侧三项（`unverified`）·
+  S7 真机 E1–E11 全表 / S8 插件串联**（M7–M9）· Windows **进程树回收三项**（仍 `unverified`：
+  Job Object / 无孤儿 `llama-server.exe` / `taskkill /T`；注：Windows **真引擎装配 + S1 已真机跑通**，见 D-85）·
   歌手详情 4 标签 / 评论翻页 / 卡拉OK YRC / 桌面歌词（PD-1 延后）。
 - **未做真机验证**的项在台账里逐条标注（如 Radix 弹层观感、音频代理播放、皮肤观感）—— 别把
   "类型检查 + 断言通过"当成"功能可用"。

@@ -55,6 +55,70 @@ miao-dock/
 > 3. **新增 / 搬迁目录必须同步更新本节**。同时检查：`AGENTS.md` §1 的分层表 · `.trae/rules/project_rules.md` ·
 >    以及**断言里写死的路径** —— 路径不同步的后果不是变红，而是**静默跳过**。
 
+## 快速开始（装环境 → 装配引擎 → 启动）
+
+> **产品默认走真引擎**（`MIAO_ENGINE_PROTOCOL=real`）：`npm run app` 起的链路需要 `runtimes/`（按平台、**不入库**，见 `engine/VERSIONS.lock`）。
+> 只想跑前端 / 服务、不碰引擎：用下面 §开发 里的 `MIAO_ENGINE_PROTOCOL=mock` 快回路。
+
+### 依赖总览
+
+| 用途 | 依赖 | 说明 |
+|---|---|---|
+| 跑服务 / 脚本 | **Node ≥ 20**（见 `package.json` 的 `engines`） | 服务、引擎脚本、全部验收脚本都是纯 Node |
+| 构建桌面端 | **Rust 工具链**（rustup / cargo）+ 平台 C 工具链 | Tauri v2 需要 cargo + 系统链接器 |
+| 运行桌面端 | macOS 自带 WebKit · Windows **WebView2** | Win11 自带；Win10 常见随 Edge 已装，缺则装 Evergreen Runtime |
+| **真翻译引擎** | ① Python 3.11 运行时 ② venv + 依赖 ③ 模型权重 ④ llama.cpp 二进制 | 全落在 `runtimes/`（**不入库**），由本节脚本装配 |
+
+### 一、装核心依赖
+
+**macOS**
+
+```bash
+xcode-select --install                                           # clang + SDK（编译 pydensecrf 也要它）
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # 装完确保 ~/.cargo/bin 在 PATH
+```
+
+**Windows 10**
+
+1. **Rust**：装 `rustup-init.exe`，工具链选 **MSVC**。
+2. **Visual Studio 2022 生成工具**（Build Tools，不必装完整 IDE）：在安装器里勾「**使用 C++ 的桌面开发**」—— 它同时带来 MSVC 编译器与 **Windows SDK**（引擎依赖里的 `pydensecrf` 要现场编译，Tauri 链接也要）。装到默认路径即可；装在别处就用环境变量 `MIAO_VC_ROOT` / `MIAO_SDK_ROOT` 指过去。
+3. **WebView2**：Win11 自带；Win10 若缺，装 Evergreen Runtime。
+
+> 自检：`node -v`（≥ 20）· `cargo --version` 能打出版本号。
+> 🔴 `cargo` 不在 PATH ⇒ `npm run app` 报 `failed to run 'cargo metadata' ... (os error 2)`。
+> macOS：把 `export PATH="$HOME/.cargo/bin:$PATH"` 加进 `~/.zshrc` 再 `source`；
+> Windows：重开终端，或在「系统属性 → 环境变量」里把 `%USERPROFILE%\.cargo\bin` 补进 `Path`。
+
+### 二、装配翻译引擎（`runtimes/`，四条命令按序、幂等）
+
+```bash
+npm run setup:engine     # ① Python 3.11 运行时 + venv（+ 引擎源码）→ runtimes/manga-translator/
+npm run deps:engine      # ② 往 venv 里装引擎依赖（平台差异见下）
+npm run fetch:models     # ③ 下模型权重 + llama.cpp 运行时归档
+npm run extract:models   # ④ 解包归档 → bin/llama/llama-b11417/llama-server[.exe]
+```
+
+**② 的平台差异 —— 唯一不能"一条命令通吃"的一步：**
+
+- **Windows**：`npm run deps:engine` 一把梭。它把依赖**拆两批**装 —— `pydensecrf` 在 PyPI **没有任何 Windows wheel**，只能现场用 MSVC 编译；而 pip 是事务性的，混在一批里会因它失败而**整批回滚**。脚本还会自动写入 `pydensecrf` 的**旧常量兼容补丁**。
+  换机排障：`node engine/scripts/install-engine-deps.mjs --print-env` 会打印探测到的 MSVC / SDK 路径。
+- **macOS**：该脚本是 Windows 专用，手动装：
+  ```bash
+  runtimes/manga-translator/venv/bin/pip install -r runtimes/manga-translator/src/requirements.txt
+  ```
+  ⚠️ `pydensecrf`（requirements 里那行 GitHub 直链）是**移动靶**：上游已把模块级常量迁进了枚举，而引擎源码仍用旧写法 ⇒ 会在**掩码细化**一步报 `AttributeError: ... has no attribute 'DIAG_KERNEL'`（检测 / OCR / 翻译都已跑完才炸，易误判成"翻译坏了"）。命中时按 `engine/scripts/install-engine-deps.mjs` 的 `patchPydensecrfCompat()` 同一原理，把枚举成员回填成模块级同名常量（Windows 脚本自动做，macOS 需手动）。
+
+> **版本与落点以 `engine/VERSIONS.lock` 为准**：§3 = macOS，§6 = Windows（含真机实测与三个必踩坑）。
+> `runtimes/` 按平台且**不入库** —— 换机重装 = 重跑本节四条命令。
+
+### 三、启动
+
+```bash
+cd app && npm install && cd ..
+npm run app                             # 真引擎（默认）：python main.py(8000) + 执行器(8001) + llama-server(8080)
+MIAO_ENGINE_PROTOCOL=mock npm run app   # 替身快回路：不需要 runtimes/
+```
+
 ## 开发
 
 ```bash
@@ -64,21 +128,9 @@ node service/src/server.mjs
 # 测试替身（模拟引擎 + 模拟 LLM）—— 只有测试用，产品走真引擎
 node engine/src/server.mjs
 
-# 桌面端（需 Rust 工具链）；它会自己拉起**三个**子进程：服务 + 引擎 + LLM
-#   默认 real ⇒ 引擎栈 = python main.py(8000) + 执行器(8001) + llama-server(8080)，需要 runtimes/
-#   想跑替身快回路：MIAO_ENGINE_PROTOCOL=mock npm run app
-cd app && npm install
-cd .. && npm run app
+# 桌面端整条链路（需 Rust 工具链 + 真引擎）见上一节 §快速开始；它会自己拉起**三个**子进程：
+#   服务 + 引擎 + LLM。默认 real ⇒ python main.py(8000) + 执行器(8001) + llama-server(8080)。
 ```
-
-> **若 `npm run app` 报 `failed to run 'cargo metadata' ... No such file or directory (os error 2)`**，
-> 说明 `cargo` 不在 PATH —— 工具链装在 `~/.cargo/bin` 但 shell 没加载它。修一次即可永久生效：
->
-> ```bash
-> echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
-> ```
->
-> 验证：`cargo --version` 能打出版本号即可。Rust 另需 Node ≥ 18（`node -v`）。
 
 > 环境变量 `MIAO_ROOT` 可覆盖落盘根目录（验收用临时目录），默认 `~/Pictures/Box 漫画`。
 > 运行期状态在平台应用数据目录下的 `Box/state/`（`MIAO_STATE_DIR` 可覆盖）：
@@ -154,9 +206,11 @@ npm run selftest:app:e11:real    # E11 三进程树回收 + E1 生效参数快�
 > **S5 契约增量已完成**（D-74）：`/health.sidecar` 扩到 **9 键**（含 `engineVersion` = 引擎 commit 短 sha）、
 > 三个 503 严格分开（`UNAVAILABLE` 进程不在 / `ENGINE_NOT_READY` 进程在但未就绪 / `MODEL_DOWNLOAD_FAILED` 模型没了）、
 > 新增需鉴权的诊断视图 `GET /engine/status`。
+> **Windows 10 侧**（D-85）：真引擎装配已平台化（venv / llama.cpp / 清单 / 解包 / 装配脚本），
+> **S1 真机已出真译文**（真 llama-server，12.2 s GPU）；⚠️ **进程树回收三项仍 `unverified`**
+> （Job Object / 无孤儿 `llama-server.exe` / `taskkill /T` —— 属 Rust 侧，本轮只跑了引擎侧 S1）。
 >
 > 🔴 **引擎栈模式默认 `real`**：`npm run app` 起的**已经是真引擎**（`python main.py` + `llama-server`，
 > 需要 `runtimes/`，见 `engine/VERSIONS.lock`）。模拟引擎只在测试里被显式注入
 > （`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs` / `check:e5e6` / `check:contract`）。
-> **未做**：诊断 UI / 插件串联（S6–S8）· Windows 侧（`unverified`）·
-> 打包分发（G-13：装出来的 `.app` 里不含 `service/` 与 `engine/`，起不了服务）。
+> **未做**：诊断 UI / 插件串联（S6–S8）· 打包分发（G-13：装出来的 `.app` 里不含 `service/` 与 `engine/`，起不了服务）。

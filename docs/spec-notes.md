@@ -3476,7 +3476,13 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 - `e2e/engine/{s1,e3}-*.mjs`：win32 分支为新增，POSIX 不变。
 - **结论：macOS 拉取本提交，行为不变。** 唯一边界：macOS **x64/Intel** 本就不在支持范围（清单只有 `darwin-arm64` 资产）—— 此前会下一个跑不起来的 arm64 二进制，现在 runtime 集直接过滤为空、失败更早更明确。
 
-### 八、改动文件
+### 八、本条**不**关闭的未验项
+
+D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收 / 无孤儿 `llama-server.exe` / `taskkill /T`）**
+**本条不关闭** —— 那三项属 **Rust / 进程管理侧**，而本轮跑的是**引擎侧 S1**（`e2e/engine/s1-real-engine-check.mjs`，直接起 `python main.py` + `llama-server`），
+**没有**经过 Tauri 壳的进程树管理。⇒ register 里 U3 一行的"未在 Windows 上跑过"仍然成立，只是**理由**从"本机无 Windows"变成"本轮跑的是引擎侧、不是壳侧"。README / AGENTS 的现状行已按此改写（**不**把"Windows 侧"整体说成已验）。
+
+### 九、改动文件
 
 `service/src/config.mjs` · `service/src/engine-client.mjs` · `engine/model-store.mjs` · `engine/models.manifest.json` · `engine/scripts/fetch-models.mjs` · `engine/scripts/setup-engine.mjs`（新）· `engine/scripts/install-engine-deps.mjs`（新）· `engine/VERSIONS.lock`（§6）· `e2e/engine/s1-real-engine-check.mjs` · `e2e/engine/e3-real-full-chain-check.mjs` · `app/src-tauri/tauri.conf.json` · `app/src-tauri/icons/icon.ico`（新）· `package.json`（`setup:engine` / `deps:engine` / `extract:models`）· 本文件。
 
