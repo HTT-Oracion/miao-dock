@@ -1407,6 +1407,7 @@ if (!refute) {
   let skipped = 0;
   const falsePositives = [];
   const applied = []; // {kind, ...} 用于最终恢复校验
+  const restoreErrors = []; // 恢复动作本身失败（不许抛，见下面的 finally）
 
   console.log(
     `\n破坏源文件 → 断言必须变红 → 按字节恢复（应执行 ${expectedTotal} 条）\n`,
@@ -1483,14 +1484,28 @@ if (!refute) {
         }
       }
     } finally {
-      // 精确按字节恢复
+      // 精确按字节恢复。
+      //
+      // 🔴 **恢复动作一律不许抛出** —— 这一条是实测换来的：`unlinkSync` 在被宿主的删除守卫
+      //   拦下时（`SAFE_DELETE_BULK_CONFIRM_REQUIRED`）会直接抛，而 `finally` 里抛出的异常
+      //   会掀翻**整个反证轮**，后果有两个、且都是最难查的那种：
+      //     (a) 后面所有改错**一条都不跑**（本轮"应执行 44 条"实际只跑了一半）；
+      //     (b) 源码树被留在**被改坏**的状态 —— 于是**下一次 `check:units` 正向轮**
+      //         莫名其妙少一条（实测 37 → 36），而报错只说"文档写 37、脚本实际 36"，
+      //         **完全指不到这里**（`check:docs` 正是拿正向轮的自报条数去比文档的）。
+      //   所以：失败的恢复只**登记**，由下面的「恢复校验」段统一判红（那里本来就会读盘复核）。
       if (record) {
-        if (record.kind === "rename" && existsSync(record.to))
-          renameSync(record.to, record.from);
-        else if (record.kind === "create" && existsSync(record.file))
-          unlinkSync(record.file);
-        else if (record.kind === "edit")
-          overrideFile(record.file, null); // 清除内存覆盖（磁盘从未被写）
+        try {
+          if (record.kind === "rename" && existsSync(record.to)) renameSync(record.to, record.from);
+          else if (record.kind === "create" && existsSync(record.file)) unlinkSync(record.file);
+          else if (record.kind === "edit") overrideFile(record.file, null); // 清除内存覆盖（磁盘从未被写）
+        } catch (err) {
+          restoreErrors.push({ ...record, error: String(err).slice(0, 200) });
+          console.log(
+            `  ⚠ 恢复失败（已登记，稍后统一判红）：${path.relative(ROOT, record.file ?? record.from)}`
+            + ` —— ${String(err).slice(0, 160)}`,
+          );
+        }
         applied.push(record);
       }
     }
@@ -1536,6 +1551,13 @@ if (!refute) {
       `✗ 有 ${skipped} 条未能反证（锚点未找到/源文件缺席）—— 跳过 ≠ 通过`,
     );
   if (restoreFail) console.log(`✗ 有 ${restoreFail} 个文件未恢复到原始字节`);
+  if (restoreErrors.length)
+    console.log(
+      `✗ 有 ${restoreErrors.length} 个**恢复动作本身**失败（多半是宿主的删除守卫/权限）—— 源码树可能未复原，`
+      + `请先手工核对再重跑：\n    ${restoreErrors
+        .map((r) => `${path.relative(ROOT, r.file ?? r.from)}：${r.error}`)
+        .join("\n    ")}`,
+    );
   if (falsePositives.length)
     console.log(`✗ 假阳性：${falsePositives.join(", ")}`);
   process.exitCode =

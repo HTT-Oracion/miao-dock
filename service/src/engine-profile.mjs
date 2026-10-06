@@ -132,12 +132,21 @@ export const ACCEL_LABELS = {
 export function resolveAccel({ choice = 'auto', hardwareAccel = 'cpu', useGpu = true } = {}) {
   // 「不许用 GPU」这一支优先：`accel=cpu`（用户设置）或 `MIAO_ENGINE_USE_GPU=0`（注入）都落这
   if (useGpu === false) {
-    // 硬件本来是能跑 GPU 的 ⇒ 这是一次**回退**，§7.4-3 要求"不静默"，故 degraded
+    // 🔴 必须分清**两种** `useGpu === false` —— 它们外观相同、含义相反（E8 取证时照出）：
+    //   · `choice === 'cpu'`：用户在设置页选了「强制 CPU」⇒ 这是**他主动要的**，
+    //     `config.mjs` 由此把 `engineUseGpu` 也算成 false（见 `config.engineUseGpu` 那行）。
+    //     §7.4-3 管的是"指定 GPU 后端**启动失败**"，不是用户不要 GPU ⇒ **不报 degraded**。
+    //   · `choice` 是 auto / 某个 GPU 后端：那就是 Rust 侧检测到 GPU 起不来、注入
+    //     `MIAO_ENGINE_USE_GPU=0` 重拉（见 `server.mjs` §7.4-3 那段）⇒ 真回退，**必须 degraded**。
+    // 合并成一件事的后果是"用户自己点了 CPU，界面却报故障"——正是本函数头注释警告的那种误导。
+    const byUserChoice = choice === 'cpu';
     return {
       accel: 'cpu',
-      degraded: hardwareAccel !== 'cpu',
+      degraded: !byUserChoice && hardwareAccel !== 'cpu',
       mismatch: null,
-      reason: hardwareAccel === 'cpu' ? '硬件本就无 GPU' : `已回退 CPU（硬件推荐 ${hardwareAccel}）`,
+      reason: byUserChoice
+        ? '用户指定 CPU（非回退）'
+        : (hardwareAccel === 'cpu' ? '硬件本就无 GPU' : `已回退 CPU（硬件推荐 ${hardwareAccel}）`),
     };
   }
   if (choice === 'auto' || choice === hardwareAccel) {

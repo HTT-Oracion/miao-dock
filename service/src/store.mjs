@@ -79,6 +79,20 @@ export class Store {
     this.idempotency = new Map();
     this.startedAt = nowIso();
     /**
+     * **本进程**的启动时刻（ms，毫秒精度）。
+     *
+     * 🔴 为什么必须单独存一个毫秒精度的字段，而不是复用上面的 `startedAt`：
+     *   1. `startedAt` 是给人看的 ISO（`nowIso()` **截掉了毫秒**），拿它与任务的
+     *      `Date.parse(createdAt)` 比大小会引入最多 1 s 的偏斜；
+     *   2. 更要紧的是它承载一条**语义边界**：`init()` 会把**上一轮**的终态任务从盘上
+     *      恢复进 `this.tasks`（任务清单要显示历史），而 `idle-policy.mjs` 的
+     *      `lastActivityAt()` 若把这些历史记录也算作"任务活动"，就会得出
+     *      「距上次活动 18 小时」⇒ ③ LLM 刚被拉起就被第一次 tick 卸掉。
+     *      那正是"用户重启 Box 后翻译永远起不来"的现场。本字段是这个过滤的**下界**。
+     *   见 `idle-policy.mjs` 的 `lastActivityAt()` / `runtimeStartMs()`。
+     */
+    this.runtimeStartedAtMs = Date.now();
+    /**
      * 翻译前的**懒加载恢复**钩子（《04》§9.3）：③ 被空闲卸载后再来任务时，先拉起它。
      * 由 server.mjs 在装配阶段注入（`store.ensureLlm = () => supervisor.start()`）。
      * 缺省 `null` ⇒ 纯 Store 场景（单测/自检）行为完全不变。

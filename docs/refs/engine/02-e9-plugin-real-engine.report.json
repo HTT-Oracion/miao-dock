@@ -1,0 +1,336 @@
+{
+  "startedAt": "2026-10-06T13:19:09.801Z",
+  "runDir": "/Users/doro/code/self/forFun/miao-trans/.temp-translate-test/e9-20261006-131909",
+  "sites": {
+    "a": "https://jmanga.media/read/%E8%BB%A2%E7%94%9F%E3%82%B4%E3%83%96%E3%83%AA%E3%83%B3%E3%81%A0%E3%81%91%E3%81%A9%E8%B3%AA%E5%95%8F%E3%81%82%E3%82%8B%EF%BC%9F/ja/chapter-112-raw/",
+    "b": "https://jmanga.media/read/%E8%BB%A2%E7%94%9F%E3%82%B4%E3%83%96%E3%83%AA%E3%83%B3%E3%81%A0%E3%81%91%E3%81%A9%E8%B3%AA%E5%95%8F%E3%81%82%E3%82%8B%EF%BC%9F/ja/chapter-113-raw/"
+  },
+  "facts": {
+    "pagesA": 18,
+    "pagesB": 16,
+    "takeB": 13,
+    "total": 31,
+    "batchLimit": 20
+  },
+  "engineLaunch": {
+    "cmd": [
+      "/Users/doro/code/self/forFun/miao-dock/runtimes/manga-translator/venv/bin/python",
+      "main.py",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8000",
+      "--use-gpu",
+      "--nonce",
+      "None"
+    ],
+    "cwd": "/Users/doro/code/self/forFun/miao-dock/runtimes/manga-translator/src/server",
+    "executorPort": 8001
+  },
+  "engineReadyMs": 8454,
+  "health": {
+    "status": "ok",
+    "sidecar": "running",
+    "tier": "tiny",
+    "accel": "mps",
+    "model": "sakura-1.5b-qwen2.5-v1.0-fp16"
+  },
+  "engineOptions": {
+    "protocol": "real",
+    "effectiveTier": "tiny",
+    "hardwareAccel": "mps"
+  },
+  "navA": {
+    "ms": 2934,
+    "status": 200,
+    "title": "転生ゴブリンだけど質問ある？ - 112 raw - jmanga"
+  },
+  "warmA": {
+    "rounds": 23,
+    "bottomHits": 0,
+    "ms": 12085,
+    "imgs": 20,
+    "lazy": 18,
+    "pending": 0,
+    "loaded": 18,
+    "y": 16560,
+    "h": 21314,
+    "vh": 900
+  },
+  "pageSideA": {
+    "total": 20,
+    "kept": 18
+  },
+  "prepareA": {
+    "sel": {
+      "state": "idle",
+      "clicked": 0,
+      "ok": true
+    },
+    "cn": {
+      "filled": true,
+      "value": "E9 真站点联调 112+113"
+    },
+    "ok": true,
+    "attempts": 1
+  },
+  "batchA": {
+    "ms": 104231,
+    "summary": "已保存到 漫画库 /",
+    "items": 18,
+    "tasks": 1
+  },
+  "writebackA": {
+    "n": 18,
+    "blob": 18,
+    "decoded": 18,
+    "keptOriginal": 18,
+    "seqs": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16",
+      "17",
+      "18"
+    ]
+  },
+  "navB": {
+    "ms": 1271,
+    "status": 200,
+    "title": "転生ゴブリンだけど質問ある？ - 113 raw - jmanga"
+  },
+  "warmB": {
+    "rounds": 22,
+    "bottomHits": 0,
+    "ms": 12422,
+    "imgs": 18,
+    "lazy": 16,
+    "pending": 0,
+    "loaded": 16,
+    "y": 15946,
+    "h": 19042,
+    "vh": 900
+  },
+  "prepareB": {
+    "sel": {
+      "state": "idle",
+      "clicked": 1,
+      "ok": true
+    },
+    "cn": {
+      "filled": true,
+      "value": "E9 真站点联调 112+113"
+    },
+    "ok": true,
+    "attempts": 1
+  },
+  "batchB": {
+    "ms": 95483,
+    "summary": "已保存到 漫画库 /",
+    "items": 31,
+    "tasks": 2
+  },
+  "tasks": [
+    {
+      "taskId": "tsk_01M48NXDBW381X431JH4V8ZZ86",
+      "status": "done",
+      "batches": [
+        "#1 1-18×18"
+      ]
+    },
+    {
+      "taskId": "tsk_01M48P16JPJ3S0F1GMCGYHRHSJ",
+      "status": "done",
+      "batches": [
+        "#1 19-31×13"
+      ]
+    }
+  ],
+  "itemDurations": [
+    5639,
+    5937,
+    6833,
+    4868,
+    3341,
+    7592,
+    5706,
+    7230,
+    7312,
+    3132,
+    8530,
+    8764,
+    6797,
+    4917,
+    3096,
+    4219,
+    4081,
+    5105,
+    3831,
+    6692,
+    4795,
+    5667,
+    5294,
+    4025,
+    8945,
+    7392,
+    8952,
+    10215,
+    15412,
+    4897,
+    8613
+  ],
+  "landed": {
+    "root": "/Users/doro/code/self/forFun/miao-trans/.temp-translate-test/e9-20261006-131909/out",
+    "comicDir": "E9 真站点联调 112+113",
+    "originals": 31,
+    "translated": 31
+  },
+  "serial": {
+    "n": 31,
+    "violations": [],
+    "spanMs": 213215.73461914062
+  },
+  "compare": [
+    {
+      "seq": 18,
+      "sameShape": true,
+      "size": [
+        800,
+        1136
+      ],
+      "changedPct": 3.33
+    },
+    {
+      "seq": 19,
+      "sameShape": true,
+      "size": [
+        800,
+        1136
+      ],
+      "changedPct": 0.71
+    },
+    {
+      "seq": 31,
+      "sameShape": true,
+      "size": [
+        800,
+        1136
+      ],
+      "changedPct": 8.9
+    }
+  ],
+  "finishedAt": "2026-10-06T13:23:21.313Z",
+  "results": [
+    {
+      "id": "E9.0 前置：box-service 明确报**真引擎**协议 `protocol=real`（不是靠 mock 默认值碰巧对上）",
+      "ok": true,
+      "detail": "protocol=real · options={\"protocol\":\"real\",\"effectiveTier\":\"tiny\",\"hardwareAccel\":\"mps\"}"
+    },
+    {
+      "id": "E9.3 面板头部徽标 = 「服务已就绪」（插件真的探到了 5180 上的真 box-service）",
+      "ok": true,
+      "detail": "badge=\"服务已就绪\""
+    },
+    {
+      "id": "E9.1 真实站点 chapter-112 扫描到 18 张（页面共 20 个 <img>，非漫画图被过滤规则排除）",
+      "ok": true,
+      "detail": "页面命中=18 页面 img 总数=20"
+    },
+    {
+      "id": "E9.2 面板只渲染第 1 页 = 18 格（18 ≤ 单页上限 20，不分页）；提示行「本页 18 张 · 全页共 18 张」",
+      "ok": true,
+      "detail": "hint=\"本页 18 张 · 全页共 18 张 已扫描到 18 张图片\""
+    },
+    {
+      "id": "E9.4 勾选 18 张后计数正确（未达单批上限 20）",
+      "ok": true,
+      "detail": "counter=\"已选 18 张 · 分布于 1 页\""
+    },
+    {
+      "id": "E9.5 第一批走完插件全流程到完成态（页面给出完成回执 + 服务端任务 done + 该批 18 项已入账）",
+      "ok": true,
+      "detail": "summary=\"已保存到 漫画库 /\" · 任务状态=[\"done\"] · items=18 · 104 s"
+    },
+    {
+      "id": "E9.6 **回写生效**：页面 18 个原图被标记 data-miao-translated，src 换成 blob:（译文确实是从 box-service 取回来的）",
+      "ok": true,
+      "detail": "标记=18 blob:=18"
+    },
+    {
+      "id": "E9.7 回写后的 blob 能解码为真图片，且原 CDN URL 被保留在 data-miao-original-src",
+      "ok": true,
+      "detail": "可解码=18 保留原址=18 seq=1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18"
+    },
+    {
+      "id": "E9.8 跨页导航后面板回到可勾选态（同一漫画名续编号；state=idle，点了 1 次「继续翻一批」，共试 1 轮）",
+      "ok": true,
+      "detail": "counter=\"已选 0 张 · 分布于 0 页\" state=idle comicName=\"E9 真站点联调 112+113\""
+    },
+    {
+      "id": "E9.9 跨页导航（URL 变更）后重扫 chapter-113 = 16 张",
+      "ok": true,
+      "detail": "16 格"
+    },
+    {
+      "id": "E9.10 第二批勾选 13 张（本页共 16 张）",
+      "ok": true,
+      "detail": "counter=\"已选 13 张 · 分布于 1 页\""
+    },
+    {
+      "id": "E9.11 第二批走完插件全流程到完成态（页面给出完成回执 + 服务端累计 31 项全入账）",
+      "ok": true,
+      "detail": "summary=\"已保存到 漫画库 /\" · 任务状态=[\"done\",\"done\"] · items=31 · 95 s"
+    },
+    {
+      "id": "E9.12 【契约事实】两次提交 → **两个** Task，且每个 Task 各 1 个 Batch（面板单次上限 20 ⇒ 插件永远不产生\"跨提交的追加批次\"）",
+      "ok": true,
+      "detail": "任务数=2 · 各任务批次=[[\"#1 1-18×18\"],[\"#1 19-31×13\"]]"
+    },
+    {
+      "id": "E9.13 【判据「序号连续」】两个 Task 的 seq 首尾相接（Task1 = 1–18、Task2 = 19–31），全页 1–31 无洞无重；且 Task2 **不是**从 1 重新开始",
+      "ok": true,
+      "detail": "seqs 共 31 个（1…31）· Task1=1-18 · Task2=19-31"
+    },
+    {
+      "id": "E9.14 31 个 item 全部终态成功（无 failed / 无卡在 pending）",
+      "ok": true,
+      "detail": "items=31 · 非成功=无"
+    },
+    {
+      "id": "E9.15 落盘 31 对（原图 + 译文）在**同一漫画目录**、**同一命名规则**下，序号 001–031 连续、无缺、无重",
+      "ok": true,
+      "detail": "原图 31 译文 31 缺原图[] 缺译文[]"
+    },
+    {
+      "id": "E9.16 【判据「同一队列」】31 张译文的落盘时刻严格按序号递增 —— 两批**串行**、没有交错执行",
+      "ok": true,
+      "detail": "译文落盘时刻递增：n=31 逆序点=[] 跨度=213 s"
+    },
+    {
+      "id": "E9.17 抽样 3 张（首批末 + 次批首尾，跨两个 Task）译文与原文逐像素不同 —— 真引擎的翻译阶段确实跑了",
+      "ok": true,
+      "detail": "[{\"seq\":18,\"sameShape\":true,\"size\":[800,1136],\"changedPct\":3.33},{\"seq\":19,\"sameShape\":true,\"size\":[800,1136],\"changedPct\":0.71},{\"seq\":31,\"sameShape\":true,\"size\":[800,1136],\"changedPct\":8.9}]"
+    },
+    {
+      "id": "E9.18 全程无**插件自身**的 JS 异常（插件不靠吞异常过；站点自带脚本的噪声不计入）",
+      "ok": true,
+      "detail": "站内噪声 2 条（如 CBNL）"
+    }
+  ],
+  "pluginErrors": [],
+  "siteErrors": [
+    "CBNL"
+  ]
+}

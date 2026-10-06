@@ -66,11 +66,17 @@ npm run check:engine-client[:refute] # 翻译引擎适配层 42 条 / 反证 8 �
 npm run check:models[:refute] # S3 模型下载器 E7：32 条 / 反证 5 条（本地 Range 夹具源，秒级，不碰真权重）
 npm run fetch:models          # S3 模型下载器 CLI：--check 只校验 / --link 只重建引擎树里的链接（零网络）
 npm run check:profile[:refute] # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）42 条 / 反证 13 条（起真进程，约 10s）
-npm run check:e5e6[:refute]    # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，13 条 / 逃生开关反证 2 条（约 25s）
+npm run check:e5e6[:refute]    # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run check:contract[:refute] # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status，77 条（8 个实例场景 A–H）/ 逃生开关反证 4 条（各约 3s / 2s）
+# —— S7 真机端到端 E1–E11（逐项取证；总表见 docs/engine-e2e-acceptance-report.md）——
+npm run check:e3:real         # E3 真引擎全链路 31 张（一个 Task 两个 Batch + 落盘 + SSE 一致）8 条 · **真权重，分钟级，不进常规门**
+npm run check:e4[:refute]     # E4 档位切换：生效档位 vs 配置档位 / 未声明档位必须抛错（真服务 + 假引擎，秒级）6 条 / 反证 4 条
+npm run check:e7:real[:refute] # E7 模型续传与校验 · **真机半边**：3.6 GB 真权重的 sha256 跑得完 + 篡改必检出（约 30s）6 条 / 反证 3 条
+npm run check:e8[:refute]     # E8 加速后端：真机走 MPS / 真回退报 degraded / **用户自选 CPU 不算故障**（真服务 ×3 轮，秒级）6 条 / 反证 4 条
+npm run check:e10[:refute]    # E10 安全：只监听回环 / 非图片字节不进引擎 / 无令牌 403（秒级）7 条 / 反证 4 条
 node service/scripts/llm-real-timing.mjs  # 真 ③（llama-server）冷启动与内存实测（**真权重，分钟级，不进常规门**）
 npm run check:music[:refute]  # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 215 条 / 反证 180 条
-npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ X-C3「准备中」134 条 / 反证 62 条
+npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ X-C3「准备中」135 条 / 反证 63 条
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条 / 反证 44 条
 cd app && npx tsc --noEmit && npx vite build   # 前端类型与构建
 cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）

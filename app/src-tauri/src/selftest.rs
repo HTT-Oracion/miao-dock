@@ -388,13 +388,32 @@ pub fn spawn(app: AppHandle) {
                 .collect();
             // S4：③ 的归属权移交 box-service（《04》§9.1）⇒ 本 Manager 直接持有的子进程
             // 从 3 个变成 **2 个**（① service + ② engine）。
-            // ⚠️ 必须同步改成 `== 2`，**不能放宽成 `>= 2`** —— 放宽会把"少起了一个进程"
-            //    变成永远看不见的失败，而这条断言的全部价值就在于"少一个就红"。
-            //    ③ 是否活着改由 box-service 的 `/health.sidecar.llm` 报告（S5）。
+            //
+            // ⚠️ 断言必须**按名字点名**，两个错法都不能用：
+            //   · 数 `children.len()` —— `Children::view()` 是**固定三行的视图**（缺席的那项
+            //     `pid = None`），长度恒为 3 ⇒ 写成 `== 2` 会**恒红**。实测它红了一段时间没人发现，
+            //     因为 S7 只跑 `--e11` 子集，默认的 B/S 组没进 S7 的门。
+            //   · 只数"pid 非空"的个数 —— 会退化成"少一个就红"的一半：① 与 ② 混在一起数，
+            //     "少起 ① + 多起 ③"也能凑够 2。所以**逐个点名**。
+            //   · 也**不能**放宽成 `>= 2`：那样"少起了一个进程"就永远看不见了，
+            //     而这条断言的全部价值就在于"少一个就红"。
+            //
+            // ③ 是否活着**不在这条断言的范围内**（它已归 box-service，是本进程的孙进程）——
+            // 由 `/health.sidecar.llm` 那条链路负责（`check:contract` / `check:engine-settings` /
+            // E11 的 `selftest:app:e11:real`）。这里反过来**钉住"③ 不在本进程"**：
+            // 哪天 ③ 又被本进程拉起来，它会红 —— 那不是噪音，是契约变更的信号。
+            let held = |name: &str| st.children.iter().find(|x| x.name == name);
+            let svc_ok = held("service").is_some_and(|x| x.pid.is_some() && x.alive);
+            let eng_ok = held("engine").is_some_and(|x| x.pid.is_some() && x.alive);
+            let llm_not_held = held("llm").is_some_and(|x| x.pid.is_none());
             c.add(
                 "S2c",
-                st.children.len() == 2 && st.children.iter().all(|x| x.pid.is_some() && x.alive),
-                format!("mode={} 子进程（① ②；③ 归 box-service）：{}", st.mode, pids.join(" ")),
+                svc_ok && eng_ok && llm_not_held,
+                format!(
+                    "mode={} 本进程持有的子进程（应为 ① service + ② engine；③ 归 box-service）：{}",
+                    st.mode,
+                    pids.join(" ")
+                ),
             );
 
             // 供后台线程做 HTTP 探活

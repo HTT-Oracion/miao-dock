@@ -1581,6 +1581,7 @@ function restartIdleWatcher(idleMs, neverUnload) {
     intervalMs: config.idleTickMs,
     neverUnload,
     disabled: config.noIdleUnload,
+    activityScope: config.idleActivityScope,
   });
   if (neverUnload || config.noIdleUnload) {
     serverLog(`空闲卸载：${neverUnload ? '用户选择「从不卸载」（两级都关）' : '被 MIAO_NO_IDLE_UNLOAD=1 关掉（反证用）'}`);

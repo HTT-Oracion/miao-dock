@@ -68,7 +68,12 @@ function probeHttp(port, method, pathname, expect, timeoutMs) {
  * 其次才回落到从命令行反解 —— 反解是对**已发生的事**做字符串考古，容易在换参数时失真。
  */
 function modelIdOf(launch) {
-  if (launch.model) return String(launch.model).replace(/\.gguf$/i, '');
+  // 🔴 两条分支必须**同形态**：从命令反解的那条本来就 `basename`，而"优先取 `launch.model`"这条
+  // 原先漏了 —— 真档的 `launch.model` 是**绝对路径**（`tierModelPath()` 给的是盘上路径），
+  // 于是 `/health.sidecar.model` 会把 `…/runtimes/manga-translator/models/sakura/sakura-…-fp16`
+  // 整个泄出去。契约《03》§5.1 的示例是 **model id**（`sakura-1.5b-qwen2.5-v1.0-iq4xs`），
+  // `/engine/status` 的 `llm.model` 同。E4.5 照出这处不一致（5/1）。
+  if (launch.model) return path.basename(String(launch.model)).replace(/\.gguf$/i, '');
   const cmd = launch.cmd || [];
   const i = cmd.indexOf('-m');
   const file = i > -1 ? cmd[i + 1] : null;

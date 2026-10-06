@@ -93,21 +93,45 @@ export function queueFacts(store) {
 }
 
 /**
+ * **本进程**的启动时刻（ms）。取不到（纯 Store 假对象 / 缺字段）返回 `null`，
+ * 表示"无法界定本次运行"⇒ 调用方退回**不过滤**的旧行为（保守：宁可少卸一次）。
+ */
+export function runtimeStartMs(store) {
+  const v = store && store.runtimeStartedAtMs;
+  return Number.isFinite(v) ? v : null;
+}
+
+/**
  * 「任务活动时刻」——取最后一次**创建或收尾**的较大者。
  *
  * 用"活动"而不是严格的"完成"：§9.2 写的是「距最后一次任务完成」，而取活动的是一个**更保守**
  * 的上界（任务刚创建、还在排队时它也会把计时推后）。保守方向是对的：
  * 宁可少卸一次，不可在任务等着的时候把 ③ 停掉。
  * 没有任何任务时返回 `null`（⇒ 「本次运行还没跑过任务」，没有热态可卸）。
+ *
+ * ## 🔴 `since`（范围下界）—— 本函数唯一的坑，且踩过一次
+ * `store.init()` 会把**上一轮**的终态任务从盘上恢复进 `store.tasks`（任务清单 UI 要显示历史）。
+ * 若把这些历史记录也算作"任务活动"，重启 Box 后第一次判定就是
+ * 「距上次活动 18 小时 ≥ 5 min ⇒ 卸载 ③」——**③ 刚被拉起就被卸掉**，
+ * 用户看到的是"重启之后翻译一直起不来"。而 `neverRan`（本次运行还没跑过任务、没有热态可卸）
+ * 这条判据本意正是要挡住它，却因为分不清"活动属于哪一次运行"而被**静默绕过**。
+ * ⇒ 所以默认下界取 `runtimeStartMs(store)`：**早于本进程启动的活动一律不算**。
+ *   此时 `lastActivityAt` 返回 `null` ⇒ 落到 `neverRan` ⇒ 不卸。这是正确且保守的结论：
+ *   本进程还没跑过任务，就**没有热态可卸**（③ 是刚拉起的冷进程，卸了也不省什么）。
+ *
+ * @param {object} store
+ * @param {number|null} [since] 活动有效下界（ms）。显式传 `null` = 不过滤（反证开关 `MIAO_IDLE_SCOPE=all` 走这条）
  */
-export function lastActivityAt(store) {
+export function lastActivityAt(store, since = runtimeStartMs(store)) {
   let latest = null;
   const tasks = store.tasks instanceof Map ? [...store.tasks.values()] : Object.values(store.tasks || {});
   for (const t of tasks) {
     for (const iso of [t.createdAt, t.finishedAt]) {
       if (!iso) continue;
       const ms = Date.parse(iso);
-      if (Number.isFinite(ms) && (latest === null || ms > latest)) latest = ms;
+      if (!Number.isFinite(ms)) continue;
+      if (since !== null && ms < since) continue; // 上一次运行留下的活动，不算本次运行的热态
+      if (latest === null || ms > latest) latest = ms;
     }
   }
   return latest;
@@ -123,6 +147,7 @@ export function createIdleWatcher({
   store, supervisor, log = () => {},
   idleMs = 300_000, intervalMs = 5_000,
   neverUnload = false, disabled = false,
+  activityScope = 'runtime',
   now = () => Date.now(),
   onUnload = null,
 } = {}) {
@@ -130,12 +155,18 @@ export function createIdleWatcher({
   let timer = null;
   let lastDecision = null;
 
+  // 🔴 "任务活动"的**范围**：默认只算本次运行（`runtime`）。这是必需的 —— 见 `lastActivityAt()`
+  //    的注释：不加下界，进程重启后 ③ 会被"上一轮的活动"判成空闲 18 小时而**拉起即被卸**。
+  //    `activityScope='all'` 是反证开关（`MIAO_IDLE_SCOPE=all`）：故意恢复旧行为，用来证明
+  //    下面那条"重启后不该卸"的断言**确实**作用在这个下界上，而不是碰巧绿。
+  const since = activityScope === 'all' ? null : runtimeStartMs(store);
+
   async function tick() {
     if (stopped) return lastDecision;
     const facts = queueFacts(store);
     const decision = decideUnloadLlm({
       now: now(),
-      lastActivityAt: lastActivityAt(store),
+      lastActivityAt: lastActivityAt(store, since),
       running: facts.running,
       queued: facts.queued,
       idleMs,

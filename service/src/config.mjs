@@ -449,6 +449,12 @@ export const config = {
   // 误差可忽略，而对 CPU 完全无感（一次纯判定）。验收夹具把它压到 250ms，好让
   // "到点卸载"落在秒级 —— 与 `MIAO_IDLE_LLM_MS` 一起构成"可反证的短回路"。
   idleTickMs: envInt('MIAO_IDLE_TICK_MS', 5_000),
+  // 「任务活动」的**统计范围**（= `idle-policy.mjs` 里 `lastActivityAt()` 的下界）：
+  //   'runtime'（默认）—— 只算**本进程**启动之后的活动。盘上恢复的上一轮终态任务不算，
+  //     否则重启 Box 后 ③ 刚拉起就会被判"空闲 18 小时"而卸掉（真实现场见 `lastActivityAt()` 注释）。
+  //   'all' —— 把历史任务也算进来，**故意的旧行为**。这是反证开关（`MIAO_IDLE_SCOPE=all`），
+  //     用来证明"重启后不该卸"那条断言确实作用在这个下界上，而不是碰巧绿。
+  idleActivityScope: process.env.MIAO_IDLE_SCOPE === 'all' ? 'all' : 'runtime',
   // Tier2 空闲卸载（默认 30 min）：**实现方是引擎自带的 `--models-ttl`**，box-service 不动作。
   // 从下面同一个数字派生，避免「秒」与「毫秒」两个副本走散。
   idleVisionMs: ENGINE_MODELS_TTL_SEC * 1000,

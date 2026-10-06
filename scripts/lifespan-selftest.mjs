@@ -22,7 +22,8 @@
  * 见 ~/.workbuddy/skills/falsifiable-verification。
  */
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -33,7 +34,24 @@ const APP = path.join(ROOT, 'app');
 const BIN = path.join(APP, 'src-tauri', 'target', 'debug', 'miao-dock');
 /// 落盘根目录与状态目录都指到仓库内的临时目录：既别碰用户的 ~/Pictures/Box 漫画，
 /// 也让每次自检从空目录开始（否则续做/编号会受上一轮残留影响）。
-const TMP = path.join(ROOT, '.tmp-selftest');
+const TMP = mkdtempSync(path.join(os.tmpdir(), 'miao-e11-'));
+
+/// 落盘根目录与状态目录都指到**每次新建的空目录**：既别碰用户的 ~/Pictures/Box 漫画，
+/// 也真让每次自检从空目录开始（否则续做/编号、以及"状态目录里带着上一轮终态任务"
+/// 这类跨轮状态会污染断言）。
+///
+/// 🔴 曾经这里是仓库内**固定**的 `.tmp-selftest`，注释写着"让每次自检从空目录开始"，
+///    代码却**从来没清过** —— 于是它跨轮累积了 12 条历史终态任务（最新一条是十几天前的）。
+///    而 `idle-policy.lastActivityAt()` 当时把**历史活动**也当成"本次运行的活动"
+///    ⇒ 重启后 ③ 刚拉起就被判"空闲 18 小时"卸掉 ⇒ E11 报 `LLM ✗`；
+///    手工复现（用全新目录）却一切正常。看着像 E11 脚本的锅，实际是**产品缺陷**。
+/// ⚠️ 所以"跨轮状态"这条**不是靠清目录规避的**：产品侧已改成只算本次运行的活动，
+///    并由 `check:e5e6` 的 E6.7 用**同一状态目录故意重启**去验证。
+///    这里换成 `mkdtempSync` 只为让 E11 专心考"树回收"，不掺别的变量。
+/// ⚠️ 落点选 `os.tmpdir()`（`/var/folders/…`）而不是仓库内，除了不污染工作树，还因为
+///    本机沙箱对 `fs.rmSync` 加了"单轮批量删除 > 50 条需确认"的守卫，递归清空仓库内
+///    那个目录会**直接抛 `SAFE_DELETE_BULK_CONFIRM_REQUIRED`**。`MIAO_ROOT` 另有黑名单
+///    挡住系统 `/tmp`，而 `os.tmpdir()` 不在其中（`check:e5e6` 是同款做法）。
 /// 服务端口段（契约 §1）+ 引擎端口 + LLM 端口（S2 起 ③ 是独立进程）
 const SERVICE_PORTS = Array.from({ length: 11 }, (_, i) => 5180 + i);
 const LLM_PORT = 8080;
@@ -191,6 +209,7 @@ function describeBusy(busy) {
 
 async function runE11() {
   requireBin();
+  console.log(`[tmp] 本轮落盘根：${TMP}（每轮新建，不作清理）`);
   const startedVite = await ensureDevServer({ root: ROOT });
   const child = spawnApp(refute ? { MIAO_NO_PARENT_WATCH: '1' } : {});
   let out = '';
@@ -256,6 +275,7 @@ async function runE11() {
 // ------------------------------------------------------------------ B 组：窗与托盘 / 服务常驻
 
 async function runB() {
+  console.log(`[tmp] 本轮落盘根：${TMP}（每轮新建，不作清理）`);
   const startedVite = await ensureDevServer({ root: ROOT });
   let failed = 0;
   try {

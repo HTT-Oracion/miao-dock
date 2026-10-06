@@ -124,6 +124,23 @@ function killProc(st) {
   if (st && st.child && st.child.exitCode === null) st.child.kill('SIGTERM');
 }
 
+/** 等子进程**真的**退出（SIGTERM 之后它还要收尾）—— 用 `exitCode` 而不是 sleep 一个定值 */
+async function waitChildGone(st, timeoutMs = 20_000) {
+  const until = Date.now() + timeoutMs;
+  while (st.child.exitCode === null && Date.now() < until) await sleep(50);
+  return st.child.exitCode !== null;
+}
+
+/** 等端口彻底不通（旧服务的 ③ 要先让出端口，新服务的 ③ 才绑得上同一个号） */
+async function waitPortClosed(port, timeoutMs = 20_000) {
+  const until = Date.now() + timeoutMs;
+  while (await portOpen(port, 200)) {
+    if (Date.now() > until) return false;
+    await sleep(100);
+  }
+  return true;
+}
+
 // ------------------------------------------------------------------ 服务 HTTP 夹子
 
 function request(port, method, pathname, { headers = {}, body = null, token } = {}) {
@@ -250,7 +267,10 @@ async function run() {
   try {
     const eng = await waitReady(engine);
 
-    service = spawnProc(SERVICE_ENTRY, {
+    // 服务进程的环境变量抽出来，因为 E6.7 要**用同一份配置重启**服务：
+    // `MIAO_ROOT` / `MIAO_STATE_DIR` 必须与第一次完全一致，否则"上一轮的终态任务"
+    // 根本不在盘上，那组断言就变成了空转（绿得毫无意义）。
+    const svcEnv = {
       MIAO_ENGINE_PROTOCOL: 'mock',
       MIAO_ENGINE_PORT: String(eng.port),
       MIAO_LLM_PORT: String(llmPort),
@@ -260,8 +280,8 @@ async function run() {
       MIAO_ENGINE_TIER: 'small', // 用户配置档位 = small（本机硬件推荐是 tiny，故"降档"有空间可降）
       MIAO_IDLE_LLM_MS: String(IDLE_MS),
       MIAO_IDLE_TICK_MS: String(IDLE_TICK_MS),
-    }, 'service');
-    const svc = await waitReady(service);
+    };
+    service = spawnProc(SERVICE_ENTRY, svcEnv, 'service');    const svc = await waitReady(service);
     const port = svc.port;
     console.log(`[e5e6] service=${port} engine=${eng.port} ③=${llmPort} 落盘=${rootDir}`);
 
@@ -360,6 +380,58 @@ async function run() {
       + '「队列非空却卸载」这类越界动作（卸载次数 = 1，正好对上一次真正的空闲）',
       countOf(service.out, '⇒ 卸载 ③ LLM') === 1,
       `卸载 ${countOf(service.out, '⇒ 卸载 ③ LLM')} 次`);
+
+    // ============================================================ E6.7 / E6.8 · 跨进程重启（§9.1 的边界）
+    //
+    // 🔴 这一组是**从一个真缺陷回填的**：`store.init()` 会把上一轮的终态任务从盘上恢复进
+    //    `store.tasks`（任务清单要显示历史），而最初的 `lastActivityAt()` 把这些历史活动的
+    //    最大时刻直接当成"本次运行的活动" ⇒ 重启后第一次判定就是
+    //    「距上次活动 N 小时 ≥ 阈值 ⇒ 卸载 ③」——③ 刚被拉起就被卸掉。
+    //    用户看到的是"重启 Box 之后翻译一直起不来"；而在**全新状态目录**下跑（本脚本原先那样）
+    //    永远不复现。所以这里**故意复用同一个 `MIAO_STATE_DIR`** 重启服务，把它变成可反证的断言。
+    //    反证开关 `MIAO_IDLE_SCOPE=all` 恢复旧口径 ⇒ E6.7 必须变红。
+    killProc(service);
+    await waitChildGone(service);
+    await waitPortClosed(llmPort); // 旧 ③ 先让出端口，新服务才绑得上同一个号
+
+    service = spawnProc(SERVICE_ENTRY, svcEnv, 'service');
+    const svc2 = await waitReady(service);
+
+    // ③ 是异步预拉起的：先等它接客，再开始计时
+    let restartedLlmUp = false;
+    for (let i = 0; i < 300; i += 1) {
+      if (await llmModelId(llmPort)) { restartedLlmUp = true; break; }
+      await sleep(100);
+    }
+    // ⚠️ 编号用 `E6.7a` 而不是 `E6.7 前置`：反证轮的 `matchById()` 是**前缀匹配**
+    //    （`id.startsWith(code + ' ')`），若前置也叫 `E6.7 …`，它会命中前置那条，
+    //    于是"主断言变红"可能被前置的绿盖住 ⇒ 反证误判。
+    check('E6.7a 前置：重启后 ③ **确实被重新拉起**（否则"没被卸"可能只是"压根没起来"，断言会变成空转）',
+      restartedLlmUp, restartedLlmUp ? `端口 ${llmPort} 已接客` : `端口 ${llmPort} 30s 内没接客`);
+
+    // 观察窗口：阈值 1.5s、巡检 250ms ⇒ 6 次巡检。给足冗余，慢机器上也够判红。
+    await sleep(Math.max(6 * IDLE_MS, 12 * IDLE_TICK_MS));
+    const llmStillUp = await portOpen(llmPort, 300);
+    check('E6.7 §9.1 重启边界：状态目录里**带着上一轮的终态任务**时，本次运行还没跑过任务 ⇒ '
+      + '③ **不该**被判空闲卸载（"距上次活动 18 小时"是**上一次运行**的事，不是本次的热态）',
+      llmStillUp && countOf(service.out, '⇒ 卸载 ③ LLM') === 0,
+      `③端口通=${llmStillUp} · 本次运行卸载次数=${countOf(service.out, '⇒ 卸载 ③ LLM')}`);
+
+    // 对照：不能把机制改死 —— 本次运行**跑过**任务之后，空闲卸载仍然必须生效
+    // （注意用 `svc2.port`：服务端口是自选的，重启后不一定还落在同一个号上）
+    const r3 = await submitOne(svc2.port, 'E6 重启后');
+    if (r3.status !== 201) throw new Error(`重启后提交失败 status=${r3.status} ${JSON.stringify(r3.json)}`);
+    const t3 = await waitTask(svc2.port, r3.json.taskId);
+    let unloaded2 = false;
+    const dl2 = Date.now() + 20_000;
+    while (Date.now() < dl2) {
+      if (!(await portOpen(llmPort, 200))) { unloaded2 = true; break; }
+      await sleep(120);
+    }
+    check('E6.8 对照（防"把机制改死"）：重启后的新服务**跑过一个任务** ⇒ 空闲达阈值时 ③ 照常被卸载'
+      + '（只绿 E6.7 不绿本条，说明是把卸载关掉了，而不是修对了范围）',
+      t3.status === 'done' && unloaded2 && countOf(service.out, '⇒ 卸载 ③ LLM') === 1,
+      `任务=${t3.status} · ③端口通=${await portOpen(llmPort, 200)} · 本次运行卸载次数=${countOf(service.out, '⇒ 卸载 ③ LLM')}`);
   } finally {
     killProc(service);
     killProc(engine);
@@ -391,9 +463,15 @@ const REFUTATIONS = [
     env: { MIAO_NO_IDLE_UNLOAD: '1' },
     expect: ['E6.1', 'E6.3', 'E6.4'],
   },
+  {
+    // 这条打的是**范围**（本次运行 vs 含历史），与上面那条打的**机制开关**（卸不卸）是不同的两面。
+    name: '恢复旧口径「任务活动含历史记录」（`MIAO_IDLE_SCOPE=all`）⇒ 重启边界断言必须变红',
+    env: { MIAO_IDLE_SCOPE: 'all' },
+    expect: ['E6.7'],
+  },
 ];
 
-const EXPECTED_REFUTATIONS = 2; // 分母写死
+const EXPECTED_REFUTATIONS = 3; // 分母写死
 
 function matchById(list, code) {
   return list.find((r) => r.id === code || r.id.startsWith(`${code} `));
