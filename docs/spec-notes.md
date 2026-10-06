@@ -2853,3 +2853,85 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 `package.json` · 本文件 · `docs/engine-integration-plan.md`（§5 阶段总览 / S7）· `AGENTS.md` · `README.md`。
 （另一仓 `miao-trans`：`e2e/e9-real-engine.mjs`（新）· `e2e/verify.mjs` · `.gitignore`。）
 
+---
+
+## D-77 · S8 插件串联（P-1…P-4）—— 两态分流 / `details` 接通 / 「首张稍慢」落点修正 + 真引擎下复跑 E9（2026-10-06）
+
+> S8 是**最后一公里**：插件在**真引擎**下跑通《01》§4.1/§4.2 的两态与文案。代码在**另一仓**
+> `miao-trans`（两个 commit：`a1d8aa5` 主体 + `0195952` 两处落点修正），验收回到本仓 D-76 的 E9。
+> 本节点**没有**新的规格偏差（`miao-trans/docs/spec-notes.md` 的 D 系列未新增）—— 两处落错是**实现**错，不是文档错。
+
+### 交付（`miao-trans` 仓）
+
+| 文件 | 作用 |
+|---|---|
+| `extension/src/types/contract.ts` | P-1：《03》§2.3 错误码联合补 `ENGINE_NOT_READY` / `MODEL_DOWNLOAD_FAILED`（HTTP 均 503），并新增 `meansEnginePreparing` / `meansModelDownloadFailed`，**与 `meansServiceNotReady`（进程不在）互斥** |
+| `extension/src/domain/clientState.ts` | P-2：`servicePhase = ready / absent / preparing`；`preparing` **只给「重试」+ 等待语义**，不给「启动 Box」（那是 `absent` 的动作） |
+| `extension/src/panel/{Panel.tsx,controller.ts,panel.css}` | P-2/P-3：浮层 / 头徽标 / 提示行按两态渲染；文案逐字「正在准备翻译引擎…」 |
+| `extension/src/adapters/boxServiceClient.ts` · `entrypoints/background.ts` · `types/messages.ts` | `details` 跨层打通（见决策 3） |
+| `extension/src/domain/demoMode.ts`（**删**）· `controller.ts` 三处消费 · `README.md` 演示段落 | P-4：删除演示旁路 `DEMO_BYPASS_SERVICE_READY` |
+| `extension/tests/s8-engine-states.test.ts`（新）· `extension/e2e/noservice-probe.mjs`（新） | 单测 + 真实 Chromium e2e（**不启动** mock-service） |
+
+### 🔴 决策 1：「首张稍慢」的落点是 `running && current === 1`，**不是**「准备中」浮层的副行
+
+第一版（`a1d8aa5`）把它挂在 `ENGINE_PREPARING.slowFirst` 上、渲染成准备中浮层的副行 —— **落点错**。
+权威源（《01》§4.2 /《04》§5.3 /《09》L4）三处都指向：它是 **`running` 且正在处理第 1 张**时的提示、
+**第 2 张起消失**，位置在全局进度条**下方一行**的辅助文案。
+
+**为什么这个错不只是"位置不对"**：《01》§4.2 末注明写它属**预期行为**，**不得**做成
+`--mt-warning` / `--mt-error` 的告警样式。挂在「准备中」浮层上，语义就从「一切正常，第一张慢点」
+变成「当前有状况」，与「准备中」这个**非错误**态（不给「启动 Box」）自相矛盾。
+
+**`current` 一律取服务端 `progress`**，不在客户端推演 —— 否则"第几张"会出现两份真相。
+
+### 🔴 决策 2：「准备中」副行按阶段的映射必须有**事实源**，取不到就**不渲染**
+
+《01》§4.1 逐字要求副行分两句：『正在准备翻译模型』/『正在预热』。事实源 = `503` 响应体的
+`details.sidecar.state`（本仓 `service/src/server.mjs`，取值 `starting` / `prewarming` / `downloading`）。
+映射：`prewarming → 正在预热`，`starting` / `downloading → 正在准备翻译模型`（与本仓 NotReadyScreen 的 L1/L2/L3 交叉印证）。
+
+**取不到阶段时返回 `null` ⇒ 不渲染副行，不猜第三句** —— 这是"宁可少说一句，也不编一句"。
+
+### 🔴 决策 3：`details` 链路断在**四处**，字段"定义了但从来没传过"
+
+`BoxServiceError.details` 一直是 `{}`：类型里有字段、构造里有形参，但**四条投递路径都没接上** ——
+`boxServiceClient` 的 `handle()` / `fetchLibraryFile()` / SSE 三处 `throw` 少了第 4 参 `body.error.details ?? {}`，
+`background.fail()` 不透传、`messages.ts` 的 `BgResponse` 错误分支没有该字段、`controller.sendBg()` 转发时丢掉。
+
+这一类缺陷的形态与 §D-76 决策 1 的第 5 条同族：**不报错、断言全绿，只是那条信息永远为空**。
+所以 S8 的断言是**端到端**的（`P2-8` 打乱映射必须变红），而不是"检查类型定义里有没有这个字段"。
+
+### 🔴 决策 4：P-4 必须删掉演示旁路（否则"服务未就绪"这条路径永远测不到）
+
+`DEMO_BYPASS_SERVICE_READY` 让浮层按 `ready` 渲染 ⇒ 未就绪的真实路径**永远绕过去**。
+这不是"能跑"，是"没测"。删除范围：`demoMode.ts`、`controller` 三处消费、README 演示模式段落、演示探针；
+**保留** P0-3 的任务恢复与令牌配对引导（那是产品行为，不是旁路）。
+
+新增 `e2e/noservice-probe.mjs`（真实 Chromium + 未打包扩展，**不启动** mock-service）正是补上这条路径：
+断渲染 `service-not-ready` 且**不是** `engine-preparing`，并按 `actionLabel` 口径断言**不出现**「启动 Box」的可用幻觉。
+
+### 三件套（S8 的证据）
+
+- **正向**（下面四条在 `miao-trans` 仓跑，所以**不写 `npm run` 前缀** —— 本仓 `check:docs` 会把全文的
+  `npm run X` 都对本仓 `package.json` 校验，写上就会误报"命令不存在"，同 D-71/D-76）：
+  `test` **201 passed**（新增 `s8-engine-states.test.ts`，分母钉死）· `types` 0 错 ·
+  `compile` 0 错 · `verify` **27/27** · `e2e/noservice-probe.mjs` **10/10**。
+- **反证 3 条**（各真跑变红后**按 shasum 还原**）：
+  ① 去掉 `showsSlowFirstImageHint` 的 `current === 1` ⇒ `P3-3` 变红；
+  ② 打乱 `preparingSubline` 映射（`prewarming → model`）⇒ `P2-8` 变红；
+  ③ 恢复 `DEMO_BYPASS_SERVICE_READY` 语义（浮层按 `ready` 渲染）⇒ noservice 探针 **4 项 FAIL**。
+- **真机验收**（本节点唯一"只能在真环境发生"的一条）：**真引擎下复跑 E9 = 19/0**
+  （真实漫画站 `jmanga.media` + 真 box-service + 真 ③；详表见 D-76 断言段与
+  `docs/engine-e2e-acceptance-report.md` §2.9）。
+
+### 未做 / 边界
+
+- **一条都不加**：D-76 的 unverified register 仍**恰好 10 条**（U1–U10），本条不新增未验项。
+  S8 侧没有"验不了"的部分 —— 两态文案走单测 + e2e，两态的真实触发走 E9。
+- **顺带修掉两条"工具自身"**（不属 S8 交付，登记在本文件末）：`e2e/verify.mjs` 的截图落点改为
+  `.temp-translate-test/verify/`（已 gitignore），且把**恒真**的 `J1` 改成真断言；`.gitignore` 新增
+  `.temp-translate-test/` —— 起因是**用户要求**"后续测试产物（如测试产生的漫画文件）别散进 `e2e/`"。
+
+**本节新增/修改的文件**（`miao-trans` 仓）：`extension/src/{types/contract.ts,domain/clientState.ts,panel/*,adapters/boxServiceClient.ts,entrypoints/background.ts,types/messages.ts,store/translation/batchSlice.ts}` ·
+`extension/src/domain/demoMode.ts`（删）· `extension/tests/s8-engine-states.test.ts`（新）·
+`extension/e2e/noservice-probe.mjs`（新）· `e2e/e9-real-engine.mjs`（新）· `e2e/verify.mjs` · `.gitignore` · `README.md`。
