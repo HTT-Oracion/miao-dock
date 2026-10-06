@@ -18,6 +18,11 @@
  *   node engine/scripts/install-engine-deps.mjs            # 两步都跑
  *   node engine/scripts/install-engine-deps.mjs --main     # 只跑批 A
  *   node engine/scripts/install-engine-deps.mjs --crf      # 只跑批 B
+ *   node engine/scripts/install-engine-deps.mjs --print-env # 只打印探测到的 MSVC/SDK 环境（不装）
+ *
+ * 环境变量：
+ *   MIAO_VC_ROOT    MSVC 工具集根（默认按候选表探测，见 msvcVcRoots()）
+ *   MIAO_SDK_ROOT   Windows SDK 根（默认 `C:/Program Files (x86)/Windows Kits/10`）
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -47,14 +52,37 @@ function newestDir(parent) {
   } catch { return null; }
 }
 
+/** MSVC 工具集（`…/VC/Tools/MSVC`）根的候选表 —— VS 安装路径不固定，逐个探测第一个存在的。 */
+function msvcVcRoots() {
+  return [
+    process.env.MIAO_VC_ROOT,
+    'C:/VS2022BT/VC/Tools/MSVC',                                                        // 本机实测落点（非默认路径）
+    'C:/Program Files/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC',           // 官方默认：生成工具
+    'C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC',
+    'C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Tools/MSVC',
+    'C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC',
+    'C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC',
+  ].filter(Boolean);
+}
+
+function msvcSdkRoot() {
+  return process.env.MIAO_SDK_ROOT || 'C:/Program Files (x86)/Windows Kits/10';
+}
+
 /** 手动拼 MSVC + Windows SDK 的 INCLUDE/LIB/PATH（不依赖 vcvars/reg.exe）。 */
 function msvcEnv() {
-  const VC_ROOT = 'C:/VS2022BT/VC/Tools/MSVC';
-  const KITS = 'C:/Program Files (x86)/Windows Kits/10';
-  const msvcVer = newestDir(VC_ROOT);
-  if (!msvcVer) throw new Error(`找不到 MSVC 工具集：${VC_ROOT}`);
+  const KITS = msvcSdkRoot();
+
+  let VC_ROOT = null; let msvcVer = null;
+  for (const r of msvcVcRoots()) {
+    const v = newestDir(r);
+    if (v) { VC_ROOT = r; msvcVer = v; break; }
+  }
+  if (!VC_ROOT) {
+    throw new Error(`找不到 MSVC 工具集（候选：${msvcVcRoots().join(' | ')}；可用 MIAO_VC_ROOT 指向你的 VC/Tools/MSVC）`);
+  }
   const sdkVer = newestDir(path.join(KITS, 'Include'));
-  if (!sdkVer) throw new Error(`找不到 Windows SDK Include：${KITS}/Include`);
+  if (!sdkVer) throw new Error(`找不到 Windows SDK Include：${KITS}/Include（可用 MIAO_SDK_ROOT 覆盖）`);
 
   const msvcBase = `${VC_ROOT}/${msvcVer}`;
   const incBase = `${KITS}/Include/${sdkVer}`;
@@ -64,6 +92,8 @@ function msvcEnv() {
   //    链接阶段（link.exe /MANIFEST）要调它，漏了会得到 `LNK1158: 无法运行"rc.exe"`，
   //    而报错发生在 link 一步、离"PATH 缺了个 SDK bin"这个根因很远。
   const sdkBin = `${KITS}/bin/${sdkVer}/x64`;
+  // `<VS>/VC/Auxiliary/VS/include` —— 由 `<VS>/VC/Tools/MSVC/<ver>` 上跳三级得到 `<VS>/VC`。
+  const auxInclude = path.resolve(msvcBase, '..', '..', '..', 'Auxiliary', 'VS', 'include').replace(/\\/g, '/');
 
   const INCLUDE = [
     `${msvcBase}/include`,
@@ -72,7 +102,7 @@ function msvcEnv() {
     `${incBase}/um`,
     `${incBase}/winrt`,
     `${incBase}/cppwinrt`,
-    'C:/VS2022BT/VC/Auxiliary/VS/include',
+    auxInclude,
   ].join(';');
   const LIB = [
     `${msvcBase}/lib/x64`,
@@ -81,6 +111,7 @@ function msvcEnv() {
   ].join(';');
 
   log(`MSVC ${msvcVer} · SDK ${sdkVer}`);
+  log(`  VC 根：${VC_ROOT}`);
   return {
     ...process.env,
     INCLUDE,
@@ -163,10 +194,20 @@ async function download(url, dest) {
 }
 
 async function main() {
+  const args = process.argv.slice(2);
+
+  // `--print-env`：只打印探测到的 MSVC/SDK 环境（排障 / 换机确认路径用），不碰 venv、不联网。
+  if (args.includes('--print-env')) {
+    const env = msvcEnv();
+    log(`INCLUDE = ${env.INCLUDE}`);
+    log(`LIB     = ${env.LIB}`);
+    log(`PATH 前两段 = ${env.PATH.split(path.delimiter).slice(0, 2).join('  ;  ')}`);
+    return 0;
+  }
+
   if (!fs.existsSync(VENV_PY)) throw new Error(`venv 不存在：${VENV_PY}（先跑 setup-engine.mjs --venv）`);
   if (!fs.existsSync(REQ)) throw new Error(`requirements.txt 不存在：${REQ}`);
 
-  const args = process.argv.slice(2);
   const onlyMain = args.includes('--main');
   const onlyCrf = args.includes('--crf');
 
