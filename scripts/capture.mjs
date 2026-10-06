@@ -13,7 +13,7 @@
  *
  * 两道闸，都为了同一件事：**别把假图当证据收进仓**。
  *   ① 开跑前问系统是否锁屏 —— 锁屏时截到的是壁纸，尺寸和体积却都「正常」；
- *   ② 四张先落暂存区，**互不相同**且齐全才整批搬进 `docs/refs/e2e/`。
+ *   ② 各屏先落暂存区，**互不相同**且齐全才整批搬进 `docs/refs/e2e/`。
  * 任一不过就整批丢弃，仓里保持上一轮已验证的版本，不会被坏运行覆盖。
  *
  * 用法：node scripts/capture.mjs
@@ -32,16 +32,20 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const BIN = path.join(ROOT, 'app', 'src-tauri', 'target', 'debug', 'miao-dock');
 const OUT = path.join(ROOT, 'docs', 'refs', 'e2e');
 
-/** 四张取证图的文件名与它们各自该拍到什么（缺失或重复都算这一张没截到） */
+/** 取证图的文件名与它们各自该拍到什么（缺失或重复都算这一张没截到） */
 const SHOTS = [
   ['01-queue.png', '任务队列'],
   ['02-library.png', '本地漫画库'],
   ['03-compare.png', '原译对照'],
   ['04-settings-dark.png', '设置页（深色）'],
+  // S6 取证：②翻译服务（十项 / 三小节 / 引擎诊断）。04 停在「通用」，
+  // 单靠它看不出 S6 到底交付了什么 —— 而这一屏正是 S6 的唯一出口。
+  ['05-settings-engine.png', '设置 ②翻译服务（服务与配对 / 推理引擎 / 模型与诊断）'],
+  ['06-settings-diag.png', '设置 ②翻译服务 · 引擎诊断面板（滚到底）'],
 ];
 
 /**
- * 截图**先落到暂存区**，四张全齐且互不相同，才整批搬进 `docs/refs/e2e/`。
+ * 截图**先落到暂存区**，SHOTS 全部齐且互不相同，才整批搬进 `docs/refs/e2e/`。
  *
  * 为什么不是直接截进仓：坏运行会把好证据原地覆盖掉（已经吃过一次 —— 一次锁屏运行，
  * 四张真图被同一张壁纸替换，而壁纸尺寸、体积都「正常」，肉眼和体积校验都拦不住）。
@@ -150,7 +154,7 @@ if (lines.length === 0) {
 }
 for (const l of lines) console.log(`  ${l}`);
 
-// ---- 校验：四张齐、且互不相同。任一条不过就整批不入库，仓里保持原样。 ----
+// ---- 校验：全部齐、且互不相同。任一条不过就整批不入库，仓里保持原样。 ----
 
 const absent = SHOTS.filter(([f]) => !existsSync(path.join(STAGE, f)));
 if (absent.length) {
@@ -177,7 +181,7 @@ if (dupes.length) {
 
 mkdirSync(OUT, { recursive: true });
 for (const [f] of SHOTS) copyFileSync(path.join(STAGE, f), path.join(OUT, f));
-console.log(`\n四张互不相同，已入库 ${SHOTS.length} 张。`);
+console.log(`\n${SHOTS.length} 张互不相同，已入库 ${SHOTS.length} 张。`);
 
 // 应用侧自己报的成败：全绿才返回 0，与入库与否分开汇报
 const bad = lines.filter((l) => l.startsWith('✗')).length;

@@ -45,11 +45,29 @@ export function useEngineState(onToast: (t: string, k?: 'info' | 'good' | 'bad')
   const [verifyError, setVerifyError] = useState<string | null>(null);
 
   /**
-   * 刷新序号。用它而不是直接把 `reload` 塞进依赖：
-   * 下载轮询每 2s 触发一次，若 `reload` 每次渲染都换引用，定时器会反复重建。
+   * 「组件还在吗」的自取消守卫 —— **由刷新序号 + 一个 ref 组成**。
+   *
+   * 🔴 `alive.current = true` 这一行不是冗余，它是这个守卫**唯一正确**的写法：
+   * React 18 的 `StrictMode`（`main.tsx` 里开着）在开发模式下会把 mount 的 effect 跑两遍 ——
+   *   effect₁ → cleanup₁（把 alive 置 false）→ effect₂
+   * 而 ref 是**同一个对象**，cleanup₁ 之后再没有任何地方把它置回 `true`。
+   * 于是两次 `reload()` 的 promise 都走到下面那句 `if (!alive.current) return`，
+   * **数据不落地、错误也不落地** —— 界面永久停在「读取中…」。
+   * 服务端实测 1ms 就答完了（`/engine/options` 13ms 首跑、之后 1ms），所以它极容易被
+   * 误读成"后端慢 / 还在加载"，而真相是这个守卫自己把结果吞了。
+   *
+   * ⚠️ 生产构建没有这次双调用，所以它只在 `npm run dev` 与**截图取证**（走 vite dev server）里发作 ——
+   * 这正是它一直没被人工发现的原因（S6 的 05 号取证图把它照出来了）。
+   * 同一条教训在本仓已有先例：`screens/lyrics/index.ts` 就是为了躲开这次双调用而**刻意不套**
+   * `StrictMode`。既然后果这么大，写在文档里不够，`ENGINE.hook.strictModeAliveGuard` 把它钉住。
    */
   const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   const reload = useCallback(async () => {
     try {

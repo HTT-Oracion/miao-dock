@@ -1088,6 +1088,28 @@ add('ENGINE.hook.verifyNotFailedWhenNotOk', 'ENGINE', (ctx) => {
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
+add('ENGINE.hook.strictModeAliveGuard', 'ENGINE', (ctx) => {
+  /*
+   * 「自取消守卫」必须**成对**：挂载置 true、卸载置 false。
+   *
+   * 🔴 只写卸载那一半（`useEffect(() => () => { alive.current = false; }, [])`）是**错的**，
+   * 而且错得极像"后端慢"：`main.tsx` 开着 `React.StrictMode`，开发模式下 mount 的 effect
+   * 会跑两遍（effect₁ → cleanup₁ → effect₂），ref 又是同一个对象 ⇒ cleanup₁ 把 alive
+   * 永久钉成 false，两次 reload 的 promise 都走 `if (!alive.current) return`，
+   * **数据不落地、错误也不落地** ⇒ 界面永久停在「读取中…」（服务端实测 1ms 就答完了）。
+   * 生产构建没有双调用，所以它只在 dev 与截图取证里发作 —— 这是 05 号取证图照出来的缺陷。
+   */
+  const src = ctx.s.engineState;
+  const problems = [];
+  if (!/alive\.current\s*=\s*true;/.test(src)) {
+    problems.push('挂载时没有把 alive 置回 true —— StrictMode 双调用后守卫永久为 false（界面会停在「读取中…」）');
+  }
+  if (!/alive\.current\s*=\s*false;/.test(src)) {
+    problems.push('卸载时没有置 false（会在已卸载组件上 setState，且"读不到就不显示"的纪律落空）');
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
 // —— 诊断面板 EngineDiag.tsx ——
 add('ENGINE.diag.notSubTitle', 'ENGINE', (ctx) => {
   /*
@@ -1905,6 +1927,14 @@ const MUTATIONS = [
     find: 'return <div className="set-note">{emphasis(children)}</div>;',
     replace: 'return <div className="set-note">{children}</div>;',
     expect: ['ENGINE.emphasis.renderPoints'],
+  },
+  {
+    name: '去掉自取消守卫的置位那一半（StrictMode 双调用后界面永久停在「读取中…」）',
+    file: F.engineState,
+    // 只删「挂载置 true」那一行 —— 留下卸载置 false（这正是真实写法容易犯的形态：只写一半）
+    find: '    alive.current = true;\n',
+    replace: '',
+    expect: ['ENGINE.hook.strictModeAliveGuard'],
   },
   {
     name: '在 JSX 裸文本里塞回一个 markdown 粗体（这是本轮真实修掉的那个缺陷）',
