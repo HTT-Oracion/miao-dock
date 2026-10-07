@@ -71,7 +71,9 @@
     "probe:png": "node e2e/make-probe-png.mjs",
     "app": "npm --prefix app run tauri dev",
     "app:build": "npm --prefix app run tauri build",
-    "check:docs": "node e2e/docs-consistency-check.mjs"
+    "check:docs": "node e2e/docs-consistency-check.mjs",
+    "check:bundle": "node e2e/bundle-targets-check.mjs",
+    "check:bundle:refute": "node e2e/bundle-targets-check.mjs --refute"
   },
   "engines": {
     "node": ">=20"
