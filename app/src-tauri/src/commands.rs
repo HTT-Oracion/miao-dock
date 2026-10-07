@@ -8,6 +8,7 @@
 //! ③ 错误信封（契约 §2.2）在这里统一解析成结构化错误，前端拿到的是 code/message/details。
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::str::FromStr;
 use std::time::Duration;
 
 use serde::Serialize;
@@ -99,7 +100,23 @@ pub fn service_restart(app: AppHandle, mgr: State<'_, ServiceManager>) -> Status
 }
 
 /// 应用退出（托盘菜单 → 二次确认之后调用）
-#[tauri::command]
+///
+/// 🔴 **必须是 `async` 命令**（命令属性上的 `(async)` = 跑在 tauri 异步运行时的
+/// 线程池上，**不是主线程**）。这不是风格问题，而是**功能开关**：
+///
+/// Tauri 的**同步**命令在主线程上执行，而 `AppHandle::exit` 在**主线程**里调用时
+/// **不保证真的退出** —— 官方讨论 tauri#3555 的结论就是这句
+/// 「you shouldn't call `AppHandle::exit` on the main thread」，提问者的现象与本机
+/// 用户报的一模一样：**点了「退出喵坞」没反应**（窗口照旧、进程照旧）。
+///
+/// 顺带把第二个「点了像没反应」的成因也一并消掉：`ServiceManager::stop()` 是**阻塞**的
+/// （先礼后兵，最多等 `STOP_GRACE`）。同步命令跑在主线程 ⇒ 这段时间窗口的消息泵一起
+/// 被冻住 —— 即便最终退得掉，那几秒里界面也是死的，用户只会更用力地点两下。
+///
+/// ⚠️ 与 `main.rs` 的 `RunEvent::ExitRequested` 是**两道**清理，不是重复：这里走的是
+/// 正常路径（先收干净再退，端口立刻释放）；那一道兜底 `Cmd+Q` / 其它退出路径。
+/// 子进程表在 `stop()` 里已被 `take_all()` 掏空，所以第二遍是空操作。
+#[tauri::command(async)]
 pub fn quit_app(app: AppHandle, mgr: State<'_, ServiceManager>) {
     mgr.stop();
     app.exit(0);
@@ -119,6 +136,40 @@ pub fn show_window(app: AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.set_focus();
+    }
+}
+
+/// 把主题同步给原生窗口（G-14 / G-18）。
+///
+/// 前端主题是「换 CSS 变量」实现的，只改 WebView 内容区；macOS 的原生标题栏
+/// （含红绿灯按钮所在的那条 bar）不会跟着变，导致暗色时「顶部一条白、下面一片黑」。
+///
+/// 这里做**两件**事，缺一不可：
+/// 1. `set_theme` —— 只把「模式」告诉系统，系统**自选**一个它认为合适的标题栏底色。
+///    这解决不了「和 app 主题一致」：系统那份深色是 `#1E1E1E` 一类的中性灰，
+///    与设计令牌里的 `#140F29` 天然对不上（G-18 的实测结论）。
+/// 2. `set_background_color` —— 把窗口底色**钉死成设计令牌的 `board` 色**
+///    （浅 `#FAFAFF` / 深 `#140F29`，与 `body` 背景同一个令牌）。
+///    配合 `titleBarStyle: "Transparent"`（tao 的 `setTitlebarAppearsTransparent`），
+///    标题栏底色即窗口底色，于是「顶部」与「主体」在像素上是同一个颜色。
+///
+/// 关键点：**原生标题栏、原生红绿灯、原生拖拽全部保留** —— 不动 `decorations`，
+/// 不画任何自绘按钮，所以上一轮丢掉的那一堆系统行为一个都不会丢（G-15/G-16 已否决）。
+#[tauri::command]
+pub fn set_theme(app: AppHandle, mode: Option<String>) {
+    let (theme, board) = match mode.as_deref() {
+        Some("dark") => (Some(tauri::Theme::Dark), Some("#140F29")),
+        Some("light") => (Some(tauri::Theme::Light), Some("#FAFAFF")),
+        // 跟随系统：模式交回系统，颜色仍需给 —— 否则标题栏退回系统中性灰
+        _ => (None, None),
+    };
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_theme(theme);
+        if let Some(hex) = board {
+            if let Ok(c) = tauri::utils::config::Color::from_str(hex) {
+                let _ = w.set_background_color(Some(c));
+            }
+        }
     }
 }
 

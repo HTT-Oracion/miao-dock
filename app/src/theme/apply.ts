@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { cssVars, type ThemeMode } from './tokens';
+import { setWindowTheme } from '@/ipc';
+import { cssVars, type ThemeMode } from '@/theme/tokens';
 
 const STORAGE_KEY = 'miao.theme';
 
@@ -28,5 +29,12 @@ export function useThemeTokens(mode: ThemeMode): void {
     root.dataset.theme = mode;
     // 让 WebView 原生控件（滚动条、表单）也跟随主题
     root.style.colorScheme = mode;
+    // 同步给原生窗口：标题栏（含红绿灯按钮那条 bar）跟着变色，否则暗色时顶部一条白。
+    // 纯浏览器环境（如规格自检跑在浏览器里）没有 Tauri 桥，静默忽略即可。
+    try {
+      void setWindowTheme(mode);
+    } catch {
+      /* 非 Tauri 环境：无窗口可同步 */
+    }
   }, [mode]);
 }

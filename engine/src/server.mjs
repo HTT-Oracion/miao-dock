@@ -33,6 +33,40 @@ const FAIL_SEQS = new Set(
 );
 /** 随机失败率（0–1） */
 const FAIL_RATE = Math.max(0, Math.min(1, Number(process.env.MIAO_ENGINE_FAIL_RATE || 0) || 0));
+/**
+ * **OOM 注入**：《04》§8.1 的降档触发条件之一。开播后的**前 N 次** `/translate` 返回
+ * 显存不足（`CUDA out of memory` 口径，与 llama.cpp / torch 实际文案一致），第 N+1 次起恢复正常。
+ *
+ * 为什么需要它：§8 的降档回路（**识别 OOM → 降一档 → 重启 ③ → 重试 → 成功**）在没有它的
+ * 情况下，只能靠"真把内存吃爆"来触发 —— 那在 16GB 机器上会连带把别的进程拖下水，
+ * 而且不可复现。注入一个**可复现的内存不足**，测的仍然是被测代码（service 的降档判定与重启），
+ * 不是造假：真实 OOM 也是"这一张装不下、降到低档就装得下"这个形状。
+ * 「前 N 次」而不是"永远 OOM"，正是在模拟"降到低档后就装得下了"——
+ * 否则降档之后仍然失败，就无法区分"降档没生效"和"降了也不够"。
+ */
+const OOM_TIMES = Math.max(0, Number.parseInt(process.env.MIAO_ENGINE_OOM_TIMES || '0', 10) || 0);
+let oomLeft = OOM_TIMES;
+
+/**
+ * **卡死注入**：这些 seq 的请求**永不返回**（既不回结果也不回错误，连响应头都不发）。
+ *
+ * 为什么需要它：U10② 是"真机长任务下引擎偶发停摆"——3 次运行复现 1 次，
+ * 且**只在真权重长任务上**出现，靠反复跑真机去等它复现，代价是每次十几分钟且不可控。
+ * 而这个缺陷真正要验的东西**与被测代码无关**，只与"引擎不回答"这一事实有关：
+ *   · 单项的等待时间是否有上界（= 不会变成 `超时 × 重试次数`）
+ *   · 挂住时**磁盘与日志是否留痕**（否则事后无法归因）
+ * 所以把它做成**可确定复现**的注入，测到的仍然是真实代码路径（`store._processItem` →
+ * `engine-client.requestOnce` → 超时 → 失败分支），不是造假。
+ *
+ * 与 `FAIL_SEQ` 的区别：那个**立刻**返回错误（覆盖 failed / 重试），
+ * 这个**永不返回**（覆盖"超时"这条路径 —— 它是唯一能照出"静默叠乘"形状的注入）。
+ */
+const STALL_SEQS = new Set(
+  String(process.env.MIAO_ENGINE_STALL_SEQ || '')
+    .split(',')
+    .map((s) => Number.parseInt(s.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n > 0),
+);
 
 const bootedAt = Date.now();
 const log = (msg) => console.log(`[mangatranslator-mock] ${msg}`);
@@ -96,8 +130,30 @@ const handler = async (req, res) => {
         return sendJson(res, 400, { error: { code: 'ENGINE_BAD_INPUT', message: '输入字节不是可识别图片' } });
       }
 
+      // 卡死注入（见 STALL_SEQS 注释）：**什么都不回**，连响应头都不发。
+      // 客户端于是只能等到自己的超时 —— 这正是 U10② 的形状（引擎活着，这一张永不结束）。
+      // ⚠️ 挂住时**不要**注册定时器去"保活"：真实故障里不会有任何心跳，
+      //    注入一个心跳就把被测场景换掉了。
+      if (STALL_SEQS.has(seq)) {
+        log(`注入卡死（seq=${seq}，本请求永不返回）`);
+        return;
+      }
+
       // 模拟推理耗时
       await sleep(Math.max(1, Math.round(ITEM_MS * (0.8 + Math.random() * 0.4))));
+
+      // OOM 注入（§8.1）：文案照 llama.cpp / torch 的真实形状写，供 service 侧按签名识别
+      if (oomLeft > 0) {
+        oomLeft -= 1;
+        log(`注入显存不足（seq=${seq}，剩余注入 ${oomLeft} 次）`);
+        return sendJson(res, 500, {
+          error: {
+            code: 'ENGINE_OOM',
+            message: 'CUDA out of memory. Tried to allocate 1.20 GiB '
+              + '(GPU 0; 16.00 GiB total capacity; 220.00 MiB free)',
+          },
+        });
+      }
 
       if (FAIL_SEQS.has(seq) || (FAIL_RATE > 0 && Math.random() < FAIL_RATE)) {
         return sendJson(res, 500, {
@@ -156,7 +212,7 @@ log(`监听地址 : http://${HOST}:${port}`);
 log(`引擎     : sakura-mock（ja→zh）`);
 log(`单张耗时 : ${ITEM_MS}ms（±20% 抖动）`);
 log(`就绪延迟 : ${START_MS}ms`);
-log(`失败注入 : FAIL_SEQ=[${[...FAIL_SEQS].join(',')}] FAIL_RATE=${FAIL_RATE}`);
+log(`失败注入 : FAIL_SEQ=[${[...FAIL_SEQS].join(',')}] FAIL_RATE=${FAIL_RATE} OOM_TIMES=${OOM_TIMES} STALL_SEQ=[${[...STALL_SEQS].join(',')}]`);
 // 机器可读就绪行：桌面端 Rust 层据此确认 sidecar 端口
 log(`MIAO_ENGINE_READY ${JSON.stringify({ port, engine: 'sakura-mock' })}`);
 log('========================================================');

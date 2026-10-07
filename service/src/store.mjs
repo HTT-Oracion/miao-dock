@@ -8,11 +8,13 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import {
   BATCH_LIMIT, ETA_SAMPLE_WINDOW, MAX_SEQ, FILE_NAME_RE, ORIGINAL_SCAN_RE,
   TRANSLATED_SCAN_RE, TASKS_STATE_DIR, IDEMPOTENCY_FILE, PENDING_DIR,
+  HIDDEN_COMICS_FILE,
   assertInsideRoot, canonicalize, config, seq3,
 } from './config.mjs';
 import { ApiError } from './errors.mjs';
 import { sniffImageType } from './image.mjs';
 import { translateImage, EngineError } from './engine-client.mjs';
+import { isOomError } from './tier-downgrade.mjs';
 import { isSafeDirName } from './names.mjs';
 import { writeSseEvent } from './sse.mjs';
 
@@ -59,6 +61,25 @@ function ulid() {
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 
+/**
+ * 任务时间戳专用的 ISO（**保留毫秒**）。
+ *
+ * 🔴 为什么不复用上面那个 `nowIso()`：它截掉毫秒（给人看的字段够用），而
+ *   `createdAt` / `finishedAt` 会被 `idle-policy.lastActivityAt()` 拿去和
+ *   `store.runtimeStartedAtMs`（`Date.now()`，**毫秒**）比大小。两侧精度差最多 1 秒 ⇒
+ *   **与 Store 构造同一秒内创建的任务**，其 `Date.parse(createdAt)` 会落在下界**之前**，
+ *   于是被判成"上一轮的历史"过滤掉 ⇒ 本次运行永远落到 `neverRan`
+ *   ⇒ **这一轮的空闲卸载完全不生效**（③ LLM 常驻、不释放）。
+ *   实测（`check:e5e6` 第 2~5 轮稳定 11/5，E6 整组红）：下界 `1791304803088`，
+ *   任务 `createdAt` 截断成 `...803000` ⇒ `803000 < 803088` ⇒ `la=null`，
+ *   该轮 82 次巡检里 81 次是 `never_ran`。
+ *
+ * 🔴 为什么修**精度**而不是给比较**加松弛**（把下界也截到秒）：加松弛会把"上一轮刚结束"
+ *   的任务拉进同一秒、算成本次运行的**热态** —— 那正是 `runtimeStartedAtMs` 要挡的事
+ *   （E6.7「重启后 ③ 刚被拉起就被卸掉」）。flaky 只会从 E6.1 搬到 E6.7，白改。
+ */
+const nowIsoMs = () => new Date().toISOString();
+
 export class Store {
   /** @param {string} rootDir 落盘根目录（已校验） */
   constructor(rootDir) {
@@ -76,7 +97,41 @@ export class Store {
     this._loopActive = false;
     /** idempotencyKey → { taskId, batchIndex, at } */
     this.idempotency = new Map();
+    /**
+     * 已从漫画库**隐藏**的漫画名（用户不勾选「删除本地文件」时只隐藏、保留磁盘文件）。
+     * 扫描 `/library` 时跳过这些目录；`unhideComic` 可恢复。见 `HIDDEN_COMICS_FILE` 注释。
+     * @type {Set<string>}
+     */
+    this.hiddenComics = new Set();
     this.startedAt = nowIso();
+    /**
+     * **本进程**的启动时刻（ms，毫秒精度）。
+     *
+     * 🔴 为什么必须单独存一个毫秒精度的字段，而不是复用上面的 `startedAt`：
+     *   1. 参与比较的**两侧必须同精度**。`startedAt` 是给人看的 ISO（`nowIso()` **截掉了毫秒**），
+     *      拿它当比大小的下界就引入最多 1 s 的偏斜；而**任务侧**的 `createdAt` / `finishedAt`
+     *      一度也走 `nowIso()`（同样秒精度）—— 那边才是真正踩过的坑：与 Store 构造**同一秒内**
+     *      创建的任务会被判成"上一轮的历史"⇒ 本轮永远 `neverRan` ⇒ 空闲卸载整轮失效。
+     *      故本字段是毫秒精度，**任务侧改用 `nowIsoMs()`**，两侧对齐（见 `nowIsoMs()` 注释）。
+     *   2. 更要紧的是它承载一条**语义边界**：`init()` 会把**上一轮**的终态任务从盘上
+     *      恢复进 `this.tasks`（任务清单要显示历史），而 `idle-policy.mjs` 的
+     *      `lastActivityAt()` 若把这些历史记录也算作"任务活动"，就会得出
+     *      「距上次活动 18 小时」⇒ ③ LLM 刚被拉起就被第一次 tick 卸掉。
+     *      那正是"用户重启 Box 后翻译永远起不来"的现场。本字段是这个过滤的**下界**。
+     *   见 `idle-policy.mjs` 的 `lastActivityAt()` / `runtimeStartMs()`。
+     */
+    this.runtimeStartedAtMs = Date.now();
+    /**
+     * 翻译前的**懒加载恢复**钩子（《04》§9.3）：③ 被空闲卸载后再来任务时，先拉起它。
+     * 由 server.mjs 在装配阶段注入（`store.ensureLlm = () => supervisor.start()`）。
+     * 缺省 `null` ⇒ 纯 Store 场景（单测/自检）行为完全不变。
+     */
+    this.ensureLlm = null;
+    /**
+     * 档位降档控制器（《04》§8）。由 server.mjs 注入（进程级单例 ⇒ 天然是"服务级"作用域）。
+     * 缺省 `null` ⇒ 纯 Store 场景（单测/自检）不做降档，行为完全不变。
+     */
+    this.tierDowngrade = null;
   }
 
   // ---------------------------------------------------------------- 启动恢复
@@ -87,6 +142,14 @@ export class Store {
     try {
       const raw = JSON.parse(fs.readFileSync(IDEMPOTENCY_FILE, 'utf8'));
       for (const [k, v] of Object.entries(raw || {})) this.idempotency.set(k, v);
+    } catch { /* 首次启动无文件 */ }
+
+    // 已隐藏的漫画名（非数组/坏文件一律当作"没有隐藏"—— 与 idempotency 同一处置：
+    // 读盘失败绝不能连带把服务带不起来，那会让"少看见几部漫画"升级成"整个库打不开"。
+    this.hiddenComics = new Set();
+    try {
+      const raw = JSON.parse(fs.readFileSync(HIDDEN_COMICS_FILE, 'utf8'));
+      if (Array.isArray(raw?.comics)) for (const n of raw.comics) if (typeof n === 'string') this.hiddenComics.add(n);
     } catch { /* 首次启动无文件 */ }
 
     let restored = 0;
@@ -289,7 +352,7 @@ export class Store {
       // 来源归因：由 server 层按契约 §2 的可选头 `X-Box-Client` 判定（见 spec-notes G-04）
       source: source || 'unknown',
       idempotencyKey: idempotencyKey || null,
-      createdAt: nowIso(),
+      createdAt: nowIsoMs(),
       finishedAt: null,
       batches,
       events: [],
@@ -437,7 +500,146 @@ export class Store {
       translatedCount: translated.size,
       pendingCount: pendings.length,
       pendings,
+      /**
+       * 已有译文的页号（升序）。
+       *
+       * 为什么要在这里就把集合给出：`GET /library` 的汇总里只有**张数**，
+       * 回答不了"哪几页译过了"。`pendings` 只能反推（在有原图的前提下），
+       * 一遇到"有译文但原图没了"的页就漏 —— 而返工计划（`retranslatePlan`）
+       * 需要精确判断每一页**是否将被覆盖**，靠张数推断会把结论整体错位。
+       */
+      translatedSeqs: [...translated].sort((a, b) => a - b),
     };
+  }
+
+  /**
+   * 返工计划：目录里**所有有原图的页**（不论是否已有译文）。
+   *
+   * 与 `resumePlan` 的差别只有一条，却决定了整个功能的语义：
+   * `resumePlan` 取的是「有原图 **且缺译文**」，返工取的是「有原图」——
+   * 译错了的那几页**已经有译文**了，正是 `resumePlan` 明确排除掉的那些。
+   * 若复用它，返工会对「已译完」的漫画报"没有待续做的页"，功能形同虚设。
+   *
+   * ⚠️ 页数上限：单次提交仍受 `BATCH_LIMIT` 约束，所以整部返工需要分批
+   * （由 `createRetranslateTask` 报 409，前端据此提示分批）。
+   */
+  retranslatePlan(dirName) {
+    const plan = this.resumePlan(dirName); // 复用同一遍扫描，不维护第二份索引
+    const dir = path.join(this.root, dirName);
+    const candidates = [];
+    for (const f of this._listDir(dir)) {
+      const m = ORIGINAL_SCAN_RE.exec(f);
+      if (!m) continue;
+      const seq = Number(m[1]);
+      let byteSize = 0;
+      try { byteSize = fs.statSync(path.join(dir, f)).size; } catch { /* ignore */ }
+      candidates.push({
+        seq,
+        ext: f.split('.').pop().toLowerCase(),
+        byteSize,
+        originalFile: f,
+        hadTranslation: plan.translatedSeqs.includes(seq),
+      });
+    }
+    candidates.sort((a, b) => a.seq - b.seq);
+    return {
+      comicName: dirName,
+      dirName,
+      outputDir: dir,
+      imageCount: plan.imageCount,
+      translatedCount: plan.translatedCount,
+      retranslateCount: candidates.length,
+      /** 已被译文覆盖、这次会被真正重写的页（前端用来提示"会覆盖 N 张"） */
+      overwriteCount: candidates.filter((c) => c.hadTranslation).length,
+      candidates,
+    };
+  }
+
+  /** 列目录，目录不存在返回空数组（`resumePlan` 抛 404，返工计划要能"空目录也不炸"） */
+  _listDir(dir) {
+    try {
+      return fs.readdirSync(dir);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * 单张漫画返工重译：为「有原图」的页**重新**跑一遍引擎，**覆盖已有译文**。
+   *
+   * ## 与 `createResumeTask` 的分工（别混）
+   *  · resume    = 补**缺**的页，遇到已有译文就跳过（幂等续做，可反复点）。
+   *  · retranslate = 重跑**已译**的页（译错了要返工），译文会被覆盖。
+   *
+   * ## 覆盖是怎么做到的（两处配套，缺一不可）
+   * ① `item.overwrite = true` ⇒ `_processItem` **跳过** `skipExisting` 的幂等短路
+   *    （否则每一页都会以 `already_exists` 被跳过，任务秒完但什么都没重译）；
+   * ② `_writeItem` 对 `overwrite` 的页改用 `flag:'w'` 而非 `'wx'` 覆盖写译文。
+   *
+   * ## 为什么不覆盖原图
+   * 原图是**用户的数据**，返工只重译 —— `_writeOriginal` 的「永不覆盖」原样保留，
+   * 且续做路径 `fromDisk:true` 读的就是磁盘上那份原图，一个字节都不会动。
+   *
+   * 单次上限沿用 `BATCH_LIMIT`（20）：整部漫画上百页时必须分批，
+   * 一次建单塞 200 页会让引擎队列被单个任务占死。
+   */
+  createRetranslateTask(dirName, { seqs, source } = {}) {
+    const plan = this.retranslatePlan(dirName);
+    const want = seqs && seqs.length ? new Set(seqs.map(Number)) : null;
+    const picked = want ? plan.candidates.filter((c) => want.has(c.seq)) : plan.candidates;
+
+    if (picked.length === 0) {
+      throw new ApiError('TASK_NOT_FOUND',
+        plan.imageCount === 0 ? '该漫画目录里没有原图，无从返工' : '指定的页在本机没有原图',
+        { comicName: dirName, imageCount: plan.imageCount });
+    }
+    if (picked.length > BATCH_LIMIT) {
+      throw new ApiError('BATCH_LIMIT_EXCEEDED',
+        `返工 ${picked.length} 张，超过单次上限 ${BATCH_LIMIT} 张；请分批返工`,
+        { limit: BATCH_LIMIT, submitted: picked.length, seqs: picked.map((c) => c.seq) });
+    }
+
+    const items = picked.map((c) => ({
+      seq: c.seq,
+      ext: c.ext,
+      mime: c.ext === 'jpg' ? 'image/jpeg' : `image/${c.ext}`,
+      byteSize: c.byteSize,
+      /** 原图从磁盘读，内存里没有上传字节 */
+      fromDisk: true,
+      /** 🔴 返工标记：让 worker 跳过幂等短路 + 允许覆盖译文（见方法头的两处配套） */
+      overwrite: true,
+      status: 'pending',
+      saved: false,
+      outputFile: null,
+      originalFile: c.originalFile,
+      sha256: null,
+      durationMs: null,
+      retryCount: 0,
+      reason: null,
+    }));
+
+    const seqFrom = picked[0].seq;
+    const seqTo = picked[picked.length - 1].seq;
+    const task = this._newTask({
+      comicName: dirName,
+      dirName,
+      source,
+      batches: [{
+        batchIndex: 1,
+        count: items.length,
+        seqFrom,
+        seqTo,
+        status: 'queued',
+        idempotencyKey: null,
+        items,
+      }],
+      idempotencyKey: null,
+    });
+
+    this.tasks.set(task.taskId, task);
+    this._persistNow(task);
+    this._enqueueOrStart(task);
+    return { task, replay: false, plan };
   }
 
   /**
@@ -507,6 +709,138 @@ export class Store {
     this._persistNow(task);
     this._enqueueOrStart(task);
     return { task, replay: false };
+  }
+
+  /**
+   * 重跑**同一个任务**：把失败页复位为待译，用**原来的 taskId** 回到队列。
+   *
+   * 为什么不复用 `createResumeTask`（那会产生新 taskId）：队列行上「重试」的语义是
+   * 「**这一行**重新开始跑」。新建任务的话，原失败行留在历史里、旁边又冒出一条新行 ——
+   * 用户看到的是「点了重试，历史里多出一个任务」，而不是「这一行变回翻译中」。
+   *（`createResumeTask` 继续服务漫画库 X-D1 的「继续翻译」，那条路按目录找缺页，语义不同。）
+   *
+   * 字节来源：失败页的原图已按 G-11 落盘（`_keepOriginalOnFailure`），而上传那份暂存字节
+   * 在任务收尾时已被清扫（`_sweepStaged` / `_forgetBlobs`）⇒ 复位时把 `fromDisk` 置真，
+   * 走「从磁盘读原图」那条路。若某页连原图都没能留下（G-11 的降级路径），它重跑会以
+   * `original_missing` 再次失败 —— 那是**如实的失败**，不该被这里掩盖成成功。
+   *
+   * 只复位 `failed`：`success` / `skipped` 的页是已经拿到结果的（skipped 多为
+   * `already_exists`），重跑它们既浪费又会与「不覆盖」冲突。
+   */
+  retryTask(taskId) {
+    const task = this.mustTask(taskId);
+    if (!TASK_TERMINAL.has(task.status)) {
+      throw new ApiError('TASK_NOT_RETRYABLE',
+        `任务还在 ${task.status}，无需重试`, { taskId, status: task.status });
+    }
+
+    let reused = 0;
+    for (const batch of task.batches) {
+      for (const item of batch.items) {
+        if (item.status !== 'failed') continue;
+        item.status = 'pending';
+        item.fromDisk = true;
+        item.saved = false;
+        item.outputFile = null;
+        item.sha256 = null;
+        item.durationMs = null;
+        item.retryCount = 0;
+        item.reason = null;
+        item.errorMessage = null;
+        reused++;
+      }
+    }
+    if (reused === 0) {
+      throw new ApiError('TASK_NOT_RETRYABLE',
+        '该任务没有可重试的页（只有失败的页需要重跑）', { taskId, status: task.status });
+    }
+
+    // 回到「未收尾」姿态：清掉上一次的终态痕迹，否则队列页会同时显示新的活动状态与旧的完成时间。
+    task.finishedAt = null;
+    task.cancelRequested = false;
+    task.lastError = null;
+    this._syncBatchStatuses(task);
+    // 与新建任务**同一套调度**：空闲 ⇒ 立刻 running（就是用户要的「直接变成翻译中」），
+    // 否则排进队尾（此时显示「等待中」才是诚实的 —— 引擎同一时刻只跑一个任务）。
+    this._enqueueOrStart(task);
+    return { task, reused };
+  }
+
+  /**
+   * 批量删除任务**记录**（队列页多选删除）。
+   *
+   * 逐条回报、不整批抛错 —— 一批多选里混着「翻译中的」（删不掉）与「已完成的」（删得掉）
+   * 是常态，整批失败会让用户无从下手；只有逐条说清"哪几条没删成、为什么"，按钮才有意义。
+   *
+   * 只删「记录」：内存里的 task + 落盘的 `state/tasks/<taskId>.json`。
+   * **绝不碰漫画目录** —— 队列删的是"任务"，用户在漫画库删的才是"漫画"（两者是两回事，
+   * 一部漫画可能对应多条历史任务）。翻译中 / 排队中不可删：它们还在跑、进程随时回写状态，
+   * 删内存副本只会让"列表说没了、服务还在写"两者失配。
+   */
+  deleteTasks(taskIds) {
+    const deleted = [];
+    const skipped = [];
+    for (const taskId of taskIds) {
+      const task = this.tasks.get(taskId);
+      if (!task) {
+        skipped.push({ taskId, reason: 'not_found' });
+        continue;
+      }
+      if (!TASK_TERMINAL.has(task.status)) {
+        skipped.push({ taskId, reason: 'not_deletable', status: task.status });
+        continue;
+      }
+      // 收尾资源：终态任务的暂存区早已清空，这里兜底再扫一次；内存字节引用同理。
+      this._sweepStaged(taskId);
+      this._forgetBlobs(taskId);
+      this.tasks.delete(taskId);
+      try {
+        fs.rmSync(path.join(TASKS_STATE_DIR, `${taskId}.json`), { force: true });
+      } catch { /* 盘上已无该文件，无需处理 */ }
+      deleted.push(taskId);
+    }
+    return { deleted, skipped };
+  }
+
+  // ---------------------------------------------------------------- 漫画库「隐藏」
+
+  /** 已隐藏的漫画名（按中文排序），供 `/library` 过滤与「管理已隐藏」展示。 */
+  hiddenComicsView() {
+    return [...this.hiddenComics].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+  }
+
+  /** 隐藏一部漫画（保留磁盘文件），返回最新隐藏清单。 */
+  hideComic(comicName) {
+    if (!this.hiddenComics.has(comicName)) {
+      this.hiddenComics.add(comicName);
+      this._persistHidden();
+    }
+    return this.hiddenComicsView();
+  }
+
+  /** 取消隐藏（恢复显示），返回最新隐藏清单。 */
+  unhideComic(comicName) {
+    if (this.hiddenComics.delete(comicName)) this._persistHidden();
+    return this.hiddenComicsView();
+  }
+
+  /**
+   * 目录被**真删掉**时顺手清掉隐藏记录。
+   * 不清的后果：同名漫画日后重建（重新翻译同名作品）会被无声跳过，用户只看到"库是空的"。
+   */
+  forgetHidden(comicName) {
+    if (this.hiddenComics.delete(comicName)) this._persistHidden();
+  }
+
+  _persistHidden() {
+    try {
+      fs.mkdirSync(path.dirname(HIDDEN_COMICS_FILE), { recursive: true, mode: 0o700 });
+      fs.writeFileSync(HIDDEN_COMICS_FILE, JSON.stringify({ comics: this.hiddenComicsView() }, null, 2));
+    } catch (e) {
+      // 写不进盘不该让这次隐藏失败（内存里已生效），但必须说一声：否则用户重启后
+      // 会看到"我删掉的漫画又回来了"，却查不出为什么。
+      console.warn(`[box-service] ⚠ 隐藏清单写入失败（内存已生效，重启后会丢失）：${e.message}`);
+    }
   }
 
   /** 读磁盘上已有的原图字节（续做路径专用）；找不到返回 null，由调用方按失败收尾 */
@@ -756,7 +1090,9 @@ export class Store {
     const blobKey = `${task.taskId}:${item.seq}`;
 
     // 幂等续做：NNN_translated.* 已存在 → skipped(already_exists)，序号不变
-    if (config.skipExisting && this._translatedExists(dir, item.seq)) {
+    // ⚠️ `item.overwrite`（返工重译）必须**绕过**这条短路，否则每一页都会以
+    // `already_exists` 被跳过 —— 任务秒完、进度条走满、译文却一个字没换。
+    if (config.skipExisting && !item.overwrite && this._translatedExists(dir, item.seq)) {
       item.status = 'skipped';
       item.reason = 'already_exists';
       item.saved = true;
@@ -775,6 +1111,12 @@ export class Store {
     item.status = 'translating';
     this._emitItemStatus(task, batch, item);
     this._syncBatchStatuses(task);
+    // 🔴 必须落盘。`_emitItemStatus` / `_syncBatchStatuses` 只改内存并发事件，
+    // 不写盘 —— 于是"这一页正在跑"在**磁盘上不存在**，落盘的永远是上一次终态。
+    // U10② 的现场就吃了这个亏：快照读到 `{total:13, done:8, failed:0, current:0}`，
+    // 看起来"什么都没在跑"，而实际有一页正卡在引擎里、连"它存在"都看不出来。
+    // 磁盘状态必须能回答"现在在跑哪一页"，否则崩溃/挂死现场一律无法归因。
+    await this._persist(task);
 
     const t0 = Date.now();
     // 字节来源三选一：内存（`this.blobs`，快路径）→ **暂存区**（G-12 的持久副本，活得过进程）
@@ -798,17 +1140,67 @@ export class Store {
     const forceFail = config.failSeqs.has(item.seq) ||
       (config.itemFailRate > 0 && Math.random() < config.itemFailRate);
 
+    // 《04》§9.3 懒加载恢复：③ LLM 可能已被空闲卸载（§9.1 Tier1）。任务到来时先把它拉回来，
+    // 再走正常链路 —— 对用户表现为「这张稍慢」，而**不是失败**（§9.4：卸载 ≠ 未就绪）。
+    // ⚠️ 必须放在**重试循环之外**：③ 没起来时每一张都会失败，把它放进循环里只会把 3 次重试
+    //    浪费在同一次等待上（而且三次都是同一个原因失败，看着像"引擎坏了"）。
+    if (typeof this.ensureLlm === 'function') {
+      try { await this.ensureLlm(); } catch { /* 起不来就照常往下走 —— 真正的失败原因由 translateImage 给出 */ }
+    }
+
     let attempt = 0;
     let translated = null;
     let lastErr = null;
+    // 单项**总预算**（含所有重试）。见 config.itemTimeoutMs 的注释：
+    // 没有它，一次挂住 = 单次超时 × 重试次数 = **20 分钟完全静默**，
+    // 而且中途不写状态、不打日志 ⇒ 外部无法区分"在慢慢想"与"已经死了"。
+    const deadline = t0 + config.itemTimeoutMs;
     for (;;) {
       attempt++;
+      // 预算耗尽就**不再开新的一次尝试** —— 这条是"静默有上界"的承重点：
+      // 少了它，重试会把等待时间叠乘（`engineTimeoutMs × MAX_ATTEMPTS`）。
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        lastErr = new EngineError('ENGINE_TIMEOUT',
+          `单项总预算 ${config.itemTimeoutMs}ms 已耗尽（第 ${attempt} 次尝试开始前）`);
+        break;
+      }
+      // 每次尝试的**请求超时**取两者之小：剩余预算 × 「单次请求多久算没响应」。
+      // 少了后半截，只要有人把单项预算调大（`MIAO_ITEM_TIMEOUT_MS` > `MIAO_ENGINE_TIMEOUT_MS`），
+      // 一次挂住就能吃掉整个预算 —— 「单次请求上限」这个旋钮会形同虚设。
+      const attemptTimeoutMs = Math.min(remaining, config.engineTimeoutMs);
       try {
         if (forceFail) throw new EngineError('ENGINE_ERROR', 'injected_failure');
-        translated = await translateImage(bytes, { seq: item.seq, from: 'ja', to: 'zh', mime: item.mime });
+        translated = await translateImage(bytes, {
+          seq: item.seq, from: 'ja', to: 'zh', mime: item.mime, timeoutMs: attemptTimeoutMs,
+        });
         break;
       } catch (err) {
         lastErr = err;
+        // 🔴 **每一次尝试失败都留痕**。U10② 最致命的地方不是"超时了"，而是**超时了却没有任何输出**：
+        // 从外面看，它与"引擎正在慢慢推理"逐字节相同，于是只能登记成"偶发、成因待抓"。
+        // 这一行把三件事说清楚：第几次、已经花了多久、**引擎最后在做什么**
+        //（超时时 engine-client 会把已收到的帧解析成阶段附在 `detail.frames` 上）。
+        const stage = (err && err.detail && Array.isArray(err.detail.frames))
+          ? err.detail.frames.filter((f) => f.text || f.code === 4)
+            .slice(-3).map((f) => f.text || '等待翻译实例').join(' → ')
+          : '';
+        console.warn(`[item ${task.taskId}#${item.seq}] 第 ${attempt}/${MAX_ATTEMPTS} 次尝试失败：`
+          + `${(err && err.code) || 'internal_error'} · 已用 ${Date.now() - t0}ms`
+          + ` · 预算剩 ${Math.max(0, deadline - Date.now())}ms`
+          + (stage ? ` · 引擎阶段：${stage}` : ' · 引擎无阶段帧'));
+        // 《04》§8.2：OOM ⇒ 降一档重试**一次**，且**不叠加** item 级重试 —— 所以这里把
+        // attempt 回退一格再重试（一次 OOM 只算降档那一次，不额外吃掉 item 的重试预算）。
+        // 降档是**服务级**的：`this.tierDowngrade` 是进程级单例，降完之后后续所有 item 都走新档。
+        // ⚠️ 不会打转：闩落下后再 OOM，`tryDowngrade()` 返回 `already-downgraded` ⇒ 落到下面的
+        //    常规重试/失败分支（§8.2 底线「已是最低档仍 OOM ⇒ 任务 failed」）。
+        if (this.tierDowngrade && isOomError(err)) {
+          const r = await this.tierDowngrade.tryDowngrade();
+          if (r.downgraded) {
+            attempt -= 1;
+            continue;
+          }
+        }
         if (attempt >= MAX_ATTEMPTS) break;
         await sleep(RETRY_BACKOFF_MS);
       }
@@ -904,7 +1296,22 @@ export class Store {
     this._writeOriginal(task, item, originalBytes);
 
     const dir = this.taskDir(task);
-    fs.writeFileSync(path.join(dir, translatedName), translated.bytes, { flag: 'wx', mode: 0o600 });
+    /**
+     * 译文的落盘 flag：**默认 `'wx'`（独占，已存在即失败）**，这是「不覆盖」的硬保证。
+     *
+     * 返工重译（`item.overwrite`）是**唯一**允许覆盖译文的场景 —— 用户明确要求重译，
+     * 不覆盖的话旧译文会永远留在那儿，返工等于没做。改用 `'w'` 之前先删掉旧文件：
+     * 扩展名可能与上次不同（上次 png、这次 jpg），只覆盖同名会留下**两份**译文，
+     * 而扫描按 readdir 顺序认第一个 ⇒ 用户看到"重译了但还是旧图"。
+     */
+    if (item.overwrite) {
+      const stale = this._findTranslatedName(dir, item.seq);
+      if (stale && stale !== translatedName) {
+        try { fs.rmSync(path.join(dir, stale), { force: true }); } catch { /* 删不掉就下面写同名那份 */ }
+      }
+    }
+    fs.writeFileSync(path.join(dir, translatedName), translated.bytes,
+      { flag: item.overwrite ? 'w' : 'wx', mode: 0o600 });
     item.outputFile = translatedName;
     item.sha256 = sha256(translated.bytes);
   }
@@ -1005,7 +1412,7 @@ export class Store {
 
   _finalize(task, status) {
     task.status = status;
-    task.finishedAt = nowIso();
+    task.finishedAt = nowIsoMs();
     task.queuePosition = 0;
     const idx = this.queue.indexOf(task);
     if (idx >= 0) this.queue.splice(idx, 1);
@@ -1152,6 +1559,15 @@ export class Store {
     return {
       taskId: task.taskId,
       comicName: task.comicName,
+      /**
+       * 归一化后的目录名。
+       *
+       * 为什么列表行也要带它：漫画库要判「这本书是否已有任务在跑」，
+       * 而库里显示的是**原始漫画名**、落盘用的是**归一化名**（两者可能差空格/大小写）。
+       * 前端拿原始名去比会漏判 ⇒ 已经排队的书还能再点一次返工 ⇒ 同一本被两个任务
+       * 前后脚跑、译文互相覆盖。与其让前端猜归一化规则，不如把真值给出去。
+       */
+      normalizedComicName: task.normalizedComicName,
       source: task.source || 'unknown',
       status: task.status,
       queuePosition: task.queuePosition,

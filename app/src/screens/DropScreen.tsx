@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { open } from '@tauri-apps/plugin-dialog';
-import { apiPostMultipart, errorText, expandPaths } from '../ipc';
-import type { CreateTaskResponse } from '../types';
-import { splitBatches, uuid } from '../util';
-import { Btn, IconDrop } from '../components/atoms';
+import { apiPostMultipart, errorText, expandPaths } from '@/ipc';
+import type { CreateTaskResponse } from '@/types';
+import { splitBatches, uuid } from '@/util';
+import { Btn } from '@components/units';
+import { Upload } from 'lucide-react';
 
 const BATCH_LIMIT = 20; // 契约 §5.2 单次上限
 
@@ -158,10 +159,10 @@ export function DropScreen({
           if (e.key === 'Enter') void pickFiles();
         }}
       >
-        <IconDrop />
+        <Upload size={20} />
         <div className="dropzone-title">把图片或文件夹拖进这里</div>
         <div className="dropzone-sub">
-          支持 png / jpg / jpeg / webp；单次提交上限 {BATCH_LIMIT} 张，超出的部分会自动分批
+          支持 png / jpg / jpeg / webp；服务端每批 {BATCH_LIMIT} 张，超出的部分会自动排队（序号连续，不需要你分批）
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
           <Btn kind="ghost" onClick={() => void pickFiles()}>

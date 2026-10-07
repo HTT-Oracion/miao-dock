@@ -27,7 +27,7 @@ use crate::service::ServiceManager;
 const SELFTEST_ENV: &str = "MIAO_SELFTEST";
 const CLOSE_QUITS_ENV: &str = "MIAO_CLOSE_QUITS";
 
-/// B1 后半条要用的样张：40×60 真 PNG（生成脚本 `scripts/make-probe-png.mjs`）。
+/// B1 后半条要用的样张：40×60 真 PNG（生成脚本 `e2e/make-probe-png.mjs`）。
 /// 必须是**真的** PNG —— 服务端有魔数嗅探（契约 §8.2），塞假字节只会得到 INVALID_IMAGE，
 /// 那样验出来的只是「校验还在」，不是「关窗后还能干活」。
 static PROBE_PNG: &[u8] = include_bytes!("../testdata/probe.png");
@@ -125,6 +125,23 @@ fn port_open(port: u16) -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(800)).is_ok()
 }
 
+/// 从**外部**给子进程发 SIGTERM —— 用来制造「② 挂了」这个事件。
+///
+/// 为什么要自己发信号、而不是让被测进程"报告自己挂了"：后者是被测方自证，不构成证据。
+/// 「外部制造事件 → 回读状态」才是崩溃分级这类**机制类**断言的正确取证方式。
+/// ⚠️ Windows 分支本机无法验证（G2 ④）⇒ 返回 false 让该条判红，**不假装通过**。
+fn kill_child(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        unsafe { libc::kill(pid as i32, libc::SIGTERM) == 0 }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
 /// 关窗后**真的提交一次翻译任务**并等它跑完。
 ///
 /// 这是 B1 的后半条：契约判据写的是「窗口隐藏；进程存活；**此时用插件/curl 提交任务仍成功执行**」。
@@ -209,12 +226,25 @@ fn submit_and_wait(base: &str, token: &str) -> (bool, String) {
 const SPEC_DRIVER_JS: &str = r#"
 (async function () {
   function put(v) { location.hash = 'miaospec=' + encodeURIComponent(v); }
+  function nameOf(b) {
+    // 可访问名称：aria-label 优先，其次可见文字，最后 title。
+    // ver2.0 把设置入口改成**纯图标**（无可见文字），所以只认 textContent 会找不到它
+    // —— 那不是实现坏了，是断言的定位方式跟不上设计。所以这里三种都认。
+    return (b.getAttribute('aria-label') || b.textContent || b.getAttribute('title') || '').trim();
+  }
   try {
     var nav = Array.prototype.slice.call(document.querySelectorAll('.nav-item'))
-      .filter(function (b) { return (b.textContent || '').indexOf('设置') >= 0; })[0];
+      .filter(function (b) { return nameOf(b).indexOf('设置') >= 0; })[0];
     if (!nav) { put('NO_SETTINGS_NAV'); return; }
     nav.click();
     await new Promise(function (r) { setTimeout(r, 400); });
+
+    // 规格自检在①通用组里。ver2.0 起设置页是两栏壳 + 5 分组，当前分组由
+    // 深链 ?section= 决定 —— 若上一步把分组停在别的组上，「运行自检」就不在屏上。
+    // 这里显式回到①通用组，避免「断言因分组不对而误报」。
+    var general = Array.prototype.slice.call(document.querySelectorAll('.set-nav-item'))
+      .filter(function (b) { return nameOf(b).indexOf('通用') >= 0; })[0];
+    if (general) { general.click(); await new Promise(function (r) { setTimeout(r, 400); }); }
 
     var btn = Array.prototype.slice.call(document.querySelectorAll('button'))
       .filter(function (b) { return (b.textContent || '').trim() === '运行自检'; })[0];
@@ -223,7 +253,7 @@ const SPEC_DRIVER_JS: &str = r#"
     await new Promise(function (r) { setTimeout(r, 2200); });
 
     var rows = Array.prototype.slice.call(document.querySelectorAll('.spec-row'));
-    var bad = rows.filter(function (r) { return r.classList.contains('is-bad'); })
+    var bad = rows.filter(function (r) { r.classList.contains('is-bad'); })
       .map(function (r) { return (r.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 70); });
     put('SPEC total=' + rows.length + ' failed=' + bad.length + (bad.length ? ' | ' + bad.join(' ; ') : ''));
   } catch (e) { put('EXC ' + String(e)); }
@@ -329,8 +359,64 @@ pub fn spawn(app: AppHandle) {
                 }
             }
 
-            // 供后台线程做 HTTP 探活
+            // ---- S2：三进程生命周期（五态机 / E1 生效参数快照 / 三重就绪）----
+            // 取的都是**运行时可观测量**：状态机真实轨迹、日志里真的打出来的参数快照、
+            // 三个子进程的真实 pid —— 不是回头读一遍自己的源码（那只能证明"写了"）。
             let mgr = a.state::<ServiceManager>();
+            let st = mgr.status();
+            let has = |k: &str| st.transitions.iter().any(|t| t == k);
+            c.add(
+                "S2a",
+                has("starting") && has("L1") && has("L2") && has("L3") && has("running"),
+                format!("五态机轨迹：{}", st.transitions.join("→")),
+            );
+            let snap: Vec<String> = st
+                .log
+                .iter()
+                .filter(|l| l.contains("② engine") || l.contains("③ llm") || l.contains("① service"))
+                .cloned()
+                .collect();
+            c.add(
+                "S2b",
+                st.log.iter().any(|l| l.contains("生效参数快照")) && snap.len() == 3,
+                format!("E1 生效参数快照 {} 行：{}", snap.len(), snap.join(" ／ ")),
+            );
+            let pids: Vec<String> = st
+                .children
+                .iter()
+                .map(|x| format!("{}={:?}", x.name, x.pid))
+                .collect();
+            // S4：③ 的归属权移交 box-service（《04》§9.1）⇒ 本 Manager 直接持有的子进程
+            // 从 3 个变成 **2 个**（① service + ② engine）。
+            //
+            // ⚠️ 断言必须**按名字点名**，两个错法都不能用：
+            //   · 数 `children.len()` —— `Children::view()` 是**固定三行的视图**（缺席的那项
+            //     `pid = None`），长度恒为 3 ⇒ 写成 `== 2` 会**恒红**。实测它红了一段时间没人发现，
+            //     因为 S7 只跑 `--e11` 子集，默认的 B/S 组没进 S7 的门。
+            //   · 只数"pid 非空"的个数 —— 会退化成"少一个就红"的一半：① 与 ② 混在一起数，
+            //     "少起 ① + 多起 ③"也能凑够 2。所以**逐个点名**。
+            //   · 也**不能**放宽成 `>= 2`：那样"少起了一个进程"就永远看不见了，
+            //     而这条断言的全部价值就在于"少一个就红"。
+            //
+            // ③ 是否活着**不在这条断言的范围内**（它已归 box-service，是本进程的孙进程）——
+            // 由 `/health.sidecar.llm` 那条链路负责（`check:contract` / `check:engine-settings` /
+            // E11 的 `selftest:app:e11:real`）。这里反过来**钉住"③ 不在本进程"**：
+            // 哪天 ③ 又被本进程拉起来，它会红 —— 那不是噪音，是契约变更的信号。
+            let held = |name: &str| st.children.iter().find(|x| x.name == name);
+            let svc_ok = held("service").is_some_and(|x| x.pid.is_some() && x.alive);
+            let eng_ok = held("engine").is_some_and(|x| x.pid.is_some() && x.alive);
+            let llm_not_held = held("llm").is_some_and(|x| x.pid.is_none());
+            c.add(
+                "S2c",
+                svc_ok && eng_ok && llm_not_held,
+                format!(
+                    "mode={} 本进程持有的子进程（应为 ① service + ② engine；③ 归 box-service）：{}",
+                    st.mode,
+                    pids.join(" ")
+                ),
+            );
+
+            // 供后台线程做 HTTP 探活
             (c.items, mgr.base_url(), mgr.token())
         });
 
@@ -493,6 +579,33 @@ pub fn spawn(app: AppHandle) {
                 all.push(("B1d".into(), false, "服务未启动，取不到 base/token".into()));
                 all.push(("B1e".into(), false, "服务未启动，无法提交".into()));
             }
+        }
+
+        // ---- S2d 崩溃分级：从**外面**杀掉 ② engine ----
+        // 判据是「① 仍 running（服务没跟着塌）+ degraded 翻真（不静默）」。
+        // 反证开关 `MIAO_NO_CRASH_MONITOR=1` 关掉看护后，degraded 不会翻转 ⇒ 这条必红。
+        // ⚠️ S4 起改杀 ② 而不是 ③：③ 的归属权已移交 box-service，本 Manager 的 `children`
+        //    里根本没有它（`child_pid("llm")` 恒为 None ⇒ 断言会**恒红**，看着像"机制坏了"
+        //    实则判据失效）。机制本身没变 —— 仍是"外部杀掉一个非 ① 的子进程 ⇒ 分级为
+        //    degraded 而非整体 error"。③ 挂掉的降级路径改由 box-service 的 `/health` 表达（S5）。
+        {
+            let pid = on_main(&app, |a| a.state::<ServiceManager>().child_pid("engine")).flatten();
+            let killed = pid.map(kill_child).unwrap_or(false);
+            std::thread::sleep(Duration::from_millis(2600)); // 看护每 1s 巡一次，留两轮余量
+            let (state, degraded, err) = on_main(&app, |a| {
+                let st = a.state::<ServiceManager>().status();
+                (
+                    format!("{:?}", st.state).to_lowercase(),
+                    st.degraded,
+                    st.last_error.clone().unwrap_or_default(),
+                )
+            })
+            .unwrap_or_else(|| ("?".into(), false, "主线程调度失败".into()));
+            all.push((
+                "S2d".into(),
+                killed && state == "running" && degraded,
+                format!("外部杀掉 ②(pid={pid:?}) 后 state={state} degraded={degraded} {err}"),
+            ));
         }
 
         // 退出前把子进程收干净，免得留下孤儿占端口

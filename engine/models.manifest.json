@@ -1,0 +1,144 @@
+{
+  "manifestVersion": 1,
+  "engineCommit": "441d07c59a735c7db3db2e7bb8b07920afd8a9cc",
+  "updatedAt": "2026-10-05",
+  "purpose": "S3 模型管理：把引擎运行所需的全部外部资产（视觉模型 / LLM 权重 / 外部二进制）连同来源与校验值一起固化进版本控制，取代此前散落在 .tmp/engine-test/（被 .gitignore 忽略、不入库）的取物脚本。",
+  "rootNote": "所有 dest 均相对于模型根目录 runtimes/manga-translator/（可用 MIAO_MODEL_ROOT 覆盖）。该目录在 .gitignore 内 —— 资产本身不入库，只有本清单入库。",
+  "linkNote": "🔴 引擎把模型路径**硬编码**在自己源码树里，所以「换引擎版本不重下模型」不是靠摆放位置就能保证的：manga_translator/utils/inference.py:94 是 _MODEL_DIR = os.path.join(BASE_PATH, 'models')，而 utils/generic.py:24-25 推出 BASE_PATH = <引擎>/src —— 即视觉模型**必须**出现在 <引擎>/src/models/<子目录>/。src/ 一换版本（删除后重解包）就会连模型一起没掉。server/args.py 也**没有** --model-dir（只有 --models-ttl），唯一能改的钩子是 manga_translator.py:298-299 的 params['model_dir']（运行期）。⇒ 本清单的做法：**权威副本一律放 store（dest），引擎树里那几份只是硬链接（linkTo）**；换版本后跑 `fetch-models.mjs --link` 即可在**零网络**下重建，不必重下 4 GB。",
+  "urlNote": "url = 上游规范地址（用于标识与溯源，也是引擎自身 hash 校验所认的地址）；sources = 本机实测可用的下载通道，按顺序尝试。本机 huggingface.co 不可达、GitHub release 资产直连 502，故 sources 以镜像打头。见 engine/VERSIONS.lock §7。",
+  "shaNote": "sha256 / sizeBytes 均于 2026-10-05 对盘上真实字节重算得出（shasum -a 256）。其中 4 个视觉模型与旧取物脚本记录逐字节吻合（独立重算互证）；Sakura 权重与 llama 归档的 sha256 为首次记录（旧脚本对它们传的是 '-'，即不校验）。随后 `fetch-models.mjs --check` 再次全量复核：6/6 通过。",
+  "linkBaseNote": "linkTo 相对于「链接基准目录」，默认 <模型根目录>/src（即引擎源码树根）。",
+  "sets": {
+    "visual": {
+      "desc": "默认流水线（detector=default / inpainter=lama_large / ocr=48px）必需的 4 个文件；缺任一则该档无法翻译",
+      "files": ["detect_default", "inpainter_lama_large", "ocr_48px", "ocr_alphabet_v7"]
+    },
+    "llm": {
+      "desc": "Sakura LLM 权重（经 llama-server 以 OpenAI 兼容接口提供）。⚠️ CC BY-NC-SA 4.0，禁止商用；对外分发前必须先有法务结论（VERSIONS.lock §6）",
+      "files": ["sakura_1_5b_fp16"]
+    },
+    "runtime": {
+      "desc": "外部二进制（llama-server）。严格说不是「模型」，但它与模型同性质：外部资产 + 需镜像通道 + 需要校验，故复用同一套下载与校验机制。🔴 这里**按平台分化**：条目带 `platform` 字段（`darwin-arm64` / `win32-x64`），selectFiles 按当前平台过滤 ⇒ 在 Windows 上只会下 Windows 的那两条（llama+cudart），不会去下 macos 的。",
+      "files": ["llama_cpp_macos_arm64", "llama_cpp_win_cuda_x64", "cudart_win_cuda_x64"]
+    }
+  },
+  "files": [
+    {
+      "id": "detect_default",
+      "set": "visual",
+      "dest": "models-store/detection/detect-20241225.ckpt",
+      "linkTo": "models/detection/detect-20241225.ckpt",
+      "sha256": "67ce1c4ed4793860f038c71189ba9630a7756f7683b1ee5afb69ca0687dc502e",
+      "sizeBytes": 308380176,
+      "url": "https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/detect-20241225.ckpt",
+      "sources": [
+        "https://ghfast.top/https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/detect-20241225.ckpt"
+      ],
+      "license": "GPL-3.0-only（随引擎）",
+      "note": "Detector.default → DefaultDetector。引擎落盘规则 model_dir = <BASE_PATH>/models/<_MODEL_SUB_DIR>，BASE_PATH = src/；_check_downloaded_map() 只判文件存在 ⇒ 预置即免下载（utils/inference.py:94,283-300）。"
+    },
+    {
+      "id": "inpainter_lama_large",
+      "set": "visual",
+      "dest": "models-store/inpainting/lama_large_512px.ckpt",
+      "linkTo": "models/inpainting/lama_large_512px.ckpt",
+      "sha256": "11d30fbb3000fb2eceae318b75d9ced9229d99ae990a7f8b3ac35c8d31f2c935",
+      "sizeBytes": 204544673,
+      "url": "https://huggingface.co/dreMaz/AnimeMangaInpainting/resolve/main/lama_large_512px.ckpt",
+      "sources": [
+        "https://hf-mirror.com/dreMaz/AnimeMangaInpainting/resolve/main/lama_large_512px.ckpt"
+      ],
+      "license": "见上游仓库 dreMaz/AnimeMangaInpainting",
+      "note": "Inpainter.lama_large —— 🔴 在 HF 上，不是你会在 GitHub 上找到的 lama_mpe。两者名字像但不同源。"
+    },
+    {
+      "id": "ocr_48px",
+      "set": "visual",
+      "dest": "models-store/ocr/ocr_ar_48px.ckpt",
+      "linkTo": "models/ocr/ocr_ar_48px.ckpt",
+      "sha256": "29daa46d080818bb4ab239a518a88338cbccff8f901bef8c9db191a7cb97671d",
+      "sizeBytes": 204290192,
+      "url": "https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/ocr_ar_48px.ckpt",
+      "sources": [
+        "https://ghfast.top/https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/ocr_ar_48px.ckpt"
+      ],
+      "license": "GPL-3.0-only（随引擎）",
+      "note": "Ocr.\"48px\" → Model48pxOCR。与 ocr_alphabet_v7 成对，缺一不可。"
+    },
+    {
+      "id": "ocr_alphabet_v7",
+      "set": "visual",
+      "dest": "models-store/ocr/alphabet-all-v7.txt",
+      "linkTo": "models/ocr/alphabet-all-v7.txt",
+      "sha256": "f5722368146aa0fbcc9f4726866e4efc3203318ebb66c811d8cbbe915576538a",
+      "sizeBytes": 186651,
+      "url": "https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/alphabet-all-v7.txt",
+      "sources": [
+        "https://ghfast.top/https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/alphabet-all-v7.txt"
+      ],
+      "license": "GPL-3.0-only（随引擎）",
+      "note": "OCR 字母表。体积小（182 KB），但同样是「缺了就起不来」的必需件 —— 只判大的、漏掉小的，是这类清单最常见的漏项。"
+    },
+    {
+      "id": "sakura_1_5b_fp16",
+      "set": "llm",
+      "dest": "models/sakura/sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
+      "sha256": "eb0f76c7d52710329c4071d8fbbef5c51f9a4f047c066472e6c7063a53e45764",
+      "sizeBytes": 3560416256,
+      "url": "https://huggingface.co/SakuraLLM/Sakura-1.5B-Qwen2.5-v1.0-GGUF/resolve/main/sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
+      "sources": [
+        "https://hf-mirror.com/SakuraLLM/Sakura-1.5B-Qwen2.5-v1.0-GGUF/resolve/main/sakura-1.5b-qwen2.5-v1.0-fp16.gguf"
+      ],
+      "license": "CC BY-NC-SA 4.0 —— 🔴 禁止任何形式的商用",
+      "note": "3.3 GB（fp16）。该仓库只有 fp16 一份，计划里写的 Tiny「≈1.1 GB」指 4-bit 量化，官方仓库里不存在。备选档 8B / 14B 更慢，暂不用。"
+    },
+    {
+      "id": "llama_cpp_macos_arm64",
+      "set": "runtime",
+      "platform": "darwin-arm64",
+      "dest": "bin/llama-b11417-macos-arm64.tar.gz",
+      "extractTo": "bin/llama/llama-b11417",
+      "extractStrip": 1,
+      "sha256": "7ee64cdecfc7a5423db3c518fd0c880a061104555a703c8c6c5fd0a109691957",
+      "sizeBytes": 11965040,
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11417/llama-b11417-bin-macos-arm64.tar.gz",
+      "sources": [
+        "https://ghfast.top/https://github.com/ggml-org/llama.cpp/releases/download/b11417/llama-b11417-bin-macos-arm64.tar.gz"
+      ],
+      "license": "MIT（llama.cpp）",
+      "note": "解包后 llama-server 落在 bin/llama/llama-b11417/（见 engine/scripts/fetch-models.mjs 的 --extract）。🔴 不要用 api.github.com 的 releases/latest 端点：本机实测它返回了错的 tag（v0.5.0），真实 tag 形如 b<NNNNN>，必须写死。归档顶层目录是 llama-b11417/ ⇒ extractStrip=1。"
+    },
+    {
+      "id": "llama_cpp_win_cuda_x64",
+      "set": "runtime",
+      "platform": "win32-x64",
+      "dest": "bin/llama-b11417-win-cuda-12.4-x64.zip",
+      "extractTo": "bin/llama/llama-b11417",
+      "extractStrip": 0,
+      "sha256": "c62ad14eb7b82b465fd47d6bf73eb20e677254a454fd47a7574bf14d3ce0e1f8",
+      "sizeBytes": 264469128,
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11417/llama-b11417-bin-win-cuda-12.4-x64.zip",
+      "sources": [
+        "https://ghfast.top/https://github.com/ggml-org/llama.cpp/releases/download/b11417/llama-b11417-bin-win-cuda-12.4-x64.zip"
+      ],
+      "license": "MIT（llama.cpp）",
+      "note": "Windows x64 CUDA 12.4 构建（含 ggml-cuda.dll）。压缩包是**扁平结构**（llama-server.exe 等直接在根）⇒ extractStrip=0。⚠️ CUDA 构建必须与 cudart 的 DLL 同目录（见 cudart_win_cuda_x64），否则 llama-server 启动时缺 DLL。要换 CPU 后端就改这条（llama-b11417-bin-win-cpu-x64.zip）+ 去掉 cudart 条目。"
+    },
+    {
+      "id": "cudart_win_cuda_x64",
+      "set": "runtime",
+      "platform": "win32-x64",
+      "dest": "bin/cudart-llama-win-cuda-12.4-x64.zip",
+      "extractTo": "bin/llama/llama-b11417",
+      "extractStrip": 0,
+      "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
+      "sizeBytes": 391443627,
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11417/cudart-llama-bin-win-cuda-12.4-x64.zip",
+      "sources": [
+        "https://ghfast.top/https://github.com/ggml-org/llama.cpp/releases/download/b11417/cudart-llama-bin-win-cuda-12.4-x64.zip"
+      ],
+      "license": "NVIDIA CUDA Runtime（随 llama.cpp 发布）",
+      "note": "CUDA 12.4 运行库（cublas64_12 / cublasLt64_12 / cudart64_12），**必须解到 llama-server.exe 所在目录**（extractTo 与 llama_cpp_win_cuda_x64 相同）。扁平结构 ⇒ extractStrip=0。⚠️ 本机（RTX 4060 Ti / driver 595.79）支持 CUDA 12.4；换 CUDA 版本时这三条（llama/cudart/平台）要一起改。"
+    }
+  ]
+}

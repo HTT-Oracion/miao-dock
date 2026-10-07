@@ -8,6 +8,8 @@
 
 mod capture;
 mod commands;
+mod lyrics_window;
+mod music;
 mod selftest;
 mod service;
 
@@ -59,19 +61,133 @@ pub(crate) fn tray_action(app: &AppHandle, id: &str) {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
         .manage(ServiceManager::new())
         .invoke_handler(tauri::generate_handler![
             commands::service_status,
             commands::service_restart,
             commands::quit_app,
+            // ── 桌面歌词（独立窗口）──
+            lyrics_window::open_lyrics_window,
+            lyrics_window::close_lyrics_window,
+            lyrics_window::lyrics_window_open,
+            lyrics_window::save_lyrics_window_state,
+            lyrics_window::lyrics_push,
+            lyrics_window::get_lyrics_state,
+            lyrics_window::lyrics_control,
+            lyrics_window::resize_lyrics_window,
             commands::hide_window,
             commands::show_window,
+            commands::set_theme,
             commands::api_get,
             commands::api_post,
             commands::api_post_multipart,
             commands::api_bytes,
             commands::open_path,
             commands::expand_paths,
+            // ── 音乐模块（网易云）──
+            music::music_search,
+            music::music_song_url,
+            music::music_login_qr_key,
+            music::music_login_qr_create,
+            music::music_login_qr_check,
+            music::music_login_status,
+            music::music_login_cookie,
+            music::music_logout,
+            music::music_user_playlist,
+            music::music_playlist_tracks,
+            music::music_playlist_tracks_range,
+            music::music_playlist_info_with_track_ids,
+            music::music_playlist_detail,
+            music::music_likelist,
+            music::music_like,
+            music::music_playlist_subscribe,
+            music::music_lyric,
+            music::music_song_comments,
+            music::music_send_comment,
+            music::music_personalized,
+            music::music_recommend_songs,
+            music::music_recommend_resource,
+            music::music_simi_song,
+            music::music_artist_search,
+            music::music_playlist_search,
+            music::music_artist_songs,
+            music::music_artist_detail,
+            music::music_artist_albums,
+            music::music_artist_mvs,
+            music::music_album_detail,
+            music::music_mv_url,
+            // ── 音乐模块（酷狗）──
+            music::kugou_search,
+            music::kugou_artist_search,
+            music::kugou_playlist_search,
+            music::kugou_artist_songs,
+            music::kugou_song_url,
+            music::kugou_lyric,
+            music::kugou_login_status,
+            music::kugou_login_cookie,
+            music::kugou_logout,
+            music::kugou_user_playlists,
+            music::kugou_playlist_tracks,
+            music::kugou_playlist_tracks_range,
+            music::kugou_guess_like,
+            music::kugou_rank_list,
+            music::kugou_rank_songs,
+            music::kugou_like_toggle,
+            music::kugou_liked_hashes,
+            // ── 音乐模块（QQ）──
+            music::qq_search,
+            music::qq_song_url,
+            music::qq_lyric,
+            music::qq_login_status,
+            music::qq_login_cookie,
+            music::qq_logout,
+            music::qq_user_playlists,
+            music::qq_playlist_tracks,
+            music::qq_playlist_tracks_range,
+            music::qq_artist_search,
+            music::qq_artist_songs,
+            music::qq_playlist_search,
+            music::qq_rank_list,
+            music::qq_rank_songs,
+            music::music_qq_recommend_playlists,
+            music::qq_liked_hashes,
+            music::qq_like_toggle,
+            // ── 音乐模块（咪咕）──
+            music::migu_search,
+            music::migu_playlist_search,
+            music::migu_artist_search,
+            music::migu_artist_songs,
+            music::migu_song_url,
+            music::migu_lyric,
+            music::migu_login_status,
+            music::migu_logout,
+            music::migu_user_playlists,
+            music::migu_playlist_tracks,
+            music::migu_playlist_tracks_range,
+            music::migu_rank_list,
+            music::migu_rank_songs,
+            music::migu_recommend_playlists,
+            // ── 音乐模块（多平台管理）──
+            music::music_get_login_statuses,
+            music::music_switch_provider,
+            music::music_get_playback_source,
+            music::music_open_login_window,
+            // ── 音乐模块（本地）──
+            music::local::get_music_files,
+            music::local::import_local_music,
+            music::local::import_local_music_folder,
+            music::local::get_local_lyric,
+            music::local::verify_local_covers,
+            music::local::delete_cover_cache_files,
+            // ── 音乐模块（音频代理）──
+            music::audio_proxy::cmd_get_proxy_port,
+            // ── 音乐模块（缓存：歌词/音频共用内核）──
+            // 歌词缓存不暴露命令：它在四个聚合歌词命令内部生效，前端零改动。
+            music::audio_cache::music_audio_cached,
+            music::audio_cache::music_cache_download,
+            music::audio_cache::music_cache_stats,
+            music::audio_cache::music_cache_clear,
         ])
         .setup(|app| {
             // ---- 托盘：常驻 + 状态点由前端窗口承载（托盘菜单反映服务状态文案） ----
@@ -101,6 +217,17 @@ fn main() {
             let handle = app.handle().clone();
             let mgr = app.state::<ServiceManager>();
             mgr.start(&handle);
+
+            // ---- 音乐模块：初始化 cookie 缓存 + 启动音频代理（Range/206）----
+            // 音频代理是独立的本地 HTTP 服务（127.0.0.1 随机端口），在线音源播放/封面
+            // 都经它透传（加 Referer/CORS/流式）。启动失败不阻断主流程，只影响在线播放。
+            let music_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                music::init_cookie_cache(&music_handle).await;
+                if let Err(e) = music::audio_proxy::start_audio_proxy().await {
+                    log::warn!("[Music] 音频代理启动失败: {e}");
+                }
+            });
 
             // ---- M3 生命周期验收（B1–B3）：程序化跑，不需要人点 ----
             if selftest::enabled() {

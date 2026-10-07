@@ -24,6 +24,13 @@ export interface TaskProgress {
 export interface TaskRow {
   taskId: string;
   comicName: string;
+  /**
+   * 归一化后的目录名（漫画库用它和 `ComicEntry` 对上，见 store 的 `listView` 注释）。
+   *
+   * **可选**：这是后加的字段，`state/tasks/*.json` 里恢复出来的旧任务快照没有它。
+   * 消费方必须容忍 `undefined`（拿 `comicName` 兜底），别把它当必填。
+   */
+  normalizedComicName?: string;
   source: TaskSource;
   status: TaskStatus;
   queuePosition: number;
@@ -95,7 +102,63 @@ export interface LibraryResponse {
   totalImages: number;
   totalBytes: number;
   comics: ComicEntry[];
+  /**
+   * 被「只从库里移除、不删本地文件」的漫画名（服务端持久化在 `state/hidden-comics.json`）。
+   *
+   * 为什么需要它：漫画库是**目录即索引** —— 目录还在、扫描就一定会扫到它。
+   * 于是「删除但不删文件」这个动作在文件系统里无处安放，只能另存一份"忽略名单"。
+   * `comics` 里已排除它们；`POST /library/{name}/unhide` 可恢复。
+   */
+  hidden?: string[];
+  hiddenCount?: number;
   updatedAt: string;
+}
+
+/** `POST /tasks/delete` 的响应（队列多选删除）：逐条回报，不整批失败 */
+export interface DeleteTasksResponse {
+  deleted: string[];
+  /** 未删的原因：`not_found`（已被别处删掉）/ `not_deletable`（翻译中或排队中） */
+  skipped: { taskId: string; reason: 'not_found' | 'not_deletable'; status?: TaskStatus }[];
+  deletedCount: number;
+  skippedCount: number;
+}
+
+/** `POST /library/{comicName}/delete` 的响应 */
+export interface LibraryDeleteResponse {
+  comicName: string;
+  /** true = 连本地目录一起删了；false = 只从库里隐藏 */
+  deletedFiles: boolean;
+  outputDir?: string;
+  hidden?: string[];
+  hiddenCount?: number;
+}
+
+/** `GET /library/{comicName}/retranslate` 的响应（返工计划） */
+export interface RetranslatePlan {
+  comicName: string;
+  /** 归一化后的目录名（= `TaskRow.normalizedComicName`），用于和任务列表对上 */
+  dirName: string;
+  outputDir: string;
+  imageCount: number;
+  translatedCount: number;
+  /** 有原图的页数 = 本次默认返工的范围 */
+  retranslateCount: number;
+  /** 其中已有译文的页数 = 会被覆盖的页数（不可逆，UI 必须提示） */
+  overwriteCount: number;
+  candidates: { seq: number; ext: string; byteSize: number; originalFile: string; hadTranslation: boolean }[];
+  /**
+   * 前端补的字段（非服务端返回）：该漫画是否已有任务在队列中。
+   *
+   * 为什么放在计划对象上而不是单独一个 state：计划与"能不能点"是**同一个判断的两面**，
+   * 拆成两个 state 就会出现"菜单按计划说能点、按钮按队列说在跑"的矛盾帧。
+   */
+  reworking?: boolean;
+}
+
+/** `POST /library/{comicName}/retranslate` 的响应（建单视图 + 覆盖信息） */
+export interface RetranslateResponse extends CreateTaskResponse {
+  overwriteCount: number;
+  retranslateCount: number;
 }
 
 // ------------------------------------------------------------------ 健康

@@ -51,6 +51,39 @@ export function splitBatches(files: string[], limit = 20): string[][] {
 }
 
 /**
+ * 模糊匹配（不区分大小写），用于漫画库搜索。
+ *
+ * 判定用**子序列**而不是简单 `includes`：漫画名动辄「第12话 · 学园祭」这种，
+ * 用户只记得「12学」也应当能命中。子序列天然覆盖「连续子串」这一情形
+ * （`includes` 命中 ⇒ 子序列必命中），所以不必再补测一次。
+ *
+ * 大小写折叠用 `toLowerCase()` 而非 `toLocaleLowerCase()`：后者在土耳其语等
+ * locale 下把 `I` 折成 `ı`，同一份代码在不同机器上结果不同 —— 搜索不该有时区式差异。
+ * 中文没有大小写，这一步只服务名字里的拉丁字母／罗马数字。
+ */
+export function fuzzyMatch(text: string, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const t = text.toLowerCase();
+  let i = 0;
+  for (let j = 0; j < t.length && i < q.length; j++) {
+    if (t[j] === q[i]) i++;
+  }
+  return i === q.length;
+}
+
+/** 把数组切成定长页，返回第 `page`（1 起）页的内容；越界返回空数组 */
+export function pageSlice<T>(items: T[], page: number, size: number): T[] {
+  const start = (Math.max(1, page) - 1) * size;
+  return items.slice(start, start + size);
+}
+
+/** 总页数（至少 1，避免出现「第 1 / 0 页」） */
+export function pageCount(total: number, size: number): number {
+  return Math.max(1, Math.ceil(total / size));
+}
+
+/**
  * UUIDv4。
  *
  * 契约 §5.2 要求 `idempotencyKey` 是 UUIDv4。`crypto.randomUUID()` 只在安全上下文可用，

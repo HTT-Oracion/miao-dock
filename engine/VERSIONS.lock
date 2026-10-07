@@ -1,0 +1,313 @@
+# VERSIONS.lock —— 真实翻译引擎的版本锁（miao-dock ver2.0）
+#
+# 依据：docs/engine-integration-plan.md §S0 / §S3（《04》§2 三层进程）
+# 目的：把「引擎源码 commit / Python / PyTorch / llama.cpp」四件事钉死。
+#       换版本 = 改这个文件 + 走 D-xx 评审，不允许"顺手升级"。
+# ⚠️ 本文件在仓库内（`engine/`），**可版本控制**。
+#    运行时本体在 `runtimes/`（已被 .gitignore 忽略，体积大、按平台不同）。
+#
+# 最后更新：2026-10-05（**S0 完成 · 第一张真译文已产出 · G1 通过** —— 见 §9）
+
+## 1. 引擎源码（✅ 已锁定）
+
+repo         = https://github.com/zyddnys/manga-image-translator
+commit       = 441d07c59a735c7db3db2e7bb8b07920afd8a9cc
+commit_date  = 2026-09-25
+license      = GPL-3.0-only（见 §6）
+size         = 97 MB（解包后）
+install_to   = runtimes/manga-translator/src/（在仓库外，`runtimes/` 已 gitignore）
+
+# 获取通道（实测）：`git clone https` 被本机代理拒（`CONNECT tunnel failed, response 502`），
+# 但 **codeload 归档直下可用**（200 / 56 MB）：
+#   curl -L -o src.tar.gz \
+#     https://codeload.github.com/zyddnys/manga-image-translator/tar.gz/441d07c5...
+#   tar -xzf src.tar.gz -C runtimes/manga-translator/src --strip-components=1
+#
+# ⚠️ 归档解包**不带 .git** ⇒ 版本只认本文件的 commit 行，`git describe` 不可用。
+# ⚠️ 上游自 **2022-04-23（beta-0.3）之后不再发 release**（`/releases` 最新就是它，
+#    tag 里也没有可用版本）⇒ 计划里写的"锁 tag"**不成立**，改为**锁 commit**。
+#    升级 = 重跑评审 + 改这一行，不允许追 `main`。
+
+## 2. 引擎运行时 —— Python（✅ 已实测）
+
+engine_python = 3.11.17
+source        = python-build-standalone（astral-sh）
+source_tag    = 20261003
+source_url    = https://mirror.nju.edu.cn/github-release/astral-sh/python-build-standalone/20261003/cpython-3.11.17%2B20261003-aarch64-apple-darwin-install_only.tar.gz
+install_to    = runtimes/manga-translator/python-3.11/
+venv          = runtimes/manga-translator/venv/
+
+# 🔴 **2026-10-05 更正**：上游 `pyproject.toml` 写着 `requires-python = ">=3.10, <3.12"`。
+#    即引擎**不支持 3.12**，而第一轮 S0 装的是 3.12.15 —— 版本选错了。
+#    上一轮的结论「装一个 3.10+ 的 Python 就行」是把 README 的 `3.10+` 当成了上界。
+#    现改为 **3.11.17**（支持区间内的最高版）。3.12.15 未删除，改名保留为
+#    `runtimes/manga-translator/python-3.12-probe/`：**只用于 MPS 能力探针，不是引擎运行时**。
+#    ⚠️ 名字里带版本号是故意的 —— 避免下次又拿错解释器去建引擎 venv。
+
+## 3. 引擎依赖（✅ 已装成 2026-10-05 · 用时 47m47s · 退出码 0）
+
+requirements = runtimes/manga-translator/src/requirements.txt（上游原样）
+requirements_used = runtimes/manga-translator/requirements.engine.txt（见下 ① 的绕法）
+install_log  = runtimes/manga-translator/pip-install4.log   # ✅ 成功那次（旧 pip-install.log 是失败尝试）
+index        = https://pypi.tuna.tsinghua.edu.cn/simple
+installer    = .tmp/engine-test/pip-mkdir-fix.py（见下 ③；垫片日志：修正 3 次错报）
+
+# 关键版本（实测自安装输出）：
+torch        = 2.14.1          # 与 §4 探针同版
+torchvision  = 0.29.1
+numpy        = 1.26.4          # ⚠️ 上游**钉死** 1.26.4，与 §4 探针的 2.5.3 **不同**（组合不同，别混用结论）
+opencv       = 4.11.0.86
+transformers = 5.18.0
+onnxruntime  = 1.30.0
+accelerate   = 1.15.0
+pydantic     = 2.5.0           # 上游钉死
+fastapi      = 0.125.0         # 回溯后的落点
+rusty-manga-image-translator = 0.12.1   # ← 来自 frederik-uni 额外索引
+# 上游其余钉死的：openai==1.63.0 · httpx==0.27.2 · py3langid==0.2.2 · sentencepiece==0.2.2
+
+# ⚠️ 两处**取不到**的源（本机代理限制，见 §5），装的时候必须绕：
+#   ① `pydensecrf@https://github.com/.../master.zip` → 直连 000；走 `ghfast.top` 镜像可下（2.4 MB）
+#      ⇒ 本轮**先剔掉这行**（`requirements.engine.txt`），**pydensecrf 目前未安装** —— S1 若命中
+#        依赖它的 OCR 后处理会 ImportError，届时再补（已记风险）。
+#   ② `--extra-index-url https://frederik-uni.github.io/manga-image-translator-rust/...`
+#      → 目录列表 404 属正常（simple 索引不列表），包页实测 **200** ⇒ 可用（本轮实装成功）
+#   ③ 🔴 **本机 Python 侧文件中介换掉了错误类型**：`os.mkdir` 对**已存在**目录本该抛
+#      `FileExistsError`，却被抛成**包着 `EEXIST` 文案的 `PermissionError`** ⇒ 按正确 errno
+#      忽略"已存在"的调用方（**pip 解包 sdist 就是**）接不到，报成"安装失败"。
+#      ⇒ 安装走 `.tmp/engine-test/pip-mkdir-fix.py`（**只在该目录确实存在时**纠正类型；
+#        不存在的路径**原样抛出** ⇒ 不放大任何权限）。详见 `docs/spec-notes.md` D-59 §5③。
+# ✅ 已补齐（2026-10-05）：
+#   · `pip check` → **No broken requirements found**（依赖自洽）
+#   · `pydensecrf 1.0` → **已编译安装成功**（cp311 macosx_11_0_arm64 wheel，222 KB）
+#     走 `ghfast.top` 镜像下 master.zip（2.2 MB）→ `.tmp/engine-test/pip-mkdir-fix.py install <zip>`。
+#     ⚠️ 上一版本文件里写"pydensecrf 目前未安装"是**当时状态**；它是 `mask_refinement` 的**硬依赖**
+#        （`mask_refinement/text_mask_utils.py:68`），不装则 `python -m manga_translator` 一启动就
+#        `ModuleNotFoundError` —— **不是"命中才算"的可选项**，这里更正。
+
+## 4. MPS 能力探针（独立件，结论仍有效；⚠️ 它不是引擎环境）
+
+torch        = 2.14.1          # cp312 / macosx_14_0_arm64
+numpy        = 2.5.3
+venv         = runtimes/manga-translator/venv-3.12-probe/
+probe        = .tmp/engine-test/mps-probe.py
+# 实测：mps.is_built()=True · mps.is_available()=True · 张量 matmul 与 CPU **逐位一致（偏差 0.000e+00）**
+#      conv2d 1024×1024×32ch：MPS ≈ 10.1 ms / CPU ≈ 342 ms（≈ 34×）· driver 已分配 1032 MB
+# ⚠️ 这一项是在 **Python 3.12 + torch 2.14.1** 上测的，**不能**当作"引擎的 torch 也能用 MPS"的证据。
+#
+# ✅ 已在 **3.11 的引擎 venv** 里重测（2026-10-05，同一支探针）：
+#   Python 3.11.17 · torch 2.14.1 · macOS 15.1.1 · arm64
+#   mps.is_built()=True · mps.is_available()=True · 张量与 CPU **逐位一致（0.000e+00）**
+#   conv2d：首跑 31.0 ms（含预热）· 稳态 **CPU 185.5 ms / MPS 12.3 ms ≈ 15.05×** · driver 已分配 1032 MB
+#   ⇒ 结论：**引擎这套 venv 的 MPS 可用**（R1 由"高"降"中"，仍未归零——真实流水线未跑 MPS）。
+
+## 5. 模型与 LLM（✅ 2026-10-05 全部就位 · sha256 全部校验通过）
+
+### 5.1 视觉/OCR 模型（已镜像预置）
+
+# 引擎按 `Config()` 默认值跑一张图，最少要这几个权重（`utils/inference.py:94` 规则）：
+#   model_dir = <BASE_PATH>/models/<_MODEL_SUB_DIR>   # BASE_PATH = src/（`utils/generic.py:25`）
+#   file 路径 = model_dir + mapping['file']（`'.'` 表示**文件名从 URL 尾段推得**）
+#
+# | 用途 | 默认档 | 落盘路径 | 来源 | 状态 |
+# |---|---|---|---|---|
+# | detector | `Detector.default` → `DefaultDetector` | `src/models/detection/detect-20241225.ckpt` | GitHub release（经 ghfast.top）| ✅ 已下+校验 |
+# | inpainter | `Inpainter.lama_large` | `src/models/inpainting/lama_large_512px.ckpt` | huggingface（经 hf-mirror `/resolve`）| ✅ 已下+校验 |
+# | ocr | `Ocr.ocr48px` | `src/models/ocr/ocr_ar_48px.ckpt` + `alphabet-all-v7.txt` | GitHub release（经 ghfast.top）| ✅ 已下+校验 |
+#
+# 获取脚本（幂等 + 续传 + sha256 校验）：`.tmp/engine-test/s0-fetch-and-run.sh`
+# 通道实测记录：`runtimes/manga-translator/model-fetch-probe.log`
+#
+# 🔴 **两个源在本机都不可用**，所以"预置"是唯一办法（引擎下载逻辑**不做镜像回退**）：
+#    · GitHub **release 资产**：直连实测 **000 / 850s 超时**（站点根路径却是 200）⇒ 走 `ghfast.top` 前缀（206）
+#    · `huggingface.co`：**CONNECT 不通** ⇒ 走 `hf-mirror.com` 的 **`/resolve/main/<file>`**（206）
+#    · 引擎会校验 `hash` ⇒ **不要改 URL**，改为预置同名文件让 `_check_downloaded_map()` 跳过下载 ——
+#      依据：`_check_downloaded_map` **只判文件存在**（`utils/inference.py:283-300`）。
+#    · `translator` 默认 `sugoi`（离线，又是 GitHub release）⇒ 本项目**显式换成 sakura**，绕开它。
+#
+# 另注（默认值来自 `config.py`）：detector 默认其实走 `DefaultDetector`（`detect-20241225.ckpt`），
+#   **不是** `ctd`；inpainter 默认 `lama_large`（HF 上），`lama_mpe` 才是 GitHub 上的那个。
+
+### 5.2 LLM（Sakura）—— ✅ 已就位
+
+llama_cpp     = **b11417**            # ggml-org/llama.cpp
+llama_asset   = llama-b11417-bin-macos-arm64.tar.gz（12 MB，经 ghfast.top）
+llama_install = runtimes/manga-translator/bin/llama/llama-b11417/llama-server
+# 🔴 `api.github.com/.../releases/latest` 在本机**返回了错的 tag**（回了个 `v0.5.0`）
+#    ⇒ **不要用 latest 端点**；查 `/releases?per_page=3` 拿真实 `b<NNNNN>` tag 并**写死在本文件**。
+
+sakura_repo   = SakuraLLM/Sakura-1.5B-Qwen2.5-v1.0-GGUF（经 hf-mirror）
+sakura_file   = sakura-1.5b-qwen2.5-v1.0-fp16.gguf（**3.3 GB**）
+sakura_install= runtimes/manga-translator/models/sakura/
+# ⚠️ 该仓库**只有 fp16 一份**（没有 Q4/Q5 量化）；计划里写的 Tiny"≈1.1 GB"指 4-bit 量化，官方仓库里不存在
+#    ⇒ 实际下载量按 **3.3 GB** 算（"首次安装 5–8 GB"的结论仍成立）。
+# 备选档：Sakura-8B-Qwen3-v1.1-SFT-GGUF / Sakura-14B-Qwen2.5-v1.0-GGUF（更慢，暂不用）。
+#
+# ⚠️ **Sakura 不是一个"模型文件"，是一个"本地 OpenAI 兼容服务"**：
+#    `translators/sakura.py` 用 `openai` 客户端打 **`SAKURA_API_BASE`（默认 `http://127.0.0.1:8080/v1`）**
+#    （`translators/keys.py:25`，可用同名环境变量覆盖）⇒ 那是 **llama-server 的端口**。
+#    即：**Sakura 走 `llama-server`，不走 `--translator` 的离线模型路径**。
+#    相关环境变量：`SAKURA_API_BASE` / `SAKURA_VERSION`（0.9|0.10）/ `SAKURA_DICT_PATH`。
+
+## 6. 许可（⚠️ **两层**，且都比音乐模块严）
+
+engine_license = GPL-3.0-only（上游 `pyproject.toml` 的 `license` 字段 + `LICENSE` 文件）
+model_license  = **CC BY-NC-SA 4.0**（SakuraLLM 全部模型）—— 🔴 **禁止任何形式的商用**
+# 本项目先例：`vendor/music-reference/README.md` 的结论是"个人自用不触发分发义务"。
+# 引擎+模型这一件**必须重新评估**，不能照抄那个结论：
+#   ① 引擎依赖清单里出现传染面更大的第三方（`mangastudio` 系、`rusty-manga-image-translator` 等）；
+#   ② 有利的一面：引擎是**独立进程**（只经 HTTP 说话） ⇒ 不与本项目代码形成"衍生作品"；
+#   ③ 但模型的 **NC（非商用）** 条款与引擎的 GPL 是**两件独立的事**：
+#      即便分发问题解决了，NC 仍可能禁止在商业场景使用**模型权重**（而不只是禁止分发代码）。
+# ⇒ 列为**待确认项**（不是本轮能定的），**对外分发/商用之前必须先有法务结论**。
+
+## 7. 本机网络约束（影响获取路径，见计划 R9/R10）
+
+# pypi ✅ · pypi.tuna ✅ · codeload.github.com ✅（**归档下载可用**）
+# github.com 根路径/`info/refs` ✅ 但 `git clone` 的 **CONNECT 被代理拒（502）**；release 资产 502
+#   ⇒ 结论：**源码/资产一律用 codeload 或镜像 URL 直下，不要指望 `git clone`**
+# hf-mirror.com ✅ · modelscope.cn ✅ · mirror.nju.edu.cn ✅ · ghfast.top ✅（GitHub 资产镜像）
+# huggingface.co ❌（CONNECT tunnel failed）
+
+## 8. 引擎的真实形状（S0 读源码实测，S1 适配层按这个写）
+
+# 入口与端口（**终结 README 里 8000/8001/5003 的四种说法**：它们不是漂移，是**不同入口**）
+web_entry    = `python -m server.main --port 8000`   # FastAPI + uvicorn，默认 host 127.0.0.1 / port **8000**
+executor     = 上面那条命令**自己会拉起子进程**：`python -m manga_translator shared --host <h> --port <8000+1> --nonce <n>`
+             # `server/main.py:244 start_translator_client_proc()`，`__main__` 里 `args.start_instance = True` 是**强制的**
+             # ⇒ **端口成对出现：8000(web) + 8001(executor)**
+             # 🔴 **必须用 `python -m server.main` 起**：CLI 的 `--start-instance` 本身**默认 False**，
+             #    只有 `__main__`（main.py:394）会把它覆写成 True。若改用 `uvicorn server.main:app` 或
+             #    直接 import app，**执行器不会起来** —— 那条分支（main.py:289-292）只清空并重建
+             #    `upload-cache/`，然后等**外部执行器**来 `POST /register`。
+             #    ⇒ 症状会是"web 活着但翻译请求永远在等执行器"，且**不报错**。
+shared_entry = `python -m manga_translator shared --port 5003`   # 单跑执行器时的默认端口（README 的"5003"出处）
+ws_entry     = `python -m manga_translator ws --port 5003`       # WebSocket 模式
+local_entry  = `python -m manga_translator local -i <img>`       # **CLI 单图/批处理**，落 `result/final.png`
+             # ⇒ **S0 要的"跑一张真翻译"用这条最省事**（不起 web、不起执行器、没有 nonce）
+             # 参数（`manga_translator/args.py:117-130`，子命令名就是 `local` 而非 batch）：
+             #   `-i/--input`（必需，nargs='+'，**目录或文件**）· `-o/--dest` · `-f/--format`（choices=OUTPUT_FORMATS）
+             #   `--overwrite` · `--save-text` / `--load-text`（互斥）· `--skip-no-text` · `--config-file`
+             #   通用组：`--use-gpu` / `--use-gpu-limited`（**互斥**）· `--model-dir` · `--kernel-size` · `--ignore-errors`
+             # 🔴 **翻译器不在 CLI**：`--translator` / `target_lang` 属于 `TranslatorConfig`（config.py:219-222），
+             #    CLI **没有** `--translator`（server/args.py 也没有）⇒ 只能经 `--config-file <json>` 传。
+             #    默认值：`translator = sugoi`（离线日→英）· `target_lang = 'ENG'`。
+             #    `translators/__init__.py:66` 有 **`Translator.none`**（不翻译档，只走检测/擦除/上字）
+             #    ⇒ 可用它**先把"引擎能跑完流水线"与"翻译质量"分开验**（本项目"管路通≠功能通"的引擎侧对应物）。
+
+# 进程树深度（🔴 比计划假设的深：计划按"服务 → 引擎"两层写）
+#   box-service → server.main(uvicorn, 8000) → manga_translator shared(执行器, 8001) → [llama-server]
+#   ⚠️ `proc.terminate()` 只覆盖**一层**（`main.py:272 handle_exit_signals`），
+#     执行器再往下拉的东西（模型/LMM）不在它的信号范围内 ⇒ **孤儿回收风险比计划里写的高**，S2 重估。
+#   ⚠️ 它**不打印"就绪行"**（只先打 `Nonce: <hex>`，然后 uvicorn 的日志）
+#     ⇒ 计划里的"三重判定（进程存活 + 端口 + HTTP 应答）"是必需的，不是过度设计。
+
+# 鉴权：web 与执行器之间用 `--nonce`（`X-Nonce` 头）。默认自动生成 16 字节 hex；
+#       `MT_WEB_NONCE` 可覆盖。⇒ 本项目要自己掌握这个 nonce，不能让它随进程随机。
+# 关键端点（`server/main.py`）：
+#   POST /translate/image             ← **本项目适配层要用的那个**（返回结果图）
+#   POST /translate/image/stream      ← 1 字节状态 + 4 字节长度 的流式（status 0/1/2/3/4）
+#   POST /translate/with-form/image   ← multipart 变体（文件名/字段名按这个抄）
+#   POST /translate/json · /translate/bytes · /queue-size
+#   GET  /docs                        ← S1 的 OpenAPI 快照来源
+#   POST /register（internal-api，要 X-Nonce）· GET /results/list · DELETE /results/{folder}
+# 其余启动参数（`server/args.py`）：`--use-gpu` / `--use-gpu-limited` / `--models-ttl`（默认 **0 = 永不卸载**）
+#   / `--verbose` / `--pre-dict` / `--post-dict` / `--ignore-errors`
+
+## 9. G1 验收记录：第一张真译文（✅ 2026-10-05 通过）
+
+# 命令（`.tmp/engine-test/s0-fetch-and-run.sh translate`，CPU，无 --use-gpu）：
+#   llama-server -m models/sakura/sakura-1.5b-qwen2.5-v1.0-fp16.gguf --port 8080 -c 4096 -ngl 99
+#   cd src && PYTHONPATH=src SAKURA_API_BASE=http://127.0.0.1:8080/v1 SAKURA_VERSION=0.9 \
+#     venv/bin/python -m manga_translator local \
+#       -i <repo>/test-manga -o <eng>/out-first \
+#       --config-file <eng>/sakura-chs.config.json \
+#       --font-path src/fonts/msyh.ttc --overwrite
+#
+# --config-file 内容（🔴 `local` **没有** `--translator` CLI 参数，只能这样传）：
+#   {"translator":{"translator":"sakura","target_lang":"CHS"},
+#    "detector":{"detector":"default"},"inpainter":{"inpainter":"lama_large"},"ocr":{"ocr":"48px"}}
+#
+# 实测结果：
+#   产物        = runtimes/manga-translator/out-first/test_0.webp（1125×1600，322 KB）
+#   耗时        = **1.6 分钟**（CPU；含模型加载）
+#   流水线       = 检测(DefaultDetector 1536×2048) → OCR(Model48pxOCR，**21 个文本框**) →
+#                翻译(Sakura 0.9 → 简体中文) → 掩码细化 → 擦除(LamaLarge 1128×1600) → 上字 → 落盘
+#   像素取证     = 与原图逐像素比对：**4.94% 像素有实质差异**（最大通道差 255）⇒ 确实改图了，不是原图回写
+#   译文抽样     = いらっしゃい→"真让人不爽。" · これ全部をきみひとりが…？→"这些全部都是你一个人…？"
+#
+# ⚠️ 两个**已观察到、S1 必须处理**的行为（不是本轮的失败，但要记）：
+#   ① **行数不匹配 → 重试路径会打出 `Error code: 404 {'error':{'message':'File Not Found'}}`**。
+#      11 行原文 → 10 行译文，触发 `_check_translation_quality` 重译；重译那一次 404，然后**降级为逐行翻译**
+#      （`_translate_single_lines`）才成功。⇒ 404 的成因未定位；**逐行降级是它能出结果的原因**，
+#      接真引擎时这条路径会被频繁走到，S1 要单独盯（可能拉长耗时）。
+#   ② **1.5B 档的译文质量明显一般**（`いらっしゃい` 译成"真让人不爽"是错的；`野バト`(野鸽) 被译成"野兔"）。
+#      ⇒ 这是**产品选型问题**，不是管线问题：Tiny 档只能验"通"，若要"可用"得上 8B/14B 档（下载量与耗时都要重估）。
+
+## 6. Windows 10 移植（✅ 2026-10-07 全链路真机跑通）
+
+# 平台 = Windows 10 · i5-12400 · RTX 4060 Ti 8GB · 15.7GB RAM
+# Python = 3.11.17（python-build-standalone win-x64，非 §3 的 aarch64-apple-darwin）
+
+### 6.1 实装落点（与 §3 的 macOS 布局逐项对照）
+# 解释器    = runtimes/manga-translator/python-3.11/python.exe
+# venv      = runtimes/manga-translator/venv/        ← **Windows 布局**：venv/Scripts/python.exe
+# site-pkgs = venv/Lib/site-packages                 ← macOS 是 venv/lib/python3.11/site-packages
+# torch     = 2.14.1+cu126 · torchvision 0.29.1+cu126（CUDA 12.6；cuda.is_available()=True，device=RTX 4060 Ti）
+#             ↑ 与 §3 的 2.14.1 **同版本号**，只是换成 cu126 构建 ⇒ 后端差异只在构建，不在版本
+# numpy     = 1.26.4（上游钉死。torchvision 会先拉 2.4.6，装 requirements 时被降回 1.26.4）
+# 其余      = transformers 5.19.0 · onnxruntime 1.30.0 · accelerate 1.15.0 · pydantic 2.5.0
+#             fastapi 0.125.0（回溯落点，与 §3 一致）· rusty-manga-image-translator 0.12.1 · manga-ocr 0.1.16
+# llama     = bin/llama/llama-b11417/llama-server.exe（win-cuda-12.4 + cudart；条目见 models.manifest.json）
+# 新增脚本  = engine/scripts/setup-engine.mjs（下 Python 运行时 + 引擎源码）
+#             engine/scripts/install-engine-deps.mjs（装 venv 依赖，Windows 适配版，见 §6.3）
+
+### 6.2 🔴 Windows 侧必踩的三个坑（本轮实测，非推测）
+# ① **`vcvars64.bat` 在本环境不可用**：它靠 `reg.exe` 查注册表定位 Windows SDK，而本机 sandbox **拦截 reg.exe**
+#    ⇒ 直接 call 它会拿到一份**缺 ucrt/um 头目录的残缺 INCLUDE**（编译时找不到 `io.h` 之类）。
+#    处置：install-engine-deps.mjs **不用 vcvars**，改为**手动拼 INCLUDE/LIB/PATH**
+#    （MSVC include + SDK ucrt/shared/um/winrt/cppwinrt），并设 `DISTUTILS_USE_SDK=1` + `MSSdk=1`
+#    让 setuptools/distutils **跳过 vcvarsall**、直接吃现成环境。
+# ② **`rc.exe` 不在 MSVC 目录，在 Windows SDK 的 `bin/<ver>/x64`**。漏进 PATH 会在**链接**阶段炸：
+#    `LINK : fatal error LNK1158: 无法运行"rc.exe"` —— 报错发生在 link、离"PATH 少了个 SDK bin"很远。
+# ③ `npm run app` 另外还因缺 `app/src-tauri/icons/icon.ico` 编译失败（tauri-build 的 Windows 资源文件）；
+#    已补（从 icon.png 转 PNG-compressed ICO）并把 `icon.ico` 加进 tauri.conf.json 的 `bundle.icon`。
+# 本机 MSVC/SDK 路径 = C:\VS2022BT\VC\Tools\MSVC\14.44.35207
+#                    + C:\Program Files (x86)\Windows Kits\10\{Include,Lib,bin}\10.0.22621.0
+
+### 6.3 依赖安装：**必须拆两批**
+# pydensecrf 在 PyPI **没有任何 Windows wheel**，只能源码编译。而 pip 是"先全部收集、最后统一安装"的**事务**：
+# 只要 pydensecrf 编译失败，整批 100+ 依赖会**一起回滚** ⇒ 全白装。故拆两批：
+#   批 A：requirements.txt **剔掉 pydensecrf 行** → 纯 wheel，一把装完
+#   批 B：`pip install --no-build-isolation <pydensecrf zip>` → 走 MSVC 编译
+# 网络：github 直连本机常被代理拦（502）；pydensecrf 改为**先经镜像下 zip 到本地**再装
+#   （`ghfast.top` / `gh-proxy.com` 前缀实测可通 —— 与 §3 记的 `ghfast.top` 同源）。
+
+### 6.4 🔴 pydensecrf 的 master 是**移动靶** —— 上游已改版 API
+# 上游把旧的**模块级常量**迁进了枚举，而引擎源码用的是旧写法：
+#   旧（引擎 `mask_refinement/text_mask_utils.py:84-90`）：`dcrf.DIAG_KERNEL` / `dcrf.NO_NORMALIZATION`
+#   新（master 现在导出）：`dcrf.KernelType.DIAG_KERNEL` / `dcrf.NormalizationType.NO_NORMALIZATION`
+# 取证：`master.zip` 体积从 §3 那轮的 **2.2 MB** 变成现在的 **2.3 MB** ⇒ 内容确实变了（不是"我们装错了"）。
+# 症状（真机实测）：`AttributeError: module 'pydensecrf.densecrf' has no attribute 'DIAG_KERNEL'`，
+#   出现在**掩码细化**一步 —— 检测/OCR/Sakura 翻译**都已跑完**才炸，很容易误判成"翻译坏了"。
+# ✅ 处置：install-engine-deps.mjs 加**幂等兼容补丁**（写进 venv 的 `pydensecrf/__init__.py`），
+#   把枚举成员回填成模块级同名常量 ⇒ 新旧 API 都能用。
+# ⚠️ 未做、建议后续：`requirements.txt` 那行直链 master 应**钉到具体 commit/tag**，否则每次重装都可能再变。
+
+### 6.5 ✅ 端到端验证（S1 真引擎 · `node e2e/engine/s1-real-engine-check.mjs`）
+# 链路   = llama-server(Sakura 1.5B fp16) → server.main(uvicorn:8000) → 执行器(:8001) → **经真实适配层**送图
+# 三态   = stopped → prewarming(7.8s) → running(15.8s)
+# 结果   = ✅ 译文落盘（289756 B，**12.2 s**，GPU）；输入/输出同为 429×734；
+#          逐像素 **changedPct=3.61%** · maxChannelDiff=255 ⇒ 确实重绘了文字（不是原图回写）
+# 译文抽样 = 毎日新鮮な野ウサギをありがとうな→"每天都有新鲜的野兔哦。"
+#            これ全部をきみひとりが…？→"这些全部都是你一个人……？"
+# 测试图  = test-manga/test_0.webp（429×734，从 docs/refs/manga-ocr/01-full-page-ab.png 的**左面板**裁出）
+#           ⚠️ 刻意取**原始日文页**而非已翻译页：拿已翻译页当输入会让"改图率"失去意义。
+# ⚠️ 1.5B 档译文质量一般（`いらっしゃい`→"直烦人"）—— 与本文档上面记的"1.5B 质量明显一般"是同一件事：
+#    是**产品选型**问题，不是 Windows 移植问题。
+
+### 6.6 e2e 脚本的 Windows 硬编码（已修）
+# `e2e/engine/{s1-real-engine-check,e3-real-full-chain-check}.mjs` 曾写死：
+#   · VENV_PY  = `<RT>/venv/bin/python`      → 应为 venv/Scripts/python.exe
+#   · LLAMA_BIN = `<RT>/bin/llama/.../llama-server`（无 .exe）
+# ⇒ 均改为按 `process.platform` 分叉。
+

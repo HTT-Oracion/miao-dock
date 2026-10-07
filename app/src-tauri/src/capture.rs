@@ -15,7 +15,7 @@
 //! 另一个环境陷阱（吃过一次）：**显示器睡眠时 `-R` 直接失败**（`could not create image
 //! from display with rect`），而同期的 `-x`（全屏）会「成功」但截出一张**纯黑图** ——
 //! 后者是静默失败，四张全黑的「取证图」照样能进仓、没人看得出。所以这里做空屏检测，
-//! 并且调用方（`scripts/capture.mjs`）在拉起应用前先 `caffeinate` 把显示器顶住。
+//! 并且调用方（`e2e/capture.mjs`）在拉起应用前先 `caffeinate` 把显示器顶住。
 //!
 //! 第三个陷阱，同样是「图是真的、但内容不是它声称的那个」：**主题会串轮次**。
 //! 主题持久化在前端 `localStorage`，于是上一轮把深色存下来、这一轮 01–03 就跟着变深色，
@@ -57,27 +57,88 @@ const PROBE_THEME_JS: &str = "var __m=document.documentElement.dataset.theme||'?
 /// 回读完成后把标题还原，免得探针的字样留在窗口标题里影响后续截图
 const RESTORE_TITLE_JS: &str = "document.title='喵坞 MiaoDock';";
 
-const LIBRARY_NAV_JS: &str =
-    "var n=[].slice.call(document.querySelectorAll('.nav-item')).filter(function(b){return (b.textContent||'').indexOf('漫画库')>=0;})[0];if(n)n.click();";
+/// 点侧栏 / 视图 Tab / 设置小节里的某个可点项：**先轮询等它出现，再点**。
+///
+/// 🔴 这道「轮询」不是保险，是必需的。原先几处 JS 是"`querySelector` 一次，拿到就点"：
+/// 目标那一刻还没挂上 DOM 时取到 `null`、`click()` 静默落空 —— 截出来的还是上一屏，
+/// **而文件名却在说谎**（`04-settings-dark.png` 那张浅色图就是这么来的，见本文件头）。
+///
+/// 🔴 另一个坑是**选择器**本身：ver2.0 的 IA 改版把两处入口都换了样子 ——
+///    · 设置入口从"带文字的项"变成**纯图标**（C8b：`globalHasText=false`）⇒ 按文字找不到它；
+///    · 视图从侧栏项变成独立的 Tab 栏（`.viewtab`，不再是 `.nav-item`）。
+/// 两者叠加的后果是**整段取证 JS 静默失效**，而且失效得很像"截图权限坏了"：
+/// 五张图全是同一张、主题恒为 light。好在「取证图必须自证主题」那道闸把它整批拒收，
+/// 仓里没被污染 —— 这次才查得出是选择器陈旧，而不是屏幕锁了。
+/// 轮询上限（次 × 50ms = 8s）。**给足** —— 这是被实测打过的：
+///
+/// 原先是 40 次（= 2s）。在**冷启动**（vite 首次按需编译这个模块图）+ 服务刚起来那一轮里，
+/// 设置页可能 2s 内还没挂上 DOM ⇒ 轮询提前放弃 ⇒ 深色开关没点上 ⇒
+/// `04-settings-dark.png` 主题读回 `light` 被判 ✗，**整批不入库**。
+/// 那次失败是**好的失败**（闸门拦住了名不副实的图）；但取证随之变成看运气，所以要给足预算。
+/// 8s 只是一个上界：目标一出现就立刻停手，正常路径仍然是几十毫秒。
+const POLL_TRIES: u32 = 160;
+
+fn click_when_ready(sel: &str, text: Option<&str>) -> String {
+    let filter = match text {
+        Some(t) => format!(".filter(function(b){{return (b.textContent||'').indexOf('{t}')>=0;}})[0]"),
+        // 纯图标入口没有文字可匹配 —— 只能取第一个
+        None => "[0]".to_string(),
+    };
+    format!(
+        "(function(){{var n=0;var t=setInterval(function(){{n++;\
+         var el=Array.prototype.slice.call(document.querySelectorAll('{sel}')){filter};\
+         if(el){{clearInterval(t);el.click();return;}}if(n>={POLL_TRIES})clearInterval(t);}},50);}})()"
+    )
+}
 
 const COMPARE_JS: &str = "var c=document.querySelector('.grid-card');if(c)c.click();";
 
 /// 切到设置页并把深色打开。
 ///
-/// **不能「点一次就走」**：原先固定等 350ms 就 `querySelector('.switch')`，
-/// 若设置页那一刻还没挂上 DOM，取到 null、点击静默落空 —— 截出来的
-/// `04-settings-dark.png` 仍是浅色，**文件名却在说谎**。现在先轮询等 `.switch` 真的出现
-/// 再点，并且切完还要回读主题自证（见 `read_theme`）；只有 `is-on` 才停手，
+/// 切完要回读主题自证（见 `read_theme`）；只有 `is-on` 才停手，
 /// 因此重复调用是幂等的 —— 万一启动时本来就是深色，也不会被这次点击反而切回浅色。
-const TOGGLE_DARK_JS: &str = "(function(){\
-     var nav=Array.prototype.slice.call(document.querySelectorAll('.nav-item')).filter(function(b){return (b.textContent||'').indexOf('设置')>=0;})[0];\
-     if(nav)nav.click();\
-     var n=0;var t=setInterval(function(){\
-     n++;var s=document.querySelector('.switch');\
-     if(s){clearInterval(t);if(!s.classList.contains('is-on'))s.click();return;}\
-     if(n>=40)clearInterval(t);\
-     },50);\
-     })()";
+fn toggle_dark_js() -> String {
+    format!(
+        "{};(function(){{var n=0;var t=setInterval(function(){{n++;\
+         var s=document.querySelector('.switch');\
+         if(s){{clearInterval(t);if(!s.classList.contains('is-on'))s.click();return;}}\
+         if(n>={POLL_TRIES})clearInterval(t);}},50);}})()",
+        click_when_ready(".nav-item.is-global", None)
+    )
+}
+
+/// 切到设置页 → ②翻译服务组（S6 的唯一出口那一屏）。
+fn settings_engine_js() -> String {
+    format!(
+        "{};{}",
+        click_when_ready(".nav-item.is-global", None),
+        click_when_ready(".set-nav-item", Some("翻译服务"))
+    )
+}
+
+/// ②翻译服务 → **滚到底**（「模型管理」+「引擎诊断」两块在长页的最下面，默认不在视口里）。
+///
+/// 🔴 滚动容器是 **`.content`**，不是 `.settings-main`。DOM 是
+/// `.content > .settings > .settings-main`：`.content`（app.scss）才是
+/// `flex:1; min-height:0; overflow:auto` 的那个；`.settings` 只有
+/// `min-height:100%`、`.settings-main` 只有 `flex:1; min-width:0`，两者**都没有 overflow**。
+/// 早先写 `.settings-main` 时 `scrollHeight > clientHeight` 恒不成立 ⇒ 轮询一直空转到
+/// `POLL_TRIES` 上限、一次都没滚过，截出来的 06 与 05 逐字节相同（534224 B），
+/// 由"互不相同"校验拦下（这正是它存在的意义）。
+///
+/// 仍走"轮询等出现再动"：容器那一刻还没挂上时 `scrollTop = 1e6` 会**静默无效**。
+/// 轮询条件同时要求 `.set-diag` 已在 DOM 里（②翻译服务确实渲染完了），
+/// 否则 `.content` 从上一个视图起就是可滚的 ⇒ 会在切屏途中就把滚动用掉、白滚一次。
+fn settings_diag_js() -> String {
+    format!(
+        "{};(function(){{var n=0;var t=setInterval(function(){{n++;\
+         var d=document.querySelector('.set-diag');\
+         var m=document.querySelector('.content');\
+         if(d&&m&&m.scrollHeight>m.clientHeight){{clearInterval(t);m.scrollTop=m.scrollHeight;return;}}\
+         if(n>={POLL_TRIES})clearInterval(t);}},50);}})()",
+        settings_engine_js()
+    )
+}
 
 pub fn dir() -> Option<PathBuf> {
     std::env::var(CAPTURE_DIR_ENV).ok().filter(|s| !s.trim().is_empty()).map(PathBuf::from)
@@ -185,35 +246,57 @@ pub fn spawn(app: AppHandle) {
         let _ = std::fs::create_dir_all(&dir);
         std::thread::sleep(BOOT_WAIT);
 
-        // 先把主题钉回浅色再重载 —— 让这四张图与「上一轮存了什么主题」无关
+        // 先把主题钉回浅色再重载 —— 让这几张图与「上一轮存了什么主题」无关
         if let Some(w) = app.get_webview_window("main") {
             let _ = w.eval(FORCE_LIGHT_JS);
         }
         std::thread::sleep(RELOAD_WAIT);
 
         // 每步都带上**预期主题**：截完立刻回读自证，不符就判 ✗（整批不入库，见 capture.mjs）
-        let steps: [(&str, Option<&str>, u64, &str, &str); 4] = [
-            // 队列屏是启动默认屏，直接截
-            ("01-queue.png", None, 400, "任务队列", "light"),
+        let steps: [(&str, Option<String>, u64, &str, &str); 6] = [
+            // 🔴 默认视图是「投放」，不是队列 —— 直接截会得到投放页（上一版就这么静静错了）
+            (
+                "01-queue.png",
+                Some(click_when_ready(".viewtab", Some("队列"))),
+                400,
+                "任务队列",
+                "light",
+            ),
             (
                 "02-library.png",
-                Some(LIBRARY_NAV_JS),
+                Some(click_when_ready(".viewtab", Some("漫画库"))),
                 1500,
                 "本地漫画库（真实数据：上一轮 D 组端到端跑出来的落盘产物）",
                 "light",
             ),
             (
                 "03-compare.png",
-                Some(COMPARE_JS),
+                Some(COMPARE_JS.to_string()),
                 2200,
                 "原译对照（等图片解码完再截）",
                 "light",
             ),
             (
                 "04-settings-dark.png",
-                Some(TOGGLE_DARK_JS),
-                1600,
+                Some(toggle_dark_js()),
+                2000,
                 "设置页（深色模式）",
+                "dark",
+            ),
+            (
+                // 跟在 04 之后 ⇒ 主题已是深色（`toggle_dark_js` 幂等）。等待要更长：
+                // 这一屏挂载后还要 `/engine/options` + `/engine/status` 两个请求回来才有内容。
+                "05-settings-engine.png",
+                Some(settings_engine_js()),
+                3600,
+                "设置 ②翻译服务（S6：服务与配对 / 推理引擎 / 模型与诊断 / 引擎诊断）",
+                "dark",
+            ),
+            (
+                "06-settings-diag.png",
+                Some(settings_diag_js()),
+                1500,
+                "设置 ②翻译服务 · 滚到底（「模型管理」与「引擎诊断」面板：进程状态 / 生效配置 / 模型状态 / 阶段日志 / 三个操作）",
                 "dark",
             ),
         ];
@@ -221,7 +304,7 @@ pub fn spawn(app: AppHandle) {
         let mut lines: Vec<String> = Vec::new();
         for (file, js, wait_ms, label, want_theme) in steps {
             if let Some(js) = js {
-                drive(&app, js);
+                drive(&app, &js);
             }
             std::thread::sleep(Duration::from_millis(wait_ms));
             let out = dir.join(file);

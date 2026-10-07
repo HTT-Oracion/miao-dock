@@ -10,7 +10,21 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 // ------------------------------------------------------------------ 服务状态
 
-export type ServiceState = 'stopped' | 'starting' | 'running' | 'error';
+/**
+ * 服务五态（《02》§2.1）。
+ *
+ * ⚠️ `stopping` 是 S2 加的第五态（Rust `ServiceState::Stopping`），**TS 侧一度漏同步** ——
+ * 症状是「正在停止」期间前端把它当未知值：`stateView()` 取到 `undefined` 会直接崩，
+ * 而崩之前的表现是"状态点不显示"。所以这里必须与 `service.rs` 逐值对齐。
+ */
+export type ServiceState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error';
+
+/** 子进程一览（Rust 的 `ChildView`）：`name` ∈ `service` / `engine` / `llm` */
+export interface ChildStatus {
+  name: string;
+  pid: number | null;
+  alive: boolean;
+}
 
 export interface ServiceStatus {
   state: ServiceState;
@@ -20,6 +34,23 @@ export interface ServiceStatus {
   root_dir: string | null;
   /** sidecar 引擎实际端口（对用户不可见，仅诊断用） */
   sidecar_port: number | null;
+  /** ③ LLM 的实际端口（S2 新增） */
+  llm_port: number | null;
+  /** `real` | `mock` —— 必须显式暴露：否则"以为在跑真引擎、其实跑的替身"最难查 */
+  mode: string;
+  /**
+   * 启动期细分阶段 `L1` / `L2` / `L3`（《02》§4）。
+   *
+   * 不在启动期时为 `null`。**这是「准备中」界面的唯一事实源** —— 早先的写法是拿
+   * `sidecar_port` 是否存在去猜"到第几段了"，那既不知道 L3 只做到一半，也会在
+   * 端口先于阶段就绪时把 L1 显示成 L2。
+   */
+  phase: string | null;
+  /** ② 或 ③ 挂了但 ① 还在 ⇒ degraded（任务会失败，服务本身仍可应答） */
+  degraded: boolean;
+  children: ChildStatus[];
+  /** 状态机实际走过的轨迹（自检断言用） */
+  transitions: string[];
   log: string[];
   last_error: string | null;
 }
@@ -48,6 +79,12 @@ export const serviceRestart = () => invoke<ServiceStatus>('service_restart');
 export const quitApp = () => invoke<void>('quit_app');
 export const hideWindow = () => invoke<void>('hide_window');
 export const showWindow = () => invoke<void>('show_window');
+/**
+ * 把主题同步给原生窗口（标题栏 / 红绿灯按钮配色）。
+ * `mode` 为 `'light' | 'dark' | null`，null 表示跟随系统。
+ */
+export const setWindowTheme = (mode: 'light' | 'dark' | null) =>
+  invoke<void>('set_theme', { mode });
 
 // ------------------------------------------------------------------ 契约端点代理
 

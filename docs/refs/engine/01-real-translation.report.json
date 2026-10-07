@@ -1,0 +1,81 @@
+{
+  "startedAt": "2026-10-05T17:19:08.390Z",
+  "ports": {
+    "engine": 8000,
+    "executor": 8001,
+    "llama": 8080
+  },
+  "probeInitial": {
+    "state": "stopped",
+    "port": null,
+    "engine": null,
+    "engineVersion": "441d07c",
+    "tier": null,
+    "accel": null,
+    "warmed": null,
+    "llm": null,
+    "model": null
+  },
+  "llmReady": true,
+  "launch": {
+    "cmd": [
+      "/Users/doro/code/self/forFun/miao-dock/runtimes/manga-translator/venv/bin/python",
+      "main.py",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8000",
+      "--use-gpu",
+      "--nonce",
+      "None"
+    ],
+    "cwd": "/Users/doro/code/self/forFun/miao-dock/runtimes/manga-translator/src/server",
+    "executorPort": 8001
+  },
+  "probeTimeline": [
+    {
+      "atMs": 0,
+      "state": "stopped",
+      "port": null,
+      "executorUp": false
+    },
+    {
+      "atMs": 4221,
+      "state": "prewarming",
+      "port": 8000,
+      "executorUp": false
+    },
+    {
+      "atMs": 7849,
+      "state": "running",
+      "port": 8000,
+      "executorUp": true
+    }
+  ],
+  "translate": {
+    "ok": true,
+    "ext": "png",
+    "mime": "image/png",
+    "bytes": 1371745,
+    "elapsedMs": 12633,
+    "outPath": "/Users/doro/code/self/forFun/miao-dock/tmp-engine-test/s1-real/server-mode.png",
+    "sha256": "18f8a240bf0bd617931cd28da9ac5f58e6736e6604aabedc67e3ea8b6e3aeabc"
+  },
+  "engineLogTail": "1.1\" 200 OK\nINFO:     127.0.0.1:56355 - \"POST /execute/translate HTTP/1.1\" 200 OK\n[shared] Loading models\n[SakuraTranslator] 您当前选择了Sakura 0.9版本，暂不支持术语表\n[shared] Running text detection\n[DefaultDetector] Detection resolution: 1536x2048\n[shared] Running ocr\n[Model48pxOCR] prob: 0.9972792863845825 毎日 fg: (7, 6, 3) bg: (7, 6, 3)\n[Model48pxOCR] prob: 0.9998722076416016 きみ fg: (4, 8, 3) bg: (4, 8, 3)\n[Model48pxOCR] prob: 0.8201560974121094 …あ fg: (11, 13, 8) bg: (11, 13, 8)\n[Model48pxOCR] prob: 0.9978581070899963 ないか！ fg: (1, 2, 0) bg: (1, 2, 0)\n[Model48pxOCR] prob: 0.999722421169281 野バトも fg: (3, 5, 1) bg: (3, 5, 1)\n[Model48pxOCR] prob: 0.32696571946144104 はい― fg: (3, 6, 2) bg: (3, 6, 2)\n[Model48pxOCR] prob: 0.999863862991333 こっちは fg: (4, 4, 1) bg: (4, 4, 1)\n[Model48pxOCR] prob: 0.9999215006828308 すごいじゃ fg: (0, 3, 0) bg: (0, 3, 0)\n[Model48pxOCR] prob: 0.9999676942825317 なります fg: (6, 6, 2) bg: (6, 6, 2)\n[Model48pxOCR] prob: 0.9999813437461853 これ全部を fg: (4, 4, 1) bg: (4, 4, 1)\n[Model48pxOCR] prob: 0.9999175071716309 野ネズミに fg: (4, 5, 2) bg: (4, 5, 2)\n[Model48pxOCR] prob: 0.48379769921302795 あの――っ fg: (2, 5, 1) bg: (2, 5, 1)\n[Model48pxOCR] prob: 0.999915599822998 昨日のぶんは fg: (3, 4, 2) bg: (3, 4, 2)\n[Model48pxOCR] prob: 0.9967673420906067 いらっしゃい fg: (2, 4, 1) bg: (2, 4, 1)\n[Model48pxOCR] prob: 0.890537440776825 ひとりが…？ fg: (3, 3, 1) bg: (3, 3, 1)\n[Model48pxOCR] prob: 0.5707100033760071 待ってたよ！ fg: (0, 1, 0) bg: (0, 1, 0)\n[Model48pxOCR] prob: 0.995812714099884 獲れたのか？ fg: (3, 4, 1) bg: (3, 4, 1)\n[Model48pxOCR] prob: 0.9998876452445984 ありがとうな fg: (3, 4, 0) bg: (3, 4, 0)\n[Model48pxOCR] prob: 0.9996923804283142 今日も大量だな fg: (3, 4, 1) bg: (3, 4, 1)\n[Model48pxOCR] prob: 0.9992430806159973 新鮮な野ウサギを fg: (3, 3, 2) bg: (3, 3, 2)\n[Model48pxOCR] prob: 0.9997512698173523 すぐに売り切れてな fg: (4, 5, 2) bg: (4, 5, 2)\n[shared] No pre-translation replacements made.\n[shared] Running text translation\n[SakuraTranslator] Translating into Chinese (Simplified)\n[SakuraTranslator] Temperature: 0.3, TopP: 0.3\n[SakuraTranslator] 原文： ['いらっしゃい', '待ってたよ！昨日のぶんはすぐに売り切れてな', '今日も大量だな', '毎日新鮮な野ウサギをありがとうな', 'こっちは野ネズミになります', '野バトも獲れたのか？', 'はい―', 'これ全部をきみひとりが…？', '…あ', 'あの――っ', 'すごいじゃないか！']\n[SakuraTranslator] 您当前选择了Sakura 0.9版本，暂不支持术语表\n[SakuraTranslator] -- Sakura Prompt --\nSystem:\n你是一个轻小说翻译模型，可以流畅通顺地以日本轻小说的风格将日文翻译成简体中文，并联系上下文正确使用人称代词，不擅自添加原文中没有的代词。\nUser:\n将下面的日文文本翻译成中文：\nいらっしゃい\n待ってたよ！昨日のぶんはすぐに売り切れてな\n今日も大量だな\n毎日新鮮な野ウサギをありがとうな\nこっちは野ネズミになります\n野バトも獲れたのか？\nはい―\nこれ全部をきみひとりが…？\n…あ\nあの――っ\nすごいじゃないか！\n\n\n[SakuraTranslator] 预处理后的查询文本：['「いらつしやい」', '「待つてたよ！昨日のぶんはすぐに売り切れてな」', '「今日も大量だな」', '「毎日新鮮な野ウサギをありがとうな」', '「こつちは野ネズミになります」', '「野バトも獲れたのか？」', '「はい―」', '「これ全部をきみひとりが…？」', '「…あ」', '「あの――つ」', '「すごいじやないか！」']\n[SakuraTranslator] -- Sakura Response --\n「真让人不爽。」\n「我等你很久了！昨天的份马上就卖完了。」\n「今天也卖了很多呢。」\n「谢谢你每天提供新鲜的野兔。」\n「野鼠也抓到了哦。」\n「野兔也抓到了吗？」\n「是的——」\n「这些全部都是你一个人…？」\n「……啊。」\n「那个——你。」\n「你真厉害！」\n\n\n[SakuraTranslator] 0: いらっしゃい => 真让人不爽。\n[SakuraTranslator] 1: 待ってたよ！昨日のぶんはすぐに売り切れてな => 我等你很久了！昨天的份马上就卖完了。\n[SakuraTranslator] 2: 今日も大量だな => 今天也卖了很多呢。\n[SakuraTranslator] 3: 毎日新鮮な野ウサギをありがとうな => 谢谢你每天提供新鲜的野兔。\n[SakuraTranslator] 4: こっちは野ネズミになります => 野鼠也抓到了哦。\n[SakuraTranslator] 5: 野バトも獲れたのか？ => 野兔也抓到了吗？\n[SakuraTranslator] 6: はい― => 是的——\n[SakuraTranslator] 7: これ全部をきみひとりが…？ => 这些全部都是你一个人…？\n[SakuraTranslator] 8: …あ => ……啊。\n[SakuraTranslator] 9: あの――っ => 那个——你。\n[SakuraTranslator] 10: すごいじゃないか！ => 你真厉害！\n[shared] No post-translation replacements made.\n[shared] Starting post-translation check...\n[shared] Starting page-level target language check with 11 regions...\n[shared] Page-level target language ratio check passed\n[shared] All translation regions passed post-translation check.\n[shared] Running mask refinement\n\r[mask]:   0%|          | 0/21 [00:00<?, ?it/s]\r[mask]: 100%|██████████| 21/21 [00:00<00:00, 456.84it/s]\n[LamaLargeInpainter] Inpainting resolution: 1128x1600\n[shared] Running rendering\n\r[render]:   0%|          | 0/11 [00:00<?, ?it/s]\r[render]:  55%|█████▍    | 6/11 [00:00<00:00, 59.51it/s]\r[render]: 100%|██████████| 11/11 [00:00<00:00, 92.71it/s]\n",
+  "llamaLogTail": "server: model loaded\n0.00.475.793 I srv  llama_server: listening on http://127.0.0.1:8080\n0.00.475.793 W srv  llama_server: notice: server default port will be changed to :9931 in a future release (ref: https://github.com/ggml-org/llama.cpp/pull/26508)\n0.13.320.292 I slot get_availabl: id  3 | task -1 | selected slot by LRU, t_last = -1\n0.13.320.342 I slot launch_slot_: id  3 | task 0 | processing task, is_child = 0\n0.16.783.298 I slot print_timing: id  3 | task 0 | prompt eval time =     180.84 ms /   176 tokens (    1.03 ms per token,   973.26 tokens per second)\n0.16.783.301 I slot print_timing: id  3 | task 0 |        eval time =    3281.99 ms /    97 tokens (   34.19 ms per token,    29.25 tokens per second)\n0.16.783.301 I slot print_timing: id  3 | task 0 |       total time =    3462.82 ms /   273 tokens\n0.16.783.302 I slot print_timing: id  3 | task 0 |    graphs reused =         95\n0.16.783.612 I slot      release: id  3 | task 0 | stop processing: n_tokens = 272, truncated = 0\n",
+  "finishedAt": "2026-10-05T17:19:29.386Z",
+  "compare": {
+    "inputSize": [
+      1125,
+      1600
+    ],
+    "outputSize": [
+      1125,
+      1600
+    ],
+    "changedPct": 2.98,
+    "maxChannelDiff": 255,
+    "vsLocalModeChangedPct": 4.31,
+    "vsLocalModeMaxDiff": 255
+  }
+}

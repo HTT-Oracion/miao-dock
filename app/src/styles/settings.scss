@@ -1,0 +1,1038 @@
+/* ================================================================ 设置页 */
+
+/*
+ * 设置页两栏壳（《09》§4.1）。宽度与 sticky 偏移由组件从 `SETTINGS` 常量以
+ * 内联样式注入，这里只给不依赖常量的部分 —— 单一事实源在 tokens.ts。
+ *
+ * 横向 flex + `align-items: flex-start`：右栏内容通常比视口高，左栏若stretch 会
+ * 跟着长高，sticky 就失去意义（要相对自身盒子滚动才生效）。
+ */
+.settings {
+  display: flex;
+  align-items: flex-start;
+  gap: 26px;
+  min-height: 100%;
+}
+
+/* 左栏：分组导航。`flex:0 0 180px` 与 `position:sticky; top:26px` 由组件内联注入 */
+.settings-nav {
+  position: sticky;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 180px;
+}
+
+/* 分组项：18px 图标 + 名称 + 项数。padding 9/12 与 gap 2 由组件内联注入 */
+.set-nav-item {
+  display: flex;
+  align-items: center;
+  border-radius: var(--md-radius-sm);
+  background: transparent;
+  font-size: 12.5px;
+  color: var(--md-ink-2);
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+.set-nav-item:hover {
+  background: var(--md-surface-2);
+}
+.set-nav-item.is-active {
+  background: var(--md-pink-soft);
+  color: var(--md-ink);
+  font-weight: 500;
+}
+.set-nav-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+.set-nav-icon svg {
+  display: block;
+}
+.set-nav-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/*
+ * 项数：写出来是刻意的（见 SettingsScreen 头部注释）。
+ * 用 tabular 数字免得 5 个数宽度不一，读起来像没对齐。
+ */
+.set-nav-count {
+  flex: 0 0 auto;
+  font-family: var(--md-font-numeric);
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+.set-nav-item.is-active .set-nav-count {
+  color: var(--md-pink);
+}
+
+/* 右栏：`min-width:0` 必写 —— 落盘根目录 / 令牌都是长路径，
+   缺了它这一列会把 flex 容器撑破，整页出现横向滚动 */
+.settings-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-head {
+  margin-bottom: 20px;
+}
+.settings-title {
+  font-family: var(--md-font-display);
+  font-weight: 700;
+  line-height: 1.3;
+}
+.settings-blurb {
+  margin-top: 4px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--md-muted);
+}
+
+/*
+ * 组级说明（catalog 的 `note` / `noteSummary`）。
+ *
+ * 默认是**折叠态**：一行摘要 + 「为什么 ?」。摘要是 `note` 的抽句，全文一字不删地
+ * 留在展开态里 —— 收起的不是信息，是"6 行背景论证常年占着首屏"这件事。
+ *
+ * 折叠与否由 catalog 给不给 `noteSummary` 决定（组件里不按字符数猜阈值）：
+ * 没给就是不折叠，此时 `.set-note-row` 不存在、规则也退化成"铺一段文字"。
+ */
+.set-note {
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--md-ink-2);
+  padding: 9px 11px;
+  border-radius: var(--md-radius-sm);
+  border: 1px solid var(--md-line-soft);
+  background: var(--md-surface);
+}
+
+/* 折叠/展开两种形态共用的那一行：摘要（或全文）在左，「为什么 ?」在最右 */
+.set-note-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* 展开态要读长文 ⇒ 顶部对齐，别让按钮跟着基线漂到中间 */
+.set-note.is-open .set-note-row {
+  align-items: flex-start;
+}
+
+/*
+ * 摘要：**单行**（超出省略）。多行摘要会把折叠的意义抹掉 —— 那说明该往 catalog 里
+ * 再抽掉一句，而不是让 CSS 多放几行。悬停有 `title` 兜底可读全文。
+ */
+.set-note-sum {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--md-ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 展开态：换回正常换行，行高抬到 1.75（长文按 1.6 排会挤） */
+.set-note-sum.is-full {
+  white-space: normal;
+  line-height: 1.75;
+}
+
+/* 「为什么 ?」/「收起」—— 一枚小药丸按钮，不抢摘要的宽度 */
+.set-note-more {
+  flex: 0 0 auto;
+  font-family: var(--md-font-body);
+  font-size: 10.5px;
+  color: var(--md-muted);
+  border: 1px solid var(--md-line);
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: var(--md-surface-2);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.set-note-more:hover {
+  background: var(--md-surface);
+  color: var(--md-ink-2);
+}
+
+.set-group {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 小节标题 10.5/700/uppercase/.05em（大小与字距由组件按 SETTINGS 注入）。
+   组内分层的唯一手段（C11 判据），不可省 */
+.set-subtitle {
+  font-family: var(--md-font-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--md-muted);
+  margin-bottom: 2px;
+}
+
+/*
+ * 行：`min-height:50 / padding:10 0` 由组件按 SETTINGS 注入。
+ *
+ * 分隔线只画**顶**线，且排除"小节标题后的第一行"与"组内第一行" ——
+ * 靠相邻选择器而不是给每行画上下边框，于是小节之间天然断开，
+ * 不必再回头抹掉最后一行的底线（那种写法在加小节时必漏）。
+ */
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-top: 1px solid var(--md-line-soft);
+}
+.set-group > .set-row:first-child,
+.set-group > .set-subtitle + .set-row {
+  border-top: 0;
+}
+
+.set-row-label {
+  flex: 1;
+  min-width: 0;
+}
+.set-row-title {
+  font-size: 12.5px;
+  color: var(--md-ink);
+  /*
+   * 标题行做成一列 flex：为了把「默认：X」这枚小字**挂在同一行**的右端。
+   * `baseline` 而非 `center` —— 两者字号不同（12.5 / 11），居中对齐会让小字
+   * 看起来比标题高一点点；`wrap` 兜住窄窗：实在放不下时小字落到第二行，
+   * 总比被压成省略号强。
+   */
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.set-row-name {
+  /* 标题本身可被压缩、小字不压 —— 长标题先让位，别把「默认：」挤成「默…」 */
+  min-width: 0;
+}
+/*
+ * 出厂默认值（catalog 的 `def`）。刻意比 `why` 还浅一档、且不加背景 ——
+ * 它是一条**参考信息**，不是状态、更不是控件；加个底色就会读成一枚可点的标签。
+ */
+.set-row-def {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--md-muted);
+  white-space: nowrap;
+}
+/* 未实现项：标题降权但不加删除线 —— 它是计划中的项，不是被废弃的项 */
+.set-row.is-pending .set-row-title {
+  color: var(--md-muted);
+}
+.set-row-why {
+  margin-top: 3px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--md-muted);
+}
+
+/*
+ * 行内说明**只占一行**（`Row` 与 `PendingRow` 都挂这个修饰符）。
+ *
+ * 为什么：7 项的 `why` 各 2 行左右，把行高从冻结的 50 顶到 70~80 ——
+ * 而这两行里真正改变用户动作的只有前半句（"改它要重启引擎才生效"），
+ * 后半句是设计规则的自述。截成一行、`title` 悬停可读全文，原文完整保留在组抽屉里。
+ *
+ * ⚠️ 用 `nowrap + ellipsis` 而不是 `-webkit-line-clamp`：前者**必然**是一行，
+ * 后者在容器够宽时仍可能放两行，那就又回到"有的行 50、有的行 76"的老问题。
+ */
+.set-row-why.is-one {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.set-row-ctl {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ================================================================ 音乐缓存（四格块） */
+
+/*
+ * 「音乐缓存」项是**通栏四格**，不是标准两栏行（catalog 里 `layout: 'block'`）。
+ *
+ * 两列各自上下两行：
+ *   左列 = 文案「音乐缓存」/ 缓存目录绝对路径
+ *   右列 = 当前总大小 / 打开目录 + 清除缓存
+ *
+ * 用 grid 而不是嵌套两行 flex：四格的**行高天然对齐**（grid 的两行共用行轨道），
+ * 嵌套 flex 各算各的，左列路径长一行就会把右列的按钮顶歪。
+ * 列宽 `1fr auto`：左列吃掉剩余宽度（长路径靠 ellipsis 截断），右列按内容宽度，
+ * 于是"总量 / 按钮"永远贴右，不会因为路径长短而漂移。
+ *
+ * 类名用 `set-cache-*` 前缀：本分片禁 `.music-`/`.di-`/`.qt-`/`.lib-`/`.viewtab`
+ * （别的模块的强专属前缀），而这一项属于设置页，`set-` 才是它的归属前缀。
+ */
+.set-cache {
+  border-top: 1px solid var(--md-line-soft);
+  padding: 10px 0;
+}
+.set-group > .set-cache:first-child {
+  border-top: 0;
+}
+
+.set-cache-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 14px;
+}
+
+/* 左上：标题。字号与 `.set-row-title` 对齐，这一项看起来仍是"设置页的一行" */
+.set-cache-name {
+  font-size: 12.5px;
+  color: var(--md-ink);
+}
+
+/*
+ * 左下：缓存目录绝对路径。
+ *
+ * 颜色刻意比左上标题**浅一档**（`--md-muted`）以示层级：两者是"这项叫什么"与
+ * "它的值"，同色会被读成两行并列的标题。`min-width:0` 必写 —— 它在 grid 的
+ * `1fr` 列里，不加会被长路径顶破容器（路径里带 bundle id，很长）。
+ */
+.set-cache-path {
+  min-width: 0;
+  font-family: var(--md-font-numeric);
+  font-size: 10.5px;
+  color: var(--md-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 右上：总大小。`--md-font-numeric` 是本仓唯一的数字字体（不是 `--font-num`） */
+.set-cache-total {
+  font-family: var(--md-font-numeric);
+  font-size: 12.5px;
+  color: var(--md-ink);
+  text-align: right;
+}
+
+/* 右下：两个按钮 */
+.set-cache-acts {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* 下拉的定位上下文：absolute 相对它定位，而不是相对整页 */
+.set-cache-menu-wrap {
+  position: relative;
+}
+
+/*
+ * 清除范围下拉。
+ *
+ * 绝对定位而非 `details`：要能被 Esc 与「点外部收起」统一管起来，
+ * 而原生 `details` 只能靠再次点击按钮收起，那会让「点按钮开 → 点同一个按钮关」
+ * 与外部点击两套逻辑互相抢。
+ * `z-index` 高于普通内容但低于 `.modal-mask`(40)：二次确认是整屏遮罩，
+ * 菜单不该浮在它上面。
+ */
+.set-cache-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  min-width: 190px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-sm);
+  box-shadow: 0 10px 28px rgba(20, 15, 41, 0.18);
+}
+
+.set-cache-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--md-radius-sm);
+  background: transparent;
+  font-size: 12px;
+  color: var(--md-ink);
+  text-align: left;
+  transition: background 0.15s;
+}
+.set-cache-item:hover:not(:disabled) {
+  background: var(--md-surface-2);
+}
+/* 「全部清除」与下面四项是两种语义：前者是总闸，后者是单项 */
+.set-cache-item.is-all {
+  color: var(--md-error);
+  font-weight: 500;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--md-line-soft);
+  padding-bottom: 7px;
+  border-radius: 0;
+}
+
+/*
+ * 某平台 0 缓存 ⇒ 该项置灰不可点。
+ *
+ * 刻意用 `disabled`（连同上面的 `:hover:not(:disabled)` 一并不给 hover 反馈）：
+ * 没有可删的东西时给一个能点的项，用户点下去"什么都没发生"，
+ * 只会以为功能坏了。灰着 + 不可点才是如实的状态。
+ */
+.set-cache-item:disabled {
+  color: var(--md-muted);
+  cursor: default;
+}
+
+.set-cache-item-size {
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  color: var(--md-muted);
+}
+
+/* ================================================================ ② 翻译服务：推理引擎 / 模型与诊断 */
+
+/*
+ * 「不推荐」档位的**强警告**通栏条（《02》§5：Small 保留但标注不推荐，选中时强警告）。
+ *
+ * 用 `--md-warning` 而不是 `--md-error`：这一档**能跑**，只是吃内存 ——
+ * 画成红色错误会让人以为"选了就坏"，于是去点别的档位，而正确的动作其实是
+ * "知道代价之后自己决定"。用通栏条而不是挤进右列：右列是 `flex:0 0 auto` 的窄列，
+ * 一句带数字的警告塞进去会把同一个下拉挤歪（同 `.set-cache` 脱离 `Row` 的理由）。
+ */
+.set-warn {
+  font-size: 11.5px;
+  line-height: 1.7;
+  margin-bottom: 10px;
+  padding: 9px 11px;
+  border-radius: var(--md-radius-sm);
+  border: 1px solid var(--md-warning);
+  background: var(--md-surface);
+  color: var(--md-ink-2);
+}
+
+/*
+ * 「改完要重启引擎」的提示条（《09》§4.3 末句）。
+ *
+ * 常态是**中性**的：它在陈述一类键的性质，用户动手前就该知道，不是出事了。
+ * `is-pending` 才转 warning —— 那时含义变了，是"你已经存了，但引擎还在按旧值跑，
+ * 现在就得重启，否则刚才那次保存白改"。两者共用一条规则、只换颜色，
+ * 是为了让"同一句话的两种语气"在视觉上只差一个信号，而不是两条不相干的条。
+ */
+.set-hint {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-radius: var(--md-radius-sm);
+  border: 1px solid var(--md-line-soft);
+  background: var(--md-surface-2);
+  color: var(--md-muted);
+  font-size: 10.5px;
+  line-height: 1.7;
+}
+.set-hint b {
+  color: var(--md-ink-2);
+  font-weight: 600;
+}
+.set-hint.is-pending {
+  border-color: var(--md-warning);
+  background: var(--md-surface);
+  color: var(--md-ink-2);
+}
+.set-hint.is-pending b {
+  color: var(--md-warning);
+}
+
+/*
+ * 「模型管理」通栏块（catalog 里 `layout: 'block'`）。
+ *
+ * 与 `.set-cache` 用同一条骨架（顶线 + 上下 10px），于是"通栏项"在设置页里
+ * 看起来始终是同一类东西。这里不加底色卡片 —— 一屏里出现两个嵌套卡片
+ * （「模型管理」+「引擎诊断」）会把分组的层数读乱。
+ */
+.set-manage {
+  border-top: 1px solid var(--md-line-soft);
+  padding: 10px 0;
+}
+.set-manage-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.set-manage-label {
+  flex: 1;
+  min-width: 0;
+}
+/* 字号与 `.set-row-title` 对齐：这一项看起来仍是"设置页的一行"，只是宽了 */
+.set-manage-name {
+  font-size: 12.5px;
+  color: var(--md-ink);
+}
+.set-manage-why {
+  margin-top: 3px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--md-muted);
+}
+.set-manage-acts {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* 校验结论 / 「尚未校验」提示。`is-bad` 表示"发现不符"，不是"操作失败" */
+.set-manage-state {
+  margin-top: 9px;
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--md-muted);
+}
+.set-manage-state.is-bad {
+  color: var(--md-error);
+}
+/*
+ * 不符 / 缺失清单。限高 160 + 自身滚动：一份几十行的清单会把这一项撑成一整屏，
+ * 把下面的「引擎诊断」挤出视口 —— 而诊断面板恰恰是出问题时最该被看见的东西。
+ */
+.set-manage-list {
+  margin-top: 7px;
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  border-radius: var(--md-radius-xs);
+  border: 1px solid var(--md-line-soft);
+  background: var(--md-surface-2);
+}
+.set-manage-list-line {
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+  line-height: 1.75;
+  color: var(--md-muted);
+  word-break: break-all;
+}
+
+/*
+ * 「引擎诊断»面板（《09》§6.2）。
+ *
+ * ⚠️ 内部小标题用 `.set-diag-h`，**不能**用 `.set-subtitle` —— 后者是规格自检 C11
+ * 数「② 这一组有几个小节」的判据（恰 3 个）。面板里再有 5 个 `.set-subtitle`，
+ * C11 会变红，而红的原因不再是它要守的东西，那条断言也就废了。
+ */
+.set-diag {
+  border-top: 1px solid var(--md-line-soft);
+  padding: 10px 0;
+}
+.set-diag-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.set-diag-name {
+  font-size: 12.5px;
+  color: var(--md-ink);
+}
+.set-diag-why {
+  margin-top: 3px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--md-muted);
+}
+.set-diag-acts {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/*
+ * 折叠态的**摘要行** —— 三枚进程 chip（①②③）。
+ *
+ * 它承担的事：不点开就回答「是没起来 / 在准备 / 还是在跑但没预热」。
+ * 用了 `.set-state.is-chip` 与配对行**同一枚语汇**（同高同圆角）—— 同一页里
+ * "一个进程的状态"只该有一种长相，否则用户会以为这是两回事。
+ * `flex-wrap` 是必须的：窄窗下三枚 chip 并排会溢出，换行比截断好。
+ */
+.set-diag-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* 「展开 ▾ / 收起 ꜛ」—— 与 `.set-note-more`（组说明抽屉）同一枚药丸语汇 */
+.set-diag-fold {
+  font-family: var(--md-font-body);
+  font-size: 10.5px;
+  color: var(--md-muted);
+  border: 1px solid var(--md-line);
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: var(--md-surface-2);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.set-diag-fold:hover {
+  background: var(--md-surface);
+  color: var(--md-ink-2);
+}
+.set-diag-note {
+  margin-top: 7px;
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--md-muted);
+}
+.set-diag-note code {
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+}
+/* 五个区块之间用一条细线分开：区块数是规格钉死的 5，视觉上就该数得出来 */
+.set-diag-sec {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--md-line-soft);
+}
+/* 面板内小标题：11/600/ink-2 —— 比 `.set-subtitle` 弱一档（那是设置项层级），
+   又比正文强一档，读得出"这是一个区块的名字" */
+.set-diag-h {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--md-ink-2);
+}
+/* 键值对换行排：`flex-wrap` 是因为引擎上报的键会随版本增减，横排写死列数会挤爆 */
+.set-diag-kv {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 8px;
+}
+.set-diag-kv-item {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+.set-diag-k {
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+.set-diag-v {
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  color: var(--md-ink);
+}
+/* 进程状态三行：名称 / 状态 / 端口 / pid 四列对齐，扫一眼就能看出是哪一环不在 */
+.set-diag-proc {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 7px;
+  font-size: 11px;
+}
+.set-diag-proc-name {
+  flex: 0 0 96px;
+  color: var(--md-ink-2);
+}
+.set-diag-proc-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 92px;
+  color: var(--md-ink);
+}
+.set-diag-proc-num {
+  font-family: var(--md-font-numeric);
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+/* 版本 / 模型名推到最右：它是补充信息，不该跟端口挤在一起比宽度 */
+.set-diag-proc-extra {
+  margin-left: auto;
+  font-family: var(--md-font-numeric);
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+/* 阶段日志 / 下载输出：等宽 + 自身滚动。原样转发引擎输出，不做结构化解析 */
+.set-diag-log {
+  margin-top: 8px;
+  max-height: 168px;
+  overflow-y: auto;
+  padding: 7px 9px;
+  border-radius: var(--md-radius-xs);
+  border: 1px solid var(--md-line-soft);
+  background: var(--md-surface-2);
+}
+.set-diag-log-line {
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+  line-height: 1.75;
+  color: var(--md-muted);
+  word-break: break-all;
+}
+.set-diag-dl {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: var(--md-radius-xs);
+  border: 1px solid var(--md-line-soft);
+  background: var(--md-surface-2);
+}
+.set-diag-dl.is-bad {
+  border-color: var(--md-error);
+}
+.set-diag-dl-head {
+  font-size: 11px;
+  color: var(--md-ink-2);
+}
+.set-diag-ops {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--md-line-soft);
+}
+
+/* ================================================================ ② 推理引擎：空闲卸载合卡 */
+
+/*
+ * 两个空闲卸载阈值**合成一张卡**（R3）。
+ *
+ * 之前是两行 + 两段 `.set-row-note`，把"待遇不同"讲了两遍 —— 而两项唯一的区别
+ * 就是**何时生效**。合成一卡后那个区别变成右端两枚对齐的 chip（`.set-idle-tag`），
+ * 一眼能横着比；散文写法要读完两段才能比出来。
+ *
+ * 骨架沿用 `.set-cache` / `.set-manage`（顶线 + 上下 10px）：设置页里的"通栏块"
+ * 看起来始终是同一类东西，不再多一种形状。
+ * ⚠️ 卡内标题是 `.set-idle-name`，**不是** `.set-subtitle` —— ② 的「恰 3 个小节」
+ * 是 C11 逐字盯着的判据。
+ */
+.set-idle {
+  border-top: 1px solid var(--md-line-soft);
+  padding: 10px 0;
+}
+.set-group > .set-idle:first-child {
+  border-top: 0;
+}
+.set-idle-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.set-idle-name {
+  font-size: 12.5px;
+  color: var(--md-ink);
+}
+/* 「0 = 从不卸载」是**卡片级**说明（写在两个阈值之前，对两行都成立） */
+.set-idle-sub {
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+.set-idle-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 7px;
+}
+/* 40px 定宽：两行的输入框因此左边缘对齐，读起来是一张表而不是两句话 */
+.set-idle-k {
+  flex: 0 0 40px;
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+}
+/*
+ * 「何时生效」chip：`margin-left:auto` 把它推到最右，于是两枚**右端对齐**、可直接横比。
+ * 这正是"两句话改成两枚 chip"的全部理由 —— 差别从需要阅读变成需要扫一眼。
+ * `nowrap` 必须写：这两枚的文案长度不同（7 字 / 6 字），换行会把对齐毁掉。
+ */
+.set-idle-tag {
+  margin-left: auto;
+  font-size: 10.5px;
+  border-radius: 999px;
+  padding: 2px 9px;
+  border: 1px solid var(--md-line);
+  background: var(--md-surface-2);
+  color: var(--md-muted);
+  white-space: nowrap;
+}
+.set-idle-tag.is-now {
+  border-color: var(--md-success);
+  color: var(--md-success);
+}
+.set-idle-tag.is-restart {
+  border-color: var(--md-warning);
+  color: var(--md-warning);
+}
+/* 两档待遇差异的共用注解（原来两段散文各讲一遍，现在只剩这一处） */
+.set-idle-foot {
+  margin-top: 8px;
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--md-muted);
+}
+.set-idle-foot b {
+  color: var(--md-ink-2);
+}
+.set-idle-foot code {
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+}
+
+/* ================================================================ ② 警告：一种形状（R5） */
+
+/*
+ * 设置页里的三处提示原来是**三种形状**：`.set-warn`（档位不推荐）、两处
+ * `.notice.is-bad`（后端不符清单 / 最近一次错误）。形状不同会让"哪句更要紧"
+ * 变成一道形状题 —— 用户得先学会两套语汇才分得清。
+ *
+ * 统一成一条：**左侧一枚圆形色块 + 一行文字**，轻重只由颜色表达
+ * （warning = "知道代价之后自己决定"，error = "现在就得看"）。
+ *
+ * ⚠️ 只覆盖**设置页作用域内**的用法，**不动 `.notice` 的全局定义** ——
+ * `.notice` 在别的屏也在用（manga.scss 里那份），改它等于替所有屏改版。
+ */
+.settings-main .set-warn,
+.settings-main .notice.is-bad {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+.settings-main .set-warn::before,
+.settings-main .notice.is-bad::before {
+  content: '!';
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: var(--md-warning);
+  color: #fff;
+  font-family: var(--md-font-numeric);
+  font-size: 9px;
+  line-height: 14px;
+  text-align: center;
+}
+/* error 那一枚换成 ×：同形状、同位置，只换颜色与符号 —— 这是"只靠颜色分轻重"的落点 */
+.settings-main .notice.is-bad::before {
+  content: '×';
+  background: var(--md-error);
+}
+
+/* ================================================================ ④ 资源与投放：存储占用（三行分列） */
+/*
+ * 骨架与 `.set-cache` 同源（通栏块从一条 border-top 起行），但里面**没有合计行** ——
+ * 那是本项的立场而不是遗漏：三处口径不同，凑总数会把"没有接口的那一处"当 0 算进去。
+ * 详见 `StorageBlock.tsx` 的文件头。
+ */
+.set-storage {
+  border-top: 1px solid var(--md-line-soft);
+  padding: 10px 0;
+}
+.set-group > .set-storage:first-child {
+  border-top: 0;
+}
+
+.set-storage-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.set-storage-name {
+  font-size: 12.5px;
+  color: var(--md-ink);
+}
+/* 「三处分开列 · 不合计」：一句立场说明，与标题同行、比标题浅一档 */
+.set-storage-rule {
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+
+/*
+ * 三行网格：名称 / 值 / 来源。
+ *
+ * 列宽用 `auto auto 1fr` 而不是三等分 —— 值的长短差得很远（`1.2 GB` 与 `未统计`），
+ * 等分会让"来源"那一列被挤到和值一样窄，三列看起来像互不相干的三个字段，
+ * 而这恰恰是"值属于哪一处"这件事要一眼看清的地方。
+ */
+.set-storage-rows {
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 3px 12px;
+}
+.set-storage-k {
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+}
+.set-storage-v {
+  font-family: var(--md-font-numeric);
+  font-size: 11.5px;
+  color: var(--md-ink);
+  text-align: right;
+}
+/*
+ * 「未统计」**不是一个测出来的数**，所以不复用等宽数字字体 ——
+ * 等宽 + 右对齐会让它读起来像"某个统计结果就是 0 字节"，而真相是没有接口。
+ */
+.set-storage-v.is-unknown {
+  font-family: var(--md-font-body);
+  color: var(--md-muted);
+}
+.set-storage-src {
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--md-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ================================================================ ⑤ 关于：第三方许可（聚合 + 可展开清单） */
+.set-lic {
+  border-top: 1px solid var(--md-line-soft);
+  padding: 10px 0;
+}
+.set-group > .set-lic:first-child {
+  border-top: 0;
+}
+.set-lic-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+/* 与 `.set-cache-name` / `.set-storage-name` 同一字号 —— 通栏块的标题都长得一样 */
+.set-lic-name {
+  font-size: 12.5px;
+  color: var(--md-ink);
+}
+/* 「查看清单」：与「为什么 ?」/「展开 ▾」同一枚药丸 —— 折叠动作全页只有一种形状 */
+.set-lic-fold {
+  flex: 0 0 auto;
+  font-family: var(--md-font-body);
+  font-size: 10.5px;
+  color: var(--md-muted);
+  border: 1px solid var(--md-line);
+  background: transparent;
+  border-radius: 999px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.set-lic-fold:hover {
+  background: var(--md-surface);
+  color: var(--md-ink-2);
+}
+
+.set-lic-scopes {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* 两侧各占一格：`1fr` 而不是 `auto` —— 窄窗下让它们等分，而不是把数字挤到右缘 */
+.set-lic-scope {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.set-lic-scope-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.set-lic-scope-name {
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+}
+/* 覆盖数 `342 / 516` 走等宽：它是本块最该被看清的一组数（"有没有凑齐"） */
+.set-lic-scope-num {
+  font-family: var(--md-font-numeric);
+  font-size: 11.5px;
+  color: var(--md-ink);
+}
+.set-lic-sum {
+  margin-top: 2px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--md-muted);
+}
+/* 免责声明复用 `.notice` 的形状，只补一处外边距（它不是行内脚注，是效力边界） */
+.set-lic-note {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+/*
+ * 展开后的完整清单：**限高滚动**而不是整段铺开 ——
+ * 五百多行若全高渲染，这一组会长到十几屏，把「关于」变成一份依赖表。
+ */
+.set-lic-list {
+  margin-top: 8px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--md-line-soft);
+  border-radius: var(--md-radius-sm);
+  padding: 6px 10px;
+}
+.set-lic-list-head {
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--md-muted);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--md-line-soft);
+}
+.set-lic-list-title {
+  margin-top: 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--md-muted);
+}
+.set-lic-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+/* 包名单行省略：`@scope/name@1.2.3` 可以很长，而许可名短且必须完整——先让包名让位 */
+.set-lic-pkg {
+  min-width: 0;
+  font-family: var(--md-font-numeric);
+  color: var(--md-ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.set-lic-val {
+  flex: 0 0 auto;
+  font-family: var(--md-font-numeric);
+  color: var(--md-muted);
+}
+/* 「未取到声明」——与「未统计」同理：它不是一种许可，别让它长得像许可名 */
+.set-lic-val.is-unknown {
+  font-family: var(--md-font-body);
+}
+

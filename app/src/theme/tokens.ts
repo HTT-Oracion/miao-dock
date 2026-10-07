@@ -94,6 +94,69 @@ export const SHELL = {
   logoSize: 40,
 } as const;
 
+/**
+ * 侧栏两级结构几何（《09》§3.1）—— ver2.0 新增，逐值可对账
+ *
+ * | 元素            | 规格 | 为什么是这个值 |
+ * |-----------------|------|----------------|
+ * | 应用入口        | 58×52 | 图标 + 文字的形态，沿用 ver1.0 `.nav-item`，不改动已验证的点击热区 |
+ * | 应用入口（纯图标）| 44×44 | 同一按钮关掉文字后的形态（「侧栏图标标签」偏好，台账 D-84） |
+ * | 分隔线          | 34×1  | 与入口同宽的短横线，居中；比通栏更像"分组"而非"分隔线" |
+ * | 全局层设置      | 44×44 | **纯图标**（去文字），故用方形 44 而非 58×52 |
+ * | 设置 hover 提示 | title | 去掉了文字，交互上必须补回可发现的提示 |
+ *
+ * ⚠️ `iconOnlyItem` 与 `globalItem` 数值相同但**语义不同**，刻意不复用同一个常量：
+ * 前者是"同一个应用入口在另一种偏好下的形态"（它仍带 `is-app`、仍参与应用层秩序），
+ * 后者是"全局层唯一入口"。合并成一个常量会让将来想单独调其中一个时被迫连带改另一个。
+ *
+ * 两套尺寸都不小于 44 —— 44 是**点击热区下限**，纯图标态不得为了好看而缩到 40 以下。
+ */
+export const SIDEBAR = {
+  appItem: { w: 58, h: 52 },
+  iconOnlyItem: { w: 44, h: 44 },
+  divider: { w: 34, h: 1 },
+  globalItem: { w: 44, h: 44 },
+} as const;
+
+/**
+ * 翻译应用内视图 Tab 行（《09》§3.2）—— ver2.0 新增
+ *
+ * 高 44：低于工具条 62（它是二级导航，不该与应用级工具条抢视觉权重），
+ * 高于常见触控目标 40（保证可点）。贴在工具条下方，与工具条之间不另加边框分隔 ——
+ * 二者同属"顶部导航带"，再加一条线会把 62+44 切成两个不相干的区域。
+ */
+export const VIEW_TABS = {
+  height: 44,
+  itemMinWidth: 88,
+  itemPaddingX: 16,
+} as const;
+
+/**
+ * 设置页两栏壳几何（《09》§4.1）—— 1:1 参考实现 `SettingsPage.tsx` 的几何规格
+ *
+ * | 元素       | 规格 | 说明 |
+ * |------------|------|------|
+ * | 左栏       | 180px，`flex:0 0 180px` | 分组导航 |
+ * | 左栏 sticky| top 26px | 对齐内容区上内边距，滚动时左栏不动 |
+ * | 右栏       | flex:1 / min-width:0 | `min-width:0` 必写，否则长路径会把壳撑破 |
+ * | 分组项     | padding 9/12, icon 18, gap 2 | — |
+ * | 页标题     | 15px/700 | — |
+ * | 小节标题   | 10.5px/700/uppercase/.05em | **组内分层的关键**，不可省 |
+ * | 行         | min-height 50, padding 10 0 | 相邻行 1px line-soft |
+ */
+export const SETTINGS = {
+  navWidth: 180,
+  navStickyTop: 26,
+  navItemPadding: { y: 9, x: 12 },
+  navItemIcon: 18,
+  navItemGap: 2,
+  pageTitleSize: 15,
+  sectionTitleSize: 10.5,
+  sectionTitleTracking: '0.05em',
+  rowMinHeight: 50,
+  rowPaddingY: 10,
+} as const;
+
 /** 画面 X-C1 · 任务队列几何（《02》§5.2） */
 export const QUEUE_TABLE = {
   colSource: 120,
