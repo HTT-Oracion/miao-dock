@@ -3486,5 +3486,381 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
 
 `service/src/config.mjs` · `service/src/engine-client.mjs` · `engine/model-store.mjs` · `engine/models.manifest.json` · `engine/scripts/fetch-models.mjs` · `engine/scripts/setup-engine.mjs`（新）· `engine/scripts/install-engine-deps.mjs`（新）· `engine/VERSIONS.lock`（§6）· `e2e/engine/s1-real-engine-check.mjs` · `e2e/engine/e3-real-full-chain-check.mjs` · `app/src-tauri/tauri.conf.json` · `app/src-tauri/icons/icon.ico`（新）· `package.json`（`setup:engine` / `deps:engine` / `extract:models`）· 本文件。
 
+---
+
+## D-86 · 🔴 本地引擎被**系统代理**劫持 ⇒ 16 张图全 failed；一条链上**两个独立缺陷**（`http_proxy` 被继承 + 上游 `return prompt` 返回 list）（2026-10-07）
+
+**现象**：用户用插件交了一批 **16 张**图，队列里任务**全 failed**；输出目录
+`~/Pictures/Box 漫画/転生ゴブリンだけど質問ある-19/` 只有 16 张原图、**0 张译文**。
+
+### 一、取证链（每一步都可复现，不是推断）
+
+| # | 动作 | 结果 |
+|---|---|---|
+| 1 | 读任务记录 `…/Box/state/tasks/tsk_01M49NF0ZKRE5V2D3VSKKY58H6.json` | `status=failed`；`batches[0].items` **16 条全 failed**；样本 `{"seq":1,"originalFile":"001.jpg","status":"failed","saved":false,"outputFile":null,"durationMs":19765,"retryCount":1,"reason":"engine_engine_error"}`；`finalProgress {"total":16,"done":0,"failed":16}`；22:31:04Z → 22:35:39Z |
+| 2 | `GET /api/v1/engine/status`（`recentStageLog`） | 反复出现 `… seq 15/16: translating` → `seq 15/16: 引擎报错：can only concatenate str (not "list") to str` |
+| 3 | 把**真实失败图**按适配层同一请求打给引擎（`POST /translate/image/stream`） | 结果流走到 `translating` 后回 **code 2** 错误帧，文案同上 |
+| 4 | 直接驱动 `SakuraTranslator._translate()` 拿**真实 traceback** | `File "…/translators/sakura.py", line 465, in _translate` → `TypeError: can only concatenate str (not "list") to str` |
+| 5 | 同一次运行的 httpx 日志 | 上游原因是 **`HTTP/1.1 502 Bad Gateway`**（`upstream connect failed … (os error 10061)`）——**那是代理在答，不是 llama-server** |
+
+### 二、两个**独立**缺陷（缺任一都不会报这个错；缺任一也仍会丢结果）
+
+#### 缺陷 A（根因）· 本地引擎被代理劫持
+
+`service/src/engine-client.mjs::resolveEngineLaunch()` 的 env 是 `{ ...process.env, … }`
+⇒ **用户机器（或本机 sandbox）的 `http_proxy` / `HTTP_PROXY` / `ALL_PROXY` 被原样继承给引擎进程**。
+引擎侧 `translators/sakura.py` 用 openai SDK（httpx，默认 `trust_env=True`）访问
+`SAKURA_API_BASE = http://127.0.0.1:8080/v1` —— **一个纯本机地址** —— httpx 老老实实把它交给代理。
+国内用户普遍挂 Clash / V2Ray，只要代理没把 `127.0.0.1` 放进直连名单，**本机推理链路就被拦在门外**。
+
+> 本机实测两侧都堵：`127.0.0.1:8080` 经代理答 `502`；而**直连被 sandbox 拒**（`ECONNREFUSED`）。
+> 即当时引擎**唯一**"出得去"的路就是代理，于是它**必走**代理、**必** 502。
+
+**修法**：`resolveEngineLaunch` 在 `...process.env` **之后**注入 `engineLocalNoProxy()` ——
+把 `127.0.0.1,localhost,::1` 并进 `NO_PROXY`（**两个大小写都写**：httpx/requests/curl 读法不一致）。
+
+**语义边界（重要）**：**只加旁路，不删代理**。引擎若改用云端翻译器（非本机 sakura）**仍然需要**代理；
+删掉它会把那种配置静默打死 —— 而那种坏法与"本机被劫"看起来一样难查。L10 就是钉这条的。
+
+#### 缺陷 B · 上游 `sakura.py` 失败时返回 **list**
+
+`_handle_translation_request()` 在 `(openai.APIError, openai.APIConnectionError)` 重试
+`_RETRY_ATTEMPTS=3` 次耗尽后 **`return prompt`** —— 而 `prompt` 就是调用方传进来的 `queries`（**list**），
+调用点却按 str 用它（`_translate` 的 `'…' + response`）⇒ 把"翻译接口不可用"这句真话
+糊成一句 python 内部错误，对外只剩 `engine_engine_error`（**这正是本次排查一开始只能看到的东西**）。
+
+**修法**：改成**显式 `raise RuntimeError(...)`**，把真实原因上抛。
+🔴 **不能改成 `return str(prompt)`** —— `prompt` 是**日文原文**，那样会把原文当译文**静默输出**
+（用户拿到一页没翻译的"结果"却以为翻译过了），比失败更坏。
+
+**落点**：上游源码在 `runtimes/`（不入库，`.gitignore:38`），故以**幂等补丁**挂在
+`engine/scripts/setup-engine.mjs::patchEngineSource()`。**不放 `deps:engine`** —— 那个脚本是
+**Windows 专用**（macOS 手动 `pip -r src/requirements.txt`），挂那边 macOS 装配**永远拿不到**这个补丁。
+锚点缺失时**直接抛错**（源码被钉在 `ENGINE_COMMIT` 这个具体 commit 上，锚点没了 = 装出来的引擎已不是验过的那份）。
+
+### 三、顺手修掉的两处**既有**缺陷（与本次诉求相邻，**非本次引入**）
+
+1. **反证轮变异 H 的锚点已过期**：源码把 `for (const f of frames) if (…) pushStage(…)` 重构成了
+   `recordFrame(seq, f)`，旧锚点在源码里**已不存在** ⇒ 该轮长期报「锚点未找到」，
+   **分母写 8 而实际只跑得动 7**（分母虚高，看着像"跑过了"）。已按重构后的真实行更新锚点。
+2. **`runtimes/manga-translator/openapi.engine.json` 不入库**：`.gitignore:38` 忽略整个 `runtimes/`，
+   而 `check:engine-client` **硬依赖**它 ⇒ **任何全新克隆跑这条门必红**（`ENOENT`，与本次改动无关）。
+   按其文档出处（"真引擎 `GET /docs` 导出的快照"）用 `GET /openapi.json` 重建。
+   ⚠️ **未做**：把"重建快照"做成脚本 —— 它现在是"装配后必须生成却没人生成"的产物，下次换机还会踩。
+
+### 四、验收
+
+- `npm run check:engine-client` → **45 / 45 绿**。新增三条：
+  - **L9** 注入 `NO_PROXY` 且覆盖本机三写法（`127.0.0.1` / `localhost` / `::1`）；
+  - **L10** 保留用户 `http_proxy`（不删代理）+ `NO_PROXY` 取「原有项 ∪ 本机」（**按实际键名取值** ——
+    Windows 的 env **大小写不敏感**，Node 把 `HTTP_PROXY`/`http_proxy` 折叠成同一个键，
+    断言写死任一大小写都会在另一个平台假红）；
+  - **L11** 只设小写 `no_proxy` 时也能被并集进来。
+  三条都用**受控 env**（先清干净再取）—— 否则"这台机器恰好设过 `NO_PROXY`"会让 L9 **在没有注入时也变绿**，
+  而反证轮正是靠它变红来证明注入有用。
+- `npm run check:engine-client:refute` → **9 / 9 条按预期变红**（新增变异 **I** 去掉注入 ⇒ L9/L10/L11 全红；
+  修好的 **H** ⇒ V1 按预期变红）。
+- **缺陷 B 的行为变化**（同一条长文本、同一台机器）：改前 `TypeError: can only concatenate str (not "list") to str`
+  → 改后 `RuntimeError: Sakura API请求失败（已重试 3 次）：upstream connect failed … (os error 10061)`。
+- **端到端（真权重 + 真 llama-server）**：把**本次失败的那张 `001.jpg`** 按适配层同一请求
+  （`POST /translate/image/stream`）打给一个**带着 `http_proxy` + 注入 `NO_PROXY`** 的引擎实例，全流水线跑通：
+  `detection → ocr → textline_merge → translating → after-translating → mask-generation → inpainting → rendering → finished`，
+  产出译文 PNG **856334 B / 13.97 s**（此前同一张图在 `translating` 就回 code 2 错误帧）。
+- **代理旁路的 A/B（决定性）**：把 `http_proxy` 指向一个**死端口**（`127.0.0.1:9`，无人监听）当"代理没放行本机"的替身：
+  - **对照**（同一死代理，**无** `NO_PROXY`）⇒ `RuntimeError: Sakura API请求失败（已重试 3 次）：Connection error.`
+  - **修复**（同一死代理，`NO_PROXY=127.0.0.1,localhost,::1`）⇒ `200 OK`，译文 `['你好，世界。', '这是测试。']`
+
+  ⇒ 证明注入**确实改变了 httpx 对本机请求的路由**（不是"环境碰巧好了"）。
+  > 为什么用"死代理"当替身：本机 sandbox 的代理会转发**所有**本地端口，已不存在"代理不可达但直连可达"的端口；
+  > 死代理把"代理路径坏掉"这一半**受控**地造出来，仍是同一件事。
+
+### 五、待办（本条**不**关闭）
+
+- **端到端复跑真批次**：需在**未被 sandbox 限制**的进程里重启 box-service（引擎 env 在 box-service 启动时成型，
+  改代码后**必须重启 box-service** 才会生效 —— 只重启引擎没用，`resolveEngineLaunch` 的函数体是启动时加载的）。
+- 上面第三节第 2 条（快照脚本化）。
+
+### 五之二、`check:docs` 在 Windows 上是**红的**，但**不是本条造成的**（读的人别误判）
+
+`npm run check:docs` 当前 **12 通过 / 2 失败**，两条都是
+「`AGENTS.md` / `README.md` 声明的 `check:music` 条数（写 **215**）与脚本自报（**213**）不一致」。
+根因在**音乐**那一摊，不在本条：
+
+- 实跑 `npm run check:music`：**213 通过 / 3 失败**（`ISLANDV 13/14` · `RESTORE 11/12` · `KEYS 11/12`）；
+- 该脚本的 `add('…')` 静态条数与 `5becf39`（文档写下 215 的那次）**逐字相同（171 处）** ⇒ **不是"断言被删"**，
+  而是**跑出来就是失败 3 条**，`check:docs` 的计数门拿"通过数"去比对，于是跟着红；
+- 本条改动的 4 个文件全在 `service/`、`engine/scripts/`、`e2e/service/`，而 `check:music` 只读 `app/`（`git status` 可证）⇒ **无交集**。
+
+⇒ **未修**：那 3 条是音乐播放器（队列恢复 / 快捷键 / 岛屿视图）的行为断言，属**另一个功能面**，
+不替它下结论，也不用"改文档数字"来骗绿（`check:docs` 自己的提示就写着别为了变绿改断言或删条目）。
+
+### 六、改动文件
+
+`service/src/engine-client.mjs`（`engineLocalNoProxy()` + 在 `resolveEngineLaunch` 注入）·
+`engine/scripts/setup-engine.mjs`（`patchEngineSource()` / `sourcePatchState()` + `--check` 增一行 + 跑在跳过分支之外）·
+`e2e/service/engine-client-check.mjs`（L9/L10/L11 · 变异 I · 修 H 锚点）· 本文件。
+
+---
+
+## D-87 · Windows 点「退出喵坞」**没反应**（`AppHandle::exit` 在主线程不保证退出）+ 队列「重试」不再冒历史任务（复用**同一** `taskId`）（2026-10-07）
+
+**用户原话（两条独立诉求，各自成因不同，别当成一件事）**：
+1. 「Windows 点击**退出喵坞**没反应，修一下」；
+2. 「翻译队列点击**重试**后，直接把状态变成**翻译中**就行，**不要新出来一个历史任务**」。
+
+---
+
+### 一、缺陷 A · 点「退出喵坞」没反应
+
+#### 成因（一条链上三处；单看哪一处都不像"完全没反应"，但叠起来就是它）
+
+1. **`quit_app` 是同步命令 ⇒ 跑在主线程**。Tauri v2 的**同步** `#[tauri::command]` 在**主线程**（事件循环线程）上执行；而 `AppHandle::exit` 在**主线程**里调用时**不保证真的退出** —— 官方讨论 **tauri#3555** 的结论原话就是
+   「you shouldn't call `AppHandle::exit` on the main thread」，提问者的现象与本机用户报的一字不差：**点了退出，窗口照旧、进程照旧**。
+2. **`ServiceManager::reap()` 的收尾是无界 `handle.wait()`**。`stop()` 是**阻塞**的：先礼后兵（SIGTERM → 等 `STOP_GRACE` → `taskkill /T /F`）→ 收尸。收尸那一段原来是
+   `for p in procs { let _ = p.handle.wait(); }` —— **没有上界**：`taskkill` 一旦没带走某个子进程（权限不足 / PID 已被复用 / 进程卡在不可中断的系统调用里），`wait()` 就**永远不返回**。同步命令跑在主线程 ⇒ 调用它的那条线程连同**整个退出流程**一起挂死。
+3. **前端把失败**静默**吞了**。旧版 `onQuit={() => void quitApp()}` —— IPC 一旦被拒（命令报错、或上面第 1 条让 `exit` 没生效），**什么都不发生**：用户看到的就是"点了没反应"，而线索全落在看不见的控制台里。
+
+> 1 与 2 是"真退不掉"，3 是"退不掉时你**也**不知道为什么"。三者对外表现**完全相同**（点了像没反应），必须一起修 —— 只修一处，用户下次换个条件还会撞上。
+
+#### 修法
+
+| # | 文件 | 改动 | 为什么 |
+|---|---|---|---|
+| A1 | `app/src-tauri/src/commands.rs` | `#[tauri::command]` → `#[tauri::command(async)]` | 命令属性上的 `(async)` 让它跑在 tauri **异步运行时**的线程池、**不在主线程** ⇒ `AppHandle::exit` 正常生效。这是**功能开关**，不是风格 |
+| A2 | `app/src-tauri/src/service.rs` | 新增 `const REAP_GRACE = 2s`；收尸段改为 `try_wait()` 循环 + `REAP_GRACE` 上界（超时打日志后放过） | 宁可放过一个孤儿（还有 `child-watch` / `parent-watch` 一层兜底，见 **D-12**），也**绝不无限等**。收尸失败=后台多一个进程；退不掉=用户自己解决不了 |
+| A3 | 同上 · Windows `signal_tree` | `taskkill` 加 `creation_flags(CREATE_NO_WINDOW)` | 应用本体是 `windows_subsystem = "windows"`（**没有**控制台），spawn `taskkill` 会**蹦出一个 cmd 黑框**。纯观感问题，但"点退出时闪出黑框"很容易被当成中毒 |
+| A4 | `app/src/App.tsx` | `void quitApp()` → `void quitApp().catch((e) => push(errorText(e), 'bad'))` | 失败**不再静默**：把原因摆到灵动岛上，至少能知道该往哪儿查 |
+
+**与 `main.rs` 的 `RunEvent::ExitRequested` 是两道清理，不是重复**：`quit_app` 走**正常路径**（先收干净再退，端口立刻释放）；那一道兜底 `Cmd+Q` 与其它退出路径。子进程表在 `stop()` 里已被 `take_all()` 掏空，所以第二遍是空操作。
+
+---
+
+### 二、缺陷 B · 队列行「重试」在历史里冒出一条新任务
+
+#### 成因
+
+队列行的「重试」走的是 `POST /library/{comicName}/resume` —— 那是**漫画库 X-D1「继续翻译」**的端点，语义是「按**目录**找『有原图、缺译文』的页」，会**新建一个 `taskId`**。于是用户点了「重试」：原失败行留在历史里、旁边又冒出一条新行 —— 与他想要的「**这一行**变回翻译中」对不上。**根子在"端点语义选了『按目录续做』，而诉求是『这一行重来』"**。
+
+#### 修法：新增契约外增量端点 `POST /tasks/{taskId}/retry`（复用**同一** `taskId`）
+
+| 层 | 改动 |
+|---|---|
+| `service/src/store.mjs` | 新增 `retryTask(taskId)`：把 `failed` 页复位为 `pending` + `fromDisk:true`，清 `saved / outputFile / sha256 / durationMs / retryCount / reason / errorMessage`；清 `finishedAt / cancelRequested / lastError`；`_syncBatchStatuses`；`_enqueueOrStart`（**空闲 ⇒ 立刻 `running`**，即用户要的"直接变翻译中"；忙 ⇒ 排队尾、显示"等待中"才是诚实的——引擎同一时刻只跑一个任务）。`reused === 0` 抛 `TASK_NOT_RETRYABLE` |
+| `service/src/server.mjs` | 路由段（`batches \| events \| cancel \| retry`）加入 `retry`；新增 `handleRetry()`：`assertSidecarReady` + `assertRootWritable` → `store.retryTask` → **200**（复用既有任务，**不是 201 新建**）+ `createView` |
+| `service/src/errors.mjs` | 新增 `TASK_NOT_RETRYABLE: 409`（与 `TASK_NOT_CANCELABLE` / `TASK_NOT_APPENDABLE` 同家族：**当前状态不允许该动作**，别混成 404 / 500）。两个分支都走到它：任务还在跑却被点重试、或任务没有任何失败页（如 `done`） |
+| `app/src/App.tsx` | `retry()` 改打 `/tasks/{taskId}/retry`；去掉不再需要的 `isApiError` 分支（404 那句"没有待续做的页"已不适用）；提示文案改为「已重新加入队列」 |
+| `app/src/screens/QueueScreen.tsx` | 失败行「重试」按钮 `title` 改为「重跑这一行里失败的页（仍是同一个任务）」 |
+
+**只复位 `failed`**：`success` / `skipped` 的页是**已拿到结果**的（`skipped` 多为 `already_exists`），重跑它们既浪费、又与"不覆盖"冲突。
+**字节来源**：失败页原图已按 **G-11**（`_keepOriginalOnFailure`）落盘，而上传那份暂存字节在任务收尾时已被清扫（`_sweepStaged` / `_forgetBlobs`）⇒ 复位时置 `fromDisk:true`，走"**从磁盘读原图**"那条路，**不重传字节**。若某页连原图都没留下（G-11 的降级路径），重跑会以 `original_missing` **再次如实失败** —— 不掩盖成成功。
+
+**`resume` 保留**：漫画库 X-D1 的「继续翻译」仍用它（按目录找缺页、新建任务）。两条路的**字节来源相同**（都从磁盘读原图、都不重传），差的是**任务的身份**。`e2e/e2e.mjs` 的 D3g/D3h 测的正是 `resume` 本身，脚本注释已改写澄清"**两者分开，别互当覆盖**"（假绿家族第 4 类）。
+
+---
+
+### 三、验收
+
+| 命令 | 结果 |
+|---|---|
+| Rust `cargo check`（在 `app/src-tauri`） | **通过**，零错误零警告 |
+| 前端 `tsc --noEmit` | 退出码 0 |
+| `npm run check:quit` | **4 / 0**（Q1–Q4） |
+| `npm run check:retry` | **6 / 0**（R1–R6） |
+| `npm run check:units` | 37 / 0（未受本轮影响，回归确认） |
+| `npm run check:ia` | 32 / 0（同上） |
+
+- **`check:retry` R5 的实证**：同一条任务 `tsk_01M49REKQJ5XP14TF72D0RPG12` 重跑，`finishedAt` `…23:18.854Z → …23:20.067Z` **前移**、`progress.total` 仍 **3**、失败页集合仍 `[2]` ⇒ 是"同一件事再来一次"，**不是**新任务；`GET /tasks` 的 `total` **1 → 1**（历史不冒新行）。R3 拿到 `status=running` ⇒ 用户要的"直接变成翻译中"。
+- **`check:quit` 是源码级钉子**：本机没有桌面自动化权限（`osascript` 被 TCC 拒、Windows 侧无可用点击注入），**点不了那个按钮**。能自动化的部分只剩"把会让退出失灵的写法钉住"。Q1–Q4 各钉**一处成因**（不是风格），谁改回去哪一条立刻变红。
+
+### 四、反证（断言必须配反证，见 `AGENTS.md`）
+
+- `npm run check:quit:refute` → **REFUTE: 4/4**：M1 `quit_app` 退回同步命令 ⇒ **Q1** 红；M2 `reap()` 退回无界 `wait()` ⇒ **Q2** 红；M3 去掉 `CREATE_NO_WINDOW` ⇒ **Q3** 红；M4 前端退回静默 ⇒ **Q4** 红。三处源文件**按字节还原**校验一致。
+- `npm run check:retry:refute` → **REFUTE: 5/5**：M1 服务端 `/retry` 退回 `createResumeTask` ⇒ **R2/R3/R4/R5** 红；M2 前端退回 `/resume` ⇒ **R6** 红。源文件**按字节还原**校验一致。
+
+> **写脚本时踩到的两个坑**（都会造成"看着绿、其实没钉住"，记下来防复踩）：
+> 1. **`check:quit` 的 M1 一开始"该红没红"（假阳性）**：锚点 `#[tauri::command(async)]` 在全文命中 **2** 处 —— 一处是**真实的命令属性**，另一处是**我自己刚写进 `commands.rs` 的文档注释**里引用的字面量。refute 把注释那处替换掉了，真实属性仍在 ⇒ 断言误判"仍是 async"。**修法**：把那句注释改成「命令属性上的 `(async)`」（去掉字面括号形式），让真实属性**唯一**。教训同 **D-84**：着力点必须落在**唯一且真实**的那一处。
+> 2. **`check:retry` 反证轮 `EPERM` 写回失败**：刚被 `kill` 的子进程在 Windows 上**短暂**仍占着它加载过的文件句柄 ⇒ 紧随其后的 `writeFileSync` 抛 `EPERM: operation not permitted`。**修法**：`killProc` 改为 **await 子进程真正退出**（3s 超时兜底 SIGKILL），并加 `writeRetry()` 带**有上界**的退避重试（上界必须有 —— 否则"文件被占"会被重试循环拖成**静默挂死**，正是本仓库反复踩过的那一类）。
+
+### 五、边界与待办（**本条不关闭**）
+
+- 🔴 **`check:quit` 证明的是"四处成因的写法都被钉住了"，不是"Windows 上退出真的能退"** —— 沙箱点不了 GUI 按钮，**真机退出仍需人工点测**。脚本文件头与本节都如实标着；**别把"钉子绿"当"功能绿"**。
+- **未做全量构建**：Rust 侧只跑 `cargo check`（编译校验），**未跑 `app:build`**（Tauri 打包）。打包链路另行验证。
+- **代码未提交**：本轮（连同前一条 **D-86**）的全部改动仍在工作区，等确认后再 commit。
+- **`npm run check:docs` 在 Windows 上仍是红的**（**非本轮引入**）：2 条失败都是 `check:music` 文档声明 **215** vs 脚本自报 **213**（音乐那一摊既有问题，见 **D-86 §五之二**），与本轮 `service/` + `app/` 改动**无交集**。本轮新增的 `check:quit` / `check:retry` **不在** `check:docs` 的条数比对清单内（该门只比 `check:music` / `check:units` / `check:settings` 三套），故**不改变其红绿**。
+
+### 六、改动文件
+
+`app/src-tauri/src/commands.rs` · `app/src-tauri/src/service.rs` · `app/src/App.tsx` · `app/src/screens/QueueScreen.tsx` ·
+`service/src/store.mjs` · `service/src/server.mjs` · `service/src/errors.mjs` ·
+`e2e/e2e.mjs`（D3g 注释澄清 resume vs retry）· `e2e/quit-command-check.mjs`（**新**，`check:quit`）· `e2e/service/queue-retry-check.mjs`（**新**，`check:retry`）· `package.json`（新增 4 条脚本）· 本文件。
+
+---
+
+## D-88 · 🔴 翻译日志报 `[Errno 22] Invalid argument` —— 一条链上**两个独立缺陷**：子进程 stdio 是 GBK + 读日志的一端"遇错即停"（2026-10-07）
+
+**用户原话**：「翻译日志显示[Errno 22] Invalid argument」（表现：整批图 failed）。
+
+### 一、现象与取证入口
+
+- 用户只看到一句 `[Errno 22] Invalid argument`，**没有任何上下文**。
+- 完整 traceback 落在引擎执行器的落盘日志 `runtimes/manga-translator/src/result/log_<时间戳>.txt` —— 这是**唯一**能看到全貌的地方。实测那一次：
+  ```text
+  ERROR: [manga-translator.shared] Error during mask-generation:
+  Traceback (most recent call last):
+    File ".../manga_translator.py", line 568, in _translate
+      ctx.mask = await self._run_mask_refinement(config, ctx)
+    File ".../manga_translator.py", line 1357, in _run_mask_refinement
+      return await dispatch_mask_refinement(...)
+    File ".../mask_refinement/__init__.py", line 24, in dispatch
+      final_mask = complete_mask(...)
+    File ".../mask_refinement/text_mask_utils.py", line 170, in complete_mask
+      for i, cc in enumerate(tqdm(textline_ccs, '[mask]')):
+    File ".../tqdm/std.py", line 1101, in __init__
+      self.sp = self.status_printer(self.fp)
+    File ".../tqdm/std.py", line 446, in status_printer
+      getattr(sys.stderr, 'flush', lambda: None)()
+  OSError: [Errno 22] Invalid argument
+  ```
+- **报错点与真因完全不相干**：一句 `tqdm` 的 `sys.stderr.flush()`，把"日志读取"的故障冒成了"掩码细化阶段失败"。
+
+### 二、成因：五段链（只有第 ① 段是"引擎的问题"）
+
+1. 中文 Windows 上 Python 子进程的 `stdout/stderr` 默认按 **ANSI 代码页**（GBK/cp936）编码；而真引擎会把**日文**写进日志（`utils/log.py` 的 `logging.basicConfig()` 把 root `StreamHandler` 接到了 **stderr**）⇒ 日志里第一行日文就是一堆**非法 UTF-8 字节**。实测（`env -u` 剥掉沙箱的 `PYTHONUTF8`/`PYTHONIOENCODING` 后）：`stdout.encoding=gbk`、`locale=cp936`、`utf8_mode=0`。
+2. Rust 侧读子进程输出用的是 `BufReader::lines().map_while(Result::ok)`：`lines()` 要求**合法 UTF-8**，不合法时返回 `Err`；`map_while(Result::ok)` 遇第一个 `Err` 就**结束迭代**。
+3. 迭代结束 ⇒ `BufReader`（连同 `ChildStderr`）被丢弃 ⇒ **这一端的管道读句柄被关闭**。
+4. 此后子进程**再往该流写任何东西都失败**。Windows 的报错是 `OSError: [Errno 22] Invalid argument`（**不是** Linux 那种 `Broken pipe`）。
+5. 它冒出来的位置是 `tqdm` 初始化时那句 `sys.stderr.flush()`（`tqdm/std.py:446`；`status_printer` 在 `fp in (sys.stderr, sys.stdout)` 时**同时 flush 两者**，故 stderr 先中招）。
+
+**"直连引擎也能复现"是定位的关键**：不经服务 / 队列，直接对运行中的 `8000` 端口发同一张图，得到**完全相同的阶段序列**（`detection → ocr → textline_merge → translating → after-translating → mask-generation → [Errno 22]`）⇒ 问题**内生于引擎管线**，与队列 / 服务 / Rust 无关。但把它**致命化**（从"日志里有非法字节"变成"整张图失败"）的是 ②③，**那两段是我们的代码**。
+
+**"管道破裂"的实测复现**：Windows 上"**读端已关 + 缓冲区里还有待写数据**"时，`sys.stderr.flush()` / `.write()` 抛 `errno 22`。（只关读端、**没有**待写数据时 flush 是 OK 的 —— 第一版复现脚本因此没复现出来，补上"先写无换行数据、等读端关掉再 flush"才复现。）
+
+### 三、修法（两处，各堵一段）
+
+| # | 文件 | 改动 | 为什么 |
+|---|---|---|---|
+| 1 | `app/src-tauri/src/service.rs` | 新增 `relay_lines<R: Read>`：**按字节**读、以 `\n` 切行、`String::from_utf8_lossy` 解码、去尾 `\r`、**读错误只结束本条流、不关全局**；`spawn_inner` 的 stdout / stderr 两处 reader 由 `BufReader::new(out).lines().map_while(Result::ok)` 改为 `relay_lines(out, ...)` | 读日志的一端**永不因编码停读** ⇒ 不关管道 ⇒ 子进程写 stderr 不再 EINVAL；日志里的非法字节被 lossy 成 `�`，**不丢行** |
+| 2 | `service/src/engine-client.mjs` | `resolveEngineLaunch` 的 env 注入 `PYTHONIOENCODING: 'utf-8'`（与 D-86 的 `NO_PROXY` 并列） | 从根上让引擎 stdio **就是合法 UTF-8**：日文日志不再产生非法字节（消除 ①） |
+
+- 只钉 **stdio**（`PYTHONIOENCODING`），**不用 `PYTHONUTF8`**：后者连带改 locale / 文件系统编码，影响面远超"日志可读"这一个诉求。
+- **两处都要**：②③（我们的读法）若被写回去，任何"非 UTF-8 输出"仍会打死子进程；①（引擎编码）若不钉，日志本身还是花的。
+
+### 四、验收
+
+| 命令 | 结果 |
+|---|---|
+| Rust `cargo check`（在 `app/src-tauri`） | **通过**，零错误零警告（2.28s） |
+| `npm run check:stdio` | **2 / 0**（S1 源码钉子 + S2 行为对照） |
+| `npm run check:stdio:refute` | **1 / 1**（M1 → S1 红；`service.rs` 按字节还原一致） |
+| `npm run check:engine-client` | **46 / 0**（新增 **L12**） |
+| `npm run check:engine-client:refute` | **10 / 10**（新增 **J** → L12 红） |
+| `npm run check:docs` | 12 / 2 —— 两条红仍是 `check:music` 文档 **215** vs 脚本 **213**（既有，与本轮无交集） |
+
+- **S2 把"约束"变成"后果"**：起一个**真子进程**用 `Buffer` 直写「ASCII 行 / 含非法 UTF-8（GBK『荒木宰』= `bb c4 c4 be d4 d7`）/ ASCII 行」，旧策略（严格 + 遇错即停）**只读到第 1 行**，新策略（lossy）**3 行一行不丢**。实测：`总行=3 旧=1（停在第2行） 新=3`。
+- **L12**：受控 env（先 `delete process.env.PYTHONIOENCODING`）后断言 `ioLaunch.env.PYTHONIOENCODING.toLowerCase() === 'utf-8'`。
+
+### 五、反证
+
+- `check:stdio:refute` → **1/1**：M1 把 `relay_lines(out, |line| {` 改回 `for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {` ⇒ **S1** 红；`service.rs` 按字节还原一致。
+- `check:engine-client:refute` → **10/10**：**J** 去掉 `PYTHONIOENCODING: 'utf-8',` ⇒ **L12** 红。
+
+> **写这条钉子时踩的坑（会造成"假红"，记下来防复踩）**：S1 一开始是**整文件** `includes('map_while(Result::ok)')`，可 `service.rs` **本来就有一段注释在解释"为什么不能用它"**（三处字面量**都在注释里**）⇒ S1 **恒红**，且红得毫无道理。**修法**：判定前先**剥掉 Rust 注释**（行注释 + 块注释；只跟踪双引号字符串 —— 字符字面量装不下 `//`，生命周期 `'a` 若被当字符串最坏只造成假绿）再扫。**教训同 D-87 / D-84**：钉子的着力点必须落在**唯一且真实**的那一处 —— 注释里的"反面教材"不能算"使用了它"。
+> 附带坑：写这段说明时，我在**块注释里**写了字面 `/*` `*/`，其中 `*/` **提前闭合了外层 `/** ... */`** ⇒ 脚本直接 `SyntaxError: Unexpected identifier`。**在块注释里讲解块注释**必须改写成"行注释 / 块注释"这种**文字说法**，不能出现字面分隔符。
+
+### 六、边界与待办（**本条不关闭**）
+
+- **④⑤（管道被关掉后报 errno 22）是 Windows 平台事实，只做一次性实测取证**，**不做成常驻断言**：那需要真起 Python 子进程 + 真管道，会把这条门变成"必须先装配真引擎"的重门，而它要防的回归点在 **S1**（源码钉子）。这一点已写进 `e2e/child-output-check.mjs` 的文件头。
+- **本脚本不证明"引擎能在 Windows 上跑通"**，只证明"读日志的一端不会因为编码而停读"。
+- **真机端到端复核仍未做**：本轮是在**运行中的引擎**上直连复现并据此定位的；修复后**未再跑一张真图端到端**确认 `[Errno 22]` 真的消失（需真引擎 + 真 ③ 链路，分钟级）。**建议用户在真机上重跑一批图做最终确认**。
+- **沙箱编码掩盖陷阱**：沙箱 env 默认带 `PYTHONUTF8=1` / `PYTHONIOENCODING=utf-8`，会**掩盖** GBK 问题 —— 复现时必须 `env -u` 剥离后才看得到 `gbk`/`cp936`。这也正是**为什么只有真机（用户 env）才撞得上**。
+- **代码未提交**：本轮（连同 **D-86 / D-87**）全部改动仍在工作区，等确认后再 commit。
+- **`npm run check:docs` 在 Windows 上仍是红的**（**非本轮引入**）：两条失败都是 `check:music` 文档声明 **215** vs 脚本自报 **213**（音乐那一摊既有问题，见 **D-86 §五之二**）。`check:stdio` / `check:engine-client` **不在** `check:docs` 的条数比对清单内（该门只比 `check:music` / `check:units` / `check:settings` 三套），故**不改变其红绿**。
+
+### 七、改动文件
+
+`app/src-tauri/src/service.rs` · `service/src/engine-client.mjs` ·
+`e2e/child-output-check.mjs`（**新**，`check:stdio`）· `e2e/service/engine-client-check.mjs`（+L12 / +变异 J，分母 9→10）·
+`package.json`（新增 `check:stdio` / `check:stdio:refute`）· `AGENTS.md` · `README.md` · 本文件。
 
 
+
+
+---
+
+## D-89 · 🔴 重启后翻译仍报 `[Errno 22]`/`[Errno 20]` —— 真身是「重启时残留的**孤儿执行器**占着 8001」（2026-10-07）
+
+**用户原话**：「通过队列进行翻译，日志显示 引擎错误: [Errno 20] Invalid argument」（并确认「已经重启过了」）。
+
+### 一、现象与第一反应
+
+用户重启后仍报错，且是**新的 errno 20**（上一轮 D-88 是 `[Errno 22]`）。第一反应会怀疑 D-88 没修好。实测（进程树取证）推翻了这一点：**D-88 已生效**（重启后引擎日志里日文已是正确 UTF-8 `荒木宰 => 荒木宰。`，不再是 GBK 乱码），报错点是**另一个独立缺陷**。
+
+### 二、errno 20 vs 22 的分野（别混为一谈）
+
+| errno | 含义 | 场景 |
+|---|---|---|
+| 22 | EINVAL「Invalid argument」 | 管道断裂（D-88 的 tqdm stderr flush） |
+| 20 | ENOTDIR「Not a directory」 | 文件系统/句柄类，**不同写点** |
+
+实测 broken-pipe 场景（`closedpipe2.py` + GBK 版 tqdm 场景）**恒得 22、从不得 20**。故 `[Errno 20]` 是孤儿执行器在**不同写点**报出的同源错误（都因「句柄已死」）。
+
+### 三、根因：进程树取证（psutil 拿到的铁证）
+
+重启后进程树里有**两条链**：
+
+```
+健康链：  miao-dock.exe → child-watch.mjs → 引擎 main(8000) → 执行器(8001)   ✓ 父进程全存活
+孤儿链：  [已死进程 8260] → venv -m manga_translator(12424) → 执行器(35392)   ✗ 父进程 8260 已死
+```
+
+- **执行器**（`python -m manga_translator shared`，占 8001）是**上一轮更早会话**残留的孤儿：它的 launcher 父进程（8260）早已死，但它没被杀干净，仍占着 8001、stderr 管道早已断。
+- 每次重启，新引擎 main 都**起不来干净执行器**（8001 被孤儿占着），翻译经这个孤儿执行器跑 → 它一初始化 `tqdm` 就 flush 到已断的 stderr → `OSError [Errno 22]`/`[Errno 20]`。
+
+### 四、为什么「先礼」杀不掉（平台事实，实测坐实）
+
+Windows 的 `signal_tree(force=false)` = `taskkill /PID <pid> /T`（**不带 /F**）。实测：
+
+| 目标 | `taskkill /T` 不带 /F | 结果 |
+|---|---|---|
+| node | 返回 255 | **进程不死** |
+| Python | 返回 128 | **进程不死** |
+
+`taskkill` 不带 `/F` 发的是 `WM_CLOSE`/`CTRL_BREAK`，而 node / python 这类**控制台进程默认不响应** ⇒ 「先礼」名存实亡，白白空等 `STOP_GRACE`（3s），还给了孙进程（执行器）被 reparent 的窗口。「后兵」的 `/F` 对已断链的 pgid 发时，执行器已成孤儿、够不到了。
+
+对比：**`taskkill /T /F` 能一次杀净整条链**（实测真实链 `child-watch → 引擎 main → 执行器` 三层，输出「终止 PID A → B → C」整棵枚举杀净，执行器 alive=False）。
+
+### 五、修法
+
+| # | 文件 | 改动 | 为什么 |
+|---|---|---|---|
+| 1 | `app/src-tauri/src/service.rs` | Windows `signal_tree` 的 `/F` 由 `if force { c.arg("/F") }` 改为**无条件** `c.arg("/F")`（`force` 参数保留但用 `let _ = force;` 显式消费） | Windows 没有「优雅终止」这一档（不带 /F 对控制台进程无效），`force=false/true` 都必须走 /F。代价是跳过引擎 `main.py` 的 `handle_exit_signals` 优雅路径 —— 但那条路径在 Windows 上本来就收不到 SIGTERM、不会触发，**没有损失** |
+
+- **不碰 unix 分支**（macOS 的 `kill(-pgid, SIGTERM)` 是真实优雅终止，Python 能捕获 SIGTERM → `proc.terminate()` 执行器，逐字节不变）。
+- **不影响 `CREATE_NO_WINDOW`**（黑框问题）与 `MIAO_NO_TREE_KILL` 反证开关。
+
+### 六、验收
+
+| 命令 | 结果 |
+|---|---|
+| Rust `cargo check`（`app/src-tauri`） | **通过**，零错误零警告（3.32s） |
+| `npm run check:quit` | **5 / 0**（新增 Q5） |
+| `npm run check:quit:refute` | **5 / 5**（新增 M5 → Q5 红；三文件按字节还原一致） |
+
+- **Q5**：Windows `signal_tree` 函数体（`Command::new("taskkill")` 到 `no_tree_kill` 之间）内，`c.arg("/F")` **无条件**出现、**不含** `if force {`。
+- **M5**：把 `c.arg("/F");` 改回 `if force { c.arg("/F"); }` ⇒ **Q5** 红。
+
+### 七、写钉子踩的坑（记下来防复踩）
+
+1. **`#[cfg(windows)]` 全文命中 2 处**（`spawn_inner` 的 `CREATE_NEW_PROCESS_GROUP` + `signal_tree`），`indexOf('#[cfg(windows)]')` 命中前者 ⇒ 切片把 unix 分支的 `if force { SIGKILL } else { SIGTERM }` 也卷进来 ⇒ **假红**。修法：改用**唯一**锚点 `Command::new("taskkill")` 定位（教训同 D-84/D-87：着力点必须唯一且真实）。
+2. **`service.rs` 是 CRLF 换行**（1167 个 `\r\n`、0 个裸 LF），`indexOf('…\nfn signal_tree')` 用 `\n` 锚点匹配不到（返回 -1）⇒ 切片为空 ⇒ **假红**。修法：锚点**不依赖换行符**（用行内唯一串），跨 CRLF/LF 平台通用。
+
+### 八、边界与待办
+
+- **崩溃/强杀路径已一并修掉**：`child-watch.mjs` 的 Windows `killTree` 原写法 `...(sig === 'SIGKILL' ? ['/F'] : [])` —— SIGTERM 先礼不带 /F 对控制台进程无效，只能等 1500ms 的 `setTimeout(..., .unref())` 才 /F，若看守在窗口内自身退出，`/F` 被跳过 ⇒ 执行器成孤儿。现改为 Windows 分支无论 SIGTERM/SIGKILL 都直接 `/F`（同 `service.rs::signal_tree` 一处修复，同一条根因的两处代码）。配源码钉子 `check:child-watch-kill`（S1 + M1）。
+- **`[Errno 20]` 的精确写点未定位**：判断为孤儿执行器「句柄已死」的同源错误，但没抓到那一条具体 traceback（因为它发生在**已断的 stderr 管道上**，写不进来）。不影响修复方向（根因是孤儿执行器），但若用户再报，优先抓 box-service 的 `recentStageLog` 而非引擎落盘日志。
+- **真机端到端复核**：本轮改完代码**未重编译 exe + 未重启验证**（当前运行的引擎仍是上一版 exe）。需重新 `cargo build` + 重启后跑一批图确认。
+- **代码未提交**（连同 D-86/D-87/D-88 全部改动仍在工作区）。
+
+### 九、改动文件
+
+`app/src-tauri/src/service.rs`（Windows `signal_tree` 无条件 /F）· `engine/scripts/child-watch.mjs`（Windows `killTree` 无条件 /F）· `e2e/quit-command-check.mjs`（+Q5 / +M5）· `e2e/child-watch-kill-check.mjs`（**新**，`check:child-watch-kill`，S1 / M1）· `package.json`（新增 2 条脚本）· `AGENTS.md` · `README.md` · 本文件。

@@ -68,10 +68,13 @@ npm run selftest:app:e11[:refute]     # E11 三进程树回收（mock，秒级�
 npm run selftest:app:e11:real         # 同上但**真进程**（python+执行器+llama-server，14 端口）· 分钟级
 npm run check:launch-plan     # S2 启动配方契约 24 条（print-launch-plan.mjs → Rust，含与 probeEngine 同源断言 + ③ 归属移交的 P-llm-* ）
 npm run check:child-watch[:refute]   # 外部二进制父死看守的双向取证（秒级；真模式 E11 的唯一依赖）
+npm run check:child-watch-kill[:refute] # child-watch Windows killTree 无条件 /F 源码钉子（不起进程；D-89 崩溃路径孤儿执行器）
 npm run e2e                   # D 组端到端
 npm run check:ia              # IA 结构 32 条（含 C8d：侧栏两套几何 58×52 / 44×44 随标签形态成对切换）
 npm run check:tls             # TLS 依赖链 14 条（三层）
-npm run check:engine-client[:refute] # 翻译引擎适配层 42 条 / 反证 8 条（真协议用 openapi 快照「假引擎」，秒级）
+npm run check:quit[:refute]   # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW / 前端不静默 / Windows signal_tree 无条件 /F；不起进程）
+npm run check:engine-client[:refute] # 翻译引擎适配层 46 条 / 反证 10 条（真协议用 openapi 快照「假引擎」，秒级）
+npm run check:retry[:refute]  # 队列「重试」任务身份：复用**同一** taskId（不冒历史行）6 条 / 反证 5 条（mock 引擎 + 真服务子进程，秒级）
 npm run check:models[:refute] # S3 模型下载器 E7：32 条 / 反证 5 条（本地 Range 夹具源，秒级，不碰真权重）
 npm run fetch:models          # S3 模型下载器 CLI：--check 只校验 / --link 只重建引擎树里的链接（零网络）
 npm run check:profile[:refute] # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）

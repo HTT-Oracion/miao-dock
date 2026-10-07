@@ -454,9 +454,15 @@ try {
       `pendingCount=${plan?.pendingCount} pendings=[${(plan?.pendings ?? []).map((p) => p.seq).join(',')}]`,
     );
 
-    // 队列屏「重试」按钮走的就是这条 POST /resume（App.tsx），不是重新上传。
-    // 旧语义下它**点了会报错**：失败页没有原图 → 续做清单为空 → 404「无可续做页」，
-    // 而按钮明明长在一条 partial_failed 的任务行上。这条断言把那条用户路径闭上。
+    // 漫画库 X-D1 的「继续翻译」走的是这条 `POST /resume`：按**目录**找「有原图、缺译文」
+    // 的页，**新建一个任务**。旧语义下它**点了会报错**：失败页没有原图 → 续做清单为空 →
+    // 404「无可续做页」，而按钮明明长在一条 partial_failed 的任务行上。这条断言把那条用户路径闭上。
+    //
+    // ⚠️ 别把它与**队列行**上的「重试」搞混：后者走 `POST /tasks/{id}/retry`，复用原 taskId、
+    //    不新建任务（用户裁定 2026-10-07：「点重试别再冒出一个历史任务」）。
+    //    那条路由 `check:retry`（`e2e/service/queue-retry-check.mjs`）专门取证 —— 它有反证轮，
+    //    而本脚本没有，所以两者分开：这里测 resume 的续做语义，那里测 retry 的任务身份。
+    //
     // 带上 X-Box-Client：真实应用是经 Rust 层转发的，那层给每个请求都打这个头
     // （`app/src-tauri/src/commands.rs`），故「来源」列才会显示「本机投放」。
     // 不带的话截图里会是一条「—」，看起来像缺陷，其实只是用例没照抄真实请求形状。
@@ -468,7 +474,7 @@ try {
     const rsJson = json(rs);
     check(
       'D3g',
-      `队列屏「重试」在 partial_failed 任务上真的可用：POST /resume 建单 201 并指向失败页 seq=${failSeq}`,
+      `漫画库「继续翻译」在 partial_failed 任务上真的可用：POST /resume 建单 201 并指向失败页 seq=${failSeq}`,
       rs.status === 201 && !!rsJson?.taskId,
       `${rs.status} ${JSON.stringify(rsJson?.error ?? rsJson?.taskId)}`,
     );

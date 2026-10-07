@@ -148,6 +148,7 @@ npm run selftest:app:e11      # E11 三进程树回收（mock）：SIGKILL 主�
 npm run selftest:app:e11:real # 同上但真进程（python+执行器+llama-server）；分钟级，按需手动跑
 npm run check:launch-plan     # S2 启动配方契约 24 条（含 ③ 归属移交后的 P-llm-* 断言）
 npm run check:child-watch     # 外部二进制父死看守的双向取证（反证：check:child-watch:refute）
+npm run check:child-watch-kill # child-watch Windows killTree 无条件 /F 源码钉子（反证：check:child-watch-kill:refute）
 npm run fetch:models          # S3 模型下载器（--check 只校验不联网 / --link 只重建引擎树里的链接；反证：check:models:refute）
 npm run e2e                   # D1–D5 端到端（真实 engine + 真实 service，真落盘）
 npm run capture               # 截图取证（需屏幕解锁；不满足条件会拒绝出图而非交假证据）
@@ -155,7 +156,8 @@ npm run capture               # 截图取证（需屏幕解锁；不满足条件
 # 结构断言（每条都带反证轮，见 docs/spec-notes.md 与 AGENTS.md §3）
 npm run check:ia              # IA 结构 32 条（侧栏两级 / 视图 Tab / 设置两栏壳 / 小节分层 / 侧栏两套几何 C8d）
 npm run check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
-npm run check:engine-client   # 翻译引擎适配层 42 条 / 反证 8 条（真协议用 openapi 快照「假引擎」，秒级可复跑）
+npm run check:quit            # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW / 前端不静默 / Windows signal_tree 无条件 /F）
+npm run check:engine-client   # 翻译引擎适配层 46 条 / 反证 10 条（真协议用 openapi 快照「假引擎」，秒级可复跑）
 npm run check:models          # S3 模型下载器 32 条 / 反证 5 条（本地 Range 夹具源：中断续传 / 篡改一字节 / 换版本重链，秒级）
 npm run check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）
 npm run check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
@@ -164,6 +166,7 @@ npm run check:music           # 音乐平台 / 心动模式 / 桌面歌词 / 逐
 npm run check:settings        # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + X-C3 裁定结果 + ④ 功能梳理（侧栏标签 / 存储占用 / 第三方许可 / def）164 条（反证：check:settings:refute，103 条）
 npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 样式分层 37 条（反证：check:units:refute）
 npm run check:stall           # U10② 引擎卡死：「静默有上界 + 每次尝试留痕 + 进行中落盘」7 条 / 反证 3 条（mock 引擎对指定 seq「永不回包」）
+npm run check:retry           # 队列「重试」任务身份：复用**同一** taskId / 不冒历史行 6 条 / 反证 5 条（mock 引擎 + 真服务子进程）
 npm run check:engine-settings # S6 引擎设置面：档位 / 后端 / 空闲 / 模型目录 + 模型下载状态 61 条（反证：check:engine-settings:refute）
 npm run check:docs            # 文档 ↔ 实现一致性：条数对账 / 引用的命令存在 / 禁词 0 命中 / 分组覆盖 14 条
 ```
