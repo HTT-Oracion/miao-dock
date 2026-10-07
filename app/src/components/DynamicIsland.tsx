@@ -282,7 +282,15 @@ export function DynamicIsland() {
     // 排队期间光标已经移开 → 直接放弃，别制造一次"扩了又收"的闪烁
     if (!wantExpandedRef.current) return;
     goPhase('expanded'); // 宽高同帧开动
-    setContentOn(false); // 折叠内容原位淡出（位置固定，无位移）
+    /*
+     * ⚠️ 只有音乐卡才淡出"折叠态内容" —— 它的展开态是**另一套**大卡（封面/歌名靠 transform
+     * 位移过去，折叠态的波形与名字让位）。普通提示**没有第二套内容**：它的展开态只是把胶囊
+     * 从自然宽放宽到 320，让 `.di-title` 的 `max-width` 从 176 涨到 236，从而露出被裁掉的
+     * 后半句（见 music.scss）。对提示也 `setContentOn(false)`，会把标题连同关闭键整体淡成
+     * 透明，而底下没有任何新内容补位 —— 表现就是「hover 上去有个形变动画，然后字没了」。
+     * 所以这里按 kind 分流：提示保持 contentOn=true，只是一路放宽。
+     */
+    if (t.kind === 'music') setContentOn(false);
     await wait(MORPH_MS);
     if (!expandedRef.current) return; // 中途中止：期间已收起
     if (phaseRef.current !== 'expanded') return;

@@ -12,6 +12,10 @@ export const CODES = {
   // 两个分支都会走到它：① 任务还在跑（running/queued）却被点重试；② 任务没有任何失败页
   //（例如 done）。都用 409 表达"冲突：现在不是做这件事的时候"，别混成 404 或 500。
   TASK_NOT_RETRYABLE: 409,
+  // 又是同一家族：**任务当前状态不允许删除**。只有「翻译中 / 排队中」会被它挡下 ——
+  // 那两条没有可删的「记录」可言（任务还在跑，进程随时会回写），所以拒绝而不是删掉内存里的副本。
+  // 用 409 表达"冲突：现在不是做这件事的时候"，与 NOT_CANCELABLE / NOT_RETRYABLE 一致。
+  TASK_NOT_DELETABLE: 409,
   SEQUENCE_OVERFLOW: 409,
   DISK_FULL: 507,
   PERMISSION_DENIED: 403,

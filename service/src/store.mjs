@@ -8,6 +8,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import {
   BATCH_LIMIT, ETA_SAMPLE_WINDOW, MAX_SEQ, FILE_NAME_RE, ORIGINAL_SCAN_RE,
   TRANSLATED_SCAN_RE, TASKS_STATE_DIR, IDEMPOTENCY_FILE, PENDING_DIR,
+  HIDDEN_COMICS_FILE,
   assertInsideRoot, canonicalize, config, seq3,
 } from './config.mjs';
 import { ApiError } from './errors.mjs';
@@ -96,6 +97,12 @@ export class Store {
     this._loopActive = false;
     /** idempotencyKey → { taskId, batchIndex, at } */
     this.idempotency = new Map();
+    /**
+     * 已从漫画库**隐藏**的漫画名（用户不勾选「删除本地文件」时只隐藏、保留磁盘文件）。
+     * 扫描 `/library` 时跳过这些目录；`unhideComic` 可恢复。见 `HIDDEN_COMICS_FILE` 注释。
+     * @type {Set<string>}
+     */
+    this.hiddenComics = new Set();
     this.startedAt = nowIso();
     /**
      * **本进程**的启动时刻（ms，毫秒精度）。
@@ -135,6 +142,14 @@ export class Store {
     try {
       const raw = JSON.parse(fs.readFileSync(IDEMPOTENCY_FILE, 'utf8'));
       for (const [k, v] of Object.entries(raw || {})) this.idempotency.set(k, v);
+    } catch { /* 首次启动无文件 */ }
+
+    // 已隐藏的漫画名（非数组/坏文件一律当作"没有隐藏"—— 与 idempotency 同一处置：
+    // 读盘失败绝不能连带把服务带不起来，那会让"少看见几部漫画"升级成"整个库打不开"。
+    this.hiddenComics = new Set();
+    try {
+      const raw = JSON.parse(fs.readFileSync(HIDDEN_COMICS_FILE, 'utf8'));
+      if (Array.isArray(raw?.comics)) for (const n of raw.comics) if (typeof n === 'string') this.hiddenComics.add(n);
     } catch { /* 首次启动无文件 */ }
 
     let restored = 0;
@@ -610,6 +625,83 @@ export class Store {
     // 否则排进队尾（此时显示「等待中」才是诚实的 —— 引擎同一时刻只跑一个任务）。
     this._enqueueOrStart(task);
     return { task, reused };
+  }
+
+  /**
+   * 批量删除任务**记录**（队列页多选删除）。
+   *
+   * 逐条回报、不整批抛错 —— 一批多选里混着「翻译中的」（删不掉）与「已完成的」（删得掉）
+   * 是常态，整批失败会让用户无从下手；只有逐条说清"哪几条没删成、为什么"，按钮才有意义。
+   *
+   * 只删「记录」：内存里的 task + 落盘的 `state/tasks/<taskId>.json`。
+   * **绝不碰漫画目录** —— 队列删的是"任务"，用户在漫画库删的才是"漫画"（两者是两回事，
+   * 一部漫画可能对应多条历史任务）。翻译中 / 排队中不可删：它们还在跑、进程随时回写状态，
+   * 删内存副本只会让"列表说没了、服务还在写"两者失配。
+   */
+  deleteTasks(taskIds) {
+    const deleted = [];
+    const skipped = [];
+    for (const taskId of taskIds) {
+      const task = this.tasks.get(taskId);
+      if (!task) {
+        skipped.push({ taskId, reason: 'not_found' });
+        continue;
+      }
+      if (!TASK_TERMINAL.has(task.status)) {
+        skipped.push({ taskId, reason: 'not_deletable', status: task.status });
+        continue;
+      }
+      // 收尾资源：终态任务的暂存区早已清空，这里兜底再扫一次；内存字节引用同理。
+      this._sweepStaged(taskId);
+      this._forgetBlobs(taskId);
+      this.tasks.delete(taskId);
+      try {
+        fs.rmSync(path.join(TASKS_STATE_DIR, `${taskId}.json`), { force: true });
+      } catch { /* 盘上已无该文件，无需处理 */ }
+      deleted.push(taskId);
+    }
+    return { deleted, skipped };
+  }
+
+  // ---------------------------------------------------------------- 漫画库「隐藏」
+
+  /** 已隐藏的漫画名（按中文排序），供 `/library` 过滤与「管理已隐藏」展示。 */
+  hiddenComicsView() {
+    return [...this.hiddenComics].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+  }
+
+  /** 隐藏一部漫画（保留磁盘文件），返回最新隐藏清单。 */
+  hideComic(comicName) {
+    if (!this.hiddenComics.has(comicName)) {
+      this.hiddenComics.add(comicName);
+      this._persistHidden();
+    }
+    return this.hiddenComicsView();
+  }
+
+  /** 取消隐藏（恢复显示），返回最新隐藏清单。 */
+  unhideComic(comicName) {
+    if (this.hiddenComics.delete(comicName)) this._persistHidden();
+    return this.hiddenComicsView();
+  }
+
+  /**
+   * 目录被**真删掉**时顺手清掉隐藏记录。
+   * 不清的后果：同名漫画日后重建（重新翻译同名作品）会被无声跳过，用户只看到"库是空的"。
+   */
+  forgetHidden(comicName) {
+    if (this.hiddenComics.delete(comicName)) this._persistHidden();
+  }
+
+  _persistHidden() {
+    try {
+      fs.mkdirSync(path.dirname(HIDDEN_COMICS_FILE), { recursive: true, mode: 0o700 });
+      fs.writeFileSync(HIDDEN_COMICS_FILE, JSON.stringify({ comics: this.hiddenComicsView() }, null, 2));
+    } catch (e) {
+      // 写不进盘不该让这次隐藏失败（内存里已生效），但必须说一声：否则用户重启后
+      // 会看到"我删掉的漫画又回来了"，却查不出为什么。
+      console.warn(`[box-service] ⚠ 隐藏清单写入失败（内存已生效，重启后会丢失）：${e.message}`);
+    }
   }
 
   /** 读磁盘上已有的原图字节（续做路径专用）；找不到返回 null，由调用方按失败收尾 */

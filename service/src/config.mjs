@@ -200,6 +200,19 @@ export const TOKEN_FILE = path.join(STATE_DIR, 'token');
 export const ENGINE_SETTINGS_FILE = path.join(STATE_DIR, 'engine-settings.json');
 
 /**
+ * 「已从漫画库隐藏」的漫画名清单（`state/hidden-comics.json`）。
+ *
+ * 场景：用户在漫画库删一部漫画时，弹窗里「是否删除本地文件」**不勾选** ⇒ 只把这部
+ * 从库里**隐藏**（磁盘文件原样保留），扫描时跳过它；勾选则连目录一起删。
+ *
+ * 为什么是「额外一份清单」而不是像其它地方那样「目录即索引」：这里要表达的恰恰是
+ * **「目录还在、但用户不想看到它」** —— 这件事在文件系统里无法自证，只能记下来。
+ * 放 `STATE_DIR` 而不放漫画目录：同 `token` / `idempotency.json` 的理由
+ * （契约 §7.5 —— 放进漫画目录会被库扫描误读为用户内容）。
+ */
+export const HIDDEN_COMICS_FILE = path.join(STATE_DIR, 'hidden-comics.json');
+
+/**
  * 「盘上的用户设置」+「环境变量」合并后的**生效设置**（`engine-settings.mjs` 的唯一调用点）。
  *
  * 🔴 这里是「谁说了算」的**唯一一处**实现。`print-launch-plan.mjs` 通过 import 本文件

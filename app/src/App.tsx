@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiPost, errorText, openPath, quitApp, serviceRestart } from '@/ipc';
 import type { ServiceState } from '@/ipc';
 import { useLibrary, useQuitRequest, useService, useTasks, useToasts } from '@hooks';
@@ -24,7 +24,7 @@ import {
   type Screen,
   type TranslateView,
 } from '@/nav';
-import type { CancelResponse, LibraryResponse, TaskRow } from '@/types';
+import type { CancelResponse, DeleteTasksResponse, LibraryResponse, TaskRow } from '@/types';
 import { formatBytes } from '@/util';
 
 /**
@@ -78,6 +78,50 @@ export function App() {
     setRefreshKey((k) => k + 1);
     void reloadTasks();
   }, [reloadTasks]);
+
+  /**
+   * 翻译完成后自动刷新漫画库（用户反馈：翻完了，库页却还是旧的）。
+   *
+   * 为什么**不给漫画库也加轮询**：库读的是**整个根目录**（逐目录 stat + 逐页清点），
+   * 代价远高于读一次任务列表，空闲时反复扫盘纯属浪费。而"库内容变了"这件事，
+   * 任务列表**已经知道** —— `running+queued` 从「有活」落到「没活」，就是一批任务刚收尾。
+   * 在那一刻补一次库刷新，正好覆盖用户真正会遇到的情形（翻完就该看到成品）。
+   * 其余边缘情形（外部往根目录里拷了东西）交给库页的「刷新」按钮。
+   */
+  const activeTasks = (tasks?.running ?? 0) + (tasks?.queued ?? 0);
+  const prevActiveTasks = useRef(0);
+  useEffect(() => {
+    if (prevActiveTasks.current > 0 && activeTasks === 0) refreshAll();
+    prevActiveTasks.current = activeTasks;
+  }, [activeTasks, refreshAll]);
+
+  /**
+   * 队列多选删除（`POST /tasks/delete`）。
+   *
+   * 只删记录、**不碰漫画目录** —— 队列删的是"任务"，漫画库删的才是"漫画"。
+   * 服务端逐条回报（翻译中/排队中的会被跳过），所以这里把两个数一起说出来，
+   * 而不是笼统地报"删除成功"。返回值供调用方决定是否清空勾选。
+   */
+  const deleteTasks = useCallback(
+    async (taskIds: string[]): Promise<boolean> => {
+      try {
+        const r = await apiPost<DeleteTasksResponse>('/tasks/delete', { taskIds });
+        if (r.deletedCount > 0 && r.skippedCount > 0) {
+          push(`已删除 ${r.deletedCount} 条记录；${r.skippedCount} 条翻译中/排队中，未删除`, 'info');
+        } else if (r.deletedCount > 0) {
+          push(`已删除 ${r.deletedCount} 条任务记录`, 'good');
+        } else {
+          push('没有可删除的任务（翻译中/排队中的不能删除）', 'info');
+        }
+        refreshAll();
+        return true;
+      } catch (e) {
+        push(errorText(e), 'bad');
+        return false;
+      }
+    },
+    [push, refreshAll],
+  );
 
   const restart = useCallback(async () => {
     try {
@@ -225,7 +269,13 @@ export function App() {
           ) : screen === 'translate' ? (
             view === 'queue' ? (
               hasRows ? (
-                <QueueTable rows={rows} onCancel={cancel} onRetry={retry} onOpen={openTaskDir} />
+                <QueueTable
+                  rows={rows}
+                  onCancel={cancel}
+                  onRetry={retry}
+                  onOpen={openTaskDir}
+                  onDelete={deleteTasks}
+                />
               ) : (
                 <QueueEmpty onGoSettings={() => setScreen('settings')} onGoDrop={() => setView('drop')} />
               )

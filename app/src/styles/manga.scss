@@ -6,6 +6,54 @@
   gap: 10px;
 }
 
+/* 多选工具条：常态只放一句说明 + 「多选」；进入多选后换成「已选 N / 全选本页 / 删除 / 取消多选」 */
+.queue-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+.queue-sel {
+  font-size: 11.5px;
+  color: var(--md-ink);
+}
+.queue-hint {
+  font-size: 11px;
+  color: var(--md-muted);
+}
+/* 分页器：居中，按钮与页码同行 */
+.queue-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding-top: 2px;
+  font-size: 11.5px;
+}
+
+/* 复选框：原生 input 各平台外观差异大，统一压成 15×15 圆角方块 + 语义色勾选。
+   禁用的（翻译中/排队中）走半透明，配 title 说明原因。 */
+.ck {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--md-pink);
+  cursor: pointer;
+}
+.ck:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+/* 弹窗里的「勾选 + 说明」一行 */
+.ckrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 2px;
+  cursor: pointer;
+  color: var(--md-ink);
+}
+
 /* 表头列宽 弹性 / 120 / 160 / 150 / 90；行高 58（《02》§5.2） */
 .qt-head,
 .qt-row {
@@ -46,12 +94,22 @@
   border-color: var(--md-line);
 }
 
+/* 任务名列：多选时左边多一个复选框，故整格是「行」；文字仍竖排两行由 .qt-name-col 承担。
+   这样加复选框不会挤动后面几列的固定宽（120/160/150/90 一个都不动）。 */
 .qt-name {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.qt-name-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
   gap: 1px;
+  text-align: left;
 }
 .qt-name-main {
   font-size: 12.5px;
@@ -438,6 +496,67 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+}
+/* 搜索框：贴在左栏顶部，与列表之间留一道分隔线 */
+.lib-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--md-line-soft);
+  flex: 0 0 auto;
+}
+.lib-search-ico {
+  position: absolute;
+  left: 20px;
+  color: var(--md-muted);
+  pointer-events: none;
+}
+.lib-search-input {
+  width: 100%;
+  height: 30px;
+  padding-left: 28px;
+  padding-right: 26px;
+  font-size: 12px;
+}
+.lib-search-clear {
+  position: absolute;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  color: var(--md-muted);
+}
+.lib-search-clear:hover {
+  color: var(--md-ink);
+}
+.lib-empty {
+  padding: 16px 10px;
+  font-size: 11.5px;
+  color: var(--md-muted);
+  text-align: center;
+}
+/* 左栏分页器（窄栏，故用紧凑两行式） */
+.lib-pager {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-top: 1px solid var(--md-line-soft);
+  font-size: 11px;
+}
+/* 「已隐藏 N」入口：左栏底部的一条文字按钮 */
+.lib-hidden-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--md-muted);
+}
+.lib-hidden-link:hover {
+  color: var(--md-ink);
 }
 
 .lib-right {
@@ -613,6 +732,129 @@
   box-shadow: 0 6px 18px rgba(59, 51, 82, 0.12);
   -webkit-user-select: none;
   user-select: none;
+}
+/* 可点全屏的图给"放大镜"光标；标题栏右侧给一句提示，免得功能不被发现 */
+.pane-body img.zoomable {
+  cursor: zoom-in;
+}
+.pane-zoom {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+
+/* 网格分页器（在 lib-foot-note 右侧） */
+.lib-grid-pager {
+  display: inline-flex;
+  gap: 8px;
+}
+
+/* ================================================================ 全屏看图（对照视图之上） */
+
+/* 铺满窗口的遮罩：z-index 高于一切表单层，低于模态确认框（那是不可跳过的） */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: rgba(12, 9, 24, 0.88);
+  cursor: zoom-out;
+}
+.lightbox-stage {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  cursor: default;
+}
+.lightbox-stage img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--md-radius-sm);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  -webkit-user-select: none;
+  user-select: none;
+}
+.lightbox-msg {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+}
+/* 底部控制条：作"看得清"的底，而不是半透明浮字 */
+.lightbox-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  cursor: default;
+}
+/* 右上角关闭键 */
+.lightbox-x {
+  position: fixed;
+  top: 16px;
+  right: 18px;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  color: var(--md-ink);
+}
+.lightbox-x:hover {
+  border-color: var(--md-pink);
+}
+
+/* ================================================================ 删除 / 隐藏弹窗的补充行 */
+
+.modal-warn {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--md-error);
+}
+.modal-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--md-muted);
+}
+.hidden-list {
+  margin-top: 10px;
+  max-height: 240px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hidden-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: var(--md-radius-xs);
+  background: var(--md-surface-2);
+}
+.hidden-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--md-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ================================================================ X-B1 本机投放 */

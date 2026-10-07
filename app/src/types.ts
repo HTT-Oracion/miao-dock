@@ -95,7 +95,35 @@ export interface LibraryResponse {
   totalImages: number;
   totalBytes: number;
   comics: ComicEntry[];
+  /**
+   * 被「只从库里移除、不删本地文件」的漫画名（服务端持久化在 `state/hidden-comics.json`）。
+   *
+   * 为什么需要它：漫画库是**目录即索引** —— 目录还在、扫描就一定会扫到它。
+   * 于是「删除但不删文件」这个动作在文件系统里无处安放，只能另存一份"忽略名单"。
+   * `comics` 里已排除它们；`POST /library/{name}/unhide` 可恢复。
+   */
+  hidden?: string[];
+  hiddenCount?: number;
   updatedAt: string;
+}
+
+/** `POST /tasks/delete` 的响应（队列多选删除）：逐条回报，不整批失败 */
+export interface DeleteTasksResponse {
+  deleted: string[];
+  /** 未删的原因：`not_found`（已被别处删掉）/ `not_deletable`（翻译中或排队中） */
+  skipped: { taskId: string; reason: 'not_found' | 'not_deletable'; status?: TaskStatus }[];
+  deletedCount: number;
+  skippedCount: number;
+}
+
+/** `POST /library/{comicName}/delete` 的响应 */
+export interface LibraryDeleteResponse {
+  comicName: string;
+  /** true = 连本地目录一起删了；false = 只从库里隐藏 */
+  deletedFiles: boolean;
+  outputDir?: string;
+  hidden?: string[];
+  hiddenCount?: number;
 }
 
 // ------------------------------------------------------------------ 健康

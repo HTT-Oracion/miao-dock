@@ -43,6 +43,8 @@
     "check:stall:refute": "node e2e/service/stall-guard-check.mjs --refute",
     "check:retry": "node e2e/service/queue-retry-check.mjs",
     "check:retry:refute": "node e2e/service/queue-retry-check.mjs --refute",
+    "check:lib-manage": "node e2e/service/library-manage-check.mjs",
+    "check:lib-manage:refute": "node e2e/service/library-manage-check.mjs --refute",
     "check:quit": "node e2e/quit-command-check.mjs",
     "check:quit:refute": "node e2e/quit-command-check.mjs --refute",
     "check:contract": "node e2e/service/contract-delta-check.mjs",

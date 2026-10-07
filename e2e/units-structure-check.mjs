@@ -924,6 +924,34 @@ add('ISLAND.idleRendersNothing', 'ISLAND', (s) => {
     return { ok: false, detail: '空闲态未早退（会一直挂着一个空胶囊）' };
   return { ok: true, detail: '' };
 });
+add('ISLAND.toastExpandKeepsContent', 'ISLAND', (s) => {
+  // 用户 2026-10-07 报：「hover 上去看着有个动画，然后消息内容就看不见了」。
+  //
+  // 根因：`playExpand` **无条件** `setContentOn(false)`。音乐卡展开态有**另一套**内容
+  // （大卡：封面/歌名位移过去，折叠态的波形与名字让位），淡出折叠内容是对的；
+  // 而普通提示的展开态**没有第二套内容** —— 它只是把胶囊从自然宽放宽到 320，
+  // 让 `.di-title` 的 max-width 从 176 涨到 236 从而露出被裁掉的后半句（见 music.scss）。
+  // 对提示也淡出，等于把标题连关闭键一起抹成透明，而底下无人补位 ⇒ 「字没了」。
+  //
+  // 判据：`playExpand` 段内，`setContentOn(false)` **只能**出现在 `t.kind === 'music'` 的分支里。
+  // 必须先 stripComments：本文件的注释里主动写出了 `setContentOn(false)` 来解释这个坑，
+  // 不剥注释会把注释算成命中（断言测到注释 = 假阳性）。
+  if (!s.island) return { ok: false, detail: 'DynamicIsland.tsx 不存在' };
+  const isl = stripComments(s.island);
+  const from = isl.indexOf('const playExpand = useCallback(');
+  const to = isl.indexOf('const playCollapse', from);
+  const seg = from >= 0 && to > from ? isl.slice(from, to) : '';
+  if (!seg) return { ok: false, detail: '未定位到 playExpand 段' };
+  const guarded = /if \(t\.kind === 'music'\) setContentOn\(false\);/.test(seg);
+  const fades = [...seg.matchAll(/setContentOn\(false\)/g)].length;
+  return {
+    ok: guarded && fades === 1,
+    detail:
+      guarded && fades === 1
+        ? ''
+        : `playExpand 对提示也淡出内容（hover 后字消失）：guarded=${guarded} setContentOn(false)×${fades}`,
+  };
+});
 
 // ══════════════════════════════════════════════════════════════════════════
 // STYLE —— 样式分层（app.css 拆成 base/app/manga/settings/components/music 六个分片）
@@ -1322,6 +1350,13 @@ const MUTATIONS = [
     replace: "  // 反证：空闲态不再早退",
     expect: ["ISLAND.idleRendersNothing"],
   },
+  {
+    name: "让 playExpand 对普通提示也淡出内容（hover 上去字消失）",
+    file: F.island,
+    find: "    if (t.kind === 'music') setContentOn(false);",
+    replace: "    setContentOn(false); // 反证：提示也淡出",
+    expect: ["ISLAND.toastExpandKeepsContent"],
+  },
 
   // ── STYLE（样式分层）─────────────────────────────────────────────────────
   // 这一组反证守的是「拆完之后没人守规矩，样式又长回一个文件 / 放错分片 /
@@ -1451,7 +1486,15 @@ if (!refute) {
           skipped += mut.expect.length;
         } else {
           const txt = original.toString("utf8");
-          if (!txt.includes(mut.find)) {
+          // 🔴 EOL 折算：本仓 `core.autocrlf=true`（且无 `.gitattributes` 归一），工作区是 **CRLF**，
+          //    而下面的锚点字面量写的是 **LF**。不折算时，**任何跨行锚点**都会"锚点未找到" →
+          //    该条静默不反证（跳过 ≠ 通过）。2026-10-07 实测：Windows 上因此有 9 条长期被跳过
+          //    （vite/tsconfig 的别名、index.scss 的 @use、music/Toast 的多行锚点），
+          //    而"能跑绿的 26 条"掩盖了这件事 —— 正是本项目最警惕的「覆盖率幻觉」。
+          const eol = txt.includes("\r\n") ? "\r\n" : "\n";
+          const find = mut.find.split("\n").join(eol);
+          const repl = mut.replace.split("\n").join(eol);
+          if (!txt.includes(find)) {
             console.log(
               `⚠ ${mut.name}\n    破坏锚点未找到（源文件已变？）—— 本条无法反证`,
             );
@@ -1459,7 +1502,7 @@ if (!refute) {
             skipped += mut.expect.length;
           } else {
             record = { kind: "edit", file: mut.file, original };
-            overrideFile(mut.file, txt.replace(mut.find, mut.replace)); // 内存破坏，不写磁盘
+            overrideFile(mut.file, txt.replace(find, repl)); // 内存破坏，不写磁盘
           }
         }
       }

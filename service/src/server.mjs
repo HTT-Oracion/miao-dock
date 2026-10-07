@@ -1146,6 +1146,9 @@ function scanLibrary() {
   } catch { /* 根目录不存在 → 空库 */ }
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
+    // 用户「删除但不删本地文件」⇒ 只隐藏：目录还在，但不再出现在库里。
+    // 判定用**原始目录名**（与 `hideComic` 存的名字同一口径）。
+    if (store.hiddenComics.has(entry.name)) continue;
     const dir = path.join(root, entry.name);
     const originals = new Set();
     const translated = new Set();
@@ -1198,6 +1201,9 @@ function scanLibrary() {
     totalImages: comics.reduce((n, c) => n + c.imageCount, 0),
     totalBytes: comics.reduce((n, c) => n + c.byteSize, 0),
     comics,
+    // 隐藏清单：既让界面能显示「已隐藏 N 部 · 管理」，也让用户知道库没扫漏。
+    hidden: store.hiddenComicsView(),
+    hiddenCount: store.hiddenComics.size,
     updatedAt: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
   };
 }
@@ -1289,6 +1295,76 @@ function handleReveal(req, res, cors, rawName) {
 }
 
 /**
+ * `POST /tasks/delete` —— 队列页多选删除（**契约外增量端点**）。
+ *
+ * body：`{ "taskIds": ["tsk_…", …] }`。
+ * 语义：只删「记录」（内存 + `state/tasks/<id>.json`），**不碰漫画目录** ——
+ * 队列删的是"任务"，漫画库删的才是"漫画"。翻译中 / 排队中不可删，逐条回报 `skipped`，
+ * 不整批失败（一批多选里混着两种状态是常态，见 `Store.deleteTasks`）。
+ */
+async function handleDeleteTasks(req, res, cors) {
+  const body = await readBody(req);
+  let parsed = null;
+  try { parsed = body && body.length ? JSON.parse(body.toString('utf8')) : null; } catch { /* 允许空体 → 下面报错 */ }
+  const taskIds = parsed?.taskIds;
+  if (!Array.isArray(taskIds) || taskIds.length === 0 || taskIds.some((t) => typeof t !== 'string')) {
+    throw new ApiError('INVALID_IMAGE', 'taskIds 必须是非空字符串数组', { taskIds });
+  }
+  const { deleted, skipped } = store.deleteTasks(taskIds);
+  sendJson(res, 200, { deleted, skipped, deletedCount: deleted.length, skippedCount: skipped.length }, cors);
+}
+
+/**
+ * `POST /library/{comicName}/delete` —— 从漫画库删除一部漫画（**契约外增量端点**）。
+ *
+ * body：`{ "deleteFiles": boolean }`（缺省按 `false` 处理，即"只隐藏"更安全）：
+ *  · `deleteFiles: true`  ⇒ 递归删除该漫画目录（磁盘真删）；
+ *  · `deleteFiles: false` ⇒ 只把该漫画**隐藏**（目录与文件原样保留），库里不再显示。
+ *
+ * 安全：目录名先过 `resolveComicDir`（§8.2 校验点 2 的原始名断言 + 前缀校验），
+ * 真删前再断言一次"在根目录内、且不是根目录本身" —— 删除是不可逆动作，守卫不嫌多。
+ */
+async function handleLibraryDelete(req, res, cors, rawName) {
+  const { name, dir } = resolveComicDir(rawName);
+  const body = await readBody(req);
+  let parsed = null;
+  try { parsed = body && body.length ? JSON.parse(body.toString('utf8')) : null; } catch { /* 允许空体 */ }
+  const deleteFiles = parsed?.deleteFiles === true;
+
+  if (!deleteFiles) {
+    const hidden = store.hideComic(name);
+    return sendJson(res, 200, { comicName: name, deletedFiles: false, hidden, hiddenCount: hidden.length }, cors);
+  }
+
+  try {
+    assertInsideRoot(store.root, path.join(dir, 'x.png'));
+  } catch {
+    securityLog(`拒绝删除越界的漫画目录：${dir}（root=${store.root}）`);
+    throw permissionDenied();
+  }
+  if (path.resolve(dir) === path.resolve(store.root)) {
+    securityLog(`拒绝删除漫画库根目录本身：${dir}`);
+    throw permissionDenied();
+  }
+  if (!fs.existsSync(dir)) {
+    // 目录本就不在：顺手清掉可能残留的隐藏记录（否则同名重建会被无声跳过），再如实报 404。
+    store.forgetHidden(name);
+    throw new ApiError('TASK_NOT_FOUND', '漫画目录不存在', { comicName: name, outputDir: dir });
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+  // 目录已真删，隐藏记录也就没意义了 —— 不清会让"日后重建的同名漫画"被无声跳过。
+  store.forgetHidden(name);
+  sendJson(res, 200, { comicName: name, deletedFiles: true, outputDir: dir }, cors);
+}
+
+/** `POST /library/{comicName}/unhide` —— 取消隐藏，恢复显示（**契约外增量端点**）。 */
+async function handleLibraryUnhide(req, res, cors, rawName) {
+  const { name } = resolveComicDir(rawName);
+  const hidden = store.unhideComic(name);
+  sendJson(res, 200, { comicName: name, hidden, hiddenCount: hidden.length }, cors);
+}
+
+/**
  * `GET /library/{comicName}/resume` —— 该漫画「有原图、缺译文」的页清单
  * （**契约外增量端点**，见 docs/spec-notes.md G-07）。
  *
@@ -1362,6 +1438,9 @@ async function route(req, res, cors, url) {
   }
   // /tasks/{taskId}
   if (p.length === 2 && p[0] === 'tasks') {
+    // ⚠️ 必须在把 p[1] 当 taskId 之前拦下 `delete`：taskId 形状是 `tsk_…`，
+    // 不会与这个保留字冲突，但顺序上先判更不易被后来的改动带歪。
+    if (p[1] === 'delete' && method === 'POST') return handleDeleteTasks(req, res, cors);
     if (method === 'GET') return handleTaskDetail(req, res, cors, p[1], url);
     throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
   }
@@ -1415,6 +1494,14 @@ async function route(req, res, cors, url) {
   // /library/{comicName}/reveal
   if (p.length === 3 && p[0] === 'library' && p[2] === 'reveal' && method === 'POST') {
     return handleReveal(req, res, cors, p[1]);
+  }
+  // /library/{comicName}/delete —— 删除策略二选一（契约：deleteFiles=true 连目录删；false 只隐藏）
+  if (p.length === 3 && p[0] === 'library' && p[2] === 'delete' && method === 'POST') {
+    return handleLibraryDelete(req, res, cors, p[1]);
+  }
+  // /library/{comicName}/unhide —— 撤销隐藏（隐藏项不出现在 GET /library，故必须留这扇门）
+  if (p.length === 3 && p[0] === 'library' && p[2] === 'unhide' && method === 'POST') {
+    return handleLibraryUnhide(req, res, cors, p[1]);
   }
   // /library/{comicName}/resume
   if (p.length === 3 && p[0] === 'library' && p[2] === 'resume') {
