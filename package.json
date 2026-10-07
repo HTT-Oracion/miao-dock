@@ -45,6 +45,8 @@
     "check:retry:refute": "node e2e/service/queue-retry-check.mjs --refute",
     "check:lib-manage": "node e2e/service/library-manage-check.mjs",
     "check:lib-manage:refute": "node e2e/service/library-manage-check.mjs --refute",
+    "check:retranslate": "node e2e/service/retranslate-check.mjs",
+    "check:retranslate:refute": "node e2e/service/retranslate-check.mjs --refute",
     "check:quit": "node e2e/quit-command-check.mjs",
     "check:quit:refute": "node e2e/quit-command-check.mjs --refute",
     "check:contract": "node e2e/service/contract-delta-check.mjs",

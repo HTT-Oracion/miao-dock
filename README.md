@@ -168,6 +168,7 @@ npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动�
 npm run check:stall           # U10② 引擎卡死：「静默有上界 + 每次尝试留痕 + 进行中落盘」7 条 / 反证 3 条（mock 引擎对指定 seq「永不回包」）
 npm run check:retry           # 队列「重试」任务身份：复用**同一** taskId / 不冒历史行 6 条 / 反证 5 条（mock 引擎 + 真服务子进程）
 npm run check:lib-manage      # 队列多选删除 + 漫画库隐藏/删除：仅终端态可删 / deleteFiles 勾选 / 越界名 403 / 前端接线 8 条 / 反证 4 条（反证：check:lib-manage:refute）
+npm run check:retranslate     # 单张漫画返工重译 + 全屏缩放：覆盖译文 / 不碰原图 / 与 resume 分工 / 缩放不抢音量键 12 条 / 反证 5 条（反证：check:retranslate:refute）
 npm run check:engine-settings # S6 引擎设置面：档位 / 后端 / 空闲 / 模型目录 + 模型下载状态 61 条（反证：check:engine-settings:refute）
 npm run check:docs            # 文档 ↔ 实现一致性：条数对账 / 引用的命令存在 / 禁词 0 命中 / 分组覆盖 14 条
 ```

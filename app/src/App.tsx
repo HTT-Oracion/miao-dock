@@ -280,7 +280,13 @@ export function App() {
                 <QueueEmpty onGoSettings={() => setScreen('settings')} onGoDrop={() => setView('drop')} />
               )
             ) : view === 'library' ? (
-              <LibraryScreen lib={lib} onRefresh={refreshAll} onToast={push} refreshKey={refreshKey} />
+              <LibraryScreen
+                lib={lib}
+                tasks={rows}
+                onRefresh={refreshAll}
+                onToast={push}
+                refreshKey={refreshKey}
+              />
             ) : (
               <DropScreen
                 rootDir={status?.root_dir ?? null}

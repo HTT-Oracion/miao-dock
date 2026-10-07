@@ -1404,6 +1404,68 @@ function handleResume(req, res, cors, rawName) {
   });
 }
 
+/**
+ * `GET /library/{comicName}/retranslate` —— 返工计划：**所有有原图的页**
+ * （**契约外增量端点**）。
+ *
+ * ## 为什么不能复用 `GET .../resume`
+ * resume 给的是「有原图、**缺译文**」的页 —— 恰恰把"译错了的那几页"排除在外。
+ * 译错的页**已经有译文**了，所以返工要的集合是「有原图」（不论译文在不在）。
+ * 两者对同一部漫画给出的答案几乎不重叠，混淆会让返工按钮永远显示"没有可返工的页"。
+ *
+ * 顺带给 `overwriteCount`：前端要告诉用户"这会覆盖 N 张已有译文"，
+ * 这是不可逆操作，不提示就等于替用户做决定。
+ */
+function handleRetranslatePlan(req, res, cors, rawName) {
+  const { name } = resolveComicDir(rawName);
+  sendJson(res, 200, store.retranslatePlan(name), cors);
+}
+
+/**
+ * `POST /library/{comicName}/retranslate` —— 单张漫画**返工重译**（**契约外增量端点**）。
+ *
+ * body（可选）：`{ "seqs": [3, 7] }`；省略则返工该漫画全部有原图的页。
+ *
+ * ## 与 resume / retry 的三分（都叫"再跑一次"，语义各不相同）
+ *  · resume     补**缺**的页，遇到已有译文跳过 ⇒ 可反复点，幂等。
+ *  · retry      重跑**同一个任务**里**失败**的页，复用同一 taskId（队列行原地复活）。
+ *  · retranslate 重跑**已译**的页（译错了要返工），**覆盖**译文，新建 taskId。
+ *
+ * 覆盖只发生在译文上；原图是用户数据，`_writeOriginal` 的「永不覆盖」原样保留。
+ * 页数超 `BATCH_LIMIT` 报 `BATCH_LIMIT_EXCEEDED`（409），前端据此提示分批。
+ */
+function handleRetranslate(req, res, cors, rawName) {
+  return readBody(req).then(async (body) => {
+    await assertSidecarReady();
+    const { name } = resolveComicDir(rawName);
+    let seqs;
+    if (body && body.length) {
+      let parsedBody = null;
+      try { parsedBody = JSON.parse(body.toString('utf8')); } catch { /* 允许空体 */ }
+      if (parsedBody && parsedBody.seqs !== undefined) {
+        if (!Array.isArray(parsedBody.seqs)) {
+          throw new ApiError('INVALID_IMAGE', 'seqs 必须是数组', { seqs: parsedBody.seqs });
+        }
+        seqs = parsedBody.seqs;
+      }
+    }
+    assertRootWritable(); // §2.2 DISK_FULL(507)：返工同样要往磁盘写译文
+    const { task, plan } = store.createRetranslateTask(name, { seqs, source: sourceOf(req) });
+    sendJson(res, 201, {
+      ...store.createView(task),
+      overwriteCount: plan.overwriteCount,
+      retranslateCount: pickedCount(plan, seqs),
+    }, cors);
+  });
+}
+
+/** 本次实际提交的页数（指定 seqs 时只算被选中的，用于回执不谎报） */
+function pickedCount(plan, seqs) {
+  if (!seqs || !seqs.length) return plan.retranslateCount;
+  const want = new Set(seqs.map(Number));
+  return plan.candidates.filter((c) => want.has(c.seq)).length;
+}
+
 // ------------------------------------------------------------------ 路由
 
 function splitPath(pathname) {
@@ -1502,6 +1564,12 @@ async function route(req, res, cors, url) {
   // /library/{comicName}/unhide —— 撤销隐藏（隐藏项不出现在 GET /library，故必须留这扇门）
   if (p.length === 3 && p[0] === 'library' && p[2] === 'unhide' && method === 'POST') {
     return handleLibraryUnhide(req, res, cors, p[1]);
+  }
+  // /library/{comicName}/retranslate —— 单张漫画返工重译（覆盖已有译文）
+  if (p.length === 3 && p[0] === 'library' && p[2] === 'retranslate') {
+    if (method === 'GET') return handleRetranslatePlan(req, res, cors, p[1]);
+    if (method === 'POST') return handleRetranslate(req, res, cors, p[1]);
+    throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
   }
   // /library/{comicName}/resume
   if (p.length === 3 && p[0] === 'library' && p[2] === 'resume') {

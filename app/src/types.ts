@@ -24,6 +24,13 @@ export interface TaskProgress {
 export interface TaskRow {
   taskId: string;
   comicName: string;
+  /**
+   * 归一化后的目录名（漫画库用它和 `ComicEntry` 对上，见 store 的 `listView` 注释）。
+   *
+   * **可选**：这是后加的字段，`state/tasks/*.json` 里恢复出来的旧任务快照没有它。
+   * 消费方必须容忍 `undefined`（拿 `comicName` 兜底），别把它当必填。
+   */
+  normalizedComicName?: string;
   source: TaskSource;
   status: TaskStatus;
   queuePosition: number;
@@ -124,6 +131,34 @@ export interface LibraryDeleteResponse {
   outputDir?: string;
   hidden?: string[];
   hiddenCount?: number;
+}
+
+/** `GET /library/{comicName}/retranslate` 的响应（返工计划） */
+export interface RetranslatePlan {
+  comicName: string;
+  /** 归一化后的目录名（= `TaskRow.normalizedComicName`），用于和任务列表对上 */
+  dirName: string;
+  outputDir: string;
+  imageCount: number;
+  translatedCount: number;
+  /** 有原图的页数 = 本次默认返工的范围 */
+  retranslateCount: number;
+  /** 其中已有译文的页数 = 会被覆盖的页数（不可逆，UI 必须提示） */
+  overwriteCount: number;
+  candidates: { seq: number; ext: string; byteSize: number; originalFile: string; hadTranslation: boolean }[];
+  /**
+   * 前端补的字段（非服务端返回）：该漫画是否已有任务在队列中。
+   *
+   * 为什么放在计划对象上而不是单独一个 state：计划与"能不能点"是**同一个判断的两面**，
+   * 拆成两个 state 就会出现"菜单按计划说能点、按钮按队列说在跑"的矛盾帧。
+   */
+  reworking?: boolean;
+}
+
+/** `POST /library/{comicName}/retranslate` 的响应（建单视图 + 覆盖信息） */
+export interface RetranslateResponse extends CreateTaskResponse {
+  overwriteCount: number;
+  retranslateCount: number;
 }
 
 // ------------------------------------------------------------------ 健康

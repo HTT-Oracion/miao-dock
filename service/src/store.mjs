@@ -500,7 +500,146 @@ export class Store {
       translatedCount: translated.size,
       pendingCount: pendings.length,
       pendings,
+      /**
+       * 已有译文的页号（升序）。
+       *
+       * 为什么要在这里就把集合给出：`GET /library` 的汇总里只有**张数**，
+       * 回答不了"哪几页译过了"。`pendings` 只能反推（在有原图的前提下），
+       * 一遇到"有译文但原图没了"的页就漏 —— 而返工计划（`retranslatePlan`）
+       * 需要精确判断每一页**是否将被覆盖**，靠张数推断会把结论整体错位。
+       */
+      translatedSeqs: [...translated].sort((a, b) => a - b),
     };
+  }
+
+  /**
+   * 返工计划：目录里**所有有原图的页**（不论是否已有译文）。
+   *
+   * 与 `resumePlan` 的差别只有一条，却决定了整个功能的语义：
+   * `resumePlan` 取的是「有原图 **且缺译文**」，返工取的是「有原图」——
+   * 译错了的那几页**已经有译文**了，正是 `resumePlan` 明确排除掉的那些。
+   * 若复用它，返工会对「已译完」的漫画报"没有待续做的页"，功能形同虚设。
+   *
+   * ⚠️ 页数上限：单次提交仍受 `BATCH_LIMIT` 约束，所以整部返工需要分批
+   * （由 `createRetranslateTask` 报 409，前端据此提示分批）。
+   */
+  retranslatePlan(dirName) {
+    const plan = this.resumePlan(dirName); // 复用同一遍扫描，不维护第二份索引
+    const dir = path.join(this.root, dirName);
+    const candidates = [];
+    for (const f of this._listDir(dir)) {
+      const m = ORIGINAL_SCAN_RE.exec(f);
+      if (!m) continue;
+      const seq = Number(m[1]);
+      let byteSize = 0;
+      try { byteSize = fs.statSync(path.join(dir, f)).size; } catch { /* ignore */ }
+      candidates.push({
+        seq,
+        ext: f.split('.').pop().toLowerCase(),
+        byteSize,
+        originalFile: f,
+        hadTranslation: plan.translatedSeqs.includes(seq),
+      });
+    }
+    candidates.sort((a, b) => a.seq - b.seq);
+    return {
+      comicName: dirName,
+      dirName,
+      outputDir: dir,
+      imageCount: plan.imageCount,
+      translatedCount: plan.translatedCount,
+      retranslateCount: candidates.length,
+      /** 已被译文覆盖、这次会被真正重写的页（前端用来提示"会覆盖 N 张"） */
+      overwriteCount: candidates.filter((c) => c.hadTranslation).length,
+      candidates,
+    };
+  }
+
+  /** 列目录，目录不存在返回空数组（`resumePlan` 抛 404，返工计划要能"空目录也不炸"） */
+  _listDir(dir) {
+    try {
+      return fs.readdirSync(dir);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * 单张漫画返工重译：为「有原图」的页**重新**跑一遍引擎，**覆盖已有译文**。
+   *
+   * ## 与 `createResumeTask` 的分工（别混）
+   *  · resume    = 补**缺**的页，遇到已有译文就跳过（幂等续做，可反复点）。
+   *  · retranslate = 重跑**已译**的页（译错了要返工），译文会被覆盖。
+   *
+   * ## 覆盖是怎么做到的（两处配套，缺一不可）
+   * ① `item.overwrite = true` ⇒ `_processItem` **跳过** `skipExisting` 的幂等短路
+   *    （否则每一页都会以 `already_exists` 被跳过，任务秒完但什么都没重译）；
+   * ② `_writeItem` 对 `overwrite` 的页改用 `flag:'w'` 而非 `'wx'` 覆盖写译文。
+   *
+   * ## 为什么不覆盖原图
+   * 原图是**用户的数据**，返工只重译 —— `_writeOriginal` 的「永不覆盖」原样保留，
+   * 且续做路径 `fromDisk:true` 读的就是磁盘上那份原图，一个字节都不会动。
+   *
+   * 单次上限沿用 `BATCH_LIMIT`（20）：整部漫画上百页时必须分批，
+   * 一次建单塞 200 页会让引擎队列被单个任务占死。
+   */
+  createRetranslateTask(dirName, { seqs, source } = {}) {
+    const plan = this.retranslatePlan(dirName);
+    const want = seqs && seqs.length ? new Set(seqs.map(Number)) : null;
+    const picked = want ? plan.candidates.filter((c) => want.has(c.seq)) : plan.candidates;
+
+    if (picked.length === 0) {
+      throw new ApiError('TASK_NOT_FOUND',
+        plan.imageCount === 0 ? '该漫画目录里没有原图，无从返工' : '指定的页在本机没有原图',
+        { comicName: dirName, imageCount: plan.imageCount });
+    }
+    if (picked.length > BATCH_LIMIT) {
+      throw new ApiError('BATCH_LIMIT_EXCEEDED',
+        `返工 ${picked.length} 张，超过单次上限 ${BATCH_LIMIT} 张；请分批返工`,
+        { limit: BATCH_LIMIT, submitted: picked.length, seqs: picked.map((c) => c.seq) });
+    }
+
+    const items = picked.map((c) => ({
+      seq: c.seq,
+      ext: c.ext,
+      mime: c.ext === 'jpg' ? 'image/jpeg' : `image/${c.ext}`,
+      byteSize: c.byteSize,
+      /** 原图从磁盘读，内存里没有上传字节 */
+      fromDisk: true,
+      /** 🔴 返工标记：让 worker 跳过幂等短路 + 允许覆盖译文（见方法头的两处配套） */
+      overwrite: true,
+      status: 'pending',
+      saved: false,
+      outputFile: null,
+      originalFile: c.originalFile,
+      sha256: null,
+      durationMs: null,
+      retryCount: 0,
+      reason: null,
+    }));
+
+    const seqFrom = picked[0].seq;
+    const seqTo = picked[picked.length - 1].seq;
+    const task = this._newTask({
+      comicName: dirName,
+      dirName,
+      source,
+      batches: [{
+        batchIndex: 1,
+        count: items.length,
+        seqFrom,
+        seqTo,
+        status: 'queued',
+        idempotencyKey: null,
+        items,
+      }],
+      idempotencyKey: null,
+    });
+
+    this.tasks.set(task.taskId, task);
+    this._persistNow(task);
+    this._enqueueOrStart(task);
+    return { task, replay: false, plan };
   }
 
   /**
@@ -951,7 +1090,9 @@ export class Store {
     const blobKey = `${task.taskId}:${item.seq}`;
 
     // 幂等续做：NNN_translated.* 已存在 → skipped(already_exists)，序号不变
-    if (config.skipExisting && this._translatedExists(dir, item.seq)) {
+    // ⚠️ `item.overwrite`（返工重译）必须**绕过**这条短路，否则每一页都会以
+    // `already_exists` 被跳过 —— 任务秒完、进度条走满、译文却一个字没换。
+    if (config.skipExisting && !item.overwrite && this._translatedExists(dir, item.seq)) {
       item.status = 'skipped';
       item.reason = 'already_exists';
       item.saved = true;
@@ -1155,7 +1296,22 @@ export class Store {
     this._writeOriginal(task, item, originalBytes);
 
     const dir = this.taskDir(task);
-    fs.writeFileSync(path.join(dir, translatedName), translated.bytes, { flag: 'wx', mode: 0o600 });
+    /**
+     * 译文的落盘 flag：**默认 `'wx'`（独占，已存在即失败）**，这是「不覆盖」的硬保证。
+     *
+     * 返工重译（`item.overwrite`）是**唯一**允许覆盖译文的场景 —— 用户明确要求重译，
+     * 不覆盖的话旧译文会永远留在那儿，返工等于没做。改用 `'w'` 之前先删掉旧文件：
+     * 扩展名可能与上次不同（上次 png、这次 jpg），只覆盖同名会留下**两份**译文，
+     * 而扫描按 readdir 顺序认第一个 ⇒ 用户看到"重译了但还是旧图"。
+     */
+    if (item.overwrite) {
+      const stale = this._findTranslatedName(dir, item.seq);
+      if (stale && stale !== translatedName) {
+        try { fs.rmSync(path.join(dir, stale), { force: true }); } catch { /* 删不掉就下面写同名那份 */ }
+      }
+    }
+    fs.writeFileSync(path.join(dir, translatedName), translated.bytes,
+      { flag: item.overwrite ? 'w' : 'wx', mode: 0o600 });
     item.outputFile = translatedName;
     item.sha256 = sha256(translated.bytes);
   }
@@ -1403,6 +1559,15 @@ export class Store {
     return {
       taskId: task.taskId,
       comicName: task.comicName,
+      /**
+       * 归一化后的目录名。
+       *
+       * 为什么列表行也要带它：漫画库要判「这本书是否已有任务在跑」，
+       * 而库里显示的是**原始漫画名**、落盘用的是**归一化名**（两者可能差空格/大小写）。
+       * 前端拿原始名去比会漏判 ⇒ 已经排队的书还能再点一次返工 ⇒ 同一本被两个任务
+       * 前后脚跑、译文互相覆盖。与其让前端猜归一化规则，不如把真值给出去。
+       */
+      normalizedComicName: task.normalizedComicName,
       source: task.source || 'unknown',
       status: task.status,
       queuePosition: task.queuePosition,

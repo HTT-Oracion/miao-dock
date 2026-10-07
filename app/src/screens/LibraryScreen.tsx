@@ -1,9 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
-import { EyeOff, FolderUp, RefreshCw, Search, Trash2, X } from 'lucide-react';
+import { ChevronDown, EyeOff, FolderUp, RefreshCw, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import { apiBytes, apiGet, apiPost, errorText, isApiError, openPath } from '@/ipc';
 import { LIBRARY } from '@/theme/tokens';
-import type { ComicEntry, LibraryDeleteResponse, LibraryResponse } from '@/types';
+import type {
+  ComicEntry,
+  LibraryDeleteResponse,
+  LibraryResponse,
+  RetranslatePlan,
+  RetranslateResponse,
+  TaskRow,
+} from '@/types';
 import { formatBytes, fuzzyMatch, pageCount, pageSlice, sniffMime } from '@/util';
 import { Btn } from '@components/units';
 
@@ -224,6 +231,17 @@ function Pane({
   );
 }
 
+/** 缩放档位（%）：下限 100%（=原尺寸，不再缩小）、上限 200%，步进 25% */
+const ZOOM_MIN = 100;
+const ZOOM_MAX = 200;
+const ZOOM_STEP = 25;
+
+/** 把缩放夹进 [100, 200] 并对齐到 25 的整数倍 —— 避免拖拽/连点攒出 137.5% 这种值 */
+function clampZoom(z: number): number {
+  const snapped = Math.round(z / ZOOM_STEP) * ZOOM_STEP;
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, snapped));
+}
+
 /**
  * 全屏看图（零依赖自绘，拍板：不为此引第三方 lightbox）。
  *
@@ -232,6 +250,20 @@ function Pane({
  * 与项目"零 Context、少依赖"的既有裁定相悖（《09》§2）。
  *
  * 关键交互：**Esc 关闭全屏而不是退出对照** —— 由 `Compare` 统一裁决（见那里的说明）。
+ *
+ * ## 缩放（Ctrl/⌘ + ↑ / ↓，100%–200%）
+ * 为什么把快捷键挂在**这里**而不是全局：全局已有 `useMusicHotkeys` 占着裸 `↑/↓`
+ * （调音量），而它对带 Ctrl/⌘ 的一律 return，所以 `Ctrl+↑` 这条组合**没人抢**。
+ * 反过来本组件也只认「Ctrl/⌘ + ↑/↓」，不碰裸键 —— 两边井水不犯河水。
+ *
+ * ## 拖拽（放大后）
+ * 用 **Pointer Events** 而非 `mousedown/touchstart` 三件套：一次监听同时覆盖
+ * 鼠标、触屏、触控板（macOS 与 Windows 的事件模型在这里是同一套）；
+ * 再配 `touch-action: none` 阻止移动端浏览器的默认平移手势 —— 否则触屏上拖动会
+ * 变成"整页跟着滚"，图片纹丝不动。
+ *
+ * 偏移量按**指针位移**累加，而不是换算成绝对坐标 —— 缩放变化后图片尺寸变了，
+ * 绝对坐标会让"松手位置"和"指针位置"错开，出现图突然跳一下。
  */
 function Lightbox({
   comicName,
@@ -254,37 +286,197 @@ function Lightbox({
 }) {
   const blob = useBlobUrl(filePath(comicName, seq, variant));
   const label = variant === 'original' ? '原图' : '译文';
+  const [zoom, setZoom] = useState(ZOOM_MIN);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [barHidden, setBarHidden] = useState(false);
+  // 拖拽过程用 ref 记，不进 state：指针每动一动就 setState 会把组件重渲染到拖不动
+  const drag = useRef<{ active: boolean; px: number; py: number; moved: boolean } | null>(null);
+
+  /**
+   * 缩放时**重置偏移** —— 由下面两个 `setZoom` 后的 `setOffset({x:0,y:0})` 同步完成。
+   *
+   * 为什么必须重置：图片按 `scale` 从中心放大，旧的偏移在新比例下对应的可见区域完全不同
+   * （100% 时 (0,0) 是居中，200% 时同样的 (0,0) 仍居中，但用户上次拖到的边缘位置
+   * 在新比例下已经变成"图片外的空白"）。留着旧偏移会出现"一按 Ctrl+↑ 图就偏出去"。
+   */
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Ctrl(win/linux) 与 ⌘(mac) 都算"缩放键" —— macOS 上 ⌘+↑/↓ 没有系统级默认行为，
+      // 而 Ctrl+↑/↓ 在 macOS 是 Mission Control / 全屏，两者都不能抢，故两个都收。
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      setZoom((z) => clampZoom(e.key === 'ArrowUp' ? z + ZOOM_STEP : z - ZOOM_STEP));
+      setOffset({ x: 0, y: 0 });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // 换页后缩放与偏移一并复位：新图不该继承上一张的放大倍数
+  useEffect(() => {
+    setZoom(ZOOM_MIN);
+    setOffset({ x: 0, y: 0 });
+  }, [seq, variant]);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    // 只响应主键 / 单指；右键与多指交给系统（macOS 上右键常被唤出菜单）
+    if (e.button !== 0) return;
+    drag.current = { active: true, px: e.clientX, py: e.clientY, moved: false };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d || !d.active) return;
+    const dx = e.clientX - d.px;
+    const dy = e.clientY - d.py;
+    if (!d.moved && Math.abs(dx) + Math.abs(dy) < 3) return; // 抖动阈值：区分"点击"与"拖拽"
+    d.moved = true;
+    d.px = e.clientX;
+    d.py = e.clientY;
+    setOffset((o) => ({ x: o.x + dx, y: o.y + dy }));
+  };
+
+  const endDrag = (e: React.PointerEvent) => {
+    const d = drag.current;
+    drag.current = null;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    // 纯点击（没移动过）⇒ 当成"显示/隐藏底部工具栏"；拖过就不触发，避免拖完顺手把工具栏也关了
+    if (d && !d.moved) setBarHidden((v) => !v);
+  };
+
+  const zoomed = zoom > ZOOM_MIN;
+
   return (
     <div className="lightbox" onClick={onClose} role="dialog" aria-modal="true" aria-label="全屏查看">
       <div className="lightbox-stage" onClick={(e) => e.stopPropagation()}>
         {blob.kind === 'ready' ? (
-          <img src={blob.url} alt={`第 ${seq} 页${label} 全屏`} draggable={false} />
+          <img
+            src={blob.url}
+            alt={`第 ${seq} 页${label} 全屏`}
+            draggable={false}
+            className={zoomed ? 'is-zoomed' : undefined}
+            style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom / 100})` }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+            title={zoomed ? '拖动可调整显示区域 · 点一下隐藏工具栏' : 'Ctrl/⌘ + ↑↓ 缩放 · 点一下隐藏工具栏'}
+          />
         ) : (
           <span className="lightbox-msg">{blob.kind === 'loading' ? '加载中…' : '该侧文件缺失'}</span>
         )}
       </div>
 
-      <div className="lightbox-bar" onClick={(e) => e.stopPropagation()}>
-        <span className="compare-seq">
-          <span className="num">{seq}</span>
-          <span> / </span>
-          <span className="muted">· {label} · </span>
-          <span className="muted">{comicName}</span>
-        </span>
-        <Btn kind="ghost" size="sm" disabled={!canPrev} onClick={onPrev}>
-          ← 上一张
-        </Btn>
-        <Btn kind="ghost" size="sm" disabled={!canNext} onClick={onNext}>
-          下一张 →
-        </Btn>
-        <Btn kind="primary" size="sm" onClick={onClose}>
-          关闭
-        </Btn>
-      </div>
+      {/* 隐藏后留一条极窄的提示带：否则用户不知道还能点回来 */}
+      {barHidden ? <div className="lightbox-hint">点图显示工具栏</div> : null}
+
+      {!barHidden ? (
+        <div className="lightbox-bar" onClick={(e) => e.stopPropagation()}>
+          <span className="compare-seq">
+            <span className="num">{seq}</span>
+            <span> / </span>
+            <span className="muted">· {label} · </span>
+            <span className="muted">{comicName}</span>
+          </span>
+          <span className="lightbox-zoom" title="Ctrl/⌘ + ↑ 放大、↓ 缩小（100%–200%）">
+            <span className="num">{zoom}%</span>
+          </span>
+          <Btn kind="ghost" size="sm" disabled={!canPrev} onClick={onPrev}>
+            ← 上一张
+          </Btn>
+          <Btn kind="ghost" size="sm" disabled={!canNext} onClick={onNext}>
+            下一张 →
+          </Btn>
+          <Btn kind="primary" size="sm" onClick={onClose}>
+            关闭
+          </Btn>
+        </div>
+      ) : null}
 
       <button type="button" className="lightbox-x" onClick={onClose} aria-label="关闭全屏">
         <X size={18} />
       </button>
+    </div>
+  );
+}
+
+/**
+ * 「操作」下拉按钮。
+ *
+ * 为什么自己写而不是用现成的 `Select`：`Select` 是**表单控件**（有当前值、选中即回调、
+ * 需要受控 value），这里是**命令菜单**（点了就执行、没有"当前选中项"）。
+ * 两者交互模型不同，硬套会让下拉里出现"高亮着但其实没选中"的误导态。
+ *
+ * 关闭时机三条（缺一条都会留下明显 bug）：
+ *  · 点外部 —— `mousedown` **捕获阶段**监听（`SongMenu` 同一手法：用 mousedown 而非 click，
+ *    否则触发菜单的那个 click 会顺着冒泡把刚打开的菜单又关掉）；
+ *  · Esc —— 交给上层 `Compare` 的键盘监听统一裁决，避免两处都抢 Esc；
+ *  · 选完一项 —— 由调用方在回调里关。
+ */
+function ActionMenu({
+  label,
+  disabled,
+  badge,
+  children,
+}: {
+  label: string;
+  disabled?: boolean;
+  /** 触发按钮右侧的小标记（当前用它显示「返工中」） */
+  badge?: string;
+  children: (close: () => void) => ReactElement;
+}) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (box.current && e.target instanceof Node && !box.current.contains(e.target)) setOpen(false);
+    };
+    /**
+     * Esc 收下拉，且**只**收下拉。
+     *
+     * 为什么不在这里 `stopPropagation`：上层 `Compare` 也监听 Esc（用来退出对照），
+     * 掐断传播会让"Esc 退出对照"整体失灵；而这里 `e.preventDefault()` 语义上不对
+     * （Esc 本来没有默认行为要拦），所以**两者都做**：只 `stopPropagation`，
+     * 让下拉吃掉这一次 Esc，上层收不到就不会顺带退出对照。
+     */
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setOpen(false);
+    };
+    window.addEventListener('mousedown', onDown, true);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('mousedown', onDown, true);
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }, [open]);
+
+  return (
+    <div className="actionmenu" ref={box}>
+      <button
+        type="button"
+        className="btn btn-ghost"
+        disabled={disabled}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        title={disabled ? '当前有该漫画的任务在跑，不能再返工' : '对这本漫画执行操作'}
+      >
+        {label}
+        {badge ? <span className="actionmenu-badge">{badge}</span> : null}
+        <ChevronDown size={13} className={open ? 'is-open' : undefined} />
+      </button>
+      {open ? (
+        <div className="actionmenu-pop" role="menu">
+          {children(() => setOpen(false))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -301,17 +493,29 @@ function Lightbox({
 function Compare({
   comic,
   seq,
+  retranslate,
+  submitting,
   onSeq,
   onBack,
+  onRetranslate,
 }: {
   comic: ComicEntry;
   seq: number;
+  /** 该漫画的返工计划（可能还没加载完 → null） */
+  retranslate: RetranslatePlan | null;
+  /** 返工请求在途（提交中禁用，防连点建出两个任务） */
+  submitting: boolean;
   onSeq: (s: number) => void;
   onBack: () => void;
+  onRetranslate: (seqs?: number[]) => void;
 }) {
   const canPrev = seq > 1;
   const canNext = seq < comic.seqMax;
   const [zoom, setZoom] = useState<'original' | 'translated' | null>(null);
+  /** 该漫画是否已有任务在跑（queued/running）—— 有就不能再返工，否则会重复跑同一本 */
+  const reworking = retranslate?.reworking ?? false;
+  const noOriginal = retranslate !== null && retranslate.retranslateCount === 0;
+  const rtBlocked = submitting || reworking || noOriginal;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -356,6 +560,66 @@ function Compare({
         <Btn kind="ghost" disabled={!canNext} onClick={() => canNext && onSeq(seq + 1)}>
           下一张 →
         </Btn>
+        <ActionMenu
+          label="操作"
+          disabled={rtBlocked}
+          badge={reworking ? '返工中' : undefined}
+        >
+          {(close) => (
+            <>
+              <button
+                type="button"
+                className="actionmenu-item"
+                role="menuitem"
+                disabled={rtBlocked}
+                onClick={() => {
+                  close();
+                  onRetranslate();
+                }}
+                title={
+                  submitting
+                    ? '返工请求正在提交'
+                    : reworking
+                      ? '该漫画已有任务在队列中，等它跑完再返工'
+                      : noOriginal
+                        ? '该漫画目录里没有原图，无从返工'
+                        : `重新翻译全部 ${retranslate?.retranslateCount ?? 0} 张（覆盖 ${retranslate?.overwriteCount ?? 0} 张已有译文）`
+                }
+              >
+                <RotateCcw size={13} />
+                <span className="actionmenu-label">
+                  重新翻译
+                  <span className="actionmenu-sub">
+                    {submitting
+                      ? '提交中…'
+                      : reworking
+                        ? '返工中'
+                        : noOriginal
+                          ? '没有原图'
+                          : `全部 ${retranslate?.retranslateCount ?? 0} 张 · 覆盖 ${retranslate?.overwriteCount ?? 0} 张`}
+                  </span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className="actionmenu-item"
+                role="menuitem"
+                disabled={rtBlocked}
+                onClick={() => {
+                  close();
+                  onRetranslate([seq]);
+                }}
+                title={`只重译当前这一页（第 ${seq} 页）`}
+              >
+                <RotateCcw size={13} />
+                <span className="actionmenu-label">
+                  重新翻译本页
+                  <span className="actionmenu-sub">第 {seq} 页</span>
+                </span>
+              </button>
+            </>
+          )}
+        </ActionMenu>
       </div>
       <div className="compare-panes">
         <Pane comicName={comic.comicName} seq={seq} variant="original" onZoom={() => setZoom('original')} />
@@ -493,15 +757,20 @@ function HiddenComicsModal({
  * · **分页**：左栏 + 网格各一套分页 —— 漫画可能上百部，单部漫画也可能上千页。
  * · **删除**：`POST /library/{name}/delete`，带勾选框决定是否连本地目录一起删。
  * · **刷新**：手动刷新按钮（翻译完成后的自动刷新由 App 的"任务收尾"信号负责）。
- * · **全屏看图**：点对照视图里任一张图。
+ * · **全屏看图**：点对照视图里任一张图；全屏内 `Ctrl/⌘ + ↑↓` 缩放 100%–200%、
+ *   放大后可拖拽，点图可收起/展开底部工具栏。
+ * · **返工重译**：`POST /library/{name}/retranslate`，覆盖已有译文（原图永不覆盖）。
  */
 export function LibraryScreen({
   lib,
+  tasks,
   onRefresh,
   onToast,
   refreshKey,
 }: {
   lib: LibraryResponse | null;
+  /** 队列快照，只用来判「该漫画是否已有任务在跑」（→ 显示返工中） */
+  tasks: TaskRow[];
   onRefresh: () => void;
   onToast: (text: string, kind?: 'info' | 'good' | 'bad') => void;
   refreshKey: number;
@@ -510,6 +779,9 @@ export function LibraryScreen({
   const [compareSeq, setCompareSeq] = useState<number | null>(null);
   const [pending, setPending] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  // 返工：计划（能不能返工 / 会覆盖几张）+ 提交中
+  const [rtPlan, setRtPlan] = useState<RetranslatePlan | null>(null);
+  const [rtBusy, setRtBusy] = useState(false);
   // 搜索 / 分页 / 删除 / 隐藏管理
   const [query, setQuery] = useState('');
   const [libPage, setLibPage] = useState(1);
@@ -585,6 +857,68 @@ export function LibraryScreen({
     };
   }, [current, refreshKey]);
 
+  /**
+   * 该漫画是否**已有任务在队列里**（queued / running）。
+   *
+   * 为什么前端自己算而不是让服务端给：任务列表本来就在 `App` 手里每秒刷新，
+   * 服务端再扫一遍 `this.tasks` 是重复劳动。判据用 `dirName`（归一化后的目录名）
+   * 而不是 `comicName` —— 库里显示的是原始漫画名，落盘用的是归一化名，两者可能差一个
+   * 空格/大小写；拿原始名去比会漏判，于是已经排队的漫画还能再点一次返工，
+   * 结果是同一本被两个任务前后脚跑、译文互相覆盖。
+   */
+  const reworkingComics = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of tasks) {
+      if (t.status === 'queued' || t.status === 'running') set.add(t.normalizedComicName ?? t.comicName);
+    }
+    return set;
+  }, [tasks]);
+
+  // 选中漫画后拉一次返工计划：告诉「操作」菜单能不能点、会覆盖几张
+  useEffect(() => {
+    if (!current) {
+      setRtPlan(null);
+      return;
+    }
+    let alive = true;
+    apiGet<RetranslatePlan>(`/library/${encodeURIComponent(current.comicName)}/retranslate`)
+      .then((p) => {
+        // 把「是否在队列中」一并带上：计划是静态的，任务状态是动态的，分开拿会闪
+        if (alive) setRtPlan({ ...p, reworking: reworkingComics.has(p.dirName) });
+      })
+      .catch((e: unknown) => {
+        if (alive) setRtPlan(isApiError(e) && e.status === 404 ? null : null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [current, refreshKey, reworkingComics]);
+
+  /**
+   * 提交返工重译（`POST /library/{name}/retranslate`）。
+   *
+   * 覆盖已有译文是**不可逆**的，所以回执必须说清"覆盖了几张"，
+   * 而不是笼统报"已加入队列"—— 用户需要知道自己刚覆盖了什么。
+   */
+  const retranslate = async (seqs?: number[]) => {
+    if (!current) return;
+    setRtBusy(true);
+    try {
+      const r = await apiPost<RetranslateResponse>(
+        `/library/${encodeURIComponent(current.comicName)}/retranslate`,
+        seqs ? { seqs } : {},
+      );
+      const scope = seqs ? `第 ${seqs.join('、')} 页` : `全部 ${r.retranslateCount} 张`;
+      onToast(`已开始返工：${scope}（覆盖 ${r.overwriteCount} 张已有译文）`, 'good');
+      setCompareSeq(null);
+      onRefresh();
+    } catch (e) {
+      onToast(errorText(e), 'bad');
+    } finally {
+      setRtBusy(false);
+    }
+  };
+
   const resume = async () => {
     if (!current) return;
     setBusy(true);
@@ -645,7 +979,15 @@ export function LibraryScreen({
 
   if (compareSeq !== null && current) {
     return (
-      <Compare comic={current} seq={compareSeq} onSeq={setCompareSeq} onBack={() => setCompareSeq(null)} />
+      <Compare
+        comic={current}
+        seq={compareSeq}
+        retranslate={rtPlan}
+        submitting={rtBusy}
+        onSeq={setCompareSeq}
+        onBack={() => setCompareSeq(null)}
+        onRetranslate={(seqs) => void retranslate(seqs)}
+      />
     );
   }
 

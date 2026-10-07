@@ -789,6 +789,9 @@
   display: grid;
   place-items: center;
   cursor: default;
+  /* 放大后可拖拽调显示区域；`touch-action:none` 阻止移动端默认平移手势抢走拖拽 */
+  touch-action: none;
+  overflow: hidden;
 }
 .lightbox-stage img {
   max-width: 100%;
@@ -798,6 +801,36 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
   -webkit-user-select: none;
   user-select: none;
+  /* 放大态才给"可抓取"光标：100% 时图就那么大，拖不动，_grabbing 光标是骗人的 */
+  cursor: default;
+  transform-origin: center center;
+  will-change: transform;
+}
+.lightbox-stage img.is-zoomed {
+  cursor: grab;
+}
+.lightbox-stage img.is-zoomed:active {
+  cursor: grabbing;
+}
+/* 工具栏隐藏后的提示带：极窄、不抢画面，但得让人知道还能点回来 */
+.lightbox-hint {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.08);
+  user-select: none;
+}
+/* 当前缩放比：与工具栏同底色，避免读起来像另一个层级 */
+.lightbox-zoom {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--md-muted);
+  background: var(--md-line-soft);
 }
 .lightbox-msg {
   color: rgba(255, 255, 255, 0.7);
@@ -831,6 +864,69 @@
 }
 .lightbox-x:hover {
   border-color: var(--md-pink);
+}
+
+/* ================================================================ 「操作」下拉菜单 */
+
+/*
+ * 触发按钮的定位上下文：菜单绝对定位在按钮下方，而不是相对 `.compare-head`。
+ * 若挂在 head 上，按钮在 head 靠右一端时菜单会横向溢出视口右边。
+ */
+.actionmenu {
+  position: relative;
+  display: inline-flex;
+}
+.actionmenu-badge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--md-blue);
+  background: var(--md-blue-soft, var(--md-line-soft));
+}
+.actionmenu-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 210px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: var(--md-radius-sm);
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  box-shadow: 0 12px 32px rgba(12, 9, 24, 0.22);
+}
+.actionmenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: var(--md-radius-xs);
+  text-align: left;
+  color: var(--md-ink);
+  font-size: 12px;
+}
+.actionmenu-item:hover:not(:disabled) {
+  background: var(--md-line-soft);
+}
+.actionmenu-item:disabled {
+  color: var(--md-muted);
+  cursor: not-allowed;
+}
+/* 两行排版：第一行命令名、第二行范围/状态 —— 用 grid 让两行左边缘对齐图标 */
+.actionmenu-label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.actionmenu-sub {
+  font-size: 10.5px;
+  color: var(--md-muted);
 }
 
 /* ================================================================ 删除 / 隐藏弹窗的补充行 */
