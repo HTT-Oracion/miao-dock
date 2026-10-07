@@ -822,15 +822,45 @@
   background: rgba(255, 255, 255, 0.08);
   user-select: none;
 }
-/* 当前缩放比：与工具栏同底色，避免读起来像另一个层级 */
+/* 当前缩放比 + −/+ 按钮：与工具栏同底色，避免读起来像另一个层级 */
 .lightbox-zoom {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  gap: 2px;
+  padding: 2px 4px;
   border-radius: 999px;
   font-size: 11px;
   color: var(--md-muted);
   background: var(--md-line-soft);
+  /* 控件本身是个复合控件，按钮可点 ⇒ 给默认光标，别让整条都像纯文本 */
+  cursor: default;
+}
+/*
+ * 缩放按钮：不依赖任何手势的保底路径。
+ * 触控板捏合在 macOS 上被 WebKit 自己吃成页面缩放，Tauri 关不掉（wry 的 macOS 后端
+ * 没接 `zoom_hotkeys_enabled`），所以缩放**不能只做手势**——这条必须一直在。
+ */
+.lightbox-zoom-btn {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--md-ink);
+  background: transparent;
+  cursor: pointer;
+}
+.lightbox-zoom-btn:hover:not(:disabled) {
+  background: var(--md-line);
+}
+/* 到顶/到底就禁用：光标随之变默认态，同时 screen reader 读得出"不可用" */
+.lightbox-zoom-btn:disabled {
+  color: var(--md-muted);
+  opacity: 0.4;
+  cursor: default;
 }
 .lightbox-msg {
   color: rgba(255, 255, 255, 0.7);

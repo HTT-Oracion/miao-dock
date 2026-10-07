@@ -3864,3 +3864,96 @@ Windows 的 `signal_tree(force=false)` = `taskkill /PID <pid> /T`（**不带 /F*
 ### 九、改动文件
 
 `app/src-tauri/src/service.rs`（Windows `signal_tree` 无条件 /F）· `engine/scripts/child-watch.mjs`（Windows `killTree` 无条件 /F）· `e2e/quit-command-check.mjs`（+Q5 / +M5）· `e2e/child-watch-kill-check.mjs`（**新**，`check:child-watch-kill`，S1 / M1）· `package.json`（新增 2 条脚本）· `AGENTS.md` · `README.md` · 本文件。
+
+## D-90 · 全屏看图缩放改用 `Ctrl/⌘ + 滚轮` + **锚点缩放**；macOS 触控板**捏合不可依赖** ⇒ 必须留非手势兜底（2026-10-07）
+
+### 一、决策
+
+把 `Lightbox` 的缩放输入从 `Ctrl/⌘ + ↑/↓`（D-87 引入）改为 **`Ctrl/⌘ + 滚轮`**，并配三条输入通道：
+
+| 层 | 输入 | 作用 | 依赖平台能力 |
+|---|---|---|---|
+| 一 | `Ctrl/⌘ + 滚轮` | 以**光标为锚点**缩放 | 无（两端都稳） |
+| 二 | 工具栏 `−` / `+` 按钮 | 固定步长缩放 | **无**（保底） |
+| 三 | 放大态下**裸滚轮** | 平移（macOS 双指滑动肌肉记忆） | 无 |
+
+判据用 `e.ctrlKey || e.metaKey` 合并，**不按平台分叉** —— 用户不必记"这台该按哪个"。
+
+### 二、平台事实（核实过，不是推测）
+
+1. **Windows 端原生缩放本来就是关的**：`zoom_hotkeys_enabled` 在 Tauri 里默认 `false`
+   （`tauri-utils/src/config.rs:2446`），wry 把它接到 WebView2 的
+   `SetIsZoomControlEnabled(false)`（`webview2/mod.rs:639`）与
+   `SetIsPinchZoomEnabled(false)`（`webview2/mod.rs:660`）
+   ⇒ `Ctrl+滚轮` 不会被浏览器抢走。**这正是本方案成立的前提。**
+2. **macOS 端没有任何开关能关掉捏合**：`zoom_hotkeys_enabled` 在 `wry/src/wkwebview/` 下
+   **完全没有接线**（全仓只有 `webview2/mod.rs` 用它）。WKWebView 自己处理
+   `magnifyWithEvent:` 走 WebKit 的 pageZoom，`gesturestart/gesturechange`
+   （MDN 标 *Non-standard*）又只在页面本身可缩放时才发
+   —— 我们的 viewport 是 `initial-scale=1.0` 且没开 user-scalable，**基本收不到**。
+3. **结论**：触控板捏合这条路在 macOS 上**救不回来**，且无 macOS 设备可实测
+   ⇒ 决定**不写** gesture 层（避免一段可能永不触发的死代码 + 一堆 WebKit 私有 API 免责声明），
+   改为用**第二层按钮**保证"任何平台都能缩放"。
+
+### 三、三个实现要点（都是"能编译但手感/行为错"的坑）
+
+1. **必须自己挂非 passive 监听器**：React 的 `onWheel` 是**被动**监听，
+   在里面 `preventDefault()` 无效且刷警告（本项目已在 `PlayerBar.tsx:154` 踩过并留注释）。
+   ⇒ `addEventListener('wheel', h, { passive: false })`。
+2. **必须指数缩放，不能固定步长**：鼠标一格 `deltaY ≈ 100`，触控板是每帧几 px 的
+   连续小值（一滑几十帧）。固定步长会让触控板"一滑就顶到 200%"。
+   改为 `z' = z · (1 + deltaY · 0.0015)`，让总增量只取决于**滚动总距离**、与帧数无关。
+3. **必须锚点缩放，不能中心缩放**：算式 `o' = a - (a - o) · s'/s`
+   （`a` = 光标相对 stage 中心）。⚠️ `a` 必须量 **stage**（未变换容器）的矩形，
+   **不能**量图片的 —— 图片被 `scale` 变换过，`getBoundingClientRect()` 返回的是变换后的框。
+   中心缩放能跑、类型能过，但每滚一下图都往中间跳，只有真机才看得出来。
+
+### 四、写钉子踩的三个坑（都实测到了，不是预防性提醒）
+
+1. **假红：段尾锚点落在注释上**。`ZOOM.twoFingerPan` 段尾用
+   `// 换页后缩放与偏移一并复位` 定位，而断言已 `stripComments` ⇒ 永远找不到 ⇒ 恒红。
+   改用代码锚点 `applyView(ZOOM_MIN,`。
+2. **假红：段首锚点在要判的代码之后**。段首原用 `addEventListener('wheel'`，
+   而裸滚轮平移分支写在 `onWheel` **函数体内**（注册语句在函数之后）
+   ⇒ 切片把要判的代码切掉了。改从 `const onWheel = (e: WheelEvent)` 起算。
+3. **假阳性（反证轮抓到的）**：只查 `/\.lightbox-zoom-btn/` 会让"只有基础块、
+   悬停/禁用态全缺"也过关 —— 而那正是"按钮裸奔"的样子。
+   补判 hover/disabled 后又变**假绿**：`.lightbox-zoom-btn:hover-x` 仍**包含**
+   `.lightbox-zoom-btn:hover` 子串 ⇒ 伪类后必须加 `(?![\w-])` 负向后瞻。
+   ⇒ 教训同 D-84/D-87：**判据必须与它声称捕捉的缺陷一一对应**，
+   否则反证轮抓到的"假阳性"其实是指纹太宽，而加宽后的正则又可能引入子串假绿。
+
+### 五、过期契约的处理（`check:retranslate` R6）
+
+R6 原钉「认 Ctrl/⌘ + 只处理 ↑/↓」，改滚轮后它**必然变红**。
+处理方式是**重写而非删除** —— 它要守的风险点没变，只是载体换了：
+缩放**不带修饰键就触发**（新形态下表现为"触控板双指滑动被当缩放、一滑就顶格"）。
+重写后判 `modGate && wheel && !arrows`（第三个条件正是"旧键盘缩放已撤干净"），
+反证轮 M5 改为打滚轮门控、新增 M6 复活 `ArrowUp/ArrowDown` 测第三条。
+
+### 六、验收
+
+| 命令 | 结果 |
+|---|---|
+| `npx tsc --noEmit`（app） | **通过**，零错误 |
+| `npm --prefix app run build` | **通过**（`tsc --noEmit && vite build`） |
+| `npm run check:units` | **42 / 0**（新增 ZOOM 组 4 条） |
+| `npm run check:units:refute` | **52 / 52**（新增 ZOOM 组 7 条变异），零假阳性、字节还原一致 |
+| `npm run check:retranslate` | **12 / 0**（R6 重写） |
+| `npm run check:retranslate:refute` | **9 / 9**（M5 改写 + 新增 M6） |
+| `npm run check:lib-manage` | **8 / 0** |
+| `npm run check:docs` | `check:units` 计数门与 GROUPS 覆盖**全绿**；余 2 红是 `check:music` 既有问题（215/213），与本轮无关 |
+
+- **ZOOM 组 4 条**：`wheelNonPassive`（非 passive + 对称卸载 + 无重复 `onWheel`）·
+  `anchorZoom`（量光标 + 比例换算 + 未退回中心缩放）· `buttonFallback`（按钮 + 样式齐 + 已接逻辑）·
+  `twoFingerPan`（放大态门控 + `preventDefault`）。
+
+### 七、边界与待办
+
+- **真机端到端未验**：本轮只跑源码级钉子与前端构建，**未重编译 exe、未在真机点过**。
+  尤其**锚点缩放的观感必须真机看** —— 源码绿只证明"没写成中心缩放"，不证明"手感对"。
+- **macOS 侧完全未实测**（本机是 Windows，无 Mac）。第二层按钮是为此留的兜底。
+  若日后在 Mac 上实测发现 `gesture*` 可用，可作为第四层加进去；实测不通则维持现状。
+- **两个端点行为未验**：① `Ctrl+滚轮` 在 Windows 上是否真没被 WebView2 抢
+  （代码层由 `zoom_hotkeys_enabled=false` 推断，真机才能确认）；
+  ② macOS 上按住 ⌘ 双指滑动是否真的产生带 `metaKey` 的 `wheel` 事件。

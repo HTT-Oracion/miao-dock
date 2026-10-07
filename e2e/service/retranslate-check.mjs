@@ -22,19 +22,26 @@
  * 反过来，"覆盖"也不能覆盖过头：**原图必须一个字节都不动**（`_writeOriginal` 的
  * 「永不覆盖」，契约 §7.2）。R5 钉这条 —— 否则返工会把用户的原图也一起毁了。
  *
- * ## 为什么 R6 要钉"只认 Ctrl/⌘ + ↑↓"
+ * ## 为什么 R6 要钉"缩放必须限定 Ctrl/⌘"
  *
- * 全局 `useMusicHotkeys` 占着**裸** `↑/↓`（调音量），它对带 Ctrl/⌘ 的一律 return。
- * 两条路必须井水不犯河水：缩放若写成裸 `↑/↓`，会和音量调节互相打架
- * （表现为"在全屏里按 ↑，音量变了、图没变"）。所以断言要求
- * 「认 Ctrl 或 ⌘」且「**裸键时不缩放**」两个条件同时成立。
+ * 缩放的输入在 2026-10-07 从 `Ctrl/⌘ + ↑/↓` 改成了 `Ctrl/⌘ + 滚轮`（用户要求）。
+ * 要守的风险点**没变**，只是换了个载体：**不带修饰键的输入不得触发缩放**。
+ *   · 旧形态的后果：缩放若写成裸 `↑/↓`，会和全局 `useMusicHotkeys` 的音量键打架
+ *     （"在全屏里按 ↑，音量变了、图没变"）。
+ *   · 新形态的后果：滚轮判定若不要求修饰键，触控板双指滚动会被当缩放
+ *     （"手滑一下直接冲到 200%"），且 100% 时裸滚轮被吞、用户以为滚轮失灵。
+ * 所以断言要求「认 Ctrl 或 ⌘」且「已换成滚轮」且「旧 ↑/↓ 键盘缩放已撤干净」三者同时成立。
  *
- * ## 反证轮（`--refute`）：五条变异，各自必须让指定断言变红
+ * 缩放的**实现**细节（锚点缩放、非 passive 监听、−/+ 兜底按钮）由
+ * `check:units` 的 ZOOM 组钉（那里能直接看源码结构，本脚本不重复钉）。
+ *
+ * ## 反证轮（`--refute`）：六条变异，各自必须让指定断言变红
  *   M1 去掉 `item.overwrite` 的幂等短路豁免 ⇒ 返工全被 skipped ⇒ R2/R3 变红；
  *   M2 `overwrite` 标记不落到 item 上 ⇒ 同上 ⇒ R2/R3 变红；
  *   M3 译文写回时忽略 overwrite（恒用 `'wx'`）⇒ 覆盖失败 ⇒ R3 变红；
  *   M4 返工取「缺页」而非「有原图的页」⇒ 对已译完的漫画报无可返工 ⇒ R1 变红；
- *   M5 前端缩放键去掉 Ctrl/⌘ 限定 ⇒ 与音量键冲突 ⇒ R6 变红。
+ *   M5 滚轮缩放去掉 Ctrl/⌘ 限定 ⇒ 裸滚轮也缩放 ⇒ R6 变红；
+ *   M6 复活已废弃的 ↑/↓ 键盘缩放 ⇒ 与全局音量键抢键 ⇒ R6 变红。
  *
  * 用法：
  *   node e2e/service/retranslate-check.mjs           正向跑（期望全绿）
@@ -455,19 +462,23 @@ async function runAll() {
       `HTTP ${overRes.status} code=${overJson?.error?.code}（期望 400/BATCH_LIMIT_EXCEEDED）`,
     );
 
-    // ---- R6：缩放键必须限定 Ctrl/⌘，且**裸键不缩放**（否则与音量键打架） ----
+    // ---- R6：缩放必须限定 Ctrl/⌘，且**裸滚轮不缩放**（改为滚轮后的新契约） ----
+    //
+    // 2026-10-07 改版：缩放输入从 `Ctrl/⌘ + ↑/↓` 改为 `Ctrl/⌘ + 滚轮`（用户要求）。
+    // 本条随之**重写**而非删除 —— 它要守的风险点没变：**滚轮不带修饰键就缩放**。
+    // 后果具体：① 触控板双指滚动被当缩放，"滑一下冲到 200%"；
+    //          ② 100% 时的裸滚轮被吞，用户以为滚轮失灵。
+    // 反过来"只有修饰键才缩放"正是本条要的正向形态，故判 `hasModGate && !gatesArrowUpDown`。
     const libSrc = stripComments(fs.readFileSync(LIB_SRC, 'utf8'));
     const hasModGate = /e\.ctrlKey\s*\|\|\s*e\.metaKey/.test(libSrc);
+    const usesWheel = /addEventListener\('wheel'/.test(libSrc);
+    // 旧键盘缩放必须**已撤干净**：留着 ↑/↓ 会与 useMusicHotkeys 的音量键抢
     const gatesArrowUpDown = /ArrowUp/.test(libSrc) && /ArrowDown/.test(libSrc);
-    // 裸键不缩放：缩放判定必须要求修饰键存在（而不是"没有修饰键才缩放"的反面写法）
-    const earlyReturnOnBare =
-      /if\s*\(!\(e\.ctrlKey\s*\|\|\s*e\.metaKey\)[^)]*\)\s*return;/.test(libSrc) ||
-      /if\s*\(!\(e\.metaKey\s*\|\|\s*e\.ctrlKey\)[^)]*\)\s*return;/.test(libSrc);
     check(
       'R6',
-      '缩放快捷键：认 Ctrl 或 ⌘、只处理 ↑/↓，且**裸 ↑↓ 不触发缩放**（避免与 useMusicHotkeys 的音量键打架）',
-      hasModGate && gatesArrowUpDown && earlyReturnOnBare,
-      `modGate=${hasModGate} arrows=${gatesArrowUpDown} bareReturn=${earlyReturnOnBare}`,
+      '缩放改为滚轮：认 Ctrl 或 ⌘ 才缩放（裸滚轮不缩放），且旧 ↑/↓ 键盘缩放已撤',
+      hasModGate && usesWheel && !gatesArrowUpDown,
+      `modGate=${hasModGate} wheel=${usesWheel} arrows=${gatesArrowUpDown}`,
     );
 
     // ---- R8：缩放范围与拖拽 ----
@@ -539,12 +550,27 @@ const MUTATIONS = [
     expect: ['R1', 'R2'],
   },
   {
-    name: 'M5 前端缩放键去掉 Ctrl/⌘ 限定（改成裸 ↑↓，与音量键打架）',
+    // 缩放改滚轮后，破坏点从「键盘修饰键门控」移到「滚轮修饰键门控」：
+    // 去掉 ctrl/meta 判定 ⇒ 触控板双指滚动被当缩放，一滑就顶到 200%。
+    name: 'M5 前端滚轮缩放去掉 Ctrl/⌘ 限定（裸滚轮也缩放，双指滑动一滑就顶格）',
     edits: [
       {
         file: LIB_SRC,
-        find: '      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;',
-        replace: '      if (e.altKey || e.shiftKey) return;',
+        find: '      if (e.ctrlKey || e.metaKey) {',
+        replace: '      if (true) {',
+      },
+    ],
+    expect: ['R6'],
+  },
+  {
+    // 旧键盘缩放复活 ⇒ 与 useMusicHotkeys 的裸 ↑↓ 音量键抢
+    name: 'M6 复活已废弃的 ↑/↓ 键盘缩放（与全局音量键抢键）',
+    edits: [
+      {
+        file: LIB_SRC,
+        find: "    window.addEventListener('wheel', onWheel, { passive: false });",
+        replace:
+          "    window.addEventListener('wheel', onWheel, { passive: false });\n    void (e: KeyboardEvent) => e.key === 'ArrowUp' || e.key === 'ArrowDown';",
       },
     ],
     expect: ['R6'],

@@ -68,6 +68,7 @@ const F = {
   island: path.join(SRC, 'components', 'DynamicIsland.tsx'),
   toastBus: path.join(SRC, 'toastBus.ts'),
   musicToast: path.join(SRC, 'screens', 'music', 'Toast.tsx'),
+  library: path.join(SRC, 'screens', 'LibraryScreen.tsx'),
   // 断言读到的 s.appCss 是全分片拼接（见下方 readStyleSource 调用处）；
   // 下面这个 musicScss **只给反证机制用**（按 file 路径临时改源文件）。
   // 灵动岛的样式在 music.scss 里（.di-capsule 等），故反证指向它。
@@ -354,6 +355,8 @@ function loadSources() {
   s.island = readMaybe(F.island);
   s.toastBus = readMaybe(F.toastBus);
   s.musicToast = readMaybe(F.musicToast);
+  // ZOOM：全屏看图缩放（Lightbox 在这个文件里）
+  s.library = readMaybe(F.library);
   // 全分片拼接（顺序 = index.scss 的 @use 顺序 = 层叠顺序）。
   // app.css 已按模块拆成六个分片，读单文件会集体变红（读不到 ≠ 真回归），故走拼接。
   s.appCss = readStyleSource(F.stylesDir);
@@ -953,6 +956,90 @@ add('ISLAND.toastExpandKeepsContent', 'ISLAND', (s) => {
   };
 });
 
+// ============================ ZOOM（全屏看图缩放）============================
+// 缩放这一块的四条约束，每条都对应一个"看起来实现了、其实没生效"的坑：
+//
+//   PASSIVE   wheel 必须**非 passive** 手动挂。React 的 onWheel 是被动的，
+//             在里面 preventDefault 无效 ⇒ 页面跟着滚、Mac 上可能被当成页面缩放。
+//   ANCHOR    必须**锚点缩放**（以光标为原点）。改成"总是归零/以中心缩放"手感立刻变差，
+//             但代码照样跑、类型照样过 ⇒ 只有源码钉子拦得住。
+//   FALLBACK  必须存在**不依赖手势**的 −/+ 按钮。macOS 触控板捏合被 WebKit 自己吃成
+//             页面缩放、事件根本到不了 JS，而 wry 的 macOS 后端没接 zoom_hotkeys_enabled
+//             ⇒ 没有按钮就等于 mac 上完全没法缩放。
+//   TWOFINGER 裸滚轮只在**放大态**才平移。放到 100% 也平移 ⇒ 用户滚轮"失灵"。
+//
+// 判据一律先 stripComments：本组多条在注释里主动写出了反面写法
+// （`onWheel`、`passive`、捏合被吃等），不剥注释会恒红或恒绿 —— 两种都是假信号。
+add('ZOOM.wheelNonPassive', 'ZOOM', (s) => {
+  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  const lib = stripComments(s.library);
+  const missing = [];
+  if (!/addEventListener\('wheel'/.test(lib)) missing.push("没有手动 addEventListener('wheel')（说明靠 React onWheel，被动）");
+  if (!/passive:\s*false/.test(lib)) missing.push('wheel 监听未声明 passive: false（preventDefault 无效）');
+  if (!/removeEventListener\('wheel'/.test(lib)) missing.push("wheel 监听没有对称的 removeEventListener（卸载泄漏）");
+  // 反向：不能同时挂一个 React onWheel 干同样的事，否则一次滚轮被处理两遍
+  if (/onWheel=/.test(lib)) missing.push('同时挂了 React onWheel（会与手动监听重复处理）');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+add('ZOOM.anchorZoom', 'ZOOM', (s) => {
+  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  const lib = stripComments(s.library);
+  const from = lib.indexOf('const zoomAt = (');
+  const to = lib.indexOf('useEffect', from);
+  const seg = from >= 0 && to > from ? lib.slice(from, to) : '';
+  if (!seg) return { ok: false, detail: '未定位到 zoomAt 段' };
+  const missing = [];
+  // 锚点算式必须在：用 stage（未变换容器）的矩形取光标相对中心的位置
+  if (!/stageRef\.current/.test(seg)) missing.push('zoomAt 未经 stageRef 取舞台元素');
+  if (!/getBoundingClientRect/.test(seg)) missing.push('zoomAt 未量光标位置（退化成中心缩放）');
+  // 偏移必须按比例换算，而不是直接重置
+  if (!/\(ax\s*-\s*cur\.offset\.x\)\s*\*/.test(seg)) missing.push('偏移未按 s\'/s 比例换算（未做锚点缩放）');
+  // ⚠️ 反向断言：zoomAt 里出现「无条件 setOffset({x:0,y:0})」就是退回了中心缩放
+  if (/setOffset\(\{\s*x:\s*0\s*,\s*y:\s*0\s*\}\)/.test(seg) && !/next === ZOOM_MIN/.test(seg))
+    missing.push('zoomAt 无条件重置偏移（锚点缩放被写回中心缩放）');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+add('ZOOM.buttonFallback', 'ZOOM', (s) => {
+  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  const lib = stripComments(s.library);
+  const missing = [];
+  if (!/className="lightbox-zoom-btn"/.test(lib)) missing.push('工具栏没有 .lightbox-zoom-btn（缺不依赖手势的缩放入口）');
+  if (!/aria-label="放大"/.test(lib)) missing.push('缺「放大」按钮');
+  if (!/aria-label="缩小"/.test(lib)) missing.push('缺「缩小」按钮');
+  // 按钮必须真的调了缩放，而不是摆在那儿
+  if (!/stepZoom/.test(lib)) missing.push('按钮没有接缩放逻辑 stepZoom');
+  // 样式也得**齐**：只查「有 .lightbox-zoom-btn」会让「只有基础块、悬停/禁用态全缺」
+  // 也能过关，而那正是"按钮裸奔"的样子 ⇒ 判据必须与它声称的内容一致
+  //（反证轮实测：只查类名时，把 :hover 规则改名的变异不会变红 —— 假阳性）。
+  const css = stripComments(s.appCss ?? '');
+  if (!/\.lightbox-zoom-btn\b/.test(css)) missing.push('manga.scss 里没有 .lightbox-zoom-btn 样式');
+  // ⚠️ 伪类后必须带 `(?![\w-])` 负向后瞻：否则把规则改成 `:hover-x` 时，
+  //    `.lightbox-zoom-btn:hover-x` 仍**包含** `.lightbox-zoom-btn:hover` 子串 ⇒ 假绿。
+  if (!/\.lightbox-zoom-btn:hover(?![\w-])/.test(css)) missing.push('缩放按钮没有悬停态样式');
+  if (!/\.lightbox-zoom-btn:disabled(?![\w-])/.test(css)) missing.push('缩放按钮没有禁用态样式（到顶/到底会显得仍可点）');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+add('ZOOM.twoFingerPan', 'ZOOM', (s) => {
+  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  const lib = stripComments(s.library);
+  // ⚠️ 段首锚点必须在 `addEventListener('wheel'` **之前** —— 裸滚轮平移的分支写在
+  //    onWheel 函数体里（注册语句在函数之后），从注册语句起算会把要判的代码切掉。
+  const from = lib.indexOf('const onWheel = (e: WheelEvent)');
+  // ⚠️ 段尾锚点必须落在**代码**上，不能用注释（本函数已 stripComments，
+  //    拿注释当段尾会永远找不到 ⇒ 恒红。这正是「着力点撞上注释 ⇒ 假红」）。
+  const to = lib.indexOf("addEventListener('wheel'", from);
+  const seg = from >= 0 && to > from ? lib.slice(from, to) : '';
+  if (!seg) return { ok: false, detail: '未定位到 wheel 监听段' };
+  const missing = [];
+  // 必须有放大态门控：无条件平移会让 100% 时滚轮失灵
+  if (!/zoom\s*>\s*ZOOM_MIN/.test(seg)) missing.push('裸滚轮平移未门控在放大态（100% 时滚轮会失灵）');
+  if (!/preventDefault/.test(seg)) missing.push('平移未 preventDefault（页面会跟着滚）');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
 // ══════════════════════════════════════════════════════════════════════════
 // STYLE —— 样式分层（app.css 拆成 base/app/manga/settings/components/music 六个分片）
 // ══════════════════════════════════════════════════════════════════════════
@@ -1076,7 +1163,7 @@ function runAll(s, ids) {
   return res;
 }
 
-const GROUPS = ["LAYOUT", "PURITY", "NAMING", "CALLERS", "KEEP", "HOOKS", "ALIAS", "STATE", "ISLAND", "STYLE"];
+const GROUPS = ["LAYOUT", "PURITY", "NAMING", "CALLERS", "KEEP", "HOOKS", "ALIAS", "STATE", "ISLAND", "ZOOM", "STYLE"];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -1358,6 +1445,65 @@ const MUTATIONS = [
     expect: ["ISLAND.toastExpandKeepsContent"],
   },
 
+  // ── ZOOM（全屏看图缩放）──────────────────────────────────────────────────
+  // 这一组守的是「缩放看起来有、实际不生效」的三种形态：被动监听（滚轮没反应且页面乱滚）、
+  // 中心缩放（能放大但手感差）、只有手势没有按钮（macOS 上完全没法缩放）。
+  {
+    // 最典型的退化：嫌手动挂监听麻烦，改回 React 的 onWheel ⇒ passive，preventDefault 失效
+    name: "把 wheel 监听改回被动的 React onWheel（preventDefault 失效 + 页面跟着滚）",
+    file: F.library,
+    find: "    window.addEventListener('wheel', onWheel, { passive: false });",
+    replace: "    // 反证：改回 React onWheel（被动监听）\n    void onWheel;",
+    expect: ["ZOOM.wheelNonPassive"],
+  },
+  {
+    // 只挂不卸 ⇒ 浮层开关多次后旧监听仍在跑，一次滚轮被处理 N 次
+    name: "删掉 wheel 监听的 removeEventListener（卸载泄漏 ⇒ 一次滚轮缩放多次）",
+    file: F.library,
+    find: "    return () => window.removeEventListener('wheel', onWheel);",
+    replace: "    return undefined;",
+    expect: ["ZOOM.wheelNonPassive"],
+  },
+  {
+    // 锚点缩放退化成"缩放就回中心"：能跑、类型过，但每滚一下图都往中间跳
+    name: "把锚点缩放改成直接重置偏移（等价于中心缩放，手感退化）",
+    file: F.library,
+    find: "    applyView(next, { x: ax - (ax - cur.offset.x) * k, y: ay - (ay - cur.offset.y) * k });",
+    replace: "    applyView(next, { x: 0, y: 0 });",
+    expect: ["ZOOM.anchorZoom"],
+  },
+  {
+    // 不量光标位置 ⇒ 没有锚点可言（退化成中心缩放，但仍走 zoomAt，看着"有实现"）
+    name: "让 zoomAt 不再量光标位置（失去锚点，仍有 zoomAt 函数 ⇒ 半绿假象）",
+    file: F.library,
+    find: "    const rect = stage.getBoundingClientRect();",
+    replace: "    const rect = { left: 0, top: 0, width: 0, height: 0 };",
+    expect: ["ZOOM.anchorZoom"],
+  },
+  {
+    // 去掉按钮 = macOS 上完全没法缩放（捏合被 WebKit 吃掉，事件到不了 JS）
+    name: "删掉工具栏的缩小按钮（macOS 上失去唯一的非手势缩放路径）",
+    file: F.library,
+    find: '              aria-label="缩小"\n',
+    replace: "",
+    expect: ["ZOOM.buttonFallback"],
+  },
+  {
+    name: "删掉工具栏缩放按钮的样式（按钮裸奔，无禁用态/悬停态）",
+    file: path.join(F.stylesDir, "manga.scss"),
+    find: ".lightbox-zoom-btn:hover:not(:disabled) {",
+    replace: ".lightbox-zoom-btn:hover-x:not(:disabled) {",
+    expect: ["ZOOM.buttonFallback"],
+  },
+  {
+    // 裸滚轮平移不门控放大态 ⇒ 100% 时滚轮被吞，用户以为失灵
+    name: "把裸滚轮平移移出放大态门控（100% 时滚轮被吞，失灵）",
+    file: F.library,
+    find: "      if (view.current.zoom > ZOOM_MIN) {",
+    replace: "      if (true) {",
+    expect: ["ZOOM.twoFingerPan"],
+  },
+
   // ── STYLE（样式分层）─────────────────────────────────────────────────────
   // 这一组反证守的是「拆完之后没人守规矩，样式又长回一个文件 / 放错分片 /
   // 开始用 SCSS 语法」。没有它们，分层只是目录 aesthetics。
@@ -1415,7 +1561,7 @@ console.log(
   "公共组件抽离（components/units）结构断言" + (refute ? " · 反证轮" : ""),
 );
 console.log(`根目录：${ROOT}`);
-console.log(`断言总数：${A.length}（LAYOUT/PURITY/NAMING/CALLERS/KEEP/HOOKS/ALIAS/STATE/ISLAND）`);
+console.log(`断言总数：${A.length}（LAYOUT/PURITY/NAMING/CALLERS/KEEP/HOOKS/ALIAS/STATE/ISLAND/ZOOM）`);
 
 if (!refute) {
   const res = runAll(loadSources());
