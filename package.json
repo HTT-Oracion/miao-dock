@@ -1,9 +1,9 @@
 {
   "name": "miao-dock",
   "private": true,
-  "version": "0.1.0",
+  "version": "2.0.0",
   "type": "module",
-  "description": "喵坞 MiaoDock · Box 桌面端（漫画翻译模块 ver1.0）",
+  "description": "喵坞 MiaoDock · Box 桌面端（漫画翻译 + 音乐应用 ver2.0）",
   "scripts": {
     "service": "node service/src/server.mjs",
     "engine": "node engine/src/server.mjs",
