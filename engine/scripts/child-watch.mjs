@@ -47,8 +47,12 @@ function killTree(sig) {
   const pid = child.pid;
   if (!pid) return;
   if (process.platform === 'win32') {
+    // 🔴 Windows 上「先礼」（不带 /F）对**控制台进程无效**（D-89）：`taskkill /T` 不带
+    // /F 对 node 返回 255、对 Python 返回 128，目标进程一个不死。所以 Windows 上无论
+    // SIGTERM 还是 SIGKILL 都直接 /F —— 平台没有「优雅」这一档，硬保留先礼只会空等、
+    // 还给孙进程（执行器）被 reparent 成孤儿占着 port+1 的窗口。
     try {
-      spawn('taskkill', ['/PID', String(pid), '/T', ...(sig === 'SIGKILL' ? ['/F'] : [])], {
+      spawn('taskkill', ['/PID', String(pid), '/T', '/F'], {
         stdio: 'ignore',
       });
     } catch {

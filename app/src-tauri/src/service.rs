@@ -1131,12 +1131,29 @@ fn signal_tree(pgid: u32, force: bool) {
 
 #[cfg(windows)]
 fn signal_tree(pgid: u32, force: bool) {
+    use std::os::windows::process::CommandExt;
+    // `CREATE_NO_WINDOW`：不给子进程分配控制台窗口。
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut c = Command::new("taskkill");
     c.args(["/PID", &pgid.to_string(), "/T"]);
-    if force {
-        c.arg("/F");
-    }
+    // 🔴 Windows 上「先礼」（不带 `/F`）对**控制台进程无效**（D-89）：
+    //
+    // 实测（2026-10-07）：`taskkill /PID <pid> /T` 不带 `/F` 时，对 node 返回 255、
+    // 对 Python 返回 128，目标进程**一个都不死**。`taskkill` 不带 `/F` 发的是
+    // `WM_CLOSE`/`CTRL_BREAK`，而 node / python 这类控制台进程**默认不响应**——
+    // 于是「先礼后兵」里的「先礼」在 Windows 上名存实亡，白白空等 STOP_GRACE，
+    // 还给了孙进程（执行器）被 reparent 的窗口。
+    //
+    // 平台事实决定了没有「优雅」这一档：`force=false` 与 `force=true` 都必须走 `/F`。
+    // 代价是跳过引擎 `main.py` 里 `handle_exit_signals` 的 `proc.terminate()` 优雅路径
+    // —— 但那条路径在 Windows 上本来就**不会被触发**（收不到 SIGTERM），所以没有损失。
+    c.arg("/F");
+    // 应用本体是 `windows_subsystem = "windows"`（**没有**控制台），此时 spawn 一个
+    // 控制台程序，Windows 会**新开一个黑框**闪一下。纯观感问题，但「点退出时蹦出一个
+    // cmd 黑框」很容易被当成"是不是中毒了"，成本一行，消掉它。
+    c.creation_flags(CREATE_NO_WINDOW);
     let _ = c.stdout(Stdio::null()).stderr(Stdio::null()).status();
+    let _ = force; // 语义保留：unix 分支靠它区分 SIGTERM/SIGKILL；Windows 分支两档等价
 }
 
 /// **反证开关**：跳过整棵树的回收，只做直接子进程的 `kill()`。
