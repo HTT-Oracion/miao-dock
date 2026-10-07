@@ -25,12 +25,12 @@ export const SKINS: {
   preview: string;
   light?: boolean;
 }[] = [
-  { id: 'modern', label: '现代', cls: 'sk-modern', preview: '/style-previews/modern.webp' },
-  { id: 'glass', label: '通透', cls: 'sk-glass', preview: '/style-previews/glass.webp', light: true },
-  { id: 'immersive', label: '沉浸', cls: 'sk-immersive', preview: '/style-previews/immersive.webp' },
-  { id: 'spectrum', label: '音域回响', cls: 'sk-spectrum', preview: '/style-previews/spectrum.webp' },
-  { id: 'vinyl', label: '透明彩胶', cls: 'sk-vinyl', preview: '/style-previews/vinyl.webp', light: true },
-  { id: 'cover', label: '封面渐染', cls: 'sk-cover', preview: '/style-previews/cover.webp', light: true },
+  { id: 'modern', label: '现代', cls: 'sk-modern', preview: '/style-previews/modern.png' },
+  { id: 'glass', label: '通透', cls: 'sk-glass', preview: '/style-previews/glass.png', light: true },
+  { id: 'immersive', label: '沉浸', cls: 'sk-immersive', preview: '/style-previews/immersive.png' },
+  { id: 'spectrum', label: '音域回响', cls: 'sk-spectrum', preview: '/style-previews/spectrum.png' },
+  { id: 'vinyl', label: '透明彩胶', cls: 'sk-vinyl', preview: '/style-previews/vinyl.png', light: true },
+  { id: 'cover', label: '封面渐染', cls: 'sk-cover', preview: '/style-previews/cover.png', light: true },
 ];
 
 /**
