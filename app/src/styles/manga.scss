@@ -729,12 +729,18 @@
   color: var(--md-ink-2);
   border-bottom: 1px solid var(--md-line-soft);
 }
+/*
+ * 与 `.lightbox-stage` 同理：**必须 flex 居中，不能用 grid + place-items:center**
+ * —— grid 的 auto 轨道会被内容撑开 ⇒ 百分比 `max-height` 失效 ⇒ 图溢出、要滚动。
+ * 对照视图两张图并排时也吃这个亏，一并改掉。
+ */
 .pane-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 12px;
   background: var(--md-surface-2);
 }
@@ -777,17 +783,32 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 24px;
+  /* 收紧外框：省下的纵向空间全给图（工具栏越矮、图越大） */
+  gap: 8px;
+  padding: 12px;
   background: rgba(12, 9, 24, 0.88);
   cursor: zoom-out;
 }
+/*
+ * 舞台必须 **flex 居中**，不能用 `grid + place-items:center`。
+ *
+ * 2026-10-08 无头实测（Chrome；舞台 347×352、图 1200×1800）：
+ *   `grid + place-items:center + img{max-height:100%}` ⇒ 图被渲染成 345×**517**，
+ *   纵向溢出 165px，再被下面的 `overflow:hidden` 裁掉 —— 用户看到的
+ *   "点开图片还要滚动才能看完整张"就是这个。
+ * 成因：grid 的单条 auto 轨道会按**内容**（图的原始尺寸）撑开，而百分比 `max-height`
+ *   正是对着这条轨道算的 ⇒ 轨道高度＝内容高度，约束等于没生效。
+ *   flex 的交叉轴尺寸直接取容器高度（确定值），百分比 `max-height` 才真正起作用。
+ * 实测换成 flex 居中后图是 233×350 —— 恰好铺满。
+ * ⇒ 改回 grid 会立刻复现"图片超出可视区"，`check:units` 的 ZOOM.fitToWindow 会红。
+ */
 .lightbox-stage {
   flex: 1;
   min-height: 0;
   width: 100%;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: default;
   /* 放大后可拖拽调显示区域；`touch-action:none` 阻止移动端默认平移手势抢走拖拽 */
   touch-action: none;
@@ -866,17 +887,24 @@
   color: rgba(255, 255, 255, 0.7);
   font-size: 12px;
 }
-/* 底部控制条：作"看得清"的底，而不是半透明浮字 */
+/* 底部控制条：作"看得清"的底，而不是半透明浮字；压矮压紧，把纵向空间让给图 */
 .lightbox-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
+  gap: 8px;
+  padding: 5px 10px;
   border-radius: 999px;
   background: var(--md-surface);
   border: 1px solid var(--md-line);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
   cursor: default;
+}
+/* 漫画名过长会把工具栏整条撑宽（看着更"挡"）⇒ 超过 30vw 就省略 */
+.lightbox-bar .compare-seq > span:last-child {
+  max-width: 30vw;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 /* 右上角关闭键 */
 .lightbox-x {

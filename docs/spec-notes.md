@@ -3957,3 +3957,90 @@ R6 原钉「认 Ctrl/⌘ + 只处理 ↑/↓」，改滚轮后它**必然变红*
 - **两个端点行为未验**：① `Ctrl+滚轮` 在 Windows 上是否真没被 WebView2 抢
   （代码层由 `zoom_hotkeys_enabled=false` 推断，真机才能确认）；
   ② macOS 上按住 ⌘ 双指滑动是否真的产生带 `metaKey` 的 `wheel` 事件。
+
+## D-91 · 看图器三处修正：滚轮方向、**开图即整张可见**（实测出 grid 的坑）、下限 50% + 工具栏瘦身（2026-10-08）
+
+### 一、用户报的四件事
+1. `Ctrl + 滚轮` 方向反了（原话"ctrl + ↓ 是放大，应该是 ↑"）⇒ 应为**向上放大**。
+2. 缩放下限从 100% 放宽到 **50%**。
+3. 点开图片后**要滚动才能看完整张图**。
+4. 底部工具栏"有点挡到"。
+
+### 二、第 3 条的根因 —— **不是猜的，是用无头 Chrome 量出来的**
+
+`.lightbox-stage` 原为 `display: grid; place-items: center` + `img { max-width/height: 100% }`。
+直觉上"百分比 `max-height` 会约束图片"，**实测不成立**：
+
+| 布局 | 图片实际渲染（舞台 347×352，图 1200×1800） |
+|---|---|
+| `grid + place-items:center`（原样） | **345×517** ⇒ 纵向溢出 165px，被 `overflow:hidden` 裁掉 |
+| `flex` + `align-items/justify-content:center` | **233×350** ⇒ 恰好铺满 |
+| `grid + grid-template-rows: 100%` | 233×350 ⇒ 也恰好铺满 |
+
+成因：grid 的单条 **auto 轨道会按内容（图的原始尺寸）撑开**，而百分比 `max-height` 正是
+对着这条轨道算的 ⇒ 轨道高 = 内容高，约束等于没生效；再被 `overflow: hidden` 一裁，
+用户看到的就是"图被切掉、得滚动才能看全"。flex 的交叉轴尺寸直接取容器高度（确定值），
+百分比才真正起作用。
+
+⇒ 修法：`.lightbox-stage` 与 `.pane-body` 都改成 **flex 居中**（不用绝对定位 hack，
+移动端/缩放/拖拽等既有行为零改动）。**同一个坑在对照视图（`.pane-body`）也埋着**，
+只是那里是 `overflow: auto`，所以表现为"可以滚动"。
+
+### 三、另外三处
+
+- **方向**：缩放因子 `1 + deltaY·k` → **`1 - deltaY·k`**（`deltaY < 0` = 向上滚 = 放大）。
+- **档位**：`ZOOM_MIN = 50`；新增 `ZOOM_FIT = 100` 作为「恰好铺满」**基准档**，
+  并用作**初始档与换页复位档** —— 不能再拿 `ZOOM_MIN` 当初值，否则开图只有一半大。
+  平移门控随之由 `zoom > ZOOM_MIN` 改为 `zoom > ZOOM_FIT`（≤100% 没有可平移余量）；
+  `zoomAt` 在 `next <= ZOOM_FIT` 时**归位居中**（否则从放大态缩回来，旧偏移会把图顶出画面）。
+- **工具栏**：`.lightbox` padding 24→12、gap 12→8；`.lightbox-bar` padding 8/14→5/10
+  （实测条高 40→31px）；漫画名超 30vw 省略，免得把整条撑宽。
+
+### 四、钉子
+
+- `check:units` 新增 **ZOOM.wheelDirection**（因子必须是 `1 - deltaY·k`，且不许出现加号形态）
+  与 **ZOOM.fitToWindow**（初始档 = `ZOOM_FIT`、换页复位、两个容器必须 flex 居中、
+  `img{max-*:100%}`、舞台 `overflow:hidden`）⇒ **42 → 44 条**。
+- 原 `ZOOM.anchorZoom` 的反向断言（查 `setOffset({0,0})`）随重构**已失去着力点**，
+  **重写**为"必须存在 `next <= ZOOM_FIT` 的归位分支"，同时兜住"归位写成无条件"的退化。
+- 原 `ZOOM.twoFingerPan` 的门控判据 `zoom > ZOOM_MIN` → `zoom > ZOOM_FIT`。
+- 反证轮新增 **6 条**变异（方向取加号、删归位分支、初值改 `ZOOM_MIN`、舞台退回 grid、
+  删 img 的 `max-height`、`.pane-body` 退回 grid）⇒ **52 → 58 条**，全红零跳过。
+- `check:retranslate` R8 的下限断言 `ZOOM_MIN = 100` → `50`。
+
+### 五、把"布局假设"变成实测（可复用）
+
+本机有 Chrome，**不必装 playwright** 就能量：把**真实构建产物 CSS** 链进一个最小 HTML、
+复制目标 DOM，用页面内 JS 把 `getBoundingClientRect()` 写进 DOM，再
+`chrome --headless=new --dump-dom --virtual-time-budget=5000` 读回来。
+本轮正是靠它把"grid 会溢出 165px"从猜测变成数字，也顺手量了工具栏高度。
+
+⚠️ 测试图要用**真 PNG**：SVG（尤其没有 `viewBox` 的）在 Chrome 里 `naturalWidth` 会是 0，
+量出来是假的 —— 第一次尝试就被这个坑骗过。
+
+### 六、验收
+
+| 命令 | 结果 |
+|---|---|
+| `npx tsc --noEmit`（app） | 通过 |
+| `npm --prefix app run build` | 通过 |
+| `node e2e/units-structure-check.mjs` | **44 / 0** |
+| `node e2e/units-structure-check.mjs --refute` | **58 / 58 全红、零跳过** |
+| `node e2e/service/retranslate-check.mjs` / `--refute` | **12 / 0** / **9 / 9** |
+| `npm run check:lib-manage` | **8 / 0** |
+| `npm run check:docs` | check:units 计数门与 GROUPS 全绿；余 2 红是 `check:music` 既有问题（215/213），与本轮无关 |
+| 真机浏览器实测（真实构建 CSS，1440×900） | stage 1400×743、img **495×743**、溢出 **NO**、barH 31 |
+
+### 七、边界
+
+- **未重编译 exe、未在真机点过**：滚轮方向与锚点缩放的**手感**只能真机确认；
+  源码绿只证明"没写反/没退回 grid"，不证明"手感对"。
+- macOS 侧仍未实测（本机 Windows）。
+
+### 八、踩到的工具坑（已写进 falsifiable-verification 技能）
+
+`node xxx-check.mjs --refute | tail -n` 会让 **SIGPIPE 打断脚本**，`restore()` 来不及跑 ⇒
+变异创建的垃圾文件（`app/src/components/atoms.tsx`、`app/src/hooks.ts`，11 字节 `export {};`）
+留在工作区 ⇒ **下一次**跑反证轮会有 2 条"锚点已存在、无法反证"被**静默跳过**
+（跳过 ≠ 通过，但总量仍显示 56/56 很容易骗过眼睛）。
+**跑反证轮一律重定向到文件再读，不要接 `head`/`tail`。**

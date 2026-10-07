@@ -231,9 +231,21 @@ function Pane({
   );
 }
 
-/** 缩放范围（%）：下限 100%（=原尺寸，不再缩小）、上限 200% */
-const ZOOM_MIN = 100;
+/** 缩放范围（%）：下限 50%（可以缩得更小看全局）、上限 200% */
+const ZOOM_MIN = 50;
 const ZOOM_MAX = 200;
+
+/**
+ * 「恰好铺满可视区」档 = 100%，也是**打开全屏时的基准档**。
+ *
+ * 图像在 100% 时由 CSS 收进可视区（`max-width/height:100%` + 容器 flex 居中，
+ * 见 `manga.scss` 的 `.lightbox-stage`）⇒ 打开全屏就是**整张可见、不需要滚动**。
+ * 由此得到本组比例的语义：< 100% = 比铺满还小；> 100% 才开始溢出，
+ * **也只有 > 100% 时才允许平移**（≤ 100% 没有可平移的余量）。
+ *
+ * ⚠️ 别把它读成"原始像素尺寸"：这里的 100% 是相对**可视区**的，不是 1:1 像素。
+ */
+const ZOOM_FIT = 100;
 
 /** 滚轮一步的"档位"：按钮点一次 / 键盘按一下都是这么多；滚轮则按此换算成比例 */
 const ZOOM_STEP = 25;
@@ -246,15 +258,19 @@ const ZOOM_STEP = 25;
  *   · 鼠标滚轮一格 = ±100（Windows/WebView2 实测口径）
  *   · 触控板双指滑动 = 每帧几 px 的**连续小值**，一滑几十帧
  * 若按"每事件 +25%"硬加，触控板一滑就直接顶到 200%（甚至因为惯性余波反复触顶）。
- * 指数式 `z' = z · (1 + deltaY·k)` 让**总增量只取决于滚动总距离**，与事件帧数无关 ——
+ * 指数式让**总增量只取决于滚动总距离**，与事件帧数无关 ——
  * 鼠标一格与触控板"滑同样距离"得到同样的结果。
  *
  * 系数 0.0015 的来由：鼠标一格（100px）≈ +15%，从 100% 到 200% 约需 5 格，
  * 落在"几格就够看清细节、又不至于一路点到顶"的区间。
+ *
+ * ## 方向
+ * 取 `z' = z · (1 - deltaY·k)`，是**减号**：滚轮**向上**（deltaY < 0）为**放大**，
+ * 与浏览器及所有看图工具一致。写成加号方向就反了 —— 用户看到的是"往上滚反而变小"。
  */
 const ZOOM_WHEEL_K = 0.0015;
 
-/** 把缩放夹进 [100, 200]，并按 1% 取整（滚轮是连续量，不再对齐到 25 的整数倍） */
+/** 把缩放夹进 [50, 200]，并按 1% 取整（滚轮是连续量，不再对齐到 25 的整数倍） */
 function clampZoom(z: number): number {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z)));
 }
@@ -268,7 +284,13 @@ function clampZoom(z: number): number {
  *
  * 关键交互：**Esc 关闭全屏而不是退出对照** —— 由 `Compare` 统一裁决（见那里的说明）。
  *
- * ## 缩放（Ctrl/⌘ + 滚轮，100%–200%）
+ * ## 缩放（Ctrl/⌘ + 滚轮：**向上放大**、向下缩小；50%–200%）
+ *
+ * ### 100% 是「恰好铺满」档 —— 打开全屏就能看到整张图
+ * 图像在 100% 时由 CSS 收进可视区（`max-width/height:100%` + 容器 flex 居中），
+ * 所以**默认档就是"整张可见"**，不需要滚动。缩到 50% 能看更全局，放大到 200% 才溢出
+ * —— 也只有溢出（> 100%）时才启用平移，见下面「平移」一节。
+ * ⚠️ 这里的 100% 是相对**可视区**的，不是原始像素 1:1。
  *
  * ### 为什么是滚轮而不是 ↑/↓
  * 全局 `useMusicHotkeys` 占着裸 `↑/↓`（调音量）；虽然它对带 Ctrl/⌘ 的一律 return、
@@ -307,7 +329,7 @@ function clampZoom(z: number): number {
  *
  * **双指滚动**（放大态下不带 Ctrl 的滚轮）映射成平移：这是 macOS 用户拖完图之后
  * 调整视野的肌肉记忆（触控板上"拖"要按住不动，"滑"才是连续的），比拖拽顺手得多。
- * ⚠️ 只在**放大态**下生效 —— 100% 时图就那么大，没有可平移的余量，
+ * ⚠️ 只在**放大态**（> 100%）下生效 —— ≤100% 时图已被 CSS 收进可视区，没有平移余量，
  * 此时若吞掉滚轮，用户会觉得"滚轮失灵了"。
  *
  * 偏移量按**指针位移**累加，而不是换算成绝对坐标 —— 缩放变化后图片尺寸变了，
@@ -334,14 +356,14 @@ function Lightbox({
 }) {
   const blob = useBlobUrl(filePath(comicName, seq, variant));
   const label = variant === 'original' ? '原图' : '译文';
-  const [zoom, setZoom] = useState(ZOOM_MIN);
+  const [zoom, setZoom] = useState(ZOOM_FIT);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [barHidden, setBarHidden] = useState(false);
   // 拖拽过程用 ref 记，不进 state：指针每动一动就 setState 会把组件重渲染到拖不动
   const drag = useRef<{ active: boolean; px: number; py: number; moved: boolean } | null>(null);
   // 锚点缩放要在**同一次事件**里同时算出 zoom 与 offset，而 setState 是异步的
   // （拿到的 zoom 还是旧值）。故镜像一份进 ref，滚轮这类高频输入直接读它。
-  const view = useRef({ zoom: ZOOM_MIN, offset: { x: 0, y: 0 } });
+  const view = useRef({ zoom: ZOOM_FIT, offset: { x: 0, y: 0 } });
   // 锚点缩放要量"光标相对 stage 中心"的距离，故得拿到 stage 元素
   const stageRef = useRef<HTMLDivElement | null>(null);
 
@@ -360,17 +382,18 @@ function Lightbox({
    *
    * ⚠️ 必须拿到 **stage** 的矩形而不是图片的：图片本身被 `scale` 变换过，
    * 它的 `getBoundingClientRect()` 返回的是**变换后**的框，算出来的 `a` 是错的。
-   * stage 是 `display:grid; place-items:center` 的未变换容器，中心即图片中心（100% 时）。
+   * stage 是 flex 居中（自身未做变换）的容器，中心即图片中心（100% 时）。
    */
   const zoomAt = (clientX: number, clientY: number, factor: number) => {
-    const stage = stageRef.current;
     const cur = view.current;
     const next = clampZoom(cur.zoom * factor);
-    // 已经顶到上/下限：连偏移一起归位（回到 100% 时就该重新居中）
-    if (next === cur.zoom && (cur.zoom === ZOOM_MIN || cur.zoom === ZOOM_MAX)) {
-      if (cur.offset.x !== 0 || cur.offset.y !== 0) applyView(next, { x: 0, y: 0 });
+    // 缩回「恰好铺满」及以内（≤100%）：图已被 CSS 收进可视区，没有可平移的余量
+    // ⇒ 一律归位居中。留着旧偏移反而会把图推出画面（此时偏移不再是"视口内的相对位移"）。
+    if (next <= ZOOM_FIT) {
+      if (cur.zoom !== next || cur.offset.x !== 0 || cur.offset.y !== 0) applyView(next, { x: 0, y: 0 });
       return;
     }
+    const stage = stageRef.current;
     if (!stage) {
       applyView(next, { x: 0, y: 0 });
       return;
@@ -395,10 +418,11 @@ function Lightbox({
       if (e.ctrlKey || e.metaKey) {
         // 必须拦：否则页面跟着滚，而且 Mac 上 ⌘+滚轮可能被系统/浏览器当成页面缩放
         e.preventDefault();
-        zoomAt(e.clientX, e.clientY, 1 + e.deltaY * ZOOM_WHEEL_K);
+        // ⚠️ 减号：滚轮**向上**（deltaY < 0）是**放大**，与浏览器/看图工具一致
+        zoomAt(e.clientX, e.clientY, 1 - e.deltaY * ZOOM_WHEEL_K);
         return;
       }
-      if (view.current.zoom > ZOOM_MIN) {
+      if (view.current.zoom > ZOOM_FIT) {
         // 平移也要拦：不拦的话遮罩内容不多，滚轮会连带把下层页面滚走
         e.preventDefault();
         const cur = view.current;
@@ -414,7 +438,7 @@ function Lightbox({
 
   // 换页后缩放与偏移一并复位：新图不该继承上一张的放大倍数
   useEffect(() => {
-    applyView(ZOOM_MIN, { x: 0, y: 0 });
+    applyView(ZOOM_FIT, { x: 0, y: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seq, variant]);
 
@@ -455,10 +479,10 @@ function Lightbox({
   const stepZoom = (dir: 1 | -1) => {
     const cur = view.current;
     const next = clampZoom(dir > 0 ? cur.zoom + ZOOM_STEP : cur.zoom - ZOOM_STEP);
-    applyView(next, next === ZOOM_MIN ? { x: 0, y: 0 } : cur.offset);
+    applyView(next, next <= ZOOM_FIT ? { x: 0, y: 0 } : cur.offset);
   };
 
-  const zoomed = zoom > ZOOM_MIN;
+  const zoomed = zoom > ZOOM_FIT;
 
   return (
     <div className="lightbox" onClick={onClose} role="dialog" aria-modal="true" aria-label="全屏查看">
@@ -474,7 +498,7 @@ function Lightbox({
             onPointerMove={onPointerMove}
             onPointerUp={endDrag}
             onPointerCancel={endDrag}
-            title={zoomed ? '拖动或双指滑动可调整显示区域 · 点一下隐藏工具栏' : 'Ctrl/⌘ + 滚轮缩放 · 点一下隐藏工具栏'}
+            title={zoomed ? '拖动或双指滑动可调整显示区域 · 点一下隐藏工具栏' : 'Ctrl/⌘ + 滚轮（向上放大）· 点一下隐藏工具栏'}
           />
         ) : (
           <span className="lightbox-msg">{blob.kind === 'loading' ? '加载中…' : '该侧文件缺失'}</span>
@@ -498,7 +522,7 @@ function Lightbox({
             自己吃掉成页面缩放，Tauri 没有任何开关能关掉它（wry 的 macOS 后端根本没接
             `zoom_hotkeys_enabled`），所以绝不能把缩放只做成手势。
           */}
-          <span className="lightbox-zoom" title="Ctrl/⌘ + 滚轮缩放（100%–200%）">
+          <span className="lightbox-zoom" title="Ctrl/⌘ + 滚轮：向上放大、向下缩小（也可点 −/+，50%–200%）">
             <button
               type="button"
               className="lightbox-zoom-btn"
@@ -892,8 +916,9 @@ function HiddenComicsModal({
  * · **分页**：左栏 + 网格各一套分页 —— 漫画可能上百部，单部漫画也可能上千页。
  * · **删除**：`POST /library/{name}/delete`，带勾选框决定是否连本地目录一起删。
  * · **刷新**：手动刷新按钮（翻译完成后的自动刷新由 App 的"任务收尾"信号负责）。
- * · **全屏看图**：点对照视图里任一张图；全屏内 `Ctrl/⌘ + ↑↓` 缩放 100%–200%、
- *   放大后可拖拽，点图可收起/展开底部工具栏。
+ * · **全屏看图**：点对照视图里任一张图。开图即「整张可见」（100% = 恰好铺满，不需滚动）；
+ *   全屏内用 `Ctrl/⌘ + 滚轮`（向上放大、向下缩小）或工具栏 −/+ 缩放 50%–200%、
+ *   放大后可拖拽或双指滑动平移，点图可收起/展开底部工具栏。
  * · **返工重译**：`POST /library/{name}/retranslate`，覆盖已有译文（原图永不覆盖）。
  */
 export function LibraryScreen({

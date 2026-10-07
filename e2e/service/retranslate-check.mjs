@@ -482,14 +482,15 @@ async function runAll() {
     );
 
     // ---- R8：缩放范围与拖拽 ----
-    const hasClamp = /clampZoom/.test(libSrc) && /ZOOM_MAX\s*=\s*200/.test(libSrc) && /ZOOM_MIN\s*=\s*100/.test(libSrc);
+    // 2026-10-08：下限 100% → 50%（用户要求可缩小看全局），上限仍 200%。
+    const hasClamp = /clampZoom/.test(libSrc) && /ZOOM_MAX\s*=\s*200/.test(libSrc) && /ZOOM_MIN\s*=\s*50/.test(libSrc);
     // 拖拽用 Pointer Events（一次覆盖鼠标/触屏/触控板，macOS 与 Windows 同模型）
     const usesPointer = /onPointerDown/.test(libSrc) && /onPointerMove/.test(libSrc);
     check(
       'R8',
-      '缩放范围夹在 100%–200%；拖拽用 Pointer Events（兼容 macOS 触控板与鼠标）',
+      '缩放范围夹在 50%–200%；拖拽用 Pointer Events（兼容 macOS 触控板与鼠标）',
       hasClamp && usesPointer,
-      `clamp(100..200)=${hasClamp} pointerEvents=${usesPointer}`,
+      `clamp(50..200)=${hasClamp} pointerEvents=${usesPointer}`,
     );
   } finally {
     await killProc(service);

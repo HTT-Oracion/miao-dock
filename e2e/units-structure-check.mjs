@@ -957,16 +957,20 @@ add('ISLAND.toastExpandKeepsContent', 'ISLAND', (s) => {
 });
 
 // ============================ ZOOM（全屏看图缩放）============================
-// 缩放这一块的四条约束，每条都对应一个"看起来实现了、其实没生效"的坑：
+// 缩放这一块的六条约束，每条都对应一个"看起来实现了、其实没生效"的坑：
 //
 //   PASSIVE   wheel 必须**非 passive** 手动挂。React 的 onWheel 是被动的，
 //             在里面 preventDefault 无效 ⇒ 页面跟着滚、Mac 上可能被当成页面缩放。
+//   DIRECTION 滚轮**向上**必须是放大（因子取 `1 - deltaY·k`）。写成加号方向就反了，
+//             图能缩能放、类型也过 ⇒ 只有源码钉子拦得住（2026-10-08 用户实测报出来的）。
 //   ANCHOR    必须**锚点缩放**（以光标为原点）。改成"总是归零/以中心缩放"手感立刻变差，
 //             但代码照样跑、类型照样过 ⇒ 只有源码钉子拦得住。
 //   FALLBACK  必须存在**不依赖手势**的 −/+ 按钮。macOS 触控板捏合被 WebKit 自己吃成
 //             页面缩放、事件根本到不了 JS，而 wry 的 macOS 后端没接 zoom_hotkeys_enabled
 //             ⇒ 没有按钮就等于 mac 上完全没法缩放。
-//   TWOFINGER 裸滚轮只在**放大态**才平移。放到 100% 也平移 ⇒ 用户滚轮"失灵"。
+//   FIT       开图必须「整张可见」：默认落在 ZOOM_FIT，且容器 flex 居中 + `img{max-*:100%}`。
+//             实测 `grid + place-items` 会让百分比 max-height 失效 ⇒ 图溢出被裁。
+//   TWOFINGER 裸滚轮只在**溢出态（> 100%）**才平移。≤100% 也平移 ⇒ 用户滚轮"失灵"。
 //
 // 判据一律先 stripComments：本组多条在注释里主动写出了反面写法
 // （`onWheel`、`passive`、捏合被吃等），不剥注释会恒红或恒绿 —— 两种都是假信号。
@@ -995,9 +999,11 @@ add('ZOOM.anchorZoom', 'ZOOM', (s) => {
   if (!/getBoundingClientRect/.test(seg)) missing.push('zoomAt 未量光标位置（退化成中心缩放）');
   // 偏移必须按比例换算，而不是直接重置
   if (!/\(ax\s*-\s*cur\.offset\.x\)\s*\*/.test(seg)) missing.push('偏移未按 s\'/s 比例换算（未做锚点缩放）');
-  // ⚠️ 反向断言：zoomAt 里出现「无条件 setOffset({x:0,y:0})」就是退回了中心缩放
-  if (/setOffset\(\{\s*x:\s*0\s*,\s*y:\s*0\s*\}\)/.test(seg) && !/next === ZOOM_MIN/.test(seg))
-    missing.push('zoomAt 无条件重置偏移（锚点缩放被写回中心缩放）');
+  // ⚠️ 反向：缩到「恰好铺满」及以内（≤ ZOOM_FIT）没有可平移的余量，必须归位居中。
+  //    少了这条，从放大态缩回 ≤100% 时旧偏移会把图顶出画面（"图歪在一边 / 跑没了"）。
+  //    它同时兜住另一种退化：把归位写成**无条件**（连放大态也每次归零 ⇒ 退回中心缩放）。
+  if (!/next\s*<=\s*ZOOM_FIT/.test(seg))
+    missing.push('未在缩到「恰好铺满」及以内（≤ ZOOM_FIT）时归位（旧偏移会把图推出画面）');
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
 });
 
@@ -1034,10 +1040,78 @@ add('ZOOM.twoFingerPan', 'ZOOM', (s) => {
   const seg = from >= 0 && to > from ? lib.slice(from, to) : '';
   if (!seg) return { ok: false, detail: '未定位到 wheel 监听段' };
   const missing = [];
-  // 必须有放大态门控：无条件平移会让 100% 时滚轮失灵
-  if (!/zoom\s*>\s*ZOOM_MIN/.test(seg)) missing.push('裸滚轮平移未门控在放大态（100% 时滚轮会失灵）');
+  // 必须有「溢出才平移」的门控：≤100%（恰好铺满及以内）没有可平移余量，
+  // 此时若吞掉裸滚轮，用户会觉得滚轮失灵。
+  if (!/zoom\s*>\s*ZOOM_FIT/.test(seg)) missing.push('裸滚轮平移未门控在溢出态（≤100% 时滚轮会失灵）');
   if (!/preventDefault/.test(seg)) missing.push('平移未 preventDefault（页面会跟着滚）');
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+// DIRECTION —— 滚轮**向上**必须是放大。
+// 取 `1 - deltaY·k`；写成 `1 + deltaY·k` 方向就反了。图能缩能放、类型也过，
+// 只有源码钉子拦得住 —— 2026-10-08 就是用户报「ctrl+↓ 才是放大」才发现写反的。
+add('ZOOM.wheelDirection', 'ZOOM', (s) => {
+  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  const lib = stripComments(s.library);
+  const from = lib.indexOf('const onWheel = (e: WheelEvent)');
+  const to = lib.indexOf("addEventListener('wheel'", from);
+  const seg = from >= 0 && to > from ? lib.slice(from, to) : '';
+  if (!seg) return { ok: false, detail: '未定位到 wheel 监听段' };
+  const missing = [];
+  // 正向：缩放因子 = 1 - deltaY·k（减号）⇒ 向上滚（deltaY<0）为放大
+  if (!/1\s*-\s*e\.deltaY\s*\*\s*ZOOM_WHEEL_K/.test(seg))
+    missing.push('滚轮缩放因子不是 1 - deltaY·k（向上滚不为放大）');
+  // ⚠️ 反向：不许出现加号形态（那就是方向反了）
+  if (/1\s*\+\s*e\.deltaY\s*\*\s*ZOOM_WHEEL_K/.test(seg))
+    missing.push('滚轮用了 1 + deltaY·k（方向反了：向上滚反而缩小）');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+// FIT —— 打开全屏即「整张可见、不需要滚动」。
+//
+// 这条守的是一个**实测出来的**坑（2026-10-08，无头 Chrome 量过，见 D-91）：
+//   `.lightbox-stage` 用 `grid + place-items:center` 时，grid 的单条 auto 轨道会按**内容**
+//   （图的原始尺寸）撑开，而百分比 `max-height:100%` 正是对着这条轨道算的 ⇒ 约束等于没生效
+//   ⇒ 舞台 347×352、图被渲染成 345×517，纵向溢出 165px 并被 `overflow:hidden` 裁掉。
+//   换 flex 居中后是 233×350 —— 恰好铺满。故判据里必须钉住 flex 居中。
+add('ZOOM.fitToWindow', 'ZOOM', (s) => {
+  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  const lib = stripComments(s.library);
+  const missing = [];
+  // 初始 / 换页复位都必须落在「恰好铺满」档（不是缩放下限，否则开图小一半）
+  if (!/useState\(ZOOM_FIT\)/.test(lib)) missing.push('初始比例不是 ZOOM_FIT（开图不是"整张可见"）');
+  if (!/zoom:\s*ZOOM_FIT/.test(lib)) missing.push('view 镜像的初始 zoom 不是 ZOOM_FIT');
+  if (!/applyView\(ZOOM_FIT,\s*\{\s*x:\s*0\s*,\s*y:\s*0\s*\}\)/.test(lib)) missing.push('换页未复位到 ZOOM_FIT');
+  // 取一条规则的声明体（`sel {` 到其后第一个 `}`；这两条块内无嵌套）
+  const pick = (src, sel) => {
+    const i = src.indexOf(sel + ' {');
+    if (i < 0) return '';
+    const j = src.indexOf('}', i);
+    return j > i ? src.slice(i, j) : '';
+  };
+  const css = stripComments(s.appCss ?? '');
+  for (const [sel, hint] of [
+    ['.lightbox-stage', '全屏舞台'],
+    ['.pane-body', '对照视图'],
+  ]) {
+    const block = pick(css, sel);
+    if (!block) {
+      missing.push(`manga.scss 里没有 ${sel} 规则（${hint}）`);
+      continue;
+    }
+    if (!/display:\s*flex/.test(block)) missing.push(`${sel} 不是 flex 居中（grid 的 auto 轨道会让 max-height:100% 失效）`);
+    if (!/align-items:\s*center/.test(block)) missing.push(`${sel} 缺 align-items: center`);
+    if (!/justify-content:\s*center/.test(block)) missing.push(`${sel} 缺 justify-content: center`);
+  }
+  const stage = pick(css, '.lightbox-stage');
+  if (stage && !/overflow:\s*hidden/.test(stage)) missing.push('.lightbox-stage 不是 overflow: hidden（放大后图会溢出到遮罩外）');
+  const img = pick(css, '.lightbox-stage img');
+  if (!img) missing.push('manga.scss 里没有 .lightbox-stage img 规则');
+  else {
+    if (!/max-width:\s*100%/.test(img)) missing.push('.lightbox-stage img 缺 max-width: 100%');
+    if (!/max-height:\s*100%/.test(img)) missing.push('.lightbox-stage img 缺 max-height: 100%（图会超出可视区）');
+  }
+  return { ok: missing.length === 0, detail: missing.join('、') };
 });
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -1496,12 +1570,87 @@ const MUTATIONS = [
     expect: ["ZOOM.buttonFallback"],
   },
   {
-    // 裸滚轮平移不门控放大态 ⇒ 100% 时滚轮被吞，用户以为失灵
-    name: "把裸滚轮平移移出放大态门控（100% 时滚轮被吞，失灵）",
+    // 裸滚轮平移不门控溢出态 ⇒ ≤100% 时滚轮被吞，用户以为失灵
+    name: "把裸滚轮平移移出溢出态门控（≤100% 时滚轮被吞，失灵）",
     file: F.library,
-    find: "      if (view.current.zoom > ZOOM_MIN) {",
+    find: "      if (view.current.zoom > ZOOM_FIT) {",
     replace: "      if (true) {",
     expect: ["ZOOM.twoFingerPan"],
+  },
+  {
+    // 方向反了：滚轮向上反而缩小 —— 能缩能放、类型也过，只有钉子拦得住
+    name: "把滚轮缩放因子改成 1 + deltaY·k（向上滚反而缩小，方向反了）",
+    file: F.library,
+    find: "zoomAt(e.clientX, e.clientY, 1 - e.deltaY * ZOOM_WHEEL_K);",
+    replace: "zoomAt(e.clientX, e.clientY, 1 + e.deltaY * ZOOM_WHEEL_K);",
+    expect: ["ZOOM.wheelDirection"],
+  },
+  {
+    // 缩回「铺满」及以内不归位 ⇒ 旧偏移把图顶出画面
+    name: "删掉「≤ ZOOM_FIT 归位」分支（缩回铺满后图歪在一边、跑出画面）",
+    file: F.library,
+    find: `    if (next <= ZOOM_FIT) {
+      if (cur.zoom !== next || cur.offset.x !== 0 || cur.offset.y !== 0) applyView(next, { x: 0, y: 0 });
+      return;
+    }
+`,
+    replace: "",
+    expect: ["ZOOM.anchorZoom"],
+  },
+  {
+    // 开图默认落到缩放下限（50%）：图小一半，且丢掉"整张铺满"语义
+    name: "把初始比例改成 ZOOM_MIN（开图不是整张铺满）",
+    file: F.library,
+    find: "useState(ZOOM_FIT)",
+    replace: "useState(ZOOM_MIN)",
+    expect: ["ZOOM.fitToWindow"],
+  },
+  {
+    // 退回 grid：auto 轨道按内容撑开 ⇒ max-height:100% 失效 ⇒ 图溢出被裁（实测 345×517）
+    name: "把 .lightbox-stage 改回 grid + place-items（max-height:100% 失效，图溢出被裁）",
+    file: path.join(F.stylesDir, "manga.scss"),
+    find: `.lightbox-stage {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;`,
+    replace: `.lightbox-stage {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: grid;
+  place-items: center;`,
+    expect: ["ZOOM.fitToWindow"],
+  },
+  {
+    name: "删掉 .lightbox-stage img 的 max-height: 100%（图片溢出可视区）",
+    file: path.join(F.stylesDir, "manga.scss"),
+    find: `.lightbox-stage img {
+  max-width: 100%;
+  max-height: 100%;`,
+    replace: `.lightbox-stage img {
+  max-width: 100%;`,
+    expect: ["ZOOM.fitToWindow"],
+  },
+  {
+    name: "把 .pane-body 改回 grid + place-items（对照视图同样溢出、要滚动）",
+    file: path.join(F.stylesDir, "manga.scss"),
+    find: `.pane-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;`,
+    replace: `.pane-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  place-items: center;`,
+    expect: ["ZOOM.fitToWindow"],
   },
 
   // ── STYLE（样式分层）─────────────────────────────────────────────────────
