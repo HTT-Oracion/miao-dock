@@ -4146,3 +4146,107 @@ const find = txt.includes(mut.find) ? mut.find : mut.find.split('\n').join(eol);
   等那 3 条修好，文档数字要同步改成 218，否则计数门会重新变红。
 - macOS 侧未验证（本机 Windows）。不过整个约束是 WebView2 专属的：**WKWebView 没有这个问题**
   （wry 在 `wkwebview/` 下不接 `additional_browser_args`），所以 macOS 上登录窗本来就不受此影响。
+
+---
+
+## D-93 · Windows 打包支持：平台分叉出 `nsis` 安装包；**ring 编译失败的真身是 MSVC 环境缺失**（2026-10-08）
+
+### 一、问题：`bundle.targets` 全是 macOS 专属包型
+
+用户报「好像不支持打包成 Windows」。核实到三件事：
+
+- `app/src-tauri/tauri.conf.json` 的 `bundle.targets` 是 **`["app","dmg"]`** —— `app`（`.app` 目录）与
+  `dmg`（磁盘映像）**都是 macOS 专属包型**。Windows 上没有任何可用包型 ⇒ 这就是"不支持打包"的**直接成因**。
+- 仓库里**一次都没成功打包过**：`target/` 下只有 `debug/`，**无 `release/`、无 `bundle/`**。
+- 没有任何平台专用配置文件（`tauri.windows.conf.json` 等**不存在**）。
+
+### 二、修法：平台分叉，基座一字不动
+
+Tauri v2 会把 `tauri.<platform>.conf.json` 与基座按 **JSON Merge Patch** 合并，且**数组是整体替换**
+（不是追加、不是去重）。于是新增一个只含一个键的文件：
+
+`app/src-tauri/tauri.windows.conf.json`
+
+```json
+{ "bundle": { "targets": ["nsis"] } }
+```
+
+- 基座 `targets` 保持 `["app","dmg"]` ⇒ **macOS 侧逐字节不变**（遵守 D-85「平台分叉一律只加分支」）。
+- 只覆盖 `targets` 一个键，`productName`/`identifier`/`version`/`icon`/`macOS` **一概不复制** ——
+  复制 = 同一事实两处来源，必漂移（基座换了图标而 windows 配置还指着旧文件）。
+- **实测证据**（真跑 release 构建时打印）：
+  `Info Patching ...\miao-dock.exe with bundle type information: nsis` + `Finished 1 bundle`，
+  且 `bundle/` 下**只有 `nsis/`、没有 `dmg/`** ⇒ 确证是"**替换**"而非"合并"。
+
+### 三、本次范围（用户裁定）：只到「能产出安装包」
+
+- ✅ **做**：Windows 上 `npm run app:build` 产出 **NSIS 安装包**。
+- ❌ **不做**：`bundle.resources` 仍为空、无 `externalBin`、`build.rs` 无拷贝步骤 ⇒
+  **包内仍不含 `service/` 与 `engine/`，装完起不了服务**。`service.rs::resolve_entry` 仍是"从 exe 向上找 6 层"。
+  即 **G-13（打包分发）只解决了一半**：从"没有安装包"推进到"有安装包但起不了服务"。
+- 已推导但**未采纳**的备选：`externalBin` 打 `node.exe` 自带运行时 —— 抬高体积与维护成本，需另行裁定。
+
+### 四、🔴 真正的坑不在仓库里：**ring 编译失败 = 缺 MSVC 环境**
+
+首次真跑 `npm run app:build` **失败**，报的是：
+
+```
+error: failed to run custom build command for `ring v0.17.14`
+  process didn't exit successfully: `...\release\build\ring-71d88a2bbdb2d2ff\build-script-build` (exit code: 1)
+  --- stderr          ← 空的！
+  error occurred in cc-rs: command did not execute successfully (status code exit code: 2):
+    "...\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\cl.exe" ... "-c" "...\crypto/curve25519/curve25519_64_adx.c"
+```
+
+**两个误导点**：① 报的是 `ring`（容易以为它自己坏了）；② cargo 打印的 `--- stderr` 段**是空的**。
+
+真身：**`cl.exe` 的诊断走 stdout**，被 cargo 的分区吃掉了。手工做 A/B（同一份 `#include <stddef.h>` 的最小文件）：
+
+| 条件 | 结果 |
+|---|---|
+| **不设 `INCLUDE`**（本机沙箱 shell 的真实状态） | `fatal error C1034: stddef.h: 不包括路径集`，**exit 2** |
+| 手工导出 `INCLUDE` / `LIB`（MSVC + Windows Kits） | **exit 0** |
+
+**exit 2 与 ring 报的 `exit code: 2` 逐个吻合** ⇒ 因果闭合：`ring` 是依赖树里少数**要现场编译 C** 的
+crate，而 `cl.exe` 靠环境变量 `INCLUDE` / `LIB` 找头文件与库；沙箱 shell 从没跑过 `vcvars64.bat`，
+`INCLUDE`/`LIB` **都是空的**。
+
+⇒ **这不是仓库缺陷，是构建环境缺陷**。本机已存在的 `target/debug` 能出，是因为用户自己的终端
+（IDE / VS 命令行）带了环境。**任何 Windows 构建（`app` 与 `app:build` 一样）都必须在带 MSVC 环境的终端里跑。**
+
+> 与本仓既有记录的关系：`vcvars64.bat` 在本机**不可用**（它依赖被沙箱拦的 `reg.exe`）——
+> 所以这里走的是**手工导出 `INCLUDE`/`LIB`/`PATH`**（`MSVC/bin/HostX64/x64` + `Windows Kits/10/bin/<ver>/x64`）的路子。
+
+### 五、钉子：`npm run check:bundle`（4 条 / 反证 4 条）
+
+| 断言 | 守什么 |
+|---|---|
+| `W1` | `tauri.windows.conf.json` 存在，且 `bundle.targets === ["nsis"]` |
+| `W2` | 基座 `tauri.conf.json` 的 `targets` **仍是 `["app","dmg"]`** ——「支持 Windows」必须走平台分叉，不许改基座污染 macOS |
+| `W3` | 基座 `bundle.icon` 含 **`.ico`**（Windows 打包必需；macOS 用 `.icns`，三份图标缺一不可）|
+| `W4` | 平台配置**不复制**基座已有的键（`productName`/`identifier`/`version`/`icon`/`active`/`macOS`/`resources`）|
+
+> ⚠️ **一处自查出来的假红（值得记）**：`W4` 的禁复制列表一开始**误把 `targets` 也列了进去**，
+> 导致**基线 4 条里 1 条必红**。而 `targets` 恰恰是平台配置**应该**覆盖的那个键。
+> 判据：**"断言在绿基线上就该是绿的"** —— 基线红意味着**判据写错了**，不是环境问题。
+> 已把 `targets` 从禁复制列表移除（脚本里留了注释说明为什么它必须不在表里）。
+
+反证 4 条各对应一种真实回退形态：`M1` windows targets 退回空数组 · `M2` 改基座 targets 成 `"all"`
+· `M3` 从基座图标删掉 `.ico` · `M4` windows 配置把基座 `icon` 抄一份。全部**按字节还原**。
+
+### 六、验收
+
+| 命令 | 结果 |
+|---|---|
+| `npm run check:bundle` | **4 / 0**（exit 0） |
+| `npm run check:bundle:refute` | **4 / 4 全红、零跳过、按字节还原一致** |
+| `npm run app:build`（带 MSVC 环境，release） | **exit 0**，产出 `target/release/bundle/nsis/喵坞_2.0.0_x64-setup.exe`（**20.62 MiB / 21,623,790 B**）|
+| `npm run check:docs` | **14 / 0**（exit 0） |
+
+### 七、边界
+
+- **安装包只验证到"产出成功"**：**未在真机走完安装向导、未验证安装后的应用能启动**（用户裁定范围止于产出安装包）。
+- 装完**仍起不了服务**（包内不含 `service/`/`engine/`）—— 这是 G-13 的剩余部分，本轮未动。
+- **MSVC 环境是使用者的责任**：本机沙箱需手工导出 `INCLUDE`/`LIB`；已写进 `README.md`「一、装核心依赖」与
+  `AGENTS.md` §5「环境陷阱」。
+- macOS 侧未回归（本机 Windows）；不过改动是"**只新增一个 Windows 专用文件**"，基座文件字节级未动。

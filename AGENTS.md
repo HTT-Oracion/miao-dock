@@ -95,6 +95,8 @@ node e2e/service/llm-real-timing.mjs  # 真 ③（llama-server）冷启动与内
 npm run check:music[:refute]  # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 215 条 / 反证 182 条
 npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+「② 分组简洁化」+ X-C3「准备中」时间线 + ④ 功能梳理（侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / 行内 def） 164 条 / 反证 103 条
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 看图缩放 / 样式分层 44 条 / 反证 58 条
+npm run check:bundle[:refute] # Windows 打包配置钉子 4 条 / 反证 4 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；源码级，不起进程）
+npm run check:docs            # 文档 ↔ 实现一致性 14 条（条数对账 / 命令存在 / 禁词 0 命中 / GROUPS 覆盖）
 cd app && npx tsc --noEmit && npx vite build   # 前端类型与构建
 cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 ```
@@ -104,10 +106,11 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 
 ## 4. 当前状态与已知缺口
 
-- ver1.0（漫画翻译）**已完成**；ver2.0（设置页重构 + IA + 音乐模块）进行中，音乐模块四平台已接通。
-- **翻译引擎接入进度**：S0 环境闸门（G1 ✅）· **S1 适配层对齐**（D-62）· **S2 三进程生命周期已完成，
-  macOS 侧过 G2**（D-64…D-70）· **S3 模型管理已完成**（D-72）· **S4 档位/加速/降档/空闲卸载已完成**（D-73）·
-  **S5 契约增量已完成**（D-74）。
+- **ver1.0（漫画翻译）已完成**；**ver2.0（设置页重构 + IA + 音乐模块）已完成** —— 音乐模块四平台已接通，
+  桌面歌词 / 逐字歌词 / 评论等已落地。真正剩下的只有**打包分发**（G-13）与若干**真机未验证项**。
+- **翻译引擎接入 S0–S8 全部完成**：S0 环境闸门（G1 ✅）· S1 适配层（D-62）· S2 三进程生命周期（D-64…D-70）·
+  S3 模型管理（D-72）· S4 档位/加速/降档/空闲卸载（D-73）· S5 契约增量（D-74）·
+  **S6 Box UI 引擎诊断视图（D-75）· S7 真机端到端 E1–E11（D-76）· S8 插件串联（D-77）**。
   `ServiceManager` 现管 `Children{service, engine}`，
   就绪是**三重判定**（进程存活 + 端口 + HTTP），五态机 `stopped→starting(L1–L3)→running→stopping→stopped`。
 - **契约面（S5，D-74）**：`/health.sidecar` 是 **9 键**（新增 `engineVersion`；`tier`/`model`/`accel`/`warmed`/`llm`），
@@ -131,10 +134,13 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
   也就是说 `npm run app` 起的**已经是真引擎**（`python main.py` + `llama-server`），
   模拟引擎只在测试里被显式注入（`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs`）。
   ⇒ **本机没拉引擎（`runtimes/` 不在）时，产品链路起不来**，这是 G-13（打包分发）未做的一部分。
-- **未做**：打包分发（`bundle.resources` 为空，装出来的 `.app` 起不了服务，G-13）· **S6 诊断 UI /
-  S7 真机 E1–E11 全表 / S8 插件串联**（M7–M9）· Windows **进程树回收三项**（仍 `unverified`：
-  Job Object / 无孤儿 `llama-server.exe` / `taskkill /T`；注：Windows **真引擎装配 + S1 已真机跑通**，见 D-85）·
-  歌手详情 4 标签 / 评论翻页 / 卡拉OK YRC / 桌面歌词（PD-1 延后）。
+- **未做**：打包分发 —— Windows 侧**已能产出 NSIS 安装包**（`app/src-tauri/tauri.windows.conf.json` 平台分叉，`npm run check:bundle` 钉住；macOS 包型仍 `app`+`dmg`，未动），
+  但包内仍不含 `service/`/`engine/`、**装完起不了服务**（`bundle.resources` 为空，G-13 未闭环）· Windows **进程树回收三项**
+  （仍 `unverified`：Job Object / 无孤儿 `llama-server.exe` / `taskkill /T`；注：Windows **真引擎装配 + S1 已真机跑通**，见 D-85）·
+  **汽水音乐平台**（PD-1，延后；代码保留不排首批）· **评论翻页**（当前只拉第 1 页 20 条）·
+  **歌手详情第 4 标签**（当前仅网易云，专辑/MV/简介 三标签）。
+  ⚠️ 旧版此处写的「S6 诊断 UI / S7 / S8 未做」与「卡拉OK YRC / 桌面歌词延后」**均已过期** ——
+  桌面歌词（`lyrics_window.rs` + `screens/lyrics/DesktopLyrics.tsx`）与卡拉OK 逐字歌词（`screens/music/KaraokeLyrics.tsx`）**均已实现**。
 - **未做真机验证**的项在台账里逐条标注（如 Radix 弹层观感、音频代理播放、皮肤观感）—— 别把
   "类型检查 + 断言通过"当成"功能可用"。
 - 本仓库曾出现**同仓库并发写入**（另一个会话/窗口在改同一批文件，甚至把编辑器格式化后的引号风格一起提交）。
@@ -143,6 +149,12 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 ## 5. 环境陷阱（本机特有，踩过多次）
 
 - **Rust 不在 PATH**：`PATH="$HOME/.cargo/bin:$PATH" cargo build`。
+- **（Windows）编译 Rust 侧必须在带 MSVC 环境的终端里**：依赖树里 `ring` 要现场编译 C，
+  `cl.exe` 靠 `INCLUDE` / `LIB` 找头文件与库。在**没跑过 `vcvars64.bat` 的 shell**里构建，会停在这两行：
+  `error: failed to run custom build command for ring ... (exit code: 2)`，而 cargo 打印的 `--- stderr` 段**是空的**
+  （真正的诊断 `fatal error C1034: stddef.h: 不包括路径集` 走的是 **stdout**）⇒ 只看 stderr 会误判成 ring 坏了。
+  做法：用「x64 Native Tools Command Prompt for VS 2022」，或手工导出 `INCLUDE` / `LIB` 后再跑。
+  这与 `npm run app`（dev）还是 `npm run app:build`（release）无关 —— 两者都要编译 ring。
 - **cargo 在沙箱里删不掉构建产物**：报 `failed to remove file ... build-script-build`。
   做法：先 `rm -f app/src-tauri/target/debug/build/*/build-script-build`，再前台构建。
 - **`vite build` 需 `--no-emptyOutDir`**：本机沙箱拦截批量删 `dist/`（与代码无关）。
