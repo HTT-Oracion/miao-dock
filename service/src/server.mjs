@@ -1090,6 +1090,25 @@ async function handleCancel(req, res, cors, taskId) {
   sendJson(res, 200, result, cors);
 }
 
+/**
+ * `POST /tasks/{taskId}/retry` —— **重跑这一个任务**（契约外增量端点，见 spec-notes D-87）。
+ *
+ * 与 `POST /library/{comicName}/resume` 的分工，别混：
+ *  · resume = 漫画库 X-D1 的「继续翻译」：按**目录**找「有原图、缺译文」的页，**新建 taskId**；
+ *  · retry  = 队列页那一行的「重试」：把**这一条任务**的失败页复位重跑，**taskId 不变** ——
+ *    所以队列行直接变回「翻译中」，而不会在历史里多冒出一行。
+ * 两者都进同一条串行队列，也都不重传原图（字节来源见 `Store.retryTask` 的注释）。
+ *
+ * 返回 200（复用既有任务，不是 201 新建）；响应体沿用 `createView`，前端拿到的就是
+ * 那一行的新状态。队列忙时 status 为 `queued`（队尾），闲时为 `running`。
+ */
+async function handleRetry(req, res, cors, taskId) {
+  await assertSidecarReady();
+  assertRootWritable(); // §2.2 DISK_FULL(507)：重跑同样要落盘
+  const { task } = store.retryTask(taskId);
+  sendJson(res, 200, store.createView(task), cors);
+}
+
 function handleQueue(req, res, cors) {
   sendJson(res, 200, store.queueSnapshot(), cors);
 }
@@ -1346,11 +1365,12 @@ async function route(req, res, cors, url) {
     if (method === 'GET') return handleTaskDetail(req, res, cors, p[1], url);
     throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
   }
-  // /tasks/{taskId}/batches | events | cancel
+  // /tasks/{taskId}/batches | events | cancel | retry
   if (p.length === 3 && p[0] === 'tasks') {
     if (p[2] === 'batches' && method === 'POST') return handleAppendBatch(req, res, cors, p[1]);
     if (p[2] === 'events' && method === 'GET') return handleSse(req, res, cors, p[1]);
     if (p[2] === 'cancel' && method === 'POST') return handleCancel(req, res, cors, p[1]);
+    if (p[2] === 'retry' && method === 'POST') return handleRetry(req, res, cors, p[1]);
     throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
   }
 

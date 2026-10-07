@@ -48,6 +48,8 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
 const SERVICE_READY_TIMEOUT: Duration = Duration::from_secs(30);
 /// 停止时先礼后兵：SIGTERM 之后等这么久，没走就 SIGKILL
 const STOP_GRACE: Duration = Duration::from_secs(3);
+/// 收尸（`try_wait` 确认退出）的上界。见 `reap()` 第 ④ 段：**这里必须有上界**。
+const REAP_GRACE: Duration = Duration::from_secs(2);
 
 // ------------------------------------------------------------------ 对外视图
 
@@ -621,8 +623,40 @@ impl ServiceManager {
                 signal_tree(procs[i].pgid, true);
             }
         }
+        // ④ 收尸 —— 🔴 **必须有上界**。
+        //
+        // 这一段原来是**无界**的 `handle.wait()`。它看着无害，实则正是
+        // 「点退出没反应」的**第二个**可能成因：`taskkill /T /F` 万一没能带走某个子进程
+        //（权限不足、PID 已被复用、进程正卡在不可中断的系统调用里），`wait()` 就**永远
+        // 不返回** —— 调用它的那条线程连同整个退出流程一起挂死。旧版 `quit_app` 是同步
+        // 命令（跑在主线程），于是表现就是**窗口活着、进程活着、点什么都没反应**。
+        //
+        // 两害相权：收尸失败最多留一个孤儿进程（`child-watch` / `parent-watch` 还有一层
+        // 兜底，见 D-12），而**退不掉**是用户直接看得见、且自己解决不了的故障。
+        // 所以这里宁可放过孤儿，也绝不允许无限等。
+        let reap_deadline = Instant::now() + REAP_GRACE;
         for p in procs.iter_mut() {
-            let _ = p.handle.wait();
+            loop {
+                match p.handle.try_wait() {
+                    Ok(Some(_)) => break, // 正常：已退出（try_wait 顺带完成 wait，收掉僵尸）
+                    Ok(None) => {
+                        if Instant::now() >= reap_deadline {
+                            push_log(
+                                &log,
+                                &format!(
+                                    "[miao-dock] ⚠ {}（pid={}）在 {}s 内未确认退出 —— 不再等，继续退出",
+                                    p.label,
+                                    p.handle.id(),
+                                    REAP_GRACE.as_secs()
+                                ),
+                            );
+                            break;
+                        }
+                        thread::sleep(Duration::from_millis(50));
+                    }
+                    Err(_) => break, // 探测本身失败：没有更有意义的动作可做
+                }
+            }
         }
     }
 

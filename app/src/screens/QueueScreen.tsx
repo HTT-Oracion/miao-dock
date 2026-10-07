@@ -76,7 +76,7 @@ function ActionButton({
   }
   if (t.status === 'failed' || t.status === 'partial_failed') {
     return (
-      <Btn kind="primary" size="sm" onClick={() => onRetry(t)} title="用同一漫画名重新提交">
+      <Btn kind="primary" size="sm" onClick={() => onRetry(t)} title="重跑这一行里失败的页（仍是同一个任务）">
         重试
       </Btn>
     );

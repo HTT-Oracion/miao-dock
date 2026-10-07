@@ -100,7 +100,23 @@ pub fn service_restart(app: AppHandle, mgr: State<'_, ServiceManager>) -> Status
 }
 
 /// 应用退出（托盘菜单 → 二次确认之后调用）
-#[tauri::command]
+///
+/// 🔴 **必须是 `async` 命令**（命令属性上的 `(async)` = 跑在 tauri 异步运行时的
+/// 线程池上，**不是主线程**）。这不是风格问题，而是**功能开关**：
+///
+/// Tauri 的**同步**命令在主线程上执行，而 `AppHandle::exit` 在**主线程**里调用时
+/// **不保证真的退出** —— 官方讨论 tauri#3555 的结论就是这句
+/// 「you shouldn't call `AppHandle::exit` on the main thread」，提问者的现象与本机
+/// 用户报的一模一样：**点了「退出喵坞」没反应**（窗口照旧、进程照旧）。
+///
+/// 顺带把第二个「点了像没反应」的成因也一并消掉：`ServiceManager::stop()` 是**阻塞**的
+/// （先礼后兵，最多等 `STOP_GRACE`）。同步命令跑在主线程 ⇒ 这段时间窗口的消息泵一起
+/// 被冻住 —— 即便最终退得掉，那几秒里界面也是死的，用户只会更用力地点两下。
+///
+/// ⚠️ 与 `main.rs` 的 `RunEvent::ExitRequested` 是**两道**清理，不是重复：这里走的是
+/// 正常路径（先收干净再退，端口立刻释放）；那一道兜底 `Cmd+Q` / 其它退出路径。
+/// 子进程表在 `stop()` 里已被 `take_all()` 掏空，所以第二遍是空操作。
+#[tauri::command(async)]
 pub fn quit_app(app: AppHandle, mgr: State<'_, ServiceManager>) {
     mgr.stop();
     app.exit(0);

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { apiPost, errorText, isApiError, openPath, quitApp, serviceRestart } from '@/ipc';
+import { apiPost, errorText, openPath, quitApp, serviceRestart } from '@/ipc';
 import type { ServiceState } from '@/ipc';
 import { useLibrary, useQuitRequest, useService, useTasks, useToasts } from '@hooks';
 import { initialMode, persistMode, useThemeTokens } from '@/theme/apply';
@@ -104,19 +104,23 @@ export function App() {
   };
 
   /**
-   * 「重试」走的是**本地续做**（`POST /library/{name}/resume`），不是重新上传：
-   * 服务端不保留已上传的原图字节，但原图早已落盘，续做直接读磁盘补缺页。
-   * 因此重试不会新增编号、不会覆盖原图（spec-notes G-07）。
+   * 「重试」= **同一个任务重跑一次**（`POST /tasks/{taskId}/retry`）。
+   *
+   * 为什么不再走 `POST /library/{name}/resume`：resume 的语义是「按**漫画目录**找缺页」，
+   * 它会**新建一个 taskId** ⇒ 队列页上原失败行留在历史里、旁边又冒出一条新行。
+   * 用户看到的是「点了重试，历史里多出一个任务」，而他要的是「**这一行**变回翻译中」。
+   * 队列行上的「重试」指的是这一行重来一遍，所以复用 taskId 才对得上语义。
+   *
+   * ⚠️ `resume` 那条路仍然在（漫画库 X-D1 的「继续翻译」用它）—— 两条路的字节来源相同
+   *（都从磁盘读原图、都不重传），差的是**任务的身份**。
    */
   const retry = async (t: TaskRow) => {
     try {
-      await apiPost(`/library/${encodeURIComponent(t.comicName)}/resume`, {});
-      push(`「${t.comicName}」的待译页已重新加入队列`, 'good');
+      await apiPost(`/tasks/${encodeURIComponent(t.taskId)}/retry`, {});
+      push(`「${t.comicName}」已重新加入队列`, 'good');
       refreshAll();
     } catch (e) {
-      // 没有缺页时服务端返回 404 —— 对用户来说这是「已经译完了」，不是错误
-      if (isApiError(e) && e.status === 404) push(`「${t.comicName}」没有待续做的页`, 'info');
-      else push(errorText(e), 'bad');
+      push(errorText(e), 'bad');
     }
   };
 
@@ -261,7 +265,16 @@ export function App() {
       <MusicKernel />
 
       {quitOpen ? (
-        <QuitConfirm onStay={() => setQuitOpen(false)} onQuit={() => void quitApp()} />
+        <QuitConfirm
+          onStay={() => setQuitOpen(false)}
+          onQuit={() => {
+            // 失败**不再静默**：旧版写的是 `void quitApp()`，一旦这条 IPC 被拒
+            //（命令报错、主线程上 `exit` 没生效…）就什么都不发生 —— 用户看到的是
+            //「点了『退出喵坞』没反应」，而控制台里那点信息他根本看不到。
+            // 把原因摆到灵动岛上，至少能知道该往哪儿查（Rust 侧的 `quit_app` 见 D-87）。
+            void quitApp().catch((e: unknown) => push(errorText(e), 'bad'));
+          }}
+        />
       ) : null}
 
       {/*

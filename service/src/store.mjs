@@ -557,6 +557,61 @@ export class Store {
     return { task, replay: false };
   }
 
+  /**
+   * 重跑**同一个任务**：把失败页复位为待译，用**原来的 taskId** 回到队列。
+   *
+   * 为什么不复用 `createResumeTask`（那会产生新 taskId）：队列行上「重试」的语义是
+   * 「**这一行**重新开始跑」。新建任务的话，原失败行留在历史里、旁边又冒出一条新行 ——
+   * 用户看到的是「点了重试，历史里多出一个任务」，而不是「这一行变回翻译中」。
+   *（`createResumeTask` 继续服务漫画库 X-D1 的「继续翻译」，那条路按目录找缺页，语义不同。）
+   *
+   * 字节来源：失败页的原图已按 G-11 落盘（`_keepOriginalOnFailure`），而上传那份暂存字节
+   * 在任务收尾时已被清扫（`_sweepStaged` / `_forgetBlobs`）⇒ 复位时把 `fromDisk` 置真，
+   * 走「从磁盘读原图」那条路。若某页连原图都没能留下（G-11 的降级路径），它重跑会以
+   * `original_missing` 再次失败 —— 那是**如实的失败**，不该被这里掩盖成成功。
+   *
+   * 只复位 `failed`：`success` / `skipped` 的页是已经拿到结果的（skipped 多为
+   * `already_exists`），重跑它们既浪费又会与「不覆盖」冲突。
+   */
+  retryTask(taskId) {
+    const task = this.mustTask(taskId);
+    if (!TASK_TERMINAL.has(task.status)) {
+      throw new ApiError('TASK_NOT_RETRYABLE',
+        `任务还在 ${task.status}，无需重试`, { taskId, status: task.status });
+    }
+
+    let reused = 0;
+    for (const batch of task.batches) {
+      for (const item of batch.items) {
+        if (item.status !== 'failed') continue;
+        item.status = 'pending';
+        item.fromDisk = true;
+        item.saved = false;
+        item.outputFile = null;
+        item.sha256 = null;
+        item.durationMs = null;
+        item.retryCount = 0;
+        item.reason = null;
+        item.errorMessage = null;
+        reused++;
+      }
+    }
+    if (reused === 0) {
+      throw new ApiError('TASK_NOT_RETRYABLE',
+        '该任务没有可重试的页（只有失败的页需要重跑）', { taskId, status: task.status });
+    }
+
+    // 回到「未收尾」姿态：清掉上一次的终态痕迹，否则队列页会同时显示新的活动状态与旧的完成时间。
+    task.finishedAt = null;
+    task.cancelRequested = false;
+    task.lastError = null;
+    this._syncBatchStatuses(task);
+    // 与新建任务**同一套调度**：空闲 ⇒ 立刻 running（就是用户要的「直接变成翻译中」），
+    // 否则排进队尾（此时显示「等待中」才是诚实的 —— 引擎同一时刻只跑一个任务）。
+    this._enqueueOrStart(task);
+    return { task, reused };
+  }
+
   /** 读磁盘上已有的原图字节（续做路径专用）；找不到返回 null，由调用方按失败收尾 */
   _readOriginalFromDisk(task, seq) {
     const dir = this.taskDir(task);

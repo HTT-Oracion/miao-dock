@@ -8,6 +8,10 @@ export const CODES = {
   TASK_NOT_FOUND: 404,
   TASK_NOT_APPENDABLE: 409,
   TASK_NOT_CANCELABLE: 409,
+  // 与上一条同一个家族：**任务当前这个状态不允许该动作**（而不是"任务不存在"=404）。
+  // 两个分支都会走到它：① 任务还在跑（running/queued）却被点重试；② 任务没有任何失败页
+  //（例如 done）。都用 409 表达"冲突：现在不是做这件事的时候"，别混成 404 或 500。
+  TASK_NOT_RETRYABLE: 409,
   SEQUENCE_OVERFLOW: 409,
   DISK_FULL: 507,
   PERMISSION_DENIED: 403,
