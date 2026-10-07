@@ -2751,6 +2751,85 @@ add('RESTORE.onlyOnce', 'RESTORE', (s) => {
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
 });
 
+// ── WEBVIEW（窗口 WebView2 参数一致性）──────────────────────────────────────
+//
+// 这一组防的是「音乐模块 → 点登录 → 选网易云 → **登录窗口打开失败**」的真因（台账 D-92）。
+//
+// 机制（不是猜测，是微软 Win32 文档的原话）：
+//   · wry 在**每次建 webview** 时都调一次 `CreateCoreWebView2EnvironmentWithOptions`，
+//     把 `additional_browser_args` 塞进 `AdditionalBrowserArguments`
+//     （`wry-0.57.0/src/webview2/mod.rs:289-370`；不设时用 wry 默认值，同文件 :303）。
+//   · 同一个 user data folder 只对应**一个共享的浏览器进程**。
+//   · 微软文档：「WebView creation fails with HRESULT_FROM_WIN32(ERROR_INVALID_STATE)
+//     if the specified options does not match the options of the WebViews that are
+//     currently running in the shared browser process.」
+//     `ERROR_INVALID_STATE` = **0x8007139F**。
+//   ⇒ 「主窗走默认值、登录窗走自定义值」不是风格差异，是**必炸**：
+//     第二个环境创建直接被拒 ⇒ `build()` 返 Err ⇒ 前端只看到「登录窗口打开失败」。
+//     （歌词窗同样没设参数，所以它一直没事 —— 这正是"只有登录窗坏"的原因。）
+//
+// 所以判据不是"别设参数"，而是**「要么都不设，要么所有窗口设成逐字相同的一份」** ——
+// 后者才是将来真要做参数定制时该走的路。
+add('WEBVIEW.sameArgsEverywhere', 'WEBVIEW', (s) => {
+  // ⚠️ 必须先剥注释：mod.rs 里正是用注释写明「不许设 additional_browser_args」的，
+  //    直接扫原文会把解释文字当成"设了"⇒ 恒红（本项目栽过多次的"着力点撞上注释"）。
+  const rust = [stripComments(s.rustMod ?? ''), stripComments(s.rustLyrics ?? '')].join('\n');
+  // Rust 侧：每个 webview 都对应一次 WebviewWindowBuilder::new
+  const runtimeWindows = (rust.match(/WebviewWindowBuilder::new\s*\(/g) || []).length;
+  const declared = rust.match(/additional_browser_args\s*\(\s*"([^"]*)"/g) || [];
+  const values = new Set(declared.map((d) => d.slice(d.indexOf('"') + 1, d.lastIndexOf('"'))));
+
+  // tauri.conf.json 的 `app.windows` 里每个窗口同样是一个 webview
+  let confWindows = 0;
+  let confWithArgs = 0;
+  try {
+    const conf = JSON.parse(s.tauriConf ?? '{}');
+    for (const w of conf?.app?.windows ?? []) {
+      confWindows++;
+      if (w && w.additionalBrowserArgs != null) {
+        confWithArgs++;
+        values.add(String(w.additionalBrowserArgs));
+      }
+    }
+  } catch {
+    return { ok: false, detail: 'tauri.conf.json 不是合法 JSON' };
+  }
+
+  const totalWindows = runtimeWindows + confWindows;
+  const withArgs = declared.length + confWithArgs;
+  if (withArgs === 0) return { ok: true, detail: '' }; // 当前策略：全体走 wry 默认值（天然一致）
+  if (values.size > 1)
+    return {
+      ok: false,
+      detail: `窗口之间的 WebView2 参数不一致（${values.size} 种取值）⇒ 共享浏览器进程会以 0x8007139F 拒绝建窗`,
+    };
+  if (withArgs !== totalWindows)
+    return {
+      ok: false,
+      detail: `只有 ${withArgs}/${totalWindows} 个窗口设了参数 ⇒ 与其余窗口的 wry 默认值冲突，第 ${withArgs + 1} 个窗口起创建失败（登录窗口打不开）`,
+    };
+  return { ok: true, detail: '' };
+});
+
+add('WEBVIEW.loginExternal', 'WEBVIEW', (s) => {
+  // 登录窗/弹窗必须加载**平台官方页面**（`WebviewUrl::External`）。
+  // 若照抄桌面歌词窗那套 `WebviewUrl::App("lyrics.html")` 的写法，登录窗会去加载
+  // 应用自身界面 ⇒ 用户面前弹出来的是我们自己的 UI，登录页根本不出现，
+  // 而代码能编译、能跑、不报错（歌词窗必须 App、登录窗必须 External，两者**不可互抄**）。
+  const rust = stripComments(s.rustMod ?? '');
+  if (!rust) return { ok: false, detail: 'src-tauri/src/music/mod.rs 不存在' };
+  if (/WebviewUrl::App\s*\(/.test(rust))
+    return {
+      ok: false,
+      detail:
+        'music/mod.rs 里出现了 WebviewUrl::App —— 登录窗/弹窗必须加载平台官方页面（External），不能加载应用自身页面',
+    };
+  const ext = (rust.match(/WebviewUrl::External\s*\(/g) || []).length;
+  if (ext < 5)
+    return { ok: false, detail: `只有 ${ext} 处 WebviewUrl::External（四平台登录窗 + OAuth 弹窗共 5 处）` };
+  return { ok: true, detail: '' };
+});
+
 // ── 执行器 ────────────────────────────────────────────────────────────────
 function runAll(s, ids) {
   const res = {};
@@ -2766,7 +2845,7 @@ function runAll(s, ids) {
   return res;
 }
 
-const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS', 'AUDIO', 'CACHE', 'SKIN', 'QUEUE', 'MENU', 'ISLANDV', 'RESTORE', 'KEYS'];
+const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS', 'AUDIO', 'CACHE', 'SKIN', 'QUEUE', 'MENU', 'ISLANDV', 'RESTORE', 'KEYS', 'WEBVIEW'];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -4358,6 +4437,31 @@ const MUTATIONS = [
     expect: ['ISLANDV.desktopLyricsKept'],
   },
 
+  // ── WEBVIEW（窗口 WebView2 参数一致性：防「登录窗口打开失败」复发）──────────
+  // ⚠️ 锚点一律用**单行**：工作区是 CRLF（core.autocrlf=true），而反证轮用的是
+  //    `txt.includes(find)`（裸字符串比较）—— 多行 find 里的 `\n` 匹配不上 `\r\n`，
+  //    会被判"破坏锚点未找到"而**静默跳过**（跳过 ≠ 通过）。本仓库已踩过一次。
+  {
+    // 只给**一个**窗口单独加参数 —— 这正是本次缺陷的形态：
+    // 主窗走 wry 默认值、登录窗走自定义值 ⇒ WebView2 以 0x8007139F 拒绝建窗。
+    // `.inner_size(940.0, 760.0)` 全文唯一（网易云登录窗），故锚点稳定。
+    name: '只给网易云登录窗单独设 additional_browser_args（与主窗默认值冲突 ⇒ 建窗失败）',
+    file: F.rustMod,
+    find: '        .inner_size(940.0, 760.0)',
+    replace:
+      '        .additional_browser_args("--disable-features=Foo")\n        .inner_size(940.0, 760.0)',
+    expect: ['WEBVIEW.sameArgsEverywhere'],
+  },
+  {
+    // 把登录窗改成加载应用自身页面（很自然的错：照抄桌面歌词窗的 WebviewUrl::App）。
+    // 编译能过、运行不报错，只是**登录页不再出现**。
+    name: '把网易云登录窗改成加载应用自身页面（照抄歌词窗写法 ⇒ 登录页不出现）',
+    file: F.rustMod,
+    find: '            WebviewUrl::External("about:blank".parse().map_err(|e: url::ParseError| e.to_string())?),',
+    replace: '            WebviewUrl::App("index.html".into()),',
+    expect: ['WEBVIEW.loginExternal'],
+  },
+
   // ── RESTORE（启动恢复）──────────────────────────────────────────────────
   // 每条断言都配一条反证。恢复链路的失效形态全是**静默**的（重开是空的、
   // 定位没生效、队列被清空），没有反证就分不清"功能坏了"和"从没实现过"。
@@ -4807,13 +4911,19 @@ if (!refute) {
     let okApply = true;
     try {
       const txt = original.toString('utf8');
-      if (!txt.includes(mut.find)) {
+      // ⚠️ EOL 容错：工作区是 CRLF（core.autocrlf=true），而多行锚点在脚本里写作 `\n`。
+      // 不换算就会 `includes` 失败 ⇒ 该条被判"锚点未找到"而**跳过**（跳过 ≠ 通过）；
+      // 实测上一次在 Windows 上就有 61 条这样静默消失，而 Linux/macOS 的 LF 检出看不出来。
+      // 做法与 units-structure-check.mjs 一致：按目标文件实际的 EOL 重写锚点后再匹配。
+      const eol = txt.includes('\r\n') ? '\r\n' : '\n';
+      const find = txt.includes(mut.find) ? mut.find : mut.find.split('\n').join(eol);
+      if (!txt.includes(find)) {
         console.log(`⚠ ${mut.name}\n    破坏锚点未找到（源文件已变？）—— 本条无法反证`);
         okApply = false;
         skipped += mut.expect.length;
       } else {
         // 内存破坏：只写 override 层（不写磁盘），断言经缓存读到的就是破坏后内容
-        overrideFile(file, txt.replace(mut.find, mut.replace));
+        overrideFile(file, txt.replace(find, mut.replace.split('\n').join(eol)));
       }
       if (okApply) {
         const res = runAll(loadSources(), mut.expect);

@@ -768,6 +768,37 @@ pub async fn music_get_playback_source(app: AppHandle) -> Result<String, String>
 //  登录窗口 - 多平台
 // ============================================================
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔴 窗口 WebView2 参数：**要么所有窗口都不设 `additional_browser_args`，要么所有窗口
+//    设成逐字相同的字符串**。绝不允许只给其中一部分窗口设。
+//
+// 为什么（这是"登录窗口打开失败"的真因，不是猜测）：
+//
+//   1. wry 在**每次建 webview** 时都调一次 `CreateCoreWebView2EnvironmentWithOptions`
+//      （`wry-0.57.0/src/webview2/mod.rs:289-370`），把 `additional_browser_args` 塞进
+//      `ICoreWebView2EnvironmentOptions::AdditionalBrowserArguments`；不设时用 wry 的默认值
+//      `--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection`（同文件 :303）。
+//   2. 同一个 user data folder 只会有**一个共享的 WebView2 浏览器进程**。
+//      微软的 Win32 API 文档写得很直白：
+//      > WebView creation fails with `HRESULT_FROM_WIN32(ERROR_INVALID_STATE)` if the
+//      > specified options does not match the options of the WebViews that are currently
+//      > running in the shared browser process.
+//      `ERROR_INVALID_STATE` = **0x8007139F**（"组或资源的状态不正确"）。
+//   3. 于是：主窗走 `tauri.conf.json`（未设 ⇒ wry 默认值），登录窗设了自定义值 ⇒
+//      **第二个环境创建直接失败** ⇒ `build()` 返回 Err ⇒ 前端弹「登录窗口打开失败」。
+//      而歌词窗同样没设参数，所以它一直是好的 —— 这正好解释了"为什么只有登录窗坏"。
+//
+// 这份自定义参数当初的理由是"禁用 Chromium 自动媒体会话，避免与 smtc.rs 会话重复"，
+// 但两点都不成立：① `smtc.rs` **在这个 crate 里根本不存在**（全仓 grep 无命中）；
+// ② 它只加在登录窗/弹窗上，而登录窗根本不播音频，真正播音频的主窗从来没加过。
+// 即：这段参数既没达到目的，又把登录功能弄坏了。
+//
+// ⚠️ 因此**不要**为了省事只在某个新建窗口上加参数。若将来真要做媒体会话抑制：
+//    先在主窗（`tauri.conf.json` 的 `app.windows[0].additionalBrowserArgs`）与**每一个**
+//    运行期窗口上写**逐字相同**的字符串，再让 `e2e/music-platform-check.mjs` 的
+//    `WEBVIEW.sameArgsEverywhere` 通过 —— 那条钉子就是为防这次这个坑复活而写的。
+// ─────────────────────────────────────────────────────────────────────────────
+
 /// 网易云登录 cookie 优先级 (参考 Mineradio)
 const NETEASE_COOKIE_PRIORITY: &[&str] = &[
     "MUSIC_U",
@@ -896,7 +927,8 @@ fn attach_login_popup_handler<'a, R: tauri::Runtime, M: tauri::Manager<R>>(
         )
         .title("帐号登录")
         .inner_size(560.0, 640.0)
-        .additional_browser_args("--disable-features=MediaSessionService,HardwareMediaKeyHandling,msWebOOUI,msPdfOOUI,msSmartScreenProtection,msEdgeAutofill,msEdgeShopping,msEdgeWallet --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-client-side-phishing-detection --disable-component-update --disable-default-apps --disable-extensions --disable-sync")
+        // 🔴 不许在这里设 additional_browser_args —— 见本文件「窗口 WebView2 参数」说明
+        //    （设了就会与主窗的默认参数冲突 ⇒ WebView2 拒绝建窗）
         // OAuth 走完后第三方会回跳到平台自己的域名，此时登录已完成，
         // 子窗口要自己关掉，否则用户得手动点叉。
         .on_page_load(|window, payload| {
@@ -1051,8 +1083,8 @@ async fn open_netease_login_window(app: &AppHandle) -> Result<String, String> {
             WebviewUrl::External("about:blank".parse().map_err(|e: url::ParseError| e.to_string())?),
         )
         .title("网易云音乐登录")
-        // 与其它窗口保持一致的 WebView2 参数（禁用 Chromium 自动媒体会话，避免与 smtc.rs 会话重复）
-        .additional_browser_args("--disable-features=MediaSessionService,HardwareMediaKeyHandling,msWebOOUI,msPdfOOUI,msSmartScreenProtection,msEdgeAutofill,msEdgeShopping,msEdgeWallet --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-client-side-phishing-detection --disable-component-update --disable-default-apps --disable-extensions --disable-sync")
+        // 🔴 不许在这里设 additional_browser_args —— 见本文件「窗口 WebView2 参数」说明
+        //    （设了就会与主窗的默认参数冲突 ⇒ WebView2 拒绝建窗）
         .inner_size(940.0, 760.0)
         .min_inner_size(780.0, 580.0),
         app,
@@ -1137,8 +1169,8 @@ async fn open_kugou_login_window(app: &AppHandle) -> Result<String, String> {
             WebviewUrl::External("about:blank".parse().map_err(|e: url::ParseError| e.to_string())?),
         )
         .title("酷狗音乐登录")
-        // 与其它窗口保持一致的 WebView2 参数（禁用 Chromium 自动媒体会话，避免与 smtc.rs 会话重复）
-        .additional_browser_args("--disable-features=MediaSessionService,HardwareMediaKeyHandling,msWebOOUI,msPdfOOUI,msSmartScreenProtection,msEdgeAutofill,msEdgeShopping,msEdgeWallet --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-client-side-phishing-detection --disable-component-update --disable-default-apps --disable-extensions --disable-sync")
+        // 🔴 不许在这里设 additional_browser_args —— 见本文件「窗口 WebView2 参数」说明
+        //    （设了就会与主窗的默认参数冲突 ⇒ WebView2 拒绝建窗）
         .inner_size(900.0, 720.0)
         .min_inner_size(760.0, 560.0),
         app,
@@ -1250,8 +1282,8 @@ async fn open_qq_login_window(app: &AppHandle) -> Result<String, String> {
             WebviewUrl::External("about:blank".parse().map_err(|e: url::ParseError| e.to_string())?),
         )
         .title("QQ 音乐登录")
-        // 与其它窗口保持一致的 WebView2 参数（禁用 Chromium 自动媒体会话，避免与 smtc.rs 会话重复）
-        .additional_browser_args("--disable-features=MediaSessionService,HardwareMediaKeyHandling,msWebOOUI,msPdfOOUI,msSmartScreenProtection,msEdgeAutofill,msEdgeShopping,msEdgeWallet --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-client-side-phishing-detection --disable-component-update --disable-default-apps --disable-extensions --disable-sync")
+        // 🔴 不许在这里设 additional_browser_args —— 见本文件「窗口 WebView2 参数」说明
+        //    （设了就会与主窗的默认参数冲突 ⇒ WebView2 拒绝建窗）
         .inner_size(900.0, 720.0)
         .min_inner_size(760.0, 560.0),
         app,
@@ -1359,8 +1391,8 @@ async fn open_migu_login_window(app: &AppHandle) -> Result<String, String> {
             WebviewUrl::External("about:blank".parse().map_err(|e: url::ParseError| e.to_string())?),
         )
         .title("咪咕音乐登录")
-        // 与其它窗口保持一致的 WebView2 参数（禁用 Chromium 自动媒体会话，避免与 smtc.rs 会话重复）
-        .additional_browser_args("--disable-features=MediaSessionService,HardwareMediaKeyHandling,msWebOOUI,msPdfOOUI,msSmartScreenProtection,msEdgeAutofill,msEdgeShopping,msEdgeWallet --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-client-side-phishing-detection --disable-component-update --disable-default-apps --disable-extensions --disable-sync")
+        // 🔴 不许在这里设 additional_browser_args —— 见本文件「窗口 WebView2 参数」说明
+        //    （设了就会与主窗的默认参数冲突 ⇒ WebView2 拒绝建窗）
         .inner_size(900.0, 720.0)
         .min_inner_size(760.0, 560.0),
         app,

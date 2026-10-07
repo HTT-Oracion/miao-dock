@@ -4044,3 +4044,105 @@ R6 原钉「认 Ctrl/⌘ + 只处理 ↑/↓」，改滚轮后它**必然变红*
 留在工作区 ⇒ **下一次**跑反证轮会有 2 条"锚点已存在、无法反证"被**静默跳过**
 （跳过 ≠ 通过，但总量仍显示 56/56 很容易骗过眼睛）。
 **跑反证轮一律重定向到文件再读，不要接 `head`/`tail`。**
+
+## D-92 · 「登录窗口打开失败」真因：**WebView2 共享 UDF 的 options 必须一致**（不是 Tauri 权限问题）（2026-10-08）
+
+### 一、症状与一开始的怀疑方向（都错了）
+
+用户报：音乐模块 → 点登录 → 选网易云 → 弹「登录窗口打开失败」。
+
+先排除掉的两条路（记下来免得下次再走）：
+1. **不是 capabilities 白名单**。`capabilities/default.json` 的 `windows` 只有
+   `["main","desktop-lyrics"]`，登录窗不在里面 —— 但 `capabilities` 只作用于 **IPC 命令**
+   （`tauri-2.12.1/src/ipc/authority.rs`，全仓只有 `ipc/` 用 `runtime_authority`），
+   **建窗本身不受它管**；而且登录窗加载外部 origin、压根不调 Tauri 命令。
+2. **不是"async 命令里建窗"**。Tauri 文档确实警告"同步命令里建窗在 Windows 会死锁"
+   （tauri#8997），但 `music_open_login_window` 早就是 `async fn`。
+
+### 二、真因（一句话）
+
+**同一个 user data folder 只对应一个共享的 WebView2 浏览器进程，而每个 WebView 创建时都
+带着自己的 `AdditionalBrowserArguments`；options 与已在跑的进程不一致时，创建直接失败。**
+
+- wry 在**每次**建 webview 都调一次 `CreateCoreWebView2EnvironmentWithOptions`，把
+  `additional_browser_args` 塞进 `ICoreWebView2EnvironmentOptions`
+  （`wry-0.57.0/src/webview2/mod.rs:289-370`）；不设时用 wry 默认值
+  `--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection`（同文件 `:303`）。
+- 微软 Win32 文档原话：
+  > WebView creation fails with `HRESULT_FROM_WIN32(ERROR_INVALID_STATE)` if the specified
+  > options does not match the options of the WebViews that are currently running in the
+  > shared browser process.
+  `ERROR_INVALID_STATE` = **0x8007139F**（"组或资源的状态不正确"）。WebView2Feedback#4593 有同码复现。
+
+于是本仓库的形态是：**主窗走 `tauri.conf.json`（未设 ⇒ wry 默认值），登录窗/弹窗设了自定义值
+（5 处，`music/mod.rs` 原 899/1055/1141/1254/1363 行）** ⇒ 主窗先建、占住共享进程 ⇒ 登录窗
+第二个 environment 创建被拒 ⇒ `build()` 返 Err ⇒ 前端只看到「登录窗口打开失败」。
+
+**为什么只有登录窗坏**：桌面歌词窗同样没设参数（走默认值）⇒ 与主窗一致 ⇒ 一直没事。
+这条"歌词窗好、登录窗坏"的差分正是定位的钥匙。
+
+### 三、那段自定义参数为什么可以直接删
+
+它的注释理由是"禁用 Chromium 自动媒体会话，避免与 smtc.rs 会话重复"，两点都不成立：
+① **`smtc.rs` 在这个 crate 里根本不存在**（全仓 grep 无命中）；
+② 它只加在**登录窗/弹窗**上，而登录窗根本不播音频，真正播音频的主窗从来没加过。
+即：既没达到目的，又把登录功能弄坏了。故 5 处一律删除，全体回到 wry 默认值（天然一致）。
+
+⚠️ **不能改用"每个窗口独立 data_directory"来绕**（tauri#8196 的 OneDrive 场景给过这个建议）：
+OAuth 弹窗与登录窗必须**共享 cookie 存储**（第三方回跳要在登录窗的 cookie jar 里落下凭证，
+Rust 轮询 `win.cookies()` 正是读它），换独立 UDF 会让第三方登录整条链路失效。
+
+### 四、钉子（`check:music` 新增 WEBVIEW 组 2 条）
+
+- `WEBVIEW.sameArgsEverywhere` —— 判据不是"别设参数"，而是
+  **「要么都不设，要么所有窗口设成逐字相同的一份」**：统计 Rust 侧
+  `WebviewWindowBuilder::new(` 数 + `tauri.conf.json` 的 `app.windows` 数作为"窗口总数"，
+  再统计 `additional_browser_args("…")` 的**条数与取值种类**。三种红灯：
+  取值多于一种 / 只有部分窗口设了 / 配置里与 Rust 里不一致。
+  ⚠️ 必须先 `stripComments` —— 本文件（mod.rs）里就是用注释写明"不许设"的，不剥注释会**恒红**。
+- `WEBVIEW.loginExternal` —— 登录窗/弹窗必须 `WebviewUrl::External`（加载平台官方页面），
+  且 `music/mod.rs` 里**不得出现** `WebviewUrl::App`。防的是"照抄桌面歌词窗写法"
+  （歌词窗必须 `App`，两者**不可互抄**）：改错了能编译、能跑、不报错，只是登录页不再出现。
+- 反证 +2 条：给网易云登录窗单独加参数（→ `sameArgsEverywhere` 红）、把它改成 `WebviewUrl::App`
+  （→ `loginExternal` 红）。断言数 216 → **218**，反证 180 → **182**。
+
+### 五、顺手修掉一个会让"反证轮"整体失效的坑（**这个是意外收获，但很重要**）
+
+跑反证轮时发现 **61 条变异被静默跳过**（"破坏锚点未找到"）。原因：工作区是 **CRLF**
+（`core.autocrlf=true`），而变异脚本里多行锚点写作 `find: "…\n…"`，harness 用
+`txt.includes(mut.find)` 做**裸字符串比较** ⇒ `\n` 永远匹配不上 `\r\n`。
+
+⇒ 修法（与 `units-structure-check.mjs` 已有的做法一致）：按目标文件实际 EOL 重写锚点后再匹配：
+
+```js
+const eol = txt.includes('\r\n') ? '\r\n' : '\n';
+const find = txt.includes(mut.find) ? mut.find : mut.find.split('\n').join(eol);
+… txt.replace(find, mut.replace.split('\n').join(eol))
+```
+
+修完：**182/182 条全部按预期变红、0 跳过、0 假阳性**（原先 121/121 + 61 跳过）。
+即这 61 条断言本来就写对了，只是**在 Windows 上从来没能被验过** —— 而 `check:music:refute`
+在 LF 检出（macOS/Linux）上看不出这个区别。**"跳过 ≠ 通过"**，本仓库第二次栽在同类问题上。
+
+### 六、验收
+
+| 命令 | 结果 |
+|---|---|
+| `cargo check`（app/src-tauri） | **通过**（exit 0） |
+| `node e2e/music-platform-check.mjs` | **215 / 3**（新增 2 条全绿；余 3 条是既有失败，见 §七） |
+| `node e2e/music-platform-check.mjs --refute` | **182 / 182 全红、零跳过、零假阳性**（exit 0） |
+| `npm run check:units` / `:refute` | **44 / 0** / **58 / 58** |
+| `npm run check:retranslate` | **12 / 0** |
+| `npm run check:lib-manage` | **8 / 0** |
+| `npm run check:docs` | **14 / 0**（exit 0）—— 既有的 **2 条**音乐计数红一并消失：此前文档写 215 而脚本实际通过 213，本轮 +2 条断言正好补齐；同时更新 `AGENTS.md` 的反证条数 180 → 182 |
+
+### 七、边界
+
+- **未重编译 exe、未在真机点过**。本条的修法是"删掉冲突参数"，证据是微软文档 + wry 源码 +
+  "歌词窗好/登录窗坏"的差分，**逻辑上闭合**；但仍需真机确认登录窗能弹出、扫码后能落 cookie。
+- **`check:music` 仍有 3 条既有失败**（`ISLANDV` / `RESTORE` / `KEYS.manualPressNotMerged`），
+  与本轮无关、本轮未动。⚠️ 注意由此带来的**文档语义扭曲**：`check:docs` 的计数门取的是脚本
+  **通过数**，所以 `AGENTS.md`/`README.md` 里的 "215 条" 是"通过数"而非"断言总数（218）"。
+  等那 3 条修好，文档数字要同步改成 218，否则计数门会重新变红。
+- macOS 侧未验证（本机 Windows）。不过整个约束是 WebView2 专属的：**WKWebView 没有这个问题**
+  （wry 在 `wkwebview/` 下不接 `additional_browser_args`），所以 macOS 上登录窗本来就不受此影响。
