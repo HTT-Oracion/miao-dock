@@ -513,7 +513,21 @@
   color: var(--md-muted);
   pointer-events: none;
 }
-.lib-search-input {
+/*
+ * ⚠️ 这里**刻意写成复合选择器**（`.lib-search .lib-search-input`，特异性 0,2,0），
+ * 不要"简化"回单类 `.lib-search-input`。
+ *
+ * 为什么：搜索框同时挂着通用类 `.input`（`className="input lib-search-input"`），
+ * 两者**特异性相同**（都是 0,1,0），胜负只由**出现顺序**决定；而 `.input` 定义在
+ * 本分片**更靠后**的位置（通用表单件集中放在文件后半段）⇒ 它赢，于是这里的
+ * height/padding 被整条盖掉。且 `.input` 用的是 **`padding: 0 11px` 简写**，会把
+ * 左右 padding 一起重置为 11px —— 后果是放大镜图标（`left:20px`）与清除 ✕
+ *（`right:16px`）直接压在输入的文字上。
+ *
+ * 靠"把这条挪到 .input 后面"也能绿，但那是**用顺序换正确性**：下次有人整理分片
+ * 顺序就会静默复发。复合选择器让胜负与顺序脱钩，才是这里要的表达。
+ */
+.lib-search .lib-search-input {
   width: 100%;
   height: 30px;
   padding-left: 28px;
