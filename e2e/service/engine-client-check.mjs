@@ -481,6 +481,73 @@ async function runPositive() {
       nIdx > -1 && defaultLaunch.cmd[nIdx + 1] === 'None',
       defaultLaunch.cmd.join(' '));
 
+    // ---------------------------------------------------------- L9/L10 · 本机代理旁路（D-86）
+    // 断言一律用**受控 env**：先清干净再取。不这么做，一台"恰好设了 NO_PROXY 含 127.0.0.1"
+    // 的机器上，L9 会在**没有注入**的情况下也变绿 —— 而反证轮正是靠它变红来证明注入有用。
+    const savedEnv = {
+      NO_PROXY: process.env.NO_PROXY,
+      no_proxy: process.env.no_proxy,
+      http_proxy: process.env.http_proxy,
+    };
+    const restoreEnv = (k, v) => { if (v === undefined) delete process.env[k]; else process.env[k] = v; };
+
+    delete process.env.NO_PROXY; delete process.env.no_proxy;
+    const noProxyLaunch = resolveEngineLaunch({ port: enginePort });
+    restoreEnv('NO_PROXY', savedEnv.NO_PROXY);
+    restoreEnv('no_proxy', savedEnv.no_proxy);
+    const npList = String(noProxyLaunch.env.NO_PROXY || '').split(',').map((s) => s.trim());
+    check('L9 启动 env 注入 NO_PROXY 且覆盖**本机三写法**（`127.0.0.1`/`localhost`/`::1`）—— 防"用户/沙箱挂了代理，把本机 8080 推理链路劫走"（D-86：就是本期 16 张图全 failed 的真根因）',
+      ['127.0.0.1', 'localhost', '::1'].every((h) => npList.includes(h)),
+      String(noProxyLaunch.env.NO_PROXY));
+
+    // L10 是 L9 的**另一半**：旁路只能靠"加 NO_PROXY"实现，**不能靠删代理** ——
+    // 引擎若改用云端翻译器仍然需要代理，删掉它会把那种配置静默打死（坏法与"本机被劫"一样难查）。
+    //
+    // ⚠️ 取值的写法有讲究：**Windows 的 env 是大小写不敏感的**，Node 的 `process.env` 会把
+    //    `HTTP_PROXY` 与 `http_proxy` **折叠成同一个键**（保留先出现的那种写法）。于是这里用
+    //    小写写进去、`{...process.env}` 摊出来的普通对象里却可能只有大写那个键 ⇒ 断言必须
+    //    **按实际键名**去取，写死任一大小写都会在另一个平台上假红。
+    process.env.http_proxy = 'http://10.0.0.9:3128';
+    process.env.NO_PROXY = 'example.com';
+    const proxyKey = Object.keys(process.env).find((k) => k.toLowerCase() === 'http_proxy');
+    const withProxyLaunch = resolveEngineLaunch({ port: enginePort });
+    restoreEnv('http_proxy', savedEnv.http_proxy);
+    restoreEnv('NO_PROXY', savedEnv.NO_PROXY);
+    restoreEnv('no_proxy', savedEnv.no_proxy);
+    check('L10 父进程设了代理 ⇒ env **保留**它（不删代理），且 NO_PROXY 是「原有项 + 本机」的并集（不是覆盖掉原有项）',
+      withProxyLaunch.env[proxyKey] === 'http://10.0.0.9:3128'
+      && String(withProxyLaunch.env.NO_PROXY).includes('example.com')
+      && String(withProxyLaunch.env.NO_PROXY).includes('127.0.0.1'),
+      JSON.stringify({ proxyKey, proxyVal: withProxyLaunch.env[proxyKey], NO_PROXY: withProxyLaunch.env.NO_PROXY }));
+    // 只设**小写** `no_proxy` 时也要被"看见"并并集（有些工具只写小写），且两个大小写输出一致。
+    delete process.env.NO_PROXY;
+    process.env.no_proxy = 'corp.internal';
+    const lowerLaunch = resolveEngineLaunch({ port: enginePort });
+    restoreEnv('NO_PROXY', savedEnv.NO_PROXY);
+    restoreEnv('no_proxy', savedEnv.no_proxy);
+    const lowerNp = String(lowerLaunch.env.NO_PROXY || '');
+    check('L11 只设**小写** `no_proxy` 时也能被并集进来，且两个大小写输出一致 —— httpx/requests/curl 读法不一致，漏一份的成本是一次"偶发"',
+      lowerNp.includes('corp.internal') && lowerNp.includes('127.0.0.1')
+      && lowerLaunch.env.no_proxy === lowerLaunch.env.NO_PROXY,
+      `${lowerLaunch.env.no_proxy} vs ${lowerLaunch.env.NO_PROXY}`);
+
+    // ---------------------------------------------------------- L12 · 引擎 stdio 编码（D-88）
+    // 与 L9–L11 同类：**启动 env 里必须多带一个键**，否则真机必挂，而且挂的地方看着毫不相干。
+    // 不加它时（实测链路）：Windows 上 Python 子进程的 stdio 按 ANSI 代码页（中文机 = GBK/cp936）
+    // 编码 ⇒ 引擎写进日志的**日文**（`utils/log.py` 把 root StreamHandler 接到了 stderr）是
+    // **非法 UTF-8 字节** ⇒ 上层按行读日志的一端读到非法字节就**停读并关掉管道读端** ⇒
+    // 引擎**再写 stderr** 报 `OSError: [Errno 22] Invalid argument`（冒出来的是 `tqdm` 初始化
+    // 那句 `sys.stderr.flush()`）⇒ 整张图在「掩码细化」处失败。
+    // ⚠️ 同样用**受控 env**：先清掉这台机器上可能已有的 `PYTHONIOENCODING`，
+    //    否则"本机恰好设了 utf-8"会让它在**没有注入**时也变绿（与 L9 同一个假绿家族）。
+    const savedPio = process.env.PYTHONIOENCODING;
+    delete process.env.PYTHONIOENCODING;
+    const ioLaunch = resolveEngineLaunch({ port: enginePort });
+    restoreEnv('PYTHONIOENCODING', savedPio);
+    check('L12 启动 env 强制 `PYTHONIOENCODING=utf-8`（引擎 stdio 必须是 UTF-8）—— 否则中文 Windows 下 GBK 日文日志会让上层读日志的一端停读、关掉管道，引擎随后写 stderr 报 `[Errno 22] Invalid argument`（D-88）',
+      String(ioLaunch.env.PYTHONIOENCODING || '').toLowerCase() === 'utf-8',
+      `PYTHONIOENCODING=${ioLaunch.env.PYTHONIOENCODING}`);
+
     // ---------------------------------------------------------- C · 生效参数快照（§5.2 的 `config` 块）
     const snap = engineConfigSnapshot();
     check('C1 `config` 是 **camelCase** 的 6 键（`targetLang` / `detectionSize`）—— 发出去的是 snake_case、报出来的是 camelCase，两个形状必须出自同一处（跨层字段名漂移的挡板）',
@@ -656,13 +723,33 @@ const MUTATIONS = [
   {
     name: 'H · 阶段日志做改名映射（记 `detect` 而不是引擎原话 `检测中…`）',
     file: ENGINE_CLIENT,
-    find: '  for (const f of frames) if (f.code === 1 && f.text) pushStage(seq, f.text);',
-    replace: "  for (const f of frames) if (f.code === 1 && f.text) pushStage(seq, 'detect');",
+    // ⚠️ 锚点已随源码重构更新：结果为帧的遍历从 `for (const f of frames) … pushStage(…)`
+    //    改成了 `recordFrame(seq, f)`，真正记阶段名的是 `recordFrame` 里的这一句。
+    //    旧锚点（`if (f.code === 1 && f.text)`）在源码里**已不存在**，于是这条变异长期恒报
+    //    「锚点未找到」= 反证轮分母虚高（分母 9 而实际只跑得动 8），却看着像"跑过了"。
+    find: '  if (frame.code === 1) pushStage(seq, frame.text);',
+    replace: "  if (frame.code === 1) pushStage(seq, 'detect');",
     expect: ['V1'],
+  },
+  {
+    name: 'I · 引擎启动 env 不再注入本机代理旁路（用户/沙箱挂了代理就把本机 8080 推理链路劫走：D-86）',
+    file: ENGINE_CLIENT,
+    // 不带行尾：本文件是 CRLF，锚点里写死 `\n` 会在匹配前就失败（写死 `\r\n` 又会在改用 LF 时失败）。
+    find: '      ...engineLocalNoProxy(),',
+    replace: '',
+    expect: ['L9', 'L10', 'L11'],
+  },
+  {
+    name: 'J · 引擎启动 env 不再强制 stdio 用 UTF-8（中文 Windows 下 GBK 日文日志会把读日志的一端打死：D-88）',
+    file: ENGINE_CLIENT,
+    // 不带行尾：本文件是 CRLF，锚点里写死 `\n` 会在匹配前就失败（同变异 I 的理由）。
+    find: "      PYTHONIOENCODING: 'utf-8',",
+    replace: '',
+    expect: ['L12'],
   },
 ];
 
-const EXPECTED_MUTATIONS = 8; // 分母写死
+const EXPECTED_MUTATIONS = 10; // 分母写死
 
 function sha(p) {
   return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');

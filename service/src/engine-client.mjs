@@ -700,6 +700,49 @@ function envIntLocal(name, def) {
   return Number.isFinite(n) && n > 0 ? n : def;
 }
 
+/**
+ * 本机地址 —— 引擎子进程**必须**直连、绝不能过代理的三个写法（`::1` 是 Node/uvicorn 在本机
+ * 可能绑到的 IPv6 回环，少了它就等于"IPv4 放行、IPv6 照样被劫"）。
+ */
+const LOCAL_NO_PROXY_HOSTS = ['127.0.0.1', 'localhost', '::1'];
+
+/**
+ * 本地引擎子进程的**代理旁路**环境（`NO_PROXY`）—— 见 spec-notes D-86。
+ *
+ * 🔴 为什么非有不可（真机实测链路，2026-10-07）：
+ *   `resolveEngineLaunch` 的 env 是 `{ ...process.env, ... }`，于是**用户机器上的
+ *   `http_proxy` / `HTTP_PROXY` / `ALL_PROXY` 会被原样继承给引擎进程**；引擎侧
+ *   `translators/sakura.py` 用 openai SDK（httpx，默认 `trust_env=True`）访问
+ *   `SAKURA_API_BASE` —— 那是 **`http://127.0.0.1:8080/v1`，一个纯本机地址** ——
+ *   而 httpx 会老老实实把这个本机请求交给代理。
+ *   国内用户普遍挂 Clash / V2Ray 一类的**系统代理或 proxy 环境变量**；只要代理没把
+ *   `127.0.0.1` 放进直连名单，本机推理链路就被拦在门外。实测症状（本机 sandbox 代理）：
+ *     ① 代理答 `HTTP 502 upstream connect failed ... (os error 10061)`；
+ *     ② 引擎 `_handle_translation_request` 重试 `_RETRY_ATTEMPTS=3` 次全 502 后 `return prompt`；
+ *     ③ 而 `prompt` 是 **list**，上层 `_translate` 做 `'…' + response` ⇒
+ *        `TypeError: can only concatenate str (not "list") to str`；
+ *     ④ 整张图被判 `engine_engine_error`，16 张全 `failed`、磁盘上 0 张译文。
+ *
+ * 语义边界（**只加旁路，不删代理**）：
+ *   引擎若改用云端翻译器（非本机 sakura），**仍然需要**走代理 ⇒ 这里保留用户原有的
+ *   `http_proxy` 等，只把**本机地址**并进 `NO_PROXY`。删代理会把"云端翻译"一起打死，
+ *   而那种坏法（翻译器连不上外网）与本次的坏法（本机被劫）看起来一模一样的难查。
+ *
+ * 两个大小写都写：httpx / requests / curl 读法不一致（`NO_PROXY` 与 `no_proxy` 都认的库
+ * 占多数，但只认其中一个的也不少），写两份的成本是零，漏一份的成本是一次"偶发"。
+ *
+ * @param {object} env 取值来源（默认 `process.env`；可注入以便断言）
+ * @returns {{ NO_PROXY: string, no_proxy: string }}
+ */
+export function engineLocalNoProxy(env = process.env) {
+  const cur = String(env.NO_PROXY ?? env.no_proxy ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const merged = [...new Set([...cur, ...LOCAL_NO_PROXY_HOSTS])].join(',');
+  return { NO_PROXY: merged, no_proxy: merged };
+}
+
 export function resolveEngineLaunch(overrides = {}) {
   const {
     pythonBin = config.enginePython,
@@ -722,6 +765,28 @@ export function resolveEngineLaunch(overrides = {}) {
     cwd: config.engineServerDir,
     env: {
       ...process.env,
+      // 🔴 顺序要紧：必须在 `...process.env` **之后**。若用户（或本机 sandbox）已经设了
+      //    `NO_PROXY`，要的是"把它并上本机地址"的那一份，而不是被它原样盖掉（D-86）。
+      ...engineLocalNoProxy(),
+      // 🔴 引擎子进程的 stdio **必须**是 UTF-8（见 spec-notes D-88）。
+      //
+      // 不加这一条时，Windows 上 Python 的 stdout/stderr 按**ANSI 代码页**编码
+      //（中文机 = GBK/cp936）；而真引擎会把**日文**原文/译文写进日志 —— `utils/log.py`
+      // 的 `logging.basicConfig()` 把 root StreamHandler 接到了 **stderr** ⇒ 日志里第一行
+      // 日文就是一堆**非法 UTF-8 字节**。
+      //
+      // 那会连带打死两件事（都实测过）：
+      //  ① 上层按行读子进程输出的一端（Rust `service.rs`）读到非法 UTF-8 后会**停止读取**
+      //     并关掉管道读端；此后引擎**再写 stderr** 就报 `OSError: [Errno 22] Invalid argument`
+      //     —— 而它冒出来的地方看着毫不相干（`tqdm` 初始化时那句 `sys.stderr.flush()`），
+      //     整张图因此在「掩码细化」处失败（本 bug 的直接现象）。
+      //  ② 即使不崩，日志面板里的日文也会是乱码。
+      //
+      // 只钉 **stdio**（`PYTHONIOENCODING`），不用 `PYTHONUTF8`：后者会连带改掉
+      // locale/文件系统编码，影响面远超"日志用什么编码"这一件事。
+      // 顺序同样必须在 `...process.env` 之后 —— 用户机器上那份（若有）说了不算，
+      // 因为"上层按 UTF-8 读"是我们这边的硬契约。
+      PYTHONIOENCODING: 'utf-8',
       // 引擎③（Sakura LLM）地址：`translators/keys.py` 读 SAKURA_API_BASE
       SAKURA_API_BASE: sakuraBase,
       // nonce 走 env 亦可（`args.py --nonce` 的默认值就是 MT_WEB_NONCE）

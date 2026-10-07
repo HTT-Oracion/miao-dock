@@ -28,7 +28,7 @@
 //!    SIGTERM→（超时）SIGKILL，连带清掉孙进程（真引擎的执行器就是这么漏出来的）；
 //!    Windows 走 `taskkill /T /F`。⚠️ Windows 分支**本机无法验证**，标 `unverified`（G2 ④）。
 use std::collections::{BTreeMap, VecDeque};
-use std::io::{BufRead, BufReader};
+use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
@@ -797,6 +797,59 @@ fn push_log(log: &Arc<Mutex<VecDeque<String>>>, line: &str) {
     l.push_back(line.to_string());
 }
 
+/// 逐行转发子进程输出 —— 🔴 **绝不因为"这一行不是合法 UTF-8"而停读**（见 spec-notes D-88）。
+///
+/// ## 为什么不能用 `BufReader::new(out).lines().map_while(Result::ok)`
+/// 那个写法看着无害，实则把「**子进程输出的编码**」与「**父进程能不能继续读**」耦在了一起，
+/// 而 Windows 上它们本来是分离的两件事：
+///
+/// 1. `lines()` 内部是 `read_line`，要求**合法 UTF-8**；不合法时返回 `Err(InvalidData)`。
+/// 2. `map_while(Result::ok)` 遇到第一个 `Err` 就**结束迭代**，`BufReader`（连同 `ChildStdout`
+///    / `ChildStderr`）随即被丢弃 ⇒ **这一端的管道读句柄被关闭**。
+/// 3. 此后子进程**再往这个流里写任何东西都会失败**。Windows 上的报错是
+///    `OSError: [Errno 22] Invalid argument`（**不是** Linux 那种 `Broken pipe`），
+///    而且它会**伪装成一个与该流毫不相干的错误**出现在别处 —— 实测是引擎里 `tqdm`
+///    初始化时那句 `sys.stderr.flush()`（`tqdm/std.py:446`），整张图因此在「掩码细化」处失败。
+///
+/// 触发条件在本机是**必然**的：中文 Windows 上 Python 子进程的 stdio 默认按 ANSI 代码页
+/// （GBK/cp936）编码，而真引擎会把**日文**原文/译文写进日志（`utils/log.py` 的
+/// `logging.basicConfig` 把 root handler 接到了 **stderr**）⇒ 第一行日文日志就把读者打死。
+/// （另见 `engine-client.mjs` 里给引擎注入 `PYTHONIOENCODING=utf-8` 的那一半修复。）
+///
+/// ## 现在的语义
+/// 按**字节**读、以 `b'\n'` 切行、用 `String::from_utf8_lossy` 解码 ⇒ 非法字节退化为 `�`，
+/// **但读者永远不会放弃**，管道也不会被提前关掉。日志面板因此最多是"某几个字是问号"，
+/// 而不会变成"从某一行起什么都没有 + 引擎随后报一个莫名其妙的错"。
+/// 行尾的 `\r` 顺手去掉（Windows 子进程写 `\r\n`）。
+fn relay_lines<R: Read>(mut r: R, mut on_line: impl FnMut(String)) {
+    let mut buf: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; 8192];
+    loop {
+        match r.read(&mut chunk) {
+            Ok(0) => break, // EOF：子进程退出、管道结束
+            Ok(n) => {
+                for &b in &chunk[..n] {
+                    if b == b'\n' {
+                        let mut line = std::mem::take(&mut buf);
+                        if line.last() == Some(&b'\r') {
+                            line.pop();
+                        }
+                        on_line(String::from_utf8_lossy(&line).into_owned());
+                    } else {
+                        buf.push(b);
+                    }
+                }
+            }
+            // 读错误（管道被对端关闭等）：**结束这一条流**，但不影响其它子进程与主流程。
+            Err(_) => break,
+        }
+    }
+    // 结尾可能有一行没有换行符
+    if !buf.is_empty() {
+        on_line(String::from_utf8_lossy(&buf).into_owned());
+    }
+}
+
 /// 定位入口脚本：环境变量优先，其次从可执行文件/工作目录向上找（开发期在 src-tauri 下运行）
 fn resolve_entry(rel: &str, env_key: &str) -> Result<PathBuf, String> {
     if let Ok(p) = std::env::var(env_key) {
@@ -909,7 +962,10 @@ fn spawn_inner(
         let log = log.clone();
         let tx = tx.clone();
         thread::spawn(move || {
-            for line in BufReader::new(out).lines().map_while(Result::ok) {
+            // ⚠️ 走 `relay_lines`（按字节 + lossy），**不是** `.lines().map_while(Result::ok)`：
+            //    后者一遇到非法 UTF-8 就停读并关掉管道，会让子进程后续写 stderr 直接报
+            //    `[Errno 22] Invalid argument`。见 `relay_lines` 的注释与 spec-notes D-88。
+            relay_lines(out, |line| {
                 if collect_ready {
                     if let Some(idx) = line.find('{') {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line[idx..]) {
@@ -918,15 +974,13 @@ fn spawn_inner(
                     }
                 }
                 push_log(&log, &line);
-            }
+            });
         });
     }
     if let Some(err) = child.stderr.take() {
         let log = log.clone();
         thread::spawn(move || {
-            for line in BufReader::new(err).lines().map_while(Result::ok) {
-                push_log(&log, &format!("[stderr] {line}"));
-            }
+            relay_lines(err, |line| push_log(&log, &format!("[stderr] {line}")));
         });
     }
 

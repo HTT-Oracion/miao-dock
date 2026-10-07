@@ -2,19 +2,20 @@
 /**
  * setup-engine.mjs —— 引擎运行时装配（Python 解释器 + 引擎源码）
  * =============================================================================
- * 只做「manifest 管不到的那三件事」：
+ * 只做「manifest 管不到的那几件事」：
  *   · Python 解释器（python-build-standalone）→ runtimes/manga-translator/python-3.11/
  *   · venv（用上面那个解释器建）            → runtimes/manga-translator/venv/
  *   · 引擎源码（上游 commit 归档）        → runtimes/manga-translator/src/
+ *   · 源码补丁（幂等，只改我们自己发现的缺陷，见 patchEngineSource）→ 同上 src/
  * 模型权重 / llama.cpp 二进制走 `engine/scripts/fetch-models.mjs`（manifest 是唯一清单）。
  *
  * 版本一律以 `engine/VERSIONS.lock` 为准（本文件里的常量与那份 lock 一一对应）。
  *
  * 用法：
- *   node engine/scripts/setup-engine.mjs            # 装 Python + venv + 引擎源码
+ *   node engine/scripts/setup-engine.mjs            # 装 Python + venv + 引擎源码（+ 打补丁）
  *   node engine/scripts/setup-engine.mjs --python   # 只装 Python 运行时
  *   node engine/scripts/setup-engine.mjs --venv     # 只建 venv（需 Python 已就位）
- *   node engine/scripts/setup-engine.mjs --source   # 只装引擎源码
+ *   node engine/scripts/setup-engine.mjs --source   # 只装引擎源码（+ 打补丁）
  *   node engine/scripts/setup-engine.mjs --check    # 只报告现状，不下载
  *
  * 环境变量：
@@ -190,6 +191,75 @@ async function installSource(force) {
   log(`  ✓ 源码：${SRC_DIR}`);
 }
 
+// ================================================================ 上游源码补丁
+
+const SAKURA_PY = path.join(SRC_DIR, 'manga_translator', 'translators', 'sakura.py');
+
+/**
+ * 补丁标记。**幂等判据**：文件里出现它 ⇒ 已打过，直接跳过（重复打会在函数体里堆第二份 raise）。
+ * 同时它也是"这份源码被我们改过"的唯一凭据。
+ */
+const SAKURA_MARK = '# miao-dock 补丁 D-86';
+
+/**
+ * 锚点 = 上游原样三行。取整个 `except` 分支体（含缩进）而不是单独一句 `return prompt`，
+ * 因为 `return prompt` 在文件里可能有别的语境；带上前一行 logger.error 才唯一。
+ */
+const SAKURA_ANCHOR = [
+  "                    self.logger.error(f'Sakura API请求失败。错误信息： {e}')",
+  '                    return prompt',
+  '',
+].join('\n');
+
+const SAKURA_PATCH = [
+  "                    self.logger.error(f'Sakura API请求失败。错误信息： {e}')",
+  `                    ${SAKURA_MARK}：原样的 return prompt 返回的是 list（prompt 就是调用方`,
+  '                    # 传进来的 queries），而上游调用点按 str 用它（_translate 里对 response 做字符串拼接）⇒',
+  '                    # TypeError: can only concatenate str (not "list") to str —— 把"翻译接口不可用"',
+  '                    # 这句真话糊成一句 python 内部错误（16 张图全 failed、对外只剩 engine_engine_error）。',
+  '                    # 改为显式抛错，让失败以真实原因上抛。',
+  '                    # 🔴 不能改成 return str(prompt)：prompt 是**日文原文**，那样会把原文当译文',
+  '                    #    静默输出，比失败更坏（用户拿到一页没翻译的"结果"却以为翻译过了）。',
+  "                    raise RuntimeError(f'Sakura API请求失败（已重试 {server_error_attempt} 次）：{e}')",
+  '',
+].join('\n');
+
+/**
+ * 上游源码补丁：Sakura 翻译器「失败时返回 list」缺陷（spec-notes D-86）。
+ *
+ * 为什么补丁挂在这里而不是 `install-engine-deps.mjs`：那个脚本是 **Windows 专用**
+ * （macOS 手动 `pip -r requirements.txt`，见 README），挂在那边会让 macOS 装配**永远拿不到**
+ * 这个补丁 —— 而缺陷本身与平台无关。
+ *
+ * 🔴 锚点缺失时**直接抛错**，不静默跳过：源码被钉在 `ENGINE_COMMIT` 这个具体 commit 上，
+ *    锚点找不着 = 「装配出来的引擎已不是我们验过的那份」。静默跳过会让缺陷悄悄回来，
+ *    而下次定位它又要从 `engine_engine_error` 这一句开始猜（正是本次的代价）。
+ */
+function patchEngineSource() {
+  if (!fs.existsSync(SAKURA_PY)) throw new Error(`找不到 Sakura 翻译器源码：${SAKURA_PY}`);
+  const cur = fs.readFileSync(SAKURA_PY, 'utf8');
+  if (cur.includes(SAKURA_MARK)) { log('[跳过] 源码补丁已应用：sakura.py'); return; }
+  if (!cur.includes(SAKURA_ANCHOR)) {
+    throw new Error([
+      'sakura.py 补丁锚点未找到（源码已变）。',
+      `  文件：${SAKURA_PY}`,
+      `  期望锚点：${JSON.stringify(SAKURA_ANCHOR)}`,
+      '  ⇒ 换上游 commit 时必须**重新核对并更新** patchEngineSource 的锚点/替换体',
+      '    （engine/VERSIONS.lock 的 ENGINE_COMMIT 与 setup-engine.mjs 的 ENGINE_COMMIT 同步改）。',
+    ].join('\n'));
+  }
+  // 用函数式替换：替换串里出现的 `$` 不会被当成 replace 的特殊记号（模板串里已经有 `{e}` 之类，别赌）
+  fs.writeFileSync(SAKURA_PY, cur.replace(SAKURA_ANCHOR, () => SAKURA_PATCH), 'utf8');
+  log('  ✓ 已打补丁：sakura.py（失败不再抛 list/str 混淆的 TypeError）');
+}
+
+/** `--check` 用：报告补丁现状（不改文件） */
+function sourcePatchState() {
+  try {
+    return fs.readFileSync(SAKURA_PY, 'utf8').includes(SAKURA_MARK) ? '✓ 已打' : '✗ 未打';
+  } catch { return '✗ 缺（源码未装）'; }
+}
+
 async function main() {
   const args = new Set(process.argv.slice(2));
   const check = args.has('--check');
@@ -203,6 +273,7 @@ async function main() {
     log(`Python(${PY_VERSION})：${fs.existsSync(pyExe()) ? '✓ 已装' : '✗ 缺'}`);
     log(`venv：${fs.existsSync(venvExe()) ? '✓ 已建' : '✗ 缺'}`);
     log(`引擎源码：${await sourceReady() ? '✓ 已装' : '✗ 缺'}`);
+    log(`源码补丁：${sourcePatchState()}`);
     return 0;
   }
   await fsp.mkdir(RT, { recursive: true });
@@ -211,6 +282,9 @@ async function main() {
   if (!selective || onlyPy) await installPython(force);
   if (!selective || onlyVenv) await installVenv(force);
   if (!selective || onlySrc) await installSource(force);
+  // 补丁**不受 installSource 的跳过分支影响**：源码早就在（本次会话的常见情形）也要能补上。
+  // 幂等：已打过就跳过。见 patchEngineSource。
+  patchEngineSource();
   log('完成。');
   return 0;
 }
