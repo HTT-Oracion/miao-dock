@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { apiPost, errorText, openPath, quitApp, serviceRestart } from '@/ipc';
+import { apiPost, errorText, openPath, quitApp, serviceRestart, serviceStart } from '@/ipc';
 import type { ServiceState } from '@/ipc';
 import { useLibrary, useQuitRequest, useService, useTasks, useToasts } from '@hooks';
 import { initialMode, persistMode, useThemeTokens } from '@/theme/apply';
-import { initialSidebarLabels, persistSidebarLabels } from '@/shell-prefs';
+import {
+  initialServiceAutoStart,
+  initialSidebarLabels,
+  persistServiceAutoStart,
+  persistSidebarLabels,
+} from '@/shell-prefs';
 import type { ThemeMode } from '@/theme/tokens';
 import { Badge, Btn, Pill } from '@components/units';
 import { DynamicIsland } from '@components/DynamicIsland';
@@ -50,6 +55,13 @@ export function App() {
    * 设置页一拨开关，侧栏同帧就变，不存在"存了但界面没跟"。
    */
   const [sidebarLabels, setSidebarLabels] = useState(() => initialSidebarLabels());
+  /**
+   * 翻译服务是否**随应用自动启动**（壳层偏好，`shell-prefs.ts`）。
+   *
+   * 与 `sidebarLabels` 完全同构：值的家在偏好模块里，这里只持有"当前这一份"，
+   * 设置页的开关与 `Sidebar` 读的是**同一个 state** —— 拨一下开关不必重载。
+   */
+  const [autoStart, setAutoStart] = useState(() => initialServiceAutoStart());
   const [quitOpen, setQuitOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -73,6 +85,35 @@ export function App() {
     setSidebarLabels(on);
     persistSidebarLabels(on);
   }, []);
+
+  /** 自动启动开关：同上（界面立刻变 → 再落盘）。落盘后 effect 会按新值决定要不要立刻拉服务 */
+  const setServiceAutoStart = useCallback((on: boolean) => {
+    setAutoStart(on);
+    persistServiceAutoStart(on);
+  }, []);
+
+  /**
+   * 自动启动本地翻译服务（「设置 → 翻译服务 → 服务与配对 → 自动启动翻译服务」）。
+   *
+   * ## 触发时机是"进入漫画翻译应用"，不是"应用一启动"
+   * 关掉这个开关的人要的是「**我不翻译就别把引擎拉起来**」—— 引擎是重资源
+   *（真模式下 python + llama-server + 执行器，GB 级内存与显存）。所以挂在 `screen` 上。
+   *
+   * ## 🔴 依赖里**不能**放 `status`
+   * 放了就会变成"只要服务不是 running 就拉一次"：用户刚在设置页点完
+   * 「停止本地服务」，下一秒就被这个 effect 原地复活 —— 开关看着像失灵，
+   * 而且现场表现是"停不掉"。判定必须在**屏切换那一瞬**做完，之后不再回头。
+   * 顺带也省掉了"失败后无限重试"（那会让一个坏掉的引擎反复冷启动）。
+   *
+   * ## 幂等由 Rust 兜底，前端不做去重
+   * `service_start` 在 Rust 侧是幂等的（`ServiceManager::start_once`），
+   * 而 `React.StrictMode` 在开发期**会故意把 effect 跑两遍** —— 前端再写一层
+   * 去重只会把"到底谁负责"弄糊。失败也不弹吐司：未就绪屏自己会解释原因（X-C3）。
+   */
+  useEffect(() => {
+    if (screen !== 'translate' || !autoStart) return;
+    void serviceStart().catch(() => undefined);
+  }, [screen, autoStart]);
 
   const refreshAll = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -127,6 +168,19 @@ export function App() {
     try {
       push('正在重启本地服务…', 'info');
       await serviceRestart();
+    } catch (e) {
+      push(errorText(e), 'bad');
+    }
+  }, [push]);
+
+  /**
+   * 手动启动（未就绪屏「启动本地服务」）。与上面的自动启动走**同一条** IPC，
+   * 区别只在"谁点的"与要不要给反馈 —— 用户点的必须给一句，自动拉起的不能给（会变噪音）。
+   */
+  const startService = useCallback(async () => {
+    try {
+      push('正在启动本地服务…', 'info');
+      await serviceStart();
     } catch (e) {
       push(errorText(e), 'bad');
     }
@@ -263,7 +317,12 @@ export function App() {
           ) : null}
 
           {showNotReady ? (
-            <NotReadyScreen status={status} onRestart={() => void restart()} onToast={push} />
+            <NotReadyScreen
+              status={status}
+              onStart={() => void startService()}
+              onRestart={() => void restart()}
+              onToast={push}
+            />
           ) : screen === 'music' ? (
             <MusicScreen />
           ) : screen === 'translate' ? (
@@ -302,6 +361,8 @@ export function App() {
               onMode={setTheme}
               sidebarLabels={sidebarLabels}
               onSidebarLabels={setLabels}
+              serviceAutoStart={autoStart}
+              onServiceAutoStart={setServiceAutoStart}
               lib={lib}
               onToast={push}
             />

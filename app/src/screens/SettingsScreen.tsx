@@ -11,12 +11,12 @@ import { SpecFixtureHost } from '@screens/settings/SpecCheck';
 import { AboutSection, GeneralSection, MediaSection, ResourceSection, TranslateSection } from '@screens/settings/sections';
 
 /**
- * 设置页 —— 两栏壳 + 5 分组 31 项（《09》§4.1 / §4.2）。
+ * 设置页 —— 两栏壳 + 5 分组 32 项（《09》§4.1 / §4.2）。
  *
  * ## 为什么从「单页平铺」改成两栏
  *
  * ver1.0 把服务状态、令牌、外观、生命周期、规格自检一路铺下来，读起来是"五种互不相干的
- * 提示堆在一页"。31 项若继续平铺会变成两屏半，而且**用户要什么就找什么**这件事
+ * 提示堆在一页"。32 项若继续平铺会变成两屏半，而且**用户要什么就找什么**这件事
  * 彻底做不到 —— 令牌在第 7 行、模型目录在第 30 行，谁记得住。
  *
  * 两栏 + 单组渲染解决的是这个：一次只展示一组，左栏给出全部 5 个分组的入口与项数。
@@ -34,6 +34,8 @@ export function SettingsScreen({
   onMode,
   sidebarLabels,
   onSidebarLabels,
+  serviceAutoStart,
+  onServiceAutoStart,
   lib,
   onToast,
 }: {
@@ -43,6 +45,15 @@ export function SettingsScreen({
   /** 侧栏标签偏好（真值来自 `App` 的 state，这里只透传给①通用组） */
   sidebarLabels: boolean;
   onSidebarLabels: (on: boolean) => void;
+  /**
+   * 「自动启动翻译服务」偏好（真值同样来自 `App` 的 state）。
+   *
+   * ⚠️ 刻意**不**在这里自己读 `localStorage`：`App` 的自动启动 effect 读的是它自己那份
+   * state，若设置页另读一份，用户拨开关只会改到"设置页以为的值"，而真正决定要不要拉服务的
+   * 那个 state 没动 —— 表现就是「关掉了，重启应用还是自动起」。一个偏好一个来源。
+   */
+  serviceAutoStart: boolean;
+  onServiceAutoStart: (on: boolean) => void;
   /**
    * 漫画库盘点（译文库占用）。
    *
@@ -148,7 +159,14 @@ export function SettingsScreen({
               fixtureRef={fixtureRef}
             />
           ) : null}
-          {active.id === 'translate' ? <TranslateSection status={status} onToast={onToast} /> : null}
+          {active.id === 'translate' ? (
+            <TranslateSection
+              status={status}
+              autoStart={serviceAutoStart}
+              onAutoStart={onServiceAutoStart}
+              onToast={onToast}
+            />
+          ) : null}
           {active.id === 'media' ? <MediaSection /> : null}
           {active.id === 'resource' ? <ResourceSection lib={lib} /> : null}
           {active.id === 'about' ? <AboutSection /> : null}

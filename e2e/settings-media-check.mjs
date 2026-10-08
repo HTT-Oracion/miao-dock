@@ -5,7 +5,7 @@
  *
  * 覆盖两组，因为它们的失效形态是同一类（**编译得过、不抛错、界面就是不对**）：
  *   ③ 播放·媒体 ——「能实现 / 不能实现」重新裁定（EXCLUDED…CACHE 八组）
- *   ② 翻译服务 —— 十项全部接真实能力 + 引擎诊断视图（ENGINE 一组）
+ *   ② 翻译服务 —— 十一项全部接真实能力 + 引擎诊断视图（ENGINE 一组）
  *
  * ## 为什么需要它
  *
@@ -150,8 +150,10 @@ const MEDIA_GROUPS = ['playback', 'lyrics', 'vinyl'];
 /** ③ 全表项数自校常量应等于的合计
  *  26（初版）→ 29（③ 组 5 项 pending → 8 项 live）→ 31（P3 桌面歌词恢复 2 项）
  *  → 32（加「音乐缓存」1 项）→ 33（加「歌词高亮方式」1 项）
- *  → **31**（整条剔除「缓存清理」「检查更新」2 项，见 RETIRED） */
-const SPEC_TOTAL = 31;
+ *  → 31（整条剔除「缓存清理」「检查更新」2 项，见 RETIRED）
+ *  → **32**（② 服务与配对加「自动启动翻译服务」1 项，台账 D-94：让"不翻译就别把
+ *     引擎拉起来"成为可配置项，关掉后改由未就绪屏的「启动本地服务」手动拉起） */
+const SPEC_TOTAL = 32;
 
 /** ④ 设置页必须真正取用的 store setter（逐项对应的控件回写） */
 const MEDIA_SETTERS = [
@@ -970,10 +972,11 @@ add('CACHE.zeroDisabled', 'CACHE', (ctx) => {
 
 // ============================ ⑨ ENGINE（② 翻译服务：推理引擎 / 模型与诊断） ============================
 /*
- * 这一组守的是 ② 翻译服务**十项全部接真实能力**（《09》§4.3 / 《02》§5）
+ * 这一组守的是 ② 翻译服务**十一项全部接真实能力**（《09》§4.3 / 《02》§5；
+ * 原「十项」自 D-94 起 +1 —— 服务与配对新增「自动启动翻译服务」）
  * 与「引擎诊断视图」（《09》§6.2）。
  *
- * 为什么它值得一整组断言：这十项的失效形态**全都不会报错** ——
+ * 为什么它值得一整组断言：这十一项的失效形态**全都不会报错** ——
  *   · catalog 里标了 `live`、sections.tsx 里也写了控件，但控件绑的不是服务端字段
  *     （渲染出来永远停在"读取中…"，或显示一个前端自己编的默认值）；
  *   · 「已配置」与「已生效」被合成一个值（保存成功后下拉跳回旧值，用户只能得出"没存上"）；
@@ -993,7 +996,10 @@ const DIAG_SECTIONS = ['进程状态', '生效配置', '模型状态', '最近�
 /** 诊断面板的三个操作按钮文案 */
 const DIAG_OPS = ['重启引擎', '重新下载模型', '强制释放模型'];
 
-/** 取 ② 的十项（真实数据结构，不是字符串） */
+/** ② 全组项数 —— 与 catalog 的 `SECTION_ITEM_TOTAL` 独立数出来（互为质证） */
+const ENGINE_ITEMS_TOTAL = 11;
+
+/** 取 ② 的十一项（真实数据结构，不是字符串） */
 function translateItems(ctx) {
   const err = CAT_ERR(ctx.cat);
   if (err) return { err, items: null, sec: null };
@@ -1001,13 +1007,20 @@ function translateItems(ctx) {
   return { err: null, items: flatItems(sec), sec };
 }
 
-add('ENGINE.items.tenAllLive', 'ENGINE', (ctx) => {
+/*
+ * 有意**不把项数写进断言 id**（原 id 是 `ENGINE.items.tenAllLive`）：
+ * 项数进 id 就得随每次增删改 id，改漏一处（如反证轮的 `expect`）就成了假覆盖 ——
+ * 名字会随规格腐坏，而"全部 live"这个**风险点**从不腐坏。项数只在断言内部与
+ * `ENGINE_ITEMS_TOTAL` 比对。
+ */
+add('ENGINE.items.allLive', 'ENGINE', (ctx) => {
   const { err, items, sec } = translateItems(ctx);
   if (err) return { ok: false, detail: err };
   const per = (sec.groups ?? []).map((g) => `${g.id}=${(g.items ?? []).length}`);
   const problems = [];
-  if (items.length !== 10) problems.push(`项数 ${items.length}，应为 10（${per.join(', ')}）`);
-  // 每项都必须 live —— 十项里剩一项 pending，就意味着《09》§4.3 的"10 项"没落地
+  if (items.length !== ENGINE_ITEMS_TOTAL)
+    problems.push(`项数 ${items.length}，应为 ${ENGINE_ITEMS_TOTAL}（${per.join(', ')}）`);
+  // 每项都必须 live —— 十一项里剩一项 pending，就意味着《09》§4.3 的能力清单没落地
   const notLive = items.filter((i) => i.state !== 'live').map((i) => i.id);
   if (notLive.length) problems.push(`仍是 pending/其它态：${notLive.join(', ')}`);
   return { ok: problems.length === 0, detail: problems.join('；') };
@@ -1758,7 +1771,7 @@ add('NOTREADY.l4.noLoading', 'NOTREADY', (ctx) => {
 //   · 压一行只砍 `why`，`CtlNote` 不许跟着消失（那条小字说的是"为什么此刻是灰的"）。
 //
 // ⚠️ 组名单列 `SIMPLIFY`（而不是并进 ENGINE）：ENGINE 那二十余条守的是
-// 「十项接真实能力」，这九条守的是「同一批能力换了一种更短的说法」。
+// 「十一项接真实能力」，这九条守的是「同一批能力换了一种更短的说法」。
 // 混在一起，回归时就分不清是"能力掉了"还是"话又变长了"。
 
 /** 比对摘要与原文前，两侧都去掉空白与 `**` —— 星号是强调标记，不是内容 */
@@ -2079,19 +2092,29 @@ add('FEATURES.def.commentSynced', 'FEATURES', (ctx) => {
   };
 });
 
-// ① 侧栏图标标签：一个偏好 + 一套几何分支，两处必须同源。
+// ① 壳层偏好：侧栏图标标签 + 翻译服务自动启动（D-94）。两者共用同一条储存纪律。
 add('FEATURES.shell.pref', 'FEATURES', (ctx) => {
   const src = stripComments(ctx.s.shellPrefs);
   const problems = [];
+  // —— 侧栏标签偏好（D-84）
   if (!/miao\.sidebar-labels/.test(src)) problems.push('偏好 key 不是 miao.sidebar-labels');
   if (!/export function initialSidebarLabels/.test(src)) problems.push('缺少 initialSidebarLabels');
   if (!/export function persistSidebarLabels/.test(src)) problems.push('缺少 persistSidebarLabels');
+  // —— 翻译服务自动启动偏好（D-94）
+  if (!/miao\.service-auto-start/.test(src)) problems.push('偏好 key 不是 miao.service-auto-start');
+  if (!/export function initialServiceAutoStart/.test(src)) problems.push('缺少 initialServiceAutoStart');
+  if (!/export function persistServiceAutoStart/.test(src)) problems.push('缺少 persistServiceAutoStart');
   /*
-   * 默认值必须是「只有明确写过 '0' 才是关」。
-   * 写成 `=== '1'` 看似等价，实则把"没写过"也判成关 —— 老用户升级后侧栏凭空少一行字。
+   * 两个偏好的默认值都必须是「只有明确写过 '0' 才是关」。
+   * 写成 `=== '1'` 看似等价，实则把"没写过"也判成关 —— 老用户升级后侧栏凭空少一行字、
+   * 或翻译服务不再自动起来。这里**数出现次数**（≥2）而不是只测一次：
+   * 否则新增的第二个偏好照抄成 `=== '1'` 时，断言仍绿（它只看了第一处）。
    */
-  if (!/getItem\(STORAGE_KEY\)\s*!==\s*'0'/.test(src))
-    problems.push('初始值不是「只有显式 0 才关闭」（缺键必须回落到显示）');
+  const strictDefault = src.match(/getItem\([A-Z_]+\)\s*!==\s*'0'/g) ?? [];
+  if (strictDefault.length < 2)
+    problems.push(
+      `只有 ${strictDefault.length}/2 个偏好是「只有显式 0 才关闭」（缺键必须回落到既有形态）`,
+    );
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -2382,9 +2405,10 @@ const MUTATIONS = [
   {
     name: '把项数自校常量改成 26（模拟自校常量漂移）',
     file: F.catalog,
-    // ⚠️ 锚点必须与 catalog 的真实字节一致 —— 常量从 29 变 31、再变 32、再变 33 后不同步，
-    // 这条会退化成「锚点未找到 / 跳过」，看起来仍是全绿（跳过 ≠ 通过）
-    find: 'export const SPEC_ITEM_TOTAL = 31;',
+    // ⚠️ 锚点必须与 catalog 的真实字节一致 —— 常量每变一次（29→31→32→33→31→**32**）
+    // 都要同步这里，否则本行会退化成「锚点未找到 / 跳过」，看起来仍是全绿（跳过 ≠ 通过）。
+    // 实测：漏同步时这条确实静默跳过过（详见台账 D-94 的反证轮复修记录）。
+    find: 'export const SPEC_ITEM_TOTAL = 32;',
     replace: 'export const SPEC_ITEM_TOTAL = 26;',
     expect: ['COUNT.specMatches'],
   },
@@ -2579,16 +2603,16 @@ const MUTATIONS = [
   /*
    * ============================ ② 翻译服务（S6） ============================
    *
-   * ② 这十项的失效形态全都**不报错**：编译过、类型过、页面照常渲染，只是内容不对。
+   * ② 这十一项的失效形态全都**不报错**：编译过、类型过、页面照常渲染，只是内容不对。
    * 所以每一条正向断言都必须配一次"把它破坏掉、看它变红"，否则正向断言本身
    * 是不是有效（会不会恒绿）无从得知。
    */
   {
-    name: '把 ② 的「翻译档位」改成 pending（模拟十项里有一项没落地）',
+    name: '把 ② 的「翻译档位」改成 pending（模拟十一项里有一项没落地）',
     file: F.catalog,
     find: "          id: 'tier',\n          label: '翻译档位',\n          state: 'live',\n",
     replace: "          id: 'tier',\n          label: '翻译档位',\n          state: 'pending',\n",
-    expect: ['ENGINE.items.tenAllLive'],
+    expect: ['ENGINE.items.allLive'],
   },
   {
     name: '把 ② 第三小节 id 改错（小节结构被破坏，C11 的"恰 3 个"会跟着失守）',
@@ -3062,8 +3086,24 @@ const MUTATIONS = [
   {
     name: '把侧栏标签偏好的默认值写反（`!== \'0\'` → `=== \'1\'`：没写过的老用户被当成"关"）',
     file: F.shellPrefs,
-    find: "  return localStorage.getItem(STORAGE_KEY) !== '0';",
-    replace: "  return localStorage.getItem(STORAGE_KEY) === '1';",
+    // ⚠️ 锚点里的常量名要跟着源码走（`STORAGE_KEY` 在 D-94 拆成 `SIDEBAR_KEY` /
+    // `AUTO_START_KEY` 两个），否则这条会静默跳过（跳过 ≠ 通过）。
+    find: "  return localStorage.getItem(SIDEBAR_KEY) !== '0';",
+    replace: "  return localStorage.getItem(SIDEBAR_KEY) === '1';",
+    expect: ['FEATURES.shell.pref'],
+  },
+  {
+    name: '把自动启动偏好的默认值写反（`!== \'0\'` → `=== \'1\'`：没写过的老用户不再自动起服务）',
+    file: F.shellPrefs,
+    find: "  return localStorage.getItem(AUTO_START_KEY) !== '0';",
+    replace: "  return localStorage.getItem(AUTO_START_KEY) === '1';",
+    expect: ['FEATURES.shell.pref'],
+  },
+  {
+    name: '把自动启动偏好的 key 改错（写/读不再同一格 ⇒ 开关拨了不生效）',
+    file: F.shellPrefs,
+    find: "const AUTO_START_KEY = 'miao.service-auto-start';",
+    replace: "const AUTO_START_KEY = 'miao.service-autostart';",
     expect: ['FEATURES.shell.pref'],
   },
   {
@@ -3169,7 +3209,7 @@ const MUTATIONS = [
 // ── 主流程 ────────────────────────────────────────────────────────────────
 const refute = process.argv.includes('--refute');
 
-console.log('设置页断言（③ 播放·媒体「能实现/不能实现」重新裁定 + ② 翻译服务十项与引擎诊断）' + (refute ? ' · 反证轮' : ''));
+console.log('设置页断言（③ 播放·媒体「能实现/不能实现」重新裁定 + ② 翻译服务十一项与引擎诊断）' + (refute ? ' · 反证轮' : ''));
 console.log(`根目录：${ROOT}`);
 console.log(`断言总数：${A.length}（${GROUPS.join('/')}）`);
 
@@ -3204,7 +3244,19 @@ if (!refute) {
     let okApply = true;
     try {
       const txt = original.toString('utf8');
-      if (!txt.includes(mut.find)) {
+      /*
+       * 🔴 锚点必须按目标文件的实际换行**折算**再匹配。
+       *
+       * 本仓库 `core.autocrlf=true`（且没有 `.gitattributes`），工作区里全是 **CRLF**，
+       * 而这里的 `mut.find` 多行字面量是按 **LF** 写的。裸 `txt.includes(mut.find)`
+       * 于是对**任何跨行锚点**都恒为 false ⇒ 判成"破坏锚点未找到"而**静默跳过** ——
+       * 跳过 ≠ 通过（跳过的那几条覆盖率是 0，账面却看不出来）。
+       * 实测本脚本曾因此在基线就静默跳过 31 条；music / units 两个脚本早就加了这一折算，
+       * 唯独这里漏了。`all: true` 的分支同理（`split` 的锚点也要折算）。
+       */
+      const eol = txt.includes('\r\n') ? '\r\n' : '\n';
+      const find = txt.includes(mut.find) ? mut.find : mut.find.split('\n').join(eol);
+      if (!txt.includes(find)) {
         console.log(`⚠ ${mut.name}\n    破坏锚点未找到（源文件已变？）—— 本条无法反证`);
         okApply = false;
         skipped += mut.expect.length;
@@ -3215,7 +3267,8 @@ if (!refute) {
          * 此时只改第一处是不够的：断言仍然绿，于是这条反证变成**假反证** ——
          * 它看起来覆盖到了，其实什么都没测到。这类"看起来做了反证"比不做更危险。
          */
-        const next = mut.all ? txt.split(mut.find).join(mut.replace) : txt.replace(mut.find, mut.replace);
+        const replacement = mut.replace.split('\n').join(eol);
+        const next = mut.all ? txt.split(find).join(replacement) : txt.replace(find, replacement);
         writeFileSync(mut.file, next);
       }
       if (okApply) {

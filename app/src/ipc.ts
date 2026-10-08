@@ -75,6 +75,16 @@ export function errorText(e: unknown): string {
 // ------------------------------------------------------------------ 服务生命周期
 
 export const serviceStatus = () => invoke<ServiceStatus>('service_status');
+/**
+ * 手动启动本地服务（**幂等**：已在启动中/运行中时原样返回当前状态，不会起第二套进程树）。
+ *
+ * 调用方会让它被调用得比想象中频繁 —— `React.StrictMode` 下 effect 开发期故意跑两遍，
+ * 加上"进入翻译模块自动启动"与用户连点。幂等性在 Rust 侧 `start_once` 里保证，
+ * 前端**不必**自己去重。
+ */
+export const serviceStart = () => invoke<ServiceStatus>('service_start');
+/** 手动停止本地服务（回收整棵三进程树，Rust 侧是阻塞操作、最坏约 5s） */
+export const serviceStop = () => invoke<ServiceStatus>('service_stop');
 export const serviceRestart = () => invoke<ServiceStatus>('service_restart');
 export const quitApp = () => invoke<void>('quit_app');
 export const hideWindow = () => invoke<void>('hide_window');

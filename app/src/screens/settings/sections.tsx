@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
-import { errorText, openPath } from '@/ipc';
+import { errorText, openPath, serviceStart, serviceStop } from '@/ipc';
 import type { ServiceStatus } from '@/ipc';
 import type { ThemeMode } from '@/theme/tokens';
 import { stateView } from '@/nav';
@@ -161,12 +161,54 @@ export function GeneralSection({
  */
 export function TranslateSection({
   status,
+  autoStart,
+  onAutoStart,
   onToast,
 }: {
   status: ServiceStatus | null;
+  /** 「自动启动翻译服务」当前值（真值源是 `App` 的 state，这里只渲染） */
+  autoStart: boolean;
+  onAutoStart: (on: boolean) => void;
   onToast: (t: string, k?: 'info' | 'good' | 'bad') => void;
 }) {
   const eng = useEngineState(onToast);
+
+  /**
+   * 手动启停的忙标记。
+   *
+   * ⚠️ 两个动作共用**一个** busy：它们作用于同一个对象（服务栈），
+   * 允许"启动"与"停止"同时可点会造出"启动中又被停止"的竞态，
+   * 而界面给出的信息（一个转字）本来就该说"此刻有事在做"。
+   */
+  const [svcBusy, setSvcBusy] = useState(false);
+
+  const startSvc = async () => {
+    setSvcBusy(true);
+    try {
+      await serviceStart();
+      onToast('正在启动本地服务…', 'info');
+    } catch (e) {
+      onToast(errorText(e), 'bad');
+    } finally {
+      setSvcBusy(false);
+    }
+  };
+
+  /**
+   * 停止不弹"已停止"的吐司：`service_stop` 是**阻塞**调用，它返回时子进程树已经收完了，
+   * 此时状态事件也已推到前端（Rust 侧补发的 emit）—— 状态点会自己从「运行中」跳到「未启动」，
+   * 再叠一条吐司是重复告知。
+   */
+  const stopSvc = async () => {
+    setSvcBusy(true);
+    try {
+      await serviceStop();
+    } catch (e) {
+      onToast(errorText(e), 'bad');
+    } finally {
+      setSvcBusy(false);
+    }
+  };
 
   const copyToken = async () => {
     if (!status?.token) return;
@@ -247,6 +289,43 @@ export function TranslateSection({
         {status?.last_error ? (
           <div className="notice is-bad set-row-note">最近一次错误：{status.last_error}</div>
         ) : null}
+
+        {/*
+          手动启停 —— 这是「自动启动翻译服务」关掉之后的**唯一入口**
+          （另一处在未就绪屏 X-C3 上，文案同为「启动本地服务」）。
+
+          为什么两个按钮都常驻、按状态置灰，而不是"只在需要时出现一个"：
+          停止态只画「启动」的话，用户看不出"原来还能停"；运行态只画「停止」同理。
+          一枚禁用按钮同时说明了"有这个动作"和"此刻不适用"，信息量更大。
+        */}
+        <div className="set-pair-acts">
+          <Btn
+            kind="primary"
+            disabled={svcBusy || status?.state !== 'stopped'}
+            onClick={() => void startSvc()}
+          >
+            启动本地服务
+          </Btn>
+          <Btn
+            kind="ghost"
+            disabled={svcBusy || status?.state !== 'running'}
+            onClick={() => void stopSvc()}
+          >
+            停止本地服务
+          </Btn>
+        </div>
+
+        {/*
+          自动启动开关：**同一个 state 同时驱动两处** —— 拨一下，`App` 的自动启动 effect
+          立刻按新值生效（原值可能已经拉起过服务，关掉不会把它停掉：那两件事分开）。
+        */}
+        <Row item={itemOf(pairing, 'service-auto-start')}>
+          <Switch
+            on={autoStart}
+            onToggle={() => onAutoStart(!autoStart)}
+            label="自动启动翻译服务"
+          />
+        </Row>
 
         <Row item={itemOf(pairing, 'token-pairing')}>
           <button

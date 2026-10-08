@@ -108,7 +108,7 @@ function summaryOf(
     return {
       bad: false,
       title: '本地服务未启动',
-      sub: '点下方「重启本地服务」把它拉起来。首次启动需要装载模型，会慢一些。',
+      sub: '点下方「启动本地服务」把它拉起来。首次启动需要装载模型，会慢一些。',
     };
   }
   if (state === 'stopping') {
@@ -143,10 +143,19 @@ function summaryOf(
  */
 export function NotReadyScreen({
   status,
+  onStart,
   onRestart,
   onToast,
 }: {
   status: ServiceStatus | null;
+  /**
+   * 手动启动（仅 `stopped` 时用）。
+   *
+   * 为什么不复用 `onRestart`：`service_restart` 是"停 + 起"，而此刻**根本没有东西可停** ——
+   * 对一个本来就停止的服务说"重启"，语义是错的，且多走一次阻塞的 `stop()`
+   *（最坏 5s 的空等）。用户看到的按钮文案与它真正做的事必须对得上。
+   */
+  onStart: () => void;
   onRestart: () => void;
   onToast: (text: string, kind?: 'info' | 'good' | 'bad') => void;
 }) {
@@ -308,9 +317,20 @@ export function NotReadyScreen({
             {busy ? '正在发起…' : '重新下载模型'}
           </Btn>
         ) : null}
-        <Btn kind={failed && status?.phase === 'L2' ? 'ghost' : 'primary'} onClick={onRestart}>
-          重启本地服务
-        </Btn>
+        {/*
+          停止态给「启动」、其余给「重启」：见 `onStart` 的注释（对停止的服务说"重启"是错的）。
+          停止态下它就是**主按钮** —— 那是这一屏此刻唯一该做的事。
+          ⚠️ 文案变了，`summaryOf` 里 stopped 那一句的指引也必须跟着改（已同步）。
+        */}
+        {state === 'stopped' ? (
+          <Btn kind="primary" onClick={onStart}>
+            启动本地服务
+          </Btn>
+        ) : (
+          <Btn kind={failed && status?.phase === 'L2' ? 'ghost' : 'primary'} onClick={onRestart}>
+            重启本地服务
+          </Btn>
+        )}
         <Btn kind="ghost" onClick={() => setUserLog(!logOpen)}>
           {logOpen ? '收起日志' : '查看日志'}
         </Btn>
