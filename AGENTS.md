@@ -73,6 +73,7 @@ npm run e2e                   # D 组端到端
 npm run check:ia              # IA 结构 32 条（含 C8d：侧栏两套几何 58×52 / 44×44 随标签形态成对切换）
 npm run check:tls             # TLS 依赖链 14 条（三层）
 npm run check:quit[:refute]   # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW / 前端不静默 / Windows signal_tree 无条件 /F；不起进程）
+npm run check:autostart[:refute] # 翻译服务「自动启动 / 手动启停」根因钉子 12 条 / 反证 12 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / 自动启动 effect 依赖不含 status / 未就绪屏 stopped 给「启动」/ 设置页启停行；不起进程；D-94）
 npm run check:engine-client[:refute] # 翻译引擎适配层 46 条 / 反证 10 条（真协议用 openapi 快照「假引擎」，秒级）
 npm run check:retry[:refute]  # 队列「重试」任务身份：复用**同一** taskId（不冒历史行）6 条 / 反证 5 条（mock 引擎 + 真服务子进程，秒级）
 npm run check:lib-manage[:refute] # 队列多选删除 + 漫画库隐藏/删除：仅终端态可删 / 删除带 deleteFiles 勾选 / 越界名 403 / 前端接线 8 条 / 反证 4 条（mock 引擎 + 真服务子进程，秒级）
@@ -93,10 +94,10 @@ npm run check:e10[:refute]    # E10 安全：只监听回环 / 非图片字节�
 #   脚本自己拉起并收尾 box-service / 引擎 / ③ / `:8001` 执行器。
 node e2e/service/llm-real-timing.mjs  # 真 ③（llama-server）冷启动与内存实测（**真权重，分钟级，不进常规门**）
 npm run check:music[:refute]  # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 215 条 / 反证 182 条
-npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+「② 分组简洁化」+ X-C3「准备中」时间线 + ④ 功能梳理（侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / 行内 def） 164 条 / 反证 103 条
+npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+「② 分组简洁化」+ X-C3「准备中」时间线 + ④ 功能梳理（侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / 行内 def） 164 条 / 反证 105 条
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 看图缩放 / 样式分层 44 条 / 反证 58 条
 npm run check:bundle[:refute] # Windows 打包配置钉子 4 条 / 反证 4 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；源码级，不起进程）
-npm run check:docs            # 文档 ↔ 实现一致性 14 条（条数对账 / 命令存在 / 禁词 0 命中 / GROUPS 覆盖）
+npm run check:docs            # 文档 ↔ 实现一致性 16 条（条数对账 / 命令存在 / 禁词 0 命中 / GROUPS 覆盖）
 cd app && npx tsc --noEmit && npx vite build   # 前端类型与构建
 cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 ```

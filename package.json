@@ -49,6 +49,8 @@
     "check:retranslate:refute": "node e2e/service/retranslate-check.mjs --refute",
     "check:quit": "node e2e/quit-command-check.mjs",
     "check:quit:refute": "node e2e/quit-command-check.mjs --refute",
+    "check:autostart": "node e2e/service-autostart-check.mjs",
+    "check:autostart:refute": "node e2e/service-autostart-check.mjs --refute",
     "check:contract": "node e2e/service/contract-delta-check.mjs",
     "check:contract:refute": "node e2e/service/contract-delta-check.mjs --refute",
     "check:engine-settings": "node e2e/service/engine-settings-check.mjs",

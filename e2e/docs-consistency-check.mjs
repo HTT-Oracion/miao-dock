@@ -12,7 +12,7 @@
 // 本脚本把这一类变成可执行检查 —— 数字对不上就非零退出。
 //
 // ## 它检查什么
-// ① 三个 check 脚本里 `add(` 的条数 vs 文档里声明的条数（AGENTS.md / README.md / spec-notes）
+// ① 四个 check 脚本里断言的条数 vs 文档里声明的条数（AGENTS.md / README.md / spec-notes）
 // ② 文档里引用的 npm 命令是否真实存在于 package.json
 // ③ 文档里出现的「被禁历史品牌标识」必须为 0 命中
 // ④ 各 check 脚本的 GROUPS 声明与实际用到的分组是否一致（漏加分组会静默不打印）
@@ -36,6 +36,7 @@ const SUITES = [
   { cmd: 'check:music', script: 'e2e/music-platform-check.mjs' },
   { cmd: 'check:units', script: 'e2e/units-structure-check.mjs' },
   { cmd: 'check:settings', script: 'e2e/settings-media-check.mjs' },
+  { cmd: 'check:autostart', script: 'e2e/service-autostart-check.mjs' },
 ];
 // 台账（spec-notes）**不参与**条数比对：它记录的是**历史**（"当时 86 条（反证 16）"
 // 恰恰是有价值的痕迹），拿它跟现状比会逼得人去改历史。

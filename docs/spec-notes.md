@@ -4250,3 +4250,159 @@ crate，而 `cl.exe` 靠环境变量 `INCLUDE` / `LIB` 找头文件与库；沙�
 - **MSVC 环境是使用者的责任**：本机沙箱需手工导出 `INCLUDE`/`LIB`；已写进 `README.md`「一、装核心依赖」与
   `AGENTS.md` §5「环境陷阱」。
 - macOS 侧未回归（本机 Windows）；不过改动是"**只新增一个 Windows 专用文件**"，基座文件字节级未动。
+
+---
+
+## D-94 · 「翻译服务自动启动」变成可配置项 + 配套手动启停；顺手修掉 `check:settings:refute` 的 **31 条 CRLF 静默跳过**（2026-10-08）
+
+### 一、用户诉求与「是否支持」的核实：**没有"跟随切换"这一机制，只有"一打开就拉"**
+
+用户报：「翻译服务会随着切换到漫画翻译模块后自行拉起，希望设置页加一个配置，可以配置是否跟随切换到翻译模块
+就启动服务；如果没开自动启动，可以手动在漫画翻译模块里启动。」
+
+核实到三件事：
+
+- **不存在任何"切模块触发启动"的代码**。真身是 `main.rs` 的 setup 里**无条件**一句 `mgr.start(&handle);`
+  （旧 `main.rs:215` 附近）。看着像"切到漫画翻译才起"，是因为**应用初始屏恰好就是漫画翻译**
+  （`app/src/App.tsx:47` `useState<Screen>('translate')`）—— 所以"一打开就拉起"与"切到漫画翻译就拉起"
+  在观感上无法区分。用户的描述是**观测**，不是机制。
+- **没有任何"停服务"的入口**：`commands.rs` 只有 `service_status` / `service_restart`，没有 `service_stop`。
+- ⇒ 需求 = **两件事**：① 把"要不要自动拉起"变成可配置；② 补一对手动启停（用户经选项确认：**启停都做**，
+  开关放「翻译服务 → 服务与配对」）。
+
+### 二、设计：偏好住 localStorage，由**前端**决定何时拉起；Rust 侧的无条件启动**撤掉**
+
+「自动启动」这个偏好的家只能有一个。它落在 **`localStorage`**（`app/src/shell-prefs.ts`），
+**不能**放进 Rust 侧读：localStorage 只有 WebView 读得到，Rust 要读它就得再把偏好抄一份到 tauri-store ——
+那就成了"同一事实两处来源"，两处必然漂移（D-94 之前 D-86 已经在 env 上栽过一次同款）。
+
+⇒ 于是把 `main.rs` 的无条件启动**整段撤掉**，改由前端一个 effect 在"进入漫画翻译"时决定拉不拉。
+
+> ⚠️ **但自检 / 取证两条通道必须保留直拉**，否则断的是自检本身：
+> · `selftest.rs` 的 **S2 组**断言**五态轨迹**（`starting→L1→L2→L3→running`）与 E1 生效参数快照，
+>   它只 `mgr.status()` **读结果**、不会自己去启动 ⇒ 不在这里拉起，整组恒红，且**红的原因看着像"状态机坏了"**；
+> · `capture.rs` 截的是**真实界面**，服务没起来时翻译三屏全落在"未就绪"，截出来的不是要取证的那一屏。
+> 两者都由环境变量开启（`MIAO_SELFTEST` / `MIAO_CAPTURE_DIR`），属**测试通道**，与用户偏好无关 ⇒
+> 收敛成一句 `if selftest::enabled() || capture::enabled() { …start… }`。
+
+### 三、Rust：一个幂等入口 + 三条命令（两处"必须 async / 必须补 emit"）
+
+| 位置 | 内容 | 守什么 |
+|---|---|---|
+| `service.rs::start_once` | **判定 + 置位压在**同一把锁**内**，`return false` 早于 `self.start(app)` | 「先 `status()` 再决定」是两次加锁、两段临界区，中间有窗口期；`StrictMode` 双跑 / 进模块自动启动 / 用户连点会同时撞进来，两条启动线程各起一套三进程树 ⇒ **抢同一批端口**（① 5180–5190 / ② 8000+8001 / ③ 8080），而"抢端口"的报错离根因极远 |
+| `commands.rs::service_start` | 同步命令，调 `mgr.start_once(&app)` | 幂等由上面那把锁兜底 |
+| `commands.rs::service_stop` | **`#[tauri::command(async)]`** + `mgr.stop()` 后**补发** `mgr.emit(&app)` | ① `stop()` 是**阻塞**的（先礼后兵 `STOP_GRACE` + 有界收尸 `REAP_GRACE`，最坏约 5s）⇒ 同步命令跑**主线程**会把窗口消息泵一起冻住（与 `quit_app` 同一条教训，tauri#3555 / D-87）；② `stop()` **自己不发状态事件**（原先唯一调用者 `service_restart` 紧接着 `start()` 会 emit，所以看不出来）⇒ 不补这一发，前端订阅的 `miao://service-state` 永远收不到，界面会**一直停在「运行中」** |
+| `main.rs` | `generate_handler!` 注册 `service_start` / `service_stop` | 漏注册 ⇒ `invoke` 报 `command not found`，而这与"服务坏了"长得一样 |
+
+### 四、前端：偏好模块 + 一个 effect + 两处手动入口
+
+- `shell-prefs.ts` 新增 `miao.service-auto-start`：与 `miao.sidebar-labels` **完全同构**（`'1'/'0'` 窄枚举，
+  **只有显式写过 `'0'` 才是关**，缺键回落到**既有形态 = 自动启动**）。默认开 ⇒ 升级后观感与旧版一字不差。
+  ⚠️ 文件里原来的 `STORAGE_KEY` 因此**拆成** `SIDEBAR_KEY` / `AUTO_START_KEY` 两个（一个名字指两个前缀会读错格）。
+- `App.tsx` 自动启动 effect：
+  ```ts
+  useEffect(() => {
+    if (screen !== 'translate' || !autoStart) return;
+    void serviceStart().catch(() => undefined);
+  }, [screen, autoStart]);
+  ```
+  🔴 **依赖里（刻意）不放 `status`**：放了就变成"只要服务不是 running 就拉一次" —— 用户刚在设置页点完
+  「停止本地服务」，下一秒被原地复活，现场表现是**"停不掉"**、开关看着像失灵。判定必须在**屏切换那一瞬**
+  做完，之后不再回头（顺带也免掉"失败后无限重试"把坏引擎反复冷启动）。
+  幂等交给 Rust 的 `start_once`，前端**不做**去重（`StrictMode` 双跑是 IDE 开发期的既定行为）。
+- `catalog.ts`：②「服务与配对」新增 **`service-auto-start`**（`def: '开'`，`state: 'live'`）⇒
+  `SPEC_ITEM_TOTAL` 31 → **32**，②单项 10 → **11**。
+- `sections.tsx`：`TranslateSection` 的「服务与配对」小节加一行**手动启停**（`.set-pair-acts`，
+  两枚按钮**都常驻、按 `status.state` 置灰** —— 一枚禁用按钮同时说明"有此动作"与"此刻不适用"，
+  比"只在需要时出现一个"信息量大）+ 开关本体。
+- `NotReadyScreen.tsx`：`stopped` 态给「**启动本地服务**」（走新 `onStart`），其余态维持「重启本地服务」——
+  对**停止**的服务说"重启"语义是错的，还得多走一次最坏 5s 的阻塞 `stop()`。`summaryOf` 的 stopped 指引文案同步改。
+
+### 五、🔴 顺手修掉一个**会让整条反证轮失效**的坑：`check:settings:refute` 基线就有 31 条静默跳过
+
+改断言计数时跑反证轮，发现它**本来就是红的**。`git stash` 量基线确证：
+
+| | 正向 | 反证 |
+|---|---|---|
+| **改动前基线** | `164 / 0` 全绿 | `REFUTE: 72/72（应执行 103）` + **31 条"锚点未找到"跳过** ⇒ exit 1 |
+| **修完（本轮）** | `164 / 0` | `REFUTE: 105/105`、**0 跳过**、按字节还原一致 ⇒ exit 0 |
+
+根因与 D-92「五」**完全同款**：工作区是 **CRLF**（`core.autocrlf=true` 且无 `.gitattributes`），
+而变异脚本里的多行锚点写作 `find: "…\n…"`，harness 用 `txt.includes(mut.find)` 做**裸字符串比较**
+⇒ `\n` 永远匹配不上 `\r\n` ⇒ 跨行锚点**全部**落到"锚点未找到"而**静默跳过**。
+`units-structure-check.mjs` / `music-platform-check.mjs` 早已加了 EOL 折算，**唯独 `settings-media-check.mjs` 漏了**。
+
+修法（与那两个脚本一致）：按目标文件实际 EOL 折算锚点后再匹配/替换，`all:true` 分支同样折算。
+
+> 教训复现：**"跳过 ≠ 通过"** —— 这 31 条断言本来就写对了，只是**在 Windows 上从来没能被验过**，
+> 而账面（`72/72`）**看着是全绿的**。这是本仓库**第三次**栽在同一类问题上（前两次见 D-92 §五与
+> D-89 §五的同类锚点坑）。
+
+折算后剩 **2 条**是真·锚点漂移，且**都是本轮自己造成的**：`SPEC_ITEM_TOTAL = 31;`（→32）、
+`getItem(STORAGE_KEY)`（→ 拆成 `SIDEBAR_KEY`）。两条已同步；另**补 2 条新变异**（自动启动偏好的默认值写反 /
+key 写错）⇒ 反证条数 103 → **105**。
+
+### 六、新钉子：`npm run check:autostart`（12 条 / 反证 12 条，源码级、不起进程）
+
+起因：这个功能的失效形态**全都不报错**（编译过、`cargo check` 过、`tsc` 过、界面照常渲染），
+只能把成因钉在源码里。逐条对应一个真实机制：
+
+| 断言 | 守什么 |
+|---|---|
+| `A1` | `service_start` 走**幂等**入口 `start_once`（非幂等 ⇒ StrictMode 双跑/连点起两套进程树抢端口） |
+| `A2` | `start_once` 判定+置位**同锁**，且 `return false` 在 `self.start(app)` **之前**（顺序颠倒 ⇒ 幂等名存实亡） |
+| `A3` | `service_stop` 是 **async 命令**（阻塞 `stop()` 最坏 5s，同步命令冻主线程） |
+| `A4` | `service_stop` 在 `stop()` 后**补发** `emit`（否则界面永远停在「运行中」） |
+| `A5` | `main.rs` 注册了 `service_start` / `service_stop` |
+| `B1` | `main.rs` **不再无条件启动**（收进测试通道）；旧的裸 `mgr.start(&handle);` **0 命中** |
+| `C1` | 自动启动 effect 依赖**恰为** `[screen, autoStart]`，**不含 `status`**（含则"停止"被秒复活） |
+| `C2` | effect 两个守卫都在（`screen !== 'translate'` + `!autoStart`） |
+| `C3` | 自动拉起用 `serviceStart()`，**不是** `serviceRestart()`（后者多走一次阻塞 stop） |
+| `D1` | 未就绪屏 `stopped` → 「启动本地服务」(onStart)，其余 → 「重启本地服务」(onRestart) |
+| `D2` | 设置页手动启停行 `serviceStart`/`serviceStop` 都接线，且两枚按钮按状态置灰 |
+| `D3` | `ipc.ts` 的 `serviceStart`/`serviceStop` 指向真实命令名 |
+
+> `B1` 是**双向**钉：「退回无条件启动」与「整段删掉（以为前端会管）」两种反向失效都记在这一条上 ——
+> 后者的症状是自检 S2 五态轨迹 + 截图取证双双失据，而红的原因看着像"状态机坏了"。
+> 所以脚本里**有意保留** `if selftest::enabled() || capture::enabled()` 这条测试通道。
+
+新脚本也**自带 EOL 折算**（`locate()`），从第一天起就不给 CRLF 留坑。反证 12 条各对应一种真实回退形态，
+全部**按字节还原**，`0 跳过 / 0 假阳性`。
+
+### 七、计数同步（改断言覆盖的东西，就要同时更新断言与文档）
+
+| 位置 | 旧 → 新 |
+|---|---|
+| `catalog.ts::SPEC_ITEM_TOTAL` | 31 → **32**（② +1 项） |
+| `check:settings` 正向 | **164**（不变：只替换/延展了断言，未新增 `add()`） |
+| `check:settings` 反证 | 103 → **105**（新增 2 条偏好变异） |
+| 断言 id `ENGINE.items.tenAllLive` | → **`ENGINE.items.allLive`**：项数**不进 id**（进 id 就得随每次增删改 id，改漏一处 —— 如反证轮的 `expect` —— 就成了假覆盖；"全部 live"这个**风险点**才不腐坏） |
+| `e2e/docs-consistency-check.mjs::SUITES` | 3 个 → **4 个**（纳入 `check:autostart` ⇒ 其条数受文档门约束） |
+| `check:docs` | 14 → **16** 条（AGENTS.md / README.md 同步） |
+
+### 八、验收
+
+| 命令 | 结果 |
+|---|---|
+| `cargo check`（`app/src-tauri`，带 MSVC 环境） | **exit 0** |
+| `app` 下 `tsc --noEmit` | **exit 0** |
+| `npm run check:autostart` | **12 / 0**（exit 0） |
+| `npm run check:autostart:refute` | **12 / 12 全红、0 跳过、按字节还原一致**（exit 0） |
+| `npm run check:settings` | **164 / 0**（exit 0） |
+| `npm run check:settings:refute` | **105 / 105 全红、0 跳过**（exit 0）—— 修掉基线 31 条静默跳过 |
+| `npm run check:docs` | **16 / 0**（exit 0） |
+| `npm run check:ia` / `check:units` / `:refute` | **32 / 0** · **44 / 0** · **58 / 58** |
+| `npm run check:music` | **215 / 3** —— 3 条既有失败（`ISLANDV` / `RESTORE` / `KEYS`），与本轮无关、本轮未动 |
+| `npm run check:engine-settings` | **55 / 6** —— 6 条是**该脚本按 macOS/Metal 写的**（如断言 `cuda` 必被拒），本机是 CUDA ⇒ 既有环境性失败，与本轮无关（脚本只读 `service/src`、`engine/src`，本轮**一个字节没碰**） |
+
+### 九、边界
+
+- **未在真机点过**：本机没有桌面自动化权限，`check:autostart` 证的是"**成因的写法都被钉住了**"，
+  **不是**"开关按下去真的按预期工作"。仍需人点一遍：关掉开关 → 重开应用 → 服务**不该**起来；
+  未就绪屏「启动本地服务」能拉起；设置页「停止本地服务」能停掉且界面**立刻**从「运行中」跳「未启动」。
+- **已知行为（有意，非缺陷）**：开关 `开` 时，"停止"只在**当前这次进入漫画翻译**期间有效 ——
+  切到别的屏再切回漫画翻译，effect 会按新的一次屏切换重新拉服务。这与"自动启动 = 开"的语义一致；
+  想让它长期停住，应把开关**关掉**（这也正是「停止」按钮旁边的那个开关的用途）。
+- **macOS 侧未回归**（本机 Windows）。不过本轮改动**没有任何平台分叉**：Rust 命令、状态机、前端 effect 三处
+  都是平台无关的；`#[tauri::command(async)]` 与 `emit` 在 WKWebView 上同理。
+- **`service_stop` 的 5s 上界是"最坏"而非实测值**：`STOP_GRACE` + `REAP_GRACE` 的累计上界，实际通常远快。
