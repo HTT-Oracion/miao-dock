@@ -77,7 +77,7 @@ export const RADIUS = {
 export const FONT = {
   display: "'Zen Maru Gothic', 'Noto Sans SC', system-ui, sans-serif",
   body: "'GenJyuuGothicP', 'Noto Sans SC', 'Zen Maru Gothic', system-ui, sans-serif",
-  numeric: "'Inter', 'Noto Sans SC', system-ui, sans-serif",
+  numeric: "'Zen Maru Gothic','Inter', 'Noto Sans SC', system-ui, sans-serif",
 } as const;
 
 /** 品牌色为冻结值 —— 不绑令牌、不随主题切换（《01》§9） */
