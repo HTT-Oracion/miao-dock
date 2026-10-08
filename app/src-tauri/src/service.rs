@@ -353,6 +353,38 @@ impl ServiceManager {
         });
     }
 
+    /// **幂等**启动：已在「启动中 / 运行中 / 正在停止」就直接返回，不重复拉起。
+    ///
+    /// ## 为什么不让调用方自己「先 `status()` 再决定」
+    /// 那是**两次加锁、两段临界区**：`读状态 → 判定 → 启动` 之间存在窗口期。
+    /// 有三条路径会在这个窗口里撞上：设置页的开关、进入翻译模块的自动启动、
+    /// 用户连点两下。两条启动线程各自起一套三进程树，会抢同一批端口
+    /// （① 的 5180–5190、② 的 8000/8001、③ 的 8080）—— 而"两个进程抢同一个端口"
+    /// 的报错离根因极远，现场看是乱七八糟的启动失败。
+    /// 所以「判定 + 置位」必须压在**同一把锁**内完成。
+    ///
+    /// 同步把状态落成 `Starting` 还有第二个好处：UI 立刻显示「启动中」，
+    /// 而不是在后台线程跑起来之前先愣一下（那一愣正好是要堵的窗口）。
+    ///
+    /// 返回 `true` 表示**本次真的发起了启动**。
+    pub fn start_once(&self, app: &AppHandle) -> bool {
+        {
+            let mut g = self.inner.lock().unwrap();
+            if matches!(
+                g.state,
+                ServiceState::Starting | ServiceState::Running | ServiceState::Stopping
+            ) {
+                return false;
+            }
+            g.state = ServiceState::Starting;
+            g.phase = None;
+            g.degraded = false;
+        }
+        self.emit(app);
+        self.start(app);
+        true
+    }
+
     fn start_blocking(&self, app: &AppHandle) {
         {
             let mut g = self.inner.lock().unwrap();

@@ -65,6 +65,8 @@ fn main() {
         .manage(ServiceManager::new())
         .invoke_handler(tauri::generate_handler![
             commands::service_status,
+            commands::service_start,
+            commands::service_stop,
             commands::service_restart,
             commands::quit_app,
             // ── 桌面歌词（独立窗口）──
@@ -213,10 +215,29 @@ fn main() {
                 format!("{}={}", quit.id().as_ref(), quit.text().unwrap_or_default()),
             ]);
 
-            // ---- 启动服务（先引擎后服务） ----
-            let handle = app.handle().clone();
-            let mgr = app.state::<ServiceManager>();
-            mgr.start(&handle);
+            // ---- 自动启动翻译服务（**由前端决定**，见下） ----
+            //
+            // 偏好住在 `app/src/shell-prefs.ts`（「设置 → 翻译服务 → 服务与配对 →
+            // 自动启动翻译服务」，**默认开**）。为什么不在 Rust 侧读它：它落在 **localStorage**，
+            // 而 localStorage 只有 WebView 读得到 —— Rust 读不到，除非把偏好再抄一份到 tauri-store。
+            // 抄一份就是"同一事实两处来源"，两处必然漂移。
+            //
+            // 所以这里**不再无条件启动**：默认开时的观感与旧版一致（应用一打开、初始屏就是
+            // 漫画翻译，前端挂载后立刻拉起）。关掉之后，应用不会碰服务，
+            // 用户改从「设置 → 翻译服务 → 服务与配对」或未就绪屏上的「启动本地服务」手动拉起。
+            //
+            // ⚠️ 自检 / 截图取证两条通道**例外，必须在这里直接拉起**：
+            //   · `selftest.rs` 的 S2 组断言**五态轨迹**（starting→L1→L2→L3→running）与
+            //     E1 生效参数快照，它只 `mgr.status()` 读结果、**不会自己去启动** ——
+            //     不在这里拉起，整组恒红，而且红的原因看着像"状态机坏了"。
+            //   · `capture.rs` 截的是真实界面；服务没起来时翻译三屏全落在"未就绪"，
+            //     截出来的不是要取证的那一屏。
+            // 两者都由环境变量开启（`MIAO_SELFTEST` / `MIAO_CAPTURE_DIR`），属测试通道，
+            // 与用户偏好无关 —— 见 `e2e/lifespan-selftest.mjs` 与 `e2e/capture.mjs`。
+            if selftest::enabled() || capture::enabled() {
+                let handle = app.handle().clone();
+                app.state::<ServiceManager>().start(&handle);
+            }
 
             // ---- 音乐模块：初始化 cookie 缓存 + 启动音频代理（Range/206）----
             // 音频代理是独立的本地 HTTP 服务（127.0.0.1 随机端口），在线音源播放/封面

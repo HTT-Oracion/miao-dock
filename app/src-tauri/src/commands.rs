@@ -99,6 +99,42 @@ pub fn service_restart(app: AppHandle, mgr: State<'_, ServiceManager>) -> Status
     mgr.status()
 }
 
+/// 手动启动本地翻译服务。
+///
+/// 两条调用路径：
+///   ① 「设置 → 翻译服务 → 服务与配对 → 自动启动翻译服务」**关掉之后**的手动拉起；
+///   ② 未就绪屏（X-C3）上的「启动本地服务」按钮。
+///
+/// **幂等**：已在启动中/运行中就直接返回当前状态，不重复拉起 —— 判定与置位压在
+/// `ServiceManager::start_once` 的同一把锁内完成。这一点有实际约束：前端跑在
+/// `React.StrictMode` 下，effect 在开发期**会故意跑两遍**，加上"进入翻译模块自动启动"
+/// 与用户连点，同一瞬间进来两三次是常态。若各自都起一条启动线程，两套进程树会去抢
+/// 同一批端口（① 5180–5190 / ② 8000+8001 / ③ 8080）。
+#[tauri::command]
+pub fn service_start(app: AppHandle, mgr: State<'_, ServiceManager>) -> StatusView {
+    mgr.start_once(&app);
+    mgr.status()
+}
+
+/// 手动停止本地翻译服务（回收整棵三进程树）。
+///
+/// 🔴 **必须是 `#[tauri::command(async)]`**：`ServiceManager::stop()` 是**阻塞**的
+///（先礼后兵 `STOP_GRACE` + 有界收尸 `REAP_GRACE`，最坏约 5s）。同步命令跑在**主线程**，
+/// 那几秒里窗口的消息泵一起冻住 —— 与 `quit_app` 同一条教训（见本文件 `quit_app` 注释、
+/// 台账 D-87）。这里沿用「同步函数 + async 属性」的写法：函数体仍是普通阻塞代码，
+/// 但整个调用被丢到异步运行时的线程池上执行，不占主线程。
+///
+/// ⚠️ 与 `start_blocking` 不同，`ServiceManager::stop()` **自己不发出状态事件**
+///（原先唯一的调用者是 `service_restart`，它紧接着 `start()` 会 emit，所以看不出来）。
+/// 手动停止是"停到 `stopped` 就结束"，没有后续 emit ⇒ 这里必须补一发，
+/// 否则前端订阅的 `miao://service-state` 永远收不到，界面会一直停在「运行中」。
+#[tauri::command(async)]
+pub fn service_stop(app: AppHandle, mgr: State<'_, ServiceManager>) -> StatusView {
+    mgr.stop();
+    mgr.emit(&app);
+    mgr.status()
+}
+
 /// 应用退出（托盘菜单 → 二次确认之后调用）
 ///
 /// 🔴 **必须是 `async` 命令**（命令属性上的 `(async)` = 跑在 tauri 异步运行时的
