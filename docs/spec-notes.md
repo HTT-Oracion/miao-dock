@@ -4406,3 +4406,116 @@ key 写错）⇒ 反证条数 103 → **105**。
 - **macOS 侧未回归**（本机 Windows）。不过本轮改动**没有任何平台分叉**：Rust 命令、状态机、前端 effect 三处
   都是平台无关的；`#[tauri::command(async)]` 与 `emit` 在 WKWebView 上同理。
 - **`service_stop` 的 5s 上界是"最坏"而非实测值**：`STOP_GRACE` + `REAP_GRACE` 的累计上界，实际通常远快。
+
+---
+
+## D-95 · 设置页三处警告框「边框贴着文字、左右顶格」—— 两条**同等特异性**规则抢同一个 `padding`（2026-10-08）
+
+### 一、症状与初判偏差
+
+用户报：`<div className="notice is-bad set-row-note">读不到引擎选项：{eng.loadError}</div>`
+—— `.set-row-note` 把 `.notice` 的 `padding` 覆盖了。**用户的初判是对的**，但"覆盖"的机制
+需要说清，因为它决定了修法。
+
+### 二、真身：不是某一处写错，是两条规则**特异性打平**后按书写顺序决胜
+
+| 类 | 语义 | 声明的 padding |
+|---|---|---|
+| `.notice`（`manga.scss:1126`） | **盒式**提示：四周留白托住边框与底色 | `9px 11px` |
+| `.set-row-note`（`components.scss:389`） | **无边附注**：故意清零上/左/右，让文字与所在行左对齐 | `0 0 10px` |
+
+两者都是**单个类**（特异性 (0,1,0) 打平）⇒ 胜负只由 `index.scss` 的 `@use` 顺序决定：
+
+```
+manga.scss      (@use 第 35 行) → .notice      { padding: 9px 11px }
+components.scss (@use 第 37 行) → .set-row-note { padding: 0 0 10px }   ← 后加载，赢
+```
+
+于是盒子的四周留白被附注的简写清零。**这是"两个各自都对的规则，叠在一起才错"** ——
+所以单看任一文件都看不出问题，`grep` 也找不到"谁覆盖了谁"。
+
+> ⚠️ 同组的 `.set-diag-note` / `.set-lic-note` / `.set-manage-state`（也常叠 `.notice`）
+> **只写 `margin-top`、不碰 `padding`**，因此全都不受影响。`.set-row-note` 是**唯一**
+> 写了完整 `padding` 简写的那个 —— 这就是"为什么只有这三处坏"的答案。
+
+### 三、修法：必须靠**选择器权重**，不能靠书写形式
+
+加一条两类的补偿规则（`components.scss`）：
+
+```scss
+.notice.set-row-note { padding: 9px 11px; }
+```
+
+特异性抬到 (0,2,0) > (0,1,0)，无论分片顺序如何都赢。
+
+🔴 **试过但无效的写法**：把 `.set-row-note` 的简写改写成长写
+（`padding-top: 0; padding-right: 0; padding-bottom: 10px; padding-left: 0;`）
+—— 表面上"只主张下边距、不碰它不该管的三边"，语义更干净。**但它在构建时被撤销**：
+`vite.config.ts` 的 `minify: "esbuild"` 会把四条长写**重新合并回** `padding: 0 0 10px`。
+
+实测取证：
+
+```
+$ npx esbuild probe.css --minify     # 输入为四条长写
+.set-row-note{font-size:10.5px;padding:0 0 10px}      ← 被合并成简写，修复消失
+```
+
+更隐蔽的是：**`npx sass` 单独编译时保留长写**（`--style=compressed` 也保留），
+所以"只跑 sass 看产物"会**误以为修好了** —— 只有走完整 `vite build` 才暴露。
+⇒ 教训：**凡涉及 CSS 归并（longhand↔shorthand）的修复，验证必须走真实构建产物**，
+不能只跑 sass。
+
+### 四、验证：无头 Chrome 读**计算值**，不读 CSS 文本
+
+"CSS 里写了" ≠ "浏览器算出来是那个值"，尤其本 bug 的真身就是**层叠仲裁**。
+故用真实构建产物 + 最小 DOM，读 `getComputedStyle`：
+
+| 元素 | 计算 padding | 判定 |
+|---|---|---|
+| `.notice.is-bad.set-row-note`（叠用态） | `9px \| 11px \| 9px \| 11px` | ✅ 与纯盒式一致 |
+| `.set-row-note.set-row-note-body`（纯附注） | `0 \| 0 \| 8px \| 0` | ✅ 行为未变 |
+| `.notice.is-bad`（纯盒式，基准） | `9px \| 11px \| 9px \| 11px` | ✅ 基准 |
+
+### 五、钉子：`ENGINE.css.noticePadding`（`check:settings`，165 条 / 反证 107 条）
+
+判据分两半，**缺一不可**（各配一条反证）：
+
+1. **补偿规则须存在**，且其 `padding` 与 `.notice` **逐字一致** —— 用 `.notice` 的实际取值去比，
+   **不写死** `9px 11px`。写死的话，「`.notice` 改了内边距」与「补偿规则没跟着改」这两件事
+   **都测不出来**（2026-10-08 实践：这属于 D-86「两处来源必然漂移」的同款陷阱）。
+2. **`.set-row-note` 自身不许出现 padding 长写** —— 把上面那条"试过但无效"的写法钉成禁令，
+   防止后人"顺手改干净一点"又把修复交还给 esbuild。
+
+> 补偿规则里的 `9px 11px` 与 `.notice` 是**有意重复**（跨分片无法用变量共享而不引 `@use` 耦
+> 合）。与 `.notice` 同步这件事由钉子 ① 兜底 —— 改了 `.notice` 忘了改补偿规则会**直接红**。
+
+**验收**：`check:settings` **165 / 0**；`check:settings:refute` **107 / 107**（新增 2 条变异
+分别打红两半判据，且按字节还原）。文档计数门 `check:docs` 随动 14→16 全绿。
+
+### 六、旁注：本次会话发现的环境损坏（与上述修复无关，单独处置）
+
+用户这次是**带着引擎起不来的报错**来的（`ENOENT`：`venv\Scripts\python.exe` /
+`llama-server.exe` / `sakura-*.gguf`）。排查结论：`runtimes/manga-translator/` 下
+**除 `venv/Lib/site-packages/`（5.7 GB / 46804 文件）外，所有实体文件被清空**
+（`python-3.11/`、`src/`、`bin/`、`models/` 只剩空目录骨架，`venv/Scripts` 也没了解释器）。
+
+真身直指 `setup-engine.mjs:142` 的 `extract()`：
+
+```js
+fs.rmSync(destDir, { recursive: true, force: true });   // 先无条件删掉目标目录
+const rc = spawnSync('tar', args, { stdio: 'inherit' });
+if (rc.status !== 0) throw new Error(...);              // 失败时目录已空，无回滚
+```
+
+**先删后解、失败不回滚** ⇒ 解包一旦失败，原有 payload 永久丢失。
+`setup-engine.mjs` 的守卫本身是对的（`sourceReady()` 查 `server/main.py` 而非"目录非空"，
+注释里还专门记了"第一版踩过'非空'的坑"），但 `existsNonEmpty()` 被用在
+`PY_DIR`/`venv` 上 —— 空骨架目录能骗过它。已按四步恢复：
+① 清空壳 → ② 重下 Python 3.11.17 + 引擎源码（`tar` 在 Git Bash 下报
+`Cannot connect to F: resolve failed`，用 `MSYS2_ARG_CONV_EXCL='*'` 绕）→
+③ 复用幸存的 `site-packages`（含难编译的 `pydensecrf`）→ ④ 重下 7 项模型/运行时
+（视觉 4 项 + llama 625 MB + Sakura 3.3 GB，sha256 全过）。
+
+⚠️ **`extract()` 的"先删后解"是待修缺陷**（本次未动，仅记录）：建议改为
+解到临时目录再原子替换（与 `.models.ready.json` 的 `rename` 原子替换同一思路），
+避免"解包失败 = 原有环境报废"。
