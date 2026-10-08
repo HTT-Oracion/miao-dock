@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 import type { ServiceState } from '@/ipc';
 import { SHELL, SIDEBAR } from '@/theme/tokens';
 import { Dot } from '@components/units';
-import logo from '@/assets/brand/miao-logo.svg';
+import logo from '@/assets/brand/miao-logo.png';
 import { APP_LABEL, stateView, type AppId, type Screen } from '@/nav';
 import { Languages, Music4, Settings } from 'lucide-react';
 
@@ -67,7 +67,7 @@ export function Sidebar({
   return (
     <nav className="sidebar" style={{ width: SHELL.sidebarWidth, flexBasis: SHELL.sidebarWidth }}>
       <div className="sidebar-logo" style={{ width: SHELL.logoSize, height: SHELL.logoSize }}>
-        <img src={logo} alt="喵坞" width={30} height={30} />
+        <img src={logo} alt="喵坞" width={40} height={40} />
       </div>
 
       {/* ── 应用层 ──
