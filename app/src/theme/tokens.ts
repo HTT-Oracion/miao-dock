@@ -62,12 +62,21 @@ export const RADIUS = {
 } as const;
 
 /**
- * 字体分工（《02》§5）：Zen Maru Gothic（标题/强调）、Noto Sans SC（正文）、Inter Medium（纯数字）。
+ * 字体分工（《02》§5）：Zen Maru Gothic（标题/强调）、源柔ゴシックP Medium（正文）、Inter Medium（纯数字）。
  * 桌面端随应用分发字体文件（`src/assets/fonts`），不依赖用户系统是否装了这两款字体。
+ *
+ * 正文首位是**源柔ゴシックP Medium（GenJyuuGothicP，字重 500）**：圆润亲和、汉字覆盖全，
+ * 与「喵坞」的圆角调性一致。它比 Noto Sans SC 体量更大，故走**独立分片加载**
+ * （见 `src/assets/fonts/genjyuu-gothic-p-medium/`），不塞进 `main.tsx` 的 fontsource 清单 ——
+ * 那几家是 npm 包、按包名引；这一家是随仓分发的 120 片 woff2，由 `styles/index.scss` 的
+ * `@use` 统一引入（本仓「样式只经 index.scss 一个入口」的规矩）。
+ *
+ * ⚠️ 字体族名必须写 `'GenJyuuGothicP'`（上游 `@font-face` 里的名字），
+ *    不是文件名 `GenJyuuGothic-P-Medium` —— 写错则整个第一位静默失效、直接回落 Noto Sans SC。
  */
 export const FONT = {
   display: "'Zen Maru Gothic', 'Noto Sans SC', system-ui, sans-serif",
-  body: "'Noto Sans SC', 'Zen Maru Gothic', system-ui, sans-serif",
+  body: "'GenJyuuGothicP', 'Noto Sans SC', 'Zen Maru Gothic', system-ui, sans-serif",
   numeric: "'Inter', 'Noto Sans SC', system-ui, sans-serif",
 } as const;
 

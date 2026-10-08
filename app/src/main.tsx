@@ -9,6 +9,18 @@ import '@fontsource/zen-maru-gothic/700.css';
 import '@fontsource/noto-sans-sc/400.css';
 import '@fontsource/noto-sans-sc/500.css';
 
+// 正文首选「源柔ゴシックP Medium」—— 没有可用的 npm 包（`@fontsource/genjyuu-gothic`
+// 只含 latin 子集、不含汉字），故按**随仓分发**处理：120 片 woff2 + 一份 @font-face 清单
+// 放在 `src/assets/fonts/genjyuu-gothic-p-medium/`，在这里引它的 `font.css`。
+//
+// ⚠️ 必须从**这里**（JS 侧）引，不能写进 `styles/index.scss` 的 `@use`：
+//    Sass 对「带 `.css` 后缀的 `@use`」是**静默丢弃**的 —— 不报错、不产出、也不改 `url()`，
+//    于是 120 片字体会全部不进构建（`dist/` 里 0 个 GenJyuu 分片），
+//    而 `npm run build` 照样成功、页面照样渲染（只是回落到 Noto Sans SC）。
+//    走 JS 侧的 CSS 模块引用，Vite 才会处理 `url()` 并把 woff2 落进 `dist/assets/`。
+//    这一条已钉在 `e2e/settings-media-check.mjs` 的 FONT 组，别改回去。
+import '@/assets/fonts/genjyuu-gothic-p-medium/font.css';
+
 // 样式**只经 index.scss 一个入口**（《09》§2.4）：分片清单、层叠顺序与新增模块的规矩
 // 都写在那个文件里，这里不再逐个 import —— 绕过入口就绕过了顺序约定。
 import '@/styles/index.scss';

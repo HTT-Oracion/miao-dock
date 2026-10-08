@@ -4519,3 +4519,97 @@ if (rc.status !== 0) throw new Error(...);              // 失败时目录已空
 ⚠️ **`extract()` 的"先删后解"是待修缺陷**（本次未动，仅记录）：建议改为
 解到临时目录再原子替换（与 `.models.ready.json` 的 `rename` 原子替换同一思路），
 避免"解包失败 = 原有环境报废"。
+
+---
+
+## D-96 · 正文首选字体改为「源柔ゴシックP Medium」—— 选包踩空 + Sass **静默丢弃** `.css`（2026-10-08）
+
+### 一、需求与落点
+
+「正文首选字体改为源柔ゴシックP Medium」。落点是**单点**：`app/src/theme/tokens.ts`
+的 `FONT.body`（`var(--md-font-body)` 在 6 个样式文件里被引用 70+ 次，但只有这一处定义）。
+`display` / `numeric` **不动**（用户明确"本次只改 body"）。
+
+### 二、选包：`@fontsource/genjyuu-gothic` 是**陷阱**
+
+本仓的字体惯例是 `main.tsx` 引 `@fontsource/*`（自托管、按 `unicode-range` 切片）。
+npm 上确实有 `@fontsource/genjyuu-gothic@5.3.0`，**但装上一看只有 latin**：
+
+```
+files/ 只有 4 个文件，全是 genjyuu-gothic-latin-*
+500.css 里 src 指向的 woff2 在 files/ 里根本不存在（du 得 0）
+```
+
+fontsource 官方 API 亦自证：`"subsets":["latin"]`、`"unicodeRange":{}`。
+**正文 99% 是中文** —— 装它等于英文走源柔、中文全部回落，且这份包连 latin 都缺文件。
+已卸载、`package.json` 无残留。（`jikasei.me` 官方只有 10.7 MB **整字库** TTF，
+无切片；直接塞进项目会让安装包显著变大。）
+
+**改用** `shogo82148/genjyuugothic-subsets`（**SIL OFL 1.1**，21 star，含 Releases）：
+官方预构建 zip = **120 片 woff2 + 一份 `@font-face` 清单**，整包 4.3 MB，
+与「按 unicode-range 切片」的既有架构**完全同构**。
+族名是 **`GenJyuuGothicP`**（注意：**无连字符**，不是文件名 `GenJyuuGothic-P-Medium`）。
+
+| 项 | 值 |
+|---|---|
+| 来源 | `github.com/shogo82148/genjyuugothic-subsets` release `2022-06-16` |
+| 落点 | `app/src/assets/fonts/genjyuu-gothic-p-medium/`（120 woff2 + `font.css`） |
+| 授权 | SIL OFL 1.1（商用 + 应用内嵌均允许） |
+
+### 三、🔴 真身：Sass 对「带 `.css` 后缀的 `@use`」是**静默丢弃**
+
+初次接法（想遵守「样式只经 `index.scss` 一个入口」）：
+`index.scss` 里写 `@use '../assets/fonts/genjyuu-gothic-p-medium/font.css';`
+
+**`cd app && npx tsc --noEmit && npx vite build` 成功、无警告，但 `dist/assets/` 里 0 个 Genjyuu 分片。**
+`sass` 单编同样得 0 —— 不是 Vite 的锅：Sass 对 `.css` 的 `@use` **既不内联、也不报错、也不改 `url()`**，
+Vite 因此从未看见那 120 个 `url()`，资源自然不落盘。
+
+> 这是本条最贵的一课：**构建成功 ≠ 生效**。页面照常渲染，只是正文回落 Noto Sans SC ——
+> 与"没改过"完全同形。若不是事后去数 `dist/assets/` 里的分片数，这个改动会以"绿着"的状态交付。
+>
+> ⚠️ 附带风险：`e2e/_styles-source.mjs` 的 `styleEntryOrder()` 会把**任何** `@use` 目标
+> （含 `.css`）拼进"样式全文"。若留在 `index.scss`，断言读到的是**含 120 条 `@font-face` 的文本**，
+> 而真实产物里一条都没有 —— 断言与产物**静默分叉**。
+
+**修法**：改由 **JS 侧**引（`main.tsx` 里 `import '@/assets/fonts/.../font.css'`），
+与其余 `@fontsource/*` 的引法一致；Vite 处理 CSS 模块时会改写 `url()` 并把 woff2 落进
+`dist/assets/`。`index.scss` **保持原样不动**。
+
+### 四、验证（真产物 + 真浏览器）
+
+1. **产物计数**：`dist/assets/` 有 **120** 片 `GenJyuuGothic-P-Medium-*.woff2`；
+   主 CSS 里 `@font-face` **120** 条、条条带 `unicode-range`，`src` 已由 Vite 指纹化。
+2. **真实渲染**（本机 Chrome headless，读计算值 / canvas 量宽，不看 CSS 文本）：
+   - 截图对比：源柔的「口」类方框**圆角明显**、笔画更柔和；Noto Sans SC 为**锐角直角** —— 两字体确实不同。
+   - `document.fonts.load("500 90px 'GenJyuuGothicP'", '喵坞漫画翻译')` ⇒ `check(text)=true`，
+     `gjFaces=120`，`status={"unloaded":117,"loaded":3}` —— **恰好 3 片按需加载**，
+     证明 unicode-range 懒加载按设计工作。
+   - 字形覆盖：latin `282≠240`、digits `137≠120`、kana `151≠180`（与回退字体**宽度不同** ⇒ 有独立字形）。
+3. ⚠️ **探针本身踩过一次坑（记录以免重犯）**：`dist` 的 CSS 用**绝对** `url(/assets/…)`，
+   在 `file://` 下会解析到**文件系统根** ⇒ 探针里全部加载失败（`check=false`、三字体等宽）。
+   探针把 `url(/assets/` 批量改成 `url(./assets/` 后才 `check=true`。
+   **这是探针的错，不是应用的错**（应用内 base 为 `/`，正常）。
+
+### 五、新钉子：`FONT` 组（`npm run check:settings`，3 条 / 反证 5 条）
+
+| 判据 | 失效形态 | 反证 |
+|---|---|---|
+| `FONT.genjyuu.viaJsModule` | `main.tsx` 未 import 该 font.css，**或** 有人把它挪回 `index.scss` 的 `@use` | 删 import / 挪回 `@use`（2 条） |
+| `FONT.genjyuu.bodyFirst` | 族名写错（如写成文件名）⇒ 静默回落；或源柔被挪离首位；或丢 Noto 回退 | 改名 / 挪位 / 删回退（3 条） |
+| `FONT.genjyuu.assetsPresent` | 分片被删/未提交/被 gitignore 误伤（**缺片只影响部分汉字，最难发现**） | — |
+
+设计要点：
+- **族名不写死**：从随仓 `font.css` 里**实际读出** `font-family`，再与 `FONT.body` 首位比对 ——
+  两处各写各的就会漂移，写死则"两处一起改错"仍绿。
+- **上限也钉**：woff2 必须**恰好 120**（多于 120 = 混进别的字重/字体）。
+- **取值的引号陷阱**：`FONT.body` 的值是**双引号串内嵌单引号**（`" 'Gen…', 'Noto…' "`），
+  正则若写成"见引号就停"会在内部第一个单引号处截断 ⇒ 误报"首位取不到"。已按引号种类配对取值。
+
+### 六、⚠️ 踩到的流程坑：新分组必须登记进 `GROUPS`
+
+`FONT` 三条钉子写完后跑正向，总数仍报 `165/0` **全绿** —— 但输出里**根本没有 `【FONT】` 段**。
+真身：`settings-media-check.mjs` 有个显式清单
+`const GROUPS = ['EXCLUDED', …, 'FEATURES']`，**不在清单里的分组被静默跳过、且计入通过数**。
+补登记后立刻现形（`FONT 2/3`，其中一条真红）。
+⇒ **新增分组后必须确认输出里出现了该组标题**，否则"全绿"是假的。

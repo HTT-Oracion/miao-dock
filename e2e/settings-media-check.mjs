@@ -42,7 +42,7 @@
  *
  * 注意：本脚本禁止出现某个历史品牌标识的字面量（项目已清除该品牌词），需要提及时写「参考实现」。
  */
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { readStyleSource } from './_styles-source.mjs';
@@ -1521,6 +1521,121 @@ add('ENGINE.css.noticePadding', 'ENGINE', (ctx) => {
   };
 });
 
+// ============================ FONT 组 ============================
+// 正文首选字体「源柔ゴシックP Medium（GenJyuuGothicP）」。它不是 npm 包而是**随仓分发**
+// （`app/src/assets/fonts/genjyuu-gothic-p-medium/`：120 片 woff2 + 一份 @font-face 清单），
+// 因此有两条**编译得过、构建成功、页面照常显示**的静默失效路径，本组专治这两条。
+
+// —— ① @font-face 清单必须由 JS 侧引入，且**不得**走 sass 的 @use ——
+add('FONT.genjyuu.viaJsModule', 'FONT', (ctx) => {
+  /*
+   * 失效形态（**实测踩过**）：把 `font.css` 写成 `styles/index.scss` 里的
+   * `@use '../assets/fonts/genjyuu-gothic-p-medium/font.css';`
+   *
+   * 后果：Sass 对「带 `.css` 后缀的 `@use`」是**静默丢弃** —— 不报错、不产出、
+   * 也不改写其中的 `url()`。于是 `npm run build` 照常成功、
+   * 但 `dist/assets/` 里**一个 GenJyuu 分片都没有**（实测 0 个），
+   * 页面照常渲染，只是正文**回落**到 Noto Sans SC —— 与"没改过"完全同形。
+   *
+   * 判据：
+   *   ① `main.tsx` 必须 import 那份 font.css（走 JS 侧，Vite 才会处理 url() 并落盘资源）；
+   *   ② `index.scss` 里**不许**出现指向该 font.css 的 `@use`（防有人"顺手挪回去"）。
+   */
+  const main = stripComments(ctx.s.main);
+  const entry = stripComments(readMaybe(path.join(F.stylesDir, 'index.scss')));
+  const problems = [];
+
+  if (!/import\s+['"][^'"]*genjyuu-gothic-p-medium\/font\.css['"]/.test(main)) {
+    problems.push('main.tsx 没有 import 源柔字体的 font.css（Vite 不会处理 url()，120 片字体不进构建）');
+  }
+  // 入口里出现指向 font.css 的 @use ⇒ 一定是被挪回 sass 了（那会静默丢弃）
+  if (/@use\s+['"][^'"]*font\.css['"]/.test(entry)) {
+    problems.push('index.scss 用 @use 引了 font.css —— Sass 会静默丢弃该 .css（字体分片不会进构建）');
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+// —— ② 字体栈首位必须是 GenJyuuGothicP（正文），且族名拼写正确 ——
+add('FONT.genjyuu.bodyFirst', 'FONT', (ctx) => {
+  /*
+   * 失效形态：族名写错一个字符（例如写成文件名 `GenJyuuGothic-P-Medium`，
+   * 而上游 @font-face 里的名字是**无连字符**的 `GenJyuuGothicP`）——
+   * 浏览器认不出该族名，**整个第一位静默失效**，直接回落 Noto Sans SC。
+   * 无报错、无警告、构建正常。所以族名必须与 assets 里那份 font.css 对齐着钉。
+   *
+   * 判据分两半：
+   *   ① tokens.ts 的 FONT.body 首位是 `'GenJyuuGothicP'`；
+   *   ② 它是**首位**（不能只出现在 fallback 段里 —— 那等于没生效）。
+   *   另一条隐含约束：族名要与随仓 font.css 里 `font-family:` 的写法一致，
+   *   故从那份 font.css 里**实际读出**族名来比，避免两处各写各的。
+   */
+  const tokens = stripComments(ctx.s.tokens);
+  const problems = [];
+
+  // 从随仓 font.css 读真实族名（单一事实源在上游文件，不在断言里写死）
+  const fontCssPath = path.join(APP, 'src', 'assets', 'fonts', 'genjyuu-gothic-p-medium', 'font.css');
+  let realFamily = null;
+  if (existsSync(fontCssPath)) {
+    const m = readFileSync(fontCssPath, 'utf8').match(/font-family\s*:\s*['"]([^'"]+)['"]/);
+    if (m) realFamily = m[1];
+  }
+  if (!realFamily) {
+    problems.push('随仓 font.css 里读不到 font-family（源柔字体清单缺失或格式变了）');
+  }
+
+  // 值形如 `" 'GenJyuuGothicP', 'Noto Sans SC', … "` —— 外层是双引号、内部含单引号，
+  // 故外层按引号种类配对取值，不能写成「见引号就停」（那会在内部第一个单引号处截断）。
+  const body = tokens.match(/body\s*:\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/);
+  if (!body) {
+    problems.push('tokens.ts 里找不到 FONT.body');
+  } else {
+    const stack = body[1].slice(1, -1); // 去外层引号，留栈本身
+    const first = (stack.match(/^\s*['"]([^'"]+)['"]/) || [])[1];
+    if (!first) problems.push('FONT.body 的首位取不到（字体栈写法变了）');
+    else if (realFamily && first !== realFamily) {
+      problems.push(`FONT.body 首位是「${first}」，与 font.css 的族名「${realFamily}」不一致（族名不符 ⇒ 静默回落）`);
+    } else if (!/^GenJyuuGothicP$/.test(first)) {
+      problems.push('FONT.body 首位不是 GenJyuuGothicP');
+    }
+    // Noto Sans SC 应仍在栈里作回退（防有人"顺手把 fallback 删了"）
+    if (!/Noto Sans SC/.test(stack)) problems.push('FONT.body 丢了 Noto Sans SC 回退');
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+// —— ③ 随仓字体分片与清单必须齐备（120 片 + font.css）——
+add('FONT.genjyuu.assetsPresent', 'FONT', (ctx) => {
+  /*
+   * 这是**假绿成本最低**的一条：文件被误删 / 未随 git 提交 / .gitignore 误伤时，
+   * 字体会缺分片 —— 缺的那几片覆盖的汉字回落、其余正常，
+   * 于是"大部分中文看着是对的"，最难被发现。
+   *
+   * 判据：目录里 woff2 必须**恰好 120 片**（上游 2022-06-16 版的既定分片数），
+   * 且 font.css 的 @font-face 条数与之相等（清单与文件互为对照，缺一即红）。
+   * ⚠️ 上限也钉住：多于 120 说明混进了别的字重/其它字体，同样要红。
+   */
+  const dir = path.join(APP, 'src', 'assets', 'fonts', 'genjyuu-gothic-p-medium');
+  const problems = [];
+  if (!existsSync(dir)) {
+    return { ok: false, detail: `随仓字体目录不存在：${dir}（正文首选字体未入库）` };
+  }
+  const files = readdirSync(dir);
+  const nWoff = files.filter((f) => f.endsWith('.woff2')).length;
+  const cssPath = path.join(dir, 'font.css');
+  if (!existsSync(cssPath)) {
+    problems.push('缺 font.css（@font-face 清单）');
+  } else {
+    const css = readFileSync(cssPath, 'utf8');
+    const nFaces = (css.match(/@font-face/g) || []).length;
+    if (nFaces !== 120) problems.push(`font.css 里 @font-face 有 ${nFaces} 条（应为 120）`);
+    // 每条都要有 unicode-range，否则退化成"一把梭全量加载"，分片失去意义
+    const nRange = (css.match(/unicode-range/g) || []).length;
+    if (nRange !== nFaces) problems.push(`有 ${nFaces - nRange} 条 @font-face 缺 unicode-range（分片失效）`);
+  }
+  if (nWoff !== 120) problems.push(`woff2 分片有 ${nWoff} 片（应为 120）`);
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
 // —— markdown 强调标记：必须被解析，且 JSX 裸文本里不许出现 ——
 add('ENGINE.emphasis.impl', 'ENGINE', (ctx) => {
   const body = fnBody(ctx.s.parts, 'emphasis');
@@ -2416,7 +2531,7 @@ async function runAll() {
   return res;
 }
 
-const GROUPS = ['EXCLUDED', 'RETIRED', 'ADDED', 'COUNT', 'NOTE', 'WIRING', 'STORE', 'PLAYER', 'OPTIONS', 'CACHE', 'ENGINE', 'NOTREADY', 'SIMPLIFY', 'FEATURES'];
+const GROUPS = ['EXCLUDED', 'RETIRED', 'ADDED', 'COUNT', 'NOTE', 'WIRING', 'STORE', 'PLAYER', 'OPTIONS', 'CACHE', 'ENGINE', 'NOTREADY', 'SIMPLIFY', 'FEATURES', 'FONT'];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -3279,6 +3394,43 @@ const MUTATIONS = [
       + '  padding-left: 0;\n'
       + '}\n.set-row-note code {',
     expect: ['ENGINE.css.noticePadding'],
+  },
+
+  // —— FONT 组三条判据各配一条反证 ——
+  {
+    name: '把源柔 font.css 的 import 从 main.tsx 删掉（120 片字体不进构建，正文静默回落）',
+    file: F.main,
+    find: "import '@/assets/fonts/genjyuu-gothic-p-medium/font.css';\n",
+    replace: '',
+    expect: ['FONT.genjyuu.viaJsModule'],
+  },
+  {
+    name: '把 font.css 挪回 index.scss 的 @use（Sass 静默丢弃 .css ⇒ 字体分片全不进构建）',
+    file: path.join(F.stylesDir, 'index.scss'),
+    find: "@use 'base.scss';",
+    replace: "@use '../assets/fonts/genjyuu-gothic-p-medium/font.css';\n@use 'base.scss';",
+    expect: ['FONT.genjyuu.viaJsModule'],
+  },
+  {
+    name: '把 FONT.body 首位的族名写错（写成文件名，与 font.css 的族名不符 ⇒ 静默回落）',
+    file: F.tokens,
+    find: "body: \"'GenJyuuGothicP', 'Noto Sans SC', 'Zen Maru Gothic', system-ui, sans-serif\",",
+    replace: "body: \"'GenJyuuGothic-P-Medium', 'Noto Sans SC', 'Zen Maru Gothic', system-ui, sans-serif\",",
+    expect: ['FONT.genjyuu.bodyFirst'],
+  },
+  {
+    name: '把源柔从 FONT.body 首位挪走（降级成 fallback ⇒ 等于没改）',
+    file: F.tokens,
+    find: "body: \"'GenJyuuGothicP', 'Noto Sans SC', 'Zen Maru Gothic', system-ui, sans-serif\",",
+    replace: "body: \"'Noto Sans SC', 'GenJyuuGothicP', 'Zen Maru Gothic', system-ui, sans-serif\",",
+    expect: ['FONT.genjyuu.bodyFirst'],
+  },
+  {
+    name: '删掉 Noto Sans SC 回退（源柔缺字时无兜底字体）',
+    file: F.tokens,
+    find: "body: \"'GenJyuuGothicP', 'Noto Sans SC', 'Zen Maru Gothic', system-ui, sans-serif\",",
+    replace: "body: \"'GenJyuuGothicP', 'Zen Maru Gothic', system-ui, sans-serif\",",
+    expect: ['FONT.genjyuu.bodyFirst'],
   },
 ];
 
