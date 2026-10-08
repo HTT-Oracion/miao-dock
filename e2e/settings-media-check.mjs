@@ -1466,6 +1466,61 @@ add('ENGINE.css.classes', 'ENGINE', (ctx) => {
   };
 });
 
+// —— 盒式提示叠行的附注类时，盒子的内边距不能被附注的简写吃掉 ——
+add('ENGINE.css.noticePadding', 'ENGINE', (ctx) => {
+  /*
+   * 失效形态（用户实测）：`<div className="notice is-bad set-row-note">读不到引擎选项：…</div>`
+   * 渲染成"边框贴着文字、左右顶格" —— 编译得过、不抛错、断言不红，只是界面不对。
+   *
+   * 成因：`.notice`（盒式，`padding: 9px 11px`）与 `.set-row-note`（无边附注，
+   * `padding: 0 0 10px`）都是**单个类**，特异性打平 ⇒ 胜负只由 `index.scss` 的 `@use`
+   * 顺序决定，而 `components.scss` 排在 `manga.scss` 之后 ⇒ 附注的简写赢，把上/左/右清零。
+   *
+   * 判据分两半，缺一不可：
+   *   ① 必须存在**两类的**补偿规则 `.notice.set-row-note{…}`，且其 padding 与 `.notice`
+   *      自身逐字相同（用 `.notice` 的实际取值去比，而不是写死 `9px 11px` —— 写死会让
+   *      「.notice 改了内边距」与「补偿规则没跟着改」这两件事都测不出来）。
+   *   ② `.set-row-note` 自身**不许**改成长写（`padding-top: …`）—— `minify: "esbuild"`
+   *      会把四条长写重新合并成简写，修复在压缩阶段被悄悄撤回。这一条钉住"别用那种写法"。
+   *
+   * 反证：注掉 ① 那条规则 ⇒ 无补偿规则、盒子重回被清零态 ⇒ 变红；
+   *      把 ② 改成四条长写 ⇒ 命中"会被 esbuild 合并"⇒ 变红。
+   */
+  const css = stripComments(ctx.s.css);
+  const problems = [];
+
+  // `.notice` 的 padding 取值（单个类、非契约类）——作为比较基准
+  const notice = css.match(/\.notice\s*\{([^}]*)\}/);
+  const noticePad = notice && notice[1].match(/padding\s*:\s*([^;}]+)/);
+  if (!noticePad) {
+    problems.push('样式里找不到 `.notice` 的 padding（基准取不到，本判据无从比对）');
+  } else {
+    const want = noticePad[1].replace(/\s+/g, ' ').trim();
+    // ① 两类的补偿规则必须存在，且 padding 与 `.notice` 一致
+    const fix = css.match(/\.notice\.set-row-note\s*\{([^}]*)\}/);
+    if (!fix) {
+      problems.push('缺 `.notice.set-row-note` 补偿规则（盒式提示叠附注类时四周留白被清零）');
+    } else {
+      const got = fix[1].match(/padding\s*:\s*([^;}]+)/);
+      if (!got) problems.push('`.notice.set-row-note` 里没有 padding（补偿未落到位）');
+      else if (got[1].replace(/\s+/g, ' ').trim() !== want) {
+        problems.push(`补偿规则的 padding 与 .notice 不一致（${got[1].trim()} ≠ ${want}）`);
+      }
+    }
+  }
+
+  // ② `.set-row-note` 自身不许出现长写（会被 esbuild 合并回去，等于修复被撤回）
+  const rowNote = css.match(/\.set-row-note\s*\{([^}]*)\}/);
+  if (rowNote && /padding-(?:top|right|bottom|left)\s*:/.test(rowNote[1])) {
+    problems.push('`.set-row-note` 用了 padding 长写（esbuild 会合并回简写，修复会被撤回）');
+  }
+
+  return {
+    ok: problems.length === 0,
+    detail: problems.length ? problems.join('；') : '',
+  };
+});
+
 // —— markdown 强调标记：必须被解析，且 JSX 裸文本里不许出现 ——
 add('ENGINE.emphasis.impl', 'ENGINE', (ctx) => {
   const body = fnBody(ctx.s.parts, 'emphasis');
@@ -3203,6 +3258,27 @@ const MUTATIONS = [
     find: '    "gen:licenses": "node app/scripts/gen-licenses.mjs",\n',
     replace: '',
     expect: ['FEATURES.gen.script'],
+  },
+
+  // —— ENGINE.css.noticePadding 的两半判据各配一条反证 ——
+  {
+    name: '注掉 .notice.set-row-note 补偿规则（盒式提示叠附注类时四周留白重回被清零态）',
+    file: F.componentsStyle,
+    find: '.notice.set-row-note {\n  padding: 9px 11px;\n}',
+    replace: '/* 反证：补偿规则被注掉 */',
+    expect: ['ENGINE.css.noticePadding'],
+  },
+  {
+    name: '把 .set-row-note 的 padding 换成四条长写（esbuild 会合并回简写 ⇒ 修复被静默撤回）',
+    file: F.componentsStyle,
+    find: '  padding: 0 0 10px;\n}\n.set-row-note code {',
+    replace:
+      '  padding-top: 0;\n'
+      + '  padding-right: 0;\n'
+      + '  padding-bottom: 10px;\n'
+      + '  padding-left: 0;\n'
+      + '}\n.set-row-note code {',
+    expect: ['ENGINE.css.noticePadding'],
   },
 ];
 

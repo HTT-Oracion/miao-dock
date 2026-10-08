@@ -396,6 +396,30 @@
   font-family: var(--md-font-numeric);
   font-size: 10px;
 }
+
+/* 🔴 盒式提示叠上本类时，把盒子的四周留白还回去。
+ *
+ * 冲突成因：`.notice` 是盒式（`padding: 9px 11px`，四周留白才托得住边框与底色），
+ * `.set-row-note` 是**无边附注**（`padding: 0 0 10px`，故意把上/左/右清零，好让文字与
+ * 所在行左对齐）。两者同时挂到一条 div（`.notice.is-bad.set-row-note`，见 sections.tsx
+ * 三处）时，都是单个类 ⇒ 特异性打平 ⇒ 胜负只由 `index.scss` 的 `@use` 顺序决定；
+ * `components.scss` 排在 `manga.scss` 之后，于是附注的 `0 0 10px` 赢，把盒子的四周留白
+ * 清零成"边框贴着文字、左右顶格"。
+ *
+ * 修法：用两类的选择器（`.notice` + `.set-row-note`）把特异性抬过单类，让 padding 回到
+ * 盒式取值。⚠️ **不能**改成在 `.set-row-note` 里写 `padding-top/right/bottom/left` 长写
+ * —— `vite.config.ts` 的 `minify: "esbuild"` 会把四条长写重新合并成 `padding: 0 0 10px`，
+ * 修复在压缩阶段被悄悄撤回（实测：esbuild 0.28 对同一段长写输出即简写）。故必须靠
+ * **选择器权重**取胜，而不是靠书写形式。
+ *
+ * 值只覆盖 padding，不碰 `.notice` 的字号/配色 —— 盒式提示仍是盒式提示。⚠️ 这里与
+ * `.notice` 的 `9px 11px` 是**有意重复**：两处若各自变动会静默漂移，改动 `.notice` 的
+ * 内边距时务必同步本行（`check:settings` 不盯样式，靠代码评审）。不带 `.notice` 的纯附注
+ * （如自检说明）不受影响。 */
+.notice.set-row-note {
+  padding: 9px 11px;
+}
+
 /* 自检说明与运行器之间的分隔：这里不是"某行的补充"，要自己起一条线 */
 .set-row-note-body {
   padding-bottom: 8px;
