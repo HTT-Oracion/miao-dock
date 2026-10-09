@@ -121,6 +121,15 @@ export const openPath = (path: string) => invoke<void>('open_path', { path });
 /** 把投放的文件/目录展开为图片绝对路径列表（已按文件名自然序排序） */
 export const expandPaths = (paths: string[]) => invoke<string[]>('expand_paths', { paths });
 
+/**
+ * 把一段文本写到**用户刚在保存对话框里选定**的那个路径（设置页「全部日志」抽屉的「导出 .txt」）。
+ *
+ * 路径来自系统保存对话框，本函数不拼接、不猜测、不创建目录 —— 因而也不需要宽泛的
+ * 文件系统权限：能力边界正好是"用户自己选的那一个文件"。
+ */
+export const writeTextFile = (path: string, contents: string) =>
+  invoke<void>('write_text_file', { path, contents });
+
 // ------------------------------------------------------------------ 事件
 
 /** 服务四态变化（Rust 侧 emit，前端据此切 X-C3 / 显示状态点） */

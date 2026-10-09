@@ -87,6 +87,7 @@ fn main() {
             commands::api_bytes,
             commands::open_path,
             commands::expand_paths,
+            commands::write_text_file,
             // ── 音乐模块（网易云）──
             music::music_search,
             music::music_song_url,

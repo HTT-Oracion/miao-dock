@@ -339,6 +339,21 @@ pub fn open_path(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 把一段文本写到**用户自己选定**的路径（设置页「全部日志」抽屉的「导出 .txt」）。
+///
+/// 为什么单开一条命令、而不是挂 `plugin-fs`：那个插件要额外加 Cargo 依赖 + 一整套
+/// 路径范围的权限项，而这里只需要"写到用户刚在系统保存对话框里选中的那一个文件"。
+/// 路径由**用户**在对话框里给出，本命令不拼接、不猜测、不创建目录 —— 能力边界
+/// 正好是那一个文件。（`app` 自己的命令不受 Tauri 的 capability ACL 约束，
+/// 与既有的 `api_post` / `open_path` 一致。）
+#[tauri::command]
+pub fn write_text_file(path: String, contents: String) -> Result<(), String> {
+    if path.trim().is_empty() {
+        return Err("导出路径为空".to_string());
+    }
+    std::fs::write(&path, contents).map_err(|e| format!("写入失败：{e}"))
+}
+
 /// 把投放的路径（文件或目录）展开为**图片文件绝对路径列表**，按文件名自然序排列
 ///
 /// 「阅读顺序」在浏览器里是坐标排序（契约 §7.3），而本机投放的对象是磁盘上的文件，
