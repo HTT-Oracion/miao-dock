@@ -49,7 +49,7 @@ import net from 'node:net';
 import path from 'node:path';
 
 import { buildEngineConfig, config } from './config.mjs';
-import { sniffImageType } from './image.mjs';
+import { sniffImageType } from './manga/image.mjs';
 
 /**
  * 仓库根 —— `engine/` 与 `service/` 都在它下面。

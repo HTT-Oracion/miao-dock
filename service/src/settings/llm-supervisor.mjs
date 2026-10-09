@@ -27,8 +27,8 @@ import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 
-import { config } from './config.mjs';
-import { resolveLlmLaunch } from './engine-client.mjs';
+import { config } from '../config.mjs';
+import { resolveLlmLaunch } from '../engine-client.mjs';
 
 /** `sidecar.llm.state` 的取值（沿用 §5.1 `sidecar.state` 的枚举词表） */
 export const LLM_STATES = ['stopped', 'starting', 'running', 'unloading', 'error'];

@@ -43,6 +43,12 @@ alwaysApply: true
 - **新增 / 搬迁目录后必须同步**：`README.md` 目录节（唯一入口）· 本文件 · `AGENTS.md` §1 · `package.json` 命令 ·
   **断言里写死的路径**（不同步的后果是**静默跳过**，不是变红）· 脚本自己的用法注释。
 
+**服务端模块目录（硬规则，ver2.2 起）**：`service/src/` 根**只留跨模块底座**
+（`server.mjs` / `config.mjs` / `errors.mjs` / `engine-client.mjs` / `multipart.mjs` / `parent-watch.mjs`）；
+业务域分子目录 `service/src/manga/`（漫画翻译）· `service/src/settings/`（设置 / 档位 / 诊断）·
+`service/src/music/`（音乐，服务端**占位**，逻辑在 Rust 侧 `app/src-tauri/src/music/`）。
+🔴 **新增服务模块必须归入对应域目录**，不得平铺回 `service/src/` 根；只有**跨域共用**才上提到根。
+
 ## 4. 动手前后
 
 - 动手前：`git status` + `git log -1` 确认基线；本仓库出现过**同仓库并发写入**，改别人未提交的文件要用 `git stash`，不要 `git checkout --`（不可恢复）。

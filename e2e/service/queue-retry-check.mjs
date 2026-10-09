@@ -52,7 +52,7 @@ const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const ENGINE_ENTRY = path.join(ROOT, 'engine', 'src', 'server.mjs');
 const SERVICE_ENTRY = path.join(ROOT, 'service', 'src', 'server.mjs');
 const SERVER_SRC = path.join(ROOT, 'service', 'src', 'server.mjs');
-const STORE_SRC = path.join(ROOT, 'service', 'src', 'store.mjs');
+const STORE_SRC = path.join(ROOT, 'service', 'src', 'manga', 'store.mjs');
 const APP_SRC = path.join(ROOT, 'app', 'src', 'App.tsx');
 
 const REFUTE = process.argv.includes('--refute');
@@ -495,7 +495,7 @@ const main = async () => {
     for (const [i, e] of mut.edits.entries()) {
       if (!originals.has(e.file)) originals.set(e.file, readBytes(e.file));
       const txt = originals.get(e.file).toString('utf8');
-      // 🔴 多行锚点**必须按目标文件的实际 EOL 归一化**：工作区有 CRLF 文件（如 `service/src/store.mjs`），
+      // 🔴 多行锚点**必须按目标文件的实际 EOL 归一化**：工作区有 CRLF 文件（如 `service/src/manga/store.mjs`），
       //    锚点里写死 `\n` 会在 `includes` 那一步就失败 ⇒ 被当成"锚点未找到"**静默跳过**，
       //    表现为「应执行 7 条、实际只反证了 6 条」这种分母虚高（真红过的坑）。
       const eol = txt.includes('\r\n') ? '\r\n' : '\n';

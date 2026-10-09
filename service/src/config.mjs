@@ -14,7 +14,7 @@ import path from 'node:path';
 
 import {
   ENGINE_SETTINGS_KEYS, envVisionTtlSec, mergeWithEnv, readEngineSettings,
-} from './engine-settings.mjs';
+} from './settings/engine-settings.mjs';
 
 export const SERVICE_NAME = 'box-service';
 export const SERVICE_VERSION = '1.2.0';

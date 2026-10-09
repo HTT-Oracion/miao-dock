@@ -31,7 +31,7 @@ process.env.MIAO_TOKEN = process.env.MIAO_TOKEN || '0'.repeat(64);
 process.env.MIAO_STATE_DIR = path.join(TMP, 'state');
 process.env.MIAO_LLM_PORT = String(await findFreePort(9200));
 
-const { LlmSupervisor } = await import(pathToFileURL(path.join(ROOT, 'service', 'src', 'llm-supervisor.mjs')).href);
+const { LlmSupervisor } = await import(pathToFileURL(path.join(ROOT, 'service', 'src', 'settings', 'llm-supervisor.mjs')).href);
 
 const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
 

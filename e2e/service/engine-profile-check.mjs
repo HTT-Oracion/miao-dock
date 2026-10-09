@@ -31,11 +31,14 @@ import { pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const SERVICE_SRC = path.join(ROOT, 'service', 'src');
-const PROFILE_FILE = path.join(SERVICE_SRC, 'engine-profile.mjs');
-const SUPERVISOR_FILE = path.join(SERVICE_SRC, 'llm-supervisor.mjs');
-const DOWNGRADE_FILE = path.join(SERVICE_SRC, 'tier-downgrade.mjs');
-const IDLE_FILE = path.join(SERVICE_SRC, 'idle-policy.mjs');
-const STORE_FILE = path.join(SERVICE_SRC, 'store.mjs');
+// 🔴 ver2.2 模块化：设置域模块下钻到 settings/，漫画域模块下钻到 manga/
+const SETTINGS_SRC = path.join(SERVICE_SRC, 'settings');
+const MANGA_SRC = path.join(SERVICE_SRC, 'manga');
+const PROFILE_FILE = path.join(SETTINGS_SRC, 'engine-profile.mjs');
+const SUPERVISOR_FILE = path.join(SETTINGS_SRC, 'llm-supervisor.mjs');
+const DOWNGRADE_FILE = path.join(SETTINGS_SRC, 'tier-downgrade.mjs');
+const IDLE_FILE = path.join(SETTINGS_SRC, 'idle-policy.mjs');
+const STORE_FILE = path.join(MANGA_SRC, 'store.mjs');
 
 const REFUTE = process.argv.includes('--refute');
 

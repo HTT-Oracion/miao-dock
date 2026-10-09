@@ -10,11 +10,11 @@ import {
   TRANSLATED_SCAN_RE, TASKS_STATE_DIR, IDEMPOTENCY_FILE, PENDING_DIR,
   HIDDEN_COMICS_FILE,
   assertInsideRoot, canonicalize, config, normalizeDirection, seq3,
-} from './config.mjs';
-import { ApiError } from './errors.mjs';
+} from '../config.mjs';
+import { ApiError } from '../errors.mjs';
 import { sniffImageType } from './image.mjs';
-import { translateImage, EngineError } from './engine-client.mjs';
-import { isOomError } from './tier-downgrade.mjs';
+import { translateImage, EngineError } from '../engine-client.mjs';
+import { isOomError } from '../settings/tier-downgrade.mjs';
 import { isSafeDirName } from './names.mjs';
 import { writeSseEvent } from './sse.mjs';
 

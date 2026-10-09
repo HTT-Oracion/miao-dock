@@ -45,7 +45,7 @@ import { encodePng } from '../../engine/src/png.mjs';
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const ENGINE_ENTRY = path.join(ROOT, 'engine', 'src', 'server.mjs');
 const SERVICE_ENTRY = path.join(ROOT, 'service', 'src', 'server.mjs');
-const STORE_SRC = path.join(ROOT, 'service', 'src', 'store.mjs');
+const STORE_SRC = path.join(ROOT, 'service', 'src', 'manga', 'store.mjs');
 const SERVER_SRC = path.join(ROOT, 'service', 'src', 'server.mjs');
 const APP_SRC = path.join(ROOT, 'app', 'src', 'App.tsx');
 

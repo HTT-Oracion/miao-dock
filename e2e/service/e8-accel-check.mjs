@@ -40,7 +40,7 @@ import process from 'node:process';
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const SERVICE_ENTRY = path.join(ROOT, 'service', 'src', 'server.mjs');
 const SERVER_SRC = path.join(ROOT, 'service', 'src', 'server.mjs');
-const PROFILE_SRC = path.join(ROOT, 'service', 'src', 'engine-profile.mjs');
+const PROFILE_SRC = path.join(ROOT, 'service', 'src', 'settings', 'engine-profile.mjs');
 const TOKEN = 'e'.repeat(64);
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-e8-'));
 const REFUTE = process.argv.includes('--refute');
@@ -113,7 +113,7 @@ function httpGetJson(port, pathname, token) {
  */
 function askProfile(expr) {
   const js = `
-    const m = await import(${JSON.stringify(new URL('../../service/src/engine-profile.mjs', import.meta.url).href)});
+    const m = await import(${JSON.stringify(new URL('../../service/src/settings/engine-profile.mjs', import.meta.url).href)});
     const out = (${expr});
     process.stdout.write(JSON.stringify(out));
   `;

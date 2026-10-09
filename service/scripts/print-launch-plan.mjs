@@ -16,7 +16,7 @@
  * ⚠️ S4 起 ③（LLM）的**归属权移交给了 box-service**（《04》§9.1：Tier1 空闲卸载的实现方是
  *    box-service，③ 不在引擎 TTL 范围内）。本脚本仍**照常给出 ③ 的完整配方**，但会带上
  *    `owner: "service"` —— Rust 只拿它**打印生效参数快照**（E1），不再据它 spawn，
- *    真正的拉起由 `service/src/llm-supervisor.mjs` 按**同一份** `resolveLlmLaunch()` 执行。
+ *    真正的拉起由 `service/src/settings/llm-supervisor.mjs` 按**同一份** `resolveLlmLaunch()` 执行。
  *
  * ⚠️ 本脚本 import `config.mjs`，而它在模块顶层会 `ensureToken()` **写 state/token 文件**。
  *    打印配方是只读操作，不该有落盘副作用 ⇒ 先把 `MIAO_TOKEN` 置成固定值

@@ -20,17 +20,17 @@ import {
   ENGINE_VERSION, engineConfigSnapshot, probeEngine, recentStageLog, resolveLlmLaunch,
   availableTiers, TIER_LLM_MODELS,
 } from './engine-client.mjs';
-import { EngineSettingsError, RESTART_REQUIRED_KEYS, assertPatch, readEngineSettings, writeEngineSettings } from './engine-settings.mjs';
-import { ACCEL_LABELS, TIERS as TIERS_ALL, TIER_PEAK_GB, accelOptions, probeHardware, resolveAccel, tierOptions } from './engine-profile.mjs';
-import { createIdleWatcher } from './idle-policy.mjs';
-import { LlmSupervisor } from './llm-supervisor.mjs';
-import { modelStatus } from './model-status.mjs';
-import { createTierDowngrade } from './tier-downgrade.mjs';
+import { EngineSettingsError, RESTART_REQUIRED_KEYS, assertPatch, readEngineSettings, writeEngineSettings } from './settings/engine-settings.mjs';
+import { ACCEL_LABELS, TIERS as TIERS_ALL, TIER_PEAK_GB, accelOptions, probeHardware, resolveAccel, tierOptions } from './settings/engine-profile.mjs';
+import { createIdleWatcher } from './settings/idle-policy.mjs';
+import { LlmSupervisor } from './settings/llm-supervisor.mjs';
+import { modelStatus } from './settings/model-status.mjs';
+import { createTierDowngrade } from './settings/tier-downgrade.mjs';
 import { allFieldStrings, firstField, groupParts, parseMultipartEx } from './multipart.mjs';
-import { normalizeComicName, isSafeDirName } from './names.mjs';
+import { normalizeComicName, isSafeDirName } from './manga/names.mjs';
 import { watchParent } from './parent-watch.mjs';
-import { Store } from './store.mjs';
-import { HEARTBEAT_MS, SSE_HEADERS, writeComment } from './sse.mjs';
+import { Store } from './manga/store.mjs';
+import { HEARTBEAT_MS, SSE_HEADERS, writeComment } from './manga/sse.mjs';
 
 const MAX_BODY = 256 * 1024 * 1024; // 20 张高分辨率原图的宽松上限
 const MIME = {

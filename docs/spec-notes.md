@@ -4837,3 +4837,54 @@ nllb 档的权重按 **HF 缓存布局**落盘（`engine/models.manifest.json` �
    （引擎 2 处 + 服务 1 处 + 插件 1 处），排期时再评估。
 3. **可复现证据保留**：`.tmp/en-test/e2-ocr-confidence-experiment.mjs`（实验脚本）+ 本文数值。
    `.tmp/` 不入库 ⇒ 数值与结论已固化在本文，将来立项不必重推。
+
+## D-101 · ver2.2 服务端模块化：`service/src/` 按业务域拆 `manga` / `settings` / `music`（2026-10-10）
+
+> 由 ver2.2 在线翻译（并入「翻译服务」）引入的代码结构调整而来。目标：让「漫画翻译 / 设置 / 音乐」三块服务代码
+> 各有明确归属，避免 `service/src/` 根继续平铺，也为后续在线翻译新增模块（计划中的 `translate/`）留出范式。
+
+### 一、拆法（`git mv` 保留历史）
+
+| 域 | 目录 | 迁入的模块 |
+|---|---|---|
+| 漫画翻译 | `service/src/manga/` | `store.mjs`（队列与落盘）· `image.mjs` · `names.mjs` · `sse.mjs` |
+| 设置 / 引擎 / 诊断 | `service/src/settings/` | `engine-settings.mjs` · `engine-profile.mjs` · `model-status.mjs` · `idle-policy.mjs` · `tier-downgrade.mjs` · `llm-supervisor.mjs` |
+| 音乐 | `service/src/music/` | **空目录（占位）** —— 音乐逻辑在 Rust 侧 `app/src-tauri/src/music/`，服务端暂无对应代码 |
+
+`service/src/` 根**只留跨模块底座**：`server.mjs`（装配入口）· `config.mjs` · `errors.mjs` ·
+`engine-client.mjs`（引擎适配，唯一耦合点）· `multipart.mjs` · `parent-watch.mjs`。
+
+### 二、连带同步（不同步的后果是**静默跳过**，不是变红）
+
+1. **模块内相对导入**：`../config.mjs` / `../errors.mjs` / `../engine-client.mjs` / `../settings/tier-downgrade.mjs`；
+   同目录引用保持 `./`（如 `manga/store.mjs` → `./image.mjs`）。
+2. **`server.mjs` 的导入前缀**：`./settings/…` · `./manga/…`。
+3. 🔴 **断言里写死的路径**（本次真正踩到的坑）：`e2e/` 下多个脚本用
+   `path.join(ROOT, 'service', 'src', 'store.mjs')` 之类**硬编码**引用被移文件（反证轮要改写它们）——
+   未同步时 `check:profile` 直接 `ERR_MODULE_NOT_FOUND`（**这一条会变红**，属于幸运）；
+   但若脚本被改成"找不到就跳过"，就会退化成**静默跳过**。已同步：
+   `engine-profile-check` · `e8-accel-check` · `e4-tier-check` · `e10-security-check` · `stall-guard-check` ·
+   `retranslate-check` · `queue-retry-check` · `library-manage-check` · `llm-real-timing`。
+
+### 三、新增服务模块的归属判据（写进 `AGENTS.md` §1 与 `.trae/rules/project_rules.md` §3）
+
+- **按业务域归目录**：漫画 → `manga/`，设置 / 档位 / 诊断 → `settings/`，音乐 → `music/`。
+- **只有跨域共用**才允许上提到 `service/src/` 根（如 `config` / `errors` / `engine-client`）。
+- 新增 / 搬迁后**必须同步**：`README.md` 目录节 · `AGENTS.md` §1 · `.trae/rules/project_rules.md` ·
+  **断言里写死的路径**。
+
+### 四、验收（除既有环境性失败外全绿）
+
+| 门 | 结果 |
+|---|---|
+| `npm run check:profile` | **43 / 0** |
+| `npm run check:engine-client` | **50 / 0** |
+| `npm run check:docs` | **16 / 0** |
+| `npm run selftest:service` | 134 / 1（`Unknown signal: SIGSTOP` —— Windows 无 SIGSTOP，**既有环境性失败**） |
+| `npm run check:engine-settings` | 55 / 6（该门按 macOS+16GB 写；本机 Windows+CUDA，**既有环境性失败**） |
+
+### 五、提交信息格式同步（ver2.2 起）
+
+本节点同时把提交规范改为 `类型(模块): 功能简述 + 关键点简述`
+（类型 `feat` / `chore` / `fix` / `style` / `test` / 其他；模块如 `music` / `settings` / `manga` / `docs`…），
+写入 `AGENTS.md` §2 第 9 条 · `.trae/rules/project_rules.md` §5。

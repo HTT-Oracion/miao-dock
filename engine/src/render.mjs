@@ -7,7 +7,7 @@
 //     （校验：取顶部色带中心像素，其色相应 ≈ (seq*47)%360，见 e2e/engine/selftest.mjs）
 //
 // 输出统一为 PNG。真实引擎若保持原容器格式也无需改 Service：落盘扩展名取自对返回字节的嗅探
-// （见 service/src/store.mjs `_writeItem`）。
+// （见 service/src/manga/store.mjs `_writeItem`）。
 import { encodePng, hslToRgb, hueForSeq } from './png.mjs';
 
 /** 纸面与线条色（粉彩同族，用作模拟版式，不替代设计令牌） */

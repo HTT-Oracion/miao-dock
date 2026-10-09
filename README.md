@@ -29,7 +29,10 @@ miao-dock/
 │   ├── src/music/    音乐领域态（zustand store · ipc · platform · 播放器选项）
 │   └── src/components/units/  通用 UI 单元（判据：**不 import 业务层**）
 ├── service/      box-service —— **唯一翻译入口**：鉴权 / 串行队列 / 编号分配 / 落盘（Node，127.0.0.1:5180–5190）
-│   ├── src/        **产品代码**：`server.mjs` 路由 · `store.mjs` 队列与落盘 · `engine-client.mjs` 引擎适配（唯一耦合点）
+│   ├── src/        **产品代码**：`server.mjs` 装配路由 · `config.mjs` / `errors.mjs` / `engine-client.mjs`（引擎适配，唯一耦合点）等**跨模块底座**
+│   │   ├── manga/     漫画翻译域：`store.mjs` 队列与落盘 · `image.mjs` · `names.mjs` · `sse.mjs`
+│   │   ├── settings/  设置域：`engine-settings` · `engine-profile` · `model-status` · `idle-policy` · `tier-downgrade` · `llm-supervisor`
+│   │   └── music/     音乐域：服务端**占位**（逻辑在 Rust 侧 `app/src-tauri/src/music/`）
 │   └── scripts/    **运行期**脚本（只剩一个）：`print-launch-plan.mjs` —— Rust 启动时问它要「启动配方」
 ├── engine/       翻译引擎的**接缝层**（真引擎装在 `runtimes/`，不在库）
 │   ├── VERSIONS.lock         引擎 / 权重 / 外部二进制的**版本锁**（换版本照它来）
@@ -51,7 +54,7 @@ miao-dock/
 └── README.md     本文件
 ```
 
-> **目录约定（动目录之前先读这三条）**
+> **目录约定（动目录之前先读这几条）**
 >
 > 1. **产品 / 验收分家**：`service/src`、`engine/src`、`app/src` 是**产品**；`e2e/` 是**验收**。
 >    判据不是"像不像测试"，而是**产品代码在运行期会不会 fork 它** —— 会 fork 的
@@ -60,6 +63,9 @@ miao-dock/
 >    （历史上散着 `.tmp-e2e` / `.tmp-models` / `.tmp-selftest` / `tmp-engine-test` 四个，已合并 —— 见 `docs/spec-notes.md` D-79）。
 > 3. **新增 / 搬迁目录必须同步更新本节**。同时检查：`AGENTS.md` §1 的分层表 · `.trae/rules/project_rules.md` ·
 >    以及**断言里写死的路径** —— 路径不同步的后果不是变红，而是**静默跳过**。
+> 4. **服务端按域分子目录**（ver2.2 起）：`service/src/manga/`（漫画翻译）· `service/src/settings/`（设置 / 档位 / 诊断）·
+>    `service/src/music/`（音乐，服务端占位）。`service/src/` 根**只留跨模块底座**；**新增服务模块必须归入对应域目录**，
+>    只有**跨域共用**才上提到根（判据与理由见 `docs/spec-notes.md` D-101）。
 
 ## 快速开始（装环境 → 装配引擎 → 启动）
 
