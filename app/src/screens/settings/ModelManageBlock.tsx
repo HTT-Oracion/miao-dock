@@ -69,7 +69,7 @@ export function ModelManageBlock({ item, eng }: { item: SettingItem; eng: Engine
           <div className={v.ok ? 'set-manage-state' : 'set-manage-state is-bad'}>
             {v.ok
               ? `校验通过：${v.pass} / ${v.total} 个文件与清单一致（用时 ${(v.elapsedMs / 1000).toFixed(1)}s）`
-              : `校验完成：不符 ${v.bad} · 缺失 ${v.missing}（共 ${v.total}）—— 点「重新下载模型」补齐`}
+              : `校验完成：不符 ${v.bad} · 缺失 ${v.missing}${v.hf.broken ? ` · HF 布局不可解析 ${v.hf.broken}` : ''}（共 ${v.total}）—— 点「重新下载模型」补齐`}
           </div>
           {shown.length > 0 ? (
             <div className="set-manage-list">

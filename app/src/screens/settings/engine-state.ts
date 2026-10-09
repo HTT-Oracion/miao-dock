@@ -148,7 +148,7 @@ export function useEngineState(onToast: (t: string, k?: 'info' | 'good' | 'bad')
       // `ok:false` 是"校验完成、发现不符"，**不是操作失败** —— 文案必须体现这个区别，
       // 否则用户会以为"校验这个功能坏了"而不是"我的模型坏了"。
       if (r.ok) onToast(`校验通过：${r.pass}/${r.total} 个文件全部一致`, 'good');
-      else onToast(`校验完成：不符 ${r.bad} · 缺失 ${r.missing}（共 ${r.total}）`, 'bad');
+      else onToast(`校验完成：不符 ${r.bad} · 缺失 ${r.missing}${r.hf.broken ? ` · HF 布局不可解析 ${r.hf.broken}` : ''}（共 ${r.total}）`, 'bad');
       return r;
     } catch (e) {
       setVerifyResult(null);

@@ -889,9 +889,15 @@ function handleModelsVerify(req, res, cors) {
         { exitCode: code, timeout, tail: text.split('\n').slice(-8).join('\n') });
     }
     const [pass, bad, missing, total] = [m[1], m[2], m[3], m[4]].map(Number);
+    // HF 缓存布局那一节（只在清单含 `hf` 条目时才有）—— 它才是"文件都在、引擎仍加载不了"的判据，
+    // 所以必须**一并计入 ok**：只比文件存在/哈希会给一个"绿着但跑不起来"的假结论（见 spec-notes D-99）。
+    const mh = /HF 缓存布局：可解析 (\d+) \/ 不可解析 (\d+)（共 (\d+)）/.exec(text);
+    const hfBroken = mh ? Number(mh[2]) : 0;
+    const hfTotal = mh ? Number(mh[3]) : 0;
     sendJson(res, 200, {
-      ok: bad === 0 && missing === 0,
+      ok: bad === 0 && missing === 0 && hfBroken === 0,
       pass, bad, missing, total,
+      hf: { resolvable: hfTotal - hfBroken, broken: hfBroken, total: hfTotal },
       problems,
       rootDir: MODEL_ROOT,
       exitCode: code,

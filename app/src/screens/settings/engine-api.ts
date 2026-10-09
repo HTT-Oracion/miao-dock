@@ -204,6 +204,8 @@ export interface ModelsVerifyResult {
   bad: number;
   missing: number;
   total: number;
+  /** HF 缓存布局（带 `hf` 的条目）：只有**不可解析 0** 才算在 —— 光文件在、布局坏，引擎仍加载不了 */
+  hf: { resolvable: number; broken: number; total: number };
   problems: string[];
   rootDir: string;
   exitCode: number;

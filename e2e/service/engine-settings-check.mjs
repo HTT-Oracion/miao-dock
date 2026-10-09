@@ -569,10 +569,17 @@ async function runPositive() {
       check('U8 返回 rootDir 与 manifest（否则"通过"可能是拿一份被裁过的清单比出来的）',
         v?.rootDir === emptyRoot && typeof v?.manifest === 'string' && v.manifest.endsWith('models.manifest.json'),
         `${v?.rootDir} | ${v?.manifest}`);
-      check('U8b 缺失清单逐条带出（用户要知道**缺的是哪一样**，不是只看到一个数字）',
-        Array.isArray(v?.problems) && v.problems.length === v.missing
-        && v.problems.every((s) => s.includes('缺失')),
-        `problems=${v?.problems?.length}`);
+      // `problems` 现在是**两节合起来**的清单（缺文件 + HF 缓存布局不可解析）⇒ 分母不再是 missing。
+      // 断言的着力点仍是原意：**每一个**缺失条目都单独出现（不是只给一个数字）；
+      // 并让 HF 那一节的不可解析数与 `hf.broken` 对上，且它**必须**反映到 `ok`（见 spec-notes D-99）。
+      const missLines = (v?.problems ?? []).filter((s) => /：缺失$/.test(s));
+      check('U8b 缺失清单逐条带出（用户要知道**缺的是哪一样**，不是只看到一个数字）；HF 布局不可解析项也在同一份 problems 里逐条带出，且计入 ok',
+        Array.isArray(v?.problems)
+        && missLines.length === v.missing
+        && missLines.every((s) => /^✗\s+[A-Za-z0-9_]+：缺失$/.test(s))
+        && v?.hf?.total > 0 && v?.hf?.broken === v.hf.total
+        && v?.ok === false,
+        `problems=${v?.problems?.length} 缺失行=${missLines.length} hf=${JSON.stringify(v?.hf)}`);
       check('U9 校验用的模型根 = 设置里的 modelDir（MIAO_MODEL_ROOT ⇒ source=env）',
         v?.rootDir === emptyRoot, String(v?.rootDir));
     });
