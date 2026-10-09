@@ -23,18 +23,31 @@
 // ⚠️ 这里**不是**客户端状态机（《03》§4.5：引擎的准备/卸载/降档都不新增客户端状态机节点）。
 //    它只喂 `sidecar.llm.state` 这一个诊断字段。
 import { spawn as nodeSpawn } from 'node:child_process';
+import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 
-import { config } from '../config.mjs';
+import { config, REPO_ROOT } from '../config.mjs';
 import { resolveLlmLaunch } from '../engine-client.mjs';
 
 /** `sidecar.llm.state` 的取值（沿用 §5.1 `sidecar.state` 的枚举词表） */
 export const LLM_STATES = ['stopped', 'starting', 'running', 'unloading', 'error'];
 
-const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
-const CHILD_WATCH = path.join(REPO_ROOT, 'engine', 'scripts', 'child-watch.mjs');
+/**
+ * `child-watch` 看护器的绝对路径 —— 由 `config.REPO_ROOT`（**唯一仓库根**）拼出。
+ *
+ * 🔴 不再在本文件 `path.resolve(import.meta.dirname, '..', '..')`：本文件 ver2.2 被搬进了
+ *    `service/src/settings/`，同样的 dots 数只到 `service/` ⇒ 路径被算成
+ *    `service/engine/scripts/child-watch.mjs`，子进程 `Cannot find module` ⇒ ③ LLM 起不来
+ *    ⇒ 翻译阶段报 `Sakura API请求失败…：Connection error.`（本次故障的直接根因）。
+ *
+ * 导出是给断言用的：`check:profile` 的 L 组直接钉「这个路径存在」——
+ * 谁再把本文件搬一层、或改动仓库根算法，`npm run check:profile` 必须立刻变红，
+ * 而不是等到用户点翻译才以「Connection error」的面目出现。
+ */
+export const CHILD_WATCH_PATH = path.join(REPO_ROOT, 'engine', 'scripts', 'child-watch.mjs');
+const CHILD_WATCH = CHILD_WATCH_PATH;
 
 const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
 
@@ -162,6 +175,13 @@ export class LlmSupervisor {
   async _doStart(timeoutMs) {
     this.state = 'starting';
     this.lastError = null;
+
+    // 🔴 起进程**之前**先确认看护器脚本真的在盘上。少了这一步，路径算错（或文件被移走）的表现是
+    //    子进程瞬时 `MODULE_NOT_FOUND` 退出、而 supervisor 只报一句「③ LLM 未在 180s 内就绪」
+    //    —— 把「路径算错了」伪装成「模型加载慢/超时」，正是本次排查一开始被误导的地方。
+    if (this.watch && !fs.existsSync(CHILD_WATCH)) {
+      throw new Error(`③ 看护器脚本不存在：${CHILD_WATCH}（仓库根算错或文件被移走）`);
+    }
 
     const head = this.watch ? process.execPath : this.launch.cmd[0];
     const args = this.watch

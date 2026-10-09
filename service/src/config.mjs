@@ -60,6 +60,18 @@ const ENGINE_TIMEOUT_MS = envInt('MIAO_ENGINE_TIMEOUT_MS', ENGINE_TIMEOUT_DEFAUL
 const SRC_DIR = import.meta.dirname; // .../service/src
 export const PKG_DIR = path.resolve(SRC_DIR, '..'); // .../service
 
+/**
+ * 仓库根 —— `engine/` `service/` `app/` 都在它下面。
+ *
+ * 🔴 由 `config.mjs` 给出**唯一答案**，而不是让各模块各自 `path.resolve(import.meta.dirname, '..', '..')`。
+ *    后者把「仓库根」绑在了**调用方自己的层级**上：模块一旦被搬进子目录（ver2.2 的
+ *    `service/src/settings/` `manga/` 分区），dots 数不变但根少了一级 —— 症状是「某个子进程
+ *    起不来」这类离根因极远的报错（本次 ver2.2 拆分即踩：③ LLM 的 `child-watch` 路径被算成
+ *    `service/engine/scripts/…` ⇒ `MODULE_NOT_FOUND` ⇒ 翻译阶段连着 `Connection error`）。
+ *    `config.mjs` 是**永不需要搬动**的跨模块底座 ⇒ 把根锚在它身上，搬谁都不会算错。
+ */
+export const REPO_ROOT = path.resolve(SRC_DIR, '..', '..');
+
 function envInt(name, def) {
   const raw = process.env[name];
   if (raw === undefined || raw === '') return def;

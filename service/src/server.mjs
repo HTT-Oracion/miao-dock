@@ -9,8 +9,8 @@ import http from 'node:http';
 import path from 'node:path';
 
 import {
-  API_VERSION, BASE_PATH, BATCH_LIMIT, ENGINE_SETTINGS_FILE, ORIGINAL_SCAN_RE, ROOT_DIR,
-  SERVICE_NAME, SERVICE_VERSION, STATE_DIR, TASKS_STATE_DIR, TRANSLATED_SCAN_RE,
+  API_VERSION, BASE_PATH, BATCH_LIMIT, ENGINE_SETTINGS_FILE, ORIGINAL_SCAN_RE, REPO_ROOT,
+  ROOT_DIR, SERVICE_NAME, SERVICE_VERSION, STATE_DIR, TASKS_STATE_DIR, TRANSLATED_SCAN_RE,
   TOKEN_FILE, TRANSLATE_DIRECTIONS, assertInsideRoot, config, engineSettingsFile,
   isSupportedDirection, normalizeDirection,
   readIdleSettings, validateRoot,
@@ -193,7 +193,7 @@ const MODEL_ROOT = config.engineModelDir;
 // 盘况之间切换，而这两条分支各对应一个不同的 503 错误码（要分别断言）。
 // ⚠️ 与 `MIAO_MODEL_ROOT` 成对使用；产品路径不设置它（清单永远是入库的那一份）。
 const MODEL_MANIFEST = process.env.MIAO_MODEL_MANIFEST
-  || path.join(path.resolve(import.meta.dirname, '..', '..'), 'engine', 'models.manifest.json');
+  || path.join(REPO_ROOT, 'engine', 'models.manifest.json');
 
 /**
  * 「重新下载模型」的执行体（《02》§5 模型管理的两个动作之一）。
@@ -215,7 +215,7 @@ const MODEL_MANIFEST = process.env.MIAO_MODEL_MANIFEST
  */
 const MODEL_DOWNLOAD_SCRIPT = path.resolve(
   process.env.MIAO_MODEL_DOWNLOAD_SCRIPT
-  || path.join(import.meta.dirname, '..', '..', 'engine', 'scripts', 'fetch-models.mjs'),
+  || path.join(REPO_ROOT, 'engine', 'scripts', 'fetch-models.mjs'),
 );
 /** 输出尾巴保留多少行 —— 够看清"卡在哪一步/报了什么错"，又不至于把内存当日志盘 */
 const MODEL_DOWNLOAD_TAIL_MAX = 40;
@@ -872,7 +872,7 @@ function handleEngineUnload(req, res, cors) {
  */
 function handleModelsVerify(req, res, cors) {
   return readBody(req).then(async () => {
-    const script = path.resolve(import.meta.dirname, '..', '..', 'engine', 'scripts', 'fetch-models.mjs');
+    const script = path.resolve(REPO_ROOT, 'engine', 'scripts', 'fetch-models.mjs');
     const started = Date.now();
     const { code, stdout, stderr, timeout } = await runVerifyChild(script, {
       MIAO_MODEL_ROOT: MODEL_ROOT,

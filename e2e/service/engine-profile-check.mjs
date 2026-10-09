@@ -149,7 +149,21 @@ async function runLlmSupervisor() {
   process.env.MIAO_STATE_DIR = path.join(TMP, 'state');
   const port = Number(process.env.MIAO_LLM_PORT);
 
-  const { LlmSupervisor } = await import(pathToFileURL(SUPERVISOR_FILE).href);
+  const { LlmSupervisor, CHILD_WATCH_PATH } = await import(pathToFileURL(SUPERVISOR_FILE).href);
+
+  // L0 · 回归钉子（与真档共用**同一段**路径算法，故在 mock 档也照验）
+  // ③ 真档要用 `engine/scripts/child-watch.mjs` 包一层（E11）；该路径由**仓库根**推出，而仓库根
+  // 是"从本文件位置往回数 dots"算的 —— ver2.2 把 `llm-supervisor.mjs` 搬进 `service/src/settings/`
+  // 后，dots 数没变、根却少一级，路径落成 `service/engine/scripts/…`，症状是子进程
+  // `Cannot find module` ⇒ ③ LLM 起不来 ⇒ 用户点翻译只看到 `Connection error`（本次故障的根因）。
+  // 这里把"看护器路径必须落在**仓库根**的 `engine/scripts` 下、且真的存在"钉死：谁再搬动本文件、
+  // 或把仓库根算法改坏，本断言立刻变红，而不是等用户点翻译才发现。`ROOT` 是本脚本**独立**算出的
+  // 仓库根，与被测模块各算各的 —— 不是把实现抄一遍，而是拿两个独立来源对账。
+  const expectedWatch = path.join(ROOT, 'engine', 'scripts', 'child-watch.mjs');
+  const watchExists = fs.existsSync(CHILD_WATCH_PATH);
+  check('L0 ③ 看护器路径落在**仓库根**下且真实存在（防「搬文件后仓库根少算一级」静默起不来）',
+    CHILD_WATCH_PATH === expectedWatch && watchExists,
+    `CHILD_WATCH_PATH=${CHILD_WATCH_PATH}（期望 ${expectedWatch}；存在=${watchExists}）`);
 
   const logs = [];
   const sup = new LlmSupervisor({ log: (m) => logs.push(m) });
@@ -716,9 +730,22 @@ const MUTATIONS = [
     replace: '      createdAt: nowIso(),',
     expect: ['I10'],
   },
+  {
+    // 回归钉子：③ 真档靠 `child-watch.mjs` 包一层（E11），其路径由**仓库根**推出。ver2.2 把
+    // `llm-supervisor.mjs` 搬进 `service/src/settings/` 时，"按 dots 数回退"的仓库根少算一级 ⇒
+    // 路径落到 `service/engine/scripts/…` ⇒ 子进程 `Cannot find module` ⇒ ③ 起不来 ⇒
+    // 用户点翻译只看到 `Connection error`。这里把仓库根**故意多套一层 `service/`** 还原那个坏法，
+    // L0「路径落在仓库根下且存在」必须变红。
+    name: 'O · ③ 看护器路径的仓库根**多套一层**（还原 ver2.2 搬家后少算一级的坏法）'
+      + '⇒ L0 「路径落在仓库根下且存在」必须变红',
+    file: SUPERVISOR_FILE,
+    find: "export const CHILD_WATCH_PATH = path.join(REPO_ROOT, 'engine', 'scripts', 'child-watch.mjs');",
+    replace: "export const CHILD_WATCH_PATH = path.join(REPO_ROOT, 'service', 'engine', 'scripts', 'child-watch.mjs'); // refute：仓库根少算一级",
+    expect: ['L0'],
+  },
 ];
 
-const EXPECTED_MUTATIONS = 14; // 分母写死
+const EXPECTED_MUTATIONS = 15; // 分母写死
 
 function sha(p) { return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex'); }
 

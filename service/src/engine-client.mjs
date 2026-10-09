@@ -48,15 +48,12 @@ import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 
-import { buildEngineConfig, config } from './config.mjs';
+import { buildEngineConfig, config, REPO_ROOT } from './config.mjs';
 import { sniffImageType } from './manga/image.mjs';
 
-/**
- * 仓库根 —— `engine/` 与 `service/` 都在它下面。
- * 放在文件顶部（而不是原先"启动配方"那一节里）是因为 `ENGINE_VERSION` 在模块初始化时
- * 就要用它去读清单：const 有 TDZ，靠"反正调用得晚"是**时序巧合**，不是结构保证。
- */
-const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
+// 仓库根（`engine/` `service/` 都在它下面）由 `config.mjs` 唯一给出，**不在本文件按 dot 数推算** ——
+// 否则本文件一旦被搬进子目录就会静默算错根（见 config.mjs 的 `REPO_ROOT` 注释）。
+// `ENGINE_VERSION` 在模块初始化时就要用它去读清单，故它必须在 import 期已就绪（config 先于本文件求值）。
 
 /** 引擎错误：带 code 便于上层区分「引擎不可用」与「单图翻译失败」 */
 export class EngineError extends Error {
