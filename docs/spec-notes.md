@@ -4911,13 +4911,31 @@ nllb 档的权重按 **HF 缓存布局**落盘（`engine/models.manifest.json` �
 | 补丁 | 文件 | 改动 |
 |---|---|---|
 | D-102 | `rendering/text_render.py` | `load_char` 加 `FT_LOAD_NO_BITMAP \| FT_LOAD_RENDER`（强制矢量轮廓，防御性） |
-| D-103 | `rendering/text_render.py` | FALLBACK 首选 `msyh.ttc`（微软雅黑笔画饱满；fonts/ 上游自带，无新增分发物） |
+| D-103 | `rendering/text_render.py` | FALLBACK 首选字体（初版 `msyh.ttc`；同日改为 **Zen Maru Gothic 圆体**，见下节） |
 | D-104 | `rendering/__init__.py` | `warpPerspective` flags `INTER_LINEAR → INTER_CUBIC`（放大映射更锐） |
 
 **取证**：`engine-patches-check` 正向 6/0（EXPECTED_PATCHES 7→9）· 反证 4/0 ·
-Python `py_compile` 通过 · 渲染冒烟（`set_font(None)` 首选=Microsoft YaHei，16/20/24/32px
-抗锯齿像素占比 0.45~0.77，样张 `.tmp/render-after.png` 清晰）。
+Python `py_compile` 通过 · 渲染冒烟（16/20/24/32px 抗锯齿像素占比 0.45~0.77）。
 **待用户实测**：整页真实翻译（含 INPAINT→RENDER 全链路）后肉眼确认。
+
+### D-103 追加：首选字体换 Zen Maru Gothic 圆体（同日）
+
+用户看样张后选定 **Zen Maru Gothic**（圆体；前端 UI 也在用同族）。要点：
+- **它是日文字体**（JIS 汉字集），简体中文缺约 27% 字形（实测样例缺 `们伟你别执说`）⇒
+  `get_char_glyph` **逐字回退**到紧随其后的 `msyh.ttc` ⇒「圆体 + 黑体」混排、但不出豆腐块。
+  若要**不混排**需换全简中圆体（**幼圆** / **资源圆体 Resource Han Rounded**）。
+- 该 TTF **不在上游引擎包内** ⇒ 新增清单条目 **`font_zen_maru_gothic`**
+  （`engine/models.manifest.json`，`set: visual`，`dest: models-store/fonts/…` →
+  `linkTo: fonts/…`，sha256 `a0c0b53543e0…`；`url`/`sources` 钉到 google/fonts 的
+  commit `633bf7f8` 以保证字节可复现；SIL OFL 可自由分发）⇒ `fetch:models` 会把
+  它下载并**硬链接**进 `src/fonts/`。🔴 文件缺失时渲染**静默回退** msyh（不报错）。
+- 取证：**真实重放** `setup-engine.mjs --source` 干净命中（得到 4 项列表）· `check:models`
+  **38/0**（M1 现 17 条）· 反证 **6/6** · `check:engine-patches` **6/0** · 反证 **4/4** ·
+  `check:docs` **16/0** · `fetch:models --id font_zen_maru_gothic` 下载+sha256 校验+硬链
+  （`store ino == src ino`）通过 · 冒烟首选 = `Zen Maru Gothic`。
+- 🔴 教训沿用：改 `runtimes/` 里的引擎源码必须**登记进 `ENGINE_PATCHES`**（源码不入库，
+  重装即丢）；同理**清单外的资产**（如手工丢进 `fonts/` 的字体）也不能留 —— 要么进
+  manifest，要么删掉。
 
 **用户调试入口**：想回退某一项，直接改 `engine/scripts/setup-engine.mjs` 的 ENGINE_PATCHES
 （删除对应条目 + 改 `EXPECTED_PATCHES` 分母）后重放 `node engine/scripts/setup-engine.mjs --source`；

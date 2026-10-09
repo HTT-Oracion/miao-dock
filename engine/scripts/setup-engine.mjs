@@ -384,20 +384,29 @@ export const ENGINE_PATCHES = [
     }],
   },
   {
-    id: 'render-font-msyh-first',
+    id: 'render-font-zen-first',
     mark: '# miao-dock 补丁 D-103',
     file: srcPy('manga_translator', 'rendering', 'text_render.py'),
-    desc: 'FALLBACK 字体首选微软雅黑（Arial-Unicode 中文笔画细，插值后发虚，D-103）',
+    desc: 'FALLBACK 字体首选 Zen Maru Gothic 圆体（简体缺字由 msyh 逐字兜底），D-103',
     edits: [{
+      // 锚点 = 上游原样 FALLBACK_FONTS 的前三条（含 `[` 行）。取到**第二条字体行**（msyh）以便
+      // 覆盖上游的 Arial 首选；替换后余下的 msgothic 行自然顺延 ⇒ 得到干净的 4 项列表。
       anchor: [
         'FALLBACK_FONTS = [',
         "    os.path.join(BASE_PATH, 'fonts/Arial-Unicode-Regular.ttf'),",
+        "    os.path.join(BASE_PATH, 'fonts/msyh.ttc'),",
       ].join('\n'),
       patch: [
-        '# miao-dock 补丁 D-103：FALLBACK 字体首选微软雅黑。原首选 Arial-Unicode-Regular 的中文笔画',
-        '# 很细，经 warpPerspective 插值后发虚；msyh.ttc（微软雅黑）笔画饱满、清晰度明显更好。',
-        '# 两者都在 fonts/ 下（上游自带），只改优先级、不新增分发物。用户显式配 font_path 时仍最优先。',
+        '# miao-dock 补丁 D-103：FALLBACK 字体首选 Zen Maru Gothic（圆体；Google Fonts，SIL OFL）。',
+        '# 缘起：原首选 Arial-Unicode-Regular 中文笔画太细，经 warpPerspective 插值后发虚。',
+        '# ⚠️ Zen Maru Gothic 是**日文字体**（JIS 汉字集），简体字缺约 27% ⇒ 靠紧随其后的 msyh.ttc',
+        '#    **逐字兜底**（get_char_glyph 遍历 FONT_SELECTION 逐字回退）⇒ 结果是「圆体 + 黑体」混排，',
+        '#    但不出豆腐块。想要不混排需换全简中的圆体（幼圆 / 资源圆体 Resource Han Rounded）。',
+        '# 🔴 Zen 的 TTF 不在上游包内，由 models.manifest.json 的 font_zen_maru_gothic 条目注入 fonts/；',
+        '#    它缺失时**静默回退**到 msyh（不报错）⇒ 换装后请确认该文件确实在 fonts/ 下。',
+        '# 用户显式配 font_path 时仍最优先。',
         'FALLBACK_FONTS = [',
+        "    os.path.join(BASE_PATH, 'fonts/ZenMaruGothic-Regular.ttf'),",
         "    os.path.join(BASE_PATH, 'fonts/msyh.ttc'),",
         "    os.path.join(BASE_PATH, 'fonts/Arial-Unicode-Regular.ttf'),",
       ].join('\n'),
