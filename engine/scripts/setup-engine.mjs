@@ -413,6 +413,35 @@ export const ENGINE_PATCHES = [
     }],
   },
   {
+    id: 'render-font-lxgw-first',
+    mark: '# miao-dock 补丁 D-105',
+    file: srcPy('manga_translator', 'rendering', 'text_render.py'),
+    desc: 'FALLBACK 字体首选霞鹜文楷 GB（LXGW WenKai GB，GB18030 简体全覆盖），D-105',
+    edits: [{
+      // 锚点 = D-103 打完后的 FALLBACK_FONTS 前三行（`[` + Zen 首选行 + msyh 行）。
+      // 🔴 本条**依赖 D-103 先应用**（靠数组顺序保证）；两条补丁的 mark 与锚点都互不相交 ⇒ 各自幂等：
+      //    全新环境：上游 →(D-103)→ Zen 首选 →(D-105)→ LXGW 首选；
+      //    已打过 D-103 的环境：D-103 跳过（mark 命中），本条单独命中自己的锚点。
+      anchor: [
+        'FALLBACK_FONTS = [',
+        "    os.path.join(BASE_PATH, 'fonts/ZenMaruGothic-Regular.ttf'),",
+        "    os.path.join(BASE_PATH, 'fonts/msyh.ttc'),",
+      ].join('\n'),
+      patch: [
+        '# miao-dock 补丁 D-105：FALLBACK 字体首选霞鹜文楷 GB（LXGW WenKai GB；GB18030 简体全覆盖的楷体）。',
+        '# 缘起：Zen Maru Gothic 是**日文字体**（JIS 汉字集），简体字缺约 27% ⇒ 由 msyh 逐字兜底后',
+        '#   呈「圆体 + 黑体」混排。霞鹜文楷 GB 简体基本同源 ⇒ 一篇简中译文不再混排。',
+        '# ⚠️ 霞鹜文楷**无 Bold 字重**（上游仅 Light / Regular / Medium）⇒ 取 **Medium** 档充当加粗观感。',
+        '# 🔴 其 TTF 不在上游包内，由 models.manifest.json 的 font_lxgw_wenkai_gb 条目注入 fonts/；',
+        '#    缺失时**静默回退**到紧随的 Zen / msyh（不报错）⇒ 换装后请确认该文件确实在 fonts/ 下。',
+        'FALLBACK_FONTS = [',
+        "    os.path.join(BASE_PATH, 'fonts/LXGWWenKaiGB-Medium.ttf'),",
+        "    os.path.join(BASE_PATH, 'fonts/ZenMaruGothic-Regular.ttf'),",
+        "    os.path.join(BASE_PATH, 'fonts/msyh.ttc'),",
+      ].join('\n'),
+    }],
+  },
+  {
     id: 'render-warp-cubic',
     mark: '# miao-dock 补丁 D-104',
     file: srcPy('manga_translator', 'rendering', '__init__.py'),

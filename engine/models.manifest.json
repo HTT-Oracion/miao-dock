@@ -11,8 +11,8 @@
   "hfNote": "带 `hf` 字段的条目是 **HuggingFace 缓存布局**：权威副本在 store 的 `blobs/<blob>`，引擎树里要同时存在 `<cache>/blobs/<blob>`（HF 的物理副本）与 `<cache>/snapshots/<revision>/<filename>`（HF 的解析入口，靠 `refs/main` 指向 revision）。三者由 `linkModels` 一并重建（零网络）。约定：带 `hf` 的条目其 `linkTo` **必须**落在 `blobs/` 下 —— `linkModels` 据此推出 `<cache>` 根。判据是 `huggingface_hub.try_to_load_from_cache()` 返回路径而非 None（见 docs/spec-notes.md D-99）。",
   "sets": {
     "visual": {
-      "desc": "默认流水线必需项：4 个视觉模型（detector=default / inpainter=lama_large / ocr=48px + 字母表）+ 1 个译文渲染字体（Zen Maru Gothic 圆体，见补丁 D-103）。⚠️ 字体缺失不致命（渲染会静默回退 msyh），但会丢失圆体效果 ⇒ 仍按必需件随组下载。",
-      "files": ["detect_default", "inpainter_lama_large", "ocr_48px", "ocr_alphabet_v7", "font_zen_maru_gothic"]
+      "desc": "默认流水线必需项：4 个视觉模型（detector=default / inpainter=lama_large / ocr=48px + 字母表）+ 2 个译文渲染字体（首选霞鹜文楷 GB，见补丁 D-105；次级 Zen Maru Gothic 圆体，见补丁 D-103）。⚠️ 字体缺失不致命（渲染会静默回退 msyh），但会丢失楷体/圆体效果 ⇒ 仍按必需件随组下载。",
+      "files": ["detect_default", "inpainter_lama_large", "ocr_48px", "ocr_alphabet_v7", "font_lxgw_wenkai_gb", "font_zen_maru_gothic"]
     },
     "llm": {
       "desc": "Sakura LLM 权重（经 llama-server 以 OpenAI 兼容接口提供）。⚠️ CC BY-NC-SA 4.0，禁止商用；对外分发前必须先有法务结论（VERSIONS.lock §6）",
@@ -105,7 +105,21 @@
         "https://cdn.jsdelivr.net/gh/google/fonts@633bf7f8bd80897a8c2680385c53fb0ac4399f6e/ofl/zenmarugothic/ZenMaruGothic-Regular.ttf"
       ],
       "license": "SIL OFL 1.1（Google Fonts：Zen Maru Gothic，可自由分发，无商用限制）",
-      "note": "译文渲染的首选字体（`rendering/text_render.py` 的 FALLBACK_FONTS[0]，见补丁 D-103）。落盘到引擎 `src/fonts/`。⚠️ 它是**日文字体**（JIS 汉字集），简体中文缺约 27% 字形 ⇒ 由紧随其后的 msyh.ttc 逐字兜底（get_char_glyph 遍历 FONT_SELECTION 逐字回退）⇒ 圆体+黑体混排、但不出豆腐块。它不是上游引擎包自带的 ⇒ 必须靠本条目注入；缺失时渲染会**静默回退**到 msyh（不报错）。Google Fonts 仓库无逐字体 tag，故 url/sources 均钉到该文件的 commit sha 以保证字节可复现。"
+      "note": "译文渲染的**次级**字体（`rendering/text_render.py` 的 FALLBACK_FONTS[1]，见补丁 D-103/D-105）。落盘到引擎 `src/fonts/`。⚠️ 它是**日文字体**（JIS 汉字集），简体中文缺约 27% 字形 ⇒ 由紧随其后的 msyh.ttc 逐字兜底（get_char_glyph 遍历 FONT_SELECTION 逐字回退）⇒ 圆体+黑体混排、但不出豆腐块。它不是上游引擎包自带的 ⇒ 必须靠本条目注入；缺失时渲染会**静默回退**到 msyh（不报错）。Google Fonts 仓库无逐字体 tag，故 url/sources 均钉到该文件的 commit sha 以保证字节可复现。"
+    },
+    {
+      "id": "font_lxgw_wenkai_gb",
+      "set": "visual",
+      "dest": "models-store/fonts/LXGWWenKaiGB-Medium.ttf",
+      "linkTo": "fonts/LXGWWenKaiGB-Medium.ttf",
+      "sha256": "b885c51ec0d3f325974013801dfcefda1a9ba0bf385c607cf5f2582dafa2e5ab",
+      "sizeBytes": 25745488,
+      "url": "https://github.com/lxgw/LxgwWenkaiGB/releases/download/v1.522/LXGWWenKaiGB-Medium.ttf",
+      "sources": [
+        "https://ghfast.top/https://github.com/lxgw/LxgwWenkaiGB/releases/download/v1.522/LXGWWenKaiGB-Medium.ttf"
+      ],
+      "license": "SIL OFL 1.1（霞鹜文楷 GB / LXGW WenKai GB，可自由分发，无商用限制）",
+      "note": "译文渲染的**首选**字体（`rendering/text_render.py` 的 FALLBACK_FONTS[0]，见补丁 D-105）。落盘到引擎 `src/fonts/`。✅ 走 GB18030 简体全覆盖（与 Zen Maru Gothic 的 JIS 汉字集不同，简中译文基本同源、不再混排），楷体。⚠️ 霞鹜文楷**无 Bold 字重**（上游仅 Light / Regular / Medium）⇒ 取 **Medium** 档（笔画更饱满、≈ 500）充当加粗观感。它不是上游引擎包自带的 ⇒ 必须靠本条目注入；缺失时渲染会**静默回退**到紧随的 Zen / msyh（不报错）。release 资产自带 tag（非 git 树文件），url/sources 钉 v1.522 以保证字节可复现。"
     },
     {
       "id": "sakura_1_5b_fp16",

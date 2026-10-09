@@ -4937,6 +4937,112 @@ Python `py_compile` 通过 · 渲染冒烟（16/20/24/32px 抗锯齿像素占比
   重装即丢）；同理**清单外的资产**（如手工丢进 `fonts/` 的字体）也不能留 —— 要么进
   manifest，要么删掉。
 
+### D-105 · 首选字体改霞鹜文楷 GB（LXGW WenKai GB）—— 简体全覆盖楷体（2026-10-10）
+
+用户看样张后改选 **霞鹜文楷 GB**（简体全覆盖楷体；D-103 的 Zen Maru Gothic 退居次级）。要点：
+- **为什么不混排**：Zen 是日文字体（JIS 汉字集），简体缺约 27% ⇒ 靠 `msyh` 逐字兜底后呈
+  「圆体 + 黑体」混排；LXGW WenKai GB 走 **GB18030 简体全覆盖**（派生自 Klee One / Fontworks）
+  ⇒ 一篇简中译文基本同源、不再混排，且楷体笔画（**Medium 档**）饱满。
+- **字重档 = Medium**：霞鹜文楷**无 Bold 字重**（上游只发布 Light / Regular / Medium）⇒ 取 **Medium**
+  档（笔画更饱满、≈ 500）充当「加粗观感」；前端声明为 `font-weight: 400`（全站主字重即 Medium），
+  UI 里 700 处由浏览器**合成加粗**（fake bold，非原生字重）。
+- **清单条目**：新增 **`font_lxgw_wenkai_gb`**（`engine/models.manifest.json`，`set: visual`，
+  `dest: models-store/fonts/LXGWWenKaiGB-Medium.ttf` → `linkTo: fonts/…`，`sha256 b885c51ec0d3…`，
+  `sizeBytes 25745488`；`url`/`sources` 钉 release **v1.522**；SIL OFL 1.1）⇒ `fetch:models`
+  下载并**硬链接**进 `src/fonts/`。🔴 缺失时静默回退 Zen / msyh（不报错）。
+- **补丁链（新增 D-105，不动 D-103）**：D-105 的**锚点 = D-103 产出**的 `FALLBACK_FONTS` 前三行，
+  patch 在其前插入 LXGW 行 ⇒ 终态 `[LXGW, Zen, msyh, Arial, msgothic]`。两条补丁的 mark 与锚点
+  都互不相交 ⇒ **各自幂等**：全新环境 `上游 →(D-103)→ Zen →(D-105)→ LXGW`；已打 D-103 的环境
+  D-103 跳过、D-105 单独命中。🔴 换 `runtimes/` 源码必须同步 `ENGINE_PATCHES`（D-103 的教训）。
+- **前端同改**：`app/src/theme/tokens.ts` 的 `FONT.display/body/numeric` **三栈首位**统一前置
+  `'LXGW WenKai GB'`；随仓字体放 `app/src/assets/fonts/lxgw-wenkai-gb/`（**Medium 档**单体 TTF
+  + `font.css`，`@font-face` 声明 `font-weight: 400`），由 `main.tsx` 从 JS 侧 import（同 GenJyuu
+  那份的坑：Sass 对带 `.css` 的 `@use` 静默丢弃）。
+
+**取证**：补丁链反证 15 项全绿（含「D-105 anchor 落在 D-103 产出内」「终态 LXGW 在首位且注释无重复」）·
+`check:engine-patches` 分母 9→10 · 前端 `npm run build` 通过 · `fetch:models --link` 硬链成功（同 inode）。
+
+> ⚠️ **实验态（本轮未提交）**：若采纳，需同步 `e2e/settings-media-check.mjs` 的 FONT 组
+> （现值断言「`FONT.body` 首位 = `GenJyuuGothicP`」，会被前置 LXGW 打红，含 3 条反证轮的 find 锚点）；
+> 若不采纳，回滚清单：删 D-105 补丁 + 清单条目 + 前端字体目录与 import + `FONT` 三行复原 +
+> `EXPECTED_PATCHES` 改回 9。
+
 **用户调试入口**：想回退某一项，直接改 `engine/scripts/setup-engine.mjs` 的 ENGINE_PATCHES
 （删除对应条目 + 改 `EXPECTED_PATCHES` 分母）后重放 `node engine/scripts/setup-engine.mjs --source`；
 或临时改 `runtimes/.../rendering/` 下两文件（重装会丢，以补丁表为准）。
+
+### D-106 · UI 字体改悠哉字体（Yozai）—— 前端三栈首位（2026-10-10）
+
+用户要求把 UI 的 `FONT.display / body / numeric` **默认改为 Yozai Font**；**引擎译文（D-105）不动**。要点：
+- **字体**：悠哉字体（`lxgw/yozai-font`，lxgw 基于日文手写体 Y.OzFont 改造，拼接补字；GB2312 6763 +
+  通用规范汉字表 8105 + BIG5-2003 13058；手写日系 Q 感）· SIL OFL 1.1 可自由分发。
+- **族名**（解析自 name table）：Regular 文件 `Family(1)='Yozai'`（中文 `悠哉字体`）；
+  Medium 文件 `Family(1)='Yozai Medium'`、`TypoFamily(16)='Yozai'`+`TypoSub(17)='Medium'`。
+  ⇒ CSS 里自定 `font-family: 'Yozai'`（`@font-face` 的族名由我们声明，与文件 name table 无关）。
+- ⚠️ release **v0.868 无 Bold**（只发 Light / Regular / Medium）⇒ `font.css` **400→Regular、
+  700→Medium**（把 Medium 当加粗字重，避免浏览器合成加粗发糊）。
+- **前端同改**：新增 `app/src/assets/fonts/yozai-font/`（`Yozai-Regular.ttf` + `Yozai-Medium.ttf`
+  + `font.css`，由 `main.tsx` 从 JS 侧 import）；`tokens.ts` 三栈首位前置 `'Yozai'`，
+  LXGW / GenJyuu / Zen 退居回退位。**LXGW 前端资产暂留**（用户未要求删）。
+- **取证**：前端 `vite build` 通过 · `dist/` 含 `Yozai-Regular-*.ttf` + `Yozai-Medium-*.ttf`。
+- ⚠️ **实验态（本轮未提交）**：`e2e/settings-media-check.mjs` 的 `FONT.genjyuu.bodyFirst` 仍红
+  （写死「body 首位 = `GenJyuuGothicP`」，现首位是 `Yozai`；同 D-105 那条），采纳时一并改中性判据。
+
+### D-107 · UI 字体改狮尾圆体 · 简体（Swei Gothic CJK SC）—— 前端三栈首位（2026-10-10）
+
+用户要求把 UI 三栈首位换成**狮尾圆体**看效果；**引擎译文（D-105）不动**；**已下载字体（Yozai/LXGW）不删**。要点：
+
+- **字体**：狮尾圆体（`max32002/swei-gothic`，max 基于**思源黑体**「拔脚 + 加圆」改造；简中/繁中/日/韩四子集；
+  **7 档字重齐全，含原生 Bold**）· SIL OFL 1.1。本仓取**简体分支（CJK SC）**两档：Regular(400) + Bold(700)。
+- **载体选 WebFont 目录的 woff2**（每档约 6 MB）而非 TTF（约 16 MB）：体积省 63%。⚠️ 用 fontTools+brotli
+  实测两版 **name table 完全一致**（TypoFamily 同为 `Swei Gothic CJK SC`），不是猜的。
+- 🔴 **「每字重一个独立 family」坑**：狮尾的 Family(1) 是**逐档命名**的（`… SC Regular` / `… SC Bold`，
+  霞鹜文楷 Medium 档同款套路）⇒ CSS 族名**必须**用 TypoFamily(16) 的 `'Swei Gothic CJK SC'`，
+  再由 `font-weight` 区分两档；写 Family(1) 的名字 ⇒ 700 取不到 Bold 那条 face。
+- **前端同改**：新增 `app/src/assets/fonts/swei-gothic/`（两档 woff2 + `font.css`，由 `main.tsx` 从 JS 侧
+  import）；`tokens.ts` 三栈首位统一 `'Swei Gothic CJK SC'`，Yozai / LXGW / GenJyuu / Zen 退居回退位
+  （**已下载字体全部保留**，回退链完整）。
+- **取样核对**（name table，fontTools）：Regular/Bold 的 TypoFamily(en) 均为 `Swei Gothic CJK SC`；
+  sha256 Regular `0f88aa4d…` / Bold `8eb0916b…`（woff2）。
+- **取证**：`vite build` 通过 · `dist/` 含两档 woff2 · 样张 `.tmp/font-swei-preview.png`
+  （狮尾 Regular/Bold + Yozai 参照三段对比）。
+- ⚠️ **事故记录（并发写覆盖）**：本轮 `tokens.ts` 的 body 行在我写入后被外部改回
+  `'GenJyuuGothicP', 'LXGW…, 'GenJyuuGothicP', …`（首位换回源柔、源柔出现两次）⇒ `check:settings`
+  一度 176/0「全绿」——那不是真验收，是 body 首位恰好又喂饱了写死的 `FONT.genjyuu.bodyFirst`。
+  已用探针脚本复刻断言判据定位，恢复 Swei 首位后复跑回到 **175/1**（唯一红即那条已知写死断言）。
+  教训：**「从红变绿」和「从绿变红」一样要查根因**；并发会话/本地编辑器可能改同一文件，
+  关键编辑后应回读确认。
+- ⚠️ **实验态（本轮未提交）**：`FONT.genjyuu.bodyFirst` 红同 D-105/D-106，采纳时一并改中性判据；
+  回滚清单：删 `swei-gothic/` 目录、`tokens.ts` 三行复原（上一位是 Yozai，见 D-106）、`main.tsx` 去掉 import。
+
+### D-108 · UI 字体定案（Swei + Yozai）· 移除 GenJyuu · FONT 断言中性化（2026-10-10）
+
+**用户定案**：`display` / `numeric` = **狮尾圆体 · 简体（Swei Gothic CJK SC）**、`body` = **悠哉字体（Yozai）**；
+**漫画译文**渲染字体仍为引擎侧 `LXGWWenKaiGB-Medium`（D-105，本轮**未动**）。要求**删除 GenJyuuGothicP 的资源与相关引用**。
+
+- **字体栈**（`app/src/theme/tokens.ts`，三栈均去掉 `GenJyuuGothicP`；`Inter` 保留）：
+  - `display` = `Swei Gothic CJK SC → Yozai → LXGW WenKai GB → Zen Maru Gothic → Noto Sans SC`
+  - `body` = `Yozai → LXGW WenKai GB → Swei Gothic CJK SC → Noto Sans SC → Zen Maru Gothic`
+  - `numeric` = `Swei Gothic CJK SC → Yozai → LXGW WenKai GB → Zen Maru Gothic → Inter → Noto Sans SC`
+- **删除的资源**：`app/src/assets/fonts/genjyuu-gothic-p-medium/`（121 个文件 = 120 片 woff2 + `font.css`，
+  git 记 121 条删除）；`main.tsx` 去掉其 import 与专属注释段（通用告诫「Sass 静默丢弃 `.css`」保留，
+  升格为随仓字体段头的统一说明）；三份随仓 `font.css` 注释里指向 GenJyuu 的措辞一并改写。
+- **e2e `FONT` 组中性化**（原三条断言写死 GenJyuu ⇒ 一旦删字体就全红，正是本轮的连带工作）：
+  | 原断言 | 现断言 | 新判据 |
+  |---|---|---|
+  | `FONT.genjyuu.viaJsModule` | **`FONT.viaJsModule`** | **扫描** `fonts/*/font.css`，每份都必须在 `main.tsx` 里 import；`index.scss` 不得 `@use` 任何 font.css |
+  | `FONT.genjyuu.bodyFirst` | **`FONT.stackFirstHasFace`** | 对 **display/body/numeric 三栈**逐栈查：首位族名必须能在①随仓 `font.css` 的 `font-family` 或②`main.tsx` 的 fontsource 包名（族名转 kebab）中找到 —— **不绑定具体字体名** |
+  | `FONT.genjyuu.assetsPresent` | **`FONT.assetsPresent`** | 逐目录校验「`@font-face` 条数 == 字体文件数」，取代原「恰好 120 片」硬编码 |
+  - 新增 `F.fontsDir` 常量 + `fontDirsWithCss()` / `declaredFamilies()` 辅助；断言按目录扫描，**下次换字体不必改断言**。
+  - **反证轮 5 条重写**（原 5 条锚点全绑 GenJyuu，随函数改名失效）：① 删 `main.tsx` 的 swei import → `viaJsModule`；
+    ② `index.scss @use` font.css → `viaJsModule`；③ 悠哉清单**两条 face 族名**一并改坏（`all: true`——只改一条
+    会剩另一条顶着，断言照样绿 ⇒ 假反证）→ `stackFirstHasFace`；④ `FONT.display` 首位写成文件名
+    `SweiGothicCJKsc-Regular` → `stackFirstHasFace`；⑤ 霞鹜清单 `@font-face {` → `@font-face-x {`（条数变 0）→ `assetsPresent`。
+- **取证**：`check:settings` **176/0**（FONT 组 3/3）· `check:settings:refute` **120/120 条按预期变红**
+  （0 跳过 / 0 假阳性 / 0 未恢复）· 前端 `vite build` 通过（`dist/` 产出两档狮尾 woff2）。
+- ⚠️ **并发写实战（本轮加强版）**：`tokens.ts` 被外部进程**两次**改写 —— 先是 body 首位被换成
+  `'GenJyuuGothicP', 'LXGW…, 'GenJyuuGothicP', …`，再是 `'Yozai', 'Yozai', …`（首位 Yozai、重复两次）。
+  我的首次 Edit 因锚点不符而失败，按**实际读到的内容**重做并**回读确认**才落地。
+  教训固化：**关键编辑后必须回读**，且「上一次读到的内容」不能当成 Edit 锚点的唯一依据。
+- **状态**：本轮改动仍未提交（等用户验收）。回滚清单：恢复 `genjyuu-gothic-p-medium/`（git 有历史）、
+  `tokens.ts` 三行复原、`main.tsx` 加回 import、e2e 三条断言与 5 条变异按 D-108 反向改。

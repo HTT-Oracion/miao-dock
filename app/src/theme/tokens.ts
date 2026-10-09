@@ -62,22 +62,27 @@ export const RADIUS = {
 } as const;
 
 /**
- * 字体分工（《02》§5）：Zen Maru Gothic（标题/强调）、源柔ゴシックP Medium（正文）、Inter Medium（纯数字）。
- * 桌面端随应用分发字体文件（`src/assets/fonts`），不依赖用户系统是否装了这两款字体。
+ * 字体分工（《02》§5，2026-10-10 定案）：**标题/强调与纯数字 = 狮尾圆体 · 简体（Swei Gothic CJK SC）**、
+ * **正文 = 悠哉字体（Yozai）**；回退位依次为霞鹜文楷 GB、Zen Maru Gothic、Noto Sans SC。
+ * 桌面端随应用分发字体文件（`src/assets/fonts`），不依赖用户系统是否装了这几款字体。
+ * （**漫画译文**的渲染字体是另一条线：引擎侧 `LXGWWenKaiGB-Medium`，见 D-105，与本文件无关。）
  *
- * 正文首位是**源柔ゴシックP Medium（GenJyuuGothicP，字重 500）**：圆润亲和、汉字覆盖全，
- * 与「喵坞」的圆角调性一致。它比 Noto Sans SC 体量更大，故走**独立分片加载**
- * （见 `src/assets/fonts/genjyuu-gothic-p-medium/`），不塞进 `main.tsx` 的 fontsource 清单 ——
- * 那几家是 npm 包、按包名引；这一家是随仓分发的 120 片 woff2，由 `styles/index.scss` 的
- * `@use` 统一引入（本仓「样式只经 index.scss 一个入口」的规矩）。
+ * 🔴 族名必须与对应 `font.css` 里的 `font-family` 逐字一致，写错 ⇒ 该栈**首位静默失效**、回落下一项：
+ *    `'Swei Gothic CJK SC'`（取 **TypoFamily**，不是 `Swei Gothic CJK SC Regular`——狮尾**每字重一个
+ *    独立 family**，写 Family(1) 的名字 700 就取不到 Bold 那条 face）、`'Yozai'`、`'LXGW WenKai GB'`。
  *
- * ⚠️ 字体族名必须写 `'GenJyuuGothicP'`（上游 `@font-face` 里的名字），
- *    不是文件名 `GenJyuuGothic-P-Medium` —— 写错则整个第一位静默失效、直接回落 Noto Sans SC。
+ * 随仓分发三类字体，引入方式**不同**、别搞混：
+ *   · Swei Gothic CJK SC —— **woff2**（Regular + **原生 Bold**），清单在 `src/assets/fonts/swei-gothic/font.css`；
+ *   · Yozai —— 单体 TTF（Regular + Medium，无 Bold ⇒ 清单里 700 映射到 Medium），清单在 `src/assets/fonts/yozai-font/font.css`；
+ *   · LXGW WenKai GB —— 单体 TTF（**Medium 档**，无 Bold），清单在 `src/assets/fonts/lxgw-wenkai-gb/font.css`。
+ *   三者都由 `main.tsx` 从 **JS 侧** import（不能走 `styles/index.scss` 的 `@use`——Sass 对带 `.css`
+ *   后缀的 `@use` 静默丢弃，字体不会进构建）。
+ *   ⚠️ 原「源柔ゴシックP Medium（GenJyuuGothicP，120 片 woff2）」已于 2026-10-10 弃用并移除。
  */
 export const FONT = {
-  display: "'Zen Maru Gothic', 'Noto Sans SC', system-ui, sans-serif",
-  body: "'GenJyuuGothicP', 'Noto Sans SC', 'Zen Maru Gothic', system-ui, sans-serif",
-  numeric: "'Zen Maru Gothic','Inter', 'Noto Sans SC', system-ui, sans-serif",
+  display: "'Swei Gothic CJK SC', 'Yozai', 'LXGW WenKai GB', 'Zen Maru Gothic', 'Noto Sans SC', system-ui, sans-serif",
+  body: "'Yozai', 'LXGW WenKai GB', 'Swei Gothic CJK SC', 'Noto Sans SC', 'Zen Maru Gothic', system-ui, sans-serif",
+  numeric: "'Swei Gothic CJK SC', 'Yozai', 'LXGW WenKai GB', 'Zen Maru Gothic', 'Inter', 'Noto Sans SC', system-ui, sans-serif",
 } as const;
 
 /** 品牌色为冻结值 —— 不绑令牌、不随主题切换（《01》§9） */

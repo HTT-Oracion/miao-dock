@@ -1,0 +1,46 @@
+@charset "UTF-8";
+
+/*
+狮尾圆体 · 简体（Swei Gothic CJK SC）—— max32002 基于思源黑体做「拔脚 + 加圆」改造的圆体，
+支持简中 / 繁中 / 日文 / 韩文四个子集，共 7 档字重（Thin / DemiLight / Light / Regular /
+Medium / Bold / Black）。SIL Open Font License 1.1，可自由分发与商用。
+本仓取**简体分支（CJK SC）**、两档：Regular（正文 400）+ **Bold（700，原生真字重）**。
+
+⚠️ 族名必须与 `tokens.ts` 的 FONT.* 首项**逐字一致**（`Swei Gothic CJK SC`）——
+   写错 ⇒ 整个首位静默失效、回落下一项。
+
+🔴「每字重一个独立 family」的坑：狮尾圆体不像普通字体那样各族共用 family，
+   它的 Family(1) 是**逐档命名**的 —— Regular 是 `Swei Gothic CJK SC Regular`、
+   Bold 是 `Swei Gothic CJK SC Bold`（霞鹜文楷的 Medium 档也是这个套路）。
+   ⇒ 所以这里**不能**拿 Family(1) 的名字当族名（那样两档会变成两个无关字体、
+   700 加粗取不到真 Bold），必须用 **TypoFamily(16)** 的 `Swei Gothic CJK SC`
+   作为统一族名，再由 `font-weight` 在同一族内区分两档文件。
+   改成 TC / JP 子集时同理：族名要跟着换成 `Swei Gothic CJK TC` / `… CJK JP`。
+
+⚠️ 本清单必须由 **JS 侧**（`main.tsx`）import：Sass 对「带 `.css` 后缀的 `@use`」静默丢弃，
+   字体不会进构建（同 lxgw-wenkai-gb / yozai-font 那几份的坑）。
+
+用 WebFont 目录的 **woff2**（每档约 6 MB），而不是 CJK SC 目录的 TTF（每档约 16 MB）：
+同为桌面端下载，woff2 体积小约 63%、解析更快，字形无差别。两版 name table 已实测
+**完全一致**（同源产物，`Swei Gothic CJK SC` 的 TypoFamily 也一样），不是猜的。
+
+来源：https://github.com/max32002/swei-gothic · WebFont/CJK SC/ · master（release tag 2.143）
+sha256（Regular.woff2）：0f88aa4d6684aa53e11940cf94c31fe506fca07072f365539de9ebbcfc166343
+sha256（Bold.woff2）   ：8eb0916b3f2ed1e7b093f15705918165efa8e35f1b58c8c61edb1d652bb56945
+*/
+
+@font-face {
+  font-family: 'Swei Gothic CJK SC';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(./SweiGothicCJKsc-Regular.woff2) format('woff2');
+}
+
+@font-face {
+  font-family: 'Swei Gothic CJK SC';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(./SweiGothicCJKsc-Bold.woff2) format('woff2');
+}

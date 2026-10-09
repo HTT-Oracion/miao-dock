@@ -1,0 +1,27 @@
+@charset "UTF-8";
+
+/*
+霞鹜文楷 GB（LXGW WenKai GB）—— 派生自 Klee One（Fontworks），简体按 GB18030 整理。
+SIL Open Font License 1.1，可自由分发与商用。
+
+⚠️ 族名必须与 `tokens.ts` 的 FONT.* 里的写法**逐字一致**（`LXGW WenKai GB`）——
+   写错（例如写成文件名 `LXGWWenKaiGB-Medium`）浏览器认不出 ⇒ 该栈静默失效、回落下一项。
+⚠️ 本清单必须由 **JS 侧**（`main.tsx`）import：Sass 对「带 `.css` 后缀的 `@use`」静默丢弃，
+   字体资源不会进构建（同 swei-gothic / yozai-font 那几份的坑）。
+
+⚠️ 霞鹜文楷**没有 Bold 字重**（上游只发布 Light / Regular / Medium 三档）。
+   现选 **Medium** 档充当「加粗观感」——比 Regular 笔画更饱满、更实（≈ 500 字重）。
+   这里声明为 `font-weight: 400`：全站主字重即 Medium 粗细；UI 里 700 处会由浏览器
+   **合成加粗**（fake bold，笔画可能略糊，非原生字重）。
+
+来源：https://github.com/lxgw/LxgwWenkaiGB release v1.522 / LXGWWenKaiGB-Medium.ttf
+sha256：b885c51ec0d3f325974013801dfcefda1a9ba0bf385c607cf5f2582dafa2e5ab
+*/
+
+@font-face {
+  font-family: 'LXGW WenKai GB';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(./LXGWWenKaiGB-Medium.ttf) format('truetype');
+}

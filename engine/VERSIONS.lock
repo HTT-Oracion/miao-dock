@@ -148,14 +148,21 @@ sakura_install= runtimes/manga-translator/models/sakura/
 #    即：**Sakura 走 `llama-server`，不走 `--translator` 的离线模型路径**。
 #    相关环境变量：`SAKURA_API_BASE` / `SAKURA_VERSION`（0.9|0.10）/ `SAKURA_DICT_PATH`。
 
-### 5.3 译文渲染字体（✅ 2026-10-10 · 补丁 D-103）
+### 5.3 译文渲染字体（✅ 2026-10-10 · 补丁 D-103 / D-105）
+
+lxgw_gb       = LXGWWenKaiGB-Medium.ttf（24.6 MB / sha256 b885c51e…）★ 首选（无 Bold 档，取 Medium 当加粗）
+lxgw_src      = github.com/lxgw/LxgwWenkaiGB release v1.522（OFL 1.1，可自由分发）· GB18030 简体全覆盖
+lxgw_install  = runtimes/manga-translator/src/fonts/LXGWWenKaiGB-Medium.ttf
 
 zen_maru      = ZenMaruGothic-Regular.ttf（3.66 MB / sha256 a0c0b535…）
 zen_src       = google/fonts 仓库 commit `633bf7f8`（2023-02-23，Version 1.001；OFL 1.1，可自由分发）
 zen_install   = runtimes/manga-translator/src/fonts/ZenMaruGothic-Regular.ttf
-# 引擎 `rendering/text_render.py` 的 FALLBACK_FONTS[0]（补丁 D-103）；权威副本在
-# `models-store/fonts/`，由 `fetch:models` 硬链接进 `src/fonts/`。条目见 `models.manifest.json`
-# 的 `font_zen_maru_gothic`。⚠️ 日文字体（JIS 汉字集），简体字缺约 27% ⇒ 由 msyh.ttc 逐字兜底。
+
+# 引擎 `rendering/text_render.py` 的 FALLBACK_FONTS：D-105 把霞鹜文楷 GB 置为首选 [0]，
+# Zen Maru Gothic 降为次级 [1]；权威副本在 `models-store/fonts/`，由 `fetch:models` 硬链接进 `src/fonts/`。
+# 条目见 `models.manifest.json` 的 `font_lxgw_wenkai_gb`（首选）/ `font_zen_maru_gothic`（次级）。
+# ⚠️ Zen 是日文字体（JIS 汉字集），简体字缺约 27% ⇒ 由 msyh.ttc 逐字兜底（圆体+黑体混排）；
+#    LXGW 简体基本同源 ⇒ 不再混排。两者缺失都不致命（静默回退 msyh）。
 
 ## 6. 许可（⚠️ **两层**，且都比音乐模块严）
 
