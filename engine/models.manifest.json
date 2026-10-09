@@ -8,6 +8,7 @@
   "urlNote": "url = 上游规范地址（用于标识与溯源，也是引擎自身 hash 校验所认的地址）；sources = 本机实测可用的下载通道，按顺序尝试。本机 huggingface.co 不可达、GitHub release 资产直连 502，故 sources 以镜像打头。见 engine/VERSIONS.lock §7。",
   "shaNote": "sha256 / sizeBytes 均于 2026-10-05 对盘上真实字节重算得出（shasum -a 256）。其中 4 个视觉模型与旧取物脚本记录逐字节吻合（独立重算互证）；Sakura 权重与 llama 归档的 sha256 为首次记录（旧脚本对它们传的是 '-'，即不校验）。随后 `fetch-models.mjs --check` 再次全量复核：6/6 通过。",
   "linkBaseNote": "linkTo 相对于「链接基准目录」，默认 <模型根目录>/src（即引擎源码树根）。",
+  "hfNote": "带 `hf` 字段的条目是 **HuggingFace 缓存布局**：权威副本在 store 的 `blobs/<blob>`，引擎树里要同时存在 `<cache>/blobs/<blob>`（HF 的物理副本）与 `<cache>/snapshots/<revision>/<filename>`（HF 的解析入口，靠 `refs/main` 指向 revision）。三者由 `linkModels` 一并重建（零网络）。约定：带 `hf` 的条目其 `linkTo` **必须**落在 `blobs/` 下 —— `linkModels` 据此推出 `<cache>` 根。判据是 `huggingface_hub.try_to_load_from_cache()` 返回路径而非 None（见 docs/spec-notes.md D-99）。",
   "sets": {
     "visual": {
       "desc": "默认流水线（detector=default / inpainter=lama_large / ocr=48px）必需的 4 个文件；缺任一则该档无法翻译",
@@ -20,6 +21,19 @@
     "runtime": {
       "desc": "外部二进制（llama-server）。严格说不是「模型」，但它与模型同性质：外部资产 + 需镜像通道 + 需要校验，故复用同一套下载与校验机制。🔴 这里**按平台分化**：条目带 `platform` 字段（`darwin-arm64` / `win32-x64`），selectFiles 按当前平台过滤 ⇒ 在 Windows 上只会下 Windows 的那两条（llama+cudart），不会去下 macos 的。",
       "files": ["llama_cpp_macos_arm64", "llama_cpp_win_cuda_x64", "cudart_win_cuda_x64"]
+    },
+    "translation": {
+      "desc": "英译中使用的离线翻译模型 facebook/nllb-200-distilled-600M（引擎 `nllb` 档，见 docs/spec-notes.md D-97）。🔴 **权重不随包分发**：首次调用引擎时才下载。🔴 CC-BY-NC-4.0 **禁止商用** —— 本机自用；对外分发前必须换成 MIT 档（`m2m100`，零补丁）。",
+      "files": [
+        "nllb_600m_config",
+        "nllb_600m_generation_config",
+        "nllb_600m_pytorch_model",
+        "nllb_600m_readme",
+        "nllb_600m_sentencepiece",
+        "nllb_600m_special_tokens_map",
+        "nllb_600m_tokenizer",
+        "nllb_600m_tokenizer_config"
+      ]
     }
   },
   "files": [
@@ -139,6 +153,126 @@
       ],
       "license": "NVIDIA CUDA Runtime（随 llama.cpp 发布）",
       "note": "CUDA 12.4 运行库（cublas64_12 / cublasLt64_12 / cudart64_12），**必须解到 llama-server.exe 所在目录**（extractTo 与 llama_cpp_win_cuda_x64 相同）。扁平结构 ⇒ extractStrip=0。⚠️ 本机（RTX 4060 Ti / driver 595.79）支持 CUDA 12.4；换 CUDA 版本时这三条（llama/cudart/平台）要一起改。"
+    },
+    {
+      "id": "nllb_600m_config",
+      "set": "translation",
+      "dest": "models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/91ba54326eccfdb17a06a7d110df3d71f39b84b8",
+      "linkTo": "models/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/91ba54326eccfdb17a06a7d110df3d71f39b84b8",
+      "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "config.json" },
+      "sha256": "f9b4081d3d108e9d06532ea8d92b932c04ed3a15ff2f87e6982f8e14db51fbc5",
+      "sizeBytes": 846,
+      "url": "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/config.json",
+      "sources": [
+        "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/config.json"
+      ],
+      "license": "CC-BY-NC-4.0 —— 🔴 禁止商用",
+      "note": "模型结构配置 ⇒ transformers 靠它决定 instantiate 哪个类。blob 名是 HF 的 etag（小文本 = git oid），**不是** sha256，别混。"
+    },
+    {
+      "id": "nllb_600m_generation_config",
+      "set": "translation",
+      "dest": "models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/4c6d168201607a22255bee55a6ed092b0e3ed7a1",
+      "linkTo": "models/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/4c6d168201607a22255bee55a6ed092b0e3ed7a1",
+      "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "generation_config.json" },
+      "sha256": "0bb604cdb8392649176935a447ce994128f170a6908c135a17d0e3dfb8113cb2",
+      "sizeBytes": 189,
+      "url": "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/generation_config.json",
+      "sources": [
+        "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/generation_config.json"
+      ],
+      "license": "CC-BY-NC-4.0 —— 🔴 禁止商用",
+      "note": "生成参数默认值（bos/eos/pad 等）。体积 189 B，但缺了 `generate()` 会拿不到默认参数 —— 正是「只判大的、漏掉小的」那类漏项。"
+    },
+    {
+      "id": "nllb_600m_pytorch_model",
+      "set": "translation",
+      "dest": "models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/c266c2cfd19758b6d09c1fc31ecdf1e485509035f6b51dfe84f1ada83eefcc42",
+      "linkTo": "models/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/c266c2cfd19758b6d09c1fc31ecdf1e485509035f6b51dfe84f1ada83eefcc42",
+      "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "pytorch_model.bin" },
+      "sha256": "c266c2cfd19758b6d09c1fc31ecdf1e485509035f6b51dfe84f1ada83eefcc42",
+      "sizeBytes": 2460457927,
+      "url": "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/pytorch_model.bin",
+      "sources": [
+        "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/pytorch_model.bin"
+      ],
+      "license": "CC-BY-NC-4.0 —— 🔴 禁止商用",
+      "note": "2.29 GiB 权重，HF 用 sha256 当 blob 名（LFS 文件）。🔴 该仓库**只有 pytorch_model.bin、没有 safetensors** ⇒ 探针要两个都探（`_check_downloaded` 同理）。"
+    },
+    {
+      "id": "nllb_600m_readme",
+      "set": "translation",
+      "dest": "models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/489890f6973db2448e698120b132fc8e2fcfb304",
+      "linkTo": "models/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/489890f6973db2448e698120b132fc8e2fcfb304",
+      "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "README.md" },
+      "sha256": "0964c46d35be00825c73b3a9ca212043b4b4e4f38e18e88c22e4490d31f9f1a3",
+      "sizeBytes": 7667,
+      "url": "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/README.md",
+      "sources": [
+        "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/README.md"
+      ],
+      "license": "CC-BY-NC-4.0 —— 🔴 禁止商用",
+      "note": "加载用不到，但 HF 的 `snapshot_download` 会拉它。纳入清单是为了「下载器能完整复刻 HF 缓存」——少了它，`snapshot_download` 的完整性检查会认为缓存被破坏而重新联网。"
+    },
+    {
+      "id": "nllb_600m_sentencepiece",
+      "set": "translation",
+      "dest": "models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/14bb8dfb35c0ffdea7bc01e56cea38b9e3d5efcdcb9c251d6b40538e1aab555a",
+      "linkTo": "models/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/14bb8dfb35c0ffdea7bc01e56cea38b9e3d5efcdcb9c251d6b40538e1aab555a",
+      "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "sentencepiece.bpe.model" },
+      "sha256": "14bb8dfb35c0ffdea7bc01e56cea38b9e3d5efcdcb9c251d6b40538e1aab555a",
+      "sizeBytes": 4852054,
+      "url": "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/sentencepiece.bpe.model",
+      "sources": [
+        "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/sentencepiece.bpe.model"
+      ],
+      "license": "CC-BY-NC-4.0 —— 🔴 禁止商用",
+      "note": "SentencePiece 词表。engine 侧 `tokenizer.json` 已够用，但 HF 会一并取它，缺了会触发重新联网。"
+    },
+    {
+      "id": "nllb_600m_special_tokens_map",
+      "set": "translation",
+      "dest": "models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/02fba84e401dd2017999a39cac2c1278591c3a03",
+      "linkTo": "models/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/02fba84e401dd2017999a39cac2c1278591c3a03",
+      "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "special_tokens_map.json" },
+      "sha256": "992bd4ed610d644d6823081937bcc91bb8878dd556cea4ae5327f2480361330e",
+      "sizeBytes": 3548,
+      "url": "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/special_tokens_map.json",
+      "sources": [
+        "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/special_tokens_map.json"
+      ],
+      "license": "CC-BY-NC-4.0 —— 🔴 禁止商用",
+      "note": "特殊 token 映射（eos/pad/unk）—— D-97d 用的 `convert_tokens_to_ids('zho_Hans')` 依赖它把语言码对到 token id。"
+    },
+    {
+      "id": "nllb_600m_tokenizer",
+      "set": "translation",
+      "dest": "models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/e316b82de11d0f951f370943b3c438311629547285129b0b81dadabd01bca665",
+      "linkTo": "models/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/e316b82de11d0f951f370943b3c438311629547285129b0b81dadabd01bca665",
+      "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "tokenizer.json" },
+      "sha256": "e316b82de11d0f951f370943b3c438311629547285129b0b81dadabd01bca665",
+      "sizeBytes": 17331176,
+      "url": "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/tokenizer.json",
+      "sources": [
+        "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/tokenizer.json"
+      ],
+      "license": "CC-BY-NC-4.0 —— 🔴 禁止商用",
+      "note": "fast tokenizer 本体（16.5 MB），`AutoTokenizer` 实际加载的那份。"
+    },
+    {
+      "id": "nllb_600m_tokenizer_config",
+      "set": "translation",
+      "dest": "models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/742aa330eae62f661fe28ff3fdd1d216d1481294",
+      "linkTo": "models/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/742aa330eae62f661fe28ff3fdd1d216d1481294",
+      "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "tokenizer_config.json" },
+      "sha256": "d1aa8c3697d3e35674f97b5b7e9c99d22b010f528e80140257d97316be90d044",
+      "sizeBytes": 564,
+      "url": "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/tokenizer_config.json",
+      "sources": [
+        "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/tokenizer_config.json"
+      ],
+      "license": "CC-BY-NC-4.0 —— 🔴 禁止商用",
+      "note": "tokenizer 类型与参数。定了 NllbTokenizerFast ⇒ D-97d 的 `convert_tokens_to_ids` 才成立。"
     }
   ]
 }

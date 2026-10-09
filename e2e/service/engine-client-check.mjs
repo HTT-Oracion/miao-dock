@@ -275,6 +275,7 @@ async function runPositive() {
   const {
     translateImage, probeEngine, resolveEngineLaunch, EngineError,
     recentStageLog, engineConfigSnapshot, ENGINE_VERSION, ENGINE_DEFAULT_DETECTION_SIZE,
+    engineHfOfflineEnv, translationWeightsPresent,
   } = mod;
   const { config } = await import(pathToFileURL(CONFIG_FILE).href);
 
@@ -548,6 +549,27 @@ async function runPositive() {
       String(ioLaunch.env.PYTHONIOENCODING || '').toLowerCase() === 'utf-8',
       `PYTHONIOENCODING=${ioLaunch.env.PYTHONIOENCODING}`);
 
+    // ---------------------------------------------------------- L13/L14 · HF 离线 env（B3）
+    // 与 L9–L12 同类：**启动 env 里必须多带一对键**。差别是它**依赖盘上状态**
+    // （权重在 ⇒ 带上；不在 ⇒ 不带上，否则会把首次下载一并堵死）—— 所以分两层打：
+    // L13 打纯函数（三种情形，与机器无关）；L14 打"这一项真的被合进了启动 env"。
+    const hfOn = JSON.stringify(engineHfOfflineEnv({ present: true }));
+    const hfOff = JSON.stringify(engineHfOfflineEnv({ present: false }));
+    const hfDis = JSON.stringify(engineHfOfflineEnv({ present: true, disabled: true }));
+    check('L13 权重在盘 ⇒ 带 `HF_HUB_OFFLINE=1` + `TRANSFORMERS_OFFLINE=1`；不在盘 ⇒ 不带；`MIAO_NO_HF_OFFLINE=1` ⇒ 不带',
+      hfOn === JSON.stringify({ HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1' }) && hfOff === '{}' && hfDis === '{}',
+      `on→${hfOn} off→${hfOff} disabled→${hfDis}（本机权重在盘=${translationWeightsPresent()}）`);
+
+    // L14 是 L13 的**落点**：函数算得对 ≠ 真被合进启动 env（"算出来了但没接上"是常见的半成品形态）。
+    // 用注入把这一项从"本机恰好有权重"里解耦 —— 否则在没有权重的机器上这条断言恒真空绿。
+    const hfLaunch = resolveEngineLaunch({
+      port: enginePort,
+      hfOffline: { HF_HUB_OFFLINE: 'injected', TRANSFORMERS_OFFLINE: 'injected' },
+    });
+    check('L14 `resolveEngineLaunch` 的 env **真的**合入了 HF 离线项（不是算完就丢），且可注入覆盖',
+      hfLaunch.env.HF_HUB_OFFLINE === 'injected' && hfLaunch.env.TRANSFORMERS_OFFLINE === 'injected',
+      `HF_HUB_OFFLINE=${hfLaunch.env.HF_HUB_OFFLINE}`);
+
     // ---------------------------------------------------------- C · 生效参数快照（§5.2 的 `config` 块）
     const snap = engineConfigSnapshot();
     check('C1 `config` 是 **camelCase** 的 6 键（`targetLang` / `detectionSize`）—— 发出去的是 snake_case、报出来的是 camelCase，两个形状必须出自同一处（跨层字段名漂移的挡板）',
@@ -747,9 +769,17 @@ const MUTATIONS = [
     replace: '',
     expect: ['L12'],
   },
+  {
+    name: 'K · 引擎启动 env 不再合入 HF 离线项（权重已预置却仍去联网取 etag ⇒ 被系统代理拦成 502：B3）',
+    file: ENGINE_CLIENT,
+    // 不带行尾：本文件是 CRLF（同变异 I/J 的理由）。
+    find: '      ...(hfOffline === undefined ? engineHfOfflineEnv() : hfOffline),',
+    replace: '',
+    expect: ['L14'],
+  },
 ];
 
-const EXPECTED_MUTATIONS = 10; // 分母写死
+const EXPECTED_MUTATIONS = 11; // 分母写死
 
 function sha(p) {
   return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');

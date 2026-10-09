@@ -24,7 +24,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import {
-  ensureModels, verifyModels, linkModels, sha256File, readMarker, statSafe,
+  ensureModels, verifyModels, linkModels, verifyHfCache, hfLayout, sha256File, readMarker, statSafe,
   ModelStoreError, REDOWNLOAD_LIMIT, READY_MARKER, PART_SUFFIX,
 } from '../../engine/model-store.mjs';
 
@@ -147,6 +147,8 @@ function fixtureManifest(fx, entries) {
       set: 'all',
       dest: e.dest ?? `${e.id}.bin`,
       ...(e.linkTo ? { linkTo: e.linkTo } : {}),
+      ...(e.hf ? { hf: e.hf } : {}),
+      ...(e.platform ? { platform: e.platform } : {}),
       sha256: e.sha256,
       sizeBytes: e.sizeBytes,
       url: `${fx.base}${e.path}`,
@@ -383,6 +385,72 @@ async function scnRelink(fx, alpha) {
   };
 }
 
+/**
+ * P：**HuggingFace 缓存布局** —— blobs + snapshots/<rev>/<file> + refs/main 三件齐备
+ * =============================================================================
+ * 为什么必须单独立一组：HF 的 `try_to_load_from_cache()`（引擎 `_check_downloaded` 与
+ * D-97c 的探针都靠它）**不认**"文件在 src/models/ 下"这件事，它认的是
+ * `<cache>/models--<org>--<name>/snapshots/<revision>/<filename>` + `refs/main`。
+ * 只把 blob 硬链接过去 = 「链接建好了、权重还是不被认」⇒ 引擎联网重下 ⇒ 本机 `ProxyError 502`。
+ * 本组是这一整类问题的唯一承担者（见 docs/spec-notes.md D-99）。
+ */
+async function scnHfLayout(fx, alpha) {
+  const root = await freshRoot('hf');
+  const linkBase = path.join(root, 'engine-src'); // 扮演引擎源码树 src/
+  fx.def('/alpha', { buf: alpha.buf });
+  const rev = 'f8d333a098d19b4fd9a8b18f94170487ad3f821d';
+  const cache = 'models/translators/nllb/models--facebook--nllb-200-distilled-600M';
+  const entry = {
+    ...alpha,
+    dest: `store/${cache}/blobs/BLOB`,
+    linkTo: `${cache}/blobs/BLOB`,
+    hf: { revision: rev, filename: 'config.json' },
+  };
+  const m = fixtureManifest(fx, [entry]);
+
+  await ensureModels(m, { rootDir: root, integrity: 'hash', logger: () => {} });
+  const l1 = await linkModels(m, { rootDir: root, linkBase });
+
+  const store = path.join(root, entry.dest);
+  const blobTo = path.join(linkBase, entry.linkTo);
+  const snapTo = path.join(linkBase, cache, 'snapshots', rev, 'config.json');
+  const refsTo = path.join(linkBase, cache, 'refs', 'main');
+  const sStore = await statSafe(store);
+  const sBlob = await statSafe(blobTo);
+  const sSnap = await statSafe(snapTo);
+  const refs = fs.existsSync(refsTo) ? fs.readFileSync(refsTo, 'utf8') : null;
+  const v1 = await verifyHfCache(m, { rootDir: root, linkBase });
+
+  // —— 模拟「引擎换版本」：整棵 src/ 被删（模型目录跟着没了）
+  await fsp.rm(linkBase, { recursive: true, force: true });
+  const before = fx.requests.length;
+  const l2 = await linkModels(m, { rootDir: root, linkBase });
+  const newRequests = fx.requests.length - before; // 必须 0
+  const sSnap2 = await statSafe(snapTo);
+  const v2 = await verifyHfCache(m, { rootDir: root, linkBase });
+
+  // —— 反例：linkTo 不落在 blobs/ 下 ⇒ 必须抛错，不许静默猜 <cache> 根
+  let badCode = null;
+  try {
+    hfLayout({ id: 'bad', hf: { revision: rev, filename: 'config.json' }, linkTo: `${cache}/files/config.json` },
+      { rootDir: root, linkBase });
+  } catch (e) { badCode = e?.code; }
+
+  return {
+    hfCount: l1.hf.length,
+    refsContent: refs,
+    refsOk: refs === rev,
+    blobLinked: !!sBlob && !!sStore && sBlob.ino === sStore.ino,
+    snapshotLinked: !!sSnap && !!sStore && sSnap.ino === sStore.ino && sSnap.dev === sStore.dev,
+    verifyOk: v1.ok.includes('alpha') && v1.missing.length === 0,
+    relinkedHf: l2.hf.length,
+    restoredSnapshot: !!sSnap2 && !!sStore && sSnap2.ino === sStore.ino,
+    verifyOkAfterRelink: v2.ok.includes('alpha') && v2.missing.length === 0,
+    newRequests,
+    badCode,
+  };
+}
+
 /** I：多源回退（第一个源 500 → 换第二个源） */async function scnFallback(fx, alpha) {
   const root = await freshRoot('fallback');
   fx.def('/bad', { buf: alpha.buf, failTimes: 99 });
@@ -415,6 +483,13 @@ const PRED = {
   'E7-4a 引擎树里那份是与 store 同一 inode 的硬链接': (f) => f.sameInode && f.linked1.includes('alpha'),
   'E7-4b 换版本（src/ 整棵被删）后重链即恢复且哈希正确': (f) => f.relinked2.includes('alpha') && f.restoredOk,
   'E7-4c 重链全程 0 次网络请求（这就是"换版本不重下"）': (f) => f.newRequests === 0,
+  // —— HF 缓存布局（组 P）：HF 认的是 snapshots/<rev>/<file> + refs/main，不是"文件就在 src 下"
+  'P1 带 hf 的条目补齐 snapshot 与 refs/main（HF 才看得见）': (f) => f.hfCount === 1 && f.refsOk,
+  'P2 snapshot 与 store 权威副本同一 inode（硬链接，不多占盘）': (f) => f.snapshotLinked && f.blobLinked,
+  'P3 verifyHfCache 认定可解析': (f) => f.verifyOk,
+  'P4 换版本后重链即恢复可解析（0 次网络）':
+    (f) => f.relinkedHf === 1 && f.restoredSnapshot && f.verifyOkAfterRelink && f.newRequests === 0,
+  'P5 linkTo 不落在 blobs/ 下 ⇒ 抛 MODEL_HF_BAD_LINK（不静默猜）': (f) => f.badCode === 'MODEL_HF_BAD_LINK',
 };
 
 /** 取谓词并在缺失时**立刻炸**：拼错名字不该退化成"静默跳过"。 */
@@ -517,6 +592,21 @@ async function main() {
       `新请求 ${rl.newRequests} 次`);
     add('N4 store 权威副本未被牵连', rl.storeIntact, '');
 
+    setGroup('【P】HF 缓存布局（blobs + snapshots/<rev>/<file> + refs/main）');
+    const hf = await scnHfLayout(fx, alpha);
+    add('P1 带 hf 的条目补齐 snapshot 与 refs/main（HF 才看得见）',
+      P('P1 带 hf 的条目补齐 snapshot 与 refs/main（HF 才看得见）')(hf),
+      `hf 条目 ${hf.hfCount} 个 · refs/main=${hf.refsOk ? '对' : hf.refsContent}`);
+    add('P2 snapshot 与 store 权威副本同一 inode（硬链接，不多占盘）',
+      P('P2 snapshot 与 store 权威副本同一 inode（硬链接，不多占盘）')(hf),
+      `blob=${hf.blobLinked} snapshot=${hf.snapshotLinked}`);
+    add('P3 verifyHfCache 认定可解析', P('P3 verifyHfCache 认定可解析')(hf), '');
+    add('P4 换版本后重链即恢复可解析（0 次网络）',
+      P('P4 换版本后重链即恢复可解析（0 次网络）')(hf),
+      `重链 ${hf.relinkedHf} 个 · 网络请求 ${hf.newRequests} 次`);
+    add('P5 linkTo 不落在 blobs/ 下 ⇒ 抛 MODEL_HF_BAD_LINK（不静默猜）',
+      P('P5 linkTo 不落在 blobs/ 下 ⇒ 抛 MODEL_HF_BAD_LINK（不静默猜）')(hf), `code=${hf.badCode}`);
+
     setGroup('【M】真实清单自洽');
     const real = JSON.parse(fs.readFileSync(path.join(REPO, 'engine', 'models.manifest.json'), 'utf8'));
     const ids = real.files.map((f) => f.id);
@@ -527,6 +617,17 @@ async function main() {
     add('M1 逐条字段齐备', fieldsOk, `共 ${real.files.length} 条`);
     add('M2 sha256 全是 64 位小写十六进制', shaOk, '');
     add('M3 sets 引用的 id 都存在', setsOk, Object.keys(real.sets).join(' / '));
+    // hf 条目最容易出的一类错：linkTo 与 dest 的 blob 名走散（复制粘贴换了一个忘了另一个）
+    // —— 那会让"下载落在 A、链接指到 B"，而两边都不报错。这里钉住这条等式。
+    const hfFiles = real.files.filter((f) => f.hf);
+    const hfOk = hfFiles.length > 0 && hfFiles.every((f) => {
+      const segs = String(f.linkTo).split('/');
+      return !!f.hf.revision && !!f.hf.filename
+        && segs[segs.length - 2] === 'blobs'
+        && segs[segs.length - 1] === String(f.dest).split('/').pop();
+    });
+    add('M4 hf 条目契约：revision/filename 齐备 · linkTo 落在 blobs/ · blob 名与 dest 一致',
+      hfOk, `hf 条目 ${hfFiles.length} 个`);
 
     await fx.close();
   } else {
@@ -558,6 +659,11 @@ async function main() {
         id: 'R5', env: 'MIAO_NO_LINK', desc: '关掉"把 store 链进引擎树"这一步',
         target: 'E7-4b 换版本（src/ 整棵被删）后重链即恢复且哈希正确',
         run: async () => scnRelink(fx, alpha),
+      },
+      {
+        id: 'R6', env: 'MIAO_NO_LINK', desc: '关掉建链 ⇒ hf 条目的 snapshot / refs/main 也补不上',
+        target: 'P1 带 hf 的条目补齐 snapshot 与 refs/main（HF 才看得见）',
+        run: async () => scnHfLayout(fx, alpha),
       },
     ];
 
@@ -591,7 +697,8 @@ async function main() {
     console.log('✓ 全部反证成立：每条断言都能捕捉到它声称捕捉的机制。');
     // ⚠️ R1 与 R4 共用同一个开关，但打的是**两条不同的断言**（检出篡改 / 坏源必须报错）。
     //    它们不是"两条反证共用一条断言"，而是"一个开关的两处作用面"——两条判据各自独立。
-    console.log('注：R1/R4 共用开关 MIAO_NO_MODEL_VERIFY，但目标是两条互相独立的判据。');
+    //    R5 与 R6 同理（都关建链，但一个咬"换版本后重链恢复"，一个咬"hf 缓存布局补齐"）。
+    console.log('注：R1/R4 共用 MIAO_NO_MODEL_VERIFY，R5/R6 共用 MIAO_NO_LINK，但每对都打在两条互相独立的判据上。');
     return;
   }
 
@@ -599,7 +706,7 @@ async function main() {
   const pass = results.filter((r) => r.ok).length;
   const fail = results.length - pass;
   console.log(`\n${'─'.repeat(56)}`);
-  const EXPECTED_TOTAL = 32;
+  const EXPECTED_TOTAL = 38;
   if (results.length !== EXPECTED_TOTAL) {
     console.log(`✗ 断言条数 ${results.length} ≠ 写死的 ${EXPECTED_TOTAL}（分母必须写死并断言）`);
     process.exit(1);

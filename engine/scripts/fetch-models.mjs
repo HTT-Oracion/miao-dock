@@ -5,8 +5,9 @@
  * 用法：
  *   node engine/scripts/fetch-models.mjs                      # 拉全套（visual + llm + runtime）
  *   node engine/scripts/fetch-models.mjs --set visual         # 只拉视觉模型（默认流水线必需）
+ *   node engine/scripts/fetch-models.mjs --set translation    # 只拉英译中权重（nllb，2.3 GiB）
  *   node engine/scripts/fetch-models.mjs --id ocr_48px        # 只拉一个
- *   node engine/scripts/fetch-models.mjs --check              # 只校验、不联网（诊断口径）
+ *   node engine/scripts/fetch-models.mjs --check              # 只校验、不联网（含 HF 缓存布局可解析性）
  *   node engine/scripts/fetch-models.mjs --set runtime --extract   # 拉 llama.cpp 并解包
  *   node engine/scripts/fetch-models.mjs --integrity cached   # 应用启动口径（命中 .ready 就不重算哈希）
  *   node engine/scripts/fetch-models.mjs --link               # **只重建引擎树里的链接**（零网络）
@@ -24,7 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-import { ensureModels, verifyModels, linkModels, matchesPlatform, ModelStoreError } from '../model-store.mjs';
+import { ensureModels, verifyModels, verifyHfCache, linkModels, matchesPlatform, ModelStoreError } from '../model-store.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
@@ -73,7 +74,17 @@ async function main() {
     console.log(`校验：通过 ${r.ok.length} / 不符 ${r.bad.length} / 缺失 ${r.missing.length}（共 ${r.total}）`);
     for (const b of r.bad) console.log(`  ✗ ${b.id}：盘上 ${b.actual.slice(0, 12)}… ≠ 清单 ${b.expected.slice(0, 12)}…`);
     for (const m of r.missing) console.log(`  ✗ ${m}：缺失`);
-    return r.bad.length || r.missing.length ? 1 : 0;
+
+    // —— HF 缓存布局（带 `hf` 的条目）：光有 blobs 不够，HF 认的是 snapshots/<rev>/<file> + refs/main。
+    //    这一节是"链接建完了、权重还是不被引擎认"的唯一承担者（见 docs/spec-notes.md D-99）。
+    const hf = await verifyHfCache(manifest, { rootDir: ROOT, ids: args.ids, set: args.set });
+    if (hf.total) {
+      console.log(`HF 缓存布局：可解析 ${hf.ok.length} / 不可解析 ${hf.missing.length}（共 ${hf.total}）`);
+      for (const m of hf.missing) {
+        console.log(`  ✗ ${m.id}：snapshot=${m.snapshot ? '有' : '缺'} store=${m.store ? '有' : '缺'} refs/main=${m.refs ? '对' : '缺或不对'}`);
+      }
+    }
+    return (r.bad.length || r.missing.length || hf.missing.length) ? 1 : 0;
   }
 
   // —— 只重建链接（引擎换版本后的收尾动作，零网络）
@@ -83,6 +94,7 @@ async function main() {
     });
     console.log(`链接基准：${l.base}`);
     console.log(`链接：新建 ${l.linked.length} · 已是 ${l.already.length} · 复制 ${l.copied.length} · 跳过 ${l.skipped.length}（共 ${l.total}）`);
+    if (l.hf.length) console.log(`HF 缓存布局：补齐 ${l.hf.length} 个条目的 snapshot + refs/main`);
     if (l.skipped.length) {
       console.log('✗ 有跳过项 ⇒ store 里还缺资产，先跑一次下载。');
       return 1;
@@ -112,6 +124,7 @@ async function main() {
   if (!args.noLink) {
     const l = await linkModels(manifest, { rootDir: ROOT, ids: args.ids, set: args.set });
     console.log(`链接：新建 ${l.linked.length} · 已是 ${l.already.length} · 复制 ${l.copied.length} · 跳过 ${l.skipped.length}`);
+    if (l.hf.length) console.log(`HF 缓存布局：补齐 ${l.hf.length} 个条目的 snapshot + refs/main`);
   }
 
   if (args.extract) {

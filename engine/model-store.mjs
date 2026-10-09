@@ -71,6 +71,22 @@ export async function statSafe(p) {
   } catch { return null; }
 }
 
+/**
+ * 同 `statSafe`，但**不跟随**符号链接（`lstat`）。
+ *
+ * 为什么必须另有一个：HuggingFace 下载器在 `snapshots/` 下留的是**相对符号链接**，
+ * 而 `stat` 会跟随它。若只判 `stat`，"链接目标被搬走（悬空链接）"会表现为"这里什么都没有"
+ * —— 于是建链时会往同一个路径再 `link()` 一次，拿到 `EEXIST`，接着退化成 `copyFile`：
+ * 而 `copyFile` 写的是**符号链接的目标**，不是在替换这个链接。结果既没修好、也没报错。
+ * ⇒ 判断"这个路径上有没有东西"一律用 `lstat`。
+ */
+export async function lstatSafe(p) {
+  try {
+    const s = await fsp.lstat(p);
+    return { size: s.size, mtimeMs: s.mtimeMs, ino: s.ino, dev: s.dev, isSymbolicLink: s.isSymbolicLink() };
+  } catch { return null; }
+}
+
 /** 流式算 sha256（不把文件读进内存 —— Sakura 权重有 3.3 GB）。 */
 export async function sha256File(file, { signal } = {}) {
   return new Promise((resolve, reject) => {
@@ -125,6 +141,47 @@ export function platformKey(platform = process.platform, arch = process.arch) {
 /** 条目是否适用于给定平台（无 `platform` 字段 = 平台无关，恒适用）。 */
 export function matchesPlatform(file, key = platformKey()) {
   return !file.platform || file.platform === key;
+}
+
+// ------------------------------------------------------------------ HuggingFace 缓存布局
+
+/**
+ * 带 `hf` 的条目在 **HuggingFace 缓存布局**下的落点（纯函数，便于断言）。
+ *
+ * 为什么需要它（见 docs/spec-notes.md D-99）：英译中的离线档走 `huggingface_hub`，
+ * 而 HF 的缓存不是"一个目录里平铺文件"：`try_to_load_from_cache()`（引擎 `_check_downloaded`
+ * 与 D-97c 的探针都用它判"权重在不在"）解析的是
+ *   `<cache>/models--<org>--<name>/snapshots/<revision>/<filename>`
+ * 而该路径通常只是指向 `<cache>/models--<org>--<name>/blobs/<blob>` 的链接，
+ * `<revision>` 又要从 `refs/main` 里读出来。
+ * ⇒ 「把权重放进 `src/models/`」如果只平铺文件，HF **看不见**它 —— 于是照样联网重下
+ *   （而在本机就是 `ProxyError 502`，见 D-97c）。这一层就是"看得见"与"看不见"的分界。
+ *
+ * 约定（可断言，不猜）：带 `hf` 的条目其 `linkTo` **必须**形如 `<cache>/blobs/<blob>`
+ * ⇒ `<cache>` = `dirname(dirname(linkTo))`。不满足就抛错：猜错的表现是
+ * 「链接建好了、权重还是不被认」，症状与根因离得极远。
+ */
+export function hfLayout(file, { rootDir, linkBase }) {
+  if (!file.hf) return null;
+  if (!file.linkTo) {
+    throw new ModelStoreError('MODEL_HF_NO_LINK', `${file.id}：带 hf 的条目必须有 linkTo`);
+  }
+  const segs = file.linkTo.split('/').filter(Boolean);
+  if (segs.length < 3 || segs[segs.length - 2] !== 'blobs') {
+    throw new ModelStoreError(
+      'MODEL_HF_BAD_LINK',
+      `${file.id}：带 hf 的条目其 linkTo 必须形如 <cache>/blobs/<blob>，收到「${file.linkTo}」`,
+      { id: file.id, linkTo: file.linkTo },
+    );
+  }
+  const cacheDir = path.join(linkBase, ...segs.slice(0, -2));
+  return {
+    cacheDir,
+    blobFrom: path.join(rootDir, file.dest),
+    snapshotTo: path.join(cacheDir, 'snapshots', file.hf.revision, file.hf.filename),
+    refsTo: path.join(cacheDir, 'refs', 'main'),
+    refsContent: file.hf.revision, // HF 写的是**裸** commit（无换行），照抄
+  };
 }
 
 // ------------------------------------------------------------------ .ready 标记
@@ -443,7 +500,7 @@ export async function linkModels(manifest, { rootDir, linkBase, ids, set, logger
   const flags = refuteFlags();
   const files = selectFiles(manifest, { ids, set }).filter((f) => f.linkTo);
   const base = linkBase ?? path.join(rootDir, 'src');
-  const out = { total: files.length, base, linked: [], already: [], copied: [], skipped: [] };
+  const out = { total: files.length, base, linked: [], already: [], copied: [], skipped: [], hf: [] };
 
   if (flags.noLink) {
     out.skipped = files.map((f) => f.id);
@@ -451,9 +508,37 @@ export async function linkModels(manifest, { rootDir, linkBase, ids, set, logger
     return out;
   }
 
+  /**
+   * 把 `from` 落到 `to`（硬链接优先，跨设备退化复制）。
+   *
+   * 🔴 判"路径上有没有东西"用 `lstatSafe` 而非 `statSafe`：HF 在 `snapshots/` 下留的是
+   *    相对符号链接，`stat` 会跟随它 —— 链接悬空时 `stat` 返回 null，于是这里会以为
+   *    "路径是空的"而直接 `link()` 拿到 `EEXIST`，再退化成 `copyFile`，
+   *    而 `copyFile` 写的是**链接指向的目标**、并不是替换这个链接本身。既没修好也不报错。
+   * @returns {'linked'|'already'|'copied'}
+   */
+  const linkOne = async (label, from, to) => {
+    const stFrom = await statSafe(from);
+    await fsp.mkdir(path.dirname(to), { recursive: true });
+    const lTo = await lstatSafe(to);
+    if (lTo) {
+      const stTo = await statSafe(to); // 跟随链接：悬空则为 null
+      if (stTo && stTo.ino === stFrom.ino && stTo.dev === stFrom.dev) return 'already';
+      await fsp.rm(to, { force: true }); // 悬空链接 / 上一版本留下的旧文件
+    }
+    try {
+      await fsp.link(from, to);
+      log(logger, `  [链接] ${label} → ${path.relative(base, to) || to}`);
+      return 'linked';
+    } catch (e) {
+      await fsp.copyFile(from, to); // 跨设备等情况：退化为复制，但**如实记账**
+      log(logger, `  [复制] ${label}（硬链接不可用：${e.code || e.message}）`);
+      return 'copied';
+    }
+  };
+
   for (const file of files) {
     const from = path.join(rootDir, file.dest);
-    const to = path.join(base, file.linkTo);
     const stFrom = await statSafe(from);
     if (!stFrom) {
       out.skipped.push(file.id);
@@ -461,23 +546,58 @@ export async function linkModels(manifest, { rootDir, linkBase, ids, set, logger
       continue;
     }
 
-    await fsp.mkdir(path.dirname(to), { recursive: true });
-    const stTo = await statSafe(to);
-    if (stTo && stTo.ino === stFrom.ino && stTo.dev === stFrom.dev) {
-      out.already.push(file.id); // 已经是指向同一 inode 的链接，不动它
-      continue;
-    }
-    if (stTo) await fsp.rm(to, { force: true }); // 上一个引擎版本留下的、或已被换掉的旧文件
+    const to = path.join(base, file.linkTo);
+    const how = await linkOne(file.id, from, to);
+    out[how].push(file.id);
 
-    try {
-      await fsp.link(from, to);
-      out.linked.push(file.id);
-      log(logger, `  [链接] ${file.id} → ${file.linkTo}`);
-    } catch (e) {
-      await fsp.copyFile(from, to); // 跨设备等情况：退化为复制，但**如实记账**
-      out.copied.push(file.id);
-      log(logger, `  [复制] ${file.id}（硬链接不可用：${e.code || e.message}）`);
+    // —— HuggingFace 缓存布局：blob 之外还要有 snapshots/<rev>/<file> 与 refs/main
+    //    否则引擎用 huggingface_hub 判"权重在不在"时会**看不见**这份权重（见 hfLayout）。
+    const hf = hfLayout(file, { rootDir, linkBase: base });
+    if (hf) {
+      const snapHow = await linkOne(`${file.id}#snapshot`, from, hf.snapshotTo);
+      const refsWritten = await writeRefsIfChanged(hf.refsTo, hf.refsContent);
+      out.hf.push({ id: file.id, snapshot: hf.snapshotTo, refs: hf.refsTo, how: snapHow, refsWritten });
     }
+  }
+  return out;
+}
+
+/**
+ * 写 `refs/main`（内容 = 裸 commit）。**内容一致就不动它** —— 避免每次装配都刷新 mtime，
+ * 那会让"这次装配真的改了什么"变得看不出来。
+ * @returns {boolean} 是否真的写了
+ */
+async function writeRefsIfChanged(refsTo, content) {
+  await fsp.mkdir(path.dirname(refsTo), { recursive: true });
+  try {
+    if ((await fsp.readFile(refsTo, 'utf8')) === content) return false;
+  } catch { /* 不存在或读不动 ⇒ 写一份新的 */ }
+  await fsp.writeFile(refsTo, content);
+  return true;
+}
+
+/**
+ * 纯校验（不联网）：带 `hf` 的条目在引擎树里**是否真的能被 HF 解析到**。
+ * =============================================================================
+ * 判据三条，缺一不可（任何一条缺了，`try_to_load_from_cache()` 就会返回 None，
+ * 引擎随即联网重下 —— 在本机表现为 `ProxyError 502`）：
+ *   ① `snapshots/<revision>/<filename>` 存在（HF 认的是这个路径，不是 blobs 那个）
+ *   ② `refs/main` 的内容 = `revision`（HF 靠它把 "main" 解析成 commit）
+ *   ③ 权威副本（store 的 `dest`）在
+ * 这是「链接建完了但权重仍然不被认」这一整类问题的**唯一**承担者。
+ */
+export async function verifyHfCache(manifest, { rootDir, linkBase, ids, set } = {}) {
+  const base = linkBase ?? path.join(rootDir, 'src');
+  const files = selectFiles(manifest, { ids, set }).filter((f) => f.hf);
+  const out = { total: files.length, ok: [], missing: [] };
+  for (const file of files) {
+    const l = hfLayout(file, { rootDir, linkBase: base });
+    const snap = await statSafe(l.snapshotTo);
+    const store = await statSafe(l.blobFrom);
+    let refOk = false;
+    try { refOk = (await fsp.readFile(l.refsTo, 'utf8')).trim() === l.refsContent.trim(); } catch { /* 缺 refs */ }
+    if (snap && store && refOk) out.ok.push(file.id);
+    else out.missing.push({ id: file.id, snapshot: !!snap, store: !!store, refs: refOk });
   }
   return out;
 }

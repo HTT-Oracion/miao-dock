@@ -224,6 +224,64 @@ export const ENGINE_VERSION = config.engineProtocol === 'mock' ? 'mock' : readEn
  */
 export const ENGINE_DEFAULT_DETECTION_SIZE = 2048;
 
+// ================================================================ HF 离线（B3）
+
+/**
+ * 英译中权重（nllb）在引擎树里的 **HF snapshot 目录**。
+ *
+ * 🔴 从 `models.manifest.json` **推**出来，不写死路径：清单是外部资产的唯一事实源（S3），
+ *    在这里再抄一遍字面量，换模型/换 revision 时就会漏改一处，而失败形态是
+ *    "权重明明在盘上、离线判定却说不存在"。
+ * 读不到清单 / 清单里没有 `hf` 条目 → `null`（=不知道，就不擅自假设"有权重"）。
+ */
+export function translationSnapshotDir(engineDir = config.engineDir) {
+  try {
+    const m = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8'));
+    const f = (m.files || []).find((x) => x.hf && x.set === 'translation');
+    if (!f) return null;
+    // linkTo 形如 `<cache>/blobs/<blob>`（清单的 M4 断言钉住这条契约）⇒ `<cache>` = 去掉最后两段
+    const segs = String(f.linkTo).split('/').filter(Boolean);
+    return path.join(engineDir, ...segs.slice(0, -2), 'snapshots', f.hf.revision);
+  } catch { return null; }
+}
+
+/** 权重是否已预置在引擎树里。**只判存在**，不算哈希（那是 `fetch-models --check` 的事）。 */
+export function translationWeightsPresent(engineDir = config.engineDir) {
+  const dir = translationSnapshotDir(engineDir);
+  return !!dir && fs.existsSync(dir);
+}
+
+/**
+ * 引擎子进程的 **HF 离线** 环境（见 docs/spec-notes.md D-100）。
+ *
+ * 为什么要有这一条（D-97c 已经让"已预置的权重"在**加载时**不联网，这里是把它在**进程层面**
+ * 再钉一次）：带上 `HF_HUB_OFFLINE=1` 后，引擎里的 HF 调用连 etag 都不去取 ——
+ * 本机 `huggingface.co` 不可达 + 用户普遍挂系统代理 ⇒ 一次 etag 请求就是 `ProxyError 502`，
+ * 而它冒出来的地方离根因极远（表现为"引擎起不来"）。离线态下失败会变成**立刻的、说人话的**
+ * 本地错误。
+ *
+ * 🔴 **只在权重确实已在盘上时才设**：否则会把"首次下载"这条路一并堵死 —— 而那时我们要的
+ *    恰恰是联网。
+ * 🔴 与 D-86 的 `NO_PROXY` 是**两套东西、都保留**：那个管"本机 8080 不被代理劫走"，
+ *    这个管"HF 不去联网"。删掉任一个都会各自打死一条链路。
+ *
+ * @param {{present?:boolean, disabled?:boolean}} [overrides] 取值来源可注入（便于断言）
+ */
+export function engineHfOfflineEnv(overrides = {}) {
+  const {
+    present = translationWeightsPresent(),
+    disabled = envBoolLocal('MIAO_NO_HF_OFFLINE'),
+  } = overrides;
+  if (disabled || !present) return {};
+  return { HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1' };
+}
+
+function envBoolLocal(name, def = false) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return def;
+  return !['0', 'false', 'no', 'off'].includes(String(raw).toLowerCase());
+}
+
 /**
  * **生效参数快照**（《03》§5.2 的 `config` 块）—— 供 Box 做「界面与文档对账」。
  *
@@ -752,6 +810,7 @@ export function resolveEngineLaunch(overrides = {}) {
     modelsTtl = config.engineModelsTtl,
     nonce = config.engineNonce,
     sakuraBase = config.engineSakuraBase,
+    hfOffline, // undefined = 自动判定（见 engineHfOfflineEnv）
   } = overrides || {};
 
   const cmd = [pythonBin, 'main.py', '--host', host, '--port', String(port)];
@@ -768,6 +827,9 @@ export function resolveEngineLaunch(overrides = {}) {
       // 🔴 顺序要紧：必须在 `...process.env` **之后**。若用户（或本机 sandbox）已经设了
       //    `NO_PROXY`，要的是"把它并上本机地址"的那一份，而不是被它原样盖掉（D-86）。
       ...engineLocalNoProxy(),
+      // B3：权重已预置 ⇒ 在**进程层面**也离线（理由见 `engineHfOfflineEnv`）。
+      // 默认自动判定；`hfOffline` 可注入（验收用它把这一项从"本机恰好有权重"里解耦出来）。
+      ...(hfOffline === undefined ? engineHfOfflineEnv() : hfOffline),
       // 🔴 引擎子进程的 stdio **必须**是 UTF-8（见 spec-notes D-88）。
       //
       // 不加这一条时，Windows 上 Python 的 stdout/stderr 按**ANSI 代码页**编码

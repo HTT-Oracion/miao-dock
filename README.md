@@ -171,8 +171,8 @@ npm run check:ia              # IA 结构 32 条（侧栏两级 / 视图 Tab / �
 npm run check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
 npm run check:quit            # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW / 前端不静默 / Windows signal_tree 无条件 /F）
 npm run check:autostart       # 翻译服务「自动启动 / 手动启停」根因钉子 12 条 / 反证 12 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / effect 依赖不含 status / stopped 给「启动」；不起进程）
-npm run check:engine-client   # 翻译引擎适配层 46 条 / 反证 10 条（真协议用 openapi 快照「假引擎」，秒级可复跑）
-npm run check:models          # S3 模型下载器 32 条 / 反证 5 条（本地 Range 夹具源：中断续传 / 篡改一字节 / 换版本重链，秒级）
+npm run check:engine-client   # 翻译引擎适配层 48 条 / 反证 11 条（真协议用 openapi 快照「假引擎」，秒级可复跑）
+npm run check:models          # S3 模型下载器 38 条 / 反证 6 条（本地 Range 夹具源：中断续传 / 篡改一字节 / 换版本重链 / HF 缓存布局，秒级）
 npm run check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）
 npm run check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run check:contract        # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status 77 条（反证：check:contract:refute）
