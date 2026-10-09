@@ -44,28 +44,28 @@
 
 | ID | 任务 | 目标 | 范围 | 优先级 | 验收标准 | 状态 |
 |---|---|---|---|---|---|---|
-| **B1** | nllb 权重入仓 | manifest 是模型唯一清单，nllb 也要进去 | `engine/models.manifest.json` 新增条目（含 sha256/sizeBytes/许可/来源） | **P0** | `fetch:models --check` 通过；`--link` 在**零网络**下重建引擎树 | ◐ |
-| **B2** | HF 缓存布局支持 | 让下载器认得 HF 的 `blobs/ + snapshots/` 结构 | `engine/model-store.mjs` | **P0** | 落位后 `huggingface_hub.try_to_load_from_cache` 对全部文件返回 OK | ◐ |
-| **B3** | 引擎启动 env 兜底 | 固化「模型已预置 ⇒ 不联网」 | `service/src/engine-client.mjs::resolveEngineLaunch` | P1 | 断网（或 HF 不可达）下引擎仍能加载 nllb | ☐ |
+| **B1** | nllb 权重入仓 | manifest 是模型唯一清单，nllb 也要进去 | `engine/models.manifest.json` 新增条目（含 sha256/sizeBytes/许可/来源） | **P0** | `fetch:models --check` 通过；`--link` 在**零网络**下重建引擎树 | ☑ |
+| **B2** | HF 缓存布局支持 | 让下载器认得 HF 的 `blobs/ + snapshots/` 结构 | `engine/model-store.mjs` | **P0** | 落位后 `huggingface_hub.try_to_load_from_cache` 对全部文件返回 OK | ☑ |
+| **B3** | 引擎启动 env 兜底 | 固化「模型已预置 ⇒ 不联网」 | `service/src/engine-client.mjs::resolveEngineLaunch` | P1 | 断网（或 HF 不可达）下引擎仍能加载 nllb | ☑ |
 
 ### C 组 · 服务层（P1）
 
 | ID | 任务 | 目标 | 范围 | 优先级 | 验收标准 | 状态 |
 |---|---|---|---|---|---|---|
-| **C1** | 按任务合成引擎配置 | 常量下沉为默认基线，新增纯函数 | `service/src/config.mjs` 新增 `buildEngineConfig({lang})` | **P1** | `config.engineConfig` 保持不可变；纯函数可断言 | ☐ |
-| **C2** | `translateImage` 传语言 | 请求体带上 `from_lang` | `engine-client.mjs::realTranslateImage` | **P1** | 下发体含 `config.translator.from_lang` | ☐ |
-| **C3** | 任务语言白名单 | 非法方向 400 | `service/src/server.mjs` + `errors.mjs` | P1 | 非法 `lang` → 400 | ☐ |
-| **C4** | 重试/续做继承方向 | 对齐 D-87（复用 taskId） | `store.mjs::retryTask` | P1 | 重试后方向不变 | ☐ |
-| **C5** | 设置页「翻译方向」项 | ②翻译服务 11 → 12 项 | `app/src/screens/settings/catalog.ts` 等 | P1 | 项数断言 + `GROUPS` 登记同步 | ☐ |
-| **C6** | 计数门连锁同步 | 防「全绿但少一节」的假绿 | `AGENTS.md` / `README.md` / `check:docs` / `GROUPS` | P1 | 四处一次同步 | ☐ |
-| **C7** | 诊断视图展示 `from → to` | 界面与事实对齐 | `EngineDiag.tsx` + `engine-state.ts` | P2 | 快照含 `fromLang` | ☐ |
+| **C1** | 按任务合成引擎配置 | 常量下沉为默认基线，新增纯函数 | `service/src/config.mjs` 新增 `buildEngineConfig({lang})` | **P1** | `config.engineConfig` 保持不可变；纯函数可断言 | ☑ |
+| **C2** | `translateImage` 传语言 | 请求体带上 `from_lang` | `engine-client.mjs::realTranslateImage` | **P1** | 下发体含 `config.translator.from_lang` | ☑ |
+| **C3** | 任务语言白名单 | 非法方向 400 | `service/src/server.mjs` + `errors.mjs` | P1 | 非法 `lang` → 400 | ☑ |
+| **C4** | 重试/续做继承方向 | 对齐 D-87（复用 taskId） | `store.mjs::retryTask` | P1 | 重试后方向不变 | ☑ |
+| **C5** | 设置页「翻译方向」项 | ②翻译服务 11 → 12 项 | `app/src/screens/settings/catalog.ts` 等 | P1 | 项数断言 + `GROUPS` 登记同步 | ☑ |
+| **C6** | 计数门连锁同步 | 防「全绿但少一节」的假绿 | `AGENTS.md` / `README.md` / `check:docs` / `GROUPS` | P1 | 四处一次同步 | ☑ |
+| **C7** | 诊断视图展示 `from → to` | 界面与事实对齐 | `EngineDiag.tsx` + `engine-state.ts` | P2 | 快照含 `fromLang` | ☑ |
 
 ### D 组 · 前端 / 插件（P1-P2）
 
 | ID | 任务 | 目标 | 范围 | 优先级 | 验收标准 | 状态 |
 |---|---|---|---|---|---|---|
-| **D1** | 面板「翻译方向」选择 + 持久化 | 插件端可选英译中 | `miao-trans/extension/src/panel/*` | P1 | 创建任务带 `lang:{from:'en',to:'zh'}` | ☐ |
-| **D2** | 契约文档 + `contract.ts` 先改 | 两端同版本（先契约后实现） | `miao-trans/docs/` + `types/contract.ts` | P1 | verify 断言通过 | ☐ |
+| **D1** | 面板「翻译方向」选择 + 持久化 | 插件端可选英译中 | `miao-trans/extension/src/panel/*` | P1 | 创建任务带 `lang:{from:'en',to:'zh'}` | ☑ |
+| **D2** | 契约文档 + `contract.ts` 先改 | 两端同版本（先契约后实现） | `miao-trans/docs/` + `types/contract.ts` | P1 | verify 断言通过 | ☑ |
 
 ### E 组 · OCR 专项（P0/P2）
 
@@ -74,13 +74,13 @@
 | ID | 任务 | 目标 | 范围 | 优先级 | 验收标准 | 状态 |
 |---|---|---|---|---|---|---|
 | **E1** | （= A1）断词合并 | 见 A1 | — | **P0** | 见 A1 | ☑ |
-| **E2** | 识别错误的轻量纠错 | 降低高频 OCR 错字对译文的影响 | 译前词典（`pre_dict` 正则）或拼写纠正 | **P2** | 先做**实验**判定收益，再决定是否立项 | ☐（需先实验） |
+| **E2** | 识别错误的轻量纠错 | 降低高频 OCR 错字对译文的影响 | 译前词典（`pre_dict` 正则）或拼写纠正 | **P2** | 先做**实验**判定收益，再决定是否立项 | ☑ **已实验 · 不立项**（置信度可完美检出，但自动矫正会改错；见 D-100，「低置信度提示」列 ver2.2） |
 
 ### F 组 · 文档与台账（P0）
 
 | ID | 任务 | 范围 | 优先级 | 验收标准 | 状态 |
 |---|---|---|---|---|---|
-| **F1** | 决策与踩坑入台账 | `docs/spec-notes.md` D-97 / D-98 | **P0** | 有依据、有反证、有回写 | ☑ |
+| **F1** | 决策与踩坑入台账 | `docs/spec-notes.md` D-97 / D-98 / **D-99（HF 缓存布局）· D-100（E2 实验）** | **P0** | 有依据、有反证、有回写 | ☑ |
 | **F2** | 本清单状态回写 | 本文档 | **P0** | 状态列与实物一致 | ☑ |
 
 ---

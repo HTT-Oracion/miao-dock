@@ -4736,8 +4736,104 @@ self.text += ' ' + txt      # 在行尾 '-' 与后半截之间插了空格
 **识别错误**（`BUT YOU'RE` 被 OCR 认成 `BLIT IOURE`，置信度仅 0.345）本补丁**无效**，
 需另立项（译前词典 / 拼写纠正），且**先实验再立项**（收益未证）。
 
+> **2026-10-10 追注**：该实验已做完 ⇒ **不立项**，裁定与数据见 **D-100**。
+
+---
+
+## D-99 · HF 缓存布局：`blobs/<sha>` + `snapshots/<rev>/<file>` + `refs/main` 三件套缺一不可（2026-10-10）
+
+### 一、症状（"链接建完了、权重还是不被引擎认"）
+
+nllb 档的权重按 **HF 缓存布局**落盘（`engine/models.manifest.json` 里带 `hf` 字段的条目）。
+**光有物理文件不够** —— `huggingface_hub` 认的是「解析入口」：`snapshots/<revision>/<filename>`
+要经 `refs/main` 指向 revision。少任何一件，`from_pretrained` 就报"找不到模型"，即使文件一个不缺。
+
+### 二、判据（唯一诚实的那个）
+
+`huggingface_hub.try_to_load_from_cache()` 返回**路径**（而非 `None`）才算在。等价于三件套齐：
+`<cache>/blobs/<blob>`（物理副本）+ `<cache>/snapshots/<revision>/<filename>`（解析入口）+ `<cache>/refs/main`（指向 revision）。
+
+### 三、修法
+
+- `engine/model-store.mjs::linkModels` 重建链接时**一并**建这三件套（零网络；硬链接失败退化复制）。
+  约定：带 `hf` 的条目其 `linkTo` **必须**落在 `blobs/` 下 ⇒ `linkModels` 据此推出 `<cache>` 根。
+- `engine/scripts/fetch-models.mjs --check` 增加「HF 缓存布局」一节（可解析 / 不可解析逐条列出）。
+
+### 四、🔴 连带的假绿（F 组全量回归才发现，已修）
+
+`POST /engine/models/verify` 原先 `ok = bad===0 && missing===0` —— **没把 HF 布局算进去**。
+于是"文件都在、仅 HF 布局不可解析"会报 `ok:true`，界面写「校验通过」，
+而下面却列着 HF 的 `✗` 行 —— 这是**最危险的一种假绿**（用户以为能用，引擎其实加载不了）。
+
+修法（`service/src/server.mjs`）：解析 HF 汇总行 ⇒ `ok = bad===0 && missing===0 && hfBroken===0`，
+并新增响应字段 `hf:{resolvable,broken,total}`；两处界面文案（`ModelManageBlock.tsx` / `engine-state.ts`）
+在不通过时补出「· HF 布局不可解析 N」。
+
+### 五、新钉子
+
+- `e2e/engine/model-store-check.mjs`（`check:models` 38 条）：守三件套重建 + `try_to_load_from_cache` 探针。
+- `e2e/service/engine-settings-check.mjs::U8b`（已按两节重写）：`problems` 现在是**两节合起来**的清单，
+  分母不再是 `missing` —— 断言「每个缺失条目单独出现」+ `hf.broken===hf.total>0` + `ok===false`。
+
 ### 五、新钉子
 
 `npm run check:engine-patches[:refute]` —— 6 条 / 反证 4 条（零网络零 GPU）。
 它守的是**表与实物**的一致性（条数/结构/marker 命名/目标存在/已应用/补丁体自含 marker），
 不重跑真引擎（真链路验证走 `.tmp/en-test/` 的实测，分钟级，不进常规门）。
+
+## D-100 · E2 实验：OCR「识别错误」**不立项自动纠错**；「低置信度检出」记入 ver2.2 候选（2026-10-10）
+
+> 由 D-98 末尾留的尾巴而来（断词归补丁，识别错误需另立项）。E2 的验收标准是
+> 「先做**实验**判定收益，再决定是否立项」—— 本文就是那次实验与裁定。
+
+### 一、样本与真值（`test-manga/en/test-0.png`，nllb 链路实测）
+
+全页 32 个 OCR region。已知有**且仅有** 1 处识别错误：
+
+| region 文本（OCR） | 置信度 | 真值 | nllb 译文 |
+|---|---|---|---|
+| `BLIT IOU'RE EVEN` | **0.3452** | `BUT YOU'RE EVEN` | 「你的可怜的债务比我想象的还要好.」❌ |
+| `IT'S UNBE- LIEVABLE, …`（A1 已修断词） | 0.8839 | `IT'S UNBELIEVABLE, …` | 「这令人难以置信, 但我们没有时间感到震惊.」✅ |
+
+⇒ 识别错误确实**污染译文**（该页 8 行里坏 1 行 = 12.5%），不是纸面问题。
+
+### 二、Q1：置信度能否检出错误？—— 能，且分离干净
+
+实验脚本 `.tmp/en-test/e2-ocr-confidence-experiment.mjs`（读实测日志的 32 个 region，可复跑）：
+
+| 阈值 | 标出 | 命中 | 误报 | recall | precision |
+|---|---|---|---|---|---|
+| <0.3 | 0 | 0/1 | 0 | 0.00 | 1.00 |
+| **<0.4 ~ <0.6** | **1** | **1/1** | **0** | **1.00** | **1.00** |
+| <0.7 | 4 | 1/1 | 3 | 1.00 | 0.25 |
+
+错字置信度 0.3452，次低的**正确** region 是 0.6077 —— 中间有 0.26 的空档，0.4–0.6 任一阈值都把
+「1 个错字」与「31 个正确」完美切开。⇒ **检出（detect）廉价且可靠**。
+
+### 三、Q2：能否自动**修正**？—— 本页实测：拼写纠正会**把对的改错**
+
+| 坏词 | 真值 | 最小编辑距离会选谁 |
+|---|---|---|
+| `BLIT` | `BUT`（距离 2） | **`BIT`（距离 1）** ❌ 选错 |
+| `IOU'RE` | `YOU'RE`（距离 1） | `YOU'RE` ✅ |
+
+漫画 OCR 是**全大写、无句法、含人名与拟声词**的文本：`BLIT` 距 `BIT`/`BLITZ`/`SLIT` 都比距真值 `BUT` 更近。
+一个「有时对、有时错」的纠正器，在译文上表现为**把本来能译对的行改坏** —— 净收益可能为负。
+
+### 四、引擎里现成的杠杆（都够不着）
+
+- `pre_dict`（`load_dictionary` + `apply_dictionary`，`manga_translator.py:527/531`）= **字面 from→to 替换表**，
+  不是拼写纠正。给本页加 `BLIT IOU'RE`→`BUT YOU'RE` 能修，但**逐页打地鼠、零泛化**，ROI ≈ 0。
+- `post_check_max_retry_attempts`（`config.py:243`）= **译文**校验失败后的重译，**不重跑 OCR**；
+  本页页级检查还打了 `passed` ⇒ 根本没触发。
+- `use_mtpe`（LLM 后编辑）需要额外编辑模型，属另一条产品线。
+
+### 五、裁定
+
+1. **不立项「自动纠错」**（ver2.1 不做，ver2.2 也不预先承诺）。依据：① 样本 n=1 页、1 个错例，
+   不足以称「高频」；② 字面词典不泛化；③ 编辑距离纠正在本页实测**会改错**。
+2. **记入 ver2.2 候选：低置信度「提示」**（检出可靠、零污染风险、成本低）—— 但它是**披露**不是**修复**
+   （告诉用户「此页有 1 处识别可能性低，译文可能不准」）；⚠️ 需把 OCR 置信度贯通到服务/插件
+   （引擎 2 处 + 服务 1 处 + 插件 1 处），排期时再评估。
+3. **可复现证据保留**：`.tmp/en-test/e2-ocr-confidence-experiment.mjs`（实验脚本）+ 本文数值。
+   `.tmp/` 不入库 ⇒ 数值与结论已固化在本文，将来立项不必重推。
