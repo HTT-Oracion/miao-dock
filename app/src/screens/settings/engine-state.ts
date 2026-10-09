@@ -189,6 +189,9 @@ export function configPairs(cfg: EngineStatus['config'] | undefined): { k: strin
   if (!cfg) return [];
   return [
     { k: '翻译器', v: cfg.translator },
+    // `null` = 基线没钉源语言 ⇒ 真正生效的方向是**逐任务**下的（ver2.1）。
+    // 显示成空白会让人以为"没配"，必须把这句语义写出来。
+    { k: '源语言', v: cfg.fromLang ?? '按任务方向' },
     { k: '目标语言', v: cfg.targetLang },
     { k: '检测器', v: cfg.detector },
     // `null` 必须显示成"未下发"而不是一个数字：我们**不下发**它时引擎用自己的默认值，

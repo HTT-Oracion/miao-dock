@@ -24,9 +24,11 @@
  *   5. 前端 App.tsx 的「重试」打的是这条路由，**不再**打 `/library/{name}/resume`。
  *
  * ## 反证轮（`--refute`）
- *   破坏源文件 → 对应断言**必须变红** → 按字节还原。两条变异：
+ *   破坏源文件 → 对应断言**必须变红** → 按字节还原。四条变异：
  *     M1 服务端把 `/retry` 退回 `createResumeTask`（= 旧行为）⇒ R2/R3/R4/R5 应变红；
- *     M2 前端把 `/retry` 退回 `/resume` ⇒ R6 应变红。
+ *     M2 前端把 `/retry` 退回 `/resume` ⇒ R6 应变红；
+ *     M3 服务端不再校验方向白名单（`zh>ja` 被放行）⇒ R7 应变红；
+ *     M4 `store._processItem` 把方向写死 ja/zh ⇒ R9 应变红。
  *   服务是**子进程**（不是 in-process import），所以磁盘上的破坏会被新起的进程读到 ——
  *   不需要 engine-client-check 那套"子进程重新 import"来绕 ESM 缓存。
  *
@@ -50,6 +52,7 @@ const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const ENGINE_ENTRY = path.join(ROOT, 'engine', 'src', 'server.mjs');
 const SERVICE_ENTRY = path.join(ROOT, 'service', 'src', 'server.mjs');
 const SERVER_SRC = path.join(ROOT, 'service', 'src', 'server.mjs');
+const STORE_SRC = path.join(ROOT, 'service', 'src', 'store.mjs');
 const APP_SRC = path.join(ROOT, 'app', 'src', 'App.tsx');
 
 const REFUTE = process.argv.includes('--refute');
@@ -196,14 +199,36 @@ const makeImages = (n) =>
     data: encodePng(40, 60, (x, y, put) => put((x * 6 + i * 13) % 256, (y * 4 + i * 7) % 256, 128)),
   }));
 
-async function submit(port, token, comicName, images) {
-  const mp = buildMultipart({ comicName, idempotencyKey: crypto.randomUUID() }, images);
+async function submit(port, token, comicName, images, lang) {
+  const payload = { comicName, idempotencyKey: crypto.randomUUID() };
+  if (lang) payload.lang = lang;
+  const mp = buildMultipart(payload, images);
   const res = await request(port, 'POST', '/api/v1/tasks', {
     token,
     headers: { 'Content-Type': mp.contentType },
     body: mp.body,
   });
   return { status: res.status, json: json(res) };
+}
+
+/** 读落盘的任务记录（`state/tasks/<taskId>.json`）—— 方向的**持久化**事实 */
+function readTaskState(stateDir, taskId) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(stateDir, 'tasks', `${taskId}.json`), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/** 问引擎「最近一次请求的方向」（替身把 `X-Miao-From/To` 记在 `/ready` 的 `lang` 上） */
+async function engineSeenLang(port) {
+  try {
+    const res = await request(port, 'GET', '/ready', {});
+    const body = json(res);
+    return body && body.lang ? body.lang : null;
+  } catch {
+    return null;
+  }
 }
 
 const detail = async (port, token, taskId) =>
@@ -260,6 +285,7 @@ async function runAll() {
     const submitted = await submit(PORT, TOKEN, '重试身份', makeImages(TOTAL_IMAGES));
     const taskId = submitted.json?.taskId;
     const first = taskId ? await waitTask(PORT, TOKEN, taskId) : null;
+    const firstState = taskId ? readTaskState(STATE_DIR, taskId) : null;
     const failedSeqs = (first?.items ?? []).filter((i) => i.status === 'failed').map((i) => i.seq);
     check(
       'R1',
@@ -310,6 +336,42 @@ async function runAll() {
         second?.progress?.total === TOTAL_IMAGES &&
         JSON.stringify(failedSeqs2) === JSON.stringify([FAIL_SEQ]),
       `taskId=${second?.taskId} finishedAt ${first?.finishedAt} → ${second?.finishedAt} total=${second?.progress?.total} failed=[${failedSeqs2.join(',')}]`,
+    );
+
+    // ---- R7~R10：翻译方向（ver2.1）—— 白名单 / 落库 / 端到端到引擎 / 重试继承 ----
+    const badLang = await submit(PORT, TOKEN, '方向白名单', makeImages(1), { from: 'zh', to: 'ja' });
+    check(
+      'R7',
+      '非法方向（`zh>ja`：两个码各自合法、但**不在支持表里**）→ **400 INVALID_TRANSLATE_LANG**。静默回落成日译中会让英文漫画以日语送进引擎 ⇒ 整页原文照抄',
+      badLang.status === 400 && badLang.json?.error?.code === 'INVALID_TRANSLATE_LANG',
+      `HTTP ${badLang.status} code=${badLang.json?.error?.code}`,
+    );
+
+    const enTask = await submit(PORT, TOKEN, '方向贯通', makeImages(2), { from: 'en', to: 'zh' });
+    const enId = enTask.json?.taskId;
+    const enDone = enId ? await waitTask(PORT, TOKEN, enId) : null;
+    const enPersisted = enId ? readTaskState(STATE_DIR, enId) : null;
+    check(
+      'R8',
+      '`lang:{en,zh}` 的任务**方向落库**（`state/tasks/*.json` 的 `lang` 是 en>zh，不是默认的 ja>zh）',
+      enPersisted?.lang?.from === 'en' && enPersisted?.lang?.to === 'zh',
+      JSON.stringify(enPersisted?.lang),
+    );
+    const seen = await engineSeenLang(engineInfo.port);
+    check(
+      'R9',
+      '方向**真的送到了引擎**（替身把最近一次请求的 `X-Miao-From/To` 报在 `/ready` 的 `lang` 上）—— 这是 `store._processItem` 那一段链路的唯一观测点',
+      seen?.from === 'en' && seen?.to === 'zh',
+      `引擎看到 ${JSON.stringify(seen)}（任务终态 ${enDone?.status}）`,
+    );
+
+    const afterRetry = readTaskState(STATE_DIR, taskId);
+    check(
+      'R10',
+      '重试**不改方向**（复用同一 task ⇒ 继承原方向；重试后落库的 `lang` 与首次一致）',
+      afterRetry?.lang?.from === 'ja' && afterRetry?.lang?.to === 'zh'
+        && JSON.stringify(afterRetry.lang) === JSON.stringify(firstState?.lang),
+      `首次 ${JSON.stringify(firstState?.lang)} → 重试后 ${JSON.stringify(afterRetry?.lang)}`,
     );
 
     // ---- R6：前端接线（源码断言）----
@@ -375,6 +437,28 @@ const MUTATIONS = [
     ],
     expect: ['R6'],
   },
+  {
+    name: 'M3 服务端不再校验方向白名单（非法方向被当成默认方向放行 ⇒ 英文漫画以日语送引擎）',
+    edits: [
+      {
+        file: SERVER_SRC,
+        find: '  if (!isSupportedDirection(payload.lang)) {',
+        replace: '  if (false) { // refute：白名单失效',
+      },
+    ],
+    expect: ['R7'],
+  },
+  {
+    name: 'M4 `store._processItem` 把方向写死成 ja/zh（任务方向没传下去 ⇒ 替身看到的方向永远是日语）',
+    edits: [
+      {
+        file: STORE_SRC,
+        find: "          lang: task.lang,\n          from: task.lang && task.lang.from,",
+        replace: "          lang: { from: 'ja', to: 'zh' },\n          from: 'ja',",
+      },
+    ],
+    expect: ['R9'],
+  },
 ];
 
 const readBytes = (f) => {
@@ -411,12 +495,18 @@ const main = async () => {
     for (const [i, e] of mut.edits.entries()) {
       if (!originals.has(e.file)) originals.set(e.file, readBytes(e.file));
       const txt = originals.get(e.file).toString('utf8');
-      if (!txt.includes(e.find)) {
+      // 🔴 多行锚点**必须按目标文件的实际 EOL 归一化**：工作区有 CRLF 文件（如 `service/src/store.mjs`），
+      //    锚点里写死 `\n` 会在 `includes` 那一步就失败 ⇒ 被当成"锚点未找到"**静默跳过**，
+      //    表现为「应执行 7 条、实际只反证了 6 条」这种分母虚高（真红过的坑）。
+      const eol = txt.includes('\r\n') ? '\r\n' : '\n';
+      const find = e.find.replace(/\r?\n/g, eol);
+      const replace = e.replace.replace(/\r?\n/g, eol);
+      if (!txt.includes(find)) {
         console.log(`⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`);
         skipped += mut.expect.length;
         continue;
       }
-      await writeRetry(e.file, txt.replace(e.find, e.replace));
+      await writeRetry(e.file, txt.replace(find, replace));
     }
     // 🔴 还原一律进 `finally`：破坏若让 `runAll()` 抛异常，写在 try 之后的还原就不会执行，
     //    源文件会永久留成被破坏状态（E4 / E8 上都踩到过这一条）。

@@ -308,7 +308,7 @@ async function runPositive() {
         } catch { return false; }
       })(),
       (() => { try { return JSON.parse(lastHit().body.toString('utf8')).image.slice(0, 40); } catch { return 'n/a'; } })());
-    check('R3 请求体 config 与 config.engineConfig 基线一致（sakura / CHS / 48px / lama_large）',
+    check('R3 请求体 config 的**基线四项**与 `config.engineConfig` 一致（sakura / CHS / 48px / lama_large / default）',
       (() => {
         try {
           const o = JSON.parse(lastHit().body.toString('utf8'));
@@ -320,6 +320,23 @@ async function runPositive() {
         } catch { return false; }
       })(),
       (() => { try { return JSON.stringify(JSON.parse(lastHit().body.toString('utf8')).config); } catch { return 'n/a'; } })());
+    // ↓ ver2.1 的两条**方向**断言：这是「服务把方向真的送到引擎」在**请求体层面**的取证。
+    //   只测 R3 不够 —— R3 在 `from_lang` 缺失时同样绿（发 `config.engineConfig` 常量也一样绿）。
+    check('R16 ja 方向 ⇒ 请求体下发 `config.translator.from_lang === "JPN"`（显式源语言，不再靠 langid 自动检测）',
+      (() => {
+        try { return JSON.parse(lastHit().body.toString('utf8')).config?.translator?.from_lang === 'JPN'; }
+        catch { return false; }
+      })(),
+      (() => { try { return JSON.stringify(JSON.parse(lastHit().body.toString('utf8')).config.translator); } catch { return 'n/a'; } })());
+    const a1en = await attempt(() => translateImage(pngBytes(40, 60, 5), { seq: 17, lang: { from: 'en', to: 'zh' }, mime: 'image/png' }));
+    check('R17 en 方向 ⇒ `from_lang === "ENG"` **且**翻译器切成 `nllb`（sakura 的 prompt 硬编码日文、语言表只有 {CHS,JPN} ⇒ 英文必原文照抄，A 组实测 8/8 行）',
+      (() => {
+        try {
+          const t = JSON.parse(lastHit().body.toString('utf8')).config?.translator;
+          return t?.from_lang === 'ENG' && t?.translator === 'nllb' && t?.target_lang === 'CHS';
+        } catch { return false; }
+      })(),
+      a1en.err ? errText(a1en.err) : (() => { try { return JSON.stringify(JSON.parse(lastHit().body.toString('utf8')).config.translator); } catch { return 'n/a'; } })());
     check('R4 返回 {bytes,ext,mime} 且 ext 由**字节嗅探**得出（不信引擎自称的 Content-Type）',
       !!r1 && Buffer.isBuffer(r1.bytes) && r1.ext === 'png' && r1.mime === 'image/png' && r1.bytes.length > 8,
       r1 ? `${r1.ext} ${r1.mime} ${r1.bytes.length}B` : errText(a1.err));
@@ -572,12 +589,13 @@ async function runPositive() {
 
     // ---------------------------------------------------------- C · 生效参数快照（§5.2 的 `config` 块）
     const snap = engineConfigSnapshot();
-    check('C1 `config` 是 **camelCase** 的 6 键（`targetLang` / `detectionSize`）—— 发出去的是 snake_case、报出来的是 camelCase，两个形状必须出自同一处（跨层字段名漂移的挡板）',
-      ['translator', 'targetLang', 'detector', 'detectionSize', 'ocr', 'inpainter'].every((k) => k in snap)
-      && !('target_lang' in snap) && !('detection_size' in snap),
+    check('C1 `config` 是 **camelCase** 的 7 键（`fromLang` / `targetLang` / `detectionSize`）—— 发出去的是 snake_case、报出来的是 camelCase，两个形状必须出自同一处（跨层字段名漂移的挡板）',
+      ['translator', 'fromLang', 'targetLang', 'detector', 'detectionSize', 'ocr', 'inpainter'].every((k) => k in snap)
+      && !('from_lang' in snap) && !('target_lang' in snap) && !('detection_size' in snap),
       JSON.stringify(snap));
-    check('C2 快照值与 `config.engineConfig`（真发给引擎的那份）**逐项一致** —— 不是另抄一遍字面量（抄两遍 = 等它们走散）',
+    check('C2 快照值与 `config.engineConfig`（基线）**逐项一致** —— 不是另抄一遍字面量（抄两遍 = 等它们走散）。`fromLang` 报的是基线（`null` = 基线不钉源语言、逐任务下发），不是某个任务的方向',
       snap.translator === config.engineConfig.translator.translator
+      && snap.fromLang === (config.engineConfig.translator.from_lang ?? null)
       && snap.targetLang === config.engineConfig.translator.target_lang
       && snap.detector === config.engineConfig.detector.detector
       && snap.ocr === config.engineConfig.ocr.ocr
@@ -777,9 +795,16 @@ const MUTATIONS = [
     replace: '',
     expect: ['L14'],
   },
+  {
+    name: 'L · 请求体退回发 `config.engineConfig` 常量（逐任务方向被丢掉 ⇒ 英译中被当日语送进引擎：ver2.1 C2）',
+    file: ENGINE_CLIENT,
+    find: '    config: buildEngineConfig({ lang: langOf(opts) }),',
+    replace: '    config: config.engineConfig,',
+    expect: ['R16', 'R17'],
+  },
 ];
 
-const EXPECTED_MUTATIONS = 11; // 分母写死
+const EXPECTED_MUTATIONS = 12; // 分母写死
 
 function sha(p) {
   return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');

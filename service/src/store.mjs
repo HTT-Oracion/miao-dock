@@ -9,7 +9,7 @@ import {
   BATCH_LIMIT, ETA_SAMPLE_WINDOW, MAX_SEQ, FILE_NAME_RE, ORIGINAL_SCAN_RE,
   TRANSLATED_SCAN_RE, TASKS_STATE_DIR, IDEMPOTENCY_FILE, PENDING_DIR,
   HIDDEN_COMICS_FILE,
-  assertInsideRoot, canonicalize, config, seq3,
+  assertInsideRoot, canonicalize, config, normalizeDirection, seq3,
 } from './config.mjs';
 import { ApiError } from './errors.mjs';
 import { sniffImageType } from './image.mjs';
@@ -633,6 +633,8 @@ export class Store {
         idempotencyKey: null,
         items,
       }],
+      // 与续做同理：返工是**新建任务**，方向由调用方给（不给 = 默认日译中）。
+      lang,
       idempotencyKey: null,
     });
 
@@ -652,7 +654,7 @@ export class Store {
    *
    * 单次上限沿用契约 §5.2 的 20 —— 续做同样是一批 ≤20 张的提交，只是字节来源不同。
    */
-  createResumeTask(dirName, { seqs, source } = {}) {
+  createResumeTask(dirName, { seqs, source, lang } = {}) {
     const plan = this.resumePlan(dirName);
     const want = seqs && seqs.length ? new Set(seqs.map(Number)) : null;
     const pendings = want ? plan.pendings.filter((p) => want.has(p.seq)) : plan.pendings;
@@ -702,6 +704,10 @@ export class Store {
         idempotencyKey: null,
         items,
       }],
+      // 续做是**新建任务**（新 taskId），方向没有"上一条"可继承 ⇒ 由调用方显式给；
+      // 不给就落默认方向（日译中）。英文漫画点「继续翻译」时若不带方向，
+      // 会以日语送进引擎 = 整页空译文 —— 所以 server 的 resume 分支必须透传 `lang`。
+      lang,
       idempotencyKey: null,
     });
 
@@ -1172,7 +1178,14 @@ export class Store {
       try {
         if (forceFail) throw new EngineError('ENGINE_ERROR', 'injected_failure');
         translated = await translateImage(bytes, {
-          seq: item.seq, from: 'ja', to: 'zh', mime: item.mime, timeoutMs: attemptTimeoutMs,
+          seq: item.seq,
+          // 🔴 方向**取自任务**（`task.lang`），不是写死的 'ja'/'zh'：一台机器上日译中与英译中
+          //    并存，写死会让英译中任务被当日语送进引擎（A2 之前的表现：整页空译文）。
+          //    重试/续做复用同一个 task ⇒ 方向天然继承，见 `retryTask`。
+          lang: task.lang,
+          from: task.lang && task.lang.from,
+          to: task.lang && task.lang.to,
+          mime: item.mime, timeoutMs: attemptTimeoutMs,
         });
         break;
       } catch (err) {

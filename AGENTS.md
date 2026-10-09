@@ -74,8 +74,8 @@ npm run check:ia              # IA 结构 32 条（含 C8d：侧栏两套几何 
 npm run check:tls             # TLS 依赖链 14 条（三层）
 npm run check:quit[:refute]   # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW / 前端不静默 / Windows signal_tree 无条件 /F；不起进程）
 npm run check:autostart[:refute] # 翻译服务「自动启动 / 手动启停」根因钉子 12 条 / 反证 12 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / 自动启动 effect 依赖不含 status / 未就绪屏 stopped 给「启动」/ 设置页启停行；不起进程；D-94）
-npm run check:engine-client[:refute] # 翻译引擎适配层 48 条 / 反证 11 条（真协议用 openapi 快照「假引擎」，秒级）
-npm run check:retry[:refute]  # 队列「重试」任务身份：复用**同一** taskId（不冒历史行）6 条 / 反证 5 条（mock 引擎 + 真服务子进程，秒级）
+npm run check:engine-client[:refute] # 翻译引擎适配层 50 条 / 反证 12 条（真协议用 openapi 快照「假引擎」，秒级）
+npm run check:retry[:refute]  # 队列「重试」任务身份：复用**同一** taskId（不冒历史行）+ 翻译方向（白名单/落库/送到引擎/重试继承） 10 条 / 反证 7 条（mock 引擎 + 真服务子进程，秒级）
 npm run check:lib-manage[:refute] # 队列多选删除 + 漫画库隐藏/删除：仅终端态可删 / 删除带 deleteFiles 勾选 / 越界名 403 / 前端接线 8 条 / 反证 4 条（mock 引擎 + 真服务子进程，秒级）
 npm run check:retranslate[:refute] # 单张漫画返工重译 + 全屏缩放快捷键：返工**覆盖**译文（塞假译文验真被顶掉）/ 不碰原图 / 与 resume 分工 / 裸 ↑↓ 不缩放（不抢音量键）12 条 / 反证 5 条（mock 引擎 + 真服务子进程，秒级）
 npm run check:models[:refute] # S3 模型下载器 E7：38 条 / 反证 6 条（本地 Range 夹具源，秒级，不碰真权重；含 HF 缓存布局 blobs+snapshots+refs）

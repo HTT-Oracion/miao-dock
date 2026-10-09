@@ -267,9 +267,10 @@ async function assertEngineStatus(port, label, expectState) {
     && typeof v.engine.version === 'string' && v.engine.version.length > 0
     && v.engine.state === expectState,
     JSON.stringify(v?.engine));
-  check(`S5.7c config 是 **camelCase** 的 6 键（targetLang / detectionSize，不是 target_lang / detection_size）（${label}）`,
-    v?.config && ['translator', 'targetLang', 'detector', 'detectionSize', 'ocr', 'inpainter'].every((k) => k in v.config)
-    && !('target_lang' in v.config) && !('detection_size' in v.config),
+  // ver2.1 起多一个 `fromLang`（源语言基线，`null` = 逐任务下发）⇒ 6 → **7 键**。
+  check(`S5.7c config 是 **camelCase** 的 7 键（fromLang / targetLang / detectionSize，不是 from_lang / target_lang / detection_size）（${label}）`,
+    v?.config && ['translator', 'fromLang', 'targetLang', 'detector', 'detectionSize', 'ocr', 'inpainter'].every((k) => k in v.config)
+    && !('from_lang' in v.config) && !('target_lang' in v.config) && !('detection_size' in v.config),
     JSON.stringify(v?.config));
   check(`S5.7d models 是 {visualReady, sakuraReady, lastVerifiedAt} 三键（§5.2）（${label}）`,
     v?.models && ['visualReady', 'sakuraReady', 'lastVerifiedAt'].every((k) => k in v.models)

@@ -557,6 +557,111 @@ export const config = {
   engineSakuraBase: process.env.SAKURA_API_BASE || 'http://127.0.0.1:8080/v1',
 };
 
+// ------------------------------------------------------------------ 翻译方向（ver2.1 · 英译中）
+
+/**
+ * 本版支持的任务语言方向（**短码**）。UI 的「翻译方向」选项、建单白名单、引擎配置合成
+ * 三处**共认这一份**，不许各自再抄一遍。
+ *
+ * 🔴 为什么不是「任意语言随便传」：`buildEngineConfig` 要把短码翻成引擎内部语言码
+ *    （`translators/common.py::VALID_LANGUAGES`，如 `en` → `ENG`），而**翻译器是按方向选的**
+ *    （见下方 `DIRECTION_TRANSLATOR`）。放开了传，就会出现「传了个我们没验过的方向、
+ *    翻译器却仍是 sakura」这种静默产出原文的结果 —— A 组实测：sakura + 英文 = 8/8 行
+ *    原文照抄，被下游「identical to original」滤掉，用户看到的是"跑过了但一个字没翻"。
+ */
+export const TRANSLATE_DIRECTIONS = [
+  { from: 'ja', to: 'zh', label: '日译中' },
+  { from: 'en', to: 'zh', label: '英译中' },
+];
+
+/** 短码 → 引擎内部语言码。键与引擎 `ISO_639_1_TO_VALID_LANGUAGES` 对齐，只取本版用到的。 */
+const LANG_SHORT_TO_ENGINE = {
+  ja: 'JPN', jpn: 'JPN',
+  en: 'ENG', eng: 'ENG',
+  zh: 'CHS', chs: 'CHS', 'zh-cn': 'CHS',
+};
+
+const ENGINE_LANG_CODES = new Set(Object.values(LANG_SHORT_TO_ENGINE));
+
+/**
+ * 语言标识 → 引擎内部语言码；**认不出来返回 `null`（不猜）**。
+ * 短码（`en`）、引擎码（`ENG`）都收，大小写不敏感；`auto` 原样保留（显式要引擎自动检测）。
+ */
+export function engineLangCode(value) {
+  if (value === null || value === undefined) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+  if (lower === 'auto') return 'auto';
+  if (LANG_SHORT_TO_ENGINE[lower]) return LANG_SHORT_TO_ENGINE[lower];
+  const upper = raw.toUpperCase();
+  return ENGINE_LANG_CODES.has(upper) ? upper : null;
+}
+
+/**
+ * 方向是否在本版支持范围内（`from` 与 `to` 都要能被认出来且**恰好**是登记过的那一对）。
+ *
+ * ⚠️ 判的是"这一对"而不是"两个码各自合法"：`zh→ja` 里两个码都合法，但它不在支持表里 ——
+ *    按"各自合法"放行，`buildEngineConfig` 就会拿不到翻译器（回落 sakura），
+ *    于是中文原样进、中文原样出。方向必须成对校验。
+ */
+export function isSupportedDirection(lang) {
+  const d = normalizeDirection(lang);
+  return d !== null && TRANSLATE_DIRECTIONS.some((x) => x.from === d.from && x.to === d.to);
+}
+
+/**
+ * 把方向规范化成 `{from, to}` 短码小写。**只规范化、不校验合法性**：
+ * 校验是调用方的事（`server.mjs` 用它做 400 判据、`store` 用它做落库前的统一形状）。
+ * 缺 `from`/`to` 或不是对象时返回 `null`（调用方据此回落到默认方向）。
+ */
+export function normalizeDirection(lang) {
+  if (!lang || typeof lang !== 'object' || Array.isArray(lang)) return null;
+  const from = String(lang.from ?? '').trim().toLowerCase();
+  const to = String(lang.to ?? '').trim().toLowerCase();
+  if (!from || !to) return null;
+  return { from, to };
+}
+
+/**
+ * **方向 → 引擎翻译器**：只在基线翻译器**结构上做不到该方向**时才改写。
+ * 今天只有一条：`en>CHS` —— `sakura` 的 system prompt 把源语言硬编码成日文、
+ * `_LANGUAGE_CODE_MAP` 只有 `{CHS, JPN}`（A 组实测 8/8 行原文照抄）⇒ 英文必须换 `nllb`
+ * （离线权重见 `engine/models.manifest.json` 的 `translation` set）。
+ * 其余方向落回 `config.engineConfig.translator.translator`（出厂 `sakura`，可被 env 覆盖）。
+ */
+const DIRECTION_TRANSLATOR = { 'ENG>CHS': 'nllb' };
+
+/**
+ * 按任务方向合成**这一次请求**的引擎配置。
+ *
+ * 为什么要有它（而不是继续把 `config.engineConfig` 整个发出去）：
+ * `from_lang` 是**逐任务**的 —— 同一台机器上既有日译中又有英译中；而 `engineConfig`
+ * 是进程级常量。把常量改成可变的，就退化成"哪个任务先跑、谁的设置说了算"。
+ * ⇒ `engineConfig` 继续当**不可变基线**，本函数在它之上叠一层方向。
+ *
+ * @param {{lang?: {from?:string, to?:string}}} [opts]
+ * @returns {object} 新的引擎配置（**不改动** `config.engineConfig`）
+ */
+export function buildEngineConfig({ lang } = {}) {
+  const base = config.engineConfig;
+  const from = engineLangCode(lang && lang.from);
+  const to = engineLangCode(lang && lang.to) ?? base.translator.target_lang;
+  const translator = DIRECTION_TRANSLATOR[`${from}>${to}`] || base.translator.translator;
+  return {
+    ...base,
+    translator: {
+      ...base.translator,
+      translator,
+      target_lang: to,
+      // 🔴 映射不出引擎码时**不下发** `from_lang`（保持上游 `None` = auto），而不是发个空串。
+      //    `TranslatorConfig.from_lang` 的语义是「None = 保持上游 auto」（A2 补丁）；
+      //    发空串会被 `_src_lang or 'auto'` 吞掉，看着一样，实则多了一个假值来源。
+      ...(from ? { from_lang: from } : {}),
+    },
+  };
+}
+
 // ------------------------------------------------------------------ 路径安全工具（契约 §8.2）
 
 /**

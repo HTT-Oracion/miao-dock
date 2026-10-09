@@ -48,7 +48,7 @@ import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 
-import { config } from './config.mjs';
+import { buildEngineConfig, config } from './config.mjs';
 import { sniffImageType } from './image.mjs';
 
 /**
@@ -295,6 +295,11 @@ export function engineConfigSnapshot() {
   const c = config.engineConfig || {};
   return {
     translator: c.translator?.translator ?? null,
+    // 🔴 `fromLang` 报的是**基线**（默认 `null` = 基线不固定源语言）。ver2.1 起源语言是
+    //    **逐任务**下发的（`buildEngineConfig({lang})`），所以这里的 `null` 不是"没配"，
+    //    而是"按任务方向"—— 界面必须按这个语义显示，不能显示成空/未知。
+    //    基线若被 `MIAO_ENGINE_TRANSLATOR` 之类 env 钉住，这里就会报出那个值。
+    fromLang: c.translator?.from_lang ?? null,
     targetLang: c.translator?.target_lang ?? null,
     detector: c.detector?.detector ?? null,
     detectionSize: c.detector?.detection_size ?? ENGINE_DEFAULT_DETECTION_SIZE,
@@ -398,13 +403,30 @@ function recordFrame(seq, frame) {
 
 // ================================================================ real 协议
 
+/**
+ * 从调用参数里取「任务方向」。
+ *
+ * 两个来源都收：`lang`（新形状，`{from, to}` 短码）优先，其次回落 ver1.0 就有的
+ * `from`/`to` 两个字面量参数。为什么要同时收：`translateImage` 的签名是
+ * **ver1.0 兼容面**（《04》§4.5，见函数注释），既有调用点（含各验收脚本）传的是
+ * `from`/`to`；把老形状直接砍掉会让它们静默退化成"没方向"（= 上游 auto），
+ * 而那正是 A2 要消灭的形态。
+ */
+function langOf(opts) {
+  const o = opts || {};
+  if (o.lang && typeof o.lang === 'object') return { from: o.lang.from, to: o.lang.to };
+  return { from: o.from, to: o.to };
+}
+
 async function realTranslateImage(bytes, opts) {
   const { seq } = opts || {};
   const ext = assertTranslatableImage(bytes);
   // 用**嗅探结果**构造 data URI —— 不信调用方给的 mime，也就绕开了「纯 base64 被当 URL」那个坑
   const payload = Buffer.from(JSON.stringify({
     image: `data:${mimeOfExt(ext)};base64,${bytes.toString('base64')}`,
-    config: config.engineConfig,
+    // 🔴 逐任务合成（`from_lang` / 翻译器都随方向变），**不是**发 `config.engineConfig` 那份常量。
+    //    见 `config.mjs::buildEngineConfig`：常量留作基线，方向只叠在这一层。
+    config: buildEngineConfig({ lang: langOf(opts) }),
   }), 'utf8');
 
   const res = await requestOnce('/translate/image/stream', {
@@ -499,7 +521,12 @@ async function realProbe() {
 // ================================================================ mock 协议
 
 async function mockTranslateImage(bytes, opts) {
-  const { seq, from = 'ja', to = 'zh', mime = 'application/octet-stream' } = opts || {};
+  const { seq, mime = 'application/octet-stream' } = opts || {};
+  // 方向同 `real` 一路：优先 `lang`，回落 `from`/`to`。默认值仍是 ver1.0 的 ja→zh
+  //（替身只把方向写进 `X-Miao-From/To` 头，不做真实翻译 —— 那两个头正是"服务到底传了什么方向"的观测点）。
+  const lang = langOf(opts);
+  const from = lang.from || 'ja';
+  const to = lang.to || 'zh';
   if (!Buffer.isBuffer(bytes) || bytes.length === 0) {
     throw new EngineError('BAD_INPUT', '原图字节为空，拒绝送翻译');
   }
@@ -555,7 +582,10 @@ async function mockProbe() {
  * 单张翻译。**签名与 ver1.0 保持一致**（《04》§4.5）——`store.mjs` 不应感知引擎换代：
  * ver1.0 怎么调 mock 引擎，ver2.0 就以同样方式调真实引擎。
  * @param {Buffer} bytes 原图字节
- * @param {{seq:number, from?:string, to?:string, mime?:string, timeoutMs?:number}} opts
+ * @param {{seq:number, lang?:{from:string,to:string}, from?:string, to?:string, mime?:string, timeoutMs?:number}} opts
+ *   `lang` 是**任务方向**（短码，ver2.1 起）；`from`/`to` 是 ver1.0 的老形状，两者都收
+ *   （优先级见 `langOf`）。方向决定 `config.translator.from_lang` 与翻译器选型 ——
+ *   见 `config.mjs::buildEngineConfig`。
  *   `timeoutMs` 缺省 `config.engineTimeoutMs`。由 `store` 下发
  *   **`min(单项剩余预算, engineTimeoutMs)`** —— 前者管"整项还有多久"，后者管
  *   "一次请求多久算没响应"，两者都要满足才不会出现「一次挂住吃掉整个预算」。

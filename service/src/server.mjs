@@ -11,7 +11,8 @@ import path from 'node:path';
 import {
   API_VERSION, BASE_PATH, BATCH_LIMIT, ENGINE_SETTINGS_FILE, ORIGINAL_SCAN_RE, ROOT_DIR,
   SERVICE_NAME, SERVICE_VERSION, STATE_DIR, TASKS_STATE_DIR, TRANSLATED_SCAN_RE,
-  TOKEN_FILE, assertInsideRoot, config, engineSettingsFile,
+  TOKEN_FILE, TRANSLATE_DIRECTIONS, assertInsideRoot, config, engineSettingsFile,
+  isSupportedDirection, normalizeDirection,
   readIdleSettings, validateRoot,
 } from './config.mjs';
 import { ApiError, errorEnvelope, permissionDenied } from './errors.mjs';
@@ -1024,16 +1025,36 @@ function sourceOf(req) {
   return 'unknown';
 }
 
+/**
+ * 解析并校验请求里的**翻译方向**（`payload.lang`，ver2.1）。
+ *
+ * · 没给 ⇒ 返回 `undefined`（`store._newTask` 用默认方向「日译中」，旧客户端零改动）；
+ * · 给了但不在 `TRANSLATE_DIRECTIONS` 里 ⇒ **400 `INVALID_TRANSLATE_LANG`**（理由见该码的注释）；
+ * · 合法 ⇒ 规范化成小写短码 `{from, to}`。
+ */
+function resolveTaskLang(payload) {
+  if (!payload || payload.lang === undefined || payload.lang === null) return undefined;
+  if (!isSupportedDirection(payload.lang)) {
+    throw new ApiError('INVALID_TRANSLATE_LANG', '不支持的翻译方向', {
+      lang: payload.lang,
+      supported: TRANSLATE_DIRECTIONS.map((d) => `${d.from}>${d.to}`),
+    });
+  }
+  return normalizeDirection(payload.lang);
+}
+
 function handleCreateTask(req, res, cors) {
   return readBody(req).then(async (body) => {
     await assertSidecarReady();
     const { payload, images, imageOrder } = parseUploadRequest(req, body);
+    const lang = resolveTaskLang(payload);
     const norm = normalizeComicName(payload.comicName);
     if (!norm.ok) throw new ApiError(norm.code, norm.message, norm.details);
     // §8.2 校验点 2：请求校验期就断言，绝不等到落盘期才失败
     assertSafeDirName(norm.name);
     assertRootWritable(); // §2.2 DISK_FULL(507)：请求级落盘不可用
     payload.__normalizedName = norm.name;
+    payload.lang = lang;
 
     const { task, replay } = store.createTask({
       payload, images, imageOrder, source: sourceOf(req),
@@ -1049,7 +1070,18 @@ function handleAppendBatch(req, res, cors, taskId) {
     await assertSidecarReady();
     const { payload, images, imageOrder } = parseUploadRequest(req, body);
     // §8.2 校验点 2：不带 comicName，用任务上已存的归一化名再断言一次
-    assertSafeDirName(store.mustTask(taskId).dirName);
+    const existing = store.mustTask(taskId).dirName;
+    assertSafeDirName(existing);
+    // 方向是**任务级**属性（整条任务共用一套翻译器与 from_lang）⇒ 追加批次不能改它。
+    // 给了就必须与任务一致：不一致等于"同一任务里后 20 张换个玩法"，而
+    // `task.lang` 是唯一的真源、追加批次的 `lang` 会被丢弃 —— 那才是真的静默分歧。
+    const lang = resolveTaskLang(payload);
+    const current = store.mustTask(taskId).lang;
+    if (lang && (lang.from !== current.from || lang.to !== current.to)) {
+      throw new ApiError('INVALID_TRANSLATE_LANG', '追加批次的翻译方向必须与任务一致', {
+        task: current, incoming: lang,
+      });
+    }
     const { task } = store.appendBatch(taskId, { payload, images, imageOrder });
     const view = store.createView(task);
     sendJson(res, 200, view, cors);
@@ -1380,7 +1412,9 @@ function handleResumePlan(req, res, cors, rawName) {
 /**
  * `POST /library/{comicName}/resume` —— 为缺译文的页补译文，进入**同一条**串行队列。
  *
- * body（可选）：`{ "seqs": [12, 13] }`；省略则续做全部缺页。
+ * body（可选）：`{ "seqs": [12, 13], "lang": {"from":"en","to":"zh"} }`；省略则续做全部缺页
+ * 并落**默认方向**（日译中）。方向要给：续做是新建任务，没有"上一条任务"可继承
+ *（见 `store.createResumeTask` 的注释）。
  * 单次上限沿用契约 §5.2 的 20 —— 续做同样是一次 ≤20 张的提交，只是字节来自磁盘。
  */
 function handleResume(req, res, cors, rawName) {
@@ -1388,6 +1422,7 @@ function handleResume(req, res, cors, rawName) {
     await assertSidecarReady();
     const { name } = resolveComicDir(rawName);
     let seqs;
+    let lang;
     if (body && body.length) {
       let parsedBody = null;
       try { parsedBody = JSON.parse(body.toString('utf8')); } catch { /* 允许空体 */ }
@@ -1397,9 +1432,12 @@ function handleResume(req, res, cors, rawName) {
         }
         seqs = parsedBody.seqs;
       }
+      if (parsedBody && parsedBody.lang !== undefined) {
+        lang = resolveTaskLang({ lang: parsedBody.lang });
+      }
     }
     assertRootWritable(); // §2.2 DISK_FULL(507)：请求级落盘不可用
-    const { task } = store.createResumeTask(name, { seqs, source: sourceOf(req) });
+    const { task } = store.createResumeTask(name, { seqs, source: sourceOf(req), lang });
     sendJson(res, 201, store.createView(task), cors);
   });
 }
@@ -1424,7 +1462,8 @@ function handleRetranslatePlan(req, res, cors, rawName) {
 /**
  * `POST /library/{comicName}/retranslate` —— 单张漫画**返工重译**（**契约外增量端点**）。
  *
- * body（可选）：`{ "seqs": [3, 7] }`；省略则返工该漫画全部有原图的页。
+ * body（可选）：`{ "seqs": [3, 7], "lang": {"from":"en","to":"zh"} }`；省略则返工该漫画全部有原图的页，
+ * 并落**默认方向**（日译中）。方向要给 —— 返工同样是新建任务（同 resume 的理由）。
  *
  * ## 与 resume / retry 的三分（都叫"再跑一次"，语义各不相同）
  *  · resume     补**缺**的页，遇到已有译文跳过 ⇒ 可反复点，幂等。
@@ -1439,6 +1478,7 @@ function handleRetranslate(req, res, cors, rawName) {
     await assertSidecarReady();
     const { name } = resolveComicDir(rawName);
     let seqs;
+    let lang;
     if (body && body.length) {
       let parsedBody = null;
       try { parsedBody = JSON.parse(body.toString('utf8')); } catch { /* 允许空体 */ }
@@ -1448,9 +1488,12 @@ function handleRetranslate(req, res, cors, rawName) {
         }
         seqs = parsedBody.seqs;
       }
+      if (parsedBody && parsedBody.lang !== undefined) {
+        lang = resolveTaskLang({ lang: parsedBody.lang });
+      }
     }
     assertRootWritable(); // §2.2 DISK_FULL(507)：返工同样要往磁盘写译文
-    const { task, plan } = store.createRetranslateTask(name, { seqs, source: sourceOf(req) });
+    const { task, plan } = store.createRetranslateTask(name, { seqs, source: sourceOf(req), lang });
     sendJson(res, 201, {
       ...store.createView(task),
       overwriteCount: plan.overwriteCount,

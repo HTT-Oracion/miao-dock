@@ -373,7 +373,7 @@ export function TranslateSection({
         </Row>
       </div>
 
-      {/* 小节二：推理引擎（4）—— 档位 / 后端 / 两个空闲卸载阈值 */}
+      {/* 小节二：推理引擎（5）—— 方向 / 档位 / 后端 / 两个空闲卸载阈值 */}
       <div className="set-group">
         <SubTitle>推理引擎</SubTitle>
         {eng.loadError ? (
@@ -381,6 +381,22 @@ export function TranslateSection({
             读不到引擎选项：{eng.loadError}
           </div>
         ) : null}
+
+        {/*
+          翻译方向 —— **只读说明，刻意不给控件**（ver2.1）。
+          `catalog.ts` 的纪律「假控件比缺控件更伤」在这里正好适用：方向是**逐任务**的
+          （插件面板里选一次、随该次提交下发），设一个全局下拉反而会把另一个方向的任务带错。
+          所以这一行的职责是**解释**，不是配置：它把"为什么引擎诊断里的源语言写着
+          「按任务方向」"这件事在一个用户能找到的地方说清楚。
+        */}
+        <Row item={itemOf(inference, 'translate-direction')}>
+          <ReadOnly>日译中 · 英译中</ReadOnly>
+        </Row>
+        <RowNote>
+          方向由发起翻译的一端随任务指定（插件面板「日译中 / 英译中」），没有全局开关。
+          英译中走离线 nllb（不经 ③ LLM），日译中走 Sakura；未指定方向的任务落默认「日译中」。
+          非法方向会被服务端拒绝（400），而不是静默当成日译中 —— 那会让英文漫画跑完却一个字都没翻。
+        </RowNote>
 
         <Row item={itemOf(inference, 'tier')}>
           {o ? (

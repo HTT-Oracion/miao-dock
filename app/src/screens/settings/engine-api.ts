@@ -149,6 +149,8 @@ export interface EngineStatus {
   warmed: boolean;
   config: Record<string, unknown> & {
     translator: string;
+    /** `null` = 基线不固定源语言，**逐任务**按其方向下发（ver2.1 起）；界面显示成"按任务方向" */
+    fromLang: string | null;
     targetLang: string;
     detector: string;
     /** `null` = 我们**没下发**它（引擎用自身默认），与"下发了 2048"不是一回事 */
