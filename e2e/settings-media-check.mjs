@@ -994,8 +994,9 @@ add('CACHE.zeroDisabled', 'CACHE', (ctx) => {
 const ENGINE_GROUPS = ['pairing', 'inference', 'model'];
 /** 三小节标题字面量 —— C11 同时校验文字，这里必须逐字同源 */
 const ENGINE_SUBTITLES = ['服务与配对', '推理引擎', '模型与诊断'];
-/** 面板内四个区块标题（第五个"操作"区由 `.set-diag-ops` 承载，它不是一个 DiagSection） */
-const DIAG_SECTIONS = ['进程状态', '生效配置', '模型状态', '最近阶段日志'];
+/** 折叠区里剩下的三个区块标题（第 4 个「最近阶段日志」在 ver2.1 被**摘出**折叠范围，
+ *  成为常驻日志区 —— 见《03》§3。它一旦回到折叠区，`ENGINE.run.noDupeLogSection` 变红） */
+const DIAG_SECTIONS = ['进程状态', '生效配置', '模型状态'];
 /** 诊断面板的三个操作按钮文案 */
 const DIAG_OPS = ['重启引擎', '重新下载模型', '强制释放模型'];
 
@@ -1299,7 +1300,7 @@ add('ENGINE.diag.fromCatalog', 'ENGINE', (ctx) => {
   }
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
-add('ENGINE.diag.fiveBlocksAndOps', 'ENGINE', (ctx) => {
+add('ENGINE.diag.sectionsAndOps', 'ENGINE', (ctx) => {
   const src = ctx.s.engineDiag;
   const problems = [];
   const missingSections = DIAG_SECTIONS.filter((t) => !src.includes(`<DiagSection title="${t}"`));
@@ -1359,9 +1360,138 @@ add('ENGINE.diag.unknownStateSafe', 'ENGINE', (ctx) => {
   };
 });
 add('ENGINE.diag.stageLogReversed', 'ENGINE', (ctx) => {
-  const src = ctx.s.engineDiag;
-  const ok = /\[\.\.\.s\.recentStageLog\]\.reverse\(\)/.test(src);
+  const code = stripComments(ctx.s.engineDiag);
+  /*
+   * 最新在上（引擎按发生顺序写入）。`logs` 取自 `s.recentStageLog`，
+   * `allLogs = [...logs].reverse()` —— 常驻区与抽屉共用同一份顺序，不各自 reverse 一遍。
+   */
+  const ok = /\[\.\.\.logs\]\.reverse\(\)/.test(code) && /s\?\.recentStageLog/.test(code);
   return { ok, detail: ok ? '' : '阶段日志没逆序（最新的应该在最上面，否则用户要滚到底才看见刚发生的事）' };
+});
+
+// —— 运行状态卡（ver2.1《03》：日志从折叠范围里摘出来，成为 ② 组的常驻卡） ——
+/*
+ * 这一组的主线判据只有一条：**不看任何折叠控件，就能读到最近几行真实日志**。
+ * 它的失效形态全是"编译得过、类型检查过、界面就是不对"，所以每条断言都配一次破坏。
+ */
+add('ENGINE.run.logOutsideFold', 'ENGINE', (ctx) => {
+  /*
+   * 日志区必须在**折叠之外**。判据落在代码里的**位置关系**上：`{open ? (` 是折叠体的开关，
+   * 日志区与状态头行都必须排在它**之前**（即不受它门住）。
+   * 只查"有没有 set-run-log"会被骗 —— 把日志塞回折叠分支里，那个类名照样在。
+   */
+  const code = stripComments(ctx.s.engineDiag);
+  const problems = [];
+  const foldAt = code.indexOf('{open ? (');
+  const logAt = code.indexOf('set-run-log');
+  const headAt = code.indexOf('set-run-head');
+  if (foldAt < 0) problems.push('找不到折叠体的开关（open ? (）—— 判据失去着力点');
+  if (headAt < 0) problems.push('找不到运行状态卡的头行（.set-run-head）');
+  if (logAt < 0) problems.push('找不到常驻日志区（.set-run-log）');
+  if (foldAt >= 0 && logAt >= 0 && logAt > foldAt) {
+    problems.push('日志区排在折叠体之后（等于又被折叠门住了 —— 本版要修的就是这件事）');
+  }
+  if (foldAt >= 0 && headAt >= 0 && headAt > foldAt) {
+    problems.push('状态头行排在折叠体之后（摘要 chip 也跟着被折叠了）');
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('ENGINE.run.logNotConditional', 'ENGINE', (ctx) => {
+  /*
+   * 折叠态下日志也必须在（《03》§7.2 A2）。这里查的是**样式**那一半：
+   * 只要有一条规则能让日志区在某种状态下 `display:none`，"零点击可见"这条承诺就作废了。
+   * （组件那一半由 `ENGINE.run.logOutsideFold` 守着 —— 两半缺一不可。）
+   */
+  const css = stripComments(ctx.s.css);
+  const hidden = /\.set-run-log[^{]*\{[^}]*display:\s*none/.test(css);
+  return {
+    ok: !hidden,
+    detail: hidden ? '.set-run-log 在某种状态下被 display:none 隐藏（折叠态就看不到日志了）' : '',
+  };
+});
+add('ENGINE.run.noDupeLogSection', 'ENGINE', (ctx) => {
+  /*
+   * 「最近阶段日志」在折叠区里**不得再有第二个实例**（《03》§7.2 A3）。
+   * 留着旧区块就是"日志既常驻、又被折进去"：两份渲染、两处维护，
+   * 且用户会以为自己看到的已经是全部。
+   */
+  const code = stripComments(ctx.s.engineDiag);
+  const dup = code.includes('<DiagSection title="最近阶段日志"');
+  return {
+    ok: !dup,
+    detail: dup ? '折叠区里仍有「最近阶段日志」区块（日志被渲染了两遍）' : '',
+  };
+});
+add('ENGINE.run.noTimestamp', 'ENGINE', (ctx) => {
+  /*
+   * 🔴 日志与「最后更新」里**不得出现时间戳**（《03》§3.3）。
+   *
+   * 引擎的阶段日志行形态是 `seq N: 原话`，本身不含时刻字段。给它补一个时间戳就是**编数据** ——
+   * 与本项目「没有就不显示，不补占位数字」的纪律直接冲突。替代品是**客户端**记录的相对时刻。
+   * 这条是防回归的：将来"顺手加个时间戳"看起来像改进，其实是把一个不存在的字段补上了。
+   */
+  const code = stripComments(ctx.s.engineDiag);
+  const problems = [];
+  if (/\b\d{1,2}:\d{2}:\d{2}\b/.test(code)) {
+    problems.push('出现了形如 HH:MM:SS 的时间戳（引擎不报时刻，补一个就是编数据）');
+  }
+  if (!code.includes('最后更新：')) problems.push('缺「最后更新：」这一句（没有它就没有替代品）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('ENGINE.run.expandTo8', 'ENGINE', (ctx) => {
+  /*
+   * 默认 3 行、**就地**扩到 8 行（《03》§3.2）。
+   * 3 行 = 一次典型失败所需的最小上下文（失败行 + 它前一步 + 再前一步）；
+   * "多看几行"与"看全部"是两个需求：前者高频、不该付跳记录的成本。
+   */
+  const code = stripComments(ctx.s.engineDiag);
+  const problems = [];
+  if (!/LOG_DEFAULT\s*=\s*3/.test(code)) problems.push('默认行数不是 3');
+  if (!/LOG_EXPANDED\s*=\s*8/.test(code)) problems.push('就地展开的上限不是 8');
+  if (!/logMore\s*\?\s*LOG_EXPANDED\s*:\s*LOG_DEFAULT/.test(code)) {
+    problems.push('日志区没有按 logMore 在 3 / 8 行之间切换');
+  }
+  if (!code.includes('set-run-more')) problems.push('缺「展开到 8 行」的就地入口');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('ENGINE.run.logErrorTint', 'ENGINE', (ctx) => {
+  /* 失败行就地着色（《03》§3.4）：只靠颜色分轻重，与 R5「统一形状、只靠颜色」同一条尺子 */
+  const code = stripComments(ctx.s.engineDiag);
+  const css = stripComments(ctx.s.css);
+  const problems = [];
+  if (!/isFailedLine\(line\)/.test(code)) problems.push('日志行没有按失败态取类名（isFailedLine）');
+  if (!/function isFailedLine/.test(code)) problems.push('缺 isFailedLine 的实现');
+  const rule = /\.set-run-line\.is-bad\s*\{([^}]*)\}/.exec(css);
+  if (!rule) problems.push('缺 .set-run-line.is-bad 的样式规则');
+  else if (!/var\(--md-error\)/.test(rule[1])) problems.push('失败行没有取 --md-error');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('ENGINE.run.drawerFull', 'ENGINE', (ctx) => {
+  /*
+   * 「全部日志」抽屉 = `recentStageLog` **全量**（最多 120 行、倒序）（《03》§7.2 A6）。
+   * ⚠️ 它**不能**渲染卡内那 3/8 行的 `shownLogs` —— 那样抽屉只是把卡放大了一点，
+   * "一键取全量"这件事并没有做到。
+   */
+  const code = stripComments(ctx.s.engineDiag);
+  const problems = [];
+  if (!/LOG_DRAWER_MAX\s*=\s*120/.test(code)) problems.push('抽屉上限不是 120 行');
+  if (!/drawerLogs\s*=\s*allLogs\.slice\(0,\s*LOG_DRAWER_MAX\)/.test(code)) {
+    problems.push('抽屉没有取全量（应为 allLogs.slice(0, LOG_DRAWER_MAX)）');
+  }
+  if (!/drawerLogs\.map\(/.test(code)) problems.push('抽屉没有渲染 drawerLogs');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('ENGINE.run.drawerOps', 'ENGINE', (ctx) => {
+  /* 抽屉的三个操作与三种关法（《03》§3.6）：少一样就是"打开了出不去"或"看到了拿不走" */
+  const code = stripComments(ctx.s.engineDiag);
+  const problems = [];
+  if (!code.includes('复制全部')) problems.push('缺「复制全部」');
+  if (!code.includes('导出 .txt')) problems.push('缺「导出 .txt」');
+  if (!/role="dialog"/.test(code)) problems.push('抽屉没有 dialog 语义');
+  if (!/aria-label="关闭"/.test(code)) problems.push('缺关闭按钮（或它没有无障碍名）');
+  if (!code.includes('set-run-scrim')) problems.push('缺遮罩（点遮罩关闭无处可点）');
+  if (!/e\.key === 'Escape'/.test(code)) problems.push('缺 Esc 关闭');
+  return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
 // —— 模型管理块 ModelManageBlock.tsx ——
@@ -1452,7 +1582,7 @@ add('ENGINE.css.classes', 'ENGINE', (ctx) => {
   const srcs = [ctx.s.sections, ctx.s.engineDiag, ctx.s.modelManage, ctx.s.parts].join('\n');
   const used = new Set();
   for (const m of srcs.matchAll(
-    /\bset-(?:diag|manage|warn|hint|state|pnum|token|idle|note|row)[a-z0-9-]*/g,
+    /\bset-(?:diag|manage|warn|hint|state|pnum|token|idle|note|row|run)[a-z0-9-]*/g,
   )) {
     used.add(m[0]);
   }
@@ -2161,30 +2291,24 @@ add('SIMPLIFY.select.pulledRight', 'SIMPLIFY', (ctx) => {
 
 add('SIMPLIFY.diag.foldedByDefault', 'SIMPLIFY', (ctx) => {
   /*
-   * 引擎诊断**默认折叠**（方案 B，2026-10-07 拍板，替代《02》§10-2 原先的"不折叠"）。
+   * 「诊断详情」**默认折叠**（ver2.0 的 R6 结论不被推翻），但折叠的**对象收窄了**：
+   * 日志与三枚 chip 都在折叠之外（《03》§1）。所以"默认折叠"必须与"日志常驻"**同时**成立 ——
+   * 只查 `useState(false)` 会漏掉"折起来之后连日志也没了"这种更糟的实现。
    *
-   * 折叠的**不是诊断能力，是低频细节**：展开态 170px（常态）到 500px+（带下载日志），
-   * 把 ② 的三小节标题与主要控件顶出首屏。收起来之后，最高频那一问
-   * （**是没起来 / 在准备 / 还是在跑但没预热**）由摘要行的三枚 chip 直接回答 ——
-   * 不点开就看得见。所以"默认折叠"必须与"摘要行仍在"**同时**成立，
-   * 只查 `useState(false)` 会漏掉"折起来之后什么都没了"这种更糟的实现。
-   */
-  /*
    * ⚠️ 必须是**折叠开关那一枚自己**的初值，不能笼统搜 `useState(false)` ——
-   * 本组件还有一枚 `restarting` 的初值也是 false。搜全局的话，把 open 改成
-   * `useState(true)` 之后仍然能搜到 restarting 那一枚，断言照绿（实测过这条假阳性）。
+   * 本组件还有两枚别的布尔（`logMore` / `drawer`）初值也是 false。搜全局的话，
+   * 把 open 改成 `useState(true)` 之后仍然能搜到别的那两枚，断言照绿（实测过这条假阳性）。
    * 判据锚在**状态变量名**上：折叠开关叫 `open` 是这一处的事实，改名就该跟着改断言。
    */
   const code = stripComments(ctx.s.engineDiag);
   const problems = [];
   if (!/const\s*\[\s*open\s*,\s*setOpen\s*\]\s*=\s*useState\(false\)/.test(code)) {
-    problems.push('诊断面板的折叠态不是默认收起（open 的初值应为 false）');
+    problems.push('「诊断详情」不是默认收起（open 的初值应为 false）');
   }
-  if (!/className="set-diag-fold"/.test(code)) problems.push('没有「展开 / 收起」的折叠开关');
+  if (!/className="set-run-fold"/.test(code)) problems.push('没有「诊断详情」的折叠开关');
   if (!/aria-expanded=\{open\}/.test(code)) problems.push('折叠开关没有 aria-expanded（读屏用户不知道展开了没）');
-  // 展开体必须真的被 open 门住；摘要 chip 条必须只在收起时渲染（展开态的「进程状态」报得更细）
-  if (!/\{open\s*\?\s*\(/.test(code)) problems.push('展开体没有被 open 门住（会一直全量渲染）');
-  if (!/\{open\s*\?\s*null\s*:\s*\(/.test(code)) problems.push('摘要 chip 条没有"只在收起时渲染"的守卫（展开后会与「进程状态」重复）');
+  // 折叠体必须真的被 open 门住（否则"折叠"只是个装饰）
+  if (!/\{open\s*\?\s*\(/.test(code)) problems.push('折叠体没有被 open 门住（会一直全量渲染）');
   if ((code.match(/className="set-state is-chip"/g) ?? []).length !== 3) {
     problems.push('摘要行不是三枚进程 chip（①②③ 各一枚）');
   }
@@ -2804,7 +2928,7 @@ const MUTATIONS = [
   {
     name: '把「引擎诊断」的 layout 字段去掉（一整块面板会被压成一行）',
     file: F.catalog,
-    find: '          // 通栏块：进程表 / 参数 / 模型 / 阶段日志 / 三个操作，是一整块面板而非一行\n          layout: \'block\',\n',
+    find: '          // 通栏块：常驻的「运行状态」卡 + 折叠的「诊断详情」，是一整块面板而非一行\n          layout: \'block\',\n',
     replace: '',
     expect: ['ENGINE.layout.diagBlock'],
   },
@@ -2951,8 +3075,8 @@ const MUTATIONS = [
   {
     name: '去掉阶段日志的逆序（最新一条沉到最下面）',
     file: F.engineDiag,
-    find: '[...s.recentStageLog].reverse()',
-    replace: 's.recentStageLog',
+    find: '[...logs].reverse()',
+    replace: 'logs',
     expect: ['ENGINE.diag.stageLogReversed'],
   },
   {
@@ -3234,8 +3358,8 @@ const MUTATIONS = [
   {
     name: '把诊断面板的标题/why 硬写回组件里（catalog 里那一份从此永不渲染）',
     file: F.engineDiag,
-    find: '<div className="set-diag-why">{emphasis(item.why)}</div>',
-    replace: '<div className="set-diag-why">{"进程、参数的现场。"}</div>',
+    find: '<div className="set-run-why">{emphasis(item.why)}</div>',
+    replace: '<div className="set-run-why">{"进程、参数的现场。"}</div>',
     expect: ['ENGINE.diag.fromCatalog', 'ENGINE.emphasis.renderPoints'],
   },
 
@@ -3434,6 +3558,69 @@ const MUTATIONS = [
     find: "body: \"'GenJyuuGothicP', 'Noto Sans SC', 'Zen Maru Gothic', system-ui, sans-serif\",",
     replace: "body: \"'GenJyuuGothicP', 'Zen Maru Gothic', system-ui, sans-serif\",",
     expect: ['FONT.genjyuu.bodyFirst'],
+  },
+
+  // ———《03》设置页优化：运行状态卡。每条新断言各配一次破坏 ———
+  {
+    name: '把日志区塞回折叠分支（等于本版什么都没修）',
+    file: F.engineDiag,
+    find: '        <div className="set-run-log">',
+    replace: '        {open ? (\n        <div className="set-run-log">',
+    expect: ['ENGINE.run.logOutsideFold'],
+  },
+  {
+    name: '让日志区在某个状态下 display:none（折叠态就看不到日志了）',
+    file: F.settingsStyle,
+    find: '.set-run-log {\n  border-top: 1px solid var(--md-line-soft);',
+    replace: '.set-run-log {\n  display: none;\n  border-top: 1px solid var(--md-line-soft);',
+    expect: ['ENGINE.run.logNotConditional'],
+  },
+  {
+    name: '把「最近阶段日志」区块留在折叠区里（日志被渲染两遍）',
+    file: F.engineDiag,
+    find: '          <div className="set-diag-ops">\n',
+    replace:
+      '          <DiagSection title="最近阶段日志"><div /></DiagSection>\n'
+      + '          <div className="set-diag-ops">\n',
+    expect: ['ENGINE.run.noDupeLogSection'],
+  },
+  {
+    name: '给「最后更新」补一个时间戳（引擎不报时刻，补一个就是编数据）',
+    file: F.engineDiag,
+    find: '最后更新：{relativeText(logs.length > 0 ? stampRef.current.at : 0, now)}',
+    replace:
+      '最后更新 14:22:07：{relativeText(logs.length > 0 ? stampRef.current.at : 0, now)}',
+    expect: ['ENGINE.run.noTimestamp'],
+  },
+  {
+    name: '把就地展开的上限从 8 行改回 3 行（"多看几行"退化成没有这回事）',
+    file: F.engineDiag,
+    find: 'const LOG_EXPANDED = 8;',
+    replace: 'const LOG_EXPANDED = 3;',
+    expect: ['ENGINE.run.expandTo8'],
+  },
+  {
+    name: '让失败行不再着色（失败被淹没在常规色里）',
+    file: F.engineDiag,
+    // `all`：卡内与抽屉两处用同一句取类名，只改一处另一处仍是失败色 ⇒ 断言照绿（假反证）
+    find: "className={isFailedLine(line) ? 'set-run-line is-bad' : 'set-run-line'}",
+    replace: 'className="set-run-line"',
+    all: true,
+    expect: ['ENGINE.run.logErrorTint'],
+  },
+  {
+    name: '把抽屉上限截断到 10 行（"一键取全量"名不副实）',
+    file: F.engineDiag,
+    find: 'const LOG_DRAWER_MAX = 120;',
+    replace: 'const LOG_DRAWER_MAX = 10;',
+    expect: ['ENGINE.run.drawerFull'],
+  },
+  {
+    name: '把「导出 .txt」摘掉（看到了却拿不走）',
+    file: F.engineDiag,
+    find: '导出 .txt',
+    replace: '导出 txt',
+    expect: ['ENGINE.run.drawerOps'],
   },
 ];
 
