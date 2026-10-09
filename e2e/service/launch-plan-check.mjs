@@ -82,7 +82,9 @@ check(
 // ---------------------------------------------------------------- real 专属
 check(
   'P-real-9 engine 是 `python main.py`（cwd=src/server，平级 import 决定不能写成 -m server.main）',
-  /python$/.test(real.engine.cmd[0]) && real.engine.cmd[1] === 'main.py',
+  // 认 `.exe`：Windows 上 venv 的可执行是 `python.exe`（`config.enginePython`），POSIX 才是 `python`。
+  // 写死 `/python$/` 会在 Windows 假红（本机即踩），而它要表达的其实是"可执行属于 python 家族"。
+  /python(\.exe)?$/.test(real.engine.cmd[0]) && real.engine.cmd[1] === 'main.py',
   real.engine.cmd.slice(0, 2).join(' '),
 );
 check(
@@ -107,13 +109,14 @@ check(
 );
 check(
   'P-real-13 llm 是 llama-server，且 `--port` 与 serviceEnv 的 SAKURA_API_BASE 端口一致（否则引擎找不到 ③）',
-  real.llm.cmd[0].endsWith('llama-server')
+  // 认 `.exe`：Windows 上 `defaultLlmServerBin()` 给的是 `llama-server.exe`，POSIX 是 `llama-server`。
+  /llama-server(\.exe)?$/.test(real.llm.cmd[0])
     && real.serviceEnv?.SAKURA_API_BASE === `http://127.0.0.1:${real.llm.probes[0].port}/v1`,
   `${real.llm.cmd[0]} | ${real.serviceEnv?.SAKURA_API_BASE}`,
 );
 check(
   'P-real-14 三种进程类型齐备：node(服务由 Rust 拼) / python 可执行 / llama-server',
-  /python$/.test(real.engine.cmd[0]) && real.llm.cmd[0].endsWith('llama-server'),
+  /python(\.exe)?$/.test(real.engine.cmd[0]) && /llama-server(\.exe)?$/.test(real.llm.cmd[0]),
   `engine=${path.basename(real.engine.cmd[0])} llm=${path.basename(real.llm.cmd[0])}`,
 );
 check(

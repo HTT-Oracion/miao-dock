@@ -249,7 +249,9 @@ async function runAll() {
     // `…/runtimes/manga-translator/models/sakura/sakura-…-fp16` 整个泄进 `/health`。
     const tinyLaunch = askChild(`(() => {
       const l = m.resolveLlmLaunch({ tier: 'tiny' });
-      const b = String(l.model).split('/').pop();
+      // 同时认正斜杠与反斜杠两种分隔符：Windows 盘上路径用反斜杠，只按 split(斜杠) 切会取到整条路径，
+      // 于是「期望 id」变成绝对路径、E4.5 在 Windows 假红（本机即踩）。
+      const b = String(l.model).split(/[\\\\/]/).pop();
       return { model: l.model, base: b, id: b.replace(/\\.gguf$/i, '') };
     })()`);
     const reported = sc?.model ?? '';
