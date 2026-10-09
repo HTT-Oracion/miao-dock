@@ -594,10 +594,10 @@ export function TranslateSection({
         <ModelManageBlock item={itemOf(model, 'model-manage')} eng={eng} />
 
         {/*
-          通栏块：诊断面板（《09》§6.2）。
-          **默认折叠**（方案 B，2026-10-07 拍板，替代《02》§10-2 原先的"不折叠"）：
-          展开态 170~500px 会把上面三小节的标题与控件顶出首屏。收起后摘要行仍给
-          三枚进程 chip —— 「是没起来 / 在准备 / 还是在跑但没预热」不点开就看得见。
+          通栏块：「运行状态」卡 + 「诊断详情」（《03》）。
+          **日志从折叠范围里摘出来了** —— 不点任何折叠控件就能看到最近 3 行真实日志，
+          这正是「排障第一入口不该付一次点击的成本」那条判据的落地。
+          折叠的对象因此**收窄**为 进程表 / 生效配置 / 模型路径 / 三个操作（比 ver2.0 更小）。
         */}
         <EngineDiag item={itemOf(model, 'engine-diag')} eng={eng} service={status} onToast={onToast} />
       </div>

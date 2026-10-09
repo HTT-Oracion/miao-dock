@@ -728,6 +728,203 @@
   border-top: 1px solid var(--md-line-soft);
 }
 
+/* ================================================================ ② 模型与诊断：运行状态卡（《03》） */
+
+/*
+ * 「最近发生的事，零点击可见」—— 日志从折叠范围里摘出来，成为 ② 组常驻的一张卡。
+ *
+ * 与设置页其它"通栏块"（`.set-cache` / `.set-manage` / `.set-idle`）**故意不同形**：
+ * 那些是"嵌在分组里的一段"、靠顶线分节；这张卡是本版的核心物件（有自己的头行 / 正文 / 脚），
+ * 有边框和圆角才读得出"这是一张卡"。形状差异在这里是**信息**，不是不一致。
+ *
+ * ⚠️ 卡内标题是 `.set-run-title`，**不是** `.set-subtitle` —— ② 的「恰 3 个小节」
+ * 是 C11 逐字盯着的判据（理由见 `EngineDiag.tsx` 文件头）。
+ */
+.set-run {
+  margin-top: 6px;
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-md);
+  background: var(--md-surface);
+  overflow: hidden;
+}
+/* 头行：标题 + 三枚 chip + 两个入口。`flex-wrap` 是必须的：窄窗下它们并排会溢出 */
+.set-run-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+.set-run-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--md-ink);
+}
+/* 把两个入口推到最右：左半是"现在怎么样"，右半是"还能看什么"，一栏一件事 */
+.set-run-grow {
+  flex: 1;
+}
+/*
+ * 卡级说明（catalog 的 `why`）。放在头行之下、日志之上 —— 它解释的是"这张卡是什么"，
+ * 而不是"某一行日志是什么"，所以不能塞进日志区里。
+ */
+.set-run-why {
+  padding: 0 12px 8px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--md-muted);
+}
+/* 「诊断详情 ▾」/「全部日志」/「展开到 8 行 ▾」—— 与 `.set-note-more` 同一枚药丸语汇 */
+.set-run-fold,
+.set-run-all,
+.set-run-more {
+  font-family: var(--md-font-body);
+  font-size: 10.5px;
+  color: var(--md-muted);
+  border: 1px solid var(--md-line);
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: var(--md-surface-2);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.set-run-fold:hover,
+.set-run-all:hover,
+.set-run-more:hover {
+  background: var(--md-surface);
+  color: var(--md-ink-2);
+}
+/* 「全部日志」是这张卡的主要出口，文字色提一档（`展开到 8 行` 才是纯次要动作） */
+.set-run-all {
+  color: var(--md-ink-2);
+}
+/* 日志区：等宽 + 一行一条。原样转发引擎输出，不做结构化解析 */
+.set-run-log {
+  border-top: 1px solid var(--md-line-soft);
+  background: var(--md-board);
+  padding: 8px 12px;
+}
+.set-run-line {
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  line-height: 1.75;
+  color: var(--md-ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 失败行就地着色（《03》§3.4）：**只改颜色** —— 不加图标、不换形状（与 R5 同一条尺子） */
+.set-run-line.is-bad {
+  color: var(--md-error);
+}
+/* 空态：照实说、不留白。用**正文字体**而非等宽 —— 它是一句交代，不是一行日志 */
+.set-run-empty {
+  font-family: var(--md-font-body);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--md-muted);
+  white-space: normal;
+}
+.set-run-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--md-line-soft);
+  padding: 7px 12px;
+}
+/* 「最后更新：12 秒前」—— **客户端**记录的时刻（引擎的阶段日志不含时刻，不补编造的） */
+.set-run-updated {
+  flex: 1;
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+/*
+ * 「诊断详情」折叠条：**虚线框** —— 「这里还有一层，但它不是此刻要看的东西」。
+ * 条上那句清单就是"里面有什么"，不点开也知道值不值得点。
+ */
+.set-run-detail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 9px 12px;
+  border: 1px dashed var(--md-line);
+  border-radius: var(--md-radius-sm);
+  background: var(--md-surface);
+}
+.set-run-detail-t {
+  flex: 1;
+  font-size: 12px;
+  color: var(--md-ink-2);
+}
+
+/* ── 「全部日志」抽屉（全量 ≤120 行、倒序、可复制、可导出） ── */
+.set-run-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  /* 与既有 `.modal-mask` 同一枚遮罩色：全应用只该有一种"被挡住"的样子 */
+  background: rgba(20, 15, 41, 0.42);
+}
+.set-run-drawer {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 100%);
+  max-height: min(70vh, 520px);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-lg);
+  background: var(--md-surface);
+  box-shadow: 0 18px 48px rgba(20, 15, 41, 0.22);
+  overflow: hidden;
+}
+.set-run-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--md-line-soft);
+}
+.set-run-drawer-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--md-ink);
+}
+.set-run-drawer-sub {
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+.set-run-drawer-x {
+  font-family: var(--md-font-body);
+  font-size: 12px;
+  line-height: 1;
+  color: var(--md-muted);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.set-run-drawer-x:hover {
+  color: var(--md-ink);
+}
+.set-run-drawer-body {
+  flex: 1;
+  overflow: auto;
+  padding: 10px 12px;
+  background: var(--md-board);
+}
+/*
+ * 抽屉里的行**不截断**（要能读全、要能选中）—— 超长走横向滚动。
+ * 卡内那 3 行用省略号是有意的（它只是"一眼看到发生了什么事"），
+ * 抽屉是"要看全部"，两种形态对同一行文本的要求本来就不同。
+ */
+.set-run-drawer-body .set-run-line {
+  white-space: pre;
+  overflow: visible;
+  text-overflow: clip;
+}
+
 /* ================================================================ ② 推理引擎：空闲卸载合卡 */
 
 /*

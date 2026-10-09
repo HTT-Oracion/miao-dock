@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { save } from '@tauri-apps/plugin-dialog';
 import { Btn, Dot } from '@components/units';
-import { errorText, serviceRestart } from '@/ipc';
+import { errorText, serviceRestart, writeTextFile } from '@/ipc';
 import type { ServiceStatus } from '@/ipc';
 import { configPairs } from '@screens/settings/engine-state';
 import type { EngineState } from '@screens/settings/engine-state';
@@ -33,13 +34,29 @@ const STATE_VIEW: Record<string, { text: string; colorVar: string } | undefined>
   error: { text: '异常', colorVar: '--md-error' },
 };
 
+/** 常驻日志区默认显几行 */
+const LOG_DEFAULT = 3;
+/** 就地展开的上限（不再跳抽屉）—— 3 行是一次典型失败的最小上下文，8 行是"多看几眼" */
+const LOG_EXPANDED = 8;
+/** 「全部日志」抽屉的上限 —— 与引擎侧留存的 `recentStageLog` 同口径（最多 120 行） */
+const LOG_DRAWER_MAX = 120;
+
 /**
- * ② 翻译服务 ·「模型与诊断」的**引擎诊断视图**（《02》§5 / 《09》§6.2）。
+ * ② 翻译服务 ·「模型与诊断」的**运行状态卡 + 诊断详情**（《03》§3）。
  *
- * ## 它不是调试后门
- * 《02》§5 的定位写得很清楚：这是「用户能自己回答『为什么这次翻译这么慢』」的正当入口。
- * 它**仍然对普通用户可见**，五个区块一个不少：进程状态 / 生效配置 / 模型状态 /
- * 最近阶段日志 / 操作。
+ * ## 这一版修的是上一版自己造的问题
+ * ver2.0 的 R6 把整个引擎诊断面板折叠了（不折叠时常态 170px、带下载日志 500px+，
+ * 把 ② 的三小节标题顶出首屏）。那次取舍本身有道理，但它把**最高频的一条信息一起埋了**：
+ * 「最近发生了什么」—— 而 ver2.0 自己的文档就写着 `recentStageLog` 是**排障第一入口**。
+ * 把第一入口藏在一次点击之后，是把定位写反了。
+ *
+ * 所以本版的处置不是"再折叠一次"，而是**把日志从折叠范围里拿出来**：
+ *   · 「运行状态」卡 = 标题 + 三枚进程 chip + **常驻日志区**（默认 3 行，就地可扩到 8）
+ *     + 「全部日志」抽屉（全量 ≤120 行、倒序、可复制、可导出）；
+ *   · 「诊断详情」仍然折叠 —— 折叠的对象**收窄**为 进程表 / 生效配置 / 模型路径 / 三个操作。
+ *
+ * 一句话对照：ver2.0 是「要看日志 ⇒ 先点展开」；本版是「日志就摆在那儿，想多看再点」。
+ * **能力一个都不少**：项数不减、按钮不减、日志总量不减，只改层次。
  *
  * ## 标题与 why 都从 catalog 的那一项来（不在这里硬写）
  * 原先 `.set-diag-name` 与 why 是本文件里的两个字符串，而 catalog 的 `engine-diag` 项
@@ -47,25 +64,22 @@ const STATE_VIEW: Record<string, { text: string; colorVar: string } | undefined>
  * 于是"改口径"要改两处、漏一处没人发现。现在与兄弟块 `ModelManageBlock` 同一惯用法：
  * `item.label` + `emphasis(item.why)`，catalog 是唯一事实源。
  *
- * ## 默认**折叠**（方案 B，2026-10-07 拍板，替代《02》§10-2 原先的"不折叠"）
- * 原先默认展开 ≈ 170px（常态）到 500px+（带下载日志），把 ② 的三小节标题与主要控件
- * 顶出首屏。折叠后摘要行 = 标题 + 一句 why + **三枚进程状态 chip** + 「展开」。
- * 被收起来的**不是诊断能力，是低频细节**（生效配置键值、模型路径与下载任务、阶段日志）；
- * 最高频那一问（**是没起来 / 在准备 / 还是在跑但没预热**）由摘要行的三枚 chip 直接回答 ——
- * 不点开就看得见。展开后仍是完整 5 区块 + 3 个操作。
- *
  * ## 🔴 ③ 那枚 chip 不能无条件报「运行中」
  * ③ Sakura 被空闲卸载后，**进程态仍是 running**，只有 `warmed` 转 false。
- * 摘要行若照着 state 直译成「运行中」，用户看到的是"一切正常"，而真相是
- * 「首张要等一次冷启动」—— 这是整块摘要唯一能骗人的地方，也最容易骗过肉眼。
+ * chip 若照着 state 直译成「运行中」，用户看到的是"一切正常"，而真相是
+ * 「首张要等一次冷启动」—— 这是整块卡唯一能骗人的地方，也最容易骗过肉眼。
  * 所以 `running && !warmed` 一律报**「未预热」**。
+ *
+ * ## 🔴 不加时间戳（《03》§3.3）
+ * 引擎的阶段日志行形态是 `seq N: 原话`，本身**不含时刻字段**。给它补一个时间戳
+ * 就是编数据 —— 与本项目「没有就不显示，不补占位数字」的纪律直接冲突。
+ * 替代品是卡片右下角那句**客户端**记录的「最后更新：12 秒前」：那是我们真的知道的事实。
  *
  * ## 🔴 内部小标题**不能**复用 `SubTitle`
  * ② 那一组的「三小节」是被规格自检 C11 精确盯着的：它数 `settings-main` 里的
  * `.set-subtitle`，要求**恰好 3 个**且文字是「服务与配对 / 推理引擎 / 模型与诊断」。
- * 这里再有 5 个 `.set-subtitle`，C11 会立刻变红 —— 而那不是误报，是真的分不清
- * "这一组有几层结构"了。所以面板内一律用 `.set-diag-h`（同字号语汇，另一个层级），
- * **折叠态与展开态都必须如此**。
+ * 折叠区里再有 3 个 `.set-subtitle`，C11 会立刻变红 —— 而那不是误报，是真的分不清
+ * "这一组有几层结构"了。所以面板内一律用 `.set-diag-h`（同字号语汇，另一个层级）。
  *
  * ## 每一个"读不到"都如实说
  * `/engine/status` 和 `/engine/options` 失败时（服务刚重启、引擎没起来）本组件
@@ -87,13 +101,43 @@ export function EngineDiag({
 }) {
   const [restarting, setRestarting] = useState(false);
   /**
-   * 折叠态。默认收起（方案 B）；`false` 初值即"默认折叠"这件事本身，
-   * 不需要额外读偏好 —— 面板是**出问题时才要展开**的东西。
+   * 「诊断详情」折叠态。默认收起；`false` 初值即"默认折叠"这件事本身。
+   * 注意折叠的**不是**整块能力：日志与三枚 chip 都在折叠之外（见文件头）。
    */
   const [open, setOpen] = useState(false);
+  /** 日志区就地展开（3 → 8 行）。与抽屉是两个不同的需求：前者高频、后者低频 */
+  const [logMore, setLogMore] = useState(false);
+  /** 「全部日志」抽屉 */
+  const [drawer, setDrawer] = useState(false);
   const s = eng.status;
   const o = eng.options;
   const busy = eng.action !== null;
+
+  /*
+   * 「最后更新」是**客户端**记录的事实：日志内容一变化就记一次时刻。
+   * 引擎不报时刻，所以这个数字只能由"我们什么时候看到它变了"来给 —— 见文件头。
+   */
+  const logs = s?.recentStageLog ?? [];
+  const logSig = logs.length > 0 ? `${logs.length}·${logs[logs.length - 1]}` : '';
+  const stampRef = useRef<{ sig: string; at: number }>({ sig: '\u0000', at: 0 });
+  if (stampRef.current.sig !== logSig) stampRef.current = { sig: logSig, at: Date.now() };
+
+  /* 每 5 秒刷新一次"XX 秒前"，否则这个数字会停在第一次渲染的那一刻 */
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 5000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  /* 抽屉的 Esc 关闭（点遮罩 / 关闭按钮在下方各自的元素上） */
+  useEffect(() => {
+    if (!drawer) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDrawer(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [drawer]);
 
   /**
    * 「重启引擎」走的其实是 **`service_restart`（整条本地链路 ①②③）**。
@@ -121,7 +165,7 @@ export function EngineDiag({
   };
 
   /*
-   * 摘要行的三枚 chip —— **每一枚分别取自它自己那个进程的 state**，不共用一份映射：
+   * 三枚 chip —— **每一枚分别取自它自己那个进程的 state**，不共用一份映射：
    *   ① 从 Rust 侧的 `ServiceStatus`（服务五态机）
    *   ② / ③ 从 `/engine/status`（引擎自己报的字符串，可能多出第六种）
    * ③ 再叠一条 `warmed` 的修正（见上方文件头）。
@@ -136,34 +180,41 @@ export function EngineDiag({
       ? { text: '未预热', colorVar: '--md-warning' }
       : llmBase;
 
-  return (
-    <div className="set-diag">
-      <div className="set-diag-top">
-        <div>
-          <div className="set-diag-name">{item.label}</div>
-          {item.why ? <div className="set-diag-why">{emphasis(item.why)}</div> : null}
-        </div>
-        <div className="set-diag-acts">
-          <Btn size="sm" disabled={busy || restarting} onClick={() => void eng.reload()}>
-            刷新
-          </Btn>
-          <button
-            type="button"
-            className="set-diag-fold"
-            aria-expanded={open}
-            onClick={() => setOpen(!open)}
-          >
-            {open ? '收起 ꜛ' : '展开 ▾'}
-          </button>
-        </div>
-      </div>
+  /* 最新在上（引擎按发生顺序写入，界面要第一眼看到刚发生的那条） */
+  const allLogs = [...logs].reverse();
+  const shownLogs = allLogs.slice(0, logMore ? LOG_EXPANDED : LOG_DEFAULT);
+  const drawerLogs = allLogs.slice(0, LOG_DRAWER_MAX);
+  const logText = allLogs.join('\n');
 
-      {/*
-        摘要行：折叠态**唯一**要回答的问题就是这三枚 chip。
-        展开后不再重复（展开态的「进程状态」区块报得更细），所以只在收起时渲染。
-      */}
-      {open ? null : (
-        <div className="set-diag-strip">
+  const copyAll = async () => {
+    try {
+      await navigator.clipboard.writeText(logText);
+      onToast('已复制全部日志', 'good');
+    } catch (e) {
+      onToast(errorText(e), 'bad');
+    }
+  };
+  const exportTxt = async () => {
+    try {
+      // 取消不是错误：用户按下取消 ⇒ save() 给 null ⇒ 静默返回
+      const path = await save({
+        defaultPath: '引擎阶段日志.txt',
+        filters: [{ name: '文本文件', extensions: ['txt'] }],
+      });
+      if (!path) return;
+      await writeTextFile(path, logText);
+      onToast('已导出日志', 'good');
+    } catch (e) {
+      onToast(errorText(e), 'bad');
+    }
+  };
+
+  return (
+    <>
+      {/* ── 运行状态卡（常驻，不在任何折叠里）── */}
+      <div className="set-run">
+        <div className="set-run-head">
+          <span className="set-run-title">{item.label}</span>
           <span className="set-state is-chip">
             <Dot colorVar={chipText(service?.state).colorVar} />
             <span className="set-state-text">① {chipText(service?.state).text}</span>
@@ -176,8 +227,84 @@ export function EngineDiag({
             <Dot colorVar={llmChip.colorVar} />
             <span className="set-state-text">③ {llmChip.text}</span>
           </span>
+          <span className="set-run-grow" />
+          <button
+            type="button"
+            className="set-run-fold"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            {open ? '收起 ꜛ' : '诊断详情 ▾'}
+          </button>
+          <button type="button" className="set-run-all" onClick={() => setDrawer(true)}>
+            全部日志
+          </button>
         </div>
-      )}
+
+        {item.why ? <div className="set-run-why">{emphasis(item.why)}</div> : null}
+
+        {/*
+          常驻日志区 —— **折叠之外**，这是本版的全部改动所在。
+          行内容原样转发引擎输出（`seq N: 原话`），**不做改名映射**：
+          映射了就会在引擎改阶段名之后继续说旧名字。
+        */}
+        <div className="set-run-log">
+          {allLogs.length > 0 ? (
+            shownLogs.map((line, i) => (
+              <div
+                key={`${i}-${line}`}
+                className={isFailedLine(line) ? 'set-run-line is-bad' : 'set-run-line'}
+              >
+                {line}
+              </div>
+            ))
+          ) : (
+            <div className="set-run-empty">
+              {s
+                ? '当前没有阶段记录：替身（mock）引擎是单包响应、没有阶段帧，此时为空是如实的空；真引擎翻译时会逐条写入。可对照上方「引擎模式」确认现在跑的是哪一个。'
+                : '读不到（见上方）'}
+            </div>
+          )}
+        </div>
+
+        <div className="set-run-foot">
+          {/*
+            没有阶段记录时必须是「—」，而不是"刚刚" —— 那个时刻是"我们第一次读到空日志"的时刻，
+            不是"日志更新于此刻"。本项目不补占位数字，这里同理。
+          */}
+          <span className="set-run-updated">
+            最后更新：{relativeText(logs.length > 0 ? stampRef.current.at : 0, now)}
+          </span>
+          {allLogs.length > LOG_DEFAULT ? (
+            <button
+              type="button"
+              className="set-run-more"
+              aria-expanded={logMore}
+              onClick={() => setLogMore(!logMore)}
+            >
+              {logMore ? `收起到 ${LOG_DEFAULT} 行 ꜛ` : `展开到 ${LOG_EXPANDED} 行 ▾`}
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {/*
+        「诊断详情」的折叠条。被折叠的集合**比 ver2.0 更小**：日志已经不在其中。
+        条上那句话就是"里面有什么"的清单 —— 不点开也能知道值不值得点。
+      */}
+      <div className="set-run-detail">
+        <span className="set-run-detail-t">
+          诊断详情 —— 进程表 / 生效配置 / 模型路径 / 重启 · 重下 · 释放
+        </span>
+        <button
+          type="button"
+          className="set-run-fold"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          {open ? '收起 ꜛ' : '展开 ▾'}
+        </button>
+      </div>
 
       {eng.loadError ? (
         <div className="notice is-bad set-diag-note">
@@ -187,7 +314,7 @@ export function EngineDiag({
         </div>
       ) : null}
 
-      {/* 展开态：5 个区块 + 3 个操作**一个不少**（折叠只是默认收起，不是删内容） */}
+      {/* 折叠区：3 个区块 + 3 个操作**一个不少**（折叠只是默认收起，不是删内容） */}
       {open ? (
         <>
           <DiagSection title="进程状态">
@@ -255,24 +382,6 @@ export function EngineDiag({
             <DownloadState view={s?.modelDownload} />
           </DiagSection>
 
-          <DiagSection title="最近阶段日志">
-            {s && s.recentStageLog.length > 0 ? (
-              <div className="set-diag-log">
-                {[...s.recentStageLog].reverse().map((line, i) => (
-                  // 引擎原始阶段名（`seq N: 原话`）—— **不做改名映射**：
-                  // 映射了就会在引擎改阶段名之后继续说旧名字
-                  <div key={`${i}-${line}`} className="set-diag-log-line">{line}</div>
-                ))}
-              </div>
-            ) : (
-              <div className="set-diag-note">
-                {s
-                  ? '当前没有阶段记录：替身（mock）引擎是单包响应、没有阶段帧，此时为空是如实的空；真引擎翻译时会逐条写入。可对照上方「引擎模式」确认现在跑的是哪一个。'
-                  : '读不到（见上方）'}
-              </div>
-            )}
-          </DiagSection>
-
           <div className="set-diag-ops">
             <Btn size="sm" disabled={busy || restarting} onClick={() => void restart()}>
               {restarting ? '重启中…' : '重启引擎'}
@@ -303,8 +412,80 @@ export function EngineDiag({
           </div>
         </>
       ) : null}
-    </div>
+
+      {/* ── 「全部日志」抽屉 ── */}
+      {drawer ? (
+        <div className="set-run-scrim" onClick={() => setDrawer(false)}>
+          <div
+            className="set-run-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="全部日志"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="set-run-drawer-head">
+              <span className="set-run-drawer-title">全部日志</span>
+              <span className="set-run-drawer-sub">
+                最多 {LOG_DRAWER_MAX} 行 · 最新在上
+              </span>
+              <span className="set-run-grow" />
+              <Btn size="sm" onClick={() => void copyAll()}>
+                复制全部
+              </Btn>
+              <Btn size="sm" onClick={() => void exportTxt()}>
+                导出 .txt
+              </Btn>
+              <button
+                type="button"
+                className="set-run-drawer-x"
+                aria-label="关闭"
+                onClick={() => setDrawer(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="set-run-drawer-body">
+              {drawerLogs.length > 0 ? (
+                drawerLogs.map((line, i) => (
+                  <div
+                    key={`${i}-${line}`}
+                    className={isFailedLine(line) ? 'set-run-line is-bad' : 'set-run-line'}
+                  >
+                    {line}
+                  </div>
+                ))
+              ) : (
+                <div className="set-run-empty">当前没有阶段记录。</div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
+}
+
+/**
+ * 一行日志是不是失败行（《03》§3.4：失败行就地着色，不新增形状、不加图标）。
+ *
+ * 判据取**引擎原话**里的失败词 —— 引擎的阶段名与措辞就是我们的唯一事实源，
+ * 另立一套映射会在引擎改阶段名之后继续说旧名字（这也正是"不做改名映射"的原因）。
+ */
+function isFailedLine(line: string): boolean {
+  if (/退出码\s*[1-9]/.test(line)) return true;
+  if (line.includes('失败')) return true;
+  return /\b(?:error|failed|failure|exception|traceback)\b/i.test(line);
+}
+
+/** 相对时刻（《03》§3.3）：只报我们真的知道的事实，不编时间戳 */
+function relativeText(at: number, now: number): string {
+  if (!at) return '—';
+  const sec = Math.max(0, Math.round((now - at) / 1000));
+  if (sec < 5) return '刚刚';
+  if (sec < 60) return `${sec} 秒前`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} 分钟前`;
+  return `${Math.floor(min / 60)} 小时前`;
 }
 
 /**
@@ -312,7 +493,7 @@ export function EngineDiag({
  *
  * ⚠️ 刻意**不用** `SubTitle`：那个类名（`.set-subtitle`）被 C11 用来数"② 这一组有几个小节"，
  * 而这里的小标题是**项内部**的分层，不是设置项层级。用同一个类名会让 C11 从
- * 「恰好 3 个」变成「3 + 5 个」，于是那条断言彻底失效（它会红，但红的原因不再是它要守的东西）。
+ * 「恰好 3 个」变成「3 + 3 个」，于是那条断言彻底失效（它会红，但红的原因不再是它要守的东西）。
  */
 function DiagSection({ title, children }: { title: string; children: ReactNode }) {
   return (
