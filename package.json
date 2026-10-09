@@ -26,6 +26,8 @@
     "check:engine-client:refute": "node e2e/service/engine-client-check.mjs --refute",
     "check:models": "node e2e/engine/model-store-check.mjs",
     "check:models:refute": "node e2e/engine/model-store-check.mjs --refute",
+    "check:engine-patches": "node e2e/engine/engine-patches-check.mjs",
+    "check:engine-patches:refute": "node e2e/engine/engine-patches-check.mjs --refute",
     "check:profile": "node e2e/service/engine-profile-check.mjs",
     "check:profile:refute": "node e2e/service/engine-profile-check.mjs --refute",
     "check:e5e6": "node e2e/service/e5-e6-check.mjs",

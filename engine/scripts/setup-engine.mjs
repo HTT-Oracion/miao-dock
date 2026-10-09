@@ -29,7 +29,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
@@ -192,72 +192,265 @@ async function installSource(force) {
 }
 
 // ================================================================ 上游源码补丁
+//
+// 上游引擎源码**不入库**（`runtimes/` 在 .gitignore 内），由 installSource() 从锁定 commit 解包。
+// 因此我们对上游的每一处修改，都必须以「幂等补丁」的形式**声明在这张表里** —— 否则换机或换版本
+// 装配出来的引擎就少了它，而缺陷会以「翻译没字」「译文崩坏」这类**静默**面目回来（本项目已两次踩到）。
+//
+// 每个补丁三件套：
+//   · mark   —— 幂等判据，也是「这处已被我们改过」的唯一凭据；目标文件里出现它即跳过。
+//   · edits  —— 若干 `{anchor, patch}`。**anchor 必须是上游原样字节**（含缩进）。
+//               anchor 找不到就**抛错**，绝不静默跳过：源码钉在 ENGINE_COMMIT 上，
+//               锚点失效 = 「装出来的引擎已不是我们验过的那份」。
+//   · patch 以**函数**形式喂给 replace（见 applyPatches），避免替换串里的 `$` 被当成特殊记号。
+//
+// ⚠️ 同一文件的多个补丁按**数组顺序**依次应用 ⇒ anchor 必须两两不相交。
 
-const SAKURA_PY = path.join(SRC_DIR, 'manga_translator', 'translators', 'sakura.py');
+const srcPy = (...rel) => path.join(SRC_DIR, ...rel);
+
+/** 补丁表（SSOT）。新增补丁只加一项；`e2e/engine/engine-patches-check.mjs` 逐条取证。 */
+export const ENGINE_PATCHES = [
+  {
+    id: 'sakura-fail-not-list',
+    mark: '# miao-dock 补丁 D-86',
+    file: srcPy('manga_translator', 'translators', 'sakura.py'),
+    desc: 'Sakura 翻译失败时不再 return list（上游会糊成 TypeError，D-86）',
+    edits: [{
+      // 锚点 = 上游原样三行。取整个 `except` 分支体（含缩进）而不是单独一句 `return prompt`，
+      // 因为 `return prompt` 在文件里可能有别的语境；带上前一行 logger.error 才唯一。
+      anchor: [
+        "                    self.logger.error(f'Sakura API请求失败。错误信息： {e}')",
+        '                    return prompt',
+        '',
+      ].join('\n'),
+      patch: [
+        "                    self.logger.error(f'Sakura API请求失败。错误信息： {e}')",
+        '                    # miao-dock 补丁 D-86：原样的 return prompt 返回的是 list（prompt 就是调用方',
+        '                    # 传进来的 queries），而上游调用点按 str 用它（_translate 里对 response 做字符串拼接）⇒',
+        '                    # TypeError: can only concatenate str (not "list") to str —— 把"翻译接口不可用"',
+        '                    # 这句真话糊成一句 python 内部错误（16 张图全 failed、对外只剩 engine_engine_error）。',
+        '                    # 改为显式抛错，让失败以真实原因上抛。',
+        '                    # 🔴 不能改成 return str(prompt)：prompt 是**日文原文**，那样会把原文当译文',
+        '                    #    静默输出，比失败更坏（用户拿到一页没翻译的"结果"却以为翻译过了）。',
+        "                    raise RuntimeError(f'Sakura API请求失败（已重试 {server_error_attempt} 次）：{e}')",
+        '',
+      ].join('\n'),
+    }],
+  },
+  {
+    id: 'translator-config-from-lang',
+    mark: '# miao-dock 补丁 D-97a',
+    file: srcPy('manga_translator', 'config.py'),
+    desc: 'TranslatorConfig 增 from_lang，让「显式方向」有地方可放',
+    edits: [{
+      anchor: [
+        "    target_lang: str = 'ENG' #todo: validate VALID_LANGUAGES #todo: convert to enum",
+        '    """Destination language"""',
+      ].join('\n'),
+      patch: [
+        "    target_lang: str = 'ENG' #todo: validate VALID_LANGUAGES #todo: convert to enum",
+        '    """Destination language"""',
+        '    from_lang: Optional[str] = None',
+        '    """# miao-dock 补丁 D-97a：显式源语言（内部语言码，如 ENG）。',
+        '    上游只有 auto（交给 langid 自动检测），而实测该检测在本项目的英文漫画短句上判错',
+        '    ⇒ 由服务端按任务下发方向（用户显式选方向，不做静默兜底）。',
+        '    None = 完全保持上游的 auto 行为（默认值即此，故不影响日译中）。"""',
+      ].join('\n'),
+    }],
+  },
+  {
+    id: 'dispatch-explicit-src-lang',
+    mark: '# miao-dock 补丁 D-97b',
+    file: srcPy('manga_translator', 'translators', '__init__.py'),
+    desc: 'dispatch 不再把源语言写死为 auto，改用 TranslatorConfig.from_lang',
+    edits: [
+      {
+        anchor: ['    if not queries:', '        return queries'].join('\n'),
+        patch: [
+          '    if not queries:',
+          '        return queries',
+          '',
+          '    # miao-dock 补丁 D-97b：把「源语言」从写死的字面量改成可由调用方指定的参数。',
+          '    #   上游在本函数里 6 处硬编码 \'auto\'（chain.langs[flag] 与 tgt_lang 两侧），于是',
+          '    #   TranslatorConfig 里配的方向**根本传不到翻译器**：nllb 只能靠 langid 自动检测，',
+          '    #   实测对英文漫画短句判错 ⇒ 落 "Could not detect source language, skipping translation"，',
+          '    #   整页译文变空串（用户看到「翻译跑过了、却一个字都没有」）。',
+          '    #   取值优先级：translator_config.from_lang（显式）> \'auto\'（上游原行为，逐字保留）。',
+          "    _src_lang = getattr(translator_config, 'from_lang', None) if translator_config is not None else None",
+          "    _src_lang = _src_lang or 'auto'",
+        ].join('\n'),
+      },
+      {
+        anchor: "                await translator.load('auto', chain.langs[flag], device)",
+        patch: "                await translator.load(_src_lang, chain.langs[flag], device)",
+      },
+      {
+        anchor: "                queries = await translator.translate('auto', chain.langs[flag], queries, args)",
+        patch: "                queries = await translator.translate(_src_lang, chain.langs[flag], queries, args)",
+      },
+      {
+        anchor: "                queries = await translator.translate('auto', chain.langs[flag], queries, use_mtpe)",
+        patch: "                queries = await translator.translate(_src_lang, chain.langs[flag], queries, use_mtpe)",
+      },
+      {
+        anchor: "            await translator.load('auto', tgt_lang, device)",
+        patch: "            await translator.load(_src_lang, tgt_lang, device)",
+      },
+      {
+        anchor: "            queries = await translator.translate('auto', tgt_lang, queries, args)",
+        patch: "            queries = await translator.translate(_src_lang, tgt_lang, queries, args)",
+      },
+      {
+        anchor: "            queries = await translator.translate('auto', tgt_lang, queries, use_mtpe)",
+        patch: "            queries = await translator.translate(_src_lang, tgt_lang, queries, use_mtpe)",
+      },
+    ],
+  },
+  {
+    id: 'nllb-load-cache-dir',
+    mark: '# miao-dock 补丁 D-97c',
+    file: srcPy('manga_translator', 'translators', 'nllb.py'),
+    desc: 'nllb 加载：cache_dir 与 _download 一致，且预置权重时零网络（local_files_only）',
+    edits: [{
+      anchor: [
+        '        self.tokenizer = AutoTokenizer.from_pretrained(self._TRANSLATOR_MODEL)',
+        '        self.model = AutoModelForSeq2SeqLM.from_pretrained(self._TRANSLATOR_MODEL)',
+      ].join('\n'),
+      patch: [
+        '        # miao-dock 补丁 D-97c：加载端要满足两条，缺一条在「权重已预置」的产品形态下都会坏。',
+        '        #   ① **cache_dir 必须与 `_download()` 一致** —— 上游 `_download()` 写',
+        '        #      `cache_dir=self._MODEL_SUB_DIR`（= <引擎>/src/models/translators/nllb），而这里不传',
+        '        #      ⇒ 读的是默认 HF 缓存（~/.cache/huggingface）⇒「下载落 A、加载读 B」：',
+        '        #      默认缓存为空时必报 "couldn\'t connect to huggingface.co"。',
+        '        #   ② **即便 cache_dir 对了，`from_pretrained` 仍会为取 etag 发一次网络请求** ——',
+        '        #      本机 HF 不可达 / 系统代理拦路时会抛 ProxyError: 502 Bad Gateway（实测），',
+        '        #      把「权重已预置」变成「引擎起不来」。故先探一次缓存：命中即 local_files_only=True',
+        '        #      （零网络）；未命中才退回上游的联网行为（首次下载路径）。',
+        '        #      探针用 try_to_load_from_cache 的返回值类型判定：命中=str 路径；已知不存在=哨兵；未知=None。',
+        '        #   🔴 用 `self._MODEL_SUB_DIR` 而非字面量：NLLBBigTranslator 覆写了它，子类自动跟着对。',
+        '        import huggingface_hub',
+        '        def _miao_cached(name):',
+        '            return isinstance(huggingface_hub.try_to_load_from_cache(',
+        '                self._TRANSLATOR_MODEL, name, cache_dir=self._MODEL_SUB_DIR), str)',
+        "        _miao_local_only = _miao_cached('pytorch_model.bin') or _miao_cached('model.safetensors')",
+        '        self.tokenizer = AutoTokenizer.from_pretrained(',
+        '            self._TRANSLATOR_MODEL, cache_dir=self._MODEL_SUB_DIR, local_files_only=_miao_local_only)',
+        '        self.model = AutoModelForSeq2SeqLM.from_pretrained(',
+        '            self._TRANSLATOR_MODEL, cache_dir=self._MODEL_SUB_DIR, local_files_only=_miao_local_only)',
+      ].join('\n'),
+    }],
+  },
+  {
+    id: 'nllb-tokenizer-lang-id',
+    mark: '# miao-dock 补丁 D-97d',
+    file: srcPy('manga_translator', 'translators', 'nllb.py'),
+    desc: 'nllb 不再用被 transformers>=5 移除的 lang_code_to_id（AttributeError 被 except 吞成静默空串）',
+    edits: [{
+      anchor: '            target_lang_id = self.tokenizer.lang_code_to_id[to_lang]',
+      patch: [
+        "            # miao-dock 补丁 D-97d：transformers>=5 移除了 `NllbTokenizer.lang_code_to_id`",
+        '            #   ⇒ 上游这行抛 AttributeError，而它被下面 `except Exception` **吞掉**，',
+        '            #   于是 _translate_batch 静默返回 [\'\'] * len(queries) —— 用户看到「翻译跑完了、',
+        '            #   却一个字都没有」。改用 `convert_tokens_to_ids`（新旧版本都在）。',
+        '            #   保留旧 API 优先：不是为兼容旧版，而是万一将来又恢复，行为不会变。',
+        "            if hasattr(self.tokenizer, 'lang_code_to_id'):",
+        '                target_lang_id = self.tokenizer.lang_code_to_id[to_lang]',
+        '            else:',
+        '                target_lang_id = self.tokenizer.convert_tokens_to_ids(to_lang)',
+      ].join('\n'),
+    }],
+  },
+  {
+    id: 'textblock-dehyphen',
+    mark: '# miao-dock 补丁 D-98',
+    file: srcPy('manga_translator', 'utils', 'textblock.py'),
+    desc: 'TextBlock 拼接时合并断行连字符（消除 OCR 断词导致的整句译文崩坏）',
+    edits: [{
+      anchor: [
+        '        self.texts = texts if texts is not None else []',
+        '        self.text = texts[0]',
+        '        if self.text and len(texts) > 1:',
+        '            for txt in texts[1:]:',
+        String.raw`                first_cjk = '\u3000' <= self.text[-1] <= '\u9fff'`,
+      ].join('\n'),
+      patch: [
+        '        self.texts = texts if texts is not None else []',
+        '        self.text = texts[0]',
+        '        if self.text and len(texts) > 1:',
+        '            for txt in texts[1:]:',
+        '                # miao-dock 补丁 D-98：断行连字符合并。',
+        '                #   检测器会把一个词切成两个 region（实测 `ARE IN-` + `CREDIBLE.` 两块），',
+        '                #   而这里按行拼接时走拉丁分支 ⇒ 在 `-` 与后半截之间插了空格：',
+        '                #   "ARE IN-" + "CREDIBLE." = "ARE IN- CREDIBLE."，翻译器当两个词 ⇒ 整句语义崩坏',
+        '                #   （实测 nllb：「你真的是可信的」而不是「你真的是难以置信的」）。',
+        '                #   判据：上一行以 `-` 结尾、`-` 前是字母数字、下一行首字符也是字母数字 ⇒ 去 `-` 直接相连。',
+        '                #   🔴 只有这一步**同时知道「这是两行之间的接缝」**，所以只能在这里做：拼接前用全局',
+        '                #      正则（re.sub(r"-\\s+","")) 会把 `well- known` 这类正常写法一起合掉。',
+        '                #   ⚠️ 已知误伤：行尾破折号被打断（`I WANT TO-` + `NO!` → `I WANT TONO!`）。它与断行连字符',
+        '                #      在廉价规则下不可区分；且本字段只用于**翻译查询**（排版用 `region.lines`），',
+        '                #      误伤只坏一句译文、不动版面 ⇒ 接受。',
+        "                if (len(self.text) >= 2 and self.text.endswith('-')",
+        '                        and self.text[-2].isalnum() and txt[:1].isalnum()):',
+        '                    self.text = self.text[:-1] + txt',
+        '                    continue',
+        String.raw`                first_cjk = '\u3000' <= self.text[-1] <= '\u9fff'`,
+      ].join('\n'),
+    }],
+  },
+];
 
 /**
- * 补丁标记。**幂等判据**：文件里出现它 ⇒ 已打过，直接跳过（重复打会在函数体里堆第二份 raise）。
- * 同时它也是"这份源码被我们改过"的唯一凭据。
- */
-const SAKURA_MARK = '# miao-dock 补丁 D-86';
-
-/**
- * 锚点 = 上游原样三行。取整个 `except` 分支体（含缩进）而不是单独一句 `return prompt`，
- * 因为 `return prompt` 在文件里可能有别的语境；带上前一行 logger.error 才唯一。
- */
-const SAKURA_ANCHOR = [
-  "                    self.logger.error(f'Sakura API请求失败。错误信息： {e}')",
-  '                    return prompt',
-  '',
-].join('\n');
-
-const SAKURA_PATCH = [
-  "                    self.logger.error(f'Sakura API请求失败。错误信息： {e}')",
-  `                    ${SAKURA_MARK}：原样的 return prompt 返回的是 list（prompt 就是调用方`,
-  '                    # 传进来的 queries），而上游调用点按 str 用它（_translate 里对 response 做字符串拼接）⇒',
-  '                    # TypeError: can only concatenate str (not "list") to str —— 把"翻译接口不可用"',
-  '                    # 这句真话糊成一句 python 内部错误（16 张图全 failed、对外只剩 engine_engine_error）。',
-  '                    # 改为显式抛错，让失败以真实原因上抛。',
-  '                    # 🔴 不能改成 return str(prompt)：prompt 是**日文原文**，那样会把原文当译文',
-  '                    #    静默输出，比失败更坏（用户拿到一页没翻译的"结果"却以为翻译过了）。',
-  "                    raise RuntimeError(f'Sakura API请求失败（已重试 {server_error_attempt} 次）：{e}')",
-  '',
-].join('\n');
-
-/**
- * 上游源码补丁：Sakura 翻译器「失败时返回 list」缺陷（spec-notes D-86）。
+ * 上游源码补丁：把 ENGINE_PATCHES 里声明的每一处修改打到上游源码上。
  *
  * 为什么补丁挂在这里而不是 `install-engine-deps.mjs`：那个脚本是 **Windows 专用**
  * （macOS 手动 `pip -r requirements.txt`，见 README），挂在那边会让 macOS 装配**永远拿不到**
- * 这个补丁 —— 而缺陷本身与平台无关。
+ * 这些补丁 —— 而缺陷本身与平台无关。
  *
- * 🔴 锚点缺失时**直接抛错**，不静默跳过：源码被钉在 `ENGINE_COMMIT` 这个具体 commit 上，
- *    锚点找不着 = 「装配出来的引擎已不是我们验过的那份」。静默跳过会让缺陷悄悄回来，
- *    而下次定位它又要从 `engine_engine_error` 这一句开始猜（正是本次的代价）。
+ * 🔴 锚点缺失时**直接抛错**，不静默跳过（见 ENGINE_PATCHES 头注）。
+ * ⚠️ 补丁**不受 installSource 的跳过分支影响**：源码早就在（常见情形）也要能补上 ⇒ main() 里
+ *    无条件调用本函数。
  */
 function patchEngineSource() {
-  if (!fs.existsSync(SAKURA_PY)) throw new Error(`找不到 Sakura 翻译器源码：${SAKURA_PY}`);
-  const cur = fs.readFileSync(SAKURA_PY, 'utf8');
-  if (cur.includes(SAKURA_MARK)) { log('[跳过] 源码补丁已应用：sakura.py'); return; }
-  if (!cur.includes(SAKURA_ANCHOR)) {
-    throw new Error([
-      'sakura.py 补丁锚点未找到（源码已变）。',
-      `  文件：${SAKURA_PY}`,
-      `  期望锚点：${JSON.stringify(SAKURA_ANCHOR)}`,
-      '  ⇒ 换上游 commit 时必须**重新核对并更新** patchEngineSource 的锚点/替换体',
-      '    （engine/VERSIONS.lock 的 ENGINE_COMMIT 与 setup-engine.mjs 的 ENGINE_COMMIT 同步改）。',
-    ].join('\n'));
+  for (const p of ENGINE_PATCHES) {
+    if (!fs.existsSync(p.file)) {
+      throw new Error(`找不到补丁目标源码（${p.id}）：${p.file}\n  ⇒ 引擎源码未装，先跑 setup-engine.mjs --source`);
+    }
+    let cur = fs.readFileSync(p.file, 'utf8');
+    const eol = cur.includes('\r\n') ? '\r\n' : '\n';
+    const norm = (s) => (eol === '\n' ? s : s.replace(/\n/g, eol));
+    // 🔴 锚点/替换体在表里一律用 `\n` 书写，这里按**文件实际 EOL** 归一化。
+    //    上游源码并非同一套行尾（实测 `utils/textblock.py` 是 CRLF，`config.py` 是 LF）——
+    //    不归一化的后果不是报错而是**锚点永不命中**（然后被当成"源码变了"），排查起来极费时。
+    // 幂等：marker 出现即已打过（重复打会在文件里堆第二份注释与语句）
+    if (cur.includes(p.mark)) { log(`[跳过] 源码补丁已应用：${p.id}`); continue; }
+    for (const [i, e] of p.edits.entries()) {
+      const anchor = norm(e.anchor);
+      const patch = norm(e.patch);
+      if (!cur.includes(anchor)) {
+        throw new Error([
+          `补丁 ${p.id} 的第 ${i + 1} 个锚点未找到（源码已变）。`,
+          `  文件：${p.file}`,
+          `  期望锚点：${JSON.stringify(e.anchor)}`,
+          '  ⇒ 换上游 commit 时必须**重新核对并更新** ENGINE_PATCHES 里的锚点/替换体',
+          '    （engine/VERSIONS.lock 的 ENGINE_COMMIT 与 setup-engine.mjs 的 ENGINE_COMMIT 同步改）。',
+        ].join('\n'));
+      }
+      // 函数式替换：替换串里的 `$` 不会被当成 replace 的特殊记号（替换体里有 `{e}` 之类，别赌）
+      cur = cur.replace(anchor, () => patch);
+    }
+    fs.writeFileSync(p.file, cur, 'utf8');
+    log(`  ✓ 已打补丁：${p.id}（${p.desc}）`);
   }
-  // 用函数式替换：替换串里出现的 `$` 不会被当成 replace 的特殊记号（模板串里已经有 `{e}` 之类，别赌）
-  fs.writeFileSync(SAKURA_PY, cur.replace(SAKURA_ANCHOR, () => SAKURA_PATCH), 'utf8');
-  log('  ✓ 已打补丁：sakura.py（失败不再抛 list/str 混淆的 TypeError）');
 }
 
-/** `--check` 用：报告补丁现状（不改文件） */
+/** `--check` 用：报告每个补丁的现状（不改文件） */
 function sourcePatchState() {
-  try {
-    return fs.readFileSync(SAKURA_PY, 'utf8').includes(SAKURA_MARK) ? '✓ 已打' : '✗ 未打';
-  } catch { return '✗ 缺（源码未装）'; }
+  return ENGINE_PATCHES.map((p) => {
+    let state;
+    try { state = fs.readFileSync(p.file, 'utf8').includes(p.mark) ? '✓ 已打' : '✗ 未打'; }
+    catch { state = '✗ 缺（源码未装）'; }
+    return `  · ${p.id}：${state}`;
+  }).join('\n');
 }
 
 async function main() {
@@ -289,4 +482,9 @@ async function main() {
   return 0;
 }
 
-main().then((c) => process.exit(c)).catch((e) => { console.error(`\n✗ ${e.stack || e.message}`); process.exit(1); });
+// 只有「被当作脚本直接运行」时才执行装配 —— 被 `import`（如 e2e/engine/engine-patches-check.mjs
+// 取 ENGINE_PATCHES 做取证）时**不得**触发下载/打补丁这类副作用。
+const invokedDirectly = process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+if (invokedDirectly) {
+  main().then((c) => process.exit(c)).catch((e) => { console.error(`\n✗ ${e.stack || e.message}`); process.exit(1); });
+}

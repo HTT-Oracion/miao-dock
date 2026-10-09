@@ -4613,3 +4613,131 @@ Vite 因此从未看见那 120 个 `url()`，资源自然不落盘。
 `const GROUPS = ['EXCLUDED', …, 'FEATURES']`，**不在清单里的分组被静默跳过、且计入通过数**。
 补登记后立刻现形（`FONT 2/3`，其中一条真红）。
 ⇒ **新增分组后必须确认输出里出现了该组标题**，否则"全绿"是假的。
+
+---
+
+## D-97 · 英译中支持：定选 nllb + 三个「静默失败」断点 + 补丁表化（2026-10-10）
+
+> 本文只记**决策与坑**；任务清单在 `docs/english-translation-dev-plan.md`，实测原始日志在 `.tmp/en-test/`。
+
+### 一、选型：**`nllb-200-distilled-600M`**（用户自用、非商用，接受 CC-BY-NC-4.0）
+
+实测（`test-manga/en/test-0.png`，同一张英文页三路对照）：
+
+| 档 | 许可 | 英译中实测 | 结论 |
+|---|---|---|---|
+| `sakura` | CC BY-NC-SA | **8/8 行原文照抄** | ❌ 不支持英文 |
+| `nllb` 600M | **CC-BY-NC-4.0** | 8/8 出中文 | ✅ **定选**（非商用） |
+| `m2m100` 418M | MIT | 零补丁跑通 | 备选（将来商用） |
+
+🔴 两条纪律：**`nllb` 不得进随包默认**（NC 会随分发物走）；将来商用改配 MIT 档。
+🔴 推翻旧结论：`nllb` 是 **CC-BY-NC-4.0**，不是 CC-BY-4.0（早前记反过，已核实 HF API `cardData.license`）。
+
+**为什么 `sakura` 不行**（硬证据，不是"效果不好"）：prompt 字面写死「将下面的**日文**文本翻译成中文」
+（`sakura.py`），且 `_LANGUAGE_CODE_MAP` 只有 `{CHS, JPN}` ⇒ 英文进、英文出，随后被
+「identical to original」过滤器全数滤掉。它**不是**"翻得烂"，是**根本没翻**。
+
+### 二、三个「静默失败」断点（每一个都表现为"跑完了、却什么都没有"）
+
+| # | 位置 | 失效形态 | 补丁 |
+|---|---|---|---|
+| ① | `translators/__init__.py::dispatch` 6 处硬编码 `'auto'` | `TranslatorConfig` 里配的方向**根本传不到翻译器** ⇒ 只能靠 `langid` 自动检测 ⇒ 实测判错 ⇒ `Could not detect source language` ⇒ **整页空串** | D-97a + D-97b |
+| ② | `nllb.py::_load` 的 `from_pretrained` **不传 cache_dir** | `_download()` 落 `<引擎>/src/models/translators/nllb`，加载读默认 HF 缓存（`~/.cache/huggingface`）⇒「下载落 A、加载读 B」 | D-97c |
+| ③ | `_translate_batch` 用 `tokenizer.lang_code_to_id` | transformers≥5 已**移除**该属性 ⇒ AttributeError 被 `except Exception` **吞掉** ⇒ 静默 `return [''] * n` | D-97d |
+
+③ 是三者里最阴的：它不报错、不告警，日志里只有一句 `Batch translation failed`，
+而**上一行**刚打印过正常译文列表头。若只看"有没有报错"，会一路绿着交付一页空字。
+
+### 三、补丁表化（`ENGINE_PATCHES`）
+
+上游源码**不入库**，靠 `setup-engine.mjs::patchEngineSource` 重放。本次把它从"内联一个补丁"
+改成**数据表**（`{id, mark, file, desc, edits:[{anchor, patch}]}`），理由：新增补丁只加一行、
+`e2e/engine/engine-patches-check.mjs` 能对**表与实物**做一致性取证（6 条 / 反证 4 条）。
+`main()` 增加了 `invokedDirectly` 守卫 —— 被 `import` 取表时**不得**触发下载/打补丁。
+
+> ⚠️ **CRLF 陷阱（本次实际踩到）**：锚点在表里一律用 `\n` 书写，而**上游源码并非同一套行尾**
+> —— 实测 `utils/textblock.py` 是 **CRLF**，`config.py` / `nllb.py` 是 LF。
+> 不按文件实际 EOL 归一化的后果**不是报错，而是锚点永不命中**（然后被误判成"源码变了"，
+> 于是去改锚点、改错方向）。修法：`const eol = cur.includes('\r\n') ? '\r\n' : '\n'` 后归一化
+> 锚点与替换体。⇒ **多行锚点必须按文件实际 EOL 归一化**，这条纪律再确认一次。
+
+### 四、验证（真引擎 / 纯 CLI `--config-file`，**无任何运行时补丁**）
+
+正向：`--config-file` 带 `{"translator":{"translator":"nllb","target_lang":"CHS","from_lang":"ENG"}}`
+⇒ 8/8 行出中文，落 `final.png`。
+
+| 断言 | 反证（撤掉后实测） |
+|---|---|
+| A1 断词合并生效：`INCREDIBLE.` / `UNBELIEVABLE,` | 撤 D-98 ⇒ `IN- CREDIBLE.` / `UNBE- LIEVABLE,` |
+| A2 显式源语言生效：8/8 有中文 | 撤 `from_lang` ⇒ 8/8 空串 + `Could not detect source language` |
+| A3 预置权重离线加载：零 HF 环境变量也能加载 | 撤 D-97c ⇒ `ProxyError: 502 Bad Gateway`（经系统代理去取 etag） |
+| A4 tokenizer 兼容：有译文 | 撤 D-97d ⇒ 8/8 空串 + `Batch translation failed` |
+
+**A3 的第二半才是关键**：即便 cache_dir 补对了，`from_pretrained` **仍会为取 etag 发一次网络请求**
+（本机 HF 不可达 + 系统代理拦路 ⇒ 502）。故 D-97c 加了缓存探针：命中 ⇒ `local_files_only=True`
+（零网络）；未命中 ⇒ 退回上游联网行为（首次下载路径）。
+
+### 五、附带发现（各记一条，后续可立 G）
+
+- **页级「目标语言比例」检查会假过**：全英文未翻译（0 个中文字）时仍打
+  `Page-level target language ratio check passed`。真兜底是逐行 `identical to original` 过滤。
+- **`Context(**params)` 传参是死路**：`mode/local.py` 建的 `ctx` 被 `self.translate(img, config)` 整个丢弃。
+- **`--pre-dict` 不是零代码解法**：它按空白切分（正则里不能含字面空格）、且是全局替换，
+  区分不了"断行连字符"与"行尾破折号"——所以断词合并只能落在拼接点（见 D-98）。
+
+---
+
+## D-98 · OCR 行尾断字符合并：根因在「跨 region 拼接」，不在 OCR（2026-10-10）
+
+### 一、根因（逐块取证）
+
+不是"块内换行"，是**检测器把单词切成了两个 region**，再由拼接逻辑用**空格**缝起来：
+
+```
+prob 0.9950  ARE IN-        ← region A（置信度很高）
+prob 0.6077  CREDIBLE.      ← region B（单独一块，置信度低）
+```
+
+`utils/textblock.py::TextBlock.__init__` 走拉丁分支：
+
+```python
+self.text += ' ' + txt      # 在行尾 '-' 与后半截之间插了空格
+```
+
+⇒ `"ARE IN-" + "CREDIBLE."` = `"ARE IN- CREDIBLE."` ⇒ 翻译器当两个词 ⇒ 整句语义崩坏。
+
+### 二、修法：在拼接点合并（**只有这一步同时知道"这是两行之间的接缝"**）
+
+判据：上一行以 `-` 结尾、`-` 前是字母数字、下一行首字符也是字母数字 ⇒ 去掉 `-` 直接相连。
+
+🔴 **为什么不做成"译前全局正则"**：`re.sub(r'-\s+','')` 会把 `well- known` 这类正常写法一起合掉，
+且没有行边界信息。拼接点是唯一同时具备"行边界"与"上下文"的地方。
+
+### 三、爆炸半径（小，且已实测）
+
+`region.text` **只用于翻译查询**；排版用的是 `region.lines`，`text_raw` 仅影响盒子缩放
+（`manga_translator.py` 注释：expand the render detection box）⇒ 误伤只坏一句译文，**不动版面**。
+
+### 四、验证
+
+| | 原文（进翻译器） | 译文 |
+|---|---|---|
+| 撤 D-98 | `ITS UNBE- LIEVABLE, …` | 它是**不可爱**的, 但我们没有时间被震惊. |
+| **打 D-98** | `ITS UNBELIEVABLE, …` | 这**令人难以置信**, 但我们没有时间被震惊. |
+| 撤 D-98 | `YOU REALLY ARE IN- CREDIBLE.` | 你真的是**可信**的. |
+| **打 D-98** | `YOU REALLY ARE INCREDIBLE.` | 你真的**难以置信**. |
+
+**已知误伤（如实记录，接受）**：行尾破折号被打断 —— `I WANT TO-` + `NO!` → `I WANT TONO!`。
+它与断行连字符在**廉价规则**下不可区分（都满足"行尾单连字符 + 两侧字母"）。
+试过"下一行首字母大写且以句末标点结尾则不合并"的守卫，但**会漏掉本页 #3**（`CREDIBLE.` 恰是这个形态）
+⇒ 得不偿失，宁可接受 `TO-` 这类低概率误伤（只坏一句译文、不动版面）。
+
+🔴 **两类要分开**：**断词**（`IN- CREDIBLE`）本补丁解决；
+**识别错误**（`BUT YOU'RE` 被 OCR 认成 `BLIT IOURE`，置信度仅 0.345）本补丁**无效**，
+需另立项（译前词典 / 拼写纠正），且**先实验再立项**（收益未证）。
+
+### 五、新钉子
+
+`npm run check:engine-patches[:refute]` —— 6 条 / 反证 4 条（零网络零 GPU）。
+它守的是**表与实物**的一致性（条数/结构/marker 命名/目标存在/已应用/补丁体自含 marker），
+不重跑真引擎（真链路验证走 `.tmp/en-test/` 的实测，分钟级，不进常规门）。
