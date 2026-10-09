@@ -4888,3 +4888,37 @@ nllb 档的权重按 **HF 缓存布局**落盘（`engine/models.manifest.json` �
 本节点同时把提交规范改为 `类型(模块): 功能简述 + 关键点简述`
 （类型 `feat` / `chore` / `fix` / `style` / `test` / 其他；模块如 `music` / `settings` / `manga` / `docs`…），
 写入 `AGENTS.md` §2 第 9 条 · `.trae/rules/project_rules.md` §5。
+
+--------------------------------------------------------------------------------
+
+## D-102/103/104 · 译文文字模糊三连修（渲染链路，ver2.2）
+
+**症状**：用户反馈「漫画翻译后，文本看着有点模糊」。取证 `result/…-CHS-m2m100/final.png`：
+中文笔画细、边缘发虚（如「是的，先生！」「你真的很可靠。」）。
+
+**根因排查（两条假设被推翻，一条成立）**：
+1. ❌「字体点阵（bitmap strike）导致发虚」——实测 `msyh.ttc / Arial-Unicode / NotoCJK` 的
+   `num_fixed_sizes` 全为 0，**没有点阵**。D-102 的 `FT_LOAD_NO_BITMAP` 属**防御性保留**
+   （防用户换带点阵字体时复发）；🔴 它**必须与 `FT_LOAD_RENDER` 同加**：freetype-py 的
+   `load_char` 默认 `flags=FT_LOAD_RENDER`（隐式渲染出 bitmap），显式指定 flags 后隐式渲染
+   消失 ⇒ 只加 NO_BITMAP 会 `ValueError: NULL pointer access`（首版已踩）。
+2. ❌「被 setup:engine 覆盖」风险成立但已有机制：改 runtimes/ 必须登记 `ENGINE_PATCHES`（SSOT）。
+3. ✅ 真因两条：**默认字体 Arial-Unicode-Regular 中文笔画太细**（FALLBACK 首选，插值后更虚）
+   + **`warpPerspective` 用 `INTER_LINEAR`**（译文比原文长 ⇒ 字号调小 ⇒ box 映射多为放大，
+   双线性放大把笔画边缘抹糊）。
+
+**修法（三补丁，均入 ENGINE_PATCHES，可独立回退调试）**：
+| 补丁 | 文件 | 改动 |
+|---|---|---|
+| D-102 | `rendering/text_render.py` | `load_char` 加 `FT_LOAD_NO_BITMAP \| FT_LOAD_RENDER`（强制矢量轮廓，防御性） |
+| D-103 | `rendering/text_render.py` | FALLBACK 首选 `msyh.ttc`（微软雅黑笔画饱满；fonts/ 上游自带，无新增分发物） |
+| D-104 | `rendering/__init__.py` | `warpPerspective` flags `INTER_LINEAR → INTER_CUBIC`（放大映射更锐） |
+
+**取证**：`engine-patches-check` 正向 6/0（EXPECTED_PATCHES 7→9）· 反证 4/0 ·
+Python `py_compile` 通过 · 渲染冒烟（`set_font(None)` 首选=Microsoft YaHei，16/20/24/32px
+抗锯齿像素占比 0.45~0.77，样张 `.tmp/render-after.png` 清晰）。
+**待用户实测**：整页真实翻译（含 INPAINT→RENDER 全链路）后肉眼确认。
+
+**用户调试入口**：想回退某一项，直接改 `engine/scripts/setup-engine.mjs` 的 ENGINE_PATCHES
+（删除对应条目 + 改 `EXPECTED_PATCHES` 分母）后重放 `node engine/scripts/setup-engine.mjs --source`；
+或临时改 `runtimes/.../rendering/` 下两文件（重装会丢，以补丁表为准）。

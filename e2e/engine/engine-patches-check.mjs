@@ -27,7 +27,7 @@ const REPO = path.resolve(HERE, '..', '..');
 const REFUTE = process.argv.includes('--refute');
 
 /** 写死的期望补丁条数。加了补丁就必须同步改这里（否则分母漂移，见 AGENTS.md §2-3）。 */
-const EXPECTED_PATCHES = 6;
+const EXPECTED_PATCHES = 9;
 
 /** marker 命名纪律：一眼能认出"这处被我们改过"，也便于全仓扫描。 */
 const MARK_PREFIX = '# miao-dock 补丁 D-';

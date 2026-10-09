@@ -361,6 +361,63 @@ export const ENGINE_PATCHES = [
     }],
   },
   {
+    id: 'text-render-no-bitmap',
+    mark: '# miao-dock 补丁 D-102',
+    file: srcPy('manga_translator', 'rendering', 'text_render.py'),
+    desc: '正文渲染强制矢量轮廓（FT_LOAD_NO_BITMAP），消除带点阵字体在小字号下的发虚/锯齿（D-102）',
+    edits: [{
+      // 锚点 = 上游 get_char_glyph 里原样的 load_char 裸调用。取带前后两行以唯一（load_char 在
+      // 文件里另有一处 get_char_border 用的是带 flags 的形式，不会撞）。
+      anchor: [
+        "        face.load_char(cdpt)",
+        '        return Glyph(face.glyph)',
+      ].join('\n'),
+      patch: [
+        '        # miao-dock 补丁 D-102：强制矢量轮廓渲染，不加 FT_LOAD_NO_BITMAP 时，',
+        '        # msyh.ttc / msgothic.ttc 这类带嵌入点阵（bitmap strike）的字体在非整数倍字号下',
+        '        # 会直接采样点阵，导致笔画发虚、边缘锯齿（描边一直走矢量路径，故描边清晰、正文模糊）。',
+        '        # 🔴 必须同时带 FT_LOAD_RENDER：freetype-py 的 load_char 默认 flags=FT_LOAD_RENDER，',
+        '        #    显式指定 flags 后就不再隐式 render ⇒ bitmap 未渲染 ⇒ 读 buffer 报 NULL pointer。',
+        '        face.load_char(cdpt, freetype.FT_LOAD_NO_BITMAP | freetype.FT_LOAD_RENDER)',
+        '        return Glyph(face.glyph)',
+      ].join('\n'),
+    }],
+  },
+  {
+    id: 'render-font-msyh-first',
+    mark: '# miao-dock 补丁 D-103',
+    file: srcPy('manga_translator', 'rendering', 'text_render.py'),
+    desc: 'FALLBACK 字体首选微软雅黑（Arial-Unicode 中文笔画细，插值后发虚，D-103）',
+    edits: [{
+      anchor: [
+        'FALLBACK_FONTS = [',
+        "    os.path.join(BASE_PATH, 'fonts/Arial-Unicode-Regular.ttf'),",
+      ].join('\n'),
+      patch: [
+        '# miao-dock 补丁 D-103：FALLBACK 字体首选微软雅黑。原首选 Arial-Unicode-Regular 的中文笔画',
+        '# 很细，经 warpPerspective 插值后发虚；msyh.ttc（微软雅黑）笔画饱满、清晰度明显更好。',
+        '# 两者都在 fonts/ 下（上游自带），只改优先级、不新增分发物。用户显式配 font_path 时仍最优先。',
+        'FALLBACK_FONTS = [',
+        "    os.path.join(BASE_PATH, 'fonts/msyh.ttc'),",
+        "    os.path.join(BASE_PATH, 'fonts/Arial-Unicode-Regular.ttf'),",
+      ].join('\n'),
+    }],
+  },
+  {
+    id: 'render-warp-cubic',
+    mark: '# miao-dock 补丁 D-104',
+    file: srcPy('manga_translator', 'rendering', '__init__.py'),
+    desc: 'warpPerspective 用 INTER_CUBIC 替代 INTER_LINEAR（文字 box 放大映射时边缘更锐，D-104）',
+    edits: [{
+      anchor: '    rgba_region = cv2.warpPerspective(box, M, (img.shape[1], img.shape[0]), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)',
+      patch: [
+        '    # miao-dock 补丁 D-104：INTER_LINEAR → INTER_CUBIC。译文常比原文长 ⇒ 字号被调小 ⇒',
+        '    # 文字 box 映射到目标框时多为放大，双线性放大会把笔画边缘抹糊；三次插值明显更锐。',
+        '    rgba_region = cv2.warpPerspective(box, M, (img.shape[1], img.shape[0]), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0)',
+      ].join('\n'),
+    }],
+  },
+  {
     id: 'textblock-dehyphen',
     mark: '# miao-dock 补丁 D-98',
     file: srcPy('manga_translator', 'utils', 'textblock.py'),
