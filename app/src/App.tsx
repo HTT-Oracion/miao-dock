@@ -75,6 +75,14 @@ export function App() {
   const [cancelingIds, setCancelingIds] = useState<Set<string>>(() => new Set());
   /** 待漫画库定位的漫画名（队列行「查看」→ 切到漫画库并选中它） */
   const [libraryFocus, setLibraryFocus] = useState<string | null>(null);
+  /**
+   * 「新建漫画」一次性信号。
+   *
+   * 按钮长在本组件算出来的工具条里，而弹窗与它提交后要做的事（刷新库、选中新项、发 Toast）
+   * 全在 `LibraryScreen` 内。把整摊弹窗状态抬上来会把它劈成两半，故沿用与 `libraryFocus`
+   * **同构**的一次性信号：本组件只负责"置一次真"，LibraryScreen 消费后回调清空。
+   */
+  const [newBookRequest, setNewBookRequest] = useState(false);
 
   useThemeTokens(mode);
 
@@ -308,6 +316,11 @@ export function App() {
           subtitle: libSummary,
           actions: (
             <>
+              {/* 「新建漫画」是**库级动作**（作用于整个库，不是某一项），故与「打开根目录」同层
+                  （设计稿 §7.1.1 的位置裁决：不放左栏底部，免得与分页器抢位置） */}
+              <Btn kind="primary" onClick={() => setNewBookRequest(true)}>
+                新建漫画
+              </Btn>
               <Btn kind="ghost" onClick={() => openPath(libRoot).catch((e: unknown) => push(errorText(e), 'bad'))}>
                 打开根目录
               </Btn>
@@ -388,6 +401,8 @@ export function App() {
                 tasks={rows}
                 focus={libraryFocus}
                 onFocusHandled={() => setLibraryFocus(null)}
+                newBookSignal={newBookRequest}
+                onNewBookHandled={() => setNewBookRequest(false)}
                 onRefresh={refreshAll}
                 onToast={push}
                 refreshKey={refreshKey}

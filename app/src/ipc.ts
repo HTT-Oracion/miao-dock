@@ -103,9 +103,22 @@ export const apiGet = <T,>(path: string) => invoke<T>('api_get', { path });
 export const apiPost = <T,>(path: string, body?: unknown) =>
   invoke<T>('api_post', { path, body: body ?? null });
 
-/** `multipart/form-data` 提交（契约 §5.2）：files 为本地绝对路径，前端已按 ≤20 分批 */
-export const apiPostMultipart = <T,>(path: string, payload: unknown, files: string[]) =>
-  invoke<T>('api_post_multipart', { path, payload, files });
+/** `DELETE` 代理（带可选 JSON 体）。目前唯一用途是移除封面 —— 契约里它只有 DELETE 一种动词 */
+export const apiDelete = <T,>(path: string, body?: unknown) =>
+  invoke<T>('api_delete', { path, body: body ?? null });
+
+/**
+ * `multipart/form-data` 提交（契约 §5.2）：files 为本地绝对路径，前端已按 ≤20 分批。
+ *
+ * `field` = 文件分片的**字段名**，默认 `images[]`（批量投放用）。封面走同一条通道但
+ * 服务端按契约认的是 `cover`，故那里必须显式传 `'cover'`。
+ */
+export const apiPostMultipart = <T,>(
+  path: string,
+  payload: unknown,
+  files: string[],
+  field?: string,
+) => invoke<T>('api_post_multipart', { path, payload, files, field: field ?? null });
 
 /**
  * 取库内文件字节。返回 `ArrayBuffer`（Rust 侧走 `tauri::ipc::Response` 二进制通道），

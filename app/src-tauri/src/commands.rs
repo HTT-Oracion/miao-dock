@@ -253,12 +253,19 @@ pub async fn api_post(
 }
 
 /// `multipart/form-data` 提交（契约 §5.2）：payload + images[]（≤20 张，由前端分批）
+///
+/// `field` 是**文件分片的字段名**，默认 `images[]`。之所以开这个口子：
+/// 漫画库封面（`POST /library/{book}/cover`）走的是同一条 multipart 通道、但服务端
+/// 按契约要求字段名必须是 `cover`（且**恰好 1 个**）—— 字段名写死的旧签名会把封面
+/// 塞进 `images[]`，服务端于是回「缺少封面分片」，而前端只能看到一个与"选了图"
+/// 毫无字面关联的 400。
 #[tauri::command]
 pub async fn api_post_multipart(
     mgr: State<'_, ServiceManager>,
     path: String,
     payload: Value,
     files: Vec<String>,
+    field: Option<String>,
 ) -> Result<Value, ApiErrorView> {
     let (base, token) = target(&mgr)?;
     let mut form = reqwest::multipart::Form::new();
@@ -267,6 +274,7 @@ pub async fn api_post_multipart(
         "payload",
         reqwest::multipart::Part::text(payload_text).mime_str("application/json").map_err(|e| ApiErrorView::network(e.to_string()))?,
     );
+    let part_name = field.unwrap_or_else(|| "images[]".to_string());
     for (i, f) in files.iter().enumerate() {
         let bytes = std::fs::read(f).map_err(|e| ApiErrorView::network(format!("读取文件失败 {f}：{e}")))?;
         let ext = Path::new(f)
@@ -282,7 +290,7 @@ pub async fn api_post_multipart(
         // filename 由客户端按阅读顺序三位补零（契约 §5.2）；服务端仍会按字节嗅探真实类型
         let name = format!("{:03}.{ext}", i + 1);
         form = form.part(
-            "images[]",
+            part_name.clone(),
             reqwest::multipart::Part::bytes(bytes)
                 .file_name(name)
                 .mime_str(mime)
@@ -319,6 +327,32 @@ pub async fn api_bytes(
         return Err(parse_error(status, &String::from_utf8_lossy(&bytes)));
     }
     Ok(tauri::ipc::Response::new(bytes.to_vec()))
+}
+
+/// `DELETE` 代理（带可选 JSON 体）。
+///
+/// 为什么需要它：契约里 `DELETE /library/{book}/cover`（移除封面）**只有这一个动词**
+/// —— 没有等价的 `POST` 变体。没有本命令时，UI 上的「移除封面」按钮无路可走，
+/// 只能退化成"改 manifest 而不删文件"，那会留下一个读不出来的 `cover.*`
+/// （`readCoverName` 的 readdir 兜底会把它又认回来）。
+///
+/// 与 `api_get` 同样守两条硬纪律（见本段文件头）：**真 async fn** + **非阻塞 Client**。
+#[tauri::command]
+pub async fn api_delete(
+    mgr: State<'_, ServiceManager>,
+    path: String,
+    body: Option<Value>,
+) -> Result<Value, ApiErrorView> {
+    let (base, token) = target(&mgr)?;
+    let mut req = client()
+        .delete(format!("{base}{path}"))
+        .header("X-Box-Token", token)
+        .header("X-Box-Client", "box-desktop/0.1.0");
+    if let Some(b) = body {
+        req = req.json(&b);
+    }
+    let res = req.send().await.map_err(|e| ApiErrorView::network(e.to_string()))?;
+    finish(res).await
 }
 
 // ------------------------------------------------------------------ 本机投放

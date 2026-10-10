@@ -96,12 +96,80 @@ export interface ComicEntry {
   modifiedAt: string | null;
 }
 
+/**
+ * 漫画（本 / 大类）——「本 → 话 → 页」三层里的**顶层**（设计稿 §11.1）。
+ *
+ * 与 `ComicEntry` 的关系：`ComicEntry` 是**目录级**的平铺视图（一目录一条），
+ * 大类目录也会出现在 `comics` 里；`BookEntry` 只对**带 `manifest.json` 的目录**产出，
+ * 并把内部的每个话目录展开成 `chapters`。两者并存是有意的 —— `comics` 是既有消费方
+ * （队列「查看」的定位、删除弹窗、返工端点）的口径，不能因为多了「话」这一层就换掉。
+ */
+export interface BookEntry {
+  bookName: string;
+  /** 归一化后的目录名；本体与 `bookName` 同值，留着是为了和 `TaskRow.normalizedComicName` 对得上 */
+  dirName: string;
+  outputDir: string;
+  title: string;
+  /** 空串 = 未署名（UI 显示「未署名」，判空**不能用** `!author` 之外的口径） */
+  author: string;
+  /**
+   * 封面在书籍目录内的**文件名**（`cover.png` 等，不含目录）；无封面为 `null`。
+   *
+   * ⚠️ 它**不是**可直接渲染的 URL：WebView 读不了任意本地路径。取字节要走
+   * `GET /library/{book}/cover`（见 spec-notes D-116），本字段只用来判「有没有封面」。
+   */
+  coverPath: string | null;
+  chapterCount: number;
+  totalPages: number;
+  byteSize: number;
+  modifiedAt: string | null;
+  /** 本大类下的全部话（按话号升序，服务端已排好） */
+  chapters: ChapterEntry[];
+}
+
+/**
+ * 话。
+ *
+ * 同一形状服务两种来源（设计稿 §11.1 特意用一个类型）：
+ * - **已归并**：大类目录里的 `01_第1话` 子目录 ⇒ `no` 有值、`merged: true`、`mergedTo` 有归属；
+ * - **未归并单话**：库根下的普通目录 ⇒ `no`/`mergedTo` 均为 `null`、`merged: false`。
+ *
+ * `no` 与 `mergedTo` 恒存在（不用 `'no' in item` 之类"字段在不在"来判分支）——
+ * 未归并时它们的值就是 `null`。
+ */
+export interface ChapterEntry {
+  /** 已归并：话号；未归并：`null`（它还没有话号） */
+  no: number | null;
+  /** 已归并 = `01_第1话`；未归并 = 原单话目录名 */
+  dirName: string;
+  /** 绝对路径（打开目录 / 取图用） */
+  absDir: string;
+  imageCount: number;
+  translatedCount: number;
+  seqMax: number;
+  /** 已译页码（升序）。逐页判定必须用集合，禁用 `seq <= translatedCount`（G-10） */
+  translatedSeqs: number[];
+  missingSeqs: number[];
+  /** 是否已被归并 —— 决定它能否被单独删除（已归并的不能，只能从所属漫画里删） */
+  merged: boolean;
+  /** 已归并时的归属；未归并为 `null` */
+  mergedTo?: { bookName: string; no: number } | null;
+}
+
 export interface LibraryResponse {
   root: string;
   count: number;
   totalImages: number;
   totalBytes: number;
+  /**
+   * **目录级**平铺视图（含大类目录与未归并单话，逐字节向后兼容旧服务端）。
+   * 新代码做「本 → 话 → 页」的分层渲染时用 `books` / `others`，但定位/删除/返工仍按本字段。
+   */
   comics: ComicEntry[];
+  /** 大类（带 `manifest.json` 的目录）；**可选**：旧服务端不返回 */
+  books?: BookEntry[];
+  /** 未归并的单话（库根下没有 `manifest.json` 的目录，即左栏「其它」分组）；**可选** */
+  others?: ChapterEntry[];
   /**
    * 被「只从库里移除、不删本地文件」的漫画名（服务端持久化在 `state/hidden-comics.json`）。
    *

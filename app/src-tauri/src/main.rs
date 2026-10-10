@@ -85,6 +85,7 @@ fn main() {
             commands::api_post,
             commands::api_post_multipart,
             commands::api_bytes,
+            commands::api_delete,
             commands::open_path,
             commands::expand_paths,
             commands::write_text_file,

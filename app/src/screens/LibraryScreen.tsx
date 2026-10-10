@@ -1,9 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
-import { EyeOff, FolderUp, Play, RefreshCw, RotateCcw, Search, Trash2, X } from 'lucide-react';
-import { apiBytes, apiGet, apiPost, errorText, isApiError, openPath } from '@/ipc';
+import {
+  ChevronDown,
+  EyeOff,
+  FolderUp,
+  GitMerge,
+  Pencil,
+  Play,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Trash2,
+  X,
+} from 'lucide-react';
+import { apiDelete, apiGet, apiPost, apiPostMultipart, errorText, isApiError, openPath } from '@/ipc';
 import { LIBRARY } from '@/theme/tokens';
 import type {
+  BookEntry,
+  ChapterEntry,
   ComicEntry,
   LibraryDeleteResponse,
   LibraryResponse,
@@ -11,126 +25,33 @@ import type {
   RetranslateResponse,
   TaskRow,
 } from '@/types';
-import { formatBytes, fuzzyMatch, pageCount, pageSlice, sniffMime } from '@tools';
+import {
+  formatBytes,
+  fuzzyMatch,
+  groupSearchResults,
+  matchIndices,
+  pageCount,
+  pageSlice,
+} from '@tools';
 import { useDebouncedValue } from '@hooks/useDebouncedValue';
 import { Btn, MenuButton, MenuItem, Notice } from '@components/units';
+import {
+  bookFirstImagePath,
+  coverPath,
+  filePath,
+  topLevelFirstImagePath,
+  useBlobUrl,
+} from '@screens/library/blob';
+import type { BookMetaIntent } from '@screens/library/modals';
+import { EditBookModal, MergeModal, NewBookModal } from '@screens/library/modals';
 
 /** 左栏每页漫画数（窄栏 + 每项约 48px 高，12 项差不多一屏） */
 const LIB_PAGE_SIZE = 12;
 /** 网格每页张数（110×165 卡 + 12 间距；24 张约两行多，翻页不至于太空） */
 const GRID_PAGE_SIZE = 24;
 
-/** 库内文件路径（`GET /library/{comicName}/files/{seq}?variant=…`） */
-function filePath(comicName: string, seq: number, variant: 'original' | 'translated'): string {
-  return `/library/${encodeURIComponent(comicName)}/files/${seq}?variant=${variant}`;
-}
-
-/**
- * 取图结果的 blob URL 缓存（**跨组件、跨卸载**）。
- *
- * ## 为什么必须有它
- * 从对照视图点「返回」回到网格时，网格里每一张缩略图都会被**重新挂载**，
- * 于是每个 `useBlobUrl` 都会重新走一次 IPC 取字节 —— 表现就是"返回后整片网格刷一下、
- * 先闪一片『加载中…』再逐张出图"。缓存把已经取到的 blob URL 留下来，
- * 重新挂载时**同步命中**（useState 惰性初始化里就能拿到），于是不再有那一下闪烁。
- *
- * ## 所有权：缓存持有 URL，组件不再 revoke
- * 旧实现是"组件挂载时建 URL、卸载时 revoke"。一旦引入缓存，这条所有权就不成立了 ——
- * 组件卸载后 revoke 掉，缓存里就成了死链。所以改为：**由缓存统一持有并管理 revoke**，
- * 组件只借用。淘汰（LRU）时才 revoke 掉最旧的一条。
- *
- * ## 为什么在途请求也要去重
- * 同一页可能被网格卡与对照视图**同时**请求（返回时更是如此）。不去重就会为同一条路径
- * 建出两个 object URL，其中一个永远不会被引用、也永远不会被 revoke —— 纯泄漏。
- */
-const URL_CACHE = new Map<string, string>(); // path → objectURL；Map 的插入序即 LRU 序
-const URL_CACHE_MAX = 160;
-const INFLIGHT = new Map<string, Promise<string>>();
-
-/** 命中缓存（并把该条移到 LRU 末尾）；未命中返回 null */
-function cachePeek(path: string): string | null {
-  const url = URL_CACHE.get(path);
-  if (url === undefined) return null;
-  URL_CACHE.delete(path);
-  URL_CACHE.set(path, url);
-  return url;
-}
-
-/** 存入缓存并在超限时淘汰最旧的一条（连同 revoke） */
-function cachePut(path: string, url: string): void {
-  URL_CACHE.set(path, url);
-  while (URL_CACHE.size > URL_CACHE_MAX) {
-    const oldest = URL_CACHE.keys().next().value as string | undefined;
-    if (oldest === undefined) break;
-    const dead = URL_CACHE.get(oldest);
-    URL_CACHE.delete(oldest);
-    if (dead) URL.revokeObjectURL(dead);
-  }
-}
-
-/** 取一条路径的 blob URL：先查缓存，再查在途，最后才真发一次请求 */
-function fetchBlobUrl(path: string): Promise<string> {
-  const hit = cachePeek(path);
-  if (hit) return Promise.resolve(hit);
-  const inflight = INFLIGHT.get(path);
-  if (inflight) return inflight;
-  const p = apiBytes(path)
-    .then((buf) => {
-      const url = URL.createObjectURL(new Blob([buf], { type: sniffMime(buf) }));
-      cachePut(path, url);
-      return url;
-    })
-    .finally(() => {
-      INFLIGHT.delete(path);
-    });
-  INFLIGHT.set(path, p);
-  return p;
-}
-
-/** blob 取图的结果：`missing` = 文件不存在（含未发起请求），与 `loading` 必须分开 */
-type BlobState = { kind: 'loading' } | { kind: 'ready'; url: string } | { kind: 'missing' };
-
-/**
- * 取库内图片并转成 blob URL（经上面的缓存）。
- *
- * 返回**三态**而不是 `string | null`：`null` 同时表达了「还在取」和「取不到」，
- * 调用方无从区分，于是只能一律显示「加载中…」—— 文件根本不存在时就会**永远**停在加载中。
- */
-function useBlobUrl(path: string | null): BlobState {
-  // 惰性初始化：**重新挂载时若缓存已命中，首帧就是 ready**，不经过 loading —— 这就是"不闪"的来源
-  const [state, setState] = useState<BlobState>(() => {
-    if (!path) return { kind: 'missing' };
-    const hit = cachePeek(path);
-    return hit ? { kind: 'ready', url: hit } : { kind: 'loading' };
-  });
-
-  useEffect(() => {
-    if (!path) {
-      setState({ kind: 'missing' });
-      return;
-    }
-    const hit = cachePeek(path);
-    if (hit) {
-      setState({ kind: 'ready', url: hit });
-      return;
-    }
-    let alive = true;
-    setState({ kind: 'loading' });
-    fetchBlobUrl(path)
-      .then((url) => {
-        if (alive) setState({ kind: 'ready', url });
-      })
-      .catch(() => {
-        if (alive) setState({ kind: 'missing' });
-      });
-    // ⚠️ 故意**不 revoke** —— URL 归缓存所有（见上面 URL_CACHE 的说明）
-    return () => {
-      alive = false;
-    };
-  }, [path]);
-
-  return state;
-}
+/** 作者为空时的占位文案（设计稿 §7.1 中下 / §7.3 头部卡**同一口径**，故只写一份常量） */
+const AUTHOR_FALLBACK = '未署名';
 
 /**
  * 网格卡三态 —— 判定依据是 `/library` 给出的**逐页**集合（`translatedSeqs` / `missingSeqs`），
@@ -142,14 +63,23 @@ type GridState = 'done' | 'pending' | 'missing';
 const GRID_LABEL: Record<GridState, string> = { done: '已译', pending: '待译', missing: '缺页' };
 
 /**
- * 左栏每部漫画的状态短语。
+ * 一「部」的状态短语。
  *
  * 原先这里只写 `缺 ${imageCount - translatedCount}`，而那个数其实是**没有译文的**页数
  * —— 于是同一屏上冒出两个含义相反的「缺」：左栏说「缺 1」（那一页其实有原图，只是待译），
  * 网格卡说「缺页」（专指**没有原图**）。字面同源、意思不同，正是 G-11 里
  * 「同一张图、两屏两个故事」的翻版。逐页集合（G-10）已经能分开算，就没理由继续含糊。
+ *
+ * 收参按**结构**而不是 `ComicEntry`：大类、话、未归并单话三者的页级计数同名同义，
+ * 逐页判定的口径也只有一个（G-10），没必要为每种来源各写一份。
  */
-function progressLabel(c: ComicEntry): string {
+interface PageCounts {
+  imageCount: number;
+  translatedCount: number;
+  missingSeqs: number[];
+}
+
+function progressLabel(c: PageCounts): string {
   if (c.imageCount === 0) return '空目录';
   const missing = c.missingSeqs.length;
   const pending = c.imageCount - c.translatedCount - missing;
@@ -158,6 +88,81 @@ function progressLabel(c: ComicEntry): string {
   if (pending > 0) parts.push(`待译 ${pending}`);
   if (missing > 0) parts.push(`缺页 ${missing}`);
   return parts.join(' · ');
+}
+
+// ------------------------------------------------------------------ 左栏视图件
+
+/**
+ * 左栏一项的**展示视图**：大类与未归并单话归一成同一形状，左栏与搜索分组共用。
+ *
+ * 为什么不直接用 `BookEntry`/`ChapterEntry`：左栏要显示的是「漫画」这一个概念
+ * （「N 话 · M 页」），其中大类有作者有封面、未归并单话没有 —— 两个类型各写一条渲染分支
+ * 就会长出两套几乎一样的 DOM。归一到 `LibItem` 后只有"取哪些字段"的差别，
+ * 而那个差别已经由 `buildItems()` 一次性吸收掉了。
+ */
+interface LibItem {
+  /** 选中态键 = 点击后要选中的 `comicName`（= `comics` 的键，故与既有选中逻辑天然对齐） */
+  key: string;
+  name: string;
+  /** 空串 = 未署名 */
+  author: string;
+  chapterCount: number;
+  pageCount: number;
+  /** 缩略图字节路径；`null` = 无图（显示占位） */
+  thumbPath: string | null;
+  /** 是否大类（决定该项是否参与「编辑信息 / 删除」那套动作） */
+  merged: boolean;
+}
+
+/**
+ * 封面缩略。
+ *
+ * `loading` 与 `missing` 都落到占位（`line-soft` 底 + 书名首字，设计稿 §7.1）：
+ * 32×44 的小格子里塞「加载中…」比直接显示首字更难看，且缩略图取回来只要几十毫秒。
+ * 但 `ready` 与"取不到"必须分开 —— 取不到时**不能**装作还在加载。
+ */
+function CoverThumb({ path, name, className }: { path: string | null; name: string; className: string }) {
+  const blob = useBlobUrl(path);
+  if (blob.kind === 'ready') {
+    return <img className={className} src={blob.url} alt="" draggable={false} />;
+  }
+  return (
+    <div className={`${className} is-ph`} aria-hidden="true">
+      {name.slice(0, 1)}
+    </div>
+  );
+}
+
+/**
+ * 把 `text` 按命中下标切成「命中 / 未命中」两色片段（命中片段加 `grp-hit`，设计稿 §7.2）。
+ *
+ * 下标来自 `matchIndices()` —— 与 `fuzzyMatch()` **同一判定**，所以不可能出现
+ * "行判为命中却一个字都没高亮"。相连的下标合并成一段，避免一个字一个 `<span>`。
+ */
+function Highlight({ text, query }: { text: string; query: string }) {
+  const idx = matchIndices(text, query);
+  if (!idx || idx.length === 0) return <>{text}</>;
+  const set = new Set(idx);
+  const runs: { hit: boolean; text: string }[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const hit = set.has(i);
+    const last = runs[runs.length - 1];
+    if (last && last.hit === hit) last.text += text[i]!;
+    else runs.push({ hit, text: text[i]! });
+  }
+  return (
+    <>
+      {runs.map((r, i) =>
+        r.hit ? (
+          <span key={i} className="grp-hit">
+            {r.text}
+          </span>
+        ) : (
+          r.text
+        ),
+      )}
+    </>
+  );
 }
 
 /**
@@ -851,6 +856,8 @@ export function LibraryScreen({
   tasks,
   focus,
   onFocusHandled,
+  newBookSignal,
+  onNewBookHandled,
   onRefresh,
   onToast,
   refreshKey,
@@ -861,6 +868,15 @@ export function LibraryScreen({
   /** 队列行「查看」带过来的漫画名：进入本屏后选中并翻到它那一页（消费一次即回调清空） */
   focus?: string | null;
   onFocusHandled?: () => void;
+  /**
+   * 工具条「新建漫画」按下的一次性信号。
+   *
+   * 为什么用信号而不是把弹窗 state 抬到 App：按钮长在 App 的工具条里，而弹窗的提交
+   * 要 `onRefresh()`、要 `setActive()` —— 那些都在本屏。抬 state 上去等于把"漫画库的
+   * 三个弹窗"劈成两半；信号只传"按过了"这一个事实，消费一次即清（与 `focus` 同构）。
+   */
+  newBookSignal?: boolean;
+  onNewBookHandled?: () => void;
   onRefresh: () => void;
   onToast: (text: string, kind?: 'info' | 'good' | 'bad') => void;
   refreshKey: number;
@@ -882,9 +898,90 @@ export function LibraryScreen({
   const [deleting, setDeleting] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [unhiding, setUnhiding] = useState(false);
+  // 三个新增弹窗：新建 / 编辑信息 / 归并（各自一个"是否打开"+ 一个提交中标记）
+  const [newBookOpen, setNewBookOpen] = useState(false);
+  const [editBook, setEditBook] = useState<BookEntry | null>(null);
+  const [mergeTarget, setMergeTarget] = useState<ChapterEntry | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [savingMeta, setSavingMeta] = useState(false);
+  const [merging, setMerging] = useState(false);
+  /** 搜索态里被收起的**分组键**集合（设计稿 §7.2：折叠不跨搜索保留，见下方 effect） */
+  const [foldedGroups, setFoldedGroups] = useState<Set<string>>(() => new Set());
 
   const comics = lib?.comics ?? [];
   const hidden = lib?.hidden ?? [];
+  const books = lib?.books ?? [];
+  const others = lib?.others ?? [];
+
+  /**
+   * 服务端是否给了分层数据（`books` / `others`）。
+   *
+   * 旧服务端只回 `comics`。没有这条兜底，升级到新版面前端的用户会看到**空左栏**
+   * —— 那看起来像"漫画全丢了"，而实际只是少了一个字段。
+   */
+  const hasLayers = books.length > 0 || others.length > 0;
+
+  /**
+   * 左栏（浏览态）的行数据。
+   *
+   * 排序按 `key`（= 目录名，`zh-Hans-CN`）—— 与服务端对 `comics` 的排序**同一口径**，
+   * 于是左栏顺序与前端的"上一页 / 下一页"、`focus` 定位的行号计算仍然一致。
+   */
+  const items = useMemo<LibItem[]>(() => {
+    const build: LibItem[] = hasLayers
+      ? [
+          ...books.map<LibItem>((b) => ({
+            key: b.bookName,
+            name: b.bookName,
+            author: b.author,
+            chapterCount: b.chapterCount,
+            pageCount: b.totalPages,
+            // 有封面用封面，没有就退回首话首图（设计稿 §7.1 左）
+            thumbPath: b.coverPath
+              ? coverPath(b.bookName, b.modifiedAt)
+              : bookFirstImagePath(b.bookName, b.chapters),
+            merged: true,
+          })),
+          ...others.map<LibItem>((o) => ({
+            key: o.dirName,
+            name: o.dirName,
+            // 未归并单话没有 manifest ⇒ 没有作者（显示「未署名」）
+            author: '',
+            chapterCount: 1,
+            pageCount: o.imageCount,
+            thumbPath: topLevelFirstImagePath(o.dirName, o),
+            merged: false,
+          })),
+        ]
+      : comics.map<LibItem>((c) => ({
+          key: c.comicName,
+          name: c.comicName,
+          author: '',
+          chapterCount: 1,
+          pageCount: c.imageCount,
+          thumbPath: topLevelFirstImagePath(c.comicName, c),
+          merged: false,
+        }));
+    return build.sort((a, b) => a.key.localeCompare(b.key, 'zh-Hans-CN'));
+  }, [hasLayers, books, others, comics]);
+
+  const searching = query.trim().length > 0;
+
+  /**
+   * 搜索态（屏 A′）的分组结果。
+   *
+   * 只在有分层数据时按「本 → 话」分组；否则退回按 `comics` 平铺过滤 ——
+   * 分组的前提是有「话」，旧服务端给不出话，硬分组只会得到一堆空组。
+   */
+  const searchGroups = useMemo(
+    () => (searching && hasLayers ? groupSearchResults(books, others, query) : []),
+    [searching, hasLayers, books, others, query],
+  );
+  /** 无分层的旧服务端：搜索态仍是平铺过滤（与改造前的行为一致） */
+  const flatHits = useMemo(
+    () => (searching && !hasLayers ? items.filter((it) => fuzzyMatch(it.name, query)) : []),
+    [searching, hasLayers, items, query],
+  );
 
   // 逐键过滤很便宜，但过滤会改 `current`，进而重挂载右栏网格、重拉整页缩略图。
   // 故喂给过滤的是**防抖后的 query**：连续输入期间只回显、不级联，停手 200ms 才过滤一次。
@@ -894,9 +991,10 @@ export function LibraryScreen({
   useEffect(() => {
     setLibPage((p) => (p > libPages ? libPages : p));
   }, [libPages]);
-  // 换搜索词从头看
+  // 换搜索词从头看（分组折叠也一并复位：设计稿 §7.2 要求「折叠状态不跨搜索保留」）
   useEffect(() => {
     setLibPage(1);
+    setFoldedGroups(new Set());
   }, [query]);
   const libRows = useMemo(() => pageSlice(filtered, libPage, LIB_PAGE_SIZE), [filtered, libPage]);
 
@@ -921,6 +1019,19 @@ export function LibraryScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus]);
 
+  /**
+   * 工具条「新建漫画」→ 开弹窗。
+   *
+   * 与 `focus` 同构的一次性信号：消费一次即回调清空，否则之后每次重挂载都会自动弹出来。
+   * 这里**不**清搜索词也不改选中态 —— 新建成功后由 `createBook()` 自己去选中新项。
+   */
+  useEffect(() => {
+    if (!newBookSignal) return;
+    setNewBookOpen(true);
+    onNewBookHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newBookSignal]);
+
   // 当前选中：优先沿用 active；它被搜索滤掉时落到第一项。搜索结果为空则无选中。
   const current = useMemo(() => {
     if (filtered.length === 0) return null;
@@ -931,6 +1042,17 @@ export function LibraryScreen({
   useEffect(() => {
     if (current && current.comicName !== active) setActive(current.comicName);
   }, [current, active]);
+
+  /**
+   * 当前选中的**大类**；选中的是未归并单话时为 `null`。
+   *
+   * 「编辑信息」只对大类成立 —— 未归并单话在磁盘上没有 `manifest.json`，
+   * 拿它去调 `POST /meta` 会被 `resolveBookDir` 以 404 拒绝。置灰比"点了才被拒"好。
+   */
+  const currentBook = useMemo(
+    () => books.find((b) => b.bookName === (current?.comicName ?? '')) ?? null,
+    [books, current],
+  );
 
   // 换一部漫画 → 网格回到第一页
   useEffect(() => {
@@ -1086,9 +1208,109 @@ export function LibraryScreen({
     }
   };
 
+  /**
+   * 新建漫画（`POST /library/create`）。
+   *
+   * 成功后的三步**缺一不可**：① 关弹窗；② 清搜索词；③ 选中新项。
+   * ② 是必需的 —— 若搜索框里还留着"夏"，新建出来的《夏日》虽然已在库里，
+   * 却可能被当前过滤条件挡在左栏之外，于是 `setActive` 选中了一个**看不见的项**，
+   * 用户看到的仍是旧的那本（"点了创建什么都没发生"）。
+   */
+  const createBook = async (name: string, author: string) => {
+    setCreating(true);
+    try {
+      const r = await apiPost<{ bookName: string }>('/library/create', { name, author });
+      const created = r.bookName || name;
+      onToast(`已创建《${created}》`, 'good');
+      setNewBookOpen(false);
+      setQueryInput('');
+      setActive(created);
+      onRefresh();
+    } catch (e) {
+      onToast(errorText(e), 'bad');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  /**
+   * 保存漫画信息（封面 + 作者）。
+   *
+   * 四种意图落到**三条**不同的端点上（契约如此，不是可以随便合并的）：
+   * · `meta` / `cover-first` → `POST /meta`（后者带 `coverFromFirstChapter:true`）；
+   * · `cover-local` → `POST /cover`（multipart 单文件，字段名 `cover`；作者随 `payload` 同一次写入）；
+   * · `cover-remove` → `DELETE /cover`（**只有这一个动词**）—— 它按契约保留 `author`，
+   *   所以"移除封面同时改作者"要再补一次 `POST /meta`。顺序不能颠倒：
+   *   先删封面（失败就整个失败，作者不动），再写作者。
+   */
+  const saveMeta = async (intent: BookMetaIntent, author: string) => {
+    const book = editBook;
+    if (!book) return;
+    const base = `/library/${encodeURIComponent(book.bookName)}`;
+    setSavingMeta(true);
+    try {
+      if (intent.kind === 'cover-local') {
+        await apiPostMultipart(`${base}/cover`, { author }, [intent.srcPath], 'cover');
+      } else if (intent.kind === 'cover-remove') {
+        await apiDelete(`${base}/cover`);
+        await apiPost(`${base}/meta`, { author });
+      } else if (intent.kind === 'cover-first') {
+        await apiPost(`${base}/meta`, { author, coverFromFirstChapter: true });
+      } else {
+        await apiPost(`${base}/meta`, { author });
+      }
+      onToast(`已更新《${book.bookName}》的信息`, 'good');
+      setEditBook(null);
+      onRefresh();
+    } catch (e) {
+      onToast(errorText(e), 'bad');
+    } finally {
+      setSavingMeta(false);
+    }
+  };
+
+  /**
+   * 归并（`POST /library/{name}/merge`）。
+   *
+   * 目标已经占号时服务端回 409 `CHAPTER_NO_TAKEN`，弹窗会在**提交前**就把它拦成
+   * 「改话号 / 顺延 / 取消」三选一，所以走到这里还撞上 409 只可能是库在这一瞬变了
+   * —— 如实把服务端的话转给用户，别自己编一个。
+   */
+  const mergeInto = async (target: string, no: number) => {
+    const src = mergeTarget;
+    if (!src) return;
+    setMerging(true);
+    try {
+      await apiPost(`/library/${encodeURIComponent(src.dirName)}/merge`, { target, no });
+      onToast(`已归并为《${target}》第 ${no} 话`, 'good');
+      setMergeTarget(null);
+      onRefresh();
+    } catch (e) {
+      onToast(errorText(e), 'bad');
+    } finally {
+      setMerging(false);
+    }
+  };
+
   if (comics.length === 0 && hidden.length === 0) {
     return (
-      <Notice>漫画库还是空的。翻译完成后，成品会出现在这里的根目录下。</Notice>
+      <>
+        <Notice>
+          漫画库还是空的。点工具条的「新建漫画」创建一个，或从「本机投放」送翻译成品进来。
+        </Notice>
+        {/* ⚠️ 空库也要渲染「新建漫画」弹窗：工具条上的按钮在 App 里、永远可点，
+            若这里直接 return 掉弹窗，用户点「新建漫画」会看到**什么都没发生** */}
+        {newBookOpen ? (
+          <NewBookModal
+            root={lib?.root ?? ''}
+            existing={[]}
+            busy={creating}
+            onCancel={() => setNewBookOpen(false)}
+            onConfirm={(name, author) => void createBook(name, author)}
+            onViewExisting={() => setNewBookOpen(false)}
+          />
+        ) : null}
+      </>
     );
   }
 
@@ -1127,7 +1349,7 @@ export function LibraryScreen({
             className="input lib-search-input"
             value={queryInput}
             onChange={(e) => setQueryInput(e.target.value)}
-            placeholder="搜索漫画名…"
+            placeholder="搜索漫画名 / 作者 / 话号…"
             spellCheck={false}
           />
           {queryInput ? (
@@ -1143,24 +1365,129 @@ export function LibraryScreen({
         </div>
 
         <div className="lib-left-list">
-          {libRows.map((c) => (
-            <button
-              key={c.comicName}
-              type="button"
-              className={c.comicName === current?.comicName ? 'lib-item is-active' : 'lib-item'}
-              onClick={() => setActive(c.comicName)}
-            >
-              <span className="lib-item-name" title={c.comicName}>
-                {c.comicName}
-              </span>
-              <span className="lib-item-meta">
-                <span className="num">{c.imageCount}</span> 张 · {progressLabel(c)}
-              </span>
-            </button>
-          ))}
-          {libRows.length === 0 ? (
-            <div className="lib-empty">没有匹配「{query}」的漫画</div>
-          ) : null}
+          {searching ? (
+            /* ── 屏 A′：搜索结果分组态 ───────────────────────────────── */
+            hasLayers ? (
+              searchGroups.length > 0 ? (
+                searchGroups.map((g) => {
+                  const folded = foldedGroups.has(g.key);
+                  return (
+                    <div className="grp" key={g.key}>
+                      {/* 分组标题可点选收起/展开（设计稿 §7.2「折叠」） */}
+                      <button
+                        type="button"
+                        className="grp-head"
+                        onClick={() =>
+                          setFoldedGroups((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(g.key)) next.delete(g.key);
+                            else next.add(g.key);
+                            return next;
+                          })
+                        }
+                      >
+                        <ChevronDown size={12} className={folded ? 'grp-caret is-folded' : 'grp-caret'} />
+                        <span className="grp-title" title={g.title}>
+                          {/* 「其它」不加大类框，故不高亮书名号里的书名（它本来就不是书名） */}
+                          {g.merged ? <Highlight text={g.title} query={query} /> : g.title}
+                        </span>
+                        <span className="num grp-count">{g.rows.length}</span>
+                      </button>
+                      {folded ? null : (
+                        <div className="grp-body">
+                          {g.merged ? null : (
+                            <div className="other-hint">
+                              未归并的单话会出现在这里，点「归并」把它挂到某本漫画的某一话。
+                            </div>
+                          )}
+                          {g.rows.map((r) => (
+                            <div className="grp-row" key={r.key}>
+                              <button
+                                type="button"
+                                className={
+                                  r.bookName === current?.comicName
+                                    ? 'grp-row-main is-active'
+                                    : 'grp-row-main'
+                                }
+                                onClick={() => setActive(r.bookName)}
+                                title={r.label}
+                              >
+                                <span className="grp-row-label">
+                                  <Highlight text={r.label} query={query} />
+                                </span>
+                                <span className="grp-row-status muted">
+                                  · {progressLabel(r.target)}
+                                </span>
+                              </button>
+                              {r.mergeable ? (
+                                <span className="grp-row-act">
+                                  <Btn kind="ghost" size="sm" onClick={() => setMergeTarget(r.target)}>
+                                    <GitMerge size={12} />
+                                    归并
+                                  </Btn>
+                                </span>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="lib-empty">没有匹配「{query}」的漫画或话</div>
+              )
+            ) : (
+              /* 旧服务端（无 books/others）：退回平铺过滤，行为与改造前一致 */
+              <>
+                {flatHits.map((it) => (
+                  <button
+                    key={it.key}
+                    type="button"
+                    className={it.key === current?.comicName ? 'lib-item is-active' : 'lib-item'}
+                    onClick={() => setActive(it.key)}
+                  >
+                    <CoverThumb path={it.thumbPath} name={it.name} className="cover-thumb" />
+                    <span className="lib-item-text">
+                      <span className="lib-item-name" title={it.name}>
+                        {it.name}
+                      </span>
+                      <span className="lib-item-meta">
+                        <span className="num">{it.pageCount}</span> 张
+                      </span>
+                    </span>
+                  </button>
+                ))}
+                {flatHits.length === 0 ? (
+                  <div className="lib-empty">没有匹配「{query}」的漫画</div>
+                ) : null}
+              </>
+            )
+          ) : (
+            /* ── 屏 A：浏览态（封面缩略 + 名称 + 作者 · N 话 · M 页）────── */
+            <>
+              {pageSlice(items, libPage, LIB_PAGE_SIZE).map((it) => (
+                <button
+                  key={it.key}
+                  type="button"
+                  className={it.key === current?.comicName ? 'lib-item is-active' : 'lib-item'}
+                  onClick={() => setActive(it.key)}
+                >
+                  <CoverThumb path={it.thumbPath} name={it.name} className="cover-thumb" />
+                  <span className="lib-item-text">
+                    <span className="lib-item-name" title={it.name}>
+                      {it.name}
+                    </span>
+                    <span className="lib-item-meta">
+                      {it.author || AUTHOR_FALLBACK} · <span className="num">{it.chapterCount}</span> 话 ·{' '}
+                      <span className="num">{it.pageCount}</span> 页
+                    </span>
+                  </span>
+                </button>
+              ))}
+              {items.length === 0 ? <div className="lib-empty">漫画库还是空的</div> : null}
+            </>
+          )}
         </div>
 
         <div className="lib-left-foot">
@@ -1174,7 +1501,8 @@ export function LibraryScreen({
           ) : null}
         </div>
 
-        {libPages > 1 ? (
+        {/* 搜索态是分组的连续列表，不分页（设计稿 §7.2 的屏 A′ 里没有分页器） */}
+        {!searching && libPages > 1 ? (
           <div className="lib-pager">
             <Btn kind="ghost" size="sm" disabled={libPage <= 1} onClick={() => setLibPage(libPage - 1)}>
               上一页
@@ -1244,8 +1572,23 @@ export function LibraryScreen({
                       }}
                     />
                     <MenuItem
+                      icon={<Pencil size={13} />}
+                      label="编辑信息"
+                      sub={currentBook ? undefined : '未归并单话没有漫画信息'}
+                      disabled={!currentBook}
+                      title={
+                        currentBook
+                          ? '改封面（本地图片 / 取第 1 话首图 / 移除）与作者'
+                          : '未归并的单话还没有漫画信息，先把它归并进某本漫画'
+                      }
+                      onClick={() => {
+                        close();
+                        if (currentBook) setEditBook(currentBook);
+                      }}
+                    />
+                    <MenuItem
                       icon={<Trash2 size={13} />}
-                      label="删除"
+                      label="删除整本"
                       danger
                       title="从漫画库删除（可选择是否连本地文件一起删）"
                       onClick={() => {
@@ -1336,7 +1679,11 @@ export function LibraryScreen({
             </div>
           </>
         ) : (
-          <Notice>没有匹配「{query}」的漫画。换个关键词，或清空搜索。</Notice>
+          <Notice>
+            {searching
+              ? `没有匹配「${query}」的漫画或话。换个关键词，或清空搜索。`
+              : '漫画库还是空的。点工具条的「新建漫画」创建一个，或从「本机投放」送翻译成品进来。'}
+          </Notice>
         )}
       </section>
 
@@ -1355,6 +1702,41 @@ export function LibraryScreen({
           busy={unhiding}
           onClose={() => setShowHidden(false)}
           onUnhide={(name) => void doUnhide(name)}
+        />
+      ) : null}
+
+      {newBookOpen ? (
+        <NewBookModal
+          root={lib?.root ?? ''}
+          existing={comics.map((c) => c.dirName)}
+          busy={creating}
+          onCancel={() => setNewBookOpen(false)}
+          onConfirm={(name, author) => void createBook(name, author)}
+          onViewExisting={(name) => {
+            // 同名时「查看它」：关弹窗 + 清搜索词（否则可能被过滤条件挡在左栏外）+ 选中
+            setNewBookOpen(false);
+            setQueryInput('');
+            setActive(name);
+          }}
+        />
+      ) : null}
+
+      {editBook ? (
+        <EditBookModal
+          book={editBook}
+          busy={savingMeta}
+          onCancel={() => setEditBook(null)}
+          onSubmit={(intent, author) => void saveMeta(intent, author)}
+        />
+      ) : null}
+
+      {mergeTarget ? (
+        <MergeModal
+          source={mergeTarget.dirName}
+          books={books}
+          busy={merging}
+          onCancel={() => setMergeTarget(null)}
+          onConfirm={(target, no) => void mergeInto(target, no)}
         />
       ) : null}
     </div>
