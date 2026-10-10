@@ -342,13 +342,15 @@ function takenChapterNos(book: BookEntry): Set<number> {
   return out;
 }
 
-/** 目标大类的默认话号 = `max(话号) + 1`；一话都没有 ⇒ 1（设计稿 §7.6.3） */
+/** 目标大类的默认话号 = `floor(max(话号)) + 1`；一话都没有 ⇒ 1（设计稿 §7.6.3）。
+ *  对小数话号取整再 +1：max = 14.1 时默认给 15 而不是 15.1 —— 顺延的语义是"下一话"，
+ *  没理由默认就跳到小数。 */
 function nextChapterNo(book: BookEntry): number {
   let max = 0;
   for (const no of takenChapterNos(book)) {
     if (no > max) max = no;
   }
-  return max + 1;
+  return Math.floor(max) + 1;
 }
 
 /**
@@ -381,18 +383,18 @@ export function MergeModal({
   const targetBook = books.find((b) => b.bookName === target) ?? null;
   const taken = useMemo(() => (targetBook ? takenChapterNos(targetBook) : new Set<number>()), [targetBook]);
 
-  // 话号校验：整数且 ≥ 1（设计稿 §8.4「话号须为 ≥1 的整数」）
-  const no = /^\d+$/.test(noText.trim()) ? Number(noText.trim()) : NaN;
-  const noOk = Number.isInteger(no) && no >= 1;
+  // 话号校验：≥1、≤999.9、最多一位小数且小数位非 0（与服务端 resolveChapterDir 同一口径）
+  const no = /^\d+(?:\.[1-9])?$/.test(noText.trim()) ? Number(noText.trim()) : NaN;
+  const noOk = Number.isFinite(no) && no >= 1 && no <= 999.9;
   const conflict = noOk && taken.has(no);
 
-  const noError = noOk ? '' : '话号须为 ≥1 的整数';
+  const noError = noOk ? '' : '话号须为 ≥1 的数（最多一位小数）';
   const canSubmit = !busy && !!targetBook && noOk && !conflict;
 
-  /** 顺延到「大于当前话号的最小空位」；再没有空位（连续占满）就顺延到 max+1 */
+  /** 顺延到「大于当前话号的最小空位」（从**下一个整数**找起：14.1 撞了就给 15、16…） */
   const shiftToFree = () => {
-    let n = noOk ? no + 1 : 1;
-    while (taken.has(n)) n++;
+    let n = noOk ? Math.floor(no) + 1 : 1;
+    while (taken.has(n)) n += 1;
     setNoText(String(n));
   };
 
@@ -429,7 +431,7 @@ export function MergeModal({
             ref={noRef}
             className="input"
             value={noText}
-            inputMode="numeric"
+            inputMode="decimal"
             onChange={(e) => setNoText(e.target.value)}
             spellCheck={false}
           />

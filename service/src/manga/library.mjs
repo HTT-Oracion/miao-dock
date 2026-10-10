@@ -10,6 +10,7 @@ import path from 'node:path';
 
 import {
   CHAPTER_DIR_RE, COVER_RE, MANIFEST_FILE, ORIGINAL_SCAN_RE, TRANSLATED_SCAN_RE, assertInsideRoot,
+  isValidChapterNo,
 } from '../config.mjs';
 
 /** ISO 秒级时间戳（与全仓 `scanLibrary` / `updatedAt` 口径一致：去掉毫秒） */
@@ -69,7 +70,9 @@ export function readManifest(bookDir, bookName = path.basename(bookDir)) {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return base;
   const episodes = Array.isArray(parsed.episodes)
     ? parsed.episodes
-      .filter((e) => e && typeof e === 'object' && Number.isInteger(e.no) && typeof e.dir === 'string')
+      // 话号合法性只有一份定义（含一位小数，见 config.isValidChapterNo）——
+      // 手改 manifest 写进 `14.10` / `0` 这类值时按坏数据处理，回落成空数组
+      .filter((e) => e && typeof e === 'object' && isValidChapterNo(e.no) && typeof e.dir === 'string')
       .map((e) => ({ no: e.no, dir: e.dir }))
     : [];
   return {

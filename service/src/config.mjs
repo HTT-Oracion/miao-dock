@@ -821,10 +821,28 @@ export const MANIFEST_FILE = 'manifest.json';
 export const COVER_RE = /^cover\.(png|jpg|jpeg|webp)$/;
 /** 封面上限 10 MiB（与资料库图片上传上限一致；`readBody` 的 MAX_BODY 是 256 MiB，无冲突） */
 export const COVER_MAX_BYTES = 10 * 1024 * 1024;
-/** 话目录名：`NN_第N话`（两位零填充话号 ⇒ 文件系统自然序 == 话序） */
-export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
-/** 话号上限（与 seq 的 999 同档，避免目录名膨胀） */
+/**
+ * 话目录名：`NN_第N话`（话号支持一位小数，如 14.1 ⇒ 目录 `14.1_第14.1话`）。
+ *
+ * 零填充只对整数话号生效（`7` ⇒ `07`；`14.1` 四个字符已 ≥ 2，padStart 不动它），
+ * 故前缀段放宽为「1–3 位数字 + 可选一位非 0 小数」。旧写法 `(\d{2})_第` 有个潜伏缺陷：
+ * 第 100 话的目录是 `100_第100话`（前缀 3 位），旧正则认不出它 —— 这次一并修正。
+ * 小数位拒 `0`（`14.0` 就是 `14`，放进来会和整数话号撞目录）也拒两位（`14.10` 无意义）。
+ */
+export const CHAPTER_DIR_RE = /^(\d{1,3}(?:\.[1-9])?)_第(\d{1,3}(?:\.[1-9])?)话$/;
+/** 话号上限（与 seq 的 999 同档，避免目录名膨胀）；小数话号上限即 999.9 */
 export const MAX_CHAPTER_NO = 999;
+
+/**
+ * 话号的**运行期**校验（归并 body 的 `no`、manifest `episodes[].no` 共用这一份定义）。
+ * URL 段的话号仍走字符串正则先判格式（404 语义），再落到这里判范围 —— 见 `resolveChapterDir`。
+ */
+export function isValidChapterNo(v) {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return false;
+  if (v < 1 || v > MAX_CHAPTER_NO + 0.9) return false;
+  // 整数直接过；带小数只认「恰一位且非 0」（14.1 ✓ / 14.55 ✗ / 14.0 ✗）
+  return Number.isInteger(v) || /^\d{1,3}\.[1-9]$/.test(String(v));
+}
 /** 归并时「源目录里历史遗留的元信息」的备份目录（相对 STATE_DIR） */
 export const MERGE_ARCHIVE_DIR = 'merge-archive';
 

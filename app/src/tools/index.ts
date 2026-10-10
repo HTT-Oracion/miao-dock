@@ -178,18 +178,20 @@ export function sniffMime(buf: ArrayBuffer): string {
  * 但两侧正则一旦不同，就会出现"前端认得、服务端不认"的目录被判成「其它」。
  */
 export function chapterNoOf(dirName: string): number | null {
-  const m = /^(\d{2})_第(\d{1,3})话$/.exec(dirName);
+  // 与服务端 CHAPTER_DIR_RE 同一口径：话号支持一位小数（14.1_第14.1话）
+  const m = /^(\d{1,3}(?:\.[1-9])?)_第(\d{1,3}(?:\.[1-9])?)话$/.exec(dirName);
   return m ? Number(m[2]) : null;
 }
 
 /**
- * 话号 → 目录名前缀：`1` ⇒ `01`（两位零填充）。
+ * 话号 → 目录名前缀：`1` ⇒ `01`（两位零填充）；`14.1` ⇒ `14.1`（本身已 ≥ 2 位，不动）。
  *
  * 零填充不是为了好看：目录按名字排序，`10_第10话` 若不填充就会排在 `2_第2话` 前面。
  * 与服务端 `chapterDirName()` 的填充位数**必须一致**，否则预览的目录名与落盘的目录名不同字。
+ * ⚠️ 不能 Math.floor：那会把 `14.1` 砍成 `14`，预览就与服务端落盘的 `14.1_第14.1话` 对不上了。
  */
 export function padChapterNo(no: number): string {
-  return String(Math.max(0, Math.floor(no))).padStart(2, '0');
+  return String(Math.max(0, no)).padStart(2, '0');
 }
 
 /**

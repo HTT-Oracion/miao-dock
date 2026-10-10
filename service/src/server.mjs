@@ -10,7 +10,7 @@ import path from 'node:path';
 
 import {
   API_VERSION, BASE_PATH, BATCH_LIMIT, COVER_MAX_BYTES, ENGINE_SETTINGS_FILE, MANIFEST_FILE,
-  MAX_CHAPTER_NO, MERGE_ARCHIVE_DIR, ORIGINAL_SCAN_RE, REPO_ROOT,
+  MAX_CHAPTER_NO, MERGE_ARCHIVE_DIR, ORIGINAL_SCAN_RE, REPO_ROOT, isValidChapterNo,
   ROOT_DIR, SERVICE_NAME, SERVICE_VERSION, STATE_DIR, TASKS_STATE_DIR, TRANSLATED_SCAN_RE,
   TOKEN_FILE, TRANSLATE_DIRECTIONS, assertInsideRoot, config, engineSettingsFile,
   isSupportedDirection, normalizeDirection,
@@ -1384,14 +1384,23 @@ function resolveChapterDir(bookRaw, noRaw) {
     securityLog(`拒绝路径越界的话号（§8.2 校验点 2）：${JSON.stringify(noRaw)}`);
     throw permissionDenied();
   }
-  // 只认纯数字：`'1abc'`、`'01x'`、`''`、`'1.0'` 一律拒。parseInt 的"能读几个字符算几个"
-  // 会让 `/chapters/1xyz/` 静默命中第 1 话 —— 那是把拼错的路径当成对的。
-  if (!/^\d{1,4}$/.test(noText)) {
-    throw new ApiError('TASK_NOT_FOUND', `话号必须是 1–${MAX_CHAPTER_NO} 的整数`, { chapterNo: noRaw });
+  // 只认「1–999.9、最多一位小数且小数位非 0」：`'1abc'`、`'01x'`、`''`、`'14.10'`、`'14.0'`
+  // 一律拒。parseInt 的"能读几个字符算几个"会让 `/chapters/1xyz/` 静默命中第 1 话
+  // —— 那是把拼错的路径当成对的。
+  if (!/^\d{1,3}(?:\.[1-9])?$/.test(noText)) {
+    throw new ApiError(
+      'TASK_NOT_FOUND',
+      `话号必须是 1–${MAX_CHAPTER_NO}.9 的数（最多一位小数）`,
+      { chapterNo: noRaw },
+    );
   }
   const no = Number(noText);
-  if (no < 1 || no > MAX_CHAPTER_NO) {
-    throw new ApiError('TASK_NOT_FOUND', `话号必须是 1–${MAX_CHAPTER_NO} 的整数`, { chapterNo: noRaw });
+  if (!isValidChapterNo(no)) {
+    throw new ApiError(
+      'TASK_NOT_FOUND',
+      `话号必须是 1–${MAX_CHAPTER_NO}.9 的数（最多一位小数）`,
+      { chapterNo: noRaw },
+    );
   }
   const { name: bookName, dir: bookDir } = resolveBookDir(bookRaw); // 第一段：书（含 §8.2 原始名断言）
   const dirName = chapterDirName(no); // 服务端生成，不由用户输入拼出

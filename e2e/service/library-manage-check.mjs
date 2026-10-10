@@ -18,7 +18,7 @@
  * 能抓住语义混淆的只有**删除之后去看它到底删了什么**：目录还在不在、库里还列不列它、
  * 任务记录还在不在。所以必须单开一个脚本。
  *
- * ## 判据（见下方 L1..L8 / N1..N6 的 label）
+ * ## 判据（见下方 L1..L8 / N1..N7b 的 label）
  *
  * ## Step 8 扩展（plan「漫画库交互流程改造」）：新建 / 归并 / 封面
  * 5. **新建漫画**（`POST /library/create`）：建目录 + `manifest.json` 同步落盘（N1）；
@@ -27,6 +27,9 @@
  *    物理移动为 `<大类>/07_第7话`（NN_第N话 零填充，N4）；`episodes[]` 按目录重建（N5）。
  * 7. **封面**（`POST /library/{book}/cover`）：扩展名由**字节嗅探**决定（不信任 filename），
  *    `manifest.cover` 与 author 同一次请求同步写入，`GET /cover` 原样发回字节（N6）。
+ * 8. **话号一位小数**（2026-10-11 需求）：归并 `no=14.1` → 目录 `14.1_第14.1话`、
+ *    `episodes[].no` 记 14.1、`/chapters/14.1/…` 寻址到同一话（N7）；两位小数 / `.0`
+ *    → 404 拒绝（N7b）。
  *
  * ## 反证轮（`--refute`）：八条变异，各自必须让指定断言变红
  *   M1 去掉 `deleteTasks` 的终态门 ⇒ 翻译中的任务也会被删 ⇒ L1 变红；
@@ -573,6 +576,62 @@ async function runAll() {
         Buffer.isBuffer(cvGet.body) &&
         cvGet.body.equals(coverPng),
       `HTTP ${cv.status} coverOnDisk=${coverOnDisk} manifestCover=${manifestAfterCover?.cover} author=${manifestAfterCover?.author} getBytes=${cvGet.status}/${cvGet.body?.length}`,
+    );
+
+    // ---- N7：话号支持一位小数（2026-10-11 需求）----
+    // 归并 body.no = 14.1 ⇒ 物理目录 `14.1_第14.1话`（整数话号 14.1 的 padStart 不动它）、
+    // episodes[].no 记为 JSON 数 14.1、话级寻址 `/chapters/14.1/…` 可用。
+    // 同时咬三件事：**格式**（14.1 不被当成非法）、**存储**（目录名/manifest 的真实形状）、
+    // **寻址**（URL 里的小数话号能定位到同一话）。两位小数（14.55）在 resolveChapterDir
+    // 的正则就 404，放在反证轮外用直连请求验（见下方 N7b）。
+    const mgDec = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC_C)}/merge`, {
+      targetBook: NEW_BOOK,
+      no: 14.1,
+    });
+    const mgDecJ = json(mgDec);
+    const decDir = path.join(newDir, '14.1_第14.1话');
+    const libDec = await getLibrary(PORT, TOKEN);
+    const decBook = (libDec?.books ?? []).find((x) => x.bookName === NEW_BOOK);
+    const manifestDec = readManifestOnDisk();
+    const rtDec = await request(
+      PORT,
+      'GET',
+      `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/14.1/retranslate`,
+      { token: TOKEN },
+    );
+    const rtDecJ = json(rtDec);
+    check(
+      'N7',
+      '话号一位小数：归并 no=14.1 → 目录 14.1_第14.1话，episodes 记 14.1，/chapters/14.1 寻址到同一话',
+      mgDec.status === 200 &&
+        mgDecJ?.merged?.to === `${NEW_BOOK}/14.1_第14.1话` &&
+        fs.existsSync(decDir) &&
+        manifestDec?.episodes?.some((e) => e.no === 14.1 && e.dir === '14.1_第14.1话') &&
+        decBook?.chapterCount === 2 &&
+        rtDec.status === 200 &&
+        rtDecJ?.dirName === `${NEW_BOOK}/14.1_第14.1话`,
+      `HTTP ${mgDec.status} to=${mgDecJ?.merged?.to} dir=${fs.existsSync(decDir)} episodes=${JSON.stringify(manifestDec?.episodes ?? null)} chCount=${decBook?.chapterCount} rt=${rtDec.status}/${rtDecJ?.dirName}`,
+    );
+
+    // ---- N7b：话号格式边界 —— 两位小数 / .0 必须被拒（404），一位小数放行 ----
+    // 与 N7 同一函数的两条腿：N7 证"对的能过"，这条证"错的进不来"。
+    const badDec = await request(
+      PORT,
+      'GET',
+      `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/14.55/retranslate`,
+      { token: TOKEN },
+    );
+    const zeroDec = await request(
+      PORT,
+      'GET',
+      `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/14.0/retranslate`,
+      { token: TOKEN },
+    );
+    check(
+      'N7b',
+      '话号格式边界：14.55（两位小数）/ 14.0（.0）→ 404 TASK_NOT_FOUND，不许静默解析',
+      badDec.status === 404 && zeroDec.status === 404,
+      `14.55=${badDec.status} 14.0=${zeroDec.status}`,
     );
   } finally {
     await killProc(service);
