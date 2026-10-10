@@ -92,6 +92,14 @@ export const CODES = {
    * 归因成 409 而不是 500：用户能行动（关掉预览/资源管理器窗口，稍后再试），D-125。
    */
   MERGE_SOURCE_LOCKED: 409,
+  /**
+   * `POST /library/{book}/chapters/{no}/renumber`：该话还有未终态任务（翻译中/排队中）——
+   * 改话号 = 改名目录，会让在跑的任务写向不存在的旧路径。与 `MERGE_SOURCE_BUSY` 同理但
+   * 不肯复用：界面提示的主语不同（"这本漫画" vs "这一话"）。
+   */
+  CHAPTER_SOURCE_BUSY: 409,
+  /** 改话号的目录改名撞上 Windows「句柄占用族」且退避重试耗尽（D-125 同款归因） */
+  CHAPTER_SOURCE_LOCKED: 409,
 };
 
 export class ApiError extends Error {

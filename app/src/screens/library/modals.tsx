@@ -18,7 +18,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 
 import { Btn, Select } from '@components/units';
 import { chapterNoOf, coverFileName, dupKey, padChapterNo, shortPath } from '@tools';
-import type { BookEntry } from '@/types';
+import type { BookEntry, ChapterEntry } from '@/types';
 import { bookFirstImagePath, coverPath, useBlobUrl } from '@screens/library/blob';
 
 /** Windows/POSIX 双料的非法文件名字符（与 `tools.dupKey()` 剥的是同一批） */
@@ -460,6 +460,107 @@ export function MergeModal({
           ) : null}
         </>
       )}
+    </Sheet>
+  );
+}
+
+
+// ------------------------------------------------------------------ 7.6.4 编辑话数
+
+/**
+ * 编辑话数弹窗：改已归并话的话号（用户 2026-10-11 需求：归并后还要能改话数）。
+ *
+ * 校验与归并弹窗（§7.6.3）同一套口径 —— 「什么算合法话号」只有一份定义
+ * （`/^\d+(\.[1-9])?$/` + 1–999.9），两边各写一套迟早漂移出"归并认 14.1、
+ * 改号不认 14.1"这种怪事。
+ *
+ * 与服务端的两处对齐：
+ * · `unchanged`（改成原话号）**直接放行**：服务端对同话号是 200 空操作
+ *   （`dirName` 相同即跳过改名），前端置灰"没变化"的提交键只是省一次请求；
+ * · 冲突预检的判据 = 目标书里**其它**话已占的号（服务端对占号回 409
+ *   `CHAPTER_NO_TAKEN`，与归并同码 —— 两者对"占用"的定义必须一致）。
+ */
+export function EditChapterNoModal({
+  bookName,
+  chapter,
+  takenNos,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  bookName: string;
+  /** 要改号的那一话 */
+  chapter: ChapterEntry;
+  /** 该书里**其它**话已占的话号（不含本话原号） */
+  takenNos: number[];
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: (no: number) => void;
+}) {
+  const [noText, setNoText] = useState(() => (chapter.no !== null ? String(chapter.no) : ''));
+  const noRef = useRef<HTMLInputElement>(null);
+
+  // 话号校验：≥1、≤999.9、最多一位小数且小数位非 0（与服务端 resolveChapterDir 同一口径）
+  const no = /^\d+(?:\.[1-9])?$/.test(noText.trim()) ? Number(noText.trim()) : NaN;
+  const noOk = Number.isFinite(no) && no >= 1 && no <= 999.9;
+  const unchanged = noOk && chapter.no !== null && no === chapter.no;
+  const conflict = noOk && !unchanged && takenNos.includes(no);
+
+  const noError = noOk ? '' : '话号须为 ≥1 的数（最多一位小数）';
+  const canSubmit = !busy && noOk && !conflict && !unchanged;
+
+  return (
+    <Sheet
+      title={`编辑《${bookName}》第 ${chapter.no} 话的话号`}
+      busy={busy}
+      onClose={onCancel}
+      actions={
+        <>
+          <Btn kind="ghost" onClick={onCancel} disabled={busy}>
+            取消
+          </Btn>
+          <Btn kind="primary" onClick={() => canSubmit && onConfirm(no)} disabled={!canSubmit}>
+            {busy ? '保存中…' : '保存'}
+          </Btn>
+        </>
+      }
+    >
+      <div className="modal-label">新话号 *</div>
+      <input
+        ref={noRef}
+        className="input"
+        value={noText}
+        inputMode="decimal"
+        onChange={(e) => setNoText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && canSubmit) onConfirm(no);
+        }}
+        spellCheck={false}
+        autoFocus
+      />
+      {noError ? <div className="modal-warn">⚠️ {noError}</div> : null}
+      {conflict ? (
+        <div className="modal-warn">
+          ⚠️ 第 <span className="num">{no}</span> 话已有内容，请换一个话号。
+          <div className="modal-warn-acts">
+            <Btn kind="ghost" size="sm" onClick={() => noRef.current?.focus()} disabled={busy}>
+              改话号
+            </Btn>
+            <Btn kind="ghost" size="sm" onClick={onCancel} disabled={busy}>
+              取消
+            </Btn>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="modal-hint">
+        预览：第 <span className="num">{chapter.no}</span> 话 → 第{' '}
+        <span className="num">{noOk ? no : '?'}</span> 话（目录名改名{' '}
+        {noOk && !unchanged ? `${padChapterNo(chapter.no ?? 0)}_… → ${padChapterNo(no)}_第${no}话` : '—'}）
+      </div>
+      <div className="modal-hint">
+        本话的页文件原地保留，只有所在文件夹改名；该话有任务在跑时会拒绝改号。
+      </div>
     </Sheet>
   );
 }

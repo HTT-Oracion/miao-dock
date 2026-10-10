@@ -2078,6 +2078,61 @@ function handleChapterRetranslate(req, res, cors, bookRaw, noRaw) {
 }
 
 /**
+ * `POST /library/{book}/chapters/{no}/renumber` —— 编辑已归并话的话号（body: `{ no: 新话号 }`）。
+ *
+ * 实现 = **话目录改名**：`NN_第N话` → `MM_第M话`，随后 `episodesFromDirs` 按目录重建
+ * `episodes[]` —— 目录即索引，改名本身就把 json 带对了，不存在"目录与数组各改各"的
+ * 两处同步。话号校验复用 `resolveChapterDir` 的同一套（"什么算合法话号"只有一份定义）。
+ *
+ * 三道门（与归并同构，缺一道就是数据事故）：
+ * ① 旧话必须存在（`mustChapterDir`，含 §8.2 安全校验）；
+ * ② 该话没有未终态任务（翻译中改名 = 任务写向不存在的路径 → 409 `CHAPTER_SOURCE_BUSY`）；
+ * ③ 新话号未被占用（目录名与 `episodes[].no` 双向查 → 409 `CHAPTER_NO_TAKEN`，同归并）。
+ * 目录改名撞上 Windows 句柄占用时与归并同一套退避重试 + 409 `CHAPTER_SOURCE_LOCKED`（D-125）。
+ */
+async function handleChapterRenumber(req, res, cors, bookRaw, noRaw) {
+  const oldInfo = mustChapterDir(bookRaw, noRaw);
+  const { ok, value } = await readJsonBody(req);
+  if (!ok) throw new ApiError('INVALID_BOOK_META', '请求体不是合法 JSON', { raw: 'unparsable' });
+  const body = value && typeof value === 'object' ? value : {};
+  const newInfo = resolveChapterDir(oldInfo.bookName, body.no);
+  if (newInfo.dirName !== oldInfo.dirName) {
+    const busy = store.activeTasksForDir(oldInfo.relDir);
+    if (busy.length > 0) {
+      throw new ApiError('CHAPTER_SOURCE_BUSY',
+        `《${oldInfo.bookName}》第 ${oldInfo.no} 话还有 ${busy.length} 个任务在跑（${busy.map((t) => t.status).join('、')}），请等它跑完或先取消`,
+        { bookName: oldInfo.bookName, from: oldInfo.no, to: newInfo.no, statuses: busy.map((t) => t.status), taskIds: busy.map((t) => t.taskId) });
+    }
+    const dst = path.join(oldInfo.bookDir, newInfo.dirName);
+    // ③ 双向查（同归并）：目录名（位置）与 episodes[].no（说明文字）都要干净
+    const takenNos = listChapterDirs(oldInfo.bookDir).map((c) => c.no);
+    const declaredNos = readManifest(oldInfo.bookDir, oldInfo.bookName).episodes.map((e) => e.no);
+    if (fs.existsSync(dst) || takenNos.includes(newInfo.no) || declaredNos.includes(newInfo.no)) {
+      throw new ApiError('CHAPTER_NO_TAKEN', `《${oldInfo.bookName}》已经有第 ${newInfo.no} 话了`,
+        { bookName: oldInfo.bookName, chapterNo: newInfo.no, occupiedBy: fs.existsSync(dst) ? 'dir' : 'episodes' });
+    }
+    try {
+      await renameDirWithRetry(oldInfo.dir, dst);
+    } catch (err) {
+      if (isBusyFsError(err)) {
+        // 占用重试已耗尽（≈800ms）：归因成用户能行动的 409，不再是 500（D-125 同款）
+        throw new ApiError('CHAPTER_SOURCE_LOCKED',
+          `《${oldInfo.bookName}》第 ${oldInfo.no} 话的目录正被其它程序占用（可能有页面还在预览、或资源管理器/杀毒正在扫描），已自动重试仍失败，请稍候再试`,
+          { bookName: oldInfo.bookName, from: oldInfo.no, to: newInfo.no, reason: String(err.message || err) });
+      }
+      throw err;
+    }
+    writeManifestAtomic(oldInfo.bookDir, {
+      ...readManifest(oldInfo.bookDir, oldInfo.bookName), episodes: episodesFromDirs(oldInfo.bookDir),
+    });
+  }
+  sendJson(res, 200, {
+    ...bookMetaView(oldInfo.bookName, oldInfo.bookDir),
+    renumbered: { from: oldInfo.no, to: newInfo.no },
+  }, cors);
+}
+
+/**
  * `GET /library/{book}/chapters/{no}/files/{seq}` —— 话内取图。
  *
  * `variant` 与漫画级 `files/{seq}` 同款（`translated` 默认 / `original`）。
@@ -2334,6 +2389,9 @@ async function route(req, res, cors, url) {
       if (method === 'GET') return handleChapterRetranslatePlan(req, res, cors, bookRaw, noRaw);
       if (method === 'POST') return handleChapterRetranslate(req, res, cors, bookRaw, noRaw);
       throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
+    }
+    if (p.length === 5 && p[4] === 'renumber' && method === 'POST') {
+      return handleChapterRenumber(req, res, cors, bookRaw, noRaw);
     }
     throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
   }

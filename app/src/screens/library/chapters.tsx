@@ -11,7 +11,7 @@
 // 「重译本话 / 打开目录」只把意图回抛给屏：这三个动作都要 `onRefresh()`、要发 Toast、
 // 失败还要把结构化错误翻成人话，那些全在屏里。放在卡片里做，就会出现"卡片自己刷了、
 // 左栏与头部没刷"的半刷新。
-import { FolderUp, Play, RotateCcw, Trash2 } from 'lucide-react';
+import { FolderUp, Pencil, Play, RotateCcw, Trash2 } from 'lucide-react';
 
 import { Badge, Dot, MenuButton, MenuItem } from '@components/units';
 import type { ChapterEntry } from '@/types';
@@ -108,6 +108,7 @@ export function ChapterCard({
   onOpenDir,
   onResume,
   onRetranslate,
+  onEditNo,
 }: {
   bookName: string;
   chapter: ChapterEntry;
@@ -118,6 +119,8 @@ export function ChapterCard({
   /** 续做本话（把「有原图、缺译文」的页加入队列）—— 头部菜单迁往右键后，话级续做的家在这里 */
   onResume: () => void;
   onRetranslate: () => void;
+  /** 编辑话数（改号 = 服务端给话目录改名，弹窗收集新号） */
+  onEditNo: () => void;
 }) {
   const no = chapter.no;
   const status = chapterStatusOf(chapter);
@@ -209,6 +212,16 @@ export function ChapterCard({
                 onClick={() => {
                   close();
                   onRetranslate();
+                }}
+              />
+              <MenuItem
+                icon={<Pencil size={13} />}
+                label="编辑话数"
+                title={no === null ? '该目录没有话号，无从改起' : `把第 ${no} 话改成另一个话号（页文件原地保留）`}
+                disabled={no === null}
+                onClick={() => {
+                  close();
+                  onEditNo();
                 }}
               />
               <MenuItem

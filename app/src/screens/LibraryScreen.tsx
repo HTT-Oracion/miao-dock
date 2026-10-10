@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import {
+  ArrowLeft,
   ChevronDown,
   EyeOff,
   FolderUp,
@@ -26,6 +27,7 @@ import type {
   TaskRow,
 } from '@/types';
 import {
+  chapterNoOf,
   formatBytes,
   fuzzyMatch,
   groupSearchResults,
@@ -34,7 +36,7 @@ import {
   pageSlice,
 } from '@tools';
 import { useDebouncedValue } from '@hooks/useDebouncedValue';
-import { Btn, ContextMenu, MenuButton, MenuItem, MenuSeparator, Notice, Tooltip } from '@components/units';
+import { Btn, ContextMenu, IconButton, MenuButton, MenuItem, MenuSeparator, Notice, Tooltip } from '@components/units';
 import {
   bookFirstImagePath,
   chapterFilePath,
@@ -46,7 +48,7 @@ import {
 import type { Variant } from '@screens/library/blob';
 import { ChapterCard } from '@screens/library/chapters';
 import type { BookMetaIntent } from '@screens/library/modals';
-import { EditBookModal, MergeModal, NewBookModal } from '@screens/library/modals';
+import { EditBookModal, EditChapterNoModal, MergeModal, NewBookModal } from '@screens/library/modals';
 
 /** 左栏每页漫画数（窄栏 + 每项约 48px 高，12 项差不多一屏） */
 const LIB_PAGE_SIZE = 12;
@@ -747,9 +749,9 @@ function Compare({
   return (
     <div className="compare">
       <div className="compare-head card">
-        <Btn kind="ghost" onClick={onBack}>
-          返回
-        </Btn>
+        <IconButton title="返回" onClick={onBack}>
+          <ArrowLeft size={20} />
+        </IconButton>
         <span className="compare-seq">
           <span className="num">{seq}</span>
           <span> / </span>
@@ -1012,9 +1014,12 @@ export function LibraryScreen({
   const [editBook, setEditBook] = useState<BookEntry | null>(null);
   /** 归并弹窗的**源目录名**（左栏单话 / 右键菜单「归并到」共用这一个入口） */
   const [mergeTarget, setMergeTarget] = useState<string | null>(null);
+  /** 编辑话数弹窗：改某本已归并话的话号（话卡菜单入口） */
+  const [editNoChapter, setEditNoChapter] = useState<{ bookName: string; chapter: ChapterEntry } | null>(null);
   const [creating, setCreating] = useState(false);
   const [savingMeta, setSavingMeta] = useState(false);
   const [merging, setMerging] = useState(false);
+  const [renumbering, setRenumbering] = useState(false);
   /**
    * 右键菜单（漫画操作的家）：记录**被右键的那一项**与弹出坐标。
    *
@@ -1461,6 +1466,26 @@ export function LibraryScreen({
     }
   };
 
+  /**
+   * 编辑话数（`POST /library/{book}/chapters/{no}/renumber`，2026-10-11 用户需求）。
+   * 改号 = 服务端把话目录改名 + episodes 重建（页文件原地不动）；成功后刷新库 ——
+   * 左栏计数、话卡角标、URL 缓存键（含话号）都会跟着新目录走。
+   */
+  const renumberChapter = async (bookName: string, chapter: ChapterEntry, no: number) => {
+    if (chapter.no === null) return; // 无话号的目录拼不出话级端点，弹窗也不会为它打开
+    setRenumbering(true);
+    try {
+      await apiPost(`/library/${encodeURIComponent(bookName)}/chapters/${chapter.no}/renumber`, { no });
+      onToast(`已改为《${bookName}》第 ${no} 话`, 'good');
+      setEditNoChapter(null);
+      onRefresh();
+    } catch (e) {
+      onToast(errorText(e), 'bad');
+    } finally {
+      setRenumbering(false);
+    }
+  };
+
   if (comics.length === 0 && hidden.length === 0) {
     return (
       <>
@@ -1827,9 +1852,9 @@ export function LibraryScreen({
               {/* 屏 C 的返回（设计稿 §5.3：任何层级可「返回」且不丢选中态）——
                   返回的是屏 B 话列表，左栏选中保持不动 */}
               {inChapter ? (
-                <Btn kind="ghost" onClick={() => setChapterNo(null)} title="返回这一部的话列表">
-                  返回
-                </Btn>
+                <IconButton title="返回这一部的话列表" onClick={() => setChapterNo(null)}>
+                  <ArrowLeft size={20} />
+                </IconButton>
               ) : null}
               <div className="lib-head-titles">
                 <div className="lib-head-name" title={headName}>
@@ -1891,6 +1916,7 @@ export function LibraryScreen({
                             `《${currentBook.bookName}》第 ${ch.no} 话`,
                           );
                         }}
+                        onEditNo={() => setEditNoChapter({ bookName: currentBook.bookName, chapter: ch })}
                       />
                     ))}
                   </div>
@@ -2072,6 +2098,19 @@ export function LibraryScreen({
           busy={merging}
           onCancel={() => setMergeTarget(null)}
           onConfirm={(target, no) => void mergeInto(target, no)}
+        />
+      ) : null}
+
+      {editNoChapter ? (
+        <EditChapterNoModal
+          bookName={editNoChapter.bookName}
+          chapter={editNoChapter.chapter}
+          takenNos={(books.find((b) => b.bookName === editNoChapter.bookName)?.chapters ?? [])
+            .map((c) => chapterNoOf(c.dirName))
+            .filter((n): n is number => n !== null && n !== editNoChapter.chapter.no)}
+          busy={renumbering}
+          onCancel={() => setEditNoChapter(null)}
+          onConfirm={(no) => void renumberChapter(editNoChapter.bookName, editNoChapter.chapter, no)}
         />
       ) : null}
 

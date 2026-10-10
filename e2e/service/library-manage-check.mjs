@@ -18,7 +18,7 @@
  * 能抓住语义混淆的只有**删除之后去看它到底删了什么**：目录还在不在、库里还列不列它、
  * 任务记录还在不在。所以必须单开一个脚本。
  *
- * ## 判据（见下方 L1..L8 / N1..N9 的 label）
+ * ## 判据（见下方 L1..L8 / N1..N10d 的 label）
  *
  * ## Step 8 扩展（plan「漫画库交互流程改造」）：新建 / 归并 / 封面
  * 5. **新建漫画**（`POST /library/create`）：建目录 + `manifest.json` 同步落盘（N1）；
@@ -35,8 +35,13 @@
  *    退避重试救回 → 200（N8）；持续占用重试耗尽 → 409 `MERGE_SOURCE_LOCKED` 而非
  *    500（N8b）；释放后重试成功、无半截目录残留（N8c）；页图/封面读流走 `pipeline`
  *    （中止即释放句柄，根因消除腿，源码级断言，N9）。
+ * 10. **编辑话数**（2026-10-11 用户需求，归并后还要能改话数）：
+ *    `POST /library/{book}/chapters/{no}/renumber`，7 → 7.1 = 话目录改名 +
+ *    episodes 重建 + 页文件原地保留（N10）；改到已占话号 → 409 `CHAPTER_NO_TAKEN`
+ *    且目录不动（N10b）；该话有未终态任务 → 409 `CHAPTER_SOURCE_BUSY`（N10c）；
+ *    任务跑完后改号恢复可用（N10d）。
  *
- * ## 反证轮（`--refute`）：十一条变异，各自必须让指定断言变红
+ * ## 反证轮（`--refute`）：十三条变异，各自必须让指定断言变红
  *   M1 去掉 `deleteTasks` 的终态门 ⇒ 翻译中的任务也会被删 ⇒ L1 变红；
  *   M2 `scanLibrary` 不跳过隐藏项 ⇒ 隐藏了还列出来 ⇒ L4 变红；
  *   M3 `handleLibraryDelete` 无视 `deleteFiles`（恒为 false）⇒ L6 变红；
@@ -47,7 +52,9 @@
  *   M8 封面落盘但 manifest.cover 不回写 ⇒ N6 变红；
  *   M9 页图读流退回 `.pipe`（中止泄漏句柄）⇒ N9 变红；
  *   M10 占用退避重试被去掉 ⇒ 瞬时占用也 500 ⇒ N8 变红；
- *   M11 占用终态不再归因 LOCKED ⇒ 回归 500 ⇒ N8b 变红。
+ *   M11 占用终态不再归因 LOCKED ⇒ 回归 500 ⇒ N8b 变红；
+ *   M12 改号的占号复检被去掉 ⇒ 覆盖已有话 ⇒ N10b 变红；
+ *   M13 改号的在跑任务门被去掉 ⇒ 翻译中也能改名 ⇒ N10c 变红。
  * 服务/前端都按源码破坏来验（服务是**子进程**，磁盘破坏会被新进程读到）。
  *
  * 用法：
@@ -695,6 +702,68 @@ async function runAll() {
       `HTTP ${mgUnlock.status} dst=${fs.existsSync(path.join(newDir, '22.2_第22.2话'))}`,
     );
 
+    // ---- N10：编辑话数（2026-10-11 用户需求）：目录改名 + episodes 重建，页文件原地保留 ----
+    const rn = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7/renumber`, {
+      no: 7.1,
+    });
+    const rnJ = json(rn);
+    check(
+      'N10',
+      '编辑话数：7 → 7.1 = 话目录改名（旧目录消失、新目录在、页文件原地保留、episodes 重建）',
+      rn.status === 200 &&
+        !fs.existsSync(path.join(newDir, '07_第7话')) &&
+        fs.existsSync(path.join(newDir, '7.1_第7.1话')) &&
+        fs.existsSync(path.join(newDir, '7.1_第7.1话', '001.png')) &&
+        (readManifestOnDisk()?.episodes ?? []).some((e) => e.no === 7.1 && e.dir === '7.1_第7.1话'),
+      `HTTP ${rn.status} renumbered=${JSON.stringify(rnJ?.renumbered ?? null)} oldGone=${!fs.existsSync(path.join(newDir, '07_第7话'))} newDir=${fs.existsSync(path.join(newDir, '7.1_第7.1话'))}`,
+    );
+
+    // ---- N10b：占号 → 409 CHAPTER_NO_TAKEN，且目录纹丝不动 ----
+    const rnTak = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/renumber`, {
+      no: 22.1,
+    });
+    const rnTakJ = json(rnTak);
+    check(
+      'N10b',
+      '改到已被占用的话号（22.1 已在）→ 409 CHAPTER_NO_TAKEN，本话目录不被改动',
+      rnTak.status === 409 && rnTakJ?.error?.code === 'CHAPTER_NO_TAKEN' && fs.existsSync(path.join(newDir, '7.1_第7.1话')),
+      `HTTP ${rnTak.status} code=${rnTakJ?.error?.code}`,
+    );
+
+    // ---- N10c：在跑任务门 —— 话级返工任务挂着时改号 → 409 CHAPTER_SOURCE_BUSY ----
+    // 连塞两个任务再立刻改号：队列串行，第二个必然还挂着 ⇒ 判定与引擎快慢无关（N3 同一手筋）。
+    // ⚠️ 返工必须给 seqs 限到 2 张：全量候选 = 整话原图（20 张）会撞 BATCH_LIMIT_EXCEEDED，
+    //    任务根本建不起来 —— 门还没轮到测就漏了。
+    const rtA = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/retranslate`, { seqs: [1, 2] });
+    const rtB = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/retranslate`, { seqs: [3, 4] });
+    const rnBusy = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/renumber`, {
+      no: 8,
+    });
+    const rnBusyJ = json(rnBusy);
+    check(
+      'N10c',
+      '该话有未终态任务 → 409 CHAPTER_SOURCE_BUSY（翻译中改名 = 任务写向不存在的旧路径）',
+      rnBusy.status === 409 && rnBusyJ?.error?.code === 'CHAPTER_SOURCE_BUSY' && fs.existsSync(path.join(newDir, '7.1_第7.1话')),
+      `HTTP ${rnBusy.status} code=${rnBusyJ?.error?.code} rtA=${rtA.status}(${json(rtA)?.error?.code ?? json(rtA)?.taskId}) rtB=${rtB.status}(${json(rtB)?.error?.code ?? json(rtB)?.taskId})`,
+    );
+    for (const t of [json(rtA)?.taskId, json(rtB)?.taskId]) {
+      if (t) await waitTask(PORT, TOKEN, t);
+    }
+
+    // ---- N10d：任务跑完后改号恢复可用（BUSY 是可恢复错误，不是永久拒绝）----
+    // 目录名沿用同一套零填充规则：8 → `08_第8话`（N4 的 NN_第N话 约定）。
+    const rnFree = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/renumber`, {
+      no: 8,
+    });
+    check(
+      'N10d',
+      '任务到终态后改号 → 200：目录 7.1_第7.1话 消失、08_第8话 落位',
+      rnFree.status === 200 &&
+        !fs.existsSync(path.join(newDir, '7.1_第7.1话')) &&
+        fs.existsSync(path.join(newDir, '08_第8话')),
+      `HTTP ${rnFree.status} oldGone=${!fs.existsSync(path.join(newDir, '7.1_第7.1话'))} newDir=${fs.existsSync(path.join(newDir, '08_第8话'))}`,
+    );
+
     // ---- N9：发图/封面读流必须走 pipeline（D-125 的根因消除腿）----
     // .pipe() 在客户端中止（取消加载/切页）时**不销毁**源流 ⇒ 读句柄泄漏 ⇒ Windows 下该目录
     // 的归并 rename 撞 EPERM。行为级复现这条太脆（时序敏感），按 D-112 缺口的形态做源码级断言。
@@ -870,6 +939,28 @@ const MUTATIONS = [
       },
     ],
     expect: ['N8b'],
+  },
+  {
+    name: 'M12 改号的占号复检被去掉（改到已占话号会覆盖/顶撞已有话）',
+    edits: [
+      {
+        file: SERVER_SRC,
+        find: "    if (fs.existsSync(dst) || takenNos.includes(newInfo.no) || declaredNos.includes(newInfo.no)) {",
+        replace: '    if (false) { // refute：改号不再查占号',
+      },
+    ],
+    expect: ['N10b'],
+  },
+  {
+    name: 'M13 改号的在跑任务门被去掉（翻译中也能给话改名 ⇒ 任务写向不存在的旧路径）',
+    edits: [
+      {
+        file: SERVER_SRC,
+        find: '    const busy = store.activeTasksForDir(oldInfo.relDir);\n    if (busy.length > 0) {',
+        replace: '    const busy = []; // refute：在跑任务门被去掉\n    if (busy.length > 0) {',
+      },
+    ],
+    expect: ['N10c'],
   },
 ];
 
