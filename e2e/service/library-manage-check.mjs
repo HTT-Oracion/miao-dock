@@ -18,12 +18,25 @@
  * 能抓住语义混淆的只有**删除之后去看它到底删了什么**：目录还在不在、库里还列不列它、
  * 任务记录还在不在。所以必须单开一个脚本。
  *
- * ## 判据（见下方 L1..L8 的 label）
- * ## 反证轮（`--refute`）：四条变异，各自必须让指定断言变红
+ * ## 判据（见下方 L1..L8 / N1..N6 的 label）
+ *
+ * ## Step 8 扩展（plan「漫画库交互流程改造」）：新建 / 归并 / 封面
+ * 5. **新建漫画**（`POST /library/create`）：建目录 + `manifest.json` 同步落盘（N1）；
+ *    同名 → 409 `BOOK_NAME_TAKEN` 且不动已有目录（N2，判据是 existsSync 复检，D-118）。
+ * 6. **归并**（`POST /library/{name}/merge`）：源有未终态任务 → 409 `MERGE_SOURCE_BUSY`（N3）；
+ *    物理移动为 `<大类>/07_第7话`（NN_第N话 零填充，N4）；`episodes[]` 按目录重建（N5）。
+ * 7. **封面**（`POST /library/{book}/cover`）：扩展名由**字节嗅探**决定（不信任 filename），
+ *    `manifest.cover` 与 author 同一次请求同步写入，`GET /cover` 原样发回字节（N6）。
+ *
+ * ## 反证轮（`--refute`）：八条变异，各自必须让指定断言变红
  *   M1 去掉 `deleteTasks` 的终态门 ⇒ 翻译中的任务也会被删 ⇒ L1 变红；
  *   M2 `scanLibrary` 不跳过隐藏项 ⇒ 隐藏了还列出来 ⇒ L4 变红；
  *   M3 `handleLibraryDelete` 无视 `deleteFiles`（恒为 false）⇒ L6 变红；
- *   M4 前端把 `/tasks/delete` 写错 ⇒ L8 变红。
+ *   M4 前端把 `/tasks/delete` 写错 ⇒ L8 变红；
+ *   M5 新建的同名复检被去掉 ⇒ N2 变红；
+ *   M6 归并的在跑任务门被去掉 ⇒ N3 变红；
+ *   M7 话目录命名的零填充被去掉 ⇒ N4 变红；
+ *   M8 封面落盘但 manifest.cover 不回写 ⇒ N6 变红。
  * 服务/前端都按源码破坏来验（服务是**子进程**，磁盘破坏会被新进程读到）。
  *
  * 用法：
@@ -47,6 +60,7 @@ const ENGINE_ENTRY = path.join(ROOT, 'engine', 'src', 'server.mjs');
 const SERVICE_ENTRY = path.join(ROOT, 'service', 'src', 'server.mjs');
 const STORE_SRC = path.join(ROOT, 'service', 'src', 'manga', 'store.mjs');
 const SERVER_SRC = path.join(ROOT, 'service', 'src', 'server.mjs');
+const LIBRARY_SRC = path.join(ROOT, 'service', 'src', 'manga', 'library.mjs');
 const APP_SRC = path.join(ROOT, 'app', 'src', 'App.tsx');
 
 const REFUTE = process.argv.includes('--refute');
@@ -164,7 +178,7 @@ const postJson = (port, token, urlPath, obj) =>
     body: Buffer.from(JSON.stringify(obj), 'utf8'),
   });
 
-function buildMultipart(payload, images) {
+function buildMultipart(payload, images, fileField = 'images') {
   const boundary = `----miaomanage${Math.random().toString(16).slice(2)}`;
   const parts = [];
   if (payload) {
@@ -178,7 +192,7 @@ function buildMultipart(payload, images) {
   for (const img of images) {
     parts.push(
       Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="images"; filename="${img.filename}"\r\n` +
+        `--${boundary}\r\nContent-Disposition: form-data; name="${fileField}"; filename="${img.filename}"\r\n` +
           `Content-Type: ${img.contentType}\r\n\r\n`,
         'utf8',
       ),
@@ -430,6 +444,136 @@ async function runAll() {
       /\/tasks\/delete/.test(appSrc) && /\/delete/.test(libSrc) && /deleteFiles/.test(libSrc),
       `app:/tasks/delete=${/\/tasks\/delete/.test(appSrc)} lib:/delete=${/\/delete/.test(libSrc)} deleteFiles=${/deleteFiles/.test(libSrc)}`,
     );
+
+    // ================================================================
+    // Step 8 扩展：新建 / 归并 / 封面（plan §Step 8 的后四件事）
+    //
+    // 前置：占位任务（B/C/D）全部到终态 —— 归并的「在跑拒绝」「物理移动」
+    // 都要求"此刻没有别的任务搅局"，否则断言的是竞态而不是语义。
+    for (const t of [b.json?.taskId, c.json?.taskId, taskD]) {
+      if (t) await waitTask(PORT, TOKEN, t);
+    }
+
+    const NEW_BOOK = '新建测试书';
+    const newDir = path.join(ROOT_DIR, NEW_BOOK);
+    const readManifestOnDisk = () => {
+      try {
+        return JSON.parse(fs.readFileSync(path.join(newDir, 'manifest.json'), 'utf8'));
+      } catch {
+        return null;
+      }
+    };
+
+    // ---- N1：新建漫画 → 建目录 + manifest.json 落盘（schema/author）+ 库里列为大类 ----
+    const cr = await postJson(PORT, TOKEN, '/api/v1/library/create', { name: NEW_BOOK, author: '测试作者' });
+    const crJ = json(cr);
+    const createdBook = ((await getLibrary(PORT, TOKEN))?.books ?? []).find((x) => x.bookName === NEW_BOOK);
+    const manifestCreated = readManifestOnDisk();
+    check(
+      'N1',
+      '新建漫画：201 建目录，manifest.json 同步落盘（schema=1 + author），库里列为 0 话的大类',
+      cr.status === 201 &&
+        crJ?.bookName === NEW_BOOK &&
+        fs.existsSync(newDir) &&
+        manifestCreated?.schema === 1 &&
+        manifestCreated?.author === '测试作者' &&
+        createdBook?.chapterCount === 0,
+      `HTTP ${cr.status} bookName=${crJ?.bookName} dir=${fs.existsSync(newDir)} schema=${manifestCreated?.schema} author=${manifestCreated?.author} chapterCount=${createdBook?.chapterCount}`,
+    );
+
+    // ---- N2：新建同名 → 409，且**不动**已有目录（部分建目录不留残骸）----
+    const dup = await postJson(PORT, TOKEN, '/api/v1/library/create', { name: NEW_BOOK });
+    const dupJ = json(dup);
+    check(
+      'N2',
+      '新建同名：409 BOOK_NAME_TAKEN，已有目录原样保留（不存在"建了一半"的第二个目录）',
+      dup.status === 409 &&
+        dupJ?.error?.code === 'BOOK_NAME_TAKEN' &&
+        fs.existsSync(newDir) &&
+        readManifestOnDisk()?.author === '测试作者',
+      `HTTP ${dup.status} code=${dupJ?.error?.code} dir=${fs.existsSync(newDir)} manifestAuthor=${readManifestOnDisk()?.author}`,
+    );
+
+    // ---- N3：归并拒绝在跑任务（源还有未终态任务 → 409 MERGE_SOURCE_BUSY）----
+    // 连塞两个任务再立刻归并：队列是串行的，第二个必然还挂着 ⇒ 判定与引擎快慢无关。
+    const bt1 = await submit(PORT, TOKEN, COMIC_B, makeImages(IMAGES_FILL));
+    const bt2 = await submit(PORT, TOKEN, COMIC_B, makeImages(IMAGES_FILL));
+    const mgBusy = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC_B)}/merge`, {
+      targetBook: NEW_BOOK,
+      no: 7,
+    });
+    const mgBusyJ = json(mgBusy);
+    check(
+      'N3',
+      '归并拒绝在跑任务：源目录还有未终态任务 → 409 MERGE_SOURCE_BUSY（翻译中被搬走 = 写向不存在的路径）',
+      mgBusy.status === 409 && mgBusyJ?.error?.code === 'MERGE_SOURCE_BUSY',
+      `HTTP ${mgBusy.status} code=${mgBusyJ?.error?.code}`,
+    );
+    for (const t of [bt1.json?.taskId, bt2.json?.taskId]) {
+      if (t) await waitTask(PORT, TOKEN, t);
+    }
+
+    // ---- N4：归并物理移动 → <大类>/07_第7话（两位零填充命名），原顶层目录消失 ----
+    const dirB = path.join(ROOT_DIR, COMIC_B);
+    const mg = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC_B)}/merge`, {
+      targetBook: NEW_BOOK,
+      no: 7,
+    });
+    const mgJ = json(mg);
+    const libAfterMerge = await getLibrary(PORT, TOKEN);
+    const mergedBook = (libAfterMerge?.books ?? []).find((x) => x.bookName === NEW_BOOK);
+    check(
+      'N4',
+      '归并：源目录物理移动为 <大类>/07_第7话（NN_第N话 两位零填充），原顶层目录消失，库里 chapterCount=1',
+      mg.status === 200 &&
+        fs.existsSync(path.join(newDir, '07_第7话')) &&
+        !fs.existsSync(dirB) &&
+        mgJ?.merged?.to === `${NEW_BOOK}/07_第7话` &&
+        mergedBook?.chapterCount === 1,
+      `HTTP ${mg.status} to=${mgJ?.merged?.to} chDir=${fs.existsSync(path.join(newDir, '07_第7话'))} srcGone=${!fs.existsSync(dirB)} chapterCount=${mergedBook?.chapterCount}`,
+    );
+
+    // ---- N5：manifest 回写 → episodes[] 按目录重建（no 与 dir 两头都对）----
+    const manifestAfterMerge = readManifestOnDisk();
+    check(
+      'N5',
+      '归并后 manifest.json 的 episodes[] 按目录重建：唯一一条 {no:7, dir:"07_第7话"}',
+      Array.isArray(manifestAfterMerge?.episodes) &&
+        manifestAfterMerge.episodes.length === 1 &&
+        manifestAfterMerge.episodes[0]?.no === 7 &&
+        manifestAfterMerge.episodes[0]?.dir === '07_第7话',
+      `episodes=${JSON.stringify(manifestAfterMerge?.episodes ?? null)}`,
+    );
+
+    // ---- N6：封面落盘 + json 同步（扩展名字段由**字节嗅探**决定，不信任 filename）----
+    // 故意给 filename=.bin / contentType=application/octet-stream：落盘名必须是嗅探出来的 cover.png
+    const coverPng = encodePng(8, 8, (x, y, put) => put(200, 30, 90));
+    const mpCover = buildMultipart(
+      { author: '测试作者2' },
+      [{ filename: 'whatever.bin', contentType: 'application/octet-stream', data: coverPng }],
+      'cover',
+    );
+    const cv = await request(PORT, 'POST', `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/cover`, {
+      token: TOKEN,
+      headers: { 'Content-Type': mpCover.contentType },
+      body: mpCover.body,
+    });
+    const cvJ = json(cv);
+    const coverOnDisk = fs.existsSync(newDir) ? fs.readdirSync(newDir).find((f) => /^cover\./.test(f)) : null;
+    const cvGet = await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/cover`, { token: TOKEN });
+    const manifestAfterCover = readManifestOnDisk();
+    check(
+      'N6',
+      '封面：POST 落盘为 cover.png（嗅探命名），manifest.cover 与 author 同一次请求同步写入，GET /cover 原样发回字节',
+      cv.status === 200 &&
+        coverOnDisk === 'cover.png' &&
+        manifestAfterCover?.cover === 'cover.png' &&
+        manifestAfterCover?.author === '测试作者2' &&
+        cvGet.status === 200 &&
+        Buffer.isBuffer(cvGet.body) &&
+        cvGet.body.equals(coverPng),
+      `HTTP ${cv.status} coverOnDisk=${coverOnDisk} manifestCover=${manifestAfterCover?.cover} author=${manifestAfterCover?.author} getBytes=${cvGet.status}/${cvGet.body?.length}`,
+    );
   } finally {
     await killProc(service);
     await killProc(engine);
@@ -502,6 +646,59 @@ const MUTATIONS = [
       },
     ],
     expect: ['L8'],
+  },
+  {
+    // 🔴 同名判据是「existsSync 复检」而不是 err.code（D-118）。去掉它 ⇒ mkdir 的原始错误
+    //    直接上抛成 500 —— N2 期望的 409/BOOK_NAME_TAKEN 就红。
+    name: 'M5 新建漫画的同名复检被去掉（撞名错误直接 500，不再归因为 409）',
+    edits: [
+      {
+        file: SERVER_SRC,
+        find: '    if (fs.existsSync(path.join(store.root, norm.name))) {',
+        replace: '    if (false) { // refute：同名复检被去掉',
+      },
+    ],
+    expect: ['N2'],
+  },
+  {
+    // 在跑门被去掉 ⇒ 归并真的会把带任务的目录搬走：N3 期望的 409 变 200。
+    // （搬走后引擎往旧路径写会失败 ⇒ 该任务以 failed 终态收场，不阻塞后续轮次。）
+    name: 'M6 归并的在跑任务门被去掉（翻译中的目录也能被搬走）',
+    edits: [
+      {
+        file: SERVER_SRC,
+        find: '  const busy = store.activeTasksForDir(srcName);\n  if (busy.length > 0) {',
+        replace: '  const busy = []; // refute：在跑任务门被去掉\n  if (busy.length > 0) {',
+      },
+    ],
+    expect: ['N3'],
+  },
+  {
+    // 话目录命名只此一处定义（chapterDirName）。零填充被去掉 ⇒ 位移后的目录名是 `7_第7话`，
+    // N4 断言的 `07_第7话`（位置、merged.to、chapterCount 三个口径）全部落空。
+    name: 'M7 话目录命名的两位零填充被去掉（归并产物变成 7_第7话）',
+    edits: [
+      {
+        file: LIBRARY_SRC,
+        find: "  return `${String(no).padStart(2, '0')}_第${no}话`;",
+        replace: "  return `${no}_第${no}话`; // refute：零填充被去掉",
+      },
+    ],
+    expect: ['N4'],
+  },
+  {
+    // 「同步写入」的验证点：封面文件照常落盘、GET 照常发回，唯独 manifest.cover 不回写 ⇒
+    // 文件与 json 脱钩（这正是用户点名要防的缺陷），N6 红而其余子条件全绿 —— 说明断言咬的是同步性。
+    name: 'M8 封面落盘但 manifest 的 cover 字段不回写（文件与 json 脱钩）',
+    edits: [
+      {
+        file: SERVER_SRC,
+        find: '  writeManifestAtomic(dir, { ...manifest, cover: coverName, episodes: episodesFromDirs(dir) });',
+        replace:
+          '  writeManifestAtomic(dir, { ...manifest, cover: null, episodes: episodesFromDirs(dir) }); // refute：cover 不回写',
+      },
+    ],
+    expect: ['N6'],
   },
 ];
 
