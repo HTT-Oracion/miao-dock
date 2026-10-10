@@ -583,7 +583,7 @@ export class Store {
    * 单次上限沿用 `BATCH_LIMIT`（20）：整部漫画上百页时必须分批，
    * 一次建单塞 200 页会让引擎队列被单个任务占死。
    */
-  createRetranslateTask(dirName, { seqs, source } = {}) {
+  createRetranslateTask(dirName, { seqs, source, lang } = {}) {
     const plan = this.retranslatePlan(dirName);
     const want = seqs && seqs.length ? new Set(seqs.map(Number)) : null;
     const picked = want ? plan.candidates.filter((c) => want.has(c.seq)) : plan.candidates;
