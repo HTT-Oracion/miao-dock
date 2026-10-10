@@ -11,7 +11,7 @@
 // 「重译本话 / 打开目录」只把意图回抛给屏：这三个动作都要 `onRefresh()`、要发 Toast、
 // 失败还要把结构化错误翻成人话，那些全在屏里。放在卡片里做，就会出现"卡片自己刷了、
 // 左栏与头部没刷"的半刷新。
-import { FolderUp, RotateCcw, Trash2 } from 'lucide-react';
+import { FolderUp, Play, RotateCcw, Trash2 } from 'lucide-react';
 
 import { Badge, Dot, MenuButton, MenuItem } from '@components/units';
 import type { ChapterEntry } from '@/types';
@@ -106,14 +106,17 @@ export function ChapterCard({
   busy,
   onOpen,
   onOpenDir,
+  onResume,
   onRetranslate,
 }: {
   bookName: string;
   chapter: ChapterEntry;
-  /** 本话（或所属漫画）已有任务在跑 ⇒ 重译入口置灰 */
+  /** 本话（或所属漫画）已有任务在跑 ⇒ 重译/续做入口置灰 */
   busy: boolean;
   onOpen: () => void;
   onOpenDir: () => void;
+  /** 续做本话（把「有原图、缺译文」的页加入队列）—— 头部菜单迁往右键后，话级续做的家在这里 */
+  onResume: () => void;
   onRetranslate: () => void;
 }) {
   const no = chapter.no;
@@ -121,6 +124,8 @@ export function ChapterCard({
   // 空话（一张原图都没有）不取图：对"确定没有"的东西发一次必然 404 的请求，
   // 表现是缩略图先停在「加载中…」再变成失败 —— 把"不存在"伪装成"还没到"。
   const thumb = useBlobUrl(no === null || chapter.imageCount === 0 ? null : chapterImagePath(bookName, chapter));
+  // 本话待续做张数（有原图、缺译文的页数；集合判定，不用张数倒推 —— G-10）
+  const pendingCount = Math.max(0, chapter.imageCount - chapter.translatedCount - chapter.missingSeqs.length);
 
   // 无原图 ⇒ 服务端的返工计划会是空的（`retranslateCount === 0`），点了必然 409。
   // 前端先拦：与「更多操作」菜单的 `noOriginal` 分支同一口径。
@@ -178,6 +183,21 @@ export function ChapterCard({
                 onClick={() => {
                   close();
                   onOpenDir();
+                }}
+              />
+              <MenuItem
+                icon={<Play size={13} />}
+                label="续做本话"
+                sub={pendingCount > 0 ? `待续做 ${pendingCount} 张` : '没有待续做的页'}
+                disabled={busy || pendingCount === 0}
+                title={
+                  pendingCount === 0
+                    ? '本话没有「有原图、缺译文」的页'
+                    : `把待译的 ${pendingCount} 页加入队列（不覆盖已有译文）`
+                }
+                onClick={() => {
+                  close();
+                  onResume();
                 }}
               />
               <MenuItem

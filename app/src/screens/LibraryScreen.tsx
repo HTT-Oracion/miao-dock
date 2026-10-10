@@ -34,7 +34,7 @@ import {
   pageSlice,
 } from '@tools';
 import { useDebouncedValue } from '@hooks/useDebouncedValue';
-import { Btn, MenuButton, MenuItem, Notice } from '@components/units';
+import { Btn, ContextMenu, MenuButton, MenuItem, MenuSeparator, Notice, Tooltip } from '@components/units';
 import {
   bookFirstImagePath,
   chapterFilePath,
@@ -829,11 +829,14 @@ function Compare({
  */
 function DeleteComicModal({
   comic,
+  kind,
   busy,
   onCancel,
   onConfirm,
 }: {
   comic: ComicEntry;
+  /** 删除口径：大类 = 整本；未归并单话 = 本话（只影响说法，端点是同一个） */
+  kind: '整本' | '本话';
   busy: boolean;
   onCancel: () => void;
   onConfirm: (deleteFiles: boolean) => void;
@@ -842,7 +845,9 @@ function DeleteComicModal({
   return (
     <div className="modal-mask" onClick={busy ? undefined : onCancel}>
       <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-title">删除「{comic.comicName}」</div>
+        <div className="modal-title">
+          删除{kind}「{comic.comicName}」
+        </div>
         <div className="modal-body">
           这会把该漫画从漫画库里移除。目录位置：
           <div className="pathpreview" style={{ margin: '6px 0 10px' }}>
@@ -991,17 +996,33 @@ export function LibraryScreen({
   const [chapterNo, setChapterNo] = useState<number | null>(null);
   /** 屏 B（话列表）的分页；与页网格分页各自独立 —— 两屏来回翻页互不干扰 */
   const [chPage, setChPage] = useState(1);
-  const [toDelete, setToDelete] = useState<ComicEntry | null>(null);
+  /**
+   * 待删除的目标 + **删除口径**（大类 = 删除整本；未归并单话 = 删除本话）。
+   *
+   * 两种口径走的是同一个端点（`POST /library/{name}/delete`，主语都是顶层目录），
+   * 分开的只是**说法** —— 单话没有"整本"可言，话都删了当然就是删这一话；
+   * 弹窗标题跟着口径走，否则用户在删单话时看到「删除整本」会以为自己删多了。
+   */
+  const [toDelete, setToDelete] = useState<{ comic: ComicEntry; kind: '整本' | '本话' } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [unhiding, setUnhiding] = useState(false);
   // 三个新增弹窗：新建 / 编辑信息 / 归并（各自一个"是否打开"+ 一个提交中标记）
   const [newBookOpen, setNewBookOpen] = useState(false);
   const [editBook, setEditBook] = useState<BookEntry | null>(null);
-  const [mergeTarget, setMergeTarget] = useState<ChapterEntry | null>(null);
+  /** 归并弹窗的**源目录名**（左栏单话 / 右键菜单「归并到」共用这一个入口） */
+  const [mergeTarget, setMergeTarget] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [savingMeta, setSavingMeta] = useState(false);
   const [merging, setMerging] = useState(false);
+  /**
+   * 右键菜单（漫画操作的家）：记录**被右键的那一项**与弹出坐标。
+   *
+   * 头部按钮只留「刷新」之后，打开目录 / 续做 / 返工 / 编辑信息 / 删除这些动作全部
+   * 迁到这里 —— 右键的是**哪一项就操作哪一项**，与"当前选中"无关（右键不改选中，
+   * 这是文件管理器的通用惯例；混在一起会出现"右键 A 却删了 B"的事故）。
+   */
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; item: LibItem } | null>(null);
   /** 搜索态里被收起的**分组键**集合（设计稿 §7.2：折叠不跨搜索保留，见下方 effect） */
   const [foldedGroups, setFoldedGroups] = useState<Set<string>>(() => new Set());
 
@@ -1222,10 +1243,6 @@ export function LibraryScreen({
   const actionBase = inChapter
     ? `/library/${encodeURIComponent(currentBook.bookName)}/chapters/${chapterNo}`
     : `/library/${encodeURIComponent(current?.comicName ?? '')}`;
-  /** 操作目标的**归因名**（Toast 用）：话要说清是哪部书的哪一话 */
-  const actionName = inChapter
-    ? `《${currentBook.bookName}》第 ${chapterNo} 话`
-    : (current?.comicName ?? '');
   /** 头部卡的标题与路径：话内显示话号 + 该话目录，否则显示目录名 + 顶层目录 */
   const headName = inChapter ? `第 ${chapterNo} 话` : (current?.comicName ?? '');
   const headPath = inChapter ? (currentChapter?.absDir ?? '') : (current?.outputDir ?? '');
@@ -1322,7 +1339,7 @@ export function LibraryScreen({
   };
 
   const confirmDelete = async (deleteFiles: boolean) => {
-    const target = toDelete;
+    const target = toDelete?.comic;
     if (!target) return;
     setDeleting(true);
     try {
@@ -1342,6 +1359,10 @@ export function LibraryScreen({
       setDeleting(false);
     }
   };
+
+  /** `LibItem.key` → 顶层目录条目（comics 含**所有**顶层目录，大类也在内） */
+  const comicOf = (key: string): ComicEntry | null =>
+    comics.find((c) => c.comicName === key) ?? null;
 
   const doUnhide = async (name: string) => {
     setUnhiding(true);
@@ -1429,7 +1450,7 @@ export function LibraryScreen({
     if (!src) return;
     setMerging(true);
     try {
-      await apiPost(`/library/${encodeURIComponent(src.dirName)}/merge`, { target, no });
+      await apiPost(`/library/${encodeURIComponent(src)}/merge`, { target, no });
       onToast(`已归并为《${target}》第 ${no} 话`, 'good');
       setMergeTarget(null);
       onRefresh();
@@ -1476,7 +1497,8 @@ export function LibraryScreen({
     );
   }
 
-  // 「更多操作」菜单的两组文案：与 Compare 同源口径（见 retranslateMeta / resumeMeta）
+  // 「更多操作」菜单的两组文案：与 Compare 同源口径（见 retranslateMeta / resumeMeta）。
+  // 头部不再放菜单后，它们服务的是**右键菜单里被选中的那一项**（是当前项时才有真数据）。
   const rtInfo = retranslateMeta(
     rtPlan,
     rtBusy,
@@ -1484,6 +1506,112 @@ export function LibraryScreen({
     rtPlan !== null && rtPlan.retranslateCount === 0,
   );
   const resumeInfo = resumeMeta(pending, busy);
+
+  /**
+   * 右键菜单的内容（漫画级动作的**唯一**入口）。
+   *
+   * 项序按「看得见的在前、破坏性的在后」：打开目录 / ─ / 继续翻译 / 重新翻译 /
+   * 编辑信息（大类）或 归并到（单话）/ 删除（大类「删除整本」、单话「删除本话」）。
+   *
+   * 预检文案（待续做几张 / 会覆盖几张）只有**当前项**有（计划是为 current 拉的）；
+   * 右键别的项时不预取 —— 动作本身会先选中语义地打向该项的端点，服务端是权威校验，
+   * 拒绝的理由会经 `errorText` 进 Toast。为一个右键菜单给库里每项都拉一遍计划，不值。
+   */
+  const renderComicMenu = (it: LibItem, close: () => void): ReactElement => {
+    const comic = comicOf(it.key);
+    const base = `/library/${encodeURIComponent(it.key)}`;
+    const isCur = it.key === current?.comicName;
+    const busyRt = rtBusy || reworkingComics.has(it.key);
+    const rtSub = isCur ? rtInfo.sub : busyRt ? '返工中' : undefined;
+    const resSub = isCur ? resumeInfo.sub : undefined;
+    /** 右键项对应的**大类**（编辑信息需要 manifest 数据，单话没有 ⇒ null） */
+    const bookOfItem = it.merged ? (books.find((b) => b.bookName === it.key) ?? null) : null;
+    return (
+      <>
+        <MenuItem
+          icon={<FolderUp size={13} />}
+          label="打开目录"
+          disabled={!comic}
+          title="在文件管理器里打开这个漫画的目录"
+          onClick={() => {
+            close();
+            if (comic) openPath(comic.outputDir).catch((e: unknown) => onToast(errorText(e), 'bad'));
+          }}
+        />
+        <MenuSeparator />
+        <MenuItem
+          icon={<Play size={13} />}
+          label="继续翻译"
+          sub={resSub}
+          disabled={busy || (isCur && resumeInfo.disabled)}
+          title={isCur ? resumeInfo.title : '把待译的页加入队列（只补缺的，不覆盖已有译文）'}
+          onClick={() => {
+            close();
+            void resume(base, it.name);
+          }}
+        />
+        <MenuItem
+          icon={<RotateCcw size={13} />}
+          label="重新翻译"
+          sub={rtSub}
+          disabled={busyRt || (isCur && rtInfo.blocked)}
+          title={
+            busyRt
+              ? '该漫画已有任务在队列中，等它跑完再返工'
+              : isCur
+                ? rtInfo.title
+                : '重新翻译全部页（覆盖已有译文，原图不动）'
+          }
+          onClick={() => {
+            close();
+            void retranslate(base, it.name);
+          }}
+        />
+        {it.merged ? (
+          <MenuItem
+            icon={<Pencil size={13} />}
+            label="编辑信息"
+            disabled={!bookOfItem}
+            title={
+              bookOfItem
+                ? '改封面（本地图片 / 取第 1 话首图 / 移除）与作者'
+                : '漫画信息还没就绪，稍后再试'
+            }
+            onClick={() => {
+              close();
+              if (bookOfItem) setEditBook(bookOfItem);
+            }}
+          />
+        ) : books.length > 0 ? (
+          <MenuItem
+            icon={<GitMerge size={13} />}
+            label="归并到"
+            sub="挂到某本漫画的某一话"
+            title="把这一话物理移动进某个大类目录（不可逆）"
+            onClick={() => {
+              close();
+              setMergeTarget(it.key);
+            }}
+          />
+        ) : null}
+        <MenuItem
+          icon={<Trash2 size={13} />}
+          label={it.merged ? '删除整本' : '删除本话'}
+          danger
+          disabled={!comic}
+          title={
+            it.merged
+              ? '从漫画库删除整部漫画（可选择是否连本地文件一起删）'
+              : '从漫画库删除这一话（可选择是否连本地文件一起删）'
+          }
+          onClick={() => {
+            close();
+            if (comic) setToDelete({ comic, kind: it.merged ? '整本' : '本话' });
+          }}
+        />
+      </>
+    );
+  };
 
   return (
     <div className="lib">
@@ -1569,7 +1697,7 @@ export function LibraryScreen({
                               </button>
                               {r.mergeable ? (
                                 <span className="grp-row-act">
-                                  <Btn kind="ghost" size="sm" onClick={() => setMergeTarget(r.target)}>
+                                  <Btn kind="ghost" size="sm" onClick={() => setMergeTarget(r.target.dirName)}>
                                     <GitMerge size={12} />
                                     归并
                                   </Btn>
@@ -1594,6 +1722,10 @@ export function LibraryScreen({
                     type="button"
                     className={it.key === current?.comicName ? 'lib-item is-active' : 'lib-item'}
                     onClick={() => setActive(it.key)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setCtxMenu({ x: e.clientX, y: e.clientY, item: it });
+                    }}
                   >
                     <CoverThumb
                       path={it.thumbPath}
@@ -1604,9 +1736,9 @@ export function LibraryScreen({
                       radius={LIBRARY.cover.thumb.radius}
                     />
                     <span className="lib-item-text">
-                      <span className="lib-item-name" title={it.name}>
-                        {it.name}
-                      </span>
+                      <Tooltip label={it.name}>
+                        <span className="lib-item-name">{it.name}</span>
+                      </Tooltip>
                       <span className="lib-item-meta">
                         <span className="num">{it.pageCount}</span> 张
                       </span>
@@ -1627,6 +1759,10 @@ export function LibraryScreen({
                   type="button"
                   className={it.key === current?.comicName ? 'lib-item is-active' : 'lib-item'}
                   onClick={() => setActive(it.key)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setCtxMenu({ x: e.clientX, y: e.clientY, item: it });
+                  }}
                 >
                   <CoverThumb
                     path={it.thumbPath}
@@ -1637,9 +1773,9 @@ export function LibraryScreen({
                     radius={LIBRARY.cover.thumb.radius}
                   />
                   <span className="lib-item-text">
-                    <span className="lib-item-name" title={it.name}>
-                      {it.name}
-                    </span>
+                    <Tooltip label={it.name}>
+                      <span className="lib-item-name">{it.name}</span>
+                    </Tooltip>
                     <span className="lib-item-meta">
                       {it.author || AUTHOR_FALLBACK} · <span className="num">{it.chapterCount}</span> 话 ·{' '}
                       <span className="num">{it.pageCount}</span> 页
@@ -1711,77 +1847,13 @@ export function LibraryScreen({
                     : `${currentBook.author || AUTHOR_FALLBACK} · ${currentBook.chapterCount} 话 · ${currentBook.totalPages} 页`}
                 </span>
               ) : null}
-              <Btn
-                kind="ghost"
-                onClick={() => openPath(headPath).catch((e: unknown) => onToast(errorText(e), 'bad'))}
-              >
-                <FolderUp size={14} />
-                打开目录
-              </Btn>
               <Btn kind="ghost" onClick={onRefresh} title="重新扫描漫画库">
                 <RefreshCw size={14} />
                 刷新
               </Btn>
-              {/* 低频动作收进下拉；删除仍走 DeleteComicModal（含 deleteFiles 勾选）。
-                  话内（屏 C）只留本话的续做/返工 —— 「编辑信息 / 删除整本」的主语是整部，
-                  在话的头部出现只会让人以为删的是这一话 */}
-              <MenuButton label="更多操作">
-                {(close) => (
-                  <>
-                    <MenuItem
-                      icon={<Play size={13} />}
-                      label="继续翻译"
-                      sub={resumeInfo.sub}
-                      disabled={resumeInfo.disabled}
-                      title={resumeInfo.title}
-                      onClick={() => {
-                        close();
-                        void resume(actionBase, actionName);
-                      }}
-                    />
-                    <MenuItem
-                      icon={<RotateCcw size={13} />}
-                      label="重新翻译"
-                      sub={rtInfo.sub}
-                      disabled={rtInfo.blocked}
-                      title={rtInfo.title}
-                      onClick={() => {
-                        close();
-                        void retranslate(actionBase, actionName);
-                      }}
-                    />
-                    {inChapter ? null : (
-                      <>
-                        <MenuItem
-                          icon={<Pencil size={13} />}
-                          label="编辑信息"
-                          sub={currentBook ? undefined : '未归并单话没有漫画信息'}
-                          disabled={!currentBook}
-                          title={
-                            currentBook
-                              ? '改封面（本地图片 / 取第 1 话首图 / 移除）与作者'
-                              : '未归并的单话还没有漫画信息，先把它归并进某本漫画'
-                          }
-                          onClick={() => {
-                            close();
-                            if (currentBook) setEditBook(currentBook);
-                          }}
-                        />
-                        <MenuItem
-                          icon={<Trash2 size={13} />}
-                          label="删除整本"
-                          danger
-                          title="从漫画库删除（可选择是否连本地文件一起删）"
-                          onClick={() => {
-                            close();
-                            setToDelete(current);
-                          }}
-                        />
-                      </>
-                    )}
-                  </>
-                )}
-              </MenuButton>
+              {/* 头部按钮只留「刷新」：打开目录 / 续做 / 返工 / 编辑信息 / 删除 / 归并
+                  全部迁往**左栏漫画项的右键菜单**（renderComicMenu）—— 操作的主语是
+                  "被右键的那部漫画"，比"头部当前显示的这部"更不容易错位 */}
             </div>
 
             {currentBook && !inChapter ? (
@@ -1805,6 +1877,13 @@ export function LibraryScreen({
                         }}
                         onOpenDir={() =>
                           openPath(ch.absDir).catch((e: unknown) => onToast(errorText(e), 'bad'))}
+                        onResume={() => {
+                          if (ch.no === null) return; // 无话号的目录拼不出话级端点，卡片入口也已禁用
+                          void resume(
+                            `/library/${encodeURIComponent(currentBook.bookName)}/chapters/${ch.no}`,
+                            `《${currentBook.bookName}》第 ${ch.no} 话`,
+                          );
+                        }}
                         onRetranslate={() => {
                           if (ch.no === null) return; // 无话号的目录拼不出话级端点，卡片入口也已禁用
                           void retranslate(
@@ -1944,7 +2023,8 @@ export function LibraryScreen({
 
       {toDelete ? (
         <DeleteComicModal
-          comic={toDelete}
+          comic={toDelete.comic}
+          kind={toDelete.kind}
           busy={deleting}
           onCancel={() => setToDelete(null)}
           onConfirm={(deleteFiles) => void confirmDelete(deleteFiles)}
@@ -1987,12 +2067,18 @@ export function LibraryScreen({
 
       {mergeTarget ? (
         <MergeModal
-          source={mergeTarget.dirName}
+          source={mergeTarget}
           books={books}
           busy={merging}
           onCancel={() => setMergeTarget(null)}
           onConfirm={(target, no) => void mergeInto(target, no)}
         />
+      ) : null}
+
+      {ctxMenu ? (
+        <ContextMenu x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)}>
+          {(close) => renderComicMenu(ctxMenu.item, close)}
+        </ContextMenu>
       ) : null}
     </div>
   );

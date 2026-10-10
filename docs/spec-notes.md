@@ -5449,3 +5449,49 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 永不到终态，属预期的红，机制按 `roundErr` 判红处理）。`check:music` 218/1、`check:docs`
 14/2，与 D-121 基线一致。AGENTS.md §1 的命令注释与屏内件示例已同步（README 目录节加
 `library/`；`project_rules.md` 为泛化表述无需改）。
+## D-124 · 话号一位小数 + 漫画操作迁往右键菜单 + units 入册 Tooltip/ContextMenu（2026-10-11）
+
+**需求五件**：① 话数支持一位小数（14.1）；② 单话「归并到」入口；③ 漫画标题 Tooltip
+（可复制）封装为复用件；④ 单话删除标签「删除整本」→「删除本话」；⑤ 头部按钮只留「刷新」，
+其余动作迁往**左栏漫画项右键菜单**。
+
+**① 话号小数的口径（🔴 校验只有一份定义）**
+
+- `config.CHAPTER_DIR_RE` 放宽为 `(\d{1,3}(?:\.[1-9])?)_第(\d{1,3}(?:\.[1-9])?)话`。
+  小数位**拒 0 拒两位**：`14.0` 就是 `14`（放进来会与整数话号撞目录）、`14.10` 无意义。
+  前缀段放宽顺带修掉一个**潜伏缺陷**：旧 `\d{2}_第` 认不出第 100 话（目录 `100_第100话`
+  前缀 3 位）—— 话号上限 999 却只有 1–99 能被扫描识别。
+- 新增 `config.isValidChapterNo(v)`：范围 1–999.9 + 「整数或恰一位非 0 小数」。
+  `resolveChapterDir`（URL 404 语义在前）与 `readManifest` 的 `episodes[]` 过滤**共用这一份**。
+- `chapterDirName` **一字未改**：`String(14.1).padStart(2,'0')` 本来就是 `'14.1'`
+  ⇒ 目录 `14.1_第14.1话`；M7 反证（padStart 被去掉）依然成立。
+- 前端 `tools.chapterNoOf` 同步正则；`padChapterNo` **去掉 Math.floor**（floor 会把
+  预览砍成 `14`，与服务端落盘的 `14.1` 不同字）；MergeModal 校验/报错/顺延（从
+  `floor(no)+1` 找起）、默认话号 `floor(max)+1` 同步。
+- **取证**：`check:lib-manage` 加 N7/N7b（14→16 条）：真服务上归并 `no=14.1` → 物理目录、
+  `episodes` JSON 数 14.1、`/chapters/14.1/retranslate` 寻址到同一话；`14.55` / `14.0` → 404。
+
+**②⑤ 右键菜单是漫画级动作的唯一入口**
+
+- `units/ContextMenu`（Portal + fixed、夹进视口、点外部/Esc/滚动收起）+ `MenuSeparator`；
+  菜单项**复用 MenuItem**（同一应用菜单不长两副面孔）。头部只留「刷新」。
+- 菜单挂在**左栏漫画项**上，主语是「被右键的那一项」，与「当前选中」无关（右键不改选中）。
+  项序：打开目录 / ─ / 继续翻译 / 重新翻译 / 编辑信息（大类）或 归并到（单话）/
+  删除整本·本话。预检文案（待续做几张/覆盖几张）只有当前项有 —— 不给库里每项预拉计划，
+  服务端是权威校验，拒绝理由经 `errorText` 进 Toast。
+- 屏 C 话级动作的落点：话卡菜单补「续做本话」（头部菜单撤走后话级 resume 的家），
+  待续做张数由集合差算（G-10）。
+- `DeleteComicModal` 加 `kind: '整本'|'本话'`（只影响说法，端点同一个）；
+  `mergeTarget` 收窄为源目录名字符串。
+
+**③ Tooltip**：`units/Tooltip`（Portal + fixed，250ms 延迟）。**气泡可交互**：
+`pointer-events:none` 与「方便复制漫画名」直接矛盾 —— 悬停挪进气泡时由气泡自己续命
+（`keep`），`user-select:text` 让文字可选中。
+
+**④ 入册纪律**：units MANIFEST/BARREL_EXPORTS 同步（恰有 16 文件 / 22 导出）；
+新组件类名全部 `ui-` 前缀；`.ui-tooltip` / `.ui-menu-sep` / `.ui-ctx` 落 `components.scss`
+（units 语义的样式不进 manga.scss）。
+
+**取证**：tsc 0 错误；vite build EXIT=0；`check:units` 44/0（反证 58/58）；
+`check:retranslate` 12/0；`check:lib-manage` **16/0**（反证 8/8，四源文件字节还原）；
+`check:music` 218/1、`check:docs` 14/2 —— 均为 D-121 基线红，无新增。
