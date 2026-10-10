@@ -111,6 +111,59 @@
   color: var(--md-pink);
 }
 
+/* ---- ② 命令菜单（MenuButton）----
+ * 触发按钮复用 `.btn .btn-ghost`（`.ui-menu-btn` 只挂状态）；弹层走 Portal + fixed，
+ * 位置由组件按按钮实时算，故这里只描述外观。 */
+.ui-menu-btn[aria-expanded='true'] svg { transform: rotate(180deg); }
+.ui-menu-badge {
+  margin-left: 2px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--md-blue);
+  background: var(--md-blue-soft, var(--md-line-soft));
+}
+.ui-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 200px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: var(--md-radius-sm);
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  box-shadow: 0 12px 32px rgba(12, 9, 24, 0.22);
+}
+.ui-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: var(--md-radius-xs);
+  color: var(--md-ink);
+  font-size: 12px;
+  text-align: left;
+}
+.ui-menu-item:hover:not(:disabled) { background: var(--md-line-soft); }
+.ui-menu-item:disabled {
+  color: var(--md-muted);
+  cursor: not-allowed;
+}
+.ui-menu-item.is-danger:hover:not(:disabled) { color: var(--md-error); }
+.ui-menu-label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.ui-menu-sub {
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+
 /*
  * 滑杆：轨道 5px / 圆角 3 / 11×11 粉圆拇指 —— 与音乐屏的 .music-prog-bar、.music-vol
  * **逐值一致**。同一个应用里不该出现两种滑条，所以几何直接沿用，不另起一套。

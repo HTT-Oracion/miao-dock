@@ -36,6 +36,7 @@
 - `app/src/components/` —— 应用级组件（Sidebar / Toolbar / ViewTabs / QuitConfirm）。
 - `app/src/screens/<屏>/` —— 屏内件（`settings/parts.tsx`、`music/shared.tsx`）。
 - `app/src/hooks/` —— **hooks 唯一收口**：`use*` 命名的 hook 一律住这里（业务 hook 进桶文件 `index.ts`，经 `@hooks` 引入；纯行为 hook 如 `useEsc`、`useCoverColor` 单放同目录）。旧的 `src/hooks.ts` 单文件**不得**与目录并存 —— 模块解析会**静默二选一**（`HOOKS.layout` 盯死）。
+- `app/src/tools/` —— **共享纯函数收口**（与 `components/` 同级，经 `@tools` 引入）：跨屏复用、与业务类型解耦的小工具（格式化 / 分页 / 模糊匹配 / UUID / MIME 嗅探 / 重名规范化 …）。只服务单个屏的逻辑仍留屏内。
 - **按「依赖什么」定归属，不按「被用几次」定归属。** 抽离规则与反面纪律（什么**不**该抽）见 `docs/spec-notes.md` D-34 与《09》§2.2。
 
 **服务端模块目录（硬规则，ver2.2 起，见 `docs/spec-notes.md` D-101）**：
@@ -70,6 +71,14 @@
    - **模块** = 改动主要落在的域：产品模块（`music` / `settings` / `manga`）· 层（`app` / `service` / `engine` / `e2e`）· `docs` 等。
    - `功能简述` 说"做了什么"；`+` 后的 `关键点简述` 列本次要点 / 坑（多项用 `+` 或 `·` 分隔）。
    - 例：`feat(manga): 在线翻译来源并入②翻译服务 + 来源分段控件与密钥落盘` · `refactor(service): 拆分 manga/settings 模块目录（music 占位）` · `chore(app): 版本号升到 2.1.0 + 五处版本文件同步`。
+10. **禁止内联长链三元。** 形如 `title={a ? 'x' : b ? 'y' : c ? 'z' : w}` 的多级内联三元必须抽成
+    **具名变量或早返回函数**（范式：`LibraryScreen.tsx` 的 `retranslateMeta` / `resumeMeta` 返回
+    `{ title, sub, blocked }`），让每个分支可读、可单测。
+11. **注释只描述功能。** 注释写"做了什么"即可；**只有核心改动**（跨文件契约 / 易踩坑 / 反直觉处）
+    才追加"为什么"，且保持精简。禁止大段复述代码或写流水账。
+12. **通用 UI 一律复用 `components/units/` 单元。** 下拉命令菜单用 `MenuButton` + `MenuItem`、
+    盒式提示用 `Notice`、按钮用 `Btn` —— 不在各屏自造同类 DOM / 样式。
+    各屏**业务样式**件（列表项 / Tab / 卡片 / 看板单元等）仍留屏内，不强套通用件（归属判据同 §3）。
 
 ## 3. 验收命令（改完必须跑，绿色才算交付）
 
@@ -106,7 +115,7 @@ npm run check:e10[:refute]    # E10 安全：只监听回环 / 非图片字节�
 #   真实漫画站 31 张 + 真引擎，19 条断言，约 10 分钟；产物落该仓 `.temp-translate-test/`（已 gitignore）。
 #   脚本自己拉起并收尾 box-service / 引擎 / ③ / `:8001` 执行器。
 node e2e/service/llm-real-timing.mjs  # 真 ③（llama-server）冷启动与内存实测（**真权重，分钟级，不进常规门**）
-npm run check:music[:refute]  # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 215 条 / 反证 182 条
+npm run check:music[:refute]  # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 216 条 / 反证 182 条
 npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3「准备中」时间线 + ④ 功能梳理（侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / 行内 def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）176 条 / 反证 120 条
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 看图缩放 / 样式分层 44 条 / 反证 58 条
 npm run check:bundle[:refute] # Windows 打包配置钉子 4 条 / 反证 4 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；源码级，不起进程）

@@ -20,6 +20,7 @@ export default defineConfig({
       "@screens": aliasPath("./src/screens"),
       "@music": aliasPath("./src/music"),
       "@hooks": aliasPath("./src/hooks"),
+      "@tools": aliasPath("./src/tools"),
       "@": aliasPath("./src"),
     },
   },

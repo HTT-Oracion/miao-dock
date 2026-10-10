@@ -5,7 +5,7 @@ import type { ThemeMode } from '@/theme/tokens';
 import { LIBRARY, QUEUE_TABLE } from '@/theme/tokens';
 import type { TaskRow } from '@/types';
 import { STATUS_DOT_VAR, STATUS_LABEL, SOURCE_LABEL } from '@/types';
-import { Dot, MagicCircle } from '@components/units';
+import { Btn, Dot, MagicCircle } from '@components/units';
 import { QuitConfirm } from '@components/QuitConfirm';
 import { emphasis } from '@screens/settings/parts';
 
@@ -70,6 +70,13 @@ const SAMPLE_ROWS: TaskRow[] = [
   },
 ];
 
+/** 样张行动作：与真表同构（状态 → 按钮），避免内联长链三元 */
+function sampleActionBtn(status: TaskRow['status']) {
+  if (status === 'running' || status === 'queued') return <Btn kind="danger" size="sm">取消</Btn>;
+  if (status === 'failed' || status === 'partial_failed') return <Btn kind="primary" size="sm">重试</Btn>;
+  return <Btn kind="ghost" size="sm">查看</Btn>;
+}
+
 /**
  * 规格样张 —— 以离屏方式渲染一份队列表、空态与漫画库几何件。
  *
@@ -125,13 +132,9 @@ export function SpecFixture() {
                 <span>{STATUS_LABEL[t.status]}</span>
               </div>
               <div className="qt-c-action" style={{ width: QUEUE_TABLE.colAction }}>
-                {t.status === 'running' || t.status === 'queued' ? (
-                  <span className="btn btn-danger btn-sm">取消</span>
-                ) : t.status === 'failed' || t.status === 'partial_failed' ? (
-                  <span className="btn btn-primary btn-sm">重试</span>
-                ) : (
-                  <span className="btn btn-ghost btn-sm">查看</span>
-                )}
+                {sampleActionBtn(t.status)}
+                {/* R3：每行尾部都有 [更多]（打开目录 / 删除）—— 样张与真表同构 */}
+                <Btn kind="ghost" size="sm">更多</Btn>
               </div>
             </div>
           ))}
@@ -238,9 +241,9 @@ export function SpecCheckBlock({
   return (
     <div className="set-spec">
       <div className="set-spec-actions">
-        <button type="button" className="btn btn-primary" onClick={onRun}>
+        <Btn kind="primary" onClick={onRun}>
           运行自检
-        </button>
+        </Btn>
         {results ? (
           <span className="muted set-spec-count">
             通过 <span className="num">{results.length - failed}</span> /{' '}

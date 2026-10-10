@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { save } from '@tauri-apps/plugin-dialog';
-import { Btn, Dot } from '@components/units';
+import { Btn, Dot, Notice } from '@components/units';
 import { errorText, serviceRestart, writeTextFile } from '@/ipc';
 import type { ServiceStatus } from '@/ipc';
 import { configPairs } from '@screens/settings/engine-state';
@@ -307,11 +307,11 @@ export function EngineDiag({
       </div>
 
       {eng.loadError ? (
-        <div className="notice is-bad set-diag-note">
+        <Notice kind="bad" className="set-diag-note">
           读不到引擎状态：{eng.loadError}
           <br />
           界面<b>不显示上一次的旧值</b> —— 诊断视图最坏的形态就是「一份看起来正常的快照」。
-        </div>
+        </Notice>
       ) : null}
 
       {/* 折叠区：3 个区块 + 3 个操作**一个不少**（折叠只是默认收起，不是删内容） */}

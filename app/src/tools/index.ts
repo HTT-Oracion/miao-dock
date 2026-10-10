@@ -1,4 +1,9 @@
-/** 展示层的小工具。纯函数，无副作用 —— 便于在「规格自检」里单独验证。 */
+/**
+ * 共享工具函数（纯函数，无副作用、不 import 业务层）—— 与 `components/` 同级。
+ *
+ * 放这里的判据：**跨屏可复用**且与业务类型解耦；只服务单个屏的逻辑仍留在屏内。
+ * 纯函数便于在「规格自检」里单独验证。
+ */
 
 /** 人类可读容量。X-D1 副标题的「占 X GB」与左栏容量都走这里，保证两处口径一致 */
 export function formatBytes(n: number): string {
@@ -70,6 +75,23 @@ export function fuzzyMatch(text: string, query: string): boolean {
     if (t[j] === q[i]) i++;
   }
   return i === q.length;
+}
+
+/**
+ * 仅用于**重名校验**的轻量规范化（防呆比对）。
+ *
+ * 权威规范化只在服务端执行（契约 §6），客户端**不**用它拼落盘路径 —— 这里只做
+ * 「和库里的目录名像不像同一本」的近似比对：NFKC + 剥 Windows 非法字符 + 折叠空白。
+ * 与服务端 `normalizeComicName` 同源起手，命中即拦；宁可偶尔多拦一次（提示用户），
+ * 也不要因为口径差一点点就漏掉重复提交。
+ */
+export function dupKey(raw: string): string {
+  return raw
+    .normalize('NFKC')
+    .replace(/[/\\:*?"<>|]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
 }
 
 /** 把数组切成定长页，返回第 `page`（1 起）页的内容；越界返回空数组 */

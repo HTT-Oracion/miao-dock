@@ -5,7 +5,7 @@ import { errorText, openPath, serviceStart, serviceStop } from '@/ipc';
 import type { ServiceStatus } from '@/ipc';
 import type { ThemeMode } from '@/theme/tokens';
 import { stateView } from '@/nav';
-import { Btn, ColorPicker, Dot, NumberInput, Range, Select, Swatches, Switch } from '@components/units';
+import { Btn, ColorPicker, Dot, Notice, NumberInput, Range, Select, Swatches, Switch } from '@components/units';
 import { CtlNote, GroupNote, PendingRow, ReadOnly, Row, RowNote, SubTitle } from '@screens/settings/parts';
 import { SKINS, QUALITY_OPTIONS, LYRICS_SIZE, LYRICS_COLORS, LYRICS_MODE_OPTIONS } from '@music/player-options';
 import { useMusicStore } from '@music/store';
@@ -287,7 +287,7 @@ export function TranslateSection({
           )}
         </Row>
         {status?.last_error ? (
-          <div className="notice is-bad set-row-note">最近一次错误：{status.last_error}</div>
+          <Notice kind="bad" className="set-row-note">最近一次错误：{status.last_error}</Notice>
         ) : null}
 
         {/*
@@ -328,14 +328,9 @@ export function TranslateSection({
         </Row>
 
         <Row item={itemOf(pairing, 'token-pairing')}>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={!status?.token}
-            onClick={() => void copyToken()}
-          >
+          <Btn kind="primary" disabled={!status?.token} onClick={() => void copyToken()}>
             复制令牌
-          </button>
+          </Btn>
         </Row>
         {/*
           令牌值渲染成**只读输入框**（拍板：原先是 `<code>`）。
@@ -377,9 +372,7 @@ export function TranslateSection({
       <div className="set-group">
         <SubTitle>推理引擎</SubTitle>
         {eng.loadError ? (
-          <div className="notice is-bad set-row-note">
-            读不到引擎选项：{eng.loadError}
-          </div>
+          <Notice kind="bad" className="set-row-note">读不到引擎选项：{eng.loadError}</Notice>
         ) : null}
 
         {/*
@@ -476,9 +469,7 @@ export function TranslateSection({
           越是这样越要说清楚，否则用户会以为自己选的 CUDA 真的在跑。
         */}
         {o?.accel.mismatch ? (
-          <div className="notice is-bad set-row-note">
-            {o.accel.mismatch} —— 已按硬件探测值执行（{o.accel.reason}）
-          </div>
+          <Notice kind="bad" className="set-row-note">{o.accel.mismatch} —— 已按硬件探测值执行（{o.accel.reason}）</Notice>
         ) : null}
 
         {/*

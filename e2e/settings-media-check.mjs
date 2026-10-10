@@ -1120,7 +1120,8 @@ add('ENGINE.wiring.tierWarnFromServer', 'ENGINE', (ctx) => {
 });
 add('ENGINE.wiring.accelMismatch', 'ENGINE', (ctx) => {
   const body = tsBody(ctx) ?? '';
-  const ok = body.includes('accel.mismatch') && /notice is-bad/.test(body) && /accel\.reason/.test(body);
+  // 红条既可以写成裸 `<div className="notice is-bad">`，也可以是封装后的 `<Notice kind="bad">`；两者渲染等价。
+  const ok = body.includes('accel.mismatch') && /(?:notice is-bad|<Notice kind="bad")/.test(body) && /accel\.reason/.test(body);
   return {
     ok,
     detail: ok

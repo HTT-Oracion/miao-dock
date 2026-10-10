@@ -27,7 +27,8 @@ miao-dock/
 │   ├── src-tauri/src/lyrics_window.rs  桌面歌词**独立置顶窗**
 │   ├── src/screens/  六个屏入口：投放 / 队列 / 漫画库 / 音乐 / 设置 / 未就绪（`music/`·`lyrics/`·`settings/` 为屏内件）
 │   ├── src/music/    音乐领域态（zustand store · ipc · platform · 播放器选项）
-│   └── src/components/units/  通用 UI 单元（判据：**不 import 业务层**）
+│   ├── src/components/units/  通用 UI 单元（判据：**不 import 业务层**）
+│   └── src/tools/    共享纯函数（`@tools`：格式化 / 分页 / 模糊匹配 / UUID / MIME 嗅探），**不 import 业务层**
 ├── service/      box-service —— **唯一翻译入口**：鉴权 / 串行队列 / 编号分配 / 落盘（Node，127.0.0.1:5180–5190）
 │   ├── src/        **产品代码**：`server.mjs` 装配路由 · `config.mjs` / `errors.mjs` / `engine-client.mjs`（引擎适配，唯一耦合点）等**跨模块底座**
 │   │   ├── manga/     漫画翻译域：`store.mjs` 队列与落盘 · `image.mjs` · `names.mjs` · `sse.mjs`
@@ -182,7 +183,7 @@ npm run check:models          # S3 模型下载器 38 条 / 反证 6 条（本�
 npm run check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）
 npm run check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run check:contract        # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status 77 条（反证：check:contract:refute）
-npm run check:music           # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 215 条（反证：check:music:refute）
+npm run check:music           # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 216 条（反证：check:music:refute）
 npm run check:settings        # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3 裁定结果 + ④ 功能梳理（侧栏标签 / 存储占用 / 第三方许可 / def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）176 条（反证：check:settings:refute，120 条）
 npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 看图缩放 / 样式分层 44 条（反证：check:units:refute）
 npm run check:stall           # U10② 引擎卡死：「静默有上界 + 每次尝试留痕 + 进行中落盘」7 条 / 反证 3 条（mock 引擎对指定 seq「永不回包」）

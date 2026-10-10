@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { musicCacheStats } from '@music/ipc';
 import type { LibraryResponse } from '@/types';
-import { formatBytes } from '@/util';
+import { formatBytes } from '@tools';
 import type { SettingItem } from '@screens/settings/catalog';
 
 /**

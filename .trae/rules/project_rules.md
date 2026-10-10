@@ -25,12 +25,18 @@ alwaysApply: true
 6. **关键节点独立 commit**，提交信息说明该节点内容与**为什么**；跨里程碑修正另起 `fix(...)`。
 7. **非平凡决策与踩过的坑写进 `docs/spec-notes.md`**（编号接续，勿重复占用编号）——
    这是跨工具、跨会话唯一能共享的记忆。
+8. **禁止内联长链三元**：`title={a ? 'x' : b ? 'y' : c ? 'z' : w}` 这类多级三元必须抽成**具名变量 / 早返回函数**
+   （范式见 `LibraryScreen.tsx` 的 `retranslateMeta` / `resumeMeta`），让每个分支可读、可单测。
+9. **注释只描述功能**：说明"做了什么"即可；仅**核心改动**才追加"为什么"，且保持精简 —— 禁止大段复述代码。
+10. **通用 UI 一律走 `components/units/`**：下拉命令菜单用 `MenuButton` + `MenuItem`、盒式提示用 `Notice`、
+    按钮用 `Btn`；不在各屏自造同类 DOM / 样式（各屏业务样式件如列表项 / Tab / 卡片仍留屏内）。
 
 ## 3. 目录分层（《09》§2.2）
 
 - `app/src/components/units/` = 通用 UI 单元，**判据：不 import 业务层**（store / ipc / types / platform / 根 hooks）。类名一律 `ui-` 前缀。
 - `app/src/components/` = 应用级（Sidebar / Toolbar / ViewTabs / QuitConfirm）。
 - `app/src/screens/<屏>/` = 屏内件。
+- `app/src/tools/` = 共享纯函数（经 `@tools` 引入，与 `components/` 同级）：跨屏复用、**不 import 业务层**。
 - **按「依赖什么」定归属，不按「被用几次」**。新组件先看它 import 什么，再决定放哪。
 - 不要为了"复用"把绑定单屏几何/业务类型的件抽走（反面清单见 `docs/spec-notes.md` D-34）。
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import raw from '@/generated/licenses.json';
 import type { SettingItem } from '@screens/settings/catalog';
+import { Notice } from '@components/units';
 
 /**
  * 设置页 ⑤ 关于 ·「第三方许可」项的块（台账 D-84）。
@@ -107,7 +108,7 @@ export function LicensesBlock({ item }: { item: SettingItem }) {
         免责声明用 `notice`（与设置页其它提示同一形状），不用行内小字 ——
         它说的是"这份清单的效力边界"，重要性高于一条脚注。
       */}
-      <div className="notice set-lic-note">{DATA.disclaimer}</div>
+      <Notice className="set-lic-note">{DATA.disclaimer}</Notice>
 
       {open ? (
         <div className="set-lic-list">

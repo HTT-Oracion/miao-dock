@@ -1,4 +1,4 @@
-import { Btn } from '@components/units';
+import { Btn, Notice } from '@components/units';
 import { emphasis } from '@screens/settings/parts';
 import type { SettingItem } from '@screens/settings/catalog';
 import type { EngineState } from '@screens/settings/engine-state';
@@ -63,7 +63,7 @@ export function ModelManageBlock({ item, eng }: { item: SettingItem; eng: Engine
       </div>
 
       {eng.verifyError ? (
-        <div className="notice is-bad set-manage-state">校验失败：{eng.verifyError}</div>
+        <Notice kind="bad" className="set-manage-state">校验失败：{eng.verifyError}</Notice>
       ) : v ? (
         <>
           <div className={v.ok ? 'set-manage-state' : 'set-manage-state is-bad'}>

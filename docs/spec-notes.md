@@ -4960,7 +4960,7 @@ Python `py_compile` 通过 · 渲染冒烟（16/20/24/32px 抗锯齿像素占比
   那份的坑：Sass 对带 `.css` 的 `@use` 静默丢弃）。
 
 **取证**：补丁链反证 15 项全绿（含「D-105 anchor 落在 D-103 产出内」「终态 LXGW 在首位且注释无重复」）·
-`check:engine-patches` 分母 9→10 · 前端 `npm run build` 通过 · `fetch:models --link` 硬链成功（同 inode）。
+`check:engine-patches` 分母 9→10 · 前端 `cd app && npx tsc --noEmit && npx vite build` 通过 · `fetch:models --link` 硬链成功（同 inode）。
 
 > ⚠️ **实验态（本轮未提交）**：若采纳，需同步 `e2e/settings-media-check.mjs` 的 FONT 组
 > （现值断言「`FONT.body` 首位 = `GenJyuuGothicP`」，会被前置 LXGW 打红，含 3 条反证轮的 find 锚点）；
@@ -5046,3 +5046,54 @@ Python `py_compile` 通过 · 渲染冒烟（16/20/24/32px 抗锯齿像素占比
   教训固化：**关键编辑后必须回读**，且「上一次读到的内容」不能当成 Edit 锚点的唯一依据。
 - **状态**：本轮改动仍未提交（等用户验收）。回滚清单：恢复 `genjyuu-gothic-p-medium/`（git 有历史）、
   `tokens.ts` 三行复原、`main.tsx` 加回 import、e2e 三条断言与 5 条变异按 D-108 反向改。
+
+## D-109 · UI 通用单元封装（`MenuButton` / `MenuItem` + `Notice`）+ 三条代码约束（2026-10-10）
+
+**背景（用户三条要求）**：① 内联多级三元（`title={a ? 'x' : b ? 'y' : c ? 'z' : w}`）不可读 → 抽变量；
+② 「点击展开下拉」要封装成组件；③ 注释只描述功能、核心改动才追加。①③ 列入项目约束。
+
+- **新增通用单元**（`app/src/components/units/`，均**不 import 业务层**、类名 `ui-` 前缀）：
+  - `MenuButton` + `MenuItem`：触发按钮 + Portal 弹层，`position:fixed` **脱离 `.content` 的 `overflow:auto` 裁剪**；
+    关闭时机 = 点外部 / Esc（`stopPropagation` 不冒泡）/ 滚动 / 缩放。`children(close)` 让项内点击后收起。
+  - `Notice`：盒式提示条，等价原 `.notice` / `.notice.is-bad`，`kind="bad"` 走错误配色，支持 `className` 追加。
+  - 登记：`units/index.ts` barrel + `e2e/units-structure-check.mjs` 的 `MANIFEST` / `BARREL_EXPORTS`；样式落 `components.scss`。
+- **迁移**：删掉两处各写各的下拉（`QueueScreen` 的 `RowMenu`、`LibraryScreen` 的 `ActionMenu`），统一走 `MenuButton`；
+  10 处 `.notice` 迁到 `<Notice>`（App / DropScreen / LibraryScreen / EngineDiag / LicensesBlock / ModelManageBlock / sections）；
+  2 枚裸 `.btn` 迁到 `<Btn>`（sections 复制令牌 / SpecCheck 运行自检）。旧菜单样式从 `manga.scss` 整体移除。
+  - **未迁**：各屏**业务样式**件（nav-item / ltab / grid-card / lightbox 等 60+ 个自定义 `<button>`）—— 它们绑单屏几何/业务类型，
+    强套 `Btn` 反而错（归属判据同 §3「按依赖定归属」）。
+- **`retranslateMeta` / `resumeMeta`**（`LibraryScreen.tsx`）：把返工/继续翻译菜单的长链三元抽成**早返回函数**，
+  返回 `{ title, sub, blocked }`，Compare 与「更多」菜单**同源**取用。作为约束①的范式。
+- **约束落点**：`AGENTS.md` §2.10/11/12、`.trae/rules/project_rules.md` §2.8/9/10。
+- **取证**：`tsc --noEmit` 0 · `vite build` 通过（构建 CSS 含全部 `.ui-menu*` 与 `[aria-expanded=true]` 旋转规则）·
+  `check:units` 44/0 · `check:settings` 176/0 · `check:ia` 32/0 · `check:lib-manage` 8/0 · `check:retranslate` 12/0。
+- ⚠️ **连带修复见 D-110**（`dupKey` 的正则含引号触发 e2e 剥注释器全局失同步）。
+
+## D-110 · e2e 剥注释器支持正则字面量（修 `dupKey` 正则含引号导致的全局失同步）（2026-10-10）
+
+**症状**：`check:music` 由基线 **215/3** 变成 **214/4** —— 新失败项 `AUDIO.singleEntry`
+（`createMediaElementSource` 全文命中由 1 变 7，全是**注释里的**）。
+
+- **根因**：`e2e/music-platform-check.mjs::stripComments` 的字符串状态机**不认识正则字面量**。
+  本轮新增 `DropScreen.tsx::dupKey` 的正则 `/[/\\:*?"<>|]/g` 里含裸 `"` ⇒ 状态机误入 `dq` 串态，
+  且该态**不在换行处闭合** ⇒ 此后所有 `/* */` 注释不再被剥，一律当代码 ⇒ 计数型断言虚高。
+  `walkText` 把全 `src` 拼成一份，故**一处失同步污染整份**。
+  - 定位手法：对每个文件单独跑 `stripComments`，找出**终态 != `code`** 的文件（=`DropScreen.tsx`）。
+- **修法**：给状态机加正则分支 —— 代码态遇 `/` 时用「上一显著字符 + 关键字」判正则 vs 除号
+  （`regexAllowed`：跟随「运算符/左括号/`return` 等关键字」= 正则，跟随「值/`)`/`]`」= 除号），
+  命中则整段正则**原样保留**（内部 `[` 类里的引号/斜杠不参与串/注释判定）。
+- **新增自检** `AUDIO.regexLiteralTolerant`：正则含引号时注释仍须被剥（旧逻辑下该断言为**红**，已取证）。
+  因 `dupKey` 的正则常驻源码，**回退修法 ⇒ `AUDIO.singleEntry` 立刻变红**，形成隐式钉子。
+- **取证**：`check:music` 回到 **216/3**（新自检 +1，基线三条环境性失败不变）· `check:music:refute` **182/182 按预期变红**、
+  全部被改文件**字节一致**恢复。
+
+## D-111 · 共享纯函数收口 `app/src/tools/`（`util.ts` 迁入 + `dupKey` 上提 + `@tools` 别名）（2026-10-10）
+
+**背景（用户要求）**：工具函数有必要的话抽离到 `tools` 目录，**与 `components/` 同级**，放最后做。
+
+- **动作**：`app/src/util.ts` → `app/src/tools/index.ts`；新增 `@tools` 别名（`app/vite.config.ts` + `app/tsconfig.json` `paths`，
+  与既有 `@components` / `@hooks` 同风格）。
+- **上提**：`DropScreen.tsx` 的局部纯函数 `dupKey`（重名规范化）移入 `tools/index.ts` —— 纯函数、跨屏语义，不再散在屏内。
+- **判定（写进 `AGENTS.md` §1 / `project_rules.md` §3 / `README.md` 目录树）**：`app/src/tools/` 判据 = **跨屏可复用 + 不 import 业务层**
+  （与 `components/units/` 同源）；**只服务单屏的逻辑仍留屏内**，不为"集中"硬搬。
+- **取证**：`tsc --noEmit` 0 · `vite build` 通过（`@tools` 解析正常）· 5 处 `@/util` 引用全改指 `@tools`（0 残留）。
