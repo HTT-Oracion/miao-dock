@@ -5215,3 +5215,171 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 - 前端新增屏内件落 `app/src/screens/library/`（`modals.tsx` / `ChapterCard.tsx` / `blob.ts`），
   `LibraryScreen.tsx` **不搬迁**（理由见 D-119）；纯函数写进**既有桶文件** `app/src/tools/index.ts`。
 
+## D-116 · 封面：接口字段叫 `coverPath`、字节读走新增的 `GET /library/{book}/cover`（2026-10-10）
+
+**背景**：设计稿 §11.1 的前端模型里封面字段名是 `coverPath`，而 §11.3 的 `manifest.json` 里叫 `cover`；
+另外计划的路由表只给封面列了 `POST` / `DELETE`。两条都需要裁定，否则前端**没有办法把封面显示出来**。
+
+**决策**
+
+1. **两个名字并存是有意的，不是笔误**：
+   - `manifest.json` 的 `cover` = **落盘**契约（人可读可改、随目录迁移，值是**文件名** `cover.jpg`）；
+   - `GET /library` 的 `books[].coverPath` = **接口**契约（对齐设计稿 §11.1 的字段名）。
+   - 二者语义不同：一个是"文件叫什么名"，一个是"这本漫画的封面是什么"。**不要为了"统一"把它们改成同一个名字**
+     —— 改名会让设计稿、前端模型、json 三处之一失同步，而失同步的表现只是"封面不显示"。
+2. `GET /library/{book}/cover` 是**计划路由表之外新增的读端点**。理由：前端拿到 `coverPath` 之后，
+   把它变成可渲染的东西只有两条路 —— ① asset protocol + 配 scope（**安全面扩张**，为一个只读展示素材不值得）；
+   ② 加一条**与 `files/{seq}` 对称**的读端点（已有一条在发字节，加一条成本极小）。选 ②。
+   - 仍走完整鉴权 + 前缀校验；**不做隐藏判定** —— 隐藏的是「这本书不列在库里」，不是"它的封面成了机密"。
+   - 响应 `no-store`：封面可被替换，且前端已用 `modifiedAt` 做缓存版本号（见 D-119 第 3 条）。
+
+**取证**：`service/src/server.mjs` 的 `handleLibraryCoverFile()`；前端 `screens/library/blob.ts` 的 `coverPath()`。
+
+## D-117 · 话级寻址：路由形状与「话号非法」的**两级判据、固定顺序**（2026-10-10）
+
+**背景**：`/library/{book}/chapters/{no}/{resume|retranslate|files/{seq}}` 三段路由都吃 `no`，
+而 `no` 来自 URL（攻击面）与请求体（归并落位）。若两侧判据不同源，会漂移出
+「`/chapters/007/` 能读、归并却拒绝」这类怪事。
+
+**决策**
+
+1. **`no` 的合法性只有一份定义**，即 `resolveChapterDir(bookRaw, noRaw)`；话级三条路由与
+   `POST /library/{name}/merge` 的落位**共用它**。
+2. **判据顺序固定为「先越界、后格式」**：
+   - 第 1 步 `isSafeDirName(noText)` → 不通过 ⇒ **403 `PERMISSION_DENIED`**；
+   - 第 2 步 `/^\d{1,4}$/` → 不通过 ⇒ **404 `TASK_NOT_FOUND`**；
+   - 第 3 步范围 `1..MAX_CHAPTER_NO(999)`。
+   **顺序不能反**：先判数字格式会把 `../../etc`（不匹配纯数字）报成 404 —— 把一个**越界攻击**
+   伪装成"路径不存在"，安全日志也就跟着不记了。反过来先判安全名，越界一律 403，与
+   `resolveComicDir` 的既有顺序一致。
+3. `noText` 统一 `String(noRaw ?? '')`：归并请求体里 `{no: 2}` 是 **JSON number**，
+   直接喂给只接受 string 的 `isSafeDirName`（内部有 `typeof` 断言）会被误判成越界。
+4. **URL 里用原始话号（`/chapters/3/`），不用零填充目录名**（`03_第3话`）。
+   目录名是**落盘**表示，URL 是**接口**表示；让 URL 承担"两位零填充"这条落盘纪律，
+   等于把落盘改名（比如将来支持三位）成本外溢到接口与前端缓存键。
+
+**取证**：`service/src/server.mjs` 的 `resolveChapterDir()` 注释；e2e `library-manage-check` 的 M13
+（越界两段都 403）。
+
+## D-118 · 新建同名判定：用 `existsSync` 复检，**且刻意不做预校验**（2026-10-10）
+
+**背景**：`handleLibraryCreate` 用 `mkdirSync(dir, { recursive: false })` 建目录，同名会抛 `EEXIST`。
+直觉写法是 `if (err.code === 'EEXIST')` → 409。
+
+**实测事实**：本机沙箱的**文件代理层**会把 `err.code` 改写成它自己的码
+（`ownKeys` 实测为 `["stack","message","code","decision","__codebuddyBrokerPolicyError"]`，
+`err.code` 恒不是 `EEXIST`，而 `err.message` 仍是 `EEXIST: file already exists, mkdir '…'`，
+`err.errno` / `err.syscall` 均为 `undefined`）。按 `code` 判 ⇒ 同名会返回 **500 INTERNAL**，
+前端只会看到"服务器内部错误"。
+
+**决策**
+
+1. 判据用**可观测事实**：`fs.existsSync(path.join(store.root, norm.name))` → 409 `BOOK_NAME_TAKEN`。
+   理由不只是"沙箱怪癖"：**错误码会被包装层改写，目录在不在不会被改写**。
+2. 🔴 **不改成"先 `existsSync` 预校验再 mkdir"**。预校验虽然也能拦下同名，但它会**掩盖**
+   「`recursive: false` 被改成 `true`」这个缺陷 —— 预校验照样绿，而实际上 `mkdir(recursive:true)`
+   会**静默复用**已存在目录、把新 manifest 写进别人的书里。
+   让 `mkdir` 自己去撞、撞完用可观测事实归因，Step 8 的反证轮才咬得住（反证轮破坏 `recursive:false`
+   必须变红）。
+3. 409 的 `details` 带上 `hidden`：目录可能因为"删除时未勾选删本地文件"而被隐藏 —— 不带上它，
+   用户会问「库里看不见它，凭什么说我重名」。
+4. 新建成功后必须 `store.forgetHidden(norm.name)`：否则新建出来的这本立刻被扫描跳过，
+   表现是「创建成功但库里没有」。
+
+**取证**：`service/src/server.mjs` 的 `handleLibraryCreate()` 注释块；`.tmp/step3/smoke.mjs` 的 C2（同名 409）。
+
+## D-119 · `LibraryScreen.tsx` 不搬迁；字节取用抽到 `screens/library/blob.ts`（2026-10-10）
+
+**背景**：本 plan 要给漫画库加三支弹窗、分组搜索、两屏（话列表 / 话内页），
+`LibraryScreen.tsx` 已 1362 行，全塞进去会到两千行以上。
+
+**决策**
+
+1. 🔴 **`LibraryScreen.tsx` 不搬迁、不改名**。硬证据：`e2e/units-structure-check.mjs:71` 写死路径，
+   6 条 `ZOOM.*` 断言读的是该文件全文（其中 `ZOOM.fitToWindow` 还用**文件级全文正则**
+   `useState(ZOOM_FIT)` / `zoom: ZOOM_FIT` / `applyView(ZOOM_FIT, { x: 0, y: 0 })`）；
+   `e2e/service/retranslate-check.mjs:66`、`e2e/service/library-manage-check.mjs:426` 也写死同一路径。
+   搬一次要同步 3 个脚本 4 处路径，而 **AGENTS §3 尾明说：路径不同步的后果是"静默跳过"，不是变红**
+   —— 那等于把 6 条 ZOOM 断言和 R6/R8/L8 悄悄变成永不执行的装饰。
+2. **新件落 `app/src/screens/library/`**（`modals.tsx`、`blob.ts`）：specifier 是
+   `@screens/library/Xxx`，与 `@screens/LibraryScreen` **不同名、无解析歧义**，
+   不触发 `hooks.ts` + `hooks/` 那条同名禁令。
+3. **`blob.ts` 是纯提取 + 两点新增**：
+   - 提取：`filePath` / `URL_CACHE` / `cachePeek` / `cachePut` / `fetchBlobUrl` / `useBlobUrl` / `BlobState`
+     —— 原样搬运，逐字未改逻辑。**不许在屏内留第二份缓存**：两份 LRU 会让同一张图取两次、
+     且各自的 `revoke` 互不知情（表现为"返回网格后有一张永久破图"）。
+   - 新增：`chapterFilePath()`（话内页）、`coverPath()`（封面）、`topLevelFirstImagePath()` /
+     `bookFirstImagePath()`（无封面时"首话首图"的前端只读孪生）。
+   - `coverPath()` 的 `?v=<modifiedAt>` 是**必需的**：封面文件名固定 `cover.png`，
+     换一张 png 后**路径完全不变** ⇒ 不带版本号会一直命中旧缓存，用户看到的是"换了封面但还是旧图"。
+     服务端按 pathname 路由，查询串本就被忽略。
+   - `URL_CACHE` 是**模块级 Map**，其键必须是"书 + 话 + 页"三段。若沿用"只按 seq"，
+     《A》第 1 话第 1 页与《B》第 1 话第 1 页会命中同一条缓存 —— 跨书串图（且是"看起来正常、
+     内容错了"这类最难发现的缺陷）。
+4. **前端纯函数写进既有桶文件** `app/src/tools/index.ts`（`chapterNoOf` / `padChapterNo` /
+   `coverFileName` / `groupSearchResults` / `matchIndices`），**不新开文件** ⇒ 零 barrel 同步、零断言同步。
+   - `fuzzyMatch` 改为**委托** `matchIndices`：命中判定与高亮切分只能有一份实现，
+     否则会出现"整行判为命中、却没有一个字被高亮"的矛盾帧。
+   - `matchIndices` **逐字符折叠大小写**并记录"折叠后位置 → 原串下标"的映射。
+     不能整串 `toLowerCase()` 后直接用下标切原文：折叠**不保证长度不变**
+     （`'İ'.toLowerCase()` 是 2 个 code unit），会从那一个字符起整体错位，且平时测不到。
+5. **搜索分组的口径**（设计稿 §7.2 / §8.1 的落实）：
+   - 命中权重：**本命中（书名/作者）= 2 > 仅话命中 = 1**；同权重按"命中行数多的在前"，再按书名
+     `zh-Hans-CN` 升序；「其它」不参与排序，**恒置底**。
+   - 本命中 ⇒ **整组展开**（用户搜的是这一本，他需要看到它有几话）；仅话命中 ⇒ 只列命中的话。
+   - `query` 为空串时等价于"全部命中"，于是调用方不必为"空搜索"另写一条渲染分支。
+6. 左栏与搜索分组共用 `LibItem` 视图模型：大类与未归并单话**归一成同一形状**（`key/name/author/
+   chapterCount/pageCount/thumbPath/merged`），避免两套几乎一样的 DOM。
+   `progressLabel()` 的入参也从 `ComicEntry` 放宽为结构化 `PageCounts` —— 大类、话、未归并单话的
+   页级计数同名同义，逐页判定的口径也只有一个（G-10），没理由各写一份。
+7. **兜底**：`books` / `others` 是 `LibraryResponse` 的**可选**字段。旧服务端只回 `comics` 时，
+   左栏退回平铺渲染、搜索退回平铺过滤 —— 否则升级到新版面前端的用户会看到**空左栏**，
+   那看起来像"漫画全丢了"。
+
+**代价（已记账）**：`ZOOM.fitToWindow` 用的是**文件级**全文正则，因此**将来**任何时候把
+`Lightbox` / `ZOOM` 常量搬出 `LibraryScreen.tsx`，该断言必红。本次没搬，故不动 `check:units`
+的读取范围（`s.library` 仍只读一个文件），断言与源码保持同一形状。
+
+**取证**：`tsc --noEmit` 0 · `check:units` 44/0 · `check:retranslate` 12/0 · `check:lib-manage` 8/0 +
+`:refute` 4/4 · `vite build` 通过 · `cargo check` 通过（新增 `api_delete`）。
+
+## D-120 · 封面落盘所需的两条 Rust 缺口：`api_delete` 与 multipart 字段名（2026-10-10）
+
+**背景**：`POST /library/{book}/cover` 与 `DELETE /library/{book}/cover` 是设计稿 §7.6.2「编辑信息」
+的三条封面来源，但前端两条能力都缺：
+
+1. **没有 `DELETE` 代理** —— `app/src/ipc.ts` 只有 `apiGet` / `apiPost` / `apiPostMultipart` / `apiBytes`。
+   没有它，「移除封面」无路可走，只能退化成"改 manifest 而不删文件"，而 `readCoverName()` 的
+   readdir 兜底会把**已删但不该再认**的 `cover.*` 又认回来。
+2. **`api_post_multipart` 的文件分片字段名写死 `images[]`**，而封面端点按契约认的是 `cover`
+   （且**恰好 1 个**）。用旧签名上传封面 ⇒ 服务端回「缺少封面分片(field=cover)」，
+   而前端只能看到一个与"选了图"毫无字面关联的 400。
+
+**决策**
+
+- 新增 `#[tauri::command] api_delete(mgr, path, body: Option<Value>)`，与 `api_post` 同构，
+  同样守 D-112 的两条硬纪律（**真 `async fn`** + **非阻塞 `reqwest::Client`**）。
+- 给 `api_post_multipart` 加**可选**参数 `field: Option<String>`（缺省 `"images[]"`）。
+  不改函数名、不改既有调用点的传参（`Option` 缺键即 `None`），故投放链路零影响；
+  TS 侧 `apiPostMultipart(path, payload, files, field?)` 同构。
+- 两条都在 `main.rs` 的 `invoke_handler` 登记。**`app` 自己的命令不受 Tauri capability ACL 约束**
+  （既有论证见 `commands.rs` 对 `write_text_file` 的注释），故不需要改 capabilities。
+
+**取证**：`~/.cargo/bin/cargo check` 通过（本机 `cargo` 不在 `PATH`，须用绝对路径）。
+
+## D-121 · 交付期基线红项登记（非本次引入，暂不处置）（2026-10-10）
+
+在 `origin/v2.2.0`（`895c84a`）的**干净工作树**上复跑，以下两项**本就是红的**，
+与「漫画库本 → 话 → 页」改造无关，故本次不动它们（改它们属于音乐模块/文档口径的独立变更）：
+
+| 检查 | 现象 | 根因（已定位） | 复现 |
+|---|---|---|---|
+| `check:music` | 218/1 失败：`ISLANDV.toggleBothWays` | 断言要 `view === 'lyrics' ? <Play … : <ListMusic`，而源码用的是 `AudioLines`。**两条方向都在**（意图满足），断言**过度指定了具体图标名** | `node e2e/music-platform-check.mjs`（在 `895c84a` 工作树上同样红） |
+| `check:docs` | 2 失败：AGENTS.md / README.md 写 `check:music 216 条`，脚本自报 218 | 断言条数漂移；且 `docs-consistency-check` 取的是「**通过**条数」而非总条数 ⇒ 只要 `check:music` 有 1 条红，文档就**无法**同时正确 | `node e2e/docs-consistency-check.mjs` |
+
+**处置建议（留给负责人拍板）**：两条应一起处理 —— 要么修 `DynamicIsland` 的切换图标回 `Play`
+（但 `AudioLines` 是后来特意换的，属 UI 决策），要么把断言从"具体图标名"放宽为"两个分支图标不同"
+（但按 AGENTS §2 不得为转绿而放宽）；随后把两处文档条数同步为脚本的**总**条数。
+**在红项消掉之前，不要**把文档条数写成 218 —— 那会把一个耦合缺陷固化下来。
+
+
