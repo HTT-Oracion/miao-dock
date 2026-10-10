@@ -5383,3 +5383,42 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 **在红项消掉之前，不要**把文档条数写成 218 —— 那会把一个耦合缺陷固化下来。
 
 
+## D-122 · 屏 B/C/D 的「书 + 话」投影：PageView 是"我在哪一层"的唯一判据（2026-10-11）
+
+**背景**：Step 6 把右栏从「整本页网格」扩成三屏 —— 屏 B（话列表）、屏 C（话内页网格）、
+屏 D（对照，原样复用）。三种页源（旧口径整本 / 未归并单话 / 大类里的一话）都要进网格与对照。
+
+**决策**
+
+- 新增 `PageView` 投影（`base` + `comicName` + 页集合 + `imagePath(seq, variant)` 闭包）：
+  "这一格是整本还是话、取图该打哪个端点"这个判断**只在这一个地方做**（`flatViewOf` /
+  `chapterViewOf` 两个构造器）。网格、`Pane`、`Lightbox` 一律收**字节路径**（`path`），
+  不再收 `comicName` 自己拼 —— 拼路径的逻辑散进组件里，迟早长出第二套口径。
+- 🔴 **缓存键天然含「书 + 话 + 页」**：`URL_CACHE` 的键就是路径本身，而
+  `chapterFilePath` 拼出的路径含书名与话号（D-117）。话级路径 `/library/{书}/chapters/{话}/files/{seq}`
+  与顶层路径 `/library/{名}/files/{seq}` 天然不同名，无需额外隔离 —— 这正是"路径即缓存键"设计的红利。
+- `Pane`/`Lightbox` 从 `comicName: string` 改为 `path: string`（`Lightbox` 另加 `title` 做
+  顶部归因回显 —— 路径里是编码后的目录名，不能直接给人看）。**屏 D 的取图与翻页逻辑一行未动**，
+  `check:retranslate` 的 R6/R8 断言锚点（`e.ctrlKey || e.metaKey`、`addEventListener('wheel'`、
+  `clampZoom`、`ZOOM_MAX = 200`）全部原样保留 —— M5/M6 反证变异的 `find` 字符串也未变。
+- **操作端点归一**：续做 / 返工在「整本」与「话」两个层级是**同一形态**
+  （`{base}/resume`、`{base}/retranslate`；服务端只是"目录怎么来的"不同 —— 顶层名 vs
+  `书/NN_第N话` 相对路径，见 `handleChapterResume` 的注释）。前端只换基址（`actionBase`），
+  不换逻辑；返工计划回执里的 `dirName` 本来就是任务键，`reworkingComics.has(p.dirName)`
+  两个层级通吃。
+- **话卡的「重译本话」busy 判据是两条的或**：整本有任务在跑（`reworkingComics.has(book.dirName)`）
+  或本话有任务在跑（`has(book.dirName + '/' + ch.dirName)`）都置灰 —— 整本返工包含这一话，
+  两个任务前后脚跑会互相覆盖译文。
+- **话卡缩略图口径**（`chapterImagePath`）：该话**第一张译文图**，整话未译则退回首张原图，
+  空话为 `null`（调用方显示「空话」占位，不发必然 404 的请求）。它与 `bookFirstImagePath`
+  的「第一张有原图页」在整话未译时结果相同，不算第二套判据。
+- **「删除本话」恒置灰**（`CHAPTER_DELETE_BLOCKED_TITLE` 指出去处，设计稿 §7.3 裁决）；
+  话内头部（屏 C）的「更多操作」只留本话的续做/返工 —— 「编辑信息 / 删除整本」的主语是整部，
+  出现在话的头部只会让人以为删的是这一话。
+- **屏 C 的返回**：`setChapterNo(null)` 退回屏 B；换书时 `chapterNo` 一并清零
+  （话号留着会指向另一部的话）。话号在但话没了（目录被动过）⇒ `currentChapter` 为 `null`，
+  按「不在话内」退回屏 B，不白屏。
+
+**取证**：`npx tsc --noEmit` 0 错误；`vite build --no-emptyOutDir` EXIT=0；
+`check:units` 44/0；`check:retranslate` 12/0（R6/R8 绿）；`check:lib-manage` 8/0 + 反证 4/4；
+`check:music` 218/1、`check:docs` 14/2 —— 均与 D-121 登记的基线一致，无新增红项。
