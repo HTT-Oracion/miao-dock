@@ -460,9 +460,20 @@ function rustFnBody(src, name) {
  *     → 不剥注释，"已搬走/未直接调用"这些判据会**恒绿**（该红没红）。
  * 本仓库历史上正是栽在"注释让断言误判"上（D-31），故此处一律先剥。
  */
+// 关键字之后的正则字面量（`return /re/`），末尾不是标识符但 `/` 仍是正则起始
+const REGEX_KEYWORDS = /(?:return|typeof|instanceof|in|of|new|delete|void|do|else|yield|await|case)$/;
+
+/** 判断代码态遇到的 `/` 是正则起始还是除号（除号跟随「值」，正则跟随「运算符/左括号」） */
+function regexAllowed(codeSoFar, prevSig) {
+  if (prevSig === '') return true;
+  if (/[)\]\w$]/.test(prevSig)) return REGEX_KEYWORDS.test(codeSoFar.replace(/\s+$/, ''));
+  return true;
+}
+
 function stripComments(src) {
   let out = '';
   let state = 'code';
+  let prevSig = ''; // 代码态最近一个显著字符，供判别 `/` 是正则还是除号
   for (let i = 0; i < src.length; i++) {
     const c = src[i];
     const c2 = src[i + 1];
@@ -479,10 +490,32 @@ function stripComments(src) {
         i++;
         continue;
       }
+      // 正则字面量：内部的引号/斜杠不参与字符串与注释判定，整段原样保留
+      if (c === '/' && regexAllowed(out, prevSig)) {
+        out += c;
+        i++;
+        let inClass = false;
+        for (; i < src.length; i++) {
+          const rc = src[i];
+          if (rc === '\\') {
+            out += rc + (src[i + 1] ?? '');
+            i++;
+            continue;
+          }
+          out += rc;
+          if (rc === '[') inClass = true;
+          else if (rc === ']') inClass = false;
+          else if (rc === '/' && !inClass) break;
+          else if (rc === '\n') break; // 未闭合：按除号处理，不影响后续
+        }
+        prevSig = '/';
+        continue;
+      }
       if (c === "'") state = 'sq';
       else if (c === '"') state = 'dq';
       else if (c === '`') state = 'tpl';
       out += c;
+      if (!/\s/.test(c)) prevSig = c;
       continue;
     }
     if (state === 'block') {
@@ -510,9 +543,9 @@ function stripComments(src) {
       i++;
       continue;
     }
-    if (state === 'sq' && c === "'") state = 'code';
-    else if (state === 'dq' && c === '"') state = 'code';
-    else if (state === 'tpl' && c === '`') state = 'code';
+    if (state === 'sq' && c === "'") { state = 'code'; prevSig = 'x'; }
+    else if (state === 'dq' && c === '"') { state = 'code'; prevSig = 'x'; }
+    else if (state === 'tpl' && c === '`') { state = 'code'; prevSig = 'x'; }
     out += c;
   }
   return out;
@@ -1469,6 +1502,18 @@ add('AUDIO.singleEntry', 'AUDIO', (s) => {
       detail: `createMediaElementSource 应只在 audioGraph 出现 1 次，实际全文 ${hits} 次 / audioGraph ${inGraph} 次`,
     };
   return { ok: true, detail: '' };
+});
+
+add('AUDIO.regexLiteralTolerant', 'AUDIO', () => {
+  // 正则字面量里的引号不能让剥注释器误入字符串态：否则该处之后的注释会被当成代码，
+  // 「全文只允许 N 处」型计数（如 AUDIO.singleEntry）会因注释而虚高。
+  const sample = 'const re = /["x]/g; // createMediaElementSource 只在注释\nconst keep = 1;\n';
+  const stripped = stripComments(sample);
+  const ok = !stripped.includes('createMediaElementSource') && stripped.includes('const keep');
+  return {
+    ok,
+    detail: ok ? '' : '剥注释器未识别正则字面量里的引号 ⇒ 后续注释被当代码（计数型断言会虚高）',
+  };
 });
 
 // ============================ CACHE（音乐缓存接线）============================
