@@ -9,7 +9,8 @@ import http from 'node:http';
 import path from 'node:path';
 
 import {
-  API_VERSION, BASE_PATH, BATCH_LIMIT, ENGINE_SETTINGS_FILE, ORIGINAL_SCAN_RE, REPO_ROOT,
+  API_VERSION, BASE_PATH, BATCH_LIMIT, COVER_MAX_BYTES, ENGINE_SETTINGS_FILE, MANIFEST_FILE,
+  MAX_CHAPTER_NO, MERGE_ARCHIVE_DIR, ORIGINAL_SCAN_RE, REPO_ROOT,
   ROOT_DIR, SERVICE_NAME, SERVICE_VERSION, STATE_DIR, TASKS_STATE_DIR, TRANSLATED_SCAN_RE,
   TOKEN_FILE, TRANSLATE_DIRECTIONS, assertInsideRoot, config, engineSettingsFile,
   isSupportedDirection, normalizeDirection,
@@ -27,6 +28,11 @@ import { LlmSupervisor } from './settings/llm-supervisor.mjs';
 import { modelStatus } from './settings/model-status.mjs';
 import { createTierDowngrade } from './settings/tier-downgrade.mjs';
 import { allFieldStrings, firstField, groupParts, parseMultipartEx } from './multipart.mjs';
+import {
+  chapterDirName, chapterNoFromDirName, createBookDir, hasManifest, listChapterDirs, ownFilesBytes,
+  readCoverName, readManifest, removeCover, scanChapterPages, writeCover, writeManifestAtomic,
+} from './manga/library.mjs';
+import { sniffImageType } from './manga/image.mjs';
 import { normalizeComicName, isSafeDirName } from './manga/names.mjs';
 import { watchParent } from './parent-watch.mjs';
 import { Store } from './manga/store.mjs';
@@ -1175,9 +1181,23 @@ function handleTaskList(req, res, cors, url) {
 
 // ------------------------------------------------------------------ 库与导出
 
+/**
+ * 扫库：一次扫描同时产出 `comics`（向后兼容）/ `books`（大类）/ `others`（未归并单话）。
+ *
+ * 契约与理由见 docs/spec-notes.md D-115：
+ *  · **判据唯一**：顶层目录内有 `manifest.json` ⇒ 大类；没有 ⇒ 未归并单话。
+ *  · **`comics` 原样保留**（口径 = 每个顶层目录一条、页级扫描只看该目录自身，与改造前逐字一致），
+ *    因为 `DropScreen` 的重名比对、`App` 的库摘要、`selftest` / `e2e` / `lib-manage` 都读它。
+ *  · **页级扫描抄一份都不行**：`scanChapterPages` 是「单话目录」与「大类内的话目录」共用的唯一入口。
+ *  · **空大类必须出现在 `books` 里**（刚创建、还没归并任何话）—— 否则「新建完看不见」。
+ *
+ * `hiddenComics` 判据仍是**顶层目录名**（`hideComic(name)` 存的就是它）⇒ 整本隐藏天然兼容。
+ */
 function scanLibrary() {
   const root = store.root;
   const comics = [];
+  const books = [];
+  const others = [];
   let entries = [];
   try {
     entries = fs.readdirSync(root, { withFileTypes: true });
@@ -1188,61 +1208,65 @@ function scanLibrary() {
     // 判定用**原始目录名**（与 `hideComic` 存的名字同一口径）。
     if (store.hiddenComics.has(entry.name)) continue;
     const dir = path.join(root, entry.name);
-    const originals = new Set();
-    const translated = new Set();
-    let modifiedMs = 0;
-    // G-01 口径：容量 = 该漫画目录内**所有文件**字节数之和（含原图、译文与残留的临时文件），
-    // 不含子目录递归 —— 落盘结构是单层目录（契约 §7.1），递归只会把异常结构悄悄算进来。
-    let byteSize = 0;
-    try {
-      for (const f of fs.readdirSync(dir)) {
-        let m = ORIGINAL_SCAN_RE.exec(f);
-        if (m) originals.add(Number(m[1]));
-        m = TRANSLATED_SCAN_RE.exec(f);
-        if (m) translated.add(Number(m[1]));
-        try {
-          const st = fs.statSync(path.join(dir, f));
-          if (st.isFile()) byteSize += st.size;
-        } catch { /* 单个文件读不到则不计入 */ }
-      }
-      modifiedMs = fs.statSync(dir).mtimeMs;
-    } catch { /* ignore */ }
-    const seqMax = originals.size ? Math.max(...originals) : 0;
-    // 「哪一页已译」必须**逐页**给出，不能只给张数。
-    // 只给 translatedCount 时，客户端只能拿 `seq <= count` 当代理指标 —— 缺页一旦落在
-    // 中间（例如 seq=3 的译文失败），代理指标就会把后面每一页的判定整体前移一位，
-    // 于是「没有译文的页」被标成「已译」，而真正有译文的尾页被标成「待译」。
-    // 扫描时本来就有这个集合，之前没暴露出去，客户端只好退而求其次。
-    const translatedSeqs = [...translated].sort((a, b) => a - b);
-    // 编号段内有原图缺失的页（正常情况为空数组）。单独给「洞」而不是给完整的原图集合，
-    // 是因为前者通常为空、几乎不占体积，而原图集合是 1..seqMax 的等长副本。
-    const missingSeqs = [];
-    for (let s = 1; s <= seqMax; s += 1) if (!originals.has(s)) missingSeqs.push(s);
-    comics.push({
-      comicName: entry.name,
-      dirName: entry.name,
-      outputDir: dir,
-      imageCount: originals.size,
-      translatedCount: translated.size,
-      byteSize,
-      seqMax,
-      nextSeq: seqMax + 1,
-      translatedSeqs,
-      missingSeqs,
-      modifiedAt: modifiedMs ? new Date(modifiedMs).toISOString().replace(/\.\d{3}Z$/, 'Z') : null,
-    });
+    // 顶层页扫描 = `comics` 的口径（G-01：目录内所有文件字节之和）
+    const own = scanChapterPages(dir);
+    comics.push({ comicName: entry.name, dirName: entry.name, outputDir: dir, ...own });
+
+    if (hasManifest(dir)) books.push(buildBookEntry(entry.name, dir, own));
+    else others.push({ no: null, dirName: entry.name, absDir: dir, merged: false, ...own });
   }
-  comics.sort((a, b) => a.comicName.localeCompare(b.comicName, 'zh-Hans-CN'));
+  const byName = (a, b) => a.dirName.localeCompare(b.dirName, 'zh-Hans-CN');
+  comics.sort(byName);
+  books.sort(byName);
+  others.sort(byName);
+  const totalImages = books.reduce((n, b) => n + b.totalPages, 0)
+    + others.reduce((n, c) => n + c.imageCount, 0);
+  const totalBytes = books.reduce((n, b) => n + b.byteSize, 0)
+    + others.reduce((n, c) => n + c.byteSize, 0);
   return {
     root,
+    // 「部」数 = 大类 + 未归并单话（单话漫画也是「只有一话的漫画」），与 `comics.length` 恒等
     count: comics.length,
-    totalImages: comics.reduce((n, c) => n + c.imageCount, 0),
-    totalBytes: comics.reduce((n, c) => n + c.byteSize, 0),
+    totalImages,
+    totalBytes,
     comics,
+    books,
+    others,
     // 隐藏清单：既让界面能显示「已隐藏 N 部 · 管理」，也让用户知道库没扫漏。
     hidden: store.hiddenComicsView(),
     hiddenCount: store.hiddenComics.size,
     updatedAt: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+  };
+}
+
+/**
+ * 大类条目：元信息（`manifest.json` 的 title/author/cover）+ 各话的页级汇总。
+ *
+ * `byteSize` 沿用 G-01 口径：**各话之和 + 大类目录内的文件**（含 `cover.*` 与 `manifest.json`）
+ * —— 不因为多了这两个文件就偷偷改口径（见 D-115 §5）。
+ */
+function buildBookEntry(bookName, dir, own) {
+  const manifest = readManifest(dir, bookName);
+  const chapters = listChapterDirs(dir).map((c) => ({
+    no: c.no,
+    dirName: c.dirName,
+    absDir: c.absDir,
+    // 位置即「已归并」（D-115 §1）：能出现在大类目录里，本身就是已归并的证据
+    merged: true,
+    ...scanChapterPages(c.absDir),
+  }));
+  return {
+    bookName,
+    dirName: bookName,
+    outputDir: dir,
+    title: manifest.title,
+    author: manifest.author,
+    cover: readCoverName(dir, manifest),
+    chapterCount: chapters.length,
+    totalPages: chapters.reduce((n, c) => n + c.imageCount, 0),
+    byteSize: ownFilesBytes(dir) + chapters.reduce((n, c) => n + c.byteSize, 0),
+    modifiedAt: own.modifiedAt,
+    chapters,
   };
 }
 
