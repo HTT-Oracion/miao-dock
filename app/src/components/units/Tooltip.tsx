@@ -22,6 +22,16 @@ export function Tooltip({ label, children }: { label: string; children: ReactEle
   const hostRef = useRef<HTMLSpanElement | null>(null);
   const timer = useRef<number | null>(null);
 
+  /**
+   * 悬停丢失的修复（用户 2026-10-11 报：「hover 到 tooltip 上它就消失了」）：
+   * 气泡悬在宿主上方 6px，指针从宿主挪进气泡必然先触发宿主的 mouseleave。
+   * 若宿主离开就立即收，气泡在指针到达前已经被销毁 —— `onMouseEnter={keep}` 永远追不上。
+   * 所以「离开」改成**宽限期**：宿主离开起 140ms 后才真正收，指针在这段窗口内进入气泡
+   * 就取消收起；气泡自身离开（或宽限内没进气泡）才收。
+   * 140ms 取值：跨过 6px 间隙绰绰有余，又不至于让"扫过列表"的收起手感变黏。
+   */
+  const GRACE_MS = 140;
+
   const show = () => {
     if (timer.current !== null) window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
@@ -32,10 +42,18 @@ export function Tooltip({ label, children }: { label: string; children: ReactEle
       }
     }, 250);
   };
-  /** 悬停从宿主挪到气泡上：不收（气泡要能选中复制，进气泡 ≠ 离开） */
+  /** 悬停从宿主挪到气泡上：取消宽限收起（气泡要能选中复制，进气泡 ≠ 离开） */
   const keep = () => {
     if (timer.current !== null) window.clearTimeout(timer.current);
     timer.current = null;
+  };
+  /** 宿主 / 聚焦离开：不立即收，先给指针一段时间挪进气泡（见 GRACE_MS 的说明） */
+  const scheduleHide = () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      setPos(null);
+    }, GRACE_MS);
   };
   const hide = () => {
     if (timer.current !== null) window.clearTimeout(timer.current);
@@ -51,9 +69,9 @@ export function Tooltip({ label, children }: { label: string; children: ReactEle
       ref={hostRef}
       className="ui-tooltip-host"
       onMouseEnter={show}
-      onMouseLeave={hide}
+      onMouseLeave={scheduleHide}
       onFocus={show}
-      onBlur={hide}
+      onBlur={scheduleHide}
     >
       {children}
       {pos

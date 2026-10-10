@@ -89,21 +89,20 @@ export const toastBus = {
 };
 
 /**
- * 订阅吐司总线。返回**最后一条**而非数组 —— 灵动岛一次只显示一条，
- * 少传一层数据、少一层无谓的重渲染。
+ * 订阅吐司总线（**全量列表**）—— 通知堆叠（NotificationStack）的读取口。
+ *
+ * 2026-10-11 改版：轻提示的承载从灵动岛剥离成 topRight 的通知堆叠（antd notification
+ * 的形态），堆叠要**同时**展示多条，所以给全量列表而不是"最后一条"。
+ * 总线本身不变：仍是那个唯一队列 + 单例订阅表（ISLAND.singleSource 的口径）。
  */
-export function useToastsFromBus(): BusToast | null {
-  const [last, setLast] = useState<BusToast | null>(() =>
-    queue.length > 0 ? queue[queue.length - 1] : null,
-  );
+export function useToastList(): BusToast[] {
+  const [list, setList] = useState<BusToast[]>(() => [...queue]);
 
   useEffect(() => {
     // 订阅时先同步一次：挂载前已入队的提示不能丢
-    setLast(queue.length > 0 ? queue[queue.length - 1] : null);
-    return toastBus.subscribe((list) => {
-      setLast(list.length > 0 ? list[list.length - 1] : null);
-    });
+    setList([...queue]);
+    return toastBus.subscribe((l) => setList(l));
   }, []);
 
-  return last;
+  return list;
 }

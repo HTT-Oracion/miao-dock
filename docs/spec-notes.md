@@ -5505,3 +5505,21 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 - **修法 ②（根因消除）**：页图 `sendImageBytes` 与封面 `handleLibraryCoverFile` 的发流从 `.pipe(res)` 改 `pipeline(...).catch()` —— 客户端中止即销毁源流、释放句柄（顺带消灭了源 error 事件的 uncaughtException 隐患）；两函数改 `async`，调用点本就 fire-and-forget / 被 route await，兼容。
 - **取证**：`check:lib-manage` 16→**20** 条（N8 瞬时占用救回 / N8b 持续占用 409 / N8c 释放后重试 200 / N9 源码级 pipeline 断言），反证 8→**11**（M9 退回 pipe ⇒ N9 红、M10 去重试 ⇒ N8 红、M11 去归因 ⇒ N8b 红），四源文件字节还原；`check:contract` 77/0；`check:docs` 16/0。
 - **运营注意**：改的是 `service/src/*.mjs` ⇒ **必须重启 box-service** 才生效（用户正在跑的旧进程仍会 500）。
+
+## D-126 · Tooltip 悬停丢失：宿主离开改宽限期（2026-10-11）
+
+**症状**：用户报「hover 到 tooltip 上它就消失了」。
+
+- **根因**：气泡悬在宿主上方 6px（`.ui-tooltip` 定位 `top: r.top - 6`），指针从宿主挪进气泡**必然先触发宿主的 mouseleave**；原实现宿主离开立即 `hide()` 销毁气泡，气泡自己的 `onMouseEnter={keep}`（原本只清"显示定时器"）永远追不上。
+- **修法**：宿主离开（`onMouseLeave`/`onBlur`）改为 `scheduleHide()` —— 140ms（`GRACE_MS`）后才真正收；指针在这段窗口内进入气泡，`onMouseEnter={keep}` 取消收起。气泡自身离开仍是立即 `hide`。140ms：跨过 6px 间隙绰绰有余，又不至于让"扫过列表"的收起手感变黏。
+- **取证**：`check:units` 44→**45** 条（新增 TOOLTIP.graceHide：宿主离开必须是 scheduleHide + keep 取消 + GRACE_MS 存在），反证 +1（宿主离开改回立即 hide ⇒ TOOLTIP.graceHide 红），总反证 59/59。
+
+## D-127 · 轻提示从灵动岛剥离为 topRight 通知堆叠（NotificationStack）（2026-10-11）
+
+**需求**：用户要求把「灵动岛 + onToast」的提示改成 antd notification（topRight）形态。
+
+- **为什么剥离**：灵动岛一条胶囊一次只能显示一条提示，且会被音乐播放态顶掉 —— 批量操作（删除/归并/返工）的反馈互相覆盖。topRight 堆叠让多条并存、逐条关闭、自动消失。
+- **不引 antd**：只借形态（topRight 堆叠 + 语义色 + 逐条关闭 + TTL）。引整个 antd 只为通知一个组件，包体与主题两头不划算（antd 变量体系与 `--md-*` 令牌是两套）。视觉逐项取本项目语汇：底 `--md-surface`/描边 `--md-line`/阴影与 `.di-capsule` 同值/圆角 12 同档/语义色沿用 `di-dot-*` 映射。
+- **架构不变**：`toastBus` 仍是**唯一队列**（ISLAND.singleSource 的裁定原样有效），`useToasts().push` 与 music/Toast 转发器照旧；改的只是渲染层 —— 新增 `components/NotificationStack.tsx`（App 根挂载，与灵动岛并列），`toastBus.useToastList()` 订阅全量（原 `useToastsFromBus` 只给"最后一条"，已随灵动岛的提示通道一起退役）。手动关闭走 180ms 退场动画（`LEAVE_MS` ↔ app.scss `.ntf.is-leaving` 0.18s 同源）；TTL 仍在总线（3.8s / 报错 6.5s）。
+- **灵动岛只留音乐**：`DynamicIsland.tsx` 删掉整个 toast 通路（KIND_TO_STATUS / requestClose / leaving / di-row 一族状态与 JSX）；空闲早退从 `!toast && !hasQueue` 收窄为 `!hasQueue`。music.scss 同步删掉只服务提示的死样式（`.is-toast`/`.is-leaving`/`.di-row`/`.di-lead`/`.di-title`/`.di-close`/`.di-dot*`）。
+- **取证**：`check:units` ISLAND 组改判——`morphDurationSync`（MORPH_MS 320 ↔ CSS width 0.32s，原 0.26s↔requestClose 的比对随退场机制退役）、`idleRendersNothing`（新早退形态）、`noToastChannel`（岛不得再引用 toastBus 通道，防"两个渲染层"回潮）；反证锚点同步换（13 条组合仍 59/59 全红 + 字节还原）；`tsc --noEmit` 0 · `vite build` 通过。

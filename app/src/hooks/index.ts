@@ -7,7 +7,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 // 吐司的**唯一实现**在这里，本文件只做类型与 hook 转发（原因见本文件末尾的吐司段注释）
 import {
   toastBus,
-  useToastsFromBus,
   type BusToast,
 } from '@/toastBus';
 import {
@@ -172,10 +171,10 @@ export function useQuitRequest(onRequest: () => void) {
 export type Toast = BusToast;
 
 export function useToasts() {
-  const last = useToastsFromBus();
   const push = useCallback((text: string, kind: Toast['kind'] = 'info') => {
     toastBus.push(text, kind);
   }, []);
   // dismiss 直接给总线的方法（引用稳定，不需要再包一层 useCallback）
-  return { toasts: last ? [last] : [], push, dismiss: toastBus.dismiss };
+  // 渲染由 components/NotificationStack 承担（它自己 useToastList 订阅全量），这里只出「推」
+  return { push, dismiss: toastBus.dismiss };
 }

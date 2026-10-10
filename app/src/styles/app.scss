@@ -332,3 +332,88 @@
   color: var(--md-muted);
 }
 
+
+/* ================================================================ 通知堆叠（topRight）
+ * 轻提示的唯一渲染层（components/NotificationStack.tsx）。形态参考 antd notification
+ * （topRight 多条并存、逐条关闭、自动消失），视觉取本项目语汇：
+ * 底色/描边同 .card，阴影与 .di-capsule 同值，圆角 12 同档，语义色沿用 di-dot-* 的映射。 */
+
+.ntf-stack {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  /* 岛(55)之上、漫画模态(70)/下拉(75)之下：通知不该压住对话框与菜单 */
+  z-index: 56;
+  pointer-events: none; /* 容器不拦点击，只有卡片自己能点 */
+}
+
+.ntf {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 360px;
+  padding: 9px 10px 9px 12px;
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(20, 15, 41, 0.2);
+  font-size: 12px;
+  color: var(--md-ink);
+  animation: ntf-in 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes ntf-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 手动关闭的退场：180ms，与 NotificationStack 的 LEAVE_MS 同源（改一处必须改另一处） */
+.ntf.is-leaving {
+  opacity: 0;
+  transform: translateX(12px);
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+.ntf-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.ntf-text {
+  min-width: 0;
+  /* 多行可读：通知是"用户要读完的反馈"，不像岛内标题那样裁单行 */
+  word-break: break-word;
+  user-select: text;
+}
+
+.ntf-close {
+  flex: none;
+  display: flex;
+  /* 关闭键与文字拉开一点距离，且弱化视觉重量 */
+  margin-left: 2px;
+  opacity: 0.6;
+}
+
+.ntf-close .ui-cbtn {
+  width: 22px;
+  height: 22px;
+}
+
+.ntf-close:hover {
+  opacity: 1;
+}

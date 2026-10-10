@@ -1,5 +1,5 @@
-import { ListMusic, Maximize2, Music, Pause, Play, SkipBack, SkipForward, X, AudioLines } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ListMusic, Maximize2, Music, Pause, Play, SkipBack, SkipForward, AudioLines } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { IconButton } from '@components/units/IconButton';
 import { attachAnalyser, findAudioElement, isAudioContextRunning, readLevels } from '@music/audioGraph';
@@ -7,10 +7,9 @@ import { coverProxyUrl, fmtTime, useMusicStore } from '@music/store';
 import type { IslandView, ParsedLyricLine } from '@music/store';
 import type { Song } from '@music/types';
 import { KaraokeLyrics } from '@screens/music/KaraokeLyrics';
-import { toastBus, useToastsFromBus, type ToastKind } from '@/toastBus';
 
 /**
- * 灵动岛 —— 拍板第 4 项（方案 B = 播放态 + 承接轻提示）。
+ * 灵动岛 —— 拍板第 4 项（方案 B = 播放态）。
  *
  * ## 形态与交互契约取自哪里
  * 取自 vendor 里的参考实现（`upstream-v10/components/dynamic-island.tsx`，只读不改）。
@@ -26,27 +25,30 @@ import { toastBus, useToastsFromBus, type ToastKind } from '@/toastBus';
  * | `useSongLevels` 纯前端假波形     | `AnalyserNode` 接真实音频 + 不可用时回落 CSS 动画波形 |
  *
  * ## 三态
- * 圆形 30×30（只有语义点）→ 胶囊（音乐 200×30 / 普通提示自适应宽×30）→ 大卡 320×150（音乐）。
+ * 圆形 30×30（只有语义点）→ 胶囊（音乐 200×30）→ 大卡 320×150。
  * 尺寸常量与参考实现**逐值一致**。
  *
  * ## 为什么空闲时不渲染 DOM
  * 空气里挂一个空胶囊比"根本不显示"更怪；而组件本身常驻（App 根一直渲染它），
  * `return null` 只是不下 DOM，state / refs 仍在 —— 所以动画状态能跨空闲期保留。
+ *
+ * ## 轻提示为什么不在岛上（2026-10-11 改版）
+ * 一条胶囊一次只能显示一条提示，且会被音乐播放态顶掉 —— 批量操作的反馈会互相覆盖。
+ * 轻提示的承载剥离给了 `components/NotificationStack.tsx`（topRight 通知堆叠，
+ * antd notification 形态）。两者共用 toastBus 这条唯一队列（ISLAND.singleSource 的
+ * 裁定不变），本组件**不再引用 toastBus** —— 那是「单一渲染层」的判据。
  */
 
 /* ---- 尺寸常量：与参考实现逐值一致（30 / 200×30 / 320×150）---- */
 const CIRCLE_SIZE = 30;
-const COLLAPSED_HEIGHT = 30;
 const MUSIC_COLLAPSED_WIDTH = 200;
 const MUSIC_COLLAPSED_HEIGHT = 30;
 const EXPANDED_WIDTH = 320;
 const MUSIC_EXPANDED_HEIGHT = 150;
-/** 普通提示展开态高度：参考实现里"无描述的单行提示"取 34 */
-const TOAST_EXPANDED_HEIGHT = 34;
 
-/** 形变（宽/高）时长 —— 必须与 app.css `.di-capsule` 的 width/height transition 一致 */
+/** 形变（宽/高）时长 —— 必须与 music.scss `.di-capsule` 的 width/height transition 一致 */
 const MORPH_MS = 320;
-/** 淡入/淡出时长 —— 必须与 app.css `.di-capsule` 的 transform/opacity 0.26s 一致 */
+/** 淡入/淡出时长 —— 必须与 music.scss `.di-capsule` 的 transform/opacity 0.26s 一致 */
 const FADE_MS = 260;
 /** 波形柱数量（对齐参考实现折叠态的 5 根） */
 const WAVE_BARS = 5;
@@ -72,44 +74,21 @@ const ISLAND_LYR_WINDOW = 2;
 const ISLAND_LYR_SIZE = 14;
 const ISLAND_LYR_SIZE_NEXT = 12;
 
-/** 参考实现的 `IslandStatus`（六态） */
-type IslandStatus = 'success' | 'error' | 'info' | 'warning' | 'loading' | 'blue';
-
-/**
- * 语义色映射表（实际代码里的六态口径）。
- * 总线侧保留了旧名 good/bad（6 处业务在用，不能破坏），这里做等价映射；
- * warning/loading/blue 是参考实现另有语义的三态，总线新增。
- */
-const KIND_TO_STATUS: Record<ToastKind, IslandStatus> = {
-  info: 'info',
-  good: 'success',
-  bad: 'error',
-  warning: 'warning',
-  loading: 'loading',
-  blue: 'blue',
-};
-
 /** 形变阶段：圆形 → 胶囊 → 大卡（分别对应一组内联宽高） */
 type Phase = 'circle' | 'collapsed' | 'expanded';
 
-/** 当前**真正渲染在岛上**的内容（参考实现的 `displayed`）。 */
+/** 当前**真正渲染在岛上**的歌（参考实现的 `displayed`）。 */
 interface Shown {
-  kind: 'toast' | 'music';
   /**
    * 展示键。**仅当它变化时才播出现/替换动画** —— 这是刻意去重：
    * `playSong` 会先置 currentSong 再异步置 isPlaying，
    * 若以"播放态"为触发，同一首歌会先淡入展开、再缩回扩散，看起来像加载两次。
    */
   key: string;
-  /** 轻提示的 toast id（用于"只关这一条"）；音乐卡为固定 'music' */
-  id: string;
   text: string;
-  status: IslandStatus;
 }
 
 export function DynamicIsland() {
-  const toast = useToastsFromBus();
-
   // 播放态数据。⚠️ 订阅粒度保持细：订阅 queue 整个数组会让每次入队/出队都重渲染这里。
   const currentSong = useMusicStore((s) => s.currentSong);
   const isPlaying = useMusicStore((s) => s.isPlaying);
@@ -131,11 +110,8 @@ export function DynamicIsland() {
   const [displayed, setDisplayed] = useState<Shown | null>(null);
   const [phase, setPhase] = useState<Phase>('circle');
   const [visible, setVisible] = useState(false); // 整体淡入淡出
-  const [contentOn, setContentOn] = useState(false); // 折叠态内容（文字 / 波形 / 关闭键）
+  const [contentOn, setContentOn] = useState(false); // 折叠态内容（歌名 / 波形）
   const [cardOn, setCardOn] = useState(false); // 大卡内容
-  const [leaving, setLeaving] = useState(false); // 点击关闭的退场
-  const [rowWidth, setRowWidth] = useState(0); // 折叠态自适应宽（测量得到）
-  const [titleOver, setTitleOver] = useState(false); // 标题是否溢出（溢出→右端淡出）
 
   // 同步给异步动画读取的 ref（setState 是异步的，动画链需要"此刻"的值）
   const chainRef = useRef<Promise<void>>(Promise.resolve());
@@ -146,12 +122,7 @@ export function DynamicIsland() {
   const targetRef = useRef<Shown | null>(null);
   const displayedRef = useRef<Shown | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
-  const rowRef = useRef<HTMLDivElement | null>(null);
-  const titleRef = useRef<HTMLSpanElement | null>(null);
   const pendingLeaveRef = useRef(false);
-  const closeTimerRef = useRef<number | null>(null);
-  const leavingRef = useRef(false);
-  const closeIdRef = useRef<string | null>(null);
   const lastKeyRef = useRef<string | null>(null);
 
   const setShown = useCallback((it: Shown | null) => {
@@ -179,54 +150,6 @@ export function DynamicIsland() {
   const run = useCallback((fn: () => Promise<void>) => {
     chainRef.current = chainRef.current.then(fn).catch(() => undefined);
   }, []);
-
-  /**
-   * 点击关闭：先补一段退场，再真正从总线移除。
-   *
-   * 为什么用 setTimeout 而不是 transitionend：元素会在 dismiss 后被条件渲染卸载，
-   * 那时 transitionend 根本收不到，动画会被硬截断。
-   * ⚠️ 260ms 必须与 app.css `.di-capsule` transition 里的 0.26s 一致
-   * （check:units 的 ISLAND.leaveDurationSync 双向比对这两个数，改一处必须改另一处）。
-   */
-  const requestClose = useCallback(() => {
-    const t = displayedRef.current;
-    if (!t || t.kind !== 'toast' || leavingRef.current) return;
-    const closeId = t.id;
-    leavingRef.current = true;
-    closeIdRef.current = closeId;
-    setLeaving(true);
-    closeTimerRef.current = window.setTimeout(() => {
-      closeTimerRef.current = null;
-      // 只关"按下关闭键时的那一条"：退场途中若换了内容，不能连带关掉新提示
-      const cur = displayedRef.current;
-      if (cur && cur.kind === 'toast' && cur.id === closeId) {
-        toastBus.dismiss(Number(closeId));
-      }
-      leavingRef.current = false;
-      closeIdRef.current = null;
-      setLeaving(false);
-    }, 260);
-  }, []);
-
-  useEffect(
-    () => () => {
-      if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
-    },
-    [],
-  );
-
-  // 退场途中来了**另一条**提示：取消退场，交给 replace 动画换内容（否则新提示也会被淡出）
-  useEffect(() => {
-    if (!toast) return;
-    const id = String(toast.id);
-    if (leavingRef.current && closeIdRef.current !== null && id !== closeIdRef.current) {
-      if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
-      leavingRef.current = false;
-      closeIdRef.current = null;
-      setLeaving(false);
-    }
-  }, [toast]);
 
   /* ---------------- 动画段（每段 await 之后都要回查 ref，才能被中途中止） ---------------- */
 
@@ -283,14 +206,10 @@ export function DynamicIsland() {
     if (!wantExpandedRef.current) return;
     goPhase('expanded'); // 宽高同帧开动
     /*
-     * ⚠️ 只有音乐卡才淡出"折叠态内容" —— 它的展开态是**另一套**大卡（封面/歌名靠 transform
-     * 位移过去，折叠态的波形与名字让位）。普通提示**没有第二套内容**：它的展开态只是把胶囊
-     * 从自然宽放宽到 320，让 `.di-title` 的 `max-width` 从 176 涨到 236，从而露出被裁掉的
-     * 后半句（见 music.scss）。对提示也 `setContentOn(false)`，会把标题连同关闭键整体淡成
-     * 透明，而底下没有任何新内容补位 —— 表现就是「hover 上去有个形变动画，然后字没了」。
-     * 所以这里按 kind 分流：提示保持 contentOn=true，只是一路放宽。
+     * 展开态是**另一套**大卡（封面/歌名靠 transform 位移过去，折叠态的波形与名字让位），
+     * 所以折叠态内容要淡出 —— 大卡内容在最终位淡入补位（cardOn）。
      */
-    if (t.kind === 'music') setContentOn(false);
+    setContentOn(false);
     await wait(MORPH_MS);
     if (!expandedRef.current) return; // 中途中止：期间已收起
     if (phaseRef.current !== 'expanded') return;
@@ -322,23 +241,17 @@ export function DynamicIsland() {
   }, [run, playCollapse]);
 
   const handleClick = useCallback(() => {
-    const t = displayedRef.current;
-    if (!t || leavingRef.current) return;
+    if (!displayedRef.current) return;
     if (expandedRef.current) {
       // 展开态点击 → 收起
       wantExpandedRef.current = false;
       run(playCollapse);
       return;
     }
-    if (t.kind === 'music') {
-      // 持久卡（音乐）折叠态点击 → 展开
-      wantExpandedRef.current = true;
-      run(playExpand);
-      return;
-    }
-    // 普通提示折叠态点击 → 关闭
-    requestClose();
-  }, [requestClose, run, playCollapse, playExpand]);
+    // 折叠态点击 → 展开
+    wantExpandedRef.current = true;
+    run(playExpand);
+  }, [run, playCollapse, playExpand]);
 
   const openPlayer = useCallback(() => setPlayerExpanded(true), [setPlayerExpanded]);
 
@@ -350,25 +263,13 @@ export function DynamicIsland() {
 
   /* ---------------- 目标内容 → 驱动动画 ---------------- */
 
-  // 目标内容：轻提示优先（用户刚操作完，注意力在反馈上），其次播放卡。
-  // 写 ref 是为了让上面的异步动画段读到"此刻"的目标（state 是异步的）。
-  const target: Shown | null = toast
+  // 目标内容：当前播放的歌。写 ref 是为了让上面的异步动画段读到"此刻"的目标（state 是异步的）。
+  const target: Shown | null = currentSong
     ? {
-        kind: 'toast',
-        key: `toast:${toast.id}`,
-        id: String(toast.id),
-        text: toast.text,
-        status: KIND_TO_STATUS[toast.kind],
+        key: `int:${currentSong.id}:${currentSong.name}`,
+        text: currentSong.name,
       }
-    : currentSong
-      ? {
-          kind: 'music',
-          key: `int:${currentSong.id}:${currentSong.name}`,
-          id: 'music',
-          text: currentSong.name,
-          status: 'info',
-        }
-      : null;
+    : null;
   targetRef.current = target;
 
   const targetKey = target ? target.key : null;
@@ -425,88 +326,39 @@ export function DynamicIsland() {
     return () => window.removeEventListener('mousemove', onMove);
   }, [expanded, handleMouseLeave]);
 
-  /* ---------------- 测量 ---------------- */
-
-  // 折叠态自适应宽：量"这一行内容的自然宽"，写到内联 width 上才能被 transition 补间。
-  // ⚠️ 展开态下这一行是 width:100%（跟随胶囊），量到的是容器宽不是自然宽 → 必须跳过，
-  // 否则会用它当收起目标，胶囊就永远收不回去了。
-  useLayoutEffect(() => {
-    const el = rowRef.current;
-    if (!el) return;
-    const measure = () => {
-      if (phaseRef.current === 'expanded') return;
-      const w = Math.ceil(el.getBoundingClientRect().width);
-      setRowWidth((prev) => (Math.abs(prev - w) > 0.5 ? w : prev));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [displayed]);
-
-  // 标题溢出检测：溢出时右端加渐隐遮罩（代替省略号，长歌名/长提示读起来更完整）
-  useEffect(() => {
-    const el = titleRef.current;
-    if (!el) return;
-    const check = () => setTitleOver(el.scrollWidth > el.clientWidth + 1);
-    check();
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [displayed, phase]);
-
   /* ---------------- 波形 ---------------- */
 
-  const wave = useWaveform(isPlaying && displayed?.kind === 'music', WAVE_BARS);
+  const wave = useWaveform(isPlaying && displayed !== null, WAVE_BARS);
 
   /* ---------------- 渲染 ---------------- */
 
-  // 空闲态：既没有提示、也没有队列 → 不渲染任何 DOM（不占位）
-  if (!toast && !hasQueue) return null;
+  // 空闲态：没有播放中的歌 → 不渲染任何 DOM（不占位）
+  if (!hasQueue) return null;
   if (!displayed) return null;
 
-  const kind = displayed.kind;
-  const shownMusic = kind === 'music';
-  const width =
-    phase === 'expanded'
-      ? EXPANDED_WIDTH
-      : phase === 'circle'
-        ? CIRCLE_SIZE
-        : shownMusic
-          ? MUSIC_COLLAPSED_WIDTH
-          : Math.max(CIRCLE_SIZE, rowWidth);
-  const height =
-    phase === 'expanded'
-      ? shownMusic
-        ? MUSIC_EXPANDED_HEIGHT
-        : TOAST_EXPANDED_HEIGHT
-      : shownMusic
-        ? MUSIC_COLLAPSED_HEIGHT
-        : COLLAPSED_HEIGHT;
+  const width = phase === 'expanded' ? EXPANDED_WIDTH : phase === 'circle' ? CIRCLE_SIZE : MUSIC_COLLAPSED_WIDTH;
+  const height = phase === 'expanded' ? MUSIC_EXPANDED_HEIGHT : MUSIC_COLLAPSED_HEIGHT;
 
   return (
     <div className="di-wrap">
       <div
         ref={shellRef}
         className={
-          'di-capsule ' +
-          (shownMusic ? 'is-music' : 'is-toast') +
-          (phase === 'expanded' ? ' is-expanded' : '') +
-          (leaving ? ' is-leaving' : '')
+          'di-capsule is-music' + (phase === 'expanded' ? ' is-expanded' : '')
         }
         role="status"
         aria-live="polite"
         style={{
           width: `${width}px`,
           height: `${height}px`,
-          opacity: leaving ? 0 : visible ? 1 : 0,
+          opacity: visible ? 1 : 0,
         }}
         onClick={handleClick}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         onPointerLeave={handleMouseLeave}
       >
-        {shownMusic && currentSong ? (
+        {currentSong ? (
           <MusicCard
             song={currentSong}
             coverUrl={coverProxyUrl(currentSong.cover, proxyPort)}
@@ -524,35 +376,7 @@ export function DynamicIsland() {
             highlight={lyricsHighlight}
             onToggleView={toggleIslandView}
           />
-        ) : (
-          <div className="di-row" ref={rowRef}>
-            <span className="di-lead" aria-hidden="true">
-              <span className={'di-dot di-dot-' + displayed.status} />
-            </span>
-            <span
-              ref={titleRef}
-              className={titleOver ? 'di-title is-clip' : 'di-title'}
-              // 文字"浮现"用透明度（圆形阶段先不显示），而不靠胶囊扩开时被裁出来
-              style={{ opacity: contentOn ? 1 : 0 }}
-            >
-              {displayed.text}
-            </span>
-            <span
-              className="di-close"
-              style={{ opacity: contentOn ? 1 : 0, pointerEvents: contentOn ? 'auto' : 'none' }}
-            >
-              <IconButton
-                title="关闭提示"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  requestClose();
-                }}
-              >
-                <X size={12} />
-              </IconButton>
-            </span>
-          </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

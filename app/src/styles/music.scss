@@ -31,10 +31,9 @@
 }
 
 /* 胶囊本体：三态共用同一个元素，形变全靠内联 width/height 补间。
-   ⚠️ transition 里**第一段**是 transform/opacity 0.26s —— 这是"退场时长"，
-   与 DynamicIsland.tsx 里 requestClose 的 setTimeout 260ms 必须一致
-   （check:units 的 ISLAND.leaveDurationSync 会双向比对这两个数，改一处必须改另一处）。
-   宽高 0.32s 与 TS 侧 MORPH_MS 同源；圆角一起过渡，大卡才不是椭圆。 */
+   ⚠️ transition 里的 width 0.32s 与 DynamicIsland.tsx 的 MORPH_MS(320) 必须一致
+   （check:units 的 ISLAND.morphDurationSync 会双向比对这两个数，改一处必须改另一处）；
+   transform/opacity 0.26s 与 TS 侧 FADE_MS(260) 同源。 */
 .di-capsule {
   pointer-events: auto;
   position: relative;
@@ -61,110 +60,6 @@
    展开态收成 20（大卡）/18（单行长条）。 */
 .di-capsule.is-expanded.is-music {
   border-radius: 20px;
-}
-.di-capsule.is-expanded.is-toast {
-  border-radius: 18px;
-}
-/* 退场：往上收 + 淡出。透明度由 TS 侧内联控制（内联优先于类），这里只给位移。
-   ⚠️ 0.26s 与 requestClose 的 260ms 必须一致 —— 早退看不见收尾，晚退则胶囊悬着不走。 */
-.di-capsule.is-leaving {
-  transform: translateY(-10px) scale(0.97);
-}
-
-/* 普通提示的一行内容。折叠态必须 width:max-content —— 它的自然宽会被 TS 侧
-   量出来写进胶囊的 width（只有这样宽度才可补间）；展开态改成铺满，让文字拿到更多宽度。 */
-.di-row {
-  flex: 0 0 auto;
-  width: max-content;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px 0 4px;
-}
-.di-capsule.is-expanded .di-row {
-  flex: 1 1 auto;
-  width: 100%;
-  padding: 0 12px 0 6px;
-}
-/* 语义点占一个 22px 的方框：圆形阶段它和参考实现的图标一样是"居中的那一个元素"，
-   若让 7px 的点自己当首元素，它会被左边距顶到角落。 */
-.di-lead {
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.di-title {
-  min-width: 0;
-  max-width: 176px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--md-ink);
-  white-space: nowrap;
-  overflow: hidden;
-  transition: opacity 0.16s; /* 文字"浮现"（透明度由 TS 侧按形变阶段切） */
-}
-.di-capsule.is-expanded .di-title {
-  max-width: 236px;
-  font-size: 12px;
-}
-/* 溢出时右端渐隐，不用省略号 —— 省略号会把"还有多少"藏起来，
-   渐隐则暗示"文字还在继续"。遮罩由 TS 侧量出 scrollWidth > clientWidth 后开启。 */
-.di-title.is-clip {
-  -webkit-mask-image: linear-gradient(to right, #000 88%, transparent 100%);
-  mask-image: linear-gradient(to right, #000 88%, transparent 100%);
-}
-.di-close {
-  flex: 0 0 auto;
-  display: flex;
-  transition: opacity 0.18s;
-}
-/* 关闭键压到 22px：胶囊本身只有 30 高，30px 的圆按钮会顶满上下、没有余量。
-   作用域限定在提示态，免得把大卡里的传输控件一起缩小。 */
-.di-capsule.is-toast .di-close .ui-cbtn {
-  width: 22px;
-  height: 22px;
-}
-
-/* 轻提示态：状态点 + 文字（不用图标 —— 圆点读作"语气"更轻，图标会与文字抢注意力）
-   六态语义色，与参考实现的 IslandStatus 对齐：
-   总线旧名 good→success / bad→error / info→info，另加 warning / loading / blue。 */
-.di-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--md-muted);
-}
-.di-dot-info {
-  background: var(--md-pink); /* info 用品牌色（参考实现里 info 取主题色） */
-}
-.di-dot-success {
-  background: var(--md-success);
-}
-.di-dot-error {
-  background: var(--md-error);
-}
-.di-dot-warning {
-  background: var(--md-warning);
-}
-.di-dot-blue {
-  background: var(--md-blue);
-}
-/* loading：7px 的实心点转起来看不出在转，必须换成环 */
-.di-dot-loading {
-  width: 11px;
-  height: 11px;
-  background: transparent;
-  border: 1.6px solid var(--md-blue);
-  border-top-color: transparent;
-  animation: di-spin 0.8s linear infinite;
-}
-@keyframes di-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 /* 音乐卡容器：铺满胶囊（折叠 200×30 / 展开 320×150），内部元素全部绝对定位，

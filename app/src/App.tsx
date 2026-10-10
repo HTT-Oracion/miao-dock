@@ -12,6 +12,7 @@ import {
 import type { ThemeMode } from '@/theme/tokens';
 import { Badge, Btn, Notice, Pill } from '@components/units';
 import { DynamicIsland } from '@components/DynamicIsland';
+import { NotificationStack } from '@components/NotificationStack';
 import { MusicKernel } from '@components/MusicKernel';
 import { QuitConfirm } from '@components/QuitConfirm';
 import { Sidebar } from '@components/Sidebar';
@@ -456,16 +457,13 @@ export function App() {
       ) : null}
 
       {/*
-        灵动岛：**接管**了原先这里的 `.toasts` 渲染层（拍板第 4 项方案 B）。
-        为什么是"接管"而不是"并存"：同一条提示被渲染两次会让人以为是 bug，
-        而且两处位置不同（顶部 vs 右下角），用户会以为按了两次。
-        旧位置不再渲染 —— 参考实现也是把 toast 统一收进灵动岛一处。
-
-        ⚠️ 代价要说清：原有提示从**右下角**移到了**顶部**，这是 6 处既有业务的观感变化
-        （服务重启 / 漫画库 / 打开目录 / 设置页）。换来的是"切屏也能看到"——
-        原先在音乐屏发的提示，切到设置页就消失了。
+        灵动岛：只承载**音乐播放态**（2026-10-11 起，轻提示的承载已剥离给 NotificationStack ——
+        一条胶囊一次只能显示一条提示、且会被播放态顶掉，批量操作的反馈会互相覆盖）。
+        右上角 `<NotificationStack />` 是轻提示的**唯一**渲染层（antd notification 形态）。
+        两者共用 toastBus 这条唯一队列（ISLAND.singleSource 的裁定不变）。
       */}
       <DynamicIsland />
+      <NotificationStack />
     </div>
   );
 }

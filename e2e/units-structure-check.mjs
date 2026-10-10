@@ -68,6 +68,7 @@ const F = {
   island: path.join(SRC, 'components', 'DynamicIsland.tsx'),
   toastBus: path.join(SRC, 'toastBus.ts'),
   musicToast: path.join(SRC, 'screens', 'music', 'Toast.tsx'),
+  tooltip: path.join(SRC, 'components', 'units', 'Tooltip.tsx'),
   library: path.join(SRC, 'screens', 'LibraryScreen.tsx'),
   // 断言读到的 s.appCss 是全分片拼接（见下方 readStyleSource 调用处）；
   // 下面这个 musicScss **只给反证机制用**（按 file 路径临时改源文件）。
@@ -366,6 +367,8 @@ function loadSources() {
   s.island = readMaybe(F.island);
   s.toastBus = readMaybe(F.toastBus);
   s.musicToast = readMaybe(F.musicToast);
+  // 悬停提示（Tooltip 宽限期）
+  s.tooltip = readMaybe(F.tooltip);
   // ZOOM：全屏看图缩放（Lightbox 在这个文件里）
   s.library = readMaybe(F.library);
   // 全分片拼接（顺序 = index.scss 的 @use 顺序 = 层叠顺序）。
@@ -912,59 +915,61 @@ add('ISLAND.musicToastForwards', 'ISLAND', (s) => {
   if (/<div/.test(t)) missing.push('仍在渲染 DOM');
   return { ok: missing.length === 0, detail: missing.length ? `music/Toast 转发：${missing.join('、')}` : '' };
 });
-add('ISLAND.leaveDurationSync', 'ISLAND', (s) => {
-  // 退场时长两处必须一致：CSS 的 .di-capsule.is-leaving 0.26s ↔ TS 的 setTimeout 260ms。
-  // 早退 → 看不见收尾；晚退 → 胶囊悬着不走。
+add('ISLAND.morphDurationSync', 'ISLAND', (s) => {
+  // 形变时长两处必须一致：CSS 的 .di-capsule width 0.32s ↔ TS 的 MORPH_MS 320。
+  // 慢的没走完快的那段就开始 → 胶囊在动画半途被内联宽高"瞬移"。
+  // （2026-10-11 起岛不再承载轻提示、没有"退场"了，原来对 0.26s ↔ requestClose
+  //   的比对随退场机制一起退役，改为守形变时长。）
   const css = stripComments(s.appCss ?? '');
   const ts = stripComments(s.island ?? '');
-  // ⚠️ 时长写在 **.di-capsule 的 transition 简写里**，不在 .is-leaving 块内
-  //（.is-leaving 只改 transform/opacity）。所以要从 .di-capsule 上取。
-  const mCss = css.match(/\.di-capsule\s*\{[^}]*?transition:[^;]*?(\d*\.?\d+)s/);
-  const mTs = ts.match(/setTimeout\([\s\S]*?,\s*(\d+)\s*\)/);
-  if (!mCss) return { ok: false, detail: '样式里找不到 .di-capsule.is-leaving 的 transition 时长' };
-  if (!mTs) return { ok: false, detail: 'DynamicIsland.tsx 找不到退场的 setTimeout' };
-  const cssS = Math.round(parseFloat(mCss[1]) * 1000);
+  // ⚠️ 时长写在 **.di-capsule 的 transition 简写里**，要从 .di-capsule 上取 width 那段。
+  const mCss = css.match(/\.di-capsule\s*\{[^}]*?width\s+([\d.]+)s/);
+  const mTs = ts.match(/const MORPH_MS = (\d+);/);
+  if (!mCss) return { ok: false, detail: '样式里找不到 .di-capsule 的 width transition 时长' };
+  if (!mTs) return { ok: false, detail: 'DynamicIsland.tsx 找不到 MORPH_MS' };
+  const cssMs = Math.round(parseFloat(mCss[1]) * 1000);
   const tsMs = Number(mTs[1]);
   return {
-    ok: cssS === tsMs,
-    detail: cssS === tsMs ? '' : `退场时长不一致：CSS ${mCss[1]}s(${cssS}ms) ↔ TS ${tsMs}ms`,
+    ok: cssMs === tsMs,
+    detail: cssMs === tsMs ? '' : `形变时长不一致：CSS ${mCss[1]}s(${cssMs}ms) ↔ TS ${tsMs}ms`,
   };
 });
 add('ISLAND.idleRendersNothing', 'ISLAND', (s) => {
-  // 无提示且无播放时**不占位** —— 空气里挂个空胶囊比不显示更怪
+  // 无播放中的歌时**不占位** —— 空气里挂个空胶囊比不显示更怪
+  //（2026-10-11 起岛上只有音乐播放态：轻提示已剥离给 NotificationStack）
   if (!s.island) return { ok: false, detail: 'DynamicIsland.tsx 不存在' };
   const isl = stripComments(s.island);
-  if (!/if \(!toast && !hasQueue\) return null/.test(isl))
+  if (!/if \(!hasQueue\) return null/.test(isl))
     return { ok: false, detail: '空闲态未早退（会一直挂着一个空胶囊）' };
   return { ok: true, detail: '' };
 });
-add('ISLAND.toastExpandKeepsContent', 'ISLAND', (s) => {
-  // 用户 2026-10-07 报：「hover 上去看着有个动画，然后消息内容就看不见了」。
-  //
-  // 根因：`playExpand` **无条件** `setContentOn(false)`。音乐卡展开态有**另一套**内容
-  // （大卡：封面/歌名位移过去，折叠态的波形与名字让位），淡出折叠内容是对的；
-  // 而普通提示的展开态**没有第二套内容** —— 它只是把胶囊从自然宽放宽到 320，
-  // 让 `.di-title` 的 max-width 从 176 涨到 236 从而露出被裁掉的后半句（见 music.scss）。
-  // 对提示也淡出，等于把标题连关闭键一起抹成透明，而底下无人补位 ⇒ 「字没了」。
-  //
-  // 判据：`playExpand` 段内，`setContentOn(false)` **只能**出现在 `t.kind === 'music'` 的分支里。
-  // 必须先 stripComments：本文件的注释里主动写出了 `setContentOn(false)` 来解释这个坑，
-  // 不剥注释会把注释算成命中（断言测到注释 = 假阳性）。
+add('ISLAND.noToastChannel', 'ISLAND', (s) => {
+  // 2026-10-11 改版：轻提示的**唯一**渲染层是 components/NotificationStack.tsx（topRight）。
+  // 灵动岛若再接回 toastBus（哪怕只是 import 后没用），同一队列就有两个渲染层 ——
+  // 同一条提示既出现在右上角、又出现在岛顶，用户会以为按了两次（与 .toasts 时代同病）。
   if (!s.island) return { ok: false, detail: 'DynamicIsland.tsx 不存在' };
   const isl = stripComments(s.island);
-  const from = isl.indexOf('const playExpand = useCallback(');
-  const to = isl.indexOf('const playCollapse', from);
-  const seg = from >= 0 && to > from ? isl.slice(from, to) : '';
-  if (!seg) return { ok: false, detail: '未定位到 playExpand 段' };
-  const guarded = /if \(t\.kind === 'music'\) setContentOn\(false\);/.test(seg);
-  const fades = [...seg.matchAll(/setContentOn\(false\)/g)].length;
-  return {
-    ok: guarded && fades === 1,
-    detail:
-      guarded && fades === 1
-        ? ''
-        : `playExpand 对提示也淡出内容（hover 后字消失）：guarded=${guarded} setContentOn(false)×${fades}`,
-  };
+  const hits = [];
+  if (/toastBus|useToastList|useToastsFromBus|BusToast|ToastKind/.test(isl))
+    hits.push('DynamicIsland 仍引用 toastBus 通道');
+  // 岛上只剩音乐播放态：类名必须是 is-music（is-toast 的 CSS 已随提示一起退役）
+  if (!/is-music/.test(isl)) hits.push('岛未按音乐态渲染（缺 is-music）');
+  return { ok: hits.length === 0, detail: hits.join('；') };
+});
+
+// ============================ TOOLTIP（悬停提示 · 宽限期）============================
+// 守「hover 到气泡上气泡先没了」（用户 2026-10-11 报）：气泡悬在宿主上方 6px，
+// 指针从宿主挪进气泡必然先触发宿主 mouseleave —— 立即收就永远追不上。
+// 宿主离开必须走宽限期 scheduleHide，气泡 mouseEnter 取消之（Tooltip.tsx 的 GRACE_MS）。
+add('TOOLTIP.graceHide', 'TOOLTIP', (s) => {
+  if (!s.tooltip) return { ok: false, detail: 'units/Tooltip.tsx 不存在' };
+  const t = stripComments(s.tooltip);
+  const missing = [];
+  if (!/onMouseLeave=\{scheduleHide\}/.test(t)) missing.push('宿主离开不是宽限期（立即收）');
+  if (!/onBlur=\{scheduleHide\}/.test(t)) missing.push('聚焦离开不是宽限期');
+  if (!/GRACE_MS/.test(t)) missing.push('没有宽限期常量');
+  if (!/onMouseEnter=\{keep\}/.test(t)) missing.push('气泡进入没有取消收起');
+  return { ok: missing.length === 0, detail: missing.join('；') };
 });
 
 // ============================ ZOOM（全屏看图缩放）============================
@@ -1248,7 +1253,7 @@ function runAll(s, ids) {
   return res;
 }
 
-const GROUPS = ["LAYOUT", "PURITY", "NAMING", "CALLERS", "KEEP", "HOOKS", "ALIAS", "STATE", "ISLAND", "ZOOM", "STYLE"];
+const GROUPS = ["LAYOUT", "PURITY", "NAMING", "CALLERS", "KEEP", "HOOKS", "ALIAS", "STATE", "ISLAND", "TOOLTIP", "ZOOM", "STYLE"];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -1508,26 +1513,38 @@ const MUTATIONS = [
     expect: ["ISLAND.musicToastForwards"],
   },
   {
-    name: "把退场时长改成 CSS 0.4s ↔ TS 260ms 不一致（胶囊提前消失 / 悬着不走）",
+    name: "把胶囊形变时长改成 CSS 0.4s ↔ TS 320ms 不一致（动画半途被内联宽高瞬移）",
     file: F.musicScss,
-    // 锚点取 transition 里的第一个时长（0.26s）。判据取的是同一处，故改它必然触发红
-    find: "    transform 0.26s cubic-bezier(0.4, 0, 0.2, 1),",
-    replace: "    transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),",
-    expect: ["ISLAND.leaveDurationSync"],
+    // 锚点取 transition 里的 width 段。判据取的是同一处，故改它必然触发红
+    find: "    width 0.32s cubic-bezier(0.22, 0.61, 0.36, 1),",
+    replace: "    width 0.4s cubic-bezier(0.22, 0.61, 0.36, 1),",
+    expect: ["ISLAND.morphDurationSync"],
   },
   {
     name: "去掉灵动岛的空闲态早退（会一直挂着一个空胶囊）",
     file: F.island,
-    find: "  if (!toast && !hasQueue) return null;",
+    find: "  if (!hasQueue) return null;",
     replace: "  // 反证：空闲态不再早退",
     expect: ["ISLAND.idleRendersNothing"],
   },
   {
-    name: "让 playExpand 对普通提示也淡出内容（hover 上去字消失）",
+    name: "让灵动岛重新接回 toastBus（轻提示出现两个渲染层，同一条显示两次）",
     file: F.island,
-    find: "    if (t.kind === 'music') setContentOn(false);",
-    replace: "    setContentOn(false); // 反证：提示也淡出",
-    expect: ["ISLAND.toastExpandKeepsContent"],
+    find: "import { coverProxyUrl, fmtTime, useMusicStore } from '@music/store';",
+    replace:
+      "import { coverProxyUrl, fmtTime, useMusicStore } from '@music/store';\nimport { useToastList } from '@/toastBus'; // 反证：提示通道重新接入",
+    expect: ["ISLAND.noToastChannel"],
+  },
+
+  // ── TOOLTIP（悬停提示）──────────────────────────────────────────────
+  // 守的是「hover 到气泡上气泡先没了」：气泡悬在宿主上方 6px，宿主 mouseleave
+  // 必须走宽限期（scheduleHide），不能立即收 —— 否则指针还在半路上气泡就销毁了。
+  {
+    name: "宿主离开改回立即收起（指针跨间隙时气泡先销毁，hover 不进气泡）",
+    file: F.tooltip,
+    find: "      onMouseLeave={scheduleHide}",
+    replace: "      onMouseLeave={hide}",
+    expect: ["TOOLTIP.graceHide"],
   },
 
   // ── ZOOM（全屏看图缩放）──────────────────────────────────────────────────
@@ -1721,7 +1738,7 @@ console.log(
   "公共组件抽离（components/units）结构断言" + (refute ? " · 反证轮" : ""),
 );
 console.log(`根目录：${ROOT}`);
-console.log(`断言总数：${A.length}（LAYOUT/PURITY/NAMING/CALLERS/KEEP/HOOKS/ALIAS/STATE/ISLAND/ZOOM）`);
+console.log(`断言总数：${A.length}（LAYOUT/PURITY/NAMING/CALLERS/KEEP/HOOKS/ALIAS/STATE/ISLAND/TOOLTIP/ZOOM）`);
 
 if (!refute) {
   const res = runAll(loadSources());
