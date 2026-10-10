@@ -5422,3 +5422,30 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 **取证**：`npx tsc --noEmit` 0 错误；`vite build --no-emptyOutDir` EXIT=0；
 `check:units` 44/0；`check:retranslate` 12/0（R6/R8 绿）；`check:lib-manage` 8/0 + 反证 4/4；
 `check:music` 218/1、`check:docs` 14/2 —— 均与 D-121 登记的基线一致，无新增红项。
+## D-123 · Step 8 断言扩展 + Step 7 裁定留痕（2026-10-11）
+
+**Step 7（封面实时预览）裁定：不做**（plan §4.3 选项 B）。理由：`POST /cover` 复用既有的
+`api_post_multipart` 通道（Rust 侧读本地文件 → multipart 上传，与「本机投放」同一条链路），
+选**选项 A**（Rust `read_image` + capabilities 扩张）只为弹窗里那一张预览图，安全面与代码面
+的代价都不成比例。弹窗内以「文件名 + 选择本地图片 / 取第 1 话首图 / 移除」三个动作表达意图，
+预览缺位由「保存后 `onRefresh()` 立即看到新封面」兜底。
+
+**Step 8：`e2e/service/library-manage-check.mjs` 8 → 14 条，反证 4 → 8 条**：
+
+| 断言 | 咬什么 | 反证（变异 → 变红） |
+|---|---|---|
+| N1 | 新建 = 建目录 + `manifest.json` **同步**落盘（schema=1 + author）+ 库里列为 0 话大类 | —（正向即证） |
+| N2 | 同名 → 409 `BOOK_NAME_TAKEN` 且**不动**已有目录 | M5：existsSync 复检去掉 → 撞名错误裸抛 500（D-118 的"不预校验"纪律由此可反证） |
+| N3 | 源有未终态任务 → 409 `MERGE_SOURCE_BUSY` | M6：在跑门去掉 → 归并真把带任务的目录搬走（变异轮里该任务以 failed 终态收场，不阻塞后续轮次） |
+| N4 | 物理移动为 `<大类>/07_第7话`（NN_第N话 零填充）、原顶层目录消失 | M7：`chapterDirName` 的 `padStart(2,'0')` 去掉 → 产物变 `7_第7话` |
+| N5 | `episodes[]` 按目录重建（`{no:7, dir:"07_第7话"}` 唯一一条） | —（与 N4 同路径；单独成条是为了让"位置对"与"json 对"可分开红） |
+| N6 | 封面：嗅探命名（filename 给 `.bin` 也落成 `cover.png`）+ manifest.cover/author 同请求写入 + `GET /cover` 原样发回字节 | M8：manifest 的 cover 不回写（文件照落、GET 照发，唯独 json 脱钩 —— 咬的正是"同步性"） |
+
+**取证方法上的两条**：N3 为消竞态，连塞**两个**任务再立刻归并 —— 队列串行 ⇒ 第二个必然
+还挂着，判定与引擎快慢无关；反证轮照例不接 `head`/`tail`、输出重定向到文件、结束后
+`git status` + 恢复校验确认四个源文件字节一致。
+
+**结果**：正向 14/0；反证 8/8（M1/M6 轮 runAll 以 waitTask 超时异常收场 —— 变异让任务
+永不到终态，属预期的红，机制按 `roundErr` 判红处理）。`check:music` 218/1、`check:docs`
+14/2，与 D-121 基线一致。AGENTS.md §1 的命令注释与屏内件示例已同步（README 目录节加
+`library/`；`project_rules.md` 为泛化表述无需改）。

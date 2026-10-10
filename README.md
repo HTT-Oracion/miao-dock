@@ -25,7 +25,7 @@ miao-dock/
 ├── app/          Tauri v2 桌面端：Rust 壳（`app/src-tauri/`）+ Vite/React 前端（`app/src/`）
 │   ├── src-tauri/src/music/  音乐模块 Rust 侧：四平台（`netease`/`kugou`/`qqmusic`/`migu`）+ 音频代理 + 加密 + 歌词 + 缓存（汽水延后）
 │   ├── src-tauri/src/lyrics_window.rs  桌面歌词**独立置顶窗**
-│   ├── src/screens/  六个屏入口：投放 / 队列 / 漫画库 / 音乐 / 设置 / 未就绪（`music/`·`lyrics/`·`settings/` 为屏内件）
+│   ├── src/screens/  六个屏入口：投放 / 队列 / 漫画库 / 音乐 / 设置 / 未就绪（`music/`·`lyrics/`·`settings/`·`library/` 为屏内件）
 │   ├── src/music/    音乐领域态（zustand store · ipc · platform · 播放器选项）
 │   ├── src/components/units/  通用 UI 单元（判据：**不 import 业务层**）
 │   └── src/tools/    共享纯函数（`@tools`：格式化 / 分页 / 模糊匹配 / UUID / MIME 嗅探），**不 import 业务层**
