@@ -5097,3 +5097,15 @@ Python `py_compile` 通过 · 渲染冒烟（16/20/24/32px 抗锯齿像素占比
 - **判定（写进 `AGENTS.md` §1 / `project_rules.md` §3 / `README.md` 目录树）**：`app/src/tools/` 判据 = **跨屏可复用 + 不 import 业务层**
   （与 `components/units/` 同源）；**只服务单屏的逻辑仍留屏内**，不为"集中"硬搬。
 - **取证**：`tsc --noEmit` 0 · `vite build` 通过（`@tools` 解析正常）· 5 处 `@/util` 引用全改指 `@tools`（0 残留）。
+
+## D-112 · Tauri 四个契约代理命令改 `async fn` + 非阻塞 `reqwest::Client`（2026-10-10）
+
+**症状**：漫画库一屏几十张缩略图（`api_bytes`）重拉时窗口消息泵被冻住，点击「像没反应」；另一路的表现是加载直接崩。
+
+- **根因（同一文件 `app/src-tauri/src/commands.rs` 上两条，必须成对看）**：
+  - ① **「命令是否 `async`」≠「函数体是否阻塞」**。`#[tauri::command]` 的**同步**命令跑在**主线程**上，`api_get` / `api_bytes` 原本就是这一档 ⇒ 一次 HTTP 就把窗口冻住。（`api_post` 原本挂的是 `#[tauri::command(async)]`，那只是把**函数体**挪到异步线程池，与「命令声明成 `async fn`」不是一回事。）
+  - ② 四个命令底层一律 `reqwest::blocking::*`。blocking 客户端**自带一个 Tokio 运行时**，在 async 上下文里被 drop 会直接 panic：`Cannot drop a runtime in a context where blocking is not allowed`。
+- **修法**：四个代理命令统一为 `#[tauri::command] pub async fn` + `reqwest::Client`（非阻塞；`.send().await` / `.text().await` / `.bytes().await`），multipart 同步换 `reqwest::multipart`。
+  命令体上留了一条注释钉住这对约束 —— **只改一头都不行**：只 async 不改 Client ⇒ panic；只改 Client 不改 async ⇒ 仍冻主线程。
+- **取证**：`cargo check` 0 · `tsc --noEmit` 0 · `check:contract` 77/0 · `check:quit` 5/0 · `check:units` 44/0（回归门未退化）。
+  ⚠️ **缺口（待补）**：本项**无源码级钉子** ——「代理命令必须是 `async fn` 且不得出现 `reqwest::blocking`」既没有断言也没有反证轮；退回同步或 blocking 时上面几道门**全绿不报**。可照 `check:quit` 的形态补纯源码扫描（不起进程）。

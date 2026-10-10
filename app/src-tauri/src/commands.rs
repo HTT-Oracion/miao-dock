@@ -59,11 +59,11 @@ fn parse_error(status: u16, body: &str) -> ApiErrorView {
     }
 }
 
-fn client() -> reqwest::blocking::Client {
-    reqwest::blocking::Client::builder()
+fn client() -> reqwest::Client {
+    reqwest::Client::builder()
         .timeout(Duration::from_secs(180))
         .build()
-        .unwrap_or_else(|_| reqwest::blocking::Client::new())
+        .unwrap_or_else(|_| reqwest::Client::new())
 }
 
 fn target(mgr: &ServiceManager) -> Result<(String, String), ApiErrorView> {
@@ -73,9 +73,9 @@ fn target(mgr: &ServiceManager) -> Result<(String, String), ApiErrorView> {
     }
 }
 
-fn finish(res: reqwest::blocking::Response) -> Result<Value, ApiErrorView> {
+async fn finish(res: reqwest::Response) -> Result<Value, ApiErrorView> {
     let status = res.status().as_u16();
-    let text = res.text().unwrap_or_default();
+    let text = res.text().await.unwrap_or_default();
     if (200..300).contains(&status) {
         if text.trim().is_empty() {
             return Ok(Value::Null);
@@ -210,21 +210,32 @@ pub fn set_theme(app: AppHandle, mode: Option<String>) {
 }
 
 // ------------------------------------------------------------------ 契约端点代理
+//
+// 🔴 这四个代理命令是**真正的 async fn**（`#[tauri::command]` + `async`），底层 HTTP 一律走
+// **非阻塞** 的 `reqwest::Client`（`.await`）。两条都必须守：
+//   ① 命令若是**同步**（不带 async），跑在**主线程**上 —— 一次 HTTP 就把窗口消息泵冻住，
+//      漫画库一屏几十张缩略图（`api_bytes`）重拉时界面全死、点击「像没反应」。
+//   ② 命令若是 async 但底层用 **`reqwest::blocking`**，会**直接 panic**：blocking 客户端自带
+//      一个 Tokio 运行时，在 async 运行时里被 drop 会触发
+//      "Cannot drop a runtime in a context where blocking is not allowed"
+//      ⇒ 所有加载（队列 / 漫画库 / 漫画）齐崩。
+// 所以：async fn + 非阻塞 Client，二者缺一不可。
 
 #[tauri::command]
-pub fn api_get(mgr: State<'_, ServiceManager>, path: String) -> Result<Value, ApiErrorView> {
+pub async fn api_get(mgr: State<'_, ServiceManager>, path: String) -> Result<Value, ApiErrorView> {
     let (base, token) = target(&mgr)?;
     let res = client()
         .get(format!("{base}{path}"))
         .header("X-Box-Token", token)
         .header("X-Box-Client", "box-desktop/0.1.0")
         .send()
+        .await
         .map_err(|e| ApiErrorView::network(e.to_string()))?;
-    finish(res)
+    finish(res).await
 }
 
-#[tauri::command(async)]
-pub fn api_post(
+#[tauri::command]
+pub async fn api_post(
     mgr: State<'_, ServiceManager>,
     path: String,
     body: Option<Value>,
@@ -237,24 +248,24 @@ pub fn api_post(
     if let Some(b) = body {
         req = req.json(&b);
     }
-    let res = req.send().map_err(|e| ApiErrorView::network(e.to_string()))?;
-    finish(res)
+    let res = req.send().await.map_err(|e| ApiErrorView::network(e.to_string()))?;
+    finish(res).await
 }
 
 /// `multipart/form-data` 提交（契约 §5.2）：payload + images[]（≤20 张，由前端分批）
 #[tauri::command]
-pub fn api_post_multipart(
+pub async fn api_post_multipart(
     mgr: State<'_, ServiceManager>,
     path: String,
     payload: Value,
     files: Vec<String>,
 ) -> Result<Value, ApiErrorView> {
     let (base, token) = target(&mgr)?;
-    let mut form = reqwest::blocking::multipart::Form::new();
+    let mut form = reqwest::multipart::Form::new();
     let payload_text = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into());
     form = form.part(
         "payload",
-        reqwest::blocking::multipart::Part::text(payload_text).mime_str("application/json").map_err(|e| ApiErrorView::network(e.to_string()))?,
+        reqwest::multipart::Part::text(payload_text).mime_str("application/json").map_err(|e| ApiErrorView::network(e.to_string()))?,
     );
     for (i, f) in files.iter().enumerate() {
         let bytes = std::fs::read(f).map_err(|e| ApiErrorView::network(format!("读取文件失败 {f}：{e}")))?;
@@ -272,7 +283,7 @@ pub fn api_post_multipart(
         let name = format!("{:03}.{ext}", i + 1);
         form = form.part(
             "images[]",
-            reqwest::blocking::multipart::Part::bytes(bytes)
+            reqwest::multipart::Part::bytes(bytes)
                 .file_name(name)
                 .mime_str(mime)
                 .map_err(|e| ApiErrorView::network(e.to_string()))?,
@@ -284,13 +295,14 @@ pub fn api_post_multipart(
         .header("X-Box-Client", "box-desktop/0.1.0")
         .multipart(form)
         .send()
+        .await
         .map_err(|e| ApiErrorView::network(e.to_string()))?;
-    finish(res)
+    finish(res).await
 }
 
 /// 取库内文件字节（漫画库网格 / 原译对照用）。走 IPC 二进制通道，前端转 blob URL
 #[tauri::command]
-pub fn api_bytes(
+pub async fn api_bytes(
     mgr: State<'_, ServiceManager>,
     path: String,
 ) -> Result<tauri::ipc::Response, ApiErrorView> {
@@ -299,9 +311,10 @@ pub fn api_bytes(
         .get(format!("{base}{path}"))
         .header("X-Box-Token", token)
         .send()
+        .await
         .map_err(|e| ApiErrorView::network(e.to_string()))?;
     let status = res.status().as_u16();
-    let bytes = res.bytes().map_err(|e| ApiErrorView::network(e.to_string()))?;
+    let bytes = res.bytes().await.map_err(|e| ApiErrorView::network(e.to_string()))?;
     if !(200..300).contains(&status) {
         return Err(parse_error(status, &String::from_utf8_lossy(&bytes)));
     }
