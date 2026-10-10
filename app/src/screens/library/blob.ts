@@ -52,11 +52,28 @@ export function coverPath(bookName: string, revision?: string | null): string {
   return revision ? `${base}?v=${encodeURIComponent(revision)}` : base;
 }
 
-/** 一话的**页集合**（取首图只需要这三项，故按结构收参、不 import 业务类型） */
-interface PageSet {
+/**
+ * 一话 / 一部 / 一个大类的**页集合**（按结构收参，不 import 业务类型）。
+ *
+ * `ChapterEntry`、`ComicEntry`、未归并单话的扫描结果三者都**结构兼容**这个形状，
+ * 所以屏里可以直接互相传递、不必断言或转换。字段名一律照抄服务端（`scanChapterPages`），
+ * 免得出现"这里叫 pages、那里叫 count"的第二套说法。
+ */
+export interface PageSet {
   seqMax: number;
+  /** 有原图的页数 */
+  imageCount: number;
+  /** 有译文的页数（**只能用来报数**，不能用它推「哪几页已译」，见 G-10） */
+  translatedCount: number;
   missingSeqs: number[];
   translatedSeqs: number[];
+}
+
+/** 数组最小值；空数组 ⇒ `null`。手写循环而不用 `Math.min(...arr)`：页数上千时展开会爆栈 */
+function minOf(xs: number[]): number | null {
+  let min: number | null = null;
+  for (const x of xs) if (min === null || x < min) min = x;
+  return min;
 }
 
 /**
@@ -107,6 +124,21 @@ export function bookFirstImagePath(
     return chapterFilePath(bookName, ch.no, seq, variantOf(ch, seq));
   }
   return null;
+}
+
+/**
+ * **话卡缩略图**路径（设计稿 §7.3）：该话**第一张译文图**；整话还没译完则退回首张原图；
+ * 一张原图都没有（空话）⇒ `null`，由调用方显示「空话」占位。
+ *
+ * 为什么不是「第一张有原图页」那个口径（`bookFirstImagePath` 用的）：话卡要回答的是
+ * "翻过这一话你大概会看到什么"。一话里只有第 3 页译完时，缩略图该是那张**译文**
+ * ——拿第 1 页原图当缩略图会让"这一话已经译了"这件事在列表里完全看不出来。
+ * 两者在"整话未译"时结果相同，因此算不上第二套判据。
+ */
+export function chapterImagePath(bookName: string, ch: { no: number | null } & PageSet): string | null {
+  if (ch.no === null) return null; // 话号都没有 ⇒ 它不是话目录，拼不出路径
+  const seq = minOf(ch.translatedSeqs) ?? firstPageOf(ch);
+  return seq === null ? null : chapterFilePath(bookName, ch.no, seq, variantOf(ch, seq));
 }
 
 /**

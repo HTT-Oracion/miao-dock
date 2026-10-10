@@ -37,11 +37,14 @@ import { useDebouncedValue } from '@hooks/useDebouncedValue';
 import { Btn, MenuButton, MenuItem, Notice } from '@components/units';
 import {
   bookFirstImagePath,
+  chapterFilePath,
   coverPath,
   filePath,
   topLevelFirstImagePath,
   useBlobUrl,
 } from '@screens/library/blob';
+import type { Variant } from '@screens/library/blob';
+import { ChapterCard } from '@screens/library/chapters';
 import type { BookMetaIntent } from '@screens/library/modals';
 import { EditBookModal, MergeModal, NewBookModal } from '@screens/library/modals';
 
@@ -49,6 +52,14 @@ import { EditBookModal, MergeModal, NewBookModal } from '@screens/library/modals
 const LIB_PAGE_SIZE = 12;
 /** 网格每页张数（110×165 卡 + 12 间距；24 张约两行多，翻页不至于太空） */
 const GRID_PAGE_SIZE = 24;
+/**
+ * 屏 B 话列表每页话数（设计稿 §7.3 明写 `CHAPTER_PAGE_SIZE = 24`，与 `GRID_PAGE_SIZE` 同值）。
+ *
+ * 与网格分页同值不是巧合：话卡与页卡是**同一个 110×165 的格子**（设计稿 §7.3「沿用
+ * `LIBRARY.card` 令牌，不新增几何」），所以每屏装得下的个数天然相同。两处各写一个数，
+ * 迟早出现"话列表 24/页、页网格 30/页"这种没理由的不一致。
+ */
+const CHAPTER_PAGE_SIZE = 24;
 
 /** 作者为空时的占位文案（设计稿 §7.1 中下 / §7.3 头部卡**同一口径**，故只写一份常量） */
 const AUTHOR_FALLBACK = '未署名';
@@ -115,19 +126,86 @@ interface LibItem {
 }
 
 /**
+ * 页网格（屏 A / 屏 C）与对照视图（屏 D）共用的**页集合投影**。
+ *
+ * 三种来源在此归一：旧口径的整本（`ComicEntry`，顶层取图）、大类里的一话
+ * （`ChapterEntry`，话内取图）。没有这条投影，网格就得在自己体内判一遍
+ * "我这一格是整本还是话" —— 那个判断只该有一处，就是这里的 `imagePath()` 闭包。
+ *
+ * 🔴 `imagePath` 返回的路径**必须含「书 + 话 + 页」三段**：路径同时是 `URL_CACHE`
+ * 的键（D-117），只按页号做键会让《A》第 1 话第 1 页与《B》第 1 话第 1 页命中
+ * 同一条缓存 —— 跨书串图，且是"看起来正常、内容错了"的最难发现的那类缺陷。
+ */
+interface PageView {
+  /** 操作端点基址：`/library/{名}` 或 `/library/{书}/chapters/{话}`（续做 / 返工都挂在它下面） */
+  base: string;
+  /** 归因显示名（对照头部 / 全屏回显 / Toast）：编码过的目录名不能直接给人看 */
+  comicName: string;
+  seqMax: number;
+  translatedSeqs: number[];
+  missingSeqs: number[];
+  /** 第 `seq` 页 `variant` 侧的字节路径 */
+  imagePath(seq: number, variant: Variant): string;
+}
+
+/** 整本 / 未归并单话的投影：取图走**顶层**端点（与旧口径一致） */
+function flatViewOf(c: ComicEntry): PageView {
+  return {
+    base: `/library/${encodeURIComponent(c.comicName)}`,
+    comicName: c.comicName,
+    seqMax: c.seqMax,
+    translatedSeqs: c.translatedSeqs,
+    missingSeqs: c.missingSeqs,
+    imagePath: (seq, variant) => filePath(c.comicName, seq, variant),
+  };
+}
+
+/** 大类里一话的投影：取图走**话级**端点（`GET /library/{书}/chapters/{话}/files/{seq}`） */
+function chapterViewOf(b: BookEntry, ch: ChapterEntry): PageView {
+  // 屏 C 的入口（话卡）对 `no === null` 是禁用的，走到这里话号必在；`?? 0` 只是让类型闭合
+  const no = ch.no ?? 0;
+  return {
+    base: `/library/${encodeURIComponent(b.bookName)}/chapters/${no}`,
+    comicName: `${b.bookName} · 第 ${no} 话`,
+    seqMax: ch.seqMax,
+    translatedSeqs: ch.translatedSeqs,
+    missingSeqs: ch.missingSeqs,
+    imagePath: (seq, variant) => chapterFilePath(b.bookName, no, seq, variant),
+  };
+}
+
+/**
  * 封面缩略。
  *
  * `loading` 与 `missing` 都落到占位（`line-soft` 底 + 书名首字，设计稿 §7.1）：
  * 32×44 的小格子里塞「加载中…」比直接显示首字更难看，且缩略图取回来只要几十毫秒。
  * 但 `ready` 与"取不到"必须分开 —— 取不到时**不能**装作还在加载。
+ *
+ * 尺寸与圆角由调用方从 `LIBRARY.cover` 传进来（左栏缩略 32×44、详情头 56×76）：
+ * 这两个值只差尺寸，各写一份 CSS 规则就会出现"改了一处、另一处还是旧的"。
  */
-function CoverThumb({ path, name, className }: { path: string | null; name: string; className: string }) {
+function CoverThumb({
+  path,
+  name,
+  className,
+  w,
+  h,
+  radius,
+}: {
+  path: string | null;
+  name: string;
+  className: string;
+  w: number;
+  h: number;
+  radius: number;
+}) {
   const blob = useBlobUrl(path);
+  const style = { width: w, height: h, borderRadius: radius };
   if (blob.kind === 'ready') {
-    return <img className={className} src={blob.url} alt="" draggable={false} />;
+    return <img className={className} style={style} src={blob.url} alt="" draggable={false} />;
   }
   return (
-    <div className={`${className} is-ph`} aria-hidden="true">
+    <div className={`${className} is-ph`} style={style} aria-hidden="true">
       {name.slice(0, 1)}
     </div>
   );
@@ -168,10 +246,15 @@ function Highlight({ text, query }: { text: string; query: string }) {
 /**
  * 网格缩略图。三态必须分开，且**只在确实有译文时才发请求** ——
  * 对已知没有译文的页仍去取一次、失败后显示「加载中…」，是把「不存在」伪装成「还没到」。
+ *
+ * 收 `path`（而不是 `comicName + seq` 自己去拼）：屏 C 的页源可能是大类里的一话
+ * （`/library/{书}/chapters/{话}/files/…`），也可能是「其它」里的单话或旧口径的整本
+ * （`/library/{名}/files/…`）。让缩略图自己拼路径，就得在这里再判一次"我这一层是话还是整本"
+ * —— 那个判断只该有一处（`PageView`）。
  */
-function Thumb({ comicName, seq, state }: { comicName: string; seq: number; state: GridState }) {
+function Thumb({ path, seq, state }: { path: string; seq: number; state: GridState }) {
   // hooks 不能条件调用，故把「要不要取」编码进 path（null = 不取）
-  const blob = useBlobUrl(state === 'done' ? filePath(comicName, seq, 'translated') : null);
+  const blob = useBlobUrl(state === 'done' ? path : null);
   if (state === 'done') {
     if (blob.kind === 'loading') return <div className="grid-placeholder">加载中…</div>;
     if (blob.kind === 'ready') {
@@ -189,17 +272,18 @@ function Thumb({ comicName, seq, state }: { comicName: string; seq: number; stat
 }
 
 function Pane({
-  comicName,
+  path,
   seq,
   variant,
   onZoom,
 }: {
-  comicName: string;
+  /** 该页该变体的**字节路径**（由 `PageView.image()` 给出） */
+  path: string;
   seq: number;
-  variant: 'original' | 'translated';
+  variant: Variant;
   onZoom: () => void;
 }) {
-  const blob = useBlobUrl(filePath(comicName, seq, variant));
+  const blob = useBlobUrl(path);
   const label = variant === 'original' ? '原图' : '译文';
   const file = `${String(seq).padStart(3, '0')}${variant === 'translated' ? '_translated' : ''}.png`;
   return (
@@ -342,7 +426,8 @@ function clampZoom(z: number): number {
  * 绝对坐标会让"松手位置"和"指针位置"错开，出现图突然跳一下。
  */
 function Lightbox({
-  comicName,
+  path,
+  title,
   seq,
   variant,
   canPrev,
@@ -351,16 +436,19 @@ function Lightbox({
   onNext,
   onClose,
 }: {
-  comicName: string;
+  /** 该页该变体的**字节路径**（由 `PageView.imagePath()` 给出；路径同时是缓存键，天然含书 + 话） */
+  path: string;
+  /** 顶部文本回显的**归因名**（`《书》第 N 话` / 漫画名）——路径里是编码后的目录名，不能直接给人看 */
+  title: string;
   seq: number;
-  variant: 'original' | 'translated';
+  variant: Variant;
   canPrev: boolean;
   canNext: boolean;
   onPrev: () => void;
   onNext: () => void;
   onClose: () => void;
 }) {
-  const blob = useBlobUrl(filePath(comicName, seq, variant));
+  const blob = useBlobUrl(path);
   const label = variant === 'original' ? '原图' : '译文';
   const [zoom, setZoom] = useState(ZOOM_FIT);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -520,7 +608,7 @@ function Lightbox({
             <span className="num">{seq}</span>
             <span> / </span>
             <span className="muted">· {label} · </span>
-            <span className="muted">{comicName}</span>
+            <span className="muted">{title}</span>
           </span>
           {/*
             缩放控件：− / 百分比 / + 三段。
@@ -607,7 +695,7 @@ function resumeMeta(
  * 用户以为只是退出全屏、结果直接被踢回网格）。因此这里独占键盘监听，全屏自身不再监听。
  */
 function Compare({
-  comic,
+  view,
   seq,
   retranslate,
   submitting,
@@ -615,9 +703,10 @@ function Compare({
   onBack,
   onRetranslate,
 }: {
-  comic: ComicEntry;
+  /** 当前对照的页集合投影（整本或一话 —— 对本组件两者无差别，取图与翻页都走投影） */
+  view: PageView;
   seq: number;
-  /** 该漫画的返工计划（可能还没加载完 → null） */
+  /** 返工计划（可能还没加载完 → null） */
   retranslate: RetranslatePlan | null;
   /** 返工请求在途（提交中禁用，防连点建出两个任务） */
   submitting: boolean;
@@ -626,7 +715,7 @@ function Compare({
   onRetranslate: (seqs?: number[]) => void;
 }) {
   const canPrev = seq > 1;
-  const canNext = seq < comic.seqMax;
+  const canNext = seq < view.seqMax;
   const [zoom, setZoom] = useState<'original' | 'translated' | null>(null);
   /** 该漫画是否已有任务在跑（queued/running）—— 有就不能再返工，否则会重复跑同一本 */
   const reworking = retranslate?.reworking ?? false;
@@ -652,8 +741,8 @@ function Compare({
 
   // 翻页时若全屏开着，保持全屏（只是换图）—— 除非该页那一侧没了
   useEffect(() => {
-    if (zoom === 'translated' && !comic.translatedSeqs.includes(seq)) setZoom(null);
-  }, [zoom, seq, comic.translatedSeqs]);
+    if (zoom === 'translated' && !view.translatedSeqs.includes(seq)) setZoom(null);
+  }, [zoom, seq, view]);
 
   return (
     <div className="compare">
@@ -664,10 +753,10 @@ function Compare({
         <span className="compare-seq">
           <span className="num">{seq}</span>
           <span> / </span>
-          <span className="num">{comic.seqMax}</span>
+          <span className="num">{view.seqMax}</span>
         </span>
         <span className="muted" style={{ fontSize: 11 }}>
-          {comic.comicName}
+          {view.comicName}
         </span>
         <div style={{ flex: 1 }} />
         <Btn kind="ghost" disabled={!canPrev} onClick={() => canPrev && onSeq(seq - 1)}>
@@ -711,13 +800,14 @@ function Compare({
         </MenuButton>
       </div>
       <div className="compare-panes">
-        <Pane comicName={comic.comicName} seq={seq} variant="original" onZoom={() => setZoom('original')} />
-        <Pane comicName={comic.comicName} seq={seq} variant="translated" onZoom={() => setZoom('translated')} />
+        <Pane path={view.imagePath(seq, 'original')} seq={seq} variant="original" onZoom={() => setZoom('original')} />
+        <Pane path={view.imagePath(seq, 'translated')} seq={seq} variant="translated" onZoom={() => setZoom('translated')} />
       </div>
 
       {zoom ? (
         <Lightbox
-          comicName={comic.comicName}
+          path={view.imagePath(seq, zoom)}
+          title={view.comicName}
           seq={seq}
           variant={zoom}
           canPrev={canPrev}
@@ -894,6 +984,13 @@ export function LibraryScreen({
   const query = useDebouncedValue(queryInput, 200);
   const [libPage, setLibPage] = useState(1);
   const [gridPage, setGridPage] = useState(1);
+  /**
+   * 屏 C 正在看的**话号**（`null` = 不在话内）。仅当当前选中是大类时才有意义：
+   * 未归并单话没有话，右栏直接是页网格（屏 A）。
+   */
+  const [chapterNo, setChapterNo] = useState<number | null>(null);
+  /** 屏 B（话列表）的分页；与页网格分页各自独立 —— 两屏来回翻页互不干扰 */
+  const [chPage, setChPage] = useState(1);
   const [toDelete, setToDelete] = useState<ComicEntry | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
@@ -1054,12 +1151,43 @@ export function LibraryScreen({
     [books, current],
   );
 
-  // 换一部漫画 → 网格回到第一页
+  // 换一部漫画 → 话内定位与两套分页一并归零（话号留着会指向另一部的话，必清）
+  useEffect(() => {
+    setChapterNo(null);
+    setGridPage(1);
+    setChPage(1);
+  }, [current?.comicName]);
+  // 换一话 → 页网格回第一页
   useEffect(() => {
     setGridPage(1);
-  }, [current?.comicName]);
+  }, [chapterNo]);
 
-  const seqMax = current?.seqMax ?? 0;
+  /**
+   * 当前选中的**话**（屏 C 的数据源）。话号在但话没了（刷新后目录被动过）⇒ `null`，
+   * 调用方按「不在话内」处理、退回屏 B —— 而不是白屏。
+   */
+  const currentChapter = useMemo(
+    () =>
+      currentBook && chapterNo !== null
+        ? currentBook.chapters.find((c) => c.no === chapterNo) ?? null
+        : null,
+    [currentBook, chapterNo],
+  );
+  /** 是否在话内（屏 C）。`currentChapter` 非空 ⇒ `currentBook` 也非空，二者同涨同落 */
+  const inChapter = currentBook !== null && currentChapter !== null;
+
+  /**
+   * 页网格（屏 A / 屏 C）与对照视图（屏 D）的投影。
+   *
+   * 只有两处有"逐页"这回事：整本 / 未归并单话（屏 A，顶层取图）与话内（屏 C，话内取图）。
+   * 大类本身（屏 B）没有页 —— 页的宿主是它的话，故这里返回 `null`，右栏改渲染话卡。
+   */
+  const gridView = useMemo<PageView | null>(() => {
+    if (currentBook) return currentChapter ? chapterViewOf(currentBook, currentChapter) : null;
+    return current ? flatViewOf(current) : null;
+  }, [currentBook, currentChapter, current]);
+
+  const seqMax = gridView?.seqMax ?? 0;
   const gridPages = pageCount(seqMax, GRID_PAGE_SIZE);
   useEffect(() => {
     setGridPage((p) => (p > gridPages ? gridPages : p));
@@ -1071,17 +1199,45 @@ export function LibraryScreen({
 
   // 逐页判定用集合，不用张数（G-10）。`?? []` 只是防御：服务由本应用自己拉起，
   // 正常情况下这两个字段一定在；真缺了也只是退化成「全部待译」，不会白屏。
-  const translatedSeqs = useMemo(() => new Set(current?.translatedSeqs ?? []), [current]);
-  const missingSeqs = useMemo(() => new Set(current?.missingSeqs ?? []), [current]);
+  const translatedSeqs = useMemo(() => new Set(gridView?.translatedSeqs ?? []), [gridView]);
+  const missingSeqs = useMemo(() => new Set(gridView?.missingSeqs ?? []), [gridView]);
 
-  // 选中漫画后拉一次「缺页清单」，用于给「继续翻译」置灰 / 显示待续做张数
+  // 屏 B 话列表的分页（与左栏同一手法：行数变少时夹回合法区间）
+  const chPages = pageCount(currentBook?.chapters.length ?? 0, CHAPTER_PAGE_SIZE);
+  useEffect(() => {
+    setChPage((p) => (p > chPages ? chPages : p));
+  }, [chPages]);
+  const chapterRows = useMemo(
+    () => pageSlice(currentBook?.chapters ?? [], chPage, CHAPTER_PAGE_SIZE),
+    [currentBook, chPage],
+  );
+
+  /**
+   * 当前生效的**操作目标**：头部菜单「继续翻译 / 重新翻译」与两条计划端点打向哪里。
+   *
+   * 屏 C（话内）→ 该话；其余（屏 A / 屏 B）→ 选中的顶层目录。三者的端点形态完全相同
+   * （`{base}/resume`、`{base}/retranslate`）—— 服务端内部才区分"目录怎么来的"
+   * （顶层名 vs `书/NN_第N话` 相对路径），前端只换基址，不换逻辑。
+   */
+  const actionBase = inChapter
+    ? `/library/${encodeURIComponent(currentBook.bookName)}/chapters/${chapterNo}`
+    : `/library/${encodeURIComponent(current?.comicName ?? '')}`;
+  /** 操作目标的**归因名**（Toast 用）：话要说清是哪部书的哪一话 */
+  const actionName = inChapter
+    ? `《${currentBook.bookName}》第 ${chapterNo} 话`
+    : (current?.comicName ?? '');
+  /** 头部卡的标题与路径：话内显示话号 + 该话目录，否则显示目录名 + 顶层目录 */
+  const headName = inChapter ? `第 ${chapterNo} 话` : (current?.comicName ?? '');
+  const headPath = inChapter ? (currentChapter?.absDir ?? '') : (current?.outputDir ?? '');
+
+  // 选中目标后拉一次「缺页清单」，用于给「继续翻译」置灰 / 显示待续做张数（话内即该话的）
   useEffect(() => {
     if (!current) {
       setPending(null);
       return;
     }
     let alive = true;
-    apiGet<{ pendingCount: number }>(`/library/${encodeURIComponent(current.comicName)}/resume`)
+    apiGet<{ pendingCount: number }>(`${actionBase}/resume`)
       .then((p) => {
         if (alive) setPending(p.pendingCount);
       })
@@ -1092,7 +1248,7 @@ export function LibraryScreen({
     return () => {
       alive = false;
     };
-  }, [current, refreshKey]);
+  }, [current, actionBase, refreshKey]);
 
   /**
    * 该漫画是否**已有任务在队列里**（queued / running）。
@@ -1111,14 +1267,14 @@ export function LibraryScreen({
     return set;
   }, [tasks]);
 
-  // 选中漫画后拉一次返工计划：告诉「操作」菜单能不能点、会覆盖几张
+  // 选中目标后拉一次返工计划：告诉「操作」菜单能不能点、会覆盖几张（话内即该话的计划）
   useEffect(() => {
     if (!current) {
       setRtPlan(null);
       return;
     }
     let alive = true;
-    apiGet<RetranslatePlan>(`/library/${encodeURIComponent(current.comicName)}/retranslate`)
+    apiGet<RetranslatePlan>(`${actionBase}/retranslate`)
       .then((p) => {
         // 把「是否在队列中」一并带上：计划是静态的，任务状态是动态的，分开拿会闪
         if (alive) setRtPlan({ ...p, reworking: reworkingComics.has(p.dirName) });
@@ -1129,24 +1285,20 @@ export function LibraryScreen({
     return () => {
       alive = false;
     };
-  }, [current, refreshKey, reworkingComics]);
+  }, [current, actionBase, refreshKey, reworkingComics]);
 
   /**
-   * 提交返工重译（`POST /library/{name}/retranslate`）。
+   * 提交返工重译（`POST {base}/retranslate`；`base` 由调用方给 —— 整本、话两个层级同一形态）。
    *
-   * 覆盖已有译文是**不可逆**的，所以回执必须说清"覆盖了几张"，
+   * 覆盖已有译文是**不可逆**的，所以回执必须说清"覆盖了几张"、覆盖的是**哪一本/哪一话**，
    * 而不是笼统报"已加入队列"—— 用户需要知道自己刚覆盖了什么。
    */
-  const retranslate = async (seqs?: number[]) => {
-    if (!current) return;
+  const retranslate = async (base: string, name: string, seqs?: number[]) => {
     setRtBusy(true);
     try {
-      const r = await apiPost<RetranslateResponse>(
-        `/library/${encodeURIComponent(current.comicName)}/retranslate`,
-        seqs ? { seqs } : {},
-      );
+      const r = await apiPost<RetranslateResponse>(`${base}/retranslate`, seqs ? { seqs } : {});
       const scope = seqs ? `第 ${seqs.join('、')} 页` : `全部 ${r.retranslateCount} 张`;
-      onToast(`已开始返工：${scope}（覆盖 ${r.overwriteCount} 张已有译文）`, 'good');
+      onToast(`已开始返工：${name} ${scope}（覆盖 ${r.overwriteCount} 张已有译文）`, 'good');
       setCompareSeq(null);
       onRefresh();
     } catch (e) {
@@ -1156,15 +1308,11 @@ export function LibraryScreen({
     }
   };
 
-  const resume = async () => {
-    if (!current) return;
+  const resume = async (base: string, name: string) => {
     setBusy(true);
     try {
-      const res = await apiPost<{ comicName: string; queuePosition: number }>(
-        `/library/${encodeURIComponent(current.comicName)}/resume`,
-        {},
-      );
-      onToast(`已加入队列：${res.comicName}（第 ${res.queuePosition} 位）`, 'good');
+      const res = await apiPost<{ comicName: string; queuePosition: number }>(`${base}/resume`, {});
+      onToast(`已加入队列：${name}（第 ${res.queuePosition} 位）`, 'good');
       onRefresh();
     } catch (e) {
       onToast(errorText(e), 'bad');
@@ -1314,16 +1462,16 @@ export function LibraryScreen({
     );
   }
 
-  if (compareSeq !== null && current) {
+  if (compareSeq !== null && gridView) {
     return (
       <Compare
-        comic={current}
+        view={gridView}
         seq={compareSeq}
         retranslate={rtPlan}
         submitting={rtBusy}
         onSeq={setCompareSeq}
         onBack={() => setCompareSeq(null)}
-        onRetranslate={(seqs) => void retranslate(seqs)}
+        onRetranslate={(seqs) => void retranslate(gridView.base, gridView.comicName, seqs)}
       />
     );
   }
@@ -1447,7 +1595,14 @@ export function LibraryScreen({
                     className={it.key === current?.comicName ? 'lib-item is-active' : 'lib-item'}
                     onClick={() => setActive(it.key)}
                   >
-                    <CoverThumb path={it.thumbPath} name={it.name} className="cover-thumb" />
+                    <CoverThumb
+                      path={it.thumbPath}
+                      name={it.name}
+                      className="cover-thumb"
+                      w={LIBRARY.cover.thumb.w}
+                      h={LIBRARY.cover.thumb.h}
+                      radius={LIBRARY.cover.thumb.radius}
+                    />
                     <span className="lib-item-text">
                       <span className="lib-item-name" title={it.name}>
                         {it.name}
@@ -1473,7 +1628,14 @@ export function LibraryScreen({
                   className={it.key === current?.comicName ? 'lib-item is-active' : 'lib-item'}
                   onClick={() => setActive(it.key)}
                 >
-                  <CoverThumb path={it.thumbPath} name={it.name} className="cover-thumb" />
+                  <CoverThumb
+                    path={it.thumbPath}
+                    name={it.name}
+                    className="cover-thumb"
+                    w={LIBRARY.cover.thumb.w}
+                    h={LIBRARY.cover.thumb.h}
+                    radius={LIBRARY.cover.thumb.radius}
+                  />
                   <span className="lib-item-text">
                     <span className="lib-item-name" title={it.name}>
                       {it.name}
@@ -1526,17 +1688,32 @@ export function LibraryScreen({
         {current ? (
           <>
             <div className="lib-head card">
+              {/* 屏 C 的返回（设计稿 §5.3：任何层级可「返回」且不丢选中态）——
+                  返回的是屏 B 话列表，左栏选中保持不动 */}
+              {inChapter ? (
+                <Btn kind="ghost" onClick={() => setChapterNo(null)} title="返回这一部的话列表">
+                  返回
+                </Btn>
+              ) : null}
               <div className="lib-head-titles">
-                <div className="lib-head-name" title={current.comicName}>
-                  {current.comicName}
+                <div className="lib-head-name" title={headName}>
+                  {headName}
                 </div>
-                <div className="lib-head-path" title={current.outputDir}>
-                  {current.outputDir}
+                <div className="lib-head-path" title={headPath}>
+                  {headPath}
                 </div>
               </div>
+              {/* 大类的补充信息：话内归因到所属大类，话列表给出作者与规模（设计稿 §7.1 同一口径） */}
+              {currentBook ? (
+                <span className="lib-head-sub muted">
+                  {inChapter
+                    ? `《${currentBook.bookName}》`
+                    : `${currentBook.author || AUTHOR_FALLBACK} · ${currentBook.chapterCount} 话 · ${currentBook.totalPages} 页`}
+                </span>
+              ) : null}
               <Btn
                 kind="ghost"
-                onClick={() => openPath(current.outputDir).catch((e: unknown) => onToast(errorText(e), 'bad'))}
+                onClick={() => openPath(headPath).catch((e: unknown) => onToast(errorText(e), 'bad'))}
               >
                 <FolderUp size={14} />
                 打开目录
@@ -1545,7 +1722,9 @@ export function LibraryScreen({
                 <RefreshCw size={14} />
                 刷新
               </Btn>
-              {/* 低频动作收进下拉；删除仍走 DeleteComicModal（含 deleteFiles 勾选） */}
+              {/* 低频动作收进下拉；删除仍走 DeleteComicModal（含 deleteFiles 勾选）。
+                  话内（屏 C）只留本话的续做/返工 —— 「编辑信息 / 删除整本」的主语是整部，
+                  在话的头部出现只会让人以为删的是这一话 */}
               <MenuButton label="更多操作">
                 {(close) => (
                   <>
@@ -1557,7 +1736,7 @@ export function LibraryScreen({
                       title={resumeInfo.title}
                       onClick={() => {
                         close();
-                        void resume();
+                        void resume(actionBase, actionName);
                       }}
                     />
                     <MenuItem
@@ -1568,115 +1747,191 @@ export function LibraryScreen({
                       title={rtInfo.title}
                       onClick={() => {
                         close();
-                        void retranslate();
+                        void retranslate(actionBase, actionName);
                       }}
                     />
-                    <MenuItem
-                      icon={<Pencil size={13} />}
-                      label="编辑信息"
-                      sub={currentBook ? undefined : '未归并单话没有漫画信息'}
-                      disabled={!currentBook}
-                      title={
-                        currentBook
-                          ? '改封面（本地图片 / 取第 1 话首图 / 移除）与作者'
-                          : '未归并的单话还没有漫画信息，先把它归并进某本漫画'
-                      }
-                      onClick={() => {
-                        close();
-                        if (currentBook) setEditBook(currentBook);
-                      }}
-                    />
-                    <MenuItem
-                      icon={<Trash2 size={13} />}
-                      label="删除整本"
-                      danger
-                      title="从漫画库删除（可选择是否连本地文件一起删）"
-                      onClick={() => {
-                        close();
-                        setToDelete(current);
-                      }}
-                    />
+                    {inChapter ? null : (
+                      <>
+                        <MenuItem
+                          icon={<Pencil size={13} />}
+                          label="编辑信息"
+                          sub={currentBook ? undefined : '未归并单话没有漫画信息'}
+                          disabled={!currentBook}
+                          title={
+                            currentBook
+                              ? '改封面（本地图片 / 取第 1 话首图 / 移除）与作者'
+                              : '未归并的单话还没有漫画信息，先把它归并进某本漫画'
+                          }
+                          onClick={() => {
+                            close();
+                            if (currentBook) setEditBook(currentBook);
+                          }}
+                        />
+                        <MenuItem
+                          icon={<Trash2 size={13} />}
+                          label="删除整本"
+                          danger
+                          title="从漫画库删除（可选择是否连本地文件一起删）"
+                          onClick={() => {
+                            close();
+                            setToDelete(current);
+                          }}
+                        />
+                      </>
+                    )}
                   </>
                 )}
               </MenuButton>
             </div>
 
-            <div className="card lib-grid-wrap">
-              <div className="lib-grid">
-                {gridSeqs.map((seq) => {
-                  const state: GridState = missingSeqs.has(seq)
-                    ? 'missing'
-                    : translatedSeqs.has(seq)
-                      ? 'done'
-                      : 'pending';
-                  return (
-                    <button
-                      key={seq}
-                      type="button"
-                      className="grid-card"
-                      style={{
-                        width: LIBRARY.card.w,
-                        height: LIBRARY.card.h,
-                        borderRadius: LIBRARY.card.radius,
-                      }}
-                      disabled={state === 'missing'}
-                      onClick={() => setCompareSeq(seq)}
-                      title={
-                        state === 'missing'
-                          ? `第 ${seq} 页在本机没有原图，无法对照`
-                          : `第 ${seq} 页 · 点开看原文 / 译文对照`
-                      }
-                    >
-                      <Thumb comicName={current.comicName} seq={seq} state={state} />
-                      <span className="grid-foot">
-                        <span className="num">{String(seq).padStart(3, '0')}</span>
-                        <span
-                          className={state === 'missing' ? 'is-bad' : undefined}
+            {currentBook && !inChapter ? (
+              /* ── 屏 B：话列表（设计稿 §7.3）── 话卡沿用 110×165 网格几何；
+                  大类自身没有"页"，所以它选中时右栏不渲染页网格 */
+              <>
+                <div className="card lib-grid-wrap">
+                  <div className="lib-grid">
+                    {chapterRows.map((ch) => (
+                      <ChapterCard
+                        key={ch.dirName}
+                        bookName={currentBook.bookName}
+                        chapter={ch}
+                        busy={
+                          // 整本有任务在跑 ⇒ 它的话也在被写，本话再返工会互相覆盖
+                          reworkingComics.has(currentBook.dirName) ||
+                          reworkingComics.has(`${currentBook.dirName}/${ch.dirName}`)
+                        }
+                        onOpen={() => {
+                          if (ch.no !== null) setChapterNo(ch.no);
+                        }}
+                        onOpenDir={() =>
+                          openPath(ch.absDir).catch((e: unknown) => onToast(errorText(e), 'bad'))}
+                        onRetranslate={() => {
+                          if (ch.no === null) return; // 无话号的目录拼不出话级端点，卡片入口也已禁用
+                          void retranslate(
+                            `/library/${encodeURIComponent(currentBook.bookName)}/chapters/${ch.no}`,
+                            `《${currentBook.bookName}》第 ${ch.no} 话`,
+                          );
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="lib-foot-note">
+                  <span>
+                    共 <span className="num">{currentBook.chapters.length}</span> 话
+                    {chPages > 1 ? (
+                      <>
+                        {' · 第 '}
+                        <span className="num">{chPage}</span> / <span className="num">{chPages}</span> 页
+                      </>
+                    ) : null}
+                  </span>
+                  {chPages > 1 ? (
+                    <span className="lib-grid-pager">
+                      <Btn kind="ghost" size="sm" disabled={chPage <= 1} onClick={() => setChPage(chPage - 1)}>
+                        上一页
+                      </Btn>
+                      <Btn
+                        kind="ghost"
+                        size="sm"
+                        disabled={chPage >= chPages}
+                        onClick={() => setChPage(chPage + 1)}
+                      >
+                        下一页
+                      </Btn>
+                    </span>
+                  ) : (
+                    <span>点任意一话看它的页 · 卡片「⋯」里可重译整话</span>
+                  )}
+                </div>
+              </>
+            ) : (
+              /* ── 屏 A（整本 / 未归并单话）与屏 C（话内页）：同一套页网格渲染 ──
+                  两处只差投影（gridView），格子本身零差别 */
+              <>
+                <div className="card lib-grid-wrap">
+                  <div className="lib-grid">
+                    {gridSeqs.map((seq) => {
+                      const state: GridState = missingSeqs.has(seq)
+                        ? 'missing'
+                        : translatedSeqs.has(seq)
+                          ? 'done'
+                          : 'pending';
+                      return (
+                        <button
+                          key={seq}
+                          type="button"
+                          className="grid-card"
+                          style={{
+                            width: LIBRARY.card.w,
+                            height: LIBRARY.card.h,
+                            borderRadius: LIBRARY.card.radius,
+                          }}
+                          disabled={state === 'missing'}
+                          onClick={() => setCompareSeq(seq)}
                           title={
-                            state === 'done'
-                              ? `第 ${seq} 页：本地已有译文`
-                              : state === 'pending'
-                                ? `第 ${seq} 页：有原图、缺译文 —— 点「继续翻译」可以补`
-                                : `第 ${seq} 页：本机没有这一页`
+                            state === 'missing'
+                              ? `第 ${seq} 页在本机没有原图，无法对照`
+                              : `第 ${seq} 页 · 点开看原文 / 译文对照`
                           }
                         >
-                          {GRID_LABEL[state]}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+                          <Thumb
+                            path={state === 'done' && gridView ? gridView.imagePath(seq, 'translated') : ''}
+                            seq={seq}
+                            state={state}
+                          />
+                          <span className="grid-foot">
+                            <span className="num">{String(seq).padStart(3, '0')}</span>
+                            <span
+                              className={state === 'missing' ? 'is-bad' : undefined}
+                              title={
+                                state === 'done'
+                                  ? `第 ${seq} 页：本地已有译文`
+                                  : state === 'pending'
+                                    ? `第 ${seq} 页：有原图、缺译文 —— 点「继续翻译」可以补`
+                                    : `第 ${seq} 页：本机没有这一页`
+                              }
+                            >
+                              {GRID_LABEL[state]}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
 
-            <div className="lib-foot-note">
-              <span>
-                共 <span className="num">{seqMax}</span> 组
-                {gridPages > 1 ? (
-                  <>
-                    {' · 第 '}
-                    <span className="num">{gridPage}</span> / <span className="num">{gridPages}</span> 页
-                  </>
-                ) : null}
-              </span>
-              {gridPages > 1 ? (
-                <span className="lib-grid-pager">
-                  <Btn kind="ghost" size="sm" disabled={gridPage <= 1} onClick={() => setGridPage(gridPage - 1)}>
-                    上一页
-                  </Btn>
-                  <Btn
-                    kind="ghost"
-                    size="sm"
-                    disabled={gridPage >= gridPages}
-                    onClick={() => setGridPage(gridPage + 1)}
-                  >
-                    下一页
-                  </Btn>
-                </span>
-              ) : (
-                <span>点任意一格看原文 / 译文对照</span>
-              )}
-            </div>
+                <div className="lib-foot-note">
+                  <span>
+                    共 <span className="num">{seqMax}</span> 组
+                    {gridPages > 1 ? (
+                      <>
+                        {' · 第 '}
+                        <span className="num">{gridPage}</span> / <span className="num">{gridPages}</span> 页
+                      </>
+                    ) : null}
+                  </span>
+                  {gridPages > 1 ? (
+                    <span className="lib-grid-pager">
+                      <Btn kind="ghost" size="sm" disabled={gridPage <= 1} onClick={() => setGridPage(gridPage - 1)}>
+                        上一页
+                      </Btn>
+                      <Btn
+                        kind="ghost"
+                        size="sm"
+                        disabled={gridPage >= gridPages}
+                        onClick={() => setGridPage(gridPage + 1)}
+                      >
+                        下一页
+                      </Btn>
+                    </span>
+                  ) : (
+                    <span>点任意一格看原文 / 译文对照</span>
+                  )}
+                </div>
+              </>
+            )}
           </>
         ) : (
           <Notice>

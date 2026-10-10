@@ -1265,3 +1265,46 @@
   margin-top: 6px;
 }
 
+
+/* ── 头部卡的补充信息（屏 B/C）────────────────────────────────────────── */
+/* 大类：作者 · N 话 · M 页（§7.1 同一口径）；话内：《书名》归因 */
+.lib-head-sub {
+  font-size: 11px;
+  color: var(--md-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 屏 B：话列表（设计稿 §7.3）──────────────────────────────────────── */
+/* 话卡容器：本体是 .grid-card（同几何，不另写一份），容器只为角标与悬浮菜单提供定位 */
+.chapter-card {
+  position: relative;
+  flex: 0 0 auto;
+}
+/* 右上角「第 N 话」角标：不挡卡片点击（Badge 是展示件，不可交互） */
+.chapter-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  pointer-events: none;
+}
+/* 左上角悬浮菜单：悬停 / 键盘聚焦时浮现（触屏无 hover，桌面端以鼠标为主） */
+.chapter-menu {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.chapter-card:hover .chapter-menu,
+.chapter-menu:focus-within {
+  opacity: 1;
+}
+/* 脚注右侧的状态点 + 文字：颜色只是辅助，文字与点同现（《02》§5.2 色不作唯一载体） */
+.chapter-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
