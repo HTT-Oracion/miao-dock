@@ -18,7 +18,7 @@
  * 能抓住语义混淆的只有**删除之后去看它到底删了什么**：目录还在不在、库里还列不列它、
  * 任务记录还在不在。所以必须单开一个脚本。
  *
- * ## 判据（见下方 L1..L8 / N1..N7b 的 label）
+ * ## 判据（见下方 L1..L8 / N1..N9 的 label）
  *
  * ## Step 8 扩展（plan「漫画库交互流程改造」）：新建 / 归并 / 封面
  * 5. **新建漫画**（`POST /library/create`）：建目录 + `manifest.json` 同步落盘（N1）；
@@ -30,8 +30,13 @@
  * 8. **话号一位小数**（2026-10-11 需求）：归并 `no=14.1` → 目录 `14.1_第14.1话`、
  *    `episodes[].no` 记 14.1、`/chapters/14.1/…` 寻址到同一话（N7）；两位小数 / `.0`
  *    → 404 拒绝（N7b）。
+ * 9. **归并撞 Windows 句柄占用**（D-125，线上"归并 22.1 → 服务内部错误"的修复）：
+ *    源目录内文件被打开句柄占用时，`renameSync` 抛 EPERM。瞬时占用（350ms 后释放）被
+ *    退避重试救回 → 200（N8）；持续占用重试耗尽 → 409 `MERGE_SOURCE_LOCKED` 而非
+ *    500（N8b）；释放后重试成功、无半截目录残留（N8c）；页图/封面读流走 `pipeline`
+ *    （中止即释放句柄，根因消除腿，源码级断言，N9）。
  *
- * ## 反证轮（`--refute`）：八条变异，各自必须让指定断言变红
+ * ## 反证轮（`--refute`）：十一条变异，各自必须让指定断言变红
  *   M1 去掉 `deleteTasks` 的终态门 ⇒ 翻译中的任务也会被删 ⇒ L1 变红；
  *   M2 `scanLibrary` 不跳过隐藏项 ⇒ 隐藏了还列出来 ⇒ L4 变红；
  *   M3 `handleLibraryDelete` 无视 `deleteFiles`（恒为 false）⇒ L6 变红；
@@ -39,7 +44,10 @@
  *   M5 新建的同名复检被去掉 ⇒ N2 变红；
  *   M6 归并的在跑任务门被去掉 ⇒ N3 变红；
  *   M7 话目录命名的零填充被去掉 ⇒ N4 变红；
- *   M8 封面落盘但 manifest.cover 不回写 ⇒ N6 变红。
+ *   M8 封面落盘但 manifest.cover 不回写 ⇒ N6 变红；
+ *   M9 页图读流退回 `.pipe`（中止泄漏句柄）⇒ N9 变红；
+ *   M10 占用退避重试被去掉 ⇒ 瞬时占用也 500 ⇒ N8 变红；
+ *   M11 占用终态不再归因 LOCKED ⇒ 回归 500 ⇒ N8b 变红。
  * 服务/前端都按源码破坏来验（服务是**子进程**，磁盘破坏会被新进程读到）。
  *
  * 用法：
@@ -633,6 +641,72 @@ async function runAll() {
       badDec.status === 404 && zeroDec.status === 404,
       `14.55=${badDec.status} 14.0=${zeroDec.status}`,
     );
+
+    // ---- N8/N8b/N8c：归并撞 Windows「句柄占用族」（D-125）----
+    // 用户点「归并」时该话的缩略图请求可能还在传（目录内有打开的读句柄），renameSync 抛
+    // EPERM。修复前这条直接变 500「服务内部错误」——即线上实测的归并报障。修复后：
+    // 瞬时占用被退避重试救回（N8）；持续占用归因成 409 MERGE_SOURCE_LOCKED，可解释可行动
+    // （N8b）；释放后重试成功且无半截目录残留（N8c）。
+    const busyA = '占用重试甲 22.1';
+    const busyADir = path.join(ROOT_DIR, busyA);
+    fs.mkdirSync(busyADir, { recursive: true });
+    fs.writeFileSync(path.join(busyADir, '001.png'), encodePng(4, 4, (x, y, put) => put(10, 20, 30)));
+    const heldA = fs.openSync(path.join(busyADir, '001.png'), 'r');
+    setTimeout(() => {
+      try { fs.closeSync(heldA); } catch { /* 已关 */ }
+    }, 350); // 350ms < 重试窗口（5 次 × 200ms）⇒ 必须被重试救回
+    const mgHold = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(busyA)}/merge`, {
+      targetBook: NEW_BOOK,
+      no: 22.1,
+    });
+    const mgHoldJ = json(mgHold);
+    check(
+      'N8',
+      '归并撞瞬时句柄占用：退避重试窗口内释放 ⇒ 200 救回（不是 500 内部错误）',
+      mgHold.status === 200 && mgHoldJ?.merged?.to === `${NEW_BOOK}/22.1_第22.1话`,
+      `HTTP ${mgHold.status} to=${mgHoldJ?.merged?.to ?? mgHoldJ?.error?.code}`,
+    );
+
+    const busyB = '占用重试乙 22.2';
+    const busyBDir = path.join(ROOT_DIR, busyB);
+    fs.mkdirSync(busyBDir, { recursive: true });
+    fs.writeFileSync(path.join(busyBDir, '001.png'), encodePng(4, 4, (x, y, put) => put(40, 50, 60)));
+    const heldB = fs.openSync(path.join(busyBDir, '001.png'), 'r'); // 全程不释放 ⇒ 重试必然耗尽
+    const mgLock = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(busyB)}/merge`, {
+      targetBook: NEW_BOOK,
+      no: 22.2,
+    });
+    const mgLockJ = json(mgLock);
+    check(
+      'N8b',
+      '占用重试耗尽 → 409 MERGE_SOURCE_LOCKED（可解释、可行动），不许再是 500 INTERNAL',
+      mgLock.status === 409 && mgLockJ?.error?.code === 'MERGE_SOURCE_LOCKED' && !fs.existsSync(path.join(newDir, '22.2_第22.2话')),
+      `HTTP ${mgLock.status} code=${mgLockJ?.error?.code} dstCreated=${fs.existsSync(path.join(newDir, '22.2_第22.2话'))}`,
+    );
+    fs.closeSync(heldB);
+    const mgUnlock = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(busyB)}/merge`, {
+      targetBook: NEW_BOOK,
+      no: 22.2,
+    });
+    check(
+      'N8c',
+      '句柄释放后重试同一话 → 200：LOCKED 是可恢复错误，源目录无残留、目标落位正确',
+      mgUnlock.status === 200 && fs.existsSync(path.join(newDir, '22.2_第22.2话')),
+      `HTTP ${mgUnlock.status} dst=${fs.existsSync(path.join(newDir, '22.2_第22.2话'))}`,
+    );
+
+    // ---- N9：发图/封面读流必须走 pipeline（D-125 的根因消除腿）----
+    // .pipe() 在客户端中止（取消加载/切页）时**不销毁**源流 ⇒ 读句柄泄漏 ⇒ Windows 下该目录
+    // 的归并 rename 撞 EPERM。行为级复现这条太脆（时序敏感），按 D-112 缺口的形态做源码级断言。
+    const serverSrc = fs.readFileSync(SERVER_SRC, 'utf8');
+    const pipelineCount = (serverSrc.match(/pipeline\(fs\.createReadStream\(file\), res\)/g) || []).length;
+    const pipeResLeft = /\.pipe\(res\)/.test(serverSrc);
+    check(
+      'N9',
+      '页图与封面两条读流都走 pipeline（中止即释放句柄），源码无 .pipe(res) 残留',
+      pipelineCount === 2 && !pipeResLeft,
+      `pipeline=${pipelineCount} pipeResLeft=${pipeResLeft}`,
+    );
   } finally {
     await killProc(service);
     await killProc(engine);
@@ -758,6 +832,44 @@ const MUTATIONS = [
       },
     ],
     expect: ['N6'],
+  },
+  {
+    // 锚点连到 sendImageBytes 的收尾行 + 下一函数签名（该 pipeline 行出现两处，裸行不唯一，D-113）。
+    // 退回 .pipe ⇒ 源码级断言 N9 红（pipeline 计数掉到 1 且出现 .pipe(res) 残留）。
+    name: 'M9 页图读流退回 .pipe（客户端中止不销毁源流 ⇒ 句柄泄漏 ⇒ 归并 rename 撞 EPERM）',
+    edits: [
+      {
+        file: SERVER_SRC,
+        find: '  await pipeline(fs.createReadStream(file), res).catch(() => {});\n}\n\nfunction handleLibraryFile(req, res, cors, rawName, seqText, url) {',
+        replace: '  fs.createReadStream(file).pipe(res); // refute：退回 pipe，中止即泄漏句柄\n}\n\nfunction handleLibraryFile(req, res, cors, rawName, seqText, url) {',
+      },
+    ],
+    expect: ['N9'],
+  },
+  {
+    // 重试被去掉 ⇒ 瞬时占用（350ms 后释放）也会在第一次 rename 失败时直接上抛 ⇒ N8 红成 500。
+    // N8b/N8c 不 expect：它们不依赖重试次数（耗尽路径行为不变）。
+    name: 'M10 归并移动的占用退避重试被去掉（EPERM 第一次就上抛 ⇒ 瞬时占用也 500）',
+    edits: [
+      {
+        file: SERVER_SRC,
+        find: '      if (!isBusyFsError(err) || i >= RENAME_RETRY.tries) throw err;',
+        replace: '      throw err; // refute：占用重试被去掉',
+      },
+    ],
+    expect: ['N8'],
+  },
+  {
+    // 占用归因被短路 ⇒ 重试耗尽后 err 原样上抛 ⇒ 500 INTERNAL 回归，N8b 红成 500。
+    name: 'M11 占用终态不再归因为 MERGE_SOURCE_LOCKED（回退成 500 内部错误）',
+    edits: [
+      {
+        file: SERVER_SRC,
+        find: '    if (isBusyFsError(err)) {\n      // 占用重试已耗尽（约 800ms）：把"500 服务内部错误"归因成用户能行动的 409（D-125）',
+        replace: '    if (false) { // refute：占用不再归因\n      // 占用重试已耗尽（约 800ms）：把"500 服务内部错误"归因成用户能行动的 409（D-125）',
+      },
+    ],
+    expect: ['N8b'],
   },
 ];
 
