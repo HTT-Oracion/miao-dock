@@ -831,6 +831,21 @@ export class Store {
   }
 
   /**
+   * 该目录上还有没有**未终态**的任务（running / queued）。
+   *
+   * 用途：归并（物理移动目录）前的前置校验。搬走一个正在被 worker 写盘的目录，会让在跑的
+   * 任务把译文写向**已不存在的路径**；而它自己的状态仍是 running ⇒「任务在跑」与「目录不见了」
+   * 同时成立，最后只剩一条 failed 与一堆无从归因的日志。前端的置灰（`reworkingComics`）是**体验**，
+   * 这里才是**权威** —— 只靠前端置灰就是"假绿"（AGENTS §2-4）。
+   *
+   * 判据沿用 `TASK_TERMINAL`（本文件唯一的那份"哪些状态算跑完"定义），不另立一份。
+   * `dirName` 一律是**相对路径**（`'夏日重现/01_第1话'`），与 `_newTask` 存的口径一致。
+   */
+  activeTasksForDir(dirName) {
+    return [...this.tasks.values()].filter((t) => t.dirName === dirName && !TASK_TERMINAL.has(t.status));
+  }
+
+  /**
    * 目录被**真删掉**时顺手清掉隐藏记录。
    * 不清的后果：同名漫画日后重建（重新翻译同名作品）会被无声跳过，用户只看到"库是空的"。
    */

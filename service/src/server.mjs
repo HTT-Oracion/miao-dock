@@ -9,8 +9,9 @@ import http from 'node:http';
 import path from 'node:path';
 
 import {
-  API_VERSION, BASE_PATH, BATCH_LIMIT, COVER_MAX_BYTES, ENGINE_SETTINGS_FILE, ORIGINAL_SCAN_RE,
-  REPO_ROOT, ROOT_DIR, SERVICE_NAME, SERVICE_VERSION, STATE_DIR, TASKS_STATE_DIR, TRANSLATED_SCAN_RE,
+  API_VERSION, BASE_PATH, BATCH_LIMIT, COVER_MAX_BYTES, ENGINE_SETTINGS_FILE, MANIFEST_FILE,
+  MAX_CHAPTER_NO, MERGE_ARCHIVE_DIR, ORIGINAL_SCAN_RE, REPO_ROOT,
+  ROOT_DIR, SERVICE_NAME, SERVICE_VERSION, STATE_DIR, TASKS_STATE_DIR, TRANSLATED_SCAN_RE,
   TOKEN_FILE, TRANSLATE_DIRECTIONS, assertInsideRoot, config, engineSettingsFile,
   isSupportedDirection, normalizeDirection,
   readIdleSettings, validateRoot,
@@ -28,8 +29,9 @@ import { modelStatus } from './settings/model-status.mjs';
 import { createTierDowngrade } from './settings/tier-downgrade.mjs';
 import { allFieldStrings, firstField, groupParts, parseMultipartEx } from './multipart.mjs';
 import {
-  createBookDir, episodesFromDirs, hasManifest, listChapterDirs, ownFilesBytes, pickFirstChapterImage,
-  readCoverName, readManifest, removeCover, scanChapterPages, writeCover, writeManifestAtomic,
+  chapterDirName, createBookDir, episodesFromDirs, hasManifest, listChapterDirs, ownFilesBytes,
+  pickFirstChapterImage, readCoverName, readManifest, removeCover, scanChapterPages, writeCover,
+  writeManifestAtomic,
 } from './manga/library.mjs';
 import { sniffImageType } from './manga/image.mjs';
 import { normalizeComicName, isSafeDirName } from './manga/names.mjs';
@@ -1358,6 +1360,66 @@ function resolveComicDir(rawName) {
   return { name: norm.name, dir };
 }
 
+/**
+ * 解析并校验**话目录**（`<book>/NN_第N话`）—— 契约见 D-115 §4，因果见 D-117。
+ *
+ * 🔴 为什么必须新开一条、而不是把 `resolveComicDir` 改成"允许含 `/` 的名字"：
+ *    `resolveComicDir` 走 `isSafeDirName()`，而它**显式拒绝 `/` 与 `\`**（names.mjs:78）。
+ *    于是既有的 `/library/{comicName}/...` 单段路由**到不了**嵌套的话目录 —— 这不是疏忽，
+ *    是 §8.2 校验点 2 在挡路径穿越。放宽它 = 把"名字里可以带 `/`"这扇门打开 ⇒ `..%2F..%2Fetc`
+ *    这类名字会被拼进路径。正确做法是**多给一段**：两段（书、话号）**各自**校验，
+ *    再由服务端**自己拼**目录名，用户输入里永远不出现分隔符。
+ *
+ * 话号由数字解析后交给 `chapterDirName()` 生成目录名 —— 目录名不是用户给的，
+ * 是服务端算出来的；仍过一次 `isSafeDirName` 只是防"将来命名规则被改坏"。
+ */
+function resolveChapterDir(bookRaw, noRaw) {
+  // 话号来自两处：URL 段（永远是字符串）与 merge 的 body（可能是 JSON number）。
+  // 统一成字符串再校验 —— 否则 `{no: 2}` 会在 isSafeDirName 的 typeof 断言上被判成"越界"而回 403。
+  const noText = String(noRaw ?? '');
+  // 🔴 顺序不能反：**先判越界（403），再判格式（404）**。`../../etc` 同样不匹配数字正则，
+  //    若先判格式就会回 404 —— 而 §8.2 只允许 403，404 会把"有人试图越界"掩盖成"话号拼错了"
+  //    （与 `resolveComicDir` 的处理逐条对齐）。
+  if (!isSafeDirName(noText)) {
+    securityLog(`拒绝路径越界的话号（§8.2 校验点 2）：${JSON.stringify(noRaw)}`);
+    throw permissionDenied();
+  }
+  // 只认纯数字：`'1abc'`、`'01x'`、`''`、`'1.0'` 一律拒。parseInt 的"能读几个字符算几个"
+  // 会让 `/chapters/1xyz/` 静默命中第 1 话 —— 那是把拼错的路径当成对的。
+  if (!/^\d{1,4}$/.test(noText)) {
+    throw new ApiError('TASK_NOT_FOUND', `话号必须是 1–${MAX_CHAPTER_NO} 的整数`, { chapterNo: noRaw });
+  }
+  const no = Number(noText);
+  if (no < 1 || no > MAX_CHAPTER_NO) {
+    throw new ApiError('TASK_NOT_FOUND', `话号必须是 1–${MAX_CHAPTER_NO} 的整数`, { chapterNo: noRaw });
+  }
+  const { name: bookName, dir: bookDir } = resolveBookDir(bookRaw); // 第一段：书（含 §8.2 原始名断言）
+  const dirName = chapterDirName(no); // 服务端生成，不由用户输入拼出
+  if (!isSafeDirName(dirName)) {
+    securityLog(`话目录名未通过安全断言（命名规则可能被改坏）：${JSON.stringify(dirName)}`);
+    throw permissionDenied();
+  }
+  const dir = path.join(bookDir, dirName);
+  try {
+    assertInsideRoot(store.root, path.join(dir, 'x.png'));
+  } catch {
+    securityLog(`话目录拼接后前缀校验失败：${dir}（root=${store.root}）`);
+    throw permissionDenied();
+  }
+  return { bookName, bookDir, no, dirName, dir, relDir: `${bookName}/${dirName}` };
+}
+
+/** 话目录必须**存在**（取图 / 续做 / 返工都要真的能读盘）—— 不存在则 404 */
+function mustChapterDir(bookRaw, noRaw) {
+  const info = resolveChapterDir(bookRaw, noRaw);
+  if (!fs.existsSync(info.dir)) {
+    throw new ApiError('TASK_NOT_FOUND', `这本漫画没有第 ${info.no} 话`, {
+      bookName: info.bookName, chapterNo: info.no, outputDir: info.dir,
+    });
+  }
+  return info;
+}
+
 function findFile(dir, seq, variant) {
   const wantTranslated = variant === 'translated';
   let names = [];
@@ -1371,6 +1433,32 @@ function findFile(dir, seq, variant) {
     if (m && Number(m[1]) === seq) return f;
   }
   return null;
+}
+
+/**
+ * 把一个目录内的图片文件按字节发出去（`files/{seq}` 与 `chapters/{no}/files/{seq}` 共用）。
+ *
+ * 抽出来的理由不是"少写几行"，而是**打开文件前的 TOCTOU 复校验只能有一处**：
+ * 两处各写一遍，就会漂移成"这里校验、那里忘了"，而漏掉的那一处就是把任意路径读出去的口子。
+ */
+function sendImageBytes(res, cors, dir, name) {
+  const file = path.join(dir, name);
+  try {
+    assertInsideRoot(store.root, file); // 打开文件前再校验一次（防 TOCTOU）
+  } catch {
+    securityLog(`文件读取越界：${file}`);
+    throw permissionDenied();
+  }
+  const ext = name.split('.').pop().toLowerCase();
+  const stat = fs.statSync(file);
+  res.writeHead(200, {
+    ...cors,
+    'Content-Type': MIME[ext] || 'application/octet-stream',
+    'Content-Length': stat.size,
+    'Content-Disposition': `inline; filename="${name}"`,
+    'Cache-Control': 'no-store',
+  });
+  fs.createReadStream(file).pipe(res);
 }
 
 function handleLibraryFile(req, res, cors, rawName, seqText, url) {
@@ -1389,23 +1477,7 @@ function handleLibraryFile(req, res, cors, rawName, seqText, url) {
       comicName: path.basename(dir), seq, variant, root: store.root,
     });
   }
-  const file = path.join(dir, name);
-  try {
-    assertInsideRoot(store.root, file); // 打开文件前再校验一次（防 TOCTOU）
-  } catch {
-    securityLog(`文件读取越界：${file}`);
-    throw permissionDenied();
-  }
-  const ext = name.split('.').pop().toLowerCase();
-  const stat = fs.statSync(file);
-  res.writeHead(200, {
-    ...cors,
-    'Content-Type': MIME[ext] || 'application/octet-stream',
-    'Content-Length': stat.size,
-    'Content-Disposition': `inline; filename="${name}"`,
-    'Cache-Control': 'no-store',
-  });
-  fs.createReadStream(file).pipe(res);
+  sendImageBytes(res, cors, dir, name);
 }
 
 function handleReveal(req, res, cors, rawName) {
@@ -1768,6 +1840,209 @@ function handleLibraryCoverFile(req, res, cors, rawName) {
   fs.createReadStream(file).pipe(res);
 }
 
+// ---------------------------------------------------------------- 大类：归并 + 话级寻址
+// 契约见 docs/spec-notes.md D-115 §4 与 D-117（话级寻址为何必须新开一条解析）。
+
+/** 归并归档目录（`state/merge-archive/`），按需创建 */
+function mergeArchiveDir() {
+  const dir = path.join(STATE_DIR, MERGE_ARCHIVE_DIR);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return dir;
+}
+
+/** 归档用的时间戳（文件名安全：冒号与点在 Windows 上都不合法） */
+function stampOf() {
+  return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+/**
+ * `EXDEV`（跨卷 / 网络盘）判定 —— **多信号**，不只看 `err.code`。
+ *
+ * 为什么三条一起看：`err.code` 是三者里**可移植性最低**的一项（包装层会把它整体换掉，
+ * 实测某沙箱把 code 统一改成自己的码而 message 保留原文）；`err.errno === 18` 与 message 里的
+ * `EXDEV` 字样是另外两条独立线索。任意一条命中即认定跨卷 —— 判错的代价只是文案（下一条
+ * 都是 409），而判漏的代价是把一次可解释的失败变成 500。
+ */
+function isCrossDeviceError(err) {
+  if (!err) return false;
+  if (err.code === 'EXDEV' || err.errno === 18) return true; // 18 = EXDEV（Linux/macOS 同值）
+  return /EXDEV|cross-device/i.test(String(err.message || ''));
+}
+
+/**
+ * 归并移动完成后的不变量校验：**一个大类目录里只能有一份 `manifest.json`**。
+ *
+ * 正常路径下这里是空操作 —— 前置校验已经卡死了"源必须是 others（无 manifest）"。留着它是为了
+ * 覆盖**竞态**：若在那个极短窗口里有人往源目录写进一份 `manifest.json`，移动后大类里就有了两份。
+ * 更糟的是 D-115 §1 的判据（"目录里有没有 manifest"）**照样成立** ⇒ 扫描不报错，
+ * 只是元信息取到哪一份变成不确定。把多出来的那份挪进归档，让这条不变量无条件成立。
+ */
+function evictStrayManifest(bookDir, bookName, movedDirName) {
+  const stray = path.join(bookDir, movedDirName, MANIFEST_FILE);
+  if (!fs.existsSync(stray)) return null;
+  const dest = path.join(mergeArchiveDir(), `${stampOf()}-${movedDirName}-stray.json`);
+  fs.renameSync(stray, dest);
+  console.warn(`[box-service] ⚠ 归并 ${bookName}/${movedDirName} 时发现多出的 manifest.json，已归档到 ${dest}`);
+  return dest;
+}
+
+/**
+ * `POST /library/{name}/merge` —— 把「其它」里的未归并单话**物理移动**进某个大类，成为第 N 话。
+ *
+ * body：`{ targetBook, no }`。
+ *
+ * ## 前置校验（缺一即拒，且错误码必须可判定）
+ *  ① 源必须存在                                                  → 404 TASK_NOT_FOUND
+ *  ② 源必须是 `others`（**目录内无 `manifest.json`**）            → 409 ALREADY_MERGED
+ *     这一条同时解决了"移动后大类里出现两份 manifest"这个更根本的问题：源本来就不可能是大类。
+ *  ③ 源上不得有未终态任务（翻译中被搬走 = 写向不存在的路径）        → 409 MERGE_SOURCE_BUSY
+ *  ④ 目标大类必须存在（有 manifest）                              → 404 TASK_NOT_FOUND
+ *  ⑤ 目标话号未被占用（**目录名与 `episodes[].no` 双向都查**）     → 409 CHAPTER_NO_TAKEN
+ *
+ * ## 移动语义
+ *  · **只改位置与名字，不删任何页文件**。`fs.renameSync` 而不是"复制 + 删源"：后者中途失败
+ *    会留下半个目录，而源可能已被删 —— 不可逆。
+ *  · 跨卷（`EXDEV`）**不做降级拷贝**，直接 409 让用户知道这本不能自动归并。
+ *  · 移动前把源目录里的 `cover.*` 删掉：那份封面的语义属于"单话"，升格成整本封面属于语义篡改。
+ *  · 移动后按**目录**重建目标大类的 `episodes[]`。
+ *
+ * ## 归并**不可逆**（本期不做"退回其它"，设计 R-06）
+ * 所以前端确认弹窗的文案必须说清，且不做"撤销"承诺 —— 服务端这边也没有反向端点可调。
+ */
+async function handleLibraryMerge(req, res, cors, rawName) {
+  const { name: srcName, dir: srcDir } = resolveComicDir(rawName);
+  const { ok, value } = await readJsonBody(req);
+  if (!ok) throw new ApiError('INVALID_BOOK_META', '请求体不是合法 JSON', { raw: 'unparsable' });
+  const body = value && typeof value === 'object' ? value : {};
+  const targetRaw = body.targetBook ?? body.book ?? body.target;
+  const { name: targetName, dir: targetDir } = resolveBookDir(targetRaw);
+  // 话号复用 `resolveChapterDir` 的同一套校验（那里管的是"寻址"，这里管的是"落位"，
+  // 但"什么算合法话号"只能有一份定义，否则两边会漂移出 `/chapters/007/` 能读、归并却拒绝这类怪事）
+  const { no, dirName: dstName } = resolveChapterDir(targetName, body.no);
+
+  if (!fs.existsSync(srcDir)) {
+    throw new ApiError('TASK_NOT_FOUND', '未归并单话目录不存在', { comicName: srcName, outputDir: srcDir });
+  }
+  if (hasManifest(srcDir)) {
+    throw new ApiError('ALREADY_MERGED', `「${srcName}」已经是一本大类（目录内有 manifest.json），不能再次归并`,
+      { comicName: srcName, outputDir: srcDir });
+  }
+  const busy = store.activeTasksForDir(srcName);
+  if (busy.length > 0) {
+    throw new ApiError('MERGE_SOURCE_BUSY',
+      `「${srcName}」还有 ${busy.length} 个任务在跑（${busy.map((t) => t.status).join('、')}），请等它跑完或先取消`,
+      { comicName: srcName, statuses: busy.map((t) => t.status), taskIds: busy.map((t) => t.taskId) });
+  }
+  const dst = path.join(targetDir, dstName);
+  // ⑤ 双向查：目录名（位置）与 episodes[].no（说明文字）都要干净。只查一侧的话，
+  //    手改过 episodes 的大类会出现"目录名不冲突、但 json 说这个话号已经有人了"的不一致状态。
+  const takenNos = listChapterDirs(targetDir).map((c) => c.no);
+  const declaredNos = readManifest(targetDir, targetName).episodes.map((e) => e.no);
+  if (fs.existsSync(dst) || takenNos.includes(no) || declaredNos.includes(no)) {
+    throw new ApiError('CHAPTER_NO_TAKEN', `《${targetName}》已经有第 ${no} 话了`,
+      { targetBook: targetName, chapterNo: no, occupiedBy: fs.existsSync(dst) ? 'dir' : 'episodes' });
+  }
+
+  // 移动前清掉源目录里的封面（它属于"单话"，不该升格为整本封面）
+  const removedCoverCount = removeCover(srcDir);
+  try {
+    fs.renameSync(srcDir, dst);
+  } catch (err) {
+    if (isCrossDeviceError(err)) {
+      throw new ApiError('MERGE_CROSS_DEVICE',
+        '漫画库与目标目录不在同一个磁盘卷上，无法自动归并（请手动移动该目录）',
+        { comicName: srcName, targetBook: targetName, chapterNo: no, reason: String(err.message || err) });
+    }
+    throw err;
+  }
+  evictStrayManifest(targetDir, targetName, dstName);
+  // 按目录重建 episodes[]（不做"读旧数组再合并"，理由见 library.mjs::episodesFromDirs）
+  writeManifestAtomic(targetDir, {
+    ...readManifest(targetDir, targetName), episodes: episodesFromDirs(targetDir),
+  });
+  sendJson(res, 200, {
+    ...bookMetaView(targetName, targetDir),
+    merged: {
+      from: srcName, to: `${targetName}/${dstName}`, no, removedCoverCount,
+    },
+  }, cors);
+}
+
+// ---------------------------------------------------------------- 话级：续做 / 返工 / 取图
+
+/** `GET /library/{book}/chapters/{no}/resume` —— 该话「有原图、缺译文」的页清单 */
+function handleChapterResumePlan(req, res, cors, bookRaw, noRaw) {
+  const { relDir } = mustChapterDir(bookRaw, noRaw);
+  sendJson(res, 200, store.resumePlan(relDir), cors);
+}
+
+/** `GET /library/{book}/chapters/{no}/retranslate` —— 该话**所有有原图**的页（不止缺译文的） */
+function handleChapterRetranslatePlan(req, res, cors, bookRaw, noRaw) {
+  const { relDir } = mustChapterDir(bookRaw, noRaw);
+  sendJson(res, 200, store.retranslatePlan(relDir), cors);
+}
+
+/**
+ * `POST /library/{book}/chapters/{no}/resume` —— 话级续做，进入**同一条**串行队列。
+ *
+ * 与漫画级 `POST /library/{name}/resume` 只差"目录怎么来的"：那里是顶层目录名，
+ * 这里是 `<book>/NN_第N话` 相对路径。`store.createResumeTask` 内部只做
+ * `path.join(this.root, dirName)` ⇒ 传相对路径**一行都不用改**（这正是"dirName 存相对路径"
+ * 的设计红利，别顺手改成绝对路径 —— 改了整个任务模型就绑死在当前 root 上）。
+ */
+function handleChapterResume(req, res, cors, bookRaw, noRaw) {
+  return readBody(req).then(async (body) => {
+    await assertSidecarReady();
+    const { relDir } = mustChapterDir(bookRaw, noRaw);
+    const opts = readResumeOptions(body);
+    assertRootWritable();
+    const { task } = store.createResumeTask(relDir, { ...opts, source: sourceOf(req) });
+    sendJson(res, 201, store.createView(task), cors);
+  });
+}
+
+/** `POST /library/{book}/chapters/{no}/retranslate` —— 话级返工（覆盖该话已有译文） */
+function handleChapterRetranslate(req, res, cors, bookRaw, noRaw) {
+  return readBody(req).then(async (body) => {
+    await assertSidecarReady();
+    const { relDir } = mustChapterDir(bookRaw, noRaw);
+    const opts = readResumeOptions(body);
+    assertRootWritable();
+    const { task, plan } = store.createRetranslateTask(relDir, { ...opts, source: sourceOf(req) });
+    sendJson(res, 201, {
+      ...store.createView(task),
+      overwriteCount: plan.overwriteCount,
+      retranslateCount: pickedCount(plan, opts.seqs),
+    }, cors);
+  });
+}
+
+/**
+ * `GET /library/{book}/chapters/{no}/files/{seq}` —— 话内取图。
+ *
+ * `variant` 与漫画级 `files/{seq}` 同款（`translated` 默认 / `original`）。
+ * 前端**必须**按「书 + 话 + 页 + variant」做缓存 key —— 只按页号缓存会让《A》第 1 话第 1 页
+ * 与《B》第 1 话第 1 页命中同一条（跨书串图，且"看起来正常、内容错了"，最难发现的那类缺陷）。
+ */
+function handleChapterFile(req, res, cors, bookRaw, noRaw, seqText, url) {
+  const info = mustChapterDir(bookRaw, noRaw);
+  const seq = Number.parseInt(seqText, 10);
+  if (!Number.isFinite(seq) || seq < 1 || seq > 999) {
+    throw new ApiError('INVALID_IMAGE', 'seq 必须是 1–999 的整数', { seq: seqText });
+  }
+  const variant = url.searchParams.get('variant') || 'translated';
+  if (!['original', 'translated'].includes(variant)) {
+    throw new ApiError('INVALID_IMAGE', 'variant 只能是 original 或 translated', { variant });
+  }
+  const name = findFile(info.dir, seq, variant);
+  if (!name) {
+    throw new ApiError('TASK_NOT_FOUND', '该话中找不到这一页', {
+      bookName: info.bookName, chapterNo: info.no, seq, variant,
+    });
+  }
+  sendImageBytes(res, cors, info.dir, name);
+}
+
 /**
  * `GET /library/{comicName}/resume` —— 该漫画「有原图、缺译文」的页清单
  * （**契约外增量端点**，见 docs/spec-notes.md G-07）。
@@ -1779,6 +2054,29 @@ function handleLibraryCoverFile(req, res, cors, rawName) {
 function handleResumePlan(req, res, cors, rawName) {
   const { name } = resolveComicDir(rawName);
   sendJson(res, 200, store.resumePlan(name), cors);
+}
+/**
+ * 从请求体读出 `{ seqs, lang }` —— `resume` 与 `retranslate`、漫画级与话级，**四条路共用**。
+ *
+ * 抽出来是因为入参校验必须逐字一致：两边各写一遍，"哪一条能收空数组 / 哪一条会静默吞掉
+ * 拼错的 lang" 就会变成随时间漂移的知识，而漂移的那一条恰恰不会被任何断言碰到。
+ * 空体与坏 JSON 都按"没给"处理（与既有行为一致：这两个端点本就允许无 body）。
+ */
+function readResumeOptions(body) {
+  const out = { seqs: undefined, lang: undefined };
+  if (!body || !body.length) return out;
+  let parsedBody = null;
+  try { parsedBody = JSON.parse(body.toString('utf8')); } catch { return out; /* 允许空体 */ }
+  if (parsedBody && parsedBody.seqs !== undefined) {
+    if (!Array.isArray(parsedBody.seqs)) {
+      throw new ApiError('INVALID_IMAGE', 'seqs 必须是数组', { seqs: parsedBody.seqs });
+    }
+    out.seqs = parsedBody.seqs;
+  }
+  if (parsedBody && parsedBody.lang !== undefined) {
+    out.lang = resolveTaskLang({ lang: parsedBody.lang });
+  }
+  return out;
 }
 
 /**
@@ -1793,23 +2091,9 @@ function handleResume(req, res, cors, rawName) {
   return readBody(req).then(async (body) => {
     await assertSidecarReady();
     const { name } = resolveComicDir(rawName);
-    let seqs;
-    let lang;
-    if (body && body.length) {
-      let parsedBody = null;
-      try { parsedBody = JSON.parse(body.toString('utf8')); } catch { /* 允许空体 */ }
-      if (parsedBody && parsedBody.seqs !== undefined) {
-        if (!Array.isArray(parsedBody.seqs)) {
-          throw new ApiError('INVALID_IMAGE', 'seqs 必须是数组', { seqs: parsedBody.seqs });
-        }
-        seqs = parsedBody.seqs;
-      }
-      if (parsedBody && parsedBody.lang !== undefined) {
-        lang = resolveTaskLang({ lang: parsedBody.lang });
-      }
-    }
+    const opts = readResumeOptions(body);
     assertRootWritable(); // §2.2 DISK_FULL(507)：请求级落盘不可用
-    const { task } = store.createResumeTask(name, { seqs, source: sourceOf(req), lang });
+    const { task } = store.createResumeTask(name, { ...opts, source: sourceOf(req) });
     sendJson(res, 201, store.createView(task), cors);
   });
 }
@@ -1849,27 +2133,13 @@ function handleRetranslate(req, res, cors, rawName) {
   return readBody(req).then(async (body) => {
     await assertSidecarReady();
     const { name } = resolveComicDir(rawName);
-    let seqs;
-    let lang;
-    if (body && body.length) {
-      let parsedBody = null;
-      try { parsedBody = JSON.parse(body.toString('utf8')); } catch { /* 允许空体 */ }
-      if (parsedBody && parsedBody.seqs !== undefined) {
-        if (!Array.isArray(parsedBody.seqs)) {
-          throw new ApiError('INVALID_IMAGE', 'seqs 必须是数组', { seqs: parsedBody.seqs });
-        }
-        seqs = parsedBody.seqs;
-      }
-      if (parsedBody && parsedBody.lang !== undefined) {
-        lang = resolveTaskLang({ lang: parsedBody.lang });
-      }
-    }
+    const opts = readResumeOptions(body);
     assertRootWritable(); // §2.2 DISK_FULL(507)：返工同样要往磁盘写译文
-    const { task, plan } = store.createRetranslateTask(name, { seqs, source: sourceOf(req), lang });
+    const { task, plan } = store.createRetranslateTask(name, { ...opts, source: sourceOf(req) });
     sendJson(res, 201, {
       ...store.createView(task),
       overwriteCount: plan.overwriteCount,
-      retranslateCount: pickedCount(plan, seqs),
+      retranslateCount: pickedCount(plan, opts.seqs),
     }, cors);
   });
 }
@@ -1985,6 +2255,31 @@ async function route(req, res, cors, url) {
   // /library/{comicName}/files/{seq}
   if (p.length === 4 && p[0] === 'library' && p[2] === 'files' && method === 'GET') {
     return handleLibraryFile(req, res, cors, p[1], p[3], url);
+  }
+  // /library/{book}/chapters/{no}/{resume|retranslate|files/{seq}} —— 话级寻址（D-117）
+  // ⚠️ 必须排在 `/library/{comicName}/{action}` 那批之前吗？不必：批次之间用 p.length 区分
+  //（这里最低 5 段，那批恒 3 段）。但三条 `chapters` 路由之间要先长后短，见下。
+  if (p.length >= 5 && p[0] === 'library' && p[2] === 'chapters') {
+    const bookRaw = p[1];
+    const noRaw = p[3];
+    if (p.length === 6 && p[4] === 'files' && method === 'GET') {
+      return handleChapterFile(req, res, cors, bookRaw, noRaw, p[5], url);
+    }
+    if (p.length === 5 && p[4] === 'resume') {
+      if (method === 'GET') return handleChapterResumePlan(req, res, cors, bookRaw, noRaw);
+      if (method === 'POST') return handleChapterResume(req, res, cors, bookRaw, noRaw);
+      throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
+    }
+    if (p.length === 5 && p[4] === 'retranslate') {
+      if (method === 'GET') return handleChapterRetranslatePlan(req, res, cors, bookRaw, noRaw);
+      if (method === 'POST') return handleChapterRetranslate(req, res, cors, bookRaw, noRaw);
+      throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
+    }
+    throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
+  }
+  // /library/{name}/merge —— 把未归并单话物理移动进某个大类
+  if (p.length === 3 && p[0] === 'library' && p[2] === 'merge' && method === 'POST') {
+    return handleLibraryMerge(req, res, cors, p[1]);
   }
   // /library/{comicName}/reveal
   if (p.length === 3 && p[0] === 'library' && p[2] === 'reveal' && method === 'POST') {
