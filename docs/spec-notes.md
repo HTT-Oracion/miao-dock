@@ -5127,3 +5127,91 @@ Python `py_compile` 通过 · 渲染冒烟（16/20/24/32px 抗锯齿像素占比
 - **修法**：新增 `app/src/hooks/useDebouncedValue.ts`（纯 DOM 行为 hook、无业务依赖，与 `useEsc` 同档，走 `@hooks/useDebouncedValue` 单文件引用、**不进业务桶**）；`LibraryScreen` 的输入框受控值用**原始态** `queryInput`（保证按键即时回显、不错字），喂给 `filtered` 的是**防抖 200ms 后**的 `query`。
 - **连带**：新增 hook 须同步 `e2e/units-structure-check.mjs` 的 `HOOKS_MANIFEST`（hooks 唯一收口白名单，D-41）—— 漏登记就是「全绿 + 该文件无人管」。
 - **取证**：`tsc --noEmit` 0 · `check:units` 44/0（含 hooks 清单一致性）。
+
+## D-115 · 漫画库从「目录即漫画」升级为「本 → 话 → 页」三层（落盘契约冻结）（2026-10-10）
+
+**背景（用户要求 + 设计稿）**：漫画库要支持「手动新建漫画」「详情页按话分页」「分组与归并」「删除整本 / 单话」。
+现状是**一目录 = 一漫画**的平铺模型（`GET /library.comics`），没有「话」这一层。改造落地时必须先定死**落盘契约**，
+否则服务端与前端会各写一套。本节即 Step 1 的产物：**先定死，再写码**。
+
+### 1. 目录判定规则（**唯一判据，不用第二份索引**）
+
+```
+顶层目录内存在 manifest.json  ⇒  大类（漫画 · 本）
+顶层目录内不存在 manifest.json ⇒  未归并单话  ⇒  搜索分组时归入「其它」
+```
+
+- 判据是 **`manifest.json` 是否存在（`existsSync`）**，不是「能不能解析」。坏 JSON 的目录**仍是**大类
+  —— 否则一个手抖写坏的 `manifest.json` 会让整本从 `books` 掉进「其它」，页面表现为「我的漫画没了」，
+  而归因只能靠猜。解析失败时回落成安全默认值（`title = 目录名`、`author = ''`、`cover = null`、`episodes = []`）。
+- 由这条派生：**「已归并」= 位置**（目录在大类目录之内）—— 不需要在数据里存 `merged` 布尔。
+  API 响应里的 `chapter.merged` / `others[].merged` 是**扫描期由位置算出的投影**，不是落盘字段。
+- **空大类必须出现在 `books` 里**（刚创建、还没归并任何话）—— 否则「新建完看不见」，用户以为失败。
+  新建时**立即写入 `manifest.json`**，于是空大类天然满足上面的判据。
+
+### 2. 命名规则
+
+| 对象 | 命名 | 备注 |
+|---|---|---|
+| 大类目录 | 目录名原文（`normalizeComicName` 的结果） | 现状不变 |
+| 话目录 | `NN_第N话`（`NN` = 两位零填充话号） | 保证**文件系统自然序 == 话序** |
+| 封面 | `cover.<ext>`（ext ∈ png/jpg/jpeg/webp） | basename **固定**为 `cover` |
+| 元信息 | `manifest.json` | 随目录可移植 |
+
+### 3. `manifest.json` schema v1
+
+```json
+{ "schema": 1, "title": "夏日重现", "author": "田中", "cover": "cover.jpg",
+  "episodes": [ { "no": 1, "dir": "01_第1话" } ] }
+```
+
+- `episodes[].dir` 为**目录内相对路径**（物理移动后一律是 `NN_第N话`，不出现 `../`）。
+- 落盘写入 `episodes[]`（可移植、可读可修）；但**读取时以目录为准**（`listChapters` 扫 `CHAPTER_DIR_RE` 匹配的子目录）
+  —— 「目录即索引」这条哲学的一致性要求：位置是权威，`episodes[]` 是随目录一起的说明文字。
+
+### 4. 路由表（`/api/v1` 前缀省略）
+
+| 方法 | 路径 | 用途 | 新增/复用 |
+|---|---|---|---|
+| GET | `/library` | **加字段**：`books` / `others`（`comics` 原样保留） | 扩展 |
+| POST | `/library/create` | 建同名目录 + 写初始 manifest；同名 → 409 | 新增 |
+| GET·POST | `/library/{book}/meta` | 读/写 `author`·`title`；`coverFromFirstChapter:true` 取第 1 话首图 | 新增 |
+| POST | `/library/{book}/cover` | **multipart 单文件**（字段 `cover`）→ 落 `cover.<ext>` + 回写 manifest | 新增 |
+| DELETE | `/library/{book}/cover` | 删 `cover.*` + `manifest.cover=null`（保留 author） | 新增 |
+| POST | `/library/{name}/merge` | 归并：物理移动 + 重命名 + 回写 `episodes[]` | 新增 |
+| POST | `/library/{book}/delete` | 删除整本（`deleteFiles` 语义不变） | **复用**现有 handler |
+| POST | `/library/{name}/delete` | 删除未归并单话 | **复用** |
+| GET·POST | `/library/{book}/chapters/{no}/resume` | 话级续做 | 新增（理由见 D-117） |
+| GET·POST | `/library/{book}/chapters/{no}/retranslate` | 话级返工 | 新增 |
+| GET | `/library/{book}/chapters/{no}/files/{seq}` | 话内取图 | 新增 |
+
+**`comics` 字段保留的理由（向后兼容是硬要求）**：`DropScreen.tsx:132`（`dupKey` 重名比对读 `lib.comics`）、
+`App.tsx:278`（`libSummary`）、`e2e/service/library-manage-check.mjs:225`（`names()` 读 `comics`）、
+`e2e/service/selftest.mjs` / `e2e/e2e.mjs` 都依赖它原样存在。口径 = **每个顶层目录一条、页级扫描只看该目录自身**
+（与改造前逐字一致）⇒ 纯单话库上前后**逐字节等价**；大类的 `comics` 条目页数为 0（页在子目录里，属预期）。
+
+### 5. `books[i].byteSize` 口径
+
+沿用 G-01「目录内所有文件字节之和」，**不因多了 `manifest.json` / `cover.*` 而偷偷改口径**：
+大类 = 各话之和 + 大类目录自身的文件（含 `cover.*` 与 `manifest.json`）。这条是显式记账，不是顺手。
+
+### 6. 新增 `config.mjs` 常量
+
+```js
+export const MANIFEST_FILE = 'manifest.json';
+export const COVER_RE = /^cover\.(png|jpg|jpeg|webp)$/;
+export const COVER_MAX_BYTES = 10 * 1024 * 1024;
+export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
+```
+
+⚠️ `ORIGINAL_SCAN_RE`(`/^(\d{3})\.(png|jpg|jpeg|webp)$/`) 与 `TRANSLATED_SCAN_RE` **一个字都不改**：
+`cover.jpg`（无三位数字前缀）与 `manifest.json` 天然不匹配这两个正则 ⇒ 不会被误算成「页」。
+
+### 7. 归属与分层（对 AGENTS §1 / D-101 的落实）
+
+- 新服务模块落 `service/src/manga/library.mjs`（既有 `manga/` 域目录内，**不新增目录**）。
+- 页级扫描逻辑**不得抄第二份**：抽成 `scanChapterPages(dir)`，「单话目录」与「大类内的话目录」**共用同一个函数**
+  （照抄 `_writeOriginal` 的「单一入口、多调用点」纪律）。
+- 前端新增屏内件落 `app/src/screens/library/`（`modals.tsx` / `ChapterCard.tsx` / `blob.ts`），
+  `LibraryScreen.tsx` **不搬迁**（理由见 D-119）；纯函数写进**既有桶文件** `app/src/tools/index.ts`。
+

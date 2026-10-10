@@ -811,6 +811,23 @@ export const FILE_NAME_RE = /^\d{3}(_translated)?\.(png|jpg|jpeg|webp)$/;
 export const ORIGINAL_SCAN_RE = /^(\d{3})\.(png|jpg|jpeg|webp)$/;
 export const TRANSLATED_SCAN_RE = /^(\d{3})_translated\.(png|jpg|jpeg|webp)$/;
 
+// ---------------------------------------------------------------- 漫画库「本 → 话 → 页」三层（D-115）
+//
+// ⚠️ 上面三条正则**一个字都不改**：`cover.jpg`（无三位数字前缀）与 `manifest.json`
+//    天然不匹配它们 ⇒ 不会被误算成「页」。这是「文件名由服务端固定生成」白送的好处。
+/** 大类（书籍目录）判定与元信息的唯一文件名 */
+export const MANIFEST_FILE = 'manifest.json';
+/** 封面文件名（basename 固定为 cover，扩展名由字节嗅探决定） */
+export const COVER_RE = /^cover\.(png|jpg|jpeg|webp)$/;
+/** 封面上限 10 MiB（与资料库图片上传上限一致；`readBody` 的 MAX_BODY 是 256 MiB，无冲突） */
+export const COVER_MAX_BYTES = 10 * 1024 * 1024;
+/** 话目录名：`NN_第N话`（两位零填充话号 ⇒ 文件系统自然序 == 话序） */
+export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
+/** 话号上限（与 seq 的 999 同档，避免目录名膨胀） */
+export const MAX_CHAPTER_NO = 999;
+/** 归并时「源目录里历史遗留的元信息」的备份目录（相对 STATE_DIR） */
+export const MERGE_ARCHIVE_DIR = 'merge-archive';
+
 export function seq3(seq) {
   return String(seq).padStart(3, '0');
 }
