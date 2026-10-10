@@ -77,7 +77,8 @@ const F = {
 };
 
 // ── 冻结的契约（负责人冻结，本脚本照抄，不改口径） ────────────────────────
-/** units 目录应恰有的 11 个文件（多一个/少一个都判红；useEsc 已迁 src/hooks，D-41） */
+/** units 目录应恰有的 16 个文件（多一个/少一个都判红；useEsc 已迁 src/hooks，D-41）
+ *  Tooltip / ContextMenu 是 2026-10-11 漫画右键菜单一并入册的可复用件（D-124） */
 const MANIFEST = [
   "atoms.tsx",
   "Select.tsx",
@@ -87,6 +88,8 @@ const MANIFEST = [
   "ColorPicker.tsx",
   "IconButton.tsx",
   "MenuButton.tsx",
+  "ContextMenu.tsx",
+  "Tooltip.tsx",
   "Notice.tsx",
   "PlayModeButton.tsx",
   "NumberInput.tsx",
@@ -98,8 +101,10 @@ const MANIFEST = [
 const BARREL_EXPORTS = [
   "Badge",
   "Btn",
+  "ContextMenu",
   "Dot",
   "MagicCircle",
+  "MenuSeparator",
   "Pill",
   "ColorPicker",
   "Empty",
@@ -112,6 +117,7 @@ const BARREL_EXPORTS = [
   "Select",
   "Swatches",
   "Switch",
+  "Tooltip",
   "ROW_GAP",
   "ROW_H",
   "VirtualList",

@@ -164,6 +164,44 @@
   color: var(--md-muted);
 }
 
+/* 右键菜单与 MenuButton 弹层同壳（.ui-menu），只补锚点差异：左上对齐光标 */
+.ui-ctx {
+  min-width: 176px;
+}
+
+/* 菜单分组线（ContextMenu 的 MenuSeparator）：比"空一项"更明确是分组 */
+.ui-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--md-line-soft);
+}
+
+/* ---- 悬停提示（Tooltip）----
+ * 宿主只挂状态（内联元素、零几何干预）；气泡走 Portal + fixed，锚在宿主顶缘中点，
+ * 由 transform 拉回居中。文字可选中 —— 出这个气泡的目的之一就是"把漫画名复制走"。 */
+.ui-tooltip-host {
+  display: inline-flex;
+  min-width: 0;
+}
+.ui-tooltip {
+  position: fixed;
+  z-index: 70;
+  transform: translate(-50%, -100%);
+  max-width: 360px;
+  padding: 5px 9px;
+  border-radius: var(--md-radius-xs);
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  box-shadow: 0 8px 22px rgba(12, 9, 24, 0.18);
+  color: var(--md-ink);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+
 /*
  * 滑杆：轨道 5px / 圆角 3 / 11×11 粉圆拇指 —— 与音乐屏的 .music-prog-bar、.music-vol
  * **逐值一致**。同一个应用里不该出现两种滑条，所以几何直接沿用，不另起一套。

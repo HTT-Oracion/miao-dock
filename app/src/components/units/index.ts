@@ -19,6 +19,7 @@
  * - 音乐语义的行（`SongRow` / `Cover`）→ 留在 `screens/music/shared.tsx`
  */
 export { Badge, Btn, Dot, MagicCircle, Pill } from '@components/units/atoms';
+export { ContextMenu, MenuSeparator } from '@components/units/ContextMenu';
 export { ColorPicker } from '@components/units/ColorPicker';
 export { Empty } from '@components/units/Empty';
 export { IconButton } from '@components/units/IconButton';
@@ -30,4 +31,5 @@ export { Range } from '@components/units/Range';
 export { Select } from '@components/units/Select';
 export { Swatches } from '@components/units/Swatches';
 export { Switch } from '@components/units/Switch';
+export { Tooltip } from '@components/units/Tooltip';
 export { ROW_GAP, ROW_H, VirtualList } from '@components/units/VirtualList';
