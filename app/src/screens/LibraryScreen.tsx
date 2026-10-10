@@ -12,6 +12,7 @@ import type {
   TaskRow,
 } from '@/types';
 import { formatBytes, fuzzyMatch, pageCount, pageSlice, sniffMime } from '@tools';
+import { useDebouncedValue } from '@hooks/useDebouncedValue';
 import { Btn, MenuButton, MenuItem, Notice } from '@components/units';
 
 /** 左栏每页漫画数（窄栏 + 每项约 48px 高，12 项差不多一屏） */
@@ -872,7 +873,9 @@ export function LibraryScreen({
   const [rtPlan, setRtPlan] = useState<RetranslatePlan | null>(null);
   const [rtBusy, setRtBusy] = useState(false);
   // 搜索 / 分页 / 删除 / 隐藏管理
-  const [query, setQuery] = useState('');
+  // 输入框受控值是原始态（保证按键即时回显），过滤用防抖后的值 —— 见 filtered 下方注释
+  const [queryInput, setQueryInput] = useState('');
+  const query = useDebouncedValue(queryInput, 200);
   const [libPage, setLibPage] = useState(1);
   const [gridPage, setGridPage] = useState(1);
   const [toDelete, setToDelete] = useState<ComicEntry | null>(null);
@@ -883,6 +886,8 @@ export function LibraryScreen({
   const comics = lib?.comics ?? [];
   const hidden = lib?.hidden ?? [];
 
+  // 逐键过滤很便宜，但过滤会改 `current`，进而重挂载右栏网格、重拉整页缩略图。
+  // 故喂给过滤的是**防抖后的 query**：连续输入期间只回显、不级联，停手 200ms 才过滤一次。
   const filtered = useMemo(() => comics.filter((c) => fuzzyMatch(c.comicName, query)), [comics, query]);
   const libPages = pageCount(filtered.length, LIB_PAGE_SIZE);
   // 行数变少（搜索结果变窄 / 删完一部）→ 把页码夹回合法区间，否则停在空白页
@@ -909,7 +914,7 @@ export function LibraryScreen({
     const idx = filtered.findIndex((c) => c.comicName === focus || c.dirName === focus);
     if (idx >= 0) {
       setActive(filtered[idx]!.comicName);
-      setQuery('');
+      setQueryInput('');
       setLibPage(Math.floor(idx / LIB_PAGE_SIZE) + 1);
     }
     onFocusHandled?.();
@@ -1120,16 +1125,16 @@ export function LibraryScreen({
           <Search size={13} className="lib-search-ico" />
           <input
             className="input lib-search-input"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={queryInput}
+            onChange={(e) => setQueryInput(e.target.value)}
             placeholder="搜索漫画名…"
             spellCheck={false}
           />
-          {query ? (
+          {queryInput ? (
             <button
               type="button"
               className="lib-search-clear"
-              onClick={() => setQuery('')}
+              onClick={() => setQueryInput('')}
               aria-label="清空搜索"
             >
               <X size={13} />

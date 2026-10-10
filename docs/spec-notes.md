@@ -5118,3 +5118,12 @@ Python `py_compile` 通过 · 渲染冒烟（16/20/24/32px 抗锯齿像素占比
 - **根因 ②（EOL 未折算）**：本仓 `core.autocrlf=true`，工作区是 **CRLF**，而跨行锚点字面量写的是 **LF** ⇒ 该锚点**永远「未找到」**，这一条被静默跳过（脚本只计进 `skipped` 后继续，跳过 ≠ 通过）。与 `units-structure-check.mjs` 在 2026-10-07 长期漏跑 9 条同类。
 - **修法**：find / replace 一并**连到函数名**（`#[tauri::command(async)]` + 换行 + `pub fn quit_app`）；写入前按目标文件实际的 `\r\n` / `\n` 折算锚点。
 - **取证**：`check:quit` 5/0；`check:quit:refute` **5/5 按预期变红**，且 `commands.rs` / `service.rs` / `App.tsx` **字节一致**恢复（`md5` 前后同值）。
+
+## D-114 · 漫画库搜索防抖：受控值与过滤值分离（`useDebouncedValue`）（2026-10-10）
+
+**症状**：漫画库搜索框每敲一个键都卡。
+
+- **根因**：逐键过滤本身很便宜，**贵的是它的级联** —— 过滤改 `filtered` ⇒ 选中项可能被挤到别的漫画上 ⇒ 右栏页网格重挂载并**重拉十几张缩略图**。
+- **修法**：新增 `app/src/hooks/useDebouncedValue.ts`（纯 DOM 行为 hook、无业务依赖，与 `useEsc` 同档，走 `@hooks/useDebouncedValue` 单文件引用、**不进业务桶**）；`LibraryScreen` 的输入框受控值用**原始态** `queryInput`（保证按键即时回显、不错字），喂给 `filtered` 的是**防抖 200ms 后**的 `query`。
+- **连带**：新增 hook 须同步 `e2e/units-structure-check.mjs` 的 `HOOKS_MANIFEST`（hooks 唯一收口白名单，D-41）—— 漏登记就是「全绿 + 该文件无人管」。
+- **取证**：`tsc --noEmit` 0 · `check:units` 44/0（含 hooks 清单一致性）。
