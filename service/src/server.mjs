@@ -9,9 +9,8 @@ import http from 'node:http';
 import path from 'node:path';
 
 import {
-  API_VERSION, BASE_PATH, BATCH_LIMIT, COVER_MAX_BYTES, ENGINE_SETTINGS_FILE, MANIFEST_FILE,
-  MAX_CHAPTER_NO, MERGE_ARCHIVE_DIR, ORIGINAL_SCAN_RE, REPO_ROOT,
-  ROOT_DIR, SERVICE_NAME, SERVICE_VERSION, STATE_DIR, TASKS_STATE_DIR, TRANSLATED_SCAN_RE,
+  API_VERSION, BASE_PATH, BATCH_LIMIT, COVER_MAX_BYTES, ENGINE_SETTINGS_FILE, ORIGINAL_SCAN_RE,
+  REPO_ROOT, ROOT_DIR, SERVICE_NAME, SERVICE_VERSION, STATE_DIR, TASKS_STATE_DIR, TRANSLATED_SCAN_RE,
   TOKEN_FILE, TRANSLATE_DIRECTIONS, assertInsideRoot, config, engineSettingsFile,
   isSupportedDirection, normalizeDirection,
   readIdleSettings, validateRoot,
@@ -29,7 +28,7 @@ import { modelStatus } from './settings/model-status.mjs';
 import { createTierDowngrade } from './settings/tier-downgrade.mjs';
 import { allFieldStrings, firstField, groupParts, parseMultipartEx } from './multipart.mjs';
 import {
-  chapterDirName, chapterNoFromDirName, createBookDir, hasManifest, listChapterDirs, ownFilesBytes,
+  createBookDir, episodesFromDirs, hasManifest, listChapterDirs, ownFilesBytes, pickFirstChapterImage,
   readCoverName, readManifest, removeCover, scanChapterPages, writeCover, writeManifestAtomic,
 } from './manga/library.mjs';
 import { sniffImageType } from './manga/image.mjs';
@@ -458,6 +457,24 @@ async function readBody(req) {
     chunks.push(chunk);
   }
   return Buffer.concat(chunks);
+}
+
+/**
+ * 读并解析 JSON 请求体，**区分「空体」与「坏 JSON」**。
+ *
+ * 🔴 为什么不像既有的 `handleDeleteTasks` 那样 `try/catch` 后把解析失败当空体：
+ * 那两个 handler 的语义是"空体 = 用默认值"，解析失败当空体不改变行为；而 `create` / `meta`
+ * 的语义是"**用户明确给了要写什么**"——把 `{"title":` 这种半截 JSON 静默当成"没给参数"，
+ * 就会回 200 而什么都没改，前端弹「已保存」。这正是 §2-4 说的"看起来正常、其实没生效"。
+ */
+async function readJsonBody(req) {
+  const body = await readBody(req);
+  if (!body || body.length === 0) return { ok: true, value: null };
+  try {
+    return { ok: true, value: JSON.parse(body.toString('utf8')) };
+  } catch {
+    return { ok: false, value: null };
+  }
 }
 
 // ------------------------------------------------------------------ 端点实现
@@ -966,6 +983,29 @@ function runVerifyChild(script, extraEnv, { timeoutMs = 900_000 } = {}) {
   });
 }
 
+/**
+ * 从 multipart 的 fields/files 里取出 `payload` JSON。
+ *
+ * 两处调用：① 本仓的投递建单（`parseUploadRequest`）② 封面落盘（`handleLibraryCover`，见 D-116
+ * —— 同一次请求里既传图又传 `author`）。抽成一份，免得两条 multiplart 路径对"`payload` 既可能是
+ * 普通字段、也可能是被当文件传"这件事各记一半。
+ */
+function extractPayloadField(fields, files) {
+  let rawPayload = firstField(fields, 'payload');
+  // `payload` 既可能是普通字段（推荐），也可能被客户端当文件 part 上传，两者都接受
+  if (rawPayload === null) {
+    const asFile = files.get('payload');
+    if (asFile && asFile.length > 0) rawPayload = asFile[0].data.toString('utf8');
+  }
+  if (rawPayload === null || rawPayload === undefined || String(rawPayload).trim() === '') return {};
+  try {
+    const parsed = JSON.parse(rawPayload);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 /** 解析 multipart 表单：payload + images[] + imageOrder[] */
 function parseUploadRequest(req, body) {
   const ct = req.headers['content-type'] || '';
@@ -1003,22 +1043,7 @@ function parseUploadRequest(req, body) {
       { limit: BATCH_LIMIT, submitted: images.length });
   }
 
-  let payload = {};
-  // `payload` 既可能是普通字段（推荐），也可能被客户端当文件 part 上传，两者都接受
-  let rawPayload = firstField(fields, 'payload');
-  if (rawPayload === null) {
-    const asFile = files.get('payload');
-    if (asFile && asFile.length > 0) rawPayload = asFile[0].data.toString('utf8');
-  }
-  if (rawPayload !== null && rawPayload !== undefined && rawPayload.trim() !== '') {
-    try {
-      payload = JSON.parse(rawPayload);
-    } catch {
-      payload = {};
-    }
-  }
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) payload = {};
-  return { payload, images, imageOrder: allFieldStrings(fields, 'imageOrder') };
+  return { payload: extractPayloadField(fields, files), images, imageOrder: allFieldStrings(fields, 'imageOrder') };
 }
 
 /**
@@ -1213,7 +1238,13 @@ function scanLibrary() {
     comics.push({ comicName: entry.name, dirName: entry.name, outputDir: dir, ...own });
 
     if (hasManifest(dir)) books.push(buildBookEntry(entry.name, dir, own));
-    else others.push({ no: null, dirName: entry.name, absDir: dir, merged: false, ...own });
+    else {
+      // 未归并单话：`no` 恒为 null（它还没有话号），`mergedTo` 恒为 null（没有归属）——
+      // 两个字段一起给出，前端就不必用 `'no' in item` 之类的"字段在不在"来判分支（D-115 §1）。
+      others.push({
+        no: null, dirName: entry.name, absDir: dir, merged: false, mergedTo: null, ...own,
+      });
+    }
   }
   const byName = (a, b) => a.dirName.localeCompare(b.dirName, 'zh-Hans-CN');
   comics.sort(byName);
@@ -1253,6 +1284,7 @@ function buildBookEntry(bookName, dir, own) {
     absDir: c.absDir,
     // 位置即「已归并」（D-115 §1）：能出现在大类目录里，本身就是已归并的证据
     merged: true,
+    mergedTo: { bookName, no: c.no },
     ...scanChapterPages(c.absDir),
   }));
   return {
@@ -1261,13 +1293,42 @@ function buildBookEntry(bookName, dir, own) {
     outputDir: dir,
     title: manifest.title,
     author: manifest.author,
-    cover: readCoverName(dir, manifest),
+    // 字段名 `coverPath` 对齐设计稿 11.1 的前端模型；`manifest.json` 里的键仍是 `cover`（D-115 §3）。
+    // 两侧名字不同是有意的：json 是**落盘**契约（人可读可改、随目录迁移），这里是**接口**契约。
+    coverPath: readCoverName(dir, manifest),
     chapterCount: chapters.length,
     totalPages: chapters.reduce((n, c) => n + c.imageCount, 0),
     byteSize: ownFilesBytes(dir) + chapters.reduce((n, c) => n + c.byteSize, 0),
     modifiedAt: own.modifiedAt,
     chapters,
   };
+}
+
+/**
+ * 大类元信息视图 = `buildBookEntry` 去掉 `chapters`。
+ *
+ * `/meta` 与 `/cover` 的响应只需要"改完之后这本长什么样"，不需要把整本的话与逐页集合
+ * 再回传一遍（详情页的数据源是 `GET /library`）。同一条 `buildBookEntry` 保证两处口径一致。
+ */
+function bookMetaView(bookName, dir) {
+  const { chapters, ...meta } = buildBookEntry(bookName, dir, scanChapterPages(dir));
+  return { ...meta, chapterCount: chapters.length };
+}
+
+/**
+ * 解析并校验**大类目录**（`/meta` · `/cover` · `/merge` 的目标）。
+ *
+ * 在 `resolveComicDir` 之上再要求「存在性 + 有 `manifest.json`」：`/meta` · `/cover` 一族
+ * 对「未归并单话目录」必须是 404（它没有可编辑的元信息），而不是给它现造一个 manifest
+ * —— 那会让一本单话"升级"成大类的语义从「归并」偷偷变成「改个标题」。
+ */
+function resolveBookDir(rawName) {
+  const { name, dir } = resolveComicDir(rawName);
+  if (!fs.existsSync(dir) || !hasManifest(dir)) {
+    throw new ApiError('TASK_NOT_FOUND', '漫画大类不存在（目录内没有 manifest.json）',
+      { bookName: name, outputDir: dir });
+  }
+  return { name, dir };
 }
 
 /**
@@ -1424,6 +1485,287 @@ async function handleLibraryUnhide(req, res, cors, rawName) {
   const { name } = resolveComicDir(rawName);
   const hidden = store.unhideComic(name);
   sendJson(res, 200, { comicName: name, hidden, hiddenCount: hidden.length }, cors);
+}
+
+// ---------------------------------------------------------------- 大类：新建 / 元信息 / 封面
+// 契约见 docs/spec-notes.md D-115 §4 与 D-116。四条端点全是 Box 专用（插件端不认识这些路径）。
+
+/** 标题长度上限。比目录名（64）宽 —— 目录名是文件名，标题只是显示文字 */
+const MAX_TITLE_CHARS = 200;
+/** 作者长度上限 */
+const MAX_AUTHOR_CHARS = 100;
+
+/**
+ * `POST /library/create` —— 手动新建一部漫画（大类）。
+ *
+ * body：`{ name, title?, author? }`。`name` 走 `normalizeComicName`（契约 §6.1，
+ * **服务端是唯一权威**，前端只做 `dupKey` 预校验）；同名 → 409 `BOOK_NAME_TAKEN`。
+ *
+ * 🔴 建完必须 `forgetHidden`：同名目录曾被"删除但不删文件"（= 只隐藏）过、而目录后来又被
+ *    手工删掉时，隐藏记录还在盘上；此时新建出的同名大类会被 `scanLibrary` 的
+ *    `hiddenComics.has(entry.name)` 直接跳过 ⇒ 用户看到"刚建完就没了"。
+ *    这与 `handleLibraryDelete` 里那句 `store.forgetHidden(name)` 是同一个坑的另一面。
+ */
+async function handleLibraryCreate(req, res, cors) {
+  const { ok, value } = await readJsonBody(req);
+  if (!ok) {
+    throw new ApiError('INVALID_BOOK_META', '请求体不是合法 JSON', { raw: 'unparsable' });
+  }
+  const rawName = value && typeof value === 'object'
+    ? (value.name ?? value.comicName ?? value.title)
+    : null;
+  const norm = normalizeComicName(rawName);
+  if (!norm.ok) throw new ApiError(norm.code, norm.message, norm.details);
+  if (!isSafeDirName(norm.name)) {
+    securityLog(`拒绝路径越界的新建漫画名（§8.2 校验点 2）：${JSON.stringify(rawName)}`);
+    throw permissionDenied();
+  }
+  const title = value && typeof value.title === 'string' ? value.title.trim() : '';
+  if (title.length > MAX_TITLE_CHARS) {
+    throw new ApiError('INVALID_BOOK_META', `标题超过 ${MAX_TITLE_CHARS} 个字符`, { limit: MAX_TITLE_CHARS, length: title.length });
+  }
+  const author = value && typeof value.author === 'string' ? value.author.trim() : '';
+  if (author.length > MAX_AUTHOR_CHARS) {
+    throw new ApiError('INVALID_BOOK_META', `作者超过 ${MAX_AUTHOR_CHARS} 个字符`, { limit: MAX_AUTHOR_CHARS, length: author.length });
+  }
+
+  let created = null;
+  try {
+    created = createBookDir(store.root, norm.name);
+  } catch (err) {
+    /**
+     * 🔴 判据用 **`fs.existsSync` 复检**，不用 `err.code === 'EEXIST'`。
+     *
+     * 理由是"错误码不是可观测事实、目录在不在才是"：
+     *  · 错误码会被**包装层改写**——实测本机沙箱把 `err.code` 统一换成自己的码，
+     *    而 `err.message` 仍是 `EEXIST: file already exists, mkdir '…'`。按 code 判会漏掉，返回 500。
+     *  · 目录有没有被建出来是**同一份事实**的两面：`mkdirSync(recursive:false)` 在已存在时抛错、
+     *    在存在时 `existsSync` 为真 —— 用后者判定，`recursive:false` 这条纪律才有意义。
+     *
+     * ⚠️ 因此这里**不**做 `existsSync` 预校验：预校验会把"`recursive:false` 被改成 `true`"这个
+     *    缺陷掩盖掉（预校验照样能拦下同名），于是"同名 → 409"这条断言就再也红不了。
+     *    让 mkdir 自己去撞、撞完用可观测事实归因，反证才咬得住（见 Step 8 的反证轮）。
+     */
+    if (fs.existsSync(path.join(store.root, norm.name))) {
+      // 同名目录（可能是"隐藏但文件还在"的那本）—— 如实回 409，并带上 `hidden` 让界面能解释
+      // "为什么库里看不见它却还说我重名"。
+      throw new ApiError('BOOK_NAME_TAKEN', `已存在同名漫画「${norm.name}」`, {
+        bookName: norm.name, outputDir: path.join(store.root, norm.name),
+        hidden: store.hiddenComics.has(norm.name),
+      });
+    }
+    throw err;
+  }
+  // 隐藏记录必须清掉，否则新建出来的这本会被扫描跳过（见函数头注释）
+  store.forgetHidden(norm.name);
+  if (title || author) {
+    writeManifestAtomic(created.dir, {
+      ...created.manifest, title: title || created.manifest.title, author,
+    });
+  }
+  sendJson(res, 201, bookMetaView(norm.name, created.dir), cors);
+}
+
+/**
+ * 把 `title` / `author` 两个可选字段合并进 manifest。
+ * 返回 `{manifest, touched}`：`touched` 为假表示"这次请求没要求改任何字段"。
+ */
+function applyMetaFields(manifest, body) {
+  const next = { ...manifest };
+  let touched = false;
+  if (body && Object.prototype.hasOwnProperty.call(body, 'title')) {
+    if (typeof body.title !== 'string') {
+      throw new ApiError('INVALID_BOOK_META', 'title 必须是字符串', { field: 'title', type: typeof body.title });
+    }
+    const t = body.title.trim();
+    if (t.length === 0) throw new ApiError('INVALID_BOOK_META', '标题不能为空', { field: 'title' });
+    if (t.length > MAX_TITLE_CHARS) {
+      throw new ApiError('INVALID_BOOK_META', `标题超过 ${MAX_TITLE_CHARS} 个字符`, { limit: MAX_TITLE_CHARS, length: t.length });
+    }
+    next.title = t;
+    touched = true;
+  }
+  if (body && Object.prototype.hasOwnProperty.call(body, 'author')) {
+    if (typeof body.author !== 'string') {
+      throw new ApiError('INVALID_BOOK_META', 'author 必须是字符串', { field: 'author', type: typeof body.author });
+    }
+    const a = body.author.trim();
+    // 空串是**合法**输入 = 「清掉署名」（与 title 不同：标题清空了这本就没有名字了）
+    if (a.length > MAX_AUTHOR_CHARS) {
+      throw new ApiError('INVALID_BOOK_META', `作者超过 ${MAX_AUTHOR_CHARS} 个字符`, { limit: MAX_AUTHOR_CHARS, length: a.length });
+    }
+    next.author = a;
+    touched = true;
+  }
+  return { manifest: next, touched };
+}
+
+/**
+ * 把一张**磁盘上已有**的图片落成封面（`coverFromFirstChapter` 路径）。
+ *
+ * 复用 `writeCover()` 而不是自己 `fs.copyFileSync`：一次性拿到大小校验 / 嗅探 / 删旧 / 原子写
+ * 四道保护（D-115 §7 的"单一入口"）。
+ */
+function coverFromFirstChapter(root, bookDir) {
+  const src = pickFirstChapterImage(bookDir);
+  if (!src) {
+    throw new ApiError('TASK_NOT_FOUND', '这本漫画还没有任何话，取不到首图', { bookDir });
+  }
+  let data = null;
+  try {
+    data = fs.readFileSync(src);
+  } catch (err) {
+    throw new ApiError('INVALID_IMAGE', '读取首图失败', { src, reason: String(err && err.message) });
+  }
+  if (data.length > COVER_MAX_BYTES) {
+    throw new ApiError('COVER_TOO_LARGE',
+      `图片不能超过 ${Math.round(COVER_MAX_BYTES / (1024 * 1024))} MB`,
+      { limitBytes: COVER_MAX_BYTES, actualBytes: data.length, src });
+  }
+  const ext = sniffImageType(data);
+  if (!ext) {
+    throw new ApiError('INVALID_IMAGE', '这个文件不是图片（png / jpg / webp）', { src });
+  }
+  return writeCover(root, bookDir, data, ext);
+}
+
+/** `GET /library/{book}/meta` —— 读元信息（title / author / coverPath / 话页汇总）。 */
+function handleLibraryMeta(req, res, cors, rawName) {
+  const { name, dir } = resolveBookDir(rawName);
+  sendJson(res, 200, bookMetaView(name, dir), cors);
+}
+
+/**
+ * `POST /library/{book}/meta` —— 写 title / author；`{coverFromFirstChapter:true}` 取第 1 话首图。
+ *
+ * 三个字段都没有 ⇒ 400 `INVALID_BOOK_META`。静默回 200 会让前端弹「已保存」而磁盘零变化
+ *（AGENTS §2-4 的"假绿"）。
+ */
+async function handleLibraryMetaWrite(req, res, cors, rawName) {
+  const { name, dir } = resolveBookDir(rawName);
+  const { ok, value } = await readJsonBody(req);
+  if (!ok) throw new ApiError('INVALID_BOOK_META', '请求体不是合法 JSON', { raw: 'unparsable' });
+  const body = value && typeof value === 'object' ? value : {};
+  const { manifest, touched } = applyMetaFields(readManifest(dir, name), body);
+  let changed = touched;
+  if (body.coverFromFirstChapter === true) {
+    manifest.cover = coverFromFirstChapter(store.root, dir);
+    changed = true;
+  } else if (body.coverFromFirstChapter !== undefined && body.coverFromFirstChapter !== false) {
+    throw new ApiError('INVALID_BOOK_META', 'coverFromFirstChapter 只能是布尔 true', {
+      field: 'coverFromFirstChapter', type: typeof body.coverFromFirstChapter,
+    });
+  }
+  if (!changed) {
+    throw new ApiError('INVALID_BOOK_META',
+      '没有需要更新的字段（title / author / coverFromFirstChapter 至少要给一个）', {});
+  }
+  // `episodes[]` 一律按**目录**重建后回写（D-115 §3「目录即索引」），不做"读旧数组再合并"
+  writeManifestAtomic(dir, { ...manifest, episodes: episodesFromDirs(dir) });
+  sendJson(res, 200, bookMetaView(name, dir), cors);
+}
+
+/**
+ * `POST /library/{book}/cover` —— multipart 单文件（字段 `cover`）落封面 + 回写 manifest。
+ *
+ * 🔴 扩展名**只由字节决定**（`sniffImageType`），不信任 `part.filename` / `part.contentType`
+ *    —— 契约 §7.2 同纪律：把 `evil.png`（其实是 exe）放行的代价，是它随后被当成图片渲染/上传。
+ *
+ * 🔴 顺序是「先落文件、后写 json」：万一在两步之间中断，`readCoverName` 的 readdir 兜底
+ *    仍能把封面文件认出来（D-115 §4 的读时容错），而反过来的顺序会留下"manifest 指着一个
+ *    不存在的 cover"的空指。
+ */
+async function handleLibraryCover(req, res, cors, rawName) {
+  const { name, dir } = resolveBookDir(rawName);
+  const body = await readBody(req);
+  const ct = req.headers['content-type'] || '';
+  if (!/multipart\/form-data/i.test(ct)) {
+    throw new ApiError('INVALID_IMAGE', 'Content-Type 必须是 multipart/form-data', { contentType: ct });
+  }
+  const declaredLen = Number.parseInt(req.headers['content-length'] ?? '', 10);
+  if (Number.isFinite(declaredLen) && declaredLen !== body.length) {
+    throw new ApiError('INVALID_IMAGE', 'Content-Length 与实际请求体字节数不一致',
+      { contentLength: declaredLen, actualBytes: body.length });
+  }
+  const parsed = parseMultipartEx(body, ct);
+  if (parsed === null) throw new ApiError('INVALID_IMAGE', 'multipart 缺少 boundary', {});
+  if (!parsed.complete) {
+    throw new ApiError('INVALID_IMAGE', 'multipart 请求体被截断（缺少结束分隔符）', { bytes: body.length });
+  }
+  const { fields, files } = groupParts(parsed.parts);
+  const covers = files.get('cover') || [];
+  if (covers.length === 0) {
+    throw new ApiError('INVALID_IMAGE', '缺少封面分片（字段名 cover）', { submitted: 0 });
+  }
+  if (covers.length > 1) {
+    // 多选一张会造成"用了哪张"不可判定 —— 明确拒绝，别让 readdir/数组顺序替用户做决定
+    throw new ApiError('INVALID_IMAGE', '封面只能一次选一张', { submitted: covers.length });
+  }
+  const data = covers[0].data;
+  if (data.length > COVER_MAX_BYTES) {
+    throw new ApiError('COVER_TOO_LARGE',
+      `图片不能超过 ${Math.round(COVER_MAX_BYTES / (1024 * 1024))} MB`,
+      { limitBytes: COVER_MAX_BYTES, actualBytes: data.length });
+  }
+  const ext = sniffImageType(data);
+  if (!ext) {
+    throw new ApiError('INVALID_IMAGE', '这个文件不是图片（png / jpg / webp）',
+      { filename: covers[0].filename || null, contentType: covers[0].contentType || null });
+  }
+  const coverName = writeCover(store.root, dir, data, ext);
+  // 同一次请求里既传图又传作者（设计稿 11.2 的编辑信息弹窗"确认"按钮走这一条）
+  const { manifest } = applyMetaFields(readManifest(dir, name), extractPayloadField(fields, files));
+  writeManifestAtomic(dir, { ...manifest, cover: coverName, episodes: episodesFromDirs(dir) });
+  sendJson(res, 200, bookMetaView(name, dir), cors);
+}
+
+/**
+ * `DELETE /library/{book}/cover` —— 移除封面：删盘上 `cover.*` + `manifest.cover = null`。
+ *
+ * 📌 **保留 `author`**（D-115 §4 明写）：移除封面不是"清空元信息"，把作者一并抹掉是过度删除。
+ */
+async function handleLibraryCoverDelete(req, res, cors, rawName) {
+  const { name, dir } = resolveBookDir(rawName);
+  removeCover(dir);
+  const manifest = readManifest(dir, name);
+  writeManifestAtomic(dir, { ...manifest, cover: null, episodes: episodesFromDirs(dir) });
+  sendJson(res, 200, bookMetaView(name, dir), cors);
+}
+
+/**
+ * `GET /library/{book}/cover` —— 把封面**字节**发给前端（列表缩略图 / 详情页头部用）。
+ *
+ * 为什么必须有这一条：计划的路由表只列了 `POST` / `DELETE`，但前端拿到 `coverPath`
+ * （目录内文件名）之后**没有任何办法把它变成可渲染的东西** —— WebView 不能直接读本地任意路径
+ * （那要 asset protocol + scope，属安全面扩张）。而页图早就有一条 `files/{seq}` 在发字节，
+ * 封面走一条对称的读端点才是最省事、也最一致的答案（D-116）。
+ *
+ * 封面是**未受保护的展示素材**（不是页图），仍走完整鉴权 + 前缀校验，只是不做隐藏判定
+ * —— 隐藏的是「这本书不列在库里」，不是"它的封面文件成了机密"。
+ */
+function handleLibraryCoverFile(req, res, cors, rawName) {
+  const { name, dir } = resolveBookDir(rawName);
+  const coverName = readCoverName(dir, readManifest(dir, name));
+  if (!coverName) {
+    throw new ApiError('TASK_NOT_FOUND', '这本漫画还没有封面', { bookName: name, outputDir: dir });
+  }
+  const file = path.join(dir, coverName);
+  try {
+    assertInsideRoot(store.root, file); // 打开文件前再校验一次（防 TOCTOU，与 files/{seq} 同）
+  } catch {
+    securityLog(`封面文件读取越界：${file}`);
+    throw permissionDenied();
+  }
+  const ext = coverName.split('.').pop().toLowerCase();
+  const stat = fs.statSync(file);
+  res.writeHead(200, {
+    ...cors,
+    'Content-Type': MIME[ext] || 'application/octet-stream',
+    'Content-Length': stat.size,
+    // 封面会被"换封面"改掉，且前端按 URL 缓存成 blob ⇒ 不允许任何一层缓存（含 WebView）
+    'Cache-Control': 'no-store',
+  });
+  fs.createReadStream(file).pipe(res);
 }
 
 /**
@@ -1621,6 +1963,24 @@ async function route(req, res, cors, url) {
   // /library
   if (p.length === 1 && p[0] === 'library' && method === 'GET') {
     return sendJson(res, 200, scanLibrary(), cors);
+  }
+  // /library/create —— 手动新建大类（同名 → 409）。⚠️ 与「名为 create 的大类」同形，
+  // 但后者仍可经 `/library/create/meta` 等更长路径寻址（p.length 不同），不冲突。
+  if (p.length === 2 && p[0] === 'library' && p[1] === 'create' && method === 'POST') {
+    return handleLibraryCreate(req, res, cors);
+  }
+  // /library/{book}/meta —— 读 / 写 title·author，`coverFromFirstChapter` 取第 1 话首图
+  if (p.length === 3 && p[0] === 'library' && p[2] === 'meta') {
+    if (method === 'GET') return handleLibraryMeta(req, res, cors, p[1]);
+    if (method === 'POST') return handleLibraryMetaWrite(req, res, cors, p[1]);
+    throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
+  }
+  // /library/{book}/cover —— GET 取封面字节 · POST（multipart）落封面 · DELETE 移除封面
+  if (p.length === 3 && p[0] === 'library' && p[2] === 'cover') {
+    if (method === 'GET') return handleLibraryCoverFile(req, res, cors, p[1]);
+    if (method === 'POST') return handleLibraryCover(req, res, cors, p[1]);
+    if (method === 'DELETE') return handleLibraryCoverDelete(req, res, cors, p[1]);
+    throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
   }
   // /library/{comicName}/files/{seq}
   if (p.length === 4 && p[0] === 'library' && p[2] === 'files' && method === 'GET') {

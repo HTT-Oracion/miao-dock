@@ -123,6 +123,55 @@ export function listChapterDirs(bookDir) {
   return out;
 }
 
+/**
+ * 由**目录**反推要写进 `manifest.json` 的 `episodes[]`。
+ *
+ * 与 `listChapterDirs` 是同一份事实的两种呈现（这里多一层 `{no, dir}` 投影）。
+ * 每次写 manifest 都调它**重建**而不是"读旧数组再合并"：合并会把已被手工删掉的话目录
+ * 留在 `episodes[]` 里，而读取端又只认目录 ⇒ 两边永久失配，且没人会发现。
+ */
+export function episodesFromDirs(bookDir) {
+  return listChapterDirs(bookDir).map((c) => ({ no: c.no, dir: c.dirName }));
+}
+
+/**
+ * 「取第 1 话首图」的选图规则（`POST /library/{book}/meta {coverFromFirstChapter:true}`）。
+ *
+ * 规则：**最小话号**目录里 —— 优先该话**最小页号的译文**（封面用译文，读者第一眼看到的就是
+ * 已译内容），没有译文才退回最小页号的**原图**。返回绝对路径；无可用图片返回 `null`。
+ *
+ * 📌 这里只负责"选哪张"，**不负责落盘** —— 取字节之后的校验/嗅探/删旧/原子写一律走
+ * `writeCover()` 那一个入口。另起一条写路径 = 迟早漂移成"这里校验、那里没校验"（D-115 §7）。
+ */
+export function pickFirstChapterImage(bookDir) {
+  const chapters = listChapterDirs(bookDir); // 已按话号升序 ⇒ [0] 就是最小话号
+  if (chapters.length === 0) return null;
+  const first = chapters[0].absDir;
+  let entries = [];
+  try {
+    entries = fs.readdirSync(first);
+  } catch {
+    return null;
+  }
+  let bestTranslated = null;
+  let bestOriginal = null;
+  for (const f of entries) {
+    let m = TRANSLATED_SCAN_RE.exec(f);
+    if (m) {
+      const seq = Number(m[1]);
+      if (bestTranslated === null || seq < bestTranslated.seq) bestTranslated = { seq, name: f };
+      continue;
+    }
+    m = ORIGINAL_SCAN_RE.exec(f);
+    if (m) {
+      const seq = Number(m[1]);
+      if (bestOriginal === null || seq < bestOriginal.seq) bestOriginal = { seq, name: f };
+    }
+  }
+  const pick = bestTranslated || bestOriginal;
+  return pick ? path.join(first, pick.name) : null;
+}
+
 // ------------------------------------------------------------------ 页级扫描（唯一入口）
 
 /**
