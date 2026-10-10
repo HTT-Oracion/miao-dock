@@ -5109,3 +5109,12 @@ Python `py_compile` 通过 · 渲染冒烟（16/20/24/32px 抗锯齿像素占比
   命令体上留了一条注释钉住这对约束 —— **只改一头都不行**：只 async 不改 Client ⇒ panic；只改 Client 不改 async ⇒ 仍冻主线程。
 - **取证**：`cargo check` 0 · `tsc --noEmit` 0 · `check:contract` 77/0 · `check:quit` 5/0 · `check:units` 44/0（回归门未退化）。
   ⚠️ **缺口（待补）**：本项**无源码级钉子** ——「代理命令必须是 `async fn` 且不得出现 `reqwest::blocking`」既没有断言也没有反证轮；退回同步或 blocking 时上面几道门**全绿不报**。可照 `check:quit` 的形态补纯源码扫描（不起进程）。
+
+## D-113 · e2e 退出命令反证轮：锚点绑定函数名 + 锚点按 EOL 折算（修假绿与静默跳过）（2026-10-10）
+
+**症状**：`check:quit` 的 M1（把 `quit_app` 退回同步命令）**从来没真的打中过 `quit_app`**，反证轮却报「按预期变红」—— 典型假绿。
+
+- **根因 ①（锚点不唯一）**：`MUTATIONS.M1` 的 find 只给了属性行 `#[tauri::command(async)]`，而该字面量在 `commands.rs` 里**出现多处**（`service_stop` / `quit_app` …），`String.replace` 是「第一次出现即替换」⇒ 变异打在 `service_stop` 上，`quit_app` 纹丝不动，Q1 自然不变红。
+- **根因 ②（EOL 未折算）**：本仓 `core.autocrlf=true`，工作区是 **CRLF**，而跨行锚点字面量写的是 **LF** ⇒ 该锚点**永远「未找到」**，这一条被静默跳过（脚本只计进 `skipped` 后继续，跳过 ≠ 通过）。与 `units-structure-check.mjs` 在 2026-10-07 长期漏跑 9 条同类。
+- **修法**：find / replace 一并**连到函数名**（`#[tauri::command(async)]` + 换行 + `pub fn quit_app`）；写入前按目标文件实际的 `\r\n` / `\n` 折算锚点。
+- **取证**：`check:quit` 5/0；`check:quit:refute` **5/5 按预期变红**，且 `commands.rs` / `service.rs` / `App.tsx` **字节一致**恢复（`md5` 前后同值）。

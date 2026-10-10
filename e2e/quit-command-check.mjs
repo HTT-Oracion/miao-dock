@@ -154,7 +154,16 @@ function printResults(title) {
 const MUTATIONS = [
   {
     name: 'M1 quit_app 退回同步命令（回到主线程）',
-    edits: [{ file: COMMANDS_RS, find: '#[tauri::command(async)]', replace: '#[tauri::command]' }],
+    // 🔴 锚点必须**连到函数名**：本文件里 `#[tauri::command(async)]` 已有多处
+    //    （service_stop / api_post …），只给属性行是"第一次出现即替换" ⇒ 变异打在**别的函数**上，
+    //    Q1 不会变红，整条反证变成假绿。
+    edits: [
+      {
+        file: COMMANDS_RS,
+        find: '#[tauri::command(async)]\npub fn quit_app',
+        replace: '#[tauri::command]\npub fn quit_app',
+      },
+    ],
     expect: ['Q1'],
   },
   {
@@ -232,13 +241,19 @@ const main = () => {
     for (const [i, e] of mut.edits.entries()) {
       if (!originals.has(e.file)) originals.set(e.file, readBytes(e.file));
       const txt = originals.get(e.file).toString('utf8');
-      if (!txt.includes(e.find)) {
+      // 🔴 EOL 折算：本仓 `core.autocrlf=true`，工作区是 **CRLF**，而锚点字面量写的是 **LF**。
+      //    不折算时**跨行锚点**永远"锚点未找到" → 该条静默不反证（跳过 ≠ 通过）。
+      //    与 `units-structure-check.mjs` 同一处理（它在 2026-10-07 因同类问题长期漏跑 9 条）。
+      const eol = txt.includes('\r\n') ? '\r\n' : '\n';
+      const find = e.find.split('\n').join(eol);
+      const repl = e.replace.split('\n').join(eol);
+      if (!txt.includes(find)) {
         console.log(`⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`);
         skipped += mut.expect.length;
         missing = true;
         continue;
       }
-      fs.writeFileSync(e.file, txt.replace(e.find, e.replace));
+      fs.writeFileSync(e.file, txt.replace(find, repl));
     }
     if (missing) {
       for (const [f, snap] of originals) fs.writeFileSync(f, snap); // 还原已改的那几处
