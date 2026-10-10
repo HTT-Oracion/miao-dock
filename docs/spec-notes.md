@@ -5523,3 +5523,13 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 - **架构不变**：`toastBus` 仍是**唯一队列**（ISLAND.singleSource 的裁定原样有效），`useToasts().push` 与 music/Toast 转发器照旧；改的只是渲染层 —— 新增 `components/NotificationStack.tsx`（App 根挂载，与灵动岛并列），`toastBus.useToastList()` 订阅全量（原 `useToastsFromBus` 只给"最后一条"，已随灵动岛的提示通道一起退役）。手动关闭走 180ms 退场动画（`LEAVE_MS` ↔ app.scss `.ntf.is-leaving` 0.18s 同源）；TTL 仍在总线（3.8s / 报错 6.5s）。
 - **灵动岛只留音乐**：`DynamicIsland.tsx` 删掉整个 toast 通路（KIND_TO_STATUS / requestClose / leaving / di-row 一族状态与 JSX）；空闲早退从 `!toast && !hasQueue` 收窄为 `!hasQueue`。music.scss 同步删掉只服务提示的死样式（`.is-toast`/`.is-leaving`/`.di-row`/`.di-lead`/`.di-title`/`.di-close`/`.di-dot*`）。
 - **取证**：`check:units` ISLAND 组改判——`morphDurationSync`（MORPH_MS 320 ↔ CSS width 0.32s，原 0.26s↔requestClose 的比对随退场机制退役）、`idleRendersNothing`（新早退形态）、`noToastChannel`（岛不得再引用 toastBus 通道，防"两个渲染层"回潮）；反证锚点同步换（13 条组合仍 59/59 全红 + 字节还原）；`tsc --noEmit` 0 · `vite build` 通过。
+
+## D-128 · 编辑话数：`POST /library/{book}/chapters/{no}/renumber`（2026-10-11）
+
+**需求**：用户要求归并后的漫画还要支持编辑话数。
+
+- **实现 = 话目录改名**：`NN_第N话` → `MM_第M话`（复用 `chapterDirName` 的零填充与一位小数规则），随后 `episodesFromDirs` 按目录重建 `episodes[]` —— 目录即索引，改名本身把 json 带对，不存在"目录与数组各改各"。页文件原地不动。
+- **三道门（与归并同构）**：① 旧话必须存在（`mustChapterDir`，§8.2 安全校验照走）；② 该话无未终态任务 → 否则 409 `CHAPTER_SOURCE_BUSY`（翻译中改名 = 任务写向不存在的旧路径）；③ 新话号未被占用（目录名 + `episodes[].no` 双向查，同归并）→ 409 `CHAPTER_NO_TAKEN`。话号合法性复用 `resolveChapterDir` 的同一套（"什么算合法话号"只有一份定义）。同话号 = 200 空操作。目录改名撞 Windows 句柄占用沿用 D-125 的退避重试 + 409 `CHAPTER_SOURCE_LOCKED`。新错误码 `CHAPTER_SOURCE_BUSY`/`CHAPTER_SOURCE_LOCKED` 同步登记 `errors.mjs` 状态表（漏登记 = code 对但 HTTP 仍 500，D-125 的教训）。
+- **前端**：话卡菜单加「编辑话数」（无话号置灰）→ `EditChapterNoModal`（`modals.tsx`，校验口径与归并弹窗同一份正则；冲突预检 = 该书**其它**话已占的号）→ 屏内 `renumberChapter` 提交 + `onRefresh()`（左栏计数/话卡角标/URL 缓存键都随新目录走）。
+- **取证**：`check:lib-manage` 20→**24** 条（N10 改名成功 + 页文件原地保留 + episodes 重建 / N10b 占号 409 且目录不动 / N10c 在跑任务 409 / N10d 任务终态后改号恢复可用），反证 11→**13**（M12 去占号复检 ⇒ N10b 红、M13 去在跑门 ⇒ N10c 红），四源文件字节还原。
+- **e2e 手筋两枚**：① 话级返工必须给 `seqs` 限张（全量候选 = 整话原图 20 张 > `BATCH_LIMIT` ⇒ 400，任务建不起来，门没测先漏）；② 改号目标目录名是**零填充**的（`08_第8话` 不是 `8_第8话`），断言写错形态就是假红。
