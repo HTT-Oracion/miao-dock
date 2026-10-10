@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
-import { ChevronDown, EyeOff, FolderUp, RefreshCw, RotateCcw, Search, Trash2, X } from 'lucide-react';
+import { EyeOff, FolderUp, Play, RefreshCw, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import { apiBytes, apiGet, apiPost, errorText, isApiError, openPath } from '@/ipc';
 import { LIBRARY } from '@/theme/tokens';
 import type {
@@ -11,8 +11,8 @@ import type {
   RetranslateResponse,
   TaskRow,
 } from '@/types';
-import { formatBytes, fuzzyMatch, pageCount, pageSlice, sniffMime } from '@/util';
-import { Btn } from '@components/units';
+import { formatBytes, fuzzyMatch, pageCount, pageSlice, sniffMime } from '@tools';
+import { Btn, MenuButton, MenuItem, Notice } from '@components/units';
 
 /** 左栏每页漫画数（窄栏 + 每项约 48px 高，12 项差不多一屏） */
 const LIB_PAGE_SIZE = 12;
@@ -562,82 +562,33 @@ function Lightbox({
   );
 }
 
-/**
- * 「操作」下拉按钮。
- *
- * 为什么自己写而不是用现成的 `Select`：`Select` 是**表单控件**（有当前值、选中即回调、
- * 需要受控 value），这里是**命令菜单**（点了就执行、没有"当前选中项"）。
- * 两者交互模型不同，硬套会让下拉里出现"高亮着但其实没选中"的误导态。
- *
- * 关闭时机三条（缺一条都会留下明显 bug）：
- *  · 点外部 —— `mousedown` **捕获阶段**监听（`SongMenu` 同一手法：用 mousedown 而非 click，
- *    否则触发菜单的那个 click 会顺着冒泡把刚打开的菜单又关掉）；
- *  · Esc —— 交给上层 `Compare` 的键盘监听统一裁决，避免两处都抢 Esc；
- *  · 选完一项 —— 由调用方在回调里关。
- */
-function ActionMenu({
-  label,
-  disabled,
-  badge,
-  children,
-}: {
-  label: string;
-  disabled?: boolean;
-  /** 触发按钮右侧的小标记（当前用它显示「返工中」） */
-  badge?: string;
-  children: (close: () => void) => ReactElement;
-}) {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement | null>(null);
+/** 返工菜单项文案：按 提交中 / 返工中 / 无原图 / 计划未就绪 / 正常 取值（避免内联多级三元）。 */
+function retranslateMeta(
+  plan: RetranslatePlan | null,
+  submitting: boolean,
+  reworking: boolean,
+  noOriginal: boolean,
+): { title: string; sub: string; blocked: boolean } {
+  if (submitting) return { title: '返工请求正在提交', sub: '提交中…', blocked: true };
+  if (reworking) return { title: '该漫画已有任务在队列中，等它跑完再返工', sub: '返工中', blocked: true };
+  if (noOriginal) return { title: '该漫画目录里没有原图，无从返工', sub: '没有原图', blocked: true };
+  if (!plan) return { title: '正在读取返工计划…', sub: '读取中…', blocked: true };
+  return {
+    title: `重新翻译全部 ${plan.retranslateCount} 张（覆盖 ${plan.overwriteCount} 张已有译文）`,
+    sub: `全部 ${plan.retranslateCount} 张 · 覆盖 ${plan.overwriteCount} 张`,
+    blocked: false,
+  };
+}
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (box.current && e.target instanceof Node && !box.current.contains(e.target)) setOpen(false);
-    };
-    /**
-     * Esc 收下拉，且**只**收下拉。
-     *
-     * 为什么不在这里 `stopPropagation`：上层 `Compare` 也监听 Esc（用来退出对照），
-     * 掐断传播会让"Esc 退出对照"整体失灵；而这里 `e.preventDefault()` 语义上不对
-     * （Esc 本来没有默认行为要拦），所以**两者都做**：只 `stopPropagation`，
-     * 让下拉吃掉这一次 Esc，上层收不到就不会顺带退出对照。
-     */
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      setOpen(false);
-    };
-    window.addEventListener('mousedown', onDown, true);
-    window.addEventListener('keydown', onKey, true);
-    return () => {
-      window.removeEventListener('mousedown', onDown, true);
-      window.removeEventListener('keydown', onKey, true);
-    };
-  }, [open]);
-
-  return (
-    <div className="actionmenu" ref={box}>
-      <button
-        type="button"
-        className="btn btn-ghost"
-        disabled={disabled}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        title={disabled ? '当前有该漫画的任务在跑，不能再返工' : '对这本漫画执行操作'}
-      >
-        {label}
-        {badge ? <span className="actionmenu-badge">{badge}</span> : null}
-        <ChevronDown size={13} className={open ? 'is-open' : undefined} />
-      </button>
-      {open ? (
-        <div className="actionmenu-pop" role="menu">
-          {children(() => setOpen(false))}
-        </div>
-      ) : null}
-    </div>
-  );
+/** 继续翻译菜单项文案。 */
+function resumeMeta(
+  pending: number | null,
+  busy: boolean,
+): { title: string; sub: string; disabled: boolean } {
+  if (busy) return { title: '正在提交…', sub: '提交中…', disabled: true };
+  if (pending === 0) return { title: '该漫画没有待续做的页', sub: '没有待续做的页', disabled: true };
+  const n = pending ?? '…';
+  return { title: `把待译的页加入队列（待续做 ${n} 张）`, sub: `待续做 ${n} 张`, disabled: false };
 }
 
 /**
@@ -674,7 +625,7 @@ function Compare({
   /** 该漫画是否已有任务在跑（queued/running）—— 有就不能再返工，否则会重复跑同一本 */
   const reworking = retranslate?.reworking ?? false;
   const noOriginal = retranslate !== null && retranslate.retranslateCount === 0;
-  const rtBlocked = submitting || reworking || noOriginal;
+  const rt = retranslateMeta(retranslate, submitting, reworking, noOriginal);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -719,66 +670,39 @@ function Compare({
         <Btn kind="ghost" disabled={!canNext} onClick={() => canNext && onSeq(seq + 1)}>
           下一张 →
         </Btn>
-        <ActionMenu
+        <MenuButton
           label="操作"
-          disabled={rtBlocked}
+          disabled={rt.blocked}
           badge={reworking ? '返工中' : undefined}
+          title="对这本漫画执行操作"
         >
           {(close) => (
             <>
-              <button
-                type="button"
-                className="actionmenu-item"
-                role="menuitem"
-                disabled={rtBlocked}
+              <MenuItem
+                icon={<RotateCcw size={13} />}
+                label="重新翻译"
+                sub={rt.sub}
+                disabled={rt.blocked}
+                title={rt.title}
                 onClick={() => {
                   close();
                   onRetranslate();
                 }}
-                title={
-                  submitting
-                    ? '返工请求正在提交'
-                    : reworking
-                      ? '该漫画已有任务在队列中，等它跑完再返工'
-                      : noOriginal
-                        ? '该漫画目录里没有原图，无从返工'
-                        : `重新翻译全部 ${retranslate?.retranslateCount ?? 0} 张（覆盖 ${retranslate?.overwriteCount ?? 0} 张已有译文）`
-                }
-              >
-                <RotateCcw size={13} />
-                <span className="actionmenu-label">
-                  重新翻译
-                  <span className="actionmenu-sub">
-                    {submitting
-                      ? '提交中…'
-                      : reworking
-                        ? '返工中'
-                        : noOriginal
-                          ? '没有原图'
-                          : `全部 ${retranslate?.retranslateCount ?? 0} 张 · 覆盖 ${retranslate?.overwriteCount ?? 0} 张`}
-                  </span>
-                </span>
-              </button>
-              <button
-                type="button"
-                className="actionmenu-item"
-                role="menuitem"
-                disabled={rtBlocked}
+              />
+              <MenuItem
+                icon={<RotateCcw size={13} />}
+                label="重新翻译本页"
+                sub={`第 ${seq} 页`}
+                disabled={rt.blocked}
+                title={`只重译当前这一页（第 ${seq} 页）`}
                 onClick={() => {
                   close();
                   onRetranslate([seq]);
                 }}
-                title={`只重译当前这一页（第 ${seq} 页）`}
-              >
-                <RotateCcw size={13} />
-                <span className="actionmenu-label">
-                  重新翻译本页
-                  <span className="actionmenu-sub">第 {seq} 页</span>
-                </span>
-              </button>
+              />
             </>
           )}
-        </ActionMenu>
+        </MenuButton>
       </div>
       <div className="compare-panes">
         <Pane comicName={comic.comicName} seq={seq} variant="original" onZoom={() => setZoom('original')} />
@@ -924,6 +848,8 @@ function HiddenComicsModal({
 export function LibraryScreen({
   lib,
   tasks,
+  focus,
+  onFocusHandled,
   onRefresh,
   onToast,
   refreshKey,
@@ -931,6 +857,9 @@ export function LibraryScreen({
   lib: LibraryResponse | null;
   /** 队列快照，只用来判「该漫画是否已有任务在跑」（→ 显示返工中） */
   tasks: TaskRow[];
+  /** 队列行「查看」带过来的漫画名：进入本屏后选中并翻到它那一页（消费一次即回调清空） */
+  focus?: string | null;
+  onFocusHandled?: () => void;
   onRefresh: () => void;
   onToast: (text: string, kind?: 'info' | 'good' | 'bad') => void;
   refreshKey: number;
@@ -965,6 +894,27 @@ export function LibraryScreen({
     setLibPage(1);
   }, [query]);
   const libRows = useMemo(() => pageSlice(filtered, libPage, LIB_PAGE_SIZE), [filtered, libPage]);
+
+  /**
+   * 外部定位（队列行「查看」带来的 `focus`）。
+   *
+   * 三步缺一不可：① 选中该漫画；② 清掉搜索词（否则它可能被当前过滤条件滤掉，选中即失效）；
+   * ③ 把左栏翻到它所在的那一页（否则高亮落在一页之外的列表上，看着像"没定位"）。
+   * 消费一次即 `onFocusHandled()`，上层据此清空 focus —— 否则之后每次手动浏览都会被拉回来。
+   *
+   * 依赖只写 `focus`：这是"一次性的定位指令"，取挂载/变更当帧的 `filtered` 快照即可。
+   */
+  useEffect(() => {
+    if (!focus) return;
+    const idx = filtered.findIndex((c) => c.comicName === focus || c.dirName === focus);
+    if (idx >= 0) {
+      setActive(filtered[idx]!.comicName);
+      setQuery('');
+      setLibPage(Math.floor(idx / LIB_PAGE_SIZE) + 1);
+    }
+    onFocusHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus]);
 
   // 当前选中：优先沿用 active；它被搜索滤掉时落到第一项。搜索结果为空则无选中。
   const current = useMemo(() => {
@@ -1133,7 +1083,7 @@ export function LibraryScreen({
 
   if (comics.length === 0 && hidden.length === 0) {
     return (
-      <div className="notice">漫画库还是空的。翻译完成后，成品会出现在这里的根目录下。</div>
+      <Notice>漫画库还是空的。翻译完成后，成品会出现在这里的根目录下。</Notice>
     );
   }
 
@@ -1150,6 +1100,15 @@ export function LibraryScreen({
       />
     );
   }
+
+  // 「更多操作」菜单的两组文案：与 Compare 同源口径（见 retranslateMeta / resumeMeta）
+  const rtInfo = retranslateMeta(
+    rtPlan,
+    rtBusy,
+    rtPlan?.reworking ?? false,
+    rtPlan !== null && rtPlan.retranslateCount === 0,
+  );
+  const resumeInfo = resumeMeta(pending, busy);
 
   return (
     <div className="lib">
@@ -1253,18 +1212,45 @@ export function LibraryScreen({
                 <RefreshCw size={14} />
                 刷新
               </Btn>
-              <Btn kind="ghost" onClick={() => setToDelete(current)} title="从漫画库删除（可选择是否连本地文件一起删）">
-                <Trash2 size={14} />
-                删除
-              </Btn>
-              <Btn
-                kind="primary"
-                disabled={busy || pending === 0}
-                title={pending === 0 ? '该漫画没有待续做的页' : `待续做 ${pending ?? '…'} 张`}
-                onClick={resume}
-              >
-                继续翻译{pending ? `（${pending}）` : ''}
-              </Btn>
+              {/* 低频动作收进下拉；删除仍走 DeleteComicModal（含 deleteFiles 勾选） */}
+              <MenuButton label="更多操作">
+                {(close) => (
+                  <>
+                    <MenuItem
+                      icon={<Play size={13} />}
+                      label="继续翻译"
+                      sub={resumeInfo.sub}
+                      disabled={resumeInfo.disabled}
+                      title={resumeInfo.title}
+                      onClick={() => {
+                        close();
+                        void resume();
+                      }}
+                    />
+                    <MenuItem
+                      icon={<RotateCcw size={13} />}
+                      label="重新翻译"
+                      sub={rtInfo.sub}
+                      disabled={rtInfo.blocked}
+                      title={rtInfo.title}
+                      onClick={() => {
+                        close();
+                        void retranslate();
+                      }}
+                    />
+                    <MenuItem
+                      icon={<Trash2 size={13} />}
+                      label="删除"
+                      danger
+                      title="从漫画库删除（可选择是否连本地文件一起删）"
+                      onClick={() => {
+                        close();
+                        setToDelete(current);
+                      }}
+                    />
+                  </>
+                )}
+              </MenuButton>
             </div>
 
             <div className="card lib-grid-wrap">
@@ -1345,7 +1331,7 @@ export function LibraryScreen({
             </div>
           </>
         ) : (
-          <div className="notice">没有匹配「{query}」的漫画。换个关键词，或清空搜索。</div>
+          <Notice>没有匹配「{query}」的漫画。换个关键词，或清空搜索。</Notice>
         )}
       </section>
 

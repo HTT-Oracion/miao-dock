@@ -176,7 +176,12 @@ export const QUEUE_TABLE = {
   colSource: 120,
   colProgress: 160,
   colStatus: 150,
-  colAction: 90,
+  /**
+   * 操作列。**从 90 加宽到 128**（R3）：每行现在是「主动作 + [更多]」两枚按钮
+   * （[取消]/[重试]/[查看] + [更多]），90 放不下。改这里必须**同步改**
+   * `manga.scss` 的 `.qt-c-action`（flex-basis 才是实际宽度）与 `SpecCheck` 样张 —— C2a 量的是实测宽。
+   */
+  colAction: 128,
   rowHeight: 58,
 } as const;
 

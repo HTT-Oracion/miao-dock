@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { FolderOpen, Trash2 } from 'lucide-react';
 import { QUEUE_TABLE } from '@/theme/tokens';
 import {
   STATUS_DOT_VAR,
@@ -8,8 +9,8 @@ import {
   type TaskRow,
   type TaskStatus,
 } from '@/types';
-import { pageCount, pageSlice, relativeTime } from '@/util';
-import { Btn, Dot, MagicCircle } from '@components/units';
+import { pageCount, pageSlice, relativeTime } from '@tools';
+import { Btn, Dot, MagicCircle, MenuButton, MenuItem } from '@components/units';
 
 /**
  * 队列每页条数。
@@ -66,27 +67,34 @@ function ProgressCell({ t }: { t: TaskRow }) {
 }
 
 /**
- * 操作列只有一个位置（宽 90，《02》§5.2）。
+ * 行首动作 —— 按状态取**语义最主要的那一个**：进行中/排队 → 取消；失败 → 重试；终态 → 查看。
  *
- * 按状态取**语义最主要的那一个**动作：进行中/排队 → 取消；失败 → 重试；已完成 → 查看。
- * 「打开目录」是同一条信息在漫画库里的另一种视图，故留在 X-D1，不挤占这 90px。
- * 已记入 docs/spec-notes.md G-06。
+ * 「查看」跳的是**漫画库**（不是系统文件夹）—— 先判库里有没有这本（没有就提示、不跳），
+ * 有则跳过去并定位。「打开目录」是另一件事，收进右侧 [更多]（见 `MenuButton`，spec-notes G-06 更新）。
  */
-function ActionButton({
+function PrimaryAction({
   t,
+  canceling,
   onCancel,
   onRetry,
-  onOpen,
+  onViewComic,
 }: {
   t: TaskRow;
+  canceling: boolean;
   onCancel: (t: TaskRow) => void;
   onRetry: (t: TaskRow) => void;
-  onOpen: (t: TaskRow) => void;
+  onViewComic: (t: TaskRow) => void;
 }) {
   if (t.status === 'running' || t.status === 'queued') {
     return (
-      <Btn kind="danger" size="sm" onClick={() => onCancel(t)} title="取消该任务；已落盘的张数会保留">
-        取消
+      <Btn
+        kind="danger"
+        size="sm"
+        disabled={canceling}
+        onClick={() => onCancel(t)}
+        title="取消该任务；已落盘的张数会保留"
+      >
+        {canceling ? '取消中…' : '取消'}
       </Btn>
     );
   }
@@ -98,7 +106,7 @@ function ActionButton({
     );
   }
   return (
-    <Btn kind="ghost" size="sm" onClick={() => onOpen(t)} title={t.outputDir}>
+    <Btn kind="ghost" size="sm" onClick={() => onViewComic(t)} title="去漫画库查看这本漫画">
       查看
     </Btn>
   );
@@ -106,17 +114,23 @@ function ActionButton({
 
 function Row({
   t,
+  canceling,
   onCancel,
   onRetry,
-  onOpen,
+  onViewComic,
+  onOpenDir,
+  onDeleteRow,
   pickMode,
   picked,
   onTogglePick,
 }: {
   t: TaskRow;
+  canceling: boolean;
   onCancel: (t: TaskRow) => void;
   onRetry: (t: TaskRow) => void;
-  onOpen: (t: TaskRow) => void;
+  onViewComic: (t: TaskRow) => void;
+  onOpenDir: (t: TaskRow) => void;
+  onDeleteRow: (t: TaskRow) => void;
   pickMode: boolean;
   picked: boolean;
   onTogglePick: (id: string) => void;
@@ -164,7 +178,40 @@ function Row({
       </div>
 
       <div className="qt-c-action" style={{ width: QUEUE_TABLE.colAction }}>
-        <ActionButton t={t} onCancel={onCancel} onRetry={onRetry} onOpen={onOpen} />
+        <PrimaryAction
+          t={t}
+          canceling={canceling}
+          onCancel={onCancel}
+          onRetry={onRetry}
+          onViewComic={onViewComic}
+        />
+        <MenuButton label="更多" size="sm">
+          {(close) => (
+            <>
+              <MenuItem
+                icon={<FolderOpen size={13} />}
+                label="打开目录"
+                sub="在文件管理器中定位"
+                onClick={() => {
+                  close();
+                  onOpenDir(t);
+                }}
+              />
+              <MenuItem
+                icon={<Trash2 size={13} />}
+                label="删除"
+                sub="只删记录 · 不动文件"
+                danger
+                disabled={!deletable}
+                title={deletable ? '删除这条任务记录（不动漫画库里的文件）' : `${STATUS_LABEL[t.status]}的任务不能删除`}
+                onClick={() => {
+                  close();
+                  onDeleteRow(t);
+                }}
+              />
+            </>
+          )}
+        </MenuButton>
       </div>
     </div>
   );
@@ -185,15 +232,22 @@ function Row({
  */
 export function QueueTable({
   rows,
+  cancelingIds,
   onCancel,
   onRetry,
-  onOpen,
+  onViewComic,
+  onOpenDir,
   onDelete,
 }: {
   rows: TaskRow[];
+  /** 正在取消中的任务 id（乐观标记，用于把行首「取消」置灰为「取消中…」） */
+  cancelingIds?: Set<string>;
   onCancel: (t: TaskRow) => void;
   onRetry: (t: TaskRow) => void;
-  onOpen: (t: TaskRow) => void;
+  /** 「查看」= 跳漫画库并定位（存在性判断与跳转都在 App） */
+  onViewComic: (t: TaskRow) => void;
+  /** 「更多 → 打开目录」= 用系统文件管理器打开该任务的落盘目录 */
+  onOpenDir: (t: TaskRow) => void;
   onDelete: (taskIds: string[]) => Promise<boolean>;
 }) {
   const [pickMode, setPickMode] = useState(false);
@@ -322,9 +376,12 @@ export function QueueTable({
           <Row
             key={t.taskId}
             t={t}
+            canceling={cancelingIds?.has(t.taskId) ?? false}
             onCancel={onCancel}
             onRetry={onRetry}
-            onOpen={onOpen}
+            onViewComic={onViewComic}
+            onOpenDir={onOpenDir}
+            onDeleteRow={(row) => void onDelete([row.taskId])}
             pickMode={pickMode}
             picked={picked.has(t.taskId)}
             onTogglePick={togglePick}

@@ -10,7 +10,7 @@ import {
   persistSidebarLabels,
 } from '@/shell-prefs';
 import type { ThemeMode } from '@/theme/tokens';
-import { Badge, Btn, Pill } from '@components/units';
+import { Badge, Btn, Notice, Pill } from '@components/units';
 import { DynamicIsland } from '@components/DynamicIsland';
 import { MusicKernel } from '@components/MusicKernel';
 import { QuitConfirm } from '@components/QuitConfirm';
@@ -30,7 +30,7 @@ import {
   type TranslateView,
 } from '@/nav';
 import type { CancelResponse, DeleteTasksResponse, LibraryResponse, TaskRow } from '@/types';
-import { formatBytes } from '@/util';
+import { formatBytes } from '@tools';
 
 /**
  * 喵坞应用外壳（《02》§5.1 / 《09》§3）：侧栏 78 + 工具条 62 + 应用区。
@@ -64,6 +64,17 @@ export function App() {
   const [autoStart, setAutoStart] = useState(() => initialServiceAutoStart());
   const [quitOpen, setQuitOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  /**
+   * 正在取消中的任务 id（乐观标记）。
+   *
+   * 为什么需要它：服务端 `cancelTask` 对**执行中**的任务会等到一个安全点才回（最长 30s），
+   * 这期间按钮若还长得像可点，用户会以为"点了没反应"而反复点。
+   * 所以点下的**同一帧**就把该行标成「取消中…」并禁用 —— 反馈先于服务端响应。
+   * （配合 `api_post` 的 `(async)` 修法，主线程本身也不再被这段等待冻住。）
+   */
+  const [cancelingIds, setCancelingIds] = useState<Set<string>>(() => new Set());
+  /** 待漫画库定位的漫画名（队列行「查看」→ 切到漫画库并选中它） */
+  const [libraryFocus, setLibraryFocus] = useState<string | null>(null);
 
   useThemeTokens(mode);
 
@@ -191,14 +202,48 @@ export function App() {
   const queueDepth = (tasks?.running ?? 0) + (tasks?.queued ?? 0);
   const libRoot = (lib as LibraryResponse | null)?.root ?? status?.root_dir ?? '';
 
+  /**
+   * 取消任务。
+   *
+   * 🔴 **先乐观标记再发请求**：服务端对 running 任务会挂到安全点才回（最长 30s）。
+   * 若等响应回来才给反馈，这半分钟里界面看着像死的 —— 表现就是"取消按钮点下去卡死"。
+   * 所以这里立刻把该行标成「取消中…」（禁用按钮、给出进行态），响应回来再 `refreshAll`
+   * 用服务端真实状态覆盖。这是"感知上的即时响应"，不是伪造结果：数字仍全部来自服务端。
+   */
   const cancel = async (t: TaskRow) => {
+    setCancelingIds((prev) => new Set(prev).add(t.taskId));
     try {
       const r = await apiPost<CancelResponse>(`/tasks/${t.taskId}/cancel`, {});
       push(`已取消「${t.comicName}」，保留了 ${r.keptItems} 张已落盘的译文`, 'info');
-      refreshAll();
     } catch (e) {
       push(errorText(e), 'bad');
+    } finally {
+      setCancelingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(t.taskId);
+        return next;
+      });
+      refreshAll();
     }
+  };
+
+  /**
+   * 队列行「查看」—— 跳漫画库并**定位**到该漫画。
+   *
+   * 先判存在性（R3）：库里没有对应的成品（还没落盘 / 已被删 / 只隐藏了）就只提示、不跳，
+   * 避免把用户带到一个空白库页上。判据用**归一化目录名**（`normalizedComicName`）去对
+   * `ComicEntry.comicName`/`dirName`：库里显示的是目录名，任务上的原名可能差一个空格或大小写。
+   */
+  const viewComic = (t: TaskRow) => {
+    const name = t.normalizedComicName ?? t.comicName;
+    const comics = (lib as LibraryResponse | null)?.comics ?? [];
+    const hit = comics.find((c) => c.comicName === name || c.dirName === name);
+    if (!hit) {
+      push(`漫画库里还没有「${name}」的成品（可能尚未落盘或已被删除）`, 'bad');
+      return;
+    }
+    setLibraryFocus(hit.comicName);
+    setView('library');
   };
 
   /**
@@ -266,9 +311,6 @@ export function App() {
               <Btn kind="ghost" onClick={() => openPath(libRoot).catch((e: unknown) => push(errorText(e), 'bad'))}>
                 打开根目录
               </Btn>
-              <Btn kind="primary" onClick={() => setView('drop')}>
-                继续翻译
-              </Btn>
             </>
           ),
         };
@@ -311,9 +353,9 @@ export function App() {
 
         <div className="content">
           {ipcError ? (
-            <div className="notice is-bad">
+            <Notice kind="bad">
               <b>无法与桌面端主进程通信。</b> {ipcError}
-            </div>
+            </Notice>
           ) : null}
 
           {showNotReady ? (
@@ -330,9 +372,11 @@ export function App() {
               hasRows ? (
                 <QueueTable
                   rows={rows}
+                  cancelingIds={cancelingIds}
                   onCancel={cancel}
                   onRetry={retry}
-                  onOpen={openTaskDir}
+                  onViewComic={viewComic}
+                  onOpenDir={openTaskDir}
                   onDelete={deleteTasks}
                 />
               ) : (
@@ -342,6 +386,8 @@ export function App() {
               <LibraryScreen
                 lib={lib}
                 tasks={rows}
+                focus={libraryFocus}
+                onFocusHandled={() => setLibraryFocus(null)}
                 onRefresh={refreshAll}
                 onToast={push}
                 refreshKey={refreshKey}
@@ -368,8 +414,8 @@ export function App() {
             />
           )}
 
-          {tasksError ? <div className="notice is-bad">任务列表读取失败：{tasksError}</div> : null}
-          {libError ? <div className="notice is-bad">漫画库读取失败：{libError}</div> : null}
+          {tasksError ? <Notice kind="bad">任务列表读取失败：{tasksError}</Notice> : null}
+          {libError ? <Notice kind="bad">漫画库读取失败：{libError}</Notice> : null}
         </div>
       </div>
 

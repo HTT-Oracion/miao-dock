@@ -223,7 +223,7 @@ pub fn api_get(mgr: State<'_, ServiceManager>, path: String) -> Result<Value, Ap
     finish(res)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn api_post(
     mgr: State<'_, ServiceManager>,
     path: String,

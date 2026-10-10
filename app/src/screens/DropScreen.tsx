@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { open } from '@tauri-apps/plugin-dialog';
-import { apiPostMultipart, errorText, expandPaths } from '@/ipc';
-import type { CreateTaskResponse } from '@/types';
-import { splitBatches, uuid } from '@/util';
-import { Btn } from '@components/units';
+import { apiGet, apiPostMultipart, errorText, expandPaths } from '@/ipc';
+import type { CreateTaskResponse, LibraryResponse } from '@/types';
+import { dupKey, splitBatches, uuid } from '@tools';
+import { Btn, Notice } from '@components/units';
 import { Upload } from 'lucide-react';
 
 const BATCH_LIMIT = 20; // 契约 §5.2 单次上限
@@ -114,14 +114,36 @@ export function DropScreen({
 
   const submit = async () => {
     if (!canSubmit) return;
+    const name = comicName.trim();
     setBusy(true);
     setResult(null);
     try {
+      /*
+       * **重名校验（R1）**：提交前先用**同一个根目录**的库列表比对，命中同名直接拦下、
+       * 不建任务队列 —— 避免"第 12 话"被重复投放成两份。
+       *
+       * 查库失败**不阻断**（服务不可达 / 首次还没扫过库）：重名是防呆，不该因此让正常投放
+       * 用不了；服务端对同名本就有「续编号、不覆盖」的兜底（契约 §6.3）。
+       * 需要**有意**补页走的是漫画库的「继续翻译」（`POST /library/{name}/resume`），不是这里。
+       */
+      try {
+        const lib = await apiGet<LibraryResponse>('/library');
+        const key = dupKey(name);
+        const hit = (lib.comics ?? []).find((c) => dupKey(c.comicName) === key || dupKey(c.dirName) === key);
+        if (hit) {
+          onToast(`漫画名「${hit.comicName}」已存在，请换个名字；补页请用漫画库的「继续翻译」`, 'bad');
+          setBusy(false);
+          return;
+        }
+      } catch {
+        // 读库不可达 —— 交给服务端兜底
+      }
+
       const key = uuid();
       // B1：第一批走 POST /tasks（带 comicName，服务端在此规范化并给出 normalizedComicName）
       const first = await apiPostMultipart<CreateTaskResponse>(
         '/tasks',
-        { comicName: comicName.trim(), idempotencyKey: key },
+        { comicName: name, idempotencyKey: key },
         batches[0],
       );
       // B2…Bn：追加同一任务的后续批次（契约 §5.3「分批提交的唯一实现路径」）
@@ -186,7 +208,8 @@ export function DropScreen({
           onChange={(e) => setComicName(e.target.value)}
         />
         <span className="field-hint">
-          名称由服务端统一规范化（全角转半角、非法字符剥离、重名不覆盖）；同名漫画会续编号，不会另开目录。
+          名称由服务端统一规范化（全角转半角、非法字符剥离）；同名漫画会被拦下、不重复投放 ——
+          要补页请用漫画库的「继续翻译」。
         </span>
       </div>
 
@@ -235,7 +258,7 @@ export function DropScreen({
       </div>
 
       {result ? (
-        <div className="notice">
+        <Notice>
           <div>
             <b>已进入同一条队列。</b> 落盘到：
           </div>
@@ -247,11 +270,11 @@ export function DropScreen({
               去漫画库看
             </Btn>
           </div>
-        </div>
+        </Notice>
       ) : null}
 
       {!nameOk && files.length > 0 ? (
-        <div className="notice is-bad">请先填漫画名 —— 它是落盘目录的唯一键（契约 §6.3：重名不覆盖）。</div>
+        <Notice kind="bad">请先填漫画名 —— 它是落盘目录的唯一键（契约 §6.3：重名不覆盖）。</Notice>
       ) : null}
     </div>
   );
