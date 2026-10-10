@@ -87,6 +87,11 @@ export const CODES = {
    *    而源目录已被删）。宁可报 409 让用户知道"这本不能自动归并"，也不要赌一次跨卷拷贝。
    */
   MERGE_CROSS_DEVICE: 409,
+  /**
+   * 归并的物理移动撞上 Windows「句柄占用族」（EPERM/EBUSY/EACCES）且退避重试（≈800ms）耗尽。
+   * 归因成 409 而不是 500：用户能行动（关掉预览/资源管理器窗口，稍后再试），D-125。
+   */
+  MERGE_SOURCE_LOCKED: 409,
 };
 
 export class ApiError extends Error {

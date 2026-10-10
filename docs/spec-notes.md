@@ -5495,3 +5495,13 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 **取证**：tsc 0 错误；vite build EXIT=0；`check:units` 44/0（反证 58/58）；
 `check:retranslate` 12/0；`check:lib-manage` **16/0**（反证 8/8，四源文件字节还原）；
 `check:music` 218/1、`check:docs` 14/2 —— 均为 D-121 基线红，无新增。
+
+## D-125 · 归并报「服务内部错误」：Windows 句柄占用族的重试与归因（2026-10-11）
+
+**症状**：归并「辺境の錬金术师 ~…~ 22.1」→「服务内部错误」。书里 14.2…21.2 的小数话号此前都归并成功，单这一个失败且可复现。
+
+- **根因（隔离环境实测复现）**：`renameSync(srcDir, dst)` 在源目录内**任一文件被打开句柄占用**时抛 `EPERM`（Windows 语义）。此前该 try/catch 只对 `EXDEV` 有降级，其余原样上抛 ⇒ 500 INTERNAL（details 里是 `EPERM … rename …22.1`）。占用来源：点「归并」时该话缩略图响应还在传（`createReadStream().pipe(res)` 在**客户端中止**时不销毁源流 ⇒ 句柄泄漏，服务自己的根因腿）、资源管理器缩略图/索引器、杀毒扫描。
+- **修法 ①（归因+重试）**：`renameDirWithRetry`（5 次 × 200ms ≈ 800ms 退避）吃掉瞬时占用；耗尽后按 `isBusyFsError`（EPERM/EBUSY/EACCES + message 兜底；EXDEV 的 message 不含这三个码 ⇒ 不误判）归因成 **409 `MERGE_SOURCE_LOCKED`**（errors.mjs 状态表同步登记），不再是 500。
+- **修法 ②（根因消除）**：页图 `sendImageBytes` 与封面 `handleLibraryCoverFile` 的发流从 `.pipe(res)` 改 `pipeline(...).catch()` —— 客户端中止即销毁源流、释放句柄（顺带消灭了源 error 事件的 uncaughtException 隐患）；两函数改 `async`，调用点本就 fire-and-forget / 被 route await，兼容。
+- **取证**：`check:lib-manage` 16→**20** 条（N8 瞬时占用救回 / N8b 持续占用 409 / N8c 释放后重试 200 / N9 源码级 pipeline 断言），反证 8→**11**（M9 退回 pipe ⇒ N9 红、M10 去重试 ⇒ N8 红、M11 去归因 ⇒ N8b 红），四源文件字节还原；`check:contract` 77/0；`check:docs` 16/0。
+- **运营注意**：改的是 `service/src/*.mjs` ⇒ **必须重启 box-service** 才生效（用户正在跑的旧进程仍会 500）。

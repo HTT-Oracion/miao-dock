@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
 
 import {
   API_VERSION, BASE_PATH, BATCH_LIMIT, COVER_MAX_BYTES, ENGINE_SETTINGS_FILE, MANIFEST_FILE,
@@ -1450,7 +1451,7 @@ function findFile(dir, seq, variant) {
  * 抽出来的理由不是"少写几行"，而是**打开文件前的 TOCTOU 复校验只能有一处**：
  * 两处各写一遍，就会漂移成"这里校验、那里忘了"，而漏掉的那一处就是把任意路径读出去的口子。
  */
-function sendImageBytes(res, cors, dir, name) {
+async function sendImageBytes(res, cors, dir, name) {
   const file = path.join(dir, name);
   try {
     assertInsideRoot(store.root, file); // 打开文件前再校验一次（防 TOCTOU）
@@ -1467,7 +1468,9 @@ function sendImageBytes(res, cors, dir, name) {
     'Content-Disposition': `inline; filename="${name}"`,
     'Cache-Control': 'no-store',
   });
-  fs.createReadStream(file).pipe(res);
+  // pipeline 而不是 .pipe()：客户端中止（取消加载/切页）时自动销毁源流、**释放文件句柄** ——
+  // 泄漏的读句柄会让该目录的归并 rename 撞 EPERM（D-125）；错误（含客户端提前断开）吞掉不外抛
+  await pipeline(fs.createReadStream(file), res).catch(() => {});
 }
 
 function handleLibraryFile(req, res, cors, rawName, seqText, url) {
@@ -1824,7 +1827,7 @@ async function handleLibraryCoverDelete(req, res, cors, rawName) {
  * 封面是**未受保护的展示素材**（不是页图），仍走完整鉴权 + 前缀校验，只是不做隐藏判定
  * —— 隐藏的是「这本书不列在库里」，不是"它的封面文件成了机密"。
  */
-function handleLibraryCoverFile(req, res, cors, rawName) {
+async function handleLibraryCoverFile(req, res, cors, rawName) {
   const { name, dir } = resolveBookDir(rawName);
   const coverName = readCoverName(dir, readManifest(dir, name));
   if (!coverName) {
@@ -1846,7 +1849,8 @@ function handleLibraryCoverFile(req, res, cors, rawName) {
     // 封面会被"换封面"改掉，且前端按 URL 缓存成 blob ⇒ 不允许任何一层缓存（含 WebView）
     'Cache-Control': 'no-store',
   });
-  fs.createReadStream(file).pipe(res);
+  // 同 sendImageBytes：pipeline 保证中止时释放句柄（D-125）
+  await pipeline(fs.createReadStream(file), res).catch(() => {});
 }
 
 // ---------------------------------------------------------------- 大类：归并 + 话级寻址
@@ -1876,6 +1880,47 @@ function isCrossDeviceError(err) {
   if (!err) return false;
   if (err.code === 'EXDEV' || err.errno === 18) return true; // 18 = EXDEV（Linux/macOS 同值）
   return /EXDEV|cross-device/i.test(String(err.message || ''));
+}
+
+/**
+ * Windows「句柄占用族」判定 —— `rename` 撞上被打开的文件句柄时抛这几个码。
+ *
+ * 典型来源（都是**等待可解**的，与 EXDEV 的"永远搬不动"有本质区别）：
+ *  · `EPERM`/`EBUSY`：目录内有文件被某进程打开 —— 页面图响应还在传、资源管理器缩略图、
+ *    本服务自己泄漏的读取流（见 `sendImageBytes` 改 `pipeline` 的修复，D-125）；
+ *  · `EACCES`：杀毒/索引器瞬时独占。
+ * message 正则兜底是给包装层留的（理由同 `isCrossDeviceError` 的多信号纪律）。
+ * 注意 EXDEV 的 message（"cross-device link not permitted"）**不含**这三个码 ⇒ 不会误判。
+ */
+function isBusyFsError(err) {
+  if (!err) return false;
+  if (['EPERM', 'EBUSY', 'EACCES'].includes(err.code)) return true;
+  return /EPERM|EBUSY|EACCES|being used by another process/i.test(String(err.message || ''));
+}
+
+const RENAME_RETRY = { tries: 5, delayMs: 200 }; // 总等待 ≈ 800ms，瞬时句柄足够释放
+const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 目录重命名 + 占用退避重试。
+ *
+ * 为什么重试而不是直接报错：归并入口就挂在详情页/搜索结果上，用户点「归并」时**该话的
+ * 缩略图请求极可能还在路上**（环回上高分辨率 webp 传输以秒计），Windows 下目录内有
+ * 打开的读句柄 ⇒ `renameSync` 抛 `EPERM`。等几百毫秒句柄就释放了 —— 这是**重试可解**的
+ * 瞬态失败，不该把它变成用户可见的报错（D-125）。重试耗尽仍占用才抛，由调用方归因成
+ * `MERGE_SOURCE_LOCKED`（409），而不是 500 INTERNAL。
+ */
+async function renameDirWithRetry(src, dst) {
+  for (let i = 1; ; i++) {
+    try {
+      fs.renameSync(src, dst);
+      return;
+    } catch (err) {
+      if (!isBusyFsError(err) || i >= RENAME_RETRY.tries) throw err;
+      serverLog(`归并移动被占用（${err.code || 'busy'}，${i}/${RENAME_RETRY.tries - 1} 次重试后放弃）：${path.basename(src)}`);
+      await sleepMs(RENAME_RETRY.delayMs);
+    }
+  }
 }
 
 /**
@@ -1955,11 +2000,17 @@ async function handleLibraryMerge(req, res, cors, rawName) {
   // 移动前清掉源目录里的封面（它属于"单话"，不该升格为整本封面）
   const removedCoverCount = removeCover(srcDir);
   try {
-    fs.renameSync(srcDir, dst);
+    await renameDirWithRetry(srcDir, dst);
   } catch (err) {
     if (isCrossDeviceError(err)) {
       throw new ApiError('MERGE_CROSS_DEVICE',
         '漫画库与目标目录不在同一个磁盘卷上，无法自动归并（请手动移动该目录）',
+        { comicName: srcName, targetBook: targetName, chapterNo: no, reason: String(err.message || err) });
+    }
+    if (isBusyFsError(err)) {
+      // 占用重试已耗尽（约 800ms）：把"500 服务内部错误"归因成用户能行动的 409（D-125）
+      throw new ApiError('MERGE_SOURCE_LOCKED',
+        `「${srcName}」正被其它程序占用（可能有页面还在预览、或资源管理器/杀毒正在扫描该目录），已自动重试仍失败，请稍候再试`,
         { comicName: srcName, targetBook: targetName, chapterNo: no, reason: String(err.message || err) });
     }
     throw err;
