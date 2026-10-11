@@ -1,4 +1,4 @@
-import { Btn } from '@components/units';
+import { Btn, Modal } from '@components/units';
 
 /**
  * 退出二次确认层（契约《02》§2.1）。
@@ -18,24 +18,24 @@ export const QUIT_CONFIRM_COPY = '退出后浏览器插件将无法提交翻译�
 
 export function QuitConfirm({ onStay, onQuit }: { onStay: () => void; onQuit: () => void }) {
   return (
-    <div className="modal-mask" onClick={onStay}>
-      <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-title">退出喵坞？</div>
-        <div className="modal-body">
-          {QUIT_CONFIRM_COPY}
-          <br />
-          <br />
-          只是想收起窗口的话，点「留在后台」—— 服务会继续跑，托盘图标常驻。
-        </div>
-        <div className="modal-actions">
+    <Modal
+      title="退出喵坞？"
+      onClose={onStay}
+      actions={
+        <>
           <Btn kind="ghost" onClick={onStay}>
             留在后台
           </Btn>
           <Btn kind="danger" onClick={onQuit}>
             退出喵坞
           </Btn>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      {QUIT_CONFIRM_COPY}
+      <br />
+      <br />
+      只是想收起窗口的话，点「留在后台」—— 服务会继续跑，托盘图标常驻。
+    </Modal>
   );
 }

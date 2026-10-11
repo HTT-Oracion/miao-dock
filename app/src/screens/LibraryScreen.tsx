@@ -36,7 +36,7 @@ import {
   pageSlice,
 } from '@tools';
 import { useDebouncedValue } from '@hooks/useDebouncedValue';
-import { Btn, ContextMenu, IconButton, MenuButton, MenuItem, MenuSeparator, Notice, Tooltip } from '@components/units';
+import { Btn, ContextMenu, IconButton, MenuButton, MenuItem, MenuSeparator, Modal, Notice, Tooltip } from '@components/units';
 import {
   bookFirstImagePath,
   chapterFilePath,
@@ -845,41 +845,40 @@ function DeleteComicModal({
 }) {
   const [deleteFiles, setDeleteFiles] = useState(false);
   return (
-    <div className="modal-mask" onClick={busy ? undefined : onCancel}>
-      <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-title">
-          删除{kind}「{comic.comicName}」
-        </div>
-        <div className="modal-body">
-          这会把该漫画从漫画库里移除。目录位置：
-          <div className="pathpreview" style={{ margin: '6px 0 10px' }}>
-            {comic.outputDir}
-          </div>
-          <label className="ckrow">
-            <input
-              type="checkbox"
-              className="ck"
-              checked={deleteFiles}
-              onChange={(e) => setDeleteFiles(e.target.checked)}
-            />
-            <span>同时删除本地文件（连漫画目录一起删除）</span>
-          </label>
-          {deleteFiles ? (
-            <div className="modal-warn">⚠️ 本地文件会被永久删除，无法恢复。</div>
-          ) : (
-            <div className="modal-hint">不勾选则只从库里隐藏，本地文件原样保留，之后可恢复。</div>
-          )}
-        </div>
-        <div className="modal-actions">
+    <Modal
+      title={<>删除{kind}「{comic.comicName}」</>}
+      busy={busy}
+      onClose={onCancel}
+      actions={
+        <>
           <Btn kind="ghost" onClick={onCancel} disabled={busy}>
             取消
           </Btn>
           <Btn kind="danger" onClick={() => onConfirm(deleteFiles)} disabled={busy}>
             确认删除
           </Btn>
-        </div>
+        </>
+      }
+    >
+      这会把该漫画从漫画库里移除。目录位置：
+      <div className="pathpreview" style={{ margin: '6px 0 10px' }}>
+        {comic.outputDir}
       </div>
-    </div>
+      <label className="ckrow">
+        <input
+          type="checkbox"
+          className="ck"
+          checked={deleteFiles}
+          onChange={(e) => setDeleteFiles(e.target.checked)}
+        />
+        <span>同时删除本地文件（连漫画目录一起删除）</span>
+      </label>
+      {deleteFiles ? (
+        <div className="modal-warn">⚠️ 本地文件会被永久删除，无法恢复。</div>
+      ) : (
+        <div className="modal-hint">不勾选则只从库里隐藏，本地文件原样保留，之后可恢复。</div>
+      )}
+    </Modal>
   );
 }
 
@@ -902,32 +901,30 @@ function HiddenComicsModal({
   onUnhide: (name: string) => void;
 }) {
   return (
-    <div className="modal-mask" onClick={onClose}>
-      <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-title">已隐藏的漫画</div>
-        <div className="modal-body">
-          这些漫画的**目录还在磁盘上**，只是被「删除（未勾选删除本地文件）」从库里隐藏了。
-          点「恢复」即可让它们重新出现。
-          <div className="hidden-list">
-            {hidden.map((name) => (
-              <div key={name} className="hidden-row">
-                <span className="hidden-name" title={name}>
-                  {name}
-                </span>
-                <Btn kind="ghost" size="sm" disabled={busy} onClick={() => onUnhide(name)}>
-                  恢复
-                </Btn>
-              </div>
-            ))}
+    <Modal
+      title="已隐藏的漫画"
+      onClose={onClose}
+      actions={
+        <Btn kind="primary" onClick={onClose}>
+          完成
+        </Btn>
+      }
+    >
+      这些漫画的**目录还在磁盘上**，只是被「删除（未勾选删除本地文件）」从库里隐藏了。
+      点「恢复」即可让它们重新出现。
+      <div className="hidden-list">
+        {hidden.map((name) => (
+          <div key={name} className="hidden-row">
+            <span className="hidden-name" title={name}>
+              {name}
+            </span>
+            <Btn kind="ghost" size="sm" disabled={busy} onClick={() => onUnhide(name)}>
+              恢复
+            </Btn>
           </div>
-        </div>
-        <div className="modal-actions">
-          <Btn kind="primary" onClick={onClose}>
-            完成
-          </Btn>
-        </div>
+        ))}
       </div>
-    </div>
+    </Modal>
   );
 }
 

@@ -24,6 +24,7 @@
 | D-140 | 接入 CI（双平台）+ 跨平台写死断言改平台忠实 | e2e / 基建 |
 | D-141 | `image.mjs` 上移底座 + 新增 `check:layering` 依赖方向钉子 | service |
 | D-142 | 删 `SongMenu` 并入 `units/ContextMenu`（+ 连带重写 MENU 判据组） | app 前端 |
+| D-143 | 新增 `units/Modal` 收敛 5 处手写模态壳（+ 修 4 条失效反证锚） | app 前端 |
 
 ---
 
@@ -352,3 +353,53 @@ ubuntu + macos 双平台，Node 22。必过门：
 
 `AGENTS.md` 原写 `check:music … 反证 182 条`，实际已是 184（D-137 一带的改动所致）。
 已改 184。（该数不被 `check:docs` 机器核对——它只核对**通过**条数 216——故此前无人发现。）
+
+---
+
+## D-143 · 新增 `units/Modal` 收敛 5 处手写模态壳（+ 修 4 条失效反证锚）（2026-10-11）
+
+审计（`code-audit-report.md` §2.5c）指出：`units/` 有 15 个组件却**没有 `Modal`**，
+于是同一段模态壳被手写 5 遍，每遍都是逐字相同的
+`modal-mask` + `role="dialog"` + `aria-modal` + `stopPropagation`。
+
+### 改法
+
+1. 新增 `app/src/components/units/Modal.tsx`：蒙层 + 卡片 + 标题/正文/操作三段。
+   `busy` 时蒙层点击失效（提交中误关）。**只做结构去重，行为一字不动。**
+2. 替换 5 处：`components/QuitConfirm.tsx` · `screens/library/modals.tsx`（原 `Sheet` 外壳，
+   4 个调用点一并改 `<Modal>`）· `screens/LibraryScreen.tsx`（删除确认 / 已隐藏管理）·
+   `screens/settings/CacheBlock.tsx`。
+3. `units/index.ts` barrel + `units-structure-check.mjs` 的 `MANIFEST`（16→17）/`BARREL_EXPORTS` 同步登记。
+
+### 🔴 为什么不把 Esc / 焦点陷阱也收进来
+
+现状是"谁需要谁自己挂"（只有 `CacheBlock` 调 `useEsc(onCancel)`），
+一次性塞进通用件会**改变现有行为**（退出确认原本不响应 Esc）。收口行为属独立决策，
+本件只做结构去重，已在文件头注明。
+
+### 判据同步
+
+`settings-media-check.mjs` 的 `CACHE.confirmBeforeClear` 原判「本文件内联 `modal-mask` + `role=dialog`」，
+现改判「用 `<Modal>` 渲染确认层」（那段 DOM 已在单元里）。**未放宽**：仍要求
+确认是清除的前置（`pending ?` 门控 + 已调 `musicCacheClear`）。
+
+### 顺带修复：4 条失效反证锚（既有缺陷）
+
+`check:settings:refute` 原为 **123/127**（4 条「破坏锚点未找到」）—— 与本次改动**无关**，
+是 D-136 把「通用」组的 `note` / `noteSummary` 删掉后，三条变异仍锚在已不存在的文本上
+（用 `git stash` 跑原始版本对照确认）。按本项目「跳过 ≠ 通过」纪律一并修好：
+
+| 变异 | 原锚（已不存在） | 今锚 |
+|---|---|---|
+| 删 `lyrics-mode` 项 | 含 `why:` 字段的旧条目 | 现条目（`why` 已移除） |
+| 删「一行摘要」 | `GENERAL.noteSummary` | **`TRANSLATE.noteSummary`** |
+| 写回需求条目号 | `GENERAL.note` 旧文案 | **`TRANSLATE.note`** |
+
+（前两条的语义是"有组说明却没有摘要"「全组文案不许混进设计过程」——改成判「翻译服务」组，
+该组是当前**唯一**同时有 `note` + `noteSummary` 的组。）
+
+### 验收
+
+`check:units` 45/0 · `check:units:refute` 59/59 · `check:settings` **180/0** ·
+`check:settings:refute` **127/127**（由 123/127 修复）· `check:ia` 32/0 · `check:quit` 5/0 ·
+`check:autostart` 12/0 · `check:docs` 17/0 · `tsc --noEmit` 0 · `vite build` 通过。

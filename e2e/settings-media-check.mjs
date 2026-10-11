@@ -887,13 +887,15 @@ add('CACHE.confirmBeforeClear', 'CACHE', (ctx) => {
    */
   const src = ctx.s.cacheBlock;
   if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx' };
-  const hasDialog = /className="modal-mask"/.test(src) && /role="dialog"/.test(src);
+  // D-143：模态壳已收口到通用单元 `units/Modal`（`.modal-mask` + `role="dialog"` 在单元里），
+  // 故这里改判「用 Modal 渲染确认层」，而不是再要求本文件内联那段 DOM。
+  const hasModal = /<Modal\b/.test(src);
   const clearAt = src.indexOf('musicCacheClear(');
   // 确认状态必须是清除的前置：pending 非空时才渲染弹层，点确认后才调清除
   const gateByPending = /pending\s*\?/.test(src) && /setPending\(/.test(src);
   return {
-    ok: hasDialog && clearAt > 0 && gateByPending,
-    detail: !hasDialog
+    ok: hasModal && clearAt > 0 && gateByPending,
+    detail: !hasModal
       ? '没有二次确认弹层（清缓存不可撤销）'
       : clearAt <= 0
         ? '找不到 musicCacheClear 调用'
@@ -3068,9 +3070,6 @@ const MUTATIONS = [
       "          label: '歌词高亮方式',\n" +
       "          state: 'live',\n" +
       "          def: '逐字',\n" +
-      "          why:\n" +
-      "            '逐字＝有逐字数据（yrc/qrc）时精确到字、没有则整行从左到右渐进（默认）；' +\n" +
-      "            '整行＝唱到该句整行一次性点亮，不逐字也不渐变。作用于「展开播放器」与灵动岛歌词卡。',\n" +
       "        },\n",
     replace: '',
     expect: ['ADDED.lyrics-mode', 'COUNT.total'],
@@ -3472,9 +3471,9 @@ const MUTATIONS = [
     expect: ['SIMPLIFY.notesummary.verbatim'],
   },
   {
-    name: '把「通用」的一行摘要删掉（该组有组说明却没摘要）',
+    name: '把「翻译服务」的一行摘要删掉（该组有组说明却没摘要）',
     file: F.catalog,
-    find: "  noteSummary: '本组 4 项 · 「侧栏图标标签」关掉后只显示图标、侧栏宽度不变',\n",
+    find: "  noteSummary:\n    '本组 13 项 · 改档位/后端/模型目录要重启引擎才生效 · 两个空闲卸载阈值生效时机不同',\n",
     replace: '',
     expect: ['SIMPLIFY.notesummary.verbatim'],
   },
@@ -3872,11 +3871,11 @@ const MUTATIONS = [
     expect: ['SIMPLIFY.translate.noSpecRefs'],
   },
   {
-    name: '把需求条目号写回「通用」组说明（全组文案不许混进设计过程）',
+    name: '把需求条目号写回「翻译服务」组说明（全组文案不许混进设计过程）',
     file: F.catalog,
-    find: "'本组 4 项。「侧栏图标标签」关掉后只显示图标、侧栏宽度不变 —— '",
-    replace: "'本组 4 项（P-D1）。「侧栏图标标签」关掉后只显示图标、侧栏宽度不变 —— '",
-    // 本条只指向全量判据：写回的是「通用」组，翻译来源那条扫不到它。
+    find: "    '本组 13 项，分四小节：翻译来源、服务与配对、推理引擎、模型与诊断。' +\n",
+    replace: "    '本组 13 项（P-D1），分四小节：翻译来源、服务与配对、推理引擎、模型与诊断。' +\n",
+    // 本条只指向全量判据：写回的是「翻译服务」组，其余分组那条扫不到它。
     expect: ['SIMPLIFY.copy.noSpecRefs'],
   },
 ];

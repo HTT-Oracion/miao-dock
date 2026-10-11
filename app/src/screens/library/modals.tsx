@@ -12,11 +12,10 @@
 // 一律不自己发请求 —— 提交交给屏（`LibraryScreen`），因为提交后要 `onRefresh()`、
 // 要发 Toast、要在失败时把结构化错误翻译成人话，那些都在屏里。
 import { useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
 import { ImagePlus, Trash2 } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 
-import { Btn, Select } from '@components/units';
+import { Btn, Modal, Select } from '@components/units';
 import { chapterNoOf, coverFileName, dupKey, padChapterNo, shortPath } from '@tools';
 import type { BookEntry, ChapterEntry } from '@/types';
 import { bookFirstImagePath, coverPath, useBlobUrl } from '@screens/library/blob';
@@ -26,31 +25,6 @@ const ILLEGAL_NAME_RE = /[/\\:*?"<>|]/;
 
 /** 作者上限（设计稿 §7.6.2：0–40 字） */
 const MAX_AUTHOR_CHARS = 40;
-
-/** 弹窗外壳：三支弹窗共用，避免三次抄同一段蒙层/圆角/点外关闭 */
-function Sheet({
-  title,
-  busy,
-  onClose,
-  children,
-  actions,
-}: {
-  title: string;
-  busy: boolean;
-  onClose: () => void;
-  children: ReactNode;
-  actions: ReactNode;
-}) {
-  return (
-    <div className="modal-mask" onClick={busy ? undefined : onClose}>
-      <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-title">{title}</div>
-        <div className="modal-body">{children}</div>
-        <div className="modal-actions">{actions}</div>
-      </div>
-    </div>
-  );
-}
 
 // ------------------------------------------------------------------ 7.6.1 新建漫画
 
@@ -110,7 +84,7 @@ export function NewBookModal({
   };
 
   return (
-    <Sheet
+    <Modal
       title="新建漫画"
       busy={busy}
       onClose={onCancel}
@@ -165,7 +139,7 @@ export function NewBookModal({
           ) : null}
         </div>
       ) : null}
-    </Sheet>
+    </Modal>
   );
 }
 
@@ -249,7 +223,7 @@ export function EditBookModal({
   };
 
   return (
-    <Sheet
+    <Modal
       title={`编辑《${book.bookName}》`}
       busy={busy}
       onClose={onCancel}
@@ -326,7 +300,7 @@ export function EditBookModal({
       <div className="modal-hint">
         留空则显示「未署名」（<span className="num">{author.length}</span> / {MAX_AUTHOR_CHARS}）
       </div>
-    </Sheet>
+    </Modal>
   );
 }
 
@@ -399,7 +373,7 @@ export function MergeModal({
   };
 
   return (
-    <Sheet
+    <Modal
       title={`归并「${source}」`}
       busy={busy}
       onClose={onCancel}
@@ -460,7 +434,7 @@ export function MergeModal({
           ) : null}
         </>
       )}
-    </Sheet>
+    </Modal>
   );
 }
 
@@ -510,7 +484,7 @@ export function EditChapterNoModal({
   const canSubmit = !busy && noOk && !conflict && !unchanged;
 
   return (
-    <Sheet
+    <Modal
       title={`编辑《${bookName}》第 ${chapter.no} 话的话号`}
       busy={busy}
       onClose={onCancel}
@@ -561,6 +535,6 @@ export function EditChapterNoModal({
       <div className="modal-hint">
         本话的页文件原地保留，只有所在文件夹改名；该话有任务在跑时会拒绝改号。
       </div>
-    </Sheet>
+    </Modal>
   );
 }

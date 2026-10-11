@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Btn } from '@components/units';
+import { Btn, Modal } from '@components/units';
 import { useEsc } from '@hooks/useEsc';
 import { openPath } from '@/ipc';
 import { musicCacheClear, musicCacheStats } from '@music/ipc';
@@ -281,22 +281,22 @@ function ClearConfirm({
   const what = scope === 'all' ? '全部平台的音乐缓存' : `${PROVIDER_LABEL[scope]}的缓存`;
 
   return (
-    <div className="modal-mask" onClick={onCancel}>
-      <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-title">确认清除{what}？</div>
-        <div className="modal-body">
-          清除后本地缓存的文件会被删除，<b>无法恢复</b>。
-          正在播放的歌会自动重新联网加载，不会中断，只是首次播放要多等一会儿。
-        </div>
-        <div className="modal-actions">
+    <Modal
+      title={`确认清除${what}？`}
+      onClose={onCancel}
+      actions={
+        <>
           <Btn kind="ghost" onClick={onCancel}>
             取消
           </Btn>
           <Btn kind="danger" onClick={onConfirm}>
             清除{scope === 'all' ? '全部' : PROVIDER_LABEL[scope]}
           </Btn>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      清除后本地缓存的文件会被删除，<b>无法恢复</b>。
+      正在播放的歌会自动重新联网加载，不会中断，只是首次播放要多等一会儿。
+    </Modal>
   );
 }

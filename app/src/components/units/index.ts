@@ -24,6 +24,7 @@ export { ColorPicker } from '@components/units/ColorPicker';
 export { Empty } from '@components/units/Empty';
 export { IconButton } from '@components/units/IconButton';
 export { MenuButton, MenuItem } from '@components/units/MenuButton';
+export { Modal } from '@components/units/Modal';
 export { Notice } from '@components/units/Notice';
 export { NumberInput } from '@components/units/NumberInput';
 export { PlayModeButton } from '@components/units/PlayModeButton';
