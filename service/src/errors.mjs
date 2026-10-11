@@ -155,6 +155,17 @@ export function permissionDenied() {
   return new ApiError('PERMISSION_DENIED', '鉴权失败或来源不被允许', {});
 }
 
+/**
+ * 安全事件日志（越界拒绝 / 令牌失败 / Origin 拒绝）。
+ *
+ * 为什么和 `permissionDenied` 同住 `errors.mjs`：两者是**同一个安全响应**的两半 ——
+ * 「记一笔」+「回 403」。原先定义在 `server.mjs`，但 `manga/library.mjs` 的寻址函数
+ * （`resolveComicDir` 等）也要在拒绝时记这一笔 ⇒ 下沉到底座才能被域层复用（D-147）。
+ */
+export function securityLog(msg) {
+  console.warn(`[box-service][security] ${msg}`);
+}
+
 export function errorEnvelope(err) {
   const code = err instanceof ApiError ? err.code : 'INTERNAL';
   const status = err instanceof ApiError ? err.status : 500;

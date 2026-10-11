@@ -13,9 +13,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import {
-  CHAPTER_DIR_RE, COVER_RE, MANIFEST_FILE, ORIGINAL_SCAN_RE, TRANSLATED_SCAN_RE, assertInsideRoot,
-  isValidChapterNo,
+  CHAPTER_DIR_RE, COVER_RE, MANIFEST_FILE, MAX_CHAPTER_NO, ORIGINAL_SCAN_RE, TRANSLATED_SCAN_RE,
+  assertInsideRoot, isValidChapterNo,
 } from '../config.mjs';
+import { ApiError, permissionDenied, securityLog } from '../errors.mjs';
+import { isSafeDirName, normalizeComicName } from './names.mjs';
 
 /** ISO 秒级时间戳（与全仓 `scanLibrary` / `updatedAt` 口径一致：去掉毫秒） */
 function isoOf(ms) {
@@ -471,4 +473,104 @@ export function findFile(dir, seq, variant) {
     if (m && Number(m[1]) === seq) return f;
   }
   return null;
+}
+
+// ------------------------------------------------------------------ 寻址（数据层）
+//
+// 「URL/body 里的原始名 → 库根之下的安全目录」这一层的归属：**寻址**，不是 HTTP。
+// 原先住在 `server.mjs`，靠闭包读 `store.root` ⇒ 脱不开服务（审计 §2.3）。
+// 搬来本模块后 `root` 由宿主显式传入，全是**纯函数**。
+//
+// 🔴 **403 与 404 的先后是契约**（§8.2），搬迁时逐条保留：
+//    先判「越界」（`isSafeDirName` fail ⇒ 403 `permissionDenied`），再判「格式/存在」（404）。
+//    若顺序反了，`../../etc` 这种同样不匹配数字正则的输入会回 404，
+//    把「有人试图越界」掩盖成「名字拼错了」。
+
+/** 原始名 → `{name, dir}`；越界一律 403（不泄露是哪一项失败） */
+export function resolveComicDir(root, rawName) {
+  if (!isSafeDirName(rawName)) {
+    securityLog(`拒绝路径越界的漫画名（§8.2 校验点 2）：${JSON.stringify(rawName)}`);
+    throw permissionDenied();
+  }
+  const norm = normalizeComicName(rawName);
+  if (!norm.ok) throw new ApiError(norm.code, norm.message, norm.details);
+  if (!isSafeDirName(norm.name)) {
+    securityLog(`拒绝路径越界的漫画名：${JSON.stringify(rawName)}`);
+    throw permissionDenied();
+  }
+  const dir = path.join(root, norm.name);
+  try {
+    assertInsideRoot(root, path.join(dir, 'x.png'));
+  } catch {
+    securityLog(`拼接后前缀校验失败：${dir}（root=${root}）`);
+    throw permissionDenied();
+  }
+  return { name: norm.name, dir };
+}
+
+/** 大类（`resolveComicDir` + 「目录在、且有 `manifest.json`」）；不存在 → 404 */
+export function resolveBookDir(root, rawName) {
+  const { name, dir } = resolveComicDir(root, rawName);
+  if (!fs.existsSync(dir) || !hasManifest(dir)) {
+    throw new ApiError('TASK_NOT_FOUND', '漫画大类不存在（目录内没有 manifest.json）',
+      { bookName: name, outputDir: dir });
+  }
+  return { name, dir };
+}
+
+/** `{book}/${话号}` → 该话的目录信息（`{bookName, bookDir, no, dirName, dir, relDir}`） */
+export function resolveChapterDir(root, bookRaw, noRaw) {
+  // 话号来自两处：URL 段（永远是字符串）与 merge 的 body（可能是 JSON number）。
+  // 统一成字符串再校验 —— 否则 `{no: 2}` 会在 isSafeDirName 的 typeof 断言上被判成"越界"而回 403。
+  const noText = String(noRaw ?? '');
+  // 🔴 顺序不能反：**先判越界（403），再判格式（404）**。`../../etc` 同样不匹配数字正则，
+  //    若先判格式就会回 404 —— 而 §8.2 只允许 403，404 会把"有人试图越界"掩盖成"话号拼错了"
+  //    （与 `resolveComicDir` 的处理逐条对齐）。
+  if (!isSafeDirName(noText)) {
+    securityLog(`拒绝路径越界的话号（§8.2 校验点 2）：${JSON.stringify(noRaw)}`);
+    throw permissionDenied();
+  }
+  // 只认「1–999.9、最多一位小数且小数位非 0」：`'1abc'`、`'01x'`、`''`、`'14.10'`、`'14.0'`
+  // 一律拒。parseInt 的"能读几个字符算几个"会让 `/chapters/1xyz/` 静默命中第 1 话
+  // —— 那是把拼错的路径当成对的。
+  if (!/^\d{1,3}(?:\.[1-9])?$/.test(noText)) {
+    throw new ApiError(
+      'TASK_NOT_FOUND',
+      `话号必须是 1–${MAX_CHAPTER_NO}.9 的数（最多一位小数）`,
+      { chapterNo: noRaw },
+    );
+  }
+  const no = Number(noText);
+  if (!isValidChapterNo(no)) {
+    throw new ApiError(
+      'TASK_NOT_FOUND',
+      `话号必须是 1–${MAX_CHAPTER_NO}.9 的数（最多一位小数）`,
+      { chapterNo: noRaw },
+    );
+  }
+  const { name: bookName, dir: bookDir } = resolveBookDir(root, bookRaw); // 第一段：书（含 §8.2 原始名断言）
+  const dirName = chapterDirName(no); // 服务端生成，不由用户输入拼出
+  if (!isSafeDirName(dirName)) {
+    securityLog(`话目录名未通过安全断言（命名规则可能被改坏）：${JSON.stringify(dirName)}`);
+    throw permissionDenied();
+  }
+  const dir = path.join(bookDir, dirName);
+  try {
+    assertInsideRoot(root, path.join(dir, 'x.png'));
+  } catch {
+    securityLog(`话目录拼接后前缀校验失败：${dir}（root=${root}）`);
+    throw permissionDenied();
+  }
+  return { bookName, bookDir, no, dirName, dir, relDir: `${bookName}/${dirName}` };
+}
+
+/** `resolveChapterDir` + 「该话目录确实存在」；不存在 → 404 */
+export function mustChapterDir(root, bookRaw, noRaw) {
+  const info = resolveChapterDir(root, bookRaw, noRaw);
+  if (!fs.existsSync(info.dir)) {
+    throw new ApiError('TASK_NOT_FOUND', `这本漫画没有第 ${info.no} 话`, {
+      bookName: info.bookName, chapterNo: info.no, outputDir: info.dir,
+    });
+  }
+  return info;
 }

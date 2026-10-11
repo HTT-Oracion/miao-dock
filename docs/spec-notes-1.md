@@ -28,6 +28,7 @@
 | D-144 | `server.mjs` 去重：任务创建工厂 + 兜底收敛 + multipart 四闸 | service |
 | D-145 | 库扫描/视图下沉数据层（`server.mjs` → `manga/library.mjs`） | service |
 | D-146 | 去掉 `onToast` 属性穿透，改用 `useToasts()` 单例总线 | app 前端 |
+| D-147 | 路径寻址下沉数据层（`resolveComicDir` 等 4 个）+ `securityLog` 归位底座 | service |
 
 ---
 
@@ -535,3 +536,57 @@ const { push: onToast } = useToasts();   // 名字保留 onToast，其余调用�
 
 `tsc --noEmit` 0 · `vite build` 通过 · `check:units` 45/0 · `check:ia` 32/0 ·
 `check:settings` 180/0 · `check:music` 216/3（3 条既有环境红）· `check:docs` 17/0。
+
+---
+
+## D-147 · 路径寻址下沉数据层 + `securityLog` 归位底座（2026-10-11）
+
+**背景**：审计 §2.3 剩余。`resolveComicDir` / `resolveBookDir` / `resolveChapterDir` /
+`mustChapterDir` 住在 `server.mjs`，靠闭包读 `store.root` ⇒ 脱不开服务。
+（审计同段还称「`store` 反向依赖 server 注入的 `ensureLlm`/`tierDowngrade`」—— **经核实不成立**，
+见下。）
+
+### 改动一：四个寻址函数下沉 `manga/library.mjs`
+
+`root` 由宿主显式传入（首参），四个函数变**纯函数**：
+`resolveComicDir(root, raw)` · `resolveBookDir(root, raw)` ·
+`resolveChapterDir(root, book, no)` · `mustChapterDir(root, book, no)`。
+依赖：`isSafeDirName`/`normalizeComicName`（`names.mjs`）· `MAX_CHAPTER_NO`/`isValidChapterNo`/
+`assertInsideRoot`（`config.mjs`）· `ApiError`/`permissionDenied`/`securityLog`（`../errors.mjs`）·
+`hasManifest`/`chapterDirName`（本模块）。**依赖方向 keep 域→底座，无环。**
+
+`server.mjs` 侧改成**注入 `store.root` 的薄包装**（同 `libraryView()` 范式）：
+
+```js
+const resolveComicDir = (rawName) => resolveComicDirAt(store.root, rawName);
+// …另外三个同形
+```
+
+⇒ 调用点（~23 处）**零改动**。`server.mjs` 本轮（D-144/D-145/D-147）累计 2891 → **2680** 行。
+
+### 改动二：`securityLog` 从 `server.mjs` 归位 `errors.mjs`（底座）
+
+寻址函数在拒绝时要「记一笔 + 回 403」，而 `securityLog` 原只在 `server.mjs`。
+下沉到 `errors.mjs` —— 它与 `permissionDenied()` 本就是**同一个安全响应的两半**。
+`errors.mjs` 是既有底座（L0 白名单无需变更）；`server` 与 `library` 各 import 之。
+
+### 🔴 安全语义逐条保留（**先 403 后 404**）
+
+`resolveComicDir` 与 `resolveChapterDir` 都**先判越界**（`isSafeDirName` fail ⇒ 403），
+**再判格式/存在**（404）。顺序反了，`../../etc` 会被回 404 ⇒ 把「有人试图越界」掩盖成
+「名字/话号拼错」。搬迁只在 `SERVER_SRC → LIBRARY_SRC` 挪了位置，判据与顺序一字未改；
+`check:e10`（7/0）与 `check:lib-manage` 的越界守卫（L 组）在真 HTTP 上复验通过。
+
+### 核实：所谓「store 反向依赖」实为**刻意的依赖注入**（审计误判）
+
+`store.mjs` **不 import `server.mjs`**；是 `server` 在装配阶段注入
+`store.ensureLlm = () => llm.start(...)` / `store.tierDowngrade = tierCtl`。
+两者在 `store` 里都**声明为可空缺省**（`= null`），注释明写「缺省 `null` ⇒ 纯 Store 场景
+（单测/自检）行为完全不变」，使用处也都有 `typeof === 'function'` / 真值守卫。
+⇒ 这不是「反向依赖」，恰是**让 Store 可独立测试**的 DI。**故本项不改**（改了反而破坏可测性）。
+
+### 验收
+
+`selftest:service` **134/1**（1 条既有 Windows 环境性红）· `check:lib-manage` **24/0 +
+refute 13/13（字节还原校验全过）** · `check:contract` 77/0 · `check:e10` 7/0 · `check:retry` 10/0 ·
+`check:retranslate` 12/0 · `check:layering` 3/0 · `node --check` 通过。

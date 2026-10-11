@@ -11,13 +11,13 @@ import { pipeline } from 'node:stream/promises';
 
 import {
   API_VERSION, BASE_PATH, BATCH_LIMIT, COVER_MAX_BYTES, ENGINE_SETTINGS_FILE, MANIFEST_FILE,
-  MAX_CHAPTER_NO, MERGE_ARCHIVE_DIR, REPO_ROOT, isValidChapterNo,
+  MERGE_ARCHIVE_DIR, REPO_ROOT,
   ROOT_DIR, SERVICE_NAME, SERVICE_VERSION, STATE_DIR, TASKS_STATE_DIR,
   TOKEN_FILE, TRANSLATE_DIRECTIONS, assertInsideRoot, config, engineSettingsFile,
   isSupportedDirection, normalizeDirection,
   readIdleSettings, validateRoot,
 } from './config.mjs';
-import { ApiError, errorEnvelope, permissionDenied } from './errors.mjs';
+import { ApiError, errorEnvelope, permissionDenied, securityLog } from './errors.mjs';
 import {
   ENGINE_VERSION, engineConfigSnapshot, probeEngine, recentStageLog, resolveLlmLaunch,
   availableTiers, TIER_LLM_MODELS,
@@ -30,9 +30,10 @@ import { modelStatus } from './settings/model-status.mjs';
 import { createTierDowngrade } from './settings/tier-downgrade.mjs';
 import { allFieldStrings, firstField, groupParts, parseMultipartEx } from './multipart.mjs';
 import {
-  bookMetaView, chapterDirName, createBookDir, episodesFromDirs, findFile, hasManifest,
-  listChapterDirs, pickFirstChapterImage, readCoverName, readManifest, removeCover,
-  scanLibrary, writeCover, writeManifestAtomic,
+  bookMetaView, createBookDir, episodesFromDirs, findFile, hasManifest,
+  listChapterDirs, mustChapterDir as mustChapterDirAt, pickFirstChapterImage, readCoverName, readManifest,
+  removeCover, resolveBookDir as resolveBookDirAt, resolveChapterDir as resolveChapterDirAt,
+  resolveComicDir as resolveComicDirAt, scanLibrary, writeCover, writeManifestAtomic,
 } from './manga/library.mjs';
 import { sniffImageType } from './image.mjs';
 import { normalizeComicName, isSafeDirName } from './manga/names.mjs';
@@ -143,7 +144,7 @@ async function sidecarState() {
 }
 
 const serverLog = (msg) => console.log(`[box-service] ${msg}`);
-const securityLog = (msg) => console.warn(`[box-service][security] ${msg}`);
+// `securityLog` / 寻址函数（resolveComicDir 等）已下沉数据层/底座（D-147），见下方 import。
 
 /**
  * §8.2 校验点 2：`normalizedComicName` 不含 `/ \ ..`（再断言一次，不信任上游）。
@@ -1386,116 +1387,16 @@ function libraryView() {
 }
 
 /**
- * 解析并校验**大类目录**（`/meta` · `/cover` · `/merge` 的目标）。
+ * 寻址薄包装：数据层（`manga/library.mjs`）的寻址函数是**纯函数**，`root` 由宿主注入。
+ * 这层只做「注入 `store.root`」一件事 —— 于是调用点（~23 处）零改动（D-147）。
  *
- * 在 `resolveComicDir` 之上再要求「存在性 + 有 `manifest.json`」：`/meta` · `/cover` 一族
- * 对「未归并单话目录」必须是 404（它没有可编辑的元信息），而不是给它现造一个 manifest
- * —— 那会让一本单话"升级"成大类的语义从「归并」偷偷变成「改个标题」。
+ * 🔴 逻辑与安全顺序（**先判越界 403，再判格式/存在 404**，契约 §8.2）**都在数据层**，
+ *    那里有逐条注释，此处不重述 —— 改顺序会改错误码语义，别在这层"顺手"加判断。
  */
-function resolveBookDir(rawName) {
-  const { name, dir } = resolveComicDir(rawName);
-  if (!fs.existsSync(dir) || !hasManifest(dir)) {
-    throw new ApiError('TASK_NOT_FOUND', '漫画大类不存在（目录内没有 manifest.json）',
-      { bookName: name, outputDir: dir });
-  }
-  return { name, dir };
-}
-
-/**
- * 解析并校验漫画目录（路径穿越 → 403 + 安全日志，契约 §8.2）。
- * 注意：这里的 comicName 直接来自 URL，**先对原始名做 §8.2 校验点 2 的断言**——
- * 归一化会把 `/ \ :` 剥离掉，若只断言归一化结果，`../../etc` 会退化成合法的 `....etc`
- * 而返回 404，掩盖了越界意图。§8.2 只允许 403。
- */
-function resolveComicDir(rawName) {
-  if (!isSafeDirName(rawName)) {
-    securityLog(`拒绝路径越界的漫画名（§8.2 校验点 2）：${JSON.stringify(rawName)}`);
-    throw permissionDenied();
-  }
-  const norm = normalizeComicName(rawName);
-  if (!norm.ok) throw new ApiError(norm.code, norm.message, norm.details);
-  if (!isSafeDirName(norm.name)) {
-    securityLog(`拒绝路径越界的漫画名：${JSON.stringify(rawName)}`);
-    throw permissionDenied();
-  }
-  const dir = path.join(store.root, norm.name);
-  try {
-    assertInsideRoot(store.root, path.join(dir, 'x.png'));
-  } catch {
-    securityLog(`拼接后前缀校验失败：${dir}（root=${store.root}）`);
-    throw permissionDenied();
-  }
-  return { name: norm.name, dir };
-}
-
-/**
- * 解析并校验**话目录**（`<book>/NN_第N话`）—— 契约见 D-115 §4，因果见 D-117。
- *
- * 🔴 为什么必须新开一条、而不是把 `resolveComicDir` 改成"允许含 `/` 的名字"：
- *    `resolveComicDir` 走 `isSafeDirName()`，而它**显式拒绝 `/` 与 `\`**（names.mjs:78）。
- *    于是既有的 `/library/{comicName}/...` 单段路由**到不了**嵌套的话目录 —— 这不是疏忽，
- *    是 §8.2 校验点 2 在挡路径穿越。放宽它 = 把"名字里可以带 `/`"这扇门打开 ⇒ `..%2F..%2Fetc`
- *    这类名字会被拼进路径。正确做法是**多给一段**：两段（书、话号）**各自**校验，
- *    再由服务端**自己拼**目录名，用户输入里永远不出现分隔符。
- *
- * 话号由数字解析后交给 `chapterDirName()` 生成目录名 —— 目录名不是用户给的，
- * 是服务端算出来的；仍过一次 `isSafeDirName` 只是防"将来命名规则被改坏"。
- */
-function resolveChapterDir(bookRaw, noRaw) {
-  // 话号来自两处：URL 段（永远是字符串）与 merge 的 body（可能是 JSON number）。
-  // 统一成字符串再校验 —— 否则 `{no: 2}` 会在 isSafeDirName 的 typeof 断言上被判成"越界"而回 403。
-  const noText = String(noRaw ?? '');
-  // 🔴 顺序不能反：**先判越界（403），再判格式（404）**。`../../etc` 同样不匹配数字正则，
-  //    若先判格式就会回 404 —— 而 §8.2 只允许 403，404 会把"有人试图越界"掩盖成"话号拼错了"
-  //    （与 `resolveComicDir` 的处理逐条对齐）。
-  if (!isSafeDirName(noText)) {
-    securityLog(`拒绝路径越界的话号（§8.2 校验点 2）：${JSON.stringify(noRaw)}`);
-    throw permissionDenied();
-  }
-  // 只认「1–999.9、最多一位小数且小数位非 0」：`'1abc'`、`'01x'`、`''`、`'14.10'`、`'14.0'`
-  // 一律拒。parseInt 的"能读几个字符算几个"会让 `/chapters/1xyz/` 静默命中第 1 话
-  // —— 那是把拼错的路径当成对的。
-  if (!/^\d{1,3}(?:\.[1-9])?$/.test(noText)) {
-    throw new ApiError(
-      'TASK_NOT_FOUND',
-      `话号必须是 1–${MAX_CHAPTER_NO}.9 的数（最多一位小数）`,
-      { chapterNo: noRaw },
-    );
-  }
-  const no = Number(noText);
-  if (!isValidChapterNo(no)) {
-    throw new ApiError(
-      'TASK_NOT_FOUND',
-      `话号必须是 1–${MAX_CHAPTER_NO}.9 的数（最多一位小数）`,
-      { chapterNo: noRaw },
-    );
-  }
-  const { name: bookName, dir: bookDir } = resolveBookDir(bookRaw); // 第一段：书（含 §8.2 原始名断言）
-  const dirName = chapterDirName(no); // 服务端生成，不由用户输入拼出
-  if (!isSafeDirName(dirName)) {
-    securityLog(`话目录名未通过安全断言（命名规则可能被改坏）：${JSON.stringify(dirName)}`);
-    throw permissionDenied();
-  }
-  const dir = path.join(bookDir, dirName);
-  try {
-    assertInsideRoot(store.root, path.join(dir, 'x.png'));
-  } catch {
-    securityLog(`话目录拼接后前缀校验失败：${dir}（root=${store.root}）`);
-    throw permissionDenied();
-  }
-  return { bookName, bookDir, no, dirName, dir, relDir: `${bookName}/${dirName}` };
-}
-
-/** 话目录必须**存在**（取图 / 续做 / 返工都要真的能读盘）—— 不存在则 404 */
-function mustChapterDir(bookRaw, noRaw) {
-  const info = resolveChapterDir(bookRaw, noRaw);
-  if (!fs.existsSync(info.dir)) {
-    throw new ApiError('TASK_NOT_FOUND', `这本漫画没有第 ${info.no} 话`, {
-      bookName: info.bookName, chapterNo: info.no, outputDir: info.dir,
-    });
-  }
-  return info;
-}
+const resolveComicDir = (rawName) => resolveComicDirAt(store.root, rawName);
+const resolveBookDir = (rawName) => resolveBookDirAt(store.root, rawName);
+const resolveChapterDir = (bookRaw, noRaw) => resolveChapterDirAt(store.root, bookRaw, noRaw);
+const mustChapterDir = (bookRaw, noRaw) => mustChapterDirAt(store.root, bookRaw, noRaw);
 
 /**
  * 把一个目录内的图片文件按字节发出去（`files/{seq}` 与 `chapters/{no}/files/{seq}` 共用）。
