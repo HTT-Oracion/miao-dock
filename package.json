@@ -1,7 +1,7 @@
 {
   "name": "miao-dock",
   "private": true,
-  "version": "2.1.0",
+  "version": "2.2.1",
   "type": "module",
   "description": "喵坞 MiaoDock · Box 桌面端（漫画翻译 + 音乐应用 ver2.0）",
   "scripts": {

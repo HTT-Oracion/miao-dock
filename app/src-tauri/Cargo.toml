@@ -1,6 +1,6 @@
 [package]
 name = "miao-dock"
-version = "2.1.0"
+version = "2.2.1"
 description = "喵坞 MiaoDock · Box 桌面端（漫画翻译 + 音乐应用）"
 edition = "2021"
 rust-version = "1.77"

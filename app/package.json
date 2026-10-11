@@ -1,7 +1,7 @@
 {
   "name": "miao-dock-app",
   "private": true,
-  "version": "2.1.0",
+  "version": "2.2.1",
   "type": "module",
   "description": "喵坞 MiaoDock 桌面端（Tauri v2 + Vite/React）",
   "scripts": {
