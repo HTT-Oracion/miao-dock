@@ -42,7 +42,7 @@
 **服务端模块目录（硬规则，ver2.2 起，见 `docs/spec-notes.md` D-101）**：
 
 - `service/src/` 根**只留跨模块底座**：装配入口 `server.mjs` · `config.mjs` · `errors.mjs` · `engine-client.mjs`（引擎适配，唯一耦合点）· `multipart.mjs` · `parent-watch.mjs`。
-- **按业务域分子目录**：`service/src/manga/`（漫画翻译：`store` 队列落盘 · `image` · `names` · `sse`）· `service/src/settings/`（设置 / 引擎档位 / 诊断：`engine-settings` · `engine-profile` · `model-status` · `idle-policy` · `tier-downgrade` · `llm-supervisor`）· `service/src/music/`（音乐：逻辑主要在 Rust 侧 `app/src-tauri/src/music/`，服务端此目录为**占位**）。
+- **按业务域分子目录**：`service/src/manga/`（漫画翻译：`store` 队列落盘 · `image` · `names` · `sse` · `translate` 在线翻译：契约 / 注册 / 门面 / http / sse-parse / limiter / 设置 / 密钥 / `platforms/youdao`）· `service/src/settings/`（设置 / 引擎档位 / 诊断：`engine-settings` · `engine-profile` · `model-status` · `idle-policy` · `tier-downgrade` · `llm-supervisor`）· `service/src/music/`（音乐：逻辑主要在 Rust 侧 `app/src-tauri/src/music/`，服务端此目录为**占位**）。
 - 🔴 **新增服务模块必须归入对应域目录**，不得再平铺回 `service/src/` 根；**只有跨域共用**才允许上提到根。
 - 搬迁 / 新增后必须同步：**断言里写死的路径**（`e2e/` 下大量 `path.join(ROOT,'service','src',…)`，不同步的后果是**静默跳过**）· 模块内相对导入 · 本节分层 · `README.md` 目录节 · `.trae/rules/project_rules.md`。
 
@@ -105,6 +105,7 @@ npm run fetch:models          # S3 模型下载器 CLI：--check 只校验 / --l
 npm run check:profile[:refute] # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）
 npm run check:e5e6[:refute]    # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run check:contract[:refute] # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status，77 条（8 个实例场景 A–H）/ 逃生开关反证 4 条（各约 3s / 2s）
+npm run check:translate[:refute] # ver2.2 在线翻译服务（有道智云）：签名 v3 / 四层超时 / 限流 / 三层设置 / 密钥隔离 / 契约适配器 / 5 路由端到端 51 条 / 反证 6 开关（假上游冒你有道，零网络秒级；D-129）
 # —— S7 真机端到端 E1–E11（逐项取证；总表见 docs/engine-e2e-acceptance-report.md）——
 npm run check:e3:real         # E3 真引擎全链路 31 张（一个 Task 两个 Batch + 落盘 + SSE 一致）8 条 · **真权重，分钟级，不进常规门**
 npm run check:e4[:refute]     # E4 档位切换：生效档位 vs 配置档位 / 未声明档位必须抛错（真服务 + 假引擎，秒级）6 条 / 反证 4 条

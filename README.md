@@ -31,7 +31,7 @@ miao-dock/
 │   └── src/tools/    共享纯函数（`@tools`：格式化 / 分页 / 模糊匹配 / UUID / MIME 嗅探），**不 import 业务层**
 ├── service/      box-service —— **唯一翻译入口**：鉴权 / 串行队列 / 编号分配 / 落盘（Node，127.0.0.1:5180–5190）
 │   ├── src/        **产品代码**：`server.mjs` 装配路由 · `config.mjs` / `errors.mjs` / `engine-client.mjs`（引擎适配，唯一耦合点）等**跨模块底座**
-│   │   ├── manga/     漫画翻译域：`store.mjs` 队列与落盘 · `image.mjs` · `names.mjs` · `sse.mjs`
+│   │   ├── manga/     漫画翻译域：`store.mjs` 队列与落盘 · `image.mjs` · `names.mjs` · `sse.mjs` · `translate/` 在线翻译（契约 / 注册 / 门面 / http / sse-parse / limiter / 设置 / 密钥 / `platforms/youdao.mjs`）
 │   │   ├── settings/  设置域：`engine-settings` · `engine-profile` · `model-status` · `idle-policy` · `tier-downgrade` · `llm-supervisor`
 │   │   └── music/     音乐域：服务端**占位**（逻辑在 Rust 侧 `app/src-tauri/src/music/`）
 │   └── scripts/    **运行期**脚本（只剩一个）：`print-launch-plan.mjs` —— Rust 启动时问它要「启动配方」
@@ -191,6 +191,7 @@ npm run check:retry           # 队列「重试」任务身份：复用**同一*
 npm run check:lib-manage      # 队列多选删除 + 漫画库隐藏/删除：仅终端态可删 / deleteFiles 勾选 / 越界名 403 / 前端接线 8 条 / 反证 4 条（反证：check:lib-manage:refute）
 npm run check:retranslate     # 单张漫画返工重译 + 全屏缩放：覆盖译文 / 不碰原图 / 与 resume 分工 / 缩放不抢音量键 12 条 / 反证 5 条（反证：check:retranslate:refute）
 npm run check:engine-settings # S6 引擎设置面：档位 / 后端 / 空闲 / 模型目录 + 模型下载状态 61 条（反证：check:engine-settings:refute）
+npm run check:translate      # ver2.2 在线翻译服务（有道智云）：签名 v3 / 四层超时 / 限流 / 三层设置 / 密钥隔离 / 契约适配器 / 5 路由端到端 51 条（反证：check:translate:refute，6 开关；假上游零网络秒级）
 npm run check:docs            # 文档 ↔ 实现一致性：条数对账 / 引用的命令存在 / 禁词 0 命中 / 分组覆盖 16 条
 npm run check:bundle          # Windows 打包配置钉子 4 条 / 反证 4 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；源码级，不起进程）
 ```

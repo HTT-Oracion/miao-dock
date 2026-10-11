@@ -51,7 +51,8 @@ alwaysApply: true
 
 **服务端模块目录（硬规则，ver2.2 起）**：`service/src/` 根**只留跨模块底座**
 （`server.mjs` / `config.mjs` / `errors.mjs` / `engine-client.mjs` / `multipart.mjs` / `parent-watch.mjs`）；
-业务域分子目录 `service/src/manga/`（漫画翻译）· `service/src/settings/`（设置 / 档位 / 诊断）·
+业务域分子目录 `service/src/manga/`（漫画翻译：`store` / `image` / `names` / `sse` / `translate` 在线翻译）·
+`service/src/settings/`（设置 / 档位 / 诊断：`engine-settings` / `engine-profile` / `model-status` / `idle-policy` / `tier-downgrade` / `llm-supervisor`）·
 `service/src/music/`（音乐，服务端**占位**，逻辑在 Rust 侧 `app/src-tauri/src/music/`）。
 🔴 **新增服务模块必须归入对应域目录**，不得平铺回 `service/src/` 根；只有**跨域共用**才上提到根。
 

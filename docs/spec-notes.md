@@ -5533,3 +5533,51 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 - **前端**：话卡菜单加「编辑话数」（无话号置灰）→ `EditChapterNoModal`（`modals.tsx`，校验口径与归并弹窗同一份正则；冲突预检 = 该书**其它**话已占的号）→ 屏内 `renumberChapter` 提交 + `onRefresh()`（左栏计数/话卡角标/URL 缓存键都随新目录走）。
 - **取证**：`check:lib-manage` 20→**24** 条（N10 改名成功 + 页文件原地保留 + episodes 重建 / N10b 占号 409 且目录不动 / N10c 在跑任务 409 / N10d 任务终态后改号恢复可用），反证 11→**13**（M12 去占号复检 ⇒ N10b 红、M13 去在跑门 ⇒ N10c 红），四源文件字节还原。
 - **e2e 手筋两枚**：① 话级返工必须给 `seqs` 限张（全量候选 = 整话原图 20 张 > `BATCH_LIMIT` ⇒ 400，任务建不起来，门没测先漏）；② 改号目标目录名是**零填充**的（`08_第8话` 不是 `8_第8话`），断言写错形态就是假红。
+
+## D-129 · 在线翻译服务 ver2.2：架构决策 + P-G1~P-G6 裁定 + 两处生产缺陷 + 验收（2026-10-11）
+
+**背景**：按《在线翻译服务-设计方案-ver2.2》（§11 T0–T6 分期）落地「在线翻译来源」。
+全部新服务模块归 `service/src/manga/translate/`（ver2.2 硬规则：新服务模块必须归域目录，D-101）；
+对外 5 条路由挂在 `server.mjs`（+192 行，含 P-D4 的 autostart 联动），错误码扩表进 `errors.mjs`。
+
+**架构决策（实现期拍板，方案 §4 的具体化）**
+
+- **契约式适配器 + 注册表 + 门面三层**：`contract.mjs`（`assertAdapter` 启动自检形状，缺方法当场炸，不留到运行期）· `registry.mjs`（`FACTORIES` 仅 youdao，测试期可加 fake）· `index.mjs` 门面（translateText / translateStream / configureTranslate / saveTranslateSettings / saveTranslateCredentials / translateOptionsView / currentTranslateSource / translateApiError）。门面**不认任何平台**——"新增平台不改门面"由契约层保证。
+- **text 与 llm 是两个方法而不是一个 + stream 布尔**（§4.1）：两类**失败语义不同**——流式吐了一半不能静默重试。合成一个方法，调用方无法表达"我接受流式语义"。
+- **单一耦合点**：`platforms/youdao.mjs` 是有道细节（签名 v3 / 双判 / 参数裁剪 / 语言码）的**唯一**落点，与 `engine-client.mjs` 同范式。
+- **密钥隔离**（P-G2 裁定①）：`state/translate-credentials.json`（0600），与 settings 分文件；任何响应与诊断视图只回 `{appKey, hasSecret}`，**不回 secret**（`REFUTE.echoSecret` 逃生开关盯着 K1 断言）。
+
+**P-G1~P-G6 裁定**（方案 §12 六条待裁定，结论全部落代码）：
+
+| 编号 | 裁定 | 落点 |
+| --- | --- | --- |
+| P-G1 | llm-trans 走 **form**（跟 curl 示例，不信自相矛盾的协议表；只影响真联调） | `platforms/youdao.mjs` `postStream({fields})` |
+| P-G2 | 密钥**单独文件**（方案倾向①） | `credentials.mjs` → `state/translate-credentials.json` |
+| P-G3 | `splitLines` **默认关**且**不进设置**——逐请求参数；上游逐行结果须与源行数相等才采用 | `index.mjs` `splitLines: !!splitLines`；settings 白名单 6 键无此键 |
+| P-G4 | `langCode(short, api)` **按接口分表**（llm/text 的语言码集不同，合并单表会给错码） | `youdao.mjs:210` |
+| P-G5 | **不做**余额/额度主动查询，靠 401/411 被动感知（5 条路由里没有 status） | `server.mjs` 5 路由 |
+| P-G6 | 随实现落台账 = 本条目 | 本文 |
+
+**模块落点偏离说明**：方案 §附「直接引用的既有代码」表写的是 ver1.0 平铺路径（`service/src/sse.mjs` 等）；实际按 D-101 落在 `service/src/manga/`（sse / names / store 同域复用，不复制）。§11 的 T0–T6 模块名与域内实际文件一一对应：contract / registry / errors / http / sse-parse / limiter / settings / credentials → `translate/` 同名；youdao → `translate/platforms/youdao.mjs`；门面 → `translate/index.mjs`。
+
+**两处生产缺陷（实现期自发现，已修 + 各由反证钉住）**
+
+1. **`translateOptionsView` 的 fileIssues 上报缺口**：`settings.mjs` 读路径纪律承诺"未知键/非法值丢弃 + 上报"，但 options 视图只回 platforms/settings/sources/credentials ⇒「设置文件里有未知键」在界面上无迹可寻。修：`currentMerged()` 把盘上 read 结果（exists/corrupt/reason/unknownKeys/invalid）一并带回，options 视图新增 `fileIssues` 五键（4 处调用点只取 `.settings`，无破坏）。
+2. **llm 流式不判 HTTP 状态码**：上游 5xx + 垃圾体 ⇒ `parseLineJsonStream` 静默跳过非 JSON 行 ⇒ 返回**空译文 + translate.done**——用户看到的是"译了一整遍，结果是空的"（text 路径有 `JSON.parse` 兜底，流式没有，这一判只能在解析第一行之前做）。修：非 2xx 判死抛 `TRANSLATE_UPSTREAM_ERROR` 带 `httpStatus`（5xx 可重试 ⇒ llm 500 用例 hits=2 成立）。
+
+**T4 connect 层结论**：四层超时（connect 5s / ttfb 15s·20s / idle 20s / total 30s）里 **connect 与 total 在黑洞地址上同义**（连不上 ⇒ 永远连不上，total 到点前 connect 必先炸）。T4 用例（`MIAO_TRANSLATE_CONNECT_MS` + idle 放到 60s + 请求级 800ms）验的是 **total 层**；connect 层由 T1（400ms）单独钉。黑洞候选 `192.0.2.1 / 10.255.255.1 / 198.51.100.1` 运行时探测（400ms 挂住不报错才算"挂住"），探不到则断言失败，**不静默跳过**。
+
+**已知瑕疵（验收 B 报告，未修，不影响判定）**：llm `code:"0"` 但 `successful:false` 时，`upstreamError('llm', obj.code)` 收到 `"0"`，归一消息为"上游返回未登记的错误码 0"——诊断文案有误导性（真正原因是双判未过）。留待后续节点修。
+
+**验收**
+
+- `check:translate`（`e2e/service/translate-check.mjs`）：假上游 = 进程内 `http.Server` 冒你有道，**同算法独立验签**（逐 hit 记 signOk）+ salt 防重放（同 salt 回 207）+ hits 记账 + peakInflight。**51 条全绿**：S 签名与协议 13 · T 四层超时 4 · L 限流 2 · C 三层设置 6 · K 密钥隔离 4 · A 契约与适配器 12 · R 路由端到端 8（R 组起真服务子进程，跨进程用内容触发）+ COUNT + RUN。
+- `check:translate:refute`：**6/6 按预期变红**——NO_TRUNCATE→S1 · REUSE_SALT→S4/T2/T3/T4/A9/A10（级联：一切重试都撞 207）· IDLE_AS_TOTAL→T3 · ECHO_SECRET→K1 · STREAM_RETRY_AFTER_FIRST→S7 · SWAP_JUDGE→19 条（级联：所有成功类断言全红）。无未变红、无额外变红。
+- 受影响既有断言复跑全绿：`check:settings` 176/0 · `check:ia` 32/0 · `check:units` 45/0 · `check:autostart` 12/0 · `check:contract` 77/0 · `check:e10` 7/0 · `check:engine-client` 50/0 · `check:docs` 16/0；`tsc --noEmit` 0 错误 + `vite build` 通过。
+
+**既有基线红登记（两条，均非本轮引入，已取证；修法是独立节点，按 AGENTS §2「不得为转绿而放宽」，本条目不动）**
+
+| 检查 | 现象 | 根因 | 取证 |
+| --- | --- | --- | --- |
+| `selftest:service` | 134/1：`ERR_UNKNOWN_SIGNAL: SIGSTOP` | A20 组脚本 `kill('SIGSTOP')`——Windows 无此信号（脚本为 macOS 开发机写法） | 脚本文件 `git status` 无改动；异常在测试脚本自身抛出，早于任何路由交互 |
+| `check:engine-settings` | 55/6：S4/S5/S7/S9/S9b/S10b | 断言按 **16GB / Metal Mac** 写死，本机 **15.7GB / CUDA**：S4 正则 `/16 GB/` 不匹配"15.7 GB"；S5 期望 cuda 被拒但本机合法（200 且写盘）⇒ S7 文件存在；15.7GB 上 small 档物理不可行 ⇒ S9 的 `tier=small` 被 400 ⇒ S9b/S10b 级联 | `git stash` 回 HEAD 干净树复跑**同样 6 条红**（55/6 逐条一致），与本轮改动无关 |
