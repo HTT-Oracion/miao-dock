@@ -444,78 +444,87 @@ export function TranslateSection({
         ) : null}
 
         {/*
-          在线配置块（P-D6：只留平台 + appKey + appSecret + 保存）。
+          在线配置块。
 
-          显示条件是 `srcOnline || settingsDirty` 而不是只有 `srcOnline`：
-          从在线切回本地引擎时草稿与生效值有差异，块必须留着让用户按得到「保存」——
-          否则那条切换路径没有入口（切回本地是要停掉整条在线链路的动作，不能只靠猜）。
+          🔴 平台 / appKey / appSecret **只在「在线 API」时出现**：选了本地引擎，这三个
+          控件一个都用不上，摆着只是一片"点了没作用的表单"。但**块本身**的条件仍是
+          `srcOnline || settingsDirty` —— 从在线切回本地引擎时草稿与生效值有差异，
+          块必须留着让用户按得到「保存」，否则那条切换路径没有入口
+          （切回本地是要停掉整条在线链路的动作，不能只靠猜）。
         */}
         {srcOpts && (srcOnline || settingsDirty) ? (
           <div className="set-src">
-            <div className="set-src-line">
-              <span className="set-src-k">平台</span>
-              <Select
-                label="在线翻译平台"
-                value={draftPlatform}
-                options={platformOptions}
-                onChange={setDraftPlatform}
-              />
-            </div>
-            <div className="set-src-line">
-              <span className="set-src-k">appKey</span>
-              <input
-                className="set-src-in"
-                type="password"
-                value={draftKey}
-                onChange={(e) => setDraftKey(e.target.value)}
-                placeholder="请输入平台应用 ID"
-                aria-label="appKey"
-              />
-            </div>
-            <div className="set-src-line">
-              <span className="set-src-k">appSecret</span>
-              <input
-                className="set-src-in"
-                type="password"
-                value={draftSecret}
-                onChange={(e) => setDraftSecret(e.target.value)}
-                placeholder={credView?.hasSecret ? '••••••••' : '请输入平台应用密钥'}
-                aria-label="appSecret"
-              />
-            </div>
+            {srcOnline ? (
+              <>
+                <div className="set-src-line">
+                  <span className="set-src-k">平台</span>
+                  <Select
+                    label="在线翻译平台"
+                    value={draftPlatform}
+                    options={platformOptions}
+                    onChange={setDraftPlatform}
+                  />
+                </div>
+                <div className="set-src-line">
+                  <span className="set-src-k">appKey</span>
+                  <input
+                    className="set-src-in"
+                    type="password"
+                    value={draftKey}
+                    onChange={(e) => setDraftKey(e.target.value)}
+                    placeholder="请输入平台应用 ID"
+                    aria-label="appKey"
+                  />
+                </div>
+                <div className="set-src-line">
+                  <span className="set-src-k">appSecret</span>
+                  <input
+                    className="set-src-in"
+                    type="password"
+                    value={draftSecret}
+                    onChange={(e) => setDraftSecret(e.target.value)}
+                    placeholder={credView?.hasSecret ? '••••••••' : '请输入平台应用密钥'}
+                    aria-label="appSecret"
+                  />
+                </div>
+              </>
+            ) : null}
+            {/*
+              「保存密钥」只在在线时给：「保存」写 settings、「保存密钥」写 credentials，
+              两个端点、两份文件 —— 合并成一个按钮就分不清是哪一半被拒了，而两种失败的
+              补救动作完全不同（改选项 vs 重新填密钥）。
+            */}
             <div className="set-src-acts">
               <Btn kind="primary" disabled={!settingsDirty || srcBusy} onClick={() => void saveSrcSettings()}>
                 保存
               </Btn>
-              {/*
-                两个按钮**分开**是敲定的：「保存」写 settings、「保存密钥」写 credentials。
-                服务端两个端点、盘上两份文件，合并成一个按钮就分不清是哪一半被拒了 ——
-                而两种失败的补救动作完全不同（改选项 vs 重新填密钥）。
-              */}
-              <Btn
-                kind="ghost"
-                disabled={!draftSecret || srcBusy}
-                title={
-                  draftSecret
-                    ? '把 appKey 与 appSecret 写入本机 0600 密钥文件（appSecret 提交后永不回显）'
-                    : 'appSecret 为空 —— 密钥只写不读，空提交不会改变任何东西'
-                }
-                onClick={() => void saveSrcCredentials()}
-              >
-                保存密钥
-              </Btn>
+              {srcOnline ? (
+                <Btn
+                  kind="ghost"
+                  disabled={!draftSecret || srcBusy}
+                  title={
+                    draftSecret
+                      ? '把 appKey 与 appSecret 写入本机 0600 密钥文件（appSecret 提交后永不回显）'
+                      : 'appSecret 为空 —— 密钥只写不读，空提交不会改变任何东西'
+                  }
+                  onClick={() => void saveSrcCredentials()}
+                >
+                  保存密钥
+                </Btn>
+              ) : null}
             </div>
-            <div className="set-src-note">
-              密钥<b>只写不读</b>：appSecret 提交后永不回显，两个密钥框都以掩码显示（明文不上屏）。
-              盘上已有 appSecret 时该框以掩码点占位 —— 留空提交 = 保持原样，填新的即覆盖。
-            </div>
+            {srcOnline ? (
+              <div className="set-src-note">
+                密钥<b>只写不读</b>：appSecret 提交后永不回显，两个密钥框都以掩码显示（明文不上屏）。
+                盘上已有 appSecret 时该框以掩码点占位 —— 留空提交 = 保持原样，填新的即覆盖。
+              </div>
+            ) : null}
           </div>
         ) : null}
 
         <RowNote>
-          本地引擎：翻译在本机完成（下方「推理引擎」「模型与诊断」两小节管的就是它）。
-          在线 API：原文发给第三方平台，密钥只写不读。切换来源对<b>下一次</b>翻译生效，
-          进行中的任务按发起时的来源跑完（P-D1：来源是服务的设置，不是任务属性）。
+          本地引擎在本机完成翻译；在线 API 把原文发给第三方平台。
+          切换来源对<b>下一次</b>翻译生效，进行中的任务按发起时的来源跑完。
         </RowNote>
       </div>
 

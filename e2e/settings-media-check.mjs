@@ -2332,6 +2332,48 @@ add('SIMPLIFY.secret.masked', 'SIMPLIFY', (ctx) => {
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
+add('SIMPLIFY.translate.noSpecRefs', 'SIMPLIFY', (ctx) => {
+  /*
+   * 「翻译来源」的用户可见文案**不再出现需求 / 设计稿引用**：
+   * `P-D\d`（需求条目号）、`《…》`（设计稿）、`§n`（章节号）、`ver2.2`（改版过程号）。
+   *
+   * 背景：这一小节原先把设计过程直接写进界面（组说明里的"（P-D1）""ver2.2 加进来的
+   * 第一小节"、行内 why 里的"（P-D5）"）——读起来是给评审看的，不是给用户看的。
+   *
+   * ⚠️ 判据**只圈翻译来源**：② 的其它小节（模型与诊断的 why 仍写着《02》§5、③ 媒体组说明
+   * 写着《09》§5.6）同类引用还在，不在本轮范围。**判据不许比政策宽** —— 一句"整个 catalog
+   * 都不许有引用"会立刻变红，而唯一的解红方式是把它改回来（判据就此失去意义）。
+   *
+   * 三个出口都要查，少一个等于漏一处：① 组说明 `note`；② `source` 组各项的文案；
+   * ③ sections.tsx 里「翻译来源」那一段 JSX（RowNote / 掩码说明都在里面）。
+   */
+  const dataErr = CAT_ERR(ctx.cat);
+  if (dataErr) return { ok: false, detail: dataErr };
+  const sec = ctx.cat.mod.TRANSLATE;
+  const ref = /P-[A-Z]\d|《[^》]*》|§\s*\d|ver\d+\.\d+/;
+  const hits = [];
+  const problems = [];
+  const probe = (where, text) => {
+    const m = ref.exec(typeof text === 'string' ? text : '');
+    if (m) hits.push(`${where} 里的「${m[0]}」`);
+  };
+  probe('组说明 note', sec.note);
+  const grp = (sec.groups ?? []).find((g) => g.id === 'source');
+  if (!grp) problems.push('② 里找不到 source 组（翻译来源）');
+  // 只展平**这一个组**：整段 TRANSLATE 会把模型与诊断那一项的《02》§5 也算进来（判据过宽）
+  else for (const it of flatItems({ groups: [grp] })) {
+    probe(`项 ${it.id}.why`, it.why);
+    probe(`项 ${it.id}.def`, it.def);
+  }
+  const body = stripComments(ctx.s.sections);
+  const a = body.indexOf('<SubTitle>翻译来源');
+  const b = a < 0 ? -1 : body.indexOf('<SubTitle>服务与配对', a);
+  if (a < 0 || b < 0) problems.push('sections.tsx 里「翻译来源」小节边界找不到（判据圈不住）');
+  else probe('sections 翻译来源 JSX', body.slice(a, b));
+  problems.push(...hits.map((h) => `仍有需求/设计稿引用：${h}`));
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
 add('SIMPLIFY.select.pulledRight', 'SIMPLIFY', (ctx) => {
   /*
    * 拍板：「说明在前、下拉**贴最右**」。
@@ -3710,18 +3752,20 @@ const MUTATIONS = [
   },
 
   // ———密钥掩码：两个框各破坏一次（只破坏一个测不出"两个都漏改"）———
+  // ⚠️ 锚点跨行 ⇒ 第 2、3 行的**缩进必须与 sections.tsx 一致**（这两条曾因在线块加了一层
+  // 缩进而"锚点未找到"被静默跳过 —— 跳过 ≠ 通过，脚本会打印 ⚠ 并让退出码非 0）。
   {
     name: '把 appKey 框改回明文（保存后密钥直接铺在屏幕上）',
     file: F.sections,
-    find: '                className="set-src-in"\n                type="password"\n                value={draftKey}',
-    replace: '                className="set-src-in"\n                value={draftKey}',
+    find: 'className="set-src-in"\n                    type="password"\n                    value={draftKey}',
+    replace: 'className="set-src-in"\n                    value={draftKey}',
     expect: ['SIMPLIFY.secret.masked'],
   },
   {
     name: '把 appSecret 框改回明文（保存后密钥直接铺在屏幕上）',
     file: F.sections,
-    find: '                className="set-src-in"\n                type="password"\n                value={draftSecret}',
-    replace: '                className="set-src-in"\n                value={draftSecret}',
+    find: 'className="set-src-in"\n                    type="password"\n                    value={draftSecret}',
+    replace: 'className="set-src-in"\n                    value={draftSecret}',
     expect: ['SIMPLIFY.secret.masked'],
   },
   {
@@ -3730,6 +3774,13 @@ const MUTATIONS = [
     find: "credView?.hasSecret ? '••••••••' :",
     replace: "credView?.hasSecret ? '已保存 · 留空则不更改' :",
     expect: ['SIMPLIFY.secret.masked'],
+  },
+  {
+    name: '把需求条目号写回「翻译来源」文案（界面又变成给评审看的）',
+    file: F.catalog,
+    find: "'「翻译来源」二选一：本地引擎（默认）/ 在线 API",
+    replace: "'「翻译来源」二选一（P-D1）：本地引擎（默认）/ 在线 API",
+    expect: ['SIMPLIFY.translate.noSpecRefs'],
   },
 ];
 

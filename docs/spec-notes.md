@@ -5646,3 +5646,25 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 - 反证：**三条**（appKey 改回明文 / appSecret 改回明文 / appSecret 占位态改回文字，各破坏一次，都指向同一断言）—— 只破坏一个测不出"两个都漏改"。`check:settings:refute` 120→**123**。
 
 **验收**：`check:settings` **177/0** · `check:settings:refute` **123/123**（无跳过 / 无假阳性 / 破坏文件按字节复原）· `check:docs` 16/0 · `tsc --noEmit` 0 · `vite build` 通过。
+
+---
+
+## D-132 · 「翻译来源」去需求/设计稿引用 + 在线配置块按来源显示（2026-10-11）
+
+**诉求**：② 「在线翻译」的用户可见文案里混着**给评审看**的东西（需求条目号 `P-Dx`、设计稿 `《xx》§`、改版过程号 `ver2.2 加进来的…`）；且平台 / appKey / appSecret 在「本地引擎」时也照常显示 —— 一排用不上的控件。
+
+**清掉的三处（翻译来源）**
+
+- `catalog.ts` `TRANSLATE.note`：删「（P-D1）」与「「翻译来源」是 ver2.2 加进来的第一小节」，改写为「在这里选一次，之后所有翻译都按它走」（noteSummary 三段仍是 note 子串，`SIMPLIFY.notesummary.verbatim` 不破）。
+- `catalog.ts` `translate-source.why`（行内 `set-row-why is-one`）：删「（P-D1）」「（P-D5）」与设计说明（投放/队列/重试/返工/插件都不加来源控件），改为一句用户向描述。
+- `sections.tsx` 翻译来源 `<RowNote>`：删「（P-D1：来源是服务的设置，不是任务属性）」与「下方两小节管的就是它」的交叉引用。
+
+**⚠️ 未清（不在在线翻译范围，同类引用仍在）**：`model-dir.why` 的「《02》§5」、③ 媒体组说明的「拍板《09》§5.6」。要清就一起清，判据圈定范围再一起放宽 —— **判据不许比政策宽**。
+
+**在线配置块改为按来源显示**：平台 / appKey / appSecret **只在「在线 API」时出现**；「保存密钥」与密钥注解同样只在在线时给。**块本身**的条件仍是 `srcOnline || settingsDirty` —— 从在线切回本地引擎时要留着「保存」按钮（否则那条切换路径没有入口），只是块里只剩一枚按钮。
+
+**钉子**：新增 `SIMPLIFY.translate.noSpecRefs`（`check:settings` 177→**178**）—— 三个出口都查（组说明 note / source 组各项文案 / sections 里「翻译来源」那段 JSX），命中 `P-D\d`·`《…》`·`§n`·`ver2.2` 即红。反证一条（把 `P-D1` 写回组说明 ⇒ 红该断言）。`check:settings:refute` 123→**124**。
+
+- 🔴 复修记录：把在线块套进一层 `{srcOnline ? … }` 后，**两条密钥掩码反证**跨行锚点的缩进失配 ⇒「锚点未找到」被**静默跳过**（REFUTE 报 122/122，应执行 124）。跨行锚点的缩进与目标文件耦合是这脚本的固有坑（同 D-94）；已把锚点改为**起始行不带缩进**（`className=…` 起）并加注释。**跳过 ≠ 通过**，退出码会非 0。
+
+**验收**：`check:settings` **178/0** · `check:settings:refute` **124/124**（无跳过 / 无假阳性 / 破坏文件按字节复原）· `check:docs` 16/0 · `tsc --noEmit` 0 · `vite build` 通过。
