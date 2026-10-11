@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { fmtTime } from '@music/store';
+import { ListEnd, Play } from 'lucide-react';
+import { fmtTime, useMusicStore } from '@music/store';
 import { providerLabel } from '@music/platform';
 import type { Song } from '@music/types';
-import { useSongMenu } from '@screens/music/SongMenu';
+import { ContextMenu, MenuItem } from '@components/units';
 
 /**
  * 音乐屏共享小组件 —— 只放**音乐语义**的东西。
@@ -82,15 +84,20 @@ export function SongRow({
   showCover?: boolean;
   duration?: number;
 }) {
-  // 菜单由行自己持有：一行一个菜单实例，互不干扰；开关与定位的机制在 useSongMenu 里只有一份
-  const menu = useSongMenu();
+  const playSong = useMusicStore((s) => s.playSong);
+  const playNext = useMusicStore((s) => s.playNext);
+  // 一行一个菜单实例：开关 / 定位 / 关闭时机全交给通用单元 ContextMenu，行只负责"什么时候开"
+  const [menu, setMenu] = useState<{ x: number; y: number; song: Song; onPlay?: () => void } | null>(null);
   // Song.duration 的单位是**毫秒**（与 Rust models.rs 的契约一致），不要再乘 1000
   const durMs = duration ?? song.duration;
   return (
     <div
       className={active ? 'music-row is-hot' : 'music-row'}
       onClick={onClick}
-      onContextMenu={(e) => menu.open(e, song, onPlay)}
+      onContextMenu={(e) => {
+        e.preventDefault(); // 关掉系统右键菜单，否则两层菜单叠在一起
+        setMenu({ x: e.clientX, y: e.clientY, song, onPlay });
+      }}
     >
       {leading}
       {showCover ? <Cover url={cover ?? ''} /> : null}
@@ -100,8 +107,32 @@ export function SongRow({
       </div>
       {durMs ? <span className="music-dur">{fmtTime(durMs)}</span> : null}
       {actions ? <div className="music-row-act">{actions}</div> : null}
-      {/* 菜单 portal 到 body（列表是滚动容器，挂在行内会被裁掉）—— 放这里只为复用同一份开关逻辑 */}
-      {menu.node}
+      {/* 菜单 portal 到 body（列表是滚动容器，挂在行内会被裁掉） */}
+      {menu ? (
+        <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
+          {(close) => (
+            <>
+              <MenuItem
+                icon={<Play size={13} />}
+                label="播放"
+                onClick={() => {
+                  close(); // 先关再执行：动作里可能弹 toast / 换视图，留着菜单会挡住
+                  if (menu.onPlay) menu.onPlay();
+                  else void playSong(menu.song);
+                }}
+              />
+              <MenuItem
+                icon={<ListEnd size={13} />}
+                label="下一首播放"
+                onClick={() => {
+                  close();
+                  playNext(menu.song);
+                }}
+              />
+            </>
+          )}
+        </ContextMenu>
+      ) : null}
     </div>
   );
 }

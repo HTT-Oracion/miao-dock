@@ -23,6 +23,7 @@
 | D-139 | 抽 `atomic-file.mjs` 底座 + store 任务状态改原子写 | service |
 | D-140 | 接入 CI（双平台）+ 跨平台写死断言改平台忠实 | e2e / 基建 |
 | D-141 | `image.mjs` 上移底座 + 新增 `check:layering` 依赖方向钉子 | service |
+| D-142 | 删 `SongMenu` 并入 `units/ContextMenu`（+ 连带重写 MENU 判据组） | app 前端 |
 
 ---
 
@@ -296,3 +297,58 @@ ubuntu + macos 双平台，Node 22。必过门：
 ### 验收
 
 `check:layering` 3/0 · `check:layering:refute` 3/3 · `selftest:service` 134/1（1 条既有 Windows 环境性红）· `check:docs` 见下。
+
+---
+
+## D-142 · 删 `SongMenu` 并入 `units/ContextMenu`（+ 连带重写 MENU 判据组）（2026-10-11）
+
+审计（`code-audit-report.md` §2.5a）指出：`screens/music/SongMenu.tsx`（140 行）
+**完整复刻**了 `components/units/ContextMenu.tsx`（75 行）的四监听器机制
+（`mousedown` 捕获 / `keydown` 捕获 / `scroll` 捕获 / `resize`），
+连注释都在解释同一个「scroll 不冒泡」的理由。同一应用里菜单项长两副面孔。
+
+### 为什么这次能做（上一次暂缓）
+
+上一批**评估后暂缓**过：它牵动 `check:music` 的 **8 条 MENU 判据 + 9 条反证 + CSS 组**，
+全部锚在 `SongMenu.tsx` 内部实现上。这次按其本来面目**连带重写**这些判据。
+
+### 改法
+
+1. **删** `screens/music/SongMenu.tsx`。
+2. `shared.tsx::SongRow` 与 `QueueDrawer` 各自持 `menu` state（`{x,y,song,onPlay?}`），
+   右键 `e.preventDefault()` + `setMenu(...)`，用 `<ContextMenu>` + `<MenuItem>` 渲染。
+   **`onPlay` 语义不变**：宿主给了用宿主的，没给退 `playSong(song)`（队列行不给 → 走兜底）。
+3. 🔴 `ContextMenu` 根节点补 `onClick={e => e.stopPropagation()}` + `onContextMenu={e => e.preventDefault()}` ——
+   portal 事件沿 **React 树** 冒泡回宿主行，不截断就是「点菜单项 = 顺带点了这一行」。
+   这是原 `SongMenu` 里那段 `stopPropagation` 的**通用化**（菜单项自身不必各截一次）。
+4. 🔴 **z-index 不能简单照搬**：原 `.music-menu` 是 **78**（必须高于队列抽屉 72 / 展开播放器 70），
+   而 `.ui-menu` 是 **60** ⇒ 直接换会被抽屉压住。改法：给右键菜单单列一条
+   `.ui-menu.ui-ctx { z-index: 78 }`（普通下拉 MenuButton 不带 `.ui-ctx`，仍 60）。
+5. 删 `.music-menu` / `.music-menu-item`（已成死 CSS）。
+
+### 判据搬迁（机制 → units，语义 → 宿主）
+
+| 判据 | 原判 | 今判 |
+|---|---|---|
+| `MENU.portal` / `closeCapture` / `scrollCapture` / `esc` / `flip` / `noBubble` / `css` | `SongMenu.tsx` | **`units/ContextMenu.tsx`**（+ `components.scss`） |
+| `MENU.playSemantics` / `nextItem` / `rowContextMenu` | `SongMenu.tsx` | `shared.tsx`（`SongRow`） |
+| `MENU.queueRow` | `QueueDrawer.tsx`（判 `useSongMenu`） | 同文件（判 `useState` + `<ContextMenu>`） |
+| `MENU.noDownload` | `SongMenu.tsx` | 三处菜单来源（`shared` / `queueDrawer` / `contextMenu`） |
+
+判据**条数不变**（12 条），故 `check:music` 仍是 216 条。
+
+### 断言
+
+反证锚点同步重定向（9 条）：`document.body` 缩进由 8 空格改 4（ContextMenu 嵌套更浅）——
+首轮 refute 因此报「锚点未找到」，修正后 **184/184 全中、零跳过**。
+
+### 验收
+
+`check:music` **216/3**（3 条为既有环境性红：ISLANDV / RESTORE / KEYS）·
+`check:music:refute` **184/184** · `check:units` 45/0 · `check:settings` 180/0 ·
+`tsc --noEmit` 0 · `vite build` 通过。
+
+### 附：顺带修正一处陈旧计数
+
+`AGENTS.md` 原写 `check:music … 反证 182 条`，实际已是 184（D-137 一带的改动所致）。
+已改 184。（该数不被 `check:docs` 机器核对——它只核对**通过**条数 216——故此前无人发现。）

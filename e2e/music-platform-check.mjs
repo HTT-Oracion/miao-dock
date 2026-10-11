@@ -72,7 +72,8 @@ const F = {
   hotkeys: path.join(APP, 'src', 'hooks', 'useMusicHotkeys.ts'),
   musicUiDir: path.join(APP, 'src', 'screens', 'music'),
   // ── 歌曲右键菜单（MENU 组）── 逐文件判定，避免"某个写法在别的文件里也有"造成假绿
-  songMenu: path.join(APP, 'src', 'screens', 'music', 'SongMenu.tsx'),
+  // 菜单机制已收口到通用单元 `ContextMenu`（D-142），故机制类判据判它、语义类判据判宿主。
+  contextMenu: path.join(APP, 'src', 'components', 'units', 'ContextMenu.tsx'),
   songRowShared: path.join(APP, 'src', 'screens', 'music', 'shared.tsx'),
   queueDrawer: path.join(APP, 'src', 'screens', 'music', 'QueueDrawer.tsx'),
   leftPanel: path.join(APP, 'src', 'screens', 'music', 'LeftPanel.tsx'),
@@ -87,6 +88,8 @@ const F = {
   // flex-shrink）经逐条核对**唯一**命中 music.scss，其余分片无同文本 —— 唯一性是
   // 反证能生效的前提，若同一文本在两个分片出现，改一个另一个仍在，断言就不会变红。
   musicScss: path.join(APP, 'src', 'styles', 'music.scss'),
+  // 右键菜单样式已收口到 components.scss 的 .ui-menu（D-142），反证要按 file 改它
+  componentsScss: path.join(APP, 'src', 'styles', 'components.scss'),
   stylesDir: path.join(APP, 'src', 'styles'),
   srcDir: path.join(APP, 'src'),
   rustSrcDir: path.join(APP, 'src-tauri', 'src'),
@@ -211,7 +214,7 @@ function loadSources() {
     hotkeys: readMaybe(F.hotkeys),
     // 全分片拼接（顺序 = index.scss 的 @use 顺序 = 层叠顺序），不是读单个 app.css
     css: readStyleSource(F.stylesDir),
-    songMenu: readMaybe(F.songMenu),
+    contextMenu: readMaybe(F.contextMenu),
     songRowShared: readMaybe(F.songRowShared),
     queueDrawer: readMaybe(F.queueDrawer),
     leftPanel: readMaybe(F.leftPanel),
@@ -3027,7 +3030,7 @@ function exportSection(src, name) {
 }
 
 add('MENU.portal', 'MENU', (s) => {
-  const src = stripComments(s.songMenu ?? '');
+  const src = stripComments(s.contextMenu ?? '');
   const missing = [];
   if (!/\bcreatePortal\s*\(/.test(src)) missing.push('菜单没走 createPortal');
   // 目标必须是 body：列表都在 overflow 容器里，挂在行内会被裁掉
@@ -3052,7 +3055,7 @@ const isCaptureListener = (src, evt, handler) =>
   ).test(src);
 
 add('MENU.closeCapture', 'MENU', (s) => {
-  const src = stripComments(s.songMenu ?? '');
+  const src = stripComments(s.contextMenu ?? '');
   const missing = [];
   // 必须是 mousedown + 捕获阶段：click 到达 window 时行的 onClick 已经先跑完 →
   // 点菜单项会顺带播放这一行（用户只看到"歌切了"，说不清为什么）
@@ -3064,70 +3067,68 @@ add('MENU.closeCapture', 'MENU', (s) => {
 });
 
 add('MENU.scrollCapture', 'MENU', (s) => {
-  const src = stripComments(s.songMenu ?? '');
+  const src = stripComments(s.contextMenu ?? '');
   const missing = [];
   // scroll **不冒泡**：只有捕获阶段的 window 监听能听到内层容器的滚动，否则菜单飘在原处
-  if (!isCaptureListener(src, 'scroll', 'onViewChange'))
+  if (!isCaptureListener(src, 'scroll', 'onClose'))
     missing.push('scroll 监听不是捕获阶段（听不到内层容器滚动 → 菜单与内容脱节）');
   if (!/addEventListener\(\s*['"]resize['"]\s*,/.test(src)) missing.push('resize 未关闭菜单');
   return { ok: missing.length === 0, detail: missing.length ? `视口变化关闭：${missing.join('、')}` : '' };
 });
 
 add('MENU.esc', 'MENU', (s) => {
-  const src = stripComments(s.songMenu ?? '');
+  const src = stripComments(s.contextMenu ?? '');
+  // ContextMenu 用「!== 'Escape' 早返回」的写法（而非 === 分支），故判据认这两种形态
   const ok =
     /addEventListener\(\s*['"]keydown['"]/.test(src) &&
-    /e\.key\s*===\s*['"]Escape['"]/.test(src) &&
-    /\bclose\(\)/.test(src);
+    /e\.key\s*!==\s*['"]Escape['"]/.test(src) &&
+    /\bonClose\(\)/.test(src);
   return { ok, detail: ok ? '' : 'Esc 不能关闭菜单（缺 keydown 监听或没判 Escape）' };
 });
 
 add('MENU.flip', 'MENU', (s) => {
-  const src = stripComments(s.songMenu ?? '');
+  const src = stripComments(s.contextMenu ?? '');
   const missing = [];
-  if (!/x\s*\+\s*MENU_W\s*>\s*window\.innerWidth/.test(src)) missing.push('未判右边界');
-  if (!/y\s*\+\s*MENU_H\s*>\s*window\.innerHeight/.test(src)) missing.push('未判下边界');
-  // 光判边界不算翻转：必须真的把坐标减去估算尺寸
-  if (!/x\s*-\s*MENU_W/.test(src)) missing.push('右边放不下时没有翻到左侧');
-  if (!/y\s*-\s*MENU_H/.test(src)) missing.push('下边放不下时没有翻到上方');
-  return { ok: missing.length === 0, detail: missing.length ? `视口边缘翻转：${missing.join('、')}` : '' };
+  // 量**真实尺寸**后夹进视口（比常量估算准：菜单没渲染时拿不到真宽高）
+  if (!/getBoundingClientRect\(\)/.test(src)) missing.push('未量菜单真实尺寸');
+  if (!/window\.innerHeight\s*-\s*r\.height/.test(src)) missing.push('未判下边界');
+  if (!/window\.innerWidth\s*-\s*r\.width/.test(src)) missing.push('未判右边界');
+  if (!/Math\.max\(8,\s*Math\.min\(/.test(src)) missing.push('未把坐标夹进视口（贴边会溢出）');
+  return { ok: missing.length === 0, detail: missing.length ? `视口边缘夹取：${missing.join('、')}` : '' };
 });
 
 add('MENU.noBubble', 'MENU', (s) => {
-  const src = stripComments(s.songMenu ?? '');
-  const n = (src.match(/e\.stopPropagation\(\)/g) || []).length;
-  // 3 处 = 菜单根节点 + 两个菜单项。portal 的事件沿 **React 树** 冒泡回行，
-  // 少一处就等于"点某一项 = 顺带点了这一行"。
-  return {
-    ok: n >= 3,
-    detail: n >= 3 ? '' : `stopPropagation 只有 ${n} 处（应为 3：菜单根节点 + 播放 + 下一首播放）`,
-  };
+  const src = stripComments(s.contextMenu ?? '');
+  // portal 的事件沿 **React 树** 冒泡回宿主；宿主是可点击的行时，根节点必须截断 onClick，
+  // 否则「点菜单项 = 顺带点了这一行」（行 onClick 会播这首歌）。
+  const ok = /onClick=\{\(e\)\s*=>\s*e\.stopPropagation\(\)\}/.test(src);
+  return { ok, detail: ok ? '' : '菜单根节点没有截断 onClick（点菜单项会顺带触发宿主行的点击）' };
 });
 
 add('MENU.playSemantics', 'MENU', (s) => {
-  const src = stripComments(s.songMenu ?? '');
+  const src = stripComments(s.songRowShared ?? '');
   const missing = [];
   // 宿主给了 onPlay 就用宿主的（与左键点击同一语义）……
-  if (!/if\s*\(\s*st\.onPlay\s*\)\s*st\.onPlay\(\s*\)/.test(src))
+  if (!/if\s*\(\s*menu\.onPlay\s*\)\s*menu\.onPlay\(\s*\)/.test(src))
     missing.push('「播放」没有优先用宿主的 onPlay');
   // ……没给才退回 playSong：绝不在这里猜一个"大概对"的语义
-  if (!/else\s+void\s+playSong\(st\.song\)/.test(src))
+  if (!/else\s+void\s+playSong\(menu\.song\)/.test(src))
     missing.push('宿主没给 onPlay 时未退回 playSong(song)');
   return { ok: missing.length === 0, detail: missing.length ? `播放语义：${missing.join('、')}` : '' };
 });
 
 add('MENU.nextItem', 'MENU', (s) => {
-  const src = stripComments(s.songMenu ?? '');
+  const src = stripComments(s.songRowShared ?? '');
   const missing = [];
   if (!/下一首播放/.test(src)) missing.push('菜单里没有「下一首播放」项');
-  if (!/playNext\(st\.song\)/.test(src)) missing.push('「下一首播放」没有调 playNext');
+  if (!/playNext\(menu\.song\)/.test(src)) missing.push('「下一首播放」没有调 playNext');
   return { ok: missing.length === 0, detail: missing.length ? `下一首播放：${missing.join('、')}` : '' };
 });
 
 add('MENU.noDownload', 'MENU', (s) => {
   // 本轮不做：取流要动 Rust。留一个"点了没反应"的菜单项比没有更糟。
-  // 判据不限作用域但限定文件（SongMenu），且**不剥注释** —— 注释里也不该出现它。
-  const hit = /下载/.test(s.songMenu ?? '');
+  // 判据不限作用域但限定三处菜单来源，且**不剥注释** —— 注释里也不该出现它。
+  const hit = /下载/.test(s.songRowShared ?? '') || /下载/.test(s.queueDrawer ?? '') || /下载/.test(s.contextMenu ?? '');
   return { ok: !hit, detail: hit ? '菜单里出现了「下载」项（本轮不做，避免点了没用）' : '' };
 });
 
@@ -3136,10 +3137,10 @@ add('MENU.rowContextMenu', 'MENU', (s) => {
   if (!body) return { ok: false, detail: 'shared.tsx 里取不到 SongRow' };
   const missing = [];
   if (!/\bonContextMenu=/.test(body)) missing.push('SongRow 没接 onContextMenu（右键没反应）');
-  if (!/menu\.open\(\s*e,\s*song,\s*onPlay\s*\)/.test(body))
-    missing.push('右键没有把宿主的 onPlay 交给菜单');
+  if (!/setMenu\(\{\s*x:\s*e\.clientX,\s*y:\s*e\.clientY,\s*song,\s*onPlay\s*\}\)/.test(body))
+    missing.push('右键没有把宿主的 onPlay 带进菜单');
   if (!/onPlay\?:/.test(body)) missing.push('SongRow 没有可选的 onPlay prop');
-  if (!/\{menu\.node\}/.test(body)) missing.push('SongRow 没渲染菜单节点');
+  if (!/<ContextMenu\b/.test(body)) missing.push('SongRow 没渲染菜单（ContextMenu）');
   return { ok: missing.length === 0, detail: missing.length ? `歌曲行菜单：${missing.join('、')}` : '' };
 });
 
@@ -3165,30 +3166,35 @@ hostOnPlay('history', 'historyView', 1); // 播放历史
 add('MENU.queueRow', 'MENU', (s) => {
   const src = stripComments(s.queueDrawer ?? '');
   const missing = [];
-  const iHook = src.indexOf('useSongMenu()');
+  const iState = src.indexOf('const [menu, setMenu] = useState<');
   const iEarly = src.indexOf('if (!queueOpen) return null;');
-  if (iHook < 0) missing.push('QueueDrawer 没接菜单');
-  else if (iEarly >= 0 && iHook > iEarly)
-    missing.push('useSongMenu 在早退之后调用（放 renderItem 里同理 —— hook 顺序会随行数变）');
+  if (iState < 0) missing.push('QueueDrawer 没有菜单状态');
+  else if (iEarly >= 0 && iState > iEarly)
+    missing.push('菜单状态在早退之后声明（放 renderItem 里同理 —— 顺序会随行数变）');
   // 队列行不是 SongRow，是自己接的：不给 onPlay → 走 playSong(s) 的"在现有队列里定位"语义
-  if (!/onContextMenu=\{\(e\)\s*=>\s*menu\.open\(e,\s*s\)\}/.test(src))
+  if (!/onContextMenu=\{\(e\)\s*=>\s*\{/.test(src))
     missing.push('队列行没接 onContextMenu');
-  if (!/\{menu\.node\}/.test(src)) missing.push('QueueDrawer 没渲染菜单节点');
+  if (!/<ContextMenu\b/.test(src)) missing.push('QueueDrawer 没渲染菜单（ContextMenu）');
   return { ok: missing.length === 0, detail: missing.length ? `队列行菜单：${missing.join('、')}` : '' };
 });
 
 add('MENU.css', 'MENU', (s) => {
   const css = s.css ?? '';
-  const i = css.indexOf('.music-menu {');
+  // 菜单样式已收口到通用单元的 .ui-menu（components.scss）；music 屏不再自造 .music-menu
+  const i = css.indexOf('.ui-menu {');
   const block = i < 0 ? '' : css.slice(i, css.indexOf('}', i));
   const missing = [];
-  if (!block) missing.push('样式缺 .music-menu 规则');
+  if (!block) missing.push('样式缺 .ui-menu 规则');
   else {
-    if (!/z-index:\s*\d+/.test(block)) missing.push('.music-menu 没有 z-index（会被抽屉/展开播放器压住）');
     const tokens = (block.match(/var\(--md-/g) || []).length;
-    if (tokens < 3) missing.push(`.music-menu 只用了 ${tokens} 个设计令牌（深色模式不跟随）`);
+    if (tokens < 3) missing.push(`.ui-menu 只用了 ${tokens} 个设计令牌（深色模式不跟随）`);
   }
-  if (!/\.music-menu-item\s*\{/.test(css)) missing.push('样式缺 .music-menu-item 规则');
+  // 右键菜单（.ui-ctx）必须高于队列抽屉(72)/展开播放器(70)、低于模态(80)
+  const ci = css.indexOf('.ui-menu.ui-ctx');
+  const ctxBlock = ci < 0 ? '' : css.slice(ci, css.indexOf('}', ci));
+  if (!/z-index:\s*78\b/.test(ctxBlock))
+    missing.push('右键菜单未抬到 z-index 78（会被队列抽屉/展开播放器压住看不见）');
+  if (!/\.ui-menu-item\s*\{/.test(css)) missing.push('样式缺 .ui-menu-item 规则');
   return { ok: missing.length === 0, detail: missing.length ? `菜单样式：${missing.join('、')}` : '' };
 });
 
@@ -4293,79 +4299,82 @@ const MUTATIONS = [
   // ── MENU 歌曲右键菜单 ──────────────────────────────────────────────────
   {
     name: '菜单挂回行内（不 portal 到 body → 被滚动容器裁掉）',
-    file: F.songMenu,
-    find: '        document.body,\n',
-    replace: '        document.documentElement,\n',
+    file: F.contextMenu,
+    find: '    document.body,\n',
+    replace: '    document.documentElement,\n',
     expect: ['MENU.portal'],
   },
   {
     name: '外部关闭的 mousedown 改成冒泡阶段（点菜单项会顺带播放这一行）',
-    file: F.songMenu,
+    file: F.contextMenu,
     find: "window.addEventListener('mousedown', onDown, true);",
     replace: "window.addEventListener('mousedown', onDown, false);",
     expect: ['MENU.closeCapture'],
   },
   {
     name: '外部关闭改用 click（被行的 onClick 抢先 → 点菜单项 = 顺带播这一行）',
-    file: F.songMenu,
+    file: F.contextMenu,
     find: "window.addEventListener('mousedown', onDown, true);",
     replace: "window.addEventListener('click', onDown, true);",
     expect: ['MENU.closeCapture'],
   },
   {
     name: 'scroll 监听改成冒泡阶段（听不到内层容器滚动 → 菜单飘在原处）',
-    file: F.songMenu,
-    find: "window.addEventListener('scroll', onViewChange, true);",
-    replace: "window.addEventListener('scroll', onViewChange, false);",
+    file: F.contextMenu,
+    find: "window.addEventListener('scroll', onClose, true);",
+    replace: "window.addEventListener('scroll', onClose, false);",
     expect: ['MENU.scrollCapture'],
   },
   {
     name: 'Esc 判据写错（按 Esc 关不掉菜单）',
-    file: F.songMenu,
-    find: "if (e.key === 'Escape') close();",
-    replace: "if (e.key === 'Esc') close();",
+    file: F.contextMenu,
+    find: "if (e.key !== 'Escape') return;",
+    replace: "if (e.key !== 'Esc') return;",
     expect: ['MENU.esc'],
   },
   {
-    name: '右边放不下时不再翻转（菜单被视口右缘切掉一半）',
-    file: F.songMenu,
-    find: 'const px = x + MENU_W > window.innerWidth ? Math.max(0, x - MENU_W) : x;',
-    replace: 'const px = x + MENU_W > window.innerWidth ? x : x;',
+    name: '右边放不下时不夹进视口（菜单被视口右缘切掉一半）',
+    file: F.contextMenu,
+    find: 'const left = Math.max(8, Math.min(x, window.innerWidth - r.width - 8));',
+    replace: 'const left = x;',
     expect: ['MENU.flip'],
   },
   {
-    name: '「下一首播放」不阻断冒泡（点它 = 顺带把这一行也播了）',
-    file: F.songMenu,
-    find: '              e.stopPropagation();\n              close();\n              playNext(st.song);',
-    replace: '              close();\n              playNext(st.song);',
+    name: '菜单根节点不截断 onClick（点菜单项 = 顺带触发宿主行的点击）',
+    file: F.contextMenu,
+    find: '      onClick={(e) => e.stopPropagation()}\n',
+    replace: '',
     expect: ['MENU.noBubble'],
   },
   {
     name: '「下一首播放」不调 playNext（点了没反应）',
-    file: F.songMenu,
-    find: '              playNext(st.song);',
-    replace: '              void st.song;',
+    file: F.songRowShared,
+    find: 'playNext(menu.song);',
+    replace: 'void menu.song;',
     expect: ['MENU.nextItem'],
   },
   {
     name: '加回一个点了没用的「下载」菜单项（本轮不做）',
-    file: F.songMenu,
-    find: '            <ListEnd size={13} /> 下一首播放\n          </button>',
-    replace:
-      '            <ListEnd size={13} /> 下一首播放\n          </button>\n          <button type="button" className="music-menu-item">下载</button>',
+    file: F.songRowShared,
+    find: '                label="下一首播放"',
+    replace: '                label="下一首播放"\n                sub="下载"',
     expect: ['MENU.noDownload'],
   },
   {
     name: '播放兜底去掉（宿主没传 onPlay 时菜单点了没反应）',
-    file: F.songMenu,
-    find: '              else void playSong(st.song);',
-    replace: '              else void 0;',
+    file: F.songRowShared,
+    find: 'else void playSong(menu.song);',
+    replace: 'else void 0;',
     expect: ['MENU.playSemantics'],
   },
   {
     name: 'SongRow 不接 onContextMenu（右键没反应）',
     file: F.songRowShared,
-    find: '      onContextMenu={(e) => menu.open(e, song, onPlay)}\n',
+    find:
+      '      onContextMenu={(e) => {\n'
+      + '        e.preventDefault(); // 关掉系统右键菜单，否则两层菜单叠在一起\n'
+      + '        setMenu({ x: e.clientX, y: e.clientY, song, onPlay });\n'
+      + '      }}\n',
     replace: '',
     expect: ['MENU.rowContextMenu'],
   },
@@ -4384,14 +4393,15 @@ const MUTATIONS = [
     expect: ['MENU.onPlay.history'],
   },
   {
-    name: 'QueueDrawer 把 useSongMenu 挪到早退之后（hook 顺序随行数变）',
+    name: 'QueueDrawer 把菜单状态挪到早退之后（顺序随行数变）',
     file: F.queueDrawer,
     find:
-      '  const menu = useSongMenu();\n' +
+      '  const [menu, setMenu] = useState<{ x: number; y: number; song: Song } | null>(null);\n' +
       "  const queueOpen = useMusicStore((s) => s.queueOpen);\n" +
       "  const queue = useMusicStore((s) => s.queue);\n" +
       "  const currentIndex = useMusicStore((s) => s.currentIndex);\n" +
       "  const playSong = useMusicStore((s) => s.playSong);\n" +
+      "  const playNext = useMusicStore((s) => s.playNext);\n" +
       "  const removeFromQueue = useMusicStore((s) => s.removeFromQueue);\n" +
       "  const clearQueue = useMusicStore((s) => s.clearQueue);\n" +
       "  const setQueueOpen = useMusicStore((s) => s.setQueueOpen);\n" +
@@ -4401,17 +4411,19 @@ const MUTATIONS = [
       "  const queue = useMusicStore((s) => s.queue);\n" +
       "  const currentIndex = useMusicStore((s) => s.currentIndex);\n" +
       "  const playSong = useMusicStore((s) => s.playSong);\n" +
+      "  const playNext = useMusicStore((s) => s.playNext);\n" +
       "  const removeFromQueue = useMusicStore((s) => s.removeFromQueue);\n" +
       "  const clearQueue = useMusicStore((s) => s.clearQueue);\n" +
       "  const setQueueOpen = useMusicStore((s) => s.setQueueOpen);\n" +
-      '\n  if (!queueOpen) return null;\n  const menu = useSongMenu();\n',
+      '\n  if (!queueOpen) return null;\n'
+      + '  const [menu, setMenu] = useState<{ x: number; y: number; song: Song } | null>(null);\n',
     expect: ['MENU.queueRow'],
   },
   {
-    name: '菜单去掉 z-index（被队列抽屉 / 展开播放器压住看不见）',
-    file: F.musicScss,
-    find: '  position: fixed;\n  z-index: 78;\n  min-width: 148px;',
-    replace: '  position: fixed;\n  min-width: 148px;',
+    name: '右键菜单去掉 z-index 78（被队列抽屉 / 展开播放器压住看不见）',
+    file: F.componentsScss,
+    find: '.ui-menu.ui-ctx { z-index: 78; }',
+    replace: '.ui-menu.ui-ctx { }',
     expect: ['MENU.css'],
   },
 

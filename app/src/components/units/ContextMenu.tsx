@@ -62,7 +62,18 @@ export function ContextMenu({
   }, [onClose, x, y]);
 
   return createPortal(
-    <div className="ui-menu ui-ctx" role="menu" ref={ref} style={{ top: pos.top, left: pos.left }}>
+    <div
+      className="ui-menu ui-ctx"
+      role="menu"
+      ref={ref}
+      style={{ top: pos.top, left: pos.left }}
+      // portal 的事件会沿 **React 树** 冒泡回宿主 —— 宿主若是「可点击的行」（歌曲行 / 队列行），
+      // 不在这里截断就等于「点菜单项 = 顺带点了这一行」（行 onClick 会播这首歌）。
+      // 根节点截一次即可：菜单项自身不必各截一次，事件冒泡到根就停。
+      onClick={(e) => e.stopPropagation()}
+      // 菜单自身吃掉右键：在菜单上再点右键不该弹出系统菜单
+      onContextMenu={(e) => e.preventDefault()}
+    >
       {children(onClose)}
     </div>,
     document.body,

@@ -152,6 +152,11 @@
   color: var(--md-muted);
   cursor: not-allowed;
 }
+/* 右键菜单（`.ui-ctx`）锚在光标处，常与抽屉 / 展开播放器**同屏** —— 抬到 78：
+   必须高于队列抽屉(72) 与展开播放器(70)，否则在抽屉里右键看不到菜单；
+   又必须低于模态层(80)，菜单不该盖住确认对话框。
+   普通下拉（MenuButton）不带 `.ui-ctx`，仍用 `.ui-menu` 的 60。 */
+.ui-menu.ui-ctx { z-index: 78; }
 .ui-menu-item.is-danger:hover:not(:disabled) { color: var(--md-error); }
 .ui-menu-label {
   display: flex;
