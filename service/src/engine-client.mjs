@@ -49,7 +49,7 @@ import net from 'node:net';
 import path from 'node:path';
 
 import { buildEngineConfig, config, REPO_ROOT } from './config.mjs';
-import { sniffImageType } from './manga/image.mjs';
+import { sniffImageType } from './image.mjs';
 
 // 仓库根（`engine/` `service/` 都在它下面）由 `config.mjs` 唯一给出，**不在本文件按 dot 数推算** ——
 // 否则本文件一旦被搬进子目录就会静默算错根（见 config.mjs 的 `REPO_ROOT` 注释）。

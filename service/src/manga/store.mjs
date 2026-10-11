@@ -13,7 +13,7 @@ import {
 } from '../config.mjs';
 import { ApiError } from '../errors.mjs';
 import { atomicWriteJson } from '../atomic-file.mjs';
-import { sniffImageType } from './image.mjs';
+import { sniffImageType } from '../image.mjs';
 import { translateImage, EngineError } from '../engine-client.mjs';
 import { isOomError } from '../settings/tier-downgrade.mjs';
 import { isSafeDirName } from './names.mjs';

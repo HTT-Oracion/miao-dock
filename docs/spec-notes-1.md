@@ -22,6 +22,7 @@
 | D-138 | box-service 顶层未捕获异常兜底（统一 shutdown + 非零退出） | service |
 | D-139 | 抽 `atomic-file.mjs` 底座 + store 任务状态改原子写 | service |
 | D-140 | 接入 CI（双平台）+ 跨平台写死断言改平台忠实 | e2e / 基建 |
+| D-141 | `image.mjs` 上移底座 + 新增 `check:layering` 依赖方向钉子 | service |
 
 ---
 
@@ -248,3 +249,50 @@ ubuntu + macos 双平台，Node 22。必过门：
 `check:e8` **6/0**（win32/cuda 真机，改造前此处恒红）· `check:e8:refute` **4/4** ·
 `check:profile` **44/0**（R1 真判通过）· `check:docs` 17/0 · `selftest:engine` 23/0。
 ⚠️ CI 尚未在 GitHub 上实跑（本地无法验证 Actions）—— 首次运行可能暴露其余平台相关红条，届时逐条修。
+
+---
+
+## D-141 · `image.mjs` 上移底座 + 新增 `check:layering` 依赖方向钉子（2026-10-11）
+
+审计（`code-audit-report.md` §13.1）指出「缺 service 分层方向的机器约束」，并猜测
+`config.mjs → settings/engine-settings.mjs` 是「分层倒置」。
+
+### 先纠正一处定性错误
+
+回读代码发现：`config.mjs` 确实是**组合根** —— 它 import `engine-settings.mjs` 是为了把
+「用户可调引擎设置」并进 `config`（`engineTier` / `engineAccel` / `engineUseGpu`），
+且 `engineSettings` / `engineSettingSources` / `engineSettingsFile` **有真实消费者**
+（config 内部 + `server.mjs:724`）。**不是倒置，也不是死代码。** 同 `server.mjs` 一样，
+它们是「装配/组合」职责，本就该读各域 —— 审计把组合根当成了纯底座。
+
+### 真问题：一处真越界
+
+`engine-client.mjs`（底座）为 `sniffImageType` import 了 `manga/image.mjs`（业务域）。
+而 `image.mjs` 是**零依赖的图片字节嗅探**，与"漫画"这个业务概念无关 ——
+它落在 `manga/` 只是历史位置。
+
+**改法**：`git mv service/src/manga/image.mjs service/src/image.mjs`，更新 3 处 import
+（`engine-client` / `server` / `manga/store`）。零断言锚点受影响（e2e 无引用该路径）。
+
+### 断言：`check:layering`（新增，3 条 / 反证 3 条）
+
+把「底座层边界」从散文变成机器判据（此前只写在 `AGENTS.md` §1，无人核查）：
+
+- **L0** `service/src/*.mjs` 文件集 == 白名单 ⇒ 新增底座必须显式登记（同 units `MANIFEST` 的做法），
+  防止"随手在根建模块"让底座层无声膨胀。
+- **L1** 底座层不得 import `./manga/**`。
+- **L2** 底座层对 `./settings/**` 的导入仅限 `engine-settings.mjs`。
+- **装配入口 `server.mjs` 豁免 L1/L2** —— 把各域拼起来正是它的职责（初版忘了豁免，
+  正向直接红；这说明判据确实咬得住真实结构）。
+
+判据写成纯函数 `evaluate(files)`（接收文件表），反证轮喂**内存变异**（改 import / 增删文件条目），
+不碰工作区。
+
+### 规范变更
+
+新增验收命令 `check:layering[:refute]`，登记 `AGENTS.md` §3 与 `package.json`；
+`AGENTS.md` §1 底座清单新增 `image.mjs`；§1 增补「方向由 check:layering 机器核查」一句。
+
+### 验收
+
+`check:layering` 3/0 · `check:layering:refute` 3/3 · `selftest:service` 134/1（1 条既有 Windows 环境性红）· `check:docs` 见下。

@@ -34,7 +34,7 @@ import {
   pickFirstChapterImage, readCoverName, readManifest, removeCover, scanChapterPages, writeCover,
   writeManifestAtomic,
 } from './manga/library.mjs';
-import { sniffImageType } from './manga/image.mjs';
+import { sniffImageType } from './image.mjs';
 import { normalizeComicName, isSafeDirName } from './manga/names.mjs';
 import { watchParent } from './parent-watch.mjs';
 import { Store } from './manga/store.mjs';
