@@ -26,6 +26,7 @@
 | D-142 | 删 `SongMenu` 并入 `units/ContextMenu`（+ 连带重写 MENU 判据组） | app 前端 |
 | D-143 | 新增 `units/Modal` 收敛 5 处手写模态壳（+ 修 4 条失效反证锚） | app 前端 |
 | D-144 | `server.mjs` 去重：任务创建工厂 + 兜底收敛 + multipart 四闸 | service |
+| D-145 | 库扫描/视图下沉数据层（`server.mjs` → `manga/library.mjs`） | service |
 
 ---
 
@@ -452,3 +453,55 @@ HTTP 入口，`store` 仍反向依赖 server 注入的 `ensureLlm` / `tierDowngr
 
 > 代码行数几乎不变（2871 → 2891）：**去重的价值在「骨架只有一份」，不在行数** ——
 > 工厂与两个视图构造器自身的注释占掉了省下的行。
+
+---
+
+## D-145 · 库扫描/视图下沉数据层 —— `server.mjs` → `manga/library.mjs`（2026-10-11）
+
+**背景**：审计 §2.3 主项。`scanLibrary` / `buildBookEntry` / `bookMetaView` / `findFile`
+住在 `server.mjs`（HTTP 入口）里，导致「库长什么样」这件事**不起一个服务就验不了**；
+而 `library.mjs` 本已是「本→话→页」的数据原语模块，扫描/视图天然属于同一层。
+
+**改动**：四个函数 `git mv` 到 `service/src/manga/library.mjs`（标 `export`）。
+
+### `scanLibrary` 的签名变化（唯一的非纯搬运）
+
+原实现 `scanLibrary()` 直接读 `store.root` / `store.hiddenComics` / `store.hiddenComicsView()`
+—— 这正是它无法脱离服务的原因。改成：
+
+```js
+export function scanLibrary({ root, hidden, hiddenList }) { … }
+```
+
+宿主（`server.mjs`）加一层薄包装注入服务状态，路由调用点从 `scanLibrary()` 改为 `libraryView()`：
+
+```js
+function libraryView() {
+  return scanLibrary({ root: store.root, hidden: store.hiddenComics, hiddenList: store.hiddenComicsView() });
+}
+```
+
+`buildBookEntry` / `bookMetaView` / `findFile` 本就是纯函数，**签名一字未改**。
+`findFile` 依赖的 `ORIGINAL_SCAN_RE` / `TRANSLATED_SCAN_RE` 一并从 `config.mjs` 在
+`library.mjs` 侧 import（`server.mjs` 侧移除，避免未用导入）。
+
+**依赖方向**：`library.mjs` → `../config.mjs`（域→底座，正确）；无反向边，无环。
+
+### 未做（§2.3 剩余）
+
+`resolveComicDir` / `resolveChapterDir` / `mustChapterDir`（**路径解析**，抛 `ApiError` 的
+HTTP 语义耦合）仍留在 `server.mjs`；`store` 仍反向依赖 server 注入的 `ensureLlm` / `tierDowngrade`。
+这些是**边界重构**（非搬运），须专门一轮 + 全量回归。
+
+### 验收
+
+`selftest:service` **134/1**（1 条既有 Windows 环境性红）· `check:lib-manage` **24/0** +
+**refute 13/13** · `check:contract` 77/0 · `check:retry` 10/0 · `check:retranslate` 12/0 ·
+`check:layering` 3/0 · `node --check` 通过。`server.mjs` 2891 → **2779** 行。
+
+> 🔴 **踩坑记录（重要）**：本轮 `check:lib-manage --refute` 首次运行被**中断**（耗时约 11 分钟，
+> 13 组变异 × 每组重启服务+引擎），而该反证轮是**原地改写真实源文件**、靠 `finally` 还原 ⇒
+> 中断后 **M10/M12 两处变异残留在工作区**，导致后续正向跑出 `20/4`（N8/N10b/c/d），
+> 一度被误判为「搬迁引入的回归」。用 `git worktree add … HEAD` 跑**基线对照**（24/0）才定性。
+> **教训**：本仓「原地变异」型反证轮**必须整轮跑完**（后台 + 足时），跑完**必查 `git status`**；
+> 中断后先 `grep -rn "refute：" service/src app/src` 清残留，再下任何结论。

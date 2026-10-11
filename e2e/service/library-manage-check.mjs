@@ -820,8 +820,10 @@ const MUTATIONS = [
     name: 'M2 scanLibrary 不跳过隐藏项（隐藏了还列出来）',
     edits: [
       {
-        file: SERVER_SRC,
-        find: '    if (store.hiddenComics.has(entry.name)) continue;',
+        // D-145：`scanLibrary` 已从 server.mjs（HTTP 入口）搬到 `manga/library.mjs`（数据层），
+        // 锚点随迁；`store.hiddenComics` 现在是形参 `hidden`。
+        file: LIBRARY_SRC,
+        find: '    if (hidden.has(entry.name)) continue;',
         replace: '    if (false) continue; // refute：不跳过隐藏项',
       },
     ],

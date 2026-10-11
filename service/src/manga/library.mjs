@@ -1,8 +1,12 @@
-// 漫画库「本 → 话 → 页」三层的**落盘原语**（契约冻结见 docs/spec-notes.md D-115）。
+// 漫画库「本 → 话 → 页」三层的**落盘原语 + 扫描/视图（数据层）**（契约冻结见 docs/spec-notes.md D-115）。
 //
 // 为什么单开一个模块：页级扫描、目录命名、manifest 读写与封面落盘这四件事，在
 // `server.mjs`（扫描与端点）与将来可能的批量导入之间是**共用的**。写成一份、
 // 多调用点，才不会出现「这里校验、那里没校验」的漂移（照抄 `_writeOriginal` 的纪律）。
+//
+// D-145：库的**扫描与视图**（`scanLibrary`/`buildBookEntry`/`bookMetaView`/`findFile`）
+// 也从 `server.mjs` 搬来此处 —— 它们本是数据组装、住在 HTTP 入口会让「库长什么样」
+// 只能起服务才验得了。宿主把 `root`/隐藏清单传进来，故它们仍是纯函数。
 //
 // 本模块是**产品代码**（服务运行期会用到），不是 e2e 夹具，故留在 `service/src/manga/`。
 import fs from 'node:fs';
@@ -331,4 +335,140 @@ export function createBookDir(root, name) {
     throw err;
   }
   return { dir, manifest };
+}
+
+// ------------------------------------------------------------------ 扫描与视图（数据层）
+//
+// 这一组的归属：**数据组装**，不是 HTTP。原先住在 `server.mjs`（HTTP 入口）里，
+// 于是「库长什么样」这件事只能起一个服务才验得了（审计 §2.3）。
+// 搬来本模块后 `scanLibrary` / `buildBookEntry` / `bookMetaView` / `findFile`
+// 都是**纯函数**（宿主把 `root` / 隐藏清单传进来），可以脱开服务单独测。
+
+/**
+ * 扫库：一次扫描同时产出 `comics`（向后兼容）/ `books`（大类）/ `others`（未归并单话）。
+ *
+ * 契约与理由见 docs/spec-notes.md D-115：
+ *  · **判据唯一**：顶层目录内有 `manifest.json` ⇒ 大类；没有 ⇒ 未归并单话。
+ *  · **`comics` 原样保留**（口径 = 每个顶层目录一条、页级扫描只看该目录自身，与改造前逐字一致），
+ *    因为 `DropScreen` 的重名比对、`App` 的库摘要、`selftest` / `e2e` / `lib-manage` 都读它。
+ *  · **页级扫描抄一份都不行**：`scanChapterPages` 是「单话目录」与「大类内的话目录」共用的唯一入口。
+ *  · **空大类必须出现在 `books` 里**（刚创建、还没归并任何话）—— 否则「新建完看不见」。
+ *
+ * `hidden` 判据仍是**顶层目录名**（`hideComic(name)` 存的就是它）⇒ 整本隐藏天然兼容。
+ *
+ * ## 为什么 `root` / `hidden` / `hiddenList` 由调用方传进来
+ * 本模块是「本→话→页」的**落盘原语**，不该知道"谁是宿主"。宿主（`server.mjs`）把
+ * `store.root` 与 `store.hiddenComics` 传进来 ⇒ 本函数不持有任何服务状态，
+ * 于是它是**可单独测的**（正是它从 HTTP 入口搬出来的目的）。
+ */
+export function scanLibrary({ root, hidden, hiddenList }) {
+  const comics = [];
+  const books = [];
+  const others = [];
+  let entries = [];
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch { /* 根目录不存在 → 空库 */ }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    // 用户「删除但不删本地文件」⇒ 只隐藏：目录还在，但不再出现在库里。
+    // 判定用**原始目录名**（与 `hideComic` 存的名字同一口径）。
+    if (hidden.has(entry.name)) continue;
+    const dir = path.join(root, entry.name);
+    // 顶层页扫描 = `comics` 的口径（G-01：目录内所有文件字节之和）
+    const own = scanChapterPages(dir);
+    comics.push({ comicName: entry.name, dirName: entry.name, outputDir: dir, ...own });
+
+    if (hasManifest(dir)) books.push(buildBookEntry(entry.name, dir, own));
+    else {
+      // 未归并单话：`no` 恒为 null（它还没有话号），`mergedTo` 恒为 null（没有归属）——
+      // 两个字段一起给出，前端就不必用 `'no' in item` 之类的"字段在不在"来判分支（D-115 §1）。
+      others.push({
+        no: null, dirName: entry.name, absDir: dir, merged: false, mergedTo: null, ...own,
+      });
+    }
+  }
+  const byName = (a, b) => a.dirName.localeCompare(b.dirName, 'zh-Hans-CN');
+  comics.sort(byName);
+  books.sort(byName);
+  others.sort(byName);
+  const totalImages = books.reduce((n, b) => n + b.totalPages, 0)
+    + others.reduce((n, c) => n + c.imageCount, 0);
+  const totalBytes = books.reduce((n, b) => n + b.byteSize, 0)
+    + others.reduce((n, c) => n + c.byteSize, 0);
+  return {
+    root,
+    // 「部」数 = 大类 + 未归并单话（单话漫画也是「只有一话的漫画」），与 `comics.length` 恒等
+    count: comics.length,
+    totalImages,
+    totalBytes,
+    comics,
+    books,
+    others,
+    // 隐藏清单：既让界面能显示「已隐藏 N 部 · 管理」，也让用户知道库没扫漏。
+    hidden: hiddenList,
+    hiddenCount: hidden.size,
+    updatedAt: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+  };
+}
+
+/**
+ * 大类条目：元信息（`manifest.json` 的 title/author/cover）+ 各话的页级汇总。
+ *
+ * `byteSize` 沿用 G-01 口径：**各话之和 + 大类目录内的文件**（含 `cover.*` 与 `manifest.json`）
+ * —— 不因为多了这两个文件就偷偷改口径（见 D-115 §5）。
+ */
+export function buildBookEntry(bookName, dir, own) {
+  const manifest = readManifest(dir, bookName);
+  const chapters = listChapterDirs(dir).map((c) => ({
+    no: c.no,
+    dirName: c.dirName,
+    absDir: c.absDir,
+    // 位置即「已归并」（D-115 §1）：能出现在大类目录里，本身就是已归并的证据
+    merged: true,
+    mergedTo: { bookName, no: c.no },
+    ...scanChapterPages(c.absDir),
+  }));
+  return {
+    bookName,
+    dirName: bookName,
+    outputDir: dir,
+    title: manifest.title,
+    author: manifest.author,
+    // 字段名 `coverPath` 对齐设计稿 11.1 的前端模型；`manifest.json` 里的键仍是 `cover`（D-115 §3）。
+    // 两侧名字不同是有意的：json 是**落盘**契约（人可读可改、随目录迁移），这里是**接口**契约。
+    coverPath: readCoverName(dir, manifest),
+    chapterCount: chapters.length,
+    totalPages: chapters.reduce((n, c) => n + c.imageCount, 0),
+    byteSize: ownFilesBytes(dir) + chapters.reduce((n, c) => n + c.byteSize, 0),
+    modifiedAt: own.modifiedAt,
+    chapters,
+  };
+}
+
+/**
+ * 大类元信息视图 = `buildBookEntry` 去掉 `chapters`。
+ *
+ * `/meta` 与 `/cover` 的响应只需要"改完之后这本长什么样"，不需要把整本的话与逐页集合
+ * 再回传一遍（详情页的数据源是 `GET /library`）。同一条 `buildBookEntry` 保证两处口径一致。
+ */
+export function bookMetaView(bookName, dir) {
+  const { chapters, ...meta } = buildBookEntry(bookName, dir, scanChapterPages(dir));
+  return { ...meta, chapterCount: chapters.length };
+}
+
+/** 在 `dir` 里按序号找出某个变体的文件名（`original` / `translated`）；找不到返回 null */
+export function findFile(dir, seq, variant) {
+  const wantTranslated = variant === 'translated';
+  let names = [];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return null;
+  }
+  for (const f of names) {
+    const m = wantTranslated ? TRANSLATED_SCAN_RE.exec(f) : ORIGINAL_SCAN_RE.exec(f);
+    if (m && Number(m[1]) === seq) return f;
+  }
+  return null;
 }

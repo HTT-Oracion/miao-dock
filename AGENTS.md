@@ -46,7 +46,7 @@
 
 - `service/src/` 根**只留跨模块底座**：装配入口 `server.mjs` · `config.mjs` · `errors.mjs` · `engine-client.mjs`（引擎适配，唯一耦合点）· `multipart.mjs` · `parent-watch.mjs` · `atomic-file.mjs`（原子写 JSON，跨 manga/settings 复用；D-139）· `image.mjs`（图片字节嗅探，D-141 从 `manga/` 上移）。
   方向由 `npm run check:layering` 机器核查：**除装配入口 `server.mjs` 外**，底座层不得 import `manga/**`；对 `settings/**` 的导入仅限 `engine-settings.mjs`（`config` 作为组合根读用户设置的唯一入口）。
-- **按业务域分子目录**：`service/src/manga/`（漫画翻译：`store` 队列落盘 · `image` · `names` · `sse` · `translate` 在线翻译：契约 / 注册 / 门面 / http / sse-parse / limiter / 设置 / 密钥 / `platforms/youdao`）· `service/src/settings/`（设置 / 引擎档位 / 诊断：`engine-settings` · `engine-profile` · `model-status` · `idle-policy` · `tier-downgrade` · `llm-supervisor`）· `service/src/music/`（音乐：逻辑主要在 Rust 侧 `app/src-tauri/src/music/`，服务端此目录为**占位**）。
+- **按业务域分子目录**：`service/src/manga/`（漫画翻译：`store` 队列落盘 · `library` 本→话→页落盘原语与库扫描/视图（D-115/D-145）· `names` · `sse` · `translate` 在线翻译：契约 / 注册 / 门面 / http / sse-parse / limiter / 设置 / 密钥 / `platforms/youdao`）· `service/src/settings/`（设置 / 引擎档位 / 诊断：`engine-settings` · `engine-profile` · `model-status` · `idle-policy` · `tier-downgrade` · `llm-supervisor`）· `service/src/music/`（音乐：逻辑主要在 Rust 侧 `app/src-tauri/src/music/`，服务端此目录为**占位**）。
 - 🔴 **新增服务模块必须归入对应域目录**，不得再平铺回 `service/src/` 根；**只有跨域共用**才允许上提到根。
 - 搬迁 / 新增后必须同步：**断言里写死的路径**（`e2e/` 下大量 `path.join(ROOT,'service','src',…)`，不同步的后果是**静默跳过**）· 模块内相对导入 · 本节分层 · `README.md` 目录节 · `.trae/rules/project_rules.md`。
 

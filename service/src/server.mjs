@@ -11,8 +11,8 @@ import { pipeline } from 'node:stream/promises';
 
 import {
   API_VERSION, BASE_PATH, BATCH_LIMIT, COVER_MAX_BYTES, ENGINE_SETTINGS_FILE, MANIFEST_FILE,
-  MAX_CHAPTER_NO, MERGE_ARCHIVE_DIR, ORIGINAL_SCAN_RE, REPO_ROOT, isValidChapterNo,
-  ROOT_DIR, SERVICE_NAME, SERVICE_VERSION, STATE_DIR, TASKS_STATE_DIR, TRANSLATED_SCAN_RE,
+  MAX_CHAPTER_NO, MERGE_ARCHIVE_DIR, REPO_ROOT, isValidChapterNo,
+  ROOT_DIR, SERVICE_NAME, SERVICE_VERSION, STATE_DIR, TASKS_STATE_DIR,
   TOKEN_FILE, TRANSLATE_DIRECTIONS, assertInsideRoot, config, engineSettingsFile,
   isSupportedDirection, normalizeDirection,
   readIdleSettings, validateRoot,
@@ -30,9 +30,9 @@ import { modelStatus } from './settings/model-status.mjs';
 import { createTierDowngrade } from './settings/tier-downgrade.mjs';
 import { allFieldStrings, firstField, groupParts, parseMultipartEx } from './multipart.mjs';
 import {
-  chapterDirName, createBookDir, episodesFromDirs, hasManifest, listChapterDirs, ownFilesBytes,
-  pickFirstChapterImage, readCoverName, readManifest, removeCover, scanChapterPages, writeCover,
-  writeManifestAtomic,
+  bookMetaView, chapterDirName, createBookDir, episodesFromDirs, findFile, hasManifest,
+  listChapterDirs, pickFirstChapterImage, readCoverName, readManifest, removeCover,
+  scanLibrary, writeCover, writeManifestAtomic,
 } from './manga/library.mjs';
 import { sniffImageType } from './image.mjs';
 import { normalizeComicName, isSafeDirName } from './manga/names.mjs';
@@ -1374,112 +1374,15 @@ async function handleTranslateCredentials(req, res, cors) {
 // ------------------------------------------------------------------ 库与导出
 
 /**
- * 扫库：一次扫描同时产出 `comics`（向后兼容）/ `books`（大类）/ `others`（未归并单话）。
- *
- * 契约与理由见 docs/spec-notes.md D-115：
- *  · **判据唯一**：顶层目录内有 `manifest.json` ⇒ 大类；没有 ⇒ 未归并单话。
- *  · **`comics` 原样保留**（口径 = 每个顶层目录一条、页级扫描只看该目录自身，与改造前逐字一致），
- *    因为 `DropScreen` 的重名比对、`App` 的库摘要、`selftest` / `e2e` / `lib-manage` 都读它。
- *  · **页级扫描抄一份都不行**：`scanChapterPages` 是「单话目录」与「大类内的话目录」共用的唯一入口。
- *  · **空大类必须出现在 `books` 里**（刚创建、还没归并任何话）—— 否则「新建完看不见」。
- *
- * `hiddenComics` 判据仍是**顶层目录名**（`hideComic(name)` 存的就是它）⇒ 整本隐藏天然兼容。
+ * `GET /library` 的响应体：把宿主持有的东西（`store.root` 与隐藏清单）喂给数据层。
+ * 数据层（`manga/library.mjs` 的 `scanLibrary`）本身不持有服务状态 —— 宿主负责注入。
  */
-function scanLibrary() {
-  const root = store.root;
-  const comics = [];
-  const books = [];
-  const others = [];
-  let entries = [];
-  try {
-    entries = fs.readdirSync(root, { withFileTypes: true });
-  } catch { /* 根目录不存在 → 空库 */ }
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    // 用户「删除但不删本地文件」⇒ 只隐藏：目录还在，但不再出现在库里。
-    // 判定用**原始目录名**（与 `hideComic` 存的名字同一口径）。
-    if (store.hiddenComics.has(entry.name)) continue;
-    const dir = path.join(root, entry.name);
-    // 顶层页扫描 = `comics` 的口径（G-01：目录内所有文件字节之和）
-    const own = scanChapterPages(dir);
-    comics.push({ comicName: entry.name, dirName: entry.name, outputDir: dir, ...own });
-
-    if (hasManifest(dir)) books.push(buildBookEntry(entry.name, dir, own));
-    else {
-      // 未归并单话：`no` 恒为 null（它还没有话号），`mergedTo` 恒为 null（没有归属）——
-      // 两个字段一起给出，前端就不必用 `'no' in item` 之类的"字段在不在"来判分支（D-115 §1）。
-      others.push({
-        no: null, dirName: entry.name, absDir: dir, merged: false, mergedTo: null, ...own,
-      });
-    }
-  }
-  const byName = (a, b) => a.dirName.localeCompare(b.dirName, 'zh-Hans-CN');
-  comics.sort(byName);
-  books.sort(byName);
-  others.sort(byName);
-  const totalImages = books.reduce((n, b) => n + b.totalPages, 0)
-    + others.reduce((n, c) => n + c.imageCount, 0);
-  const totalBytes = books.reduce((n, b) => n + b.byteSize, 0)
-    + others.reduce((n, c) => n + c.byteSize, 0);
-  return {
-    root,
-    // 「部」数 = 大类 + 未归并单话（单话漫画也是「只有一话的漫画」），与 `comics.length` 恒等
-    count: comics.length,
-    totalImages,
-    totalBytes,
-    comics,
-    books,
-    others,
-    // 隐藏清单：既让界面能显示「已隐藏 N 部 · 管理」，也让用户知道库没扫漏。
-    hidden: store.hiddenComicsView(),
-    hiddenCount: store.hiddenComics.size,
-    updatedAt: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
-  };
-}
-
-/**
- * 大类条目：元信息（`manifest.json` 的 title/author/cover）+ 各话的页级汇总。
- *
- * `byteSize` 沿用 G-01 口径：**各话之和 + 大类目录内的文件**（含 `cover.*` 与 `manifest.json`）
- * —— 不因为多了这两个文件就偷偷改口径（见 D-115 §5）。
- */
-function buildBookEntry(bookName, dir, own) {
-  const manifest = readManifest(dir, bookName);
-  const chapters = listChapterDirs(dir).map((c) => ({
-    no: c.no,
-    dirName: c.dirName,
-    absDir: c.absDir,
-    // 位置即「已归并」（D-115 §1）：能出现在大类目录里，本身就是已归并的证据
-    merged: true,
-    mergedTo: { bookName, no: c.no },
-    ...scanChapterPages(c.absDir),
-  }));
-  return {
-    bookName,
-    dirName: bookName,
-    outputDir: dir,
-    title: manifest.title,
-    author: manifest.author,
-    // 字段名 `coverPath` 对齐设计稿 11.1 的前端模型；`manifest.json` 里的键仍是 `cover`（D-115 §3）。
-    // 两侧名字不同是有意的：json 是**落盘**契约（人可读可改、随目录迁移），这里是**接口**契约。
-    coverPath: readCoverName(dir, manifest),
-    chapterCount: chapters.length,
-    totalPages: chapters.reduce((n, c) => n + c.imageCount, 0),
-    byteSize: ownFilesBytes(dir) + chapters.reduce((n, c) => n + c.byteSize, 0),
-    modifiedAt: own.modifiedAt,
-    chapters,
-  };
-}
-
-/**
- * 大类元信息视图 = `buildBookEntry` 去掉 `chapters`。
- *
- * `/meta` 与 `/cover` 的响应只需要"改完之后这本长什么样"，不需要把整本的话与逐页集合
- * 再回传一遍（详情页的数据源是 `GET /library`）。同一条 `buildBookEntry` 保证两处口径一致。
- */
-function bookMetaView(bookName, dir) {
-  const { chapters, ...meta } = buildBookEntry(bookName, dir, scanChapterPages(dir));
-  return { ...meta, chapterCount: chapters.length };
+function libraryView() {
+  return scanLibrary({
+    root: store.root,
+    hidden: store.hiddenComics,
+    hiddenList: store.hiddenComicsView(),
+  });
 }
 
 /**
@@ -1592,21 +1495,6 @@ function mustChapterDir(bookRaw, noRaw) {
     });
   }
   return info;
-}
-
-function findFile(dir, seq, variant) {
-  const wantTranslated = variant === 'translated';
-  let names = [];
-  try {
-    names = fs.readdirSync(dir);
-  } catch {
-    return null;
-  }
-  for (const f of names) {
-    const m = wantTranslated ? TRANSLATED_SCAN_RE.exec(f) : ORIGINAL_SCAN_RE.exec(f);
-    if (m && Number(m[1]) === seq) return f;
-  }
-  return null;
 }
 
 /**
@@ -2522,7 +2410,7 @@ async function route(req, res, cors, url) {
 
   // /library
   if (p.length === 1 && p[0] === 'library' && method === 'GET') {
-    return sendJson(res, 200, scanLibrary(), cors);
+    return sendJson(res, 200, libraryView(), cors);
   }
   // /library/create —— 手动新建大类（同名 → 409）。⚠️ 与「名为 create 的大类」同形，
   // 但后者仍可经 `/library/create/meta` 等更长路径寻址（p.length 不同），不冲突。
