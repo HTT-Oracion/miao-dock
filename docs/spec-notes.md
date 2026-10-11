@@ -5626,3 +5626,23 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 - 真机复验：修后 `POST /translate/stream` 对真上游 SSE 帧能解析出业务错误（108）并归一为 `TRANSLATE_AUTH_FAILED`（**不再假成功**）；`POST /translate/text` 同理（108）。**密钥一有效即可出译文，签名与协议两侧已通。**
 
 **🔴 提醒**：`service/src/manga/translate/*` 与 `platforms/youdao.mjs` 改动需**重启 box-service / 喵坞**才生效。
+
+---
+
+## D-131 · 设置页密钥框一律掩码：appKey 不再明文回显（2026-10-11）
+
+**症状**：② 「翻译来源」的在线配置块里，保存密钥后 **appKey 明文铺在输入框里**（该 `<input>` 无 `type` ⇒ text）。appSecret 早已是 `type="password"`，唯独 appKey 例外。
+
+**拍板**：appKey 与 appSecret **同一形态** —— 都 `type="password"`，明文不上屏（用户诉求）。
+
+- `sections.tsx`：appKey 输入框加 `type="password"`；`placeholder` 从 `credView?.appKey`（**会把明文密钥当占位符再泄一次**）改为固定 `'请输入平台应用 ID'`。
+  - appKey 仍**预填**进 value ⇒ 保存后以掩码点显示（"密码框"观感），可选中重填 —— 这与 appSecret 的"从空开始"不同：appSecret 永不回显、只能重填；appKey 服务端要求保存时非空，故必须预填。
+  - appSecret（**两框都要**）：本已是 `type="password"`，但保存后被清空、只剩文字提示「已保存 · 留空则不更改」⇒ 观感不是密码框。改为**掩码点占位**（`'••••••••'`），与 appKey 一致；"留空提交=保持原样"的说明移到下方 `.set-src-note`（信息不丢）。
+- 文案同步（原话是"界面只显示已配置的 appKey"，已不成立）：`catalog.ts`（translate-source 的 `why`）、`sections.tsx` 的 `.set-src-note`、`translate-api.ts` 的类型头注。
+
+**钉子**：新增 `SIMPLIFY.secret.masked`（`check:settings` 176→**177**）—— 逐个框判 `type="password"`，窗口锚在**离 `aria-label` 最近的 `<input>`** 上；外加一条：appSecret 的"已保存"态占位符必须是**掩码点**（锚 `credView?.hasSecret`，**不能**裸搜 `hasSecret` —— 它在 `saveSrcCredentials` 的 `hasSecret: true` 处先出现，锚错即假绿）。
+
+- 🔴 两个"想当然的写法"都会**假绿**：① 在整段里**数** `type="password"` 的个数 ⇒ 一个框被改回 text、另一个仍凑数；② 用固定长度前缀窗（`slice(at-320, at)`）⇒ **越界到上一个框**：appKey 被摘掉时 appSecret 的窗口仍命中 appKey 那份。故窗口必须从本框的 `<input>` 起算。
+- 反证：**三条**（appKey 改回明文 / appSecret 改回明文 / appSecret 占位态改回文字，各破坏一次，都指向同一断言）—— 只破坏一个测不出"两个都漏改"。`check:settings:refute` 120→**123**。
+
+**验收**：`check:settings` **177/0** · `check:settings:refute` **123/123**（无跳过 / 无假阳性 / 破坏文件按字节复原）· `check:docs` 16/0 · `tsc --noEmit` 0 · `vite build` 通过。

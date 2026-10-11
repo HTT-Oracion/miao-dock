@@ -274,8 +274,8 @@ export function TranslateSection({
       setSrcErr(null);
       setDraftSource(o.settings.source);
       setDraftPlatform(o.settings.platform);
-      // appKey 可回显（密钥只写不读）；appSecret 一律从空开始 —— 预填一个"看起来像密钥"的
-      // 东西会让用户以为没保存过，而真相只是我们从不回显它
+      // appKey 预填（输入框是 `type="password"`，掩码显示，明文不上屏）；appSecret 一律从空开始
+      // —— 预填一个"看起来像密钥"的东西会让用户以为没保存过，而真相只是我们从不回显它
       setDraftKey(o.credentials[o.settings.platform]?.appKey ?? '');
       setDraftSecret('');
     } catch (e) {
@@ -465,9 +465,10 @@ export function TranslateSection({
               <span className="set-src-k">appKey</span>
               <input
                 className="set-src-in"
+                type="password"
                 value={draftKey}
                 onChange={(e) => setDraftKey(e.target.value)}
-                placeholder={credView?.appKey ?? '请输入平台应用 ID'}
+                placeholder="请输入平台应用 ID"
                 aria-label="appKey"
               />
             </div>
@@ -478,7 +479,7 @@ export function TranslateSection({
                 type="password"
                 value={draftSecret}
                 onChange={(e) => setDraftSecret(e.target.value)}
-                placeholder={credView?.hasSecret ? '已保存 · 留空则不更改' : '请输入平台应用密钥'}
+                placeholder={credView?.hasSecret ? '••••••••' : '请输入平台应用密钥'}
                 aria-label="appSecret"
               />
             </div>
@@ -505,8 +506,8 @@ export function TranslateSection({
               </Btn>
             </div>
             <div className="set-src-note">
-              密钥<b>只写不读</b>：appSecret 提交后永不回显，「appSecret」框显示「已保存」即代表盘上已有一份；
-              留空提交 = 保持原样。
+              密钥<b>只写不读</b>：appSecret 提交后永不回显，两个密钥框都以掩码显示（明文不上屏）。
+              盘上已有 appSecret 时该框以掩码点占位 —— 留空提交 = 保持原样，填新的即覆盖。
             </div>
           </div>
         ) : null}

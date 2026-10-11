@@ -42,7 +42,7 @@ export interface TranslatePlatformOption {
 }
 
 /**
- * 密钥的**回显形状**：`appKey` 可读（设置页要显示"已配置哪个 key"），
+ * 密钥的**回显形状**：`appKey` 可读（设置页据此预填，但输入框以掩码显示），
  * `appSecret` **永不回显** —— 只回一个 `hasSecret` 布尔。
  * 🔴 任何情况下本类型都不出现 `appSecret` 字段：那是它在类型上的保证。
  */

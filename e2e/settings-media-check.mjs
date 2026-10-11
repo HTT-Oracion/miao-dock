@@ -2286,6 +2286,52 @@ add('SIMPLIFY.token.readonly', 'SIMPLIFY', (ctx) => {
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
+add('SIMPLIFY.secret.masked', 'SIMPLIFY', (ctx) => {
+  /*
+   * 密钥框**一律掩码**（appKey 亦然）。
+   *
+   * 背景：appKey 原先按「可回显」处理，保存后明文铺在输入框里；拍板改成与 appSecret
+   * 同一形态 —— 两者都 `type="password"`，明文不上屏。
+   *
+   * 🔴 为什么逐个框判、且窗口锚在 `<input …>` 上，而不是在整段里数 `type="password"`：
+   *   ① 数总数测不出"其中一个被改回 text"（另一个仍凑够数 ⇒ 假绿）；
+   *   ② 用固定长度前缀窗（如 `slice(at-320, at)`）会**越界到上一个框** ——
+   *      appKey 被摘掉 `type="password"` 时，appSecret 的窗口仍能命中 appKey 那一份 ⇒
+   *      假绿。所以窗口从**离 `aria-label` 最近的那个 `<input`** 起算，精确框住本框。
+   *
+   * 也不全局搜 `type="password"`：令牌框（`.set-token-in`）走的是 readOnly 不掩码，
+   * 搜全局会把"两个密钥框都漏改"判成绿。
+   */
+  const body = stripComments(tsBody(ctx) ?? '');
+  const problems = [];
+  for (const label of ['appKey', 'appSecret']) {
+    const at = body.indexOf(`aria-label="${label}"`);
+    if (at < 0) {
+      problems.push(`${label} 输入框不在（aria-label 缺失）`);
+      continue;
+    }
+    const inp = body.lastIndexOf('<input', at);
+    // 从本框的 `<input` 起、到 `aria-label` 之后一小段：只装本框自己的属性
+    const win = inp < 0 ? body.slice(0, at + 40) : body.slice(inp, at + 40);
+    if (!/type="password"/.test(win)) {
+      problems.push(`${label} 框不是 type="password"（密钥明文会上屏）`);
+    }
+  }
+  /*
+   * appSecret **盘上已有一份**时，框内以**掩码点**占位（而不是"已保存 · …"这类文字）——
+   * 与 appKey 的掩码观感一致。
+   * 🔴 锚 `credView?.hasSecret` 而不是裸 `hasSecret`：后者在上方 `saveSrcCredentials` 的
+   * `hasSecret: true` 处**先**出现，裸搜会锚错位置、窗口落在密钥回写那段上 ⇒ 命中与否
+   * 与被测的占位态无关（假绿）。`credView?.hasSecret` 是占位符这一处独有的。
+   */
+  const hp = body.indexOf('credView?.hasSecret');
+  if (hp < 0) problems.push('appSecret 占位符没接 hasSecret（分不出"已保存 / 未保存"）');
+  else if (!/'•+'/.test(body.slice(hp, hp + 120))) {
+    problems.push('appSecret 已保存时不是掩码点占位（文字提示会被误读成"值没存下"）');
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
 add('SIMPLIFY.select.pulledRight', 'SIMPLIFY', (ctx) => {
   /*
    * 拍板：「说明在前、下拉**贴最右**」。
@@ -3661,6 +3707,29 @@ const MUTATIONS = [
     find: '导出 .txt',
     replace: '导出 txt',
     expect: ['ENGINE.run.drawerOps'],
+  },
+
+  // ———密钥掩码：两个框各破坏一次（只破坏一个测不出"两个都漏改"）———
+  {
+    name: '把 appKey 框改回明文（保存后密钥直接铺在屏幕上）',
+    file: F.sections,
+    find: '                className="set-src-in"\n                type="password"\n                value={draftKey}',
+    replace: '                className="set-src-in"\n                value={draftKey}',
+    expect: ['SIMPLIFY.secret.masked'],
+  },
+  {
+    name: '把 appSecret 框改回明文（保存后密钥直接铺在屏幕上）',
+    file: F.sections,
+    find: '                className="set-src-in"\n                type="password"\n                value={draftSecret}',
+    replace: '                className="set-src-in"\n                value={draftSecret}',
+    expect: ['SIMPLIFY.secret.masked'],
+  },
+  {
+    name: '把 appSecret 的"已保存"态从掩码点改回文字提示（观感不再是密码框）',
+    file: F.sections,
+    find: "credView?.hasSecret ? '••••••••' :",
+    replace: "credView?.hasSecret ? '已保存 · 留空则不更改' :",
+    expect: ['SIMPLIFY.secret.masked'],
   },
 ];
 
