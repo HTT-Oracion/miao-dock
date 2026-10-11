@@ -88,12 +88,23 @@ export function plain(text: string): string {
  * 给了 `noteSummary` 才折叠；没给就原样铺全文（`note` 本来就短，加个抽屉只多一次点击）。
  * 按字符数猜阈值是"没人能解释、也没法被断言"的写法，所以阈值留在 catalog。
  *
+ * ## 缺组说明 ⇒ 整块不渲染（自守，不靠调用处记得删）
+ * 显隐由**数据**决定：catalog 给了 `note` 才出现这一块，没给就 `return null`。
+ * 于是"删掉某组的 `note`"这件事只需改一处（catalog），调用处不必跟着删渲染点 ——
+ * 调用了也不会渲染。分组数、渲染点因此可以固定为"每组都写一行"，与文案增减解耦。
+ *
+ * 🔴 这一守同时是**崩溃防线**：`children` 为 `undefined` 时 `emphasis(undefined)`
+ * 会抛 `TypeError`。类型上 `{X.note as string}` 把 `string | undefined` 硬掰成了
+ * `string`，`tsc --noEmit` 放行 —— 只看编译期发现不了（本页已因此崩过两次）。
+ *
  * ## `emphasis(children)` 只在展开态求值
  * 折叠态显示的是 `summary`（纯文本，按 catalog 的硬约束它不含标记）；
  * 全文始终走 `emphasis()` —— 它是 `**` 唯一的渲染点之一。
  */
-export function GroupNote({ children, summary }: { children: string; summary?: string }) {
+export function GroupNote({ children, summary }: { children?: string; summary?: string }) {
   const [open, setOpen] = useState(false);
+  // 没有组说明：整块不渲染（读屏也不念）
+  if (!children) return null;
   if (!summary) return <div className="set-note">{emphasis(children)}</div>;
   return (
     <div className={open ? 'set-note is-open' : 'set-note'}>

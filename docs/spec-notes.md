@@ -5695,3 +5695,60 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 其余锚在文案上的反证（`必须重启引擎` / `从不卸载` / `RestartHint` 行）**文案未动，无需同步**。
 
 **验收**：`check:settings` **179/0** · `check:settings:refute` **125/125**（无跳过 / 无假阳性 / 破坏文件按字节复原）· `check:docs` 16/0 · `tsc --noEmit` 0 · `vite build` 通过。
+
+## D-134 · 组说明改为可选 + 修复设置页崩溃（2026-10-11）
+
+**症状（用户报「项目直接报错」）**：用户自行精简设置页文案时，把 `MEDIA` / `RESOURCE` 两组的 `note` + `noteSummary` **整块删掉**。后果两级：
+
+1. 🔴 **运行时崩溃**：`sections.tsx` 仍渲染 `<GroupNote summary={MEDIA.noteSummary}>{MEDIA.note as string}</GroupNote>`（`RESOURCE` 同）。`note` 变 `undefined`，而 `GroupNote` 在**没有 summary** 时走 `emphasis(children)` ⇒ `undefined.split('**')` → **TypeError**。因分栏按 `active.id` 渲染，点「播放·媒体」/「资源与投放」即刻白屏。**这是用户看到的"报错"，也是本轮首要修复项。**
+2. **断言红**：`SIMPLIFY.notesummary.verbatim` 要求 5 组都带 `note+noteSummary`（`pairs !== 5` 即红）；`SIMPLIFY.notesummary.wired` 要求 `<GroupNote>` 数 == 分组数 5。
+
+**决策（用户拍板「保留删改」）**：**组说明改为可选** —— 不写就不渲染 `GroupNote`。理由：是否给某组写组级说明是产品决策，不该被一次文案精简顺手带走，但既然用户明确要精简这两组，就让"没有说明"成为一种合法形态，而不是硬塞回文字。
+
+**改法**
+
+- `sections.tsx`：删掉 `MEDIA` / `RESOURCE` 两处 `<GroupNote>`（各留一行注释说明"无组说明 ⇒ 不渲染"）。⚠️ 教训：**catalog 字段被删、渲染点没跟着删**是这一崩的成因；断言只查了 data 侧配对，查不到 JSX 侧引用已失效的常量。
+- `notesummary.verbatim`：政策从「5 组都必须有 `note+noteSummary`」改为「**凡有** `note` 的组必须配 `noteSummary`，且摘要每段逐字取自 `note`」；判据改为 `withNote === pairs`；分母**仍写死 5 个分组**（不许少），另留下限：`withNote === 0` 即红（防空转 —— 全页一个组说明都没有，是把形态整体删了，另属决策）。
+- `notesummary.wired`：分母从「分组数（5）」改为「**有组说明的分组数**」（现为 3）；其余不变（每个 `<GroupNote>` 仍须带 `summary={…noteSummary}`）。
+- `NOTE.count` 对**无 note 的组直接跳过**（`note` 为空 ⇒ 没有"本组 N 项"可校验），故移除两组的 note 不使它变红。
+
+**🔴 同步的旧锚点（3 条，锚在被删文案上会静默跳过）**
+
+- `NOTE.count` 反证：原锚 `MEDIA.note`「本组 12 项…」→ 重定向 `TRANSLATE.note`「本组 13 项，分四小节」改 12。
+- `notesummary.verbatim` 反证 ×2：原锚 `MEDIA.noteSummary` / `RESOURCE.noteSummary` → 重定向为「② 摘要加一段非逐字内容」与「删 `GENERAL.noteSummary`（有说明却没摘要）」。
+
+**验收**：`check:settings` **179/0** · `check:settings:refute` **125/125**（无跳过 / 无假阳性 / 破坏文件按字节复原）· `check:docs` 16/0 · `check:contract` 77/0 · `tsc --noEmit` 0 · `vite build` 通过。**未提交**（用户要求暂不提交）。
+
+**遗留（用户侧决定，未动）**：① 用户其余文案删改按「保留删改」原样保留，其中少数留有悬空标点（如 `service-auto-start.why` 结尾 `—— `）；② `catalog.ts` 里 `MediaSection` 的文档注释仍称"逐项结论写在 `note` 里"，与"note 已移除"不一致，属注释陈旧，待用户确认后再清。
+
+## D-135 · 又一处悬空 GroupNote（ABOUT）崩溃（2026-10-11）
+
+**症状（用户报「设置页又报错了」）**：用户继续精简文案时，把 `ABOUT` 组的 `note` + `noteSummary` 也删了，但 `sections.tsx` 的 `AboutSection` 仍渲染 `<GroupNote summary={ABOUT.noteSummary}>{ABOUT.note as string}</GroupNote>` ⇒ `ABOUT.note` 为 `undefined` ⇒ `GroupNote` 无 summary 分支走 `emphasis(undefined)` ⇒ **TypeError，点「关于」分栏白屏**。**与 D-134 同一崩法，第二次。**
+
+**根因（为什么会复发）**：`note?: string` 是**可选字段**，`{ABOUT.note as string}` 的 `as string` 把 `string | undefined` 硬掰成 `string`，**tsc 放行**（`tsc --noEmit` 干净）⇒ 类型系统拦不住"catalog 删字段、JSX 留引用"。D-134 只在两处手工删了 JSX，属**治标**：删得掉 MEDIA/RESOURCE，删不掉"下次又忘"。
+
+**改法**：与 D-134 一致 —— 删除 `AboutSection` 的 `<GroupNote>` 渲染块（留一行注释说明"无组说明 ⇒ 不渲染"）。改后 `sections.tsx` 里 `<GroupNote>` = 2（GENERAL / TRANSLATE），断言分母 `groups-with-note` = 2，自洽。
+
+**验收**：`check:settings` **179/0** · `check:settings:refute` **125/125**（无跳过 / 无假阳性 / 破坏文件按字节复原）· `check:docs` 16/0 · `check:contract` 77/0 · `tsc --noEmit` 0 · `vite build` 通过。**未提交**（用户要求暂不提交）。
+
+**🔴 未做（等用户拍板，属行为变更）**：彻底止血需二选一 —— ① 让 `GroupNote` 自身对空 `children` 免疫（`if (!children) return null`，把白屏降级为"不渲染"）。⚠️ 这是**新行为**，须同时加一条断言钉住它，否则成"无人看守的行为"；且它会令"残留标签"不再显形，只靠 `notesummary.wired` 的计数兜。② 把组说明的**声明与渲染并到一处**（如 `<SectionNote section={X} />` 组件内自判 `note` 有无），从结构上消掉"两处各写一半"。方案 ② 与用户接下来的「文案统一抽离」目标同向，建议并入那次改造一次做。
+
+## D-136 · 说明文案缺字段即不渲染（`GroupNote` / `blurb` 自守）（2026-10-11）
+
+**诉求（用户）**：「改一下，没有 `note` / `blurb` / `noteSummary` 时就不显示对应那行。」—— 即 D-135 建议的方案 ①。
+
+**改法（渲染层自守，声明与渲染解耦）**
+
+- `parts.tsx::GroupNote`：签名 `children: string` → `children?: string`，并在体首加 `if (!children) return null;` —— **缺组说明整块不渲染**（不渲染空 `<div>`，读屏也不念）。这同时是**崩溃防线**：`emphasis(undefined)` 不再可能被调用。
+- `SettingsScreen.tsx`：`blurb` 渲染由无条件改为 `{active.blurb ? <div className="settings-blurb">…</div> : null}` —— **缺 blurb 不留空行**。
+- `sections.tsx`：`MEDIA / RESOURCE / ABOUT` 三处**恢复** `<GroupNote>` 调用（D-134/D-135 曾手工移除）。显隐现在由**数据**决定：catalog 给 `note` 就出现，删 `note` 就自动消失 —— **改一处（catalog）即可，无需再动渲染点**。这正是"两处各写一半"这个复发根因（D-134/135 两次崩溃）的结构性解法（D-135 的 ①）。
+
+**断言（同步 + 新增）**
+
+- `SIMPLIFY.notesummary.wired`：分母由「**有组说明的分组数**」改为「**分组总数**（5）」（五组现在都写一行 `<GroupNote>`，显隐归组件自守）。`noSum`（每个标签须带 `summary`）与组件退路（`if (!summary)` / `set-note-more`）不变。
+- **新增** `SIMPLIFY.optional.selfGuard`：「缺字段 ⇒ 不渲染那一行」这条政策必须被渲染层钉住 —— ① `GroupNote` 体里须有 `if (!children) return null`；② `SettingsScreen` 的 blurb 渲染须挂在 `active.blurb` 的守卫上。**为什么必须钉**：`{X.note as string}` 的 `as string` 把可选字段掰成必填，`tsc` 拦不住（D-134/135 的复发根因），显隐判据只能在渲染层，且必须有人看守。
+- 两条反证：删 `if (!children) return null` → `optional.selfGuard`；把 blurb 改回无条件（`active.blurb ?` → `true ?`）→ `optional.selfGuard`。
+
+**验收**：`check:settings` **180/0** · `check:settings:refute` **127/127**（无跳过 / 无假阳性 / 破坏文件按字节复原）· `check:docs` 16/0 · `check:contract` 77/0 · `tsc --noEmit` 0 · `vite build` 通过。**未提交**。
+
+**⚠️ 副作用（有意）**：`GroupNote` 对空 `children` 自守后，「残留标签」（catalog 删了 note、JSX 还写着）不再显形 —— 靠 `notesummary.wired` 的计数（每组一行）与实际渲染解耦兜底，不会再崩。

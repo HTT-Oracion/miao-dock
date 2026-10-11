@@ -147,7 +147,10 @@ export function SettingsScreen({
             <div className="settings-title" style={{ fontSize: SETTINGS.pageTitleSize }}>
               {active.name}
             </div>
-            <div className="settings-blurb">{emphasis(active.blurb)}</div>
+            {/* blurb 缺省即不渲染这一行（显隐由 catalog 数据决定，不留空行、不崩） */}
+            {active.blurb ? (
+              <div className="settings-blurb">{emphasis(active.blurb)}</div>
+            ) : null}
           </header>
 
           {active.id === 'general' ? (

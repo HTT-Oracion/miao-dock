@@ -148,8 +148,7 @@ const data = {
    * ⚠️ 界面与文档都必须把这句话带出去 —— 清单是"包自己说的"，不是"我们核准过的"。
    */
   disclaimer:
-    '以下是各依赖**自己声明**的许可，由 package-lock.json / Cargo.lock 与本地包元数据枚举得出，' +
-    '**尚未逐条人工核准**；GPL 边界复核见台账 D-21。',
+    '以下是各依赖**自己声明**的许可，由 package-lock.json / Cargo.lock 与本地包元数据枚举得出，',
   sources: {
     npm: 'app/package-lock.json + app/node_modules/**/package.json（不含 devDependencies）',
     rust: 'app/src-tauri/Cargo.lock + ~/.cargo/registry/src/**/Cargo.toml',

@@ -2123,7 +2123,8 @@ add('SIMPLIFY.notesummary.verbatim', 'SIMPLIFY', (ctx) => {
     const note = typeof sec?.note === 'string' ? sec.note : '';
     const sum = typeof sec?.noteSummary === 'string' ? sec.noteSummary : '';
     if (!note) {
-      problems.push(`${sec.id} 没有组说明（note）`);
+      // 组说明可以省略（省略即该组不渲染 GroupNote）；但留了摘要却没留说明，是数据残缺
+      if (sum.trim()) problems.push(`${sec.id} 有摘要却没有组说明（摘要无源）`);
       continue;
     }
     if (!sum.trim()) {
@@ -2145,9 +2146,17 @@ add('SIMPLIFY.notesummary.verbatim', 'SIMPLIFY', (ctx) => {
       }
     }
   }
-  // 分母写死：本页就是 5 个分组，且每组的 note 都必须带摘要。少一个即红（防空转）。
+  /*
+   * 政策（D-134）：组说明**可与不可** —— 不写就不渲染 GroupNote（小节的说明可省略）。
+   * 但凡**有**组说明的分组，必须同时配一行摘要（`withNote === pairs`），
+   * 且摘要每一段都逐字取自说明（上面的循环负责）。
+   * 分母仍写死：5 个分组不许变；另留一条下限防空转 —— 全页不能一个组说明都没有
+   * （那是把「组级说明」这一形态整体删掉，属产品决策，不该被一次文案精简顺手带走）。
+   */
+  const withNote = secs.filter((s) => typeof s?.note === 'string' && !!s.note.trim()).length;
   if (secs.length !== 5) problems.push(`分组数 ${secs.length}，应为 5`);
-  if (pairs !== 5) problems.push(`只有 ${pairs} 组同时有 note + noteSummary，应为 5`);
+  if (withNote === 0) problems.push('所有分组都没有组说明 —— 组级说明这一形态被整体移除了');
+  if (withNote !== pairs) problems.push(`有 ${withNote} 组带组说明，但只有 ${pairs} 组配了一行摘要`);
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -2160,11 +2169,13 @@ add('SIMPLIFY.notesummary.wired', 'SIMPLIFY', (ctx) => {
    */
   const dataErr = CAT_ERR(ctx.cat);
   if (dataErr) return { ok: false, detail: dataErr };
+  // 分母 = **分组总数**（D-136 起五组都各写一行 <GroupNote>，显隐改由组件自守 ——
+  // 与"某组有没有 note"解耦；缺 note 的组由 GroupNote 自己 return null）
   const n = (ctx.cat.mod.SETTINGS_SECTIONS ?? []).length;
   const problems = [];
   // 逐个 `<GroupNote …>` 标签看它有没有带 summary（不锁常量名，重构改名不会误红）
   const calls = ctx.s.sections.match(/<GroupNote[^>]*>/g) ?? [];
-  if (calls.length !== n) problems.push(`sections.tsx 里有 ${calls.length} 个 <GroupNote>，应为 ${n}`);
+  if (calls.length !== n) problems.push(`sections.tsx 里有 ${calls.length} 个 <GroupNote>，应为 ${n}（每组一行）`);
   const noSum = calls.filter((c) => !/summary=\{[\w$]+\.noteSummary\}/.test(c));
   if (noSum.length) {
     problems.push(`${noSum.length} 个 <GroupNote> 没接摘要（数据是死的，界面照旧铺全文）`);
@@ -2174,6 +2185,34 @@ add('SIMPLIFY.notesummary.wired', 'SIMPLIFY', (ctx) => {
   else {
     if (!/if\s*\(!summary\)/.test(gb)) problems.push('GroupNote 没有"没给摘要就不折叠"的退路');
     if (!gb.includes('set-note-more')) problems.push('GroupNote 没有渲染「为什么 ?」按钮');
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+add('SIMPLIFY.optional.selfGuard', 'SIMPLIFY', (ctx) => {
+  /*
+   * 政策：**缺字段 ⇒ 不渲染对应那一行**。`note`（组说明）与 `blurb`（页标题下的描述）
+   * 都是可选文案，没写时界面既不该留空行，更不该崩。
+   *
+   * 为什么必须钉在**渲染层**：`note` 经由 `{X.note as string}` 送进 `<GroupNote>`，
+   * 那个 `as string` 把 `string | undefined` 硬掰成了 `string` —— `tsc --noEmit` 放行，
+   * 只在运行时炸（本页已因此崩过两次：D-134 MEDIA/RESOURCE、D-135 ABOUT）。
+   * 所以显隐判据只能在渲染层自守，且必须被断言盯着，否则下次精简文案又会踩回去。
+   *
+   * 判据取"有没有守卫"而不是"长什么样"：
+   *   ① `GroupNote` 体里必须有 `if (!children) return null`（缺说明直接不渲染，
+   *      而不是渲染一个空 `<div className="set-note">` —— 空行同样是缺陷）；
+   *   ② `SettingsScreen` 的 blurb 渲染必须挂在 `active.blurb` 的守卫上（`?` 或 `&&`）。
+   */
+  const problems = [];
+  const gb = fnBody(ctx.s.parts, 'GroupNote');
+  if (!gb) problems.push('parts.tsx 里找不到 GroupNote 的实现体');
+  else if (!/if\s*\(\s*!children\s*\)\s*return\s+null/.test(gb)) {
+    problems.push('GroupNote 没有"缺组说明就不渲染"的自守（缺 note 会崩或留空行）');
+  }
+  const ss = stripComments(ctx.s.settingsScreen ?? '');
+  if (!/active\.blurb\s*[?&]/.test(ss)) {
+    problems.push('SettingsScreen 的 blurb 是无条件渲染（缺 blurb 会崩或留空行）');
   }
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
@@ -2886,10 +2925,10 @@ const MUTATIONS = [
     expect: ['RETIRED.cache-clean'],
   },
   {
-    name: '把 note 里的「本组 12 项」改回 11（模拟正文数字与数据脱节）',
+    name: '把 note 里的「本组 13 项」改成 12（模拟正文数字与数据脱节）',
     file: F.catalog,
-    find: '本组 12 项，分播放/歌词/透明彩胶三小节。',
-    replace: '本组 11 项，分播放/歌词/透明彩胶三小节。',
+    find: '本组 13 项，分四小节',
+    replace: '本组 12 项，分四小节',
     expect: ['NOTE.count'],
   },
   {
@@ -3421,24 +3460,21 @@ const MUTATIONS = [
 
   // ——— ② 分组简洁化（2026-10-07）—— 每条新增断言都必须有一条能把它打红的破坏 ———
   {
-    name: '让 ③ 的摘要说出 note 里没有的话（摘要成了新的承诺）',
+    name: '让 ② 的摘要说出 note 里没有的话（摘要成了新的承诺）',
     file: F.catalog,
-    find: "'本组 12 项 · 分播放/歌词/透明彩胶三小节",
-    replace: "'本组 12 项已全部落地 · 分播放/歌词/透明彩胶三小节",
+    /*
+     * ⚠️ 锚点带着目标组的**摘要原文** ⇒ 摘要每改一次就要同步一次（本项目已两次踩坑：
+     * D-84 与 D-134）。锚点不同步会退化成「锚点未找到 ⇒ 跳过」—— 跳过 ≠ 通过
+     * （分母写死，跳过会被 `✗ 有 N 条未能反证` 抓住，不会静默变绿，但仍要随手同步）。
+     */
+    find: "'本组 13 项 · 改档位/后端/模型目录要重启引擎才生效",
+    replace: "'本组 13 项 · 改档位/后端/模型目录要重启引擎才生效 · 摘要新增的一条",
     expect: ['SIMPLIFY.notesummary.verbatim'],
   },
   {
-    name: '把 RESOURCE 的一行摘要删掉（组说明退回铺满 6 行的老样子）',
+    name: '把「通用」的一行摘要删掉（该组有组说明却没摘要）',
     file: F.catalog,
-    /*
-     * ⚠️ 锚点里带着 RESOURCE 的**摘要原文**，因此摘要每改一次就要同步一次。
-     * D-84 把这一组的 noteSummary 从「本组 2 项都卡在磁盘口径上 · 原先的「缓存清理」已删除」
-     * 重写成现在这句，锚点没跟着走 ⇒ 这条当场退化成「锚点未找到 ⇒ 跳过」。
-     * 好在分母是写死的（expectedTotal），跳过会被 `✗ 有 N 条未能反证` 抓住、不会静默变绿；
-     * 但每次动这几组的 note/noteSummary，仍应顺手 `grep` 一下本文件里的旧文案。
-     */
-    find:
-      "  noteSummary:\n    '本组 2 项 · 存储占用分三行列出、不合计 · 临时文件暂缺服务侧接口',\n",
+    find: "  noteSummary: '本组 4 项 · 「侧栏图标标签」关掉后只显示图标、侧栏宽度不变',\n",
     replace: '',
     expect: ['SIMPLIFY.notesummary.verbatim'],
   },
@@ -3448,6 +3484,20 @@ const MUTATIONS = [
     find: '<GroupNote summary={GENERAL.noteSummary}>{GENERAL.note as string}</GroupNote>',
     replace: '<GroupNote>{GENERAL.note as string}</GroupNote>',
     expect: ['SIMPLIFY.notesummary.wired'],
+  },
+  {
+    name: '去掉 GroupNote 的"缺组说明就不渲染"自守（缺 note 时又会在 emphasis 处崩）',
+    file: F.parts,
+    find: 'if (!children) return null;',
+    replace: '// 自守被移除（反证）',
+    expect: ['SIMPLIFY.optional.selfGuard'],
+  },
+  {
+    name: '把页标题下的 blurb 改回无条件渲染（缺 blurb 时这一行会崩或留空）',
+    file: F.settingsScreen,
+    find: 'active.blurb ? (',
+    replace: 'true ? (',
+    expect: ['SIMPLIFY.optional.selfGuard'],
   },
   {
     name: '把 Row / PendingRow 的 why 去掉 is-one（行高又被 2 行的 why 顶回 70~80）',

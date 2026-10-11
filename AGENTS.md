@@ -117,7 +117,7 @@ npm run check:e10[:refute]    # E10 安全：只监听回环 / 非图片字节�
 #   脚本自己拉起并收尾 box-service / 引擎 / ③ / `:8001` 执行器。
 node e2e/service/llm-real-timing.mjs  # 真 ③（llama-server）冷启动与内存实测（**真权重，分钟级，不进常规门**）
 npm run check:music[:refute]  # 音乐平台 / 心动模式 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 216 条 / 反证 182 条
-npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3「准备中」时间线 + ④ 功能梳理（侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / 行内 def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）179 条 / 反证 125 条
+npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3「准备中」时间线 + ④ 功能梳理（侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / 行内 def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染（自守）180 条 / 反证 127 条
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 看图缩放 / 样式分层 45 条 / 反证 59 条
 npm run check:bundle[:refute] # Windows 打包配置钉子 4 条 / 反证 4 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；源码级，不起进程）
 npm run check:docs            # 文档 ↔ 实现一致性 16 条（条数对账 / 命令存在 / 禁词 0 命中 / GROUPS 覆盖）

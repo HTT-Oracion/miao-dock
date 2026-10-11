@@ -1,6 +1,7 @@
 # 依赖与构建产物
 node_modules/
 dist/
+dist-verify/
 app/src-tauri/target/
 
 # Tauri 生成的 schema / 清单缓存（构建期自动产出，不入库）

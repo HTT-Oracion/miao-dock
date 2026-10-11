@@ -121,8 +121,7 @@ export function GeneralSection({
           <ReadOnly>收起到托盘</ReadOnly>
         </Row>
         <RowNote>
-          关闭窗口只是把窗口收起来 —— 本地服务继续跑，浏览器插件照样能提交翻译任务，
-          托盘图标常驻。要真正退出请用托盘菜单里的「退出喵坞…」，届时会有二次确认。
+          关闭窗口只是把窗口收起来，托盘图标常驻。要真正退出请用托盘菜单里的「退出喵坞…」，届时会有二次确认。
         </RowNote>
 
         {/*
@@ -520,11 +519,6 @@ export function TranslateSection({
             ) : null}
           </div>
         ) : null}
-
-        <RowNote>
-          本地引擎在本机完成翻译；在线 API 把原文发给第三方平台。
-          切换来源对<b>下一次</b>翻译生效，进行中的任务按发起时的来源跑完。
-        </RowNote>
       </div>
 
       {/* 小节二：服务与配对（4） */}
@@ -626,8 +620,7 @@ export function TranslateSection({
           <span className="set-token-ro">只读</span>
         </div>
         <RowNote>
-          插件靠这个令牌提交翻译任务。令牌由本机生成、权限 0600，只存在这台机器上，
-          不会上传到任何远端；换令牌等于让旧令牌立即失效。
+          插件靠这个令牌提交翻译任务。令牌由本机生成、权限 0600，只存在与本地
         </RowNote>
 
         <Row item={itemOf(pairing, 'root-dir')}>
@@ -652,11 +645,6 @@ export function TranslateSection({
         <Row item={itemOf(inference, 'translate-direction')}>
           <ReadOnly>日译中 · 英译中</ReadOnly>
         </Row>
-        <RowNote>
-          方向由发起翻译的一端随任务指定（插件面板里的「日译中 / 英译中」），没有全局开关。
-          英译中走离线 nllb，日译中走 Sakura；未指定方向的任务按「日译中」处理。
-          非法方向会被拒绝（400），不会静默当成日译中。
-        </RowNote>
 
         <Row item={itemOf(inference, 'tier')}>
           {o ? (
@@ -1140,6 +1128,7 @@ export function MediaSection() {
 
   return (
     <>
+      {/* 组说明缺省即不渲染（GroupNote 自守）：catalog 未给 MEDIA.note 时这一行自动消失 */}
       <GroupNote summary={MEDIA.noteSummary}>{MEDIA.note as string}</GroupNote>
       {/* 按 catalog 的 groups 顺序渲染三小节：写死第一组会静默漏掉「歌词 / 透明彩胶」 */}
       {MEDIA.groups.map((g) => (
@@ -1168,6 +1157,7 @@ export function ResourceSection({ lib }: { lib: LibraryResponse | null }) {
   };
   return (
     <>
+      {/* 组说明缺省即不渲染（GroupNote 自守）：catalog 未给 RESOURCE.note 时这一行自动消失 */}
       <GroupNote summary={RESOURCE.noteSummary}>{RESOURCE.note as string}</GroupNote>
       <Group group={RESOURCE.groups[0]} render={render} />
     </>
@@ -1211,6 +1201,7 @@ export function AboutSection() {
 
   return (
     <>
+      {/* 组说明缺省即不渲染（GroupNote 自守）：catalog 未给 ABOUT.note 时这一行自动消失 */}
       <GroupNote summary={ABOUT.noteSummary}>{ABOUT.note as string}</GroupNote>
       <div className="set-group">
         <Row item={versionItem}>

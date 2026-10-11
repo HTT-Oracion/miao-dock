@@ -84,8 +84,7 @@ export function ModelManageBlock({ item, eng }: { item: SettingItem; eng: Engine
         <div className="set-manage-state">正在重新下载模型 —— 进度与输出见下方「引擎诊断」。</div>
       ) : (
         <div className="set-manage-state">
-          本次会话尚未校验。校验会逐个重算 SHA256，因此<b>不挂自动</b>：它要读完整的几 GB，
-          只能由你显式点一次。
+          本次会话尚未校验。校验会逐个重算 SHA256，因此<b>不挂自动</b>
         </div>
       )}
     </div>
