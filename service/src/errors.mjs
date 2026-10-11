@@ -100,6 +100,44 @@ export const CODES = {
   CHAPTER_SOURCE_BUSY: 409,
   /** 改话号的目录改名撞上 Windows「句柄占用族」且退避重试耗尽（D-125 同款归因） */
   CHAPTER_SOURCE_LOCKED: 409,
+  // ---------------------------------------------------------------- ver2.2 新增（在线翻译一族，**不进插件契约**）
+  //
+  // 🔴 与 S6 的 `INVALID_SETTING` 同族：这一组全是 **Box 专用**端点（`/api/v1/translate/*`）
+  //    的错误码。契约 §2.2 描述的是**插件**要认的错误集，插件端不认识这些路径 —— 两者互不影响。
+  //
+  // 🔴 为什么 11 条一条都不能合并（沿用本文件 :24-32 与方案 §7.2 的纪律）：错误码是给
+  //    **界面分支**用的，而这一族每条码指向的**用户动作**互不相同 ——
+  //      · `429` RATE_LIMITED      ⇒ 「等一会儿再点」（重试只会更堵）
+  //      · `503` NOT_CONFIGURED    ⇒ 「去填密钥」（设置 → 翻译来源）
+  //      · `402` QUOTA_EXCEEDED    ⇒ 「账户欠费，去充值」
+  //      · `504` TIMEOUT           ⇒ 「上游慢了，可重试」
+  //      · `400` CAPABILITY        ⇒ 「这个平台没这个能力，换平台/换入口」
+  //    合并成一个"翻译失败"，用户只能对着同一句话反复重试 —— 那是把一句假话讲给用户听。
+  //
+  // 取值与 `manga/translate/errors.mjs` 的 `TRANSLATE_CODES` **逐字一致**（门面把
+  // TranslateError 转成 ApiError 时以两边同一状态码出信封，不许有一丝偏差）。
+  /** 无 appKey / appSecret ⇒ 用户要做的是"去填密钥"（503，不是 500） */
+  TRANSLATE_NOT_CONFIGURED: 503,
+  /** 密钥或应用配置错（上游 108/110/112/202/203/205/206/207）⇒ 检查 appKey/appSecret */
+  TRANSLATE_AUTH_FAILED: 502,
+  /** 本地校验失败（空文本 / 未知方向 / 缺参 / prompt 超限）⇒ 改请求 */
+  TRANSLATE_INVALID_INPUT: 400,
+  /** 文本超过上游单次长度上限（5000 字符）⇒ 切短再试 */
+  TRANSLATE_TEXT_TOO_LONG: 400,
+  /** 频率/字符数受限（上游 411/412 或本服务闸门排队超时）⇒ 等一会儿再点 */
+  TRANSLATE_RATE_LIMITED: 429,
+  /** 账户欠费（上游 401）⇒ 去充值 */
+  TRANSLATE_QUOTA_EXCEEDED: 402,
+  /** 未开通领域（上游 310）⇒ 换领域或到控制台开通 */
+  TRANSLATE_UNSUPPORTED_FEATURE: 400,
+  /** 上游业务错误（1/301/302/303/304/902000）或 5xx ⇒ 稍后重试 / 看上游状态 */
+  TRANSLATE_UPSTREAM_ERROR: 502,
+  /** 根本到不了上游（ENOTFOUND/ECONNREFUSED/ECONNRESET/EAI_AGAIN）⇒ 检查网络 */
+  TRANSLATE_UPSTREAM_UNREACHABLE: 502,
+  /** 任一层超时（connect/ttfb/idle/total，details.stage 标明哪层）⇒ 可重试 */
+  TRANSLATE_TIMEOUT: 504,
+  /** 请求的能力平台不支持（如 mode:'llm' 而平台只有 'text'）⇒ 换平台/换入口 */
+  TRANSLATE_CAPABILITY_UNSUPPORTED: 400,
 };
 
 export class ApiError extends Error {

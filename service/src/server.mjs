@@ -38,7 +38,11 @@ import { sniffImageType } from './manga/image.mjs';
 import { normalizeComicName, isSafeDirName } from './manga/names.mjs';
 import { watchParent } from './parent-watch.mjs';
 import { Store } from './manga/store.mjs';
-import { HEARTBEAT_MS, SSE_HEADERS, writeComment } from './manga/sse.mjs';
+import { HEARTBEAT_MS, SSE_HEADERS, writeComment, writeSseEvent } from './manga/sse.mjs';
+import {
+  configureTranslate, currentTranslateSource, saveTranslateCredentials, saveTranslateSettings,
+  translateApiError, translateOptionsView, translateStream, translateText,
+} from './manga/translate/index.mjs';
 
 const MAX_BODY = 256 * 1024 * 1024; // 20 张高分辨率原图的宽松上限
 const MIME = {
@@ -1207,6 +1211,154 @@ function handleTaskList(req, res, cors, url) {
   sendJson(res, 200, store.taskListView({ status, limit }), cors);
 }
 
+// ------------------------------------------------------------------ 在线翻译（ver2.2 · 方案 §6.3）
+//
+// 五条路由全部继承 `X-Box-Token` + Origin 校验（createHandler 里统一做，与既有端点同一把尺）。
+// 业务全在 `manga/translate/index.mjs`（门面）—— 这里只做搬运：读体、调门面、出信封 / SSE。
+// 🔴 门面纪律在路由层同样有效：本文件不出现任何平台字段名（`llm-trans` / `transIncre` …）。
+
+/** 翻译路由的请求体：必须是 JSON 对象（空体按 `{}` 处理，缺字段由门面报 400） */
+function translateBodyOf(value) {
+  if (value === null || value === undefined) return {};
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new ApiError('TRANSLATE_INVALID_INPUT',
+      `请求体必须是 JSON 对象，收到 ${Array.isArray(value) ? 'array' : typeof value}`,
+      { received: Array.isArray(value) ? 'array' : typeof value });
+  }
+  return value;
+}
+
+/**
+ * `POST /api/v1/translate/text` —— 普通文本翻译（整体）。
+ *
+ * 200 体只回 `{ text, lines?, langType }`：请求了 splitLines 但上游没给逐行译文时
+ * **不带 lines 键**（对齐失败只由"键缺失"表达，方案 §6.2 —— 不硬凑：错位的逐行译文
+ * 比没逐行危害大得多）。`details.aligned` 不进 200 体，前端不要求。
+ */
+async function handleTranslateText(req, res, cors) {
+  const { ok, value } = await readJsonBody(req);
+  if (!ok) throw new ApiError('TRANSLATE_INVALID_INPUT', '请求体不是合法 JSON', {});
+  try {
+    const result = await translateText(translateBodyOf(value));
+    sendJson(res, 200, {
+      text: result.text,
+      ...(Array.isArray(result.lines) ? { lines: result.lines } : {}),
+      ...(result.langType !== undefined ? { langType: result.langType } : {}),
+    }, cors);
+  } catch (err) {
+    throw translateApiError(err); // 翻译域错误 → 契约信封；其余原样抛（走既有 500）
+  }
+}
+
+/**
+ * `POST /api/v1/translate/stream` —— 大模型翻译（流式，SSE 事件 translate.delta/.done/.error）。
+ *
+ * 三条硬顺序 / 硬纪律：
+ *  ① **先 writeHead 再调门面**：头一旦发出，HTTP 状态就定了 —— 此后一切结果（含校验失败）
+ *     都以 translate.* 事件表达，不再可能切换成 4xx。坏 JSON / 非对象体在头之前拦（回 400）。
+ *  ② **背压**：`writeSseEvent` 返回 false ⇒ 在 onDelta 里等 'drain'；门面 await onDelta ⇒
+ *     "上游读取节奏跟随下游"—— 否则下游慢、上游快会把内存堆成一座山（方案 §6.4）。
+ *  ③ **客户端断开必须真断上游**：有道按量计费，客户端关了还继续拉 = 白花钱。
+ *
+ * ⚠️ 断连监听用 `res.on('close')` 而**不是** `req.on('close')`：本端点是 POST 且请求体
+ *    已被 `readBody` 消费完 —— 实测（Node v24，POST+带体+SSE 探针）此时 req 的 'close'
+ *    在请求体读完即刻触发（≈+1ms），拿它 abort 会在第一个 delta 之前就掐死每一条流；
+ *    res 的 'close' 才严格对应"客户端断开 / 响应结束"（实测：客户端中断时 +335ms 触发）。
+ *    （GET 无体的 `handleSse` 用 req.on('close') 是对的 —— 那条路请求体不消费，'close'
+ *     即 socket 关闭。两条路形状不同，不能照抄。）
+ */
+async function handleTranslateStream(req, res, cors) {
+  const { ok, value } = await readJsonBody(req);
+  if (!ok) throw new ApiError('TRANSLATE_INVALID_INPUT', '请求体不是合法 JSON', {});
+  const body = translateBodyOf(value); // 形状校验在写头之前：那时还回得了 400
+
+  res.writeHead(200, { ...cors, ...SSE_HEADERS });
+  res.socket?.setNoDelay?.(true);
+  res.socket?.setTimeout?.(0); // 长流：关掉 socket 空闲超时（同 handleSse）
+
+  let eventId = 0;
+  const nextId = () => { eventId += 1; return eventId; };
+  let afterChars = 0; // 已吐给客户端多少字 —— translate.error 的现场证据（方案 §6.1-4）
+
+  const ac = new AbortController();
+  res.on('close', () => ac.abort());
+
+  try {
+    await translateStream({ ...body, signal: ac.signal }, {
+      onDelta: async (delta) => {
+        afterChars += delta.length;
+        const wrote = writeSseEvent(res, { id: nextId(), event: 'translate.delta', data: { text: delta } });
+        // 背压：写不动且连接还活着 ⇒ 等 drain（连接已死时等不到，不等）
+        if (!wrote && !res.writableEnded && !res.destroyed) {
+          await new Promise((resolve) => { res.once('drain', resolve); });
+        }
+      },
+      onDone: async ({ text, langType }) => {
+        writeSseEvent(res, { id: nextId(), event: 'translate.done', data: { text, langType } });
+      },
+    });
+    res.end();
+  } catch (err) {
+    const e = translateApiError(err);
+    // 顺序不能反：**先** translate.error **再** end()。反了浏览器拿到的是"流干净结束"。
+    writeSseEvent(res, {
+      id: nextId(),
+      event: 'translate.error',
+      data: {
+        code: e instanceof ApiError ? e.code : 'INTERNAL',
+        message: e instanceof ApiError ? e.message : '翻译流中途失败',
+        afterChars,
+      },
+    });
+    res.end();
+  }
+}
+
+/**
+ * `GET /api/v1/translate/options` —— 设置页 / 翻译面板的取值来源。
+ * `settings` + `sources` **现读**（env > 文件 > 默认，逐键标来源）；`credentials` 只回
+ * `{ appKey, hasSecret }` —— **secret 永不回显**（方案 §8.3）。
+ */
+async function handleTranslateOptions(req, res, cors) {
+  try {
+    sendJson(res, 200, await translateOptionsView(), cors);
+  } catch (err) {
+    throw translateApiError(err);
+  }
+}
+
+/**
+ * `POST /api/v1/translate/settings` —— 非密钥设置补丁（白名单 strict：未知键/非法值当场 400）。
+ * 错误信封走 `INVALID_SETTING`（与 `/engine/settings` 同款，S6 同族）。
+ */
+async function handleTranslateSettings(req, res, cors) {
+  const { ok, value } = await readJsonBody(req);
+  if (!ok) throw new ApiError('INVALID_SETTING', '请求体不是合法 JSON', {});
+  try {
+    // value 为 null（空体）/ 非对象时由 assertTranslatePatch 抛 INVALID_SETTING —— 不静默当空补丁
+    const result = saveTranslateSettings(value);
+    sendJson(res, 200, { ok: true, changed: result.changed, settings: result.settings }, cors);
+  } catch (err) {
+    throw translateApiError(err);
+  }
+}
+
+/**
+ * `POST /api/v1/translate/credentials` —— 保存平台密钥（**只写不读**：任何响应都不回显 secret）。
+ * 校验（platform / appKey / appSecret 非空、appSecret ≤128）在 `writeCredentials` 内，
+ * 失败 → `TRANSLATE_INVALID_INPUT`(400)。
+ */
+async function handleTranslateCredentials(req, res, cors) {
+  const { ok, value } = await readJsonBody(req);
+  if (!ok) throw new ApiError('TRANSLATE_INVALID_INPUT', '请求体不是合法 JSON', {});
+  try {
+    const saved = saveTranslateCredentials(translateBodyOf(value));
+    sendJson(res, 200, { ok: true, saved }, cors);
+  } catch (err) {
+    throw translateApiError(err);
+  }
+}
+
 // ------------------------------------------------------------------ 库与导出
 
 /**
@@ -2345,6 +2497,27 @@ async function route(req, res, cors, url) {
     return handleModelsDownload(req, res, cors);
   }
 
+  // /translate/text —— 在线翻译 · 普通文本（整体，方案 §6.3）
+  if (p.length === 2 && p[0] === 'translate' && p[1] === 'text' && method === 'POST') {
+    return handleTranslateText(req, res, cors);
+  }
+  // /translate/stream —— 在线翻译 · 大模型流式（POST + SSE 响应体）
+  if (p.length === 2 && p[0] === 'translate' && p[1] === 'stream' && method === 'POST') {
+    return handleTranslateStream(req, res, cors);
+  }
+  // /translate/options —— 平台能力 + 生效设置（含来源）+ 脱敏密钥视图
+  if (p.length === 2 && p[0] === 'translate' && p[1] === 'options' && method === 'GET') {
+    return handleTranslateOptions(req, res, cors);
+  }
+  // /translate/settings —— 非密钥设置补丁（白名单 strict）
+  if (p.length === 2 && p[0] === 'translate' && p[1] === 'settings' && method === 'POST') {
+    return handleTranslateSettings(req, res, cors);
+  }
+  // /translate/credentials —— 平台密钥，只写不读（secret 永不回显）
+  if (p.length === 2 && p[0] === 'translate' && p[1] === 'credentials' && method === 'POST') {
+    return handleTranslateCredentials(req, res, cors);
+  }
+
   // /library
   if (p.length === 1 && p[0] === 'library' && method === 'GET') {
     return sendJson(res, 200, scanLibrary(), cors);
@@ -2557,7 +2730,19 @@ const llm = new LlmSupervisor({
   log: (m) => serverLog(m),
 });
 
-if (config.llmAutostart) {
+// 在线翻译门面注入（方案 §8）：两个盘上文件的路径由**本文件**给 —— 门面不 import config.mjs
+//（与 engine-settings 同款防 ESM 环的理由，见 translate/settings.mjs 文件头的注释）。
+// 注入一次，之后每次翻译调用门面都现读设置与密钥（方案 §8.4：改了下次调用即生效）。
+configureTranslate({
+  settingsFile: path.join(STATE_DIR, 'translate-settings.json'),
+  credentialsFile: path.join(STATE_DIR, 'translate-credentials.json'),
+});
+
+// P-D4（ver2.2 已定稿）：翻译来源 = 在线 ⇒ 引擎不随开机拉起。在线用户整条链路走
+// openapi.youdao.com，完全不需要 ③ 那份显存/内存；`llmAutostart` 从此只是"本地来源"的开关。
+// source **现读**（configureTranslate 之后即可查）：settings 文件不存在 = 首次启动 = 默认
+// local ⇒ 与接线前行为完全一致；只有用户显式把来源切成在线时才跳过拉起。
+if (config.llmAutostart && currentTranslateSource() !== 'online') {
   // ⚠️ **不 await**：真档下 llama-server 要读几 GB 权重，等它就绪会把服务自身的
   // `MIAO_READY` 行推迟到分钟级 —— 而 Rust 侧等这行是有超时的（会把"服务起不来"报成
   // 真正的启动失败）。③ 晚到不要紧：它在**翻译那一刻**才被用到，而那条路有懒加载兜底。
@@ -2640,6 +2825,9 @@ serverLog(`sidecar    : ${sidecar.state} port=${sidecar.port ?? '-'} engine=${si
 // ③ 的归属方是**本进程**（不是 Rust）—— 这句日志是"谁该为 8080 负责"的现场凭证。
 serverLog(`引擎③ LLM : 归属=box-service model=${llm.model ?? '-'} port=${llm.port ?? '-'} `
   + `autostart=${config.llmAutostart} 空闲卸载=${config.unloadNever ? '从不' : `${Math.round(config.idleLlmMs / 60_000)}min`}`);
+// P-D4 的可见指示：上面那行的 autostart 只是**配置**值；引擎这一程究竟拉没拉，还取决于
+// 翻译来源。两行挨着放，"引擎没起"才有处可查（而不是让用户以为开机自启坏了）。
+serverLog(`翻译来源   : ${currentTranslateSource()}（online ⇒ 引擎不随开机拉起，P-D4）`);
 // 档位：把"硬件推荐 / 用户配置 / 实际可用"三者摊开写，夹取发生时一眼能看见（§7.2 + §8）
 serverLog(`档位       : 生效=${effectiveTier}（硬件推荐=${hardware.recommendedTier} `
   + `配置=${config.engineTier ?? '未指定'} 可用权重档=${availableTiers().join('/') || '无'}）`
