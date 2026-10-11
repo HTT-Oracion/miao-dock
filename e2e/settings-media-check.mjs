@@ -2374,6 +2374,45 @@ add('SIMPLIFY.translate.noSpecRefs', 'SIMPLIFY', (ctx) => {
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
+add('SIMPLIFY.copy.noSpecRefs', 'SIMPLIFY', (ctx) => {
+  /*
+   * 设置页**全部五组**的用户可见文案都不得混进需求 / 设计稿引用：`P-D\d`（需求条目号）、
+   * `《…》`（设计稿）、`§n`（章节号）、`verX.Y`（改版过程号）。
+   *
+   * 与 `SIMPLIFY.translate.noSpecRefs` 的分工：那条只管「翻译来源」一个组，并把
+   * sections.tsx 里那一小段 JSX 也纳入（JSX 片段要按小节标题切片），本条覆盖
+   * **五组全部的 catalog 文案**（blurb / note / noteSummary / 逐项 why / def）——
+   * 两条互补，不是重复。
+   *
+   * ⚠️ 判据与政策**同宽**：政策是"设置页说明面向用户"，不是"只有翻译来源面向用户"。
+   * 若某个组的说明里又写回了设计过程，本条与那条会一起变红 —— 那正是要它红的形态。
+   */
+  const dataErr = CAT_ERR(ctx.cat);
+  if (dataErr) return { ok: false, detail: dataErr };
+  const ref = /P-[A-Z]\d|《[^》]*》|§\s*\d|ver\d+\.\d+/;
+  const hits = [];
+  const check = (where, text) => {
+    if (typeof text !== 'string') return;
+    const m = ref.exec(text);
+    if (m) hits.push(`${where} 里的「${m[0]}」`);
+  };
+  for (const sec of ctx.cat.mod.SETTINGS_SECTIONS ?? []) {
+    check(`${sec.id}.blurb`, sec.blurb);
+    check(`${sec.id}.note`, sec.note);
+    check(`${sec.id}.noteSummary`, sec.noteSummary);
+    for (const g of sec.groups ?? []) {
+      for (const it of g.items ?? []) {
+        check(`${sec.id}/${it.id}.why`, it.why);
+        check(`${sec.id}/${it.id}.def`, it.def);
+      }
+    }
+  }
+  return {
+    ok: hits.length === 0,
+    detail: hits.map((h) => `仍有需求/设计稿引用：${h}`).join('；'),
+  };
+});
+
 add('SIMPLIFY.select.pulledRight', 'SIMPLIFY', (ctx) => {
   /*
    * 拍板：「说明在前、下拉**贴最右**」。
@@ -2849,8 +2888,8 @@ const MUTATIONS = [
   {
     name: '把 note 里的「本组 12 项」改回 11（模拟正文数字与数据脱节）',
     file: F.catalog,
-    find: '本组 12 项全部接真实能力。',
-    replace: '本组 11 项全部接真实能力。',
+    find: '本组 12 项，分播放/歌词/透明彩胶三小节。',
+    replace: '本组 11 项，分播放/歌词/透明彩胶三小节。',
     expect: ['NOTE.count'],
   },
   {
@@ -3384,8 +3423,8 @@ const MUTATIONS = [
   {
     name: '让 ③ 的摘要说出 note 里没有的话（摘要成了新的承诺）',
     file: F.catalog,
-    find: "'本组 12 项全部接真实能力 · 桌面歌词：已实现 · 「待接入」已按",
-    replace: "'本组 12 项已全部落地 · 桌面歌词：已实现 · 「待接入」已按",
+    find: "'本组 12 项 · 分播放/歌词/透明彩胶三小节",
+    replace: "'本组 12 项已全部落地 · 分播放/歌词/透明彩胶三小节",
     expect: ['SIMPLIFY.notesummary.verbatim'],
   },
   {
@@ -3399,7 +3438,7 @@ const MUTATIONS = [
      * 但每次动这几组的 note/noteSummary，仍应顺手 `grep` 一下本文件里的旧文案。
      */
     find:
-      "  noteSummary:\n    '本组 2 项 · 存储占用已接真实能力（拆三行分列，其中「模型」那一行目前无接口，如实标未统计） · 「临时文件」仍缺服务侧「列举 / 清理上传暂存」两条接口',\n",
+      "  noteSummary:\n    '本组 2 项 · 存储占用分三行列出、不合计 · 临时文件暂缺服务侧接口',\n",
     replace: '',
     expect: ['SIMPLIFY.notesummary.verbatim'],
   },
@@ -3778,9 +3817,17 @@ const MUTATIONS = [
   {
     name: '把需求条目号写回「翻译来源」文案（界面又变成给评审看的）',
     file: F.catalog,
-    find: "'「翻译来源」二选一：本地引擎（默认）/ 在线 API",
-    replace: "'「翻译来源」二选一（P-D1）：本地引擎（默认）/ 在线 API",
+    find: "'翻译来源二选一 —— 本地引擎（默认）或在线 API",
+    replace: "'翻译来源二选一（P-D1）—— 本地引擎（默认）或在线 API",
     expect: ['SIMPLIFY.translate.noSpecRefs'],
+  },
+  {
+    name: '把需求条目号写回「通用」组说明（全组文案不许混进设计过程）',
+    file: F.catalog,
+    find: "'本组 4 项。「侧栏图标标签」关掉后只显示图标、侧栏宽度不变 —— '",
+    replace: "'本组 4 项（P-D1）。「侧栏图标标签」关掉后只显示图标、侧栏宽度不变 —— '",
+    // 本条只指向全量判据：写回的是「通用」组，翻译来源那条扫不到它。
+    expect: ['SIMPLIFY.copy.noSpecRefs'],
   },
 ];
 

@@ -131,9 +131,8 @@ export function GeneralSection({
         */}
         <Row item={specItem} />
         <div className="set-row-note set-row-note-body">
-          对离屏样张量实际渲染尺寸与颜色，跟 design token 常量逐一比对。
-          CSS 里改错了数值，这里会立刻报红 —— 让「界面与方案文档对得上」变成一条可复核的断言，
-          而不是一句主观评价。
+          对离屏样张量取实际渲染尺寸与颜色，与设计常量逐一比对。
+          CSS 里改错了数值，这里会立刻报红。
         </div>
         <SpecCheckBlock
           results={spec.results}
@@ -654,9 +653,9 @@ export function TranslateSection({
           <ReadOnly>日译中 · 英译中</ReadOnly>
         </Row>
         <RowNote>
-          方向由发起翻译的一端随任务指定（插件面板「日译中 / 英译中」），没有全局开关。
-          英译中走离线 nllb（不经 ③ LLM），日译中走 Sakura；未指定方向的任务落默认「日译中」。
-          非法方向会被服务端拒绝（400），而不是静默当成日译中 —— 那会让英文漫画跑完却一个字都没翻。
+          方向由发起翻译的一端随任务指定（插件面板里的「日译中 / 英译中」），没有全局开关。
+          英译中走离线 nllb，日译中走 Sakura；未指定方向的任务按「日译中」处理。
+          非法方向会被拒绝（400），不会静默当成日译中。
         </RowNote>
 
         <Row item={itemOf(inference, 'tier')}>
@@ -708,7 +707,7 @@ export function TranslateSection({
         {tierSelectable.length < tierFeasible.length ? (
           <RowNote>
             另有 {tierFeasible.length - tierSelectable.length} 个物理可行的档位未列出：
-            它们的权重还没纳入模型清单，选了也下不到。同一把尺子 —— 不摆点了没作用的选项。
+            它们的权重还没纳入模型清单，选了也下不到，所以不显示。
           </RowNote>
         ) : null}
 
@@ -803,9 +802,8 @@ export function TranslateSection({
             必须留着 —— 它是这两档唯一的区别在界面上的落点。
           */}
           <div className="set-idle-foot">
-            LLM 档由 box-service 自己看护（<b>即时</b>）；视觉档由引擎自带的{' '}
-            <code>--models-ttl</code> 执行，参数在拉开进程时就固化（<b>必须重启引擎</b>）。
-            这是刻意的差别，不是遗漏。
+            LLM 档保存后<b>即时</b>生效；视觉档的参数在拉开引擎进程时就固化，
+            <b>必须重启引擎</b>才生效。这是刻意的差别，不是遗漏。
             {o && !o.idle.llm.minIsExact
               ? `（当前 LLM 阈值 ${o.idle.llm.ms} 毫秒 —— 不是整分钟，界面显示的是四舍五入后的分钟数，由环境变量覆盖所致）`
               : ''}
@@ -1220,8 +1218,8 @@ export function AboutSection() {
         </Row>
         {failed ? (
           <RowNote>
-            读不到构建版本（WebView 未获 <code>core:app:allow-version</code> 授权时如此）。
-            刻意不填一个手写版本号顶上 —— 那会让你以为看的是当前这个包。
+            读不到构建版本（WebView 未获 <code>core:app:allow-version</code> 授权时会这样）。
+            这里不用手写版本号顶上 —— 那会让你以为看的是当前这个包。
           </RowNote>
         ) : null}
         {/* 原先这里还有一行「检查更新」—— 该项目已整条删除（缺的是更新源这个外部事实，
