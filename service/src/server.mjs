@@ -2849,23 +2849,41 @@ if (restore.swept > 0) serverLog(`暂存区清扫：删除 ${restore.swept} 个�
 serverLog(`MIAO_READY ${JSON.stringify({ port, token: config.token, rootDir: store.root })}`);
 serverLog('=========================================================');
 
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => {
-    serverLog(`收到 ${sig}，关闭中…`);
-    clearInterval(heartbeatTimer);
-    idleWatcher?.stop();
-    // 先等 ③ 真的退出再退自己 —— 否则 8080 会短暂留给孤儿，而 E11 的外部观察者正是去抓它。
-    // 加 finally 兜底：③ 的收尾失败不该让服务关不掉（Rust 侧超时后会 SIGKILL，反而更难诊断）。
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      server.close(() => process.exit(0));
-      // 兜底：SSE 长连接可能让 close 回调迟迟不触发
-      setTimeout(() => process.exit(0), 500).unref();
-    };
-    llm.stop({ reason: `服务收到 ${sig}`, graceMs: 3000 }).catch(() => {}).finally(finish);
-    // 二次兜底：LLM 收尾本身也可能卡住（进程僵死 → kill 无响应）
-    setTimeout(finish, 6000).unref();
-  });
+// 主动退出（信号）与被动崩溃（未捕获异常 / 未处理 rejection）**共用同一套收尾**：
+// 三者都必须在退自己之前先把 ③ 收掉 —— 否则 8080 会短暂留给孤儿，而 E11 的外部观察者正是去抓它。
+let shuttingDown = false;
+function shutdown(reason, exitCode) {
+  if (shuttingDown) return; // 信号与崩溃可能先后到达，只收尾一次
+  shuttingDown = true;
+  serverLog(`${reason}，关闭中…`);
+  clearInterval(heartbeatTimer);
+  idleWatcher?.stop();
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    server.close(() => process.exit(exitCode));
+    // 兜底：SSE 长连接可能让 close 回调迟迟不触发
+    setTimeout(() => process.exit(exitCode), 500).unref();
+  };
+  // 加 finally 兜底：③ 的收尾失败不该让服务关不掉（Rust 侧超时后会 SIGKILL，反而更难诊断）。
+  llm.stop({ reason, graceMs: 3000 }).catch(() => {}).finally(finish);
+  // 二次兜底：LLM 收尾本身也可能卡住（进程僵死 → kill 无响应）
+  setTimeout(finish, 6000).unref();
 }
+
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => shutdown(`收到 ${sig}`, 0));
+}
+
+// 🔴 未捕获异常 / 未处理 rejection 的**顶层兜底**：本进程是 ①②③ 三个子进程的宿主，
+//    Node ≥15 下未处理的 rejection 默认直接终止进程 —— 那就把子进程留成孤儿。
+//    这里接住 → 记录 → 走同一套收尾 → 以**非零**码退出：既不丢故障（仍以 1 退），也不留孤儿。
+process.on('unhandledRejection', (err) => {
+  serverLog(`未处理的 Promise rejection（顶层兜底）：${err && err.stack ? err.stack : err}`);
+  shutdown('未处理的 Promise rejection', 1);
+});
+process.on('uncaughtException', (err) => {
+  serverLog(`未捕获异常（顶层兜底）：${err && err.stack ? err.stack : err}`);
+  shutdown('未捕获异常', 1);
+});

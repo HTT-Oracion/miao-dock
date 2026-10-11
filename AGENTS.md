@@ -124,6 +124,7 @@ npm run check:music[:refute]  # 音乐平台 / 心动模式 / 桌面歌词 / 逐
 npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3「准备中」时间线 + ④ 功能梳理（侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / 行内 def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染（自守）180 条 / 反证 127 条
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 看图缩放 / 样式分层 45 条 / 反证 59 条
 npm run check:bundle[:refute] # Windows 打包配置钉子 4 条 / 反证 4 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；源码级，不起进程）
+npm run check:resilience[:refute] # box-service 顶层异常兜底 7 条 / 反证 11 条（源码级：未捕获异常/未处理 rejection 已注册 · 走同一 shutdown · 收 ③ · 重入闸 · 非零退出；不起进程；内存变异反证；D-138）
 npm run check:docs            # 文档 ↔ 实现一致性 16 条（条数对账 / 命令存在 / 禁词 0 命中 / GROUPS 覆盖）
 cd app && npx tsc --noEmit && npx vite build   # 前端类型与构建
 cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）

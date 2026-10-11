@@ -79,7 +79,9 @@
     "app:build": "npm --prefix app run tauri build",
     "check:docs": "node e2e/docs-consistency-check.mjs",
     "check:bundle": "node e2e/bundle-targets-check.mjs",
-    "check:bundle:refute": "node e2e/bundle-targets-check.mjs --refute"
+    "check:bundle:refute": "node e2e/bundle-targets-check.mjs --refute",
+    "check:resilience": "node e2e/service/resilience-check.mjs",
+    "check:resilience:refute": "node e2e/service/resilience-check.mjs --refute"
   },
   "engines": {
     "node": ">=20"

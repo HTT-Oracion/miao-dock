@@ -19,6 +19,7 @@
 | 编号 | 主题 | 涉及层 |
 |------|------|--------|
 | D-137 | 歌词整行高亮去掉推进动画（单层渲染 + 默认改整行） | app 前端 |
+| D-138 | box-service 顶层未捕获异常兜底（统一 shutdown + 非零退出） | service |
 
 ---
 
@@ -106,3 +107,56 @@ el.style.width = `${p * 100}%`;
 
 本文件 + `docs/spec-notes.md` D-55（原始开关的来龙去脉，标注其后继为 D-137）
 + `app/src/screens/music/KaraokeLyrics.tsx` 头部注释 + `player-options.ts` 常量注释。
+
+---
+
+## D-138 · box-service 顶层未捕获异常兜底 —— 崩溃也要先收子进程（2026-10-11）
+
+v2.2.1 结构/健壮性审计（`code-audit-report.md` §13.2a）发现：**全仓 0 个未捕获异常处理器**
+（`grep unhandledRejection|uncaughtException` 零命中）。
+
+### 为什么是缺陷
+
+box-service 是 **①②③ 三个子进程的宿主**。Node ≥15 起，未处理的 promise rejection 默认
+**直接终止进程** —— 而进程一死，③（llama-server）就丢在那里成孤儿，8080 被占。
+E11（「主进程 SIGKILL 后不留孤儿」）防的是**不可捕获**的死法，防不住这条**可捕获**的死法。
+
+### 改法
+
+1. 把原信号处理器（`SIGINT`/`SIGTERM`）的收尾体抽成 `shutdown(reason, exitCode)`：
+   `clearInterval(heartbeat)` → `idleWatcher.stop()` → `llm.stop()` → `server.close` → `process.exit(exitCode)`，
+   带两层有界兜底（500ms close 保底 / 6s LLM 收尾保底）。
+2. 信号处理器改为 `=> shutdown(\`收到 ${sig}\`, 0)`（**单一收尾路径**）。
+3. 新增顶层兜底：`process.on('unhandledRejection'|'uncaughtException')` → 记录 →
+   `shutdown(…, 1)`。**以非零码退出**：接住异常 ≠ 吞掉故障。
+4. `shutdown` 加重入闸 `shuttingDown`：信号与崩溃可能先后到达，只收尾一次。
+
+### 断言（新增 `check:resilience`，源码级）
+
+`e2e/service/resilience-check.mjs`，7 条 / 反证 11 条。判据是**纯函数** `evaluate(src)`：
+接收源码文本 → 返回断言结果；反证轮把**内存变异**后的文本喂进去跑同一套判据，
+**不碰工作区**（范式取自 `engine-patches-check.mjs`，见审计 §10「最高质量范式」）。
+
+- R1/R2 两类处理器已注册 · R3 都走 `shutdown`（非直接 `process.exit`）· R4 信号也走同一 `shutdown`
+  · R5 `shutdown` 内确实 `llm.stop` · R6 有重入闸 · R7 崩溃以非零码退出。
+- 反证 M1–M6：改名注销 / 绕过 shutdown / 去 llm.stop / 去重入闸 → 对应条变红。
+- 🔴 **写 R6 时抓到一次自指假阳性**：初版判据是 `shutdownBody.includes('shuttingDown')`，
+  而 `shuttingDown = true;` 这个**赋值行**同样含该标识符 ⇒ 去掉守卫判据**照样绿**。
+  改为正则 `/if\s*\(\s*shuttingDown\s*\)\s*return/` 才咬得住。
+  **教训同 D-137：判「结构存在」要用结构本身当锚点，不能用被测对象里恰好也出现的标识符。**
+
+### 规范变更
+
+- 新增验收命令 `check:resilience[:refute]`，已登记 `AGENTS.md` §3 与 `package.json`。
+- 断言脚本放 `e2e/service/`（与其余 service 级检查同域），**不进**生产 `src/`。
+
+### 验收
+
+`check:resilience` 7/0 · `check:resilience:refute` 11/11（无假阳性、无跳过）·
+`selftest:service` **134/1**（1 条为既有 Windows 环境性红：无 `SIGSTOP`，与本轮无关）·
+`node --check service/src/server.mjs` 通过。
+
+### 边界
+
+本脚本证明的是**「顶层兜底结构在」**，**不是**「真崩过且没留孤儿」。后者只能真造一次崩溃，
+或靠 `selftest:app:e11`（SIGKILL）从外部补充取证。
