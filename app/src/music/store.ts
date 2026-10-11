@@ -1378,8 +1378,10 @@ export const useMusicStore = create<MusicState>((set, get) => ({
      * 于是卡片按歌词态渲染却拿到空分支。枚举型偏好一律白名单收口。
      */
     const islandView: IslandView = prefs.islandView === 'lyrics' ? 'lyrics' : 'play';
-    // 歌词高亮方式：同 islandView，枚举型偏好白名单收口，脏值一律回落 'word'
-    const lyricsMode: LyricsMode = prefs.lyricsMode === 'line' ? 'line' : 'word';
+    // 歌词高亮方式：同 islandView，枚举型偏好白名单收口，脏值一律回落 LYRICS_MODE_DEF
+    // ⚠️ 这里刻意**不**因为默认值改动而迁移老偏好：用户在设置页显式选过的值就是他的选择，
+    //   替他改回去等于产品替他做决定。只有"从没选过"（键缺失）的人才拿到新默认（D-137：'line'）。
+    const lyricsMode: LyricsMode = prefs.lyricsMode === 'word' ? 'word' : LYRICS_MODE_DEF;
     /*
      * 播放平台：同样白名单收口。
      * 脏值（手改 / 旧版本残留 / 日后新增平台后被删）一律回落 'netease' ——

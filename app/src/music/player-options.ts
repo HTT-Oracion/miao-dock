@@ -75,14 +75,16 @@ export const LYRICS_COLOR_DEF = '#FFE066';
 
 /**
  * 歌词高亮方式（本项目新增，参考实现没有此开关）。
- * `word` = 逐字（yrc 数据精确到字，无则行级渐进，即现状）；`line` = 整行一次性点亮。
+ * `line` = 整行一次性点亮（**D-137 起的默认**：用户报"整行高亮却还有逐渐移动的动画"，
+ *   根因是整行走的是"双层 + width 写死 100%"，结构里仍留着可被改写的 width 通路；
+ *   现改为整行单层渲染，推进从结构上不存在）；`word` = 逐字（yrc 精确到字，无则行级渐进）。
  * 与 `LYRICS_SIZE` 同纪律：设置页与展开播放器共读这一处，改这里两处一起变。
  */
 export const LYRICS_MODE_OPTIONS: { value: LyricsMode; label: string }[] = [
-  { value: 'word', label: '逐字' },
   { value: 'line', label: '整行' },
+  { value: 'word', label: '逐字' },
 ];
-export const LYRICS_MODE_DEF: LyricsMode = 'word';
+export const LYRICS_MODE_DEF: LyricsMode = 'line';
 
 /** 透明彩胶自定义色（参考实现 `vinylCustomColor`） */
 export const VINYL_COLOR_DEF = '#E8B04B';

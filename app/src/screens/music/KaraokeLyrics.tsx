@@ -4,12 +4,18 @@
  * 从参考实现（vendor/music-reference/upstream-v10）移植**渲染方案**，但按其说明
  * 重写为原生 DOM + CSS（不引 Chakra / framer-motion，与本项目其余 UI 一致）。
  *
- * ## 渲染方案：双层叠加 + width% 裁切
+ * ## 渲染方案：双层叠加 + width% 裁切（**仅逐字模式**）
  *   · 底层：整行文本，用「未唱色」（高亮色压到低透明度）；
  *   · 顶层：**同一行文本**，用「已唱色」（满高亮），`position:absolute` 压底层之上，
  *     靠 `width: N%` 裁切 —— 只露左侧已唱过的部分；
  *   · RAF 每帧把顶层 width 从 0% 推到 100%，就得到"逐字填充"的推进感；
  *   · 顶层右缘加 `mask-image` 渐变，让裁切边不是一道硬线，而是柔和过渡。
+ *
+ * ## 整行模式（`lyricsMode === 'line'`，D-137 起为默认）：**单层，不裁切**
+ *   当前行就是一个普通的 `.music-lyr-line is-on`，不套双层、不挂顶层、不吃 mask，
+ *   RAF 也不写 width ⇒ 唱到哪句、哪句**瞬间**整行点亮，结构上没有可推进的东西。
+ *   （此前是"双层 + width 写死 100%"：视觉相同，但结构里仍留着可被改写的 width
+ *   通路，一旦模式判断出错就静默退回推进动画。见渲染分支处的注释。）
  *
  * ## 为什么用双层而不是 `background-clip: text`
  *   ① `background-clip:text` 要把进度写进背景渐变的 stop 或 `var()` 的 `calc()`，
@@ -29,6 +35,7 @@
  * ## 性能
  *   每帧只做两件小事：① 定位当前行索引（变了才 setState）；② 给**当前行**的顶层写一次
  *   width。非当前行不参与 RAF、也不重渲染 —— 整表 setState 只在换行时发生。
+ *   整行模式下第②件直接跳过（没有顶层可写），每帧只剩索引定位。
  */
 import { useEffect, useRef, useState } from 'react';
 import { findAudioElement } from '@music/audioGraph';
@@ -56,6 +63,7 @@ interface KaraokeLyricsProps {
    * 也会让 `.music-exp-lyr-box` 的滚动定位在小盒子里来回跳。
    * ⚠️ 它**只切渲染区间的起止下标**，双层结构与 RAF 逐字推进**一行都不改** ——
    * 逐字实现全项目只有这一份（第二份实现是本项目明确禁止的）。
+   * ⚠️ 整行模式下当前行走单层（无 width 可裁），本 prop 同样照常工作。
    */
   windowSize?: number;
   /**
@@ -164,10 +172,13 @@ export function KaraokeLyrics({
   const linesRef = useRef(lines);
   linesRef.current = lines;
   const idxRef = useRef(-1);
-  // 整行/逐字模式：整行模式下当前行直接满亮，不走逐字/行级渐进分支
+  // 整行/逐字模式：整行模式下当前行是**单层**渲染（连 kara-dup 都不套），
+  // 结构上就不存在"顶层 width 从 0 推到 100"这件事 ⇒ 推进动画从根上不存在。
   const lyricsMode = useMusicStore((s) => s.lyricsMode);
   const modeRef = useRef(lyricsMode);
   modeRef.current = lyricsMode;
+  /** 本次渲染用的是整行还是逐字：写进根类名，让 CSS 决定要不要留过渡 */
+  const isLineMode = lyricsMode === 'line';
   // 降级外推用的基准：最近一次 progressMs 及其到达时刻（performance.now）
   const fallbackMsRef = useRef(0);
   const fallbackAtRef = useRef(0);
@@ -212,9 +223,11 @@ export function KaraokeLyrics({
           setActiveIndex(idx);
         }
         const el = overlayRef.current;
-        if (el && idx >= 0) {
-          // 整行模式：当前行满亮（100%）；逐字模式：走 getLineProgress 的逐字/行级渐进
-          const p = modeRef.current === 'line' ? 1 : getLineProgress(ls[idx], ls[idx + 1], now);
+        // 🔴 整行模式**直接不写 width**：当前行是单层渲染（没有 .kara-over 可写），
+        //   仍去写会拿到上一行遗留的 ref，把已卸载节点反复赋值 —— 白做功且可能报错。
+        //   这一行是"整行无推进"的第一道闸，样式侧那道闸见 `.is-line-mode`。
+        if (el && idx >= 0 && modeRef.current !== 'line') {
+          const p = getLineProgress(ls[idx], ls[idx + 1], now);
           const w = `${(p * 100).toFixed(2)}%`;
           el.style.width = w;
           // 翻译行写**同一个** w ⇒ 与原歌词严格同时点亮（共用一份进度，不可能分叉）
@@ -258,8 +271,14 @@ export function KaraokeLyrics({
   // 展开播放器注入在 .music-exp 根上、灵动岛注入在歌词卡根节点上，都靠 CSS 变量继承传下来。
   // 本组件不自己注入 —— 否则同一份"取色/取字号"会有第三个 owner。
   // ⚠️ 灵动岛**不在** .music-exp 子树里，所以它必须自己注入一遍（见 DynamicIsland 的注释）。
+  // 根类名三段拼接（对齐 / 整行模式各一个开关）。抽成变量而不是内联长链三元：
+  // 项目纪律明令禁止内联长链三元（D-109），且这段将来加开关时不必重排已有两项。
+  const boxCls = ['music-exp-lyr-box', align === 'left' ? 'is-left' : '', isLineMode ? 'is-line-mode' : '']
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <div className={align === 'left' ? 'music-exp-lyr-box is-left' : 'music-exp-lyr-box'}>
+    <div className={boxCls}>
       {/*
         歌词流**第 0 帧**：排在所有歌词行之前，与歌词同容器 ⇒ 随歌词一起滚动。
         用 `kara-header` 独立类名（不挂 `is-on`）：它没有时间戳、永远不是"当前行"，
@@ -282,7 +301,29 @@ export function KaraokeLyrics({
             </div>
           );
         }
-        // 当前行：双层叠加 —— 底层未唱 + 顶层已唱（width 裁切 + mask 柔边）
+        /*
+         * 整行模式：当前行**单层**渲染 —— 一个普通 `.music-lyr-line is-on`，不套
+         * `.kara-dup`、不挂 `.kara-over`、不吃 mask。
+         *
+         * 为什么不用「双层 + width 写死 100%」（原做法）：那样虽然视觉上也是整行亮，
+         * 但结构里仍留着一条"顶层 width 可被 RAF 改写"的通路 —— 任何一处回退到
+         * 逐字计算（模式判断写错、ref 指到上一行、切模式时序错位）都会**静默**恢复成
+         * 推进动画，而界面上完全看不出异常。改成单层后，"整行无推进"由**结构**保证：
+         * 没有可写的 width，就没有可推进的东西。
+         *
+         * 翻译同理单层（`.kara-trans` 已是块级、次级色），不需要双层也不需要遮罩。
+         */
+        if (isLineMode) {
+          return (
+            <div key={i} ref={activeRowRef} className="music-lyr-line is-on kara-line">
+              {line.text}
+              {showTranslation && line.translation ? (
+                <span className="kara-trans">{line.translation}</span>
+              ) : null}
+            </div>
+          );
+        }
+        // 逐字模式：当前行双层叠加 —— 底层未唱 + 顶层已唱（width 裁切 + mask 柔边）
         return (
           <div key={i} ref={activeRowRef} className="music-lyr-line is-on kara-line kara-line-on">
             <span className="kara-dup">

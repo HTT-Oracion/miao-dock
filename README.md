@@ -5,7 +5,7 @@
 - **两个应用**：**漫画翻译**（投放 / 队列 / 漫画库）· **音乐**（网易云 / 酷狗 / QQ / 咪咕 四平台）
 - 依据：《00-决策纪要》《02-Box-技术方案》《03-翻译服务接口契约》《09-技术方案-ver2.0-最终版》
 - 开发方案与验收标准：`docs/dev-plan.md` · 引擎接入里程碑与现状：`docs/engine-integration-plan.md`
-- 偏离与裁定留痕：`docs/spec-notes.md`
+- 偏离与裁定留痕：`docs/spec-notes.md`（D-01~D-136）· `docs/spec-notes-1.md`（**D-137 起新增写这里**）
 - **AI 协作上下文入口：`AGENTS.md`**（任何 AI 工具进入本仓库先读它；Trae 另见 `.trae/rules/project_rules.md`）
 
 ## 与插件端的关系
@@ -45,7 +45,7 @@ miao-dock/
 │   ├── *.mjs                  生命周期 / 端到端 / 截图取证 / 文档与结构对账
 │   ├── service/               box-service 侧（`selftest.mjs` = A 组契约自测 · `stall-guard-check.mjs` = U10② 取证）
 │   └── engine/                引擎侧（引擎自测 / 真引擎全链路 / 真机 sha256 与断点续传）
-├── docs/         事实源与取证：`dev-plan.md`（方案与判据）· `spec-notes.md`（**台账：裁定与偏离留痕**）· `refs/`（入库的图与报告）
+├── docs/         事实源与取证：`dev-plan.md`（方案与判据）· `spec-notes.md`（**台账：裁定与偏离留痕**，D-01~D-136）· `spec-notes-1.md`（**台账续篇，D-137 起新条目写这里**）· `refs/`（入库的图与报告）
 ├── test-manga/   本机验收素材：真实漫画（**不入库**）
 ├── test-music/   本机验收素材：音乐（**不入库**）
 ├── runtimes/     **真引擎本机资产**：Python venv + 模型权重 + llama.cpp（**不入库**，清单见 `engine/VERSIONS.lock`）

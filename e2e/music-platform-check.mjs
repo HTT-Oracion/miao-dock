@@ -1958,24 +1958,64 @@ add('LYRICS.modeStoreChain', 'LYRICS', (s) => {
   const setBody = methodBody(store, 'setLyricsMode');
   if (setBody == null) missing.push('store 缺 setLyricsMode 实现');
   else if (!/savePrefs\s*\(\s*\{\s*lyricsMode\s*:/.test(setBody)) missing.push('setLyricsMode 未持久化 lyricsMode');
-  // ③ 水合白名单收口（脏值一律回落 word）
+  // ③ 水合白名单收口（脏值一律回落 LYRICS_MODE_DEF）
+  //    D-137：默认值改为 'line' 后，收口判据随之改为「显式 'word' 才逐字，其余回落默认」。
+  //    ⚠️ 刻意**不**写死 'line' 字面量 —— 那样默认值再改一次这里就会红，而红的原因
+  //    并不是缺陷（是默认改了）。锁「引用 LYRICS_MODE_DEF」才能一直守住单一事实源。
   const hyd = methodBody(store, 'hydratePrefs');
   if (hyd == null) missing.push('store 缺 hydratePrefs 实现');
-  else if (!/prefs\.lyricsMode\s*===\s*['"]line['"]\s*\?\s*['"]line['"]\s*:\s*['"]word['"]/.test(hyd))
+  else if (!/prefs\.lyricsMode\s*===\s*['"]word['"]\s*\?\s*['"]word['"]\s*:\s*LYRICS_MODE_DEF/.test(hyd))
     missing.push('hydratePrefs 未把 lyricsMode 白名单收口（脏值会原样进内存）');
   return { ok: missing.length === 0, detail: missing.length ? `歌词模式全链路：${missing.join('、')}` : '' };
 });
 
 add('LYRICS.modeLineRender', 'LYRICS', (s) => {
-  // 整行模式：当前行满亮（p=1），不走逐字/行级渐进。判据锁在 RAF tick 里那一行三元上。
-  // 防「开关做了、渲染层没接」—— 那会让"整行"选项看起来没作用。
+  /*
+   * 整行模式：**单层渲染 + RAF 不写 width + 样式无过渡**（D-137）。
+   *
+   * 为什么不再锁 `modeRef.current === 'line' ? 1 : ...` 那个三元：D-137 之前整行是
+   * 「双层 + width 写死 100%」，视觉对但结构里仍留着一条可被改写的 width 通路 ——
+   * 模式判断一旦出错（ref 指到上一行、切模式时序错位）就**静默**退回推进动画，
+   * 界面上完全看不出异常（这正是用户报的"整行高亮却还有逐渐移动的动画"）。
+   * 现在整行走单层，"无推进"由结构保证，判据也随之换成三条结构特征。
+   */
   const kara = stripComments(s.karaoke ?? '');
+  const css = stripComments(s.css ?? '');
   if (!kara) return { ok: false, detail: '未读到 KaraokeLyrics.tsx' };
   const missing = [];
   if (!/useMusicStore\s*\(\s*\(?[^)]*\)?\s*=>\s*[A-Za-z_$][\w$]*\.lyricsMode\b/.test(kara))
     missing.push('未从 store 读取 lyricsMode');
-  if (!/modeRef\.current\s*===\s*['"]line['"]\s*\?\s*1\s*:/.test(kara))
-    missing.push("整行模式未满亮（缺 modeRef.current==='line'?1: 分支）");
+  /*
+   * ① 整行分支存在，且当前行走单层（不套 kara-dup、不挂 kara-over）。
+   *
+   * 🔴 分支边界必须用「**第二个** `return (`」切，**不能**用「下一个 kara-dup 出现处」：
+   *   反证"把整行改回双层"恰恰是往整行分支里插 `kara-dup` —— 拿被测对象当切点，
+   *   切点会跟着反证一起跑掉，判据就永远看不到那次插入 ⇒ **假阳性**（实测踩过：
+   *   反证轮报 `✗ 假阳性：LYRICS.modeLineRender`）。
+   *   `return (` 是分支结构的恒定特征（整行分支内无嵌套 return），反证改不动它。
+   *   也不能靠注释文字切：stripComments 已把注释剥掉，靠注释切会永远切在 -1 上，
+   *   静默退化成"全文搜 kara-dup"而恒红。
+   */
+  const lineAt = kara.search(/if\s*\(\s*isLineMode\s*\)\s*\{/);
+  if (lineAt < 0) missing.push('缺整行模式渲染分支（未判 isLineMode）');
+  else {
+    const rest = kara.slice(lineAt);
+    const re = /return\s*\(/g;
+    re.exec(rest);
+    const m2 = re.exec(rest);
+    const seg = rest.slice(0, m2 ? m2.index : 700);
+    if (/(?<![\w-])kara-dup(?![\w-])/.test(seg)) missing.push('整行分支仍套了 kara-dup 双层（应单层）');
+    if (/(?<![\w-])kara-over(?![\w-])/.test(seg)) missing.push('整行分支仍挂了 kara-over 顶层（应单层）');
+    if (!/(?<![\w-])is-on(?![\w-])/.test(seg)) missing.push('整行分支的当前行未挂 is-on');
+  }
+  // ② RAF 在整行模式下不写 width（否则会写到已卸载的遗留 ref 上）
+  if (!/modeRef\.current\s*!==\s*['"]line['"]/.test(kara))
+    missing.push("RAF 未在整行模式跳过 width 写入（缺 modeRef.current !== 'line' 闸门）");
+  // ③ 样式侧：整行模式取消 transition（`transition: all` 会让字号渐变 ⇒ 整行缓缓位移）
+  if (!/\.music-exp-lyr-box\.is-line-mode\s+\.music-lyr-line\s*\{[^}]*transition:\s*none/.test(css))
+    missing.push('样式缺 .is-line-mode 的 transition:none（整行仍会渐变位移）');
+  // ④ 根类名必须真的把 is-line-mode 挂上去（前面几条都靠这个类生效）
+  if (!/is-line-mode/.test(kara)) missing.push('根类名未挂 is-line-mode');
   return { ok: missing.length === 0, detail: missing.length ? `整行模式渲染：${missing.join('、')}` : '' };
 });
 
@@ -4825,10 +4865,31 @@ const MUTATIONS = [
     expect: ['LYRICS.modeStoreChain'],
   },
   {
-    name: '把整行模式的满亮值 1 改成 0（"整行"选项变成一行都不亮）',
+    /*
+     * D-137：整行从「双层 + width 写死 100%」改成**单层渲染**，原先锚在那个三元上的
+     * 反证已失效（锚点不存在 ⇒ 静默跳过，跳过 ≠ 通过）。换成三条打在新结构上的反证：
+     * 分别破坏「单层」「RAF 闸门」「样式过渡」三处，缺任一条断言就该红。
+     */
+    name: '整行分支里把单层改回双层（重新引入可被 RAF 改写的 width 通路）',
     file: F.karaoke,
-    find: "modeRef.current === 'line' ? 1 : getLineProgress(ls[idx], ls[idx + 1], now)",
-    replace: "modeRef.current === 'line' ? 0 : getLineProgress(ls[idx], ls[idx + 1], now)",
+    find: '            <div key={i} ref={activeRowRef} className="music-lyr-line is-on kara-line">',
+    replace:
+      '            <div key={i} ref={activeRowRef} className="music-lyr-line is-on kara-line kara-line-on">\n' +
+      '              <span className="kara-dup"><span className="kara-under">{line.text}</span></span>',
+    expect: ['LYRICS.modeLineRender'],
+  },
+  {
+    name: '去掉 RAF 的整行闸门（整行模式又开始逐帧写 width）',
+    file: F.karaoke,
+    find: "if (el && idx >= 0 && modeRef.current !== 'line') {",
+    replace: 'if (el && idx >= 0) {',
+    expect: ['LYRICS.modeLineRender'],
+  },
+  {
+    name: '样式里去掉 .is-line-mode 的 transition:none（整行高亮又变成缓缓位移）',
+    file: F.musicScss,
+    find: '.music-exp-lyr-box.is-line-mode .music-lyr-line {\n  transition: none;\n}',
+    replace: '.music-exp-lyr-box.is-line-mode .music-lyr-line {\n  transition: all 0.2s;\n}',
     expect: ['LYRICS.modeLineRender'],
   },
   {

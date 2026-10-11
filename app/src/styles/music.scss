@@ -1369,6 +1369,17 @@
   color: var(--lyr-hl, #ffe066);
 }
 /*
+  整行模式（`.is-line-mode`，D-137）：**取消一切过渡**，唱到哪句哪句瞬间到位。
+  🔴 上面那条 `.music-lyr-line { transition: all 0.2s }` 是"整行高亮却仍有逐渐移动的
+  动画"的**第二个来源**：`all` 把 font-size（+3px）与 font-weight 一并纳入过渡，
+  而歌词是 `text-align: center` —— 字号渐变时整行以中心为锚点向两端缓缓外扩，
+  视觉上就是"一行字在慢慢长大/移动"。它与 width 裁切无关，所以只改渲染层治不了。
+  `transition: none` 只在整行模式生效：逐字模式的行间过渡是既有观感，不动它。
+*/
+.music-exp-lyr-box.is-line-mode .music-lyr-line {
+  transition: none;
+}
+/*
   ⚠️ 这里原本有一条 `.music-exp.is-light .music-lyr-line { color: var(--md-ink); }`，**已删除**。
   它有两个问题，任一都足以让「歌词高亮色」失效：
   ① **优先级反了**：3 个类（0,3,0）压过上面 `.music-lyr-line.is-on`（0,2,0），

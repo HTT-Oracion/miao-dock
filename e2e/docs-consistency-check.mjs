@@ -42,8 +42,11 @@ const SUITES = [
 // 恰恰是有价值的痕迹），拿它跟现状比会逼得人去改历史。
 // 参与比对的只有"声明当前状态"的三处入口。
 const DOCS = ['AGENTS.md', 'README.md', '.trae/rules/project_rules.md'];
-// 参与其它检查（命令存在 / 禁词）的文档 —— 台账也要查，它同样不该出现失效命令
-const ALL_DOCS = [...DOCS, 'docs/spec-notes.md'];
+// 参与其它检查（命令存在 / 禁词）的文档 —— 台账也要查，它同样不该出现失效命令。
+// 🔴 台账已分流为两份（D-137 起新条目写 spec-notes-1.md），**两份都要列**：
+//   漏列的后果是「续篇里写了个不存在的 npm 命令，本文档检查却全绿」——
+//   那正是本脚本要消灭的那类"文档与实际脱节且脱节不报错"。
+const ALL_DOCS = [...DOCS, 'docs/spec-notes.md', 'docs/spec-notes-1.md'];
 
 /** 跑一次脚本，从它自己的汇总行里取「通过 N / 失败 M」的 N */
 function selfReportedCount(scriptPath) {
