@@ -409,7 +409,73 @@
   color: var(--md-muted);
 }
 
-/* ================================================================ ② 翻译服务：推理引擎 / 模型与诊断 */
+/* ================================================================ ② 翻译服务：翻译来源 / 推理引擎 / 模型与诊断 */
+
+/*
+ * 「翻译来源」小节的**在线配置块**（ver2.2 · P-D2 并入 ② 作为第一个小节；P-D6 只留
+ * 平台 + appKey + appSecret + 保存）。
+ *
+ * 骨架沿用 `.set-idle` / `.set-manage`（顶线 + 上下 10px）：设置页里的"通栏块"
+ * 看起来始终是同一类东西。它**不是**卡片（不加底色边框）—— 一屏里已经有
+ * 「模型管理」「引擎诊断」「运行状态」三个块状物，再多一张卡会把层数读乱。
+ *
+ * ⚠️ 块内没有任何 `.set-subtitle`：② 的「恰 4 个小节」是 C11 逐字盯着的判据
+ * （数 `.set-subtitle`），这里的行首标签用 `.set-src-k`，弱一档但读得出"这是一行的名字"。
+ */
+.set-src {
+  border-top: 1px solid var(--md-line-soft);
+  padding: 10px 0;
+}
+.set-src-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 7px;
+}
+/* 52px 定宽：平台 / appKey / appSecret 三行的控件左边缘对齐，读起来是一张表而不是三句话 */
+.set-src-k {
+  flex: 0 0 52px;
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+}
+/*
+ * 两个密钥框与 `.set-token-in` 同款几何（Surface-2 底 + 1px line + xs 圆角）——
+ * 同一页里"一份值"只该有一种长相。`::selection` 同理换成蓝底（默认系统蓝在这套
+ * 浅紫语汇里像另一个应用的控件）。焦点环不在这里定义：base.scss 的全局
+ * `:focus-visible` 已经覆盖（与 `.set-token-in` 一致）。
+ */
+.set-src-in {
+  flex: 1;
+  min-width: 0;
+  background: var(--md-surface-2);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-xs);
+  padding: 5px 9px;
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  color: var(--md-ink-2);
+  letter-spacing: 0.02em;
+}
+.set-src-in::selection {
+  background: var(--md-blue-soft);
+}
+/* 「保存 / 保存密钥」—— 与 `.set-pair-acts` 同一条理由：窄右列塞不下两枚按钮 */
+.set-src-acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+/* 「密钥只写不读」的注解：跟在两个按钮后面，回答"保存密钥按了之后发生了什么" */
+.set-src-note {
+  margin-top: 8px;
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--md-muted);
+}
+.set-src-note b {
+  color: var(--md-ink-2);
+}
 
 /*
  * 「服务与配对」里的**手动启停**动作行（「启动本地服务 / 停止本地服务」）。
@@ -552,7 +618,7 @@
  * 「引擎诊断»面板（《09》§6.2）。
  *
  * ⚠️ 内部小标题用 `.set-diag-h`，**不能**用 `.set-subtitle` —— 后者是规格自检 C11
- * 数「② 这一组有几个小节」的判据（恰 3 个）。面板里再有 5 个 `.set-subtitle`，
+ * 数「② 这一组有几个小节」的判据（恰 4 个）。面板里再有 5 个 `.set-subtitle`，
  * C11 会变红，而红的原因不再是它要守的东西，那条断言也就废了。
  */
 .set-diag {
@@ -737,7 +803,7 @@
  * 那些是"嵌在分组里的一段"、靠顶线分节；这张卡是本版的核心物件（有自己的头行 / 正文 / 脚），
  * 有边框和圆角才读得出"这是一张卡"。形状差异在这里是**信息**，不是不一致。
  *
- * ⚠️ 卡内标题是 `.set-run-title`，**不是** `.set-subtitle` —— ② 的「恰 3 个小节」
+ * ⚠️ 卡内标题是 `.set-run-title`，**不是** `.set-subtitle` —— ② 的「恰 4 个小节」
  * 是 C11 逐字盯着的判据（理由见 `EngineDiag.tsx` 文件头）。
  */
 .set-run {
@@ -936,7 +1002,7 @@
  *
  * 骨架沿用 `.set-cache` / `.set-manage`（顶线 + 上下 10px）：设置页里的"通栏块"
  * 看起来始终是同一类东西，不再多一种形状。
- * ⚠️ 卡内标题是 `.set-idle-name`，**不是** `.set-subtitle` —— ② 的「恰 3 个小节」
+ * ⚠️ 卡内标题是 `.set-idle-name`，**不是** `.set-subtitle` —— ② 的「恰 4 个小节」
  * 是 C11 逐字盯着的判据。
  */
 .set-idle {

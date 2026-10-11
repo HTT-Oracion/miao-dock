@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import { errorText, openPath, serviceStart, serviceStop } from '@/ipc';
@@ -21,6 +21,8 @@ import type { LibraryResponse } from '@/types';
 import { useEngineState } from '@screens/settings/engine-state';
 import { ACCEL_LABEL } from '@screens/settings/engine-api';
 import type { EngineAccel, EngineOptions, EngineTier } from '@screens/settings/engine-api';
+import { saveTranslateCredentials, saveTranslateSettings, translateOptions } from '@screens/settings/translate-api';
+import type { TranslateOptions, TranslateSettingsPatch, TranslateSource } from '@screens/settings/translate-api';
 
 const STATUS_TEXT: Record<ServiceStatus['state'], string> = {
   stopped: '未启动',
@@ -29,6 +31,18 @@ const STATUS_TEXT: Record<ServiceStatus['state'], string> = {
   stopping: '正在停止',
   error: '异常',
 };
+
+/**
+ * 翻译来源二选一（ver2.2 · P-D1）。
+ *
+ * 选项表写死在这里而**不从服务端拉**：来源是**服务的设置**，两个取值由产品拍板定稿
+ * （P-D2 的「并入 ② 作为第一个小节」就是这件事的落地）。平台清单才该由服务端下发
+ * （那是"接哪家 API"的事实）—— 两类东西分开放，别把"有哪几家"和"用不用在线"混成一题。
+ */
+const SRC_OPTIONS: readonly { value: TranslateSource; label: string }[] = [
+  { value: 'local', label: '本地引擎' },
+  { value: 'online', label: '在线 API' },
+];
 
 /** 按 id 从小节里取项。id 写错是编程错误，宁可崩也不要静默渲染成空行 */
 function itemOf(g: SettingGroup, id: string): SettingItem {
@@ -146,18 +160,23 @@ export function GeneralSection({
 }
 
 /**
- * ② 翻译服务 —— 10 项 · 三小节（《09》§4.3）。
+ * ② 翻译服务 —— 13 项 · 四小节（《09》§4.3）。
  *
- * 小节标题是这一组的**唯一分层手段**，也是 C11 的判据（它数 `.set-subtitle` 恰为 3 个），
+ * 小节标题是这一组的**唯一分层手段**，也是 C11 的判据（它数 `.set-subtitle` 恰为 4 个），
  * 所以标题写在 catalog 里、本组件按 `groups` 顺序渲染 —— 少一组会直接体现为少一个 SubTitle。
  *
- * ## 这十项的取值来自**两个**服务端视角（不是一处冗余）
+ * ## 后三小节的取值来自**两个**服务端视角（不是一处冗余）
  *   · `GET /engine/options` —— 选项清单：能选什么、选完何时生效、哪些键要重启
  *   · `GET /engine/status`  —— 体检报告：进程此刻什么样、下载任务跑到哪了
  * 详见 `useEngineState` 的文件头。这里只说一件界面上必须守住的事：
  * **「已配置」与「已生效」要分别显示**。档位下拉显示的是**已配置**（用户在这里改的是
  * "下次启动用哪档"），旁边那句小字才报当前引擎在跑哪档。反过来的话，用户刚保存完
  * 就会看到下拉跳回旧值，只能得出"没存上"的结论。
+ *
+ * ## 第一小节「翻译来源」走**另一条**服务端通道（ver2.2 · P-D2）
+ * `GET /translate/options` 拉来源与平台清单，两个写端点**分开**（设置 / 密钥）——
+ * 密钥只写不读，形状收口在 `translate-api.ts`。本组件内自带一份挂载拉取与草稿 state
+ * （不并进 `useEngineState`：那条通道管的是引擎，与翻译来源不是同一个生命周期）。
  */
 export function TranslateSection({
   status,
@@ -220,10 +239,140 @@ export function TranslateSection({
     }
   };
 
+  /*
+   * ── 翻译来源（ver2.2 · P-D2：在线翻译并入 ② 的第一个小节）──
+   *
+   * 与引擎那条通道**刻意分开**：来源是服务的设置（P-D1），它的读写在服务端是另外三个
+   * 端点（`translate-api.ts`），且密钥只写不读。并进 `useEngineState` 会让"改引擎档位"
+   * 与"改翻译来源"共享同一份 loading/error，而它们的失败原因与补救动作完全不同。
+   */
+  const [srcOpts, setSrcOpts] = useState<TranslateOptions | null>(null);
+  const [srcErr, setSrcErr] = useState<string | null>(null);
+  const [draftSource, setDraftSource] = useState<TranslateSource>('local');
+  const [draftPlatform, setDraftPlatform] = useState('');
+  const [draftKey, setDraftKey] = useState('');
+  const [draftSecret, setDraftSecret] = useState('');
+  const [srcBusy, setSrcBusy] = useState(false);
+  /*
+   * 自取消守卫与 `useEngineState` 同款（含 StrictMode 双调用那次教训）：
+   * `alive.current = true` 必须写在挂载 effect 里 —— 只写卸载那一半的话，
+   * 开发模式下第一次 cleanup 会把它永久钉成 false，界面停在「读取中…」。
+   */
+  const srcAlive = useRef(true);
+  useEffect(() => {
+    srcAlive.current = true;
+    return () => {
+      srcAlive.current = false;
+    };
+  }, []);
+
+  const loadSrc = useCallback(async () => {
+    try {
+      const o = await translateOptions();
+      if (!srcAlive.current) return;
+      setSrcOpts(o);
+      setSrcErr(null);
+      setDraftSource(o.settings.source);
+      setDraftPlatform(o.settings.platform);
+      // appKey 可回显（密钥只写不读）；appSecret 一律从空开始 —— 预填一个"看起来像密钥"的
+      // 东西会让用户以为没保存过，而真相只是我们从不回显它
+      setDraftKey(o.credentials[o.settings.platform]?.appKey ?? '');
+      setDraftSecret('');
+    } catch (e) {
+      if (!srcAlive.current) return;
+      // 失败清空旧值：服务重启的瞬间留着上一份，"读不到"会显示成一份正常的来源
+      setSrcOpts(null);
+      setSrcErr(errorText(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSrc();
+  }, [loadSrc]);
+
   const pairing = TRANSLATE.groups.find((x) => x.id === 'pairing') as SettingGroup;
   const inference = TRANSLATE.groups.find((x) => x.id === 'inference') as SettingGroup;
   const model = TRANSLATE.groups.find((x) => x.id === 'model') as SettingGroup;
+  const source = TRANSLATE.groups.find((x) => x.id === 'source') as SettingGroup;
   const state = status ? stateView(status.state) : null;
+
+  // —— 翻译来源的派生值与两个保存动作 ——
+  const srcOnline = draftSource === 'online';
+  /** 生效值（服务端那份）：草稿与它比较才知道"有没有改动" */
+  const savedSource = srcOpts?.settings.source ?? null;
+  const savedPlatform = srcOpts?.settings.platform ?? null;
+  /*
+   * 「保存」按钮的亮灯条件：草稿与生效值有差异。
+   * 🔴 不能只在 `srcOnline` 时显示 —— 那样从在线切回本地引擎的用户会找不到保存入口，
+   * 而"切回本地"恰恰是最需要一次显式提交的动作（它要停掉的是整个在线链路）。
+   */
+  const settingsDirty =
+    srcOpts !== null && (draftSource !== savedSource || (srcOnline && draftPlatform !== savedPlatform));
+  const platformOptions: { value: string; label: string }[] = (srcOpts?.platforms ?? []).map((p) => ({
+    value: p.id,
+    label: p.label,
+  }));
+  // 当前配的那个平台即使不在清单里也要出现（同「翻译档位」的兜底：不许露出裸 id）
+  if (draftPlatform && !platformOptions.some((p) => p.value === draftPlatform)) {
+    platformOptions.push({ value: draftPlatform, label: `${draftPlatform}（当前配置）` });
+  }
+  const platformLabel = srcOpts?.platforms.find((p) => p.id === draftPlatform)?.label ?? draftPlatform;
+  /** 草稿平台那份已配置密钥的回显（`null` = 没配过 / 还没读到） */
+  const credView = srcOpts ? srcOpts.credentials[draftPlatform] : null;
+
+  const saveSrcSettings = async () => {
+    if (!srcOpts) return;
+    // 只发**改动过**的字段：整份提交会把没动的键也写一遍，服务端回的 changed 清单会失去意义
+    const patch: TranslateSettingsPatch = {};
+    if (draftSource !== savedSource) patch.source = draftSource;
+    if (srcOnline && draftPlatform !== savedPlatform) patch.platform = draftPlatform;
+    if (Object.keys(patch).length === 0) return;
+    setSrcBusy(true);
+    try {
+      const r = await saveTranslateSettings(patch);
+      /*
+       * 就地合并生效值而**不整份重拉**：重拉会把用户还没保存的草稿（如刚打了一半的密钥）
+       * 冲掉。服务端已回 `changed`，本地这份就是它刚确认过的新值。
+       */
+      setSrcOpts((prev) => (prev ? { ...prev, settings: { ...prev.settings, ...patch } } : prev));
+      onToast(r.changed.length > 0 ? `已保存：${r.changed.join('、')}` : '已保存', 'good');
+    } catch (e) {
+      onToast(errorText(e), 'bad');
+    } finally {
+      setSrcBusy(false);
+    }
+  };
+
+  const saveSrcCredentials = async () => {
+    // appSecret 为空时不发请求：密钥只写不读，空提交什么都不会改变，只会换来一条看不懂的错
+    if (!srcOpts || !draftSecret) return;
+    setSrcBusy(true);
+    try {
+      const r = await saveTranslateCredentials({
+        platform: draftPlatform,
+        appKey: draftKey,
+        appSecret: draftSecret,
+      });
+      // 按回声更新回显（appKey + 已保存标记）；secret 本体哪里都不留
+      setSrcOpts((prev) =>
+        prev
+          ? {
+              ...prev,
+              credentials: {
+                ...prev.credentials,
+                [r.saved.platform]: { appKey: r.saved.appKey, hasSecret: true },
+              },
+            }
+          : prev,
+      );
+      setDraftSecret('');
+      onToast('密钥已保存', 'good');
+    } catch (e) {
+      onToast(errorText(e), 'bad');
+    } finally {
+      setSrcBusy(false);
+    }
+  };
 
   const o = eng.options;
   const busy = eng.action !== null;
@@ -260,7 +409,116 @@ export function TranslateSection({
     <>
       <GroupNote summary={TRANSLATE.noteSummary}>{TRANSLATE.note as string}</GroupNote>
 
-      {/* 小节一：服务与配对（3） */}
+      {/* 小节一：翻译来源（1）—— ver2.2 在线翻译并入 ② 的第一个小节（P-D2） */}
+      <div className="set-group">
+        <SubTitle>翻译来源</SubTitle>
+
+        <Row item={itemOf(source, 'translate-source')}>
+          {srcOpts ? (
+            /*
+             * 顺序与「翻译档位」一致：说明在前、下拉贴最右（两行右边缘对齐）。
+             * 「在线 · 平台名」只在在线时出现 —— 本地引擎这一行没有需要注解的生效值，
+             * 摆一句空话反而会让"选中即生效"这件事变得可疑。
+             */
+            <>
+              {srcOnline ? <CtlNote>{`在线 · ${platformLabel}`}</CtlNote> : null}
+              <Select
+                label={itemOf(source, 'translate-source').label}
+                value={draftSource}
+                options={SRC_OPTIONS}
+                onChange={setDraftSource}
+              />
+            </>
+          ) : (
+            <ReadOnly>{srcErr ? '读取失败' : '读取中…'}</ReadOnly>
+          )}
+        </Row>
+
+        {srcErr ? (
+          <Notice kind="bad" className="set-row-note">
+            读不到翻译来源设置：{srcErr}
+            <Btn size="sm" disabled={srcBusy} onClick={() => void loadSrc()}>
+              重试
+            </Btn>
+          </Notice>
+        ) : null}
+
+        {/*
+          在线配置块（P-D6：只留平台 + appKey + appSecret + 保存）。
+
+          显示条件是 `srcOnline || settingsDirty` 而不是只有 `srcOnline`：
+          从在线切回本地引擎时草稿与生效值有差异，块必须留着让用户按得到「保存」——
+          否则那条切换路径没有入口（切回本地是要停掉整条在线链路的动作，不能只靠猜）。
+        */}
+        {srcOpts && (srcOnline || settingsDirty) ? (
+          <div className="set-src">
+            <div className="set-src-line">
+              <span className="set-src-k">平台</span>
+              <Select
+                label="在线翻译平台"
+                value={draftPlatform}
+                options={platformOptions}
+                onChange={setDraftPlatform}
+              />
+            </div>
+            <div className="set-src-line">
+              <span className="set-src-k">appKey</span>
+              <input
+                className="set-src-in"
+                value={draftKey}
+                onChange={(e) => setDraftKey(e.target.value)}
+                placeholder={credView?.appKey ?? '请输入平台应用 ID'}
+                aria-label="appKey"
+              />
+            </div>
+            <div className="set-src-line">
+              <span className="set-src-k">appSecret</span>
+              <input
+                className="set-src-in"
+                type="password"
+                value={draftSecret}
+                onChange={(e) => setDraftSecret(e.target.value)}
+                placeholder={credView?.hasSecret ? '已保存 · 留空则不更改' : '请输入平台应用密钥'}
+                aria-label="appSecret"
+              />
+            </div>
+            <div className="set-src-acts">
+              <Btn kind="primary" disabled={!settingsDirty || srcBusy} onClick={() => void saveSrcSettings()}>
+                保存
+              </Btn>
+              {/*
+                两个按钮**分开**是敲定的：「保存」写 settings、「保存密钥」写 credentials。
+                服务端两个端点、盘上两份文件，合并成一个按钮就分不清是哪一半被拒了 ——
+                而两种失败的补救动作完全不同（改选项 vs 重新填密钥）。
+              */}
+              <Btn
+                kind="ghost"
+                disabled={!draftSecret || srcBusy}
+                title={
+                  draftSecret
+                    ? '把 appKey 与 appSecret 写入本机 0600 密钥文件（appSecret 提交后永不回显）'
+                    : 'appSecret 为空 —— 密钥只写不读，空提交不会改变任何东西'
+                }
+                onClick={() => void saveSrcCredentials()}
+              >
+                保存密钥
+              </Btn>
+            </div>
+            <div className="set-src-note">
+              密钥<b>只写不读</b>：appSecret 提交后永不回显，「appSecret」框显示「已保存」即代表盘上已有一份；
+              留空提交 = 保持原样。
+            </div>
+          </div>
+        ) : null}
+
+        <RowNote>
+          本地引擎：翻译在本机完成（下方「推理引擎」「模型与诊断」两小节管的就是它）。
+          在线 API：原文发给第三方平台，密钥只写不读。切换来源对<b>下一次</b>翻译生效，
+          进行中的任务按发起时的来源跑完（P-D1：来源是服务的设置，不是任务属性）。
+        </RowNote>
+      </div>
+
+      {/* 小节二：服务与配对（4） */}
       <div className="set-group">
         <SubTitle>服务与配对</SubTitle>
 
@@ -368,7 +626,7 @@ export function TranslateSection({
         </Row>
       </div>
 
-      {/* 小节二：推理引擎（5）—— 方向 / 档位 / 后端 / 两个空闲卸载阈值 */}
+      {/* 小节三：推理引擎（5）—— 方向 / 档位 / 后端 / 两个空闲卸载阈值 */}
       <div className="set-group">
         <SubTitle>推理引擎</SubTitle>
         {eng.loadError ? (
@@ -481,8 +739,8 @@ export function TranslateSection({
          *
          * ⚠️ 两项在 catalog 里**各自还在**（`idle-llm` / `idle-vision`）：这是**渲染分组**，
          * 不是合并数据项，项数合计因此不变（动它 C10 会红）。
-         * ⚠️ 卡内标题**不用** `<SubTitle>`：② 的「恰 3 个小节」是 C11 逐字盯着的判据，
-         * 这里再加一个 `.set-subtitle` 会让那条断言从 3 变 4、彻底失效。
+         * ⚠️ 卡内标题**不用** `<SubTitle>`：② 的「恰 4 个小节」是 C11 逐字盯着的判据，
+         * 这里再加一个 `.set-subtitle` 会让那条断言从 4 变 5、彻底失效。
          */}
         <div className="set-idle">
           <div className="set-idle-head">
@@ -547,7 +805,7 @@ export function TranslateSection({
         <RestartHint title="推理引擎" keys={['翻译档位', '加速后端', '空闲卸载视觉']} pending={pending} />
       </div>
 
-      {/* 小节三：模型与诊断（3） */}
+      {/* 小节四：模型与诊断（3） */}
       <div className="set-group">
         <SubTitle>模型与诊断</SubTitle>
 

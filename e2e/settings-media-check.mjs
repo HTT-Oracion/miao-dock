@@ -5,7 +5,7 @@
  *
  * 覆盖两组，因为它们的失效形态是同一类（**编译得过、不抛错、界面就是不对**）：
  *   ③ 播放·媒体 ——「能实现 / 不能实现」重新裁定（EXCLUDED…CACHE 八组）
- *   ② 翻译服务 —— 十二项全部接真实能力 + 引擎诊断视图（ENGINE 一组）
+ *   ② 翻译服务 —— 十三项全部接真实能力 + 引擎诊断视图（ENGINE 一组）
  *
  * ## 为什么需要它
  *
@@ -158,8 +158,10 @@ const MEDIA_GROUPS = ['playback', 'lyrics', 'vinyl'];
  *  → **32**（② 服务与配对加「自动启动翻译服务」1 项，台账 D-94：让"不翻译就别把
  *     引擎拉起来"成为可配置项，关掉后改由未就绪屏的「启动本地服务」手动拉起）
  *  → **33**（② 推理引擎加「翻译方向」1 项，ver2.1：把"方向逐任务下发、英译中走离线 nllb"
- *     写进界面 —— 否则引擎诊断里的「源语言：按任务方向」没有一处能自答） */
-const SPEC_TOTAL = 33;
+ *     写进界面 —— 否则引擎诊断里的「源语言：按任务方向」没有一处能自答）
+ *  → **34**（② 加「翻译来源」小节 1 项，ver2.2：在线翻译并入 ② 作为第一个小节（P-D2）
+ *     —— 来源二选一（本地引擎 / 在线 API），是服务的设置不是任务属性（P-D1）） */
+const SPEC_TOTAL = 34;
 
 /** ④ 设置页必须真正取用的 store setter（逐项对应的控件回写） */
 const MEDIA_SETTERS = [
@@ -976,28 +978,29 @@ add('CACHE.zeroDisabled', 'CACHE', (ctx) => {
   };
 });
 
-// ============================ ⑨ ENGINE（② 翻译服务：推理引擎 / 模型与诊断） ============================
+// ============================ ⑨ ENGINE（② 翻译服务：翻译来源 / 服务与配对 / 推理引擎 / 模型与诊断） ============================
 /*
- * 这一组守的是 ② 翻译服务**十二项全部接真实能力**（《09》§4.3 / 《02》§5；
+ * 这一组守的是 ② 翻译服务**十三项全部接真实能力**（《09》§4.3 / 《02》§5；
  * 原「十项」自 D-94 起 +1（服务与配对加「自动启动翻译服务」）、ver2.1 再 +1
- * （推理引擎加「翻译方向」，只读说明项））
+ * （推理引擎加「翻译方向」，只读说明项）、ver2.2 再 +1（第一个小节「翻译来源」，
+ * 在线翻译并入 ② 的落点，P-D2））
  * 与「引擎诊断视图」（《09》§6.2）。
  *
- * 为什么它值得一整组断言：这十二项的失效形态**全都不会报错** ——
+ * 为什么它值得一整组断言：这十三项的失效形态**全都不会报错** ——
  *   · catalog 里标了 `live`、sections.tsx 里也写了控件，但控件绑的不是服务端字段
  *     （渲染出来永远停在"读取中…"，或显示一个前端自己编的默认值）；
  *   · 「已配置」与「已生效」被合成一个值（保存成功后下拉跳回旧值，用户只能得出"没存上"）；
  *   · 数字框逐字符提交（想把 5 改成 30，中途那一下会先写成 3 —— 那是**真实生效**的写入）；
- *   · 诊断面板的内部小标题复用了 `.set-subtitle`（规格自检 C11 的"恰好 3 个"从
- *     "3"变成"3+5"，那条断言红得莫名其妙，等于废掉）；
+ *   · 诊断面板的内部小标题复用了 `.set-subtitle`（规格自检 C11 的"恰好 4 个"从
+ *     "4"变成"4+5"，那条断言红得莫名其妙，等于废掉）；
  *   · JSX 文本里漏出 markdown 的 `**`（界面上原样显示两个星号）。
  * 每一条都编译得过、类型检查过、不抛错。只能靠断言钉住。
  */
 
-/** ② 的三小节 id（顺序即渲染顺序，也是 C11 判据「恰 3 个 `.set-subtitle`」的来源） */
-const ENGINE_GROUPS = ['pairing', 'inference', 'model'];
-/** 三小节标题字面量 —— C11 同时校验文字，这里必须逐字同源 */
-const ENGINE_SUBTITLES = ['服务与配对', '推理引擎', '模型与诊断'];
+/** ② 的四小节 id（顺序即渲染顺序，也是 C11 判据「恰 4 个 `.set-subtitle`」的来源） */
+const ENGINE_GROUPS = ['source', 'pairing', 'inference', 'model'];
+/** 四小节标题字面量 —— C11 同时校验文字，这里必须逐字同源 */
+const ENGINE_SUBTITLES = ['翻译来源', '服务与配对', '推理引擎', '模型与诊断'];
 /** 折叠区里剩下的三个区块标题（第 4 个「最近阶段日志」在 ver2.1 被**摘出**折叠范围，
  *  成为常驻日志区 —— 见《03》§3。它一旦回到折叠区，`ENGINE.run.noDupeLogSection` 变红） */
 const DIAG_SECTIONS = ['进程状态', '生效配置', '模型状态'];
@@ -1005,9 +1008,9 @@ const DIAG_SECTIONS = ['进程状态', '生效配置', '模型状态'];
 const DIAG_OPS = ['重启引擎', '重新下载模型', '强制释放模型'];
 
 /** ② 全组项数 —— 与 catalog 的 `SECTION_ITEM_TOTAL` 独立数出来（互为质证） */
-const ENGINE_ITEMS_TOTAL = 12;
+const ENGINE_ITEMS_TOTAL = 13;
 
-/** 取 ② 的十二项（真实数据结构，不是字符串） */
+/** 取 ② 的十三项（真实数据结构，不是字符串） */
 function translateItems(ctx) {
   const err = CAT_ERR(ctx.cat);
   if (err) return { err, items: null, sec: null };
@@ -1028,7 +1031,7 @@ add('ENGINE.items.allLive', 'ENGINE', (ctx) => {
   const problems = [];
   if (items.length !== ENGINE_ITEMS_TOTAL)
     problems.push(`项数 ${items.length}，应为 ${ENGINE_ITEMS_TOTAL}（${per.join(', ')}）`);
-  // 每项都必须 live —— 十二项里剩一项 pending，就意味着《09》§4.3 的能力清单没落地
+  // 每项都必须 live —— 十三项里剩一项 pending，就意味着《09》§4.3 的能力清单没落地
   const notLive = items.filter((i) => i.state !== 'live').map((i) => i.id);
   if (notLive.length) problems.push(`仍是 pending/其它态：${notLive.join(', ')}`);
   return { ok: problems.length === 0, detail: problems.join('；') };
@@ -1068,7 +1071,7 @@ for (const [id, group] of [['ENGINE.layout.manageBlock', 'model-manage'], ['ENGI
 // —— 接线：sections.tsx 的 TranslateSection ——
 const tsBody = (ctx) => fnBody(ctx.s.sections, 'TranslateSection');
 
-add('ENGINE.wiring.threeSubTitles', 'ENGINE', (ctx) => {
+add('ENGINE.wiring.fourSubTitles', 'ENGINE', (ctx) => {
   const raw = tsBody(ctx);
   if (!raw) return { ok: false, detail: 'sections.tsx 里找不到 TranslateSection 的实现体' };
   /*
@@ -1077,10 +1080,12 @@ add('ENGINE.wiring.threeSubTitles', 'ENGINE', (ctx) => {
    * 第 4 个，判据报「有 4 个」——而组件里真的只有 3 个。
    * 那是一次**假红**：解红的最快办法是把注释删掉，也就是把"为什么不能用"这条说明删掉，
    * 判据反而把维护者引向最坏的方向。剥注释后，数出来的才是**真的会被渲染的**小节标题。
+   *
+   * ver2.2（P-D2）起是 4 个：在线翻译并入 ② 作为第一个小节「翻译来源」。
    */
   const body = stripComments(raw);
   const n = (body.match(/<SubTitle>/g) ?? []).length;
-  if (n !== 3) return { ok: false, detail: `TranslateSection 里有 ${n} 个 <SubTitle>，应恰为 3（C11 判据）` };
+  if (n !== 4) return { ok: false, detail: `TranslateSection 里有 ${n} 个 <SubTitle>，应恰为 4（C11 判据）` };
   const missing = ENGINE_SUBTITLES.filter((t) => !body.includes(`<SubTitle>${t}</SubTitle>`));
   return {
     ok: missing.length === 0,
@@ -1102,8 +1107,12 @@ add('ENGINE.wiring.tierKeepsConfigured', 'ENGINE', (ctx) => {
    * 判据是「已配置档**即使不在候选清单里也必须出现在选项里**」这条兜底分支。
    * 只查"有 tierValue"会假绿 —— 兜底写了但没人用、或用了但没推进 options，都测不到。
    * 这里锚在**渲染出来的那句标注**上（它同时也是用户能看见的证据）。
+   *
+   * ⚠️ 标注必须带后缀「 · 权重不在清单」：ver2.2 平台下拉也有一处「（当前配置）」兜底
+   * （platformOptions），只搜「（当前配置」会分不清两处兜底 —— 破坏 tier 那处时
+   * 平台那处仍能让断言绿，反证随之失效。
    */
-  const ok = /tierOptions\.push\(/.test(body) && body.includes('（当前配置');
+  const ok = /tierOptions\.push\(/.test(body) && body.includes('（当前配置 · 权重不在清单）');
   return {
     ok,
     detail: ok ? '' : '缺「已配置档不在清单里也要出现在选项里」的兜底（控件会显示成空白/裸 id）',
@@ -1275,13 +1284,13 @@ add('ENGINE.hook.strictModeAliveGuard', 'ENGINE', (ctx) => {
 add('ENGINE.diag.notSubTitle', 'ENGINE', (ctx) => {
   /*
    * 面板内部小标题**不能**复用 `.set-subtitle` / `SubTitle`：
-   * 那个类名是规格自检 C11 数"② 有几个小节"的判据（恰 3 个）。
+   * 那个类名是规格自检 C11 数"② 有几个小节"的判据（恰 4 个）。
    * ⚠️ 必须先剥注释再判 —— 本文件的注释里**就在讨论这件事**（写着 `SubTitle` 与 `.set-subtitle`），
    * 直接搜字面量会把说明当成违规（而且删掉说明才能变绿，正好把判据引向错误的方向）。
    */
   const code = stripComments(ctx.s.engineDiag);
   const problems = [];
-  if (code.includes('set-subtitle')) problems.push('面板里用了 .set-subtitle（C11 的"恰 3 个"会失效）');
+  if (code.includes('set-subtitle')) problems.push('面板里用了 .set-subtitle（C11 的"恰 4 个"会失效）');
   if (/\bSubTitle\b/.test(code)) problems.push('面板里用了 SubTitle 组件');
   if (!code.includes('set-diag-h')) problems.push('面板内部标题没有用 .set-diag-h');
   return { ok: problems.length === 0, detail: problems.join('；') };
@@ -1583,11 +1592,13 @@ add('ENGINE.css.classes', 'ENGINE', (ctx) => {
    * 界面元素**恰好都落在这些前缀上**（状态 chip、端口 chip、令牌输入框、空闲卸载合卡、
    * 组说明抽屉、行内 why）。前缀不扩，这一轮的新 UI 就整片不在反向判据覆盖内 ——
    * 元素照常渲染、只是没有样式，与"忘了写 CSS"完全同形。
+   * ⚠️ ver2.2 再扩容 `set-src`：在线翻译配置块（来源下拉 + 平台 + 密钥两行 + 两按钮）
+   * 整片落在该前缀上，不扩则这块新 UI 同样没有样式兜底。
    */
   const srcs = [ctx.s.sections, ctx.s.engineDiag, ctx.s.modelManage, ctx.s.parts].join('\n');
   const used = new Set();
   for (const m of srcs.matchAll(
-    /\bset-(?:diag|manage|warn|hint|state|pnum|token|idle|note|row|run)[a-z0-9-]*/g,
+    /\bset-(?:diag|manage|warn|hint|state|pnum|token|idle|note|row|run|src)[a-z0-9-]*/g,
   )) {
     used.add(m[0]);
   }
@@ -2087,7 +2098,7 @@ add('NOTREADY.l4.noLoading', 'NOTREADY', (ctx) => {
 //   · 压一行只砍 `why`，`CtlNote` 不许跟着消失（那条小字说的是"为什么此刻是灰的"）。
 //
 // ⚠️ 组名单列 `SIMPLIFY`（而不是并进 ENGINE）：ENGINE 那二十余条守的是
-// 「十二项接真实能力」，这九条守的是「同一批能力换了一种更短的说法」。
+// 「十三项接真实能力」，这九条守的是「同一批能力换了一种更短的说法」。
 // 混在一起，回归时就分不清是"能力掉了"还是"话又变长了"。
 
 /** 比对摘要与原文前，两侧都去掉空白与 `**` —— 星号是强调标记，不是内容 */
@@ -2283,10 +2294,20 @@ add('SIMPLIFY.select.pulledRight', 'SIMPLIFY', (ctx) => {
    * 让人一眼读成"一列操作"，而不是每行各自为政。顺序反过来（下拉在前）则右边缘
    * 由**说明文字的宽度**决定，逐行漂移。
    *
-   * 判据用**位置**而不是长相：在 TranslateSection 里，每一枚 `<Select` 之前
-   * 必须已经出现过一枚 `<CtlNote`（即两两成对且说明在前）。
+   * 判据用**位置**而不是长相：在 TranslateSection 的**两栏行**里，每一枚 `<Select`
+   * 之前必须已经出现过一枚 `<CtlNote`（即两两成对且说明在前）。
+   *
+   * ⚠️ ver2.2 起 `.set-src` 块**先摘掉再数**：在线配置块是另一种形态 ——
+   * `.set-src-k` 小标签在左、控件贴右的**表单行**（标签就是它的"说明"），
+   * 不是两栏行，本例子钉的右边缘对齐管不到它；类名存在性由 `ENGINE.css.classes` 兜底。
+   * 不摘的话，平台那枚下拉会被判成"没有说明"，而它明明有 —— 那是假红，
+   * 且解红只能靠把断言改成恒绿。摘法锚在结构上：该块恒居于 `<RowNote>` 之前。
    */
-  const body = stripComments(tsBody(ctx) ?? '');
+  const full = stripComments(tsBody(ctx) ?? '');
+  const at = full.indexOf('className="set-src"');
+  const end = at < 0 ? -1 : full.indexOf('<RowNote>', at);
+  // 摘不掉（块或 RowNote 不在）就整段判 —— 计数会立刻报出来，逼人来看，不会静默放过
+  const body = at < 0 || end < 0 ? full : full.slice(0, at) + full.slice(end);
   const problems = [];
   let ctl = 0;
   let nth = 0;
@@ -2297,8 +2318,8 @@ add('SIMPLIFY.select.pulledRight', 'SIMPLIFY', (ctx) => {
       if (ctl < nth) problems.push(`第 ${nth} 枚下拉之前没有说明（下拉漂到了左边）`);
     }
   }
-  if (nth !== 2) problems.push(`② 里的下拉有 ${nth} 枚，应为 2（翻译档位 / 加速后端）`);
-  if (ctl !== 2) problems.push(`② 里的控件旁注解有 ${ctl} 枚，应为 2`);
+  if (nth !== 3) problems.push(`② 两栏行里的下拉有 ${nth} 枚，应为 3（翻译来源 / 翻译档位 / 加速后端）`);
+  if (ctl !== 3) problems.push(`② 两栏行里的控件旁注解有 ${ctl} 枚，应为 3`);
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -2715,10 +2736,10 @@ const MUTATIONS = [
   {
     name: '把项数自校常量改成 26（模拟自校常量漂移）',
     file: F.catalog,
-    // ⚠️ 锚点必须与 catalog 的真实字节一致 —— 常量每变一次（29→31→32→33→31→32→**33**）
+    // ⚠️ 锚点必须与 catalog 的真实字节一致 —— 常量每变一次（29→31→32→33→31→32→**33**→**34**）
     // 都要同步这里，否则本行会退化成「锚点未找到 / 跳过」，看起来仍是全绿（跳过 ≠ 通过）。
     // 实测：漏同步时这条确实静默跳过过（详见台账 D-94 的反证轮复修记录）。
-    find: 'export const SPEC_ITEM_TOTAL = 33;',
+    find: 'export const SPEC_ITEM_TOTAL = 34;',
     replace: 'export const SPEC_ITEM_TOTAL = 26;',
     expect: ['COUNT.specMatches'],
   },
@@ -2913,19 +2934,19 @@ const MUTATIONS = [
   /*
    * ============================ ② 翻译服务（S6） ============================
    *
-   * ② 这十二项的失效形态全都**不报错**：编译过、类型过、页面照常渲染，只是内容不对。
+   * ② 这十三项的失效形态全都**不报错**：编译过、类型过、页面照常渲染，只是内容不对。
    * 所以每一条正向断言都必须配一次"把它破坏掉、看它变红"，否则正向断言本身
    * 是不是有效（会不会恒绿）无从得知。
    */
   {
-    name: '把 ② 的「翻译档位」改成 pending（模拟十二项里有一项没落地）',
+    name: '把 ② 的「翻译档位」改成 pending（模拟十三项里有一项没落地）',
     file: F.catalog,
     find: "          id: 'tier',\n          label: '翻译档位',\n          state: 'live',\n",
     replace: "          id: 'tier',\n          label: '翻译档位',\n          state: 'pending',\n",
     expect: ['ENGINE.items.allLive'],
   },
   {
-    name: '把 ② 第三小节 id 改错（小节结构被破坏，C11 的"恰 3 个"会跟着失守）',
+    name: '把 ② 第四小节 id 改错（小节结构被破坏，C11 的"恰 4 个"会跟着失守）',
     file: F.catalog,
     find: "      id: 'model',\n",
     replace: "      id: 'modelx',\n",
@@ -2950,7 +2971,7 @@ const MUTATIONS = [
     file: F.sections,
     find: '        <SubTitle>模型与诊断</SubTitle>\n',
     replace: '',
-    expect: ['ENGINE.wiring.threeSubTitles'],
+    expect: ['ENGINE.wiring.fourSubTitles'],
   },
   {
     name: '把「引擎此刻在跑哪档」改成读已配置的值（已配置与已生效被合成一个）',
@@ -2970,8 +2991,11 @@ const MUTATIONS = [
   {
     name: '删掉「已配置档也要出现在选项里」的兜底（控件会显示成空白/裸 id）',
     file: F.sections,
-    find: '（当前配置',
-    replace: '（不在清单',
+    // ⚠️ 锚点必须带后缀「 · 权重不在清单」：ver2.2 平台下拉也有一处「（当前配置）」兜底
+    // （platformOptions），只搜「（当前配置」会命中**更靠前的那一处**，破坏的是平台兜底、
+    // tier 兜底原封不动 —— 断言照绿，这条反证就成了假反证（实测翻车过）。
+    find: '（当前配置 · 权重不在清单）',
+    replace: '（不在清单）',
     expect: ['ENGINE.wiring.tierKeepsConfigured'],
   },
   {
@@ -3051,7 +3075,7 @@ const MUTATIONS = [
     expect: ['ENGINE.hook.verifyNotFailedWhenNotOk'],
   },
   {
-    name: '把诊断面板的内部小标题换成 SubTitle（C11 的"恰 3 个"会失效）',
+    name: '把诊断面板的内部小标题换成 SubTitle（C11 的"恰 4 个"会失效）',
     file: F.engineDiag,
     find: '<div className="set-diag-h">{title}</div>',
     replace: '<SubTitle>{title}</SubTitle>',
@@ -3643,7 +3667,7 @@ const MUTATIONS = [
 // ── 主流程 ────────────────────────────────────────────────────────────────
 const refute = process.argv.includes('--refute');
 
-console.log('设置页断言（③ 播放·媒体「能实现/不能实现」重新裁定 + ② 翻译服务十一项与引擎诊断）' + (refute ? ' · 反证轮' : ''));
+console.log('设置页断言（③ 播放·媒体「能实现/不能实现」重新裁定 + ② 翻译服务十三项与引擎诊断）' + (refute ? ' · 反证轮' : ''));
 console.log(`根目录：${ROOT}`);
 console.log(`断言总数：${A.length}（${GROUPS.join('/')}）`);
 

@@ -549,12 +549,12 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
 
   // ---------------------------------------------------------------- C11 设置小节分层
   {
-    // 判据来自《09》§4.3：②翻译服务恒含三小节。
+    // 判据来自《09》§4.3：②翻译服务恒含四小节。
     //
-    // ⚠️ 这里**不**判「小节标题是 uppercase」。三个小节名是中文（服务与配对 / 推理引擎 /
-    // 模型与诊断），`text-transform:uppercase` 对中文**没有任何视觉变化** ——
+    // ⚠️ 这里**不**判「小节标题是 uppercase」。四个小节名是中文（翻译来源 / 服务与配对 /
+    // 推理引擎 / 模型与诊断），`text-transform:uppercase` 对中文**没有任何视觉变化** ——
     // 那条断言无论实现对错都恒真，是一条测不出东西的假断言。判据改为
-    // 「②恰好渲染 3 个 .set-subtitle」，它在小节被抹平时会真的变红。
+    // 「②恰好渲染 4 个 .set-subtitle」，它在小节被抹平时会真的变红。
     // （CSS 里保留 uppercase 属性：将来小节名改用英文时它会立刻生效。）
     const main = document.querySelector('.settings-main') as HTMLElement | null;
     const subs = Array.from(main?.querySelectorAll('.set-subtitle') ?? []);
@@ -563,17 +563,17 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     if (!main || !isTranslate) {
       add(
         'C11',
-        '②翻译服务恒含三小节（服务与配对 / 推理引擎 / 模型与诊断），小节标题独立于项',
+        '②翻译服务恒含四小节（翻译来源 / 服务与配对 / 推理引擎 / 模型与诊断），小节标题独立于项',
         true,
         '当前不在②翻译服务（跳过，非通过依据）',
       );
     } else {
       const texts = subs.map((e) => (e.textContent ?? '').trim());
-      const want = ['服务与配对', '推理引擎', '模型与诊断'];
+      const want = ['翻译来源', '服务与配对', '推理引擎', '模型与诊断'];
       add(
         'C11',
-        '②翻译服务恒含三小节（小节标题独立于项；抹平小节即红）',
-        texts.length === 3 && texts.every((t, i) => t === want[i]),
+        '②翻译服务恒含四小节（小节标题独立于项；抹平小节即红）',
+        texts.length === 4 && texts.every((t, i) => t === want[i]),
         `实际 ${texts.length} 个小节：${texts.join(' / ') || '无'}`,
       );
     }
