@@ -37,7 +37,6 @@ export function SettingsScreen({
   serviceAutoStart,
   onServiceAutoStart,
   lib,
-  onToast,
 }: {
   status: ServiceStatus | null;
   mode: ThemeMode;
@@ -62,7 +61,6 @@ export function SettingsScreen({
    * 而两边都没错，只是取数时刻不同。同一份数据只有一个来源。
    */
   lib: LibraryResponse | null;
-  onToast: (text: string, kind?: 'info' | 'good' | 'bad') => void;
 }) {
   // 深链 `?section=general|translate|media|resource|about`
   //
@@ -167,7 +165,6 @@ export function SettingsScreen({
               status={status}
               autoStart={serviceAutoStart}
               onAutoStart={onServiceAutoStart}
-              onToast={onToast}
             />
           ) : null}
           {active.id === 'media' ? <MediaSection /> : null}

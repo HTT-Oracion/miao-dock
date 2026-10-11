@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import { errorText, openPath, serviceStart, serviceStop } from '@/ipc';
+import { useToasts } from '@hooks';
 import type { ServiceStatus } from '@/ipc';
 import type { ThemeMode } from '@/theme/tokens';
 import { stateView } from '@/nav';
@@ -180,15 +181,15 @@ export function TranslateSection({
   status,
   autoStart,
   onAutoStart,
-  onToast,
 }: {
   status: ServiceStatus | null;
   /** 「自动启动翻译服务」当前值（真值源是 `App` 的 state，这里只渲染） */
   autoStart: boolean;
   onAutoStart: (on: boolean) => void;
-  onToast: (t: string, k?: 'info' | 'good' | 'bad') => void;
 }) {
-  const eng = useEngineState(onToast);
+  // 吐司单例总线：直接取用，不必由宿主透传（见 useToasts 注释）
+  const { push: onToast } = useToasts();
+  const eng = useEngineState();
 
   /**
    * 手动启停的忙标记。
@@ -844,7 +845,7 @@ export function TranslateSection({
           这正是「排障第一入口不该付一次点击的成本」那条判据的落地。
           折叠的对象因此**收窄**为 进程表 / 生效配置 / 模型路径 / 三个操作（比 ver2.0 更小）。
         */}
-        <EngineDiag item={itemOf(model, 'engine-diag')} eng={eng} service={status} onToast={onToast} />
+        <EngineDiag item={itemOf(model, 'engine-diag')} eng={eng} service={status} />
       </div>
     </>
   );

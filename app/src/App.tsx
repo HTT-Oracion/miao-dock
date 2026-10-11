@@ -421,7 +421,6 @@ export function App() {
               source={source}
               onStart={() => void startService()}
               onRestart={() => void restart()}
-              onToast={push}
             />
           ) : screen === 'music' ? (
             <MusicScreen />
@@ -449,14 +448,12 @@ export function App() {
                 newBookSignal={newBookRequest}
                 onNewBookHandled={() => setNewBookRequest(false)}
                 onRefresh={refreshAll}
-                onToast={push}
                 refreshKey={refreshKey}
               />
             ) : (
               <DropScreen
                 rootDir={status?.root_dir ?? null}
                 onSubmitted={refreshAll}
-                onToast={push}
                 onGoLibrary={() => setView('library')}
               />
             )
@@ -470,7 +467,6 @@ export function App() {
               serviceAutoStart={autoStart}
               onServiceAutoStart={setServiceAutoStart}
               lib={lib}
-              onToast={push}
             />
           )}
 

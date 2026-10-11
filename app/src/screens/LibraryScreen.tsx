@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { apiDelete, apiGet, apiPost, apiPostMultipart, errorText, isApiError, openPath } from '@/ipc';
+import { useToasts } from '@hooks';
 import { LIBRARY } from '@/theme/tokens';
 import type {
   BookEntry,
@@ -953,7 +954,6 @@ export function LibraryScreen({
   newBookSignal,
   onNewBookHandled,
   onRefresh,
-  onToast,
   refreshKey,
 }: {
   lib: LibraryResponse | null;
@@ -972,9 +972,10 @@ export function LibraryScreen({
   newBookSignal?: boolean;
   onNewBookHandled?: () => void;
   onRefresh: () => void;
-  onToast: (text: string, kind?: 'info' | 'good' | 'bad') => void;
   refreshKey: number;
 }): ReactElement {
+  // 吐司单例总线：直接取用，不必由宿主透传（见 useToasts 注释）
+  const { push: onToast } = useToasts();
   const [active, setActive] = useState<string | null>(null);
   const [compareSeq, setCompareSeq] = useState<number | null>(null);
   const [pending, setPending] = useState<number | null>(null);

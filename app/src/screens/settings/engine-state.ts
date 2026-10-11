@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorText } from '@/ipc';
+import { useToasts } from '@hooks';
 import {
   downloadEngineModels, engineOptions, engineStatus, saveEngineSettings, unloadEngineLlm, verifyEngineModels,
 } from '@screens/settings/engine-api';
@@ -28,7 +29,10 @@ export type EngineAction = 'save' | 'unload' | 'verify' | 'download';
  * 一个看不见的 2s 定时器会让风扇转起来而用户不知道为什么。
  * 想立刻看最新态就用诊断视图里的「刷新」（那是用户明确表达的一次意愿）。
  */
-export function useEngineState(onToast: (t: string, k?: 'info' | 'good' | 'bad') => void) {
+export function useEngineState() {
+  // 吐司走**单例总线**（`useToasts` 的 `push` 每次调用各拿一份引用，但推的是同一条队列），
+  // 所以本 hook 直接取用即可，无需宿主层层透传 `onToast`。
+  const { push: onToast } = useToasts();
   const [options, setOptions] = useState<EngineOptions | null>(null);
   const [status, setStatus] = useState<EngineStatus | null>(null);
   /** 拉取失败：**如实显示**"读不到"，不退化成一份看起来正常的默认值 */

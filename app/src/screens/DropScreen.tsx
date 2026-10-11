@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { open } from '@tauri-apps/plugin-dialog';
 import { apiGet, apiPostMultipart, errorText, expandPaths } from '@/ipc';
+import { useToasts } from '@hooks';
 import type { CreateTaskResponse, LibraryResponse } from '@/types';
 import { dupKey, splitBatches, uuid } from '@tools';
 import { Btn, Notice } from '@components/units';
@@ -39,14 +40,14 @@ function decorate(files: string[]): Picked[] {
 export function DropScreen({
   rootDir,
   onSubmitted,
-  onToast,
   onGoLibrary,
 }: {
   rootDir: string | null;
   onSubmitted: () => void;
-  onToast: (text: string, kind?: 'info' | 'good' | 'bad') => void;
   onGoLibrary: () => void;
 }) {
+  // 吐司单例总线：直接取用，不必由宿主透传（见 useToasts 注释）
+  const { push: onToast } = useToasts();
   const [files, setFiles] = useState<Picked[]>([]);
   const [comicName, setComicName] = useState('');
   const [dragging, setDragging] = useState(false);

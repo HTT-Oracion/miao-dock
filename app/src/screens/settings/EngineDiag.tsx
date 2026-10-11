@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { save } from '@tauri-apps/plugin-dialog';
+import { useToasts } from '@hooks';
 import { Btn, Dot, Notice } from '@components/units';
 import { errorText, serviceRestart, writeTextFile } from '@/ipc';
 import type { ServiceStatus } from '@/ipc';
@@ -90,15 +91,15 @@ export function EngineDiag({
   item,
   eng,
   service,
-  onToast,
 }: {
   /** catalog 的 `engine-diag` 项 —— 标题与 why 都从它来（单一事实源，见下方文件头） */
   item: SettingItem;
   eng: EngineState;
   /** ① box-service 自己的状态 —— 它不在 `/engine/status` 里（那是引擎的视角），得从 Rust 侧拿 */
   service: ServiceStatus | null;
-  onToast: (t: string, k?: 'info' | 'good' | 'bad') => void;
 }) {
+  // 吐司单例总线：直接取用，不必由宿主透传（见 useToasts 注释）
+  const { push: onToast } = useToasts();
   const [restarting, setRestarting] = useState(false);
   /**
    * 「诊断详情」折叠态。默认收起；`false` 初值即"默认折叠"这件事本身。

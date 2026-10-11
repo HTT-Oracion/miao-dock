@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Btn } from '@components/units';
 import { errorText } from '@/ipc';
+import { useToasts } from '@hooks';
 import type { ServiceStatus } from '@/ipc';
 import { downloadEngineModels } from '@screens/settings/engine-api';
 import type { TranslateSource } from '@screens/settings/translate-api';
@@ -147,7 +148,6 @@ export function NotReadyScreen({
   source,
   onStart,
   onRestart,
-  onToast,
 }: {
   status: ServiceStatus | null;
   /**
@@ -164,8 +164,9 @@ export function NotReadyScreen({
    */
   onStart: () => void;
   onRestart: () => void;
-  onToast: (text: string, kind?: 'info' | 'good' | 'bad') => void;
 }) {
+  // 吐司单例总线：直接取用，不必由宿主透传（见 useToasts 注释）
+  const { push: onToast } = useToasts();
   /**
    * 日志**默认收起**（本屏"信息精简"唯一的行为性改动），但**失败时自动展开**
    * —— 「把卡在哪儿说清楚」这个立意不能丢。

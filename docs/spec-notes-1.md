@@ -27,6 +27,7 @@
 | D-143 | 新增 `units/Modal` 收敛 5 处手写模态壳（+ 修 4 条失效反证锚） | app 前端 |
 | D-144 | `server.mjs` 去重：任务创建工厂 + 兜底收敛 + multipart 四闸 | service |
 | D-145 | 库扫描/视图下沉数据层（`server.mjs` → `manga/library.mjs`） | service |
+| D-146 | 去掉 `onToast` 属性穿透，改用 `useToasts()` 单例总线 | app 前端 |
 
 ---
 
@@ -505,3 +506,32 @@ HTTP 语义耦合）仍留在 `server.mjs`；`store` 仍反向依赖 server 注�
 > 一度被误判为「搬迁引入的回归」。用 `git worktree add … HEAD` 跑**基线对照**（24/0）才定性。
 > **教训**：本仓「原地变异」型反证轮**必须整轮跑完**（后台 + 足时），跑完**必查 `git status`**；
 > 中断后先 `grep -rn "refute：" service/src app/src` 清残留，再下任何结论。
+
+---
+
+## D-146 · 去掉 `onToast` 属性穿透，改用 `useToasts()` 单例总线（2026-10-11）
+
+**背景**：审计 §2.5。吐司函数 `onToast` 由 `App.tsx` 逐层透传到 8 个文件、80 处。
+但 `hooks/index.ts::useToasts` 的注释已写明：吐司走的是 **`toastBus` 模块级单例队列**
+（当初正为消除"两份互不相通的队列"而改的）⇒ 任何组件直接 `useToasts().push` 推的是**同一条队列**，
+透传并无必要。
+
+**改动**：6 个**使用点**各就地取用，宿主不再传：
+
+```ts
+const { push: onToast } = useToasts();   // 名字保留 onToast，其余调用点零改动
+```
+
+- 使用点：`NotReadyScreen` · `DropScreen` · `LibraryScreen` · `SettingsScreen`→`sections` ·
+  `EngineDiag` · `engine-state`（`useEngineState` 由 `(onToast)` 改为无参，内部自取）。
+- 宿主：`App.tsx` 去掉 4 处 `onToast={push}`（`push` 在 App 内另有大量使用，保留）；
+  `SettingsScreen` 去掉对 `TranslateSection` 的转发；`sections` 去掉对 `EngineDiag` 的转发。
+- `LibraryScreen` 的 6 个 `onToast` 使用点**都在主组件内**（948 行起），故一次 `useToasts()` 覆盖全屏。
+
+**风险控制**：无任何断言锚在 `onToast`/`useToasts`（已 grep 核实）；`useToasts().push` 是
+`useCallback` 稳定引用，进入 `useCallback`/`useEffect` 依赖数组不引起额外渲染。
+
+### 验收
+
+`tsc --noEmit` 0 · `vite build` 通过 · `check:units` 45/0 · `check:ia` 32/0 ·
+`check:settings` 180/0 · `check:music` 216/3（3 条既有环境红）· `check:docs` 17/0。
