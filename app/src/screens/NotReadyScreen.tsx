@@ -3,6 +3,7 @@ import { Btn } from '@components/units';
 import { errorText } from '@/ipc';
 import type { ServiceStatus } from '@/ipc';
 import { downloadEngineModels } from '@screens/settings/engine-api';
+import type { TranslateSource } from '@screens/settings/translate-api';
 
 /**
  * L1–L4 启动分层（《02》§3 / 《09》§6.1）。
@@ -143,11 +144,17 @@ function summaryOf(
  */
 export function NotReadyScreen({
   status,
+  source,
   onStart,
   onRestart,
   onToast,
 }: {
   status: ServiceStatus | null;
+  /**
+   * 翻译来源（P-D1 / P-D3）。`online` 时本屏走**精简页**（不搬时间线）；
+   * `local` / `null`（读不到来源，按本地处理）时维持四段时间线现状。
+   */
+  source: TranslateSource | null;
   /**
    * 手动启动（仅 `stopped` 时用）。
    *
@@ -189,6 +196,47 @@ export function NotReadyScreen({
 
   const detail = lastLogLine(status?.log);
   const summary = summaryOf(state, err, status?.phase, degraded);
+
+  /*
+   * ── P-D3 精简页：来源=在线 ──
+   *
+   * 在线来源的用户被拦，只剩一个原因：box-service 自己没起来（`stopped` / `error`）。
+   * 这时**刻意不搬四段时间线** —— L1–L4 描述的是**本地引擎**的启动分层
+   *（检查环境 → 下模型 → 预热 → 首图），而在线翻译一个字节的模型都不装；
+   * 把时间线搬过来，等于让人等一个与在线翻译无关的东西。所以只剩一句现状 + 一枚按钮。
+   *
+   * 标题仍按真实状态取（`summaryOf` 是状态 → 措辞的唯一事实源：`stopped` 与 `error`
+   * 说的话不同，失败时一并带上 `last_error`），副行换成来源这一句，如实说明
+   * 「在线翻译已配置，但漫画任务仍需要本地服务在跑」—— 不夸大，也不装作与服务无关。
+   */
+  if (source === 'online') {
+    return (
+      <div className="notready">
+        <div className={summary.bad ? 'nr-sum is-bad' : 'nr-sum'}>
+          <span className="nr-dot" />
+          <div>
+            <div className="nr-sum-t">{summary.title}</div>
+            <div className="nr-sum-d">
+              {failed && err ? `原因：${err} ` : ''}
+              翻译来源已配置为在线平台，但漫画的投放、队列与漫画库仍由本地服务承载 ——
+              点下方按钮把本地服务拉起来。
+            </div>
+          </div>
+        </div>
+        <div className="nr-acts">
+          {state === 'stopped' ? (
+            <Btn kind="primary" onClick={onStart}>
+              启动本地服务
+            </Btn>
+          ) : (
+            <Btn kind="primary" onClick={onRestart}>
+              重启本地服务
+            </Btn>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const redownload = async () => {
     setBusy(true);

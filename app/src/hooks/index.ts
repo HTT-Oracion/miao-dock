@@ -1,5 +1,5 @@
 /**
- * hooks 唯一收口的**业务桶**（spec-notes D-41）：服务状态 / 任务列表 / 漫画库 / 托盘退出 / 吐司。
+ * hooks 唯一收口的**业务桶**（spec-notes D-41）：服务状态 / 任务列表 / 漫画库 / 翻译来源 / 托盘退出 / 吐司。
  * `use*` 命名的 hook 一律住 `src/hooks/`：业务数据类进本桶（经 `@hooks` 引入），
  * 纯 DOM 行为类单放同目录（如 `@hooks/useEsc`），units 组件不得 import 本目录任何东西。
  */
@@ -19,6 +19,9 @@ import {
   type ServiceStatus,
 } from '@/ipc';
 import type { LibraryResponse, TaskListResponse } from '@/types';
+// 翻译来源的三个端点是 Box 专用契约，形状与调用收口在设置页的 translate-api.ts（P-D1）
+import { translateOptions } from '@screens/settings/translate-api';
+import type { TranslateSource } from '@screens/settings/translate-api';
 
 // ------------------------------------------------------------------ 服务状态
 
@@ -139,6 +142,57 @@ export function useLibrary(enabled: boolean, refreshKey: number) {
   }, [load, refreshKey]);
 
   return { data, error, reload: load };
+}
+
+// ------------------------------------------------------------------ 翻译来源
+
+/**
+ * 翻译来源（P-D1）：**服务的设置，不是任务的属性** —— 用户只在设置里选一次，
+ * box-service 记住它；投放 / 队列 / 重试 / 返工 / 浏览器插件都不加来源控件。
+ *
+ * 读一次 `/translate/options`。服务没起来（或请求被拒）时 `source=null`，
+ * 调用方按**本地**处理：设置读失败不该把翻译屏锁死 —— 那意味着此刻没有任何
+ * HTTP 通道，准入判据回落到"服务没 running 就拦"（ver2.1 现状），不会更松。
+ * 服务起到 running 之后由调用方调 `reload()` 补读（见 App.tsx 的补读时机注释）。
+ */
+export function useTranslateSource() {
+  const [source, setSource] = useState<TranslateSource | null>(null);
+  const [platform, setPlatform] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  /*
+   * 自取消守卫与设置页 `loadSrc` 同款（含 StrictMode 双调用那次教训）：
+   * `alive.current = true` 必须写在挂载 effect 里 —— 只写卸载那一半的话，
+   * 开发模式下第一次 cleanup 会把它永久钉成 false，来源永远停在初始值。
+   */
+  const alive = useRef(true);
+
+  const load = useCallback(async () => {
+    try {
+      const o = await translateOptions();
+      if (!alive.current) return;
+      setSource(o.settings.source);
+      setPlatform(o.settings.platform);
+    } catch {
+      // 读不到按本地处理（见上方注释）：不设错误态 —— 这一读失败没有"用户该做什么"，
+      // 服务没起来时 X-C3 已经在解释原因了
+      if (!alive.current) return;
+      setSource(null);
+      setPlatform(null);
+    } finally {
+      if (alive.current) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    alive.current = true;
+    void load();
+    return () => {
+      alive.current = false;
+    };
+  }, [load]);
+
+  return { source, platform, loading, reload: load };
 }
 
 // ------------------------------------------------------------------ 托盘退出请求

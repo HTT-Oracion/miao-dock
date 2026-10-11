@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiPost, errorText, openPath, quitApp, serviceRestart, serviceStart } from '@/ipc';
 import type { ServiceState } from '@/ipc';
-import { useLibrary, useQuitRequest, useService, useTasks, useToasts } from '@hooks';
+import { useLibrary, useQuitRequest, useService, useTasks, useToasts, useTranslateSource } from '@hooks';
 import { initialMode, persistMode, useThemeTokens } from '@/theme/apply';
 import {
   initialServiceAutoStart,
@@ -30,6 +30,7 @@ import {
   type Screen,
   type TranslateView,
 } from '@/nav';
+import type { TranslateSource } from '@screens/settings/translate-api';
 import type { CancelResponse, DeleteTasksResponse, LibraryResponse, TaskRow } from '@/types';
 import { formatBytes } from '@tools';
 
@@ -89,6 +90,8 @@ export function App() {
 
   const { status, ipcError } = useService();
   const running = status?.state === 'running';
+  /** 翻译来源（P-D1）：服务的设置。读不到时 source=null，按本地档处理（见 hook 注释） */
+  const { source, platform, reload: reloadSource } = useTranslateSource();
   const { data: tasks, error: tasksError, reload: reloadTasks } = useTasks(running);
   const { data: lib, error: libError } = useLibrary(running, refreshKey);
   const { push } = useToasts();
@@ -134,6 +137,24 @@ export function App() {
     if (screen !== 'translate' || !autoStart) return;
     void serviceStart().catch(() => undefined);
   }, [screen, autoStart]);
+
+  /**
+   * 翻译来源的**补读时机**（P-D3 分档的保鲜）—— `useTranslateSource` 挂载时只读一次，
+   * 这两个时机不补，分档就会一直拿旧值：
+   *
+   * ① 服务起到 running：冷启动时 `/translate/options` 必然读不到（`source=null` 按本地档，
+   *    理由见 hook 注释）。不补的话，配了在线来源的用户会在服务起来后一直拿着本地档的
+   *    chip 与准入判据 —— 分档集成在最常见的场景里失效；
+   * ② 屏幕切换：来源可能在设置页刚被改过（P-D1：它是**服务的设置**，不是任务属性），
+   *    回到翻译屏时 chip 与分档都要反映新值。
+   *
+   * 🔴 两条都**只在 running 时补读**：服务停下时选项接口必然读失败，而那时若把
+   *    `source` 冲成 null，在线用户点完「停止本地服务」看到的会是四段时间线而不是
+   *    P-D3 的精简页 —— 分档恰好在它最该出现的场景里失效。保持上一次读到的值即可。
+   */
+  useEffect(() => {
+    if (running) void reloadSource();
+  }, [screen, running, reloadSource]);
 
   const refreshAll = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -280,7 +301,16 @@ export function App() {
     openPath(t.outputDir).catch((e: unknown) => push(errorText(e), 'bad'));
   };
 
-  const blocked = !running;
+  /*
+   * 准入分档（P-D3）：来源是**本地**时维持 ver2.1 现状（服务没 running 就拦）；
+   * 来源是**在线**时只看 box-service 五态 —— `stopped` / `error` 才拦，
+   * `starting` / `degraded` 都不拦（本地引擎起没起来不挡在线翻译的界面准入，
+   * 真翻不动由服务端在任务上如实报，不在准入上预拦）。
+   * 读不到来源（`null`：服务没起来 / 选项请求失败）按本地处理 —— 回落到最严判据，
+   * 不会比 ver2.1 更松（理由见 `useTranslateSource` 注释）。
+   */
+  const svcDown = status?.state === 'stopped' || status?.state === 'error';
+  const blocked = source === 'online' ? svcDown : !running;
   // 哪些屏在服务未就绪时让位，判定集中在 nav.ts 一处（设置页与音乐屏有例外）
   const showNotReady = blocked && isBlockedWhenNotReady(screen);
 
@@ -295,7 +325,12 @@ export function App() {
       return {
         title: '服务未就绪',
         subtitle: '本地翻译服务还没起来；起来之后这里会显示任务队列',
-        actions: <ServicePill status={status?.state ?? 'starting'} />,
+        actions: (
+          <>
+            <Badge>{sourceChipLabel(source, platform)}</Badge>
+            <ServicePill status={status?.state ?? 'starting'} />
+          </>
+        ),
       };
     }
     // 音乐屏不随翻译服务状态变化：它的标题恒定，占位内容自己说明进度
@@ -317,6 +352,8 @@ export function App() {
           subtitle: libSummary,
           actions: (
             <>
+              {/* 来源 chip：翻译三视图 + 未就绪工具条一致（P-D1：来源是服务的设置，常亮） */}
+              <Badge>{sourceChipLabel(source, platform)}</Badge>
               {/* 「新建漫画」是**库级动作**（作用于整个库，不是某一项），故与「打开根目录」同层
                   （设计稿 §7.1.1 的位置裁决：不放左栏底部，免得与分页器抢位置） */}
               <Btn kind="primary" onClick={() => setNewBookRequest(true)}>
@@ -332,7 +369,12 @@ export function App() {
         return {
           title: '本机投放',
           subtitle: '拖入图片或文件夹 · 与插件共用同一条队列',
-          actions: <Badge>每批 20 张 · 自动排队</Badge>,
+          actions: (
+            <>
+              <Badge>{sourceChipLabel(source, platform)}</Badge>
+              <Badge>每批 20 张 · 自动排队</Badge>
+            </>
+          ),
         };
       default:
         return {
@@ -340,13 +382,14 @@ export function App() {
           subtitle: `串行执行 · 同一时刻只跑 1 个任务 · 队内 ${queueDepth} 个`,
           actions: (
             <>
+              <Badge>{sourceChipLabel(source, platform)}</Badge>
               <Badge>每批 20 张 · 自动排队</Badge>
               <ServicePill status={status?.state ?? 'starting'} />
             </>
           ),
         };
     }
-  }, [libRoot, libSummary, push, queueDepth, screen, showNotReady, status?.state, view]);
+  }, [libRoot, libSummary, platform, push, queueDepth, screen, showNotReady, source, status?.state, view]);
 
   // 翻译应用的视图 Tab 行；音乐屏不加（《09》§3.3），设置页是全局页也不加
   const showViewTabs = !showNotReady && screen === 'translate';
@@ -375,6 +418,7 @@ export function App() {
           {showNotReady ? (
             <NotReadyScreen
               status={status}
+              source={source}
               onStart={() => void startService()}
               onRestart={() => void restart()}
               onToast={push}
@@ -466,6 +510,26 @@ export function App() {
       <NotificationStack />
     </div>
   );
+}
+
+/**
+ * 平台 id → 展示名（来源 chip 用，P-D1）。
+ *
+ * 只映射**已知** id：契约当前只有 `youdao` 一把。未知 id 原样显示而不猜 ——
+ * 猜一个译名比显示 id 更糟（用户拿着错的名字去设置里找，找不到）。
+ */
+const PLATFORM_LABELS: Record<string, string> = { youdao: '有道智云' };
+
+/**
+ * 来源 chip 文案：本地 → 「本地引擎」；在线 → 「在线 · 平台中文名」。
+ *
+ * 抽成具名函数而不是 JSX 里的长链三元（工程纪律第 8 条）：四个工具条分支
+ * （未就绪 + 翻译三视图）共用同一句，写四遍必然会漂。
+ */
+function sourceChipLabel(source: TranslateSource | null, platform: string | null): string {
+  if (source !== 'online') return '本地引擎';
+  if (!platform) return '在线';
+  return `在线 · ${PLATFORM_LABELS[platform] ?? platform}`;
 }
 
 /**
