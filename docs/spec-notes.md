@@ -5581,3 +5581,48 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 | --- | --- | --- | --- |
 | `selftest:service` | 134/1：`ERR_UNKNOWN_SIGNAL: SIGSTOP` | A20 组脚本 `kill('SIGSTOP')`——Windows 无此信号（脚本为 macOS 开发机写法） | 脚本文件 `git status` 无改动；异常在测试脚本自身抛出，早于任何路由交互 |
 | `check:engine-settings` | 55/6：S4/S5/S7/S9/S9b/S10b | 断言按 **16GB / Metal Mac** 写死，本机 **15.7GB / CUDA**：S4 正则 `/16 GB/` 不匹配"15.7 GB"；S5 期望 cuda 被拒但本机合法（200 且写盘）⇒ S7 文件存在；15.7GB 上 small 档物理不可行 ⇒ S9 的 `tier=small` 被 400 ⇒ S9b/S10b 级联 | `git stash` 回 HEAD 干净树复跑**同样 6 条红**（55/6 逐条一致），与本轮改动无关 |
+
+## D-130 · 在线翻译真联调：SSE 帧解析缺陷（llm 空译文）+ 零帧兜底 + 漫画链路未接线（2026-10-11）
+
+**背景**：用户问「切到在线 API 能否正常走接口翻译」。**真机联调**（本机真实密钥直打 `openapi.youdao.com`，不是读代码猜测）得三条结论，两条代码缺陷已修。
+
+**取证（真联调，非推测）**
+
+- 真实上游 `POST /proxy/http/llm-trans` 的响应是**标准 SSE 帧**：
+  `event:message\ndata:{"code":"108","message":"应用ID无效",...,"successful":false}\n\n`（`content-type: text/event-stream`）。
+  这与 `sse-parse.mjs` 旧注释断言的"逐行 JSON、非标准 SSE"**正好相反**。
+- text 接口（`/api`）签名**通过**（签名错会是 202 而非 108），证明密钥被正确读出、正确签名、正确发出；上游回 **108 应用 ID 无效** ⇒ **用户侧**（appKey 抄错 / 该应用未开通文本+大模型翻译服务 / 不在有效期）。
+
+**缺陷 1（真 bug，代码侧）：流式解析协议错配 ⇒ llm「成功 + 空译文」**
+
+`sse-parse.mjs` 按「每行一个裸 JSON」解析，而真实上游是 SSE 帧 ⇒ `event:message` 与 `data:{...}` 两行 `JSON.parse` 全失败、被"非 JSON 行静默跳过"吞掉 ⇒ **0 帧 ⇒ 空译文 + `translate.done`**（用户看到"译了一整遍，结果是空的"）。D-129 的"非 2xx 先判死"救不了（上游是 200）。
+
+- **修**：`parseLineJsonStream` **同时**吃两种形态 —— SSE `data:` 帧（一个事件可含多行 data，以 \n 拼负载；跳过 `event:`/`id:`/`retry:`/`:` 注释）**与**裸 JSON 行（向后兼容）；半包/尾包语义不变。
+- **反证开关** `MIAO_TRANSLATE_REFUTE_LEGACY_LINE_JSON`（解析器退回"只认裸 JSON 行"）⇒ 红 `S6/S7/S10/S11/S14/A6/A8/A11`（正是"llm 全组空译文"的线上症状）。
+
+**缺陷 2（真 bug，代码侧）：200 但零帧不报错 ⇒ 同一个"空译文"假象的另一个入口**
+
+即便解析全失效，只要上游回 200，旧代码就返 `{text:''}` 当成功。
+
+- **修**：`youdao.mjs` `translateStream` 记帧数，`frames===0` ⇒ 抛 `TRANSLATE_UPSTREAM_ERROR`（`details.reason='no_frames'`）。与"非 2xx 先判死"配对：前者挡**已挂掉**的上游，这一判挡**回话了却读不出**的上游。
+- **反证开关** `MIAO_TRANSLATE_REFUTE_NO_FRAME_GUARD` ⇒ 只红 `S16`。
+
+**顺带修 D-129 记录的误导文案**：`code:"0"` 但 `successful!==true` 时原走 `mapUpstreamError('0')` → "未登记的错误码 0"；现显式报"回了成功码但未标记成功，通常意味着应用未开通大模型翻译"（S9 从"名字对不上"变成"原因说得清"）。
+
+**🔴 假绿根因（本条最该记住的）**：`check:translate` 旧 51 条 + 6 反证**全绿**却验不出缺陷 1 —— 因为**假上游发的恰好是裸 JSON 行**（错的协议），与真实上游（SSE 帧）不一致。**mock 与真实协议不一致 ⇒ 断言验的是 mock，不是产品**。
+
+- **修**：假上游 llm 回话**默认改发真 SSE 帧**（`event:message` + `data:`），半包/尾包/错误码/`no-success` 全部随之改帧；另留 `line-json` 模式**单独**验"裸 JSON 行仍吃得下"。新增 `S14`（真 SSE 帧解析，含原始字节取证 `state.lastLlmRaw`）、`S15`（裸 JSON 向后兼容）、`S16`（零帧兜底）。
+
+**⚠️ 未修（需决策）：切到 online 后漫画翻译没有接线（方案 §11 T6）**
+
+- 现状：`store.mjs` 的 `translateImage` 仍走 `engine-client` → **本地 Python 引擎**；前端只调 `/translate/options|settings|credentials`，**没有任何入口**调 `/translate/text|stream`。即「来源=在线」目前只影响设置展示 / NotReady 页 / 引擎是否随开机拉起。
+- 更要命的组合：P-D4 让 `source==='online'` 时**引擎不随开机拉起**，且 `store.ensureLlm` 只在该 if 分支里注入 ⇒ online 下 `ensureLlm=null`，连"任务来了懒加载引擎"的补救也没了。界面准入在 online 下只看服务五态（不拦）⇒ 用户能发起漫画翻译但引擎没起 ⇒ 失败。
+- **为什么不顺手改**：在线翻译产出的是**文本**，而漫画翻译产出的是**把译文渲染回图上的图片**（OCR + 重绘仍在本地）。"在线接管漫画翻译" = 本地 OCR → 在线译文本 → 本地重绘 的架构改动，且方案把 T6 标为"可选、需密钥"。属**产品决策**，不在本轮"修接口"范围内。
+
+**验收（本轮）**
+
+- `check:translate`：**54/0**（S=16 · T=4 · L=2 · C=6 · K=4 · A=12 · R=8；+COUNT+RUN 共 56 行）。新增 S14/S15/S16 三条正断言。
+- `check:translate:refute`：**8/8 按预期变红**（新增 `LEGACY_LINE_JSON→S6/S7/S10/S11/S14/A6/A8/A11` · `NO_FRAME_GUARD→S16`；`SWAP_JUDGE` 级联 19→21，纳入新增的 S14/S15）。
+- 真机复验：修后 `POST /translate/stream` 对真上游 SSE 帧能解析出业务错误（108）并归一为 `TRANSLATE_AUTH_FAILED`（**不再假成功**）；`POST /translate/text` 同理（108）。**密钥一有效即可出译文，签名与协议两侧已通。**
+
+**🔴 提醒**：`service/src/manga/translate/*` 与 `platforms/youdao.mjs` 改动需**重启 box-service / 喵坞**才生效。

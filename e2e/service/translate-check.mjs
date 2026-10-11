@@ -10,7 +10,7 @@
  *
  * | 组 | 条数 | 验什么 | 纪律 |
  * |---|---|---|---|
- * | S  | 13 | 签名 v3 与两接口协议（截断 / salt 防重放 / 字段集 / 判成功 / 错误码表 / 半包尾包） | §5 / §7.2 |
+ * | S  | 16 | 签名 v3 与两接口协议（截断 / salt 防重放 / 字段集 / 判成功 / 错误码表 / SSE 帧解析 / 半包尾包 / 零帧兜底） | §5 / §7.2 |
  * | T  | 4  | connect / ttfb / idle / total 四层超时**互不混淆**（`details.stage` 归因） | §7.1 |
  * | L  | 2  | 令牌桶并发 3 + QPS 10；排队超时归 429 而不是 504 | §7.4 |
  * | C  | 6  | 三层设置（env > 文件 > 默认）+ 双向不对称校验 + 坏文件不阻断 | §8.1/§8.2 |
@@ -26,7 +26,7 @@
  * 于是"我们这边签名算错""salt 复用""字段名拼错"都会以**确定的**上游错误码回来，
  * 而不是靠运气。
  *
- * ## 六条反证开关各护什么（`--refute` 轮，一个开关一个子进程）
+ * ## 八条反证开关各护什么（`--refute` 轮，一个开关一个子进程）
  * `refute.mjs` 在**模块顶层**读 env ⇒ 进程内不可回滚 ⇒ 每个开关必须另起子进程
  * （`engine-settings-check.mjs` 的同款纪律）。子进程跑**同一套正向断言**，
  * 指定的那几条必须变红，且**只能**红那几条。
@@ -40,7 +40,7 @@
  *
  * 用法：
  *   node e2e/service/translate-check.mjs            正向轮
- *   node e2e/service/translate-check.mjs --refute   反证轮（6 个开关 → 6 个子进程）
+ *   node e2e/service/translate-check.mjs --refute   反证轮（8 个开关 → 8 个子进程）
  *
  * 约束：纯 Node、零第三方依赖；**禁止静态 import 任何 translate 模块**（env 必须先布置）；
  *       临时目录自建自清（成功即清、失败保留并打印路径）。
@@ -74,7 +74,7 @@ const BLACKHOLE_CANDIDATES = ['192.0.2.1', '10.255.255.1', '198.51.100.1'];
 // ------------------------------------------------------------------ 条数分母（写死自检）
 // 🔴 每个数字都要与实际写出来的断言条数一致 —— 少写一条就静默少验一条，
 //    而"少验"在输出里完全看不出来（AGENTS.md §2-4：看着覆盖、实则空转）。
-const EXPECTED_S = 13;
+const EXPECTED_S = 16;
 const EXPECTED_T = 4;
 const EXPECTED_L = 2;
 const EXPECTED_C = 6;
@@ -276,6 +276,8 @@ function createFakeUpstream() {
     holdMs: 0,
     llmDeltas: DEFAULT_DELTAS,
     llmLangType: 'zh-CHS',
+    /** 最近一次 llm 回话写给客户端的**原始字节**（S14 取证：证明假上游发的是真 SSE 帧） */
+    lastLlmRaw: '',
     hits: [],
     badSign: 0,
     seenSalts: new Set(),
@@ -290,10 +292,19 @@ function createFakeUpstream() {
     return sha(TEST_APP_KEY + input + salt + curtime + TEST_APP_SECRET);
   };
 
+  /**
+   * llm 回话按**真实有道的 SSE 帧**发：`event:message\ndata:{...}\n\n`。
+   * 🔴 D-130：旧假上游发的是"裸 JSON 行"，与真上游（SSE 帧）不一致 ⇒ 断言全绿却验不出
+   *    解析器读不了 SSE 帧。假上游从此以真形态回话；`line-json` 模式单独保留，用来验
+   *    "两种形态都要吃得下"。
+   */
+  const sseFrame = (obj) => `event:message\ndata:${JSON.stringify(obj)}\n\n`;
+
   const replyErr = (res, isLlm, code) => {
     const body = isLlm
-      ? `${JSON.stringify({ code, msg: 'injected by fake upstream' })}\n`
+      ? sseFrame({ code, msg: 'injected by fake upstream' })
       : JSON.stringify({ errorCode: code, query: 'injected by fake upstream' });
+    if (isLlm) state.lastLlmRaw = body;
     res.writeHead(200, {
       'Content-Type': isLlm ? 'text/event-stream; charset=utf-8' : 'application/json; charset=utf-8',
     });
@@ -358,33 +369,49 @@ function createFakeUpstream() {
         try { return res.write(chunk); } catch { return false; }
       };
 
-      /** 正常回话：text 回整体 JSON，llm 回逐行 JSON 流 */
+      /** 正常回话：text 回整体 JSON；llm 回**真实有道的 SSE 帧**（`event:message` + `data:`） */
       const replyOk = () => {
         if (isLlm) {
           res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8' });
-          const lines = state.llmDeltas.map((d, i) => JSON.stringify({
+          const objOf = (d, i) => ({
             code: '0', successful: true,
             data: { transIncre: d, ...(i === 0 ? { langType: state.llmLangType } : {}) },
-          }));
+          });
+          if (mode === 'line-json') {
+            // 兼容协议：裸 JSON 行（**不是**真上游形态；单独留着验"两种都要吃得下"）
+            state.lastLlmRaw = state.llmDeltas.map((d, i) => `${JSON.stringify(objOf(d, i))}\n`).join('');
+            safeWrite(state.lastLlmRaw);
+            res.end();
+            return;
+          }
+          if (mode === 'empty-frames') {
+            // 200 SSE 但**零数据帧**（只有元数据）⇒ 解析器零帧 ⇒ 适配器必须报错而非"空译文"（D-130）
+            state.lastLlmRaw = 'event:message\n\n';
+            safeWrite(state.lastLlmRaw);
+            res.end();
+            return;
+          }
+          const frames = state.llmDeltas.map((d, i) => sseFrame(objOf(d, i)));
+          state.lastLlmRaw = frames.join('');
           if (mode === 'half-packet') {
-            // 半包：一行被拆进两个 TCP 块，中间隔 80ms
-            const s = lines[0];
+            // 半包：一帧被拆进两个 TCP 块，中间隔 80ms
+            const s = frames[0];
             const cut = Math.max(1, Math.floor(s.length / 2));
             safeWrite(s.slice(0, cut));
             setTimeout(() => {
-              safeWrite(`${s.slice(cut)}\n`);
-              for (const l of lines.slice(1)) safeWrite(`${l}\n`);
+              safeWrite(s.slice(cut));
+              for (const f of frames.slice(1)) safeWrite(f);
               res.end();
             }, 80);
             return;
           }
           if (mode === 'tail-packet') {
-            // 尾包：最后一行**没有**换行符
-            lines.forEach((l, i) => safeWrite(i === lines.length - 1 ? l : `${l}\n`));
+            // 尾包：最后一帧**没有**收尾的空行（缺一个 \n）
+            frames.forEach((f, i) => safeWrite(i === frames.length - 1 ? f.replace(/\n\n$/, '') : f));
             res.end();
             return;
           }
-          for (const l of lines) safeWrite(`${l}\n`);
+          safeWrite(state.lastLlmRaw);
           res.end();
           return;
         }
@@ -413,7 +440,8 @@ function createFakeUpstream() {
           return;
         case 'ok-then-break': {
           res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8' });
-          safeWrite(`${JSON.stringify({ code: '0', successful: true, data: { transIncre: state.llmDeltas[0], langType: state.llmLangType } })}\n`);
+          state.lastLlmRaw = sseFrame({ code: '0', successful: true, data: { transIncre: state.llmDeltas[0], langType: state.llmLangType } });
+          safeWrite(state.lastLlmRaw);
           setTimeout(() => { try { res.socket?.destroy(); } catch { /* ignore */ } }, 40);
           return;
         }
@@ -422,9 +450,10 @@ function createFakeUpstream() {
           res.end('this is not json at all —— 500 + 垃圾体');
           return;
         case 'no-success':
-          // code:"0" 但 successful:false —— llm 双判必须判失败
+          // code:"0" 但 successful:false —— llm 双判必须判失败（按真 SSE 帧发）
           res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8' });
-          res.end(`${JSON.stringify({ code: '0', successful: false })}\n`);
+          state.lastLlmRaw = sseFrame({ code: '0', successful: false });
+          res.end(state.lastLlmRaw);
           return;
         default: replyOk();
       }
@@ -723,6 +752,50 @@ async function groupS() {
     check('S13 翻译域 11 个统一码的 HTTP 状态与**根 errors.mjs 逐字一致**（门面转 ApiError 时两边同一状态码出信封，不许有一丝偏差）',
       inner.length === 0 && drift.length === 0 && Object.keys(TRANSLATE_CODES).length === 11,
       `域内不符=${inner.join(',') || '无'} 与根表漂移=${drift.join(',') || '无'}`);
+  }
+
+  // S14 真上游形态：SSE 帧（`event:message` + `data:`）必须被解析
+  {
+    const text = nextText('帧');
+    const deltas = [];
+    let done = null;
+    const r = await attempt(() => translateStream({ text, from: 'ja', to: 'zh', timeoutMs: 8000 },
+      { onDelta: (d) => deltas.push(d), onDone: (d) => { done = d; } }));
+    const raw = fake.state.lastLlmRaw;
+    check('S14 🔴 真上游形态是**标准 SSE 帧**（`event:message` + `data:{...}`，D-130 真机取证）：解析器逐帧取出 3 条增量、onDone 累计一致；且假上游确以该形态回话（旧"裸 JSON 行"解析器在这条上必红）',
+      !r.err && /^event:message\ndata:\{/.test(raw) && deltas.join('') === '甲乙丙'
+      && !!done && done.text === '甲乙丙',
+      r.err ? errText(r.err) : `raw=${JSON.stringify(raw.slice(0, 40))}… 增量=${JSON.stringify(deltas)}`);
+  }
+
+  // S15 向后兼容：裸 JSON 行
+  {
+    const keep = fake.state.llmDeltas;
+    fake.state.llmDeltas = ['AB', 'C'];
+    const deltas = [];
+    let done = null;
+    const r = await attempt(() => withMode('line-json', 0, () => translateStream(
+      { text: trig('MLINEJSON'), from: 'ja', to: 'zh', timeoutMs: 8000 },
+      { onDelta: (d) => deltas.push(d), onDone: (d) => { done = d; } })));
+    const raw = fake.state.lastLlmRaw;
+    fake.state.llmDeltas = keep;
+    check('S15 向后兼容：**裸 JSON 行**（非 SSE 帧）仍被解析 —— 上一步的修复不许把"逐行 JSON"这条形态打死（两种形态都要吃得下）',
+      !r.err && !raw.startsWith('event:') && deltas.join('') === 'ABC' && !!done && done.text === 'ABC',
+      r.err ? errText(r.err) : `raw=${JSON.stringify(raw.slice(0, 30))}… 增量=${JSON.stringify(deltas)}`);
+  }
+
+  // S16 200 但零帧 ⇒ 报错，不许"成功 + 空译文"
+  {
+    const text = trig('MEMPTY');
+    const deltas = [];
+    const r = await attempt(() => withMode('empty-frames', 0, () => translateStream(
+      { text, from: 'ja', to: 'zh', timeoutMs: 8000 },
+      { onDelta: (d) => deltas.push(d) })));
+    const mine = fake.state.hits.filter((h) => h.fields.i === text);
+    check('S16 🔴 上游 200 但**零可解析帧**（协议错配/空响应）⇒ 报 UPSTREAM_ERROR（reason=no_frames），绝不返回"成功 + 空译文"（与"非 2xx 先判死"配对：前者挡挂掉的上游，这一判挡"回话了却读不出"的上游）',
+      r.err?.code === 'TRANSLATE_UPSTREAM_ERROR' && r.err.details?.reason === 'no_frames'
+      && deltas.length === 0 && mine.length === 1,
+      `${r.err ? errText(r.err) : '竟然成功了（空译文）'} 请求数=${mine.length} 增量=${deltas.length}`);
   }
 }
 
@@ -1395,12 +1468,24 @@ const SWITCHES = [
   {
     name: 'MIAO_TRANSLATE_REFUTE_SWAP_JUDGE（两接口判成功互换）',
     env: { MIAO_TRANSLATE_REFUTE_SWAP_JUDGE: '1' },
-    expectRed: ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S10', 'S11',
+    expectRed: ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S10', 'S11', 'S14', 'S15',
       'L1', 'L2', 'C6', 'K3', 'A6', 'A7', 'A8', 'A10', 'A11'],
-    why: '锚点 S8/S9 一族：text 改用 llm 双判、llm 改用 text 单判 ⇒ 每一个"调用成功"类断言全红。级联说明：S1-S7/S10/S11 的取证都以"成功拿到译文/成功建流"为前提；L1/L2 的收尾断言要求 6/25 个请求成功；C6/K3 的收尾是一次成功翻译；A6/A7/A8/A10/A11 同属"翻译成功"类（A8 的三档档位也要流式真成功才判命中）。不红的都是与判成功无关的面：S9（期望的正是 UPSTREAM_ERROR，判反了也红不到它）、S12/S13（纯函数）、T 组（超时路径不判成功）、C1-C5/K1/K2/K4（设置与密钥面）、A1-A5（注册/能力/路由/语言码，失败早于判成功）、A9（非 2xx 先判死，早于任何判成功）、A12（纯函数）、R 组（服务子进程由 spawnProc 剥掉 REFUTE_*，量的是产品路径）。',
+    why: '锚点 S8/S9 一族：text 改用 llm 双判、llm 改用 text 单判 ⇒ 每一个"调用成功"类断言全红。级联说明：S1-S7/S10/S11/S14/S15 的取证都以"成功拿到译文/成功建流"为前提（S14/S15 是 llm 流式成功的两种协议形态）；L1/L2 的收尾断言要求 6/25 个请求成功；C6/K3 的收尾是一次成功翻译；A6/A7/A8/A10/A11 同属"翻译成功"类（A8 的三档档位也要流式真成功才判命中）。不红的都是与判成功无关的面：S9/S16（期望的正是 UPSTREAM_ERROR —— 判反了也红不到它）、S12/S13（纯函数）、T 组（超时路径不判成功）、C1-C5/K1/K2/K4（设置与密钥面）、A1-A5（注册/能力/路由/语言码，失败早于判成功）、A9（非 2xx 先判死，早于任何判成功）、A12（纯函数）、R 组（服务子进程由 spawnProc 剥掉 REFUTE_*，量的是产品路径）。',
+  },
+  {
+    name: 'MIAO_TRANSLATE_REFUTE_LEGACY_LINE_JSON（解析器只认裸 JSON 行、丢弃 SSE `data:` 帧）',
+    env: { MIAO_TRANSLATE_REFUTE_LEGACY_LINE_JSON: '1' },
+    expectRed: ['S6', 'S7', 'S10', 'S11', 'S14', 'A6', 'A8', 'A11'],
+    why: '锚点 S14：真上游形态是**标准 SSE 帧**，退回"只认裸 JSON 行"后 `data:` 帧被整片丢弃 ⇒ 凡"llm 流式成功"类断言全红 —— **这正是 D-130 的线上症状**（译了一整遍、结果是空的）。级联：S6（llm 出网后要收到帧才算成功）、S7（首块锁定要求至少 1 个增量）、S10（llm 业务码行要按真码归一）、S11（半包/尾包增量）、A6（llm 裁剪要成功收尾）、A8（档位要成功才取到记账）、A11（流式累计）。两条仍绿恰好证明"两种形态都要吃得下"：S9（期望的正是 UPSTREAM_ERROR，零帧兜底替它报了错）、S15（本就走裸 JSON 行形态）；S16 也绿（零帧兜底与形态无关）。',
+  },
+  {
+    name: 'MIAO_TRANSLATE_REFUTE_NO_FRAME_GUARD（流式不做"200 但零帧即报错"兜底）',
+    env: { MIAO_TRANSLATE_REFUTE_NO_FRAME_GUARD: '1' },
+    expectRed: ['S16'],
+    why: '锚点 S16：摘掉零帧兜底 ⇒ 上游 200 但零帧时返回"成功 + 空译文"（用户看到的那句假话），S16 从"报 UPSTREAM_ERROR"退化成"竟然成功了（空译文）"。只红 S16：其余用例的 llm 回话都至少有一帧。',
   },
 ];
-const EXPECTED_SWITCHES = 6; // 分母写死
+const EXPECTED_SWITCHES = 8; // 分母写死
 
 async function runRefute() {
   console.log('ver2.2 在线翻译 · 反证轮');

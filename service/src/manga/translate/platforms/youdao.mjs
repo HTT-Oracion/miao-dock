@@ -273,7 +273,8 @@ export function create() {
 
     /**
      * 大模型翻译（流式）。POST `https://openapi.youdao.com/proxy/http/llm-trans`。
-     * 响应是**逐行 JSON** 的 text/event-stream，由 `sse-parse` 切。
+     * 响应是 **SSE 帧**（`event:message` + `data:{...}`）的 text/event-stream，由 `sse-parse` 切
+     * （真上游实测为 SSE 帧，非"逐行 JSON"；见 D-130。sse-parse 两种形态都吃，向后兼容）。
      * 🔴 判成功：`code === "0"`（字符串）**且** `successful === true`（布尔）双判。
      * 累计归门面（方案 §6.1-2）：本方法只负责"解析出 transIncre 交给 onDelta"，
      * 累计全文由返回值给出，终态由门面统一。
@@ -313,6 +314,7 @@ export function create() {
 
       let full = '';
       let langType;
+      let frames = 0; // 解析出的帧数（零帧 ⇒ D-130 的"成功但空译文"兜底判据）
       // 首块之前的业务错误经 mapUpstreamError 抛 TranslateError（门面据此判定可重试）；
       // onObj 里抛错会中断 for-await，流随之销毁，不会继续拉上游（按量计费）。
       // onObj 声明为 async 并 `await onDelta`：门面传来的 onDelta 可能是 async
@@ -320,12 +322,20 @@ export function create() {
       // 那个 Promise 被丢弃，背压链在适配器这一环断裂，上游读取节奏不再跟随下游（方案 §6.4）。
       // 业务逻辑不变：仍只负责"解析出 transIncre 交给 onDelta"，累计由返回值给出。
       await parseLineJsonStream(res.stream, async (obj) => {
+        frames += 1;
         // 反证开关：两接口判成功互换 ⇒ llm 改用 text 的单判，双判被废
         //（check 的 A7/A10 等 llm 成功用例应变红；方案 §10 反证表第 6 行）
         const llmFailed = REFUTE.swapJudge
           ? String(obj.errorCode) !== '0'
           : (String(obj.code) !== '0' || obj.successful !== true);
         if (llmFailed) {
+          // code:"0" 但 successful !== true：双判**第二关**没过。直接 mapUpstreamError('0') 只会
+          // 说"上游返回未登记的错误码 0"（D-129 记录在案的误导文案）——这里显式给出真正的原因。
+          if (!REFUTE.swapJudge && String(obj.code) === '0') {
+            throw new TranslateError('TRANSLATE_UPSTREAM_ERROR',
+              '有道大模型翻译回了成功码但未标记成功（successful≠true），通常意味着该应用未开通「大模型翻译」服务',
+              { platform: 'youdao', api: 'llm', upstreamCode: '0', successful: obj.successful === true });
+          }
           throw upstreamError('llm', REFUTE.swapJudge ? obj.errorCode : obj.code);
         }
         const data = obj.data || {};
@@ -337,6 +347,16 @@ export function create() {
           langType = data.langType;
         }
       });
+
+      // 🔴 200 但**零帧**：协议错配（如"拿裸 JSON 行去解 SSE 帧"）或空响应 ⇒ 绝不返回
+      //    "成功 + 空译文"。这是与"非 2xx 先判死"配对的另一半（D-130）：前者挡已经挂掉的
+      //    上游，这一判挡"回话了、我们却读不出"的上游。缺了它，用户看到的又是
+      //    "译了一整遍，结果是空的"。零帧 ⇒ 首块锁定未触发 ⇒ 门面仍可重试（链路类错误）。
+      if (frames === 0 && !REFUTE.noFrameGuard) {
+        throw new TranslateError('TRANSLATE_UPSTREAM_ERROR',
+          '有道大模型翻译上游返回 200 但没有任何可解析的事件帧（协议不匹配或空响应），已阻止「成功但空译文」的假象',
+          { platform: 'youdao', api: 'llm', httpStatus: res.status, reason: 'no_frames' });
+      }
 
       const result = { text: full };
       if (langType !== undefined) result.langType = langType;

@@ -33,4 +33,8 @@ export const REFUTE = {
   streamRetryAfterFirst: envBool('MIAO_TRANSLATE_REFUTE_STREAM_RETRY_AFTER_FIRST'),
   /** 两个接口判成功逻辑互换 ⇒ text 的 `errorCode:"0"` 被判失败、llm 的双判被废（第 6 行） */
   swapJudge: envBool('MIAO_TRANSLATE_REFUTE_SWAP_JUDGE'),
+  /** 流式解析只认裸 JSON 行、丢弃 SSE `data:` 帧（退回"不认识真上游帧格式"）⇒ llm 全组空译文（第 7 行；D-130） */
+  legacyLineJsonOnly: envBool('MIAO_TRANSLATE_REFUTE_LEGACY_LINE_JSON'),
+  /** 流式不做"200 但零帧即报错"兜底 ⇒ 退回"成功 + 空译文"假象（第 8 行；D-130） */
+  noFrameGuard: envBool('MIAO_TRANSLATE_REFUTE_NO_FRAME_GUARD'),
 };
