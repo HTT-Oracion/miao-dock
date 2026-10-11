@@ -25,6 +25,7 @@
 | D-141 | `image.mjs` 上移底座 + 新增 `check:layering` 依赖方向钉子 | service |
 | D-142 | 删 `SongMenu` 并入 `units/ContextMenu`（+ 连带重写 MENU 判据组） | app 前端 |
 | D-143 | 新增 `units/Modal` 收敛 5 处手写模态壳（+ 修 4 条失效反证锚） | app 前端 |
+| D-144 | `server.mjs` 去重：任务创建工厂 + 兜底收敛 + multipart 四闸 | service |
 
 ---
 
@@ -403,3 +404,51 @@ ubuntu + macos 双平台，Node 22。必过门：
 `check:units` 45/0 · `check:units:refute` 59/59 · `check:settings` **180/0** ·
 `check:settings:refute` **127/127**（由 123/127 修复）· `check:ia` 32/0 · `check:quit` 5/0 ·
 `check:autostart` 12/0 · `check:docs` 17/0 · `tsc --noEmit` 0 · `vite build` 通过。
+
+---
+
+## D-144 · `server.mjs` 去重：任务创建工厂 + 兜底收敛 + multipart 四闸（2026-10-11）
+
+审计（`code-audit-report.md` §2.3）指出 `server.mjs` 三处重复。本节只做**去重**（低风险半边），
+**未做**「数据层下沉」（那才是 §2.3 的主项，见下「未做」）。
+
+### 1. 任务创建工厂 `taskLauncher`
+
+`handleChapterResume` / `handleChapterRetranslate` / `handleResume` / `handleRetranslate`
+四个 handler 骨架逐字相同（8 行 × 4），只差**目录怎么来**与**建哪类任务**。
+抽成 `taskLauncher({ dirOf, build })` + 两个视图构造器（`resumeView` / `retranslateView`）。
+
+🔴 **骨架顺序是契约的一部分**：`sidecar 就绪 → 解析目录（可能抛 404/400）→ 读选项 →
+落盘可用性 → 建任务 → 201`。换顺序会**改错误优先级**（例如非法漫画名 + 非法 body 会先报哪个）。
+已在工厂上写明"不要重排"。
+
+### 2. 兜底收敛 12 → 1
+
+路由层 `throw new ApiError('TASK_NOT_FOUND', \`未知端点：…\`)` 逐字重复 12 次。
+改为 `const miss = () => …` 一个具名动作。（`ApiError` 的其它 13 处 `TASK_NOT_FOUND`
+文案各不相同，不属重复，未动。）
+
+### 3. multipart 四闸 `groupMultipart`
+
+上传入口两处（`parseUploadRequest` 的图片批量 / `handleLibraryCover` 的封面）
+各自抄了同一段：Content-Type → Content-Length 一致 → boundary 存在 → 以结束分隔符收尾。
+抽成 `groupMultipart(req, body)` 返回 `{fields, files}`。
+
+**理由不是「短」而是「同口径」**：少一道闸就意味着某条上传路径会**静默少收几张图**
+（截断的请求体照样能解析出前半段）。
+
+### 未做（§2.3 主项，仍待专门一轮）
+
+**数据层下沉**：`scanLibrary` / `resolveComicDir` / `buildBookEntry` / `findFile` 仍住在
+HTTP 入口，`store` 仍反向依赖 server 注入的 `ensureLlm` / `tierDowngrade`。
+这一步会把 server 与 store 的边界整个翻一遍，须与 `check:contract` + `selftest` 逐条回归，
+不属「去重」，故本轮不混做。
+
+### 验收
+
+`selftest:service` **134/1**（1 条既有 Windows 环境性红）· `check:contract` 77/0 ·
+`check:retry` 10/0 · `check:lib-manage` 24/0 · `check:retranslate` 12/0 · `check:e10` 7/0 ·
+`node --check` 通过。
+
+> 代码行数几乎不变（2871 → 2891）：**去重的价值在「骨架只有一份」，不在行数** ——
+> 工厂与两个视图构造器自身的注释占掉了省下的行。

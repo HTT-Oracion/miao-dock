@@ -1013,8 +1013,15 @@ function extractPayloadField(fields, files) {
   }
 }
 
-/** 解析 multipart 表单：payload + images[] + imageOrder[] */
-function parseUploadRequest(req, body) {
+/**
+ * multipart 的**四道公共闸**：Content-Type → Content-Length 一致 → boundary 存在 → 以结束分隔符收尾。
+ * 四道全过才返回分好组的 `{ fields, files }`。
+ *
+ * 抽出来的理由不是"短"，而是这四个错误**必须同口径** —— 少一道闸，就意味着某条上传路径
+ * 会**静默少收几张图**（截断的请求体照样能解析出前半段）。上传入口不止一处，
+ * 正确性只能靠"两边走的是同一段代码"来保证。
+ */
+function groupMultipart(req, body) {
   const ct = req.headers['content-type'] || '';
   if (!/multipart\/form-data/i.test(ct)) {
     throw new ApiError('INVALID_IMAGE', 'Content-Type 必须是 multipart/form-data', { contentType: ct });
@@ -1034,7 +1041,12 @@ function parseUploadRequest(req, body) {
     throw new ApiError('INVALID_IMAGE', 'multipart 请求体被截断（缺少结束分隔符）',
       { bytes: body.length });
   }
-  const { fields, files } = groupParts(parsed.parts);
+  return groupParts(parsed.parts);
+}
+
+/** 解析 multipart 表单：payload + images[] + imageOrder[] */
+function parseUploadRequest(req, body) {
+  const { fields, files } = groupMultipart(req, body);
   const images = (files.get('images') || []).map((p) => ({
     filename: p.filename,
     contentType: p.contentType,
@@ -1914,21 +1926,7 @@ async function handleLibraryMetaWrite(req, res, cors, rawName) {
 async function handleLibraryCover(req, res, cors, rawName) {
   const { name, dir } = resolveBookDir(rawName);
   const body = await readBody(req);
-  const ct = req.headers['content-type'] || '';
-  if (!/multipart\/form-data/i.test(ct)) {
-    throw new ApiError('INVALID_IMAGE', 'Content-Type 必须是 multipart/form-data', { contentType: ct });
-  }
-  const declaredLen = Number.parseInt(req.headers['content-length'] ?? '', 10);
-  if (Number.isFinite(declaredLen) && declaredLen !== body.length) {
-    throw new ApiError('INVALID_IMAGE', 'Content-Length 与实际请求体字节数不一致',
-      { contentLength: declaredLen, actualBytes: body.length });
-  }
-  const parsed = parseMultipartEx(body, ct);
-  if (parsed === null) throw new ApiError('INVALID_IMAGE', 'multipart 缺少 boundary', {});
-  if (!parsed.complete) {
-    throw new ApiError('INVALID_IMAGE', 'multipart 请求体被截断（缺少结束分隔符）', { bytes: body.length });
-  }
-  const { fields, files } = groupParts(parsed.parts);
+  const { fields, files } = groupMultipart(req, body);
   const covers = files.get('cover') || [];
   if (covers.length === 0) {
     throw new ApiError('INVALID_IMAGE', '缺少封面分片（字段名 cover）', { submitted: 0 });
@@ -2195,6 +2193,39 @@ function handleChapterRetranslatePlan(req, res, cors, bookRaw, noRaw) {
 }
 
 /**
+ * 「再跑一次」族「**建任务**」四个 POST 端点的共用骨架。
+ * 四者只差两件事 —— **目录怎么来**（`dirOf`）与**建哪类任务**（`build`）：
+ *   · 话级（`POST …/chapters/{no}/resume|retranslate`）持相对路径 `<book>/NN_第N话`；
+ *   · 漫画级（`POST /library/{name}/resume|retranslate`）持顶层目录名。
+ *
+ * 骨架里的顺序是契约的一部分，**不要重排**（换顺序会改错误优先级）：
+ *   sidecar 就绪 → 解析目录（可能抛 404/400）→ 读选项 → 落盘可用性 → 建任务 → 201。
+ */
+function taskLauncher({ dirOf, build }) {
+  return (req, res, cors, ...pathArgs) => readBody(req).then(async (body) => {
+    await assertSidecarReady();
+    const dir = dirOf(...pathArgs);
+    const opts = readResumeOptions(body);
+    assertRootWritable(); // §2.2 DISK_FULL(507)：请求级落盘不可用（续做/返工都要写盘）
+    sendJson(res, 201, build(dir, opts, sourceOf(req)), cors);
+  });
+}
+
+/** 续做回执：只有任务视图 */
+const resumeView = (dir, opts, source) =>
+  store.createView(store.createResumeTask(dir, { ...opts, source }).task);
+
+/** 返工回执：任务视图 + 两个计数（"这会覆盖 N 张已有译文"—— 不可逆操作必须告知） */
+const retranslateView = (dir, opts, source) => {
+  const { task, plan } = store.createRetranslateTask(dir, { ...opts, source });
+  return {
+    ...store.createView(task),
+    overwriteCount: plan.overwriteCount,
+    retranslateCount: pickedCount(plan, opts.seqs),
+  };
+};
+
+/**
  * `POST /library/{book}/chapters/{no}/resume` —— 话级续做，进入**同一条**串行队列。
  *
  * 与漫画级 `POST /library/{name}/resume` 只差"目录怎么来的"：那里是顶层目录名，
@@ -2202,32 +2233,16 @@ function handleChapterRetranslatePlan(req, res, cors, bookRaw, noRaw) {
  * `path.join(this.root, dirName)` ⇒ 传相对路径**一行都不用改**（这正是"dirName 存相对路径"
  * 的设计红利，别顺手改成绝对路径 —— 改了整个任务模型就绑死在当前 root 上）。
  */
-function handleChapterResume(req, res, cors, bookRaw, noRaw) {
-  return readBody(req).then(async (body) => {
-    await assertSidecarReady();
-    const { relDir } = mustChapterDir(bookRaw, noRaw);
-    const opts = readResumeOptions(body);
-    assertRootWritable();
-    const { task } = store.createResumeTask(relDir, { ...opts, source: sourceOf(req) });
-    sendJson(res, 201, store.createView(task), cors);
-  });
-}
+const handleChapterResume = taskLauncher({
+  dirOf: (bookRaw, noRaw) => mustChapterDir(bookRaw, noRaw).relDir,
+  build: resumeView,
+});
 
 /** `POST /library/{book}/chapters/{no}/retranslate` —— 话级返工（覆盖该话已有译文） */
-function handleChapterRetranslate(req, res, cors, bookRaw, noRaw) {
-  return readBody(req).then(async (body) => {
-    await assertSidecarReady();
-    const { relDir } = mustChapterDir(bookRaw, noRaw);
-    const opts = readResumeOptions(body);
-    assertRootWritable();
-    const { task, plan } = store.createRetranslateTask(relDir, { ...opts, source: sourceOf(req) });
-    sendJson(res, 201, {
-      ...store.createView(task),
-      overwriteCount: plan.overwriteCount,
-      retranslateCount: pickedCount(plan, opts.seqs),
-    }, cors);
-  });
-}
+const handleChapterRetranslate = taskLauncher({
+  dirOf: (bookRaw, noRaw) => mustChapterDir(bookRaw, noRaw).relDir,
+  build: retranslateView,
+});
 
 /**
  * `POST /library/{book}/chapters/{no}/renumber` —— 编辑已归并话的话号（body: `{ no: 新话号 }`）。
@@ -2354,16 +2369,10 @@ function readResumeOptions(body) {
  *（见 `store.createResumeTask` 的注释）。
  * 单次上限沿用契约 §5.2 的 20 —— 续做同样是一次 ≤20 张的提交，只是字节来自磁盘。
  */
-function handleResume(req, res, cors, rawName) {
-  return readBody(req).then(async (body) => {
-    await assertSidecarReady();
-    const { name } = resolveComicDir(rawName);
-    const opts = readResumeOptions(body);
-    assertRootWritable(); // §2.2 DISK_FULL(507)：请求级落盘不可用
-    const { task } = store.createResumeTask(name, { ...opts, source: sourceOf(req) });
-    sendJson(res, 201, store.createView(task), cors);
-  });
-}
+const handleResume = taskLauncher({
+  dirOf: (rawName) => resolveComicDir(rawName).name,
+  build: resumeView,
+});
 
 /**
  * `GET /library/{comicName}/retranslate` —— 返工计划：**所有有原图的页**
@@ -2396,20 +2405,10 @@ function handleRetranslatePlan(req, res, cors, rawName) {
  * 覆盖只发生在译文上；原图是用户数据，`_writeOriginal` 的「永不覆盖」原样保留。
  * 页数超 `BATCH_LIMIT` 报 `BATCH_LIMIT_EXCEEDED`（409），前端据此提示分批。
  */
-function handleRetranslate(req, res, cors, rawName) {
-  return readBody(req).then(async (body) => {
-    await assertSidecarReady();
-    const { name } = resolveComicDir(rawName);
-    const opts = readResumeOptions(body);
-    assertRootWritable(); // §2.2 DISK_FULL(507)：返工同样要往磁盘写译文
-    const { task, plan } = store.createRetranslateTask(name, { ...opts, source: sourceOf(req) });
-    sendJson(res, 201, {
-      ...store.createView(task),
-      overwriteCount: plan.overwriteCount,
-      retranslateCount: pickedCount(plan, opts.seqs),
-    }, cors);
-  });
-}
+const handleRetranslate = taskLauncher({
+  dirOf: (rawName) => resolveComicDir(rawName).name,
+  build: retranslateView,
+});
 
 /** 本次实际提交的页数（指定 seqs 时只算被选中的，用于回执不谎报） */
 function pickedCount(plan, seqs) {
@@ -2429,6 +2428,9 @@ function splitPath(pathname) {
 async function route(req, res, cors, url) {
   const seg = splitPath(url.pathname);
   const method = req.method || 'GET';
+  // 未命中端点的统一 404。原先这一行在下面逐字重复 12 次 —— 改一处必漏十一处，
+  // 故收成一个具名动作（语义同为"这段路径没有对应端点"）。
+  const miss = () => new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
 
   // GET /health —— 唯一免鉴权
   if (seg.length === 3 && seg[0] === 'api' && seg[1] === API_VERSION && seg[2] === 'health' && method === 'GET') {
@@ -2440,7 +2442,7 @@ async function route(req, res, cors, url) {
   }
 
   if (seg[0] !== 'api' || seg[1] !== API_VERSION) {
-    throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
+    throw miss();
   }
   const p = seg.slice(2);
 
@@ -2448,7 +2450,7 @@ async function route(req, res, cors, url) {
   if (p.length === 1 && p[0] === 'tasks') {
     if (method === 'POST') return handleCreateTask(req, res, cors);
     if (method === 'GET') return handleTaskList(req, res, cors, url);
-    throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
+    throw miss();
   }
   // /tasks/{taskId}
   if (p.length === 2 && p[0] === 'tasks') {
@@ -2456,7 +2458,7 @@ async function route(req, res, cors, url) {
     // 不会与这个保留字冲突，但顺序上先判更不易被后来的改动带歪。
     if (p[1] === 'delete' && method === 'POST') return handleDeleteTasks(req, res, cors);
     if (method === 'GET') return handleTaskDetail(req, res, cors, p[1], url);
-    throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
+    throw miss();
   }
   // /tasks/{taskId}/batches | events | cancel | retry
   if (p.length === 3 && p[0] === 'tasks') {
@@ -2464,7 +2466,7 @@ async function route(req, res, cors, url) {
     if (p[2] === 'events' && method === 'GET') return handleSse(req, res, cors, p[1]);
     if (p[2] === 'cancel' && method === 'POST') return handleCancel(req, res, cors, p[1]);
     if (p[2] === 'retry' && method === 'POST') return handleRetry(req, res, cors, p[1]);
-    throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
+    throw miss();
   }
 
   // /queue
@@ -2531,14 +2533,14 @@ async function route(req, res, cors, url) {
   if (p.length === 3 && p[0] === 'library' && p[2] === 'meta') {
     if (method === 'GET') return handleLibraryMeta(req, res, cors, p[1]);
     if (method === 'POST') return handleLibraryMetaWrite(req, res, cors, p[1]);
-    throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
+    throw miss();
   }
   // /library/{book}/cover —— GET 取封面字节 · POST（multipart）落封面 · DELETE 移除封面
   if (p.length === 3 && p[0] === 'library' && p[2] === 'cover') {
     if (method === 'GET') return handleLibraryCoverFile(req, res, cors, p[1]);
     if (method === 'POST') return handleLibraryCover(req, res, cors, p[1]);
     if (method === 'DELETE') return handleLibraryCoverDelete(req, res, cors, p[1]);
-    throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
+    throw miss();
   }
   // /library/{comicName}/files/{seq}
   if (p.length === 4 && p[0] === 'library' && p[2] === 'files' && method === 'GET') {
@@ -2556,17 +2558,17 @@ async function route(req, res, cors, url) {
     if (p.length === 5 && p[4] === 'resume') {
       if (method === 'GET') return handleChapterResumePlan(req, res, cors, bookRaw, noRaw);
       if (method === 'POST') return handleChapterResume(req, res, cors, bookRaw, noRaw);
-      throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
+      throw miss();
     }
     if (p.length === 5 && p[4] === 'retranslate') {
       if (method === 'GET') return handleChapterRetranslatePlan(req, res, cors, bookRaw, noRaw);
       if (method === 'POST') return handleChapterRetranslate(req, res, cors, bookRaw, noRaw);
-      throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
+      throw miss();
     }
     if (p.length === 5 && p[4] === 'renumber' && method === 'POST') {
       return handleChapterRenumber(req, res, cors, bookRaw, noRaw);
     }
-    throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
+    throw miss();
   }
   // /library/{name}/merge —— 把未归并单话物理移动进某个大类
   if (p.length === 3 && p[0] === 'library' && p[2] === 'merge' && method === 'POST') {
@@ -2588,16 +2590,16 @@ async function route(req, res, cors, url) {
   if (p.length === 3 && p[0] === 'library' && p[2] === 'retranslate') {
     if (method === 'GET') return handleRetranslatePlan(req, res, cors, p[1]);
     if (method === 'POST') return handleRetranslate(req, res, cors, p[1]);
-    throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
+    throw miss();
   }
   // /library/{comicName}/resume
   if (p.length === 3 && p[0] === 'library' && p[2] === 'resume') {
     if (method === 'GET') return handleResumePlan(req, res, cors, p[1]);
     if (method === 'POST') return handleResume(req, res, cors, p[1]);
-    throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
+    throw miss();
   }
 
-  throw new ApiError('TASK_NOT_FOUND', `未知端点：${method} ${url.pathname}`, { path: url.pathname });
+  throw miss();
 }
 
 // ------------------------------------------------------------------ 请求入口
