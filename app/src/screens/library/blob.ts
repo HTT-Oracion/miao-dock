@@ -17,6 +17,31 @@ import { sniffMime } from '@tools';
 export type Variant = 'original' | 'translated';
 
 /**
+ * 一屏页集合的**投影**：把「整本」「大类里的一话」两种页来源归一成同一个取图接口。
+ *
+ * 三种来源在此归一：旧口径的整本（`ComicEntry`，顶层取图）、大类里的一话
+ * （`ChapterEntry`，话内取图）。没有这条投影，网格就得在自己体内判一遍
+ * "我这一格是整本还是话" —— 那个判断只该有一处，就是这里的 `imagePath()` 闭包。
+ *
+ * 🔴 `imagePath` 返回的路径**必须含「书 + 话 + 页」三段**：路径同时是 `URL_CACHE`
+ * 的键（D-117），只按页号做键会让《A》第 1 话第 1 页与《B》第 1 话第 1 页命中
+ * 同一条缓存 —— 跨书串图，且是"看起来正常、内容错了"的最难发现的那类缺陷。
+ *
+ * D-148：从 `LibraryScreen.tsx` 移来（`Compare`/`viewer.tsx` 也要用它；留在屏内会成环）。
+ */
+export interface PageView {
+  /** 操作端点基址：`/library/{名}` 或 `/library/{书}/chapters/{话}`（续做 / 返工都挂在它下面） */
+  base: string;
+  /** 归因显示名（对照头部 / 全屏回显 / Toast）：编码过的目录名不能直接给人看 */
+  comicName: string;
+  seqMax: number;
+  translatedSeqs: number[];
+  missingSeqs: number[];
+  /** 第 `seq` 页 `variant` 侧的字节路径 */
+  imagePath(seq: number, variant: Variant): string;
+}
+
+/**
  * **顶层目录**内的文件路径（未归并单话、以及旧「一目录 = 一漫画」的成品都走这里）。
  *
  * `GET /library/{comicName}/files/{seq}?variant=…`

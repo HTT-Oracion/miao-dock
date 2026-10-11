@@ -5068,7 +5068,7 @@ Python `py_compile` 通过 · 渲染冒烟（16/20/24/32px 抗锯齿像素占比
   2 枚裸 `.btn` 迁到 `<Btn>`（sections 复制令牌 / SpecCheck 运行自检）。旧菜单样式从 `manga.scss` 整体移除。
   - **未迁**：各屏**业务样式**件（nav-item / ltab / grid-card / lightbox 等 60+ 个自定义 `<button>`）—— 它们绑单屏几何/业务类型，
     强套 `Btn` 反而错（归属判据同 §3「按依赖定归属」）。
-- **`retranslateMeta` / `resumeMeta`**（`LibraryScreen.tsx`）：把返工/继续翻译菜单的长链三元抽成**早返回函数**，
+- **`retranslateMeta` / `resumeMeta`**（`screens/library/meta.ts`，D-148 自 `LibraryScreen.tsx` 移出）：把返工/继续翻译菜单的长链三元抽成**早返回函数**，
   返回 `{ title, sub, blocked }`，Compare 与「更多」菜单**同源**取用。作为约束①的范式。
 - **约束落点**：`AGENTS.md` §2.10/11/12、`.trae/rules/project_rules.md` §2.8/9/10。
 - **取证**：`tsc --noEmit` 0 · `vite build` 通过（构建 CSS 含全部 `.ui-menu*` 与 `[aria-expanded=true]` 旋转规则）·

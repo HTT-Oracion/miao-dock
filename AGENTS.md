@@ -77,7 +77,7 @@
    - `功能简述` 说"做了什么"；`+` 后的 `关键点简述` 列本次要点 / 坑（多项用 `+` 或 `·` 分隔）。
    - 例：`feat(manga): 在线翻译来源并入②翻译服务 + 来源分段控件与密钥落盘` · `refactor(service): 拆分 manga/settings 模块目录（music 占位）` · `chore(app): 版本号升到 2.1.0 + 五处版本文件同步`。
 10. **禁止内联长链三元。** 形如 `title={a ? 'x' : b ? 'y' : c ? 'z' : w}` 的多级内联三元必须抽成
-    **具名变量或早返回函数**（范式：`LibraryScreen.tsx` 的 `retranslateMeta` / `resumeMeta` 返回
+    **具名变量或早返回函数**（范式：`screens/library/meta.ts` 的 `retranslateMeta` / `resumeMeta` 返回
     `{ title, sub, blocked }`），让每个分支可读、可单测。
 11. **注释只描述功能。** 注释写"做了什么"即可；**只有核心改动**（跨文件契约 / 易踩坑 / 反直觉处）
     才追加"为什么"，且保持精简。禁止大段复述代码或写流水账。

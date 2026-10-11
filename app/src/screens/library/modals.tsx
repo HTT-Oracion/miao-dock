@@ -17,7 +17,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 
 import { Btn, Modal, Select } from '@components/units';
 import { chapterNoOf, coverFileName, dupKey, padChapterNo, shortPath } from '@tools';
-import type { BookEntry, ChapterEntry } from '@/types';
+import type { BookEntry, ChapterEntry, ComicEntry } from '@/types';
 import { bookFirstImagePath, coverPath, useBlobUrl } from '@screens/library/blob';
 
 /** Windows/POSIX 双料的非法文件名字符（与 `tools.dupKey()` 剥的是同一批） */
@@ -534,6 +534,111 @@ export function EditChapterNoModal({
       </div>
       <div className="modal-hint">
         本话的页文件原地保留，只有所在文件夹改名；该话有任务在跑时会拒绝改号。
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * 删除确认弹窗。
+ *
+ * 勾选框默认**不勾**：不勾 = 只从漫画库移除（目录原样保留，之后可在「已隐藏」里恢复）；
+ * 勾上才连本地目录一起删。默认落在"破坏性更小"的那一侧。
+ */
+export function DeleteComicModal({
+  comic,
+  kind,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  comic: ComicEntry;
+  /** 删除口径：大类 = 整本；未归并单话 = 本话（只影响说法，端点是同一个） */
+  kind: '整本' | '本话';
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: (deleteFiles: boolean) => void;
+}) {
+  const [deleteFiles, setDeleteFiles] = useState(false);
+  return (
+    <Modal
+      title={<>删除{kind}「{comic.comicName}」</>}
+      busy={busy}
+      onClose={onCancel}
+      actions={
+        <>
+          <Btn kind="ghost" onClick={onCancel} disabled={busy}>
+            取消
+          </Btn>
+          <Btn kind="danger" onClick={() => onConfirm(deleteFiles)} disabled={busy}>
+            确认删除
+          </Btn>
+        </>
+      }
+    >
+      这会把该漫画从漫画库里移除。目录位置：
+      <div className="pathpreview" style={{ margin: '6px 0 10px' }}>
+        {comic.outputDir}
+      </div>
+      <label className="ckrow">
+        <input
+          type="checkbox"
+          className="ck"
+          checked={deleteFiles}
+          onChange={(e) => setDeleteFiles(e.target.checked)}
+        />
+        <span>同时删除本地文件（连漫画目录一起删除）</span>
+      </label>
+      {deleteFiles ? (
+        <div className="modal-warn">⚠️ 本地文件会被永久删除，无法恢复。</div>
+      ) : (
+        <div className="modal-hint">不勾选则只从库里隐藏，本地文件原样保留，之后可恢复。</div>
+      )}
+    </Modal>
+  );
+}
+
+/**
+ * 「已隐藏」管理弹窗。
+ *
+ * 为什么必须有：删除时若不勾"删本地文件"，目录还在、扫描就会再扫到它，
+ * 所以只能另存一份忽略名单（`state/hidden-comics.json`）。**没有这个入口，
+ * 被隐藏的漫画就等于凭空消失且无法找回** —— 只做隐藏不给恢复，是个死胡同。
+ */
+export function HiddenComicsModal({
+  hidden,
+  busy,
+  onClose,
+  onUnhide,
+}: {
+  hidden: string[];
+  busy: boolean;
+  onClose: () => void;
+  onUnhide: (name: string) => void;
+}) {
+  return (
+    <Modal
+      title="已隐藏的漫画"
+      onClose={onClose}
+      actions={
+        <Btn kind="primary" onClick={onClose}>
+          完成
+        </Btn>
+      }
+    >
+      这些漫画的**目录还在磁盘上**，只是被「删除（未勾选删除本地文件）」从库里隐藏了。
+      点「恢复」即可让它们重新出现。
+      <div className="hidden-list">
+        {hidden.map((name) => (
+          <div key={name} className="hidden-row">
+            <span className="hidden-name" title={name}>
+              {name}
+            </span>
+            <Btn kind="ghost" size="sm" disabled={busy} onClick={() => onUnhide(name)}>
+              恢复
+            </Btn>
+          </div>
+        ))}
       </div>
     </Modal>
   );

@@ -28,7 +28,7 @@ alwaysApply: true
    ⚠️ **D-137 起新条目写 `docs/spec-notes-1.md`**（`docs/spec-notes.md` 已封卷于 D-136）；
    编号全局接续，动手前先 `grep "^## D-" docs/spec-notes*.md | tail -3` 确认最新编号。
 8. **禁止内联长链三元**：`title={a ? 'x' : b ? 'y' : c ? 'z' : w}` 这类多级三元必须抽成**具名变量 / 早返回函数**
-   （范式见 `LibraryScreen.tsx` 的 `retranslateMeta` / `resumeMeta`），让每个分支可读、可单测。
+   （范式见 `screens/library/meta.ts` 的 `retranslateMeta` / `resumeMeta`），让每个分支可读、可单测。
 9. **注释只描述功能**：说明"做了什么"即可；仅**核心改动**才追加"为什么"，且保持精简 —— 禁止大段复述代码。
 10. **通用 UI 一律走 `components/units/`**：下拉命令菜单用 `MenuButton` + `MenuItem`、盒式提示用 `Notice`、
     按钮用 `Btn`；不在各屏自造同类 DOM / 样式（各屏业务样式件如列表项 / Tab / 卡片仍留屏内）。

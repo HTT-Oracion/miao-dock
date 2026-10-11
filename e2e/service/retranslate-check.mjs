@@ -64,6 +64,8 @@ const ENGINE_ENTRY = path.join(ROOT, 'engine', 'src', 'server.mjs');
 const SERVICE_ENTRY = path.join(ROOT, 'service', 'src', 'server.mjs');
 const STORE_SRC = path.join(ROOT, 'service', 'src', 'manga', 'store.mjs');
 const LIB_SRC = path.join(ROOT, 'app', 'src', 'screens', 'LibraryScreen.tsx');
+// D-148：缩放的实现从 `LibraryScreen.tsx` 搬到 `screens/library/viewer.tsx`（Lightbox）。
+const VIEWER_SRC = path.join(ROOT, 'app', 'src', 'screens', 'library', 'viewer.tsx');
 
 const REFUTE = process.argv.includes('--refute');
 /// 起的是模拟引擎；不声明会让服务按 real 协议去打替身。
@@ -469,7 +471,7 @@ async function runAll() {
     // 后果具体：① 触控板双指滚动被当缩放，"滑一下冲到 200%"；
     //          ② 100% 时的裸滚轮被吞，用户以为滚轮失灵。
     // 反过来"只有修饰键才缩放"正是本条要的正向形态，故判 `hasModGate && !gatesArrowUpDown`。
-    const libSrc = stripComments(fs.readFileSync(LIB_SRC, 'utf8'));
+    const libSrc = stripComments(fs.readFileSync(VIEWER_SRC, 'utf8'));
     const hasModGate = /e\.ctrlKey\s*\|\|\s*e\.metaKey/.test(libSrc);
     const usesWheel = /addEventListener\('wheel'/.test(libSrc);
     // 旧键盘缩放必须**已撤干净**：留着 ↑/↓ 会与 useMusicHotkeys 的音量键抢
@@ -556,7 +558,7 @@ const MUTATIONS = [
     name: 'M5 前端滚轮缩放去掉 Ctrl/⌘ 限定（裸滚轮也缩放，双指滑动一滑就顶格）',
     edits: [
       {
-        file: LIB_SRC,
+        file: VIEWER_SRC,
         find: '      if (e.ctrlKey || e.metaKey) {',
         replace: '      if (true) {',
       },
@@ -568,7 +570,7 @@ const MUTATIONS = [
     name: 'M6 复活已废弃的 ↑/↓ 键盘缩放（与全局音量键抢键）',
     edits: [
       {
-        file: LIB_SRC,
+        file: VIEWER_SRC,
         find: "    window.addEventListener('wheel', onWheel, { passive: false });",
         replace:
           "    window.addEventListener('wheel', onWheel, { passive: false });\n    void (e: KeyboardEvent) => e.key === 'ArrowUp' || e.key === 'ArrowDown';",

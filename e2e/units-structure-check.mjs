@@ -70,6 +70,8 @@ const F = {
   musicToast: path.join(SRC, 'screens', 'music', 'Toast.tsx'),
   tooltip: path.join(SRC, 'components', 'units', 'Tooltip.tsx'),
   library: path.join(SRC, 'screens', 'LibraryScreen.tsx'),
+  // D-148：`LibraryScreen.tsx` 拆出「看图/对照」簇；ZOOM 组的锚点随之落到 viewer.tsx
+  libraryViewer: path.join(SRC, 'screens', 'library', 'viewer.tsx'),
   // 断言读到的 s.appCss 是全分片拼接（见下方 readStyleSource 调用处）；
   // 下面这个 musicScss **只给反证机制用**（按 file 路径临时改源文件）。
   // 灵动岛的样式在 music.scss 里（.di-capsule 等），故反证指向它。
@@ -372,8 +374,18 @@ function loadSources() {
   s.musicToast = readMaybe(F.musicToast);
   // 悬停提示（Tooltip 宽限期）
   s.tooltip = readMaybe(F.tooltip);
-  // ZOOM：全屏看图缩放（Lightbox 在这个文件里）
-  s.library = readMaybe(F.library);
+  // ZOOM：全屏看图缩放（Lightbox 在 viewer.tsx —— 屏本体已拆分，D-148）。
+  // 判据读「屏本体 + `screens/library/*.tsx`」的**拼接源码**，只关心"关键字在不在"。
+  // 🔴 **逐文件单独 `stripComments` 再拼**：`stripComments` 是带状态机的（反引号 ≠ 字符串/正则
+  //    字面量都可能让它跑偏，见 D-110）。直接拼原文再 strip，前一个文件的失同步会**污染**
+  //    后一个文件（实测：viewer.tsx 的块注释因此没被剥掉 ⇒ ZOOM.wheelNonPassive 假阳性）。
+  //    逐文件 strip 后每个文件都从 `code` 态起步，互不牵连；再 strip 一次是幂等的。
+  s.library = [
+    F.library,
+    ...listFiles(path.join(SRC, 'screens', 'library'))
+      .filter((n) => n.endsWith('.tsx'))
+      .map((n) => path.join(SRC, 'screens', 'library', n)),
+  ].map((p) => stripComments(readMaybe(p))).join('\n');
   // 全分片拼接（顺序 = index.scss 的 @use 顺序 = 层叠顺序）。
   // app.css 已按模块拆成六个分片，读单文件会集体变红（读不到 ≠ 真回归），故走拼接。
   s.appCss = readStyleSource(F.stylesDir);
@@ -1556,7 +1568,7 @@ const MUTATIONS = [
   {
     // 最典型的退化：嫌手动挂监听麻烦，改回 React 的 onWheel ⇒ passive，preventDefault 失效
     name: "把 wheel 监听改回被动的 React onWheel（preventDefault 失效 + 页面跟着滚）",
-    file: F.library,
+    file: F.libraryViewer,
     find: "    window.addEventListener('wheel', onWheel, { passive: false });",
     replace: "    // 反证：改回 React onWheel（被动监听）\n    void onWheel;",
     expect: ["ZOOM.wheelNonPassive"],
@@ -1564,7 +1576,7 @@ const MUTATIONS = [
   {
     // 只挂不卸 ⇒ 浮层开关多次后旧监听仍在跑，一次滚轮被处理 N 次
     name: "删掉 wheel 监听的 removeEventListener（卸载泄漏 ⇒ 一次滚轮缩放多次）",
-    file: F.library,
+    file: F.libraryViewer,
     find: "    return () => window.removeEventListener('wheel', onWheel);",
     replace: "    return undefined;",
     expect: ["ZOOM.wheelNonPassive"],
@@ -1572,7 +1584,7 @@ const MUTATIONS = [
   {
     // 锚点缩放退化成"缩放就回中心"：能跑、类型过，但每滚一下图都往中间跳
     name: "把锚点缩放改成直接重置偏移（等价于中心缩放，手感退化）",
-    file: F.library,
+    file: F.libraryViewer,
     find: "    applyView(next, { x: ax - (ax - cur.offset.x) * k, y: ay - (ay - cur.offset.y) * k });",
     replace: "    applyView(next, { x: 0, y: 0 });",
     expect: ["ZOOM.anchorZoom"],
@@ -1580,7 +1592,7 @@ const MUTATIONS = [
   {
     // 不量光标位置 ⇒ 没有锚点可言（退化成中心缩放，但仍走 zoomAt，看着"有实现"）
     name: "让 zoomAt 不再量光标位置（失去锚点，仍有 zoomAt 函数 ⇒ 半绿假象）",
-    file: F.library,
+    file: F.libraryViewer,
     find: "    const rect = stage.getBoundingClientRect();",
     replace: "    const rect = { left: 0, top: 0, width: 0, height: 0 };",
     expect: ["ZOOM.anchorZoom"],
@@ -1588,7 +1600,7 @@ const MUTATIONS = [
   {
     // 去掉按钮 = macOS 上完全没法缩放（捏合被 WebKit 吃掉，事件到不了 JS）
     name: "删掉工具栏的缩小按钮（macOS 上失去唯一的非手势缩放路径）",
-    file: F.library,
+    file: F.libraryViewer,
     find: '              aria-label="缩小"\n',
     replace: "",
     expect: ["ZOOM.buttonFallback"],
@@ -1603,7 +1615,7 @@ const MUTATIONS = [
   {
     // 裸滚轮平移不门控溢出态 ⇒ ≤100% 时滚轮被吞，用户以为失灵
     name: "把裸滚轮平移移出溢出态门控（≤100% 时滚轮被吞，失灵）",
-    file: F.library,
+    file: F.libraryViewer,
     find: "      if (view.current.zoom > ZOOM_FIT) {",
     replace: "      if (true) {",
     expect: ["ZOOM.twoFingerPan"],
@@ -1611,7 +1623,7 @@ const MUTATIONS = [
   {
     // 方向反了：滚轮向上反而缩小 —— 能缩能放、类型也过，只有钉子拦得住
     name: "把滚轮缩放因子改成 1 + deltaY·k（向上滚反而缩小，方向反了）",
-    file: F.library,
+    file: F.libraryViewer,
     find: "zoomAt(e.clientX, e.clientY, 1 - e.deltaY * ZOOM_WHEEL_K);",
     replace: "zoomAt(e.clientX, e.clientY, 1 + e.deltaY * ZOOM_WHEEL_K);",
     expect: ["ZOOM.wheelDirection"],
@@ -1619,7 +1631,7 @@ const MUTATIONS = [
   {
     // 缩回「铺满」及以内不归位 ⇒ 旧偏移把图顶出画面
     name: "删掉「≤ ZOOM_FIT 归位」分支（缩回铺满后图歪在一边、跑出画面）",
-    file: F.library,
+    file: F.libraryViewer,
     find: `    if (next <= ZOOM_FIT) {
       if (cur.zoom !== next || cur.offset.x !== 0 || cur.offset.y !== 0) applyView(next, { x: 0, y: 0 });
       return;
@@ -1631,7 +1643,7 @@ const MUTATIONS = [
   {
     // 开图默认落到缩放下限（50%）：图小一半，且丢掉"整张铺满"语义
     name: "把初始比例改成 ZOOM_MIN（开图不是整张铺满）",
-    file: F.library,
+    file: F.libraryViewer,
     find: "useState(ZOOM_FIT)",
     replace: "useState(ZOOM_MIN)",
     expect: ["ZOOM.fitToWindow"],
