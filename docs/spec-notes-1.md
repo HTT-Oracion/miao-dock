@@ -20,6 +20,7 @@
 |------|------|--------|
 | D-137 | 歌词整行高亮去掉推进动画（单层渲染 + 默认改整行） | app 前端 |
 | D-138 | box-service 顶层未捕获异常兜底（统一 shutdown + 非零退出） | service |
+| D-139 | 抽 `atomic-file.mjs` 底座 + store 任务状态改原子写 | service |
 
 ---
 
@@ -160,3 +161,45 @@ E11（「主进程 SIGKILL 后不留孤儿」）防的是**不可捕获**的死�
 
 本脚本证明的是**「顶层兜底结构在」**，**不是**「真崩过且没留孤儿」。后者只能真造一次崩溃，
 或靠 `selftest:app:e11`（SIGKILL）从外部补充取证。
+
+---
+
+## D-139 · 抽 `atomic-file.mjs` 底座 + store 任务状态改原子写（2026-10-11）
+
+审计（`code-audit-report.md` §2.2）发现：**同一件事在本仓有两种做法** ——
+设置类落盘（`translate/settings.mjs`·`translate/credentials.mjs`·`settings/engine-settings.mjs`）
+都做了 `tmp → fsync → rename`，且注释里写明了为什么必须这样；
+唯独 `manga/store.mjs::_persistNow` **裸 `writeFileSync`**。
+
+### 为什么是缺陷
+
+裸写崩在中间会留**半截 JSON**。`store.init()` 对读不动或字段缺失的任务文件是**静默跳过**
+（`catch { /* 单个任务文件损坏则跳过 */ }`）—— 用户看到的是「跑过的任务历史少了几个」，
+而这条路径在**正常退出下永远测不到**。
+
+### 改法
+
+1. 新增跨模块底座 `service/src/atomic-file.mjs`：`atomicWriteJson(file, value, {mode,indent})`
+   与 `atomicWriteText(file, text, {mode})`，实现照抄仓内已验证的 `tmp-${pid}-${Date.now} → fsync → rename`
+   （tmp 名带 pid+时间戳，与 `translate-check.mjs` 的 `.tmp-` 残留扫描口径一致）。
+2. `store.mjs::_persistNow` 改调 `atomicWriteJson`（保留原有「写失败不影响主路径」的吞错语义）。
+3. **规范变更**：`AGENTS.md` §1「`service/src/` 根只留跨模块底座」的清单新增 `atomic-file.mjs`。
+
+### 未做（明确留待后续）
+
+`library.mjs::writeManifestAtomic`（无 fsync、固定 `.tmp` 名）与三处设置类落盘**暂未迁移**
+到新底座 —— 它们**本身已是原子写**，迁移属纯 DRY，且那三处被 `check:translate` /
+`check:engine-settings` 的反证锚点覆盖，迁移须同步改锚。**先修缺陷（store）、后收口重复**，
+避免一次改动同时承担「修 bug」与「改结构」两种风险。收口列入后续批次。
+
+### 断言
+
+`check:resilience` 扩为**两组**：R 组（顶层兜底，D-138）+ A 组（原子写）。
+A1 = store 走 `atomicWriteJson` 且无裸 `fs.writeFileSync`；A2 = 底座确实 `fsync` + `rename`。
+反证 M7（store 退回裸写）/ M8（去 fsync）/ M9（去 rename）→ 各自变红。
+
+### 验收
+
+`check:resilience` 9/0 · `check:resilience:refute` **14/14** ·
+`selftest:service` **134/1**（1 条既有 Windows 环境性红）· `check:retry` 10/0 · `check:lib-manage` 24/0 ·
+`check:docs` 17/0。

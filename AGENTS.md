@@ -44,7 +44,7 @@
 
 **服务端模块目录（硬规则，ver2.2 起，见 `docs/spec-notes.md` D-101）**：
 
-- `service/src/` 根**只留跨模块底座**：装配入口 `server.mjs` · `config.mjs` · `errors.mjs` · `engine-client.mjs`（引擎适配，唯一耦合点）· `multipart.mjs` · `parent-watch.mjs`。
+- `service/src/` 根**只留跨模块底座**：装配入口 `server.mjs` · `config.mjs` · `errors.mjs` · `engine-client.mjs`（引擎适配，唯一耦合点）· `multipart.mjs` · `parent-watch.mjs` · `atomic-file.mjs`（原子写 JSON，跨 manga/settings 复用；D-139）。
 - **按业务域分子目录**：`service/src/manga/`（漫画翻译：`store` 队列落盘 · `image` · `names` · `sse` · `translate` 在线翻译：契约 / 注册 / 门面 / http / sse-parse / limiter / 设置 / 密钥 / `platforms/youdao`）· `service/src/settings/`（设置 / 引擎档位 / 诊断：`engine-settings` · `engine-profile` · `model-status` · `idle-policy` · `tier-downgrade` · `llm-supervisor`）· `service/src/music/`（音乐：逻辑主要在 Rust 侧 `app/src-tauri/src/music/`，服务端此目录为**占位**）。
 - 🔴 **新增服务模块必须归入对应域目录**，不得再平铺回 `service/src/` 根；**只有跨域共用**才允许上提到根。
 - 搬迁 / 新增后必须同步：**断言里写死的路径**（`e2e/` 下大量 `path.join(ROOT,'service','src',…)`，不同步的后果是**静默跳过**）· 模块内相对导入 · 本节分层 · `README.md` 目录节 · `.trae/rules/project_rules.md`。
@@ -124,7 +124,7 @@ npm run check:music[:refute]  # 音乐平台 / 心动模式 / 桌面歌词 / 逐
 npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3「准备中」时间线 + ④ 功能梳理（侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / 行内 def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染（自守）180 条 / 反证 127 条
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 看图缩放 / 样式分层 45 条 / 反证 59 条
 npm run check:bundle[:refute] # Windows 打包配置钉子 4 条 / 反证 4 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；源码级，不起进程）
-npm run check:resilience[:refute] # box-service 顶层异常兜底 7 条 / 反证 11 条（源码级：未捕获异常/未处理 rejection 已注册 · 走同一 shutdown · 收 ③ · 重入闸 · 非零退出；不起进程；内存变异反证；D-138）
+npm run check:resilience[:refute] # box-service 健壮性钉子 9 条 / 反证 14 条（源码级：R1–R7 顶层未捕获异常兜底（走同一 shutdown / 收 ③ / 重入闸 / 非零退出）· A1–A2 任务状态原子写（store 走 atomicWriteJson · tmp→fsync→rename）；不起进程；内存变异反证；D-138/D-139）
 npm run check:docs            # 文档 ↔ 实现一致性 16 条（条数对账 / 命令存在 / 禁词 0 命中 / GROUPS 覆盖）
 cd app && npx tsc --noEmit && npx vite build   # 前端类型与构建
 cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）

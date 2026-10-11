@@ -12,6 +12,7 @@ import {
   assertInsideRoot, canonicalize, config, normalizeDirection, seq3,
 } from '../config.mjs';
 import { ApiError } from '../errors.mjs';
+import { atomicWriteJson } from '../atomic-file.mjs';
 import { sniffImageType } from './image.mjs';
 import { translateImage, EngineError } from '../engine-client.mjs';
 import { isOomError } from '../settings/tier-downgrade.mjs';
@@ -1816,9 +1817,10 @@ export class Store {
 
   _persistNow(task) {
     try {
-      fs.mkdirSync(TASKS_STATE_DIR, { recursive: true, mode: 0o700 });
       const file = path.join(TASKS_STATE_DIR, `${task.taskId}.json`);
-      fs.writeFileSync(file, JSON.stringify(this.serialize(task), null, 2), { mode: 0o600 });
+      // 原子写：裸 writeFileSync 崩在中间会留下半截 JSON，init() 读到损坏文件会**静默跳过**
+      // 该任务（丢历史，且正常退出路径下测不到）。见 D-139。
+      atomicWriteJson(file, this.serialize(task));
     } catch { /* 任务清单写入失败不影响主路径 */ }
   }
 
