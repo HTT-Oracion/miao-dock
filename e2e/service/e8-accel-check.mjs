@@ -231,17 +231,22 @@ async function round({ env = {}, settings = null } = {}) {
 async function runAll() {
   results.length = 0;
 
-  // ---- E8.1：「macOS 走 MPS」的**真机探测**依据（不是"代码里写了 mps"）----
+  // ---- E8.1：真机硬件探测与**平台一致**（不是"代码里写了 mps"）----
+  // 🔴 原先写死 `platform==='darwin' && arch==='arm64' && accel==='mps'` ⇒ 非 macOS 上恒红，
+  //    会直接卡住双平台 CI（D-140）。改为**平台忠实**：darwin ⇒ metal/mps；非 darwin ⇒ **不**出现 mps。
   const hw = askProfile('m.probeHardware()');
-  check('E8.1 真机硬件探测：本机 darwin/arm64 上 `accel === "mps"`（"macOS 走 MPS"的实测依据）',
-    hw?.platform === 'darwin' && hw?.arch === 'arm64' && hw?.accel === 'mps' && !!hw?.recommendedTier,
+  const hwAccelOk = hw?.platform === 'darwin'
+    ? hw?.accel === 'mps' && hw?.gpu?.kind === 'metal'
+    : hw?.accel !== 'mps' && hw?.gpu?.kind !== 'metal';
+  check('E8.1 真机硬件探测与平台一致：darwin ⇒ accel=mps/gpu=metal；非 darwin ⇒ **不**出现 mps（"macOS 走 MPS"的实测依据）',
+    hwAccelOk && !!hw?.recommendedTier,
     `platform=${hw?.platform} arch=${hw?.arch} accel=${hw?.accel} gpu=${JSON.stringify(hw?.gpu)} tier=${hw?.recommendedTier} ram=${Number(hw?.totalRamGb).toFixed(1)}GB`);
 
-  // ---- E8.2：对照组 —— 什么都不关时是 mps + ok（证明下面的 degraded 不是"恒报"）----
+  // ---- E8.2：对照组 —— 什么都不关时 `accel` 等于**本机推荐后端** + ok（证明下面的 degraded 不是"恒报"）----
   const normal = await round();
-  check('E8.2 对照组：不关 GPU 时 `accel === "mps"` 且 `/health.status === "ok"`（degraded **不是**恒报）',
-    normal.health?.sidecar?.accel === 'mps' && normal.health?.status === 'ok' && normal.health?.sidecar?.state === 'running',
-    `status=${normal.health?.status} state=${normal.health?.sidecar?.state} accel=${normal.health?.sidecar?.accel}`);
+  check('E8.2 对照组：不关 GPU 时 `accel` 等于本机推荐后端 且 `/health.status === "ok"`（degraded **不是**恒报）',
+    normal.health?.sidecar?.accel === hw?.accel && normal.health?.status === 'ok' && normal.health?.sidecar?.state === 'running',
+    `status=${normal.health?.status} state=${normal.health?.sidecar?.state} accel=${normal.health?.sidecar?.accel} 本机推荐=${hw?.accel}`);
 
   // ---- E8.3：**真回退**要不静默（§7.4-3）：Rust 侧注入 USE_GPU=0，choice 仍是 auto ----
   const fallback = await round({ env: { MIAO_ENGINE_USE_GPU: '0' } });
@@ -268,11 +273,15 @@ async function runAll() {
     sameAll && reasons[0] && reasons[1] && reasons[0] !== reasons[1],
     `同值三轮=${sameAll} / 回退理由=${JSON.stringify(reasons[0])} / 自选理由=${JSON.stringify(reasons[1])}`);
 
-  // ---- E8.6：不给假控件 —— Metal 机器的后端候选里不该出现 CUDA（《02》§5）----
+  // ---- E8.6：不给假控件 —— 候选必须**反映本机**（无 Metal 不出 mps、无 CUDA 不出 cuda）----
   const accels = (normal.options?.accel?.options ?? []).map((o) => o.value);
-  check('E8.6 加速后端候选里**没有**本机不可用的 CUDA（假控件比缺控件更伤）',
-    accels.includes('auto') && accels.includes('cpu') && accels.includes('mps') && !accels.includes('cuda'),
-    `候选=[${accels.join(',')}] / hardwareRecommended=${normal.options?.accel?.hardwareRecommended}`);
+  const isMetal = hw?.gpu?.kind === 'metal';
+  const isCuda = hw?.gpu?.kind === 'cuda';
+  check('E8.6 加速后端候选**反映本机**：含 auto/cpu 与本机推荐后端，且**不含**本机不可用的 mps/cuda（假控件比缺控件更伤）',
+    accels.includes('auto') && accels.includes('cpu') && accels.includes(hw?.accel)
+      && (isMetal ? accels.includes('mps') : !accels.includes('mps'))
+      && (isCuda ? accels.includes('cuda') : !accels.includes('cuda')),
+    `候选=[${accels.join(',')}] / 本机 gpu=${hw?.gpu?.kind} accel=${hw?.accel} hardwareRecommended=${normal.options?.accel?.hardwareRecommended}`);
 
   // 反证轮要按 id 取"这一轮的结果"，所以回一份 map（与 E4/E7 同形）。
   const map = {};
@@ -302,19 +311,19 @@ const MUTATIONS = [
     }],
   },
   {
-    name: 'E8.1：让真机硬件探测在 darwin/arm64 上**不认 MPS**（macOS 走 CPU）',
-    expect: ['E8.1 真机硬件探测：本机 darwin/arm64 上 `accel === "mps"`（"macOS 走 MPS"的实测依据）'],
-    // 破坏点选在最贴近断言语义的一行（`metal → mps` 的映射），而不是把函数名改坏 ——
-    // 后者会让模块直接 Referror、整轮服务都起不来，"变红"就不可归因了。
+    name: 'E8.1：真机探测不给出推荐档位（recommendedTier 置空）',
+    expect: ['E8.1 真机硬件探测与平台一致：darwin ⇒ accel=mps/gpu=metal；非 darwin ⇒ **不**出现 mps（"macOS 走 MPS"的实测依据）'],
+    // 🔴 锚点选 `recommendedTier`（**每个平台都经过**），而不是 darwin 专有的 metal→mps 映射 ——
+    //    后者在非 macOS 上根本不被执行 ⇒ 反证轮"该红没红"（假阴性），双平台 CI 会挂（D-140）。
     edits: [{
       file: PROFILE_SRC,
-      find: "  if (gpu && gpu.kind === 'metal') return 'mps';",
-      replace: "  if (gpu && gpu.kind === 'metal') return 'cpu'; // refute：Metal 也不认 MPS",
+      find: '    recommendedTier: mapTier({ totalRamGb, gpu }),',
+      replace: '    recommendedTier: null, // refute：探测不给推荐档位',
     }],
   },
   {
-    name: 'E8.6：让后端候选恒含 CUDA（Metal 机器上也给"点了没用"的假控件）',
-    expect: ['E8.6 加速后端候选里**没有**本机不可用的 CUDA（假控件比缺控件更伤）'],
+    name: 'E8.6：让后端候选恒含全部后端（Metal 机器上也给"点了没用"的假控件）',
+    expect: ['E8.6 加速后端候选**反映本机**：含 auto/cpu 与本机推荐后端，且**不含**本机不可用的 mps/cuda（假控件比缺控件更伤）'],
     edits: [{
       file: SERVER_SRC,
       find: '      options: accelOptions(hardware.accel, { all: config.settingsRefute.accelOpen }),',

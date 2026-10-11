@@ -605,12 +605,16 @@ async function runPositive() {
     injBytes.totalRamGb === 24 && injBytes.recommendedTier === 'small',
     `${injBytes.totalRamGb}GB → ${injBytes.recommendedTier}`);
 
-  // ------------------------------------------------------- R · 真机自检（非契约）
+  // ---- R · 真机自检（非契约）----
+  // 平台忠实：非 macOS 上也要真判（原先非 darwin 分支写 `: true` ⇒ 零校验假绿，D-140）。
   const real = probeHardware();
+  const realOk = real.platform === 'darwin'
+    ? real.gpu.kind === 'metal' && real.accel === 'mps'
+    : real.gpu.kind !== 'metal' && real.accel !== 'mps';
   check(`R1 真机自检（**非契约**，只作交叉核对）：platform=${real.platform} arch=${real.arch} `
     + `ram=${real.totalRamGb}GB gpu=${real.gpu.kind} accel=${real.accel} tier=${real.recommendedTier}`
     + ` 可行档位=${JSON.stringify(feasibleTiers(real))}`,
-    real.platform === 'darwin' ? real.gpu.kind === 'metal' && real.accel === 'mps' : true,
+    realOk,
     JSON.stringify(real.gpu));
 
   // ------------------------------------------------------- D/I · 降档与空闲卸载的**判定**

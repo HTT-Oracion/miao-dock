@@ -172,6 +172,10 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
   桌面歌词（`lyrics_window.rs` + `screens/lyrics/DesktopLyrics.tsx`）与卡拉OK 逐字歌词（`screens/music/KaraokeLyrics.tsx`）**均已实现**。
 - **未做真机验证**的项在台账里逐条标注（如 Radix 弹层观感、音频代理播放、皮肤观感）—— 别把
   "类型检查 + 断言通过"当成"功能可用"。
+- **CI 已接入**（`.github/workflows/ci.yml`，v2.2.1 起；D-140）：ubuntu + macos 双平台跑
+  **源码级检查 + `npm run selftest` + 判定层（e8/e4/e10）+ 前端 tsc/build**。
+  真机门（cargo release 打包 / 真权重 E3·E7 / E11 real）**不进常规门**。
+  ⇒ 改断言/改模块目录后，本地跑绿**还不够**，必须让 CI 也绿才算交付。
 - 本仓库曾出现**同仓库并发写入**（另一个会话/窗口在改同一批文件，甚至把编辑器格式化后的引号风格一起提交）。
   动手前先 `git status` + `git log -1` 确认基线是谁的；改别人未提交的文件要 `git stash` 而不是 `git checkout --`（后者不可恢复）。
 

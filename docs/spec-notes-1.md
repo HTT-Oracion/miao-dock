@@ -21,6 +21,7 @@
 | D-137 | 歌词整行高亮去掉推进动画（单层渲染 + 默认改整行） | app 前端 |
 | D-138 | box-service 顶层未捕获异常兜底（统一 shutdown + 非零退出） | service |
 | D-139 | 抽 `atomic-file.mjs` 底座 + store 任务状态改原子写 | service |
+| D-140 | 接入 CI（双平台）+ 跨平台写死断言改平台忠实 | e2e / 基建 |
 
 ---
 
@@ -203,3 +204,47 @@ A1 = store 走 `atomicWriteJson` 且无裸 `fs.writeFileSync`；A2 = 底座确�
 `check:resilience` 9/0 · `check:resilience:refute` **14/14** ·
 `selftest:service` **134/1**（1 条既有 Windows 环境性红）· `check:retry` 10/0 · `check:lib-manage` 24/0 ·
 `check:docs` 17/0。
+
+---
+
+## D-140 · 接入 CI + 跨平台写死断言改「平台忠实」（2026-10-11）
+
+审计（`code-audit-report.md` §2.1 / §5）两条并列的 P0：**零 CI** + **跨平台写死断言**。
+后者是前者的前置 —— 断言在非 macOS 上恒红，CI 加了也是红的。
+
+### 一、跨平台写死断言（真缺陷）
+
+| 位置 | 原写法 | 问题 |
+|---|---|---|
+| `e2e/service/e8-accel-check.mjs` E8.1 | `platform==='darwin' && arch==='arm64' && accel==='mps'` | 非 macOS 恒红 |
+| 同上 E8.2 | `accel === 'mps'` | 同上（本机是 cuda/cpu 时红） |
+| 同上 E8.6 | 恒要求 `mps` 存在、`cuda` 不存在 | 同上（与"反映本机"的原意相反） |
+| `e2e/service/engine-profile-check.mjs` R1 | `platform==='darwin' ? … : true` | 非 macOS **零校验假绿** |
+
+改法：一律改**平台忠实** —— darwin 断 metal/mps；非 darwin 断「**不**出现 mps」。
+E8.2 的 accel 改为「等于本机推荐后端」（`hw.accel`）；E8.6 改为「含 auto/cpu 与本机后端，
+**不含**本机没有的 mps/cuda」。断言条数不变（E8 仍 6 条 / 反证 4 条）。
+
+🔴 **反证锚点也要平台无关**：E8.1 原反证打的是 `metal → mps` 映射那行，而**非 macOS 根本不执行它**
+⇒ 反证轮「该红没红」（假阴性），CI 照样挂。改用 `recommendedTier: mapTier(...)` 这行
+（**每个平台都经过**）当锚点，变异置 `null` ⇒ E8.1 全平台变红。
+
+### 二、CI（`.github/workflows/ci.yml`）
+
+ubuntu + macos 双平台，Node 22。必过门：
+**源码级检查**（`check:docs` / `resilience` / `bundle` / `quit` / `autostart` / `ia` / `units` / `music` / `settings`）
+→ **契约自测** `npm run selftest` → **判定层**（`check:e8` / `e4` / `e10`）→ **前端** `tsc --noEmit && vite build`。
+真机门（cargo release 打包 / 真权重 E3·E7 / E11 real）**不进常规门**，避免 CI 变"永远红的摆设"。
+
+### 三、环境限制（本机，非缺陷）
+
+`check:profile:refute` 在本开发机**无法验证**：它用 `spawnSync` 起子进程，而本沙箱下
+`spawnSync` 报 `EBUSY`（用 `git stash` 跑原始版本对照，**同样失败** ⇒ 与本次改动无关，
+是环境限制）。CI 上是正常 runner，不受此影响。已把该现象记此备查：
+**本机"跑不了"与"代码坏"要分清 —— 用原始版本对照一次即可定性。**
+
+### 验收
+
+`check:e8` **6/0**（win32/cuda 真机，改造前此处恒红）· `check:e8:refute` **4/4** ·
+`check:profile` **44/0**（R1 真判通过）· `check:docs` 17/0 · `selftest:engine` 23/0。
+⚠️ CI 尚未在 GitHub 上实跑（本地无法验证 Actions）—— 首次运行可能暴露其余平台相关红条，届时逐条修。
