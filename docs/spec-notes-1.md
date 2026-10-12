@@ -1108,3 +1108,53 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 > （正在移除翻译模块，见下条）。`tsc` 的错误 100% 落在 `TranslateSection.tsx` / `App.tsx`，
 > 本次改动的文件 0 错；`check:music` 全量绿。**建议该场会话收口后补跑一次 `vite build`。**
 
+
+---
+
+## D-157 · 修 D-156 遗留的三处断言失效 + 撤销并发改动 + 四文档核对（2026-10-12）
+
+### 一、D-156 遗留：只改了 music-platform-check，漏了另外两个脚本
+
+| 脚本 | 症状 | 根因 | 修法 |
+|---|---|---|---|
+| `settings-media-check` | `STORE.setter.*` 7 条 + `STORE.hydrate.defined` 共 **8 条红** | 它的 `s.store` 仍读 `store.ts` **单文件**，而 setter / `hydratePrefs` 已随切片迁出 | `s.store` 改为「store.ts + `music/actions/*.ts`」逐文件 strip 拼接（目录动态列举）；2 条 `file: F.store` 变异锚改指 `actions/playback.ts` |
+| `units-structure-check` | `STATE.zustandInUse` **假阳性** | `slice.ts` 里 `import type { StoreApi } from 'zustand'` 也算一处引用 ⇒ 变异只破坏 store.ts 那处便打不掉它 | `slice.ts` 改为按 zustand 调用形状**手写** `StoreSet` / `StoreGet`，store.ts 保持全 src 唯一运行时引用 |
+| `units-structure-check` | toastBus 变异锚**失效** | 锚的 `find` 指向 D-156 拆开的旧 import 行（`coverProxyUrl, fmtTime, useMusicStore` 一行已拆成两行） | `find` 改指新 import 行 |
+
+> 教训一：拆文件类改造**必须全局排查读该文件的脚本**，不能只改"主检查"。
+> 可靠做法是全量 grep 一遍所有指向该文件的路径（`grep -rn "music.*store.ts" e2e/`），再逐个决定改不改。
+> 本轮漏了 settings-media-check（它只在文件头注释里提了一句 STORE 读 store.ts，grep 文件名时容易被漏掉）。
+
+> 教训二：偏好 setter（`setLyricsMode` / `setVinylCustomColor` 等）住在**播放段**而非 init 段 ——
+> 我把锚先改指到 init.ts 又错了一次。**段归属不能凭段名猜**，要以 grep 的实际位置为准。
+
+### 二、撤销工作区里另一场会话的在途改动（用户要求）
+
+收尾时发现工作区有 **28 个文件的未提交改动**（10-12 14:46 写入，本会话当时无任何操作）：
+一整轮「**移除在线翻译模块**」的改造（删 `translate-api.ts` · `service/src/manga/translate/*` 11 个文件 ·
+`translate-check.mjs` · 改 `server.mjs` / `catalog.ts` / `AGENTS.md` / `README.md` / `spec-notes.md` / `package.json` 等），
+且是**半成品**：`server.mjs` 改 import `./manga/image.mjs` 但该文件不存在；`securityLog` 被撤回 server 本地定义；
+`TranslateSection.tsx` 仍在 import 已删除的 `translate-api`。
+
+按用户要求**撤销**（先备份成 patch，再 `git checkout -- .`）：
+`_wip-backups/wip-remove-translate-20261012-1527.patch`（6905 行 / 28 文件 / 14 个删除记录，放在 manga/ 下、git 仓外）。
+撤销后 git status 干净、git diff HEAD 为空、被删文件全部恢复、vite build 与 check:settings 回到基线。
+
+> 纪律：不可逆操作前先留 patch；撤销前确认无未跟踪文件、暂存区为空。
+
+### 三、四个文档核对结论（用户要求"基于 v2.2.0 执行改造任务后"）
+
+| 文档 | 结论 |
+|---|---|
+| `docs/spec-notes.md` | 已**封卷于 D-136**（文件头明写），D-137 起的新条目按规定写 `spec-notes-1.md` —— 本次 D-147~D-157 都在续篇里，无缺失 |
+| `docs/spec-notes-1.md` | D-147~D-157 全部在册（本次改造的完整台账） |
+| `.trae/rules/project_rules.md` | D-148/D-150/D-154 已把范式指针改指 `screens/library/meta.ts` |
+| `README.md` | 无 app/src 结构描述，不存在过期陈述 |
+| `AGENTS.md` | 范式指针 / check 条数（music 216 · settings 180 · units 45 · ia 32 · autostart 12，check:docs 17/0 实证一致）；**补写**了前端 `app/src/music/` 按层分文件的说明（§1 原先只描述服务端域目录，D-156 的新分层没进去） |
+
+### 验收
+
+`tsc --noEmit` 0 · `check:settings` **180/0 + refute 127/127 零跳过** · `check:units` **45/0 + refute 59/59 零跳过** ·
+`check:music` 216/3 + refute 184/184 · `check:lib-manage` 24/0 + refute 13/13 ·
+`check:retranslate` 12/0 + refute 9/9 · `check:ia` 32/0 · `check:autostart` 12/0 · `check:contract` 77/0 ·
+`check:docs` 17/0 · `vite build` 通过。

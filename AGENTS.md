@@ -54,6 +54,9 @@
 
 **状态管理统一 zustand**：跨组件共享状态一律 zustand（`@music/store` 是先例），**不引入 React Context**（全仓 `createContext` 为零，维持此状 —— `STATE.noReactContext`）。注意它管的是**跨组件共享**，不是"所有状态都塞进全局"：只需一处持有或仅父子一层传递的照旧 `useState`。理由见《09》§2.3.3 与 `docs/spec-notes.md` D-42。
 
+**前端 `app/src/music/` 按层分文件（D-156，与 §1 服务端域目录同思路）**：`store.ts`（zustand 装配：`MusicState` 接口 + 初始 state + 切片 spread，647 行）· `actions/*.ts`（12 个 action 段切片，工厂签名 `Pick<MusicState, ...keys>` 显式列名）· `convert.ts`（纯转换：`songKey`/`fmtTime`/`coverProxyUrl`/`localToSong`/`qualityLabel`）· `prefs.ts`（偏好层：`Prefs` + `savePrefs`）· `persist.ts`（localStorage 读写 + 启动恢复快照，D-153）· `slice.ts`（切片公共件：`StoreSet`/`StoreGet` + 跨段常量）· `tools/lyrics.ts`（歌词解析，D-149）。
+🔴 **切片文件与 `store.ts` 不得互相 import 值**（`MusicState` 等类型可 type-only）—— 被多段共用的东西一律先下沉到上面某个分层文件，否则成环。判据源已改成「`store.ts` + `music/actions/*.ts`」动态拼接，新增切片不必改断言。
+
 ## 2. 工程纪律（本项目硬性要求，不得绕过）
 
 1. **交付物必须自证，断言必须可反证。** 只跑正向等于没验证 —— 反证轮必须真的变红才算数。
