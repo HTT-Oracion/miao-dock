@@ -61,6 +61,8 @@ const F = {
   secMedia: path.join(APP, 'src', 'screens', 'settings', 'sections', 'MediaSection.tsx'),
   secAbout: path.join(APP, 'src', 'screens', 'settings', 'sections', 'AboutSection.tsx'),
   store: path.join(APP, 'src', 'music', 'store.ts'),
+  // D-156：music/store.ts 的 action 段已按切片切到 music/actions/*.ts。
+  actionsDir: path.join(APP, 'src', 'music', 'actions'),
   options: path.join(APP, 'src', 'music', 'player-options.ts'),
   expanded: path.join(APP, 'src', 'screens', 'music', 'ExpandedPlayer.tsx'),
   musicScreen: path.join(APP, 'src', 'screens', 'MusicScreen.tsx'),
@@ -210,7 +212,13 @@ function loadSources() {
       .filter((n) => n.endsWith('.tsx'))
       .map((n) => stripComments(readMaybe(path.join(F.sectionsDir, n))))
       .join('\n'),
-    store: readMaybe(F.store),
+    // D-156：`store.ts` 的 action 段已切到 `music/actions/*.ts`（setter / hydratePrefs 等）。
+    // 读「store.ts + 全部切片」的逐文件 strip 拼接 —— 否则 STORE.setter.* / STORE.hydrate.*
+    // 会因切片而假红（本次实测 8 条）。目录动态列举 ⇒ 以后每切一段自动覆盖。
+    store: [
+      F.store,
+      ...readdirSync(F.actionsDir).filter((n) => n.endsWith('.ts')).map((n) => path.join(F.actionsDir, n)),
+    ].map((p) => stripComments(readMaybe(p))).join('\n'),
     options: readMaybe(F.options),
     expanded: readMaybe(F.expanded),
     musicScreen: readMaybe(F.musicScreen),
@@ -2969,7 +2977,7 @@ const MUTATIONS = [
   },
   {
     name: '把 store 某个 setter 的 savePrefs 调用删掉（偏好不再持久化）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     // 只改 patch 键名，不碰形参名：savePrefs 仍在，只是键写错 → 精准打「键对不对」
     find: 'savePrefs({ vinylCustomColor:',
     replace: 'savePrefs({ notVinylCustomColor:',
@@ -3095,7 +3103,7 @@ const MUTATIONS = [
   },
   {
     name: '把 store 的 setLyricsMode 里 savePrefs 键改错（歌词高亮方式偏好不持久化）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: 'savePrefs({ lyricsMode:',
     replace: 'savePrefs({ notLyricsMode:',
     expect: ['STORE.setter.lyricsMode'],

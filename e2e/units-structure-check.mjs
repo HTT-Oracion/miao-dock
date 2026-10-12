@@ -1549,9 +1549,10 @@ const MUTATIONS = [
   {
     name: "让灵动岛重新接回 toastBus（轻提示出现两个渲染层，同一条显示两次）",
     file: F.island,
-    find: "import { coverProxyUrl, fmtTime, useMusicStore } from '@music/store';",
+    // D-156：`coverProxyUrl`/`fmtTime` 已随纯函数搬到 @music/convert，此处只剩 useMusicStore
+    find: "import { useMusicStore } from '@music/store';",
     replace:
-      "import { coverProxyUrl, fmtTime, useMusicStore } from '@music/store';\nimport { useToastList } from '@/toastBus'; // 反证：提示通道重新接入",
+      "import { useMusicStore } from '@music/store';\nimport { useToastList } from '@/toastBus'; // 反证：提示通道重新接入",
     expect: ["ISLAND.noToastChannel"],
   },
 
