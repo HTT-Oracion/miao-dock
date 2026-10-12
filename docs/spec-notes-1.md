@@ -29,6 +29,17 @@
 | D-145 | 库扫描/视图下沉数据层（`server.mjs` → `manga/library.mjs`） | service |
 | D-146 | 去掉 `onToast` 属性穿透，改用 `useToasts()` 单例总线 | app 前端 |
 | D-147 | 路径寻址下沉数据层（`resolveComicDir` 等 4 个）+ `securityLog` 归位底座 | service |
+| D-148 | 拆 `LibraryScreen.tsx`：看图/对照簇 + 8 子组件全外移（2122→1344） | app 前端 |
+| D-149 | 拆 `music/store.ts` 第一刀：歌词纯函数+类型 → `tools/lyrics.ts` | app 前端 |
+| D-150 | 拆 `sections.tsx`：5 个 Section 各自成件 + `index` 桶 | app 前端 |
+| D-151 | 拆 `LibraryScreen` 屏本体：左栏 → `LeftRail.tsx` + `libModel.ts` | app 前端 |
+| D-152 | 拆 `LibraryScreen` 右栏 → `LibraryRight.tsx` | app 前端 |
+| D-153 | 拆 `music/store.ts` 第二刀：持久化 → `music/persist.ts` | app 前端 |
+| D-154 | 拆 `LibraryScreen` 屏本体第二刀：状态与派生 → `hooks/useLibraryModel.ts` | app 前端 |
+| D-155 | `store.ts` slice 拆分：**已勘查未执行**（三障碍 + 下一轮顺序） | app 前端 |
+| D-156 | 拆 `store.ts` 的 `create()` 体：12 个 action 段 → `music/actions/*.ts`（2485→647） | app 前端 |
+| D-157 | 修 D-156 遗留三处断言失效 + 撤销并发改动 + 四文档核对结论 | e2e / 基建 |
+| D-158 | `server.mjs` 复用 `MAX_SEQ` + 新增 `check:docpaths` + `docs/dev-setup.md` | e2e / 基建 |
 
 ---
 
@@ -1158,3 +1169,53 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 `check:music` 216/3 + refute 184/184 · `check:lib-manage` 24/0 + refute 13/13 ·
 `check:retranslate` 12/0 + refute 9/9 · `check:ia` 32/0 · `check:autostart` 12/0 · `check:contract` 77/0 ·
 `check:docs` 17/0 · `vite build` 通过。
+
+---
+
+## D-158 · `server.mjs` 复用 `MAX_SEQ` + 新增文档路径存在性断言 + 新人上手文档（2026-10-12）
+
+**背景**：审计 §4.2 / §9 / §13.3 三个小项，均为低风险、可秒级验证，合并一轮做完。
+
+### 一、§4.2 `server.mjs` 两处 `seq > 999` 硬写
+
+`handleLibraryFile` 与 `handleChapterFile` 各写死 `seq > 999`，
+而 `config.mjs` 早有 `export const MAX_SEQ = 999`。
+改为引用常量，错误消息同步改模板串（``seq 必须是 1–${MAX_SEQ} 的整数``）。
+e2e 无锚该消息串；回归 contract 77/0 · lib-manage 24/0 · e10 7/0 · retranslate 12/0。
+
+### 二、§9 新增 `e2e/docs-path-check.mjs`（现行文档路径必须真实存在）
+
+动机：文档写错路径**不报错**，但新人照着 `AGENTS.md` 的域目录清单找不到文件；
+更糟的一类是「文档说已改成 X、代码里还是 Y」—— 那种漂移连 grep 都难发现。
+
+**规则刻意收窄**（实测零误报后才定稿）：
+
+- 反引号包裹 + 已知顶层目录（service/app/e2e/docs/scripts/engine/src-tauri）+ 带扩展名的**文件**路径；
+- **不收目录**（`service/src/manga/` 这类在文档里常被泛泛提及，误报率高）；
+- **不收裸文本**（会把"曾经的 foo.ts"这种叙述算进来）。
+
+**检查范围只限现行文档**：`AGENTS.md` · `README.md` · `docs/spec-notes-1.md` · `docs/dev-setup.md` ·
+`.trae/rules/project_rules.md`。
+🔴 `docs/spec-notes.md` **明确不查** —— 它已封卷于 D-136（文件头明写），
+里面有大量历史路径（原 `service/scripts/` 下那批自检脚本，实际已迁到 `e2e/service/` 下）。
+历史痕迹本身有价值，**改它才是错**；这是审计 §9「文档漂移」被误判成缺陷的一处。
+
+自带反证（内存变异 2 条，`_file-cache` 的 `overrideFile`，不落盘）；
+注册 `check:docpaths[:refute]` 并进 CI 的「源码级检查」段。
+顺带修正 `AGENTS.md` 里 `check:docs` 的条数声明 **16 → 17**（与脚本实测一致，原先差 1 无人报 ——
+因为 `check:docs` 只对账**别的**套件，不对账自己）。
+
+### 三、§13.3 补 `docs/dev-setup.md` + 续上台账索引
+
+- 新建 `docs/dev-setup.md`：环境要求 / 三条命令上手 / 按耗时排的检查清单 /
+  **五个最容易踩的坑**（EOL · 反证轮整轮跑完 · 别用 shell grep 判有无 · build 前挪走 dist · 先看 git status）/
+  代码地图 / 规范与台账在哪。本机特有坑（MSVC / 沙箱 / TCC）不重复，指向 `AGENTS.md` §5。
+- 台账索引**其实早已存在**（`spec-notes-1.md` 头部「索引」表），但**停在 D-147** ——
+  审计 §13.3「无决策索引」的抱怨由此而来。本轮补齐 D-148~D-158 共 11 行。
+  📌 教训：**索引是手工表，新增条目必须顺手续一行**，否则三个月后它就等于不存在。
+
+### 验收
+
+`check:docpaths` 5/0 + refute 2/2 · `check:docs` 17/0 · `check:contract` 77/0 ·
+`check:lib-manage` 24/0 · `check:e10` 7/0 · `check:retranslate` 12/0 ·
+`node --check service/src/server.mjs` 通过。

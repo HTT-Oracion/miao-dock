@@ -20,7 +20,13 @@ import path from 'node:path';
 import { cachedReadText, overrideFile, clearOverrides } from './_file-cache.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]:)/, '$1'), '..');
-const LIVE_DOCS = ['AGENTS.md', 'README.md', 'docs/spec-notes-1.md', '.trae/rules/project_rules.md'];
+const LIVE_DOCS = [
+  'AGENTS.md',
+  'README.md',
+  'docs/spec-notes-1.md',
+  'docs/dev-setup.md',
+  '.trae/rules/project_rules.md',
+];
 const PATH_RE = /`((?:service|app|e2e|docs|scripts|engine|src-tauri)\/[\w./-]+\.(?:mjs|ts|tsx|rs|md|json|scss|css|html))`/g;
 
 function runAll() {
