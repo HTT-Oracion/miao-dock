@@ -48,6 +48,8 @@ const F = {
   store: path.join(APP, 'src', 'music', 'store.ts'),
   // D-149：歌词解析纯函数已从 store.ts 抽到 tools/lyrics.ts；歌词判据读「store + lyrics」的拼接。
   lyrics: path.join(APP, 'src', 'tools', 'lyrics.ts'),
+  // D-153：持久化（readLS/writeLS/快照/sanitize）已从 store.ts 抽到 music/persist.ts。
+  persist: path.join(APP, 'src', 'music', 'persist.ts'),
   types: path.join(APP, 'src', 'music', 'types.ts'),
   // ── 桌面歌词（P3）──
   rustLyrics: path.join(APP, 'src-tauri', 'src', 'lyrics_window.rs'),
@@ -195,6 +197,8 @@ function loadSources() {
     // 歌词判据的源：`store.ts` + `tools/lyrics.ts`。**逐文件单独 strip 再拼** ——
     // `stripComments` 带状态机，直接拼原文会让前一个文件的失同步污染后一个（见 D-148 同类坑）。
     storeLyrics: [F.store, F.lyrics].map((p) => stripComments(readMaybe(p))).join('\n'),
+    // D-153：持久化判据的源（`store.ts` + `music/persist.ts`，同样逐文件 strip 后拼）。
+    storePersist: [F.store, F.persist].map((p) => stripComments(readMaybe(p))).join('\n'),
     types: readMaybe(F.types),
     rustLyrics: readMaybe(F.rustLyrics),
     capabilities: readMaybe(F.capabilities),
@@ -2685,7 +2689,7 @@ add('RESTORE.snapshotPersisted', 'RESTORE', (s) => {
 add('RESTORE.snapshotVersioned', 'RESTORE', (s) => {
   // 版本校验：localStorage 跨版本存活，不校验就会拿着旧结构继续跑
   // （症状"恢复了但队列是空的"，且不报错）。
-  const body = fnBodyAny(stripComments(s.store ?? ''), 'readResumeSnapshot') || '';
+  const body = fnBodyAny(s.storePersist ?? '', 'readResumeSnapshot') || '';
   const missing = [];
   if (!/SNAPSHOT_VERSION/.test(body)) missing.push('readResumeSnapshot 不认版本号');
   if (!/s\.v\s*!==\s*SNAPSHOT_VERSION/.test(body)) missing.push('readResumeSnapshot 没有「版本不符即当没有」的判据');
@@ -2700,7 +2704,7 @@ add('RESTORE.truncateKeepsCurrent', 'RESTORE', (s) => {
   // ⚠️ 这里**不用 fnBodyAny 取函数体**：该函数签名带内联对象返回类型
   // `): { queue: Song[]; index: number } {`，取体工具会把**类型注解里的 `{`**
   // 当成函数体起点（已实测取空 → 判据恒红）。改用两条实现细节上**唯一**的锚点。
-  const store = stripComments(s.store ?? '');
+  const store = s.storePersist ?? '';
   const missing = [];
   if (!/index:\s*index\s*-\s*start/.test(store)) missing.push('截断后没有重算 index（当前歌会被截出窗口）');
   if (!/queue\.slice\(start,\s*start\s*\+\s*max\)/.test(store)) missing.push('截断不是按 start 窗口切');
@@ -4576,14 +4580,14 @@ const MUTATIONS = [
   },
   {
     name: '快照不校验版本号（拿旧结构继续跑 → "恢复了但队列是空的"且不报错）',
-    file: F.store,
+    file: F.persist,
     find: 'if (s.v !== SNAPSHOT_VERSION) return null;',
     replace: '// 反证：不校验版本',
     expect: ['RESTORE.snapshotVersioned'],
   },
   {
     name: '截断队列时不重算 index（当前歌被截出窗口 → 恢复后停在一首无关的歌上）',
-    file: F.store,
+    file: F.persist,
     find: 'return { queue: queue.slice(start, start + max), index: index - start };',
     replace: 'return { queue: queue.slice(start, start + max), index };',
     expect: ['RESTORE.truncateKeepsCurrent'],

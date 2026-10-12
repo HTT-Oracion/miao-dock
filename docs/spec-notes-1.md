@@ -861,3 +861,50 @@ app/src/screens/library/
 > 屏本体 830 行里绝大部分是**状态与副作用**（25 个 `useState` + 12 个 `useEffect`/`useMemo`）——
 > 再往下拆就得把这些派生值收成一个 `useLibraryModel()` 自定义 hook（按职责分组），
 > 那是"拆状态"而非"拆视图"，属另一类改造。
+
+---
+
+## D-153 · 拆 `music/store.ts` 第二刀：持久化 → `music/persist.ts`（2026-10-11）
+
+**背景**：审计 §3.3 说 `store.ts` 混了四层职责（纯函数 / 持久化 / 网络 / 播放状态机）。
+D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层。
+
+### 移出的内容 → `app/src/music/persist.ts`（135 行）
+
+`readLS` · `writeLS` · `LS_SNAPSHOT` · `SNAPSHOT_VERSION` · `SNAPSHOT_MAX_QUEUE` ·
+`SNAPSHOT_PERSIST_INTERVAL_MS` · `ResumeSnapshot` · `truncateQueueForSnapshot` ·
+`readResumeSnapshot` · `writeResumeSnapshot` · `clearResumeSnapshot` · `sanitizeForStorage`。
+
+`store.ts` **2,604 → 2,485 行**。
+
+**刻意留在 store 的三样**（避免把"持久化"变成垃圾桶）：
+- `LS_HISTORY` / `LS_LOCAL` / `LS_PREFS`：这三个键是**业务**（历史 / 本地曲库 / 偏好），
+  store 各处直接按语义用，不适合搬走；
+- `savePrefs` 与 `Prefs`：`Prefs` 是 **`MusicState` 的公开形状**（`prefs: Prefs` 是 state 字段），
+  搬走会让 `persist ↔ store` 成环；`savePrefs` 与它同生共死，故一起留；
+- `clampInRange` / `dlPrefsOf`：`dlPrefsOf` 是**从 state 派生下载偏好**，根本不是持久化。
+
+### 引用方改指
+
+`MusicKernel.tsx`：`SNAPSHOT_PERSIST_INTERVAL_MS` 从 `@music/store` 改从 `@music/persist` 导入
+（它是"快照兜底定时器"的间隔，语义上就属于持久化）。
+
+### 断言锚的搬迁
+
+- `music-platform-check.mjs`：新增 `F.persist` 与 `s.storePersist`（`store.ts` + `persist.ts`，
+  逐文件 strip 后拼接）；`RESTORE.snapshotVersioned`（`readResumeSnapshot` 体）与
+  `RESTORE.truncateKeepsCurrent`（`truncateQueueForSnapshot` 体）改读 `s.storePersist`；
+  2 条变异锚（快照版本校验、截断重算 index）的 `file:` 从 `F.store` 改 `F.persist`。
+- 正向 216/3（3 条既有环境红不变）· **反证 184/184、零跳过**。
+
+### 验收
+
+`tsc --noEmit` 0 · `vite build` 通过 · `check:music` 216/3 + **refute 184/184** ·
+`check:units` 45/0 · `check:settings` 180/0 · `check:ia` 32/0 · `check:autostart` 12/0 ·
+`check:lib-manage` 24/0 · `check:retranslate` 12/0 · `check:docs` 17/0。
+
+> 📌 **§3.3 至此收口**：`LibraryScreen.tsx` **2,122 → 950**（D-148/D-151/D-152）·
+> `music/store.ts` **2,822 → 2,485**（D-149/D-153）· `sections.tsx` **1,225 → 5 件 + 桶**（D-150）。
+> 仍**未做**且已知风险：① `store.ts` 的**播放状态机**那层（`MusicState` 416 行 / `create()` 千余行）
+> —— 真正的解法是按 zustand **slice** 拆，属高风险重构；② `LibraryScreen` 屏本体余下 ~830 行的
+> 派生值收口（`useLibraryModel()`）；③ 三平台共享的 `engine-profile-check` 等历史遗留。
