@@ -3731,7 +3731,7 @@ const MUTATIONS = [
   },
   {
     name: '把 store.ts 的 registerAudioElement 改名（模拟内核拿不到登记通道）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: 'export function registerAudioElement(el: HTMLAudioElement | null): void {',
     replace: 'export function registerAudioElementGone(el: HTMLAudioElement | null): void {',
     expect: ['PLAYER.registerApi'],
@@ -3745,7 +3745,7 @@ const MUTATIONS = [
   },
   {
     name: '把 seek 里的 audioEl.currentTime 那行删掉（退回"只改进度不动音频"）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     // 锚点不含变量名：`currentTime = ms / 1000` 是全局唯一片段，变量改名也不会让这条静默失效
     find: 'currentTime = ms / 1000',
     replace: 'currentTimeMoved = ms / 1000',
@@ -3790,7 +3790,7 @@ const MUTATIONS = [
   },
   {
     name: '把 next() 里 { expand: false } 删掉（自动切歌会弹开播放器）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     // 破坏必须**清掉全部** playSong 的 expand:false —— 断言判的是"每条路径都传了"，
     // 只删一处它仍为真（这个假阳性是反证轮实测抓出来的，不是推理出来的）
     find: '    void get().playSong(queue[idx], undefined, { expand: false });',
@@ -3799,7 +3799,7 @@ const MUTATIONS = [
   },
   {
     name: '把 prev() 里 { expand: false } 删掉',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find:
       '        : (currentIndex - 1 + queue.length) % queue.length;\n    void get().playSong(queue[idx], undefined, { expand: false });',
     replace:
@@ -3808,7 +3808,7 @@ const MUTATIONS = [
   },
   {
     name: '把 playSong 的 opts?.expand 判定去掉（永远展开）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '      ...(opts?.expand === false ? {} : { expanded: true }),',
     replace: '      expanded: true,',
     expect: ['PLAYER.playSongExpandOpt'],
@@ -3875,7 +3875,7 @@ const MUTATIONS = [
   // ── PLAYER · D 实际音质回写 ───────────────────────────────────────────
   {
     name: '把 resolveOnlineUrl 里 currentBitrate 的写入删掉（音质标签变假 UI）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '    currentBitrate: r.br || 0,\n',
     replace: '',
     expect: ['PLAYER.resolveWrites'],
@@ -3884,14 +3884,14 @@ const MUTATIONS = [
   // ── HEARTBEAT 心动模式 ────────────────────────────────────────────────
   {
     name: '把 cycleMode 的档位数组退回三档（去掉心动）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: "    const order: PlayMode[] = ['list', 'shuffle', 'one', 'heartbeat'];",
     replace: "    const order: PlayMode[] = ['list', 'shuffle', 'one'];",
     expect: ['HEARTBEAT.cycleFour'],
   },
   {
     name: '档位数组里 heartbeat 写两遍（点两下卡在同一档）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: "    const order: PlayMode[] = ['list', 'shuffle', 'one', 'heartbeat'];",
     replace:
       "    const order: PlayMode[] = ['list', 'shuffle', 'one', 'heartbeat', 'heartbeat'];",
@@ -3899,14 +3899,14 @@ const MUTATIONS = [
   },
   {
     name: '删掉切心动档时的降级提示（静默降级 = 假控件）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: "    if (nextMode === 'heartbeat' && !platform.supportsSimilar(get().playbackSource)) {",
     replace: '    if (false) {',
     expect: ['HEARTBEAT.warnsOnDegrade'],
   },
   {
     name: '让 next 把 heartbeat 当普通队列顺序（不走相似续播）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     // 锚点只取到函数名的左括号，与参数/后续实现解耦（避免合法重构后静默失效）
     find: "if (playMode === 'heartbeat' && platform.supportsSimilar(get().playbackSource)) {",
     replace: "if (playMode === 'heartbeat' && false) {",
@@ -3914,7 +3914,7 @@ const MUTATIONS = [
   },
   {
     name: '相似结果不作为新队列（playSong 丢掉 pick，退回追加语义）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '          await get().playSong(nextSong, pick, { expand: false });',
     replace: '          await get().playSong(nextSong, undefined, { expand: false });',
     expect: ['HEARTBEAT.nextUsesSimilar'],
@@ -3929,7 +3929,7 @@ const MUTATIONS = [
   },
   {
     name: '删掉 fallbackNext（取不到相似时无处降级）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '  fallbackNext: () => {',
     replace: '  fallbackRemoved: () => {',
     expect: ['HEARTBEAT.fallbackExists'],
@@ -3974,7 +3974,7 @@ const MUTATIONS = [
   {
     // 这条模拟的是最容易发生的真实事故：有人为了让歌词"跟得更准"就顺手加一次推送
     name: '在 setProgress 里加一次桌面歌词推送（每秒数次 → 打满事件通道）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '  setProgress: (ms) => set({ progressMs: ms }),',
     replace:
       '  setProgress: (ms) => { set({ progressMs: ms }); void get().pushLyricsState(); },',
@@ -4297,7 +4297,7 @@ const MUTATIONS = [
   },
   {
     name: "不在队列的歌不接进队列（历史点歌会与 currentIndex 不一致）",
-    file: "app/src/music/store.ts",
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: "        set({ queue: next, currentIndex: next.length - 1 });",
     replace: "        set({ currentIndex: next.length - 1 });",
     expect: ["QUEUE.adoptOutOfQueue"],
@@ -4479,7 +4479,7 @@ const MUTATIONS = [
   },
   {
     name: 'setIslandView 不写 savePrefs（切到歌词卡后重开就回到播放卡）',
-    file: 'app/src/music/store.ts',
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '    savePrefs({ islandView: v });\n',
     replace: '    // [refute] 偏好未持久化\n',
     expect: ['ISLANDV.pref.persist'],
@@ -4585,7 +4585,7 @@ const MUTATIONS = [
   // 定位没生效、队列被清空），没有反证就分不清"功能坏了"和"从没实现过"。
   {
     name: '暂停时不再存快照（"听完暂停、第二天再开"丢进度）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '    if (!get().isPlaying) get().persistSnapshot();',
     replace: '    // 反证：暂停不存快照',
     expect: ['RESTORE.snapshotPersisted'],
@@ -4637,7 +4637,7 @@ const MUTATIONS = [
   {
     // 闸只开不关：用户之后正常播放遇到一次网络抖动，就会静默遍历整个队列并清空
     name: 'URL 解析抛错时不关恢复态（playUrl 永不设置 → 没有任何路径会关闸）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '      set({ isPlaying: false, restoring: false });',
     replace: '      set({ isPlaying: false });',
     expect: ['RESTORE.restoringClosed'],
@@ -4660,7 +4660,7 @@ const MUTATIONS = [
   {
     // Q4：写死 10 → 恢复时"整条队列都失败"永远走不到清空那一步
     name: '恢复态的跳歌上限写死 10 首（遍历不完就停 → 该清的队列没清）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: 'const skipLimit = restoring ? Math.max(1, get().queue.length) : 10;',
     replace: 'const skipLimit = 10;',
     expect: ['RESTORE.skipLimitRestoring'],
@@ -4681,49 +4681,49 @@ const MUTATIONS = [
     // 后果是用户切到「无损」后播的仍是上次的「极高」文件，界面显示新档位 —— 察觉不到。
     // 这条反证同时证明 CACHE.keyHasQuality 不是恒绿。
     name: '查缓存时删掉 quality 实参（⇒ 切档位后命中上次文件，界面显示新档位实际播旧码率）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: 'ipc.musicAudioCached(provider, audioCacheId(provider, song), quality)',
     replace: 'ipc.musicAudioCached(provider, audioCacheId(provider, song))',
     expect: ['CACHE.keyHasQuality'],
   },
   {
     name: '把查缓存的档位换成 r.quality（四平台值域不同 ⇒ 同一首歌每次 key 都不同 ⇒ 永不命中）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '  const quality = state.playbackQuality;',
     replace: "  const quality = String((await platform.songUrl(provider, song, 'standard')).quality || '');",
     expect: ['CACHE.qualityFromState'],
   },
   {
     name: '把档位默认成 standard（参数传漏时静默命中标准音质 ⇒ 用户以为在听高音质）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '  const quality = state.playbackQuality;',
     replace: "  const quality = state.playbackQuality || 'standard';",
     expect: ['CACHE.noQualityFallback'],
   },
   {
     name: '本地歌曲不再排除（用户导入的文件被计入「音乐缓存」统计 ⇒ 设置页占用数字失真）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '  if (song._localPath) return null;\n',
     replace: '  // 反证：本地歌曲也入缓存链\n',
     expect: ['CACHE.localSongExcluded'],
   },
   {
     name: '预热不再排除本地歌曲（本地文件被重复问一次缓存，且计入音乐缓存统计）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '  if (song._localPath) return;\n',
     replace: '  // 反证：预热不排除本地\n',
     expect: ['CACHE.localSongExcluded'],
   },
   {
     name: '把查缓存挪到取流地址之后（先回源再查 ⇒ 命中也省不掉这次网络往返，白接缓存）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '  const cached = await lookupAudioCache(song, provider, quality);\n',
     replace: '  // 反证：不查缓存\n',
     expect: ['CACHE.hitSkipsSongUrl'],
   },
   {
     name: '缓存命中后不 return（命中了还会继续往下调 songUrl ⇒ 缓存等于没接）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '    return cached;\n',
     replace: '    // 反证：命中不返回\n',
     expect: ['CACHE.hitSkipsSongUrl'],
@@ -4757,21 +4757,21 @@ const MUTATIONS = [
   },
   {
     name: '缓存命中路径不走 convertFileSrc（绝对路径直喂 <audio> 被跨源挡住 ⇒ 命中反而播不出声）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '    return hit ? convertFileSrc(hit) : null;',
     replace: '    return hit || null;',
     expect: ['CACHE.hitUsesConvertFileSrc'],
   },
   {
     name: '把预热 await 住（慢网下点歌要等整首下载完才响；下载失败还会被当成"播放失败"跳歌）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '  void ipc.musicCacheDownload(provider, audioCacheId(provider, song), quality, url).catch(() => {});',
     replace: "  await ipc.musicCacheDownload(provider, audioCacheId(provider, song), quality, url);",
     expect: ['CACHE.downloadNonBlocking', 'CACHE.downloadFailureSilent'],
   },
   {
     name: '下载失败不上抛（未处理的 Promise 拒绝会中断播放链路 ⇒ 缓存失败变成歌放不出来）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '  void ipc.musicCacheDownload(provider, audioCacheId(provider, song), quality, url).catch(() => {});',
     replace: '  void ipc.musicCacheDownload(provider, audioCacheId(provider, song), quality, url);',
     expect: ['CACHE.downloadFailureSilent'],

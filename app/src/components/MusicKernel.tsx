@@ -3,8 +3,9 @@ import { listen } from '@tauri-apps/api/event';
 import { useMusicHotkeys } from '@hooks/useMusicHotkeys';
 import { ensureAudioContextActive, isGraphAttached, markNotWirable, setGraphVolume } from '@music/audioGraph';
 import type { LyricsControlPayload } from '@music/ipc';
-import { registerAudioElement, useMusicStore } from '@music/store';
+import { useMusicStore } from '@music/store';
 import { SNAPSHOT_PERSIST_INTERVAL_MS } from '@music/persist';
+import { registerAudioElement } from '@music/actions/playback';
 
 /**
  * 音乐播放内核 —— **应用级常驻组件**。

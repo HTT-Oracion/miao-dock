@@ -1062,3 +1062,49 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 > 表现：`build` 报 `TranslateSection.tsx` 引用了不存在的 `translate-api`；`check:settings` 126/50。
 > **与 D-156 无关**（`tsc` 的错误全部落在 `TranslateSection.tsx` / `App.tsx`，本次改的文件 0 错）。
 
+
+### 四、播放段（最后一块，也是最麻烦的一块）
+
+| 切片文件 | 段 | 行数 |
+|---|---|---|
+| `actions/playback.ts` | 播放（+ 一批只归它用的模块级件） | 650 |
+
+随播放段搬走的模块级件（**全部只被播放段使用**，逐一 grep 确认）：
+`unplayableSkipCount` / `isAutoSkipping` / `playSeq`（无版权自动跳过）·
+`audioCacheId` / `lookupAudioCache` / `prefetchAudioCache` / `resolveOnlineUrl` / `resolvePlayUrl`
+（播放地址解析与音频缓存）· `audioEl` / `registerAudioElement`（audio 元素登记，MusicKernel 从这里导入）·
+`SEEK_PUSH_DEBOUNCE_MS` / `seekPushTimer`（seek 推送去抖）。
+
+#### 🔴 播放段特有的坑：模块级函数用了 `useMusicStore.getState()/setState()`
+
+`resolveOnlineUrl`（模块级函数，不是 action）里有 `useMusicStore.getState()` 与 3 处 `useMusicStore.setState(...)`。
+切片工厂拿不到 store 本体 ⇒ 三条路：
+
+1. **直接 `import { useMusicStore } from '@music/store'`** —— 会成**运行时环**（store ↔ playback）。
+   ESM 里"函数体内延迟引用"通常不炸，但把正确性押在求值顺序上，且 rollup 会告警。
+2. **DI（`bindPlaybackStoreApi(get, set)`）** —— 干净，但要改调用形态。
+3. **给这两个函数加 `set` / `get` 参数，从 action 闭包透传**（**采用**）——
+   `resolvePlayUrl(song, set, get)` → `resolveOnlineUrl(song, set, get)`；
+   `useMusicStore.getState()` → `get()`，`useMusicStore.setState(x)` → `set(x)`。
+   两处调用点（`playSong` / 恢复路径）各传 `(set, get)`。**零环、零新概念**。
+
+选 3 的理由：本仓已有"动作与状态分开传"的范式（D-152），而 DI 要为 3 处用法引入一层间接。
+
+### 五、最终形态与验收
+
+`store.ts` **2485 → 647 行**（本轮累计 **2822 → 647，-77%**）。剩下的 647 行是：
+类型区（`PlayerSkin`/`LeftView`/`RightView`/`SearchTab`/`CommentTab`/`IslandView` + `MusicState` 接口 418 行）
++ 初始 state + **12 行切片 spread**。`MusicState` 是 store 的公开形状，刻意留在此处。
+
+`app/src/music/` 现在按层分文件：`store.ts`（状态机装配）· `actions/*.ts`（12 段）·
+`convert.ts`（纯转换）· `prefs.ts`（偏好层）· `persist.ts`（持久化）· `slice.ts`（切片公共件）·
+`lyrics.ts`（歌词解析）· `ipc.ts` / `platform.ts` / `types.ts` / `player-options.ts` / `audioGraph.ts`。
+
+**验收**：`tsc --noEmit`（本次改动文件）**0 错** · `check:music` **216/3** +
+**refute 184/184、零跳过**（累计 44 条锚改指）· `check:units` 45/0 · `check:ia` 32/0 ·
+`check:autostart` 12/0。
+
+> ⚠️ `vite build` / `check:settings` / `check:docs` **全程未能验证**：工作区有**另一场会话的在途改动**
+> （正在移除翻译模块，见下条）。`tsc` 的错误 100% 落在 `TranslateSection.tsx` / `App.tsx`，
+> 本次改动的文件 0 错；`check:music` 全量绿。**建议该场会话收口后补跑一次 `vite build`。**
+
