@@ -87,10 +87,22 @@
 12. **通用 UI 一律复用 `components/units/` 单元。** 下拉命令菜单用 `MenuButton` + `MenuItem`、
     盒式提示用 `Notice`、按钮用 `Btn` —— 不在各屏自造同类 DOM / 样式。
     各屏**业务样式**件（列表项 / Tab / 卡片 / 看板单元等）仍留屏内，不强套通用件（归属判据同 §3）。
+13. **自测统一走 `e2e/run-checks.mjs` 聚合入口；新检查必须登记进 `e2e/_check-registry.mjs`。**
+    日常 `npm run check`（static 快闸门）/ `check:changed`（按 git 变更过滤，跳过项显式列出）；
+    push 前 `check:full`；定期 `check:nightly`（含全部反证轮）。
+    🔴 **service 层恒串行**：各脚本从**固定且互相重叠的端口区间**（5300–5800）「先探测再绑定」
+    抢端口，并行会交叉污染出假结果——这是正确性问题，不是性能问题，宁慢不串。
+    漏登记的后果是「静默消失在分层之外」（该红没红），由 `check:registry` 双向覆盖断言把守。
 
 ## 3. 验收命令（改完必须跑，绿色才算交付）
 
 ```bash
+# —— 自测聚合入口（分层 + 并行 + git 变更过滤；注册表在 e2e/_check-registry.mjs）——
+npm run check                # static 快闸门 11 项（8 路并行，约 10s）——每次提交
+npm run check:changed        # 只跑与 git 变更相关的（static+service；跳过项显式列出）——日常开发主力
+npm run check:full           # static + service 全量（service 串行，约 4 分钟）——push / PR 前
+npm run check:nightly        # 全量：含 nightly（真引擎/模型）与全部反证轮——定期 / 合并前
+npm run check:registry[:refute] # 注册表完整性 4 条 / 反证 4 变异（npm 检查脚本 ↔ 注册表双向覆盖 + 文件存在 + tier 合法 + id 唯一）
 npm run selftest              # A 组服务契约 159 条 + 引擎自测 23 条
 npm run selftest:app[:refute] # B 组应用生命周期 16 条（含 S2a–S2d：五态轨迹 / E1 参数快照 / 三子进程 / 崩溃分级；含反证）
 npm run selftest:app:e11[:refute]     # E11 三进程树回收（mock，秒级）：SIGKILL 主进程 → 13 端口全释放
@@ -200,6 +212,10 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 - **`vite build` 需 `--no-emptyOutDir`**：本机沙箱拦截批量删 `dist/`（与代码无关）。
 - **跑 e2e 要把临时目录挪到系统临时区**（安全删除守卫会拦仓库内 `.tmp/e2e/`）：
   `MIAO_E2E_TMP="$(node -e 'console.log(require("os").tmpdir())')/miao-e2e" npm run e2e`
+- **同步 spawn（`execFileSync` / `spawnSync`）在本环境直接 EBUSY**（实测 2026-10-13）：
+  异步 `spawn` 却完全正常。e2e / 工具脚本里要调子进程（含 git 查询）一律用异步 spawn ——
+  别图省事写同步版：症状是一句莫名的 `EBUSY` 而非缺 PATH 的 ENOENT，极难排查。
+  已被 `run-checks.mjs` 的 `capture()` 与全部子进程执行路径覆盖。
 - **批量 `sed -i` 之后看 `git status`**：本机会留下 `xxx<随机后缀>` 的临时快照文件（未跟踪）。
 - **别用 shell `grep` 判"有没有"**：本机 zsh + BSD grep 在 `\|`、`--include=*.tsx` 这类写法上会**静默失配**
   （曾因此把"文件里确实有 D-42"判成 0 命中，白排查一轮）。用专用搜索工具，或改用能打印内容的命令。

@@ -85,7 +85,13 @@
     "check:resilience": "node e2e/service/resilience-check.mjs",
     "check:resilience:refute": "node e2e/service/resilience-check.mjs --refute",
     "check:layering": "node e2e/service/layering-check.mjs",
-    "check:layering:refute": "node e2e/service/layering-check.mjs --refute"
+    "check:layering:refute": "node e2e/service/layering-check.mjs --refute",
+    "check": "node e2e/run-checks.mjs --tier static",
+    "check:full": "node e2e/run-checks.mjs --tier static,service",
+    "check:nightly": "node e2e/run-checks.mjs --tier all",
+    "check:changed": "node e2e/run-checks.mjs --tier static,service --changed",
+    "check:registry": "node e2e/registry-check.mjs",
+    "check:registry:refute": "node e2e/registry-check.mjs --refute"
   },
   "engines": {
     "node": ">=20"
