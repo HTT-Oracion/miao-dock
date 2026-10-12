@@ -1,6 +1,7 @@
 import { ChevronLeft, Play } from 'lucide-react';
 import { providerLabel } from '@music/platform';
-import { coverProxyUrl, songKey, useMusicStore } from '@music/store';
+import { useMusicStore } from '@music/store';
+import { coverProxyUrl, songKey } from '@music/convert';
 import type { LeftView } from '@music/store';
 import { HistoryView } from '@screens/music/HistoryView';
 import { LocalView } from '@screens/music/LocalView';

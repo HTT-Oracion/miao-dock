@@ -22,7 +22,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { capsOf } from '@music/platform';
 import { LYRICS_SIZE, QUALITY_OPTIONS, SKINS, STYLE_PREVIEW_ORDER } from '@music/player-options';
-import { coverProxyUrl, fmtTime, songKey, useMusicStore } from '@music/store';
+import { useMusicStore } from '@music/store';
+import { coverProxyUrl, fmtTime, songKey } from '@music/convert';
 import type { PlayerSkin } from '@music/store';
 import type { MusicComment } from '@music/types';
 import { ColorPicker, Empty, IconButton, PlayModeButton, Select, Switch } from '@components/units';

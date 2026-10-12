@@ -46,6 +46,9 @@ const F = {
   ipc: path.join(APP, 'src', 'music', 'ipc.ts'),
   platform: path.join(APP, 'src', 'music', 'platform.ts'),
   store: path.join(APP, 'src', 'music', 'store.ts'),
+  // D-156：`store.ts` 的 action 段已按切片切到 `music/actions/*.ts`。
+  // 变异锚按"这段实现现在住哪"落文件；`s.store` 则是「本体 + 全部切片」的拼接（见 loadSources）。
+  actionsDir: path.join(APP, 'src', 'music', 'actions'),
   // D-149：歌词解析纯函数已从 store.ts 抽到 tools/lyrics.ts；歌词判据读「store + lyrics」的拼接。
   lyrics: path.join(APP, 'src', 'tools', 'lyrics.ts'),
   // D-153：持久化（readLS/writeLS/快照/sanitize）已从 store.ts 抽到 music/persist.ts。
@@ -188,17 +191,26 @@ function walkText(dir, exts) {
 }
 
 function loadSources() {
+  // D-156：`store.ts` 的 action 段已按切片切到 `music/actions/*.ts`。判据的源统一为
+  // 「store.ts + 全部切片」的**逐文件 strip 后拼接** —— 「方法在不在」「这段逻辑在不在」
+  // 这类判据才不会因切片而假红。目录**动态列举** ⇒ 以后每切一段自动覆盖，不必改这里。
+  // （逐文件 strip 再拼，不能拼原文：`stripComments` 带状态机，跨文件会失同步，见 D-148。）
+  const ACTIONS = readdirSync(path.join(APP, 'src', 'music', 'actions'))
+    .filter((n) => n.endsWith('.ts'))
+    .map((n) => path.join(APP, 'src', 'music', 'actions', n));
+  const SF = [F.store, ...ACTIONS];   // store 本体 + 全部切片
   const s = {
     rustMod: readMaybe(F.rustMod),
     rustMain: readMaybe(F.rustMain),
     ipc: readMaybe(F.ipc),
     platform: readMaybe(F.platform),
-    store: readMaybe(F.store),
-    // 歌词判据的源：`store.ts` + `tools/lyrics.ts`。**逐文件单独 strip 再拼** ——
-    // `stripComments` 带状态机，直接拼原文会让前一个文件的失同步污染后一个（见 D-148 同类坑）。
-    storeLyrics: [F.store, F.lyrics].map((p) => stripComments(readMaybe(p))).join('\n'),
-    // D-153：持久化判据的源（`store.ts` + `music/persist.ts`，同样逐文件 strip 后拼）。
-    storePersist: [F.store, F.persist].map((p) => stripComments(readMaybe(p))).join('\n'),
+    store: SF.map((p) => stripComments(readMaybe(p))).join('\n'),
+    /** `store.ts` 单文件原文（需要"只看 store 本体"的判据用；如 scope 类断言） */
+    storeRaw: readMaybe(F.store),
+    // 歌词判据的源：store 全量 + `tools/lyrics.ts`。
+    storeLyrics: [...SF, F.lyrics].map((p) => stripComments(readMaybe(p))).join('\n'),
+    // D-153：持久化判据的源（store 全量 + `music/persist.ts`，同样逐文件 strip 后拼）。
+    storePersist: [...SF, F.persist].map((p) => stripComments(readMaybe(p))).join('\n'),
     types: readMaybe(F.types),
     rustLyrics: readMaybe(F.rustLyrics),
     capabilities: readMaybe(F.capabilities),
@@ -3609,14 +3621,14 @@ const MUTATIONS = [
   },
   {
     name: '删掉 store.ts 里 switchPlaybackSource 的清空逻辑',
-    file: F.store,
+    file: path.join(F.actionsDir, 'platform.ts'),
     find: '      officialCharts: [],\n      recommendPlaylists: [],\n      dailySongs: [],\n',
     replace: '      // [refute] 清空逻辑被移除\n',
     expect: ['STORE.switchClears'],
   },
   {
     name: '把 store.ts 的 toggleLike action 改名（模拟漏实现）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'like.ts'),
     // 锚点只取到参数表左括号为止：参数名会随实现调整（如 songId → song），
     // 若把参数名写进锚点，一次合法重构就会让这条反证静默失效（「无法反证」≠「已证伪」）。
     find: '  toggleLike: async (',
@@ -3674,7 +3686,7 @@ const MUTATIONS = [
   },
   {
     name: '把 store 的 loadMoreSearch 改名（模拟漏实现续拉）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'search.ts'),
     find: '  loadMoreSearch: async (',
     replace: '  loadMoreSearchDisabled: async (',
     expect: ['SEARCH.storePaging'],
@@ -4116,7 +4128,7 @@ const MUTATIONS = [
   },
   {
     name: "store 推送时不带 playMode（歌词窗永远显示默认模式）",
-    file: "app/src/music/store.ts",
+    file: path.join(F.actionsDir, 'desktop.ts'),
     find: "      // 播放模式要跟着走：歌词窗的控制栏靠它显示正确的模式图标（两窗 store 互不可见）\n      playMode,",
     replace: "      // 反证：不带 playMode",
     expect: ["LYRICS.playModeContract"],
@@ -4133,7 +4145,7 @@ const MUTATIONS = [
   {
     // 模拟"只留定义、删掉调用"—— 这是「只查标识符存在」型断言最经典的漏网方式
     name: 'loadLyrics 不再调用 parseYrc（只走 LRC，逐字高亮静默失效）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'lyrics.ts'),
     find: "        lines = l.yrc ? parseYrc(l.yrc) : parseLrc(l.lyric || '');\n",
     replace: "        lines = parseLrc(l.lyric || '');\n",
     expect: ['LYRICS.parseYrcUsed'],
@@ -4292,14 +4304,14 @@ const MUTATIONS = [
   },
   {
     name: "playNext 不去重（同一首会在队列里出现两次）",
-    file: "app/src/music/store.ts",
+    file: path.join(F.actionsDir, 'queue.ts'),
     find: "    const without = queue.filter((s) => songKey(s) !== key);",
     replace: "    const without = queue;",
     expect: ["QUEUE.playNextInsert"],
   },
   {
     name: "playNext 不判「正在播」就摘掉重插（把当前项从队列里删掉）",
-    file: "app/src/music/store.ts",
+    file: path.join(F.actionsDir, 'queue.ts'),
     find: "      get().toast('这首歌正在播放');\n      return;",
     replace: "      get().toast('这首歌正在播放');",
     expect: ["QUEUE.playNextNoSelfRemove"],
@@ -4453,14 +4465,14 @@ const MUTATIONS = [
   },
   {
     name: 'islandView 改用 ?? 回落（脏值 \'xxx\' 会被原样读进内存）',
-    file: 'app/src/music/store.ts',
+    file: path.join(F.actionsDir, 'init.ts'),
     find: "    const islandView: IslandView = prefs.islandView === 'lyrics' ? 'lyrics' : 'play';",
     replace: "    const islandView: IslandView = (prefs.islandView ?? 'play') as IslandView;",
     expect: ['ISLANDV.pref.hydrate'],
   },
   {
     name: 'hydratePrefs 恢复时漏掉 islandView（冷启动回到默认值）',
-    file: 'app/src/music/store.ts',
+    file: path.join(F.actionsDir, 'init.ts'),
     find: '      islandView,\n',
     replace: '',
     expect: ['ISLANDV.pref.hydrate'],
@@ -4537,7 +4549,7 @@ const MUTATIONS = [
   },
   {
     name: '提前删掉桌面歌词的状态推送（本轮红线：只加不删）',
-    file: 'app/src/music/store.ts',
+    file: path.join(F.actionsDir, 'desktop.ts'),
     find: '  pushLyricsState: async () => {',
     replace: '  pushLyricsStateRemoved: async () => {',
     expect: ['ISLANDV.desktopLyricsKept'],
@@ -4594,7 +4606,7 @@ const MUTATIONS = [
   },
   {
     name: '切平台时不存 playbackSource（重启后恒为网易云 → 恢复按错平台校验登录态）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'platform.ts'),
     find: '    savePrefs({ playbackSource: p });',
     replace: '    // 反证：不存平台偏好',
     expect: ['RESTORE.playbackSourcePersisted'],
@@ -4602,14 +4614,14 @@ const MUTATIONS = [
   {
     // 这一条是 Q1 的核心：把「探不动」当「登出」→ 用户一断网就丢播放进度
     name: '把「探测失败」也判成明确未登录（断网即清快照，Q1 语义反了）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'init.ts'),
     find: "  if (info === null || info === undefined) return 'probe_failed';",
     replace: "  if (info === null || info === undefined) return 'logged_out';",
     expect: ['RESTORE.verdictThreeStates'],
   },
   {
     name: '恢复时不传 autoplay:false（重开应用直接自动播放，违背需求）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'init.ts'),
     find: '      autoplay: false,\n      expand: false,\n      resumeAtMs: snap.progressMs,',
     replace: '      expand: false,\n      resumeAtMs: snap.progressMs,',
     expect: ['RESTORE.restoredPaused'],
@@ -4617,7 +4629,7 @@ const MUTATIONS = [
   {
     // 只保留快照不退回闸：断网时第一次进屏就把闸关死，网络好了也永不再试
     name: '探针失败时不把「只跑一次」的闸退回 false（断网一次 → 恢复功能永久失效）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'init.ts'),
     find: '      set({ restoreAttempted: false });',
     replace: '      // 反证：不退回闸',
     expect: ['RESTORE.probeFailKeepsSnapshot'],
@@ -4655,7 +4667,7 @@ const MUTATIONS = [
   },
   {
     name: '去掉「本次会话只恢复一次」的闸（切走再切回会重复恢复并覆盖用户的操作）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'init.ts'),
     find: '    if (get().restoreAttempted) return;',
     replace: '    // 反证：无闸',
     expect: ['RESTORE.onlyOnce'],
@@ -4915,7 +4927,7 @@ const MUTATIONS = [
   },
   {
     name: "删掉 loadLyrics 里的 mergeTranslation 调用（翻译歌词永远不显示）",
-    file: F.store,
+    file: path.join(F.actionsDir, 'lyrics.ts'),
     find: "mergeTranslation(lines, l.translation || '');",
     replace: 'void 0;',
     expect: ['LYRICS.translationMerge'],

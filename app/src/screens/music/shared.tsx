@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { ListEnd, Play } from 'lucide-react';
-import { fmtTime, useMusicStore } from '@music/store';
+import { useMusicStore } from '@music/store';
+import { fmtTime } from '@music/convert';
 import { providerLabel } from '@music/platform';
 import type { Song } from '@music/types';
 import { ContextMenu, MenuItem } from '@components/units';

@@ -987,3 +987,78 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 
 批量搬迁共享件（障碍 1）→ `export MusicState` + `s.store` 改拼接 → **按段推进**，每段：
 切文件 → tsc → `check:music` 正向 + refute → 全绿再提交。**不要一次切 13 段**。
+
+---
+
+## D-156 · 拆 `music/store.ts` 的 `create()` 体：12 个 action 段 → `music/actions/*.ts`（2026-10-12）
+
+**背景**：D-155 已勘查未执行。本轮按既定顺序执行：**先搬共享件 → 改 `s.store` 为拼接 → 按段推进**，
+共三批（每批跑 `tsc` + `check:music` 正向 + refute，全绿才继续下一批）。
+
+### 一、共享件先搬出 `store.ts`（否则切片与 store 成环）
+
+| 新去处 | 内容 |
+|---|---|
+| `music/persist.ts` | `LS_HISTORY` / `LS_LOCAL` / `LS_PREFS`（存储键原本就在持久化层，D-153 漏搬） |
+| `music/convert.ts`（新） | `QUALITY_LABELS` · `qualityLabel` · `coverProxyUrl` · `localToSong` · `songKey` · `fmtTime` |
+| `music/prefs.ts`（新） | `interface Prefs` + `savePrefs`（被播放/平台/UI 三段共用） |
+| `music/slice.ts`（新） | `StoreSet`/`StoreGet` 签名 + `PAGE_SIZE` + `MAX_PLAY_QUEUE` |
+
+`convert.ts` 的引用方随之改指：`DynamicIsland` · `Charts` · `ExpandedPlayer` · `HistoryView` · `LeftPanel` ·
+`LocalView` · `PlayerBar` · `QueueDrawer` · `RightPanel` · `shared`（10 个文件的 import 拆分，脚本批量）。
+
+`prefs.ts` 里 `import type { IslandView, PlayerSkin } from '@music/store'` 是 **type-only**（编译期擦除）⇒ 不成环。
+
+### 二、`create()` 体 12 段 → `music/actions/*.ts`
+
+`store.ts` 改成 `create<MusicState>()((set, get) => ({ ...切片们, ...未切的段 }))`；
+每个切片是 `(set: StoreSet, get: StoreGet): Pick<MusicState, ...keys> => ({ ... })` ——
+**`Pick` 显式列出该段提供的 action 名**（写错名字 tsc 立刻报，防漏）。
+
+| 切片文件 | 段 | 行数 |
+|---|---|---|
+| `actions/local.ts` | 本地 | 56 |
+| `actions/history.ts` | 播放历史 | 22 |
+| `actions/left.ts` | 左栏 | 89 |
+| `actions/right.ts` | 右栏 | 164 |
+| `actions/search.ts` | 搜索 | 95 |
+| `actions/like.ts` | 红心 | 51 |
+| `actions/lyrics.ts` | 歌词 / 评论 | 30 |
+| `actions/init.ts` | init（+ `clampInRange` / `loginVerdict` / `LoginVerdict` 随段） | 169 |
+| `actions/queue.ts` | 队列 | 93 |
+| `actions/platform.ts` | 平台（+ `mergeLogin` 随段） | 122 |
+| `actions/desktop.ts` | 桌面歌词（+ `dlPrefsOf` 随段） | 75 |
+| `actions/ui.ts` | UI（+ `closeExpandedTimer` 随段） | 27 |
+
+**`store.ts` 2485 → 1283 行**（本轮累计 2822 → 1283，-54%）。
+
+### 三、断言改造（这是本轮的真正工作量）
+
+- `e2e/music-platform-check.mjs`：`s.store` 从「`store.ts` 单文件原文」改成
+  「`store.ts` + `music/actions/*.ts`」的**逐文件 `stripComments` 后拼接**，且 `actions/` 目录**动态列举**
+  ⇒ 以后每切一段自动覆盖，不必再改判据。另加 `s.storeRaw`（单文件原文）备用。
+  `storeLyrics` / `storePersist` 同样改为「全量 + 各自那一层」。
+- 新增 `F.actionsDir`；**16 条变异锚**的 `file:/ 有**两种**写法，自动扫描漏了 6 条
+
+我写脚本扫「`file: F.store` 且 `find` 已不在 `store.ts`」的锚来自动改指，只改了 10 条；
+剩 6 条是 **`file: "app/src/music/store.ts"` 字符串字面量**（不是 `F.store`）⇒ 脚本看不见。
+最后是 `--refute` 报「破坏锚点未找到：6 条」才暴露的。
+
+**纪律**：批量改 `file:/），若有 action 名写错，`Pick<MusicState, ...>` 会当场报错 ——
+   这是好事，但意味着**不能手工估 keys**。
+2. **`closeExpandedTimer` 等模块级 `let` 只能随唯一使用者搬走**。若某段与另一段共用同一个 `let`，
+   要么搬共享模块（`export let` 的赋值只能在定义方做 ⇒ 得改成容器对象），要么该段不切。
+   本轮 6 个 `let` 都是单一归属，故直接随段走。
+
+### 验收
+
+`tsc --noEmit`（本次改动文件）0 · `check:music` **216/3**（3 条既有环境红）+
+**refute 184/184、零跳过**（16 条改指锚全部命中）· `check:units` 45/0 · `check:ia` 32/0 ·
+`check:autostart` 12/0 · `check:docs` 17/0。
+
+> ⚠️ `vite build` 与 `check:settings` **本轮未能验证**：收尾时发现工作区有**另一场会话的在途改动**
+> （正在移除翻译模块：已删 `app/src/screens/settings/translate-api.ts`、`service/src/manga/translate/*` 11 个文件、
+> `e2e/service/translate-check.mjs`，并改了 `catalog.ts` / `App.tsx` / `package.json` 等，**尚未完成**）。
+> 表现：`build` 报 `TranslateSection.tsx` 引用了不存在的 `translate-api`；`check:settings` 126/50。
+> **与 D-156 无关**（`tsc` 的错误全部落在 `TranslateSection.tsx` / `App.tsx`，本次改的文件 0 错）。
+

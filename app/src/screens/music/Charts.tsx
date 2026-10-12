@@ -1,7 +1,8 @@
 import { RefreshCw, Sparkles } from 'lucide-react';
 import type { WheelEvent } from 'react';
 import { capsOf } from '@music/platform';
-import { coverProxyUrl, useMusicStore } from '@music/store';
+import { useMusicStore } from '@music/store';
+import { coverProxyUrl } from '@music/convert';
 import type { Playlist } from '@music/types';
 import { Empty } from '@components/units';
 

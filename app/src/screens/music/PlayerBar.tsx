@@ -12,7 +12,8 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { QUALITY_OPTIONS } from '@music/player-options';
-import { fmtTime, qualityLabel, useMusicStore } from '@music/store';
+import { useMusicStore } from '@music/store';
+import { fmtTime, qualityLabel } from '@music/convert';
 import { IconButton, PlayModeButton, Select } from '@components/units';
 import { DesktopLyricsSettingsModal } from '@screens/music/DesktopLyricsSettingsModal';
 

@@ -1,6 +1,7 @@
 import { Plus, Trash2, X } from 'lucide-react';
 import { providerColor } from '@music/platform';
-import { coverProxyUrl, songKey, useMusicStore } from '@music/store';
+import { useMusicStore } from '@music/store';
+import { coverProxyUrl, songKey } from '@music/convert';
 import { Empty, IconButton, VirtualList } from '@components/units';
 import { SongRow, providerName, relTime } from '@screens/music/shared';
 

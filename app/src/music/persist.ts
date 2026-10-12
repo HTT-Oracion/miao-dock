@@ -7,6 +7,20 @@
 import type { MusicProvider } from '@music/platform';
 import type { Song } from '@music/types';
 
+// ------------------------------------------------------------------ 存储键
+
+/**
+ * 各持久化条目的 localStorage 键。
+ *
+ * 为什么放在这里（而不是 `store.ts`）：这些键被 `create()` 体的多个 action 段
+ * 按语义直接使用；action 段要切到 `music/actions/*.ts`（D-156），键留在 store 里
+ * 会让新文件 import store、store 又 import 新文件 ⇒ 成环。它们是"存在哪儿"的
+ * 定义，与读写动作同源。
+ */
+export const LS_HISTORY = 'miaodock.music.playHistory';
+export const LS_LOCAL = 'miaodock.music.localSongs';
+export const LS_PREFS = 'miaodock.music.prefs';
+
 // ------------------------------------------------------------------ 持久化小工具
 
 export function readLS<T>(key: string, fallback: T): T {

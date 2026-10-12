@@ -1,6 +1,7 @@
 import { open } from '@tauri-apps/plugin-dialog';
 import { FolderOpen, FolderPlus, Trash2 } from 'lucide-react';
-import { songKey, useMusicStore } from '@music/store';
+import { useMusicStore } from '@music/store';
+import { songKey } from '@music/convert';
 import { Empty, IconButton, VirtualList } from '@components/units';
 import { SongRow } from '@screens/music/shared';
 
