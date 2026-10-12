@@ -811,3 +811,53 @@ app/src/screens/library/
 > ⚠️ 屏本体仍约 **955 行**（25 个 `useState`）。右栏（头行 + 网格 / 话列表，约 290 行 JSX）
 > 是下一刀的自然落点；但**它引用的状态更多**（`gridView`/`gridSeqs`/`chapterRows`/上下文菜单…），
 > 抽出的 props 会比左栏更多 —— 建议与「把派生值收成 `useLibraryModel()`」一并做。
+
+---
+
+## D-152 · 拆 `LibraryScreen` 右栏 → `LibraryRight.tsx`（2026-10-11）
+
+**背景**：D-151 抽走左栏后，屏本体仍 ~955 行 —— 因为 return 里还剩**右栏**（头行 + 屏 B 话列表 /
+屏 A·C 页网格，**201 行** JSX）。
+
+### 移出的内容
+
+`<section className="lib-right">`（201 行）→ 新建 `screens/library/LibraryRight.tsx`（283 行）。
+
+`LibraryScreen.tsx` **1,126 → 950 行**；屏本体 **1,174 → 约 830 行**（-29%）。
+
+至此 `screens/library/` 目录：
+
+| 文件 | 内容 |
+|---|---|
+| `blob.ts` / `chapters.tsx` / `modals.tsx` / `cards.tsx` / `viewer.tsx` / `meta.ts` | D-119 / D-148 已建 |
+| `libModel.ts` | D-151 建的共享小件 |
+| `LeftRail.tsx` | D-151 左栏 |
+| `LibraryRight.tsx` | 本轮 · 右栏 |
+
+### 27 个 props —— 与左栏同理
+
+右栏比左栏引用更多状态（`gridView`/`gridSeqs`/`missingSeqs`/`translatedSeqs`/`seqMax`/`chapterRows`/
+`reworkingComics`/`chPage`/`gridPage`/…），但有两点让它没变成"传整个 store"：
+
+1. **动作与状态分开**：`onOpenChapter` / `onExitChapter` / `onOpenDir` / `onResume` /
+   `onRetranslate` / `onEditNoChapter` / `onCompare` 是**动作**，父层各回传一个值。
+   特别地 `onExitChapter`（出话）与 `onOpenChapter`（进话）**必须分开** —— 一开始想把"返回"
+   也表达成 `onOpenChapter(-1)`，那是把哨兵值塞进业务语义里，改掉了。
+2. **`onOpenDir` 收编了 `openPath` + 失败 Toast**：原先这段（`openPath(...).catch(e => onToast(errorText(e), 'bad'))`）
+   写在右栏 JSX 里，等于把"打开目录失败怎么提示"这个产品决定漏给视图层。现在右栏只喊"打开它"。
+
+### 断言锚
+
+**零变异锚受影响**（与 D-151 同）：`check:units` 的 ZOOM 组读「`LibraryScreen.tsx` +
+`screens/library/*.tsx`」拼接，而右栏没有缩放代码。
+
+### 验收
+
+`tsc --noEmit` 0 · `vite build` 通过 · `check:units` **45/0 + refute 59/59** · `check:music` 216/3 ·
+`check:settings` 180/0 · `check:ia` 32/0 · `check:autostart` 12/0 · `check:lib-manage` 24/0 ·
+`check:retranslate` 12/0 · `check:contract` 77/0 · `check:docs` 17/0。
+
+> 📌 `LibraryScreen.tsx` 累计 **2,122 → 950 行**（D-148/D-151/D-152 三刀）。
+> 屏本体 830 行里绝大部分是**状态与副作用**（25 个 `useState` + 12 个 `useEffect`/`useMemo`）——
+> 再往下拆就得把这些派生值收成一个 `useLibraryModel()` 自定义 hook（按职责分组），
+> 那是"拆状态"而非"拆视图"，属另一类改造。
