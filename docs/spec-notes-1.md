@@ -40,6 +40,7 @@
 | D-156 | 拆 `store.ts` 的 `create()` 体：12 个 action 段 → `music/actions/*.ts`（2485→647） | app 前端 |
 | D-157 | 修 D-156 遗留三处断言失效 + 撤销并发改动 + 四文档核对结论 | e2e / 基建 |
 | D-158 | `server.mjs` 复用 `MAX_SEQ` + 新增 `check:docpaths` + `docs/dev-setup.md` | e2e / 基建 |
+| D-159 | `server.mjs` 路由：只把八条同形的 `/library/{name}/{action}` 收成表（含全表化不做的勘查结论） | service |
 
 ---
 
@@ -1219,3 +1220,52 @@ e2e 无锚该消息串；回归 contract 77/0 · lib-manage 24/0 · e10 7/0 · r
 `check:docpaths` 5/0 + refute 2/2 · `check:docs` 17/0 · `check:contract` 77/0 ·
 `check:lib-manage` 24/0 · `check:e10` 7/0 · `check:retranslate` 12/0 ·
 `node --check service/src/server.mjs` 通过。
+
+---
+
+## D-159 · `server.mjs` 路由：只把**同形族**表驱动，不全表化（含全表化的勘查结论）（2026-10-12）
+
+**背景**：审计 §11 #6 的后半「`server.mjs` 数据层下沉 + **路由表化**」。数据层下沉已由
+D-145/D-147 完成；本轮处理「路由表化」。
+
+### 勘查结论：**整表驱动在本仓收益不成立**
+
+`route()` 现为 176 行（改前）/ 169 行（改后），40+ 个端点，逐条读完后判定：
+
+- **形态比我预估的齐**：几乎全是 `p.length === N && p[i] === '字面量' && method === 'X'`；
+- **但把它整表化会让代码变长**：40+ 个表项每个都要包一层 `run: (req,res,cors,url,p,method) => …`，
+  因为 handler 签名高度异构（3 参 / 4 参 / 带 `url` / 带 `p[1]` / 带 `p[3],p[5]` / 返回 SSE / 返回 JSON…）。
+  粗估表反而 **+40% 行数**，且多出 40 个闭包。**"顺序显式"是风格收益，换不来这个成本。**
+- 真正脆弱的只有一处：`/library/{book}/chapters/…` 那条 `p.length >= 5` 内部还要先长后短
+  （注释已写明）—— 它形态特殊，本来就不适合进表。
+
+> 📌 **这与 D-155（store slice）的判断逻辑一致**：先量"改成目标形态到底省不省"，再决定动不动。
+> 审计把「表驱动」当成默认更优，但**控制流改写**与**文件拆分**不是一回事 ——
+ 前者只换写法，后者才减体积/减职责。
+
+### 做了什么：把**八条同形**的 `/library/{name}/{action}` 收成一张表
+
+这八条（`meta/cover/merge/reveal/delete/unhide/retranslate/resume`）满足全部前置条件：
+
+1. **同形**：都是 `p.length === 3 && p[0] === 'library'`，用 `p[2]` 字面量互相区分；
+2. **同方法 handler 签名完全一致**：都是 `(req, res, cors, rawName)` ⇒ 表里直接存**方法名引用**，
+   不用包 lambda（这是它能净减代码的关键）；
+3. **族内无序依赖**（`p[2]` 互斥）、**族间靠 p.length 区分**（这族恒 3 段）⇒ 双重区分。
+
+⇒ 表长 8 行，替换掉原来的 ~28 行 if；`server.mjs` 2680 → 2673 行。
+**真正的收益是新增成本**：以后加一个漫画级动作 = 表里加一行，不会再写出一条 `if (p.length === 3 …)`。
+
+### 🔴 位置约束（写进表的注释，改位置前必读）
+
+整族**可以**排在 `files`（4 段）与 `chapters`（≥5 段）**之后** —— 靠 p.length 区分，
+移动位置不改变任何一条的命中（本次就是把原在 `files/chapters` **之前**的 meta/cover 两条移到族里的）。
+但仍必须排在 `/library/create`（2 段）**之后**。
+
+### 验收
+
+`node --check` 通过 · `check:contract` 77/0 · `check:lib-manage` 24/0 ·
+`check:e10` 7/0 · `check:retranslate` 12/0 · `check:layering` 3/0 ·
+反证轮：contract / retranslate / lib-manage 三条全跑（见当轮记录）。
+
+> ⏭️ **剩余路由**（tasks / queue / engine / translate / 以及 library 的 GET·create·files·chapters）
+> 保持 if/else：形态异构，表驱动无净收益。**不建议下一轮"为了统一"把它们也塞进表。**

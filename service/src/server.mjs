@@ -2214,6 +2214,29 @@ function splitPath(pathname) {
   });
 }
 
+/**
+ * `/library/{name}/{action}` 族的路由表（八条同形，D-159 收敛）。
+ *
+ * 为什么用**方法名引用**而不是 `run` lambda：这八条的同方法 handler **签名完全一致**
+ * （都是 `(req, res, cors, rawName)`），直接引用最省，也不会多包一层闭包。
+ * 方法缺席时（如 DELETE 打到 `meta`）由调用方抛 `miss()` —— 与原先"逐条 if + throw miss()"
+ * 是同一条语义。
+ *
+ * 🔴 整族的位置约束（改位置前必读）：族内八条用 `p[2]` 字面量互相区分（**无序依赖**）；
+ *    族与 `files`（4 段）/ `chapters`（≥5 段）用 `p.length` 区分。**双重区分 ⇒ 整族可以排在
+ *    它们之后**。但必须仍排在 `/library/create`（2 段）之后 —— 那里靠 p.length 区分。
+ */
+const LIBRARY_NAME_ACTIONS = [
+  { key: 'meta', GET: handleLibraryMeta, POST: handleLibraryMetaWrite },
+  { key: 'cover', GET: handleLibraryCoverFile, POST: handleLibraryCover, DELETE: handleLibraryCoverDelete },
+  { key: 'merge', POST: handleLibraryMerge },
+  { key: 'reveal', POST: handleReveal },
+  { key: 'delete', POST: handleLibraryDelete },
+  { key: 'unhide', POST: handleLibraryUnhide },
+  { key: 'retranslate', GET: handleRetranslatePlan, POST: handleRetranslate },
+  { key: 'resume', GET: handleResumePlan, POST: handleResume },
+];
+
 async function route(req, res, cors, url) {
   const seg = splitPath(url.pathname);
   const method = req.method || 'GET';
@@ -2318,19 +2341,7 @@ async function route(req, res, cors, url) {
   if (p.length === 2 && p[0] === 'library' && p[1] === 'create' && method === 'POST') {
     return handleLibraryCreate(req, res, cors);
   }
-  // /library/{book}/meta —— 读 / 写 title·author，`coverFromFirstChapter` 取第 1 话首图
-  if (p.length === 3 && p[0] === 'library' && p[2] === 'meta') {
-    if (method === 'GET') return handleLibraryMeta(req, res, cors, p[1]);
-    if (method === 'POST') return handleLibraryMetaWrite(req, res, cors, p[1]);
-    throw miss();
-  }
-  // /library/{book}/cover —— GET 取封面字节 · POST（multipart）落封面 · DELETE 移除封面
-  if (p.length === 3 && p[0] === 'library' && p[2] === 'cover') {
-    if (method === 'GET') return handleLibraryCoverFile(req, res, cors, p[1]);
-    if (method === 'POST') return handleLibraryCover(req, res, cors, p[1]);
-    if (method === 'DELETE') return handleLibraryCoverDelete(req, res, cors, p[1]);
-    throw miss();
-  }
+  // （`meta` / `cover` 两条已并入下方的 `LIBRARY_NAME_ACTIONS` 表 —— 与 merge/reveal/… 同形。）
   // /library/{comicName}/files/{seq}
   if (p.length === 4 && p[0] === 'library' && p[2] === 'files' && method === 'GET') {
     return handleLibraryFile(req, res, cors, p[1], p[3], url);
@@ -2359,33 +2370,15 @@ async function route(req, res, cors, url) {
     }
     throw miss();
   }
-  // /library/{name}/merge —— 把未归并单话物理移动进某个大类
-  if (p.length === 3 && p[0] === 'library' && p[2] === 'merge' && method === 'POST') {
-    return handleLibraryMerge(req, res, cors, p[1]);
-  }
-  // /library/{comicName}/reveal
-  if (p.length === 3 && p[0] === 'library' && p[2] === 'reveal' && method === 'POST') {
-    return handleReveal(req, res, cors, p[1]);
-  }
-  // /library/{comicName}/delete —— 删除策略二选一（契约：deleteFiles=true 连目录删；false 只隐藏）
-  if (p.length === 3 && p[0] === 'library' && p[2] === 'delete' && method === 'POST') {
-    return handleLibraryDelete(req, res, cors, p[1]);
-  }
-  // /library/{comicName}/unhide —— 撤销隐藏（隐藏项不出现在 GET /library，故必须留这扇门）
-  if (p.length === 3 && p[0] === 'library' && p[2] === 'unhide' && method === 'POST') {
-    return handleLibraryUnhide(req, res, cors, p[1]);
-  }
-  // /library/{comicName}/retranslate —— 单张漫画返工重译（覆盖已有译文）
-  if (p.length === 3 && p[0] === 'library' && p[2] === 'retranslate') {
-    if (method === 'GET') return handleRetranslatePlan(req, res, cors, p[1]);
-    if (method === 'POST') return handleRetranslate(req, res, cors, p[1]);
-    throw miss();
-  }
-  // /library/{comicName}/resume
-  if (p.length === 3 && p[0] === 'library' && p[2] === 'resume') {
-    if (method === 'GET') return handleResumePlan(req, res, cors, p[1]);
-    if (method === 'POST') return handleResume(req, res, cors, p[1]);
-    throw miss();
+  // ── /library/{name}/{action} 族（八条同形，见表 `LIBRARY_NAME_ACTIONS`）────────────────
+  // 新增漫画级动作：往表里加一行，**不要**再写一条 `if (p.length === 3 …)`。
+  if (p.length === 3 && p[0] === 'library') {
+    const row = LIBRARY_NAME_ACTIONS.find((r) => r.key === p[2]);
+    if (row) {
+      const fn = row[method];
+      if (fn) return fn(req, res, cors, p[1]);
+      throw miss(); // 路径命中但方法缺席（如 DELETE /library/x/meta）
+    }
   }
 
   throw miss();
