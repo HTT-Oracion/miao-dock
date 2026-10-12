@@ -2,17 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import {
   ArrowLeft,
-  ChevronDown,
-  EyeOff,
   FolderUp,
   GitMerge,
   Pencil,
   Play,
   RefreshCw,
   RotateCcw,
-  Search,
   Trash2,
-  X,
 } from 'lucide-react';
 import { apiDelete, apiGet, apiPost, apiPostMultipart, errorText, isApiError, openPath } from '@/ipc';
 import { useToasts } from '@hooks';
@@ -29,14 +25,13 @@ import type {
 } from '@/types';
 import {
   chapterNoOf,
-  formatBytes,
   fuzzyMatch,
   groupSearchResults,
   pageCount,
   pageSlice,
 } from '@tools';
 import { useDebouncedValue } from '@hooks/useDebouncedValue';
-import { Btn, ContextMenu, IconButton, MenuItem, MenuSeparator, Notice, Tooltip } from '@components/units';
+import { Btn, ContextMenu, IconButton, MenuItem, MenuSeparator, Notice } from '@components/units';
 import {
   bookFirstImagePath,
   chapterFilePath,
@@ -45,7 +40,7 @@ import {
   topLevelFirstImagePath,
 } from '@screens/library/blob';
 import type { PageView } from '@screens/library/blob';
-import { CoverThumb, GRID_LABEL, Highlight, Thumb } from '@screens/library/cards';
+import { GRID_LABEL, Thumb } from '@screens/library/cards';
 import type { GridState } from '@screens/library/cards';
 import { ChapterCard } from '@screens/library/chapters';
 import type { BookMetaIntent } from '@screens/library/modals';
@@ -54,9 +49,10 @@ import {
 } from '@screens/library/modals';
 import { Compare } from '@screens/library/viewer';
 import { retranslateMeta, resumeMeta } from '@screens/library/meta';
+import { LeftRail } from '@screens/library/LeftRail';
+import { AUTHOR_FALLBACK, LIB_PAGE_SIZE } from '@screens/library/libModel';
+import type { LibItem } from '@screens/library/libModel';
 
-/** 左栏每页漫画数（窄栏 + 每项约 48px 高，12 项差不多一屏） */
-const LIB_PAGE_SIZE = 12;
 /** 网格每页张数（110×165 卡 + 12 间距；24 张约两行多，翻页不至于太空） */
 const GRID_PAGE_SIZE = 24;
 /**
@@ -68,37 +64,8 @@ const GRID_PAGE_SIZE = 24;
  */
 const CHAPTER_PAGE_SIZE = 24;
 
-/** 作者为空时的占位文案（设计稿 §7.1 中下 / §7.3 头部卡**同一口径**，故只写一份常量） */
-const AUTHOR_FALLBACK = '未署名';
 
 
-/**
- * 一「部」的状态短语。
- *
- * 原先这里只写 `缺 ${imageCount - translatedCount}`，而那个数其实是**没有译文的**页数
- * —— 于是同一屏上冒出两个含义相反的「缺」：左栏说「缺 1」（那一页其实有原图，只是待译），
- * 网格卡说「缺页」（专指**没有原图**）。字面同源、意思不同，正是 G-11 里
- * 「同一张图、两屏两个故事」的翻版。逐页集合（G-10）已经能分开算，就没理由继续含糊。
- *
- * 收参按**结构**而不是 `ComicEntry`：大类、话、未归并单话三者的页级计数同名同义，
- * 逐页判定的口径也只有一个（G-10），没必要为每种来源各写一份。
- */
-interface PageCounts {
-  imageCount: number;
-  translatedCount: number;
-  missingSeqs: number[];
-}
-
-function progressLabel(c: PageCounts): string {
-  if (c.imageCount === 0) return '空目录';
-  const missing = c.missingSeqs.length;
-  const pending = c.imageCount - c.translatedCount - missing;
-  if (pending <= 0 && missing <= 0) return '已译完';
-  const parts: string[] = [];
-  if (pending > 0) parts.push(`待译 ${pending}`);
-  if (missing > 0) parts.push(`缺页 ${missing}`);
-  return parts.join(' · ');
-}
 
 // ------------------------------------------------------------------ 左栏视图件
 
@@ -110,19 +77,6 @@ function progressLabel(c: PageCounts): string {
  * 就会长出两套几乎一样的 DOM。归一到 `LibItem` 后只有"取哪些字段"的差别，
  * 而那个差别已经由 `buildItems()` 一次性吸收掉了。
  */
-interface LibItem {
-  /** 选中态键 = 点击后要选中的 `comicName`（= `comics` 的键，故与既有选中逻辑天然对齐） */
-  key: string;
-  name: string;
-  /** 空串 = 未署名 */
-  author: string;
-  chapterCount: number;
-  pageCount: number;
-  /** 缩略图字节路径；`null` = 无图（显示占位） */
-  thumbPath: string | null;
-  /** 是否大类（决定该项是否参与「编辑信息 / 删除」那套动作） */
-  merged: boolean;
-}
 
 /** 整本 / 未归并单话的投影：取图走**顶层**端点（与旧口径一致） */
 function flatViewOf(c: ComicEntry): PageView {
@@ -858,212 +812,40 @@ export function LibraryScreen({
     );
   };
 
+  /** 折叠 / 展开搜索结果里的一个分组（左栏自持 UI 态，但 updater 留在屏本体） */
+  const toggleFolded = (key: string) => {
+    setFoldedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   return (
     <div className="lib">
-      <aside
-        className="lib-left"
-        style={{ width: LIBRARY.leftColumnWidth, flexBasis: LIBRARY.leftColumnWidth }}
-      >
-        <div className="lib-search">
-          <Search size={13} className="lib-search-ico" />
-          <input
-            className="input lib-search-input"
-            value={queryInput}
-            onChange={(e) => setQueryInput(e.target.value)}
-            placeholder="搜索漫画名 / 作者 / 话号…"
-            spellCheck={false}
-          />
-          {queryInput ? (
-            <button
-              type="button"
-              className="lib-search-clear"
-              onClick={() => setQueryInput('')}
-              aria-label="清空搜索"
-            >
-              <X size={13} />
-            </button>
-          ) : null}
-        </div>
-
-        <div className="lib-left-list">
-          {searching ? (
-            /* ── 屏 A′：搜索结果分组态 ───────────────────────────────── */
-            hasLayers ? (
-              searchGroups.length > 0 ? (
-                searchGroups.map((g) => {
-                  const folded = foldedGroups.has(g.key);
-                  return (
-                    <div className="grp" key={g.key}>
-                      {/* 分组标题可点选收起/展开（设计稿 §7.2「折叠」） */}
-                      <button
-                        type="button"
-                        className="grp-head"
-                        onClick={() =>
-                          setFoldedGroups((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(g.key)) next.delete(g.key);
-                            else next.add(g.key);
-                            return next;
-                          })
-                        }
-                      >
-                        <ChevronDown size={12} className={folded ? 'grp-caret is-folded' : 'grp-caret'} />
-                        <span className="grp-title" title={g.title}>
-                          {/* 「其它」不加大类框，故不高亮书名号里的书名（它本来就不是书名） */}
-                          {g.merged ? <Highlight text={g.title} query={query} /> : g.title}
-                        </span>
-                        <span className="num grp-count">{g.rows.length}</span>
-                      </button>
-                      {folded ? null : (
-                        <div className="grp-body">
-                          {g.merged ? null : (
-                            <div className="other-hint">
-                              未归并的单话会出现在这里，点「归并」把它挂到某本漫画的某一话。
-                            </div>
-                          )}
-                          {g.rows.map((r) => (
-                            <div className="grp-row" key={r.key}>
-                              <button
-                                type="button"
-                                className={
-                                  r.bookName === current?.comicName
-                                    ? 'grp-row-main is-active'
-                                    : 'grp-row-main'
-                                }
-                                onClick={() => setActive(r.bookName)}
-                                title={r.label}
-                              >
-                                <span className="grp-row-label">
-                                  <Highlight text={r.label} query={query} />
-                                </span>
-                                <span className="grp-row-status muted">
-                                  · {progressLabel(r.target)}
-                                </span>
-                              </button>
-                              {r.mergeable ? (
-                                <span className="grp-row-act">
-                                  <Btn kind="ghost" size="sm" onClick={() => setMergeTarget(r.target.dirName)}>
-                                    <GitMerge size={12} />
-                                    归并
-                                  </Btn>
-                                </span>
-                              ) : null}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="lib-empty">没有匹配「{query}」的漫画或话</div>
-              )
-            ) : (
-              /* 旧服务端（无 books/others）：退回平铺过滤，行为与改造前一致 */
-              <>
-                {flatHits.map((it) => (
-                  <button
-                    key={it.key}
-                    type="button"
-                    className={it.key === current?.comicName ? 'lib-item is-active' : 'lib-item'}
-                    onClick={() => setActive(it.key)}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setCtxMenu({ x: e.clientX, y: e.clientY, item: it });
-                    }}
-                  >
-                    <CoverThumb
-                      path={it.thumbPath}
-                      name={it.name}
-                      className="cover-thumb"
-                      w={LIBRARY.cover.thumb.w}
-                      h={LIBRARY.cover.thumb.h}
-                      radius={LIBRARY.cover.thumb.radius}
-                    />
-                    <span className="lib-item-text">
-                      <Tooltip label={it.name}>
-                        <span className="lib-item-name">{it.name}</span>
-                      </Tooltip>
-                      <span className="lib-item-meta">
-                        <span className="num">{it.pageCount}</span> 张
-                      </span>
-                    </span>
-                  </button>
-                ))}
-                {flatHits.length === 0 ? (
-                  <div className="lib-empty">没有匹配「{query}」的漫画</div>
-                ) : null}
-              </>
-            )
-          ) : (
-            /* ── 屏 A：浏览态（封面缩略 + 名称 + 作者 · N 话 · M 页）────── */
-            <>
-              {pageSlice(items, libPage, LIB_PAGE_SIZE).map((it) => (
-                <button
-                  key={it.key}
-                  type="button"
-                  className={it.key === current?.comicName ? 'lib-item is-active' : 'lib-item'}
-                  onClick={() => setActive(it.key)}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    setCtxMenu({ x: e.clientX, y: e.clientY, item: it });
-                  }}
-                >
-                  <CoverThumb
-                    path={it.thumbPath}
-                    name={it.name}
-                    className="cover-thumb"
-                    w={LIBRARY.cover.thumb.w}
-                    h={LIBRARY.cover.thumb.h}
-                    radius={LIBRARY.cover.thumb.radius}
-                  />
-                  <span className="lib-item-text">
-                    <Tooltip label={it.name}>
-                      <span className="lib-item-name">{it.name}</span>
-                    </Tooltip>
-                    <span className="lib-item-meta">
-                      {it.author || AUTHOR_FALLBACK} · <span className="num">{it.chapterCount}</span> 话 ·{' '}
-                      <span className="num">{it.pageCount}</span> 页
-                    </span>
-                  </span>
-                </button>
-              ))}
-              {items.length === 0 ? <div className="lib-empty">漫画库还是空的</div> : null}
-            </>
-          )}
-        </div>
-
-        <div className="lib-left-foot">
-          <span>
-            已用容量 <span className="num">{formatBytes(lib?.totalBytes ?? 0)}</span>
-          </span>
-          {hidden.length > 0 ? (
-            <button type="button" className="lib-hidden-link" onClick={() => setShowHidden(true)}>
-              <EyeOff size={12} /> 已隐藏 {hidden.length}
-            </button>
-          ) : null}
-        </div>
-
-        {/* 搜索态是分组的连续列表，不分页（设计稿 §7.2 的屏 A′ 里没有分页器） */}
-        {!searching && libPages > 1 ? (
-          <div className="lib-pager">
-            <Btn kind="ghost" size="sm" disabled={libPage <= 1} onClick={() => setLibPage(libPage - 1)}>
-              上一页
-            </Btn>
-            <span className="muted">
-              <span className="num">{libPage}</span> / <span className="num">{libPages}</span>
-            </span>
-            <Btn
-              kind="ghost"
-              size="sm"
-              disabled={libPage >= libPages}
-              onClick={() => setLibPage(libPage + 1)}
-            >
-              下一页
-            </Btn>
-          </div>
-        ) : null}
-      </aside>
+      <LeftRail
+        queryInput={queryInput}
+        onQueryInput={setQueryInput}
+        query={query}
+        searching={searching}
+        hasLayers={hasLayers}
+        searchGroups={searchGroups}
+        flatHits={flatHits}
+        items={items}
+        activeKey={current?.comicName ?? null}
+        onActive={setActive}
+        foldedGroups={foldedGroups}
+        onToggleFolded={toggleFolded}
+        onCtxMenu={(e, item) => setCtxMenu({ x: e.clientX, y: e.clientY, item })}
+        onMerge={setMergeTarget}
+        libPage={libPage}
+        libPages={libPages}
+        onLibPage={setLibPage}
+        totalBytes={lib?.totalBytes ?? 0}
+        hiddenCount={hidden.length}
+        onShowHidden={() => setShowHidden(true)}
+      />
 
       <section className="lib-right">
         {current ? (

@@ -766,3 +766,48 @@ app/src/screens/settings/sections/
 `check:autostart` **12/0 + refute 12/12** · `check:units` **45/0 + refute 59/59** · `check:ia` 32/0 ·
 `check:music` 216/3（3 条既有环境红）· `check:lib-manage` 24/0 · `check:retranslate` 12/0 ·
 `check:contract` 77/0 · `check:docs` 17/0。
+
+---
+
+## D-151 · 拆 `LibraryScreen` 屏本体：左栏 → `LeftRail.tsx`（2026-10-11）
+
+**背景**：D-148 把 8 个子组件与 2 个弹窗移出后，屏本体 `LibraryScreen()` 自身**仍是 1,174 行**
+（25 个 `useState`）—— 这是审计 §3.3 对 LibraryScreen 的**第一条**抱怨，D-148 没解决。
+
+### 移出的内容
+
+`<aside>`（**204 行** JSX）→ 新建 `screens/library/LeftRail.tsx`（253 行）：
+
+```
+app/src/screens/library/
+  LeftRail.tsx    左栏：搜索框 + 列表（浏览态 / 搜索分组态 / 无分层平铺态）+ 容量脚 + 分页器
+  libModel.ts     共享小件：LIB_PAGE_SIZE · AUTHOR_FALLBACK · PageCounts · progressLabel · LibItem
+```
+
+`LibraryScreen.tsx` **1,344 → 1,126 行**（屏本体约 955 行）。
+
+**为什么单开 `libModel.ts`**（与 D-148 的 `meta.ts` 同因）：`LIB_PAGE_SIZE` / `AUTHOR_FALLBACK` /
+`PageCounts` / `progressLabel` / `LibItem` **屏本体与 `LeftRail` 都要** —— 留在 `LibraryScreen.tsx`
+会形成 `LibraryScreen ↔ LeftRail` 的循环 import。
+
+### 关于「20 个 props」
+
+左栏是**受控视图**（搜索词、选中键、折叠集、页码都由屏本体持有），故 props 多。
+这比留在屏内更好：抽出来后左栏只依赖 props，可单独理解；而"20 个 props"正是**受控组件**的
+应有形状（本仓守「零 Context」，不引入 Context 来回避 props）。
+`onCtxMenu` / `onMerge` / `onShowHidden` 三个是**动作**而非状态，屏本体各自只回传一个值。
+
+### 断言锚
+
+**零变异锚受影响** —— `check:units` 的 ZOOM 组读的是「`LibraryScreen.tsx` + `screens/library/*.tsx`」
+的拼接（D-148 建的机制），而左栏里没有任何缩放代码。故本轮只跑检查、没改断言。
+
+### 验收
+
+`tsc --noEmit` 0 · `vite build` 通过 · `check:units` **45/0 + refute 59/59** · `check:music` 216/3 ·
+`check:settings` 180/0 · `check:ia` 32/0 · `check:autostart` 12/0 · `check:lib-manage` 24/0 ·
+`check:retranslate` 12/0 · `check:docs` 17/0。
+
+> ⚠️ 屏本体仍约 **955 行**（25 个 `useState`）。右栏（头行 + 网格 / 话列表，约 290 行 JSX）
+> 是下一刀的自然落点；但**它引用的状态更多**（`gridView`/`gridSeqs`/`chapterRows`/上下文菜单…），
+> 抽出的 props 会比左栏更多 —— 建议与「把派生值收成 `useLibraryModel()`」一并做。
