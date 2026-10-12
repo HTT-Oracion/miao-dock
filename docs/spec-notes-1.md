@@ -908,3 +908,50 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 > 仍**未做**且已知风险：① `store.ts` 的**播放状态机**那层（`MusicState` 416 行 / `create()` 千余行）
 > —— 真正的解法是按 zustand **slice** 拆，属高风险重构；② `LibraryScreen` 屏本体余下 ~830 行的
 > 派生值收口（`useLibraryModel()`）；③ 三平台共享的 `engine-profile-check` 等历史遗留。
+
+---
+
+## D-154 · 拆 `LibraryScreen` 屏本体第二刀：状态与派生 → `useLibraryModel`（2026-10-11）
+
+**背景**：D-152 之后屏本体仍 ~830 行 —— 里面的绝大多数是**状态（25 个 `useState`）+ 派生
+（`useMemo`：`items`/`searchGroups`/`gridView`/`chapterRows`/…）+ 它们的重置副作用**，
+与"渲染什么、点了做什么"是两件事。
+
+### 移出的内容 → `app/src/hooks/useLibraryModel.ts`（472 行）
+
+一整段连续块（原 149–479 行，330 行）：25 个 `useState` · 全部 `useMemo` 派生 · 随之而来的
+`useEffect`（页码夹回、换词复位、`focus` 定位、预取返工计划…）· `flatViewOf`/`chapterViewOf`
+两个投影构造器。**返回 72 个名字**（状态值 + setter + 派生值）。
+
+`LibraryScreen.tsx` **950 → 649 行**；屏本体 **1,174 → 约 582 行**（累计 -50%）。
+
+**留在屏本体的是什么**：`retranslate`/`resume`/`confirmDelete`/`createBook`/`saveMeta`/`mergeInto`/
+`renumberChapter`/`renderComicMenu` 这些**动作** —— 它们要发请求、要弹 toast，属于"用户做了什么"，
+不是"数据长什么样"。这条界线是本刀的分界依据。
+
+`GRID_PAGE_SIZE` / `CHAPTER_PAGE_SIZE` 随之下沉 `screens/library/libModel.ts`（与 `LIB_PAGE_SIZE` 团聚）。
+
+### 🔴 踩到 D-41 的硬约束：`use*` 文件必须住 `src/hooks/`
+
+第一版把钩子放在 `screens/library/useLibraryModel.ts`，`check:units` 的
+`HOOKS.noMisplacedUse` **立刻变红**：「文件名以 use + 大写字母开头的文件必须住在 `src/hooks/` 内」。
+这条**没有豁免机制** —— 于是钩子落到 `app/src/hooks/useLibraryModel.ts`，并**登记进
+`HOOKS_MANIFEST`**（显式白名单，与 units 的 `MANIFEST` 同一套做法）。
+⚠️ 不登记的话，`HOOKS` 组会报"hooks 目录多了一个没登记的件" —— 同样是红。
+
+**代价与取舍**：钩子住在共享的 `hooks/`，却 import `@screens/library/{libModel,blob}`（屏内小件）。
+这是"use* 一律住 hooks"与"屏内逻辑留屏内"两条约定的**交叠处**：本仓的 D-41 是硬约束，
+故按它办；若将来出现第二个屏级钩子，值得为"屏级 hooks"单开一条豁免规则（而不是继续往
+共享 `hooks/` 里堆屏内概念）。
+
+### 断言锚
+
+**零变异锚新增/改指** —— `check:units` 的 ZOOM 组读「`LibraryScreen.tsx` + `screens/library/*.tsx`」
+拼接，本刀只动状态/派生（`.ts` 钩子不在 `.tsx` glob 里，且里面没有缩放代码）。唯一改的是
+`HOOKS_MANIFEST` 加一项。
+
+### 验收
+
+`tsc --noEmit` 0 · `vite build` 通过 · `check:units` **45/0 + refute 59/59** · `check:music` 216/3 ·
+`check:settings` 180/0 · `check:ia` 32/0 · `check:autostart` 12/0 · `check:lib-manage` 24/0 ·
+`check:retranslate` 12/0 · `check:contract` 77/0 · `check:docs` 17/0。

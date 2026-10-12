@@ -129,7 +129,7 @@ const BARREL_EXPORTS = [
   "VirtualList",
 ];
 /** src/hooks/ 应恰有的文件（hooks 唯一收口，D-41） */
-const HOOKS_MANIFEST = ["index.ts", "useEsc.ts", "useCoverColor.ts", "useMusicHotkeys.ts", "useDebouncedValue.ts"];
+const HOOKS_MANIFEST = ["index.ts", "useEsc.ts", "useCoverColor.ts", "useMusicHotkeys.ts", "useDebouncedValue.ts", "useLibraryModel.ts"];
 /** hooks/index.ts 业务桶应出口的业务 hook 名 */
 const HOOKS_BARREL_EXPORTS = [
   "useService",
