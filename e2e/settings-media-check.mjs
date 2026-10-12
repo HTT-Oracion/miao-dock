@@ -53,7 +53,13 @@ const APP = path.join(ROOT, 'app');
 
 const F = {
   catalog: path.join(APP, 'src', 'screens', 'settings', 'catalog.ts'),
-  sections: path.join(APP, 'src', 'screens', 'settings', 'sections.tsx'),
+  // D-150：`sections.tsx` 已按 Section 拆到 `sections/*.tsx`（含 index 桶与 shared）。
+  sectionsDir: path.join(APP, 'src', 'screens', 'settings', 'sections'),
+  // 变异锚的落点（各 Section 各自一件）
+  secGeneral: path.join(APP, 'src', 'screens', 'settings', 'sections', 'GeneralSection.tsx'),
+  secTranslate: path.join(APP, 'src', 'screens', 'settings', 'sections', 'TranslateSection.tsx'),
+  secMedia: path.join(APP, 'src', 'screens', 'settings', 'sections', 'MediaSection.tsx'),
+  secAbout: path.join(APP, 'src', 'screens', 'settings', 'sections', 'AboutSection.tsx'),
   store: path.join(APP, 'src', 'music', 'store.ts'),
   options: path.join(APP, 'src', 'music', 'player-options.ts'),
   expanded: path.join(APP, 'src', 'screens', 'music', 'ExpandedPlayer.tsx'),
@@ -197,7 +203,13 @@ const readBytes = (p) => (existsSync(p) ? readFileSync(p) : null);
 function loadSources() {
   return {
     catalog: readMaybe(F.catalog),
-    sections: readMaybe(F.sections),
+    // D-150：设置页 5 个 Section 已拆成 `sections/*.tsx`。判据读**拼接源码**（只关心
+    // "关键字/函数体在不在"）。🔴 **逐文件单独 `stripComments` 再拼** —— `stripComments`
+    // 带状态机，直接拼原文会让前一个文件的失同步污染后一个（D-148/D-149 同类坑）。
+    sections: readdirSync(F.sectionsDir)
+      .filter((n) => n.endsWith('.tsx'))
+      .map((n) => stripComments(readMaybe(path.join(F.sectionsDir, n))))
+      .join('\n'),
     store: readMaybe(F.store),
     options: readMaybe(F.options),
     expanded: readMaybe(F.expanded),
@@ -2942,14 +2954,14 @@ const MUTATIONS = [
   },
   {
     name: '把 MediaSection 的遍历改回 MEDIA.groups[0]（只渲染第一小节）',
-    file: F.sections,
+    file: F.secMedia,
     find: '      {MEDIA.groups.map((g) => (\n        <Group key={g.id} group={g} render={render} />\n      ))}',
     replace: '      <Group group={MEDIA.groups[0]} render={render} />',
     expect: ['WIRING.groups.traverse', 'WIRING.groups.noFirst'],
   },
   {
     name: '把 setVinylCustomColor 从 sections.tsx 里摘掉（控件不再回写 store）',
-    file: F.sections,
+    file: F.secMedia,
     // 锚点只到 `= useMusicStore((s) => s.setVinylCustomColor);`，不写形参名
     find: '  const setVinylCustomColor = useMusicStore((s) => s.setVinylCustomColor);',
     replace: '  const setVinylCustomColor = () => {};',
@@ -2993,14 +3005,14 @@ const MUTATIONS = [
   },
   {
     name: '把 switch 里 quality 的 case 改错（模拟某项没有取项/分派点）',
-    file: F.sections,
+    file: F.secMedia,
     find: "      case 'quality':",
     replace: "      case 'quality-off':",
     expect: ['WIRING.item.quality'],
   },
   {
     name: '把 quality 的 case 改成挂空（return null，控件不渲染）',
-    file: F.sections,
+    file: F.secMedia,
     // 锚点只到 `return (`，不写形参/变量名
     find: "      case 'quality':\n        return (",
     replace: "      case 'quality':\n        return null;\n      case '__dead':\n        return (",
@@ -3056,7 +3068,7 @@ const MUTATIONS = [
   },
   {
     name: "把 sections.tsx 里 music-cache 的 case 改错（四格块不会被渲染）",
-    file: F.sections,
+    file: F.secMedia,
     find: "      case 'music-cache':",
     replace: "      case 'music-cache-off':",
     expect: ['WIRING.item.music-cache'],
@@ -3076,7 +3088,7 @@ const MUTATIONS = [
   },
   {
     name: "把 sections.tsx 里 lyrics-mode 的 case 改错（歌词高亮方式开关不渲染）",
-    file: F.sections,
+    file: F.secMedia,
     find: "      case 'lyrics-mode':",
     replace: "      case 'lyrics-mode-off':",
     expect: ['WIRING.item.lyrics-mode'],
@@ -3133,14 +3145,14 @@ const MUTATIONS = [
   },
   {
     name: '删掉「模型与诊断」小节标题（C11 的小节数不再对得上）',
-    file: F.sections,
+    file: F.secTranslate,
     find: '        <SubTitle>模型与诊断</SubTitle>\n',
     replace: '',
     expect: ['ENGINE.wiring.fourSubTitles'],
   },
   {
     name: '把「引擎此刻在跑哪档」改成读已配置的值（已配置与已生效被合成一个）',
-    file: F.sections,
+    file: F.secTranslate,
     /*
      * ⚠️ 反证必须打在**数据绑定**上，不能打在文案上。
      * 第一版写成把 `引擎正在跑：` 换个说法 —— 那句话变了，但 `tier.effective` 还在，
@@ -3155,7 +3167,7 @@ const MUTATIONS = [
   },
   {
     name: '删掉「已配置档也要出现在选项里」的兜底（控件会显示成空白/裸 id）',
-    file: F.sections,
+    file: F.secTranslate,
     // ⚠️ 锚点必须带后缀「 · 权重不在清单」：ver2.2 平台下拉也有一处「（当前配置）」兜底
     // （platformOptions），只搜「（当前配置」会命中**更靠前的那一处**，破坏的是平台兜底、
     // tier 兜底原封不动 —— 断言照绿，这条反证就成了假反证（实测翻车过）。
@@ -3165,14 +3177,14 @@ const MUTATIONS = [
   },
   {
     name: '让「不推荐」档的强警告不取服务端文案（前端另编一句）',
-    file: F.sections,
+    file: F.secTranslate,
     find: 'tierInfo.warning',
     replace: 'tierInfo.tier',
     expect: ['ENGINE.wiring.tierWarnFromServer'],
   },
   {
     name: '删掉「用户指定的后端本机没有」的红条（用户会以为选的 CUDA 真的在跑）',
-    file: F.sections,
+    file: F.secTranslate,
     find: 'accel.mismatch',
     replace: 'accel.effective',
     all: true,
@@ -3180,7 +3192,7 @@ const MUTATIONS = [
   },
   {
     name: '把视觉档的空闲卸载也写成即时生效（两档待遇被混同）',
-    file: F.sections,
+    file: F.secTranslate,
     find: '必须重启引擎',
     replace: '保存后即生效',
     // `all: true` 是必须的：这五个字在源码里出现两次（合卡注解的代码 + 它上面那句注释），
@@ -3190,7 +3202,7 @@ const MUTATIONS = [
   },
   {
     name: '删掉卡片级「0 = 从不卸载」的说明（0 会被当成 bug 而不是设计）',
-    file: F.sections,
+    file: F.secTranslate,
     find: '从不卸载',
     replace: '空闲即释放',
     all: true,
@@ -3198,14 +3210,14 @@ const MUTATIONS = [
   },
   {
     name: '删掉「改完要重启」的提示条（《09》§4.3 末句要求小节下方给提示）',
-    file: F.sections,
+    file: F.secTranslate,
     find: '<RestartHint title="推理引擎"',
     replace: '<RestartHint2 title="推理引擎"',
     expect: ['ENGINE.wiring.restartHint'],
   },
   {
     name: '去掉「打开模型目录」的存在性守卫（路径不存在时点了只会报错）',
-    file: F.sections,
+    file: F.secTranslate,
     find: 'disabled={!o.modelDir.exists}',
     replace: 'disabled={false}',
     expect: ['ENGINE.wiring.modelDirGuarded'],
@@ -3363,7 +3375,7 @@ const MUTATIONS = [
   },
   {
     name: '在 JSX 裸文本里塞回一个 markdown 粗体（这是本轮真实修掉的那个缺陷）',
-    file: F.sections,
+    file: F.secTranslate,
     // 锚点取「改完要重启」提示条那一行（稳定的 JSX 裸文本行），末尾补一对星号即可触发
     find: '      <b>{title}</b>：改 {keys.join(\' / \')} 需<b>重启引擎</b>才生效 ——',
     replace: '      <b>{title}</b>：改 {keys.join(\' / \')} 需<b>重启引擎</b>才生效 ——**',
@@ -3479,7 +3491,7 @@ const MUTATIONS = [
   },
   {
     name: '把「通用」的 <GroupNote> 摘掉 summary（数据有了、界面不折叠）',
-    file: F.sections,
+    file: F.secGeneral,
     find: '<GroupNote summary={GENERAL.noteSummary}>{GENERAL.note as string}</GroupNote>',
     replace: '<GroupNote>{GENERAL.note as string}</GroupNote>',
     expect: ['SIMPLIFY.notesummary.wired'],
@@ -3522,21 +3534,21 @@ const MUTATIONS = [
   },
   {
     name: '把状态行的 is-chip 摘掉（状态又变回一串不可断的文本）',
-    file: F.sections,
+    file: F.secTranslate,
     find: '<span className="set-state is-chip">\n                <Dot colorVar={state.colorVar} pulse={status?.state === \'starting\'} />',
     replace: '<span className="set-state">\n                <Dot colorVar={state.colorVar} pulse={status?.state === \'starting\'} />',
     expect: ['SIMPLIFY.state.chip'],
   },
   {
     name: '把令牌输入框改成 disabled（不可选中、不可复制 —— 让用户拿不走）',
-    file: F.sections,
+    file: F.secTranslate,
     find: '            className="set-token-in"\n            readOnly\n',
     replace: '            className="set-token-in"\n            disabled\n',
     expect: ['SIMPLIFY.token.readonly'],
   },
   {
     name: '在「翻译档位」前插一枚下拉（说明被挤到下拉后面，右边缘不再对齐）',
-    file: F.sections,
+    file: F.secTranslate,
     find: "        <Row item={itemOf(inference, 'tier')}>\n",
     replace:
       "        <Row item={itemOf(inference, 'tier')}>\n" +
@@ -3559,7 +3571,7 @@ const MUTATIONS = [
   },
   {
     name: '让「关于」里留着已删项的引用（渲染到那一组直接抛错，且五道门都看不见）',
-    file: F.sections,
+    file: F.secAbout,
     // ⚠️ 锚点随实现迁移过一次：`licenses` 从 PendingRow 变成了 LicensesBlock（D-84）。
     // 锚点若不同步，这条会退化成「锚点未找到 ⇒ 跳过」，而输出里**看起来仍是全绿**。
     find: "        <LicensesBlock item={itemOf(g, 'licenses')} />",
@@ -3639,7 +3651,7 @@ const MUTATIONS = [
   },
   {
     name: '把①组开关的回写断掉（拨了开关只改一半，偏好不落盘）',
-    file: F.sections,
+    file: F.secGeneral,
     find: '            onToggle={() => onSidebarLabels(!sidebarLabels)}',
     replace: '            onToggle={() => undefined}',
     expect: ['FEATURES.shell.wired'],
@@ -3702,7 +3714,7 @@ const MUTATIONS = [
   },
   {
     name: '把「关于」里的许可块换回「待接入」行（实现了却当作没做）',
-    file: F.sections,
+    file: F.secAbout,
     find: "        <LicensesBlock item={itemOf(g, 'licenses')} />",
     replace: "        <PendingRow item={itemOf(g, 'licenses')} />",
     expect: ['FEATURES.licenses.ui'],
@@ -3844,21 +3856,21 @@ const MUTATIONS = [
   // 缩进而"锚点未找到"被静默跳过 —— 跳过 ≠ 通过，脚本会打印 ⚠ 并让退出码非 0）。
   {
     name: '把 appKey 框改回明文（保存后密钥直接铺在屏幕上）',
-    file: F.sections,
+    file: F.secTranslate,
     find: 'className="set-src-in"\n                    type="password"\n                    value={draftKey}',
     replace: 'className="set-src-in"\n                    value={draftKey}',
     expect: ['SIMPLIFY.secret.masked'],
   },
   {
     name: '把 appSecret 框改回明文（保存后密钥直接铺在屏幕上）',
-    file: F.sections,
+    file: F.secTranslate,
     find: 'className="set-src-in"\n                    type="password"\n                    value={draftSecret}',
     replace: 'className="set-src-in"\n                    value={draftSecret}',
     expect: ['SIMPLIFY.secret.masked'],
   },
   {
     name: '把 appSecret 的"已保存"态从掩码点改回文字提示（观感不再是密码框）',
-    file: F.sections,
+    file: F.secTranslate,
     find: "credView?.hasSecret ? '••••••••' :",
     replace: "credView?.hasSecret ? '已保存 · 留空则不更改' :",
     expect: ['SIMPLIFY.secret.masked'],

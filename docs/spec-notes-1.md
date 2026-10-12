@@ -710,3 +710,59 @@ refute 13/13（字节还原校验全过）** · `check:contract` 77/0 · `check:
 `tsc --noEmit` 0 · `vite build` 通过 · `check:music` 216/3 + **refute 184/184** ·
 `check:units` 45/0 + refute 59/59 · `check:settings` 180/0 · `check:ia` 32/0 · `check:autostart` 12/0 ·
 `check:lib-manage` 24/0 · `check:retranslate` 12/0 · `check:docs` 17/0。
+
+---
+
+## D-150 · 拆 `sections.tsx`：5 个 Section 各自成件（2026-10-11）
+
+**背景**：审计 §3.3 的最后一个大文件。`screens/settings/sections.tsx` **1,225 行**，
+5 个 Section 挤一文件（`TranslateSection` 单组件 758 行），且共享件（`itemOf`/`Group`）
+夹在各 Section 之间。它是三个大文件里**断言耦合最高**的一个：**78 处读判据 + 26 条变异锚**
+都锚在它一个文件上。
+
+### 新的目录结构
+
+```
+app/src/screens/settings/sections/
+  index.tsx             桶文件（5 行）—— 外部引用 `@screens/settings/sections` 路径**不变**
+  shared.tsx            共享件：itemOf · Group
+  GeneralSection.tsx    ① 通用
+  TranslateSection.tsx  ② 翻译（+ RestartHint / pendingRestart / TIER_LABEL / IDLE_MIN_MAX / SRC_OPTIONS / STATUS_TEXT）
+  MediaSection.tsx      ③ 播放·媒体（+ LS_LYRICS_LOCKED / readLyricsLocked / writeLyricsLocked）
+  ResourceSection.tsx   ④ 资源与投放
+  AboutSection.tsx      ⑤ 关于
+```
+
+`SettingsScreen.tsx` 是**唯一**引用者，且走目录 index ⇒ **零改动**。旧 `sections.tsx` 删除。
+共享件的归属按**实际使用者**定：`itemOf`/`Group` 被 ≥3 个 Section 用 ⇒ `shared.tsx`；
+`TIER_LABEL`/`IDLE_MIN_MAX`/`RestartHint`/`pendingRestart`/`SRC_OPTIONS`/`STATUS_TEXT` 只 TranslateSection 用
+⇒ 随它走（不进 shared，避免"共享"变成垃圾桶）。
+
+### 断言锚的搬迁
+
+- `settings-media-check.mjs`：`F.sections`（单文件路径）→ `F.sectionsDir` + `s.sections` =
+  **逐文件单独 `stripComments` 后拼接**（与 D-148/D-149 同一范式）；新增 4 个锚落点
+  `secGeneral`/`secTranslate`/`secMedia`/`secAbout`；**26 条变异锚**逐条改指
+  （Translate 16 · Media 6 · General 2 · About 2；`shared.tsx` 0 条）。正向 180/0 + **refute 127/127**。
+- `service-autostart-check.mjs`：`SECTIONS`（路径）→ `readSections()`（每次重读的拼接）；
+  D2 的变异锚改指 `SECTION_TRANSLATE`。
+- `units-structure-check.mjs`：`CALLER_IMPORT_FILES` 里 `sections.tsx` 一项改指
+  `sections/TranslateSection.tsx`（引 units 最多者作代表 —— `ResourceSection`/`AboutSection`
+  用 parts + 专用块，本就不引 units）。
+
+### 🔴 两个坑（都是"搬迁语义变了但调用点没跟上"）
+
+1. **模块级常量只算一次 ⇒ 反证轮读到旧内容**（D2 **假阳性**）。`SECTIONS` 原先是个**路径**常量，
+   我把它换成"读全部 Section 拼接"后仍是模块级 `const` —— 反证轮改的是磁盘文件、再调 `runAll()`，
+   而常量早在模块加载时就求值完了 ⇒ 读到旧内容 ⇒ D2 该红没红。
+   **修法：改成函数 `readSections()`，在 `runAll()` 里每次调用**（与既有的 `read(SERVICE_RS)` 同一范式）。
+   —— 教训：**把"路径常量"改成"内容常量"时，要同时检查它的求值时机**。
+2. **改语义后忘了改调用点**：`const sec = read(SECTIONS)` 里的 `read()` 期待**路径**，而 `SECTIONS`
+   已变成**内容** ⇒ `read('<一整份源码>')` ⇒ `ENAMETOOLONG: name too long`。
+
+### 验收
+
+`tsc --noEmit` 0 · `vite build` 通过 · `check:settings` **180/0 + refute 127/127（零跳过）** ·
+`check:autostart` **12/0 + refute 12/12** · `check:units` **45/0 + refute 59/59** · `check:ia` 32/0 ·
+`check:music` 216/3（3 条既有环境红）· `check:lib-manage` 24/0 · `check:retranslate` 12/0 ·
+`check:contract` 77/0 · `check:docs` 17/0。

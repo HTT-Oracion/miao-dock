@@ -53,7 +53,7 @@ const F = {
   queueScreen: path.join(SRC, "screens", "QueueScreen.tsx"),
   rightPanel: path.join(SRC, "screens", "music", "RightPanel.tsx"),
   queueDrawer: path.join(SRC, "screens", "music", "QueueDrawer.tsx"),
-  sections: path.join(SRC, "screens", "settings", "sections.tsx"),
+  // D-150：`sections.tsx` 已拆到 `sections/*.tsx`，本表见下方 CALLER_IMPORT_FILES。
   quitConfirm: path.join(SRC, "components", "QuitConfirm.tsx"),
   parts: path.join(SRC, "screens", "settings", "parts.tsx"),
   shared: path.join(SRC, "screens", "music", "shared.tsx"),
@@ -175,7 +175,11 @@ const CALLER_IMPORT_FILES = {
   "screens/QueueScreen.tsx": F.queueScreen,
   "screens/music/RightPanel.tsx": F.rightPanel,
   "screens/music/QueueDrawer.tsx": F.queueDrawer,
-  "screens/settings/sections.tsx": F.sections,
+  // D-150：`sections.tsx` 已拆成 `sections/*.tsx` ⇒ 取其中引 units 最多的 TranslateSection 作代表
+  // （`ResourceSection` / `AboutSection` 用 parts + 专用块，本就不引 units，不能一概而论）。
+  "screens/settings/sections/TranslateSection.tsx": path.join(
+    SRC, "screens", "settings", "sections", "TranslateSection.tsx",
+  ),
   "components/QuitConfirm.tsx": F.quitConfirm,
 };
 

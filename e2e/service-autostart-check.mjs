@@ -89,7 +89,18 @@ const SERVICE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'service.rs');
 const MAIN_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'main.rs');
 const APP_TSX = path.join(ROOT, 'app', 'src', 'App.tsx');
 const NOT_READY = path.join(ROOT, 'app', 'src', 'screens', 'NotReadyScreen.tsx');
-const SECTIONS = path.join(ROOT, 'app', 'src', 'screens', 'settings', 'sections.tsx');
+// D-150：`sections.tsx` 已按 Section 拆到 `sections/*.tsx`。A9/D2 只看"代码里有没有这些调用"，
+// 故读全部 Section 的**拼接**；D2 的变异锚落到 TranslateSection（服务启停 UI 在那儿）。
+// ⚠️ 拼接必须**每次 runAll 重读**（不能做成模块级常量）—— 反证轮改的是磁盘上的文件，
+//    常量只算一次 ⇒ 读到旧内容 ⇒ 该红不红（D2 实测假阳性）。
+const SECTIONS_DIR = path.join(ROOT, 'app', 'src', 'screens', 'settings', 'sections');
+const readSections = () =>
+  fs
+    .readdirSync(SECTIONS_DIR)
+    .filter((n) => n.endsWith('.tsx'))
+    .map((n) => fs.readFileSync(path.join(SECTIONS_DIR, n), 'utf8'))
+    .join('\n');
+const SECTION_TRANSLATE = path.join(SECTIONS_DIR, 'TranslateSection.tsx');
 const IPC_TS = path.join(ROOT, 'app', 'src', 'ipc.ts');
 
 const REFUTE = process.argv.includes('--refute');
@@ -133,7 +144,7 @@ function runAll() {
   const main = read(MAIN_RS);
   const app = read(APP_TSX);
   const nrs = read(NOT_READY);
-  const sec = read(SECTIONS);
+  const sec = readSections(); // D-150：每次重读（反证轮改了磁盘上的文件）
   const ipc = read(IPC_TS);
 
   // ---- A1：service_start 走幂等入口 ----
@@ -393,7 +404,7 @@ const MUTATIONS = [
   },
   {
     name: 'D2 设置页「停止本地服务」误接成 serviceStart（按钮点了没反应 / 起反效果）',
-    file: SECTIONS,
+    file: SECTION_TRANSLATE,
     find: 'await serviceStop();',
     replace: 'await serviceStart();',
     expect: ['D2'],
