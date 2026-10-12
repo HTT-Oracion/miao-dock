@@ -955,3 +955,35 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 `tsc --noEmit` 0 · `vite build` 通过 · `check:units` **45/0 + refute 59/59** · `check:music` 216/3 ·
 `check:settings` 180/0 · `check:ia` 32/0 · `check:autostart` 12/0 · `check:lib-manage` 24/0 ·
 `check:retranslate` 12/0 · `check:contract` 77/0 · `check:docs` 17/0。
+
+---
+
+## D-155 · `music/store.ts` 的 slice 拆分：**已勘查、未执行**（2026-10-11）
+
+**§3.3 的最后一项**。D-149/D-153 已把纯函数与持久化两层切走；剩下的是 `create()` **体本身 1,576 行**
+（`store.ts:909-2485`）。实测勘查结论：**这不是"再切一刀"，而是一轮独立重构**。
+
+### 实测数据（决定了它为什么不能顺手做）
+
+| 项 | 数值 |
+|---|---|
+| `create()` 体内的 action 段 | **13 段**（`init` / 本地 / 播放 / 队列 / 播放历史 / 平台 / 搜索 / 左栏 / 右栏 / 红心 / 歌词·评论 / 桌面歌词 / UI），合计约 1,300 行 |
+| 读 `s.store` 的判据 | **52 处** |
+| 指向 `store.ts` 的变异锚 | **44 条** —— 其中 **19 条是多行 / 带转义**的锚，**无法用脚本自动定位归属段**，只能逐条人工判断 |
+
+### 三个必须先解的障碍（否则切到一半就是"断言红着"）
+
+1. **循环 import**：`MusicState` 接口**未导出**（`interface MusicState`）；action 段还依赖
+   `localToSong` / `LS_LOCAL` / `fmtTime` / `songKey` / `coverProxyUrl` 等**住在 store.ts 的值**。
+   直接把段切到 `music/actions/*.ts` ⇒ 新文件 import `@music/store`，而 store 又 import 新文件 ⇒ **成环**。
+   **每一步切片都要连带搬迁这些共享件**（`LS_*` 宜进 `persist.ts`；`localToSong`/`fmtTime`/`songKey`/
+   `coverProxyUrl`/`qualityLabel` 宜进新的 `music/convert.ts`，并更新 `DynamicIsland` 等引用方）。
+2. **类型**：slice 工厂的签名要用 `StoreApi<MusicState>['setState'|'getState']`（`zustand@4.5.7` 可导入
+   `StoreApi`），且 `store.ts` 的 `create` 回调要补第三参 `api`；`MusicState` 需 `export`。
+3. **锚迁移**：`s.store` 改成「`store.ts` + `music/actions/*.ts`」的**逐文件 strip 拼接**（一次改动即可覆盖
+   52 处判据）；但 **44 条变异锚**要逐条改指 —— 19 条多行锚必须人工读。
+
+### 建议的执行顺序（下一轮）
+
+批量搬迁共享件（障碍 1）→ `export MusicState` + `s.store` 改拼接 → **按段推进**，每段：
+切文件 → tsc → `check:music` 正向 + refute → 全绿再提交。**不要一次切 13 段**。
