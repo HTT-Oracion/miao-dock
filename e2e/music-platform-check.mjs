@@ -83,6 +83,8 @@ const F = {
   contextMenu: path.join(APP, 'src', 'components', 'units', 'ContextMenu.tsx'),
   songRowShared: path.join(APP, 'src', 'screens', 'music', 'shared.tsx'),
   queueDrawer: path.join(APP, 'src', 'screens', 'music', 'QueueDrawer.tsx'),
+  // 播放模式循环按钮（"心动不可用时不显示该档"的 UI 落点，HEARTBEAT 组判它）
+  playModeButton: path.join(APP, 'src', 'components', 'units', 'PlayModeButton.tsx'),
   leftPanel: path.join(APP, 'src', 'screens', 'music', 'LeftPanel.tsx'),
   rightPanel: path.join(APP, 'src', 'screens', 'music', 'RightPanel.tsx'),
   localView: path.join(APP, 'src', 'screens', 'music', 'LocalView.tsx'),
@@ -239,6 +241,7 @@ function loadSources() {
     contextMenu: readMaybe(F.contextMenu),
     songRowShared: readMaybe(F.songRowShared),
     queueDrawer: readMaybe(F.queueDrawer),
+    playModeButton: readMaybe(F.playModeButton),
     leftPanel: readMaybe(F.leftPanel),
     rightPanel: readMaybe(F.rightPanel),
     localView: readMaybe(F.localView),
@@ -1238,27 +1241,59 @@ add('HEARTBEAT.gatedByLikedAndPlatform', 'HEARTBEAT', (s) => {
 add('HEARTBEAT.noRandomDegrade', 'HEARTBEAT', (s) => {
   // 🔴 旧行为是"平台不支持就降级成随机"，本版明确禁止：
   // 随机听起来像心动、实则毫无相关性 —— 与假控件同级。
-  // 判据：cycleMode 必须**跳过**不可用的心动档（不落档），且说明原因。
+  // 判据：cycleMode 必须**跳过**不可用的心动档（不落档）。
+  //
+  // 🔴 v2.3 口径变更：不可用时**不弹 toast**。需求给定"不是我喜欢的音乐的歌单
+  // 播放时，不显示心动模式的按钮就行"—— 提示只说明"你按的没用"，没有可操作价值，
+  // 而每次按都甩一条会让人以为按钮坏了。所以这里**反向钉死**：不得再有 toast。
   const body = methodBody(stripComments(s.store), 'cycleMode');
   if (body == null) return { ok: false, detail: 'store.ts 未定义 cycleMode' };
   const missing = [];
   if (!/canUseHeartbeat/.test(body)) missing.push('cycleMode 未按 canUseHeartbeat 跳过不可用档位');
   if (!/continue;/.test(body)) missing.push('不可用时没有跳过（会落在一个用不了的档上）');
-  if (!/\.toast\(/.test(body)) missing.push('未向用户说明为什么跳过（静默跳过 = 用户以为按钮坏了）');
+  if (/\.toast\(/.test(body)) missing.push('仍在弹"不可用"提示（需求：不显示按钮即可，不必提示）');
   // setPlayMode 里也要有同一道闸兜底
   const sp = methodBody(stripComments(s.store), 'setPlayMode');
   if (sp == null || !/canUseHeartbeat/.test(sp)) missing.push('setPlayMode 缺同一道闸（可绕过 cycleMode 直接落档）');
+  if (sp && /\.toast\(/.test(sp)) missing.push('setPlayMode 仍在弹"不可用"提示');
+  // UI 侧必须真的"不显示"：模式按钮要接 heartbeatAvailable，且不可用时回落显示前一档。
+  // ⚠️ 判 props 的**使用**而不只是定义：定义在、没传值 = 恒为默认真 = 照常显示心动档。
+  const pmb = readMaybe(F.playModeButton);
+  if (pmb == null) return { ok: false, detail: 'components/units/PlayModeButton.tsx 不存在', ...{} };
+  const pmbBody = stripComments(pmb);
+  if (!/heartbeatAvailable/.test(pmbBody)) missing.push('PlayModeButton 没有 heartbeatAvailable（不可用时仍显示心动档）');
+  // ⚠️ 必须锚定**赋值号**：写成 `/mode === 'heartbeat' && !heartbeatAvailable/` 的话，
+  // 把它改成 `false && mode === 'heartbeat' && !heartbeatAvailable` 后子串照样命中 ⇒ 断言假绿，
+  // 而运行时那一档已经不再被隐藏（反证轮实测）。
+  else if (!/=\s*mode\s*===\s*'heartbeat'\s*&&\s*!heartbeatAvailable/.test(pmbBody))
+    missing.push('PlayModeButton 收了 heartbeatAvailable 却没在渲染时用它');
+  // 两个调用点都要真的把它传下去（漏一处 = 播放条不显示、展开播放器照旧显示）
+  for (const [id, key] of [['playerBar', 'playerBar'], ['expanded', 'expanded']]) {
+    const src = stripComments(s[key] ?? '');
+    if (!/heartbeatAvailable=\{heartbeatAvailable\}/.test(src))
+      missing.push(`${id} 未把 heartbeatAvailable 传给 PlayModeButton`);
+    if (!/canUseHeartbeat/.test(src)) missing.push(`${id} 未走 canUseHeartbeat 判据`);
+  }
+  // 冷启动兜底：偏好里的 heartbeat 必须被挡（此刻 queueFromLiked 恒假 ⇒ 该档不可用）
+  const init = stripComments(readMaybe(path.join(APP, 'src', 'music', 'actions', 'init.ts')));
+  if (!/prefs\.playMode\s*!==\s*'heartbeat'/.test(init))
+    missing.push('hydratePrefs 未挡下偏好里的 heartbeat（冷启动会出现"显示心动却不可用"）');
   return { ok: missing.length === 0, detail: missing.length ? `心动不可用时的处理：${missing.join('、')}` : '' };
 });
 add('HEARTBEAT.enterRebuildsQueue', 'HEARTBEAT', (s) => {
-  // 进入心动 = 拿当前歌换一批相似歌，队列 = [当前歌, ...相似]。
-  // 两种情形必须可区分：首次进入从头播第一首；再次进入保留当前歌、只换其余。
+  // 进入心动 = 拿当前歌换一批相似歌重排队列。两种情形必须可区分：
+  //   ① 首次进入：队列 = 心动列表本身，**从它的第一首开始播**（种子歌不进队列 ——
+  //      留在队首会让播放列表第一行永远显示一首没在播的歌）；
+  //   ② 再次进入：保留当前歌继续播，种子歌放队首、其余换成新列表。
   const body = methodBody(stripComments(s.store), 'enterHeartbeat');
   if (body == null) return { ok: false, detail: 'store.ts 未定义 enterHeartbeat' };
   const missing = [];
   if (!/similarSongs\(/.test(body)) missing.push('未调 similarSongs');
-  // 队列必须是 [seed, ...pick]：保留当前歌，否则 currentIndex 与 currentSong 会对不上
-  if (!/\[\s*seed\s*,\s*\.\.\.pick\s*\]/.test(body)) missing.push('队列不是 [当前歌, ...相似]（当前歌被挤出队列）');
+  // 队列必须按"首次/再次"分两种形态。⚠️ 只判 `[seed, ...pick]` 出现过是不够的：
+  // 改成 `const nextQueue = [seed, ...pick]`（无视 already）后那行照样在源码里，
+  // 断言会假绿，而运行时首次进入会把种子歌摆在队首却不播它（反证轮可打红）。
+  if (!/already\s*\?\s*\[\s*seed\s*,\s*\.\.\.pick\s*\]\s*:\s*pick/.test(body))
+    missing.push('队列未按首次/再次进入分两种形态（首次进入的种子歌不该留在队首）');
   // 排除种子自身（接口可能把它自己算进相似里 → 队列里出现两遍）
   if (!/songKey/.test(body)) missing.push('未按 songKey 排除当前曲');
   // 首次/再次：由 heartbeatSeeded 区分，且**必须真的读它**。
@@ -1270,6 +1305,10 @@ add('HEARTBEAT.enterRebuildsQueue', 'HEARTBEAT', (s) => {
   // 两条路径都要在：置真的那条是"再次进入"，有 playSong 的那条是"首次进入从头播"
   if (!/if\s*\(\s*already\s*\)/.test(body)) missing.push('缺"再次进入"分支');
   if (!/playSong\(/.test(body)) missing.push('首次进入没有"从头播放第一首"');
+  // ⚠️ 首次进入必须从**新列表第一首**播，不能播种子歌：
+  // 写死 playSong(seed, ...) 时源码里 playSong 照样在，判"有没有 playSong"会假绿。
+  if (!/playSong\(nextQueue\[0\]/.test(body))
+    missing.push('首次进入播的不是心动列表第一首（会先播进来前那首，需求要求直接播新列表第一首）');
   return { ok: missing.length === 0, detail: missing.length ? `enterHeartbeat：${missing.join('、')}` : '' };
 });
 add('HEARTBEAT.nextAdvances', 'HEARTBEAT', (s) => {
@@ -1286,7 +1325,12 @@ add('HEARTBEAT.nextAdvances', 'HEARTBEAT', (s) => {
   // advance 路径**必须真的前进**：播新列表的第一首，而不是停在原地
   const eh = methodBody(stripComments(s.store), 'enterHeartbeat');
   if (!/opts\?\.advance/.test(eh ?? '')) missing.push('enterHeartbeat 未支持 advance');
-  if (!/nextQueue\[1\]/.test(eh ?? '')) missing.push('advance 路径没有从新列表的第一首开始播');
+  // advance 路径**必须真的前进**：播新列表的第一首，而不是停在原地。
+  // ⚠️ v2.3：首次进入的队列里**没有种子歌**（= pick），再次进入才有（= [seed, ...pick]），
+  // 所以起点要按下标条件取，不能写死 nextQueue[1]（首次进入会跳过新列表真正的第一首）。
+  if (!/startAt/.test(eh ?? '')) missing.push('advance 路径没有按"队列里有没有种子"取起点');
+  if (!/already\s*\?\s*1\s*:\s*0/.test(eh ?? ''))
+    missing.push('advance 起点未区分首次/再次进入（首次进入会跳过新列表第一首）');
   return { ok: missing.length === 0, detail: missing.length ? `心动模式的推进：${missing.join('、')}` : '' };
 });
 add('HEARTBEAT.restoresQueueOnLeave', 'HEARTBEAT', (s) => {
@@ -1303,7 +1347,15 @@ add('HEARTBEAT.restoresQueueOnLeave', 'HEARTBEAT', (s) => {
   // ——而运行时永远走不到，用户切走时列表仍停在相似歌上（反证轮实测抓到）。
   if (!/playMode\s*===\s*'heartbeat'\s*&&\s*get\(\)\.heartbeatRestore/.test(sp))
     missing.push('恢复分支的门禁不成立（被短路后代码还在、但永远走不到）');
-  if (!/queue:\s*snap\.queue/.test(sp)) missing.push('恢复时没有换回快照里的队列');
+  if (!/queue:\s*snap\.queue/.test(sp) && !/snap\.queue/.test(sp))
+    missing.push('恢复时没有换回快照里的队列');
+  // ⚠️ v2.3：正在播的歌若不在原列表里，必须**置顶**（插到队首）而不是跳回原下标。
+  // 否则用户正听的那首会被悄悄换成另一首，界面毫无提示。
+  if (!/found\s*<\s*0\s*\?\s*\[\s*cur\s*,\s*\.\.\.snap\.queue\s*\]/.test(sp))
+    missing.push('正在播的歌不在原列表时没有置顶（会被换成另一首，界面无提示）');
+  // 置顶那一支的下标必须指向 0（置顶 = 第一行）
+  if (!/currentIndex:[^;]*?found\s*<\s*0\s*\?\s*0\s*:/.test(sp) && !/cur\s*&&\s*found\s*<\s*0\s*\?\s*0\s*:/.test(sp))
+    missing.push('置顶了但 currentIndex 没指向 0（抽屉会高亮到别的行）');
   // ⚠️ 恢复时**不能**复位 heartbeatSeeded：复位了的话再切回心动会被当成首次进入、把当前歌从头重播
   if (/heartbeatSeeded:\s*false/.test(sp))
     missing.push('恢复时复位了 heartbeatSeeded（再进心动会把当前歌从头重播）');
@@ -1389,6 +1441,19 @@ add('QUEUE.scrollsToCurrent', 'QUEUE', (s) => {
   if (iIdx < 0 || iReset < 0) missing.push('定位与复位未在同一分支里裁决');
   else if (iReset < iIdx) missing.push('把 scrollTop 归零写在了定位之前（顺序反了）');
   return { ok: missing.length === 0, detail: missing.length ? `播放列表定位：${missing.join('、')}` : '' };
+});
+add('QUEUE.heartbeatTitle', 'QUEUE', (s) => {
+  // 心动模式下队列来自 music_intelligence_list（相似歌），不是用户点开的那个歌单 ——
+  // 标题必须跟着变，否则左栏停在歌单上、抽屉里却是一批陌生的歌，两处对不上且无提示。
+  const drawer = stripComments(s.queueDrawer ?? '');
+  const missing = [];
+  if (!/isHeartbeat\s*\?\s*'心动模式'\s*:\s*'播放队列'/.test(drawer))
+    missing.push("QueueDrawer 标题未按心动模式切换（'心动模式' / '播放队列'）");
+  if (!/playMode\s*===\s*'heartbeat'/.test(drawer)) missing.push('QueueDrawer 未判当前是否心动模式');
+  // 必须由 store 的 playMode 驱动，不能写死
+  if (!/useMusicStore\(\s*\(s\)\s*=>\s*s\.playMode\s*\)/.test(drawer))
+    missing.push('QueueDrawer 未从 store 取 playMode（标题会变成写死值）');
+  return { ok: missing.length === 0, detail: missing.length ? `抽屉标题：${missing.join('、')}` : '' };
 });
 add('QUEUE.drawerSlidesIn', 'QUEUE', (s) => {
   // 需求第 5 条：播放列表以抽屉形式**从右往左展开**。
@@ -4197,22 +4262,71 @@ const MUTATIONS = [
   {
     name: 'cycleMode 不再跳过不可用的心动档（会落在一个用不了的档上）',
     file: path.join(F.actionsDir, 'playback.ts'),
-    find: '      if (cand === \'heartbeat\' && !canUseHeartbeat(get())) {',
-    replace: '      if (false) {',
+    find: "      if (cand === 'heartbeat' && !canUseHeartbeat(get())) continue;",
+    replace: '      if (false) continue;',
     expect: ['HEARTBEAT.noRandomDegrade'],
   },
   {
     name: 'setPlayMode 去掉心动可用性的兜底闸（可绕过 cycleMode 直接落档）',
     file: path.join(F.actionsDir, 'playback.ts'),
-    find: '      if (!canUseHeartbeat(get())) {',
-    replace: '      if (false) {',
+    find: '      if (!canUseHeartbeat(get())) return;',
+    replace: '      if (false) return;',
     expect: ['HEARTBEAT.noRandomDegrade'],
+  },
+  {
+    name: '不可用时又弹回"心动模式仅在网易云…可用"的提示（需求已改为不显示按钮即可）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '      if (!canUseHeartbeat(get())) return;',
+    replace: "      if (!canUseHeartbeat(get())) { get().toast('心动模式不可用'); return; }",
+    expect: ['HEARTBEAT.noRandomDegrade'],
+  },
+  {
+    name: '模式按钮不再按可用性隐藏心动档（非喜欢歌单时照常显示心跳图标）',
+    file: F.playModeButton,
+    find: '    mode === \'heartbeat\' && !heartbeatAvailable',
+    replace: '    false && mode === \'heartbeat\' && !heartbeatAvailable',
+    expect: ['HEARTBEAT.noRandomDegrade'],
+  },
+  {
+    name: '播放条漏传 heartbeatAvailable（非喜欢歌单时模式按钮仍显示心动档）',
+    file: F.playerBar,
+    find: '            heartbeatAvailable={heartbeatAvailable}',
+    replace: '            heartbeatAvailable={true}',
+    expect: ['HEARTBEAT.noRandomDegrade'],
+  },
+  {
+    name: '展开播放器漏传 heartbeatAvailable（两处显示不一致）',
+    file: F.expanded,
+    find: '              heartbeatAvailable={heartbeatAvailable}',
+    replace: '              heartbeatAvailable={true}',
+    expect: ['HEARTBEAT.noRandomDegrade'],
+  },
+  {
+    name: '冷启动不再挡下偏好里的 heartbeat（会出现"显示心动却点不动"）',
+    file: path.join(F.actionsDir, 'init.ts'),
+    find: "      ALL_MODES.includes(prefs.playMode as PlayMode) && prefs.playMode !== 'heartbeat'",
+    replace: '      ALL_MODES.includes(prefs.playMode as PlayMode)',
+    expect: ['HEARTBEAT.noRandomDegrade'],
+  },
+  {
+    name: '心动队列不分首次/再次（首次进入也把种子歌摆在队首却播新列表第一首）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '    const nextQueue = already ? [seed, ...pick] : pick;',
+    replace: '    const nextQueue = [seed, ...pick];',
+    expect: ['HEARTBEAT.enterRebuildsQueue'],
   },
   {
     name: '心动队列丢掉当前歌（currentIndex 与 currentSong 会对不上）',
     file: path.join(F.actionsDir, 'playback.ts'),
-    find: '    const nextQueue = [seed, ...pick];',
+    find: '    const nextQueue = already ? [seed, ...pick] : pick;',
     replace: '    const nextQueue = [...pick];',
+    expect: ['HEARTBEAT.enterRebuildsQueue'],
+  },
+  {
+    name: '首次进入播种子歌而不是心动列表第一首（需求要求直接播新列表第一首）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '    await get().playSong(nextQueue[0], nextQueue, { autoplay: true, expand: false });',
+    replace: '    await get().playSong(seed, nextQueue, { autoplay: true, expand: false });',
     expect: ['HEARTBEAT.enterRebuildsQueue'],
   },
   {
@@ -4230,10 +4344,10 @@ const MUTATIONS = [
     expect: ['HEARTBEAT.nextAdvances'],
   },
   {
-    name: 'advance 路径不前进（从新列表第 0 位开始 ⇒ 又是原地重播）',
+    name: 'advance 路径不按首次/再次取起点（首次进入会跳过新列表真正的第一首）',
     file: path.join(F.actionsDir, 'playback.ts'),
-    find: '      await get().playSong(nextQueue[1] ?? nextQueue[0], nextQueue, { expand: false });',
-    replace: '      await get().playSong(nextQueue[0], nextQueue, { expand: false });',
+    find: '      const startAt = already ? 1 : 0;',
+    replace: '      const startAt = 1;',
     expect: ['HEARTBEAT.nextAdvances'],
   },
   {
@@ -4256,6 +4370,20 @@ const MUTATIONS = [
     find: '        queueFromLiked: snap.queueFromLiked,',
     replace: '        queueFromLiked: snap.queueFromLiked, heartbeatSeeded: false,',
     expect: ['HEARTBEAT.restoresQueueOnLeave'],
+  },
+  {
+    name: '切离心动时不把"不在原列表里的当前歌"置顶（会悄悄换成另一首）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '        cur && found < 0 ? [cur, ...snap.queue] : snap.queue;',
+    replace: '        snap.queue;',
+    expect: ['HEARTBEAT.restoresQueueOnLeave'],
+  },
+  {
+    name: '抽屉标题写死"播放队列"（心动模式下与左栏歌单对不上且无提示）',
+    file: F.queueDrawer,
+    find: "          <span className=\"music-card-title\">{isHeartbeat ? '心动模式' : '播放队列'}</span>",
+    replace: '          <span className="music-card-title">播放队列</span>',
+    expect: ['QUEUE.heartbeatTitle'],
   },
 
   // ── PLAYLIST 播放列表入口 ────────────────────────────────────────────
@@ -4843,6 +4971,7 @@ const MUTATIONS = [
       "  const queueOpen = useMusicStore((s) => s.queueOpen);\n" +
       "  const queue = useMusicStore((s) => s.queue);\n" +
       "  const currentIndex = useMusicStore((s) => s.currentIndex);\n" +
+      "  const playMode = useMusicStore((s) => s.playMode);\n" +
       "  const playSong = useMusicStore((s) => s.playSong);\n" +
       "  const playNext = useMusicStore((s) => s.playNext);\n" +
       "  const removeFromQueue = useMusicStore((s) => s.removeFromQueue);\n" +
@@ -4853,13 +4982,14 @@ const MUTATIONS = [
       "  const queueOpen = useMusicStore((s) => s.queueOpen);\n" +
       "  const queue = useMusicStore((s) => s.queue);\n" +
       "  const currentIndex = useMusicStore((s) => s.currentIndex);\n" +
+      "  const playMode = useMusicStore((s) => s.playMode);\n" +
       "  const playSong = useMusicStore((s) => s.playSong);\n" +
       "  const playNext = useMusicStore((s) => s.playNext);\n" +
       "  const removeFromQueue = useMusicStore((s) => s.removeFromQueue);\n" +
       "  const clearQueue = useMusicStore((s) => s.clearQueue);\n" +
       "  const setQueueOpen = useMusicStore((s) => s.setQueueOpen);\n" +
-      '\n  if (!queueOpen) return null;\n'
-      + '  const [menu, setMenu] = useState<{ x: number; y: number; song: Song } | null>(null);\n',
+      '\n  if (!queueOpen) return null;\n' +
+      '  const [menu, setMenu] = useState<{ x: number; y: number; song: Song } | null>(null);\n',
     expect: ['MENU.queueRow'],
   },
   {

@@ -15,8 +15,8 @@ import { IconButton } from '@components/units/IconButton';
  * ## 为什么不接收 store
  * 传 `mode` + `onCycle` 两个 prop，而不是内部 `useMusicStore` ——
  * 那样它就会 import 业务层，units 的纯净性判据（不依赖业务数据）当场破掉。
- * 心动模式当前是否可用也**不在这里判**：本组件是"切下一档"的循环按钮，
- * 判据在 store 的 cycleMode（不可用就跳过该档并提示），UI 只负责显示当前档位。
+ * 心动模式当前是否可用由调用方按 `heartbeatAvailable` 传进来（判据仍在 store 的
+ * `canUseHeartbeat` 这一个出口），UI 只负责"不可用时别把这一档显示出来"。
  */
 const META = {
   list: { title: '列表循环', Icon: Repeat },
@@ -28,16 +28,35 @@ const META = {
   heartbeat: { title: '心动模式', Icon: Heart },
 } as const;
 
+/** 可选的循环顺序（与 store.cycleMode 的 order 数组同序） */
+const CYCLE_ORDER = ['list', 'one', 'shuffle', 'order', 'heartbeat'] as const;
+
 export function PlayModeButton({
   mode,
   onCycle,
   size = 16,
+  heartbeatAvailable = true,
 }: {
   mode: keyof typeof META;
   onCycle: () => void;
   size?: number;
+  /**
+   * 心动模式当前是否可用（默认真 = 无条件显示，仅供不关心该门禁的调用方）。
+   *
+   * 不可用时**不显示**这一档 —— 不是"显示了但点了没反应"、也不是"按一下弹提示"。
+   * 后两者都是假控件：用户看到心跳图标会以为当前在心动模式，
+   * 而实际行为是另一档，界面与行为自相矛盾且不报错。
+   */
+  heartbeatAvailable?: boolean;
 }) {
-  const { title, Icon } = META[mode] ?? META.order;
+  // 当前档不可用时的回落目标：跳过心动，取它在循环顺序里的**前一档**
+  // （'heartbeat' 的前一档是 'order'）—— 与 cycleMode 跳过它的落点保持一致，
+  // 免得"按钮显示 order、点一下却到 shuffle"这种对不上的状态。
+  const shownMode =
+    mode === 'heartbeat' && !heartbeatAvailable
+      ? CYCLE_ORDER[CYCLE_ORDER.indexOf('heartbeat') - 1]
+      : mode;
+  const { title, Icon } = META[shownMode] ?? META.order;
   return (
     <IconButton title={title} onClick={onCycle}>
       <Icon size={size} />

@@ -20,6 +20,7 @@ export function QueueDrawer() {
   const queueOpen = useMusicStore((s) => s.queueOpen);
   const queue = useMusicStore((s) => s.queue);
   const currentIndex = useMusicStore((s) => s.currentIndex);
+  const playMode = useMusicStore((s) => s.playMode);
   const playSong = useMusicStore((s) => s.playSong);
   const playNext = useMusicStore((s) => s.playNext);
   const removeFromQueue = useMusicStore((s) => s.removeFromQueue);
@@ -28,13 +29,25 @@ export function QueueDrawer() {
 
   if (!queueOpen) return null;
 
+  /*
+   * 心动模式下队列内容来自 `music_intelligence_list`（相似歌），**不是**用户点开的那个歌单。
+   * 标题必须跟着变 —— 否则用户打开抽屉看到的是一批陌生的歌，头顶却写着"播放队列"，
+   * 而左栏正停在「我喜欢的音乐」上，两处对不上却没有任何提示（不报错、只表现为"列表莫名其妙换了"）。
+   *
+   * ⚠️ 这行刻意放在**早退之后**：反证轮里有一条变异要把 useState 挪到早退之后，
+   * 它的锚点是从 `menu` 一路连到 `if (!queueOpen) return null` 的**连续代码行** ——
+   * 在那段之间插任何东西（注释块也算）都会打断锚点，那条变异就再也打不红
+   * （"跳过 ≠ 通过"，反证轮实测）。
+   */
+  const isHeartbeat = playMode === 'heartbeat';
+
   return (
     <>
       <div className="music-drawer-bd" onClick={() => setQueueOpen(false)} />
       <div className="music-drawer">
         <div className="music-drawer-hd">
           <ListMusic size={15} className="music-drawer-ic" />
-          <span className="music-card-title">播放队列</span>
+          <span className="music-card-title">{isHeartbeat ? '心动模式' : '播放队列'}</span>
           <span className="music-card-sub">（{queue.length} 首）</span>
           <div className="grow" />
           <IconButton title="清空队列" onClick={() => clearQueue()}>

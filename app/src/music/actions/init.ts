@@ -53,9 +53,20 @@ export const createInitSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 
      * 白名单同时挡住旧版本残留与手改 localStorage 两种情况。
      */
     const ALL_MODES: readonly PlayMode[] = ['list', 'one', 'shuffle', 'order', 'heartbeat'];
-    const playMode: PlayMode = ALL_MODES.includes(prefs.playMode as PlayMode)
-      ? (prefs.playMode as PlayMode)
-      : 'order';
+    /*
+     * 心动模式额外收一道门：`heartbeat` 落在白名单里也不算数。
+     *
+     * 冷启动这一刻 `queueFromLiked` 恒为假（还没有队列，见下方注释），
+     * 所以心动模式**必然**不可用 —— 若照白名单放它进来，状态就是
+     * "模式 = 心动，但那个档位此刻点不动、也不显示"，界面与行为对不上。
+     * 需求要的是"不是「我喜欢的音乐」就不显示心动模式"，那就该在这里落回顺序播放：
+     * 用户之后重新播「我喜欢的音乐」时，`playPlaylist` 会按 `likedHeartbeatOn`
+     * 自动把心动模式接回来，这条偏好并没有丢。
+     */
+    const playMode: PlayMode =
+      ALL_MODES.includes(prefs.playMode as PlayMode) && prefs.playMode !== 'heartbeat'
+        ? (prefs.playMode as PlayMode)
+        : 'order';
     const skin: PlayerSkin = prefs.skin ?? 'modern';
     const playbackQuality: PlaybackQuality = prefs.playbackQuality ?? 'hires';
     const lyricsFontSize =

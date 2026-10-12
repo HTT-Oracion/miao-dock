@@ -484,14 +484,15 @@ export const createPlaybackSlice = (set: StoreSet, get: StoreGet): Pick<MusicSta
 
     const already = get().heartbeatSeeded;
     /*
-     * 队列 = [当前歌, ...相似]。两种情形的差别**只在于要不要从头播**：
-     *   ① 首次进入：整队列换成心动列表并从第一首开始播（第一首即当前歌）；
-     *   ② 再次进入：当前歌原样继续播，只把它以外的部分换掉。
-     * 为什么两种都保留当前歌：需求要的是"继续播放当前歌曲"，
-     * 而把当前歌从队列里摘掉会让 currentIndex 与 currentSong 对不上
-     * （抽屉里没有任何一行是正在播的那首）—— 那是自相矛盾的状态。
+     * 队列 = 心动列表本身。两种情形的差别**只在于从哪里开始播**：
+     *   ① 首次进入：队列整个换成心动列表，**从它的第一首开始播** ——
+     *      即接口返回的第一首，不是"进来之前在听的那首"。
+     *      种子歌不进队列：它是"为什么换这批"的因由，不是这批歌的一员；
+     *      留在队首会让播放列表第一行永远显示一首没在播的歌。
+     *   ② 再次进入：当前歌原样继续播，把它放到队首、其余换成新的心动列表。
+     * 两种都保住 currentIndex 与 currentSong 对得上（抽屉里必有一行是正在播的那首）。
      */
-    const nextQueue = [seed, ...pick];
+    const nextQueue = already ? [seed, ...pick] : pick;
 
     /*
      * 首次进入前**先存一份原队列快照**，供"切离心动模式时恢复原播放列表"用。
@@ -512,11 +513,14 @@ export const createPlaybackSlice = (set: StoreSet, get: StoreGet): Pick<MusicSta
     if (opts?.advance) {
       /*
        * 走到队尾时的续播（`next` 在最后一首时调）：换一批新的相似歌，
-       * 从**新的第一首**（下标 1，0 位留给刚播完的种子歌）接着播。
+       * 从**新的第一首**接着播。
        * 这条路径**必须自己前进** —— 它是"播完了往下走"，不是"切模式"，
        * 沿用"保留当前歌"的语义会让播完的歌原地重播。
+       * ⚠️ 首次进入时队列里没有种子（`nextQueue = pick`），此时下标 0 才是新列表第一首；
+       * 再次进入时种子在队首，要跳过它 —— 否则续播又回到刚播完的那首。
        */
-      await get().playSong(nextQueue[1] ?? nextQueue[0], nextQueue, { expand: false });
+      const startAt = already ? 1 : 0;
+      await get().playSong(nextQueue[startAt] ?? nextQueue[0], nextQueue, { expand: false });
       set({ queueFromLiked: true, heartbeatSeeded: true });
       return;
     }
@@ -527,8 +531,9 @@ export const createPlaybackSlice = (set: StoreSet, get: StoreGet): Pick<MusicSta
       return;
     }
 
-    // 首次进入：从第一首（当前歌）开始播。autoplay 打开、不展开播放器（与自动续播同款口径）
-    await get().playSong(seed, nextQueue, { autoplay: true, expand: false });
+    // 首次进入：从**心动列表的第一首**开始播（不是进来前在听的那首）。
+    // autoplay 打开、不展开播放器（与自动续播同款口径）
+    await get().playSong(nextQueue[0], nextQueue, { autoplay: true, expand: false });
     set({ queueFromLiked: true, heartbeatSeeded: true });
   },
 
@@ -695,15 +700,17 @@ export const createPlaybackSlice = (set: StoreSet, get: StoreGet): Pick<MusicSta
     /*
      * 进入心动模式的前置闸 + 副作用，**只在这一处**。
      *
-     * 不可用时直接不改模式（保持原档），并说明原因 —— 而不是把档位切过去、
-     * 实际却按别的规则播。那种"按钮上是心动、行为是随机"的错位不报错、只表现为行为怪异，
+     * 不可用时直接不改模式（保持原档）—— 而不是把档位切过去、实际却按别的规则播。
+     * 那种"按钮上是心动、行为是随机"的错位不报错、只表现为行为怪异，
      * 是本项目明确禁止的假控件级问题。其它平台按需求"不处理"。
+     *
+     * ⚠️ 这里**刻意不弹 toast**：需求给定的心动模式入口只有播放模式按钮一处，
+     * 而它是"循环切下一档"的单按钮 —— 不可用时正确做法是**这一档不出现在
+     * 可选范围里**（UI 不显示），而不是每次按都甩一条"不可用"的提示。
+     * 提示只说明"你按的没用"，对用户没有可操作的价值。
      */
     if (mode === 'heartbeat') {
-      if (!canUseHeartbeat(get())) {
-        get().toast('心动模式仅在网易云音乐、且播放「我喜欢的音乐」时可用');
-        return;
-      }
+      if (!canUseHeartbeat(get())) return;
       /*
        * 记下"「我喜欢的音乐」开启过心动模式"：这是切回该歌单时自动进心动的唯一依据
        * （需求第 4 条）。写状态 + 落偏好，跨会话保留。
@@ -729,10 +736,21 @@ export const createPlaybackSlice = (set: StoreSet, get: StoreGet): Pick<MusicSta
       const snap = get().heartbeatRestore as { queue: Song[]; index: number; queueFromLiked: boolean };
       const cur = get().currentSong;
       const found = cur ? snap.queue.findIndex((s) => songKey(s) === songKey(cur)) : -1;
+      /*
+       * 恢复后的队列分两种：
+       *   ① 正在播的歌**在**原列表里 → 原样恢复并把下标对到它（列表回到位、歌不断）；
+       *   ② 不在原列表里（心动列表是接口给的，未必收在原歌单内）→
+       *      把它**插到队首**再恢复。
+       * 为什么必须置顶而不是跳回原下标：那样用户会突然换到一首**别的歌**上，
+       * 而界面毫无提示 —— 听感是"我点的歌自己跳走了"。置顶既保住了正在播的
+       * 这首，又让它出现在列表第一行，语义自洽（下一首/上一首也从它往后走）。
+       */
+      const restored =
+        cur && found < 0 ? [cur, ...snap.queue] : snap.queue;
       set({
         playMode: mode,
-        queue: snap.queue,
-        currentIndex: found >= 0 ? found : snap.index,
+        queue: restored,
+        currentIndex: cur && found < 0 ? 0 : found >= 0 ? found : snap.index,
         queueFromLiked: snap.queueFromLiked,
         /*
          * ⚠️ 这里**故意不**复位 `heartbeatSeeded`。
@@ -756,9 +774,10 @@ export const createPlaybackSlice = (set: StoreSet, get: StoreGet): Pick<MusicSta
      * 五档循环（需求给定顺序）：列表循环 → 单曲循环 → 随机播放 → 顺序播放 → 心动模式 → 回列表。
      *
      * 心动模式是**有条件可用**的档位：不可用时**跳过**它直接到下一档，
-     * 不做"降级成随机"（降级会让用户以为在听相似歌曲，实际听的是随机）。
-     * `setPlayMode` 内部还有一道同样的闸兜底 —— 两处判据同源（都走 canUseHeartbeat），
-     * 所以不会出现"跳过判据说能用、落点说不能用"的分歧。
+     * 不做"降级成随机"（降级会让用户以为在听相似歌曲，实际听的是随机），
+     * 也**不弹提示**（需求给定"不显示心动模式的按钮"—— 不可用的档位就该静默不出现在
+     * 可选范围里，每次按都提示只会让人以为按钮坏了）。`setPlayMode` 内部还有
+     * 一道同样的闸兜底 —— 两处判据同源（都走 canUseHeartbeat），不会分歧。
      */
     const order: PlayMode[] = ['list', 'one', 'shuffle', 'order', 'heartbeat'];
     const cur = order.indexOf(get().playMode);
@@ -766,13 +785,7 @@ export const createPlaybackSlice = (set: StoreSet, get: StoreGet): Pick<MusicSta
 
     for (let step = 1; step <= order.length; step++) {
       const cand = order[(from + step) % order.length];
-      if (cand === 'heartbeat' && !canUseHeartbeat(get())) {
-        // 只在"正好轮到它的那一档"提示一次：用户按一次按钮，看到一条说明即可
-        if (step === 1) {
-          get().toast('心动模式仅在网易云音乐、且播放「我喜欢的音乐」时可用');
-        }
-        continue;
-      }
+      if (cand === 'heartbeat' && !canUseHeartbeat(get())) continue;
       get().setPlayMode(cand);
       return;
     }

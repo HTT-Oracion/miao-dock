@@ -23,6 +23,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { capsOf } from '@music/platform';
 import { LYRICS_SIZE, QUALITY_OPTIONS, SKINS, STYLE_PREVIEW_ORDER } from '@music/player-options';
 import { useMusicStore } from '@music/store';
+import { canUseHeartbeat } from '@music/actions/playback';
 import { coverProxyUrl, fmtTime, songKey } from '@music/convert';
 import type { PlayerSkin } from '@music/store';
 import type { MusicComment } from '@music/types';
@@ -104,6 +105,11 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const volume = useMusicStore((s) => s.volume);
   const muted = useMusicStore((s) => s.muted);
   const playMode = useMusicStore((s) => s.playMode);
+  // 心动模式是否可用（判据只有一个出口：store 的 canUseHeartbeat）。
+  // 不可用时模式按钮**不显示**心动档，而不是显示一个点不动的假控件。
+  const heartbeatAvailable = useMusicStore(
+    (s) => canUseHeartbeat({ playbackSource: s.playbackSource, queueFromLiked: s.queueFromLiked }),
+  );
   const skin = useMusicStore((s) => s.skin);
   const parsedLyrics = useMusicStore((s) => s.parsedLyrics);
   const comments = useMusicStore((s) => s.comments);
@@ -609,7 +615,12 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
 
           {/* ── 中区（绝对居中）──────────────────────────────────────── */}
           <div className="music-ctrl">
-            <PlayModeButton mode={playMode} onCycle={() => cycleMode()} size={20} />
+            <PlayModeButton
+              mode={playMode}
+              onCycle={() => cycleMode()}
+              size={20}
+              heartbeatAvailable={heartbeatAvailable}
+            />
             <IconButton title="上一首" onClick={() => prev()}>
               <SkipBack size={22} />
             </IconButton>

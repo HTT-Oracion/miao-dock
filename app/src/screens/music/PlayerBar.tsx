@@ -13,6 +13,7 @@ import {
 import { useState } from 'react';
 import { QUALITY_OPTIONS } from '@music/player-options';
 import { useMusicStore } from '@music/store';
+import { canUseHeartbeat } from '@music/actions/playback';
 import { fmtTime, qualityLabel } from '@music/convert';
 import { IconButton, PlayModeButton, Select } from '@components/units';
 import { DesktopLyricsSettingsModal } from '@screens/music/DesktopLyricsSettingsModal';
@@ -50,6 +51,11 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
   const volume = useMusicStore((s) => s.volume);
   const muted = useMusicStore((s) => s.muted);
   const playMode = useMusicStore((s) => s.playMode);
+  // 心动模式是否可用（判据只有一个出口：store 的 canUseHeartbeat）。
+  // 不可用时模式按钮**不显示**心动档，而不是显示一个点不动的假控件。
+  const heartbeatAvailable = useMusicStore(
+    (s) => canUseHeartbeat({ playbackSource: s.playbackSource, queueFromLiked: s.queueFromLiked }),
+  );
   const playbackQuality = useMusicStore((s) => s.playbackQuality);
   const currentQuality = useMusicStore((s) => s.currentQuality);
   const currentBitrate = useMusicStore((s) => s.currentBitrate);
@@ -135,7 +141,11 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
           <IconButton title="下一首" onClick={() => next()}>
             <SkipForward size={17} />
           </IconButton>
-          <PlayModeButton mode={playMode} onCycle={() => cycleMode()} />
+          <PlayModeButton
+            mode={playMode}
+            onCycle={() => cycleMode()}
+            heartbeatAvailable={heartbeatAvailable}
+          />
         </div>
 
         {/* 右侧：音质（档位文字）+ 音量 + 桌面歌词 + 桌面歌词设置 + 播放队列 + 关闭播放 */}
