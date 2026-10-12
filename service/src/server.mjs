@@ -11,7 +11,7 @@ import { pipeline } from 'node:stream/promises';
 
 import {
   API_VERSION, BASE_PATH, BATCH_LIMIT, COVER_MAX_BYTES, ENGINE_SETTINGS_FILE, MANIFEST_FILE,
-  MERGE_ARCHIVE_DIR, REPO_ROOT,
+  MAX_SEQ, MERGE_ARCHIVE_DIR, REPO_ROOT,
   ROOT_DIR, SERVICE_NAME, SERVICE_VERSION, STATE_DIR, TASKS_STATE_DIR,
   TOKEN_FILE, TRANSLATE_DIRECTIONS, assertInsideRoot, config, engineSettingsFile,
   isSupportedDirection, normalizeDirection,
@@ -1429,8 +1429,8 @@ async function sendImageBytes(res, cors, dir, name) {
 function handleLibraryFile(req, res, cors, rawName, seqText, url) {
   const { dir } = resolveComicDir(rawName);
   const seq = Number.parseInt(seqText, 10);
-  if (!Number.isFinite(seq) || seq < 1 || seq > 999) {
-    throw new ApiError('INVALID_IMAGE', 'seq 必须是 1–999 的整数', { seq: seqText });
+  if (!Number.isFinite(seq) || seq < 1 || seq > MAX_SEQ) {
+    throw new ApiError('INVALID_IMAGE', `seq 必须是 1–${MAX_SEQ} 的整数`, { seq: seqText });
   }
   const variant = url.searchParams.get('variant') || 'translated';
   if (!['original', 'translated'].includes(variant)) {
@@ -2098,8 +2098,8 @@ async function handleChapterRenumber(req, res, cors, bookRaw, noRaw) {
 function handleChapterFile(req, res, cors, bookRaw, noRaw, seqText, url) {
   const info = mustChapterDir(bookRaw, noRaw);
   const seq = Number.parseInt(seqText, 10);
-  if (!Number.isFinite(seq) || seq < 1 || seq > 999) {
-    throw new ApiError('INVALID_IMAGE', 'seq 必须是 1–999 的整数', { seq: seqText });
+  if (!Number.isFinite(seq) || seq < 1 || seq > MAX_SEQ) {
+    throw new ApiError('INVALID_IMAGE', `seq 必须是 1–${MAX_SEQ} 的整数`, { seq: seqText });
   }
   const variant = url.searchParams.get('variant') || 'translated';
   if (!['original', 'translated'].includes(variant)) {

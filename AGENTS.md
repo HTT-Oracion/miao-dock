@@ -130,7 +130,8 @@ npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动�
 npm run check:bundle[:refute] # Windows 打包配置钉子 4 条 / 反证 4 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；源码级，不起进程）
 npm run check:resilience[:refute] # box-service 健壮性钉子 9 条 / 反证 14 条（源码级：R1–R7 顶层未捕获异常兜底（走同一 shutdown / 收 ③ / 重入闸 / 非零退出）· A1–A2 任务状态原子写（store 走 atomicWriteJson · tmp→fsync→rename）；不起进程；内存变异反证；D-138/D-139）
 npm run check:layering[:refute] # service 依赖方向钉子 3 条 / 反证 3 条（源码级：L0 底座文件集 == 白名单 · L1 底座不得 import manga/** · L2 底座对 settings/ 仅限 engine-settings.mjs；装配入口 server.mjs 豁免；不起进程；内存变异反证；D-141）
-npm run check:docs            # 文档 ↔ 实现一致性 16 条（条数对账 / 命令存在 / 禁词 0 命中 / GROUPS 覆盖）
+npm run check:docs            # 文档 ↔ 实现一致性 17 条（条数对账 / 命令存在 / 禁词 0 命中 / GROUPS 覆盖）
+npm run check:docpaths[:refute] # 现行文档引用的仓库路径必须真实存在 4 条 / 反证 2 条（只查 AGENTS/README/spec-notes-1/project_rules；spec-notes.md 已封卷于 D-136，历史路径明确不查；源码级，内存变异反证；D-158）
 cd app && npx tsc --noEmit && npx vite build   # 前端类型与构建
 cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 ```

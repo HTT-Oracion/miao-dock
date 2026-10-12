@@ -41,6 +41,7 @@ jobs:
       - name: 源码级检查
         run: |
           npm run check:docs
+          npm run check:docpaths
           npm run check:resilience
           npm run check:bundle
           npm run check:quit

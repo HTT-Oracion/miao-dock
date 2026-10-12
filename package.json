@@ -78,6 +78,8 @@
     "app": "npm --prefix app run tauri dev",
     "app:build": "npm --prefix app run tauri build",
     "check:docs": "node e2e/docs-consistency-check.mjs",
+    "check:docpaths": "node e2e/docs-path-check.mjs",
+    "check:docpaths:refute": "node e2e/docs-path-check.mjs --refute",
     "check:bundle": "node e2e/bundle-targets-check.mjs",
     "check:bundle:refute": "node e2e/bundle-targets-check.mjs --refute",
     "check:resilience": "node e2e/service/resilience-check.mjs",
