@@ -302,16 +302,34 @@ export function dailySongs(provider: MusicProvider): Promise<Song[]> {
 /**
  * 相似歌曲（心动模式的续播来源）。
  *
- * **仅网易云可得**：它的 `/api/v1/discovery/simiSong` 支持"传入 songid 返回相似歌曲"。
- * 酷狗的 `guess_like` 是"全站个人 FM"、**不接收 songid**；QQ / 咪咕无对应接口。
- * 所以其余平台返回空数组，由调用方**降级为随机**。
+ * **仅网易云可得**：它有"传入 songid 返回相似歌曲"的接口；酷狗的 `guess_like`
+ * 是"全站个人 FM"、**不接收 songid**；QQ / 咪咕无对应接口。所以其余平台返回
+ * 空数组，由调用方**降级为随机**（见 `cycleMode` / `canUseHeartbeat`）。
  *
  * ⚠️ 不要用「同歌手 / 同歌单 / 每日推荐」冒充"相似" —— 那是歌手循环或歌单循环，
  * 语义完全不同，用户点开就知道不对。
+ *
+ * 网易云内部走**主路 + 回落**两条（实测 2026-10-12，见 `netease::intelligence_list`）：
+ *   ① `playmode/intelligence/list`（智能播放）—— 单次 ~149 条，是客户端"心动模式"
+ *      真正用的接口；但**要求登录**，且 `pid` 只能是「我喜欢的音乐」；
+ *   ② `simiSong` —— 单次**硬顶 5 条**，但不需要登录。
+ * ① 报错或返回空（冷门歌 / 未登录 / 歌单定位失败）时回落 ②，
+ * 两条都空才算"没有相似歌曲"，由调用方提示用户。
  */
-export function similarSongs(provider: MusicProvider, songId: string, limit = 20): Promise<Song[]> {
-  if (provider === 'netease') return ipc.musicSimiSong(songId, limit);
-  return Promise.resolve([]);
+export async function similarSongs(
+  provider: MusicProvider,
+  songId: string,
+  limit = 20,
+): Promise<Song[]> {
+  if (provider !== 'netease') return Promise.resolve([]);
+  try {
+    const smart = await ipc.musicIntelligenceList(songId);
+    if (smart.length > 0) return smart;
+  } catch {
+    // 落 simi_song：智能播放失败（未登录 / 上游 4xx-5xx）时，
+    // simi_song 仍然是可用的（它不需要登录），不要在这里把错误抛给调用方。
+  }
+  return ipc.musicSimiSong(songId, limit);
 }
 
 /** 该平台是否支持"按歌曲取相似"（UI 据此提示用户，不做无声降级） */

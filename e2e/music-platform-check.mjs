@@ -113,6 +113,7 @@ const CONTRACT = {
     'music_playlist_detail', 'music_likelist', 'music_like', 'music_playlist_subscribe',
     'music_lyric', 'music_song_comments', 'music_personalized', 'music_recommend_songs',
     'music_recommend_resource', 'music_artist_search', 'music_playlist_search', 'music_artist_songs',
+    'music_intelligence_list',
   ],
   kugou: [
     'kugou_search', 'kugou_song_url', 'kugou_lyric', 'kugou_login_status', 'kugou_logout',

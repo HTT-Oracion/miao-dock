@@ -88,17 +88,30 @@ async fn post_eapi_full(
     let payload_text = serde_json::to_string(&full_payload).map_err(|e| e.to_string())?;
     let encrypted = encrypt_eapi_payload(api_path, &payload_text)?;
 
-    // 合并 header cookie 和用户 cookie
+    // 合并 header cookie 和用户 cookie。
+    //
+    // 🔴 **用户 cookie 必须放在前面**（2026-10-12 实测踩坑）：
+    // `build_eapi_header()` 里有一项 `MUSIC_U: ""`，拼在用户 cookie 之前时，
+    // 服务端读到的是**空**的 MUSIC_U → 所有需要登录的 eapi 接口一律回
+    // `301 需要登录`（`playmode/intelligence/list` 就这么挂的）。
+    // 而 eapi 的登录态接口恰恰是"必须带真 MUSIC_U"的那一类。
+    // 排序反过来的代价：用户 cookie 缺的项才轮到 header 兜底，语义不变。
+    //
+    // 另外**跳过空值**：`__csrf=` / `channel=` / `MUSIC_U=` 这类空 cookie
+    // 不携带任何信息，只会把同名真值"顶掉"，没有理由发出去。
     let header_cookie = header
         .iter()
+        .filter(|(_, v)| !v.as_str().unwrap_or("").is_empty())
         .map(|(k, v)| format!("{k}={}", v.as_str().unwrap_or("")))
         .collect::<Vec<_>>()
         .join("; ");
 
     let full_cookie = if user_cookie.is_empty() {
         header_cookie
+    } else if header_cookie.is_empty() {
+        user_cookie.to_string()
     } else {
-        format!("{header_cookie}; {user_cookie}")
+        format!("{user_cookie}; {header_cookie}")
     };
 
     let resp = client
@@ -752,6 +765,36 @@ pub async fn playlist_tracks_range(id: &str, start: usize, count: usize, cookie:
     Ok(songs)
 }
 
+/// 从用户歌单数组里找出「我喜欢的音乐」的歌单 id。
+///
+/// 判定顺序**不能改**：`specialType == 5` 是网易云对"喜欢歌单"的稳定约定；
+/// 名称匹配只是兜底（用户可把歌单改名，而 specialType 不会跟着变）；
+/// `id == uid` 是最后的兜底（喜欢歌单的 id 恰为 uid）。
+fn find_liked_playlist_id(playlists: &[Value], uid: &str) -> String {
+    playlists
+        .iter()
+        .find(|pl| {
+            pl.get("specialType").and_then(|v| v.as_i64()).unwrap_or(0) == 5
+        })
+        .or_else(|| {
+            playlists.iter().find(|pl| {
+                let name = pl.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                name == "我喜欢的音乐" || name.contains("喜欢")
+            })
+        })
+        .or_else(|| {
+            // 兜底：用 uid 作为歌单 id
+            playlists.iter().find(|pl| {
+                pl.get("id")
+                    .and_then(|v| v.as_i64())
+                    .map(|n| n.to_string() == uid)
+                    .unwrap_or(false)
+            })
+        })
+        .and_then(|pl| pl.get("id").and_then(|v| v.as_i64()).map(|n| n.to_string()))
+        .unwrap_or_else(|| uid.to_string())
+}
+
 /// 获取喜欢列表 — 优先从"我喜欢的音乐"歌单取 trackIds
 pub async fn likelist(uid: &str, cookie: &str) -> Result<Vec<String>, String> {
     let client = build_client();
@@ -771,27 +814,7 @@ pub async fn likelist(uid: &str, cookie: &str) -> Result<Vec<String>, String> {
         .and_then(|p| p.as_array())
         .ok_or("No playlists in result")?;
 
-    // 找到"我喜欢的音乐"歌单（网易云特殊歌单，specialType=5 或名称匹配）
-    let liked_pl = playlists.iter().find(|pl| {
-        let special = pl.get("specialType").and_then(|v| v.as_i64()).unwrap_or(0);
-        special == 5
-    }).or_else(|| {
-        playlists.iter().find(|pl| {
-            let name = pl.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            name == "我喜欢的音乐" || name.contains("喜欢")
-        })
-    }).or_else(|| {
-        // 兜底：用 uid 作为歌单 id
-        playlists.iter().find(|pl| {
-            pl.get("id").and_then(|v| v.as_i64()).map(|n| n.to_string() == uid).unwrap_or(false)
-        })
-    });
-
-    let liked_id = if let Some(pl) = liked_pl {
-        pl.get("id").and_then(|v| v.as_i64()).map(|n| n.to_string()).unwrap_or_default()
-    } else {
-        uid.to_string()
-    };
+    let liked_id = find_liked_playlist_id(playlists, uid);
 
     log::info!("[NetEase] liked playlist id: {liked_id}");
 
@@ -1033,6 +1056,357 @@ pub async fn simi_song(id: &str, limit: u32, cookie: &str) -> Result<Vec<Song>, 
     Ok(songs.iter().map(map_song_record).collect())
 }
 
+// ============================================================
+//  请求缓存（心动模式相关）
+// ============================================================
+//
+// 为什么需要缓存，两个接口各有一个"不缓存就纯浪费"的理由：
+//
+// ① `intelligence_list`：实测同一个 (songId, pid) 重复请求返回**完全相同**的
+//    149 条（overlap 149/149）。而心动模式的 `next()` 走到队尾会换一批种子
+//    再请求、用户反复进/出心动模式也会重复请求同一个种子 —— 不缓存就是
+//    每次都白打一次 ~500ms 的网络往返。
+// ② `liked_playlist_id`：intelligence_list 的 `pid` 只能从
+//    `login_status` + `user_playlist` 两个 HTTP 请求解出来。不缓存的话，
+//    每进一次心动模式都要多打两发。
+//
+// 设计约束：
+// - **只缓存成功结果**：失败的请求不进缓存，否则一次网络抖动会被"记住"一整段 TTL。
+// - **key 带身份信息**：intelligence 的 key 含 pid（pid 由 MUSIC_U 推导），
+//   liked_playlist_id 的 key 含 MUSIC_U —— 重新登录 / 登出后 key 自然变，
+//   不会把上一个账号的歌单 id 复用给下一个账号。
+// - **过期条目在 put 时顺带淘汰**：`retain` 一次 O(n)，n 是缓存条数（上限
+//   由 TTL + 换种子频率决定，量级在几十条），不做后台定时清理任务。
+
+/// 缓存条目：数据 + 写入时刻 + 该条目自己的 TTL
+struct CacheEntry<T> {
+    value: T,
+    at: std::time::Instant,
+    ttl: Duration,
+}
+
+/// 带 TTL 的进程内缓存（`Mutex<HashMap>`，临界区极短、绝不在持锁时 await）
+type TtlCache<T> = std::sync::Mutex<std::collections::HashMap<String, CacheEntry<T>>>;
+
+/// 取未过期条目；不存在或已过期都返回 `None`。
+fn cache_get<T: Clone>(map: &TtlCache<T>, key: &str) -> Option<T> {
+    // 锁中毒说明有线程在临界区内 panic 了 —— HashMap 本身仍是完好的，
+    // 直接复用而不是把后续所有请求一起带崩（缓存不是关键路径）。
+    let guard = map.lock().unwrap_or_else(|e| e.into_inner());
+    guard
+        .get(key)
+        .filter(|e| e.at.elapsed() < e.ttl)
+        .map(|e| e.value.clone())
+}
+
+/// 写入条目，并顺带淘汰所有已过期条目（防止切很多歌时缓存无限增长）。
+fn cache_put<T: Clone>(map: &TtlCache<T>, key: String, value: T, ttl: Duration) {
+    let mut guard = map.lock().unwrap_or_else(|e| e.into_inner());
+    guard.retain(|_, e| e.at.elapsed() < e.ttl);
+    guard.insert(
+        key,
+        CacheEntry {
+            value,
+            at: std::time::Instant::now(),
+            ttl,
+        },
+    );
+}
+
+/// 智能播放结果缓存有效期。
+/// 5 分钟：短于"用户切走再切回来"的间隔，又足够让一次心动队列播到换批。
+const INTEL_CACHE_TTL: Duration = Duration::from_secs(300);
+
+/// 「我喜欢的音乐」歌单 id 缓存有效期。
+/// 30 分钟：这个 id 几乎不会变（用户改名/重建喜欢歌单是极低频操作），
+/// 而它每进一次心动模式都要用，给长一些直接省掉两发 HTTP。
+const LIKED_PID_CACHE_TTL: Duration = Duration::from_secs(1800);
+
+static INTEL_CACHE: std::sync::OnceLock<TtlCache<Vec<Song>>> = std::sync::OnceLock::new();
+static LIKED_PID_CACHE: std::sync::OnceLock<TtlCache<String>> = std::sync::OnceLock::new();
+
+fn intel_cache() -> &'static TtlCache<Vec<Song>> {
+    INTEL_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+fn liked_pid_cache() -> &'static TtlCache<String> {
+    LIKED_PID_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// 本模块覆盖**上面**的缓存三件套（cache_get / cache_put / TTL）与
+/// **下面**的 `find_liked_playlist_id` / `intelligence_list` —— 故意放在这里
+/// 而不是文件末尾：被测的纯函数就近可见，`intelligence_live` 也在本模块内。
+#[cfg(test)]
+mod intelligence_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn pl(id: i64, name: &str, special: i64) -> Value {
+        json!({ "id": id, "name": name, "specialType": special })
+    }
+
+    /// `specialType == 5` 是稳定约定，必须优先于名称匹配。
+    /// 反证点：若把 specialType 判定删掉，用户把喜欢歌单改名后就会取错。
+    #[test]
+    fn liked_pid_prefers_special_type_over_name() {
+        let list = vec![pl(111, "我喜欢", 0), pl(222, "我喜欢的音乐", 5)];
+        assert_eq!(find_liked_playlist_id(&list, "111"), "222");
+    }
+
+    /// 名称兜底：没有 specialType=5 时（极少数账号/旧数据），按名称匹配。
+    #[test]
+    fn liked_pid_falls_back_to_name() {
+        let list = vec![pl(111, "随便建的", 0), pl(333, "我喜欢的音乐", 0)];
+        assert_eq!(find_liked_playlist_id(&list, "111"), "333");
+    }
+
+    /// uid 兜底：名称也匹配不到时，用 uid 本身（喜欢歌单 id 恰为 uid）。
+    #[test]
+    fn liked_pid_falls_back_to_uid() {
+        let list = vec![pl(111, "随便建的", 0)];
+        assert_eq!(find_liked_playlist_id(&list, "999"), "999");
+    }
+
+    /// 缓存命中：同 key 第二次取到的是同一份数据。
+    #[test]
+    fn cache_roundtrip() {
+        let map: TtlCache<String> = std::sync::Mutex::new(std::collections::HashMap::new());
+        cache_put(&map, "k".into(), "v".into(), INTEL_CACHE_TTL);
+        assert_eq!(cache_get(&map, "k"), Some("v".to_string()));
+        // 没写过的 key 不能凭空命中
+        assert_eq!(cache_get(&map, "nope"), None);
+    }
+
+    /// TTL 过期必须取不到 —— 否则换了一批种子还拿旧列表。
+    /// ttl=0 表示"写入即过期"，无需 sleep。
+    #[test]
+    fn cache_expires() {
+        let map: TtlCache<String> = std::sync::Mutex::new(std::collections::HashMap::new());
+        cache_put(&map, "k".into(), "v".into(), Duration::ZERO);
+        assert_eq!(cache_get(&map, "k"), None);
+    }
+
+    /// 过期条目要在 put 时被淘汰 —— 否则切很多歌时缓存无限增长。
+    #[test]
+    fn cache_evicts_stale_on_put() {
+        let map: TtlCache<String> = std::sync::Mutex::new(std::collections::HashMap::new());
+        cache_put(&map, "stale".into(), "x".into(), Duration::ZERO);
+        cache_put(&map, "fresh".into(), "y".into(), INTEL_CACHE_TTL);
+        assert_eq!(cache_get(&map, "fresh"), Some("y".to_string()));
+        let guard = map.lock().unwrap();
+        assert!(!guard.contains_key("stale"), "过期条目未被淘汰");
+        assert_eq!(guard.len(), 1);
+    }
+}
+
+/// 真联调：拿真实 cookie 打一次 `intelligence_list`，验证 eapi 加密路径 +
+/// `data[].songInfo` 解析 + 缓存命中。
+///
+/// **默认 ignore**（打真实网络、依赖本机登录态）。跑法：
+/// ```text
+/// set MIAO_NETEASE_COOKIE=C:\Users\<你>\AppData\Roaming\com.miaodock.desktop\music-cookies.json
+/// cargo test --bin miao-dock intelligence_live -- --ignored --nocapture
+/// ```
+/// cookie 文件就是 miao-dock 自己落盘的那份（`{ cookie_netease: "..." }`），
+/// 不需要另找登录态。
+#[tokio::test]
+#[ignore = "打真实网络并依赖本机登录态，手工跑"]
+async fn intelligence_live() {
+    let cookie_file = match std::env::var("MIAO_NETEASE_COOKIE") {
+        Ok(p) => p,
+        Err(_) => {
+            eprintln!("skip: 未设 MIAO_NETEASE_COOKIE");
+            return;
+        }
+    };
+    let raw = std::fs::read_to_string(&cookie_file).expect("cookie 文件应可读");
+    let cookie: String = serde_json::from_str::<serde_json::Value>(&raw)
+        .ok()
+        .and_then(|v| {
+            v.get("cookie_netease")
+                .and_then(|c| c.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or(raw);
+    let cookie = super::cookie::normalize_cookie_header(&cookie);
+
+    // 种子用真实数据（我喜欢的音乐里的曲子）；换任意歌曲 id 都行
+    let song_id = "2087669501";
+    let first = intelligence_list(song_id, &cookie)
+        .await
+        .expect("intelligence_list 应成功（未登录会在这里失败）");
+    assert!(!first.is_empty(), "应返回非空歌曲列表");
+    assert!(
+        first.iter().all(|s| !s.id.is_empty()),
+        "不应出现 id 为空的脏条目（songInfo 判空失效）"
+    );
+    assert!(
+        first.iter().any(|s| s.id != song_id),
+        "返回里应有种子之外的歌"
+    );
+    println!("intelligence_list: {} songs", first.len());
+
+    // 第二次必须走缓存：同 key 命中，条数一致
+    let second = intelligence_list(song_id, &cookie).await.unwrap();
+    assert_eq!(first.len(), second.len(), "缓存命中应返回同一批");
+
+    // 🔴 直接验缓存**真的被写了**：只比"两次条数一样"是不够的 ——
+    // 万一带缓存的代码没接上，两次都打网络也会拿到同样的 149 条，断言照绿。
+    // 这里直接查缓存 map 里有没有这条 key（key = song_id|pid）。
+    let pid = liked_playlist_id(&cookie).await.expect("应能定位喜欢歌单");
+    assert!(
+        cache_get(intel_cache(), &format!("{song_id}|{pid}")).is_some(),
+        "intelligence_list 的结果应写入缓存"
+    );
+    assert!(
+        cache_get(liked_pid_cache(), &format!(
+            "likedPid:{}",
+            super::cookie::parse_cookie_string(&cookie)
+                .get("MUSIC_U")
+                .cloned()
+                .unwrap_or_default()
+        ))
+        .is_some(),
+        "liked_playlist_id 应写入缓存"
+    );
+    println!("cache: hit (pid={pid})");
+
+    // 顺带验公开 eapi 接口没被 cookie 排序改动打坏
+    // （artist_songs 是 eapi，且不依赖登录态 —— 改坏了它说明回归）
+    let songs = artist_songs("6452", 10, 0, &cookie)
+        .await
+        .expect("artist_songs 应仍然可用");
+    assert!(!songs.is_empty(), "artist_songs 不应返回空");
+    println!("artist_songs: {} songs (回归检查)", songs.len());
+}
+
+/// 「我喜欢的音乐」歌单 id（智能播放接口的 `pid` 唯一合法取值）。
+///
+/// 为什么不让前端传：`pid` 的约束（只能是喜欢歌单，见 `intelligence_list`）
+/// 是上游的隐性规则，前端拿到的 `leftPlaylistMeta.id` 只是"当前打开的歌单"，
+/// 心跳模式里它恰好是喜欢歌单，但把这个巧合固化成接口契约迟早出错。
+/// 由 Rust 侧自己解析 + 缓存，前端零成本。
+///
+/// 需要两个 HTTP 请求（`login_status` 拿 uid → `user_playlist` 拿歌单数组），
+/// 所以必须带缓存，见本文件「请求缓存」节的说明 ②。
+async fn liked_playlist_id(cookie: &str) -> Result<String, String> {
+    // key 用 cookie 里的 MUSIC_U：账号切换 / 重新登录后 key 自然变，
+    // 不会把上一个号的喜欢歌单 id 复用给下一个号。
+    let cache_key = format!(
+        "likedPid:{}",
+        super::cookie::parse_cookie_string(cookie)
+            .get("MUSIC_U")
+            .cloned()
+            .unwrap_or_default()
+    );
+    if let Some(hit) = cache_get(liked_pid_cache(), &cache_key) {
+        return Ok(hit);
+    }
+
+    let info = login_status(cookie).await?;
+    if !info.logged_in || info.user_id.is_empty() {
+        return Err("未登录，无法定位「我喜欢的音乐」歌单".into());
+    }
+
+    let client = build_client();
+    let limit_str = "200".to_string();
+    let offset_str = "0".to_string();
+    let pl_result = get_api(
+        &client,
+        "/api/user/playlist",
+        &[
+            ("uid", info.user_id.as_str()),
+            ("limit", &limit_str),
+            ("offset", &offset_str),
+            ("csrf_token", ""),
+        ],
+        cookie,
+    )
+    .await?;
+
+    let playlists = pl_result
+        .get("playlist")
+        .and_then(|p| p.as_array())
+        .ok_or("No playlists in result")?;
+
+    let pid = find_liked_playlist_id(playlists, &info.user_id);
+    log::info!("[NetEase] liked playlist id resolved: {pid}");
+    cache_put(liked_pid_cache(), cache_key, pid.clone(), LIKED_PID_CACHE_TTL);
+    Ok(pid)
+}
+
+/// 智能播放（心动模式）—— 网易云官方 `/api/playmode/intelligence/list`。
+///
+/// **与 `simi_song` 的分工**（实测于 2026-10-12，账号 uid 83700187）：
+/// - `simi_song`（weapi `/api/v1/discovery/simiSong`）：单次**硬顶 5 条**，
+///   `limit` / `offset` 传什么都不管用，但**不需要登录**；
+/// - 本接口（eapi）：单次 **149 条**，是网易云客户端「心动模式」真正用的接口。
+///
+/// 本接口的四个上游约束（都是实测踩出来的，改代码前必读）：
+/// 1. **必须登录** —— 不带 cookie 返回 `301 需要登录`；
+/// 2. **`pid` 必传且只能是「我喜欢的音乐」** —— 自建歌单 / 年度歌单 /
+///    官方榜单全部 `400 不支持该歌单类型`。这与前端 `canUseHeartbeat` 的
+///    「网易云 + 队列来自喜欢歌单」语义天然对齐；
+/// 3. **`count` 无效** —— 传 1 和传 10 都是 149，别指望调大它；
+/// 4. **不可累积** —— 同一 (songId, pid) 重复请求返回完全相同的 149 条，
+///    想换一批只能换种子。这正是上面要加缓存的原因：命中即省一次请求。
+///
+/// 返回结构是 `{ id, alg, recommended, songInfo }`，**`songInfo` 可能为 null**
+/// （实测 149 条里有 5 条）—— 不判空会把空曲目塞进队列，播放时才发现播不了。
+pub async fn intelligence_list(song_id: &str, cookie: &str) -> Result<Vec<Song>, String> {
+    let pid = liked_playlist_id(cookie).await?;
+    let cache_key = format!("{song_id}|{pid}");
+
+    if let Some(hit) = cache_get(intel_cache(), &cache_key) {
+        log::info!("[NetEase] intelligence_list cache hit: song={song_id} ({} songs)", hit.len());
+        return Ok(hit);
+    }
+
+    let client = build_client();
+    let mut payload = serde_json::Map::new();
+    payload.insert("songId".into(), json!(song_id));
+    payload.insert("type".into(), json!("fromPlayOne"));
+    payload.insert("playlistId".into(), json!(pid));
+    payload.insert("startMusicId".into(), json!(song_id));
+    // count 上游忽略（约束 3），传 1 只为占位
+    payload.insert("count".into(), json!(1));
+
+    let result = post_eapi(
+        &client,
+        "/api/playmode/intelligence/list",
+        payload,
+        cookie,
+    )
+    .await?;
+
+    let code = result.get("code").and_then(|v| v.as_i64()).unwrap_or(-1);
+    if code != 200 {
+        return Err(format!("intelligence_list failed: code={code}"));
+    }
+
+    let data = result
+        .get("data")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    // songInfo 非 null 才算一条有效歌曲；id 为空的是脏数据，一并滤掉
+    let songs: Vec<Song> = data
+        .iter()
+        .filter_map(|item| item.get("songInfo").filter(|v| !v.is_null()))
+        .map(|info| map_song_record(info))
+        .filter(|s| !s.id.is_empty())
+        .collect();
+
+    log::info!(
+        "[NetEase] intelligence_list: song={song_id} pid={pid} raw={} usable={}",
+        data.len(),
+        songs.len()
+    );
+
+    cache_put(intel_cache(), cache_key, songs.clone(), INTEL_CACHE_TTL);
+    Ok(songs)
+}
 /// 搜索歌单 (使用 cloudsearch type=1000)
 pub async fn playlist_search(keywords: &str, limit: u32, cookie: &str) -> Result<Vec<Playlist>, String> {
     let client = build_client();

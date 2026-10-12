@@ -1269,3 +1269,57 @@ D-145/D-147 完成；本轮处理「路由表化」。
 
 > ⏭️ **剩余路由**（tasks / queue / engine / translate / 以及 library 的 GET·create·files·chapters）
 > 保持 if/else：形态异构，表驱动无净收益。**不建议下一轮"为了统一"把它们也塞进表。**
+
+---
+
+## D-160 · 心动模式接入「智能播放」：`simi_song` 5 条 → 149 条 + eapi cookie 排序坑（2026-10-12）
+
+**背景**：调研结论（`.tmp-check/neteaseApi/REPORT.md`，39 个接口实测）——
+`/api/v1/discovery/simiSong` 单次**硬顶 5 条**（`limit`/`offset` 均无效），
+而网易云客户端「心动模式」真正用的 `/api/playmode/intelligence/list`
+单次**固定 149 条**。本轮把后者迁进来，`simi_song` **原样保留**作回落。
+
+### 实现：主路 + 回落，不是替换
+
+| 层 | 文件 | 改动 |
+|---|---|---|
+| Rust | `netease.rs` | 新增 `intelligence_list()`（eapi）+ `liked_playlist_id()`（带缓存）+ `find_liked_playlist_id()`（从 `likelist` 抽出共用）+ TTL 缓存三件套；**`simi_song` 一行未动** |
+| Rust | `music/mod.rs` · `main.rs` | 新增命令 `music_intelligence_list` 并注册 |
+| 前端 | `ipc.ts` · `platform.ts` | `similarSongs` 改为「先 intelligence、失败/空回落 simiSong」 |
+| 前端 | `actions/playback.ts` | 去重（songKey）+ 修正 `HEARTBEAT_FETCH` 文档 |
+
+**为什么 `pid` 由 Rust 解析而不是前端传**：`pid` 的约束（只能是「我喜欢的音乐」）
+是上游隐性规则 —— 前端 `leftPlaylistMeta.id` 只是"当前打开的歌单"，心跳模式里它
+**恰好**是喜欢歌单，把这个巧合固化成接口契约迟早出错。
+
+### 🔴 eapi cookie 排序坑（本轮实测踩到，改动外溢）
+
+`build_eapi_header()` 里有一项 `MUSIC_U: ""`，而 `post_eapi_full` 把 header cookie
+拼在**用户 cookie 之前** ⇒ 服务端先读到**空** MUSIC_U ⇒ 所有需登录的 eapi 接口
+一律回 `301 需要登录`。`intelligence_list` 就是这么挂的（第一次真联调即复现）。
+
+修法：**用户 cookie 置前** + header cookie **跳过空值**。
+外溢面：`artist_songs` / `artist/top/song` / 登录 QR 也走 `post_eapi` ——
+前两个是公开接口不受影响（已由 `intelligence_live` 的回归断言兜住），
+QR 登录时用户 cookie 通常为空、行为不变。
+
+### 缓存（两层，都在 Rust 侧）
+
+| 缓存 | key | TTL | 理由 |
+|---|---|---|---|
+| `intelligence_list` 结果 | `songId\|pid` | 5 min | 实测同一 key 重复请求返回**完全相同**的 149 条（overlap 149/149）；`next()` 到队尾换批、反复进出心动模式都会重打 |
+| `liked_playlist_id` | `likedPid:MUSIC_U` | 30 min | 它要 `login_status` + `user_playlist` 两发 HTTP 才能解出来 |
+
+约束：**只缓存成功结果**（一次网络抖动不该被记住一整个 TTL）· key 带 MUSIC_U
+（换号后 key 自然变，不串号）· 过期条目在 `put` 时 `retain` 淘汰（防切很多歌时无限增长）
+· 锁中毒时 `into_inner()` 复用而不是带崩后续请求。
+
+### 验收
+
+- `cargo test` 13/0（1 ignored = 真联调）；真联调实测 **149 首**、
+  缓存命中（pid=94517441，与调研一致）、`artist_songs` 50 首回归通过
+- `tsc --noEmit` 0 · `check:music` 227/3（3 条为存量 ISLANDV/RESTORE/KEYS，
+  已用 `git stash` 对比确认与本次无关）· `check:music:refute` 212/212 ·
+  `check:contract` 77/0 · `check:docs` 15/2（存量，与本次无关）
+- `e2e/music-platform-check.mjs` 的 `CONTRACT.netease` 补登 `music_intelligence_list`
+  （否则"命令被摘掉注册"这类回归没有任何断言能发现）

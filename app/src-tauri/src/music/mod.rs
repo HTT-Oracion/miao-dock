@@ -205,6 +205,18 @@ pub async fn music_simi_song(id: String, limit: Option<u32>) -> Result<Vec<Song>
     netease::simi_song(&id, limit.unwrap_or(50), &app_cookie).await
 }
 
+/// 智能播放 (心动模式): 网易云官方 `/api/playmode/intelligence/list`
+///
+/// 与 `music_simi_song` 的关系是**主路 + 回落**，不是替代：本接口单次 ~149 条
+/// 但要求登录、`pid` 只能是「我喜欢的音乐」；`simi_song` 只有 5 条却不需要登录。
+/// 两者都由前端 `platform.similarSongs` 编排（先本接口、失败回落 simi_song），
+/// 上游契约与实测约束见 `netease::intelligence_list` 的文档注释。
+#[tauri::command]
+pub async fn music_intelligence_list(id: String) -> Result<Vec<Song>, String> {
+    let app_cookie = get_app_cookie().await;
+    netease::intelligence_list(&id, &app_cookie).await
+}
+
 #[tauri::command]
 pub async fn music_artist_search(keywords: String, limit: Option<u32>) -> Result<Vec<Artist>, String> {
     let app_cookie = get_app_cookie().await;

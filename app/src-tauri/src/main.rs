@@ -113,6 +113,7 @@ fn main() {
             music::music_recommend_songs,
             music::music_recommend_resource,
             music::music_simi_song,
+            music::music_intelligence_list,
             music::music_artist_search,
             music::music_playlist_search,
             music::music_artist_songs,

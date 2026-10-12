@@ -81,6 +81,9 @@ export const musicRecommendResource = () => invoke<Playlist[]>('music_recommend_
 export const musicSimiSong = (id: string, limit?: number) =>
   invoke<Song[]>('music_simi_song', { id, limit: limit ?? null });
 
+/** 智能播放（心动模式官方接口，单次 ~149 条，需登录） */
+export const musicIntelligenceList = (id: string) => invoke<Song[]>('music_intelligence_list', { id });
+
 export const musicArtistSearch = (keywords: string, limit?: number) =>
   invoke<Artist[]>('music_artist_search', { keywords, limit: limit ?? null });
 
