@@ -650,3 +650,63 @@ refute 13/13（字节还原校验全过）** · `check:contract` 77/0 · `check:
 > 📌 **环境坑**：`vite build` 会先清空 `app/dist/`（661 个文件），被本机沙箱的
 > safe-delete 守卫拦下（`SAFE_DELETE_BULK_CONFIRM_REQUIRED`，阈值 50）。**不是代码问题**：
 > 把 `dist/` 移走再 build 即可。
+
+---
+
+## D-149 · 拆 `music/store.ts` 第一刀：歌词纯函数 → `tools/lyrics.ts`（2026-10-11）
+
+**背景**：审计 §3.3。`music/store.ts` 2,822 行，混了四层职责（纯函数 / 持久化 / 网络 / 播放状态机）。
+本轮先把**最干净的一簇**拿出去：歌词解析纯函数。
+
+### 移出的内容
+
+`screens` 无关的**零依赖纯函数** → 新建 `app/src/tools/lyrics.ts`（228 行）：
+`LyricWord` / `ParsedLyricLine` 类型 · `parseLrc` · `finalizeLineDurations` · `parseYrc` ·
+`mergeTranslation` · `lyricIndexAt`。
+
+理由：这些的进出都是字符串 / 数组，**不碰 store 的任何状态**，却被 store 独占 —— 而
+`tools/index.ts` 头注释明写「纯函数便于在规格自检里单独验证」，这个约定在歌词解析上原先没遵守。
+
+`store.ts` **2,822 → 2,604 行**。引用方随之改指：`KaraokeLyrics.tsx`（`lyricIndexAt`/`ParsedLyricLine`）·
+`DynamicIsland.tsx`（`ParsedLyricLine`）。`store.ts` 只留 `mergeTranslation`/`parseLrc`/`parseYrc`
+（`loadLyrics` 要用）。
+
+> ⚠️ 仍**未做**：store 的持久化簇（`readLS`/`writeLS`/快照/`savePrefs`）与四层职责分离。
+> 那要牵动 `prefs.islandView` 那条反证锚，留下一刀。
+
+### 断言锚的搬迁（与 D-148 同一套做法）
+
+- `music-platform-check.mjs`：新增 `F.lyrics`；新增 `s.storeLyrics` = **逐文件单独 `stripComments` 再拼接**
+  （不能直接拼原文 —— 状态机跨文件失同步，见 D-148）；`LYRICS.parseYrcUsed` / `LYRICS.lineInterpolation` /
+  `LYRICS.translationMerge` 三条判据改读 `s.storeLyrics`；3 条变异（`parseYrc` 改名 /
+  `finalizeLineDurations` 夹紧 / `parseLrc` 补 duration）的 `file:` 从 `F.store` 改 `F.lyrics`。
+- 正向 `216/3`（3 条既有环境红不变）· **反证 184/184、零跳过**。
+
+### 🔴🔴 本轮的真正地雷：`sed -i` / `Write` 会**把文件写成 LF**，而本仓工作区是 CRLF
+
+这是本轮踩到的、**比代码本身更值得记**的坑，务必按下面的做法排查。
+
+**现象**：`check:docs` 从 17/0 变 15/2 —— 报「AGENTS.md 声明的 check:music 条数与脚本一致
+〔文档写 216，脚本实际 217〕」。`check:docs` 是**实跑脚本取「通过 N」**，所以是 `check:music`
+的通过数变了：`RESTORE.restoringClosed` 由红转绿。
+
+**根因**：该判据里有两条**多行**锚点用 `occurrences(src, 'get().clearQueue();\n            set(…)')`
+—— 字面量是 **LF**。工作区若是 CRLF，这两条**本来就该红**（本仓已知的 EOL 假红）。
+而本会话用 `sed -i` 删行、用 `Write` 建新文件，**两者都会把整文件写成 LF** ⇒ 那两条锚点
+突然命中 ⇒ 判据变绿 ⇒ 通过数 216→217 ⇒ `check:docs` 报错。
+（同一根因也会**反向**影响其它按 CRLF 写的锚点。）
+
+**纪律**：
+1. **改完必须把文件转回 CRLF**（本仓 `core.autocrlf=true`，工作区 CRLF）。检测**不要用
+   `grep -c $'\r'`** —— 该转义在 Git Bash 里可能不展开成空模式，于是 `grep -c ''` **匹配每一行**，
+   看着"C R 数 = 行数"像是没问题，实际早已是纯 LF（本轮就是这么被误导的）。用 Node 数
+   `text.split('\n').filter(l => l.endsWith('\r')).length`，或直接判 `\r` 是否出现。
+2. **判据若出现 flaky 的红/绿翻转，先查该文件的 EOL**，再怀疑代码。
+3. `Write` 工具与 `sed -i` 都会写 LF；`Edit` 保留原行尾。**批量搬家优先用 `sed -n`（只读）+ 追加**，
+   若用了 `sed -i`，末尾统一转 CRLF。
+
+### 验收
+
+`tsc --noEmit` 0 · `vite build` 通过 · `check:music` 216/3 + **refute 184/184** ·
+`check:units` 45/0 + refute 59/59 · `check:settings` 180/0 · `check:ia` 32/0 · `check:autostart` 12/0 ·
+`check:lib-manage` 24/0 · `check:retranslate` 12/0 · `check:docs` 17/0。

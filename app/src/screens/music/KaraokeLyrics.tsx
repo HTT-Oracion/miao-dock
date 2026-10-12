@@ -39,8 +39,9 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { findAudioElement } from '@music/audioGraph';
-import { lyricIndexAt, useMusicStore } from '@music/store';
-import type { ParsedLyricLine } from '@music/store';
+import { useMusicStore } from '@music/store';
+import { lyricIndexAt } from '@tools/lyrics';
+import type { ParsedLyricLine } from '@tools/lyrics';
 
 interface KaraokeLyricsProps {
   /** 已解析歌词行（time 单位秒；含可选 duration / words） */

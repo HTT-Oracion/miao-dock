@@ -46,6 +46,8 @@ const F = {
   ipc: path.join(APP, 'src', 'music', 'ipc.ts'),
   platform: path.join(APP, 'src', 'music', 'platform.ts'),
   store: path.join(APP, 'src', 'music', 'store.ts'),
+  // D-149：歌词解析纯函数已从 store.ts 抽到 tools/lyrics.ts；歌词判据读「store + lyrics」的拼接。
+  lyrics: path.join(APP, 'src', 'tools', 'lyrics.ts'),
   types: path.join(APP, 'src', 'music', 'types.ts'),
   // ── 桌面歌词（P3）──
   rustLyrics: path.join(APP, 'src-tauri', 'src', 'lyrics_window.rs'),
@@ -190,6 +192,9 @@ function loadSources() {
     ipc: readMaybe(F.ipc),
     platform: readMaybe(F.platform),
     store: readMaybe(F.store),
+    // 歌词判据的源：`store.ts` + `tools/lyrics.ts`。**逐文件单独 strip 再拼** ——
+    // `stripComments` 带状态机，直接拼原文会让前一个文件的失同步污染后一个（见 D-148 同类坑）。
+    storeLyrics: [F.store, F.lyrics].map((p) => stripComments(readMaybe(p))).join('\n'),
     types: readMaybe(F.types),
     rustLyrics: readMaybe(F.rustLyrics),
     capabilities: readMaybe(F.capabilities),
@@ -1840,7 +1845,7 @@ add('LYRICS.parseYrcUsed', 'LYRICS', (s) => {
   // ⚠️ 判据必须**限定作用域 + 数出现次数**，不能只查标识符出现过：
   // 把 loadLyrics 里那次调用删掉（只留定义）、或复制出第二个同名函数，都曾让
   // 同类断言保持全绿（本项目已栽过多次，D-31）。
-  const store = stripComments(s.store ?? '');
+  const store = s.storeLyrics ?? '';
   const missing = [];
   // ① 定义唯一
   const defs = (store.match(/export function parseYrc\b/g) || []).length;
@@ -1861,7 +1866,7 @@ add('LYRICS.lineInterpolation', 'LYRICS', (s) => {
   // 若 duration 不被推断/夹紧，"无逐字数据"的歌在渲染层就没有可插值的跨度 →
   // 效果与"没做逐字高亮"一模一样，而 parseYrc / 双层结构那几条断言**依然全绿**。
   // 所以必须单独把这条退化路径锁死。
-  const store = stripComments(s.store ?? '');
+  const store = s.storeLyrics ?? '';
   const kara = stripComments(s.karaoke ?? '');
   const missing = [];
   // ① finalizeLineDurations 存在，且被 parseLrc / parseYrc **两条路径**都调用
@@ -2025,7 +2030,7 @@ add('LYRICS.modeLineRender', 'LYRICS', (s) => {
 add('LYRICS.translationMerge', 'LYRICS', (s) => {
   // 翻译合并：ParsedLyricLine 有 translation 字段 + mergeTranslation 函数 + loadLyrics 真调用。
   // 防「字段/函数定义了但 loadLyrics 没接」—— 那会永远不显示翻译。
-  const store = stripComments(s.store ?? '');
+  const store = s.storeLyrics ?? '';
   const missing = [];
   if (!/translation\?:\s*string/.test(store)) missing.push('ParsedLyricLine 缺 translation? 字段');
   if (!/function\s+mergeTranslation\s*\(/.test(store)) missing.push('缺 mergeTranslation 函数');
@@ -4116,7 +4121,7 @@ const MUTATIONS = [
   // ── LYRICS 逐字歌词（卡拉OK）────────────────────────────────────────
   {
     name: '把 parseYrc 改名（模拟"定义了但没接进来"）',
-    file: F.store,
+    file: F.lyrics,
     find: 'export function parseYrc(yrc: string): ParsedLyricLine[] {',
     replace: 'export function parseYrcDisabled(yrc: string): ParsedLyricLine[] {',
     expect: ['LYRICS.parseYrcUsed'],
@@ -4132,14 +4137,14 @@ const MUTATIONS = [
   {
     // 本任务最关键的反证：破坏「无 yrc 时的行级插值」—— 绝大多数歌走的就是这条路
     name: 'finalizeLineDurations 去掉 [0.45, 12] 夹紧（退化路径失去边界保护）',
-    file: F.store,
+    file: F.lyrics,
     find: '    lines[i].duration = Math.max(0.45, Math.min(12, lines[i].duration as number));\n',
     replace: '    lines[i].duration = lines[i].duration as number;\n',
     expect: ['LYRICS.lineInterpolation'],
   },
   {
     name: 'parseLrc 不再补 duration（LRC 退化路径断头 → 无 yrc 的歌没有推进跨度）',
-    file: F.store,
+    file: F.lyrics,
     find: '  // ⚠️ LRC **只有行级时间**，没有逐字数据 —— 必须在这里补出行持续时长，\n  // 否则「无 yrc 的歌」在渲染层没有可插值的跨度，逐字推进会整体失效。\n  return finalizeLineDurations(lines);',
     replace: '  return lines;',
     expect: ['LYRICS.lineInterpolation'],

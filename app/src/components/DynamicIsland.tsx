@@ -4,7 +4,8 @@ import type { CSSProperties } from 'react';
 import { IconButton } from '@components/units/IconButton';
 import { attachAnalyser, findAudioElement, isAudioContextRunning, readLevels } from '@music/audioGraph';
 import { coverProxyUrl, fmtTime, useMusicStore } from '@music/store';
-import type { IslandView, ParsedLyricLine } from '@music/store';
+import type { IslandView } from '@music/store';
+import type { ParsedLyricLine } from '@tools/lyrics';
 import type { Song } from '@music/types';
 import { KaraokeLyrics } from '@screens/music/KaraokeLyrics';
 
