@@ -102,7 +102,7 @@ function SearchResults() {
   const currentSong = useMusicStore((s) => s.currentSong);
   const appendToQueue = useMusicStore((s) => s.appendToQueue);
   const toggleLike = useMusicStore((s) => s.toggleLike);
-  const playQueue = useMusicStore((s) => s.playQueue);
+  const playPlaylist = useMusicStore((s) => s.playPlaylist);
   const toast = useMusicStore((s) => s.toast);
 
   const likeWritable = capsOf(searchProvider).likeWrite;
@@ -139,7 +139,7 @@ function SearchResults() {
         renderItem={(s, i) => {
           const liked = likedSet.has(s.id);
           // 搜索结果里点一首 = 把整个结果集设为队列（与左键点行同一个回调）
-          const play = () => void playQueue(results, i);
+          const play = () => void playPlaylist(results, { index: i });
           return (
             <SongRow
               song={s}
@@ -253,7 +253,7 @@ function RightTracksView() {
   const loadingMore = useMusicStore((s) => s.loadingMoreRight);
   const loadMore = useMusicStore((s) => s.loadMoreRight);
   const back = useMusicStore((s) => s.backToRecommendations);
-  const playQueue = useMusicStore((s) => s.playQueue);
+  const playPlaylist = useMusicStore((s) => s.playPlaylist);
   const currentSong = useMusicStore((s) => s.currentSong);
   const proxyPort = useMusicStore((s) => s.proxyPort);
 
@@ -272,7 +272,7 @@ function RightTracksView() {
           type="button"
           className="music-btn pri"
           disabled={tracks.length === 0}
-          onClick={() => void playQueue(tracks, 0)}
+          onClick={() => void playPlaylist(tracks, { playlist: meta ?? undefined })}
         >
           <Play size={12} /> 播放全部
         </button>
@@ -291,7 +291,7 @@ function RightTracksView() {
             onNearEnd={loadingMore ? undefined : () => void loadMore()}
             renderItem={(s, i) => {
               // 榜单/歌单曲目：把整张单子设为队列
-              const play = () => void playQueue(tracks, i);
+              const play = () => void playPlaylist(tracks, { playlist: meta ?? undefined, index: i });
               return (
                 <SongRow
                   song={s}
@@ -317,7 +317,7 @@ function DailyView() {
   const songs = useMusicStore((s) => s.dailySongs);
   const loading = useMusicStore((s) => s.loadingDaily);
   const back = useMusicStore((s) => s.backToRecommendations);
-  const playQueue = useMusicStore((s) => s.playQueue);
+  const playPlaylist = useMusicStore((s) => s.playPlaylist);
   const currentSong = useMusicStore((s) => s.currentSong);
   const proxyPort = useMusicStore((s) => s.proxyPort);
 
@@ -334,7 +334,7 @@ function DailyView() {
           type="button"
           className="music-btn pri"
           disabled={songs.length === 0}
-          onClick={() => void playQueue(songs, 0)}
+          onClick={() => void playPlaylist(songs)}
         >
           <Play size={12} /> 播放全部
         </button>
@@ -351,7 +351,7 @@ function DailyView() {
           itemKey={(s, i) => `${s.provider}:${s.id}:${i}`}
           renderItem={(s, i) => {
             // 每日推荐：把推荐列表设为队列
-            const play = () => void playQueue(songs, i);
+            const play = () => void playPlaylist(songs, { index: i });
             return (
               <SongRow
                 song={s}

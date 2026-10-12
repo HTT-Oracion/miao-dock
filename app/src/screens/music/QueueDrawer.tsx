@@ -52,6 +52,9 @@ export function QueueDrawer() {
             className="is-drawer"
             items={queue}
             resetKey="queue"
+            // 打开抽屉即定位到"正在播的那首"（需求第 3 条）。定位交给 VirtualList 自己裁决：
+            // 在外面写 scrollTop 会与它内部的复位逻辑打架（表现为先闪到顶再跳下来）。
+            scrollToIndex={currentIndex}
             itemKey={(s, i) => `${songKey(s)}:${i}`}
             renderItem={(s, i) => (
               <div

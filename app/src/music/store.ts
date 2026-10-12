@@ -117,6 +117,51 @@ export interface MusicState {
    */
   muted: boolean;
   playMode: PlayMode;
+  /**
+   * 当前队列是否来自「我喜欢的音乐」。
+   *
+   * 为什么需要它：心动模式**只在这个歌单的上下文里**有效（见 PlayMode 注释）。
+   * 它随队列一起被写：播「我喜欢的音乐」置真，播其它歌单/搜索结果/本地/历史置假。
+   * 不做成"看 queue 内容去猜"—— 队列里是一堆 Song，猜不出它从哪来。
+   */
+  queueFromLiked: boolean;
+  /**
+   * 当前这轮队列上下文里**是否进过心动模式**。
+   *
+   * 用途：区分「首次进入心动模式」与「离开后又切回来」——
+   * 前者要替换整个队列并从头播放第一首，后者要**保留当前歌曲**、只替换其余部分
+   * 并继续播放当前歌曲（需求原文的两种情形）。
+   *
+   * 🔴 为什么不能直接用"队列是不是心动生成的"来判断：
+   * 切离心动模式时队列会**恢复成原来的播放列表**（需求），那一刻队列已不是心动生成的，
+   * 但"进过心动"这个事实必须留着 —— 否则切回来又走"首次进入"，把用户正在听的歌从头重播。
+   * 这两个条件会分叉，所以必须是**独立**的标志。
+   *
+   * 生命周期：随播放源的新队列一起复位（`playQueue` 里置假），不持久化
+   * —— 冷启动后队列来自快照，视为"还没进过心动"，行为与首次一致。
+   */
+  heartbeatSeeded: boolean;
+  /**
+   * 进入心动模式**之前**的队列快照 —— 用于"切离心动模式时恢复成原来的播放列表"。
+   *
+   * 为什么必须有它：心动模式会把队列整个换成相似歌（[当前歌, ...相似]），
+   * 原歌单就此被覆盖。若不先存一份，用户切到别的模式时**拿不回**他原来的歌单 ——
+   * 队列会一直停在那一串相似歌上，而且没有任何入口能回去。
+   *
+   * 只记"首次进入"时的那一份：从心动切走再切回来（`heartbeatSeeded` 已为真）不覆盖它，
+   * 否则第二次进入会把「[当前歌, ...相似]」当成"原列表"存下来，恢复出来的还是相似歌。
+   */
+  heartbeatRestore: { queue: Song[]; index: number; queueFromLiked: boolean } | null;
+  /**
+   * 「我喜欢的音乐」是否**开启过**心动模式（持久化）。
+   *
+   * 用途：切换歌单时若目标是「我喜欢的音乐」—— 开启过就自动切到心动模式并开始播放；
+   * 没开启过就沿用前一个歌单的播放模式。
+   * 之所以要**单独**记在"我喜欢的音乐"名下、而不是复用全局 playMode：
+   * 全局 playMode 会被切歌单重写（离开心动会切成顺序播放），
+   * 拿它当"有没有开启过"的判据，切一次歌单就丢了。
+   */
+  likedHeartbeatOn: boolean;
   playUrl: string;
   playbackQuality: PlaybackQuality;
   currentQuality: string;
@@ -197,6 +242,18 @@ export interface MusicState {
 
   // ---- 左栏（我的音乐）----
   leftView: LeftView;
+  /**
+   * 歌单列表两个分组（创建的歌单 / 收藏的歌单）的收起状态，**默认都展开**。
+   *
+   * 为什么放 store 而不是组件内 useState：分组状态要能跨 Tab 切换存活 ——
+   * 用组件内状态的话，用户收起"收藏的歌单"后去「本地」转一圈再回来，分组又展开了，
+   * 他收起的动作等于白做。这类"用户刚调过、不该被无关操作重置"的 UI 状态属于屏级状态，
+   * 与 `leftView` / `queueOpen` 同类，故放 store。
+   *
+   * 不持久化：它是一次性的浏览偏好，重启后回到"都展开"这个最稳妥的默认值即可，
+   * 没有必要占一个偏好键（与歌词字号那类"用户显式调过"的偏好不同）。
+   */
+  playlistGroupOpen: { created: boolean; subscribed: boolean };
   userPlaylists: Playlist[];
   loadingUserPlaylists: boolean;
   userPlaylistsError: string;
@@ -326,7 +383,55 @@ export interface MusicState {
    * 而"播放条没出现"与"从来没恢复过"在视觉上无法区分，也不该区分。
    */
   handleRestoreFailed: () => void;
-  playQueue: (songs: Song[], startIndex: number, opts?: { expand?: boolean }) => Promise<void>;
+  playQueue: (
+    songs: Song[],
+    startIndex: number,
+    opts?: {
+      expand?: boolean;
+      /** 这次入队的来源是不是「我喜欢的音乐」——决定心动模式是否可用（见 queueFromLiked） */
+      fromLiked?: boolean;
+      /** 这次是"从播放历史里点播"（历史不重复置顶，见 recordPlayHistory） */
+      fromHistory?: boolean;
+    },
+  ) => Promise<void>;
+  /**
+   * 播放一个**歌单 / 歌曲列表**（歌单、榜单、每日推荐、本地曲库、播放历史的统一入口）。
+   *
+   * 与 `playQueue` 的分工：`playQueue` 是"按下标播一首"的底层入口；
+   * 本 action 承载**列表特有的联动**，三件事都只在"用户点开某个列表"时成立：
+   *   ① 起始下标 —— `opts.index` 有值（用户点了具体某一首）就以它为准；
+   *      没有（点"播放全部"）则按当前模式决定：列表循环/单曲循环/顺序播放从第 1 首起，
+   *      随机播放随机挑一首（需求第 2 条）。
+   *   ② 离开心动模式的上下文要切回顺序播放（需求第 4 条）。
+   *   ③ 进入「我喜欢的音乐」时，若它开启过心动模式则自动切到心动模式并开始播放（需求第 4 条）。
+   *
+   * 播放历史与本地曲库同样走这里 —— 它们是**独立的播放列表**（需求第 6 条），
+   * 不是"当前队列的附属"，所以一样要享受/承担上面这三条联动。
+   */
+  playPlaylist: (
+    songs: Song[],
+    opts?: {
+      /** 该列表对应的歌单元信息（只有歌单才有；用来识别「我喜欢的音乐」） */
+      playlist?: Playlist;
+      /** 用户点的那一首的下标；不传 = "播放全部"，起始位交给模式决定 */
+      index?: number;
+      /** 从播放历史点播（历史列表不因这次播放而重排，见 recordPlayHistory） */
+      fromHistory?: boolean;
+    },
+  ) => Promise<void>;
+  /**
+   * 进入心动模式：拿当前歌曲去换一批相似歌，重排队列。
+   *
+   * 两种情形（需求原文）：
+   *   ① 首次进入（`heartbeatSeeded` 为假）→ 队列整个换成心动列表，**从头播放第一首**；
+   *   ② 离开后又切回来（`heartbeatSeeded` 为真）→ **保留当前播放歌曲**，
+   *      只把它以外的部分换成新的心动列表，**继续播放当前歌曲**（不重启、不动进度）。
+   *
+   * `opts.advance` 是**第三条**用途（由 `next` 在走到队尾时调用）：播完最后一首要往下走，
+   * 所以换一批之后**从新的第一首开始播**。它与上面两条的区别是"要不要自己前进"——
+   * 前两条都不前进（一条从头播当前歌、一条继续播当前歌），这条必须前进。
+   */
+  enterHeartbeat: (opts?: { advance?: boolean }) => Promise<void>;
   /**
    * 「下一首播放」：把这首歌插到**当前播放的下一首**位置。
    * 与 `appendToQueue`（加进队尾）是两种不同的用户意图，所以刻意分成两个 action。
@@ -343,8 +448,6 @@ export interface MusicState {
    * 这两条路的差异没法塞进 `next()` 里（它两种调用都要服务）。
    */
   handleTrackEnded: () => void;
-  /** 心动模式取不到相似歌曲时的降级：按队列顺序取下一首（不随机） */
-  fallbackNext: () => void;
   seek: (ms: number) => void;
   setVolume: (v: number) => void;
   /** 静音/取消静音（不改 volume，见 `muted` 字段注释） */
@@ -357,6 +460,16 @@ export interface MusicState {
    */
   closePlayback: () => void;
   cycleMode: () => void;
+  /**
+   * 直接切到某个播放模式（不是"循环到下一个"）。
+   *
+   * 与 `cycleMode` 的分工：`cycleMode` 是按钮的"下一档"，要跳过不可用的档位；
+   * 本 action 是"切到这个模式"的**唯一落点**，承载进入某档时的副作用 ——
+   * 目前是"进心动模式就重排队列"与"记下我喜欢的音乐开启过心动"。
+   * 把副作用放在这里而不是各调用点，是为了让"切顺序播放"这类无副作用的调用
+   * 也走同一条路径，避免有人绕过它、导致心动模式的队列没被重建。
+   */
+  setPlayMode: (mode: PlayMode) => void;
   /** 换音质：更新偏好，并在**正在播放**时重取地址续播（保住当前进度） */
   setPlaybackQuality: (q: PlaybackQuality) => Promise<void>;
   setLyricsFontSize: (px: number) => void;
@@ -430,6 +543,8 @@ export interface MusicState {
 
   // 左栏
   setLeftView: (v: LeftView) => void;
+  /** 收起/展开歌单分组（创建的歌单 / 收藏的歌单） */
+  setPlaylistGroupOpen: (group: 'created' | 'subscribed', open: boolean) => void;
   loadUserPlaylists: (p?: MusicProvider) => Promise<void>;
   openLeftPlaylist: (pl: Playlist) => Promise<void>;
   loadMoreLeft: () => Promise<void>;
@@ -529,7 +644,12 @@ export const useMusicStore = create<MusicState>()((set, get) => ({
   durationMs: 0,
   volume: 0.8,
   muted: false,
-  playMode: 'list',
+  // 默认顺序播放（需求口径：五档里默认「顺序播放」，不是列表循环）
+  playMode: 'order',
+  queueFromLiked: false,
+  heartbeatSeeded: false,
+  heartbeatRestore: null,
+  likedHeartbeatOn: false,
   playUrl: '',
   playbackQuality: 'hires',
   currentQuality: '',
@@ -579,6 +699,7 @@ export const useMusicStore = create<MusicState>()((set, get) => ({
 
   // ---- 左栏 ----
   leftView: 'playlists',
+  playlistGroupOpen: { created: true, subscribed: true },
   userPlaylists: [],
   loadingUserPlaylists: false,
   userPlaylistsError: '',

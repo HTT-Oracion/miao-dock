@@ -20,6 +20,14 @@ export interface Prefs {
   playbackQuality: PlaybackQuality;
   volume: number;
   playMode: PlayMode;
+  /**
+   * 「我喜欢的音乐」是否开启过心动模式。
+   *
+   * 为什么**单独**记、不复用 `playMode`：切歌单时若离开心动模式会被改写成顺序播放
+   * （需求第 4 条），`playMode` 随之丢失"曾经开过"这个事实。而"是否开启过"要跨歌单、
+   * 跨会话保留（切回我喜欢的音乐时要能自动恢复心动模式），所以必须独立成项。
+   */
+  likedHeartbeatOn: boolean;
   skin: PlayerSkin;
   /** 展开播放器歌词字号（px） */
   lyricsFontSize: number;

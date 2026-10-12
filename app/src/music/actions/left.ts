@@ -5,8 +5,14 @@ import { PAGE_SIZE } from '@music/slice';
 import type { MusicState, StoreGet, StoreSet } from '@music/slice';
 import type { Song } from '@music/types';
 
-export const createLeftSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 'setLeftView' | 'loadUserPlaylists' | 'openLeftPlaylist' | 'loadMoreLeft' | 'loadAllLeft' | 'backToPlaylists'> => ({
+/** 「我喜欢的音乐」的**统一显示名**（各平台原名不一，见 loadUserPlaylists 的注释） */
+export const LIKED_PLAYLIST_NAME = '我喜欢的音乐';
+
+export const createLeftSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 'setLeftView' | 'setPlaylistGroupOpen' | 'loadUserPlaylists' | 'openLeftPlaylist' | 'loadMoreLeft' | 'loadAllLeft' | 'backToPlaylists'> => ({
   setLeftView: (v) => set({ leftView: v }),
+
+  setPlaylistGroupOpen: (group, open) =>
+    set((s) => ({ playlistGroupOpen: { ...s.playlistGroupOpen, [group]: open } })),
 
   loadUserPlaylists: async (p) => {
     const provider = p ?? get().playbackSource;
@@ -18,7 +24,28 @@ export const createLeftSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 
     try {
       const list = await platform.userPlaylists(provider);
       if (get().playbackSource !== provider) return;
-      set({ userPlaylists: list, loadingUserPlaylists: false });
+      /*
+       * 「我喜欢的音乐」= **第一个 subscribed=false 的歌单**，并把它的名字统一改成「我喜欢的音乐」。
+       *
+       * 为什么用 `subscribed` 判，而不是原来的"下标 0"：
+       * `subscribed` 是接口给每条数据打的**语义标记**（false = 用户自己创建的，
+       * true = 收藏别人的），属于数据本身的属性；而"排在第一"只是当前的排序结果，
+       * 排序一调，按下标判就静默指到别的歌单上 —— 且不报错。
+       *
+       * 为什么还要**改名**：这个歌单在各平台/各语言下的显示名并不统一
+       * （"我喜欢" / "我喜欢的音乐" / "喜欢的音乐"）。心动模式的可用性判定、
+       * 以及左侧"创建/收藏"分组，都依赖"哪一条是它"这个判断 ——
+       * 名字统一之后，用户眼里看到的和代码里判定的是同一条，不会出现
+       * "界面叫我喜欢、代码认的却是另一条"这种对不上的情况。
+       */
+      const likedIdx = list.findIndex((pl) => pl.subscribed === false);
+      const marked =
+        likedIdx < 0
+          ? list
+          : list.map((pl, i) =>
+              i === likedIdx ? { ...pl, name: LIKED_PLAYLIST_NAME, isLiked: true } : pl,
+            );
+      set({ userPlaylists: marked, loadingUserPlaylists: false });
     } catch (e) {
       set({ loadingUserPlaylists: false, userPlaylistsError: String(e) });
     }
@@ -30,7 +57,13 @@ export const createLeftSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 
     try {
       const [meta, songs] = await platform.playlistTracks(provider, pl.id);
       if (get().playbackSource !== provider) return;
-      set({ leftPlaylistMeta: meta, leftPlaylistTracks: songs });
+      // 曲目接口返回的 meta **不带** isLiked，名字也是接口原始名 —— 必须把点进来时那份
+      // 统一后的信息带过去。否则下钻一次，「我喜欢的音乐」就变回接口原名，
+      // 心动模式的可用性判定（看 isLiked）也会跟着失效。
+      set({
+        leftPlaylistMeta: pl.isLiked ? { ...meta, name: pl.name, isLiked: true } : meta,
+        leftPlaylistTracks: songs,
+      });
     } catch {
       set({ leftPlaylistTracks: [] });
     } finally {

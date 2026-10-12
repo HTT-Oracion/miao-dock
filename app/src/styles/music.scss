@@ -130,6 +130,44 @@
   transform: translate(74px, 12px) scale(1);
 }
 
+/* 单一共享歌手行：歌名正下方，展开 = 12px 在 (74,32)。
+   与 `.di-name` 同款做法（绝对定位 + translate/scale 补间），理由见 DynamicIsland 里的注释。
+
+   ## 🔴 只在**展开态**显示（2026-10-12 改）
+   折叠胶囊只有 30px 高，歌名已占到 y≈21.1，底下只剩 8.9px ——
+   歌手行挤进来只能渲染成 7px 左右的小字，等于在 30px 里塞两行：读不清、还挤掉波形。
+   所以折叠态**整体隐藏**。
+
+   ⚠️ 隐藏用 `opacity: 0` 而不是 `display: none`：display:none 会把元素从渲染树摘掉，
+   重新展开时 transition 没有起点 ⇒ 会闪一下（与 `.di-card` 用 opacity 而非 display 的同源教训）。
+   opacity 还能让它收起时跟着歌名一起淡出，而不是"啪"地消失。
+   折叠态的 translate/scale 保留（不为显示，只为收起时轨迹自然），max-width 与展开态同值。 */
+.di-subname {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  max-width: 224px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--md-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform-origin: left top;
+  pointer-events: none;
+  transform: translate(44px, 21.6px) scale(0.6);
+  opacity: 0;
+  transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1),
+              opacity 0.18s ease-out;
+}
+.di-capsule.is-expanded .di-subname {
+  /* top 32 与展开卡片的 padding-top 对齐，歌手行正好落在"歌名下方、进度条上方"的空档里
+     （进度行是绝对定位 bottom:50 ⇒ y∈[88,100]，与此不冲突） */
+  transform: translate(74px, 32px) scale(1);
+  opacity: 1;
+}
+
 /* 波形：只在折叠态出现（展开态由大卡里的进度条取代）。
    柱高由 TS 侧真实频谱写内联高度；`is-css` 是**降级档**——
    拿不到音频上下文时用 CSS 动画画"正在出声"，暂停（data-on=0）时完全静止。 */
@@ -180,14 +218,20 @@
 }
 
 /* 展开大卡：绝对铺满，与折叠内容重叠，靠透明度交叉切换（无位移）。
-   32px 上内边距是给"共享封面/歌名"让位 —— 它们在展开态也占着上半部分。 */
+   32px 上内边距是给"共享封面/歌名"让位 —— 它们在展开态也占着上半部分。
+   ⚠️ 下内边距 42px 不是"留白"，而是**给绝对定位的按钮栏预留它的地盘**：
+     按钮栏 height:30 + bottom:12 ⇒ 占据 y∈[108,138]，流内内容底边必须止于 y=108，
+     即 padding-bottom = 150-108 = 42。（写成 50 会把歌词区压到 38px、裁掉第二行。）
+     按钮栏与进度行都已脱离文档流（见 .di-ctl / .di-prog），所以这里只约束
+     **流内内容**（歌手 / 歌词）别被压到按钮栏下面；歌词卡用同一组值（见 .di-card.is-lyr），
+     两态的内容区底边因此也在同一水平线上。 */
 .di-card {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 32px 16px 12px;
+  padding: 32px 16px 42px;
   opacity: 0;
   transition: opacity 0.18s;
 }
@@ -200,7 +244,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 进度行：与按钮栏一样**绝对定位**（见下方 .di-ctl 的固定几何说明）。
+   位置/宽度只由卡片尺寸决定，与当前是播放卡还是歌词卡无关 ⇒ 切 di-toggle 时不需重算、不偏移。 */
 .di-prog {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 50px;
+  height: 12px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -229,14 +280,25 @@
   background: var(--md-pink);
   transition: width 0.2s;
 }
-/* 传输控件整宽居中；「打开播放器」钉在右下角（对齐参考实现的排版） */
+/* 传输控件整宽居中；「打开播放器」钉在右下角（对齐参考实现的排版）。
+   ⚠️ 固定几何（切 di-toggle 不许跳动）：整行**绝对定位**在卡片底部，
+   高度恒为 30px，按钮尺寸恒为 30px（歌词卡**不再**压成 26px）。
+   原先歌词卡把 .ui-cbtn 压到 26px，而本行是 justify-content:center ——
+   按钮一变小，整行的**总宽就变**，居中导致每个按钮的 x 都平移；
+   行高也从 30 变 26，上下一起跳。改为固定尺寸后，两种视图下这一行的
+   盒子完全一致 ⇒ 只剩内容区（歌手+进度 ⇄ 歌词）在它上方切换。 */
 .di-ctl {
-  position: relative;
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 12px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 26px;
 }
+/* 「打开播放器」钉在行内右端（行已是绝对定位，right:0 即卡片右内边距处） */
 .di-open {
   position: absolute;
   right: 0;
@@ -250,33 +312,42 @@
    ## 为什么歌词区在封面**下方**（而不是右侧让位）
    共享封面（折叠/展开同一个元素）在展开态占着 (16,12)-(64,60)。若让歌词贴着顶部、
    靠 `padding-left` 绕开封面，歌词会被挤到 230px 宽且整体偏离卡片中线；
-   而把歌词整块放到封面下方（top: 62px）、铺满 288px，两行居中且不与封面打架 ——
-   竖向空间是够的（150 - 62 - 26(控件) - 6 - 8 = 48px，两行 14/12 约 43px）。
-   代价是控件行略收紧（30 → 26），只作用于歌词卡，不动播放卡。 */
+   而把歌词整块放到封面下方（top: 62px）、铺满 288px，两行居中且不与封面打架。
+
+   ## 🔴 切 di-toggle 不许跳动（2026-10-12）
+   本卡曾把 .ui-cbtn 压到 26px、并改 padding-top/bottom/gap 来给歌词腾空间。
+   但按钮栏是 `justify-content:center` 的整行：**按钮尺寸一变，整行总宽就变** ⇒ 每个按钮
+   的 x 全部平移；行高也随 30→26 变 ⇒ 上下跳；进度条还因 `.di-prog` 在流内而被推着走。
+   现在按钮栏与进度行都**绝对定位 + 固定几何**（见 .di-ctl / .di-prog），
+   两态共用同一组坐标，所以歌词卡这里**只调自己那块内容区**（含歌词行高），
+   **不再碰 .di-ctl 的任何尺寸** —— 一碰就等于把"不跳动"这个保证自己拆掉。 */
 .di-card.is-lyr {
-  padding: 62px 16px 8px;
+  /* 上内边距仍要让开共享封面（62）；下内边距与播放卡**同值**（42 = 按钮栏顶边），
+     两态的内容区底边因此对齐；歌词区实得 150-62-42 = 46px，容得下两行 14/12。 */
+  padding: 62px 16px 42px;
   gap: 6px;
-}
-.di-card.is-lyr .di-ctl .ui-cbtn {
-  width: 26px;
-  height: 26px;
 }
 
 /* 视图切换键（歌词 ⇄ 播放）：给淡底 + 小圆角，读作"切视图"而不是"第四个传输键"。
-   ⚠️ 它旁边就是播放/暂停的 Play 图标（歌词态下两个三角同时在），靠这个底色区分开。 */
+   ⚠️ 它旁边就是播放/暂停的 Play 图标（歌词态下两个三角同时在），靠这个底色区分开。
+   🔴 固定占位：外层 .di-toggle 恒为 30×30（= 旁边 .ui-cbtn 的尺寸），把 26×26 的按钮
+   居中放在里面。**外层尺寸两态相同**才是"按钮栏不跳动"的关键 ——
+   若外层跟着内容变成 26px，按钮栏总宽随之变化，居中定位就会让**所有**按钮平移。
+   视觉上仍是 26px 的小圆角底（背景只画在内层），只是外面还留了 2px 的透明余量。 */
 .di-toggle {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 9px;
-  background: var(--md-pink-soft);
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
 }
 .di-toggle .ui-cbtn {
   width: 26px;
   height: 26px;
   color: var(--md-pink);
+  background: var(--md-pink-soft);
+  border-radius: 9px;
 }
 
 /* 歌词区：吃掉"歌手 + 进度"那一段的竖向空间（flex:1），两行在剩余高度里居中 */
@@ -644,6 +715,57 @@
 }
 /* 队列抽屉的行容器自带上下留白（等价原 .music-drawer-list 的 padding: 6px 0） */
 .ui-vlist.is-drawer { padding: 6px 0; }
+/*
+ * 歌单分组头（创建的歌单 / 收藏的歌单）—— 可点击收起/展开，**默认展开**。
+ *
+ * 最终形态（2026-10-12 定稿）：**纯文字行**，不要背景、不要圆角、不要左侧图标、
+ * 不要底部分隔线 —— 分组头只承担"这一行的标题是什么"，
+ * 任何底色/形状/图标都属于额外装饰，加了反而显得吵（用户明确要求）。
+ *
+ * 保留的两处设计约定：
+ *   · 文字用 `.set-subtitle` 的口径（display 字体 / 700 / muted），
+ *     与设置页的小节标题同一层，只是字号略大（12.5px）以匹配左栏的信息密度；
+ *   · 折叠箭头 `ChevronDown` 在右侧，收起时旋转 -90° 朝右。
+ *
+ * ⚠️ 高度写死 26px 是**自包含**的（不依赖 VirtualList 的行高）：
+ * 外层用 height:100% + align-items:center 把它垂直居中，所以调用方换 itemHeight
+ * 时照样居中，不会脱节。—— 别把 26px 改成百分比，那会随行高变形。
+ */
+.music-plgroup {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  /* 左右各收 6px：内容不贴面板边缘 */
+  padding: 0 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.music-plgroup-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 26px;
+  padding: 0 12px 0 0;
+}
+.music-plgroup-lb {
+  font-family: var(--md-font-display);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--md-muted);
+  letter-spacing: 0.02em;
+}
+.music-plgroup-ct {
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+.music-plgroup-chev {
+  flex: 0 0 auto;
+  color: var(--md-muted);
+  transition: transform 0.18s ease-out;
+}
+/* 收起时箭头朝右（-90°），展开时朝下 —— 与常见折叠控件一致 */
+.music-plgroup.is-shut .music-plgroup-chev { transform: rotate(-90deg); }
 .music-row {
   display: flex;
   align-items: center;
@@ -1094,6 +1216,12 @@
      抽屉若低于 70 就被它整个盖住 —— 用户点了"播放队列"却什么都没出现（曾如此）。
      取 71/72：高于展开播放器，仍低于 Radix 弹层（80），弹层不会反过来被抽屉盖住。 */
   z-index: 71;
+  /* 蒙层只做淡入（不跟着抽屉平移，理由见 .music-drawer 的注释） */
+  animation: music-drawer-bd-in 0.24s ease-out both;
+}
+@keyframes music-drawer-bd-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .music-drawer {
   position: fixed;
@@ -1106,6 +1234,17 @@
   display: flex;
   flex-direction: column;
   z-index: 72;
+  /* 从右往左滑入：抽屉贴在窗口右缘，所以位移动画取 translateX(100%) → 0，
+     读起来就是"从右边抽出来"。只做进场（组件在关闭时直接卸载，没有退场状态可挂），
+     与展开播放器"有进无退"的处理保持一致。
+     ⚠️ 位移只能作用在**抽屉本体**上，不能给 .music-drawer-bd 也加同一套：
+       蒙层是整屏定位的，平移它会把整块遮罩一起横向拖动，露出下面的界面。
+       蒙层只做透明度淡入。 */
+  animation: music-drawer-in 0.24s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+@keyframes music-drawer-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
 }
 .music-drawer-hd {
   display: flex;
@@ -1155,9 +1294,18 @@
   backdrop-filter: var(--skin-blur, none);
   -webkit-backdrop-filter: var(--skin-blur, none);
   overflow: hidden;
-  /* 进场即播：从底部上滑铺满（《09》§5.6 第 3 项 —— "详情"= 展开播放器从底部上滑铺满全屏）。
-     退场见下方 .is-closing：组件在收起后会 return null，没有那个状态就播不出退场动画。 */
-  animation: music-exp-up 0.34s cubic-bezier(0.4, 0, 0.2, 1);
+  /* ⚠️ 进场（上滑）与动态背景（渐变流动）是**两条独立动画**，必须写在同一个列表里，
+     且"开/关动态"只许改 animation-play-state。
+     原因（闪烁的根因）：`animation` 是**简写属性**，一改就把它列出的**所有**动画
+     （animation-name / duration / timing / …）**整体重置并从头重播**。
+     原先 `.is-dynamic` 单独写了 `animation: music-exp-flow …`，于是点「动态」开关时
+     简写从 `flow` 变回 `music-exp-up` ⇒ **已经播完的进场动画被重播一遍**，
+     表现就是整屏上滑一次（用户看到的"闪一下"）。
+     `animation-play-state` 不重启动画，只控制跑/停，所以拿它当开关。 */
+  animation: music-exp-up 0.34s cubic-bezier(0.4, 0, 0.2, 1) 1 both,
+             music-exp-flow 8s ease-in-out infinite paused;
+  animation-play-state: running, paused;
+  background-size: 100% 100%;
 }
 @keyframes music-exp-up {
   from { transform: translateY(100%); }
@@ -1176,6 +1324,10 @@
 @media (prefers-reduced-motion: reduce) {
   .music-exp,
   .music-exp.is-closing {
+    animation-duration: 0.001s;
+  }
+  /* 队列抽屉同理：开了"减少动态效果"就不做横向位移，只做瞬时切换 */
+  .music-drawer {
     animation-duration: 0.001s;
   }
 }
@@ -1251,10 +1403,12 @@
 }
 
 /* 动态背景（设置项 dynamic-bg）：只有「现代 / 沉浸」有可流动的渐变，
-   做法是把渐变放大到 200% 再平移 background-position —— 不重排、纯合成层。 */
+   做法是把渐变放大到 200% 再平移 background-position —— 不重排、纯合成层。
+   ⚠️ 这里**只**改 background-size 与 animation-play-state，**绝不再写 animation 简写**
+     （简写会重置并重播同列表里的进场动画 ⇒ 整屏闪一下，详见 .music-exp 上方注释）。 */
 .music-exp.is-dynamic {
   background-size: 200% 200%;
-  animation: music-exp-flow 8s ease-in-out infinite;
+  animation-play-state: running, running;
 }
 @keyframes music-exp-flow {
   0% { background-position: 0% 50%; }

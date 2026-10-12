@@ -21,7 +21,7 @@ export function LocalView() {
   const importFolder = useMusicStore((s) => s.importFolder);
   const removeLocalSong = useMusicStore((s) => s.removeLocalSong);
   const clearLocalSongs = useMusicStore((s) => s.clearLocalSongs);
-  const playQueue = useMusicStore((s) => s.playQueue);
+  const playPlaylist = useMusicStore((s) => s.playPlaylist);
   const currentSong = useMusicStore((s) => s.currentSong);
 
   const pickFiles = async () => {
@@ -68,8 +68,10 @@ export function LocalView() {
           renderItem={(info, i) => {
             const s = localQueue[i];
             if (!s) return null; // 理论上同序等长；不同步时跳过而不是崩
-            // 本地曲库：把整份本地列表设为队列（与左键点行同一个回调）
-            const play = () => void playQueue(localQueue, i);
+            // 本地曲库本身就是一个**独立的播放列表**（需求第 6 条）：整份本地列表设为队列，
+            // 并从点中的这一首开始。走 playPlaylist 而非 playQueue，是为了让"切换列表"
+            // 的联动（离开心动模式要切回顺序播放）在这里也生效。
+            const play = () => void playPlaylist(localQueue, { index: i });
             return (
               <SongRow
                 song={s}

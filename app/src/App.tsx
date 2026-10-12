@@ -24,6 +24,10 @@ import { LibraryScreen } from '@screens/LibraryScreen';
 import { DropScreen } from '@screens/DropScreen';
 import { MusicScreen } from '@screens/MusicScreen';
 import { SettingsScreen } from '@screens/SettingsScreen';
+// 展开播放器挂在**应用根**（不在 MusicScreen 内）—— 判据见渲染处注释：
+// 它是 `position: fixed; inset: 0` 的全屏浮层，数据全部来自 store，本就不依赖任何一屏的 DOM。
+import { ExpandedPlayer } from '@screens/music/ExpandedPlayer';
+import { useMusicStore } from '@music/store';
 import {
   isBlockedWhenNotReady,
   stateView,
@@ -155,6 +159,27 @@ export function App() {
   useEffect(() => {
     if (running) void reloadSource();
   }, [screen, running, reloadSource]);
+
+  /* ---- 展开播放器（挂应用根，故它的 Esc / seek 也归这里）----
+   * 判据与 MusicKernel 同款："离开本屏之后还该继续存在的，就不能住在本屏里"。
+   * 灵动岛（DynamicIsland）常驻应用根，它上面的「打开播放器」在**任何屏**都能点，
+   * 浮层就必须同样在**任何屏**都能出现 —— 否则从设置页点开就是"按了没反应"。 */
+  const seekMusic = useMusicStore((s) => s.seek);
+  const musicExpanded = useMusicStore((s) => s.expanded);
+  const closeMusicExpanded = useMusicStore((s) => s.closeExpanded);
+
+  // Esc 收起展开播放器：与音乐屏内那条同源，但**只判 expanded**。
+  // 队列抽屉仍归音乐屏（它只在那一屏存在，Esc 连带关它才是对的）。
+  useEffect(() => {
+    if (!musicExpanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeMusicExpanded();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [musicExpanded, closeMusicExpanded]);
+
+  const onMusicSeek = useCallback((ms: number) => seekMusic(ms), [seekMusic]);
 
   const refreshAll = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -482,6 +507,15 @@ export function App() {
         放在 shell 末尾，是为了让"它不属于任何一屏"这件事在代码顺序上也读得出来。
       */}
       <MusicKernel />
+
+      {/*
+        展开播放器：与 MusicKernel 同理挂**应用根**，不随屏切换卸载。
+        它是 `position: fixed; inset: 0; z-index: 70` 的全屏浮层，数据全来自 store，
+        不读音乐屏的任何 DOM —— 所以从设置页/漫画库页点灵动岛的「打开播放器」也能正常铺开，
+        不必先跳回音乐屏（那样等于让用户为"看播放器"额外付一次换屏的视觉跳转）。
+        Esc / seek 的归属也一并搬到这里，见上方 effect。
+      */}
+      <ExpandedPlayer onSeek={onMusicSeek} />
 
       {quitOpen ? (
         <QuitConfirm

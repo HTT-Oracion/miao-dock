@@ -469,6 +469,13 @@ function MusicCard({
 
       <div className="di-name">{song.name}</div>
 
+      {/* 歌手行：歌名**正下方**，与歌名同属"共享元素"一族（绝对定位 + transform 补间）。
+          为什么不用流内布局：`.di-name` 的折叠↔展开是靠 translate/scale 补间的，
+          歌手行若走流内，折叠态的胶囊只有 30px 高、且溢出部分靠 overflow 裁切 ——
+          流内元素会跟着裁切变形。挂绝对定位才能像歌名一样在两态间平滑补间。
+          两态都显示（折叠态是"歌名 + 歌手"两行的信息密度，见 music.scss 的 .di-subname）。 */}
+      <div className="di-subname">{song.artist || '未知歌手'}</div>
+
       {/* 波形：折叠态才显示；暂停时静止（语义是"正在出声"） */}
       <div
         className={real ? 'di-wave' : 'di-wave is-css'}

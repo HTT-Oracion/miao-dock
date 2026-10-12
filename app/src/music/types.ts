@@ -60,6 +60,18 @@ export interface Playlist {
   track_count: number;
   creator: string;
   subscribed: boolean;
+  /**
+   * 是否「我喜欢的音乐」。
+   *
+   * 各平台的用户歌单接口都把"我喜欢的音乐"放在**第一条**（网易云尤其如此），
+   * 所以标识由 `loadUserPlaylists` 在拉回列表后**按下标 0 打上**，
+   * 不靠名称匹配 —— 名称会随用户语言/平台改动（"我喜欢" / "我喜欢的音乐" / "喜欢的音乐"），
+   * 靠名字匹配是一处随时会静默失效的脆弱判据。
+   *
+   * 为什么需要这个标识：心动模式**只在这个歌单的上下文里**可用（见 PlayMode 注释）。
+   * 没有它就无法区分"在听我喜欢的音乐"与"在听某个普通歌单"。
+   */
+  isLiked?: boolean;
 }
 
 export interface SongUrlResult {
@@ -159,8 +171,20 @@ export interface LocalSongInfo {
   has_lyric: boolean;
 }
 
-/** 播放模式：list 列表循环 / heartbeat 心动模式 / shuffle 随机 / one 单曲循环 */
-export type PlayMode = 'list' | 'heartbeat' | 'shuffle' | 'one';
+/**
+ * 播放模式（五档，循环顺序即数组顺序见 store.cycleMode）：
+ * `list` 列表循环（播完最后一首回到第一首）/ `one` 单曲循环 / `shuffle` 随机播放 /
+ * `order` 顺序播放（播到最后一首即停，不回卷）/ `heartbeat` 心动模式。
+ *
+ * 🔴 `order` 与 `list` 的差别**只在末尾**：`list` 回卷、`order` 停止。
+ * 两者在中间部分完全一致（都按队列顺序往后走）—— 所以别把它们合成一个"带停止标志"的档位，
+ * 它们是用户在按钮上能看见的两个不同选项。
+ *
+ * 🔴 `heartbeat` 是**有条件可用**的档位：仅当播放源为网易云、且当前队列来自
+ * 「我喜欢的音乐」时才有效（判据集中在 `canUseHeartbeat()`）。条件不满足时
+ * 循环模式会**跳过**它，而不是降级成随机 —— 降级会让用户以为在听相似歌曲。
+ */
+export type PlayMode = 'list' | 'one' | 'shuffle' | 'order' | 'heartbeat';
 
 /**
  * 歌词高亮方式（设置页「播放·媒体 → 歌词」）：

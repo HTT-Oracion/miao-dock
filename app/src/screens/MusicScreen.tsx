@@ -1,6 +1,5 @@
 import { useCallback, useEffect } from 'react';
 import { useMusicStore } from '@music/store';
-import { ExpandedPlayer } from '@screens/music/ExpandedPlayer';
 import { LeftPanel } from '@screens/music/LeftPanel';
 import { LoginModal } from '@screens/music/LoginModal';
 import { PlayerBar } from '@screens/music/PlayerBar';
@@ -12,14 +11,14 @@ import { TopBar } from '@screens/music/TopBar';
 /**
  * 音乐屏 —— 只做**组合**，各区域实现在 ./music/ 下：
  *   TopBar（顶行+平台弹窗）/ LeftPanel（我的音乐四视图）/ RightPanel（发现+搜索）
- *   PlayerBar（底部播放条）/ QueueDrawer（队列）/ ExpandedPlayer（展开播放器）
- *   LoginModal（登录）/ Toast（轻提示）
+ *   PlayerBar（底部播放条）/ QueueDrawer（队列）/ LoginModal（登录）/ Toast（轻提示）
  *
- * ## 播放内核**不在这里**（2026-10-04 移出）
+ * ## 播放内核与展开播放器都**不在这里**（2026-10-04 / 2026-10-12 移出）
  *
  * 唯一一个 `<audio>` 挂在应用层常驻的 `components/MusicKernel.tsx`。
  * 原先它挂在本屏内 —— 本屏会在切到设置页时卸载，`<audio>` 随之销毁，**播放当场中断**。
- * 所以本屏现在只剩 UI 组合，以及两条**本屏级**副作用（首屏数据 init、Esc 关闭浮层）。
+ * `ExpandedPlayer` 同样搬去了应用根（App.tsx）：它是全屏 fixed 浮层、不读本屏 DOM，
+ * 而灵动岛常驻根上，它上面的「打开播放器」必须在**任何屏**都能把播放器铺开。
  *
  * 判据很简单：**离开本屏之后还该继续存在的，就不能住在本屏里。**
  */
@@ -32,7 +31,6 @@ export function MusicScreen() {
   const init = useMusicStore((s) => s.init);
   const restoreSession = useMusicStore((s) => s.restoreSession);
   const seek = useMusicStore((s) => s.seek);
-  const closeExpanded = useMusicStore((s) => s.closeExpanded);
   const setQueueOpen = useMusicStore((s) => s.setQueueOpen);
 
   /*
@@ -51,19 +49,18 @@ export function MusicScreen() {
     })();
   }, [init, restoreSession]);
 
-  // Esc 关闭展开播放器 / 队列抽屉（只在本屏存在时有意义，故留在本屏）
+  // Esc 关闭队列抽屉（只在本屏存在时有意义，故留在本屏）。
+  // ⚠️ 展开播放器的 Esc 已搬去 App 根（它也挂根，见 App 里的注释）——
+  //    这里只管队列，否则两处都监听会互相把对方的收起动作重复触发。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        // 收起走 closeExpanded（带动画）—— 与点「收起」按钮是同一条路径，
-        // 否则 Esc 会绕过退场动画，两处手感不一致
-        closeExpanded();
         setQueueOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [closeExpanded, setQueueOpen]);
+  }, [setQueueOpen]);
 
   /**
    * 进度条定位。
@@ -85,7 +82,6 @@ export function MusicScreen() {
       <PlayerBar onSeek={onSeek} hidden={queueLength === 0} />
 
       <QueueDrawer />
-      <ExpandedPlayer onSeek={onSeek} />
       <LoginModal />
       <Toast />
     </div>

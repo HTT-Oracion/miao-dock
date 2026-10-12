@@ -1009,11 +1009,72 @@ add('PLAYER.closePath', 'PLAYER', (s) => {
   return { ok: missing.length === 0, detail: missing.length ? `ExpandedPlayer 收起入口：${missing.join('、')}` : '' };
 });
 add('PLAYER.escPath', 'PLAYER', (s) => {
+  // Esc 收起的 owner 已从 MusicScreen 搬到 App 根（2026-10-12）：展开播放器挂应用根，
+  // Esc 必须跟着走 —— 否则从设置页点开播放器后就 Esc 不掉了。
+  // ⚠️ 两处都要查：App 根**必须有** closeExpanded，MusicScreen **不得再**有
+  //   （两处都监听会在音乐屏里重复触发退场动画）。
+  const app = stripComments(s.app);
   const ms = stripComments(s.musicScreen);
   const missing = [];
-  if (!/closeExpanded\s*\(\s*\)/.test(ms)) missing.push('Esc 分支未走 closeExpanded()');
-  if (/setExpanded\s*\(\s*false\s*\)/.test(ms)) missing.push('仍直接 setExpanded(false)');
-  return { ok: missing.length === 0, detail: missing.length ? `MusicScreen Esc 收起：${missing.join('、')}` : '' };
+  // App 根必须**从 store 取到** closeExpanded（可能取别名，如 closeMusicExpanded）
+  // 并在 Esc 分支里调用它 —— 只判"出现过 closeExpanded()"会被别处的引用骗过。
+  const aliasM =
+    /\bconst\s+(\w+)\s*=\s*useMusicStore\(\s*\(?s\)?\s*=>\s*s\.closeExpanded\s*\)/.exec(app) ??
+    // 解构取法：const { closeExpanded } = useMusicStore(s)
+    (() => {
+      const d = /\bconst\s*\{([^}]*)\}\s*=\s*useMusicStore\(/.exec(app);
+      if (!d) return null;
+      const name = d[1]
+        .split(',')
+        .map((x) => (x.includes(':') ? x.split(':')[1] : x).trim())
+        .find((x) => /^closeExpanded$/.test(x));
+      return name ? [name] : null;
+    })();
+  const alias = aliasM ? aliasM[1] : null;
+  if (!alias) missing.push('App 根没有从 store 取 closeExpanded');
+  else if (!new RegExp(`\\b${alias}\\s*\\(\\s*\\)`).test(app)) missing.push(`App 根 Esc 分支未调用 ${alias}()`);
+  if (/setExpanded\s*\(\s*false\s*\)/.test(app)) missing.push('App 根仍直接 setExpanded(false)');
+  if (/closeExpanded\s*\(\s*\)/.test(ms)) missing.push('MusicScreen 仍在监听 closeExpanded（应只在 App 根）');
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `展开播放器 Esc 收起：${missing.join('、')}` : '',
+  };
+});
+add('PLAYER.noAnimShorthandClash', 'PLAYER', (s) => {
+  // 🔴 闪烁的根因（2026-10-12 修）：`animation` 是**简写属性**，一改就把它列出的所有动画
+  // 整体重置并**从头重播**。`.is-dynamic` 原先单独写了 `animation: music-exp-flow …`，
+  // 于是点「动态」开关时简写从 flow 变回 music-exp-up ⇒ 已播完的进场动画被重播 ⇒ 整屏闪一下。
+  // 判据：任何**作用在 .music-exp 上的 animation 简写**都不得在基础规则之外出现
+  //（.is-closing 的退场简写是合法的 —— 那是组件即将卸载的终态，不存在"重播进场"）。
+  const missing = [];
+  const clash = [...s.css.matchAll(/(^|[},])\s*(\.music-exp[^{]*?)\{([^}]*)\}/g)].filter((m) =>
+    /(^|\s|;)animation\s*:/.test(m[3]),
+  );
+  for (const m of clash) {
+    const sel = m[2].trim();
+    if (sel === '.music-exp' || sel === '.music-exp.is-closing') continue;
+    missing.push(`${sel} 又写了 animation 简写（会重播进场动画 ⇒ 整屏闪一下）`);
+  }
+  // 反向：动态开关必须只靠 animation-play-state 控制跑/停
+  if (!/\.music-exp\.is-dynamic\s*\{[^}]*animation-play-state\s*:\s*running\s*,\s*running/.test(s.css))
+    missing.push('.is-dynamic 未用 animation-play-state 开启动画（改简写会重播进场动画）');
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `展开播放器动画简写冲突：${missing.join('、')}` : '',
+  };
+});
+add('PLAYER.expandedMountedAtRoot', 'PLAYER', (s) => {
+  // 展开播放器必须挂在**应用根**：灵动岛常驻根上，它的「打开播放器」在任意屏都点得到，
+  // 浮层若只活在 MusicScreen 内，从设置页点就是"按了没反应"（这正是本次修的 bug）。
+  const app = stripComments(s.app);
+  const ms = stripComments(s.musicScreen);
+  const missing = [];
+  if (!/<ExpandedPlayer\b/.test(app)) missing.push('App 根没有渲染 <ExpandedPlayer>');
+  if (/<ExpandedPlayer\b/.test(ms)) missing.push('MusicScreen 仍渲染 <ExpandedPlayer>（会随屏卸载）');
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `展开播放器挂载点：${missing.join('、')}` : '',
+  };
 });
 add('PLAYER.playSongExpandOpt', 'PLAYER', (s) => {
   const body = methodBody(stripComments(s.store), 'playSong');
@@ -1118,91 +1179,233 @@ add('PLAYER.resolveWrites', 'PLAYER', (s) => {
   };
 });
 
-// ── 心动模式（heartbeat · 拍板第 4 项）────────────────────────────────────
+// ── 心动模式（heartbeat · 五档改版）────────────────────────────────────
 add('HEARTBEAT.modeInType', 'HEARTBEAT', (s) => {
-  // 类型层：PlayMode 必须含 heartbeat，否则 store 里判它是"不可能状态"
+  // 类型层：PlayMode 必须含 heartbeat 与新增的 order（顺序播放）
   if (!/\bheartbeat\b/.test(s.types)) return { ok: false, detail: 'types.ts 的 PlayMode 未含 heartbeat' };
+  if (!/'order'/.test(s.types)) return { ok: false, detail: "types.ts 的 PlayMode 未含新增的 'order'（顺序播放）" };
   return { ok: true, detail: '' };
 });
-add('HEARTBEAT.cycleFour', 'HEARTBEAT', (s) => {
-  // cycleMode 的 order 数组必须含四档。**只判"含 heartbeat"不够** ——
-  // 一旦有人把数组写成 ['list','shuffle','one','heartbeat','heartbeat'] 也能骗过"含"，
-  // 但那样点两下就卡在同一档。判据改成"数组恰为四项"。
+add('HEARTBEAT.cycleFive', 'HEARTBEAT', (s) => {
+  // cycleMode 的档位循环顺序必须是需求给定的：列表 → 单曲 → 随机 → 顺序 → 心动。
+  // ⚠️ 判"顺序"而不是"集合"：档位顺序是需求明文，写成集合相等就把
+  // "点一下切到哪档"这件用户可感的事放走了（顺序错了会跳档）。
   const body = methodBody(stripComments(s.store), 'cycleMode');
   if (body == null) return { ok: false, detail: 'store.ts 未定义 cycleMode' };
   const m = body.match(/order:\s*PlayMode\[\]\s*=\s*\[([^\]]*)\]/);
   if (!m) return { ok: false, detail: 'cycleMode 里找不到 order 数组' };
   const items = m[1].split(',').map((x) => x.trim().replace(/^'|'$/g, '')).filter(Boolean);
-  const want = ['list', 'shuffle', 'one', 'heartbeat'];
-  const ok = items.length === want.length && want.every((w) => items.includes(w));
+  const want = ['list', 'one', 'shuffle', 'order', 'heartbeat'];
+  const ok = items.length === want.length && want.every((w, i) => items[i] === w);
   return {
     ok,
-    detail: ok ? '' : `cycleMode 档位应恰为 ${want.join('/')}，实为 ${items.join('/') || '(空)'}`,
+    detail: ok ? '' : `cycleMode 档位顺序应为 ${want.join(' → ')}，实为 ${items.join(' → ') || '(空)'}`,
   };
 });
-add('HEARTBEAT.warnsOnDegrade', 'HEARTBEAT', (s) => {
-  // 降级必须**告诉用户**：切到心动档而平台不支持时，若静默降级成随机，
-  // 用户会以为在听相似歌曲 —— 这与"假控件"同级的问题（D-37 的判据）。
+add('HEARTBEAT.defaultIsOrder', 'HEARTBEAT', (s) => {
+  // 默认档位必须是顺序播放（需求明文）。两处都要对：初始 state 与缺省时的水合回落。
+  const missing = [];
+  if (!/^\s*playMode: 'order',$/m.test(s.store)) missing.push("store 初始 state 的 playMode 不是 'order'");
+  const body = methodBody(stripComments(s.store), 'hydratePrefs');
+  if (body == null || !/ALL_MODES/.test(body) || !/:\s*'order';/.test(body))
+    missing.push('hydratePrefs 未把缺省/脏值回落到 order');
+  return { ok: missing.length === 0, detail: missing.length ? `默认播放模式：${missing.join('、')}` : '' };
+});
+add('HEARTBEAT.gatedByLikedAndPlatform', 'HEARTBEAT', (s) => {
+  // 心动模式是**有条件可用**的档位：仅网易云 + 仅「我喜欢的音乐」上下文。
+  // 判据落在那唯一一个出口 canUseHeartbeat 上（两个条件都要在，且用平台能力函数而非硬编码）。
+  //
+  // ⚠️ 不能用 fnBodyAny 取本函数的函数体：它的入参是对象类型字面量 `state: {...}`，
+  // 那是签名里的第一个 `{`，会被当成函数体的起点 —— 取出来的是**类型声明**，
+  // 于是 `supportsSimilar` 永远找不到（断言假红，且红得毫无道理）。
+  // 这里改为直接取 return 表达式：条件必须出现在**返回式**里才算真的判了。
+  const src = stripComments(s.store);
+  const ret = /function\s+canUseHeartbeat\s*\([\s\S]*?return\s+([^;]+);/.exec(src);
+  const missing = [];
+  if (!ret) missing.push('playback.ts 未定义 canUseHeartbeat');
+  else {
+    if (!/supportsSimilar/.test(ret[1])) missing.push('未走平台能力函数（硬编码平台名会在新增平台时漏改）');
+    if (!/queueFromLiked/.test(ret[1])) missing.push('未判「我喜欢的音乐」上下文');
+  }
+  // 能力名单本身也要对：supportsSimilar 只对网易云为真（防"为了让它跑起来把门禁放开"）
+  const cap = fnBodyAny(stripComments(s.platform ?? ''), 'supportsSimilar');
+  if (cap == null) missing.push('platform.ts 未定义 supportsSimilar');
+  else if (!/netease/.test(cap) || /kugou|qqmusic|migu/.test(cap))
+    missing.push('supportsSimilar 应对非网易云一律 false');
+  return { ok: missing.length === 0, detail: missing.length ? `心动可用性判据：${missing.join('、')}` : '' };
+});
+add('HEARTBEAT.noRandomDegrade', 'HEARTBEAT', (s) => {
+  // 🔴 旧行为是"平台不支持就降级成随机"，本版明确禁止：
+  // 随机听起来像心动、实则毫无相关性 —— 与假控件同级。
+  // 判据：cycleMode 必须**跳过**不可用的心动档（不落档），且说明原因。
   const body = methodBody(stripComments(s.store), 'cycleMode');
   if (body == null) return { ok: false, detail: 'store.ts 未定义 cycleMode' };
-  const ok = /supportsSimilar/.test(body) && /\.toast\(/.test(body);
-  return {
-    ok,
-    detail: ok ? '' : '切到心动档时未按平台能力提示降级（静默降级 = 假控件）',
-  };
+  const missing = [];
+  if (!/canUseHeartbeat/.test(body)) missing.push('cycleMode 未按 canUseHeartbeat 跳过不可用档位');
+  if (!/continue;/.test(body)) missing.push('不可用时没有跳过（会落在一个用不了的档上）');
+  if (!/\.toast\(/.test(body)) missing.push('未向用户说明为什么跳过（静默跳过 = 用户以为按钮坏了）');
+  // setPlayMode 里也要有同一道闸兜底
+  const sp = methodBody(stripComments(s.store), 'setPlayMode');
+  if (sp == null || !/canUseHeartbeat/.test(sp)) missing.push('setPlayMode 缺同一道闸（可绕过 cycleMode 直接落档）');
+  return { ok: missing.length === 0, detail: missing.length ? `心动不可用时的处理：${missing.join('、')}` : '' };
 });
-add('HEARTBEAT.nextUsesSimilar', 'HEARTBEAT', (s) => {
-  // next 在 heartbeat 下必须真的走相似接口，而不是当 shuffle 处理
+add('HEARTBEAT.enterRebuildsQueue', 'HEARTBEAT', (s) => {
+  // 进入心动 = 拿当前歌换一批相似歌，队列 = [当前歌, ...相似]。
+  // 两种情形必须可区分：首次进入从头播第一首；再次进入保留当前歌、只换其余。
+  const body = methodBody(stripComments(s.store), 'enterHeartbeat');
+  if (body == null) return { ok: false, detail: 'store.ts 未定义 enterHeartbeat' };
+  const missing = [];
+  if (!/similarSongs\(/.test(body)) missing.push('未调 similarSongs');
+  // 队列必须是 [seed, ...pick]：保留当前歌，否则 currentIndex 与 currentSong 会对不上
+  if (!/\[\s*seed\s*,\s*\.\.\.pick\s*\]/.test(body)) missing.push('队列不是 [当前歌, ...相似]（当前歌被挤出队列）');
+  // 排除种子自身（接口可能把它自己算进相似里 → 队列里出现两遍）
+  if (!/songKey/.test(body)) missing.push('未按 songKey 排除当前曲');
+  // 首次/再次：由 heartbeatSeeded 区分，且**必须真的读它**。
+  // ⚠️ 只判"源码里出现过 heartbeatSeeded"是不够的：把判定改成 `const already = false;`
+  // 后，后面那句 `heartbeatSeeded: true` 仍在源码里 —— 断言照样绿，而"区分首次/再次"已经没了（反证轮实测）。
+  if (!/already\s*=\s*get\(\)\.heartbeatSeeded/.test(body))
+    missing.push('未真的读 heartbeatSeeded 来区分首次/再次进入');
+  if (!/heartbeatSeeded:\s*true/.test(body)) missing.push('未把 heartbeatSeeded 置真');
+  // 两条路径都要在：置真的那条是"再次进入"，有 playSong 的那条是"首次进入从头播"
+  if (!/if\s*\(\s*already\s*\)/.test(body)) missing.push('缺"再次进入"分支');
+  if (!/playSong\(/.test(body)) missing.push('首次进入没有"从头播放第一首"');
+  return { ok: missing.length === 0, detail: missing.length ? `enterHeartbeat：${missing.join('、')}` : '' };
+});
+add('HEARTBEAT.nextAdvances', 'HEARTBEAT', (s) => {
+  // 🔴 心动模式下 `next()` **必须先尝试在队列里前进**，只有走到队尾才换一批。
+  // 早先无条件调 enterHeartbeat()，而它的"再次进入"语义是**保留当前歌**，
+  // 于是自然播完时原地重播、整个心动模式卡死在第一首（这是本轮修掉的真实缺陷）。
   const body = methodBody(stripComments(s.store), 'next');
   if (body == null) return { ok: false, detail: 'store.ts 未定义 next' };
   const missing = [];
-  if (!/heartbeat/.test(body)) missing.push('未判 heartbeat');
-  // ⚠️ 判"这条分支真的可达"，不能只判"代码里出现过 similarSongs(" ——
-  // 把门禁写成 `&& false` 后调用照样在源码里，但运行时永远走不到（反证轮实测假阳性）。
-  // 判据取**门禁条件本身**：必须仍是 supportsSimilar(get().playbackSource)，
-  // 且它在同一条件里取反后有 fallbackNext 出口（不支持时走队列下一首，不是随机）。
-  const gate = body.match(
-    /playMode\s*===\s*'heartbeat'\s*&&\s*platform\.supportsSimilar\(\s*get\(\)\.playbackSource\s*\)/,
-  );
-  if (!gate) missing.push('心动分支被永久关闭（门禁取反）或未按平台能力分流');
-  if (!/if\s*\(\s*playMode\s*===\s*'heartbeat'/.test(body)) missing.push('缺 heartbeat 入口判断');
-  if (!/similarSongs\(/.test(body)) missing.push('未调 similarSongs');
-  // 相似结果要替换队列（否则队列越滚越杂）
-  if (!/playSong\(\s*nextSong\s*,\s*pick/.test(body)) missing.push('相似结果未作为新队列');
-  // 必须排除当前这首（接口可能把它自己算进相似里 → 立刻重播同一首）
-  if (!/songKey/.test(body)) missing.push('未按 songKey 排除当前曲');
-  // 不支持相似 / 接口失败 / 拿到空结果，三条都要有降级出口
-  const degrades = (body.match(/fallbackNext\(\)/g) || []).length;
-  if (degrades < 2) missing.push(`降级出口只有 ${degrades} 处（空结果与异常各需一条）`);
-  return { ok: missing.length === 0, detail: missing.length ? `next 的心动分支：${missing.join('、')}` : '' };
+  if (!/currentIndex\s*\+\s*1\s*<\s*queue\.length/.test(body))
+    missing.push('未判"队列里还有下一首"（会直接换一批而不前进）');
+  if (!/enterHeartbeat\(\s*\{\s*advance:\s*true\s*\}\s*\)/.test(body))
+    missing.push('队尾续播未走 advance 路径（换一批后不会前进）');
+  // advance 路径**必须真的前进**：播新列表的第一首，而不是停在原地
+  const eh = methodBody(stripComments(s.store), 'enterHeartbeat');
+  if (!/opts\?\.advance/.test(eh ?? '')) missing.push('enterHeartbeat 未支持 advance');
+  if (!/nextQueue\[1\]/.test(eh ?? '')) missing.push('advance 路径没有从新列表的第一首开始播');
+  return { ok: missing.length === 0, detail: missing.length ? `心动模式的推进：${missing.join('、')}` : '' };
 });
-add('HEARTBEAT.platformGate', 'HEARTBEAT', (s) => {
-  // 能力门禁：supportsSimilar 只对网易云为真。
-  // 这条防的是"为了让它跑起来把门禁放开" —— 那会让三个平台都去调不存在的接口。
-  if (!/supportsSimilar/.test(s.platform)) return { ok: false, detail: 'platform.ts 缺 supportsSimilar' };
-  const body = fnBodyAny(stripComments(s.platform), 'supportsSimilar');
-  if (body == null) return { ok: false, detail: 'platform.ts 未定义 supportsSimilar' };
-  const ok = /netease/.test(body) && !/kugou/.test(body) && !/qqmusic/.test(body) && !/migu/.test(body);
-  return {
-    ok,
-    detail: ok ? '' : 'supportsSimilar 应对非网易云一律 false（酷狗/QQ/咪咕无"按 songid 找相似"接口）',
-  };
-});
-add('HEARTBEAT.fallbackExists', 'HEARTBEAT', (s) => {
-  // 降级路径必须存在且是"队列下一首"（不是随机）：拿不到相似时
-  // 直接静默停下或随机跳，都与"续播"语义不符。
-  const body = methodBody(stripComments(s.store), 'fallbackNext');
-  if (body == null) return { ok: false, detail: 'store.ts 未定义 fallbackNext' };
-  const nextBody = methodBody(stripComments(s.store), 'next');
-  if (nextBody == null) return { ok: false, detail: 'store.ts 未定义 next' };
-  const ok = /fallbackNext\(\)/.test(nextBody) && /\+ 1\) %/.test(body);
-  return {
-    ok,
-    detail: ok ? '' : '取不到相似歌曲时的降级路径不完整（应有 fallbackNext 且按队列顺序取）',
-  };
+add('HEARTBEAT.restoresQueueOnLeave', 'HEARTBEAT', (s) => {
+  // 切离心动模式要把队列**恢复成原来的播放列表**（需求第 5 点）——
+  // 心动把队列换成了相似歌，不先存快照就永远拿不回来。
+  const sp = methodBody(stripComments(s.store), 'setPlayMode');
+  if (sp == null) return { ok: false, detail: 'store.ts 未定义 setPlayMode' };
+  const eh = methodBody(stripComments(s.store), 'enterHeartbeat');
+  const missing = [];
+  if (!/heartbeatRestore/.test(eh ?? '')) missing.push('enterHeartbeat 未存原队列快照');
+  if (!/heartbeatRestore/.test(sp)) missing.push('setPlayMode 未消费原队列快照（切走时恢复不出来）');
+  // 🔴 必须判**门禁条件本身**，不能只判"恢复代码在不在"：
+  // 把条件改成 `if (false)` 后，恢复那几行照样留在源码里，断言会假绿
+  // ——而运行时永远走不到，用户切走时列表仍停在相似歌上（反证轮实测抓到）。
+  if (!/playMode\s*===\s*'heartbeat'\s*&&\s*get\(\)\.heartbeatRestore/.test(sp))
+    missing.push('恢复分支的门禁不成立（被短路后代码还在、但永远走不到）');
+  if (!/queue:\s*snap\.queue/.test(sp)) missing.push('恢复时没有换回快照里的队列');
+  // ⚠️ 恢复时**不能**复位 heartbeatSeeded：复位了的话再切回心动会被当成首次进入、把当前歌从头重播
+  if (/heartbeatSeeded:\s*false/.test(sp))
+    missing.push('恢复时复位了 heartbeatSeeded（再进心动会把当前歌从头重播）');
+  return { ok: missing.length === 0, detail: missing.length ? `切离心动恢复队列：${missing.join('、')}` : '' };
 });
 
-// ── 桌面歌词（P3 · 拍板第 1 项）───────────────────────────────────────────
+// ── 播放列表入口（歌单 / 本地 / 历史 的统一语义）──────────────────────────
+add('PLAYLIST.startIndexByMode', 'PLAYER', (s) => {
+  // 需求第 2 条：点「播放全部」时，列表循环/单曲循环/顺序播放从**第一首**起，
+  // 随机播放则**随机**挑一首。用户点了具体某一首（opts.index）则以它为准 ——
+  // 精确意图不该被任何模式改写。
+  const body = methodBody(stripComments(s.store), 'playPlaylist');
+  if (body == null) return { ok: false, detail: 'store.ts 未定义 playPlaylist' };
+  const missing = [];
+  if (!/opts\?\.index\s*!=\s*null/.test(body)) missing.push('未区分"点某一首"与"播放全部"');
+  if (!/playMode\s*===\s*'shuffle'/.test(body)) missing.push("未按随机档分流（顺序档与随机档会一个样）");
+  if (!/Math\.random\(\)/.test(body)) missing.push('随机档没有随机（等于顺序播）');
+  return { ok: missing.length === 0, detail: missing.length ? `播放全部的起始位：${missing.join('、')}` : '' };
+});
+add('PLAYLIST.rowsGoThroughPlaylist', 'PLAYER', (s) => {
+  // 需求第 6 条：播放历史与本地曲库是**独立的播放列表** —— 点其中一行要把**整份列表**
+  // 设为队列并从该行开始（这样「下一首」才沿着用户看到的列表走）。
+  // 走 playPlaylist 而不是 playQueue，才能同时获得"切换列表"的联动（离开心动 → 顺序播放）。
+  const missing = [];
+  for (const [id, key] of [['local', 'localView'], ['history', 'historyView']]) {
+    const src = stripComments(s[key] ?? '');
+    if (!/playPlaylist\(/.test(src)) missing.push(`${key} 未走 playPlaylist（不是独立播放列表）`);
+    // 队列必须是"整份列表"，而不是只播点中的那一首
+    if (!/Queue\b/.test(src)) missing.push(`${key} 未构造整份列表作为队列`);
+  }
+  return { ok: missing.length === 0, detail: missing.length ? `本地/历史播放入口：${missing.join('、')}` : '' };
+});
+add('PLAYLIST.leavesHeartbeatToOrder', 'HEARTBEAT', (s) => {
+  // 需求第 4 条：切换歌单/换列表时，若当前是心动模式 → 先切成顺序播放。
+  const body = methodBody(stripComments(s.store), 'playPlaylist');
+  if (body == null) return { ok: false, detail: 'store.ts 未定义 playPlaylist' };
+  const missing = [];
+  if (!/playMode\s*===\s*'heartbeat'/.test(body)) missing.push('未判当前是否心动模式');
+  if (!/playMode:\s*'order'/.test(body)) missing.push("未切到顺序播放（'order'）");
+  // 必须**先改模式再定起始位**：否则"随机档 + 从心动切来"会走随机，与"切成顺序播放"相抵
+  const iMode = body.indexOf("playMode: 'order'");
+  const iIdx = body.indexOf('Math.random()');
+  if (iMode >= 0 && iIdx >= 0 && iMode > iIdx)
+    missing.push('先定起始位再改模式（随机档会绕过"切成顺序播放"）');
+  return { ok: missing.length === 0, detail: missing.length ? `切歌单离开心动：${missing.join('、')}` : '' };
+});
+add('PLAYLIST.likedAutoHeartbeat', 'HEARTBEAT', (s) => {
+  // 需求第 4 条后半：「我喜欢的音乐」**单独**记着有没有开启过心动模式 ——
+  // 开启过就在切进该歌单时自动切到心动并开始播放；没开启过则沿用前一个歌单的模式。
+  const body = methodBody(stripComments(s.store), 'playPlaylist');
+  const missing = [];
+  if (!/likedHeartbeatOn/.test(body ?? '')) missing.push('未读「我喜欢的音乐」的心动开关');
+  if (!/isLiked/.test(body ?? '')) missing.push('未识别「我喜欢的音乐」（isLiked 标识）');
+  if (!/setPlayMode\(\s*'heartbeat'\s*\)/.test(body ?? '')) missing.push('开启过却没自动切到心动');
+  // 标识必须在拉歌单时打上，否则 isLiked 永远是假。
+  // ⚠️ 判"按 subscribed 找"这个**判据本身**，而不是判"源码里有没有 isLiked: true"：
+  // 后者在把 findIndex 结果打成 -1 后照样命中（标记代码还在、但永远走不到），
+  // 反证轮实测过这种假绿。
+  const left = stripComments(s.store);
+  if (!/findIndex\(\s*\(pl\)\s*=>\s*pl\.subscribed\s*===\s*false\s*\)/.test(left))
+    missing.push('未按 subscribed=false 找出「我喜欢的音乐」（判据失效 ⇒ 一条都认不出来）');
+  if (!/isLiked:\s*true/.test(left)) missing.push('找到后没有打 isLiked 标识');
+  // 改名也要钉住：那是需求第 1 条的另一半（各平台原名不一）
+  if (!/name:\s*LIKED_PLAYLIST_NAME/.test(left)) missing.push('没有把该歌单名统一改成「我喜欢的音乐」');
+  // 并且要持久化，跨会话保留（prefs.ts 不在 s.store 的拼接范围里，直接按路径读）
+  // ⚠️ 用 \b 而不是裸子串：把声明改名成 `likedHeartbeatOnRemoved` 时裸子串仍会命中（反证轮实测假绿）。
+  const prefsSrc = stripComments(readMaybe(path.join(APP, 'src', 'music', 'prefs.ts')));
+  if (!/\blikedHeartbeatOn\b/.test(prefsSrc)) missing.push('likedHeartbeatOn 未进偏好（重启就丢）');
+  return { ok: missing.length === 0, detail: missing.length ? `我喜欢的音乐的心动记忆：${missing.join('、')}` : '' };
+});
+
+// ── 播放队列抽屉（定位当前曲 + 从右滑入）────────────────────────────────
+add('QUEUE.scrollsToCurrent', 'QUEUE', (s) => {
+  // 需求第 3 条：点开播放列表要定位到正在播的那首。
+  const drawer = stripComments(s.queueDrawer ?? '');
+  const vl = stripComments(readMaybe(F.virtualList));
+  const missing = [];
+  if (!/scrollToIndex=\{currentIndex\}/.test(drawer)) missing.push('QueueDrawer 未把当前下标交给列表定位');
+  if (!/scrollToIndex/.test(vl)) missing.push('VirtualList 未支持 scrollToIndex');
+  // 定位必须与"复位到顶"在同一处裁决，否则两者打架会让抽屉先闪到顶再跳下来
+  const iIdx = vl.indexOf('scrollToIndex == null');
+  const iReset = vl.indexOf('el.scrollTop = 0');
+  if (iIdx < 0 || iReset < 0) missing.push('定位与复位未在同一分支里裁决');
+  else if (iReset < iIdx) missing.push('把 scrollTop 归零写在了定位之前（顺序反了）');
+  return { ok: missing.length === 0, detail: missing.length ? `播放列表定位：${missing.join('、')}` : '' };
+});
+add('QUEUE.drawerSlidesIn', 'QUEUE', (s) => {
+  // 需求第 5 条：播放列表以抽屉形式**从右往左展开**。
+  const css = s.css;
+  const rule = (css.match(/\.music-drawer\s*\{([^}]*)\}/) || [, ''])[1];
+  const missing = [];
+  if (!/animation\s*:\s*music-drawer-in/.test(rule)) missing.push('抽屉没有进场动画');
+  const kf = (css.match(/@keyframes\s+music-drawer-in\s*\{([\s\S]*?)\n\}/) || [, ''])[1];
+  if (!/translateX\(100%\)/.test(kf)) missing.push("起点不是 translateX(100%)（不会从右往左滑出）");
+  if (!/translateX\(0\)/.test(kf)) missing.push('终点不是 translateX(0)');
+  // 蒙层**不能**跟着平移（整屏遮罩横移会露出下面的界面），只能淡入
+  const bd = (css.match(/\.music-drawer-bd\s*\{([^}]*)\}/) || [, ''])[1];
+  if (/translateX/.test(bd)) missing.push('蒙层也跟着平移了（遮罩横移会露出底下的界面）');
+  if (!/animation\s*:\s*music-drawer-bd-in/.test(bd)) missing.push('蒙层没有淡入动画');
+  return { ok: missing.length === 0, detail: missing.length ? `队列抽屉展开：${missing.join('、')}` : '' };
+});
+
+
 // 这一组断言的全都是「**静默失效**」型陷阱：每一条不满足时都不会报错，
 // 只是某个功能在真机上悄悄不工作。所以必须逐条锁死。
 add('LYRICS.rustCommands', 'LYRICS', (s) => {
@@ -2607,6 +2810,47 @@ add('ISLANDV.toggleBothWays', 'ISLANDV', (s) => {
   return { ok: missing.length === 0, detail: missing.length ? `视图切换：${missing.join('、')}` : '' };
 });
 
+add('ISLANDV.ctlStableAcrossViews', 'ISLANDV', (s) => {
+  // 🔴 切 di-toggle 不许跳动（2026-10-12 修）：按钮栏是 justify-content:center 的整行，
+  // 歌词卡原先把 .ui-cbtn 压到 26px ⇒ 整行总宽变 ⇒ 每个按钮的 x 全部平移，
+  // 行高 30→26 又让整行上下跳；进度条还因 .di-prog 在流内被推着走。
+  // 修法：按钮栏与进度行都**绝对定位 + 固定几何**，歌词卡不再碰 .di-ctl 的任何尺寸。
+  const missing = [];
+  const ctl = (s.css.match(/\.di-ctl\s*\{([^}]*)\}/) || [, ''])[1];
+  if (!/position\s*:\s*absolute/.test(ctl)) missing.push('.di-ctl 未绝对定位（会随流内内容高度变化而移动）');
+  if (!/height\s*:\s*30px/.test(ctl)) missing.push('.di-ctl 未固定高度 30px');
+  if (!/justify-content\s*:\s*center/.test(ctl)) missing.push('.di-ctl 不再是居中整行（判据基准变了）');
+
+  const prog = (s.css.match(/\.di-prog\s*\{([^}]*)\}/) || [, ''])[1];
+  if (!/position\s*:\s*absolute/.test(prog)) missing.push('.di-prog 未绝对定位（切视图时位置会被流内内容带偏）');
+  if (!/bottom\s*:/.test(prog)) missing.push('.di-prog 未固定 bottom（宽度/位置会随两态内容重算）');
+
+  // 🔴 歌词卡**不得**再改 .di-ctl 的按钮尺寸 —— 这正是当初跳动的那一刀
+  if (/\.di-card\.is-lyr[^{]*\.di-ctl\s+\.ui-cbtn\s*\{/.test(s.css))
+    missing.push('.di-card.is-lyr 又改了 .di-ctl 内按钮尺寸（两态总宽不同 ⇒ 居中位移）');
+
+  // 两态的下内边距必须同值（内容区底边对齐，各自的高度差由 padding-top 吸收）
+  const pad = (sel) => {
+    const m = new RegExp(`\\${sel}\\s*\\{([^}]*)\\}`).exec(s.css);
+    const p = m && /padding\s*:\s*([\d.]+)px\s+([\d.]+)px\s+([\d.]+)px/.exec(m[1]);
+    return p ? p[3] : null;
+  };
+  const pbCard = pad('.di-card');
+  const pbLyr = pad('.di-card.is-lyr');
+  if (pbCard == null || pbLyr == null) missing.push('取不到 .di-card / .di-card.is-lyr 的 padding');
+  else if (pbCard !== pbLyr) missing.push(`两态下内边距不同（${pbCard} vs ${pbLyr}）⇒ 内容区底边不对齐`);
+
+  // di-toggle 外层必须与按钮同尺寸（它内层的 26px 按钮靠外层留白占住位置）
+  const tg = (s.css.match(/\.di-toggle\s*\{([^}]*)\}/) || [, ''])[1];
+  if (!/width\s*:\s*30px/.test(tg) || !/height\s*:\s*30px/.test(tg))
+    missing.push('.di-toggle 外层未固定 30×30（外层随内容变小 ⇒ 整行总宽变 ⇒ 居中位移）');
+  if (!/flex\s*:\s*0\s+0\s+auto/.test(tg)) missing.push('.di-toggle 未 flex:0 0 auto（会被 flex 压缩改宽度）');
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `按钮栏/进度条两态稳定性：${missing.join('、')}` : '',
+  };
+});
+
 add('ISLANDV.cardSize', 'ISLANDV', (s) => {
   const isl = islSrc(s);
   const missing = [];
@@ -2954,7 +3198,7 @@ function runAll(s, ids) {
   return res;
 }
 
-const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS', 'AUDIO', 'CACHE', 'SKIN', 'QUEUE', 'MENU', 'ISLANDV', 'RESTORE', 'KEYS', 'WEBVIEW'];
+const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'PLAYLIST', 'HEARTBEAT', 'LYRICS', 'AUDIO', 'CACHE', 'SKIN', 'QUEUE', 'MENU', 'ISLANDV', 'RESTORE', 'KEYS', 'WEBVIEW'];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -3770,7 +4014,9 @@ const MUTATIONS = [
   {
     name: '把 .music-exp 的进场动画那行删掉',
     file: F.musicScss,
-    find: '  animation: music-exp-up 0.34s cubic-bezier(0.4, 0, 0.2, 1);\n',
+    // 锚点随 2026-10-12 的改版更新：进场动画不再独占一行，而是与动态背景流动
+    // 写在同一个 animation 列表里（分开写会让动态开关重播进场动画 ⇒ 整屏闪一下）。
+    find: '  animation: music-exp-up 0.34s cubic-bezier(0.4, 0, 0.2, 1) 1 both,\n',
     replace: '',
     expect: ['PLAYER.animEnter'],
   },
@@ -3800,10 +4046,11 @@ const MUTATIONS = [
   {
     name: '把 prev() 里 { expand: false } 删掉',
     file: path.join(F.actionsDir, 'playback.ts'),
+    // 锚点随 2026-10-12 的五档改版更新：prev 现在按模式分流，线性分支收在 else 里
     find:
-      '        : (currentIndex - 1 + queue.length) % queue.length;\n    void get().playSong(queue[idx], undefined, { expand: false });',
+      '      idx = (currentIndex - 1 + queue.length) % queue.length;\n    }\n    void get().playSong(queue[idx], undefined, { expand: false });',
     replace:
-      '        : (currentIndex - 1 + queue.length) % queue.length;\n    void get().playSong(queue[idx], undefined);',
+      '      idx = (currentIndex - 1 + queue.length) % queue.length;\n    }\n    void get().playSong(queue[idx], undefined);',
     expect: ['PLAYER.prevExpandFalse'],
   },
   {
@@ -3821,11 +4068,25 @@ const MUTATIONS = [
     expect: ['PLAYER.closePath'],
   },
   {
-    name: '把 MusicScreen 的 Esc 分支改回 setExpanded(false)',
-    file: F.musicScreen,
-    find: '        closeExpanded();',
-    replace: '        setExpanded(false);',
+    name: '把 App 根的 Esc 分支改回 setExpanded(false)',
+    file: F.app,
+    find: "if (e.key === 'Escape') closeMusicExpanded();",
+    replace: "if (e.key === 'Escape') setMusicExpanded(false);",
     expect: ['PLAYER.escPath'],
+  },
+  {
+    name: '让 MusicScreen 也监听 closeExpanded（两处重复触发退场动画）',
+    file: F.musicScreen,
+    find: '      if (e.key === \'Escape\') {\n        setQueueOpen(false);',
+    replace: '      if (e.key === \'Escape\') {\n        closeExpanded();\n        setQueueOpen(false);',
+    expect: ['PLAYER.escPath'],
+  },
+  {
+    name: '把 <ExpandedPlayer> 挪回 MusicScreen 内（从设置页点「打开播放器」就没反应）',
+    file: F.app,
+    find: '      <ExpandedPlayer onSeek={onMusicSeek} />\n',
+    replace: '',
+    expect: ['PLAYER.expandedMountedAtRoot'],
   },
 
   // ── PLAYER · C 播放条补全 ─────────────────────────────────────────────
@@ -3881,43 +4142,48 @@ const MUTATIONS = [
     expect: ['PLAYER.resolveWrites'],
   },
 
-  // ── HEARTBEAT 心动模式 ────────────────────────────────────────────────
+  // ── HEARTBEAT 心动模式（五档改版）────────────────────────────────────
   {
-    name: '把 cycleMode 的档位数组退回三档（去掉心动）',
-    file: path.join(F.actionsDir, 'playback.ts'),
-    find: "    const order: PlayMode[] = ['list', 'shuffle', 'one', 'heartbeat'];",
-    replace: "    const order: PlayMode[] = ['list', 'shuffle', 'one'];",
-    expect: ['HEARTBEAT.cycleFour'],
+    name: "把 types.ts 的 PlayMode 去掉 'order'（顺序播放从类型层消失）",
+    file: F.types,
+    find: "export type PlayMode = 'list' | 'one' | 'shuffle' | 'order' | 'heartbeat';",
+    replace: "export type PlayMode = 'list' | 'one' | 'shuffle' | 'heartbeat';",
+    expect: ['HEARTBEAT.modeInType'],
   },
   {
-    name: '档位数组里 heartbeat 写两遍（点两下卡在同一档）',
+    name: '把 cycleMode 的档位数组退回四档（去掉顺序播放）',
     file: path.join(F.actionsDir, 'playback.ts'),
-    find: "    const order: PlayMode[] = ['list', 'shuffle', 'one', 'heartbeat'];",
-    replace:
-      "    const order: PlayMode[] = ['list', 'shuffle', 'one', 'heartbeat', 'heartbeat'];",
-    expect: ['HEARTBEAT.cycleFour'],
+    find: "    const order: PlayMode[] = ['list', 'one', 'shuffle', 'order', 'heartbeat'];",
+    replace: "    const order: PlayMode[] = ['list', 'one', 'shuffle', 'heartbeat'];",
+    expect: ['HEARTBEAT.cycleFive'],
   },
   {
-    name: '删掉切心动档时的降级提示（静默降级 = 假控件）',
+    name: '把档位数组的两个档位对调（点一下会跳档）',
     file: path.join(F.actionsDir, 'playback.ts'),
-    find: "    if (nextMode === 'heartbeat' && !platform.supportsSimilar(get().playbackSource)) {",
-    replace: '    if (false) {',
-    expect: ['HEARTBEAT.warnsOnDegrade'],
+    find: "    const order: PlayMode[] = ['list', 'one', 'shuffle', 'order', 'heartbeat'];",
+    replace: "    const order: PlayMode[] = ['list', 'one', 'order', 'shuffle', 'heartbeat'];",
+    expect: ['HEARTBEAT.cycleFive'],
   },
   {
-    name: '让 next 把 heartbeat 当普通队列顺序（不走相似续播）',
-    file: path.join(F.actionsDir, 'playback.ts'),
-    // 锚点只取到函数名的左括号，与参数/后续实现解耦（避免合法重构后静默失效）
-    find: "if (playMode === 'heartbeat' && platform.supportsSimilar(get().playbackSource)) {",
-    replace: "if (playMode === 'heartbeat' && false) {",
-    expect: ['HEARTBEAT.nextUsesSimilar'],
+    name: '把默认播放模式从顺序播放改回列表循环',
+    file: F.store,
+    find: "  playMode: 'order',",
+    replace: "  playMode: 'list',",
+    expect: ['HEARTBEAT.defaultIsOrder'],
   },
   {
-    name: '相似结果不作为新队列（playSong 丢掉 pick，退回追加语义）',
+    name: 'canUseHeartbeat 硬编码平台名（不再走平台能力函数）',
     file: path.join(F.actionsDir, 'playback.ts'),
-    find: '          await get().playSong(nextSong, pick, { expand: false });',
-    replace: '          await get().playSong(nextSong, undefined, { expand: false });',
-    expect: ['HEARTBEAT.nextUsesSimilar'],
+    find: '  return platform.supportsSimilar(state.playbackSource) && state.queueFromLiked;',
+    replace: "  return state.playbackSource === 'netease' && state.queueFromLiked;",
+    expect: ['HEARTBEAT.gatedByLikedAndPlatform'],
+  },
+  {
+    name: 'canUseHeartbeat 丢掉「我喜欢的音乐」上下文（任何队列都能进心动）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '  return platform.supportsSimilar(state.playbackSource) && state.queueFromLiked;',
+    replace: '  return platform.supportsSimilar(state.playbackSource);',
+    expect: ['HEARTBEAT.gatedByLikedAndPlatform'],
   },
   {
     name: '把 supportsSimilar 对酷狗也放开（酷狗无"按 songid 找相似"接口）',
@@ -3925,14 +4191,167 @@ const MUTATIONS = [
     find: "export function supportsSimilar(provider: MusicProvider): boolean {\n  return provider === 'netease';\n}",
     replace:
       "export function supportsSimilar(provider: MusicProvider): boolean {\n  return provider === 'netease' || provider === 'kugou';\n}",
-    expect: ['HEARTBEAT.platformGate'],
+    expect: ['HEARTBEAT.gatedByLikedAndPlatform'],
   },
   {
-    name: '删掉 fallbackNext（取不到相似时无处降级）',
+    name: 'cycleMode 不再跳过不可用的心动档（会落在一个用不了的档上）',
     file: path.join(F.actionsDir, 'playback.ts'),
-    find: '  fallbackNext: () => {',
-    replace: '  fallbackRemoved: () => {',
-    expect: ['HEARTBEAT.fallbackExists'],
+    find: '      if (cand === \'heartbeat\' && !canUseHeartbeat(get())) {',
+    replace: '      if (false) {',
+    expect: ['HEARTBEAT.noRandomDegrade'],
+  },
+  {
+    name: 'setPlayMode 去掉心动可用性的兜底闸（可绕过 cycleMode 直接落档）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '      if (!canUseHeartbeat(get())) {',
+    replace: '      if (false) {',
+    expect: ['HEARTBEAT.noRandomDegrade'],
+  },
+  {
+    name: '心动队列丢掉当前歌（currentIndex 与 currentSong 会对不上）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '    const nextQueue = [seed, ...pick];',
+    replace: '    const nextQueue = [...pick];',
+    expect: ['HEARTBEAT.enterRebuildsQueue'],
+  },
+  {
+    name: 'enterHeartbeat 不再区分首次/再次进入（每次切回来都把当前歌从头重播）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '    const already = get().heartbeatSeeded;',
+    replace: '    const already = false;',
+    expect: ['HEARTBEAT.enterRebuildsQueue'],
+  },
+  {
+    name: '心动模式自然播完时无条件换一批（不前进 ⇒ 播完的歌原地重播、卡在首曲）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '        if (currentIndex + 1 < queue.length) {',
+    replace: '        if (false) {',
+    expect: ['HEARTBEAT.nextAdvances'],
+  },
+  {
+    name: 'advance 路径不前进（从新列表第 0 位开始 ⇒ 又是原地重播）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '      await get().playSong(nextQueue[1] ?? nextQueue[0], nextQueue, { expand: false });',
+    replace: '      await get().playSong(nextQueue[0], nextQueue, { expand: false });',
+    expect: ['HEARTBEAT.nextAdvances'],
+  },
+  {
+    name: '进入心动前不存原队列快照（切走时恢复不出原播放列表）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '        heartbeatRestore: {',
+    replace: '        heartbeatSnapshotDisabled: {',
+    expect: ['HEARTBEAT.restoresQueueOnLeave'],
+  },
+  {
+    name: '切离心动时不恢复原队列（列表一直停在相似歌上）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '    if (get().playMode === \'heartbeat\' && get().heartbeatRestore) {',
+    replace: '    if (false) {',
+    expect: ['HEARTBEAT.restoresQueueOnLeave'],
+  },
+  {
+    name: '恢复原队列时复位 heartbeatSeeded（再进心动会把当前歌从头重播）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '        queueFromLiked: snap.queueFromLiked,',
+    replace: '        queueFromLiked: snap.queueFromLiked, heartbeatSeeded: false,',
+    expect: ['HEARTBEAT.restoresQueueOnLeave'],
+  },
+
+  // ── PLAYLIST 播放列表入口 ────────────────────────────────────────────
+  {
+    name: '播放全部恒定从第一首起（随机档退化成顺序播）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '          ? Math.floor(Math.random() * songs.length)',
+    replace: '          ? 0',
+    expect: ['PLAYLIST.startIndexByMode'],
+  },
+  {
+    name: '播放全部时忽略用户点的具体某一首（模式改写精确意图）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '      opts?.index != null',
+    replace: '      false',
+    expect: ['PLAYLIST.startIndexByMode'],
+  },
+  {
+    name: '本地曲库退回 playQueue（不再是独立播放列表）',
+    file: F.localView,
+    find: 'void playPlaylist(localQueue, { index: i });',
+    replace: 'void playQueue(localQueue, i);',
+    expect: ['PLAYLIST.rowsGoThroughPlaylist'],
+  },
+  {
+    name: '播放历史退回"只播点中那一首"（不再是独立播放列表）',
+    file: F.historyView,
+    find: 'void playPlaylist(historyQueue, { index: i, fromHistory: true });',
+    replace: 'void playQueue(historyQueue, i);',
+    expect: ['PLAYLIST.rowsGoThroughPlaylist'],
+  },
+  {
+    name: '切歌单时不把心动模式切成顺序播放',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: "    if (get().playMode === 'heartbeat') {\n      set({ playMode: 'order' });",
+    replace: "    if (false) {\n      set({ playMode: 'order' });",
+    expect: ['PLAYLIST.leavesHeartbeatToOrder'],
+  },
+  {
+    name: '切进「我喜欢的音乐」时不自动恢复心动模式',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '    if (liked && get().likedHeartbeatOn) {',
+    replace: '    if (false) {',
+    expect: ['PLAYLIST.likedAutoHeartbeat'],
+  },
+  {
+    name: '拉歌单时不打「我喜欢的音乐」标识（isLiked 永远为假）',
+    file: path.join(F.actionsDir, 'left.ts'),
+    // 锚点随 2026-10-12 的规则变更更新：识别口径从"下标 0"改为
+    // "第一个 subscribed===false 的歌单"。这里把 findIndex 打成 -1 ⇒ 一条都不打标。
+    find: '      const likedIdx = list.findIndex((pl) => pl.subscribed === false);',
+    replace: '      const likedIdx = -1;',
+    expect: ['PLAYLIST.likedAutoHeartbeat'],
+  },
+  {
+    name: '不把「我喜欢的音乐」改名（界面仍显示接口原名，各平台叫法不一）',
+    file: path.join(F.actionsDir, 'left.ts'),
+    find: '              i === likedIdx ? { ...pl, name: LIKED_PLAYLIST_NAME, isLiked: true } : pl,',
+    replace: '              i === likedIdx ? { ...pl, isLiked: true } : pl,',
+    expect: ['PLAYLIST.likedAutoHeartbeat'],
+  },
+  {
+    name: 'likedHeartbeatOn 不落偏好（重启就丢"开启过心动"这件事）',
+    file: path.join(APP, 'src', 'music', 'prefs.ts'),
+    find: '  likedHeartbeatOn: boolean;',
+    replace: '  likedHeartbeatOnRemoved?: boolean;',
+    expect: ['PLAYLIST.likedAutoHeartbeat'],
+  },
+
+  // ── QUEUE 播放列表抽屉（定位当前曲 + 从右滑入）──────────────────────
+  {
+    name: '队列抽屉不把当前下标交给列表（打开时不定位到正在播的那首）',
+    file: F.queueDrawer,
+    find: 'scrollToIndex={currentIndex}',
+    replace: 'data-no-scroll',
+    expect: ['QUEUE.scrollsToCurrent'],
+  },
+  {
+    name: '抽屉进场动画删掉（不再从右往左展开）',
+    file: F.musicScss,
+    find: '  animation: music-drawer-in 0.24s cubic-bezier(0.4, 0, 0.2, 1) both;',
+    replace: '',
+    expect: ['QUEUE.drawerSlidesIn'],
+  },
+  {
+    name: '抽屉进场起点改成从下方（不再是"从右往左"）',
+    file: F.musicScss,
+    find: '  from { transform: translateX(100%); }',
+    replace: '  from { transform: translateY(100%); }',
+    expect: ['QUEUE.drawerSlidesIn'],
+  },
+  {
+    name: '让蒙层也跟着抽屉平移（整屏遮罩横移会露出底下界面）',
+    file: F.musicScss,
+    find: '  animation: music-drawer-bd-in 0.24s ease-out both;',
+    replace: '  animation: music-drawer-in 0.24s cubic-bezier(0.4, 0, 0.2, 1) both;',
+    expect: ['QUEUE.drawerSlidesIn'],
   },
 
   // ── LYRICS 桌面歌词 ──────────────────────────────────────────────────
@@ -4291,8 +4710,10 @@ const MUTATIONS = [
   {
     name: "把播放队列的 z-index 降回展开播放器之下（点「播放队列」看不到东西）",
     file: F.musicScss,
-    find: "  flex-direction: column;\n  z-index: 72;\n}",
-    replace: "  flex-direction: column;\n  z-index: 60;\n}",
+    // 锚点收窄到那一行本身：抽屉里后来插入了进场动画的注释与声明，
+    // 原先"跨到右花括号"的三行锚点会静默失效（跳过 ≠ 通过）
+    find: '  z-index: 72;',
+    replace: '  z-index: 60;',
     expect: ["UI.drawerAboveExpanded"],
   },
   {
@@ -4539,6 +4960,34 @@ const MUTATIONS = [
     find: "    '--lyr-hl': highlight,\n",
     replace: '',
     expect: ['ISLANDV.hlVarInjected'],
+  },
+  {
+    name: '.is-dynamic 用 animation 简写开关动态背景（重播进场动画 ⇒ 整屏闪一下）',
+    file: F.musicScss,
+    find: '  animation-play-state: running, running;\n}',
+    replace: '  animation: music-exp-flow 8s ease-in-out infinite;\n}',
+    expect: ['PLAYER.noAnimShorthandClash'],
+  },
+  {
+    name: '歌词卡把按钮栏按钮压回 26px（两态总宽不同 ⇒ 居中位移 + 上下跳）',
+    file: F.musicScss,
+    find: '.di-card.is-lyr {\n  /* 上内边距仍要让开共享封面（62）；下内边距与播放卡**同值**（42 = 按钮栏顶边），\n     两态的内容区底边因此对齐；歌词区实得 150-62-42 = 46px，容得下两行 14/12。 */\n  padding: 62px 16px 42px;',
+    replace: ".di-card.is-lyr {\n  padding: 62px 16px 42px;\n}\n.di-card.is-lyr .di-ctl .ui-cbtn {\n  width: 26px;\n  height: 26px;\n}",
+    expect: ['ISLANDV.ctlStableAcrossViews'],
+  },
+  {
+    name: '.di-toggle 外层跟着内容缩成 26px（整行总宽变 ⇒ 居中位移）',
+    file: F.musicScss,
+    find: '.di-toggle {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 30px;\n  height: 30px;\n  flex: 0 0 auto;\n}',
+    replace: '.di-toggle {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 26px;\n  height: 26px;\n}',
+    expect: ['ISLANDV.ctlStableAcrossViews'],
+  },
+  {
+    name: '把 .di-prog 放回文档流（切视图时进度条位置随内容高度变）',
+    file: F.musicScss,
+    find: '.di-prog {\n  position: absolute;\n  left: 16px;\n  right: 16px;\n  bottom: 50px;\n  height: 12px;\n  display: flex;',
+    replace: '.di-prog {\n  display: flex;',
+    expect: ['ISLANDV.ctlStableAcrossViews'],
   },
   {
     name: '歌词卡字号接回 --lyr-size（跟随用户 17–48 的量程 → 320px 卡片被撑爆）',

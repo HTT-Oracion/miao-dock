@@ -1,8 +1,9 @@
-import { ChevronLeft, Play } from 'lucide-react';
+import { ChevronDown, ChevronLeft, Play } from 'lucide-react';
 import { providerLabel } from '@music/platform';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl, songKey } from '@music/convert';
 import type { LeftView } from '@music/store';
+import type { Playlist } from '@music/types';
 import { HistoryView } from '@screens/music/HistoryView';
 import { LocalView } from '@screens/music/LocalView';
 import { Empty, VirtualList } from '@components/units';
@@ -58,7 +59,7 @@ export function LeftPanel() {
   );
 }
 
-/** 我的歌单：未登录是空态（store 不会去拉），登录后列出当前平台账号的歌单 */
+/** 我的歌单：未登录是空态（store 不会去拉），登录后按「创建 / 收藏」分组列出 */
 function PlaylistsView() {
   const playbackSource = useMusicStore((s) => s.playbackSource);
   const loginInfos = useMusicStore((s) => s.loginInfos);
@@ -68,6 +69,8 @@ function PlaylistsView() {
   const proxyPort = useMusicStore((s) => s.proxyPort);
   const openLeftPlaylist = useMusicStore((s) => s.openLeftPlaylist);
   const loadUserPlaylists = useMusicStore((s) => s.loadUserPlaylists);
+  const groupOpen = useMusicStore((s) => s.playlistGroupOpen);
+  const setGroupOpen = useMusicStore((s) => s.setPlaylistGroupOpen);
 
   const logged = !!loginInfos[playbackSource]?.logged_in;
 
@@ -75,6 +78,50 @@ function PlaylistsView() {
   if (error) return <Empty bad>歌单读取失败：{error}</Empty>;
   if (loading && userPlaylists.length === 0) return <Empty>加载歌单中…</Empty>;
   if (userPlaylists.length === 0) return <Empty>这个平台账号下还没有歌单</Empty>;
+
+  /*
+   * 分组：按 `subscribed` 分——false = 用户自己创建的（含统一改名后的「我喜欢的音乐」），
+   * true = 收藏别人的。这个标记是接口给的语义位，不是猜的。
+   * 空分组**整组不渲染**（连组头一起）：没有收藏歌单时留一个"收藏的歌单 0"的组头，
+   * 只会让用户以为点了没反应。
+   */
+  const created = userPlaylists.filter((pl) => pl.subscribed !== true);
+  const subscribed = userPlaylists.filter((pl) => pl.subscribed === true);
+
+  type Row =
+    | {
+        kind: 'group';
+        key: string;
+        group: 'created' | 'subscribed';
+        label: string;
+        count: number;
+        open: boolean;
+      }
+    | { kind: 'pl'; key: string; pl: Playlist };
+
+  const rows: Row[] = [];
+  if (created.length > 0) {
+    rows.push({
+      kind: 'group',
+      key: 'g-created',
+      group: 'created',
+      label: '创建的歌单',
+      count: created.length,
+      open: groupOpen.created,
+    });
+    if (groupOpen.created) for (const pl of created) rows.push({ kind: 'pl', key: pl.id, pl });
+  }
+  if (subscribed.length > 0) {
+    rows.push({
+      kind: 'group',
+      key: 'g-subscribed',
+      group: 'subscribed',
+      label: '收藏的歌单',
+      count: subscribed.length,
+      open: groupOpen.subscribed,
+    });
+    if (groupOpen.subscribed) for (const pl of subscribed) rows.push({ kind: 'pl', key: pl.id, pl });
+  }
 
   return (
     <div className="music-body">
@@ -85,21 +132,42 @@ function PlaylistsView() {
           刷新
         </button>
       </div>
+      {/*
+        分组头与歌单行**合成同一个虚拟列表**（而不是两个各自滚动的列表）：
+        一个面板里出现两个滚动条会让用户以为上面那块是钉住的。合成一列之后，
+        分组头只是另一种行，收起/展开只改变 rows 的内容，滚动条始终只有一条。
+        resetKey 带上两个开合状态 ⇒ 收起/展开时回到顶部，
+        否则收起上面的组会让下面整批内容"往上跳"而滚动位置没变，看起来像列表自己窜位。
+      */}
       <VirtualList
-        items={userPlaylists}
-        resetKey={`left-playlists:${playbackSource}`}
-        itemKey={(pl) => pl.id}
-        renderItem={(pl) => (
-          <div className="music-row" onClick={() => void openLeftPlaylist(pl)}>
-            <Cover url={coverProxyUrl(pl.cover, proxyPort)} />
-            <div className="music-row-tx">
-              <b>{pl.name}</b>
-              <span>
-                {pl.track_count} 首 · {providerLabel(pl.provider)}
-              </span>
+        items={rows}
+        resetKey={`left-playlists:${playbackSource}:${groupOpen.created}:${groupOpen.subscribed}`}
+        itemKey={(r) => r.key}
+        renderItem={(row) =>
+          row.kind === 'group' ? (
+            <div
+              className={`music-plgroup${row.open ? '' : ' is-shut'}`}
+              onClick={() => setGroupOpen(row.group, !row.open)}
+            >
+              {/* 纯文字行：无背景、无圆角、无图标、无分隔线 —— 识别靠标题文字本身 */}
+              <div className="music-plgroup-pill">
+                <b className="music-plgroup-lb">{row.label}</b>
+                <span className="music-plgroup-ct">{row.count}</span>
+                <ChevronDown size={13} className="music-plgroup-chev" />
+              </div>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="music-row" onClick={() => void openLeftPlaylist(row.pl)}>
+              <Cover url={coverProxyUrl(row.pl.cover, proxyPort)} />
+              <div className="music-row-tx">
+                <b>{row.pl.name}</b>
+                <span>
+                  {row.pl.track_count} 首 · {providerLabel(row.pl.provider)}
+                </span>
+              </div>
+            </div>
+          )
+        }
       />
     </div>
   );
@@ -117,7 +185,7 @@ function LeftTracksView() {
   const loadingMore = useMusicStore((s) => s.loadingMoreLeft);
   const loadMore = useMusicStore((s) => s.loadMoreLeft);
   const back = useMusicStore((s) => s.backToPlaylists);
-  const playQueue = useMusicStore((s) => s.playQueue);
+  const playPlaylist = useMusicStore((s) => s.playPlaylist);
   const currentSong = useMusicStore((s) => s.currentSong);
   const proxyPort = useMusicStore((s) => s.proxyPort);
 
@@ -139,7 +207,7 @@ function LeftTracksView() {
           type="button"
           className="music-btn pri"
           disabled={tracks.length === 0}
-          onClick={() => void playQueue(tracks, 0)}
+          onClick={() => void playPlaylist(tracks, { playlist: meta ?? undefined })}
         >
           <Play size={12} /> 播放全部
         </button>
@@ -159,7 +227,7 @@ function LeftTracksView() {
             renderItem={(s, i) => {
               // 「播放」在歌单曲目里的语义是"把整个歌单设为队列并从这一首开始" ——
               // 左键点行与右键菜单的「播放」必须是同一个回调，否则两处行为会各走各的
-              const play = () => void playQueue(tracks, i);
+              const play = () => void playPlaylist(tracks, { playlist: meta ?? undefined, index: i });
               return (
                 <SongRow
                   song={s}

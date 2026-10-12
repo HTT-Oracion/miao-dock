@@ -43,7 +43,19 @@ export const createInitSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 
   hydratePrefs: () => {
     const prefs = readLS<Partial<Prefs>>(LS_PREFS, {});
     const volume = typeof prefs.volume === 'number' ? prefs.volume : 0.8;
-    const playMode: PlayMode = prefs.playMode ?? 'list';
+    /*
+     * 播放模式：枚举型偏好**白名单收口**，脏值一律回落 'order'（新的默认档）。
+     *
+     * ⚠️ 这里刻意**不**因为默认值从 'list' 改成 'order' 而去迁移老偏好：
+     * 用户在按钮上显式选过的档位就是他的选择，替他改回去等于产品替他做决定
+     * （与 lyricsMode / islandView 的处理同一条纪律，见 D-137）。
+     * 只有"从没选过"（键缺失或值不认识）的人才拿到新默认。
+     * 白名单同时挡住旧版本残留与手改 localStorage 两种情况。
+     */
+    const ALL_MODES: readonly PlayMode[] = ['list', 'one', 'shuffle', 'order', 'heartbeat'];
+    const playMode: PlayMode = ALL_MODES.includes(prefs.playMode as PlayMode)
+      ? (prefs.playMode as PlayMode)
+      : 'order';
     const skin: PlayerSkin = prefs.skin ?? 'modern';
     const playbackQuality: PlaybackQuality = prefs.playbackQuality ?? 'hires';
     const lyricsFontSize =
@@ -99,6 +111,11 @@ export const createInitSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 
       vinylColorMode: prefs.vinylColorMode === 'custom' ? 'custom' : 'auto',
       vinylCustomColor: prefs.vinylCustomColor ?? VINYL_COLOR_DEF,
       islandView,
+      // 布尔项一律用 === true 收口（与 dynamicEnabled / discMode 同一写法）
+      likedHeartbeatOn: prefs.likedHeartbeatOn === true,
+      // 队列上下文每次启动都从零开始：cold start 时还没有队列，标成"来自我喜欢音乐"是假的
+      queueFromLiked: false,
+      heartbeatSeeded: false,
     });
   },
 

@@ -46,6 +46,15 @@ interface VirtualListProps<T> {
   onNearEnd?: () => void;
   /** 变化即把滚动位置复位到顶（歌单 id / 视图名） */
   resetKey?: string | number;
+  /**
+   * 打开时把这一行滚到视口中间（如播放队列定位到"正在播的那首"）。
+   *
+   * 与 `resetKey` 的关系：`resetKey` 把位置复位到顶，本参数再把位置挪到目标行 ——
+   * 两者都作用于滚动位置，所以**必须由本组件统一裁决**（见下面的 useEffect），
+   * 不能交给调用方自己在外面 `scrollTop = …`：那样会和复位打架，
+   * 表现为"打开抽屉先闪到顶部再跳下来"。
+   */
+  scrollToIndex?: number;
   className?: string;
 }
 
@@ -58,6 +67,7 @@ export function VirtualList<T>({
   overscan = 6,
   onNearEnd,
   resetKey,
+  scrollToIndex,
   className,
 }: VirtualListProps<T>) {
   const outerRef = useRef<HTMLDivElement>(null);
@@ -83,14 +93,32 @@ export function VirtualList<T>({
     return () => ro.disconnect();
   }, []);
 
-  // 换列表 / 换视图复位到顶
+  // 换列表 / 换视图复位到顶；给了 scrollToIndex 则改为定位到目标行。
+  // 两件事写在**同一个** layout effect 里，是为了让它们相对顺序确定：
+  // 分开写时两个 effect 都会改 scrollTop，谁后跑取决于代码顺序 —— 一个改动的顺序调整
+  // 就会让"打开抽屉先闪到顶再跳下来"。这里合成一处，复位即定位，不存在中间态。
+  // 用 layout effect（而非 effect）是为了赶在浏览器绘制前定好位置，用户看不到跳动。
   useLayoutEffect(() => {
     const el = outerRef.current;
     if (!el) return;
-    el.scrollTop = 0;
-    setScrollTop(0);
     autoFillAskedRef.current = -1;
-  }, [resetKey]);
+
+    if (scrollToIndex == null || scrollToIndex < 0) {
+      el.scrollTop = 0;
+      setScrollTop(0);
+      return;
+    }
+
+    // 目标行居中：目标行顶边 - (视口高 - 行高) / 2，再夹到合法区间
+    const content = items.length === 0 ? 0 : items.length * itemHeight + (items.length - 1) * gap;
+    const centered = scrollToIndex * pitch - (el.clientHeight - itemHeight) / 2;
+    const maxTop = Math.max(0, content - el.clientHeight);
+    const top = Math.max(0, Math.min(centered, maxTop));
+    el.scrollTop = top;
+    setScrollTop(top);
+    // items.length 进依赖：队列在抽屉打开后仍可能变（续拉/删行），
+    // 定位要跟着重算，否则"正在播的那行"会跑出视口
+  }, [resetKey, scrollToIndex, itemHeight, gap, pitch, items.length]);
 
   useEffect(
     () => () => {
