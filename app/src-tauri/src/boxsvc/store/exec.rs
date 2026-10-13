@@ -163,14 +163,17 @@ fn assert_seq_range(seq_from: i64, count: i64, dir_name: &str) -> SResult<()> {
     Ok(())
 }
 
-/// 事件（`_emit`）：进环形日志 + 推进 `eventSeq`；SSE 订阅者见模块头 ③。
+/// 事件（`_emit`）：进环形日志 + 推进 `eventSeq` + **广播给 SSE 订阅者**（F5.7）。
 fn emit(es: &mut u64, lea: &mut i64, task: &mut Task, event: &str, data: Value) {
     *es += 1;
-    task.events.push(TaskEvent { id: *es, event: event.to_string(), data });
+    let rec = TaskEvent { id: *es, event: event.to_string(), data };
+    task.events.push(rec.clone());
     if task.events.len() > MAX_EVENT_LOG {
         let excess = task.events.len() - MAX_EVENT_LOG;
         task.events.drain(0..excess);
     }
+    // 无订阅者时是 no-op（同 Node `clients.size===0`）—— 故 store 的单元测试不受影响。
+    crate::boxsvc::events::publish(&task.task_id, (rec.id, rec.event.clone(), rec.data.clone()));
     *lea = now_ms();
 }
 
@@ -733,11 +736,12 @@ impl Store {
     }
 
     /// `activeTasksForDir`：该目录上还有没有**未终态**的任务（归并前的前置校验）。
-    pub fn active_tasks_for_dir(&self, dir_name: &str) -> Vec<String> {
+    /// 返回 `(taskId, status)` —— Node 返回整对象，但归并只用这两个字段。
+    pub fn active_tasks_for_dir(&self, dir_name: &str) -> Vec<(String, String)> {
         self.tasks
             .iter()
             .filter(|t| t.dir_name == dir_name && !TASK_TERMINAL.contains(&t.status.as_str()))
-            .map(|t| t.task_id.clone())
+            .map(|t| (t.task_id.clone(), t.status.clone()))
             .collect()
     }
 

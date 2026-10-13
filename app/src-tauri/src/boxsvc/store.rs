@@ -43,17 +43,36 @@ impl StoreError {
         StoreError { code: code.to_string(), message: message.into(), details }
     }
 
-    /// 契约 §2.2 的错误码 → HTTP 状态（只列 store 会用到的那些，其余落 500）。
+    /// 契约 §2.2 的错误码 → HTTP 状态。**逐条誊抄 `service/src/errors.mjs` 的 `CODES`**
+    /// （少一条 = 那个错误码静默落 500，界面拿到一句假话）。
     pub fn status(&self) -> u16 {
         match self.code.as_str() {
+            "IDEMPOTENT_REPLAY" => 200,
+            // 400
             "BATCH_LIMIT_EXCEEDED" | "COMIC_NAME_REQUIRED" | "INVALID_COMIC_NAME"
-            | "INVALID_IMAGE" | "INVALID_BOOK_META" => 400,
+            | "INVALID_IMAGE" | "INVALID_SETTING" | "INVALID_TRANSLATE_LANG" | "INVALID_BOOK_META"
+            | "COVER_TOO_LARGE" | "TRANSLATE_INVALID_INPUT" | "TRANSLATE_TEXT_TOO_LONG"
+            | "TRANSLATE_UNSUPPORTED_FEATURE" | "TRANSLATE_CAPABILITY_UNSUPPORTED" => 400,
             "TASK_NOT_FOUND" => 404,
-            "TASK_NOT_APPENDABLE" | "TASK_NOT_CANCELABLE" | "TASK_NOT_RETRYABLE"
-            | "TASK_NOT_DELETABLE" | "SEQUENCE_OVERFLOW" => 409,
+            // 402
+            "TRANSLATE_QUOTA_EXCEEDED" => 402,
+            // 403
             "PERMISSION_DENIED" => 403,
+            // 409
+            "TASK_NOT_APPENDABLE" | "TASK_NOT_CANCELABLE" | "TASK_NOT_RETRYABLE"
+            | "TASK_NOT_DELETABLE" | "SEQUENCE_OVERFLOW" | "DOWNLOAD_IN_PROGRESS"
+            | "BOOK_NAME_TAKEN" | "ALREADY_MERGED" | "MERGE_SOURCE_BUSY" | "CHAPTER_NO_TAKEN"
+            | "MERGE_CROSS_DEVICE" | "MERGE_SOURCE_LOCKED" | "CHAPTER_SOURCE_BUSY"
+            | "CHAPTER_SOURCE_LOCKED" => 409,
+            // 429
+            "TRANSLATE_RATE_LIMITED" => 429,
+            // 502
+            "TRANSLATE_AUTH_FAILED" | "TRANSLATE_UPSTREAM_ERROR" | "TRANSLATE_UPSTREAM_UNREACHABLE" => 502,
+            // 503
+            "UNAVAILABLE" | "ENGINE_NOT_READY" | "MODEL_DOWNLOAD_FAILED" | "TRANSLATE_NOT_CONFIGURED" => 503,
+            // 504
+            "TRANSLATE_TIMEOUT" => 504,
             "DISK_FULL" => 507,
-            "UNAVAILABLE" | "ENGINE_NOT_READY" | "MODEL_DOWNLOAD_FAILED" => 503,
             _ => 500,
         }
     }

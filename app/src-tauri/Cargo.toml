@@ -59,6 +59,7 @@ rand = "0.8"
 regex = "1"                        # QQ 音乐歌词 HTML 清洗
 sha1 = "0.10"                      # QQ 音乐签名
 sha2 = "0.10"                      # store 落盘的 item.sha256（Node crypto.createHash('sha256')）
+unicode-normalization = "0.1"      # 漫画名规范化（复刻 JS String.normalize('NFKC')）
 chrono = "0.4"                     # QQ 音乐 searchid 时间戳
 urlencoding = "2"                  # QQ/酷狗 搜索参数编码
 encoding_rs = "0.8"                # QQ 音乐 GB18030 解码

@@ -26,7 +26,11 @@ use axum::Router;
 
 pub mod backend;
 pub mod engine;
+pub mod events;
 pub mod handlers;
+pub mod library;
+pub mod multipart;
+pub mod names;
 pub mod routes;
 pub mod store;
 
