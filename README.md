@@ -193,8 +193,25 @@ npm run check:retranslate     # 单张漫画返工重译 + 全屏缩放：覆盖
 npm run check:engine-settings # S6 引擎设置面：档位 / 后端 / 空闲 / 模型目录 + 模型下载状态 61 条（反证：check:engine-settings:refute）
 npm run check:translate      # ver2.2 在线翻译服务（有道智云）：签名 v3 / 四层超时 / 限流 / 三层设置 / 密钥隔离 / 契约适配器 / 5 路由端到端 54 条（反证：check:translate:refute，8 开关；假上游默认发真 SSE 帧，零网络秒级）
 npm run check:docs            # 文档 ↔ 实现一致性：条数对账 / 引用的命令存在 / 禁词 0 命中 / 分组覆盖 16 条
-npm run check:bundle          # Windows 打包配置钉子 4 条 / 反证 4 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；源码级，不起进程）
+npm run check:bundle          # 打包配置钉子 5 条 / 反证 5 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip`；源码级，不起进程）
 ```
+
+**F 组「服务 Rust 化」的同源对拍钉子**（F0–F5 已全部完成，见 `docs/packaging-local-engine-dev-plan.md`）——
+每组都**双靶子**跑同一份断言：`MIAO_SERVICE_IMPL=node` 吃 `service/src/server.mjs`，`=rust` 吃 `target/debug/boxsvc`：
+
+```bash
+npm run check:paths          # F2 路径解析与 config.mjs 逐字节对拍 3 条 / 反证 3 条
+npm run check:store# F3  任务库内核对拍 24 条 / 反证 24 条（serde 字段声明序须逐字复刻 Node 键序）
+npm run check:store-exec     # F3-b 执行/队列对拍 74 条 / 反证（7 场景连定义都单源）
+npm run check:engine-parity  # F4 引擎协议/配方层对拍 24 条 / 反证
+npm run check:engine-http    # F4-b1 引擎 HTTP 运行期对拍 18 条 / 反证（伪引擎喂帧）
+npm run check:llm-supervisor # F4-b2 ③ supervisor 对拍 4 条 / 反证（起真 mock-llm 子进程）
+npm run check:harness        # F0 双靶子 harness 7 条 / 反证（未知 IMPL 取值必须吵一声）
+npm run check:routes         # F5 路由表/转发计数 9 条（--final 10 条 = 完成门）/ 反证 4 条（转发数必须 0）
+```
+
+> ⚠️ **为什么 `service/src/*.mjs` 还留着**：它已从**产品运行时与随包**摘除（F5.8），
+> 但仍是上面七组的**对照端**。删它 = 连带作废全部对拍，不是"顺手清理"。
 
 **S7 真机端到端 E1–E11**（逐项取证总表：`docs/engine-e2e-acceptance-report.md`）—— 这几条**不进常规门**，按需手动跑：
 

@@ -139,10 +139,22 @@ node e2e/service/llm-real-timing.mjs  # 真 ③（llama-server）冷启动与内
 npm run check:music[:refute]  # 音乐平台 / 播放模式五档 / 心动模式 / 播放列表入口与抽屉 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 227 条 / 反证 212 条
 npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3「准备中」时间线 + ④ 功能梳理（侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / 行内 def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染（自守）180 条 / 反证 127 条
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 看图缩放 / 样式分层 45 条 / 反证 59 条
-npm run check:bundle[:refute] # Windows 打包配置钉子 4 条 / 反证 4 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；源码级，不起进程）
+npm run check:bundle[:refute] # 打包配置钉子 5 条 / 反证 5 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip` ——「文件不在」是永远绿的空断言，因 `vendor/node.zip` 从未存在；源码级，不起进程）
 npm run check:resilience[:refute] # box-service 健壮性钉子 9 条 / 反证 14 条（源码级：R1–R7 顶层未捕获异常兜底（走同一 shutdown / 收 ③ / 重入闸 / 非零退出）· A1–A2 任务状态原子写（store 走 atomicWriteJson · tmp→fsync→rename）；不起进程；内存变异反证；D-138/D-139）
 npm run check:layering[:refute] # service 依赖方向钉子 3 条 / 反证 3 条（源码级：L0 底座文件集 == 白名单 · L1 底座不得 import manga/** · L2 底座对 settings/ 仅限 engine-settings.mjs；装配入口 server.mjs 豁免；不起进程；内存变异反证；D-141）
 npm run check:docs            # 文档 ↔ 实现一致性 17 条（条数对账 / 命令存在 / 禁词 0 命中 / GROUPS 覆盖）
+# —— F 组「服务 Rust 化」的同源对拍钉子（F0–F5 已全部 ☑，见 docs/packaging-local-engine-dev-plan.md）——
+#    每组都**双靶子**跑同一份断言：`MIAO_SERVICE_IMPL=node` 吃 `service/src/server.mjs`，
+#    `=rust` 吃 `target/debug/boxsvc`。⇒ `service/src/*.mjs` 虽已从**产品运行时**摘除，
+#    但作为这七组的**对照端**必须保留；删它 = 连带作废全部对拍（不是"顺手清理"）。
+npm run check:paths[:refute]    # F2 路径解析与 `config.mjs` **逐字节**对拍 3 条 / 反证 3 条（`boxsvc --print-paths` 对拍；含 `normalize_lexical` 与 `assert_inside_root` 两处真缺陷的回归钉）
+npm run check:store[:refute]   # F3 任务库内核同源对拍 24 条 / 反证 24 条（🔴 serde 字段**声明序**必须逐字复刻 Node `serialize()` 键序；`Option` 保留 `undefined`→省略键；`Vec` 保插入序）
+npm run check:store-exec[:refute] # F3-b 执行/队列同源对拍 74 条 / 反证（7 场景**连定义都单源**；🔴 `itemErrors` 必须比 —— 「总预算耗尽」与「单请求超时」`reason` 同为 `engine_engine_timeout`，只有 `errorMessage` 能分开）
+npm run check:engine-parity[:refute] # F4 引擎纯协议/配方层同源对拍 24 条 / 反证（`resolve_engine_launch` 走 `python main.py` 非 `-m server.main`；三条少一个键真机必挂的启动 env 都在 Rust 复刻）
+npm run check:engine-http[:refute]  # F4-b1 引擎 HTTP 运行期同源对拍 18 条 / 反证（伪引擎服务器喂帧；三条：`.no_proxy()` · **空闲**超时非总时长 · 超时携带部分字节）
+npm run check:llm-supervisor[:refute] # F4-b2 ③ supervisor 同源对拍 4 条 / 反证（起**真** `mock-llm` 子进程；两条：两层锁否则诊断排在 180s `start()` 后 · 探针同步不走 reqwest）
+npm run check:harness[:refute] # F0 双靶子 harness 7 条 / 反证（`MIAO_SERVICE_IMPL=node|rust` 同断言；未知取值必须**吵一声**否则「两边都绿」其实是 node 跑了两遍）
+npm run check:routes[:refute]  # F5 路由表 / 转发计数 9 条（`--final` 10 条 = 完成门）/ 反证 4 条（44 条全 `Tier::Migrated`、**转发数 = 0**；反证 M1 真跑 `--list-routes` + `MIAO_ROUTE_REFUTE` 注入假转发 ⇒ 完成门报「仍有 N 条转发」变红）
 npm run check:docpaths[:refute] # 现行文档引用的仓库路径必须真实存在 5 条 / 反证 2 条（查 AGENTS/README/spec-notes-1/dev-setup/project_rules；spec-notes.md 已封卷于 D-136，历史路径明确不查；源码级，内存变异反证；D-158）
 docs/dev-setup.md              # 新人上手：环境 / 装依赖 / 跑检查 / 五个最容易踩的坑 / 代码地图（D-158）
 cd app && npx tsc --noEmit && npx vite build   # 前端类型与构建

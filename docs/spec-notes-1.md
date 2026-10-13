@@ -51,6 +51,7 @@
 | D-167 | `check:contract` S5.3 的"读取时刻"假红：`updatedAt` 是**读时** `nowIso()` | e2e |
 | D-168 | 服务实现默认档翻转为 Rust（`resolve_service_cmd`）+ 两档不同的"找不到 boxsvc"语义 | app / engine |
 | D-169 | 第二个 `[[bin]]` 让裸 `cargo run` 变歧义 ⇒ `Cargo.toml` 必须钉 `default-run` | app / e2e |
+| D-170 | F 组收尾勘查：哪些文件**不能**删（`service/` 是七组对拍的对照端）+ `load_plan` 的 node 遗留 | docs / app |
 
 ---
 
@@ -1647,4 +1648,53 @@ available binaries: boxsvc, miao-dock
 开发态可跑性"）：正向 **18/18**、`--refute` **19/19 全红**（F1a 删键 / F1b 指向不存在的
 bin，各自按预期变红）。反证轮用该文件既有的 `locate()` 做行尾折算 ⇒ 变异锚按 LF 写也能
 命中 CRLF 的 `Cargo.toml`，还原校验字节一致。
+
+## D-170 · F 组收尾勘查：什么**不能**删 + `load_plan` 的 node 遗留（2026-10-13）
+
+F 组（F0–F5）台账已全 ☑。本条记的是**收尾时对"哪些文件该删"的勘查结论**——
+结论是：**能删的都删完了，剩下的每一处都有具体理由**，且理由与"看起来像死代码"相反。
+
+### 一、`service/src/*.mjs`（32 文件 / 11308 行）：**必须保留**
+
+⚠️ 最容易被误当成"摘除 Node 的漏网之鱼"的一批。摘除摘的是**产品运行时与随包**
+（`backend.rs` / `proxy()` / `Shell.client` / `MIAO_LEGACY_BACKEND` 已全删），
+**不是仓库源码**：`service/src/*.mjs` 仍是**七组同源对拍**的**对照端**——
+`check:store`(24) · `check:store-exec`(74) · `check:engine-parity`(24) ·
+`check:engine-http`(18) · `check:llm-supervisor`(4) · `check:paths`(3) · `check:contract`(77)。
+
+🔴 **删除的连带后果**：e2e 默认靶子**仍是 node**（`_service-harness.mjs`：
+`MIAO_SERVICE_IMPL` 未设 ⇒ node），22 个脚本仍经 `spawnTarget`/`targetFor` 起服务。
+删 `service/` ⇒ 这七组**永久作废**，且是"两边都绿"变成"只有一边"的**静默降级**：
+对拍的意义恰恰在于 node 是**已知正确的参照**，Rust 是被检验方。
+
+### 二、e2e 侧的勘查（无死代码）
+
+- `_service-harness.mjs`(22 处引用) · `_file-cache`(5) · `capture`(6) ·
+  `_styles-source`(4) · `_parent-harness`(2) · `_devserver`(2) · `_e2e-paths`(2) ·
+  `_store-exec-node-runner`(1) · `llm-real-timing`(1) · `make-probe-png`(1)：全部**在用**。
+- 🔴 `e2e/engine/s1-real-engine-check.mjs` **零引用**，但**不是死代码**：它是**故意不注册**的
+  手动真引擎取证脚本（要几 GB 权重 + GPU + 分钟级；文件头与
+  `docs/engine-e2e-acceptance-report.md` 都写明"按需手动跑"）。注册它反而会让常规门挂。
+- `service/src` 里静态 import 图显示 3 个"入口不可达"（`platforms/youdao.mjs` ·
+  `platforms/__fake__.mjs` · `sse-parse.mjs`）——**是动态加载**：`registry.mjs` 的
+  `FACTORIES` 用 `() => import('./platforms/youdao.mjs')`，`__fake__` 是给验收脚本的反证件。
+  🔴 教训：**静态 import 图会漏动态边**，据此判死代码会误删。
+
+### 三、真实遗留：`load_plan()` 的 node 依赖（A3b，P0）
+
+`service.rs::load_plan()` 仍 `Command::new("node")` 跑
+`service/scripts/print-launch-plan.mjs`（**零依赖**纯 node 脚本）。它与被摘除的遗留后端
+**无关**（是 S2 起的"启动配方契约面"），但 A3「node 随包」已标 ✗ 作废 ⇒
+**打包后这条会硬失败**。已在计划台账新增 **A3b** 行（P0）并列两个方案：
+(a) 只随包带这一个脚本 + 最小 node（≈36 MB，与 A3 同代价）；
+(b) 把配方逻辑 Rust 化，`print-launch-plan.mjs` 与 `check:launch-plan`(24 条) 一同退役。
+**未擅自实施** —— 两者都要打包组（G）的资源清单先定，且 (b) 是新工作量。
+
+### 四、顺带补上的文档缺口
+
+F 组新增的 8 组钉子（上述七组 + `check:routes`）此前在 `AGENTS.md` / `README.md`
+**完全没有登记**。🔴 而 `check:registry` 只做 **npm ↔ `_check-registry.mjs` 双向覆盖**，
+**不管文档** ⇒ 这个缺口不会被任何断言抓到，只能靠人补。现已补齐并写明
+"每组双靶子、`service/` 是对照端、删它=作废全部对拍"。顺带把 `check:bundle` 的条数
+从 4/4 更正为 5/5（W5 是 F5 验收③）。
 
