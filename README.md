@@ -34,13 +34,13 @@ miao-dock/
 │   │   ├── manga/     漫画翻译域：`store.mjs` 队列与落盘 · `image.mjs` · `names.mjs` · `sse.mjs` · `translate/` 在线翻译（契约 / 注册 / 门面 / http / sse-parse / limiter / 设置 / 密钥 / `platforms/youdao.mjs`）
 │   │   ├── settings/  设置域：`engine-settings` · `engine-profile` · `model-status` · `idle-policy` · `tier-downgrade` · `llm-supervisor`
 │   │   └── music/     音乐域：服务端**占位**（逻辑在 Rust 侧 `app/src-tauri/src/music/`）
-│   └── scripts/    **运行期**脚本（只剩一个）：`print-launch-plan.mjs` —— Rust 启动时问它要「启动配方」
+│   └── （无 `scripts/` —— 启动配方已于 A3b 收进 Rust `boxsvc::engine::build_launch_plan`）
 ├── engine/       翻译引擎的**接缝层**（真引擎装在 `runtimes/`，不在库）
 │   ├── VERSIONS.lock         引擎 / 权重 / 外部二进制的**版本锁**（换版本照它来）
 │   ├── models.manifest.json  模型清单：来源 URL + sha256 + 字节数（权威副本在 `runtimes/…/models-store/`）
 │   ├── model-store.mjs       下载内核：断点续传 / 逐文件哈希 / `.ready` 幂等 / 硬链接
 │   ├── src/                  **测试替身**：模拟引擎 + 模拟 LLM（产品默认走真引擎 `MIAO_ENGINE_PROTOCOL=real`）
-│   └── scripts/              **运行期**脚本：`child-watch.mjs`（父死带走整棵子树）· `fetch-models.mjs`（CLI）
+│   └── scripts/              **运行期**脚本：`fetch-models.mjs`（CLI，A3d 待 Rust 化）· `setup-engine.mjs` / `install-engine-deps.mjs`（本机环境引导）｜`child-watch.mjs` 降为 **Node 对照端**（产品主路径已换 Rust `boxsvc --child-watch`，A3c；仍被 `service/src/settings/llm-supervisor.mjs` 引用）
 ├── e2e/          **全部验收与取证脚本**（纯 Node 零依赖；一条命令一组断言，正向与反证成对）
 │   ├── *.mjs                  生命周期 / 端到端 / 截图取证 / 文档与结构对账
 │   ├── service/               box-service 侧（`selftest.mjs` = A 组契约自测 · `stall-guard-check.mjs` = U10② 取证）
@@ -59,7 +59,11 @@ miao-dock/
 >
 > 1. **产品 / 验收分家**：`service/src`、`engine/src`、`app/src` 是**产品**；`e2e/` 是**验收**。
 >    判据不是"像不像测试"，而是**产品代码在运行期会不会 fork 它** —— 会 fork 的
->    （`print-launch-plan.mjs` / `child-watch.mjs` / `fetch-models.mjs`）留在各自模块的 `scripts/` 下，**不搬进 `e2e/`**。
+>    （`fetch-models.mjs`，以及 A3c 之后**仍在 Node 侧被引用**的 `child-watch.mjs`）
+>    留在各自模块的 `scripts/` 下，**不搬进 `e2e/`**。
+>    ⚠️ 反向也成立：**产品主路径一旦改走 Rust**（`print-launch-plan.mjs` A3b 退役、
+>    `child-watch.mjs` A3c 降为对照端），留在 `scripts/` 里就不再是"产品"，
+>    但**不许顺手删** —— 先查还有谁 import 它（`llm-supervisor.mjs` 仍用 `child-watch.mjs`）。
 > 2. **临时产物一律写进 `.tmp/<用途>/`**，不要在仓库根另起 `.tmp-xxx/` 或 `tmp-xxx/`
 >    （历史上散着 `.tmp-e2e` / `.tmp-models` / `.tmp-selftest` / `tmp-engine-test` 四个，已合并 —— 见 `docs/spec-notes.md` D-79）。
 > 3. **新增 / 搬迁目录必须同步更新本节**。同时检查：`AGENTS.md` §1 的分层表 · `.trae/rules/project_rules.md` ·
@@ -167,8 +171,8 @@ npm run selftest:app:refute   # 上一项的反证——它必须**变红**，�
 npm run selftest:app:e11      # E11 三进程树回收（mock）：SIGKILL 主进程 → 13 端口全释放
 npm run selftest:app:e11:real # 同上但真进程（python+执行器+llama-server）；分钟级，按需手动跑
 npm run check:launch-plan     # S2 启动配方契约 24 条（含 ③ 归属移交后的 P-llm-* 断言）
-npm run check:child-watch     # 外部二进制父死看守的双向取证（反证：check:child-watch:refute）
-npm run check:child-watch-kill # child-watch Windows killTree 无条件 /F 源码钉子（反证：check:child-watch-kill:refute）
+npm run check:child-watch     # 外部二进制父死看守**双靶**取证（Node 原版 + A3c Rust 移植，Rust 靶用产品同源 Rust 父 `boxsvc --child-watch-parent`；含接线错误防护 W2；反证轮只判 Rust 靶，Node 靶按结构跳过并标注原因）
+npm run check:child-watch-kill # child-watch Windows killTree 无条件 /F **双靶源码钉**（Node `child-watch.mjs` + Rust `child_watch.rs`，源码级不起进程；反证 2 条）
 npm run fetch:models          # S3 模型下载器（--check 只校验不联网 / --link 只重建引擎树里的链接；反证：check:models:refute）
 npm run e2e                   # D1–D5 端到端（真实 engine + 真实 service，真落盘）
 npm run capture               # 截图取证（需屏幕解锁；不满足条件会拒绝出图而非交假证据）

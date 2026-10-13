@@ -31,7 +31,6 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use super::{env_bool, env_str, resolve_llm_launch, EngineError, LaunchSpec, LlmLaunchOverrides};
-use crate::paths;
 
 /// `sidecar.llm.state` 的取值（沿用 §5.1 `sidecar.state` 的枚举词表）。
 pub const LLM_STATES: [&str; 5] = ["stopped", "starting", "running", "unloading", "error"];
@@ -57,19 +56,19 @@ impl LlmState {
     }
 }
 
-/// `child-watch` 看护器的绝对路径 —— 由 `paths::repo_root()`（**唯一仓库根**）拼出。
+/// 父死看守器的**宿主可执行**（A3c）—— 与 `boxsvc` 同一个二进制。
 ///
-/// 🔴 Node 侧曾因 `path.resolve(import.meta.dirname, '..','..')` 的 dots 数在文件搬家后算错，
-///    子进程 `Cannot find module` ⇒ ③ 起不来 ⇒ 翻译报 `Connection error`（本次故障的直接根因）。
-///    Rust 侧**没有**这个陷阱：根一律来自 `config.mjs::REPO_ROOT` 的镜像 `paths::repo_root()`。
-pub fn child_watch_path() -> std::path::PathBuf {
-    paths::repo_root().join("engine").join("scripts").join("child-watch.mjs")
-}
-
-/// 真档包 child-watch 时需要 node 解释器。Node 用 `process.execPath`；Rust 取 `MIAO_NODE_EXEC`
-/// （对拍时两端设同一值；F5 用打包 node 单源，见 MEMORY）。
-fn node_exec() -> String {
-    env_str("MIAO_NODE_EXEC").unwrap_or_else(|| "node".to_string())
+/// 🔴 寻址口径必须与 app 侧 `service.rs::watch_host` **完全一致**
+///    （`MIAO_BOXSVC_BIN` → 与本可执行同目录 → 报错），否则会出现"服务起得来
+///    但 ③ 拉不起来"的错位 —— 而这在开发态的报错是 `③ 未在 180s 内就绪`，离根因极远。
+pub fn watch_host() -> std::path::PathBuf {
+    if let Some(p) = env_str("MIAO_CHILD_WATCH_HOST") {
+        return std::path::PathBuf::from(p);
+    }
+    // 宿主就是 boxsvc 自己 ⇒ `current_exe()` 已经是答案（e2e / 打包都成立）。
+    // 开发态若只 build 了主 bin（`miao-dock.exe`）而没有 boxsvc，则同目录找不到 ——
+    // 那时 `do_start` 的存在性检查会给出可读的错误，而不是让 spawn 报一句含糊的失败。
+    std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("boxsvc"))
 }
 
 fn now_ms() -> i64 {
@@ -232,6 +231,10 @@ struct Inner {
     model: Option<String>,
     port: Option<u16>,
     child: Option<Child>,
+    /// 🔴 **父死通道的写端**（A3c）。`watch` 档下必须**一直攥着**：它是"父进程还活着"
+    ///   的唯一证据 —— 一旦 drop，内核关闭最后一个写端 ⇒ 看守器读到 EOF ⇒ 自杀，
+    ///   症状是「③ 每次拉起都立刻死」而报错停在「未在 180s 内就绪」，离根因极远。
+    _watch_keepalive: Option<std::process::ChildStdin>,
     pid: Option<u32>,
     state: LlmState,
     last_error: Option<String>,
@@ -346,21 +349,22 @@ fn do_start(
     //    唯一事实源、改了就可见，不存在这个滞后。见 `do_stop` 的同款注释。
     publish(diag, inner);
 
-    // 🔴 起进程**之前**先确认看护器脚本真的在盘上。少了这一步，「路径算错/文件被移走」的表现是
-    //    子进程瞬时 `MODULE_NOT_FOUND` 退出、而 supervisor 只报一句「未在 180s 内就绪」
-    //    —— 把「路径算错了」伪装成「模型加载慢/超时」。
-    let cwp = child_watch_path();
-    if inner.watch && !cwp.exists() {
+    // 🔴 起进程**之前**先确认看护器**宿主**真的在盘上。少了这一步，「路径算错/文件被移走」
+    //    的表现是子进程瞬时退出、而 supervisor 只报一句「未在 180s 内就绪」
+    //    —— 把「宿主找不到」伪装成「模型加载慢/超时」。
+    let host = watch_host();
+    if inner.watch && !host.is_file() {
         return Err(format!(
-            "③ 看护器脚本不存在：{}（仓库根算错或文件被移走）",
-            cwp.display()
+            "③ 看守器宿主不存在：{}（先 cargo build --bin boxsvc，或设 MIAO_CHILD_WATCH_HOST）",
+            host.display()
         ));
     }
 
     let (head, args): (String, Vec<String>) = if inner.watch {
-        let mut a = vec![cwp.to_string_lossy().into_owned(), "--".to_string()];
+        // A3c：看守器 = `boxsvc --child-watch`，与宿主同一个可执行文件（零新增随包物）
+        let mut a = vec!["--child-watch".to_string(), "--".to_string()];
         a.extend(inner.launch.cmd.iter().cloned());
-        (node_exec(), a)
+        (host.to_string_lossy().into_owned(), a)
     } else {
         let mut it = inner.launch.cmd.iter().cloned();
         let head = it.next().ok_or_else(|| "配方 cmd 为空".to_string())?;
@@ -379,8 +383,24 @@ fn do_start(
     for (k, v) in &inner.launch.env {
         cmd.env(k, v);
     }
-    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    // 🔴 `watch` 档要留一根**空管道**当父死通道（A3c）：写端由本进程攥住（见 `_watch_keepalive`），
+    //    看守器从它的 stdin 读到 EOF ⇒ 判定「父进程已死」⇒ 带走整棵子树。
+    //    ⚠️ 这里**不能**给 `Stdio::null()`：那样看守器一起来就 EOF ⇒ 每次拉起都自杀，
+    //    症状是「③ 每次拉起都立刻死」而报错停在「未在 180s 内就绪」，离根因极远。
+    //    非 watch 档（mock 替身自带父死看管）维持 null。
+    if inner.watch {
+        cmd.stdin(Stdio::piped());
+        // 🔴 **必须同时声明** `MIAO_CHILD_WATCH_PIPE=1`（A3c）：看守器据此认定
+        //    「stdin 的 EOF 是父死的权威证据」。缺了它就只剩 ppid 轮询，而 Windows 上
+        //    父进程退出后 ppid 冻结、pid 未回收 ⇒ 永远判不出父死 ⇒ ③ 拉起后
+        //    box-service 一死 llama-server 就变孤儿占着 8080（E11 静默失效）。
+        cmd.env("MIAO_CHILD_WATCH_PIPE", "1");
+    } else {
+        cmd.stdin(Stdio::null());
+    }
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+    let _watch_keepalive = child.stdin.take();
 
     if let Some(out) = child.stdout.take() {
         let lg = logs.clone();
@@ -394,6 +414,7 @@ fn do_start(
     inner.pid = Some(child.id());
     inner.started_at = Some(now_ms());
     inner.child = Some(child);
+    inner._watch_keepalive = _watch_keepalive;
 
     let ok = wait_ready(logs, inner, timeout_ms);
     if !ok {
@@ -557,6 +578,11 @@ fn do_stop(
     };
     inner.pid = None;
     inner.state = LlmState::Stopped;
+    // 🔴 父死通道写端在**停止动作完成之后**才清（A3c）。提前清会让看守器读到 EOF、
+    //    抢先自杀去杀子树 —— 于是 `child.wait()` 拿到的是**看守器**的退出码而非
+    //    llama-server 的，`exited` 语义静默失真（且与 `terminate()` 形成两路竞态）。
+    //    停止之后再留着没有意义（下次 start 会覆盖它），清掉是为了不白占一个句柄。
+    inner._watch_keepalive = None;
     log(
         logs,
         format!(
@@ -632,6 +658,7 @@ impl LlmSupervisor {
                 model,
                 port,
                 child: None,
+                _watch_keepalive: None,
                 pid: None,
                 state: LlmState::Stopped,
                 last_error: None,

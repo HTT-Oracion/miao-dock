@@ -192,6 +192,12 @@ struct Proc {
     pgid: u32,
     probes: Vec<Probe>,
     probe_timeout: Duration,
+    /// 🔴 **父死通道的写端**（A3c）。`watch` 档下它必须被**一直攥着**，否则内核关闭
+    ///   最后一个写端 ⇒ 看守器读到 EOF ⇒ 认定"父进程已死"⇒ 自杀。
+    ///   症状极其误导：引擎每次一起来就没了，而日志里看守器还会打一行
+    ///   「父进程通道在启动后 Nms 内就闭合了」。
+    ///   `None` = 非 watch 档（没这条通道，字段是多余的）。
+    _watch_keepalive: Option<std::process::ChildStdin>,
 }
 
 struct Children {
@@ -1020,6 +1026,28 @@ fn resolve_entry(rel: &str, env_key: &str) -> Result<PathBuf, String> {
     Err(format!("找不到 {rel}（可用环境变量 {env_key} 指定绝对路径）"))
 }
 
+/// 父死看守器的**宿主可执行**（A3c）—— 与 `boxsvc` 同一个二进制。
+///
+/// 🔴 为什么不新开一个 bin：看守器是**每引擎栈常驻**的子进程，多一个可执行文件就多一份
+///    随包物与一条寻址路径；而 `boxsvc` 本来就随包（F5 之后它是服务本体），复用它
+///    `bundle.resources` 一条都不用改。代价是"看守器失败"与"服务失败"共用一个 exe，
+///    但两者不会同时发生（子命令在起服务之前就 return 了）。
+///
+/// 寻址与 `resolve_boxsvc` **同一条路**（`MIAO_BOXSVC_BIN` → 同目录 → 报错）——
+/// 🔴 两者必须一致：若这里另写一套，开发态会出现"服务起得来但看守器找不到"
+///    （boxsvc 被 build 了但寻址口径不同），症状是引擎一起来就死。
+fn watch_host() -> Result<PathBuf, String> {
+    resolve_boxsvc()
+}
+
+/// 看守器脚本路径的**退役说明**（A3c）。保留这个函数是为了让"它去哪了"有一处可查的落点，
+/// 而不是散落在注释里—— 日后有人按旧文档去找 `engine/scripts/child-watch.mjs` 时，
+/// 至少能在这里看到它已被 `child_watch::run` 取代、且断言改钉了 `boxsvc --child-watch`。
+#[allow(dead_code)]
+fn watch_entry_retired_note() -> &'static str {
+    "看守器已 Rust 化（A3c）：child_watch::run + `boxsvc --child-watch`，不再需要 node 解释器"
+}
+
 type ReadyRx = mpsc::Receiver<serde_json::Value>;
 
 /// 起一个子进程（**进自己的进程组**），把 stdout/stderr 收进日志。
@@ -1049,10 +1077,10 @@ fn spawn_inner(
     // ⚠️ 包一层之后 Rust 持有的直接子进程是"看守"，真正的引擎/LLM 是它的子进程；
     // 所以回收才必须走**进程组**（`signal_tree`）而不是 `Child::kill()`。
     let (head, args): (String, Vec<String>) = if spec.watch {
-        let watch = resolve_entry("engine/scripts/child-watch.mjs", "MIAO_CHILD_WATCH_ENTRY")?;
-        let mut a = vec![watch.to_string_lossy().into_owned(), "--".into()];
+        // A3c：看守器 = `boxsvc --child-watch`（与宿主同一个可执行文件，零新增随包物）
+        let mut a = vec!["--child-watch".to_string(), "--".to_string()];
         a.extend(spec.cmd.iter().cloned());
-        ("node".to_string(), a)
+        (watch_host()?.to_string_lossy().into_owned(), a)
     } else {
         (spec.cmd[0].clone(), spec.cmd[1..].to_vec())
     };
@@ -1060,8 +1088,23 @@ fn spawn_inner(
     let mut cmd = Command::new(&head);
     cmd.args(&args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .stdin(Stdio::null());
+        .stderr(Stdio::piped());
+    // 🔴 `watch` 时 stdin 必须是**管道**且写端要被**长期攥住**（A3c 的父死通道）：
+    //    看守器把"stdin 读到 EOF"当作"父进程已死"，而管道 EOF 只在**所有写端**关闭时
+    //    才到来 —— 父进程活着就意味着有一个写端开着。
+    //    🔴 若这里图省事写 `Stdio::null()`：看守器一起来就读到 EOF ⇒ 每次启动都自杀，
+    //    症状是"引擎一起来就没了"，离根因极远。看守器侧对此有显式告警兜底。
+    //    非 watch 档（自家 Node/Rust 子进程）维持 null：它们内部自带父死看管。
+    if spec.watch {
+        cmd.stdin(Stdio::piped());
+        // 🔴 **必须同时声明** `MIAO_CHILD_WATCH_PIPE=1`（A3c）：看守器据此认定
+        //    「stdin 的 EOF 是父死的权威证据」。缺了这个声明它只能退回 ppid 轮询，
+        //    而 Windows 上父进程退出后 ppid 冻结 + pid 未回收 ⇒ 永远判不出父死 ⇒
+        //    **E11 静默失效**（这是本轮实测踩到并修掉的真实缺陷，见 child_watch.rs）。
+        cmd.env("MIAO_CHILD_WATCH_PIPE", "1");
+    } else {
+        cmd.stdin(Stdio::null());
+    }
     if let Some(cwd) = &spec.cwd {
         cmd.current_dir(cwd);
     }
@@ -1086,6 +1129,11 @@ fn spawn_inner(
         .spawn()
         .map_err(|e| format!("无法执行 {}：{e}", spec.cmd[0]))?;
     let pid = child.id();
+    // 🔴 把父死通道的写端从 `Child` 里**取出来存进 `Proc`**（A3c）。这一步漏了的话
+    //    它会随 `child` 字段一起被持有…… 但 `Child::stdin` 同样是"持有"，所以真正的风险
+    //    在**回收路径**：`reap()` 里 `procs.take_all()` 之后若谁把它 drop 掉，
+    //    引擎就会在停止过程中被自己的看守器抢先杀掉。显式存字段是为了让这个意图可见。
+    let _watch_keepalive = child.stdin.take();
     let label: &'static str = match spec.label.as_deref() {
         Some("service") => "service",
         Some("engine") => "engine",
@@ -1130,6 +1178,7 @@ fn spawn_inner(
                 .probe_timeout_ms
                 .map(Duration::from_millis)
                 .unwrap_or(PROBE_TIMEOUT),
+            _watch_keepalive,
         },
         if collect_ready { Some(rx) } else { None },
     ))

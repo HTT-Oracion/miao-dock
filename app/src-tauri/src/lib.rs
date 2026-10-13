@@ -7,4 +7,5 @@
 // 因此本库只放**服务侧**（boxsvc）与**跨端共用**的纯逻辑（paths）；Tauri 装配仍留在
 // `main.rs`（它只管进程、窗口、托盘、IPC 命令）。拆出来是**机械搬移**，不改逻辑。
 pub mod boxsvc;
+pub mod child_watch;
 pub mod paths;

@@ -53,6 +53,7 @@
 | D-169 | 第二个 `[[bin]]` 让裸 `cargo run` 变歧义 ⇒ `Cargo.toml` 必须钉 `default-run` | app / e2e |
 | D-170 | F 组收尾勘查：哪些文件**不能**删（`service/` 是七组对拍的对照端）+ `load_plan` 的 node 遗留 | docs / app |
 | D-171 | A3b 启动配方 Rust 化：退役 node 打印器与它的 24 条断言的**被测对象**；形参传反的三处静默失效 | engine / e2e |
+| D-172 | A3c 父死看守 Rust 化：父死判定必须是**双通道**，且"判不出来"≠"父死"；Windows 上身份 =(pid, 创建时间) | engine / e2e |
 
 ---
 
@@ -1767,3 +1768,81 @@ F 组新增的 8 组钉子（上述七组 + `check:routes`）此前在 `AGENTS.m
 
 **验收**：正向 **25/25**、反证 **6/6 全红**、`cargo test --lib` **98 passed**（94 → 98）、
 与 node 版 real/mock 两档**逐字段一致**（仅余 `MIAO_NODE_EXEC` 与路径分隔符两类表示差异）。
+
+---
+
+## D-172 · A3c 父死看守 Rust 化：父死判定必须是**双通道**，且"判不出来" ≠ "父死"（2026-10-13）
+
+**改动**：新增 `app/src-tauri/src/child_watch.rs` + `boxsvc --child-watch`（复用已随包的 `boxsvc`，
+**不新增第三个可执行文件、不改 `bundle.resources`**）。`service.rs` 的 `watch` 档与
+`boxsvc::engine::supervisor::do_start` 都改走它；stdin 由 `Stdio::null()` 改成 `Stdio::piped()`
++ 注入 `MIAO_CHILD_WATCH_PIPE=1`，父侧用 `_watch_keepalive: Option<ChildStdin>` **攥住写端**。
+
+**为什么 `child-watch.mjs` 保留**（与 A3b 退役 `print-launch-plan.mjs` 的处置不同）：
+`service/src/settings/llm-supervisor.mjs` **仍在用它**（该文件本身属于 Node 对照端，
+A3d 才处理）。所以本轮是「产品主路径换 Rust + Node 版降为对照端」，不是「删除」。
+
+### 🔴 缺陷 ①：管道 EOF **不等于**父死 —— 而它的失效形态是**双向静默**
+
+管道 EOF 的真实语义只是"所有写端都关了"，而"没有写端"有两种成因：
+(a) 父进程死了（要杀子树）；(b) 父进程**根本没攥住**写端（`stdin=null`，EOF 是常量，一起来就有）。
+两者的字节流**完全一样**，处置却相反。初版照直觉"读到 EOF 就自杀"，
+症状是**引擎/LLM 一起来就没了**，而报错停在几层之外（"未在 180s 内就绪"）。
+
+修法是**让 ppid 通道复核**：管道通道只置 `PIPE_EOF` 候选标志，
+由主循环用 `parent_gone_strict()` 判一次才升级为 `SHUTDOWN`。
+
+### 🔴 缺陷 ②：`GetFileType(stdin) == FILE_TYPE_PIPE` 在 Windows 上恒为假
+
+本机实测：Rust `Stdio::piped()` 起的子进程，该判据返回 `false`（std 并非把裸管道直接交给子进程）。
+**若保留它，管道通道会被永久作废** ⇒ 只剩 ppid 通道 ⇒ 而 Windows 上父退出后 ppid 冻结、
+探活仍报 `STILL_ACTIVE`（见缺陷 ③）⇒ **E11 在真档上彻底失效且一行日志都没有**。
+
+改法：**显式声明契约** `MIAO_CHILD_WATCH_PIPE=1`，由父进程 spawn 那一侧注入 ——
+这条知识只能放在**唯一能保证它正确的地方**。声明缺失 ⇒ 管道判据作废、只走 ②。
+
+### 🔴 缺陷 ③：Windows 上"ppid 没变 + 探活成功"**永远判不出父死**
+
+实测父退出后（pid 尚未回收时）：`th32ParentProcessID` **冻结在旧值**（unix 会 reparent 到 1）；
+`OpenProcess(pid)` **仍成功**；`GetExitCodeProcess` 连续 3 轮都返回 `code=259`（`STILL_ACTIVE`）。
+
+⇒ 必须引入 **进程身份** `(pid, creation_time)`（`GetProcessTimes`）：
+身份取不到 ⇒ 父死；创建时间变了 ⇒ pid 被复用 ⇒ 原父已死；身份不变 ⇒ 父健在。
+unix 不需要这层（reparent 到 1 本身就是权威信号）。
+另：`STILL_ACTIVE` 从 `Win32::Foundation` 导入，`ppid` 用 **ToolHelp32 全表快照**取 ——
+**不用** `NtQueryInformationProcess`（ntdll 未文档化导出，`windows-sys` 也不导出）。
+
+### 🔴 缺陷 ④：`parent_gone` 返回 `Option<bool>` —— `None` 是"判不出来"，不是"父死"
+
+ToolHelp32 快照在权限不足 / 进程数逼近上限时会失败。把它当"父死"会**杀掉一个好好活着的引擎**，
+这是**最坏的失效方向**（误杀 > 多留 1 秒孤儿）。所以 `parent_gone_strict` 把未知一律缺省为"父健在"。
+
+⚠️ 由此引出一条看似自相矛盾的裁定：Windows 分支里"身份取不到"却**判父死**。
+理由是这一分支的失效方向必须一致 —— 判"健在"的话 Windows 上 E11 就彻底静默失效（已实测确认）；
+而 `MIAO_CHILD_WATCH_PIPE=1` 为真时管道通道会在同一轮给出权威判据，两处一致 ⇒ 不会误杀。
+
+### 🔴 最贵的一课：**e2e 的"父进程"也必须与产品同源**，否则会得出错误结论
+
+用 node 当父去测 Rust 看守器，本轮实测出现"JS 版通过、Rust 版失败"，照此结论差点**改坏产品**。
+根因：node 在 Windows 上给子进程的 stdio 并非裸匿名管道，`process.exit()` 后写端**不产生 EOF**；
+而 ppid 通道又被缺陷 ③ 破坏 ⇒ 两条通道都判不出父死。
+
+⇒ **产品的父是 Rust**（`service.rs` / `supervisor.rs`），测试就必须照实测走。
+新增产品同源夹具 `boxsvc --child-watch-parent <ms> -- <cmd>`：
+按 `service.rs::spawn_inner` 的**完全相同**接线起看守器，活指定毫秒后 `process::exit(0)` 硬退。
+（⚠️ `Stdio::piped()` 在句柄耗尽的机器上返回 `ERROR_NO_SYSTEM_RESOURCES`(231)；
+夹具此时**显式**注入 `MIAO_CHILD_WATCH_PIPE=0` 并打可见警告，**不允许悄悄降级**。）
+
+### 断言处置
+
+- `check:child-watch` 重写为**跨平台心跳取证**（不再依赖 Unix 的 `ps`/`pkill`）+ 双靶 + 接线防护 + 反证。
+  🔴 反证轮**只判 Rust 靶**：node 父进程退出会连带清理目标（Windows 隐式 job），
+  关掉看守目标也会死 ⇒ 该靶在反证轮**结构上无法给出有效结论**，明确标注跳过原因而非伪装通过。
+- `check:child-watch-kill` 改**双靶源码钉**（Node `child-watch.mjs` + Rust `child_watch.rs`），
+  保住 D-89「Windows `taskkill` 的 `/F` **无条件**」在两端都成立；反证 **2/2 全红**。
+  🔴 判据前必须 `stripComments`：本仓库注释**主动写出了被禁的写法**，不剥就是把注释当代码匹配（D-149 同源）。
+- 注册表 `watch` 从 `['service/src/parent-watch.mjs', 'app/src-tauri/**']`（**指向一个与本钉子无关的文件**）
+  改为真实的四个：`child_watch.rs` / `service.rs` / `supervisor.rs` / `child-watch.mjs`。
+
+**验收**：`check:child-watch` 正向 **3/3**、反证 **1/1 有效**（另 1 靶按结构跳过）；
+`check:child-watch-kill` 正向 **2/2**、反证 **2/2 全红**；`cargo test --lib` **108 passed**（98 → 108）。

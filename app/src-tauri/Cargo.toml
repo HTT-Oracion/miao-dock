@@ -78,6 +78,11 @@ uuid = { version = "1", features = ["v4"] }  # 咪咕 cookie id
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# A3c：父死看守器在 Windows 上要装控制台 Ctrl+C handler（否则看守器被直接终止、
+# 被看守的 llama-server 留在原地占着 8080）。版本与锁文件里已有的传递依赖对齐。
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading", "Win32_Storage_FileSystem", "Win32_System_SystemServices"] }
+
 
 [profile.release]
 codegen-units = 1

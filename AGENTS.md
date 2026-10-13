@@ -26,10 +26,13 @@
 
 **目录约定（硬规则，全文与理由见 `README.md` §目录 · `docs/spec-notes.md` D-79）**：
 
-- **产品 / 验收分家**：判据不是"像不像测试"，而是**产品代码运行期会不会 fork 它**。会 fork 的两个
-  （`engine/scripts/child-watch.mjs` · `engine/scripts/fetch-models.mjs`）
-  留在原处，其余全部在 `e2e/`。搬迁脚本时**按来源分子目录**以保住相对深度（`service/scripts/x` → `e2e/service/x`）。
-  ⚠️ A3b 起启动配方打印器**已退役**（配方逻辑收进 `boxsvc::engine::build_launch_plan`）—— 它曾是这个清单的第一项。剩下的两个分别归 A3c / A3d。
+- **产品 / 验收分家**：判据不是"像不像测试"，而是**产品代码运行期会不会 fork 它**。会 fork 的
+  （`engine/scripts/fetch-models.mjs`）留在原处，其余全部在 `e2e/`。搬迁脚本时**按来源分子目录**以保住相对深度（`service/scripts/x` → `e2e/service/x`）。
+  ⚠️ **反向也成立**：产品主路径一旦改走 Rust，那个脚本就**降级为对照端**——
+  `print-launch-plan.mjs` **已退役**（配方收进 `boxsvc::engine::build_launch_plan`，A3b）；
+  `child-watch.mjs` A3c 起降为**对照端**（产品主路径换 `boxsvc --child-watch`，但 `service/src/settings/llm-supervisor.mjs` 仍 import 它 ⇒ **不许删**，A3d 才处理）。
+  🔴 **降级 ≠ 删**：删之前先 `grep` 还有谁引用。A3b/A3c 处置不同就是这条的两种结果。
+  🔴 剩下的 `fetch-models.mjs` 归 A3d。
 - **临时产物一律写进 `.tmp/<用途>/`**（`e2e/` · `selftest/` · `models/` · `engine-test/`），**不得**在仓库根另起 `.tmp-xxx/` / `tmp-xxx/`。
 - **新增或搬迁目录后必须同步**：`README.md` 目录节（唯一入口）· 本节分层表 · `.trae/rules/project_rules.md` ·
   `package.json` 命令 · **断言里写死的路径**（不同步的后果是**静默跳过**，不是变红）· 脚本自己的用法注释。
@@ -109,8 +112,8 @@ npm run selftest:app[:refute] # B 组应用生命周期 16 条（含 S2a–S2d�
 npm run selftest:app:e11[:refute]     # E11 三进程树回收（mock，秒级）：SIGKILL 主进程 → 13 端口全释放
 npm run selftest:app:e11:real         # 同上但**真进程**（python+执行器+llama-server，14 端口）· 分钟级
 npm run check:launch-plan[:refute] # S2/A3b 启动配方契约 25 条 / 反证 6 条（**被测对象已从 node 打印器换成 Rust `--print-launch-plan`**；含与 probeEngine 同源断言 + ③ 归属移交的 P-llm-*；反证含形参传反/env 不压差量/watch 消失/归属退回 manager 四类静默失效，末尾**重编译**以免留下坏产物）
-npm run check:child-watch[:refute]   # 外部二进制父死看守的双向取证（秒级；真模式 E11 的唯一依赖）
-npm run check:child-watch-kill[:refute] # child-watch Windows killTree 无条件 /F 源码钉子（不起进程；D-89 崩溃路径孤儿执行器）
+npm run check:child-watch[:refute]   # 外部二进制父死看守**双靶**取证 3 条（秒级；真模式 E11 的唯一依赖）。A3c 起双靶：Node 原版 + Rust `boxsvc --child-watch`；Rust 靶用**产品同源 Rust 父** `boxsvc --child-watch-parent`（用 node 当父测的是产品里不存在的场景 ⇒ 会得出「E11 失效」的错误结论）。含 W2 接线错误防护（父没攥住 stdin 管道时不得自杀）。反证轮**只判 Rust 靶**，Node 靶按结构跳过并标注原因
+npm run check:child-watch-kill[:refute] # child-watch Windows killTree 无条件 /F **双靶源码钉** 2 条 / 反证 2 条（不起进程；D-89 崩溃路径孤儿执行器）。判据**先 stripComments** —— 注释里主动写出了被禁写法
 npm run e2e                   # D 组端到端
 npm run check:ia              # IA 结构 32 条（含 C8d：侧栏两套几何 58×52 / 44×44 随标签形态成对切换）
 npm run check:tls             # TLS 依赖链 14 条（三层）
@@ -183,7 +186,11 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 - 🔴 **③（Sakura LLM）的归属权在 S4 从 Rust 移交给了 box-service**（《04》§9.1：Tier1 空闲卸载的实现方
   必须是持有任务队列的那一侧）。`print-launch-plan.mjs` 因此**不再输出 `llm` 条目**，
   Rust 只从配方里取命令文本用于**打印**（E1 参数快照），拉起/停止由 `service/src/settings/llm-supervisor.mjs` 负责。
-  E11（不留孤儿）靠 `child-watch.mjs` 包一层保住 —— **改这段前先读 D-73 决策 1**，漏改一处就是"两个 llama-server 抢 8080"。
+  E11（不留孤儿）靠 `child-watch` 包一层保住 —— **改这段前先读 D-73 决策 1**，漏改一处就是"两个 llama-server 抢 8080"。
+  🔴 A3c 起该层是 `boxsvc --child-watch`（Rust）；`service/src/settings/llm-supervisor.mjs` 仍走 `child-watch.mjs`（Node 对照端）—— **两处都要改，否则一半的 ③ 不受 E11 保护**。
+  🔴 父死判定是**双通道**（stdin 管道 + ppid/进程身份）且**"判不出来" ≠ "父死"**，改任何一条前先读 D-172。
+  ⚠️ 父侧必须给 `Stdio::piped()` + `MIAO_CHILD_WATCH_PIPE=1` 并**攥住 `ChildStdin`**（`_watch_keepalive`）——
+  少任一条，看守器拿不到权威判据，E11 静默失效。
 - **模型资产管理（S3）**：`engine/models.manifest.json`（版本控制）是唯一清单 —— 来源 / sha256 / 大小；
   `engine/model-store.mjs` 负责下载（断点续传 / 逐文件 SHA256 / 失败单文件重下 / `.ready` 幂等 / 可暂停），
   `npm run fetch:models` 是 CLI。

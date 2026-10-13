@@ -70,6 +70,28 @@ fn main() {
         }
         return;
     }
+    // `--child-watch-parent <ms> -- <cmd>`：**测试夹具**，扮演父进程起看守器再硬退（A3c）。
+    // 用途：`e2e/child-watch-check.mjs` 用它当"会死的父"——必须是 Rust 而不是 node，
+    // 因为产品的父就是 Rust（`service.rs` 攥 `ChildStdin`），而 node 父在 Windows 上
+    // 不给子进程可用的匿名管道 ⇒ 测出来的结论对产品不成立。详见 `run_as_parent` 的注释。
+    if let Some(i) = std::env::args().position(|a| a == "--child-watch-parent") {
+        let args: Vec<String> = std::env::args().skip(i + 1).collect();
+        std::process::exit(miao_dock::child_watch::run_as_parent(&args));
+    }
+    // `--child-watch -- <cmd> [args...]`：把命令包一层**父死看守**（A3c）。
+    // 用途：真档下 ② `python main.py` / ③ `llama-server` 是**外部二进制**，主进程被
+    // SIGKILL 后它们不会自退（E11 要消灭的正是这种孤儿）。它曾是 `engine/scripts/child-watch.mjs`，
+    // 而那需要 node 解释器 —— A3「node 随包」已作废 ⇒ 看守器一并 Rust 化。
+    //
+    // 🔴 为什么挂在 `boxsvc` 而不是新开一个 bin：看守器是**每引擎栈常驻**的子进程，
+    //    多一个可执行文件就多一份随包物与一条寻址路径；`boxsvc` 本来就随包（F5 之后
+    //    它是服务本体），且 `--print-launch-plan` 等子命令已经证明这条复用路子成立。
+    //    代价是「看守器失败」与「服务失败」共用一个 exe —— 但两者不会同时发生
+    //    （子命令在起服务之前就 `return` 了）。
+    if let Some(i) = std::env::args().position(|a| a == "--child-watch") {
+        let args: Vec<String> = std::env::args().skip(i + 1).collect();
+        std::process::exit(miao_dock::child_watch::run(&args));
+    }
     let opts = miao_dock::boxsvc::Options::from_env();
     if let Err(e) = miao_dock::boxsvc::run_blocking(opts) {
         eprintln!("[box-service] boxsvc 启动失败：{e}");
