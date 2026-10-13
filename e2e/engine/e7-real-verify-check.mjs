@@ -40,8 +40,11 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
+import { runtimesDir } from '../../engine/scripts/runtime-root.mjs';
+
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
-const MODEL_ROOT = process.env.MIAO_MODEL_ROOT || path.join(ROOT, 'runtimes', 'manga-translator');
+// 🔴 B1：真机取权重的落点与产品同源（`<appData>/runtimes/manga-translator`）。
+const MODEL_ROOT = process.env.MIAO_MODEL_ROOT || runtimesDir();
 const MANIFEST_PATH = path.join(ROOT, 'engine', 'models.manifest.json');
 const STORE_SRC = path.join(ROOT, 'engine', 'model-store.mjs');
 const REFUTE = process.argv.includes('--refute');

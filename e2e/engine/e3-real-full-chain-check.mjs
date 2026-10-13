@@ -30,8 +30,12 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
+import { runtimesDir } from '../../engine/scripts/runtime-root.mjs';
+
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
-const RT = path.join(ROOT, 'runtimes', 'manga-translator');
+// 🔴 B1：真机取资产的落点与产品同源（`<appData>/runtimes/manga-translator`）——
+//    读仓库 `runtimes/` 会「验收通过、产品找不到」，因为产品只认 appData 那份。
+const RT = process.env.MIAO_MODEL_ROOT || runtimesDir();
 // Windows 是 venv/Scripts/python.exe，POSIX 是 venv/bin/python
 const VENV_PY = process.platform === 'win32'
   ? path.join(RT, 'venv', 'Scripts', 'python.exe')

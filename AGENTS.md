@@ -20,7 +20,7 @@
 | 桌面壳 | Tauri v2（Rust） | `app/src-tauri/` |
 | 前端 | Vite + React 18 + TS，**原生 CSS + CSS 变量**（无 Tailwind；UI 库仅 `@radix-ui/react-select`） | `app/src/` |
 | 翻译服务 | Node（127.0.0.1:5180–5190） | `service/` |
-| 翻译引擎 | **接缝层**：真引擎装在 `runtimes/`（不在库），本目录放版本锁 `VERSIONS.lock` / 模型清单与下载器 / 子进程看守；`engine/src/` 是**测试替身**（mock 引擎 + mock LLM） | `engine/` |
+| 翻译引擎 | **接缝层**：真引擎装在 `<appData>/runtimes/manga-translator/`（不在库，B1 起与安装位置无关），本目录放版本锁 `VERSIONS.lock` / 模型清单与下载器 / 子进程看守；`engine/src/` 是**测试替身**（mock 引擎 + mock LLM） | `engine/` |
 | 验收与取证脚本 | 纯 Node 零依赖（`e2e/service/`、`e2e/engine/` 按来源分） | `e2e/` |
 | 参考实现切片 | 只读参考，**保持原样不改** | `vendor/music-reference/`（不入库） |
 
@@ -120,7 +120,7 @@ npm run check:ia              # IA 结构 32 条（含 C8d：侧栏两套几何 
 npm run check:tls             # TLS 依赖链 14 条（三层）
 npm run check:quit[:refute]   # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW / 前端不静默 / Windows signal_tree 无条件 /F；不起进程）
 npm run check:autostart[:refute] # 翻译服务「自动启动 / 手动启停」根因钉子 18 条 / 反证 19 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / 自动启动 effect 依赖不含 status / 未就绪屏 stopped 给「启动」/ 设置页启停行 / 服务实现默认档 = Rust（E1–E5）/ Cargo.toml `default-run` 指向真实 bin（F1）；不起进程；D-94 · D-168 · D-169）
-npm run check:engine-client[:refute] # 翻译引擎适配层 50 条 / 反证 12 条（真协议用 openapi 快照「假引擎」，秒级）
+npm run check:engine-client[:refute] # 翻译引擎适配层 50 条 / 反证 12 条（真协议用 openapi 快照「假引擎」，秒级）。⚠️ L4 要引擎**真装在默认落点**（`<appData>/runtimes/manga-translator/`）—— 本机若只有仓库 `runtimes/` 那份，用 `MIAO_RUNTIME_ROOT=<repo>/runtimes` 指过去（B1）
 npm run check:retry[:refute]  # 队列「重试」任务身份：复用**同一** taskId（不冒历史行）+ 翻译方向（白名单/落库/送到引擎/重试继承） 10 条 / 反证 7 条（mock 引擎 + 真服务子进程，秒级）
 npm run check:lib-manage[:refute] # 漫画库管理取证：队列删除（仅终端态可删）/ 隐藏与恢复 / 越界名 403 / 前端接线 / 新建（manifest 同步落盘 + 同名 409）/ 归并（在跑拒绝 + NN_第N话 物理移动 + episodes 回写）/ 封面（嗅探命名 + json 同步）/ 话号一位小数（14.1 落位与寻址 + 两位小数/.0 拒绝）16 条 / 反证 8 条（mock 引擎 + 真服务子进程，秒级）
 npm run check:retranslate[:refute] # 单张漫画返工重译 + 全屏缩放快捷键：返工**覆盖**译文（塞假译文验真被顶掉）/ 不碰原图 / 与 resume 分工 / 裸 ↑↓ 不缩放（不抢音量键）12 条 / 反证 5 条（mock 引擎 + 真服务子进程，秒级）
@@ -141,11 +141,14 @@ npm run check:e10[:refute]    # E10 安全：只监听回环 / 非图片字节�
 #   真实漫画站 31 张 + 真引擎，19 条断言，约 10 分钟；产物落该仓 `.temp-translate-test/`（已 gitignore）。
 #   脚本自己拉起并收尾 box-service / 引擎 / ③ / `:8001` 执行器。
 node e2e/service/llm-real-timing.mjs  # 真 ③（llama-server）冷启动与内存实测（**真权重，分钟级，不进常规门**）
-npm run check:music[:refute]  # 音乐平台 / 播放模式五档 / 心动模式 / 播放列表入口与抽屉 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 227 条 / 反证 212 条
-npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3「准备中」时间线 + ④ 功能梳理（侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / 行内 def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染（自守）180 条 / 反证 127 条
+npm run check:music[:refute]  # 音乐平台 / 播放模式五档 / 心动模式 / 播放列表入口与抽屉 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 228 条 / 反证 212 条
+npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3「准备中」时间线 + ④ 功能梳理（侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / 行内 def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染（自守）176 条 / 反证 127 条
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 看图缩放 / 样式分层 45 条 / 反证 59 条
 npm run check:bundle[:refute] # 打包配置钉子 6 条 / 反证 7 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip` ——「文件不在」是永远绿的空断言，因 `vendor/node.zip` 从未存在；**W6** 必需资产条目在**且** src 文件真实存在；源码级，不起进程）
 npm run check:resources[:refute] # 随包资源寻址 **A1/A2** 三环境取证 8 条 / 反证 4 条（dev 态不误报且来源=repo · 打包齐备来源=resource · 打包缺失报 `RESOURCE_MISSING` 且退出码≠0 · 两边都有时资源目录优先 · 必需资产三处事实源交叉验证 · S1/S2/S3 源码钉）。🔴 dev 态与打包态**必须都跑**：只跑 dev 态**永远绿**（资产就在仓库里，打包态的错测不出来），只跑打包态会把 dev 态误判成缺失
+npm run check:packaged[:refute] # **A4 打包后冒烟**（mock 档，nightly 层）9 条 / 反证 2 条按预期红。三层取证：**安装层**（NSIS `/S /D=` 静默安装；exe 与 `engine/models.manifest.json` 在、`service/` 与 `node.zip` 不在）→ **资产层**（`boxsvc --check-assets` ok=true）→ **服务层**（`/health` 200 + mock 替身 + 清单路径落在安装目录内 + `--print-launch-plan mock` 的 `mode=mock`）。🔴 **不起 GUI 而起 release `boxsvc`**：无头环境 GUI 必失败 ⇒ 时红时绿比没有更坏。🔴 反证轮必须**同时切断 `MIAO_REPO_ROOT` 回退**，否则删了包内资产也会从旁边仓库读到 ⇒ 假绿
+npm run check:runtime-probe[:refute] # **B2 引擎运行时就绪检测** 26 条 / 反证 2 条（`GET /api/v1/engine/runtime`；四项 `venvRoot`/`python`/`source`/`deps` 逐项独立翻转 + `detail` 必带绝对路径 + mock 档不 warn）。🔴 **只 warn 不 fail**：mock 档不该有真引擎（30+ 个 e2e 靠它），real 档硬门归 D6
+npm run check:path-single-source[:refute] # **B3 检测与启动同源** 5 条 / 反证 1 条（`/engine/runtime` 的 `python.path` vs `boxsvc --print-launch-plan` 的 `engine.cmd[0]` **逐字节**比对；天然覆盖 Windows `venv\Scripts\python.exe` 分叉）。反证：检测侧手拼 `venv/bin/python` ⇒ 红
 npm run check:resilience[:refute] # box-service 健壮性钉子 9 条 / 反证 14 条（源码级：R1–R7 顶层未捕获异常兜底（走同一 shutdown / 收 ③ / 重入闸 / 非零退出）· A1–A2 任务状态原子写（store 走 atomicWriteJson · tmp→fsync→rename）；不起进程；内存变异反证；D-138/D-139）
 npm run check:layering[:refute] # service 依赖方向钉子 3 条 / 反证 3 条（源码级：L0 底座文件集 == 白名单 · L1 底座不得 import manga/** · L2 底座对 settings/ 仅限 engine-settings.mjs；装配入口 server.mjs 豁免；不起进程；内存变异反证；D-141）
 npm run check:docs            # 文档 ↔ 实现一致性 17 条（条数对账 / 命令存在 / 禁词 0 命中 / GROUPS 覆盖）
@@ -153,7 +156,7 @@ npm run check:docs            # 文档 ↔ 实现一致性 17 条（条数对账
 #    每组都**双靶子**跑同一份断言：`MIAO_SERVICE_IMPL=node` 吃 `service/src/server.mjs`，
 #    `=rust` 吃 `target/debug/boxsvc`。⇒ `service/src/*.mjs` 虽已从**产品运行时**摘除，
 #    但作为这七组的**对照端**必须保留；删它 = 连带作废全部对拍（不是"顺手清理"）。
-npm run check:paths[:refute]    # F2 路径解析与 `config.mjs` **逐字节**对拍 3 条 / 反证 3 条（`boxsvc --print-paths` 对拍；含 `normalize_lexical` 与 `assert_inside_root` 两处真缺陷的回归钉）
+npm run check:paths[:refute]    # F2 路径解析与 `config.mjs` **逐字节**对拍 5 条 / 反证 5 条（`boxsvc --print-paths` 对拍；含 `normalize_lexical` 与 `assert_inside_root` 两处真缺陷的回归钉；**PATH.appData** B1 落点 + **PATH.tooling** 装配脚本同源）
 npm run check:store[:refute]   # F3 任务库内核同源对拍 24 条 / 反证 24 条（🔴 serde 字段**声明序**必须逐字复刻 Node `serialize()` 键序；`Option` 保留 `undefined`→省略键；`Vec` 保插入序）
 npm run check:store-exec[:refute] # F3-b 执行/队列同源对拍 74 条 / 反证（7 场景**连定义都单源**；🔴 `itemErrors` 必须比 —— 「总预算耗尽」与「单请求超时」`reason` 同为 `engine_engine_timeout`，只有 `errorMessage` 能分开）
 npm run check:engine-parity[:refute] # F4 引擎纯协议/配方层同源对拍 24 条 / 反证（`resolve_engine_launch` 走 `python main.py` 非 `-m server.main`；三条少一个键真机必挂的启动 env 都在 Rust 复刻）
@@ -197,16 +200,21 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
   `boxsvc::engine::model_store` 负责下载（断点续传 / 逐文件 SHA256 / 失败单文件重下 / `.ready` 幂等 / 传输中断一次重下），
   CLI 是 `boxsvc --fetch-models`（**A3d 起为产品主路径**；`engine/model-store.mjs` + `engine/scripts/fetch-models.mjs` 保留为**双靶对照端**）。
   🔴 有意差异：Rust 版**不实现** `AbortSignal` —— 产品跑的是 CLI，「暂停」的真实形态就是杀进程，`.part` 留下即断点。
-  🔴 **权威副本在 `runtimes/manga-translator/models-store/`，引擎源码树 `src/models/` 里那几份只是硬链接** ——
+  🔴 **权威副本在 `<appData>/runtimes/manga-translator/models-store/`，引擎源码树 `src/models/` 里那几份只是硬链接** ——
   因为引擎把模型路径硬编码在自己源码树里（`utils/inference.py:94` + `utils/generic.py:24-25`，且
   `server/args.py` 没有 `--model-dir`）⇒ **换引擎版本后跑 `npm run fetch:models -- --link` 即可零网络恢复**，
   不必重下几个 GB。链接只占一份盘。
+  🔴 B1 起这套资产的**落点与安装位置无关**（`<appData>/runtimes/manga-translator/`）；装配脚本
+  （`setup-engine` / `install-engine-deps` / `fetch-models`）共用 `engine/scripts/runtime-root.mjs`，
+  与产品 `paths::runtime_root()` 同源，由 `check:paths` 的 `PATH.tooling` 钉住。
 - 🔴 **一条容易说错的现状**：引擎栈模式由 `MIAO_ENGINE_PROTOCOL` 决定，**默认 `real`** ——
   也就是说 `npm run app` 起的**已经是真引擎**（`python main.py` + `llama-server`），
   模拟引擎只在测试里被显式注入（`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs`）。
-  ⇒ **本机没拉引擎（`runtimes/` 不在）时，产品链路起不来**，这是 G-13（打包分发）未做的一部分。
+  ⇒ **本机没拉引擎（运行时目录不在）时，产品链路起不来**；缺哪一项由 `GET /api/v1/engine/runtime` 逐项报出（B2），
+  而不是一句 `Connection error`。
 - **未做**：打包分发 —— Windows 侧**已能产出 NSIS 安装包**（`app/src-tauri/tauri.windows.conf.json` 平台分叉，`npm run check:bundle` 钉住；macOS 包型仍 `app`+`dmg`，未动），
-  但包内仍不含 `service/`/`engine/`、**装完起不了服务**（`bundle.resources` 为空，G-13 未闭环）· Windows **进程树回收三项**
+  A4 起**已能在真实安装产物上冒烟**（`npm run check:packaged`：静默安装 → `--check-assets` → 起服务打 `/health` + mock 替身 + 启动配方）；
+  引擎运行时本身**不随包**（用户自装，B1/B2）· Windows **进程树回收三项**
   （仍 `unverified`：Job Object / 无孤儿 `llama-server.exe` / `taskkill /T`；注：Windows **真引擎装配 + S1 已真机跑通**，见 D-85）·
   **汽水音乐平台**（PD-1，延后；代码保留不排首批）· **评论翻页**（当前只拉第 1 页 20 条）·
   **歌手详情第 4 标签**（当前仅网易云，专辑/MV/简介 三标签）。

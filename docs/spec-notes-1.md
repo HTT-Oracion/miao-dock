@@ -2042,3 +2042,121 @@ Rust 常量、`check:bundle` 常量、`check:resources` 常量各一份，做不
 `check:registry` 4/4（92 项）；`check:paths` 3/3 + 反证 3/3；`check:models` 74/74 + 反证 12/12；
 `check:engine-settings` 55/6（存量）；`check:autostart` 18/18 · `check:routes` 9/9 ·
 `check:launch-plan` 25/25 · `check:harness` 7/7 · `check:llm-supervisor` 4/4。
+
+---
+
+## D-175 · A4/B1/B2/B3：把冒烟搬到真实安装产物上，并让运行时「落点 / 检测 / 推导」三者一致（2026-10-13）
+
+**背景**：A1/A2 只回答「资产进包了、也找得到」，没回答「装完到底能不能用」。
+A4 第一次在**真实安装产物**上验服务栈；B1 让运行时落点与**安装位置**脱钩；
+B2 让「缺什么」可读且读得具体；B3 堵住本方向最大风险（R1：检测与启动两套推导）。
+
+### B1 · appData 落点：单一事实源必须在**两侧同时**落地
+
+`paths.rs` 新增 `app_data_dir()` 平台分叉单一事实源（macOS `Library/Application Support` /
+Windows `LOCALAPPDATA`，取不到再退回 `~/AppData/Local` / 其余 `~/.local/share`），
+`default_runtime_root()` = `<appData>/runtimes`，`runtimes_dir()` = `<appData>/runtimes/manga-translator`；
+`engine_dir()` / `engine_python()` 的默认值从 `repo_root()/runtimes` 改为 `runtimes_dir()/…`
+（`MIAO_ENGINE_DIR` / `MIAO_ENGINE_PYTHON` / `MIAO_RUNTIME_ROOT` 覆盖语义不变）。
+Node 对照端 `config.mjs` 同构同步，并新增导出 `RUNTIME_ROOT`、`MODEL_MANIFEST`。
+
+🔴 **13 键对拍不是「11 键加两个键」就完事**：`snapshot()` 每加一键，
+`check:paths` 的 `NODE_DUMP` 必须同键同值，否则 Rust 侧会单方面「通过」——
+这是显式白名单类断言的通病（同 `GROUPS` 假绿教训，D-161 附近）。
+新增 `runtimeRoot`、`modelManifest` 后正向 **4/4**，并补反证 **M4**
+（Node 侧默认值退回仓库布局 ⇒ 红）。
+
+### B2 · 检测四项，不是五项 —— `node` 项被裁掉
+
+台账原写 `node`（过渡期）/ `python` / `source` / `deps` / `venvRoot` 五项。
+F5 + A3d 之后 **node 不再是产品依赖**（`Command::new("node")` 已清零），
+检测它只会让用户去找一个我们并不需要的东西。⇒ 裁为 `venvRoot` / `python` / `source` / `deps`。
+
+- `deps` 的 site-packages 用 `lib/python*` **通配一层**，不写死 `python3.11`
+  （用户 venv 版本不受我们控制，写死即假红）。
+- `is_file` / `is_dir` 走 `symlink_metadata`（lstat）而非 `metadata()`，
+  以兼容 Windows junction / 符号链接与硬链接。
+- `warn_unready_if_real(is_mock)` 供 app 与 `boxsvc` CLI 两入口共用。
+
+🔴 **只 warn，不 fail**：mock 档直接返回。mock 档**不该有真引擎**（30+ 个 e2e 靠它），
+在 mock 档也报未就绪等于给所有 mock 用例加噪声。real 档的硬门归 **D6**，不在这里顺手做。
+
+### B1 收尾 · 装配脚本的落点也必须搬 —— 否则「装到 A、读到 B」
+
+B1 只改了产品侧默认值，而**装配脚本**仍各自写死 `path.join(REPO, 'runtimes', 'manga-translator')`：
+`setup-engine.mjs` / `install-engine-deps.mjs` / `fetch-models.mjs` 三处。
+于是 `npm run setup:engine` 装进仓库 `runtimes/`、产品却只认 `<appData>/runtimes/` ——
+**两边都不报错**，症状是"明明装过了却说起不来"。`config.mjs` 的 `engineModelDir` 注释
+本来就要求「fetch-models 的 ROOT 必须与服务同源」，B1 之后这条已经漂移。
+
+修法：新增 `engine/scripts/runtime-root.mjs`（`defaultAppDataDir` / `defaultRuntimeRoot` /
+`runtimeRoot` / `runtimesDir`），三个装配脚本与三个真机 e2e 统一改用它。
+
+🔴 **为什么不让它们 import `service/src/config.mjs`**（那才是真单一事实源）：
+config.mjs **import 即有副作用**（模块顶层 `fs.mkdirSync(STATE_DIR)`，还会拉起
+`settings/engine-settings.mjs`），并且它必须是 Rust 的**逐字节对照端**、不能被工具链反向依赖。
+⇒ 接受两份实现，但用 `check:paths` 新增的 **PATH.tooling** 断言把漂移当场抓住
+（拿 `runtime-root.mjs` 的默认值与 Node 快照的 `runtimeRoot` / `engineDir/..` 比对）。
+
+🔴 **有一个落点故意不搬**：`e2e/service/engine-client-check.mjs` 读的
+`openapi.engine.json` 是 S1 **手工导出的夹具**（`.gitignore` 忽略整个 `runtimes/`，
+不是 `setup-engine.mjs` 的安装产物）。夹具的落点与引擎运行时的落点是两件事，
+混为一谈会让"机器上只有其中一份"时静默读错。
+
+### B3 · 单源化的验收 = 两个入口读同一份推导
+
+新增 `e2e/service/path-single-source-check.mjs`：起服务打 `GET /api/v1/engine/runtime`
+取 `python.path`，与 `boxsvc --print-launch-plan` 的 `engine.cmd[0]` **逐字节比对**。
+这比「读源码看起来同源」强：它证的是**运行期实际取值**，且天然覆盖 Windows 的
+`venv\Scripts\python.exe` 分叉（另一份推导最容易在这里写死 `bin/python`）。
+
+### A4 · 三条贵的教训
+
+**① 不起 GUI，起 release `boxsvc`。** 无头环境里 GUI 必失败 ⇒ 冒烟会**时红时绿**，
+比没有冒烟更坏（它训练人忽略红色）。改起 release `boxsvc` + `MIAO_RESOURCE_DIR`
+指向真实安装目录。Node 侧不实现 `resource_dir()`（A1 裁定为 Rust 侧能力）⇒
+设了 `MIAO_RESOURCE_DIR` 两边取值不同 ⇒ **A4 只跑 Rust 靶**。
+
+🔴 **② 反证必须切断 `MIAO_REPO_ROOT` 回退。** 反证轮删掉包内 `models.manifest.json`
+后 `--check-assets` 仍报 ok —— `missing_assets()` 的判据是「资源目录没有 **且** 仓库也没有」，
+开发机上仓库就在旁边 ⇒ 回退成功 ⇒ **假绿**。修法：反证轮同时把 `MIAO_REPO_ROOT`
+指向空目录。
+
+🔴 **③ A4 暴露了 A3b 起就存在的编译断裂：`miao-dock` bin 编不过。**
+`service.rs` 用 `boxsvc::engine::build_launch_plan` 与 `runtime_probe::…`，
+而 `main.rs` 既无 `mod boxsvc;` 也无 use ⇒ `error[E0433]`。
+**只因平时只跑 `cargo build --bin boxsvc` 与 `cargo test --lib`，两者都不覆盖
+`miao-dock` bin ⇒ 一直没暴露。**
+
+修法：`main.rs` 加 `pub(crate) use miao_dock::boxsvc;`，
+`service.rs` 改 `use crate::boxsvc; use miao_dock::paths;`。
+🔴 不能用 `mod boxsvc;` —— 那会把同一份源码**再编译一份**，bin/lib 各有一套类型、
+之后必然各自漂移；也不能 `use miao_dock::{boxsvc, paths};`
+（`boxsvc` 在 bin crate 里没被用到就报 unused import，而 paths 又必须由 lib 提供）。
+
+### 顺带修掉 · `check:engine-client` 用了 `spawnSync`，正向崩掉 + 反证轮整轮失效
+
+复跑验收时发现 `check:engine-client` 从 50 条掉到 41 条，且报 `RUN 断言脚本未预期崩溃`。
+根因：文件里有 5 处 `spawnSync`，而本机沙箱下它**稳定**返回 `EBUSY`（实测 5/5），
+且 `result.stdout` 是 **`undefined`**（不是 null）⇒ 第一处 `cExplicit.stdout.trim()` 就把
+脚本打崩，后面 9 条断言一条都没跑；反证轮那两处虽用 `child.stdout || ''` 防住了崩溃，
+但每个变异都只能收到「子进程没有结果行」—— **看上去像破坏没生效，实则是判据没机会跑**
+（最坏的那类假红）。
+
+修法：5 处全改成本仓既有纪律的**异步 `spawn`**（新增 `runCapture()`，`env` 传完整环境、
+内部不 merge `process.env`，否则「delete 掉某个 `MIAO_*` 再起进程」会被悄悄加回去）。
+
+🔴 **L4 仍红，但那是真断言**：`cwd === engineServerDir && existsSync(cwd/main.py)` 因引擎没装在
+`<appData>/runtimes/manga-translator/` 而红 —— 这正是 B1 要的「缺什么说得清」。
+把 `MIAO_RUNTIME_ROOT` 指到本机现有的仓库安装后 **50/50**、反证 **12/12 全红**，
+证明断言本身没问题，缺的只是装配（而装配脚本本轮已修，见上节）。
+
+**验收**：`check:packaged`（新，nightly）正向 **9/9** + 反证 **2/2 按预期红**（P4/P7）；
+`check:runtime-probe`（新）正向 **26/26** + 反证 **2/2 全红**（源码变异 + 重编译 + 字节还原）；
+`check:path-single-source`（新）正向 **5/5** + 反证 **1/1 全红** + restore ✓；
+`check:paths` 正向 **5/5**（13 键 + appData 落点 + 装配脚本同源）+ 反证 **5/5 全红**（M5 新增）；
+`check:engine-client` 正向 **50/50** + 反证 **12/12 全红**（修掉 5 处 `spawnSync` 的 EBUSY 崩溃；
+⚠️ 需 `MIAO_RUNTIME_ROOT` 指向本机已有的引擎安装，否则 L4 因「引擎不在 appData 落点」如实变红）；
+`cargo test --lib` **127 passed**（124 → 127）；`cargo build --bin miao-dock` **首次通过**；
+`check:registry` 4/4（98 项）· `check:routes` 9/9 + 反证 9/9 · `check:engine-parity` 24/24 ·
+`check:store` 24/24 · `check:harness` 7/7 · `check:engine-settings` 55/6（存量）。

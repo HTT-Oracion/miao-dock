@@ -9,18 +9,23 @@
  *
  * ## 机制
  *   · Rust 侧：`boxsvc --print-paths`（毫秒级，不起服务、不拉 node）打印 `paths.rs::snapshot()`
- *   · Node 侧：起一个 node 子进程 import `service/src/config.mjs`，打印同名的 11 个键
+ *   · Node 侧：起一个 node 子进程 import `service/src/config.mjs`，打印同名的 13 个键
  *   · 逐键逐字节比对；键集合也必须一致（少一个键 = 少一条断言）
+ *   · 工具链侧：再起一个子进程 import `engine/scripts/runtime-root.mjs`，与 Node 快照比对
  *
  * ## 断言
- *   PATH.default    无覆盖时的 11 个路径逐字节相同
+ *   PATH.default    无覆盖时的 13 个路径逐字节相同
  *   PATH.override   `MIAO_STATE_DIR/ROOT/ENGINE_DIR/ENGINE_PYTHON/ENGINE_SERVER_DIR` 覆盖后仍逐字节相同
  *   PATH.keys       两侧键集合完全一致
+ *   PATH.appData    未设 `MIAO_*` 时引擎落点锚在 `<appData>/runtimes`（逐字节相同**不保证**落点对）
+ *   PATH.tooling    装配脚本（setup-engine / install-engine-deps / fetch-models）的落点与产品同源
  *
- * ## 反证轮（--refute，3 个内存变异）
+ * ## 反证轮（--refute，5 个内存变异）
  *   M1 篡改 Node 侧某个值 → 该场景变红
  *   M2 篡改 Rust 侧某个值 → 该场景变红
  *   M3 删掉一个键          → keys 变红
+ *   M4 Node 侧默认值退回仓库布局 → 同源与落点两条同时红
+ *   M5 装配脚本落点退回仓库 runtimes/ → PATH.tooling 变红
  *
  * 用法：node e2e/service/paths-parity-check.mjs [--refute]
  * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
@@ -88,6 +93,15 @@ async function dumpNode(env) {
   return JSON.parse((await run(process.execPath, ['--input-type=module', '-e', NODE_DUMP], { MIAO_TOKEN: TOKEN, ...env })).trim());
 }
 
+const TOOLING_DUMP = `
+const m = await import(${JSON.stringify('file://' + path.join(REPO_ROOT, 'engine', 'scripts', 'runtime-root.mjs').replace(/\\/g, '/'))});
+process.stdout.write(JSON.stringify({ runtimeRoot: m.runtimeRoot(), runtimesDir: m.runtimesDir() }));
+`;
+
+async function dumpTooling(env) {
+  return JSON.parse((await run(process.execPath, ['--input-type=module', '-e', TOOLING_DUMP], { MIAO_TOKEN: TOKEN, ...env })).trim());
+}
+
 /** 逐键逐字节比对；返回差异数组（空 = 完全一致）。导出以便反证轮复用它。 */
 export function diffPaths(a, b) {
   const out = [];
@@ -133,6 +147,28 @@ function appDataViolations(snap) {
     bad.push(`engineDir 仍在仓库根下（${snap.engineDir}）`);
   }
   return bad;
+}
+
+/**
+ * B1 收尾：**装配脚本**的落点必须与产品快照同源。
+ * 返回差异数组（空 = 一致）。导出以便反证轮复用它。
+ *
+ * 为什么值得单独一条：`engine/scripts/runtime-root.mjs` 是 `config.mjs` 之外的第二份实现
+ * （config.mjs import 即有副作用、且必须是 Rust 的逐字节对照端，不能被工具链反向依赖）。
+ * 两份实现必然面临漂移 —— 而漂移的症状是「装到 A、读到 B」，**两边都不报错**。
+ */
+export function diffTooling(tooling, nodeSnap) {
+  if (!tooling || !nodeSnap) return ['缺少快照'];
+  const out = [];
+  if (tooling.runtimeRoot !== nodeSnap.runtimeRoot) {
+    out.push(`runtimeRoot: 工具链=${JSON.stringify(tooling.runtimeRoot)} 产品=${JSON.stringify(nodeSnap.runtimeRoot)}`);
+  }
+  // 模型根 = `engineDir/..`（config.mjs 的 engineModelDir 就是这么派生的）
+  const want = path.resolve(nodeSnap.engineDir, '..');
+  if (tooling.runtimesDir !== want) {
+    out.push(`runtimesDir: 工具链=${JSON.stringify(tooling.runtimesDir)} 产品=${JSON.stringify(want)}`);
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------ 正向
@@ -193,6 +229,21 @@ for (const sc of SCENARIOS) {
   check('PATH.appData — B1：未设 MIAO_* 时引擎落点在 <appData>/runtimes（两侧）', bad.length === 0, bad);
 }
 
+// PATH.tooling（B1 收尾）：装配脚本（setup-engine / install-engine-deps / fetch-models）
+//    共用的落点必须与产品同源。没有这条，「装到 A、读到 B」会一直静默。
+{
+  const bad = [];
+  let tooling = null;
+  try {
+    tooling = await dumpTooling(SCENARIOS[0].env);
+  } catch (e) {
+    bad.push(`工具链 dump 失败：${e.message || e}`);
+  }
+  if (!nodeDefault) bad.push('node 无快照');
+  else bad.push(...diffTooling(tooling, nodeDefault));
+  check('PATH.tooling — B1：引擎装配脚本落点与产品同源', bad.length === 0, bad);
+}
+
 // ------------------------------------------------------------------ 反证
 if (REFUTE) {
   if (failed > 0) {
@@ -232,6 +283,17 @@ if (REFUTE) {
         };
         // 必须同时让「同源」与「落点」两边都不成立 —— 只红一条说明另一条是死的
         return appDataViolations(repo).length > 0 && diffPaths(rustDefault, repo).length > 0;
+      },
+    },
+    {
+      id: 'M5',
+      what: '装配脚本落点退回仓库 runtimes/（B1 收尾的回归）',
+      run: () => {
+        const repoRt = path.join(nodeDefault.repoRoot, 'runtimes');
+        return diffTooling(
+          { runtimeRoot: repoRt, runtimesDir: path.join(repoRt, 'manga-translator') },
+          nodeDefault,
+        ).length > 0;
       },
     },
   ];

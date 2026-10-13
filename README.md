@@ -35,12 +35,12 @@ miao-dock/
 │   │   ├── settings/  设置域：`engine-settings` · `engine-profile` · `model-status` · `idle-policy` · `tier-downgrade` · `llm-supervisor`
 │   │   └── music/     音乐域：服务端**占位**（逻辑在 Rust 侧 `app/src-tauri/src/music/`）
 │   └── （无 `scripts/` —— 启动配方已于 A3b 收进 Rust `boxsvc::engine::build_launch_plan`）
-├── engine/       翻译引擎的**接缝层**（真引擎装在 `runtimes/`，不在库）
+├── engine/       翻译引擎的**接缝层**（真引擎装在 `<appData>/runtimes/manga-translator/`，不在库）
 │   ├── VERSIONS.lock         引擎 / 权重 / 外部二进制的**版本锁**（换版本照它来）
-│   ├── models.manifest.json  模型清单：来源 URL + sha256 + 字节数（权威副本在 `runtimes/…/models-store/`）
+│   ├── models.manifest.json  模型清单：来源 URL + sha256 + 字节数（权威副本在 `…/models-store/`）
 │   ├── model-store.mjs       下载内核（**Node 对照端**，A3d；产品主路径是 Rust `boxsvc::engine::model_store`）
 │   ├── src/                  **测试替身**：模拟引擎 + 模拟 LLM（产品默认走真引擎 `MIAO_ENGINE_PROTOCOL=real`）
-│   └── scripts/              `setup-engine.mjs` / `install-engine-deps.mjs`（本机环境引导）｜`fetch-models.mjs` 与 `child-watch.mjs` 均为 **Node 对照端**（产品主路径分别是 Rust `boxsvc --fetch-models`(A3d) / `boxsvc --child-watch`(A3c)；`child-watch.mjs` 仍被 `service/src/settings/llm-supervisor.mjs` 引用）
+│   └── scripts/              `setup-engine.mjs` / `install-engine-deps.mjs`（本机环境引导）｜`fetch-models.mjs` 与 `child-watch.mjs` 均为 **Node 对照端**（产品主路径分别是 Rust `boxsvc --fetch-models`(A3d) / `boxsvc --child-watch`(A3c)；`child-watch.mjs` 仍被 `service/src/settings/llm-supervisor.mjs` 引用）｜`runtime-root.mjs` = 装配脚本共用的**运行时落点**单一事实源（B1）
 ├── e2e/          **全部验收与取证脚本**（纯 Node 零依赖；一条命令一组断言，正向与反证成对）
 │   ├── *.mjs                  生命周期 / 端到端 / 截图取证 / 文档与结构对账
 │   ├── service/               box-service 侧（`selftest.mjs` = A 组契约自测 · `stall-guard-check.mjs` = U10② 取证）
@@ -48,7 +48,7 @@ miao-dock/
 ├── docs/         事实源与取证：`dev-plan.md`（方案与判据）· `spec-notes.md`（**台账：裁定与偏离留痕**，D-01~D-136）· `spec-notes-1.md`（**台账续篇，D-137 起新条目写这里**）· `refs/`（入库的图与报告）
 ├── test-manga/   本机验收素材：真实漫画（**不入库**）
 ├── test-music/   本机验收素材：音乐（**不入库**）
-├── runtimes/     **真引擎本机资产**：Python venv + 模型权重 + llama.cpp（**不入库**，清单见 `engine/VERSIONS.lock`）
+├── runtimes/     **开发机遗留的引擎资产目录**（**不入库**）：B1 起产品的默认落点已搬到 `<appData>/runtimes/manga-translator/`；这里只在用 `MIAO_RUNTIME_ROOT=<repo>/runtimes` 显式覆盖时才被读到
 ├── vendor/       参考实现切片（只读，**不入库**）
 ├── .tmp/         **全仓唯一的临时落盘目录**（**不入库**）：`e2e/` · `selftest/` · `models/` · `engine-test/`
 ├── AGENTS.md     AI 协作上下文入口（任何工具进仓库先读它）
@@ -75,7 +75,8 @@ miao-dock/
 
 ## 快速开始（装环境 → 装配引擎 → 启动）
 
-> **产品默认走真引擎**（`MIAO_ENGINE_PROTOCOL=real`）：`npm run app` 起的链路需要 `runtimes/`（按平台、**不入库**，见 `engine/VERSIONS.lock`）。
+> **产品默认走真引擎**（`MIAO_ENGINE_PROTOCOL=real`）：`npm run app` 起的链路需要**引擎运行时**（按平台、**不入库**，见 `engine/VERSIONS.lock`）。
+> 落点固定在**平台应用数据目录**下的 `runtimes/manga-translator/`（macOS `~/Library/Application Support/`、Windows `%LOCALAPPDATA%\`、Linux `~/.local/share/`）—— 与**装到哪个盘**无关，打包后才能找到（B1）。
 > 只想跑前端 / 服务、不碰引擎：用下面 §开发 里的 `MIAO_ENGINE_PROTOCOL=mock` 快回路。
 
 ### 依赖总览
@@ -85,7 +86,7 @@ miao-dock/
 | 跑服务 / 脚本 | **Node ≥ 20**（见 `package.json` 的 `engines`） | 服务、引擎脚本、全部验收脚本都是纯 Node |
 | 构建桌面端 | **Rust 工具链**（rustup / cargo）+ 平台 C 工具链 | Tauri v2 需要 cargo + 系统链接器 |
 | 运行桌面端 | macOS 自带 WebKit · Windows **WebView2** | Win11 自带；Win10 常见随 Edge 已装，缺则装 Evergreen Runtime |
-| **真翻译引擎** | ① Python 3.11 运行时 ② venv + 依赖 ③ 模型权重 ④ llama.cpp 二进制 | 全落在 `runtimes/`（**不入库**），由本节脚本装配 |
+| **真翻译引擎** | ① Python 3.11 运行时 ② venv + 依赖 ③ 模型权重 ④ llama.cpp 二进制 | 全落在 `<appData>/runtimes/manga-translator/`（**不入库**），由本节脚本装配 |
 
 ### 一、装核心依赖
 
@@ -114,14 +115,18 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # 装完确保 
 > macOS：把 `export PATH="$HOME/.cargo/bin:$PATH"` 加进 `~/.zshrc` 再 `source`；
 > Windows：重开终端，或在「系统属性 → 环境变量」里把 `%USERPROFILE%\.cargo\bin` 补进 `Path`。
 
-### 二、装配翻译引擎（`runtimes/`，四条命令按序、幂等）
+### 二、装配翻译引擎（`<appData>/runtimes/manga-translator/`，四条命令按序、幂等）
 
 ```bash
-npm run setup:engine     # ① Python 3.11 运行时 + venv（+ 引擎源码）→ runtimes/manga-translator/
+npm run setup:engine     # ① Python 3.11 运行时 + venv（+ 引擎源码）→ <appData>/runtimes/manga-translator/
 npm run deps:engine      # ② 往 venv 里装引擎依赖（平台差异见下）
 npm run fetch:models     # ③ 下模型权重 + llama.cpp 运行时归档
 npm run extract:models   # ④ 解包归档 → bin/llama/llama-b11417/llama-server[.exe]
 ```
+
+> **落点**：默认 `<appData>/runtimes/manga-translator/`（B1 起与产品同源，装配与读取不可能再分叉）。
+> 要挪地方用 `MIAO_RUNTIME_ROOT`（改运行时根本身）或 `MIAO_MODEL_ROOT`（只改模型根，语义 = `…/manga-translator`）。
+> 换机重装 = 重跑本节四条命令 —— 这套资产**不入库**，也不随安装包分发。
 
 **② 的平台差异 —— 唯一不能"一条命令通吃"的一步：**
 
@@ -129,19 +134,20 @@ npm run extract:models   # ④ 解包归档 → bin/llama/llama-b11417/llama-ser
   换机排障：`node engine/scripts/install-engine-deps.mjs --print-env` 会打印探测到的 MSVC / SDK 路径。
 - **macOS**：该脚本是 Windows 专用，手动装：
   ```bash
-  runtimes/manga-translator/venv/bin/pip install -r runtimes/manga-translator/src/requirements.txt
+  RT="$HOME/Library/Application Support/runtimes/manga-translator"
+  "$RT/venv/bin/pip" install -r "$RT/src/requirements.txt"
   ```
   ⚠️ `pydensecrf`（requirements 里那行 GitHub 直链）是**移动靶**：上游已把模块级常量迁进了枚举，而引擎源码仍用旧写法 ⇒ 会在**掩码细化**一步报 `AttributeError: ... has no attribute 'DIAG_KERNEL'`（检测 / OCR / 翻译都已跑完才炸，易误判成"翻译坏了"）。命中时按 `engine/scripts/install-engine-deps.mjs` 的 `patchPydensecrfCompat()` 同一原理，把枚举成员回填成模块级同名常量（Windows 脚本自动做，macOS 需手动）。
 
 > **版本与落点以 `engine/VERSIONS.lock` 为准**：§3 = macOS，§6 = Windows（含真机实测与三个必踩坑）。
-> `runtimes/` 按平台且**不入库** —— 换机重装 = 重跑本节四条命令。
+> `<appData>/runtimes/` 按平台且**不入库** —— 换机重装 = 重跑本节四条命令。
 
 ### 三、启动
 
 ```bash
 cd app && npm install && cd ..
 npm run app                             # 真引擎（默认）：python main.py(8000) + 执行器(8001) + llama-server(8080)
-MIAO_ENGINE_PROTOCOL=mock npm run app   # 替身快回路：不需要 runtimes/
+MIAO_ENGINE_PROTOCOL=mock npm run app   # 替身快回路：不需要引擎运行时
 ```
 
 ## 开发
@@ -183,13 +189,13 @@ npm run check:ia              # IA 结构 32 条（侧栏两级 / 视图 Tab / �
 npm run check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
 npm run check:quit            # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW / 前端不静默 / Windows signal_tree 无条件 /F）
 npm run check:autostart       # 翻译服务「自动启动 / 手动启停」根因钉子 18 条 / 反证 19 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / effect 依赖不含 status / stopped 给「启动」/ 服务实现默认档 = Rust / default-run 指向真实 bin；不起进程）
-npm run check:engine-client   # 翻译引擎适配层 50 条 / 反证 12 条（真协议用 openapi 快照「假引擎」，秒级可复跑）
+npm run check:engine-client   # 翻译引擎适配层 50 条 / 反证 12 条（真协议用 openapi 快照「假引擎」，秒级可复跑；L4 要引擎装在默认落点，本机只有仓库 runtimes/ 时用 MIAO_RUNTIME_ROOT 指过去）
 npm run check:models          # S3 模型下载器 **双靶** 37×2 = 74 条 / 反证 6×2 = 12 条（本地 Range 夹具源：中断续传 / 服务端不支持 Range / 篡改一字节 / 换版本重链 / HF 缓存布局，秒级）。A3d 两靶同跑：Node 对照端 + Rust `boxsvc --fetch-models`（产品主路径）；反证开关走子进程 env
 npm run check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）
 npm run check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run check:contract        # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status 77 条（反证：check:contract:refute）
-npm run check:music           # 音乐平台 / 播放模式五档 / 心动模式 / 播放列表入口与抽屉 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 227 条（反证：check:music:refute，212 条）
-npm run check:settings        # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3 裁定结果 + ④ 功能梳理（侧栏标签 / 存储占用 / 第三方许可 / def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染 180 条（反证：check:settings:refute，127 条）
+npm run check:music           # 音乐平台 / 播放模式五档 / 心动模式 / 播放列表入口与抽屉 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 228 条（反证：check:music:refute，212 条）
+npm run check:settings        # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3 裁定结果 + ④ 功能梳理（侧栏标签 / 存储占用 / 第三方许可 / def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染 176 条（反证：check:settings:refute，127 条）
 npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 看图缩放 / 样式分层 45 条（反证：check:units:refute）
 npm run check:stall           # U10② 引擎卡死：「静默有上界 + 每次尝试留痕 + 进行中落盘」7 条 / 反证 3 条（mock 引擎对指定 seq「永不回包」）
 npm run check:retry           # 队列「重试」任务身份：复用**同一** taskId / 不冒历史行 + 翻译方向贯通 10 条 / 反证 7 条（mock 引擎 + 真服务子进程）
@@ -200,13 +206,16 @@ npm run check:translate      # ver2.2 在线翻译服务（有道智云）：签
 npm run check:docs            # 文档 ↔ 实现一致性：条数对账 / 引用的命令存在 / 禁词 0 命中 / 分组覆盖 16 条
 npm run check:bundle          # 打包配置钉子 6 条 / 反证 7 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip`；**W6** 必需资产条目在且 src 真实存在；源码级，不起进程）
 npm run check:resources       # 随包资源寻址 **A1/A2** 三环境取证 8 条 / 反证 4 条（dev 态不误报 · 打包齐备取资源目录 · 打包缺失报 `RESOURCE_MISSING` · 优先级 · 必需资产交叉验证 · 源码钉）
+npm run check:packaged        # **A4 打包后冒烟**：真实安装包三层取证 9 条（nightly 层；NSIS 静默安装 → `--check-assets` → 起服务打 `/health` + mock 替身 + 启动配方）
+npm run check:runtime-probe   # **B2 引擎运行时四项只读检测** 26 条 / 反证 2 条（`GET /api/v1/engine/runtime`；缺哪一项 + `detail` 必带绝对路径）
+npm run check:path-single-source # **B3 检测与启动同源** 5 条 / 反证 1 条（`/engine/runtime` 的 `python.path` vs `--print-launch-plan` 的 `engine.cmd[0]` 逐字节比对）
 ```
 
 **F 组「服务 Rust 化」的同源对拍钉子**（F0–F5 已全部完成，见 `docs/packaging-local-engine-dev-plan.md`）——
 每组都**双靶子**跑同一份断言：`MIAO_SERVICE_IMPL=node` 吃 `service/src/server.mjs`，`=rust` 吃 `target/debug/boxsvc`：
 
 ```bash
-npm run check:paths          # F2 路径解析与 config.mjs 逐字节对拍 3 条 / 反证 3 条
+npm run check:paths          # F2 路径解析与 config.mjs 逐字节对拍 5 条 / 反证 5 条（13 键快照 + B1 的 appData 落点 + B1 收尾的装配脚本同源）
 npm run check:store# F3  任务库内核对拍 24 条 / 反证 24 条（serde 字段声明序须逐字复刻 Node 键序）
 npm run check:store-exec     # F3-b 执行/队列对拍 74 条 / 反证（7 场景连定义都单源）
 npm run check:engine-parity  # F4 引擎协议/配方层对拍 24 条 / 反证
@@ -258,17 +267,18 @@ npm run selftest:app:e11:real    # E11 三进程树回收 + E1 生效参数快�
 
 **🚧 未做 / 未验证（如实登记）**
 
-- 🟡 **打包分发（G-13）：服务栈已能随包，但**从未在真实安装产物上冒烟过**。
+- 🟡 **打包分发（G-13）：服务栈已能随包，A4 起**第一次在真实安装产物上冒烟过**。
   **Windows 侧已能产出 NSIS 安装包**（`tauri.windows.conf.json` 平台分叉，`npm run check:bundle` 钉住；macOS 包型仍是 `app` + `dmg`，未动）。
   服务栈侧：F 组已把服务全部搬进 Rust（`bundle.resources` **不需要** `service/` —— W5 明确禁止），
   A1 让 Rust 按资源目录寻址（`paths::resource_dir()`，release 构建生效）、A2 把必需的引擎资产
   （`models.manifest.json`）打进包 —— 两者由 `npm run check:resources` 三环境取证、`check:bundle` W6 钉住。
-  ⚠️ **仍未验证**：`npm run app:build` 产出的**真实安装包**从未跑过一次冒烟（A4 待办），
-  所以"装完能起服务"目前只有**配置级与寻址级**证据，没有产物级证据。
+  **A4 冒烟**（`npm run check:packaged`，nightly 层）：对 `npm run app:build` 产出的**真实安装包**做
+  NSIS 静默安装 → `boxsvc --check-assets` → 起服务打 `/health` + mock 替身 + 启动配方，三层取证 9 条。
+  ⚠️ **仍未验证**：macOS 真机安装（本机只有 Windows）；引擎运行时本身**不随包**（用户自装，B1/B2）。
 - **Windows 进程树回收三项仍 `unverified`**：Job Object / 无孤儿 `llama-server.exe` / `taskkill /T`（Rust 侧，D-85 只跑了引擎侧 S1）。
 - **汽水音乐平台延后**（PD-1 / D-23）：Windows-only 平台耦合 + 依赖仓外二进制签名器；代码保留、不排首批。
 - **音乐模块真机未验证项**：Radix 弹层观感 · 音频代理播放 · 皮肤观感（断言只覆盖结构与接线）。
 - **G-18 遗留**：Windows 无 macOS `Transparent` 标题栏等价物（本机走 `backgroundColor`），**未装机验证**。
 - **引擎 `pydensecrf` 的 GitHub 直链未钉到具体 commit**（移动靶，见上「快速开始」②）。
 
-> 🔴 **引擎栈模式默认 `real`**：`npm run app` 起的**已经是真引擎**（`python main.py` + `llama-server`，需要 `runtimes/`，见 `engine/VERSIONS.lock`）。模拟引擎只在测试里被显式注入（`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs` / `check:e5e6` / `check:contract`）。**本机没拉引擎（`runtimes/` 不在）时产品链路起不来** —— 这也是 G-13 未做的一部分。
+> 🔴 **引擎栈模式默认 `real`**：`npm run app` 起的**已经是真引擎**（`python main.py` + `llama-server`，需要 `<appData>/runtimes/manga-translator/`，见 `engine/VERSIONS.lock`）。模拟引擎只在测试里被显式注入（`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs` / `check:e5e6` / `check:contract`）。**本机没拉引擎（运行时目录不在）时产品链路起不起来** —— 缺哪一项由 `GET /api/v1/engine/runtime` 逐项报出（B2）。

@@ -37,6 +37,13 @@ npm run app                         # ③ 起 dev（tauri dev）
 ⚠️ **第 ② 步不能跳**。基线不绿时你分不清哪条红是自己引入的——本仓的检查条数是写死的
 （`AGENTS.md` §3 有清单），对不上就说明基线已经被动过。
 
+> **真引擎不在仓库里**：`npm run app` 默认走 `MIAO_ENGINE_PROTOCOL=real`，要的是
+> `<appData>/runtimes/manga-translator/`（macOS `~/Library/Application Support/`、Windows `%LOCALAPPDATA%\`、
+> Linux `~/.local/share/`）下的 Python venv + 依赖 + 模型权重 —— **与装到哪个盘无关**（B1）。
+> 装配：`npm run setup:engine && npm run deps:engine && npm run fetch:models && npm run extract:models`
+> （README §二）。不想碰引擎就用 `MIAO_ENGINE_PROTOCOL=mock npm run app` 跑替身快回路。
+> 装没装齐、缺哪一项：`GET /api/v1/engine/runtime`（B2）。
+
 ## 3. 常用命令（按耗时排）
 
 **秒级 · 源码级（只读源码/配置，不起进程）** —— 改完必跑：
@@ -50,12 +57,19 @@ check:bundle  check:resilience  check:layering  check:quit  check:autostart
 
 ```
 selftest  check:contract  check:e10  check:e4  check:e8
+check:paths  check:runtime-probe  check:path-single-source   # B1/B2/B3：落点 · 就绪检测 · 同源
 ```
 
 **分钟级 · 反证轮** —— 只有**改了断言本身**才跑（证明断言咬的是机制，不是碰巧绿）：
 
 ```
 任意 check 加 :refute，如 npm run check:music:refute
+```
+
+**nightly · 打包后冒烟** —— 只有 `npm run app:build` 产出真实安装包后才跑（A4）：
+
+```
+check:packaged          # 静默安装 → 资产自检 → 起服务打 /health + mock 替身 + 启动配方
 ```
 
 **前端**：`cd app && npx tsc --noEmit && npx vite build`

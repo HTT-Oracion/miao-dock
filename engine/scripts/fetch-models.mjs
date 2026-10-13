@@ -17,7 +17,7 @@
  *    引擎源码树 `src/models/` 里那几份只是硬链接；`src/` 被换掉后跑这一条即可恢复，
  *    **不需要重下几个 GB**（依据与理由见 manifest 的 linkNote）。
  *
- * 环境变量：MIAO_MODEL_ROOT 覆盖模型根目录（默认 runtimes/manga-translator/）
+ * 环境变量：MIAO_MODEL_ROOT 覆盖模型根目录（默认 <appData>/runtimes/manga-translator/）
  */
 
 import fs from 'node:fs';
@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 import { ensureModels, verifyModels, verifyHfCache, linkModels, matchesPlatform, ModelStoreError } from '../model-store.mjs';
+import { runtimesDir } from './runtime-root.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
@@ -90,7 +91,9 @@ async function main() {
   }
 
   const manifestPath = args.manifest || DEFAULT_MANIFEST;
-  const ROOT = args.root || process.env.MIAO_MODEL_ROOT || path.join(REPO, 'runtimes', 'manga-translator');
+  // 🔴 B1：与服务同源（`config.mjs` 的 `engineModelDir` 注释同样要求这一点）——
+  //    一边读仓库 `runtimes/`、一边读 `<appData>/runtimes/` 会「两边都报成功」。
+  const ROOT = args.root || process.env.MIAO_MODEL_ROOT || runtimesDir();
   const sink = makeProgressSink(args.progressLog);
   const writeReport = (payload) => {
     if (args.report) fs.writeFileSync(args.report, `${JSON.stringify(payload, null, 2)}\n`);

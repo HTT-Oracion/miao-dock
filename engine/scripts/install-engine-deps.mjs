@@ -28,11 +28,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '..', '..');
-const RT = path.join(ROOT, 'runtimes', 'manga-translator');
+import { runtimesDir } from './runtime-root.mjs';
+
+// 🔴 B1：落点与产品同源（`<appData>/runtimes/manga-translator`），不再锚仓库根。
+const RT = process.env.MIAO_MODEL_ROOT || runtimesDir();
 const VENV_PY = path.join(RT, 'venv', 'Scripts', 'python.exe');
 const SRC = path.join(RT, 'src');
 const REQ = path.join(SRC, 'requirements.txt');

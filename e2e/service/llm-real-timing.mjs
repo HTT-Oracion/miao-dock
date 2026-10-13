@@ -14,7 +14,8 @@
  *   ③ `stop()` 之后**进程真的没了**（而不是只关了个句柄）—— 内存回落是它的外部证据。
  *
  * 用法：`node e2e/service/llm-real-timing.mjs`
- * 约束：只读本仓 `runtimes/` 下的二进制与权重；只绑 127.0.0.1；结束一定停进程。
+ * 约束：只读**产品落点**（B1 起为 `<appData>/runtimes/manga-translator/`，经 `resolveLlmLaunch()` 解析）
+ *       下的 llama.cpp 二进制与权重；只绑 127.0.0.1；结束一定停进程。
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';

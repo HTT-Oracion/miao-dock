@@ -29,8 +29,11 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
+import { runtimesDir } from '../../engine/scripts/runtime-root.mjs';
+
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
-const RT = path.join(ROOT, 'runtimes', 'manga-translator');
+// 🔴 B1：真机取资产的落点与产品同源（`<appData>/runtimes/manga-translator`）。
+const RT = process.env.MIAO_MODEL_ROOT || runtimesDir();
 const SRC = path.join(RT, 'src');
 // Windows 是 venv/Scripts/python.exe，POSIX 是 venv/bin/python
 const VENV_PY = process.platform === 'win32'

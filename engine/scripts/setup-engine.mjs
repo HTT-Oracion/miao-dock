@@ -2,10 +2,10 @@
 /**
  * setup-engine.mjs —— 引擎运行时装配（Python 解释器 + 引擎源码）
  * =============================================================================
- * 只做「manifest 管不到的那几件事」：
- *   · Python 解释器（python-build-standalone）→ runtimes/manga-translator/python-3.11/
- *   · venv（用上面那个解释器建）            → runtimes/manga-translator/venv/
- *   · 引擎源码（上游 commit 归档）        → runtimes/manga-translator/src/
+ * 只做「manifest 管不到的那几件事」（落点 = `<appData>/runtimes/manga-translator/`，B1）：
+ *   · Python 解释器（python-build-standalone）→ …/python-3.11/
+ *   · venv（用上面那个解释器建）            → …/venv/
+ *   · 引擎源码（上游 commit 归档）        → …/src/
  *   · 源码补丁（幂等，只改我们自己发现的缺陷，见 patchEngineSource）→ 同上 src/
  * 模型权重 / llama.cpp 二进制走 `engine/scripts/fetch-models.mjs`（manifest 是唯一清单）。
  *
@@ -19,7 +19,8 @@
  *   node engine/scripts/setup-engine.mjs --check    # 只报告现状，不下载
  *
  * 环境变量：
- *   MIAO_MODEL_ROOT   模型根目录（默认 runtimes/manga-translator）
+ *   MIAO_MODEL_ROOT   模型根目录（默认 <appData>/runtimes/manga-translator）
+ *   MIAO_RUNTIME_ROOT 覆盖运行时根本身（默认 <appData>/runtimes）
  *   MIAO_PY_URL / MIAO_SRC_URL  覆盖下载地址（换镜像用）
  *
  * ⚠️ 幂等：目标目录已存在且非空则跳过；`--force` 才重下。
@@ -29,11 +30,13 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const REPO = path.resolve(HERE, '..', '..');
-const RT = process.env.MIAO_MODEL_ROOT || path.join(REPO, 'runtimes', 'manga-translator');
+import { runtimesDir } from './runtime-root.mjs';
+
+// 🔴 B1：落点与产品同源（`<appData>/runtimes/manga-translator`），不再锚仓库根 ——
+//    装配脚本自己写死 `<repo>/runtimes` 会让「装到 A、读到 B」，且两边都不报错。
+const RT = process.env.MIAO_MODEL_ROOT || runtimesDir();
 
 /** 与 engine/VERSIONS.lock §2 / §1 对应（换版本改这两处 + 那份 lock） */
 const PY_VERSION = '3.11.17';

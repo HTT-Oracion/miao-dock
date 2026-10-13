@@ -25,7 +25,7 @@
  *
  * 约束：纯 Node、零依赖；不写用户目录（临时文件落 os.tmpdir）；反证轮结束**必须**按字节还原。
  */
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -38,7 +38,10 @@ import { encodePng } from '../../engine/src/png.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..', 'service'); // .../service
 const REPO = path.resolve(ROOT, '..');
-const RT = path.join(REPO, 'runtimes', 'manga-translator');
+// ⚠️ 这里的 `runtimes/` **不随 B1 搬**：`openapi.engine.json` 是 S1 手工导出的**夹具**
+//    （`.gitignore` 忽略整个 `runtimes/`，它不是 `setup-engine.mjs` 的安装产物）——
+//    夹具的落点与引擎运行时的落点是两件事，混为一谈会让「机器上只有其中一份」时静默读错。
+const RT = process.env.MIAO_MODEL_ROOT || path.join(REPO, 'runtimes', 'manga-translator');
 const SERVICE_SRC = path.join(ROOT, 'src');
 const ENGINE_CLIENT = path.join(SERVICE_SRC, 'engine-client.mjs');
 const CONFIG_FILE = path.join(SERVICE_SRC, 'config.mjs');
@@ -85,6 +88,30 @@ async function attempt(fn) {
 function errText(err) {
   if (!err) return '';
   return `抛错 ${err.code || err.name}: ${err.message}`;
+}
+
+/**
+ * 起一个子进程、收 stdout/stderr（**异步 spawn**）。
+ *
+ * 🔴 为什么不能用 `spawnSync`：本机沙箱下它**稳定**返回 `EBUSY`，且 `result.stdout` 是
+ *    `undefined`（不是 null）⇒ 直接 `.trim()` 会把整个脚本打崩，后面的断言一条都跑不到。
+ *    而反证轮收到的是「子进程没有结果行」，看上去像**破坏没生效**，实则是判据没机会跑。
+ *    本仓的既有纪律就是「e2e 一律异步 spawn」（见 AGENTS.md §5 / D-19 一类环境陷阱），
+ *    这个文件是漏网的那一个 —— 已按同一纪律改过来。
+ *
+ * `env` 传**完整**环境（调用方自己决定带哪些键）—— 内部不再 merge `process.env`，
+ * 否则「delete 掉某个 MIAO_* 再起进程」这类场景会被悄悄加回去。
+ */
+function runCapture(cmd, args, env) {
+  return new Promise((resolve) => {
+    const c = spawn(cmd, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    let err = '';
+    c.stdout.on('data', (d) => (out += d));
+    c.stderr.on('data', (d) => (err += d));
+    c.on('error', (e) => { err += String(e && e.message ? e.message : e); resolve({ stdout: out, stderr: err, code: null }); });
+    c.on('close', (code) => resolve({ stdout: out, stderr: err, code }));
+  });
 }
 /**
  * 断言 id 的格式是 `「短码」 描述`。反证轮的 `expect` 只写短码，
@@ -606,9 +633,9 @@ async function runPositive() {
       && snap.detectionSize === ENGINE_DEFAULT_DETECTION_SIZE,
       `detectionSize=${snap.detectionSize} default=${ENGINE_DEFAULT_DETECTION_SIZE}`);
     // 显式下发 ⇒ 快照跟着变。**另起进程**：env 在 `config.mjs` 顶层读，本进程改不动它。
-    const cExplicit = spawnSync(process.execPath, ['-e',
+    const cExplicit = await runCapture(process.execPath, ['-e',
       `import(${JSON.stringify(pathToFileURL(ENGINE_CLIENT).href)}).then(m=>console.log('DS='+JSON.stringify(m.engineConfigSnapshot().detectionSize))).catch(e=>console.log('ERR='+e.message));`,
-    ], { env: { ...process.env, MIAO_ENGINE_DETECTION_SIZE: '1024' }, encoding: 'utf8' });
+    ], { ...process.env, MIAO_ENGINE_DETECTION_SIZE: '1024' });
     check('C4 显式下发 `MIAO_ENGINE_DETECTION_SIZE=1024` ⇒ 快照报 1024（"不下发=用引擎默认"与"下发一个值"是两回事）',
       /DS=1024/.test(cExplicit.stdout), cExplicit.stdout.trim() || cExplicit.stderr.trim());
 
@@ -627,15 +654,15 @@ async function runPositive() {
     delete cleanEnv.MIAO_ENGINE_PROTOCOL;
     cleanEnv.MIAO_TOKEN = 'e'.repeat(64);
     cleanEnv.MIAO_STATE_DIR = path.join(TMP, 'state2');
-    const dDefault = spawnSync(process.execPath, ['-e',
+    const dDefault = await runCapture(process.execPath, ['-e',
       `import(${JSON.stringify(pathToFileURL(CONFIG_FILE).href)}).then(m=>console.log('PROTO='+m.config.engineProtocol)).catch(e=>console.log('ERR='+e.message));`,
-    ], { env: cleanEnv, encoding: 'utf8' });
+    ], cleanEnv);
     check('D1 **默认协议是 real**（生产不许走替身；跑测试才显式声明 mock）',
       /PROTO=real/.test(dDefault.stdout), dDefault.stdout.trim() || dDefault.stderr.trim());
 
-    const dBogus = spawnSync(process.execPath, ['-e',
+    const dBogus = await runCapture(process.execPath, ['-e',
       `import(${JSON.stringify(pathToFileURL(CONFIG_FILE).href)}).then(()=>console.log('NO_THROW')).catch(e=>console.log('THREW:'+e.message));`,
-    ], { env: { ...cleanEnv, MIAO_ENGINE_PROTOCOL: 'bogus' }, encoding: 'utf8' });
+    ], { ...cleanEnv, MIAO_ENGINE_PROTOCOL: 'bogus' });
     check('D2 协议取值非法 → **启动即抛错**（不静默回退：静默回退会让"以为在测 mock、其实走了 real"变成假绿）',
       /THREW:.*取值非法/.test(dBogus.stdout), dBogus.stdout.trim() || dBogus.stderr.trim());
 
@@ -663,14 +690,11 @@ async function runPositive() {
     let mFail = 2;
     let mDetail = '模拟引擎未就绪';
     if (mockReady) {
-      const child = spawnSync(process.execPath, [import.meta.filename, '--mock-child'], {
-        env: {
-          ...process.env,
-          MIAO_ENGINE_PROTOCOL: 'mock',
-          MIAO_ENGINE_PORT: String(mockPort),
-          MIAO_ENGINE_PROBE_MS: '800',
-        },
-        encoding: 'utf8',
+      const child = await runCapture(process.execPath, [import.meta.filename, '--mock-child'], {
+        ...process.env,
+        MIAO_ENGINE_PROTOCOL: 'mock',
+        MIAO_ENGINE_PORT: String(mockPort),
+        MIAO_ENGINE_PROBE_MS: '800',
       });
       const line = (child.stdout || '').split('\n').find((l) => l.startsWith('[RESULT] '));
       if (line) {
@@ -845,7 +869,7 @@ async function runRefute() {
       }
       fs.writeFileSync(mut.file, txt.replace(mut.find, mut.replace));
 
-      const child = spawnSync(process.execPath, [import.meta.filename], { encoding: 'utf8' });
+      const child = await runCapture(process.execPath, [import.meta.filename], { ...process.env });
       const line = (child.stdout || '').split('\n').find((l) => l.startsWith('[RESULT] '));
       fs.writeFileSync(mut.file, original);
       record.done = true;
