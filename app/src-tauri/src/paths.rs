@@ -144,12 +144,15 @@ pub fn assets_report() -> serde_json::Value {
 
 // ------------------------------------------------------------------ 目录（契约 §2.1 / §7.1 / §7.5）
 
-/// 任务清单等运行期状态的位置：平台应用数据目录下的 `Box/state`。
-/// 契约 §7.5：**不放漫画目录内**（否则会被库扫描误读为用户内容）。
-pub fn default_state_dir() -> PathBuf {
+/// 平台的**应用数据目录**（`~/Library/Application Support` / `%LOCALAPPDATA%` / `~/.local/share`）。
+///
+/// 🔴 B1 起这是「状态目录」与「运行时目录」**共用的平台分叉事实源**：两者都挂在它下面
+///    （`<appData>/Box/state`、`<appData>/runtimes/manga-translator`）。写成两份分叉 ⇒
+///    将来只改一处 ⇒ 状态在 A 盘、运行时在 B 盘，而两处**都不报错**。
+fn app_data_dir() -> PathBuf {
     let home = home_dir();
     if cfg!(target_os = "macos") {
-        return home.join("Library").join("Application Support").join("Box").join("state");
+        return home.join("Library").join("Application Support");
     }
     if cfg!(target_os = "windows") {
         let base = std::env::var("LOCALAPPDATA")
@@ -157,9 +160,29 @@ pub fn default_state_dir() -> PathBuf {
             .filter(|s| !s.is_empty())
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join("AppData").join("Local"));
-        return base.join("Box").join("state");
+        return base;
     }
-    home.join(".local").join("share").join("Box").join("state")
+    home.join(".local").join("share")
+}
+
+/// 任务清单等运行期状态的位置：平台应用数据目录下的 `Box/state`。
+/// 契约 §7.5：**不放漫画目录内**（否则会被库扫描误读为用户内容）。
+pub fn default_state_dir() -> PathBuf {
+    app_data_dir().join("Box").join("state")
+}
+
+/// 🔴 B1：引擎运行时的**落点**（`<appData>/runtimes`）。
+///
+/// 为什么从仓库根搬到 appData：打包后 `repo_root()` 向上找不到同时含 `service/` 与 `engine/`
+/// 的目录（两者都不进包，见 A1/A2）⇒ 退回 cwd ⇒ 引擎路径算错。而 appData **始终可写**
+/// 且与安装位置无关 —— 这正是「引擎由用户自装」唯一稳定的锚点。
+pub fn default_runtime_root() -> PathBuf {
+    app_data_dir().join("runtimes")
+}
+
+/// 引擎运行时根（`<appData>/runtimes/manga-translator`）。
+pub fn runtimes_dir() -> PathBuf {
+    default_runtime_root().join("manga-translator")
 }
 
 /// 落盘根目录默认值：契约 §7.1 —— `~/Pictures/Box 漫画`。
@@ -219,32 +242,30 @@ pub fn resolve(p: PathBuf) -> PathBuf {
     normalize_lexical(&joined)
 }
 
-/// 生效的**引擎源码目录**（`MIAO_ENGINE_DIR` 覆盖，默认 `<仓库>/runtimes/manga-translator/src`）。
+/// 生效的**引擎源码目录**（`MIAO_ENGINE_DIR` 覆盖，默认 `<appData>/runtimes/manga-translator/src`）。
 ///
-/// 🔴 迁移期**逐字节复刻** `config.mjs` 的语义：`MIAO_ENGINE_DIR || resolve(PKG_DIR, '..', 'runtimes', …, 'src')`
+/// 🔴 B1 起默认值锚在 **appData 运行时根**（不再锚仓库根）：F5 后 `repo_root()` 在打包态
+///    必然算错（A1 已论证），而引擎是用户自装的，落点必须与安装位置无关。
+///
+/// 🔴 迁移期**逐字节复刻** `config.mjs` 的语义：`MIAO_ENGINE_DIR || <runtimesDir>/src`
 ///    —— **不做存在性判断**。任何"顺手加个 if is_dir() 回退"都是行为分叉：Node 不判断、
 ///    Rust 判断，遇到目录缺失时两边给出不同路径，而两边**都看起来在工作**（R1 的典型）。
-///    默认值要改（如改到 appData 用户自装目录）必须**两边同一次改**，不能只改一边。
+///    默认值要改（如改回仓库布局）必须**两边同一次改**，不能只改一边。
 pub fn engine_dir() -> PathBuf {
-    env_path("MIAO_ENGINE_DIR")
-        .unwrap_or_else(|| repo_root().join("runtimes").join("manga-translator").join("src"))
+    env_path("MIAO_ENGINE_DIR").unwrap_or_else(|| runtimes_dir().join("src"))
 }
 
-/// 生效的**引擎解释器**（`MIAO_ENGINE_PYTHON` 覆盖，默认 `<仓库>/runtimes/manga-translator/venv/{bin/python|Scripts/python.exe}`）。
+/// 生效的**引擎解释器**（`MIAO_ENGINE_PYTHON` 覆盖，默认 `<appData>/runtimes/manga-translator/venv/{bin/python|Scripts/python.exe}`）。
 ///
-/// 🔴 默认值锚在**仓库根**而不是 `engine_dir()` —— 复刻 `config.mjs` 的事实：
-///    它的 `defaultEnginePython()` 用的是 `PKG_DIR/..`，**不随 `MIAO_ENGINE_DIR` 变**。
+/// 🔴 默认值锚在**运行时根**而不是 `engine_dir()` —— 复刻 `config.mjs` 的事实：
+///    它的 `defaultEnginePython()` 用的是 `runtimesDir/venv`，**不随 `MIAO_ENGINE_DIR` 变**。
 ///    若这里跟着 `engine_dir()` 走，设了 `MIAO_ENGINE_DIR` 时两边就会给出不同的解释器路径
 ///    （检测说 A、启动用 B），而这正是 R1 要消灭的那类分叉。
 pub fn engine_python() -> PathBuf {
     if let Some(p) = env_path("MIAO_ENGINE_PYTHON") {
         return p;
     }
-    repo_root()
-        .join("runtimes")
-        .join("manga-translator")
-        .join("venv")
-        .join(venv_python_rel())
+    runtimes_dir().join("venv").join(venv_python_rel())
 }
 
 /// 生效的**模型根目录**（`MIAO_MODEL_ROOT` 覆盖，默认引擎目录上一级）。
@@ -358,6 +379,7 @@ pub fn snapshot() -> serde_json::Value {
         "idempotencyFile": s(idempotency_file()),
         "tokenFile": s(token_file()),
         "rootDir": s(root_dir()),
+        "runtimeRoot": s(default_runtime_root()),
         "engineDir": s(engine_dir()),
         "engineServerDir": s(engine_server_dir()),
         "enginePython": s(engine_python()),

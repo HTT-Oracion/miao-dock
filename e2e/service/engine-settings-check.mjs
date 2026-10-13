@@ -38,6 +38,7 @@
  * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（box-service 的段）。
  */
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
@@ -206,6 +207,42 @@ function writeFakeManifest(base, { fail = false } = {}) {
   // 成功夹具 = **真清单的一份拷贝**：模型都已就位 ⇒ 走 cached 复用，零网络、几百毫秒结束。
   fs.copyFileSync(path.join(ROOT, 'engine', 'models.manifest.json'), file);
   return file;
+}
+
+/**
+ * D 组的「成功夹具」：**自带一个已就位的微型模型根**。
+ *
+ * 🔴 B1 起不能只拷真清单了：模型根默认值从「仓库 runtimes/」搬到了 `<appData>/runtimes`
+ *    （打包后仓库根必然算错，A1 已论证），而 appData 那份在验收机上**是空的** ——
+ *    只拷清单 ⇒ 执行体真去下 294 MB ⇒ D4/D5 轮询超时，而且**往用户真实环境里写数据**。
+ *    验收夹具绝不允许碰用户目录（同 `MIAO_ROOT` / `MIAO_STATE_DIR` 一律指 TMP）。
+ *
+ * 做法：一条 1 字节的条目 + 预先写好且 sha256 正确的文件 ⇒ `ensureModels` 判"存在且哈希对"
+ * 就直接复用（不打网络），`--link` 也按 `linkBase` 建链。D 组验的是**状态机**（立即返回 /
+ * 409 / 终态 / tail 转发），下载正确性归 S3 的 `check:models` 双靶，故一条足够。
+ */
+function writeReadyModelRoot(base) {
+  const modelsRoot = path.join(base, 'models');
+  const destRel = 'fixture/dummy.bin';
+  const bytes = Buffer.from('fixture-not-real-weights');
+  fs.mkdirSync(path.join(modelsRoot, 'fixture'), { recursive: true });
+  fs.writeFileSync(path.join(modelsRoot, destRel), bytes);
+  const manifest = {
+    manifestVersion: 1,
+    files: [
+      {
+        id: 'fixture_dummy',
+        set: 'visual',
+        dest: destRel,
+        sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
+        sizeBytes: bytes.length,
+        url: 'https://fixture.invalid/dummy.bin',
+      },
+    ],
+  };
+  const manifestPath = `${base}.json`;
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 1));
+  return { manifestPath, modelsRoot };
 }
 
 function baseEnv(svcPort, stateDir, extra = {}) {
@@ -601,11 +638,13 @@ async function runPositive() {
   //   · 失败如实报失败，且失败之后还能重试
   //   · 执行体不在盘上时如实报错 + `runnerExists=false`（界面据此把按钮变灰）
   {
-    const fakeOk = writeFakeManifest(path.join(TMP, 'fake-dl-ok'));
+    const dlRoot = writeReadyModelRoot(path.join(TMP, 'dl-ready'));
     const [svcPort] = await freePorts(5060, 2);
     const stateDir = path.join(TMP, `state-dl-${svcPort}`);
     await withService(baseEnv(svcPort, stateDir, {
-      MIAO_ENGINE_PROTOCOL: 'mock', MIAO_MODEL_MANIFEST: fakeOk,
+      MIAO_ENGINE_PROTOCOL: 'mock',
+      MIAO_MODEL_MANIFEST: dlRoot.manifestPath,
+      MIAO_MODEL_ROOT: dlRoot.modelsRoot,
     }), `service-D-${svcPort}`, async (info) => {
       const noToken = await httpReq(info.port, 'POST', '/api/v1/engine/models/download', {
         headers: { 'Content-Type': 'application/json' }, body: Buffer.from('{}'),

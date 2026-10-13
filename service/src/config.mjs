@@ -162,18 +162,45 @@ export function parseSeqList(raw) {
 // ------------------------------------------------------------------ 目录（契约 §2.1 / §7.1 / §7.5）
 
 /**
+ * 平台的**应用数据目录**（`~/Library/Application Support` / `%LOCALAPPDATA%` / `~/.local/share`）。
+ *
+ * 🔴 B1 起这是「状态目录」与「运行时目录」**共用的平台分叉事实源**：两者都挂在它下面
+ *    （`<appData>/Box/state`、`<appData>/runtimes/manga-translator`）。写成两份分叉 ⇒
+ *    将来只改一处 ⇒ 状态在 A 盘、运行时在 B 盘，而两处**都不报错**。
+ *    与 Rust `paths::app_data_dir()` 逐字节对齐（`check:paths` 钉住）。
+ */
+function defaultAppDataDir() {
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support');
+  }
+  if (process.platform === 'win32') {
+    return process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+  }
+  return path.join(os.homedir(), '.local', 'share');
+}
+
+/**
  * 契约 §7.5 明确「任务清单**不放漫画目录内**」，位置固定为平台应用数据目录。
  * 注：契约原文写的产品目录名是 `Box`；本迭代遵循契约原文不改名（见 docs/spec-notes.md G-04）。
  */
 function defaultStateDir() {
-  if (process.platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'Application Support', 'Box', 'state');
-  }
-  if (process.platform === 'win32') {
-    const base = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-    return path.join(base, 'Box', 'state');
-  }
-  return path.join(os.homedir(), '.local', 'share', 'Box', 'state');
+  return path.join(defaultAppDataDir(), 'Box', 'state');
+}
+
+/**
+ * 🔴 B1：引擎运行时的**落点**（`<appData>/runtimes`）。
+ *
+ * 为什么从仓库根搬到 appData：打包后仓库根向上找不到同时含 `service/` 与 `engine/` 的目录
+ * （两者都不进包，见 A1/A2）⇒ 引擎路径算错。而 appData **始终可写**且与安装位置无关 ——
+ * 这正是「引擎由用户自装」唯一稳定的锚点。与 Rust `paths::default_runtime_root()` 同源。
+ */
+function defaultRuntimeRoot() {
+  return path.join(defaultAppDataDir(), 'runtimes');
+}
+
+/** 引擎运行时根（`<appData>/runtimes/manga-translator`）。 */
+function runtimesDir() {
+  return path.join(defaultRuntimeRoot(), 'manga-translator');
 }
 
 /** 契约 §7.1：macOS `~/Pictures/Box 漫画/`；Windows `%USERPROFILE%\Pictures\Box 漫画\` */
@@ -187,12 +214,15 @@ function defaultRootDir() {
 /**
  * 引擎 venv 里的 Python 解释器默认路径。
  *
+ * 🔴 B1 起默认值锚在 **appData 运行时根**（不再锚仓库根 `PKG_DIR/..`）：打包后仓库根必然算错，
+ *    而引擎是用户自装的，落点必须与安装位置无关。与 Rust `paths::engine_python()` 逐字节对齐。
+ *
  * 🔴 **venv 布局按平台分叉**：POSIX 是 `venv/bin/python`，Windows 是 `venv/Scripts/python.exe`。
  *    写死其中一个会让另一平台的引擎**起不来**，而且症状是"python 找不到"这种离根因极远的报错
  *    （`resolveEngineLaunch` 会拼出一条指向不存在文件的命令）。`MIAO_ENGINE_PYTHON` 可覆盖。
  */
 function defaultEnginePython() {
-  const venv = path.resolve(PKG_DIR, '..', 'runtimes', 'manga-translator', 'venv');
+  const venv = path.join(runtimesDir(), 'venv');
   return process.platform === 'win32'
     ? path.join(venv, 'Scripts', 'python.exe')
     : path.join(venv, 'bin', 'python');
@@ -285,9 +315,16 @@ export const PENDING_DIR = path.join(STATE_DIR, 'pending');
  */
 export const ROOT_DIR = path.resolve(process.env.MIAO_ROOT || defaultRootDir());
 
+/**
+ * 🔴 B1：引擎运行时根（`<appData>/runtimes`）。导出供 e2e 与 Rust `paths::default_runtime_root()`
+ *    逐字节对拍（`check:paths`）—— 引擎落点是「用户自装」的唯一锚点，两侧必须同源。
+ */
+export const RUNTIME_ROOT = defaultRuntimeRoot();
+
 /** 引擎源码根（`src/`）。`engineServerDir` 由它派生，避免 `MIAO_ENGINE_DIR` 覆盖后两者走散。 */
+// 🔴 B1 起默认值锚在 appData 运行时根（不再锚仓库根）：打包后仓库根必然算错（A1 已论证）。
 const ENGINE_DIR = process.env.MIAO_ENGINE_DIR
-  || path.resolve(PKG_DIR, '..', 'runtimes', 'manga-translator', 'src');
+  || path.join(runtimesDir(), 'src');
 
 // ------------------------------------------------------------------ 令牌（契约 §2.1）
 

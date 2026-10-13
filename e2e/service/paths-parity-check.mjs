@@ -72,6 +72,7 @@ const c = m.config;
 process.stdout.write(JSON.stringify({
   repoRoot: m.REPO_ROOT, pkgDir: m.PKG_DIR, stateDir: m.STATE_DIR, tasksStateDir: m.TASKS_STATE_DIR,
   idempotencyFile: m.IDEMPOTENCY_FILE, tokenFile: m.TOKEN_FILE, rootDir: m.ROOT_DIR,
+  runtimeRoot: m.RUNTIME_ROOT,
   engineDir: c.engineDir, engineServerDir: c.engineServerDir, enginePython: c.enginePython, engineModelDir: c.engineModelDir,
 }));
 `;
@@ -98,14 +99,49 @@ export function diffPaths(a, b) {
   return out;
 }
 
+/** 期望的应用数据目录（与两侧 `defaultAppDataDir` / `app_data_dir` 同一套平台分叉）。 */
+function expectAppData() {
+  const home = os.homedir();
+  if (process.platform === 'darwin') return path.join(home, 'Library', 'Application Support');
+  if (process.platform === 'win32') {
+    return process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+  }
+  return path.join(home, '.local', 'share');
+}
+
+/**
+ * B1 验收①：一份快照的引擎落点必须锚在 `<appData>/runtimes` 下。
+ * 返回不合规的条目数组（空 = 合规）。
+ */
+function appDataViolations(snap) {
+  const rt = path.join(expectAppData(), 'runtimes');
+  const venvRel = process.platform === 'win32'
+    ? path.join('Scripts', 'python.exe')
+    : path.join('bin', 'python');
+  const want = {
+    runtimeRoot: rt,
+    engineDir: path.join(rt, 'manga-translator', 'src'),
+    enginePython: path.join(rt, 'manga-translator', 'venv', venvRel),
+  };
+  const bad = [];
+  for (const [k, v] of Object.entries(want)) {
+    if (snap[k] !== v) bad.push(`${k}=${JSON.stringify(snap[k])} 期望 ${JSON.stringify(v)}`);
+  }
+  // 引擎路径不得留在仓库根下 —— 防默认值被悄悄改回 `repo_root()` 布局
+  if (snap.engineDir && snap.repoRoot && snap.engineDir.startsWith(snap.repoRoot)) {
+    bad.push(`engineDir 仍在仓库根下（${snap.engineDir}）`);
+  }
+  return bad;
+}
+
 // ------------------------------------------------------------------ 正向
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-paths-parity-'));
 const SCENARIOS = [
-  { id: 'PATH.default', label: '无覆盖时 11 个路径逐字节相同', env: {} },
+  { id: 'PATH.default', label: '无覆盖时 12 个路径逐字节相同', env: {} },
   {
     id: 'PATH.override',
-    label: 'env 覆盖后 11 个路径仍逐字节相同',
+    label: 'env 覆盖后 12 个路径仍逐字节相同',
     env: {
       MIAO_STATE_DIR: path.join(TMP, 'state'),
       MIAO_ROOT: path.join(TMP, 'root', 'Box 漫画'),
@@ -140,6 +176,21 @@ for (const sc of SCENARIOS) {
   check('PATH.keys — 两侧路径键集合完全一致', a.length > 0 && a.join(',') === b.join(','), { rust: a, node: b });
 }
 
+// PATH.appData（B1 验收①）：未设 `MIAO_*` 时引擎落点必须锚在 `<appData>/runtimes`，两侧都是。
+//    为什么单独一条：逐字节相同**不保证**落点正确 —— 两边一起锚在仓库根上同样"逐字节相同"，
+//    而打包后那就是错的（A1 已论证 `repo_root()` 在打包态算不出根）。
+{
+  const bad = [];
+  for (const [side, snap] of [['rust', rustDefault], ['node', nodeDefault]]) {
+    if (!snap) {
+      bad.push(`${side} 无快照`);
+      continue;
+    }
+    bad.push(...appDataViolations(snap).map((v) => `${side}: ${v}`));
+  }
+  check('PATH.appData — B1：未设 MIAO_* 时引擎落点在 <appData>/runtimes（两侧）', bad.length === 0, bad);
+}
+
 // ------------------------------------------------------------------ 反证
 if (REFUTE) {
   if (failed > 0) {
@@ -164,6 +215,21 @@ if (REFUTE) {
         const b = { ...nodeDefault };
         delete b.tokenFile;
         return diffPaths(rustDefault, b).some((x) => x.includes('Node 缺键 tokenFile'));
+      },
+    },
+    {
+      id: 'M4',
+      what: 'Node 侧默认值退回仓库布局（B1 的回归）',
+      run: () => {
+        const repoRt = path.join(nodeDefault.repoRoot, 'runtimes');
+        const repo = {
+          ...nodeDefault,
+          runtimeRoot: repoRt,
+          engineDir: path.join(repoRt, 'manga-translator', 'src'),
+          enginePython: path.join(repoRt, 'manga-translator', 'venv', 'Scripts', 'python.exe'),
+        };
+        // 必须同时让「同源」与「落点」两边都不成立 —— 只红一条说明另一条是死的
+        return appDataViolations(repo).length > 0 && diffPaths(rustDefault, repo).length > 0;
       },
     },
   ];
