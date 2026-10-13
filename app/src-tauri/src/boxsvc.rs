@@ -25,6 +25,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Router;
 
 pub mod backend;
+pub mod engine;
 pub mod store;
 
 use backend::LegacyBackend;

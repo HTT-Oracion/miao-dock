@@ -5813,3 +5813,26 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 **登记**：`package.json` 加 `check:store` / `check:store:refute`；`e2e/_check-registry.mjs` 加 `{id:'store', tier:'service', refute:true}`。`registry-check` 覆盖 **77** 项（原 75）。
 
 **验收（本轮实测）**：`check:store` 正向 **24/24**；`check:store:refute` **4 个变异全红**（M1 原子写退化 ⇒ 中断测试红 = F3 验收②的原话；M2 篡 Node `orderImages`；M3 篡 Rust `serializedTask.status`；M4 删 `views.progress.failed` 键）· `check:paths` 3/3 回归绿 · `cargo test --lib` **25/25** · `registry-check` 4/4（反证 4/4）· `boxsvc` 二进制编译通过。
+
+## D-140 · 服务运行时 Rust 化：F4 engine 耦合点落地（2026-10-13）
+
+**范围裁定（F4 拆两步，同 F3 纪律）**：`engine-client.mjs`（894 行）是「box-service ↔ 翻译引擎」的**唯一耦合点**（《04》§3.3），一半是**纯协议/配方**（启动配方、就绪档位、参数快照、代理旁路、HF 离线、结果流解析），一半是**网络 I/O + 执行态**（`translateImage` 的 real/mock HTTP、`probeEngine` 三重判定）。本轮只做 **F4-a 纯协议/配方层**（无网络、无子进程）：可调、可对拍、可反证。**F4-b（网络 I/O + 真正持有引擎子进程句柄的 supervisor）留待下轮。**
+
+**模块结构（`app/src-tauri/src/boxsvc/engine.rs` + `engine/selftest.rs`）**
+- 纯函数：`mime_of_ext` / `parse_result_stream`（**5 字节帧**：1 字节 code + 4 字节大端长度）/ `record_frame`（code 4=等待实例、1=阶段原话、3=排队位次、2=引擎报错）/ `engine_config_snapshot`（camelCase 7 键）/ `engine_local_no_proxy` / `hf_offline_env` / `engine_version`（读 manifest `engineCommit` 短 sha）/ `translation_snapshot_dir`·`weights_present` / `available_tiers`·`tier_model_path` / `resolve_engine_launch` / `resolve_llm_launch`（real+mock 分支）。
+- 常量：`ENGINE_DEFAULT_DETECTION_SIZE=2048` / `LLAMA_VERSION_DIR=llama-b11417` / `LLM_OWNER=service` / `TIER_LLM_MODELS`（仅 tiny 有权重，small/medium 显式 None ⇒ 调用方**必须报错，绝不回落 tiny**）。
+
+**🔴 跨层字段名漂移的挡板**：`resolve_engine_launch` 的 cmd 是 `python main.py --host …`（**不是** `-m server.main`：`from args import` 是平级相对导入，`-m` 必 `ModuleNotFoundError`）；`engine_config_snapshot` **发给引擎 snake_case、报给 Box camelCase**，两边从**同一处** `engine_config()` 派生。
+
+**🔴 三条「少一个键真机必挂」的启动 env（都在 Rust 侧复刻）**：① `NO_PROXY`/`no_proxy` 双写法并集（D-86：用户挂代理会把本机 8080 推理链路劫走）；② `PYTHONIOENCODING=utf-8`（D-88：中文 Windows 下 GBK 日文日志会打死读日志的一端）；③ `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`（B3/D-100：**只在权重在盘时才设**，否则堵死首次下载）。
+
+**同源机制（沿用 F3）**：`boxsvc --engine-selftest` 单源同吐 `pureInputs`（帧字节 / 无代理 env / HF 情形 / 启动 overrides）+ `pure`（Rust 输出）；`e2e/service/engine-parity-check.mjs` 里 **Node 吃 Rust 的输入**跑真 `engine-client.mjs` 再逐条比。
+- 🔴 **Node 侧要另起子进程**：`config.mjs` 在**模块加载期**读 env ⇒ 同一进程改不了协议（real/mock 各要跑一遍）⇒ `--report` 模式用子进程按指定协议重新加载，父进程只对拍（并写 `rust-<proto>.json` 传输入）。
+- 🔴 **结果流用伪引擎驱动**：`parseResultStream` 是 **private**（未导出）⇒ 只能经导出的 `translateImage` 观察。对拍脚本起一个只回**Rust 给的帧字节**的最小 HTTP 服务，跑真 `translateImage` 取 `{result 字节, ext, mime}` + `recentStageLog()`，与 Rust 的 `parse_result_stream`+`record_frame` 比。⇒ 一举钉住帧解析 + `sniffImageType` + `mimeOfExt` + 阶段日志四条。
+- **env 只比注入键**：Node 的 `env = {...process.env}` 有几百个键；对拍只取注入面（`PYTHONIOENCODING`/`SAKURA_API_BASE`/`MT_WEB_NONCE`/`HF_*`/no-proxy 合并值），规避 Windows env 大小写折叠与 `process.execPath` 等环境差异。
+
+**⚠️ 已知偏离（有意）**：① `default_models_ttl()` 从 env 近似（`MIAO_UNLOAD_NEVER`/`MIAO_IDLE_LLM_MS`/`MIAO_ENGINE_MODELS_TTL`），未读设置文件的 `idleVisionMin` —— 设置面迁移后对齐。② `take_chars` 按**码点**截断，JS 按 **UTF-16 码元**（星光面 emoji 会差；阶段名是 ASCII/CJK⇒等价），与 D-139 的 `localeCompare` 同类。③ mock 档 LLM 的 `cmd[0]`：Node 用 `process.execPath`，Rust 取 `MIAO_NODE_EXEC`（对拍时两边设成同一值）—— 真正单源在 F5 用打包的 node 路径。
+
+**登记**：`package.json` 加 `check:engine-parity` / `:refute`；`e2e/_check-registry.mjs` 加 `{id:'engine-parity', tier:'service', refute:true}`。`registry-check` 覆盖 **79** 项（原 77）。
+
+**验收（本轮实测）**：`check:engine-parity` 正向 **24/24**（real 13 + mock 11）· `--refute` **5 个变异全红**（M1 只给 Rust 换协议 ⇒ 与 Node 的 real 对不上；M2 篡启动 cmd 丢 `--use-gpu`；M3 篡注入 env；M4 删阶段日志行；M5 篡 `tierModelPath`）· `check:store` 24/24 · `check:paths` 3/3 回归绿 · `cargo test --lib` **35/35** · `registry-check` 4/4（反证 4/4）· `boxsvc` 编译通过。**F4-b 执行态（网络 I/O + supervisor 复用 `service.rs::signal_tree`/`no_tree_kill`）未做** —— F4 验收② 的「只杀主进程不杀进程组 ⇒ 端口占用断言变红」正落在 `service.rs::no_tree_kill` 反证开关上。

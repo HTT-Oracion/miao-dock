@@ -19,6 +19,12 @@ fn main() {
         println!("{}", miao_dock::boxsvc::store::selftest::report());
         return;
     }
+    // `--engine-selftest`：在**固定输入**下打印引擎耦合点的纯函数 / 启动配方 / 参数快照 / 结果流解析。
+    // 用途：e2e 做「Rust 与 Node 的 engine-client 同源」比对（F4 的钉子）—— 同样不起服务、不拉 node。
+    if std::env::args().any(|a| a == "--engine-selftest") {
+        println!("{}", miao_dock::boxsvc::engine::selftest::report());
+        return;
+    }
     let opts = miao_dock::boxsvc::Options::from_env();
     if let Err(e) = miao_dock::boxsvc::run_blocking(opts) {
         eprintln!("[box-service] boxsvc 启动失败：{e}");
