@@ -916,19 +916,43 @@ fn relay_lines<R: Read>(mut r: R, mut on_line: impl FnMut(String)) {
     }
 }
 
-/// 服务实现的**靶子**（F1）：`MIAO_SERVICE_IMPL=rust` ⇒ 起 Rust `boxsvc`（内部反代到 Node 遗留后端）；
-/// 否则起 Node `service/src/server.mjs`。
+/// 服务实现的**靶子**：`MIAO_SERVICE_IMPL=rust|boxsvc` ⇒ `boxsvc`；`=node` ⇒ Node
+/// `service/src/server.mjs`；**未设 ⇒ 默认 `boxsvc`（F5.8 起）**。
 ///
-/// 🔴 **默认 node**：打包（A2/A3）把 `boxsvc` 放进安装包之前，产品路径一律不动 ——
-///    这样「切实现」是一个**可回退**的开关（F 组的反代渐进要的正是它），而不是一次不可逆的迁移。
-///    与 e2e 共用同一个 `MIAO_SERVICE_IMPL` 名字是**刻意的**：app 与验收脚本切的是同一个东西。
+/// 🔴 **默认已翻转**：F1 过渡期默认 node（"打包把 boxsvc 放进安装包之前，产品路径一律不动"），
+///    而 F5 已把**全部** 44 条端点迁进 Rust（`routes::forwarded_count() == 0`，由
+///    `check:routes --final` 的完成门盯着）。此时默认仍是 node，等于"摘除 Node"只写在文档里
+///    —— 产品照旧起一份 Node 服务，正是计划文档 R3 说的那个形态。与 e2e 共用同一个
+///    `MIAO_SERVICE_IMPL` 名字是**刻意的**：app 与验收脚本切的是同一个东西。
+///
+/// 三档的分歧点在于**找不到 boxsvc 时怎么办**，两档刻意不同：
+///   · `=rust`（显式）⇒ **硬失败**。说了算数：显式切了却没生效、还悄悄换回 Node，
+///     会让"切实现"这件事彻底失去可观测性（`harness-check` 的 H5 钉的是同一条）。
+///   · 未设（默认）⇒ **退回 Node 并打印可见警告**。开发态 `cargo run --bin miao-dock`
+///     只构建了主 bin，`target/debug/` 里没有 `boxsvc` —— 这时硬失败会把
+///     "跑起来看看界面"变成"先读一篇构建说明"。⚠️ 但退回**绝不静默**：Node 是过渡依赖、
+///     将来从包里删掉，警告必须让人看得见"Rust 没生效以及为什么"。
 fn resolve_service_cmd() -> Result<Vec<String>, String> {
     let impl_ = std::env::var("MIAO_SERVICE_IMPL").unwrap_or_default();
     let impl_ = impl_.trim().to_ascii_lowercase();
-    if impl_ == "rust" || impl_ == "boxsvc" {
-        let bin = resolve_boxsvc()?;
-        return Ok(vec![bin.to_string_lossy().into_owned()]);
+    match impl_.as_str() {
+        "rust" | "boxsvc" => Ok(vec![resolve_boxsvc()?.to_string_lossy().into_owned()]),
+        "node" => node_service_cmd(),
+        // 未设（或无法识别的值）⇒ 默认 Rust；拿不到 boxsvc 才退回 Node（可见警告）。
+        _ => match resolve_boxsvc() {
+            Ok(bin) => Ok(vec![bin.to_string_lossy().into_owned()]),
+            Err(e) => {
+                // ⚠️ 退回**绝不静默**：Node 是过渡依赖、将来要从包里删掉，这条警告是人唯一
+                //    看得见"Rust 没生效、以及为什么"的地方（静默退回 = R3 的形态）。
+                eprintln!("[miao-dock] ⚠ 默认档应为 Rust boxsvc，但{e}；本次退回 Node。想让默认档跑起来：cargo build --bin boxsvc");
+                node_service_cmd()
+            }
+        },
     }
+}
+
+/// Node 服务入口（**过渡 / 对拍**用，非默认档）。
+fn node_service_cmd() -> Result<Vec<String>, String> {
     let entry = resolve_entry("service/src/server.mjs", "MIAO_SERVICE_ENTRY")?;
     Ok(vec!["node".into(), entry.to_string_lossy().into_owned()])
 }
@@ -953,7 +977,7 @@ fn resolve_boxsvc() -> Result<PathBuf, String> {
         }
     }
     Err(format!(
-        "找不到 {name}（MIAO_SERVICE_IMPL=rust 需要它）：先在 app/src-tauri 执行 `cargo build --bin boxsvc`，或设 MIAO_BOXSVC_BIN"
+        "找不到 {name}（Rust 服务实现需要它）：先在 app/src-tauri 执行 `cargo build --bin boxsvc`，或设 MIAO_BOXSVC_BIN"
     ))
 }
 

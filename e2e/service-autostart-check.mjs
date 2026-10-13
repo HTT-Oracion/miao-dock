@@ -67,6 +67,26 @@
  *   D3 `ipc.ts` 的 `serviceStart` / `serviceStop` 必须指到 `service_start` /
  *      `service_stop` 这两个真实命令名（指错名字 → invoke 落空，按钮点了没反应）。
  *
+ * ### 服务实现的**默认档**（service.rs · F5.8）
+ *   E1 未设 `MIAO_SERVICE_IMPL` ⇒ **默认 Rust boxsvc**（默认分支必须调到 `resolve_boxsvc`）。
+ *      退回 node 是"摘除 Node"只写在文档里的形态：产品照旧起一份 Node 服务 —— 功能照常、
+ *      e2e 全绿，而包里那份 Node 永远删不掉（计划文档 R3），验收标准①（转发数 = 0）
+ *      也永远只是 `routes.rs` 里的一行注释。
+ *
+ *   E2 默认档拿不到 boxsvc 时退回 Node **必须可见**（`eprintln!` 带原因 + 构建指引）。
+ *      静默退回会让"Rust 没生效"彻底不可观测 —— 而这正是 F5.8 想消灭的那种状态。
+ *
+ *   E3 显式 `MIAO_SERVICE_IMPL=rust` 仍**硬失败**（`resolve_boxsvc()?` 直接传播）。
+ *      "说了算数"：显式切了却没生效、还悄悄换回 Node，等于切实现这件事没有可观测性。
+ *      ⚠️ 与 E2 的分歧是**刻意的**：显式档硬失败、默认档可见退回（开发态只构建主 bin 时
+ *      `target/debug/` 里没有 boxsvc，硬失败会把"跑起来看界面"变成"先读构建说明"）。
+ *
+ *   E4 显式 `=node` 档仍可达（对拍 / 排障要能把靶子换回去），且 Node 入口只在
+ *      `node_service_cmd` 一处拼接 —— 两处各拼一份必然漂移。
+ *
+ *   E5 取值先 `trim` + 小写再比对（`RUST` / ` rust ` 必须算**显式**档）。少了它，
+ *      带空格的显式档会掉进默认档 —— 症状是"我明明设了 rust 却没按显式档报错"。
+ *
  * ## 反证轮（`--refute`）
  *   逐条把上面的写法改回缺陷形态 → 对应断言**必须变红** → 按字节还原。
  *
@@ -299,6 +319,51 @@ function runAll() {
       /export const serviceStop = \(\) => invoke<ServiceStatus>\('service_stop'\)/.test(ipc),
     '',
   );
+
+  // ---- E（F5.8）：服务实现的**默认档** ----
+  // 「默认仍是 node」是"摘除 Node"只写在文档里的形态：产品照旧起一份 Node 服务 —— 功能照常、
+  // e2e 全绿，而包里那份 Node 永远删不掉（计划文档 R3）。这五条钉住默认档的**成因**。
+  {
+    const body = fnBody(svc, 'fn resolve_service_cmd()');
+    const noBody = '未定位到 resolve_service_cmd 函数体';
+
+    check(
+      'E1',
+      '未设 `MIAO_SERVICE_IMPL` ⇒ **默认走 Rust**（默认分支必须调到 `resolve_boxsvc`，不是直接拼 Node 入口）',
+      /_ => match resolve_boxsvc\(\)/.test(body) && !/let entry = resolve_entry/.test(body),
+      body ? `走 resolve_boxsvc=${/_ => match resolve_boxsvc\(\)/.test(body)}` : noBody,
+    );
+
+    check(
+      'E2',
+      '默认档拿不到 boxsvc 时退回 Node **必须可见**（`eprintln!` 带「退回 Node」+ 构建指引，不静默换回）',
+      /eprintln!\(/.test(body) && /退回 Node/.test(body) && /cargo build --bin boxsvc/.test(body),
+      body ? `eprintln=${/eprintln!\(/.test(body)} 构建指引=${/cargo build --bin boxsvc/.test(body)}` : noBody,
+    );
+
+    check(
+      'E3',
+      '显式 `MIAO_SERVICE_IMPL=rust` 仍**硬失败**（`resolve_boxsvc()?` 直接传播，绝不悄悄落回 node）',
+      /"rust" \| "boxsvc" => Ok\(vec!\[resolve_boxsvc\(\)\?/.test(body),
+      body ? '' : noBody,
+    );
+
+    check(
+      'E4',
+      '显式 `=node` 档仍可达（对拍 / 排障要能把靶子换回去），且入口解析只有一处 `node_service_cmd`',
+      /"node" => node_service_cmd\(\)/.test(body) &&
+        /fn node_service_cmd\(\)/.test(svc) &&
+        /service\/src\/server\.mjs/.test(fnBody(svc, 'fn node_service_cmd()')),
+      body ? `node 档=${/"node" => node_service_cmd\(\)/.test(body)}` : noBody,
+    );
+
+    check(
+      'E5',
+      '`MIAO_SERVICE_IMPL` 取值先 `trim` + 小写再比对（`RUST` / ` rust ` 必须算**显式**档，而不是掉进默认档）',
+      /let impl_ = impl_\.trim\(\)\.to_ascii_lowercase\(\);/.test(body),
+      body ? '' : noBody,
+    );
+  }
 }
 
 // ------------------------------------------------------------------ 输出
@@ -415,6 +480,41 @@ const MUTATIONS = [
     find: "export const serviceStop = () => invoke<ServiceStatus>('service_stop');",
     replace: "export const serviceStop = () => invoke<ServiceStatus>('service_restart');",
     expect: ['D3'],
+  },
+  {
+    name: 'E1 默认档退回 node（"摘除 Node"只写在文档里 —— 产品照旧起一份 Node 服务）',
+    file: SERVICE_RS,
+    find: '        _ => match resolve_boxsvc() {',
+    replace: '        _ => node_service_cmd(),\n        _unreachable_arm: match resolve_boxsvc() {',
+    expect: ['E1'],
+  },
+  {
+    name: 'E2 退回 Node 改成**静默**（"Rust 没生效"再也看不见）',
+    file: SERVICE_RS,
+    find: '                eprintln!("[miao-dock] ⚠ 默认档应为 Rust boxsvc，但{e}；本次退回 Node。想让默认档跑起来：cargo build --bin boxsvc");',
+    replace: '                let _ = &e;',
+    expect: ['E2'],
+  },
+  {
+    name: 'E3 显式 rust 档也悄悄落回 node（"切了没生效"不可观测）',
+    file: SERVICE_RS,
+    find: '        "rust" | "boxsvc" => Ok(vec![resolve_boxsvc()?.to_string_lossy().into_owned()]),',
+    replace: '        "rust" | "boxsvc" => resolve_boxsvc().map(|b| vec![b.to_string_lossy().into_owned()]).or_else(|_| node_service_cmd()),',
+    expect: ['E3'],
+  },
+  {
+    name: 'E4 把显式 `=node` 档下线（对拍 / 排障再也没法换回靶子）',
+    file: SERVICE_RS,
+    find: '        "node" => node_service_cmd(),',
+    replace: '        "node" => Err("node 档已下线".to_string()),',
+    expect: ['E4'],
+  },
+  {
+    name: 'E5 取值不再 trim / 小写（`RUST` / ` rust ` 掉进默认档 —— "我明明设了"）',
+    file: SERVICE_RS,
+    find: '    let impl_ = impl_.trim().to_ascii_lowercase();',
+    replace: '    let impl_ = impl_;',
+    expect: ['E5'],
   },
 ];
 

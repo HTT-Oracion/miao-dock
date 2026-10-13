@@ -177,7 +177,7 @@ npm run capture               # 截图取证（需屏幕解锁；不满足条件
 npm run check:ia              # IA 结构 32 条（侧栏两级 / 视图 Tab / 设置两栏壳 / 小节分层 / 侧栏两套几何 C8d）
 npm run check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
 npm run check:quit            # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW / 前端不静默 / Windows signal_tree 无条件 /F）
-npm run check:autostart       # 翻译服务「自动启动 / 手动启停」根因钉子 12 条 / 反证 12 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / effect 依赖不含 status / stopped 给「启动」；不起进程）
+npm run check:autostart       # 翻译服务「自动启动 / 手动启停」根因钉子 17 条 / 反证 17 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / effect 依赖不含 status / stopped 给「启动」/ 服务实现默认档 = Rust；不起进程）
 npm run check:engine-client   # 翻译引擎适配层 50 条 / 反证 12 条（真协议用 openapi 快照「假引擎」，秒级可复跑）
 npm run check:models          # S3 模型下载器 38 条 / 反证 6 条（本地 Range 夹具源：中断续传 / 篡改一字节 / 换版本重链 / HF 缓存布局，秒级）
 npm run check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）

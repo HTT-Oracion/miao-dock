@@ -41,6 +41,15 @@
 | D-157 | 修 D-156 遗留三处断言失效 + 撤销并发改动 + 四文档核对结论 | e2e / 基建 |
 | D-158 | `server.mjs` 复用 `MAX_SEQ` + 新增 `check:docpaths` + `docs/dev-setup.md` | e2e / 基建 |
 | D-159 | `server.mjs` 路由：只把八条同形的 `/library/{name}/{action}` 收成表（含全表化不做的勘查结论） | service |
+| D-160 | 心动模式接入「智能播放」：`simi_song` 5 条 → 149 条 + eapi cookie 排序坑 | service |
+| D-161 | 台账编号碰撞认定：`D-137`~`D-143` 在两份台账里各有一份（新条目自 `D-161` 起） | docs |
+| D-162 | 服务运行时 Rust 化：F5 端点迁移收尾 + **摘除 Node**（转发数 = 0 的完成门） | engine / e2e |
+| D-163 | 服务运行时 Rust 化：F5.8 摘除遗留后端（`backend.rs` / `proxy()` 删除，只留 502 分支） | engine |
+| D-164 | `ensureToken()` 移植：摘除 Node 后**唯一**的令牌来源（空令牌是静默失败） | engine |
+| D-165 | `validateRoot()` 黑名单移植：Windows 名单原样缺失 ⇒ 这道校验在 Windows 形同虚设 | engine |
+| D-166 | ③ 懒加载被"诊断快照"挡下：去掉前置判据 + 在状态跃迁处发布快照 | engine |
+| D-167 | `check:contract` S5.3 的"读取时刻"假红：`updatedAt` 是**读时** `nowIso()` | e2e |
+| D-168 | 服务实现默认档翻转为 Rust（`resolve_service_cmd`）+ 两档不同的"找不到 boxsvc"语义 | app / engine |
 
 ---
 
@@ -1323,3 +1332,282 @@ QR 登录时用户 cookie 通常为空、行为不变。
   `check:contract` 77/0 · `check:docs` 15/2（存量，与本次无关）
 - `e2e/music-platform-check.mjs` 的 `CONTRACT.netease` 补登 `music_intelligence_list`
   （否则"命令被摘掉注册"这类回归没有任何断言能发现）
+
+---
+
+## D-161 · 台账编号碰撞：`D-137`~`D-143` 在两份台账里各有一份（新条目自 `D-161` 起）（2026-10-13）
+
+**发现**：写 F5 的条目时按本文件的规则"新增前先 `grep "^## D-" docs/spec-notes*.md | tail -3`"，
+发现 `D-137`~`D-143` **两份台账里都有一条**，且内容毫不相干：
+
+| 编号 | `docs/spec-notes.md` | `docs/spec-notes-1.md` |
+|------|----------------------|------------------------|
+| D-137 | 服务运行时 Rust 化：F0–F2 落地 | 歌词整行高亮去掉推进动画 |
+| D-138 | 迁移期两条本机环境纪律 | box-service 未捕获异常兜底 |
+| D-139 | 服务运行时 Rust 化：F3 store 内核 | 抽 `atomic-file.mjs` 底座 |
+| D-140 | 服务运行时 Rust 化：F4 engine 耦合点 | 接入 CI（双平台） |
+| D-141 | 服务运行时 Rust 化：F4-b1 引擎 HTTP | `image.mjs` 上移底座 |
+| D-142 | 服务运行时 Rust 化：F4-b2 LLM supervisor | 删 `SongMenu` 并入 `ContextMenu` |
+| D-143 | 服务运行时 Rust 化：F3-b store 执行 | 新增 `units/Modal` |
+
+**成因（按痕迹还原）**：本文件是"`spec-notes.md` 续篇、自 D-137 起顺延"——但 `spec-notes.md`
+在**同一时期**也被追加了 F 组的 `D-137`~`D-143`（F0/F2/F3/F3-b/F4/F4-b1/F4-b2 一轮一条）。
+两边的作者各自从 D-137 起数，谁都没看到对方已经占了号。
+
+**处置（只做认定，不做重编号）**：
+- 🔴 **不改旧编号**。两份台账同权（本文件规则第 2 条），而 `D-xxx` 已经被**文档、提交信息、
+  代码注释**大量引用（例：`grep -rn "D-13[7-9]" app/ e2e/` 命中一堆）。重编号会把这些引用
+  全部变成指向错误条目的**静默错链** —— 比"两条 D-139"更糟。
+- 🔴 **新条目自 `D-161` 起**（本文件最大编号 D-160 + 1）。`spec-notes.md` 侧不再追加 F 组条目
+  （F 组后续一律进本文件，避免再撞）。
+- 引用规则补一条（写给读者）：引 `D-137`~`D-143` 时**必须带上主题**（"D-139 store 内核"），
+  光写编号在这 7 个号上是**有歧义**的。
+- ⚠️ 未做：给 `spec-notes.md` 的 7 条加"（编号与续篇 D-137~D-143 碰撞，见 D-161）"的脚注 ——
+  动 7 条历史条目比留一条说明更容易出错；本条即为那份说明。
+
+**顺带修**：本文件索引表缺 `D-160` 一行（条目写了、索引没补），本次一并补上。
+
+---
+
+## D-162 · 服务运行时 Rust 化：F5 端点迁移收尾 + 摘除 Node（2026-10-13）
+
+**结果**：`routes.rs` 的 **44 条端点全部 `Tier::Migrated`**，`routes::forwarded_count() == 0`。
+F 组（服务 Rust 化）主线到此收口。
+
+**迁移分组与落地模块**（计划文档 F5 的顺序 `tasks → queue → library → translate → engine`）
+
+| 组 | 条数 | 落地位置 |
+|----|------|----------|
+| `tasks` / `queue` | 10 + 1 | `handlers.rs` 的 `tasks` / `queue` 段（读视图 + 写动作全部经 `store`） |
+| `library` | 22 | `handlers.rs` 的 `library` 段（列表/建库/看图/章节/续译/重译/重编号/元数据/封面/合并/揭示/删除/隐藏） |
+| `translate` | 5 | `handlers.rs` 的 `translate` 段 + `boxsvc/translate/` |
+| `engine` / `health` | 6 + 2 | `handlers.rs` 的 `engine`/`health` 段 + `boxsvc/engine/{state,profile,settings,model_status,tier_downgrade,idle_policy}.rs` + `sidecar.rs` |
+
+**F5 三条验收标准的「着力点」（关键是每条都有一处**会红**的地方）**
+
+1. **① 转发分支数 = 0** ⇒ `check:routes` 的 `ROUTES.count`（`forwarded[]` 长度 = `forwardedCount`）
+   + `--final` 完成门 `gateFinal(forwardedCount, injected)`。实测：正向 **9/9**、`--final` **10/10**，
+   打印 `ℹ 当前转发分支数 = 0`。
+2. **② 反证：故意漏摘一条** ⇒ `check:routes:refute` 的 **M1**。🔴 这里做了一次**加强**：
+   老版 M1 只调本文件里的 `gateFinal(forwardedCount, ['POST /api/v1/tasks'])` —— 那等于**自证**
+   （证的只是"本文件那个 `if` 会返回 false"），注入**从未进过 Rust**，`--list-routes` 报的
+   `forwardedCount` 会不会真涨、一点没验到。新版 M1 **真的去跑一遍**
+   `boxsvc --list-routes`（带 `MIAO_ROUTE_REFUTE`），断言 `forwardedCount === 2` 且两个 id 都在
+   `forwarded[]` 里、且完成门转红。实测 `--refute` **4/4 全红**。
+3. **③ `bundle.resources` 内不再有 `service/` 与 `node.zip`** ⇒ `check:bundle` 新增 **W5**
+   （基座 **与** windows 配置**两处**都不许出现，因为生效配置 = JSON Merge Patch(基座, windows)）
+   + 反证 **M5**（把 `resources` 写成 `["../service/", "../vendor/node.zip"]` ⇒ W5 必红）。
+   实测正向 **5/5**、`--refute` **5/5 全红**。
+   🔴 **判据取「配置」而不是「文件在不在」**：`vendor/node.zip` **从来就没有过**（D-08），
+   所以"文件不存在"是一条**永远绿的空断言**；真正能把它带进包里的**唯一途径**就是
+   `bundle.resources` 里列了它。这与"钉成因、不钉现象"是同一条纪律。
+
+**为什么"转发端点回 502"这条断言在转发数 = 0 时是空转的（以及怎么补）**：`check:routes` 里
+原本有一条"`Forwarded` 端点必须回 502（证明转发分支真的在工作）"——44 条全迁完后，它变成
+**0 条要验**，`forwardedBad.length === 0` 恒真。故新增 `ROUTES.refute-hook` 两条：用
+`MIAO_ROUTE_REFUTE` 把 `GET /api/v1/queue` 拉回转发态，验它**确实回 502 且体里含「尚未迁移」**；
+并在**同一进程**里验另一条端点不受影响（证明红是钩子造成的、不是服务整体坏了）。
+
+**⚠️ 一个必须写明的范围裁定：「摘除 Node」摘的是产品运行时与随包，不是仓库源码。**
+`service/src/*.mjs` 仍留在仓库里，且仍有钉子要跑它 —— `check:store` / `check:store-exec` /
+`check:engine-parity` / `check:engine-http` / `check:translate` 的同源对拍，Node 侧跑的就是
+**真 `service/src/*.mjs`**。这些钉子的价值恰恰在于"两套实现打同一套断言"。
+⇒ 删掉仓库里的 `service/` 会**连带作废 5 组同源钉子**。真正作废的是：A3（node 随包）与
+E1（node 签名项）—— 它们**本就未实现**（计划文档里都是 ☐），现在**明确作废**，不再做。
+
+**验收（本轮实测）**：`check:routes` 9/9（`--final` 10/10）· `check:routes:refute` 4/4 ·
+`check:bundle` 5/5 · `check:bundle:refute` 5/5 · `cargo test --lib` **94 passed**（D-143 时 79）·
+`check:paths` 3/3 · `check:store` 24/24 · `check:store-exec` 74/74 · `check:engine-parity` 24/24 ·
+`check:engine-http` 18/18 · `check:llm-supervisor` 4/4 · `check:harness` 7/7 · `registry-check` 4/4。
+
+**双靶子等价（`check:full`：node 37/45 · rust 38/45，失败集**完全相同**）**：两边都红的是
+`settings` 178/2、`music` 228/3、`docs` 13/4、`e2e`、`svc-selftest` 134/1（SIGSTOP）、
+`lifespan`（vite ENOENT）、`engine-settings` 55/6 —— 全是**既有环境性/存量**问题，与 F5 无关；
+rust **单独多绿**一条 `drain-runtime` 7/7（rust-only 钉子，node 按设计不参与）。
+
+---
+
+## D-163 · 服务运行时 Rust 化：F5.8 摘除遗留后端（`backend.rs` / `proxy()` 删除）（2026-10-13）
+
+**删掉的东西**：`boxsvc/backend.rs`（210 行，整个文件）、`boxsvc.rs::proxy()`（~80 行）、
+`is_hop_by_hop()`、`Shell.client` + `make_client()`、`Options.legacy_entry` 与其 `from_env` 分支、
+`Shell.backend_base` 字段、就绪行里的"遗留后端：…"、`backend::shutdown_legacy()`、
+`log` 打印里的 legacy 拼装。`MIAO_LEGACY_BACKEND` 三态解析一并删除（现在是 no-op 名字，
+连"自动跳过"都不需要了 —— 没有遗留后端这东西了）。
+
+**🔴 摘除的判据不是"看起来迁完了"，是 `routes::forwarded_count() == 0`**（D-162 的完成门）。
+少了这个数，"迁没迁完"永远只是一句话 —— 功能照常、e2e 全绿，而包里永久躺一份没人调的
+Node 服务（计划文档 **R3**）。
+
+**🔴 为什么"转发数为 0 时遗留后端是纯负担"（真实机理，不是省一个进程）**：遗留 Node 后端
+**自己也会** autostart ③ LLM（它有自己的一套 autostart 逻辑）。转发数为 0 时两个进程会
+**同时**去抢同一个 `MIAO_LLM_PORT`，后到的那个 `EADDRINUSE` 退出 ⇒ **boxsvc 侧** ③ 变成
+`state=error`。实测症状：`check:engine-settings` 的 ③ 相关用例全红（52/61）；加上"转发数 = 0
+⇒ 不拉遗留后端"之后 **55/6 —— 与 node 靶子逐字相同**（那 6 条是两边共有的存量环境问题，
+见 D-162）。③ 的归属方是 box-service（《04》§9.1），遗留后端本就不该再拉它。
+
+**摘除之后必须补上两块"遗留后端曾经代劳"的东西**（漏一块就是静默失败）：
+- **令牌**：原先来自遗留后端的就绪行 ⇒ 现改为本进程自造，见 D-164。
+- **落盘根目录**：原先取遗留后端上报的 `rootDir` ⇒ 现取 `paths::root_dir()`（同一份 env 事实源）。
+  `validate_root()` 的调用时机不变（校验 + 建立目录）。
+
+**保留的那条 502 分支（`should_forward()`）**：现在只剩**一条来路** —— 反证钩子
+`MIAO_ROUTE_REFUTE` 把某条端点拉回转发态。**必须留着**：它是 F1 反证红线的延续，
+证明"转发分支"真的存在且真的会挡请求，而不是 Rust 悄悄自己实现了（`ROUTES.refute-hook`，
+见 D-162）。⇒ `routes::Tier::Forwarded` 这个变体与 `refute_extra_forwarded()` **不许删**，
+直到有人愿意放弃那条红线。
+
+**⚠️ 已知遗留**：`e2e/service/routes-check.mjs` 里原有一句 `MIAO_LEGACY_BACKEND: '0'`，
+本次一并删掉（它已是 no-op）。仓库里**没有**别处再传这个 env。
+
+---
+
+## D-164 · `ensureToken()` 移植：摘除 Node 后**唯一**的令牌来源（2026-10-13）
+
+**背景**：F1 过渡期，令牌是从**遗留后端的就绪行**继承来的（`LegacyBackend.token`），Rust 侧
+只在"没有遗留后端"的分支里 `std::env::var("MIAO_TOKEN")` —— 即**没有**任何生成/落盘逻辑。
+摘除 Node（D-163）之后这条分支成了**唯一**路径 ⇒ 服务以**空令牌**启动。
+
+**症状（值得记下来）**：`MIAO_READY` **照常打印**（`token` 是空串）、端口**照常监听成功**、
+`/health` **照常 200**（免鉴权），只有每一个**带令牌的请求**变成 `403 PERMISSION_DENIED`。
+实测：`check:retry` **0/1**、`check:lib-manage` **0/1**、`check:retranslate` **直接崩**，
+而报告只说"拿不到 taskId"—— 离根因（每个请求都被拒）极远。这是典型的"**沉默的空值**"。
+
+**移植内容（逐条复刻 `config.mjs::ensureToken()`）**：`MIAO_TOKEN` → `state/token`
+（在盘的 64 位 hex 直接用，并把权限**校正**回 `0600`）→ 32 字节 CSPRNG
+（`rand::RngCore::fill_bytes` + `hex::encode`）落盘 `0600`。
+- 🔴 **每次启动都校正权限**：`state/token` 可能被外部改过（复制/同步工具），
+  "文件合规则直接用"会把权限问题**永久留下去**。
+- 🔴 **写不下去不静默**：`eprintln!` 如实报错 + 用内存令牌继续跑。
+  「宁可给一个提醒过你的服务，也不要给一个每个请求都被拒的服务」——
+  后者会让人去查路由、查前端、查网络，就是不会想到"令牌是空的"。
+- Windows 没有 POSIX 权限位 ⇒ `mode(0o600)` 与 Node 一样被忽略（`#[cfg(unix)]` 分支）。
+
+**验收**：`check:retry` 10/0 · `check:lib-manage` 24/0 · `check:retranslate` 12/0（全部回到 node 基线）。
+
+---
+
+## D-165 · `validateRoot()` 黑名单移植：Windows 名单原样缺失 ⇒ 这道校验形同虚设（2026-10-13）
+
+**症状**：`selftest:service` 在 rust 靶子上 **133/2**，node **134/1**。缺的那一条正是 **A14**：
+把 `MIAO_ROOT` 指到一个系统目录应报「命中黑名单」并**拒绝启动**，而 rust 侧**照常起来了**。
+
+**🔴 根因不是"少抄了几个字符串"，是"名单在 Windows 上一条都命中不了"**：
+`config.mjs` 的黑名单主体是 Unix 路径（`/tmp`、`/etc`、`/usr`、`/System`、`/Library`…），
+Windows 上**没有一条**会前缀命中 ⇒ 用户可以把落盘根指到 `C:\Windows`。
+移植时补 Windows 分支：PREFIX 加 `%SystemDrive%\Windows`、`%ProgramFiles%`、
+`%ProgramFiles(x86)%`、`%ProgramData%`；EXACT 加 `dirname(home)`（即 `C:\Users`）。
+
+**两条匹配语义不能合并（合并会误伤合法路径）**
+- **EXACT = 只拒"目录本身"**。这些是**容器目录**，其下仍可能是合法落盘位置：
+  `/Users` 之下是各用户目录、macOS 的 `/private/var` 之下是 TMPDIR。按前缀拒会把合法的
+  `C:\Users\<me>\Pictures\Box 漫画` 一并挡掉。
+- **PREFIX = 连子路径一并拒**。这些才是真正的系统目录（`/tmp`、`C:\Windows`…）。
+
+**三个容易踩的实现细节**
+1. 🔴 **不用 `Path::is_absolute()` 做前置判据**：Windows 上 `/tmp` 只有根、没有盘符 ⇒
+   Rust 判"不是绝对路径"、Node `path.isAbsolute('/tmp')` 判**是** ⇒ 同一个输入两边给出
+   **不同的失败理由**（Node 走到黑名单，Rust 走到"必须绝对路径"）。故只对空串报"必须是绝对
+   路径"，其余一律交给 `resolve_abs`（等价 `path.resolve`）。
+2. 🔴 **prefix 匹配用 `s == cb || s.starts_with(cb + MAIN_SEPARATOR)`，不用 `Path::strip_prefix`**：
+   后者按**组件**比，会把 `C:\` 当成 `C:\Windows` 的前缀而命中；Node 那边
+   `'C:\\' + '\\'` **永不**前缀命中（根路径只走 EXACT）。两者会在这一个输入上分叉。
+3. **命中时回报"名单里那一条原文"**，不是规范化后的路径 —— 报给用户的是"撞上了哪条规则"，
+   打印一个 `\\?\C:\...` 对他没有任何帮助。
+
+**顺带**："启动即建目录"（Node `validateRoot` 末尾的 `mkdirSync(recursive, 0700)`）也放在同一处：
+校验与建目录是同一件事的两半，分开放会出现"校验过了但目录没建"的中间态。
+
+**⚠️ 排查坑（差点被误导）**：从 Git Bash 手工探 `/tmp` 时，**MSYS 会把参数里的 `/tmp`
+改写成 `C:\Users\...\AppData\Local\Temp\...`** ⇒ 黑名单**正确地不命中**，看起来像"校验没生效"。
+（那次手工探针还顺手拉起了一个真 `llama-server`，已清理。）⇒ A14 只能通过**真 selftest** 验，
+不能从 Bash 手工传 `/tmp` 值。修完 **134/1 —— 与 node 基线逐字相同**。
+
+---
+
+## D-166 · ③ 懒加载被"诊断快照"挡下：去掉前置判据 + 在状态跃迁处发布快照（2026-10-13）
+
+**症状**：`check:e5e6` 在 rust 靶子上 **E6.4 / E6.5 红**（node 16/0）。这是**真回归**，不是环境。
+
+**根因（两条缺陷叠加，缺一不可）**
+1. `HttpTranslator::ensure_llm()`（`drain.rs`，§9.3 懒加载）用 `llm.snapshot()` 做**前置判据**：
+   `state != "running"` 才去 `start()`。
+2. `snapshot()` 读的是**诊断**快照（`LlmSnapshot`），而它原来**只在操作边界**发布。
+   在一次**还在等子进程退出 + 端口释放**（几百 ms）的 `stop()` 进行中，诊断快照仍写着
+   `running` ⇒ 懒加载被**静默跳过** ⇒ ③ 永不回归 ⇒ 翻译请求永远等不到引擎。
+
+**Node 为什么不犯**：`store.ensureLlm = () => supervisor.start()` —— `start()` 会排在
+`_serial` 链上**等** in-flight 的 `stop()` 结束，判据是**权威状态**（`inner.state`），
+而不是一个可能滞后的快照。
+
+**修法（两条一起改才有意义）**
+1. **去掉前置判据**：`start()` / `op` 锁自己会按权威状态决定；真起不来时由
+   `translate_image` 给出真正的失败原因（该路径有完整错误码）。保留一行 `println!` 记录
+   "未就绪"，但**不阻断**。
+2. **`publish(diag, inner)` 改到每一处状态跃迁**：`do_start` 进 `Starting` 之后、
+   `do_stop` 进 `Unloading` 之后**以及** `child.is_none()` 的提前返回分支、`op_start` 的
+   错误分支。⇒ 诊断快照从此**不会滞后于状态机**（滞后是"面板一直转圈"这类症状的温床：
+   D-150/F4-b2 的**两层锁**就是为了让 `snapshot()` 不排在 180s 的 `start()` 后面，
+   本轮补的是同一个问题的另一半 —— **发布时机**）。
+
+**连带改动**：`publish` 因此要穿 `diag`，`op_start` / `do_start` / `do_stop` 三个私有函数
+签名各多一个 `&Mutex<LlmSnapshot>` 参数，6 处调用点同步更新（`start`/`stop`/`restart`/
+`switch_tier`/start 超时的内部 `do_stop`）。
+
+**验收**：`check:e5e6` rust **16/0**（= node），`--refute` **3/3 全红**。
+
+---
+
+## D-167 · `check:contract` S5.3 的"读取时刻"假红：`updatedAt` 是**读时** `nowIso()`（2026-10-13）
+
+**症状**：`check:contract` 的 S5.3 在 rust 靶子上**不稳定地红**（同一轮里红 4/6），
+node 靶子是 3/3 绿。看着像"rust 的 `updatedAt` 与 node 不一致"。
+
+**根因**：`/queue.updatedAt` 与 `/tasks.updatedAt` 在**两边**都是**投影时现算**的
+`nowIso()`（不是落盘字段）⇒ 那条"两次读取逐字节相同"的断言，实际断言的是
+**"两次读取落在同一秒"**。node 靶子只是"运气好"（两次读得快、落在同一秒）。
+⚠️ 这属于**验证的着力点错了**，不是实现错了 —— 典型的**假红/假绿同源**缺陷：
+它既可以假红（跨秒了）也可以假绿（恰好同秒，掩盖真的不一致）。
+
+**修法**：加 `withoutReadClock(snapshot)`，比对前去掉 `updatedAt`。但
+🔴 **必须保留**"`updatedAt` 是非空字符串"的断言 —— 否则"归一化"顺手把这个字段**从覆盖里
+删掉了**，将来它真的不更新也没人知道。这是"去掉噪声"与"去掉覆盖"的边界。
+
+**⚠️ 排查教训**：第一刀只去掉了 `queue.updatedAt`，**仍然红** —— 这才看清是**同一类**的第二处
+（`tasks.updatedAt`）。遇到"读取时刻/时间戳"造成的假红，要问的是
+**"还有没有同形的字段"**，而不是给眼前那一个打补丁。
+
+**验收**：rust **6/6 绿**，`--refute` **4/4 仍全红**（改的是比对基准，不是断言的存在）。
+
+---
+
+## D-168 · 服务实现默认档翻转为 Rust（`resolve_service_cmd`）+ 两档不同的失败语义（2026-10-13）
+
+**改动**：`service.rs::resolve_service_cmd()` 的**未设 `MIAO_SERVICE_IMPL`** 档，
+从"起 Node `service/src/server.mjs`"翻转为"起 `boxsvc`"。
+
+**为什么必须翻**：F1 时的裁定是"打包把 `boxsvc` 放进安装包之前，产品路径一律不动"——
+那在当时是对的。但 F5 已把**全部 44 条端点迁进 Rust**（`forwarded_count() == 0`，
+D-162 的完成门盯着）。此时默认仍是 node，等于"摘除 Node"**只写在文档里**：
+产品照旧起一份 Node 服务，正是 R3 说的那个形态（功能照常、e2e 全绿、node 永远删不掉）。
+
+**🔴 两档"找不到 boxsvc 时怎么办"刻意不同（这是本条的核心裁定）**
+
+| 档位 | boxsvc 找不到时 | 为什么 |
+|------|----------------|--------|
+| `MIAO_SERVICE_IMPL=rust`（显式） | **硬失败**（`resolve_boxsvc()?` 直接传播） | "说了算数"：显式切了却没生效、还悄悄换回 Node，会让"切实现"彻底失去可观测性（`check:harness` 的 H5 钉的是同一条） |
+| 未设（默认） | **退回 Node + `eprintln!` 可见警告**（带原因 + 构建指引） | 开发态 `cargo run --bin miao-dock` 只构建主 bin，`target/debug/` 里**没有** `boxsvc`；硬失败会把"跑起来看看界面"变成"先读一篇构建说明" |
+
+⚠️ 关键限定：默认档的退回**绝不静默**。Node 是过渡依赖、将来从包里删掉，
+这条警告是人**唯一**看得见"Rust 没生效、以及为什么"的地方；静默退回就等于回到
+"默认 node 而没人知道"（也即本条要消灭的那个状态）。
+
+**钉子**：`e2e/service-autostart-check.mjs` 新增 **E1–E5**（该文件既有的"钉成因、不钉风格"
+体例）：E1 默认分支必须调到 `resolve_boxsvc`；E2 退回必须可见（`eprintln!` + 「退回 Node」+
+构建指引）；E3 显式 rust 仍硬失败；E4 显式 `=node` 仍可达、Node 入口只在
+`node_service_cmd` 一处拼接；E5 取值先 `trim` + 小写（`RUST` / ` rust ` 必须算**显式**档）。
+实测正向 **17/17**、`--refute` **17/17 全红**（含 E1–E5 五条新变异，各自按预期变红）。
+
+**⚠️ 边界（沿用该文件既有声明）**：本组证明的是**成因的写法被钉住了**，不是
+"默认档在真机上真的起了 boxsvc"—— 后者要靠人真跑一次（`npm run app`）。
+
