@@ -44,7 +44,10 @@ pub const MODEL_DOWNLOAD_TAIL_MAX: usize = 40;
 /// 下载超时（1h）。超时**必须真杀** —— 只改状态不杀的话进程会一直在后台写盘。
 pub const MODEL_DOWNLOAD_TIMEOUT_MS: i64 = 60 * 60_000;
 
-const DEFAULT_MODEL_DOWNLOAD_SCRIPT: &str = "engine/scripts/fetch-models.mjs";
+// A3d：模型下载 / 校验的**执行体**是 `boxsvc --fetch-models`，不再是
+// `node engine/scripts/fetch-models.mjs`（A3「node 随包」作废 ⇒ 产品运行期不许依赖解释器）。
+// 默认取**自己**（服务本体就是 boxsvc），`MIAO_MODEL_DOWNLOAD_RUNNER` 是给 e2e 注入
+// 假执行体的接缝 —— 它替代了原来的 `MIAO_MODEL_DOWNLOAD_SCRIPT`（那个隐含 node）。
 
 // ================================================================ 反证开关（集中登记）
 
@@ -132,7 +135,8 @@ pub struct EngineState {
     pub settings_file: PathBuf,
     pub model_root: PathBuf,
     pub model_manifest: PathBuf,
-    pub download_script: PathBuf,
+    /// 模型下载 / 校验的**执行体**（A3d 起 = `boxsvc`；`--fetch-models` 子命令）。
+    pub download_runner: PathBuf,
 
     // ---- 反证 ----
     pub refutes: Refutes,
@@ -204,9 +208,9 @@ impl EngineState {
         let desired_tier = engine_tier_choice.clone().unwrap_or_else(|| recommended_tier.clone());
         let effective_tier = clamp_tier_to_available(&desired_tier);
 
-        let download_script = match esettings::env_str("MIAO_MODEL_DOWNLOAD_SCRIPT") {
+        let download_runner = match esettings::env_str("MIAO_MODEL_DOWNLOAD_RUNNER") {
             Some(p) => paths::resolve(PathBuf::from(p)),
-            None => paths::repo_root().join(DEFAULT_MODEL_DOWNLOAD_SCRIPT),
+            None => std::env::current_exe().unwrap_or_else(|_| PathBuf::from("boxsvc")),
         };
 
         Ok(EngineState {
@@ -233,7 +237,7 @@ impl EngineState {
             settings_file,
             model_root: paths::model_root(),
             model_manifest: paths::model_manifest(),
-            download_script,
+            download_runner,
             refutes,
             contract_refutes,
             download: Arc::new(Mutex::new(ModelDownload::default())),
@@ -570,9 +574,10 @@ impl EngineState {
             "tail": d.tail,
             "rootDir": self.model_root.to_string_lossy(),
             "manifest": self.model_manifest.to_string_lossy(),
-            "script": self.download_script.to_string_lossy(),
-            // 脚本在不在盘上。界面据此**禁用按钮**（而不是让用户点一下换一条报错）。
-            "scriptExists": self.download_script.exists(),
+            // 执行体（A3d 起是 `boxsvc`，不再是那个 .mjs 脚本）在不在盘上。
+            // 界面据此**禁用按钮**（而不是让用户点一下换一条报错）。
+            "runner": self.download_runner.to_string_lossy(),
+            "runnerExists": self.download_runner.exists(),
         })
     }
 
@@ -589,23 +594,24 @@ impl EngineState {
                 ));
             }
         }
-        if !self.download_script.exists() {
+        if !self.download_runner.exists() {
             return Err(StoreError::new(
                 "INTERNAL",
-                format!("模型下载脚本不存在：{}", self.download_script.display()),
-                json!({ "script": self.download_script.to_string_lossy() }),
+                format!("模型下载执行体不存在：{}", self.download_runner.display()),
+                json!({ "runner": self.download_runner.to_string_lossy() }),
             ));
         }
 
-        let node_exec = esettings::env_str("MIAO_NODE_EXEC").unwrap_or_else(|| "node".to_string());
-        let mut cmd = std::process::Command::new(&node_exec);
-        cmd.arg(&self.download_script);
+        let mut cmd = std::process::Command::new(&self.download_runner);
+        cmd.arg("--fetch-models");
+        cmd.arg("--root").arg(&self.model_root);
+        cmd.arg("--manifest").arg(&self.model_manifest);
         cmd.env("MIAO_MODEL_ROOT", &self.model_root);
         cmd.stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
         let mut child = cmd.spawn().map_err(|e| {
-            StoreError::new("INTERNAL", format!("无法启动模型下载进程：{e}"), json!({ "script": self.download_script.to_string_lossy() }))
+            StoreError::new("INTERNAL", format!("无法启动模型下载进程：{e}"), json!({ "runner": self.download_runner.to_string_lossy() }))
         })?;
 
         {
@@ -618,8 +624,8 @@ impl EngineState {
             d.tail = Vec::new();
         }
         println!(
-            "[box-service] 模型下载已启动：{} → {}",
-            self.download_script.display(),
+            "[box-service] 模型下载已启动：{} --fetch-models → {}",
+            self.download_runner.display(),
             self.model_root.display()
         );
 
@@ -714,9 +720,12 @@ impl EngineState {
         Ok(self.model_download_view())
     }
 
-    /// `POST /engine/models/verify` 要跑的那条脚本（`engine/scripts/fetch-models.mjs`）。
-    pub fn verify_script(&self) -> PathBuf {
-        crate::paths::repo_root().join("engine").join("scripts").join("fetch-models.mjs")
+    /// `POST /engine/models/verify` 要跑的**执行体**（A3d 起 = `boxsvc`）。
+    ///
+    /// 与 `download_runner` 同一个可执行文件、同一个子命令族 —— 只是这里给 `--check`。
+    /// 拆成两个字段没有意义：它们是同一份代码的两种用法。
+    pub fn verify_runner(&self) -> PathBuf {
+        self.download_runner.clone()
     }
 
     /// 引擎诊断视图（`/engine/status`）。

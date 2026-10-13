@@ -47,10 +47,10 @@ export function ModelManageBlock({ item, eng }: { item: SettingItem; eng: Engine
           </Btn>
           <Btn
             size="sm"
-            disabled={busy || download?.scriptExists === false || download?.running === true}
+            disabled={busy || download?.runnerExists === false || download?.running === true}
             title={
-              download?.scriptExists === false
-                ? '模型下载脚本不在盘上'
+              download?.runnerExists === false
+                ? '模型下载执行体不在盘上'
                 : download?.running
                   ? '已有下载任务在跑（进度见下方引擎诊断）'
                   : '补齐缺失与校验不符的权重；已就绪的文件会被复用'

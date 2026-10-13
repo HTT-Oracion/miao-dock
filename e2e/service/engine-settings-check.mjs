@@ -174,29 +174,37 @@ function readSettingsFile(stateDir) {
 }
 
 /**
- * 「假下载器」夹具 —— 走 `MIAO_MODEL_DOWNLOAD_SCRIPT` 这个接缝替换掉真脚本。
+ * 「假下载器」夹具 —— 走 `MIAO_MODEL_DOWNLOAD_RUNNER` 这个接缝替换掉真执行体。
  *
- * ## 为什么必须替换，而不是真跑一次 `fetch-models.mjs`
+ * ## 为什么必须替换，而不是真跑一次 `--fetch-models`
  * 真下载要**联网 + 几 GB + 十几分钟**，且不可重放（第二次会因为已就绪而立刻结束，
  * 于是 `running` 那一刻根本观察不到）。而 D 组要验的恰恰是**状态机**：
  * 启动即返回、并发被 409 挡住、终态被记下来、tail 转发的是子进程真输出。
  * 这些与"下载器实现得对不对"无关（那是 S3 的 `check:models` 在管）。
  *
- * ## 为什么睡 700ms
+ * ## 🔴 A3d 起夹具从「一个假脚本」改成「**一份夹具清单**」
+ * 产品的执行体是 `boxsvc`（一个真 `.exe`），不再隐含解释器。那么"假执行体"就造不出来了：
+ * Windows 上 `spawn()` 一个 `.cmd`/`.bat` 会直接 **EINVAL**（Node 22 的安全策略，
+ * 无 shell 不允许起批处理），而造一个真 `.exe` 又不现实。
+ * ⇒ 改用已有的 `MIAO_MODEL_MANIFEST` 接缝控制行为：**执行体仍是产品那个**，
+ *   只是喂给它的清单不同（真清单 = 成功；非法 JSON = 失败）。
+ *   顺带的好处是这条组现在量的是**产品真实执行体的状态机**，不再是一个假的替身。
+ *
+ * ## 为什么要几百毫秒（而不是立刻结束）
  * 太短则第二个请求可能撞在"已经跑完"上 —— 那时 409 与 200 都会出现，
  * 断言就变成**靠运气**（这类"偶尔绿"的断言比红更坏：它会在某次 CI 上静默失效）。
+ * 真清单 17 个条目走 cached 复用（读 `.ready` + 逐个 stat）刚好够这个量级。
  */
-function writeFakeDownload(file, { fail = false } = {}) {
-  fs.writeFileSync(file, [
-    "console.log('模型根目录：' + (process.env.MIAO_MODEL_ROOT || '?'));",
-    "console.log('夹具下载器：开始');",
-    'setTimeout(() => {',
-    fail
-      ? "  console.error('✗ 夹具下载器：模拟失败'); process.exit(3);"
-      : "  console.log('复用 1 · 下载 0 · 因校验重下 0 · 传输 0 B'); process.exit(0);",
-    '}, 700);',
-    '',
-  ].join('\n'));
+function writeFakeManifest(base, { fail = false } = {}) {
+  const file = `${base}.json`;
+  if (fail) {
+    // 非法 JSON ⇒ 执行体连清单都读不出来 ⇒ 立刻失败退出（`MODEL_MANIFEST_BAD`）。
+    // 这就是"失败夹具"：不需要一个会 exit 3 的假可执行文件 —— 那条路在 Windows 上走不通（见下）。
+    fs.writeFileSync(file, '{ this is not json');
+    return file;
+  }
+  // 成功夹具 = **真清单的一份拷贝**：模型都已就位 ⇒ 走 cached 复用，零网络、几百毫秒结束。
+  fs.copyFileSync(path.join(ROOT, 'engine', 'models.manifest.json'), file);
   return file;
 }
 
@@ -325,19 +333,19 @@ async function runPositive() {
         /*
          * ---------------- D0 · 「重新下载模型」的**产品接缝** ----------------
          *
-         * 这一台实例**不设** `MIAO_MODEL_DOWNLOAD_SCRIPT`，所以它量的是产品路径：
-         * 脚本是不是真的在 `engine/scripts/fetch-models.mjs`。夹具轮（下面的 D 组）
-         * 会把这条接缝替换掉 —— 于是"夹具生效"与"产品路径正确"必须分开断言，
-         * 否则替换成功反而会把产品路径写错这件事盖住。
+         * 这一台实例**不设** `MIAO_MODEL_DOWNLOAD_RUNNER`，所以它量的是产品路径：
+         * 执行体是不是真的那个 `boxsvc`（A3d 起模型下载 / 校验都走它，不再有 .mjs 脚本）。
+         * 夹具轮（下面的 D 组）会把这条接缝替换掉 —— 于是"夹具生效"与
+         * "产品路径正确"必须分开断言，否则替换成功反而会把产品路径写错这件事盖住。
          *
          * ⚠️ 这里**绝不**发起下载：真跑一次要联网 + 几 GB。D0 只读初态。
          */
         const st = jsonOf(await get(info.port, '/api/v1/engine/status'));
-        check('D0 /engine/status.modelDownload 初态 idle、running=false，且 script 指向产品脚本（该脚本真的在盘上）',
+        check('D0 /engine/status.modelDownload 初态 idle、running=false，且 runner 指向产品执行体 boxsvc（它真的在盘上）',
           st?.modelDownload?.state === 'idle' && st.modelDownload.running === false
-          && st.modelDownload.scriptExists === true
-          && /engine[/\\]scripts[/\\]fetch-models\.mjs$/.test(st.modelDownload.script ?? ''),
-          JSON.stringify({ state: st?.modelDownload?.state, exists: st?.modelDownload?.scriptExists, script: st?.modelDownload?.script }));
+          && st.modelDownload.runnerExists === true
+          && /boxsvc(\.exe)?$/.test(st.modelDownload.runner ?? ''),
+          JSON.stringify({ state: st?.modelDownload?.state, exists: st?.modelDownload?.runnerExists, runner: st?.modelDownload?.runner }));
         check('D0b 下载目标目录与设置页显示的 modelDir.current **是同一个**（各拿一份就会"下到别处去"）',
           st?.modelDownload?.rootDir === v?.modelDir?.current,
           `${st?.modelDownload?.rootDir} vs ${v?.modelDir?.current}`);
@@ -591,13 +599,13 @@ async function runPositive() {
   //   · 并发被 409 挡住（两个下载互相截断 `.part` ⇒ "下完了但哈希不对"）
   //   · 终态被记下来、tail 转发的是**子进程真输出**
   //   · 失败如实报失败，且失败之后还能重试
-  //   · 脚本不在盘上时如实报错 + `scriptExists=false`（界面据此把按钮变灰）
+  //   · 执行体不在盘上时如实报错 + `runnerExists=false`（界面据此把按钮变灰）
   {
-    const fakeOk = writeFakeDownload(path.join(TMP, 'fake-dl-ok.mjs'));
+    const fakeOk = writeFakeManifest(path.join(TMP, 'fake-dl-ok'));
     const [svcPort] = await freePorts(5060, 2);
     const stateDir = path.join(TMP, `state-dl-${svcPort}`);
     await withService(baseEnv(svcPort, stateDir, {
-      MIAO_ENGINE_PROTOCOL: 'mock', MIAO_MODEL_DOWNLOAD_SCRIPT: fakeOk,
+      MIAO_ENGINE_PROTOCOL: 'mock', MIAO_MODEL_MANIFEST: fakeOk,
     }), `service-D-${svcPort}`, async (info) => {
       const noToken = await httpReq(info.port, 'POST', '/api/v1/engine/models/download', {
         headers: { 'Content-Type': 'application/json' }, body: Buffer.from('{}'),
@@ -609,7 +617,7 @@ async function runPositive() {
       const started = Date.now();
       const r1 = await post(info.port, '/api/v1/engine/models/download', {});
       const b1 = jsonOf(r1);
-      check('D2 启动下载 → 200 且**立即**返回（不等它跑完；夹具要 700ms）+ started=true、state=running、startedAt 非空',
+      check('D2 启动下载 → 200 且**立即**返回（不等它跑完；夹具清单 17 条走缓存复用，几百毫秒）+ started=true、state=running、startedAt 非空',
         r1.status === 200 && b1?.ok === true && b1?.started === true
         && b1?.download?.state === 'running' && typeof b1.download.startedAt === 'string'
         && Date.now() - started < 500,
@@ -635,19 +643,19 @@ async function runPositive() {
         JSON.stringify({ state: st?.modelDownload?.state, code: st?.modelDownload?.exitCode }));
 
       const tail = st?.modelDownload?.tail ?? [];
-      check('D5 tail 是**子进程真实输出**（含夹具打印的两行）—— 转发的是它的 stdout/stderr，不是我们自己编的进度',
-        tail.some((l) => l.includes('夹具下载器：开始')) && tail.some((l) => l.includes('复用 1')),
+      check('D5 tail 是**子进程真实输出**（含执行体自己打的那两行）—— 转发的是它的 stdout/stderr，不是我们自己编的进度',
+        tail.some((l) => l.includes('模型根目录')) && tail.some((l) => l.includes('复用')),
         JSON.stringify(tail));
     });
   }
 
   // D6/D7：子进程**非 0 退出** ⇒ 如实报 error；且失败之后还能再来一次
   {
-    const fakeFail = writeFakeDownload(path.join(TMP, 'fake-dl-fail.mjs'), { fail: true });
+    const fakeFail = writeFakeManifest(path.join(TMP, 'fake-dl-fail'), { fail: true });
     const [svcPort] = await freePorts(5080, 2);
     const stateDir = path.join(TMP, `state-dlfail-${svcPort}`);
     await withService(baseEnv(svcPort, stateDir, {
-      MIAO_ENGINE_PROTOCOL: 'mock', MIAO_MODEL_DOWNLOAD_SCRIPT: fakeFail,
+      MIAO_ENGINE_PROTOCOL: 'mock', MIAO_MODEL_MANIFEST: fakeFail,
     }), `service-Dfail-${svcPort}`, async (info) => {
       await post(info.port, '/api/v1/engine/models/download', {});
       let st = null;
@@ -656,9 +664,10 @@ async function runPositive() {
         if (st?.modelDownload?.state !== 'running') break;
         await sleep(100);
       }
-      check('D6 子进程 exit=3 ⇒ state=error、exitCode=3（**不把失败报成成功**），且 tail 带出那行错误',
-        st?.modelDownload?.state === 'error' && st.modelDownload.exitCode === 3
-        && (st.modelDownload.tail ?? []).some((l) => l.includes('模拟失败')),
+      check('D6 执行体非 0 退出 ⇒ state=error 且 exitCode 如实带出（**不把失败报成成功**），tail 带出那个错误码',
+        st?.modelDownload?.state === 'error' && typeof st.modelDownload.exitCode === 'number'
+        && st.modelDownload.exitCode !== 0
+        && (st.modelDownload.tail ?? []).some((l) => l.includes('MODEL_MANIFEST_BAD')),
         JSON.stringify({ state: st?.modelDownload?.state, code: st?.modelDownload?.exitCode, tail: st?.modelDownload?.tail?.slice(-2) }));
 
       const again = await post(info.port, '/api/v1/engine/models/download', {});
@@ -668,23 +677,23 @@ async function runPositive() {
     });
   }
 
-  // D8：脚本不在盘上 ⇒ 明确报错 + `scriptExists=false`（界面据此把按钮变灰）
+  // D8：执行体不在盘上 ⇒ 明确报错 + `runnerExists=false`（界面据此把按钮变灰）
   {
     const [svcPort] = await freePorts(5100, 2);
     const stateDir = path.join(TMP, `state-dlmiss-${svcPort}`);
-    const missing = path.join(TMP, 'no-such-dir', 'missing-download.mjs');
+    const missing = path.join(TMP, 'no-such-dir', `missing-download${process.platform === 'win32' ? '.cmd' : '.sh'}`);
     await withService(baseEnv(svcPort, stateDir, {
-      MIAO_ENGINE_PROTOCOL: 'mock', MIAO_MODEL_DOWNLOAD_SCRIPT: missing,
+      MIAO_ENGINE_PROTOCOL: 'mock', MIAO_MODEL_DOWNLOAD_RUNNER: missing,
     }), `service-Dmiss-${svcPort}`, async (info) => {
       const st = jsonOf(await get(info.port, '/api/v1/engine/status'));
-      check('D8 下载脚本不存在 ⇒ scriptExists=false（界面该把按钮**变灰**，而不是让用户点一下换一条报错）',
-        st?.modelDownload?.scriptExists === false, String(st?.modelDownload?.scriptExists));
+      check('D8 下载执行体不存在 ⇒ runnerExists=false（界面该把按钮**变灰**，而不是让用户点一下换一条报错）',
+        st?.modelDownload?.runnerExists === false, String(st?.modelDownload?.runnerExists));
 
       const r = await post(info.port, '/api/v1/engine/models/download', {});
       const b = jsonOf(r);
-      check('D8b 此时强行 POST → 500 INTERNAL 且消息指出脚本路径（不静默成功、也不假装"已开始"）',
+      check('D8b 此时强行 POST → 500 INTERNAL 且消息指出执行体路径（不静默成功、也不假装"已开始"）',
         r.status === 500 && b?.error?.code === 'INTERNAL' && /不存在/.test(b?.error?.message ?? '')
-        && (b?.error?.details?.script ?? '').includes('missing-download.mjs'),
+        && (b?.error?.details?.runner ?? '').includes('missing-download'),
         `${r.status} ${b?.error?.code} ${b?.error?.message?.slice(0, 60)}`);
     });
   }
@@ -696,11 +705,11 @@ async function runPositive() {
 async function runOnePassForRefute() {
   const [svcPort] = await freePorts(5900, 1);
   const stateDir = path.join(TMP, `state-refute-${svcPort}`);
-  // D3 要一个夹具下载器（不真下 GB），且必须**在 withService 之前**落盘 ——
-  // 服务在启动时就把它读进常量了（`MODEL_DOWNLOAD_SCRIPT` 是模块顶层求值）。
-  const fakeOk = writeFakeDownload(path.join(TMP, 'fake-dl-refute.mjs'));
+  // D3 要一份夹具清单（不真下 GB），且必须**在 withService 之前**落盘 ——
+  // 服务在启动时就把它读进常量了（`MODEL_MANIFEST` 是模块顶层求值）。
+  const fakeOk = writeFakeManifest(path.join(TMP, 'fake-dl-refute'));
   await withService(baseEnv(svcPort, stateDir, {
-    MIAO_ENGINE_PROTOCOL: 'mock', MIAO_MODEL_DOWNLOAD_SCRIPT: fakeOk,
+    MIAO_ENGINE_PROTOCOL: 'mock', MIAO_MODEL_MANIFEST: fakeOk,
   }),
     `refute-${svcPort}`, async (info) => {
       const res = await get(info.port, '/api/v1/engine/options');

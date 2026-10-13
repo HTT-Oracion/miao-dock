@@ -92,6 +92,14 @@ fn main() {
         let args: Vec<String> = std::env::args().skip(i + 1).collect();
         std::process::exit(miao_dock::child_watch::run(&args));
     }
+    // `--fetch-models [...]`：S3 模型下载器 / 校验器（A3d）。
+    // 用途：`POST /engine/models/verify` 与「重新下载模型」两个**产品运行期**路径都起它 ——
+    // 它曾是 `node engine/scripts/fetch-models.mjs`，而 A3「node 随包」已作废。
+    // 与 `--child-watch` 同一裁定：挂在 `boxsvc` 上，不新增可执行文件、不改 `bundle.resources`。
+    if let Some(i) = std::env::args().position(|a| a == "--fetch-models") {
+        let args: Vec<String> = std::env::args().skip(i + 1).collect();
+        std::process::exit(miao_dock::boxsvc::engine::fetch_models::run(&args));
+    }
     let opts = miao_dock::boxsvc::Options::from_env();
     if let Err(e) = miao_dock::boxsvc::run_blocking(opts) {
         eprintln!("[box-service] boxsvc 启动失败：{e}");

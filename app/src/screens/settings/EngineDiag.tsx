@@ -389,11 +389,11 @@ export function EngineDiag({
             </Btn>
             <Btn
               size="sm"
-              // 脚本不在盘上时按钮必须**是灰的**（服务端 `scriptExists` 就是给这一格用的）
-              disabled={busy || s?.modelDownload?.scriptExists === false || s?.modelDownload?.running === true}
+              // 执行体不在盘上时按钮必须**是灰的**（服务端 `runnerExists` 就是给这一格用的）
+              disabled={busy || s?.modelDownload?.runnerExists === false || s?.modelDownload?.running === true}
               title={
-                s?.modelDownload?.scriptExists === false
-                  ? '模型下载脚本不在盘上'
+                s?.modelDownload?.runnerExists === false
+                  ? '模型下载执行体不在盘上'
                   : s?.modelDownload?.running
                     ? '已有下载任务在跑'
                     : undefined

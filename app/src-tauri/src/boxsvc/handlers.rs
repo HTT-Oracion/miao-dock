@@ -707,20 +707,21 @@ async fn engine_unload(shell: &Arc<Shell>) -> Response {
 /// `POST /engine/models/verify`（`handleModelsVerify`）—— 「校验完整性」。
 ///
 /// 🔴 它做的是**真算 sha256**，不是"看一眼文件在不在"：调用
-///    `engine/scripts/fetch-models.mjs --check`，那个脚本走 `verifyModels()`
-///    —— `--check` 分支**不联网、不删任何东西**。这是"校验完整性"唯一诚实的实现：
-///    一个只判存在的校验会给用户"没问题"的假结论。
+///    `boxsvc --fetch-models --check`（A3d 之前是 `node engine/scripts/fetch-models.mjs --check`），
+///    走的是 `verifyModels()` —— `--check` 分支**不联网、不删任何东西**。
+///    这是"校验完整性"唯一诚实的实现：一个只判存在的校验会给用户"没问题"的假结论。
 ///
 /// 返回 `{ ok:false, ... }` 而非 HTTP 错误：**"校验完成，发现不符"是一次成功调用**，
 /// 用 4xx/5xx 表达会让界面把它显示成"操作失败"，而用户真正需要看到的是那份不符清单。
 async fn models_verify(shell: &Arc<Shell>) -> Response {
     let es = &shell.engine;
-    let script = es.verify_script();
+    let runner = es.verify_runner();
     let model_root = es.model_root.to_string_lossy().into_owned();
+    let manifest = es.model_manifest.to_string_lossy().into_owned();
     let started = now_ms();
 
     let (code, stdout, stderr, timeout) = tokio::task::spawn_blocking(move || {
-        run_verify_child(&script, &model_root)
+        run_verify_child(&runner, &manifest, &model_root)
     })
     .await
     .unwrap_or((-1, String::new(), "校验子进程未能启动".to_string(), false));
@@ -789,17 +790,21 @@ fn now_ms() -> i64 {
     super::store::model::now_ms()
 }
 
-/// 跑 `fetch-models --check` 子进程（**同步**；调用方包在 `spawn_blocking` 里）。
+/// 跑 `boxsvc --fetch-models --check` 子进程（**同步**；调用方包在 `spawn_blocking` 里）。
 ///
 /// `maxBuffer` 用**行收集**而不是 `execFile` 的默认 1 MB：模型清单里有几十项，全不符时会打
 /// 几十行 —— 撞上 maxBuffer 的失败形态是 `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`，一个与"模型坏了"
 /// 毫无关系、却同样表现为"校验失败"的错误。手写收集就没有这个上限。
 /// `timeout_ms` 给 15 min：真算 5–8 GB 的 sha256 在机械盘上可以很慢，但它**必须有个头**，
 /// 否则界面会永远转圈（且没有任何东西会告诉用户它卡住了）。
-fn run_verify_child(script: &Path, model_root: &str) -> (i64, String, String, bool) {
-    let node_exec = std::env::var("MIAO_NODE_EXEC").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "node".to_string());
-    let mut cmd = std::process::Command::new(node_exec);
-    cmd.arg(script).arg("--check");
+fn run_verify_child(runner: &Path, manifest: &str, model_root: &str) -> (i64, String, String, bool) {
+    let mut cmd = std::process::Command::new(runner);
+    cmd.arg("--fetch-models").arg("--check");
+    // 🔴 清单路径**显式**给：默认虽是同一份（`<仓库>/engine/models.manifest.json`），
+    //    但"校验用的是哪份清单"正是 `models/verify` 要如实回传的字段 —— 靠默认值对齐
+    //    等于把两处事实源分开维护，搬一次路径就静默错开。
+    cmd.arg("--manifest").arg(manifest);
+    cmd.arg("--root").arg(model_root);
     cmd.env("MIAO_MODEL_ROOT", model_root);
     cmd.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())

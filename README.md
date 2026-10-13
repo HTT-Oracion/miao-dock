@@ -38,9 +38,9 @@ miao-dock/
 ├── engine/       翻译引擎的**接缝层**（真引擎装在 `runtimes/`，不在库）
 │   ├── VERSIONS.lock         引擎 / 权重 / 外部二进制的**版本锁**（换版本照它来）
 │   ├── models.manifest.json  模型清单：来源 URL + sha256 + 字节数（权威副本在 `runtimes/…/models-store/`）
-│   ├── model-store.mjs       下载内核：断点续传 / 逐文件哈希 / `.ready` 幂等 / 硬链接
+│   ├── model-store.mjs       下载内核（**Node 对照端**，A3d；产品主路径是 Rust `boxsvc::engine::model_store`）
 │   ├── src/                  **测试替身**：模拟引擎 + 模拟 LLM（产品默认走真引擎 `MIAO_ENGINE_PROTOCOL=real`）
-│   └── scripts/              **运行期**脚本：`fetch-models.mjs`（CLI，A3d 待 Rust 化）· `setup-engine.mjs` / `install-engine-deps.mjs`（本机环境引导）｜`child-watch.mjs` 降为 **Node 对照端**（产品主路径已换 Rust `boxsvc --child-watch`，A3c；仍被 `service/src/settings/llm-supervisor.mjs` 引用）
+│   └── scripts/              `setup-engine.mjs` / `install-engine-deps.mjs`（本机环境引导）｜`fetch-models.mjs` 与 `child-watch.mjs` 均为 **Node 对照端**（产品主路径分别是 Rust `boxsvc --fetch-models`(A3d) / `boxsvc --child-watch`(A3c)；`child-watch.mjs` 仍被 `service/src/settings/llm-supervisor.mjs` 引用）
 ├── e2e/          **全部验收与取证脚本**（纯 Node 零依赖；一条命令一组断言，正向与反证成对）
 │   ├── *.mjs                  生命周期 / 端到端 / 截图取证 / 文档与结构对账
 │   ├── service/               box-service 侧（`selftest.mjs` = A 组契约自测 · `stall-guard-check.mjs` = U10② 取证）
@@ -59,11 +59,12 @@ miao-dock/
 >
 > 1. **产品 / 验收分家**：`service/src`、`engine/src`、`app/src` 是**产品**；`e2e/` 是**验收**。
 >    判据不是"像不像测试"，而是**产品代码在运行期会不会 fork 它** —— 会 fork 的
->    （`fetch-models.mjs`，以及 A3c 之后**仍在 Node 侧被引用**的 `child-watch.mjs`）
 >    留在各自模块的 `scripts/` 下，**不搬进 `e2e/`**。
 >    ⚠️ 反向也成立：**产品主路径一旦改走 Rust**（`print-launch-plan.mjs` A3b 退役、
->    `child-watch.mjs` A3c 降为对照端），留在 `scripts/` 里就不再是"产品"，
->    但**不许顺手删** —— 先查还有谁 import 它（`llm-supervisor.mjs` 仍用 `child-watch.mjs`）。
+>    `child-watch.mjs` A3c 降为对照端、`fetch-models.mjs` A3d 降为对照端），留在 `scripts/` 里就不再是"产品"，
+>    但**不许顺手删** —— 先查还有谁 import 它（`llm-supervisor.mjs` 仍用 `child-watch.mjs`）；
+>    🔴 更常见的是它**还是双靶对拍的另一边**（`fetch-models.mjs` / `model-store.mjs` 是 `check:models` 的 Node 靶），
+>    删掉等于让对拍退化成"只有一边的自证"。
 > 2. **临时产物一律写进 `.tmp/<用途>/`**，不要在仓库根另起 `.tmp-xxx/` 或 `tmp-xxx/`
 >    （历史上散着 `.tmp-e2e` / `.tmp-models` / `.tmp-selftest` / `tmp-engine-test` 四个，已合并 —— 见 `docs/spec-notes.md` D-79）。
 > 3. **新增 / 搬迁目录必须同步更新本节**。同时检查：`AGENTS.md` §1 的分层表 · `.trae/rules/project_rules.md` ·
@@ -173,7 +174,7 @@ npm run selftest:app:e11:real # 同上但真进程（python+执行器+llama-serv
 npm run check:launch-plan     # S2 启动配方契约 24 条（含 ③ 归属移交后的 P-llm-* 断言）
 npm run check:child-watch     # 外部二进制父死看守**双靶**取证（Node 原版 + A3c Rust 移植，Rust 靶用产品同源 Rust 父 `boxsvc --child-watch-parent`；含接线错误防护 W2；反证轮只判 Rust 靶，Node 靶按结构跳过并标注原因）
 npm run check:child-watch-kill # child-watch Windows killTree 无条件 /F **双靶源码钉**（Node `child-watch.mjs` + Rust `child_watch.rs`，源码级不起进程；反证 2 条）
-npm run fetch:models          # S3 模型下载器（--check 只校验不联网 / --link 只重建引擎树里的链接；反证：check:models:refute）
+npm run fetch:models          # S3 模型下载器 **Node 对照端**（--check 只校验不联网 / --link 只重建引擎树里的链接；反证：check:models:refute）。⚠️ 产品运行期跑的是 `boxsvc --fetch-models`
 npm run e2e                   # D1–D5 端到端（真实 engine + 真实 service，真落盘）
 npm run capture               # 截图取证（需屏幕解锁；不满足条件会拒绝出图而非交假证据）
 
@@ -183,7 +184,7 @@ npm run check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 
 npm run check:quit            # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW / 前端不静默 / Windows signal_tree 无条件 /F）
 npm run check:autostart       # 翻译服务「自动启动 / 手动启停」根因钉子 18 条 / 反证 19 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / effect 依赖不含 status / stopped 给「启动」/ 服务实现默认档 = Rust / default-run 指向真实 bin；不起进程）
 npm run check:engine-client   # 翻译引擎适配层 50 条 / 反证 12 条（真协议用 openapi 快照「假引擎」，秒级可复跑）
-npm run check:models          # S3 模型下载器 38 条 / 反证 6 条（本地 Range 夹具源：中断续传 / 篡改一字节 / 换版本重链 / HF 缓存布局，秒级）
+npm run check:models          # S3 模型下载器 **双靶** 37×2 = 74 条 / 反证 6×2 = 12 条（本地 Range 夹具源：中断续传 / 服务端不支持 Range / 篡改一字节 / 换版本重链 / HF 缓存布局，秒级）。A3d 两靶同跑：Node 对照端 + Rust `boxsvc --fetch-models`（产品主路径）；反证开关走子进程 env
 npm run check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）
 npm run check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run check:contract        # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status 77 条（反证：check:contract:refute）

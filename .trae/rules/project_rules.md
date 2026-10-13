@@ -45,11 +45,11 @@ alwaysApply: true
 **目录约定（硬规则，全文见 `README.md` §目录 · `docs/spec-notes.md` D-79）**：
 
 - **产品 / 验收分家**：验收脚本一律在 `e2e/`（按来源分子目录：`e2e/service/` · `e2e/engine/`）。
-  判据不是"像不像测试"，而是**产品代码运行期会不会 fork 它** —— 会 fork 的
-  （`engine/scripts/fetch-models.mjs`）留在原处。
+  判据不是"像不像测试"，而是**产品代码运行期会不会 fork 它** —— 会 fork 的留在原处。
   ⚠️ 产品主路径改走 Rust 后，那个脚本**降级为对照端**而非删除：
-  启动配方打印器已于 A3b 退役，`child-watch.mjs` 于 A3c 降级（仍被 `llm-supervisor.mjs` 引用）。
-  降级前必须 `grep` 确认还有谁引用。
+  启动配方打印器已于 A3b 退役，`child-watch.mjs` 于 A3c 降级（仍被 `llm-supervisor.mjs` 引用），
+  `fetch-models.mjs` / `model-store.mjs` 于 **A3d** 降级（是 `check:models` 双靶的 Node 那一靶）。
+  降级前必须 `grep` 确认还有谁引用，**以及它是不是某个双靶对拍的一半**。
 - **临时产物一律写进 `.tmp/<用途>/`**，**不得**在仓库根另起 `.tmp-xxx/` 或 `tmp-xxx/`。
 - **新增 / 搬迁目录后必须同步**：`README.md` 目录节（唯一入口）· 本文件 · `AGENTS.md` §1 · `package.json` 命令 ·
   **断言里写死的路径**（不同步的后果是**静默跳过**，不是变红）· 脚本自己的用法注释。

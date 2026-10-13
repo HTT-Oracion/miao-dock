@@ -218,17 +218,26 @@ const MODEL_MANIFEST = process.env.MIAO_MODEL_MANIFEST
  * **一次性启动 + 状态可查**：POST 立即返回，进度从 `/engine/status.modelDownload` 读。
  *
  * ## 为什么单飞（同一时刻只允许一个）
- * `model-store.mjs` 的续传靠 `<dest>.part` 文件。两个下载同时跑会往同一批 `.part`
+ * 续传靠 `<dest>.part` 文件。两个下载同时跑会往同一批 `.part`
  * 里写、互相截断；**失败形态是"下完了、哈希不对"**，而它看起来像"网络坏了"。
  * 与其事后归因，不如在入口 409 掉。
  *
+ * ## 🔴 A3d：执行体是 `boxsvc --fetch-models`，不再是 `node fetch-models.mjs`
+ * A3「node 随包」作废 ⇒ 产品运行期不许 fork 解释器。下载器本体已 Rust 化
+ * （`boxsvc::engine::model_store` + `boxsvc --fetch-models`），本文件只是**服务的 Node
+ * 对照端**，它调用同一个执行体 —— 否则两靶的 `modelDownload` 视图会各说一套
+ * （Rust 报 `runner`、Node 报 `script`），对拍就失去意义。
+ *
  * ## 夹具接缝
- * `MIAO_MODEL_DOWNLOAD_SCRIPT` 覆盖被执行的脚本 —— 与 `MIAO_MODEL_MANIFEST` 同一手法。
+ * `MIAO_MODEL_DOWNLOAD_RUNNER` 覆盖执行体 —— 与 `MIAO_MODEL_MANIFEST` 同一手法。
  * 没有它，验收就得**真下几个 GB**（依赖网络、十几分钟、且不可重放）。产品路径不设置它。
+ * ⚠️ A3d 起它必须是**可直接 spawn 的可执行文件**（Windows `.cmd`/`.exe`，unix 可执行），
+ *    不再隐含"再来一个 node 解释器"。
  */
-const MODEL_DOWNLOAD_SCRIPT = path.resolve(
-  process.env.MIAO_MODEL_DOWNLOAD_SCRIPT
-  || path.join(REPO_ROOT, 'engine', 'scripts', 'fetch-models.mjs'),
+const MODEL_DOWNLOAD_RUNNER = path.resolve(
+  process.env.MIAO_MODEL_DOWNLOAD_RUNNER
+  || path.join(REPO_ROOT, 'app', 'src-tauri', 'target', 'debug',
+    `boxsvc${process.platform === 'win32' ? '.exe' : ''}`),
 );
 /** 输出尾巴保留多少行 —— 够看清"卡在哪一步/报了什么错"，又不至于把内存当日志盘 */
 const MODEL_DOWNLOAD_TAIL_MAX = 40;
@@ -258,12 +267,13 @@ function modelDownloadView() {
     tail: [...modelDownload.tail],
     rootDir: MODEL_ROOT,
     manifest: MODEL_MANIFEST,
-    script: MODEL_DOWNLOAD_SCRIPT,
+    /** 执行体（A3d 起是 `boxsvc`，不再是那个 .mjs 脚本） */
+    runner: MODEL_DOWNLOAD_RUNNER,
     /**
-     * 脚本在不在盘上。界面据此**禁用按钮**（而不是让用户点一下换一条报错）——
+     * 执行体在不在盘上。界面据此**禁用按钮**（而不是让用户点一下换一条报错）——
      * 与「打开目录」按 `root` 禁用是同一条纪律。
      */
-    scriptExists: fs.existsSync(MODEL_DOWNLOAD_SCRIPT),
+    runnerExists: fs.existsSync(MODEL_DOWNLOAD_RUNNER),
   };
 }
 
@@ -282,9 +292,9 @@ function startModelDownload() {
       '模型下载已在进行中 —— 同一时刻只允许一个下载任务（并发会互相截断续传文件）',
       { startedAt: modelDownload.startedAt, tail: modelDownload.tail.slice(-5) });
   }
-  if (!fs.existsSync(MODEL_DOWNLOAD_SCRIPT)) {
-    throw new ApiError('INTERNAL', `模型下载脚本不存在：${MODEL_DOWNLOAD_SCRIPT}`,
-      { script: MODEL_DOWNLOAD_SCRIPT });
+  if (!fs.existsSync(MODEL_DOWNLOAD_RUNNER)) {
+    throw new ApiError('INTERNAL', `模型下载执行体不存在：${MODEL_DOWNLOAD_RUNNER}`,
+      { runner: MODEL_DOWNLOAD_RUNNER });
   }
 
   modelDownload.state = 'running';
@@ -293,9 +303,11 @@ function startModelDownload() {
   modelDownload.exitCode = null;
   modelDownload.timedOut = false;
   modelDownload.tail = [];
-  serverLog(`模型下载已启动：${MODEL_DOWNLOAD_SCRIPT} → ${MODEL_ROOT}`);
+  serverLog(`模型下载已启动：${MODEL_DOWNLOAD_RUNNER} --fetch-models → ${MODEL_ROOT}`);
 
-  const child = spawn(process.execPath, [MODEL_DOWNLOAD_SCRIPT], {
+  const child = spawn(MODEL_DOWNLOAD_RUNNER, [
+    '--fetch-models', '--root', MODEL_ROOT, '--manifest', MODEL_MANIFEST,
+  ], {
     env: { ...process.env, MIAO_MODEL_ROOT: MODEL_ROOT },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -889,8 +901,8 @@ function handleEngineUnload(req, res, cors) {
  * `POST /engine/models/verify` —— 「校验完整性」（《02》§5 模型管理的两个动作之一）。
  *
  * 🔴 它做的是**真算 sha256**，不是"看一眼文件在不在"：
- *    调用 `engine/scripts/fetch-models.mjs --check`，那个脚本走 `verifyModels()`
- *    —— `--check` 分支**不联网、不删任何东西**（见该脚本的用法注释）。
+ *    调用 `boxsvc --fetch-models --check`（A3d 之前是 `node fetch-models.mjs --check`），
+ *    走的是 `verifyModels()` —— `--check` 分支**不联网、不删任何东西**。
  *    这是"校验完整性"唯一诚实的实现：一个只判存在的校验会给用户"没问题"的假结论，
  *    而模型恰好是"存在但坏掉"最常见的一类资产（下到一半、被同步盘截断）。
  *
@@ -903,12 +915,13 @@ function handleEngineUnload(req, res, cors) {
  */
 function handleModelsVerify(req, res, cors) {
   return readBody(req).then(async () => {
-    const script = path.resolve(REPO_ROOT, 'engine', 'scripts', 'fetch-models.mjs');
     const started = Date.now();
-    const { code, stdout, stderr, timeout } = await runVerifyChild(script, {
+    const { code, stdout, stderr, timeout } = await runVerifyChild(MODEL_DOWNLOAD_RUNNER, {
       MIAO_MODEL_ROOT: MODEL_ROOT,
-      // 与 `engine-client.mjs` 无关：这个脚本自己读清单路径，固定为仓内那份
-    });
+      // 与 `engine-client.mjs` 无关：清单路径**显式**给（与 Rust 侧同口径）——
+      // 靠默认值对齐等于把两处事实源分开维护，搬一次路径就静默错开。
+      MIAO_MODEL_MANIFEST: MODEL_MANIFEST,
+    }, { manifest: MODEL_MANIFEST });
     const text = `${stdout}\n${stderr}`;
     const m = /校验：通过 (\d+) \/ 不符 (\d+) \/ 缺失 (\d+)（共 (\d+)）/.exec(text);
     const problems = text.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('✗'));
@@ -965,9 +978,11 @@ function handleModelsDownload(req, res, cors) {
  * `timeoutMs` 给 15 min：真算 5–8 GB 的 sha256 在机械盘上可以很慢，但它**必须有个头**，
  * 否则界面会永远转圈（且没有任何东西会告诉用户它卡住了）。
  */
-function runVerifyChild(script, extraEnv, { timeoutMs = 900_000 } = {}) {
+function runVerifyChild(runner, extraEnv, { timeoutMs = 900_000, manifest } = {}) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [script, '--check'], {
+    const args = ['--fetch-models', '--check'];
+    if (manifest) args.push('--manifest', manifest);
+    const child = spawn(runner, args, {
       env: { ...process.env, ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
     });

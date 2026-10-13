@@ -26,13 +26,14 @@
 
 **目录约定（硬规则，全文与理由见 `README.md` §目录 · `docs/spec-notes.md` D-79）**：
 
-- **产品 / 验收分家**：判据不是"像不像测试"，而是**产品代码运行期会不会 fork 它**。会 fork 的
-  （`engine/scripts/fetch-models.mjs`）留在原处，其余全部在 `e2e/`。搬迁脚本时**按来源分子目录**以保住相对深度（`service/scripts/x` → `e2e/service/x`）。
+- **产品 / 验收分家**：判据不是"像不像测试"，而是**产品代码运行期会不会 fork 它**。会 fork 的留在原处
+  （`engine/scripts/fetch-models.mjs` 等），其余全部在 `e2e/`。搬迁脚本时**按来源分子目录**以保住相对深度（`service/scripts/x` → `e2e/service/x`）。
   ⚠️ **反向也成立**：产品主路径一旦改走 Rust，那个脚本就**降级为对照端**——
   `print-launch-plan.mjs` **已退役**（配方收进 `boxsvc::engine::build_launch_plan`，A3b）；
-  `child-watch.mjs` A3c 起降为**对照端**（产品主路径换 `boxsvc --child-watch`，但 `service/src/settings/llm-supervisor.mjs` 仍 import 它 ⇒ **不许删**，A3d 才处理）。
-  🔴 **降级 ≠ 删**：删之前先 `grep` 还有谁引用。A3b/A3c 处置不同就是这条的两种结果。
-  🔴 剩下的 `fetch-models.mjs` 归 A3d。
+  `child-watch.mjs` A3c 起降为**对照端**（产品主路径换 `boxsvc --child-watch`，但 `service/src/settings/llm-supervisor.mjs` 仍 import 它 ⇒ **不许删**）；
+  `fetch-models.mjs` 与 `model-store.mjs` A3d 起**同样降为对照端**（产品主路径换 `boxsvc --fetch-models`，但它们是 `check:models` / `check:engine-settings` 的**双靶另一边** ⇒ **不许删**）。
+  🔴 **降级 ≠ 删**：删之前先 `grep` 还有谁引用。A3b/A3c/A3d 处置不同就是这条的三种结果。
+  🔴 **降级后仍必须同步改**：对照端是"同一契约的另一实现"，产品侧改了字段/参数而对照端没跟上 ⇒ 双靶对拍会**红**，红才是对的。
 - **临时产物一律写进 `.tmp/<用途>/`**（`e2e/` · `selftest/` · `models/` · `engine-test/`），**不得**在仓库根另起 `.tmp-xxx/` / `tmp-xxx/`。
 - **新增或搬迁目录后必须同步**：`README.md` 目录节（唯一入口）· 本节分层表 · `.trae/rules/project_rules.md` ·
   `package.json` 命令 · **断言里写死的路径**（不同步的后果是**静默跳过**，不是变红）· 脚本自己的用法注释。
@@ -123,9 +124,9 @@ npm run check:engine-client[:refute] # 翻译引擎适配层 50 条 / 反证 12 
 npm run check:retry[:refute]  # 队列「重试」任务身份：复用**同一** taskId（不冒历史行）+ 翻译方向（白名单/落库/送到引擎/重试继承） 10 条 / 反证 7 条（mock 引擎 + 真服务子进程，秒级）
 npm run check:lib-manage[:refute] # 漫画库管理取证：队列删除（仅终端态可删）/ 隐藏与恢复 / 越界名 403 / 前端接线 / 新建（manifest 同步落盘 + 同名 409）/ 归并（在跑拒绝 + NN_第N话 物理移动 + episodes 回写）/ 封面（嗅探命名 + json 同步）/ 话号一位小数（14.1 落位与寻址 + 两位小数/.0 拒绝）16 条 / 反证 8 条（mock 引擎 + 真服务子进程，秒级）
 npm run check:retranslate[:refute] # 单张漫画返工重译 + 全屏缩放快捷键：返工**覆盖**译文（塞假译文验真被顶掉）/ 不碰原图 / 与 resume 分工 / 裸 ↑↓ 不缩放（不抢音量键）12 条 / 反证 5 条（mock 引擎 + 真服务子进程，秒级）
-npm run check:models[:refute] # S3 模型下载器 E7：38 条 / 反证 6 条（本地 Range 夹具源，秒级，不碰真权重；含 HF 缓存布局 blobs+snapshots+refs）
+npm run check:models[:refute] # S3 模型下载器 E7 **双靶**：37 条 × 2 靶 = 正向 **74** / 反证 6 × 2 = **12**（本地 Range 夹具源，秒级，不碰真权重；含 HF 缓存布局 blobs+snapshots+refs）。A3d 起两靶同跑：Node 对照端 `fetch-models.mjs` + Rust `boxsvc --fetch-models`（**产品主路径**）。🔴 反证开关走**子进程 env** —— 进程内 `process.env` 只管得住 Node 靶 ⇒ Rust 靶永远绿，是最坏的假绿
 npm run check:engine-patches[:refute] # 上游源码补丁表（ENGINE_PATCHES）↔ 实物一致性 6 条 / 反证 4 条（零网络零 GPU：条数写死 / 结构 / marker 命名 / 目标存在 / 已应用 / 补丁体自含 marker）
-npm run fetch:models          # S3 模型下载器 CLI：--check 只校验 / --link 只重建引擎树里的链接（零网络）
+npm run fetch:models          # S3 模型下载器 CLI **Node 对照端**（开发机用）：--check 只校验 / --link 只重建引擎树里的链接（零网络）。⚠️ **产品运行期跑的是 `boxsvc --fetch-models`**
 npm run check:profile[:refute] # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）
 npm run check:e5e6[:refute]    # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run check:contract[:refute] # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status，77 条（8 个实例场景 A–H）/ 逃生开关反证 4 条（各约 3s / 2s）
@@ -192,8 +193,9 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
   ⚠️ 父侧必须给 `Stdio::piped()` + `MIAO_CHILD_WATCH_PIPE=1` 并**攥住 `ChildStdin`**（`_watch_keepalive`）——
   少任一条，看守器拿不到权威判据，E11 静默失效。
 - **模型资产管理（S3）**：`engine/models.manifest.json`（版本控制）是唯一清单 —— 来源 / sha256 / 大小；
-  `engine/model-store.mjs` 负责下载（断点续传 / 逐文件 SHA256 / 失败单文件重下 / `.ready` 幂等 / 可暂停），
-  `npm run fetch:models` 是 CLI。
+  `boxsvc::engine::model_store` 负责下载（断点续传 / 逐文件 SHA256 / 失败单文件重下 / `.ready` 幂等 / 传输中断一次重下），
+  CLI 是 `boxsvc --fetch-models`（**A3d 起为产品主路径**；`engine/model-store.mjs` + `engine/scripts/fetch-models.mjs` 保留为**双靶对照端**）。
+  🔴 有意差异：Rust 版**不实现** `AbortSignal` —— 产品跑的是 CLI，「暂停」的真实形态就是杀进程，`.part` 留下即断点。
   🔴 **权威副本在 `runtimes/manga-translator/models-store/`，引擎源码树 `src/models/` 里那几份只是硬链接** ——
   因为引擎把模型路径硬编码在自己源码树里（`utils/inference.py:94` + `utils/generic.py:24-25`，且
   `server/args.py` 没有 `--model-dir`）⇒ **换引擎版本后跑 `npm run fetch:models -- --link` 即可零网络恢复**，

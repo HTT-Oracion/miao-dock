@@ -3274,9 +3274,9 @@ const MUTATIONS = [
     expect: ['ENGINE.diag.restartIsServiceRestart'],
   },
   {
-    name: '去掉「重新下载模型」的置灰（脚本不在盘上时点了只换一条报错）',
+    name: '去掉「重新下载模型」的置灰（执行体不在盘上时点了只换一条报错）',
     file: F.engineDiag,
-    find: 's?.modelDownload?.scriptExists === false',
+    find: 's?.modelDownload?.runnerExists === false',
     replace: 'false',
     all: true,
     expect: ['ENGINE.diag.downloadDisabled'],

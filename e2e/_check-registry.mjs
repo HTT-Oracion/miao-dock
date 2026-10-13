@@ -72,7 +72,8 @@ const CHECKS = [
   { id: 'child-watch-kill', script: 'e2e/child-watch-kill-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/child_watch.rs', 'engine/scripts/child-watch.mjs'] },
   { id: 'stdio', script: 'e2e/child-output-check.mjs', tier: 'service', refute: true, watch: ['service/src/**', 'app/src-tauri/**'] },
   { id: 'autostart', script: 'e2e/service-autostart-check.mjs', tier: 'service', refute: true, watch: ['service/src/**', 'app/src-tauri/**'] },
-  { id: 'models', script: 'e2e/engine/model-store-check.mjs', tier: 'service', refute: true, watch: ['engine/**', 'models-store/**'] },
+  // A3d 起是**双靶**（Node 对照端 + Rust 移植）⇒ 两侧源码都得进 watch，少一边就是"改了不红"。
+  { id: 'models', script: 'e2e/engine/model-store-check.mjs', tier: 'service', refute: true, watch: ['engine/model-store.mjs', 'engine/scripts/fetch-models.mjs', 'app/src-tauri/src/boxsvc/engine/model_store.rs', 'app/src-tauri/src/boxsvc/engine/fetch_models.rs'] },
   { id: 'patches', script: 'e2e/engine/engine-patches-check.mjs', tier: 'service', refute: true, watch: ['engine/scripts/**', 'engine/patches/**'] },
 
   // ---- nightly：真实引擎 / 模型，分钟级，串行 ----

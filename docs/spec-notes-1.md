@@ -1846,3 +1846,122 @@ ToolHelp32 快照在权限不足 / 进程数逼近上限时会失败。把它当
 
 **验收**：`check:child-watch` 正向 **3/3**、反证 **1/1 有效**（另 1 靶按结构跳过）；
 `check:child-watch-kill` 正向 **2/2**、反证 **2/2 全红**；`cargo test --lib` **108 passed**（98 → 108）。
+
+---
+
+## D-173 · A3d 模型下载 Rust 化：双靶对拍是唯一能挡住"静默移植缺陷"的手段（2026-10-13）
+
+**改动**：新增 `app/src-tauri/src/boxsvc/engine/model_store.rs`（下载内核，移植自 `engine/model-store.mjs` 603 行）
++ `boxsvc --fetch-models`（CLI，移植自 `engine/scripts/fetch-models.mjs`）。
+沿用 A3b/A3c 同一个裁定：**复用已随包的 `boxsvc`，不新增第三个可执行文件、不改 `bundle.resources`**。
+
+产品侧两处**运行期** node 启动点清零：
+
+- `handlers.rs` 的 `models/verify`（原 `run_verify_child(&script)` 用 `MIAO_NODE_EXEC`）
+  → `run_verify_child(&es.verify_runner(), &es.model_manifest, &model_root)`，并**显式**带 `--manifest`
+  （原来清单路径是 Node 脚本内部的默认值 ⇒ 产品与脚本各持一份事实源，会静默分开维护）。
+- `state.rs::start_model_download` 的 `node <script>` → `Command::new(&self.download_runner).arg("--fetch-models")`。
+
+字段/接缝改名（前端三处同步）：`script` → `runner`、`scriptExists` → `runnerExists`、
+env `MIAO_MODEL_DOWNLOAD_SCRIPT` → **`MIAO_MODEL_DOWNLOAD_RUNNER`**（默认 `current_exe()`）。
+
+**为什么两个 `.mjs` 都保留**（与 A3b 退役 `print-launch-plan.mjs` 的处置不同）：
+`model-store.mjs` 是 `check:models` 的 **Node 对照端**，
+`fetch-models.mjs` 是 `check:engine-settings` D 组的 **Node 对照端**，
+两者都是双靶对拍的一边 ⇒ 删掉任何一边，`check:models` 就退化成"只有 Rust 靶的自证"。
+
+### 🔴 缺陷 ①：HTTP 的 `res.ok` 分不出「续传成功」和「服务端不支持 Range」
+
+同一句 `Range: bytes=N-`，服务端可能回 **206 Partial Content**（追加到 `.part` 尾部），
+也可能回 **200 OK**（不支持 Range，给了全量）。两者的 `status().is_success()` **都为真**。
+若只看 ok 就走"追加"分支 ⇒ `.part` 变成「旧前缀 + 完整新文件」⇒ sha256 必失败 ⇒ 自动重下 ⇒
+**再下载一次还是同样的错** ⇒ 表面症状是"这个模型永远下不完"，而日志上只有一句校验失败。
+
+修法：**先判状态码是不是 206**，200 必须**截断重计**（`OpenOptions::truncate(true)`）。
+同类坑：`Content-Length` 是**剩余**长度而非总长 ⇒ 进度分母只能取 `Content-Range` 里的 total
+（`total_from_content_range()`），否则续传后进度条从 60% 跳回 0%。
+
+### 🔴 缺陷 ②：校验失败重下 与 传输中断重试 是**两件事**，上限必须分开
+
+- `REDOWNLOAD_LIMIT = 1`：**内容**错了（sha256 不符）⇒ 删掉重下，**只许一次**。
+  无限重试会打爆上游且掩盖真因（清单写错 / URL 指错）。
+- `RETRY_PER_SOURCE = 3`：**传输**断了（连接重置 / timeout）⇒ 换重试，这是网络抖动。
+
+初版把两者合成一个计数 ⇒ 网络抖 3 次就把"重下额度"吃光 ⇒ 之后再遇到真损坏不再重下。
+
+### 🔴 缺陷 ③：Windows 文件身份 `(dev, ino)` 不能用 `file_index()`
+
+`std::os::windows::fs::MetadataExt::file_index()` / `volume_serial_number()` 属
+**未稳定的 `windows_by_handle` feature**（rust#63010），稳定链路上取不到。
+判硬链接"是不是同一份物理文件"又要它（HF 缓存的 `linkTo` 校验全靠这个）。
+
+修法：走 `GetFileInformationByHandle`（`windows-sys`，已在 A3c 引入的同一批依赖里），
+取 `dwVolumeSerialNumber` + `nFileIndexHigh/Low`；另 `dev` 在 Windows 上是 `u32` 需转 `u64`。
+unix 分支仍用 `MetadataExt::dev()/ino()`。
+
+### 🔴 最贵的一课：夹具 HTTP 服务器的 `drain` 必须**当场**注册，否则下载永久卡在 64KB
+
+写「断点续传 / 中断续传」场景的夹具服务器时，为了模拟慢速下载写了：
+
+```js
+const next = () => { if (ok) setImmediate(pump); else res.once('drain', pump); };
+if (slowMs) setTimeout(next, slowMs);   // ❌
+```
+
+`res.write()` 返回 `false` 后缓冲**可能在定时器到期之前就已排空并触发过一次 `drain`**，
+之后再注册 `once('drain')` 永远等不到下一次 ⇒ 字节流停在 64KB（一个内核缓冲）不动。
+
+症状极难归因：**正向轮在"续传"场景挂死 10 分钟**，而 Node 靶和 Rust 靶**同时**挂
+⇒ 很容易误判成"Rust 移植有问题"，实则是夹具的锅。
+
+修法：
+
+```js
+const schedule = () => { if (st.slowMs > 0) setTimeout(pump, st.slowMs); else setImmediate(pump); };
+if (ok) schedule(); else res.once('drain', schedule);   // ✅ 同一次调用里决定，不跨定时器
+```
+
+修完实测：Node `resumedFrom=409600` exit=0 603ms；Rust `resumedFrom=409600` exit=0 569ms。
+
+### 🔴 缺陷 ④：反证开关必须走**子进程 env**，进程内 `process.env` 只管得住 Node 靶
+
+`check:models` 的双靶里，Rust 靶是**另一个进程**（`boxsvc.exe`）。
+反证开关若只设在 `process.env` ⇒ Rust 靶读不到 ⇒ **反证轮永远绿**。
+这是假绿里最坏的一种：它不报错、不失败，只是让"反证"这件事**不存在**。
+
+修法：反证开关统一塞进 `spawn` 的 `env`（`REFUTE_ENV` 全局载体），两边都从环境读。
+
+### 🔴 缺陷 ⑤：Windows 上 Node 22 `spawn()` 一个 `.cmd` 直接 `EINVAL`
+
+D 组（模型下载视图）原夹具是"写一个假 `.cmd` 当下载脚本"。实测 `Error: spawn EINVAL`（errno -4071）。
+且就算能起，它量的也是**假执行体**的状态机，不是产品的。
+
+修法：放弃假可执行文件，改用已有的 **`MIAO_MODEL_MANIFEST` 接缝**控制行为 ——
+成功档 = 拷一份真清单；失败档 = 非法 JSON ⇒ 执行体报 `MODEL_MANIFEST_BAD` 非 0 退出。
+执行体仍是产品那个 `boxsvc.exe` ⇒ 现在量的是**产品真实执行体**的状态机。
+
+### 🔴 缺陷 ⑥：反例条目的 `dest` 指错 ⇒ 判据根本没执行（场景设计漏洞，非实现缺陷）
+
+P5（`MODEL_HF_BAD_LINK`）两靶都返回 `code=null`。排查后：`dest` 指向**不存在的** store 副本，
+而两实现的"先判 store 里有没有、没有就 skip"发生在 `hf_layout()` **之前** ⇒ 判据一次都没跑。
+
+修法：让 `dest` 指向刚下载好的那份（`entry.dest`），并给谓词补 `f.badExit !== 0`
+（只断言 `code` 的话，"没执行"和"执行了但不符"长得一样）。
+
+### 断言处置
+
+- `check:models` 重写为**双靶**（Node 对照端 + Rust `boxsvc --fetch-models`）：
+  37 条 × 2 靶 = **正向 74**；反证 6 条 × 2 靶 = **12**。
+  驱动方式是**子进程取证**（起进程 → 读盘上的 report JSON / progress 日志），
+  **不是** import 库调用 —— 后者测不到 CLI 的参数解析与退出码。
+  为此两侧各补 5 个**同构**取证参数：`--manifest` / `--root` / `--link-base` / `--report` / `--progress-log`。
+- 有意差异：Rust 版**不实现** `AbortSignal`。产品跑的是 CLI，"暂停"的真实形态就是杀进程，
+  `.part` 留下即断点（`scnAbortResume` 用**真杀进程**取证，而不是调 `abort()`）。
+- `check:engine-settings` D 组改走 `MIAO_MODEL_MANIFEST` 接缝（见缺陷 ⑤），
+  从 50/11 提升到 **55/6**（剩余 6 条是既有存量 S4/S5/S7/S9/S9b/S10b，与本轮无关）。
+
+**验收**：`check:models` 正向 **74/74**、反证 **12/12 全红**；
+`cargo test --lib` **120 passed**（108 → 120，新增 12 条 `model_store` 单测）；
+`check:registry` 4/4 · `check:bundle` 5/5 · `check:engine-parity` 24/24 · `check:store-parity` 24/24 ·
+`check:paths-parity` 3/3 · `check:engine-http-parity` 18/18 · `check:harness` 7/7 ·
+`check:llm-supervisor` 4/4 · `check:contract-delta` 77/77 · `check:routes` 9/9。
