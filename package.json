@@ -102,6 +102,8 @@
     "check:engine-http:refute": "node e2e/service/engine-http-parity-check.mjs --refute",
     "check:llm-supervisor": "node e2e/service/llm-supervisor-parity-check.mjs",
     "check:llm-supervisor:refute": "node e2e/service/llm-supervisor-parity-check.mjs --refute",
+    "check:drain-runtime": "node e2e/service/drain-runtime-check.mjs",
+    "check:drain-runtime:refute": "node e2e/service/drain-runtime-check.mjs --refute",
     "check": "node e2e/run-checks.mjs --tier static",
     "check:full": "node e2e/run-checks.mjs --tier static,service",
     "check:nightly": "node e2e/run-checks.mjs --tier all",

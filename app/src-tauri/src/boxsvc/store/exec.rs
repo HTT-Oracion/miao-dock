@@ -9,13 +9,15 @@
 //    而 store 是**同步模型**；且注入让「调度/重试/落盘/终态」这些**编排语义**能脱离真实引擎
 //    被确定性验证（引擎本身已由 `check:engine-http` 钉住，不必在这里重复）。
 // ② **调度与执行分离**：`create*` / `retryTask` 只做「入队或启跑」的**记账**（改状态 + 发事件 +
-//    落盘），真正的推进在 [`Store::drain`]。Node 里这三件事是靠 async 的 `_runTask(...).finally()`
-//    串起来的；同步模型下把它们摊平成两个可分别调用的步骤，`drain` 就是那个「跑到底」的驱动器。
-//    🔴 代价（**已知偏离**）：`POST /tasks` 的「立即返回」语义要由 F5 接线时在独立线程上跑
-//    `drain` 来补 —— 那之前本模块**不接 HTTP**，接不上就没有语义损失，只有时序差异。
-// ③ **SSE 未接线**：事件照 Node 一样进 `task.events`（环形，上限 `MAX_EVENT_LOG`）并推进
-//    `event_seq`，但**不**写给订阅者（`task.clients` 仍是 F3-a 的不透明 id 集合）。理由同上：
-//    真正的 `writeSseEvent` 需要真实响应句柄，属 F5。
+//    落盘），真正的推进在 [`Store::drain`] / `drain.rs` 的线程。Node 里这三件事是靠 async 的
+//    `_runTask(...).finally()` 串起来的；同步模型下把它们摊平成两个可分别调用的步骤，
+//    `drain` 就是那个「跑到底」的驱动器。
+//    🔴 **三段式（D-150）**：单图处理拆成「阶段 1 持锁准备 → 阶段 2 **放锁**调引擎 →
+//    阶段 3 持锁落结果」（[`EngineJob`] / [`run_engine_attempts`] / [`Store::end_step`]）。
+//    两条驱动器（`Store::drain` 同步、`drain.rs` 线程）走**同一套**阶段接口，不是两份实现 ——
+//    否则 HTTP 侧那条路径就没有同源钉子兜底了。
+// ③ **SSE 已接线（F5.7）**：事件照 Node 一样进 `task.events`（环形，上限 `MAX_EVENT_LOG`）并推进
+//    `event_seq`，同时广播给订阅者（`events::publish`）。
 //
 // ## 借用策略
 // `run_task` 把任务**克隆出 `self.tasks`** 再执行、执行完写回：这样执行体可以自由 `&mut self`
@@ -112,6 +114,59 @@ pub struct DeleteResult {
 pub struct RetryOutcome {
     pub task_id: String,
     pub reused: usize,
+}
+
+// ---------------------------------------------------------------- 三段式执行（D-150）
+
+/// 一次「需要引擎」的作业：阶段 1（**持锁**）产出 → 阶段 2（**放锁**）执行 → 阶段 3（**持锁**）收尾。
+///
+/// 🔴 存在的理由（登记 D-150）：Node 的 `_runTask` 是 async，`await` 引擎 HTTP 时事件循环照常
+/// 服务别的请求；本仓的 store 是**同步模型**，若整段 `drain` 都压在 `Mutex<Store>` 里，
+/// 引擎在飞的那几秒 `GET /tasks` / `GET /queue` / `POST .../cancel` 全被挡住 —— 于是
+/// 「正在跑」「排队位次」这些**中间态**在 HTTP 上根本观察不到（A10/A11/A13/A15/A20 实测如此）。
+/// 拆成三段后，只有**真的在调引擎**时才放锁，中间态可被读到。
+///
+/// 本结构体不借用 `Store`，故可跨「放锁/重新持锁」边界搬运。
+#[derive(Clone, Debug)]
+pub struct EngineJob {
+    pub task_id: String,
+    pub dir_name: String,
+    pub seq: i64,
+    pub bytes: Vec<u8>,
+    pub lang_from: String,
+    pub lang_to: String,
+    pub mime: String,
+    pub force_fail: bool,
+    pub item_timeout_ms: i64,
+    pub engine_timeout_ms: i64,
+    /// 阶段 1 的起点时刻 —— 单项总预算从这里算起。
+    pub t0: i64,
+}
+
+/// 阶段 2 的产物（回传给阶段 3）。
+pub struct EngineOutcome {
+    pub translated: Option<TranslateOk>,
+    pub last_err: Option<EngineError>,
+    pub attempts: i64,
+    pub force_fail: bool,
+    pub t0: i64,
+    pub seq: i64,
+}
+
+/// `cancelTask` 的两段式返回值（Node 在 running 态 `await _settled`，见 [`Store::cancel_task_step`]）。
+#[derive(Clone, Debug)]
+pub enum CancelStep {
+    /// 已收尾（queued / 边界处取消）—— 直接就是最终结果。
+    Done(CancelResult),
+    /// 有页在飞（引擎调用已放锁）：本次**不**收尾，由 drain 跑完当前张后收尾为 canceled；
+    /// 调用方应**放锁**等任务转入终态，再用 [`Store::finish_cancel`] 取结果。
+    InFlight,
+}
+
+/// 阶段 1 的判定：这一页要么已经在阶段 1 处理干净（短路 / 缺原图），要么得在引擎上跑。
+enum PrepareOutcome {
+    Continue,
+    NeedEngine(EngineJob),
 }
 
 // ================================================================ 纯辅助
@@ -257,6 +312,73 @@ fn next_pending_item(task: &Task) -> Option<(usize, usize)> {
         }
     }
     None
+}
+
+/// 按 `seq` 定位页（放锁期间可能 append 增批，**编号**才是稳定锚）。
+fn find_item_by_seq(task: &Task, seq: i64) -> Option<(usize, usize)> {
+    for (bi, b) in task.batches.iter().enumerate() {
+        for (ii, it) in b.items.iter().enumerate() {
+            if it.seq == seq {
+                return Some((bi, ii));
+            }
+        }
+    }
+    None
+}
+
+/// 有没有页正在引擎上跑（决定取消是「立即收尾」还是「等当前张跑完」）。
+fn has_translating(task: &Task) -> bool {
+    task.batches.iter().any(|b| b.items.iter().any(|i| i.status == "translating"))
+}
+
+/// 阶段 2（**放锁**）：单项总预算 + 每次尝试取「剩余预算 × 单请求上限」之小 + 退避重试。
+///
+/// 复刻 `_processItem` 里的重试循环，但**不碰 `Store`** —— 故可在持锁之外调用（见 [`EngineJob`]）。
+pub fn run_engine_attempts(tr: &dyn Translator, job: &EngineJob) -> EngineOutcome {
+    let deadline = job.t0 + job.item_timeout_ms;
+    let mut attempt: i64 = 0;
+    let mut translated: Option<TranslateOk> = None;
+    let mut last_err: Option<EngineError> = None;
+    loop {
+        attempt += 1;
+        let remaining = deadline - now_ms();
+        if remaining <= 0 {
+            last_err = Some(EngineError::new(
+                "ENGINE_TIMEOUT",
+                format!("单项总预算 {}ms 已耗尽（第 {attempt} 次尝试开始前）", job.item_timeout_ms),
+            ));
+            break;
+        }
+        // 每次尝试的**请求超时**取两者之小：剩余预算 × 「单次请求多久算没响应」。
+        let attempt_timeout = remaining.min(job.engine_timeout_ms);
+        let opts = TranslateOpts {
+            seq: job.seq,
+            lang: Some(LangPair { from: Some(job.lang_from.clone()), to: Some(job.lang_to.clone()) }),
+            from: Some(job.lang_from.clone()),
+            to: Some(job.lang_to.clone()),
+            mime: Some(job.mime.clone()),
+            timeout_ms: Some(attempt_timeout),
+        };
+        let res = if job.force_fail {
+            Err(EngineError::new("ENGINE_ERROR", "injected_failure"))
+        } else {
+            tr.translate(&job.bytes, &opts)
+        };
+        match res {
+            Ok(t) => {
+                translated = Some(t);
+                break;
+            }
+            Err(e) => {
+                last_err = Some(e);
+                if attempt >= MAX_ATTEMPTS {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(RETRY_BACKOFF_MS));
+            }
+        }
+    }
+    EngineOutcome { translated, last_err, attempts: attempt, force_fail: job.force_fail, t0: job.t0, seq: job.seq }
 }
 
 /// 建 item（Node `_buildItems`）：嗅探扩展名，0 字节/嗅探失败 ⇒ `INVALID_IMAGE`。
@@ -747,18 +869,84 @@ impl Store {
 
     // ---------------------------------------------------------------- 调度与执行
 
-    /// 把队列**跑到底**（模块头 ② 的驱动器）：先跑已置 running 的当前任务，再依次跑队列。
+    /// 同步驱动：把队列跑到底（单测 / 同源自检走这条路；HTTP 侧由 `drain.rs` 的线程驱动）。
+    ///
+    /// 🔴 与 `drain.rs` 走的是**同一套**阶段接口（`begin_step` / `end_step` / `abort_step`），
+    /// 不是两条实现 —— 区别只在于本函数**不**在引擎调用前后放锁（单线程里没有别的持锁者）。
     pub fn drain(&mut self, tr: &dyn Translator) {
-        if let Some(id) = self.current_task_id.clone() {
-            self.run_task(&id, tr);
-            if self.current_task_id.as_deref() == Some(id.as_str()) {
-                self.current_task_id = None;
+        loop {
+            let job = match self.begin_step() {
+                Ok(Some(j)) => j,
+                Ok(None) => break,
+                Err(e) => {
+                    self.abort_current(&e);
+                    continue;
+                }
+            };
+            let out = run_engine_attempts(tr, &job);
+            if let Err(e) = self.end_step(&job, out) {
+                self.abort_step(&job.task_id, &e);
             }
         }
-        self.run_loop(tr);
     }
 
-    fn run_loop(&mut self, tr: &dyn Translator) {
+    /// 阶段 1（**持锁**）：推进到「下一次引擎调用」。返回 `None` ⇒ 队列已空、无活可干。
+    pub fn begin_step(&mut self) -> SResult<Option<EngineJob>> {
+        loop {
+            // ① 保证有一个「当前任务」；没有就从队列里取（queued → running，记账与 Node 同）。
+            if self.current_task_id.is_none() {
+                let Some(id) = self.pop_next_queued() else { return Ok(None) };
+                self.current_task_id = Some(id);
+            }
+            let task_id = self.current_task_id.clone().unwrap_or_default();
+            let Some(idx) = self.task_index(&task_id) else {
+                self.current_task_id = None;
+                continue;
+            };
+
+            // ② 对齐批次状态（对应 `_runTask` 开头的 `_syncBatchStatuses`）。
+            //    `sync_batch_statuses` 只在**真的变了**时才发事件，故每轮都调与「只在开头调一次」同观。
+            {
+                let es = &mut self.event_seq;
+                let lea = &mut self.last_event_at;
+                sync_batch_statuses(es, lea, &mut self.tasks[idx]);
+            }
+
+            // ③ 取消优先 —— Node 在 for 循环**顶部**先看 cancelRequested，即使还有待处理页也直接收尾。
+            if self.tasks[idx].cancel_requested {
+                let mut task = self.tasks[idx].clone();
+                self.skip_all_pending(&mut task, "canceled");
+                self.finalize(&mut task, "canceled");
+                self.tasks[idx] = task;
+                self.current_task_id = None;
+                continue;
+            }
+
+            // ④ 取下一页；没了就是终态（复用 `run_task_body` 的 `endStatusOf`）。
+            let Some((bi, ii)) = next_pending_item(&self.tasks[idx]) else {
+                let mut task = self.tasks[idx].clone();
+                let statuses: Vec<String> = task
+                    .batches
+                    .iter()
+                    .flat_map(|b| b.items.iter().map(|i| i.status.clone()))
+                    .collect();
+                let end = pure::end_status_of(statuses.iter().map(|s| s.as_str())).to_string();
+                self.finalize(&mut task, &end);
+                self.tasks[idx] = task;
+                self.current_task_id = None;
+                continue;
+            };
+
+            // ⑤ 准备这一页：短路 / 缺原图都在这里记账完继续；要在引擎上跑的则返回作业。
+            match self.prepare_item(&task_id, idx, bi, ii)? {
+                PrepareOutcome::Continue => continue,
+                PrepareOutcome::NeedEngine(job) => return Ok(Some(job)),
+            }
+        }
+    }
+
+    /// 队列里取一个 `queued` 任务置于 `running`（复刻 `_runLoop` 的记账段 + 收尾）。
+    fn pop_next_queued(&mut self) -> Option<String> {
         while self.current_task_id.is_none() && !self.queue.is_empty() {
             let id = self.queue.remove(0);
             let Some(idx) = self.task_index(&id) else { continue };
@@ -767,7 +955,6 @@ impl Store {
             }
             self.tasks[idx].status = "running".to_string();
             self.tasks[idx].queue_position = Some(0);
-            self.current_task_id = Some(id.clone());
             {
                 let es = &mut self.event_seq;
                 let lea = &mut self.last_event_at;
@@ -777,84 +964,14 @@ impl Store {
                 emit_task_status(es, lea, &mut self.tasks[idx]);
             }
             persist_task(&self.tasks[idx]);
-            self.run_task(&id, tr);
-            self.current_task_id = None;
+            return Some(id);
         }
+        None
     }
 
-    /// 跑一个任务（克隆出 `self.tasks` 执行、执行完写回，见模块头「借用策略」）。
-    pub fn run_task(&mut self, task_id: &str, tr: &dyn Translator) {
-        let Some(idx) = self.task_index(task_id) else { return };
+    /// 阶段 1 的「单页准备」：幂等短路 → `translating`（**必须落盘**）→ 取字节 → 造作业。
+    fn prepare_item(&mut self, task_id: &str, idx: usize, bi: usize, ii: usize) -> SResult<PrepareOutcome> {
         let mut task = self.tasks[idx].clone();
-        self.run_task_owned(&mut task, tr);
-        self.tasks[idx] = task;
-    }
-
-    fn run_task_owned(&mut self, task: &mut Task, tr: &dyn Translator) {
-        match self.run_task_body(task, tr) {
-            Ok(()) => {}
-            Err(e) => {
-                task.last_error = Some(e.message.clone());
-                // 正在处理中的 item 不能留在 translating（否则任务终态里挂着一个假「进行中」）。
-                for bi in 0..task.batches.len() {
-                    for ii in 0..task.batches[bi].items.len() {
-                        if task.batches[bi].items[ii].status != "translating" {
-                            continue;
-                        }
-                        task.batches[bi].items[ii].status = "failed".to_string();
-                        task.batches[bi].items[ii].saved = false;
-                        task.batches[bi].items[ii].reason = Some("internal_error".to_string());
-                        // G-11：**已处理**的页一律保原图，异常路径也是失败的一种。
-                        let seq = task.batches[bi].items[ii].seq;
-                        let key = format!("{}:{}", task.task_id, seq);
-                        let last = self.blobs.get(&key).cloned().or_else(|| self.read_staged_bytes(&task.task_id, seq));
-                        if let Some(b) = last {
-                            // 已经在错误路径上了，这里**绝不能再抛**（否则一条错误变两条）。
-                            let _ = self.keep_original_on_failure(task, bi, ii, &b);
-                        }
-                        let es = &mut self.event_seq;
-                        let lea = &mut self.last_event_at;
-                        emit_item_status(es, lea, task, bi, ii);
-                    }
-                }
-                self.skip_all_pending(task, "internal_error");
-                self.finalize(task, "failed");
-            }
-        }
-    }
-
-    fn run_task_body(&mut self, task: &mut Task, tr: &dyn Translator) -> SResult<()> {
-        {
-            let es = &mut self.event_seq;
-            let lea = &mut self.last_event_at;
-            sync_batch_statuses(es, lea, task);
-        }
-        loop {
-            if task.cancel_requested {
-                break;
-            }
-            let Some((bi, ii)) = next_pending_item(task) else { break };
-            self.process_item(task, bi, ii, tr)?;
-        }
-        if task.cancel_requested {
-            self.skip_all_pending(task, "canceled");
-            self.finalize(task, "canceled");
-        } else {
-            let statuses: Vec<String> = task
-                .batches
-                .iter()
-                .flat_map(|b| b.items.iter().map(|i| i.status.clone()))
-                .collect();
-            let end = pure::end_status_of(statuses.iter().map(|s| s.as_str())).to_string();
-            self.finalize(task, &end);
-        }
-        Ok(())
-    }
-
-    /// 复刻 `_processItem`：幂等短路 → translating（**必须落盘**）→ 取字节 → 重试循环
-    /// （总预算 + 每次尝试取「剩余预算 × 单请求上限」之小）→ 失败保原图 / 成功落盘。
-    fn process_item(&mut self, task: &mut Task, bi: usize, ii: usize, tr: &dyn Translator) -> SResult<()> {
-        let task_id = task.task_id.clone();
         let dir_name = task.dir_name.clone();
         let dir = self.root.join(&dir_name);
         let seq = task.batches[bi].items[ii].seq;
@@ -872,26 +989,29 @@ impl Store {
             self.blobs.remove(&blob_key);
             // G-12：已有译文 ⇒ 暂存那份通常没用了 —— 但**前提是原图确实在磁盘上**。
             if find_original_name(&dir, seq).is_some() {
-                self.unstage_bytes(&task_id, seq);
+                self.unstage_bytes(task_id, seq);
             }
-            let es = &mut self.event_seq;
-            let lea = &mut self.last_event_at;
-            emit_item_status(es, lea, task, bi, ii);
-            sync_batch_statuses(es, lea, task);
-            persist_task(task);
-            return Ok(());
+            {
+                let es = &mut self.event_seq;
+                let lea = &mut self.last_event_at;
+                emit_item_status(es, lea, &mut task, bi, ii);
+                sync_batch_statuses(es, lea, &mut task);
+            }
+            persist_task(&task);
+            self.tasks[idx] = task;
+            return Ok(PrepareOutcome::Continue);
         }
 
         task.batches[bi].items[ii].status = "translating".to_string();
         {
             let es = &mut self.event_seq;
             let lea = &mut self.last_event_at;
-            emit_item_status(es, lea, task, bi, ii);
-            sync_batch_statuses(es, lea, task);
+            emit_item_status(es, lea, &mut task, bi, ii);
+            sync_batch_statuses(es, lea, &mut task);
         }
         // 🔴 必须落盘。emit / sync 只改内存并发事件，**不写盘** ⇒ 否则「这一页正在跑」在磁盘上不存在，
         //    落盘的永远是上一次终态（U10② 的现场：快照看起来「什么都没在跑」）。
-        persist_task(task);
+        persist_task(&task);
 
         let t0 = now_ms();
         let from_disk = task.batches[bi].items[ii].from_disk;
@@ -899,106 +1019,95 @@ impl Store {
         let bytes = if from_disk {
             self.read_original_from_disk(&dir_name, seq)
         } else {
-            self.blobs.get(&blob_key).cloned().or_else(|| self.read_staged_bytes(&task_id, seq))
+            self.blobs.get(&blob_key).cloned().or_else(|| self.read_staged_bytes(task_id, seq))
         };
         let Some(bytes) = bytes else {
             if !from_disk {
+                self.tasks[idx] = task;
                 return Err(StoreError::new("INTERNAL", "原图字节已丢失（内存与暂存区均无）", json!({})));
             }
             // 续做时原图不见了：单张失败，不中断任务（其余页照常续做）。
             task.batches[bi].items[ii].status = "failed".to_string();
             task.batches[bi].items[ii].reason = Some("original_missing".to_string());
             task.batches[bi].items[ii].duration_ms = Some(now_ms() - t0);
-            let es = &mut self.event_seq;
-            let lea = &mut self.last_event_at;
-            emit_item_status(es, lea, task, bi, ii);
-            sync_batch_statuses(es, lea, task);
-            persist_task(task);
-            return Ok(());
+            {
+                let es = &mut self.event_seq;
+                let lea = &mut self.last_event_at;
+                emit_item_status(es, lea, &mut task, bi, ii);
+                sync_batch_statuses(es, lea, &mut task);
+            }
+            persist_task(&task);
+            self.tasks[idx] = task;
+            return Ok(PrepareOutcome::Continue);
         };
 
         // 失败注入（覆盖 failed / partial_failed / 重试路径）；真实失败来自引擎。
         let force_fail = self.env.fail_seqs.contains(&seq)
             || (self.env.item_fail_rate > 0.0 && rand::thread_rng().gen::<f64>() < self.env.item_fail_rate);
 
-        let item_timeout = self.env.item_timeout_ms;
-        let engine_timeout = self.env.engine_timeout_ms;
-        let deadline = t0 + item_timeout;
-        let mut attempt: i64 = 0;
-        let mut translated: Option<TranslateOk> = None;
-        let mut last_err: Option<EngineError> = None;
+        let job = EngineJob {
+            task_id: task_id.to_string(),
+            dir_name,
+            seq,
+            bytes,
+            lang_from: task.lang.from.clone(),
+            lang_to: task.lang.to.clone(),
+            mime: task.batches[bi].items[ii].mime.clone(),
+            force_fail,
+            item_timeout_ms: self.env.item_timeout_ms,
+            engine_timeout_ms: self.env.engine_timeout_ms,
+            t0,
+        };
+        self.tasks[idx] = task;
+        Ok(PrepareOutcome::NeedEngine(job))
+    }
 
-        loop {
-            attempt += 1;
-            let remaining = deadline - now_ms();
-            if remaining <= 0 {
-                last_err = Some(EngineError::new(
-                    "ENGINE_TIMEOUT",
-                    format!("单项总预算 {item_timeout}ms 已耗尽（第 {attempt} 次尝试开始前）"),
-                ));
-                break;
-            }
-            // 每次尝试的**请求超时**取两者之小：剩余预算 × 「单次请求多久算没响应」。
-            let attempt_timeout = remaining.min(engine_timeout);
-            let opts = TranslateOpts {
-                seq,
-                lang: Some(LangPair { from: Some(task.lang.from.clone()), to: Some(task.lang.to.clone()) }),
-                from: Some(task.lang.from.clone()),
-                to: Some(task.lang.to.clone()),
-                mime: Some(task.batches[bi].items[ii].mime.clone()),
-                timeout_ms: Some(attempt_timeout),
-            };
-            let res = if force_fail {
-                Err(EngineError::new("ENGINE_ERROR", "injected_failure"))
-            } else {
-                tr.translate(&bytes, &opts)
-            };
-            match res {
-                Ok(t) => {
-                    translated = Some(t);
-                    break;
-                }
-                Err(e) => {
-                    last_err = Some(e);
-                    if attempt >= MAX_ATTEMPTS {
-                        break;
-                    }
-                    std::thread::sleep(Duration::from_millis(RETRY_BACKOFF_MS));
-                }
-            }
-        }
+    /// 阶段 3（**持锁**）：把引擎结果落到 item 上（成功落盘 / 失败保原图），发事件、落盘任务。
+    pub fn end_step(&mut self, job: &EngineJob, out: EngineOutcome) -> SResult<()> {
+        let Some(idx) = self.task_index(&job.task_id) else { return Ok(()) };
+        let mut task = self.tasks[idx].clone();
+        // 页按 `seq` 定位 —— 放锁期间可能有 append 增批，编号是稳定的锚。
+        let Some((bi, ii)) = find_item_by_seq(&task, job.seq) else { return Ok(()) };
+        let blob_key = format!("{}:{}", job.task_id, job.seq);
+        let bytes = job.bytes.as_slice();
+        let t0 = out.t0;
 
-        if translated.is_none() {
-            let code = last_err.as_ref().map(|e| e.code.clone()).unwrap_or_else(|| "internal_error".to_string());
-            let reason = if force_fail {
-                if self.env.fail_seqs.contains(&seq) { "injected_failure".to_string() } else { "random_failure".to_string() }
+        if out.translated.is_none() {
+            let code = out.last_err.as_ref().map(|e| e.code.clone()).unwrap_or_else(|| "internal_error".to_string());
+            let reason = if out.force_fail {
+                if self.env.fail_seqs.contains(&job.seq) { "injected_failure".to_string() } else { "random_failure".to_string() }
             } else {
                 format!("engine_{}", code.to_lowercase())
             };
             task.batches[bi].items[ii].status = "failed".to_string();
-            task.batches[bi].items[ii].retry_count = attempt - 1;
+            task.batches[bi].items[ii].retry_count = out.attempts - 1;
             task.batches[bi].items[ii].reason = Some(reason);
-            task.batches[bi].items[ii].error_message = last_err.as_ref().map(|e| e.message.clone());
+            task.batches[bi].items[ii].error_message = out.last_err.as_ref().map(|e| e.message.clone());
             task.batches[bi].items[ii].duration_ms = Some(now_ms() - t0);
             let dur = task.batches[bi].items[ii].duration_ms.unwrap_or(0);
             self.record_duration(dur as f64);
             // G-11：失败页的**原图也要落盘**（否则不可续做 / 库里说法是错的 / 重跑拿不到原图）。
-            self.keep_original_on_failure(task, bi, ii, &bytes)?;
+            // ⚠️ 这一步失败时**不**移除 blob、不发事件、不落盘 —— 原图字节留在内存里，交给
+            //    `abort_step` 统一走「异常路径也保原图」（与 Node 里那个 `?` 的语义一致）。
+            self.keep_original_on_failure(&mut task, bi, ii, bytes)?;
             self.blobs.remove(&blob_key);
-            let es = &mut self.event_seq;
-            let lea = &mut self.last_event_at;
-            emit_item_status(es, lea, task, bi, ii);
-            sync_batch_statuses(es, lea, task);
-            persist_task(task);
+            {
+                let es = &mut self.event_seq;
+                let lea = &mut self.last_event_at;
+                emit_item_status(es, lea, &mut task, bi, ii);
+                sync_batch_statuses(es, lea, &mut task);
+            }
+            persist_task(&task);
+            self.tasks[idx] = task;
             return Ok(());
         }
-        let translated = translated.expect("已判非空");
+        let translated = out.translated.expect("已判非空");
 
         // 只有真正的落盘/资源错误才降级为 saved:false 且不阻断主路径（§4.2）；其余（尤其安全/路径类）向上抛。
         let disk_full = self.env.disk_full;
         let root = self.root.clone();
         let mut item = task.batches[bi].items[ii].clone();
-        let write_res = write_item(&root, &task_id, &dir_name, disk_full, &mut item, &bytes, &translated);
+        let write_res = write_item(&root, &job.task_id, &job.dir_name, disk_full, &mut item, bytes, &translated);
         match write_res {
             Ok(()) => {
                 item.saved = true;
@@ -1007,6 +1116,8 @@ impl Store {
             Err(e) => {
                 if !is_degradable(&e.code) {
                     self.blobs.remove(&blob_key);
+                    // 保持 `translating`，由 `abort_step` 收尾（复刻 Node：抛错后由 catch 统一处理）。
+                    self.tasks[idx] = task;
                     return Err(e);
                 }
                 item.saved = false;
@@ -1022,11 +1133,65 @@ impl Store {
         {
             let es = &mut self.event_seq;
             let lea = &mut self.last_event_at;
-            emit_item_status(es, lea, task, bi, ii);
-            sync_batch_statuses(es, lea, task);
+            emit_item_status(es, lea, &mut task, bi, ii);
+            sync_batch_statuses(es, lea, &mut task);
         }
-        persist_task(task);
+        persist_task(&task);
+        self.tasks[idx] = task;
         Ok(())
+    }
+
+    /// 内部错误兜底（复刻 `_runTask` 的 catch）：`translating` 页一律判 failed + 保原图，
+    /// 其余待处理页 skipped(internal_error)，任务收尾为 failed。
+    pub fn abort_step(&mut self, task_id: &str, err: &StoreError) {
+        let Some(idx) = self.task_index(task_id) else {
+            self.current_task_id = None;
+            return;
+        };
+        let mut task = self.tasks[idx].clone();
+        task.last_error = Some(err.message.clone());
+        // 正在处理中的 item 不能留在 translating（否则任务终态里挂着一个假「进行中」）。
+        for bi in 0..task.batches.len() {
+            for ii in 0..task.batches[bi].items.len() {
+                if task.batches[bi].items[ii].status != "translating" {
+                    continue;
+                }
+                task.batches[bi].items[ii].status = "failed".to_string();
+                task.batches[bi].items[ii].saved = false;
+                task.batches[bi].items[ii].reason = Some("internal_error".to_string());
+                // G-11：**已处理**的页一律保原图，异常路径也是失败的一种。
+                let seq = task.batches[bi].items[ii].seq;
+                let key = format!("{}:{}", task.task_id, seq);
+                let last = self.blobs.get(&key).cloned().or_else(|| self.read_staged_bytes(&task.task_id, seq));
+                if let Some(b) = last {
+                    // 已经在错误路径上了，这里**绝不能再抛**（否则一条错误变两条）。
+                    let _ = self.keep_original_on_failure(&mut task, bi, ii, &b);
+                }
+                let es = &mut self.event_seq;
+                let lea = &mut self.last_event_at;
+                emit_item_status(es, lea, &mut task, bi, ii);
+            }
+        }
+        self.skip_all_pending(&mut task, "internal_error");
+        self.finalize(&mut task, "failed");
+        self.tasks[idx] = task;
+        self.current_task_id = None;
+    }
+
+    /// 把「当前任务」的错误兜底绑成一句（driver 不必自己记 `taskId`）。
+    pub fn abort_current(&mut self, err: &StoreError) {
+        if let Some(id) = self.current_task_id.clone() {
+            self.abort_step(&id, err);
+        }
+    }
+
+    /// 任务是否已进入终态（取消的两段式等待要用；任务不存在按「已终态」处理，不阻塞调用方）。
+    pub fn is_terminal(&self, task_id: &str) -> bool {
+        self.tasks
+            .iter()
+            .find(|t| t.task_id == task_id)
+            .map(|t| TASK_TERMINAL.contains(&t.status.as_str()))
+            .unwrap_or(true)
     }
 
     /// 读磁盘上已有的原图字节（续做路径专用）；找不到返回 `None`，由调用方按失败收尾。
@@ -1120,10 +1285,14 @@ impl Store {
         self.forget_blobs(&task.task_id);
     }
 
-    /// 复刻 `cancelTask`。⚠️ **已知偏离**：Node 在 running 分支 `await this._settled(task, 30000)`
-    /// 等当前张跑完；同步模型下调用 `cancel_task` 时本线程**没有** item 在飞（`drain` 不并发），
-    /// 所以直接按「边界处取消」收尾 —— 结果与 Node 等到的终态一致。
-    pub fn cancel_task(&mut self, task_id: &str) -> SResult<CancelResult> {
+    /// 复刻 `cancelTask` 的**第一段**。
+    ///
+    /// 🔴 Node 对 running 态的任务会 `await this._settled(task, 30000)` —— **等当前张跑完**再收尾，
+    /// 这正是 A10「等当前张跑完 / 已落盘保留」的来源。同步模型下不能在这里干等（会把 `Mutex`
+    /// 攥死，drain 反而跑不完当前张 ⇒ 死锁），故拆两段：本函数只置 `cancelRequested`，并在
+    /// 「没有页在飞」时立即收尾（queued / 边界处取消）；有页在飞时返回 [`CancelStep::InFlight`]，
+    /// 由调用方**放锁**等待、再用 [`Store::finish_cancel`] 取结果。
+    pub fn cancel_task_step(&mut self, task_id: &str) -> SResult<CancelStep> {
         let idx = self.task_index(task_id).ok_or_else(|| {
             StoreError::new("TASK_NOT_FOUND", format!("任务不存在：{task_id}"), json!({ "taskId": task_id }))
         })?;
@@ -1135,11 +1304,39 @@ impl Store {
             ));
         }
         self.tasks[idx].cancel_requested = true;
+        // 有页真的在飞（`translating`）⇒ 本次**不**收尾：drain 会在阶段 3 之后看到
+        // `cancelRequested` 并收尾为 canceled（对应 Node 的 `await _settled`）。
+        if self.tasks[idx].status == "running" && has_translating(&self.tasks[idx]) {
+            return Ok(CancelStep::InFlight);
+        }
+        // queued / 边界处取消：立即收尾。
         let mut task = self.tasks[idx].clone();
         self.skip_all_pending(&mut task, "canceled");
         self.finalize(&mut task, "canceled");
         self.tasks[idx] = task;
+        Ok(CancelStep::Done(self.cancel_result(&self.tasks[idx])))
+    }
+
+    /// `cancelTask` 的**收尾段**：放锁等待后调用。仍未终态则强制收尾（同 Node 的 30s 超时分支）。
+    pub fn finish_cancel(&mut self, task_id: &str) -> SResult<CancelResult> {
+        let idx = self.task_index(task_id).ok_or_else(|| {
+            StoreError::new("TASK_NOT_FOUND", format!("任务不存在：{task_id}"), json!({ "taskId": task_id }))
+        })?;
+        if !TASK_TERMINAL.contains(&self.tasks[idx].status.as_str()) {
+            let mut task = self.tasks[idx].clone();
+            self.skip_all_pending(&mut task, "canceled");
+            self.finalize(&mut task, "canceled");
+            self.tasks[idx] = task;
+        }
         Ok(self.cancel_result(&self.tasks[idx]))
+    }
+
+    /// 同步取消（单测 / 同源自检走这条路）：单线程下不存在「页在飞」，故等价于「立即收尾」。
+    pub fn cancel_task(&mut self, task_id: &str) -> SResult<CancelResult> {
+        match self.cancel_task_step(task_id)? {
+            CancelStep::Done(r) => Ok(r),
+            CancelStep::InFlight => self.finish_cancel(task_id),
+        }
     }
 
     fn cancel_result(&self, task: &Task) -> CancelResult {

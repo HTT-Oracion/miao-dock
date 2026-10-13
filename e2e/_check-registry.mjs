@@ -49,6 +49,7 @@ const CHECKS = [
   { id: 'engine-parity', script: 'e2e/service/engine-parity-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc/engine.rs', 'app/src-tauri/src/boxsvc/engine/**', 'service/src/engine-client.mjs', 'e2e/service/engine-parity-check.mjs'] },
   { id: 'engine-http', script: 'e2e/service/engine-http-parity-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc/engine/**', 'service/src/engine-client.mjs', 'e2e/service/engine-http-parity-check.mjs'] },
   { id: 'llm-supervisor', script: 'e2e/service/llm-supervisor-parity-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc/engine/supervisor.rs', 'service/src/settings/llm-supervisor.mjs', 'engine/src/mock-llm.mjs', 'e2e/service/llm-supervisor-parity-check.mjs'] },
+  { id: 'drain-runtime', script: 'e2e/service/drain-runtime-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc/drain.rs', 'app/src-tauri/src/boxsvc/store/exec.rs', 'e2e/service/drain-runtime-check.mjs'] },
   { id: 'svc-selftest', script: 'e2e/service/selftest.mjs', tier: 'service', watch: ['service/src/**'] },
   { id: 'eng-selftest', script: 'e2e/engine/selftest.mjs', tier: 'service', watch: ['engine/src/**'] },
   { id: 'lifespan', script: 'e2e/lifespan-selftest.mjs', tier: 'service', refute: true, watch: ['service/src/**', 'app/src-tauri/**'] },

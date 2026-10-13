@@ -682,8 +682,11 @@ pub fn merge_archive_dir() -> PathBuf {
 }
 
 /// 归档用时间戳（文件名安全：冒号与点在 Windows 上都不合法）。
+///
+/// 🔴 尾部的 `Z` 不能省：Node 是 `new Date().toISOString().replace(/[:.]/g,'-')` ——
+///    `toISOString()` 带 `Z`，替换的只是 `:` 与 `.`。少了它，归档文件名与 Node 差一个字符。
 pub fn stamp_of() -> String {
-    chrono::Utc::now().format("%Y-%m-%dT%H-%M-%S-%3f").to_string().replace('.', "-")
+    chrono::Utc::now().format("%Y-%m-%dT%H-%M-%S-%3fZ").to_string().replace('.', "-")
 }
 
 /// 封面大小上限。

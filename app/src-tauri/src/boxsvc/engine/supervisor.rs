@@ -250,6 +250,14 @@ pub struct LlmSnapshot {
     pub pid: Option<u32>,
 }
 
+impl LlmSnapshot {
+    /// 「③ 未持有」时的快照 —— 与 Node `LlmSupervisor.snapshot()` 的初值同形。
+    /// 上层（`Shell`）在 supervisor 尚未构造出来时用它，免得 `sidecar.llm` 出现 `null`（契约里它是对象）。
+    pub fn stopped() -> Self {
+        LlmSnapshot { state: "stopped".to_string(), model: None, port: None, pid: None }
+    }
+}
+
 /// `stop()` 的返回值（Node：`{stopped:false, why}` | `{stopped:true, exited, portFreed}`）。
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]

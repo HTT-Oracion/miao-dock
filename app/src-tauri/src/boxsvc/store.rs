@@ -774,6 +774,15 @@ impl Store {
         list_view(task)
     }
 
+    /// 心跳用：推进**全局**事件序号并返回新值（复刻 Node `++this.eventSeq`）。
+    ///
+    /// 🔴 心跳**不进** `task.events`（环形日志）—— 它只是"连接还活着"的信号，
+    ///    进日志会把 2 万条上限撑爆、并把 Last-Event-ID 续传的可见窗口挤没。
+    pub fn bump_event_seq(&mut self) -> u64 {
+        self.event_seq += 1;
+        self.event_seq
+    }
+
     /// §5.7 队列快照。
     pub fn queue_snapshot(&self) -> QueueSnapshot {
         let running = self.current_task().map(|t| {

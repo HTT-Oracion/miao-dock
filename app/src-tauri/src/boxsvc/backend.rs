@@ -13,6 +13,31 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+/// 给遗留后端挑一个**段外**的监听端口。
+///
+/// 🔴 为什么必须段外（`check:*` 的 A1 用例就是抓这个的）：
+///    5180–5190 是**产品契约**里的端口段（契约 §1：客户端据此探测）。遗留后端只是 Rust 外壳
+///    在迁移期的内部实现细节 —— 它一旦占用段内端口，「5180 被占 ⇒ 落到 5181」这条语义就错位：
+///    实测「测试占 5180、遗留后端占 5181 ⇒ 外壳落到 5182」，A1 立刻变红。
+///    真机上更糟：一个用户开两个实例就会比预期更早耗尽端口段。
+///
+/// 做法：绑 `port 0` 让内核给一个空闲的临时端口，读到号之后**立刻放掉**，把这个号交给子进程。
+/// 选号到子进程绑定之间有极小的竞态窗口 —— 由 `spawn` 的最多 `PORT_TRIES` 次重试兜住
+/// （每次重新选号），因此不会把「偶发占用」放大成「服务起不来」。
+fn free_port_outside_range() -> Option<u16> {
+    for _ in 0..8 {
+        let l = std::net::TcpListener::bind(("127.0.0.1", 0)).ok()?;
+        let port = l.local_addr().ok()?.port();
+        drop(l);
+        // Windows 的临时端口段（默认 49152+）与产品段不重叠；这里仍显式挡一道，
+        // 免得将来有人把系统临时端口段改到 5180 附近。
+        if !(crate::boxsvc::PORT_RANGE_START..=crate::boxsvc::PORT_RANGE_END).contains(&port) {
+            return Some(port);
+        }
+    }
+    None
+}
+
 /// 遗留后端的位置与就绪信息
 pub struct LegacyBackend {
     child: Child,
@@ -21,6 +46,9 @@ pub struct LegacyBackend {
     pub root_dir: String,
 }
 
+/// 选号-绑定竞态的重试次数（见 [`free_port_outside_range`] 的说明）。
+const PORT_TRIES: usize = 3;
+
 impl LegacyBackend {
     /// 拉起 Node box-service 并等它的就绪行。
     ///
@@ -28,16 +56,31 @@ impl LegacyBackend {
     /// `MIAO_READY {"port":…,"token":…,"rootDir":…}`。复用同一协议是刻意的 ——
     /// e2e 的夹具正是按它解析的（`/MIAO_READY (\{.*\})/`）。
     pub fn spawn(entry: &PathBuf, timeout: Duration) -> Result<Self, String> {
+        let mut last = String::from("未尝试");
+        for _ in 0..PORT_TRIES {
+            let port = free_port_outside_range()
+                .ok_or_else(|| "无法为遗留后端选到空闲端口".to_string())?;
+            match Self::spawn_on(entry, timeout, port) {
+                Ok(b) => return Ok(b),
+                // 只有「没就绪」才值得换端口重试；其它错误（找不到 node、缺就绪行）重试也没用。
+                Err(e) => last = e,
+            }
+        }
+        Err(format!("遗留后端 {PORT_TRIES} 次尝试均未就绪。最后错误：{last}"))
+    }
+
+    /// 指定端口起一次（`spawn` 的重试单元）。
+    fn spawn_on(entry: &PathBuf, timeout: Duration, port: u16) -> Result<Self, String> {
         let mut cmd = Command::new("node");
         cmd.arg(entry)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        // 🔴 剥离 `MIAO_PORT`：本进程（boxsvc）与遗留后端**同处 5180–5190 段**。
-        //    若夹具显式指定了 `MIAO_PORT`（如 selftest A18 用 5189），两边都会去绑同一个端口 ——
-        //    先绑者赢、后绑者启动失败，症状是「服务起不来」而根因在环境变量上。
-        //    遗留后端**不需要**固定端口（它只是被转发的后端），让它自己探测即可。
-        cmd.env_remove("MIAO_PORT");
+        // 🔴 显式给一个**段外**端口，而不是把 `MIAO_PORT` 剥掉让它自己探测：
+        //    剥掉之后它会在 5180–5190 里探测，占用产品端口段（见 `free_port_outside_range`）。
+        //    同时也顺手盖掉夹具可能传进来的 `MIAO_PORT`（如 selftest A18 用 5189）——
+        //    两边同段会互相抢端口，症状是「服务起不来」而根因在环境变量上。
+        cmd.env("MIAO_PORT", port.to_string());
         // 子进程进自己的进程组：回收时对组发信号可连带孙进程
         #[cfg(unix)]
         {
