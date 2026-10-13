@@ -43,6 +43,7 @@ const CHECKS = [
   // ---- service：起真实子进程，串行（端口竞争，见文件头）----
   { id: 'e2e', script: 'e2e/e2e.mjs', tier: 'service', watch: ['service/src/**', 'engine/src/**', 'e2e/**'] },
   { id: 'paths', script: 'e2e/service/paths-parity-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/paths.rs', 'service/src/config.mjs'] },
+  { id: 'store', script: 'e2e/service/store-parity-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc/store.rs', 'app/src-tauri/src/boxsvc/store/**', 'service/src/manga/store.mjs', 'e2e/service/store-parity-check.mjs'] },
   { id: 'svc-selftest', script: 'e2e/service/selftest.mjs', tier: 'service', watch: ['service/src/**'] },
   { id: 'eng-selftest', script: 'e2e/engine/selftest.mjs', tier: 'service', watch: ['engine/src/**'] },
   { id: 'lifespan', script: 'e2e/lifespan-selftest.mjs', tier: 'service', refute: true, watch: ['service/src/**', 'app/src-tauri/**'] },

@@ -13,6 +13,12 @@ fn main() {
         println!("{}", miao_dock::paths::snapshot());
         return;
     }
+    // `--store-selftest`：在**固定输入**下打印 store 的纯函数 / serialize / 视图 / 计划 / 原子写产物。
+    // 用途：e2e 做「Rust 与 Node 的 store 逐字节同源」比对（F3 的钉子）—— 同样不起服务。
+    if std::env::args().any(|a| a == "--store-selftest") {
+        println!("{}", miao_dock::boxsvc::store::selftest::report());
+        return;
+    }
     let opts = miao_dock::boxsvc::Options::from_env();
     if let Err(e) = miao_dock::boxsvc::run_blocking(opts) {
         eprintln!("[box-service] boxsvc 启动失败：{e}");

@@ -104,12 +104,22 @@ pub fn root_dir() -> PathBuf {
     resolve(env_path("MIAO_ROOT").unwrap_or_else(default_root_dir))
 }
 
-/// 近似 `path.resolve`：相对路径按 cwd 展开为绝对路径（绝对路径原样返回）。
-fn resolve(p: PathBuf) -> PathBuf {
-    if p.is_absolute() {
-        return p;
-    }
-    std::env::current_dir().map(|c| c.join(&p)).unwrap_or(p)
+/// 近似 `path.resolve`：相对路径按 cwd 展开，再做**词法归一**（统一分隔符、去 `.`、消 `..`）。
+///
+/// 🔴 为什么必须归一：Node 的 `path.resolve` 会**统一分隔符**（`C:/a/b` ⇒ `C:\a\b`）并消解 `..`，
+///    而「原样返回绝对路径」会让 `MIAO_ROOT=C:/x/y` 这类写法在两边指向**不同的字符串**
+///    —— 症状是「检测说 A、启动用 B」这类离根因极远的故障（R1）。这一格曾真实漏过：
+///    `--print-paths` 传出 `C:/Users/.../root` 而 Node 给 `C:\\Users\\...\\root`。
+pub fn resolve(p: PathBuf) -> PathBuf {
+    let joined = if p.is_absolute() {
+        p
+    } else {
+        match std::env::current_dir() {
+            Ok(cwd) => cwd.join(&p),
+            Err(_) => p,
+        }
+    };
+    normalize_lexical(&joined)
 }
 
 /// 生效的**引擎源码目录**（`MIAO_ENGINE_DIR` 覆盖，默认 `<仓库>/runtimes/manga-translator/src`）。
@@ -192,6 +202,16 @@ pub fn token_file() -> PathBuf {
     state_dir().join("token")
 }
 
+/// 上传字节暂存区 `state/pending`（Node `PENDING_DIR`，G-12）。
+pub fn pending_dir() -> PathBuf {
+    state_dir().join("pending")
+}
+
+/// 「已从漫画库隐藏」清单 `state/hidden-comics.json`（Node `HIDDEN_COMICS_FILE`）。
+pub fn hidden_comics_file() -> PathBuf {
+    state_dir().join("hidden-comics.json")
+}
+
 /// 引擎主进程目录（`MIAO_ENGINE_SERVER_DIR` 覆盖，默认 `engineDir/server`）。
 pub fn engine_server_dir() -> PathBuf {
     env_path("MIAO_ENGINE_SERVER_DIR").unwrap_or_else(|| engine_dir().join("server"))
@@ -215,6 +235,127 @@ pub fn snapshot() -> serde_json::Value {
         "enginePython": s(engine_python()),
         "engineModelDir": s(model_root()),
     })
+}
+
+// ------------------------------------------------------------------ 路径安全工具（契约 §8.2）
+
+/// 近似 `path.resolve`：相对路径按 cwd 展开，再做**词法归一**（去 `.`、消 `..`、统一分隔符）。
+///
+/// 与 [`resolve`] 同义；保留本名是为了让「路径安全工具」小节读起来自洽（`canonicalize` 的第一步）。
+pub fn resolve_abs(p: &Path) -> PathBuf {
+    resolve(p.to_path_buf())
+}
+
+/// 词法归一：不触碰文件系统，只按 `components()` 消 `.` / `..`。
+fn normalize_lexical(p: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut prefix: Option<std::ffi::OsString> = None;
+    let mut is_abs = false;
+    let mut parts: Vec<std::ffi::OsString> = Vec::new();
+    for c in p.components() {
+        match c {
+            Component::Prefix(pre) => prefix = Some(pre.as_os_str().to_os_string()),
+            Component::RootDir => is_abs = true,
+            Component::CurDir => {}
+            Component::ParentDir => {
+                parts.pop();
+            }
+            Component::Normal(s) => parts.push(s.to_os_string()),
+        }
+    }
+    let mut out = PathBuf::new();
+    if let Some(pre) = prefix {
+        out.push(pre);
+    }
+    if is_abs {
+        out.push(std::path::MAIN_SEPARATOR.to_string());
+    }
+    for s in parts {
+        out.push(s);
+    }
+    out
+}
+
+/// 规范化路径：解析**已存在部分**的符号链接，未存在的部分原样拼接（逐字复刻 `config.mjs` 的 `canonicalize`）。
+///
+/// 🔴 Windows 上必须剥掉 `\\?\` 前缀：Rust 的 `fs::canonicalize` 会返回 verbatim 路径
+///    （`\\?\C:\...`），而 Node 的 `fs.realpathSync` **不会** —— 不剥就会让「同源比对」
+///    在 Windows 上恒红，且差异只在开头 4 个字符，极难据此定位。
+pub fn canonicalize(p: &Path) -> PathBuf {
+    let abs = resolve_abs(p);
+    let mut cur = abs.clone();
+    let mut tail: Vec<std::ffi::OsString> = Vec::new();
+    loop {
+        match std::fs::canonicalize(&cur) {
+            Ok(real) => {
+                let mut out = strip_verbatim(real);
+                for t in tail.iter().rev() {
+                    out.push(t);
+                }
+                return out;
+            }
+            Err(_) => {
+                let parent = cur.parent().map(|x| x.to_path_buf());
+                match parent {
+                    Some(par) if par != cur => {
+                        if let Some(name) = cur.file_name() {
+                            tail.push(name.to_os_string());
+                        }
+                        cur = par;
+                    }
+                    _ => return abs,
+                }
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+fn strip_verbatim(p: PathBuf) -> PathBuf {
+    let s = p.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = s.strip_prefix(r"\\?\") {
+        return PathBuf::from(rest.to_string());
+    }
+    p
+}
+
+#[cfg(not(windows))]
+fn strip_verbatim(p: PathBuf) -> PathBuf {
+    p
+}
+
+/// 路径越界（契约 §8.2 校验点 3）。与 `mount`/落盘无关，只是拒绝。
+#[derive(Debug)]
+pub struct PathEscapeError(pub PathBuf);
+
+impl std::fmt::Display for PathEscapeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "路径越界：{}", self.0.display())
+    }
+}
+
+impl std::error::Error for PathEscapeError {}
+
+/// 拼接后前缀校验（契约 §8.2 校验点 3）。
+/// `target` 指向「文件」时，其 parent 即漫画目录，必须位于 root **之内**（且不等于 root 本身）。
+///
+/// 🔴 `parent == root ⇒ 拒绝`：复刻 Node 那句 `parentCanonical === rootCanonical ? false : startsWith`——
+///    落盘文件必须落在 root 的**子目录**里，root 本身只放目录、不放页。
+pub fn assert_inside_root(root_canonical: &Path, target: &Path) -> Result<(), PathEscapeError> {
+    let parent = match target.parent() {
+        Some(p) => p,
+        None => return Err(PathEscapeError(target.to_path_buf())),
+    };
+    let parent_canonical = canonicalize(parent);
+    let ok = parent_canonical != root_canonical
+        && parent_canonical.starts_with(root_canonical);
+    if !ok {
+        return Err(PathEscapeError(target.to_path_buf()));
+    }
+    Ok(())
 }
 
 fn env_path(key: &str) -> Option<PathBuf> {
@@ -249,5 +390,41 @@ mod tests {
         let r = repo_root();
         assert!(r.join("service").is_dir(), "repo_root 未定位到仓库根：{r:?}");
         assert!(r.join("engine").is_dir(), "repo_root 未定位到仓库根：{r:?}");
+    }
+
+    #[test]
+    fn normalize_lexical_resolves_dotdot() {
+        assert_eq!(normalize_lexical(Path::new("/a/b/../c")), PathBuf::from("/a/c"));
+        assert_eq!(normalize_lexical(Path::new("/a/./b/")), PathBuf::from("/a/b"));
+    }
+
+    #[test]
+    fn resolve_is_lexical_and_native_separator() {
+        let sep = std::path::MAIN_SEPARATOR;
+        let r = resolve(PathBuf::from(format!("{sep}a{sep}b{sep}..{sep}c")));
+        assert!(r.to_string_lossy().ends_with(&format!("a{sep}c")), "未消解 ../：{r:?}");
+        // 🔴 反证点：Windows 上绝不能留正斜杠（Node path.resolve 会给反斜杠，差一个字符即判红）
+        if sep == '\\' {
+            assert!(!r.to_string_lossy().contains('/'), "混入正斜杠：{r:?}");
+        }
+    }
+
+    #[test]
+    fn canonicalize_strips_verbatim_and_keeps_tail() {
+        // 一个必然不存在的深路径：canonicalize 应把「存在的父前缀」真实解析、把不存在的尾巴原样拼回
+        let probe = std::env::temp_dir().join("miao-canon-probe").join("deeper").join("file.json");
+        let c = canonicalize(&probe);
+        assert!(c.ends_with(Path::new("deeper").join("file.json")), "尾巴被改动：{c:?}");
+        // 🔴 Windows：绝不能带 `\\?\` verbatim 前缀（否则与 Node realpathSync 逐字节不同）
+        assert!(!c.to_string_lossy().starts_with(r"\\?\"), "verbatim 前缀未剥离：{c:?}");
+    }
+
+    #[test]
+    fn assert_inside_root_rejects_root_itself_and_outside() {
+        let root = canonicalize(&std::env::temp_dir().join("miao-inside-probe-root"));
+        // root 之下的一层子目录里的文件 ⇒ 放行
+        assert!(assert_inside_root(&root, &root.join("漫画 A").join("001.png")).is_ok());
+        // 直接躺在 root 里 ⇒ 拒绝（复刻 Node 的 parent==root ⇒ false）
+        assert!(assert_inside_root(&root, &root.join("001.png")).is_err());
     }
 }

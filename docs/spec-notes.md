@@ -5788,3 +5788,28 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 **① 沙箱内同步 spawn 必 EBUSY**：本会话（Windows + 沙箱）中，node 内 `spawnSync`/`execFileSync` 起**任何**子进程都返回 `EBUSY (-4082)`（含 `cmd.exe`），而**异步 `spawn` 正常**。⇒ 新写/改造的 e2e 断言脚本**只能用异步 spawn**；若断言依赖 `execFileSync`（e4/e8/e10/stall/launch-plan/engine-profile 等），在本会话**跑不了**（非代码问题，勿误判为回归）。`harness-check` 与 `paths-parity-check` 均据此改用异步 spawn。
 
 **② cargo 增量编译偶发「访问拒绝」→ rustc ICE**：`target/debug/incremental/...lock` 删除被拒（os error 5）后，rustc 在 `rmeta::encoder` 处 `no entry found for key` panic。⇒ 一律 **`CARGO_INCREMENTAL=0 cargo build`**（本会话首绿即靠它）；必要时先 `rm -rf target/debug/incremental`。
+
+## D-139 · 服务运行时 Rust 化：F3 store 内核落地（2026-10-13）
+
+**范围裁定（F3 拆两步）**：`store.mjs`（1918 行）一半是**纯状态机 + JSON 持久化**，一半是**执行/队列**（`createTask`/`_processTask`/`_runLoop`/`_writeItem`/`finalize`/`cancel`/`retry`）。后者依赖 F4 的 `engine.rs`（要起 Python 子进程）与 SSE 布线 ⇒ 本轮只做 **F3-a 内核**：`model`/`pure`/持久化/`init`/暂存/查询/`resume`·`retranslate` 计划/HTTP 视图。**F3-b（执行/队列）显式留待 F4 之后** —— 理由：不可调用的代码无法验证，是「假绿温床」（写进 `store.rs` 顶部注释）。
+
+**模块结构（`app/src-tauri/src/boxsvc/store/`）**
+- `model.rs`：数据模型 + 常量 + 时间/ID 生成。字段顺序**逐字复刻** `serialize()` 的键序（`serde` 默认按声明序）；`Item` 的 `mime`/`overwrite`/`error_message` 是**运行期字段**，`#[serde(skip_serializing)]`（Node `serialize()` 不吐它们）。`Task.queue_position` 必须 `Option<i64>` + `skip_serializing_if` —— Node 的 `undefined` 是**省略键**，写成 `i64` 会吐 `0`，键集合就分了叉。
+- `pure.rs`：无 IO/无时钟纯函数（`matchOriginal`/`matchTranslated`/`isValidFileName`/`sniffImageType`/`isSafeDirName`/`orderImagesIndices`/`endStatusOf`/`batchStatusOf`/`formatEtaText`）。`formatEtaText` 用 U+2013 en-dash（`预计 1–3 分钟`），不是连字符 —— 逐字节对拍时才不返工。
+- `view.rs`：HTTP 视图投影（`create`/`detail`/`list`/`queue`/`taskList`/`batchBrief`/`itemBrief`/`eta`）。同样靠**声明序**对齐 Node 键序。
+- `store.rs`：主模块。`Store` 用 `Vec` 保**插入序**（不能换 `HashMap`，否则 `tasks`/`idempotency` 顺序随机 ⇒ 视图分叉）；`IdemFile` 手写 `Serialize` 保幂等表插入序。
+- `selftest.rs`：`--store-selftest` 唯一事实源 —— **同时**吐 `pureInputs`（输入）与 `pure`（输出）。
+
+**🔴 同源机制（防夹具漂移）**：`e2e/service/store-parity-check.mjs` 里 **Node 侧吃 Rust 给的输入**，不自己造夹具 —— 若两边各自维护夹具，输入一漂就**假绿**（比的是两份不同输入的不同输出）。Rust 先跑 `--store-selftest` 吐 `pureInputs`，Node 拿它喂真 `store.mjs`，再逐条比 `pure`/`views`/`plans`/`hidden`/`persistedBytes`/`atomic`。`canon()` 递归排序对象键、去 `updatedAt`（时间戳），数组保序。
+
+**原子写复刻（R7 的靶子）**：`atomic_write_json` = 写 `.tmp-<pid>-<ts>` → `fsync` → `rename` 覆盖。Node 契约是「**绝不留下半写的 JSON**」。反证钩子 `atomic_is_direct()`（env 开关）⇒ 退化为直接覆写，供 M1 打红：退化后**中断模拟**下目标文件被污染（`targetIntactAfterAbort=false`）而正常档 `true`。
+
+**🔴 顺带修出 F2 真实缺陷（R1 类）**：移植 store 需要路径 `resolve`/根逃逸判定，手工探针发现 `MIAO_ROOT=C:/...` 时 Rust 出 `C:/Users/...`（正斜杠原样）而 Node `path.resolve` 出 `C:\Users\...`（统一反斜杠 + 解 `..`）—— **逐字节分叉**。修 `paths.rs::resolve` 走 `normalize_lexical`（统一分隔符 + 消 `..`）；补 `canonicalize` 去 Windows `\\?\` 前缀（对齐 Node `realpathSync`）、`assert_inside_root`（**根自身也算逃逸**）。新增 4 条单测。
+
+**🔴 已知偏离（有意，登记在案）**：`hidden_comics_view()` 用**码点排序**，未复刻 Node 的 `localeCompare(...,'zh-Hans-CN')`（ICU 中文序）。仅影响**隐藏清单里中文名的显示顺序**，不影响集合。注释已写在函数上方；F5 删 Node 后此偏离自然消失（届时无对照）。
+
+**行尾纪律（D-149 复发一次）**：5 个新 `.rs`（`Write` 产出）初始为 **LF**，工作区是 CRLF ⇒ 已用 Node 逐文件转回 CRLF（`store.rs` 1181 / `model` 373 / `pure` 289 / `view` 380 / `selftest` 386 行，`bareLF=0`）。
+
+**登记**：`package.json` 加 `check:store` / `check:store:refute`；`e2e/_check-registry.mjs` 加 `{id:'store', tier:'service', refute:true}`。`registry-check` 覆盖 **77** 项（原 75）。
+
+**验收（本轮实测）**：`check:store` 正向 **24/24**；`check:store:refute` **4 个变异全红**（M1 原子写退化 ⇒ 中断测试红 = F3 验收②的原话；M2 篡 Node `orderImages`；M3 篡 Rust `serializedTask.status`；M4 删 `views.progress.failed` 键）· `check:paths` 3/3 回归绿 · `cargo test --lib` **25/25** · `registry-check` 4/4（反证 4/4）· `boxsvc` 二进制编译通过。
