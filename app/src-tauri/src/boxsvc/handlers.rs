@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::body::Body;
+use axum::body::{Body, Bytes};
 use axum::http::{header, HeaderMap, HeaderValue, Uri};
 use axum::response::Response;
 use serde_json::{json, Map, Value};
@@ -30,6 +30,7 @@ use super::sidecar::assert_sidecar_ready;
 use super::store::exec::{CancelStep, CreatePayload, InputImage};
 use super::store::model::{Lang, Task, MAX_SEQ};
 use super::store::{Store, StoreError};
+use super::translate::errors::TranslateError;
 use super::Shell;
 use crate::paths;
 
@@ -365,12 +366,190 @@ async fn route(shell: &Arc<Shell>, m: Match, uri: &Uri, headers: &HeaderMap, bod
         "POST /api/v1/library/{name}/resume" => {
             task_launcher(shell, headers, body, DirOf::Comic(&p[0]), Build::Resume).await
         }
+        // ---------------------------------------------------------------- translate
+        "POST /api/v1/translate/text" => translate_text(body).await,
+        "POST /api/v1/translate/stream" => translate_stream(body).await,
+        "GET /api/v1/translate/options" => translate_options(),
+        "POST /api/v1/translate/settings" => translate_settings(body),
+        "POST /api/v1/translate/credentials" => translate_credentials(body),
         // 声明为 Migrated 但没有实现 —— 由 `check:routes` 的 `ROUTES.migrated` 断言抓出来。
         other => super::http::store_err(&StoreError::new(
             "INTERNAL",
             &format!("端点 {other} 在路由表里声明为已迁移，但尚无实现（F5 迁移进行中）"),
             json!({ "route": other }),
         )),
+    }
+}
+
+// ================================================================ translate 组（F5.5）
+//
+// 逐条对齐 Node（`service/src/server.mjs` 的 `handleTranslate*`）：路由层只做搬运
+// —— 读体、调门面、出信封 / SSE。业务全在 `boxsvc/translate/`（门面）。
+
+/// 翻译域错误 → 契约信封（`translateApiError` 的对应物）。
+fn translate_err(e: &TranslateError) -> Response {
+    let (status, body) = super::translate::error_body(e);
+    super::http::json_body(status, &body)
+}
+
+/// 读体 → `Value`：空体 = `null`（由 `translate_body_of` 视作 `{}`）；非法 JSON = 信封。
+fn translate_parse_body(raw: &[u8], code: &str) -> Result<Value, Response> {
+    if raw.is_empty() {
+        return Ok(Value::Null);
+    }
+    serde_json::from_slice::<Value>(raw).map_err(|_| {
+        translate_err(&TranslateError::new(code, "请求体不是合法 JSON", json!({})))
+    })
+}
+
+/// `translateBodyOf`：必须是 JSON 对象（`null`/空体按 `{}`）。
+fn translate_body_of(v: &Value) -> Result<Value, TranslateError> {
+    if v.is_null() {
+        return Ok(json!({}));
+    }
+    if !v.is_object() {
+        let shape = match v {
+            Value::Array(_) => "array",
+            Value::String(_) => "string",
+            Value::Number(_) => "number",
+            Value::Bool(_) => "boolean",
+            _ => "object",
+        };
+        return Err(TranslateError::new(
+            "TRANSLATE_INVALID_INPUT",
+            format!("请求体必须是 JSON 对象，收到 {shape}"),
+            json!({ "received": shape }),
+        ));
+    }
+    Ok(v.clone())
+}
+
+/// `POST /api/v1/translate/text` —— 普通文本翻译（整体）。
+async fn translate_text(body: &[u8]) -> Response {
+    let v = match translate_parse_body(body, "TRANSLATE_INVALID_INPUT") {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let b = match translate_body_of(&v) {
+        Ok(b) => b,
+        Err(e) => return translate_err(&e),
+    };
+    match super::translate::translate_text(&b).await {
+        Ok(out) => super::http::json_body(200, &out),
+        Err(e) => translate_err(&e),
+    }
+}
+
+/// 单条 SSE 事件序列化 —— 与 `service/src/manga/sse.mjs::formatSseEvent` 逐字节同形。
+fn sse_event(id: u64, event: &str, data: &Value) -> String {
+    format!("id: {id}\nevent: {event}\ndata: {data}\n\n")
+}
+
+/// `POST /api/v1/translate/stream` —— 大模型翻译（流式，SSE 事件 translate.delta/.done/.error）。
+///
+/// 三条硬顺序 / 硬纪律（同 Node）：
+///  ① **先 writeHead 再调门面**：头一旦发出，HTTP 状态就定了 —— 此后一切结果（含校验失败）
+///     都以 translate.* 事件表达。坏 JSON / 非对象体在头之前拦（回 400）。
+///  ② **背压**：delta 经有界通道传递，下游慢 ⇒ 门面的 `send().await` 挂住 ⇒ 上游读得慢。
+///  ③ **顺序不能反**：先 `translate.error` 再结束流。
+async fn translate_stream(body: &[u8]) -> Response {
+    let v = match translate_parse_body(body, "TRANSLATE_INVALID_INPUT") {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let b = match translate_body_of(&v) {
+        Ok(b) => b,
+        Err(e) => return translate_err(&e),
+    };
+
+    // 头先发：此后一切结果都以 translate.* 事件表达
+    let (delta_tx, mut delta_rx) = tokio::sync::mpsc::channel::<String>(8);
+    let (ev_tx, ev_rx) = tokio::sync::mpsc::channel::<String>(16);
+    let consumer_ev = ev_tx.clone();
+    let consumer = tokio::spawn(async move {
+        let mut ids = 0u64;
+        let mut after_chars = 0usize;
+        while let Some(d) = delta_rx.recv().await {
+            ids += 1;
+            after_chars += d.encode_utf16().count();
+            let ev = sse_event(ids, "translate.delta", &json!({ "text": d }));
+            if consumer_ev.send(ev).await.is_err() {
+                break;
+            }
+        }
+        (ids, after_chars)
+    });
+    let driver = tokio::spawn(async move {
+        let result = super::translate::translate_stream(&b, delta_tx).await;
+        let (ids, after_chars) = consumer.await.unwrap_or((0, 0));
+        match result {
+            Ok(out) => {
+                let mut data = Map::new();
+                data.insert("text".into(), out.get("text").cloned().unwrap_or(json!("")));
+                if let Some(lt) = out.get("langType") {
+                    data.insert("langType".into(), lt.clone());
+                }
+                let _ = ev_tx.send(sse_event(ids + 1, "translate.done", &Value::Object(data))).await;
+            }
+            Err(e) => {
+                let data = json!({
+                    "code": e.code,
+                    "message": e.message,
+                    "afterChars": after_chars,
+                });
+                let _ = ev_tx.send(sse_event(ids + 1, "translate.error", &data)).await;
+            }
+        }
+    });
+    // 驱动任务 detach：`ev_tx` 随它结束而释放 ⇒ 事件流自然收尾。
+    drop(driver);
+
+    let stream = futures_util::stream::unfold(ev_rx, |mut rx| async move {
+        rx.recv().await.map(|s| (Ok::<Bytes, std::io::Error>(Bytes::from(s)), rx))
+    });
+    let mut resp = Response::new(Body::from_stream(stream));
+    let h = resp.headers_mut();
+    h.insert("content-type", HeaderValue::from_static("text/event-stream; charset=utf-8"));
+    h.insert("cache-control", HeaderValue::from_static("no-cache, no-transform"));
+    h.insert("connection", HeaderValue::from_static("keep-alive"));
+    h.insert("x-accel-buffering", HeaderValue::from_static("no"));
+    resp
+}
+
+/// `GET /api/v1/translate/options` —— 设置页 / 翻译面板的取值来源。
+fn translate_options() -> Response {
+    match super::translate::options_view() {
+        Ok(v) => super::http::json_body(200, &v),
+        Err(e) => translate_err(&e),
+    }
+}
+
+/// `POST /api/v1/translate/settings` —— 非密钥设置补丁（白名单 strict）。
+/// 错误信封走 `INVALID_SETTING`（与 `/engine/settings` 同款）。
+fn translate_settings(body: &[u8]) -> Response {
+    let v = match translate_parse_body(body, "INVALID_SETTING") {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    match super::translate::save_settings(&v) {
+        Ok(out) => super::http::json_body(200, &out),
+        Err(e) => translate_err(&e),
+    }
+}
+
+/// `POST /api/v1/translate/credentials` —— 保存平台密钥（**只写不读**）。
+fn translate_credentials(body: &[u8]) -> Response {
+    let v = match translate_parse_body(body, "TRANSLATE_INVALID_INPUT") {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let b = match translate_body_of(&v) {
+        Ok(b) => b,
+        Err(e) => return translate_err(&e),
+    };
+    match super::translate::save_credentials(&b) {
+        Ok(out) => super::http::json_body(200, &out),
+        Err(e) => translate_err(&e),
     }
 }
 

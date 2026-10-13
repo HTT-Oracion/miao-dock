@@ -36,6 +36,7 @@ pub mod names;
 pub mod routes;
 pub mod sidecar;
 pub mod store;
+pub mod translate;
 
 use backend::LegacyBackend;
 use engine::supervisor::{LlmSnapshot, LlmSupervisor};

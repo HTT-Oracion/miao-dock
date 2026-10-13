@@ -74,12 +74,12 @@ pub const ROUTES: &[RouteDef] = &[
     route!("engine", "POST", "/api/v1/engine/unload", Forwarded),
     route!("engine", "POST", "/api/v1/engine/models/verify", Forwarded),
     route!("engine", "POST", "/api/v1/engine/models/download", Forwarded),
-    // ---- translate ----
-    route!("translate", "POST", "/api/v1/translate/text", Forwarded),
-    route!("translate", "POST", "/api/v1/translate/stream", Forwarded),
-    route!("translate", "GET", "/api/v1/translate/options", Forwarded),
-    route!("translate", "POST", "/api/v1/translate/settings", Forwarded),
-    route!("translate", "POST", "/api/v1/translate/credentials", Forwarded),
+    // ---- translate ----（F5.5 已迁：handlers.rs `translate` 段 + boxsvc/translate/）
+    route!("translate", "POST", "/api/v1/translate/text", Migrated),
+    route!("translate", "POST", "/api/v1/translate/stream", Migrated),
+    route!("translate", "GET", "/api/v1/translate/options", Migrated),
+    route!("translate", "POST", "/api/v1/translate/settings", Migrated),
+    route!("translate", "POST", "/api/v1/translate/credentials", Migrated),
     // ---- library ----（F5.3/F5.4 已迁：handlers.rs `library` 段）
     route!("library", "GET", "/api/v1/library", Migrated),
     route!("library", "POST", "/api/v1/library/create", Migrated),
