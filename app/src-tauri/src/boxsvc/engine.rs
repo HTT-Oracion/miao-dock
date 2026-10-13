@@ -30,6 +30,7 @@ use crate::paths;
 
 pub mod selftest;
 pub mod client;
+pub mod supervisor;
 
 // ================================================================ 常量（与 engine-client.mjs 同名同值）
 
@@ -543,20 +544,28 @@ pub fn tier_model_path(tier: &str) -> Option<PathBuf> {
 // ================================================================ 启动配方（纯函数）
 
 /// `resolveEngineLaunch` 的输出形状。`executor_port` 仅引擎配方有（LLM 配方无此键）。
-#[derive(Debug, Clone, Serialize)]
+///
+/// `Deserialize` 供 F4-b2 的 `--llm-selftest` 注入**显式配方**（对拍时两端吃同一份 spec，
+/// 不走 `resolve_llm_launch` 以免把配方差异与 supervisor 行为差异混在一起）。
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LaunchSpec {
+    #[serde(default)]
     pub label: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    #[serde(default)]
     pub cmd: Vec<String>,
     /// ⚠️ 不 `skip`：Node 的 LLM 配方里 `cwd: null` 是**存在且为 null**的键，不是省略。
+    #[serde(default)]
     pub cwd: Option<String>,
+    #[serde(default)]
     pub env: BTreeMap<String, String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub executor_port: Option<u16>,
+    #[serde(default)]
     pub probes: Vec<Value>,
 }
 

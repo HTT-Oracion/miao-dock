@@ -5860,3 +5860,57 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 **登记**：`package.json` 加 `check:engine-http` / `:refute`；`e2e/_check-registry.mjs` 加 `{id:'engine-http', tier:'service', refute:true}`。`registry-check` 覆盖 **81** 项（原 79）。
 
 **验收（本轮实测）**：`check:engine-http` 正向 **18/18** · `--refute` **5 个变异全红**（M1 篡 ext；M2 删阶段日志行；M3 篡 probe state；M4 删请求体 translator 键；M5 篡 mock mime）· `cargo test --lib` **41/41**（35→41）· `registry-check` 4/4（反证 4/4，81 项）· `boxsvc` 编译无警告。
+
+## D-142 · 服务运行时 Rust 化：F4-b2 LLM supervisor 落地（2026-10-13）
+
+**范围**：D-141 留下的 F4-b2 —— `service/src/settings/llm-supervisor.mjs`（366 行：起 llama-server + 三段探针 + 停/重启/换档）→ `app/src-tauri/src/boxsvc/engine/supervisor.rs`。
+
+**结构**
+- 状态机：`LlmState`（Stopped/Starting/Running/Unloading/Error + `as_str()`）、`LLM_STATES`（5 态，供对拍枚举比对）。
+- 快照 `LlmSnapshot{state, model, port, pid}`：🔴 **停止时 `port=None`**（Node 是 `null`；写成 `0` 会与「端口是否真的在听」的判定打架）。
+- `StopResult{stopped, why, exited, portFreed}`（camelCase，Option 字段 `skip_serializing_if`）。
+- `LlmSupervisor{ op: Mutex<Inner>（串行链）, diag: Mutex<LlmSnapshot>（无锁诊断）, logs: Arc<Mutex<Vec<String>>> }`。
+- API：`with_launch` / `from_default` / `snapshot` / `is_running` / `last_error` / `restarts` / `logs` / `start(timeout_ms)` / `stop(reason, grace_ms)` / `restart` / `switch_tier` / `use_tier`；自由操作函数 `op_start` / `do_start` / `wait_ready` / `do_stop` / `use_tier_inner` / `relay`（把动作摊成自由函数，避开借用冲突）。
+- 纯函数：`model_id_of`（**手写 basename** + 去 `.gguf`）· `first_probe_port` · `child_watch_path`。
+
+**🔴 三条要点**
+1. **两层锁**：Node 用 `_serial(fn)` promise 链保证 `start`/`stop`/`switchTier` 互斥，快照另存一份「不经过链」。Rust 复刻成 `op: Mutex<Inner>`（互斥链）+ `diag: Mutex<LlmSnapshot>`（诊断直读）—— 否则 `snapshot()` 会在 180s 的 `start()` 后面排队，面板「一直转圈」。
+2. **探针是同步的**：Node 的 `probeTcp`/`probeHttp` 走 `net.connect` / 裸 HTTP。Rust 用 `TcpStream::connect_timeout` + 手读首行状态码，**不用 reqwest**（reqwest 是 async，而 `probe` 会被同步路径调到）。
+3. **`model_id_of` 手写 basename**：`sakura-mock:tiny` 这类带冒号的模型名在 Windows 上会被 `Path::file_name` 当成盘符/verbatim 前缀处理 ⇒ 手写「取最后一个 `/` 或 `\` 之后」。
+
+**可反证钩子**（只被 `--refute` 设置，产品路径永不设）：`MIAO_LLM_NO_WAIT_READY`（不等就绪就报 running）· `MIAO_LLM_PROBE_ALWAYS_OK`（探针恒真）· `MIAO_LLM_NO_KILL`（stop 不真杀子进程）。
+
+**同源机制**：`e2e/service/llm-supervisor-parity-check.mjs` —— Rust（`boxsvc --llm-selftest '<spec>'`）与 Node（真 `LlmSupervisor`，`pathToFileURL` 动态 import）**各自起真的 `engine/src/mock-llm.mjs` 子进程**，跑 4 个场景（ready / never-ready / double-start / stop-when-stopped），归一化后比 `{states, model, portMatchesSpec, pidIsInt, stopResult, errorPresent, pidStable}`。never-ready 用 `node -e 'setTimeout(…)'` 占端口不接客；端口从 6300 起按步长 2 **成对预留**（引擎占 port 与 port+1）。
+
+**⚠️ 已知偏离**：`StopResult.why` 文案随平台；对拍断言只判 `errorPresent` 的有无，不比文案。
+
+**登记**：`package.json` 加 `check:llm-supervisor` / `:refute`；`e2e/_check-registry.mjs` 加 `{id:'llm-supervisor', tier:'service', refute:true}`。
+
+**验收**：`check:llm-supervisor` 正向 **4/4** · `--refute` **5 个变异全红**（M1 不等就绪 / M2 探针恒真 / M3 stop 不杀 / M4 篡 Node states / M5 篡 Rust model）。
+
+## D-143 · 服务运行时 Rust 化：F3-b store 执行/队列落地 + 执行态同源钉子（2026-10-13）
+
+**范围**：D-139 留下的 F3-b —— `store.mjs` 的**执行段**（建单 / 追加批次 / 续做 / 返工 / 重试 / 删除 / 调度 / 单图处理 / 落盘 / 终态 / 取消）→ `app/src-tauri/src/boxsvc/store/exec.rs`。
+
+**三条裁定（不这么做就假绿）**
+1. **翻译是注入的，不是 import 的**：Node 直接 `import { translateImage }`；Rust 改为 `trait Translator` 注入点。两个理由：`translate_image` 是 async(tokio) 而 store 是**同步模型**；且注入让「调度 / 重试 / 落盘 / 终态」的**编排语义**能脱离真实引擎被确定性验证（引擎本身已由 `check:engine-http` 钉住）。
+2. **调度与执行分离**：`create*` / `retry_task` 只做**记账**（改状态 + 发事件 + 落盘），真正的推进在 `Store::drain(&tr)`。Node 靠 async `_runTask(...).finally()` 把两者串起来。🔴 已知偏离：`POST /tasks` 的「立即返回」语义要由 **F5** 在独立线程上跑 `drain` 来补；那之前本模块不接 HTTP，接不上就没语义损失，只有时序差异。
+3. **SSE 未接线**：事件照 Node 一样进 `task.events`（环形，上限 `MAX_EVENT_LOG`）并推进 `event_seq`，但**不**写给订阅者（`task.clients` 仍是不透明 id 集合）。
+
+**🔴 两个实现要点**
+- **借用策略**：`run_task` 把任务**克隆出 `self.tasks`** 再执行、执行完写回 —— 执行体可自由 `&mut self`（blobs / durations / event_seq / queue），不必为「同时持 `&mut Task` 与 `&mut self`」打洞。任务规模 ≤ `BATCH_LIMIT`(20) × 批数，克隆代价可忽略。
+- **重试循环逐字复刻**：单项**总预算** `itemTimeoutMs`（`deadline = t0 + item_timeout`）+ 每次尝试 `min(剩余预算, engineTimeoutMs)` + `MAX_ATTEMPTS=2` + `RETRY_BACKOFF_MS=400`。
+- 另外把 `_writeItem` / `_writeOriginal` 的落盘纪律搬齐：译文默认 `wx`（独占、已存在即失败），**返工重译**是唯一允许覆盖的场景（先删旧名再写，避免两份译文并存）。
+
+**同源机制（F3-a 的加强版：连『场景定义』都是单源）**：`boxsvc --store-exec-selftest` 跑 **7 个场景**并打印 `{scenarios:[{…输入…, report}]}` —— 输入含 env / payload / 图片字节 / 预置文件 / **翻译脚本**；`e2e/service/store-exec-parity-check.mjs` 用真 `store.mjs` 跑同一份（每场景**一个新进程** —— Node 的 `config` 在模块加载期读 env），再逐条比 `{outcome, result, error, task, events, itemErrors, disk}`。
+- **翻译**：Rust 进程内脚本化翻译器 ⟷ Node `MIAO_ENGINE_PROTOCOL=mock` 打对拍脚本起的**伪引擎**（同 seq ⇒ 同字节）。
+- **场景**：`happy` / `partial-failed`（`MIAO_FAIL_SEQ` 注入）/ `skip-existing`（幂等短路）/ `cancel-queued`（种子 + 取消）/ `retry-then-run`（种子 + **真重跑**）/ `budget-exhausted`（伪引擎挂住 ⇒ 总预算耗尽）/ `delete-mixed`（删掉 · 运行中 · 不存在各一）。
+- 🔴 **`itemErrors` 是必须的**：「总预算耗尽」与「单次请求超时」的 `reason` **都是** `engine_engine_timeout` —— 只有 `errorMessage`（`已耗尽 … 第 2 次尝试`）能把两者分开。这是唯一能钉住「静默有上界」那条纪律的地方。
+- 🔴 **归一化只在对拍脚本里做一次**（createdAt/finishedAt/durationMs 抹平、taskId → `<TID>`、绝对路径 → `<ROOT>`、事件 id 拉平到 `1..n`）；Rust 只吐**原始**产物 —— 两边各自归一化 = 又一处会走散的规则。
+- 🔴 **独立预言**：脚本里另写一张 `EXPECT_STATUS`（+ G-11 / 幂等短路 / 删除逐条回报 / 总预算文案的定点断言）—— 防「两边一起错」的假绿。
+
+**登记**：`package.json` 加 `check:store-exec` / `:refute`；`e2e/_check-registry.mjs` 加 `{id:'store-exec', tier:'service', refute:true}`。`registry-check` 覆盖 **85** 项。
+
+**验收（本轮实测）**：`check:store-exec` 正向 **74/74** · `--refute` **6 个变异全红**（M1 伪引擎回错字节 / M2 伪引擎挂住 / M3 伪引擎回非图片 / M4 篡 `task.status` / M5 删事件 / M6 篡 `itemErrors`）· 回归 `check:paths` 3/3 · `check:store` 24/24 · `check:engine-parity` 24/24 · `check:engine-http` 18/18 · `check:llm-supervisor` 4/4 · `check:harness` 7/7 · `registry-check` 4/4（85 项）· `cargo test --lib` **59/59** · `boxsvc` 与 `miao-dock` 编译均无警告。
+
+**留待 F5**：其余端点迁移（~5000 行）+ 摘除 Node（**转发分支数 = 0**）；`drain` 接线到独立线程以恢复 `POST /tasks` 立即返回。

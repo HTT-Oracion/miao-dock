@@ -9,6 +9,8 @@
 // 🔴 迁移期的硬纪律：任何本模块产出的 **JSON 必须与 Node 版逐字节相同** ——
 //    `state/tasks/<id>.json` 与 `state/idempotency.json` 是两边共读的事实源。
 //    F3 的对照钉子（`e2e/service/store-parity-check.mjs`）把这条钉死。
+pub mod exec;
+pub mod exec_selftest;
 pub mod model;
 pub mod pure;
 pub mod selftest;
@@ -78,21 +80,47 @@ pub struct EnvConfig {
     pub disk_full: bool,
     /// 服务端不确定时 eta 返回 `null`（契约 §5.7）
     pub eta_null: bool,
+    /// 单项**总预算**（含所有重试；`config.itemTimeoutMs`）。没有它，一次挂住 = 单次超时 × 重试次数。
+    pub item_timeout_ms: i64,
+    /// 单次请求的**无响应上限**（`config.engineTimeoutMs`）—— 每次尝试的实际超时取这两者之小。
+    pub engine_timeout_ms: i64,
+    /// 注入失败的页号（`MIAO_FAIL_SEQ`，逗号分隔）
+    pub fail_seqs: Vec<i64>,
+    /// 随机失败率（`MIAO_ITEM_FAIL_RATE`，`[0,1]`）
+    pub item_fail_rate: f64,
 }
 
 impl EnvConfig {
     pub fn from_env() -> Self {
+        let protocol = crate::boxsvc::engine::engine_protocol();
+        // 与 `config.mjs` 同口径：真档 600s、mock 档 60s（mock 是替身，超短）。
+        let def_timeout = if protocol == "mock" { 60_000 } else { 600_000 };
+        let engine_timeout_ms = env_int("MIAO_ENGINE_TIMEOUT_MS", def_timeout);
         EnvConfig {
             skip_existing: env_bool("MIAO_SKIP_EXISTING", true),
             disk_full: env_bool("MIAO_DISK_FULL", false),
             eta_null: env_bool("MIAO_ETA_NULL", false),
+            // 默认 = `engineTimeoutMs` 的实际值（**含 `MIAO_ENGINE_TIMEOUT_MS` 的覆盖**）——
+            // 两者各写一份默认值会漂移出一种自相矛盾的配置（见 config.mjs 的同名注释）。
+            item_timeout_ms: env_int("MIAO_ITEM_TIMEOUT_MS", engine_timeout_ms),
+            engine_timeout_ms,
+            fail_seqs: parse_seq_list(std::env::var("MIAO_FAIL_SEQ").ok().as_deref()),
+            item_fail_rate: env_f64_clamped("MIAO_ITEM_FAIL_RATE", 0.0),
         }
     }
 }
 
 impl Default for EnvConfig {
     fn default() -> Self {
-        EnvConfig { skip_existing: true, disk_full: false, eta_null: false }
+        EnvConfig {
+            skip_existing: true,
+            disk_full: false,
+            eta_null: false,
+            item_timeout_ms: 600_000,
+            engine_timeout_ms: 600_000,
+            fail_seqs: Vec::new(),
+            item_fail_rate: 0.0,
+        }
     }
 }
 
@@ -104,6 +132,33 @@ fn env_bool(key: &str, def: bool) -> bool {
         }
         _ => def,
     }
+}
+
+/// `envInt(name, def)`：非空才解析；不可解析或**负数** ⇒ `def`（同 `config.mjs`）。
+fn env_int(key: &str, def: i64) -> i64 {
+    match std::env::var(key) {
+        Ok(v) if !v.is_empty() => v.trim().parse::<i64>().ok().filter(|n| *n >= 0).unwrap_or(def),
+        _ => def,
+    }
+}
+
+/// `MIAO_ITEM_FAIL_RATE`：解析失败按 0；截到 `[0,1]`（同 `config.mjs`）。
+fn env_f64_clamped(key: &str, def: f64) -> f64 {
+    match std::env::var(key) {
+        Ok(v) if !v.is_empty() => {
+            let n = v.trim().parse::<f64>().unwrap_or(0.0);
+            if n.is_finite() { n.max(0.0).min(1.0) } else { def }
+        }
+        _ => def,
+    }
+}
+
+/// `MIAO_FAIL_SEQ`：逗号分隔的页号（复刻 `parseSeqList`；非法项跳过）。
+fn parse_seq_list(raw: Option<&str>) -> Vec<i64> {
+    let Some(s) = raw else { return Vec::new() };
+    s.split(',')
+        .filter_map(|x| x.trim().parse::<i64>().ok())
+        .collect()
 }
 
 // ------------------------------------------------------------------ 幂等表记录
@@ -667,34 +722,17 @@ impl Store {
     // ---------------------------------------------------------------- 持久化
 
     pub(crate) fn record_of<'a>(&self, task: &'a Task) -> model::TaskRecord<'a> {
-        model::TaskRecord {
-            task_id: &task.task_id,
-            comic_name: &task.comic_name,
-            normalized_comic_name: &task.normalized_comic_name,
-            dir_name: &task.dir_name,
-            output_dir: &task.output_dir,
-            status: &task.status,
-            lang: &task.lang,
-            translator: &task.translator,
-            client_task_ref: &task.client_task_ref,
-            source: &task.source,
-            idempotency_key: &task.idempotency_key,
-            created_at: &task.created_at,
-            finished_at: &task.finished_at,
-            final_progress: progress_of(task),
-            batches: &task.batches,
-        }
+        record_of(task)
     }
 
     /// 复刻 `serialize()`（字段序即 `TaskRecord` 的字段序）。
     pub fn serialize(&self, task: &Task) -> serde_json::Value {
-        serde_json::to_value(self.record_of(task)).unwrap_or(serde_json::Value::Null)
+        serde_json::to_value(record_of(task)).unwrap_or(serde_json::Value::Null)
     }
 
     /// 原子写整份任务清单（失败不影响主路径 —— 与 Node 同）。
     pub fn persist_now(&self, task: &Task) {
-        let file = paths::tasks_state_dir().join(format!("{}.json", task.task_id));
-        let _ = atomic_write_json(&file, &self.record_of(task));
+        persist_task(task);
     }
 
     // ---------------------------------------------------------------- 视图
@@ -946,6 +984,38 @@ fn stage_path_for(task_id: &str, seq: i64) -> SResult<PathBuf> {
     Ok(paths::pending_dir().join(task_id).join(format!("{}.bin", seq3(seq))))
 }
 
+// ------------------------------------------------------------------ 落盘记录（自由函数版）
+//
+// 为什么要有自由版：F3-b 的 `exec.rs` 在「持有 `&mut Task`」的同时要落盘，
+// 而方法版需要 `&self` 与那个 `&mut Task` 同存 ⇒ 借用冲突。两者逻辑同一份，方法只是转发。
+
+/// 复刻 `serialize()` 的记录（字段序即 `TaskRecord` 的字段序）。
+pub(crate) fn record_of(task: &Task) -> model::TaskRecord<'_> {
+    model::TaskRecord {
+        task_id: &task.task_id,
+        comic_name: &task.comic_name,
+        normalized_comic_name: &task.normalized_comic_name,
+        dir_name: &task.dir_name,
+        output_dir: &task.output_dir,
+        status: &task.status,
+        lang: &task.lang,
+        translator: &task.translator,
+        client_task_ref: &task.client_task_ref,
+        source: &task.source,
+        idempotency_key: &task.idempotency_key,
+        created_at: &task.created_at,
+        finished_at: &task.finished_at,
+        final_progress: progress_of(task),
+        batches: &task.batches,
+    }
+}
+
+/// 原子写整份任务清单（失败不影响主路径 —— 与 Node 同）。
+pub(crate) fn persist_task(task: &Task) {
+    let file = paths::tasks_state_dir().join(format!("{}.json", task.task_id));
+    let _ = atomic_write_json(&file, &record_of(task));
+}
+
 // ------------------------------------------------------------------ 原子写（复刻 atomic-file.mjs）
 
 /// 原子写 JSON：同目录 tmp → fsync → rename 覆盖。正文 = `JSON.stringify(value, null, 2) + '\n'`。
@@ -1034,6 +1104,49 @@ fn create_private(path: &Path, mode: u32) -> std::io::Result<std::fs::File> {
     #[cfg(not(unix))]
     let _ = mode;
     opts.open(path)
+}
+
+/// **独占**创建（Node `flag:'wx'` 的对应物）：文件已存在即 `AlreadyExists`/EEXIST。
+/// 「不覆盖」的硬保证靠它 —— 用 `truncate(true)` 会**静默覆盖**，把一条 409 变成一次数据丢失。
+pub(crate) fn create_new_private(path: &Path, mode: u32) -> std::io::Result<std::fs::File> {
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(mode);
+    }
+    #[cfg(not(unix))]
+    let _ = mode;
+    opts.open(path)
+}
+
+/// 覆盖写（Node `flag:'w'` 的对应物）—— 仅返工重译的译文允许。
+pub(crate) fn write_file_private(path: &Path, bytes: &[u8], mode: u32) -> std::io::Result<()> {
+    let mut f = create_private(path, mode)?;
+    f.write_all(bytes)
+}
+
+/// 独占写（Node `flag:'wx'`）—— 已存在即失败。
+pub(crate) fn write_new_private(path: &Path, bytes: &[u8], mode: u32) -> std::io::Result<()> {
+    let mut f = create_new_private(path, mode)?;
+    f.write_all(bytes)
+}
+
+/// `std::io::Error` → Node 风格的 `errno` 串（够 `DEGRADABLE_WRITE_ERRNOS` 判定用）。
+pub(crate) fn errno_code(e: &std::io::Error) -> String {
+    match e.kind() {
+        std::io::ErrorKind::AlreadyExists => "EEXIST".to_string(),
+        std::io::ErrorKind::PermissionDenied => "EACCES".to_string(),
+        std::io::ErrorKind::NotFound => "ENOENT".to_string(),
+        _ => e.raw_os_error().map(|c| format!("errno{c}")).unwrap_or_else(|| "INTERNAL".to_string()),
+    }
+}
+
+/// 独占写失败时按 errno 构造 `StoreError`（供 F3-b 的「可降级」判定）。
+pub(crate) fn io_errno(e: std::io::Error) -> StoreError {
+    let code = errno_code(&e);
+    StoreError::new(&code, format!("IO 错误：{e}"), serde_json::json!({ "errno": code }))
 }
 
 fn mkdir_p(dir: &Path, mode: u32) -> std::io::Result<()> {

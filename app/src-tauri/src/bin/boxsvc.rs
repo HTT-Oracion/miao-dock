@@ -19,6 +19,13 @@ fn main() {
         println!("{}", miao_dock::boxsvc::store::selftest::report());
         return;
     }
+    // `--store-exec-selftest`：跑 store 的**执行态**场景（建单/排队/单图处理/取消/重试/删除），
+    // 打印 `{scenarios:[{...输入..., report:{...}}]}`。用途：e2e 做「Rust 与 Node 的 store 执行态
+    // 同源」比对（F3-b 的钉子）—— 翻译走进程内脚本引擎，不起服务、不打网络。
+    if std::env::args().any(|a| a == "--store-exec-selftest") {
+        println!("{}", miao_dock::boxsvc::store::exec_selftest::report());
+        return;
+    }
     // `--engine-selftest`：在**固定输入**下打印引擎耦合点的纯函数 / 启动配方 / 参数快照 / 结果流解析。
     // 用途：e2e 做「Rust 与 Node 的 engine-client 同源」比对（F4 的钉子）—— 同样不起服务、不拉 node。
     if std::env::args().any(|a| a == "--engine-selftest") {
@@ -31,6 +38,15 @@ fn main() {
     if let Some(i) = std::env::args().position(|a| a == "--engine-http-selftest") {
         let arg = std::env::args().nth(i + 1).unwrap_or_default();
         println!("{}", miao_dock::boxsvc::engine::client::http_selftest(&arg));
+        return;
+    }
+    // `--llm-selftest '<json>'`：驱动引擎③ supervisor **真起子进程**（对拍时喂 mock-llm），
+    // 打印归一化的状态机/快照/停止结果 `{results:[...]}`。用途：e2e 做「Rust 与 Node 的
+    // llm-supervisor 行为同源」比对（F4-b2 的钉子）—— 不起服务、不拉 node 后端。
+    if let Some(i) = std::env::args().position(|a| a == "--llm-selftest") {
+        let arg = std::env::args().nth(i + 1).unwrap_or_default();
+        let spec: serde_json::Value = serde_json::from_str(&arg).unwrap_or(serde_json::json!({}));
+        println!("{}", miao_dock::boxsvc::engine::supervisor::selftest_run(&spec));
         return;
     }
     let opts = miao_dock::boxsvc::Options::from_env();
