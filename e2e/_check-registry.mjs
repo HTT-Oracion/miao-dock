@@ -44,6 +44,7 @@ const CHECKS = [
   // ---- service：起真实子进程，串行（端口竞争，见文件头）----
   { id: 'e2e', script: 'e2e/e2e.mjs', tier: 'service', watch: ['service/src/**', 'engine/src/**', 'e2e/**'] },
   { id: 'paths', script: 'e2e/service/paths-parity-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/paths.rs', 'service/src/config.mjs'] },
+  { id: 'runtime-probe', script: 'e2e/service/runtime-probe-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc/engine/runtime_probe.rs', 'app/src-tauri/src/boxsvc/routes.rs', 'app/src-tauri/src/boxsvc/handlers.rs', 'e2e/service/runtime-probe-check.mjs'] },
   { id: 'store', script: 'e2e/service/store-parity-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc/store.rs', 'app/src-tauri/src/boxsvc/store/**', 'service/src/manga/store.mjs', 'e2e/service/store-parity-check.mjs'] },
   { id: 'store-exec', script: 'e2e/service/store-exec-parity-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc/store/**', 'service/src/manga/store.mjs', 'e2e/service/store-exec-parity-check.mjs'] },
   { id: 'routes', script: 'e2e/service/routes-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc.rs', 'app/src-tauri/src/boxsvc/routes.rs', 'app/src-tauri/src/boxsvc/handlers.rs', 'service/src/server.mjs', 'e2e/service/routes-check.mjs'] },

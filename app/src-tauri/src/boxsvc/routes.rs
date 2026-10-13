@@ -69,6 +69,7 @@ pub const ROUTES: &[RouteDef] = &[
     route!("queue", "GET", "/api/v1/queue", Migrated),
     // ---- engine ----（F5.6 已迁：handlers.rs `engine / health 组` + boxsvc/engine/state.rs）
     route!("engine", "GET", "/api/v1/engine/status", Migrated),
+    route!("engine", "GET", "/api/v1/engine/runtime", Migrated),
     route!("engine", "GET", "/api/v1/engine/options", Migrated),
     route!("engine", "POST", "/api/v1/engine/settings", Migrated),
     route!("engine", "POST", "/api/v1/engine/unload", Migrated),

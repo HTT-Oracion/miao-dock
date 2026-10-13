@@ -95,6 +95,7 @@ export const EXPECTED = [
   'GET /api/v1/queue',
   // engine
   'GET /api/v1/engine/status',
+  'GET /api/v1/engine/runtime',
   'GET /api/v1/engine/options',
   'POST /api/v1/engine/settings',
   'POST /api/v1/engine/unload',

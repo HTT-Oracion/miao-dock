@@ -375,6 +375,7 @@ async fn route(shell: &Arc<Shell>, m: Match, uri: &Uri, headers: &HeaderMap, bod
         // ---------------------------------------------------------------- health / engine（F5.6）
         "GET /health" | "GET /api/v1/health" => health(shell).await,
         "GET /api/v1/engine/status" => engine_status(shell).await,
+        "GET /api/v1/engine/runtime" => engine_runtime(),
         "GET /api/v1/engine/options" => engine_options(shell).await,
         "POST /api/v1/engine/settings" => engine_settings(shell, body).await,
         "POST /api/v1/engine/unload" => engine_unload(shell).await,
@@ -601,6 +602,13 @@ async fn engine_status(shell: &Arc<Shell>) -> Response {
     let sc = super::sidecar::sidecar_state(shell).await;
     let snap = shell.llm_snapshot();
     super::http::json_body(200, &es.engine_status_view(&sc, &snap))
+}
+
+/// `GET /engine/runtime`（B2）—— 运行时就绪检测：四项逐项独立报真伪，`detail` 带绝对路径、
+/// `fix` 给装法。与 `/engine/status` 的分工：那个是「引擎现在怎么样」（进程态），这个是
+/// 「引擎凭什么能起来」（装配态）。只读，不起子进程 —— 诊断视图可被反复打开。
+fn engine_runtime() -> Response {
+    super::http::json_body(200, &super::engine::runtime_probe::runtime_view())
 }
 
 /// `GET /engine/options`（`engineOptionsView`）—— 设置页两小节的**全部取值来源**。

@@ -198,9 +198,9 @@ function defaultRuntimeRoot() {
   return path.join(defaultAppDataDir(), 'runtimes');
 }
 
-/** 引擎运行时根（`<appData>/runtimes/manga-translator`）。 */
+/** 引擎运行时根（`<runtimeRoot>/manga-translator`）。 */
 function runtimesDir() {
-  return path.join(defaultRuntimeRoot(), 'manga-translator');
+  return path.join(RUNTIME_ROOT, 'manga-translator');
 }
 
 /** 契约 §7.1：macOS `~/Pictures/Box 漫画/`；Windows `%USERPROFILE%\Pictures\Box 漫画\` */
@@ -316,10 +316,12 @@ export const PENDING_DIR = path.join(STATE_DIR, 'pending');
 export const ROOT_DIR = path.resolve(process.env.MIAO_ROOT || defaultRootDir());
 
 /**
- * 🔴 B1：引擎运行时根（`<appData>/runtimes`）。导出供 e2e 与 Rust `paths::default_runtime_root()`
- *    逐字节对拍（`check:paths`）—— 引擎落点是「用户自装」的唯一锚点，两侧必须同源。
+ * 🔴 B1：引擎运行时根（`<appData>/runtimes`）。`MIAO_RUNTIME_ROOT` 可覆盖 ——
+ *    B2 的 `runtime_probe` 要能把 venvRoot / site-packages 判到临时目录上，
+ *    否则验收会去 stat 用户真实 appData（同 `MIAO_ROOT` / `MIAO_STATE_DIR` 的道理）。
+ *    与 Rust `paths::runtime_root()` 逐字节对齐（`check:paths` 钉住）。
  */
-export const RUNTIME_ROOT = defaultRuntimeRoot();
+export const RUNTIME_ROOT = path.resolve(process.env.MIAO_RUNTIME_ROOT || defaultRuntimeRoot());
 
 /** 引擎源码根（`src/`）。`engineServerDir` 由它派生，避免 `MIAO_ENGINE_DIR` 覆盖后两者走散。 */
 // 🔴 B1 起默认值锚在 appData 运行时根（不再锚仓库根）：打包后仓库根必然算错（A1 已论证）。

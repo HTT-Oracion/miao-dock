@@ -180,9 +180,18 @@ pub fn default_runtime_root() -> PathBuf {
     app_data_dir().join("runtimes")
 }
 
-/// 引擎运行时根（`<appData>/runtimes/manga-translator`）。
+/// 生效的**运行时根**（`MIAO_RUNTIME_ROOT` 覆盖）。
+///
+/// 🔴 为什么必须可覆盖：`runtime_probe`（B2）要把 venvRoot / site-packages 判到临时目录上，
+///    否则验收会去 `stat` 用户真实 appData —— 而"读用户目录"的验收夹具本身就是缺陷
+///    （同 `MIAO_ROOT` / `MIAO_STATE_DIR` 一律指 TMP）。默认值与 `config.mjs` 逐字节对齐。
+pub fn runtime_root() -> PathBuf {
+    resolve(env_path("MIAO_RUNTIME_ROOT").unwrap_or_else(default_runtime_root))
+}
+
+/// 引擎运行时根（`<runtimeRoot>/manga-translator`）。
 pub fn runtimes_dir() -> PathBuf {
-    default_runtime_root().join("manga-translator")
+    runtime_root().join("manga-translator")
 }
 
 /// 落盘根目录默认值：契约 §7.1 —— `~/Pictures/Box 漫画`。
@@ -379,7 +388,7 @@ pub fn snapshot() -> serde_json::Value {
         "idempotencyFile": s(idempotency_file()),
         "tokenFile": s(token_file()),
         "rootDir": s(root_dir()),
-        "runtimeRoot": s(default_runtime_root()),
+        "runtimeRoot": s(runtime_root()),
         "engineDir": s(engine_dir()),
         "engineServerDir": s(engine_server_dir()),
         "enginePython": s(engine_python()),

@@ -38,6 +38,8 @@ pub mod model_store;
 pub mod idle_policy;
 pub mod model_status;
 pub mod profile;
+// ---- B2：运行时就绪检测（只读，不代装）----
+pub mod runtime_probe;
 pub mod settings;
 pub mod state;
 pub mod tier_downgrade;
