@@ -25,6 +25,14 @@ fn main() {
         println!("{}", miao_dock::boxsvc::engine::selftest::report());
         return;
     }
+    // `--engine-http-selftest '<json>'`：跑一批「对拍用例」（translate/probe 打**伪引擎**服务器），
+    // 打印 `{results:[...]}`。用途：e2e 做「Rust 与 Node 的 engine HTTP **运行期**同源」比对
+    // （F4-b 的钉子）—— 同样不起服务、不拉 node 后端。
+    if let Some(i) = std::env::args().position(|a| a == "--engine-http-selftest") {
+        let arg = std::env::args().nth(i + 1).unwrap_or_default();
+        println!("{}", miao_dock::boxsvc::engine::client::http_selftest(&arg));
+        return;
+    }
     let opts = miao_dock::boxsvc::Options::from_env();
     if let Err(e) = miao_dock::boxsvc::run_blocking(opts) {
         eprintln!("[box-service] boxsvc 启动失败：{e}");

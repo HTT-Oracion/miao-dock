@@ -5836,3 +5836,27 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 **登记**：`package.json` 加 `check:engine-parity` / `:refute`；`e2e/_check-registry.mjs` 加 `{id:'engine-parity', tier:'service', refute:true}`。`registry-check` 覆盖 **79** 项（原 77）。
 
 **验收（本轮实测）**：`check:engine-parity` 正向 **24/24**（real 13 + mock 11）· `--refute` **5 个变异全红**（M1 只给 Rust 换协议 ⇒ 与 Node 的 real 对不上；M2 篡启动 cmd 丢 `--use-gpu`；M3 篡注入 env；M4 删阶段日志行；M5 篡 `tierModelPath`）· `check:store` 24/24 · `check:paths` 3/3 回归绿 · `cargo test --lib` **35/35** · `registry-check` 4/4（反证 4/4）· `boxsvc` 编译通过。**F4-b 执行态（网络 I/O + supervisor 复用 `service.rs::signal_tree`/`no_tree_kill`）未做** —— F4 验收② 的「只杀主进程不杀进程组 ⇒ 端口占用断言变红」正落在 `service.rs::no_tree_kill` 反证开关上。
+
+## D-141 · 服务运行时 Rust 化：F4-b1 引擎 HTTP 运行期落地（2026-10-13）
+
+**范围裁定（F4-b 再拆，同 F3/F4-a 纪律）**：F4-b 的「网络 I/O」与「真正持有引擎子进程句柄的 supervisor」是两件事。经查证——真引擎（Python / llama-server）的**起停由 app 侧 `service.rs` 负责**（`signal_tree` / `no_tree_kill`，含 Windows `taskkill /T /F`），`engine-client.mjs` 的注释亦明言「本文件不该持有 llama-server 的进程句柄」。故 F4-b 的 supervisor 侧**已在 Rust**（F4 原述「复用现有实现，不新写」自动满足），本轮只补**协议运行期**（`boxsvc/engine/client.rs`）。**F4-b2（LLM supervisor，`settings/llm-supervisor.mjs` 366 行，起 llama-server + 三段探针 + 停）+ F3-b 执行/队列 留待下轮** —— F3-b 依赖本轮的 `translate_image`。
+
+**模块结构（`app/src-tauri/src/boxsvc/engine/client.rs`）**
+- 阶段日志环（模块级 `Mutex<Vec<String>>`，同 Node 的 `STAGE_LOG`）：`push_stage` / `push_stage_line` / `recent_stage_log(n)` / `clear_stage_log`。
+- HTTP 运行期：`request_once`（reqwest）/ `probe_tcp`（tokio `net`）/ `real_translate_image` / `mock_translate_image` / `translate_image`（按 `cfg.protocol` 派发）/ `real_probe` / `mock_probe` / `probe_engine`（三重判定）。
+- 配套纯函数并入 `engine.rs`：`engine_lang_code` / `build_engine_config`（逐请求方向叠加：`en>zh` ⇒ 换 `nllb`；映射不出引擎码时**不下发** `from_lang`）。
+
+**🔴 三条与 Node 逐语义对齐的要点**
+1. **`no_proxy()`**：引擎是本机 127.0.0.1，**绝不能被系统代理劫走**。Node 的 `http.request` 不读 env 代理；reqwest **默认会读** `HTTP_PROXY` ⇒ 必须显式 `.no_proxy()`，否则真实环境里「本机引擎不可达」而开发机全绿（R 类：只在用户机上犯）。
+2. **空闲超时**（每读到一块数据就重置 deadline），**不是总时长** —— 同 Node `http.request({timeout})` 的 socket `timeout`：一次翻译可以流式吐进度帧很久，只要**一直在动**就不算超时。
+3. **超时必须带走已收到的字节**（`HttpError::Timeout{partial}`）：只报「超时了」回答不了「引擎在推理 / 在排不上队 / 完全没动静」，而这是 U10②「静默 17 分钟」事后无法归因的根因。`real_translate_image` 把 partial 解析成阶段 → 记入日志 + 附进错误详情。
+
+**同源机制（沿用 F3/F4-a）**：新钉 `e2e/service/engine-http-parity-check.mjs` —— 按用例起一个 **Node http 伪引擎**（返回固定 5 字节帧 / 状态码 / 慢响应，并**记录**收到的请求），Rust（`boxsvc --engine-http-selftest '<cases>'`，新建 tokio runtime 真发 HTTP）与 Node（`--report` 子进程，因 `config.mjs` 加载期读 env ⇒ 端口/协议只能子进程切）各打同一台服务器，逐例比 `{ok,code,ext,mime,bytesB64,stageLines}` / probe 9 字段 / **请求体**（data URI + `config`）。
+- 16 例覆盖：real 成功（ja / en 方向）+ 错误帧 + 无结果帧 + 非图字节 + 422 + 500 + 空输入（客户端拦截）+ **超时携带部分帧**；probe running/prewarming/starting/stopped；mock 成功 + mock /ready + mock stopped。
+- 🔴 伪引擎请求**按到达次序**记录（Rust 先、Node 后）；payload 比对用 `canon` 归一化（serde_json 无 `preserve_order` ⇒ 键序与 JS 插入序不同，但**引擎侧 pydantic 不吃键序**，语义等价即可）。
+
+**⚠️ 已知偏离（有意）**：① 超时计时从「请求发出」起、读取阶段每块重置；Node 从 `http.request()` 起 —— 对「卡住不给数据」等价，对「连接阶段即挂」略有差异。② `EngineError.message` 文案随平台（Node 报 `err.code`、Rust 报 reqwest 描述）⇒ **断言只比 `code`**，不比文案。
+
+**登记**：`package.json` 加 `check:engine-http` / `:refute`；`e2e/_check-registry.mjs` 加 `{id:'engine-http', tier:'service', refute:true}`。`registry-check` 覆盖 **81** 项（原 79）。
+
+**验收（本轮实测）**：`check:engine-http` 正向 **18/18** · `--refute` **5 个变异全红**（M1 篡 ext；M2 删阶段日志行；M3 篡 probe state；M4 删请求体 translator 键；M5 篡 mock mime）· `cargo test --lib` **41/41**（35→41）· `registry-check` 4/4（反证 4/4，81 项）· `boxsvc` 编译无警告。

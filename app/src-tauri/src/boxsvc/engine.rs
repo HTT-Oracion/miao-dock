@@ -29,6 +29,7 @@ use serde_json::{json, Value};
 use crate::paths;
 
 pub mod selftest;
+pub mod client;
 
 // ================================================================ 常量（与 engine-client.mjs 同名同值）
 
@@ -293,6 +294,100 @@ pub fn engine_config_snapshot() -> Value {
         "ocr": get("ocr", "ocr"),
         "inpainter": get("inpainter", "inpainter"),
     })
+}
+
+// ================================================================ 方向 → 引擎配置（`buildEngineConfig`）
+
+/// 短码 → 引擎内部语言码（键与引擎 `translators/common.py::VALID_LANGUAGES` 对齐，只取本版用到的）。
+pub const LANG_SHORT_TO_ENGINE: &[(&str, &str)] = &[
+    ("ja", "JPN"),
+    ("jpn", "JPN"),
+    ("en", "ENG"),
+    ("eng", "ENG"),
+    ("zh", "CHS"),
+    ("chs", "CHS"),
+    ("zh-cn", "CHS"),
+];
+
+/// **方向 → 引擎翻译器**：只在基线翻译器**结构上做不到该方向**时才改写（今天只有 `ENG>CHS` ⇒ `nllb`）。
+/// 依据：`sakura` 的 system prompt 把源语言硬编码成日文（A 组实测英文 8/8 行原文照抄）。
+pub const DIRECTION_TRANSLATOR: &[(&str, &str)] = &[("ENG>CHS", "nllb")];
+
+/// 语言标识 → 引擎内部语言码；**认不出来返回 `None`（不猜）**。
+/// 短码（`en`）、引擎码（`ENG`）都收，大小写不敏感；`auto` 原样保留（显式要引擎自动检测）。
+pub fn engine_lang_code(value: Option<&str>) -> Option<String> {
+    let raw = value?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let lower = raw.to_lowercase();
+    if lower == "auto" {
+        return Some("auto".to_string());
+    }
+    if let Some((_, code)) = LANG_SHORT_TO_ENGINE.iter().find(|(k, _)| *k == lower) {
+        return Some((*code).to_string());
+    }
+    let upper = raw.to_uppercase();
+    if LANG_SHORT_TO_ENGINE.iter().any(|(_, c)| *c == upper) {
+        return Some(upper);
+    }
+    None
+}
+
+/// 按任务方向合成**这一次请求**的引擎配置（在不可变基线 `engine_config()` 之上叠一层方向）。
+///
+/// 🔴 `from_lang` 是**逐任务**的 —— 同一台机器上既有日译中又有英译中；把基线改成可变的，
+///    就退化成「哪个任务先跑、谁的设置说了算」。映射不出引擎码时**不下发** `from_lang`
+///    （保持上游 `None` = auto），而不是发个空串。
+pub fn build_engine_config(from: Option<&str>, to: Option<&str>) -> Value {
+    let base = engine_config();
+    let from_code = engine_lang_code(from);
+    let to_code = engine_lang_code(to).unwrap_or_else(|| {
+        base.get("translator")
+            .and_then(|t| t.get("target_lang"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("CHS")
+            .to_string()
+    });
+    // 键与 Node 一致：`from` 为 null 时字面串 "null"（`${null}>CHS`）。
+    let key = format!("{}>{}", from_code.clone().unwrap_or_else(|| "null".into()), to_code);
+    let baseline = base
+        .get("translator")
+        .and_then(|t| t.get("translator"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("sakura")
+        .to_string();
+    let translator_name = DIRECTION_TRANSLATOR
+        .iter()
+        .find(|(k, _)| *k == key)
+        .map(|(_, v)| (*v).to_string())
+        .unwrap_or(baseline);
+
+    // 先铺基线 translator 的键，再覆盖 translator / target_lang / [from_lang]
+    // —— 等价于 Node 的 `{...base.translator, translator, target_lang, ...(from?{from_lang}:{})}`。
+    let mut tr = serde_json::Map::new();
+    if let Some(obj) = base.get("translator").and_then(|t| t.as_object()) {
+        for (k, v) in obj {
+            tr.insert(k.clone(), v.clone());
+        }
+    }
+    tr.insert("translator".into(), json!(translator_name));
+    tr.insert("target_lang".into(), json!(to_code));
+    if let Some(f) = from_code {
+        tr.insert("from_lang".into(), json!(f));
+    }
+
+    let mut out = serde_json::Map::new();
+    if let Some(obj) = base.as_object() {
+        for (k, v) in obj {
+            if k == "translator" {
+                out.insert(k.clone(), Value::Object(tr.clone()));
+            } else {
+                out.insert(k.clone(), v.clone());
+            }
+        }
+    }
+    Value::Object(out)
 }
 
 // ================================================================ 本机代理旁路（D-86）
@@ -808,5 +903,36 @@ mod tests {
         let o = LlmLaunchOverrides { tier: Some("small".into()), ..Default::default() };
         let err = resolve_llm_launch(&o).unwrap_err();
         assert_eq!(err.code, "TIER_MODEL_UNDECLARED");
+    }
+
+    #[test]
+    fn engine_lang_code_covers_short_engine_and_auto() {
+        assert_eq!(engine_lang_code(Some("ja")).as_deref(), Some("JPN"));
+        assert_eq!(engine_lang_code(Some("EN")).as_deref(), Some("ENG"));
+        assert_eq!(engine_lang_code(Some(" eng ")).as_deref(), Some("ENG"));
+        assert_eq!(engine_lang_code(Some("CHS")).as_deref(), Some("CHS"));
+        assert_eq!(engine_lang_code(Some("zh-cn")).as_deref(), Some("CHS"));
+        assert_eq!(engine_lang_code(Some("auto")).as_deref(), Some("auto"));
+        // 认不出来 / 空 / 缺省 ⇒ None（不猜）
+        assert_eq!(engine_lang_code(Some("klingon")), None);
+        assert_eq!(engine_lang_code(Some("")), None);
+        assert_eq!(engine_lang_code(None), None);
+    }
+
+    #[test]
+    fn build_engine_config_picks_nllb_for_en_zh_and_keeps_sakura_elsewhere() {
+        // en>zh ⇒ 换 nllb（sakura 对英文原文照抄），并下发 from_lang=ENG
+        let en = build_engine_config(Some("en"), Some("zh"));
+        assert_eq!(en["translator"]["translator"], "nllb");
+        assert_eq!(en["translator"]["target_lang"], "CHS");
+        assert_eq!(en["translator"]["from_lang"], "ENG");
+        // ja>zh ⇒ 回落基线（sakura），同样下发 from_lang=JPN
+        let ja = build_engine_config(Some("ja"), Some("zh"));
+        assert_eq!(ja["translator"]["translator"], "sakura");
+        assert_eq!(ja["translator"]["from_lang"], "JPN");
+        // 认不出的方向 ⇒ **不下发** from_lang（保持上游 auto），不是发空串
+        let unk = build_engine_config(Some("xx"), Some("zh"));
+        assert!(unk["translator"].get("from_lang").is_none());
+        assert_eq!(unk["translator"]["target_lang"], "CHS");
     }
 }

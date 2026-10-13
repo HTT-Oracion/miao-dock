@@ -45,6 +45,7 @@ const CHECKS = [
   { id: 'paths', script: 'e2e/service/paths-parity-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/paths.rs', 'service/src/config.mjs'] },
   { id: 'store', script: 'e2e/service/store-parity-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc/store.rs', 'app/src-tauri/src/boxsvc/store/**', 'service/src/manga/store.mjs', 'e2e/service/store-parity-check.mjs'] },
   { id: 'engine-parity', script: 'e2e/service/engine-parity-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc/engine.rs', 'app/src-tauri/src/boxsvc/engine/**', 'service/src/engine-client.mjs', 'e2e/service/engine-parity-check.mjs'] },
+  { id: 'engine-http', script: 'e2e/service/engine-http-parity-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc/engine/**', 'service/src/engine-client.mjs', 'e2e/service/engine-http-parity-check.mjs'] },
   { id: 'svc-selftest', script: 'e2e/service/selftest.mjs', tier: 'service', watch: ['service/src/**'] },
   { id: 'eng-selftest', script: 'e2e/engine/selftest.mjs', tier: 'service', watch: ['engine/src/**'] },
   { id: 'lifespan', script: 'e2e/lifespan-selftest.mjs', tier: 'service', refute: true, watch: ['service/src/**', 'app/src-tauri/**'] },

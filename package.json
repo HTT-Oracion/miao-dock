@@ -94,6 +94,8 @@
     "check:store:refute": "node e2e/service/store-parity-check.mjs --refute",
     "check:engine-parity": "node e2e/service/engine-parity-check.mjs",
     "check:engine-parity:refute": "node e2e/service/engine-parity-check.mjs --refute",
+    "check:engine-http": "node e2e/service/engine-http-parity-check.mjs",
+    "check:engine-http:refute": "node e2e/service/engine-http-parity-check.mjs --refute",
     "check": "node e2e/run-checks.mjs --tier static",
     "check:full": "node e2e/run-checks.mjs --tier static,service",
     "check:nightly": "node e2e/run-checks.mjs --tier all",
