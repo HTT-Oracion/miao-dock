@@ -13,6 +13,16 @@ mod music;
 mod selftest;
 mod service;
 
+// 🔴 `boxsvc` 住在 **lib crate**（`miao_dock`）里，不在本 bin 的模块树里 —— 独立
+//    `[[bin]] boxsvc`（e2e 的 Rust 靶子）要复用同一份实现（见 lib.rs 文件头）。
+//    故这里必须 `use miao_dock::…` 而**不是** `mod boxsvc;`：后者会把同一份源码再编译一份，
+//    bin 与 lib 各有一套类型（`Shell` / `Paths` 互不连通），且两份实现会各自漂移。
+//    ⚠️ 必须是 `pub(crate) use`：私有 `use` 建立的绑定**不能**被子模块用 `crate::boxsvc` 访问
+//    （Rust 2018 起 use 绑定默认私有）⇒ 那正是"加了 import 还是找不到模块"的成因。
+//    ⚠️ 漏掉这一行，`miao-dock` bin 从 A3b 起就编不过（`service.rs` 用 `boxsvc::engine::…`），
+//    而 `cargo build --bin boxsvc` / `cargo test --lib` 都不覆盖它 ⇒ 一直没暴露。
+pub(crate) use miao_dock::boxsvc;
+
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};

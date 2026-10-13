@@ -40,7 +40,8 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
-use crate::paths;
+use crate::boxsvc;
+use miao_dock::paths;
 
 /// 状态变化事件名（前端订阅）
 pub const STATE_EVENT: &str = "miao://service-state";

@@ -83,6 +83,8 @@
     "check:docpaths:refute": "node e2e/docs-path-check.mjs --refute",
     "check:bundle": "node e2e/bundle-targets-check.mjs",
     "check:bundle:refute": "node e2e/bundle-targets-check.mjs --refute",
+    "check:packaged": "node e2e/packaged-smoke.mjs",
+    "check:packaged:refute": "node e2e/packaged-smoke.mjs --refute",
     "check:resources": "node e2e/resources-check.mjs",
     "check:resources:refute": "node e2e/resources-check.mjs --refute",
     "check:resilience": "node e2e/service/resilience-check.mjs",

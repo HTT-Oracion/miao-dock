@@ -74,6 +74,7 @@ process.stdout.write(JSON.stringify({
   idempotencyFile: m.IDEMPOTENCY_FILE, tokenFile: m.TOKEN_FILE, rootDir: m.ROOT_DIR,
   runtimeRoot: m.RUNTIME_ROOT,
   engineDir: c.engineDir, engineServerDir: c.engineServerDir, enginePython: c.enginePython, engineModelDir: c.engineModelDir,
+  modelManifest: m.MODEL_MANIFEST,
 }));
 `;
 
@@ -138,16 +139,17 @@ function appDataViolations(snap) {
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-paths-parity-'));
 const SCENARIOS = [
-  { id: 'PATH.default', label: '无覆盖时 12 个路径逐字节相同', env: {} },
+  { id: 'PATH.default', label: '无覆盖时 13 个路径逐字节相同', env: {} },
   {
     id: 'PATH.override',
-    label: 'env 覆盖后 12 个路径仍逐字节相同',
+    label: 'env 覆盖后 13 个路径仍逐字节相同',
     env: {
       MIAO_STATE_DIR: path.join(TMP, 'state'),
       MIAO_ROOT: path.join(TMP, 'root', 'Box 漫画'),
       MIAO_ENGINE_DIR: path.join(TMP, 'eng', 'src'),
       MIAO_ENGINE_PYTHON: path.join(TMP, 'eng', 'venv', 'Scripts', 'python.exe'),
       MIAO_ENGINE_SERVER_DIR: path.join(TMP, 'eng', 'src', 'server'),
+      MIAO_MODEL_MANIFEST: path.join(TMP, 'models.json'),
     },
   },
 ];

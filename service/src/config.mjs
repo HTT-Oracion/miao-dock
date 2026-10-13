@@ -328,6 +328,18 @@ export const RUNTIME_ROOT = path.resolve(process.env.MIAO_RUNTIME_ROOT || defaul
 const ENGINE_DIR = process.env.MIAO_ENGINE_DIR
   || path.join(runtimesDir(), 'src');
 
+/**
+ * 生效的**模型清单**路径（`MIAO_MODEL_MANIFEST` 覆盖，否则仓库内那份）。
+ *
+ * 🔴 与 Rust `paths::model_manifest()` 的关系：**dev 态逐字节一致**（`check:paths` 钉住）。
+ *    Rust 侧 A1 起多一层「资源目录优先」（打包态用），本对照端**不实现那一层** ——
+ *    资源寻址是 Rust 侧的产品能力（见 A1 裁定），Node 只在它还是服务的年代存在。
+ *    ⚠️ 因此设了 `MIAO_RESOURCE_DIR` 时两边**会**不同：那正是 A4 只跑 Rust 靶的原因。
+ */
+export const MODEL_MANIFEST = path.resolve(
+  process.env.MIAO_MODEL_MANIFEST || path.join(REPO_ROOT, 'engine', 'models.manifest.json'),
+);
+
 // ------------------------------------------------------------------ 令牌（契约 §2.1）
 
 /**

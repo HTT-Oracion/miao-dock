@@ -393,6 +393,9 @@ pub fn snapshot() -> serde_json::Value {
         "engineServerDir": s(engine_server_dir()),
         "enginePython": s(engine_python()),
         "engineModelDir": s(model_root()),
+        // A1/A2 之后清单路径是「资源目录优先、仓库回退」—— 它是**打包后唯一必须进包的资产**，
+        // 故必须进快照：不进的话"装完之后清单指向哪"这件事在两边的对拍里是盲区。
+        "modelManifest": s(model_manifest()),
     })
 }
 
