@@ -282,6 +282,26 @@ async function assertEngineStatus(port, label, expectState) {
   return v;
 }
 
+/**
+ * 去掉快照里的 `updatedAt` 之后再比 —— 它是**读时取的 now**，不是队列/任务状态。
+ *
+ * 🔴 为什么非去掉不可：`/queue` 与 `/tasks` 两侧实现都在**构造快照的那一刻**取 `now`
+ *    （Node `store.mjs` 的 `queueSnapshot()` / `taskListSnapshot()`；Rust `store.rs` 的同名视图）。
+ *    于是"两次读取逐字节相同"实际断言的是**"这两次读取落在同一秒内"** —— 一个系统既未承诺、
+ *    也不可能承诺的性质。它的失败形态是**偶发红**：实测 rust 靶子 6 次里红 4 次，node 靶子
+ *    3 次全绿（差别只是两次读取之间有没有跨过秒边界，与实现无关）。
+ *
+ *    偶发红比恒定红更坏：它会让人去改一段本来就对的代码，或者干脆把这条断言注释掉。
+ *    本断言真正要咬的是「被拒之后**没有建单、没有分配序号**」，那件事由 `queued` /
+ *    `running` / `tasks` 三者完全覆盖，与这个时间戳无关。`updatedAt` 本身的**存在性**
+ *    仍然断言（见 `check` 的条件），所以不会因此丢掉字段覆盖。
+ */
+function withoutReadClock(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return snapshot;
+  const { updatedAt, ...rest } = snapshot;
+  return rest;
+}
+
 /** S5.2~S5.4：引擎在准备中 ⇒ `ENGINE_NOT_READY`，且**不建单、不分配序号** */
 async function assertNotReady(port, label, expectRawState) {
   const before = {
@@ -301,10 +321,20 @@ async function assertNotReady(port, label, expectRawState) {
     tasks: jsonOf(await httpReq(port, 'GET', '/api/v1/tasks', { token: TOKEN })),
   };
   // 只断言"返回了 503"是不够的：**先建单再报错**也满足它。必须证明队列与任务清单没动过。
-  check(`S5.3 被拒后**不建单、不分配序号**（§2.3）：/queue 与 /tasks 与拒绝前逐字节相同（${label}）`,
-    JSON.stringify(before.queue) === JSON.stringify(after.queue)
-    && JSON.stringify(before.tasks) === JSON.stringify(after.tasks),
-    `queue ${JSON.stringify(before.queue)} → ${JSON.stringify(after.queue)}`);
+  // ⚠️ 比 `/queue` 与 `/tasks` 时都剔除 `updatedAt`（读时时间戳，见 `withoutReadClock`），
+  //    但**仍要求两边都带这个字段**（有值即可，不比它等不等）。
+  const qBefore = withoutReadClock(before.queue);
+  const qAfter = withoutReadClock(after.queue);
+  const tBefore = withoutReadClock(before.tasks);
+  const tAfter = withoutReadClock(after.tasks);
+  const hasClock = typeof before.queue?.updatedAt === 'string' && before.queue.updatedAt.length > 0
+    && typeof before.tasks?.updatedAt === 'string' && before.tasks.updatedAt.length > 0;
+  check(`S5.3 被拒后**不建单、不分配序号**（§2.3）：/queue 与 /tasks（均除读时 updatedAt）与拒绝前逐字节相同（${label}）`,
+    JSON.stringify(qBefore) === JSON.stringify(qAfter)
+    && JSON.stringify(tBefore) === JSON.stringify(tAfter)
+    && hasClock,
+    `queue(-updatedAt) ${JSON.stringify(qBefore)} → ${JSON.stringify(qAfter)}；`
+    + `tasks(-updatedAt) ${JSON.stringify(tBefore)} → ${JSON.stringify(tAfter)}`);
   return { res, body };
 }
 

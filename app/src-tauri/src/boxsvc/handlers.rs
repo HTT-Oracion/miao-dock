@@ -372,6 +372,14 @@ async fn route(shell: &Arc<Shell>, m: Match, uri: &Uri, headers: &HeaderMap, bod
         "GET /api/v1/translate/options" => translate_options(),
         "POST /api/v1/translate/settings" => translate_settings(body),
         "POST /api/v1/translate/credentials" => translate_credentials(body),
+        // ---------------------------------------------------------------- health / engine（F5.6）
+        "GET /health" | "GET /api/v1/health" => health(shell).await,
+        "GET /api/v1/engine/status" => engine_status(shell).await,
+        "GET /api/v1/engine/options" => engine_options(shell).await,
+        "POST /api/v1/engine/settings" => engine_settings(shell, body).await,
+        "POST /api/v1/engine/unload" => engine_unload(shell).await,
+        "POST /api/v1/engine/models/verify" => models_verify(shell).await,
+        "POST /api/v1/engine/models/download" => models_download(shell).await,
         // 声明为 Migrated 但没有实现 —— 由 `check:routes` 的 `ROUTES.migrated` 断言抓出来。
         other => super::http::store_err(&StoreError::new(
             "INTERNAL",
@@ -551,6 +559,311 @@ fn translate_credentials(body: &[u8]) -> Response {
         Ok(out) => super::http::json_body(200, &out),
         Err(e) => translate_err(&e),
     }
+}
+
+// ================================================================ engine / health 组（F5.6）
+//
+// 逐条对齐 Node：`healthView` / `engineStatusView` / `engineOptionsView` /
+// `handleEngineSettings` / `handleEngineUnload` / `handleModelsVerify` / `handleModelsDownload`。
+// 判定与合成全在 `boxsvc/engine/state.rs`（那里是「硬件 ⊕ 用户设置 ⊕ 引擎实况」的唯一一处），
+// 本段只做**读体 → 调门面 → 出信封**。
+
+/// `GET /health` · `GET /api/v1/health`（`healthView`）—— 心跳：高频、字段少、免鉴权。
+async fn health(shell: &Arc<Shell>) -> Response {
+    let sc = super::sidecar::sidecar_state(shell).await;
+    let (root, started_at) = {
+        let s = crate::boxsvc::lock_store(&shell.store);
+        (s.root.to_string_lossy().into_owned(), s.started_at.clone())
+    };
+    // `sidecar` 9 键（§5.1）。**向后兼容**：插件端口探测只认 `service === "box-service"`，
+    // 不依赖任何新增字段（§5.1 明写）。反证开关可把它退回 ver1.0 的 3 键，
+    // 用来证明"9 键"这条断言咬的确实是新增的那 6 个字段。
+    let sidecar = if shell.engine.contract_refutes.sidecar_legacy3 {
+        json!({ "state": sc.get("state"), "port": sc.get("port"), "engine": sc.get("engine") })
+    } else {
+        sc.clone()
+    };
+    let body = json!({
+        "status": super::engine::state::EngineState::health_status(&sc),
+        "service": super::SERVICE_NAME,
+        "version": super::SERVICE_VERSION,
+        "apiVersion": super::API_VERSION,
+        "sidecar": sidecar,
+        "rootDir": root,
+        "startedAt": started_at,
+    });
+    super::http::json_body(200, &body)
+}
+
+/// `GET /engine/status`（`engineStatusView`）—— 体检报告：低频、字段多、**需令牌**。
+async fn engine_status(shell: &Arc<Shell>) -> Response {
+    let es = &shell.engine;
+    let sc = super::sidecar::sidecar_state(shell).await;
+    let snap = shell.llm_snapshot();
+    super::http::json_body(200, &es.engine_status_view(&sc, &snap))
+}
+
+/// `GET /engine/options`（`engineOptionsView`）—— 设置页两小节的**全部取值来源**。
+///
+/// 与 `/engine/status` 的分工：那个是**体检报告**（引擎现在怎么样），这个是**选项清单**
+/// （用户能选什么、选完会发生什么）。两者都读同一份 `resolve_accel()` / `tier_options()`，
+/// 所以不可能出现"诊断说 mps、设置页说 cuda"。
+async fn engine_options(shell: &Arc<Shell>) -> Response {
+    let sc = super::sidecar::sidecar_state(shell).await;
+    super::http::json_body(200, &shell.engine.options_view(&sc))
+}
+
+/// `POST /engine/settings`（`handleEngineSettings`）—— 保存设置（白名单校验 → 写盘 → 报"要不要重启"）。
+async fn engine_settings(shell: &Arc<Shell>, body: &[u8]) -> Response {
+    let es = &shell.engine;
+    let patch: Value = if body.is_empty() {
+        json!({})
+    } else {
+        match serde_json::from_slice::<Value>(body) {
+            Ok(v) => v,
+            Err(e) => {
+                return super::http::json_body(
+                    400,
+                    &json!({ "error": { "code": "INVALID_SETTING", "message": format!("请求体不是合法 JSON：{e}"), "details": { "bytes": body.len() } } }),
+                )
+            }
+        }
+    };
+
+    // 🔴 **先格式、后能力**，顺序不能反（见 `EngineState::guard_settings` 的注释）。
+    let clean = match super::engine::settings::assert_patch(&patch, es.refutes.no_whitelist) {
+        Ok(m) => m,
+        Err(e) => return super::http::json_body(400, &json!({ "error": { "code": e.code, "message": e.message, "details": e.details } })),
+    };
+    if let Err(e) = es.guard_settings(&clean) {
+        return super::http::store_err(&e);
+    }
+
+    let clean_val = Value::Object(clean);
+    let result = match super::engine::settings::write_engine_settings(&es.settings_file, &clean_val, es.refutes.no_whitelist) {
+        Ok(r) => r,
+        Err(e) => return super::http::json_body(400, &json!({ "error": { "code": e.code, "message": e.message, "details": e.details } })),
+    };
+
+    // 🔴 即时生效的那一档：**重建空闲看护**（`idle_ms` 是构造参数，改不了就换一个）。
+    //    不重建的话，界面上「空闲卸载 LLM」改完显示新值、看护仍按旧值走 —— 一个界面上
+    //    完全看不出来的偏差。视觉那一档不在此列（`RESTART_REQUIRED_KEYS`）。
+    let mut applied_now: Vec<String> = Vec::new();
+    if result.changed.iter().any(|k| k == "idleLlmMin") {
+        crate::boxsvc::restart_idle_watcher(shell);
+        applied_now.push("idleLlmMin".to_string());
+        let next = es.saved_idle();
+        println!(
+            "[box-service] 空闲卸载 LLM 阈值已更新为 {} min（看护已重建，即时生效）",
+            (next.llm_ms as f64 / 60_000.0).round() as i64
+        );
+    }
+
+    let restart_keys: Vec<String> = result
+        .changed
+        .iter()
+        .filter(|k| super::engine::settings::RESTART_REQUIRED_KEYS.contains(&k.as_str()))
+        .cloned()
+        .collect();
+    super::http::json_body(
+        200,
+        &json!({
+            "ok": true,
+            "settings": result.settings,
+            "changed": result.changed,
+            "restartRequired": result.restart_required,
+            "restartRequiredKeys": restart_keys,
+            "appliedNow": applied_now,
+        }),
+    )
+}
+
+/// `POST /engine/unload`（`handleEngineUnload`）—— 强制释放 ③ LLM（《09》§6.2 的三个操作之一）。
+///
+/// ⚠️ 它**不是**"重启"也不是"停止服务"：③ 的归属方是 box-service（《04》§9.1），所以这件事我们
+///    真的做得到、也真的只影响 ③。② 与 ① 一根毫毛都不动。
+/// ③ 本来就没在跑 ⇒ **不是错误**（§9.4 空闲卸载是设计行为），如实报 `unloaded:false` + 原因。
+async fn engine_unload(shell: &Arc<Shell>) -> Response {
+    let Some(llm) = shell.llm_supervisor() else {
+        let body = json!({ "ok": true, "unloaded": false, "reason": "③ 当前未在运行（state=stopped），无需释放", "state": "stopped" });
+        return super::http::json_body(200, &body);
+    };
+    let before = llm.snapshot();
+    if before.state != "running" {
+        let body = json!({
+            "ok": true,
+            "unloaded": false,
+            "reason": format!("③ 当前未在运行（state={}），无需释放", before.state),
+            "state": before.state,
+        });
+        return super::http::json_body(200, &body);
+    }
+    llm.stop("用户在诊断视图里强制释放", 8000);
+    let after = llm.snapshot();
+    let body = json!({ "ok": true, "unloaded": after.state != "running", "state": after.state });
+    super::http::json_body(200, &body)
+}
+
+/// `POST /engine/models/verify`（`handleModelsVerify`）—— 「校验完整性」。
+///
+/// 🔴 它做的是**真算 sha256**，不是"看一眼文件在不在"：调用
+///    `engine/scripts/fetch-models.mjs --check`，那个脚本走 `verifyModels()`
+///    —— `--check` 分支**不联网、不删任何东西**。这是"校验完整性"唯一诚实的实现：
+///    一个只判存在的校验会给用户"没问题"的假结论。
+///
+/// 返回 `{ ok:false, ... }` 而非 HTTP 错误：**"校验完成，发现不符"是一次成功调用**，
+/// 用 4xx/5xx 表达会让界面把它显示成"操作失败"，而用户真正需要看到的是那份不符清单。
+async fn models_verify(shell: &Arc<Shell>) -> Response {
+    let es = &shell.engine;
+    let script = es.verify_script();
+    let model_root = es.model_root.to_string_lossy().into_owned();
+    let started = now_ms();
+
+    let (code, stdout, stderr, timeout) = tokio::task::spawn_blocking(move || {
+        run_verify_child(&script, &model_root)
+    })
+    .await
+    .unwrap_or((-1, String::new(), "校验子进程未能启动".to_string(), false));
+
+    let text = format!("{stdout}\n{stderr}");
+    let re = regex::Regex::new(r"校验：通过 (\d+) / 不符 (\d+) / 缺失 (\d+)（共 (\d+)）").unwrap();
+    let problems: Vec<String> = text
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| l.starts_with('✗'))
+        .collect();
+
+    let Some(m) = re.captures(&text) else {
+        // 连那句汇总都没打出来 ⇒ 脚本没跑到校验段（解释器错、脚本被改、路径不对……）
+        // 这时**绝不能**报"通过 0/不符 0/缺失 0 ⇒ 一切正常"。如实报"没跑起来"。
+        let mut all: Vec<&str> = text.lines().collect();
+        let tail: Vec<&str> = all.split_off(all.len().saturating_sub(8));
+        return super::http::store_err(&StoreError::new(
+            "INTERNAL",
+            "模型校验脚本未产出结果（可能是脚本缺失或运行环境异常）",
+            json!({ "exitCode": code, "timeout": timeout, "tail": tail.join("\n") }),
+        ));
+    };
+    let num = |i: usize| m.get(i).and_then(|x| x.as_str().parse::<i64>().ok()).unwrap_or(0);
+    let (pass, bad, missing, total) = (num(1), num(2), num(3), num(4));
+
+    // HF 缓存布局那一节（只在清单含 `hf` 条目时才有）—— 它才是"文件都在、引擎仍加载不了"的
+    // 判据，所以必须**一并计入 ok**：只比文件存在/哈希会给一个"绿着但跑不起来"的假结论（D-99）。
+    let re_hf = regex::Regex::new(r"HF 缓存布局：可解析 (\d+) / 不可解析 (\d+)（共 (\d+)）").unwrap();
+    let (hf_broken, hf_total) = match re_hf.captures(&text) {
+        Some(c) => (
+            c.get(2).and_then(|x| x.as_str().parse::<i64>().ok()).unwrap_or(0),
+            c.get(3).and_then(|x| x.as_str().parse::<i64>().ok()).unwrap_or(0),
+        ),
+        None => (0, 0),
+    };
+
+    let body = json!({
+        "ok": bad == 0 && missing == 0 && hf_broken == 0,
+        "pass": pass, "bad": bad, "missing": missing, "total": total,
+        "hf": { "resolvable": hf_total - hf_broken, "broken": hf_broken, "total": hf_total },
+        "problems": problems,
+        "rootDir": es.model_root.to_string_lossy(),
+        "exitCode": code,
+        "timeout": timeout,
+        "elapsedMs": now_ms() - started,
+        // 校验用的到底是哪份清单 —— 不报这一行的话，"通过"可能是拿一份被裁过的清单比出来的
+        "manifest": es.model_manifest.to_string_lossy(),
+    });
+    super::http::json_body(200, &body)
+}
+
+/// `POST /engine/models/download`（`handleModelsDownload`）—— 「重新下载模型」。
+///
+/// 语义是**启动**而非**等待**：立即返回 `{ ok, download }`，进度看 `/engine/status`。
+/// 🔴 已经在跑 ⇒ **409**（`DOWNLOAD_IN_PROGRESS`），不返回 200「已经在下了」：
+///    后者让界面以为这次点击生效了，而用户真正需要知道的是"我这次什么都没触发"。
+async fn models_download(shell: &Arc<Shell>) -> Response {
+    match shell.engine.start_model_download() {
+        Ok(view) => super::http::json_body(200, &json!({ "ok": true, "started": true, "download": view })),
+        Err(e) => super::http::store_err(&e),
+    }
+}
+
+fn now_ms() -> i64 {
+    super::store::model::now_ms()
+}
+
+/// 跑 `fetch-models --check` 子进程（**同步**；调用方包在 `spawn_blocking` 里）。
+///
+/// `maxBuffer` 用**行收集**而不是 `execFile` 的默认 1 MB：模型清单里有几十项，全不符时会打
+/// 几十行 —— 撞上 maxBuffer 的失败形态是 `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`，一个与"模型坏了"
+/// 毫无关系、却同样表现为"校验失败"的错误。手写收集就没有这个上限。
+/// `timeout_ms` 给 15 min：真算 5–8 GB 的 sha256 在机械盘上可以很慢，但它**必须有个头**，
+/// 否则界面会永远转圈（且没有任何东西会告诉用户它卡住了）。
+fn run_verify_child(script: &Path, model_root: &str) -> (i64, String, String, bool) {
+    let node_exec = std::env::var("MIAO_NODE_EXEC").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "node".to_string());
+    let mut cmd = std::process::Command::new(node_exec);
+    cmd.arg(script).arg("--check");
+    cmd.env("MIAO_MODEL_ROOT", model_root);
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => return (-1, String::new(), e.to_string(), false),
+    };
+
+    // 读线程**必须**先起：管道满时子进程会写阻塞，而我们在下面等它退出 ⇒ 死锁。
+    let collect = |r: Option<Box<dyn std::io::Read + Send>>| -> std::sync::Arc<std::sync::Mutex<String>> {
+        let out = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        if let Some(mut r) = r {
+            let o = out.clone();
+            std::thread::spawn(move || {
+                let mut buf = [0u8; 8192];
+                loop {
+                    match r.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            if let Ok(mut s) = o.lock() {
+                                s.push_str(&String::from_utf8_lossy(&buf[..n]));
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        out
+    };
+    let so = collect(child.stdout.take().map(|x| Box::new(x) as Box<dyn std::io::Read + Send>));
+    let se = collect(child.stderr.take().map(|x| Box::new(x) as Box<dyn std::io::Read + Send>));
+
+    let deadline = now_ms() + 900_000;
+    let mut timeout = false;
+    let code = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status.code().map(|n| n as i64).unwrap_or(-1),
+            Ok(None) => {}
+            Err(_) => break -1,
+        }
+        if now_ms() > deadline {
+            timeout = true;
+            let _ = child.kill();
+            let _ = child.wait();
+            break -1;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    // 给读线程一拍把管道里的尾巴收完（子进程已退出 ⇒ 读到 EOF 即返回）。
+    std::thread::sleep(Duration::from_millis(60));
+    let stdout = so.lock().map(|s| s.clone()).unwrap_or_default();
+    let stderr = se.lock().map(|s| s.clone()).unwrap_or_default();
+    (code, stdout, stderr, timeout)
+}
+
+/// `translateBodyOf` 之外的通用 JSON 体（空体 = `{}`）—— engine 组三个 POST 共用。
+#[allow(dead_code)]
+fn engine_parse_body(raw: &[u8], code: &str) -> Result<Value, Response> {
+    if raw.is_empty() {
+        return Ok(json!({}));
+    }
+    serde_json::from_slice::<Value>(raw)
+        .map_err(|_| super::http::json_body(400, &json!({ "error": { "code": code, "message": "请求体不是合法 JSON", "details": {} } })))
 }
 
 // ================================================================ tasks

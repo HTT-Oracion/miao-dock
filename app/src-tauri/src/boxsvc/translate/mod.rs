@@ -137,6 +137,17 @@ fn current_merged() -> Result<Merged, TranslateError> {
     Ok(Merged { settings: merged, sources, read, exists, corrupt, reason })
 }
 
+/// 生效的翻译来源（`local` / `online`）—— 复刻 `currentTranslateSource()`。
+///
+/// 🔴 P-D4（ver2.2 已定稿）：来源 = 在线 ⇒ **引擎不随开机拉起**（在线链路完全不需要 ③ 的显存）。
+///    读失败一律回落 `local`（= 接线前的默认行为），不抛错 —— 一个读不出的来源不该让服务起不来。
+pub fn current_source() -> String {
+    match current_merged() {
+        Ok(m) => m.settings.get("source").and_then(|v| v.as_str()).unwrap_or("local").to_string(),
+        Err(_) => "local".to_string(),
+    }
+}
+
 /// 每平台一个令牌桶（进程内懒建）。
 fn limiter_of(platform: &str) -> Arc<limiter::Limiter> {
     limiter::limiter_of(platform)

@@ -152,16 +152,40 @@ pub fn engine_python() -> PathBuf {
 
 /// 生效的**模型根目录**（`MIAO_MODEL_ROOT` 覆盖，默认引擎目录上一级）。
 ///
-/// 🔴 Node 的 `engineModelDir` 是 `path.resolve(modelDir || resolve(ENGINE_DIR, '..'))` —— **总是绝对化**，
-///    故这里也走 `resolve`。
+/// 🔴 Node 的 `engineModelDir` 是 `path.resolve(engineSettings.modelDir || resolve(ENGINE_DIR, '..'))`
+///    —— **总是绝对化**，故这里也走 `resolve`。
+///
+/// 🔴 F5.6 起**三级回退**（与 `config.mjs:480` 逐字对齐）：`MIAO_MODEL_ROOT` → 设置文件 `modelDir`
+///    → `resolve(ENGINE_DIR, '..')`。少了中间那一级，「设置页把模型目录改到 D 盘」这件事
+///    在 Rust 侧**读不到**，而它在 Node 侧读得到 ⇒ `--print-paths` 与产品行为一起分叉（R1）。
+/// ⚠️ 这里**只**做 `modelDir` 的裸读，不复用 `boxsvc::engine::settings`：`paths` 是底座
+///    （`lib` 根），底座依赖服务域会把「域能单独理解」这个前提破掉（同 Node 的 layering 纪律）。
 pub fn model_root() -> PathBuf {
     if let Some(p) = env_path("MIAO_MODEL_ROOT") {
         return resolve(p);
+    }
+    if let Some(dir) = settings_model_dir() {
+        return resolve(PathBuf::from(dir));
     }
     let parent = engine_dir().parent().map(PathBuf::from).unwrap_or_else(|| {
         state_dir().join("runtimes").join("manga-translator")
     });
     resolve(parent)
+}
+
+/// 裸读 `state/engine-settings.json` 的 `modelDir`（字符串且非空才有值）。
+///
+/// 读不到 / 不是 JSON / 键缺失 一律 `None` —— 坏文件由 `boxsvc::engine::settings` 另行上报，
+/// 这里**不重复喊**（同一个坏文件喊两遍只会淹没日志）。
+fn settings_model_dir() -> Option<String> {
+    let text = std::fs::read_to_string(state_dir().join("engine-settings.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let s = v.get("modelDir")?.as_str()?.trim();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.to_string())
+    }
 }
 
 /// 生效的**模型清单**（`MIAO_MODEL_MANIFEST` 是验收夹具接缝；产品路径永远用入库的那一份）。

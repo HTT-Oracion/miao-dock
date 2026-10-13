@@ -46,6 +46,20 @@ use super::{io_errno, persist_task, write_original, Store, StoreError, SResult};
 /// 单张翻译的注入点（见模块头 ①）。
 pub trait Translator {
     fn translate(&self, bytes: &[u8], opts: &TranslateOpts) -> Result<TranslateOk, EngineError>;
+
+    /// 《04》§9.3 懒加载恢复：③ LLM 可能已被空闲卸载（§9.1 Tier1）。任务到来时先把它拉回来，
+    /// 再走正常链路 —— 对用户表现为「这张稍慢」，而**不是失败**（§9.4：卸载 ≠ 未就绪）。
+    ///
+    /// ⚠️ Node 把它放在**重试循环之外**（`store.mjs:1169`）：③ 没起来时每一张都会失败，
+    ///    放进循环里只会把重试浪费在同一次等待上（三次都是同一个原因，看着像"引擎坏了"）。
+    fn ensure_llm(&self) {}
+
+    /// 《04》§8.2：疑似 OOM ⇒ 降一档重试**一次**，且**不叠加** item 级重试。
+    /// 返回是否**真的**降了档（降了 ⇒ 调用方把 attempt 回退一格再重试）。
+    /// 默认实现：不做任何事（无引擎的纯逻辑档）。
+    fn on_oom(&self) -> bool {
+        false
+    }
 }
 
 /// 永远失败（缺省占位；未接引擎时用它，而不是 panic）。
@@ -339,6 +353,8 @@ pub fn run_engine_attempts(tr: &dyn Translator, job: &EngineJob) -> EngineOutcom
     let mut attempt: i64 = 0;
     let mut translated: Option<TranslateOk> = None;
     let mut last_err: Option<EngineError> = None;
+    // §9.3 懒加载恢复：③ 被空闲卸载后再来任务 ⇒ 先拉起再继续（**重试循环之外**，见 trait 注释）。
+    tr.ensure_llm();
     loop {
         attempt += 1;
         let remaining = deadline - now_ms();
@@ -370,7 +386,47 @@ pub fn run_engine_attempts(tr: &dyn Translator, job: &EngineJob) -> EngineOutcom
                 break;
             }
             Err(e) => {
+                // 🔴 **每一次尝试失败都留痕**。U10② 最致命的地方不是"超时了"，而是**超时了却
+                // 没有任何输出**：从外面看，它与"引擎正在慢慢推理"逐字节相同。
+                // 这一行把三件事说清楚：第几次、已经花了多久、**引擎最后在做什么**。
+                let stage = e
+                    .detail
+                    .as_ref()
+                    .and_then(|d| d.get("frames"))
+                    .and_then(|f| f.as_array())
+                    .map(|frames| {
+                        frames
+                            .iter()
+                            .filter(|f| f.get("text").is_some() || f.get("code").and_then(|c| c.as_i64()) == Some(4))
+                            .rev()
+                            .take(3)
+                            .collect::<Vec<_>>()
+                            .into_iter()
+                            .rev()
+                            .map(|f| f.get("text").and_then(|t| t.as_str()).unwrap_or("等待翻译实例").to_string())
+                            .collect::<Vec<_>>()
+                            .join(" → ")
+                    })
+                    .unwrap_or_default();
+                eprintln!(
+                    "[item {}#{}] 第 {attempt}/{MAX_ATTEMPTS} 次尝试失败：{} · 已用 {}ms · 预算剩 {}ms{}",
+                    job.task_id,
+                    job.seq,
+                    if e.code.is_empty() { "internal_error" } else { e.code.as_str() },
+                    now_ms() - job.t0,
+                    (deadline - now_ms()).max(0),
+                    if stage.is_empty() { " · 引擎无阶段帧".to_string() } else { format!(" · 引擎阶段：{stage}") }
+                );
                 last_err = Some(e);
+                // 《04》§8.2：OOM ⇒ 降一档重试**一次**，且**不叠加** item 级重试 —— 所以这里把
+                // attempt 回退一格再重试（一次 OOM 只算降档那一次，不额外吃掉 item 的重试预算）。
+                // ⚠️ 不会打转：闩落下后再 OOM，`try_downgrade()` 返回 `already-downgraded` ⇒ 落到
+                //    常规重试/失败分支（§8.2 底线「已是最低档仍 OOM ⇒ 任务 failed」）。
+                let oom = last_err.as_ref().map(super::super::engine::tier_downgrade::is_oom_error).unwrap_or(false);
+                if oom && tr.on_oom() {
+                    attempt -= 1;
+                    continue;
+                }
                 if attempt >= MAX_ATTEMPTS {
                     break;
                 }

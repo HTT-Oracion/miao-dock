@@ -287,9 +287,24 @@ fn publish(diag: &Mutex<LlmSnapshot>, inner: &Inner) {
     }
 }
 
-fn log(logs: &Arc<Mutex<Vec<String>>>, line: String) {
+/// 日志汇聚处（Node `opts.log` 回调的对应物）。
+///
+/// 🔴 `verbose` 是一道**必要的**开关：Node 侧 supervisor 的 `log` 直连 `serverLog`（stdout），
+///    而 Rust 侧 `--llm-selftest` 的输出必须**是纯 JSON**（对拍脚本 `JSON.parse(stdout)`）。
+///    ⇒ 服务路径（`from_default`）verbose=true（与 Node 同：日志进 stdout）；
+///      自证路径（`with_launch`）verbose=false（只进环形缓冲，不污染 stdout）。
+#[derive(Default)]
+pub struct LogSink {
+    pub lines: Vec<String>,
+    pub verbose: bool,
+}
+
+fn log(logs: &Arc<Mutex<LogSink>>, line: String) {
     if let Ok(mut v) = logs.lock() {
-        v.push(line);
+        if v.verbose {
+            println!("{line}");
+        }
+        v.lines.push(line);
     }
 }
 
@@ -302,23 +317,34 @@ fn opt_str<T: std::fmt::Display>(o: &Option<T>) -> String {
 
 // ================================================================ 生命周期操作（自由函数，避免借用冲突）
 
-fn op_start(logs: &Arc<Mutex<Vec<String>>>, inner: &mut Inner, timeout_ms: u64) {
+fn op_start(logs: &Arc<Mutex<LogSink>>, diag: &Mutex<LlmSnapshot>, inner: &mut Inner, timeout_ms: u64) {
     if inner.state == LlmState::Running {
         return;
     }
-    match do_start(logs, inner, timeout_ms) {
+    match do_start(logs, diag, inner, timeout_ms) {
         Ok(()) => {}
         Err(msg) => {
             inner.state = LlmState::Error;
             inner.last_error = Some(msg.clone());
+            publish(diag, inner); // 失败也是一次**状态迁移** ⇒ 同样要落到诊断快照
             log(logs, format!("[box-service] ③ LLM 拉起失败：{msg}"));
         }
     }
 }
 
-fn do_start(logs: &Arc<Mutex<Vec<String>>>, inner: &mut Inner, timeout_ms: u64) -> Result<(), String> {
+fn do_start(
+    logs: &Arc<Mutex<LogSink>>,
+    diag: &Mutex<LlmSnapshot>,
+    inner: &mut Inner,
+    timeout_ms: u64,
+) -> Result<(), String> {
     inner.state = LlmState::Starting;
     inner.last_error = None;
+    // 🔴 状态一改就发布。`do_start` 里有**长等待**（等就绪探针，真档可达分钟级），
+    //    只在函数收尾发布的话，这段窗口内诊断快照会停在旧态（例如 `stopped`），
+    //    而 `/engine/status` 与 `snapshot()` 都会照着旧态答 —— Node 那边 `state` 是
+    //    唯一事实源、改了就可见，不存在这个滞后。见 `do_stop` 的同款注释。
+    publish(diag, inner);
 
     // 🔴 起进程**之前**先确认看护器脚本真的在盘上。少了这一步，「路径算错/文件被移走」的表现是
     //    子进程瞬时 `MODULE_NOT_FOUND` 退出、而 supervisor 只报一句「未在 180s 内就绪」
@@ -373,7 +399,7 @@ fn do_start(logs: &Arc<Mutex<Vec<String>>>, inner: &mut Inner, timeout_ms: u64) 
     if !ok {
         // 起不来不阻断服务本身：没有 LLM 只是翻译阶段会失败（S2 的崩溃分级口径）。
         // ⚠️ 调 `do_stop`（内部实现）而非公开 `stop()` —— 后者会再进一次串行链 = 自己等自己。
-        do_stop(logs, inner, "启动超时", 8000);
+        do_stop(logs, diag, inner, "启动超时", 8000);
         return Err(format!(
             "③ LLM 未在 {}s 内就绪",
             (timeout_ms as f64 / 1000.0).round() as i64
@@ -393,7 +419,7 @@ fn do_start(logs: &Arc<Mutex<Vec<String>>>, inner: &mut Inner, timeout_ms: u64) 
 }
 
 /// 把子进程的标准流转进环形日志（Node 的 `relay`）。
-fn relay(reader: BufReader<impl Read>, logs: Arc<Mutex<Vec<String>>>, tag: &str) {
+fn relay(reader: BufReader<impl Read>, logs: Arc<Mutex<LogSink>>, tag: &str) {
     for line in reader.lines().map_while(Result::ok) {
         let t = line.trim();
         if t.is_empty() {
@@ -408,7 +434,7 @@ fn relay(reader: BufReader<impl Read>, logs: Arc<Mutex<Vec<String>>>, tag: &str)
     }
 }
 
-fn wait_ready(logs: &Arc<Mutex<Vec<String>>>, inner: &mut Inner, timeout_ms: u64) -> bool {
+fn wait_ready(logs: &Arc<Mutex<LogSink>>, inner: &mut Inner, timeout_ms: u64) -> bool {
     if env_bool("MIAO_LLM_NO_WAIT_READY", false) {
         return true; // 反证：不等就绪就宣布就绪
     }
@@ -473,7 +499,8 @@ fn wait_ready(logs: &Arc<Mutex<Vec<String>>>, inner: &mut Inner, timeout_ms: u64
 /// 停 ③ 并**等它真的退出、端口真的释放**。「真的退出」是本模块唯一重要的语义：
 /// §9.4 明说「卸载 ≠ 未就绪」，而「我以为它退了」与「它退了」的区别，只有等 `exit` + 回探端口能分开。
 fn do_stop(
-    logs: &Arc<Mutex<Vec<String>>>,
+    logs: &Arc<Mutex<LogSink>>,
+    diag: &Mutex<LlmSnapshot>,
     inner: &mut Inner,
     reason: &str,
     grace_ms: u64,
@@ -481,6 +508,7 @@ fn do_stop(
     if inner.child.is_none() {
         inner.state = LlmState::Stopped;
         inner.pid = None;
+        publish(diag, inner);
         return StopResult {
             stopped: false,
             why: Some("未在运行".to_string()),
@@ -489,6 +517,11 @@ fn do_stop(
         };
     }
     inner.state = LlmState::Unloading;
+    // 🔴 状态一改就发布（理由同 `do_start`）：从这里到最后那句 `state = Stopped` 之间，
+    //    有两段**真实等待**（等子进程退出 + 回探端口释放，本机实测数百 ms）。若只在收尾发布，
+    //    这段窗口内诊断快照会**停在 `running`** —— 而"③ 其实正在被拆掉"与"③ 好好跑着"
+    //    在外部看起来一模一样，正是本项目最忌讳的静默错报（曾据此误判 §9.3 懒加载无需拉起）。
+    publish(diag, inner);
     log(
         logs,
         format!(
@@ -540,7 +573,7 @@ fn do_stop(
     }
 }
 
-fn use_tier_inner(inner: &mut Inner, tier: &str) -> Result<(), EngineError> {
+fn use_tier_inner(logs: &Arc<Mutex<LogSink>>, inner: &mut Inner, tier: &str) -> Result<(), EngineError> {
     if inner.state != LlmState::Stopped {
         return Err(EngineError::new(
             "LLM_NOT_STOPPED",
@@ -558,6 +591,7 @@ fn use_tier_inner(inner: &mut Inner, tier: &str) -> Result<(), EngineError> {
     inner.model = model_id_of(&launch);
     inner.port = first_probe_port(&launch);
     inner.launch = launch;
+    log(logs, format!("[box-service] ③ 配方切到档位 {tier}：{}", opt_str(&inner.model)));
     Ok(())
 }
 
@@ -570,12 +604,18 @@ pub struct LlmSupervisor {
     /// 诊断快照：**不参与串行**，`snapshot()` 随时可读。
     diag: Mutex<LlmSnapshot>,
     /// ③ 的日志（Node `opts.log` 回调收集处）。
-    logs: Arc<Mutex<Vec<String>>>,
+    logs: Arc<Mutex<LogSink>>,
 }
 
 impl LlmSupervisor {
-    /// 用**显式配方**构造（对拍/上层注入用）。
+    /// 用**显式配方**构造（对拍/上层注入用）。日志只进环形缓冲、**不进 stdout**
+    /// （对拍脚本要 `JSON.parse(stdout)`，多一行日志就解析失败）。
     pub fn with_launch(launch: LaunchSpec, watch: bool) -> Self {
+        Self::with_launch_verbose(launch, watch, false)
+    }
+
+    /// 同 [`Self::with_launch`]，但可指定是否把日志同时打进 stdout（服务路径用 `true`）。
+    pub fn with_launch_verbose(launch: LaunchSpec, watch: bool, verbose: bool) -> Self {
         let model = model_id_of(&launch);
         let port = first_probe_port(&launch);
         let diag = LlmSnapshot {
@@ -599,14 +639,16 @@ impl LlmSupervisor {
                 restarts: 0,
             }),
             diag: Mutex::new(diag),
-            logs: Arc::new(Mutex::new(Vec::new())),
+            logs: Arc::new(Mutex::new(LogSink { lines: Vec::new(), verbose })),
         }
     }
 
     /// 缺省：配方由 `resolveLlmLaunch()` 给（按协议自动选 real/mock），真档才包 child-watch。
+    /// 🔴 `verbose = true`：服务路径下 supervisor 的日志必须与 Node 一样出现在 **stdout**
+    ///    —— e5e6 的「③ LLM 就绪（pid=…）」现场凭证就是按 stdout 抓的。
     pub fn from_default() -> Result<Self, EngineError> {
         let launch = resolve_llm_launch(&LlmLaunchOverrides::default())?;
-        Ok(Self::with_launch(launch, !super::is_mock_protocol()))
+        Ok(Self::with_launch_verbose(launch, !super::is_mock_protocol(), true))
     }
 
     /// 机器可读快照 —— 直接喂 `sidecar.llm` / `/engine/status` 的 `llm` 字段。
@@ -637,7 +679,7 @@ impl LlmSupervisor {
 
     /// ③ 的日志行（`[llm] …` / `[llm:err] …` / supervisor 事件）。
     pub fn logs(&self) -> Vec<String> {
-        self.logs.lock().map(|v| v.clone()).unwrap_or_default()
+        self.logs.lock().map(|v| v.lines.clone()).unwrap_or_default()
     }
 
     /// 拉起 ③ 并等就绪探针全绿。并发调用由 `op` 锁排队：后一个进入时若前一个已把它拉起
@@ -647,14 +689,14 @@ impl LlmSupervisor {
         if inner.state == LlmState::Running {
             return snapshot_of(&inner);
         }
-        op_start(&self.logs, &mut inner, timeout_ms);
+        op_start(&self.logs, &self.diag, &mut inner, timeout_ms);
         publish(&self.diag, &inner);
         snapshot_of(&inner)
     }
 
     pub fn stop(&self, reason: &str, grace_ms: u64) -> StopResult {
         let mut inner = self.op.lock().expect("op 锁中毒");
-        let r = do_stop(&self.logs, &mut inner, reason, grace_ms);
+        let r = do_stop(&self.logs, &self.diag, &mut inner, reason, grace_ms);
         publish(&self.diag, &inner);
         r
     }
@@ -663,7 +705,7 @@ impl LlmSupervisor {
     pub fn restart(&self, timeout_ms: u64) -> LlmSnapshot {
         let mut inner = self.op.lock().expect("op 锁中毒");
         inner.restarts += 1;
-        op_start(&self.logs, &mut inner, timeout_ms);
+        op_start(&self.logs, &self.diag, &mut inner, timeout_ms);
         publish(&self.diag, &inner);
         snapshot_of(&inner)
     }
@@ -673,12 +715,12 @@ impl LlmSupervisor {
     /// `start/stop` 插进来都会让「配方的档位」与「实际跑着的权重」分家。
     pub fn switch_tier(&self, tier: &str, timeout_ms: u64) -> Result<LlmSnapshot, EngineError> {
         let mut inner = self.op.lock().expect("op 锁中毒");
-        do_stop(&self.logs, &mut inner, &format!("降档到 {tier}"), 5000);
-        if let Err(e) = use_tier_inner(&mut inner, tier) {
+        do_stop(&self.logs, &self.diag, &mut inner, &format!("降档到 {tier}"), 5000);
+        if let Err(e) = use_tier_inner(&self.logs, &mut inner, tier) {
             publish(&self.diag, &inner);
             return Err(e);
         }
-        op_start(&self.logs, &mut inner, timeout_ms);
+        op_start(&self.logs, &self.diag, &mut inner, timeout_ms);
         publish(&self.diag, &inner);
         Ok(snapshot_of(&inner))
     }
@@ -688,7 +730,7 @@ impl LlmSupervisor {
     ///    （正常入口是 `switch_tier`）。
     pub fn use_tier(&self, tier: &str) -> Result<(), EngineError> {
         let mut inner = self.op.lock().expect("op 锁中毒");
-        let r = use_tier_inner(&mut inner, tier);
+        let r = use_tier_inner(&self.logs, &mut inner, tier);
         publish(&self.diag, &inner);
         r
     }

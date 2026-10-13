@@ -31,6 +31,13 @@ use crate::paths;
 pub mod selftest;
 pub mod client;
 pub mod supervisor;
+// ---- F5.6：引擎组的判定/合成/持久化层（对应 Node 的 config.mjs 引擎段 + settings/*.mjs）----
+pub mod idle_policy;
+pub mod model_status;
+pub mod profile;
+pub mod settings;
+pub mod state;
+pub mod tier_downgrade;
 
 // ================================================================ 常量（与 engine-client.mjs 同名同值）
 

@@ -30,6 +30,14 @@
  *      例如基座换了图标而 windows 配置还指着旧文件。**注意**：允许新增 Windows 专有键
  *      （如 `bundle.windows.nsis`），本条只禁「复制基座已有键」。
  *
+ *   W5 基座与 Windows 配置的 `bundle.resources` 里**没有** Node 服务（`service/`）与
+ *      `node.zip` —— F5.8 的验收标准③。服务已全部由 Rust 提供（`check:routes` 的完成门
+ *      证明转发数 = 0），往随包里再放一份 Node 就是「功能照常、e2e 全绿、但包里永久躺一份
+ *      没人调的服务」——正是计划文档 R3 要防的那个形态。
+ *      🔴 判据取**配置**而不是"文件在不在"：`vendor/node.zip` 从来就没有过（D-08），
+ *      所以"文件不存在"是一条永远绿的空断言；真正会把它带进包里的**唯一途径**就是
+ *      `bundle.resources` 里列了它。
+ *
  * ## 反证轮（`--refute`）
  *   逐条把上面的写法**改回缺陷形态** → 对应断言**必须变红** → 按字节还原。
  *
@@ -77,6 +85,10 @@ const eqArr = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.l
 ///   把它列进来会让本断言在**基线上就红**（自己写错、不是实现坏）。
 const BASE_OWNED_KEYS = ['productName', 'identifier', 'version', 'icon', 'active', 'macOS', 'resources'];
 
+/// 随包资源里**不该**出现的 Node 载荷（F5.8 验收标准③）。
+/// 大小写不敏感地按子串判：`service/` 与 `service\` 两种写法都要挡住（配置里可能写成 Windows 路径）。
+const NODE_PAYLOAD = ['service/', 'service\\', 'node.zip'];
+
 // ------------------------------------------------------------------ 正向断言
 
 function runAll() {
@@ -121,6 +133,20 @@ function runAll() {
     '`tauri.windows.conf.json` **不复制**基座已有的键（`productName`/`identifier`/`icon`/`active`/`macOS`/`resources`）—— 同一事实两处来源必漂移',
     copied.length === 0,
     copied.length ? `复制了：${copied.join(', ')}` : `顶层键=${JSON.stringify(topKeys)} bundle 键=${JSON.stringify(winBundleKeys)}`,
+  );
+
+  // ---- W5：随包资源里不得再有 Node（F5.8 验收标准③）----
+  //    生效配置 = JSON Merge Patch(基座, windows)，所以**两边都要看** —— 只看基座会漏掉
+  //    "在平台配置里补一条 resources" 这条路。
+  const resBase = (base && base.bundle && base.bundle.resources) || [];
+  const resWin = (win && win.bundle && win.bundle.resources) || [];
+  const resAll = [...(Array.isArray(resBase) ? resBase : []), ...(Array.isArray(resWin) ? resWin : [])];
+  const nodeish = resAll.filter((p) => NODE_PAYLOAD.some((k) => String(p).toLowerCase().includes(k)));
+  check(
+    'W5',
+    '`bundle.resources`（基座 + windows 配置）里**没有** Node 服务（`service/`）与 `node.zip` —— F5.8 已摘除 Node，服务由 Rust 提供',
+    Array.isArray(resBase) && Array.isArray(resWin) && nodeish.length === 0,
+    nodeish.length ? `混进了：${JSON.stringify(nodeish)}` : `base=${JSON.stringify(resBase)} win=${JSON.stringify(resWin)}`,
   );
 }
 
@@ -169,6 +195,17 @@ const MUTATIONS = [
       },
     ],
     expect: ['W4'],
+  },
+  {
+    name: 'M5 把 Node 服务塞回随包资源（F5 摘除 Node 的回归）',
+    edits: [
+      {
+        file: BASE_CONF,
+        find: '"resources": []',
+        replace: '"resources": ["../service/", "../vendor/node.zip"]',
+      },
+    ],
+    expect: ['W5'],
   },
 ];
 

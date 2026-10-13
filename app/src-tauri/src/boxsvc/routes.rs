@@ -51,11 +51,11 @@ macro_rules! route {
     };
 }
 
-/// 全量端点表。**`/health` 两条属 `health` 组**（9 字段 sidecar 视图仍未迁）。
+/// 全量端点表。**`/health` 两条属 `health` 组**（9 字段 sidecar 视图 F5.6 已迁）。
 pub const ROUTES: &[RouteDef] = &[
-    // ---- health ----
-    route!("health", "GET", "/health", Forwarded),
-    route!("health", "GET", "/api/v1/health", Forwarded),
+    // ---- health ----（F5.6 已迁：handlers.rs `health` + boxsvc/engine/state.rs，D-146 已闭合）
+    route!("health", "GET", "/health", Migrated),
+    route!("health", "GET", "/api/v1/health", Migrated),
     // ---- tasks ----（F5.2 已迁：handlers.rs `tasks` 段）
     route!("tasks", "POST", "/api/v1/tasks", Migrated),
     route!("tasks", "GET", "/api/v1/tasks", Migrated),
@@ -67,13 +67,13 @@ pub const ROUTES: &[RouteDef] = &[
     route!("tasks", "POST", "/api/v1/tasks/{taskId}/retry", Migrated),
     // ---- queue ----（F5.2 已迁：handlers.rs `queue`）
     route!("queue", "GET", "/api/v1/queue", Migrated),
-    // ---- engine ----
-    route!("engine", "GET", "/api/v1/engine/status", Forwarded),
-    route!("engine", "GET", "/api/v1/engine/options", Forwarded),
-    route!("engine", "POST", "/api/v1/engine/settings", Forwarded),
-    route!("engine", "POST", "/api/v1/engine/unload", Forwarded),
-    route!("engine", "POST", "/api/v1/engine/models/verify", Forwarded),
-    route!("engine", "POST", "/api/v1/engine/models/download", Forwarded),
+    // ---- engine ----（F5.6 已迁：handlers.rs `engine / health 组` + boxsvc/engine/state.rs）
+    route!("engine", "GET", "/api/v1/engine/status", Migrated),
+    route!("engine", "GET", "/api/v1/engine/options", Migrated),
+    route!("engine", "POST", "/api/v1/engine/settings", Migrated),
+    route!("engine", "POST", "/api/v1/engine/unload", Migrated),
+    route!("engine", "POST", "/api/v1/engine/models/verify", Migrated),
+    route!("engine", "POST", "/api/v1/engine/models/download", Migrated),
     // ---- translate ----（F5.5 已迁：handlers.rs `translate` 段 + boxsvc/translate/）
     route!("translate", "POST", "/api/v1/translate/text", Migrated),
     route!("translate", "POST", "/api/v1/translate/stream", Migrated),

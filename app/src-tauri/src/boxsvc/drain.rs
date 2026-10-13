@@ -24,6 +24,8 @@
 use std::sync::{mpsc, Arc, Mutex};
 
 use crate::boxsvc::engine::client::{translate_image, EngineCfg, TranslateOk, TranslateOpts};
+use crate::boxsvc::engine::supervisor::LlmSupervisor;
+use crate::boxsvc::engine::tier_downgrade::TierDowngrade;
 use crate::boxsvc::engine::EngineError;
 use crate::boxsvc::store::exec::{run_engine_attempts, Translator};
 use crate::boxsvc::store::Store;
@@ -76,11 +78,59 @@ impl EngineDriver {
 struct HttpTranslator {
     driver: EngineDriver,
     cfg: EngineCfg,
+    /// 引擎③ —— 懒加载恢复（§9.3）与降档（§8.2）都要它。
+    llm: Option<Arc<LlmSupervisor>>,
+    tier_ctl: Arc<TierDowngrade>,
 }
 
 impl Translator for HttpTranslator {
     fn translate(&self, bytes: &[u8], opts: &TranslateOpts) -> Result<TranslateOk, EngineError> {
         self.driver.run(translate_image(&self.cfg, bytes, opts))
+    }
+
+    /// 《04》§9.3 懒加载恢复（`store.ensureLlm` 的对应物）。
+    ///
+    /// 🔴 **不在这里预判 `snapshot().state`** —— 这个判断曾经是错的，且错得很静默：
+    ///
+    /// `snapshot()` 读的是 supervisor 的**诊断锁**，而诊断锁只在**操作边界**发布
+    /// （`start/stop/restart/switchTier` 各自收尾时 publish 一次）。一次正在进行的
+    /// `stop()` 里有两段真实的等待（等子进程退出 + 回探端口释放，本机实测数百 ms），
+    /// 这段窗口内诊断快照**仍停在 `running`** —— 于是懒加载判「已经在跑了」直接返回，
+    /// ③ 就此**再也不回来**，而症状只是"这张很慢/这张失败"（实测 `check:e5e6` 的 E6.4/E6.5 恒红）。
+    ///
+    /// Node 侧之所以没这个问题：`store.ensureLlm` 装配的是 `() => supervisor.start()`，
+    /// 而 `start()` 走 `_serial` —— 它会**排在在途 `stop()` 之后**执行，届时 `this.child` 已空，
+    /// 自然重新拉起。Rust 的 `start()` 走 `op` 锁，语义完全一样（同样串行、同样用**权威**的
+    /// `inner.state` 判「已经在跑就复用」）⇒ 正确写法就是**别在外面判**，让 `start()` 自己判。
+    fn ensure_llm(&self) {
+        let Some(llm) = &self.llm else { return };
+        // 起不来就照常往下走 —— 真正的失败原因由 `translate_image` 给出。
+        let snap = llm.start(180_000);
+        if snap.state != "running" {
+            // 🔴 这一行是给「③ 被卸载之后再也没回来」留的现场。§9.3 的懒加载是个**静默**动作：
+            //    没有它，`state` 就停在 `stopped`/`error`，而**症状**只是"这张很慢/这张失败" ——
+            //    与"引擎本来就很慢"不可分。只在**失败**时打，所以不会每条 item 都刷屏。
+            println!(
+                "[box-service] ⚠ §9.3 懒加载拉起 ③ 未就绪（state={}）",
+                snap.state
+            );
+        }
+    }
+
+    /// 《04》§8.2：OOM ⇒ 降一档。降档落到引擎 = **停 ③ → 换配方 → 重新拉起**（`switch_tier`
+    /// 是一次原子操作）。② 不依赖档位，无需跟着重启 —— 少一次分钟级的 python 冷启动。
+    fn on_oom(&self) -> bool {
+        let llm = self.llm.clone();
+        self.tier_ctl
+            .try_downgrade(move |tier| {
+                let Some(llm) = &llm else { return Ok(()) };
+                match llm.switch_tier(tier, 180_000) {
+                    Ok(snap) if snap.state == "running" => Ok(()),
+                    Ok(snap) => Err(format!("降档后 ③ 未就绪（state={}）", snap.state)),
+                    Err(e) => Err(e.message),
+                }
+            })
+            .downgraded
     }
 }
 
@@ -92,6 +142,8 @@ pub fn spawn(
     store: Arc<Mutex<Store>>,
     shared: tokio::runtime::Handle,
     cfg: EngineCfg,
+    llm: Option<Arc<LlmSupervisor>>,
+    tier_ctl: Arc<TierDowngrade>,
 ) -> DrainHandle {
     let (tx, rx) = mpsc::channel::<()>();
     std::thread::Builder::new()
@@ -115,7 +167,7 @@ pub fn spawn(
                     }
                 }
             };
-            let tr = HttpTranslator { driver, cfg };
+            let tr = HttpTranslator { driver, cfg, llm, tier_ctl };
             // 🔴 反证钩子（`MIAO_DRAIN_HOLD_LOCK=1`）：把**整段** drain 压在同一把锁里
             //    —— 那正是 D-150 的旧形态。开着它时中间态在 HTTP 上不可见（`GET /tasks` /
             //    `GET /queue` 都会被挡到任务跑完）；叠加并发读压时还可能把主运行时的 worker
