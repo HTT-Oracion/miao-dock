@@ -591,7 +591,14 @@ pub struct EngineLaunchOverrides {
 }
 
 fn default_engine_port() -> u16 {
-    let def = if is_mock_protocol() { 5003 } else { 8000 };
+    engine_port_for(is_mock_protocol())
+}
+
+/// 引擎端口的缺省值，**协议由入参决定**（同 `resolve_llm_launch_for` 的理由：
+/// `build_launch_plan(mode)` 的 `mode` 与 `MIAO_ENGINE_PROTOCOL` 可以不一致，
+/// 端口缺省必须跟着 `mode` 走，否则 mock 档会去问 8000 —— 而替身在 5003）。
+fn engine_port_for(real: bool) -> u16 {
+    let def = if real { 8000 } else { 5003 };
     env_int("MIAO_ENGINE_PORT", def) as u16
 }
 
@@ -677,6 +684,222 @@ pub fn resolve_engine_launch(o: &EngineLaunchOverrides) -> LaunchSpec {
     }
 }
 
+// ================================================================ 启动配方（A3b）
+
+/// mock 档的 ② 配方：仓内替身 `engine/src/server.mjs`。
+///
+/// 🔴 为什么单独一支而不在 `resolve_engine_launch` 里分岔：mock 档下 ② **不是** python，
+///    而是 Node 替身；把它塞进真档函数会让那个函数的每个读者都要先判断"我是不是在 mock"。
+///    且 mock 分支**不标** `watch` —— 替身自带父死看管（`engine/src/parent-watch.mjs`），
+///    再包一层只是多一层进程（与 `resolve_mock_llm_launch` 同裁定）。
+pub fn resolve_mock_engine_launch(port: Option<u16>) -> LaunchSpec {
+    let port = port.unwrap_or_else(default_engine_port);
+    let node_exec = env_str("MIAO_NODE_EXEC").unwrap_or_else(|| "node".to_string());
+    let script = paths::repo_root().join("engine").join("src").join("server.mjs");
+    LaunchSpec {
+        label: "engine".to_string(),
+        tier: None,
+        model: None,
+        cmd: vec![node_exec, script.to_string_lossy().into_owned()],
+        cwd: None,
+        // mock 档不传 `MIAO_ENGINE_PORT`：替身自己读 argv/默认端口，而 Node 版配方里那个键
+        // 是给**服务进程**用的（见 `LaunchPlan.service_env`），两处不是一回事。
+        env: BTreeMap::new(),
+        executor_port: None,
+        // 替身的就绪面是 `GET /ready`（真引擎才是 `POST /queue-size`）。
+        probes: vec![
+            json!({ "kind": "tcp", "port": port }),
+            json!({ "kind": "http", "port": port, "method": "GET", "path": "/ready", "expect": 200 }),
+        ],
+    }
+}
+
+/// 引擎②（真档 python）的启动配方 —— 按协议分两支的入口。
+/// 与 `resolve_llm_launch` 形状对称：**调用方不自己判断协议**。
+pub fn resolve_engine_launch_for_protocol(o: &EngineLaunchOverrides) -> LaunchSpec {
+    if is_mock_protocol() {
+        resolve_mock_engine_launch(o.port)
+    } else {
+        resolve_engine_launch(o)
+    }
+}
+
+/// ③ 条目上的附加字段：`owner` 与 `watch`（不进 `LaunchSpec` 本体）。
+///
+/// 🔴 为什么不直接加进 `LaunchSpec`：它是 `resolve_engine_launch` 的**返回值**类型，
+///    加两个"只在组装计划时才出现"的字段，会让纯函数的输出形状依赖调用场景。
+#[derive(Clone, Debug, serde::Serialize)]
+struct LlmEntry {
+    #[serde(flatten)]
+    spec: LaunchSpec,
+    owner: &'static str,
+    /// 🔴 **无条件输出**（mock 档就是 `false`），与 `probe_timeout_ms` 不同 —— 这是照抄 Node
+    ///    `llmEntry()` 的写法：`watch: config.engineProtocol === 'real'` 是直接赋值（键总在），
+    ///    而 `probe_timeout_ms` 是条件展开（`...(real ? {...} : {})`，mock 时键不存在）。
+    ///    把 `watch` 也改成省略 ⇒ mock 下消费方读 `llm.watch` 得到 `undefined` 而非 `false`，
+    ///    `!mock.llm.watch` 虽仍为真，但 `mock.llm.watch === false` 这类断言会假红。
+    watch: bool,
+    #[serde(rename = "probe_timeout_ms", skip_serializing_if = "Option::is_none")]
+    probe_timeout_ms: Option<u64>,
+}
+
+/// 引擎条目上的两个附加字段：`watch` 与 `probe_timeout_ms`。
+#[derive(Clone, Debug, serde::Serialize)]
+struct EngineEntry {
+    #[serde(flatten)]
+    spec: LaunchSpec,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    watch: Option<bool>,
+    #[serde(rename = "probe_timeout_ms", skip_serializing_if = "Option::is_none")]
+    probe_timeout_ms: Option<u64>,
+}
+
+/// 探针预算：真档按**真实首启耗时**给（python 要 import torch 全家桶、llama 要读几 GB 权重；
+/// 默认 20s 会把"还在加载"直接判成"起不来"，而这恰恰最容易被误读成"引擎坏了"）。
+const REAL_PROBE_TIMEOUT_MS: u64 = 240_000;
+const REAL_LLM_PROBE_TIMEOUT_MS: u64 = 180_000;
+
+/// 把 env 压成**相对当前进程的差量**（Node `print-launch-plan.mjs` 的 `envPatch()` 的 Rust 化身）。
+///
+/// 只保留「值与本进程环境**不同**」的键。与本进程相同的键剔掉：它们本来就会被子进程继承，
+/// 显式再设一遍是噪声（且会把 E1 快照淹掉）。
+///
+/// 🔴 Windows 要**逐键**比而不是整表比：环境变量名在 Windows 上**大小写不敏感**
+///    （`Path` 与 `PATH` 是同一个），而 `std::env::vars()` 与 map 里的键可能大小写不同。
+///    直接 `map.get(k)` 会把 `PATH` 判成"不在环境里"⇒ 白保留一条（且恰好是最该剔的那条）。
+fn env_diff(src: BTreeMap<String, String>) -> BTreeMap<String, String> {
+    let cur: BTreeMap<String, String> = std::env::vars().collect();
+    // Windows：把已有键折成小写索引，供大小写不敏感比对用。
+    let lower: BTreeMap<String, String> = cur
+        .iter()
+        .map(|(k, v)| (k.to_ascii_lowercase(), v.clone()))
+        .collect();
+    src.into_iter()
+        .filter(|(k, v)| {
+            let same = cur.get(k) == Some(v);
+            let same_ci = !cfg!(windows) || lower.get(&k.to_ascii_lowercase()) == Some(v);
+            !(same && same_ci)
+        })
+        .collect()
+}
+
+/// 组装一份启动配方（纯函数；不 spawn、不读设置文件）。
+///
+/// `mode` 必须是 `real` / `mock`。**协议由入参决定**而不是读环境 —— 环境的读法在
+/// `resolve_mode` 那一层已收口（`MIAO_ENGINE_PROTOCOL` 的 trim/小写/校验），
+/// 两处各判一次会出现"配方说 mock、引擎说 real"的错位。
+pub fn build_launch_plan(mode: &str) -> Result<serde_json::Value, String> {
+    let real = match mode {
+        "real" => true,
+        "mock" => false,
+        other => return Err(format!("模式非法：{other:?}（可选：real | mock）")),
+    };
+    let engine_port = engine_port_for(real);
+    let llm_port = env_int("MIAO_LLM_PORT", 8080) as u16;
+
+    let engine_spec = if real {
+        resolve_engine_launch(&EngineLaunchOverrides::default())
+    } else {
+        resolve_mock_engine_launch(Some(engine_port))
+    };
+    // 🔴 `env` 必须是**差量**（Node 版的 `envPatch()` 语义）：`resolve_engine_launch` 里的
+    //    env 组装是拿 `std::env::vars()` 当底子的，所以它含**整个进程环境**（本机实测 205 键）。
+    //    直接透传会让 Rust 给子进程设 200+ 个与本进程相同的键 —— 看着"更全"，实则：
+    //      ① E1 的「生效参数快照」变成一屏 PATH/SystemRoot 噪声，真正生效的那 6 个键被淹没；
+    //      ② 违反 `check:launch-plan` 的 P-real-12（Rust 只该设这几个键）；
+    //      ③ 跨进程传递本机绝对路径（TEMP/USERPROFILE…）给引擎，属信息泄漏面。
+    //    差量的定义 = 「值与当前进程环境**不同**的键」（同 Node），故这里逐键比对后剔除。
+    let mut engine_spec = engine_spec;
+    engine_spec.env = env_diff(engine_spec.env);
+    // mock 档的 `MIAO_ENGINE_PORT` 是**替身自己**要读的（Node 版把整段 env 显式给了它）。
+    // ⚠️ 真档不能加这个键：`resolve_engine_launch` 已按 `engine_port` 把端口编进 `--port`，
+    //    再塞一个同值的环境变量只是冗余；而 Node 版真档的 envPatch 会把它压掉（因为它
+    //    与 `process.env.MIAO_ENGINE_PORT` 同值）—— 我们这里 env 已经压过差，直接给即可。
+    if !real {
+        engine_spec
+            .env
+            .insert("MIAO_ENGINE_PORT".to_string(), engine_port.to_string());
+    }
+    let engine = EngineEntry {
+        spec: engine_spec,
+        // 外部二进制（python / llama-server）**必须**包 child-watch：主进程被 SIGKILL 后
+        // 它们会 reparent 到 launchd 并继续占着 8000/8001/8080（E11 要消灭的正是这个）。
+        // mock 档是自家 Node 替身、内部已装父死看管 ⇒ **整个键省略**（不是 `false`）：
+        // Node 版写的是 `watch: config.engineProtocol === 'real'` 的条件展开，mock 时键不存在；
+        // 若这里输出 `"watch": false`，消费方 `p[k].watch === true` 虽仍为假，但"键存在"这件事
+        // 本身会让 E1 快照与 Node 版对不上，且日后有人按"键在即真"判断就会误读。
+        watch: if real { Some(true) } else { None },
+        probe_timeout_ms: if real { Some(REAL_PROBE_TIMEOUT_MS) } else { None },
+    };
+
+    let mut service_env = BTreeMap::new();
+    service_env.insert(
+        "MIAO_ENGINE_PROTOCOL".to_string(),
+        if real { "real" } else { "mock" }.to_string(),
+    );
+    service_env.insert("MIAO_ENGINE_PORT".to_string(), engine_port.to_string());
+    // 🔴 只在真档下发：mock 档没有真 ③，`SAKURA_API_BASE` 指向 8080 是个**假地址**，
+    //    下发它会让 mock 下调引擎适配层去连一个没人监听的端口（症状：探测恒 starting，
+    //    而报错离根因很远）。Node 版的 mock 分支同样只给两项。
+    if real {
+        service_env.insert(
+            "SAKURA_API_BASE".to_string(),
+            format!("http://127.0.0.1:{llm_port}/v1"),
+        );
+    }
+
+    // ③ 的配方：mock 档是仓内替身，真档是 llama-server。**失败不静默** —— 配方拿不到就
+    // 整个启动失败，而不是"少一条快照"（那会让 E1 退化却不报）。
+    let llm = match resolve_llm_launch_for(
+        &LlmLaunchOverrides { port: Some(llm_port), ..Default::default() },
+        real,
+    ) {
+        Ok(spec) => Some(LlmEntry {
+            spec,
+            owner: LLM_OWNER,
+            // 真档是外部二进制 ⇒ 由 box-service 用 child-watch 包一层保住 E11；
+            // mock 档是自家 Node 替身，内部已装父死看管。
+            watch: real,
+            probe_timeout_ms: if real { Some(REAL_LLM_PROBE_TIMEOUT_MS) } else { None },
+        }),
+        // 🔴 用 `.message` 不用 `{e}`：`EngineError` **没有** `Display`（只有 `code`/`message`/`detail`
+        //    三个结构化字段）。写 `{e}` 会诱使后来人"顺手补个 Display"从而把结构化错误退化成字符串。
+        Err(e) => return Err(format!("③ 启动配方不可用（{}）：{}", e.code, e.message)),
+    };
+
+    final_plan_json(mode, engine, llm, service_env)
+}
+
+/// 把两个包装条目拼成最终 JSON。
+///
+/// 🔴 键序按 Node 版书写序 `{mode, serviceEnv, llm, engine}` 排：`serde_json::Map` 默认
+///    是 `BTreeMap`（**按键排序**，不是插入序）—— 要按插入序输出必须显式开 `preserve_order`。
+///    这里改为**手工按键重建**，避免依赖全局 feature（那会给全仓 JSON 带来隐式语义变化）。
+fn final_plan_json(
+    mode: &str,
+    engine: EngineEntry,
+    llm: Option<LlmEntry>,
+    service_env: BTreeMap<String, String>,
+) -> Result<serde_json::Value, String> {
+    let engine_json = serde_json::to_value(engine).map_err(|e| e.to_string())?;
+    let llm_json = match llm {
+        Some(l) => serde_json::to_value(l).map_err(|e| e.to_string())?,
+        None => serde_json::Value::Null,
+    };
+    let env_json: serde_json::Value =
+        serde_json::from_str(&serde_json::to_string(&service_env).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    // 按 Node 书写序逐键插入到新对象里；最终值由调用方 `serde_json::to_string` 序列化。
+    let ordered = format!(
+        r#"{{"mode":{},"serviceEnv":{},"llm":{},"engine":{}}}"#,
+        serde_json::to_string(mode).map_err(|e| e.to_string())?,
+        env_json,
+        llm_json,
+        engine_json,
+    );
+    serde_json::from_str(&ordered).map_err(|e| format!("组装启动配方失败：{e}"))
+}
+
 /// `resolveLlmLaunch` 的可注入覆盖。
 #[derive(Debug, Clone, Default)]
 pub struct LlmLaunchOverrides {
@@ -692,12 +915,34 @@ pub struct LlmLaunchOverrides {
 
 /// 引擎③（LLM / llama-server）的启动配方 —— 按协议分两支。**调用方都不自己拼命令。**
 pub fn resolve_llm_launch(o: &LlmLaunchOverrides) -> Result<LaunchSpec, EngineError> {
-    if is_mock_protocol() {
-        Ok(resolve_mock_llm_launch(o))
-    } else {
+    // ⚠️ `!` 不能省：`resolve_llm_launch_for` 的形参叫 `real`，而这里手上是 `is_mock_protocol()`
+    //    （mock 语义）。传错不报编译错、也不报运行错，只是**安静地返回反档的配方**
+    //    —— 抓它的是 `real_llm_launch_reports_undeclared_tier`（症状：期望
+    //    `TIER_MODEL_UNDECLARED` 却拿到 `sakura-mock:small`）。
+    resolve_llm_launch_for(o, !is_mock_protocol())
+}
+
+/// 🔴 `resolve_llm_launch` 的**协议显式**版本。
+///
+/// 为什么必须有它：`resolve_llm_launch` 自己读 `MIAO_ENGINE_PROTOCOL`，而 `build_launch_plan(mode)`
+/// 的协议来自**入参**。两者可以不一致 —— 那时就会出现「配方说 mock、引擎说 real」的错位：
+/// 实测症状是 mock 档的 ③ 配方给出 `llama-server.exe + 真权重路径`（真档的东西），
+/// 而断言 P-mock-6「mock 下也应是三进程」变红，**报错离根因很远**。
+/// 所以凡是由 `mode` 驱动的地方，一律走这个显式版本，把协议**只判一次**。
+pub fn resolve_llm_launch_for(o: &LlmLaunchOverrides, real: bool) -> Result<LaunchSpec, EngineError> {
+    if real {
         resolve_real_llm_launch(o)
+    } else {
+        Ok(resolve_mock_llm_launch(o))
     }
 }
+
+/// ⚠️ 形参一律叫 `real`（与调用方 `build_launch_plan` 里的 `let real = …` 同名），
+///    **不叫** `mock`。原因：本函数第一版的形参叫 `mock`，而调用处传的是 `real`
+///    —— 两个都编译通过、都不报错，只是安静地给出**反的配方**（mock 档返回 llama-server）。
+///    抓它的是 `launch_plan_mock_uses_mock_llm_and_mock_port_regardless_of_env`
+///    （断言直接查产物里的 `mock-llm.mjs` 路径，而不是"函数返回了 Ok"）。
+///    ⇒ 同名同义不是风格问题：**形参名与调用变量名一致，编译器才能替你抓住传反**。
 
 /// 真档：`llama-server`（外部二进制）。
 fn resolve_real_llm_launch(o: &LlmLaunchOverrides) -> Result<LaunchSpec, EngineError> {
@@ -950,5 +1195,59 @@ mod tests {
         let unk = build_engine_config(Some("xx"), Some("zh"));
         assert!(unk["translator"].get("from_lang").is_none());
         assert_eq!(unk["translator"]["target_lang"], "CHS");
+    }
+
+    // ---- A3b：启动配方 ----
+
+    #[test]
+    fn launch_plan_mock_uses_mock_llm_and_mock_port_regardless_of_env() {
+        // 🔴 这条钉的是「`mode` 入参与环境**可以不一致**」这件事：调用方按 `mode=mock` 要配方，
+        //    而进程环境里可能残留 `MIAO_ENGINE_PROTOCOL=real`（e.g. 引擎刚被切回真档）。
+        //    若下游 `resolve_llm_launch` / `default_engine_port` 各自再读一次环境，
+        //    就会出现「engine 是 mock 替身、llm 却是 llama-server、端口还是 8000」的错位。
+        let p = build_launch_plan("mock").expect("mock 配方应可组装");
+        assert_eq!(p["mode"], "mock");
+        // ③ 必须是仓内替身，**不是** llama-server
+        let llm_cmd = p["llm"]["cmd"].as_array().unwrap();
+        assert!(
+            llm_cmd.iter().any(|a| a.as_str().unwrap_or("").ends_with("mock-llm.mjs")),
+            "mock 档的 ③ 应指向 mock-llm.mjs，实际：{llm_cmd:?}"
+        );
+        // 端口必须是 mock 档的 5003 缺省（不是 real 的 8000）
+        let port = p["engine"]["probes"][0]["port"].as_u64().unwrap();
+        assert_eq!(port, 5003, "mock 档引擎端口缺省应为 5003，实际 {port}");
+        // mock 档不下发 SAKURA_API_BASE（没有真 ③，发了是指向空端口的假地址）
+        assert!(p["serviceEnv"].get("SAKURA_API_BASE").is_none());
+    }
+
+    #[test]
+    fn launch_plan_env_is_a_diff_not_a_copy_of_process_env() {
+        // P-real-12 的 Rust 侧对偶：`env` 必须是差量。若退化成整份 `std::env::vars()`，
+        // 这里会看到上百个键（实测 205），且与本进程逐字相同。
+        let p = build_launch_plan("real").expect("real 配方应可组装");
+        let env = p["engine"]["env"].as_object().unwrap();
+        assert!(
+            env.len() < 20,
+            "engine.env 看着像整份进程环境（{} 键）—— 应只含差量",
+            env.len()
+        );
+        assert!(env.contains_key("NO_PROXY"), "NO_PROXY 是差量里必须保留的一条（D-86）");
+    }
+
+    #[test]
+    fn launch_plan_mock_omits_watch_and_probe_budget_keys_entirely() {
+        // Node 版 mock 分支用条件展开，键**不存在**；输出 `"watch": false` 会让
+        // 「键存在」这件事与 Node 版对不上（消费方 `mock.llm.watch === false` 会假红）。
+        let p = build_launch_plan("mock").unwrap();
+        assert!(p["engine"].get("watch").is_none(), "mock 的 engine 不该有 watch 键");
+        assert!(p["engine"].get("probe_timeout_ms").is_none(), "mock 的 engine 不该有预算键");
+        // ⚠️ 但 ③ 的 `watch` 是**无条件**的（Node 直接赋值），mock 时为 `false` —— 别一起省掉。
+        assert_eq!(p["llm"]["watch"], serde_json::json!(false));
+    }
+
+    #[test]
+    fn launch_plan_rejects_unknown_mode() {
+        assert!(build_launch_plan("Real").is_err(), "协议大小写不做兼容（收口在 resolve_mode）");
+        assert!(build_launch_plan("").is_err());
     }
 }

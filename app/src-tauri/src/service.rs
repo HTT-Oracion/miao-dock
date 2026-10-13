@@ -19,7 +19,8 @@
 //! 1. **就绪 = 三重判定**（进程存活 + 端口监听 + HTTP 应答），**不是**"读 stdout 就绪行"。
 //!    stdout 那行仍然要读，但它只是**数据通道**（服务端口是动态的、令牌只在那行里），
 //!    它**不构成就绪判据** —— 否则「日志打出来了、其实还没能干活」会被当成 running。
-//!    探针列表由 `service/scripts/print-launch-plan.mjs` 给出（引擎侧细节留在 JS 的唯一耦合点）。
+//!    探针列表由**本进程内**的启动配方给出（A3b 起不再问 JS：`boxsvc::engine::resolve_engine_launch`
+//!    与 `resolve_llm_launch_for` 是唯一来源，见 `load_plan`）。
 //! 2. **五态机** `stopped → starting(L1/L2/L3) → running → stopping → stopped`。
 //!    L1 环境就绪（三进程都起得来）/ L2 模型就绪（各端口在听）/ L3 预热（HTTP 真应答）。
 //!    `L4 首图惰性初始化` **不在这里**：它发生在首次翻译请求时、由引擎侧表达，
@@ -404,7 +405,7 @@ impl ServiceManager {
 
         let log = self.log();
 
-        // ---- 0) 取启动配方（引擎侧细节的唯一来源，见 print-launch-plan.mjs）----
+        // ---- 0) 取启动配方（引擎侧细节的唯一来源；A3b 起在本进程内算，见 `load_plan`）----
         let mode = match resolve_mode() {
             Ok(m) => m,
             Err(e) => return self.fail(app, None, e),
@@ -829,21 +830,25 @@ fn resolve_mode() -> Result<String, String> {
     }
 }
 
-/// 向 JS 侧要一次启动配方（**引擎侧细节的唯一来源**）。
+/// 取一次启动配方（**引擎侧细节的唯一来源**，A3b 起在本进程内算）。
+///
+/// 🔴 为什么 formerly 要起 node：S2 时「怎么拼命令」住在 `service/src/engine-client.mjs`，
+///    Rust 去问它。本函数是那条唯一的跨语言依赖 —— 而它带来的代价是**打包后必然失败**
+///    （A3「node 随包」已作废），报错还停在 `无法执行 node 打印启动配方` 这种
+///    离根因很远的地方。
+///    现在配方逻辑已 Rust 化（`boxsvc::engine::{resolve_engine_launch, resolve_llm_launch}`，
+///    F4 移植时逐字对齐过），于是**不再需要任何子进程**。
+///
+/// ⚠️ 协议由入参决定（`mode`），不读环境 —— 环境的读法在 `resolve_mode()` 已收口。
 fn load_plan(mode: &str) -> Result<LaunchPlan, String> {
-    let script = resolve_entry("service/scripts/print-launch-plan.mjs", "MIAO_LAUNCH_PLAN_SCRIPT")?;
-    let out = Command::new("node")
-        .arg(&script)
-        .arg(mode)
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|e| format!("无法执行 node 打印启动配方：{e}"))?;
-    if !out.status.success() {
-        let err: String = String::from_utf8_lossy(&out.stderr).chars().take(400).collect();
-        return Err(format!("打印启动配方失败（{mode}）：{err}"));
-    }
-    serde_json::from_slice::<LaunchPlan>(&out.stdout)
-        .map_err(|e| format!("启动配方不是合法 JSON：{e}"))
+    let value = boxsvc::engine::build_launch_plan(mode)?;
+    // 解析失败要**说清是形状不对**而不是把 serde 的行号倒给用户：这份 JSON 由本进程刚生成，
+    // 解析失败等于"我们自己的输出坏了"，那是要立刻定位的实现缺陷，不是用户能修的。
+    serde_json::from_value::<LaunchPlan>(value).map_err(|e| {
+        format!(
+            "启动配方形状非法（这是实现缺陷，不是配置问题）：{e}；mode={mode}"
+        )
+    })
 }
 
 /// 写进**日志环**（UI 诊断视图读它）**并且**打到 stdout。

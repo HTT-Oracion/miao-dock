@@ -26,9 +26,10 @@
 
 **目录约定（硬规则，全文与理由见 `README.md` §目录 · `docs/spec-notes.md` D-79）**：
 
-- **产品 / 验收分家**：判据不是"像不像测试"，而是**产品代码运行期会不会 fork 它**。会 fork 的三个
-  （`service/scripts/print-launch-plan.mjs` · `engine/scripts/child-watch.mjs` · `engine/scripts/fetch-models.mjs`）
+- **产品 / 验收分家**：判据不是"像不像测试"，而是**产品代码运行期会不会 fork 它**。会 fork 的两个
+  （`engine/scripts/child-watch.mjs` · `engine/scripts/fetch-models.mjs`）
   留在原处，其余全部在 `e2e/`。搬迁脚本时**按来源分子目录**以保住相对深度（`service/scripts/x` → `e2e/service/x`）。
+  ⚠️ A3b 起启动配方打印器**已退役**（配方逻辑收进 `boxsvc::engine::build_launch_plan`）—— 它曾是这个清单的第一项。剩下的两个分别归 A3c / A3d。
 - **临时产物一律写进 `.tmp/<用途>/`**（`e2e/` · `selftest/` · `models/` · `engine-test/`），**不得**在仓库根另起 `.tmp-xxx/` / `tmp-xxx/`。
 - **新增或搬迁目录后必须同步**：`README.md` 目录节（唯一入口）· 本节分层表 · `.trae/rules/project_rules.md` ·
   `package.json` 命令 · **断言里写死的路径**（不同步的后果是**静默跳过**，不是变红）· 脚本自己的用法注释。
@@ -107,7 +108,7 @@ npm run selftest              # A 组服务契约 159 条 + 引擎自测 23 条
 npm run selftest:app[:refute] # B 组应用生命周期 16 条（含 S2a–S2d：五态轨迹 / E1 参数快照 / 三子进程 / 崩溃分级；含反证）
 npm run selftest:app:e11[:refute]     # E11 三进程树回收（mock，秒级）：SIGKILL 主进程 → 13 端口全释放
 npm run selftest:app:e11:real         # 同上但**真进程**（python+执行器+llama-server，14 端口）· 分钟级
-npm run check:launch-plan     # S2 启动配方契约 24 条（print-launch-plan.mjs → Rust，含与 probeEngine 同源断言 + ③ 归属移交的 P-llm-* ）
+npm run check:launch-plan[:refute] # S2/A3b 启动配方契约 25 条 / 反证 6 条（**被测对象已从 node 打印器换成 Rust `--print-launch-plan`**；含与 probeEngine 同源断言 + ③ 归属移交的 P-llm-*；反证含形参传反/env 不压差量/watch 消失/归属退回 manager 四类静默失效，末尾**重编译**以免留下坏产物）
 npm run check:child-watch[:refute]   # 外部二进制父死看守的双向取证（秒级；真模式 E11 的唯一依赖）
 npm run check:child-watch-kill[:refute] # child-watch Windows killTree 无条件 /F 源码钉子（不起进程；D-89 崩溃路径孤儿执行器）
 npm run e2e                   # D 组端到端

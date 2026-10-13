@@ -16,6 +16,7 @@
     "selftest:app:e11:refute": "node e2e/lifespan-selftest.mjs --e11 --refute",
     "selftest:app:e11:real": "node e2e/lifespan-selftest.mjs --e11 --mode real",
     "check:launch-plan": "node e2e/service/launch-plan-check.mjs",
+    "check:launch-plan:refute": "node e2e/service/launch-plan-check.mjs --refute",
     "check:child-watch": "node e2e/child-watch-check.mjs",
     "check:child-watch:refute": "node e2e/child-watch-check.mjs --refute",
     "check:child-watch-kill": "node e2e/child-watch-kill-check.mjs",

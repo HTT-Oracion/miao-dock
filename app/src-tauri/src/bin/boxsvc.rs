@@ -55,6 +55,21 @@ fn main() {
         println!("{}", miao_dock::boxsvc::routes::report());
         return;
     }
+    // `--print-launch-plan [real|mock]`：打印**引擎栈启动配方**（A3b）。
+    // 用途：`check:launch-plan` 断言这份 JSON 的形状（键名/探针/owner/watch/预算）——
+    // 它曾是 `service/scripts/print-launch-plan.mjs` 的 Rust 化身；脚本退役后断言改钉这里。
+    // 同样**不起服务**（不起 node、不绑端口），毫秒级跑完。
+    if let Some(i) = std::env::args().position(|a| a == "--print-launch-plan") {
+        let mode = std::env::args().nth(i + 1).unwrap_or_else(|| "real".to_string());
+        match miao_dock::boxsvc::engine::build_launch_plan(&mode) {
+            Ok(v) => println!("{v}"),
+            Err(e) => {
+                eprintln!("打印启动配方失败：{e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     let opts = miao_dock::boxsvc::Options::from_env();
     if let Err(e) = miao_dock::boxsvc::run_blocking(opts) {
         eprintln!("[box-service] boxsvc 启动失败：{e}");

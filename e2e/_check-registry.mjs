@@ -56,7 +56,7 @@ const CHECKS = [
   { id: 'lib-manage', script: 'e2e/service/library-manage-check.mjs', tier: 'service', refute: true, watch: ['service/src/**'] },
   { id: 'translate', script: 'e2e/service/translate-check.mjs', tier: 'service', refute: true, watch: ['service/src/**', 'engine/src/**'] },
   { id: 'engine-client', script: 'e2e/service/engine-client-check.mjs', tier: 'service', refute: true, watch: ['service/src/**', 'engine/src/**'] },
-  { id: 'launch-plan', script: 'e2e/service/launch-plan-check.mjs', tier: 'service', watch: ['service/src/**', 'app/src-tauri/**'] },
+  { id: 'launch-plan', script: 'e2e/service/launch-plan-check.mjs', tier: 'service', refute: true, watch: ['service/src/**', 'app/src-tauri/**'] },
   { id: 'profile', script: 'e2e/service/engine-profile-check.mjs', tier: 'service', refute: true, watch: ['service/src/**', 'engine/src/**'] },
   { id: 'engine-settings', script: 'e2e/service/engine-settings-check.mjs', tier: 'service', refute: true, watch: ['service/src/**', 'app/src/screens/settings/**'] },
   { id: 'e5e6', script: 'e2e/service/e5-e6-check.mjs', tier: 'service', refute: true, watch: ['service/src/**', 'engine/src/**'] },

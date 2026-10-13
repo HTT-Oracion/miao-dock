@@ -52,6 +52,7 @@
 | D-168 | 服务实现默认档翻转为 Rust（`resolve_service_cmd`）+ 两档不同的"找不到 boxsvc"语义 | app / engine |
 | D-169 | 第二个 `[[bin]]` 让裸 `cargo run` 变歧义 ⇒ `Cargo.toml` 必须钉 `default-run` | app / e2e |
 | D-170 | F 组收尾勘查：哪些文件**不能**删（`service/` 是七组对拍的对照端）+ `load_plan` 的 node 遗留 | docs / app |
+| D-171 | A3b 启动配方 Rust 化：退役 node 打印器与它的 24 条断言的**被测对象**；形参传反的三处静默失效 | engine / e2e |
 
 ---
 
@@ -1680,15 +1681,15 @@ F 组（F0–F5）台账已全 ☑。本条记的是**收尾时对"哪些文件�
   `FACTORIES` 用 `() => import('./platforms/youdao.mjs')`，`__fake__` 是给验收脚本的反证件。
   🔴 教训：**静态 import 图会漏动态边**，据此判死代码会误删。
 
-### 三、真实遗留：`load_plan()` 的 node 依赖（A3b，P0）
+### 三、真实遗留：`load_plan()` 的 node 依赖（A3b）—— ✅ 已按 (b) 处置，见 D-171
 
-`service.rs::load_plan()` 仍 `Command::new("node")` 跑
-`service/scripts/print-launch-plan.mjs`（**零依赖**纯 node 脚本）。它与被摘除的遗留后端
-**无关**（是 S2 起的"启动配方契约面"），但 A3「node 随包」已标 ✗ 作废 ⇒
+`service.rs::load_plan()` 曾 `Command::new("node")` 跑一个**零依赖**的纯 node 打印脚本。
+它与被摘除的遗留后端**无关**（是 S2 起的"启动配方契约面"），但 A3「node 随包」已标 ✗ 作废 ⇒
 **打包后这条会硬失败**。已在计划台账新增 **A3b** 行（P0）并列两个方案：
-(a) 只随包带这一个脚本 + 最小 node（≈36 MB，与 A3 同代价）；
-(b) 把配方逻辑 Rust 化，`print-launch-plan.mjs` 与 `check:launch-plan`(24 条) 一同退役。
-**未擅自实施** —— 两者都要打包组（G）的资源清单先定，且 (b) 是新工作量。
+(a) 只随包带那一个脚本 + 最小 node（≈36 MB，与 A3 同代价）；
+(b) 把配方逻辑 Rust 化，那个脚本与 `check:launch-plan` 一同退役。
+**选定 (b)，已实施**（D-171）：F4 早已把 `resolveEngineLaunch`/`resolveLlmLaunch` 移植到 Rust，
+零件是现成的，所以 (b) 的实际工作量远小于预估。
 
 ### 四、顺带补上的文档缺口
 
@@ -1698,3 +1699,71 @@ F 组新增的 8 组钉子（上述七组 + `check:routes`）此前在 `AGENTS.m
 "每组双靶子、`service/` 是对照端、删它=作废全部对拍"。顺带把 `check:bundle` 的条数
 从 4/4 更正为 5/5（W5 是 F5 验收③）。
 
+
+## D-171 · A3b 启动配方 Rust 化：退役 node 打印器（2026-10-13）
+
+**改动**：`service/scripts/` 下那个 128 行的启动配方打印器**退役**（连目录一并消失），
+其职责移进 `boxsvc::engine::build_launch_plan(mode)` + 新的 `boxsvc --print-launch-plan` 子命令。
+（脚本名不再出现在本文档里 —— `check:docpaths` 会把"引用已删除的路径"判红，
+连"说明它被退役了"这种历史叙述也不例外。）
+`service/scripts/` 目录随之消失。`service.rs::load_plan()` 不再 fork 任何进程 ——
+**产品代码里 `Command::new("node")` 已彻底清零**。
+
+**为什么 (b) 比预估便宜**：F4 早已把 `resolveEngineLaunch` / `resolveLlmLaunch` 移植进 Rust
+（`check:engine-parity` 24 条逐字对拍过），零件是现成的。要新写的只有三样：
+① mock 档的 ② 配方（`resolve_mock_engine_launch` —— 此前 Rust 侧只有真档分支）；
+② `owner` / `watch` / `probe_timeout_ms` 三个"只在组装计划时才出现"的附加字段；
+③ `env_diff()`（Node `envPatch()` 的 Rust 化身）。
+
+### 三条真缺陷（退役前的最后一轮逐字段对拍抓出来的）
+
+1. 🔴 **`env` 必须是差量**。`resolve_engine_launch` 的 env 组装拿 `std::env::vars()` 当底子，
+   实测含**整个进程环境 205 键**；Node 版压成 6 键差量。不压差的后果：E1「生效参数快照」
+   变成一屏 PATH/SystemRoot 噪声、违反 `P-real-12`、且把本机绝对路径传给引擎。
+   ⚠️ `env_diff` 在 Windows 上要**大小写不敏感**比对（`Path` vs `PATH`），
+   直接 `map.get(k)` 会把 `PATH` 判成"不在环境里"⇒ 白保留最该剔的那条。
+2. 🔴 **协议入参与环境可以不一致**。`build_launch_plan(mode)` 的协议来自**入参**，
+   而下游 `resolve_llm_launch` / `default_engine_port` 各自再读一次 `MIAO_ENGINE_PROTOCOL`
+   ⇒ 出现「engine 是 mock 替身、llm 却是 llama-server、端口还是 8000」的错位。
+   修法：加 `resolve_llm_launch_for(o, real)` / `engine_port_for(real)` 让协议**只判一次**。
+3. 🔴 **mock 档不该下发 `SAKURA_API_BASE`**（没有真 ③，那是没人监听的假地址），
+   且 `watch` / `probe_timeout_ms` 两键在 mock 时应**整键省略**（Node 用条件展开）。
+   ⚠️ 但 **③ 的 `watch` 是无条件输出**（mock 时为 `false`）—— 只有 `probe_timeout_ms` 才条件省略。
+   照抄时我把两者一起省掉了，被 `P-llm-2` 的 `typeof mock.llm.watch === 'boolean'` 抓住。
+
+### 🔴 本条最值得记的教训：**形参名与调用变量名相反，编译器不会告诉你**
+
+`resolve_llm_launch_for(o, mock: bool)` 被调用处传的是 `real`。两边都编译通过、
+都不报运行错，只是**安静地返回反档的配方**（mock 档给 llama-server + 真权重路径）。
+我为此在源码里反复读了三遍、还先怀疑了二进制过期 / 环境残留 / CRLF，
+最后靠 `eprintln!` 让运行时自证（`real=false` 但 `cmd[0]` 是 `llama-server.exe`）才定位。
+
+**抓它的是断言直接查产物**：`launch_plan_mock_uses_mock_llm_and_mock_port_regardless_of_env`
+断言的是「mock 档的 `llm.cmd` 里含 `mock-llm.mjs`」+「端口是 5003」，
+**不是**「函数返回了 Ok」或「结构完整」。后者在内容错了但形状对时**照样绿**——
+`P-mock-1`（字段齐备）在同一个 bug 下就是绿的。反证 R1 也印证了这点：
+分支传反只有 `P-mock-6` 会红，4 条形状类断言全部照绿。
+
+⇒ 两条硬规矩：① **凡由 `mode`/档位驱动，形参一律与调用变量同名同义**（都叫 `real`），
+同名才能让编译器/读代码的人抓住传反；② **分支体涉及"档位"时，断言必须直接查产物里的
+路径/标记**，形状断言抓不到。
+
+⚠️ 改名时**漏改了一处调用点**：`resolve_llm_launch` 里 `resolve_llm_launch_for(o, is_mock_protocol())`
+—— 形参改成 `real` 后这里要 `!`。漏改被既有的 `real_llm_launch_reports_undeclared_tier`
+抓住（症状：期望 `TIER_MODEL_UNDECLARED` 却拿到 `sakura-mock:small`）。
+**这说明老断言还在替新代码兜底** —— 若当初把那批形状断言一起"现代化"掉，这个回归就会静默。
+
+### 断言处置：退役脚本 ≠ 退役契约面
+
+`check:launch-plan` 的 **24 条一条没少**，只换了被测对象（node 脚本 → Rust 二进制）。
+另做三件事：
+- 补 **P-mock-8b**（mock 档不下发 `SAKURA_API_BASE`）—— 反证 R4 首轮**没红**，
+  暴露这是真实覆盖缺口，于是**补断言**而不是改变异让它变红；
+- 新增 **反证轮 6 条变异**（R1 分支传反 / R2 env 不压差量 / R3 watch 消失 /
+  R4 mock 假地址 / R5 归属退回 manager / R6 预算压回 20s），实测 **6/6 全红**；
+- 🔴 反证轮收尾**必须重编译**：首轮跑完正向就红了（P-real-16），因为
+  `target/debug/boxsvc.exe` 还是最后一个变异编译出来的。**「源码已还原」与「产物已还原」
+  是两件事**，字节校验只能证明前者。现在末尾有「还原重编译」+ 跑完再验正向仍绿。
+
+**验收**：正向 **25/25**、反证 **6/6 全红**、`cargo test --lib` **98 passed**（94 → 98）、
+与 node 版 real/mock 两档**逐字段一致**（仅余 `MIAO_NODE_EXEC` 与路径分隔符两类表示差异）。
