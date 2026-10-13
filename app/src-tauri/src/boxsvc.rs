@@ -26,6 +26,8 @@ use axum::Router;
 
 pub mod backend;
 pub mod engine;
+pub mod handlers;
+pub mod routes;
 pub mod store;
 
 use backend::LegacyBackend;
@@ -234,7 +236,25 @@ async fn handler(
         }
     }
 
-    // 4) `/health`：有遗留后端时**照转**（契约里的 9 字段 sidecar 只有它答得出，F5 才迁）；
+    // 4) 路由表查找（F5）：**显式白名单**，不再 catch-all。
+    //    查不到 ⇒ 与 Node 的 `miss()` 同一信封（404 TASK_NOT_FOUND）—— 于是「表漏了一条」
+    //    当场可观测，而不是被 catch-all 静默转发掉（那正是 R3 要防的"漏摘转发分支"）。
+    let segs = routes::split_path(path);
+    let Some(m) = routes::match_route(method.as_str(), &segs) else {
+        return envelope(
+            StatusCode::NOT_FOUND,
+            "TASK_NOT_FOUND",
+            &format!("未知端点：{method} {path}"),
+            serde_json::json!({ "path": path }),
+        );
+    };
+
+    // 5) 已迁移端点 → 本进程处理（Rust 靶子启了遗留后端也能自己答，`MIAO_LEGACY_BACKEND=0` 亦然）。
+    if !routes::should_forward(m.def) {
+        return handlers::dispatch(shell, m, uri, headers, body).await;
+    }
+
+    // 6) `/health`：有遗留后端时**照转**（契约里的 9 字段 sidecar 只有它答得出，F5.6 才迁）；
     //    没有遗留后端（`MIAO_LEGACY_BACKEND=0` 的自检档）时给一个**本进程**的最小健康体，
     //    否则「纯 Rust 外壳」连存活探针都没有。
     if is_health && shell.backend_base.is_none() {
@@ -248,14 +268,14 @@ async fn handler(
         .into_response();
     }
 
-    // 5) 未迁移端点 → 转发给遗留后端
+    // 7) 尚未迁移端点 → 转发给遗留后端（摘一条少一条，计数见 `--list-routes`）。
     match shell.backend_base.clone() {
         Some(base) => proxy(shell, &base, method, uri, headers, body).await,
         None => envelope(
             StatusCode::BAD_GATEWAY,
             "INTERNAL",
             "端点尚未迁移到 Rust，且遗留后端已关闭（MIAO_LEGACY_BACKEND=0）",
-            serde_json::json!({ "path": path }),
+            serde_json::json!({ "path": path, "route": m.def.id }),
         ),
     }
 }

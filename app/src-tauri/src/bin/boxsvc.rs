@@ -49,6 +49,12 @@ fn main() {
         println!("{}", miao_dock::boxsvc::engine::supervisor::selftest_run(&spec));
         return;
     }
+    // `--list-routes`：打印**显式路由表**（每条端点的 method/pattern/group/tier）+ 两个计数。
+    // 用途：e2e 做「转发分支数 = 0」的验收（F5）—— 不起服务、不拉 node，毫秒级跑完。
+    if std::env::args().any(|a| a == "--list-routes") {
+        println!("{}", miao_dock::boxsvc::routes::report());
+        return;
+    }
     let opts = miao_dock::boxsvc::Options::from_env();
     if let Err(e) = miao_dock::boxsvc::run_blocking(opts) {
         eprintln!("[box-service] boxsvc 启动失败：{e}");
