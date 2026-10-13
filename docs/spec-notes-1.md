@@ -50,6 +50,7 @@
 | D-166 | ③ 懒加载被"诊断快照"挡下：去掉前置判据 + 在状态跃迁处发布快照 | engine |
 | D-167 | `check:contract` S5.3 的"读取时刻"假红：`updatedAt` 是**读时** `nowIso()` | e2e |
 | D-168 | 服务实现默认档翻转为 Rust（`resolve_service_cmd`）+ 两档不同的"找不到 boxsvc"语义 | app / engine |
+| D-169 | 第二个 `[[bin]]` 让裸 `cargo run` 变歧义 ⇒ `Cargo.toml` 必须钉 `default-run` | app / e2e |
 
 ---
 
@@ -1610,4 +1611,40 @@ D-162 的完成门盯着）。此时默认仍是 node，等于"摘除 Node"**只
 
 **⚠️ 边界（沿用该文件既有声明）**：本组证明的是**成因的写法被钉住了**，不是
 "默认档在真机上真的起了 boxsvc"—— 后者要靠人真跑一次（`npm run app`）。
+
+## D-169 · 第二个 `[[bin]]` 让裸 `cargo run` 变歧义 ⇒ `Cargo.toml` 必须钉 `default-run`（2026-10-13）
+
+**症状**：`cargo run`（开发态最常敲的裸命令，Tauri 的 `beforeDevCommand` 也是它）报
+
+```
+error: `cargo run` could not determine which binary to run.
+Use the `--bin` option to specify a binary, or the `default-run` manifest key.
+available binaries: boxsvc, miao-dock
+```
+
+**根因**：F0 把桌面端拆成 `lib.rs` + **两个** `[[bin]]`（`miao-dock` 走 `src/main.rs`、
+`boxsvc` 是 e2e 的 rust 靶子走 `src/bin/boxsvc.rs`）。cargo **不猜**"哪个是应用"——
+一到两个及以上 bin 就报歧义。这不是 F5 引入的，但 F5 让它第一次被人真的敲到：
+现在默认档已经是 Rust boxsvc（D-168），开发流程从 `cargo run` 变成了日常动作。
+
+**修法**：`Cargo.toml` 的 `[package]` 加 `default-run = "miao-dock"`。要跑服务靶子
+仍须显式 `--bin boxsvc`（e2e 与 `check:autostart` 一直显式给，**不许**改成靠默认档）。
+
+🔴 **为什么钉一条断言，而不只是"加一行配置"**：这个键的失效形态有**两种**，
+且**两种的报错完全同一句**：
+
+| 失效形态 | 后果 |
+|----------|------|
+| 键缺失 | `could not determine which binary to run` |
+| 键指向一个不存在的 bin | **同一句** `could not determine which binary to run` |
+
+只验"键在不在"⇒ 第二种形态永远绿。所以 F1 把它和**声明**一起验：
+`[package]` 段内的 `default-run` 值必须落在某个真实声明的 `[[bin]] name` 里。
+另注：取值时必须**先截到 `[package]` 段**（`[package]` 之后遇到下一个 `[` 段即止），
+否则别处（尤其某个 `[[bin]]` 块内）的同名键会被误当成生效值。
+
+**钉子**：`e2e/service-autostart-check.mjs` 新增 **F1**（该文件已负责"app 侧服务解析与
+开发态可跑性"）：正向 **18/18**、`--refute` **19/19 全红**（F1a 删键 / F1b 指向不存在的
+bin，各自按预期变红）。反证轮用该文件既有的 `locate()` 做行尾折算 ⇒ 变异锚按 LF 写也能
+命中 CRLF 的 `Cargo.toml`，还原校验字节一致。
 

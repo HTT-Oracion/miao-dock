@@ -87,6 +87,14 @@
  *   E5 取值先 `trim` + 小写再比对（`RUST` / ` rust ` 必须算**显式**档）。少了它，
  *      带空格的显式档会掉进默认档 —— 症状是"我明明设了 rust 却没按显式档报错"。
  *
+ * ### 开发态能跑起来（Cargo.toml）
+ *   F1 `[package] default-run = "miao-dock"` 必须存在，且**指向一个真实声明的 `[[bin]]`**。
+ *      F0 拆出第二个 `[[bin]] boxsvc` 之后裸 `cargo run` 就变歧义了 —— cargo 不猜
+ *      "哪个是应用"，直接报 `could not determine which binary to run`（本机实测）。
+ *      开发态最常敲的就是裸 `cargo run`（Tauri 的 `beforeDevCommand` 也是它）。
+ *      🔴 两条都断：① 键缺失 ⇒ 命令直接失败；② 键指向不存在的 bin ⇒ cargo 报
+ *      `default-run` 匹配不到，仍是同一句"无法确定跑哪个"。所以本条要连**声明**一起验。
+ *
  * ## 反证轮（`--refute`）
  *   逐条把上面的写法改回缺陷形态 → 对应断言**必须变红** → 按字节还原。
  *
@@ -122,6 +130,7 @@ const readSections = () =>
     .join('\n');
 const SECTION_TRANSLATE = path.join(SECTIONS_DIR, 'TranslateSection.tsx');
 const IPC_TS = path.join(ROOT, 'app', 'src', 'ipc.ts');
+const CARGO_TOML = path.join(ROOT, 'app', 'src-tauri', 'Cargo.toml');
 
 const REFUTE = process.argv.includes('--refute');
 
@@ -166,6 +175,7 @@ function runAll() {
   const nrs = read(NOT_READY);
   const sec = readSections(); // D-150：每次重读（反证轮改了磁盘上的文件）
   const ipc = read(IPC_TS);
+  const cargoToml = read(CARGO_TOML);
 
   // ---- A1：service_start 走幂等入口 ----
   {
@@ -364,6 +374,30 @@ function runAll() {
       body ? '' : noBody,
     );
   }
+
+  // ---- F1：裸 `cargo run` 要能跑起来（default-run 必须存在且指向真实 bin）----
+  {
+    // 键只认 `[package]` 段内的那一处：TOML 里 `[package]` 之后遇到下一个 `[` 段即止，
+    // 否则别处（如某个 `[[bin]]` 块内）同名键会被误当成生效值。
+    const pkgStart = cargoToml.indexOf('[package]');
+    const pkgEnd = (() => {
+      const after = cargoToml.indexOf('\n[', pkgStart + 1);
+      return after < 0 ? cargoToml.length : after;
+    })();
+    const pkg = cargoToml.slice(pkgStart < 0 ? 0 : pkgStart, pkgEnd);
+    const m = /^[ \t]*default-run[ \t]*=[ \t]*"([^"]+)"/m.exec(pkg);
+    const declared = [...cargoToml.matchAll(/^\[\[bin\]\][ \t]*\r?\n(?:.*\r?\n)*?[ \t]*name[ \t]*=[ \t]*"([^"]+)"/gm)].map(
+      (x) => x[1],
+    );
+    const target = m ? m[1] : null;
+
+    check(
+      'F1',
+      '`[package] default-run = "miao-dock"` 存在**且**指向一个真实声明的 `[[bin]]`（F0 拆出第二个 bin 后裸 `cargo run` 变歧义）',
+      !!m && declared.includes(target),
+      `default-run=${target ?? '缺失'} 已声明 bin=[${declared.join(', ')}]`,
+    );
+  }
 }
 
 // ------------------------------------------------------------------ 输出
@@ -515,6 +549,20 @@ const MUTATIONS = [
     find: '    let impl_ = impl_.trim().to_ascii_lowercase();',
     replace: '    let impl_ = impl_;',
     expect: ['E5'],
+  },
+  {
+    name: 'F1a 删掉 `default-run`（裸 `cargo run` 变歧义 ⇒ "could not determine which binary to run"）',
+    file: CARGO_TOML,
+    find: 'default-run = "miao-dock"\n',
+    replace: '',
+    expect: ['F1'],
+  },
+  {
+    name: 'F1b `default-run` 指向不存在的 bin（键在，但 cargo 仍报"无法确定跑哪个"—— 同一句报错）',
+    file: CARGO_TOML,
+    find: 'default-run = "miao-dock"',
+    replace: 'default-run = "miao-dock-desktop"',
+    expect: ['F1'],
   },
 ];
 
