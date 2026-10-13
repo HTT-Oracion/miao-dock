@@ -29,16 +29,17 @@
  *
  * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（box-service 的段）。
  */
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+// F0：服务入口解析的唯一事实源（MIAO_SERVICE_IMPL=node|rust 切换靶子）
+import { SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
-const SERVICE_ENTRY = path.join(ROOT, 'service', 'src', 'server.mjs');
 const SERVER_SRC = path.join(ROOT, 'service', 'src', 'server.mjs');
 const PROFILE_SRC = path.join(ROOT, 'service', 'src', 'settings', 'engine-profile.mjs');
 const TOKEN = 'e'.repeat(64);
@@ -156,7 +157,7 @@ const listen = (server, port) => new Promise((resolve, reject) => {
 const closeAll = (servers) => Promise.all(servers.map((s) => new Promise((r) => s.close(() => r()))));
 
 function spawnService(env) {
-  const child = spawn(process.execPath, [SERVICE_ENTRY], { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawnTarget(SERVICE_ENTRY, env);
   const st = { child, out: '', err: '', ready: null };
   child.stdout.on('data', (d) => {
     st.out += d.toString();

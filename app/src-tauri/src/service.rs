@@ -485,13 +485,13 @@ impl ServiceManager {
             Err(e) => spawn_errs.push(format!("引擎启动失败（降级继续）：{e}")),
         }
 
-        let service_entry = match resolve_entry("service/src/server.mjs", "MIAO_SERVICE_ENTRY") {
-            Ok(p) => p,
+        let service_cmd = match resolve_service_cmd() {
+            Ok(c) => c,
             Err(e) => return self.fail(app, None, e),
         };
         let service_spec = LaunchSpec {
             label: Some("service".into()),
-            cmd: vec!["node".into(), service_entry.to_string_lossy().into_owned()],
+            cmd: service_cmd,
             cwd: None,
             env: plan.service_env.clone(),
             probes: Vec::new(),
@@ -914,6 +914,47 @@ fn relay_lines<R: Read>(mut r: R, mut on_line: impl FnMut(String)) {
     if !buf.is_empty() {
         on_line(String::from_utf8_lossy(&buf).into_owned());
     }
+}
+
+/// 服务实现的**靶子**（F1）：`MIAO_SERVICE_IMPL=rust` ⇒ 起 Rust `boxsvc`（内部反代到 Node 遗留后端）；
+/// 否则起 Node `service/src/server.mjs`。
+///
+/// 🔴 **默认 node**：打包（A2/A3）把 `boxsvc` 放进安装包之前，产品路径一律不动 ——
+///    这样「切实现」是一个**可回退**的开关（F 组的反代渐进要的正是它），而不是一次不可逆的迁移。
+///    与 e2e 共用同一个 `MIAO_SERVICE_IMPL` 名字是**刻意的**：app 与验收脚本切的是同一个东西。
+fn resolve_service_cmd() -> Result<Vec<String>, String> {
+    let impl_ = std::env::var("MIAO_SERVICE_IMPL").unwrap_or_default();
+    let impl_ = impl_.trim().to_ascii_lowercase();
+    if impl_ == "rust" || impl_ == "boxsvc" {
+        let bin = resolve_boxsvc()?;
+        return Ok(vec![bin.to_string_lossy().into_owned()]);
+    }
+    let entry = resolve_entry("service/src/server.mjs", "MIAO_SERVICE_ENTRY")?;
+    Ok(vec!["node".into(), entry.to_string_lossy().into_owned()])
+}
+
+/// 定位 `boxsvc` 可执行：`MIAO_BOXSVC_BIN` 优先，其次与 `miao-dock` 可执行**同目录**
+/// （开发态二者同在 `app/src-tauri/target/{debug,release}/`）。
+fn resolve_boxsvc() -> Result<PathBuf, String> {
+    if let Ok(p) = std::env::var("MIAO_BOXSVC_BIN") {
+        let pb = PathBuf::from(&p);
+        if pb.is_file() {
+            return Ok(pb);
+        }
+        return Err(format!("MIAO_BOXSVC_BIN 指向的文件不存在：{p}"));
+    }
+    let name = if cfg!(windows) { "boxsvc.exe" } else { "boxsvc" };
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let cand = dir.join(name);
+            if cand.is_file() {
+                return Ok(cand);
+            }
+        }
+    }
+    Err(format!(
+        "找不到 {name}（MIAO_SERVICE_IMPL=rust 需要它）：先在 app/src-tauri 执行 `cargo build --bin boxsvc`，或设 MIAO_BOXSVC_BIN"
+    ))
 }
 
 /// 定位入口脚本：环境变量优先，其次从可执行文件/工作目录向上找（开发期在 src-tauri 下运行）

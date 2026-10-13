@@ -39,10 +39,11 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { encodePng } from '../../engine/src/png.mjs';
+// F0：服务入口解析的唯一事实源（MIAO_SERVICE_IMPL=node|rust 切换靶子；本文件不再自己拼入口）
+import { SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const SELF = path.join(ROOT, 'e2e', 'service', 'contract-delta-check.mjs');
-const SERVICE_ENTRY = path.join(ROOT, 'service', 'src', 'server.mjs');
 const MOCK_ENGINE = path.join(ROOT, 'engine', 'src', 'server.mjs');
 const TOKEN = 'c'.repeat(64);
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-contract-'));
@@ -146,10 +147,7 @@ async function submit(port, comicName, images = [{ filename: '001.png', contentT
 
 /** 起一个 box-service 实例并等它就绪行；返回 {child, port} */
 function spawnService(env, tag) {
-  const child = spawn(process.execPath, [SERVICE_ENTRY], {
-    env: { ...process.env, ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const child = spawnTarget(SERVICE_ENTRY, env);
   const st = { child, tag, out: '', err: '', ready: null };
   child.stdout.on('data', (d) => {
     st.out += d.toString();

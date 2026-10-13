@@ -43,10 +43,11 @@ import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+// F0：服务入口解析的唯一事实源（MIAO_SERVICE_IMPL=node|rust 切换靶子）
+import { SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const SELF = path.join(ROOT, 'e2e', 'service', 'engine-settings-check.mjs');
-const SERVICE_ENTRY = path.join(ROOT, 'service', 'src', 'server.mjs');
 const MOCK_ENGINE = path.join(ROOT, 'engine', 'src', 'server.mjs');
 const MOCK_LLM = path.join(ROOT, 'engine', 'src', 'mock-llm.mjs');
 const TOKEN = 's'.repeat(64);
@@ -129,10 +130,8 @@ const freePorts = async (start, n = 1) => {
 // ------------------------------------------------------------------ 进程夹具
 
 function spawnProc(entry, env, tag, args = []) {
-  const child = spawn(process.execPath, [entry, ...args], {
-    env: { ...process.env, ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  // entry 是服务 ⇒ 按 MIAO_SERVICE_IMPL 选靶子；是 mock 引擎 ⇒ 原样走 node
+  const child = spawnTarget(entry, env, args);
   const st = { child, tag, out: '', err: '', ready: null };
   child.stdout.on('data', (d) => {
     st.out += d.toString();

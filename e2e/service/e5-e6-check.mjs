@@ -27,7 +27,6 @@
  *
  * 约束：纯 Node、零第三方依赖；临时目录自建自清；不碰用户目录；不占 5180–5190（那是 box-service 的段）。
  */
-import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -36,9 +35,10 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { encodePng } from '../../engine/src/png.mjs';
+// F0：服务入口解析的唯一事实源（MIAO_SERVICE_IMPL=node|rust 切换靶子）
+import { SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
-const SERVICE_ENTRY = path.join(ROOT, 'service', 'src', 'server.mjs');
 const ENGINE_ENTRY = path.join(ROOT, 'engine', 'src', 'server.mjs');
 
 const REFUTE = process.argv.includes('--refute');
@@ -99,10 +99,8 @@ async function llmModelId(port) {
 }
 
 function spawnProc(entry, env, tag, extraArgv = []) {
-  const child = spawn(process.execPath, [entry, ...extraArgv], {
-    env: { ...process.env, ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  // entry 是服务 ⇒ 按 MIAO_SERVICE_IMPL 选靶子；是引擎 ⇒ 原样走 node（见 _service-harness.mjs）
+  const child = spawnTarget(entry, env, extraArgv);
   const st = { child, out: '', err: '', ready: null, tag };
   child.stdout.on('data', (d) => {
     st.out += d.toString();

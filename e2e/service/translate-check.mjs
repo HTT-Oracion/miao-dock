@@ -45,7 +45,6 @@
  * 约束：纯 Node、零第三方依赖；**禁止静态 import 任何 translate 模块**（env 必须先布置）；
  *       临时目录自建自清（成功即清、失败保留并打印路径）。
  */
-import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -53,10 +52,11 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+// F0：服务入口解析的唯一事实源（MIAO_SERVICE_IMPL=node|rust 切换靶子）
+import { SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SELF = path.join(ROOT, 'e2e', 'service', 'translate-check.mjs');
-const SERVICE_ENTRY = path.join(ROOT, 'service', 'src', 'server.mjs');
 const TR = path.join(ROOT, 'service', 'src', 'manga', 'translate');
 const IS_CHILD = process.argv.includes('--refute-child');
 const IS_REFUTE_PARENT = process.argv.includes('--refute') && !IS_CHILD;
@@ -475,10 +475,8 @@ function spawnProc(entry, env, tag, args = []) {
   //    "一条开关护一条机制"的归因就散了（各开关的哨兵在 S/T/L/C/K/A 组里，K1 盯 echoSecret）。
   const clean = { ...process.env };
   for (const k of Object.keys(clean)) if (k.startsWith('MIAO_TRANSLATE_REFUTE_')) delete clean[k];
-  const child = spawn(process.execPath, [entry, ...args], {
-    env: { ...clean, ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  // entry 是服务 ⇒ 按 MIAO_SERVICE_IMPL 选靶子；是 refute 子进程（SELF）⇒ 原样走 node
+  const child = spawnTarget(entry, { ...clean, ...env }, args);
   const st = { child, tag, out: '', err: '', ready: null };
   child.stdout.on('data', (d) => {
     st.out += d.toString();

@@ -36,11 +36,13 @@ const CHECKS = [
   { id: 'docs', script: 'e2e/docs-consistency-check.mjs', tier: 'static', watch: ['**/*.md', 'docs/**', 'package.json', 'e2e/docs-consistency-check.mjs'] },
   { id: 'bundle', script: 'e2e/bundle-targets-check.mjs', tier: 'static', refute: true, watch: ['app/**', 'e2e/bundle-targets-check.mjs'] },
   { id: 'layering', script: 'e2e/service/layering-check.mjs', tier: 'static', refute: true, watch: ['service/src/**', 'e2e/service/layering-check.mjs'] },
+  { id: 'harness', script: 'e2e/service/harness-check.mjs', tier: 'static', refute: true, watch: ['e2e/service/**', 'app/src-tauri/src/**'] },
   { id: 'tls', script: 'e2e/tls-check.mjs', tier: 'static', watch: ['app/src-tauri/**', 'service/src/**', 'engine/**', 'e2e/tls-check.mjs'] },
   { id: 'registry', script: 'e2e/registry-check.mjs', tier: 'static', refute: true, watch: ['package.json', 'e2e/_check-registry.mjs', 'e2e/registry-check.mjs'] },
 
   // ---- service：起真实子进程，串行（端口竞争，见文件头）----
   { id: 'e2e', script: 'e2e/e2e.mjs', tier: 'service', watch: ['service/src/**', 'engine/src/**', 'e2e/**'] },
+  { id: 'paths', script: 'e2e/service/paths-parity-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/paths.rs', 'service/src/config.mjs'] },
   { id: 'svc-selftest', script: 'e2e/service/selftest.mjs', tier: 'service', watch: ['service/src/**'] },
   { id: 'eng-selftest', script: 'e2e/engine/selftest.mjs', tier: 'service', watch: ['engine/src/**'] },
   { id: 'lifespan', script: 'e2e/lifespan-selftest.mjs', tier: 'service', refute: true, watch: ['service/src/**', 'app/src-tauri/**'] },

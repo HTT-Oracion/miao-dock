@@ -5758,3 +5758,33 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 **验收**：`check:settings` **180/0** · `check:settings:refute` **127/127**（无跳过 / 无假阳性 / 破坏文件按字节复原）· `check:docs` 16/0 · `check:contract` 77/0 · `tsc --noEmit` 0 · `vite build` 通过。**未提交**。
 
 **⚠️ 副作用（有意）**：`GroupNote` 对空 `children` 自守后，「残留标签」（catalog 删了 note、JSX 还写着）不再显形 —— 靠 `notesummary.wired` 的计数（每组一行）与实际渲染解耦兜底，不会再崩。
+
+## D-137 · 服务运行时 Rust 化：F0–F2 落地（2026-10-13）
+
+**背景**：计划 `docs/packaging-local-engine-dev-plan.md` v3.0 把「服务运行时 Rust 化」定为 F 组主线（裁定①：先 Rust 化、后打包）。本轮实现 F0/F1/F2，F3–F5 留待后轮。
+
+**F0 · Rust 可独立运行的服务靶子**
+- 拆 `lib.rs`（`pub mod boxsvc; pub mod paths;`）+ `[[bin]] boxsvc`；`Cargo.toml` 加 `[lib]`/`[[bin]] x2`，tokio 加 `signal`。三目标均编译通过。
+- **e2e 双靶 harness** = `e2e/service/_service-harness.mjs`：入口解析唯一事实源。`MIAO_SERVICE_IMPL=node|rust` 决定 `targetFor(entry)` 返回 `node server.mjs` 还是 `boxsvc`。**只对「服务入口」生效**，mock 引擎/refute 子进程不受影响。
+- 12 个脚本删除各自重复的 `SERVICE_ENTRY` 定义、改从 harness import；`_parent-harness.mjs` 改用 `targetFor`（否则 A18 假父进程会静默拉起 node）。
+- 钉子 `check:harness`：入口唯一 / 必须 import / node 档 / rust 档 / 缺失报错 / 引擎不被劫持 / 未知值落回可见（+3 反证）。
+
+**F1 · Rust 进程内服务外壳（反代起点）**
+- `boxsvc.rs`：axum 起 127.0.0.1:5180–5190（先探测再绑定），自实现 Origin 白名单 / 令牌定长比对 / 错误信封 / CORS / `MIAO_READY` 就绪行；**未迁移端点 `reqwest` 流式转发**给遗留 Node（含 SSE/multipart）。
+- `boxsvc/backend.rs`：拉 Node 遗留后端。🔴 两处防静默失败 —— ① 遗留后端就绪行**改名 `LEGACY_READY`**（否则 e2e 的 `/MIAO_READY (\{.*\})/` 会先命中它、拿到**错端口**）；② 给子进程 `env_remove("MIAO_PORT")`（否则夹具指定端口时两者抢同一端口）。
+- app 侧 `service.rs::resolve_service_cmd`：`MIAO_SERVICE_IMPL=rust` ⇒ 起 `boxsvc`（**默认 node**，打包前不动，切实现可回退）。`commands.rs` 无需改（它只管「转发到服务端口」，与实现无关）。
+- 🔴 **踩坑（转发头）**：起初把客户端 `x-box-token` 一并透传 —— `reqwest` 的 `.header()` 是**追加不是覆盖** ⇒ 上游收到两个同名头、被 Node http 逗号合并成 `"tok, tok"` ⇒ **令牌校验必失败**，而报的是「令牌无效」，离根因极远。修法：透传头剔除 `x-box-token` 与 `accept-encoding`，令牌只由本进程注入一次；响应头除 hop-by-hop/content-length 外**全量回写**。
+- 反证红线：`MIAO_LEGACY_BACKEND=0` 关掉遗留后端 ⇒ 未迁移端点 502（证明转发真的在工作，不是 Rust 自己实现了）。
+
+**F2 · `config.mjs` 路径逻辑移植（首个垂直迁移）**
+- `paths.rs` 与 `config.mjs` **逐字节对齐**：`engine_dir` **不加存在性判断**（加了就是分叉）；`engine_python` 默认锚**仓库根**而非 `engineDir`（Node 即如此）；`state/root/modelRoot` 补 `resolve()` 语义；`venv_python_rel` 返回 `PathBuf` 逐段 join（Windows 混入 `/` 会与 Node `path.join` 逐字节不同）。新增 `boxsvc --print-paths`（毫秒级、不起服务、不拉 node）。
+- 钉子 `check:paths`：默认/覆盖/键集合逐字节相同（+3 反证）。**这是 R1「检测与启动不一致」的回归网**。
+- ⚠️ **偏离记录**：F2 原述「`resolveEngineLaunch()`/`defaultEnginePython()` 改为**调 Rust 侧**」未做 IPC 化 —— 迁移期 Node 仍自算路径，但由 `check:paths` 强制**逐字节相等**；真正的「单源」在 F5 删除 Node 路径代码时自然达成（此时不必为过渡态引入 Node→Rust 调用）。
+
+**验收（本轮实测）**：`check:harness` 7/0（反证 3/3 全红）· `check:paths` 3/0（反证 3/3）· `cargo test --lib` 3/3 · `registry-check` 4/4（75 项）· **`MIAO_SERVICE_IMPL=rust` 跑 `queue-retry-check` 10/10，与 node 靶子逐条相同** · `check:docs` 13/4（4 条既有漂移）· 三 cargo 目标编译通过。
+
+## D-138 · 迁移期两条本机环境纪律（2026-10-13 实测）
+
+**① 沙箱内同步 spawn 必 EBUSY**：本会话（Windows + 沙箱）中，node 内 `spawnSync`/`execFileSync` 起**任何**子进程都返回 `EBUSY (-4082)`（含 `cmd.exe`），而**异步 `spawn` 正常**。⇒ 新写/改造的 e2e 断言脚本**只能用异步 spawn**；若断言依赖 `execFileSync`（e4/e8/e10/stall/launch-plan/engine-profile 等），在本会话**跑不了**（非代码问题，勿误判为回归）。`harness-check` 与 `paths-parity-check` 均据此改用异步 spawn。
+
+**② cargo 增量编译偶发「访问拒绝」→ rustc ICE**：`target/debug/incremental/...lock` 删除被拒（os error 5）后，rustc 在 `rmeta::encoder` 处 `no entry found for key` panic。⇒ 一律 **`CARGO_INCREMENTAL=0 cargo build`**（本会话首绿即靠它）；必要时先 `rm -rf target/debug/incremental`。

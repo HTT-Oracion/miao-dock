@@ -4,7 +4,6 @@
 // 原则：每个断言都对应契约里的一条明文规则，断言失败即契约不符合。
 // 全部 I/O 落在临时目录（MIAO_ROOT / MIAO_STATE_DIR），不触碰用户真实图片目录。
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
@@ -13,6 +12,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { encodePng } from '../../engine/src/png.mjs';
+// F0：服务入口解析的唯一事实源（MIAO_SERVICE_IMPL=node|rust 切换靶子）
+import { SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 // 🔴 本套用例起的是**模拟引擎**（`../engine/src/server.mjs`）——它实现的是 ver1.0 的自定义协议
 // （`/ready` + 字节式 `/translate`），**不是真实引擎协议**（`/translate/image` + JSON/data URI）。
@@ -26,7 +27,6 @@ process.env.MIAO_ENGINE_PROTOCOL = 'mock';
 process.env.MIAO_NO_LLM_AUTOSTART = '1';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..', 'service'); // .../service
-const SERVICE_ENTRY = path.join(ROOT, 'src', 'server.mjs');
 const ENGINE_ENTRY = path.resolve(ROOT, '..', 'engine', 'src', 'server.mjs');
 /** 「假父进程」外壳：A18 要强杀一个父进程，不能拿自测自己冒险 */
 const HARNESS = path.join(import.meta.dirname, '_parent-harness.mjs');
@@ -164,10 +164,8 @@ async function waitTask(port, token, taskId, timeoutMs = 30_000) {
 // ------------------------------------------------------------------ 进程管理
 
 function spawnProc(entry, env, tag, extraArgv = []) {
-  const child = spawn(process.execPath, [entry, ...extraArgv], {
-    env: { ...process.env, ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  // entry 是服务 ⇒ 按 MIAO_SERVICE_IMPL 选靶子；是模拟引擎 / 假父进程 ⇒ 原样走 node
+  const child = spawnTarget(entry, env, extraArgv);
   const state = { child, out: '', err: '', ready: null, tag };
   child.stdout.on('data', (d) => {
     state.out += d.toString();
