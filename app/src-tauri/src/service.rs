@@ -40,6 +40,8 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
+use crate::paths;
+
 /// 状态变化事件名（前端订阅）
 pub const STATE_EVENT: &str = "miao://service-state";
 const LOG_CAPACITY: usize = 400;
@@ -410,6 +412,27 @@ impl ServiceManager {
         self.mark(app, "starting");
 
         let log = self.log();
+
+        // ---- -1) 随包资产自检（A1/A2）----
+        //     🔴 必须**最先**做：打包后 `repo_root()` 算不出真仓库根（`service/` 与 `engine/`
+        //     原先一个字节都没进包 ⇒ 向上找永远找不到 ⇒ 退回 cwd），于是清单/引擎路径会静默
+        //     指向不存在的位置，而用户看到的报错停在几层之外（"连接失败" / "启动超时"）。
+        //     这里在**任何子进程被起之前**就把「资源缺失」说成资源缺失。
+        //     开发态资产就在仓库里 ⇒ 自检通过（`missing_assets()` 判的是"最终拿不拿得到"）。
+        let missing = paths::missing_assets();
+        if !missing.is_empty() {
+            let dir = paths::resource_dir()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "（未找到资源目录）".to_string());
+            return self.fail(
+                app,
+                None,
+                format!(
+                    "资源缺失：{}；资源目录={dir}。安装包不完整或引擎资产未随包，请重新安装喵坞",
+                    missing.join("、")
+                ),
+            );
+        }
 
         // ---- 0) 取启动配方（引擎侧细节的唯一来源；A3b 起在本进程内算，见 `load_plan`）----
         let mode = match resolve_mode() {

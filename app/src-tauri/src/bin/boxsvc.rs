@@ -49,6 +49,21 @@ fn main() {
         println!("{}", miao_dock::boxsvc::engine::supervisor::selftest_run(&spec));
         return;
     }
+    // `--check-assets`：打印**随包资产自检**报告并退出（A1/A2）。
+    // 用途：e2e 在「模拟打包布局」下取证 —— 资源目录里没有必需资产时，这里必须**报缺失**
+    // 而不是静默回退到仓库路径（那样 dev 态永远绿、打包态永远错）。
+    // 缺失 ⇒ 退出码 1，且不打印任何"起服务"的迹象（它本来就不起服务）。
+    if std::env::args().any(|a| a == "--check-assets") {
+        let r = miao_dock::paths::assets_report();
+        println!("{r}");
+        let ok = r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !ok {
+            let missing = r.get("missing").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let names: Vec<String> = missing.iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
+            eprintln!("✗ [RESOURCE_MISSING] 资源缺失：{}", names.join("、"));
+        }
+        std::process::exit(if ok { 0 } else { 1 });
+    }
     // `--list-routes`：打印**显式路由表**（每条端点的 method/pattern/group/tier）+ 两个计数。
     // 用途：e2e 做「转发分支数 = 0」的验收（F5）—— 不起服务、不拉 node，毫秒级跑完。
     if std::env::args().any(|a| a == "--list-routes") {

@@ -89,6 +89,40 @@ const BASE_OWNED_KEYS = ['productName', 'identifier', 'version', 'icon', 'active
 /// 大小写不敏感地按子串判：`service/` 与 `service\` 两种写法都要挡住（配置里可能写成 Windows 路径）。
 const NODE_PAYLOAD = ['service/', 'service\\', 'node.zip'];
 
+/// 产品运行期**必需**的随包资产（A2）—— 必须与 Rust 侧 `paths::REQUIRED_ASSETS` 逐项一致。
+/// 🔴 这里是**第二处事实源**（Rust 常量读不进 node），所以另有一道交叉验证：
+///    `check:resources` 会拿 `boxsvc --check-assets` 报的必需资产与这里比对，
+///    两边漂移就变红 —— 单一事实源做不到，就退而求其次让它**可观测地漂移**。
+const REQUIRED_ASSETS = ['engine/models.manifest.json'];
+
+/// `bundle.resources` 的目录（src 相对它解析）。
+const CONF_DIR = path.dirname(BASE_CONF);
+
+/// `resources` 的形状：数组 **或** map（src→target）都合法（Tauri v2 两种都支持）。
+const isResShape = (r) => Array.isArray(r) || (!!r && typeof r === 'object');
+
+/// 摊平为「所有路径字符串」—— 用于查**有没有 node 载荷**（src 侧与 target 侧都要看）。
+const resStrings = (r) => {
+  if (Array.isArray(r)) return r.map(String);
+  if (r && typeof r === 'object') return Object.entries(r).flatMap(([k, v]) => [String(k), String(v)]);
+  return [String(r)];
+};
+
+/// 落到**资源目录里的相对路径**（target 侧）。数组形式下 Tauri 会**重建原目录结构**，
+/// 并把 `../` 转义成 `_up_/`（官方行为）—— 判据必须照它算，否则会假红。
+const resTargets = (r) => {
+  if (Array.isArray(r)) return r.map(String).map((p) => p.replace(/^\.\.\//, '_up_/'));
+  if (r && typeof r === 'object') return Object.values(r).map(String);
+  return [];
+};
+
+/// 源文件相对路径（src 侧）。
+const resSources = (r) => {
+  if (Array.isArray(r)) return r.map(String);
+  if (r && typeof r === 'object') return Object.keys(r).map(String);
+  return [];
+};
+
 // ------------------------------------------------------------------ 正向断言
 
 function runAll() {
@@ -138,15 +172,37 @@ function runAll() {
   // ---- W5：随包资源里不得再有 Node（F5.8 验收标准③）----
   //    生效配置 = JSON Merge Patch(基座, windows)，所以**两边都要看** —— 只看基座会漏掉
   //    "在平台配置里补一条 resources" 这条路。
+  //    ⚠️ `resources` 既可以是数组也可以是 map（src→target）；判据必须**两种都吃得下**，
+  //    否则换成 map 就会让 W5 假红 —— 而它真正要钉的是"不许有 node 载荷"，不是数据结构。
   const resBase = (base && base.bundle && base.bundle.resources) || [];
   const resWin = (win && win.bundle && win.bundle.resources) || [];
-  const resAll = [...(Array.isArray(resBase) ? resBase : []), ...(Array.isArray(resWin) ? resWin : [])];
-  const nodeish = resAll.filter((p) => NODE_PAYLOAD.some((k) => String(p).toLowerCase().includes(k)));
+  const resAll = [...resStrings(resBase), ...resStrings(resWin)];
+  const nodeish = resAll.filter((p) => NODE_PAYLOAD.some((k) => p.toLowerCase().includes(k)));
   check(
     'W5',
     '`bundle.resources`（基座 + windows 配置）里**没有** Node 服务（`service/`）与 `node.zip` —— F5.8 已摘除 Node，服务由 Rust 提供',
-    Array.isArray(resBase) && Array.isArray(resWin) && nodeish.length === 0,
+    isResShape(resBase) && isResShape(resWin) && nodeish.length === 0,
     nodeish.length ? `混进了：${JSON.stringify(nodeish)}` : `base=${JSON.stringify(resBase)} win=${JSON.stringify(resWin)}`,
+  );
+
+  // ---- W6：产品运行期**必需**的资产必须随包（A2）----
+  //    A1 让 Rust 能找到资源目录，A2 保证目录里有东西 —— 缺了 A2，A1 只是"找到了一个空目录"。
+  //    🔴 失效形态：dev 态**永远测不出来**（资产就在仓库里，代码会回退过去），
+  //    所以只能钉在**配置**上：这里漏一条，打包后 `boxsvc --check-assets` 才会报缺失。
+  const targets = new Set([...resTargets(resBase), ...resTargets(resWin)]);
+  const absent = REQUIRED_ASSETS.filter((a) => !targets.has(a));
+  // src 侧也要真存在：配置写了但文件挪走了 ⇒ 打包阶段才炸，且报错离根因很远。
+  const srcs = [...resSources(resBase), ...resSources(resWin)];
+  const missingSrc = srcs.filter((s) => !fs.existsSync(path.resolve(CONF_DIR, s)));
+  check(
+    'W6',
+    `随包资源必须含产品运行期**必需**的资产（${REQUIRED_ASSETS.join('、')}），且源文件真实存在 —— A1 找到资源目录后，A2 负责那里有东西`,
+    absent.length === 0 && missingSrc.length === 0,
+    absent.length
+      ? `缺条目：${JSON.stringify(absent)}`
+      : missingSrc.length
+        ? `源文件不存在：${JSON.stringify(missingSrc)}`
+        : `targets=${JSON.stringify([...targets])}`,
   );
 }
 
@@ -201,11 +257,34 @@ const MUTATIONS = [
     edits: [
       {
         file: BASE_CONF,
-        find: '"resources": []',
-        replace: '"resources": ["../service/", "../vendor/node.zip"]',
+        find: '"resources": {',
+        replace:
+          '"resources": {\n      "../service/": "service/",\n      "../vendor/node.zip": "node.zip",',
       },
     ],
     expect: ['W5'],
+  },
+  {
+    name: 'M6 必需资产的条目被换成别的（A2 漏配：A1 找到的将是个空目录）',
+    edits: [
+      {
+        file: BASE_CONF,
+        find: '"../../engine/models.manifest.json": "engine/models.manifest.json"',
+        replace: '"../../engine/VERSIONS.lock": "engine/VERSIONS.lock"',
+      },
+    ],
+    expect: ['W6'],
+  },
+  {
+    name: 'M7 条目 target 写对但 src 指到不存在的文件（打包阶段才炸，报错离根因极远）',
+    edits: [
+      {
+        file: BASE_CONF,
+        find: '"../../engine/models.manifest.json": "engine/models.manifest.json"',
+        replace: '"../../engine/nope.json": "engine/models.manifest.json"',
+      },
+    ],
+    expect: ['W6'],
   },
 ];
 

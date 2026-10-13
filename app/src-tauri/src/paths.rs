@@ -45,6 +45,103 @@ fn walk_up_for_root(start: Option<&Path>) -> Option<PathBuf> {
     }
 }
 
+// ------------------------------------------------------------------ 资源目录（A1）
+
+/// 产品运行期**必需**的随包资产：相对资源目录的路径（同时也是相对仓库根的路径）。
+///
+/// 🔴 这是 A2 的**另一半事实**：`tauri.conf.json` 的 `bundle.resources` 必须把这里的每一项
+/// 都打进包（`check:bundle` 的 W6 钉住），否则 A1 找到资源目录也是空的 —— 两边分开维护的
+/// 失效形态就是「配置看着有、运行时拿不到」，而它在 dev 态**永远测不出来**。
+pub const REQUIRED_ASSETS: &[&str] = &["engine/models.manifest.json"];
+
+/// 资源目录（`$RESOURCE`）：`MIAO_RESOURCE_DIR` 覆盖，否则从**本可执行文件**推导。
+///
+/// ## 为什么不用 Tauri 的 `AppHandle::path().resource_dir()`
+/// `boxsvc` 是**独立可执行**（F0 起的第二个 `[[bin]]`），它拿不到 `AppHandle`；而产品默认档
+/// 跑的正是 boxsvc。好在 `resolve_boxsvc()` 保证它与 `miao-dock` **同目录**，故从 exe 推导
+/// 在两端得到同一个值 —— 这条也是 A1 唯一可行的实现路线。
+///
+/// 推导规则与 Tauri 的 `$RESOURCE` 一致：
+///   · macOS：`…/Box.app/Contents/MacOS/<exe>` ⇒ `…/Box.app/Contents/Resources`
+///   · 其他平台：exe 所在目录
+///
+/// ⚠️ 本函数只负责**找出目录在哪**，不判断里面有什么（判断在 [`asset`] / [`missing_assets`]）。
+pub fn resource_dir() -> Option<PathBuf> {
+    if let Some(p) = env_path("MIAO_RESOURCE_DIR") {
+        return Some(p);
+    }
+    // 🔴 **只有 release 构建**才从 exe 推导（e2e 例外：上面的 env 覆盖）。
+    //    本机实测：`target/debug/engine/models.manifest.json` 曾长期躺着一份**上一版**的资产副本
+    //    （Tauri 把 `bundle.resources` 复制到 debug 产物目录里，删了配置副本却留了下来）。
+    //    debug 构建若也走这条路 ⇒ 开发态会优先读到**过期清单**，而"清单过期"的表现是
+    //    模型校验莫名其妙地不符，离根因极远 —— 比"找不到"更难查。
+    //    ⇒ 开发态一律走仓库（`repo_root()`），打包（恒为 release）才走资源目录。
+    if cfg!(debug_assertions) {
+        return None;
+    }
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    let res = if dir.file_name().and_then(|n| n.to_str()) == Some("MacOS") {
+        dir.parent()?.join("Resources")
+    } else {
+        dir.to_path_buf()
+    };
+    if res.is_dir() {
+        Some(res)
+    } else {
+        None
+    }
+}
+
+/// 资源目录下的资产；资源目录不存在、或这份资产不在里面 ⇒ `None`（调用方回退到仓库路径）。
+pub fn asset(rel: &str) -> Option<PathBuf> {
+    let p = resource_dir()?.join(rel);
+    if p.exists() {
+        Some(p)
+    } else {
+        None
+    }
+}
+
+/// **缺失**的必需资产（空 = 齐备）。
+///
+/// 🔴 判据是「**最终拿不拿得到**」而不是「资源目录里有没有」：
+/// 开发态资源目录里没有这些资产，但它们就在仓库里（`repo_root()/<rel>`）—— 若只查资源目录，
+/// dev 态会**永远报缺失**，而这个报错是假的，会把真缺失淹没掉。
+/// ⇒ 只有当「资源目录里没有 **且** 仓库里也没有」时才算缺失，这正是打包后漏配 A2 的形态。
+pub fn missing_assets() -> Vec<String> {
+    let root = repo_root();
+    REQUIRED_ASSETS
+        .iter()
+        .filter(|rel| asset(rel).is_none() && !root.join(rel).exists())
+        .map(|rel| rel.to_string())
+        .collect()
+}
+
+/// 资产自检报告（给 `boxsvc --check-assets` 与启动前置门用）。
+pub fn assets_report() -> serde_json::Value {
+    let dir = resource_dir();
+    let items: Vec<serde_json::Value> = REQUIRED_ASSETS
+        .iter()
+        .map(|rel| {
+            let from_resource = asset(rel).is_some();
+            let from_repo = repo_root().join(rel).exists();
+            serde_json::json!({
+                "name": rel,
+                "ok": from_resource || from_repo,
+                "source": if from_resource { "resource" } else if from_repo { "repo" } else { "none" },
+            })
+        })
+        .collect();
+    let missing = missing_assets();
+    serde_json::json!({
+        "resourceDir": dir.as_ref().map(|p| p.to_string_lossy().into_owned()),
+        "assets": items,
+        "missing": missing,
+        "ok": missing.is_empty(),
+    })
+}
+
 // ------------------------------------------------------------------ 目录（契约 §2.1 / §7.1 / §7.5）
 
 /// 任务清单等运行期状态的位置：平台应用数据目录下的 `Box/state`。
@@ -189,8 +286,15 @@ fn settings_model_dir() -> Option<String> {
 }
 
 /// 生效的**模型清单**（`MIAO_MODEL_MANIFEST` 是验收夹具接缝；产品路径永远用入库的那一份）。
+///
+/// 🔴 A1 起**先查资源目录**：打包后 `repo_root()` 算不出真仓库根（`service/` 与 `engine/`
+/// 原先一个字节都没进包 ⇒ 向上找永远找不到 ⇒ 退回 cwd），清单会静默指向一个不存在的位置。
+/// 开发态资源目录里没有它 ⇒ 回退到 `repo_root()`，**行为逐字节不变**。
 pub fn model_manifest() -> PathBuf {
     if let Some(p) = env_path("MIAO_MODEL_MANIFEST") {
+        return p;
+    }
+    if let Some(p) = asset("engine/models.manifest.json") {
         return p;
     }
     repo_root().join("engine").join("models.manifest.json")
@@ -450,5 +554,58 @@ mod tests {
         assert!(assert_inside_root(&root, &root.join("漫画 A").join("001.png")).is_ok());
         // 直接躺在 root 里 ⇒ 拒绝（复刻 Node 的 parent==root ⇒ false）
         assert!(assert_inside_root(&root, &root.join("001.png")).is_err());
+    }
+
+    // ---------------------------------------------------------------- 资源目录（A1）
+
+    #[test]
+    fn required_assets_are_reachable_in_dev() {
+        // 🔴 反证点：只查资源目录会让 dev 态**永远报缺失**（假红），把真缺失淹没掉。
+        //    判据必须是「最终拿不拿得到」，开发态这些资产就在仓库里。
+        let missing = missing_assets();
+        assert!(missing.is_empty(), "开发态不应报资源缺失：{missing:?}");
+    }
+
+    #[test]
+    fn assets_report_ok_matches_missing() {
+        let r = assets_report();
+        let missing = r.get("missing").and_then(|v| v.as_array()).expect("missing 必须是数组");
+        assert_eq!(
+            r.get("ok").and_then(|v| v.as_bool()),
+            Some(missing.is_empty()),
+            "ok 与 missing 必须一致（不一致 ⇒ 启动门与自检报告会说两套话）"
+        );
+        assert_eq!(
+            r.get("assets").and_then(|v| v.as_array()).map(|a| a.len()),
+            Some(REQUIRED_ASSETS.len()),
+            "报告条目数必须等于必需资产数（漏一条 ⇒ 那一条永远不被检查）"
+        );
+    }
+
+    #[test]
+    fn model_manifest_ends_with_expected_name() {
+        // A1 改了查找顺序（资源目录优先），但**文件名不许变** —— 变了就是另一份事实源。
+        let p = model_manifest();
+        assert_eq!(
+            p.file_name().and_then(|n| n.to_str()),
+            Some("models.manifest.json"),
+            "清单文件名被改：{p:?}"
+        );
+    }
+
+    #[test]
+    fn required_assets_path_is_reusable_as_repo_relative() {
+        // A2 的落点假设：同一串相对路径既能当「资源目录相对路径」也能当「仓库相对路径」。
+        // 若哪天这两边不再同构，`missing_assets()` 的 dev 回退就会静默失效。
+        for rel in REQUIRED_ASSETS {
+            assert!(
+                !Path::new(rel).is_absolute(),
+                "必需资产必须是相对路径：{rel}"
+            );
+            assert!(
+                !rel.starts_with(".."),
+                "必需资产不得含 ..（会被 Tauri 转义成 _up_）：{rel}"
+            );
+        }
     }
 }

@@ -35,6 +35,7 @@ const CHECKS = [
   { id: 'docpaths', script: 'e2e/docs-path-check.mjs', tier: 'static', refute: true, watch: ['**/*.md', 'docs/**', 'e2e/docs-path-check.mjs'] },
   { id: 'docs', script: 'e2e/docs-consistency-check.mjs', tier: 'static', watch: ['**/*.md', 'docs/**', 'package.json', 'e2e/docs-consistency-check.mjs'] },
   { id: 'bundle', script: 'e2e/bundle-targets-check.mjs', tier: 'static', refute: true, watch: ['app/**', 'e2e/bundle-targets-check.mjs'] },
+  { id: 'resources', script: 'e2e/resources-check.mjs', tier: 'static', refute: true, watch: ['app/src-tauri/src/paths.rs', 'app/src-tauri/src/service.rs', 'app/src-tauri/src/bin/boxsvc.rs', 'app/src-tauri/tauri.conf.json', 'e2e/resources-check.mjs'] },
   { id: 'layering', script: 'e2e/service/layering-check.mjs', tier: 'static', refute: true, watch: ['service/src/**', 'e2e/service/layering-check.mjs'] },
   { id: 'harness', script: 'e2e/service/harness-check.mjs', tier: 'static', refute: true, watch: ['e2e/service/**', 'app/src-tauri/src/**'] },
   { id: 'tls', script: 'e2e/tls-check.mjs', tier: 'static', watch: ['app/src-tauri/**', 'service/src/**', 'engine/**', 'e2e/tls-check.mjs'] },

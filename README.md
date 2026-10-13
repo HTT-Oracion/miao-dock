@@ -198,7 +198,8 @@ npm run check:retranslate     # 单张漫画返工重译 + 全屏缩放：覆盖
 npm run check:engine-settings # S6 引擎设置面：档位 / 后端 / 空闲 / 模型目录 + 模型下载状态 61 条（反证：check:engine-settings:refute）
 npm run check:translate      # ver2.2 在线翻译服务（有道智云）：签名 v3 / 四层超时 / 限流 / 三层设置 / 密钥隔离 / 契约适配器 / 5 路由端到端 54 条（反证：check:translate:refute，8 开关；假上游默认发真 SSE 帧，零网络秒级）
 npm run check:docs            # 文档 ↔ 实现一致性：条数对账 / 引用的命令存在 / 禁词 0 命中 / 分组覆盖 16 条
-npm run check:bundle          # 打包配置钉子 5 条 / 反证 5 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip`；源码级，不起进程）
+npm run check:bundle          # 打包配置钉子 6 条 / 反证 7 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip`；**W6** 必需资产条目在且 src 真实存在；源码级，不起进程）
+npm run check:resources       # 随包资源寻址 **A1/A2** 三环境取证 8 条 / 反证 4 条（dev 态不误报 · 打包齐备取资源目录 · 打包缺失报 `RESOURCE_MISSING` · 优先级 · 必需资产交叉验证 · 源码钉）
 ```
 
 **F 组「服务 Rust 化」的同源对拍钉子**（F0–F5 已全部完成，见 `docs/packaging-local-engine-dev-plan.md`）——
@@ -257,7 +258,13 @@ npm run selftest:app:e11:real    # E11 三进程树回收 + E1 生效参数快�
 
 **🚧 未做 / 未验证（如实登记）**
 
-- 🟡 **打包分发（G-13）只解决了一半**：**Windows 侧已能产出 NSIS 安装包**（`tauri.windows.conf.json` 平台分叉，`npm run check:bundle` 钉住；macOS 包型仍是 `app` + `dmg`，未动）；但 `bundle.resources` 仍为空、无 `externalBin`、`build.rs` 无拷贝步骤，而 `service.rs::resolve_entry` 从可执行文件向上找 6 层 ⇒ 装出来的应用**仍不含** `service/` 与 `engine/`、**起不了服务**。目前只有开发态（`npm run app` / debug 二进制）可用。
+- 🟡 **打包分发（G-13）：服务栈已能随包，但**从未在真实安装产物上冒烟过**。
+  **Windows 侧已能产出 NSIS 安装包**（`tauri.windows.conf.json` 平台分叉，`npm run check:bundle` 钉住；macOS 包型仍是 `app` + `dmg`，未动）。
+  服务栈侧：F 组已把服务全部搬进 Rust（`bundle.resources` **不需要** `service/` —— W5 明确禁止），
+  A1 让 Rust 按资源目录寻址（`paths::resource_dir()`，release 构建生效）、A2 把必需的引擎资产
+  （`models.manifest.json`）打进包 —— 两者由 `npm run check:resources` 三环境取证、`check:bundle` W6 钉住。
+  ⚠️ **仍未验证**：`npm run app:build` 产出的**真实安装包**从未跑过一次冒烟（A4 待办），
+  所以"装完能起服务"目前只有**配置级与寻址级**证据，没有产物级证据。
 - **Windows 进程树回收三项仍 `unverified`**：Job Object / 无孤儿 `llama-server.exe` / `taskkill /T`（Rust 侧，D-85 只跑了引擎侧 S1）。
 - **汽水音乐平台延后**（PD-1 / D-23）：Windows-only 平台耦合 + 依赖仓外二进制签名器；代码保留、不排首批。
 - **音乐模块真机未验证项**：Radix 弹层观感 · 音频代理播放 · 皮肤观感（断言只覆盖结构与接线）。

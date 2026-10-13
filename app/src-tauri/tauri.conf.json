@@ -36,7 +36,9 @@
     "active": true,
     "targets": ["app", "dmg"],
     "icon": ["icons/icon.icns", "icons/icon.ico", "icons/icon.png"],
-    "resources": [],
+    "resources": {
+      "../../engine/models.manifest.json": "engine/models.manifest.json"
+    },
     "macOS": {
       "minimumSystemVersion": "10.15"
     }

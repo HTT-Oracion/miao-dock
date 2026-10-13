@@ -1965,3 +1965,80 @@ P5（`MODEL_HF_BAD_LINK`）两靶都返回 `code=null`。排查后：`dest` 指�
 `check:registry` 4/4 · `check:bundle` 5/5 · `check:engine-parity` 24/24 · `check:store-parity` 24/24 ·
 `check:paths-parity` 3/3 · `check:engine-http-parity` 18/18 · `check:harness` 7/7 ·
 `check:llm-supervisor` 4/4 · `check:contract-delta` 77/77 · `check:routes` 9/9。
+
+---
+
+## D-174 · A1/A2 随包资源寻址：打包后 `repo_root()` 算不出根，而它**只**在打包态发生（2026-10-13）
+
+**背景**：F 组收口后复检发现，`paths::repo_root()`（`walk_up_for_root` 找同时含 `service/` 与 `engine/`
+的目录）在**打包态必然算错** —— 这两个目录一个字节都没进包（`bundle.resources: []`）⇒ 向上永远找不到
+⇒ 退回 cwd ⇒ 清单 / 引擎目录 / venv 解释器全部错位。
+
+**改动**：
+
+- `paths.rs` 新增 `resource_dir()` / `asset()` / `missing_assets()` / `assets_report()` +
+  常量 `REQUIRED_ASSETS`；`model_manifest()` 改为**资源目录优先、仓库回退**。
+- `boxsvc --check-assets`：打印自检 JSON，缺失 ⇒ 退出码 1 + stderr `✗ [RESOURCE_MISSING] 资源缺失：…`。
+- `service.rs::start_blocking` 在取启动配方（`load_plan`）**之前**加资产自检，缺失即 `fail("资源缺失：…")`。
+- `tauri.conf.json` 的 `bundle.resources` 改为 **map** 形式
+  `{ "../../engine/models.manifest.json": "engine/models.manifest.json" }`。
+- `check:bundle` 增 **W6**；新增 `check:resources`（三环境取证 + 源码钉）。
+
+### 🔴 为什么落点从 `service.rs::resolve_entry` 改到 `paths.rs`
+
+台账 A1 原写「`service.rs::resolve_entry` 新增 `resource_dir()` 分支」。F2 把路径推导搬进 Rust 后，
+真正依赖 `repo_root()` 的是**服务主路径**（`model_manifest` / `engine_dir` / `engine_python`），
+而 `resolve_entry` 只服务 `MIAO_SERVICE_IMPL=node` 那个**显式档**。照原落点做 ⇒ 主路径照样算错根。
+
+### 🔴 缺陷 ①：判据必须是「**最终拿不拿得到**」，不是「资源目录里有没有」
+
+初版 `missing_assets()` 只查资源目录 ⇒ 开发态**永远报缺失**（资产在仓库里，代码会回退过去）。
+这种假红的危害比漏报大：它把真缺失淹没在一堆假警报里。
+
+修法：只有当「资源目录里没有 **且** `repo_root()/<rel>` 也没有」时才算缺失。
+`REQUIRED_ASSETS` 的相对路径被设计成**两侧同构**（`engine/models.manifest.json`），回退才成立。
+
+### 🔴 缺陷 ②：dev 态**不能**优先用资源目录 —— debug 产物目录里躺着陈年副本
+
+本机实测：`target/debug/engine/models.manifest.json` 存在且是 **10-10 的旧副本**（Tauri 曾把
+`bundle.resources` 复制到 debug 产物目录，配置删了副本却留了下来）。
+
+debug 构建若也走「exe 推导资源目录」⇒ 开发态会**优先读到过期清单**，而"清单过期"的表现是
+模型校验莫名其妙地不符 —— 比"找不到"更难查（找不到至少有 ENOENT）。
+
+修法：**只有 release 构建**才从 exe 推导；`cfg!(debug_assertions)` 直接返回 `None` ⇒ 开发态一律走仓库。
+e2e 靠 `MIAO_RESOURCE_DIR` 覆盖来测打包态（env 优先级最高）。
+
+### 🔴 缺陷 ③：`bundle.resources` 不能用数组 —— `../` 会被转义成 `_up_/`
+
+Tauri v2 数组形式**保留原目录结构**并把 `../` 替换成 `_up_/` ⇒ `../engine/x` 落到
+`$RESOURCE/_up_/engine/x`。要让 A1 去找它，就得硬编码这个实现细节。
+
+改用 **map** 形式（src → target）⇒ 落点显式可控。代价：`check:bundle` 的 W5 原本断言
+`Array.isArray(resources)`，换成 map 会让 W5 **假红**。⇒ W5 改为「数组或 map 都吃得下」
+（它真正要钉的是"不许有 node 载荷"，不是数据结构）。
+
+### 🔴 缺陷 ④：src 相对路径的基准是 `tauri.conf.json` 所在目录 —— 差点写成错的
+
+首版写 `../engine/models.manifest.json`，从 `app/src-tauri/` 解析是 `app/engine/`（**不存在**）。
+正确是 `../../engine/...`。**W6 当场抓到**（它顺带断言 src 文件真实存在）—— 这条断言的收益
+在写完的下一秒就兑现了。
+
+### 🔴 缺陷 ⑤：`REQUIRED_ASSETS` 是三处事实源，只能退而求其次让它"可观测地漂移"
+
+Rust 常量、`check:bundle` 常量、`check:resources` 常量各一份，做不到单一事实源。
+⇒ 加 **X1** 交叉验证：`check:resources` 拿 `boxsvc --check-assets` 报出的必需资产与自己的常量比对，
+漂移即红。这不是消除漂移，是让漂移**当场可见**。
+
+### 已知问题（未修，留痕）
+
+`check:models` 的 `.tmp/models` 场景目录**不幂等**：连续跑两次（或正向跑完再跑反证）会出现
+`rust-tamper/beta.bin` ENOENT —— 第一次 run 把 beta 判成 `reused`（`.ready` 记录还在）而文件不在。
+`rm -rf .tmp/models` 后正向 **74/74**、反证 **12/12** 均通过。
+⚠️ 与 A1/A2 无关（改动前后同样表现），但会让"跑第二遍"假红，需单独立项。
+
+**验收**：`check:resources` 正向 **8/8** + 反证 **4/4 全红**；`check:bundle` 正向 **6/6**（W6 新增）
++ 反证 **7/7**（M6/M7 新增）；`cargo test --lib` **124 passed**（120 → 124）；
+`check:registry` 4/4（92 项）；`check:paths` 3/3 + 反证 3/3；`check:models` 74/74 + 反证 12/12；
+`check:engine-settings` 55/6（存量）；`check:autostart` 18/18 · `check:routes` 9/9 ·
+`check:launch-plan` 25/25 · `check:harness` 7/7 · `check:llm-supervisor` 4/4。

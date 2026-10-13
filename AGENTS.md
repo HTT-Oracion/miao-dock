@@ -144,7 +144,8 @@ node e2e/service/llm-real-timing.mjs  # 真 ③（llama-server）冷启动与内
 npm run check:music[:refute]  # 音乐平台 / 播放模式五档 / 心动模式 / 播放列表入口与抽屉 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 227 条 / 反证 212 条
 npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3「准备中」时间线 + ④ 功能梳理（侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / 行内 def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染（自守）180 条 / 反证 127 条
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 看图缩放 / 样式分层 45 条 / 反证 59 条
-npm run check:bundle[:refute] # 打包配置钉子 5 条 / 反证 5 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip` ——「文件不在」是永远绿的空断言，因 `vendor/node.zip` 从未存在；源码级，不起进程）
+npm run check:bundle[:refute] # 打包配置钉子 6 条 / 反证 7 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip` ——「文件不在」是永远绿的空断言，因 `vendor/node.zip` 从未存在；**W6** 必需资产条目在**且** src 文件真实存在；源码级，不起进程）
+npm run check:resources[:refute] # 随包资源寻址 **A1/A2** 三环境取证 8 条 / 反证 4 条（dev 态不误报且来源=repo · 打包齐备来源=resource · 打包缺失报 `RESOURCE_MISSING` 且退出码≠0 · 两边都有时资源目录优先 · 必需资产三处事实源交叉验证 · S1/S2/S3 源码钉）。🔴 dev 态与打包态**必须都跑**：只跑 dev 态**永远绿**（资产就在仓库里，打包态的错测不出来），只跑打包态会把 dev 态误判成缺失
 npm run check:resilience[:refute] # box-service 健壮性钉子 9 条 / 反证 14 条（源码级：R1–R7 顶层未捕获异常兜底（走同一 shutdown / 收 ③ / 重入闸 / 非零退出）· A1–A2 任务状态原子写（store 走 atomicWriteJson · tmp→fsync→rename）；不起进程；内存变异反证；D-138/D-139）
 npm run check:layering[:refute] # service 依赖方向钉子 3 条 / 反证 3 条（源码级：L0 底座文件集 == 白名单 · L1 底座不得 import manga/** · L2 底座对 settings/ 仅限 engine-settings.mjs；装配入口 server.mjs 豁免；不起进程；内存变异反证；D-141）
 npm run check:docs            # 文档 ↔ 实现一致性 17 条（条数对账 / 命令存在 / 禁词 0 命中 / GROUPS 覆盖）
