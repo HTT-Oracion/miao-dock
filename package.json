@@ -95,6 +95,8 @@
     "check:paths:refute": "node e2e/service/paths-parity-check.mjs --refute",
     "check:runtime-probe": "node e2e/service/runtime-probe-check.mjs",
     "check:runtime-probe:refute": "node e2e/service/runtime-probe-check.mjs --refute",
+    "check:path-single-source": "node e2e/service/path-single-source-check.mjs",
+    "check:path-single-source:refute": "node e2e/service/path-single-source-check.mjs --refute",
     "check:store": "node e2e/service/store-parity-check.mjs",
     "check:store:refute": "node e2e/service/store-parity-check.mjs --refute",
     "check:store-exec": "node e2e/service/store-exec-parity-check.mjs",

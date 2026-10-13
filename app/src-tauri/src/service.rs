@@ -446,6 +446,11 @@ impl ServiceManager {
             Err(e) => return self.fail(app, None, e),
         };
         push_log(&log, &format!("[miao-dock] 启动配方 mode={} …", plan.mode));
+        // B1 验收② / B2：real 档下若引擎运行时没装配，**现在就说出缺哪几项、缺在哪、怎么装**，
+        //   而不是让用户白等 240 s 再看到一句 "Connection error"（那正是 B1 要消灭的报错形态）。
+        // 🔴 只 warn 不 fail：mock 档本来就不要真引擎（30+ 个 mock e2e 靠它活着）；
+        //    real 档的硬门归 D6（首启引导）—— 那里才有完整的"缺什么 → 怎么装"流程。
+        boxsvc::engine::runtime_probe::warn_unready_if_real(plan.mode == "mock");
         // E1：**日志打印生效参数快照** —— 逐条列出真正会被执行的东西（不是"配置里写的"）。
         // 走 `say`（环 + stdout 双写），让应用之外也能取证。
         say(&log, &format!("MIAO_LAUNCH_PLAN mode={}", plan.mode));

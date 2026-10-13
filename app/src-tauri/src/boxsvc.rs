@@ -369,6 +369,10 @@ pub fn run_blocking(opts: Options) -> Result<(), String> {
     // 3) 引擎组状态（F5.6）：硬件画像 ⊕ 用户设置 ⊕ env —— **取值非法直接失败**（不静默回退）。
     let engine = Arc::new(engine::state::EngineState::from_env()?);
 
+    // 3a) real 档下把「引擎运行时未就绪」逐项喊出来（B1 验收② / B2）。
+    //     没有它，用户看到的是白等 240 s 后一句 Connection error —— 不告诉他缺什么、怎么装。
+    engine::runtime_probe::warn_unready_if_real(engine::is_mock_protocol());
+
     // 3b) 引擎③ supervisor：配方按**生效档位**给（配置的档位若没权重会被夹回可用档）。
     //     ⚠️ 与 Node 同：`③ 的归属方是 box-service`（《04》§9.1），所以它由**本进程**拉起。
     let llm = Arc::new(LlmSupervisor::with_launch_verbose(

@@ -183,6 +183,30 @@ pub fn runtime_view() -> serde_json::Value {
     serde_json::to_value(probe()).unwrap_or_else(|_| serde_json::json!({ "items": [], "ready": false }))
 }
 
+/// real 档启动时把「引擎运行时未就绪」**逐项**喊出来（B1 验收②）。
+///
+/// 没有它，用户看到的是白等 240 s 后一句 `Connection error` —— 离根因极远，且不告诉你缺什么。
+/// 有了它，启动日志里就是「缺 python（<绝对路径>）—— 运行 …setup-engine.mjs --venv」。
+///
+/// 🔴 只 warn 不 fail：mock 档**本来就不要真引擎**（30+ 个 mock e2e 靠它活着），而
+///    "装到一半"的用户也不该被一句启动失败挡住。real 档的硬门归 D6（首启引导）——
+///    那里才有完整的「缺什么 → 怎么装 → 装完重启」流程。
+/// 🔴 app 进程（`service.rs::start_blocking`）与 `boxsvc` CLI（`boxsvc::run_blocking`）
+///    是两个入口，故本函数**两边都调**而不是各写一份 —— 判据与文案分叉等于没喊。
+pub fn warn_unready_if_real(is_mock: bool) {
+    if is_mock {
+        return;
+    }
+    let probe = probe();
+    if probe.ready {
+        return;
+    }
+    for it in probe.items.iter().filter(|i| !i.ok) {
+        let fix = it.fix.as_deref().map(|f| format!(" —— {f}")).unwrap_or_default();
+        println!("[box-service] ⚠ 引擎运行时未就绪 · {}：{}{}", it.id, it.detail, fix);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
