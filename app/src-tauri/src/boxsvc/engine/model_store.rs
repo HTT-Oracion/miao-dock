@@ -259,6 +259,11 @@ pub struct RefuteFlags {
     pub no_ready: bool,
     /// 关掉"把 store 链进引擎树"这一步
     pub no_link: bool,
+    /// 夹具：**在同盘上强制走"跨卷"分支**（C2）。
+    ///
+    /// 真跨卷要两个卷才造得出来（e2e 里不能要求跑测机器有两块盘），而"跨卷时说跨卷"
+    /// 正是 C2 的验收③ —— 没有这个开关，那条话术就只能靠读代码相信。
+    pub force_crossdev: bool,
 }
 
 /// 反证开关（**只给测试用**；产品路径不得设置这些变量）。
@@ -270,6 +275,7 @@ pub fn refute_flags() -> RefuteFlags {
         no_resume: one("MIAO_NO_RESUME"),
         no_ready: one("MIAO_NO_READY"),
         no_link: one("MIAO_NO_LINK"),
+        force_crossdev: one("MIAO_LINK_FORCE_CROSSDEV"),
     }
 }
 
@@ -912,6 +918,20 @@ pub struct LinkResult {
     pub copied: Vec<String>,
     pub skipped: Vec<String>,
     pub hf: Vec<HfLink>,
+    /// **因跨卷而降级为复制**的条目 id（C2）。
+    ///
+    /// 为什么单独立一列而不是只写日志：跨卷是**唯一**一种"链接没建成但我们认为可以接受"的
+    /// 情况（退化复制，原样可用，只是多占一份盘）。它与"硬链接真失败"混在同一句日志里时，
+    /// 用户与我们都分不清"该不该管它" —— 而界面/脚本需要一个**可判定的**信号。
+    pub cross_device: Vec<String>,
+}
+
+/// 这个 IO 错误是不是"跨卷/跨设备"（硬链接建不了，只能退化成复制）？
+///
+/// 🔴 两个平台恰好**同一个号 17**：POSIX 是 `EXDEV`，Windows 是 `ERROR_NOT_SAME_DEVICE`。
+///    于是不必分平台写两套判断（那样必然有一边没人测）。
+pub fn is_cross_device(e: &std::io::Error) -> bool {
+    e.raw_os_error() == Some(17)
 }
 
 /// 把 store 里的权威副本**硬链接**进引擎源码树（`linkTo`）。
@@ -953,6 +973,7 @@ pub fn link_models(
         copied: Vec::new(),
         skipped: Vec::new(),
         hf: Vec::new(),
+        cross_device: Vec::new(),
     };
 
     if flags.no_link {
@@ -975,7 +996,11 @@ pub fn link_models(
             Some(l) => base.join(l),
             None => continue,
         };
-        match link_one(&file.id, &from, &to, &base, st_from, logger)? {
+        let (how, cross) = link_one(&file.id, &from, &to, &base, st_from, logger)?;
+        if cross {
+            out.cross_device.push(file.id.clone());
+        }
+        match how {
             LinkHow::Linked => out.linked.push(file.id.clone()),
             LinkHow::Already => out.already.push(file.id.clone()),
             LinkHow::Copied => out.copied.push(file.id.clone()),
@@ -984,7 +1009,9 @@ pub fn link_models(
         // —— HuggingFace 缓存布局：blob 之外还要有 snapshots/<rev>/<file> 与 refs/main，
         //    否则引擎用 huggingface_hub 判"权重在不在"时会**看不见**这份权重（见 `hf_layout`）。
         if let Some(hf) = hf_layout(file, root_dir, &base)? {
-            let how = link_one(&format!("{}#snapshot", file.id), &from, &hf.snapshot_to, &base, st_from, logger)?;
+            // snapshot 那一条是同一个 blob 的**第二个落点**：同一个卷上，跨不跨卷与主落点一致，
+            // 故不重复记账（否则同一条目会在 cross_device 里出现两次，计数就说不清了）。
+            let (how, _cross) = link_one(&format!("{}#snapshot", file.id), &from, &hf.snapshot_to, &base, st_from, logger)?;
             let refs_written = write_refs_if_changed(&hf.refs_to, &hf.refs_content)?;
             out.hf.push(HfLink {
                 id: file.id.clone(),
@@ -1021,6 +1048,7 @@ impl LinkHow {
 ///    相对符号链接，`metadata` 会跟随它 —— 链接悬空时返回 null，于是这里会以为
 ///    "路径是空的"而直接 `hard_link` 拿到 `AlreadyExists`，再退化成 `copy`，
 ///    而 `copy` 写的是**链接指向的目标**、并不是替换这个链接本身。既没修好也不报错。
+/// 返回 `(怎么落的, 是不是因跨卷降级)` —— 第二项给 `LinkResult.cross_device` 用。
 fn link_one(
     label: &str,
     from: &Path,
@@ -1028,36 +1056,64 @@ fn link_one(
     base: &Path,
     st_from: Stat,
     logger: Option<&dyn Fn(&str)>,
-) -> Result<LinkHow, ModelStoreError> {
+) -> Result<(LinkHow, bool), ModelStoreError> {
     if let Some(parent) = to.parent() {
         fs::create_dir_all(parent).ok();
     }
     if lstat_safe(to).is_some() {
         if let Some(st_to) = stat_safe(to) {
             if st_to.ino != 0 && st_to.ino == st_from.ino && st_to.dev == st_from.dev {
-                return Ok(LinkHow::Already);
+                return Ok((LinkHow::Already, false));
             }
         }
         // 悬空链接 / 上一版本留下的旧文件
         fs::remove_file(to).ok();
     }
-    match fs::hard_link(from, to) {
+
+    // 夹具（`MIAO_LINK_FORCE_CROSSDEV=1`）：同盘上复现跨卷那条分支。见 `RefuteFlags::force_crossdev`。
+    let hard = if refute_flags().force_crossdev {
+        Err(std::io::Error::from_raw_os_error(17))
+    } else {
+        fs::hard_link(from, to)
+    };
+
+    match hard {
         Ok(()) => {
             let rel = to.strip_prefix(base).unwrap_or(to);
             log(logger, &format!("  [链接] {label} → {}", rel.display()));
-            Ok(LinkHow::Linked)
+            Ok((LinkHow::Linked, false))
         }
         Err(e) => {
-            // 跨设备等情况：退化为复制，但**如实记账**
+            // 跨卷（或跨设备）：退化为复制，但**如实记账** —— 说的是"跨卷"，
+            // 不是笼统一句"硬链接失败"。其他失败（权限、配额、路径过长）继续报原始错误。
+            let cross = is_cross_device(&e);
             fs::copy(from, to).map_err(|ce| {
                 ModelStoreError::with_detail(
                     "MODEL_IO_ERROR",
-                    format!("硬链接与复制都失败：{e} / {ce}"),
-                    json!({ "from": from.display().to_string(), "to": to.display().to_string() }),
+                    if cross {
+                        format!(
+                            "跨卷（{} → {} 不在同一个盘）且复制也失败：{ce}",
+                            from.display(),
+                            to.display()
+                        )
+                    } else {
+                        format!("硬链接与复制都失败：{e} / {ce}")
+                    },
+                    json!({
+                        "from": from.display().to_string(),
+                        "to": to.display().to_string(),
+                        "crossDevice": cross,
+                    }),
                 )
             })?;
-            log(logger, &format!("  [复制] {label}（硬链接不可用：{e}）"));
-            Ok(LinkHow::Copied)
+            log(
+                logger,
+                &format!(
+                    "  [复制] {label}（{}）",
+                    if cross { "跨卷：与权威副本不在同一个盘，已改为复制".to_string() } else { format!("硬链接不可用：{e}") }
+                ),
+            );
+            Ok((LinkHow::Copied, cross))
         }
     }
 }
@@ -1273,5 +1329,19 @@ mod tests {
         let m = manifest(vec![]);
         let e = ensure_models(&m, Path::new("/nonexistent-root"), None, None, "sloppy", None, None).unwrap_err();
         assert_eq!(e.code, "MODEL_BAD_INTEGRITY");
+    }
+
+    /// C2：跨卷判定认的是 **os error 17**（POSIX `EXDEV` / Windows `ERROR_NOT_SAME_DEVICE` 同号）。
+    ///
+    /// 🔴 不能"凡失败都算跨卷"：那会把权限/配额/路径过长一起说成"跨卷，没事"。
+    ///    行为层（跨卷 ⇒ 复制 ⇒ 记进 `cross_device`）由 `check:model-runner` 在子进程里验
+    ///    —— 那条路径需要一个 env 夹具开关，而单测是**多线程**的，设全局 env 会串到别的用例。
+    #[test]
+    fn cross_device_is_os_error_17_only() {
+        assert!(is_cross_device(&std::io::Error::from_raw_os_error(17)), "17 = EXDEV / ERROR_NOT_SAME_DEVICE");
+        assert!(!is_cross_device(&std::io::Error::from_raw_os_error(2)), "2 = 文件不在，不是跨卷");
+        assert!(!is_cross_device(&std::io::Error::from_raw_os_error(13)), "13 = 权限不足，不是跨卷");
+        let other = std::io::Error::new(std::io::ErrorKind::Other, "no raw os error");
+        assert!(!is_cross_device(&other), "没有 raw os error 的错误不许被猜成跨卷");
     }
 }

@@ -25,7 +25,8 @@ use std::process::Command;
 use serde_json::{json, Value};
 
 use super::model_store::{
-    ensure_models, link_models, verify_hf_cache, verify_models, Manifest, ModelStoreError, ProgressEvent,
+    ensure_models, link_models, verify_hf_cache, verify_models, LinkResult, Manifest, ModelStoreError,
+    ProgressEvent,
 };
 
 use crate::paths;
@@ -290,6 +291,7 @@ pub fn run(argv: &[String]) -> i32 {
         if !l.hf.is_empty() {
             println!("HF 缓存布局：补齐 {} 个条目的 snapshot + refs/main", l.hf.len());
         }
+        print_cross_device(&l);
         write_report(&args.report, &json!({ "link": l }));
         if !l.skipped.is_empty() {
             println!("✗ 有跳过项 ⇒ store 里还缺资产，先跑一次下载。");
@@ -341,6 +343,7 @@ pub fn run(argv: &[String]) -> i32 {
                 if !l.hf.is_empty() {
                     println!("HF 缓存布局：补齐 {} 个条目的 snapshot + refs/main", l.hf.len());
                 }
+                print_cross_device(&l);
                 link_report = json!(l);
             }
             Err(e) => return fail(&e),
@@ -391,6 +394,21 @@ pub fn run(argv: &[String]) -> i32 {
         }
     }
     0
+}
+
+/// 跨卷降级要**说出来**（C2 验收③）。
+///
+/// 跨卷不是故障 —— 复制出来的文件引擎一样能用。但它会让落点下**多出一份**与权威副本等大的
+/// 拷贝：按"几个 GB"留盘的人会不够，而我们只说一句"硬链接失败"就什么都没告诉他。
+fn print_cross_device(l: &LinkResult) {
+    if l.cross_device.is_empty() {
+        return;
+    }
+    println!(
+        "⚠️ 跨卷：{} 个条目与权威副本不在同一个盘 ⇒ 已改为复制（原样可用，但要额外占一份盘）：{}",
+        l.cross_device.len(),
+        l.cross_device.join("、")
+    );
 }
 
 fn fail(e: &ModelStoreError) -> i32 {

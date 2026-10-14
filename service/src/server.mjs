@@ -228,6 +228,16 @@ const MODEL_MANIFEST = process.env.MIAO_MODEL_MANIFEST
  * 对照端**，它调用同一个执行体 —— 否则两靶的 `modelDownload` 视图会各说一套
  * （Rust 报 `runner`、Node 报 `script`），对拍就失去意义。
  *
+ * ## 🔴 默认值为什么不是 `current_exe()`（C2）
+ * C2 的台账原话是「默认值改为**随包资源路径**（`REPO_ROOT` 仅作 dev 兜底）」。A3d 之后
+ * 这件事有了**更强的形态**：**产品侧**（`boxsvc::engine::state`）的默认值就是
+ * `std::env::current_exe()` —— `boxsvc` 本来就随包，于是"装完之后这条通道跑得起来"
+ * 不依赖任何资源配置、也不依赖解释器（那条路径由 `check:model-runner` 钉住）。
+ *
+ * 本文件是**服务的 Node 对照端**，而 node 进程的"自己"是 node 解释器 —— 拿它当执行体
+ * 毫无意义，所以这里只能落到 **dev 构建产物的落点**上：这一行只在开发机与 e2e 上有意义，
+ * 产品永远不会走到它（产品跑的是 Rust 那份）。
+ *
  * ## 夹具接缝
  * `MIAO_MODEL_DOWNLOAD_RUNNER` 覆盖执行体 —— 与 `MIAO_MODEL_MANIFEST` 同一手法。
  * 没有它，验收就得**真下几个 GB**（依赖网络、十几分钟、且不可重放）。产品路径不设置它。
@@ -997,7 +1007,10 @@ function runVerifyChild(runner, extraEnv, { timeoutMs = 900_000, manifest } = {}
     child.stderr.on('data', (d) => { stderr += d.toString('utf8'); });
     child.on('error', (err) => {
       clearTimeout(timer);
-      resolve({ code: -1, stdout, stderr: `${stderr}\n${err.message}`, timeout: false });
+      // 🔴 消息里必须**带上路径**：执行体不在盘上时，用户（和我们）看到的若只是
+      //    「系统找不到指定的文件」这一句，根本不知道它在找谁 —— 而"找的是哪个执行体"
+      //    正是 C2 要答的问题。文案与 Rust 版（`handlers.rs::run_verify_child`）**逐字一致**。
+      resolve({ code: -1, stdout, stderr: `${stderr}\n无法启动执行体 ${runner}：${err.message}`, timeout: false });
     });
     child.on('close', (code) => {
       clearTimeout(timer);

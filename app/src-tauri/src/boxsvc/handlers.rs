@@ -819,7 +819,17 @@ fn run_verify_child(runner: &Path, manifest: &str, model_root: &str) -> (i64, St
         .stderr(std::process::Stdio::piped());
     let mut child = match cmd.spawn() {
         Ok(c) => c,
-        Err(e) => return (-1, String::new(), e.to_string(), false),
+        // 🔴 消息里必须**带上路径**：执行体不在盘上时，用户（和我们）看到的若只是
+        //    「系统找不到指定的文件」这一句，根本不知道它在找谁 —— 而"找的是哪个执行体"
+        //    正是 C2 要答的问题。文案与 Node 版（`server.mjs::runVerifyChild`）**逐字一致**。
+        Err(e) => {
+            return (
+                -1,
+                String::new(),
+                format!("无法启动执行体 {}：{e}", runner.display()),
+                false,
+            )
+        }
     };
 
     // 读线程**必须**先起：管道满时子进程会写阻塞，而我们在下面等它退出 ⇒ 死锁。
