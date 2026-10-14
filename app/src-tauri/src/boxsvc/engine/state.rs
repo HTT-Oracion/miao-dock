@@ -756,6 +756,9 @@ impl EngineState {
             //    —— 两个形状由 `engine_config_snapshot()` 一处派生。
             "config": engine_config_snapshot(),
             "models": models,
+            // **D1**：运行时就绪检测（五项 + ready + requiredBytes）。与 `GET /engine/runtime`
+            // 同一份 `runtime_view()` —— 于是"体检报告"里也能一眼看到"装配态"，不用再开第二个端点。
+            "runtime": super::runtime_probe::runtime_view(),
             "recentStageLog": super::client::recent_stage_log(20),
             // 「重新下载模型」的**任务实况**（S6 新增第 9 键）。它与 `models`（几秒前的磁盘就绪态）
             // **不是一回事**：下载跑着的时候 `models.sakuraReady` 仍是 false。

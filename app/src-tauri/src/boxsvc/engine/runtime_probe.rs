@@ -233,8 +233,21 @@ fn patches_item(src: &Path) -> RuntimeItem {
 }
 
 /// `/engine/runtime` 的响应体（camelCase 契约）。
+///
+/// `requiredBytes`（D1）是**当前平台可见条目的清单求和** —— 未装配时界面要能说
+/// 「需要先安装翻译引擎（模型资产约 X GB）」，而那个 X 必须**算得出来**（读
+/// `models.manifest.json` 求和），不能在界面里写死一个数字；D5 的安装引导文档用的是
+/// 同一个数（同一份清单、同一个 `platform_matches`）。
 pub fn runtime_view() -> serde_json::Value {
-    serde_json::to_value(probe()).unwrap_or_else(|_| serde_json::json!({ "items": [], "ready": false }))
+    let report = probe();
+    let mut v = serde_json::to_value(&report).unwrap_or_else(|_| serde_json::json!({ "items": [], "ready": false }));
+    if let Some(o) = v.as_object_mut() {
+        o.insert(
+            "requiredBytes".to_string(),
+            serde_json::json!(super::model_status::platform_total_bytes(&crate::paths::model_manifest())),
+        );
+    }
+    v
 }
 
 /// real 档启动时把「引擎运行时未就绪」**逐项**喊出来（B1 验收②）。

@@ -38,6 +38,9 @@ const STARTUP_COUNT = STAGES.length - 1;
 /** Rust `phase` 值 → 阶段下标。**唯一**的进度事实源，见下面 `reached` 的注释。 */
 const PHASE_INDEX: Record<string, number> = { L1: 0, L2: 1, L3: 2 };
 
+/** 1 GiB。写成常量而**不用 `1024 ** 3`**（`**` 与 markdown 粗体同形，见 `EngineDiag.tsx` 同款说明）。 */
+const GIB = 1024 * 1024 * 1024;
+
 /**
  * 状态词 → 时间线节点形态。
  *
@@ -148,6 +151,7 @@ export function NotReadyScreen({
   source,
   onStart,
   onRestart,
+  onOpenGuide,
 }: {
   status: ServiceStatus | null;
   /**
@@ -164,6 +168,13 @@ export function NotReadyScreen({
    */
   onStart: () => void;
   onRestart: () => void;
+  /**
+   * D1：「运行时未装配」态上的**指引入口** —— 跳到设置页（翻译服务 → 引擎诊断/安装引导）。
+   *
+   * 为什么不是"再给一枚重试按钮"：这一态里的东西**本机不存在**，再点多少次都一样。
+   * 用户此刻唯一该做的是去装，那就把他送到装的地方。
+   */
+  onOpenGuide: () => void;
 }) {
   // 吐司单例总线：直接取用，不必由宿主透传（见 useToasts 注释）
   const { push: onToast } = useToasts();
@@ -251,6 +262,68 @@ export function NotReadyScreen({
       setBusy(false);
     }
   };
+
+  /*
+   * ── D1：「运行时未装配」独立成态 ──
+   *
+   * 与 L1–L4 **并列**，不是它们中的一段：那四段描述的是"引擎**正在**起来的进度"，
+   * 而这一态的真相是"**它根本还没装**"—— 把它塞进 L1（或让 L1 显示"失败"）会让用户
+   * 去点「重启本地服务」，而重启一万次也不会把一个不存在的 python 变出来。
+   *
+   * 🔴 判据只认两件事：`mode === 'real'`（mock 档本来就不要真引擎）与 `runtime.ready === false`。
+   *    不看 `last_error` 的文案 —— 文案是给人看的，拿它做机器判据，改一个字界面就失效。
+   *
+   * 🔴 「约 X GB」的 X 来自 `runtime.requiredBytes`（服务端读清单求和），**不是这里写死的数字**：
+   *    写死的话，清单加一条权重就会让界面开始撒谎，且没人会发现。
+   */
+  const rt = status?.runtime;
+  const runtimeUnready = status?.mode === 'real' && !!rt && !rt.ready;
+  if (runtimeUnready && rt && state !== 'running') {
+    const failing = rt.items.filter((i) => !i.ok);
+    const gb = rt.requiredBytes > 0 ? `（模型资产约 ${(rt.requiredBytes / GIB).toFixed(1)} GB）` : '';
+    return (
+      <div className="notready">
+        <div className="nr-sum is-bad">
+          <span className="nr-dot" />
+          <div>
+            <div className="nr-sum-t">需要先安装翻译引擎{gb}</div>
+            <div className="nr-sum-d">
+              翻译引擎不随安装包分发 —— 第一次使用要在本机装配 Python 运行时与模型权重。
+              下面列出缺的是哪几项、各自怎么装。
+            </div>
+          </div>
+        </div>
+
+        {/* 缺什么逐项列出：`detail` 带绝对路径、`fix` 给装法（都来自服务端的同一份检测） */}
+        <div className="nr-rt">
+          {failing.map((it) => (
+            <div key={it.id} className="nr-rt-item">
+              <div className="nr-rt-head">
+                <span className="nr-rt-id">{it.id}</span>
+                <span className="nr-rt-detail">{it.detail}</span>
+              </div>
+              {it.fix ? <div className="nr-rt-fix">{it.fix}</div> : null}
+            </div>
+          ))}
+        </div>
+
+        <div className="nr-acts">
+          <Btn kind="primary" onClick={onOpenGuide}>
+            打开安装引导
+          </Btn>
+          <Btn kind="ghost" onClick={() => setUserLog(!logOpen)}>
+            {logOpen ? '收起日志' : '查看日志'}
+          </Btn>
+        </div>
+
+        {logOpen ? (
+          <div className="logbox">
+            {(status?.log ?? []).slice(-120).join('\n') || '（暂无日志）'}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   /**
    * 阶段状态词。

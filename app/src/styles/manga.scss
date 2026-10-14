@@ -267,6 +267,49 @@
   color: var(--md-muted);
 }
 
+/* ── D1「运行时未装配」独立态：缺项清单 ──
+   与时间线**并列**的另一种画法：时间是"还剩几步"，这里是"还缺几样"。
+   一个流程条会误导（用户以为在等），一张缺项单才对得上"它根本还没装"。 */
+.nr-rt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 16px;
+}
+.nr-rt-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 17px;
+}
+.nr-rt-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
+}
+.nr-rt-id {
+  flex: 0 0 auto;
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  color: var(--md-error);
+}
+.nr-rt-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--md-ink-2);
+  line-height: 1.6;
+  /* 绝对路径可能很长，允许在任意字符处折行，别把整行撑出容器 */
+  overflow-wrap: anywhere;
+}
+.nr-rt-fix {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--md-muted);
+  font-family: var(--md-font-numeric);
+  overflow-wrap: anywhere;
+}
+
 /* ② 时间线：节点 + 连线 + 状态词（步数与序号由 STAGES 单源派生） */
 .tl-step {
   display: flex;

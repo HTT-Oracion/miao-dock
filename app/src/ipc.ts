@@ -26,6 +26,28 @@ export interface ChildStatus {
   alive: boolean;
 }
 
+/**
+ * 引擎**运行时就绪检测**里的一项（D1）—— 与 `GET /engine/runtime` 同形。
+ *
+ * `path` 是判据**真正作用的那个绝对路径**；`ok` 为真时没有 `fix`（"已经好了还给人装法"是噪声）。
+ */
+export interface RuntimeItem {
+  id: string;
+  ok: boolean;
+  path: string;
+  detail: string;
+  /** 没就绪时给怎么装；就绪时**不存在这个键** */
+  fix?: string;
+}
+
+export interface RuntimeProbe {
+  items: RuntimeItem[];
+  /** 五项全真 = 引擎具备启动的最低条件 */
+  ready: boolean;
+  /** 当前平台要下的**模型资产**字节和（不含用户自己的 Python/torch；0 = 清单读不到） */
+  requiredBytes: number;
+}
+
 export interface ServiceStatus {
   state: ServiceState;
   /** box-service 实际端口（5180–5190 段内探测得出） */
@@ -53,6 +75,14 @@ export interface ServiceStatus {
   transitions: string[];
   log: string[];
   last_error: string | null;
+  /**
+   * 引擎运行时就绪检测（D1）—— 与 `GET /engine/runtime` **同一份** `probe()`。
+   *
+   * 🔴 它随 `service_status` 一起来、而不是让界面去请求 HTTP：D1 要覆盖的场景恰恰是
+   *    「real 档未装配 ⇒ 一个子进程都不起」（D6 闸门在 spawn 前就失败），那一刻
+   *    HTTP 通道根本不存在，而界面必须答得出「缺 python（<绝对路径>）」。
+   */
+  runtime: RuntimeProbe;
 }
 
 export interface ApiError {

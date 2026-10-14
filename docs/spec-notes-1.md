@@ -2349,3 +2349,88 @@ M3 换 `--manifest` 指向**临时副本**并动一条 `sizeBytes`，两个平�
 **验收**：`check:install-guide` **16/16** + 反证 **5/5 全红且各红在指定断言上**（文档按字节还原）；
 `check:registry` 4/4（**102** 项，+2：`check:install-guide[:refute]`）· `check:harness` 7/7 ·
 `check:docs` 17/17 · `check:docpaths` 5/5。
+
+## D-179 · D1「运行时未装配」独立成态：两条链路、一个数、一条不混进 L1 的分支（2026-10-14）
+
+**症状**：全新机器上 real 档只看到 L1 卡住（或白等 240 s 后一句离根因极远的「服务启动失败」）。
+用户不知道该装什么，更不知道该不该等。
+
+**修法**：把 B2 的运行时就绪检测**接到界面上**，并让它成为与 L1–L4 **并列**的一种态。
+
+### 两个出口，缺一不可
+- `GET /engine/status` 的 `runtime` 块（`state.rs::engine_status_view`）—— 「服务起来了但引擎没装」时用；
+- Tauri 命令 `service_status` 的 `StatusView.runtime`（`service.rs::view_of`）—— **进程内**算。
+  🔴 后者不是重复：D6 的闸门在 spawn 之前就 `fail`，那一刻一个子进程都没起、HTTP 通道**根本不存在**，
+  而界面**必须**答得出「缺 python（<绝对路径>）」。Tauri 命令通道没有这个前提。
+
+### 「约 X GB」必须算出来
+`requiredBytes` 放在 `runtime_view()`（自由函数）里现算，**不放进 `RuntimeProbe` 结构体** ——
+后者是 B2 双靶对拍与 Rust 单测的对象，加字段会牵动它们；而 `runtime_view()` 只是 JSON 出口，
+加一个键不影响任何既有断言（实测 `check:runtime-probe` **44/44** 原样通过）。
+口径 = 清单里**当前平台可见**条目的 `sizeBytes` 求和（`platform_total_bytes`，与下载器同一个 `platform_matches`）。
+🔴 它**只算模型资产**，不含用户自己的 Python / torch —— 后者体积由用户环境决定，我们算不出来；
+把它算进去就是编数字。故文案说「模型资产」，不说「安装总量」，且与 D5 引导文档里的 6.9 GB 是同一个数。
+
+### 界面分支：并列，不是混进去
+新分支是一条**独立 `return`**，在 `source === 'online'` 精简页之后、时间线之前。
+- 为什么不塞进 L1：L1–L4 描述的是「引擎**正在**起来的进度」，而这一态的真相是「它**根本还没装**」——
+  塞进去会让用户去点「重启本地服务」，而重启一万次也不会把一个不存在的 python 变出来。
+- 判据只认 `mode === 'real'` 与 `runtime.ready === false`，**不认 `last_error` 的文案**：
+  文案是给人看的，拿它做机器判据，改一个字界面就失效。
+- 数字零硬编码：界面读数来自 `rt.requiredBytes`。写死的话，清单加一条权重就会让界面开始撒谎。
+
+### 三条坑（都写进了断言）
+1. 🔴 **`1024 ** 3` 撞 `ENGINE.md.noRawAsterisks`**：JS 的幂运算符 `**` 与 markdown 粗体同形，
+   而那条断言守的正是「有人在 JSX 裸文本里塞 `**`」。它不是误报（它就该拦 `**`），
+   但**不该去蹭它的边界** ⇒ 提取 `const GIB = 1024 * 1024 * 1024` 命名常量。
+   （教训：判据红/绿翻转，先查是不是自己引入了同形子串，再怀疑断言过粗。）
+2. 🔴 **反证变异里的 Rust 字符串常量要用正斜杠**：`PathBuf::from("C:\fixed-by-m1")` 里的 `\f`
+   在 Rust 是**未知转义** ⇒ 编译直接失败。若不检查「变异真的编过了」，就会拿
+   「编译失败 ⇒ 脚本非 0 退出」冒充「断言红了」——**最坏的一种假反证**。
+   ⇒ 反证判据一律写成 `built && code !== 0 && hasRed(...)`。
+3. 🔴 **反证的判据必须选「这个变异真的会影响」的那条断言**：M1 改的是 `abs_for` 的 **`dest` 分支**，
+   而 W9 走的是 **`linkTo` 分支** —— 拿 W9 当判据，它永远红不了（等于没反证）。
+   改为 W2 + W10 后才成立；`linkTo` 分支另配 M4（见 D-180）。
+
+### 验收
+`check:notready-state` **13/13** + 反证 **5/5 全红且各红在指定断言**（G0 真起一次服务，
+顺带把 D8 的 `models.files` 也在同一条链路上验了）· `cargo test --lib` **138 passed**。
+
+## D-180 · D8 模型引导清单：三个布尔答不了「还缺哪一个文件」（2026-10-14）
+
+**症状**：`modelStatus()` 只回 `visualReady` / `sakuraReady` / `lastVerifiedAt` 三个聚合布尔。
+它们能回答"现在能不能翻译"，**答不了"还缺哪一个文件"** —— 而后者才是用户在点「重新下载模型」
+之前真正要问的。早先界面只能拿 `POST /models/verify` 的 `problems` 文本行凑，那还要先跑一次
+几分钟的 SHA256 校验；诊断视图自己答不出来。
+
+**修法**：`ModelStatus` 增 `files: Vec<ModelFileStatus>`，把清单**逐条渲染**出来。
+
+### 判据与渲染必须共用同一个路径
+`abs_for()` 是唯一算「引擎真会去打开哪个路径」的地方，就绪判据（`ready_at`）与渲染（`files[].path`）
+都走它。两处各算一遍，迟早出现「清单说这个路径、判据说那个路径」——
+而那种偏差在界面上只表现为「文件明明在，却显示缺失」。
+口径：有 `linkTo` ⇒ `<root>/src/<linkTo>`（引擎实际打开的）；没有 ⇒ `<root>/<dest>`。
+🔴 只看 `dest` 会漏掉「store 里有、但没链进引擎树」——那是**真的跑不起来**的一种状态。
+
+### `normalize()`：Rust 的 `join` 会留下混合分隔符
+`Path::join("models/x.bin")` 在 Windows 上**保留正斜杠**（Rust 不做规范化），得到
+`C:\root\src/models/x.bin` 这种混排。这个路径要进界面、还要与安装引导文档里那条全反斜杠的落点
+对照 —— 混着两种斜杠会让人以为"说的不是同一个地方"，也会让 e2e 两侧算不到一起。
+⇒ `p.components().collect()` 收成平台形态后再吐出去。
+
+### 平台判据只留一份实现
+`model_store::platform_matches(Option<&str>, key)` 从 `matches_platform(&FileEntry, key)` 里提出一层，
+`model_status` 直接调它。两处各写一遍，必然有一天出现「界面说有 4 条待下、下载器只下 3 条」——
+而那种偏差只有用户能发现。
+
+### 验收与「自证变异」
+`check:models-guide` **14/14** + 反证 **4/4 全红**。
+🔴 其中 W10 是本脚本**自带**的变异：改夹具清单一条 `dest` ⇒ 输出的 `path` 必须跟着变。
+没有它，「界面数字来自清单」这件事就只是"两边写死同一个常量"的同义反复（D-178 的纪律）。
+反证 4 条分别是：`dest` 分支写死 / 就绪判据退化成"在就算好" / `linkTo` 分支丢掉 `<root>/src` 那一层 /
+删前端渲染 —— 最后一条守的是「**服务端给了 ≠ 用户看得到**」。
+
+### 验收数据
+`check:registry` 4/4（**106** 项，+4：`check:notready-state[:refute]`、`check:models-guide[:refute]`）·
+`check:harness` 7/7 · `check:docs` 17/17 · `check:docpaths` 5/5 · `check:layering` 3/3 ·
+`check:settings` **176/4**（存量环境性）· `tsc --noEmit` 干净。

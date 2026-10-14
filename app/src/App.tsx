@@ -446,6 +446,8 @@ export function App() {
               source={source}
               onStart={() => void startService()}
               onRestart={() => void restart()}
+              // D1：「运行时未装配」态上的指引入口 —— 送到设置页（翻译服务组里有引擎诊断与装法）
+              onOpenGuide={() => setScreen('settings')}
             />
           ) : screen === 'music' ? (
             <MusicScreen />

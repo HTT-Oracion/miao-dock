@@ -101,6 +101,16 @@ pub struct StatusView {
     pub transitions: Vec<String>,
     pub log: Vec<String>,
     pub last_error: Option<String>,
+    /// **运行时就绪检测**（D1）—— 与 `GET /engine/runtime` 同一份 `probe()`。
+    ///
+    /// 🔴 为什么是**进程内**算、而不是让界面去请求 `/engine/runtime`：D1 要覆盖的场景
+    ///    恰恰是「real 档未装配 ⇒ **一个子进程都不起**」（D6 闸门在 spawn 前就 fail）。
+    ///    那一刻 HTTP 通道根本不存在，而界面**必须**答得出「缺 python（<绝对路径>）」。
+    ///    Tauri 命令通道没有这个前提，所以它是这条信息的唯一可靠出口。
+    ///
+    /// ⚠️ 代价：每次 `service_status` 会做十几次 `stat` + 一次 `read_dir`（微秒级；
+    ///    它只读文件系统元数据，不起子进程、不 import torch）。与"用户看得见真话"相比划算。
+    pub runtime: serde_json::Value,
 }
 
 /// 由内部状态构造对外视图（`status()` 与崩溃看护线程共用一份，避免两处写法走散）
@@ -121,6 +131,9 @@ fn view_of(g: &Inner) -> StatusView {
         transitions: g.transitions.clone(),
         log,
         last_error: g.last_error.clone(),
+        // D1：运行时就绪检测与引擎启动同源（同一个 `runtime_probe::probe()`），
+        // 故"服务说缺 python"与"`--check-runtime-gate` 说缺 python"不可能分叉。
+        runtime: boxsvc::engine::runtime_probe::runtime_view(),
     }
 }
 

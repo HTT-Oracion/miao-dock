@@ -215,6 +215,8 @@ npm run check:runtime-probe   # **B2/B5 引擎运行时五项只读检测** 44 �
 npm run check:path-single-source # **B3 检测与启动同源** 5 条 / 反证 1 条（`/engine/runtime` 的 `python.path` vs `--print-launch-plan` 的 `engine.cmd[0]` 逐字节比对）
 npm run check:launch-gate    # **D6 real 档启动前预检闸门** 8 条 / 反证 3 条（real+未就绪 ⇒ 一个子进程都不起、秒级返回 `L0` 并逐项点名；mock 档不过闸；含源码钉「`gate_message(` 早于 `spawn_spec(&plan.engine`」）
 npm run check:install-guide  # **D5 安装引导与产品对拍** 16 条 / 反证 5 条（两份引导的落点模板代入本机后 == `boxsvc --print-paths` 推出的落点、体积标记 == 清单按平台求和、五项就绪项 · 三条落点纪律 · 平台形态互不串）
+npm run check:notready-state # **D1「运行时未装配」独立成态** 13 条 / 反证 5 条（两条链路都带 `runtime` 块 · L1–L4 四句文案逐字冻结 · 新分支不混进 L1 失败 · 「约 X GB」来自服务端 `requiredBytes`）
+npm run check:models-guide   # **D8 模型引导清单（渲染而非编写）** 14 条 / 反证 4 条（逐条目标绝对路径 ⟷ Node 独立算 · 就绪 = 在位且大小一致 · 改清单副本 ⇒ 输出跟着变）
 ```
 
 **F 组「服务 Rust 化」的同源对拍钉子**（F0–F5 已全部完成，见 `docs/packaging-local-engine-dev-plan.md`）——
