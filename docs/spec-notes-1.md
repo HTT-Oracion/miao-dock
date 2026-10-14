@@ -2939,3 +2939,31 @@ D-195 的 `IfSilent` 守卫在真产物上生效）。
 
 **验收**：`check:offline-real` 10/10（D-197）· `check:uninstall-keep`（新，nightly）7/7 ·
 `check:packaged` 9/9 · `check:bundle` 13/13 + 反证 18/18。
+
+---
+
+## D-150 · G 组收尾：引导链门 + 普通用户文档 + 文案对齐（2026-10-14）
+
+**背景**：第三轮「开箱即用」的 Rust 改造（runtime.manifest.json / state.rs 进度态 / handlers 接线 / runtime_setup 编排）已在上一轮落库（见 packaging-local-engine-dev-plan.md §2.1 G1–G9 状态）。本轮补齐**可反证的验收门**与**面向普通用户的文档口径**，并修正一处方案表偏移。
+
+### 1. 新增 e2e/service/engine-bootstrap-check.mjs（G5 引导链门）
+
+- `static` 层（纯文件分析，不依赖起服务，保留「改一行源码立刻红」的灵敏度）；登记进 `_check-registry.mjs`（派生 `-refute` 项），并把 `EXPECTED_TIER_COUNTS` 由 `{static:16, …, refute:58}` 提到 `{static:17, …, refute:59}`（`REG.tierCounts` 计数门同步）。
+- 正向 8 条断言（W1–W8）钉住**实际已实现**的事实：运行时清单条目完整可下载且含 win32-x64 变体；wheels 的 pydensecrf 条目 `local` 与 `url` 互斥；`/engine/models/download` 接线到 `start_model_download`；`modelDownload` 暴露全部 G5 进度字段（percent/receivedBytes/totalBytes/speedBps/etaMs/stage/currentId/canResume/interruptedReason）；阶段映射 runtime→stage1、models→stage2；`engine-download.ts` 三态文案（引擎下载中 / 下载中断 / 需下载引擎）且**无命令行字样**；引导/下载视图无 node/npm/pip/MSVC 字样；`ProgressRing` 无真实进度时显示「准备中」而非假的 0%；续传态现算自盘上 `.part`（`can_resume_now`）。
+- 反证 3 条（M1 注入命令行字样 ⇒ W5 红；M2 抹掉清单 sha256 ⇒ W1 红；M3 阶段映射改名 ⇒ W4 红），每条按字节还原，收尾复核无残留 ⇒ 双向全绿。
+
+### 2. 文案对齐（修正一处方案表偏移）
+
+- `NotReadyScreen.tsx` 的 `STAGES` 第 4 项原文案被上一轮误写成状态词「首图时完成」，与《02》§3 / 《09》§6.1 方案表逐字不一致；改回方案表原文「首张稍慢，后续加快」。状态词「首图时完成」另在 `noteOf` 里保留（那是 ready 后的状态词，非时间线文案），两处互不冲突。
+- 这一处偏移让 `check:settings` 的 `NOTREADY.stages.texts` 红了；修正后 `check:settings` 182/0 复绿。
+
+### 3. 安装引导两份文档改为普通用户优先
+
+- `docs/install-guide-windows.md` / `docs/install-guide-macos.md` 顶部各加「§0 普通用户：点一次就装好（默认路径）」，把「应用内开始下载」设为默认路径，**全程不出现任何命令行**；原 §3 四条命令明确标注「只给自建/排障」，普通用户走应用内一键下载。落点/体积等事实源不变（仍过 `check:install-guide` / `check:docpaths`）。
+- `packaging-local-engine-dev-plan.md` 的 G 组「移出项」修正：`runtime.manifest.json` 已按公网方案落地（不含 site-packages 归档，符合裁定 ⑤）；`build-runtime-bundle.mjs` 未建，改用 `engine/scripts/asset-source.mjs` 收口。
+
+### 验收
+
+- 静态门：`check:engine-bootstrap` 8/0 + refute 全绿；`check:registry` 全绿（tierCounts 同步）；`check:docs` / `check:docpaths` / `check:units` / `check:ia` / `check:settings` 全绿（182/0）。
+- 设规纪律：工作区 CRLF（`core.autocrlf=true`）；本轮新增/改动文件已归一 CRLF，无 LF-only 残留。
+- ⚠️ 未做真机验证：Rust 侧（`runtime_setup.rs` / `--engine-bootstrap` 编排 / 真机一键下载装配）仅在源码层被门钉住，未跑 `cargo build` 与干净机真装；属于「门已立、舱未飞」，留 `check:models`/真机验收。

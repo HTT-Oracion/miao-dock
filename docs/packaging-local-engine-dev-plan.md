@@ -10,15 +10,18 @@
 >   
 > 决策与踩坑落 `docs/spec-notes.md`（D-xx）与续篇 `docs/spec-notes-1.md`（D-137 起）。关联既有条目：D-08（node 运行时）、D-93（打包只做了一半）、D-95 / D-97 / D-99（引擎装配、补丁、模型布局）。
 >   
-> 🔴 **2026-10-14 的两轮收口**：
-> 第一轮做完「不需要真机、也不需要法务」的全部剩余任务（D-183…D-194，含修掉三条**基线就红**的陈断言）；
-> 第二轮把**本机就能真跑**的三项也收了尾（D-196/D-197/D-198）—— 判据是"本机是否就是目标平台"：
-> B4 的 wheel **真构建 + 真装一次**（Windows/x64 就是目标平台）、C4 的**真引擎离线翻译**（真权重与真引擎都在盘）、
-> E2/E3 的**真打包 + 真卸载**（NSIS 工具链在盘）。
-> ⇒ 现在剩下的 `◐` **只有两类，都不可能在本机完成**：
-> ① **macOS 真机**（D7 的安装跑通 · E1 的签名/公证 · B4 的 darwin wheel 与"带 hardened runtime 的父进程能否拉起用户自装的未签名子进程"）；
-> ② **法务复核**（E5 的 §4 三项）——外加 B4 的 `win32-x64` 那一颗**待托管**（需要分发通道）。
-> ⇒ **未列出 `◐` 的项一律已 `☑`，并有 `check:*` 钉子（多数带反证轮）双证。**
+> 🔴 **本轮（2026-10-14）做完了「不需要真机、也不需要法务」的全部剩余任务**，并顺手修掉三条**基线就红**的陈断言
+> （见 D-194）。剩下的 `◐` 只剩两类，**都不可能在本机完成**：
+> ① **macOS 真机**（D7 的安装跑通、E1 的签名/公证、"带 hardened runtime 的父进程能否拉起用户自装的未签名子进程"）；
+> ② **法务复核**（E5 的 §4 三项）。
+> 另有两处 `◐` 是**真打包/真权重**才能收口：E2/E3 的 `.nsh` 尚未经一次真打包、C4 的真引擎断网加载要 13 GB 权重、B4 的 `wheels[]` 仍为空（尚未真构建）。
+> ⇒ **未列出 `◐` 的项一律已 `☑` 并有 `check:*` 钉子 + 反证轮双证。**
+>
+> 🔴 **2026-10-14 第三轮 · 开箱即用（G 组）**：交付基准从「按文档装得起来」提到「**发过去就能用**」。
+> 新增裁定 **④**（零配置：装配由产品代做 —— **推翻原 ②**）、**⑤**（托管只用方案 A、零自建、C 留开关位）、**⑥**（自测入口收束）。
+> ⚠️ 这三条**改变了 B/C/D 组若干条目的性质**：B4 升为硬前提（G3）、C2/D8 的「包内装配入口」升为核心项（G4）、
+> B2 的「给装法」文案退役（G6/G7）。逐条影响与移出项写在 **§0.1**，任务与风险写在 **§2.1**。
+> **A–F 组的完成状态、R1–R14 纪律与 Rust 化背景一律保留，不回改。**
 
 ---
 
@@ -29,6 +32,22 @@
 | ① | **服务运行时 = Rust**（方案 B：Rust 接管 · 保留 HTTP 契约） | box-service（11.2k 行 Node）逐步迁入 Rust 进程内服务，**HTTP 契约不变** ⇒ 前端与 e2e 零改动；迁移走**反代渐进**（F 组）。node 仅为**过渡**依赖（A3），F5 完成后从包内删除 |
 | ② | **引擎运行时 = 用户自装，我们只检测**                      | Python venv / 依赖由用户按文档安装；我们负责「说得清缺什么 + 装法给得出」                                                                         |
 | ③ | **模型 = 用户下载，我们校验建链**                        | 下载可交给用户；HF 目录布局与硬链接**用户做不对、且做错了不报错**（D-99）⇒ 校验 + 建链必须留在我们侧（C2）                                                        |
+
+### 0.1 追加裁定（2026-10-14 · 开箱即用轮）
+
+> 起因：把交付基准从「按文档装得起来」提到「**发过去就能用**」。用户机不装 Node / Python / MSVC，
+> 不读安装文档，只做一次选择（下载本地引擎 **或** 填一次在线密钥）。
+
+| # | 裁定 | 含义 |
+| - | ---- | ---- |
+| ④ | 🔴 **零配置：装配由产品代做，用户只点一下** | **推翻原裁定 ②**「引擎运行时 = 用户自装，我们只检测」。② 降级为**兜底**（手工排障路径保留，但不再是主路径）。连带影响：B2 的 `runtime_probe.rs` 五项检测由「给装法」改为「给进度」（`FIX_SETUP` / `FIX_VENV` / `FIX_DEPS` / `FIX_PATCHES` 那四句 `node engine/scripts/...` 文案**退役**，不再对用户可见）；D1 的「运行时未装配」态从终点变起点；C2/D8 的「包内装配入口」由收尾项升为核心项。**③ 不变**：模型仍由我们下载 + 校验建链，只是触发方式改为产品一键。 |
+| ⑤ | 🔴 **托管只用方案 A（零自建）**，C（对象存储）留开关位 | **不需要服务器**。Python 运行时 / 引擎源码 / llama.cpp / 模型权重 / PyPI 索引**全部走公网现成源**（`mirror.nju.edu.cn` 的 python-build-standalone、`codeload.github.com` 的引擎源码、GitHub Releases + `ghfast.top`、hf-mirror / modelscope、`pypi.tuna.tsinghua.edu.cn`）。⚠️ **原计划里的「预装 site-packages 大包（4–6 GB）」方案随之作废** —— A 方案没有可放它的通道 ⇒ 依赖改为**目标机本地建 venv + pip 以 `--index-url` 从公网镜像装**（拆两批，`VERSIONS.lock` §6.3）。唯一无现成公网物的是 `pydensecrf` 预编译 wheel（213 KB/平台）⇒ **随安装包分发**。**代价（登记为风险 G-A1）**：所有源都是第三方，源失效 = 新用户装不上 ⇒ 「清单钉 sha256 + 镜像回退 + 失败如实提示」三条不得省。 |
+| ⑥ | **自测入口收束：`package.json` 只留人需要记住的入口** | 现状 **145 条 scripts**（其中约 55 组是单项检查 + 各自 `:refute`），已长到"没人记得住、也没人敢删"。收束为：`package.json` 只保留**聚合入口 + 常用动作**（约 20 条）；细粒度命令迁入独立文件（人读速查 + 机器可读清单），需要时查表用 `--id` 调。🔴 **门必须同时立起来**（G9），否则删完必然再长回去。 |
+
+**G 组的移出项**（原计划内容，因裁定 ⑤ 作废）：
+- `engine/runtime.manifest.json` 的「site-packages 归档」条目 —— **不做**（无处可放）；但 `runtime.manifest.json` 本身**已按公网方案落地**（Python 4 平台变体 + 引擎源码，sha256/体积实测算出），见 G2 状态。
+- `engine/scripts/build-runtime-bundle.mjs` —— **未建**（改用 `engine/scripts/asset-source.mjs` 作唯一收口，见 G2 状态）。
+- 「B4 的 wheel 需先完成托管」—— **改为随包分发**（见 G3）。
 
 **方案 B 可行的三个实证**（2026-10-13 实测）：
 
@@ -136,6 +155,37 @@
 | **F4** | `engine-client.mjs` 迁移      | Python 子进程协议 + ③ LLM supervisor | 移植为 `boxsvc/engine.rs`；进程组信号（`kill(-pgid)` / `taskkill /T`）**复用 `service.rs` 现有实现**，不新写                                                                      | **P0** | ① real 档引擎能起、能停、停得干净（`check:child-watch` / `-kill` / `check:stdio` 系列原样通过）；② 反证：只杀主进程不杀进程组 ⇒ 端口占用断言变红           | ☑  |
 | **F5** | 其余端点迁移 + 摘除 Node            | 转发分支归零，`node.zip` 随包项删除         | 按 `tasks → queue → library → translate → engine` 顺序逐组迁移；每迁一组，F1 的转发分支摘一条；全摘完 ⇒ 删 `bundle.resources` 里的 `service/` 与 `vendor/node.zip`，A3 / E1 的 node 签名项一并作废 | **P0** | ① **转发分支数 = 0**（显式白名单计数）且 e2e 全绿；② 反证：故意漏摘一条 ⇒ 断言报出「仍有 N 条转发」；③ `bundle.resources` 内不再有 `service/` 与 `node.zip` | ☑  |
 
+
+### G 组 · 零配置与开箱即用（P0）—— 目标：**发过去就能用**
+
+> 依据裁定 ④⑤⑥。与既有组的关系：**G 组不推翻 A–F**，而是把它们的"用户可见终点"从「说得清缺什么」推进到「点一下就好了」。
+> B4 由 P2 便利项升为**硬前提**（G3）；C2/D8 的"包内装配入口"升为核心项（G4）；B2/D1 的检测结论仍在用，只是展示口径从"装法"改"进度"（G6/G7）。
+>
+> 🔴 **范围红线**：本次**不改动投放 / 队列 / 漫画库**三屏的结构与交互 —— 在线档与本地档在这三屏**逐项相同**，差异只在工具栏右上角的来源 Badge。G 组只动「**引擎怎么来**」这条链上的页面。
+
+| ID | 任务 | 目标 | 落点 | 优先级 | 验收标准 | 状态 |
+| -- | ---- | ---- | ---- | ------ | -------- | ---- |
+| **G1** | 交互设计稿 | 先定视觉与交互，再写代码 | `F:\software\projects\manga\miao-dock-design\本地引擎开箱即用-设计稿.html`（沿用该目录内三份既有设计稿的**单文件自包含 HTML** 形态 + 项目 `--md-*` 主题令牌）；用 `C:\Users\Doro\.workbuddy\skills\ai-ui-design` 三阶段法（种子字符串 → 设计评论家子 agent ≥9/10 → 砍不增值元素） | **P0** | ① 覆盖 5 屏 + 工具栏状态矩阵：缺引擎引导 / 下载中 / 下载中断 / 在线 API 配置 / 设置页「翻译服务」组 / 诊断详情层；② 评论家独立评分 **≥9/10**；③ 全文**无** `node` / `npm` / `pip` / `MSVC` 字样；④ 深浅双主题均成立 | ☐ |
+| **G2** | 资产清单与通道单点收口 | 通道从"散在五处"收成"一处"，并留 C 的开关位 | 新增 `engine/runtime.manifest.json`（Python 运行时归档 / 引擎源码归档两类，字段与 `models.manifest.json` 同构：`platform` / `url` / `sources` / `sha256` / `sizeBytes` / `extractTo` / `stage`）；`paths.rs` 新增 `runtime_manifest()` 与 `asset_base()`（`MIAO_ASSET_BASE`，**留空 = 用清单默认 URL**）；收口三处散点：`setup-engine.mjs:60-63` 的 `MIAO_PY_URL`/`MIAO_SRC_URL`、`install-engine-deps.mjs:353-360` 的 `mirrorUrls()` 硬编码前缀、`install-engine-deps.mjs:79` 的 `PYPI` 常量 | **P0** | ① 前缀留空时全链路走公网原有源（与今天逐字节等价）；② 设前缀时同一条资产换源生效；③ 清单每条 `sha256` **真算**（反证：改一个字符必红）；④ 平台判据仍只有 `model_store::platform_matches` 一处 | ◐ 2026-10-14：`runtime.manifest.json` 已入库（Python 4 个平台变体 + 引擎源码，**sha256 与体积全部实测下载后算出**，非凭记忆）；`paths.rs` 加 `runtime_manifest()` / `asset_base()` / `asset_url()`；新建 `engine/scripts/asset-source.mjs` 作**唯一收口**（读清单 / 按平台选条目 / 通道前缀 / 镜像回退 / 哈希校验），`setup-engine.mjs` 与 `install-engine-deps.mjs` 都接到它（顺带修掉「镜像回退只对 `github.com` 生效、漏了 codeload」这个老坑）；清单已进 `bundle.resources` 与 `REQUIRED_ASSETS`（三处事实源同步）。**门全绿**：`check:resources` 8/8 + 反证 4/4、`check:bundle` 13/13、`check:docs` 16/16、`check:install-guide` 16/16、`check:registry` 5/5。**未完**：③ 的反证钉子随 G8 的新脚本一起落 |
+| **G3** | `pydensecrf` 预编译 wheel **随包** | 目标机零编译器（**B4 由"可选便利"升为硬前提**） | `engine/wheels.manifest.json` 条目语义由 `local: true`（未托管）改为**包内提供**；`tauri.conf.json` 的 `bundle.resources` 增加 wheel（每平台一份 ~200 KB，文件名带 `platform` + ABI tag）；`install-engine-deps.mjs::planCrf()` 增加"包内 wheel"来源（优先级：包内 > 本机目录 > 源码编译） | **P0** | ① 在**没有 MSVC / 没有 Xcode CLT**的机器上完成依赖安装（真机）；② 反证：删掉包内 wheel ⇒ `planCrf()` 报出的路线变红（不得悄悄退回编译）；③ **`check:bundle` 的 W7/W7b「0 权重」判据必须显式区分 `wheel ≠ 权重`** —— 不许放宽成"随便什么二进制都行"（C5 的钉子不能被这次改动架空） | ☐ |
+| **G4** | `--engine-bootstrap` 装配编排 | 四步手工装配 → 产品内**一条阶段机** | 新增 `boxsvc/engine/runtime_setup.rs` + CLI `--engine-bootstrap`；阶段 `python → venv → deps → source → patches → models → extract → link`，每阶段**幂等 + 落账 + 可续**；**`--extract` 接进产品路径**（今天 `state.rs:605-612` 不带该参数 ⇒ `llama-server` 永远不会出现）；依赖拆两批（pip 事务性，`VERSIONS.lock` §6.3）；`/engine/models/download` 改为触发本命令 | **P0** | ① 一台**干净机器**（无 Node / Python / MSVC）上从零到 `--check-runtime-gate real` 全绿；② 任一阶段中断后重跑**不重做**已完成阶段；③ 阶段与失败原因可被前端**结构化**读到（不靠解析人类可读文本）；④ 装配完成后 `bin/llama/llama-b11417/llama-server[.exe]` 在位 | ◐ 2026-10-14：**阶段化的管道已铺好**（`FileEntry` 加 `stage`（缺省 1 ⇒ 既有清单行为逐字节不变）、新增 `select_files_staged()`、`boxsvc --fetch-models --stage N`，且**在 CLI 层翻译成 id 列表**而不是给 `select_files` 加参数 —— 那个函数四个调用点，改签名会让"默认不筛"变成"每个调用点各自记得传 None"，漏一个就静默下错东西）。`check:models` 双靶对拍 **74/74**（分母写死）不回归；`--stage 0` 被拒且给出理由。**未完**：① `models.manifest.json` 还没给重条目写 `stage: 2`（今天全部缺省 1 ⇒ `--stage 1` 等于全量，阶段语义要等这一步落）；② `runtime_setup.rs` 编排（python 解包 → 本地建 venv → 依赖两批 → 源码+补丁 → 建链 → 解包 llama.cpp → 写就绪标记）；③ `--extract` 接进产品路径；④ `/engine/models/download` 触发它 |
+| **G5** | 真实进度与中断恢复 | 百分比是真的，中断了能续 | `ModelDownload`（`state.rs:86-104`）增 `percent` / `receivedBytes` / `totalBytes` / `speedBps` / `etaMs` / `stage` / `currentId` / `canResume` / `interruptedReason`；`start_model_download()` 增加 `--progress-log` 参数 + **独立解析线程**聚合（`fetch_models.rs:142-175` 的 `ProgressSink` 已能逐行写 `ProgressEvent{id,phase,received,total}` JSON）；新增 `interrupted` 态；`ModelDownload` **持久化**到 `state` 目录（否则"关掉再打开仍显示中断"不成立） | **P0** | ① 界面百分比可由进度日志**复算**（口径：`total` = 选中条目 `sizeBytes` 之和，`received` = 已完成条目之和 + 当前文件 `received`）；② `total` 未知时 `percent = null` ⇒ 界面显示「准备中」而**不是假的 0%**；③ 断网/杀进程后重开 = 中断 + ▶ 可续，`.part` 不回退；④ **反证**：掐掉进度来源 ⇒ 断言变红（**不得回退占位数字** —— `NotReadyScreen.tsx:60-74` 与 `check:settings` 的 `NOTREADY.detail.noFabricatedProgress` 这条纪律必须继续成立） | ☐ |
+| **G6** | 引导页 / 工具栏 / 在线 API 交互 | 一键即用 + 全局可见 + 不阻塞 | `NotReadyScreen.tsx` 重做为**引导页**（主按钮唯一 = 开始下载）+ **下载视图**（大环形进度 + 已下/总量 + 速度 + 预计剩余 + 当前文件序号）+ **中断视图**（原因 + 继续/重新下载）；`App.tsx` 的工具栏 `actions` 增**引擎下载态芯片**（`nav.ts` 的 `STATE_VIEW` **不动**，新增并列映射，避免两件事挤一个槽位）；在线 API 页内嵌 `appKey`/`appSecret`（`translate/credentials` 端点，`appSecret` 只出站、永不回显）；下载**不用全屏模态**；🔴 **按翻译来源分档**：来源 = 在线的用户在工具栏 / 引导页 / 设置页**一律不出现「缺引擎 / 去下载」的信息**（`need` 态只在本地档成立） | **P0** | ① 全程无命令行 / 无文档步骤（可从 DOM 文本核对）；② 工具栏百分比与下载视图**同源同值**；③ 中断 → ▶ → 续传；④ 引导页内可填完在线 API 并当场生效，**保存后立即离开引导页**并自动拉起本地服务（投放/队列靠它承载）；⑤ 下载期间漫画库 / 设置 / 音乐可用（`nav.ts::isBlockedWhenNotReady` 的**设置页与音乐屏例外必须保留**）；⑥ 断网时如实说「需要联网」+ 重试，不空转；⑦ **在线档不出现任何"缺引擎"信息**（反证：让在线档渲染出 `need` 芯片 ⇒ 红）；⑧ 🔴 **来源未知期间不预判缺引擎** —— 冷启动读不到来源时显示**中性等待态**，不得按本地档渲染成引导页（否则只用在线的用户会先看到"要下 8.6 GB"，是**误导**）；⑨ **投放 / 队列 / 漫画库三屏一字不动**（在线档与本地档逐项相同，差异只在工具栏来源 Badge） | ☐ |
+| **G7** | 设置页重构（引擎优先） | 设置页是"服务出问题时最需要的那一屏" | 翻译服务组 IA 重排：**引擎是否可用**置顶（就绪 / 需下载 / 下载中 / 中断，各配动作），「引擎版本与占用」「模型管理」降为次级区块，「诊断与日志」「第三方许可」整体收进可展开详情层；退役 `runtime_probe.rs` 的"给装法"文案；同步 `e2e/settings-media-check.mjs` 的结构断言与 `SPEC_ITEM_TOTAL` 计数门；🔴 **按来源分档**：在线档下状态卡换成「正在使用在线翻译」+ **次级**动作「改为本地引擎」（不是主按钮「开始下载」），「引擎版本与占用」「模型管理」**整组隐藏** | **P1** | ① `check:settings` 正向 + 反证轮全绿；② 未就绪时设置页**仍不让位**；③ 界面上不出现 `node engine/scripts/...` 一类命令行字样；④ 在线档下不出现 `0 / 17` 这类对无引擎用户无意义的行（反证：在线档渲染出「开始下载」主按钮 ⇒ 红）；⑤ 「改为本地引擎」具备**前置检查** —— 引擎未就绪时先引导去下载，不允许切过去撞墙 | ☐ |
+| **G8** | 验收与文档 | 新钉子登记；计划与安装引导同步 | 新增 `e2e/service/engine-bootstrap-check.mjs`（断言 + 反证）并登记进 `e2e/_check-registry.mjs`（分层合法、`REG.tierCounts` 同步）；更新本台账（G 组状态逐项回填）；两份安装引导从"如何手工装"改写为"**为什么你不需要手工装**"（仓库侧命令降级为排障附录） | **P0** | ① `npm run check:registry` 与 `check:docs` 全绿；② 台账状态与代码实际一致（不允许"台账说没做、代码已做"）；③ `check:install-guide` 对拍仍绿（文档里的落点/体积/五项判据三件事与产品同源） | ☐ |
+| **G9** | **自测脚本收束**（裁定 ⑥） | `package.json` 只留人需要记住的入口；细粒度命令移到独立文件，需要时再查 | **① 先立门**（排在 G1 之前做，这样 G1–G8 新增脚本自动走清单而不是回灌 `package.json`）：新增 `e2e/COMMANDS.md`（人读速查）+ `e2e/_commands.json`（机器可读：id / script / args / tier / 说明）；`run-checks.mjs` 增 `--id <id>` 与 `--list`（细粒度由此调用，不再需要各自的 npm alias）；`registry-check.mjs` 增三条断言 —— `REG.commandsDoc`（清单与文档**双向**一致）、`REG.entriesRunnable`（注册表每项都能用 `--id` 调到）、`REG.npmScriptsBounded`（`package.json` scripts 条数 ≤ **24**，**防长回去**）。**② 后搬迁**：145 条 → 保留约 20 条入口（聚合四条 `check` / `check:changed` / `check:full` / `check:nightly` + `check:registry` / `e2e` / `selftest` / `capture` / `probe:png` / `app` / `app:build` / `app:build:mac` / `sign:preflight` / `gen:licenses` / `service` / `engine` + 排障附录 `setup:engine` / `deps:engine` / `fetch:models` / `extract:models`），其余 ~125 条（含约 55 组 `:refute` 变体）迁入清单 | **P1** | ① `package.json` scripts ≤ 24 且**每条都有存在理由**（逐条写在文档里）；② 新增一个 e2e 脚本而**不加** npm alias 时 `REG.commandsDoc` 会因清单缺项而红；③ 反证：删 `_commands.json` 一条 ⇒ 红；④ 反证：在清单外多出一条 npm 检查脚本 ⇒ `REG.npmScriptsBounded` 或 `REG.npmCovered` 红；⑤ 四条聚合入口行为与搬迁前**逐项等价**（`check` 的层集合不变）；⑥ ⚠️ `REG.npmCovered` 的**分母**从"145 条"缩到"约 20 条候选"后，该判据必须**显式改口径**，不许顺手改成空集（空断言永远绿，比没有更坏） | ☐ |
+
+**G 组风险登记**（A 方案的代价，不隐藏）：
+
+| # | 风险 | 说明 | 缓解 |
+| --- | ---- | ---- | ---- |
+| **G-A1** | 🔴 公网源失效 ⇒ 新用户装不上 | 裁定 ⑤ 下所有资产都是第三方（学术镜像 / GitHub / PyPI / HF 镜像）。源一挂，**已装好的老用户无感、新用户全军覆没**，且不会有人来报 | 清单钉 `sha256` + 每条多 `sources` 镜像回退 + 失败**如实报源**（不是笼统 "下载失败"）；C（对象存储）留开关位，将来只改 `asset_base()` 一处 |
+| **G-A2** | 🔴 零编译器成立性未验 | pip 若遇到只有 sdist 的包会触发编译 ⇒ "零配置"当场破功（pydensecrf 已由 G3 解决，其余包未逐个核） | G3/G4 验收①就是这条（干净机器真机跑通）；发现只发 sdist 的包 ⇒ 补进 `wheels.manifest.json` |
+| **G-A3** | 首次仍需下 4–6 GB 依赖 | 依赖走 pip 公网装，用户无感但仍要等 | 分阶段（`stage1` 先让引擎可跑，`stage2` 后台续）；进度必须真实（G5），不许用"半小时后好"这类估算安抚 |
+| **G-A4** | 随包 wheel 架空 C5 的"0 权重"钉子 | W7/W7b 是"包内 0 模型权重"的**唯一承担者**；为放 wheel 而放宽判据 ⇒ 许可边界失守且**没人会发现** | G3 验收③：判据必须显式表达"wheel 是允许的、权重是不允许的"，两条分别可反证（塞 `.gguf` 仍必红） |
+| **G-A5** | 收束脚本时把门改小 | `REG.npmCovered` 的语义依赖"npm 脚本都被注册表覆盖"；脚本搬到清单后分母变小，若顺手写成空集 ⇒ **永久假绿** | G9 验收⑥；并新增 `REG.entriesRunnable` 补上"登记了但调不到"这个反向缺口 |
+
+---
 
 ## 4. 风险
 
