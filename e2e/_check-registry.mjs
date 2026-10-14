@@ -102,6 +102,10 @@ const CHECKS = [
   // B4：**真装一次** wheel（`--no-index --no-deps` 成功 + 真二进制 + 构造 DenseCRF）。
   // 硬前置：盘上得有一颗 `--build-wheel` 产出的 wheel ⇒ 只在跑过构建的机器上有意义，故归 nightly。
   { id: 'pydensecrf-wheel-install', script: 'e2e/engine/pydensecrf-wheel-install-check.mjs', tier: 'nightly', watch: ['engine/wheels.manifest.json', 'engine/scripts/install-engine-deps.mjs', 'e2e/engine/pydensecrf-wheel-install-check.mjs'] },
+  // C4：**真引擎**在 HF 离线旗标下跑通一张真翻译（要真权重 + 真引擎 ⇒ 分钟级，nightly）。
+  { id: 'offline-real', script: 'e2e/service/offline-real-check.mjs', tier: 'nightly', watch: ['app/src-tauri/src/boxsvc/engine.rs', 'app/src-tauri/src/boxsvc/engine/state.rs', 'app/src-tauri/src/service.rs', 'engine/models.manifest.json', 'e2e/service/offline-real-check.mjs'] },
+  // E3：**真安装器**跑一次静默卸载 ⇒ 验「不挂住」+「不碰用户自装的运行时 / 作品目录」。
+  { id: 'uninstall-keep', script: 'e2e/bundle-uninstall-keep-check.mjs', tier: 'nightly', watch: ['app/src-tauri/nsis/**', 'app/src-tauri/tauri.windows.conf.json', 'e2e/bundle-uninstall-keep-check.mjs'] },
 ];
 
 /**

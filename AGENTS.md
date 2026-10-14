@@ -129,6 +129,8 @@ npm run check:engine-patches[:refute] # 上游源码补丁表（ENGINE_PATCHES�
 npm run check:extract-atomic[:refute] # **D3 原子解包**（修 D-95 待修项）6 条 / 反证 3 条（真 `tar` + 夹具归档：**失败时 `destDir` 一个字节都不动**、失败后**不留 `.part`**、成功才换（旧内容 rename 走）、上次中断的 `.part` 不干扰本次）。🔴 判据必须**跑失败路径**：旧写法（`fs.rmSync(destDir)` 在前、`tar` 在后）在源码里长得几乎一样，只有跑出来才看得见"旧目录已被删掉"。反证 M1 就是**改回旧写法** ⇒ W3 红）
 npm run check:pydensecrf-wheel[:refute] # **B4 预编译 wheel 通道** **11** 条 / 反证 **6** 条（`engine/wheels.manifest.json` 结构合法（64 位 sha256 形态 + **`local` 与 `url` 二选一互斥**："尚未托管"必须说出来）· 走产品自己的出口 `install-engine-deps.mjs --print-plan` 判定四态：**命中且哈希对得上 ⇒ 走 wheel** / 哈希不符 ⇒ **拒绝并回退** / 文件不在盘上 ⇒ 回退 / 只有别的平台条目 ⇒ 回退 · **只读模式（`--print-plan` / `--wheel-entry`）不受平台闸门限制**（macOS 用户也要能问与算哈希；默认调用与 `--build-wheel` 仍被拒） · 两份安装引导都写了这条通道）。🔴 **回退是前提不是降级**：清单为空必须仍能装。反证：去掉哈希比对 / 去掉平台过滤 / 命中也返回 source / 去掉只读旁路 / 给未托管条目补 url / 摘掉 local 又不给 url ⇒ 各自红）
 npm run check:pydensecrf-wheel-install # **B4 真装一次**（nightly 层）5 条：硬前置是有 `--build-wheel` 产出的 wheel（没有 ⇒ **失败并点名该命令**，"跳过 ≠ 通过"）；`pip install --no-index --no-deps` 成功 ⇒ **自足、不联网、不触发编译**（这比"换一台没有编译器的机器"更强）· 装出来的是**真二进制**（PE/ELF/Mach-O 魔术头，不是 `.py` 冒充）· `import` + 构造 `DenseCRF(10,10)` + 枚举成员在（产品的兼容补丁在 wheel 产物上同样成立）· wheel 文件名 tag 与产品自报的 `platform`/`pythonTag` 一致
+npm run check:offline-real   # **C4 真引擎离线加载**（nightly 层，分钟级，**要真权重 + 真引擎**）**10/10**：产品 real 档配方注入 `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`（且 `MIAO_NO_HF_OFFLINE=1` 能让它消失 —— 证明判的是产品行为，不是环境里本来就有）· ② 与 ③ 都在离线旗标下到 `running` · **真跑一张英译中**（`lang:{from:'en',to:'zh'}` ⇒ 走 nllb 的 HF 缓存）⇒ 译文落盘且与原文不同 · 收尾端口全释放。🔴 **取证边界**：② 由脚本按**产品自己的配方**（`--print-launch-plan real` 的 cmd/cwd/env）spawn —— box-service 不管 ②（`engine.pid` 恒 `null` 是归属使然）· 端口必须避开配方的「执行器 = 引擎端口 + 1」（撞了会变成 404，见 D-197）
+npm run check:uninstall-keep # **E3 真卸载一次**（nightly 层，要 NSIS 安装包 + 本机真有一份引擎运行时）**7/7**：静默卸载**不挂住**（NSIS 弹窗在 `/S` 下照样阻塞 ⇒ 钩子必须 `IfSilent`；挂住是**超时**不是变红）· 卸载真生效 · `<appData>/runtimes/manga-translator` **原封不动**（硬要求①）· 作品目录原封不动（硬要求②）。🔴 前置缺一 ⇒ **失败并点名**，不软跳过
 npm run check:offline-fallback[:refute] # **C4 离线兜底** 9 条 / 反证 3 条（夹具夹具清单 + `url` 指向**不可达地址**：权重未预置 ⇒ 配方**不**注入 HF 离线键（否则堵死首次下载）；已预置 ⇒ 注入 `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`；`--link` 零网络重建**引擎真要打开的那条路径**（`<root>/src/<linkTo>` + HF 的 `snapshots/<rev>/<file>` + `refs/main`）；清掉链接 ⇒ 立刻未就绪，而 **store 那一路始终全绿**（两层判据真的分层，R6 的陷阱正是它））。🔴 **取证边界**：真引擎在断网下真加载那一步要真权重，归 nightly；本脚本证明的是它的上游条件。反证：恒不注入 / 忽略逃生开关 / 不写 `refs/main` ⇒ 各自红）
 npm run fetch:models          # S3 模型下载器 CLI **Node 对照端**（开发机用）：--check 只校验 / --link 只重建引擎树里的链接（零网络）。⚠️ **产品运行期跑的是 `boxsvc --fetch-models`**
 npm run check:profile[:refute] # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）
@@ -235,10 +237,17 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
   首启成态（D1/D5/D6/D8）· **进度只来自真实来源（D2）** · **原子解包（D3）** · **设置页运行时实况（D4）** ·
   **Windows 侧长路径提示 + SmartScreen 说明（E2）** · **卸载时提示引擎资产、默认保留（E3）** · **计数门（E4）** ·
   **分发许可结论（E5）** · **pydensecrf 预编译 wheel 通道（B4）**。
-  🔴 **只剩真机与法务两类**（都不能在本机完成）：**D7 macOS 真机**（含 `unverified`：带 hardened runtime
+  第二轮（同日）把"**本机就是目标平台**"的三项也收了尾：**B4 的 wheel 真构建 + 真装一次**
+  （Windows/x64 就是目标平台，`check:pydensecrf-wheel-install` 5/5）· **C4 的真引擎离线翻译**
+  （真权重 + 真引擎都在盘，`check:offline-real` 10/10）· **E2/E3 的真打包 + 真卸载**
+  （`makensis` 编译 `hooks.nsh` 成功并产出安装器、`check:packaged` 9/9、
+  `check:uninstall-keep` 7/7）。
+  🔴 **只剩两类，都不可能在本机完成**：**D7 macOS 真机**（含 `unverified`：带 hardened runtime
   的父进程能否拉起用户自装的未签名 python / `llama-server`）· **E1 macOS 真机签名 + 公证**
   （配置、entitlements 与打包前自检都已就位并有钉子，但"从 dmg 装完引擎能起"只能真机验）·
-  **E5 的三项法务复核**（`docs/distribution-license-conclusion.md` §4）。⇒ **结论未出不得对外分发**。
+  **B4 的 darwin wheel**（要一台装了 CLT 的 Mac）；
+  以及 **E5 的三项法务复核**（`docs/distribution-license-conclusion.md` §4）——外加 B4 的
+  `win32-x64` 那一颗**待托管**（需要分发通道）。⇒ **结论未出不得对外分发**。
 - Windows 侧**已能产出 NSIS 安装包**（`app/src-tauri/tauri.windows.conf.json` 平台分叉，`npm run check:bundle` 钉住；macOS 包型仍 `app`+`dmg`，未动），
   A4 起**已能在真实安装产物上冒烟**（`npm run check:packaged`：静默安装 → `--check-assets` → 起服务打 `/health` + mock 替身 + 启动配方）；
   引擎运行时本身**不随包**（用户自装，B1/B2）· Windows **进程树回收三项**

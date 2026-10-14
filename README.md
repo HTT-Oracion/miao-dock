@@ -225,6 +225,8 @@ npm run check:progress-truth # **D2 进度只来自真实来源** 10 条 / 反�
 npm run check:extract-atomic # **D3 原子解包** 6 条 / 反证 3 条（真 `tar` + 夹具：解包失败时 `destDir` **一个字节都不动**、不留 `.part`；旧的「先删后解」一旦还原回去就变红）
 npm run check:pydensecrf-wheel # **B4 预编译 wheel 通道** 11 条 / 反证 6 条（`--print-plan` 四态判定：命中且 sha256 对得上 ⇒ 走 wheel；哈希不符 ⇒ **拒绝并回退**；文件不在盘上 / 只有别的平台条目 ⇒ 回退。🔴 回退是**前提**：清单为空仍能装。清单条目 `local` 与 `url` **二选一互斥**；`--print-plan` 与 `--wheel-entry` 是只读模式，非 Windows 下也能用）
 npm run check:pydensecrf-wheel-install # **B4 真装一次**（nightly）：`pip install --no-index --no-deps` 成功（**自足、不联网、不编译**）+ 真二进制 + 构造 `DenseCRF(10,10)`。硬前置是有 `--build-wheel` 产出的 wheel
+npm run check:offline-real   # **C4 真引擎离线加载**（nightly，分钟级，要真权重）：离线旗标生效下 ②③ 都到 running + 真跑一张英译中（走 nllb 的 HF 缓存）并落盘
+npm run check:uninstall-keep # **E3 真卸载一次**（nightly，要安装包 + 本机有引擎运行时）：静默卸载不挂住 · 卸载真生效 · 引擎运行时与作品目录**原封不动**
 npm run check:macos-compat   # **D7 macOS 兼容** 11 条 / 反证 4 条（解释器两个平台形态都在 + 实跑不串 + 检测与启动逐字节同源；**Windows 专用脚本在非 Windows 下 exit 2 并指向 macOS 引导**（不是 `ENOENT python.exe`）；文档分平台；`unverified` 记账）
 npm run check:macos-signing  # **E1 macOS 签名 + 公证** 8 条 / 反证 4 条（entitlements 四项为 true 且无 app-sandbox · `hardenedRuntime` + entitlements 接线 · 打包前自检：缺变量非零退出并点名 / `MIAO_NOTARIZE=0` 放行但告警 / 变量齐放行 · `app:build:mac` 串上自检）
 ```

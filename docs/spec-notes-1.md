@@ -2867,3 +2867,75 @@ wheel 优先分支。
 `check:pydensecrf-wheel-install`（新，nightly）**5/5**。
 ⇒ B4 的 `win32-x64` 半边**从"未启动"到"制品 + 校验 + 可用性全通"**，
 剩下的只有"把 wheel 托管到镜像通道"（需要分发通道，不是本机能给的）。
+
+## D-197 · C4 收口：真引擎在离线旗标下跑通一张真翻译（本机就是那台机器）（2026-10-14）
+
+C4 的验收①是「断网后引擎**仍能加载** nllb 与视觉模型」—— 它要真权重（≈13 GB）与真引擎。
+**本机就是那台机器**（探测：引擎树 / venv / `llama-server` / 真权重 / MSVC 全在盘），
+所以这一半不需要借机器，新增 `check:offline-real`（nightly）真跑。**10/10 通过。**
+
+### 「断网」怎么在不拔网线的前提下被证明
+产品在**权重确实在盘**时给引擎子进程注入 `HF_HUB_OFFLINE=1` + `TRANSFORMERS_OFFLINE=1`，
+而这两个键的语义是**硬**的：`huggingface_hub` / `transformers` 在离线模式下不去联网，
+缺什么就**直接抛错**。⇒ 在这两个键生效的前提下把一张漫画走完（视觉模型 + 翻译都真的加载并推理），
+等于证明了"权重是从本地解析的"。这比拔网线更可复现，且失败原因可归因。
+
+### 🔴 三个"看起来该这样做、其实会静默测错"的点
+
+1. **配方的 env 是差量**：`build_launch_plan` 的 `engine.env` 只留与**当前进程环境不同**的键。
+   跑本脚本的 shell 里若已经有 `HF_HUB_OFFLINE=1`，配方里就**看不到**它 ⇒ 会被误判成
+   "产品没注入"。⇒ 脚本**先从子进程环境里清掉**这三个键（`HF_HUB_OFFLINE` /
+   `TRANSFORMERS_OFFLINE` / `MIAO_NO_HF_OFFLINE`）再起服务，让"谁注入的"没有歧义；
+   并且补一条反向断言（`MIAO_NO_HF_OFFLINE=1` ⇒ 两键消失），证明判的是**产品行为**。
+2. **② 引擎不由 box-service 拉起**：② 由 Box 外壳按配方 spawn，box-service 是兄弟进程
+   （所以 `/engine/status` 的 `engine.pid` **恒 `null`** 是归属使然，不是没实现）。
+   第一次写成"只起 boxsvc"⇒ `sidecar.state` 六分钟都停在 `stopped`、提交任务得到 503
+   `UNAVAILABLE`。⇒ 脚本**扮演 Box 外壳那一半**：用 `--print-launch-plan real` 给出的
+   `cmd`/`cwd`/`env` 去 spawn ② —— 命令、工作目录、环境**全部来自产品**，测试只负责"谁 spawn"。
+3. 🔴 **「引擎执行器端口 = 引擎端口 + 1」**：这是配方的约定（`resolve_engine_launch` 的
+   `executorPort`）。第一次"连取三个空闲端口"（5911/5912/5913）⇒ **执行器(5913) 与
+   ③ llama-server(5913) 撞了**，症状是翻译报 `404 File Not Found`（执行器的请求打到了
+   llama-server 上，body 还是 OpenAI 风格的错误结构）—— 从"端口撞了"到"404"这条链
+   **完全看不出来**，我据此误以为是 sakura 适配器坏了，还去读了引擎的 `sakura.py`。
+   ⇒ 端口分配必须**避开约定**：③ 落在引擎端口 **+4 之后**，且执行器端口本身也要确认空闲。
+
+### 另外两处刻意的设计
+- **用英文页**（`test-manga/en/`）且显式下发 `lang:{from:'en',to:'zh'}`：`ENG>CHS` 才会把
+  translator 切成 `nllb`（`sakura` 的 prompt 把源语言硬编码成日文，对英文是原文照抄）
+  ⇒ 这条用例才**真的验到 nllb 的 HF 缓存**（C4 点名的就是它）。用日文页验到的是 Sakura。
+- **真档的硬证据取 `sidecar.engineVersion`**：它报 `models.manifest.json:engineCommit` 的短 sha
+  （mock 档恒 `"mock"`）⇒ 期望值**从清单推**，不写死字面量（写死的话，换引擎 commit 时
+  这条会变成"断言过期"而不是"行为变了"）。
+- 失败时把**引擎与服务两侧日志尾部 + item 的 errorMessage** 一起带出来：这一条的失败原因
+  （端口撞了 / 缺什么）只可能出现在日志里，只报 `status=failed` 等于把排查成本推给下一个人。
+
+**验收**：`check:offline-real`（新，nightly）**10/10**（W1 前置 · W2/W2b/W2c 离线键三态 ·
+W3 真档硬证据 · W4 ②③ 都在离线旗标下 running · W5a/b/c 真翻译并落盘且与原文不同 ·
+W6 进程树收干净、端口全释放）。🔴 不设反证轮（真权重 + 分钟级，与 `check:e3:real` 同待遇）；
+它依赖的每条**判据形态**已在夹具层反证过（D-191 的 M1/M2/M3）。
+
+## D-198 · E2/E3 收口：真打包一次 + 真卸载一次（本机就是 Windows 目标平台）（2026-10-14）
+
+### E2：`makensis` 真编译了 `hooks.nsh`
+`npm run app:build` → release 编译 3m12s → **`makensis` 成功**产出
+`喵坞_2.2.1_x64-setup.exe`（58.18 MiB）。⇒ 「`.nsh` 能否被 NSIS 编译」这个只能靠真打包回答的问题
+有了答案；随后 `check:packaged` 在**带钩子的安装器**上 **9/9**（静默安装/卸载没被弹窗挂住 ——
+D-195 的 `IfSilent` 守卫在真产物上生效）。
+
+### E3：真卸载一次，看它**到底动了什么**
+`check:bundle` 的 W10 只在**源码层**钉形态（默认保留 + `RMDir` 在 `IDYES` 之后 + 不出现作品目录字样）。
+而这条要求写错的代价是**用户几十分钟的装配成果被删掉** —— 那种错不能只靠"读源码看着对"。
+⇒ 新增 `check:uninstall-keep`（nightly）**7/7**，用真安装器跑一次静默卸载：
+
+- **P2「静默卸载不挂住」**：NSIS 的 `MessageBox` 在 `/S` 下照样弹并阻塞，钩子必须 `IfSilent` 跳过
+  —— 挂住的形态是**超时**而不是变红，所以脚本自己带 120s 超时并把它写成一条断言；
+- **P3 卸载真生效**（安装目录被清掉）—— 不然"没删东西"可能只是"压根没卸载"；
+- **P4 `<appData>/runtimes/manga-translator` 原封不动**（硬要求①）；
+- **P5 作品目录 `~/Pictures/Box 漫画` 原封不动**（硬要求②）。
+
+⚠️ 两条判据的**空转风险**如实处理：`P5` 在作品目录不存在时会"对比两个 false"而通过
+（detail 里把 before/after 都带出来，看得见）；`P0` 则对"本机没有引擎运行时"**直接失败并点名**
+—— 那正是这条要验的对象，没有它这条无从谈起（"跳过 ≠ 通过"）。
+
+**验收**：`check:offline-real` 10/10（D-197）· `check:uninstall-keep`（新，nightly）7/7 ·
+`check:packaged` 9/9 · `check:bundle` 13/13 + 反证 18/18。
