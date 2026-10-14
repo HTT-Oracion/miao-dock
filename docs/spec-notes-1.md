@@ -2160,3 +2160,68 @@ config.mjs **import 即有副作用**（模块顶层 `fs.mkdirSync(STATE_DIR)`�
 `cargo test --lib` **127 passed**（124 → 127）；`cargo build --bin miao-dock` **首次通过**；
 `check:registry` 4/4（98 项）· `check:routes` 9/9 + 反证 9/9 · `check:engine-parity` 24/24 ·
 `check:store` 24/24 · `check:harness` 7/7 · `check:engine-settings` 55/6（存量）。
+
+---
+
+## D-176 · B5 补丁状态检测：产品没有 node，于是补丁表有了一份「只读镜像」（2026-10-14）
+
+**背景**：台账 B5 原文写「复用 `setup-engine.mjs --check` 的 `sourcePatchState()`」。
+但 F5 + A3d 之后**产品运行期 node 启动点为零** ⇒ 那条路在产品里根本走不通
+（要么要求用户机器上有 node，要么要求随包带仓库副本，两条都撞裁定②「引擎 = 用户自装、我们只检测」）。
+而补丁没打的症状是**静默的**（D-97：译文整页空串、流程却全绿）⇒ 必须被看见。
+
+### 决策一：Rust 只读镜像，而不是随包 JSON 资产
+
+候选 (a) 把补丁表做成随包 JSON（`bundle.resources` + `REQUIRED_ASSETS`）—— **否**。
+补丁表是**装配期**数据：用户按 D5 文档自己装引擎，补丁由装机脚本打；产品只需要**看得出缺没缺**，
+它并不重放补丁。把它塞进随包集合并换不来任何功能，却会放大 A1/A2 立起来的
+「`REQUIRED_ASSETS` 三处事实源（Rust / `check:bundle` / `check:resources`）交叉验证」面。
+
+⇒ `app/src-tauri/src/boxsvc/engine/patches.rs` 持 SSOT（`setup-engine.mjs` 的 `ENGINE_PATCHES`）
+的**只读镜像**，只存检测要用的四样：`id` / `mark` / `rel` / `desc`。
+
+### 决策二：镜像漂移由 **A7 双靶交叉钉**挡住（这是镜像敢存在的唯一理由）
+
+两份表漂移的后果：**装配按 A 打、检测按 B 判** —— 「明明打够了却报缺补丁」或反过来，
+而两边都不报错。故 `boxsvc --engine-patches` 导出镜像，`engine-patches-check.mjs` 的 A7
+逐条比对 `id/mark/rel/desc`，**同序同值**。
+
+🔴 **顺序本身就是信息**：D-105 的锚点是「D-103 打完后的 FALLBACK_FONTS 前三行」，
+两条补丁按数组顺序依次应用。故 A7 按序比对而不是比集合。
+
+### 决策三：判据必须是「文件内容含 mark」，不是「目录 / 文件在」
+
+「拿目录在当补丁打过」是这个检测最容易犯的错，且症状与不检测一样静默 ⇒ 反证 **M3**
+把判据弱化成「源码目录存在即算打过」，场景 S5（抹掉一条补丁的 mark）必须不再翻转。
+
+源码目录**整个不在**时（与 `source` 项报同一件事）：`detail` 自己说清「无从判定」，
+`fix` 退回装配整棵树 —— 各项独立可读，不要求用户去比对另一项。
+
+### 两条实现坑（都会造成假红）
+
+1. 🔴 **同一文件被多条补丁共享**（`nllb.py` ×2、`text_render.py` ×3）⇒ 夹具与单测里
+   **必须追加而不是覆写**。覆写会让先写的 mark 被后写的抹掉，症状是「补丁明明打全了却报没打」。
+2. Node 表记**绝对路径**（`srcPy(...)` 在模块装载时算定），Rust 镜像记 `rel`
+   ⇒ A7 归一化时要用 `path.relative(SRC_DIR, p.file)`。为此把 `SRC_DIR` 从 `setup-engine.mjs`
+   **导出**（被 import 不触发装配副作用 —— 文件底部有 `invokedDirectly` 守卫，`engine-patches-check.mjs` 早就这么用）。
+
+### 顺带：夹具按 Node SSOT 造补丁文件 ⇒ 镜像的 `rel` 落点被顺手验了
+
+`runtime-probe-check.mjs` 的 S0 要求五项全真，而夹具里的补丁文件是**按 Node 表**生成的 ⇒
+Rust 镜像若指错文件（`rel` 与 SSOT 不一致），S0 当场报「缺补丁」。这是 A7 之外的第二道保险。
+
+### 环境对齐：junction（开发机 ↔ 产品语义）
+
+B1 后产品只认 `<appData>/runtimes/manga-translator`，而本机 15 GB 引擎在仓库 `runtimes/` ⇒
+`check:engine-patches` 的 A4/A5（看产品落点）环境性红。用 **junction**（零拷贝、可逆）
+把 `<appData>/runtimes/manga-translator` 指到仓库安装，A4/A5 转绿；
+同时 `check:engine-client` 的 L4 也不再需要 `MIAO_RUNTIME_ROOT` 覆盖。
+🔴 **不给 `runtimes_dir()` 加「仓库回退」**：那正是 B3 要消灭的「检测说没装、启动却起了」，
+且会让产品行为随 debug/release 分叉（A1 的 dev 回退只适用于**仓库自带资产**，不适用于用户数据）。
+移除方式：`rmdir` 掉那个 junction（数据在仓库里，不受影响）。
+
+**验收**：`check:runtime-probe` 正向 **38/38**（26 → 38，新增 S5 场景 + 每场景多一项 detail 断言）
++ 反证 **3/3 全红**（M1/M2/M3，均改 `runtime_probe.rs` 源码 + 重编译 + 字节还原）；
+`check:engine-patches` 正向 **7/7**（A7 新增）+ 反证 **6/6 全红**（R5 改 Rust 镜像 id + 重编译 + 还原）；
+`check:path-single-source` 5/5 + 反证 1/1（real 档 warn 行数 4 → **5**）；
+`cargo test --lib` **131 passed**（127 → 131）；`check:registry` 4/4（98 项）。

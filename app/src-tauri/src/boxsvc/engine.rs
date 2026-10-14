@@ -40,6 +40,8 @@ pub mod model_status;
 pub mod profile;
 // ---- B2：运行时就绪检测（只读，不代装）----
 pub mod runtime_probe;
+// ---- B5：上游源码补丁的只读镜像（SSOT 在 setup-engine.mjs，双靶由 A7 钉住）----
+pub mod patches;
 pub mod settings;
 pub mod state;
 pub mod tier_downgrade;

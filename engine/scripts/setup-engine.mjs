@@ -38,6 +38,9 @@ import { runtimesDir } from './runtime-root.mjs';
 //    装配脚本自己写死 `<repo>/runtimes` 会让「装到 A、读到 B」，且两边都不报错。
 const RT = process.env.MIAO_MODEL_ROOT || runtimesDir();
 
+/** 引擎源码目录。**导出**给取证脚本算 `rel`（B5 的 A7 双靶交叉钉要用同一个口径）。 */
+export const SRC_DIR = path.join(RT, 'src');
+
 /** 与 engine/VERSIONS.lock §2 / §1 对应（换版本改这两处 + 那份 lock） */
 const PY_VERSION = '3.11.17';
 const PY_TAG = '20261003';
@@ -59,7 +62,6 @@ const SRC_URL = process.env.MIAO_SRC_URL
   || `https://codeload.github.com/zyddnys/manga-image-translator/tar.gz/${ENGINE_COMMIT}`;
 
 const PY_DIR = path.join(RT, 'python-3.11');
-const SRC_DIR = path.join(RT, 'src');
 const VENV_DIR = path.join(RT, 'venv');
 const CACHE = path.join(RT, '.download-cache');
 

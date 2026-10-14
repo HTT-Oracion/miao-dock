@@ -207,7 +207,7 @@ npm run check:docs            # 文档 ↔ 实现一致性：条数对账 / 引�
 npm run check:bundle          # 打包配置钉子 6 条 / 反证 7 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip`；**W6** 必需资产条目在且 src 真实存在；源码级，不起进程）
 npm run check:resources       # 随包资源寻址 **A1/A2** 三环境取证 8 条 / 反证 4 条（dev 态不误报 · 打包齐备取资源目录 · 打包缺失报 `RESOURCE_MISSING` · 优先级 · 必需资产交叉验证 · 源码钉）
 npm run check:packaged        # **A4 打包后冒烟**：真实安装包三层取证 9 条（nightly 层；NSIS 静默安装 → `--check-assets` → 起服务打 `/health` + mock 替身 + 启动配方）
-npm run check:runtime-probe   # **B2 引擎运行时四项只读检测** 26 条 / 反证 2 条（`GET /api/v1/engine/runtime`；缺哪一项 + `detail` 必带绝对路径）
+npm run check:runtime-probe   # **B2/B5 引擎运行时五项只读检测** 38 条 / 反证 3 条（`GET /api/v1/engine/runtime`；`venvRoot`/`python`/`source`/`deps`/`patches` 逐项独立翻转 + `detail` 必带绝对路径 + 缺补丁点名到 patch id）
 npm run check:path-single-source # **B3 检测与启动同源** 5 条 / 反证 1 条（`/engine/runtime` 的 `python.path` vs `--print-launch-plan` 的 `engine.cmd[0]` 逐字节比对）
 ```
 

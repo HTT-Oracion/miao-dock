@@ -45,7 +45,7 @@ const CHECKS = [
   // ---- service：起真实子进程，串行（端口竞争，见文件头）----
   { id: 'e2e', script: 'e2e/e2e.mjs', tier: 'service', watch: ['service/src/**', 'engine/src/**', 'e2e/**'] },
   { id: 'paths', script: 'e2e/service/paths-parity-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/paths.rs', 'service/src/config.mjs'] },
-  { id: 'runtime-probe', script: 'e2e/service/runtime-probe-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc/engine/runtime_probe.rs', 'app/src-tauri/src/boxsvc/routes.rs', 'app/src-tauri/src/boxsvc/handlers.rs', 'e2e/service/runtime-probe-check.mjs'] },
+  { id: 'runtime-probe', script: 'e2e/service/runtime-probe-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc/engine/runtime_probe.rs', 'app/src-tauri/src/boxsvc/engine/patches.rs', 'app/src-tauri/src/boxsvc/routes.rs', 'app/src-tauri/src/boxsvc/handlers.rs', 'engine/scripts/setup-engine.mjs', 'e2e/service/runtime-probe-check.mjs'] },
   { id: 'path-single-source', script: 'e2e/service/path-single-source-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/paths.rs', 'app/src-tauri/src/boxsvc/engine/runtime_probe.rs', 'app/src-tauri/src/boxsvc.rs', 'e2e/service/path-single-source-check.mjs'] },
   { id: 'store', script: 'e2e/service/store-parity-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc/store.rs', 'app/src-tauri/src/boxsvc/store/**', 'service/src/manga/store.mjs', 'e2e/service/store-parity-check.mjs'] },
   { id: 'store-exec', script: 'e2e/service/store-exec-parity-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc/store/**', 'service/src/manga/store.mjs', 'e2e/service/store-exec-parity-check.mjs'] },
@@ -78,7 +78,7 @@ const CHECKS = [
   { id: 'autostart', script: 'e2e/service-autostart-check.mjs', tier: 'service', refute: true, watch: ['service/src/**', 'app/src-tauri/**'] },
   // A3d 起是**双靶**（Node 对照端 + Rust 移植）⇒ 两侧源码都得进 watch，少一边就是"改了不红"。
   { id: 'models', script: 'e2e/engine/model-store-check.mjs', tier: 'service', refute: true, watch: ['engine/model-store.mjs', 'engine/scripts/fetch-models.mjs', 'app/src-tauri/src/boxsvc/engine/model_store.rs', 'app/src-tauri/src/boxsvc/engine/fetch_models.rs'] },
-  { id: 'patches', script: 'e2e/engine/engine-patches-check.mjs', tier: 'service', refute: true, watch: ['engine/scripts/**', 'engine/patches/**'] },
+  { id: 'patches', script: 'e2e/engine/engine-patches-check.mjs', tier: 'service', refute: true, watch: ['engine/scripts/**', 'app/src-tauri/src/boxsvc/engine/patches.rs', 'app/src-tauri/src/bin/boxsvc.rs', 'e2e/engine/engine-patches-check.mjs'] },
 
   // ---- nightly：真实引擎 / 模型，分钟级，串行 ----
   { id: 'e3-real', script: 'e2e/engine/e3-real-full-chain-check.mjs', tier: 'nightly', watch: ['engine/**', 'service/src/**'] },

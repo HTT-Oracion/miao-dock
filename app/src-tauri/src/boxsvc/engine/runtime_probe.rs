@@ -2,11 +2,15 @@
 // =============================================================================
 // 回答一个问题：**引擎现在缺哪几样**。逐项独立报真伪，`detail` 必带绝对路径，`fix` 给装法。
 //
-// ## 为什么是四项，不是台账原写的五项
+// ## 为什么是五项，不是台账原写的五项（B2 四项 + B5 补丁一项）
 // 台账 B2 原文含 `node`（标注"过渡期"）。F5 完成 + A3d 落地后 node **已不是产品依赖**
 // （产品运行期 node 启动点为零，`bundle.resources` 无 node），此时检测 node 只有一个作用：
-// 让用户以为自己还得装一个用不上的运行时 ⇒ **误导**。故本实现只保留真正决定引擎能否
+// 让用户以为自己还得装一个用不上的运行时 ⇒ **误导**。故 B2 只保留真正决定引擎能否
 // 起来的四项，并在台账 D 条目里记下这条裁剪及理由。
+//
+// B5 追加第五项 `patches`：补丁没打是**静默失败**（D-97：译文整页空串、却"翻译跑过了"），
+// 而它的装法与上面四项完全不同（不是装东西，是重放补丁）⇒ 必须独立成项、点名到 patch id。
+// 补丁表本体在 `super::patches`（SSOT 的只读镜像，双靶由 `check:engine-patches` A7 钉住）。
 //
 // ## 判据必须与装机脚本同源
 // `engine/scripts/setup-engine.mjs` 是用户唯一的口径：
@@ -26,6 +30,8 @@ use serde::Serialize;
 
 use crate::paths;
 
+use super::patches;
+
 /// 一项检测的结果。
 ///
 /// `path` 是**判据真正作用的那一个绝对路径**（验收要求：任一 `detail` 缺绝对路径即算缺陷）；
@@ -41,7 +47,7 @@ pub struct RuntimeItem {
     pub fix: Option<String>,
 }
 
-/// 检测报告。`ready` = 四项全真（引擎具备启动的最低条件）。
+/// 检测报告。`ready` = 五项全真（引擎具备启动的最低条件）。
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeProbe {
@@ -93,10 +99,12 @@ fn s(p: &Path) -> String {
 const FIX_SETUP: &str = "运行 node engine/scripts/setup-engine.mjs 装配引擎运行时（Python + venv + 源码）";
 const FIX_VENV: &str = "运行 node engine/scripts/setup-engine.mjs --venv 创建 venv（需 Python 已就位）";
 const FIX_DEPS: &str = "运行 npm run deps:engine 安装引擎依赖（pip -r requirements.txt）";
+/// 补丁没打的装法：重放（幂等）而不是重装 —— 源码早就在是常见情形。
+const FIX_PATCHES: &str = "运行 node engine/scripts/setup-engine.mjs --source 重放源码补丁（幂等，已打过的会跳过）";
 
-/// 跑一遍四项检测。
+/// 跑一遍五项检测。
 pub fn probe() -> RuntimeProbe {
-    let mut items = Vec::with_capacity(4);
+    let mut items = Vec::with_capacity(5);
 
     // ---- ① venvRoot：运行时根本身在不在 ----
     let rt = paths::runtimes_dir();
@@ -174,8 +182,45 @@ pub fn probe() -> RuntimeProbe {
         fix: (!deps_ok).then(|| FIX_DEPS.to_string()),
     });
 
+    // ---- ⑤ patches：上游源码补丁还在不在（B5）----
+    // 🔴 单独一项，不与 deps 合并：装法完全不同（重放补丁 vs pip 依赖），
+    //    且「补丁没打」的症状是静默的（译文空串但流程全绿）—— 用户需要被**点名**。
+    items.push(patches_item(&paths::engine_dir()));
+
     let ready = items.iter().all(|i| i.ok);
     RuntimeProbe { items, ready }
+}
+
+/// 第五项 `patches` 的构造（抽成函数是为了能拿临时目录单测 —— `probe()` 用的是真实落点）。
+///
+/// 🔴 判据必须**点名到 patch id** 且带**绝对路径**：B5 验收①要求"报出缺项且点名"，
+///    B2 验收③要求"任一 detail 缺绝对路径即算缺陷"。两条都落在这一项上。
+fn patches_item(src: &Path) -> RuntimeItem {
+    let states = patches::patch_states(src);
+    let absent: Vec<&patches::PatchState> = states.iter().filter(|p| !p.applied).collect();
+    let patches_ok = absent.is_empty();
+    let src_present = is_dir(src);
+    let detail = if patches_ok {
+        format!("源码补丁 {}/{} 已应用（{}）", states.len() - absent.len(), states.len(), src.display())
+    } else if !src_present {
+        // 源码目录整个不在 ⇒ 补丁状态无从判定。与 `source` 项报的是同一件事，
+        // 但这里必须自己说清（各项独立可读，不依赖用户去比对另一项）。
+        format!("引擎源码目录不在（{}）⇒ 补丁状态无从判定", src.display())
+    } else {
+        let list = absent
+            .iter()
+            .map(|p| format!("{}（{}）", p.id, p.path.display()))
+            .collect::<Vec<_>>()
+            .join("、");
+        format!("缺 {} 个源码补丁：{}；源码目录 {}", absent.len(), list, src.display())
+    };
+    RuntimeItem {
+        id: "patches",
+        ok: patches_ok,
+        path: s(src),
+        detail,
+        fix: (!patches_ok).then(|| if src_present { FIX_PATCHES.to_string() } else { FIX_SETUP.to_string() }),
+    }
 }
 
 /// `/engine/runtime` 的响应体（camelCase 契约）。
@@ -211,13 +256,50 @@ pub fn warn_unready_if_real(is_mock: bool) {
 mod tests {
     use super::*;
 
-    /// 判据必须打在**真实路径**上：四项各自翻转、互不影响（B2 验收②的可反证形式）。
+    /// 判据必须打在**真实路径**上：五项各自翻转、互不影响（B2 验收②的可反证形式）。
     #[test]
-    fn probe_four_items_stable_ids() {
+    fn probe_five_items_stable_ids() {
         let p = probe();
         let ids: Vec<&str> = p.items.iter().map(|i| i.id).collect();
-        assert_eq!(ids, vec!["venvRoot", "python", "source", "deps"]);
+        assert_eq!(ids, vec!["venvRoot", "python", "source", "deps", "patches"]);
         assert_eq!(p.ready, p.items.iter().all(|i| i.ok));
+    }
+
+    /// B5 验收①：缺补丁时必须**点名到 patch id**，且 detail 带绝对路径。
+    /// 反过来说：全都打上时不得报"缺"（不能拿"目录在"当打过）。
+    #[test]
+    fn patches_item_names_missing_ids_with_absolute_paths() {
+        let tmp = std::env::temp_dir().join(format!("miao-probe-patches-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        // 源码目录在、但一个补丁都没打 ⇒ 十条全部点名
+        let bare = patches_item(&tmp);
+        assert!(!bare.ok, "空目录必须判为未就绪");
+        assert_eq!(bare.fix.as_deref(), Some(FIX_PATCHES), "源码在 ⇒ 装法应是重放补丁");
+        for p in patches::ENGINE_PATCHES {
+            assert!(bare.detail.contains(p.id), "detail 未点名 {}：{}", p.id, bare.detail);
+        }
+        assert!(bare.detail.contains(&bare.path), "detail 未带源码目录绝对路径");
+        // 全部打上 ⇒ ok 且无 fix
+        // 🔴 同一文件可能被多条补丁共享（nllb.py ×2、text_render.py ×3）⇒ 必须**追加**，
+        //    覆写会让先写的 mark 被后写的抹掉（那正是"打完补丁却报没打"的假红）。
+        use std::io::Write as _;
+        for p in patches::ENGINE_PATCHES {
+            let f = patches::patch_file(&tmp, p);
+            std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+            let mut h = std::fs::OpenOptions::new().create(true).append(true).open(&f).unwrap();
+            writeln!(h, "# x\n{}\n", p.mark).unwrap();
+        }
+        let done = patches_item(&tmp);
+        assert!(done.ok, "补丁齐全必须判为就绪：{}", done.detail);
+        assert!(done.fix.is_none(), "已经好了还给人装法是噪声");
+        assert!(done.detail.contains("10/10"), "detail 应报 10/10：{}", done.detail);
+        // 源码目录整个不在 ⇒ 说清"无从判定"，且装法退回装配整棵树
+        let gone = patches_item(&tmp.join("no-such-src"));
+        assert!(!gone.ok);
+        assert!(gone.detail.contains("无从判定"), "{}", gone.detail);
+        assert_eq!(gone.fix.as_deref(), Some(FIX_SETUP));
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     /// 验收③：每一项的 `detail` 都必须带绝对路径（本机上必然含分隔符或盘符）。

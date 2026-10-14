@@ -9,22 +9,39 @@
  *   · 锚点指向错文件/已失效 ⇒ 只有真正重放时才知道（而重放需要网络与时间）。
  * 本脚本把这些**在秒级、零网络、零 GPU** 的前提下钉死。
  *
- * 取证方式：把「断言」写成**纯函数** `evaluate(patches, readFile)` —— 正向轮喂**真实**的表与
+ * ## A7：产品侧镜像必须与 SSOT 一致（B5）
+ * 产品运行期没有 node（F5 + A3d），"补丁还在不在"的检测只能由 Rust 侧做 ——
+ * 于是有了一份只读镜像 `boxsvc::engine::patches`（`boxsvc --engine-patches` 导出）。
+ * 两份表漂移的后果：装配按 A 打、检测按 B 判 ⇒ 「明明打够了却报缺补丁」或反过来，
+ * 而两边都不报错。故 A7 逐条比对 `id/mark/rel/desc`（**同序同值** —— 顺序本身是信息：
+ * D-105 依赖 D-103 先应用）。
+ *
+ * ## 取证方式
+ * A1–A6：把断言写成**纯函数** `evaluate(patches, readFile)` —— 正向轮喂**真实**的表与
  * 文件；反证轮喂**内存里变异过的**表/内容，证明每条断言都能真的变红，且**不动工作区一个字节**
  * （本项目已有教训：变异取证若落在真实文件上，被打断就会把垃圾留在树里）。
+ * A7 / R5：另一端是**另一个进程**（Rust 靶子），无法在内存里变异 ⇒ 反证轮改
+ * `patches.rs` 源码 + **重编译** + 导出比对，收尾**按字节还原** + 再重编译
+ * （靶子是另一个进程，不重编等于没改 —— A1 的教训）。
  *
  * 用法：node e2e/engine/engine-patches-check.mjs [--refute]
+ * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { ENGINE_PATCHES } from '../../engine/scripts/setup-engine.mjs';
+import { ENGINE_PATCHES, SRC_DIR } from '../../engine/scripts/setup-engine.mjs';
+import { RUST_BIN, REPO_ROOT } from '../service/_service-harness.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const REPO = path.resolve(HERE, '..', '..');
 const REFUTE = process.argv.includes('--refute');
+const PATCHES_RS = path.join(REPO_ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 'patches.rs');
+const SRC_TAURI = path.join(REPO_ROOT, 'app', 'src-tauri');
+/// `cargo` 可执行：`CARGO` env 覆盖，否则交给 PATH（libuv 在 Windows 上会补 `.exe`）。
+const CARGO = process.env.CARGO || 'cargo';
 
 /** 写死的期望补丁条数。加了补丁就必须同步改这里（否则分母漂移，见 AGENTS.md §2-3）。 */
 const EXPECTED_PATCHES = 10;
@@ -40,6 +57,65 @@ const setGroup = (g) => { group = g; console.log(`\n${g}`); };
 function add(id, ok, detail = '') {
   results.push({ group, id, ok: !!ok });
   console.log(`  ${ok ? '✓' : '✗'} ${id}${detail ? `  ${detail}` : ''}`);
+}
+
+// ------------------------------------------------------------------ 子进程助手
+
+/** 🔴 本机沙箱 `spawnSync` 稳定 EBUSY（且 `result.stdout` 是 undefined）⇒ 一律异步 `spawn`。 */
+function runCapture(args, opts = {}) {
+  return new Promise((resolve, reject) => {
+    const c = spawn(args[0], args.slice(1), { stdio: ['ignore', 'pipe', 'pipe'], ...opts });
+    let out = '';
+    let err = '';
+    c.stdout.on('data', (d) => { out += d; });
+    c.stderr.on('data', (d) => { err += d; });
+    c.on('error', reject);
+    c.on('close', (code) => resolve({ code, stdout: out, stderr: err }));
+  });
+}
+
+/** 重编译 boxsvc。🔴 变异改了 Rust 源码，靶子是**另一个进程**，不重编等于没改。 */
+function rebuild() {
+  return new Promise((resolve) => {
+    const b = spawn(CARGO, ['build', '--bin', 'boxsvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
+    b.on('error', () => resolve(false));
+    b.on('close', (c) => resolve(c === 0));
+  });
+}
+
+// ------------------------------------------------------------------ A7：双靶交叉钉
+
+/** Node 侧（SSOT）归一成与 Rust 导出同样的形状。 */
+function nodeMirror() {
+  return ENGINE_PATCHES.map((p) => ({
+    id: p.id,
+    mark: p.mark,
+    rel: path.relative(SRC_DIR, p.file).split(path.sep),
+    desc: p.desc,
+  }));
+}
+
+/** Rust 侧镜像（`boxsvc --engine-patches`）归一成同样形状；拿不到就抛。 */
+async function rustMirror() {
+  const r = await runCapture([RUST_BIN, '--engine-patches']);
+  if (r.code !== 0) throw new Error(`boxsvc --engine-patches 退出 ${r.code}：${r.stderr.slice(0, 300)}`);
+  const j = JSON.parse(r.stdout);
+  if (!Array.isArray(j.patches)) throw new Error('导出体缺 patches 数组');
+  return j.patches.map((p) => ({ id: p.id, mark: p.mark, rel: p.rel, desc: p.desc }));
+}
+
+/** 两份表的第一处差异（`null` = 完全一致）。 */
+function firstDivergence(a, b) {
+  if (a.length !== b.length) return `条数不同：Rust ${a.length} vs Node ${b.length}`;
+  for (let i = 0; i < a.length; i++) {
+    for (const k of ['id', 'mark', 'desc']) {
+      if (a[i][k] !== b[i][k]) return `第 ${i + 1} 条 ${k} 不同：Rust ${JSON.stringify(a[i][k])} vs Node ${JSON.stringify(b[i][k])}`;
+    }
+    if (JSON.stringify(a[i].rel) !== JSON.stringify(b[i].rel)) {
+      return `第 ${i + 1} 条（${a[i].id}）rel 不同：Rust ${JSON.stringify(a[i].rel)} vs Node ${JSON.stringify(b[i].rel)}`;
+    }
+  }
+  return null;
 }
 
 // ------------------------------------------------------------------ 纯函数断言（正向/反证共用）
@@ -94,9 +170,14 @@ function evaluate(patches, readFile = readReal) {
 
 // ------------------------------------------------------------------ 主流程
 
-function main() {
+async function main() {
+  if (!fs.existsSync(RUST_BIN)) {
+    console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`);
+    process.exit(1);
+  }
+
   if (REFUTE) {
-    // ── 反证轮：每条断言喂一个能打红它的变异，且**不改工作区**
+    // ── 反证轮：每条断言喂一个能打红它的变异，且**不改工作区**（A1–A4）
     const real = readReal;
 
     setGroup('反证：每条断言都要能被一条变异打红');
@@ -137,10 +218,35 @@ function main() {
       add(m.id, bad.includes(m.expect), `（实际红：${bad.join(',') || '无'}）`);
     }
 
+    // ── R5：A7 双靶交叉钉 —— 改 Rust 镜像 + 重编译 + 收尾字节还原
+    {
+      const original = fs.readFileSync(PATCHES_RS, 'utf8');
+      const anchor = 'id: "sakura-fail-not-list",';
+      let ok = false;
+      let note = '';
+      try {
+        if (!original.includes(anchor)) throw new Error('R5 锚点未命中（patches.rs 的第一条 id 写法变了？）');
+        fs.writeFileSync(PATCHES_RS, original.replace(anchor, 'id: "sakura-fail-not-list-drifted",'));
+        // 🔴 源码改了必须**重编译**：靶子是另一个进程，不重编就等于没改
+        if (!(await rebuild())) throw new Error('cargo build 失败');
+        const div = firstDivergence(await rustMirror(), nodeMirror());
+        ok = div !== null;
+        note = div ?? '（未检出差异）';
+      } catch (e) {
+        note = `变异本身失败：${String(e.message || e).slice(0, 200)}`;
+      } finally {
+        fs.writeFileSync(PATCHES_RS, original);
+        await rebuild();
+      }
+      add('R5 Rust 镜像改一个 id ⇒ A7 交叉钉变红', ok, note);
+      const restored = fs.readFileSync(PATCHES_RS, 'utf8');
+      add('R5.restore — patches.rs 已按字节还原', restored === original);
+    }
+
     const pass = results.filter((r) => r.ok).length;
     const fail = results.length - pass;
     console.log(`\n${'─'.repeat(56)}`);
-    const EXPECTED = 4;
+    const EXPECTED = 6; // R1–R4（内存变异）+ R5（Rust 源码变异）+ R5.restore（字节还原）
     if (results.length !== EXPECTED) {
       console.log(`✗ 反证条数 ${results.length} ≠ 写死的 ${EXPECTED}`);
       process.exit(1);
@@ -164,10 +270,18 @@ function main() {
   ];
   for (const [id, name] of checks) add(id, !bad.includes(id), name);
 
+  setGroup('产品侧只读镜像 ↔ SSOT（B5 · A7 双靶交叉钉）');
+  try {
+    const div = firstDivergence(await rustMirror(), nodeMirror());
+    add('A7 Rust 镜像与 ENGINE_PATCHES 的 id/mark/rel/desc 同序同值', div === null, div ?? '');
+  } catch (e) {
+    add('A7 Rust 镜像与 ENGINE_PATCHES 的 id/mark/rel/desc 同序同值', false, String(e.message || e).slice(0, 300));
+  }
+
   const pass = results.filter((r) => r.ok).length;
   const fail = results.length - pass;
   console.log(`\n${'─'.repeat(56)}`);
-  const EXPECTED_TOTAL = 6;
+  const EXPECTED_TOTAL = 7;
   if (results.length !== EXPECTED_TOTAL) {
     console.log(`✗ 断言条数 ${results.length} ≠ 写死的 ${EXPECTED_TOTAL}`);
     process.exit(1);
@@ -176,6 +290,10 @@ function main() {
   if (fail) {
     console.log('✗ 有失败项：先判断是"补丁没打上"还是"表写错了"，不要为了转绿而放宽断言。');
     console.log('  提示：补丁由 `node engine/scripts/setup-engine.mjs --source` 重放。');
+    if (bad.includes('A4') || bad.includes('A5')) {
+      console.log(`  另：A4/A5 看的是产品落点 ${SRC_DIR}（B1 起引擎只装这里）。`);
+      console.log('    本机若装在别处（如仓库 runtimes/），用 MIAO_MODEL_ROOT=<...>/manga-translator 重跑。');
+    }
     process.exit(1);
   }
   console.log('✓ 全部通过。');

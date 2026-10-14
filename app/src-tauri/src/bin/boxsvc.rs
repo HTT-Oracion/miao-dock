@@ -13,6 +13,14 @@ fn main() {
         println!("{}", miao_dock::paths::snapshot());
         return;
     }
+    // `--engine-patches`：打印**上游源码补丁表镜像**（B5）后退出，不起服务。
+    // 用途：`e2e/engine/engine-patches-check.mjs` 的 A7 拿它与 `setup-engine.mjs` 的
+    // `ENGINE_PATCHES`（SSOT）做双靶交叉钉 —— 产品侧这份只读镜像若与 SSOT 漂移
+    // （改了 id/mark/落点/描述而另一边没跟），检测就会与装配各说各话。
+    if std::env::args().any(|a| a == "--engine-patches") {
+        println!("{}", miao_dock::boxsvc::engine::patches::table_json());
+        return;
+    }
     // `--store-selftest`：在**固定输入**下打印 store 的纯函数 / serialize / 视图 / 计划 / 原子写产物。
     // 用途：e2e 做「Rust 与 Node 的 store 逐字节同源」比对（F3 的钉子）—— 同样不起服务。
     if std::env::args().any(|a| a == "--store-selftest") {

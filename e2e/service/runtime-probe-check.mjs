@@ -7,21 +7,25 @@
  *
  * ## 它钉的是什么
  * 检测若写成"一个大 if"或"全有或全无"，用户收到的就是"引擎没装好"这种无从下手的结论 ——
- * 而四项的装法完全不同（建 venv / 解源码 / pip 依赖）。故本钉子逐个**拆掉一样**，
- * 断言**只有对应那一项**翻转，其余三项纹丝不动。这一条同时证明了各判据真的作用在
- * 各自的绝对路径上（而不是在查同一个东西）。
+ * 而五项（B2 四项 + B5 补丁一项）的装法完全不同（建 venv / 解源码 / pip 依赖 / 重放补丁）。
+ * 故本钉子逐个**拆掉一样**，断言**只有对应那一项**翻转，其余纹丝不动。这一条同时证明了
+ * 各判据真的作用在各自的绝对路径上（而不是在查同一个东西）。
  *
  * ## 为什么每个场景都自造 runtime 目录
  * 判据的默认落点是 `<appData>/runtimes/manga-translator`（B1）。验收若用真实落点，
  * 就会去 `stat` 用户机器上的引擎安装 ⇒ 结果随机器而变、且会误判。故每场景都用
  * `MIAO_RUNTIME_ROOT` / `MIAO_ENGINE_DIR` / `MIAO_ENGINE_PYTHON` 把判据指到 TMP，
  * 与 `MIAO_ROOT` / `MIAO_STATE_DIR` 一律指 TMP 是同一条纪律。
+ * 夹具里的补丁文件按 **Node 侧 SSOT**（`ENGINE_PATCHES`）生成 ⇒ 顺带验证 Rust 镜像
+ * （`boxsvc::engine::patches`）的落点与 SSOT 一致：镜像若指错文件，S0 就会报"缺补丁"。
  *
  * ## 反证轮（--refute）
  * - M1 把 `source` 判据从"`server/main.py` 存在"弱化成"`src/` 非空" ⇒ S2 不再翻转
  *   （抓装机脚本注释里明确警告过的那个错法：`--link` 会先建 models 链接，src/ 非空但没源码）。
  * - M2 把 `detail` 里的路径去掉 ⇒ S0/S1/S2/S3 的"detail 带绝对路径"断言全红。
- * 两个变异都改 `runtime_probe.rs` 源码、跑完**按字节还原**（含重编译产物）。
+ * - M3 把 `patches` 判据弱化成"源码目录存在即算打过" ⇒ S5 不再翻转
+ *   （抓"拿目录在当补丁打过"这个错法 —— 它的症状正是 B5 要消灭的静默失败）。
+ * 三个变异都改 `runtime_probe.rs` 源码、跑完**按字节还原**（含重编译产物）。
  *
  * 用法：node e2e/service/runtime-probe-check.mjs [--refute]
  * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
@@ -34,6 +38,10 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { RUST_BIN } from './_service-harness.mjs';
+import { ENGINE_PATCHES, SRC_DIR } from '../../engine/scripts/setup-engine.mjs';
+
+/// Node 侧 SSOT 记的是**绝对路径**（`srcPy(...)`）；夹具要的是相对源码目录的段。
+const relOf = (p) => path.relative(SRC_DIR, p.file).split(path.sep);
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
@@ -77,12 +85,26 @@ function buildRuntime(base, missing = []) {
     fs.writeFileSync(path.join(venv, 'bin', 'python'), '#!/bin/sh\n');
   }
   fs.writeFileSync(path.join(src, 'server', 'main.py'), '# fixture\n');
+  // B5：按 Node 侧 SSOT 造补丁目标文件（mark 写进去 = "补丁已打"）。
+  // 🔴 同一文件可能被多条补丁共享（nllb.py ×2、text_render.py ×3）⇒ 追加而不是覆写。
+  for (const p of ENGINE_PATCHES) {
+    const f = path.join(src, ...relOf(p));
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.appendFileSync(f, `# fixture\n${p.mark}\n`);
+  }
+  if (missing.includes('patches')) {
+    // 抹掉**第一条**补丁的 mark（确定性地选同一条，别随机）⇒ 只有 patches 一项翻转
+    const p = ENGINE_PATCHES[0];
+    const f = path.join(src, ...relOf(p));
+    fs.writeFileSync(f, fs.readFileSync(f, 'utf8').split(p.mark).join(''), 'utf8');
+  }
   if (missing.includes('python')) fs.rmSync(path.join(venv, process.platform === 'win32' ? 'Scripts' : 'bin'), { recursive: true, force: true });
   if (missing.includes('source')) fs.rmSync(path.join(src, 'server'), { recursive: true, force: true });
   if (missing.includes('deps')) fs.rmSync(path.join(venv, 'Lib', 'site-packages', 'torch'), { recursive: true, force: true });
   if (missing.includes('venvRoot')) fs.rmSync(path.join(rt, 'manga-translator'), { recursive: true, force: true });
   return {
     rt,
+    src,
     env: {
       MIAO_RUNTIME_ROOT: rt,
       MIAO_ENGINE_DIR: src,
@@ -134,11 +156,12 @@ async function probeRuntime(extraEnv) {
 
 /** 场景 → 期望翻转的项（`null` = 期望全就位）。 */
 const SCENARIOS = [
-  { id: 'S0', missing: null, label: 'runtime 全就位 ⇒ 四项全真、ready=true、无 fix' },
+  { id: 'S0', missing: null, label: 'runtime 全就位 ⇒ 五项全真、ready=true、无 fix' },
   { id: 'S1', missing: ['python'], label: '只拆解释器 ⇒ **只有 python** 翻转' },
   { id: 'S2', missing: ['source'], label: '只拆 server/main.py ⇒ **只有 source** 翻转' },
   { id: 'S3', missing: ['deps'], label: '只拆 torch ⇒ **只有 deps** 翻转' },
   { id: 'S4', missing: ['venvRoot'], label: '整个运行时候选 ⇒ venvRoot 翻转（级联允许）' },
+  { id: 'S5', missing: ['patches'], label: '只抹一个补丁的 mark ⇒ **只有 patches** 翻转且点名到 patch id' },
 ];
 
 if (!fs.existsSync(RUST_BIN)) {
@@ -174,7 +197,7 @@ for (const sc of SCENARIOS) {
       && Object.values(items).every((v) => v.fix === null || v.fix === undefined),
       { status, ready: body?.ready, flips });
   } else if (sc.missing.includes('venvRoot')) {
-    // 级联场景：venvRoot 没了 ⇒ python/source/deps 的判据路径都在它下面，必然一起翻。
+    // 级联场景：venvRoot 没了 ⇒ python/source/deps/patches 的判据路径都在它下面，必然一起翻。
     // 这里不断言"其余不动"（那是结构上不可能的），只钉 venvRoot **一定**翻、且 ready=false。
     check(`${sc.id} ${sc.label}`,
       status === 200 && flips[0] === 'venvRoot' && body?.ready === false
@@ -187,6 +210,15 @@ for (const sc of SCENARIOS) {
       status === 200 && flips.length === 1 && flips[0] === only
       && items[only].fix && items[only].fix.length > 0,
       { status, flips, fix: items[only]?.fix });
+    // B5 验收①：缺补丁必须**点名到 patch id**（只说"缺 1 个补丁"等于没说），
+    // 且路径要落在**被抹掉 mark 的那个文件**上（不是笼统的源码目录）。
+    if (only === 'patches') {
+      const p = ENGINE_PATCHES[0];
+      const abs = path.join(fx.src, ...relOf(p));
+      check('S5.named — detail 点名到 patch id 且带该补丁目标文件的绝对路径',
+        items.patches.detail.includes(p.id) && items.patches.detail.includes(abs),
+        { id: p.id, abs, detail: items.patches.detail });
+    }
   } else {
     check(`${sc.id} ${sc.label}`,
       status === 200 && flips.includes('venvRoot') && body?.ready === false,
@@ -264,6 +296,31 @@ if (REFUTE) {
       const items = byId(body);
       fs.rmSync(base, { recursive: true, force: true });
       return Object.values(items).some((v) => !v.detail.includes(v.path));
+    },
+  });
+
+  // M3：patches 判据弱化成"源码目录存在即算打过" ⇒ S5 不再翻转
+  // （抓"拿目录在当补丁打过"这个错法 —— 它的症状正是 B5 要消灭的静默失败）
+  mutations.push({
+    id: 'M3',
+    what: 'patches 判据弱化为「源码目录存在」',
+    edit: () => {
+      const weak = original.replace(
+        /let states = patches::patch_states\(src\);/,
+        'let states = patches::patch_states(src).into_iter().map(|mut s| { s.applied = s.path.parent().map(|p| p.is_dir()).unwrap_or(false); s }).collect::<Vec<_>>();',
+      );
+      if (weak === original) throw new Error('M3 锚点未命中（patches_item 的写法变了？）');
+      fs.writeFileSync(PROBE_RS, weak);
+    },
+    probe: async () => {
+      const base = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-rt-M3-'));
+      const fx = buildRuntime(base, ['patches']);
+      const { body } = await probeRuntime(fx.env);
+      const items = byId(body);
+      const flips = Object.entries(items).filter(([, v]) => !v.ok).map(([k]) => v);
+      fs.rmSync(base, { recursive: true, force: true });
+      // 期望：patches **不再**翻转（弱判据下源码目录还在 ⇒ 报"全打过"）
+      return !flips.includes('patches');
     },
   });
 

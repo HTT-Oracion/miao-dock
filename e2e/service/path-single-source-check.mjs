@@ -203,7 +203,7 @@ if (!fs.existsSync(RUST_BIN)) {
   const real = (await warnsFor('real')).split(/\r?\n/).filter((l) => l.includes('引擎运行时未就绪'));
   const mock = (await warnsFor('mock')).split(/\r?\n/).filter((l) => l.includes('引擎运行时未就绪'));
   check('B3.d real 档 + runtime 未装配 ⇒ 启动日志逐项报「运行时未就绪」（B1 验收②）',
-    real.length === 4 && real.every((l) => /· (venvRoot|python|source|deps)：.*[A-Z]:\\|~\//.test(l)),
+    real.length === 5 && real.every((l) => /· (venvRoot|python|source|deps|patches)：.*[A-Z]:\\|~\//.test(l)),
     real);
   check('B3.d2 mock 档**不**报运行时未就绪（mock 不要真引擎，报了会误导用户）',
     mock.length === 0, mock);
