@@ -105,7 +105,7 @@ const NODE_PAYLOAD = ['service/', 'service\\', 'node.zip'];
 /// 🔴 这里是**第二处事实源**（Rust 常量读不进 node），所以另有一道交叉验证：
 ///    `check:resources` 会拿 `boxsvc --check-assets` 报的必需资产与这里比对，
 ///    两边漂移就变红 —— 单一事实源做不到，就退而求其次让它**可观测地漂移**。
-const REQUIRED_ASSETS = ['engine/models.manifest.json'];
+const REQUIRED_ASSETS = ['engine/models.manifest.json', 'engine/runtime.manifest.json', 'engine/patches.json'];
 
 /// `bundle.resources` 的目录（src 相对它解析）。
 const CONF_DIR = path.dirname(BASE_CONF);

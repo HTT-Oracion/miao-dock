@@ -43,7 +43,7 @@ const REFUTE = process.argv.includes('--refute');
 /// 必需资产 —— 必须与 Rust 侧 `paths::REQUIRED_ASSETS` 和 `check:bundle` 的常量逐项一致。
 /// 🔴 这是**第二处事实源**（Rust 常量读不进 node），所以 X1 做交叉验证：
 ///    拿 `boxsvc --check-assets` 报出来的必需资产与这里比对，漂移即红。
-const REQUIRED_ASSETS = ['engine/models.manifest.json'];
+const REQUIRED_ASSETS = ['engine/models.manifest.json', 'engine/runtime.manifest.json', 'engine/patches.json'];
 
 const results = [];
 const check = (id, label, ok, detail) => {
@@ -85,10 +85,15 @@ function makeFixture(name, { withAsset = true, dirOnly = false } = {}) {
   fs.mkdirSync(path.join(base, 'Resources', 'engine'), { recursive: true });
   fs.mkdirSync(path.join(base, 'empty'), { recursive: true });
   if (withAsset) {
-    fs.copyFileSync(
-      path.join(ROOT, 'engine', 'models.manifest.json'),
-      path.join(base, 'Resources', 'engine', 'models.manifest.json'),
-    );
+    // 🔴 按 `REQUIRED_ASSETS` **逐条**铺，不写死文件名：新增必需资产时忘了改这里 ⇒
+    //    D2 假红（「配好了却报缺失」），而这种红会把人引去查 A1/A2 的实现 ——
+    //    其实只是夹具没跟上。G2 加 `engine/runtime.manifest.json` 时就是这么红过一次。
+    for (const rel of REQUIRED_ASSETS) {
+      const segs = rel.split('/');
+      const dst = path.join(base, 'Resources', ...segs);
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.copyFileSync(path.join(ROOT, ...segs), dst);
+    }
   }
   return { resources: path.join(base, 'Resources'), repo: path.join(base, 'empty') };
 }

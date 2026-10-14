@@ -80,9 +80,10 @@ const F = {
 };
 
 // ── 冻结的契约（负责人冻结，本脚本照抄，不改口径） ────────────────────────
-/** units 目录应恰有的 17 个文件（多一个/少一个都判红；useEsc 已迁 src/hooks，D-41）
+/** units 目录应恰有的 18 个文件（多一个/少一个都判红；useEsc 已迁 src/hooks，D-41）
  *  Tooltip / ContextMenu 是 2026-10-11 漫画右键菜单一并入册的可复用件（D-124）
- *  Modal 是 2026-10-11 收敛 5 处手写模态壳（D-143） */
+ *  Modal 是 2026-10-11 收敛 5 处手写模态壳（D-143）
+ *  ProgressRing 是 2026-10-14 引擎下载进度环（工具条/下载视图共用，D-150） */
 const MANIFEST = [
   "atoms.tsx",
   "Select.tsx",
@@ -97,6 +98,7 @@ const MANIFEST = [
   "Tooltip.tsx",
   "Notice.tsx",
   "PlayModeButton.tsx",
+  "ProgressRing.tsx",
   "NumberInput.tsx",
   "Empty.tsx",
   "VirtualList.tsx",
@@ -119,6 +121,7 @@ const BARREL_EXPORTS = [
   "Modal",
   "Notice",
   "NumberInput",
+  "ProgressRing",
   "Range",
   "Select",
   "Swatches",

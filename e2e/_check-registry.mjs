@@ -93,6 +93,7 @@ const CHECKS = [
   // D3 / B4：纯文件 + 短 CLI（真 tar / `--print-plan`），不起服务、不占端口 ⇒ static 层并行跑
   { id: 'extract-atomic', script: 'e2e/engine/extract-atomic-check.mjs', tier: 'static', refute: true, watch: ['engine/scripts/atomic-extract.mjs', 'engine/scripts/setup-engine.mjs', 'e2e/engine/extract-atomic-check.mjs'] },
   { id: 'pydensecrf-wheel', script: 'e2e/engine/pydensecrf-wheel-check.mjs', tier: 'static', refute: true, watch: ['engine/wheels.manifest.json', 'engine/scripts/install-engine-deps.mjs', 'docs/install-guide-windows.md', 'docs/install-guide-macos.md', 'e2e/engine/pydensecrf-wheel-check.mjs'] },
+  { id: 'engine-bootstrap', script: 'e2e/service/engine-bootstrap-check.mjs', tier: 'static', refute: true, watch: ['engine/runtime.manifest.json', 'engine/wheels.manifest.json', 'app/src-tauri/src/boxsvc/handlers.rs', 'app/src-tauri/src/boxsvc/engine/state.rs', 'app/src/engine-download.ts', 'app/src/screens/NotReadyScreen.tsx', 'app/src/screens/engine/DownloadPanel.tsx', 'app/src/screens/settings/OnlineApiForm.tsx', 'app/src/components/units/ProgressRing.tsx', 'e2e/service/engine-bootstrap-check.mjs'] },
 
   // ---- nightly：真实引擎 / 模型，分钟级，串行 ----
   { id: 'e3-real', script: 'e2e/engine/e3-real-full-chain-check.mjs', tier: 'nightly', watch: ['engine/**', 'service/src/**'] },
