@@ -217,6 +217,8 @@ npm run check:launch-gate    # **D6 real 档启动前预检闸门** 8 条 / 反�
 npm run check:install-guide  # **D5 安装引导与产品对拍** 16 条 / 反证 5 条（两份引导的落点模板代入本机后 == `boxsvc --print-paths` 推出的落点、体积标记 == 清单按平台求和、五项就绪项 · 三条落点纪律 · 平台形态互不串）
 npm run check:notready-state # **D1「运行时未装配」独立成态** 13 条 / 反证 5 条（两条链路都带 `runtime` 块 · L1–L4 四句文案逐字冻结 · 新分支不混进 L1 失败 · 「约 X GB」来自服务端 `requiredBytes`）
 npm run check:models-guide   # **D8 模型引导清单（渲染而非编写）** 14 条 / 反证 4 条（逐条目标绝对路径 ⟷ Node 独立算 · 就绪 = 在位且大小一致 · 改清单副本 ⇒ 输出跟着变）
+npm run check:size-guide     # **C1 体积与落点如实告知** 16 条 / 反证 3 条（`guidance.totalBytes` == 本平台清单 `sizeBytes` 求和且与 D1 同数 · 分档之和恒等于总量 · 与安装引导文档三方闭环 · 界面无写死 GB）
+npm run check:model-runner   # **C2 执行体随包定位** 12 条 / 反证 3 条（默认执行体 == 当前可执行文件的**绝对路径** · verify 跑得起来、不是 INTERNAL · 不在盘上时报路径 · 跨卷单独记账）
 ```
 
 **F 组「服务 Rust 化」的同源对拍钉子**（F0–F5 已全部完成，见 `docs/packaging-local-engine-dev-plan.md`）——

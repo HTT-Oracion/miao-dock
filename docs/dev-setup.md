@@ -61,6 +61,7 @@ selftest  check:contract  check:e10  check:e4  check:e8
 check:paths  check:runtime-probe  check:path-single-source   # B1/B2/B3：落点 · 就绪检测 · 同源
 check:launch-gate  check:install-guide                      # D6/D5：启动前闸门 · 安装引导与产品对拍
 check:notready-state  check:models-guide                    # D1/D8：未装配独立成态 · 模型引导清单（渲染）
+check:size-guide  check:model-runner                        # C1/C2：体积与落点如实告知 · 执行体随包定位（含跨卷）
 ```
 
 **分钟级 · 反证轮** —— 只有**改了断言本身**才跑（证明断言咬的是机制，不是碰巧绿）：

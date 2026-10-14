@@ -738,6 +738,50 @@
 .set-diag-file.is-bad .set-diag-file-size {
   color: var(--md-error);
 }
+/* 安装引导：体积与落点（C1）。合计一行放大一档（这是用户要照着留盘的数字），
+   分档位做成可折行的 chips —— 档位个数由清单决定，行数不能写死。 */
+.set-diag-guide {
+  margin-top: 6px;
+}
+.set-diag-guide-total {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+}
+.set-diag-guide-total b {
+  font-family: var(--md-font-numeric);
+  font-size: 13px;
+  color: var(--md-ink);
+}
+.set-diag-guide-sub {
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+  color: var(--md-muted);
+}
+.set-diag-guide-sets {
+  margin-top: 5px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.set-diag-guide-set {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+.set-diag-guide-set-id {
+  color: var(--md-ink-2);
+}
+.set-diag-guide-set-bytes,
+.set-diag-guide-set-n {
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+}
 /* 五个区块之间用一条细线分开：区块数是规格钉死的 5，视觉上就该数得出来 */
 .set-diag-sec {
   margin-top: 12px;

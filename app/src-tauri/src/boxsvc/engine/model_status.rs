@@ -32,6 +32,38 @@ pub struct ModelStatus {
     pub last_verified_at: Option<String>,
     /// 清单逐条渲染（**顺序与 `files` 一致**）。清单读不到 ⇒ 空数组（仍可回 `unknown` 三键）。
     pub files: Vec<ModelFileStatus>,
+    /// 安装引导（C1）：按**当前平台**的合计体积 + 分档位细分。
+    pub guidance: ModelGuidance,
+}
+
+/// 一个档位（`sets` 的一项）在当前平台下的**体积与条数**（C1）。
+///
+/// 存在的理由：总体积只回答"要留多少盘"，回答不了"**我只想要视觉那部分，是多少**" ——
+/// 而后者才是用户在 `--set visual`（≈0.7 GB）与全量（≈6.9 GiB）之间做选择时问的。
+/// 数字全部由 `sizeBytes` 求和得出，**不许自估**（估出来的数会在清单更新后开始撒谎）。
+#[derive(Debug, Clone, serde::Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelSetGuide {
+    pub id: String,
+    /// 该档位在**当前平台**下可见的条目数
+    pub entries: usize,
+    /// 这些条目的 `sizeBytes` 之和（没声明大小的条目按 0 计入条数、不占字节）
+    pub bytes: u64,
+}
+
+/// 安装引导（C1）—— 「装之前先说清楚要留多少盘、装到哪」。
+#[derive(Debug, Clone, serde::Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelGuidance {
+    /// 当前平台标识（与清单 `platform` 字段同一口径）
+    pub platform: String,
+    /// 当前平台可见的条目数
+    pub entries: usize,
+    /// 这些条目的 `sizeBytes` 之和（**逐字节可复算**：与 `files` 里 applicable 求和相等）
+    pub total_bytes: u64,
+    /// 分档位细分。**恒满足**「各项之和 == `total_bytes`、各项条数之和 == `entries`」——
+    /// 不属于任何 `set` 的条目归入 `unassigned`，绝不让它们从表里消失（那样用户会少下一块）。
+    pub sets: Vec<ModelSetGuide>,
 }
 
 /// 清单里的一条：**渲染出来**（不是写死在界面里）的下载引导行。
@@ -67,9 +99,106 @@ pub struct ModelFileStatus {
 
 impl ModelStatus {
     /// 清单读不到时的保守结论 —— **不再抛错**（否则一个缺清单的机器连诊断视图都打不开）。
+    ///
+    /// `guidance` 仍给出**当前平台**：平台是我们自己的事实（不依赖清单），
+    /// 体积为 0、档位为空 —— 那不是"没有体积"，是"清单读不到，算不出来"，
+    /// 界面据 `totalBytes === 0` 显示"清单读不到"，而不是"0 B"。
     pub fn unknown() -> Self {
-        ModelStatus { visual_ready: false, sakura_ready: false, last_verified_at: None, files: Vec::new() }
+        ModelStatus {
+            visual_ready: false,
+            sakura_ready: false,
+            last_verified_at: None,
+            files: Vec::new(),
+            guidance: ModelGuidance {
+                platform: super::model_store::platform_key(),
+                entries: 0,
+                total_bytes: 0,
+                sets: Vec::new(),
+            },
+        }
     }
+}
+
+/// 档位的**人读顺序**：先必须装的、再可选的。
+///
+/// 清单里 `sets` 的键序不可依赖（`serde_json` 的 `Value::Object` 默认按字母序，
+/// 于是真实顺序 `visual/llm/runtime/translation` 会变成 `llm/runtime/translation/visual`，
+/// 用户第一眼看到的是"可选的 LLM 排在必需项前面"）。所以顺序在这里显式声明，
+/// 但**表外的档位一律追加到末尾**而不是丢掉 —— 清单加分组而界面不显示，
+/// 用户就会少下一块资产，且没有任何地方会报错。
+const SET_ORDER: &[&str] = &["visual", "translation", "llm", "runtime"];
+/// 不属于任何 `set` 的条目归到这里（保证「分档之和 == 总量」恒成立）。
+const SET_UNASSIGNED: &str = "unassigned";
+
+/// 按档位聚合体积（C1）。输入是**已经渲染好的逐条清单**，于是"分档"与"逐条"用同一份判据。
+///
+/// `in_set` 是「set 名 → 该 set 的 id 列表」（清单 `sets.<name>.files`），它是**归属的权威**；
+/// 条目自身的 `set` 字段只作补充（清单只写了条目 `set` 而没在 `sets` 里登记 id 时兜住）。
+fn guidance_from(files: &[ModelFileStatus], platform: &str, in_set: &dyn Fn(&str) -> Vec<String>) -> ModelGuidance {
+    use std::collections::BTreeMap;
+
+    let mine: Vec<&ModelFileStatus> = files.iter().filter(|f| f.applicable).collect();
+    let total_bytes: u64 = mine.iter().filter_map(|f| f.size_bytes).sum();
+
+    // id → set 名。先按 `SET_ORDER` 的顺序登记（同一 id 只认第一个命中的 set），
+    // 再用条目自身 `set` 兜底。都不命中 ⇒ unassigned。
+    let mut by_id: BTreeMap<String, String> = BTreeMap::new();
+    for name in SET_ORDER {
+        for id in in_set(name) {
+            by_id.entry(id).or_insert_with(|| (*name).to_string());
+        }
+    }
+    // 表外档位也要登记（`SET_ORDER` 之外的 set 名，按 set 名排序，稳定可复现）
+    let mut extra: Vec<String> = Vec::new();
+    for f in &mine {
+        if let Some(s) = f.set.as_deref() {
+            if !SET_ORDER.contains(&s) && !extra.iter().any(|x| x == s) {
+                extra.push(s.to_string());
+            }
+        }
+    }
+    extra.sort();
+    for name in &extra {
+        for id in in_set(name) {
+            by_id.entry(id).or_insert_with(|| name.clone());
+        }
+    }
+
+    let bucket_of = |f: &ModelFileStatus| -> String {
+        by_id
+            .get(&f.id)
+            .cloned()
+            .or_else(|| f.set.clone())
+            .unwrap_or_else(|| SET_UNASSIGNED.to_string())
+    };
+
+    let mut order: Vec<String> = SET_ORDER.iter().map(|s| (*s).to_string()).collect();
+    order.extend(extra.iter().cloned());
+
+    // 只保留**真的有条目**的档位（空档位显示出来只会让人以为"这里还有东西要装"）。
+    let mut sets: Vec<ModelSetGuide> = Vec::new();
+    for name in &order {
+        let bucket: Vec<&&ModelFileStatus> = mine.iter().filter(|f| &bucket_of(f) == name).collect();
+        if bucket.is_empty() {
+            continue;
+        }
+        sets.push(ModelSetGuide {
+            id: name.clone(),
+            entries: bucket.len(),
+            bytes: bucket.iter().filter_map(|f| f.size_bytes).sum(),
+        });
+    }
+    // 表外条目（既不在 `SET_ORDER`、自身也没有 `set`）—— 凑成 unassigned 一档。
+    let unassigned: Vec<&&ModelFileStatus> = mine.iter().filter(|f| bucket_of(f) == SET_UNASSIGNED).collect();
+    if !unassigned.is_empty() {
+        sets.push(ModelSetGuide {
+            id: SET_UNASSIGNED.to_string(),
+            entries: unassigned.len(),
+            bytes: unassigned.iter().filter_map(|f| f.size_bytes).sum(),
+        });
+    }
+
+    ModelGuidance { platform: platform.to_string(), entries: mine.len(), total_bytes, sets }
 }
 
 /// 读取 `.ready` 标记（S3 写入；不存在 ⇒ `None`，不报错）。
@@ -192,6 +321,7 @@ pub fn model_status(manifest_path: &Path, root_dir: &Path, link_base: Option<&Pa
         .collect();
 
     let marker = read_ready_marker(root_dir);
+    let guidance = guidance_from(&files_out, &key, &in_set);
     ModelStatus {
         visual_ready: all_ready("visual"),
         sakura_ready: all_ready("llm"),
@@ -201,6 +331,7 @@ pub fn model_status(manifest_path: &Path, root_dir: &Path, link_base: Option<&Pa
             .and_then(|v| v.as_str())
             .map(str::to_string),
         files: files_out,
+        guidance,
     }
 }
 
@@ -321,6 +452,95 @@ mod tests {
         assert_eq!(platform_total_bytes(&mp), sum, "platform_total_bytes 必须等于逐条里 applicable 的和");
         assert!(platform_total_bytes(&tmp.join("no-such.json")) == 0, "清单读不到 ⇒ 0，不是编一个数");
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// C1 验收①：**分档位之和恒等于总量**（不重不漏），且总量与 D1 的 `requiredBytes` 同源。
+    #[test]
+    fn guidance_sums_match_the_total() {
+        let tmp = std::env::temp_dir().join(format!("miao-modelstatus-g1-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let mp = write_fixture(&tmp, &fixture_manifest());
+        let s = model_status(&mp, &tmp, None);
+        let g = &s.guidance;
+
+        assert!(!g.platform.is_empty(), "平台标识不能是空串（界面上要如实说'你是哪个平台'）");
+        assert_eq!(g.entries, s.files.iter().filter(|f| f.applicable).count(), "entries = 本平台可见条数");
+
+        let sum: u64 = s.files.iter().filter(|f| f.applicable).filter_map(|f| f.size_bytes).sum();
+        assert_eq!(g.total_bytes, sum, "总量必须逐字节等于逐条里 applicable 的 sizeBytes 之和");
+        assert_eq!(g.total_bytes, platform_total_bytes(&mp), "与 D1 的 requiredBytes 必须是同一个数（不是各算一份）");
+
+        let set_bytes: u64 = g.sets.iter().map(|x| x.bytes).sum();
+        let set_entries: usize = g.sets.iter().map(|x| x.entries).sum();
+        assert_eq!(set_bytes, g.total_bytes, "分档求和必须等于总量（有条目掉出表外就红在这里）");
+        assert_eq!(set_entries, g.entries, "分档条数之和必须等于总条数");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// C1：档位顺序是**人读顺序**，且表外档位与"不属于任何 set"的条目都**不许消失**。
+    #[test]
+    fn guidance_keeps_unknown_sets_and_unassigned_entries() {
+        let tmp = std::env::temp_dir().join(format!("miao-modelstatus-g2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let mut m = fixture_manifest();
+        // 表外档位（`SET_ORDER` 里没有的名字）—— 必须出现在表里，且排在已知档位之后
+        m["files"].as_array_mut().unwrap().push(serde_json::json!({
+            "id": "e", "set": "audio", "dest": "models-store/e.bin", "sizeBytes": 7
+        }));
+        m["sets"]["audio"] = serde_json::json!({ "files": ["e"] });
+        // 不属于任何 set 的条目 —— 必须归入 `unassigned`
+        m["files"].as_array_mut().unwrap().push(serde_json::json!({
+            "id": "f", "dest": "models-store/f.bin", "sizeBytes": 8
+        }));
+
+        let mp = write_fixture(&tmp, &m);
+        let s = model_status(&mp, &tmp, None);
+        let ids: Vec<&str> = s.guidance.sets.iter().map(|x| x.id.as_str()).collect();
+
+        assert!(ids.contains(&"visual") && ids.contains(&"runtime"), "已知档位要在：{ids:?}");
+        assert!(ids.contains(&"audio"), "清单里登记过的表外档位必须出现：{ids:?}");
+        assert!(ids.contains(&"unassigned"), "不属于任何 set 的条目必须归入 unassigned：{ids:?}");
+
+        let vi = ids.iter().position(|x| *x == "visual").unwrap();
+        let ai = ids.iter().position(|x| *x == "audio").unwrap();
+        assert!(vi < ai, "必需档位排在前、未知档位追加在后：{ids:?}");
+
+        let set_bytes: u64 = s.guidance.sets.iter().map(|x| x.bytes).sum();
+        assert_eq!(set_bytes, s.guidance.total_bytes, "加了两种'边角'条目后仍要分毫不差");
+        // 空档位不显示：清单里没有 llm 条目 ⇒ 表里不该出现一个 0 项 0 字节的 llm
+        assert!(!ids.contains(&"llm"), "空档位显示出来只会让人以为这里还有东西要装：{ids:?}");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// C1：只算**当前平台**可见的条目（另一平台那条的体积不许混进来）。
+    #[test]
+    fn guidance_filters_by_platform() {
+        let tmp = std::env::temp_dir().join(format!("miao-modelstatus-g3-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let mp = write_fixture(&tmp, &fixture_manifest());
+        let s = model_status(&mp, &tmp, None);
+
+        let all_bytes: u64 = s.files.iter().filter_map(|f| f.size_bytes).sum();
+        let other: u64 = s.files.iter().filter(|f| !f.applicable).filter_map(|f| f.size_bytes).sum();
+        assert_eq!(s.guidance.total_bytes + other, all_bytes, "全量 = 本平台 + 其他平台（不多不少）");
+        if other > 0 {
+            assert!(s.guidance.total_bytes < all_bytes, "有另一平台的条目时，总量必须严格小于全量");
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// C1：清单读不到时 `guidance` 要**空而不假**（平台仍答得出，体积为 0 而不是编一个）。
+    #[test]
+    fn guidance_is_empty_when_manifest_is_missing() {
+        let s = model_status(Path::new("/no/such/manifest.json"), Path::new("/no/such/root"), None);
+        assert!(s.guidance.sets.is_empty());
+        assert_eq!(s.guidance.total_bytes, 0);
+        assert_eq!(s.guidance.entries, 0);
+        assert_eq!(s.guidance.platform, super::super::model_store::platform_key(), "平台是我们自己的事实，不依赖清单");
     }
 
     /// D8 的「渲染而非编写」：改清单一条 `dest` ⇒ 渲染出来的路径跟着变。

@@ -143,6 +143,36 @@ export interface ModelFileStatus {
   path: string;
 }
 
+/**
+ * 一个档位（`sets` 的一项）在当前平台下的体积与条数（C1）。
+ *
+ * 字段全部由清单的 `sizeBytes` 求和得出 —— 界面只做单位换算，**不自己估**。
+ */
+export interface ModelSetGuide {
+  id: string;
+  /** 该档位在**当前平台**下可见的条目数 */
+  entries: number;
+  /** 这些条目的 `sizeBytes` 之和 */
+  bytes: number;
+}
+
+/**
+ * 安装引导（C1）—— 「装之前先说清楚要留多少盘、装到哪」。
+ *
+ * 🔴 与服务端的关系：这里的每个数字都是服务端**算好的**（`totalBytes` 出自 `guidance`，
+ *    不是前端把 `files` 再遍历一遍）。前端各算一份的结果就是"两处显示同一个量、数字却不同"。
+ */
+export interface ModelGuidance {
+  /** 当前平台标识（与清单 `platform` 同一口径） */
+  platform: string;
+  /** 当前平台可见的条目数 */
+  entries: number;
+  /** 这些条目的 `sizeBytes` 之和（逐字节可复算） */
+  totalBytes: number;
+  /** 分档位细分；各项之和恒等于 `totalBytes` */
+  sets: ModelSetGuide[];
+}
+
 export interface ModelStatus {
   visualReady: boolean;
   sakuraReady: boolean;
@@ -154,6 +184,8 @@ export interface ModelStatus {
    * 而后者才是用户在点「重新下载模型」之前要问的。
    */
   files: ModelFileStatus[];
+  /** 安装引导（C1）：按当前平台的合计体积与分档位细分 */
+  guidance: ModelGuidance;
 }
 
 // ------------------------------------------------------------------ /engine/status

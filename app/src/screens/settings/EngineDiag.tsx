@@ -7,7 +7,7 @@ import { errorText, serviceRestart, writeTextFile } from '@/ipc';
 import type { ServiceStatus } from '@/ipc';
 import { configPairs } from '@screens/settings/engine-state';
 import type { EngineState } from '@screens/settings/engine-state';
-import type { ModelDownloadView, ModelFileStatus } from '@screens/settings/engine-api';
+import type { ModelDownloadView, ModelFileStatus, ModelGuidance } from '@screens/settings/engine-api';
 import { emphasis } from '@screens/settings/parts';
 import type { SettingItem } from '@screens/settings/catalog';
 
@@ -377,9 +377,8 @@ export function EngineDiag({
                 <span className="set-diag-v">{s?.models?.lastVerifiedAt ?? '未校验过'}</span>
               </span>
             </div>
-            <div className="set-diag-note">
-              路径 <code className="set-ro">{o?.modelDir?.current ?? '—'}</code>
-            </div>
+            {/* C1：体积与落点，动手之前先说清楚 */}
+            <ModelGuide guidance={s?.models?.guidance} dir={o?.modelDir?.current} />
             {/* D8：逐条引导清单（**渲染**清单，不是在这里编写） */}
             <ModelFiles files={s?.models?.files} />
             <DownloadState view={s?.modelDownload} />
@@ -566,6 +565,64 @@ function humanBytes(n: number): string {
   if (n >= GIB) return `${(n / GIB).toFixed(1)} GB`;
   if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(0)} MB`;
   return `${n} B`;
+}
+
+/**
+ * **安装引导：体积与落点**（C1）—— 把"要留多少盘、装到哪"在**动手之前**说清楚。
+ *
+ * ## 为什么必须动手前说
+ * 那十几个 GB 是用户**自己下、自己占盘**的（引擎与模型都不随包分发）。下手前不说清，
+ * 最常见的失败不是"装失败"，而是"下到一半发现盘不够"—— 那时已经下了几个 GB，
+ * 而且没有任何一步会报错。
+ *
+ * ## 为什么分档位报
+ * 合计只回答"要留多少盘"，回答不了"我只要视觉那部分是多少"—— 而后者才是用户在
+ * 「只下必需」与「全量」之间做选择时要问的（`--set visual` ≈ 0.7 GB 对全量 ≈ 6.9 GiB）。
+ *
+ * 🔴 数字**全部来自服务端**（`guidance.totalBytes` / `guidance.sets[].bytes`，由清单
+ *    `sizeBytes` 求和得出），这里只做单位换算。前端再遍历一遍 `files` 自己求和，
+ *    就等于把"总量"实现两遍 —— 两份迟早不一样，而界面上只表现为"数字对不上"。
+ */
+function ModelGuide({ guidance, dir }: { guidance?: ModelGuidance; dir?: string }) {
+  if (!guidance) return null;
+  const loc = <code className="set-ro">{dir ?? '—'}</code>;
+  // 清单读不到：不说"0 B"（那会被读成"不用占盘"），也不编一个数字，照实说算不出来。
+  if (guidance.entries === 0) {
+    return (
+      <div className="set-diag-note">
+        落点 {loc} —— 清单读不到，体积无从算起。
+      </div>
+    );
+  }
+  return (
+    <>
+      <div className="set-diag-note">
+        当前平台 <code>{guidance.platform}</code> · 落点 {loc}
+      </div>
+      <div className="set-diag-guide">
+        <div className="set-diag-guide-total">
+          模型资产合计 <b>{humanBytes(guidance.totalBytes)}</b>
+          <span className="set-diag-guide-sub">
+            {guidance.totalBytes.toLocaleString('en-US')} 字节 · {guidance.entries} 个条目（已按本平台过滤）
+          </span>
+        </div>
+        <div className="set-diag-guide-sets">
+          {guidance.sets.map((s) => (
+            <span key={s.id} className="set-diag-guide-set">
+              <span className="set-diag-guide-set-id">{s.id}</span>
+              <span className="set-diag-guide-set-bytes">{humanBytes(s.bytes)}</span>
+              <span className="set-diag-guide-set-n">{s.entries} 项</span>
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="set-diag-note">
+        这些都是<b>从网上下的</b>资产（不随安装包分发）：上手前按上面这个数留盘。
+        另需 Python 运行时与 venv 依赖（<code>torch</code> 那几 GB）—— 那部分体积由你的
+        环境决定，这里<b>不替你估</b>。分平台的命令与逐项自检见 <code>docs/install-guide-*.md</code>。
+      </div>
+    </>
+  );
 }
 
 /**

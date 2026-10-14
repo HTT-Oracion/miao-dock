@@ -2434,3 +2434,85 @@ M3 换 `--manifest` 指向**临时副本**并动一条 `sizeBytes`，两个平�
 `check:registry` 4/4（**106** 项，+4：`check:notready-state[:refute]`、`check:models-guide[:refute]`）·
 `check:harness` 7/7 · `check:docs` 17/17 · `check:docpaths` 5/5 · `check:layering` 3/3 ·
 `check:settings` **176/4**（存量环境性）· `tsc --noEmit` 干净。
+
+## D-181 · C1 体积与落点如实告知：数字要么**从清单算**，要么别说（2026-10-14）
+
+台账 C1：「13 GB 由用户自己下 ⇒ 下手前必须说清」。验收两条 —— ① 界面总体积 = 当前平台可见
+条目的 `sizeBytes` 之和（逐字节可复算）；② 反证：改一条 `sizeBytes` ⇒ 界面数字跟着变。
+
+### 落在哪
+`ModelStatus` 增 `guidance`（`platform` / `entries` / `totalBytes` / 分档位 `sets`），随
+`GET /engine/status.models` 与 `boxsvc --engine-model-files` 一起出去；`EngineDiag.tsx` 的
+`ModelGuide` 渲染它，放在 D8 的逐条清单**之前**（先说要留多少盘、装到哪，再看逐条对账）。
+
+### 三个决定
+1. **在服务端算，不在前端遍历 `files` 求和。** 同一个量在两处实现，迟早不一样
+   （"详情页说 6.9 GB、设置页说 6.8 GB"），而那种偏差在界面上只表现为"数字对不上"。
+   放在服务端还有一个好处：`--engine-model-files` 直接把它带出来 ⇒ 可被 CLI 取证，不必起界面。
+2. **分档 + `unassigned` 兜底，保证「分档之和 == 总量」恒成立。** 分档回答的是"我只要视觉
+   那部分是多少"（`--set visual` ≈ 0.7 GB 对全量 ≈ 6.9 GiB），**漏一档就是让用户少下一块**。
+   两种边角都会发生：清单里登记了新分组而代码里的顺序表没有它（⇒ 追加到末尾，不丢）、
+   有条目只写了自身 `set` 而没进 `sets` 的 id 列表（⇒ 归 `unassigned`）。
+3. **档位顺序显式声明（`SET_ORDER`），不依赖清单键序。** `serde_json` 的 `Value::Object`
+   是 `BTreeMap` ⇒ 键序是**字母序**，真实清单会渲染成 `llm / runtime / translation / visual`
+   —— 用户第一眼看到"可选的 LLM 排在必需项前面"。顺序表在代码里写死是对的（这是**展示策略**），
+   但必须配一条"表外档位一律追加"的路径，否则清单加分组时界面静默少一块。
+
+### 两条实现坑
+- 🔴 **空档位不能显示**：清单里没有 `llm` 条目时，表里出现一个 "llm · 0 B · 0 项" 只会让人
+  以为这里还有东西要装。过滤掉，并由 e2e 的 W5d 钉住。
+- 🔴 **`totalBytes` 与 D1 的 `requiredBytes` 必须是同一个数**：D1 的 "约 X GB" 出自
+  `runtime_probe::runtime_view()` 里现算的 `platform_total_bytes()`，C1 的合计出自
+  `guidance`。两者各自独立算了一遍同一个量 —— 单测 `guidance_sums_match_the_total` 直接断言
+  二者相等，e2e 的 W4 再把它与**安装引导文档的体积标记**（D5 放的）串成三方闭环。
+
+### 验收与反证
+`check:size-guide` **16/16** + 反证 **3/3 全红**（M1 总量写死 ⇒ W1/W6 · M2 分档只留第一档 ⇒
+W2/W5 · M3 删前端引导区块 ⇒ W7）· `cargo test --lib` **138 → 142**。
+`.tmp` 之外无副作用；`guidance` 走 JSON 出口现算，**不进** `RuntimeProbe` 结构体（免得牵动
+B2 的双靶与单测 —— `check:runtime-probe` 44/44 原样通过）。
+
+## D-182 · C2 校验/建链执行体随包定位：A3d 之后「随包」= `current_exe()`（2026-10-14）
+
+### 🔴 台账落点已过期（本条最贵的一课）
+C2 原文写的是「`server.mjs:229-231` 的 `MODEL_DOWNLOAD_SCRIPT` 默认值改为随包资源路径
+（`REPO_ROOT` 仅作 dev 兜底）」。那是 **A3d 之前**的形态：执行体还是 `node
+engine/scripts/fetch-models.mjs`，"随包"只能指"把脚本放进资源目录"。
+A3d 把下载器 Rust 化（`boxsvc::engine::model_store` + `boxsvc --fetch-models`）之后，
+「随包定位」有了**更强的形态**：`state.rs` 的 `download_runner` 默认就是
+`std::env::current_exe()` —— `boxsvc` 本来就随包，于是"装完之后这条通道跑得起来"**不依赖
+任何资源配置、也不依赖解释器**。
+⇒ 本条的实质工作从"改路径"变成：**把这条形态钉住**，并补上真正缺的那块（跨卷）。
+
+### Node 对照端的默认值为什么不是 `current_exe()`
+`service/src/server.mjs` 是服务的**Node 对照端**，而 node 进程的"自己"是 node 解释器 ——
+拿它当执行体毫无意义。所以那里只能落到 dev 构建产物的落点：这一行只在开发机与 e2e 上有意义，
+产品永远不走它（产品跑的是 Rust 那份）。语义写进注释，免得下一次有人"顺手对齐"成 `execPath`。
+
+### 三个决定
+1. **跨卷单独记账**（`LinkResult.cross_device`），不是只写一行日志。跨卷是**唯一**一种
+   "链接没建成但我们认为可以接受"的情况（退化复制，原样可用，只是多占一份盘）；混在
+   "硬链接失败"里，用户与我们都分不出该不该管它。CLI 两处链接路径都打印一句"跨卷"。
+2. **`is_cross_device` 认 os error 17**：POSIX 是 `EXDEV`、Windows 是
+   `ERROR_NOT_SAME_DEVICE`，**恰好同号** ⇒ 不必分平台写两套判断（那样必有一边没人测）。
+   不能宽化成"凡失败都算跨卷"（会把权限/配额/路径过长一起说成"跨卷，没事"）。
+3. **夹具开关 `MIAO_LINK_FORCE_CROSSDEV` 走子进程 env**：真跨卷要两块盘，跑测机器没有；
+   而单测是**多线程**的，设全局 env 会串到别的用例 ⇒ 行为层只在 e2e（子进程）里验，
+   单测只覆盖纯函数。
+
+### 三条实现坑
+- 🔴 **`modelDownload` 在 `/engine/status` 的顶层**，不在 `models` 里。第一版断言写成
+  `st.models.modelDownload`，四个断言全取到 `{}` 而"失败得莫名其妙"。两个键报的是两件事：
+  `models` = **盘上文件在不在**，`modelDownload` = **下载/校验这件任务**。
+- 🔴 **执行体不在盘上时，错误消息原本不带路径**（Rust 与 Node **一致地缺**）：tail 里只有
+  「系统找不到指定的文件」，用户不知道它在找谁 —— 而"找的是哪个执行体"正是 C2 要答的问题。
+  修法：spawn 失败时把 runner 路径拼进 stderr，**两靶逐字同文案**（`handlers.rs::run_verify_child`
+  ↔ `server.mjs::runVerifyChild`）。
+- 🔴 **判据必须含 `path.isAbsolute`**：第一版 W1 只比 `path.resolve(runner) === path.resolve(BIN)`，
+  于是 M1 变异（把默认值改成仓库**相对**路径）**没红** —— 因为 e2e 的 cwd 恰好是仓库根，
+  相对串解析成的就是同一个文件。这是**假反证**的典型：不是断言写错了，而是 cwd 把差异掩盖了。
+  加上绝对性判据后 M1 立刻红。装到用户机器上会断的，正是这一条。
+
+### 验收与反证
+`check:model-runner`（新）**12/12** + 反证 **3/3 全红**（M1 默认执行体改相对路径 ⇒ W1 ·
+M2 跨卷判定恒 false ⇒ W5/W6 · M3 删 CLI 打印跨卷 ⇒ W8）· `cargo test --lib` **142 → 143**。
