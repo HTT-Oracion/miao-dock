@@ -98,7 +98,7 @@ boxsvc --fetch-models —— S3 模型下载器
   boxsvc --fetch-models --integrity cached       # 应用启动口径
   boxsvc --fetch-models --link                   # 只重建引擎树里的链接（零网络）
   boxsvc --fetch-models --no-link                # 拉完不建链
-环境变量：MIAO_MODEL_ROOT 覆盖模型根目录（默认 <仓库>/runtimes/manga-translator）
+环境变量：MIAO_MODEL_ROOT 覆盖模型根目录（默认 <appData>/runtimes/manga-translator，随 MIAO_ENGINE_DIR 推导）
 取证专用：--manifest <p> --root <p> --report <p> --progress-log <p>
 ";
 
