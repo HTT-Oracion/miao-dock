@@ -1,0 +1,14 @@
+{
+  "manifestVersion": 1,
+  "updatedAt": "2026-10-14",
+  "purpose": "pydensecrf 的**预编译 wheel** 通道（B4）：让没有 MSVC / Xcode CLT 的机器也能装上这个包。它只是**便利**，不是硬依赖 —— 清单里没有本平台条目时，装配脚本回退到原来的源码编译路线（这就是今天的行为，不是新加的分支）。",
+  "note": "🔴 目前 **wheels 为空**，这不是漏填：本仓还没有在任何平台上真构建过 pydensecrf 的 wheel，而 sha256 **不允许凭记忆写**（写一个假的比不写更坏 —— 校验会拦下真 wheel，或者更糟：拦不住假的）。要填的时候按 §填法 真构建一次再登记。",
+  "platformKey": "与 engine/models.manifest.json 的 platform 字段同一口径（win32-x64 / darwin-arm64）；pythonTag 用 wheel 的 ABI tag（cp311，见 engine/VERSIONS.lock §2 的 engine_python = 3.11.17）",
+  "fillHowTo": [
+    "① 在目标平台（且该平台有编译器）上装好引擎依赖，然后：pip wheel pydensecrf --no-deps -w <目录>",
+    "② 对产出的 .whl 算 sha256（Windows: certutil -hashfile <whl> SHA256；macOS: shasum -a 256 <whl>）",
+    "③ 把 .whl 传到镜像通道，然后在下面 wheels[] 里登记一条：platform / pythonTag / file / sha256 / sizeBytes / url / sources",
+    "④ 跑 `node e2e/engine/pydensecrf-wheel-check.mjs`（结构合法性 + sha256 形态 + 选择逻辑）"
+  ],
+  "wheels": []
+}

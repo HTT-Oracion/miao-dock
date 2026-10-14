@@ -103,11 +103,11 @@
 
 ```bash
 # —— 自测聚合入口（分层 + 并行 + git 变更过滤；注册表在 e2e/_check-registry.mjs）——
-npm run check                # static 快闸门 11 项（8 路并行，约 10s）——每次提交
+npm run check                # static 快闸门 16 项（8 路并行，约 10s）——每次提交
 npm run check:changed        # 只跑与 git 变更相关的（static+service；跳过项显式列出）——日常开发主力
 npm run check:full           # static + service 全量（service 串行，约 4 分钟）——push / PR 前
 npm run check:nightly        # 全量：含 nightly（真引擎/模型）与全部反证轮——定期 / 合并前
-npm run check:registry[:refute] # 注册表完整性 4 条 / 反证 4 变异（npm 检查脚本 ↔ 注册表双向覆盖 + 文件存在 + tier 合法 + id 唯一）
+npm run check:registry[:refute] # 注册表完整性 **5** 条 / 反证 **5** 变异（npm 检查脚本 ↔ 注册表双向覆盖 + 文件存在 + tier 合法 + id 唯一 + **各层条数 == 写死的常量**）。🔴 最后那条是 E4 的计数门：删一条钉子、或把它的 tier 写错，输出依旧全绿而**没有任何一行会变红** —— 分子变绿、分母变小；把分母钉住，减一条就得先改常量（反证 M5 正是"删一条注册项"）
 npm run selftest              # A 组服务契约 159 条 + 引擎自测 23 条
 npm run selftest:app[:refute] # B 组应用生命周期 16 条（含 S2a–S2d：五态轨迹 / E1 参数快照 / 三子进程 / 崩溃分级；含反证）
 npm run selftest:app:e11[:refute]     # E11 三进程树回收（mock，秒级）：SIGKILL 主进程 → 13 端口全释放
@@ -126,6 +126,9 @@ npm run check:lib-manage[:refute] # 漫画库管理取证：队列删除（仅�
 npm run check:retranslate[:refute] # 单张漫画返工重译 + 全屏缩放快捷键：返工**覆盖**译文（塞假译文验真被顶掉）/ 不碰原图 / 与 resume 分工 / 裸 ↑↓ 不缩放（不抢音量键）12 条 / 反证 5 条（mock 引擎 + 真服务子进程，秒级）
 npm run check:models[:refute] # S3 模型下载器 E7 **双靶**：37 条 × 2 靶 = 正向 **74** / 反证 6 × 2 = **12**（本地 Range 夹具源，秒级，不碰真权重；含 HF 缓存布局 blobs+snapshots+refs）。A3d 起两靶同跑：Node 对照端 `fetch-models.mjs` + Rust `boxsvc --fetch-models`（**产品主路径**）。🔴 反证开关走**子进程 env** —— 进程内 `process.env` 只管得住 Node 靶 ⇒ Rust 靶永远绿，是最坏的假绿
 npm run check:engine-patches[:refute] # 上游源码补丁表（ENGINE_PATCHES）↔ 实物一致性 **+ 产品侧只读镜像双靶交叉钉** 7 条 / 反证 6 条（零网络零 GPU：条数写死 / 结构 / marker 命名 / 目标存在 / 已应用 / 补丁体自含 marker / **A7 Rust 镜像与 SSOT 的 id/mark/rel/desc 同序同值**）。🔴 A4/A5 看的是**产品落点** `<appData>/runtimes/manga-translator/src`（B1）；本机引擎装在别处时用 `MIAO_MODEL_ROOT=<...>/manga-translator` 重跑
+npm run check:extract-atomic[:refute] # **D3 原子解包**（修 D-95 待修项）6 条 / 反证 3 条（真 `tar` + 夹具归档：**失败时 `destDir` 一个字节都不动**、失败后**不留 `.part`**、成功才换（旧内容 rename 走）、上次中断的 `.part` 不干扰本次）。🔴 判据必须**跑失败路径**：旧写法（`fs.rmSync(destDir)` 在前、`tar` 在后）在源码里长得几乎一样，只有跑出来才看得见"旧目录已被删掉"。反证 M1 就是**改回旧写法** ⇒ W3 红）
+npm run check:pydensecrf-wheel[:refute] # **B4 预编译 wheel 通道** 10 条 / 反证 3 条（`engine/wheels.manifest.json` 结构合法（64 位 sha256 形态）· 走产品自己的出口 `install-engine-deps.mjs --print-plan` 判定四态：**命中且哈希对得上 ⇒ 走 wheel** / 哈希不符 ⇒ **拒绝并回退** / 文件不在盘上 ⇒ 回退 / 只有别的平台条目 ⇒ 回退 · `--print-plan` **不受平台闸门限制**（macOS 用户也要能问；默认调用仍被拒） · 两份安装引导都写了这条通道）。🔴 **回退是前提不是降级**：清单为空必须仍能装。反证：去掉哈希比对 / 去掉平台过滤 / 命中也返回 source ⇒ 各自红）
+npm run check:offline-fallback[:refute] # **C4 离线兜底** 9 条 / 反证 3 条（夹具夹具清单 + `url` 指向**不可达地址**：权重未预置 ⇒ 配方**不**注入 HF 离线键（否则堵死首次下载）；已预置 ⇒ 注入 `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`；`--link` 零网络重建**引擎真要打开的那条路径**（`<root>/src/<linkTo>` + HF 的 `snapshots/<rev>/<file>` + `refs/main`）；清掉链接 ⇒ 立刻未就绪，而 **store 那一路始终全绿**（两层判据真的分层，R6 的陷阱正是它））。🔴 **取证边界**：真引擎在断网下真加载那一步要真权重，归 nightly；本脚本证明的是它的上游条件。反证：恒不注入 / 忽略逃生开关 / 不写 `refs/main` ⇒ 各自红）
 npm run fetch:models          # S3 模型下载器 CLI **Node 对照端**（开发机用）：--check 只校验 / --link 只重建引擎树里的链接（零网络）。⚠️ **产品运行期跑的是 `boxsvc --fetch-models`**
 npm run check:profile[:refute] # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）
 npm run check:e5e6[:refute]    # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
@@ -142,9 +145,11 @@ npm run check:e10[:refute]    # E10 安全：只监听回环 / 非图片字节�
 #   脚本自己拉起并收尾 box-service / 引擎 / ③ / `:8001` 执行器。
 node e2e/service/llm-real-timing.mjs  # 真 ③（llama-server）冷启动与内存实测（**真权重，分钟级，不进常规门**）
 npm run check:music[:refute]  # 音乐平台 / 播放模式五档 / 心动模式 / 播放列表入口与抽屉 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 228 条 / 反证 212 条
-npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3「准备中」时间线 + ④ 功能梳理（侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / 行内 def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染（自守）176 条 / 反证 127 条
+npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3「准备中」时间线 + ④ 功能梳理（侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / 行内 def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染（自守）+ **C5 许可清单的引擎/模型段** + **D4 运行时实况行** **183** 条 / 反证 **138** 条。⚠️ 本轮顺手修掉三条**基线就红的陈断言**（A3d 把 `scriptExists` 改名 `runnerExists`、`ExpandedPlayer` 从 `MusicScreen` 搬到 `App.tsx` 后没同步；以及 `NOTREADY.wiring.modeDegraded` 判的是"文件里出现过 `status?.mode`"，而它出现两处 ⇒ 摘掉 chip 也不红）—— 一条**永远绿不了**的断言比没有更坏：它占着"这条已覆盖"的位置，反证轮还会把"仍然红"当成"按预期变红"
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 看图缩放 / 样式分层 45 条 / 反证 59 条
-npm run check:bundle[:refute] # 打包配置钉子 6 条 / 反证 7 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip` ——「文件不在」是永远绿的空断言，因 `vendor/node.zip` 从未存在；**W6** 必需资产条目在**且** src 文件真实存在；源码级，不起进程）
+npm run check:bundle[:refute] # 打包配置钉子 **12** 条 / 反证 **16** 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip` ——「文件不在」是永远绿的空断言，因 `vendor/node.zip` 从未存在；**W6** 必需资产条目在**且** src 文件真实存在；**W7/W7b（C5）随包 0 个模型权重** —— 后缀黑名单 + 与 `models.manifest.json` **逐条交叉**，且显式断言"清单读到了、资产名非空"（否则交叉判据是空断言）；**W8–W11（E2/E3）NSIS 安装器钩子** —— 接线指向真实 `.nsh`、长路径只读检查（`SetRegView` + `ReadRegDWORD` + 给命令，**不许 `WriteRegDWORD` 替用户改 HKLM**）、卸载提示**默认保留**（`MB_DEFBUTTON2` 且 `RMDir` 出现在 `IDYES` 之后）且不碰作品目录、Windows 引导写明 SmartScreen 与长路径。源码级，不起进程）
+npm run check:macos-compat[:refute] # **D7 macOS 兼容** 11 条 / 反证 4 条（解释器推导**函数体内**两个平台形态都在（⚠️ 判据限定在函数体：单测里也有同样的字面量，全文件搜会被它骗）+ 实跑 `--print-paths` 的形态与当前平台一致且不串 + 检测侧与 `--print-launch-plan` 的 `cmd[0]` 逐字节相同；**Windows 专用脚本在非 Windows 下真的拒绝**（`MIAO_PLATFORM=darwin-arm64` 接缝 ⇒ exit 2 + `PLATFORM_UNSUPPORTED` + 指向 macOS 引导 + **不含 `ENOENT`**），且守卫必须早于任何 `fs`/`spawn`；文档分平台（macOS 引导里每次 `deps:engine` 都在"不能用"的语境里）；`unverified` 记账在位）。🔴 真机验收归 macOS 机器）
+npm run check:macos-signing[:refute] # **E1 macOS 签名 + 公证** 8 条 / 反证 4 条（`entitlements.plist` 四项必备且**都为 true**、**不含 app-sandbox 键**（判据只看键：注释里正讨论着"刻意不加它"）· `tauri.conf` 接线（`hardenedRuntime` + `entitlements` 指向真实文件）· 打包前自检三种形态：**缺变量 ⇒ 非零退出并逐个点名**（缺公证三件套时 tauri 会**跳过**公证而不是报错 ⇒ 包装得上、跑不起来）/ `MIAO_NOTARIZE=0` ⇒ 放行但**告警"不得对外分发"** / 变量齐 ⇒ 放行 · `sign:preflight` 注册且 `app:build:mac` 串上了它 · `unverified` 记账）。🔴 **落点已变**：F5 + B1 之后引擎运行时在 `~/Library/Application Support/runtimes/…`，**包内几乎无可执行对象**；"对 `Contents/` 内所有可执行逐个签名"没有对象了，多出来的是"带 hardened runtime 的父进程能否拉起用户自装的未签名 python/llama" —— 只能真机答，标 `unverified`）
 npm run check:resources[:refute] # 随包资源寻址 **A1/A2** 三环境取证 8 条 / 反证 4 条（dev 态不误报且来源=repo · 打包齐备来源=resource · 打包缺失报 `RESOURCE_MISSING` 且退出码≠0 · 两边都有时资源目录优先 · 必需资产三处事实源交叉验证 · S1/S2/S3 源码钉）。🔴 dev 态与打包态**必须都跑**：只跑 dev 态**永远绿**（资产就在仓库里，打包态的错测不出来），只跑打包态会把 dev 态误判成缺失
 npm run check:packaged[:refute] # **A4 打包后冒烟**（mock 档，nightly 层）9 条 / 反证 2 条按预期红。三层取证：**安装层**（NSIS `/S /D=` 静默安装；exe 与 `engine/models.manifest.json` 在、`service/` 与 `node.zip` 不在）→ **资产层**（`boxsvc --check-assets` ok=true）→ **服务层**（`/health` 200 + mock 替身 + 清单路径落在安装目录内 + `--print-launch-plan mock` 的 `mode=mock`）。🔴 **不起 GUI 而起 release `boxsvc`**：无头环境 GUI 必失败 ⇒ 时红时绿比没有更坏。🔴 反证轮必须**同时切断 `MIAO_REPO_ROOT` 回退**，否则删了包内资产也会从旁边仓库读到 ⇒ 假绿
 npm run check:runtime-probe[:refute] # **B2/B5 引擎运行时就绪检测** 44 条 / 反证 4 条（`GET /api/v1/engine/runtime`；五项 `venvRoot`/`python`/`source`/`deps`/`patches` 逐项独立翻转 + `detail` 必带绝对路径 + 缺补丁点名到 patch id + mock 档不 warn + **运行时根是 junction 时三项 env 判定全穿过链接**）。🔴 **只 warn 不 fail**：mock 档不该有真引擎（30+ 个 e2e 靠它）；real 档的硬门归 `check:launch-gate`（D6）
@@ -154,6 +159,8 @@ npm run check:install-guide[:refute] # **D5 分平台安装引导**与产品对�
 npm run check:notready-state[:refute] # **D1「运行时未装配」独立成态** 13 条 / 反证 5 条（`GET /engine/status` 与 Tauri 命令 `service_status` **两条链路**都带 `runtime` 块 —— HTTP 那条在"服务起来了但引擎没装"时能用，进程内那条在"一个子进程都没起"（D6 闸门）时仍能答 · **四句 L1–L4 文案逐字冻结**（取自《02》§3）· 新分支**不混进 L1 失败**（`summaryOf` 里不许出现它的措辞）且在时间线之前 `return` · 「约 X GB」来自服务端 `requiredBytes`，界面里没有写死的 GB 数字）。反证：改 L1 文案 / 条件改 `if (false)` / 标题塞进 `summaryOf` / GB 写死 / 删 `service.rs` 的赋值 ⇒ 各自红在指定的那条断言上
 npm run check:models-guide[:refute] # **D8 模型引导清单**（渲染而非编写）14 条 / 反证 4 条（`boxsvc --engine-model-files` 的逐条清单 ⟷ **Node 侧独立算**的期望：id/顺序/目标**绝对路径**（有 `linkTo` 的落在 `<root>/src/<linkTo>`，不是 `<root>/<dest>`）/平台适用性（与**下载器**同判据）/`sizeBytes` 原样转发 · 就绪 = 在位**且大小一致** · 三个聚合布尔与逐条**算自同一份判据** · **自证变异**：改夹具清单一条 `dest` ⇒ 输出跟着变（D-178 的"不能两边写死同一常量"）· 前端 `EngineDiag` 真的渲染了这份清单）。反证：`dest` 分支写死 / 就绪判据退化成"在就算好" / `linkTo` 分支丢掉 `<root>/src` 那一层 / 删前端渲染 ⇒ 各自红在指定的那条断言上
 npm run check:size-guide[:refute] # **C1 体积与落点如实告知** 16 条 / 反证 3 条（`GET /engine/status` 的 `guidance` 块：`totalBytes` == 清单里**本平台可见条目**的 `sizeBytes` 求和（逐字节，且与 D1 的 `requiredBytes` 是**同一个数**）· 分档位（`visual`/`translation`/`llm`/`runtime`）之和**恒等于**总量 —— 表外档位追加在末尾、不属于任何 `set` 的条目归 `unassigned`，都不许从表里消失（丢一条 = 用户少下一块）· 与安装引导文档的体积标记**三方闭环**（文档 ⟷ 服务端 ⟷ 清单）· 界面只做单位换算，代码里没有写死的 GB 数字）。**自证变异**：改夹具一条 `sizeBytes` ⇒ 总量与对应档位跟着变（D-178 纪律）。反证：总量写死 / 分档只留第一档 / 删前端引导区块 ⇒ 各自红在**指定的那条断言**上
+npm run check:platform-guide[:refute] # **C3 `llama-server` 按平台分化** 12 条 / 反证 3 条（`MIAO_PLATFORM` 取证接缝下**两个方向都真跑**：win32-x64 下引导清单只出现 `win32-x64` 的 runtime 条目、darwin-arm64 下（镜像）只出现 mac 条目、两边 runtime 档都非空；**引导侧与下载器给同一个答案**（同一条 `platform_matches`）· `guidance.platform` 跟随接缝 ⇒ 报告说得出"这次是假装成谁跑出来的"。反证：平台判据恒 true / 引导侧另写一份判据 / 下载器 set 分支丢掉过滤 ⇒ 各自红）
+npm run check:progress-truth[:refute] # **D2 进度只来自真实来源** 10 条 / 反证 3 条（跨三层：① 数据源 —— `state.rs` 的 tail 只推**读到的行**、`\\r` 覆盖式进度也算分隔符；② 取值 —— `lastLogLine()` 取末个非空行原样返回、**没有就不显示**；③ 渲染 —— 没有行时整块不渲染，且代码里**不存在**占位数字）。反证三层各一：推送编造的行 / `lastLogLine` 加占位兜底 / 去掉"没有就不渲染"的守卫 ⇒ 各自红）
 npm run check:model-runner[:refute] # **C2 校验/建链执行体随包定位** 12 条 / 反证 3 条（真起服务读 `/engine/status.modelDownload.runner`：默认值 == **当前可执行文件自己**且**是绝对路径** —— 相对路径在本机能跑、装完就没，判据必须含 `path.isAbsolute`，否则"cwd 恰好是仓库根"会把差异掩盖成**假绿** · `POST /engine/models/verify` 用它真的跑得起来（200 + 结构化结果，**不是 INTERNAL**）· 执行体不在盘上 ⇒ INTERNAL **且消息里带路径** · `--link` 收尾零网络跑通 · **跨卷**降级为复制并**单独记账**在 `cross_device`，跨卷且复制也失败时错误消息出现「跨卷」）。🔴 **台账 C2 的落点已过期**：它写在 A3d 之前（执行体还是 `node fetch-models.mjs`），A3d 之后"随包"的最优形态是 `current_exe()`。反证：默认执行体改成仓库相对路径 / 跨卷判定恒 false / 删 CLI 打印跨卷 ⇒ 各自红在**指定的那条断言**上
 npm run check:resilience[:refute] # box-service 健壮性钉子 9 条 / 反证 14 条（源码级：R1–R7 顶层未捕获异常兜底（走同一 shutdown / 收 ③ / 重入闸 / 非零退出）· A1–A2 任务状态原子写（store 走 atomicWriteJson · tmp→fsync→rename）；不起进程；内存变异反证；D-138/D-139）
 npm run check:layering[:refute] # service 依赖方向钉子 3 条 / 反证 3 条（源码级：L0 底座文件集 == 白名单 · L1 底座不得 import manga/** · L2 底座对 settings/ 仅限 engine-settings.mjs；装配入口 server.mjs 豁免；不起进程；内存变异反证；D-141）
@@ -171,7 +178,10 @@ npm run check:llm-supervisor[:refute] # F4-b2 ③ supervisor 同源对拍 4 条 
 npm run check:harness[:refute] # F0 双靶子 harness 7 条 / 反证（`MIAO_SERVICE_IMPL=node|rust` 同断言；未知取值必须**吵一声**否则「两边都绿」其实是 node 跑了两遍）
 npm run check:routes[:refute]  # F5 路由表 / 转发计数 9 条（`--final` 10 条 = 完成门）/ 反证 4 条（44 条全 `Tier::Migrated`、**转发数 = 0**；反证 M1 真跑 `--list-routes` + `MIAO_ROUTE_REFUTE` 注入假转发 ⇒ 完成门报「仍有 N 条转发」变红）
 npm run check:docpaths[:refute] # 现行文档引用的仓库路径必须真实存在 5 条 / 反证 2 条（查 AGENTS/README/spec-notes-1/dev-setup/project_rules；spec-notes.md 已封卷于 D-136，历史路径明确不查；源码级，内存变异反证；D-158）
+npm run sign:preflight         # **E1 macOS 打包前自检**（`app/scripts/mac-signing-preflight.mjs`）：entitlements 四项就位 + 签名/公证变量齐。🔴 缺变量就**非零退出**：缺 `APPLE_SIGNING_IDENTITY` 会产出 ad-hoc 签名的包（本机不报错、别人机器上被拦）；缺公证三件套时 tauri 会**跳过**公证而不是报错 ⇒ 包装得上、跑不起来。本机自用打包请显式设 `MIAO_NOTARIZE=0`
+npm run app:build:mac          # macOS 打包 = **自检 + tauri build**（"写进构建脚本"= 打包路径上真的会跑；`app:build` 仍是不带自检的通用入口）
 docs/dev-setup.md              # 新人上手：环境 / 装依赖 / 跑检查 / 五个最容易踩的坑 / 代码地图（D-158）
+docs/distribution-license-conclusion.md # **E5 分发许可结论**（工程侧事实清单 + 三档结论（自用可 / 对外待法务 / 含 NC 权重禁止）+ 待法务复核三项 + 发布 checklist + 判据索引）。🔴 **对外分发的前置门**：结论未出不得对外分发；它不是法律意见
 cd app && npx tsc --noEmit && npx vite build   # 前端类型与构建
 cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 ```
@@ -218,7 +228,17 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
   模拟引擎只在测试里被显式注入（`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs`）。
   ⇒ **本机没拉引擎（运行时目录不在）时，产品链路起不来**；缺哪一项由 `GET /api/v1/engine/runtime` 逐项报出（B2），
   而不是一句 `Connection error`。
-- **未做**：打包分发 —— Windows 侧**已能产出 NSIS 安装包**（`app/src-tauri/tauri.windows.conf.json` 平台分叉，`npm run check:bundle` 钉住；macOS 包型仍 `app`+`dmg`，未动），
+- **打包分发的"能做完的部分"已做完**（2026-10-14 一轮）：随包资源与寻址（A1/A2）· 打包后冒烟（A4）·
+  装配脚本去 node（A3b–A3d）· 就绪检测五项（B2/B5）· 路径单源（B1/B3）· 体积与落点如实告知（C1/C2）·
+  **`llama-server` 按平台分化（C3）** · **离线兜底（C4）** · **许可边界钉在分发物上（C5：随包 0 权重 + 许可清单含引擎/模型段）** ·
+  首启成态（D1/D5/D6/D8）· **进度只来自真实来源（D2）** · **原子解包（D3）** · **设置页运行时实况（D4）** ·
+  **Windows 侧长路径提示 + SmartScreen 说明（E2）** · **卸载时提示引擎资产、默认保留（E3）** · **计数门（E4）** ·
+  **分发许可结论（E5）** · **pydensecrf 预编译 wheel 通道（B4）**。
+  🔴 **只剩真机与法务两类**（都不能在本机完成）：**D7 macOS 真机**（含 `unverified`：带 hardened runtime
+  的父进程能否拉起用户自装的未签名 python / `llama-server`）· **E1 macOS 真机签名 + 公证**
+  （配置、entitlements 与打包前自检都已就位并有钉子，但"从 dmg 装完引擎能起"只能真机验）·
+  **E5 的三项法务复核**（`docs/distribution-license-conclusion.md` §4）。⇒ **结论未出不得对外分发**。
+- Windows 侧**已能产出 NSIS 安装包**（`app/src-tauri/tauri.windows.conf.json` 平台分叉，`npm run check:bundle` 钉住；macOS 包型仍 `app`+`dmg`，未动），
   A4 起**已能在真实安装产物上冒烟**（`npm run check:packaged`：静默安装 → `--check-assets` → 起服务打 `/health` + mock 替身 + 启动配方）；
   引擎运行时本身**不随包**（用户自装，B1/B2）· Windows **进程树回收三项**
   （仍 `unverified`：Job Object / 无孤儿 `llama-server.exe` / `taskkill /T`；注：Windows **真引擎装配 + S1 已真机跑通**，见 D-85）·

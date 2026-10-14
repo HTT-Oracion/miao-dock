@@ -43,6 +43,24 @@ const ROOT = path.resolve(APP, '..');
 const PKG_LOCK = path.join(APP, 'package-lock.json');
 const CARGO_LOCK = path.join(APP, 'src-tauri', 'Cargo.lock');
 const OUT = path.join(APP, 'src', 'generated', 'licenses.json');
+/// 引擎侧来源（C5）：资产许可在清单里逐条声明，上游/模型的总许可在版本锁 §6。
+const ENGINE_MANIFEST = path.join(ROOT, 'engine', 'models.manifest.json');
+const ENGINE_VERSIONS = path.join(ROOT, 'engine', 'VERSIONS.lock');
+/// 分发物配置：用来**推导**"这条资产有没有被打进包"（C5 的正面陈述）。
+const TAURI_CONF = path.join(APP, 'src-tauri', 'tauri.conf.json');
+
+/**
+ * 声明串 → 归一后的许可标识。
+ *
+ * 清单里的 `license` 是**给人读的一句话**（`"CC BY-NC-SA 4.0 —— 🔴 禁止任何形式的商用"`），
+ * 聚合时要把它收成标识，否则同一份许可会因为后缀不同被算成两类。
+ * 切点是"解释性后缀"：全角/半角括号与破折号 —— 都在**标识之后**，切了不丢信息。
+ */
+function spdxOf(s) {
+  if (typeof s !== 'string') return null;
+  const t = s.split(/[（(]|——|—/)[0].replace(/\*/g, '').trim();
+  return t || null;
+}
 
 /** 许可字段归一：npm 允许 `license: "MIT"` 或老式的 `licenses: [{type:"MIT"}]` */
 function normNpmLicense(pkg) {
@@ -139,8 +157,90 @@ function summarize(pkgs) {
   return { byLicense: sorted, unknown, withLicense: pkgs.length - unknown };
 }
 
+/**
+ * 读引擎 / 模型资产（C5 新增的第三段）。
+ *
+ * 为什么必须有这一段：npm 与 Cargo 两段回答的是"**我们的代码**用了什么开源库"，
+ * 而真正会卡住对外分发的许可（R13）在这一段 —— 引擎上游 GPL-3.0-only（独立进程，
+ * 只经 HTTP 说话）、Sakura 与 nllb 的 **CC-BY-NC**。前者不在 lock 里、后者根本不是一个"包"，
+ * 于是老脚本的产出里**一个字都查不到**，界面上也看不见 —— 这正是最需要被看见的一段。
+ *
+ * 三条事实各自有各自的来源，都不许凭记忆写：
+ *   · 逐条资产许可 ← `engine/models.manifest.json` 的 `license` 字段（资产自己在清单里的声明）；
+ *   · 上游 / 模型总许可 ← `engine/VERSIONS.lock` §6 的 `*_license =` 行（版本锁的一部分）；
+ *   · 是否随包 ← `tauri.conf.json` 的 `bundle.resources`（C5 的正面陈述）。
+ */
+function readEngine() {
+  const manifest = JSON.parse(readFileSync(ENGINE_MANIFEST, 'utf8'));
+
+  // 随包资源里出现过哪些文件名 —— 用来逐条推导 `bundled`。
+  let payloads = [];
+  try {
+    const conf = JSON.parse(readFileSync(TAURI_CONF, 'utf8'));
+    const res = conf?.bundle?.resources;
+    payloads = Array.isArray(res)
+      ? res.map(String)
+      : res && typeof res === 'object'
+        ? Object.values(res).map(String)
+        : [];
+  } catch {
+    payloads = [];
+  }
+  const bundledNames = new Set(payloads.map((p) => path.basename(p)));
+
+  const assets = (manifest.files ?? []).map((f) => {
+    const destName = typeof f.dest === 'string' ? path.basename(f.dest) : '';
+    return {
+      id: f.id ?? '',
+      set: f.set ?? null,
+      platform: f.platform ?? null,
+      sizeBytes: f.sizeBytes ?? null,
+      license: f.license ?? null,
+      spdx: spdxOf(f.license),
+      bundled: destName !== '' && bundledNames.has(destName),
+    };
+  });
+
+  // 上游许可：版本锁里所有 `xxx_license = ...` 行（引擎 / 模型）。
+  const lockText = readFileSync(ENGINE_VERSIONS, 'utf8');
+  const upstream = [...lockText.matchAll(/^([a-z_]+_license)\s*=\s*(.+)$/gm)].map((m) => ({
+    key: m[1],
+    license: m[2].trim(),
+    spdx: spdxOf(m[2].trim()),
+  }));
+  // 版本锁里另有 `license = ...`（不带前缀，属于 §1 引擎源码那一节）
+  for (const m of lockText.matchAll(/^license\s*=\s*(.+)$/gm)) {
+    if (upstream.some((u) => u.license === m[1].trim())) continue;
+    upstream.push({ key: 'engine_source_license', license: m[1].trim(), spdx: spdxOf(m[1].trim()) });
+  }
+
+  const bySpdx = {};
+  let unknown = 0;
+  for (const a of assets) {
+    if (!a.spdx) {
+      unknown++;
+      continue;
+    }
+    bySpdx[a.spdx] = (bySpdx[a.spdx] ?? 0) + 1;
+  }
+  const sorted = Object.fromEntries(Object.entries(bySpdx).sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0])));
+
+  return {
+    assets,
+    upstream,
+    total: assets.length,
+    withLicense: assets.length - unknown,
+    unknown,
+    bySpdx: sorted,
+    /** 🔴 C5 的正面陈述：随包分发物里的模型权重数 —— 必须是 0（由 `check:bundle` 的 W7/W7b 独立钉住）。 */
+    bundledCount: assets.filter((a) => a.bundled).length,
+    engineCommit: manifest.engineCommit ?? null,
+  };
+}
+
 const npm = readNpm();
 const rust = readRust();
+const engine = readEngine();
 
 const data = {
   generatedAt: new Date().toISOString(),
@@ -148,19 +248,23 @@ const data = {
    * ⚠️ 界面与文档都必须把这句话带出去 —— 清单是"包自己说的"，不是"我们核准过的"。
    */
   disclaimer:
-    '以下是各依赖**自己声明**的许可，由 package-lock.json / Cargo.lock 与本地包元数据枚举得出，',
+    '以下是各依赖**自己声明**的许可，由 package-lock.json / Cargo.lock / engine 清单与版本锁枚举得出，',
   sources: {
     npm: 'app/package-lock.json + app/node_modules/**/package.json（不含 devDependencies）',
     rust: 'app/src-tauri/Cargo.lock + ~/.cargo/registry/src/**/Cargo.toml',
+    engine: 'engine/models.manifest.json（逐条 license）+ engine/VERSIONS.lock §6（上游/模型总许可）',
   },
   /** 供门槛脚本对账：来源文件的规模（依赖变了而没重跑本脚本 ⇒ 不一致 ⇒ 红） */
   inputs: {
     npmProdPackages: npm.total,
     npmSkippedDev: npm.skippedDev,
     rustLockCrates: rust.total,
+    /** C5：引擎资产条数 —— 清单加了条目而没重跑本脚本，界面上的许可清单就会少一块 */
+    engineAssets: engine.total,
   },
   npm: { total: npm.total, ...summarize(npm.pkgs), packages: npm.pkgs },
   rust: { total: rust.total, ...summarize(rust.pkgs), packages: rust.pkgs },
+  engine,
 };
 
 mkdirSync(path.dirname(OUT), { recursive: true });
@@ -172,4 +276,13 @@ console.log(
 );
 console.log(
   `  rust Cargo.lock ${rust.total} 个第三方 crate · 本机取到声明 ${data.rust.withLicense} 个（缺 ${data.rust.unknown} 个）`,
+);
+console.log(
+  `  engine 资产 ${engine.total} 条 · 有声明 ${engine.withLicense} 条（缺 ${engine.unknown} 条）· 其中随包分发 ${engine.bundledCount} 条（必须是 0）`,
+);
+console.log(
+  `  engine 许可构成：${Object.entries(engine.bySpdx).map(([k, v]) => `${k} ${v}`).join(' · ') || '（无）'}`,
+);
+console.log(
+  `  engine 上游声明：${engine.upstream.map((u) => `${u.key}=${u.spdx ?? '?'}`).join(' · ') || '（无）'}`,
 );

@@ -1,5 +1,5 @@
 import { Btn, Notice } from '@components/units';
-import { emphasis } from '@screens/settings/parts';
+import { emphasis, humanBytes } from '@screens/settings/parts';
 import type { SettingItem } from '@screens/settings/catalog';
 import type { EngineState } from '@screens/settings/engine-state';
 
@@ -21,6 +21,10 @@ export function ModelManageBlock({ item, eng }: { item: SettingItem; eng: Engine
   const v = eng.verifyResult;
   const busy = eng.action !== null;
   const download = eng.status?.modelDownload;
+  /** D4：盘上实况（服务端算好的：按 inode 去重、只算就绪条目） */
+  const disk = eng.status?.models?.disk;
+  /** 适用本机的条目数 —— 与「引擎诊断」的逐条清单**同一份判据**（服务端给的 `applicable`） */
+  const mineTotal = eng.status?.models?.files?.filter((f) => f.applicable).length ?? 0;
 
   /*
    * 只列前 8 条不符/缺失：一份 40 行的清单会把这一项撑成一整屏，
@@ -60,6 +64,26 @@ export function ModelManageBlock({ item, eng }: { item: SettingItem; eng: Engine
             重新下载模型
           </Btn>
         </div>
+      </div>
+
+      {/*
+        D4：**运行时实况**一行。
+        这一项原本只能"点一次校验才知道"，用户想第一眼看到"装了什么、占了多少盘、
+        什么时候落的"却没有地方看 —— 而这三个问题恰恰是决定"要不要点重新下载"的依据。
+
+        🔴 三个数与措辞全部来自服务端 `models.disk`（它自己按 inode 去重、只算就绪条目），
+           这里**不自己遍历、不自己求和**，只做单位换算。
+      */}
+      <div className="set-manage-state">
+        {disk ? (
+          <>
+            已就绪 <b>{disk.readyEntries}</b> / {mineTotal} 条适用条目 · 模型资产占盘{' '}
+            <b>{humanBytes(disk.bytes)}</b>
+            {disk.assembledAt ? <> · 最近一次落盘 {disk.assembledAt}</> : <> · 尚无就绪条目</>}
+          </>
+        ) : (
+          <>运行时状态还没取到（服务未启动时这一行只能空着，不编数字）</>
+        )}
       </div>
 
       {eng.verifyError ? (

@@ -199,7 +199,7 @@ npm run check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲
 npm run check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run check:contract        # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status 77 条（反证：check:contract:refute）
 npm run check:music           # 音乐平台 / 播放模式五档 / 心动模式 / 播放列表入口与抽屉 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 228 条（反证：check:music:refute，212 条）
-npm run check:settings        # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3 裁定结果 + ④ 功能梳理（侧栏标签 / 存储占用 / 第三方许可 / def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染 176 条（反证：check:settings:refute，127 条）
+npm run check:settings        # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3 裁定结果 + ④ 功能梳理（侧栏标签 / 存储占用 / 第三方许可 / def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染 + **C5 许可清单的引擎/模型段** + **D4 运行时实况行** 183 条（反证：check:settings:refute，138 条）
 npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 看图缩放 / 样式分层 45 条（反证：check:units:refute）
 npm run check:stall           # U10② 引擎卡死：「静默有上界 + 每次尝试留痕 + 进行中落盘」7 条 / 反证 3 条（mock 引擎对指定 seq「永不回包」）
 npm run check:retry           # 队列「重试」任务身份：复用**同一** taskId / 不冒历史行 + 翻译方向贯通 10 条 / 反证 7 条（mock 引擎 + 真服务子进程）
@@ -208,7 +208,7 @@ npm run check:retranslate     # 单张漫画返工重译 + 全屏缩放：覆盖
 npm run check:engine-settings # S6 引擎设置面：档位 / 后端 / 空闲 / 模型目录 + 模型下载状态 61 条（反证：check:engine-settings:refute）
 npm run check:translate      # ver2.2 在线翻译服务（有道智云）：签名 v3 / 四层超时 / 限流 / 三层设置 / 密钥隔离 / 契约适配器 / 5 路由端到端 54 条（反证：check:translate:refute，8 开关；假上游默认发真 SSE 帧，零网络秒级）
 npm run check:docs            # 文档 ↔ 实现一致性：条数对账 / 引用的命令存在 / 禁词 0 命中 / 分组覆盖 16 条
-npm run check:bundle          # 打包配置钉子 6 条 / 反证 7 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip`；**W6** 必需资产条目在且 src 真实存在；源码级，不起进程）
+npm run check:bundle          # 打包配置钉子 12 条 / 反证 16 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip`；**W6** 必需资产条目在且 src 真实存在；**W7/W7b（C5）** 随包 **0 个模型权重**（后缀黑名单 + 与 `engine/models.manifest.json` 逐条交叉）；**W8–W11（E2/E3）** NSIS 安装器钩子：长路径**只读提示**（不替用户改 `HKLM`）+ 卸载**默认保留**引擎运行时且不碰作品目录 + 引导写明 SmartScreen；源码级，不起进程）
 npm run check:resources       # 随包资源寻址 **A1/A2** 三环境取证 8 条 / 反证 4 条（dev 态不误报 · 打包齐备取资源目录 · 打包缺失报 `RESOURCE_MISSING` · 优先级 · 必需资产交叉验证 · 源码钉）
 npm run check:packaged        # **A4 打包后冒烟**：真实安装包三层取证 9 条（nightly 层；NSIS 静默安装 → `--check-assets` → 起服务打 `/health` + mock 替身 + 启动配方）
 npm run check:runtime-probe   # **B2/B5 引擎运行时五项只读检测** 44 条 / 反证 4 条（`GET /api/v1/engine/runtime`；`venvRoot`/`python`/`source`/`deps`/`patches` 逐项独立翻转 + `detail` 必带绝对路径 + 缺补丁点名到 patch id + mock 档不 warn + junction 场景三项 env 判定穿过链接）
@@ -219,6 +219,13 @@ npm run check:notready-state # **D1「运行时未装配」独立成态** 13 条
 npm run check:models-guide   # **D8 模型引导清单（渲染而非编写）** 14 条 / 反证 4 条（逐条目标绝对路径 ⟷ Node 独立算 · 就绪 = 在位且大小一致 · 改清单副本 ⇒ 输出跟着变）
 npm run check:size-guide     # **C1 体积与落点如实告知** 16 条 / 反证 3 条（`guidance.totalBytes` == 本平台清单 `sizeBytes` 求和且与 D1 同数 · 分档之和恒等于总量 · 与安装引导文档三方闭环 · 界面无写死 GB）
 npm run check:model-runner   # **C2 执行体随包定位** 12 条 / 反证 3 条（默认执行体 == 当前可执行文件的**绝对路径** · verify 跑得起来、不是 INTERNAL · 不在盘上时报路径 · 跨卷单独记账）
+npm run check:platform-guide # **C3 `llama-server` 按平台分化** 12 条 / 反证 3 条（`MIAO_PLATFORM` 接缝下两个方向都真跑：Windows 只出 `win32-x64` 的 runtime 条目、macOS 只出 mac 条目；引导侧与下载器**给同一个答案**）
+npm run check:offline-fallback # **C4 离线兜底** 9 条 / 反证 3 条（权重在盘才注入 `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`；`--link` 在**不可达地址**下零网络重建引擎真要打开的那条路径（含 HF 的 `snapshots`+`refs/main`）；清掉链接 ⇒ 引擎树那一路立刻红，而 **store 那一路始终全绿** —— 两层判据真的分层）
+npm run check:progress-truth # **D2 进度只来自真实来源** 10 条 / 反证 3 条（数据源只推**读到的行** · `lastLogLine` 没有就不显示 · 没有行时整块不渲染，代码里不存在占位数字）
+npm run check:extract-atomic # **D3 原子解包** 6 条 / 反证 3 条（真 `tar` + 夹具：解包失败时 `destDir` **一个字节都不动**、不留 `.part`；旧的「先删后解」一旦还原回去就变红）
+npm run check:pydensecrf-wheel # **B4 预编译 wheel 通道** 10 条 / 反证 3 条（`--print-plan` 四态判定：命中且 sha256 对得上 ⇒ 走 wheel；哈希不符 ⇒ **拒绝并回退**；文件不在盘上 / 只有别的平台条目 ⇒ 回退。🔴 回退是**前提**：清单为空仍能装）
+npm run check:macos-compat   # **D7 macOS 兼容** 11 条 / 反证 4 条（解释器两个平台形态都在 + 实跑不串 + 检测与启动逐字节同源；**Windows 专用脚本在非 Windows 下 exit 2 并指向 macOS 引导**（不是 `ENOENT python.exe`）；文档分平台；`unverified` 记账）
+npm run check:macos-signing  # **E1 macOS 签名 + 公证** 8 条 / 反证 4 条（entitlements 四项为 true 且无 app-sandbox · `hardenedRuntime` + entitlements 接线 · 打包前自检：缺变量非零退出并点名 / `MIAO_NOTARIZE=0` 放行但告警 / 变量齐放行 · `app:build:mac` 串上自检）
 ```
 
 **F 组「服务 Rust 化」的同源对拍钉子**（F0–F5 已全部完成，见 `docs/packaging-local-engine-dev-plan.md`）——

@@ -7,8 +7,8 @@ import { errorText, serviceRestart, writeTextFile } from '@/ipc';
 import type { ServiceStatus } from '@/ipc';
 import { configPairs } from '@screens/settings/engine-state';
 import type { EngineState } from '@screens/settings/engine-state';
-import type { ModelDownloadView, ModelFileStatus, ModelGuidance } from '@screens/settings/engine-api';
-import { emphasis } from '@screens/settings/parts';
+import type { ModelDisk, ModelDownloadView, ModelFileStatus, ModelGuidance } from '@screens/settings/engine-api';
+import { emphasis, humanBytes } from '@screens/settings/parts';
 import type { SettingItem } from '@screens/settings/catalog';
 
 /**
@@ -379,6 +379,8 @@ export function EngineDiag({
             </div>
             {/* C1：体积与落点，动手之前先说清楚 */}
             <ModelGuide guidance={s?.models?.guidance} dir={o?.modelDir?.current} />
+            {/* D4：盘上实况（装没装 / 占多少盘 / 什么时候落的） */}
+            <ModelDiskRow disk={s?.models?.disk} />
             {/* D8：逐条引导清单（**渲染**清单，不是在这里编写） */}
             <ModelFiles files={s?.models?.files} />
             <DownloadState view={s?.modelDownload} />
@@ -550,22 +552,11 @@ function ProcRow({
   );
 }
 
-/**
- * 1 GiB。写成常量而**不用 `1024 ** 3`**：幂运算符的 `**` 与 markdown 粗体同形，
- * 会被 `ENGINE.md.noRawAsterisks` 当成"界面漏出裸星号"（那条断言是对的 —— 它守的正是
- * 有人在 JSX 裸文本里塞 `**`；这里只是不去蹭它的边界）。
+/*
+ * 字节 → 人读的换算**移到 `parts.tsx` 的 `humanBytes()`**（D4）：这一页与「模型管理」
+ * 两块都要显示同一个量（模型资产占盘），各自留一份换算函数就会出现"同一个数在两处
+ * 显示成不同单位"。纯函数、与具体能力无关，故归排版件 —— 与 `plain()` 同一个理由。
  */
-const GIB = 1024 * 1024 * 1024;
-
-/**
- * 字节 → 人读。清单里的 `sizeBytes` 是**精确值**，这里只做单位换算（1024 进制，
- * 与安装引导 §2 的 "6.9 GB" 同一个口径 —— 两处显示同一个数，用户才不会对着两个数字发懵）。
- */
-function humanBytes(n: number): string {
-  if (n >= GIB) return `${(n / GIB).toFixed(1)} GB`;
-  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(0)} MB`;
-  return `${n} B`;
-}
 
 /**
  * **安装引导：体积与落点**（C1）—— 把"要留多少盘、装到哪"在**动手之前**说清楚。
@@ -641,6 +632,45 @@ function ModelGuide({ guidance, dir }: { guidance?: ModelGuidance; dir?: string 
  *    `modelDir + dest` 拼的 —— 拼一个就等于在界面里再造一套落点规则，
  *    而 `linkTo` 的条目根本不落在 `dest` 上。
  */
+/**
+ * **盘上实况**（D4）—— 一次答完三个问题：装没装、占多少盘、什么时候落的。
+ *
+ * 🔴 每处措辞都在防一种误读，改动前先看清：
+ *   · 占的是「**模型资产**」而不是"整个安装" —— Python / venv 那几 GB 由用户环境决定，
+ *     我们算不出来；报一个包含它的数就是编数字（同 `ModelGuide` 的口径）；
+ *   · 去重口径写在界面上 —— 硬链接（`boxsvc --fetch-models --link` 建的那种）是同一份
+ *     inode，不说明的话用户会以为"6.9 GB 怎么显示成 13.8 GB 了"；
+ *   · 时间是「**最近落盘**」而不是"装配于" —— 我们没有"装配完成"这个事件的记录，
+ *     把文件 mtime 说成"装配时刻"就是在编数据；没有就绪条目时**不显示时间**。
+ */
+function ModelDiskRow({ disk }: { disk?: ModelDisk }) {
+  if (!disk) {
+    return <div className="set-diag-note">模型资产占盘：服务端还没给出（诊断视图没取到状态）。</div>;
+  }
+  return (
+    <div className="set-diag-guide">
+      <div className="set-diag-guide-total">
+        模型资产占盘 <b>{humanBytes(disk.bytes)}</b>
+        <span className="set-diag-guide-sub">
+          {disk.bytes.toLocaleString('en-US')} 字节 · 去重后 {disk.uniqueFiles} 个文件（硬链接不重复计）
+        </span>
+      </div>
+      <div className="set-diag-note">
+        已就绪 <b>{disk.readyEntries}</b> 条
+        {disk.assembledAt ? (
+          <>
+            {' '}
+            · 最近一次落盘 <b>{disk.assembledAt}</b>（就绪文件里最新的修改时间，
+            <b>不是</b>"装配完成时刻"）
+          </>
+        ) : (
+          <> · 还没有任何就绪条目（没落过盘）</>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ModelFiles({ files }: { files?: ModelFileStatus[] }) {
   const all = files ?? [];
   if (all.length === 0) {

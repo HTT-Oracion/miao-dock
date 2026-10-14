@@ -38,6 +38,16 @@
  *      所以"文件不存在"是一条永远绿的空断言；真正会把它带进包里的**唯一途径**就是
  *      `bundle.resources` 里列了它。
  *
+ *   W7 / W7b 随包里 **0 个模型权重**（C5 验收①）：
+ *      W7  后缀黑名单（`.gguf` / `.safetensors` / `.ckpt` / …）；
+ *      W7b 与 `engine/models.manifest.json` **逐条交叉** —— 清单是"哪些是资产"的权威，
+ *          凡是清单里声明过的资产出现在随包里就是错的，无论它被改成什么名字。
+ *      🔴 两条判据叠着用、且**都做过反证**：M8（塞 `sakura-*.gguf`）只打红 W7，
+ *      M9（把清单里的权重改个后缀夹带进来）只打红 W7b —— 这说明两条各挡一类，
+ *      少了任一条就会有一类漏网。
+ *      🔴 W7b 里显式断言"清单解析成功且资产名非空"：清单读不到时交叉集合为空 ⇒
+ *      判据**永远绿**（空断言），那比没有更坏。
+ *
  * ## 反证轮（`--refute`）
  *   逐条把上面的写法**改回缺陷形态** → 对应断言**必须变红** → 按字节还原。
  *
@@ -61,6 +71,8 @@ import path from 'node:path';
 const ROOT = path.resolve(import.meta.dirname, '..');
 const BASE_CONF = path.join(ROOT, 'app', 'src-tauri', 'tauri.conf.json');
 const WIN_CONF = path.join(ROOT, 'app', 'src-tauri', 'tauri.windows.conf.json');
+/** NSIS 安装器钩子文件（E2/E3）—— 与 `tauri.windows.conf.json` 里那条引用同一处。 */
+const NSIS_HOOKS = path.join(ROOT, 'app', 'src-tauri', 'nsis', 'hooks.nsh');
 
 const REFUTE = process.argv.includes('--refute');
 
@@ -97,6 +109,49 @@ const REQUIRED_ASSETS = ['engine/models.manifest.json'];
 
 /// `bundle.resources` 的目录（src 相对它解析）。
 const CONF_DIR = path.dirname(BASE_CONF);
+
+/// 模型清单（C5 的交叉判据要读它）。
+const MODELS_MANIFEST = path.join(ROOT, 'engine', 'models.manifest.json');
+
+/// Windows 安装引导（E2 的 SmartScreen / 长路径说明）。
+const GUIDE_WIN = path.join(ROOT, 'docs', 'install-guide-windows.md');
+
+/// NSIS 安装器钩子（E2/E3）的配置入口与文件（`q` 与配置文件同目录解析）。
+const nsisHooksRef = (win) => {
+  const p = win && win.bundle && win.bundle.windows && win.bundle.windows.nsis
+    ? win.bundle.windows.nsis.installerHooks
+    : undefined;
+  return typeof p === 'string' && p.trim() ? p.trim() : null;
+};
+const nsisHooksFile = (win) => {
+  const ref = nsisHooksRef(win);
+  return ref ? path.resolve(path.dirname(WIN_CONF), ref) : null;
+};
+
+/// 模型权重的**后缀黑名单**（C5：别把 NC 权重打进包）。
+/// ⚠️ 有意**不含** `.bin`：它太宽（工具链的普通数据也叫 `.bin`），而"清单里那几条真资产"
+///    由下面的逐条交叉断言覆盖。一条过宽的黑名单早晚会被后来者删掉，那比没有更坏。
+const WEIGHT_SUFFIXES = ['.gguf', '.safetensors', '.ckpt', '.pth', '.pt', '.onnx'];
+
+/**
+ * 清单里**每一条模型资产**的文件名（`dest` / `linkTo` / `url` 三种写法的 basename）。
+ *
+ * 为什么用「与清单交叉」而不是再列一张扩展名表：扩展名表只能挡住"你预先想到的格式"，
+ * 而清单是**唯一的权威事实源** —— 凡是清单里声明为资产的，出现在随包里就是错的，
+ * 无论它叫什么。两条判据叠起来：黑名单挡"新格式的权重"，交叉挡"清单里的老资产"。
+ */
+function manifestAssetNames() {
+  const m = readJson(MODELS_MANIFEST);
+  const names = new Set();
+  for (const f of (m && m.files) || []) {
+    for (const key of ['dest', 'linkTo']) {
+      const v = f[key];
+      if (typeof v === 'string' && v) names.add(path.basename(v).toLowerCase());
+    }
+    if (typeof f.url === 'string' && f.url.includes('/')) names.add(f.url.split('/').pop().toLowerCase());
+  }
+  return { parsed: !!m, names };
+}
 
 /// `resources` 的形状：数组 **或** map（src→target）都合法（Tauri v2 两种都支持）。
 const isResShape = (r) => Array.isArray(r) || (!!r && typeof r === 'object');
@@ -204,6 +259,94 @@ function runAll() {
         ? `源文件不存在：${JSON.stringify(missingSrc)}`
         : `targets=${JSON.stringify([...targets])}`,
   );
+
+  // ---- W7/W7b：随包里 **0 个模型权重**（C5：别把 NC 权重打进包）----
+  //    两个方向都封：① 后缀黑名单挡"新格式的权重"；② 与清单逐条交叉挡"清单里的老资产"。
+  //    🔴 反向的坑：清单读不到时交叉判据的集合为空 ⇒ **永远绿**（空断言）。
+  //       所以 W7b 里显式断言"清单解析成功且资产名非空" —— 那是这条判据**有意义**的前提。
+  const payloads = [
+    ...resStrings(resBase),
+    ...resStrings(resWin),
+    ...resTargets(resBase),
+    ...resTargets(resWin),
+  ];
+  const bySuffix = payloads.filter((p) => WEIGHT_SUFFIXES.some((s) => p.toLowerCase().endsWith(s)));
+  const { parsed, names: assetNames } = manifestAssetNames();
+  const byManifest = payloads.filter((p) => assetNames.has(path.basename(p).toLowerCase()));
+
+  check(
+    'W7',
+    `随包资源里**没有**模型权重后缀（${WEIGHT_SUFFIXES.join(' / ')}）—— 权重一律由用户自下（C 组主路径）`,
+    bySuffix.length === 0,
+    bySuffix.length ? `混进了：${JSON.stringify(bySuffix)}` : `resources=${JSON.stringify(payloads)}`,
+  );
+
+  check(
+    'W7b',
+    '随包资源里**没有**清单声明的任何一条模型资产（与 `models.manifest.json` 逐条交叉），且这条判据非空转',
+    parsed && assetNames.size > 0 && byManifest.length === 0,
+    !parsed
+      ? '清单读不到 ⇒ 交叉判据会**永远绿**（空断言），必须当作失败'
+      : assetNames.size === 0
+        ? '清单里没有任何资产名 ⇒ 同上'
+        : byManifest.length
+          ? `混进了：${JSON.stringify(byManifest)}`
+          : `与清单 ${assetNames.size} 个资产名逐条比过，0 命中`,
+  );
+
+  // ---- W8/W9/W10：NSIS 安装器钩子（E2 长路径提示 / E3 卸载提示）+ W11 文档 ----
+  //    这三条都在**配置与钩子文件**上钉：真跑一次安装器要分钟级 + 真要弹窗，而"提示语
+  //    写错一处"（默认按钮落在「删」那一支）的代价是用户几十分钟的装配成果没了。
+  const hooksRef = nsisHooksRef(win);
+  const hooksFile = nsisHooksFile(win);
+  check(
+    'W8',
+    'Windows 平台配置把 NSIS 安装器钩子接上了（`bundle.windows.nsis.installerHooks` → 文件真实存在）',
+    !!hooksRef && !!hooksFile && fs.existsSync(hooksFile),
+    `ref=${hooksRef} exists=${hooksFile ? fs.existsSync(hooksFile) : false}`,
+  );
+
+  const nsh = hooksFile && fs.existsSync(hooksFile) ? read(hooksFile) : '';
+  /*
+   * 🔴 判据只看**代码**，不看注释：`;` 开头的整行是 NSIS 注释。
+   * 不剥注释的话会两头出错 —— ① 注释里提一句 `Pictures` 就让"绝不碰作品目录"假红
+   * （本文件尾注就写明了不碰它）；② 反过来，把检查注释掉也能让断言照绿。
+   */
+  const nshCode = nsh.split(/\r?\n/).filter((l) => !l.trim().startsWith(';')).join('\n');
+  const nshFacts = [
+    `ReadRegDWORD=${/ReadRegDWORD/.test(nshCode)}`,
+    `LongPathsEnabled=${/LongPathsEnabled/.test(nshCode)}`,
+    `SetRegView=${/SetRegView/.test(nshCode)}`,
+    `New-ItemProperty=${/New-ItemProperty/.test(nshCode)}`,
+    `WriteRegDWORD=${/WriteRegDWORD/.test(nshCode)}`,
+  ].join(' ');
+  check(
+    'W9',
+    '钩子里有**长路径开关的只读检查**（读 64 位视图 + 给出可执行修复命令），且**不替用户改系统设置**'
+      + '（写 `HKLM` 要提权，安装器是当前用户模式 ⇒ 只提示）',
+    /ReadRegDWORD/.test(nshCode) && /LongPathsEnabled/.test(nshCode) && /SetRegView/.test(nshCode)
+      && /New-ItemProperty/.test(nshCode) && !/WriteRegDWORD/.test(nshCode),
+    nshFacts,
+  );
+
+  // 🔴 E3 的两条硬要求：① 默认是**保留**；② 删除动作只发生在用户明确点「是」之后。
+  //    第 ② 条用结构判据：`RMDir /r` 必须出现在某个 `IDYES` **之后**（而不是无条件执行）。
+  const rmAt = nshCode.indexOf('RMDir /r "$LOCALAPPDATA\\runtimes');
+  const yesAt = rmAt >= 0 ? nshCode.lastIndexOf('IDYES', rmAt) : -1;
+  check(
+    'W10',
+    '卸载提示：默认**保留**（`MB_DEFBUTTON2`）+ 删除只在明确选「是」之后（`RMDir` 出现在 `IDYES` 之后）+ 绝不碰作品目录',
+    /MB_DEFBUTTON2/.test(nshCode) && rmAt > 0 && yesAt > 0 && !/Pictures/i.test(nshCode),
+    `defaultKeep=${/MB_DEFBUTTON2/.test(nshCode)} rmAt=${rmAt} yesAt=${yesAt} touchesPictures=${/Pictures/i.test(nshCode)}`,
+  );
+
+  const guide = fs.existsSync(GUIDE_WIN) ? read(GUIDE_WIN) : '';
+  check(
+    'W11',
+    'Windows 安装引导里写清了两件事：SmartScreen 怎么过 + 长路径为什么必须开',
+    /SmartScreen/.test(guide) && /LongPathsEnabled/.test(guide),
+    `smartScreen=${/SmartScreen/.test(guide)} longPaths=${/LongPathsEnabled/.test(guide)}`,
+  );
 }
 
 // ------------------------------------------------------------------ 输出
@@ -285,6 +428,98 @@ const MUTATIONS = [
       },
     ],
     expect: ['W6'],
+  },
+  {
+    // C5 验收②：把一份 NC 权重塞进 `resources`。**必须变红**，否则"包内 0 权重"就是空的。
+    name: 'M8 把一份 Sakura 权重（`*.gguf`）塞进随包资源（C5：许可边界被踩）',
+    edits: [
+      {
+        file: BASE_CONF,
+        find: '"resources": {',
+        replace: '"resources": {\n      "../../engine/models/sakura-1.5b-q4.gguf": "models/sakura-1.5b-q4.gguf",',
+      },
+    ],
+    expect: ['W7'],
+  },
+  {
+    // 后缀黑名单**挡不住**这条（目标名是 `.json`）—— 它只有"与清单交叉"才能抓到。
+    // 没有这条变异，W7b 就是一条"看起来在防、其实永远绿"的断言。
+    name: 'M9 用改名方式夹带清单里的权重（后缀黑名单挡不住 ⇒ 只能靠与清单交叉）',
+    edits: [
+      {
+        file: BASE_CONF,
+        find: '"resources": {',
+        replace:
+          '"resources": {\n      "../../engine/models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/c266c2cfd19758b6d09c1fc31ecdf1e485509035f6b51dfe84f1ada83eefcc42": "models/c266c2cfd19758b6d09c1fc31ecdf1e485509035f6b51dfe84f1ada83eefcc42.json",',
+      },
+    ],
+    expect: ['W7b'],
+  },
+  {
+    // ⚠️ 锚点一律**单行**：本脚本的变异器不做 EOL 折算（配置与 .nsh 都是 CRLF），
+    //    多行锚点会被判成"未找到"而**静默跳过** —— 跳过 ≠ 通过。
+    name: 'E2：把 NSIS 安装器钩子的接线摘掉（长路径提示与卸载提示都不会再出现）',
+    edits: [{ file: WIN_CONF, find: '"installerHooks": "nsis/hooks.nsh"', replace: '"installerHooksOff": "nsis/hooks.nsh"' }],
+    expect: ['W8'],
+  },
+  {
+    name: 'E2：钩子指向一个不存在的文件（打包阶段才会炸，报错离根因很远）',
+    edits: [{ file: WIN_CONF, find: '"nsis/hooks.nsh"', replace: '"nsis/nope.nsh"' }],
+    expect: ['W8'],
+  },
+  {
+    name: 'E2：长路径检查被删掉（用户一路装到一半才报"文件名太长"）',
+    edits: [
+      {
+        file: NSIS_HOOKS,
+        find: '  ReadRegDWORD $0 HKLM "SYSTEM\\CurrentControlSet\\Control\\FileSystem" "LongPathsEnabled"',
+        replace: '  ;M12 长路径检查被删',
+      },
+    ],
+    expect: ['W9'],
+  },
+  {
+    // 「顺手替用户开一下」看起来是善意的，但它是**系统级**设置且要提权 ——
+    // 安装器不声不响改 HKLM，与"只提示"是两回事。
+    name: 'E2：安装器**替用户改**系统级长路径开关（提权 + 不声不响改 HKLM）',
+    edits: [
+      {
+        file: NSIS_HOOKS,
+        find: '  ReadRegDWORD $0 HKLM "SYSTEM\\CurrentControlSet\\Control\\FileSystem" "LongPathsEnabled"',
+        replace: '  WriteRegDWORD HKLM "SYSTEM\\CurrentControlSet\\Control\\FileSystem" "LongPathsEnabled" 1\n  ReadRegDWORD $0 HKLM "SYSTEM\\CurrentControlSet\\Control\\FileSystem" "LongPathsEnabled"',
+      },
+    ],
+    expect: ['W9'],
+  },
+  {
+    // 🔴 E3 最危险的一种写法：默认按钮落在「是」上 ⇒ 用户回车就删掉几十分钟的装配成果。
+    name: 'E3：卸载提示的默认按钮落在「删除」上（回车 = 删掉引擎运行时）',
+    edits: [{ file: NSIS_HOOKS, find: '|MB_DEFBUTTON2', replace: '' }],
+    expect: ['W10'],
+  },
+  {
+    name: 'E3：删除动作变成无条件（提示还在，但还没等用户选就删了）',
+    edits: [
+      {
+        file: NSIS_HOOKS,
+        find: '  IfFileExists "$LOCALAPPDATA\\runtimes\\manga-translator\\*.*" 0 moor_no_runtimes',
+        replace:
+          '  IfFileExists "$LOCALAPPDATA\\runtimes\\manga-translator\\*.*" 0 moor_no_runtimes\n'
+          + '    RMDir /r "$LOCALAPPDATA\\runtimes\\manga-translator"',
+      },
+    ],
+    expect: ['W10'],
+  },
+  {
+    name: 'E2：把 SmartScreen 的说明从安装引导里删掉（用户看到"Windows 已保护你的电脑"就卡住）',
+    edits: [
+      {
+        file: GUIDE_WIN,
+        find: '### 1.1 安装包首次运行会被 SmartScreen 拦一下（正常现象）',
+        replace: '### 1.1 安装包首次运行说明',
+      },
+    ],
+    expect: ['W11'],
   },
 ];
 

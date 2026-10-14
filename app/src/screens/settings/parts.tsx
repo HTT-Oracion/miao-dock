@@ -76,6 +76,28 @@ export function plain(text: string): string {
 }
 
 /**
+ * 字节数 → 人读的大小（GB / MB / KB / B）。
+ *
+ * 为什么放在这里而不是各自组件里：这个函数被**两个**块用（引擎诊断 / 模型管理），
+ * 而"同一个数在两处显示成不同单位"正是本仓一直在防的那类偏差
+ * （同 `plain()` 的理由：纯函数、与具体能力无关，故归排版件）。
+ *
+ * 单位用 1024 进制、保留一位小数 —— 与 `docs/install-guide-*.md` 里"6.93 GiB"
+ * 那类数字同一套换算（文档里的数是清单求和后按 GiB 算的）。
+ */
+export function humanBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  return `${i === 0 ? v : v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`;
+}
+
+/**
  * 组级说明：**一行摘要 + 「为什么」抽屉**（catalog 的 `note` / `noteSummary`）。
  *
  * ## 折叠的不是信息，是占位

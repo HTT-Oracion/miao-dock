@@ -40,7 +40,9 @@
       "../../engine/models.manifest.json": "engine/models.manifest.json"
     },
     "macOS": {
-      "minimumSystemVersion": "10.15"
+      "minimumSystemVersion": "10.15",
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.plist"
     }
   }
 }

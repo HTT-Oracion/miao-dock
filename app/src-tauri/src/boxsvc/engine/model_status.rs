@@ -34,6 +34,38 @@ pub struct ModelStatus {
     pub files: Vec<ModelFileStatus>,
     /// 安装引导（C1）：按**当前平台**的合计体积 + 分档位细分。
     pub guidance: ModelGuidance,
+    /// 盘上实况（D4）：就绪资产的**真实占用**与最近一次落盘时间。
+    pub disk: ModelDisk,
+}
+
+/// 盘上实况（D4 · 设置页「模型与诊断」扩到运行时）。
+///
+/// 🔴 三处「不编数字」的纪律，缺一个这个数就会开始撒谎：
+///
+/// ① **只统计就绪的条目** —— 缺的那些根本没有字节可算，"清单声明值加一加"会得到一个
+///    永远不变的数字，用户盯着它删了文件也不会变；
+/// ② **按 `(dev, ino)` 去重** —— 硬链接是**同一份 inode**（这正是 C2/B1 那套设计的核心），
+///    逐个条目相加会把 6.9 GB 报成 13.8 GB；
+/// ③ `assembled_at` 取这些文件里**最新**的 mtime，并**如实标注**它是"最近一次落盘时间"。
+///    我们没有"装配完成"这个事件的记录，**不假装有** —— 所以 UI 文案也不写"装配于"。
+#[derive(Debug, Clone, serde::Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelDisk {
+    /// 参与统计的就绪条目数
+    pub ready_entries: usize,
+    /// 去重后的**真实文件**数（硬链接只算一份）
+    pub unique_files: usize,
+    /// 去重后的占用字节
+    pub bytes: u64,
+    /// 就绪资产里最新的 mtime（ISO-8601 UTC）。无就绪条目 ⇒ 省略键（不是 1970 年）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assembled_at: Option<String>,
+}
+
+impl ModelDisk {
+    fn empty() -> Self {
+        ModelDisk { ready_entries: 0, unique_files: 0, bytes: 0, assembled_at: None }
+    }
 }
 
 /// 一个档位（`sets` 的一项）在当前平台下的**体积与条数**（C1）。
@@ -115,6 +147,7 @@ impl ModelStatus {
                 total_bytes: 0,
                 sets: Vec::new(),
             },
+            disk: ModelDisk::empty(),
         }
     }
 }
@@ -322,6 +355,7 @@ pub fn model_status(manifest_path: &Path, root_dir: &Path, link_base: Option<&Pa
 
     let marker = read_ready_marker(root_dir);
     let guidance = guidance_from(&files_out, &key, &in_set);
+    let disk = disk_usage(&files, root_dir, &base);
     ModelStatus {
         visual_ready: all_ready("visual"),
         sakura_ready: all_ready("llm"),
@@ -332,7 +366,40 @@ pub fn model_status(manifest_path: &Path, root_dir: &Path, link_base: Option<&Pa
             .map(str::to_string),
         files: files_out,
         guidance,
+        disk,
     }
+}
+
+/// 就绪资产的**盘上真实占用**（D4）。
+///
+/// 与 `ready` 判据共用 `abs_for()` ——「判据说它就绪」与「这个数把它算进去」必须是同一批路径，
+/// 两处各挑一次（例如这里改用 `dest`）会让界面出现"显示就绪 4 条、占用却是 3 条的字节"。
+fn disk_usage(files: &[&Value], root_dir: &Path, base: &Path) -> ModelDisk {
+    let mut seen: std::collections::BTreeSet<(u64, u64)> = std::collections::BTreeSet::new();
+    let mut out = ModelDisk::empty();
+    let mut newest = 0.0f64;
+    for f in files {
+        let abs = abs_for(f, root_dir, base);
+        // 🔴 只算**就绪**的：缺的那些没有字节。用 `ready_at` 而不是"存在即算"，
+        //    否则半成品（大小不符）也会被算进"占用"，用户看到的是一个虚高的数。
+        if !ready_at(&abs, f) {
+            continue;
+        }
+        let Some(st) = super::model_store::stat_safe(&abs) else { continue };
+        out.ready_entries += 1;
+        // 硬链接 = 同一份 inode ⇒ 只算一次（C2/B1 那套设计的核心，正是要在这类统计里体现出来）
+        if seen.insert((st.dev, st.ino)) {
+            out.unique_files += 1;
+            out.bytes += st.size;
+        }
+        if st.mtime_ms > newest {
+            newest = st.mtime_ms;
+        }
+    }
+    if newest > 0.0 {
+        out.assembled_at = Some(super::model_store::iso_from_ms(newest));
+    }
+    out
 }
 
 /// 当前平台**会去下**的那些条目的字节和（D1 的"约 X GB"取这个数）。
@@ -428,6 +495,50 @@ mod tests {
         std::fs::write(tmp.join("models-store").join("a.bin"), b"abcdef").unwrap();
         let s2 = model_status(&mp, &tmp, None);
         assert!(!s2.files.iter().find(|f| f.id == "a").unwrap().ready, "大小与清单不符必须判未就绪");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// D4：占用**按 inode 去重**（硬链接只算一份）、只算就绪条目、并给出最近落盘时间。
+    ///
+    /// 🔴 硬链接那一条是这套设计的核心（`linkModels` 把 store 里的权威副本链进引擎树）：
+    ///    逐个条目相加会把 6.9 GB 报成 13.8 GB，而那个数**看起来完全合理**。
+    #[test]
+    fn disk_usage_dedups_hardlinks_and_counts_ready_only() {
+        let tmp = std::env::temp_dir().join(format!("miao-modelstatus-disk-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("models-store")).unwrap();
+        std::fs::create_dir_all(tmp.join("src").join("models")).unwrap();
+
+        let a_abs = tmp.join("models-store").join("a.bin");
+        std::fs::write(&a_abs, b"abcd").unwrap();
+        // b 的 `linkTo` 指向 **a 的硬链接**（同一份 inode）
+        let b_abs = tmp.join("src").join("models").join("b.bin");
+        let linked = std::fs::hard_link(&a_abs, &b_abs).is_ok();
+
+        let manifest = serde_json::json!({
+            "files": [
+                { "id": "a", "set": "visual", "dest": "models-store/a.bin", "sizeBytes": 4 },
+                { "id": "b", "set": "visual", "dest": "models-store/b.bin", "linkTo": "models/b.bin", "sizeBytes": 4 },
+                { "id": "c", "set": "visual", "dest": "models-store/c.bin", "sizeBytes": 99 }
+            ],
+            "sets": { "visual": { "files": ["a", "b", "c"] } }
+        });
+        let mp = write_fixture(&tmp, &manifest);
+        let s = model_status(&mp, &tmp, None);
+
+        assert!(!s.visual_ready, "c 不在盘上 ⇒ visual 不得判就绪");
+        assert_eq!(s.disk.ready_entries, if linked { 2 } else { 1 }, "只统计就绪的条目（缺的没有字节可算）");
+        assert_eq!(s.disk.bytes, 4, "硬链接是同一份 inode ⇒ 不许算成 8 字节");
+        assert_eq!(s.disk.unique_files, 1, "去重后只有一份真实文件");
+        assert_eq!(s.disk.ready_entries - s.disk.unique_files, if linked { 1 } else { 0 }, "两条就绪里有一条是链接");
+        let at = s.disk.assembled_at.as_deref().expect("有就绪条目 ⇒ 必须给出最近落盘时间");
+        assert!(at.ends_with('Z') && at.len() == 24, "ISO-8601 UTC 形态：{at}");
+
+        // 全部不在位 ⇒ 占用为 0，且**不给** assembledAt（不是 1970 年那种假时间）
+        let empty = serde_json::json!({ "files": [{ "id": "z", "dest": "models-store/z.bin", "sizeBytes": 1 }] });
+        let mp2 = write_fixture(&tmp, &empty);
+        let s2 = model_status(&mp2, &tmp, None);
+        assert_eq!(s2.disk, ModelDisk::empty(), "没有就绪条目 ⇒ 占用全 0 且无时间");
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

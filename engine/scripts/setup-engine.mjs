@@ -32,6 +32,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
+import { extractAtomic } from './atomic-extract.mjs';
 import { runtimesDir } from './runtime-root.mjs';
 
 // 🔴 B1：落点与产品同源（`<appData>/runtimes/manga-translator`），不再锚仓库根 ——
@@ -65,11 +66,14 @@ const PY_DIR = path.join(RT, 'python-3.11');
 const VENV_DIR = path.join(RT, 'venv');
 const CACHE = path.join(RT, '.download-cache');
 
+/** Python 运行时里的解释器（相对 PY_DIR）—— Windows 是 `python.exe`，POSIX 是 `bin/python3`。 */
+function pyExeRel() {
+  return process.platform === 'win32' ? path.join('python.exe') : path.join('bin', 'python3');
+}
+
 /** Python 运行时里的解释器 —— Windows 是 `python.exe`，POSIX 是 `bin/python3`。 */
 function pyExe() {
-  return process.platform === 'win32'
-    ? path.join(PY_DIR, 'python.exe')
-    : path.join(PY_DIR, 'bin', 'python3');
+  return path.join(PY_DIR, pyExeRel());
 }
 
 /** venv 里的解释器 —— Windows 是 `venv/Scripts/python.exe`，POSIX 是 `venv/bin/python`。 */
@@ -143,13 +147,19 @@ async function download(url, dest, { retries = 3 } = {}) {
   }
 }
 
-function extract(archive, destDir, { strip = 1 } = {}) {
-  fs.rmSync(destDir, { recursive: true, force: true });
-  fs.mkdirSync(destDir, { recursive: true });
-  const args = ['-xf', archive, '-C', destDir];
-  if (strip > 0) args.push(`--strip-components=${strip}`);
-  const rc = spawnSync('tar', args, { stdio: 'inherit' });
-  if (rc.status !== 0) throw new Error(`解包失败（exit ${rc.status}）：${archive}`);
+/**
+ * 解包 —— 走 `atomic-extract.mjs` 的**原子**实现（D3）。
+ *
+ * 🔴 老写法是「先删后解」（`fs.rmSync(destDir)` 在前、`tar` 在后）：解包中途失败时
+ * `destDir` 已被删除、只剩半份内容，且这个状态与"装好了"在目录层面看不出区别
+ * —— 下一次跑脚本的"已就位"判据可能还会说它好了。这是 D-95 记的待修项。
+ *
+ * 现在：解到 `<dest>.part` → 校验 → 才换；任何一步失败都**不动** `destDir`。
+ * 校验（原来写在调用点之后的 `if (!fs.existsSync(...)) throw`）改为在这里的 `verify`
+ * 回调里做 —— 只有它通过才提交，否则连"半成品落位"都不会发生。
+ */
+function extract(archive, destDir, { strip = 1, verify } = {}) {
+  return extractAtomic(archive, destDir, { strip, verify });
 }
 
 async function installPython(force) {
@@ -159,11 +169,14 @@ async function installPython(force) {
   log(`  URL: ${PY_URL}`);
   await download(PY_URL, cache);
   log('  解包…');
-  extract(cache, PY_DIR);
-  // 校验解释器存在
-  const exe = pyExe();
-  if (!fs.existsSync(exe)) throw new Error(`解包后未找到解释器：${exe}`);
-  log(`  ✓ 解释器：${exe}`);
+  // 校验放进 `verify`：**先验后提交** —— 归档不对时 `PY_DIR` 一个字节都不动（D3）
+  extract(cache, PY_DIR, {
+    verify: (dir) => {
+      const rel = pyExeRel();
+      if (!fs.existsSync(path.join(dir, rel))) throw new Error(`解包后未找到解释器：${path.join(dir, rel)}`);
+    },
+  });
+  log(`  ✓ 解释器：${pyExe()}`);
 }
 
 /**
@@ -189,10 +202,13 @@ async function installSource(force) {
   log(`引擎源码 commit ${ENGINE_COMMIT.slice(0, 12)}`);
   await download(SRC_URL, cache);
   log('  解包…');
-  extract(cache, SRC_DIR);
-  if (!fs.existsSync(path.join(SRC_DIR, 'server', 'main.py'))) {
-    throw new Error(`解包后未找到 server/main.py：${SRC_DIR}`);
-  }
+  // 同上：源码不完整（归档不对 / 上游改了结构）时**不提交**，`SRC_DIR` 保持原样
+  extract(cache, SRC_DIR, {
+    verify: (dir) => {
+      const entry = path.join(dir, 'server', 'main.py');
+      if (!fs.existsSync(entry)) throw new Error(`解包后未找到 server/main.py：${entry}`);
+    },
+  });
   log(`  ✓ 源码：${SRC_DIR}`);
 }
 

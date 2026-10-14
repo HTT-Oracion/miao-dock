@@ -70,6 +70,19 @@ New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
   -Name LongPathsEnabled -Value 1 -PropertyType DWord -Force
 ```
 
+> 安装程序会在装完后**自己读一遍**这个开关（`HKLM\SYSTEM\CurrentControlSet\Control\FileSystem`）；
+> 没开就弹一段说明把上面这条命令原样给出来。它**不会**替你改（那是系统级设置、要提权），
+> 所以看到提示就照做 —— 否则首次装配会在中途报「文件名或扩展名太长」。
+
+### 1.1 安装包首次运行会被 SmartScreen 拦一下（正常现象）
+
+安装包**没有代码签名**，所以 Windows 会弹「Windows 已保护你的电脑」。
+做法：点「**更多信息**」→「**仍要运行**」。
+
+- 这不代表安装包有问题，只代表它没有向微软买签名（对外正式分发前会补签名与公证）；
+- 与本项目在 macOS 上的 Gatekeeper 提示是同一件事（见 `docs/install-guide-macos.md`）；
+- 安装**之后**的功能不受影响。
+
 ---
 
 ## 2. 体积：装之前先说清楚（可复算）
@@ -184,6 +197,18 @@ GET http://127.0.0.1:8000/api/v1/engine/runtime
 排障：`node engine/scripts/install-engine-deps.mjs --print-env` 会打印它探测到的
 MSVC / Windows SDK 路径 —— 多半是这里空着。
 
+**不想装 MSVC？先看有没有预编译 wheel 通道**（B4）：
+
+```powershell
+node engine/scripts/install-engine-deps.mjs --print-plan
+```
+
+它只回答一件事：pydensecrf 这一项会走**预编译 wheel**（无需编译器）还是**源码编译**。
+判定顺序是「清单里有本平台 + 本 Python 版本的条目 → wheel 文件在位 → sha256 与清单一致」，
+任一条不成立就回退到源码编译（**回退是设计的一部分，不是降级**）。
+清单在 `engine/wheels.manifest.json`，目前可能是空的 —— 空的就照下面装编译器。
+怎么填一条见该文件的 `fillHowTo`。
+
 - 缺 MSVC/SDK：装「Visual Studio 2022 生成工具」，勾 **MSVC v143 生成工具** +
   **Windows 11 SDK**（或 Windows 10 SDK 10.0.22621）。
 - 报 `LNK1158: 无法运行"rc.exe"`：`rc.exe` 不在 MSVC 目录里，在
@@ -244,8 +269,11 @@ $env:PYTHONIOENCODING = "utf-8"
 - **迁移到新机器**：`runtimes` 整目录拷过去**不能用**（venv 与 python 运行时里有绝对路径），
   正确做法是在新机器上重跑 §3。模型那份 6.9 GB 可以从旧机器**拷 `models-store\`** 到
   同一相对位置，省一次下载 —— 拷完跑 `fetch:models --check` 验校验和。
-- **卸载喵坞**：`<appData>\runtimes\` 里这 13 GB **不会**被自动删除（卸载程序只提示位置与体积）。
-  自己确认不再需要时手动删整个 `runtimes` 目录即可。
+- **卸载喵坞**：卸载时会**问你一句**「要不要一并删除翻译引擎运行时」，并列出它的完整路径与
+  「常见 10 GB 以上、重装一次要几十分钟」。**默认是保留**（回车 / 误触都落在保留那一支），
+  只有明确点「是」才会删 `<appData>\runtimes\manga-translator\`。
+  ⇒ 选保留之后想清理，手动删掉该目录即可；你的作品目录（`%USERPROFILE%\Pictures\Box 漫画`）
+  卸载程序**永不**触碰。
 
 ---
 

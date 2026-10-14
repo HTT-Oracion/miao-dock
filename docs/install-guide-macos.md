@@ -122,6 +122,19 @@ RT="$HOME/Library/Application Support/runtimes/manga-translator"
 "$RT/venv/bin/pip" install -r "$RT/src/requirements.txt"
 ```
 
+> **没有 Xcode 命令行工具（CLT）也能装**：`pydensecrf` 在 PyPI 上没有 macOS wheel，
+> 默认要走源码编译（需要 CLT）。若 `engine/wheels.manifest.json` 里登记了
+> **本平台 / 本 Python 版本**的预编译 wheel（通道与校验值都在那份清单里），
+> 就把它单独装上，省掉整套编译工具链：
+>
+> ```bash
+> node engine/scripts/install-engine-deps.mjs --print-plan   # 先看它会不会走 wheel（不需要编译器、不联网）
+> "$RT/venv/bin/pip" install --no-deps <清单里那条 wheel>
+> ```
+>
+> 清单目前可能是**空的**（本仓尚未在 macOS 上真构建过 wheel，而 sha256 不允许凭记忆写）——
+> 空了就照上面的手动路径走，不会因此装不上。怎么填一条见该文件的 `fillHowTo`。
+
 **然后必须补一个兼容补丁**（否则掩码细化一步会炸，见 §5.1）：
 
 ```bash

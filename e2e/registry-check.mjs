@@ -8,17 +8,19 @@
  * 跑它、`check:nightly` 永远不含它 —— 典型的「该红没红」。本钉子把「登记」从
  * 散文纪律变成可反证的断言。
  *
- * ## 断言（4 条）
+ * ## 断言（5 条）
  *   REG.npmCovered   npm 每个检查类脚本都在注册表中有 (script, args) 对应项
  *   REG.scriptsExist 注册表每项的 script 文件真实存在（防指向已搬迁/已删脚本）
  *   REG.tiersValid   每项 tier ∈ TIER_ORDER
  *   REG.idsUnique    id 无重复（含派生的 -refute）
+ *   REG.tierCounts   各层条数 == 写死的常量（E4 计数门：防「全绿但少一块」）
  *
- * ## 反证轮（--refute，4 个内存变异，各打红对应一条）
+ * ## 反证轮（--refute，5 个内存变异，各打红对应一条）
  *   M1 注入假 npm 脚本            → npmCovered 红
  *   M2 注册项指向不存在路径        → scriptsExist 红
  *   M3 注册项 tier 改坏           → tiersValid 红
  *   M4 复制一个 id                → idsUnique 红
+ *   M5 删掉一条注册项              → tierCounts 红
  * 反证前先要求**正向全绿** —— 正向就红时反证证明不了任何事（该红没红 vs 本来红分不清）。
  *
  * 用法：node e2e/registry-check.mjs [--refute]
@@ -34,6 +36,18 @@ const REFUTE = process.argv.includes('--refute');
 
 /** 聚合器入口自身：跑了会递归，不纳入覆盖要求（它们在注册表外是有意的） */
 const AGGREGATORS = new Set(['e2e/run-checks.mjs']);
+
+/**
+ * **各层条数写死并断言**（E4 计数门；AGENTS §2.3「断言条数要写死并断言」）。
+ *
+ * 为什么这不算形式主义：`run-checks.mjs` 按层分流，一条判据被**误删**、或 tier 被写错时，
+ * 它只是"不在那一层里跑了" —— 输出依旧全绿，**没有任何一行会变红**。
+ * 反向同样成立：新加的钉子若忘了登记（或登记成 nightly），`check:full` 永远不含它。
+ * 分子变绿、分母变小，正是"假绿"的标准形态；把分母钉住，减一条就得先改这个常量。
+ *
+ * 🔴 改这个常量时，请顺手确认 AGENTS.md §3 的条数也同步（`check:docs` 管不到这一节）。
+ */
+const EXPECTED_TIER_COUNTS = { static: 16, service: 45, nightly: 5, refute: 58 };
 
 /** npm 脚本 → { name, script, args }；复合脚本（`a && b`）与非 node 调用跳过 */
 function parseNpmChecks(scripts) {
@@ -63,11 +77,26 @@ function runAssertions(scripts, entries) {
     if (seen.has(e.id)) dups.push(e.id);
     seen.add(e.id);
   }
+  // 各层条数（分母）—— 与写死的常量逐层比。
+  const gotCounts = {};
+  for (const t of TIER_ORDER) gotCounts[t] = 0;
+  for (const e of entries) gotCounts[e.tier] = (gotCounts[e.tier] ?? 0) + 1;
+  const countDiff = TIER_ORDER
+    .filter((t) => (gotCounts[t] ?? 0) !== (EXPECTED_TIER_COUNTS[t] ?? 0))
+    .map((t) => `${t}: 实际 ${gotCounts[t] ?? 0} ≠ 写死 ${EXPECTED_TIER_COUNTS[t] ?? 0}`);
   return [
     { id: 'REG.npmCovered', label: 'npm 检查类脚本全部登记进注册表（script + args 逐项对上）', ok: uncovered.length === 0, detail: uncovered.length ? `未登记：${uncovered.join('；')}` : `${npmChecks.length} 个 npm 脚本全部有对应注册项` },
     { id: 'REG.scriptsExist', label: '注册表每项的 script 文件真实存在', ok: missing.length === 0, detail: missing.length ? `缺失：${missing.join('；')}` : `${entries.length} 个注册项的文件都在` },
     { id: 'REG.tiersValid', label: '注册表每项 tier 合法', ok: badTier.length === 0, detail: badTier.length ? `非法：${badTier.join('；')}` : `全部 ∈ {${TIER_ORDER.join(',')}}` },
     { id: 'REG.idsUnique', label: '注册表 id 无重复', ok: dups.length === 0, detail: dups.length ? `重复：${[...new Set(dups)].join(',')}` : `${entries.length} 个 id 互不重复` },
+    {
+      id: 'REG.tierCounts',
+      label: '各层条数 == 写死的常量（E4 计数门：减一条就得先改常量，不会"全绿但少一块"）',
+      ok: countDiff.length === 0,
+      detail: countDiff.length
+        ? `层条数不符：${countDiff.join('；')}（改常量前先确认不是误删/误改 tier）`
+        : `static=${gotCounts.static} service=${gotCounts.service} nightly=${gotCounts.nightly} refute=${gotCounts.refute}（共 ${entries.length}）`,
+    },
   ];
 }
 
@@ -114,6 +143,12 @@ if (REFUTE) {
       what: '复制一个注册项（id 撞车）',
       apply: (scripts, list) => [scripts, [...list, { ...list[0] }]],
       expect: 'REG.idsUnique',
+    },
+    {
+      id: 'M5',
+      what: '删掉一条注册项（分母悄悄变小 = 「全绿但少一块」）',
+      apply: (scripts, list) => [scripts, list.slice(1)],
+      expect: 'REG.tierCounts',
     },
   ];
 

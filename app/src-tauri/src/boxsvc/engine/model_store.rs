@@ -320,7 +320,15 @@ pub fn select_files(manifest: &Manifest, ids: Option<&[String]>, set: Option<&st
 }
 
 /// 当前平台标识，形如 `win32-x64` / `darwin-arm64` —— 与 manifest 条目的 `platform` 字段对齐。
+///
+/// `MIAO_PLATFORM` 是**取证专用**接缝（C3）：「Windows 上只引导 win32-x64 条目」这类结论
+/// 在一台机器上只能验到一半 —— 不支持它的那一半（「darwin-arm64 下只引导 mac 条目」）
+/// 要么去借机器，要么永远只是"读代码相信"。有了它，两侧镜像能在同一台机器上都验到。
+/// ⚠️ 产品路径**不得**设置它；设错的表现是去下另一个平台的二进制。
 pub fn platform_key() -> String {
+    if let Some(v) = std::env::var("MIAO_PLATFORM").ok().filter(|s| !s.trim().is_empty()) {
+        return v.trim().to_string();
+    }
     let os = match std::env::consts::OS {
         "windows" => "win32",
         "macos" => "darwin",
@@ -452,6 +460,28 @@ pub fn now_iso() -> String {
     let d = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
     let millis = d.subsec_millis();
     let secs = d.as_secs() as i64;
+    let days = secs.div_euclid(86_400);
+    let sod = secs.rem_euclid(86_400);
+    let (y, m, day) = civil_from_days(days);
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+        y,
+        m,
+        day,
+        sod / 3600,
+        (sod % 3600) / 60,
+        sod % 60,
+        millis
+    )
+}
+
+/// 毫秒时间戳 → `toISOString()` 形态（`disk.assembledAt` 用）。
+///
+/// 🔴 与 [`now_iso`] 共用同一套日历算法，**不引第三方 crate**；两处若各写一遍，
+///    迟早出现"同一个时刻在界面上差一天"这种没人查得出的偏差。
+pub fn iso_from_ms(ms: f64) -> String {
+    let secs = (ms / 1000.0).floor() as i64;
+    let millis = ((ms - (secs as f64) * 1000.0).round().clamp(0.0, 999.0)) as u64;
     let days = secs.div_euclid(86_400);
     let sod = secs.rem_euclid(86_400);
     let (y, m, day) = civil_from_days(days);

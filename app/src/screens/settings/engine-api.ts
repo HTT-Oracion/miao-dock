@@ -173,6 +173,26 @@ export interface ModelGuidance {
   sets: ModelSetGuide[];
 }
 
+/**
+ * 盘上实况（D4）—— 「装了什么、占了多少盘、什么时候落的」。
+ *
+ * 🔴 与服务端的关系同 `ModelGuidance`：每个数都是服务端**算好的**，前端只做单位换算。
+ *    三个数各自的诚实边界（写在服务端的同名字段上）：
+ *    · `bytes` 只算**就绪**条目、且按 inode **去重**（硬链接不重复计）；
+ *    · `assembledAt` 是"就绪资产里最新的落盘时间"，**不是**"装配完成时刻"——
+ *      我们没有那个事件的记录，所以界面文案也不写"装配于"。
+ */
+export interface ModelDisk {
+  /** 参与统计的就绪条目数 */
+  readyEntries: number;
+  /** 去重后的真实文件数（硬链接只算一份） */
+  uniqueFiles: number;
+  /** 去重后的占用字节 */
+  bytes: number;
+  /** 就绪资产里最新的 mtime（ISO-8601 UTC）；无就绪条目 ⇒ 键不存在 */
+  assembledAt?: string;
+}
+
 export interface ModelStatus {
   visualReady: boolean;
   sakuraReady: boolean;
@@ -186,6 +206,8 @@ export interface ModelStatus {
   files: ModelFileStatus[];
   /** 安装引导（C1）：按当前平台的合计体积与分档位细分 */
   guidance: ModelGuidance;
+  /** 盘上实况（D4）：真实占用与最近一次落盘时间 */
+  disk: ModelDisk;
 }
 
 // ------------------------------------------------------------------ /engine/status

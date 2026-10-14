@@ -113,6 +113,8 @@ const F = {
   pkgJson: path.join(ROOT, 'package.json'),
   npmLock: path.join(APP, 'package-lock.json'),
   cargoLock: path.join(APP, 'src-tauri', 'Cargo.lock'),
+  // C5：引擎资产清单 —— 许可段的第三处来源，也要参与过期对账
+  engineManifest: path.join(ROOT, 'engine', 'models.manifest.json'),
 };
 
 // ── 冻结的契约（负责人冻结，本脚本照抄，不改口径） ──────────────────────────
@@ -246,6 +248,7 @@ function loadSources() {
     pkgJson: readMaybe(F.pkgJson),
     npmLock: readMaybe(F.npmLock),
     cargoLock: readMaybe(F.cargoLock),
+    engineManifest: readMaybe(F.engineManifest),
     // 全分片拼接（顺序 = index.scss 的 @use 顺序 = 层叠顺序），
     // 不是读单个 app.css —— 样式已按模块拆分，读单文件会集体变红（读不到 ≠ 真回归）
     css: readStyleSource(F.stylesDir),
@@ -778,8 +781,13 @@ for (const c of CLS) {
   });
 }
 add('PLAYER.mounted', 'PLAYER', (ctx) => ({
-  ok: /<ExpandedPlayer\b/.test(ctx.s.musicScreen),
-  detail: '<ExpandedPlayer 未在 MusicScreen 挂载（挂载了偏好才可能生效）',
+  /*
+   * ⚠️ 挂载点在 **App.tsx**，不是 MusicScreen —— `ExpandedPlayer` 是全屏 fixed 浮层、
+   * 不读本屏 DOM，D-156 起已搬到应用根。老断言一直盯着 `MusicScreen.tsx`，
+   * 于是从搬家那天起**再也绿不了**（而且看起来像"实现没做"）。判据改成挂载点本身。
+   */
+  ok: /<ExpandedPlayer\b/.test(ctx.s.appMain),
+  detail: 'ExpandedPlayer 没有被挂载（挂载了偏好才可能生效）—— 它是全屏浮层，挂载点在应用根 App.tsx',
 }));
 add('PLAYER.cssConsumes', 'PLAYER', (ctx) => {
   const need = ['var(--lyr-size', 'var(--lyr-hl', 'var(--vinyl-accent', 'is-dynamic', 'is-disc', 'is-paused'];
@@ -1358,11 +1366,46 @@ add('ENGINE.diag.restartIsServiceRestart', 'ENGINE', (ctx) => {
 });
 add('ENGINE.diag.downloadDisabled', 'ENGINE', (ctx) => {
   const src = ctx.s.engineDiag;
-  const ok = /scriptExists\s*===\s*false/.test(src) && /disabled=/.test(src);
+  /*
+   * ⚠️ 字段名是 A3d 之后的 `runnerExists`（执行体从 `node fetch-models.mjs` 换成了 `boxsvc`）。
+   * 老断言判的是 `scriptExists` —— 产品早就改对了，而断言从那天起**再也绿不了**。
+   * 一条基线就红的断言比没有更坏：它占着"这条已经覆盖了"的位置，实际什么都没在测
+   * （反证轮还会把"仍然红"当成"按预期变红"）。§2 第 2 条：台账/断言与实际不符时以实际为准。
+   */
+  const ok = /runnerExists\s*===\s*false/.test(src) && /disabled=/.test(src);
   return {
     ok,
-    detail: ok ? '' : '「重新下载模型」没按 scriptExists===false 置灰（脚本不在盘上时点了只会换一条报错）',
+    detail: ok ? '' : '「重新下载模型」没按 runnerExists===false 置灰（执行体不在盘上时点了只会换一条报错）',
   };
+});
+// D4：设置页「模型与诊断」必须扩到**运行时** —— 装没装 / 占多少盘 / 什么时候落的。
+add('ENGINE.diag.diskRow', 'ENGINE', (ctx) => {
+  const src = stripComments(ctx.s.engineDiag);
+  const problems = [];
+  /*
+   * 判据落在**服务端字段的引用**上，不落在文案上：
+   * 文案会改，而"这条事实到底有没有被渲染出来"不会因为换词而改变。
+   * 三个字段缺任一个 ⇒ 用户就少知道一件事（缺 `bytes` = 不知道占多少盘，
+   * 缺 `assembledAt` = 不知道什么时候装的，缺 `readyEntries` = 不知道装全没有）。
+   */
+  if (!/models\?\.disk/.test(src)) problems.push('没有渲染 `models.disk`（运行时实况在界面上不存在）');
+  if (!/disk\.bytes/.test(src)) problems.push('没有显示占用字节');
+  if (!/disk\.readyEntries/.test(src)) problems.push('没有显示已就绪条目数');
+  if (!/disk\.assembledAt/.test(src)) problems.push('没有显示最近落盘时间');
+  /*
+   * 🔴 「组件里写了」与「组件被渲染了」是两件事 —— 上面三条判的都是**组件体**，
+   *    把调用点摘掉之后它们照样绿（反证轮实测到的假阳性，2026-10-14）。
+   *    这正是本项目栽过的那个形态（`ExpandedPlayer` 定义了却没挂载）。
+   */
+  if (!/<ModelDiskRow\b[^>]*disk=\{s\?\.models\?\.disk\}/.test(src))
+    problems.push('`ModelDiskRow` 没有被渲染（组件定义了却不挂载 = 界面上没有这一行）');
+  /*
+   * 🔴 换算函数必须**只有一处**（`parts.tsx`）。本文件与「模型管理」块显示的是同一个量，
+   * 各留一份换算就会出现"同一个数在两处显示成不同单位"——那类偏差没人能一眼看出。
+   */
+  if (!/humanBytes/.test(src) || !/from '@screens\/settings\/parts'/.test(src))
+    problems.push('字节换算不是从 parts 取的（各自算一份 ⇒ 同一个数可能显示成两种单位）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
 });
 add('ENGINE.diag.unknownStateSafe', 'ENGINE', (ctx) => {
   const src = ctx.s.engineDiag;
@@ -1549,8 +1592,20 @@ add('ENGINE.manage.notOkNotFailed', 'ENGINE', (ctx) => {
 });
 add('ENGINE.manage.downloadDisabled', 'ENGINE', (ctx) => {
   const src = ctx.s.modelManage;
-  const ok = /scriptExists\s*===\s*false/.test(src);
-  return { ok, detail: ok ? '' : '「重新下载模型」没按 scriptExists===false 置灰' };
+  // 同上：字段是 A3d 之后的 `runnerExists`（旧写法的 `scriptExists` 已不存在）
+  const ok = /runnerExists\s*===\s*false/.test(src);
+  return { ok, detail: ok ? '' : '「重新下载模型」没按 runnerExists===false 置灰' };
+});
+// D4：同一个运行时实况也要在「模型管理」块里出现（那是用户决定"要不要重新下载"的地方）。
+add('ENGINE.manage.diskRow', 'ENGINE', (ctx) => {
+  const src = stripComments(ctx.s.modelManage);
+  const problems = [];
+  if (!/models\?\.disk/.test(src)) problems.push('「模型管理」块没有渲染 `models.disk`');
+  if (!/disk\.bytes/.test(src)) problems.push('没有显示占用字节');
+  if (!/disk\.assembledAt/.test(src)) problems.push('没有显示最近落盘时间');
+  // 适用条目数必须取自服务端的 `applicable`，不许自己按平台名硬筛（平台判据只有一处实现）
+  if (!/f\.applicable/.test(src)) problems.push('适用条目数没有取自服务端的 `applicable`（自己按平台名筛会与下载器分叉）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
 });
 add('ENGINE.manage.listCapped', 'ENGINE', (ctx) => {
   const src = ctx.s.modelManage;
@@ -1978,7 +2033,13 @@ add('NOTREADY.wiring.modeDegraded', 'NOTREADY', (ctx) => {
    */
   const src = ctx.s.notReady;
   const problems = [];
-  if (!src.includes('status?.mode')) problems.push('没有显示 status.mode');
+  /*
+   * ⚠️ 判据必须落在**渲染那一处**，不能只判 `src.includes('status?.mode')`。
+   * `status?.mode` 在本文件里出现两次：一处是 meta 行的 chip（本断言要保的就是它），
+   * 另一处是 `runtimeUnready` 的**判定**（L0 分支的条件，与"显示"无关）。
+   * 只判"出现过"时，把 chip 那处删掉、断言照旧绿 —— 反证轮实测就是这样一条假阳性。
+   */
+  if (!/引擎模式\s*\{status\?\.mode/.test(src)) problems.push('没有显示 status.mode（"以为在跑真引擎、其实跑的替身"最难查）');
   if (!src.includes('status?.degraded')) problems.push('没有显示 degraded');
   if (!src.includes('status?.children')) problems.push('没有显示三进程 pid/alive');
   return { ok: problems.length === 0, detail: problems.join('；') };
@@ -2813,6 +2874,59 @@ add('FEATURES.licenses.fresh', 'FEATURES', (ctx) => {
     problems.push(
       `Cargo.lock 的第三方 crate 数已变：清单里 ${data.inputs?.rustLockCrates}，实际 ${third} —— 重跑 npm run gen:licenses`,
     );
+  /*
+   * C5：引擎资产**同样**要参与过期对账 —— 清单加了条目（新模型 / 新二进制）而没重跑生成脚本，
+   * 界面上那份许可清单就少一块，而它看起来完全正常。判据取清单里的 `files` 条数：它由仓库内
+   * 的文件决定（不进 registry 之类"每台机器不同"的量），可以拿来对账。
+   */
+  let engineAssets = null;
+  try {
+    engineAssets = (JSON.parse(ctx.s.engineManifest).files ?? []).length;
+  } catch {
+    problems.push('engine/models.manifest.json 不可解析（无法对账引擎资产条数）');
+  }
+  if (engineAssets !== null && data.inputs?.engineAssets !== engineAssets)
+    problems.push(
+      `引擎资产条数已变：清单里 ${data.inputs?.engineAssets}，实际 ${engineAssets} —— 重跑 npm run gen:licenses`,
+    );
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+// ③-C5 引擎 / 模型许可段：`gen:licenses` 的输出里**必须**含引擎与模型那一段。
+//
+// 为什么单列一条：npm 与 Rust 两段回答的是"我们的代码用了什么开源库"，而真正会卡住
+// 对外分发的许可（引擎 GPL-3.0-only / Sakura 与 nllb 的 CC-BY-NC）**只在**这一段里。
+// 没有它，界面上"第三方许可"看起来完整，而最要紧的三类一个都查不到。
+add('FEATURES.licenses.engine', 'FEATURES', (ctx) => {
+  let data;
+  try {
+    data = JSON.parse(ctx.s.licensesJson);
+  } catch (e) {
+    return { ok: false, detail: `licenses.json 读不到或不是合法 JSON：${e.message}` };
+  }
+  const problems = [];
+  const eng = data.engine;
+  if (!eng || typeof eng !== 'object') {
+    return { ok: false, detail: 'licenses.json 里没有 engine 段（引擎/模型许可一个字都查不到）' };
+  }
+  if (!Array.isArray(eng.assets) || eng.assets.length === 0) problems.push('engine.assets 为空');
+  else {
+    if (eng.assets.length !== eng.total) problems.push(`engine: assets ${eng.assets.length} 条，与 total ${eng.total} 不一致`);
+    const nulls = eng.assets.filter((a) => !a.license).length;
+    if (nulls !== eng.unknown) problems.push(`engine: 无声明 ${nulls} 条，与 unknown ${eng.unknown} 不一致`);
+    if (eng.withLicense + eng.unknown !== eng.total) problems.push('engine: withLicense + unknown ≠ total');
+  }
+  if (!Array.isArray(eng.upstream) || eng.upstream.length === 0) problems.push('engine.upstream 为空（引擎/模型总许可没出处）');
+  else if (!eng.upstream.some((u) => /GPL/i.test(u.spdx ?? '')))
+    problems.push('engine.upstream 里没有 GPL 声明（引擎上游是 GPL-3.0-only，缺了是漏项）');
+  /*
+   * 🔴 C5 的**核心事实**：随包分发物里的模型权重数为 0。
+   * 它是从 `tauri.conf.json` 的 `bundle.resources` 推导出来的（不是写死的常量），
+   * 由 `gen-licenses` 逐条比对文件名得出 —— 与 `check:bundle` 的 W7/W7b 是**不同层**的
+   * 两条判据：那边钉配置，这边钉"生成物也说得出这件事"。
+   */
+  if (eng.bundledCount !== 0)
+    problems.push(`随包分发物里有 ${eng.bundledCount} 条模型资产（C5：权重一律不随包）`);
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -2833,6 +2947,14 @@ add('FEATURES.licenses.ui', 'FEATURES', (ctx) => {
   if (!/s\.withLicense\}/.test(src) || !/s\.total\}/.test(src))
     problems.push('没有显示覆盖数（N / M）—— 凑不齐这件事必须看得见');
   if (!src.includes('未取到声明')) problems.push('缺少「未取到声明」的呈现');
+  /*
+   * C5：引擎 / 模型那一段必须**渲染出来**。
+   * 生成物里有、界面上没有 = 用户看不到"这两类许可是禁止商用的" ——
+   * 而这句话正是对外分发前唯一需要被人看见的那句（R13）。
+   */
+  if (!/DATA\.engine\.bySpdx/.test(src)) problems.push('引擎/模型许可段没有被渲染（「禁止商用」会看不见）');
+  if (!/DATA\.engine\.bundledCount/.test(src)) problems.push('随包分发条目数没有被渲染（C5 的正面陈述看不见）');
+  if (!/DATA\.engine\.upstream/.test(src)) problems.push('引擎上游许可（版本锁里的声明）没有被渲染');
   if (/\.filter\(\s*\(\s*p\s*\)\s*=>\s*p\.license\s*\)/.test(src))
     problems.push('把没有声明的包过滤掉了（缺口会因此看不见）');
   const item = itemById(ctx.cat.mod, 'licenses');
@@ -2857,9 +2979,20 @@ add('FEATURES.gen.script', 'FEATURES', (ctx) => {
   if (!scripts['gen:licenses']) problems.push('package.json 没有注册 gen:licenses');
   else if (!/gen-licenses\.mjs/.test(scripts['gen:licenses']))
     problems.push('gen:licenses 指向的不是那个脚本');
-  // 必须真的从两处来源读 —— 否则就是"手写一份清单假装是枚举出来的"
+  // 必须真的从三处来源读 —— 否则就是"手写一份清单假装是枚举出来的"
   if (!/Cargo\.lock/.test(script)) problems.push('生成脚本没有读 Cargo.lock');
   if (!/package-lock\.json/.test(script)) problems.push('生成脚本没有读 package-lock.json');
+  /*
+   * C5：引擎/模型那一段必须来自清单与版本锁这两个**文件**，不许在脚本里手写一份许可表。
+   *
+   * ⚠️ 判据必须落在 `path.join(...)` 那一行，不能只判"源码里出现过这个文件名"：
+   * `sources.engine` 那句**说明文字**里也写着这两个文件名 —— 拿它当判据，
+   * 把真正的读取行删掉之后断言照样绿（反证轮实测的假阳性，2026-10-14）。
+   */
+  if (!/ENGINE_MANIFEST\s*=\s*path\.join\([^)]*models\.manifest\.json/.test(script))
+    problems.push('生成脚本没有把 engine/models.manifest.json 当作文件读入（只写在说明文字里不算）');
+  if (!/ENGINE_VERSIONS\s*=\s*path\.join\([^)]*VERSIONS\.lock/.test(script))
+    problems.push('生成脚本没有把 engine/VERSIONS.lock 当作文件读入（只写在说明文字里不算）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -3324,6 +3457,52 @@ const MUTATIONS = [
     expect: ['ENGINE.manage.listCapped'],
   },
   {
+    /*
+     * 「模型管理」块里 `runnerExists` 出现**两处**（按钮的 `disabled` 与那行解释文案），
+     * 只改一处 ⇒ 另一处仍命中 ⇒ 假反证。故 `all: true` 两处一起破坏。
+     */
+    name: '去掉「模型管理」块里「重新下载模型」的置灰（执行体不在盘上时点了只换一条报错）',
+    file: F.modelManage,
+    find: 'download?.runnerExists === false',
+    replace: 'false',
+    all: true,
+    expect: ['ENGINE.manage.downloadDisabled'],
+  },
+  {
+    name: 'D4：诊断视图不再渲染运行时实况（装了什么、占多少盘、何时落的又要在别处查）',
+    file: F.engineDiag,
+    find: '<ModelDiskRow disk={s?.models?.disk} />',
+    replace: '',
+    expect: ['ENGINE.diag.diskRow'],
+  },
+  {
+    /*
+     * ⚠️ `all: true`：`disk.assembledAt` 在块里出现**两处**（判断条件 + 真正渲染的那个值），
+     * 只改一处 ⇒ 另一处仍命中 ⇒ 断言照绿（实测到的假反证）。
+     * 教训同 `ENGINE.manage.notOkNotFailed`：破坏锚点要覆盖"让断言为真的**全部**来源"。
+     */
+    name: 'D4：诊断视图不再渲染「最近落盘时间」',
+    file: F.engineDiag,
+    find: 'disk.assembledAt',
+    replace: 'undefined',
+    all: true,
+    expect: ['ENGINE.diag.diskRow'],
+  },
+  {
+    name: 'D4：「模型管理」块不再显示占用字节（用户决定要不要重下时少了最关键的一个数）',
+    file: F.modelManage,
+    find: '<b>{humanBytes(disk.bytes)}</b>',
+    replace: '<b>—</b>',
+    expect: ['ENGINE.manage.diskRow'],
+  },
+  {
+    name: '把 ExpandedPlayer 从应用根摘掉（全屏播放器再也出不来）',
+    file: F.appMain,
+    find: '      <ExpandedPlayer onSeek={onMusicSeek} />\n',
+    replace: '',
+    expect: ['PLAYER.mounted'],
+  },
+  {
     name: '把数字框换回 <input type="number">（空值会被读成 0 = 从不卸载）',
     file: F.numberInput,
     // `all`：文件头**正在讨论**这件事，注释里也写着 `type="text"`；只改第一处会改到注释上
@@ -3733,6 +3912,53 @@ const MUTATIONS = [
     find: '    "gen:licenses": "node app/scripts/gen-licenses.mjs",\n',
     replace: '',
     expect: ['FEATURES.gen.script'],
+  },
+  {
+    name: 'C5：生成脚本不再读引擎资产清单（引擎/模型许可变成"手写一份"）',
+    file: F.genScript,
+    find: "const ENGINE_MANIFEST = path.join(ROOT, 'engine', 'models.manifest.json');",
+    replace: "const ENGINE_MANIFEST = path.join(ROOT, 'engine', 'nope.json');",
+    expect: ['FEATURES.gen.script'],
+  },
+  {
+    name: 'C5：生成物里没有 engine 段（引擎/模型许可一个都查不到）',
+    file: F.licensesJson,
+    find: '"engine":{',
+    replace: '"engineMoved":{',
+    expect: ['FEATURES.licenses.engine'],
+  },
+  {
+    name: 'C5：生成物谎报"有模型资产随包分发"（许可边界被踩却不报）',
+    file: F.licensesJson,
+    find: '"bundledCount":0',
+    replace: '"bundledCount":1',
+    expect: ['FEATURES.licenses.engine'],
+  },
+  {
+    name: 'C5：引擎资产条数不再参与过期对账（清单加了条目也没人发现）',
+    file: F.licensesJson,
+    find: '"engineAssets":',
+    replace: '"engineAssetsMoved":',
+    expect: ['FEATURES.licenses.fresh'],
+  },
+  {
+    name: 'C5：界面不再渲染「禁止商用」那一段（生成物有、用户看不到）',
+    file: F.licensesBlock,
+    /*
+     * `all: true`：`DATA.engine.bySpdx` 在块里出现**两处**（NC 筛选 + 那个 Scope 的取值），
+     * 只改一处 ⇒ 另一处仍命中 ⇒ 假反证（实测过一次）。
+     */
+    find: 'DATA.engine.bySpdx',
+    replace: '{}',
+    all: true,
+    expect: ['FEATURES.licenses.ui'],
+  },
+  {
+    name: 'C5：界面不再渲染"随包分发 N 条"（C5 的正面陈述看不见）',
+    file: F.licensesBlock,
+    find: '随包分发 {DATA.engine.bundledCount} 条',
+    replace: '随包分发 0 条',
+    expect: ['FEATURES.licenses.ui'],
   },
 
   // —— ENGINE.css.noticePadding 的两半判据各配一条反证 ——

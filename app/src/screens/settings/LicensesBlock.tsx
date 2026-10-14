@@ -34,10 +34,11 @@ import { Notice } from '@components/units';
 interface LicensesFile {
   generatedAt: string;
   disclaimer: string;
-  sources: { npm: string; rust: string };
-  inputs: { npmProdPackages: number; npmSkippedDev: number; rustLockCrates: number };
+  sources: { npm: string; rust: string; engine: string };
+  inputs: { npmProdPackages: number; npmSkippedDev: number; rustLockCrates: number; engineAssets: number };
   npm: LicenseScope;
   rust: LicenseScope;
+  engine: EngineLicenses;
 }
 
 interface LicensePkg {
@@ -52,6 +53,29 @@ interface LicenseScope {
   unknown: number;
   byLicense: Record<string, number>;
   packages: LicensePkg[];
+}
+
+/** 引擎 / 模型资产的一条（C5）：许可逐条来自 `models.manifest.json`，随包与否来自打包配置。 */
+interface EngineAsset {
+  id: string;
+  set: string | null;
+  platform: string | null;
+  sizeBytes: number | null;
+  license: string | null;
+  spdx: string | null;
+  bundled: boolean;
+}
+
+interface EngineLicenses {
+  assets: EngineAsset[];
+  upstream: { key: string; license: string; spdx: string | null }[];
+  total: number;
+  withLicense: number;
+  unknown: number;
+  bySpdx: Record<string, number>;
+  /** 🔴 C5 的正面陈述：随包分发物里的模型权重数（必须是 0）。 */
+  bundledCount: number;
+  engineCommit: string | null;
 }
 
 /** JSON 断言：不做 `as const` 级的字面量推断（五百多条的深推断只会拖慢 tsc） */
@@ -85,6 +109,13 @@ function Scope({ name, s }: { name: string; s: LicenseScope }) {
 export function LicensesBlock({ item }: { item: SettingItem }) {
   const [open, setOpen] = useState(false);
 
+  /*
+   * 引擎侧的「禁止商用」不是靠写死的字面量点名，而是**从 `bySpdx` 的键里筛**：
+   * 许可串换成别的写法（SPDX 表达式的 `NC`）时，这里跟着变 ——
+   * 写死一份"CC-BY-NC / CC BY-NC-SA"的名字，下次换档（nllb → m2m100，MIT）就会开始撒谎。
+   */
+  const ncScopes = Object.keys(DATA.engine.bySpdx).filter((k) => /(^|[-\s])NC([-\s]|$)/.test(k));
+
   return (
     <div className="set-lic">
       <div className="set-lic-head">
@@ -102,7 +133,28 @@ export function LicensesBlock({ item }: { item: SettingItem }) {
       <div className="set-lic-scopes">
         <Scope name="npm 运行依赖" s={DATA.npm} />
         <Scope name="Rust crate" s={DATA.rust} />
+        <Scope
+          name="引擎与模型资产"
+          s={{
+            total: DATA.engine.total,
+            withLicense: DATA.engine.withLicense,
+            unknown: DATA.engine.unknown,
+            byLicense: DATA.engine.bySpdx,
+            packages: [],
+          }}
+        />
       </div>
+
+      {/*
+        引擎与模型那一段有一条**硬约束**：禁止商用（R13）。它不是脚注 ——
+        对外分发前必须换成可商用档位，而这句话此前在界面上根本不存在。
+      */}
+      {ncScopes.length > 0 ? (
+        <Notice className="set-lic-note is-bad">
+          引擎与模型中有 {ncScopes.length} 类**禁止商用**许可（{ncScopes.join(' / ')}）：本机自用 /
+          内测可以，对外分发前必须换档并出法务结论（见「分发许可结论」）。
+        </Notice>
+      ) : null}
 
       {/*
         免责声明用 `notice`（与设置页其它提示同一形状），不用行内小字 ——
@@ -141,6 +193,30 @@ export function LicensesBlock({ item }: { item: SettingItem }) {
               </span>
               <span className={p.license ? 'set-lic-val' : 'set-lic-val is-unknown'}>
                 {p.license ?? '未取到声明'}
+              </span>
+            </div>
+          ))}
+          <div className="set-lic-list-title">
+            引擎上游与模型（版本锁的声明，逐条）
+          </div>
+          {DATA.engine.upstream.map((u) => (
+            <div className="set-lic-row" key={`up:${u.key}`}>
+              <span className="set-lic-pkg">{u.key}</span>
+              <span className="set-lic-val">{u.spdx ?? u.license}</span>
+            </div>
+          ))}
+          <div className="set-lic-list-title">
+            引擎与模型资产（{DATA.engine.total} 条 · 随包分发 {DATA.engine.bundledCount} 条）
+          </div>
+          {DATA.engine.assets.map((a) => (
+            <div className="set-lic-row" key={`eng:${a.id}`}>
+              <span className="set-lic-pkg">
+                {a.id}
+                {a.platform ? ` [${a.platform}]` : ''}
+                {a.bundled ? ' · 随包' : ''}
+              </span>
+              <span className={a.license ? 'set-lic-val' : 'set-lic-val is-unknown'}>
+                {a.spdx ?? a.license ?? '未取到声明'}
               </span>
             </div>
           ))}
