@@ -2,13 +2,27 @@
   "manifestVersion": 1,
   "updatedAt": "2026-10-14",
   "purpose": "pydensecrf 的**预编译 wheel** 通道（B4）：让没有 MSVC / Xcode CLT 的机器也能装上这个包。它只是**便利**，不是硬依赖 —— 清单里没有本平台条目时，装配脚本回退到原来的源码编译路线（这就是今天的行为，不是新加的分支）。",
-  "note": "🔴 目前 **wheels 为空**，这不是漏填：本仓还没有在任何平台上真构建过 pydensecrf 的 wheel，而 sha256 **不允许凭记忆写**（写一个假的比不写更坏 —— 校验会拦下真 wheel，或者更糟：拦不住假的）。要填的时候按 §填法 真构建一次再登记。",
+  "note": "🔴 每一条的 `sha256` 都必须**真算出来**（`--wheel-entry` 会算并打印可直接粘贴的条目）—— 凭记忆写一个假的比不写更坏：它会拦下真 wheel，或者更糟 —— 拦不住假的。🔴 托管状态由 `local` 字段如实标注：`local: true` = **尚未托管**（只在「跑过 `--build-wheel` 的那台机器上」可用）；托管通道就绪后补 `url` 并去掉 `local`。",
   "platformKey": "与 engine/models.manifest.json 的 platform 字段同一口径（win32-x64 / darwin-arm64）；pythonTag 用 wheel 的 ABI tag（cp311，见 engine/VERSIONS.lock §2 的 engine_python = 3.11.17）",
   "fillHowTo": [
-    "① 在目标平台（且该平台有编译器）上装好引擎依赖，然后：pip wheel pydensecrf --no-deps -w <目录>",
-    "② 对产出的 .whl 算 sha256（Windows: certutil -hashfile <whl> SHA256；macOS: shasum -a 256 <whl>）",
-    "③ 把 .whl 传到镜像通道，然后在下面 wheels[] 里登记一条：platform / pythonTag / file / sha256 / sizeBytes / url / sources",
-    "④ 跑 `node e2e/engine/pydensecrf-wheel-check.mjs`（结构合法性 + sha256 形态 + 选择逻辑）"
+    "① 在目标平台（且该平台有编译器）上：`node engine/scripts/install-engine-deps.mjs --build-wheel`（复用同脚本的 MSVC 环境探测与 sdist 缓存；缺省产出到通道目录 `<RT>/.download-cache/wheels/`）",
+    "② 它**已经**把 sha256 / sizeBytes 算好并打印成可直接粘贴的条目（对已有的 whl 也可以：`--wheel-entry <x.whl>`）",
+    "③ 把 .whl 传到镜像通道，然后补 `url` / `sources` 并去掉 `local`（WB.W1 要求：`local` 与 `url` **二选一且互斥**）",
+    "④ 跑 `node e2e/engine/pydensecrf-wheel-check.mjs`（结构合法性 + sha256 形态 + 选择逻辑四态）",
+    "⑤ 跑 `node e2e/engine/pydensecrf-wheel-install-check.mjs`（**真装一次**：`--no-index --no-deps` 成功 + 真二进制 + 构造 DenseCRF）"
   ],
-  "wheels": []
+  "wheels": [
+    {
+      "id": "pydensecrf-win32-x64",
+      "platform": "win32-x64",
+      "pythonTag": "cp311",
+      "file": "pydensecrf-1.0-cp311-cp311-win_amd64.whl",
+      "sha256": "f4b5b28d8b5e600adb60b891cdbe3b2540fbe75c2bea4003faa007bbed313cbd",
+      "sizeBytes": 212943,
+      "local": true,
+      "url": null,
+      "sources": [],
+      "note": "2026-10-14 在 Windows/x64（MSVC 14.44.35207 · SDK 10.0.22621.0 · cp311）上用 `--build-wheel` 真构建；`--no-index --no-deps` 装进空 target 成功、真二进制、`DenseCRF(10,10)` 可构造（见 `check:pydensecrf-wheel-install`）。🔴 **尚未托管**（`local: true`）：只在跑过 `--build-wheel` 的机器上可用，别处仍回退源码编译。"
+    }
+  ]
 }

@@ -206,8 +206,21 @@ node engine/scripts/install-engine-deps.mjs --print-plan
 它只回答一件事：pydensecrf 这一项会走**预编译 wheel**（无需编译器）还是**源码编译**。
 判定顺序是「清单里有本平台 + 本 Python 版本的条目 → wheel 文件在位 → sha256 与清单一致」，
 任一条不成立就回退到源码编译（**回退是设计的一部分，不是降级**）。
-清单在 `engine/wheels.manifest.json`，目前可能是空的 —— 空的就照下面装编译器。
-怎么填一条见该文件的 `fillHowTo`。
+清单在 `engine/wheels.manifest.json`。
+
+**已经装了编译器、想给别人留一条免编译的路**（一条命令产出 wheel + 算好 sha256）：
+
+```powershell
+node engine/scripts/install-engine-deps.mjs --build-wheel
+```
+
+它复用 `deps:engine` 同一份 MSVC 环境探测与 sdist 缓存，把 wheel 产出到通道目录
+（`<落点>\.download-cache\wheels\`）并**打印可直接粘进清单的条目**（含真 sha256）——
+清单里那个哈希**不允许凭记忆写**，这也是为什么它由脚本算。
+🔴 产出后本机就**立刻**走 wheel 不编译（同一台机器上重装更快）；
+要让**别人**也用得上，得把 wheel 传到镜像通道并在清单里补 `url`。
+
+清单里的条目目前是 `"local": true`（**尚未托管**）：只在跑过 `--build-wheel` 的机器上可用。
 
 - 缺 MSVC/SDK：装「Visual Studio 2022 生成工具」，勾 **MSVC v143 生成工具** +
   **Windows 11 SDK**（或 Windows 10 SDK 10.0.22621）。

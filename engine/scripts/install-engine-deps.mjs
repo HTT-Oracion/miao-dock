@@ -52,13 +52,17 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PLATFORM = ((process.env.MIAO_PLATFORM || '').trim() || process.platform).toLowerCase();
 
 /**
- * `--print-plan` **不受平台闸门限制**：它只读清单、算一行结论，不装任何东西、不碰 venv、不联网。
+ * **只读模式不受平台闸门限制**：它们只读清单 / 算哈希、打印一行结论，不装任何东西、
+ * 不碰 venv、不联网、**不需要编译器**。
  *
- * 🔴 macOS 用户同样需要问这个问题（"有没有本平台的预编译 wheel"）—— 而这台机器上跑不到
- *    那一支，只能靠这个旁路 + `MIAO_PLATFORM` 接缝把它验出来（见 `pydensecrf-wheel-check`）。
+ * 🔴 macOS 用户同样需要这两个（"有没有本平台的预编译 wheel" / "这颗 whl 的哈希与条目长什么样"）
+ *    —— 而这台机器上跑不到那些分支，只能靠这个旁路 + `MIAO_PLATFORM` 接缝把它验出来
+ *    （见 `pydensecrf-wheel-check` 的 WB.W9 / WB.W11）。
+ * ⚠️ `--build-wheel` **不在此列**：它要 MSVC 的环境探测，在非 Windows 上必须被拒（那就是闸门的本意）。
  */
-const ONLY_PRINT_PLAN = process.argv.slice(2).includes('--print-plan');
-if (!PLATFORM.startsWith('win32') && !ONLY_PRINT_PLAN) {
+const READONLY_MODES = ['--print-plan', '--wheel-entry'];
+const ONLY_READONLY = process.argv.slice(2).some((a) => READONLY_MODES.includes(a));
+if (!PLATFORM.startsWith('win32') && !ONLY_READONLY) {
   console.error(
     `✗ [PLATFORM_UNSUPPORTED] install-engine-deps.mjs 仅支持 Windows（当前平台 ${PLATFORM}）。\n` +
       '  macOS 请按 docs/install-guide-macos.md 手动装依赖（pip -r requirements.txt + pydensecrf 兼容补丁），\n' +
@@ -284,14 +288,13 @@ function planCrf() {
 }
 
 /**
- * 源码编译 pydensecrf（B4 之后的**回退路线**，也是今天在用的那条）。
+ * 把 sdist 抓到本地缓存（带镜像回退，绕开 pip 直连 github 的 502）。
  *
- * 为什么留成独立函数：`--print-plan` 与批 B 都要"说得清走哪条路"，而回退这件事
- * 在两个地方发生（计划里没有 wheel / wheel 装失败）—— 收在一处才不会两边行为不同。
+ * 缓存目录与 `setup-engine.mjs` 同源（`RT/.download-cache`）—— 它在 gitignore 的 `runtimes/` 下，不入库。
+ * 抽出来是因为**两条路都要它**：源码编译（批 B 的回退）与 `--build-wheel`（B4 造 wheel）。
+ * 两处各写一遍"先下再判大小"必然会漂移（一处判 1024、一处不判）。
  */
-async function buildFromSource(env, crfUrl) {
-  // 先带镜像回退把 sdist zip 抓到本地（绕开 pip 直连 github 的 502），再用本地文件装。
-  // 缓存目录与 setup-engine.mjs 同源（RT/.download-cache）—— 它在 gitignore 的 runtimes/ 下，不入库。
+async function ensureCrfSdist(crfUrl) {
   const cacheDir = path.join(RT, '.download-cache');
   fs.mkdirSync(cacheDir, { recursive: true });
   const crfZip = path.join(cacheDir, 'pydensecrf-master.zip');
@@ -300,6 +303,43 @@ async function buildFromSource(env, crfUrl) {
   } else {
     log(`使用已缓存的 sdist：${crfZip}`);
   }
+  return crfZip;
+}
+
+/**
+ * 「给我一个 whl，我把**清单条目**打印出来」—— B4 的 `fillHowTo` 第②③步机器化。
+ *
+ * 🔴 为什么值得单做一个子命令：清单里那个 `sha256` **不允许凭记忆写**
+ * （写一个假的比不写更坏：它会拦下真 wheel，或者更糟 —— 拦不住假的）。
+ * 而"手工算 sha256 再抄进 JSON"这件事，抄错一位是**静默**的：条目光看着没问题，
+ * 直到有人装的时候被 `planCrf` 拒绝，而那时人只会觉得"这个通道不好使"。
+ * 所以宁可让它由**同一个脚本**算出来，并打印成可直接粘贴的条目。
+ *
+ * 秒级、**不需要编译器**（只是读文件 + 算哈希）⇒ 也能被 e2e 钉住。
+ */
+function wheelEntryOf(file) {
+  const abs = path.resolve(file);
+  const buf = fs.readFileSync(abs);
+  return {
+    id: `pydensecrf-${platformKey()}`,
+    platform: platformKey(),
+    pythonTag: pythonTag(),
+    file: path.basename(abs),
+    sha256: crypto.createHash('sha256').update(buf).digest('hex'),
+    sizeBytes: buf.length,
+    url: null,
+    sources: [],
+  };
+}
+
+/**
+ * 源码编译 pydensecrf（B4 之后的**回退路线**，也是今天在用的那条）。
+ *
+ * 为什么留成独立函数：`--print-plan` 与批 B 都要"说得清走哪条路"，而回退这件事
+ * 在两个地方发生（计划里没有 wheel / wheel 装失败）—— 收在一处才不会两边行为不同。
+ */
+async function buildFromSource(env, crfUrl) {
+  const crfZip = await ensureCrfSdist(crfUrl);
   const code = runPip(env,
     ['-m', 'pip', 'install', '--no-build-isolation', crfZip], '批 B：编译 pydensecrf');
   if (code !== 0) {
@@ -374,6 +414,27 @@ async function main() {
     return 0;
   }
 
+  /*
+   * `--wheel-entry <file.whl>`：只算 sha256/体积并打印**可粘贴的清单条目**（秒级、不需要编译器）。
+   * 与 `--print-plan` 同理放在 venv 检查之前 —— 造清单条目这件事与"venv 装没装"无关。
+   */
+  if (args.includes('--wheel-entry')) {
+    const i = args.indexOf('--wheel-entry');
+    const file = args[i + 1];
+    if (!file || file.startsWith('--')) {
+      console.error('✗ 用法：install-engine-deps.mjs --wheel-entry <path/to/x.whl>');
+      return 2;
+    }
+    if (!fs.existsSync(file)) {
+      console.error(`✗ 找不到 wheel：${path.resolve(file)}`);
+      return 2;
+    }
+    console.log(JSON.stringify(wheelEntryOf(file), null, 2));
+    console.log('⚠ 把上面这条粘进 engine/wheels.manifest.json 的 wheels[]，并补上 url / sources（上传镜像通道之后）——'
+      + ' `check:pydensecrf-wheel` 的 WB.W1 要求每条都有 url。');
+    return 0;
+  }
+
   if (!fs.existsSync(VENV_PY)) throw new Error(`venv 不存在：${VENV_PY}（先跑 setup-engine.mjs --venv）`);
   if (!fs.existsSync(REQ)) throw new Error(`requirements.txt 不存在：${REQ}`);
 
@@ -387,6 +448,43 @@ async function main() {
   if (!crfMatch) throw new Error('requirements.txt 里没找到 pydensecrf 直链行');
   const crfUrl = crfMatch[1].trim();
   log(`pydensecrf 直链: ${crfUrl}`);
+
+  /*
+   * `--build-wheel [--out <dir>]`：**在目标平台真构建一次**（B4 的 `fillHowTo` 第①步）。
+   *
+   * 为什么需要它：wheel 通道的每一环都能在本机跑，唯独"产出一个 wheel"要在
+   * **有编译器的目标平台**上做一次。把这件事收进同一脚本，是为了复用**同一份**
+   * MSVC 环境探测与**同一份** sdist 缓存（`RT/.download-cache`）——
+   * `vcvars` 那套坑（sandbox 拦 `reg.exe`、INCLUDE 残缺）在这里已经踩平了，
+   * 另写一个脚本必然再踩一遍。
+   *
+   * ⚠️ 产物落 `<out>`（缺省 = wheel 通道目录 `RT/.download-cache/wheels/`）：那是 `planCrf`
+   *    找 wheel 的地方 ⇒ 本机构建一次之后，同一台机器上的重装就会**走 wheel 不编译**。
+   *    但要让**别人**也用得上，还得把 wheel 传到镜像通道并登记清单（见打印出来的条目）。
+   */
+  if (args.includes('--build-wheel')) {
+    const oi = args.indexOf('--out');
+    const outDir = oi >= 0 && args[oi + 1] && !args[oi + 1].startsWith('--') ? args[oi + 1] : wheelDir();
+    fs.mkdirSync(outDir, { recursive: true });
+    const crfZip = await ensureCrfSdist(crfUrl);
+    log(`构建 wheel → ${outDir}（MSVC ${process.env.MIAO_VC_ROOT ?? '自动探测'}）`);
+    const code = runPip(env, ['-m', 'pip', 'wheel', '--no-build-isolation', '--no-deps', '-w', outDir, crfZip], '构建 pydensecrf wheel');
+    if (code !== 0) {
+      log('✗ 构建失败。这条命令**需要编译器**（本机无 MSVC/SDK 时属预期失败 —— 那就去有编译器的机器上跑）。');
+      throw new Error(`--build-wheel 失败，exit=${code}`);
+    }
+    const built = fs.readdirSync(outDir).filter((n) => n.endsWith('.whl'));
+    if (built.length === 0) throw new Error(`构建命令退出 0，但 ${outDir} 里没有 .whl`);
+    const newest = built
+      .map((n) => ({ n, t: fs.statSync(path.join(outDir, n)).mtimeMs }))
+      .sort((a, b) => b.t - a.t)[0].n;
+    const abs = path.join(outDir, newest);
+    log(`✓ 产出 ${abs}`);
+    console.log('\n把下面这条粘进 engine/wheels.manifest.json 的 wheels[]：\n');
+    console.log(JSON.stringify(wheelEntryOf(abs), null, 2));
+    console.log('\n⚠ `url` / `sources` 要等你把 wheel 传到镜像通道之后再补 —— 清单里每条都必须有 url（WB.W1 会检查）。');
+    return 0;
+  }
 
   // ---------- 批 A：除 pydensecrf 外的全部依赖 ----------
   if (!onlyCrf) {

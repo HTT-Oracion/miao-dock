@@ -99,6 +99,9 @@ const CHECKS = [
   { id: 'e7-real', script: 'e2e/engine/e7-real-verify-check.mjs', tier: 'nightly', refute: true, watch: ['engine/**', 'service/src/**'] },
   { id: 'e11', script: 'e2e/lifespan-selftest.mjs', args: ['--e11'], tier: 'nightly', refute: ['--e11', '--refute'], watch: ['service/src/**', 'app/src-tauri/**'] },
   { id: 'e11-real', script: 'e2e/lifespan-selftest.mjs', args: ['--e11', '--mode', 'real'], tier: 'nightly', watch: ['service/src/**', 'app/src-tauri/**'] },
+  // B4：**真装一次** wheel（`--no-index --no-deps` 成功 + 真二进制 + 构造 DenseCRF）。
+  // 硬前置：盘上得有一颗 `--build-wheel` 产出的 wheel ⇒ 只在跑过构建的机器上有意义，故归 nightly。
+  { id: 'pydensecrf-wheel-install', script: 'e2e/engine/pydensecrf-wheel-install-check.mjs', tier: 'nightly', watch: ['engine/wheels.manifest.json', 'engine/scripts/install-engine-deps.mjs', 'e2e/engine/pydensecrf-wheel-install-check.mjs'] },
 ];
 
 /**

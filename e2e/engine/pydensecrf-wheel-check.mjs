@@ -119,10 +119,23 @@ const envFor = (manifestPath) => ({ MIAO_WHEELS_MANIFEST: manifestPath, MIAO_WHE
     if (!w.file) problems.push(`${w.id ?? '?'}: 缺 file`);
     // 🔴 sha256 形态必须钉：凭记忆写一个假的比不写更坏（校验会拦下真 wheel，或者更糟：拦不住假的）
     if (!/^[0-9a-f]{64}$/.test(String(w.sha256 ?? ''))) problems.push(`${w.id ?? '?'}: sha256 不是 64 位小写十六进制`);
-    if (!w.url) problems.push(`${w.id ?? '?'}: 缺 url（镜像通道的来源）`);
+    if (typeof w.sizeBytes !== 'number' || w.sizeBytes <= 0) problems.push(`${w.id ?? '?'}: sizeBytes 不是正数`);
+    /*
+     * 托管状态：`local: true`（本机构建、**尚未托管**）与 `url`（已上传镜像通道）**二选一且互斥**。
+     *
+     * 为什么不是"必须有 url"：托管通道本仓还不存在，而把"本机真构建出来的那颗"如实登记
+     * 是有价值的（跑过一次 `--build-wheel` 的机器就能走 wheel 不编译），前提是**说清它没托管**。
+     * 为什么不是"url 可选"：那会让"已托管"与"没托管"混在一张表里 ——
+     * 用户照着清单去下载却下不到，且没人知道该怪谁。⇒ 互斥才是这条判据的形态。
+     */
+    const isLocal = w.local === true;
+    const hasUrl = typeof w.url === 'string' && w.url.trim() !== '';
+    if (isLocal && hasUrl) problems.push(`${w.id ?? '?'}: 同时标了 local 与 url（"没托管"与"已托管"不能同时成立）`);
+    if (!isLocal && !hasUrl) problems.push(`${w.id ?? '?'}: 既没有 url 也没标 local: true（这条到底托管了没有？谁来下载它？）`);
   }
-  check('WB.W1 `engine/wheels.manifest.json` 结构合法：条目（若有）逐条带 platform / pythonTag / file / 64 位 sha256 / url，'
-    + '且写清了 purpose 与 fillHowTo', problems.length === 0, problems);
+  check('WB.W1 `engine/wheels.manifest.json` 结构合法：条目（若有）逐条带 platform / pythonTag / file / 64 位 sha256 / 正数体积，'
+    + '且 `local` 与 `url` **二选一互斥**（"尚未托管"必须说出来），并写清了 purpose 与 fillHowTo',
+  problems.length === 0, problems);
 }
 
 // ------------------------------------------------------------------ WB.W2 空清单 ⇒ 回退源码编译
@@ -206,6 +219,35 @@ const envFor = (manifestPath) => ({ MIAO_WHEELS_MANIFEST: manifestPath, MIAO_WHE
     { code: refused.status });
 }
 
+// ------------------------------------------------------------------ WB.W11 `--wheel-entry` 也是只读模式（macOS 用户也要能算哈希）
+
+{
+  /*
+   * macOS 引导里让用户用 `--wheel-entry` 算 sha256 并生成清单条目 —— 如果那条命令在 macOS 上
+   * 因为平台闸门直接退出 2，文档就给了一条跑不通的指令。
+   * 判据走**产品自己的出口**：给一颗夹具 whl，接缝设成 darwin-arm64，看它能不能算出正确的条目。
+   */
+  const fakeWhl = path.join(tmp, `pydensecrf-1.0-${PY_TAG}-${PY_TAG}-darwin.whl`);
+  fs.writeFileSync(fakeWhl, wheelBytes);
+  const r = spawnSync(process.execPath, [DEPS_MJS, '--wheel-entry', fakeWhl], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, MIAO_PLATFORM: 'darwin-arm64' },
+  });
+  let entry = null;
+  try {
+    // ⚠️ JSON 之后还有一行 `⚠ 把上面这条粘进…` 的提示 ⇒ 只取**第一个 `{` 到最后一个 `}`**
+    //    （那行提示里没有 `}`，所以最后一个 `}` 就是 JSON 的收尾）。直接 `slice(indexOf('{'))` 会带上尾巴而解析失败。
+    const out = String(r.stdout ?? '');
+    entry = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1));
+  } catch { /* 下面判据会红 */ }
+  check('WB.W11 `--wheel-entry` 属于**只读模式**：非 Windows 下仍能用（算 sha256 + 出条目），'
+    + '且 `platform` 跟随接缝 —— 否则 macOS 引导里那条命令根本跑不通',
+  r.status === 0 && entry && entry.sha256 === sha256(wheelBytes)
+    && entry.sizeBytes === wheelBytes.length && entry.platform === 'darwin-arm64',
+  { status: r.status, entry, wantSha: sha256(wheelBytes).slice(0, 12) });
+}
+
 // ------------------------------------------------------------------ WB.W7 文档
 
 {
@@ -242,6 +284,18 @@ if (REFUTE) {
     return () => fs.writeFileSync(DEPS_MJS, MJS_ORIGINAL);
   }
 
+  /** 同 `mutate`，但改的是**清单**（WB.W1 的判据对象）。 */
+  function mutateManifest(from, to) {
+    const original = fs.readFileSync(WHEELS_JSON);
+    const text = original.toString('utf8');
+    const eol = text.includes('\r\n') ? '\r\n' : '\n';
+    const f = from.replace(/\r?\n/g, eol);
+    const t = to.replace(/\r?\n/g, eol);
+    if (!text.includes(f)) throw new Error(`清单反证锚点未命中（写法变了？）：\n  ${from.slice(0, 90)}`);
+    fs.writeFileSync(WHEELS_JSON, Buffer.from(text.replace(f, t), 'utf8'));
+    return () => fs.writeFileSync(WHEELS_JSON, original);
+  }
+
   const runForward = () => {
     const r = spawnSync(process.execPath, [SELF], { cwd: ROOT, encoding: 'utf8' });
     return { code: r.status, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
@@ -268,6 +322,39 @@ if (REFUTE) {
     const r = runForward();
     check('MB2 去掉平台/ABI 过滤 ⇒ WB.W6 红（Windows 上会去装 macOS 的 wheel）',
       r.code !== 0 && hasRed(r.out, 'WB.W6'), { code: r.code, redOn: redOn(r.out) });
+    restore();
+  }
+
+  // ---- MB4：给"未托管"的条目补一个 url（把"没托管"说成"已托管"）----
+  {
+    // ⚠️ 变异对象是**清单**而不是脚本：`mutate()` 只改 `install-engine-deps.mjs`
+    //    （MB1–MB3 用它），拿它改清单会"锚点未命中"直接抛 —— 反证轮里没有第 4 类退出码，
+    //    所以这里必须另有一个 helper，别想着"顺手复用"。
+    // ⚠️ 也别用"**追加**一个 url 键"的写法：同一对象里两个 `url` ⇒ `JSON.parse` 取**最后一个**
+    //    （`null`）⇒ 变异其实没生效，反证轮会报假阳性。要改就改**已有的那个键**。
+    const restore = mutateManifest('"url": null,', '"url": "https://example.invalid/whl",');
+    const r = runForward();
+    check('MB4 给 `local: true` 的条目补上 url ⇒ WB.W1 红（"尚未托管"与"已托管"不能同时成立）',
+      r.code !== 0 && hasRed(r.out, 'WB.W1'), { code: r.code, redOn: redOn(r.out) });
+    restore();
+  }
+
+  // ---- MB5：去掉 local 又不给 url（这条到底托管了没有？）----
+  {
+    const restore = mutateManifest('      "local": true,\n', '');
+    const r = runForward();
+    check('MB5 去掉 `local: true` 又不给 url ⇒ WB.W1 红（用户照清单去下载却下不到，且没人知道该怪谁）',
+      r.code !== 0 && hasRed(r.out, 'WB.W1'), { code: r.code, redOn: redOn(r.out) });
+    restore();
+  }
+
+  // ---- MB6：把 `--wheel-entry` 从只读白名单里摘掉（macOS 上那条命令会 exit 2）----
+  {
+    const restore = mutate("const READONLY_MODES = ['--print-plan', '--wheel-entry'];",
+      "const READONLY_MODES = ['--print-plan'];");
+    const r = runForward();
+    check('MB6 `--wheel-entry` 不再属于只读模式 ⇒ WB.W11 红（macOS 引导里让用户跑的命令会直接退出 2）',
+      r.code !== 0 && hasRed(r.out, 'WB.W11'), { code: r.code, redOn: redOn(r.out) });
     restore();
   }
 

@@ -132,8 +132,19 @@ RT="$HOME/Library/Application Support/runtimes/manga-translator"
 > "$RT/venv/bin/pip" install --no-deps <清单里那条 wheel>
 > ```
 >
-> 清单目前可能是**空的**（本仓尚未在 macOS 上真构建过 wheel，而 sha256 不允许凭记忆写）——
-> 空了就照上面的手动路径走，不会因此装不上。怎么填一条见该文件的 `fillHowTo`。
+> 清单里若**没有** macOS 条目（很可能：本仓只在 Windows 上真构建过），就照上面的手动路径走，
+> 不会因此装不上。清单怎么加一条见该文件的 `fillHowTo`。
+>
+> **想让别人也免装 Xcode CLT**（在已装 CLT 的 macOS 机器上做一次）：
+>
+> ```bash
+> "$RT/venv/bin/pip" wheel pydensecrf --no-deps -w /tmp/whl
+> node engine/scripts/install-engine-deps.mjs --wheel-entry /tmp/whl/pydensecrf-*.whl
+> ```
+>
+> 第二条命令**只需要读文件 + 算哈希**（在 macOS 上也能跑：它是脚本里的"只读模式"之一），
+> 会把 sha256 算好并打印成可粘贴的清单条目 —— 那个哈希**不允许凭记忆写**。
+> 把 wheel 传到镜像通道、补 `url` 并去掉 `local`，别人就也不必装 CLT 了。
 
 **然后必须补一个兼容补丁**（否则掩码细化一步会炸，见 §5.1）：
 
