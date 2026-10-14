@@ -1,47 +1,58 @@
 #!/usr/bin/env node
 /**
- * F3 · store **同源**钉子 —— Rust(`boxsvc/store.rs`) 与 Node(`manga/store.mjs`) 的产物逐条相同
+ * F3 · store 同源钉子 —— Rust(`boxsvc/store.rs`) 对冻结 golden 快照
  * =============================================================================
- * 为什么必须有它：F 组把服务运行时换成 Rust 的过程中，`store.mjs` 是**最大也最厚**的一块
- * （1918 行、JSON 持久化 + 三层状态机）。它的失效形态全都**不是崩溃**，而是「看起来在工作、
- * 结果悄悄不同」——落盘字段序变了、批次状态判错一格、eta 回退区间不见了、原子写退化成了
- * 直接覆写。这些都不会让任何既有断言变红。于是这里把「Rust 版 store 与 Node 版 store 在
- * **同一份固定输入**下的产物」逐条钉住。
+ * 为什么必须有它：`store.mjs` 曾是**最大也最厚**的一块（1918 行、JSON 持久化 + 三层状态机）。
+ * 它的失效形态全都**不是崩溃**，而是「看起来在工作、结果悄悄不同」——落盘字段序变了、
+ * 批次状态判错一格、eta 回退区间不见了、原子写退化成了直接覆写。这些都不会让任何既有
+ * 断言变红。于是这里把「Rust 版 store 在**同一份固定输入**下的产物」逐条钉住。
  *
- * ## 机制（输入的唯一事实源在 Rust）
- *   · `boxsvc --store-selftest` 打印 `pureInputs`（各用例输入）+ `pure`（Rust 输出）+
- *     `fixtures`（任务夹具）+ `serializedTask` / `views` / `plans` / `hidden` / `persistedBytes`
- *   · 本脚本**只读** Rust 给的输入，跑**真 `store.mjs`** 算同一份，再与 Rust 的输出比对
- *     —— 夹具只写一份，两边不会各写一份而悄悄走散
+ * ## 机制（F5 摘除 Node 后：Rust 输出 ⟷ 冻结 golden）
+ *   · `boxsvc --store-selftest` 打印 `pure` / `serializedTask` / `views` / `plans` /
+ *     `hidden` / `persistedBytes` / `atomic` / `ulidOk`（输入 `pureInputs`/`fixtures` 只作
+ *     见证，不再回填给 Node）。
+ *   · golden 快照 `e2e/service/golden/store-selftest.json` 是「Node 版 store 在同源对齐时代
+ *     冻结的最后一份正确输出」——它与 Rust 逐字节同源**已在对拍全绿时验证过**，此后作为
+ *     单向金标：Rust 侧任何一次悄然漂移（字段序 / 状态格 / eta 区间 / 原子写），这里必红。
+ *   · `canon` 只剔 `updatedAt`（唯一的实时字段），其余（createdAt/finishedAt/outputDir）
+ *     都是夹具固定值，无需路径归一化。
  *
  * ## 断言
- *   STORE.pure.*        纯函数（orderImages / endStatusOf / formatEtaText / sniffImageType /
- *                       isSafeDirName / 目录扫描）逐条相同
+ *   STORE.pure.*        纯函数逐条相同
  *   STORE.serializedTask / STORE.views.* / STORE.plans.* / STORE.hidden   结构与取值相同
  *   STORE.persistedBytes 落盘字节**逐字节**相同（唯一对字段序敏感的产物）
  *   STORE.atomic.*      原子写：中断后目标完好 + 无 tmp 残留
  *
  * ## 反证轮（--refute）
  *   M1 原子写退化成直接覆写（`MIAO_ATOMIC_DIRECT_WRITE=1`）⇒ `targetIntactAfterAbort` 必须变红
- *   M2 篡改 Node 侧一个纯函数结果 ⇒ 该场景变红
- *   M3 篡改 Rust 侧 `serializedTask` ⇒ 变红
- *   M4 删掉 Rust 侧一个键            ⇒ 变红
+ *   M2 篡改 golden 一个纯函数结果 ⇒ 该场景变红
+ *   M3 篡改 golden 的 `serializedTask` ⇒ 变红
+ *   M4 删掉 golden 一个键            ⇒ 变红
  *
  * 用法：node e2e/service/store-parity-check.mjs [--refute]
  * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
+ * 重新生成 golden：`--store-selftest` 的 canon 输出即 golden（Node 版已摘除，勿再回填 Node）
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 import { RUST_BIN } from './_service-harness.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
+const GOLDEN = path.join(HERE, 'golden', 'store-selftest.json');
 const REFUTE = process.argv.includes('--refute');
+
+// 路径归一化：golden 里凡是本机 home / 仓库根的绝对路径，都归一成占位符，
+// 否则 golden 跨机器（不同用户名 / 不同仓库位置）会假红。
+// 🔴 用正则而非精确串替换：persistedBytes 是 JSON 转义字符串，反斜杠层级不定
+//    （1 层 / 2 层 / 4 层…），`[\\/]+` 一次覆盖任意层级。
+const normStr = (s) => s
+  .replace(/[A-Za-z]:[\\/]+Users[\\/]+[A-Za-z0-9_.-]+/g, '<HOME>')
+  .replaceAll(REPO_ROOT, '<REPO>');
 
 let passed = 0;
 let failed = 0;
@@ -72,7 +83,7 @@ function run(cmd, args, env) {
   });
 }
 
-/** 规范化：对象键排序、递归剔除不确定的 `updatedAt`。数组保序。 */
+/** 规范化：对象键排序、递归剔除不确定的 `updatedAt`、路径归一化。数组保序。 */
 function canon(v) {
   if (Array.isArray(v)) return v.map(canon);
   if (v && typeof v === 'object') {
@@ -83,34 +94,12 @@ function canon(v) {
     }
     return out;
   }
+  if (typeof v === 'string') return normStr(v);
   return v;
 }
 function sameJSON(a, b) {
   return JSON.stringify(canon(a)) === JSON.stringify(canon(b));
 }
-
-// ------------------------------------------------------------------ 夹具环境（Rust 与 Node 共用）
-
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-store-parity-'));
-const ROOT_RAW = path.join(TMP, 'root');
-const STATE_RAW = path.join(TMP, 'state');
-fs.mkdirSync(ROOT_RAW, { recursive: true });
-fs.mkdirSync(STATE_RAW, { recursive: true });
-
-// 计划夹具：原图 001/002、译文 003 + 001_translated、噪声 cover.jpg / 1000.png（4 位不匹配）
-const COMIC = path.join(ROOT_RAW, '测试漫画');
-fs.mkdirSync(COMIC, { recursive: true });
-fs.writeFileSync(path.join(COMIC, '001.png'), Buffer.from([1, 2, 3]));
-fs.writeFileSync(path.join(COMIC, '002.jpg'), Buffer.from([1, 2, 3, 4]));
-fs.writeFileSync(path.join(COMIC, '003_translated.png'), Buffer.from([9, 9]));
-fs.writeFileSync(path.join(COMIC, '001_translated.webp'), Buffer.from([9]));
-fs.writeFileSync(path.join(COMIC, 'cover.jpg'), Buffer.from([7]));
-fs.writeFileSync(path.join(COMIC, '1000.png'), Buffer.from([7, 7, 7, 7, 7]));
-
-// 传**规范化后**的绝对路径，避免「谁先 canonicalize」带来的系统差异（两边的 Store 都会再规范化一次）
-const ROOT = fs.realpathSync(ROOT_RAW);
-const STATE = fs.realpathSync(STATE_RAW);
-const ENV = { MIAO_ROOT: ROOT, MIAO_STATE_DIR: STATE, MIAO_TOKEN: 'a'.repeat(64) };
 
 // ------------------------------------------------------------------ Rust 侧
 
@@ -118,159 +107,68 @@ async function dumpRust(extraEnv = {}) {
   if (!fs.existsSync(RUST_BIN)) {
     throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`);
   }
-  const env = { ...ENV, MIAO_ATOMIC_DIRECT_WRITE: '', ...extraEnv };
+  const env = { MIAO_ATOMIC_DIRECT_WRITE: '', ...extraEnv };
   return JSON.parse((await run(RUST_BIN, ['--store-selftest'], env)).trim());
 }
 
-// ------------------------------------------------------------------ Node 侧（真 store.mjs）
+// ------------------------------------------------------------------ 正向：Rust 输出 ⟷ 冻结 golden
 
-let S = null;
-let CFG = null;
-let sniffImageType = null;
-let isSafeDirName = null;
-let atomicWriteJson = null;
-
-async function loadNodeModules() {
-  const imp = (rel) => import(pathToFileURL(path.join(REPO_ROOT, rel)).href);
-  S = await imp('service/src/manga/store.mjs');
-  CFG = await imp('service/src/config.mjs');
-  ({ sniffImageType } = await imp('service/src/image.mjs'));
-  ({ isSafeDirName } = await imp('service/src/manga/names.mjs'));
-  ({ atomicWriteJson } = await imp('service/src/atomic-file.mjs'));
-}
-
-/** 用 Rust 给的输入，跑 Node 实现，交出与 Rust 同形的报告。 */
-function buildNodeReport(rust) {
-  const inp = rust.pureInputs;
-  const fx = rust.fixtures;
-
-  // ---- 纯函数 ----
-  const orderImages = {};
-  for (const [id, c] of Object.entries(inp.orderImages)) {
-    const imgs = c.files.map((f) => (f == null ? {} : { filename: f }));
-    orderImages[id] = S.orderImages(imgs, c.order).map((o) => imgs.indexOf(o));
-  }
-  const endStatusOf = {};
-  for (const [id, c] of Object.entries(inp.endStatusOf)) {
-    endStatusOf[id] = S.endStatusOf(c.statuses.map((s) => ({ status: s })));
-  }
-  const formatEtaText = {};
-  for (const [id, c] of Object.entries(inp.formatEtaText)) formatEtaText[id] = S.formatEtaText(c.min, c.max);
-  const sniff = {};
-  for (const [id, c] of Object.entries(inp.sniffImageType)) sniff[id] = sniffImageType(Buffer.from(c.bytes));
-  const safe = {};
-  for (const [id, c] of Object.entries(inp.isSafeDirName)) safe[id] = isSafeDirName(c.name);
-  const fileScan = {};
-  for (const name of inp.fileScan.names) {
-    const mo = CFG.ORIGINAL_SCAN_RE.exec(name);
-    const mt = CFG.TRANSLATED_SCAN_RE.exec(name);
-    fileScan[name] = { original: mo ? Number(mo[1]) : null, translated: mt ? Number(mt[1]) : null };
-  }
-  const pure = { orderImages, endStatusOf, formatEtaText, sniffImageType: sniff, isSafeDirName: safe, fileScan };
-
-  // ---- 单任务：serialize / 视图 ----
-  const store = new S.Store(ROOT);
-  const task = fx.task;
-  const batchesTask = fx.batchesTask;
-  store._syncBatchStatuses(batchesTask);
-
-  const views = {
-    progress: store.progressOf(task),
-    create: store.createView(task),
-    detail: store.detailView(task, {}),
-    detailFiltered: store.detailView(task, { itemsFrom: 2, itemsTo: 3 }),
-    list: store.listView(task),
-    batchStatuses: batchesTask.batches.map((b) => b.status),
-  };
-
-  // ---- 列表：taskList / queue ----
-  const listStore = new S.Store(ROOT);
-  for (const t of fx.tasks) listStore.tasks.set(t.taskId, t);
-  listStore.queue = fx.queueIds.map((id) => listStore.tasks.get(id));
-  listStore.currentTaskId = fx.currentTaskId;
-  views.taskList = listStore.taskListView({});
-  views.taskListFiltered = listStore.taskListView({ status: 'done,failed', limit: 2 });
-  views.queue = listStore.queueSnapshot();
-
-  // ---- 计划 ----
-  const plans = {
-    resume: store.resumePlan(fx.planComicDir),
-    retranslate: store.retranslatePlan(fx.planComicDir),
-    nextSeq: store._nextSeqFor(fx.planComicDir),
-  };
-
-  // ---- 隐藏清单 ----
-  const hstore = new S.Store(ROOT);
-  for (const name of fx.hiddenSeeds) hstore.hideComic(name);
-  const hidden = hstore.hiddenComicsView();
-
-  // ---- 落盘字节（逐字节）----
-  const persistFile = path.join(STATE, 'node-persist');
-  atomicWriteJson(persistFile, store.serialize(task));
-  const persistedBytes = fs.readFileSync(persistFile, 'utf8');
-
-  return { pure, serializedTask: store.serialize(task), views, plans, hidden, persistedBytes };
-}
-
-// ------------------------------------------------------------------ 正向
-
-console.log('=== F3 · store 同源（Rust boxsvc --store-selftest  ⟷  Node manga/store.mjs）===');
+console.log('=== F3 · store 同源（Rust boxsvc --store-selftest  ⟷  golden 快照）===');
 
 let rustReport = null;
-let nodeReport = null;
+let golden = null;
 try {
   rustReport = await dumpRust();
-  await loadNodeModules();
-  nodeReport = buildNodeReport(rustReport);
+  golden = JSON.parse(fs.readFileSync(GOLDEN, 'utf8'));
 } catch (e) {
-  check('SETUP — 取 Rust / Node 报告', false, String(e.message || e));
+  check('SETUP — 取 Rust 报告 / 读 golden', false, String(e.message || e));
 }
 
-if (rustReport && nodeReport) {
+if (rustReport && golden) {
   for (const key of ['orderImages', 'endStatusOf', 'formatEtaText', 'sniffImageType', 'isSafeDirName', 'fileScan']) {
     check(
       `STORE.pure.${key} — 逐条相同`,
-      sameJSON(rustReport.pure[key], nodeReport.pure[key]),
-      sameJSON(rustReport.pure[key], nodeReport.pure[key]) ? undefined : { rust: rustReport.pure[key], node: nodeReport.pure[key] },
+      sameJSON(rustReport.pure[key], golden.pure[key]),
+      sameJSON(rustReport.pure[key], golden.pure[key]) ? undefined : { rust: rustReport.pure[key], golden: golden.pure[key] },
     );
   }
 
   check(
     'STORE.serializedTask — serialize() 结构相同',
-    sameJSON(rustReport.serializedTask, nodeReport.serializedTask),
-    sameJSON(rustReport.serializedTask, nodeReport.serializedTask)
+    sameJSON(rustReport.serializedTask, golden.serializedTask),
+    sameJSON(rustReport.serializedTask, golden.serializedTask)
       ? undefined
-      : { rust: canon(rustReport.serializedTask), node: canon(nodeReport.serializedTask) },
+      : { rust: canon(rustReport.serializedTask), golden: canon(golden.serializedTask) },
   );
 
-  for (const key of Object.keys(rustReport.views)) {
+  for (const key of Object.keys(golden.views)) {
     check(
       `STORE.views.${key} — 相同`,
-      sameJSON(rustReport.views[key], nodeReport.views[key]),
-      sameJSON(rustReport.views[key], nodeReport.views[key]) ? undefined : { rust: rustReport.views[key], node: nodeReport.views[key] },
+      sameJSON(rustReport.views[key], golden.views[key]),
+      sameJSON(rustReport.views[key], golden.views[key]) ? undefined : { rust: rustReport.views[key], golden: golden.views[key] },
     );
   }
 
   for (const key of ['resume', 'retranslate', 'nextSeq']) {
     check(
       `STORE.plans.${key} — 相同`,
-      sameJSON(rustReport.plans[key], nodeReport.plans[key]),
-      sameJSON(rustReport.plans[key], nodeReport.plans[key]) ? undefined : { rust: rustReport.plans[key], node: nodeReport.plans[key] },
+      sameJSON(rustReport.plans[key], golden.plans[key]),
+      sameJSON(rustReport.plans[key], golden.plans[key]) ? undefined : { rust: rustReport.plans[key], golden: golden.plans[key] },
     );
   }
 
   check(
     'STORE.hidden — 隐藏清单视图相同',
-    sameJSON(rustReport.hidden, nodeReport.hidden),
-    { rust: rustReport.hidden, node: nodeReport.hidden },
+    sameJSON(rustReport.hidden, golden.hidden),
+    { rust: rustReport.hidden, golden: golden.hidden },
   );
 
   check(
-    'STORE.persistedBytes — 落盘字节逐字节相同',
-    rustReport.persistedBytes === nodeReport.persistedBytes,
-    rustReport.persistedBytes === nodeReport.persistedBytes
+    'STORE.persistedBytes — 落盘字节逐字节相同（归一化 home/仓库路径后）',
+    normStr(rustReport.persistedBytes) === normStr(golden.persistedBytes),
+    normStr(rustReport.persistedBytes) === normStr(golden.persistedBytes)
       ? undefined
-      : { rustLen: rustReport.persistedBytes.length, nodeLen: nodeReport.persistedBytes.length },
+      : { rustLen: rustReport.persistedBytes.length, goldenLen: golden.persistedBytes.length },
   );
 
   check('STORE.atomic.targetIntactAfterAbort — 中断后目标文件完好', rustReport.atomic.targetIntactAfterAbort === true, rustReport.atomic);
@@ -300,26 +198,26 @@ if (REFUTE) {
     }
     mutations.push({ id: 'M1', what: '原子写退化直接覆写 ⇒ 中断后目标应被污染（红）', red, info });
   }
-  // M2：篡改 Node 侧一个纯函数结果
+  // M2：篡改 golden 一个纯函数结果 ⇒ 对比敏感
   mutations.push({
     id: 'M2',
-    what: '篡改 Node orderImages 结果',
-    red: !sameJSON(rustReport.pure.orderImages, { ...nodeReport.pure.orderImages, byName: [0, 1, 2] }),
+    what: '篡改 golden orderImages 结果',
+    red: !sameJSON(rustReport.pure.orderImages, { ...golden.pure.orderImages, byName: [0, 1, 2] }),
   });
-  // M3：篡改 Rust 侧 serializedTask
+  // M3：篡改 golden 的 serializedTask
   mutations.push({
     id: 'M3',
-    what: '篡改 Rust serializedTask.status',
-    red: !sameJSON({ ...rustReport.serializedTask, status: 'ZZZ' }, nodeReport.serializedTask),
+    what: '篡改 golden serializedTask.status',
+    red: !sameJSON({ ...rustReport.serializedTask, status: 'ZZZ' }, golden.serializedTask),
   });
-  // M4：删掉 Rust 侧一个键
+  // M4：删掉 golden 一个键
   mutations.push({
     id: 'M4',
-    what: '删掉 Rust 侧一个键（views.progress.failed）',
+    what: '删掉 golden 一个键（views.progress.failed）',
     red: (() => {
-      const a = JSON.parse(JSON.stringify(rustReport.views.progress));
+      const a = JSON.parse(JSON.stringify(golden.views.progress));
       delete a.failed;
-      return !sameJSON(a, nodeReport.views.progress);
+      return !sameJSON(rustReport.views.progress, a);
     })(),
   });
 
