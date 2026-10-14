@@ -2225,3 +2225,65 @@ B1 后产品只认 `<appData>/runtimes/manga-translator`，而本机 15 GB 引�
 `check:engine-patches` 正向 **7/7**（A7 新增）+ 反证 **6/6 全红**（R5 改 Rust 镜像 id + 重编译 + 还原）；
 `check:path-single-source` 5/5 + 反证 1/1（real 档 warn 行数 4 → **5**）；
 `cargo test --lib` **131 passed**（127 → 131）；`check:registry` 4/4（98 项）。
+
+---
+
+## D-177 · D6 启动前预检闸门：把「白等 240 s」换成秒级点名，顺带揪出一个假阴性 bug（2026-10-14）
+
+**背景**：real 档引擎探针预算 240 s（`boxsvc::engine::REAL_PROBE_TIMEOUT_MS`）。缺 python 时
+旧行为是「② 起不来 → 降级继续 → L2 探针空等 240 s → 报一句 `服务启动失败`」——
+用户看到的是**卡住**，不是**没装**，且那句报错离根因极远。
+
+### 闸门的三条设计
+
+1. **位置在任何子进程之前**（`start_blocking` 取到配方、warn 之后）：一个都不起，秒级收场。
+   新增 `L0` 阶段（文档里的五态机改为 `starting(L0/L1/L2/L3)`），`last_error` 以
+   **「运行时未装配：」**开头并逐项带 `id + detail(绝对路径) + fix` —— 与 A1 的
+   「资源缺失：」同一套措辞纪律（D1 的前端分支将来据此识别，不混进 L1 失败）。
+2. **mock 档不过闸**：mock 本来就不要真引擎（30+ 个 mock e2e 靠它活着）。
+3. **warn 与闸门分工**：warn 写给日志流（逐项 detail，无头跑也能取证），闸门写给状态机
+   （`last_error`）。两者共用同一份 `probe()` ⇒ 判据与文案不会分岔。
+
+### 🔴 取证形式的偏差（如实记账）
+
+台账 D6 验收②写「绕过闸门 ⇒ 断言超时预算被打满（可测）」。本机**不起 GUI**
+（A4 已为同一原因裁定「时红时绿比没有更坏」），故 240 s 那一侧无法实跑；
+改为在**闸门本身**上取证：`boxsvc --check-runtime-gate [real|mock]` 打的是
+`start_blocking` 调的同一个 `gate_message()`，反证 **M1**（恒放行）/ **M2**（删 mock 旁路）
+各打红一条。240 s 由 `REAL_PROBE_TIMEOUT_MS` 与闸门位置**结构性**排除。
+
+🔴 **并补一条源码钉 G5**：CLI 全绿只证明「闸门函数存在且判得对」，**不证明产品接了线** ——
+把 `service.rs` 里那行调用删掉，其余断言照样全绿，而产品回到 240 s。故 G5 钉
+「`gate_message(` 的调用位置早于 `spawn_spec(&plan.engine`」，反证 **M3** 专删那行。
+
+### 🔴🔴 顺带揪出的真 bug：判据用错了 lstat/stat，链接全被判成「没装」
+
+为了让开发机与产品语义一致（B1 后产品只认 `<appData>/runtimes`），把 15 GB 引擎用
+**junction** 接到了产品落点上 —— 结果 `venvRoot` 报「运行时根不存在」，而它明明在。
+
+根因：`runtime_probe.rs` 的 `is_dir`/`is_file` 用的是 `symlink_metadata`（**lstat**），
+而 Windows 下 junction 在 lstat 里报成 **symlink**（`is_dir() == false`）。
+🔴 **原实现的注释写的意图（「符号链接指向文件时也算在位」）是对的，但调用恰好相反**：
+那个意图只有**跟随**链接（`metadata` = stat）才成立。本仓一直没触发，因为生产里被查的
+路径没有一个本身是链接（模型链在被查目录的**下游**）—— 典型的潜伏 bug。
+
+**用户侧影响**：把 15 GB 运行时 junction 到别的盘（Windows 上挪大块的常规做法）⇒
+「装好了却报没装」的**假阴性**，正是 B1/B3 要消灭的那类故障。D6 闸门会把这种用户
+**直接拦在启动之外** ⇒ 这个 bug 在 D6 之前只是误报，在 D6 之后会变成起不来。
+
+修法：`is_file`/`is_dir` 改用 `std::fs::metadata`（跟随；断链自然判假）。
+钉子：e2e 新增 **S6**（运行时根整体是 junction，三项 env 全穿过链接 ⇒ 五项仍全真）
++ 反证 **M4**（改回 `symlink_metadata` ⇒ S6 红）+ 单测 `dir_and_file_judgements_follow_links…`。
+
+### 另一处收敛：夹具抽成共享模块
+
+`buildRuntime` 原是 `runtime-probe-check.mjs` 的内联函数，D6 也要用 ⇒ 抽到
+`e2e/service/_runtime-fixture.mjs`（两份夹具漂移时会出现「A 脚本说就绪、B 脚本说没就绪」
+这种自相矛盾，同 B3 的理由，只是换了个位置）。补丁文件仍按 **Node 侧 SSOT** 生成。
+
+**验收**：`check:launch-gate`（新）正向 **8/8** + 反证 **3/3 全红**（M1/M2/M3 + 双文件字节还原）；
+`check:runtime-probe` 正向 **44/44**（38 → 44，新增 S6）+ 反证 **4/4 全红**（M1–M4）；
+`cargo test --lib` **135 passed**（131 → 135，+闸门三条 + 链接语义一条）；
+`check:path-single-source` 5/5 + 反证 1/1 · `check:engine-client` **50/50**（L4 不再需要
+`MIAO_RUNTIME_ROOT` 覆盖 —— 链接跟随修好后 junction 落点即产品落点）·
+`check:registry` 4/4（100 项）· `check:harness` 7/7 · `check:docs` 17/17 · `check:docpaths` 5/5。

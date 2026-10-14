@@ -38,11 +38,8 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { RUST_BIN } from './_service-harness.mjs';
-import { ENGINE_PATCHES, SRC_DIR } from '../../engine/scripts/setup-engine.mjs';
-
-/// Node 侧 SSOT 记的是**绝对路径**（`srcPy(...)`）；夹具要的是相对源码目录的段。
-const relOf = (p) => path.relative(SRC_DIR, p.file).split(path.sep);
-
+import { buildRuntime, relOf } from './_runtime-fixture.mjs';
+import { ENGINE_PATCHES } from '../../engine/scripts/setup-engine.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
 const REFUTE = process.argv.includes('--refute');
@@ -66,52 +63,7 @@ function check(name, cond, extra) {
   }
 }
 
-// ------------------------------------------------------------------ 夹具：造一个 runtime
-
-/** 建一份「全就位」的假引擎运行时；`missing` 指定要拆掉哪几样。 */
-function buildRuntime(base, missing = []) {
-  const rt = path.join(base, 'rt');
-  const src = path.join(rt, 'manga-translator', 'src');
-  const venv = path.join(rt, 'manga-translator', 'venv');
-  fs.mkdirSync(path.join(src, 'server'), { recursive: true });
-  fs.mkdirSync(path.join(src, 'manga_translator'), { recursive: true });
-  if (process.platform === 'win32') {
-    fs.mkdirSync(path.join(venv, 'Scripts'), { recursive: true });
-    fs.mkdirSync(path.join(venv, 'Lib', 'site-packages', 'torch'), { recursive: true });
-    fs.writeFileSync(path.join(venv, 'Scripts', 'python.exe'), 'MZ-fixture');
-  } else {
-    fs.mkdirSync(path.join(venv, 'bin'), { recursive: true });
-    fs.mkdirSync(path.join(venv, 'lib', 'python3.11', 'site-packages', 'torch'), { recursive: true });
-    fs.writeFileSync(path.join(venv, 'bin', 'python'), '#!/bin/sh\n');
-  }
-  fs.writeFileSync(path.join(src, 'server', 'main.py'), '# fixture\n');
-  // B5：按 Node 侧 SSOT 造补丁目标文件（mark 写进去 = "补丁已打"）。
-  // 🔴 同一文件可能被多条补丁共享（nllb.py ×2、text_render.py ×3）⇒ 追加而不是覆写。
-  for (const p of ENGINE_PATCHES) {
-    const f = path.join(src, ...relOf(p));
-    fs.mkdirSync(path.dirname(f), { recursive: true });
-    fs.appendFileSync(f, `# fixture\n${p.mark}\n`);
-  }
-  if (missing.includes('patches')) {
-    // 抹掉**第一条**补丁的 mark（确定性地选同一条，别随机）⇒ 只有 patches 一项翻转
-    const p = ENGINE_PATCHES[0];
-    const f = path.join(src, ...relOf(p));
-    fs.writeFileSync(f, fs.readFileSync(f, 'utf8').split(p.mark).join(''), 'utf8');
-  }
-  if (missing.includes('python')) fs.rmSync(path.join(venv, process.platform === 'win32' ? 'Scripts' : 'bin'), { recursive: true, force: true });
-  if (missing.includes('source')) fs.rmSync(path.join(src, 'server'), { recursive: true, force: true });
-  if (missing.includes('deps')) fs.rmSync(path.join(venv, 'Lib', 'site-packages', 'torch'), { recursive: true, force: true });
-  if (missing.includes('venvRoot')) fs.rmSync(path.join(rt, 'manga-translator'), { recursive: true, force: true });
-  return {
-    rt,
-    src,
-    env: {
-      MIAO_RUNTIME_ROOT: rt,
-      MIAO_ENGINE_DIR: src,
-      MIAO_ENGINE_PYTHON: path.join(venv, process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python'),
-    },
-  };
-}
+// ------------------------------------------------------------------ 夹具：造一个 runtime（共享模块，见 _runtime-fixture.mjs）
 
 // ------------------------------------------------------------------ 起服务 / 打端点
 
@@ -231,6 +183,36 @@ for (const sc of SCENARIOS) {
   fs.rmSync(base, { recursive: true, force: true });
 }
 
+// S6：运行时根是**链接**（用户把 15 GB 挪到别盘后 junction / 软链回来）⇒ 五项仍全真。
+// 🔴 判据必须**跟随**链接：Windows 的 junction 在 lstat 下报成 symlink（`is_dir()==false`）⇒
+//    判据若停在链接本身上，「装好了却报没装」这种假阴性直接冒出来 —— 正是 B1/B3 要消灭的。
+//    （原实现用的是 `symlink_metadata`，与它注释里的意图相反；本仓从未触发过，因为生产里
+//    被查路径没有一个本身是链接，直到开发机把 runtime root 做成 junction 才暴露。）
+{
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-rt-S6-'));
+  const fx = buildRuntime(base, []);
+  const linkBase = path.join(base, 'linked');
+  fs.mkdirSync(linkBase, { recursive: true });
+  const link = path.join(linkBase, 'manga-translator');
+  const target = path.join(fx.rt, 'manga-translator');
+  // junction 不需要提权（符号链接要），Windows 上优先它；POSIX 用目录软链
+  fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
+  // 三项 env 全部**穿过链接**：只穿一项等于只测一项
+  const { status, body } = await probeRuntime({
+    MIAO_RUNTIME_ROOT: linkBase,
+    MIAO_ENGINE_DIR: path.join(link, 'src'),
+    MIAO_ENGINE_PYTHON: path.join(link, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python'),
+  });
+  const items = byId(body);
+  const flips = Object.entries(items).filter(([, v]) => !v.ok).map(([k]) => k);
+  check('S6 运行时根是链接（junction/软链）⇒ 五项仍全真（判据必须跟随链接）',
+    status === 200 && body?.ready === true && flips.length === 0, { status, ready: body?.ready, flips });
+  for (const [id, v] of Object.entries(items)) {
+    check(`S6.detail ${id} — detail 带绝对路径`, typeof v.detail === 'string' && v.detail.includes(v.path), v.detail);
+  }
+  fs.rmSync(base, { recursive: true, force: true });
+}
+
 /** 重编译 boxsvc。🔴 变异改了 Rust 源码，靶子是**另一个进程**，不重编等于没改。 */
 function rebuild() {
   const build = spawn(CARGO, ['build', '--bin', 'boxsvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
@@ -321,6 +303,40 @@ if (REFUTE) {
       fs.rmSync(base, { recursive: true, force: true });
       // 期望：patches **不再**翻转（弱判据下源码目录还在 ⇒ 报"全打过"）
       return !flips.includes('patches');
+    },
+  });
+
+  // M4：判据改回 `symlink_metadata`（不跟随链接）⇒ S6 不再全真
+  // （抓「停在链接本身上」这个错法：Windows 的 junction 在 lstat 下是 symlink 而非目录，
+  //   于是「运行时被 junction 到别盘」会被判成没装 —— 装好了却报没装的假阴性）
+  mutations.push({
+    id: 'M4',
+    what: 'is_file/is_dir 改回 symlink_metadata（不跟随链接）',
+    edit: () => {
+      const weak = original.replace(
+        /std::fs::metadata\(p\)\.map\(\|m\| m\.is_(file|dir)\(\)\)/g,
+        'std::fs::symlink_metadata(p).map(|m| m.is_$1())',
+      );
+      if (weak === original) throw new Error('M4 锚点未命中（is_file/is_dir 的写法变了？）');
+      fs.writeFileSync(PROBE_RS, weak);
+    },
+    probe: async () => {
+      const base = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-rt-M4-'));
+      const fx = buildRuntime(base, []);
+      const linkBase = path.join(base, 'linked');
+      fs.mkdirSync(linkBase, { recursive: true });
+      const link = path.join(linkBase, 'manga-translator');
+      const target = path.join(fx.rt, 'manga-translator');
+      fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
+      const { body } = await probeRuntime({
+        MIAO_RUNTIME_ROOT: linkBase,
+        MIAO_ENGINE_DIR: path.join(link, 'src'),
+        MIAO_ENGINE_PYTHON: path.join(link, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python'),
+      });
+      const items = byId(body);
+      fs.rmSync(base, { recursive: true, force: true });
+      // 期望：venvRoot 翻转（链接本身被判成"不存在"）⇒ 不再全真
+      return body?.ready !== true;
     },
   });
 

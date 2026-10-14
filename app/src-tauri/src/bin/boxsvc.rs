@@ -72,6 +72,29 @@ fn main() {
         }
         std::process::exit(if ok { 0 } else { 1 });
     }
+    // `--check-runtime-gate [real|mock]`：打印 **D6 启动前预检闸门**的判定并退出，不起服务。
+    // 用途：`e2e/service/launch-gate-check.mjs` 取证「real 档 + 运行时未装配 ⇒ 被拦且秒级」。
+    // 被拦 ⇒ 退出码 1（= "这样起不来"）；放行 ⇒ 0。判据与服务侧 `start_blocking`
+    // 调的是同一个 `gate_message()`，故这里绿即那里绿（反过来不成立 —— 那条路径
+    // 还需要 `launch-gate-check` 的源码钉保证调用真的接上了，见该脚本 G5）。
+    if let Some(i) = std::env::args().position(|a| a == "--check-runtime-gate") {
+        let mode = std::env::args().nth(i + 1).unwrap_or_else(|| "real".to_string());
+        let probe = miao_dock::boxsvc::engine::runtime_probe::probe();
+        let msg = miao_dock::boxsvc::engine::runtime_probe::gate_message_for(&mode, &probe);
+        let blocked = msg.is_some();
+        let failing: Vec<&str> = probe.items.iter().filter(|i| !i.ok).map(|i| i.id).collect();
+        println!(
+            "{}",
+            serde_json::json!({
+                "mode": mode,
+                "ready": probe.ready,
+                "blocked": blocked,
+                "failing": failing,
+                "message": msg,
+            })
+        );
+        std::process::exit(if blocked { 1 } else { 0 });
+    }
     // `--list-routes`：打印**显式路由表**（每条端点的 method/pattern/group/tier）+ 两个计数。
     // 用途：e2e 做「转发分支数 = 0」的验收（F5）—— 不起服务、不拉 node，毫秒级跑完。
     if std::env::args().any(|a| a == "--list-routes") {

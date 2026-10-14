@@ -52,7 +52,7 @@ function check(name, cond, extra) {
 // ------------------------------------------------------------------ 源码扫描（驱动 H1/H2）
 
 /** 读 e2e/service/ 下所有 .mjs 的 { file, text }（harness 自身 + 本钉子除外，它们是基建）。 */
-const SKIP = new Set([HARNESS_FILE, '_parent-harness.mjs', SELF_FILE]);
+const SKIP = new Set([HARNESS_FILE, '_parent-harness.mjs', '_runtime-fixture.mjs', SELF_FILE]);
 function readSources() {
   return fs
     .readdirSync(HERE)

@@ -189,7 +189,7 @@ npm run check:ia              # IA 结构 32 条（侧栏两级 / 视图 Tab / �
 npm run check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
 npm run check:quit            # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW / 前端不静默 / Windows signal_tree 无条件 /F）
 npm run check:autostart       # 翻译服务「自动启动 / 手动启停」根因钉子 18 条 / 反证 19 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / effect 依赖不含 status / stopped 给「启动」/ 服务实现默认档 = Rust / default-run 指向真实 bin；不起进程）
-npm run check:engine-client   # 翻译引擎适配层 50 条 / 反证 12 条（真协议用 openapi 快照「假引擎」，秒级可复跑；L4 要引擎装在默认落点，本机只有仓库 runtimes/ 时用 MIAO_RUNTIME_ROOT 指过去）
+npm run check:engine-client   # 翻译引擎适配层 50 条 / 反证 12 条（真协议用 openapi 快照「假引擎」，秒级可复跑；L4 要引擎装在默认落点：把仓库 runtimes/manga-translator 用 junction 链过去，或一次性用 MIAO_RUNTIME_ROOT 指过去）
 npm run check:models          # S3 模型下载器 **双靶** 37×2 = 74 条 / 反证 6×2 = 12 条（本地 Range 夹具源：中断续传 / 服务端不支持 Range / 篡改一字节 / 换版本重链 / HF 缓存布局，秒级）。A3d 两靶同跑：Node 对照端 + Rust `boxsvc --fetch-models`（产品主路径）；反证开关走子进程 env
 npm run check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）
 npm run check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
@@ -207,8 +207,9 @@ npm run check:docs            # 文档 ↔ 实现一致性：条数对账 / 引�
 npm run check:bundle          # 打包配置钉子 6 条 / 反证 7 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip`；**W6** 必需资产条目在且 src 真实存在；源码级，不起进程）
 npm run check:resources       # 随包资源寻址 **A1/A2** 三环境取证 8 条 / 反证 4 条（dev 态不误报 · 打包齐备取资源目录 · 打包缺失报 `RESOURCE_MISSING` · 优先级 · 必需资产交叉验证 · 源码钉）
 npm run check:packaged        # **A4 打包后冒烟**：真实安装包三层取证 9 条（nightly 层；NSIS 静默安装 → `--check-assets` → 起服务打 `/health` + mock 替身 + 启动配方）
-npm run check:runtime-probe   # **B2/B5 引擎运行时五项只读检测** 38 条 / 反证 3 条（`GET /api/v1/engine/runtime`；`venvRoot`/`python`/`source`/`deps`/`patches` 逐项独立翻转 + `detail` 必带绝对路径 + 缺补丁点名到 patch id）
+npm run check:runtime-probe   # **B2/B5 引擎运行时五项只读检测** 44 条 / 反证 4 条（`GET /api/v1/engine/runtime`；`venvRoot`/`python`/`source`/`deps`/`patches` 逐项独立翻转 + `detail` 必带绝对路径 + 缺补丁点名到 patch id + mock 档不 warn + junction 场景三项 env 判定穿过链接）
 npm run check:path-single-source # **B3 检测与启动同源** 5 条 / 反证 1 条（`/engine/runtime` 的 `python.path` vs `--print-launch-plan` 的 `engine.cmd[0]` 逐字节比对）
+npm run check:launch-gate    # **D6 real 档启动前预检闸门** 8 条 / 反证 3 条（real+未就绪 ⇒ 一个子进程都不起、秒级返回 `L0` 并逐项点名；mock 档不过闸；含源码钉「`gate_message(` 早于 `spawn_spec(&plan.engine`」）
 ```
 
 **F 组「服务 Rust 化」的同源对拍钉子**（F0–F5 已全部完成，见 `docs/packaging-local-engine-dev-plan.md`）——

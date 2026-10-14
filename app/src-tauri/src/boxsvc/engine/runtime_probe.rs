@@ -81,14 +81,23 @@ fn site_packages(venv: &Path) -> Option<PathBuf> {
     dirs.into_iter().map(|d| d.join("site-packages")).find(|p| p.is_dir())
 }
 
+/// 判据用的「这是个文件吗」。
+///
+/// 🔴 **必须跟随链接**（`metadata` = stat；`symlink_metadata` 才是 lstat）——
+///    本产品建模型链用的就是硬链接 / junction（D-99、R10），而用户完全可能把 15 GB 的
+///    运行时整体 junction 到别的盘（Windows 上挪大块的常规做法）。判据若停在链接本身上，
+///    Windows 会把 junction 报成 symlink（`lstat.is_dir() == false`）⇒ 「装好了却报没装」
+///    这种**假阴性**直接冒出来 —— 正是 B1/B3 要消灭的那类故障。
+///    （原实现用的是 `symlink_metadata`，与它注释里写的意图正好相反：那个意图
+///    「符号链接指向文件时也算在位」只有**跟随**才成立。链路在本仓从未被触发过，
+///    因为生产里被查的路径没有一个本身是链接；直到把运行时 root 做成 junction 才暴露。）
+/// 链接**断**了（指向不存在的东西）时 `metadata` 失败 ⇒ 判假 —— 断链确实不能用，正确。
 fn is_file(p: &Path) -> bool {
-    // 🔴 用 `symlink_metadata`（lstat）而不是 `is_file()`：符号链接指向文件时也算在位 ——
-    //    硬链接/软链接是本产品建模型链的常规手段（D-99），判据不能把它误判成"没装"。
-    std::fs::symlink_metadata(p).map(|m| m.is_file()).unwrap_or(false)
+    std::fs::metadata(p).map(|m| m.is_file()).unwrap_or(false)
 }
 
 fn is_dir(p: &Path) -> bool {
-    std::fs::symlink_metadata(p).map(|m| m.is_dir()).unwrap_or(false)
+    std::fs::metadata(p).map(|m| m.is_dir()).unwrap_or(false)
 }
 
 fn s(p: &Path) -> String {
@@ -252,6 +261,44 @@ pub fn warn_unready_if_real(is_mock: bool) {
     }
 }
 
+/// **D6 启动前预检闸门**：real 档下运行时就绪不过 ⇒ 返回要报的文案（`None` = 放行）。
+///
+/// ## 为什么是闸门而不是继续 warn
+/// real 档引擎探针预算是 **240 s**（`boxsvc::engine::REAL_PROBE_TIMEOUT_MS`）。
+/// 缺 python 时的旧行为是「② 起不来 → 降级继续 → L2 探针空等 240 s → 报一句
+/// `服务启动失败`」—— 用户看到的是**卡住**，不是**没装**，而那两句报错离根因极远。
+/// 闸门把这段变成秒级收场，且 `last_error` 里就是缺什么、缺在哪、怎么装。
+///
+/// 🔴 **mock 档不过闸**：mock 本来就不要真引擎（30+ 个 mock e2e 靠它活着）。
+/// 🔴 与 `warn_unready_if_real` 的分工：warn 写给**日志流**（逐项 detail，无头也能取证），
+///    本函数写给**状态机**（`last_error`，前端据此进「运行时未装配」态）。
+///    两者共用同一份 `probe()` ⇒ 判据与文案不会分叉（分岐就等于没喊）。
+pub fn gate_message(mode: &str) -> Option<String> {
+    gate_message_for(mode, &probe())
+}
+
+/// 闸门判定（`probe` 由调用方给 —— 单测要能造「就差一项」的合成报告）。
+pub fn gate_message_for(mode: &str, probe: &RuntimeProbe) -> Option<String> {
+    // 只有 real 档要真引擎。其余取值（含将来新增档）一律放行：闸门管"缺东西"，
+    // 不管"模式不认识"—— 后者由 `resolve_mode()` 在更早的地方拒掉。
+    if mode != "real" || probe.ready {
+        return None;
+    }
+    let items = probe
+        .items
+        .iter()
+        .filter(|i| !i.ok)
+        .map(|i| {
+            let fix = i.fix.as_deref().map(|f| format!(" —— {f}")).unwrap_or_default();
+            format!("{}：{}{}", i.id, i.detail, fix)
+        })
+        .collect::<Vec<_>>()
+        .join("；");
+    Some(format!(
+        "运行时未装配：{items}。按安装引导（docs/install-guide-*.md）装配引擎后重启喵坞"
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,6 +310,25 @@ mod tests {
         let ids: Vec<&str> = p.items.iter().map(|i| i.id).collect();
         assert_eq!(ids, vec!["venvRoot", "python", "source", "deps", "patches"]);
         assert_eq!(p.ready, p.items.iter().all(|i| i.ok));
+    }
+
+    /// 链接**跟随**语义：目录判据不得被「这其实是个链接」骗成假阴性。
+    /// （反证 M4 把实现改回 `symlink_metadata` 时，这条与 e2e 的 S6 会一起红。）
+    #[test]
+    fn dir_and_file_judgements_follow_links_not_the_link_itself() {
+        let tmp = std::env::temp_dir().join(format!("miao-probe-links-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let real_dir = tmp.join("real");
+        let real_file = real_dir.join("f.txt");
+        std::fs::create_dir_all(&real_dir).unwrap();
+        std::fs::write(&real_file, "x").unwrap();
+        assert!(is_dir(&real_dir), "真目录必须判目录");
+        assert!(!is_file(&real_dir), "目录不得判成文件");
+        assert!(is_file(&real_file), "真文件必须判文件");
+        assert!(!is_dir(&real_file), "文件不得判成目录");
+        // 断链 ⇒ 判假（指向不存在的东西确实不能用）
+        assert!(!is_dir(&tmp.join("dangling")), "不存在的路径必须判假");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     /// B5 验收①：缺补丁时必须**点名到 patch id**，且 detail 带绝对路径。
@@ -320,6 +386,51 @@ mod tests {
         if let Some(p) = sp {
             let t = p.to_string_lossy();
             assert!(!t.contains("python3."), "site-packages 路径里出现了写死的版本号：{t}");
+        }
+    }
+
+    /// 造一份合成报告（闸门单测用：要能造「就差一项」而不动真实落点）。
+    fn synth(ok_ids: &[&str]) -> RuntimeProbe {
+        let all = ["venvRoot", "python", "source", "deps", "patches"];
+        let items = all
+            .iter()
+            .map(|id| RuntimeItem {
+                id,
+                ok: ok_ids.contains(id),
+                path: format!("C:\\synth\\{id}"),
+                detail: format!("{id} 合成明细 C:\\synth\\{id}"),
+                fix: (!ok_ids.contains(id)).then(|| format!("{id} 的装法")),
+            })
+            .collect();
+        let ready = ok_ids.len() == all.len();
+        RuntimeProbe { items, ready }
+    }
+
+    /// D6：mock 档**不过闸**（30+ 个 mock e2e 靠它活着）—— 反证 M2 钉的就是这一条。
+    #[test]
+    fn gate_lets_mock_through_even_when_unready() {
+        assert_eq!(gate_message_for("mock", &synth(&[])), None);
+    }
+
+    /// D6：real 档 + 装好了 ⇒ 放行（不能把装好的用户挡在门外）。
+    #[test]
+    fn gate_lets_ready_real_through() {
+        let p = synth(&["venvRoot", "python", "source", "deps", "patches"]);
+        assert_eq!(gate_message_for("real", &p), None);
+    }
+
+    /// D6：real 档 + 未就绪 ⇒ 拦住，且文案**点名到每一项**、带它的绝对路径与装法。
+    #[test]
+    fn gate_blocks_unready_real_naming_every_failing_item() {
+        // 只差 python 一项：文案必须只围绕它说，不许把好的那几项也报一遍
+        let p = synth(&["venvRoot", "source", "deps", "patches"]);
+        let msg = gate_message_for("real", &p).expect("real + 未就绪必须被拦");
+        assert!(msg.starts_with("运行时未装配："), "{msg}");
+        assert!(msg.contains("python"), "{msg}");
+        assert!(msg.contains("C:\\synth\\python"), "文案未带绝对路径：{msg}");
+        assert!(msg.contains("python 的装法"), "文案未带装法：{msg}");
+        for ok in ["venvRoot", "source", "deps", "patches"] {
+            assert!(!msg.contains(ok), "把好的那几项也报了一遍（噪声）：{msg}");
         }
     }
 }

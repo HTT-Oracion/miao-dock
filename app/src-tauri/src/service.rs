@@ -21,7 +21,9 @@
 //!    它**不构成就绪判据** —— 否则「日志打出来了、其实还没能干活」会被当成 running。
 //!    探针列表由**本进程内**的启动配方给出（A3b 起不再问 JS：`boxsvc::engine::resolve_engine_launch`
 //!    与 `resolve_llm_launch_for` 是唯一来源，见 `load_plan`）。
-//! 2. **五态机** `stopped → starting(L1/L2/L3) → running → stopping → stopped`。
+//! 2. **五态机** `stopped → starting(L0/L1/L2/L3) → running → stopping → stopped`。
+//!    `L0` 运行时预检闸门（D6）：real 档下引擎运行时就绪不过 ⇒ 一个子进程都不起，
+//!    秒级进「运行时未装配」（`last_error` 逐项带绝对路径与装法）。
 //!    L1 环境就绪（三进程都起得来）/ L2 模型就绪（各端口在听）/ L3 预热（HTTP 真应答）。
 //!    `L4 首图惰性初始化` **不在这里**：它发生在首次翻译请求时、由引擎侧表达，
 //!    Box 侧不新增客户端状态机节点（《03》§4.5）。见 docs/spec-notes.md D-64。
@@ -452,6 +454,17 @@ impl ServiceManager {
         // 🔴 只 warn 不 fail：mock 档本来就不要真引擎（30+ 个 mock e2e 靠它活着）；
         //    real 档的硬门归 D6（首启引导）—— 那里才有完整的"缺什么 → 怎么装"流程。
         boxsvc::engine::runtime_probe::warn_unready_if_real(plan.mode == "mock");
+        // ---- 0.5) 运行时预检闸门（D6）----
+        //    real 档下「装没装」是**能不能启动**的前提，不是"启动后再看"的事：
+        //    缺 python 时旧行为是 ② 起不来 → 降级继续 → L2 探针空等 240 s
+        //    （`boxsvc::engine::REAL_PROBE_TIMEOUT_MS`）→ 报一句离根因极远的「服务启动失败」。
+        //    用户看到的是卡住，不是没装 —— 这正是本闸门要消灭的形态。
+        //    🔴 位置在**任何子进程之前**：一个都不起，秒级收场。
+        //    🔴 mock 档不过闸（30+ 个 mock e2e 靠它活着）；判据与上面那句 warn
+        //       共用同一份 `probe()` ⇒ 日志流与状态机不会各说各话。
+        if let Some(msg) = boxsvc::engine::runtime_probe::gate_message(&plan.mode) {
+            return self.fail(app, Some("L0"), msg);
+        }
         // E1：**日志打印生效参数快照** —— 逐条列出真正会被执行的东西（不是"配置里写的"）。
         // 走 `say`（环 + stdout 双写），让应用之外也能取证。
         say(&log, &format!("MIAO_LAUNCH_PLAN mode={}", plan.mode));
