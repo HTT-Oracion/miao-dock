@@ -340,6 +340,30 @@ function runAll() {
     `defaultKeep=${/MB_DEFBUTTON2/.test(nshCode)} rmAt=${rmAt} yesAt=${yesAt} touchesPictures=${/Pictures/i.test(nshCode)}`,
   );
 
+  /*
+   * ---- W12：每个弹窗之前必须有 `IfSilent` 守卫（E2/E3 的**挂死**风险）----
+   * NSIS 的 `MessageBox` 在 `/S` 静默安装/卸载下**照样弹窗并阻塞**（`/SD` 只决定"默认按钮是谁"）。
+   * 不守卫的后果不是变红，而是 `npm run check:packaged` 的静默安装/卸载**永远不返回** ——
+   * "时红时绿"已经够坏，"挂住"更坏（CI 上表现为超时被 kill，根因却在一行 MessageBox）。
+   *
+   * ⚠️ 判据必须**剥 NSIS 注释**（`;` 到行尾）：本文件的注释里正写着"`IfSilent` 必须在任何
+   * `MessageBox` 之前"——拿原文判的话，`indexOf` 命中的是注释里的那两个词，判据恒绿。
+   */
+  const macros = [...nshCode.matchAll(/!macro\s+(\w+)([\s\S]*?)!macroend/g)].map((m) => ({ name: m[1], body: m[2] }));
+  const unguarded = [];
+  for (const mac of macros) {
+    const at = mac.body.indexOf('MessageBox');
+    if (at < 0) continue;
+    const silent = mac.body.indexOf('IfSilent');
+    if (silent < 0 || silent > at) unguarded.push(mac.name);
+  }
+  check(
+    'W12',
+    '每个 `MessageBox` 之前都有 `IfSilent` 守卫（静默安装/卸载不得被弹窗挂住 —— 那不是变红，是不返回）',
+    macros.length > 0 && unguarded.length === 0,
+    { macros: macros.map((m) => m.name), unguarded },
+  );
+
   const guide = fs.existsSync(GUIDE_WIN) ? read(GUIDE_WIN) : '';
   check(
     'W11',
@@ -509,6 +533,18 @@ const MUTATIONS = [
       },
     ],
     expect: ['W10'],
+  },
+  {
+    // 🔴 去掉静默守卫 ⇒ 静默卸载被 MessageBox 拦死 ⇒ `check:packaged` 的收尾永远跑不完。
+    //    "挂住"是最坏的一种失败：没有红字，只有超时。
+    name: 'E3：卸载弹窗去掉 `IfSilent` 守卫（静默卸载会挂住，不是变红）',
+    edits: [{ file: NSIS_HOOKS, find: '  IfSilent moor_keep_runtimes', replace: '  ;M 守卫被摘' }],
+    expect: ['W12'],
+  },
+  {
+    name: 'E2：安装后长路径提示去掉 `IfSilent` 守卫（静默安装会挂住）',
+    edits: [{ file: NSIS_HOOKS, find: '  IfSilent moor_longpath_done', replace: '  ;M 守卫被摘' }],
+    expect: ['W12'],
   },
   {
     name: 'E2：把 SmartScreen 的说明从安装引导里删掉（用户看到"Windows 已保护你的电脑"就卡住）',
