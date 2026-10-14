@@ -127,6 +127,10 @@ npm run extract:models   # ④ 解包归档 → bin/llama/llama-b11417/llama-ser
 > **落点**：默认 `<appData>/runtimes/manga-translator/`（B1 起与产品同源，装配与读取不可能再分叉）。
 > 要挪地方用 `MIAO_RUNTIME_ROOT`（改运行时根本身）或 `MIAO_MODEL_ROOT`（只改模型根，语义 = `…/manga-translator`）。
 > 换机重装 = 重跑本节四条命令 —— 这套资产**不入库**，也不随安装包分发。
+>
+> 📖 **分平台逐步引导**（落点写成第一步、体积按清单可复算、装完怎么自检、平台专属坑）：
+> [`docs/install-guide-windows.md`](docs/install-guide-windows.md) · [`docs/install-guide-macos.md`](docs/install-guide-macos.md)
+> （两文档与产品对拍成钉子：`npm run check:install-guide`）。
 
 **② 的平台差异 —— 唯一不能"一条命令通吃"的一步：**
 
@@ -210,6 +214,7 @@ npm run check:packaged        # **A4 打包后冒烟**：真实安装包三层�
 npm run check:runtime-probe   # **B2/B5 引擎运行时五项只读检测** 44 条 / 反证 4 条（`GET /api/v1/engine/runtime`；`venvRoot`/`python`/`source`/`deps`/`patches` 逐项独立翻转 + `detail` 必带绝对路径 + 缺补丁点名到 patch id + mock 档不 warn + junction 场景三项 env 判定穿过链接）
 npm run check:path-single-source # **B3 检测与启动同源** 5 条 / 反证 1 条（`/engine/runtime` 的 `python.path` vs `--print-launch-plan` 的 `engine.cmd[0]` 逐字节比对）
 npm run check:launch-gate    # **D6 real 档启动前预检闸门** 8 条 / 反证 3 条（real+未就绪 ⇒ 一个子进程都不起、秒级返回 `L0` 并逐项点名；mock 档不过闸；含源码钉「`gate_message(` 早于 `spawn_spec(&plan.engine`」）
+npm run check:install-guide  # **D5 安装引导与产品对拍** 16 条 / 反证 5 条（两份引导的落点模板代入本机后 == `boxsvc --print-paths` 推出的落点、体积标记 == 清单按平台求和、五项就绪项 · 三条落点纪律 · 平台形态互不串）
 ```
 
 **F 组「服务 Rust 化」的同源对拍钉子**（F0–F5 已全部完成，见 `docs/packaging-local-engine-dev-plan.md`）——

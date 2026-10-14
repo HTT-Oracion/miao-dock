@@ -43,6 +43,7 @@ npm run app                         # ③ 起 dev（tauri dev）
 > 装配：`npm run setup:engine && npm run deps:engine && npm run fetch:models && npm run extract:models`
 > （README §二）。不想碰引擎就用 `MIAO_ENGINE_PROTOCOL=mock npm run app` 跑替身快回路。
 > 装没装齐、缺哪一项：`GET /api/v1/engine/runtime`（B2）。
+> 分平台逐步引导（含体积、自检、平台专属坑）：`docs/install-guide-windows.md` · `docs/install-guide-macos.md`（D5）。
 
 ## 3. 常用命令（按耗时排）
 
@@ -58,6 +59,7 @@ check:bundle  check:resilience  check:layering  check:quit  check:autostart
 ```
 selftest  check:contract  check:e10  check:e4  check:e8
 check:paths  check:runtime-probe  check:path-single-source   # B1/B2/B3：落点 · 就绪检测 · 同源
+check:launch-gate  check:install-guide                      # D6/D5：启动前闸门 · 安装引导与产品对拍
 ```
 
 **分钟级 · 反证轮** —— 只有**改了断言本身**才跑（证明断言咬的是机制，不是碰巧绿）：
