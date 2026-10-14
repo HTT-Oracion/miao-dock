@@ -28,6 +28,7 @@ export { Modal } from '@components/units/Modal';
 export { Notice } from '@components/units/Notice';
 export { NumberInput } from '@components/units/NumberInput';
 export { PlayModeButton } from '@components/units/PlayModeButton';
+export { ProgressRing } from '@components/units/ProgressRing';
 export { Range } from '@components/units/Range';
 export { Select } from '@components/units/Select';
 export { Swatches } from '@components/units/Swatches';

@@ -728,17 +728,34 @@ function DownloadState({ view }: { view: ModelDownloadView | undefined }) {
     idle: '空闲',
     running: '进行中',
     done: '已完成',
-    error: '失败',
+    interrupted: '中断（可续传）',
+    failed: '失败',
   };
   const tail = view.tail.slice(-6);
+  // 🔴 兼容新态：`interrupted` / `failed` 都按警示态上色；未知态原样显示，不崩。
+  const bad = view.state === 'interrupted' || view.state === 'failed';
   return (
-    <div className={view.state === 'error' ? 'set-diag-dl is-bad' : 'set-diag-dl'}>
+    <div className={bad ? 'set-diag-dl is-bad' : 'set-diag-dl'}>
       <div className="set-diag-dl-head">
         下载任务：{label[view.state]}
         {view.state === 'running' ? ` · 起于 ${view.startedAt ?? '—'}` : null}
         {view.state !== 'running' && view.exitCode !== null ? ` · 退出码 ${view.exitCode}` : null}
         {view.timedOut ? ' · 已超时终止' : null}
+        {view.interruptedReason ? ` · ${view.interruptedReason}` : null}
       </div>
+      {view.state === 'running' || view.state === 'interrupted' || view.state === 'failed' ? (
+        <div className="set-diag-note" style={{ fontVariantNumeric: 'tabular-nums' }}>
+          {view.percent != null ? `进度 ${Math.round(view.percent)}%` : '准备中（尚无真实进度）'}
+          {view.receivedBytes != null
+            ? ` · 已下 ${humanBytes(view.receivedBytes)}${
+                view.totalBytes != null ? ` / ${humanBytes(view.totalBytes)}` : ''
+              }`
+            : ''}
+          {view.speedBps != null ? ` · ↓ ${humanBytes(view.speedBps)}/s` : ''}
+          {view.stage ? ` · 阶段 ${view.stage}` : ''}
+          {view.currentId ? ` · 当前 ${view.currentId}` : ''}
+        </div>
+      ) : null}
       {tail.length > 0 ? (
         <div className="set-diag-log">
           {tail.map((line, i) => (

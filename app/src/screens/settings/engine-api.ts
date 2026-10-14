@@ -213,7 +213,7 @@ export interface ModelStatus {
 // ------------------------------------------------------------------ /engine/status
 
 export interface ModelDownloadView {
-  state: 'idle' | 'running' | 'done' | 'error';
+  state: 'idle' | 'running' | 'interrupted' | 'done' | 'failed';
   running: boolean;
   startedAt: string | null;
   finishedAt: string | null;
@@ -227,6 +227,24 @@ export interface ModelDownloadView {
   runner: string;
   /** 执行体不在盘上 ⇒ 界面把按钮**变灰**（不让用户点了换一条报错） */
   runnerExists: boolean;
+  // ---- G5：结构化进度（全部来自 `--progress-log`，null = 无真实来源）----
+  /** 0..100；`total` 未知时为 `null`（界面显示「准备中」而非假的 0%） */
+  percent: number | null;
+  receivedBytes: number | null;
+  totalBytes: number | null;
+  /** 实时速度（字节/秒）；取不到为 `null` */
+  speedBps: number | null;
+  /** 预计剩余（毫秒）；取不到为 `null` */
+  etaMs: number | null;
+  /** 当前阶段：`stage1`（准备运行环境）| `stage2`（下载权重，后台继续）| `null` */
+  stage: 'stage1' | 'stage2' | null;
+  /** 当前正在处理的条目 id（文件名 / 阶段名）；无真实来源为 `null` */
+  currentId: string | null;
+  // ---- G5：中断 / 续传 ----
+  /** 可续传：盘上存在 `.part`，或 `.ready` 未覆盖全部选中条目 */
+  canResume: boolean;
+  /** 中断原因（措辞取自服务端事实）；`null` = 未中断 */
+  interruptedReason: string | null;
 }
 
 export interface EngineStatus {
@@ -304,5 +322,14 @@ export interface ModelsVerifyResult {
 export const verifyEngineModels = () =>
   apiPost<ModelsVerifyResult>('/engine/models/verify', {});
 
-export const downloadEngineModels = () =>
-  apiPost<{ ok: true; started: true; download: ModelDownloadView }>('/engine/models/download', {});
+/**
+ * 发起「下载/重新下载模型」。
+ *
+ * `fresh` = 屏上「重新下载」（清 `.part` 从头下）；缺省 = 「继续下载」/ 首次（续传）。
+ * 🔴 续传由 `.part` + HTTP Range 天然完成 —— 再调一次同一个端点即可（plan 关键决策三）。
+ */
+export const downloadEngineModels = (fresh = false) =>
+  apiPost<{ ok: true; started: true; download: ModelDownloadView }>(
+    fresh ? '/engine/models/download?fresh=1' : '/engine/models/download',
+    {},
+  );

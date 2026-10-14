@@ -11,6 +11,7 @@ import {
 } from '@/shell-prefs';
 import type { ThemeMode } from '@/theme/tokens';
 import { Badge, Btn, Notice, Pill } from '@components/units';
+import { ProgressRing } from '@components/units';
 import { DynamicIsland } from '@components/DynamicIsland';
 import { NotificationStack } from '@components/NotificationStack';
 import { MusicKernel } from '@components/MusicKernel';
@@ -20,6 +21,7 @@ import { Toolbar } from '@components/Toolbar';
 import { ViewTabs } from '@components/ViewTabs';
 import { QueueEmpty, QueueTable } from '@screens/QueueScreen';
 import { NotReadyScreen } from '@screens/NotReadyScreen';
+import { DownloadPanel } from '@screens/engine/DownloadPanel';
 import { LibraryScreen } from '@screens/LibraryScreen';
 import { DropScreen } from '@screens/DropScreen';
 import { MusicScreen } from '@screens/MusicScreen';
@@ -35,6 +37,8 @@ import {
   type TranslateView,
 } from '@/nav';
 import type { TranslateSource } from '@screens/settings/translate-api';
+import { engineStatus, downloadEngineModels, type ModelDownloadView } from '@screens/settings/engine-api';
+import { engineDownloadChip, isDownloadActive } from '@/engine-download';
 import type { CancelResponse, DeleteTasksResponse, LibraryResponse, TaskRow } from '@/types';
 import { formatBytes } from '@tools';
 
@@ -90,10 +94,43 @@ export function App() {
    */
   const [newBookRequest, setNewBookRequest] = useState(false);
 
+  /**
+   * 引擎下载视图开关（G5）。下载在后台继续，用户可随时打开/关闭本视图去别的屏。
+   * 🔴 与 `isBlockedWhenNotReady` 的纪律不冲突：下载视图是**信息主场**，不是拦截屏；
+   *    它开着时漫画库 / 设置 / 音乐照常可用（下载不阻塞任何一屏）。
+   */
+  const [downloadViewOpen, setDownloadViewOpen] = useState(false);
+  /** `/engine/status` 的 `modelDownload` —— 工具条芯片与下载视图的唯一真实来源。 */
+  const [download, setDownload] = useState<ModelDownloadView | null>(null);
+
   useThemeTokens(mode);
 
   const { status, ipcError } = useService();
   const running = status?.state === 'running';
+
+  /**
+   * 轮询 `modelDownload`（G5）：进度/中断态只来自真实事件，前端不编造。
+   * 1.5s 一次即可（进度聚合在 Rust 侧已节流，界面不必更密）。服务不可达时静默失败。
+   */
+  useEffect(() => {
+    let alive = true;
+    const tick = () => {
+      engineStatus()
+        .then((r) => {
+          if (alive) setDownload(r.modelDownload);
+        })
+        .catch(() => undefined);
+    };
+    tick();
+    const t = setInterval(tick, 1500);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  /** 运行时是否缺件（未装配）—— 决定工具条要不要给「需下载引擎」芯片。 */
+  const engineMissing = status?.mode === 'real' && !!status?.runtime && !status.runtime.ready;
   /** 翻译来源（P-D1）：服务的设置。读不到时 source=null，按本地档处理（见 hook 注释） */
   const { source, platform, reload: reloadSource } = useTranslateSource();
   const { data: tasks, error: tasksError, reload: reloadTasks } = useTasks(running);
@@ -346,6 +383,44 @@ export function App() {
   }, [lib]);
 
   const toolbar = useMemo(() => {
+    // G5：下载态优先于服务五态 —— 引擎在下载/中断/缺件时，工具条右侧显示「引擎下载中 /
+    // 下载中断 / 需下载引擎」芯片（带细环或播放按钮），点击回下载视图。
+    // 🔴 不替换服务五态的语义：下载完（done）芯片消失、回落服务五态（见 engineDownloadChip）。
+    const downloadChip = engineDownloadChip(download, engineMissing);
+    if (downloadChip) {
+      return {
+        title: downloadChip.isAlert ? '下载中断' : '引擎下载中',
+        subtitle: downloadChip.isAlert
+          ? '点这里继续下载或从头重下'
+          : '下载在后台继续，可随时去漫画库、设置或音乐页',
+        actions: (
+          <>
+            <Badge>{sourceChipLabel(source, platform)}</Badge>
+            <button
+              type="button"
+              onClick={() => setDownloadViewOpen((v) => !v)}
+              title={downloadChip.isAlert ? '继续下载 / 重新下载' : '查看下载进度'}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+              }}
+            >
+              {downloadChip.showRing ? (
+                <ProgressRing percent={downloadChip.percent} size={16} />
+              ) : downloadChip.isAlert ? (
+                <span style={{ color: 'var(--md-error)', fontSize: 13 }}>▶</span>
+              ) : null}
+              <Pill colorVar={downloadChip.colorVar}>{downloadChip.text}</Pill>
+            </button>
+          </>
+        ),
+      };
+    }
     if (showNotReady) {
       return {
         title: '服务未就绪',
@@ -414,7 +489,20 @@ export function App() {
           ),
         };
     }
-  }, [libRoot, libSummary, platform, push, queueDepth, screen, showNotReady, source, status?.state, view]);
+  }, [
+    libRoot,
+    libSummary,
+    platform,
+    push,
+    queueDepth,
+    screen,
+    showNotReady,
+    source,
+    status?.state,
+    view,
+    download,
+    engineMissing,
+  ]);
 
   // 翻译应用的视图 Tab 行；音乐屏不加（《09》§3.3），设置页是全局页也不加
   const showViewTabs = !showNotReady && screen === 'translate';
@@ -440,7 +528,17 @@ export function App() {
             </Notice>
           ) : null}
 
-          {showNotReady ? (
+          {downloadViewOpen && isDownloadActive(download) && download ? (
+            // G5：下载视图（屏 2 / 屏 3）。**覆盖**内容区但不弹模态、不拦截其它屏 ——
+            // 用户可随时点工具条芯片关掉它去漫画库 / 设置 / 音乐，下载在后台照常继续。
+            <DownloadPanel
+              view={download}
+              requiredBytes={status?.runtime?.requiredBytes}
+              onContinue={() => void downloadEngineModels()}
+              onRedownload={() => void downloadEngineModels(true)}
+              onBack={() => setDownloadViewOpen(false)}
+            />
+          ) : showNotReady ? (
             <NotReadyScreen
               status={status}
               source={source}
@@ -448,6 +546,8 @@ export function App() {
               onRestart={() => void restart()}
               // D1：「运行时未装配」态上的指引入口 —— 送到设置页（翻译服务组里有引擎诊断与装法）
               onOpenGuide={() => setScreen('settings')}
+              // G5：点「开始下载」⇒ 发起下载并把内容区切到下载视图。
+              onOpenDownload={() => setDownloadViewOpen(true)}
             />
           ) : screen === 'music' ? (
             <MusicScreen />

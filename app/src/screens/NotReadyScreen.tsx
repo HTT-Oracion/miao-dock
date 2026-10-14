@@ -4,6 +4,7 @@ import { errorText } from '@/ipc';
 import { useToasts } from '@hooks';
 import type { ServiceStatus } from '@/ipc';
 import { downloadEngineModels } from '@screens/settings/engine-api';
+import { OnlineApiForm } from '@screens/settings/OnlineApiForm';
 import type { TranslateSource } from '@screens/settings/translate-api';
 
 /**
@@ -75,12 +76,6 @@ function lastLogLine(log: string[] | undefined): string | null {
 
 /**
  * 摘要行：一行主句 + 一句副行。
- *
- * 原来「提示条」与「当前阶段句」是两个块、说的是同一件事 —— 合并成一行，
- * 因为用户此刻只关心三件事：卡在哪一步、是不是坏了、我该点什么。
- *
- * ⚠️ 降级（degraded）与失败共用一份红，但**不共用措辞**：前者服务还能应答、翻译会失败，
- * 后者根本提交不了。同一条屏上出现两个红条时用户分不清哪个更严重，所以只留这一处。
  */
 function summaryOf(
   state: string,
@@ -140,11 +135,10 @@ function summaryOf(
 /**
  * 画面 X-C3 · 服务未就绪 / 启动中（《02》§4）。
  *
- * 整屏四段：**一行摘要 → 时间线 → 一行 meta → 一行动作**（日志默认收起）。
- * 时间线的价值是「还剩几步」—— 那是四行独立列表给不出、而一条线能一眼给到的信息。
- *
- * 这一屏的责任不是「道歉」，而是**把卡在哪儿说清楚** —— 所以真实日志末行会挂在当前段下，
- * 失败时日志自动展开。
+ * 三种形态：
+ *  ① **在线精简页**（来源=在线）：只一句现状 + 一枚启动按钮。
+ *  ② **引导页（D1 运行时未装配）**：本地引擎一键下载 + 页内在线 API 表单 + 两者对照 + 排障折叠。
+ *  ③ **四段时间线**：引擎已装配、只是本地服务没起来（stopped/error/running/starting）。
  */
 export function NotReadyScreen({
   status,
@@ -152,40 +146,27 @@ export function NotReadyScreen({
   onStart,
   onRestart,
   onOpenGuide,
+  onOpenDownload,
 }: {
   status: ServiceStatus | null;
   /**
-   * 翻译来源（P-D1 / P-D3）。`online` 时本屏走**精简页**（不搬时间线）；
-   * `local` / `null`（读不到来源，按本地处理）时维持四段时间线现状。
+   * 翻译来源（P-D1 / P-D3）。`online` 时本屏走**精简页**；
+   * `local` / `null`（读不到来源，按本地档处理）时维持引导页 / 时间线现状。
    */
   source: TranslateSource | null;
-  /**
-   * 手动启动（仅 `stopped` 时用）。
-   *
-   * 为什么不复用 `onRestart`：`service_restart` 是"停 + 起"，而此刻**根本没有东西可停** ——
-   * 对一个本来就停止的服务说"重启"，语义是错的，且多走一次阻塞的 `stop()`
-   *（最坏 5s 的空等）。用户看到的按钮文案与它真正做的事必须对得上。
-   */
+  /** 手动启动（仅 `stopped` 时用）。 */
   onStart: () => void;
   onRestart: () => void;
-  /**
-   * D1：「运行时未装配」态上的**指引入口** —— 跳到设置页（翻译服务 → 引擎诊断/安装引导）。
-   *
-   * 为什么不是"再给一枚重试按钮"：这一态里的东西**本机不存在**，再点多少次都一样。
-   * 用户此刻唯一该做的是去装，那就把他送到装的地方。
-   */
+  /** D1：「运行时未装配」态上的**指引入口** —— 跳到设置页（翻译服务 → 引擎诊断/安装引导）。 */
   onOpenGuide: () => void;
+  /** G5：点「开始下载」⇒ 发起下载并把内容区切到下载视图。 */
+  onOpenDownload: () => void;
 }) {
-  // 吐司单例总线：直接取用，不必由宿主透传（见 useToasts 注释）
   const { push: onToast } = useToasts();
-  /**
-   * 日志**默认收起**（本屏"信息精简"唯一的行为性改动），但**失败时自动展开**
-   * —— 「把卡在哪儿说清楚」这个立意不能丢。
-   *
-   * `null` = 用户还没手动点过，跟随默认；点过之后以用户的为准（否则"收起"会点不动）。
-   */
   const [userLog, setUserLog] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
+  const [compare, setCompare] = useState(false);
+  const [trouble, setTrouble] = useState(false);
 
   const state = status?.state ?? 'starting';
   const err = status?.last_error ?? null;
@@ -193,34 +174,13 @@ export function NotReadyScreen({
   const degraded = !!status?.degraded;
   const logOpen = userLog ?? failed;
 
-  /**
-   * 已完成的阶段数。
-   *
-   * 🔴 早先这里写的是 `status?.sidecar_port ? 2 : 1` —— 拿"引擎端口存不存在"猜阶段。
-   *    它有两处必然出错：① 端口先于阶段就绪（② 端口在听 ≠ L2 探针已过）时会把 L1 显示成 L2；
-   *    ② 引擎已起但 ③ 还没答 HTTP 时，L3 永远点不亮，用户看到的是"卡在第二段"。
-   *    现在按 Rust 状态机的 `phase` 逐值映射，**没有 phase 就不假装有进度**。
-   *
-   * 上界是 `STARTUP_COUNT` 而**不是** `STAGES.length`：L4 不属启动期（见其上方注释）。
-   */
   const idx = status?.phase ? (PHASE_INDEX[status.phase] ?? 0) : 0;
   const reached = state === 'running' ? STARTUP_COUNT : idx;
 
   const detail = lastLogLine(status?.log);
   const summary = summaryOf(state, err, status?.phase, degraded);
 
-  /*
-   * ── P-D3 精简页：来源=在线 ──
-   *
-   * 在线来源的用户被拦，只剩一个原因：box-service 自己没起来（`stopped` / `error`）。
-   * 这时**刻意不搬四段时间线** —— L1–L4 描述的是**本地引擎**的启动分层
-   *（检查环境 → 下模型 → 预热 → 首图），而在线翻译一个字节的模型都不装；
-   * 把时间线搬过来，等于让人等一个与在线翻译无关的东西。所以只剩一句现状 + 一枚按钮。
-   *
-   * 标题仍按真实状态取（`summaryOf` 是状态 → 措辞的唯一事实源：`stopped` 与 `error`
-   * 说的话不同，失败时一并带上 `last_error`），副行换成来源这一句，如实说明
-   * 「在线翻译已配置，但漫画任务仍需要本地服务在跑」—— 不夸大，也不装作与服务无关。
-   */
+  // ---- 在线精简页 ----
   if (source === 'online') {
     return (
       <div className="notready">
@@ -250,75 +210,172 @@ export function NotReadyScreen({
     );
   }
 
-  const redownload = async () => {
-    setBusy(true);
-    try {
-      await downloadEngineModels();
-      onToast('已开始重新下载模型 —— 进度见「设置 → 翻译服务 → 引擎诊断」', 'info');
-    } catch (e) {
-      // 失败照实说：这里报的往往是"服务此刻不可达 / 已有下载在跑"，两者都不是"下载坏了"
-      onToast(errorText(e), 'bad');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  /*
-   * ── D1：「运行时未装配」独立成态 ──
-   *
-   * 与 L1–L4 **并列**，不是它们中的一段：那四段描述的是"引擎**正在**起来的进度"，
-   * 而这一态的真相是"**它根本还没装**"—— 把它塞进 L1（或让 L1 显示"失败"）会让用户
-   * 去点「重启本地服务」，而重启一万次也不会把一个不存在的 python 变出来。
-   *
-   * 🔴 判据只认两件事：`mode === 'real'`（mock 档本来就不要真引擎）与 `runtime.ready === false`。
-   *    不看 `last_error` 的文案 —— 文案是给人看的，拿它做机器判据，改一个字界面就失效。
-   *
-   * 🔴 「约 X GB」的 X 来自 `runtime.requiredBytes`（服务端读清单求和），**不是这里写死的数字**：
-   *    写死的话，清单加一条权重就会让界面开始撒谎，且没人会发现。
-   */
+  // ---- 引导页（D1 运行时未装配）----
   const rt = status?.runtime;
   const runtimeUnready = status?.mode === 'real' && !!rt && !rt.ready;
   if (runtimeUnready && rt && state !== 'running') {
+    const gb = rt.requiredBytes > 0 ? (rt.requiredBytes / GIB).toFixed(1) : null;
+    const start = async () => {
+      setBusy(true);
+      try {
+        await downloadEngineModels();
+        onOpenDownload();
+      } catch (e) {
+        onToast(errorText(e), 'bad');
+      } finally {
+        setBusy(false);
+      }
+    };
     const failing = rt.items.filter((i) => !i.ok);
-    const gb = rt.requiredBytes > 0 ? `（模型资产约 ${(rt.requiredBytes / GIB).toFixed(1)} GB）` : '';
+
     return (
-      <div className="notready">
-        <div className="nr-sum is-bad">
-          <span className="nr-dot" />
-          <div>
-            <div className="nr-sum-t">需要先安装翻译引擎{gb}</div>
-            <div className="nr-sum-d">
-              翻译引擎不随安装包分发 —— 第一次使用要在本机装配 Python 运行时与模型权重。
-              下面列出缺的是哪几项、各自怎么装。
+      <div style={{ maxWidth: 880, margin: '0 auto', padding: '28px 24px 48px' }}>
+        {/* 顶部：现状 + 边界 */}
+        <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--md-ink)' }}>
+          需要先安装翻译引擎{gb ? `（约 ${gb} GB）` : ''}
+        </div>
+        <div style={{ fontSize: 14, color: 'var(--md-muted)', marginTop: 8, lineHeight: 1.6 }}>
+          翻译引擎不随安装包分发 —— 第一次使用要在本机装配 Python 运行时与模型权重。
+          下面两条路任选其一，都不需要懂命令行。
+        </div>
+
+        {/* 中部：两条路并列 */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 16,
+            marginTop: 22,
+            alignItems: 'start',
+          }}
+        >
+          {/* 主路径：下载本地引擎 */}
+          <div
+            style={{
+              border: '1px solid var(--md-line, rgba(128,128,128,0.22))',
+              borderRadius: 14,
+              padding: 18,
+              background: 'var(--md-card, #fff)',
+            }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--md-ink)' }}>下载本地引擎</div>
+            <div style={{ fontSize: 13, color: 'var(--md-muted)', marginTop: 6, lineHeight: 1.6 }}>
+              一键下载并自动装配。装完即可离线翻译，图片不出本机。
+              {gb ? ` 本次约需下载 ${gb} GB` : ''}。
+            </div>
+            <div style={{ marginTop: 14 }}>
+              <Btn kind="primary" disabled={busy} onClick={() => void start()}>
+                {busy ? '正在发起…' : '开始下载'}
+              </Btn>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--md-muted)', marginTop: 10 }}>
+              下载分两段：先装运行环境（约 1 分钟可开始翻译），权重在后台继续。
+            </div>
+          </div>
+
+          {/* 备路径：使用在线翻译 */}
+          <div
+            style={{
+              border: '1px solid var(--md-line, rgba(128,128,128,0.22))',
+              borderRadius: 14,
+              padding: 18,
+              background: 'var(--md-card, #fff)',
+            }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--md-ink)' }}>使用在线翻译</div>
+            <div style={{ fontSize: 13, color: 'var(--md-muted)', marginTop: 6, lineHeight: 1.6 }}>
+              不下载引擎，填一次密钥即可。需要联网，按平台计费。
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <OnlineApiForm onSaved={onStart} />
             </div>
           </div>
         </div>
 
-        {/* 缺什么逐项列出：`detail` 带绝对路径、`fix` 给装法（都来自服务端的同一份检测） */}
-        <div className="nr-rt">
-          {failing.map((it) => (
-            <div key={it.id} className="nr-rt-item">
-              <div className="nr-rt-head">
-                <span className="nr-rt-id">{it.id}</span>
-                <span className="nr-rt-detail">{it.detail}</span>
+        {/* 底部：两者对照（默认收起） */}
+        <div style={{ marginTop: 22 }}>
+          <button
+            type="button"
+            onClick={() => setCompare(!compare)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--md-blue)',
+              fontSize: 13,
+              cursor: 'pointer',
+              padding: 0,
+            }}
+          >
+            {compare ? '收起对照' : '两者有什么区别？'}
+          </button>
+          {compare ? (
+            <div
+              style={{
+                marginTop: 10,
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: 12,
+                fontSize: 13,
+                color: 'var(--md-muted)',
+                lineHeight: 1.6,
+              }}
+            >
+              <div style={{ padding: 12, borderRadius: 10, background: 'var(--md-row, rgba(128,128,128,0.06))' }}>
+                <b style={{ color: 'var(--md-ink)' }}>本地引擎</b>
+                <div>· 占用约 {gb ? `${gb} GB` : '数 GB'} 磁盘</div>
+                <div>· 首次下载较久，之后不联网</div>
+                <div>· 图片不出本机，隐私最好</div>
               </div>
-              {it.fix ? <div className="nr-rt-fix">{it.fix}</div> : null}
+              <div style={{ padding: 12, borderRadius: 10, background: 'var(--md-row, rgba(128,128,128,0.06))' }}>
+                <b style={{ color: 'var(--md-ink)' }}>在线翻译</b>
+                <div>· 不占磁盘，无需下载</div>
+                <div>· 始终需要联网</div>
+                <div>· 按平台计费，密钥只出站</div>
+              </div>
             </div>
-          ))}
+          ) : null}
         </div>
 
-        <div className="nr-acts">
-          <Btn kind="primary" onClick={onOpenGuide}>
-            打开安装引导
-          </Btn>
-          <Btn kind="ghost" onClick={() => setUserLog(!logOpen)}>
-            {logOpen ? '收起日志' : '查看日志'}
-          </Btn>
+        {/* 右下：排障信息（默认收起） */}
+        <div style={{ marginTop: 18, display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={() => setTrouble(!trouble)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--md-muted)',
+              fontSize: 12,
+              cursor: 'pointer',
+              padding: 0,
+            }}
+          >
+            {trouble ? '收起排障信息' : '查看排障信息'}
+          </button>
         </div>
-
-        {logOpen ? (
-          <div className="logbox">
-            {(status?.log ?? []).slice(-120).join('\n') || '（暂无日志）'}
+        {trouble ? (
+          <div style={{ marginTop: 10 }}>
+            <div className="nr-rt">
+              {failing.map((it) => (
+                <div key={it.id} className="nr-rt-item">
+                  <div className="nr-rt-head">
+                    <span className="nr-rt-id">{it.id}</span>
+                    <span className="nr-rt-detail">{it.detail}</span>
+                  </div>
+                  {it.fix ? <div className="nr-rt-fix">{it.fix}</div> : null}
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <Btn kind="ghost" onClick={onOpenGuide}>
+                打开设置页查看完整诊断
+              </Btn>
+            </div>
+            {logOpen ? (
+              <div className="logbox" style={{ marginTop: 10 }}>
+                {(status?.log ?? []).slice(-120).join('\n') || '（暂无日志）'}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -327,10 +384,6 @@ export function NotReadyScreen({
 
   /**
    * 阶段状态词。
-   *
-   * 🔴 **L4 单列一支**（它不是启动期的一步，见 STAGES 上方注释）。
-   *    因为 `reached` 的上界是 `STARTUP_COUNT`，第 4 段两个 if 都进不去 ⇒ 它拿不到
-   *    「进行中」「失败」「已完成」。给它 loading 态或「待开始」都会让用户一直等它走完。
    */
   const noteOf = (i: number) => {
     if (i < reached) return '已完成';
@@ -338,7 +391,6 @@ export function NotReadyScreen({
     return STAGES[i]?.id === 'L4' ? '首图时完成' : '待开始';
   };
 
-  /** 节点形态。`num` 是全局数字字体工具类（Inter + tabular-nums） */
   const nodeClass = (note: string) => {
     switch (NODE_KIND[note]) {
       case 'is-done':
@@ -352,7 +404,6 @@ export function NotReadyScreen({
     }
   };
 
-  /** 整步形态：让连线段与状态词跟着节点一起着色，一眼看出进度占比 */
   const stepClass = (note: string) => {
     switch (NODE_KIND[note]) {
       case 'is-done':
@@ -366,7 +417,6 @@ export function NotReadyScreen({
     }
   };
 
-  /** 节点里的符号：完成打勾、失败打叉，其余显示**下标派生**的序号（不是写死的 1/2/3/4） */
   const nodeMark = (note: string, i: number) => {
     const kind = NODE_KIND[note];
     if (kind === 'is-done') return '✓';
@@ -385,7 +435,7 @@ export function NotReadyScreen({
         </div>
       </div>
 
-      {/* ② 时间线：节点 + 连线 + 状态词 —— 步数与序号都由 STAGES 单源派生 */}
+      {/* ② 时间线：节点 + 连线 + 状态词 */}
       {STAGES.map((s, i) => {
         const note = noteOf(i);
         const kind = NODE_KIND[note];
@@ -401,10 +451,6 @@ export function NotReadyScreen({
                 <span className="tl-state">{note}</span>
               </div>
               {detail && (kind === 'is-loading' || kind === 'is-failed') ? (
-                /*
-                 * 明细：**真实日志末行原样** —— 不重排、不截断成"看起来像进度"的样子。
-                 * 只有"当前段且不是待开始"才挂：待开始的段挂一行日志会让人以为它已经在跑了。
-                 */
                 <div className="tl-detail">{detail}</div>
               ) : null}
             </div>
@@ -412,9 +458,8 @@ export function NotReadyScreen({
         );
       })}
 
-      {/* ③ 一行 meta：正常时它是"都活着"，不值得占三行；异常时才转红 */}
+      {/* ③ 一行 meta */}
       <div className="nr-meta">
-        {/* `mode` 必须显式可见：否则"以为在跑真引擎、其实跑的替身"最难查 */}
         <span className="mchip">引擎模式 {status?.mode ?? '—'}</span>
         <span className={degraded ? 'mchip is-bad' : 'mchip'}>
           三进程{' '}
@@ -429,21 +474,11 @@ export function NotReadyScreen({
 
       {/* ④ 一行动作 */}
       <div className="nr-acts">
-        {/*
-         * 重试按**失败阶段**给按钮（《02》§4「按失败阶段提供『重试当前阶段』」）：
-         * L2 失败 ⇒ 用户真正该做的是重下模型，而不是重启整条链路 —— 后者只是把同一件
-         * 坏掉的事重做一遍。两条都给，是因为 L2 失败也可能是"服务被带崩了"。
-         */}
         {failed && status?.phase === 'L2' ? (
-          <Btn kind="primary" disabled={busy} onClick={() => void redownload()}>
+          <Btn kind="primary" disabled={busy} onClick={() => void redownload(onToast)}>
             {busy ? '正在发起…' : '重新下载模型'}
           </Btn>
         ) : null}
-        {/*
-          停止态给「启动」、其余给「重启」：见 `onStart` 的注释（对停止的服务说"重启"是错的）。
-          停止态下它就是**主按钮** —— 那是这一屏此刻唯一该做的事。
-          ⚠️ 文案变了，`summaryOf` 里 stopped 那一句的指引也必须跟着改（已同步）。
-        */}
         {state === 'stopped' ? (
           <Btn kind="primary" onClick={onStart}>
             启动本地服务
@@ -465,4 +500,14 @@ export function NotReadyScreen({
       ) : null}
     </div>
   );
+}
+
+/** 「重新下载模型」：保留原有能力（时间线分支 L2 失败时）。 */
+async function redownload(push: (msg: string, kind?: 'info' | 'bad' | 'good') => void) {
+  try {
+    await downloadEngineModels();
+    push('已开始重新下载模型 —— 进度见「设置 → 翻译服务 → 引擎诊断」', 'info');
+  } catch (e) {
+    push(errorText(e), 'bad');
+  }
 }

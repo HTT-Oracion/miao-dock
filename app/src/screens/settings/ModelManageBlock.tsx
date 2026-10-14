@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Btn, Notice } from '@components/units';
 import { emphasis, humanBytes } from '@screens/settings/parts';
 import type { SettingItem } from '@screens/settings/catalog';
@@ -21,6 +22,11 @@ export function ModelManageBlock({ item, eng }: { item: SettingItem; eng: Engine
   const v = eng.verifyResult;
   const busy = eng.action !== null;
   const download = eng.status?.modelDownload;
+  const st = download?.state ?? 'idle';
+  const running = st === 'running';
+  const interrupted = st === 'interrupted';
+  const failed = st === 'failed';
+  const [confirmFresh, setConfirmFresh] = useState(false);
   /** D4：盘上实况（服务端算好的：按 inode 去重、只算就绪条目） */
   const disk = eng.status?.models?.disk;
   /** 适用本机的条目数 —— 与「引擎诊断」的逐条清单**同一份判据**（服务端给的 `applicable`） */
@@ -43,26 +49,70 @@ export function ModelManageBlock({ item, eng }: { item: SettingItem; eng: Engine
         <div className="set-manage-acts">
           <Btn
             size="sm"
-            disabled={busy}
+            disabled={busy || running}
             title="真算一遍每个权重的 SHA256（几 GB，要几分钟）—— 不是「看一眼文件在不在」"
             onClick={() => void eng.verifyModels()}
           >
             校验完整性
           </Btn>
-          <Btn
-            size="sm"
-            disabled={busy || download?.runnerExists === false || download?.running === true}
-            title={
-              download?.runnerExists === false
-                ? '模型下载执行体不在盘上'
-                : download?.running
-                  ? '已有下载任务在跑（进度见下方引擎诊断）'
-                  : '补齐缺失与校验不符的权重；已就绪的文件会被复用'
-            }
-            onClick={() => void eng.download()}
-          >
-            重新下载模型
-          </Btn>
+          {interrupted ? (
+            // 屏 3：严格区分两种动作 —— 「继续下载」补齐缺口 / 「重新下载」从头再来。
+            <>
+              <Btn
+                size="sm"
+                kind="primary"
+                disabled={busy}
+                title="沿用已下的 .part，补齐缺失部分"
+                onClick={() => void eng.download()}
+              >
+                ▶ 继续下载
+              </Btn>
+              {confirmFresh ? (
+                <Btn
+                  size="sm"
+                  disabled={busy}
+                  title="清掉 .part，从头重新下载（会重下已下部分）"
+                  onClick={() => void eng.downloadFresh()}
+                >
+                  确认从头重下？
+                </Btn>
+              ) : (
+                <Btn
+                  size="sm"
+                  disabled={busy}
+                  title="清掉 .part，从头重新下载"
+                  onClick={() => setConfirmFresh(true)}
+                >
+                  重新下载
+                </Btn>
+              )}
+            </>
+          ) : failed ? (
+            <Btn
+              size="sm"
+              kind="primary"
+              disabled={busy}
+              title="中断不可续传 —— 清掉 .part 从头重新下载"
+              onClick={() => void eng.downloadFresh()}
+            >
+              重新下载
+            </Btn>
+          ) : (
+            <Btn
+              size="sm"
+              disabled={busy || download?.runnerExists === false || running}
+              title={
+                download?.runnerExists === false
+                  ? '模型下载执行体不在盘上'
+                  : running
+                    ? '已有下载任务在跑（进度见下方引擎诊断）'
+                    : '补齐缺失与校验不符的权重；已就绪的文件会被复用'
+              }
+              onClick={() => void eng.download()}
+            >
+              重新下载模型
+            </Btn>
+          )}
         </div>
       </div>
 
@@ -104,8 +154,22 @@ export function ModelManageBlock({ item, eng }: { item: SettingItem; eng: Engine
             </div>
           ) : null}
         </>
-      ) : download?.running ? (
-        <div className="set-manage-state">正在重新下载模型 —— 进度与输出见下方「引擎诊断」。</div>
+      ) : running || interrupted || failed ? (
+        // 🔴 真实进度只来自 `modelDownload` 的聚合字段；`null` 就如实留空，不编占位数字。
+        <div className={`set-manage-state${interrupted || failed ? ' is-bad' : ''}`}>
+          {running ? '正在下载模型' : interrupted ? '下载中断（可继续）' : '下载失败（需从头重下）'}
+          {download?.percent != null ? ` · 进度 ${Math.round(download.percent)}%` : ' · 准备中'}
+          {download?.receivedBytes != null
+            ? ` · 已下 ${humanBytes(download.receivedBytes)}${
+                download?.totalBytes != null ? ` / ${humanBytes(download.totalBytes)}` : ''
+              }`
+            : ''}
+          {download?.speedBps != null ? ` · ↓ ${humanBytes(download.speedBps)}/s` : ''}
+          {download?.stage ? ` · 阶段 ${download.stage}` : ''}
+          {download?.currentId ? ` · 当前 ${download.currentId}` : ''}
+          {download?.interruptedReason ? ` · ${download.interruptedReason}` : ''}
+          {' —— 进度与输出见下方「引擎诊断」'}
+        </div>
       ) : (
         <div className="set-manage-state">
           本次会话尚未校验。校验会逐个重算 SHA256，因此<b>不挂自动</b>

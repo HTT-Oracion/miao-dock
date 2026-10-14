@@ -167,6 +167,7 @@ export function useEngineState() {
   const download = useCallback(async () => {
     setAction('download');
     try {
+      // 续传：「继续下载」—— 沿用 `.part`（fresh=false），补齐已下部分。
       await downloadEngineModels();
       await reload();
       onToast('已开始下载模型 —— 进度见下方「引擎诊断」', 'info');
@@ -180,9 +181,26 @@ export function useEngineState() {
     }
   }, [onToast, reload]);
 
+  /** 「重新下载」：清 `.part` 从头再来（fresh=true）。 */
+  const downloadFresh = useCallback(async () => {
+    setAction('download');
+    try {
+      await downloadEngineModels(true);
+      await reload();
+      onToast('已从头重新下载模型 —— 进度见下方「引擎诊断」', 'info');
+      return true;
+    } catch (e) {
+      onToast(errorText(e), 'bad');
+      await reload();
+      return false;
+    } finally {
+      setAction(null);
+    }
+  }, [onToast, reload]);
+
   return {
     options, status, loadError, action, verifyResult, verifyError,
-    reload, save, unload, verifyModels, download,
+    reload, save, unload, verifyModels, download, downloadFresh,
   };
 }
 
