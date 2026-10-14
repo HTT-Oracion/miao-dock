@@ -155,6 +155,177 @@ pub fn table_json() -> serde_json::Value {
     serde_json::json!({ "patches": ENGINE_PATCHES })
 }
 
+// =============================================================================
+//  补丁**应用**（零配置装配用）
+// =============================================================================
+//  裁定④把「装配由产品代做」写死：产品运行期**没有 node**（F5 + A3d），而补丁的变换逻辑在
+//  `engine/scripts/setup-engine.mjs`（Node）里。故 Rust 侧必须能**亲自重放**补丁 —— 否则
+//  打包后的产品装出来的引擎是「未打补丁的上游源码」，而那 10 处补丁每一条都对应一个真实的
+//  线上故障（D-86 的 TypeError / D-97 系列「译文整页为空」/ D-102 字体发虚 / D-98 整句语义崩坏）。
+//
+//  应用事实源 = `engine/patches.json`（本文件同目录的 SSOT 副本，与 Node 的 ENGINE_PATCHES
+//  同序同义，由 `engine-patches-check.mjs` 的 A7 交叉钉）。本模块只 `read` 文件判已打 / 改文件打补丁，
+//  与 `runtime_probe` 同一条「诊断可反复打开、装配只改一次」纪律。
+
+/// 一条补丁的「应用」形态（来自 `patches.json`）。
+#[derive(Debug, Clone, serde::Deserialize)]
+struct PatchApply {
+    id: String,
+    #[allow(dead_code)]
+    mark: String,
+    rel: Vec<String>,
+    edits: Vec<PatchEdit>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct PatchEdit {
+    anchor: String,
+    patch: String,
+}
+
+/// 把文本按行归一（CRLF → LF），与 Node 侧 `norm()` 同口径 —— 否则锚点会「永不命中」。
+fn norm_eol(s: &str) -> String {
+    s.split('\r').map(|p| p.split('\n').collect::<Vec<_>>().join("\n")).collect::<Vec<_>>().join("\n")
+}
+
+/// 定位 `patches.json`：环境变量 > 随包资源 > 仓库内。
+fn patches_json_path() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("MIAO_ENGINE_PATCHES") {
+        if !p.trim().is_empty() {
+            return Some(PathBuf::from(p.trim()));
+        }
+    }
+    crate::paths::asset("engine/patches.json")
+        .or_else(|| Some(crate::paths::repo_root().join("engine").join("patches.json")))
+}
+
+/// 在 `src_dir` 下重放全部补丁（幂等：mark 命中即跳过该条）。
+///
+/// 返回每条的 `{ id, applied }`（applied = 本次真的改了文件）。任一锚点缺失即抛错（**不静默跳过** ——
+/// 源码钉在 ENGINE_COMMIT 上，锚点失效 = 「装出来的引擎已不是我们验过的那份」）。
+pub fn apply_engine_patches(src_dir: &Path) -> Result<Vec<(String, bool)>, String> {
+    let json_path = patches_json_path().ok_or_else(|| {
+        "找不到 engine/patches.json（零配置装配需要它来打源码补丁；设 MIAO_ENGINE_PATCHES 指向它）".to_string()
+    })?;
+    let raw = std::fs::read_to_string(&json_path)
+        .map_err(|e| format!("读 patches.json 失败（{}）：{e}", json_path.display()))?;
+    let doc: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("patches.json 不是合法 JSON：{e}"))?;
+    let list: Vec<PatchApply> = doc
+        .get("patches")
+        .and_then(|p| serde_json::from_value(p.clone()).ok())
+        .ok_or_else(|| "patches.json 缺 `patches` 数组".to_string())?;
+
+    let mut out = Vec::with_capacity(list.len());
+    for p in list {
+        // 应用清单的 rel 是 `Vec<String>`（JSON 形态），与只读镜像的 `&[&str]` 字段不同 ⇒ 拼接路径。
+        let rel: PathBuf = p.rel.iter().map(|s| s.as_str()).collect();
+        let file = src_dir.join(rel);
+        let content = match std::fs::read_to_string(&file) {
+            Ok(c) => c,
+            Err(_) => return Err(format!("补丁 {} 的目标源码不存在：{}", p.id, file.display())),
+        };
+        if content.contains(&p.mark) {
+            out.push((p.id, false)); // 已打过
+            continue;
+        }
+        let mut cur = norm_eol(&content);
+        for (i, e) in p.edits.iter().enumerate() {
+            let anchor = norm_eol(&e.anchor);
+            let patch = norm_eol(&e.patch);
+            if !cur.contains(&anchor) {
+                return Err(format!(
+                    "补丁 {} 的第 {} 个锚点未找到（源码已变）；文件：{}；期望锚点首行：{}",
+                    p.id,
+                    i + 1,
+                    file.display(),
+                    anchor.lines().next().unwrap_or("")
+                ));
+            }
+            cur = cur.replacen(&anchor, &patch, 1);
+        }
+        // 写回 LF（与 Node 侧 `norm()` 同口径）
+        std::fs::write(&file, cur)
+            .map_err(|e| format!("写补丁 {} 失败：{e}", p.id))?;
+        out.push((p.id, true));
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod apply_tests {
+    use super::*;
+
+    fn write_tree(base: &Path, files: &[(&str, &str)]) {
+        let _ = std::fs::remove_dir_all(base);
+        for (rel, content) in files {
+            let p = base.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, content).unwrap();
+        }
+    }
+
+    #[test]
+    fn apply_inserts_mark_and_is_idempotent() {
+        let base = std::env::temp_dir().join(format!("miao-patch-apply-{}", std::process::id()));
+        write_tree(
+            &base,
+            &[("manga_translator/translators/sakura.py", "a\n    self.logger.error(f'Sakura API请求失败。错误信息： {e}')\n    return prompt\nb\n")],
+        );
+        let json = base.join("patches.json");
+        std::fs::write(
+            &json,
+            serde_json::json!({ "patches": [ {
+                "id": "t", "mark": "# miao-dock 补丁 D-86",
+                "rel": ["manga_translator", "translators", "sakura.py"],
+                "edits": [ { "anchor": "    self.logger.error(f'Sakura API请求失败。错误信息： {e}')\n    return prompt\n",
+                            "patch": "    self.logger.error(f'Sakura API请求失败。错误信息： {e}')\n    # miao-dock 补丁 D-86\n    x\n" } ]
+            } ] }).to_string(),
+        )
+        .unwrap();
+        std::env::set_var("MIAO_ENGINE_PATCHES", &json);
+
+        let r1 = apply_engine_patches(&base).unwrap();
+        assert!(r1.iter().any(|(_, a)| *a), "首次应打上");
+        let c = std::fs::read_to_string(base.join("manga_translator/translators/sakura.py")).unwrap();
+        assert!(c.contains("# miao-dock 补丁 D-86"), "mark 应出现");
+
+        let r2 = apply_engine_patches(&base).unwrap();
+        assert!(!r2.iter().any(|(_, a)| *a), "第二次应幂等跳过");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn apply_anchor_missing_is_error_not_silent_skip() {
+        let base = std::env::temp_dir().join(format!("miao-patch-miss-{}", std::process::id()));
+        write_tree(&base, &[("manga_translator/translators/sakura.py", "x = 1\n")]);
+        let json = base.join("patches.json");
+        std::fs::write(
+            &json,
+            serde_json::json!({ "patches": [ {
+                "id": "t", "mark": "# m",
+                "rel": ["manga_translator", "translators", "sakura.py"],
+                "edits": [ { "anchor": "没有这一行", "patch": "z = 3" } ]
+            } ] }).to_string(),
+        )
+        .unwrap();
+        std::env::set_var("MIAO_ENGINE_PATCHES", &json);
+        // 🔴 锚点缺失必须报错：源码已变、装出来的引擎不是我们验过的那份。静默跳过 = 带病上线。
+        assert!(apply_engine_patches(&base).is_err(), "锚点缺失应报错，不得静默跳过");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn patches_json_present_and_is_array() {
+        // 真实 patches.json 必须存在且含 patches 数组（与 Node SSOT 同序由 A7 钉）。
+        let p = crate::paths::repo_root().join("engine").join("patches.json");
+        assert!(p.exists(), "engine/patches.json 必须存在（零配置装配要它打补丁）");
+        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        assert!(v.get("patches").and_then(|a| a.as_array()).map(|a| !a.is_empty()).unwrap_or(false));
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

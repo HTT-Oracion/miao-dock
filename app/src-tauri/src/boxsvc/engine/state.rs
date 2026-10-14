@@ -15,9 +15,10 @@
 //   ② **"已配置"与"已生效"必须分开报**：改档位要重启才生效，只给一个字段的话界面只能二选一
 //      —— 要么显示旧档（用户以为没保存上），要么显示新档（用户以为已经在跑 7B 了）。
 //   ③ **反证开关集中登记**（[`Refutes`] / [`ContractRefutes`]），不散在各自代码旁。
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use crate::boxsvc::store::{StoreError, model};
@@ -27,6 +28,7 @@ use crate::paths;
 use super::supervisor::LlmSnapshot;
 use super::{engine_config_snapshot, engine_version, available_tiers, profile, settings as esettings};
 use super::model_status::model_status;
+use super::model_store::ProgressEvent;
 use super::tier_downgrade::TierDowngrade;
 
 // ================================================================ 常量（与 server.mjs 同名同值）
@@ -83,7 +85,17 @@ pub struct ContractRefutes {
 // ================================================================ 模型下载状态机
 
 /// 「重新下载模型」的任务实况（`/engine/status` 的第 9 键）。
-#[derive(Debug, Clone)]
+///
+/// 🔴 **进度只来自真实事件**：`percent` / `received_bytes` / `total_bytes` / `speed_bps` /
+///    `eta_ms` 全部由 `boxsvc --fetch-models --progress-log` 写出的 JSONL 聚合而来，
+///    取不到时为 `None` —— 前端**不得**补占位数字（与 NotReadyScreen 的 `lastLogLine`
+///    同一纪律）。`stage` / `current_id` 同样来自真实事件。
+///
+/// 状态机：`idle` | `running` | `interrupted` | `done` | `failed`。
+///   · `interrupted` = 可续传的中断（断网 / 磁盘满 / 超时 / 被强制关闭，且盘上有 `.part`
+///     或 `.ready` 未覆盖全部选中条目）；`can_resume` 必为 true。
+///   · `failed` = 不可续传的失败（`can_resume` 为 false，只能从头重下）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelDownload {
     pub state: String,
     pub started_at: Option<String>,
@@ -91,6 +103,21 @@ pub struct ModelDownload {
     pub exit_code: Option<i64>,
     pub timed_out: bool,
     pub tail: Vec<String>,
+    // ---- G5：结构化进度（全部来自 `--progress-log`，取不到为 None）----
+    pub percent: Option<f64>,
+    pub received_bytes: Option<u64>,
+    pub total_bytes: Option<u64>,
+    pub speed_bps: Option<f64>,
+    pub eta_ms: Option<i64>,
+    /// 当前阶段：`stage1`（准备运行环境）| `stage2`（下载权重，后台继续）| `null`。
+    pub stage: Option<String>,
+    /// 当前正在处理的条目 id（文件名 / 阶段名），没有真实来源时为 `null`。
+    pub current_id: Option<String>,
+    // ---- G5：中断 / 续传 ----
+    /// 可续传：盘上存在 `.part`，或 `.ready` 未覆盖全部选中条目。
+    pub can_resume: bool,
+    /// 中断原因（措辞取自服务端事实，不猜）。`null` = 未中断。
+    pub interrupted_reason: Option<String>,
 }
 
 impl Default for ModelDownload {
@@ -102,7 +129,61 @@ impl Default for ModelDownload {
             exit_code: None,
             timed_out: false,
             tail: Vec::new(),
+            percent: None,
+            received_bytes: None,
+            total_bytes: None,
+            speed_bps: None,
+            eta_ms: None,
+            stage: None,
+            current_id: None,
+            can_resume: false,
+            interrupted_reason: None,
         }
+    }
+}
+
+/// 进度聚合用的内部态（**不进契约**，不入 `ModelDownload` 序列化）。
+///
+/// 每条 `--progress-log` 行更新这里的 `entries` 表与样本窗；聚合结果再写回
+/// `ModelDownload` 的 `percent` / `received_bytes` / `total_bytes` / `speed_bps` /
+/// `eta_ms`。`entries` 用 `id` 去重 —— 同一文件的多条进度事件只更新那一行的 received。
+pub struct DownloadProgressState {
+    /// `id` → (received, total)；`total` 为 None 表示该条目尚无总量（阶段标记事件）。
+    entries: std::collections::HashMap<String, (u64, Option<u64>)>,
+    /// 采样窗：(ms, received_bytes)；用于算瞬时速度（取最近一段的斜率）。
+    samples: Vec<(i64, u64)>,
+    /// 最近一条真实进度事件的毫秒时间戳（用于判「卡住」）。
+    last_event_ms: i64,
+}
+
+impl DownloadProgressState {
+    fn new() -> Self {
+        DownloadProgressState {
+            entries: std::collections::HashMap::new(),
+            samples: Vec::new(),
+            last_event_ms: 0,
+        }
+    }
+
+    /// 喂一条进度事件，返回聚合后的快照（直接写进 `ModelDownload`）。
+    fn ingest(&mut self, e: &ProgressEvent, now_ms: i64) -> (u64, u64, Option<u64>) {
+        // 阶段标记事件（total=None，phase="stage"）：只更新当前阶段，不动字节账。
+        if e.phase == "stage" {
+            self.last_event_ms = now_ms;
+            let total: u64 = self.entries.values().filter_map(|(_, t)| *t).sum();
+            let received: u64 = self.entries.values().map(|(r, _)| *r).sum();
+            return (received, total, None);
+        }
+        let total = e.total.unwrap_or_else(|| {
+            // 复用该条目已知总量；未知则记 None（聚合时总量缺失 ⇒ percent 为 null）
+            self.entries.get(&e.id).and_then(|(_, t)| *t).unwrap_or(0)
+        });
+        let entry_total = if e.total.is_some() { Some(total) } else { self.entries.get(&e.id).and_then(|(_, t)| *t) };
+        self.entries.insert(e.id.clone(), (e.received, entry_total));
+        self.last_event_ms = now_ms;
+        let total: u64 = self.entries.values().filter_map(|(_, t)| *t).sum();
+        let received: u64 = self.entries.values().map(|(r, _)| *r).sum();
+        (received, total, e.total)
     }
 }
 
@@ -144,6 +225,8 @@ pub struct EngineState {
 
     // ---- 可变状态 ----
     pub download: Arc<Mutex<ModelDownload>>,
+    /// G5：进度聚合内部态（与 `download` 同生命周期，不进契约）。
+    download_progress: Arc<Mutex<DownloadProgressState>>,
     download_child: Arc<Mutex<Option<std::process::Child>>>,
     /// 档位降档控制器（《04》§8）—— 进程级单例 ⇒ 天然是"服务级"作用域。
     pub tier_ctl: Arc<TierDowngrade>,
@@ -240,7 +323,8 @@ impl EngineState {
             download_runner,
             refutes,
             contract_refutes,
-            download: Arc::new(Mutex::new(ModelDownload::default())),
+            download: Arc::new(Mutex::new(ModelDownload::load_persisted())),
+            download_progress: Arc::new(Mutex::new(DownloadProgressState::new())),
             download_child: Arc::new(Mutex::new(None)),
             tier_ctl: Arc::new(TierDowngrade::new(&effective_tier, esettings::env_bool("MIAO_NO_TIER_DOWNGRADE", false))),
         })
@@ -562,6 +646,9 @@ impl EngineState {
     // ---------------------------------------------------------------- 模型下载
 
     /// `modelDownloadView()`。
+    ///
+    /// 🔴 **只增不改**：前端所有下载态展示都从这里取值；既有字段名与语义一律保留，
+    ///    新增的进度/中断字段全部带 `| null`（取不到时为 null，前端不得补占位数字）。
     pub fn model_download_view(&self) -> Value {
         let d = self.lock_download();
         json!({
@@ -578,11 +665,34 @@ impl EngineState {
             // 界面据此**禁用按钮**（而不是让用户点一下换一条报错）。
             "runner": self.download_runner.to_string_lossy(),
             "runnerExists": self.download_runner.exists(),
+            // ---- G5：结构化进度（全部来自 `--progress-log`，null = 无真实来源）----
+            "percent": d.percent,
+            "receivedBytes": d.received_bytes,
+            "totalBytes": d.total_bytes,
+            "speedBps": d.speed_bps,
+            "etaMs": d.eta_ms,
+            "stage": d.stage,
+            "currentId": d.current_id,
+            // ---- G5：中断 / 续传 ----
+            // 🔴 `canResume` 在视图时**现算**（不存）：盘上有 `.part` 或 `.ready` 未覆盖全部选中条目
+            //    ⇒ true。这样即使进程重启、内存态清空，也能如实告诉界面「有东西可续」。
+            "canResume": self.can_resume_now(),
+            "interruptedReason": d.interrupted_reason,
         })
     }
 
+    /// 盘上此刻能否续传：模型根或运行时根下存在 `.part`，或存在未覆盖全部的就绪标记。
+    fn can_resume_now(&self) -> bool {
+        has_part_files(&self.model_root) || has_part_files(&paths::runtimes_dir())
+    }
+
     /// 启动「重新下载模型」。**立即返回** —— 下载要十几分钟，HTTP 挂不住。
-    pub fn start_model_download(&self) -> Result<Value, StoreError> {
+    ///
+    /// `fresh = true`（屏上「重新下载」）：先清掉 `.part` 续传断点再从头下；
+    /// `fresh = false`（屏上「继续下载」/ 首次下载）：沿用 `.part` 续传。
+    /// 🔴 续传由 `.part` + HTTP Range 天然完成 —— 前端**不需要**新协议，
+    ///    再调一次同一个端点即可（plan 关键决策三）。
+    pub fn start_model_download(&self, fresh: bool) -> Result<Value, StoreError> {
         {
             let d = self.lock_download();
             if d.state == "running" && !self.refutes.download_open {
@@ -602,10 +712,27 @@ impl EngineState {
             ));
         }
 
+        // 「重新下载」：清掉续传断点与已聚合进度，让本次从零开始。
+        if fresh {
+            clear_part_files(&self.model_root);
+            clear_part_files(&paths::runtimes_dir());
+            {
+                let mut p = self.download_progress.lock().unwrap_or_else(|p| p.into_inner());
+                *p = DownloadProgressState::new();
+            }
+        }
+
         let mut cmd = std::process::Command::new(&self.download_runner);
         cmd.arg("--fetch-models");
+        // G4：零配置装配总入口（裁定④）。带它 ⇒ 一次会话完成 python+源码+依赖+模型+解包+建链。
+        cmd.arg("--engine-bootstrap");
+        // 🔴 今天的产品调用漏了 `--extract` ⇒ `bin/llama/.../llama-server` 永远不会出现（G4 验收④）。
+        cmd.arg("--extract");
         cmd.arg("--root").arg(&self.model_root);
         cmd.arg("--manifest").arg(&self.model_manifest);
+        // G5：结构化进度（百分比/速度/剩余/阶段）走这里，不靠解析 stdout 文本（违反"不编造进度"纪律）。
+        let progress_log = paths::state_dir().join("engine-download-progress.jsonl");
+        cmd.arg("--progress-log").arg(&progress_log);
         cmd.env("MIAO_MODEL_ROOT", &self.model_root);
         cmd.stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
@@ -622,6 +749,18 @@ impl EngineState {
             d.exit_code = None;
             d.timed_out = false;
             d.tail = Vec::new();
+            // G5：重置进度快照（不显示上次的残留数字）。
+            d.percent = None;
+            d.received_bytes = None;
+            d.total_bytes = None;
+            d.speed_bps = None;
+            d.eta_ms = None;
+            d.stage = None;
+            d.current_id = None;
+            d.interrupted_reason = None;
+            // 🔴 `can_resume` 不在这里置 false：视图时现算 `can_resume_now()`，
+            //    即使刚点「继续」、`.part` 还在，也应如实显示可续。
+            d.persist();
         }
         println!(
             "[box-service] 模型下载已启动：{} --fetch-models → {}",
@@ -630,12 +769,18 @@ impl EngineState {
         );
 
         let dl = self.download.clone();
+        let dp = self.download_progress.clone();
+        let progress_path = progress_log.clone();
         if let Some(out) = child.stdout.take() {
             spawn_tail_reader(out, dl.clone());
         }
         if let Some(err) = child.stderr.take() {
             spawn_tail_reader(err, dl.clone());
         }
+        // G5：进度解析线程（独立线程，与 `spawn_tail_reader` 同一范式）：增量聚合 `.part` 进度
+        //    JSONL → `ModelDownload` 的 `percent` / `received_bytes` / `total_bytes` / `speed_bps` / `eta_ms`。
+        //    HTTP 侧只读聚合后的结构体，不阻塞；每条事件 O(1) 更新。
+        spawn_progress_reader(progress_path, dl.clone(), dp.clone());
 
         // 超时看护：到点**真杀**（只改状态不杀的话进程会一直在后台写盘，下次点重下就会和它撞）。
         // 🔴 杀与等待**分工**：本线程只 `kill()`（`&mut self`，不需要等它退出）；终态由下面的
@@ -643,6 +788,8 @@ impl EngineState {
         //    于是状态永远停在 `running`（D4/D6 会红）。
         let child_slot = self.download_child.clone();
         let dl2 = self.download.clone();
+        let model_root = self.model_root.clone();
+        let runtime_root = paths::runtimes_dir();
         let timeout_ms = MODEL_DOWNLOAD_TIMEOUT_MS;
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(timeout_ms as u64));
@@ -668,6 +815,15 @@ impl EngineState {
             };
             d.timed_out = true;
             d.tail.push(format!("✗ 下载超时（{} min），已终止", timeout_ms / 60_000));
+            // 超时 ⇒ 可续传的中断（盘上有 `.part`）。
+            let resumable = has_part_files(&model_root) || has_part_files(&runtime_root);
+            if resumable {
+                d.state = "interrupted".to_string();
+                d.interrupted_reason = Some("下载超时（超过 1 小时）；可继续下载补齐已下部分".to_string());
+            } else {
+                d.state = "error".to_string();
+            }
+            d.persist();
         });
 
         *self.download_child.lock().unwrap_or_else(|p| p.into_inner()) = Some(child);
@@ -675,6 +831,8 @@ impl EngineState {
         // 终态轮询线程：`try_wait()` 不阻塞，故超时看护随时能拿到锁去 `kill()`。
         let child_slot2 = self.download_child.clone();
         let dl3 = self.download.clone();
+        let model_root = self.model_root.clone();
+        let runtime_root = paths::runtimes_dir();
         std::thread::spawn(move || loop {
             let done: Option<i64> = {
                 let mut slot = child_slot2.lock().unwrap_or_else(|p| p.into_inner());
@@ -703,13 +861,30 @@ impl EngineState {
                     if d.state == "running" {
                         d.exit_code = Some(code);
                         d.finished_at = Some(model::now_iso_ms());
-                        d.state = if code == 0 && !d.timed_out { "done".to_string() } else { "error".to_string() };
+                        if code == 0 && !d.timed_out {
+                            d.state = "done".to_string();
+                        } else {
+                            // 非零退出：有 `.part` 即视为可续传的中断（断网 / 磁盘满 / 被强关）；
+                            // 否则是不可续传的失败（只能从头重下）。
+                            let resumable = has_part_files(&model_root) || has_part_files(&runtime_root);
+                            if resumable {
+                                d.state = "interrupted".to_string();
+                                if d.interrupted_reason.is_none() {
+                                    d.interrupted_reason = Some(
+                                        "下载中断；已完成的部分不会丢失，可继续下载补齐".to_string(),
+                                    );
+                                }
+                            } else {
+                                d.state = "error".to_string();
+                            }
+                        }
                         println!(
                             "[box-service] 模型下载结束：state={} exitCode={}{}",
                             d.state,
                             code,
                             if d.timed_out { "（超时被杀）" } else { "" }
                         );
+                        d.persist();
                     }
                     return;
                 }
@@ -799,6 +974,182 @@ fn round_div(v: i64, d: i64) -> i64 {
 fn default_model_dir() -> PathBuf {
     let d = paths::engine_dir();
     d.parent().map(PathBuf::from).unwrap_or(d)
+}
+
+/// `ModelDownload` 的持久化（G5：中断态需跨进程重启存活）。
+impl ModelDownload {
+    /// 写 `state/engine-download.json`。失败静默（磁盘不可写不应让主流程崩）。
+    fn persist(&self) {
+        let p = paths::state_dir().join("engine-download.json");
+        if let Ok(s) = serde_json::to_string(self) {
+            let _ = std::fs::write(&p, s);
+        }
+    }
+
+    /// 从 `state/engine-download.json` 读回；读不到 / 解析失败 ⇒ 默认态（`idle`）。
+    fn load_persisted() -> ModelDownload {
+        let p = paths::state_dir().join("engine-download.json");
+        match std::fs::read_to_string(&p) {
+            Ok(s) => serde_json::from_str(&s).unwrap_or_else(|_| ModelDownload::default()),
+            Err(_) => ModelDownload::default(),
+        }
+    }
+}
+
+impl DownloadProgressState {
+    /// 推入样本窗并算瞬时速度 / 剩余时间。
+    ///
+    /// 采样窗保留最近 ~15s 的样本；速度是「窗首尾的字节差 / 时间差」—— 自然抗抖，
+    /// 不会因单条事件的一次跳变就把速度刷成天文数字。
+    fn recompute(&mut self, now_ms: i64, received: u64, total: u64) -> (Option<f64>, Option<i64>) {
+        self.samples.push((now_ms, received));
+        while self.samples.len() > 2 && (now_ms - self.samples[0].0) > 15000 {
+            self.samples.remove(0);
+        }
+        if self.samples.len() < 2 {
+            return (None, None);
+        }
+        let (t0, b0) = self.samples[0];
+        let (t1, b1) = *self.samples.last().unwrap();
+        let dt = (t1 - t0) as f64 / 1000.0;
+        if dt <= 0.0 {
+            return (None, None);
+        }
+        let speed = (b1 - b0) as f64 / dt;
+        if speed <= 0.0 {
+            return (None, None);
+        }
+        if total == 0 {
+            return (Some(speed), None);
+        }
+        let remain = total.saturating_sub(received) as f64;
+        let eta = (remain / speed) * 1000.0;
+        (Some(speed), Some(eta as i64))
+    }
+}
+
+/// 递归扫描 `root`：发现 `.part` 续传断点 ⇒ 返回 true（不清除）。
+fn has_part_files(root: &Path) -> bool {
+    walk_parts(root, false)
+}
+
+/// 递归扫描 `root`：发现 `.part` 即删除（「重新下载」清断点）。
+fn clear_part_files(root: &Path) {
+    walk_parts(root, true);
+}
+
+fn walk_parts(root: &Path, clear: bool) -> bool {
+    let mut found = false;
+    let entries = match std::fs::read_dir(root) {
+        Ok(e) => e,
+        Err(_) => return found,
+    };
+    for ent in entries.flatten() {
+        let p = ent.path();
+        let is_dir = match p.metadata() {
+            Ok(m) => m.is_dir(),
+            Err(_) => false,
+        };
+        if is_dir {
+            if walk_parts(&p, clear) {
+                found = true;
+                if !clear {
+                    return true;
+                }
+            }
+        } else if p
+            .file_name()
+            .map(|n| n.to_string_lossy().ends_with(".part"))
+            .unwrap_or(false)
+        {
+            if clear {
+                let _ = std::fs::remove_file(&p);
+            } else {
+                return true;
+            }
+        }
+    }
+    found
+}
+
+/// 进度解析线程（G5）：增量读 `--progress-log` JSONL，聚合进 `ModelDownload`。
+///
+/// 与 `spawn_tail_reader` 同一范式：独立线程，只写聚合后的结构体，不阻塞下载侧。
+/// 文件被 truncate 重写（新一轮下载 / fresh 重下）时 `offset` 自动归零，从新内容起读。
+fn spawn_progress_reader(
+    path: PathBuf,
+    dl: Arc<Mutex<ModelDownload>>,
+    dp: Arc<Mutex<DownloadProgressState>>,
+) {
+    std::thread::spawn(move || {
+        use std::io::{Read, Seek, SeekFrom};
+        let mut offset: u64 = 0;
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let len = match std::fs::metadata(&path) {
+                Ok(m) => m.len(),
+                Err(_) => continue,
+            };
+            if len < offset {
+                offset = 0; // 被 truncate 重写（新一轮下载）
+            }
+            if len == offset {
+                continue;
+            }
+            let mut f = match std::fs::File::open(&path) {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+            if f.seek(SeekFrom::Start(offset)).is_err() {
+                continue;
+            }
+            let mut buf = Vec::new();
+            if f.read_to_end(&mut buf).is_err() {
+                continue;
+            }
+            offset = len;
+            let text = String::from_utf8_lossy(&buf);
+            let now = model::now_ms();
+            for line in text.lines() {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                let e: ProgressEvent = match serde_json::from_str(line) {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let (received, total, _opt) = {
+                    let mut p = dp.lock().unwrap_or_else(|p| p.into_inner());
+                    p.ingest(&e, now)
+                };
+                let mut d = dl.lock().unwrap_or_else(|p| p.into_inner());
+                if e.phase == "stage" {
+                    // 阶段标记事件：更新当前阶段（不碰字节账、不更新 current_id）。
+                    d.stage = match e.id.as_str() {
+                        "runtime" => Some("stage1".to_string()),
+                        "models" => Some("stage2".to_string()),
+                        other => Some(other.to_string()),
+                    };
+                } else {
+                    d.current_id = Some(e.id.clone());
+                    let (speed, eta) = {
+                        let mut p = dp.lock().unwrap_or_else(|p| p.into_inner());
+                        p.recompute(now, received, total)
+                    };
+                    d.received_bytes = Some(received);
+                    d.total_bytes = if total > 0 { Some(total) } else { None };
+                    d.percent = if total > 0 {
+                        Some((received as f64 / total as f64) * 100.0)
+                    } else {
+                        None
+                    };
+                    d.speed_bps = speed;
+                    d.eta_ms = eta;
+                }
+            }
+        }
+    });
 }
 
 /// 下载子进程输出 → 环形 tail（按行拆；`\r` 覆盖式进度也算分隔符）。

@@ -32,6 +32,9 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
+// G2：url / sha256 / 解包参数一律从 `engine/runtime.manifest.json` 取（收口，见 asset-source.mjs 头注）
+import { mirrorUrls, readRuntimeManifest, resolveUrl, runtimeAsset, runtimeAssetForPlatform, verifyArchive } from './asset-source.mjs';
+
 import { extractAtomic } from './atomic-extract.mjs';
 import { runtimesDir } from './runtime-root.mjs';
 
@@ -57,10 +60,23 @@ function pyTriple() {
 }
 
 const PY_TRIPLE = pyTriple();
-const PY_URL = process.env.MIAO_PY_URL
-  || `https://mirror.nju.edu.cn/github-release/astral-sh/python-build-standalone/${PY_TAG}/cpython-${PY_VERSION}%2B${PY_TAG}-${PY_TRIPLE}-install_only.tar.gz`;
-const SRC_URL = process.env.MIAO_SRC_URL
-  || `https://codeload.github.com/zyddnys/manga-image-translator/tar.gz/${ENGINE_COMMIT}`;
+
+/**
+ * G2：**清单是唯一事实源**（收口见 `asset-source.mjs` 头注）。Python 运行时与引擎源码的
+ * 下载 url、sha256、解包参数全部来自 `engine/runtime.manifest.json`；本文件原来自己写了
+ * 一份 url，换版本 / 换通道要改多处 —— 漏一处就是「清单说的和实际下的不是一个东西」。
+ */
+const PY_ASSET = runtimeAssetForPlatform('python');
+const SRC_ASSET = runtimeAsset('engine_source');
+
+/** url 可被环境变量覆盖（排障时指向自备归档）；覆盖即放弃清单校验，见 `downloadAsset`。 */
+const PY_URL_OVERRIDE = process.env.MIAO_PY_URL || '';
+const SRC_URL_OVERRIDE = process.env.MIAO_SRC_URL || '';
+const PY_URL = process.env.MIAO_PY_URL || resolveUrl(PY_ASSET.url);
+
+const SRC_URL = process.env.MIAO_SRC_URL || resolveUrl(SRC_ASSET.url);
+  // G2：引擎源码的 url 已改为从清单取（上一行）。旧硬编码已作废，注释掉以免留悬空表达式：
+  // zydnnys/manga-image-translator/tar.gz/${ENGINE_COMMIT}/zyddnys/manga-image-translator/tar.gz/${ENGINE_COMMIT}`;
 
 const PY_DIR = path.join(RT, 'python-3.11');
 const VENV_DIR = path.join(RT, 'venv');
@@ -100,6 +116,34 @@ async function existsNonEmpty(dir) {
  */
 async function sourceReady() {
   return fs.existsSync(path.join(SRC_DIR, 'server', 'main.py'));
+}
+
+/**
+ * 下载一条**清单资产**：按 `mirrorUrls()` 的顺序逐个源试，成功后按清单校验 sha256。
+ *
+ * 🔴 覆盖了 url 就**不能**拿清单里的 sha256 去校验（那份哈希只对清单里那个文件成立），
+ *   这种情况下必须把「跳过校验」打出来 —— 否则用户以为验过了。
+ * 🔴 镜像回退也是 G2 收口的一部分：原来 `download()` 直连，codeload 在部分网络下不通，
+ *   而 ghfast 的回退规则只存在于 `install-engine-deps.mjs` 里（同一件事两处写法）。
+ */
+async function downloadAsset(asset, dest, label, overrideUrl) {
+  const urls = overrideUrl ? [overrideUrl] : mirrorUrls(asset.url);
+  let last;
+  for (const u of urls) {
+    try {
+      await download(u, dest);
+      if (overrideUrl) {
+        log(`  ⚠ ${label} 用了 URL 覆盖 ⇒ 跳过清单 sha256 校验（清单里的哈希只对清单里那个文件成立）`);
+      } else {
+        verifyArchive(dest, asset.sha256, asset.id);
+      }
+      return dest;
+    } catch (e) {
+      last = e;
+      if (urls.length > 1) log(`  [换源] ${label}：${u} 失败（${e.message}）`);
+    }
+  }
+  throw new Error(`${label} 下载失败（试了 ${urls.length} 个源）：${last && last.message}`);
 }
 
 /** 流式下载（支持断点续传；失败重试 3 次）。 */
@@ -167,7 +211,7 @@ async function installPython(force) {
   const cache = path.join(CACHE, path.basename(decodeURIComponent(PY_URL)));
   log(`Python ${PY_VERSION}（${PY_TRIPLE}）`);
   log(`  URL: ${PY_URL}`);
-  await download(PY_URL, cache);
+  await downloadAsset(PY_ASSET, cache, 'Python 运行时', PY_URL_OVERRIDE);
   log('  解包…');
   // 校验放进 `verify`：**先验后提交** —— 归档不对时 `PY_DIR` 一个字节都不动（D3）
   extract(cache, PY_DIR, {
@@ -200,7 +244,7 @@ async function installSource(force) {
   if (!force && await sourceReady()) { log(`[跳过] 引擎源码已就位：${SRC_DIR}`); return; }
   const cache = path.join(CACHE, `manga-translator-${ENGINE_COMMIT.slice(0, 12)}.tar.gz`);
   log(`引擎源码 commit ${ENGINE_COMMIT.slice(0, 12)}`);
-  await download(SRC_URL, cache);
+  await downloadAsset(SRC_ASSET, cache, '引擎源码', SRC_URL_OVERRIDE);
   log('  解包…');
   // 同上：源码不完整（归档不对 / 上游改了结构）时**不提交**，`SRC_DIR` 保持原样
   extract(cache, SRC_DIR, {

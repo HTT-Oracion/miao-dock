@@ -28,6 +28,7 @@ use super::model_store::{
     ensure_models, link_models, verify_hf_cache, verify_models, LinkResult, Manifest, ModelStoreError,
     ProgressEvent,
 };
+use super::runtime_setup::{run_bootstrap, to_store_error};
 
 use crate::paths;
 
@@ -45,6 +46,10 @@ struct Args {
     link_base: Option<PathBuf>,
     report: Option<PathBuf>,
     progress_log: Option<PathBuf>,
+    /// G4：零配置装配总入口（裁定④）：下载 + 解包 + 建 venv + 装依赖 + 打补丁 + 解包 llama.cpp + 建链。
+    engine_bootstrap: bool,
+    /// G4：只跑到第几阶段（`--stage N`，缺省 = 不筛，与今天等价）。
+    max_stage: Option<u8>,
 }
 
 fn parse_args(argv: &[String]) -> Result<Args, String> {
@@ -62,6 +67,8 @@ fn parse_args(argv: &[String]) -> Result<Args, String> {
         link_base: None,
         report: None,
         progress_log: None,
+        engine_bootstrap: false,
+        max_stage: None,
     };
     let mut i = 0usize;
     while i < argv.len() {
@@ -76,6 +83,21 @@ fn parse_args(argv: &[String]) -> Result<Args, String> {
             "--link-base" => { out.link_base = Some(PathBuf::from(next().ok_or("--link-base 缺值")?)); i += 1; }
             "--report" => { out.report = Some(PathBuf::from(next().ok_or("--report 缺值")?)); i += 1; }
             "--progress-log" => { out.progress_log = Some(PathBuf::from(next().ok_or("--progress-log 缺值")?)); i += 1; }
+            // G4：阶段筛选。**在 CLI 层翻译成 id 列表**（见下面 ids 那段的说明），
+            // 而不是给 `select_files` 加参数 —— 那个函数有四个调用点，改签名会让
+            // 「默认不筛」变成「每个调用点各自记得传 None」，漏一个就静默下错东西。
+            "--stage" => {
+                let raw = next().ok_or("--stage 缺值")?;
+                let n = raw.parse::<u8>().map_err(|_| format!("--stage 要一个正整数，收到「{raw}」"))?;
+                if n == 0 { return Err("--stage 从 1 起（1 = 先可用，2 = 后完整）".to_string()); }
+                out.max_stage = Some(n);
+                i += 1;
+            }
+            // G4：零配置装配总入口（裁定④）。与 `--extract` 一起传 ⇒ 产品路径也能产出 llama-server。
+            "--engine-bootstrap" => {
+                out.engine_bootstrap = true;
+                i += 1;
+            }
             "--check" => out.check = true,
             "--extract" => out.extract = true,
             "--link" => out.link_only = true,
@@ -220,9 +242,80 @@ pub fn run(argv: &[String]) -> i32 {
     let commit: String = manifest.engine_commit.chars().take(12).collect();
     println!("清单：v{} · 引擎 commit {} · 范围：{}", manifest.manifest_version, commit, scope);
 
-    let ids: Option<Vec<String>> = if args.ids.is_empty() { None } else { Some(args.ids.clone()) };
-    let ids_ref = ids.as_deref();
+    // G4：零配置装配总入口（裁定④）。把「四步手工装配」串成一次会话、一条进度流。
+    //   🔴 与 `--extract` 配合 ⇒ 产品路径也能产出 `bin/llama/llama-b11417/llama-server[.exe]`。
+    //   🔴 失败**不回滚**已就绪部分：重跑会续做（.ready 幂等 + extract 先解临时目录）。
+    if args.engine_bootstrap {
+        use std::cell::RefCell;
+        let rt_manifest_path = paths::runtime_manifest();
+        let rt_manifest = match load_manifest(&rt_manifest_path) {
+            Ok(m) => m,
+            Err(e) => return fail(&e),
+        };
+        let pip_index = std::env::var("MIAO_PY_INDEX")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "https://pypi.tuna.tsinghua.edu.cn/simple".to_string());
+        let sink = RefCell::new(ProgressSink::new(&args.progress_log));
+        let mut on_phase = |stage: &str, msg: &str| {
+            println!("[{}] {}", stage, msg);
+            sink.borrow_mut().push(&ProgressEvent {
+                id: stage.to_string(),
+                phase: "stage".to_string(),
+                received: 0,
+                total: None,
+                url: None,
+                resumed: false,
+            });
+        };
+        let rt_dir = paths::runtimes_dir();
+        match run_bootstrap(
+            &rt_manifest,
+            &manifest,
+            &rt_dir,
+            &root,
+            &rt_dir,
+            args.max_stage,
+            &pip_index,
+            &mut on_phase,
+            &mut |e: ProgressEvent| sink.borrow_mut().push(&e),
+        ) {
+            Ok(()) => {
+                println!("✓ 装配完成：运行时应就绪（boxsvc --check-runtime-gate real 应全绿）");
+                return 0;
+            }
+            Err(e) => return fail(&to_store_error(e)),
+        }
+    }
+
+    let mut ids: Option<Vec<String>> = if args.ids.is_empty() { None } else { Some(args.ids.clone()) };
     let set_ref = args.set.as_deref();
+
+    // G4：阶段筛选在**这一层**翻译成 id 列表（而不是给 `select_files` 加参数）。
+    //
+    // 顺带白拿一条语义：`--id` 路径**不做二次平台过滤**，而这里的 id 已经是
+    // `select_files_staged` 按当前平台筛过的 ⇒ 传下去的一定是本平台适用的那几条。
+    if let Some(max) = args.max_stage {
+        // 🔴 这里所在函数返回 `i32`（不是 Result）⇒ 用本文件既有的 `match … return fail(&e)`
+        //    范式，**不能写 `?`** —— 那是个编译错误（E0277），而"顺手加个 ?"是最容易犯的。
+        let picked =
+            match super::model_store::select_files_staged(&manifest, ids.as_deref(), set_ref, Some(max)) {
+                Ok(v) => v,
+                Err(e) => return fail(&e),
+            };
+        if picked.is_empty() {
+            return fail(&ModelStoreError::with_detail(
+                "MODEL_STAGE_EMPTY",
+                format!(
+                    "stage ≤ {max} 在本平台没有任何条目（platform={}）",
+                    super::model_store::platform_key()
+                ),
+                json!({ "stage": max }),
+            ));
+        }
+        ids = Some(picked.into_iter().map(|f| f.id).collect());
+    }
+    let ids_ref = ids.as_deref();
 
     // ---------------------------------------------------------------- 只校验
     if args.check {

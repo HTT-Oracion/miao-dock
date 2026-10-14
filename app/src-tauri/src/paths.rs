@@ -52,7 +52,14 @@ fn walk_up_for_root(start: Option<&Path>) -> Option<PathBuf> {
 /// 🔴 这是 A2 的**另一半事实**：`tauri.conf.json` 的 `bundle.resources` 必须把这里的每一项
 /// 都打进包（`check:bundle` 的 W6 钉住），否则 A1 找到资源目录也是空的 —— 两边分开维护的
 /// 失效形态就是「配置看着有、运行时拿不到」，而它在 dev 态**永远测不出来**。
-pub const REQUIRED_ASSETS: &[&str] = &["engine/models.manifest.json"];
+pub const REQUIRED_ASSETS: &[&str] = &[
+    "engine/models.manifest.json",
+    // G2：运行时清单（Python 运行时 + 引擎源码）。🔴 它与模型清单是**同等必需**的 ——
+    // 「零配置」的全部依据就是它；漏配的形态是"包看起来正常、点开始下载才报清单读不到"。
+    "engine/runtime.manifest.json",
+    // G4：源码补丁应用事实源（零配置下 Rust 亲自重放，产品无 node）。漏配 ⇒ 装出的引擎未打补丁。
+    "engine/patches.json",
+];
 
 /// 资源目录（`$RESOURCE`）：`MIAO_RESOURCE_DIR` 覆盖，否则从**本可执行文件**推导。
 ///
@@ -328,6 +335,52 @@ pub fn model_manifest() -> PathBuf {
         return p;
     }
     repo_root().join("engine").join("models.manifest.json")
+}
+
+/// 生效的**运行时清单**（G2：`engine/runtime.manifest.json`）—— 与 [`model_manifest`] 同一套推导。
+///
+/// 🔴 为什么必须**两份清单**而不是把运行时条目并进 `models.manifest.json`：
+/// 那份清单的每个字节都要过 C5 的「随包 0 权重」断言，而运行时清单里全是**可执行环境**，
+/// 两者的审查口径不同（一份审模型许可，一份审 GPL 源码义务）。混在一起会让两个断言都变钝。
+pub fn runtime_manifest() -> PathBuf {
+    if let Some(p) = env_path("MIAO_RUNTIME_MANIFEST") {
+        return p;
+    }
+    if let Some(p) = asset("engine/runtime.manifest.json") {
+        return p;
+    }
+    repo_root().join("engine").join("runtime.manifest.json")
+}
+
+/// 某条资产的**生效 URL**：`MIAO_ASSET_BASE` 配了合法前缀就换源，否则用清单里的原值。
+///
+/// 🔴 为什么前缀非法时**不静默回落**：那属于配置错误，而回落的表现是"照公网原样下载" ——
+/// 内网用户会以为配好了、实际流量全跑到了公网。宁可下载前就报一条清楚的错。
+pub fn asset_base() -> Result<Option<String>, String> {
+    let Ok(raw) = std::env::var("MIAO_ASSET_BASE") else {
+        return Ok(None);
+    };
+    let t = raw.trim().trim_end_matches('/');
+    if t.is_empty() {
+        return Ok(None);
+    }
+    if !(t.starts_with("http://") || t.starts_with("https://")) {
+        return Err(format!(
+            "MIAO_ASSET_BASE 必须是 http(s) 前缀（不带 scheme 的值在不同平台上语义不同，拼出来的 URL 验不了），收到「{raw}」"
+        ));
+    }
+    Ok(Some(t.to_string()))
+}
+
+/// 生效 URL：有合法前缀 ⇒ `<前缀>/<清单 url 的最后一段>`；否则原值。
+pub fn asset_url(manifest_url: &str) -> String {
+    match asset_base() {
+        Ok(Some(prefix)) => {
+            let name = manifest_url.rsplit('/').next().unwrap_or(manifest_url);
+            format!("{prefix}/{name}")
+        }
+        _ => manifest_url.to_string(),
+    }
 }
 
 /// 引擎启动入口脚本（`MIAO_ENGINE_ENTRY` 覆盖，默认引擎目录下的 `server/main.py`）。

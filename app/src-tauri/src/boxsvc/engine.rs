@@ -34,6 +34,8 @@ pub mod supervisor;
 // ---- A3d：模型管理内核 + 它的 CLI（移植自 engine/model-store.mjs · engine/scripts/fetch-models.mjs）----
 pub mod fetch_models;
 pub mod model_store;
+// ---- G4：零配置装配编排（裁定④）—— 把「仓库侧四步手工装配」串成产品内一条阶段机 ----
+pub mod runtime_setup;
 // ---- F5.6：引擎组的判定/合成/持久化层（对应 Node 的 config.mjs 引擎段 + settings/*.mjs）----
 pub mod idle_policy;
 pub mod model_status;

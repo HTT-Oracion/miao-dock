@@ -380,7 +380,7 @@ async fn route(shell: &Arc<Shell>, m: Match, uri: &Uri, headers: &HeaderMap, bod
         "POST /api/v1/engine/settings" => engine_settings(shell, body).await,
         "POST /api/v1/engine/unload" => engine_unload(shell).await,
         "POST /api/v1/engine/models/verify" => models_verify(shell).await,
-        "POST /api/v1/engine/models/download" => models_download(shell).await,
+        "POST /api/v1/engine/models/download" => models_download(shell, uri).await,
         // 声明为 Migrated 但没有实现 —— 由 `check:routes` 的 `ROUTES.migrated` 断言抓出来。
         other => super::http::store_err(&StoreError::new(
             "INTERNAL",
@@ -787,8 +787,11 @@ async fn models_verify(shell: &Arc<Shell>) -> Response {
 /// 语义是**启动**而非**等待**：立即返回 `{ ok, download }`，进度看 `/engine/status`。
 /// 🔴 已经在跑 ⇒ **409**（`DOWNLOAD_IN_PROGRESS`），不返回 200「已经在下了」：
 ///    后者让界面以为这次点击生效了，而用户真正需要知道的是"我这次什么都没触发"。
-async fn models_download(shell: &Arc<Shell>) -> Response {
-    match shell.engine.start_model_download() {
+///
+/// `?fresh=1` = 屏上「重新下载」（清 `.part` 从头下）；缺省 = 「继续下载」/ 首次（续传）。
+async fn models_download(shell: &Arc<Shell>, uri: &Uri) -> Response {
+    let fresh = query_get(uri, "fresh").map(|v| v == "1" || v == "true").unwrap_or(false);
+    match shell.engine.start_model_download(fresh) {
         Ok(view) => super::http::json_body(200, &json!({ "ok": true, "started": true, "download": view })),
         Err(e) => super::http::store_err(&e),
     }

@@ -1,0 +1,115 @@
+{
+  "manifestVersion": 1,
+  "updatedAt": "2026-10-14",
+  "engineCommit": "441d07c59a735c7db3db2e7bb8b07920afd8a9cc",
+  "versions": {
+    "python": "3.11.17",
+    "pythonTag": "20261003",
+    "note": "🔴 这两个值是 `engine/VERSIONS.lock` §2 的机器可读副本。清单里放它们，是为了让「Python 版本」有**一处**可被代码读到的来源：`setup-engine.mjs` 原来把版本写死在常量里，本文件与那份 lock 各有一份 —— 换版本漏改一处，装出来的解释器就和文档说的不是同一个。本文件与 `VERSIONS.lock` 的一致性由 `check:runtime-manifest` 断言（比对时把 VERSIONS.lock 的对应行解析出来）。"
+  },
+  "purpose": "引擎**运行时本体**的资产清单（G2 · 裁定 ⑤：零自建、零服务器，全部走公网现成源）。今天这两件事由仓库侧的 `engine/scripts/setup-engine.mjs` 用 node 跑（要仓库 + Node ≥22 + 命令行）；本清单让**产品自己**下载并解包，用户机不需要装任何环境。字段与 `models.manifest.json` 逐字同构，因此 Rust 侧复用同一个 `FileEntry` 解析器（`boxsvc/engine/model_store.rs`），不新写第二套清单结构。",
+  "channel": {
+    "env": "MIAO_ASSET_BASE",
+    "note": "**通道单点**（G2 验收②）：留空 = 用每条的 `url`（今天的行为，逐字节等价）；非空 = 把 `url` 换成 `<前缀>/<该条的文件名>`。换源 / 内网 / 离线盘都只改这一个环境变量，代码与清单都不用动。方案 C（对象存储）将来开放时，接的就是这一处。",
+    "fileNameRule": "取 `url` 的最后一段；前缀与文件名之间的斜杠由实现补齐（前缀末尾的斜杠可带可不带）。"
+  },
+  "licenseNotice": "🔴 本清单里的两项都**不是**我们自己的资产，对外分发各有义务：① Python 运行时（python-build-standalone / astral-sh）为 MIT + PSF 自带的许可文本随归档分发；② 引擎源码（manga-image-translator）为 **GPL-3.0-only** —— 对外分发必须同时提供**对应版本的完整源码与许可声明**（本清单的 `engineCommit` 就是那把钥匙，`engine/VERSIONS.lock` §1 与 E5 的法务结论都指向它）。",
+  "sets": {
+    "python": {
+      "files": [
+        "python_runtime_win_x64",
+        "python_runtime_win_arm64",
+        "python_runtime_darwin_arm64",
+        "python_runtime_darwin_x64"
+      ],
+      "note": "四个平台变体互为替代（按 `platform` 过滤），一次只会下其中一个。"
+    },
+    "source": {
+      "files": [
+        "engine_source"
+      ],
+      "note": "无 `platform` ⇒ 所有平台共用同一份上游 commit 归档。"
+    }
+  },
+  "files": [
+    {
+      "id": "python_runtime_win_x64",
+      "set": "python",
+      "platform": "win32-x64",
+      "dest": ".download-cache/python-3.11.17-x86_64-pc-windows-msvc.tar.gz",
+      "extractTo": "python-3.11",
+      "extractStrip": 1,
+      "sha256": "0f7defa7a0ed99b61e0df0bba5027474711521f1307cc3830c2f456401beeed5",
+      "sizeBytes": 48217207,
+      "url": "https://mirror.nju.edu.cn/github-release/astral-sh/python-build-standalone/20261003/cpython-3.11.17%2B20261003-x86_64-pc-windows-msvc-install_only.tar.gz",
+      "sources": [
+        "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.11.17%2B20261003-x86_64-pc-windows-msvc-install_only.tar.gz"
+      ],
+      "license": "MIT + PSF（python-build-standalone · astral-sh）",
+      "note": "解包后解释器 = `<extractTo>/python.exe`（Windows）。install_only 归档的顶层目录是 `python/` ⇒ extractStrip=1。与 `setup-engine.mjs` 的 `PY_DIR`/`pyExeRel()` 逐字一致（同一落点、同一判据）。⚠️ 换 Windows 架构或 Python 版本时，`sha256`/`sizeBytes`/`url` **三处一起改**，并同步 `engine/VERSIONS.lock` §2。"
+    },
+    {
+      "id": "python_runtime_win_arm64",
+      "set": "python",
+      "platform": "win32-arm64",
+      "dest": ".download-cache/python-3.11.17-aarch64-pc-windows-msvc.tar.gz",
+      "extractTo": "python-3.11",
+      "extractStrip": 1,
+      "sha256": "4a3aac3c777333185a53e866b75d9bfe411b4e89a9230019bccbe5e58ca277e8",
+      "sizeBytes": 45334008,
+      "url": "https://mirror.nju.edu.cn/github-release/astral-sh/python-build-standalone/20261003/cpython-3.11.17%2B20261003-aarch64-pc-windows-msvc-install_only.tar.gz",
+      "sources": [
+        "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.11.17%2B20261003-aarch64-pc-windows-msvc-install_only.tar.gz"
+      ],
+      "license": "MIT + PSF（python-build-standalone · astral-sh）",
+      "note": "Windows on ARM 的解释器。x64 机子上装 ARM 版解释器只能跑 ARM64 的扩展 ⇒ 引擎依赖（torch 等）没有对应 wheel 时这条路走不通，装配阶段会如实报依赖装不上，不会假装成功。"
+    },
+    {
+      "id": "python_runtime_darwin_arm64",
+      "set": "python",
+      "platform": "darwin-arm64",
+      "dest": ".download-cache/python-3.11.17-aarch64-apple-darwin.tar.gz",
+      "extractTo": "python-3.11",
+      "extractStrip": 1,
+      "sha256": "3663b71c18364eccfbad74c4f21f9f6149e40b07329cd776287410cc1da5d612",
+      "sizeBytes": 27099994,
+      "url": "https://mirror.nju.edu.cn/github-release/astral-sh/python-build-standalone/20261003/cpython-3.11.17%2B20261003-aarch64-apple-darwin-install_only.tar.gz",
+      "sources": [
+        "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.11.17%2B20261003-aarch64-apple-darwin-install_only.tar.gz"
+      ],
+      "license": "MIT + PSF（python-build-standalone · astral-sh）",
+      "note": "解包后解释器 = `<extractTo>/bin/python3`（POSIX）。M1/M2/M3 的目标平台。"
+    },
+    {
+      "id": "python_runtime_darwin_x64",
+      "set": "python",
+      "platform": "darwin-x64",
+      "dest": ".download-cache/python-3.11.17-x86_64-apple-darwin.tar.gz",
+      "extractTo": "python-3.11",
+      "extractStrip": 1,
+      "sha256": "4338dc0c2b954f20ca6437406db5b806626c69bae3cafeec43f1b7d57dd72a88",
+      "sizeBytes": 26992271,
+      "url": "https://mirror.nju.edu.cn/github-release/astral-sh/python-build-standalone/20261003/cpython-3.11.17%2B20261003-x86_64-apple-darwin-install_only.tar.gz",
+      "sources": [
+        "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.11.17%2B20261003-x86_64-apple-darwin-install_only.tar.gz"
+      ],
+      "license": "MIT + PSF（python-build-standalone · astral-sh）",
+      "note": "Intel Mac。与 arm64 条目**字节不同**（27.0 MB vs 27.1 MB）⇒ 平台判据错一条就是「解包出来的解释器跑不动」，这也是 `platform` 必填、且判据只许有一处（`model_store::platform_matches`）的原因。"
+    },
+    {
+      "id": "engine_source",
+      "set": "source",
+      "dest": ".download-cache/manga-translator-441d07c5.tar.gz",
+      "extractTo": "src",
+      "extractStrip": 1,
+      "sha256": "4163ade8895653f33ccc38d7c594b1df62ee1b69401be997065c5a845a4a200d",
+      "sizeBytes": 56098334,
+      "url": "https://codeload.github.com/zydnnys/manga-image-translator/tar.gz/441d07c59a735c7db3db2e7bb8b07920afd8a9cc",
+      "sources": [
+        "https://ghfast.top/https://codeload.github.com/zydmnys/manga-image-translator/tar.gz/441d07c59a735c7db3db2e7bb8b07920afd8a9cc"
+      ],
+      "license": "GPL-3.0-only（上游 manga-image-translator）",
+      "note": "🔴 **本条没有 `platform` 字段** ⇒ 所有平台共用同一份归档（上游 commit 固定，与 `engine/VERSIONS.lock` §1 同一个 `engineCommit`）。解包到 `<落点>/src`，顶层目录是 `manga-image-translator-<commit7>/` ⇒ extractStrip=1；就绪判据 = `src/server/main.py` 在盘（**不是**「src 非空」—— 建链接会先把 `src/models/` 填上，那时 src 非空但根本没有源码）。\n\n⚠️ **这一条的 `sha256` 有性质上的例外**，必须知道才不会被它绊住：`sha256` 与 `sizeBytes` 是 **2026-10-14 实测**的，但 codeload 的源码归档是**按需重新打包**的（gzip 实现/压缩级别变化会改字节，内容不变）。所以：\n  · 校验不符时**不要**当成「被篡改」去报警 —— 报错要说清是「源码归档字节与 2026-10-14 的实测不符（上游重新打包）」，并给出处置：`MIAO_ASSET_BASE` 指向自备的固定归档，或改用上游 release/commit zip。\n  · 模型权重与 llama.cpp 那些条目**没有**这个例外（它们是 release 资产 / HF 文件，字节稳定）。\n  · 这条已登记为台账风险 **G-A6**。"
+    }
+  ]
+}

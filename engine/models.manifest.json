@@ -124,6 +124,7 @@
     {
       "id": "sakura_1_5b_fp16",
       "set": "llm",
+      "stage": 2,
       "dest": "models/sakura/sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
       "sha256": "eb0f76c7d52710329c4071d8fbbef5c51f9a4f047c066472e6c7063a53e45764",
       "sizeBytes": 3560416256,
@@ -137,6 +138,7 @@
     {
       "id": "llama_cpp_macos_arm64",
       "set": "runtime",
+      "stage": 2,
       "platform": "darwin-arm64",
       "dest": "bin/llama-b11417-macos-arm64.tar.gz",
       "extractTo": "bin/llama/llama-b11417",
@@ -153,6 +155,7 @@
     {
       "id": "llama_cpp_win_cuda_x64",
       "set": "runtime",
+      "stage": 2,
       "platform": "win32-x64",
       "dest": "bin/llama-b11417-win-cuda-12.4-x64.zip",
       "extractTo": "bin/llama/llama-b11417",
@@ -169,6 +172,7 @@
     {
       "id": "cudart_win_cuda_x64",
       "set": "runtime",
+      "stage": 2,
       "platform": "win32-x64",
       "dest": "bin/cudart-llama-win-cuda-12.4-x64.zip",
       "extractTo": "bin/llama/llama-b11417",
@@ -185,6 +189,7 @@
     {
       "id": "nllb_600m_config",
       "set": "translation",
+      "stage": 2,
       "dest": "models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/91ba54326eccfdb17a06a7d110df3d71f39b84b8",
       "linkTo": "models/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/91ba54326eccfdb17a06a7d110df3d71f39b84b8",
       "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "config.json" },
@@ -200,6 +205,7 @@
     {
       "id": "nllb_600m_generation_config",
       "set": "translation",
+      "stage": 2,
       "dest": "models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/4c6d168201607a22255bee55a6ed092b0e3ed7a1",
       "linkTo": "models/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/4c6d168201607a22255bee55a6ed092b0e3ed7a1",
       "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "generation_config.json" },
@@ -215,6 +221,7 @@
     {
       "id": "nllb_600m_pytorch_model",
       "set": "translation",
+      "stage": 2,
       "dest": "models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/c266c2cfd19758b6d09c1fc31ecdf1e485509035f6b51dfe84f1ada83eefcc42",
       "linkTo": "models/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/c266c2cfd19758b6d09c1fc31ecdf1e485509035f6b51dfe84f1ada83eefcc42",
       "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "pytorch_model.bin" },
@@ -230,6 +237,7 @@
     {
       "id": "nllb_600m_readme",
       "set": "translation",
+      "stage": 2,
       "dest": "models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/489890f6973db2448e698120b132fc8e2fcfb304",
       "linkTo": "models/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/489890f6973db2448e698120b132fc8e2fcfb304",
       "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "README.md" },
@@ -245,6 +253,7 @@
     {
       "id": "nllb_600m_sentencepiece",
       "set": "translation",
+      "stage": 2,
       "dest": "models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/14bb8dfb35c0ffdea7bc01e56cea38b9e3d5efcdcb9c251d6b40538e1aab555a",
       "linkTo": "models/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/14bb8dfb35c0ffdea7bc01e56cea38b9e3d5efcdcb9c251d6b40538e1aab555a",
       "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "sentencepiece.bpe.model" },
@@ -260,6 +269,7 @@
     {
       "id": "nllb_600m_special_tokens_map",
       "set": "translation",
+      "stage": 2,
       "dest": "models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/02fba84e401dd2017999a39cac2c1278591c3a03",
       "linkTo": "models/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/02fba84e401dd2017999a39cac2c1278591c3a03",
       "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "special_tokens_map.json" },
@@ -275,6 +285,7 @@
     {
       "id": "nllb_600m_tokenizer",
       "set": "translation",
+      "stage": 2,
       "dest": "models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/e316b82de11d0f951f370943b3c438311629547285129b0b81dadabd01bca665",
       "linkTo": "models/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/e316b82de11d0f951f370943b3c438311629547285129b0b81dadabd01bca665",
       "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "tokenizer.json" },
@@ -290,6 +301,7 @@
     {
       "id": "nllb_600m_tokenizer_config",
       "set": "translation",
+      "stage": 2,
       "dest": "models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/742aa330eae62f661fe28ff3fdd1d216d1481294",
       "linkTo": "models/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/742aa330eae62f661fe28ff3fdd1d216d1481294",
       "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "tokenizer_config.json" },

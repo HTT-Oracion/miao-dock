@@ -85,6 +85,11 @@ pub struct FileEntry {
     pub hf: Option<HfInfo>,
     #[serde(default)]
     pub platform: Option<String>,
+    /// G4：装配阶段。`1` = 先可用（Python 运行时 / 源码 / 视觉模型，约 1 GB），
+    /// `2` = 后完整（翻译权重 / llama.cpp 等）。**缺省 = 1** ——
+    /// 既有清单（`models.manifest.json`）一条没写，行为必须与今天逐字节相同。
+    #[serde(default)]
+    pub stage: Option<u8>,
     #[serde(default)]
     pub sha256: String,
     #[serde(default, rename = "sizeBytes")]
@@ -137,7 +142,7 @@ pub struct Stat {
 }
 
 /// 进度事件（owned，便于跨回调边界；字段与 Node 版逐字对齐）。
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProgressEvent {
     pub id: String,
     pub phase: String,
@@ -317,6 +322,29 @@ pub fn select_files(manifest: &Manifest, ids: Option<&[String]>, set: Option<&st
             .collect());
     }
     Ok(all.iter().filter(|f| matches_platform(f, &key)).cloned().collect())
+}
+
+/// 条目的装配阶段（**缺省 1** —— 既有清单一条没写 `stage`，行为必须与今天一致）。
+pub fn stage_of(f: &FileEntry) -> u8 {
+    f.stage.unwrap_or(1)
+}
+
+/// G4：按阶段筛选（`max_stage` = 要跑到第几阶段；`None` = 不筛，行为与 [`select_files`] 一致）。
+///
+/// 🔴 为什么不把它加进 [`select_files`] 的参数里：那个函数有四个调用点
+/// （`ensure_models` / `verify_models` / `link_models` / CLI），改签名等于让
+/// 「默认行为」变成「每个调用点各自记得传 `None`」—— 而漏传一个 `None` 的后果是
+/// **静默下了另一阶段的东西**（或漏下），两者都不报错。分阶段是 G4 才有的需求，
+/// 单独一个函数更诚实。
+pub fn select_files_staged(
+    manifest: &Manifest,
+    ids: Option<&[String]>,
+    set: Option<&str>,
+    max_stage: Option<u8>,
+) -> Result<Vec<FileEntry>, ModelStoreError> {
+    let picked = select_files(manifest, ids, set)?;
+    let Some(max) = max_stage else { return Ok(picked) };
+    Ok(picked.into_iter().filter(|f| stage_of(f) <= max).collect())
 }
 
 /// 当前平台标识，形如 `win32-x64` / `darwin-arm64` —— 与 manifest 条目的 `platform` 字段对齐。
@@ -1245,6 +1273,7 @@ mod tests {
             sources: vec![],
             extract_to: None,
             extract_strip: None,
+            stage: None,
         }
     }
 

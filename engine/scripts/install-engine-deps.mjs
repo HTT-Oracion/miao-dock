@@ -33,6 +33,9 @@ import { fileURLToPath } from 'node:url';
 
 import { runtimesDir } from './runtime-root.mjs';
 
+// G2：资产来源的唯一收口（url 前缀 / 镜像回退 / PyPI 索引）—— 与 setup-engine.mjs、清单同源。
+import { PYPI_INDEX, mirrorUrls as assetMirrorUrls } from './asset-source.mjs';
+
 /** 本脚本所在目录 —— B4 的 wheel 清单按它推出**入库**的那一份（与 cwd 无关）。 */
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -76,7 +79,8 @@ const RT = process.env.MIAO_MODEL_ROOT || runtimesDir();
 const VENV_PY = path.join(RT, 'venv', 'Scripts', 'python.exe');
 const SRC = path.join(RT, 'src');
 const REQ = path.join(SRC, 'requirements.txt');
-const PYPI = 'https://pypi.tuna.tsinghua.edu.cn/simple';
+// G2：PyPI 索引地址收口到 asset-source.mjs（可用 `MIAO_PY_INDEX` 覆盖；换源不再改代码）
+const PYPI = PYPI_INDEX;
 
 const CRF_RE = /^pydensecrf\s*@\s*(\S+)/im;
 
@@ -350,14 +354,14 @@ async function buildFromSource(env, crfUrl) {
   log('✓ 批 B 完成（源码编译）');
 }
 
-/** github 直连本机常被代理拦（502），备用镜像前缀（实测 ghfast/gh-proxy 可通）。 */
+/**
+ * 带镜像回退的 url 列表 —— **G2 起收口到 `asset-source.mjs`**（与 `setup-engine.mjs` 同一处）。
+ *
+ * 保留本函数作为薄壳而不是直接改调用点：调用点有多处，包一层比逐处改更不容易漏，
+ * 而"规则只有一处"这件事仍然成立（规则在 asset-source 里）。
+ */
 function mirrorUrls(url) {
-  const list = [url];
-  if (/^https:\/\/github\.com\//.test(url)) {
-    list.push('https://ghfast.top/' + url);
-    list.push('https://gh-proxy.com/' + url);
-  }
-  return list;
+  return assetMirrorUrls(url);
 }
 
 /** 带镜像回退的下载（绕开 pip 直连 github 的脆弱性）。 */
