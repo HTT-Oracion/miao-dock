@@ -1,0 +1,589 @@
+{
+  "real": {
+    "constants": {
+      "ENGINE_DEFAULT_DETECTION_SIZE": 2048,
+      "LLAMA_VERSION_DIR": "llama-b11417",
+      "LLM_OWNER": "service",
+      "TIER_LLM_MODELS": {
+        "medium": null,
+        "small": null,
+        "tiny": "sakura-1.5b-qwen2.5-v1.0-fp16.gguf"
+      }
+    },
+    "engineVersion": "441d07c",
+    "pure": {
+      "availableTiers": [
+        "tiny"
+      ],
+      "engineHfOfflineEnv": [
+        {
+          "HF_HUB_OFFLINE": "1",
+          "TRANSFORMERS_OFFLINE": "1"
+        },
+        {},
+        {}
+      ],
+      "engineLocalNoProxy": [
+        {
+          "NO_PROXY": "example.com,127.0.0.1,localhost,::1",
+          "no_proxy": "example.com,127.0.0.1,localhost,::1"
+        },
+        {
+          "NO_PROXY": "127.0.0.1,localhost,::1",
+          "no_proxy": "127.0.0.1,localhost,::1"
+        },
+        {
+          "NO_PROXY": "corp.internal,127.0.0.1,localhost,::1",
+          "no_proxy": "corp.internal,127.0.0.1,localhost,::1"
+        },
+        {
+          "NO_PROXY": "127.0.0.1,localhost,::1",
+          "no_proxy": "127.0.0.1,localhost,::1"
+        }
+      ],
+      "parseResultStream": [
+        {
+          "error": null,
+          "ext": "webp",
+          "frames": [
+            {
+              "code": 0,
+              "size": 32
+            }
+          ],
+          "mime": "image/webp",
+          "name": "result_only",
+          "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
+          "seq": 7,
+          "stageLines": []
+        },
+        {
+          "error": null,
+          "ext": "webp",
+          "frames": [
+            {
+              "code": 1,
+              "size": 12,
+              "text": "检测中…"
+            },
+            {
+              "code": 0,
+              "size": 32
+            }
+          ],
+          "mime": "image/webp",
+          "name": "progress_then_result",
+          "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
+          "seq": 8,
+          "stageLines": [
+            "seq 8: 检测中…"
+          ]
+        },
+        {
+          "error": null,
+          "ext": "webp",
+          "frames": [
+            {
+              "code": 3,
+              "size": 2,
+              "text": "42"
+            },
+            {
+              "code": 0,
+              "size": 32
+            }
+          ],
+          "mime": "image/webp",
+          "name": "queue_position",
+          "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
+          "seq": 9,
+          "stageLines": [
+            "seq 9: 排队位次 42"
+          ]
+        },
+        {
+          "error": null,
+          "ext": "webp",
+          "frames": [
+            {
+              "code": 4,
+              "size": 0
+            },
+            {
+              "code": 0,
+              "size": 32
+            }
+          ],
+          "mime": "image/webp",
+          "name": "wait_instance",
+          "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
+          "seq": 10,
+          "stageLines": [
+            "seq 10: 等待翻译实例"
+          ]
+        },
+        {
+          "error": "inference exploded",
+          "ext": null,
+          "frames": [
+            {
+              "code": 1,
+              "size": 12,
+              "text": "翻译中…"
+            },
+            {
+              "code": 2,
+              "size": 18,
+              "text": "inference exploded"
+            }
+          ],
+          "mime": null,
+          "name": "stream_error",
+          "resultB64": null,
+          "seq": 11,
+          "stageLines": [
+            "seq 11: 翻译中…",
+            "seq 11: 引擎报错：inference exploded"
+          ]
+        }
+      ],
+      "tierModelPath": [
+        {
+          "path": "<HOME>\\AppData\\Local\\runtimes\\manga-translator\\models\\sakura\\sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
+          "tier": "tiny"
+        },
+        {
+          "path": null,
+          "tier": "small"
+        },
+        {
+          "path": null,
+          "tier": "medium"
+        }
+      ],
+      "translationSnapshotDir": "<HOME>\\AppData\\Local\\runtimes\\manga-translator\\src\\models\\translators\\nllb\\models--facebook--nllb-200-distilled-600M\\snapshots\\f8d333a098d19b4fd9a8b18f94170487ad3f821d",
+      "translationWeightsPresent": true
+    },
+    "configSnapshot": {
+      "detectionSize": 2048,
+      "detector": "default",
+      "fromLang": null,
+      "inpainter": "lama_large",
+      "ocr": "48px",
+      "targetLang": "CHS",
+      "translator": "sakura"
+    },
+    "launch": {
+      "cmd": [
+        "/py/python",
+        "main.py",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000",
+        "--use-gpu",
+        "--models-ttl",
+        "1800",
+        "--nonce",
+        "deadbeef"
+      ],
+      "cwd": "<HOME>\\AppData\\Local\\runtimes\\manga-translator\\src\\server",
+      "envInjected": {
+        "HF_HUB_OFFLINE": "1",
+        "MT_WEB_NONCE": "deadbeef",
+        "PYTHONIOENCODING": "utf-8",
+        "SAKURA_API_BASE": "http://127.0.0.1:8080/v1",
+        "TRANSFORMERS_OFFLINE": "1"
+      },
+      "executorPort": 8001,
+      "label": "engine",
+      "noProxy": "parity.example,127.0.0.1,localhost,::1",
+      "probes": [
+        {
+          "kind": "tcp",
+          "port": 8000
+        },
+        {
+          "expect": 200,
+          "kind": "http",
+          "method": "POST",
+          "path": "/queue-size",
+          "port": 8000
+        },
+        {
+          "kind": "tcp",
+          "port": 8001
+        }
+      ]
+    },
+    "llmLaunch": {
+      "cmd": [
+        "/bin/llama-server",
+        "-m",
+        "<HOME>\\AppData\\Local\\runtimes\\manga-translator\\models\\sakura\\sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
+        "--port",
+        "8080",
+        "-c",
+        "4096",
+        "-ngl",
+        "99"
+      ],
+      "cwd": null,
+      "label": "llm",
+      "model": "<HOME>\\AppData\\Local\\runtimes\\manga-translator\\models\\sakura\\sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
+      "probes": [
+        {
+          "kind": "tcp",
+          "port": 8080
+        },
+        {
+          "expect": 200,
+          "kind": "http",
+          "method": "GET",
+          "path": "/v1/models",
+          "port": 8080
+        }
+      ],
+      "tier": "tiny"
+    },
+    "frames": [
+      {
+        "ext": "webp",
+        "mime": "image/webp",
+        "name": "result_only",
+        "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
+        "stageLines": []
+      },
+      {
+        "ext": "webp",
+        "mime": "image/webp",
+        "name": "progress_then_result",
+        "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
+        "stageLines": [
+          "seq 8: 检测中…"
+        ]
+      },
+      {
+        "ext": "webp",
+        "mime": "image/webp",
+        "name": "queue_position",
+        "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
+        "stageLines": [
+          "seq 9: 排队位次 42"
+        ]
+      },
+      {
+        "ext": "webp",
+        "mime": "image/webp",
+        "name": "wait_instance",
+        "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
+        "stageLines": [
+          "seq 10: 等待翻译实例"
+        ]
+      },
+      {
+        "ext": null,
+        "mime": null,
+        "name": "stream_error",
+        "resultB64": null,
+        "stageLines": [
+          "seq 11: 翻译中…",
+          "seq 11: 引擎报错：inference exploded"
+        ]
+      }
+    ]
+  },
+  "mock": {
+    "constants": {
+      "ENGINE_DEFAULT_DETECTION_SIZE": 2048,
+      "LLAMA_VERSION_DIR": "llama-b11417",
+      "LLM_OWNER": "service",
+      "TIER_LLM_MODELS": {
+        "medium": null,
+        "small": null,
+        "tiny": "sakura-1.5b-qwen2.5-v1.0-fp16.gguf"
+      }
+    },
+    "engineVersion": "mock",
+    "pure": {
+      "availableTiers": [
+        "tiny",
+        "small",
+        "medium"
+      ],
+      "engineHfOfflineEnv": [
+        {
+          "HF_HUB_OFFLINE": "1",
+          "TRANSFORMERS_OFFLINE": "1"
+        },
+        {},
+        {}
+      ],
+      "engineLocalNoProxy": [
+        {
+          "NO_PROXY": "example.com,127.0.0.1,localhost,::1",
+          "no_proxy": "example.com,127.0.0.1,localhost,::1"
+        },
+        {
+          "NO_PROXY": "127.0.0.1,localhost,::1",
+          "no_proxy": "127.0.0.1,localhost,::1"
+        },
+        {
+          "NO_PROXY": "corp.internal,127.0.0.1,localhost,::1",
+          "no_proxy": "corp.internal,127.0.0.1,localhost,::1"
+        },
+        {
+          "NO_PROXY": "127.0.0.1,localhost,::1",
+          "no_proxy": "127.0.0.1,localhost,::1"
+        }
+      ],
+      "parseResultStream": [
+        {
+          "error": null,
+          "ext": "webp",
+          "frames": [
+            {
+              "code": 0,
+              "size": 32
+            }
+          ],
+          "mime": "image/webp",
+          "name": "result_only",
+          "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
+          "seq": 7,
+          "stageLines": []
+        },
+        {
+          "error": null,
+          "ext": "webp",
+          "frames": [
+            {
+              "code": 1,
+              "size": 12,
+              "text": "检测中…"
+            },
+            {
+              "code": 0,
+              "size": 32
+            }
+          ],
+          "mime": "image/webp",
+          "name": "progress_then_result",
+          "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
+          "seq": 8,
+          "stageLines": [
+            "seq 8: 检测中…"
+          ]
+        },
+        {
+          "error": null,
+          "ext": "webp",
+          "frames": [
+            {
+              "code": 3,
+              "size": 2,
+              "text": "42"
+            },
+            {
+              "code": 0,
+              "size": 32
+            }
+          ],
+          "mime": "image/webp",
+          "name": "queue_position",
+          "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
+          "seq": 9,
+          "stageLines": [
+            "seq 9: 排队位次 42"
+          ]
+        },
+        {
+          "error": null,
+          "ext": "webp",
+          "frames": [
+            {
+              "code": 4,
+              "size": 0
+            },
+            {
+              "code": 0,
+              "size": 32
+            }
+          ],
+          "mime": "image/webp",
+          "name": "wait_instance",
+          "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
+          "seq": 10,
+          "stageLines": [
+            "seq 10: 等待翻译实例"
+          ]
+        },
+        {
+          "error": "inference exploded",
+          "ext": null,
+          "frames": [
+            {
+              "code": 1,
+              "size": 12,
+              "text": "翻译中…"
+            },
+            {
+              "code": 2,
+              "size": 18,
+              "text": "inference exploded"
+            }
+          ],
+          "mime": null,
+          "name": "stream_error",
+          "resultB64": null,
+          "seq": 11,
+          "stageLines": [
+            "seq 11: 翻译中…",
+            "seq 11: 引擎报错：inference exploded"
+          ]
+        }
+      ],
+      "tierModelPath": [
+        {
+          "path": "<HOME>\\AppData\\Local\\runtimes\\manga-translator\\models\\sakura\\sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
+          "tier": "tiny"
+        },
+        {
+          "path": null,
+          "tier": "small"
+        },
+        {
+          "path": null,
+          "tier": "medium"
+        }
+      ],
+      "translationSnapshotDir": "<HOME>\\AppData\\Local\\runtimes\\manga-translator\\src\\models\\translators\\nllb\\models--facebook--nllb-200-distilled-600M\\snapshots\\f8d333a098d19b4fd9a8b18f94170487ad3f821d",
+      "translationWeightsPresent": true
+    },
+    "configSnapshot": {
+      "detectionSize": 1024,
+      "detector": "default",
+      "fromLang": null,
+      "inpainter": "lama_large",
+      "ocr": "48px",
+      "targetLang": "CHS",
+      "translator": "sakura"
+    },
+    "launch": {
+      "cmd": [
+        "/py/python",
+        "main.py",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000",
+        "--use-gpu",
+        "--models-ttl",
+        "1800",
+        "--nonce",
+        "deadbeef"
+      ],
+      "cwd": "<HOME>\\AppData\\Local\\runtimes\\manga-translator\\src\\server",
+      "envInjected": {
+        "HF_HUB_OFFLINE": "1",
+        "MT_WEB_NONCE": "deadbeef",
+        "PYTHONIOENCODING": "utf-8",
+        "SAKURA_API_BASE": "http://127.0.0.1:8080/v1",
+        "TRANSFORMERS_OFFLINE": "1"
+      },
+      "executorPort": 8001,
+      "label": "engine",
+      "noProxy": "127.0.0.1,localhost,::1",
+      "probes": [
+        {
+          "kind": "tcp",
+          "port": 8000
+        },
+        {
+          "expect": 200,
+          "kind": "http",
+          "method": "POST",
+          "path": "/queue-size",
+          "port": 8000
+        },
+        {
+          "kind": "tcp",
+          "port": 8001
+        }
+      ]
+    },
+    "llmLaunch": {
+      "cmd": [
+        "node",
+        "<REPO>\\engine\\src\\mock-llm.mjs",
+        "--port",
+        "8080",
+        "--model",
+        "tiny"
+      ],
+      "cwd": null,
+      "label": "llm",
+      "model": "sakura-mock:tiny",
+      "probes": [
+        {
+          "kind": "tcp",
+          "port": 8080
+        },
+        {
+          "expect": 200,
+          "kind": "http",
+          "method": "GET",
+          "path": "/v1/models",
+          "port": 8080
+        }
+      ],
+      "tier": "tiny"
+    },
+    "frames": [
+      {
+        "ext": "webp",
+        "mime": "image/webp",
+        "name": "result_only",
+        "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
+        "stageLines": []
+      },
+      {
+        "ext": "webp",
+        "mime": "image/webp",
+        "name": "progress_then_result",
+        "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
+        "stageLines": [
+          "seq 8: 检测中…"
+        ]
+      },
+      {
+        "ext": "webp",
+        "mime": "image/webp",
+        "name": "queue_position",
+        "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
+        "stageLines": [
+          "seq 9: 排队位次 42"
+        ]
+      },
+      {
+        "ext": "webp",
+        "mime": "image/webp",
+        "name": "wait_instance",
+        "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
+        "stageLines": [
+          "seq 10: 等待翻译实例"
+        ]
+      },
+      {
+        "ext": null,
+        "mime": null,
+        "name": "stream_error",
+        "resultB64": null,
+        "stageLines": [
+          "seq 11: 翻译中…",
+          "seq 11: 引擎报错：inference exploded"
+        ]
+      }
+    ]
+  }
+}
