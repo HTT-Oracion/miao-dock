@@ -117,10 +117,43 @@ export interface EngineOptions {
   };
 }
 
+/**
+ * 清单里**一条**（D8）—— 界面直接渲染，不再自己写一份"应该有哪些文件"。
+ *
+ * 字段来自 `models.manifest.json` 本身 ⇒ 改清单，引导跟着变。
+ * `path` 是**判据真正作用的绝对路径**（引擎实际会打开的那个），不是清单里那条相对路径。
+ */
+export interface ModelFileStatus {
+  id: string;
+  /** 所属分组（`visual` / `llm` / `runtime` / `translation`） */
+  set?: string;
+  /** 清单里的落点（相对模型根） */
+  dest: string;
+  /** 引擎实际打开的那个（相对 `<root>/src`）；没有 ⇒ 键不存在 */
+  linkTo?: string;
+  url?: string;
+  sizeBytes?: number;
+  /** 平台限定；不存在 = 平台无关 */
+  platform?: string;
+  /** 是否适用于**本机** ⇒ 界面据此决定要不要算进"你还缺什么" */
+  applicable: boolean;
+  /** 在位且大小与清单一致 */
+  ready: boolean;
+  /** 目标**绝对路径** */
+  path: string;
+}
+
 export interface ModelStatus {
   visualReady: boolean;
   sakuraReady: boolean;
   lastVerifiedAt: string | null;
+  /**
+   * 逐条清单（D8）。**顺序与清单一致**；清单读不到 ⇒ 空数组。
+   *
+   * 为什么在三个聚合布尔之外还要它：那三个回答"能不能翻译"，答不了"**还缺哪一个文件**"——
+   * 而后者才是用户在点「重新下载模型」之前要问的。
+   */
+  files: ModelFileStatus[];
 }
 
 // ------------------------------------------------------------------ /engine/status

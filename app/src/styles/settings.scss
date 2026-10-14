@@ -689,6 +689,55 @@
   font-family: var(--md-font-numeric);
   font-size: 10px;
 }
+/* 未就绪的引导行也要能一眼看出（清单里还缺东西时，那句话不能是同样灰的 10.5px） */
+.set-diag-note.is-bad {
+  color: var(--md-error);
+}
+/* 模型引导清单（D8）：逐条一行 —— id / 目标绝对路径 / 体积。
+   路径可能很长（`%LOCALAPPDATA%` 全展开），故它占满剩余宽度并省略号收尾，
+   悬停给全量（`title`）。数字列右对齐，方便竖着扫体积。 */
+.set-diag-files {
+  margin-top: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.set-diag-file {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+.set-diag-file-id {
+  flex: 0 0 auto;
+  font-family: var(--md-font-numeric);
+  color: var(--md-ink-2);
+}
+.set-diag-file-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+}
+.set-diag-file-size {
+  flex: 0 0 auto;
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+  text-align: right;
+}
+/* 未就绪 ⇒ 整行转红（与 `.set-diag-note.is-bad` 同一信号色，不另造一套） */
+.set-diag-file.is-bad {
+  color: var(--md-error);
+}
+.set-diag-file.is-bad .set-diag-file-id,
+.set-diag-file.is-bad .set-diag-file-path,
+.set-diag-file.is-bad .set-diag-file-size {
+  color: var(--md-error);
+}
 /* 五个区块之间用一条细线分开：区块数是规格钉死的 5，视觉上就该数得出来 */
 .set-diag-sec {
   margin-top: 12px;

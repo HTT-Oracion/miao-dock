@@ -7,7 +7,7 @@ import { errorText, serviceRestart, writeTextFile } from '@/ipc';
 import type { ServiceStatus } from '@/ipc';
 import { configPairs } from '@screens/settings/engine-state';
 import type { EngineState } from '@screens/settings/engine-state';
-import type { ModelDownloadView } from '@screens/settings/engine-api';
+import type { ModelDownloadView, ModelFileStatus } from '@screens/settings/engine-api';
 import { emphasis } from '@screens/settings/parts';
 import type { SettingItem } from '@screens/settings/catalog';
 
@@ -380,6 +380,8 @@ export function EngineDiag({
             <div className="set-diag-note">
               路径 <code className="set-ro">{o?.modelDir?.current ?? '—'}</code>
             </div>
+            {/* D8：逐条引导清单（**渲染**清单，不是在这里编写） */}
+            <ModelFiles files={s?.models?.files} />
             <DownloadState view={s?.modelDownload} />
           </DiagSection>
 
@@ -546,6 +548,70 @@ function ProcRow({
       <span className="set-diag-proc-num">{pid != null ? `pid ${pid}` : (pidNote ?? '—')}</span>
       {extra ? <span className="set-diag-proc-extra">{extra}</span> : null}
     </div>
+  );
+}
+
+/**
+ * 1 GiB。写成常量而**不用 `1024 ** 3`**：幂运算符的 `**` 与 markdown 粗体同形，
+ * 会被 `ENGINE.md.noRawAsterisks` 当成"界面漏出裸星号"（那条断言是对的 —— 它守的正是
+ * 有人在 JSX 裸文本里塞 `**`；这里只是不去蹭它的边界）。
+ */
+const GIB = 1024 * 1024 * 1024;
+
+/**
+ * 字节 → 人读。清单里的 `sizeBytes` 是**精确值**，这里只做单位换算（1024 进制，
+ * 与安装引导 §2 的 "6.9 GB" 同一个口径 —— 两处显示同一个数，用户才不会对着两个数字发懵）。
+ */
+function humanBytes(n: number): string {
+  if (n >= GIB) return `${(n / GIB).toFixed(1)} GB`;
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(0)} MB`;
+  return `${n} B`;
+}
+
+/**
+ * **模型引导清单**（D8）—— 把清单逐条渲染出来，不是在这里编写一份。
+ *
+ * ## 为什么三个聚合布尔不够
+ * 它们回答"现在能不能翻译"，却回答不了"**还缺哪一个文件**"—— 而后者才是用户在点
+ * 「重新下载模型」之前真正要确认的。那份信息清单里本来就有（`dest` / `linkTo` /
+ * `sizeBytes` / `url`），早先却被压成三个布尔，答案在界面上根本不存在。
+ *
+ * ## 只列**适用本机**的条目
+ * Windows 用户不该看到两条 macOS 的 `llama.cpp` —— 那会让人以为自己也缺。
+ * 跨平台条目用一句话交代数量，既说清"清单里有"，也不误导。
+ *
+ * 🔴 路径取服务端给的 `path`（**判据真正作用的绝对路径**），不是我们自己拿
+ *    `modelDir + dest` 拼的 —— 拼一个就等于在界面里再造一套落点规则，
+ *    而 `linkTo` 的条目根本不落在 `dest` 上。
+ */
+function ModelFiles({ files }: { files?: ModelFileStatus[] }) {
+  const all = files ?? [];
+  if (all.length === 0) {
+    return <div className="set-diag-note">清单读不到 —— 无法逐条对账。</div>;
+  }
+  const mine = all.filter((f) => f.applicable);
+  const missing = mine.filter((f) => !f.ready);
+  const others = all.length - mine.length;
+  return (
+    <>
+      <div className={missing.length ? 'set-diag-note is-bad' : 'set-diag-note'}>
+        清单共 {all.length} 条，适用本机 {mine.length} 条
+        {others > 0 ? `（另有 ${others} 条属其他平台，不列）` : ''}：
+        {missing.length ? <>其中 <b>{missing.length} 条未就绪</b></> : '全部就绪'}
+      </div>
+      <div className="set-diag-files">
+        {mine.map((f) => (
+          <div key={f.id} className={f.ready ? 'set-diag-file' : 'set-diag-file is-bad'}>
+            <span className="set-diag-file-id">{f.id}</span>
+            <span className="set-diag-file-path" title={f.path}>{f.path}</span>
+            <span className="set-diag-file-size">
+              {f.sizeBytes ? humanBytes(f.sizeBytes) : '大小未声明'}
+              {f.platform ? ` · ${f.platform}` : ''}
+            </span>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 

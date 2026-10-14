@@ -95,6 +95,21 @@ fn main() {
         );
         std::process::exit(if blocked { 1 } else { 0 });
     }
+    // `--engine-model-files`：打印**模型引导清单**（D8）后退出，不起服务。
+    // 用途：`e2e/service/models-guide-check.mjs` 拿它逐条对拍 —— 每条的目标绝对路径、
+    // 平台适用性、就绪判据都必须来自 `models.manifest.json` 本身（改清单一条 `dest`
+    // ⇒ 这里跟着变，证明是**渲染**不是写死）。清单与模型根走 `paths` 的接缝
+    // （`MIAO_MODEL_MANIFEST` / `MIAO_MODEL_ROOT`），故夹具可以整套搬到临时目录里跑。
+    // 清单读不到 ⇒ 仍打印（`files: []` + 三个 false），退出码 0：那也是一种真实状态。
+    if std::env::args().any(|a| a == "--engine-model-files") {
+        let s = miao_dock::boxsvc::engine::model_status::model_status(
+            &miao_dock::paths::model_manifest(),
+            &miao_dock::paths::model_root(),
+            None,
+        );
+        println!("{}", serde_json::to_string(&s).unwrap_or_else(|_| "{}".to_string()));
+        return;
+    }
     // `--list-routes`：打印**显式路由表**（每条端点的 method/pattern/group/tier）+ 两个计数。
     // 用途：e2e 做「转发分支数 = 0」的验收（F5）—— 不起服务、不拉 node，毫秒级跑完。
     if std::env::args().any(|a| a == "--list-routes") {

@@ -329,12 +329,21 @@ pub fn platform_key() -> String {
     format!("{os}-{arch}")
 }
 
-/// 条目是否适用于给定平台（无 `platform` 字段 = 平台无关，恒适用）。
-pub fn matches_platform(file: &FileEntry, key: &str) -> bool {
-    match &file.platform {
+/// 平台判据的**唯一实现**（无 `platform` 字段 = 平台无关，恒适用）。
+///
+/// 🔴 收在这里而不是各处自己写一遍：`select_files()`（下哪些）、`model_status()`（D8 渲染
+/// 哪几条是"当前平台的"）必须给同一个答案 —— 两处各写一遍，必然有一天出现
+/// 「界面说有 4 条待下、下载器只下 3 条」这种只有用户能发现的偏差。
+pub fn platform_matches(platform: Option<&str>, key: &str) -> bool {
+    match platform {
         None => true,
         Some(p) => p == key,
     }
+}
+
+/// 条目是否适用于给定平台。
+pub fn matches_platform(file: &FileEntry, key: &str) -> bool {
+    platform_matches(file.platform.as_deref(), key)
 }
 
 // ------------------------------------------------------------------ HuggingFace 缓存布局
