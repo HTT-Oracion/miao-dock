@@ -133,6 +133,8 @@ fn env_from(v: &Value) -> EnvConfig {
             .map(|a| a.iter().filter_map(|x| x.as_i64()).collect())
             .unwrap_or_default(),
         item_fail_rate: v.get("itemFailRate").and_then(|x| x.as_f64()).unwrap_or(0.0),
+        // 反证开关不进场景定义（它不是被测行为，是元验证钩子）⇒ 恒 false。
+        sniff_skip: false,
     }
 }
 

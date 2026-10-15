@@ -44,6 +44,29 @@ struct FrameCase {
     bytes: Vec<u8>,
 }
 
+/// 本机硬件画像的**可序列化视图**（形状对齐 Node `probeHardware()`，键名 camelCase）。
+///
+/// 之所以在这里现算而不是复用某个服务实例的字段：`EngineState` 的 `hardware_accel` /
+/// `recommended_tier` 已经吃进了**配置**（用户选了 CPU 就变 cpu），而 E8.1 要问的是
+/// 「这台机器**本身**是什么」—— 拿被配置污染过的值去对，会得到"探测结果随设置变化"的错觉。
+fn hardware_view() -> Value {
+    let hw = super::profile::probe_hardware();
+    let r2 = |v: f64| (v * 100.0).round() / 100.0;
+    json!({
+        "platform": hw.platform,
+        "arch": hw.arch,
+        "totalRamGb": r2(hw.total_ram_gb),
+        "gpu": {
+            "kind": hw.gpu.kind,
+            "vramGb": hw.gpu.vram_gb.map(r2),
+            "unifiedGb": hw.gpu.unified_gb.map(r2),
+            "name": hw.gpu.name,
+        },
+        "accel": super::profile::detect_accel(&hw.gpu),
+        "recommendedTier": super::profile::map_tier(hw.total_ram_gb, &hw.gpu),
+    })
+}
+
 /// 结果流测试向量（**输入**）。覆盖：纯结果 / 进度帧 / 队列位次 / 等待实例 / 流内错误。
 fn frame_cases() -> Vec<FrameCase> {
     let webp = minimal_webp();
@@ -185,6 +208,19 @@ pub fn report() -> String {
         "translationSnapshotDir": translation_snapshot_dir(&paths::engine_dir())
             .map(|p| p.to_string_lossy().into_owned()),
         "translationWeightsPresent": translation_weights_present(&paths::engine_dir()),
+        // E4：未声明权重的档位必须**显式报错**（`TIER_MODEL_UNDECLARED` + 可用档位清单），
+        // 不得静默沿用 tiny 的权重。这条纯函数契约原先只能由 Node 子进程 import 验（《04》§14.2），
+        // Node 摘除后改钉这里 —— 出口与 `tierModelPath` 同性质：**按当前协议**各档解析一次。
+        "llmLaunchByTier": super::tier_downgrade::TIER_ORDER
+            .iter()
+            .map(|t| {
+                let o = LlmLaunchOverrides { tier: Some((*t).to_string()), ..Default::default() };
+                match resolve_llm_launch(&o) {
+                    Ok(l) => json!({ "tier": t, "ok": true, "model": l.model }),
+                    Err(e) => json!({ "tier": t, "ok": false, "code": e.code, "detail": e.detail }),
+                }
+            })
+            .collect::<Vec<_>>(),
     });
 
     // ---- 启动配方（用上面的 overrides 现场算）----
@@ -223,6 +259,11 @@ pub fn report() -> String {
     let out = json!({
         "protocol": engine_protocol(),
         "engineVersion": engine_version(),
+        // 🔴 硬件画像**放顶层、不进 `pure`**：它随机器而变（显卡 / 内存 / 平台），而
+        //    `engine-parity` 的 golden 是**跨机器金标** —— 塞进 `pure` 会让每台机器
+        //    跑出来的 golden 都不同，那道对拍钉子当场作废。
+        //    E8 的 E8.1（"真机硬件探测与平台一致"）从这里读；形状对齐 Node `probeHardware()`。
+        "hardware": hardware_view(),
         "constants": {
             "ENGINE_DEFAULT_DETECTION_SIZE": ENGINE_DEFAULT_DETECTION_SIZE,
             "LLAMA_VERSION_DIR": LLAMA_VERSION_DIR,

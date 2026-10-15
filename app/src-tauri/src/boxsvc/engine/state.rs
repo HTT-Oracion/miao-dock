@@ -80,6 +80,9 @@ pub struct ContractRefutes {
     pub engine_status_open: bool,
     /// `warmed` 恒 true（§9.4「卸载 ≠ 未就绪」在字段层面不可见）
     pub warmed_always: bool,
+    /// 🔴 令牌校验恒通过（`MIAO_TOKEN_ALWAYS_OK=1`）—— 反证开关，用来证明
+    ///    E10.7「无令牌访问 → 403」咬的确实是鉴权本身，而不是"路由恰好不存在"。
+    pub token_always_ok: bool,
 }
 
 // ================================================================ 模型下载状态机
@@ -250,6 +253,7 @@ impl EngineState {
             sidecar_legacy3: esettings::env_bool("MIAO_SIDECAR_LEGACY3", false),
             engine_status_open: esettings::env_bool("MIAO_ENGINE_STATUS_OPEN", false),
             warmed_always: esettings::env_bool("MIAO_WARMED_ALWAYS", false),
+            token_always_ok: esettings::env_bool("MIAO_TOKEN_ALWAYS_OK", false),
         };
 
         // 「盘上的用户设置」⊕「环境变量」—— 唯一一处合并实现（与 `config.mjs` 同口径）。

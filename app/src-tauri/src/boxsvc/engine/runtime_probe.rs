@@ -104,12 +104,17 @@ fn s(p: &Path) -> String {
     p.to_string_lossy().into_owned()
 }
 
-/// 装机命令的 `fix` 文案。与 `engine/scripts/setup-engine.mjs` 的用法说明一致。
-const FIX_SETUP: &str = "运行 node engine/scripts/setup-engine.mjs 装配引擎运行时（Python + venv + 源码）";
-const FIX_VENV: &str = "运行 node engine/scripts/setup-engine.mjs --venv 创建 venv（需 Python 已就位）";
-const FIX_DEPS: &str = "运行 npm run deps:engine 安装引擎依赖（pip -r requirements.txt）";
+/// 未就绪项的 `fix` 文案 —— 一律指向**产品内的一键装配**（裁定④：装配由产品代做）。
+///
+/// 🔴 这里**不得**出现 `node` / `npm run` / `engine/scripts/*.mjs`：打包后的用户机上
+/// 既没有 Node、也没有仓库源码树，把命令行当装法等于把人引到死路（历史形态见 D-207）。
+/// 命令行只留在 `docs/install-guide-*.md` 的**排障附录**里，而那份文档已写明「普通用户不需要看」。
+/// 由 `check:engine-bootstrap` 的 W9 钉住（反证 M4 注回命令行字样 ⇒ 红）。
+const FIX_SETUP: &str = "在「设置 → 翻译服务」点「开始下载」，喵坞会自动装配引擎运行时";
+const FIX_VENV: &str = "点「开始下载」即可 —— 装配会把 Python 运行环境一并建好（无需命令行）";
+const FIX_DEPS: &str = "点「开始下载」即可 —— 装配会从公网镜像安装引擎依赖（无需命令行）";
 /// 补丁没打的装法：重放（幂等）而不是重装 —— 源码早就在是常见情形。
-const FIX_PATCHES: &str = "运行 node engine/scripts/setup-engine.mjs --source 重放源码补丁（幂等，已打过的会跳过）";
+const FIX_PATCHES: &str = "点「重新下载模型」重跑一次装配，缺失的源码补丁会被重放（幂等）";
 
 /// 跑一遍五项检测。
 pub fn probe() -> RuntimeProbe {
@@ -253,7 +258,7 @@ pub fn runtime_view() -> serde_json::Value {
 /// real 档启动时把「引擎运行时未就绪」**逐项**喊出来（B1 验收②）。
 ///
 /// 没有它，用户看到的是白等 240 s 后一句 `Connection error` —— 离根因极远，且不告诉你缺什么。
-/// 有了它，启动日志里就是「缺 python（<绝对路径>）—— 运行 …setup-engine.mjs --venv」。
+/// 有了它，启动日志里就是「缺 python（<绝对路径>）—— 点「开始下载」即可」。
 ///
 /// 🔴 只 warn 不 fail：mock 档**本来就不要真引擎**（30+ 个 mock e2e 靠它活着），而
 ///    "装到一半"的用户也不该被一句启动失败挡住。real 档的硬门归 D6（首启引导）——
@@ -307,8 +312,9 @@ pub fn gate_message_for(mode: &str, probe: &RuntimeProbe) -> Option<String> {
         })
         .collect::<Vec<_>>()
         .join("；");
+    // 主路径是**产品内一键装配**（裁定④）；安装引导只作排障附录，不作为用户动作。
     Some(format!(
-        "运行时未装配：{items}。按安装引导（docs/install-guide-*.md）装配引擎后重启喵坞"
+        "运行时未装配：{items}。在「设置 → 翻译服务」点「开始下载」自动装配；排障见 docs/install-guide-*.md"
     ))
 }
 

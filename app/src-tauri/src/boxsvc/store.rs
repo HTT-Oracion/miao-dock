@@ -107,6 +107,12 @@ pub struct EnvConfig {
     pub fail_seqs: Vec<i64>,
     /// 随机失败率（`MIAO_ITEM_FAIL_RATE`，`[0,1]`）
     pub item_fail_rate: f64,
+    /// 🔴 **反证开关**（`MIAO_SNIFF_SKIP=1`）：建单前**不**因「嗅探失败 / 0 字节」拒绝，
+    ///    用来证明 E10.4/E10.5 那条「非图片字节不进引擎」咬的确实是这层嗅探
+    ///    （与 Node 侧把 `if (!ext || bytes.length === 0)` 改成 `if (false && …)` 同语义）。
+    ///    ⚠️ 这是**两层防御**的上一层：`engine/client.rs::assert_translatable_image` 读同一个
+    ///    env 名（送图前再嗅一次）⇒ 反证要两层一起破，断言才会红。
+    pub sniff_skip: bool,
 }
 
 impl EnvConfig {
@@ -125,6 +131,7 @@ impl EnvConfig {
             engine_timeout_ms,
             fail_seqs: parse_seq_list(std::env::var("MIAO_FAIL_SEQ").ok().as_deref()),
             item_fail_rate: env_f64_clamped("MIAO_ITEM_FAIL_RATE", 0.0),
+            sniff_skip: env_bool("MIAO_SNIFF_SKIP", false),
         }
     }
 }
@@ -139,6 +146,7 @@ impl Default for EnvConfig {
             engine_timeout_ms: 600_000,
             fail_seqs: Vec::new(),
             item_fail_rate: 0.0,
+            sniff_skip: false,
         }
     }
 }

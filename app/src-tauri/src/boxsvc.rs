@@ -565,10 +565,12 @@ async fn dispatch_request(
     // 3) 鉴权（/health 豁免）—— 契约 §2.1
     //    🔴 反证开关 `MIAO_ENGINE_STATUS_OPEN=1`：让 `/engine/status` 免鉴权，用来证明
     //    「§5.2 不是免鉴权例外」这条断言咬的确实是鉴权本身（`S5.6` 应红）。
+    //    🔴 反证开关 `MIAO_TOKEN_ALWAYS_OK=1`：令牌校验恒通过，用来证明 `E10.7`
+    //       「无令牌 → 403」咬的是鉴权本身（应红），而不是路由恰好不存在。
     let is_health = path == "/health" || path == format!("/api/{API_VERSION}/health");
     let status_open = path == format!("/api/{API_VERSION}/engine/status")
         && shell.engine.contract_refutes.engine_status_open;
-    if !is_health && !status_open {
+    if !is_health && !status_open && !shell.engine.contract_refutes.token_always_ok {
         let provided = headers.get("x-box-token").and_then(|v| v.to_str().ok());
         if !token_matches(shell.token.as_deref(), provided) {
             eprintln!("[box-service][security] 令牌校验失败：{method} {uri}");

@@ -438,18 +438,33 @@ pub fn run_engine_attempts(tr: &dyn Translator, job: &EngineJob) -> EngineOutcom
 }
 
 /// 建 item（Node `_buildItems`）：嗅探扩展名，0 字节/嗅探失败 ⇒ `INVALID_IMAGE`。
-fn build_items(seq_from: i64, images: &[InputImage], image_order: &[Value]) -> SResult<(Vec<Item>, Vec<usize>)> {
+///
+/// `sniff_skip` 是**反证开关**（`MIAO_SNIFF_SKIP=1`，见 `EnvConfig::sniff_skip`）：开启时
+/// 不再拒绝，非法字节会被当合法 item 收下 ⇒ `E10.4` 应变红。它与
+/// `engine/client.rs::assert_translatable_image` 读同一个 env 名，两层一起破才红。
+fn build_items(
+    seq_from: i64,
+    images: &[InputImage],
+    image_order: &[Value],
+    sniff_skip: bool,
+) -> SResult<(Vec<Item>, Vec<usize>)> {
     let filenames: Vec<Option<String>> = images.iter().map(|i| i.filename.clone()).collect();
     let order = pure::order_images_indices(&filenames, image_order);
     let mut items = Vec::with_capacity(order.len());
     for (i, idx) in order.iter().enumerate() {
         let img = &images[*idx];
         let ext = pure::sniff_image_type(&img.data);
-        match ext {
-            Some(ext) if !img.data.is_empty() => {
+        let ok = match ext {
+            Some(ext) if !img.data.is_empty() => Some(ext.to_string()),
+            // 反证档：嗅探失败也放行（ext 取兜底值，只为让后续落盘有个名字）
+            _ if sniff_skip => Some("png".to_string()),
+            _ => None,
+        };
+        match ok {
+            Some(ext) => {
                 items.push(Item {
                     seq: seq_from + i as i64,
-                    ext: ext.to_string(),
+                    ext: ext.clone(),
                     mime: if ext == "jpg" { "image/jpeg".to_string() } else { format!("image/{ext}") },
                     byte_size: img.data.len() as i64,
                     from_disk: false,
@@ -465,7 +480,7 @@ fn build_items(seq_from: i64, images: &[InputImage], image_order: &[Value]) -> S
                     error_message: None,
                 });
             }
-            _ => {
+            None => {
                 return Err(StoreError::new(
                     "INVALID_IMAGE",
                     "图片 0 字节或无法解码（嗅探失败）",
@@ -589,7 +604,7 @@ impl Store {
         let count = images.len() as i64;
         assert_seq_range(seq_from, count, &dir_name)?;
 
-        let (items, order) = build_items(seq_from, images, image_order)?;
+        let (items, order) = build_items(seq_from, images, image_order, self.env.sniff_skip)?;
         let batch = Batch {
             batch_index: 1,
             count,
@@ -675,7 +690,7 @@ impl Store {
         let seq_from = last_seq_to + 1;
         let count = images.len() as i64;
         assert_seq_range(seq_from, count, &dir_name)?;
-        let (items, order) = build_items(seq_from, images, image_order)?;
+        let (items, order) = build_items(seq_from, images, image_order, self.env.sniff_skip)?;
         let batch_index = self.tasks[idx].batches.len() as i64 + 1;
 
         let mut staged: Vec<i64> = Vec::new();

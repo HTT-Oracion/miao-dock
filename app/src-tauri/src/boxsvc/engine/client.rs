@@ -289,7 +289,15 @@ pub struct TranslateOk {
 }
 
 /// 单张翻译的入口校验：**real 协议下提前拦掉**，省一次网络往返（也把「图坏了」与「引擎坏了」分开）。
+/// 送图前的**第二层**嗅探（Node `engine-client.mjs::translateImage` 的同名守卫）。
+///
+/// 🔴 反证开关 `MIAO_SNIFF_SKIP=1`：这一层也放行 ⇒ `E10.5`（非法字节从未到达引擎）应变红。
+///    它与 `store::exec::build_items` 读同一个 env 名 —— 「两层防御」必须两层一起破，
+///    只破一层时另一层仍会拦住，那时断言不红**不是**断言写错了。
 fn assert_translatable_image(bytes: &[u8]) -> Result<&'static str, EngineError> {
+    if env_bool("MIAO_SNIFF_SKIP", false) {
+        return Ok("png");
+    }
     if bytes.is_empty() {
         return Err(EngineError::new("BAD_INPUT", "原图字节为空，拒绝送翻译"));
     }
@@ -652,6 +660,11 @@ async fn run_case(case: &Value) -> Value {
             "ok": false,
             "code": e.code,
             "message": e.message,
+            // 🔴 超时/流内错必须把**已收到的帧**一起吐出来：code 3（排队位次）是「引擎活着
+            //    但拿不到执行器」的唯一直接证据，只报一句"超时了"就不可归因（U10② 现场）。
+            //    源头是 `EngineError.detail.frames` —— 本出口原先没转发，等于把这份证据
+            //    关在产品进程里，e2e 只能另起 Node 子进程去 import 才拿得到。
+            "frames": e.detail.as_ref().and_then(|d| d.get("frames").cloned()).unwrap_or_else(|| Value::Array(vec![])),
             "stageLines": recent_stage_log(50),
         }),
     }
