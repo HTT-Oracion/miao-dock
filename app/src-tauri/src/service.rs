@@ -522,7 +522,7 @@ impl ServiceManager {
                 // 🔴 这里曾经**写死**成 "node service/src/server.mjs" —— 靶子换成 boxsvc 之后
                 //    日志还在说 node，看日志的人会去找一个根本不存在的进程（而服务其实是好的）。
                 //    改成打印**真实的** service 命令：日志是排障的第一现场，不许编。
-                cmd_line(&service_spec.cmd),
+                cmd_line(&service_cmd),
                 fmt_env(&plan.service_env)
             ),
         );
