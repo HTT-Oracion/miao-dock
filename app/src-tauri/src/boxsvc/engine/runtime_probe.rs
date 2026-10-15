@@ -65,7 +65,10 @@ pub fn venv_dir() -> PathBuf {
 /// 🔴 POSIX 上是 `lib/python3.X/site-packages` —— 版本号随解释器变，**写死 3.11 会让
 ///    换解释器后依赖检测永远报缺失**（而引擎其实装得好好的）。故扫一层 `lib/python*`，
 ///    多个版本并存时取字典序最小者（确定性：同样输入必须给同样输出）。
-fn site_packages(venv: &Path) -> Option<PathBuf> {
+///
+/// `pub` 是因为 `wheels.rs` 的 pydensecrf 兼容补丁要找同一个目录 —— 两处各写一遍
+/// 「Windows 是 `Lib\site-packages`、POSIX 是 `lib/python*`」这个分叉，迟早会漂移。
+pub fn site_packages(venv: &Path) -> Option<PathBuf> {
     if cfg!(target_os = "windows") {
         let p = venv.join("Lib").join("site-packages");
         return p.is_dir().then_some(p);

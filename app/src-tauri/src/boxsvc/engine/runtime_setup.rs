@@ -197,39 +197,15 @@ pub fn run_bootstrap(
     super::patches::apply_engine_patches(&src_dir)
         .map_err(|e| BootstrapError::new("patches", e))?;
 
-    // ---- 阶段 5：pip 装依赖（A 方案：公网镜像） ----
-    on_phase("runtime", "安装引擎依赖");
-    let req = requirements_path(&rt_dir, std::env::var("MIAO_REQUIREMENTS").ok().as_deref())
-        .ok_or_else(|| {
-            BootstrapError::new(
-                "deps",
-                format!(
-                    "找不到依赖清单 {}（引擎源码解包后它应自带 requirements.txt）",
-                    rt_dir.join("src").join("requirements.txt").display()
-                ),
-            )
-        })?;
-    let mut pip = Command::new(&venv_py);
-    pip.arg("-m")
-        .arg("pip")
-        .arg("install")
-        .arg("-r")
-        .arg(&req)
-        .arg("--index-url")
-        .arg(pip_index)
-        .arg("--no-input");
-    // `pip` 是控制台程序，且这一跑就是几分钟 —— 不隐藏会一直挂着一个黑框。
-    hide_console(&mut pip);
-    match pip.status() {
-        Ok(st) if st.success() => {}
-        Ok(st) => {
-            return Err(BootstrapError::new(
-                "deps",
-                format!("依赖安装失败（{st}）—— 检查 PyPI 镜像是否可达，或改用 MIAO_PY_INDEX 指向可用源"),
-            ))
-        }
-        Err(e) => return Err(BootstrapError::new("deps", format!("起 pip 失败：{e}"))),
-    }
+    // ---- 阶段 5：依赖安装（**拆两批**）----
+    install_deps(
+        rt_dir,
+        &venv_py,
+        &src_dir,
+        model_root,
+        pip_index,
+        &|m| println!("{m}"),
+    )?;
 
     // ---- 阶段 6：模型权重（下载 + 解包 + 建链） ----
     on_phase("models", "下载模型权重");
@@ -257,6 +233,166 @@ pub fn run_bootstrap(
     write_runtime_ready(rt_dir, runtime_manifest, model_manifest)?;
 
     Ok(())
+}
+
+/// 依赖安装：**拆两批**（pip 事务性）+ `pydensecrf` 走预编译 wheel + 兼容补丁 + 导入自检。
+///
+/// ## 为什么必须拆两批
+/// pip 是「先全部收集、最后统一装」的**事务**：`pydensecrf` 在 PyPI 没有任何 Windows
+/// wheel，只能现场编译；混在一批里，它一失败会让整批 100+ 依赖**一起回滚** ⇒ 全白装
+/// （`engine/VERSIONS.lock` §6.3 真机实测）。
+///
+/// ## 为什么批 B 先问 `plan_crf()`
+/// 随包那颗 213 KB 的 wheel（G3）只有在**产品自己会选它**时才兑现"目标机零编译器"。
+/// 选不到（哈希不符 / 文件不在盘 / 没有本平台条目）就退回源码编译，并在失败消息里
+/// **如实点名需要 MSVC / Xcode CLT** —— 不静默、不假装成功。
+///
+/// `cache_root` = `.download-cache` 的宿主目录（`model_root`），与 Node 侧 `RT` 同源。
+fn install_deps(
+    rt_dir: &Path,
+    venv_py: &Path,
+    src_dir: &Path,
+    cache_root: &Path,
+    pip_index: &str,
+    log: &dyn Fn(&str),
+) -> BootstrapResult {
+    let req = requirements_path(rt_dir, std::env::var("MIAO_REQUIREMENTS").ok().as_deref()).ok_or_else(|| {
+        BootstrapError::new(
+            "deps",
+            format!(
+                "找不到依赖清单 {}（引擎源码解包后它应自带 requirements.txt）",
+                rt_dir.join("src").join("requirements.txt").display()
+            ),
+        )
+    })?;
+    let req_text = fs::read_to_string(&req)
+        .map_err(|e| BootstrapError::new("deps", format!("读依赖清单失败（{}）：{e}", req.display())))?;
+
+    // ---------- 批 A：除 pydensecrf 外的全部依赖（纯 wheel，一把装完） ----------
+    let filtered = super::wheels::strip_crf_line(&req_text);
+    let batch_a = rt_dir.join(".download-cache").join("miao-engine-req-nocrf.txt");
+    if let Some(dir) = batch_a.parent() {
+        fs::create_dir_all(dir)
+            .map_err(|e| BootstrapError::new("deps", format!("建 .download-cache 失败：{e}")))?;
+    }
+    // 🔴 落在运行时根而不是系统临时目录：固定文件名的临时文件在多用户机器上会互相踩
+    //    （Node 侧用 `os.tmpdir()` 的固定名，这是本模块与它唯一的有意差异）。
+    fs::write(&batch_a, filtered)
+        .map_err(|e| BootstrapError::new("deps", format!("写批 A 清单失败（{}）：{e}", batch_a.display())))?;
+    log("▶ 批 A：安装主依赖（不含 pydensecrf）");
+    let mut a = Command::new(venv_py);
+    a.arg("-m")
+        .arg("pip")
+        .arg("install")
+        .arg("-r")
+        .arg(&batch_a)
+        .arg("--index-url")
+        .arg(pip_index)
+        .arg("--no-input");
+    hide_console(&mut a);
+    match a.status() {
+        Ok(st) if st.success() => {}
+        Ok(st) => {
+            return Err(BootstrapError::new(
+                "deps",
+                format!("批 A 安装失败（{st}）—— 检查 PyPI 镜像是否可达，或改用 MIAO_PY_INDEX 指向可用源"),
+            ))
+        }
+        Err(e) => return Err(BootstrapError::new("deps", format!("起 pip 失败：{e}"))),
+    }
+    log("✓ 批 A 完成");
+
+    // ---------- 批 B：pydensecrf —— 预编译 wheel 优先，否则源码编译 ----------
+    let plan = super::wheels::plan_crf(cache_root);
+    log(&format!("pydensecrf 路线：{} —— {}", route_zh(&plan.route), plan.reason));
+    match plan.route {
+        super::wheels::CrfRoute::Wheel => {
+            let abs = plan.abs.clone().ok_or_else(|| {
+                BootstrapError::new("deps", "选路说走 wheel 却没给出路径（内部不一致）".to_string())
+            })?;
+            // `--no-index`：wheel 是自足的（依赖已由批 A 装齐），不联网才是真"零配置"。
+            // `--no-deps`：它的 numpy/cython 已就位，不让 pip 再解析一遍。
+            let mut b = Command::new(venv_py);
+            b.arg("-m").arg("pip").arg("install").arg("--no-index").arg("--no-deps").arg(&abs);
+            hide_console(&mut b);
+            match b.status() {
+                Ok(st) if st.success() => log("✓ 批 B 完成（预编译 wheel，未编译）"),
+                // 便利件装不上 ⇒ 回退源码编译，不让它把整体装配拖死（与 Node 侧同口径）。
+                Ok(st) => {
+                    log(&format!("⚠ 预编译 wheel 安装失败（{st}）—— 回退源码编译"));
+                    build_crf_from_source(venv_py, &req_text, pip_index, log)?;
+                }
+                Err(e) => {
+                    log(&format!("⚠ 起 pip 装 wheel 失败：{e} —— 回退源码编译"));
+                    build_crf_from_source(venv_py, &req_text, pip_index, log)?;
+                }
+            }
+        }
+        super::wheels::CrfRoute::Source => build_crf_from_source(venv_py, &req_text, pip_index, log)?,
+    }
+
+    // ---------- 装完：pydensecrf 旧常量兼容补丁（幂等） ----------
+    match super::wheels::apply_crf_compat_patch(rt_dir.join("venv").as_path()) {
+        Ok(true) => log("已写入 pydensecrf 旧常量兼容补丁"),
+        Ok(false) => log("pydensecrf 兼容补丁已在（或未装 pydensecrf）"),
+        Err(e) => return Err(BootstrapError::new("deps", e)),
+    }
+
+    // ---------- 导入自检：装完当时就发现，比第一次翻译时才发现便宜得多 ----------
+    super::wheels::crf_import_check(venv_py, src_dir)
+        .map_err(|e| BootstrapError::new("deps", e))?;
+    log("✓ 依赖安装完成（含导入自检）");
+    Ok(())
+}
+
+/// 路线名（人读）。
+fn route_zh(r: &super::wheels::CrfRoute) -> &'static str {
+    match r {
+        super::wheels::CrfRoute::Wheel => "预编译 wheel",
+        super::wheels::CrfRoute::Source => "源码编译",
+    }
+}
+
+/// 批 B 的源码编译回退。
+///
+/// 🔴 失败消息必须**点名需要编译器**：目标机没有 MSVC（Windows）/ Xcode CLT（macOS）时
+///    这是预期失败，而"pip 退出 1"这句话离根因极远 —— 用户会去查网络。
+/// ⚠️ 与 Node 侧的有意差异：不移植它的 MSVC 环境探测（手工拼 INCLUDE/LIB）与
+///    `ghfast.top` 镜像回退 —— 那是仓库侧装机脚本的职责，本路径只是**回退**。
+fn build_crf_from_source(
+    venv_py: &Path,
+    req_text: &str,
+    _pip_index: &str,
+    log: &dyn Fn(&str),
+) -> BootstrapResult {
+    let Some(url) = super::wheels::crf_url(req_text) else {
+        return Err(BootstrapError::new(
+            "deps",
+            "requirements.txt 里没有 pydensecrf 直链行，无法源码编译（也无法命中 wheel）".to_string(),
+        ));
+    };
+    log(&format!("▶ 批 B：从源码编译 pydensecrf（{url}）"));
+    let mut b = Command::new(venv_py);
+    b.arg("-m").arg("pip").arg("install").arg("--no-build-isolation").arg(&url);
+    hide_console(&mut b);
+    match b.status() {
+        Ok(st) if st.success() => {
+            log("✓ 批 B 完成（源码编译）");
+            Ok(())
+        }
+        Ok(st) => Err(BootstrapError::new(
+            "deps",
+            format!(
+                "pydensecrf 源码编译失败（{st}）。这一项**需要编译器**：Windows 装「Visual Studio 2022 生成工具」\
+                 （MSVC v143 + Windows SDK）、macOS 装 Xcode 命令行工具（xcode-select --install）。\n\
+                 正常情况下应命中随包的预编译 wheel（engine/wheels.manifest.json）而走不到这一步 —— \
+                 若反复落在这里，请检查该清单是否有本平台（{} / {}）条目且包内 wheel 未被改动。",
+                super::model_store::platform_key(),
+                super::wheels::python_tag()
+            ),
+        )),
+        Err(e) => Err(BootstrapError::new("deps", format!("起 pip 编译 pydensecrf 失败：{e}"))),
+    }
 }
 
 /// 依赖清单路径：`MIAO_REQUIREMENTS` 覆盖 > **上游源码树自带**的 `<rt>/src/requirements.txt`。

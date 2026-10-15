@@ -110,6 +110,32 @@ fn main() {
         println!("{}", serde_json::to_string(&s).unwrap_or_else(|_| "{}".to_string()));
         return;
     }
+    // `--engine-crf-plan`：打印 **pydensecrf 的 wheel 选路结论**（B4/G3）后退出，不起服务。
+    // 用途：`e2e/engine/pydensecrf-wheel-check.mjs` 取证「命中且哈希对得上 ⇒ 走 wheel /
+    // 哈希不符 ⇒ 拒绝并回退 / 文件不在盘 ⇒ 回退 / 只有别的平台条目 ⇒ 回退」这**四态**。
+    // 🔴 为什么必须有一个真出口而不是读代码相信：选路逻辑一旦漂移（例如把「包内优先」
+    //    写成「本机目录优先」），表现是目标机上静默退回源码编译、装到一半失败 ——
+    //    而那台机器通常不是你面前这台。
+    // 与 `--print-plan` 同口径：**只读**，非 Windows 下也能跑（macOS 用户同样要能问
+    // 「有没有本平台的预编译 wheel」），不做任何平台闸门。
+    if std::env::args().any(|a| a == "--engine-crf-plan") {
+        let plan = miao_dock::boxsvc::engine::wheels::plan_crf(&miao_dock::paths::model_root());
+        println!(
+            "{}",
+            serde_json::json!({
+                "route": match plan.route {
+                    miao_dock::boxsvc::engine::wheels::CrfRoute::Wheel => "wheel",
+                    miao_dock::boxsvc::engine::wheels::CrfRoute::Source => "source",
+                },
+                "reason": plan.reason,
+                "abs": plan.abs,
+                "from": plan.from,
+                "platform": plan.key,
+                "pythonTag": plan.tag,
+            })
+        );
+        return;
+    }
     // `--translate-cases '<json>'`：把一组用例喂给翻译**门面**（text/stream/options/settings/
     // credentials/batch），打印 `{results:[...]}`。用途：`check:translate` 的运行时断言面 ——
     // Node 服务退役后，原先「进程内直调 Node 门面」改由这里驱动 Rust 门面（真发 HTTP 打 Node

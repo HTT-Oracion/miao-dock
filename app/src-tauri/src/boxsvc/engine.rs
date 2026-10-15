@@ -36,6 +36,8 @@ pub mod fetch_models;
 pub mod model_store;
 // ---- G4：零配置装配编排（裁定④）—— 把「仓库侧四步手工装配」串成产品内一条阶段机 ----
 pub mod runtime_setup;
+// ---- B4/G3：pydensecrf 预编译 wheel 的产品侧选路（目标机零编译器）----
+pub mod wheels;
 // ---- F5.6：引擎组的判定/合成/持久化层（对应 Node 的 config.mjs 引擎段 + settings/*.mjs）----
 pub mod idle_policy;
 pub mod model_status;
