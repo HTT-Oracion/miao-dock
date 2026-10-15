@@ -105,6 +105,112 @@ function writeManifest(name, wheels, extra = {}) {
 
 const envFor = (manifestPath) => ({ MIAO_WHEELS_MANIFEST: manifestPath, MIAO_WHEEL_DIR: wheelDir });
 
+// ------------------------------------------------------------------ Rust 侧产品出口
+//
+// 上面 WB.W1–W12 全部走 Node 对照端（`install-engine-deps.mjs --print-plan`）。
+// 🔴 但**打包用户机上跑的是 Rust 侧** `boxsvc/engine/wheels.rs::plan_crf`
+//    （经 `boxsvc --engine-crf-plan`）—— 两边语义必须一致，而"一致"不能靠读代码相信。
+//    这一组判据直接打产品出口，与上面那组构成**双靶**。
+
+const BOXSVC = path.join(ROOT, 'app', 'src-tauri', 'target', 'debug', 'boxsvc.exe');
+const hasBoxsvc = fs.existsSync(BOXSVC);
+
+/** 跑产品的 `boxsvc --engine-crf-plan`，返回解析后的 JSON。 */
+function rustPlan(env = {}) {
+  const r = spawnSync(BOXSVC, ['--engine-crf-plan'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+  });
+  const text = `${r.stdout ?? ''}`.trim();
+  try {
+    return { ...JSON.parse(text), code: r.status };
+  } catch {
+    return { parseError: true, code: r.status, out: text.slice(0, 300), err: String(r.stderr ?? '').slice(0, 300) };
+  }
+}
+
+// 🔴 `MIAO_WHEEL_DIR` 的语义两侧一致：它就是 **wheel 所在目录本身**
+//    （Rust `wheel_dir()` 与 Node `wheelDir()` 都直接用它，不再往下拼 `.download-cache/wheels`）。
+//    传成 `<root>/.download-cache/wheels` 会让 Rust 侧去找
+//    `<root>/.download-cache/wheels/.download-cache/wheels` ⇒ 永远"不在盘上"。
+const rustEnvFor = (manifestPath, modelRoot) => ({
+  MIAO_WHEELS_MANIFEST: manifestPath,
+  MIAO_WHEEL_DIR: wheelDir,
+  MIAO_MODEL_ROOT: modelRoot,
+});
+
+if (hasBoxsvc) {
+  // ---- WB.R1 平台/ABI 与 Node 侧同源 ----
+  {
+    const rustProbe = rustPlan(rustEnvFor(path.join(tmp, 'empty.json'), tmp));
+    const nodeProbe = probe;
+    check('WB.R1 Rust 出口自报的平台/ABI 与 Node 侧一致（双靶同源，否则两侧会选出不同的 wheel）',
+      rustProbe.platform === nodeProbe.platform && rustProbe.pythonTag === nodeProbe.pythonTag,
+      { rust: [rustProbe.platform, rustProbe.pythonTag], node: [nodeProbe.platform, nodeProbe.pythonTag] });
+  }
+
+  // ---- WB.R2 四态：命中 / 哈希不符 / 文件不在 / 无本平台条目 ----
+  {
+    const ok = writeManifest('rust-ok.json', [{
+      id: 'fixture', platform: PLATFORM, pythonTag: PY_TAG, file: REAL_FILE,
+      sha256: sha256(wheelBytes), sizeBytes: wheelBytes.length, bundled: false, path: '',
+    }]);
+    const p1 = rustPlan(rustEnvFor(ok, tmp));
+    check('WB.R2a Rust 出口：平台匹配 + 文件在盘 + sha256 相符 ⇒ route=wheel', p1.route === 'wheel', p1);
+
+    const bad = writeManifest('rust-bad.json', [{
+      id: 'fixture', platform: PLATFORM, pythonTag: PY_TAG, file: REAL_FILE,
+      sha256: '0'.repeat(64), sizeBytes: wheelBytes.length, bundled: false, path: '',
+    }]);
+    const p2 = rustPlan(rustEnvFor(bad, tmp));
+    check('WB.R2b Rust 出口：sha256 不符 ⇒ 拒绝并回退源码编译（宁可慢，也不装没验过的东西）',
+      p2.route === 'source' && /sha256 与清单不符/.test(String(p2.reason)), p2);
+
+    const missing = writeManifest('rust-missing.json', [{
+      id: 'fixture', platform: PLATFORM, pythonTag: PY_TAG, file: 'not-on-disk.whl',
+      sha256: sha256(wheelBytes), sizeBytes: wheelBytes.length, bundled: false, path: '',
+    }]);
+    const p3 = rustPlan(rustEnvFor(missing, tmp));
+    check('WB.R2c Rust 出口：文件不在盘上 ⇒ 回退且**不报错**（便利件缺件不该让装配失败）',
+      p3.route === 'source' && /不在盘上/.test(String(p3.reason)), p3);
+
+    const p4 = rustPlan(rustEnvFor(path.join(tmp, 'empty.json'), tmp));
+    check('WB.R2d Rust 出口：清单为空 ⇒ 回退源码编译（回退是前提，不是降级）',
+      p4.route === 'source', p4);
+  }
+
+  // ---- WB.R3 macOS 镜像：清单里只有 Windows 条目 ⇒ 如实说"没有本平台" ----
+  //     这一条是 macOS 边界的事实源：`wheels.manifest.json` 目前只有 win32-x64 一条，
+  //     所以真机上 macOS 走的正是这条分支。它必须**说得出原因**（用户要知道自己为什么要装 CLT），
+  //     而不是静默回退后让人在几分钟的编译失败里自己猜。
+  {
+    const foreign = writeManifest('rust-foreign.json', [{
+      id: 'fixture', platform: 'win32-x64', pythonTag: 'cp311', file: otherFile,
+      sha256: sha256(wheelBytes), sizeBytes: wheelBytes.length, bundled: false, path: '',
+    }]);
+    const p = rustPlan({ ...rustEnvFor(foreign, tmp), MIAO_PLATFORM: 'darwin-arm64' });
+    check('WB.R3 macOS 镜像下 Rust 出口如实报「没有本平台条目 ⇒ 走源码编译」（不静默 —— 用户需要知道要装 Xcode CLT）',
+      p.route === 'source' && p.platform === 'darwin-arm64' && /没有本平台/.test(String(p.reason)), p);
+  }
+
+  // ---- WB.R4 随包那一份优先（包内 > 本机目录）----
+  //     顺序反了的表现是：用户机上没有 `.download-cache`、也没有编译器 ⇒ 静默退回源码编译。
+  {
+    const repoWheel = path.join(ROOT, 'engine', 'wheels', 'pydensecrf-1.0-cp311-cp311-win_amd64.whl');
+    const manifest = JSON.parse(fs.readFileSync(WHEELS_JSON, 'utf8'));
+    const bundledEntry = (manifest.wheels || []).find((w) => w.bundled === true);
+    const p = rustPlan({ MIAO_MODEL_ROOT: tmp });
+    check('WB.R4 真仓库上 Rust 出口选中**随包**那份 wheel（from=包内、sha256 已核对）',
+      p.route === 'wheel' && p.from === '包内' && !!bundledEntry && fs.existsSync(repoWheel), p);
+  }
+} else {
+  // 🔴 没有 boxsvc 时**不许静默跳过**：跳过 ≠ 通过（E4 纪律）。
+  //    先 `cargo build --bin boxsvc` 再跑本脚本。
+  check('WB.R0 `boxsvc` 未构建（cargo build --bin boxsvc）—— Rust 侧产品出口因此无法取证',
+    false, { boxsvc: BOXSVC });
+}
+
 // ------------------------------------------------------------------ WB.W1 清单结构
 
 {
