@@ -17,7 +17,15 @@
  * - M1 `engine-download.ts` 的运行态文案注入 `pip` 字样 ⇒ W5（无命令行字样）红。
  * - M2 `runtime.manifest.json` 抹掉某条的 `sha256` ⇒ W1（清单条目完整可下载）红。
  * - M3 `state.rs` 阶段映射 `stage1` 改成 `phase1` ⇒ W4（阶段顺序 stage1→stage2）红。
+ * - M4 `runtime_probe.rs` 的 `FIX_SETUP` 注回 `node engine/scripts/…` ⇒ W9a 红。
+ * - M5 未就绪文案抹掉产品内入口（只说缺什么）⇒ W9b 红。
  * 每条反证都按字节还原，收尾复核残留。
+ *
+ * ## W9 为什么必须打在 Rust 侧
+ * W5/W6 只扫前端 4 个文件，而「运行时未装配」屏渲染的字符串来自
+ * `boxsvc/engine/runtime_probe.rs`（经 `/engine/runtime` → `NotReadyScreen.tsx`）。
+ * 文案里的 `node engine/scripts/setup-engine.mjs` 既不会被前端扫描命中、也不匹配
+ * 旧版 `CLI_JARGON` 的任何前缀 ⇒ 长时间全绿而产品一直在教用户跑命令行。
  *
  * 用法：node e2e/service/engine-bootstrap-check.mjs [--refute]
  */
@@ -34,6 +42,9 @@ const RUNTIME_MANIFEST = path.join(ROOT, 'engine', 'runtime.manifest.json');
 const WHEELS_MANIFEST = path.join(ROOT, 'engine', 'wheels.manifest.json');
 const HANDLERS_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'handlers.rs');
 const STATE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 'state.rs');
+/// W9：**Rust 侧**面向用户的未就绪文案（`fix` + 闸门消息）也要零命令行 ——
+/// 前端 4 个文件干净不等于产品干净：`NotReadyScreen.tsx` 渲染的正是这里的字符串。
+const RUNTIME_PROBE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 'runtime_probe.rs');
 const ENGINE_DOWNLOAD_TS = path.join(ROOT, 'app', 'src', 'engine-download.ts');
 const UI_FILES = [
   path.join(ROOT, 'app', 'src', 'screens', 'NotReadyScreen.tsx'),
@@ -42,8 +53,13 @@ const UI_FILES = [
   path.join(ROOT, 'app', 'src', 'components', 'units', 'ProgressRing.tsx'),
 ];
 
-/** 命令行字样（反证 M1 / W5 / W6 要抓的就是这些）—— 只钉真正的命令，不钉「命令行」这种中性叙述词 */
-const CLI_JARGON = /npm install|pip install|python -m venv|MSVC|conda install|apt-get install/i;
+/**
+ * 命令行字样（反证 M1 / W5 / W6 / W9 要抓的就是这些）—— 只钉真正的命令，不钉「命令行」这种中性叙述词。
+ * 🔴 必须含 `node <脚本>` 与 `npm run <脚本>` 两种形态：历史文案是
+ * 「运行 node engine/scripts/setup-engine.mjs …」「运行 npm run deps:engine …」，
+ * 它们能被用户读到，却**不被**前几条命令前缀命中（W9 之前这条是盲区）。
+ */
+const CLI_JARGON = /npm install|npm run|pip install|python -m venv|MSVC|conda install|apt-get install|node\s+\S+\.mjs|node\s+engine\//i;
 
 let passed = 0;
 let failed = 0;
@@ -88,16 +104,19 @@ function check(name, cond, extra) {
     const w = (m.wheels || []).find((x) => String(x.id).includes('pydensecrf'));
     const hasSha = w && typeof w.sha256 === 'string' && w.sha256.length > 0;
     const hasSize = w && typeof w.sizeBytes === 'number' && w.sizeBytes > 0;
+    // 🔴 三态**恰取其一**：随包(bundled=true + path) / 未托管(local=true) / 已托管(url 非空)。
+    const bundled = w ? w.bundled === true : false;
+    const path = w && typeof w.path === 'string' && w.path.length > 0;
     const local = w ? w.local === true : false;
     const url = w ? (typeof w.url === 'string' && w.url.length > 0) : false;
-    // 🔴 二选一且互斥：未托管(local=true) ⇒ 没 url；托管后(local=false) ⇒ 必须有 url。
-    const mutuallyExclusive = (local && !url) || (!local && url);
-    ok2 = !!(w && hasSha && hasSize && mutuallyExclusive);
-    detail2 = { found: !!w, hasSha, hasSize, local, url, mutuallyExclusive };
+    const exactlyOne = [bundled, local, url].filter(Boolean).length === 1;
+    const bundledComplete = !bundled || path;
+    ok2 = !!(w && hasSha && hasSize && exactlyOne && bundledComplete);
+    detail2 = { found: !!w, hasSha, hasSize, bundled, path, local, url, exactlyOne, bundledComplete };
   } catch (e) {
     detail2 = String(e.message);
   }
-  check('W2 `wheels.manifest.json` pydensecrf 条目结构合法（sha256/sizeBytes 齐备，`local` 与 `url` 互斥）', ok2, detail2);
+  check('W2 `wheels.manifest.json` pydensecrf 条目结构合法（sha256/sizeBytes 齐备，分发形态 bundled/local/url 三态恰取其一且 bundled 必带 path）', ok2, detail2);
 
   // W3 端点接线 + G5 进度字段全部暴露在 `/engine/status` 的 `modelDownload`。
   const handlers = fs.readFileSync(HANDLERS_RS, 'utf8');
@@ -130,6 +149,26 @@ function check(name, cond, extra) {
   // W8 续传能力现算自盘上 `.part`（进程重启后内存态清空仍能如实报可续）。
   const resumable = state.includes('fn can_resume_now') && state.includes('has_part_files');
   check('W8 续传态现算自盘上 `.part`（`can_resume_now` + `has_part_files`），重启不丢续传能力', resumable, { resumable });
+
+  // W9 Rust 侧面向用户的未就绪文案：**零命令行**，且必须给出产品内动作。
+  //    判据只取 `const FIX_*` 的**字面值**与闸门消息那一行 —— 文件注释里正讨论着
+  //    「不许写命令行」，扫全文会把规则本身当成违规（历史上踩过：规则条文自身污染扫描）。
+  const probeSrc = fs.readFileSync(RUNTIME_PROBE_RS, 'utf8');
+  const fixLiterals = [...probeSrc.matchAll(/const FIX_[A-Z_]+: &str = "([^"]*)";/g)].map((m) => m[1]);
+  const fixClean = fixLiterals.length === 4 && fixLiterals.every((t) => t.length > 0 && !CLI_JARGON.test(t));
+  check('W9a Rust `FIX_*` 未就绪文案四条齐全且零命令行字样（node / npm run / engine/scripts）',
+    fixClean, { count: fixLiterals.length, dirty: fixLiterals.filter((t) => CLI_JARGON.test(t)) });
+
+  // W9b 文案必须落到**产品内动作**上：只说"缺什么"而不给可点的入口，用户仍无处可去。
+  const IN_APP_ENTRY = /开始下载|重新下载模型/;
+  const fixActionable = fixLiterals.length === 4 && fixLiterals.every((t) => IN_APP_ENTRY.test(t));
+  check('W9b 每条未就绪文案都指向产品内入口（「开始下载」/「重新下载模型」），不是命令行',
+    fixActionable, { notActionable: fixLiterals.filter((t) => !IN_APP_ENTRY.test(t)) });
+
+  // W9c 闸门消息同样不得把用户支去命令行。
+  const gateLine = probeSrc.split('\n').find((l) => l.includes('运行时未装配：'));
+  const gateClean = !!gateLine && !CLI_JARGON.test(gateLine);
+  check('W9c D6 闸门消息不含命令行字样（它是 `last_error`，用户会看到）', gateClean, { gateLine });
 }
 
 // ------------------------------------------------------------------ 反证轮
@@ -196,13 +235,41 @@ if (REFUTE) {
     restore();
   }
 
+  // ---- M4：Rust 未就绪文案注回命令行（W9 之前这条是盲区） ----
+  {
+    const restore = mutateFile(
+      RUNTIME_PROBE_RS,
+      'const FIX_SETUP: &str = "在「设置 → 翻译服务」点「开始下载」，喵坞会自动装配引擎运行时";',
+      'const FIX_SETUP: &str = "运行 node engine/scripts/setup-engine.mjs 装配引擎运行时";',
+    );
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W9a');
+    check('M4 Rust `FIX_SETUP` 注回命令行字样 ⇒ W9a 红', red, { code: r.code, redOn: red });
+    restore();
+  }
+
+  // ---- M5：文案丢掉产品内入口（改成纯描述）⇒ W9b 红 ----
+  {
+    const restore = mutateFile(
+      RUNTIME_PROBE_RS,
+      'const FIX_DEPS: &str = "点「开始下载」即可 —— 装配会从公网镜像安装引擎依赖（无需命令行）";',
+      'const FIX_DEPS: &str = "引擎依赖（torch / manga_translator）缺失";',
+    );
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W9b');
+    check('M5 未就绪文案抹掉产品内入口（只说缺什么）⇒ W9b 红', red, { code: r.code, redOn: red });
+    restore();
+  }
+
   // 收尾：确认还原到位
   {
     const bad = [];
     if (!fs.readFileSync(ENGINE_DOWNLOAD_TS, 'utf8').includes("text: '引擎下载中',")) bad.push('engine-download.ts 残留 M1');
     if (fs.readFileSync(RUNTIME_MANIFEST, 'utf8').includes('"sha256": ""')) bad.push('runtime.manifest.json 残留 M2');
     if (!fs.readFileSync(STATE_RS, 'utf8').includes('"runtime" => Some("stage1"')) bad.push('state.rs 残留 M3');
-    check('R1 变异收尾：三处源码/清单按字节还原', bad.length === 0, bad);
+    if (!fs.readFileSync(RUNTIME_PROBE_RS, 'utf8').includes('点「开始下载」，喵坞会自动装配引擎运行时')) bad.push('runtime_probe.rs 残留 M4');
+    if (!fs.readFileSync(RUNTIME_PROBE_RS, 'utf8').includes('装配会从公网镜像安装引擎依赖')) bad.push('runtime_probe.rs 残留 M5');
+    check('R1 变异收尾：五处源码/清单按字节还原', bad.length === 0, bad);
   }
 }
 

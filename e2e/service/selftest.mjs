@@ -13,12 +13,12 @@ import { pathToFileURL } from 'node:url';
 
 import { encodePng } from '../../engine/src/png.mjs';
 // F0：服务入口解析的唯一事实源（MIAO_SERVICE_IMPL=node|rust 切换靶子）
-import { SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
+import { killTree, SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 // 🔴 本套用例起的是**模拟引擎**（`../engine/src/server.mjs`）——它实现的是 ver1.0 的自定义协议
 // （`/ready` + 字节式 `/translate`），**不是真实引擎协议**（`/translate/image` + JSON/data URI）。
 // 所以这里**强制**声明 `mock`：起的是替身，就老实说。生产默认值仍是 `real`（见 config.mjs）。
-// 真实协议路径的断言在 `e2e/service/engine-client-check.mjs`（真协议假引擎 + S1 真引擎实测）。
+// 真实协议路径的断言在 `check:engine-http`（真协议假引擎，喂帧）与 `check:e3:real`（真引擎全链路）。
 process.env.MIAO_ENGINE_PROTOCOL = 'mock';
 // 本套用例只关心**任务 / 队列 / 落盘 / 安全**契约，不验 ③ 的生命周期（那有自己的脚本：
 // `engine-profile-check.mjs`）。而本脚本会在 A1 里**反复起停** box-service 实例，
@@ -186,7 +186,10 @@ async function waitReady(state, timeoutMs = 15_000) {
 }
 
 function killProc(state) {
-  if (state && state.child && state.child.exitCode === null) state.child.kill('SIGTERM');
+  // 🔴 杀进程树（不是只杀主进程）：rust 服务派生的引擎②/③ 否则全成孤儿（D-202）。
+  //    ⚠️ A20 那几处 `kill('SIGSTOP')` / `kill('SIGKILL')` 是**语义性**的（挂起后验中断落盘 /
+  //    模拟崩溃不给清理机会），刻意**不**改用 killTree —— 杀棵树会改变被测语义。
+  if (state && state.child && state.child.exitCode === null) killTree(state.child);
 }
 
 /**

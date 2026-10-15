@@ -236,7 +236,11 @@ if (REFUTE) {
   const redOn = (out) => out.split('\n').filter((l) => l.trimStart().startsWith('✗')).map((l) => l.trim().slice(0, 46));
 
   const LOSE_POSIX = 'PathBuf::from("bin").join("python")';
-  const GUARD = "if (!PLATFORM.startsWith('win32')) {";
+  // 🔴 锚点必须与**当前**守卫逐字一致。B4 给守卫加了只读旁路
+  //    （`&& !ONLY_READONLY`，让 macOS 用户也能 `--print-plan` / `--wheel-entry`），
+  //    锚点没跟着改 ⇒ 反证轮一进 M1 就抛「反证锚点未命中」，整轮**红着退出**。
+  //    教训：反证锚点是**源码切片**，改那行源码时必须同步这个常量（同 A7 的双靶钉法）。
+  const GUARD = "if (!PLATFORM.startsWith('win32') && !ONLY_READONLY) {";
 
   const rebuild = () =>
     new Promise((resolve) => {

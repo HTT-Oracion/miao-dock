@@ -147,7 +147,9 @@ function compareProtocol(tag, rust, gold) {
   check(`ENG.${tag}.constants — 常量相同`, sameJSON(rust.constants, gold.constants), { rust: rust.constants, golden: gold.constants });
   check(`ENG.${tag}.engineVersion — ENGINE_VERSION 相同`, rust.engineVersion === gold.engineVersion, `rust=${rust.engineVersion} golden=${gold.engineVersion}`);
 
-  for (const key of ['engineLocalNoProxy', 'engineHfOfflineEnv', 'availableTiers', 'tierModelPath', 'translationSnapshotDir', 'translationWeightsPresent']) {
+  // `llmLaunchByTier` 是 E4 用的新出口（按档位各解析一次 ③ 配方）：并进对拍面后，
+  // 「未声明档位必须显式报错」这条契约同时被 golden 与 E4 各钉一次，不会只活在一处。
+  for (const key of ['engineLocalNoProxy', 'engineHfOfflineEnv', 'availableTiers', 'tierModelPath', 'llmLaunchByTier', 'translationSnapshotDir', 'translationWeightsPresent']) {
     check(`ENG.${tag}.pure.${key} — 相同`, sameJSON(rust.pure[key], gold.pure[key]), sameJSON(rust.pure[key], gold.pure[key]) ? undefined : { rust: rust.pure[key], golden: gold.pure[key] });
   }
 

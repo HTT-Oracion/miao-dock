@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * F0 · 服务靶子抽象的钉子 —— 「入口解析唯一」+「MIAO_SERVICE_IMPL 切换正确」
+ * F0 · 服务靶子抽象的钉子 —— 「入口解析唯一」+「**靶子只有一个（boxsvc）**」
  * =============================================================================
  * 为什么要有这个钉子：F 组让 e2e 能打**两套服务实现**（node / rust）的唯一机制，是
  * 把「靶子是谁」收敛到 `_service-harness.mjs`。一旦某个脚本又自己拼一份入口，
@@ -10,16 +10,16 @@
  * ## 断言
  *   HARNESS.entrySingle       e2e/service/ 下除 harness 外**无人**定义 `SERVICE_ENTRY`
  *   HARNESS.entryImported     凡使用 `SERVICE_ENTRY` 的脚本，都必须从 harness import 它
- *   HARNESS.nodeTarget        `MIAO_SERVICE_IMPL=node` ⇒ command=node、args=[server.mjs,...]
- *   HARNESS.rustTarget        `MIAO_SERVICE_IMPL=rust` ⇒ command=boxsvc、args=[]
- *   HARNESS.rustMissingThrows rust 靶子缺失时**报错文本指向构建命令**（不是静默落回 node）
- *   HARNESS.engineUntouched   非服务入口（模拟引擎）在 rust 档下**不被劫持**（仍走 node）
- *   HARNESS.implMislabeled    未知 `MIAO_SERVICE_IMPL` 值 ⇒ 落回 node 且 **stderr 可见**（R16）
+ *   HARNESS.nodeRetired       `MIAO_SERVICE_IMPL=node` ⇒ **抛错**（退役门；静默落回 = 假绿）
+ *   HARNESS.rustTarget        服务入口 ⇒ command=boxsvc、args=[]
+ *   HARNESS.rustMissingThrows 靶子缺失时**报错文本指向构建命令**
+ *   HARNESS.engineUntouched   非服务入口（模拟引擎）**不被**靶子机制劫持（仍走 node）
+ *   HARNESS.implMislabeled    未知 `MIAO_SERVICE_IMPL` 值 ⇒ 落回 rust 且 **stderr 可见**（R16）
  *
  * ## 反证轮（--refute，3 个内存变异）
  *   M1 注入一份「本地定义 SERVICE_ENTRY」的脚本 → entrySingle 红
  *   M2 注入一份「用 SERVICE_ENTRY 但不 import harness」的脚本 → entryImported 红
- *   M3 把 node 档的 args 期望改坏（模拟 harness 没把入口接上）→ nodeTarget 红
+ *   M3 把服务靶子的哨兵写错 → rustTarget 红
  * 反证前先要求**正向全绿**（正向就红 ⇒ 反证证明不了任何事）。
  *
  * 用法：node e2e/service/harness-check.mjs [--refute]
@@ -146,54 +146,59 @@ const sources = readSources();
 
 // 入口常量（用 harness 自己算，避免本文件再拼一份 —— 那正是本钉子要禁的事）
 const harnessMod = await import('./' + HARNESS_FILE);
-const { NODE_ENTRY } = harnessMod;
+const { SERVICE_ENTRY } = harnessMod;
 const ENGINE_ENTRY = path.resolve(HERE, '..', '..', 'engine', 'src', 'server.mjs');
 
-// H3 node 档
+// H3 node 档已退役 ⇒ `MIAO_SERVICE_IMPL=node` 必须**抛错**（不是静默落回 rust）
 {
-  const t = await probe({ MIAO_SERVICE_IMPL: 'node' }, NODE_ENTRY);
-  const ok = t.ok && path.resolve(t.command) === path.resolve(process.execPath) && path.resolve(t.args[0]) === path.resolve(NODE_ENTRY);
-  check('HARNESS.nodeTarget — node 档 ⇒ command=node，args[0]=service/src/server.mjs', ok, t);
+  const r = await runNode(
+    ['--input-type=module', '-e', `await import(${JSON.stringify('./' + HARNESS_FILE)}); process.stdout.write('done');`],
+    { MIAO_SERVICE_IMPL: 'node' },
+  );
+  // 🔴 判据三条缺一不可：非 0 退出 + 文案里有「已退役」+ 指到 `service/`。
+  //    只看"非 0"会被任何无关崩溃骗过（例如语法错）；只看文案则"抛没抛"没被验。
+  const ok = r.code !== 0 && /已退役/.test(r.stderr || '') && /service\//.test(r.stderr || '');
+  check('HARNESS.nodeRetired — MIAO_SERVICE_IMPL=node ⇒ 抛错并指向「service/ 已删除」', ok, { code: r.code, stderr: (r.stderr || '').slice(0, 200) });
 }
-// H4 rust 档（用临时假二进制占位，验「解析」而非「存在」）
+// H4 服务入口 ⇒ command=boxsvc（用临时假二进制占位，验「解析」而非「存在」）
 {
   const dummy = path.join(HERE, '_tmp-boxsvc-probe.bin');
   fs.writeFileSync(dummy, '');
   try {
-    const t = await probe({ MIAO_SERVICE_IMPL: 'rust', MIAO_BOXSVC_BIN: dummy }, NODE_ENTRY);
+    const t = await probe({ MIAO_BOXSVC_BIN: dummy }, SERVICE_ENTRY);
     const ok = t.ok && path.resolve(t.command) === path.resolve(dummy) && (t.args || []).length === 0;
-    check('HARNESS.rustTarget — rust 档 ⇒ command=boxsvc，args 为空', ok, t);
+    check('HARNESS.rustTarget — 服务入口 ⇒ command=boxsvc，args 为空', ok, t);
   } finally {
     fs.rmSync(dummy, { force: true });
   }
 }
-// H5 rust 档但二进制缺失 ⇒ 明确报错（含构建指引），**不是**静默落回 node
+// H5 靶子二进制缺失 ⇒ 明确报错（含构建指引）
 {
   const missing = path.join(HERE, '_definitely_not_here_boxsvc');
-  const t = await probe({ MIAO_SERVICE_IMPL: 'rust', MIAO_BOXSVC_BIN: missing }, NODE_ENTRY);
+  const t = await probe({ MIAO_BOXSVC_BIN: missing }, SERVICE_ENTRY);
   const ok = t.ok === false && /cargo build --bin boxsvc/.test(t.message || '');
-  check('HARNESS.rustMissingThrows — rust 靶子缺失时报错指向构建命令', ok, t);
+  check('HARNESS.rustMissingThrows — 靶子缺失时报错指向构建命令', ok, t);
 }
-// H6 非服务入口（模拟引擎）在 rust 档下不被劫持
+// H6 非服务入口（模拟引擎）**不被**服务靶子机制劫持
 {
   const dummy = path.join(HERE, '_tmp-boxsvc-probe2.bin');
   fs.writeFileSync(dummy, '');
   try {
-    const t = await probe({ MIAO_SERVICE_IMPL: 'rust', MIAO_BOXSVC_BIN: dummy }, ENGINE_ENTRY);
+    const t = await probe({ MIAO_BOXSVC_BIN: dummy }, ENGINE_ENTRY);
     const ok = t.ok && path.resolve(t.command) === path.resolve(process.execPath) && path.resolve(t.args[0]) === path.resolve(ENGINE_ENTRY);
-    check('HARNESS.engineUntouched — 模拟引擎入口在 rust 档下仍走 node', ok, t);
+    check('HARNESS.engineUntouched — 模拟引擎入口仍走 node，不被靶子机制改写', ok, t);
   } finally {
     fs.rmSync(dummy, { force: true });
   }
 }
-// H7 未知值落回 node 且 stderr 可见（R16）
+// H7 未知值落回默认档（rust）且 stderr 可见（R16）
 {
   const r = await runNode(
     ['--input-type=module', '-e', `await import(${JSON.stringify('./' + HARNESS_FILE)}); process.stdout.write('done');`],
     { MIAO_SERVICE_IMPL: 'RUSTT' },
   );
   const ok = /未知 MIAO_SERVICE_IMPL/.test(r.stderr || '') && /RUSTT/i.test(r.stderr || '');
-  check('HARNESS.implMislabeled — 未知 MIAO_SERVICE_IMPL 落回 node 且 stderr 可见', ok, { stderr: (r.stderr || '').trim() });
+  check('HARNESS.implMislabeled — 未知 MIAO_SERVICE_IMPL 落回默认档（rust）且 stderr 可见', ok, { stderr: (r.stderr || '').trim() });
 }
 
 // ------------------------------------------------------------------ 反证
@@ -202,7 +207,7 @@ if (REFUTE) {
     console.log('\n正向未全绿 ⇒ 反证轮不收场（先修正向）');
     process.exit(1);
   }
-  const fakeWithDef = { file: '__refute__.mjs', text: "const SERVICE_ENTRY = path.join(ROOT, 'service', 'src', 'server.mjs');" };
+  const fakeWithDef = { file: '__refute__.mjs', text: "const SERVICE_ENTRY = '__miao_service_target__';" };
   const fakeUserNoImport = { file: '__refute2__.mjs', text: 'const c = spawnProc(SERVICE_ENTRY, env, tag);' };
 
   const mutations = [
@@ -218,11 +223,18 @@ if (REFUTE) {
     },
     {
       id: 'M3',
-      what: 'node 档 args 期望改坏（模拟入口没接上）',
+      what: '把服务靶子的哨兵写错（模拟 `SERVICE_ENTRY` 与 harness 内那份对不上）',
       run: async () => {
-        const t = await probe({ MIAO_SERVICE_IMPL: 'node' }, NODE_ENTRY);
-        // 故意要求 args[0] 为空 —— 真实值非空 ⇒ 「断言」应当拒绝
-        return !(t.ok && (t.args || []).length === 0);
+        const dummy = path.join(HERE, '_tmp-boxsvc-probe3.bin');
+        fs.writeFileSync(dummy, '');
+        try {
+          // 换一个「长得像但不是」的哨兵值：`isServiceEntry` 应当判否 ⇒ 落回 node 分支
+          // ⇒ command 不是 boxsvc。若它仍报 boxsvc，说明判定退化成「总是真」。
+          const t = await probe({ MIAO_BOXSVC_BIN: dummy }, SERVICE_ENTRY + 'x');
+          return !(t.ok && path.resolve(t.command) === path.resolve(dummy));
+        } finally {
+          fs.rmSync(dummy, { force: true });
+        }
       },
     },
   ];

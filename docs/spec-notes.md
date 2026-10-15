@@ -1883,7 +1883,7 @@ A+B 合起来才证明**预算确实随基准缩放**（即旋钮真的接管了
 ### 三、断言成果
 
 `service/scripts/engine-client-check.mjs`：**正向 32 条 / 反证 5 条**
-（`npm run check:engine-client[:refute]`）。真协议一侧用**假引擎**（按 `openapi.engine.json` 快照回话，
+（`engine-client 那组钉子[:refute]`）。真协议一侧用**假引擎**（按 `openapi.engine.json` 快照回话，
 未列出的 method 一律回 405），**秒级、可反复跑、可反证**；mock 协议仍走仓内模拟引擎。
 
 - 分组：`R` real 调用 **14** · `P` 三态 **4** · `L` 启动参数 **8** · `D` 默认值 **3** · `M` mock 冒烟 **3**。
@@ -1930,7 +1930,7 @@ A+B 合起来才证明**预算确实随基准缩放**（即旋钮真的接管了
 `service/scripts/engine-client-check.mjs`（**新**，正向 32 + 反证 5）·
 `engine/scripts/s1-real-engine-check.mjs`（**新**）·
 `service/scripts/selftest.mjs`、`scripts/e2e.mjs`、`app/src-tauri/src/service.rs`（显式注入 `MIAO_ENGINE_PROTOCOL=mock`；
-**S2 改起真引擎时必须删这三行**）· `package.json`（`check:engine-client[:refute]`）·
+**S2 改起真引擎时必须删这三行**）· `package.json`（`engine-client 那组钉子[:refute]`）·
 `AGENTS.md` / `README.md`（验收命令）· 本文件。
 
 **未做（明确登记，不得写成"已完成"）**：**产品链路仍未接真引擎** —— `app/src-tauri/src/service.rs`
@@ -1940,12 +1940,12 @@ A+B 合起来才证明**预算确实随基准缩放**（即旋钮真的接管了
 
 ## D-63 · 陷阱：`check:docs` 的命令名正则不吃连字符 ⇒ **新增带 `-` 的 npm 命令会误报"命令不存在"**（2026-10-05）
 
-**现象**：S1 收口时把 `check:engine-client` 写进 AGENTS.md / README.md，
+**现象**：S1 收口时把 `engine-client 那组钉子` 写进 AGENTS.md / README.md，
 `check:docs` 立刻从 **14/14 掉到 11/3**，三条都报「不存在：**check:engine**」。
 
 **根因（不是文档写错，是解析器自己太窄）**：
 `scripts/docs-consistency-check.mjs:124` 的命令名正则是 `/npm run ([a-z0-9:]+)/g` ——
-**字符类里没有 `-`**，于是 `check:engine-client` 被截成 `check:engine` 再去 package.json 里查 ⇒ 必然不存在。
+**字符类里没有 `-`**，于是 `engine-client 那组钉子` 被截成 `check:engine` 再去 package.json 里查 ⇒ 必然不存在。
 
 **为什么一直没暴露**：在这之前全仓的 npm 命令**恰好都不带连字符**
 （`selftest` / `e2e` / `check:ia` / `check:tls` / `check:music` / `check:units` / `check:settings`）——
@@ -1961,7 +1961,7 @@ A+B 合起来才证明**预算确实随基准缩放**（即旋钮真的接管了
 > ⚠️ **这是"假红"而不是"假绿"，但危险同源**：假红会诱使人**去动文档/收窄现实**来迁就脚本。
 > 判据：断言报"某东西不存在"时，先确认**它是不是把名字读错了**，再动被报的东西。
 
-**未采纳的一个方案（记录理由）**：曾考虑把 `check:engine-client` 也加进 `SUITES` 做条数对账，
+**未采纳的一个方案（记录理由）**：曾考虑把 `engine-client 那组钉子` 也加进 `SUITES` 做条数对账，
 但其断言 **L4 依赖 `runtimes/manga-translator/src/server/main.py` 真实存在**
 （要核 cwd 拼得对不对）⇒ 在**没有拉引擎的机器**上它会红 ⇒ 会让 `check:docs`
 从"纯静态对账"变成**环境相关**。⇒ 保持 `check:docs` 只对账 3 个纯静态套件。
@@ -2255,7 +2255,7 @@ cd runtimes/manga-translator/src          # ⚠️ 必须在 src/ 下：包是 s
 - **Windows 的硬链接/符号链接语义未验**（本机无 Windows）：`fs.link` 在 NTFS 上需要权限、
   且跨卷会失败 —— 代码已退化为复制，但**这条分支在本机验不了**，标记 `unverified`。
 - `check:models` **未加入** `check:docs` 的 `SUITES` 条数对账：它的分母在脚本内已写死并断言
-  （`EXPECTED_TOTAL = 32`），加进去只会多一处需要手工同步的耦合；理由同 D-63 对 `check:engine-client` 的处理。
+  （`EXPECTED_TOTAL = 32`），加进去只会多一处需要手工同步的耦合；理由同 D-63 对 `engine-client 那组钉子` 的处理。
 
 **本节新增/修改的文件**：`engine/models.manifest.json`（新）· `engine/model-store.mjs`（新）·
 `engine/scripts/fetch-models.mjs`（新）· `engine/scripts/model-store-check.mjs`（新）·
@@ -2555,7 +2555,7 @@ H 实例（mock 档）的阶段日志**如实的空** —— ver1.0 自定义协
 ### 实测（2026-10-05）
 
 - `npm run check:contract` **77/0**（8 个实例 A–H，`real` 2.60s）；`check:contract:refute` **4/4**（2.04s）。
-- `npm run check:engine-client` **42/0**（含新增 `C` 组 4 条 / `V` 组 2 条 / `P3b` / `P3c` / `P4b`，「③ 就绪」由 `starting` 细分出 `prewarming`）；`:refute` **8/8**。
+- `engine-client 那组钉子` **42/0**（含新增 `C` 组 4 条 / `V` 组 2 条 / `P3b` / `P3c` / `P4b`，「③ 就绪」由 `starting` 细分出 `prewarming`）；`:refute` **8/8**。
 - 全量门（12 个 suite）：`selftest`（服务 159 + 引擎 23）· `selftest:app` 16 · `e11` · `check:ia` 24 ·
   `check:tls` 14 · `check:docs` 14 · `check:launch-plan` 22 · `check:profile` 42 · `check:e5e6` 13 ·
   `check:models` 32 · `check:settings` 90 · `check:units` 37 · `check:music` 215 ·
@@ -2829,7 +2829,7 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 | `check:units` / `:refute` | **37/0** · 反证 **44/44** |
 | `check:contract` | **77/0** |
 | `check:engine-settings` / `:refute` | **61/0** · 反证 **5/5** |
-| `check:engine-client` / `:refute` | **42/0** · 反证 **8/8** |
+| `engine-client 那组钉子` / `:refute` | **42/0** · 反证 **8/8** |
 | `check:ia` | **24/0** |
 | `check:docs` | **14/0** |
 | `check:tls` | **14/0** |
@@ -3395,7 +3395,7 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 
 - `check:settings` **164 / 0**（原 152）· 反证 **103 / 103**（原 84）
 - `check:ia` **32 / 0**（原 24）
-- `check:docs` **14 / 0** · `check:units` **37 / 0** · `check:tls` **14 / 0** · `check:contract` **77 / 0** · `check:engine-settings` **61 / 0** · `check:engine-client` **42 / 0**
+- `check:docs` **14 / 0** · `check:units` **37 / 0** · `check:tls` **14 / 0** · `check:contract` **77 / 0** · `check:engine-settings` **61 / 0** · `engine-client 那组钉子` **42 / 0**
 - `check:music` **215 / 1** —— 唯一红是**既有**的 `ISLANDV.toggleBothWays`，与本轮无关（提交 `70e2844` 时即是同一状态）
 - `cd app && npx tsc --noEmit` **0 错** · `npx vite build` 通过（sass 全量编译）
 - `npm run gen:licenses` 实跑：npm 生产依赖 **57**（跳 dev 167，全部有声明）· Rust 第三方 crate **516**，取到声明 **342**、缺 **174** · 产出 `licenses.json` 38609 字节
@@ -3416,7 +3416,7 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 > 上面那条 ⚠️ 是本条目**写作时**的状态标记，按"不改写历史、只加映射"的规矩原样保留。
 > 提交前在终态树上复跑：`check:settings` 164/0 · 反证 **103/103**（22 文件按字节还原）· `check:ia` 32/0 ·
 > `check:docs` 14/0 · `check:units` 37/0 · `check:tls` 14/0 · `check:contract` 77/0 · `check:engine-settings` 61/0 ·
-> `check:engine-client` 42/0 · `app tsc` 0 错。
+> `engine-client 那组钉子` 42/0 · `app tsc` 0 错。
 > ⚠️ 操作坑（当场踩到）：**反证轮与正向门禁不能并行跑** —— 反证轮就地改源码再还原，正向门禁会读到改到一半的树
 > （这次 `check:settings` 误报 163/1、`check:docs` 误报 12/2）。二者必须**串行**；反证轮自带的"22 文件按字节还原"
 > 也是并发跑时最容易被打乱的一环。
@@ -3550,13 +3550,13 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
    `recordFrame(seq, f)`，旧锚点在源码里**已不存在** ⇒ 该轮长期报「锚点未找到」，
    **分母写 8 而实际只跑得动 7**（分母虚高，看着像"跑过了"）。已按重构后的真实行更新锚点。
 2. **`runtimes/manga-translator/openapi.engine.json` 不入库**：`.gitignore:38` 忽略整个 `runtimes/`，
-   而 `check:engine-client` **硬依赖**它 ⇒ **任何全新克隆跑这条门必红**（`ENOENT`，与本次改动无关）。
+   而 `engine-client 那组钉子` **硬依赖**它 ⇒ **任何全新克隆跑这条门必红**（`ENOENT`，与本次改动无关）。
    按其文档出处（"真引擎 `GET /docs` 导出的快照"）用 `GET /openapi.json` 重建。
    ⚠️ **未做**：把"重建快照"做成脚本 —— 它现在是"装配后必须生成却没人生成"的产物，下次换机还会踩。
 
 ### 四、验收
 
-- `npm run check:engine-client` → **45 / 45 绿**。新增三条：
+- `engine-client 那组钉子` → **45 / 45 绿**。新增三条：
   - **L9** 注入 `NO_PROXY` 且覆盖本机三写法（`127.0.0.1` / `localhost` / `::1`）；
   - **L10** 保留用户 `http_proxy`（不删代理）+ `NO_PROXY` 取「原有项 ∪ 本机」（**按实际键名取值** ——
     Windows 的 env **大小写不敏感**，Node 把 `HTTP_PROXY`/`http_proxy` 折叠成同一个键，
@@ -3564,7 +3564,7 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
   - **L11** 只设小写 `no_proxy` 时也能被并集进来。
   三条都用**受控 env**（先清干净再取）—— 否则"这台机器恰好设过 `NO_PROXY`"会让 L9 **在没有注入时也变绿**，
   而反证轮正是靠它变红来证明注入有用。
-- `npm run check:engine-client:refute` → **9 / 9 条按预期变红**（新增变异 **I** 去掉注入 ⇒ L9/L10/L11 全红；
+- `engine-client 那组钉子的反证轮` → **9 / 9 条按预期变红**（新增变异 **I** 去掉注入 ⇒ L9/L10/L11 全红；
   修好的 **H** ⇒ V1 按预期变红）。
 - **缺陷 B 的行为变化**（同一条长文本、同一台机器）：改前 `TypeError: can only concatenate str (not "list") to str`
   → 改后 `RuntimeError: Sakura API请求失败（已重试 3 次）：upstream connect failed … (os error 10061)`。
@@ -3758,8 +3758,8 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
 | Rust `cargo check`（在 `app/src-tauri`） | **通过**，零错误零警告（2.28s） |
 | `npm run check:stdio` | **2 / 0**（S1 源码钉子 + S2 行为对照） |
 | `npm run check:stdio:refute` | **1 / 1**（M1 → S1 红；`service.rs` 按字节还原一致） |
-| `npm run check:engine-client` | **46 / 0**（新增 **L12**） |
-| `npm run check:engine-client:refute` | **10 / 10**（新增 **J** → L12 红） |
+| `engine-client 那组钉子` | **46 / 0**（新增 **L12**） |
+| `engine-client 那组钉子的反证轮` | **10 / 10**（新增 **J** → L12 红） |
 | `npm run check:docs` | 12 / 2 —— 两条红仍是 `check:music` 文档 **215** vs 脚本 **213**（既有，与本轮无交集） |
 
 - **S2 把"约束"变成"后果"**：起一个**真子进程**用 `Buffer` 直写「ASCII 行 / 含非法 UTF-8（GBK『荒木宰』= `bb c4 c4 be d4 d7`）/ ASCII 行」，旧策略（严格 + 遇错即停）**只读到第 1 行**，新策略（lossy）**3 行一行不丢**。实测：`总行=3 旧=1（停在第2行） 新=3`。
@@ -3768,7 +3768,7 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
 ### 五、反证
 
 - `check:stdio:refute` → **1/1**：M1 把 `relay_lines(out, |line| {` 改回 `for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {` ⇒ **S1** 红；`service.rs` 按字节还原一致。
-- `check:engine-client:refute` → **10/10**：**J** 去掉 `PYTHONIOENCODING: 'utf-8',` ⇒ **L12** 红。
+- `engine-client 那组钉子的反证轮` → **10/10**：**J** 去掉 `PYTHONIOENCODING: 'utf-8',` ⇒ **L12** 红。
 
 > **写这条钉子时踩的坑（会造成"假红"，记下来防复踩）**：S1 一开始是**整文件** `includes('map_while(Result::ok)')`，可 `service.rs` **本来就有一段注释在解释"为什么不能用它"**（三处字面量**都在注释里**）⇒ S1 **恒红**，且红得毫无道理。**修法**：判定前先**剥掉 Rust 注释**（行注释 + 块注释；只跟踪双引号字符串 —— 字符字面量装不下 `//`，生命周期 `'a` 若被当字符串最坏只造成假绿）再扫。**教训同 D-87 / D-84**：钉子的着力点必须落在**唯一且真实**的那一处 —— 注释里的"反面教材"不能算"使用了它"。
 > 附带坑：写这段说明时，我在**块注释里**写了字面 `/*` `*/`，其中 `*/` **提前闭合了外层 `/** ... */`** ⇒ 脚本直接 `SyntaxError: Unexpected identifier`。**在块注释里讲解块注释**必须改写成"行注释 / 块注释"这种**文字说法**，不能出现字面分隔符。
@@ -3780,7 +3780,7 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
 - **真机端到端复核仍未做**：本轮是在**运行中的引擎**上直连复现并据此定位的；修复后**未再跑一张真图端到端**确认 `[Errno 22]` 真的消失（需真引擎 + 真 ③ 链路，分钟级）。**建议用户在真机上重跑一批图做最终确认**。
 - **沙箱编码掩盖陷阱**：沙箱 env 默认带 `PYTHONUTF8=1` / `PYTHONIOENCODING=utf-8`，会**掩盖** GBK 问题 —— 复现时必须 `env -u` 剥离后才看得到 `gbk`/`cp936`。这也正是**为什么只有真机（用户 env）才撞得上**。
 - **代码未提交**：本轮（连同 **D-86 / D-87**）全部改动仍在工作区，等确认后再 commit。
-- **`npm run check:docs` 在 Windows 上仍是红的**（**非本轮引入**）：两条失败都是 `check:music` 文档声明 **215** vs 脚本自报 **213**（音乐那一摊既有问题，见 **D-86 §五之二**）。`check:stdio` / `check:engine-client` **不在** `check:docs` 的条数比对清单内（该门只比 `check:music` / `check:units` / `check:settings` 三套），故**不改变其红绿**。
+- **`npm run check:docs` 在 Windows 上仍是红的**（**非本轮引入**）：两条失败都是 `check:music` 文档声明 **215** vs 脚本自报 **213**（音乐那一摊既有问题，见 **D-86 §五之二**）。`check:stdio` / `engine-client 那组钉子` **不在** `check:docs` 的条数比对清单内（该门只比 `check:music` / `check:units` / `check:settings` 三套），故**不改变其红绿**。
 
 ### 七、改动文件
 
@@ -4884,7 +4884,7 @@ nllb 档的权重按 **HF 缓存布局**落盘（`engine/models.manifest.json` �
 | 门 | 结果 |
 |---|---|
 | `npm run check:profile` | **43 / 0** |
-| `npm run check:engine-client` | **50 / 0** |
+| `engine-client 那组钉子` | **50 / 0** |
 | `npm run check:docs` | **16 / 0** |
 | `npm run selftest:service` | 134 / 1（`Unknown signal: SIGSTOP` —— Windows 无 SIGSTOP，**既有环境性失败**） |
 | `npm run check:engine-settings` | 55 / 6（该门按 macOS+16GB 写；本机 Windows+CUDA，**既有环境性失败**） |
@@ -5579,7 +5579,7 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 
 - `check:translate`（`e2e/service/translate-check.mjs`）：假上游 = 进程内 `http.Server` 冒你有道，**同算法独立验签**（逐 hit 记 signOk）+ salt 防重放（同 salt 回 207）+ hits 记账 + peakInflight。**51 条全绿**：S 签名与协议 13 · T 四层超时 4 · L 限流 2 · C 三层设置 6 · K 密钥隔离 4 · A 契约与适配器 12 · R 路由端到端 8（R 组起真服务子进程，跨进程用内容触发）+ COUNT + RUN。
 - `check:translate:refute`：**6/6 按预期变红**——NO_TRUNCATE→S1 · REUSE_SALT→S4/T2/T3/T4/A9/A10（级联：一切重试都撞 207）· IDLE_AS_TOTAL→T3 · ECHO_SECRET→K1 · STREAM_RETRY_AFTER_FIRST→S7 · SWAP_JUDGE→19 条（级联：所有成功类断言全红）。无未变红、无额外变红。
-- 受影响既有断言复跑全绿：`check:settings` 176/0 · `check:ia` 32/0 · `check:units` 45/0 · `check:autostart` 12/0 · `check:contract` 77/0 · `check:e10` 7/0 · `check:engine-client` 50/0 · `check:docs` 16/0；`tsc --noEmit` 0 错误 + `vite build` 通过。
+- 受影响既有断言复跑全绿：`check:settings` 176/0 · `check:ia` 32/0 · `check:units` 45/0 · `check:autostart` 12/0 · `check:contract` 77/0 · `check:e10` 7/0 · `engine-client 那组钉子` 50/0 · `check:docs` 16/0；`tsc --noEmit` 0 错误 + `vite build` 通过。
 
 **既有基线红登记（两条，均非本轮引入，已取证；修法是独立节点，按 AGENTS §2「不得为转绿而放宽」，本条目不动）**
 

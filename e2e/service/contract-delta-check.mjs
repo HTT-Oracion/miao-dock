@@ -30,7 +30,7 @@
  *
  * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（box-service 的段）。
  */
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -40,7 +40,7 @@ import path from 'node:path';
 
 import { encodePng } from '../../engine/src/png.mjs';
 // F0：服务入口解析的唯一事实源（MIAO_SERVICE_IMPL=node|rust 切换靶子；本文件不再自己拼入口）
-import { SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
+import { IMPL, SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const SELF = path.join(ROOT, 'e2e', 'service', 'contract-delta-check.mjs');
@@ -165,8 +165,22 @@ async function waitReady(st, timeoutMs = 15_000) {
   return st.ready;
 }
 
+/**
+ * 杀**进程树**，不是只杀主进程。
+ *
+ * 🔴 rust 靶子的服务会派生子进程（引擎② sidecar、③ llama-server），Windows 上
+ *    `child.kill()` 只结束主进程 ⇒ 孙进程全成孤儿。实测（D-202 第四节）：攒了 12 个
+ *    llama-server（每个 3.5 GB 权重）把机器卡死、别的应用跟着崩。
+ *    `taskkill /T /F` 连子树一起收；主进程已退出时它返回非 0，那不是失败。
+ */
 function killService(st) {
-  if (st && st.child.exitCode === null) { try { st.child.kill('SIGTERM'); } catch { /* ignore */ } }
+  if (!st || st.child.exitCode !== null) return;
+  try {
+    execFileSync('taskkill', ['/pid', String(st.child.pid), '/T', '/F'], { stdio: 'ignore' });
+  } catch {
+    /* 进程已退出 */
+  }
+  try { st.child.kill('SIGTERM'); } catch { /* ignore */ }
 }
 
 function listen(server, port) {
@@ -252,12 +266,18 @@ async function assertEngineStatus(port, label, expectState) {
 
   const res = await httpReq(port, 'GET', '/api/v1/engine/status', { token: TOKEN });
   const v = jsonOf(res);
-  // S6 起多一个 `modelDownload`（「重新下载模型」的任务实况）⇒ 8 → **9 键**。
+  // S6 起多一个 `modelDownload`（「重新下载模型」的任务实况）⇒ 8 → 9 键。
   // 它同样属"Box 专用、不进插件契约"那一类（§5.2 与 `recentStageLog` 同性质）。
-  // ⚠️ 这条断言的**精确等值**（不是"包含"）是刻意的：`tier` 少键那次事故就是它抓到的
+  // **D1 起 Rust 侧再多一个 `runtime`**（与 `GET /engine/runtime` 同一份 `runtime_view()`，
+  // 见 `state.rs::engine_status_view`）⇒ **rust 靶子是 10 键**。Node 对照端没有这个键
+  // （它没有 runtime_probe 实现），双靶期这是**已知契约差**（F5 摘除 Node 后 `runtime`
+  // 就是契约面的一部分，届时只剩 10 键这一种形态）。
+  // ⚠️ 两条都保持**精确等值**（不是"包含"）是刻意的：`tier` 少键那次事故就是它抓到的
   //    （见 `composeSidecar` 里 `currentTier()` 的注释）。改这条必须同时改这里的期望值。
-  const topKeys = ['engine', 'llm', 'tier', 'accel', 'warmed', 'config', 'models', 'recentStageLog', 'modelDownload'];
-  check(`S5.7 /engine/status 带令牌 → 200 且顶层 9 键齐（§5.2 + S6 的 modelDownload）（${label}）`,
+  const topKeys = IMPL === 'rust'
+    ? ['engine', 'llm', 'tier', 'accel', 'warmed', 'config', 'models', 'runtime', 'recentStageLog', 'modelDownload']
+    : ['engine', 'llm', 'tier', 'accel', 'warmed', 'config', 'models', 'recentStageLog', 'modelDownload'];
+  check(`S5.7 /engine/status 带令牌 → 200 且顶层 ${topKeys.length} 键齐（§5.2 + S6 的 modelDownload${IMPL === 'rust' ? ' + D1 的 runtime' : ''}）（${label}）`,
     res.status === 200 && v && topKeys.every((k) => k in v) && Object.keys(v).length === topKeys.length,
     res.status === 200 ? Object.keys(v || {}).join(',') : `status=${res.status} body=${res.body.toString('utf8').slice(0, 200)}`);
   check(`S5.7b engine 是 {state, version, port, pid}；version 非空且 state=${expectState}（${label}）`,

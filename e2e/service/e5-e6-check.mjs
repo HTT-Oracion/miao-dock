@@ -36,7 +36,7 @@ import path from 'node:path';
 
 import { encodePng } from '../../engine/src/png.mjs';
 // F0：服务入口解析的唯一事实源（MIAO_SERVICE_IMPL=node|rust 切换靶子）
-import { SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
+import { killTree, SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const ENGINE_ENTRY = path.join(ROOT, 'engine', 'src', 'server.mjs');
@@ -119,7 +119,8 @@ async function waitReady(st, timeoutMs = 20_000) {
 }
 
 function killProc(st) {
-  if (st && st.child && st.child.exitCode === null) st.child.kill('SIGTERM');
+  // 🔴 杀进程树（不是只杀主进程）：rust 服务派生的引擎②/③ 否则全成孤儿（D-202）
+  if (st && st.child && st.child.exitCode === null) killTree(st.child);
 }
 
 /** 等子进程**真的**退出（SIGTERM 之后它还要收尾）—— 用 `exitCode` 而不是 sleep 一个定值 */

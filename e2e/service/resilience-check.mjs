@@ -2,31 +2,27 @@
 /**
  * box-service **健壮性钉子** —— 且必须可反证
  * ================================================================
- * 两个主题，都曾在审计里被判为「出了事但不报错」：
- *
- * ## R 组 · 顶层异常兜底（D-138）
- * 目的是让「进程因未捕获错误死掉时**不留孤儿子进程**」可被秒级、零依赖地回归。
- * 真造一次崩溃要拉起 ①②③ 三个真进程（分钟级、依赖本机 runtimes），不适合当常规门。
- *
- *   R1 注册了 `process.on('unhandledRejection', …)`。
- *      Node ≥15 下未处理的 rejection 默认**直接终止进程** —— 本进程是 ①②③ 的宿主，一死就留孤儿。
- *   R2 注册了 `process.on('uncaughtException', …)`。同上。
- *   R3 两个崩溃处理器都调用 `shutdown(...)`，**不是**直接 `process.exit`（否则绕过收尾 ⇒ ③ 不停）。
- *   R4 信号处理器（SIGINT/SIGTERM）也走同一个 `shutdown`（单一收尾路径）。
- *   R5 `shutdown` 内确实收 ③（`llm.stop`）—— 不留孤儿的实际动作。
- *   R6 `shutdown` 有重入闸（`if (shuttingDown) return`）。信号与崩溃可能先后到达。
- *   R7 崩溃处理器以**非零**码退出 —— 接住异常 ≠ 吞掉故障。
- *
  * ## A 组 · 任务状态原子写（D-139）
- *   A1 `store.mjs` 的任务状态落盘走 `atomicWriteJson`，**不再裸 `writeFileSync`**。
- *      裸写崩在中间留半截 JSON ⇒ `init()` 读到损坏文件**静默跳过该任务**（丢历史，正常退出测不到）。
- *   A2 底座 `atomic-file.mjs` 确实是 tmp → **fsync** → rename（缺 fsync 则断电后 rename 可能指向空内容）。
+ *   A1 `store.rs::persist_task` 的任务状态落盘走 `atomic_write_json`，**不裸写**。
+ *      裸写崩在中间留半截 JSON ⇒ 启动读到损坏文件**静默跳过该任务**（丢历史，正常退出测不到）。
+ *   A2 `atomic_write_text` 确实是 tmp → **fsync** → rename（缺 fsync 则断电后 rename 可能指向空内容）。
  *
- * ## 反证轮（`--refute`）
- *   逐条把结构改回缺陷形态（**只在内存里改源码字符串**，不碰工作区），对应断言**必须变红**。
+ * ## R 组（顶层异常兜底）已**退役** —— 随 Node 服务实现一并删除
+ *   原 R1–R7 断言的是 `service/src/server.mjs` 的 `process.on('unhandledRejection')` /
+ *   `process.on('uncaughtException')` / 信号处理器 / `shutdown()` 重入闸 / `llm.stop()` 等
+ *   **Node 进程级**兜底结构。Rust 侧没有这个形态：
+ *     · Rust 的 panic 默认**不会**带走整个进程（除非 `panic = "abort"`，本 crate 未设）；
+ *     · 「宿主死了别留孤儿」在 Rust 侧由**父死看守**承担，且已有三组专门的门在钉：
+ *       `check:child-watch` · `check:child-watch-kill` · `check:drain-runtime`
+ *       （外加 `check:lifespan` / `e11` 的孤儿回收用例）。
+ *   ⇒ 把 R 组"搬"成 Rust 源码变异等于**新造**一条此前不存在的轨（D-204 第四节的减法纪律：
+ *   只在该轨本来就在跑时才谈退役，本来不在跑的搬过去才是加法）。故删除，不搬。
  *
- * ⚠️ 边界，别误读：R 组证明的是**"顶层兜底结构在"**，不是"真崩过且没留孤儿"（后者靠
- *   `selftest:app:e11` 从外部补充）；A 组证明的是**"写路径是原子的"**，不是"真断过一次电"。
+ * ## 判据形态：纯函数 `evaluate(src)`
+ *   接收源码文本 → 返回断言结果；反证轮把**内存变异**后的文本喂进来跑同一套判据，
+ *   **不碰工作区、不起进程、不需要 cargo build**（范式取自 `engine-patches-check.mjs`）。
+ *
+ * ⚠️ 边界，别误读：A 组证明的是**"写路径是原子的"**，不是"真断过一次电"。
  *
  * 用法：
  *   node e2e/service/resilience-check.mjs            正向跑（期望全绿）
@@ -39,12 +35,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
-const SERVER = path.join(ROOT, 'service', 'src', 'server.mjs');
-const STORE = path.join(ROOT, 'service', 'src', 'manga', 'store.mjs');
-const ATOMIC = path.join(ROOT, 'service', 'src', 'atomic-file.mjs');
+/// 🔴 唯一事实源：Rust 侧的 store（`service/src/manga/store.mjs` 已随 Node 服务实现删除）。
+const STORE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'store.rs');
 const REFUTE = process.argv.includes('--refute');
 
-/** 取某处理器/函数体的源码段：自 `marker` 起，到下一个 `stopAt` 或文件末 */
+/** 取某函数体的源码段：自 `marker` 起，到下一个 `stopAt`（或文件末） */
 function sliceFrom(src, marker, stopAt) {
   const i = src.indexOf(marker);
   if (i < 0) return '';
@@ -58,34 +53,24 @@ function sliceFrom(src, marker, stopAt) {
  * 纯函数：给定源码文本，产出断言结果。
  * 反证轮把变异后的文本喂进来跑同一套判据 —— 判据与"读盘"解耦，才测得住。
  */
-function evaluate({ server, store, atomic }) {
+function evaluate({ store }) {
   const out = [];
   const add = (id, label, ok, detail) => out.push({ id, label, ok: !!ok, detail: detail === undefined ? '' : String(detail) });
 
-  // ---- R 组：顶层兜底 ----
-  const rej = sliceFrom(server, "process.on('unhandledRejection'", 'process.on(');
-  const unc = sliceFrom(server, "process.on('uncaughtException'", 'process.on(');
-  const sigLoop = sliceFrom(server, 'for (const sig of', '\n}');
-  const shutdownBody = sliceFrom(server, 'function shutdown(', '\nfor (const sig of');
+  // ---- A 组：任务状态原子写（Rust）----
+  const persist = sliceFrom(store, 'pub(crate) fn persist_task(', '\n// ---');
+  add('A1', 'store 任务状态落盘走 atomic_write_json（不裸写）',
+    persist.includes('atomic_write_json(&file, &record_of(task))') && !/fs::write\(/.test(persist),
+    persist
+      ? `atomic=${persist.includes('atomic_write_json(&file, &record_of(task))')} bare=${/fs::write\(/.test(persist)}`
+      : '未找到 persist_task');
 
-  add('R1', "注册了 process.on('unhandledRejection')", server.includes("process.on('unhandledRejection'"));
-  add('R2', "注册了 process.on('uncaughtException')", server.includes("process.on('uncaughtException'"));
-  add('R3', '两个崩溃处理器都调用 shutdown（而非直接 process.exit）',
-    rej.includes('shutdown(') && unc.includes('shutdown('),
-    `rejection=${rej.includes('shutdown(')} exception=${unc.includes('shutdown(')}`);
-  add('R4', '信号处理器（SIGINT/SIGTERM）走同一个 shutdown', sigLoop.includes('shutdown('));
-  add('R5', 'shutdown 内确实收 ③（llm.stop）', shutdownBody.includes('llm.stop('));
-  add('R6', 'shutdown 有重入闸（if (shuttingDown) return）',
-    /if\s*\(\s*shuttingDown\s*\)\s*return/.test(shutdownBody));
-  add('R7', '崩溃处理器以非零码退出', /shutdown\([^)]*,\s*1\)/.test(rej) && /shutdown\([^)]*,\s*1\)/.test(unc));
-
-  // ---- A 组：任务状态原子写 ----
-  const persist = sliceFrom(store, '_persistNow(task) {', '\n  }');
-  add('A1', 'store 任务状态落盘走 atomicWriteJson（不裸写）',
-    persist.includes('atomicWriteJson(') && !/fs\.writeFileSync\(/.test(persist),
-    persist ? `atomic=${persist.includes('atomicWriteJson(')} bare=${/fs\.writeFileSync\(/.test(persist)}` : '未找到 _persistNow');
-  add('A2', 'atomic-file.mjs 是 tmp → fsync → rename',
-    atomic.includes('fs.fsyncSync(') && atomic.includes('fs.renameSync(tmp, file)'));
+  const atomic = sliceFrom(store, 'pub fn atomic_write_text(', 'pub(crate) fn atomic_is_direct');
+  add('A2', 'atomic_write_text 是 tmp → fsync → rename',
+    atomic.includes('f.sync_all()?;') && atomic.includes('std::fs::rename(&tmp, file)?;'),
+    atomic
+      ? `fsync=${atomic.includes('f.sync_all()?;')} rename=${atomic.includes('std::fs::rename(&tmp, file)?;')}`
+      : '未找到 atomic_write_text');
 
   return out;
 }
@@ -102,42 +87,20 @@ function printResults(rows) {
   return fail;
 }
 
-const SRC = () => ({
-  server: fs.readFileSync(SERVER, 'utf8'),
-  store: fs.readFileSync(STORE, 'utf8'),
-  atomic: fs.readFileSync(ATOMIC, 'utf8'),
-});
+const SRC = () => ({ store: fs.readFileSync(STORE_RS, 'utf8') });
 
 /// 每条变异 = 把结构改回缺陷形态（内存变异），并声明哪些断言必须变红。
 /// `target` 指明改的是哪份源码。
 const MUTATIONS = [
-  { name: 'M1 注销 unhandledRejection 注册', target: 'server',
-    apply: (s) => s.replace("process.on('unhandledRejection',", "process.on('__off_unhandledRejection',"),
-    expect: ['R1', 'R3', 'R7'] },
-  { name: 'M2 注销 uncaughtException 注册', target: 'server',
-    apply: (s) => s.replace("process.on('uncaughtException',", "process.on('__off_uncaughtException',"),
-    expect: ['R2', 'R3', 'R7'] },
-  { name: 'M3 崩溃处理器绕过收尾，直接 process.exit(1)', target: 'server',
-    apply: (s) => s.replace("shutdown('未处理的 Promise rejection', 1);", 'process.exit(1);'),
-    expect: ['R3', 'R7'] },
-  { name: 'M4 信号处理器绕过 shutdown，直接 process.exit', target: 'server',
-    apply: (s) => s.replace('process.on(sig, () => shutdown(`收到 ${sig}`, 0));', 'process.on(sig, () => process.exit(0));'),
-    expect: ['R4'] },
-  { name: 'M5 shutdown 不再收 ③（删 llm.stop）', target: 'server',
-    apply: (s) => s.replace('llm.stop({ reason, graceMs: 3000 }).catch(() => {}).finally(finish);', 'finish();'),
-    expect: ['R5'] },
-  { name: 'M6 shutdown 去掉重入闸', target: 'server',
-    apply: (s) => s.replace('if (shuttingDown) return;', 'if (false) return;'),
-    expect: ['R6'] },
-  { name: 'M7 store 任务状态退回裸写', target: 'store',
-    apply: (s) => s.replace('atomicWriteJson(file, this.serialize(task));',
-      'fs.writeFileSync(file, JSON.stringify(this.serialize(task), null, 2), { mode: 0o600 });'),
+  { name: 'M1 persist_task 退回裸写（崩在中间留半截 JSON）', target: 'store',
+    apply: (s) => s.replace('    let _ = atomic_write_json(&file, &record_of(task));',
+      '    let _ = std::fs::write(&file, serde_json::to_vec(&record_of(task)).unwrap_or_default());'),
     expect: ['A1'] },
-  { name: 'M8 atomic-file 去掉 fsync（rename 可能指向未落盘内容）', target: 'atomic',
-    apply: (s) => s.replace('fs.fsyncSync(fd);', '/* no fsync */'),
+  { name: 'M2 atomic_write_text 去掉 fsync（rename 可能指向未落盘内容）', target: 'store',
+    apply: (s) => s.replace('        f.sync_all()?;', '        // no fsync'),
     expect: ['A2'] },
-  { name: 'M9 atomic-file 去掉 rename（退回原地写）', target: 'atomic',
-    apply: (s) => s.replace('fs.renameSync(tmp, file);', '/* no rename */'),
+  { name: 'M3 atomic_write_text 去掉 rename（退回原地写）', target: 'store',
+    apply: (s) => s.replace('        std::fs::rename(&tmp, file)?;', '        std::fs::write(file, text)?;'),
     expect: ['A2'] },
 ];
 

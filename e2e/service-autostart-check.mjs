@@ -330,46 +330,54 @@ function runAll() {
     '',
   );
 
-  // ---- E（F5.8）：服务实现的**默认档** ----
-  // 「默认仍是 node」是"摘除 Node"只写在文档里的形态：产品照旧起一份 Node 服务 —— 功能照常、
-  // e2e 全绿，而包里那份 Node 永远删不掉（计划文档 R3）。这五条钉住默认档的**成因**。
+  // ---- E（D-205）：服务实现的**靶子只剩 boxsvc** ----
+  // 🔴 本组原先是「默认档必须走 Rust、但允许退回 Node（可见警告）+ 显式 `=node` 仍可达」——
+  //    那套判据在**有 Node 服务可退**时才成立。`service/` 删掉之后，"退回 Node"就是退回一个
+  //    不存在的 `.mjs`；"对拍档"也没有对照对象了。
+  //    ⇒ 本组改为钉住**目标本身**：「应用运行时不再启动 node 服务进程」。
   {
     const body = fnBody(svc, 'fn resolve_service_cmd()');
     const noBody = '未定位到 resolve_service_cmd 函数体';
+    /// 去掉整行注释后的源码。
+    /// 🔴 E3/E4 必须看**代码**而不是全文：注释里写「① 曾经是 `node service/src/server.mjs`」
+    ///    是有价值的历史（说明为什么变、以及排障时别去找那个进程），禁掉它等于逼后来人删掉理由。
+    ///    判据要咬的是"代码里还有没有 Node 入口"，不是"有没有提过它"。
+    const svcCode = svc
+      .split(/\r?\n/)
+      .filter((l) => !l.trim().startsWith('//'))
+      .join('\n');
 
     check(
       'E1',
-      '未设 `MIAO_SERVICE_IMPL` ⇒ **默认走 Rust**（默认分支必须调到 `resolve_boxsvc`，不是直接拼 Node 入口）',
-      /_ => match resolve_boxsvc\(\)/.test(body) && !/let entry = resolve_entry/.test(body),
-      body ? `走 resolve_boxsvc=${/_ => match resolve_boxsvc\(\)/.test(body)}` : noBody,
+      '默认档（未设 `MIAO_SERVICE_IMPL`）⇒ 直接 `resolve_boxsvc()?`，**没有**退回 Node 的退路',
+      /resolve_boxsvc\(\)\?/.test(body) && !/node_service_cmd/.test(body),
+      body ? `走 resolve_boxsvc=${/resolve_boxsvc\(\)\?/.test(body)} 无 node 退路=${!/node_service_cmd/.test(body)}` : noBody,
     );
 
     check(
       'E2',
-      '默认档拿不到 boxsvc 时退回 Node **必须可见**（`eprintln!` 带「退回 Node」+ 构建指引，不静默换回）',
-      /eprintln!\(/.test(body) && /退回 Node/.test(body) && /cargo build --bin boxsvc/.test(body),
-      body ? `eprintln=${/eprintln!\(/.test(body)} 构建指引=${/cargo build --bin boxsvc/.test(body)}` : noBody,
+      '显式 `=node` ⇒ **硬失败**（返回 `Err`，不静默落回 boxsvc），文案指向「service/ 已删」',
+      /if impl_ == "node" \{/.test(body) && /return Err\(/.test(body) && /service\//.test(body),
+      body ? `退役门=${/if impl_ == "node" \{/.test(body)}` : noBody,
     );
 
     check(
       'E3',
-      '显式 `MIAO_SERVICE_IMPL=rust` 仍**硬失败**（`resolve_boxsvc()?` 直接传播，绝不悄悄落回 node）',
-      /"rust" \| "boxsvc" => Ok\(vec!\[resolve_boxsvc\(\)\?/.test(body),
-      body ? '' : noBody,
+      '`service.rs` 里**不再有** node 服务入口（`node_service_cmd` 函数已删除）',
+      !/fn node_service_cmd/.test(svcCode),
+      `仍存在=${/fn node_service_cmd/.test(svcCode)}`,
     );
 
     check(
       'E4',
-      '显式 `=node` 档仍可达（对拍 / 排障要能把靶子换回去），且入口解析只有一处 `node_service_cmd`',
-      /"node" => node_service_cmd\(\)/.test(body) &&
-        /fn node_service_cmd\(\)/.test(svc) &&
-        /service\/src\/server\.mjs/.test(fnBody(svc, 'fn node_service_cmd()')),
-      body ? `node 档=${/"node" => node_service_cmd\(\)/.test(body)}` : noBody,
+      '`service.rs` 的**代码**里不再出现 `service/src/server.mjs`（Node 服务入口路径已绝迹）',
+      !/service\/src\/server\.mjs/.test(svcCode),
+      `仍出现=${/service\/src\/server\.mjs/.test(svcCode)}`,
     );
 
     check(
       'E5',
-      '`MIAO_SERVICE_IMPL` 取值先 `trim` + 小写再比对（`RUST` / ` rust ` 必须算**显式**档，而不是掉进默认档）',
+      '`MIAO_SERVICE_IMPL` 取值先 `trim` + 小写（`NODE` / ` node ` 也须落进退役分支，不被当成默认档）',
       /let impl_ = impl_\.trim\(\)\.to_ascii_lowercase\(\);/.test(body),
       body ? '' : noBody,
     );
@@ -516,35 +524,43 @@ const MUTATIONS = [
     expect: ['D3'],
   },
   {
-    name: 'E1 默认档退回 node（"摘除 Node"只写在文档里 —— 产品照旧起一份 Node 服务）',
+    name: 'E1 默认档加回"退回 node"的退路（就是本轮要消灭的那个形态）',
     file: SERVICE_RS,
-    find: '        _ => match resolve_boxsvc() {',
-    replace: '        _ => node_service_cmd(),\n        _unreachable_arm: match resolve_boxsvc() {',
+    // 把 `resolve_boxsvc()?` 降级成"失败也不传播" ⇒ E1 的 `?` 判据不再成立。
+    // 🔴 刻意**同时**引入 `node_service_cmd`：一次变异打中 E1 的两半判据（有 `?` / 无 node 退路），
+    //    否则只能证明其中一半在场。
+    find: '    let bin = resolve_boxsvc()?;\n    Ok(vec![bin.to_string_lossy().into_owned()])',
+    replace:
+      '    let bin = match resolve_boxsvc() {\n        Ok(b) => b,\n        Err(_) => return node_service_cmd(), // refute：退回 node 的退路回来了\n    };\n    Ok(vec![bin.to_string_lossy().into_owned()])',
     expect: ['E1'],
   },
   {
-    name: 'E2 退回 Node 改成**静默**（"Rust 没生效"再也看不见）',
+    name: 'E2 `=node` 不再硬失败（静默落回 boxsvc —— "我要 node 靶子"说了不算）',
     file: SERVICE_RS,
-    find: '                eprintln!("[miao-dock] ⚠ 默认档应为 Rust boxsvc，但{e}；本次退回 Node。想让默认档跑起来：cargo build --bin boxsvc");',
-    replace: '                let _ = &e;',
+    find: '    if impl_ == "node" {',
+    replace: '    if false { // refute：退役门失效',
     expect: ['E2'],
   },
   {
-    name: 'E3 显式 rust 档也悄悄落回 node（"切了没生效"不可观测）',
+    name: 'E3 把 `node_service_cmd` 函数加回来（Node 服务入口复活）',
     file: SERVICE_RS,
-    find: '        "rust" | "boxsvc" => Ok(vec![resolve_boxsvc()?.to_string_lossy().into_owned()]),',
-    replace: '        "rust" | "boxsvc" => resolve_boxsvc().map(|b| vec![b.to_string_lossy().into_owned()]).or_else(|_| node_service_cmd()),',
+    find: 'fn resolve_boxsvc() -> Result<PathBuf, String> {',
+    replace:
+      'fn node_service_cmd() -> Result<Vec<String>, String> {\n    Ok(vec!["node".into(), "service/src/server.mjs".into()])\n}\n\nfn resolve_boxsvc() -> Result<PathBuf, String> {',
     expect: ['E3'],
   },
   {
-    name: 'E4 把显式 `=node` 档下线（对拍 / 排障再也没法换回靶子）',
+    name: 'E4 把一个 Node 服务入口**常量**加回代码里（留着旧入口，随时能被再接线）',
     file: SERVICE_RS,
-    find: '        "node" => node_service_cmd(),',
-    replace: '        "node" => Err("node 档已下线".to_string()),',
+    // ⚠️ 必须插**代码**行：E4 只看去注释后的文本，插注释不会红（那是刻意的 —— 注释里提历史是允许的）。
+    //    这里插一条 `const`，它编译得过、也确实是"代码里还有 Node 入口"。
+    find: 'fn resolve_boxsvc() -> Result<PathBuf, String> {',
+    replace:
+      'const LEGACY_SERVICE_ENTRY: &str = "service/src/server.mjs"; // refute：旧入口还在代码里\nfn resolve_boxsvc() -> Result<PathBuf, String> {',
     expect: ['E4'],
   },
   {
-    name: 'E5 取值不再 trim / 小写（`RUST` / ` rust ` 掉进默认档 —— "我明明设了"）',
+    name: 'E5 取值不再 trim / 小写（`NODE` / ` node ` 掉进默认档 —— "我明明设了 node"）',
     file: SERVICE_RS,
     find: '    let impl_ = impl_.trim().to_ascii_lowercase();',
     replace: '    let impl_ = impl_;',

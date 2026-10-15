@@ -47,7 +47,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { encodePng } from '../../engine/src/png.mjs';
-import { IMPL, SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
+import { IMPL, killTree, SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 const REFUTE = process.argv.includes('--refute');
 
@@ -152,7 +152,8 @@ async function waitReady(state, timeoutMs = 15_000) {
 }
 
 function killProc(state) {
-  if (state && state.child && state.child.exitCode === null) state.child.kill('SIGTERM');
+  // 🔴 杀进程树（不是只杀主进程）：rust 服务派生的引擎②/③ 否则全成孤儿（D-202）
+  if (state && state.child && state.child.exitCode === null) killTree(state.child);
 }
 
 async function submit(port, comicName, count) {

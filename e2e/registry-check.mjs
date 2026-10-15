@@ -47,7 +47,7 @@ const AGGREGATORS = new Set(['e2e/run-checks.mjs']);
  *
  * 🔴 改这个常量时，请顺手确认 AGENTS.md §3 的条数也同步（`check:docs` 管不到这一节）。
  */
-const EXPECTED_TIER_COUNTS = { static: 17, service: 45, nightly: 8, refute: 59 };
+const EXPECTED_TIER_COUNTS = { static: 16, service: 44, nightly: 8, refute: 57 };
 
 /** npm 脚本 → { name, script, args }；复合脚本（`a && b`）与非 node 调用跳过 */
 function parseNpmChecks(scripts) {

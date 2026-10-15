@@ -40,6 +40,7 @@
  * 反证轮结束**必须**按字节还原。见 ~/.workbuddy/skills/falsifiable-verification。
  */
 import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -47,13 +48,28 @@ import path from 'node:path';
 
 import { encodePng } from '../../engine/src/png.mjs';
 // F0：服务入口解析的唯一事实源（MIAO_SERVICE_IMPL=node|rust 切换靶子）
-import { SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
+import { killTree, SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const ENGINE_ENTRY = path.join(ROOT, 'engine', 'src', 'server.mjs');
-const SERVER_SRC = path.join(ROOT, 'service', 'src', 'server.mjs');
-const STORE_SRC = path.join(ROOT, 'service', 'src', 'manga', 'store.mjs');
-const APP_SRC = path.join(ROOT, 'app', 'src', 'App.tsx');
+const APP_SRC = path.join(ROOT, 'app', 'src', 'App.tsx'); // 前端源码**不属** service/，保留
+const CARGO_DIR = path.join(ROOT, 'app', 'src-tauri');
+/** 反证轮要破坏的 Rust 源码（三处，作用各不相同，别合并）。 */
+const RUST_HANDLERS_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'handlers.rs');
+const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'store', 'exec.rs');
+
+/**
+ * 编译 Rust 靶子（反证轮改完源码必须重编，否则断言验的是"上一份产物"）。
+ * 🔴 编译失败**不算通过**：它记 skipped —— 锚点选错行与"覆盖不足"在报告里长得一样，
+ *    必须分开记，否则"反证没跑成"会被读成"反证通过"。
+ */
+function buildRust() {
+  const r = spawnSync('cargo', ['build', '--bin', 'boxsvc'], {
+    cwd: CARGO_DIR, encoding: 'utf8', maxBuffer: 40 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const log = `${r.stdout || ''}${r.stderr || ''}`.trim();
+  return { ok: r.status === 0, log: log.split('\n').slice(-6).join(' | ').slice(0, 400) };
+}
 
 const REFUTE = process.argv.includes('--refute');
 /// 声明 `mock`：起的是模拟引擎（ver1.0 自定义协议），**不是**真实引擎协议。
@@ -94,7 +110,8 @@ async function waitReady(state, re, timeoutMs = 20_000) {
 function killProc(state) {
   if (!state || !state.child || state.child.exitCode !== null) return Promise.resolve();
   const child = state.child;
-  child.kill('SIGTERM');
+  // 🔴 杀进程树（不是只杀主进程）：rust 服务派生的引擎②/③ 否则全成孤儿（D-202）
+  killTree(child);
   // ⚠️ **必须等它真的退出**再往下走。Windows 上「刚被 kill 的子进程」会**短暂**继续占着
   //    它加载过的文件句柄 —— 于是紧随其后的 `writeFileSync(service/src/server.mjs)`
   //    会抛 `EPERM: operation not permitted`（本脚本第一次跑反证轮就撞上了）。
@@ -414,12 +431,14 @@ function printResults(title) {
 /// 每条变异：破坏哪个文件、把什么换成什么、**哪几条断言必须因此变红**。
 const MUTATIONS = [
   {
-    name: 'M1 服务端把 /retry 退回 createResumeTask（= 旧行为：新建任务）',
+    name: 'M1 服务端重试时不再复用原 taskId（= 旧行为：新建任务）',
+    // ⚠️ 多行锚点按 **CRLF** 拼：Rust 源是 CRLF，用 `\n` 拼的 `includes()` 永远为假 ——
+    //    那会被记成「本条无法反证」，看起来像覆盖不足，其实只是行尾。
     edits: [
       {
-        file: SERVER_SRC,
-        find: '  const { task } = store.retryTask(taskId);',
-        replace: '  const { task } = store.createResumeTask(store.mustTask(taskId).dirName, {}); // refute：退回旧行为',
+        file: RUST_EXEC_SRC,
+        find: '        Ok(RetryOutcome { task_id: task_id.to_string(), reused })',
+        replace: '        Ok(RetryOutcome { task_id: format!("{task_id}-refute"), reused }) // refute：重试不再复用原 taskId',
       },
     ],
     expect: ['R2', 'R3', 'R4', 'R5'],
@@ -439,9 +458,10 @@ const MUTATIONS = [
     name: 'M3 服务端不再校验方向白名单（非法方向被当成默认方向放行 ⇒ 英文漫画以日语送引擎）',
     edits: [
       {
-        file: SERVER_SRC,
-        find: '  if (!isSupportedDirection(payload.lang)) {',
-        replace: '  if (false) { // refute：白名单失效',
+        file: RUST_HANDLERS_SRC,
+        // ⚠️ 多行锚点按 CRLF 拼（Rust 源是 CRLF，用 `\n` 拼的 `includes()` 永远为假）。
+        find: 'fn is_supported_direction(d: &Lang) -> bool {\r\n    TRANSLATE_DIRECTIONS.iter().any(|(f, t)| *f == d.from && *t == d.to)\r\n}',
+        replace: 'fn is_supported_direction(d: &Lang) -> bool {\r\n    let _ = d;\r\n    true // refute：白名单恒通过\r\n}',
       },
     ],
     expect: ['R7'],
@@ -450,9 +470,10 @@ const MUTATIONS = [
     name: 'M4 `store._processItem` 把方向写死成 ja/zh（任务方向没传下去 ⇒ 替身看到的方向永远是日语）',
     edits: [
       {
-        file: STORE_SRC,
-        find: "          lang: task.lang,\n          from: task.lang && task.lang.from,",
-        replace: "          lang: { from: 'ja', to: 'zh' },\n          from: 'ja',",
+        file: RUST_EXEC_SRC,
+        // ⚠️ 多行锚点按 CRLF 拼；缩进照抄源码（12 空格，写错就变成"锚点未找到"）。
+        find: '            lang_from: task.lang.from.clone(),\r\n            lang_to: task.lang.to.clone(),',
+        replace: '            lang_from: "ja".to_string(), // refute：方向写死\r\n            lang_to: "zh".to_string(),',
       },
     ],
     expect: ['R9'],
@@ -477,6 +498,15 @@ const main = async () => {
     return;
   }
 
+  // 🔴 进反证轮前先确保「产物 == 磁盘源码」：否则基线跑的是上一份编译结果，
+  //    而「变异全红」里有一部分红是被这份陈旧产物误打误撞造成的。
+  const pre = buildRust();
+  if (!pre.ok) {
+    console.log(`✗ 开跑前 cargo build 失败，无法反证：${pre.log}`);
+    process.exitCode = 1;
+    return;
+  }
+
   await runAll();
   const wasGreen = {};
   for (const r of results) wasGreen[r.id] = r.ok;
@@ -490,10 +520,11 @@ const main = async () => {
 
   console.log('\n破坏源文件 → 断言必须变红 → 按字节还原\n');
   for (const mut of MUTATIONS) {
+    let anchorMissing = false;
     for (const [i, e] of mut.edits.entries()) {
       if (!originals.has(e.file)) originals.set(e.file, readBytes(e.file));
       const txt = originals.get(e.file).toString('utf8');
-      // 🔴 多行锚点**必须按目标文件的实际 EOL 归一化**：工作区有 CRLF 文件（如 `service/src/manga/store.mjs`），
+      // 🔴 多行锚点**必须按目标文件的实际 EOL 归一化**：工作区有 CRLF 文件（如 Rust 源），
       //    锚点里写死 `\n` 会在 `includes` 那一步就失败 ⇒ 被当成"锚点未找到"**静默跳过**，
       //    表现为「应执行 7 条、实际只反证了 6 条」这种分母虚高（真红过的坑）。
       const eol = txt.includes('\r\n') ? '\r\n' : '\n';
@@ -501,10 +532,24 @@ const main = async () => {
       const replace = e.replace.replace(/\r?\n/g, eol);
       if (!txt.includes(find)) {
         console.log(`⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`);
-        skipped += mut.expect.length;
-        continue;
+        anchorMissing = true;
+        break;
       }
       await writeRetry(e.file, txt.replace(find, replace));
+    }
+    // 🔴 锚点缺失时**整条跳过**，不能只跳那一个 edit：继续往下跑 `runAll()`，测的还是
+    //    未被破坏的产物 ⇒ 那条 expect 必然"该红没红"，被记成**假阳性** ——
+    //    而真相是"这条根本没反证"。两种故障长得几乎一样，只有这条 flag 能分开它们。
+    if (anchorMissing) { skipped += mut.expect.length; continue; }
+    // 🔴 改完 Rust 源码**必须重编**才作数：不编就等于拿旧产物跑断言，红的绿的都说明不了问题。
+    const built = buildRust();
+    if (!built.ok) {
+      console.log(`⚠ ${mut.name}\n    破坏后编译失败（多半是锚点选错行），本条无法反证：${built.log}`);
+      // 🔴 这里**必须先还原再 continue**：下面的还原写在 `finally` 里，`continue` 会跳过它 ——
+      //    源码会被永久留在被破坏状态（e4-tier 上踩过同族坑）。
+      for (const [f, snap] of originals) await writeRetry(f, snap);
+      skipped += mut.expect.length;
+      continue;
     }
     // 🔴 还原一律进 `finally`：破坏若让 `runAll()` 抛异常，写在 try 之后的还原就不会执行，
     //    源文件会永久留成被破坏状态（E4 / E8 上都踩到过这一条）。
@@ -542,6 +587,10 @@ const main = async () => {
     if (!same) restoreFail++;
     console.log(`  ${same ? '✓' : '✗'} ${path.relative(ROOT, f)} 字节${same ? '一致' : '不一致！'}`);
   }
+  // 源码还原了，**产物也必须还原** —— 否则留下一个「源码是好的、跑起来是坏的」的机器。
+  const rebuilt = buildRust();
+  if (!rebuilt.ok) { restoreFail++; console.log(`  ✗ cargo build 还原失败：${rebuilt.log}`); }
+  else console.log('  ✓ cargo build 已把靶子重编回未破坏状态');
 
   console.log('\n' + '─'.repeat(56));
   console.log(`REFUTE: ${red}/${total} 条按预期变红（应执行 ${expectedTotal} 条）`);

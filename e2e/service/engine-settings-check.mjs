@@ -45,7 +45,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 // F0：服务入口解析的唯一事实源（MIAO_SERVICE_IMPL=node|rust 切换靶子）
-import { SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
+import { killTree, SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const SELF = path.join(ROOT, 'e2e', 'service', 'engine-settings-check.mjs');
@@ -151,7 +151,8 @@ async function waitReady(st, timeoutMs = 15_000) {
 }
 
 function killProc(st) {
-  if (st && st.child.exitCode === null) { try { st.child.kill('SIGTERM'); } catch { /* ignore */ } }
+  // 🔴 杀进程树（不是只杀主进程）：rust 服务派生的引擎②/③ 否则全成孤儿（D-202）
+  if (st && st.child.exitCode === null) killTree(st.child);
 }
 
 async function waitLlmRunning(port, timeoutMs = 12_000) {

@@ -44,6 +44,7 @@ const WHEELS_JSON = path.join(ROOT, 'engine', 'wheels.manifest.json');
 const GUIDE_WIN = path.join(ROOT, 'docs', 'install-guide-windows.md');
 const GUIDE_MAC = path.join(ROOT, 'docs', 'install-guide-macos.md');
 const MJS_ORIGINAL = fs.readFileSync(DEPS_MJS);
+const WHEELS_ORIGINAL = fs.readFileSync(WHEELS_JSON);
 
 let passed = 0;
 let failed = 0;
@@ -121,21 +122,55 @@ const envFor = (manifestPath) => ({ MIAO_WHEELS_MANIFEST: manifestPath, MIAO_WHE
     if (!/^[0-9a-f]{64}$/.test(String(w.sha256 ?? ''))) problems.push(`${w.id ?? '?'}: sha256 不是 64 位小写十六进制`);
     if (typeof w.sizeBytes !== 'number' || w.sizeBytes <= 0) problems.push(`${w.id ?? '?'}: sizeBytes 不是正数`);
     /*
-     * 托管状态：`local: true`（本机构建、**尚未托管**）与 `url`（已上传镜像通道）**二选一且互斥**。
+     * 分发形态**三态恰取其一**：`bundled: true`（随包分发，G3）· `local: true`（本机构建、
+     * **尚未托管**）· `url`（已上传镜像通道）。
      *
      * 为什么不是"必须有 url"：托管通道本仓还不存在，而把"本机真构建出来的那颗"如实登记
      * 是有价值的（跑过一次 `--build-wheel` 的机器就能走 wheel 不编译），前提是**说清它没托管**。
      * 为什么不是"url 可选"：那会让"已托管"与"没托管"混在一张表里 ——
-     * 用户照着清单去下载却下不到，且没人知道该怪谁。⇒ 互斥才是这条判据的形态。
+     * 用户照着清单去下载却下不到，且没人知道该怪谁。
+     * 为什么多出 `bundled`：G3 把它升为"零编译器机器上的唯一来源"，它的**落地位置**是仓库
+     * （`path`），与"从哪儿下载"是两回事 ⇒ 混进 url 那一态会让优先级失去意义。
      */
+    const isBundled = w.bundled === true;
     const isLocal = w.local === true;
     const hasUrl = typeof w.url === 'string' && w.url.trim() !== '';
-    if (isLocal && hasUrl) problems.push(`${w.id ?? '?'}: 同时标了 local 与 url（"没托管"与"已托管"不能同时成立）`);
-    if (!isLocal && !hasUrl) problems.push(`${w.id ?? '?'}: 既没有 url 也没标 local: true（这条到底托管了没有？谁来下载它？）`);
+    const states = [isBundled, isLocal, hasUrl].filter(Boolean).length;
+    if (states > 1) problems.push(`${w.id ?? '?'}: 同时标了 bundled / local / url 中的多项（三态必须恰取其一）`);
+    if (states === 0) problems.push(`${w.id ?? '?'}: 既没标 bundled、也没有 url、也没标 local: true（这条到底怎么分发？谁来提供它？）`);
+    if (isBundled && !w.path) problems.push(`${w.id ?? '?'}: 标了 bundled 却没有 path（包内那一份在哪儿？）`);
   }
   check('WB.W1 `engine/wheels.manifest.json` 结构合法：条目（若有）逐条带 platform / pythonTag / file / 64 位 sha256 / 正数体积，'
-    + '且 `local` 与 `url` **二选一互斥**（"尚未托管"必须说出来），并写清了 purpose 与 fillHowTo',
+    + '且分发形态 **bundled / local / url 三态恰取其一**（"随包"与"尚未托管"都必须说出来），并写清了 purpose 与 fillHowTo',
   problems.length === 0, problems);
+}
+
+// ------------------------------------------------------------------ WB.W1b 随包那一份必须真实存在且哈希一致（G3）
+
+{
+  /*
+   * G3 的全部意义是「用户机零编译器也能装」—— 而它成立的前提只有一个：
+   * **包内那个文件真的在仓库里、且 sha256 与清单一致**。
+   * 少了这条，清单可以写一条"随包"而仓库里什么都没有：正向全绿、装机时静默回退源码编译
+   * （症状是在没编译器的机器上装不上，离"清单里明明写着 bundled"极远）。
+   */
+  const j = JSON.parse(fs.readFileSync(WHEELS_JSON, 'utf8'));
+  const problems = [];
+  let bundledCount = 0;
+  for (const w of j.wheels ?? []) {
+    if (w.bundled !== true) continue;
+    bundledCount += 1;
+    const abs = path.resolve(path.join(ROOT, 'engine'), String(w.path));
+    if (!fs.existsSync(abs)) {
+      problems.push(`${w.id ?? '?'}: bundled 条目的 path 在仓库里不存在（${abs}）`);
+      continue;
+    }
+    const got = sha256(fs.readFileSync(abs));
+    if (got !== w.sha256) problems.push(`${w.id ?? '?'}: 包内 wheel 的 sha256 与清单不符（清单 ${String(w.sha256).slice(0, 12)}… / 实际 ${got.slice(0, 12)}…）`);
+    if (fs.statSync(abs).size !== w.sizeBytes) problems.push(`${w.id ?? '?'}: 包内 wheel 的体积与清单不符（清单 ${w.sizeBytes} / 实际 ${fs.statSync(abs).size}）`);
+  }
+  check(`WB.W1b 随包（bundled）条目的文件**真的在仓库里**且 sha256 / 体积与清单一致（G3 的成立前提；本清单 ${bundledCount} 条）`,
+    problems.length === 0 && bundledCount > 0, problems.length ? problems : { bundledCount });
 }
 
 // ------------------------------------------------------------------ WB.W2 空清单 ⇒ 回退源码编译
@@ -158,6 +193,35 @@ const envFor = (manifestPath) => ({ MIAO_WHEELS_MANIFEST: manifestPath, MIAO_WHE
   check('WB.W3 有本平台条目且 sha256 对得上 ⇒ 走 **wheel**（不编译 —— 这正是"无编译器也能装"的全部意义）',
     plan.route === 'wheel' && /sha256 已核对/.test(String(plan.reason)) && plan.wheelAbs === path.join(wheelDir, REAL_FILE),
     plan);
+}
+
+// ------------------------------------------------------------------ WB.W3b 包内（bundled）优先于本机目录（G3）
+
+{
+  /*
+   * 用户机上没有 `.download-cache` ⇒ 包内那一份必须**先被看到**。
+   * 判据：同一个 `file` 名在包内与本机目录各有一份（内容不同 ⇒ 哈希不同），
+   * 清单的 sha256 算的是**包内**那一份 ⇒ 优先级反了会因哈希不符退回源码编译，
+   * 或者更坏：拿本机目录里那份**没验过**的文件去装。
+   * 🔴 平台 / ABI 走接缝强制命中真实包内条目 —— 这条判据要**跨平台可测**（macOS 机器上也要能跑）。
+   */
+  const real = JSON.parse(fs.readFileSync(WHEELS_JSON, 'utf8')).wheels.find((w) => w.bundled === true);
+  if (!real) {
+    check('WB.W3b `bundled` 条目优先于本机目录（清单里没有 bundled 条目 ⇒ 本条无从取证）', false, { reason: '清单无 bundled 条目' });
+  } else {
+    const decoyPath = path.join(wheelDir, String(real.file));
+    fs.writeFileSync(decoyPath, Buffer.from('decoy: same file name, different bytes\n'));
+    const mf = writeManifest('bundled-priority.json', [{
+      id: real.id, platform: real.platform, pythonTag: real.pythonTag, file: real.file,
+      sha256: real.sha256, sizeBytes: real.sizeBytes, bundled: true, path: real.path, local: false, url: null,
+    }]);
+    const plan = printPlan({ ...envFor(mf), MIAO_PLATFORM: real.platform, MIAO_PY_VERSION: '3.11' });
+    const wantAbs = path.resolve(path.join(ROOT, 'engine'), String(real.path));
+    check('WB.W3b `bundled` 条目**优先于本机目录**（同名诱饵内容不同 ⇒ 必须取包内那一份，否则用户机上必然回退源码编译）',
+      plan.route === 'wheel' && plan.wheelAbs === wantAbs && /来源 包内/.test(String(plan.reason)),
+      { route: plan.route, wheelAbs: plan.wheelAbs, wantAbs, reason: plan.reason });
+    fs.rmSync(decoyPath, { force: true });
+  }
 }
 
 // ------------------------------------------------------------------ WB.W4 sha256 不符 ⇒ 拒绝
@@ -325,7 +389,7 @@ if (REFUTE) {
     restore();
   }
 
-  // ---- MB4：给"未托管"的条目补一个 url（把"没托管"说成"已托管"）----
+  // ---- MB4：给"随包"的条目再补一个 url（三态混写）----
   {
     // ⚠️ 变异对象是**清单**而不是脚本：`mutate()` 只改 `install-engine-deps.mjs`
     //    （MB1–MB3 用它），拿它改清单会"锚点未命中"直接抛 —— 反证轮里没有第 4 类退出码，
@@ -334,17 +398,38 @@ if (REFUTE) {
     //    （`null`）⇒ 变异其实没生效，反证轮会报假阳性。要改就改**已有的那个键**。
     const restore = mutateManifest('"url": null,', '"url": "https://example.invalid/whl",');
     const r = runForward();
-    check('MB4 给 `local: true` 的条目补上 url ⇒ WB.W1 红（"尚未托管"与"已托管"不能同时成立）',
+    check('MB4 给 `bundled: true` 的条目再补上 url ⇒ WB.W1 红（"随包"与"已托管"不能同时成立，三态恰取其一）',
       r.code !== 0 && hasRed(r.out, 'WB.W1'), { code: r.code, redOn: redOn(r.out) });
     restore();
   }
 
-  // ---- MB5：去掉 local 又不给 url（这条到底托管了没有？）----
+  // ---- MB5：去掉 bundled 又不给 url / local（这条到底怎么分发？）----
   {
-    const restore = mutateManifest('      "local": true,\n', '');
+    const restore = mutateManifest('"bundled": true,', '"bundled": false,');
     const r = runForward();
-    check('MB5 去掉 `local: true` 又不给 url ⇒ WB.W1 红（用户照清单去下载却下不到，且没人知道该怪谁）',
+    check('MB5 去掉 `bundled: true` 又不给 url / local ⇒ WB.W1 红（用户照清单去找却拿不到，且没人知道该怪谁）',
       r.code !== 0 && hasRed(r.out, 'WB.W1'), { code: r.code, redOn: redOn(r.out) });
+    restore();
+  }
+
+  // ---- MB7：包内优先被摘掉（只看本机目录）----
+  {
+    const restore = mutate(
+      "const abs = bundled && fs.existsSync(bundled) ? bundled : path.join(wheelDir(), String(w.file || ''));",
+      "const abs = path.join(wheelDir(), String(w.file || ''));",
+    );
+    const r = runForward();
+    check('MB7 摘掉"包内优先"（只看本机目录）⇒ WB.W3b 红（用户机上没有 .download-cache ⇒ 必然回退源码编译）',
+      r.code !== 0 && hasRed(r.out, 'WB.W3b'), { code: r.code, redOn: redOn(r.out) });
+    restore();
+  }
+
+  // ---- MB8：bundled 的 path 指向一个不存在的文件 ----
+  {
+    const restore = mutateManifest('"path": "wheels/pydensecrf-1.0-cp311-cp311-win_amd64.whl",', '"path": "wheels/no-such-file.whl",');
+    const r = runForward();
+    check('MB8 `bundled` 的 path 指向不存在的文件 ⇒ WB.W1b 红（清单可以写"随包"而仓库里什么都没有）',
+      r.code !== 0 && hasRed(r.out, 'WB.W1b'), { code: r.code, redOn: redOn(r.out) });
     restore();
   }
 
@@ -367,7 +452,9 @@ if (REFUTE) {
     restore();
   }
 
-  check('R1 变异收尾：`install-engine-deps.mjs` 按字节还原', MJS_ORIGINAL.equals(fs.readFileSync(DEPS_MJS)), null);
+  // 收尾：脚本与清单都要按字节还原（MB4/MB5/MB8 改的是清单，只查脚本会漏）
+  check('R1 变异收尾：`install-engine-deps.mjs` 与 `wheels.manifest.json` 都按字节还原',
+    MJS_ORIGINAL.equals(fs.readFileSync(DEPS_MJS)) && WHEELS_ORIGINAL.equals(fs.readFileSync(WHEELS_JSON)), null);
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

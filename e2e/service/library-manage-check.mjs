@@ -31,17 +31,19 @@
  *    `episodes[].no` 记 14.1、`/chapters/14.1/…` 寻址到同一话（N7）；两位小数 / `.0`
  *    → 404 拒绝（N7b）。
  * 9. **归并撞 Windows 句柄占用**（D-125，线上"归并 22.1 → 服务内部错误"的修复）：
- *    源目录内文件被打开句柄占用时，`renameSync` 抛 EPERM。瞬时占用（350ms 后释放）被
+ *    源目录内文件被打开句柄占用时，改名抛 EPERM。瞬时占用（350ms 后释放）被
  *    退避重试救回 → 200（N8）；持续占用重试耗尽 → 409 `MERGE_SOURCE_LOCKED` 而非
- *    500（N8b）；释放后重试成功、无半截目录残留（N8c）；页图/封面读流走 `pipeline`
- *    （中止即释放句柄，根因消除腿，源码级断言，N9）。
+ *    500（N8b）；释放后重试成功、无半截目录残留（N8c）。
+ *    —— 原第 9 条还带一条源码级断言 N9（"页图/封面读流走 `pipeline`、中止即释放句柄"），
+ *    随 Node 靶子退役**一并删除**：Rust `image_response` 是 `std::fs::read` 一次读完，
+ *    无句柄跨请求存活，该形态不存在（详见下方反证轮说明）。
  * 10. **编辑话数**（2026-10-11 用户需求，归并后还要能改话数）：
  *    `POST /library/{book}/chapters/{no}/renumber`，7 → 7.1 = 话目录改名 +
  *    episodes 重建 + 页文件原地保留（N10）；改到已占话号 → 409 `CHAPTER_NO_TAKEN`
  *    且目录不动（N10b）；该话有未终态任务 → 409 `CHAPTER_SOURCE_BUSY`（N10c）；
  *    任务跑完后改号恢复可用（N10d）。
  *
- * ## 反证轮（`--refute`）：十三条变异，各自必须让指定断言变红
+ * ## 反证轮（`--refute`）：十二条变异，各自必须让指定断言变红
  *   M1 去掉 `deleteTasks` 的终态门 ⇒ 翻译中的任务也会被删 ⇒ L1 变红；
  *   M2 `scanLibrary` 不跳过隐藏项 ⇒ 隐藏了还列出来 ⇒ L4 变红；
  *   M3 `handleLibraryDelete` 无视 `deleteFiles`（恒为 false）⇒ L6 变红；
@@ -50,11 +52,21 @@
  *   M6 归并的在跑任务门被去掉 ⇒ N3 变红；
  *   M7 话目录命名的零填充被去掉 ⇒ N4 变红；
  *   M8 封面落盘但 manifest.cover 不回写 ⇒ N6 变红；
- *   M9 页图读流退回 `.pipe`（中止泄漏句柄）⇒ N9 变红；
- *   M10 占用退避重试被去掉 ⇒ 瞬时占用也 500 ⇒ N8 变红；
+ *   M10 占用退避重试被去掉 ⇒ 瞬时占用不再被救回 ⇒ N8 变红；
  *   M11 占用终态不再归因 LOCKED ⇒ 回归 500 ⇒ N8b 变红；
  *   M12 改号的占号复检被去掉 ⇒ 覆盖已有话 ⇒ N10b 变红；
  *   M13 改号的在跑任务门被去掉 ⇒ 翻译中也能改名 ⇒ N10c 变红。
+ *
+ * 🔴 **锚点全在 Rust 源码**（`app/src-tauri/src/boxsvc/**`）：`service/`（Node 实现）已退役，
+ *    靶子只剩 `boxsvc` 一个 —— 打 Node 文件的变异**不会被执行**，只会变成"该红没红"的
+ *    假阳性。改完 Rust 源码必须 `cargo build --bin boxsvc` 重编，否则验的是上一份产物。
+ *
+ * ⚠️ **编号从 M8 跳到 M10（原 M9/N9 已删除）**：原先的 M9/N9 咬的是「页图/封面读流退回
+ *    `.pipe(res)` ⇒ 客户端中止不销毁源流 ⇒ 句柄泄漏 ⇒ 归并 `rename` 撞 EPERM」。那是
+ *    **Node 流式实现**的缺陷形态；Rust 侧 `boxsvc.rs::image_response` 用 `std::fs::read`
+ *    **一次读完即丢句柄**，结构上不存在这个形态 ⇒ 再留一条源码断言只是装饰（测的是死代码），
+ *    故连断言一并删除。D-125 的根因腿现在由 N8 / N8b / N8c 三条行为断言覆盖。
+ *
  * 服务/前端都按源码破坏来验（服务是**子进程**，磁盘破坏会被新进程读到）。
  *
  * 用法：
@@ -65,6 +77,7 @@
  * 见 ~/.workbuddy/skills/falsifiable-verification。
  */
 import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -72,14 +85,29 @@ import path from 'node:path';
 
 import { encodePng } from '../../engine/src/png.mjs';
 // F0：服务入口解析的唯一事实源（MIAO_SERVICE_IMPL=node|rust 切换靶子）
-import { SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
+import { killTree, SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const ENGINE_ENTRY = path.join(ROOT, 'engine', 'src', 'server.mjs');
-const STORE_SRC = path.join(ROOT, 'service', 'src', 'manga', 'store.mjs');
-const SERVER_SRC = path.join(ROOT, 'service', 'src', 'server.mjs');
-const LIBRARY_SRC = path.join(ROOT, 'service', 'src', 'manga', 'library.mjs');
-const APP_SRC = path.join(ROOT, 'app', 'src', 'App.tsx');
+const APP_SRC = path.join(ROOT, 'app', 'src', 'App.tsx'); // 前端源码**不属** service/，保留
+const CARGO_DIR = path.join(ROOT, 'app', 'src-tauri');
+/** 反证轮要破坏的 Rust 源码（三处，作用各不相同，别合并）。 */
+const RUST_HANDLERS_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'handlers.rs');
+const RUST_LIBRARY_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'library.rs');
+const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'store', 'exec.rs');
+
+/**
+ * 编译 Rust 靶子（反证轮改完源码必须重编，否则断言验的是"上一份产物"）。
+ * 🔴 编译失败**不算通过**：它记 skipped —— 锚点选错行与"覆盖不足"在报告里长得一样，
+ *    必须分开记，否则"反证没跑成"会被读成"反证通过"。
+ */
+function buildRust() {
+  const r = spawnSync('cargo', ['build', '--bin', 'boxsvc'], {
+    cwd: CARGO_DIR, encoding: 'utf8', maxBuffer: 40 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const log = `${r.stdout || ''}${r.stderr || ''}`.trim();
+  return { ok: r.status === 0, log: log.split('\n').slice(-6).join(' | ').slice(0, 400) };
+}
 
 const REFUTE = process.argv.includes('--refute');
 /// 起的是模拟引擎（ver1.0 自定义协议）；不声明会让服务按 real 协议去打替身。
@@ -125,7 +153,8 @@ async function waitReady(state, re, timeoutMs = 20_000) {
 function killProc(state) {
   if (!state || !state.child || state.child.exitCode !== null) return Promise.resolve();
   const child = state.child;
-  child.kill('SIGTERM');
+  // 🔴 杀进程树（不是只杀主进程）：rust 服务派生的引擎②/③ 否则全成孤儿（D-202）
+  killTree(child);
   // Windows：刚被 kill 的子进程会短暂占着文件句柄，随后写源文件会 EPERM —— 必须等它真的退出。
   return new Promise((resolve) => {
     const until = Date.now() + 3000;
@@ -762,18 +791,13 @@ async function runAll() {
       `HTTP ${rnFree.status} oldGone=${!fs.existsSync(path.join(newDir, '7.1_第7.1话'))} newDir=${fs.existsSync(path.join(newDir, '08_第8话'))}`,
     );
 
-    // ---- N9：发图/封面读流必须走 pipeline（D-125 的根因消除腿）----
-    // .pipe() 在客户端中止（取消加载/切页）时**不销毁**源流 ⇒ 读句柄泄漏 ⇒ Windows 下该目录
-    // 的归并 rename 撞 EPERM。行为级复现这条太脆（时序敏感），按 D-112 缺口的形态做源码级断言。
-    const serverSrc = fs.readFileSync(SERVER_SRC, 'utf8');
-    const pipelineCount = (serverSrc.match(/pipeline\(fs\.createReadStream\(file\), res\)/g) || []).length;
-    const pipeResLeft = /\.pipe\(res\)/.test(serverSrc);
-    check(
-      'N9',
-      '页图与封面两条读流都走 pipeline（中止即释放句柄），源码无 .pipe(res) 残留',
-      pipelineCount === 2 && !pipeResLeft,
-      `pipeline=${pipelineCount} pipeResLeft=${pipeResLeft}`,
-    );
+    // ---- N9（已删除）----
+    // 原先这里有一条源码级断言：页图/封面两条读流都走 `pipeline(fs.createReadStream(file), res)`
+    // 且全文无 `.pipe(res)` 残留 —— 咬的是 **Node 流式实现**「客户端中止不销毁源流 ⇒ 句柄泄漏 ⇒
+    // 归并 rename 撞 EPERM」（D-125 的根因腿）。
+    // 🔴 Rust 侧没有这个形态：`boxsvc.rs::image_response` 是 `std::fs::read(file)` **一次读完**
+    //    即丢句柄，句柄不跨请求存活 ⇒ 断言无可咬之物，留一条只会是装饰（D-112 那类"测了死代码"
+    //    的假绿）。故随 Node 靶子退役一并删除；D-125 由 N8 / N8b / N8c 三条行为断言承担。
   } finally {
     await killProc(service);
     await killProc(engine);
@@ -805,11 +829,13 @@ function printResults(title) {
 const MUTATIONS = [
   {
     name: 'M1 去掉 deleteTasks 的终态门（翻译中/排队中也会被删）',
+    // ⚠️ 多行锚点按目标文件的实际 EOL 归一化（Rust 源是 CRLF，用 `\n` 拼的 `includes()` 会假）。
+    //    锚点含 `reason: "not_deletable"` 才唯一 —— 同形条件在 exec.rs 里出现 3 次。
     edits: [
       {
-        file: STORE_SRC,
-        find: '      if (!TASK_TERMINAL.has(task.status)) {\n        skipped.push({ taskId, reason: \'not_deletable\', status: task.status });\n        continue;\n      }',
-        replace: '      if (false) { // refute：不再拦翻译中/排队中\n        skipped.push({ taskId, reason: \'not_deletable\', status: task.status });\n        continue;\n      }',
+        file: RUST_EXEC_SRC,
+        find: '            if !TASK_TERMINAL.contains(&self.tasks[idx].status.as_str()) {\n                skipped.push(DeleteSkip {\n                    task_id: task_id.clone(),\n                    reason: "not_deletable".to_string(),',
+        replace: '            if false { // refute：不再拦翻译中/排队中\n                skipped.push(DeleteSkip {\n                    task_id: task_id.clone(),\n                    reason: "not_deletable".to_string(),',
       },
     ],
     expect: ['L1'],
@@ -818,11 +844,11 @@ const MUTATIONS = [
     name: 'M2 scanLibrary 不跳过隐藏项（隐藏了还列出来）',
     edits: [
       {
-        // D-145：`scanLibrary` 已从 server.mjs（HTTP 入口）搬到 `manga/library.mjs`（数据层），
-        // 锚点随迁；`store.hiddenComics` 现在是形参 `hidden`。
-        file: LIBRARY_SRC,
-        find: '    if (hidden.has(entry.name)) continue;',
-        replace: '    if (false) continue; // refute：不跳过隐藏项',
+        // D-145 把 `scanLibrary` 搬进 `manga/library.mjs`；Node 退役后锚点再随迁到
+        // Rust 的 `library.rs`（`hidden` 是形参 `&HashSet<String>`）。
+        file: RUST_LIBRARY_SRC,
+        find: '            if hidden.contains(&name) {\n                continue;\n            }',
+        replace: '            if false { // refute：不跳过隐藏项\n                continue;\n            }',
       },
     ],
     expect: ['L4'],
@@ -831,9 +857,9 @@ const MUTATIONS = [
     name: 'M3 handleLibraryDelete 无视 deleteFiles（恒为 false ⇒ 永远不会真删）',
     edits: [
       {
-        file: SERVER_SRC,
-        find: '  const deleteFiles = parsed?.deleteFiles === true;',
-        replace: '  const deleteFiles = false; // refute：无视勾选',
+        file: RUST_HANDLERS_SRC,
+        find: '    let delete_files = parse_json_lenient(body).get("deleteFiles").and_then(|v| v.as_bool()).unwrap_or(false);',
+        replace: '    let delete_files = false; // refute：无视勾选',
       },
     ],
     expect: ['L6'],
@@ -855,9 +881,10 @@ const MUTATIONS = [
     name: 'M5 新建漫画的同名复检被去掉（撞名错误直接 500，不再归因为 409）',
     edits: [
       {
-        file: SERVER_SRC,
-        find: '    if (fs.existsSync(path.join(store.root, norm.name))) {',
-        replace: '    if (false) { // refute：同名复检被去掉',
+        file: RUST_HANDLERS_SRC,
+        // `create_book_dir` 失败后的 `target.exists()` 复检（D-118）—— handlers.rs 内唯一。
+        find: '            if target.exists() {',
+        replace: '            if false { // refute：同名复检被去掉',
       },
     ],
     expect: ['N2'],
@@ -868,9 +895,10 @@ const MUTATIONS = [
     name: 'M6 归并的在跑任务门被去掉（翻译中的目录也能被搬走）',
     edits: [
       {
-        file: SERVER_SRC,
-        find: '  const busy = store.activeTasksForDir(srcName);\n  if (busy.length > 0) {',
-        replace: '  const busy = []; // refute：在跑任务门被去掉\n  if (busy.length > 0) {',
+        file: RUST_HANDLERS_SRC,
+        // 归并分支用 `src_name` 查在跑任务（改号分支用 `old.rel_dir`，两条锚点别互串）。
+        find: '    let busy = lock(shell).active_tasks_for_dir(&src_name);\n    if !busy.is_empty() {',
+        replace: '    let busy: Vec<(String, String)> = Vec::new(); // refute：在跑任务门被去掉\n    if !busy.is_empty() {',
       },
     ],
     expect: ['N3'],
@@ -881,9 +909,11 @@ const MUTATIONS = [
     name: 'M7 话目录命名的两位零填充被去掉（归并产物变成 7_第7话）',
     edits: [
       {
-        file: LIBRARY_SRC,
-        find: "  return `${String(no).padStart(2, '0')}_第${no}话`;",
-        replace: "  return `${no}_第${no}话`; // refute：零填充被去掉",
+        // 话目录命名只此一处定义（`chapter_dir_name`）。零填充被去掉 ⇒ 位移后的目录名是
+        // `7_第7话`，N4 断言的 `07_第7话`（位置、merged.to、chapterCount 三个口径）全落空。
+        file: RUST_LIBRARY_SRC,
+        find: '    let padded = if s.len() < 2 { format!("0{s}") } else { s };',
+        replace: '    let padded = s; // refute：零填充被去掉',
       },
     ],
     expect: ['N4'],
@@ -894,59 +924,51 @@ const MUTATIONS = [
     name: 'M8 封面落盘但 manifest 的 cover 字段不回写（文件与 json 脱钩）',
     edits: [
       {
-        file: SERVER_SRC,
-        find: '  writeManifestAtomic(dir, { ...manifest, cover: coverName, episodes: episodesFromDirs(dir) });',
-        replace:
-          '  writeManifestAtomic(dir, { ...manifest, cover: null, episodes: episodesFromDirs(dir) }); // refute：cover 不回写',
+        // 「同步写入」的验证点：封面文件照常落盘、GET 照常发回，唯独 manifest.cover 不回写。
+        // `let _ = &cover_name;` 是喂给借用检查的（否则 `cover_name` 变成 unused 警告）。
+        file: RUST_HANDLERS_SRC,
+        find: '    manifest.cover = Some(cover_name);',
+        replace: '    manifest.cover = None; // refute：cover 不回写\n    let _ = &cover_name;',
       },
     ],
     expect: ['N6'],
   },
   {
-    // 锚点连到 sendImageBytes 的收尾行 + 下一函数签名（该 pipeline 行出现两处，裸行不唯一，D-113）。
-    // 退回 .pipe ⇒ 源码级断言 N9 红（pipeline 计数掉到 1 且出现 .pipe(res) 残留）。
-    name: 'M9 页图读流退回 .pipe（客户端中止不销毁源流 ⇒ 句柄泄漏 ⇒ 归并 rename 撞 EPERM）',
-    edits: [
-      {
-        file: SERVER_SRC,
-        find: '  await pipeline(fs.createReadStream(file), res).catch(() => {});\n}\n\nfunction handleLibraryFile(req, res, cors, rawName, seqText, url) {',
-        replace: '  fs.createReadStream(file).pipe(res); // refute：退回 pipe，中止即泄漏句柄\n}\n\nfunction handleLibraryFile(req, res, cors, rawName, seqText, url) {',
-      },
-    ],
-    expect: ['N9'],
-  },
-  {
-    // 重试被去掉 ⇒ 瞬时占用（350ms 后释放）也会在第一次 rename 失败时直接上抛 ⇒ N8 红成 500。
+    // 重试被去掉 ⇒ 瞬时占用（350ms 后释放）也救不回来（直接归因成 409 LOCKED）⇒ N8 红。
     // N8b/N8c 不 expect：它们不依赖重试次数（耗尽路径行为不变）。
-    name: 'M10 归并移动的占用退避重试被去掉（EPERM 第一次就上抛 ⇒ 瞬时占用也 500）',
+    // `i >= 1`：`i` 从 1 起，故第一次占用即返回 Err —— 等价于"重试窗口归零"。
+    name: 'M10 归并移动的占用退避重试被去掉（占用第一次就上抛 ⇒ 瞬时占用不再被救回）',
     edits: [
       {
-        file: SERVER_SRC,
-        find: '      if (!isBusyFsError(err) || i >= RENAME_RETRY.tries) throw err;',
-        replace: '      throw err; // refute：占用重试被去掉',
+        file: RUST_HANDLERS_SRC,
+        find: '                if !is_busy_fs_error(&e) || i >= RENAME_TRIES {',
+        replace: '                if !is_busy_fs_error(&e) || i >= 1 { // refute：占用重试被去掉',
       },
     ],
     expect: ['N8'],
   },
   {
     // 占用归因被短路 ⇒ 重试耗尽后 err 原样上抛 ⇒ 500 INTERNAL 回归，N8b 红成 500。
+    // ⚠️ 锚点必须带 `"MERGE_SOURCE_LOCKED"` 那一行：`if is_busy_fs_error(&e) {` 在
+    //    handlers.rs 里出现两次（归并 / 改号），裸行不唯一。
     name: 'M11 占用终态不再归因为 MERGE_SOURCE_LOCKED（回退成 500 内部错误）',
     edits: [
       {
-        file: SERVER_SRC,
-        find: '    if (isBusyFsError(err)) {\n      // 占用重试已耗尽（约 800ms）：把"500 服务内部错误"归因成用户能行动的 409（D-125）',
-        replace: '    if (false) { // refute：占用不再归因\n      // 占用重试已耗尽（约 800ms）：把"500 服务内部错误"归因成用户能行动的 409（D-125）',
+        file: RUST_HANDLERS_SRC,
+        find: '        if is_busy_fs_error(&e) {\n            return super::http::store_err(&StoreError::new(\n                "MERGE_SOURCE_LOCKED",',
+        replace: '        if false { // refute：占用不再归因\n            return super::http::store_err(&StoreError::new(\n                "MERGE_SOURCE_LOCKED",',
       },
     ],
     expect: ['N8b'],
   },
   {
+    // 占号复检被去掉 ⇒ 改到已占话号会去顶撞已有目录（改号分支断言自己那份 `.no`，与归并那份不同名）。
     name: 'M12 改号的占号复检被去掉（改到已占话号会覆盖/顶撞已有话）',
     edits: [
       {
-        file: SERVER_SRC,
-        find: "    if (fs.existsSync(dst) || takenNos.includes(newInfo.no) || declaredNos.includes(newInfo.no)) {",
-        replace: '    if (false) { // refute：改号不再查占号',
+        file: RUST_HANDLERS_SRC,
+        find: '        if dst.exists() || taken_nos.contains(&new_info.no) || declared_nos.contains(&new_info.no) {',
+        replace: '        if false { // refute：改号不再查占号',
       },
     ],
     expect: ['N10b'],
@@ -955,9 +977,10 @@ const MUTATIONS = [
     name: 'M13 改号的在跑任务门被去掉（翻译中也能给话改名 ⇒ 任务写向不存在的旧路径）',
     edits: [
       {
-        file: SERVER_SRC,
-        find: '    const busy = store.activeTasksForDir(oldInfo.relDir);\n    if (busy.length > 0) {',
-        replace: '    const busy = []; // refute：在跑任务门被去掉\n    if (busy.length > 0) {',
+        file: RUST_HANDLERS_SRC,
+        // 改号分支查的是 `old.rel_dir`（归并分支查 `src_name`，两条锚点别互串）。
+        find: '        let busy = lock(shell).active_tasks_for_dir(&old.rel_dir);\n        if !busy.is_empty() {',
+        replace: '        let busy: Vec<(String, String)> = Vec::new(); // refute：在跑任务门被去掉\n        if !busy.is_empty() {',
       },
     ],
     expect: ['N10c'],
@@ -982,6 +1005,15 @@ const main = async () => {
     return;
   }
 
+  // 🔴 进反证轮前先确保「产物 == 磁盘源码」：否则基线跑的是上一份编译结果，
+  //    而「变异全红」里有一部分红是被这份陈旧产物误打误撞造成的。
+  const pre = buildRust();
+  if (!pre.ok) {
+    console.log(`✗ 开跑前 cargo build 失败，无法反证：${pre.log}`);
+    process.exitCode = 1;
+    return;
+  }
+
   await runAll();
   const wasGreen = {};
   for (const r of results) wasGreen[r.id] = r.ok;
@@ -995,21 +1027,35 @@ const main = async () => {
 
   console.log('\n破坏源文件 → 断言必须变红 → 按字节还原\n');
   for (const mut of MUTATIONS) {
-    for (const e of mut.edits) {
+    let anchorMissing = false;
+    for (const [i, e] of mut.edits.entries()) {
       if (!originals.has(e.file)) originals.set(e.file, readBytes(e.file));
-      const snap = originals.get(e.file);
-      const txt = snap.toString('utf8');
+      const txt = originals.get(e.file).toString('utf8');
       // 🔴 本仓 `core.autocrlf=true`：工作区是 CRLF、锚点写的是 LF。不折算行尾，
       //    任何**跨行**锚点都会"锚点未找到" → 该条静默不反证（跳过 ≠ 通过）。
       const eol = txt.includes('\r\n') ? '\r\n' : '\n';
       const find = e.find.split('\n').join(eol);
       const repl = e.replace.split('\n').join(eol);
       if (!txt.includes(find)) {
-        console.log(`⚠ ${mut.name}\n    破坏锚点未找到（${path.relative(ROOT, e.file)}）—— 本条无法反证`);
-        skipped += mut.expect.length;
-        continue;
+        console.log(`⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`);
+        anchorMissing = true;
+        break;
       }
       await writeRetry(e.file, txt.replace(find, repl));
+    }
+    // 🔴 锚点缺失时**整条跳过**，不能只跳那一个 edit：继续往下跑 `runAll()`，测的还是
+    //    未被破坏的产物 ⇒ 那条 expect 必然"该红没红"，被记成**假阳性** ——
+    //    而真相是"这条根本没反证"。两种故障长得几乎一样，只有这条 flag 能分开它们。
+    if (anchorMissing) { skipped += mut.expect.length; continue; }
+    // 🔴 改完 Rust 源码**必须重编**才作数：不编就等于拿旧产物跑断言，红的绿的都说明不了问题。
+    const built = buildRust();
+    if (!built.ok) {
+      console.log(`⚠ ${mut.name}\n    破坏后编译失败（多半是锚点选错行），本条无法反证：${built.log}`);
+      // 🔴 这里**必须先还原再 continue**：下面的还原写在 `finally` 里，`continue` 会跳过它 ——
+      //    源码会被永久留在被破坏状态。
+      for (const [f, snap] of originals) await writeRetry(f, snap);
+      skipped += mut.expect.length;
+      continue;
     }
     // 还原一律进 finally：破坏若让 runAll() 抛异常，写在 try 之后的还原就不会执行
     let res = {};
@@ -1046,10 +1092,14 @@ const main = async () => {
     if (!same) restoreFail++;
     console.log(`  ${same ? '✓' : '✗'} ${path.relative(ROOT, f)} 字节${same ? '一致' : '不一致！'}`);
   }
+  // 源码还原了，**产物也必须还原** —— 否则留下一个「源码是好的、跑起来是坏的」的机器。
+  const rebuilt = buildRust();
+  if (!rebuilt.ok) { restoreFail++; console.log(`  ✗ cargo build 还原失败：${rebuilt.log}`); }
+  else console.log('  ✓ cargo build 已把靶子重编回未破坏状态');
 
   console.log('\n' + '─'.repeat(56));
   console.log(`REFUTE: ${red}/${total} 条按预期变红（应执行 ${expectedTotal} 条）`);
-  if (skipped) console.log(`✗ 有 ${skipped} 条未能反证（破坏锚点未找到）—— 跳过 ≠ 通过`);
+  if (skipped) console.log(`✗ 有 ${skipped} 条未能反证（破坏锚点未找到 / 破坏后编译失败）—— 跳过 ≠ 通过`);
   if (falsePositives.length) console.log(`✗ 假阳性：${falsePositives.join(', ')}`);
   process.exitCode = red === expectedTotal && skipped === 0 && restoreFail === 0 ? 0 : 1;
 };

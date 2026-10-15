@@ -89,7 +89,9 @@ const check = (id, label, ok, detail) => {
 const procs = [];
 function shutdown() {
   for (const p of procs) {
-    if (p && p.exitCode === null) { try { p.kill('SIGTERM'); } catch { /* ignore */ } }
+    // 🔴 `killTree` 而不是裸 `kill`：服务是 boxsvc 时会派生引擎②/③ 的子孙进程，
+    //    Windows 上裸 kill 只收主进程 ⇒ 真机一轮跑完留下孤儿（本轮 o)护的正是这条）。
+    killTree(p);
   }
 }
 process.on('SIGINT', () => { shutdown(); process.exit(130); });
@@ -189,9 +191,46 @@ process.env.MIAO_TOKEN = crypto.randomBytes(32).toString('hex');
 process.env.MIAO_STATE_DIR = STATE_DIR;
 process.env.MIAO_ROOT = ROOT_DIR;
 
-const { probeEngine, resolveEngineLaunch } = await import(
-  new URL('../../service/src/engine-client.mjs', import.meta.url).href
+// 🔴 原先是 `import { probeEngine, resolveEngineLaunch } from 'service/src/engine-client.mjs'`。
+//    该文件随 `service/` 删除（D-205）后，那两件事在 Rust 侧各有落点：
+//      · **启动配方** ⇒ `boxsvc --print-launch-plan real` —— Rust 的 `build_launch_plan` 就是
+//        "适配层自己拼的那条命令"（原 `resolveEngineLaunch` 的移植体），语义一致；
+//      · **引擎就绪** ⇒ 本地端口探测。原 `probeEngine` 会区分 stopped/starting/running，
+//        而本脚本只用它等 `running`（判据是"引擎起来了没有"）⇒ 端口探测等价。
+//    ⚠️ **改造后未经真机验证**（本机无 macOS 真机 + 几 GB 模型）—— 登记在 D-205。
+const { RUST_BIN, SERVICE_ENTRY, killTree, targetFor } = await import(
+  new URL('../service/_service-harness.mjs', import.meta.url).href
 );
+
+/** 起一个**短命**子进程并收下输出。🔴 必须异步：本机同步 spawn 一律 EBUSY（D-138）。 */
+function runCapture(cmd, argv, env) {
+  return new Promise((resolve) => {
+    const c = spawn(cmd, argv, { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    let err = '';
+    c.stdout.on('data', (d) => { out += d; });
+    c.stderr.on('data', (d) => { err += d; });
+    c.on('error', (e) => resolve({ code: -1, stdout: '', stderr: String(e) }));
+    c.on('close', (code) => resolve({ code, stdout: out, stderr: err }));
+  });
+}
+
+/** 启动配方 —— 唯一事实源是 Rust 的 `build_launch_plan`（`--print-launch-plan real`）。 */
+async function launchPlan() {
+  const r = await runCapture(RUST_BIN, ['--print-launch-plan', 'real'], {
+    SAKURA_API_BASE: `http://127.0.0.1:${LLAMA_PORT}/v1`,
+  });
+  if (r.code !== 0) throw new Error(`取启动配方失败（code=${r.code}）：${String(r.stderr).slice(0, 400)}`);
+  const j = JSON.parse(String(r.stdout).replace(/^\uFEFF/, ''));
+  const e = j.engine || {};
+  if (!Array.isArray(e.cmd) || e.cmd.length === 0) throw new Error(`配方里没有 engine.cmd：${String(r.stdout).slice(0, 300)}`);
+  // 🔴 `env` **不能丢**：配方里的注入（`PYTHONIOENCODING` / `SAKURA_API_BASE` / no-proxy 合并值 …）
+  //    正是 `check:engine-parity` 逐条钉住的东西 —— 少了它，引擎起得来但行为与产品不一样。
+  return { cmd: e.cmd, cwd: e.cwd || process.cwd(), env: e.env || {}, executorPort: EXECUTOR_PORT };
+}
+
+/** 引擎就绪探测（原 `probeEngine` 的替代：本脚本只等 `running`）。 */
+const probeEngineLocal = async () => ((await portOpen(ENGINE_PORT, 400)) ? { state: 'running' } : { state: 'stopped' });
 
 const report = {
   startedAt: new Date().toISOString(),
@@ -235,17 +274,14 @@ try {
   //    （《04》§9.1；见 D-73 决策 1）。本脚本自己起一份 llama-server 但让 box-service 也去起，
   //    会得到「两个进程抢 8080 / 第二个静默复用第一个」这种**看起来绿、其实没测到归属权**的结果。
   //    所以这里只起 ②，③ 交给下面的服务进程 —— 那才是产品里真实的进程树。
-  const launch = resolveEngineLaunch({
-    port: ENGINE_PORT, useGpu: true, modelsTtl: 0,
-    sakuraBase: `http://127.0.0.1:${LLAMA_PORT}/v1`,
-  });
+  const launch = await launchPlan();
   log(`拉起引擎：${launch.cmd.join(' ')}`);
   report.launch = { cmd: launch.cmd, cwd: launch.cwd, executorPort: launch.executorPort };
   const engine = spawnLogged(launch.cmd[0], launch.cmd.slice(1), { cwd: launch.cwd, env: launch.env }, 'engine');
 
   const t0 = Date.now();
   for (let i = 0; i < 1000; i += 1) {
-    const p = await probeEngine();
+    const p = await probeEngineLocal();
     if (p.state === 'running') break;
     if (engine.exitCode !== null) throw new Error(`引擎进程已退出（code=${engine.exitCode}）；日志尾部：\n${engine.__log.slice(-2000)}`);
     if (Date.now() - t0 > 5 * 60_000) throw new Error(`引擎 5 min 内未到 running；日志尾部：\n${engine.__log.slice(-2000)}`);
@@ -257,7 +293,10 @@ try {
   // ---- 2) box-service（真实服务进程；③ 由它按配方拉起）
   // 🔴 `MIAO_ENGINE_PROTOCOL=real` 必须**显式**给：默认虽也是 real，但显式声明让"这轮测的是真协议"
   //    写进进程环境，而不是靠默认值碰巧对上（mock 档默认值一改，这里会静默变成另一个东西）。
-  const service = spawnLogged(process.execPath, [path.join(ROOT, 'service', 'src', 'server.mjs')], {
+  // 🔴 起服务走 harness（原先硬拼 `node service/src/server.mjs` —— 那份文件已删，
+  //    而硬拼入口正是 harness 要禁的第二份推导；现在靶子只有一个：boxsvc）。
+  const svcTarget = targetFor(SERVICE_ENTRY);
+  const service = spawnLogged(svcTarget.command, svcTarget.args, {
     env: {
       ...process.env,
       MIAO_ENGINE_PROTOCOL: 'real',

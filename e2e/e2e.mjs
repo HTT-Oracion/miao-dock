@@ -18,7 +18,6 @@
  * 清理放在**下一次运行的开头**。临时根目录默认 `.tmp/e2e/`，可用 `MIAO_E2E_TMP` 指到别处
  * （例如系统临时目录：`MIAO_E2E_TMP=$(mktemp -d)`），两个脚本共用该变量。
  */
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -26,6 +25,12 @@ import process from 'node:process';
 
 import { encodePng } from '../engine/src/png.mjs';
 import { TMP_ENV, describeE2eTmp, e2eRoot, e2eState, e2eTmp } from './_e2e-paths.mjs';
+// F0：服务靶子解析的唯一事实源。
+// 🔴 本文件原先**自己拼** `service/src/server.mjs` 并用裸 `spawn(process.execPath, [entry])` 起它 ——
+//    那是 harness 之外的第二份入口推导，harness-check 的 H1/H2 只扫 `e2e/service/` 所以没抓到它。
+//    服务靶子退化成哨兵（`SERVICE_ENTRY` 不再是路径）后，这条路必须并进 harness：改成
+//    `spawnTarget(SERVICE_ENTRY, env)`，否则会去 `node __miao_service_target__`（起不来）。
+import { SERVICE_ENTRY, killTree, spawnTarget } from './service/_service-harness.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const TMP = e2eTmp();
@@ -64,10 +69,8 @@ const check = (id, label, ok, detail) => {
 // ------------------------------------------------------------------ 进程
 
 function spawnProc(entry, env, tag) {
-  const child = spawn(process.execPath, [entry], {
-    env: { ...process.env, ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  // 走 harness：服务入口 ⇒ boxsvc；非服务入口（本文件里的模拟引擎）⇒ 原样 node。
+  const child = spawnTarget(entry, env);
   const state = { child, tag, out: '' };
   child.stdout.on('data', (b) => (state.out += b.toString('utf8')));
   child.stderr.on('data', (b) => (state.out += b.toString('utf8')));
@@ -86,7 +89,9 @@ async function waitReady(state, re, timeoutMs = 20_000) {
 }
 
 function killProc(state) {
-  if (state && state.child && state.child.exitCode === null) state.child.kill('SIGTERM');
+  // 🔴 用 killTree 而不是 `child.kill()`：靶子是 boxsvc 时它会派生引擎②/③（llama-server 每个几 GB），
+  //    Windows 上裸 kill 只收主进程 ⇒ 孙进程成孤儿（D-202 实测攒了 12 个把机器卡死）。
+  if (state && state.child) killTree(state.child);
 }
 
 /**
@@ -304,7 +309,7 @@ try {
   console.log(`引擎就绪 @${engineInfo.port}（注入失败：seq=3）`);
 
   service = spawnProc(
-    path.join(ROOT, 'service', 'src', 'server.mjs'),
+    SERVICE_ENTRY,
     {
       MIAO_ENGINE_PORT: String(engineInfo.port),
       MIAO_ROOT: ROOT_DIR,

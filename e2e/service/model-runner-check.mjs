@@ -43,7 +43,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { RUST_BIN, REPO_ROOT } from './_service-harness.mjs';
+import { killTree, RUST_BIN, REPO_ROOT } from './_service-harness.mjs';
 
 const REFUTE = process.argv.includes('--refute');
 const SELF = fileURLToPath(import.meta.url);
@@ -133,13 +133,13 @@ function startService(extraEnv) {
   });
   return new Promise((resolve, reject) => {
     let buf = '';
-    const to = setTimeout(() => { child.kill(); reject(new Error('boxsvc 15s 内未就绪')); }, 15000);
+    const to = setTimeout(() => { killTree(child); reject(new Error('boxsvc 15s 内未就绪')); }, 15000);
     child.stdout.on('data', (d) => {
       buf += d;
       const m = /MIAO_READY (\{.*\})/.exec(buf);
       if (m) {
         clearTimeout(to);
-        resolve({ port: JSON.parse(m[1]).port, kill: () => child.kill() });
+        resolve({ port: JSON.parse(m[1]).port, kill: () => killTree(child) });
       }
     });
     child.stderr.on('data', (d) => (buf += d));

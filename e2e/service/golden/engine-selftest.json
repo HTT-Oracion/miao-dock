@@ -41,6 +41,35 @@
           "no_proxy": "127.0.0.1,localhost,::1"
         }
       ],
+      "llmLaunchByTier": [
+        {
+          "model": "<HOME>\\AppData\\Local\\runtimes\\manga-translator\\models\\sakura\\sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
+          "ok": true,
+          "tier": "tiny"
+        },
+        {
+          "code": "TIER_MODEL_UNDECLARED",
+          "detail": {
+            "available": [
+              "tiny"
+            ],
+            "tier": "small"
+          },
+          "ok": false,
+          "tier": "small"
+        },
+        {
+          "code": "TIER_MODEL_UNDECLARED",
+          "detail": {
+            "available": [
+              "tiny"
+            ],
+            "tier": "medium"
+          },
+          "ok": false,
+          "tier": "medium"
+        }
+      ],
       "parseResultStream": [
         {
           "error": null,
@@ -335,6 +364,23 @@
         {
           "NO_PROXY": "127.0.0.1,localhost,::1",
           "no_proxy": "127.0.0.1,localhost,::1"
+        }
+      ],
+      "llmLaunchByTier": [
+        {
+          "model": "sakura-mock:tiny",
+          "ok": true,
+          "tier": "tiny"
+        },
+        {
+          "model": "sakura-mock:small",
+          "ok": true,
+          "tier": "small"
+        },
+        {
+          "model": "sakura-mock:medium",
+          "ok": true,
+          "tier": "medium"
         }
       ],
       "parseResultStream": [
