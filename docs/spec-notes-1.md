@@ -3773,3 +3773,10 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
 `target/debug/boxsvc.exe` 的 mtime 晚于 `model_store.rs`（即跑的是含本次改动的产物），
 且 R7 在 **rust 靶**上真的变红（若二进制是旧的，它只会"永远绿"）。
 
+**补记（同日 · 真装配复核）**：`check:engine-bootstrap-real`（夹具版真装配）**11/11**，退出码 0 ——
+跑的是**产品自己的装配函数**：真 venv / 真源码解包 / 随包 wheel / 真装依赖全过，
+且 B10 证明上游源码是产品自己在第 3 阶段下下来的（不是预放）。
+另把主地址**真下一次**：**56,098,334 字节**、sha256 与清单 pin 的值**逐字节一致**
+⇒ 登记在 **G-A6** 的那条风险（codeload 按需重打包会改字节）**今天未命中**，原 `url` 可直接命中校验。
+仍未证的是「打包安装后的应用里点一次」，归 `check:packaged` 与两份引导里的干净机验收清单（真机）。
+
