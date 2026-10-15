@@ -28,41 +28,34 @@
  * 约束：纯 Node、零依赖；只读 `app/src/**`（--refute 轮临时破坏并保证按字节还原）。
  * 本脚本源码里刻意**不出现**任何被禁的历史品牌标识（需要提及时一律写「参考实现」）。
  */
-import {
-  readFileSync,
-  writeFileSync,
-  existsSync,
-  readdirSync,
-  renameSync,
-  unlinkSync,
-} from "node:fs";
-import path from "node:path";
-import { readStyleSource } from "./_styles-source.mjs";
-import { cachedReadText, cachedReadBytes, overrideFile, clearOverrides } from "./_file-cache.mjs";
+import { readFileSync, writeFileSync, existsSync, readdirSync, renameSync, unlinkSync } from 'node:fs';
+import path from 'node:path';
+import { readStyleSource } from './_styles-source.mjs';
+import { cachedReadText, cachedReadBytes, overrideFile, clearOverrides } from './_file-cache.mjs';
 
-const ROOT = path.resolve(import.meta.dirname, "..");
-const APP = path.join(ROOT, "app");
-const SRC = path.join(APP, "src");
+const ROOT = path.resolve(import.meta.dirname, '..');
+const APP = path.join(ROOT, 'app');
+const SRC = path.join(APP, 'src');
 
 const F = {
-  units: path.join(SRC, "components", "units"),
-  components: path.join(SRC, "components"),
-  app: path.join(SRC, "App.tsx"),
-  viteConfig: path.join(APP, "vite.config.ts"),
-  tsconfig: path.join(APP, "tsconfig.json"),
-  queueScreen: path.join(SRC, "screens", "QueueScreen.tsx"),
-  rightPanel: path.join(SRC, "screens", "music", "RightPanel.tsx"),
-  queueDrawer: path.join(SRC, "screens", "music", "QueueDrawer.tsx"),
+  units: path.join(SRC, 'components', 'units'),
+  components: path.join(SRC, 'components'),
+  app: path.join(SRC, 'App.tsx'),
+  viteConfig: path.join(APP, 'vite.config.ts'),
+  tsconfig: path.join(APP, 'tsconfig.json'),
+  queueScreen: path.join(SRC, 'screens', 'QueueScreen.tsx'),
+  rightPanel: path.join(SRC, 'screens', 'music', 'RightPanel.tsx'),
+  queueDrawer: path.join(SRC, 'screens', 'music', 'QueueDrawer.tsx'),
   // D-150：`sections.tsx` 已拆到 `sections/*.tsx`，本表见下方 CALLER_IMPORT_FILES。
-  quitConfirm: path.join(SRC, "components", "QuitConfirm.tsx"),
-  parts: path.join(SRC, "screens", "settings", "parts.tsx"),
-  shared: path.join(SRC, "screens", "music", "shared.tsx"),
-  loginModal: path.join(SRC, "screens", "music", "LoginModal.tsx"),
-  legacyAtoms: path.join(SRC, "components", "atoms.tsx"),
-  legacyVirtualList: path.join(SRC, "screens", "music", "VirtualList.tsx"),
-  hooksDir: path.join(SRC, "hooks"),
-  hooksFile: path.join(SRC, "hooks.ts"),
-  hooksIndex: path.join(SRC, "hooks", "index.ts"),
+  quitConfirm: path.join(SRC, 'components', 'QuitConfirm.tsx'),
+  parts: path.join(SRC, 'screens', 'settings', 'parts.tsx'),
+  shared: path.join(SRC, 'screens', 'music', 'shared.tsx'),
+  loginModal: path.join(SRC, 'screens', 'music', 'LoginModal.tsx'),
+  legacyAtoms: path.join(SRC, 'components', 'atoms.tsx'),
+  legacyVirtualList: path.join(SRC, 'screens', 'music', 'VirtualList.tsx'),
+  hooksDir: path.join(SRC, 'hooks'),
+  hooksFile: path.join(SRC, 'hooks.ts'),
+  hooksIndex: path.join(SRC, 'hooks', 'index.ts'),
   platformMenu: path.join(SRC, 'screens', 'music', 'PlatformMenu.tsx'),
   // ── 灵动岛（拍板第 4 项）
   island: path.join(SRC, 'components', 'DynamicIsland.tsx'),
@@ -85,66 +78,67 @@ const F = {
  *  Modal 是 2026-10-11 收敛 5 处手写模态壳（D-143）
  *  ProgressRing 是 2026-10-14 引擎下载进度环（工具条/下载视图共用，D-150） */
 const MANIFEST = [
-  "atoms.tsx",
-  "Select.tsx",
-  "Switch.tsx",
-  "Range.tsx",
-  "Swatches.tsx",
-  "ColorPicker.tsx",
-  "IconButton.tsx",
-  "MenuButton.tsx",
-  "ContextMenu.tsx",
-  "Modal.tsx",
-  "Tooltip.tsx",
-  "Notice.tsx",
-  "PlayModeButton.tsx",
-  "ProgressRing.tsx",
-  "NumberInput.tsx",
-  "Empty.tsx",
-  "VirtualList.tsx",
-  "index.ts",
+  'atoms.tsx',
+  'Select.tsx',
+  'Switch.tsx',
+  'Range.tsx',
+  'Swatches.tsx',
+  'ColorPicker.tsx',
+  'IconButton.tsx',
+  'MenuButton.tsx',
+  'ContextMenu.tsx',
+  'Modal.tsx',
+  'Tooltip.tsx',
+  'Notice.tsx',
+  'PlayModeButton.tsx',
+  'ProgressRing.tsx',
+  'NumberInput.tsx',
+  'Empty.tsx',
+  'VirtualList.tsx',
+  'index.ts',
 ];
 /** 桶文件应统一出口的名字（useEsc 的出口在 @hooks/useEsc，不再经 units 桶） */
 const BARREL_EXPORTS = [
-  "Badge",
-  "Btn",
-  "ContextMenu",
-  "Dot",
-  "MagicCircle",
-  "MenuSeparator",
-  "Pill",
-  "ColorPicker",
-  "Empty",
-  "IconButton",
-  "MenuButton",
-  "MenuItem",
-  "Modal",
-  "Notice",
-  "NumberInput",
-  "ProgressRing",
-  "Range",
-  "Select",
-  "Swatches",
-  "Switch",
-  "Tooltip",
-  "ROW_GAP",
-  "ROW_H",
-  "VirtualList",
+  'Badge',
+  'Btn',
+  'ContextMenu',
+  'Dot',
+  'MagicCircle',
+  'MenuSeparator',
+  'Pill',
+  'ColorPicker',
+  'Empty',
+  'IconButton',
+  'MenuButton',
+  'MenuItem',
+  'Modal',
+  'Notice',
+  'NumberInput',
+  'ProgressRing',
+  'Range',
+  'Select',
+  'Swatches',
+  'Switch',
+  'Tooltip',
+  'ROW_GAP',
+  'ROW_H',
+  'VirtualList',
 ];
 /** src/hooks/ 应恰有的文件（hooks 唯一收口，D-41） */
-const HOOKS_MANIFEST = ["index.ts", "useEsc.ts", "useCoverColor.ts", "useMusicHotkeys.ts", "useDebouncedValue.ts", "useLibraryModel.ts"];
-/** hooks/index.ts 业务桶应出口的业务 hook 名 */
-const HOOKS_BARREL_EXPORTS = [
-  "useService",
-  "useTasks",
-  "useLibrary",
-  "useQuitRequest",
-  "useToasts",
+const HOOKS_MANIFEST = [
+  'index.ts',
+  'useEsc.ts',
+  'useCoverColor.ts',
+  'useMusicHotkeys.ts',
+  'useDebouncedValue.ts',
+  'useLibraryModel.ts',
 ];
+/** hooks/index.ts 业务桶应出口的业务 hook 名 */
+const HOOKS_BARREL_EXPORTS = ['useService', 'useTasks', 'useLibrary', 'useQuitRequest', 'useToasts'];
 /** 允许被 units import 的裸包（其余裸包一律判红：新依赖需负责人确认） */
 const PKG_ALLOW = [/^react(\/.+)?$/, /^react-dom(\/.+)?$/, /^lucide-react$/];
 /** 允许的 scoped 包前缀 */
-const PKG_ALLOW_SCOPE = ["@radix-ui/"];
+const PKG_ALLOW_SCOPE = ['@radix-ui/'];
 /** 相对导入唯一允许"越出 units"的目标（theme/tokens 是设计令牌，纯数据）。
  *  对别名形式（`@/theme/tokens`）同样成立：正则只看"以 theme/tokens 结尾"。 */
 const THEME_TOKENS_RE = /(^|\/)theme\/tokens(\.\w+)?$/;
@@ -152,12 +146,12 @@ const THEME_TOKENS_RE = /(^|\/)theme\/tokens(\.\w+)?$/;
 /** 路径别名 → 真实目录（与 app/vite.config.ts、app/tsconfig.json **三处保持一致**）。
  *  前缀互不重叠（匹配要求「相等 或 前缀后紧跟 /」），'@tauri' 不会吃掉 '@tauri-apps/*' 包。 */
 const ALIASES = {
-  "@tauri": path.join(APP, "src-tauri"),
-  "@components": path.join(SRC, "components"),
-  "@screens": path.join(SRC, "screens"),
-  "@music": path.join(SRC, "music"),
-  "@hooks": path.join(SRC, "hooks"),
-  "@": SRC,
+  '@tauri': path.join(APP, 'src-tauri'),
+  '@components': path.join(SRC, 'components'),
+  '@screens': path.join(SRC, 'screens'),
+  '@music': path.join(SRC, 'music'),
+  '@hooks': path.join(SRC, 'hooks'),
+  '@': SRC,
 };
 
 /** 把 import 说明符解析为仓库内绝对路径；裸包（react、@radix-ui/…、@tauri-apps/…）返回 null */
@@ -166,24 +160,27 @@ function resolveSpec(baseDir, spec) {
   const keys = Object.keys(ALIASES).sort((a, b) => b.length - a.length); // 长前缀先试，防御性
   for (const k of keys) {
     if (spec === k) return ALIASES[k];
-    if (spec.startsWith(k + "/"))
-      return path.join(ALIASES[k], spec.slice(k.length + 1));
+    if (spec.startsWith(k + '/')) return path.join(ALIASES[k], spec.slice(k.length + 1));
   }
   return null;
 }
 
 /** 调用点必须真的从 units 引 */
 const CALLER_IMPORT_FILES = {
-  "App.tsx": F.app,
-  "screens/QueueScreen.tsx": F.queueScreen,
-  "screens/music/RightPanel.tsx": F.rightPanel,
-  "screens/music/QueueDrawer.tsx": F.queueDrawer,
+  'App.tsx': F.app,
+  'screens/QueueScreen.tsx': F.queueScreen,
+  'screens/music/RightPanel.tsx': F.rightPanel,
+  'screens/music/QueueDrawer.tsx': F.queueDrawer,
   // D-150：`sections.tsx` 已拆成 `sections/*.tsx` ⇒ 取其中引 units 最多的 TranslateSection 作代表
   // （`ResourceSection` / `AboutSection` 用 parts + 专用块，本就不引 units，不能一概而论）。
-  "screens/settings/sections/TranslateSection.tsx": path.join(
-    SRC, "screens", "settings", "sections", "TranslateSection.tsx",
+  'screens/settings/sections/TranslateSection.tsx': path.join(
+    SRC,
+    'screens',
+    'settings',
+    'sections',
+    'TranslateSection.tsx',
   ),
-  "components/QuitConfirm.tsx": F.quitConfirm,
+  'components/QuitConfirm.tsx': F.quitConfirm,
 };
 
 // ── 读文件 ───────────────────────────────────────────────────────────────
@@ -204,58 +201,58 @@ const listFiles = (dir) =>
  * 注释会让 NAMING 断言在**完全合法**的源码上误红（这也是本类脚本最容易犯的假阳性）。
  */
 function stripComments(src) {
-  let out = "";
-  let state = "code";
+  let out = '';
+  let state = 'code';
   for (let i = 0; i < src.length; i++) {
     const c = src[i];
     const c2 = src[i + 1];
-    if (state === "code") {
-      if (c === "/" && c2 === "*") {
-        state = "block";
-        out += "  ";
+    if (state === 'code') {
+      if (c === '/' && c2 === '*') {
+        state = 'block';
+        out += '  ';
         i++;
         continue;
       }
-      if (c === "/" && c2 === "/") {
-        state = "line";
-        out += "  ";
+      if (c === '/' && c2 === '/') {
+        state = 'line';
+        out += '  ';
         i++;
         continue;
       }
-      if (c === "'") state = "sq";
-      else if (c === '"') state = "dq";
-      else if (c === "`") state = "tpl";
+      if (c === "'") state = 'sq';
+      else if (c === '"') state = 'dq';
+      else if (c === '`') state = 'tpl';
       out += c;
       continue;
     }
-    if (state === "block") {
-      if (c === "*" && c2 === "/") {
-        state = "code";
-        out += "  ";
+    if (state === 'block') {
+      if (c === '*' && c2 === '/') {
+        state = 'code';
+        out += '  ';
         i++;
         continue;
       }
-      out += c === "\n" ? "\n" : " ";
+      out += c === '\n' ? '\n' : ' ';
       continue;
     }
-    if (state === "line") {
-      if (c === "\n") {
-        state = "code";
-        out += "\n";
+    if (state === 'line') {
+      if (c === '\n') {
+        state = 'code';
+        out += '\n';
         continue;
       }
-      out += " ";
+      out += ' ';
       continue;
     }
     // 字符串内：转义后整体保留
-    if (c === "\\") {
-      out += c + (c2 ?? "");
+    if (c === '\\') {
+      out += c + (c2 ?? '');
       i++;
       continue;
     }
-    if (state === "sq" && c === "'") state = "code";
-    else if (state === "dq" && c === '"') state = "code";
-    else if (state === "tpl" && c === "`") state = "code";
+    if (state === 'sq' && c === "'") state = 'code';
+    else if (state === 'dq' && c === '"') state = 'code';
+    else if (state === 'tpl' && c === '`') state = 'code';
     out += c;
   }
   return out;
@@ -265,7 +262,7 @@ function stripComments(src) {
 function stringLiterals(stripped) {
   const out = [];
   const re = /'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"|`((?:[^`\\]|\\.)*)`/g;
-  for (const m of stripped.matchAll(re)) out.push(m[1] ?? m[2] ?? m[3] ?? "");
+  for (const m of stripped.matchAll(re)) out.push(m[1] ?? m[2] ?? m[3] ?? '');
   return out;
 }
 
@@ -281,10 +278,8 @@ function classTokens(stripped) {
 /** 收集源码里所有 `from '<spec>'` 与副作用 `import '<spec>'` 的模块说明符 */
 function importSpecifiers(stripped) {
   const out = [];
-  for (const m of stripped.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g))
-    out.push(m[1]);
-  for (const m of stripped.matchAll(/\bimport\s+['"]([^'"]+)['"]/g))
-    out.push(m[1]);
+  for (const m of stripped.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)) out.push(m[1]);
+  for (const m of stripped.matchAll(/\bimport\s+['"]([^'"]+)['"]/g)) out.push(m[1]);
   return out;
 }
 
@@ -298,27 +293,17 @@ function declaresName(stripped, name) {
 
 /** 是否"导出"了某顶层名字 */
 function exportsName(stripped, name) {
-  const re = new RegExp(
-    `(?:^|\\n)\\s*export\\s+(?:async\\s+)?(?:function|const|let|var|class)\\s+${esc(name)}\\b`,
-  );
+  const re = new RegExp(`(?:^|\\n)\\s*export\\s+(?:async\\s+)?(?:function|const|let|var|class)\\s+${esc(name)}\\b`);
   return re.test(stripped);
 }
 
-const esc = (n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const esc = (n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** 解析一个 import 说明符（相对或别名）是否命中真实文件 */
 function resolvesToFile(baseDir, spec) {
   const p = resolveSpec(baseDir, spec);
   if (!p) return false;
-  const cands = [
-    p,
-    `${p}.tsx`,
-    `${p}.ts`,
-    `${p}.jsx`,
-    `${p}.js`,
-    path.join(p, "index.tsx"),
-    path.join(p, "index.ts"),
-  ];
+  const cands = [p, `${p}.tsx`, `${p}.ts`, `${p}.jsx`, `${p}.js`, path.join(p, 'index.tsx'), path.join(p, 'index.ts')];
   return cands.some((c) => existsSync(c));
 }
 
@@ -331,19 +316,16 @@ function badImportsOf(absFile, text) {
   for (const spec of importSpecifiers(stripped)) {
     const resolved = resolveSpec(dir, spec);
     if (resolved != null) {
-      const inside =
-        resolved === F.units || resolved.startsWith(F.units + path.sep);
+      const inside = resolved === F.units || resolved.startsWith(F.units + path.sep);
       if (!inside && !THEME_TOKENS_RE.test(spec)) bad.push(spec);
     } else {
-      const ok =
-        PKG_ALLOW.some((re) => re.test(spec)) || PKG_ALLOW_SAFE_SCOPE(spec);
+      const ok = PKG_ALLOW.some((re) => re.test(spec)) || PKG_ALLOW_SAFE_SCOPE(spec);
       if (!ok) bad.push(spec);
     }
   }
   return bad;
 }
-const PKG_ALLOW_SAFE_SCOPE = (spec) =>
-  PKG_ALLOW_SCOPE.some((p) => spec.startsWith(p));
+const PKG_ALLOW_SAFE_SCOPE = (spec) => PKG_ALLOW_SCOPE.some((p) => spec.startsWith(p));
 
 // ── 载入快照 ─────────────────────────────────────────────────────────────
 function loadSources() {
@@ -360,13 +342,11 @@ function loadSources() {
       abs: path.join(F.units, name),
     });
   }
-  s.index = s.units.get("index.ts")?.raw ?? "";
+  s.index = s.units.get('index.ts')?.raw ?? '';
   s.parts = readMaybe(F.parts);
   s.shared = readMaybe(F.shared);
   s.loginModal = readMaybe(F.loginModal);
-  s.callers = Object.fromEntries(
-    Object.entries(CALLER_IMPORT_FILES).map(([k, p]) => [k, readMaybe(p)]),
-  );
+  s.callers = Object.fromEntries(Object.entries(CALLER_IMPORT_FILES).map(([k, p]) => [k, readMaybe(p)]));
   s.componentsFiles = listFiles(F.components);
   s.legacyAtomsExists = existsSync(F.legacyAtoms);
   s.legacyVirtualListExists = existsSync(F.legacyVirtualList);
@@ -392,18 +372,20 @@ function loadSources() {
     ...listFiles(path.join(SRC, 'screens', 'library'))
       .filter((n) => n.endsWith('.tsx'))
       .map((n) => path.join(SRC, 'screens', 'library', n)),
-  ].map((p) => stripComments(readMaybe(p))).join('\n');
+  ]
+    .map((p) => stripComments(readMaybe(p)))
+    .join('\n');
   // 全分片拼接（顺序 = index.scss 的 @use 顺序 = 层叠顺序）。
   // app.css 已按模块拆成六个分片，读单文件会集体变红（读不到 ≠ 真回归），故走拼接。
   s.appCss = readStyleSource(F.stylesDir);
   // STYLE（样式分层）：入口的 @use 声明 + 各分片剥注释后的代码 + 目录里实际存在的分片
-  s.styleIndex = readMaybe(path.join(F.stylesDir, "index.scss"));
+  s.styleIndex = readMaybe(path.join(F.stylesDir, 'index.scss'));
   s.styleShards = listFiles(F.stylesDir)
-    .filter((f) => f.endsWith(".scss") && f !== "index.scss")
-    .map((f) => f.replace(/\.scss$/, ""))
+    .filter((f) => f.endsWith('.scss') && f !== 'index.scss')
+    .map((f) => f.replace(/\.scss$/, ''))
     .sort();
   s.styleShardCode = {};
-  for (const f of listFiles(F.stylesDir).filter((f) => f.endsWith(".scss"))) {
+  for (const f of listFiles(F.stylesDir).filter((f) => f.endsWith('.scss'))) {
     s.styleShardCode[f] = stripComments(readMaybe(path.join(F.stylesDir, f)));
   }
   // ALIAS（D-40）：两处别名声明 + 全 src 的"相对上跳"引用
@@ -434,7 +416,7 @@ function loadSources() {
           if (/^\.\.(\/|$)/.test(spec)) s.srcRelativeUp.push(`${rel} → ${spec}`);
           // 注意正则：'@tauri-apps/…' 不含 '@tauri/'，故不会误报（npm 包与别名必须区分开）
           if (/^@tauri\//.test(spec)) s.srcTauriAliasSpecs.push(`${rel} → ${spec}`);
-          if (spec === "zustand") s.srcZustandImports.push(rel);
+          if (spec === 'zustand') s.srcZustandImports.push(rel);
         }
         if (/\b(?:createContext|useContext)\s*\(/.test(st)) s.srcReactContext.push(rel);
         // use* 命名的文件必须住在 src/hooks/ 内（否则 D-41 只是句口号）
@@ -451,296 +433,253 @@ const A = [];
 const add = (id, group, run) => A.push({ id, group, run });
 
 // ============================ LAYOUT ============================
-add("LAYOUT.files", "LAYOUT", (s) => {
-  if (s.unitsDirMissing)
-    return { ok: false, detail: `目录不存在：${path.relative(ROOT, F.units)}` };
+add('LAYOUT.files', 'LAYOUT', (s) => {
+  if (s.unitsDirMissing) return { ok: false, detail: `目录不存在：${path.relative(ROOT, F.units)}` };
   const got = new Set(s.unitsFiles);
   const want = new Set(MANIFEST);
   const missing = MANIFEST.filter((n) => !got.has(n));
   const extra = s.unitsFiles.filter((n) => !want.has(n));
   return {
     ok: missing.length === 0 && extra.length === 0,
-    detail: [
-      missing.length ? `缺件：${missing.join(", ")}` : "",
-      extra.length ? `多余：${extra.join(", ")}` : "",
-    ]
+    detail: [missing.length ? `缺件：${missing.join(', ')}` : '', extra.length ? `多余：${extra.join(', ')}` : '']
       .filter(Boolean)
-      .join("；"),
+      .join('；'),
   };
 });
 
-add("LAYOUT.barrelResolves", "LAYOUT", (s) => {
-  const idx = s.units.get("index.ts");
-  if (!idx) return { ok: false, detail: "units/index.ts 缺失，无法校验桶文件" };
-  const specs = [
-    ...stripComments(idx.raw).matchAll(/\bfrom\s+['"]([^'"]+)['"]/g),
-  ].map((m) => m[1]);
+add('LAYOUT.barrelResolves', 'LAYOUT', (s) => {
+  const idx = s.units.get('index.ts');
+  if (!idx) return { ok: false, detail: 'units/index.ts 缺失，无法校验桶文件' };
+  const specs = [...stripComments(idx.raw).matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)].map((m) => m[1]);
   const broken = specs.filter((sp) => !resolvesToFile(F.units, sp));
   return {
     ok: specs.length > 0 && broken.length === 0,
     detail: broken.length
-      ? `桶文件指向不存在的模块：${broken.join(", ")}`
+      ? `桶文件指向不存在的模块：${broken.join(', ')}`
       : specs.length
-        ? ""
-        : "桶文件没有任何 re-export",
+        ? ''
+        : '桶文件没有任何 re-export',
   };
 });
 
-add("LAYOUT.barrelExports", "LAYOUT", (s) => {
-  const idx = s.units.get("index.ts")?.raw ?? "";
-  const named = [
-    ...stripComments(idx).matchAll(
-      /export\s*\{([^}]*)\}\s*from\s*['"][^'"]+['"]/g,
-    ),
-  ]
+add('LAYOUT.barrelExports', 'LAYOUT', (s) => {
+  const idx = s.units.get('index.ts')?.raw ?? '';
+  const named = [...stripComments(idx).matchAll(/export\s*\{([^}]*)\}\s*from\s*['"][^'"]+['"]/g)]
     .map((m) => m[1])
-    .join(",");
-  const missing = BARREL_EXPORTS.filter(
-    (n) => !new RegExp(`\\b${esc(n)}\\b`).test(named),
-  );
+    .join(',');
+  const missing = BARREL_EXPORTS.filter((n) => !new RegExp(`\\b${esc(n)}\\b`).test(named));
   return {
     ok: missing.length === 0,
-    detail: missing.length ? `桶文件未出口：${missing.join(", ")}` : "",
+    detail: missing.length ? `桶文件未出口：${missing.join(', ')}` : '',
   };
 });
 
-add("LAYOUT.legacyAbsent", "LAYOUT", (s) => {
+add('LAYOUT.legacyAbsent', 'LAYOUT', (s) => {
   const alive = [];
-  if (s.legacyAtomsExists) alive.push("components/atoms.tsx");
-  if (s.legacyVirtualListExists) alive.push("screens/music/VirtualList.tsx");
+  if (s.legacyAtomsExists) alive.push('components/atoms.tsx');
+  if (s.legacyVirtualListExists) alive.push('screens/music/VirtualList.tsx');
   return {
     ok: alive.length === 0,
-    detail: alive.length
-      ? `旧路径未删除（不保留兼容再导出）：${alive.join("、")}`
-      : "",
+    detail: alive.length ? `旧路径未删除（不保留兼容再导出）：${alive.join('、')}` : '',
   };
 });
 
 // ============================ PURITY ============================
-add("PURITY.noBusinessImports", "PURITY", (s) => {
-  if (s.unitsDirMissing) return { ok: false, detail: "units 目录不存在" };
+add('PURITY.noBusinessImports', 'PURITY', (s) => {
+  if (s.unitsDirMissing) return { ok: false, detail: 'units 目录不存在' };
   const offenders = [];
   for (const [name, u] of s.units) {
     const bad = badImportsOf(u.abs, u.raw);
-    if (bad.length) offenders.push(`${name} → ${bad.join(", ")}`);
+    if (bad.length) offenders.push(`${name} → ${bad.join(', ')}`);
   }
   return {
     ok: offenders.length === 0,
-    detail: offenders.length
-      ? `units 文件 import 了业务数据层（硬判据）：${offenders.join("；")}`
-      : "",
+    detail: offenders.length ? `units 文件 import 了业务数据层（硬判据）：${offenders.join('；')}` : '',
   };
 });
 
 // ============================ NAMING ============================
-add("NAMING.noMusic", "NAMING", (s) => {
+add('NAMING.noMusic', 'NAMING', (s) => {
   const hits = [];
   for (const [name, u] of s.units) {
-    for (const t of classTokens(u.stripped))
-      if (t.startsWith("music-")) hits.push(`${name}:${t}`);
+    for (const t of classTokens(u.stripped)) if (t.startsWith('music-')) hits.push(`${name}:${t}`);
   }
   return {
     ok: hits.length === 0,
-    detail: hits.length ? `units 类名仍带 music- 前缀：${hits.join(", ")}` : "",
+    detail: hits.length ? `units 类名仍带 music- 前缀：${hits.join(', ')}` : '',
   };
 });
 
-add("NAMING.noSet", "NAMING", (s) => {
+add('NAMING.noSet', 'NAMING', (s) => {
   const hits = [];
   for (const [name, u] of s.units) {
-    for (const t of classTokens(u.stripped))
-      if (t.startsWith("set-")) hits.push(`${name}:${t}`);
+    for (const t of classTokens(u.stripped)) if (t.startsWith('set-')) hits.push(`${name}:${t}`);
   }
   return {
     ok: hits.length === 0,
-    detail: hits.length ? `units 类名仍带 set- 前缀：${hits.join(", ")}` : "",
+    detail: hits.length ? `units 类名仍带 set- 前缀：${hits.join(', ')}` : '',
   };
 });
 
-add("NAMING.uiPrefix", "NAMING", (s) => {
+add('NAMING.uiPrefix', 'NAMING', (s) => {
   const want = [
-    "ui-select",
-    "ui-select-menu",
-    "ui-select-item",
-    "ui-select-ico",
-    "ui-select-ok",
-    "ui-range",
-    "ui-range-val",
-    "ui-num",
-    "ui-num-suffix",
-    "ui-swatch",
-    "ui-swatches",
-    "ui-color",
-    "ui-cbtn",
-    "ui-empty",
-    "ui-vlist",
-    "ui-vlist-inner",
-    "ui-vlist-item",
+    'ui-select',
+    'ui-select-menu',
+    'ui-select-item',
+    'ui-select-ico',
+    'ui-select-ok',
+    'ui-range',
+    'ui-range-val',
+    'ui-num',
+    'ui-num-suffix',
+    'ui-swatch',
+    'ui-swatches',
+    'ui-color',
+    'ui-cbtn',
+    'ui-empty',
+    'ui-vlist',
+    'ui-vlist-inner',
+    'ui-vlist-item',
   ];
   const all = new Set();
-  for (const [, u] of s.units)
-    for (const t of classTokens(u.stripped)) all.add(t);
+  for (const [, u] of s.units) for (const t of classTokens(u.stripped)) all.add(t);
   const missing = want.filter((t) => !all.has(t));
   return {
     ok: missing.length === 0,
-    detail: missing.length
-      ? `units 未出现约定的 ui- 类名：${missing.join(", ")}`
-      : "",
+    detail: missing.length ? `units 未出现约定的 ui- 类名：${missing.join(', ')}` : '',
   };
 });
 
-add("NAMING.neutralKept", "NAMING", (s) => {
-  const want = ["btn", "badge", "pill", "dot", "magic", "switch"];
+add('NAMING.neutralKept', 'NAMING', (s) => {
+  const want = ['btn', 'badge', 'pill', 'dot', 'magic', 'switch'];
   const all = new Set();
-  for (const [, u] of s.units)
-    for (const t of classTokens(u.stripped)) all.add(t);
+  for (const [, u] of s.units) for (const t of classTokens(u.stripped)) all.add(t);
   const missing = want.filter((t) => !all.has(t));
   return {
     ok: missing.length === 0,
-    detail: missing.length
-      ? `历史中性类名被改名/丢失：${missing.join(", ")}`
-      : "",
+    detail: missing.length ? `历史中性类名被改名/丢失：${missing.join(', ')}` : '',
   };
 });
 
 // ============================ CALLERS ============================
-add("CALLERS.partsNoControls", "CALLERS", (s) => {
+add('CALLERS.partsNoControls', 'CALLERS', (s) => {
   const st = stripComments(s.parts);
-  const banned = ["Select", "Range", "Switch", "Swatches", "ColorPicker"];
+  const banned = ['Select', 'Range', 'Switch', 'Swatches', 'ColorPicker'];
   const still = banned.filter((n) => declaresName(st, n));
   return {
     ok: still.length === 0,
-    detail: still.length
-      ? `settings/parts.tsx 仍在定义控件：${still.join(", ")}`
-      : "",
+    detail: still.length ? `settings/parts.tsx 仍在定义控件：${still.join(', ')}` : '',
   };
 });
 
-add("CALLERS.sharedNoUnits", "CALLERS", (s) => {
+add('CALLERS.sharedNoUnits', 'CALLERS', (s) => {
   const st = stripComments(s.shared);
-  const banned = ["IconButton", "Empty", "useEsc"];
+  const banned = ['IconButton', 'Empty', 'useEsc'];
   const still = banned.filter((n) => declaresName(st, n));
   return {
     ok: still.length === 0,
-    detail: still.length
-      ? `music/shared.tsx 仍在定义 units 件：${still.join(", ")}`
-      : "",
+    detail: still.length ? `music/shared.tsx 仍在定义 units 件：${still.join(', ')}` : '',
   };
 });
 
-add("CALLERS.importsUnits", "CALLERS", (s) => {
+add('CALLERS.importsUnits', 'CALLERS', (s) => {
   const missing = [];
   for (const [label, text] of Object.entries(s.callers)) {
-    if (!/(?:from|import)\s+['"][^'"]*units['"]/.test(stripComments(text)))
-      missing.push(label);
+    if (!/(?:from|import)\s+['"][^'"]*units['"]/.test(stripComments(text))) missing.push(label);
   }
   return {
     ok: missing.length === 0,
-    detail: missing.length
-      ? `这些调用点未从 units 引：${missing.join("、")}`
-      : "",
+    detail: missing.length ? `这些调用点未从 units 引：${missing.join('、')}` : '',
   };
 });
 
-add("CALLERS.loginNoRawCbtn", "CALLERS", (s) => {
-  const has = s.loginModal.includes("music-cbtn");
+add('CALLERS.loginNoRawCbtn', 'CALLERS', (s) => {
+  const has = s.loginModal.includes('music-cbtn');
   return {
     ok: !has,
-    detail: has ? "LoginModal.tsx 又出现绕过组件直接写的 music-cbtn 类名" : "",
+    detail: has ? 'LoginModal.tsx 又出现绕过组件直接写的 music-cbtn 类名' : '',
   };
 });
 
 // ============================ KEEP（反向：没抽过头） ============================
-add("KEEP.sharedExports", "KEEP", (s) => {
+add('KEEP.sharedExports', 'KEEP', (s) => {
   const st = stripComments(s.shared);
-  const need = ["SongRow", "Cover"];
+  const need = ['SongRow', 'Cover'];
   const missing = need.filter((n) => !exportsName(st, n));
   return {
     ok: missing.length === 0,
-    detail: missing.length
-      ? `music/shared.tsx 丢了音乐语义件：${missing.join(", ")}（抽过头）`
-      : "",
+    detail: missing.length ? `music/shared.tsx 丢了音乐语义件：${missing.join(', ')}（抽过头）` : '',
   };
 });
 
-add("KEEP.partsExports", "KEEP", (s) => {
+add('KEEP.partsExports', 'KEEP', (s) => {
   const st = stripComments(s.parts);
-  const need = ["Row", "PendingRow"];
+  const need = ['Row', 'PendingRow'];
   const missing = need.filter((n) => !exportsName(st, n));
   return {
     ok: missing.length === 0,
-    detail: missing.length
-      ? `settings/parts.tsx 丢了设置页排版件：${missing.join(", ")}（抽过头）`
-      : "",
+    detail: missing.length ? `settings/parts.tsx 丢了设置页排版件：${missing.join(', ')}（抽过头）` : '',
   };
 });
 
-add("KEEP.appComponents", "KEEP", (s) => {
-  const need = [
-    "Sidebar.tsx",
-    "Toolbar.tsx",
-    "ViewTabs.tsx",
-    "QuitConfirm.tsx",
-  ];
+add('KEEP.appComponents', 'KEEP', (s) => {
+  const need = ['Sidebar.tsx', 'Toolbar.tsx', 'ViewTabs.tsx', 'QuitConfirm.tsx'];
   const missing = need.filter((n) => !s.componentsFiles.includes(n));
   return {
     ok: missing.length === 0,
-    detail: missing.length
-      ? `components/ 丢了应用级组件：${missing.join(", ")}（不该进 units）`
-      : "",
+    detail: missing.length ? `components/ 丢了应用级组件：${missing.join(', ')}（不该进 units）` : '',
   };
 });
 
 // ============================ HOOKS（src/hooks 唯一收口，D-41） ============================
-add("HOOKS.layout", "HOOKS", (s) => {
-  if (!existsSync(F.hooksDir))
-    return { ok: false, detail: "src/hooks/ 目录不存在" };
+add('HOOKS.layout', 'HOOKS', (s) => {
+  if (!existsSync(F.hooksDir)) return { ok: false, detail: 'src/hooks/ 目录不存在' };
   const got = new Set(s.hooksDirFiles);
   const want = new Set(HOOKS_MANIFEST);
   const missing = HOOKS_MANIFEST.filter((n) => !got.has(n));
   const extra = s.hooksDirFiles.filter((n) => !want.has(n));
   const legacy = s.hooksFileExists
-    ? "src/hooks.ts 旧单文件仍存在 —— 与 hooks/ 并存时 TS/Vite 的模块解析会静默二选一"
-    : "";
+    ? 'src/hooks.ts 旧单文件仍存在 —— 与 hooks/ 并存时 TS/Vite 的模块解析会静默二选一'
+    : '';
   return {
     ok: missing.length === 0 && extra.length === 0 && !s.hooksFileExists,
     detail: [
-      missing.length ? `缺件：${missing.join(", ")}` : "",
-      extra.length ? `多余：${extra.join(", ")}` : "",
+      missing.length ? `缺件：${missing.join(', ')}` : '',
+      extra.length ? `多余：${extra.join(', ')}` : '',
       legacy,
     ]
       .filter(Boolean)
-      .join("；"),
+      .join('；'),
   };
 });
 
-add("HOOKS.barrelExports", "HOOKS", (s) => {
+add('HOOKS.barrelExports', 'HOOKS', (s) => {
   const st = stripComments(s.hooksIndex);
   const missing = HOOKS_BARREL_EXPORTS.filter((n) => !exportsName(st, n));
   return {
     ok: missing.length === 0,
     detail: missing.length
-      ? `hooks/index.ts 业务桶丢了 hook：${missing.join(", ")}（App.tsx 在 import，丢了编译才炸）`
-      : "",
+      ? `hooks/index.ts 业务桶丢了 hook：${missing.join(', ')}（App.tsx 在 import，丢了编译才炸）`
+      : '',
   };
 });
 
-add("HOOKS.callers", "HOOKS", (s) => {
+add('HOOKS.callers', 'HOOKS', (s) => {
   const st = stripComments(s.platformMenu);
   const okImport = /from\s+['"]@hooks\/useEsc['"]/.test(st);
   const stale = s.srcUnitsEscImports;
   return {
     ok: okImport && stale.length === 0,
     detail: [
-      okImport ? "" : "PlatformMenu 未从 @hooks/useEsc 引 useEsc",
-      stale.length ? `仍有文件从旧位置深引 useEsc：${stale.join("；")}` : "",
+      okImport ? '' : 'PlatformMenu 未从 @hooks/useEsc 引 useEsc',
+      stale.length ? `仍有文件从旧位置深引 useEsc：${stale.join('；')}` : '',
     ]
       .filter(Boolean)
-      .join("；"),
+      .join('；'),
   };
 });
 
-add("HOOKS.noMisplacedUse", "HOOKS", (s) => {
+add('HOOKS.noMisplacedUse', 'HOOKS', (s) => {
   // 判据：文件名以 use + 大写字母开头的文件必须住在 src/hooks/ 内。
   // 这条是**补出来**的 —— 上一轮收口只迁了 useEsc，漏了 screens/music/useCoverColor.ts，
   // 而原有三条 HOOKS 断言只认"已迁移的那个"，对新长出来的 hook 完全失明。
@@ -748,8 +687,8 @@ add("HOOKS.noMisplacedUse", "HOOKS", (s) => {
   return {
     ok: bad.length === 0,
     detail: bad.length
-      ? `这些 use* 文件不在 src/hooks/ 内：${bad.join("、")}（D-41：use* 一律住 hooks，否则同一个概念会被两处持有）`
-      : "",
+      ? `这些 use* 文件不在 src/hooks/ 内：${bad.join('、')}（D-41：use* 一律住 hooks，否则同一个概念会被两处持有）`
+      : '',
   };
 });
 
@@ -763,11 +702,7 @@ add("HOOKS.noMisplacedUse", "HOOKS", (s) => {
  */
 function viteAliasKeys(text) {
   return [
-    ...new Set(
-      [...stripComments(text).matchAll(/["'](@[a-zA-Z0-9_-]*)["']\s*:\s*aliasPath\(/g)].map(
-        (m) => m[1],
-      ),
-    ),
+    ...new Set([...stripComments(text).matchAll(/["'](@[a-zA-Z0-9_-]*)["']\s*:\s*aliasPath\(/g)].map((m) => m[1])),
   ];
 }
 
@@ -775,17 +710,13 @@ function viteAliasKeys(text) {
 function tsAliasKeys(text) {
   const block = text.match(/"paths"\s*:\s*\{([\s\S]*?)\n\s*\}/);
   if (!block) return [];
-  return [
-    ...new Set(
-      [...block[1].matchAll(/["'](@[a-zA-Z0-9_/-]*)["']\s*:/g)].map((m) => m[1].replace(/\/\*$/, "")),
-    ),
-  ];
+  return [...new Set([...block[1].matchAll(/["'](@[a-zA-Z0-9_/-]*)["']\s*:/g)].map((m) => m[1].replace(/\/\*$/, '')))];
 }
 
 /** 契约：六个别名（《09》§2.3.1） */
-const ALIAS_KEYS = ["@", "@tauri", "@components", "@screens", "@music", "@hooks"];
+const ALIAS_KEYS = ['@', '@tauri', '@components', '@screens', '@music', '@hooks'];
 
-add("ALIAS.keysComplete", "ALIAS", (s) => {
+add('ALIAS.keysComplete', 'ALIAS', (s) => {
   const vite = viteAliasKeys(s.viteConfig);
   const ts = tsAliasKeys(s.tsconfig);
   const missV = ALIAS_KEYS.filter((k) => !vite.includes(k));
@@ -793,15 +724,15 @@ add("ALIAS.keysComplete", "ALIAS", (s) => {
   return {
     ok: missV.length === 0 && missT.length === 0,
     detail: [
-      missV.length ? `vite.config.ts 缺：${missV.join("、")}` : "",
-      missT.length ? `tsconfig.json 缺：${missT.join("、")}` : "",
+      missV.length ? `vite.config.ts 缺：${missV.join('、')}` : '',
+      missT.length ? `tsconfig.json 缺：${missT.join('、')}` : '',
     ]
       .filter(Boolean)
-      .join("；"),
+      .join('；'),
   };
 });
 
-add("ALIAS.twoPlaceSync", "ALIAS", (s) => {
+add('ALIAS.twoPlaceSync', 'ALIAS', (s) => {
   const vite = new Set(viteAliasKeys(s.viteConfig));
   const ts = new Set(tsAliasKeys(s.tsconfig));
   const onlyVite = [...vite].filter((k) => !ts.has(k));
@@ -810,12 +741,12 @@ add("ALIAS.twoPlaceSync", "ALIAS", (s) => {
     ok: onlyVite.length === 0 && onlyTs.length === 0,
     detail:
       onlyVite.length || onlyTs.length
-        ? `两处不同步 —— 仅 vite 有：${onlyVite.join("、") || "无"}；仅 tsconfig 有：${onlyTs.join("、") || "无"}（少改一处是**静默漂移**：dev 能跑 build 报错，或编辑器报红但能跑）`
-        : "",
+        ? `两处不同步 —— 仅 vite 有：${onlyVite.join('、') || '无'}；仅 tsconfig 有：${onlyTs.join('、') || '无'}（少改一处是**静默漂移**：dev 能跑 build 报错，或编辑器报红但能跑）`
+        : '',
   };
 });
 
-add("ALIAS.subPathMaps", "ALIAS", (s) => {
+add('ALIAS.subPathMaps', 'ALIAS', (s) => {
   /*
    * 每个别名在 tsconfig 里必须**同时**声明 `@x` 与 `@x/*` 两条：
    * 只有精确项 → `@music/store` 解析不到；只有通配项 → 裸 `@music` 解析不到。
@@ -830,7 +761,7 @@ add("ALIAS.subPathMaps", "ALIAS", (s) => {
    * 而 TS 的 `paths` 是**逐条精确匹配**，必须两条都写。这个差异是别名最容易踩的坑。
    */
   const block = s.tsconfig.match(/"paths"\s*:\s*\{([\s\S]*?)\n\s*\}/);
-  if (!block) return { ok: false, detail: "tsconfig.json 里找不到 compilerOptions.paths" };
+  if (!block) return { ok: false, detail: 'tsconfig.json 里找不到 compilerOptions.paths' };
   const hits = [...block[1].matchAll(/["'](@[a-zA-Z0-9_-]*)(\/\*)?["']\s*:/g)];
   const exact = new Set(hits.filter((m) => !m[2]).map((m) => m[1]));
   const wild = new Set(hits.filter((m) => m[2]).map((m) => m[1]));
@@ -839,23 +770,23 @@ add("ALIAS.subPathMaps", "ALIAS", (s) => {
     ok: missing.length === 0,
     detail: missing.length
       ? `这些别名在 tsconfig 里缺项：${missing
-          .map((k) => `${k}${exact.has(k) ? "" : "（缺精确项）"}${wild.has(k) ? "" : "（缺 @${k.slice(1)}/* 通配项）"}`)
-          .join("、")} —— 缺哪一侧，那一类 import 就解析不到`
-      : "",
+          .map((k) => `${k}${exact.has(k) ? '' : '（缺精确项）'}${wild.has(k) ? '' : '（缺 @${k.slice(1)}/* 通配项）'}`)
+          .join('、')} —— 缺哪一侧，那一类 import 就解析不到`
+      : '',
   };
 });
 
-add("ALIAS.noRelativeUp", "ALIAS", (s) => {
+add('ALIAS.noRelativeUp', 'ALIAS', (s) => {
   const bad = s.srcRelativeUp;
   return {
     ok: bad.length === 0,
     detail: bad.length
-      ? `app/src 内仍有相对上跳引用（应写别名；同目录 './' 允许）：${bad.slice(0, 5).join("；")}${bad.length > 5 ? ` …共 ${bad.length} 处` : ""}`
-      : "",
+      ? `app/src 内仍有相对上跳引用（应写别名；同目录 './' 允许）：${bad.slice(0, 5).join('；')}${bad.length > 5 ? ` …共 ${bad.length} 处` : ''}`
+      : '',
   };
 });
 
-add("ALIAS.pkgNotShadowed", "ALIAS", (s) => {
+add('ALIAS.pkgNotShadowed', 'ALIAS', (s) => {
   // 别名 `@tauri`（→ src-tauri，预留）与 npm 包 `@tauri-apps/*` 字形极近。
   // 判据刻意不用"包引用数 > 0"：那种只数总量，单个文件被改错时测不出来。
   // 改为——**前端不得出现 `@tauri/…` 的 import**：它要么是把 `@tauri-apps/api/core`
@@ -864,29 +795,29 @@ add("ALIAS.pkgNotShadowed", "ALIAS", (s) => {
   return {
     ok: bad.length === 0,
     detail: bad.length
-      ? `前端出现了 @tauri/… 的 import：${bad.join("；")} —— 别名 @tauri 指向 src-tauri（前端不该 import 它）；是不是把 npm 包 @tauri-apps/* 写错了？`
-      : "",
+      ? `前端出现了 @tauri/… 的 import：${bad.join('；')} —— 别名 @tauri 指向 src-tauri（前端不该 import 它）；是不是把 npm 包 @tauri-apps/* 写错了？`
+      : '',
   };
 });
 
 // ============================ STATE（状态管理统一 zustand，D-42） ============================
-add("STATE.noReactContext", "STATE", (s) => {
+add('STATE.noReactContext', 'STATE', (s) => {
   const bad = s.srcReactContext;
   return {
     ok: bad.length === 0,
     detail: bad.length
-      ? `这些文件用了 React Context：${bad.join("、")} —— 跨组件共享状态一律 zustand（Context 里的 state 在 provider 之外读不到，而播放内核/IPC 回调都在组件树外改状态）`
-      : "",
+      ? `这些文件用了 React Context：${bad.join('、')} —— 跨组件共享状态一律 zustand（Context 里的 state 在 provider 之外读不到，而播放内核/IPC 回调都在组件树外改状态）`
+      : '',
   };
 });
 
-add("STATE.zustandInUse", "STATE", (s) => {
+add('STATE.zustandInUse', 'STATE', (s) => {
   // 反向兜底：只断言"没有 Context"是不够的 —— 把 store 换成别的东西（或删掉）
   // 也会让上一条变绿，而"统一 zustand"这条规则其实已经不成立。
   const n = s.srcZustandImports.length;
   return {
     ok: n > 0,
-    detail: n ? "" : "全 src 未发现 zustand 引用 —— 状态管理约定（D-42）已不成立",
+    detail: n ? '' : '全 src 未发现 zustand 引用 —— 状态管理约定（D-42）已不成立',
   };
 });
 
@@ -916,8 +847,7 @@ add('ISLAND.singleSource', 'ISLAND', (s) => {
   const missing = [];
   if (!/toastBus/.test(hooks)) missing.push('hooks/useToasts 未转发到 toastBus');
   // 旧的两处渲染层必须都已撤掉
-  if (/className="toasts"/.test(appSourceOf(s)))
-    missing.push('App 仍在渲染 .toasts（旧层未撤）');
+  if (/className="toasts"/.test(appSourceOf(s))) missing.push('App 仍在渲染 .toasts（旧层未撤）');
   if (/<div className=\{musicToast/.test(stripComments(s.musicToast ?? '')))
     missing.push('music/Toast 仍在自己渲染（会与灵动岛重复）');
   // 反向兜底：总线必须真的只有一个队列实现（防止有人另起一套 state 又忘了接）。
@@ -961,8 +891,7 @@ add('ISLAND.idleRendersNothing', 'ISLAND', (s) => {
   //（2026-10-11 起岛上只有音乐播放态：轻提示已剥离给 NotificationStack）
   if (!s.island) return { ok: false, detail: 'DynamicIsland.tsx 不存在' };
   const isl = stripComments(s.island);
-  if (!/if \(!hasQueue\) return null/.test(isl))
-    return { ok: false, detail: '空闲态未早退（会一直挂着一个空胶囊）' };
+  if (!/if \(!hasQueue\) return null/.test(isl)) return { ok: false, detail: '空闲态未早退（会一直挂着一个空胶囊）' };
   return { ok: true, detail: '' };
 });
 add('ISLAND.noToastChannel', 'ISLAND', (s) => {
@@ -1016,9 +945,10 @@ add('ZOOM.wheelNonPassive', 'ZOOM', (s) => {
   if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
   const lib = stripComments(s.library);
   const missing = [];
-  if (!/addEventListener\('wheel'/.test(lib)) missing.push("没有手动 addEventListener('wheel')（说明靠 React onWheel，被动）");
+  if (!/addEventListener\('wheel'/.test(lib))
+    missing.push("没有手动 addEventListener('wheel')（说明靠 React onWheel，被动）");
   if (!/passive:\s*false/.test(lib)) missing.push('wheel 监听未声明 passive: false（preventDefault 无效）');
-  if (!/removeEventListener\('wheel'/.test(lib)) missing.push("wheel 监听没有对称的 removeEventListener（卸载泄漏）");
+  if (!/removeEventListener\('wheel'/.test(lib)) missing.push('wheel 监听没有对称的 removeEventListener（卸载泄漏）');
   // 反向：不能同时挂一个 React onWheel 干同样的事，否则一次滚轮被处理两遍
   if (/onWheel=/.test(lib)) missing.push('同时挂了 React onWheel（会与手动监听重复处理）');
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
@@ -1036,7 +966,7 @@ add('ZOOM.anchorZoom', 'ZOOM', (s) => {
   if (!/stageRef\.current/.test(seg)) missing.push('zoomAt 未经 stageRef 取舞台元素');
   if (!/getBoundingClientRect/.test(seg)) missing.push('zoomAt 未量光标位置（退化成中心缩放）');
   // 偏移必须按比例换算，而不是直接重置
-  if (!/\(ax\s*-\s*cur\.offset\.x\)\s*\*/.test(seg)) missing.push('偏移未按 s\'/s 比例换算（未做锚点缩放）');
+  if (!/\(ax\s*-\s*cur\.offset\.x\)\s*\*/.test(seg)) missing.push("偏移未按 s'/s 比例换算（未做锚点缩放）");
   // ⚠️ 反向：缩到「恰好铺满」及以内（≤ ZOOM_FIT）没有可平移的余量，必须归位居中。
   //    少了这条，从放大态缩回 ≤100% 时旧偏移会把图顶出画面（"图歪在一边 / 跑没了"）。
   //    它同时兜住另一种退化：把归位写成**无条件**（连放大态也每次归零 ⇒ 退回中心缩放）。
@@ -1049,7 +979,8 @@ add('ZOOM.buttonFallback', 'ZOOM', (s) => {
   if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
   const lib = stripComments(s.library);
   const missing = [];
-  if (!/className="lightbox-zoom-btn"/.test(lib)) missing.push('工具栏没有 .lightbox-zoom-btn（缺不依赖手势的缩放入口）');
+  if (!/className="lightbox-zoom-btn"/.test(lib))
+    missing.push('工具栏没有 .lightbox-zoom-btn（缺不依赖手势的缩放入口）');
   if (!/aria-label="放大"/.test(lib)) missing.push('缺「放大」按钮');
   if (!/aria-label="缩小"/.test(lib)) missing.push('缺「缩小」按钮');
   // 按钮必须真的调了缩放，而不是摆在那儿
@@ -1062,7 +993,8 @@ add('ZOOM.buttonFallback', 'ZOOM', (s) => {
   // ⚠️ 伪类后必须带 `(?![\w-])` 负向后瞻：否则把规则改成 `:hover-x` 时，
   //    `.lightbox-zoom-btn:hover-x` 仍**包含** `.lightbox-zoom-btn:hover` 子串 ⇒ 假绿。
   if (!/\.lightbox-zoom-btn:hover(?![\w-])/.test(css)) missing.push('缩放按钮没有悬停态样式');
-  if (!/\.lightbox-zoom-btn:disabled(?![\w-])/.test(css)) missing.push('缩放按钮没有禁用态样式（到顶/到底会显得仍可点）');
+  if (!/\.lightbox-zoom-btn:disabled(?![\w-])/.test(css))
+    missing.push('缩放按钮没有禁用态样式（到顶/到底会显得仍可点）');
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
 });
 
@@ -1137,12 +1069,14 @@ add('ZOOM.fitToWindow', 'ZOOM', (s) => {
       missing.push(`manga.scss 里没有 ${sel} 规则（${hint}）`);
       continue;
     }
-    if (!/display:\s*flex/.test(block)) missing.push(`${sel} 不是 flex 居中（grid 的 auto 轨道会让 max-height:100% 失效）`);
+    if (!/display:\s*flex/.test(block))
+      missing.push(`${sel} 不是 flex 居中（grid 的 auto 轨道会让 max-height:100% 失效）`);
     if (!/align-items:\s*center/.test(block)) missing.push(`${sel} 缺 align-items: center`);
     if (!/justify-content:\s*center/.test(block)) missing.push(`${sel} 缺 justify-content: center`);
   }
   const stage = pick(css, '.lightbox-stage');
-  if (stage && !/overflow:\s*hidden/.test(stage)) missing.push('.lightbox-stage 不是 overflow: hidden（放大后图会溢出到遮罩外）');
+  if (stage && !/overflow:\s*hidden/.test(stage))
+    missing.push('.lightbox-stage 不是 overflow: hidden（放大后图会溢出到遮罩外）');
   const img = pick(css, '.lightbox-stage img');
   if (!img) missing.push('manga.scss 里没有 .lightbox-stage img 规则');
   else {
@@ -1164,15 +1098,15 @@ add('ZOOM.fitToWindow', 'ZOOM', (s) => {
 // 提到 .set-row），不剥注释会恒红 —— 而恒红比恒绿更隐蔽（它看起来像"覆盖到位"）。
 
 /** 约定的 @use 顺序。**顺序即层叠**：同特异性下靠后定义者胜，改它等于改视觉结果。 */
-const STYLE_USE_ORDER = ["base", "app", "manga", "settings", "components", "music"];
+const STYLE_USE_ORDER = ['base', 'app', 'manga', 'settings', 'components', 'music'];
 
 /** 从 index.scss 取出 @use 目标（去扩展名），剥注释以免举例被当真声明 */
 function useList(indexSrc) {
-  const code = stripComments(indexSrc || "");
-  return [...code.matchAll(/@use\s+['"]([^'"]+)['"]/g)].map((m) => m[1].replace(/\.scss$/, ""));
+  const code = stripComments(indexSrc || '');
+  return [...code.matchAll(/@use\s+['"]([^'"]+)['"]/g)].map((m) => m[1].replace(/\.scss$/, ''));
 }
 
-add("STYLE.shardsRegistered", "STYLE", (s) => {
+add('STYLE.shardsRegistered', 'STYLE', (s) => {
   // 双向一致：目录里存在的分片必须被 @use；@use 声明的也必须真实存在。
   // 只查单向会漏 ——「新建了分片但忘了在入口注册」是**最可能发生的错**（文件在、样式不生效），
   // 而「注册了但文件不存在」连构建都过不了，readStyleSource 也会当场抛错。
@@ -1185,44 +1119,44 @@ add("STYLE.shardsRegistered", "STYLE", (s) => {
   for (const d of declared) {
     if (!onDisk.includes(d)) missing.push(`index.scss @use 了 '${d}'，但 styles/ 下没有 ${d}.scss`);
   }
-  return { ok: missing.length === 0, detail: missing.length ? missing.join("；") : "" };
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('；') : '' };
 });
 
-add("STYLE.useOrder", "STYLE", (s) => {
+add('STYLE.useOrder', 'STYLE', (s) => {
   // @use 顺序必须等于约定顺序。这条是**层叠正确性**的守卫：当前顺序与拆分前
   // app.css 的分区顺序逐段对齐，所以拆分不改变层叠语义；一旦调换，语义即变。
   const declared = useList(s.styleIndex);
   if (declared.length !== STYLE_USE_ORDER.length || declared.some((d, i) => d !== STYLE_USE_ORDER[i])) {
     return {
       ok: false,
-      detail: `@use 顺序被改：实际 ${declared.join(" → ")}，约定 ${STYLE_USE_ORDER.join(" → ")}（顺序即层叠）`,
+      detail: `@use 顺序被改：实际 ${declared.join(' → ')}，约定 ${STYLE_USE_ORDER.join(' → ')}（顺序即层叠）`,
     };
   }
-  return { ok: true, detail: "" };
+  return { ok: true, detail: '' };
 });
 
-add("STYLE.entryIsScss", "STYLE", (s) => {
+add('STYLE.entryIsScss', 'STYLE', (s) => {
   // 入口只许 @use .scss。旧 app.css / base.css 若复活并被引回入口，分层就名存实亡。
-  const code = stripComments(s.styleIndex || "");
-  const bad = [...code.matchAll(/@use\s+['"]([^'"]+)['"]/g)].map((m) => m[1]).filter((t) => !t.endsWith(".scss"));
+  const code = stripComments(s.styleIndex || '');
+  const bad = [...code.matchAll(/@use\s+['"]([^'"]+)['"]/g)].map((m) => m[1]).filter((t) => !t.endsWith('.scss'));
   return {
     ok: bad.length === 0,
-    detail: bad.length ? `index.scss 引用了非 .scss：${bad.join("、")}（旧的 app.css/base.css 不该复活）` : "",
+    detail: bad.length ? `index.scss 引用了非 .scss：${bad.join('、')}（旧的 app.css/base.css 不该复活）` : '',
   };
 });
 
-add("STYLE.shardOwnership", "STYLE", (s) => {
+add('STYLE.shardOwnership', 'STYLE', (s) => {
   // 单向禁列表：某分片里**绝不该出现**别的模块的强专属前缀。
   // 为什么只禁这几个、且只单向：既有实现里存在合法跨模块组合 ——
   // music.scss 有 `.di-… .ui-cbtn`（灵动岛里的公共按钮）、components.scss 有
   // `.set-row / .set-state`（设置页专用但由 units 组件实现）。双向禁会误报它们。
   // 反向自查已验证：把另一分片喂进来均会报红，判据确实能抓住放错。
   const FORBID = {
-    "manga.scss": [/\.music-/, /\.di-/, /\.pf-/, /\.ac-/, /\.sk-/, /\.skin-/, /\.kara-/, /\.viewtab/],
-    "music.scss": [/\.qt-/, /\.lib-/, /\.notready/, /\.logbox/, /\.magic-/, /\.compare-/, /\.dropzone/, /\.filelist/],
-    "settings.scss": [/\.music-/, /\.di-/, /\.qt-/, /\.lib-/, /\.viewtab/],
-    "app.scss": [/\.music-/, /\.di-/, /\.qt-/, /\.lib-/, /\.set-/, /\.settings/],
-    "components.scss": [/\.music-/, /\.di-/, /\.qt-/, /\.lib-/],
+    'manga.scss': [/\.music-/, /\.di-/, /\.pf-/, /\.ac-/, /\.sk-/, /\.skin-/, /\.kara-/, /\.viewtab/],
+    'music.scss': [/\.qt-/, /\.lib-/, /\.notready/, /\.logbox/, /\.magic-/, /\.compare-/, /\.dropzone/, /\.filelist/],
+    'settings.scss': [/\.music-/, /\.di-/, /\.qt-/, /\.lib-/, /\.viewtab/],
+    'app.scss': [/\.music-/, /\.di-/, /\.qt-/, /\.lib-/, /\.set-/, /\.settings/],
+    'components.scss': [/\.music-/, /\.di-/, /\.qt-/, /\.lib-/],
   };
   const hits = [];
   for (const [file, pats] of Object.entries(FORBID)) {
@@ -1234,15 +1168,15 @@ add("STYLE.shardOwnership", "STYLE", (s) => {
     for (const p of pats) {
       const m = code.match(p);
       if (m) {
-        const line = code.slice(0, code.indexOf(m[0])).split("\n").length;
+        const line = code.slice(0, code.indexOf(m[0])).split('\n').length;
         hits.push(`${file}:${line} 含他模块选择器 ${m[0]}`);
       }
     }
   }
-  return { ok: hits.length === 0, detail: hits.length ? hits.join("；") : "" };
+  return { ok: hits.length === 0, detail: hits.length ? hits.join('；') : '' };
 });
 
-add("STYLE.noScssSyntax", "STYLE", (s) => {
+add('STYLE.noScssSyntax', 'STYLE', (s) => {
   // 分片内保持**扁平写法**：本阶段不用 SCSS 语法糖。
   // 理由不是审美，是断言：本仓检查脚本大量用 `[^}]*` 取块，嵌套会改变块结构 →
   // 判据静默失效或恒红。（开 nesting 的前置条件是给脚本装 SCSS AST 解析器，
@@ -1257,7 +1191,7 @@ add("STYLE.noScssSyntax", "STYLE", (s) => {
     const amp = code.match(/(^|[{,\n])\s*&(?![\w-])/m);
     if (amp) hits.push(`${file} 用了嵌套选择器 &`);
   }
-  return { ok: hits.length === 0, detail: hits.length ? hits.join("；") : "" };
+  return { ok: hits.length === 0, detail: hits.length ? hits.join('；') : '' };
 });
 
 // ── 执行器 ────────────────────────────────────────────────────────────────
@@ -1267,7 +1201,7 @@ function runAll(s, ids) {
     if (ids && !ids.includes(a.id)) continue;
     try {
       const r = a.run(s);
-      res[a.id] = { ok: !!r.ok, detail: r.detail || "" };
+      res[a.id] = { ok: !!r.ok, detail: r.detail || '' };
     } catch (e) {
       res[a.id] = { ok: false, detail: `断言抛错：${e.message}` };
     }
@@ -1275,7 +1209,20 @@ function runAll(s, ids) {
   return res;
 }
 
-const GROUPS = ["LAYOUT", "PURITY", "NAMING", "CALLERS", "KEEP", "HOOKS", "ALIAS", "STATE", "ISLAND", "TOOLTIP", "ZOOM", "STYLE"];
+const GROUPS = [
+  'LAYOUT',
+  'PURITY',
+  'NAMING',
+  'CALLERS',
+  'KEEP',
+  'HOOKS',
+  'ALIAS',
+  'STATE',
+  'ISLAND',
+  'TOOLTIP',
+  'ZOOM',
+  'STYLE',
+];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -1291,7 +1238,7 @@ function printGrouped(res) {
         console.log(`  ✓ ${a.id}`);
       } else {
         fail++;
-        console.log(`  ✗ ${a.id}${r.detail ? `\n      ${r.detail}` : ""}`);
+        console.log(`  ✗ ${a.id}${r.detail ? `\n      ${r.detail}` : ''}`);
       }
     }
   }
@@ -1302,86 +1249,80 @@ function printGrouped(res) {
 // 三种破坏动作：edit（改文本）/ rename（改名，模拟清单缺件）/ create（复活旧路径）
 const MUTATIONS = [
   {
-    name: "把 units/VirtualList.tsx 改名（模拟清单缺件）",
-    from: F.units + "/VirtualList.tsx",
-    to: F.units + "/VirtualList.bak",
-    expect: ["LAYOUT.files", "LAYOUT.barrelResolves"],
+    name: '把 units/VirtualList.tsx 改名（模拟清单缺件）',
+    from: F.units + '/VirtualList.tsx',
+    to: F.units + '/VirtualList.bak',
+    expect: ['LAYOUT.files', 'LAYOUT.barrelResolves'],
   },
   {
-    name: "往 units/Empty.tsx 顶部注入业务 store import",
-    file: F.units + "/Empty.tsx",
+    name: '往 units/Empty.tsx 顶部注入业务 store import',
+    file: F.units + '/Empty.tsx',
     find: "import type { ReactNode } from 'react';",
-    replace:
-      "import { useMusicStore } from '../../music/store';\nimport type { ReactNode } from 'react';",
-    expect: ["PURITY.noBusinessImports"],
+    replace: "import { useMusicStore } from '../../music/store';\nimport type { ReactNode } from 'react';",
+    expect: ['PURITY.noBusinessImports'],
   },
   {
-    name: "往 units/Select.tsx 注入根 types import（另一条被禁来源）",
-    file: F.units + "/Select.tsx",
+    name: '往 units/Select.tsx 注入根 types import（另一条被禁来源）',
+    file: F.units + '/Select.tsx',
     find: "import * as RSelect from '@radix-ui/react-select';",
-    replace:
-      "import type { SongLike } from '../types';\nimport * as RSelect from '@radix-ui/react-select';",
-    expect: ["PURITY.noBusinessImports"],
+    replace: "import type { SongLike } from '../types';\nimport * as RSelect from '@radix-ui/react-select';",
+    expect: ['PURITY.noBusinessImports'],
   },
   {
-    name: "往 units/Range.tsx 注入别名形式的业务 store import（@music/store）",
-    file: F.units + "/Range.tsx",
+    name: '往 units/Range.tsx 注入别名形式的业务 store import（@music/store）',
+    file: F.units + '/Range.tsx',
     find: "import type { CSSProperties } from 'react';",
-    replace:
-      "import { useMusicStore } from '@music/store';\nimport type { CSSProperties } from 'react';",
-    expect: ["PURITY.noBusinessImports"],
+    replace: "import { useMusicStore } from '@music/store';\nimport type { CSSProperties } from 'react';",
+    expect: ['PURITY.noBusinessImports'],
   },
   {
-    name: "往 units/IconButton.tsx 注入别名形式的根类型 import（@/types）",
-    file: F.units + "/IconButton.tsx",
+    name: '往 units/IconButton.tsx 注入别名形式的根类型 import（@/types）',
+    file: F.units + '/IconButton.tsx',
     find: "import type { MouseEvent, ReactNode } from 'react';",
-    replace:
-      "import type { TaskRow } from '@/types';\nimport type { MouseEvent, ReactNode } from 'react';",
-    expect: ["PURITY.noBusinessImports"],
+    replace: "import type { TaskRow } from '@/types';\nimport type { MouseEvent, ReactNode } from 'react';",
+    expect: ['PURITY.noBusinessImports'],
   },
   {
-    name: "把 units/Empty.tsx 的 ui-empty 改回 music-empty",
-    file: F.units + "/Empty.tsx",
+    name: '把 units/Empty.tsx 的 ui-empty 改回 music-empty',
+    file: F.units + '/Empty.tsx',
     find: "'ui-empty'",
     replace: "'music-empty'",
-    expect: ["NAMING.noMusic", "NAMING.uiPrefix"],
+    expect: ['NAMING.noMusic', 'NAMING.uiPrefix'],
   },
   {
-    name: "往 units/Select.tsx 塞一个 set-select 类名",
-    file: F.units + "/Select.tsx",
+    name: '往 units/Select.tsx 塞一个 set-select 类名',
+    file: F.units + '/Select.tsx',
     find: 'className="ui-select-item"',
     replace: 'className="ui-select-item set-select"',
-    expect: ["NAMING.noSet"],
+    expect: ['NAMING.noSet'],
   },
   {
-    name: "把 settings/parts.tsx 里重新加回 export function Select",
+    name: '把 settings/parts.tsx 里重新加回 export function Select',
     file: F.parts,
-    find: "export function SubTitle(",
-    replace:
-      "export function Select() { return null; }\nexport function SubTitle(",
-    expect: ["CALLERS.partsNoControls"],
+    find: 'export function SubTitle(',
+    replace: 'export function Select() { return null; }\nexport function SubTitle(',
+    expect: ['CALLERS.partsNoControls'],
   },
   {
-    name: "把 music/shared.tsx 里的 SongRow 删掉（模拟抽过头）",
+    name: '把 music/shared.tsx 里的 SongRow 删掉（模拟抽过头）',
     file: F.shared,
-    find: "export function SongRow({",
-    replace: "export function SongRowGone({",
-    expect: ["KEEP.sharedExports"],
+    find: 'export function SongRow({',
+    replace: 'export function SongRowGone({',
+    expect: ['KEEP.sharedExports'],
   },
   {
-    name: "把 music/shared.tsx 里重新加回 export function Empty",
+    name: '把 music/shared.tsx 里重新加回 export function Empty',
     file: F.shared,
-    find: "export function providerName(",
-    replace:
-      "export function Empty() { return null; }\nexport function providerName(",
-    expect: ["CALLERS.sharedNoUnits"],
+    find: 'export function providerName(',
+    replace: 'export function Empty() { return null; }\nexport function providerName(',
+    expect: ['CALLERS.sharedNoUnits'],
   },
   {
-    name: "把 screens/music/RightPanel.tsx 的 units import 改路径",
+    name: '把 screens/music/RightPanel.tsx 的 units import 改路径',
     file: F.rightPanel,
     find: "from '@components/units';",
     replace: "from '@components/unitz';",
-    expect: ["CALLERS.importsUnits"],
+    expect: ['CALLERS.importsUnits'],
   },
   {
     name: '把 LoginModal.tsx 改回 <button className="music-cbtn">',
@@ -1389,185 +1330,184 @@ const MUTATIONS = [
     find: '          <IconButton title="关闭" onClick={closeLogin}>\n            <X size={15} />\n          </IconButton>',
     replace:
       '          <button type="button" className="music-cbtn" onClick={closeLogin}>\n            <X size={15} />\n          </button>',
-    expect: ["CALLERS.loginNoRawCbtn"],
+    expect: ['CALLERS.loginNoRawCbtn'],
   },
   {
-    name: "把 settings/parts.tsx 的 PendingRow 改名（模拟抽过头）",
+    name: '把 settings/parts.tsx 的 PendingRow 改名（模拟抽过头）',
     file: F.parts,
-    find: "export function PendingRow(",
-    replace: "export function PendingRowGone(",
-    expect: ["KEEP.partsExports"],
+    find: 'export function PendingRow(',
+    replace: 'export function PendingRowGone(',
+    expect: ['KEEP.partsExports'],
   },
   {
-    name: "把 components/Sidebar.tsx 改名（应用级组件不该消失）",
-    from: F.components + "/Sidebar.tsx",
-    to: F.components + "/Sidebar.bak",
-    expect: ["KEEP.appComponents"],
+    name: '把 components/Sidebar.tsx 改名（应用级组件不该消失）',
+    from: F.components + '/Sidebar.tsx',
+    to: F.components + '/Sidebar.bak',
+    expect: ['KEEP.appComponents'],
   },
   {
-    name: "复活旧路径 components/atoms.tsx（模拟保留兼容再导出）",
+    name: '复活旧路径 components/atoms.tsx（模拟保留兼容再导出）',
     create: F.legacyAtoms,
-    content: "export {};\n",
-    expect: ["LAYOUT.legacyAbsent"],
+    content: 'export {};\n',
+    expect: ['LAYOUT.legacyAbsent'],
   },
   {
-    name: "把 index.ts 桶文件里 Badge 的出口摘掉（模拟漏出口）",
-    file: F.units + "/index.ts",
+    name: '把 index.ts 桶文件里 Badge 的出口摘掉（模拟漏出口）',
+    file: F.units + '/index.ts',
     find: "export { Badge, Btn, Dot, MagicCircle, Pill } from '@components/units/atoms';",
-    replace:
-      "export { Btn, Dot, MagicCircle, Pill } from '@components/units/atoms';",
-    expect: ["LAYOUT.barrelExports"],
+    replace: "export { Btn, Dot, MagicCircle, Pill } from '@components/units/atoms';",
+    expect: ['LAYOUT.barrelExports'],
   },
   {
-    name: "把 atoms.tsx 的历史中性类名 .pill 改成 .ui-pill",
-    file: F.units + "/atoms.tsx",
+    name: '把 atoms.tsx 的历史中性类名 .pill 改成 .ui-pill',
+    file: F.units + '/atoms.tsx',
     find: '<span className="pill">',
     replace: '<span className="ui-pill">',
-    expect: ["NAMING.neutralKept"],
+    expect: ['NAMING.neutralKept'],
   },
   {
-    name: "把 src/hooks/useEsc.ts 改名（模拟收口缺件）",
-    from: F.hooksDir + "/useEsc.ts",
-    to: F.hooksDir + "/useEsc.bak",
-    expect: ["HOOKS.layout"],
+    name: '把 src/hooks/useEsc.ts 改名（模拟收口缺件）',
+    from: F.hooksDir + '/useEsc.ts',
+    to: F.hooksDir + '/useEsc.bak',
+    expect: ['HOOKS.layout'],
   },
   {
-    name: "复活 src/hooks.ts 旧单文件（模拟 hooks.ts 与 hooks/ 并存）",
+    name: '复活 src/hooks.ts 旧单文件（模拟 hooks.ts 与 hooks/ 并存）',
     create: F.hooksFile,
-    content: "export {};\n",
-    expect: ["HOOKS.layout"],
+    content: 'export {};\n',
+    expect: ['HOOKS.layout'],
   },
   {
-    name: "把 src/hooks/index.ts 的 useToasts 改名（模拟业务 hook 丢失）",
-    file: F.hooksDir + "/index.ts",
-    find: "export function useToasts()",
-    replace: "export function useToastsGone()",
-    expect: ["HOOKS.barrelExports"],
+    name: '把 src/hooks/index.ts 的 useToasts 改名（模拟业务 hook 丢失）',
+    file: F.hooksDir + '/index.ts',
+    find: 'export function useToasts()',
+    replace: 'export function useToastsGone()',
+    expect: ['HOOKS.barrelExports'],
   },
   {
-    name: "把 PlatformMenu 的 useEsc 引用改回旧位置（@components/units/useEsc）",
+    name: '把 PlatformMenu 的 useEsc 引用改回旧位置（@components/units/useEsc）',
     file: F.platformMenu,
     // 锚点必须与 PlatformMenu.tsx 当前的真实字节一致：本项目**统一单引号**，
     // 编辑器保存时的重排会把引号换成双引号（纯噪声），此时锚点失配 ——
     // 后果不是变红而是本条被静默跳过，故回退噪声时**必须同步锚点**（本仓库踩过这个坑）。
     find: "from '@hooks/useEsc';",
     replace: "from '@components/units/useEsc';",
-    expect: ["HOOKS.callers"],
+    expect: ['HOOKS.callers'],
   },
   {
-    name: "把 hooks/useCoverColor.ts 移回 screens/music（模拟 use* 未收口）",
-    from: F.hooksDir + "/useCoverColor.ts",
-    to: path.join(SRC, "screens", "music", "useCoverColor.ts"),
-    expect: ["HOOKS.noMisplacedUse"],
+    name: '把 hooks/useCoverColor.ts 移回 screens/music（模拟 use* 未收口）',
+    from: F.hooksDir + '/useCoverColor.ts',
+    to: path.join(SRC, 'screens', 'music', 'useCoverColor.ts'),
+    expect: ['HOOKS.noMisplacedUse'],
   },
   {
-    name: "从 vite.config.ts 删掉 @hooks 别名（模拟两处漏改一处）",
+    name: '从 vite.config.ts 删掉 @hooks 别名（模拟两处漏改一处）',
     file: F.viteConfig,
     find: '      "@hooks": aliasPath("./src/hooks"),\n',
-    replace: "",
-    expect: ["ALIAS.keysComplete", "ALIAS.twoPlaceSync"],
+    replace: '',
+    expect: ['ALIAS.keysComplete', 'ALIAS.twoPlaceSync'],
   },
   {
-    name: "从 tsconfig.json 删掉 @music 别名（两条一起删，反向漂移：tsc 不认识而 vite 认识）",
+    name: '从 tsconfig.json 删掉 @music 别名（两条一起删，反向漂移：tsc 不认识而 vite 认识）',
     file: F.tsconfig,
     find: '      "@music": ["src/music"],\n      "@music/*": ["src/music/*"],\n',
-    replace: "",
-    expect: ["ALIAS.keysComplete", "ALIAS.twoPlaceSync"],
+    replace: '',
+    expect: ['ALIAS.keysComplete', 'ALIAS.twoPlaceSync'],
   },
   {
-    name: "只删 tsconfig 的 @music/* 通配项（配置退化：别名还在，但 @music/store 解析不到）",
+    name: '只删 tsconfig 的 @music/* 通配项（配置退化：别名还在，但 @music/store 解析不到）',
     file: F.tsconfig,
     find: '      "@music/*": ["src/music/*"],\n',
-    replace: "",
-    expect: ["ALIAS.subPathMaps"],
+    replace: '',
+    expect: ['ALIAS.subPathMaps'],
   },
   {
-    name: "把 RightPanel 的一处别名引用改回相对上跳",
+    name: '把 RightPanel 的一处别名引用改回相对上跳',
     file: F.rightPanel,
     find: "from '@components/units';",
     replace: "from '../../components/units';",
-    expect: ["ALIAS.noRelativeUp"],
+    expect: ['ALIAS.noRelativeUp'],
   },
   {
-    name: "把 ipc.ts 的 npm 包 @tauri-apps/api/core 误写成别名 @tauri/api/core",
-    file: path.join(SRC, "ipc.ts"),
+    name: '把 ipc.ts 的 npm 包 @tauri-apps/api/core 误写成别名 @tauri/api/core',
+    file: path.join(SRC, 'ipc.ts'),
     find: "from '@tauri-apps/api/core';",
     replace: "from '@tauri/api/core';",
-    expect: ["ALIAS.pkgNotShadowed"],
+    expect: ['ALIAS.pkgNotShadowed'],
   },
   {
-    name: "往 parts.tsx 塞一个 React Context（模拟绕过 zustand）",
+    name: '往 parts.tsx 塞一个 React Context（模拟绕过 zustand）',
     file: F.parts,
     find: "import type { ReactNode } from 'react';",
     replace: "import type { ReactNode } from 'react';\nconst Ctx = createContext(null);\n",
-    expect: ["STATE.noReactContext"],
+    expect: ['STATE.noReactContext'],
   },
   {
-    name: "把 store.ts 的 zustand 依赖换掉（模拟状态库不再是 zustand）",
-    file: path.join(SRC, "music", "store.ts"),
+    name: '把 store.ts 的 zustand 依赖换掉（模拟状态库不再是 zustand）',
+    file: path.join(SRC, 'music', 'store.ts'),
     find: "from 'zustand';",
     replace: "from 'zustand-gone';",
-    expect: ["STATE.zustandInUse"],
+    expect: ['STATE.zustandInUse'],
   },
 
   // ── ISLAND 灵动岛（拍板第 4 项）──────────────────────────────────────
   {
-    name: "把 App.tsx 里的 <DynamicIsland /> 删掉（实现了但没人挂）",
+    name: '把 App.tsx 里的 <DynamicIsland /> 删掉（实现了但没人挂）',
     file: F.app,
-    find: "      <DynamicIsland />",
-    replace: "      {null /* 反证：灵动岛未挂载 */}",
-    expect: ["ISLAND.mountedAtRoot"],
+    find: '      <DynamicIsland />',
+    replace: '      {null /* 反证：灵动岛未挂载 */}',
+    expect: ['ISLAND.mountedAtRoot'],
   },
   {
-    name: "把 App 里的灵动岛换回旧的 .toasts 渲染层（两套并存 → 同一条提示出现两次）",
+    name: '把 App 里的灵动岛换回旧的 .toasts 渲染层（两套并存 → 同一条提示出现两次）',
     file: F.app,
-    find: "      <DynamicIsland />",
+    find: '      <DynamicIsland />',
     replace: '      <div className="toasts" />',
-    expect: ["ISLAND.singleSource"],
+    expect: ['ISLAND.singleSource'],
   },
   {
-    name: "让 music/Toast 重新自己渲染（与灵动岛重复显示同一条提示）",
+    name: '让 music/Toast 重新自己渲染（与灵动岛重复显示同一条提示）',
     file: F.musicToast,
     // 锚点用 `return null;`（转发器不渲染任何 DOM）→ 改成一个 div。
     // 不用"删掉转发代码"当破坏：那会让本组另一条断言先红，掩盖要测的东西。
-    find: "  return null;\n}",
+    find: '  return null;\n}',
     replace: '  return <div className="music-toast">x</div>;\n}',
-    expect: ["ISLAND.musicToastForwards"],
+    expect: ['ISLAND.musicToastForwards'],
   },
   {
-    name: "把胶囊形变时长改成 CSS 0.4s ↔ TS 320ms 不一致（动画半途被内联宽高瞬移）",
+    name: '把胶囊形变时长改成 CSS 0.4s ↔ TS 320ms 不一致（动画半途被内联宽高瞬移）',
     file: F.musicScss,
     // 锚点取 transition 里的 width 段。判据取的是同一处，故改它必然触发红
-    find: "    width 0.32s cubic-bezier(0.22, 0.61, 0.36, 1),",
-    replace: "    width 0.4s cubic-bezier(0.22, 0.61, 0.36, 1),",
-    expect: ["ISLAND.morphDurationSync"],
+    find: '    width 0.32s cubic-bezier(0.22, 0.61, 0.36, 1),',
+    replace: '    width 0.4s cubic-bezier(0.22, 0.61, 0.36, 1),',
+    expect: ['ISLAND.morphDurationSync'],
   },
   {
-    name: "去掉灵动岛的空闲态早退（会一直挂着一个空胶囊）",
+    name: '去掉灵动岛的空闲态早退（会一直挂着一个空胶囊）',
     file: F.island,
-    find: "  if (!hasQueue) return null;",
-    replace: "  // 反证：空闲态不再早退",
-    expect: ["ISLAND.idleRendersNothing"],
+    find: '  if (!hasQueue) return null;',
+    replace: '  // 反证：空闲态不再早退',
+    expect: ['ISLAND.idleRendersNothing'],
   },
   {
-    name: "让灵动岛重新接回 toastBus（轻提示出现两个渲染层，同一条显示两次）",
+    name: '让灵动岛重新接回 toastBus（轻提示出现两个渲染层，同一条显示两次）',
     file: F.island,
     // D-156：`coverProxyUrl`/`fmtTime` 已随纯函数搬到 @music/convert，此处只剩 useMusicStore
     find: "import { useMusicStore } from '@music/store';",
     replace:
       "import { useMusicStore } from '@music/store';\nimport { useToastList } from '@/toastBus'; // 反证：提示通道重新接入",
-    expect: ["ISLAND.noToastChannel"],
+    expect: ['ISLAND.noToastChannel'],
   },
 
   // ── TOOLTIP（悬停提示）──────────────────────────────────────────────
   // 守的是「hover 到气泡上气泡先没了」：气泡悬在宿主上方 6px，宿主 mouseleave
   // 必须走宽限期（scheduleHide），不能立即收 —— 否则指针还在半路上气泡就销毁了。
   {
-    name: "宿主离开改回立即收起（指针跨间隙时气泡先销毁，hover 不进气泡）",
+    name: '宿主离开改回立即收起（指针跨间隙时气泡先销毁，hover 不进气泡）',
     file: F.tooltip,
-    find: "      onMouseLeave={scheduleHide}",
-    replace: "      onMouseLeave={hide}",
-    expect: ["TOOLTIP.graceHide"],
+    find: '      onMouseLeave={scheduleHide}',
+    replace: '      onMouseLeave={hide}',
+    expect: ['TOOLTIP.graceHide'],
   },
 
   // ── ZOOM（全屏看图缩放）──────────────────────────────────────────────────
@@ -1575,91 +1515,91 @@ const MUTATIONS = [
   // 中心缩放（能放大但手感差）、只有手势没有按钮（macOS 上完全没法缩放）。
   {
     // 最典型的退化：嫌手动挂监听麻烦，改回 React 的 onWheel ⇒ passive，preventDefault 失效
-    name: "把 wheel 监听改回被动的 React onWheel（preventDefault 失效 + 页面跟着滚）",
+    name: '把 wheel 监听改回被动的 React onWheel（preventDefault 失效 + 页面跟着滚）',
     file: F.libraryViewer,
     find: "    window.addEventListener('wheel', onWheel, { passive: false });",
-    replace: "    // 反证：改回 React onWheel（被动监听）\n    void onWheel;",
-    expect: ["ZOOM.wheelNonPassive"],
+    replace: '    // 反证：改回 React onWheel（被动监听）\n    void onWheel;',
+    expect: ['ZOOM.wheelNonPassive'],
   },
   {
     // 只挂不卸 ⇒ 浮层开关多次后旧监听仍在跑，一次滚轮被处理 N 次
-    name: "删掉 wheel 监听的 removeEventListener（卸载泄漏 ⇒ 一次滚轮缩放多次）",
+    name: '删掉 wheel 监听的 removeEventListener（卸载泄漏 ⇒ 一次滚轮缩放多次）',
     file: F.libraryViewer,
     find: "    return () => window.removeEventListener('wheel', onWheel);",
-    replace: "    return undefined;",
-    expect: ["ZOOM.wheelNonPassive"],
+    replace: '    return undefined;',
+    expect: ['ZOOM.wheelNonPassive'],
   },
   {
     // 锚点缩放退化成"缩放就回中心"：能跑、类型过，但每滚一下图都往中间跳
-    name: "把锚点缩放改成直接重置偏移（等价于中心缩放，手感退化）",
+    name: '把锚点缩放改成直接重置偏移（等价于中心缩放，手感退化）',
     file: F.libraryViewer,
-    find: "    applyView(next, { x: ax - (ax - cur.offset.x) * k, y: ay - (ay - cur.offset.y) * k });",
-    replace: "    applyView(next, { x: 0, y: 0 });",
-    expect: ["ZOOM.anchorZoom"],
+    find: '    applyView(next, { x: ax - (ax - cur.offset.x) * k, y: ay - (ay - cur.offset.y) * k });',
+    replace: '    applyView(next, { x: 0, y: 0 });',
+    expect: ['ZOOM.anchorZoom'],
   },
   {
     // 不量光标位置 ⇒ 没有锚点可言（退化成中心缩放，但仍走 zoomAt，看着"有实现"）
-    name: "让 zoomAt 不再量光标位置（失去锚点，仍有 zoomAt 函数 ⇒ 半绿假象）",
+    name: '让 zoomAt 不再量光标位置（失去锚点，仍有 zoomAt 函数 ⇒ 半绿假象）',
     file: F.libraryViewer,
-    find: "    const rect = stage.getBoundingClientRect();",
-    replace: "    const rect = { left: 0, top: 0, width: 0, height: 0 };",
-    expect: ["ZOOM.anchorZoom"],
+    find: '    const rect = stage.getBoundingClientRect();',
+    replace: '    const rect = { left: 0, top: 0, width: 0, height: 0 };',
+    expect: ['ZOOM.anchorZoom'],
   },
   {
     // 去掉按钮 = macOS 上完全没法缩放（捏合被 WebKit 吃掉，事件到不了 JS）
-    name: "删掉工具栏的缩小按钮（macOS 上失去唯一的非手势缩放路径）",
+    name: '删掉工具栏的缩小按钮（macOS 上失去唯一的非手势缩放路径）',
     file: F.libraryViewer,
     find: '              aria-label="缩小"\n',
-    replace: "",
-    expect: ["ZOOM.buttonFallback"],
+    replace: '',
+    expect: ['ZOOM.buttonFallback'],
   },
   {
-    name: "删掉工具栏缩放按钮的样式（按钮裸奔，无禁用态/悬停态）",
-    file: path.join(F.stylesDir, "manga.scss"),
-    find: ".lightbox-zoom-btn:hover:not(:disabled) {",
-    replace: ".lightbox-zoom-btn:hover-x:not(:disabled) {",
-    expect: ["ZOOM.buttonFallback"],
+    name: '删掉工具栏缩放按钮的样式（按钮裸奔，无禁用态/悬停态）',
+    file: path.join(F.stylesDir, 'manga.scss'),
+    find: '.lightbox-zoom-btn:hover:not(:disabled) {',
+    replace: '.lightbox-zoom-btn:hover-x:not(:disabled) {',
+    expect: ['ZOOM.buttonFallback'],
   },
   {
     // 裸滚轮平移不门控溢出态 ⇒ ≤100% 时滚轮被吞，用户以为失灵
-    name: "把裸滚轮平移移出溢出态门控（≤100% 时滚轮被吞，失灵）",
+    name: '把裸滚轮平移移出溢出态门控（≤100% 时滚轮被吞，失灵）',
     file: F.libraryViewer,
-    find: "      if (view.current.zoom > ZOOM_FIT) {",
-    replace: "      if (true) {",
-    expect: ["ZOOM.twoFingerPan"],
+    find: '      if (view.current.zoom > ZOOM_FIT) {',
+    replace: '      if (true) {',
+    expect: ['ZOOM.twoFingerPan'],
   },
   {
     // 方向反了：滚轮向上反而缩小 —— 能缩能放、类型也过，只有钉子拦得住
-    name: "把滚轮缩放因子改成 1 + deltaY·k（向上滚反而缩小，方向反了）",
+    name: '把滚轮缩放因子改成 1 + deltaY·k（向上滚反而缩小，方向反了）',
     file: F.libraryViewer,
-    find: "zoomAt(e.clientX, e.clientY, 1 - e.deltaY * ZOOM_WHEEL_K);",
-    replace: "zoomAt(e.clientX, e.clientY, 1 + e.deltaY * ZOOM_WHEEL_K);",
-    expect: ["ZOOM.wheelDirection"],
+    find: 'zoomAt(e.clientX, e.clientY, 1 - e.deltaY * ZOOM_WHEEL_K);',
+    replace: 'zoomAt(e.clientX, e.clientY, 1 + e.deltaY * ZOOM_WHEEL_K);',
+    expect: ['ZOOM.wheelDirection'],
   },
   {
     // 缩回「铺满」及以内不归位 ⇒ 旧偏移把图顶出画面
-    name: "删掉「≤ ZOOM_FIT 归位」分支（缩回铺满后图歪在一边、跑出画面）",
+    name: '删掉「≤ ZOOM_FIT 归位」分支（缩回铺满后图歪在一边、跑出画面）',
     file: F.libraryViewer,
     find: `    if (next <= ZOOM_FIT) {
       if (cur.zoom !== next || cur.offset.x !== 0 || cur.offset.y !== 0) applyView(next, { x: 0, y: 0 });
       return;
     }
 `,
-    replace: "",
-    expect: ["ZOOM.anchorZoom"],
+    replace: '',
+    expect: ['ZOOM.anchorZoom'],
   },
   {
     // 开图默认落到缩放下限（50%）：图小一半，且丢掉"整张铺满"语义
-    name: "把初始比例改成 ZOOM_MIN（开图不是整张铺满）",
+    name: '把初始比例改成 ZOOM_MIN（开图不是整张铺满）',
     file: F.libraryViewer,
-    find: "useState(ZOOM_FIT)",
-    replace: "useState(ZOOM_MIN)",
-    expect: ["ZOOM.fitToWindow"],
+    find: 'useState(ZOOM_FIT)',
+    replace: 'useState(ZOOM_MIN)',
+    expect: ['ZOOM.fitToWindow'],
   },
   {
     // 退回 grid：auto 轨道按内容撑开 ⇒ max-height:100% 失效 ⇒ 图溢出被裁（实测 345×517）
-    name: "把 .lightbox-stage 改回 grid + place-items（max-height:100% 失效，图溢出被裁）",
-    file: path.join(F.stylesDir, "manga.scss"),
+    name: '把 .lightbox-stage 改回 grid + place-items（max-height:100% 失效，图溢出被裁）',
+    file: path.join(F.stylesDir, 'manga.scss'),
     find: `.lightbox-stage {
   flex: 1;
   min-height: 0;
@@ -1673,21 +1613,21 @@ const MUTATIONS = [
   width: 100%;
   display: grid;
   place-items: center;`,
-    expect: ["ZOOM.fitToWindow"],
+    expect: ['ZOOM.fitToWindow'],
   },
   {
-    name: "删掉 .lightbox-stage img 的 max-height: 100%（图片溢出可视区）",
-    file: path.join(F.stylesDir, "manga.scss"),
+    name: '删掉 .lightbox-stage img 的 max-height: 100%（图片溢出可视区）',
+    file: path.join(F.stylesDir, 'manga.scss'),
     find: `.lightbox-stage img {
   max-width: 100%;
   max-height: 100%;`,
     replace: `.lightbox-stage img {
   max-width: 100%;`,
-    expect: ["ZOOM.fitToWindow"],
+    expect: ['ZOOM.fitToWindow'],
   },
   {
-    name: "把 .pane-body 改回 grid + place-items（对照视图同样溢出、要滚动）",
-    file: path.join(F.stylesDir, "manga.scss"),
+    name: '把 .pane-body 改回 grid + place-items（对照视图同样溢出、要滚动）',
+    file: path.join(F.stylesDir, 'manga.scss'),
     find: `.pane-body {
   flex: 1;
   min-height: 0;
@@ -1701,7 +1641,7 @@ const MUTATIONS = [
   overflow: auto;
   display: grid;
   place-items: center;`,
-    expect: ["ZOOM.fitToWindow"],
+    expect: ['ZOOM.fitToWindow'],
   },
 
   // ── STYLE（样式分层）─────────────────────────────────────────────────────
@@ -1709,69 +1649,67 @@ const MUTATIONS = [
   // 开始用 SCSS 语法」。没有它们，分层只是目录 aesthetics。
   {
     // 新建了分片却忘了在入口注册 —— 文件在、样式不生效，且**不会报任何错**
-    name: "从 index.scss 删掉 manga 的 @use（分片存在但没注册 → 整模块样式不生效）",
-    file: path.join(F.stylesDir, "index.scss"),
+    name: '从 index.scss 删掉 manga 的 @use（分片存在但没注册 → 整模块样式不生效）',
+    file: path.join(F.stylesDir, 'index.scss'),
     find: "@use 'manga.scss';\n",
-    replace: "",
-    expect: ["STYLE.shardsRegistered"],
+    replace: '',
+    expect: ['STYLE.shardsRegistered'],
   },
   {
     // 顺序即层叠：调换 base/app 就可能改变同特异性规则的胜负
-    name: "把 @use 顺序里的 music 提到 manga 之前（顺序即层叠，被悄悄改掉）",
-    file: path.join(F.stylesDir, "index.scss"),
+    name: '把 @use 顺序里的 music 提到 manga 之前（顺序即层叠，被悄悄改掉）',
+    file: path.join(F.stylesDir, 'index.scss'),
     find: "@use 'manga.scss';\n@use 'settings.scss';\n@use 'components.scss';\n@use 'music.scss';",
     replace: "@use 'music.scss';\n@use 'manga.scss';\n@use 'settings.scss';\n@use 'components.scss';",
-    expect: ["STYLE.useOrder"],
+    expect: ['STYLE.useOrder'],
   },
   {
-    name: "把入口的 @use 指回 .css（旧 app.css/base.css 复活，分层名存实亡）",
-    file: path.join(F.stylesDir, "index.scss"),
+    name: '把入口的 @use 指回 .css（旧 app.css/base.css 复活，分层名存实亡）',
+    file: path.join(F.stylesDir, 'index.scss'),
     find: "@use 'base.scss';",
     replace: "@use 'base.css';",
-    expect: ["STYLE.entryIsScss"],
+    expect: ['STYLE.entryIsScss'],
   },
   {
     // 放错分片的真实动机是「懒得翻文件」，所以反证就模拟这个动作
-    name: "把音乐的选择器塞进 manga.scss（模块私有样式放错分片）",
-    file: path.join(F.stylesDir, "manga.scss"),
-    find: "/* ================================================================ X-C1 任务队列 */",
-    replace: ".music-queue-fake { color: red; }\n/* ================================================================ X-C1 任务队列 */",
-    expect: ["STYLE.shardOwnership"],
+    name: '把音乐的选择器塞进 manga.scss（模块私有样式放错分片）',
+    file: path.join(F.stylesDir, 'manga.scss'),
+    find: '/* ================================================================ X-C1 任务队列 */',
+    replace:
+      '.music-queue-fake { color: red; }\n/* ================================================================ X-C1 任务队列 */',
+    expect: ['STYLE.shardOwnership'],
   },
   {
-    name: "在分片里用 SCSS 变量承载颜色（令牌只走 var(--md-*)，否则深色模式就不成立了）",
-    file: path.join(F.stylesDir, "music.scss"),
-    find: "/* ================================================================ 音乐屏",
-    replace: "$brand: #ffe066;\n/* ================================================================ 音乐屏",
-    expect: ["STYLE.noScssSyntax"],
+    name: '在分片里用 SCSS 变量承载颜色（令牌只走 var(--md-*)，否则深色模式就不成立了）',
+    file: path.join(F.stylesDir, 'music.scss'),
+    find: '/* ================================================================ 音乐屏',
+    replace: '$brand: #ffe066;\n/* ================================================================ 音乐屏',
+    expect: ['STYLE.noScssSyntax'],
   },
   {
-    name: "在分片里写嵌套选择器（会改块结构 → 检查脚本的正则取块判据失效）",
-    file: path.join(F.stylesDir, "music.scss"),
-    find: "/* ================================================================ 音乐屏",
-    replace: ".music-exp { &:hover { color: red; } }\n/* ================================================================ 音乐屏",
-    expect: ["STYLE.noScssSyntax"],
+    name: '在分片里写嵌套选择器（会改块结构 → 检查脚本的正则取块判据失效）',
+    file: path.join(F.stylesDir, 'music.scss'),
+    find: '/* ================================================================ 音乐屏',
+    replace:
+      '.music-exp { &:hover { color: red; } }\n/* ================================================================ 音乐屏',
+    expect: ['STYLE.noScssSyntax'],
   },
 ];
 
 // ── 主流程 ────────────────────────────────────────────────────────────────
-const refute = process.argv.includes("--refute");
+const refute = process.argv.includes('--refute');
 
-console.log(
-  "公共组件抽离（components/units）结构断言" + (refute ? " · 反证轮" : ""),
-);
+console.log('公共组件抽离（components/units）结构断言' + (refute ? ' · 反证轮' : ''));
 console.log(`根目录：${ROOT}`);
 console.log(`断言总数：${A.length}（LAYOUT/PURITY/NAMING/CALLERS/KEEP/HOOKS/ALIAS/STATE/ISLAND/TOOLTIP/ZOOM）`);
 
 if (!refute) {
   const res = runAll(loadSources());
   const { pass, fail } = printGrouped(res);
-  console.log("\n" + "─".repeat(56));
+  console.log('\n' + '─'.repeat(56));
   console.log(`通过 ${pass} / 失败 ${fail}`);
   if (fail > 0) {
-    console.log(
-      "\n下一步：逐条看上面 ✗ 的 detail —— 是脚本写错还是真实抽离缺口，勿为转绿而放宽断言。",
-    );
+    console.log('\n下一步：逐条看上面 ✗ 的 detail —— 是脚本写错还是真实抽离缺口，勿为转绿而放宽断言。');
   }
   process.exitCode = fail === 0 ? 0 : 1;
 } else {
@@ -1790,9 +1728,7 @@ if (!refute) {
   const applied = []; // {kind, ...} 用于最终恢复校验
   const restoreErrors = []; // 恢复动作本身失败（不许抛，见下面的 finally）
 
-  console.log(
-    `\n破坏源文件 → 断言必须变红 → 按字节恢复（应执行 ${expectedTotal} 条）\n`,
-  );
+  console.log(`\n破坏源文件 → 断言必须变红 → 按字节恢复（应执行 ${expectedTotal} 条）\n`);
 
   for (const mut of MUTATIONS) {
     let okApply = true;
@@ -1801,53 +1737,45 @@ if (!refute) {
       if (mut.from) {
         // 改名
         if (!existsSync(mut.from)) {
-          console.log(
-            `⚠ ${mut.name}\n    源文件不存在：${path.relative(ROOT, mut.from)} —— 本条无法反证`,
-          );
+          console.log(`⚠ ${mut.name}\n    源文件不存在：${path.relative(ROOT, mut.from)} —— 本条无法反证`);
           okApply = false;
           skipped += mut.expect.length;
         } else {
           const original = readBytes(mut.from);
-          record = { kind: "rename", from: mut.from, to: mut.to, original };
+          record = { kind: 'rename', from: mut.from, to: mut.to, original };
           renameSync(mut.from, mut.to);
         }
       } else if (mut.create) {
         if (existsSync(mut.create)) {
-          console.log(
-            `⚠ ${mut.name}\n    ${path.relative(ROOT, mut.create)} 已存在 —— 本条无法反证`,
-          );
+          console.log(`⚠ ${mut.name}\n    ${path.relative(ROOT, mut.create)} 已存在 —— 本条无法反证`);
           okApply = false;
           skipped += mut.expect.length;
         } else {
-          record = { kind: "create", file: mut.create };
+          record = { kind: 'create', file: mut.create };
           writeFileSync(mut.create, mut.content);
         }
       } else {
         const original = readBytes(mut.file);
         if (original == null) {
-          console.log(
-            `⚠ ${mut.name}\n    文件不存在：${path.relative(ROOT, mut.file)} —— 本条无法反证`,
-          );
+          console.log(`⚠ ${mut.name}\n    文件不存在：${path.relative(ROOT, mut.file)} —— 本条无法反证`);
           okApply = false;
           skipped += mut.expect.length;
         } else {
-          const txt = original.toString("utf8");
+          const txt = original.toString('utf8');
           // 🔴 EOL 折算：本仓 `core.autocrlf=true`（且无 `.gitattributes` 归一），工作区是 **CRLF**，
           //    而下面的锚点字面量写的是 **LF**。不折算时，**任何跨行锚点**都会"锚点未找到" →
           //    该条静默不反证（跳过 ≠ 通过）。2026-10-07 实测：Windows 上因此有 9 条长期被跳过
           //    （vite/tsconfig 的别名、index.scss 的 @use、music/Toast 的多行锚点），
           //    而"能跑绿的 26 条"掩盖了这件事 —— 正是本项目最警惕的「覆盖率幻觉」。
-          const eol = txt.includes("\r\n") ? "\r\n" : "\n";
-          const find = mut.find.split("\n").join(eol);
-          const repl = mut.replace.split("\n").join(eol);
+          const eol = txt.includes('\r\n') ? '\r\n' : '\n';
+          const find = mut.find.split('\n').join(eol);
+          const repl = mut.replace.split('\n').join(eol);
           if (!txt.includes(find)) {
-            console.log(
-              `⚠ ${mut.name}\n    破坏锚点未找到（源文件已变？）—— 本条无法反证`,
-            );
+            console.log(`⚠ ${mut.name}\n    破坏锚点未找到（源文件已变？）—— 本条无法反证`);
             okApply = false;
             skipped += mut.expect.length;
           } else {
-            record = { kind: "edit", file: mut.file, original };
+            record = { kind: 'edit', file: mut.file, original };
             overrideFile(mut.file, txt.replace(find, repl)); // 内存破坏，不写磁盘
           }
         }
@@ -1864,12 +1792,9 @@ if (!refute) {
             console.log(`  ✓ ${id} 按预期变红`);
           } else {
             falsePositives.push(id);
-            console.log(
-              `  ✗ ${id} 该红没红 ← 假阳性（断言测不到它声称捕捉的改错）`,
-            );
+            console.log(`  ✗ ${id} 该红没红 ← 假阳性（断言测不到它声称捕捉的改错）`);
           }
-          if (!wasGreenBase[id])
-            console.log(`     注：${id} 基线本就是红，无法据此判定断言有效性`);
+          if (!wasGreenBase[id]) console.log(`     注：${id} 基线本就是红，无法据此判定断言有效性`);
         }
       }
     } finally {
@@ -1885,14 +1810,14 @@ if (!refute) {
       //   所以：失败的恢复只**登记**，由下面的「恢复校验」段统一判红（那里本来就会读盘复核）。
       if (record) {
         try {
-          if (record.kind === "rename" && existsSync(record.to)) renameSync(record.to, record.from);
-          else if (record.kind === "create" && existsSync(record.file)) unlinkSync(record.file);
-          else if (record.kind === "edit") overrideFile(record.file, null); // 清除内存覆盖（磁盘从未被写）
+          if (record.kind === 'rename' && existsSync(record.to)) renameSync(record.to, record.from);
+          else if (record.kind === 'create' && existsSync(record.file)) unlinkSync(record.file);
+          else if (record.kind === 'edit') overrideFile(record.file, null); // 清除内存覆盖（磁盘从未被写）
         } catch (err) {
           restoreErrors.push({ ...record, error: String(err).slice(0, 200) });
           console.log(
-            `  ⚠ 恢复失败（已登记，稍后统一判红）：${path.relative(ROOT, record.file ?? record.from)}`
-            + ` —— ${String(err).slice(0, 160)}`,
+            `  ⚠ 恢复失败（已登记，稍后统一判红）：${path.relative(ROOT, record.file ?? record.from)}` +
+              ` —— ${String(err).slice(0, 160)}`,
           );
         }
         applied.push(record);
@@ -1901,59 +1826,38 @@ if (!refute) {
   }
 
   // 恢复校验：改过的按字节比对；改名的确认回位；新建的确认已删除
-  console.log("\n恢复校验");
+  console.log('\n恢复校验');
   let restoreFail = 0;
   for (const r of applied) {
-    if (r.kind === "edit") {
+    if (r.kind === 'edit') {
       const back = existsSync(r.file) ? readFileSync(r.file) : null; // 直接读磁盘，确认从未被污染
       const same = back != null && back.equals(r.original);
       if (!same) restoreFail++;
-      console.log(
-        `  ${same ? "✓" : "✗"} ${path.relative(ROOT, r.file)} 字节${same ? "一致" : "不一致！"}`,
-      );
-    } else if (r.kind === "rename") {
+      console.log(`  ${same ? '✓' : '✗'} ${path.relative(ROOT, r.file)} 字节${same ? '一致' : '不一致！'}`);
+    } else if (r.kind === 'rename') {
       const back = existsSync(r.from) ? readFileSync(r.from) : null;
       const same = back != null && back.equals(r.original) && !existsSync(r.to);
       if (!same) restoreFail++;
-      console.log(
-        `  ${same ? "✓" : "✗"} ${path.relative(ROOT, r.from)} 已回位且字节${same ? "一致" : "不一致！"}`,
-      );
-    } else if (r.kind === "create") {
+      console.log(`  ${same ? '✓' : '✗'} ${path.relative(ROOT, r.from)} 已回位且字节${same ? '一致' : '不一致！'}`);
+    } else if (r.kind === 'create') {
       const gone = !existsSync(r.file);
       if (!gone) restoreFail++;
-      console.log(
-        `  ${gone ? "✓" : "✗"} ${path.relative(ROOT, r.file)} 临时新建已清除`,
-      );
+      console.log(`  ${gone ? '✓' : '✗'} ${path.relative(ROOT, r.file)} 临时新建已清除`);
     }
   }
 
-  console.log("\n" + "─".repeat(56));
-  console.log(
-    `REFUTE: ${red}/${total} 条按预期变红（应执行 ${expectedTotal} 条）`,
-  );
-  if (total !== expectedTotal)
-    console.log(
-      `✗ 实际执行 ${total} 条 ≠ 写死的 ${expectedTotal} 条（有破坏被静默跳过）`,
-    );
-  if (skipped)
-    console.log(
-      `✗ 有 ${skipped} 条未能反证（锚点未找到/源文件缺席）—— 跳过 ≠ 通过`,
-    );
+  console.log('\n' + '─'.repeat(56));
+  console.log(`REFUTE: ${red}/${total} 条按预期变红（应执行 ${expectedTotal} 条）`);
+  if (total !== expectedTotal) console.log(`✗ 实际执行 ${total} 条 ≠ 写死的 ${expectedTotal} 条（有破坏被静默跳过）`);
+  if (skipped) console.log(`✗ 有 ${skipped} 条未能反证（锚点未找到/源文件缺席）—— 跳过 ≠ 通过`);
   if (restoreFail) console.log(`✗ 有 ${restoreFail} 个文件未恢复到原始字节`);
   if (restoreErrors.length)
     console.log(
-      `✗ 有 ${restoreErrors.length} 个**恢复动作本身**失败（多半是宿主的删除守卫/权限）—— 源码树可能未复原，`
-      + `请先手工核对再重跑：\n    ${restoreErrors
-        .map((r) => `${path.relative(ROOT, r.file ?? r.from)}：${r.error}`)
-        .join("\n    ")}`,
+      `✗ 有 ${restoreErrors.length} 个**恢复动作本身**失败（多半是宿主的删除守卫/权限）—— 源码树可能未复原，` +
+        `请先手工核对再重跑：\n    ${restoreErrors
+          .map((r) => `${path.relative(ROOT, r.file ?? r.from)}：${r.error}`)
+          .join('\n    ')}`,
     );
-  if (falsePositives.length)
-    console.log(`✗ 假阳性：${falsePositives.join(", ")}`);
-  process.exitCode =
-    red === total &&
-    total === expectedTotal &&
-    skipped === 0 &&
-    restoreFail === 0
-      ? 0
-      : 1;
+  if (falsePositives.length) console.log(`✗ 假阳性：${falsePositives.join(', ')}`);
+  process.exitCode = red === total && total === expectedTotal && skipped === 0 && restoreFail === 0 ? 0 : 1;
 }

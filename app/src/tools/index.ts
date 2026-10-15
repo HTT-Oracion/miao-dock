@@ -308,12 +308,7 @@ export function groupSearchResults<T extends SearchChapter>(
     });
   }
 
-  scored.sort(
-    (a, z) =>
-      z.weight - a.weight ||
-      z.rows - a.rows ||
-      a.name.localeCompare(z.name, 'zh-Hans-CN'),
-  );
+  scored.sort((a, z) => z.weight - a.weight || z.rows - a.rows || a.name.localeCompare(z.name, 'zh-Hans-CN'));
 
   const groups = scored.map((s) => s.group);
 

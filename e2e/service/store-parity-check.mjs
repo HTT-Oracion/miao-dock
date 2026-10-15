@@ -50,9 +50,8 @@ const REFUTE = process.argv.includes('--refute');
 // 否则 golden 跨机器（不同用户名 / 不同仓库位置）会假红。
 // 🔴 用正则而非精确串替换：persistedBytes 是 JSON 转义字符串，反斜杠层级不定
 //    （1 层 / 2 层 / 4 层…），`[\\/]+` 一次覆盖任意层级。
-const normStr = (s) => s
-  .replace(/[A-Za-z]:[\\/]+Users[\\/]+[A-Za-z0-9_.-]+/g, '<HOME>')
-  .replaceAll(REPO_ROOT, '<REPO>');
+const normStr = (s) =>
+  s.replace(/[A-Za-z]:[\\/]+Users[\\/]+[A-Za-z0-9_.-]+/g, '<HOME>').replaceAll(REPO_ROOT, '<REPO>');
 
 let passed = 0;
 let failed = 0;
@@ -129,7 +128,9 @@ if (rustReport && golden) {
     check(
       `STORE.pure.${key} — 逐条相同`,
       sameJSON(rustReport.pure[key], golden.pure[key]),
-      sameJSON(rustReport.pure[key], golden.pure[key]) ? undefined : { rust: rustReport.pure[key], golden: golden.pure[key] },
+      sameJSON(rustReport.pure[key], golden.pure[key])
+        ? undefined
+        : { rust: rustReport.pure[key], golden: golden.pure[key] },
     );
   }
 
@@ -145,7 +146,9 @@ if (rustReport && golden) {
     check(
       `STORE.views.${key} — 相同`,
       sameJSON(rustReport.views[key], golden.views[key]),
-      sameJSON(rustReport.views[key], golden.views[key]) ? undefined : { rust: rustReport.views[key], golden: golden.views[key] },
+      sameJSON(rustReport.views[key], golden.views[key])
+        ? undefined
+        : { rust: rustReport.views[key], golden: golden.views[key] },
     );
   }
 
@@ -153,15 +156,16 @@ if (rustReport && golden) {
     check(
       `STORE.plans.${key} — 相同`,
       sameJSON(rustReport.plans[key], golden.plans[key]),
-      sameJSON(rustReport.plans[key], golden.plans[key]) ? undefined : { rust: rustReport.plans[key], golden: golden.plans[key] },
+      sameJSON(rustReport.plans[key], golden.plans[key])
+        ? undefined
+        : { rust: rustReport.plans[key], golden: golden.plans[key] },
     );
   }
 
-  check(
-    'STORE.hidden — 隐藏清单视图相同',
-    sameJSON(rustReport.hidden, golden.hidden),
-    { rust: rustReport.hidden, golden: golden.hidden },
-  );
+  check('STORE.hidden — 隐藏清单视图相同', sameJSON(rustReport.hidden, golden.hidden), {
+    rust: rustReport.hidden,
+    golden: golden.hidden,
+  });
 
   check(
     'STORE.persistedBytes — 落盘字节逐字节相同（归一化 home/仓库路径后）',
@@ -171,8 +175,16 @@ if (rustReport && golden) {
       : { rustLen: rustReport.persistedBytes.length, goldenLen: golden.persistedBytes.length },
   );
 
-  check('STORE.atomic.targetIntactAfterAbort — 中断后目标文件完好', rustReport.atomic.targetIntactAfterAbort === true, rustReport.atomic);
-  check('STORE.atomic.noTmpResidue — 正常原子写无 tmp 残留', rustReport.atomic.noTmpResidue === true, rustReport.atomic);
+  check(
+    'STORE.atomic.targetIntactAfterAbort — 中断后目标文件完好',
+    rustReport.atomic.targetIntactAfterAbort === true,
+    rustReport.atomic,
+  );
+  check(
+    'STORE.atomic.noTmpResidue — 正常原子写无 tmp 残留',
+    rustReport.atomic.noTmpResidue === true,
+    rustReport.atomic,
+  );
   check('STORE.ulidOk — ULID 形状（26 位 Crockford）', rustReport.ulidOk === true);
 }
 
@@ -224,13 +236,19 @@ if (REFUTE) {
   let allRed = true;
   for (const m of mutations) {
     if (!m.red) allRed = false;
-    console.log(`  ${m.red ? '✓' : '✗'} ${m.id} ${m.what} → ${m.red ? '按预期变红' : '**没有红**（断言漏了它）'}${m.info ? ` ${JSON.stringify(m.info)}` : ''}`);
+    console.log(
+      `  ${m.red ? '✓' : '✗'} ${m.id} ${m.what} → ${m.red ? '按预期变红' : '**没有红**（断言漏了它）'}${m.info ? ` ${JSON.stringify(m.info)}` : ''}`,
+    );
   }
   console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed, allRed }));
-  console.log(`\nF3 store 同源：正向 ${passed} / ${passed + failed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`);
+  console.log(
+    `\nF3 store 同源：正向 ${passed} / ${passed + failed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`,
+  );
   process.exit(allRed ? 0 : 1);
 }
 
 console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed }));
-console.log(`\nF3 store 同源：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`);
+console.log(
+  `\nF3 store 同源：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`,
+);
 process.exit(failed === 0 ? 0 : 1);

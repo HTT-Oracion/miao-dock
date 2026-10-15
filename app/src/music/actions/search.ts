@@ -3,7 +3,13 @@ import * as platform from '@music/platform';
 import { songKey } from '@music/convert';
 import type { MusicState, StoreGet, StoreSet } from '@music/slice';
 
-export const createSearchSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 'setSearchText' | 'setSearchTab' | 'search' | 'loadMoreSearch' | 'searchArtists' | 'searchPlaylists' | 'clearSearch'> => ({
+export const createSearchSlice = (
+  set: StoreSet,
+  get: StoreGet,
+): Pick<
+  MusicState,
+  'setSearchText' | 'setSearchTab' | 'search' | 'loadMoreSearch' | 'searchArtists' | 'searchPlaylists' | 'clearSearch'
+> => ({
   setSearchText: (t) => set({ searchText: t }),
   setSearchTab: (t) => set({ searchTab: t }),
 

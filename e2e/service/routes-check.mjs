@@ -155,7 +155,9 @@ function run(cmd, args, env) {
     c.stdout.on('data', (d) => (out += d));
     c.stderr.on('data', (d) => (err += d));
     c.on('error', reject);
-    c.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(`${cmd} 退出码 ${code}：${err.slice(0, 800)}`))));
+    c.on('close', (code) =>
+      code === 0 ? resolve(out) : reject(new Error(`${cmd} 退出码 ${code}：${err.slice(0, 800)}`)),
+    );
   });
 }
 
@@ -206,7 +208,10 @@ function startPureRust(extraEnv = {}) {
   });
   return new Promise((resolve, reject) => {
     let buf = '';
-    const to = setTimeout(() => { child.kill(); reject(new Error('boxsvc 15s 内未就绪')); }, 15000);
+    const to = setTimeout(() => {
+      child.kill();
+      reject(new Error('boxsvc 15s 内未就绪'));
+    }, 15000);
     child.stdout.on('data', (d) => {
       buf += d;
       const m = /MIAO_READY (\{.*\})/.exec(buf);
@@ -217,7 +222,10 @@ function startPureRust(extraEnv = {}) {
       }
     });
     child.stderr.on('data', (d) => (buf += d));
-    child.on('close', (code) => { clearTimeout(to); reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 500)}`)); });
+    child.on('close', (code) => {
+      clearTimeout(to);
+      reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 500)}`));
+    });
   });
 }
 
@@ -234,15 +242,29 @@ if (table) {
   const ids = table.routes.map((r) => r.id);
   // ROUTES.table
   const dup = ids.filter((x, i) => ids.indexOf(x) !== i);
-  const badGroup = table.routes.filter((r) => !['health', 'tasks', 'queue', 'engine', 'translate', 'library'].includes(r.group));
+  const badGroup = table.routes.filter(
+    (r) => !['health', 'tasks', 'queue', 'engine', 'translate', 'library'].includes(r.group),
+  );
   const migratedRows = table.routes.filter((r) => r.tier === 'migrated').length;
   const forwardedRows = table.routes.filter((r) => r.tier === 'forwarded').length;
   check('ROUTES.table — id 无重复', dup.length === 0, dup);
-  check('ROUTES.table — group 取值合法', badGroup.length === 0, badGroup.map((r) => r.id));
+  check(
+    'ROUTES.table — group 取值合法',
+    badGroup.length === 0,
+    badGroup.map((r) => r.id),
+  );
   check(
     'ROUTES.table — 计数自洽（migratedCount/forwardedCount = 各行分类之和）',
-    table.migratedCount === migratedRows && table.forwardedCount === forwardedRows && migratedRows + forwardedRows === table.routes.length,
-    { migratedCount: table.migratedCount, migratedRows, forwardedCount: table.forwardedCount, forwardedRows, rows: table.routes.length },
+    table.migratedCount === migratedRows &&
+      table.forwardedCount === forwardedRows &&
+      migratedRows + forwardedRows === table.routes.length,
+    {
+      migratedCount: table.migratedCount,
+      migratedRows,
+      forwardedCount: table.forwardedCount,
+      forwardedRows,
+      rows: table.routes.length,
+    },
   );
   // ROUTES.coverage（双向覆盖）
   const cov = diffCoverage(ids, EXPECTED);
@@ -329,12 +351,17 @@ if (table) {
   }
 
   // F5 完成门（默认只报告；--final 时强制）
-  const injected = (process.env.MIAO_ROUTE_REFUTE || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const injected = (process.env.MIAO_ROUTE_REFUTE || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   const gate = gateFinal(table.forwardedCount, injected);
   if (FINAL) {
     check('ROUTES.final — 转发分支数 = 0（F5 完成门）', gate, { forwardedCount: table.forwardedCount, injected });
   } else {
-    console.log(`  ℹ F5 完成门：${gate ? '已达成（转发=0）' : `未达成（仍有 ${table.forwardedCount} 条转发）`}（加 --final 强制）`);
+    console.log(
+      `  ℹ F5 完成门：${gate ? '已达成（转发=0）' : `未达成（仍有 ${table.forwardedCount} 条转发）`}（加 --final 强制）`,
+    );
   }
 }
 
@@ -371,13 +398,19 @@ if (REFUTE) {
     {
       id: 'M2',
       what: '独立预言去掉一条 ⇒ coverage 变红',
-      run: () => diffCoverage(ids, EXPECTED.filter((x) => x !== 'GET /api/v1/queue')).some((x) => x.startsWith('表多')),
+      run: () =>
+        diffCoverage(
+          ids,
+          EXPECTED.filter((x) => x !== 'GET /api/v1/queue'),
+        ).some((x) => x.startsWith('表多')),
     },
     {
       id: 'M3',
       what: '一条 Migrated 端点谎报已实现（无实现的占位体）⇒ migrated 断言变红',
       run: () => {
-        const body = JSON.stringify({ error: { code: 'INTERNAL', message: '端点 X 在路由表里声明为已迁移，但尚无实现' } });
+        const body = JSON.stringify({
+          error: { code: 'INTERNAL', message: '端点 X 在路由表里声明为已迁移，但尚无实现' },
+        });
         return body.includes('尚无实现');
       },
     },
@@ -398,10 +431,14 @@ if (REFUTE) {
   }
   if (injectedErr) console.log(`  ⚠ M1 的注入读取失败：${injectedErr}`);
   console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed, allRed }));
-  console.log(`\nF5 路由表/转发计数：正向 ${passed} / ${passed + failed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`);
+  console.log(
+    `\nF5 路由表/转发计数：正向 ${passed} / ${passed + failed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`,
+  );
   process.exit(allRed ? 0 : 1);
 }
 
 console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed }));
-console.log(`\nF5 路由表/转发计数：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`);
+console.log(
+  `\nF5 路由表/转发计数：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`,
+);
 process.exit(failed === 0 ? 0 : 1);

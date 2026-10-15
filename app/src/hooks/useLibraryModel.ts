@@ -11,11 +11,13 @@ import { useToasts } from '@hooks';
 import { useDebouncedValue } from '@hooks/useDebouncedValue';
 import { apiGet, isApiError } from '@/ipc';
 import { fuzzyMatch, groupSearchResults, pageCount, pageSlice } from '@tools';
-import type {
-  BookEntry, ChapterEntry, ComicEntry, LibraryResponse, RetranslatePlan, TaskRow,
-} from '@/types';
+import type { BookEntry, ChapterEntry, ComicEntry, LibraryResponse, RetranslatePlan, TaskRow } from '@/types';
 import {
-  bookFirstImagePath, chapterFilePath, coverPath, filePath, topLevelFirstImagePath,
+  bookFirstImagePath,
+  chapterFilePath,
+  coverPath,
+  filePath,
+  topLevelFirstImagePath,
 } from '@screens/library/blob';
 import type { PageView } from '@screens/library/blob';
 import { CHAPTER_PAGE_SIZE, GRID_PAGE_SIZE, LIB_PAGE_SIZE } from '@screens/library/libModel';
@@ -38,31 +40,31 @@ export function useLibraryModel({
   onNewBookHandled?: () => void;
   refreshKey: number;
 }) {
-/** 整本 / 未归并单话的投影：取图走**顶层**端点（与旧口径一致） */
-function flatViewOf(c: ComicEntry): PageView {
-  return {
-    base: `/library/${encodeURIComponent(c.comicName)}`,
-    comicName: c.comicName,
-    seqMax: c.seqMax,
-    translatedSeqs: c.translatedSeqs,
-    missingSeqs: c.missingSeqs,
-    imagePath: (seq, variant) => filePath(c.comicName, seq, variant),
-  };
-}
+  /** 整本 / 未归并单话的投影：取图走**顶层**端点（与旧口径一致） */
+  function flatViewOf(c: ComicEntry): PageView {
+    return {
+      base: `/library/${encodeURIComponent(c.comicName)}`,
+      comicName: c.comicName,
+      seqMax: c.seqMax,
+      translatedSeqs: c.translatedSeqs,
+      missingSeqs: c.missingSeqs,
+      imagePath: (seq, variant) => filePath(c.comicName, seq, variant),
+    };
+  }
 
-/** 大类里一话的投影：取图走**话级**端点（`GET /library/{书}/chapters/{话}/files/{seq}`） */
-function chapterViewOf(b: BookEntry, ch: ChapterEntry): PageView {
-  // 屏 C 的入口（话卡）对 `no === null` 是禁用的，走到这里话号必在；`?? 0` 只是让类型闭合
-  const no = ch.no ?? 0;
-  return {
-    base: `/library/${encodeURIComponent(b.bookName)}/chapters/${no}`,
-    comicName: `${b.bookName} · 第 ${no} 话`,
-    seqMax: ch.seqMax,
-    translatedSeqs: ch.translatedSeqs,
-    missingSeqs: ch.missingSeqs,
-    imagePath: (seq, variant) => chapterFilePath(b.bookName, no, seq, variant),
-  };
-}
+  /** 大类里一话的投影：取图走**话级**端点（`GET /library/{书}/chapters/{话}/files/{seq}`） */
+  function chapterViewOf(b: BookEntry, ch: ChapterEntry): PageView {
+    // 屏 C 的入口（话卡）对 `no === null` 是禁用的，走到这里话号必在；`?? 0` 只是让类型闭合
+    const no = ch.no ?? 0;
+    return {
+      base: `/library/${encodeURIComponent(b.bookName)}/chapters/${no}`,
+      comicName: `${b.bookName} · 第 ${no} 话`,
+      seqMax: ch.seqMax,
+      translatedSeqs: ch.translatedSeqs,
+      missingSeqs: ch.missingSeqs,
+      imagePath: (seq, variant) => chapterFilePath(b.bookName, no, seq, variant),
+    };
+  }
 
   const { push: onToast } = useToasts();
   const [active, setActive] = useState<string | null>(null);
@@ -147,9 +149,7 @@ function chapterViewOf(b: BookEntry, ch: ChapterEntry): PageView {
             chapterCount: b.chapterCount,
             pageCount: b.totalPages,
             // 有封面用封面，没有就退回首话首图（设计稿 §7.1 左）
-            thumbPath: b.coverPath
-              ? coverPath(b.bookName, b.modifiedAt)
-              : bookFirstImagePath(b.bookName, b.chapters),
+            thumbPath: b.coverPath ? coverPath(b.bookName, b.modifiedAt) : bookFirstImagePath(b.bookName, b.chapters),
             merged: true,
           })),
           ...others.map<LibItem>((o) => ({
@@ -280,10 +280,7 @@ function chapterViewOf(b: BookEntry, ch: ChapterEntry): PageView {
    * 调用方按「不在话内」处理、退回屏 B —— 而不是白屏。
    */
   const currentChapter = useMemo(
-    () =>
-      currentBook && chapterNo !== null
-        ? currentBook.chapters.find((c) => c.no === chapterNo) ?? null
-        : null,
+    () => (currentBook && chapterNo !== null ? (currentBook.chapters.find((c) => c.no === chapterNo) ?? null) : null),
     [currentBook, chapterNo],
   );
   /** 是否在话内（屏 C）。`currentChapter` 非空 ⇒ `currentBook` 也非空，二者同涨同落 */
@@ -306,7 +303,12 @@ function chapterViewOf(b: BookEntry, ch: ChapterEntry): PageView {
     setGridPage((p) => (p > gridPages ? gridPages : p));
   }, [gridPages]);
   const gridSeqs = useMemo(
-    () => pageSlice(Array.from({ length: seqMax }, (_, i) => i + 1), gridPage, GRID_PAGE_SIZE),
+    () =>
+      pageSlice(
+        Array.from({ length: seqMax }, (_, i) => i + 1),
+        gridPage,
+        GRID_PAGE_SIZE,
+      ),
     [seqMax, gridPage],
   );
 

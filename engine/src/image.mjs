@@ -6,17 +6,23 @@
  */
 export function sniffImageType(buf) {
   if (!Buffer.isBuffer(buf) || buf.length === 0) return null;
-  if (buf.length >= 8 &&
-      buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47 &&
-      buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a) {
+  if (
+    buf.length >= 8 &&
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47 &&
+    buf[4] === 0x0d &&
+    buf[5] === 0x0a &&
+    buf[6] === 0x1a &&
+    buf[7] === 0x0a
+  ) {
     return 'png';
   }
   if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
     return 'jpg';
   }
-  if (buf.length >= 12 &&
-      buf.toString('latin1', 0, 4) === 'RIFF' &&
-      buf.toString('latin1', 8, 12) === 'WEBP') {
+  if (buf.length >= 12 && buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP') {
     return 'webp';
   }
   return null;
@@ -45,17 +51,21 @@ function readPngSize(buf) {
 function readJpegSize(buf) {
   let i = 2;
   while (i + 9 < buf.length) {
-    if (buf[i] !== 0xff) { i++; continue; }
+    if (buf[i] !== 0xff) {
+      i++;
+      continue;
+    }
     const marker = buf[i + 1];
     if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
       i += 2;
       continue;
     }
     const len = buf.readUInt16BE(i + 2);
-    const isSof = (marker >= 0xc0 && marker <= 0xc3) ||
-                  (marker >= 0xc5 && marker <= 0xc7) ||
-                  (marker >= 0xc9 && marker <= 0xcb) ||
-                  (marker >= 0xcd && marker <= 0xcf);
+    const isSof =
+      (marker >= 0xc0 && marker <= 0xc3) ||
+      (marker >= 0xc5 && marker <= 0xc7) ||
+      (marker >= 0xc9 && marker <= 0xcb) ||
+      (marker >= 0xcd && marker <= 0xcf);
     if (isSof) {
       const height = buf.readUInt16BE(i + 5);
       const width = buf.readUInt16BE(i + 7);

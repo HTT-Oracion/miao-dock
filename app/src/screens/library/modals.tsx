@@ -153,10 +153,7 @@ export function NewBookModal({
  * 服务端也正是按"一次请求完成一类动作"设计的（`POST /cover` 同时带 author）。
  */
 export type BookMetaIntent =
-  | { kind: 'meta' }
-  | { kind: 'cover-local'; srcPath: string }
-  | { kind: 'cover-first' }
-  | { kind: 'cover-remove' };
+  { kind: 'meta' } | { kind: 'cover-local'; srcPath: string } | { kind: 'cover-first' } | { kind: 'cover-remove' };
 
 /** 封面来源：保留现状 / 换成本地图片 / 取第 1 话首图 / 移除 */
 type CoverSource = 'keep' | 'local' | 'first' | 'remove';
@@ -194,8 +191,7 @@ export function EditBookModal({
     return null; // local 见下方说明；remove 就是"没有封面"
   })();
   const blob = useBlobUrl(previewPath);
-  const canRemove =
-    source !== 'remove' && (source !== 'keep' || book.coverPath !== null);
+  const canRemove = source !== 'remove' && (source !== 'keep' || book.coverPath !== null);
 
   const pickLocal = async () => {
     const picked = await open({
@@ -438,7 +434,6 @@ export function MergeModal({
   );
 }
 
-
 // ------------------------------------------------------------------ 7.6.4 编辑话数
 
 /**
@@ -528,13 +523,11 @@ export function EditChapterNoModal({
       ) : null}
 
       <div className="modal-hint">
-        预览：第 <span className="num">{chapter.no}</span> 话 → 第{' '}
-        <span className="num">{noOk ? no : '?'}</span> 话（目录名改名{' '}
-        {noOk && !unchanged ? `${padChapterNo(chapter.no ?? 0)}_… → ${padChapterNo(no)}_第${no}话` : '—'}）
+        预览：第 <span className="num">{chapter.no}</span> 话 → 第 <span className="num">{noOk ? no : '?'}</span>{' '}
+        话（目录名改名 {noOk && !unchanged ? `${padChapterNo(chapter.no ?? 0)}_… → ${padChapterNo(no)}_第${no}话` : '—'}
+        ）
       </div>
-      <div className="modal-hint">
-        本话的页文件原地保留，只有所在文件夹改名；该话有任务在跑时会拒绝改号。
-      </div>
+      <div className="modal-hint">本话的页文件原地保留，只有所在文件夹改名；该话有任务在跑时会拒绝改号。</div>
     </Modal>
   );
 }
@@ -562,7 +555,11 @@ export function DeleteComicModal({
   const [deleteFiles, setDeleteFiles] = useState(false);
   return (
     <Modal
-      title={<>删除{kind}「{comic.comicName}」</>}
+      title={
+        <>
+          删除{kind}「{comic.comicName}」
+        </>
+      }
       busy={busy}
       onClose={onCancel}
       actions={
@@ -626,8 +623,7 @@ export function HiddenComicsModal({
         </Btn>
       }
     >
-      这些漫画的**目录还在磁盘上**，只是被「删除（未勾选删除本地文件）」从库里隐藏了。
-      点「恢复」即可让它们重新出现。
+      这些漫画的**目录还在磁盘上**，只是被「删除（未勾选删除本地文件）」从库里隐藏了。 点「恢复」即可让它们重新出现。
       <div className="hidden-list">
         {hidden.map((name) => (
           <div key={name} className="hidden-row">

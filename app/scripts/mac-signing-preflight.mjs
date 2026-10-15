@@ -81,13 +81,17 @@ const env = {
   APPLE_PASSWORD: process.env.APPLE_PASSWORD,
   APPLE_TEAM_ID: process.env.APPLE_TEAM_ID,
 };
-const missing = Object.entries(env).filter(([, v]) => !String(v ?? '').trim()).map(([k]) => k);
+const missing = Object.entries(env)
+  .filter(([, v]) => !String(v ?? '').trim())
+  .map(([k]) => k);
 if (missing.length) {
   if (notarize) {
-    problems.push(`缺签名/公证所需的变量：${missing.join('、')} —— ` +
-      '缺 APPLE_SIGNING_IDENTITY 会产出 ad-hoc 签名的包（本机不报错、别人机器上被拦）；' +
-      '缺公证三件套时 tauri 会**跳过**公证而不是报错 ⇒ 包装得上、跑不起来。' +
-      '本机自用打包请显式设 MIAO_NOTARIZE=0。');
+    problems.push(
+      `缺签名/公证所需的变量：${missing.join('、')} —— ` +
+        '缺 APPLE_SIGNING_IDENTITY 会产出 ad-hoc 签名的包（本机不报错、别人机器上被拦）；' +
+        '缺公证三件套时 tauri 会**跳过**公证而不是报错 ⇒ 包装得上、跑不起来。' +
+        '本机自用打包请显式设 MIAO_NOTARIZE=0。',
+    );
   } else {
     warnings.push(`MIAO_NOTARIZE=0：本次不公证，缺 ${missing.join('、')} —— 产物只能本机自用，不得对外分发`);
   }
@@ -99,4 +103,6 @@ if (problems.length) {
   for (const p of problems) console.error(`  · ${p}`);
   process.exit(1);
 }
-console.log(`✓ 打包前自检通过（hardenedRuntime + entitlements 四项就位${notarize ? '，签名/公证变量齐' : '，本次不公证'}）`);
+console.log(
+  `✓ 打包前自检通过（hardenedRuntime + entitlements 四项就位${notarize ? '，签名/公证变量齐' : '，本次不公证'}）`,
+);

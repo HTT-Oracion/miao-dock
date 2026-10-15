@@ -89,7 +89,9 @@ export function SpectrumScene({ active, isPlaying, deep, light }: SpectrumSceneP
 
       // 暂停或没有图时：用下限电平画一条静止的基线（"静止回落"）
       const levels =
-        node && isPlaying ? readLevels(node, BAR_COUNT, IDLE_LEVEL) : (new Array(BAR_COUNT).fill(IDLE_LEVEL) as number[]);
+        node && isPlaying
+          ? readLevels(node, BAR_COUNT, IDLE_LEVEL)
+          : (new Array(BAR_COUNT).fill(IDLE_LEVEL) as number[]);
 
       // 横向基线网格（低成本地给出"地形"的纵深感）
       ctx.strokeStyle = 'rgba(255,255,255,0.05)';

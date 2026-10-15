@@ -24,14 +24,7 @@ export function IconButton({
 }) {
   const cls = ['ui-cbtn', primary ? 'main' : '', active ? 'is-on' : ''].filter(Boolean).join(' ');
   return (
-    <button
-      type="button"
-      className={cls}
-      title={title}
-      aria-label={title}
-      disabled={disabled}
-      onClick={onClick}
-    >
+    <button type="button" className={cls} title={title} aria-label={title} disabled={disabled} onClick={onClick}>
       {children}
     </button>
   );

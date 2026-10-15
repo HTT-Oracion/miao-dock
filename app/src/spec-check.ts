@@ -240,7 +240,10 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     add(
       'C5',
       `漫画库：左栏 ${LIBRARY.leftColumnWidth}；网格卡 ${LIBRARY.card.w}×${LIBRARY.card.h} r${LIBRARY.card.radius}`,
-      near(lw, LIBRARY.leftColumnWidth) && near(cw, LIBRARY.card.w) && near(ch, LIBRARY.card.h) && near(cr, LIBRARY.card.radius),
+      near(lw, LIBRARY.leftColumnWidth) &&
+        near(cw, LIBRARY.card.w) &&
+        near(ch, LIBRARY.card.h) &&
+        near(cr, LIBRARY.card.radius),
       `左栏 ${lw.toFixed(0)} / 卡 ${cw.toFixed(0)}×${ch.toFixed(0)} r${cr}`,
     );
   }
@@ -393,9 +396,7 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
      * 而结构（恒 2 项、顺序「漫画翻译 → 音乐」）与有没有文字是**两件事**，本该分开判。
      * 换成可访问名称后，两种形态下判据都成立，口径也与读屏一致。
      */
-    const names = appItems.map((e) =>
-      (e.getAttribute('aria-label') ?? e.getAttribute('title') ?? '').trim(),
-    );
+    const names = appItems.map((e) => (e.getAttribute('aria-label') ?? e.getAttribute('title') ?? '').trim());
     add(
       'C8a',
       '侧栏应用层恒为 2 项且顺序为「漫画翻译 → 音乐」（按可访问名称判，与是否显示文字无关）',
@@ -468,7 +469,10 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
         [SIDEBAR.appItem, SIDEBAR.iconOnlyItem].every((s) => s.w >= minTouch && s.h >= minTouch),
       geoms.length > 0
         ? geoms
-            .map((g) => `${g.hasText ? '图标+文字' : '纯图标'} ${g.w.toFixed(0)}×${g.h.toFixed(0)}${g.ok ? '' : ' ← 与形态不符'}`)
+            .map(
+              (g) =>
+                `${g.hasText ? '图标+文字' : '纯图标'} ${g.w.toFixed(0)}×${g.h.toFixed(0)}${g.ok ? '' : ' ← 与形态不符'}`,
+            )
             .join(' / ')
         : '未找到应用入口',
     );
@@ -486,7 +490,12 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     // 「当前没进翻译应用」不是「Tab 顺序错了」，混为一谈会让断言变成噪声。
     const tabs = Array.from(document.querySelectorAll('.viewtabs .viewtab'));
     if (tabs.length === 0) {
-      add('C9', '视图 Tab 顺序恒为「投放 → 队列 → 漫画库」', true, '当前不在翻译应用内，Tab 未渲染（跳过，非通过依据）');
+      add(
+        'C9',
+        '视图 Tab 顺序恒为「投放 → 队列 → 漫画库」',
+        true,
+        '当前不在翻译应用内，Tab 未渲染（跳过，非通过依据）',
+      );
     } else {
       const texts = tabs.map((e) => (e.textContent ?? '').trim());
       const want = TRANSLATE_VIEWS.map((v) => v.label);
@@ -528,7 +537,9 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
       );
 
       // 一次只渲染一个分组。用「壳内除 nav/main 外无第三个结构子元素」+ 「右栏只挂载一组」判断。
-      const renderedSections = shellKids.filter((k) => !k.classList.contains('settings-nav') && !k.classList.contains('settings-main'));
+      const renderedSections = shellKids.filter(
+        (k) => !k.classList.contains('settings-nav') && !k.classList.contains('settings-main'),
+      );
       const headings = main.querySelectorAll('.settings-head').length;
       add(
         'C10b',
@@ -542,7 +553,11 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
         'C10c',
         '分组恒为 5 项（①通用 ②翻译服务 ③播放·媒体 ④资源与投放 ⑤关于）',
         navItems.length === 5,
-        `左栏 ${navItems.length} 项：${Array.from(navItems).map((e) => (e.querySelector('.set-nav-label')?.textContent ?? '').trim()).join(' / ') || '无'}`,
+        `左栏 ${navItems.length} 项：${
+          Array.from(navItems)
+            .map((e) => (e.querySelector('.set-nav-label')?.textContent ?? '').trim())
+            .join(' / ') || '无'
+        }`,
       );
     }
   }

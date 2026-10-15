@@ -6,7 +6,20 @@ import { PAGE_SIZE } from '@music/slice';
 import type { MusicState, StoreGet, StoreSet } from '@music/slice';
 import type { Playlist, Song } from '@music/types';
 
-export const createRightSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 'setRightView' | 'loadCharts' | 'loadRecommend' | 'openRightPlaylist' | 'openRightChart' | 'loadMoreRight' | 'backToRecommendations' | 'togglePlaylistSubscribe'> => ({
+export const createRightSlice = (
+  set: StoreSet,
+  get: StoreGet,
+): Pick<
+  MusicState,
+  | 'setRightView'
+  | 'loadCharts'
+  | 'loadRecommend'
+  | 'openRightPlaylist'
+  | 'openRightChart'
+  | 'loadMoreRight'
+  | 'backToRecommendations'
+  | 'togglePlaylistSubscribe'
+> => ({
   setRightView: (v) => set({ rightView: v }),
 
   /** 官方榜单：网易云用硬编码榜单 ID + 歌单详情拼；酷狗/QQ/咪咕各有榜单列表接口 */
@@ -149,8 +162,7 @@ export const createRightSlice = (set: StoreSet, get: StoreGet): Pick<MusicState,
     }
   },
 
-  backToRecommendations: () =>
-    set({ rightView: 'recommendations', rightPlaylistTracks: [], rightPlaylistMeta: null }),
+  backToRecommendations: () => set({ rightView: 'recommendations', rightPlaylistTracks: [], rightPlaylistMeta: null }),
 
   togglePlaylistSubscribe: async (pl) => {
     if (pl.provider !== 'netease') {
@@ -161,9 +173,7 @@ export const createRightSlice = (set: StoreSet, get: StoreGet): Pick<MusicState,
       await ipc.musicPlaylistSubscribe(pl.id, !pl.subscribed);
       set((s) => ({
         officialCharts: s.officialCharts.map((x) => (x.id === pl.id ? { ...x, subscribed: !x.subscribed } : x)),
-        recommendPlaylists: s.recommendPlaylists.map((x) =>
-          x.id === pl.id ? { ...x, subscribed: !x.subscribed } : x,
-        ),
+        recommendPlaylists: s.recommendPlaylists.map((x) => (x.id === pl.id ? { ...x, subscribed: !x.subscribed } : x)),
         userPlaylists: s.userPlaylists.map((x) => (x.id === pl.id ? { ...x, subscribed: !x.subscribed } : x)),
       }));
       get().toast(pl.subscribed ? '已取消收藏' : '已收藏歌单', 'success');

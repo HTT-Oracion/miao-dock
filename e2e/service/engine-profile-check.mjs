@@ -114,7 +114,10 @@ function check(id, ok, detail) {
   results.push({ id, ok: !!ok, detail: detail === undefined ? '' : String(detail) });
 }
 const out = { pass: 0, fail: 0 };
-function emit() { out.pass = results.filter((r) => r.ok).length; out.fail = results.length - out.pass; }
+function emit() {
+  out.pass = results.filter((r) => r.ok).length;
+  out.fail = results.length - out.pass;
+}
 function printResults(title) {
   emit();
   console.log(`\n### ${title}`);
@@ -133,18 +136,30 @@ function runCargoTest() {
     if (m) tests.set(m[1], m[2]);
   }
   const summary = /test result: \w+\. (\d+) passed; (\d+) failed/.exec(text);
-  return { tests, text, passed: summary ? Number(summary[1]) : null, failed: summary ? Number(summary[2]) : null, code: r.status };
+  return {
+    tests,
+    text,
+    passed: summary ? Number(summary[1]) : null,
+    failed: summary ? Number(summary[2]) : null,
+    code: r.status,
+  };
 }
 
 // ------------------------------------------------------------------ 正向
 
 function runPositive() {
   const t = runCargoTest();
-  check('P1 `cargo test --lib` 全绿（0 失败）—— 具名用例的家已经搬到实现层，本门不再 import Node 模块',
-    t.failed === 0 && t.passed !== null, `passed=${t.passed} failed=${t.failed}`);
+  check(
+    'P1 `cargo test --lib` 全绿（0 失败）—— 具名用例的家已经搬到实现层，本门不再 import Node 模块',
+    t.failed === 0 && t.passed !== null,
+    `passed=${t.passed} failed=${t.failed}`,
+  );
 
-  check(`P2 具名用例条数 == ${EXPECTED_NAMED}（写死；少一条就是"分子绿、分母缩小"）`,
-    NAMED.length === EXPECTED_NAMED, `实际 ${NAMED.length}`);
+  check(
+    `P2 具名用例条数 == ${EXPECTED_NAMED}（写死；少一条就是"分子绿、分母缩小"）`,
+    NAMED.length === EXPECTED_NAMED,
+    `实际 ${NAMED.length}`,
+  );
 
   // 逐条断言：缺一条、或它变红，都能一眼看出是哪条
   for (const name of NAMED) {
@@ -155,8 +170,11 @@ function runPositive() {
 
   // ---- L 组归位指针：它必须**真的**在 check:llm-supervisor 里，而不是"搬家时丢掉"
   const reportSrc = fs.readFileSync(LLM_REPORT, 'utf8');
-  check('P3 L 组归位指针（一）：`_llm-report.mjs` 的 `CASES` 含 `restart` 用例',
-    /name:\s*'restart'\s*,\s*scenario:\s*'restart'/.test(reportSrc), '见 e2e/service/_llm-report.mjs 的 CASES');
+  check(
+    'P3 L 组归位指针（一）：`_llm-report.mjs` 的 `CASES` 含 `restart` 用例',
+    /name:\s*'restart'\s*,\s*scenario:\s*'restart'/.test(reportSrc),
+    '见 e2e/service/_llm-report.mjs 的 CASES',
+  );
 
   let goldenRestart = null;
   try {
@@ -165,13 +183,18 @@ function runPositive() {
   } catch (e) {
     goldenRestart = { __error: String(e.message) };
   }
-  check('P4 L 组归位指针（二）：llm-supervisor golden 含 `restart` 且 `pidChanged=true` / `restarts=1` —— '
-    + '「懒加载恢复真拉起」这件事没在搬家时丢掉',
+  check(
+    'P4 L 组归位指针（二）：llm-supervisor golden 含 `restart` 且 `pidChanged=true` / `restarts=1` —— ' +
+      '「懒加载恢复真拉起」这件事没在搬家时丢掉',
     !!goldenRestart && goldenRestart.pidChanged === true && goldenRestart.restarts === 1,
-    JSON.stringify(goldenRestart));
+    JSON.stringify(goldenRestart),
+  );
 
-  check(`P5 归位说明：L3（父死传播）由 \`check:child-watch\` 的双靶反证覆盖、L0 由 \`${S.split('::tests::')[0]}::tests::l0_watch_host_is_self_when_not_overridden\` 覆盖`,
-    fs.existsSync(path.join(ROOT, 'e2e', 'child-watch-check.mjs')), 'e2e/child-watch-check.mjs');
+  check(
+    `P5 归位说明：L3（父死传播）由 \`check:child-watch\` 的双靶反证覆盖、L0 由 \`${S.split('::tests::')[0]}::tests::l0_watch_host_is_self_when_not_overridden\` 覆盖`,
+    fs.existsSync(path.join(ROOT, 'e2e', 'child-watch-check.mjs')),
+    'e2e/child-watch-check.mjs',
+  );
 }
 
 // ================================================================ 反证轮
@@ -262,7 +285,8 @@ const MUTATIONS = [
     runner: 'cargo',
     file: DOWNGRADE_RS,
     find: '        if inner.used {\n            return Plan { downgrade: false, reason: "already-downgraded".into(), from: None, to: None };\n        }',
-    replace: '        if false {\n            return Plan { downgrade: false, reason: "already-downgraded".into(), from: None, to: None };\n        }',
+    replace:
+      '        if false {\n            return Plan { downgrade: false, reason: "already-downgraded".into(), from: None, to: None };\n        }',
     expect: [`${G}downgrade_walks_down_only_once`, `${G}d8_apply_failure_does_not_roll_back_the_latch`],
   },
   {
@@ -270,7 +294,8 @@ const MUTATIONS = [
     runner: 'cargo',
     file: IDLE_RS,
     find: '    if queued > 0 {\n        return Decision { unload: false, reason: REASON_BUSY_QUEUED.into(), idle_for_ms };\n    }',
-    replace: '    if false {\n        return Decision { unload: false, reason: REASON_BUSY_QUEUED.into(), idle_for_ms };\n    }',
+    replace:
+      '    if false {\n        return Decision { unload: false, reason: REASON_BUSY_QUEUED.into(), idle_for_ms };\n    }',
     expect: [`${I}queue_busy_is_veto_regardless_of_idle`, `${I}i8_queued_task_vetoes_on_the_real_wiring`],
   },
   {
@@ -298,8 +323,9 @@ const MUTATIONS = [
     expect: [`${I}zero_threshold_means_never`],
   },
   {
-    name: 'M14 任务时间戳退回**秒精度**（`now_iso_ms` → `now_iso`）⇒ 「与 Store 构造同一秒内创建的任务」'
-      + '必须变红（精度错配 = 空闲卸载整轮失效）',
+    name:
+      'M14 任务时间戳退回**秒精度**（`now_iso_ms` → `now_iso`）⇒ 「与 Store 构造同一秒内创建的任务」' +
+      '必须变红（精度错配 = 空闲卸载整轮失效）',
     runner: 'cargo',
     file: MODEL_RS,
     find: '            created_at: now_iso_ms(),',
@@ -310,7 +336,9 @@ const MUTATIONS = [
 
 const EXPECTED_MUTATIONS = 14; // 分母写死
 
-function sha(p) { return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex'); }
+function sha(p) {
+  return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+}
 
 /**
  * 锚点 / 替换串按**目标文件的实际行尾**适配。
@@ -326,11 +354,18 @@ function adaptEol(body, text) {
  */
 function runParity({ env = {}, rebuild = true } = {}) {
   if (rebuild) {
-    const build = spawnSync(CARGO, ['build', '--bin', 'boxsvc'], { cwd: SRC_TAURI, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-    if (build.status !== 0) return { built: false, reds: [], tail: `${build.stdout || ''}${build.stderr || ''}`.slice(-400) };
+    const build = spawnSync(CARGO, ['build', '--bin', 'boxsvc'], {
+      cwd: SRC_TAURI,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    if (build.status !== 0)
+      return { built: false, reds: [], tail: `${build.stdout || ''}${build.stderr || ''}`.slice(-400) };
   }
   const r = spawnSync(process.execPath, [LLM_PARITY], {
-    encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, ...env },
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    env: { ...process.env, ...env },
   });
   const text = `${r.stdout || ''}${r.stderr || ''}`;
   const reds = [];
@@ -348,11 +383,20 @@ function runRefute() {
   const restored = [];
   const problems = [];
   const restoreAll = () => {
-    for (const r of restored) { if (!r.done) { fs.writeFileSync(r.file, r.bytes); r.done = true; } }
+    for (const r of restored) {
+      if (!r.done) {
+        fs.writeFileSync(r.file, r.bytes);
+        r.done = true;
+      }
+    }
   };
   /** 编译靶子（`boxsvc`）；失败返回尾部日志。 */
   const buildTarget = () => {
-    const rb = spawnSync(CARGO, ['build', '--bin', 'boxsvc'], { cwd: SRC_TAURI, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    const rb = spawnSync(CARGO, ['build', '--bin', 'boxsvc'], {
+      cwd: SRC_TAURI,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    });
     return rb.status === 0 ? null : `${rb.stdout || ''}${rb.stderr || ''}`.slice(-200);
   };
   // 🔴 源码还原 ≠ 靶子还原：`parity` 条目编译过 `boxsvc`，还原源码后那个**二进制仍是变异版**。
@@ -360,9 +404,15 @@ function runRefute() {
   const restoreAllAndRebuild = () => {
     restoreAll();
     const err = buildTarget();
-    if (err) { problems.push(`还原源码后重编 boxsvc 失败（靶子可能仍是变异版）：${err}`); process.exitCode = 1; }
+    if (err) {
+      problems.push(`还原源码后重编 boxsvc 失败（靶子可能仍是变异版）：${err}`);
+      process.exitCode = 1;
+    }
   };
-  const onSignal = () => { restoreAllAndRebuild(); process.exit(130); };
+  const onSignal = () => {
+    restoreAllAndRebuild();
+    process.exit(130);
+  };
   process.on('SIGINT', onSignal);
   process.on('SIGTERM', onSignal);
 
@@ -374,13 +424,16 @@ function runRefute() {
   } else {
     const base = runParity({ rebuild: false });
     if (!base.built || base.reds.length > 0) {
-      problems.push(`反证轮起点：check:llm-supervisor 基线不全绿（${base.reds.join('、') || '未产出'}）⇒ parity 类条目是假反证`);
+      problems.push(
+        `反证轮起点：check:llm-supervisor 基线不全绿（${base.reds.join('、') || '未产出'}）⇒ parity 类条目是假反证`,
+      );
     } else {
       console.log('起点：check:llm-supervisor 基线全绿（parity 类反证不是空跑）\n');
     }
   }
 
-  let executed = 0; let asExpected = 0;
+  let executed = 0;
+  let asExpected = 0;
   try {
     for (const mut of MUTATIONS) {
       // 有源码锚点 ⇒ 改源码再测；没有（`env` 类）⇒ 直接跑现成靶子。
@@ -427,7 +480,9 @@ function runRefute() {
       console.log(`🔴 ${mut.name}`);
       for (const code of mut.expect) {
         const short = code.split('::tests::').pop();
-        console.log(`   ${reds.includes(code) ? '✓' : '✗'} ${short} ${reds.includes(code) ? '按预期变红' : '**没有变红**'}`);
+        console.log(
+          `   ${reds.includes(code) ? '✓' : '✗'} ${short} ${reds.includes(code) ? '按预期变红' : '**没有变红**'}`,
+        );
       }
       if (note) console.log(`   ⚠ ${note}`);
       if (missed.length === 0) asExpected += 1;
@@ -457,7 +512,11 @@ if (REFUTE) {
   try {
     runPositive();
   } catch (err) {
-    check('RUN 断言脚本未预期崩溃（视为失败：脚本崩溃 ≠ 断言通过）', false, `抛错 ${err?.code || err?.name}: ${err?.message}`);
+    check(
+      'RUN 断言脚本未预期崩溃（视为失败：脚本崩溃 ≠ 断言通过）',
+      false,
+      `抛错 ${err?.code || err?.name}: ${err?.message}`,
+    );
   }
   printResults('汇总（H 硬件/映射 · A 加速后端 · T 设置页档位 · D 降档 · I 空闲卸载 · L0 看守器宿主 · R 真机自检）');
   process.exitCode = out.fail === 0 ? 0 : 1;

@@ -89,9 +89,9 @@ if (!existsSync(BIN)) {
 const locked = screenLocked();
 if (locked === true) {
   console.error(
-    '屏幕现在是锁屏状态，截不到界面 —— 截出来会是锁屏壁纸，尺寸和体积却都「正常」。\n'
-    + '请先解锁屏幕（保持亮着、停在桌面上），再重跑这个脚本。\n'
-    + '（应用侧对空屏有检测，但对锁屏壁纸无效：壁纸不是空屏。这道闸只能在这里拦。）',
+    '屏幕现在是锁屏状态，截不到界面 —— 截出来会是锁屏壁纸，尺寸和体积却都「正常」。\n' +
+      '请先解锁屏幕（保持亮着、停在桌面上），再重跑这个脚本。\n' +
+      '（应用侧对空屏有检测，但对锁屏壁纸无效：壁纸不是空屏。这道闸只能在这里拦。）',
   );
   process.exit(2);
 }
@@ -159,22 +159,24 @@ for (const l of lines) console.log(`  ${l}`);
 const absent = SHOTS.filter(([f]) => !existsSync(path.join(STAGE, f)));
 if (absent.length) {
   console.error(
-    `\n${absent.length} 张没截到：${absent.map(([f, label]) => `${f}（${label}）`).join('、')}\n`
-    + '整批不入库 —— 仓里仍是上一轮验证过的版本。',
+    `\n${absent.length} 张没截到：${absent.map(([f, label]) => `${f}（${label}）`).join('、')}\n` +
+      '整批不入库 —— 仓里仍是上一轮验证过的版本。',
   );
   process.exit(1);
 }
 
 const digests = SHOTS.map(([f]) => [
   f,
-  createHash('sha1').update(readFileSync(path.join(STAGE, f))).digest('hex'),
+  createHash('sha1')
+    .update(readFileSync(path.join(STAGE, f)))
+    .digest('hex'),
 ]);
 const dupes = digests.filter(([, d], i) => digests.findIndex(([, d2]) => d2 === d) !== i);
 if (dupes.length) {
   console.error(
-    `\n有截图内容完全一样（${dupes.map(([f]) => f).join('、')}）—— 界面没变，说明截到的不是这个应用。\n`
-    + '最常见的原因就是屏幕锁了 / 睡着了，截到的是锁屏壁纸或桌面。\n'
-    + '整批不入库 —— 仓里仍是上一轮验证过的版本。',
+    `\n有截图内容完全一样（${dupes.map(([f]) => f).join('、')}）—— 界面没变，说明截到的不是这个应用。\n` +
+      '最常见的原因就是屏幕锁了 / 睡着了，截到的是锁屏壁纸或桌面。\n' +
+      '整批不入库 —— 仓里仍是上一轮验证过的版本。',
   );
   process.exit(1);
 }

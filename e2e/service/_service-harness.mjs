@@ -148,7 +148,11 @@ export function killTree(child) {
       /* 进程已退出 */
     }
   }
-  try { child.kill('SIGTERM'); } catch { /* ignore */ }
+  try {
+    child.kill('SIGTERM');
+  } catch {
+    /* ignore */
+  }
 }
 
 /**

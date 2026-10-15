@@ -47,36 +47,12 @@
       "slash": false
     },
     "orderImages": {
-      "byIndex": [
-        1,
-        0,
-        2
-      ],
-      "byName": [
-        2,
-        0,
-        1
-      ],
-      "empty": [
-        0,
-        1,
-        2
-      ],
-      "exprIndex": [
-        1,
-        0,
-        2
-      ],
-      "trim": [
-        0,
-        1,
-        2
-      ],
-      "unknownKey": [
-        0,
-        1,
-        2
-      ]
+      "byIndex": [1, 0, 2],
+      "byName": [2, 0, 1],
+      "empty": [0, 1, 2],
+      "exprIndex": [1, 0, 2],
+      "trim": [0, 1, 2],
+      "unknownKey": [0, 1, 2]
     },
     "sniffImageType": {
       "empty": null,
@@ -166,14 +142,7 @@
     "translator": "sakura"
   },
   "views": {
-    "batchStatuses": [
-      "canceled",
-      "queued",
-      "running",
-      "partial_failed",
-      "failed",
-      "done"
-    ],
+    "batchStatuses": ["canceled", "queued", "running", "partial_failed", "failed", "done"],
     "create": {
       "batches": [
         {
@@ -515,10 +484,7 @@
     "resume": null,
     "retranslate": null
   },
-  "hidden": [
-    "A Comic",
-    "B Comic"
-  ],
+  "hidden": ["A Comic", "B Comic"],
   "persistedBytes": "{\n  \"taskId\": \"tsk_0123456789ABCDEFGHJKMNPQRS\",\n  \"comicName\": \"夏日重现\",\n  \"normalizedComicName\": \"夏日重现\",\n  \"dirName\": \"夏日重现\",\n  \"outputDir\": \"<HOME>\\\\Pictures\\\\Box 漫画\\\\夏日重现\",\n  \"status\": \"partial_failed\",\n  \"lang\": {\n    \"from\": \"ja\",\n    \"to\": \"zh\"\n  },\n  \"translator\": \"sakura\",\n  \"clientTaskRef\": null,\n  \"source\": \"unknown\",\n  \"idempotencyKey\": null,\n  \"createdAt\": \"2026-10-13T04:35:29.000Z\",\n  \"finishedAt\": \"2026-10-13T04:36:10.500Z\",\n  \"finalProgress\": {\n    \"total\": 3,\n    \"done\": 2,\n    \"failed\": 1,\n    \"current\": 0\n  },\n  \"batches\": [\n    {\n      \"batchIndex\": 1,\n      \"count\": 3,\n      \"seqFrom\": 1,\n      \"seqTo\": 3,\n      \"status\": \"partial_failed\",\n      \"idempotencyKey\": null,\n      \"items\": [\n        {\n          \"seq\": 1,\n          \"ext\": \"png\",\n          \"byteSize\": 123,\n          \"fromDisk\": false,\n          \"status\": \"success\",\n          \"saved\": true,\n          \"originalFile\": \"001.png\",\n          \"outputFile\": \"001_translated.png\",\n          \"sha256\": \"aa\",\n          \"durationMs\": 1000,\n          \"retryCount\": 0,\n          \"reason\": null\n        },\n        {\n          \"seq\": 2,\n          \"ext\": \"jpg\",\n          \"byteSize\": 456,\n          \"fromDisk\": false,\n          \"status\": \"failed\",\n          \"saved\": false,\n          \"originalFile\": \"002.jpg\",\n          \"outputFile\": null,\n          \"sha256\": null,\n          \"durationMs\": 2000,\n          \"retryCount\": 1,\n          \"reason\": \"engine_error\"\n        },\n        {\n          \"seq\": 3,\n          \"ext\": \"webp\",\n          \"byteSize\": 789,\n          \"fromDisk\": false,\n          \"status\": \"skipped\",\n          \"saved\": true,\n          \"originalFile\": \"003.webp\",\n          \"outputFile\": \"003_translated.png\",\n          \"sha256\": null,\n          \"durationMs\": null,\n          \"retryCount\": 0,\n          \"reason\": \"already_exists\"\n        }\n      ]\n    }\n  ]\n}\n",
   "atomic": {
     "noTmpResidue": true,

@@ -75,13 +75,22 @@ export function NumberInput({
         disabled={disabled}
         aria-label={label}
         title={title}
-        onFocus={() => { editing.current = true; }}
+        onFocus={() => {
+          editing.current = true;
+        }}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') { commit(); (e.target as HTMLInputElement).blur(); }
+          if (e.key === 'Enter') {
+            commit();
+            (e.target as HTMLInputElement).blur();
+          }
           // Esc 放弃这次编辑（与弹层/下拉的 Esc 语义一致）
-          if (e.key === 'Escape') { editing.current = false; setDraft(String(value)); (e.target as HTMLInputElement).blur(); }
+          if (e.key === 'Escape') {
+            editing.current = false;
+            setDraft(String(value));
+            (e.target as HTMLInputElement).blur();
+          }
           // 上下键按 step 调一格 —— 键盘用户不必去点那个（我们刻意不画的）箭头
           if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             e.preventDefault();

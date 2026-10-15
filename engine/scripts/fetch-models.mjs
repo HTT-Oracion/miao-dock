@@ -25,7 +25,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-import { ensureModels, verifyModels, verifyHfCache, linkModels, matchesPlatform, ModelStoreError } from '../model-store.mjs';
+import {
+  ensureModels,
+  verifyModels,
+  verifyHfCache,
+  linkModels,
+  matchesPlatform,
+  ModelStoreError,
+} from '../model-store.mjs';
 import { runtimesDir } from './runtime-root.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -40,8 +47,18 @@ const DEFAULT_MANIFEST = path.join(REPO, 'engine', 'models.manifest.json');
  */
 function parseArgs(argv) {
   const out = {
-    ids: [], set: null, integrity: 'cached', check: false, extract: false, linkOnly: false, noLink: false,
-    manifest: null, root: null, linkBase: null, report: null, progressLog: null,
+    ids: [],
+    set: null,
+    integrity: 'cached',
+    check: false,
+    extract: false,
+    linkOnly: false,
+    noLink: false,
+    manifest: null,
+    root: null,
+    linkBase: null,
+    report: null,
+    progressLog: null,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -57,8 +74,9 @@ function parseArgs(argv) {
     else if (a === '--extract') out.extract = true;
     else if (a === '--link') out.linkOnly = true;
     else if (a === '--no-link') out.noLink = true;
-    else if (a === '-h' || a === '--help') { out.help = true; }
-    else throw new Error(`未知参数：${a}`);
+    else if (a === '-h' || a === '--help') {
+      out.help = true;
+    } else throw new Error(`未知参数：${a}`);
   }
   return out;
 }
@@ -71,15 +89,24 @@ function makeProgressSink(file) {
     push(p) {
       if (fd != null) fs.writeSync(fd, `${JSON.stringify(p)}\n`);
     },
-    close() { if (fd != null) { fs.closeSync(fd); fd = null; } },
+    close() {
+      if (fd != null) {
+        fs.closeSync(fd);
+        fd = null;
+      }
+    },
   };
 }
 
 const human = (n) => {
   if (n == null) return '?';
   const u = ['B', 'KB', 'MB', 'GB'];
-  let i = 0; let v = n;
-  while (v >= 1024 && i < u.length - 1) { v /= 1024; i += 1; }
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < u.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
   return `${v.toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
 };
 
@@ -100,14 +127,22 @@ async function main() {
   };
 
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  const scope = args.ids.length ? `id=${args.ids.join(',')}` : (args.set ? `set=${args.set}` : '全部');
+  const scope = args.ids.length ? `id=${args.ids.join(',')}` : args.set ? `set=${args.set}` : '全部';
   console.log(`模型根目录：${ROOT}`);
-  console.log(`清单：v${manifest.manifestVersion} · 引擎 commit ${manifest.engineCommit.slice(0, 12)} · 范围：${scope}`);
+  console.log(
+    `清单：v${manifest.manifestVersion} · 引擎 commit ${manifest.engineCommit.slice(0, 12)} · 范围：${scope}`,
+  );
 
   if (args.check) {
-    const r = await verifyModels(manifest, { rootDir: ROOT, ids: args.ids, set: args.set, onProgress: (p) => sink.push(p) });
+    const r = await verifyModels(manifest, {
+      rootDir: ROOT,
+      ids: args.ids,
+      set: args.set,
+      onProgress: (p) => sink.push(p),
+    });
     console.log(`校验：通过 ${r.ok.length} / 不符 ${r.bad.length} / 缺失 ${r.missing.length}（共 ${r.total}）`);
-    for (const b of r.bad) console.log(`  ✗ ${b.id}：盘上 ${b.actual.slice(0, 12)}… ≠ 清单 ${b.expected.slice(0, 12)}…`);
+    for (const b of r.bad)
+      console.log(`  ✗ ${b.id}：盘上 ${b.actual.slice(0, 12)}… ≠ 清单 ${b.expected.slice(0, 12)}…`);
     for (const m of r.missing) console.log(`  ✗ ${m}：缺失`);
 
     // —— HF 缓存布局（带 `hf` 的条目）：光有 blobs 不够，HF 认的是 snapshots/<rev>/<file> + refs/main。
@@ -116,21 +151,29 @@ async function main() {
     if (hf.total) {
       console.log(`HF 缓存布局：可解析 ${hf.ok.length} / 不可解析 ${hf.missing.length}（共 ${hf.total}）`);
       for (const m of hf.missing) {
-        console.log(`  ✗ ${m.id}：snapshot=${m.snapshot ? '有' : '缺'} store=${m.store ? '有' : '缺'} refs/main=${m.refs ? '对' : '缺或不对'}`);
+        console.log(
+          `  ✗ ${m.id}：snapshot=${m.snapshot ? '有' : '缺'} store=${m.store ? '有' : '缺'} refs/main=${m.refs ? '对' : '缺或不对'}`,
+        );
       }
     }
     writeReport({ verify: r, hf });
     sink.close();
-    return (r.bad.length || r.missing.length || hf.missing.length) ? 1 : 0;
+    return r.bad.length || r.missing.length || hf.missing.length ? 1 : 0;
   }
 
   // —— 只重建链接（引擎换版本后的收尾动作，零网络）
   if (args.linkOnly) {
     const l = await linkModels(manifest, {
-      rootDir: ROOT, ids: args.ids, set: args.set, linkBase: args.linkBase, logger: (m) => console.log(m),
+      rootDir: ROOT,
+      ids: args.ids,
+      set: args.set,
+      linkBase: args.linkBase,
+      logger: (m) => console.log(m),
     });
     console.log(`链接基准：${l.base}`);
-    console.log(`链接：新建 ${l.linked.length} · 已是 ${l.already.length} · 复制 ${l.copied.length} · 跳过 ${l.skipped.length}（共 ${l.total}）`);
+    console.log(
+      `链接：新建 ${l.linked.length} · 已是 ${l.already.length} · 复制 ${l.copied.length} · 跳过 ${l.skipped.length}（共 ${l.total}）`,
+    );
     if (l.hf.length) console.log(`HF 缓存布局：补齐 ${l.hf.length} 个条目的 snapshot + refs/main`);
     writeReport({ link: l });
     sink.close();
@@ -151,11 +194,16 @@ async function main() {
     onProgress: (p) => {
       sink.push(p);
       const line = `${p.id} ${p.phase} ${human(p.received)}/${human(p.total)}`;
-      if (line !== last) { last = line; process.stdout.write(`\r${line.padEnd(60)}`); }
+      if (line !== last) {
+        last = line;
+        process.stdout.write(`\r${line.padEnd(60)}`);
+      }
     },
   });
   process.stdout.write(`\r${' '.repeat(60)}\r`);
-  console.log(`复用 ${r.reused.length} · 下载 ${r.downloaded.length} · 因校验重下 ${r.redownloaded.length} · 传输 ${human(r.bytes)}`);
+  console.log(
+    `复用 ${r.reused.length} · 下载 ${r.downloaded.length} · 因校验重下 ${r.redownloaded.length} · 传输 ${human(r.bytes)}`,
+  );
   for (const [id, from] of Object.entries(r.resumeFrom)) {
     if (from > 0) console.log(`  续传：${id} 从 ${human(from)} 接着下`);
   }
@@ -164,7 +212,9 @@ async function main() {
   let linked = null;
   if (!args.noLink) {
     linked = await linkModels(manifest, { rootDir: ROOT, ids: args.ids, set: args.set, linkBase: args.linkBase });
-    console.log(`链接：新建 ${linked.linked.length} · 已是 ${linked.already.length} · 复制 ${linked.copied.length} · 跳过 ${linked.skipped.length}`);
+    console.log(
+      `链接：新建 ${linked.linked.length} · 已是 ${linked.already.length} · 复制 ${linked.copied.length} · 跳过 ${linked.skipped.length}`,
+    );
     if (linked.hf.length) console.log(`HF 缓存布局：补齐 ${linked.hf.length} 个条目的 snapshot + refs/main`);
   }
   writeReport({ ensure: r, link: linked });
@@ -195,8 +245,10 @@ async function main() {
   return 0;
 }
 
-main().then((code) => process.exit(code)).catch((err) => {
-  if (err instanceof ModelStoreError) console.error(`\n✗ [${err.code}] ${err.message}`);
-  else console.error(`\n✗ ${err.stack || err.message}`);
-  process.exit(1);
-});
+main()
+  .then((code) => process.exit(code))
+  .catch((err) => {
+    if (err instanceof ModelStoreError) console.error(`\n✗ [${err.code}] ${err.message}`);
+    else console.error(`\n✗ ${err.stack || err.message}`);
+    process.exit(1);
+  });

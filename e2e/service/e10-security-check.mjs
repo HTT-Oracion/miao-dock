@@ -50,7 +50,10 @@ const TOKEN = 'e'.repeat(64);
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-e10-'));
 const REFUTE = process.argv.includes('--refute');
 
-const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+const sleep = (ms) =>
+  new Promise((r) => {
+    setTimeout(r, ms);
+  });
 
 /** 本脚本声明的断言条数（分母写死：少执行一条即判红） */
 const DECLARED = 7;
@@ -86,13 +89,25 @@ function httpReq(port, method, pathname, { headers = {}, body = null, token } = 
     req.end();
   });
 }
-const jsonOf = (res) => { try { return JSON.parse(res.body.toString('utf8')); } catch { return null; } };
+const jsonOf = (res) => {
+  try {
+    return JSON.parse(res.body.toString('utf8'));
+  } catch {
+    return null;
+  }
+};
 
 function portOpenOn(host, port, timeoutMs = 400) {
   return new Promise((resolve) => {
     const s = net.connect({ host, port });
     let settled = false;
-    const done = (v) => { if (!settled) { settled = true; s.destroy(); resolve(v); } };
+    const done = (v) => {
+      if (!settled) {
+        settled = true;
+        s.destroy();
+        resolve(v);
+      }
+    };
     s.setTimeout(timeoutMs);
     s.once('connect', () => done(true));
     s.once('timeout', () => done(false));
@@ -104,7 +119,11 @@ const portOpen = (port) => portOpenOn('127.0.0.1', port);
 async function findFreePort(start, need = 2) {
   for (let p = start; p < start + 400; p += 1) {
     let ok = true;
-    for (let i = 0; i < need; i += 1) if (await portOpen(p + i)) { ok = false; break; }
+    for (let i = 0; i < need; i += 1)
+      if (await portOpen(p + i)) {
+        ok = false;
+        break;
+      }
     if (ok) return p;
   }
   throw new Error(`从 ${start} 起找不到 ${need} 个连续空闲端口`);
@@ -165,7 +184,13 @@ function startFakeEngine(port, executorPort) {
       if (req.url === '/translate/image/stream') {
         // 一个进度帧 + 一个结果帧。结果帧必须是**可识别的真图片**，否则适配层的
         // `sniffImageType(result)` 会把它判成 ENGINE_BAD_OUTPUT —— 与 E10 无关的噪声。
-        const body = Buffer.concat([frame(1, 'detection'), frame(0, encodePng(40, 60, (x, y, put) => put((x * 5) % 256, (y * 3) % 256, 200)))]);
+        const body = Buffer.concat([
+          frame(1, 'detection'),
+          frame(
+            0,
+            encodePng(40, 60, (x, y, put) => put((x * 5) % 256, (y * 3) % 256, 200)),
+          ),
+        ]);
         res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': body.length });
         return res.end(body);
       }
@@ -173,7 +198,9 @@ function startFakeEngine(port, executorPort) {
       res.end();
     });
   });
-  const executor = net.createServer(() => { /* 哑 socket：只为让 port+1 "在听" ⇒ running */ });
+  const executor = net.createServer(() => {
+    /* 哑 socket：只为让 port+1 "在听" ⇒ running */
+  });
   return { server, executor, hits, port, executorPort };
 }
 
@@ -185,9 +212,17 @@ function spawnService(env) {
   child.stdout.on('data', (d) => {
     st.out += d.toString();
     const m = /MIAO_READY (\{.*\})/.exec(st.out);
-    if (m && !st.ready) { try { st.ready = JSON.parse(m[1]); } catch { /* 继续等 */ } }
+    if (m && !st.ready) {
+      try {
+        st.ready = JSON.parse(m[1]);
+      } catch {
+        /* 继续等 */
+      }
+    }
   });
-  child.stderr.on('data', (d) => { st.err += d.toString(); });
+  child.stderr.on('data', (d) => {
+    st.err += d.toString();
+  });
   return st;
 }
 
@@ -198,10 +233,14 @@ async function waitReady(st, timeoutMs = 15_000) {
   return st.ready;
 }
 
-const listen = (server, port) => new Promise((resolve, reject) => {
-  server.once('error', reject);
-  server.listen(port, '127.0.0.1', () => { server.removeListener('error', reject); resolve(); });
-});
+const listen = (server, port) =>
+  new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', () => {
+      server.removeListener('error', reject);
+      resolve();
+    });
+  });
 const closeAll = (servers) => Promise.all(servers.map((s) => new Promise((r) => s.close(() => r()))));
 
 /**
@@ -274,15 +313,27 @@ async function runAll(extraEnv = {}) {
     // ---- E10.1 / E10.2：只监听回环 ----
     const lan = nonLoopbackIPv4();
     if (lan === null) {
-      check('E10.1 服务只监听回环（非 127.0.0.1 连不上）', false, '⚠️ 本机取不到非回环 IPv4 ⇒ 本条无法取证（不是通过）');
+      check(
+        'E10.1 服务只监听回环（非 127.0.0.1 连不上）',
+        false,
+        '⚠️ 本机取不到非回环 IPv4 ⇒ 本条无法取证（不是通过）',
+      );
       check('E10.2 引擎只监听回环（非 127.0.0.1 连不上）', false, '⚠️ 同上');
     } else {
       // ⚠️ 反向的假绿在这里：如果本机 LAN 地址**恰好**也是服务在听的那个（不可能，但仍要防），
       //    或防火墙把连接静默丢弃（表现为超时），都要让 detail 能看出来是哪种。
       const svcLan = await portOpenOn(lan, PORT, 700);
-      check('E10.1 服务只监听回环（非 127.0.0.1 连不上）', svcLan === false, `尝试连 ${lan}:${PORT} ⇒ ${svcLan ? '连上了（不该）' : '被拒'}`);
+      check(
+        'E10.1 服务只监听回环（非 127.0.0.1 连不上）',
+        svcLan === false,
+        `尝试连 ${lan}:${PORT} ⇒ ${svcLan ? '连上了（不该）' : '被拒'}`,
+      );
       const engLan = await portOpenOn(lan, engPort, 700);
-      check('E10.2 引擎只监听回环（非 127.0.0.1 连不上）', engLan === false, `尝试连 ${lan}:${engPort} ⇒ ${engLan ? '连上了（不该）' : '被拒'}`);
+      check(
+        'E10.2 引擎只监听回环（非 127.0.0.1 连不上）',
+        engLan === false,
+        `尝试连 ${lan}:${engPort} ⇒ ${engLan ? '连上了（不该）' : '被拒'}`,
+      );
     }
 
     // ---- E10.3：nonce 现状锁定（**偏差**，不是通过） ----
@@ -301,9 +352,11 @@ async function runAll(extraEnv = {}) {
     const nonceValue = nonceIdx >= 0 ? cmdArr[nonceIdx + 1] : null;
     const hostIdx = cmdArr.indexOf('--host');
     const hostValue = hostIdx >= 0 ? cmdArr[hostIdx + 1] : null;
-    check('E10.3 【偏差锁定】nonce 显式置为字面量 `None`（执行器跳过校验）+ host 固定 127.0.0.1 —— E10 原文的「nonce 错误被拒」在本版上游不适用',
+    check(
+      'E10.3 【偏差锁定】nonce 显式置为字面量 `None`（执行器跳过校验）+ host 固定 127.0.0.1 —— E10 原文的「nonce 错误被拒」在本版上游不适用',
       nonceValue === 'None' && hostValue === '127.0.0.1',
-      `--nonce ${JSON.stringify(nonceValue)} / --host ${JSON.stringify(hostValue)}；配方来源 boxsvc --print-launch-plan real（上游 nonce 与单图翻译互斥）`);
+      `--nonce ${JSON.stringify(nonceValue)} / --host ${JSON.stringify(hostValue)}；配方来源 boxsvc --print-launch-plan real（上游 nonce 与单图翻译互斥）`,
+    );
 
     // ---- E10.4 / E10.5：非图片字节 -> 400，且**不进引擎** ----
     const before = jsonOf(await httpReq(PORT, 'GET', '/api/v1/tasks', { token: TOKEN }));
@@ -314,14 +367,19 @@ async function runAll(extraEnv = {}) {
       images: [{ filename: '001.png', contentType: 'image/png', data: notAnImage }],
     });
     const bad = await httpReq(PORT, 'POST', '/api/v1/tasks', {
-      token: TOKEN, headers: { 'Content-Type': mp.contentType }, body: mp.body,
+      token: TOKEN,
+      headers: { 'Content-Type': mp.contentType },
+      body: mp.body,
     });
     const badJson = jsonOf(bad);
     const after = jsonOf(await httpReq(PORT, 'GET', '/api/v1/tasks', { token: TOKEN }));
-    check('E10.4 非图片字节（Content-Type 谎称 image/png）→ 400 INVALID_IMAGE，且**未建单**',
-      bad.status === 400 && badJson?.error?.code === 'INVALID_IMAGE'
-        && (after?.tasks?.length ?? -1) === (before?.tasks?.length ?? -2),
-      `HTTP ${bad.status} / ${badJson?.error?.code} / 任务数 ${before?.tasks?.length} → ${after?.tasks?.length}`);
+    check(
+      'E10.4 非图片字节（Content-Type 谎称 image/png）→ 400 INVALID_IMAGE，且**未建单**',
+      bad.status === 400 &&
+        badJson?.error?.code === 'INVALID_IMAGE' &&
+        (after?.tasks?.length ?? -1) === (before?.tasks?.length ?? -2),
+      `HTTP ${bad.status} / ${badJson?.error?.code} / 任务数 ${before?.tasks?.length} → ${after?.tasks?.length}`,
+    );
 
     const streamHits0 = fake.hits.filter((h) => h.includes('/translate/image/stream')).length;
     // 🔴 必须**等一小会儿**再数：rust 档的 `POST /tasks` 是「立即返回」，真正的推进在独立
@@ -333,17 +391,28 @@ async function runAll(extraEnv = {}) {
       await sleep(200);
       streamHits = fake.hits.filter((h) => h.includes('/translate/image/stream')).length;
     }
-    check('E10.5 上述非法字节**从未到达引擎**（引擎侧 /translate/image/stream 计数 = 0）',
-      streamHits === 0, `引擎收到的请求：${JSON.stringify(fake.hits)}`);
+    check(
+      'E10.5 上述非法字节**从未到达引擎**（引擎侧 /translate/image/stream 计数 = 0）',
+      streamHits === 0,
+      `引擎收到的请求：${JSON.stringify(fake.hits)}`,
+    );
 
     // ---- E10.6：反证守卫 —— 合法图片必须真的到达引擎 ----
     // 没有这一条，E10.5 在"引擎压根没被连上"时也照样绿 —— 那是本项目的头号假绿形态。
     const mpOk = buildMultipart({
       payload: { comicName: 'E10 合法图片', idempotencyKey: `e10ok-${Date.now()}` },
-      images: [{ filename: '001.png', contentType: 'image/png', data: encodePng(40, 60, (x, y, put) => put(x % 256, y % 256, 90)) }],
+      images: [
+        {
+          filename: '001.png',
+          contentType: 'image/png',
+          data: encodePng(40, 60, (x, y, put) => put(x % 256, y % 256, 90)),
+        },
+      ],
     });
     const okRes = await httpReq(PORT, 'POST', '/api/v1/tasks', {
-      token: TOKEN, headers: { 'Content-Type': mpOk.contentType }, body: mpOk.body,
+      token: TOKEN,
+      headers: { 'Content-Type': mpOk.contentType },
+      body: mpOk.body,
     });
     const okJson = jsonOf(okRes);
     const taskId = okJson?.taskId;
@@ -354,15 +423,19 @@ async function runAll(extraEnv = {}) {
       if (hitsAfter > 0) break;
       await sleep(200);
     }
-    check('E10.6 【反证守卫】合法图片**确实**到达引擎（否则 E10.5 是恒真的假绿）',
+    check(
+      'E10.6 【反证守卫】合法图片**确实**到达引擎（否则 E10.5 是恒真的假绿）',
       okRes.status === 201 && !!taskId && hitsAfter >= 1,
-      `HTTP ${okRes.status} / taskId=${taskId} / 引擎收到 ${hitsAfter} 次 /translate/image/stream`);
+      `HTTP ${okRes.status} / taskId=${taskId} / 引擎收到 ${hitsAfter} 次 /translate/image/stream`,
+    );
 
     // ---- E10.7：鉴权面确实存在（无令牌 -> 拒绝） ----
     const noToken = await httpReq(PORT, 'GET', '/api/v1/tasks');
-    check('E10.7 无令牌访问 → 403 PERMISSION_DENIED（安全面存在，不是裸奔）',
+    check(
+      'E10.7 无令牌访问 → 403 PERMISSION_DENIED（安全面存在，不是裸奔）',
       noToken.status === 403 && jsonOf(noToken)?.error?.code === 'PERMISSION_DENIED',
-      `HTTP ${noToken.status} / ${jsonOf(noToken)?.error?.code}`);
+      `HTTP ${noToken.status} / ${jsonOf(noToken)?.error?.code}`,
+    );
   } finally {
     // 🔴 杀**进程树**，不是只杀主进程：rust 靶子的服务会派生子进程（引擎② sidecar、
     //    ③ llama-server），Windows 上 `child.kill()` 只结束主进程，孙进程全成孤儿 ——
@@ -374,7 +447,11 @@ async function runAll(extraEnv = {}) {
       } catch {
         /* 进程已退出 */
       }
-      try { st.child.kill('SIGTERM'); } catch { /* ignore */ }
+      try {
+        st.child.kill('SIGTERM');
+      } catch {
+        /* ignore */
+      }
     }
     await sleep(150);
     await closeAll([fake.server, fake.executor]);
@@ -404,13 +481,17 @@ async function runAll(extraEnv = {}) {
  */
 const MUTATIONS = [
   { name: 'E10.4：建单前嗅探旁路（MIAO_SNIFF_SKIP=1）', expect: ['E10.4'], env: { MIAO_SNIFF_SKIP: '1' } },
-  { name: 'E10.5：两层嗅探同时旁路（MIAO_SNIFF_SKIP=1 —— store 与送图前读同一个 env）', expect: ['E10.5'], env: { MIAO_SNIFF_SKIP: '1' } },
+  {
+    name: 'E10.5：两层嗅探同时旁路（MIAO_SNIFF_SKIP=1 —— store 与送图前读同一个 env）',
+    expect: ['E10.5'],
+    env: { MIAO_SNIFF_SKIP: '1' },
+  },
   { name: 'E10.7：令牌校验恒通过（MIAO_TOKEN_ALWAYS_OK=1）', expect: ['E10.7'], env: { MIAO_TOKEN_ALWAYS_OK: '1' } },
   {
     // 🔴 用 `deadbeef` 而不是空串：Rust 的 `env_str` 把空串当「未设」处理（与 Node 同源）
     //    ⇒ 设空串等于没设，nonce 仍是 None，断言不会红。
     //    这里要证的是「断言真的在读 nonce 的值」，换任何一个非 None 值都够。
-    name: "E10.3：nonce 从字面量 None 换成别的值（MIAO_ENGINE_NONCE=deadbeef）",
+    name: 'E10.3：nonce 从字面量 None 换成别的值（MIAO_ENGINE_NONCE=deadbeef）',
     expect: ['E10.3'],
     env: { MIAO_ENGINE_NONCE: 'deadbeef' },
   },
@@ -449,8 +530,13 @@ const main = async () => {
       total++;
       const hit = Object.keys(res).find((id) => id.startsWith(prefix));
       const isRed = !!hit && res[hit].ok === false;
-      if (isRed) { red++; console.log(`  ✓ ${hit.slice(0, 24)}… 按预期变红`); }
-      else { falsePositives.push(prefix); console.log(`  ✗ ${prefix}… 该红没红 ← 假阳性`); }
+      if (isRed) {
+        red++;
+        console.log(`  ✓ ${hit.slice(0, 24)}… 按预期变红`);
+      } else {
+        falsePositives.push(prefix);
+        console.log(`  ✗ ${prefix}… 该红没红 ← 假阳性`);
+      }
       if (hit && !wasGreen[hit]) console.log('     注：该条基线本就是红，无法据此判定断言有效性');
       if (!hit) console.log('     注：该条断言没有出现在结果里（分母不符）');
     }

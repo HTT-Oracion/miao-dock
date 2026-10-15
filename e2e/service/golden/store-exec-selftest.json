@@ -208,17 +208,8 @@
           }
         ],
         "itemErrors": {},
-        "disk": [
-          "001.png",
-          "001_translated.png",
-          "002.png",
-          "002_translated.png",
-          "003.png",
-          "003_translated.png"
-        ],
-        "remainingTaskIds": [
-          "<TID>"
-        ]
+        "disk": ["001.png", "001_translated.png", "002.png", "002_translated.png", "003.png", "003_translated.png"],
+        "remainingTaskIds": ["<TID>"]
       }
     },
     {
@@ -431,16 +422,8 @@
         "itemErrors": {
           "2": "单项总预算 150ms 已耗尽（第 2 次尝试开始前）"
         },
-        "disk": [
-          "001.png",
-          "001_translated.png",
-          "002.png",
-          "003.png",
-          "003_translated.png"
-        ],
-        "remainingTaskIds": [
-          "<TID>"
-        ]
+        "disk": ["001.png", "001_translated.png", "002.png", "003.png", "003_translated.png"],
+        "remainingTaskIds": ["<TID>"]
       }
     },
     {
@@ -598,14 +581,8 @@
           }
         ],
         "itemErrors": {},
-        "disk": [
-          "001_translated.png",
-          "002.png",
-          "002_translated.png"
-        ],
-        "remainingTaskIds": [
-          "<TID>"
-        ]
+        "disk": ["001_translated.png", "002.png", "002_translated.png"],
+        "remainingTaskIds": ["<TID>"]
       }
     },
     {
@@ -744,9 +721,7 @@
         ],
         "itemErrors": {},
         "disk": [],
-        "remainingTaskIds": [
-          "<TID>"
-        ]
+        "remainingTaskIds": ["<TID>"]
       }
     },
     {
@@ -891,15 +866,8 @@
           }
         ],
         "itemErrors": {},
-        "disk": [
-          "001.png",
-          "001_translated.png",
-          "002.png",
-          "002_translated.png"
-        ],
-        "remainingTaskIds": [
-          "<TID>"
-        ]
+        "disk": ["001.png", "001_translated.png", "002.png", "002_translated.png"],
+        "remainingTaskIds": ["<TID>"]
       }
     },
     {
@@ -1032,12 +1000,8 @@
         "itemErrors": {
           "1": "单项总预算 150ms 已耗尽（第 2 次尝试开始前）"
         },
-        "disk": [
-          "001.png"
-        ],
-        "remainingTaskIds": [
-          "<TID>"
-        ]
+        "disk": ["001.png"],
+        "remainingTaskIds": ["<TID>"]
       }
     },
     {
@@ -1045,9 +1009,7 @@
       "report": {
         "outcome": null,
         "result": {
-          "deleted": [
-            "tsk_0123456789ABCDEFGHJKMNPQRV"
-          ],
+          "deleted": ["tsk_0123456789ABCDEFGHJKMNPQRV"],
           "skipped": [
             {
               "reason": "not_found",
@@ -1065,9 +1027,7 @@
         "events": [],
         "itemErrors": {},
         "disk": null,
-        "remainingTaskIds": [
-          "tsk_0123456789ABCDEFGHJKMNPQRW"
-        ]
+        "remainingTaskIds": ["tsk_0123456789ABCDEFGHJKMNPQRW"]
       }
     }
   ]

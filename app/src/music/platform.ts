@@ -166,12 +166,7 @@ export function searchPageSize(p: MusicProvider): number {
 }
 
 /** offset 为 0 起的偏移量（分页） */
-export function search(
-  provider: MusicProvider,
-  keywords: string,
-  limit = 30,
-  offset = 0,
-): Promise<Song[]> {
+export function search(provider: MusicProvider, keywords: string, limit = 30, offset = 0): Promise<Song[]> {
   switch (provider) {
     case 'kugou':
       return ipc.kugouSearch(keywords, limit, offset);
@@ -316,11 +311,7 @@ export function dailySongs(provider: MusicProvider): Promise<Song[]> {
  * ① 报错或返回空（冷门歌 / 未登录 / 歌单定位失败）时回落 ②，
  * 两条都空才算"没有相似歌曲"，由调用方提示用户。
  */
-export async function similarSongs(
-  provider: MusicProvider,
-  songId: string,
-  limit = 20,
-): Promise<Song[]> {
+export async function similarSongs(provider: MusicProvider, songId: string, limit = 20): Promise<Song[]> {
   if (provider !== 'netease') return Promise.resolve([]);
   try {
     const smart = await ipc.musicIntelligenceList(songId);
@@ -463,12 +454,7 @@ export function songUrl(provider: MusicProvider, song: Song, quality: string): P
 
 // ------------------------------------------------------------------ 歌手 / 专辑（仅网易云完整，其余仅热门歌曲）
 
-export function artistSongs(
-  provider: MusicProvider,
-  artistId: string,
-  limit = 50,
-  offset = 0,
-): Promise<Song[]> {
+export function artistSongs(provider: MusicProvider, artistId: string, limit = 50, offset = 0): Promise<Song[]> {
   switch (provider) {
     case 'kugou':
       return ipc.kugouArtistSongs(artistId, limit, offset);

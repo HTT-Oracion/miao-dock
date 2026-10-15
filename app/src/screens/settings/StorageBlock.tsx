@@ -55,7 +55,13 @@ export function StorageBlock({ item, lib }: { item: SettingItem; lib: LibraryRes
   }, [reload]);
 
   /** 音频缓存那一行的取值 —— 三种"没有值"分开说，别混成一个「—」 */
-  const cacheText = cacheFailed ? '读取失败' : cache === null ? '读取中…' : cache.total > 0 ? formatBytes(cache.total) : '无';
+  const cacheText = cacheFailed
+    ? '读取失败'
+    : cache === null
+      ? '读取中…'
+      : cache.total > 0
+        ? formatBytes(cache.total)
+        : '无';
 
   return (
     <div className="set-storage">

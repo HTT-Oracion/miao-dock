@@ -278,8 +278,7 @@ export function TranslateSection({
   const accelValue: EngineAccel = o?.accel.choice ?? 'auto';
 
   /** 值 → 中文名（后端候选缺失时也要能显示已配置的那一个，不能露出 `mps` 这种裸 id） */
-  const accelLabel = (v: EngineAccel) =>
-    o?.accel.options.find((x) => x.value === v)?.label ?? ACCEL_LABEL[v];
+  const accelLabel = (v: EngineAccel) => o?.accel.options.find((x) => x.value === v)?.label ?? ACCEL_LABEL[v];
 
   const pending = pendingRestart(o);
 
@@ -393,8 +392,8 @@ export function TranslateSection({
             </div>
             {srcOnline ? (
               <div className="set-src-note">
-                密钥<b>只写不读</b>：appSecret 提交后永不回显，两个密钥框都以掩码显示（明文不上屏）。
-                盘上已有 appSecret 时该框以掩码点占位 —— 留空提交 = 保持原样，填新的即覆盖。
+                密钥<b>只写不读</b>：appSecret 提交后永不回显，两个密钥框都以掩码显示（明文不上屏）。 盘上已有 appSecret
+                时该框以掩码点占位 —— 留空提交 = 保持原样，填新的即覆盖。
               </div>
             ) : null}
           </div>
@@ -428,7 +427,9 @@ export function TranslateSection({
           )}
         </Row>
         {status?.last_error ? (
-          <Notice kind="bad" className="set-row-note">最近一次错误：{status.last_error}</Notice>
+          <Notice kind="bad" className="set-row-note">
+            最近一次错误：{status.last_error}
+          </Notice>
         ) : null}
 
         {/*
@@ -440,18 +441,10 @@ export function TranslateSection({
           一枚禁用按钮同时说明了"有这个动作"和"此刻不适用"，信息量更大。
         */}
         <div className="set-pair-acts">
-          <Btn
-            kind="primary"
-            disabled={svcBusy || status?.state !== 'stopped'}
-            onClick={() => void startSvc()}
-          >
+          <Btn kind="primary" disabled={svcBusy || status?.state !== 'stopped'} onClick={() => void startSvc()}>
             启动本地服务
           </Btn>
-          <Btn
-            kind="ghost"
-            disabled={svcBusy || status?.state !== 'running'}
-            onClick={() => void stopSvc()}
-          >
+          <Btn kind="ghost" disabled={svcBusy || status?.state !== 'running'} onClick={() => void stopSvc()}>
             停止本地服务
           </Btn>
         </div>
@@ -461,11 +454,7 @@ export function TranslateSection({
           立刻按新值生效（原值可能已经拉起过服务，关掉不会把它停掉：那两件事分开）。
         */}
         <Row item={itemOf(pairing, 'service-auto-start')}>
-          <Switch
-            on={autoStart}
-            onToggle={() => onAutoStart(!autoStart)}
-            label="自动启动翻译服务"
-          />
+          <Switch on={autoStart} onToggle={() => onAutoStart(!autoStart)} label="自动启动翻译服务" />
         </Row>
 
         <Row item={itemOf(pairing, 'token-pairing')}>
@@ -499,9 +488,7 @@ export function TranslateSection({
           />
           <span className="set-token-ro">只读</span>
         </div>
-        <RowNote>
-          插件靠这个令牌提交翻译任务。令牌由本机生成、权限 0600，只存在与本地
-        </RowNote>
+        <RowNote>插件靠这个令牌提交翻译任务。令牌由本机生成、权限 0600，只存在与本地</RowNote>
 
         <Row item={itemOf(pairing, 'root-dir')}>
           <ReadOnly title={status?.root_dir ?? undefined}>{status?.root_dir ?? '—'}</ReadOnly>
@@ -512,7 +499,9 @@ export function TranslateSection({
       <div className="set-group">
         <SubTitle>推理引擎</SubTitle>
         {eng.loadError ? (
-          <Notice kind="bad" className="set-row-note">读不到引擎选项：{eng.loadError}</Notice>
+          <Notice kind="bad" className="set-row-note">
+            读不到引擎选项：{eng.loadError}
+          </Notice>
         ) : null}
 
         {/*
@@ -604,7 +593,9 @@ export function TranslateSection({
           越是这样越要说清楚，否则用户会以为自己选的 CUDA 真的在跑。
         */}
         {o?.accel.mismatch ? (
-          <Notice kind="bad" className="set-row-note">{o.accel.mismatch} —— 已按硬件探测值执行（{o.accel.reason}）</Notice>
+          <Notice kind="bad" className="set-row-note">
+            {o.accel.mismatch} —— 已按硬件探测值执行（{o.accel.reason}）
+          </Notice>
         ) : null}
 
         {/*
@@ -708,7 +699,12 @@ export function TranslateSection({
         {o ? (
           <RowNote>
             默认位置 <code>{o.modelDir.defaultDir}</code>；本值来自
-            {o.modelDir.source === 'env' ? '环境变量（压过设置文件）' : o.modelDir.source === 'file' ? '设置文件' : '默认值'}。
+            {o.modelDir.source === 'env'
+              ? '环境变量（压过设置文件）'
+              : o.modelDir.source === 'file'
+                ? '设置文件'
+                : '默认值'}
+            。
             {o.modelDir.configured && o.modelDir.configured !== o.modelDir.current
               ? ` 已配置 ${o.modelDir.configured}，但服务当前仍在用上面这个目录 —— 需重启才切换。`
               : ''}
@@ -743,8 +739,7 @@ function RestartHint({ title, keys, pending }: { title: string; keys: string[]; 
   const hit = keys.filter((k) => pending.includes(k));
   return (
     <div className={hit.length ? 'set-hint is-pending' : 'set-hint'}>
-      <b>{title}</b>：改 {keys.join(' / ')} 需<b>重启引擎</b>才生效 ——
-      这些值在拉开引擎进程时就定下了。
+      <b>{title}</b>：改 {keys.join(' / ')} 需<b>重启引擎</b>才生效 —— 这些值在拉开引擎进程时就定下了。
       {hit.length ? (
         <>
           <br />

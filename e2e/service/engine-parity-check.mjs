@@ -40,9 +40,8 @@ const REPO_ROOT = path.resolve(HERE, '..', '..');
 const GOLDEN = path.join(HERE, 'golden', 'engine-selftest.json');
 const REFUTE = process.argv.includes('--refute');
 
-const normStr = (s) => s
-  .replace(/[A-Za-z]:[\\/]+Users[\\/]+[A-Za-z0-9_.-]+/g, '<HOME>')
-  .replaceAll(REPO_ROOT, '<REPO>');
+const normStr = (s) =>
+  s.replace(/[A-Za-z]:[\\/]+Users[\\/]+[A-Za-z0-9_.-]+/g, '<HOME>').replaceAll(REPO_ROOT, '<REPO>');
 
 let passed = 0;
 let failed = 0;
@@ -66,7 +65,9 @@ function run(cmd, args, env) {
     c.stdout.on('data', (d) => (out += d));
     c.stderr.on('data', (d) => (err += d));
     c.on('error', reject);
-    c.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(`${path.basename(cmd)} 退出码 ${code}：${err.slice(0, 800)}`))));
+    c.on('close', (code) =>
+      code === 0 ? resolve(out) : reject(new Error(`${path.basename(cmd)} 退出码 ${code}：${err.slice(0, 800)}`)),
+    );
   });
 }
 
@@ -87,7 +88,12 @@ const sameJSON = (a, b) => JSON.stringify(canon(a)) === JSON.stringify(canon(b))
 
 // ------------------------------------------------------------------ 环境（与 _gen-golden.mjs 完全一致）
 
-const REAL_ENV = { MIAO_ENGINE_PROTOCOL: 'real', MIAO_ENGINE_PYTHON: '/py/python', NO_PROXY: 'parity.example', MIAO_ENGINE_PROBE_MS: '400' };
+const REAL_ENV = {
+  MIAO_ENGINE_PROTOCOL: 'real',
+  MIAO_ENGINE_PYTHON: '/py/python',
+  NO_PROXY: 'parity.example',
+  MIAO_ENGINE_PROBE_MS: '400',
+};
 const MOCK_ENV = { MIAO_ENGINE_PROTOCOL: 'mock', MIAO_ENGINE_DETECTION_SIZE: '1024' };
 
 async function dumpRust(env) {
@@ -103,16 +109,38 @@ function projLaunch(l) {
   const env = l.env || {};
   const has = (k) => Object.prototype.hasOwnProperty.call(env, k);
   const injected = {};
-  for (const k of ['PYTHONIOENCODING', 'SAKURA_API_BASE', 'MT_WEB_NONCE', 'HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE']) injected[k] = has(k) ? env[k] : null;
+  for (const k of ['PYTHONIOENCODING', 'SAKURA_API_BASE', 'MT_WEB_NONCE', 'HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE'])
+    injected[k] = has(k) ? env[k] : null;
   const noProxy = (has('NO_PROXY') ? env.NO_PROXY : has('no_proxy') ? env.no_proxy : null) ?? null;
-  return { label: l.label, cmd: l.cmd, cwd: l.cwd ?? null, executorPort: l.executorPort ?? null, probes: l.probes, envInjected: injected, noProxy };
+  return {
+    label: l.label,
+    cmd: l.cmd,
+    cwd: l.cwd ?? null,
+    executorPort: l.executorPort ?? null,
+    probes: l.probes,
+    envInjected: injected,
+    noProxy,
+  };
 }
 function projLlm(l) {
   if (l && l.error) return { error: l.error };
-  return { label: l.label, tier: l.tier ?? null, model: l.model ?? null, cmd: l.cmd, cwd: l.cwd ?? null, probes: l.probes };
+  return {
+    label: l.label,
+    tier: l.tier ?? null,
+    model: l.model ?? null,
+    cmd: l.cmd,
+    cwd: l.cwd ?? null,
+    probes: l.probes,
+  };
 }
 function projFrames(frames) {
-  return frames.map((f) => ({ name: f.name, resultB64: f.resultB64 ?? null, ext: f.ext ?? null, mime: f.mime ?? null, stageLines: f.stageLines }));
+  return frames.map((f) => ({
+    name: f.name,
+    resultB64: f.resultB64 ?? null,
+    ext: f.ext ?? null,
+    mime: f.mime ?? null,
+    stageLines: f.stageLines,
+  }));
 }
 
 /** 把 --engine-selftest 原输出投影成与 golden 同形的报告。 */
@@ -144,22 +172,53 @@ try {
 }
 
 function compareProtocol(tag, rust, gold) {
-  check(`ENG.${tag}.constants — 常量相同`, sameJSON(rust.constants, gold.constants), { rust: rust.constants, golden: gold.constants });
-  check(`ENG.${tag}.engineVersion — ENGINE_VERSION 相同`, rust.engineVersion === gold.engineVersion, `rust=${rust.engineVersion} golden=${gold.engineVersion}`);
+  check(`ENG.${tag}.constants — 常量相同`, sameJSON(rust.constants, gold.constants), {
+    rust: rust.constants,
+    golden: gold.constants,
+  });
+  check(
+    `ENG.${tag}.engineVersion — ENGINE_VERSION 相同`,
+    rust.engineVersion === gold.engineVersion,
+    `rust=${rust.engineVersion} golden=${gold.engineVersion}`,
+  );
 
   // `llmLaunchByTier` 是 E4 用的新出口（按档位各解析一次 ③ 配方）：并进对拍面后，
   // 「未声明档位必须显式报错」这条契约同时被 golden 与 E4 各钉一次，不会只活在一处。
-  for (const key of ['engineLocalNoProxy', 'engineHfOfflineEnv', 'availableTiers', 'tierModelPath', 'llmLaunchByTier', 'translationSnapshotDir', 'translationWeightsPresent']) {
-    check(`ENG.${tag}.pure.${key} — 相同`, sameJSON(rust.pure[key], gold.pure[key]), sameJSON(rust.pure[key], gold.pure[key]) ? undefined : { rust: rust.pure[key], golden: gold.pure[key] });
+  for (const key of [
+    'engineLocalNoProxy',
+    'engineHfOfflineEnv',
+    'availableTiers',
+    'tierModelPath',
+    'llmLaunchByTier',
+    'translationSnapshotDir',
+    'translationWeightsPresent',
+  ]) {
+    check(
+      `ENG.${tag}.pure.${key} — 相同`,
+      sameJSON(rust.pure[key], gold.pure[key]),
+      sameJSON(rust.pure[key], gold.pure[key]) ? undefined : { rust: rust.pure[key], golden: gold.pure[key] },
+    );
   }
 
-  check(`ENG.${tag}.configSnapshot — §5.2 的 config 块相同`, sameJSON(rust.configSnapshot, gold.configSnapshot), { rust: rust.configSnapshot, golden: gold.configSnapshot });
+  check(`ENG.${tag}.configSnapshot — §5.2 的 config 块相同`, sameJSON(rust.configSnapshot, gold.configSnapshot), {
+    rust: rust.configSnapshot,
+    golden: gold.configSnapshot,
+  });
 
-  check(`ENG.${tag}.launch — 引擎启动配方相同`, sameJSON(rust.launch, gold.launch), { rust: rust.launch, golden: gold.launch });
-  check(`ENG.${tag}.llmLaunch — 引擎③ 配方相同`, sameJSON(rust.llmLaunch, gold.llmLaunch), { rust: rust.llmLaunch, golden: gold.llmLaunch });
+  check(`ENG.${tag}.launch — 引擎启动配方相同`, sameJSON(rust.launch, gold.launch), {
+    rust: rust.launch,
+    golden: gold.launch,
+  });
+  check(`ENG.${tag}.llmLaunch — 引擎③ 配方相同`, sameJSON(rust.llmLaunch, gold.llmLaunch), {
+    rust: rust.llmLaunch,
+    golden: gold.llmLaunch,
+  });
 
   if (tag === 'real' && gold.frames) {
-    check('ENG.real.frames — 每帧 {结果字节, ext, mime, 阶段日志} 相同', sameJSON(rust.frames, gold.frames), { rust: rust.frames, golden: gold.frames });
+    check('ENG.real.frames — 每帧 {结果字节, ext, mime, 阶段日志} 相同', sameJSON(rust.frames, gold.frames), {
+      rust: rust.frames,
+      golden: gold.frames,
+    });
   }
 }
 
@@ -194,13 +253,19 @@ if (REFUTE) {
   mutations.push({
     id: 'M2',
     what: '篡改 golden 启动 cmd（丢 --use-gpu）',
-    red: !sameJSON({ ...golden.real.launch, cmd: golden.real.launch.cmd.filter((x) => x !== '--use-gpu') }, realReport.launch),
+    red: !sameJSON(
+      { ...golden.real.launch, cmd: golden.real.launch.cmd.filter((x) => x !== '--use-gpu') },
+      realReport.launch,
+    ),
   });
   // M3：篡改 golden 注入 env
   mutations.push({
     id: 'M3',
     what: '篡改 golden 注入 env（PYTHONIOENCODING → gbk）',
-    red: !sameJSON({ ...golden.real.launch, envInjected: { ...golden.real.launch.envInjected, PYTHONIOENCODING: 'gbk' } }, realReport.launch),
+    red: !sameJSON(
+      { ...golden.real.launch, envInjected: { ...golden.real.launch.envInjected, PYTHONIOENCODING: 'gbk' } },
+      realReport.launch,
+    ),
   });
   // M4：删 golden 一条阶段日志行
   mutations.push({
@@ -226,13 +291,19 @@ if (REFUTE) {
   let allRed = true;
   for (const m of mutations) {
     if (!m.red) allRed = false;
-    console.log(`  ${m.red ? '✓' : '✗'} ${m.id} ${m.what} → ${m.red ? '按预期变红' : '**没有红**（断言漏了它）'}${m.info ? ` ${JSON.stringify(m.info)}` : ''}`);
+    console.log(
+      `  ${m.red ? '✓' : '✗'} ${m.id} ${m.what} → ${m.red ? '按预期变红' : '**没有红**（断言漏了它）'}${m.info ? ` ${JSON.stringify(m.info)}` : ''}`,
+    );
   }
   console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed, allRed }));
-  console.log(`\nF4 engine 同源：正向 ${passed} / ${passed + failed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`);
+  console.log(
+    `\nF4 engine 同源：正向 ${passed} / ${passed + failed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`,
+  );
   process.exit(allRed ? 0 : 1);
 }
 
 console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed }));
-console.log(`\nF4 engine 同源：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`);
+console.log(
+  `\nF4 engine 同源：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`,
+);
 process.exit(failed === 0 ? 0 : 1);

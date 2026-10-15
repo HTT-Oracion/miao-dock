@@ -26,13 +26,7 @@
 /** 分组 id —— 同时是深链 `?section=` 的取值集合（《09》§4.1） */
 export type SectionId = 'general' | 'translate' | 'media' | 'resource' | 'about';
 
-export const SECTION_IDS: readonly SectionId[] = [
-  'general',
-  'translate',
-  'media',
-  'resource',
-  'about',
-] as const;
+export const SECTION_IDS: readonly SectionId[] = ['general', 'translate', 'media', 'resource', 'about'] as const;
 
 /** 能力状态：`live` 有真实能力；`pending` 引擎/音乐 M1 之后才有 */
 export type ItemState = 'live' | 'pending';
@@ -166,8 +160,7 @@ export const TRANSLATE: SettingSection = {
     '改档位/后端/模型目录要重启引擎才生效，所以界面上「已配置」与「已生效」分开显示。' +
     '两个空闲卸载阈值生效时机不同：LLM 档保存后立刻生效，视觉档必须重启引擎 —— ' +
     '提示条因此只挂在真正需要它的那一小节下方。',
-  noteSummary:
-    '本组 13 项 · 改档位/后端/模型目录要重启引擎才生效 · 两个空闲卸载阈值生效时机不同',
+  noteSummary: '本组 13 项 · 改档位/后端/模型目录要重启引擎才生效 · 两个空闲卸载阈值生效时机不同',
   groups: [
     {
       id: 'source',
@@ -194,9 +187,7 @@ export const TRANSLATE: SettingSection = {
           label: '自动启动翻译服务',
           state: 'live',
           def: '开',
-          why:
-            '开：进入「漫画翻译」时自动拉起本地服务（默认）。' +
-            '关：通过「启动本地服务」手动拉起 —— '
+          why: '开：进入「漫画翻译」时自动拉起本地服务（默认）。' + '关：通过「启动本地服务」手动拉起 —— ',
         },
         { id: 'token-pairing', label: '令牌配对', state: 'live' },
         { id: 'root-dir', label: '落盘根目录', state: 'live' },
@@ -211,35 +202,28 @@ export const TRANSLATE: SettingSection = {
           label: '翻译方向',
           state: 'live',
           def: '日译中',
-          why:
-            '英译中走**离线 nllb**，日译中走 Sakura；未指定方向的任务落默认「日译中」。',
+          why: '英译中走**离线 nllb**，日译中走 Sakura；未指定方向的任务落默认「日译中」。',
         },
         {
           id: 'tier',
           label: '翻译档位',
           state: 'live',
           def: '按硬件探测',
-          why:
-            '物理不可行的档位**不出现**；标「不推荐」并在选中时强警告。' +
-            '改它要**重启引擎**才生效',
+          why: '物理不可行的档位**不出现**；标「不推荐」并在选中时强警告。' + '改它要**重启引擎**才生效',
         },
         {
           id: 'backend',
           label: '加速后端',
           state: 'live',
           def: '自动',
-          why:
-            '「自动」按硬件探测；下拉只列本机**真的能用**的后端。' +
-            '改它要重启引擎。',
+          why: '「自动」按硬件探测；下拉只列本机**真的能用**的后端。' + '改它要重启引擎。',
         },
         {
           id: 'idle-llm',
           label: '空闲卸载 LLM',
           state: 'live',
           def: '5 分钟',
-          why:
-            'Sakura LLM 空闲多久后释放（分钟，**0 = 从不卸载**）。' +
-            '保存后**立刻生效**，不需要重启引擎。',
+          why: 'Sakura LLM 空闲多久后释放（分钟，**0 = 从不卸载**）。' + '保存后**立刻生效**，不需要重启引擎。',
         },
         {
           id: 'idle-vision',
@@ -247,8 +231,7 @@ export const TRANSLATE: SettingSection = {
           state: 'live',
           def: '30 分钟',
           why:
-            '视觉模型空闲多久后释放（分钟，0 = 从不卸载）。' +
-            '参数在拉开引擎进程时就固化，**必须重启引擎**才生效。',
+            '视觉模型空闲多久后释放（分钟，0 = 从不卸载）。' + '参数在拉开引擎进程时就固化，**必须重启引擎**才生效。',
         },
       ],
     },
@@ -260,9 +243,7 @@ export const TRANSLATE: SettingSection = {
           id: 'model-dir',
           label: '模型目录',
           state: 'live',
-          why:
-            '权重放在哪。服务只在启动时读这个路径，' +
-            '改它需要重启引擎。',
+          why: '权重放在哪。服务只在启动时读这个路径，' + '改它需要重启引擎。',
         },
         {
           id: 'model-manage',
@@ -287,8 +268,7 @@ export const TRANSLATE: SettingSection = {
            * ⚠️ why 是**重写**不是删除（《03》§7.1）：ver2.0 那句「默认收起、点开即见」描述的
            * 是"日志也被折叠"的旧形态，本版日志已摘出折叠范围，那句话留着就是错的。
            */
-          why:
-            '进程、参数、模型与阶段日志的现场。'
+          why: '进程、参数、模型与阶段日志的现场。',
         },
       ],
     },
@@ -311,8 +291,7 @@ export const TRANSLATE: SettingSection = {
 export const MEDIA: SettingSection = {
   id: 'media',
   name: '播放·媒体',
-  blurb:
-    '播放、歌词等设置',
+  blurb: '播放、歌词等设置',
   groups: [
     {
       id: 'playback',
@@ -361,16 +340,14 @@ export const MEDIA: SettingSection = {
           label: '歌词字号',
           state: 'live',
           def: '19px',
-          why:
-            '作用于「展开播放器」的歌词区' 
+          why: '作用于「展开播放器」的歌词区',
         },
         {
           id: 'lyrics-color',
           label: '歌词高亮色',
           state: 'live',
           def: '#FFE066',
-          why:
-            '作用于「展开播放器」里正在唱的那一行' 
+          why: '作用于「展开播放器」里正在唱的那一行',
         },
         {
           id: 'lyrics-window',
@@ -474,13 +451,7 @@ export const ABOUT: SettingSection = {
 };
 
 /** 顺序即左栏导航渲染顺序（①→⑤） */
-export const SETTINGS_SECTIONS: readonly SettingSection[] = [
-  GENERAL,
-  TRANSLATE,
-  MEDIA,
-  RESOURCE,
-  ABOUT,
-] as const;
+export const SETTINGS_SECTIONS: readonly SettingSection[] = [GENERAL, TRANSLATE, MEDIA, RESOURCE, ABOUT] as const;
 
 /** 深链解析：非法或缺省一律回落到①，不抛错（《09》§4.1 的 `?section=`） */
 export function parseSection(raw: string | null): SectionId {

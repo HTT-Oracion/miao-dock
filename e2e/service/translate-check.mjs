@@ -162,8 +162,12 @@ function runRust(args, env = {}) {
     const c = spawn(RUST_BIN, args, { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
-    c.stdout.on('data', (d) => { out += d.toString(); });
-    c.stderr.on('data', (d) => { err += d.toString(); });
+    c.stdout.on('data', (d) => {
+      out += d.toString();
+    });
+    c.stderr.on('data', (d) => {
+      err += d.toString();
+    });
     c.on('error', reject);
     c.on('close', (code) => {
       if (code === 0) resolve(out);
@@ -201,9 +205,13 @@ const saveCredentials = (body, env) => call('credentials', body, env);
  */
 const batch = (spec, env) => call('batch', spec, env);
 /** N 条互不相同的 body（唯一 text，见文件头纪律②） */
-const uniqueBodies = (n, tag, extra = {}) => Array.from({ length: n }, () => ({
-  text: nextText(tag), from: 'ja', to: 'zh', ...extra,
-}));
+const uniqueBodies = (n, tag, extra = {}) =>
+  Array.from({ length: n }, () => ({
+    text: nextText(tag),
+    from: 'ja',
+    to: 'zh',
+    ...extra,
+  }));
 
 /** 调用失败时的可读说明 */
 function errText(err) {
@@ -217,18 +225,35 @@ function errText(err) {
  * 断言变红与脚本崩了是两件事，反证轮对后者的读法完全不同，AGENTS.md §2-4）。
  */
 function lastHit() {
-  return fake.state.hits[fake.state.hits.length - 1]
-    || { api: '', path: '', fields: {}, contentType: '', salt: '', curtime: '', sign: '', signOk: false, at: 0 };
+  return (
+    fake.state.hits[fake.state.hits.length - 1] || {
+      api: '',
+      path: '',
+      fields: {},
+      contentType: '',
+      salt: '',
+      curtime: '',
+      sign: '',
+      signOk: false,
+      at: 0,
+    }
+  );
 }
 
 // ------------------------------------------------------------------ 小工具
 
-const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+const sleep = (ms) =>
+  new Promise((r) => {
+    setTimeout(r, ms);
+  });
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
 /** 全局计数器：**每次翻译调用的 text 都不重样**（见文件头纪律②） */
 let seq = 0;
-const nextN = () => { seq += 1; return String(seq).padStart(3, '0'); };
+const nextN = () => {
+  seq += 1;
+  return String(seq).padStart(3, '0');
+};
 const nextText = (tag) => `${tag}${nextN()}`;
 /** 内容触发文本：`__T_<TOKEN>__<序号>`（≤20 字符，见文件头纪律①） */
 const trig = (token) => `__T_${token}__${nextN()}`;
@@ -249,9 +274,8 @@ function baseEnv(overrides = {}) {
 }
 
 /** 合并默认 env 与覆盖项（`undefined` 覆盖项表示"沿用默认"）。 */
-const envOf = (overrides) => baseEnv(Object.fromEntries(
-  Object.entries(overrides || {}).filter(([, v]) => v !== undefined),
-));
+const envOf = (overrides) =>
+  baseEnv(Object.fromEntries(Object.entries(overrides || {}).filter(([, v]) => v !== undefined)));
 
 /** 临时切假上游模式（`holdMs` 仅 stall / slow-head-hold 用） */
 async function withMode(mode, holdMs, fn) {
@@ -259,7 +283,12 @@ async function withMode(mode, holdMs, fn) {
   const h = fake.state.holdMs;
   fake.state.mode = mode;
   fake.state.holdMs = holdMs || 0;
-  try { return await fn(); } finally { fake.state.mode = m; fake.state.holdMs = h; }
+  try {
+    return await fn();
+  } finally {
+    fake.state.mode = m;
+    fake.state.holdMs = h;
+  }
 }
 
 // ------------------------------------------------------------------ 网络小工具
@@ -297,7 +326,17 @@ function probeHang(host, port, timeoutMs) {
   return new Promise((resolve) => {
     const s = net.connect({ host, port });
     let settled = false;
-    const done = (v) => { if (!settled) { settled = true; try { s.destroy(); } catch { /* ignore */ } resolve(v); } };
+    const done = (v) => {
+      if (!settled) {
+        settled = true;
+        try {
+          s.destroy();
+        } catch {
+          /* ignore */
+        }
+        resolve(v);
+      }
+    };
     s.setTimeout(timeoutMs);
     s.once('connect', () => done(false));
     s.once('timeout', () => done(true));
@@ -309,7 +348,10 @@ let blackholeCache;
 async function findBlackhole() {
   if (blackholeCache !== undefined) return blackholeCache;
   for (const host of BLACKHOLE_CANDIDATES) {
-    if (await probeHang(host, 443, 400)) { blackholeCache = host; return host; }
+    if (await probeHang(host, 443, 400)) {
+      blackholeCache = host;
+      return host;
+    }
   }
   blackholeCache = null;
   return null;
@@ -319,16 +361,33 @@ async function findBlackhole() {
 
 /** 内容触发 → **上游业务错误码**（按 path 选形状回：text 回 errorCode，llm 回 code） */
 const ERR_TRIGGERS = {
-  E101: '101', E103: '103', E108: '108', E202: '202',
-  E301: '301', E302: '302', E304: '304', E310: '310',
-  E401: '401', E411: '411', E412: '412', E999: '999',
-  E1: '1', E206: '206', E902000: '902000',
+  E101: '101',
+  E103: '103',
+  E108: '108',
+  E202: '202',
+  E301: '301',
+  E302: '302',
+  E304: '304',
+  E310: '310',
+  E401: '401',
+  E411: '411',
+  E412: '412',
+  E999: '999',
+  E1: '1',
+  E206: '206',
+  E902000: '902000',
 };
 /** 内容触发 → **响应形态** */
 const MODE_TRIGGERS = {
-  M500G: 'http500-garbage', MSTALL: 'stall', MHANG: 'hang-head',
-  MNEVER: 'never-end', MHOLD: 'slow-head-hold', MBREAK: 'ok-then-break',
-  MHALF: 'half-packet', MTAIL: 'tail-packet', MNOOK: 'no-success',
+  M500G: 'http500-garbage',
+  MSTALL: 'stall',
+  MHANG: 'hang-head',
+  MNEVER: 'never-end',
+  MHOLD: 'slow-head-hold',
+  MBREAK: 'ok-then-break',
+  MHALF: 'half-packet',
+  MTAIL: 'tail-packet',
+  MNOOK: 'no-success',
 };
 
 /**
@@ -352,7 +411,7 @@ const MODE_TRIGGERS = {
 function createFakeUpstream() {
   const DEFAULT_DELTAS = ['甲', '乙', '丙'];
   const state = {
-    mode: 'ok',            // ok | hang-head | never-end | slow-head-hold | ok-then-break | half-packet | tail-packet | http500-garbage | stall | no-success | line-json | empty-frames
+    mode: 'ok', // ok | hang-head | never-end | slow-head-hold | ok-then-break | half-packet | tail-packet | http500-garbage | stall | no-success | line-json | empty-frames
     holdMs: 0,
     llmDeltas: DEFAULT_DELTAS,
     llmLangType: 'zh-CHS',
@@ -392,7 +451,9 @@ function createFakeUpstream() {
   };
 
   const server = http.createServer((req, res) => {
-    res.on('error', () => { /* 客户端已走：不让它变成 unhandled 'error' 打死进程 */ });
+    res.on('error', () => {
+      /* 客户端已走：不让它变成 unhandled 'error' 打死进程 */
+    });
     const chunks = [];
     req.on('data', (c) => chunks.push(c));
     req.on('end', () => {
@@ -412,11 +473,19 @@ function createFakeUpstream() {
         path: pathname,
         fields,
         contentType: String(req.headers['content-type'] || ''),
-        salt, curtime, sign: String(fields.sign ?? ''), signOk,
+        salt,
+        curtime,
+        sign: String(fields.sign ?? ''),
+        signOk,
         at: Date.now(),
       });
       let released = false;
-      res.on('close', () => { if (!released) { released = true; state.inflight = Math.max(0, state.inflight - 1); } });
+      res.on('close', () => {
+        if (!released) {
+          released = true;
+          state.inflight = Math.max(0, state.inflight - 1);
+        }
+      });
 
       // ① 验签
       if (!signOk) {
@@ -425,7 +494,10 @@ function createFakeUpstream() {
         return;
       }
       // ② 防重放（salt 每次请求都必须重新生成，否则必撞这里）
-      if (state.seenSalts.has(salt)) { replyErr(res, isLlm, '207'); return; }
+      if (state.seenSalts.has(salt)) {
+        replyErr(res, isLlm, '207');
+        return;
+      }
       state.seenSalts.add(salt);
 
       // ③ 内容触发
@@ -433,7 +505,11 @@ function createFakeUpstream() {
       const token = tm ? tm[1] : '';
       if (token === 'M303F') {
         // 第一次 303（可重试），之后正常 —— 用来验"重试真的发生了且换了 salt"
-        if (!state.first303.has(q)) { state.first303.add(q); replyErr(res, isLlm, '303'); return; }
+        if (!state.first303.has(q)) {
+          state.first303.add(q);
+          replyErr(res, isLlm, '303');
+          return;
+        }
       }
       if (Object.prototype.hasOwnProperty.call(ERR_TRIGGERS, token)) {
         replyErr(res, isLlm, ERR_TRIGGERS[token]);
@@ -446,7 +522,11 @@ function createFakeUpstream() {
 
       const safeWrite = (chunk) => {
         if (res.destroyed || res.writableEnded) return false;
-        try { return res.write(chunk); } catch { return false; }
+        try {
+          return res.write(chunk);
+        } catch {
+          return false;
+        }
       };
 
       /** 正常回话：text 回整体 JSON；llm 回**真实有道的 SSE 帧**（`event:message` + `data:`） */
@@ -454,7 +534,8 @@ function createFakeUpstream() {
         if (isLlm) {
           res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8' });
           const objOf = (d, i) => ({
-            code: '0', successful: true,
+            code: '0',
+            successful: true,
             data: { transIncre: d, ...(i === 0 ? { langType: state.llmLangType } : {}) },
           });
           if (mode === 'line-json') {
@@ -501,14 +582,20 @@ function createFakeUpstream() {
           translation: oneLine ? [q] : q.split('\n').map((l) => `[译]${l}`),
           l: `x2${String(fields.to ?? 'zh-CHS')}`,
         });
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(body) });
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Length': Buffer.byteLength(body),
+        });
         res.end(body);
       };
 
       switch (mode) {
-        case 'hang-head': return;                       // 永不回话 → ttfb 层
-        case 'stall': setTimeout(replyOk, state.holdMs); return;
-        case 'slow-head-hold':                          // 头先拖一会，再给半截身子 → idle 层
+        case 'hang-head':
+          return; // 永不回话 → ttfb 层
+        case 'stall':
+          setTimeout(replyOk, state.holdMs);
+          return;
+        case 'slow-head-hold': // 头先拖一会，再给半截身子 → idle 层
           setTimeout(() => {
             res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
             safeWrite('{"errorCode":"0","translation":["半');
@@ -520,9 +607,19 @@ function createFakeUpstream() {
           return;
         case 'ok-then-break': {
           res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8' });
-          state.lastLlmRaw = sseFrame({ code: '0', successful: true, data: { transIncre: state.llmDeltas[0], langType: state.llmLangType } });
+          state.lastLlmRaw = sseFrame({
+            code: '0',
+            successful: true,
+            data: { transIncre: state.llmDeltas[0], langType: state.llmLangType },
+          });
           safeWrite(state.lastLlmRaw);
-          setTimeout(() => { try { res.socket?.destroy(); } catch { /* ignore */ } }, 40);
+          setTimeout(() => {
+            try {
+              res.socket?.destroy();
+            } catch {
+              /* ignore */
+            }
+          }, 40);
           return;
         }
         case 'http500-garbage':
@@ -535,10 +632,13 @@ function createFakeUpstream() {
           state.lastLlmRaw = sseFrame({ code: '0', successful: false });
           res.end(state.lastLlmRaw);
           return;
-        default: replyOk();
+        default:
+          replyOk();
       }
     });
-    req.on('aborted', () => { /* 客户端中途走了：等 'close' 释放即可 */ });
+    req.on('aborted', () => {
+      /* 客户端中途走了：等 'close' 释放即可 */
+    });
   });
 
   return { state, server, port: 0 };
@@ -557,7 +657,10 @@ function spawnProc(entry, env, tag, args = []) {
   //    摘掉再还原（env 快照在 spawn 时同步取走，晚一步还原不影响子进程）。
   const stash = [];
   for (const k of Object.keys(process.env)) {
-    if (k.startsWith('MIAO_TRANSLATE_REFUTE_')) { stash.push([k, process.env[k]]); delete process.env[k]; }
+    if (k.startsWith('MIAO_TRANSLATE_REFUTE_')) {
+      stash.push([k, process.env[k]]);
+      delete process.env[k];
+    }
   }
   let child;
   try {
@@ -570,9 +673,17 @@ function spawnProc(entry, env, tag, args = []) {
   child.stdout.on('data', (d) => {
     st.out += d.toString();
     const m = /MIAO_READY (\{.*\})/.exec(st.out);
-    if (m && !st.ready) { try { st.ready = JSON.parse(m[1]); } catch { /* 继续等 */ } }
+    if (m && !st.ready) {
+      try {
+        st.ready = JSON.parse(m[1]);
+      } catch {
+        /* 继续等 */
+      }
+    }
   });
-  child.stderr.on('data', (d) => { st.err += d.toString(); });
+  child.stderr.on('data', (d) => {
+    st.err += d.toString();
+  });
   return st;
 }
 
@@ -595,25 +706,40 @@ function httpReq(port, method, pathname, { headers = {}, body = null, token } = 
     const h = { ...headers };
     if (token) h['X-Box-Token'] = token;
     if (body) h['Content-Length'] = body.length;
-    const req = http.request({
-      host: '127.0.0.1', port, path: pathname, method, headers: h, agent: false,
-    }, (res) => {
-      const chunks = [];
-      res.on('data', (c) => chunks.push(c));
-      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
-    });
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port,
+        path: pathname,
+        method,
+        headers: h,
+        agent: false,
+      },
+      (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+      },
+    );
     req.on('error', reject);
     if (body) req.write(body);
     req.end();
   });
 }
-const jsonOf = (res) => { try { return JSON.parse(res.body.toString('utf8')); } catch { return null; } };
+const jsonOf = (res) => {
+  try {
+    return JSON.parse(res.body.toString('utf8'));
+  } catch {
+    return null;
+  }
+};
 const get = (port, p) => httpReq(port, 'GET', p, { token: TOKEN });
-const post = (port, p, obj) => httpReq(port, 'POST', p, {
-  token: TOKEN,
-  headers: { 'Content-Type': 'application/json' },
-  body: Buffer.from(JSON.stringify(obj), 'utf8'),
-});
+const post = (port, p, obj) =>
+  httpReq(port, 'POST', p, {
+    token: TOKEN,
+    headers: { 'Content-Type': 'application/json' },
+    body: Buffer.from(JSON.stringify(obj), 'utf8'),
+  });
 
 /** 把 SSE 响应体切成事件（`id: N\nevent: X\ndata: {...}\n\n`） */
 function parseSse(buf) {
@@ -629,7 +755,13 @@ function parseSse(buf) {
       const v = line.slice(i + 1).trim();
       if (k === 'id') ev.id = Number(v);
       else if (k === 'event') ev.event = v;
-      else if (k === 'data') { try { ev.data = JSON.parse(v); } catch { ev.data = v; } }
+      else if (k === 'data') {
+        try {
+          ev.data = JSON.parse(v);
+        } catch {
+          ev.data = v;
+        }
+      }
     }
     if (ev.event) out.push(ev);
   }
@@ -646,9 +778,13 @@ async function groupS() {
     const hit = lastHit();
     const input = `${t.slice(0, 10)}${t.length}${t.slice(-10)}`;
     const expect = sha(TEST_APP_KEY + input + hit.salt + hit.curtime + TEST_APP_SECRET);
-    check(`S1 长文本（${t.length} 字符 > 20）按「前10+长度+后10」截断后参与签名：假上游同算法验签通过、独立重算的 sign 逐字一致`,
+    check(
+      `S1 长文本（${t.length} 字符 > 20）按「前10+长度+后10」截断后参与签名：假上游同算法验签通过、独立重算的 sign 逐字一致`,
       t.length === LONG_LEN && !r.err && expect === hit.sign && hit.signOk,
-      r.err ? errText(r.err) : `input=${input} sign=${hit.sign.slice(0, 8)}… 假上游验签=${hit.signOk ? '通过' : '拒绝'}`);
+      r.err
+        ? errText(r.err)
+        : `input=${input} sign=${hit.sign.slice(0, 8)}… 假上游验签=${hit.signOk ? '通过' : '拒绝'}`,
+    );
   }
 
   // S2 短文本（≤20）不截断
@@ -657,9 +793,11 @@ async function groupS() {
     const r = await text({ text: t, from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf());
     const hit = lastHit();
     const expect = sha(TEST_APP_KEY + t + hit.salt + hit.curtime + TEST_APP_SECRET);
-    check('S2 短文本（≤20 字符）原样参与签名（不截断）：独立重算的 sign 逐字一致',
+    check(
+      'S2 短文本（≤20 字符）原样参与签名（不截断）：独立重算的 sign 逐字一致',
       !r.err && t.length <= 20 && expect === hit.sign && hit.signOk,
-      r.err ? errText(r.err) : `len=${t.length} sign=${hit.sign.slice(0, 8)}…`);
+      r.err ? errText(r.err) : `len=${t.length} sign=${hit.sign.slice(0, 8)}…`,
+    );
   }
 
   // S3 每次请求换 salt
@@ -670,9 +808,11 @@ async function groupS() {
     const rb = await text({ text: b, from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf());
     const ha = fake.state.hits[fake.state.hits.length - 2];
     const hb = fake.state.hits[fake.state.hits.length - 1];
-    check('S3 每次请求重新生成 salt + curtime + sign（不是进程级常量）：两次不同 text 的 salt 必然不同',
+    check(
+      'S3 每次请求重新生成 salt + curtime + sign（不是进程级常量）：两次不同 text 的 salt 必然不同',
       !ra.err && !rb.err && ha.salt !== hb.salt && ha.sign !== hb.sign && ha.signOk && hb.signOk,
-      `saltA=${ha.salt.slice(0, 8)}… saltB=${hb.salt.slice(0, 8)}…`);
+      `saltA=${ha.salt.slice(0, 8)}… saltB=${hb.salt.slice(0, 8)}…`,
+    );
   }
 
   // S4 重试也换 salt
@@ -680,10 +820,17 @@ async function groupS() {
     const t = trig('M303F');
     const r = await text({ text: t, from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf());
     const mine = fake.state.hits.filter((h) => h.fields.q === t);
-    check('S4 重试也重新生成 salt（§7.3：复用 salt 必撞上游防重放 207）：第一次 303 → 重试即成功，两次 salt 不同、两次都过验签',
-      !r.err && mine.length === 2 && mine[0].salt !== mine[1].salt && mine.every((h) => h.signOk)
-      && r.value.text === `[译]${t}`,
-      r.err ? errText(r.err) : `请求数=${mine.length} salt0=${mine[0].salt.slice(0, 8)}… salt1=${mine[1].salt.slice(0, 8)}… 译文=${r.value.text}`);
+    check(
+      'S4 重试也重新生成 salt（§7.3：复用 salt 必撞上游防重放 207）：第一次 303 → 重试即成功，两次 salt 不同、两次都过验签',
+      !r.err &&
+        mine.length === 2 &&
+        mine[0].salt !== mine[1].salt &&
+        mine.every((h) => h.signOk) &&
+        r.value.text === `[译]${t}`,
+      r.err
+        ? errText(r.err)
+        : `请求数=${mine.length} salt0=${mine[0].salt.slice(0, 8)}… salt1=${mine[1].salt.slice(0, 8)}… 译文=${r.value.text}`,
+    );
   }
 
   // S5 text 出网字段集
@@ -692,12 +839,17 @@ async function groupS() {
     const r = await text({ text: t, from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf());
     const hit = lastHit();
     const keys = Object.keys(hit.fields).sort().join(',');
-    check('S5 text 出网协议：Content-Type 为 form-urlencoded；字段恰为 q/from/to/domain/strict + 签名五件套（signType=v3、strict=false）',
-      !r.err && hit.contentType.startsWith('application/x-www-form-urlencoded')
-      && keys === 'appKey,curtime,domain,from,q,salt,sign,signType,strict,to'
-      && hit.fields.signType === 'v3' && hit.fields.strict === 'false'
-      && hit.fields.from === 'ja' && hit.fields.to === 'zh-CHS',
-      `ct=${hit.contentType} 字段=${keys}`);
+    check(
+      'S5 text 出网协议：Content-Type 为 form-urlencoded；字段恰为 q/from/to/domain/strict + 签名五件套（signType=v3、strict=false）',
+      !r.err &&
+        hit.contentType.startsWith('application/x-www-form-urlencoded') &&
+        keys === 'appKey,curtime,domain,from,q,salt,sign,signType,strict,to' &&
+        hit.fields.signType === 'v3' &&
+        hit.fields.strict === 'false' &&
+        hit.fields.from === 'ja' &&
+        hit.fields.to === 'zh-CHS',
+      `ct=${hit.contentType} 字段=${keys}`,
+    );
   }
 
   // S6 llm 出网字段集
@@ -706,11 +858,17 @@ async function groupS() {
     const r = await stream({ text: t, from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf());
     const hit = lastHit();
     const keys = Object.keys(hit.fields).sort().join(',');
-    check('S6 llm 出网协议：字段恰为 i/prompt/from/to/streamType/handleOption + 签名五件套（streamType=increment、handleOption 缺省 0）',
-      !r.err && hit.path === '/proxy/http/llm-trans' && hit.contentType.startsWith('application/x-www-form-urlencoded')
-      && keys === 'appKey,curtime,from,handleOption,i,prompt,salt,sign,signType,streamType,to'
-      && hit.fields.streamType === 'increment' && hit.fields.handleOption === '0' && hit.fields.i === t,
-      `字段=${keys}`);
+    check(
+      'S6 llm 出网协议：字段恰为 i/prompt/from/to/streamType/handleOption + 签名五件套（streamType=increment、handleOption 缺省 0）',
+      !r.err &&
+        hit.path === '/proxy/http/llm-trans' &&
+        hit.contentType.startsWith('application/x-www-form-urlencoded') &&
+        keys === 'appKey,curtime,from,handleOption,i,prompt,salt,sign,signType,streamType,to' &&
+        hit.fields.streamType === 'increment' &&
+        hit.fields.handleOption === '0' &&
+        hit.fields.i === t,
+      `字段=${keys}`,
+    );
   }
 
   // S7 首块锁定
@@ -718,18 +876,22 @@ async function groupS() {
     const t = trig('MBREAK');
     const r = await stream({ text: t, from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf());
     const mine = fake.state.hits.filter((h) => h.fields.i === t);
-    check('S7 首块锁定：首块之后失败**绝不重试**（§7.3 —— 重来会重复/覆盖已吐给用户的增量）：上游吐了一块就掐流，请求数仍为 1',
+    check(
+      'S7 首块锁定：首块之后失败**绝不重试**（§7.3 —— 重来会重复/覆盖已吐给用户的增量）：上游吐了一块就掐流，请求数仍为 1',
       mine.length === 1 && (r.deltas || []).length === 1 && r.err?.code === 'TRANSLATE_UPSTREAM_UNREACHABLE',
-      `请求数=${mine.length} 已吐增量=${(r.deltas || []).length} ${r.err ? errText(r.err) : '竟然成功了'}`);
+      `请求数=${mine.length} 已吐增量=${(r.deltas || []).length} ${r.err ? errText(r.err) : '竟然成功了'}`,
+    );
   }
 
   // S8 text 判成功单判
   {
     const t = nextText('判成');
     const r = await text({ text: t, from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf());
-    check('S8 text 判成功按 `errorCode === "0"` **单判**：假上游的回话里**没有** successful 字段也判成功（不拿 llm 的双判去要求 text 接口）',
+    check(
+      'S8 text 判成功按 `errorCode === "0"` **单判**：假上游的回话里**没有** successful 字段也判成功（不拿 llm 的双判去要求 text 接口）',
       !r.err && r.value.text === `[译]${t}`,
-      r.err ? errText(r.err) : `译文=${r.value.text}`);
+      r.err ? errText(r.err) : `译文=${r.value.text}`,
+    );
   }
 
   // S9 llm 判成功双判
@@ -737,9 +899,11 @@ async function groupS() {
     const t = trig('MNOOK');
     const r = await stream({ text: t, from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf());
     const mine = fake.state.hits.filter((h) => h.fields.i === t);
-    check('S9 llm 判成功按 `code === "0"` **且** `successful === true` 双判：code 是 "0" 但 successful=false 必须判失败（而不是当成功吐个空译文）',
+    check(
+      'S9 llm 判成功按 `code === "0"` **且** `successful === true` 双判：code 是 "0" 但 successful=false 必须判失败（而不是当成功吐个空译文）',
       r.err?.code === 'TRANSLATE_UPSTREAM_ERROR' && mine.length === 1,
-      `${r.err ? errText(r.err) : '竟然成功了'} 请求数=${mine.length}`);
+      `${r.err ? errText(r.err) : '竟然成功了'} 请求数=${mine.length}`,
+    );
   }
 
   // S10 上游业务码 → 统一码（表驱动）
@@ -780,8 +944,11 @@ async function groupS() {
         bad.push(`${api}/${token}→${r.err ? `${r.err.code}/${r.err.status}` : '成功'}（要 ${want}/${wantStatus}）`);
       }
     });
-    check(`S10 上游业务码 → 统一码 + HTTP 状态（${rows.length} 行表驱动，两接口各查自己那张表；未登记码 999 落兜底 UPSTREAM_ERROR）`,
-      bad.length === 0, bad.length ? `不符：${bad.join('；')}` : `${rows.length} 行全部命中`);
+    check(
+      `S10 上游业务码 → 统一码 + HTTP 状态（${rows.length} 行表驱动，两接口各查自己那张表；未登记码 999 落兜底 UPSTREAM_ERROR）`,
+      bad.length === 0,
+      bad.length ? `不符：${bad.join('；')}` : `${rows.length} 行全部命中`,
+    );
   }
 
   // S11 半包 / 尾包
@@ -794,10 +961,16 @@ async function groupS() {
     fake.state.llmDeltas = keep;
     const d1 = r1.deltas || [];
     const d2 = r2.deltas || [];
-    check('S11 半包（一帧拆在两个 TCP 块里）与尾包（最后一帧没有收尾空行）都吃得下：增量不丢不重、顺序不乱，累计全文与增量拼接逐字一致',
-      !r1.err && !r2.err && d1.join('') === 'ABCD' && d2.join('') === 'XYZ'
-      && r1.value.text === 'ABCD' && r2.value.text === 'XYZ',
-      `半包=${JSON.stringify(d1)}/${JSON.stringify(r1.value && r1.value.text)} 尾包=${JSON.stringify(d2)}/${JSON.stringify(r2.value && r2.value.text)}`);
+    check(
+      'S11 半包（一帧拆在两个 TCP 块里）与尾包（最后一帧没有收尾空行）都吃得下：增量不丢不重、顺序不乱，累计全文与增量拼接逐字一致',
+      !r1.err &&
+        !r2.err &&
+        d1.join('') === 'ABCD' &&
+        d2.join('') === 'XYZ' &&
+        r1.value.text === 'ABCD' &&
+        r2.value.text === 'XYZ',
+      `半包=${JSON.stringify(d1)}/${JSON.stringify(r1.value && r1.value.text)} 尾包=${JSON.stringify(d2)}/${JSON.stringify(r2.value && r2.value.text)}`,
+    );
   }
 
   // S12 真上游形态：SSE 帧（`event:message` + `data:`）必须被解析
@@ -806,36 +979,45 @@ async function groupS() {
     const r = await stream({ text: t, from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf());
     const raw = fake.state.lastLlmRaw;
     const deltas = r.deltas || [];
-    check('S12 🔴 真上游形态是**标准 SSE 帧**（`event:message` + `data:{...}`，D-130 真机取证）：解析器逐帧取出 3 条增量、累计一致；且假上游确以该形态回话（旧"裸 JSON 行"解析器在这条上必红）',
-      !r.err && /^event:message\ndata:\{/.test(raw) && deltas.join('') === '甲乙丙'
-      && r.value.text === '甲乙丙',
-      r.err ? errText(r.err) : `raw=${JSON.stringify(raw.slice(0, 40))}… 增量=${JSON.stringify(deltas)}`);
+    check(
+      'S12 🔴 真上游形态是**标准 SSE 帧**（`event:message` + `data:{...}`，D-130 真机取证）：解析器逐帧取出 3 条增量、累计一致；且假上游确以该形态回话（旧"裸 JSON 行"解析器在这条上必红）',
+      !r.err && /^event:message\ndata:\{/.test(raw) && deltas.join('') === '甲乙丙' && r.value.text === '甲乙丙',
+      r.err ? errText(r.err) : `raw=${JSON.stringify(raw.slice(0, 40))}… 增量=${JSON.stringify(deltas)}`,
+    );
   }
 
   // S13 向后兼容：裸 JSON 行
   {
     const keep = fake.state.llmDeltas;
     fake.state.llmDeltas = ['AB', 'C'];
-    const r = await withMode('line-json', 0, () => stream(
-      { text: trig('MLINEJSON'), from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf()));
+    const r = await withMode('line-json', 0, () =>
+      stream({ text: trig('MLINEJSON'), from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf()),
+    );
     const raw = fake.state.lastLlmRaw;
     fake.state.llmDeltas = keep;
     const deltas = r.deltas || [];
-    check('S13 向后兼容：**裸 JSON 行**（非 SSE 帧）仍被解析 —— 上一步的修复不许把"逐行 JSON"这条形态打死（两种形态都要吃得下）',
+    check(
+      'S13 向后兼容：**裸 JSON 行**（非 SSE 帧）仍被解析 —— 上一步的修复不许把"逐行 JSON"这条形态打死（两种形态都要吃得下）',
       !r.err && !raw.startsWith('event:') && deltas.join('') === 'ABC' && r.value.text === 'ABC',
-      r.err ? errText(r.err) : `raw=${JSON.stringify(raw.slice(0, 30))}… 增量=${JSON.stringify(deltas)}`);
+      r.err ? errText(r.err) : `raw=${JSON.stringify(raw.slice(0, 30))}… 增量=${JSON.stringify(deltas)}`,
+    );
   }
 
   // S14 200 但零帧 ⇒ 报错，不许"成功 + 空译文"
   {
     const t = trig('MEMPTY');
-    const r = await withMode('empty-frames', 0, () => stream(
-      { text: t, from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf()));
+    const r = await withMode('empty-frames', 0, () =>
+      stream({ text: t, from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf()),
+    );
     const mine = fake.state.hits.filter((h) => h.fields.i === t);
-    check('S14 🔴 上游 200 但**零可解析帧**（协议错配/空响应）⇒ 报 UPSTREAM_ERROR（reason=no_frames），绝不返回"成功 + 空译文"（与"非 2xx 先判死"配对：前者挡挂掉的上游，这一判挡"回话了却读不出"的上游）',
-      r.err?.code === 'TRANSLATE_UPSTREAM_ERROR' && r.err.details?.reason === 'no_frames'
-      && (r.deltas || []).length === 0 && mine.length === 1,
-      `${r.err ? errText(r.err) : '竟然成功了（空译文）'} 请求数=${mine.length} 增量=${(r.deltas || []).length}`);
+    check(
+      'S14 🔴 上游 200 但**零可解析帧**（协议错配/空响应）⇒ 报 UPSTREAM_ERROR（reason=no_frames），绝不返回"成功 + 空译文"（与"非 2xx 先判死"配对：前者挡挂掉的上游，这一判挡"回话了却读不出"的上游）',
+      r.err?.code === 'TRANSLATE_UPSTREAM_ERROR' &&
+        r.err.details?.reason === 'no_frames' &&
+        (r.deltas || []).length === 0 &&
+        mine.length === 1,
+      `${r.err ? errText(r.err) : '竟然成功了（空译文）'} 请求数=${mine.length} 增量=${(r.deltas || []).length}`,
+    );
   }
 }
 
@@ -846,45 +1028,64 @@ async function groupT() {
 
   // T1 connect 层
   if (!BH) {
-    check('T1 connect 层超时（黑洞地址，`details.stage === "connect"`）', false,
-      `候选 ${BLACKHOLE_CANDIDATES.join(' / ')} 全部探不通（既没挂住也没拒），本机网络环境不支持该用例`);
+    check(
+      'T1 connect 层超时（黑洞地址，`details.stage === "connect"`）',
+      false,
+      `候选 ${BLACKHOLE_CANDIDATES.join(' / ')} 全部探不通（既没挂住也没拒），本机网络环境不支持该用例`,
+    );
   } else {
     const before = fake.state.hits.length;
-    const r = await text({ text: nextText('建连'), from: 'ja', to: 'zh', timeoutMs: 8000 },
-      envOf({ MIAO_TRANSLATE_YOUDAO_BASE: `http://${BH}:443`, MIAO_TRANSLATE_CONNECT_MS: '400' }));
-    check('T1 connect 层：黑洞地址 400ms 内建不上 → 504 TIMEOUT 且 `details.stage === "connect"`（不可达要**快败**，不是等满总超时）；一个请求都没到假上游',
+    const r = await text(
+      { text: nextText('建连'), from: 'ja', to: 'zh', timeoutMs: 8000 },
+      envOf({ MIAO_TRANSLATE_YOUDAO_BASE: `http://${BH}:443`, MIAO_TRANSLATE_CONNECT_MS: '400' }),
+    );
+    check(
+      'T1 connect 层：黑洞地址 400ms 内建不上 → 504 TIMEOUT 且 `details.stage === "connect"`（不可达要**快败**，不是等满总超时）；一个请求都没到假上游',
       r.err?.code === 'TRANSLATE_TIMEOUT' && r.err.details?.stage === 'connect' && fake.state.hits.length === before,
-      r.err ? errText(r.err) : '竟然成功了');
+      r.err ? errText(r.err) : '竟然成功了',
+    );
   }
 
   // T2 ttfb 层
   {
-    const r = await withMode('hang-head', 0, () => text(
-      { text: nextText('首字节'), from: 'ja', to: 'zh', timeoutMs: 8000 },
-      envOf({ MIAO_TRANSLATE_TTFB_MS: '400' })));
-    check('T2 ttfb 层：连上了但上游 400ms 不给响应头 → 504 TIMEOUT 且 stage === "ttfb"（大模型首字慢与整段慢是两件事，单独一档）',
+    const r = await withMode('hang-head', 0, () =>
+      text(
+        { text: nextText('首字节'), from: 'ja', to: 'zh', timeoutMs: 8000 },
+        envOf({ MIAO_TRANSLATE_TTFB_MS: '400' }),
+      ),
+    );
+    check(
+      'T2 ttfb 层：连上了但上游 400ms 不给响应头 → 504 TIMEOUT 且 stage === "ttfb"（大模型首字慢与整段慢是两件事，单独一档）',
       r.err?.code === 'TRANSLATE_TIMEOUT' && r.err.details?.stage === 'ttfb',
-      r.err ? errText(r.err) : '竟然成功了');
+      r.err ? errText(r.err) : '竟然成功了',
+    );
   }
 
   // T3 idle 层
   {
-    const r = await withMode('never-end', 0, () => text(
-      { text: nextText('空闲'), from: 'ja', to: 'zh', timeoutMs: 5000 },
-      envOf({ MIAO_TRANSLATE_IDLE_MS: '400' })));
-    check('T3 idle 层：响应头到了、身子只剩半截且不再有字节 → 504 TIMEOUT 且 stage === "idle"（「卡住」与「慢慢吐」只有空闲超时能区分）',
+    const r = await withMode('never-end', 0, () =>
+      text({ text: nextText('空闲'), from: 'ja', to: 'zh', timeoutMs: 5000 }, envOf({ MIAO_TRANSLATE_IDLE_MS: '400' })),
+    );
+    check(
+      'T3 idle 层：响应头到了、身子只剩半截且不再有字节 → 504 TIMEOUT 且 stage === "idle"（「卡住」与「慢慢吐」只有空闲超时能区分）',
       r.err?.code === 'TRANSLATE_TIMEOUT' && r.err.details?.stage === 'idle',
-      r.err ? errText(r.err) : '竟然成功了');
+      r.err ? errText(r.err) : '竟然成功了',
+    );
   }
 
   // T4 total 层
   {
-    const r = await withMode('slow-head-hold', 250, () => text(
-      { text: nextText('总时长'), from: 'ja', to: 'zh', timeoutMs: 800 },
-      envOf({ MIAO_TRANSLATE_IDLE_MS: '60000' })));
-    check('T4 total 层：idle 档放到 60s、请求自带 800ms 总预算 → 504 TIMEOUT 且 stage === "total"（总体永不结束要兜底，且不与 idle 混为一谈）',
+    const r = await withMode('slow-head-hold', 250, () =>
+      text(
+        { text: nextText('总时长'), from: 'ja', to: 'zh', timeoutMs: 800 },
+        envOf({ MIAO_TRANSLATE_IDLE_MS: '60000' }),
+      ),
+    );
+    check(
+      'T4 total 层：idle 档放到 60s、请求自带 800ms 总预算 → 504 TIMEOUT 且 stage === "total"（总体永不结束要兜底，且不与 idle 混为一谈）',
       r.err?.code === 'TRANSLATE_TIMEOUT' && r.err.details?.stage === 'total',
-      r.err ? errText(r.err) : '竟然成功了');
+      r.err ? errText(r.err) : '竟然成功了',
+    );
   }
 }
 
@@ -904,27 +1105,33 @@ async function groupL() {
   {
     const startInflight = fake.state.inflight;
     const before = fake.state.hits.length;
-    const r = await withMode('stall', 300, () => batch(
-      { call: 'text', count: 6, bodies: uniqueBodies(6, '并发', { timeoutMs: 8000 }) }, envOf()));
+    const r = await withMode('stall', 300, () =>
+      batch({ call: 'text', count: 6, bodies: uniqueBodies(6, '并发', { timeoutMs: 8000 }) }, envOf()),
+    );
     const items = r.items || [];
     const errs = items.filter((x) => x.err).length;
-    check('L1 并发闸门：6 个并发 stall 请求 → 假上游**在飞数峰值恰为 3**（不超过 3）、6 个全部成功',
-      items.length === 6 && errs === 0 && fake.state.peakInflight === 3
-      && fake.state.hits.length - before === 6,
-      `peak=${fake.state.peakInflight} hits+${fake.state.hits.length - before} 失败=${errs} 突发前在飞=${startInflight}`);
+    check(
+      'L1 并发闸门：6 个并发 stall 请求 → 假上游**在飞数峰值恰为 3**（不超过 3）、6 个全部成功',
+      items.length === 6 && errs === 0 && fake.state.peakInflight === 3 && fake.state.hits.length - before === 6,
+      `peak=${fake.state.peakInflight} hits+${fake.state.hits.length - before} 失败=${errs} 突发前在飞=${startInflight}`,
+    );
   }
 
   // L2 速率闸门
   {
-    const r = await batch(
-      { call: 'text', count: 25, bodies: uniqueBodies(25, '速率', { timeoutMs: 400 }) }, envOf());
+    const r = await batch({ call: 'text', count: 25, bodies: uniqueBodies(25, '速率', { timeoutMs: 400 }) }, envOf());
     const items = r.items || [];
     const ok = items.filter((x) => !x.err).length;
     const limited = items.filter((x) => x.err?.code === 'TRANSLATE_RATE_LIMITED');
-    check('L2 速率闸门：25 个并发 + 400ms 排队上限 → 至少 1 个 429 RATE_LIMITED 且 `details.stage === "limiter"`（**不是** 504：用户该做的是"等一会儿再点"，重试只会更堵）；成功+限流 = 25',
-      items.length === 25 && limited.length >= 1 && ok + limited.length === 25 && ok >= 3
-      && limited.every((x) => x.err.details?.stage === 'limiter'),
-      `成功=${ok} 限流=${limited.length}`);
+    check(
+      'L2 速率闸门：25 个并发 + 400ms 排队上限 → 至少 1 个 429 RATE_LIMITED 且 `details.stage === "limiter"`（**不是** 504：用户该做的是"等一会儿再点"，重试只会更堵）；成功+限流 = 25',
+      items.length === 25 &&
+        limited.length >= 1 &&
+        ok + limited.length === 25 &&
+        ok >= 3 &&
+        limited.every((x) => x.err.details?.stage === 'limiter'),
+      `成功=${ok} 限流=${limited.length}`,
+    );
   }
 }
 
@@ -937,13 +1144,19 @@ async function groupC() {
   // C1 文件不存在 = 正常首次启动
   {
     const v = await options(envOf({ MIAO_STATE_DIR: C1_DIR }));
-    check('C1 设置文件不存在 = **正常的首次启动**（不是错误）：全部出厂默认、sources 逐键标 default、fileIssues.exists=false',
-      !v.err && v.value.settings.platform === 'youdao' && v.value.settings.source === 'local'
-      && v.value.settings['youdao.llmModel'] === 'pro' && v.value.settings['youdao.textDomain'] === 'general'
-      && v.value.settings.timeoutMs === 30000
-      && Object.values(v.value.sources).every((s) => s === 'default')
-      && v.value.fileIssues.exists === false && v.value.fileIssues.corrupt === false,
-      v.err ? errText(v.err) : JSON.stringify(v.value.sources));
+    check(
+      'C1 设置文件不存在 = **正常的首次启动**（不是错误）：全部出厂默认、sources 逐键标 default、fileIssues.exists=false',
+      !v.err &&
+        v.value.settings.platform === 'youdao' &&
+        v.value.settings.source === 'local' &&
+        v.value.settings['youdao.llmModel'] === 'pro' &&
+        v.value.settings['youdao.textDomain'] === 'general' &&
+        v.value.settings.timeoutMs === 30000 &&
+        Object.values(v.value.sources).every((s) => s === 'default') &&
+        v.value.fileIssues.exists === false &&
+        v.value.fileIssues.corrupt === false,
+      v.err ? errText(v.err) : JSON.stringify(v.value.sources),
+    );
   }
 
   // C2 保存补丁（以盘上文件为准）
@@ -952,23 +1165,38 @@ async function groupC() {
     const r = await saveSettings({ 'youdao.llmModel': 'lite', timeoutMs: 12345 }, envOf());
     const disk = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
     const v = await options(envOf());
-    check('C2 保存补丁：返回 changed 与生效值，**回读盘上那个 JSON** 一致（不信响应自报），options 的 sources 逐键标为 file',
-      !r.err && r.value.changed.length === 2 && r.value.settings['youdao.llmModel'] === 'lite'
-      && disk['youdao.llmModel'] === 'lite' && disk.timeoutMs === 12345
-      && !v.err && v.value.settings['youdao.llmModel'] === 'lite' && v.value.sources['youdao.llmModel'] === 'file'
-      && v.value.sources.timeoutMs === 'file',
-      r.err ? errText(r.err) : JSON.stringify(disk));
+    check(
+      'C2 保存补丁：返回 changed 与生效值，**回读盘上那个 JSON** 一致（不信响应自报），options 的 sources 逐键标为 file',
+      !r.err &&
+        r.value.changed.length === 2 &&
+        r.value.settings['youdao.llmModel'] === 'lite' &&
+        disk['youdao.llmModel'] === 'lite' &&
+        disk.timeoutMs === 12345 &&
+        !v.err &&
+        v.value.settings['youdao.llmModel'] === 'lite' &&
+        v.value.sources['youdao.llmModel'] === 'file' &&
+        v.value.sources.timeoutMs === 'file',
+      r.err ? errText(r.err) : JSON.stringify(disk),
+    );
   }
 
   // C3 env 优先（且逐键可追溯）
   {
     const v = await options(envOf({ MIAO_TRANSLATE_SOURCE: 'online', MIAO_TRANSLATE_TIMEOUT_MS: '7777' }));
-    check('C3 env 覆盖文件（env > 文件 > 默认）：source=online / timeoutMs=7777 且 sources 标为 env；同一份视图里文件键仍标 file（"这个值谁定的"必须答得出来）',
-      !v.err && v.value.settings.source === 'online' && v.value.sources.source === 'env'
-      && v.value.settings.timeoutMs === 7777 && v.value.sources.timeoutMs === 'env'
-      && v.value.settings['youdao.llmModel'] === 'lite' && v.value.sources['youdao.llmModel'] === 'file'
-      && v.source === 'online',
-      v.err ? errText(v.err) : `source=${v.value.settings.source} timeoutMs=${v.value.settings.timeoutMs} 入口来源=${v.source}`);
+    check(
+      'C3 env 覆盖文件（env > 文件 > 默认）：source=online / timeoutMs=7777 且 sources 标为 env；同一份视图里文件键仍标 file（"这个值谁定的"必须答得出来）',
+      !v.err &&
+        v.value.settings.source === 'online' &&
+        v.value.sources.source === 'env' &&
+        v.value.settings.timeoutMs === 7777 &&
+        v.value.sources.timeoutMs === 'env' &&
+        v.value.settings['youdao.llmModel'] === 'lite' &&
+        v.value.sources['youdao.llmModel'] === 'file' &&
+        v.source === 'online',
+      v.err
+        ? errText(v.err)
+        : `source=${v.value.settings.source} timeoutMs=${v.value.settings.timeoutMs} 入口来源=${v.source}`,
+    );
   }
 
   // C4 补丁 strict：一律拒绝且不落盘
@@ -987,24 +1215,39 @@ async function groupC() {
       rs.push({ r, why });
     }
     const after = fs.readFileSync(SETTINGS_FILE, 'utf8');
-    check('C4 补丁 strict 校验：未知键 / 非法值 / 空补丁 / 未登记平台 一律 INVALID_SETTING 抛错（不静默丢），且**盘上文件一字节未动**',
-      rs.every(({ r }) => r.err && r.err.code === 'INVALID_SETTING' && r.err.status === 400)
-      && before === after,
-      `${rs.map(({ r, why }) => (r.err ? r.err.code : `通过(${why})`)).join('/')} 盘上未动=${before === after}`);
+    check(
+      'C4 补丁 strict 校验：未知键 / 非法值 / 空补丁 / 未登记平台 一律 INVALID_SETTING 抛错（不静默丢），且**盘上文件一字节未动**',
+      rs.every(({ r }) => r.err && r.err.code === 'INVALID_SETTING' && r.err.status === 400) && before === after,
+      `${rs.map(({ r, why }) => (r.err ? r.err.code : `通过(${why})`)).join('/')} 盘上未动=${before === after}`,
+    );
   }
 
   // C5 读路径 strict:false：丢弃 + 上报
   {
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify({
-      platform: 'youdao', bogusKey: 1, timeoutMs: 'not-a-number', 'youdao.textDomain': 'medicine',
-    }));
+    fs.writeFileSync(
+      SETTINGS_FILE,
+      JSON.stringify({
+        platform: 'youdao',
+        bogusKey: 1,
+        timeoutMs: 'not-a-number',
+        'youdao.textDomain': 'medicine',
+      }),
+    );
     const v = await options(envOf());
-    check('C5 读路径 strict:false：未知键与非法值**丢弃 + 上报**（不静默、也不为一个多余键让整份设置失效），上报一路带到 options 的 fileIssues；合法键照常生效',
-      !v.err && v.value.settings.platform === 'youdao' && v.value.settings['youdao.textDomain'] === 'medicine'
-      && v.value.settings.timeoutMs === 30000
-      && v.value.fileIssues.unknownKeys.length === 1 && v.value.fileIssues.unknownKeys[0] === 'bogusKey'
-      && v.value.fileIssues.invalid.length === 1 && v.value.fileIssues.invalid[0].key === 'timeoutMs',
-      v.err ? errText(v.err) : JSON.stringify({ unknownKeys: v.value.fileIssues.unknownKeys, invalid: v.value.fileIssues.invalid }));
+    check(
+      'C5 读路径 strict:false：未知键与非法值**丢弃 + 上报**（不静默、也不为一个多余键让整份设置失效），上报一路带到 options 的 fileIssues；合法键照常生效',
+      !v.err &&
+        v.value.settings.platform === 'youdao' &&
+        v.value.settings['youdao.textDomain'] === 'medicine' &&
+        v.value.settings.timeoutMs === 30000 &&
+        v.value.fileIssues.unknownKeys.length === 1 &&
+        v.value.fileIssues.unknownKeys[0] === 'bogusKey' &&
+        v.value.fileIssues.invalid.length === 1 &&
+        v.value.fileIssues.invalid[0].key === 'timeoutMs',
+      v.err
+        ? errText(v.err)
+        : JSON.stringify({ unknownKeys: v.value.fileIssues.unknownKeys, invalid: v.value.fileIssues.invalid }),
+    );
   }
 
   // C6 坏文件不阻断
@@ -1013,10 +1256,15 @@ async function groupC() {
     const before = fake.state.hits.length;
     const v = await options(envOf());
     const r = await text({ text: nextText('坏文件'), from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf());
-    check('C6 损坏文件：corrupt=true + reason 说清是哪一种坏，且**不阻断翻译**（落出厂默认照常出网，一次都没少）',
-      !v.err && v.value.fileIssues.corrupt === true && String(v.value.fileIssues.reason).includes('JSON 解析失败')
-      && !r.err && fake.state.hits.length === before + 1,
-      `corrupt=${v.value && v.value.fileIssues.corrupt} reason=${v.value && v.value.fileIssues.reason} ${r.err ? errText(r.err) : '翻译正常'}`);
+    check(
+      'C6 损坏文件：corrupt=true + reason 说清是哪一种坏，且**不阻断翻译**（落出厂默认照常出网，一次都没少）',
+      !v.err &&
+        v.value.fileIssues.corrupt === true &&
+        String(v.value.fileIssues.reason).includes('JSON 解析失败') &&
+        !r.err &&
+        fake.state.hits.length === before + 1,
+      `corrupt=${v.value && v.value.fileIssues.corrupt} reason=${v.value && v.value.fileIssues.reason} ${r.err ? errText(r.err) : '翻译正常'}`,
+    );
     fs.rmSync(SETTINGS_FILE, { force: true });
   }
 }
@@ -1029,11 +1277,17 @@ async function groupK() {
     const v = await options(envOf());
     const view = v.value && v.value.credentials;
     const raw = JSON.stringify(view);
-    check('K1 密钥视图脱敏：只回 `{ appKey, hasSecret }`，**任何出口都不回显 appSecret**（连 JSON 串里都搜不到）',
-      !v.err && view && view.youdao && view.youdao.appKey === TEST_APP_KEY && view.youdao.hasSecret === true
-      && Object.keys(view.youdao).sort().join(',') === 'appKey,hasSecret'
-      && !raw.includes(TEST_APP_SECRET),
-      JSON.stringify(view));
+    check(
+      'K1 密钥视图脱敏：只回 `{ appKey, hasSecret }`，**任何出口都不回显 appSecret**（连 JSON 串里都搜不到）',
+      !v.err &&
+        view &&
+        view.youdao &&
+        view.youdao.appKey === TEST_APP_KEY &&
+        view.youdao.hasSecret === true &&
+        Object.keys(view.youdao).sort().join(',') === 'appKey,hasSecret' &&
+        !raw.includes(TEST_APP_SECRET),
+      JSON.stringify(view),
+    );
   }
 
   // K2 缺密钥 → 不出网
@@ -1041,9 +1295,11 @@ async function groupK() {
     const before = fake.state.hits.length;
     fs.rmSync(CREDENTIALS_FILE, { force: true });
     const r = await text({ text: nextText('无密钥'), from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf());
-    check('K2 未配置密钥 → 503 NOT_CONFIGURED，且**一个请求都没出网**（在适配器断言密钥那一关就挡下，不是发出去再失败）',
+    check(
+      'K2 未配置密钥 → 503 NOT_CONFIGURED，且**一个请求都没出网**（在适配器断言密钥那一关就挡下，不是发出去再失败）',
       r.err?.code === 'TRANSLATE_NOT_CONFIGURED' && r.err.status === 503 && fake.state.hits.length === before,
-      `${r.err ? errText(r.err) : '竟然成功了'} hits+${fake.state.hits.length - before}`);
+      `${r.err ? errText(r.err) : '竟然成功了'} hits+${fake.state.hits.length - before}`,
+    );
   }
 
   // K3 改了密钥下次调用即生效
@@ -1051,10 +1307,17 @@ async function groupK() {
     const r1 = await saveCredentials({ platform: 'youdao', appKey: TEST_APP_KEY, appSecret: TEST_APP_SECRET }, envOf());
     const r2 = await text({ text: nextText('补密钥'), from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf());
     const saved = r1.value && r1.value.saved;
-    check('K3 重新保存密钥后**立即生效**（每次调用现读、适配器不缓存）：翻译恢复成功，且保存响应只回 {platform, appKey}',
-      !r1.err && saved && saved.platform === 'youdao' && saved.appKey === TEST_APP_KEY
-      && !('appSecret' in saved) && !JSON.stringify(r1.value).includes(TEST_APP_SECRET) && !r2.err,
-      r1.err ? errText(r1.err) : r2.err ? errText(r2.err) : `保存回 ${JSON.stringify(r1.value)}；译文=${r2.value.text}`);
+    check(
+      'K3 重新保存密钥后**立即生效**（每次调用现读、适配器不缓存）：翻译恢复成功，且保存响应只回 {platform, appKey}',
+      !r1.err &&
+        saved &&
+        saved.platform === 'youdao' &&
+        saved.appKey === TEST_APP_KEY &&
+        !('appSecret' in saved) &&
+        !JSON.stringify(r1.value).includes(TEST_APP_SECRET) &&
+        !r2.err,
+      r1.err ? errText(r1.err) : r2.err ? errText(r2.err) : `保存回 ${JSON.stringify(r1.value)}；译文=${r2.value.text}`,
+    );
   }
 
   // K4 保存校验 + 原子写
@@ -1071,11 +1334,15 @@ async function groupK() {
     const mode = (fs.statSync(f).mode & 0o777).toString(8);
     // Windows 上只有"可写/只读"一位，0o600 会落成 0o666 —— 权限位数的口径按平台分开
     const modeOk = process.platform === 'win32' ? mode === '666' : mode === '600';
-    check('K4 保存校验：appKey 空 / appSecret 空 / appSecret 超 128 一律 400 INVALID_INPUT；成功的那次 trim + 原子写（无 tmp 残留）+ 权限位收紧',
-      [r1, r2, r3].every((r) => r.err?.code === 'TRANSLATE_INVALID_INPUT') && !r4.err
-      && modeOk && leftovers.length === 0
-      && JSON.parse(fs.readFileSync(f, 'utf8')).platforms.youdao.appKey === 'ak',
-      `mode=${mode} tmp残留=${leftovers.length} ${[r1, r2, r3].map((r) => (r.err ? r.err.code : '通过')).join('/')}`);
+    check(
+      'K4 保存校验：appKey 空 / appSecret 空 / appSecret 超 128 一律 400 INVALID_INPUT；成功的那次 trim + 原子写（无 tmp 残留）+ 权限位收紧',
+      [r1, r2, r3].every((r) => r.err?.code === 'TRANSLATE_INVALID_INPUT') &&
+        !r4.err &&
+        modeOk &&
+        leftovers.length === 0 &&
+        JSON.parse(fs.readFileSync(f, 'utf8')).platforms.youdao.appKey === 'ak',
+      `mode=${mode} tmp残留=${leftovers.length} ${[r1, r2, r3].map((r) => (r.err ? r.err.code : '通过')).join('/')}`,
+    );
   }
 }
 
@@ -1085,11 +1352,18 @@ async function groupA() {
   // A1 未知平台
   {
     const before = fake.state.hits.length;
-    const r = await text({ platform: 'bogus', text: nextText('未知平台'), from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf());
-    check('A1 未知平台 id → 400 INVALID_INPUT 且 details.available 报得出有哪些平台（界面据此提示"只能选这些"，不让用户面对一个光秃秃的"翻译失败"）',
-      r.err?.code === 'TRANSLATE_INVALID_INPUT' && Array.isArray(r.err.details?.available)
-      && r.err.details.available.includes('youdao') && fake.state.hits.length === before,
-      r.err ? errText(r.err) : '竟然成功了');
+    const r = await text(
+      { platform: 'bogus', text: nextText('未知平台'), from: 'ja', to: 'zh', timeoutMs: 8000 },
+      envOf(),
+    );
+    check(
+      'A1 未知平台 id → 400 INVALID_INPUT 且 details.available 报得出有哪些平台（界面据此提示"只能选这些"，不让用户面对一个光秃秃的"翻译失败"）',
+      r.err?.code === 'TRANSLATE_INVALID_INPUT' &&
+        Array.isArray(r.err.details?.available) &&
+        r.err.details.available.includes('youdao') &&
+        fake.state.hits.length === before,
+      r.err ? errText(r.err) : '竟然成功了',
+    );
   }
 
   // A2 语言码不猜
@@ -1097,50 +1371,82 @@ async function groupA() {
     const before = fake.state.hits.length;
     const r1 = await text({ text: nextText('方向'), from: 'xx', to: 'zh', timeoutMs: 8000 }, envOf());
     const r2 = await stream({ text: nextText('方向'), from: 'ko', to: 'zh', timeoutMs: 8000 }, envOf());
-    check('A2 语言码「认不出就不猜」：text 收完全不认识的 xx、llm 收 ko（ko 只在 text 表里，llm 表更短）→ 一律 400 INVALID_INPUT，details.api 分别记 text/llm（两表分别查过的证据）；两次都没出网',
-      r1.err?.code === 'TRANSLATE_INVALID_INPUT' && r1.err.details?.api === 'text'
-      && r2.err?.code === 'TRANSLATE_INVALID_INPUT' && r2.err.details?.api === 'llm'
-      && Array.isArray(r2.err.details?.langs) && r2.err.details.langs.includes('ja')
-      && fake.state.hits.length === before,
-      `${r1.err ? r1.err.code : '通过'} / ${r2.err ? r2.err.code : '通过'} hits+${fake.state.hits.length - before}`);
+    check(
+      'A2 语言码「认不出就不猜」：text 收完全不认识的 xx、llm 收 ko（ko 只在 text 表里，llm 表更短）→ 一律 400 INVALID_INPUT，details.api 分别记 text/llm（两表分别查过的证据）；两次都没出网',
+      r1.err?.code === 'TRANSLATE_INVALID_INPUT' &&
+        r1.err.details?.api === 'text' &&
+        r2.err?.code === 'TRANSLATE_INVALID_INPUT' &&
+        r2.err.details?.api === 'llm' &&
+        Array.isArray(r2.err.details?.langs) &&
+        r2.err.details.langs.includes('ja') &&
+        fake.state.hits.length === before,
+      `${r1.err ? r1.err.code : '通过'} / ${r2.err ? r2.err.code : '通过'} hits+${fake.state.hits.length - before}`,
+    );
   }
 
   // A3 参数裁剪
   {
     const t1 = nextText('裁剪');
-    const r1 = await text({
-      text: t1, from: 'ja', to: 'zh', domain: 'computers', vocabId: 'v-1', prompt: '不该来', model: 'pro', timeoutMs: 8000,
-    }, envOf());
+    const r1 = await text(
+      {
+        text: t1,
+        from: 'ja',
+        to: 'zh',
+        domain: 'computers',
+        vocabId: 'v-1',
+        prompt: '不该来',
+        model: 'pro',
+        timeoutMs: 8000,
+      },
+      envOf(),
+    );
     const h1 = lastHit();
     const k1 = Object.keys(h1.fields).sort().join(',');
     const t2 = nextText('裁剪');
-    const r2 = await stream({ text: t2, from: 'ja', to: 'zh', domain: 'computers', vocabId: 'v-1', timeoutMs: 8000 }, envOf());
+    const r2 = await stream(
+      { text: t2, from: 'ja', to: 'zh', domain: 'computers', vocabId: 'v-1', timeoutMs: 8000 },
+      envOf(),
+    );
     const h2 = lastHit();
     const k2 = Object.keys(h2.fields).sort().join(',');
-    check('A3 参数裁剪（§5.4）：text 出网只带 q/from/to/domain/vocabId/strict + 签名五件套（prompt/model 传进来也漏不出去）；llm 出网只带 i/prompt/from/to/streamType/handleOption + 签名五件套（domain/vocabId 同理）',
-      !r1.err && !r2.err
-      && k1 === 'appKey,curtime,domain,from,q,salt,sign,signType,strict,to,vocabId'
-      && h1.fields.domain === 'computers' && h1.fields.vocabId === 'v-1'
-      && k2 === 'appKey,curtime,from,handleOption,i,prompt,salt,sign,signType,streamType,to',
-      `text字段=${k1}｜llm字段=${k2}`);
+    check(
+      'A3 参数裁剪（§5.4）：text 出网只带 q/from/to/domain/vocabId/strict + 签名五件套（prompt/model 传进来也漏不出去）；llm 出网只带 i/prompt/from/to/streamType/handleOption + 签名五件套（domain/vocabId 同理）',
+      !r1.err &&
+        !r2.err &&
+        k1 === 'appKey,curtime,domain,from,q,salt,sign,signType,strict,to,vocabId' &&
+        h1.fields.domain === 'computers' &&
+        h1.fields.vocabId === 'v-1' &&
+        k2 === 'appKey,curtime,from,handleOption,i,prompt,salt,sign,signType,streamType,to',
+      `text字段=${k1}｜llm字段=${k2}`,
+    );
   }
 
   // A4 按行对齐的双向不对称
   {
     const r1 = await text({ text: 'A\nB\nC', from: 'ja', to: 'zh', splitLines: true, timeoutMs: 8000 }, envOf());
-    const one = `${trig('M1LINE')}\nX`;   // 上游把整段当一行回（translation 长度 1 ≠ 入参 2 行）
+    const one = `${trig('M1LINE')}\nX`; // 上游把整段当一行回（translation 长度 1 ≠ 入参 2 行）
     const r2 = await text({ text: one, from: 'ja', to: 'zh', splitLines: true, timeoutMs: 8000 }, envOf());
-    check('A4 按行对齐**双向不对称**：上游逐行数与入参行数一致才给 lines（3=3 → 3 行）；不一致（1≠2）**整个 lines 键都不给** —— 错位的逐行译文比没逐行危害大得多（会把 A 行译文贴到 B 行）',
-      !r1.err && !r2.err && Array.isArray(r1.value.lines) && r1.value.lines.length === 3
-      && r1.value.lines[0] === '[译]A' && !('lines' in r2.value),
+    check(
+      'A4 按行对齐**双向不对称**：上游逐行数与入参行数一致才给 lines（3=3 → 3 行）；不一致（1≠2）**整个 lines 键都不给** —— 错位的逐行译文比没逐行危害大得多（会把 A 行译文贴到 B 行）',
+      !r1.err &&
+        !r2.err &&
+        Array.isArray(r1.value.lines) &&
+        r1.value.lines.length === 3 &&
+        r1.value.lines[0] === '[译]A' &&
+        !('lines' in r2.value),
       // detail 也要防空：反证轮里 r1/r2 可能是 err（value 为 null），
       // 模板里直接点 .value 会把「断言变红」升级成「脚本崩了」—— 两件事必须分开。
-      `一致→lines=${r1.err ? errText(r1.err) : JSON.stringify(r1.value.lines)}；不一致→${r2.err ? errText(r2.err) : Object.keys(r2.value).join(',')}`);
+      `一致→lines=${r1.err ? errText(r1.err) : JSON.stringify(r1.value.lines)}；不一致→${r2.err ? errText(r2.err) : Object.keys(r2.value).join(',')}`,
+    );
   }
 
   // A5 模型档位 → handleOption
   {
-    const rows = [['pro', '0'], ['lite', '3'], [undefined, '0']];
+    const rows = [
+      ['pro', '0'],
+      ['lite', '3'],
+      [undefined, '0'],
+    ];
     const bad = [];
     for (const [model, want] of rows) {
       const r = await stream({ text: nextText('档位'), from: 'ja', to: 'zh', model, timeoutMs: 8000 }, envOf());
@@ -1150,9 +1456,11 @@ async function groupA() {
     }
     const before = fake.state.hits.length;
     const rb = await stream({ text: nextText('档位'), from: 'ja', to: 'zh', model: 'bogus', timeoutMs: 8000 }, envOf());
-    check('A5 模型档位 → handleOption：pro→"0"（子曰 14B）/ lite→"3"（1.5B）/ 缺省→"0"；非法值当场 400 INVALID_INPUT 且**不出网**（不静默回落成 pro —— 那会让人以为在用车，其实在用另一辆）',
+    check(
+      'A5 模型档位 → handleOption：pro→"0"（子曰 14B）/ lite→"3"（1.5B）/ 缺省→"0"；非法值当场 400 INVALID_INPUT 且**不出网**（不静默回落成 pro —— 那会让人以为在用车，其实在用另一辆）',
       bad.length === 0 && rb.err?.code === 'TRANSLATE_INVALID_INPUT' && fake.state.hits.length === before,
-      bad.length ? `不符：${bad.join('；')}` : `三档命中；bogus→${rb.err ? rb.err.code : '竟然出网了'}`);
+      bad.length ? `不符：${bad.join('；')}` : `三档命中；bogus→${rb.err ? rb.err.code : '竟然出网了'}`,
+    );
   }
 
   // A6 llm 非 2xx 先判死
@@ -1160,10 +1468,14 @@ async function groupA() {
     const t = trig('M500G');
     const r = await stream({ text: t, from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf());
     const mine = fake.state.hits.filter((h) => h.fields.i === t);
-    check('A6 llm 非 2xx **先判死**：上游回 500 + 垃圾体（不是逐行 JSON）→ UPSTREAM_ERROR + httpStatus=500；绝不解析出空译文当成功（那对用户是"译了一整遍，结果是空的"）。5xx 属可重试 → 退避重试一次仍 500',
-      r.err?.code === 'TRANSLATE_UPSTREAM_ERROR' && r.err.details?.httpStatus === 500
-      && (r.deltas || []).length === 0 && mine.length === 2,
-      `${r.err ? errText(r.err) : '竟然成功了'} 请求数=${mine.length} 增量=${(r.deltas || []).length}`);
+    check(
+      'A6 llm 非 2xx **先判死**：上游回 500 + 垃圾体（不是逐行 JSON）→ UPSTREAM_ERROR + httpStatus=500；绝不解析出空译文当成功（那对用户是"译了一整遍，结果是空的"）。5xx 属可重试 → 退避重试一次仍 500',
+      r.err?.code === 'TRANSLATE_UPSTREAM_ERROR' &&
+        r.err.details?.httpStatus === 500 &&
+        (r.deltas || []).length === 0 &&
+        mine.length === 2,
+      `${r.err ? errText(r.err) : '竟然成功了'} 请求数=${mine.length} 增量=${(r.deltas || []).length}`,
+    );
   }
 
   // A7 可重试面
@@ -1174,19 +1486,22 @@ async function groupA() {
     const t2 = trig('E411');
     const r2 = await text({ text: t2, from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf());
     const n2 = fake.state.hits.filter((h) => h.fields.q === t2).length;
-    check('A7 可重试面（§7.3）：上游 303（服务端异常）→ 退避重试一次即成功（请求数 2）；411（频率受限）→ **不重试**（请求数 1）直接 429 —— 已经被限还重试只会更堵',
+    check(
+      'A7 可重试面（§7.3）：上游 303（服务端异常）→ 退避重试一次即成功（请求数 2）；411（频率受限）→ **不重试**（请求数 1）直接 429 —— 已经被限还重试只会更堵',
       !r1.err && n1 === 2 && r2.err?.code === 'TRANSLATE_RATE_LIMITED' && r2.err.status === 429 && n2 === 1,
-      `303→请求数 ${n1} ${r1.err ? errText(r1.err) : '成功'}；411→请求数 ${n2} ${r2.err ? r2.err.code : '通过'}`);
+      `303→请求数 ${n1} ${r1.err ? errText(r1.err) : '成功'}；411→请求数 ${n2} ${r2.err ? r2.err.code : '通过'}`,
+    );
   }
 
   // A8 llm 流式累计
   {
     const r = await stream({ text: nextText('流式'), from: 'ja', to: 'zh', timeoutMs: 8000 }, envOf());
     const deltas = r.deltas || [];
-    check('A8 llm 流式累计：3 条 transIncre 增量按序交出，累计全文 + langType 一次性给出（拼接归门面，适配器不返全文）',
-      !r.err && deltas.join('') === '甲乙丙'
-      && r.value.text === '甲乙丙' && r.value.langType === 'zh-CHS',
-      `增量=${JSON.stringify(deltas)} value=${JSON.stringify(r.value)}`);
+    check(
+      'A8 llm 流式累计：3 条 transIncre 增量按序交出，累计全文 + langType 一次性给出（拼接归门面，适配器不返全文）',
+      !r.err && deltas.join('') === '甲乙丙' && r.value.text === '甲乙丙' && r.value.langType === 'zh-CHS',
+      `增量=${JSON.stringify(deltas)} value=${JSON.stringify(r.value)}`,
+    );
   }
 }
 
@@ -1204,20 +1519,27 @@ async function groupR() {
   fs.mkdirSync(stateDir, { recursive: true });
   fs.mkdirSync(rootDir, { recursive: true });
   // 预置密钥文件：门面每次调用现读，适配器不缓存（这里顺带验"盘上密钥直接可用"）
-  fs.writeFileSync(path.join(stateDir, 'translate-credentials.json'),
-    JSON.stringify({ platforms: { youdao: { appKey: TEST_APP_KEY, appSecret: TEST_APP_SECRET } } }), { mode: 0o600 });
+  fs.writeFileSync(
+    path.join(stateDir, 'translate-credentials.json'),
+    JSON.stringify({ platforms: { youdao: { appKey: TEST_APP_KEY, appSecret: TEST_APP_SECRET } } }),
+    { mode: 0o600 },
+  );
 
-  const st = spawnProc(SERVICE_ENTRY, {
-    MIAO_PORT: String(port),
-    MIAO_ROOT: rootDir,
-    MIAO_STATE_DIR: stateDir,
-    MIAO_TOKEN: TOKEN,
-    MIAO_NO_LLM_AUTOSTART: '1',   // 本组不关心三进程生命周期
-    MIAO_TRANSLATE_YOUDAO_BASE: `http://127.0.0.1:${fake.port}`,
-    MIAO_TRANSLATE_CONNECT_MS: '5000',
-    MIAO_TRANSLATE_TTFB_MS: '5000',
-    MIAO_TRANSLATE_IDLE_MS: '20000',
-  }, 'box-service(translate)');
+  const st = spawnProc(
+    SERVICE_ENTRY,
+    {
+      MIAO_PORT: String(port),
+      MIAO_ROOT: rootDir,
+      MIAO_STATE_DIR: stateDir,
+      MIAO_TOKEN: TOKEN,
+      MIAO_NO_LLM_AUTOSTART: '1', // 本组不关心三进程生命周期
+      MIAO_TRANSLATE_YOUDAO_BASE: `http://127.0.0.1:${fake.port}`,
+      MIAO_TRANSLATE_CONNECT_MS: '5000',
+      MIAO_TRANSLATE_TTFB_MS: '5000',
+      MIAO_TRANSLATE_IDLE_MS: '20000',
+    },
+    'box-service(translate)',
+  );
   try {
     await waitReady(st);
 
@@ -1226,9 +1548,11 @@ async function groupR() {
       const t = nextText('路由');
       const res = await post(port, '/api/v1/translate/text', { text: t, from: 'ja', to: 'zh' });
       const v = jsonOf(res);
-      check('R1 POST /api/v1/translate/text → 200，译文带假上游的 `[译]` 前缀：路由 → 门面 → 适配器 → 假上游整条链通（且密钥是从盘上现读的）',
+      check(
+        'R1 POST /api/v1/translate/text → 200，译文带假上游的 `[译]` 前缀：路由 → 门面 → 适配器 → 假上游整条链通（且密钥是从盘上现读的）',
         res.status === 200 && v && v.text === `[译]${t}`,
-        `${res.status} ${JSON.stringify(v)}`);
+        `${res.status} ${JSON.stringify(v)}`,
+      );
     }
 
     // R2 无令牌
@@ -1238,9 +1562,11 @@ async function groupR() {
         body: Buffer.from(JSON.stringify({ text: 'x', from: 'ja', to: 'zh' }), 'utf8'),
       });
       const v = jsonOf(res);
-      check('R2 同一路由**无令牌 → 403 PERMISSION_DENIED**：翻译端点是 Box 专用端点，不是免鉴权例外（请求里带着密钥出网，裸奔的代价比别的端点更大）',
+      check(
+        'R2 同一路由**无令牌 → 403 PERMISSION_DENIED**：翻译端点是 Box 专用端点，不是免鉴权例外（请求里带着密钥出网，裸奔的代价比别的端点更大）',
         res.status === 403 && v?.error?.code === 'PERMISSION_DENIED',
-        `${res.status} ${v?.error?.code}`);
+        `${res.status} ${v?.error?.code}`,
+      );
     }
 
     // R3 流式路由 SSE 三事件（ happy path ）
@@ -1249,12 +1575,18 @@ async function groupR() {
       const evs = parseSse(res.body);
       const deltas = evs.filter((e) => e.event === 'translate.delta');
       const done = evs.find((e) => e.event === 'translate.done');
-      check('R3 POST /api/v1/translate/stream → 200 text/event-stream：3 条 translate.delta（增量按序）+ 1 条 translate.done（累计全文 + langType），事件 id 自增',
-        res.status === 200 && String(res.headers['content-type']).startsWith('text/event-stream')
-        && deltas.length === 3 && deltas.map((d) => d.data.text).join('') === '甲乙丙'
-        && !!done && done.data.text === '甲乙丙' && done.data.langType === 'zh-CHS'
-        && evs.every((e, i) => e.id === i + 1),
-        `${res.status} 事件=${evs.map((e) => e.event).join(',')}`);
+      check(
+        'R3 POST /api/v1/translate/stream → 200 text/event-stream：3 条 translate.delta（增量按序）+ 1 条 translate.done（累计全文 + langType），事件 id 自增',
+        res.status === 200 &&
+          String(res.headers['content-type']).startsWith('text/event-stream') &&
+          deltas.length === 3 &&
+          deltas.map((d) => d.data.text).join('') === '甲乙丙' &&
+          !!done &&
+          done.data.text === '甲乙丙' &&
+          done.data.langType === 'zh-CHS' &&
+          evs.every((e, i) => e.id === i + 1),
+        `${res.status} 事件=${evs.map((e) => e.event).join(',')}`,
+      );
     }
 
     // R4 options 视图（必须排在 R5 之前：R5 会写设置文件，把 default 来源改成 file）
@@ -1262,15 +1594,24 @@ async function groupR() {
       const res = await get(port, '/api/v1/translate/options');
       const v = jsonOf(res);
       const raw = res.body.toString('utf8');
-      check('R4 GET /api/v1/translate/options → 200：platforms 只列已注册平台（youdao，capabilities 含 llm+text）、settings 全出厂默认、sources 逐键标 default、credentials 只回 {appKey, hasSecret}（secret 永不回显）',
-        res.status === 200 && v && v.platforms.length === 1 && v.platforms[0].id === 'youdao'
-        && v.platforms[0].capabilities.includes('llm') && v.platforms[0].capabilities.includes('text')
-        && v.settings.timeoutMs === 30000 && v.settings['youdao.llmModel'] === 'pro' && v.settings.source === 'local'
-        && Object.values(v.sources).every((s) => s === 'default')
-        && v.credentials.youdao.appKey === TEST_APP_KEY && v.credentials.youdao.hasSecret === true
-        && Object.keys(v.credentials.youdao).sort().join(',') === 'appKey,hasSecret'
-        && !raw.includes(TEST_APP_SECRET),
-        `${res.status} ${raw.slice(0, 140)}…`);
+      check(
+        'R4 GET /api/v1/translate/options → 200：platforms 只列已注册平台（youdao，capabilities 含 llm+text）、settings 全出厂默认、sources 逐键标 default、credentials 只回 {appKey, hasSecret}（secret 永不回显）',
+        res.status === 200 &&
+          v &&
+          v.platforms.length === 1 &&
+          v.platforms[0].id === 'youdao' &&
+          v.platforms[0].capabilities.includes('llm') &&
+          v.platforms[0].capabilities.includes('text') &&
+          v.settings.timeoutMs === 30000 &&
+          v.settings['youdao.llmModel'] === 'pro' &&
+          v.settings.source === 'local' &&
+          Object.values(v.sources).every((s) => s === 'default') &&
+          v.credentials.youdao.appKey === TEST_APP_KEY &&
+          v.credentials.youdao.hasSecret === true &&
+          Object.keys(v.credentials.youdao).sort().join(',') === 'appKey,hasSecret' &&
+          !raw.includes(TEST_APP_SECRET),
+        `${res.status} ${raw.slice(0, 140)}…`,
+      );
     }
 
     // R5 settings 补丁
@@ -1279,33 +1620,53 @@ async function groupR() {
       const v1 = jsonOf(ok1);
       const bad = await post(port, '/api/v1/translate/settings', { 'youdao.llmModel': 'pro', bogusKey: 1 });
       const v2 = jsonOf(bad);
-      check('R5 POST /api/v1/translate/settings：合法补丁 → 200 {ok, changed, settings}；混入未知键 → 400 INVALID_SETTING（白名单 strict：不静默丢，丢了的键在界面上就是假控件）',
-        ok1.status === 200 && v1.ok === true && Array.isArray(v1.changed) && v1.changed.includes('timeoutMs')
-        && v1.settings.timeoutMs === 15000
-        && bad.status === 400 && v2?.error?.code === 'INVALID_SETTING',
-        `${ok1.status} / ${bad.status} ${v2?.error?.code}`);
+      check(
+        'R5 POST /api/v1/translate/settings：合法补丁 → 200 {ok, changed, settings}；混入未知键 → 400 INVALID_SETTING（白名单 strict：不静默丢，丢了的键在界面上就是假控件）',
+        ok1.status === 200 &&
+          v1.ok === true &&
+          Array.isArray(v1.changed) &&
+          v1.changed.includes('timeoutMs') &&
+          v1.settings.timeoutMs === 15000 &&
+          bad.status === 400 &&
+          v2?.error?.code === 'INVALID_SETTING',
+        `${ok1.status} / ${bad.status} ${v2?.error?.code}`,
+      );
     }
 
     // R6 credentials 只写不读
     {
-      const res = await post(port, '/api/v1/translate/credentials',
-        { platform: 'youdao', appKey: TEST_APP_KEY, appSecret: TEST_APP_SECRET });
+      const res = await post(port, '/api/v1/translate/credentials', {
+        platform: 'youdao',
+        appKey: TEST_APP_KEY,
+        appSecret: TEST_APP_SECRET,
+      });
       const v = jsonOf(res);
       const raw = res.body.toString('utf8');
-      check('R6 POST /api/v1/translate/credentials → 200 {ok, saved:{platform, appKey}}：**只写不读**，响应体里搜不到 appSecret（§8.3：secret 永不回显，回显一次就等于把它写进了日志与网络抓包）',
-        res.status === 200 && v.ok === true && v.saved.platform === 'youdao'
-        && v.saved.appKey === TEST_APP_KEY && !('appSecret' in v.saved) && !raw.includes(TEST_APP_SECRET),
-        `${res.status} ${raw}`);
+      check(
+        'R6 POST /api/v1/translate/credentials → 200 {ok, saved:{platform, appKey}}：**只写不读**，响应体里搜不到 appSecret（§8.3：secret 永不回显，回显一次就等于把它写进了日志与网络抓包）',
+        res.status === 200 &&
+          v.ok === true &&
+          v.saved.platform === 'youdao' &&
+          v.saved.appKey === TEST_APP_KEY &&
+          !('appSecret' in v.saved) &&
+          !raw.includes(TEST_APP_SECRET),
+        `${res.status} ${raw}`,
+      );
     }
 
     // R7 错误信封
     {
       const res = await post(port, '/api/v1/translate/text', { text: '', from: 'ja', to: 'zh' });
       const v = jsonOf(res);
-      check('R7 错误信封：空 text → 400，形状为 {error:{code,message,details}}，code 是翻译域统一码 TRANSLATE_INVALID_INPUT（不是笼统的"翻译失败" —— 用户看不出该改什么）',
-        res.status === 400 && v?.error?.code === 'TRANSLATE_INVALID_INPUT'
-        && typeof v.error.message === 'string' && v.error.details && typeof v.error.details === 'object',
-        `${res.status} ${JSON.stringify(v).slice(0, 160)}`);
+      check(
+        'R7 错误信封：空 text → 400，形状为 {error:{code,message,details}}，code 是翻译域统一码 TRANSLATE_INVALID_INPUT（不是笼统的"翻译失败" —— 用户看不出该改什么）',
+        res.status === 400 &&
+          v?.error?.code === 'TRANSLATE_INVALID_INPUT' &&
+          typeof v.error.message === 'string' &&
+          v.error.details &&
+          typeof v.error.details === 'object',
+        `${res.status} ${JSON.stringify(v).slice(0, 160)}`,
+      );
     }
 
     // R8 流式中途失败
@@ -1314,10 +1675,15 @@ async function groupR() {
       const evs = parseSse(res.body);
       const deltas = evs.filter((e) => e.event === 'translate.delta');
       const err = evs.find((e) => e.event === 'translate.error');
-      check('R8 流式中途失败：先 translate.delta 再 translate.error（**顺序不能反** —— 反了浏览器拿到的是"流干净结束"），error 带 afterChars 现场证据（已吐出 1 个增量，用户知道丢在哪）',
-        res.status === 200 && deltas.length === 1 && !!err
-        && err.data.code === 'TRANSLATE_UPSTREAM_UNREACHABLE' && err.data.afterChars === 1,
-        `事件=${evs.map((e) => e.event).join(',')} ${JSON.stringify(err?.data)}`);
+      check(
+        'R8 流式中途失败：先 translate.delta 再 translate.error（**顺序不能反** —— 反了浏览器拿到的是"流干净结束"），error 带 afterChars 现场证据（已吐出 1 个增量，用户知道丢在哪）',
+        res.status === 200 &&
+          deltas.length === 1 &&
+          !!err &&
+          err.data.code === 'TRANSLATE_UPSTREAM_UNREACHABLE' &&
+          err.data.afterChars === 1,
+        `事件=${evs.map((e) => e.event).join(',')} ${JSON.stringify(err?.data)}`,
+      );
     }
   } finally {
     killProc(st);
@@ -1360,32 +1726,51 @@ async function groupP() {
     const got = Object.fromEntries((live.codes || []).map((c) => [c.code, c.status]));
     const drift = Object.keys(CODE_STATUS).filter((k) => got[k] !== CODE_STATUS[k]);
     const total = Object.keys(CODE_STATUS).length;
-    check(`P1 统一码表：${total} 个码的 HTTP 状态与硬编码契约逐一相符（503/502/400/429/402/504…），且与 golden 一致；未登记码落 502`,
-      drift.length === 0 && Object.keys(got).length === total
-      && live.unknownCodeStatus === 502
-      && sameJSON(live.codes, golden.codes),
-      `不符=${drift.join(',') || '无'} 条目=${Object.keys(got).length}/${total} 未登记码状态=${live.unknownCodeStatus}`);
+    check(
+      `P1 统一码表：${total} 个码的 HTTP 状态与硬编码契约逐一相符（503/502/400/429/402/504…），且与 golden 一致；未登记码落 502`,
+      drift.length === 0 &&
+        Object.keys(got).length === total &&
+        live.unknownCodeStatus === 502 &&
+        sameJSON(live.codes, golden.codes),
+      `不符=${drift.join(',') || '无'} 条目=${Object.keys(got).length}/${total} 未登记码状态=${live.unknownCodeStatus}`,
+    );
   }
 
-  check('P2 签名 input 截断规则 ⟷ golden：`len<=20` 原样；否则「前10 + len + 后10」，len 按 **UTF-16 码元**（含 20/21 边界与代理对）',
+  check(
+    'P2 签名 input 截断规则 ⟷ golden：`len<=20` 原样；否则「前10 + len + 后10」，len 按 **UTF-16 码元**（含 20/21 边界与代理对）',
     sameJSON(live.truncate, golden.truncate),
-    (live.truncate || []).map((x) => `${x.utf16}:${x.q}→${x.input}`).join(' | ').slice(0, 300));
+    (live.truncate || [])
+      .map((x) => `${x.utf16}:${x.q}→${x.input}`)
+      .join(' | ')
+      .slice(0, 300),
+  );
 
-  check('P3 语言码两张表（按接口分表：text 表更长，ko 只在 text 表里）⟷ golden：认不出返回 null，绝不猜',
+  check(
+    'P3 语言码两张表（按接口分表：text 表更长，ko 只在 text 表里）⟷ golden：认不出返回 null，绝不猜',
     sameJSON(live.langCode, golden.langCode),
-    JSON.stringify(live.langCode && live.langCode.llm));
+    JSON.stringify(live.langCode && live.langCode.llm),
+  );
 
-  check('P4 上游业务码 → (统一码, 状态) 两接口各查自己那张表；未登记码落兜底 UPSTREAM_ERROR ⟷ golden',
+  check(
+    'P4 上游业务码 → (统一码, 状态) 两接口各查自己那张表；未登记码落兜底 UPSTREAM_ERROR ⟷ golden',
     sameJSON(live.upstream, golden.upstream),
-    `${(live.upstream || []).length} 行`);
+    `${(live.upstream || []).length} 行`,
+  );
 
-  check('P5 出网错误族归因（顺序即优先级：超时 > 网络族 > 兜底）⟷ golden：四层 stage 原样透传、网络族归 UNREACHABLE、取消/兜底归 UPSTREAM_ERROR',
+  check(
+    'P5 出网错误族归因（顺序即优先级：超时 > 网络族 > 兜底）⟷ golden：四层 stage 原样透传、网络族归 UNREACHABLE、取消/兜底归 UPSTREAM_ERROR',
     sameJSON(live.faults, golden.faults),
-    (live.faults || []).map((f) => `${f.name}→${f.code}/${f.stage}`).join(' | '));
+    (live.faults || []).map((f) => `${f.name}→${f.code}/${f.stage}`).join(' | '),
+  );
 
-  check('P6 可重试判定 ⟷ golden：链路与超时可重试；UPSTREAM_ERROR **仅限** 5xx 与上游 303；限流/鉴权/入参一律不重试',
+  check(
+    'P6 可重试判定 ⟷ golden：链路与超时可重试；UPSTREAM_ERROR **仅限** 5xx 与上游 303；限流/鉴权/入参一律不重试',
     sameJSON(live.retryable, golden.retryable),
-    (live.retryable || []).filter((r) => r.retryable).map((r) => r.name).join(','));
+    (live.retryable || [])
+      .filter((r) => r.retryable)
+      .map((r) => r.name)
+      .join(','),
+  );
 }
 
 // ================================================================ 条数自检
@@ -1396,20 +1781,33 @@ async function groupP() {
  */
 function checkCounts() {
   const want = {
-    S: EXPECTED_S, T: EXPECTED_T, L: EXPECTED_L, C: EXPECTED_C,
-    K: EXPECTED_K, A: EXPECTED_A, R: EXPECTED_R, P: EXPECTED_P,
+    S: EXPECTED_S,
+    T: EXPECTED_T,
+    L: EXPECTED_L,
+    C: EXPECTED_C,
+    K: EXPECTED_K,
+    A: EXPECTED_A,
+    R: EXPECTED_R,
+    P: EXPECTED_P,
   };
   const got = {};
   for (const r of results) {
     const m = /^([A-Z])(\d+)\s/.exec(r.id);
     if (m) got[m[1]] = (got[m[1]] || 0) + 1;
   }
-  const bad = Object.entries(want).filter(([g, n]) => got[g] !== n)
+  const bad = Object.entries(want)
+    .filter(([g, n]) => got[g] !== n)
     .map(([g, n]) => `${g} 组实际 ${got[g] || 0} 条 ≠ 分母 ${n}`);
   const total = Object.values(want).reduce((a, b) => a + b, 0);
-  check(`COUNT 各组条数与写死的分母一致（${total} 条业务断言 + 本行 + RUN，共 ${total + 2} 条）`,
+  check(
+    `COUNT 各组条数与写死的分母一致（${total} 条业务断言 + 本行 + RUN，共 ${total + 2} 条）`,
     bad.length === 0,
-    bad.length ? `不符：${bad.join('；')}` : Object.entries(want).map(([g, n]) => `${g}=${got[g]}`).join(' '));
+    bad.length
+      ? `不符：${bad.join('；')}`
+      : Object.entries(want)
+          .map(([g, n]) => `${g}=${got[g]}`)
+          .join(' '),
+  );
 }
 
 // ================================================================ 一轮完整断言
@@ -1421,7 +1819,9 @@ async function runOnePass() {
 
   fs.mkdirSync(STATE_DIR, { recursive: true });
   const saved = await saveCredentials(
-    { platform: 'youdao', appKey: TEST_APP_KEY, appSecret: TEST_APP_SECRET }, envOf());
+    { platform: 'youdao', appKey: TEST_APP_KEY, appSecret: TEST_APP_SECRET },
+    envOf(),
+  );
   if (saved.err) throw new Error(`夹具密钥没落下，后面全组都会莫名其妙地红：${errText(saved.err)}`);
 
   await groupP();
@@ -1433,8 +1833,11 @@ async function runOnePass() {
   await groupA();
   await groupR();
   checkCounts();
-  check('RUN 脚本完整跑完（顶层未崩：崩了只会没有 [RESULT] 行，反证轮会把「断言炸了」误读成「破坏没生效」）',
-    true, `假上游端口=${fake.port} 记账 ${fake.state.hits.length} 条 / 验签失败 ${fake.state.badSign} 次`);
+  check(
+    'RUN 脚本完整跑完（顶层未崩：崩了只会没有 [RESULT] 行，反证轮会把「断言炸了」误读成「破坏没生效」）',
+    true,
+    `假上游端口=${fake.port} 记账 ${fake.state.hits.length} 条 / 验签失败 ${fake.state.badSign} 次`,
+  );
 }
 
 // ================================================================ 反证轮
@@ -1480,8 +1883,29 @@ const SWITCHES = [
   {
     name: 'MIAO_TRANSLATE_REFUTE_SWAP_JUDGE（两接口判成功互换）',
     env: { MIAO_TRANSLATE_REFUTE_SWAP_JUDGE: '1' },
-    expectRed: ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S10', 'S11', 'S12', 'S13',
-      'L1', 'L2', 'C6', 'K3', 'A3', 'A4', 'A5', 'A7', 'A8'],
+    expectRed: [
+      'S1',
+      'S2',
+      'S3',
+      'S4',
+      'S5',
+      'S6',
+      'S7',
+      'S8',
+      'S10',
+      'S11',
+      'S12',
+      'S13',
+      'L1',
+      'L2',
+      'C6',
+      'K3',
+      'A3',
+      'A4',
+      'A5',
+      'A7',
+      'A8',
+    ],
     why: '锚点 S8/S9 一族：text 改用 llm 双判、llm 改用 text 单判 ⇒ 每一个"调用成功"类断言全红。级联说明：S1-S8/S10-S13 的取证都以"成功拿到译文/成功建流"为前提（S12/S13 是 llm 流式成功的两种协议形态）；L1/L2 的收尾断言要求 6/25 个请求成功；C6/K3 的收尾是一次成功翻译；A3/A4/A5/A7/A8 同属"翻译成功"类（A5 的三档档位也要流式真成功才判命中）。不红的都是与判成功无关的面：S9/S14（期望的正是 UPSTREAM_ERROR —— 判反了也红不到它）、T 组（超时路径不判成功）、C1-C5/K1/K2/K4（设置与密钥面）、A1-A2（注册/语言码，失败早于判成功）、A6（非 2xx 先判死，早于任何判成功）、P 组（纯逻辑表，不经路由）、R 组（服务子进程由 spawnProc 剥掉 REFUTE_*，量的是产品路径）。',
   },
   {
@@ -1510,8 +1934,12 @@ async function runRefute() {
     // spawnProc 会先剥掉父进程里的 MIAO_TRANSLATE_REFUTE_*，再合并本开关的那一个。
     const st = spawnProc(SELF, sw.env, sw.name, ['--refute-child']);
     let out = '';
-    st.child.stdout.on('data', (d) => { out += d.toString(); });
-    st.child.stderr.on('data', (d) => { out += d.toString(); });
+    st.child.stdout.on('data', (d) => {
+      out += d.toString();
+    });
+    st.child.stderr.on('data', (d) => {
+      out += d.toString();
+    });
     await new Promise((resolve) => st.child.once('exit', resolve));
 
     const line = out.split('\n').find((l) => l.startsWith('[RESULT] '));
@@ -1527,7 +1955,9 @@ async function runRefute() {
     for (const code of sw.expectRed) {
       const hit = matchById(parsed.results, code);
       const red = hit && hit.ok === false;
-      console.log(`   ${red ? '✓' : '✗'} ${code} ${red ? '按预期变红' : `**没有变红**（${hit ? hit.detail : '缺该条'}）`}`);
+      console.log(
+        `   ${red ? '✓' : '✗'} ${code} ${red ? '按预期变红' : `**没有变红**（${hit ? hit.detail : '缺该条'}）`}`,
+      );
       if (!red) missed.push(code);
     }
     // 「只红这些」：多红说明这个开关顺带打坏了别的东西，结论就不能归给这一条机制。
@@ -1564,8 +1994,10 @@ try {
   } else {
     fake = createFakeUpstream();
     await runOnePass();
-    const { fail } = printResults('ver2.2 在线翻译 · 假上游正向断言'
-      + '（S 签名与协议 / T 四层超时 / L 限流 / C 三层设置 / K 密钥隔离 / A 契约与适配器 / R 路由端到端 / P 纯逻辑⟷golden）');
+    const { fail } = printResults(
+      'ver2.2 在线翻译 · 假上游正向断言' +
+        '（S 签名与协议 / T 四层超时 / L 限流 / C 三层设置 / K 密钥隔离 / A 契约与适配器 / R 路由端到端 / P 纯逻辑⟷golden）',
+    );
     process.exitCode = fail === 0 ? 0 : 1;
   }
 } catch (err) {
@@ -1576,11 +2008,17 @@ try {
   process.exitCode = 1;
 } finally {
   if (fake && fake.server.listening) {
-    await new Promise((resolve) => { fake.server.close(() => resolve()); });
+    await new Promise((resolve) => {
+      fake.server.close(() => resolve());
+    });
   }
   const anyRed = results.some((r) => !r.ok);
   if (IS_REFUTE_PARENT || !anyRed) {
-    try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* ignore */ }
+    try {
+      fs.rmSync(TMP, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
   } else {
     console.log(`\n[临时目录保留] ${TMP}`);
   }

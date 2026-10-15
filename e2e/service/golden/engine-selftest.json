@@ -12,9 +12,7 @@
     },
     "engineVersion": "441d07c",
     "pure": {
-      "availableTiers": [
-        "tiny"
-      ],
+      "availableTiers": ["tiny"],
       "engineHfOfflineEnv": [
         {
           "HF_HUB_OFFLINE": "1",
@@ -50,9 +48,7 @@
         {
           "code": "TIER_MODEL_UNDECLARED",
           "detail": {
-            "available": [
-              "tiny"
-            ],
+            "available": ["tiny"],
             "tier": "small"
           },
           "ok": false,
@@ -61,9 +57,7 @@
         {
           "code": "TIER_MODEL_UNDECLARED",
           "detail": {
-            "available": [
-              "tiny"
-            ],
+            "available": ["tiny"],
             "tier": "medium"
           },
           "ok": false,
@@ -104,9 +98,7 @@
           "name": "progress_then_result",
           "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
           "seq": 8,
-          "stageLines": [
-            "seq 8: 检测中…"
-          ]
+          "stageLines": ["seq 8: 检测中…"]
         },
         {
           "error": null,
@@ -126,9 +118,7 @@
           "name": "queue_position",
           "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
           "seq": 9,
-          "stageLines": [
-            "seq 9: 排队位次 42"
-          ]
+          "stageLines": ["seq 9: 排队位次 42"]
         },
         {
           "error": null,
@@ -147,9 +137,7 @@
           "name": "wait_instance",
           "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
           "seq": 10,
-          "stageLines": [
-            "seq 10: 等待翻译实例"
-          ]
+          "stageLines": ["seq 10: 等待翻译实例"]
         },
         {
           "error": "inference exploded",
@@ -170,10 +158,7 @@
           "name": "stream_error",
           "resultB64": null,
           "seq": 11,
-          "stageLines": [
-            "seq 11: 翻译中…",
-            "seq 11: 引擎报错：inference exploded"
-          ]
+          "stageLines": ["seq 11: 翻译中…", "seq 11: 引擎报错：inference exploded"]
         }
       ],
       "tierModelPath": [
@@ -288,37 +273,28 @@
         "mime": "image/webp",
         "name": "progress_then_result",
         "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
-        "stageLines": [
-          "seq 8: 检测中…"
-        ]
+        "stageLines": ["seq 8: 检测中…"]
       },
       {
         "ext": "webp",
         "mime": "image/webp",
         "name": "queue_position",
         "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
-        "stageLines": [
-          "seq 9: 排队位次 42"
-        ]
+        "stageLines": ["seq 9: 排队位次 42"]
       },
       {
         "ext": "webp",
         "mime": "image/webp",
         "name": "wait_instance",
         "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
-        "stageLines": [
-          "seq 10: 等待翻译实例"
-        ]
+        "stageLines": ["seq 10: 等待翻译实例"]
       },
       {
         "ext": null,
         "mime": null,
         "name": "stream_error",
         "resultB64": null,
-        "stageLines": [
-          "seq 11: 翻译中…",
-          "seq 11: 引擎报错：inference exploded"
-        ]
+        "stageLines": ["seq 11: 翻译中…", "seq 11: 引擎报错：inference exploded"]
       }
     ]
   },
@@ -335,11 +311,7 @@
     },
     "engineVersion": "mock",
     "pure": {
-      "availableTiers": [
-        "tiny",
-        "small",
-        "medium"
-      ],
+      "availableTiers": ["tiny", "small", "medium"],
       "engineHfOfflineEnv": [
         {
           "HF_HUB_OFFLINE": "1",
@@ -417,9 +389,7 @@
           "name": "progress_then_result",
           "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
           "seq": 8,
-          "stageLines": [
-            "seq 8: 检测中…"
-          ]
+          "stageLines": ["seq 8: 检测中…"]
         },
         {
           "error": null,
@@ -439,9 +409,7 @@
           "name": "queue_position",
           "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
           "seq": 9,
-          "stageLines": [
-            "seq 9: 排队位次 42"
-          ]
+          "stageLines": ["seq 9: 排队位次 42"]
         },
         {
           "error": null,
@@ -460,9 +428,7 @@
           "name": "wait_instance",
           "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
           "seq": 10,
-          "stageLines": [
-            "seq 10: 等待翻译实例"
-          ]
+          "stageLines": ["seq 10: 等待翻译实例"]
         },
         {
           "error": "inference exploded",
@@ -483,10 +449,7 @@
           "name": "stream_error",
           "resultB64": null,
           "seq": 11,
-          "stageLines": [
-            "seq 11: 翻译中…",
-            "seq 11: 引擎报错：inference exploded"
-          ]
+          "stageLines": ["seq 11: 翻译中…", "seq 11: 引擎报错：inference exploded"]
         }
       ],
       "tierModelPath": [
@@ -559,14 +522,7 @@
       ]
     },
     "llmLaunch": {
-      "cmd": [
-        "node",
-        "<REPO>\\engine\\src\\mock-llm.mjs",
-        "--port",
-        "8080",
-        "--model",
-        "tiny"
-      ],
+      "cmd": ["node", "<REPO>\\engine\\src\\mock-llm.mjs", "--port", "8080", "--model", "tiny"],
       "cwd": null,
       "label": "llm",
       "model": "sakura-mock:tiny",
@@ -598,37 +554,28 @@
         "mime": "image/webp",
         "name": "progress_then_result",
         "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
-        "stageLines": [
-          "seq 8: 检测中…"
-        ]
+        "stageLines": ["seq 8: 检测中…"]
       },
       {
         "ext": "webp",
         "mime": "image/webp",
         "name": "queue_position",
         "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
-        "stageLines": [
-          "seq 9: 排队位次 42"
-        ]
+        "stageLines": ["seq 9: 排队位次 42"]
       },
       {
         "ext": "webp",
         "mime": "image/webp",
         "name": "wait_instance",
         "resultB64": "UklGRhgAAABXRUJQVlA4WAoAAAAAAAAAAAAAAAAAAAA=",
-        "stageLines": [
-          "seq 10: 等待翻译实例"
-        ]
+        "stageLines": ["seq 10: 等待翻译实例"]
       },
       {
         "ext": null,
         "mime": null,
         "name": "stream_error",
         "resultB64": null,
-        "stageLines": [
-          "seq 11: 翻译中…",
-          "seq 11: 引擎报错：inference exploded"
-        ]
+        "stageLines": ["seq 11: 翻译中…", "seq 11: 引擎报错：inference exploded"]
       }
     ]
   }

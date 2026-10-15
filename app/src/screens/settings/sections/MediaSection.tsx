@@ -108,9 +108,7 @@ export function MediaSection() {
           />
         );
       case 'dynamic-bg':
-        return (
-          <Switch on={dynamicEnabled} onToggle={() => setDynamicEnabled(!dynamicEnabled)} label={item.label} />
-        );
+        return <Switch on={dynamicEnabled} onToggle={() => setDynamicEnabled(!dynamicEnabled)} label={item.label} />;
       case 'disc-mode':
         return <Switch on={discMode} onToggle={() => setDiscMode(!discMode)} label={item.label} />;
       case 'music-cache':
@@ -118,14 +116,7 @@ export function MediaSection() {
         // （`Group` 见到 layout:'block' 也不会包 Row，见 Group 里的注释）
         return <CacheBlock />;
       case 'lyrics-mode':
-        return (
-          <Select
-            label={item.label}
-            value={lyricsMode}
-            options={LYRICS_MODE_OPTIONS}
-            onChange={setLyricsMode}
-          />
-        );
+        return <Select label={item.label} value={lyricsMode} options={LYRICS_MODE_OPTIONS} onChange={setLyricsMode} />;
       case 'lyrics-size':
         return (
           <Range
@@ -185,11 +176,7 @@ export function MediaSection() {
             <Btn
               size="sm"
               disabled={!lyricsWindowOpen}
-              title={
-                lyricsWindowOpen
-                  ? `下次打开桌面歌词时${lyricsLocked ? '解锁' : '锁定'}`
-                  : '请先开启桌面歌词窗口'
-              }
+              title={lyricsWindowOpen ? `下次打开桌面歌词时${lyricsLocked ? '解锁' : '锁定'}` : '请先开启桌面歌词窗口'}
               onClick={() => {
                 const next = !lyricsLocked;
                 writeLyricsLocked(next);
@@ -199,9 +186,7 @@ export function MediaSection() {
               {lyricsLocked ? '切到解锁' : '切到锁定'}
             </Btn>
             <CtlNote>
-              {lyricsWindowOpen
-                ? '改动会在下次打开桌面歌词时生效（也可在歌词窗上双击直接切换）'
-                : '先开启桌面歌词窗口'}
+              {lyricsWindowOpen ? '改动会在下次打开桌面歌词时生效（也可在歌词窗上双击直接切换）' : '先开启桌面歌词窗口'}
             </CtlNote>
           </>
         );
@@ -246,4 +231,3 @@ export function MediaSection() {
     </>
   );
 }
-

@@ -41,13 +41,21 @@ import { fileURLToPath } from 'node:url';
 
 const SELF = fileURLToPath(import.meta.url);
 const ROOT = path.resolve(path.dirname(SELF), '..', '..');
-const RT = process.env.MIAO_MODEL_ROOT || (
-  process.platform === 'darwin'
+const RT =
+  process.env.MIAO_MODEL_ROOT ||
+  (process.platform === 'darwin'
     ? path.join(os.homedir(), 'Library', 'Application Support', 'runtimes', 'manga-translator')
-    : path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'runtimes', 'manga-translator')
-);
+    : path.join(
+        process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
+        'runtimes',
+        'manga-translator',
+      ));
 const WHEEL_DIR = process.env.MIAO_WHEEL_DIR || path.join(RT, '.download-cache', 'wheels');
-const VENV_PY = path.join(RT, 'venv', process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python'));
+const VENV_PY = path.join(
+  RT,
+  'venv',
+  process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python'),
+);
 
 let passed = 0;
 let failed = 0;
@@ -69,13 +77,15 @@ if (!fs.existsSync(VENV_PY)) {
 }
 
 const wheels = fs.existsSync(WHEEL_DIR)
-  ? fs.readdirSync(WHEEL_DIR).filter((n) => n.endsWith('.whl')).map((n) => path.join(WHEEL_DIR, n))
+  ? fs
+      .readdirSync(WHEEL_DIR)
+      .filter((n) => n.endsWith('.whl'))
+      .map((n) => path.join(WHEEL_DIR, n))
   : [];
-check(
-  'W1 盘上有一颗真构建出来的 wheel（否则本条无法进行 —— 这不是"跳过"，是硬前置）',
-  wheels.length > 0,
-  { wheelDir: WHEEL_DIR, hint: '先跑：node engine/scripts/install-engine-deps.mjs --build-wheel' },
-);
+check('W1 盘上有一颗真构建出来的 wheel（否则本条无法进行 —— 这不是"跳过"，是硬前置）', wheels.length > 0, {
+  wheelDir: WHEEL_DIR,
+  hint: '先跑：node engine/scripts/install-engine-deps.mjs --build-wheel',
+});
 if (wheels.length === 0) {
   console.log(`\n通过 ${passed} / 失败 ${failed}`);
   process.exit(1);
@@ -86,15 +96,14 @@ console.log(`  · 使用 ${whl}`);
 // ---- W2：--no-index --no-deps 装进一个空 target（自足性：不联网、不编译）----
 const target = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-whl-'));
 
-const install = spawnSync(
-  VENV_PY,
-  ['-m', 'pip', 'install', '--no-index', '--no-deps', '--target', target, whl],
-  { encoding: 'utf8', env: { ...process.env, PYTHONIOENCODING: 'utf-8' } },
-);
+const install = spawnSync(VENV_PY, ['-m', 'pip', 'install', '--no-index', '--no-deps', '--target', target, whl], {
+  encoding: 'utf8',
+  env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+});
 const installOut = `${install.stdout ?? ''}${install.stderr ?? ''}`;
 check(
-  'W2 `pip install --no-index --no-deps <whl>` 成功 ⇒ 这颗 wheel **自足**：不联网、不触发任何编译'
-    + '（`--no-index` 让"顺手去下 sdist 重编"这类行为必然失败，比"换一台没有编译器的机器"更强）',
+  'W2 `pip install --no-index --no-deps <whl>` 成功 ⇒ 这颗 wheel **自足**：不联网、不触发任何编译' +
+    '（`--no-index` 让"顺手去下 sdist 重编"这类行为必然失败，比"换一台没有编译器的机器"更强）',
   install.status === 0,
   { status: install.status, tail: installOut.slice(-300) },
 );
@@ -103,15 +112,15 @@ check(
 const pkgDir = path.join(target, 'pydensecrf');
 const binFiles = fs.existsSync(pkgDir) ? fs.readdirSync(pkgDir).filter((n) => /\.(pyd|so|dylib)$/.test(n)) : [];
 const magic = binFiles.length > 0 ? fs.readFileSync(path.join(pkgDir, binFiles[0])).subarray(0, 4) : Buffer.alloc(0);
-const isBinary = magic[0] === 0x4d && magic[1] === 0x5a // MZ (PE)
-  || (magic[0] === 0x7f && magic[1] === 0x45) // ELF
-  || (magic[0] === 0xcf && magic[1] === 0xfa) // Mach-O 64
-  || (magic[0] === 0xca && magic[1] === 0xfe); // Mach-O 32
-check(
-  'W3 装出来的扩展是**真二进制**（PE / ELF / Mach-O 魔术头，不是 `.py` 冒充）',
-  binFiles.length > 0 && isBinary,
-  { binFiles, magic: [...magic].map((b) => b.toString(16)).join(' ') },
-);
+const isBinary =
+  (magic[0] === 0x4d && magic[1] === 0x5a) || // MZ (PE)
+  (magic[0] === 0x7f && magic[1] === 0x45) || // ELF
+  (magic[0] === 0xcf && magic[1] === 0xfa) || // Mach-O 64
+  (magic[0] === 0xca && magic[1] === 0xfe); // Mach-O 32
+check('W3 装出来的扩展是**真二进制**（PE / ELF / Mach-O 魔术头，不是 `.py` 冒充）', binFiles.length > 0 && isBinary, {
+  binFiles,
+  magic: [...magic].map((b) => b.toString(16)).join(' '),
+});
 
 // ---- W4：import + 构造 DenseCRF + 枚举成员在（产品那条兼容补丁在 wheel 产物上同样成立）----
 const probe = [
@@ -125,10 +134,16 @@ const probe = [
 ].join('\n');
 const run = spawnSync(VENV_PY, ['-c', probe], { encoding: 'utf8', env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
 check(
-  'W4 `import pydensecrf.densecrf` + 构造 `DenseCRF(10,10)` 成功，且枚举成员在 ⇒ 产品的兼容补丁'
-    + '（把枚举回填成模块级常量）在 wheel 产物上**同样成立**',
+  'W4 `import pydensecrf.densecrf` + 构造 `DenseCRF(10,10)` 成功，且枚举成员在 ⇒ 产品的兼容补丁' +
+    '（把枚举回填成模块级常量）在 wheel 产物上**同样成立**',
   run.status === 0 && /^OK /.test(String(run.stdout ?? '').trim()),
-  { status: run.status, out: String(run.stdout ?? '').trim().slice(0, 200), err: String(run.stderr ?? '').slice(-300) },
+  {
+    status: run.status,
+    out: String(run.stdout ?? '')
+      .trim()
+      .slice(0, 200),
+    err: String(run.stderr ?? '').slice(-300),
+  },
 );
 
 // ---- W5：wheel 的文件名 tag 与产品自报的 platform/pythonTag 一致 ----
@@ -140,14 +155,18 @@ const plan = spawnSync(
 let planObj = {};
 try {
   planObj = JSON.parse(String(plan.stdout ?? ''));
-} catch { /* 下面判据会红 */ }
+} catch {
+  /* 下面判据会红 */
+}
 const base = path.basename(whl);
-const tagOk = base.includes(String(planObj.pythonTag ?? '\u0000'))
-  && (planObj.platform === 'win32-x64' ? base.includes('win_amd64') : true)
-  && (planObj.platform === 'darwin-arm64' ? /(arm64|universal2)/.test(base) : true);
+const tagOk =
+  base.includes(String(planObj.pythonTag ?? '\u0000')) &&
+  (planObj.platform === 'win32-x64' ? base.includes('win_amd64') : true) &&
+  (planObj.platform === 'darwin-arm64' ? /(arm64|universal2)/.test(base) : true);
 check(
   'W5 wheel 的文件名 tag 与产品自报的 `platform` / `pythonTag` 一致（登记的通道口径与产物对不上 = 装了个差一档的二进制）',
-  tagOk, { file: base, platform: planObj.platform, pythonTag: planObj.pythonTag },
+  tagOk,
+  { file: base, platform: planObj.platform, pythonTag: planObj.pythonTag },
 );
 
 fs.rmSync(target, { recursive: true, force: true });

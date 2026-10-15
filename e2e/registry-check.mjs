@@ -68,7 +68,9 @@ const keyOf = (e) => `${e.script}|${(e.args ?? []).join(' ')}`;
 function runAssertions(scripts, entries) {
   const npmChecks = parseNpmChecks(scripts);
   const have = new Set(entries.map(keyOf));
-  const uncovered = npmChecks.filter((n) => !have.has(keyOf(n))).map((n) => `${n.name} → ${n.script}${n.args.length ? ` ${n.args.join(' ')}` : ''}`);
+  const uncovered = npmChecks
+    .filter((n) => !have.has(keyOf(n)))
+    .map((n) => `${n.name} → ${n.script}${n.args.length ? ` ${n.args.join(' ')}` : ''}`);
   const missing = entries.filter((e) => !fs.existsSync(path.join(ROOT, e.script))).map((e) => `${e.id}: ${e.script}`);
   const badTier = entries.filter((e) => !TIER_ORDER.includes(e.tier)).map((e) => `${e.id}: tier=${e.tier}`);
   const seen = new Set();
@@ -81,14 +83,34 @@ function runAssertions(scripts, entries) {
   const gotCounts = {};
   for (const t of TIER_ORDER) gotCounts[t] = 0;
   for (const e of entries) gotCounts[e.tier] = (gotCounts[e.tier] ?? 0) + 1;
-  const countDiff = TIER_ORDER
-    .filter((t) => (gotCounts[t] ?? 0) !== (EXPECTED_TIER_COUNTS[t] ?? 0))
-    .map((t) => `${t}: 实际 ${gotCounts[t] ?? 0} ≠ 写死 ${EXPECTED_TIER_COUNTS[t] ?? 0}`);
+  const countDiff = TIER_ORDER.filter((t) => (gotCounts[t] ?? 0) !== (EXPECTED_TIER_COUNTS[t] ?? 0)).map(
+    (t) => `${t}: 实际 ${gotCounts[t] ?? 0} ≠ 写死 ${EXPECTED_TIER_COUNTS[t] ?? 0}`,
+  );
   return [
-    { id: 'REG.npmCovered', label: 'npm 检查类脚本全部登记进注册表（script + args 逐项对上）', ok: uncovered.length === 0, detail: uncovered.length ? `未登记：${uncovered.join('；')}` : `${npmChecks.length} 个 npm 脚本全部有对应注册项` },
-    { id: 'REG.scriptsExist', label: '注册表每项的 script 文件真实存在', ok: missing.length === 0, detail: missing.length ? `缺失：${missing.join('；')}` : `${entries.length} 个注册项的文件都在` },
-    { id: 'REG.tiersValid', label: '注册表每项 tier 合法', ok: badTier.length === 0, detail: badTier.length ? `非法：${badTier.join('；')}` : `全部 ∈ {${TIER_ORDER.join(',')}}` },
-    { id: 'REG.idsUnique', label: '注册表 id 无重复', ok: dups.length === 0, detail: dups.length ? `重复：${[...new Set(dups)].join(',')}` : `${entries.length} 个 id 互不重复` },
+    {
+      id: 'REG.npmCovered',
+      label: 'npm 检查类脚本全部登记进注册表（script + args 逐项对上）',
+      ok: uncovered.length === 0,
+      detail: uncovered.length ? `未登记：${uncovered.join('；')}` : `${npmChecks.length} 个 npm 脚本全部有对应注册项`,
+    },
+    {
+      id: 'REG.scriptsExist',
+      label: '注册表每项的 script 文件真实存在',
+      ok: missing.length === 0,
+      detail: missing.length ? `缺失：${missing.join('；')}` : `${entries.length} 个注册项的文件都在`,
+    },
+    {
+      id: 'REG.tiersValid',
+      label: '注册表每项 tier 合法',
+      ok: badTier.length === 0,
+      detail: badTier.length ? `非法：${badTier.join('；')}` : `全部 ∈ {${TIER_ORDER.join(',')}}`,
+    },
+    {
+      id: 'REG.idsUnique',
+      label: '注册表 id 无重复',
+      ok: dups.length === 0,
+      detail: dups.length ? `重复：${[...new Set(dups)].join(',')}` : `${entries.length} 个 id 互不重复`,
+    },
     {
       id: 'REG.tierCounts',
       label: '各层条数 == 写死的常量（E4 计数门：减一条就得先改常量，不会"全绿但少一块"）',
@@ -114,7 +136,14 @@ for (const r of forward) {
 if (REFUTE) {
   if (!forwardOk) {
     // 正向就红 ⇒ 反证无意义（分不清「变异打红」与「本来红」）。按失败收场。
-    console.log('\n[RESULT] ' + JSON.stringify({ results: forward, pass: forward.filter((r) => r.ok).length, fail: forward.filter((r) => !r.ok).length }));
+    console.log(
+      '\n[RESULT] ' +
+        JSON.stringify({
+          results: forward,
+          pass: forward.filter((r) => r.ok).length,
+          fail: forward.filter((r) => !r.ok).length,
+        }),
+    );
     console.log('正向未全绿 ⇒ 反证轮不收场（先修正向）');
     process.exit(1);
   }
@@ -159,12 +188,16 @@ if (REFUTE) {
     const target = got.find((r) => r.id === m.expect);
     const red = target && !target.ok;
     if (!red) allRed = false;
-    console.log(`  ${red ? '✓' : '✗'} ${m.id} ${m.what} → ${m.expect} ${red ? '按预期变红' : '**没有红**（断言漏了它）'}`);
+    console.log(
+      `  ${red ? '✓' : '✗'} ${m.id} ${m.what} → ${m.expect} ${red ? '按预期变红' : '**没有红**（断言漏了它）'}`,
+    );
   }
 
   const pass = forward.filter((r) => r.ok).length;
   console.log('\n[RESULT] ' + JSON.stringify({ results: forward, pass, fail: forward.length - pass }));
-  console.log(`\n注册表完整性：正向 ${pass} / ${forward.length}，反证 ${mutations.filter((m) => m.expect).length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`);
+  console.log(
+    `\n注册表完整性：正向 ${pass} / ${forward.length}，反证 ${mutations.filter((m) => m.expect).length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`,
+  );
   process.exit(forwardOk && allRed ? 0 : 1);
 }
 

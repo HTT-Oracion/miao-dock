@@ -84,7 +84,10 @@ const ENGINE_PORT = 5027;
  */
 function buildRust() {
   const r = spawnSync('cargo', ['build', '--bin', 'boxsvc'], {
-    cwd: CARGO_DIR, encoding: 'utf8', maxBuffer: 40 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: CARGO_DIR,
+    encoding: 'utf8',
+    maxBuffer: 40 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
   const log = `${r.stdout || ''}${r.stderr || ''}`.trim();
   return { ok: r.status === 0, log: log.split('\n').slice(-6).join(' | ').slice(0, 400) };
@@ -265,9 +268,7 @@ function translatedFile(dir, seq) {
 
 function originalFile(dir, seq) {
   const pad = String(seq).padStart(3, '0');
-  const hit = fs.readdirSync(dir).find(
-    (f) => f.startsWith(`${pad}.`) && !f.includes('_translated'),
-  );
+  const hit = fs.readdirSync(dir).find((f) => f.startsWith(`${pad}.`) && !f.includes('_translated'));
   return hit ? path.join(dir, hit) : null;
 }
 
@@ -286,14 +287,27 @@ function stripComments(src) {
     const c = src[i];
     const c2 = src[i + 1];
     if (state === 'code') {
-      if (c === '/' && c2 === '/') { state = 'line'; i++; continue; }
-      if (c === '/' && c2 === '*') { state = 'block'; i++; continue; }
+      if (c === '/' && c2 === '/') {
+        state = 'line';
+        i++;
+        continue;
+      }
+      if (c === '/' && c2 === '*') {
+        state = 'block';
+        i++;
+        continue;
+      }
       out += c;
     } else if (state === 'line') {
-      if (c === '\n') { out += c; state = 'code'; }
+      if (c === '\n') {
+        out += c;
+        state = 'code';
+      }
     } else {
-      if (c === '*' && c2 === '/') { state = 'code'; i++; }
-      else if (c === '\n') out += c; // 保留换行，行号不错位
+      if (c === '*' && c2 === '/') {
+        state = 'code';
+        i++;
+      } else if (c === '\n') out += c; // 保留换行，行号不错位
     }
   }
   return out;
@@ -348,7 +362,9 @@ async function runAll() {
     const beforeOBytes = beforeO ? fs.readFileSync(beforeO) : null;
 
     // ---- R1：返工计划取的是「有原图的页」，而不是「缺译文的页」 ----
-    const planRes = json(await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(COMIC)}/retranslate`, { token: TOKEN }));
+    const planRes = json(
+      await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(COMIC)}/retranslate`, { token: TOKEN }),
+    );
     check(
       'R1',
       '返工计划覆盖**已译**的页：对已翻完的漫画仍报得出可返工张数，且覆盖数 = 全部页',
@@ -357,7 +373,9 @@ async function runAll() {
     );
 
     // 与 resume 的分工：resume 对同一本应报"没有待续做的页"（缺 0 张）
-    const resumeRes = json(await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(COMIC)}/resume`, { token: TOKEN }));
+    const resumeRes = json(
+      await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(COMIC)}/resume`, { token: TOKEN }),
+    );
     check(
       'R1b',
       '与 resume 分工明确：同一本已翻完的漫画，resume 报 0 待续做（两条路不是同一件事）',
@@ -372,10 +390,12 @@ async function runAll() {
       'R2',
       'POST /library/{name}/retranslate 建单成功（201），且回执带覆盖张数',
       rtRes.status === 201 && !!rtId && json(rtRes).overwriteCount === IMAGES,
-      `HTTP ${rtRes.status} taskId=${rtId ? '有' : '无'} overwriteCount=${json(rtRes)?.overwriteCount}`,    );
+      `HTTP ${rtRes.status} taskId=${rtId ? '有' : '无'} overwriteCount=${json(rtRes)?.overwriteCount}`,
+    );
     const done2 = rtId ? await waitTask(PORT, TOKEN, rtId) : null;
     const skippedCount = (done2?.batches ?? []).reduce(
-      (acc, b) => acc + (b.status === 'skipped' ? b.count || 0 : 0), 0,
+      (acc, b) => acc + (b.status === 'skipped' ? b.count || 0 : 0),
+      0,
     );
     const detail2 = json(await request(PORT, 'GET', `/api/v1/tasks/${rtId}`, { token: TOKEN }));
     const items = detail2?.items ?? [];
@@ -404,7 +424,9 @@ async function runAll() {
     const fakeT = translatedFile(dir, 1);
     const fakeBytes = encodePng(40, 60, (x, y, put) => put(255, 0, 255)); // 纯品红，绝不会与引擎产物相同
     fs.writeFileSync(fakeT, fakeBytes);
-    const rtRes2 = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC)}/retranslate`, { seqs: [1] });
+    const rtRes2 = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC)}/retranslate`, {
+      seqs: [1],
+    });
     const rtId2 = json(rtRes2)?.taskId;
     const doneR2 = rtId2 ? await waitTask(PORT, TOKEN, rtId2) : null;
     const afterT2 = translatedFile(dir, 1);
@@ -414,7 +436,8 @@ async function runAll() {
       'R3',
       '返工**真的覆盖**已有译文：塞进去的假译文被引擎产物顶掉了（不是 skipped 装样子的"完成"）',
       replaced && doneR2?.status === 'done',
-      replaced ? `假译文已被替换（${fakeBytes.length}B 品红 → ${afterT2Bytes.length}B 引擎产物）`
+      replaced
+        ? `假译文已被替换（${fakeBytes.length}B 品红 → ${afterT2Bytes.length}B 引擎产物）`
         : `译文仍是那份假译文（覆盖没发生）status=${doneR2?.status}`,
     );
 
@@ -448,7 +471,9 @@ async function runAll() {
     );
 
     // ---- 只返工单页：seqs 精确生效 ----
-    const oneRes = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC)}/retranslate`, { seqs: [2] });
+    const oneRes = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC)}/retranslate`, {
+      seqs: [2],
+    });
     const oneId = json(oneRes)?.taskId;
     const done3 = oneId ? await waitTask(PORT, TOKEN, oneId) : null;
     const d3 = oneId ? json(await request(PORT, 'GET', `/api/v1/tasks/${oneId}`, { token: TOKEN })) : null;
@@ -576,7 +601,8 @@ const MUTATIONS = [
         //    破坏点落在与断言无关的路径上，正是"该红没红"的假阴性来源（本轮实测踩到）。
         file: RUST_STORE_SRC,
         find: '        let mut candidates: Vec<RetranslateCandidate> = Vec::new();\n        for f in self.list_dir(&dir) {',
-        replace: '        let mut candidates: Vec<RetranslateCandidate> = Vec::new();\n        for f in Vec::<String>::new() {',
+        replace:
+          '        let mut candidates: Vec<RetranslateCandidate> = Vec::new();\n        for f in Vec::<String>::new() {',
       },
     ],
     expect: ['R1', 'R2'],
@@ -706,8 +732,10 @@ async function refute() {
   }
   // 源码还原了，**产物也必须还原** —— 否则留下一个「源码是好的、跑起来是坏的」的机器。
   const rebuilt = buildRust();
-  if (!rebuilt.ok) { restoreFail++; console.log(`  ✗ cargo build 还原失败：${rebuilt.log}`); }
-  else console.log('  ✓ cargo build 已把靶子重编回未破坏状态');
+  if (!rebuilt.ok) {
+    restoreFail++;
+    console.log(`  ✗ cargo build 还原失败：${rebuilt.log}`);
+  } else console.log('  ✓ cargo build 已把靶子重编回未破坏状态');
 
   console.log('\n' + '─'.repeat(56));
   console.log(`REFUTE: ${red}/${total} 条按预期变红（应执行 ${expectedTotal} 条）`);

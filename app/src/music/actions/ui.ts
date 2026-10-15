@@ -5,7 +5,10 @@ import type { MusicState, StoreGet, StoreSet } from '@music/slice';
 /** 收起播放器的退场定时器。留着它才能在"退场途中又被点开"时取消关闭（见 setExpanded） */
 let closeExpandedTimer: ReturnType<typeof setTimeout> | null = null;
 
-export const createUiSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 'setExpanded' | 'closeExpanded' | 'setSkin' | 'toast' | 'clearToast'> => ({
+export const createUiSlice = (
+  set: StoreSet,
+  get: StoreGet,
+): Pick<MusicState, 'setExpanded' | 'closeExpanded' | 'setSkin' | 'toast' | 'clearToast'> => ({
   setExpanded: (open) => {
     // 展开时若退场动画正在播，必须**取消那次关闭** ——
     // 否则定时器到点仍会把 expanded 置 false，表现成"点开反而关了"。

@@ -225,4 +225,3 @@ export function lyricIndexAt(lines: ParsedLyricLine[], seconds: number): number 
   }
   return idx;
 }
-

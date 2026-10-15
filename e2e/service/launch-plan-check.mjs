@@ -61,7 +61,10 @@ const mock = await plan('mock');
 const real = await plan('real');
 
 // ---------------------------------------------------------------- 通用形状
-for (const [name, p] of [['mock', mock], ['real', real]]) {
+for (const [name, p] of [
+  ['mock', mock],
+  ['real', real],
+]) {
   check(
     `P-${name}-1 mode 字段与子进程齐备`,
     p.mode === name && p.engine && p.llm && p.engine.cmd?.length && p.llm.cmd?.length,
@@ -131,12 +134,8 @@ check(
 );
 check(
   'P-real-11 engine 的三重判定与 `probeEngine()` 同源：tcp(port) + POST /queue-size + tcp(port+1)',
-  JSON.stringify(real.engine.probes.map((p) => (p.kind === 'tcp' ? `tcp:${p.port}` : `${p.method} ${p.path}`)))
-    === JSON.stringify([
-      `tcp:${real.engine.probes[0].port}`,
-      'POST /queue-size',
-      `tcp:${real.engine.probes[0].port + 1}`,
-    ]),
+  JSON.stringify(real.engine.probes.map((p) => (p.kind === 'tcp' ? `tcp:${p.port}` : `${p.method} ${p.path}`))) ===
+    JSON.stringify([`tcp:${real.engine.probes[0].port}`, 'POST /queue-size', `tcp:${real.engine.probes[0].port + 1}`]),
   JSON.stringify(real.engine.probes),
 );
 check(
@@ -147,8 +146,8 @@ check(
 check(
   'P-real-13 llm 是 llama-server，且 `--port` 与 serviceEnv 的 SAKURA_API_BASE 端口一致（否则引擎找不到 ③）',
   // 认 `.exe`：Windows 上 `defaultLlmServerBin()` 给的是 `llama-server.exe`，POSIX 是 `llama-server`。
-  /llama-server(\.exe)?$/.test(real.llm.cmd[0])
-    && real.serviceEnv?.SAKURA_API_BASE === `http://127.0.0.1:${real.llm.probes[0].port}/v1`,
+  /llama-server(\.exe)?$/.test(real.llm.cmd[0]) &&
+    real.serviceEnv?.SAKURA_API_BASE === `http://127.0.0.1:${real.llm.probes[0].port}/v1`,
   `${real.llm.cmd[0]} | ${real.serviceEnv?.SAKURA_API_BASE}`,
 );
 check(
@@ -184,9 +183,12 @@ check(
 );
 check(
   'P-llm-2 归属虽是 service，**配方本身仍完整**（cmd/probes/watch 一个不少）—— 少了它 E1 快照会悄悄缩水',
-  mock.llm.cmd?.length >= 2 && mock.llm.probes?.length >= 2
-    && real.llm.cmd?.length >= 2 && real.llm.probes?.length >= 2
-    && typeof real.llm.watch === 'boolean' && typeof mock.llm.watch === 'boolean',
+  mock.llm.cmd?.length >= 2 &&
+    mock.llm.probes?.length >= 2 &&
+    real.llm.cmd?.length >= 2 &&
+    real.llm.probes?.length >= 2 &&
+    typeof real.llm.watch === 'boolean' &&
+    typeof mock.llm.watch === 'boolean',
   `mock.cmd=${mock.llm.cmd?.length} mock.probes=${mock.llm.probes?.length} real.watch=${real.llm.watch}`,
 );
 
@@ -225,7 +227,8 @@ const MUTATIONS = [
     id: 'R1',
     name: 'mock 档的 ③ 改回真档（resolve_llm_launch_for 的分支传反）⇒ P-mock-6 红',
     find: '    if real {\n        resolve_real_llm_launch(o)\n    } else {\n        Ok(resolve_mock_llm_launch(o))\n    }',
-    replace: '    if real {\n        Ok(resolve_mock_llm_launch(o))\n    } else {\n        resolve_real_llm_launch(o)\n    }',
+    replace:
+      '    if real {\n        Ok(resolve_mock_llm_launch(o))\n    } else {\n        resolve_real_llm_launch(o)\n    }',
     // ⚠️ 只有 P-mock-6 会红：结构类断言（P-mock-1「字段齐备」）**照样通过** ——
     //    返回的仍是一份"完整"的配方，只是内容成了真档。这正是本仓库反复吃的那类教训：
     //    **形状断言抓不到"内容错了但形状对"**，必须有一条直接查产物路径/标记的断言。
@@ -323,7 +326,9 @@ if (REFUTE) {
     const reds = m.expect.filter((id) => new RegExp(`✗ ${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(rerun));
     const ok = reds.length === m.expect.length;
     if (!ok) allRed = false;
-    console.log(`  ${ok ? '✓' : '✗'} ${m.id} ${m.name} → ${ok ? '按预期变红' : `**没红**（只红了 ${reds.length}/${m.expect.length}）`}`);
+    console.log(
+      `  ${ok ? '✓' : '✗'} ${m.id} ${m.name} → ${ok ? '按预期变红' : `**没红**（只红了 ${reds.length}/${m.expect.length}）`}`,
+    );
     fs.writeFileSync(ENGINE_RS, original);
   }
   // 还原校验：字节一致才算收工
@@ -344,14 +349,14 @@ if (REFUTE) {
       c.stderr.on('data', (d) => (se += d));
       c.on('error', reject);
       c.on('close', (code) =>
-        code === 0
-          ? resolve()
-          : reject(new Error(`还原后重编译失败（产物仍是坏的）：${se.slice(0, 400)}`)),
+        code === 0 ? resolve() : reject(new Error(`还原后重编译失败（产物仍是坏的）：${se.slice(0, 400)}`)),
       );
     });
     console.log('还原重编译：✓ 产物已与源码同步');
   }
-  console.log(`\nREFUTE: ${MUTATIONS.filter(() => allRed).length}/${MUTATIONS.length} 条变异按预期变红${allRed ? '' : '（有不红的）'}`);
+  console.log(
+    `\nREFUTE: ${MUTATIONS.filter(() => allRed).length}/${MUTATIONS.length} 条变异按预期变红${allRed ? '' : '（有不红的）'}`,
+  );
   process.exit(allRed && restored ? 0 : 1);
 }
 

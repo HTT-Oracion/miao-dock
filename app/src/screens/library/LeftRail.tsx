@@ -58,10 +58,7 @@ export function LeftRail({
   onShowHidden: () => void;
 }) {
   return (
-    <aside
-      className="lib-left"
-      style={{ width: LIBRARY.leftColumnWidth, flexBasis: LIBRARY.leftColumnWidth }}
-    >
+    <aside className="lib-left" style={{ width: LIBRARY.leftColumnWidth, flexBasis: LIBRARY.leftColumnWidth }}>
       <div className="lib-search">
         <Search size={13} className="lib-search-ico" />
         <input
@@ -72,12 +69,7 @@ export function LeftRail({
           spellCheck={false}
         />
         {queryInput ? (
-          <button
-            type="button"
-            className="lib-search-clear"
-            onClick={() => onQueryInput('')}
-            aria-label="清空搜索"
-          >
+          <button type="button" className="lib-search-clear" onClick={() => onQueryInput('')} aria-label="清空搜索">
             <X size={13} />
           </button>
         ) : null}
@@ -112,18 +104,14 @@ export function LeftRail({
                           <div className="grp-row" key={r.key}>
                             <button
                               type="button"
-                              className={
-                                r.bookName === activeKey ? 'grp-row-main is-active' : 'grp-row-main'
-                              }
+                              className={r.bookName === activeKey ? 'grp-row-main is-active' : 'grp-row-main'}
                               onClick={() => onActive(r.bookName)}
                               title={r.label}
                             >
                               <span className="grp-row-label">
                                 <Highlight text={r.label} query={query} />
                               </span>
-                              <span className="grp-row-status muted">
-                                · {progressLabel(r.target)}
-                              </span>
+                              <span className="grp-row-status muted">· {progressLabel(r.target)}</span>
                             </button>
                             {r.mergeable ? (
                               <span className="grp-row-act">
@@ -175,9 +163,7 @@ export function LeftRail({
                   </span>
                 </button>
               ))}
-              {flatHits.length === 0 ? (
-                <div className="lib-empty">没有匹配「{query}」的漫画</div>
-              ) : null}
+              {flatHits.length === 0 ? <div className="lib-empty">没有匹配「{query}」的漫画</div> : null}
             </>
           )
         ) : (
@@ -238,12 +224,7 @@ export function LeftRail({
           <span className="muted">
             <span className="num">{libPage}</span> / <span className="num">{libPages}</span>
           </span>
-          <Btn
-            kind="ghost"
-            size="sm"
-            disabled={libPage >= libPages}
-            onClick={() => onLibPage(libPage + 1)}
-          >
+          <Btn kind="ghost" size="sm" disabled={libPage >= libPages} onClick={() => onLibPage(libPage + 1)}>
             下一页
           </Btn>
         </div>

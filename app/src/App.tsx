@@ -30,12 +30,7 @@ import { SettingsScreen } from '@screens/SettingsScreen';
 // 它是 `position: fixed; inset: 0` 的全屏浮层，数据全部来自 store，本就不依赖任何一屏的 DOM。
 import { ExpandedPlayer } from '@screens/music/ExpandedPlayer';
 import { useMusicStore } from '@music/store';
-import {
-  isBlockedWhenNotReady,
-  stateView,
-  type Screen,
-  type TranslateView,
-} from '@/nav';
+import { isBlockedWhenNotReady, stateView, type Screen, type TranslateView } from '@/nav';
 import type { TranslateSource } from '@screens/settings/translate-api';
 import { engineStatus, downloadEngineModels, type ModelDownloadView } from '@screens/settings/engine-api';
 import { engineDownloadChip, isDownloadActive } from '@/engine-download';
@@ -390,9 +385,7 @@ export function App() {
     if (downloadChip) {
       return {
         title: downloadChip.isAlert ? '下载中断' : '引擎下载中',
-        subtitle: downloadChip.isAlert
-          ? '点这里继续下载或从头重下'
-          : '下载在后台继续，可随时去漫画库、设置或音乐页',
+        subtitle: downloadChip.isAlert ? '点这里继续下载或从头重下' : '下载在后台继续，可随时去漫画库、设置或音乐页',
         actions: (
           <>
             <Badge>{sourceChipLabel(source, platform)}</Badge>
@@ -509,12 +502,7 @@ export function App() {
 
   return (
     <div className="shell">
-      <Sidebar
-        screen={screen}
-        onScreen={setScreen}
-        state={status?.state ?? 'starting'}
-        labels={sidebarLabels}
-      />
+      <Sidebar screen={screen} onScreen={setScreen} state={status?.state ?? 'starting'} labels={sidebarLabels} />
 
       <div className="main">
         <Toolbar title={toolbar.title} subtitle={toolbar.subtitle} actions={toolbar.actions} />

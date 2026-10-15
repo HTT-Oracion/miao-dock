@@ -140,8 +140,7 @@ function getLineProgress(
   }
 
   // ── 无逐字数据：行级**线性**插值（严格跟随播放头，无缓动、无补偿）──
-  const nextT =
-    nextLine && nextLine.time > line.time ? nextLine.time : line.time + (line.duration || 4.8);
+  const nextT = nextLine && nextLine.time > line.time ? nextLine.time : line.time + (line.duration || 4.8);
   // 跨度下限 0.75s：两行贴得极近时也能看清推进，不会被压缩成一闪
   const span = Math.max(0.75, nextT - line.time);
   const prog = Math.max(0, Math.min(1, (now - line.time) / span));
@@ -208,8 +207,7 @@ export function KaraokeLyrics({
         fallbackAtRef.current = performance.now();
       }
       // ⚠️ 暂停时**不**外推：否则暂停期间歌词会继续往前爬（最容易被当成"歌词乱跳"）
-      const elapsed =
-        st.isPlaying && fallbackAtRef.current ? performance.now() - fallbackAtRef.current : 0;
+      const elapsed = st.isPlaying && fallbackAtRef.current ? performance.now() - fallbackAtRef.current : 0;
       return (fallbackMsRef.current + elapsed) / 1000;
     };
 
@@ -296,9 +294,7 @@ export function KaraokeLyrics({
           return (
             <div key={i} className="music-lyr-line kara-line">
               {line.text}
-              {showTranslation && line.translation ? (
-                <span className="kara-trans">{line.translation}</span>
-              ) : null}
+              {showTranslation && line.translation ? <span className="kara-trans">{line.translation}</span> : null}
             </div>
           );
         }
@@ -318,9 +314,7 @@ export function KaraokeLyrics({
           return (
             <div key={i} ref={activeRowRef} className="music-lyr-line is-on kara-line">
               {line.text}
-              {showTranslation && line.translation ? (
-                <span className="kara-trans">{line.translation}</span>
-              ) : null}
+              {showTranslation && line.translation ? <span className="kara-trans">{line.translation}</span> : null}
             </div>
           );
         }

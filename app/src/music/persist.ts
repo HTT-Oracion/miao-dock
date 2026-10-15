@@ -146,4 +146,3 @@ export function clearResumeSnapshot(): void {
 export function sanitizeForStorage(song: Song): Song {
   return song.cover && song.cover.startsWith('data:') ? { ...song, cover: '' } : song;
 }
-

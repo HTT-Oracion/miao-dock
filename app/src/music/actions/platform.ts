@@ -13,14 +13,28 @@ function mergeLogin(state: MusicState, provider: MusicProvider, info: LoginInfo 
   };
 }
 
-export const createPlatformSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 'switchPlaybackSource' | 'setSearchProvider' | 'loadAllLoginStatuses' | 'loadLoginStatus' | 'openLogin' | 'closeLogin' | 'logoutCurrent' | 'logoutFor'> => ({
+export const createPlatformSlice = (
+  set: StoreSet,
+  get: StoreGet,
+): Pick<
+  MusicState,
+  | 'switchPlaybackSource'
+  | 'setSearchProvider'
+  | 'loadAllLoginStatuses'
+  | 'loadLoginStatus'
+  | 'openLogin'
+  | 'closeLogin'
+  | 'logoutCurrent'
+  | 'logoutFor'
+> => ({
   switchPlaybackSource: async (p) => {
     if (get().playbackSource === p) return;
     set({
       playbackSource: p,
       loginInfo: get().loginInfos[p] ?? null,
       // 切换平台立即清空旧平台数据，避免残留闪烁
-      userPlaylists: [],      userPlaylistsError: '',
+      userPlaylists: [],
+      userPlaylistsError: '',
       officialCharts: [],
       recommendPlaylists: [],
       dailySongs: [],
@@ -74,7 +88,9 @@ export const createPlatformSlice = (set: StoreSet, get: StoreGet): Pick<MusicSta
       set({ loginInfos: infos, loginInfo: infos[get().playbackSource] ?? null });
     } catch {
       // 服务未就绪：逐个兜底探测
-      await Promise.all((['netease', 'kugou', 'qqmusic', 'migu'] as MusicProvider[]).map((p) => get().loadLoginStatus(p)));
+      await Promise.all(
+        (['netease', 'kugou', 'qqmusic', 'migu'] as MusicProvider[]).map((p) => get().loadLoginStatus(p)),
+      );
     }
   },
 

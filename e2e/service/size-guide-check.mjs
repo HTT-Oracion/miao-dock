@@ -79,8 +79,12 @@ async function modelFiles(extraEnv) {
     });
     let out = '';
     let err = '';
-    c.stdout.on('data', (d) => { out += d; });
-    c.stderr.on('data', (d) => { err += d; });
+    c.stdout.on('data', (d) => {
+      out += d;
+    });
+    c.stderr.on('data', (d) => {
+      err += d;
+    });
     c.on('error', reject);
     c.on('close', (code) => resolve({ code, out, err }));
   });
@@ -110,7 +114,9 @@ function copyManifest(dir, manifest) {
 /** 文档里的体积标记：`<!-- install-guide:size platform=<tag> bytes=<n> -->`。 */
 function docSizeOf(file, platform) {
   const text = fs.readFileSync(file, 'utf8');
-  const m = new RegExp(`install-guide:size\\s+platform=${platform.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+bytes=(\\d+)`).exec(text);
+  const m = new RegExp(
+    `install-guide:size\\s+platform=${platform.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+bytes=(\\d+)`,
+  ).exec(text);
   return m ? Number(m[1]) : null;
 }
 
@@ -128,28 +134,43 @@ if (!fs.existsSync(RUST_BIN)) {
   const wantBytes = sumOf(m.files);
   const wantEntries = m.files.filter(applicableOf).length;
 
-  check('W1 真清单：`guidance.totalBytes` == 本平台可见条目 `sizeBytes` 之和（逐字节）',
-    g.totalBytes === wantBytes, { got: g.totalBytes, want: wantBytes });
+  check('W1 真清单：`guidance.totalBytes` == 本平台可见条目 `sizeBytes` 之和（逐字节）', g.totalBytes === wantBytes, {
+    got: g.totalBytes,
+    want: wantBytes,
+  });
 
-  check('W1b 真清单：`guidance.entries` == 本平台可见条目数',
-    g.entries === wantEntries, { got: g.entries, want: wantEntries });
+  check('W1b 真清单：`guidance.entries` == 本平台可见条目数', g.entries === wantEntries, {
+    got: g.entries,
+    want: wantEntries,
+  });
 
   const setBytes = (g.sets ?? []).reduce((a, s) => a + s.bytes, 0);
   const setEntries = (g.sets ?? []).reduce((a, s) => a + s.entries, 0);
-  check('W2 真清单：分档位体积求和 == 总量（有条目掉出分档表就红在这里）',
-    setBytes === g.totalBytes, { setBytes, totalBytes: g.totalBytes, sets: (g.sets ?? []).map((s) => s.id) });
+  check('W2 真清单：分档位体积求和 == 总量（有条目掉出分档表就红在这里）', setBytes === g.totalBytes, {
+    setBytes,
+    totalBytes: g.totalBytes,
+    sets: (g.sets ?? []).map((s) => s.id),
+  });
   check('W2b 真清单：分档位条数求和 == 总条数', setEntries === g.entries, { setEntries, entries: g.entries });
 
-  check('W3 真清单：`guidance.platform` == 本机平台标识',
-    g.platform === platformKey(), { got: g.platform, want: platformKey() });
+  check('W3 真清单：`guidance.platform` == 本机平台标识', g.platform === platformKey(), {
+    got: g.platform,
+    want: platformKey(),
+  });
 
   // W4：三方闭环 —— 文档标记 ⟷ 服务端 ⟷ 清单求和。
   // 文档那一份由 `check:install-guide` 钉在清单上；这里钉的是"服务端那一份"与它们同值。
-  const guide = path.join(REPO_ROOT, 'docs', platformKey() === 'darwin-arm64' ? 'install-guide-macos.md' : 'install-guide-windows.md');
+  const guide = path.join(
+    REPO_ROOT,
+    'docs',
+    platformKey() === 'darwin-arm64' ? 'install-guide-macos.md' : 'install-guide-windows.md',
+  );
   const doc = fs.existsSync(guide) ? docSizeOf(guide, platformKey()) : null;
-  check('W4 三方闭环：安装引导文档的体积标记 == `guidance.totalBytes` == 清单求和',
+  check(
+    'W4 三方闭环：安装引导文档的体积标记 == `guidance.totalBytes` == 清单求和',
     doc === null || (doc === g.totalBytes && doc === wantBytes),
-    { doc, totalBytes: g.totalBytes, manifestSum: wantBytes, guide: path.basename(guide) });
+    { doc, totalBytes: g.totalBytes, manifestSum: wantBytes, guide: path.basename(guide) },
+  );
 
   fs.rmSync(root, { recursive: true, force: true });
 }
@@ -185,25 +206,34 @@ function buildFixture(mutate) {
   const g = body.guidance ?? {};
   const ids = (g.sets ?? []).map((s) => s.id);
 
-  check('W5 夹具：分档求和 == 总量（含表外档位与无 set 条目）',
+  check(
+    'W5 夹具：分档求和 == 总量（含表外档位与无 set 条目）',
     (g.sets ?? []).reduce((a, s) => a + s.bytes, 0) === g.totalBytes && g.totalBytes === sumOf(manifest.files),
-    { sets: ids, totalBytes: g.totalBytes, want: sumOf(manifest.files) });
+    { sets: ids, totalBytes: g.totalBytes, want: sumOf(manifest.files) },
+  );
 
-  check('W5b 夹具：清单登记过的表外档位（audio）出现在表里，且排在已知档位之后',
-    ids.includes('audio') && ids.indexOf('visual') < ids.indexOf('audio'), { ids });
+  check(
+    'W5b 夹具：清单登记过的表外档位（audio）出现在表里，且排在已知档位之后',
+    ids.includes('audio') && ids.indexOf('visual') < ids.indexOf('audio'),
+    { ids },
+  );
 
-  check('W5c 夹具：不属于任何 set 的条目归入 `unassigned`，不许消失',
-    ids.includes('unassigned') && (g.sets ?? []).find((s) => s.id === 'unassigned')?.bytes === 8, { ids });
+  check(
+    'W5c 夹具：不属于任何 set 的条目归入 `unassigned`，不许消失',
+    ids.includes('unassigned') && (g.sets ?? []).find((s) => s.id === 'unassigned')?.bytes === 8,
+    { ids },
+  );
 
-  check('W5d 夹具：空档位不显示（清单里没有 llm 条目 ⇒ 表里没有 llm）',
-    !ids.includes('llm'), { ids });
+  check('W5d 夹具：空档位不显示（清单里没有 llm 条目 ⇒ 表里没有 llm）', !ids.includes('llm'), { ids });
 
   // 平台过滤：另一平台那条（d，6 字节）不许计入
   const myBytes = manifest.files.filter(applicableOf).reduce((a, f) => a + f.sizeBytes, 0);
   const allBytes = manifest.files.reduce((a, f) => a + f.sizeBytes, 0);
-  check('W5e 夹具：总量只含本平台可见条目（另一平台那条的体积不混进来）',
+  check(
+    'W5e 夹具：总量只含本平台可见条目（另一平台那条的体积不混进来）',
     g.totalBytes === myBytes && (myBytes === allBytes || g.totalBytes < allBytes),
-    { totalBytes: g.totalBytes, mine: myBytes, all: allBytes });
+    { totalBytes: g.totalBytes, mine: myBytes, all: allBytes },
+  );
 
   fs.rmSync(root, { recursive: true, force: true });
 }
@@ -212,14 +242,18 @@ function buildFixture(mutate) {
 //
 // 🔴 C1 验收②。若产品把体积写成常量，改了副本也不会变 ⇒ 红。
 {
-  const { root, mp, manifest } = buildFixture((m) => { m.files[0].sizeBytes += 1000; });
+  const { root, mp, manifest } = buildFixture((m) => {
+    m.files[0].sizeBytes += 1000;
+  });
   const body = await modelFiles({ MIAO_MODEL_MANIFEST: mp, MIAO_MODEL_ROOT: root });
   const g = body.guidance ?? {};
   const want = sumOf(manifest.files);
   const visual = (g.sets ?? []).find((s) => s.id === 'visual');
-  check('W6 改夹具一条 `sizeBytes` ⇒ 总量与对应档位跟着变（证明是算的，不是写死的）',
+  check(
+    'W6 改夹具一条 `sizeBytes` ⇒ 总量与对应档位跟着变（证明是算的，不是写死的）',
     g.totalBytes === want && visual?.bytes === 3 + 1000 + 4,
-    { totalBytes: g.totalBytes, want, visual: visual?.bytes });
+    { totalBytes: g.totalBytes, want, visual: visual?.bytes },
+  );
   fs.rmSync(root, { recursive: true, force: true });
 }
 
@@ -228,9 +262,14 @@ function buildFixture(mutate) {
   const diag = fs.readFileSync(ENGINE_DIAG, 'utf8');
   const api = fs.readFileSync(ENGINE_API, 'utf8');
 
-  check('W7 前端：诊断视图把 `guidance` 交给引导区块（服务端算好了，界面得接上）',
+  check(
+    'W7 前端：诊断视图把 `guidance` 交给引导区块（服务端算好了，界面得接上）',
     /<ModelGuide\s+guidance=\{s\?\.models\?\.guidance\}/.test(diag) && diag.includes('guidance.totalBytes'),
-    { wired: /<ModelGuide\s+guidance=\{s\?\.models\?\.guidance\}/.test(diag), usesServer: diag.includes('guidance.totalBytes') });
+    {
+      wired: /<ModelGuide\s+guidance=\{s\?\.models\?\.guidance\}/.test(diag),
+      usesServer: diag.includes('guidance.totalBytes'),
+    },
+  );
 
   // 代码里不许出现写死的 GB 数字（注释里的举例不算 —— 那是说明不是值）
   const code = diag.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -240,8 +279,11 @@ function buildFixture(mutate) {
   const need = ['platform', 'entries', 'totalBytes', 'sets'];
   const missing = need.filter((k) => !new RegExp(`\\b${k}\\b`).test(api));
   check('W8 前端：`ModelGuidance` 契约含 platform/entries/totalBytes/sets', missing.length === 0, missing);
-  check('W8b 前端：`ModelSetGuide` 契约含 id/bytes（界面不自己编档位名）',
-    /interface ModelSetGuide/.test(api) && /id: string;/.test(api) && /bytes: number;/.test(api), null);
+  check(
+    'W8b 前端：`ModelSetGuide` 契约含 id/bytes（界面不自己编档位名）',
+    /interface ModelSetGuide/.test(api) && /id: string;/.test(api) && /bytes: number;/.test(api),
+    null,
+  );
 }
 
 // ------------------------------------------------------------------ 反证轮
@@ -272,24 +314,39 @@ if (REFUTE) {
     new Promise((resolve) => {
       const c = spawn(process.execPath, [SELF], { cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
       let out = '';
-      c.stdout.on('data', (d) => { out += d; });
-      c.stderr.on('data', (d) => { out += d; });
+      c.stdout.on('data', (d) => {
+        out += d;
+      });
+      c.stderr.on('data', (d) => {
+        out += d;
+      });
       c.on('error', () => resolve({ code: -1, out }));
       c.on('close', (code) => resolve({ code, out }));
     });
 
   const hasRed = (out, name) => out.split('\n').some((l) => l.trimStart().startsWith('✗') && l.includes(name));
-  const redOn = (out) => out.split('\n').filter((l) => l.trimStart().startsWith('✗')).map((l) => l.trim().slice(0, 46));
+  const redOn = (out) =>
+    out
+      .split('\n')
+      .filter((l) => l.trimStart().startsWith('✗'))
+      .map((l) => l.trim().slice(0, 46));
 
   // ---- M1：总量写成常量 ----
   {
-    const restore = mutateFile(MODEL_STATUS_RS, 'ModelGuidance { platform: platform.to_string(), entries: mine.len(), total_bytes, sets }',
-      'ModelGuidance { platform: platform.to_string(), entries: mine.len(), total_bytes: 1, sets }');
+    const restore = mutateFile(
+      MODEL_STATUS_RS,
+      'ModelGuidance { platform: platform.to_string(), entries: mine.len(), total_bytes, sets }',
+      'ModelGuidance { platform: platform.to_string(), entries: mine.len(), total_bytes: 1, sets }',
+    );
     const built = await rebuild();
     const r = await runForward();
     // 判据是 W1（总量对不上清单）；W6（改副本跟着变）同样会红
     const red = built && r.code !== 0 && hasRed(r.out, 'W1') && hasRed(r.out, 'W6');
-    check('M1 总量写成常量 ⇒ W1/W6 红（"如实告知"退化成"编一个数"）', red, { built, code: r.code, redOn: redOn(r.out) });
+    check('M1 总量写成常量 ⇒ W1/W6 红（"如实告知"退化成"编一个数"）', red, {
+      built,
+      code: r.code,
+      redOn: redOn(r.out),
+    });
     restore();
     await rebuild();
   }
@@ -308,7 +365,11 @@ if (REFUTE) {
 
   // ---- M3：前端没接上 ----
   {
-    const restore = mutateFile(ENGINE_DIAG, '<ModelGuide guidance={s?.models?.guidance} dir={o?.modelDir?.current} />', '');
+    const restore = mutateFile(
+      ENGINE_DIAG,
+      '<ModelGuide guidance={s?.models?.guidance} dir={o?.modelDir?.current} />',
+      '',
+    );
     const r = await runForward();
     const red = r.code !== 0 && hasRed(r.out, 'W7');
     check('M3 删前端引导区块 ⇒ W7 红（服务端算好了、界面没接上）', red, { code: r.code, redOn: redOn(r.out) });
@@ -321,7 +382,12 @@ if (REFUTE) {
     const rs = fs.readFileSync(MODEL_STATUS_RS, 'utf8');
     if (!rs.includes('entries: mine.len(), total_bytes, sets }')) bad.push('model_status.rs 残留 M1');
     if (!rs.includes('for name in &order {')) bad.push('model_status.rs 残留 M2');
-    if (!fs.readFileSync(ENGINE_DIAG, 'utf8').includes('<ModelGuide guidance={s?.models?.guidance} dir={o?.modelDir?.current} />')) bad.push('EngineDiag.tsx 未还原');
+    if (
+      !fs
+        .readFileSync(ENGINE_DIAG, 'utf8')
+        .includes('<ModelGuide guidance={s?.models?.guidance} dir={o?.modelDir?.current} />')
+    )
+      bad.push('EngineDiag.tsx 未还原');
     check('R1 变异收尾：两处源码按字节还原', bad.length === 0, bad);
   }
 }

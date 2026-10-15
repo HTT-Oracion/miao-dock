@@ -1,6 +1,15 @@
 // init切片 —— D-156 从 store.ts 按 action 段切出。
 import * as ipc from '@music/ipc';
-import { DL_BASE_COLOR_DEF, DL_HIGHLIGHT_COLOR_DEF, DL_LINE_COUNT, DL_LYRICS_SIZE, LYRICS_COLOR_DEF, LYRICS_MODE_DEF, LYRICS_SIZE, VINYL_COLOR_DEF } from '@music/player-options';
+import {
+  DL_BASE_COLOR_DEF,
+  DL_HIGHLIGHT_COLOR_DEF,
+  DL_LINE_COUNT,
+  DL_LYRICS_SIZE,
+  LYRICS_COLOR_DEF,
+  LYRICS_MODE_DEF,
+  LYRICS_SIZE,
+  VINYL_COLOR_DEF,
+} from '@music/player-options';
 import { readLS, LS_HISTORY, LS_PREFS, readResumeSnapshot, clearResumeSnapshot } from '@music/persist';
 import { Prefs } from '@music/prefs';
 import type { LoginInfo, LyricsMode, PlayHistoryEntry, PlayMode, PlaybackQuality, MusicProvider } from '@music/types';
@@ -39,7 +48,13 @@ export function loginVerdict(infos: Record<MusicProvider, LoginInfo | null>, p: 
   return info.logged_in ? 'valid' : 'logged_out';
 }
 
-export const createInitSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 'hydratePrefs' | 'init' | 'setProxyPort' | 'restoreSession' | 'finishRestore' | 'handleRestoreFailed'> => ({
+export const createInitSlice = (
+  set: StoreSet,
+  get: StoreGet,
+): Pick<
+  MusicState,
+  'hydratePrefs' | 'init' | 'setProxyPort' | 'restoreSession' | 'finishRestore' | 'handleRestoreFailed'
+> => ({
   hydratePrefs: () => {
     const prefs = readLS<Partial<Prefs>>(LS_PREFS, {});
     const volume = typeof prefs.volume === 'number' ? prefs.volume : 0.8;
@@ -69,8 +84,7 @@ export const createInitSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 
         : 'order';
     const skin: PlayerSkin = prefs.skin ?? 'modern';
     const playbackQuality: PlaybackQuality = prefs.playbackQuality ?? 'hires';
-    const lyricsFontSize =
-      typeof prefs.lyricsFontSize === 'number' ? prefs.lyricsFontSize : LYRICS_SIZE.def;
+    const lyricsFontSize = typeof prefs.lyricsFontSize === 'number' ? prefs.lyricsFontSize : LYRICS_SIZE.def;
     /*
      * 桌面歌词的两项数值偏好在这里夹到常量区间内。
      *

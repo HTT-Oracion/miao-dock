@@ -172,7 +172,10 @@ function stripCfgTest(src) {
       if (s[j] === '{') depth += 1;
       else if (s[j] === '}') {
         depth -= 1;
-        if (depth === 0) { j += 1; break; }
+        if (depth === 0) {
+          j += 1;
+          break;
+        }
       }
     }
     s = s.slice(0, at) + s.slice(j);
@@ -190,9 +193,10 @@ const GUIDE_WIN = path.join(ROOT, 'docs', 'install-guide-windows.md');
 
 /// NSIS 安装器钩子（E2/E3）的配置入口与文件（`q` 与配置文件同目录解析）。
 const nsisHooksRef = (win) => {
-  const p = win && win.bundle && win.bundle.windows && win.bundle.windows.nsis
-    ? win.bundle.windows.nsis.installerHooks
-    : undefined;
+  const p =
+    win && win.bundle && win.bundle.windows && win.bundle.windows.nsis
+      ? win.bundle.windows.nsis.installerHooks
+      : undefined;
   return typeof p === 'string' && p.trim() ? p.trim() : null;
 };
 const nsisHooksFile = (win) => {
@@ -293,7 +297,9 @@ function runAll() {
     'W4',
     '`tauri.windows.conf.json` **不复制**基座已有的键（`productName`/`identifier`/`icon`/`active`/`macOS`/`resources`）—— 同一事实两处来源必漂移',
     copied.length === 0,
-    copied.length ? `复制了：${copied.join(', ')}` : `顶层键=${JSON.stringify(topKeys)} bundle 键=${JSON.stringify(winBundleKeys)}`,
+    copied.length
+      ? `复制了：${copied.join(', ')}`
+      : `顶层键=${JSON.stringify(topKeys)} bundle 键=${JSON.stringify(winBundleKeys)}`,
   );
 
   // ---- W5：随包资源里不得再有 Node（F5.8 验收标准③）----
@@ -309,7 +315,9 @@ function runAll() {
     'W5',
     '`bundle.resources`（基座 + windows 配置）里**没有** Node 服务（`service/`）与 `node.zip` —— F5.8 已摘除 Node，服务由 Rust 提供',
     isResShape(resBase) && isResShape(resWin) && nodeish.length === 0,
-    nodeish.length ? `混进了：${JSON.stringify(nodeish)}` : `base=${JSON.stringify(resBase)} win=${JSON.stringify(resWin)}`,
+    nodeish.length
+      ? `混进了：${JSON.stringify(nodeish)}`
+      : `base=${JSON.stringify(resBase)} win=${JSON.stringify(resWin)}`,
   );
 
   // ---- W6：产品运行期**必需**的资产必须随包（A2）----
@@ -336,12 +344,7 @@ function runAll() {
   //    两个方向都封：① 后缀黑名单挡"新格式的权重"；② 与清单逐条交叉挡"清单里的老资产"。
   //    🔴 反向的坑：清单读不到时交叉判据的集合为空 ⇒ **永远绿**（空断言）。
   //       所以 W7b 里显式断言"清单解析成功且资产名非空" —— 那是这条判据**有意义**的前提。
-  const payloads = [
-    ...resStrings(resBase),
-    ...resStrings(resWin),
-    ...resTargets(resBase),
-    ...resTargets(resWin),
-  ];
+  const payloads = [...resStrings(resBase), ...resStrings(resWin), ...resTargets(resBase), ...resTargets(resWin)];
   const bySuffix = payloads.filter((p) => WEIGHT_SUFFIXES.some((s) => p.toLowerCase().endsWith(s)));
   const { parsed, names: assetNames } = manifestAssetNames();
   const byManifest = payloads.filter((p) => assetNames.has(path.basename(p).toLowerCase()));
@@ -428,7 +431,10 @@ function runAll() {
    * 不剥注释的话会两头出错 —— ① 注释里提一句 `Pictures` 就让"绝不碰作品目录"假红
    * （本文件尾注就写明了不碰它）；② 反过来，把检查注释掉也能让断言照绿。
    */
-  const nshCode = nsh.split(/\r?\n/).filter((l) => !l.trim().startsWith(';')).join('\n');
+  const nshCode = nsh
+    .split(/\r?\n/)
+    .filter((l) => !l.trim().startsWith(';'))
+    .join('\n');
   const nshFacts = [
     `ReadRegDWORD=${/ReadRegDWORD/.test(nshCode)}`,
     `LongPathsEnabled=${/LongPathsEnabled/.test(nshCode)}`,
@@ -438,10 +444,13 @@ function runAll() {
   ].join(' ');
   check(
     'W9',
-    '钩子里有**长路径开关的只读检查**（读 64 位视图 + 给出可执行修复命令），且**不替用户改系统设置**'
-      + '（写 `HKLM` 要提权，安装器是当前用户模式 ⇒ 只提示）',
-    /ReadRegDWORD/.test(nshCode) && /LongPathsEnabled/.test(nshCode) && /SetRegView/.test(nshCode)
-      && /New-ItemProperty/.test(nshCode) && !/WriteRegDWORD/.test(nshCode),
+    '钩子里有**长路径开关的只读检查**（读 64 位视图 + 给出可执行修复命令），且**不替用户改系统设置**' +
+      '（写 `HKLM` 要提权，安装器是当前用户模式 ⇒ 只提示）',
+    /ReadRegDWORD/.test(nshCode) &&
+      /LongPathsEnabled/.test(nshCode) &&
+      /SetRegView/.test(nshCode) &&
+      /New-ItemProperty/.test(nshCode) &&
+      !/WriteRegDWORD/.test(nshCode),
     nshFacts,
   );
 
@@ -508,8 +517,8 @@ function runAll() {
   }
   check(
     'W14',
-    '产品 Rust 源码（已剥 `#[cfg(test)]`）里没有指向 node 解释器的字面量 —— 只允许出现在'
-      + ' `MIAO_NODE_EXEC`（①② 的 mock 替身解释器）或 `MIAO_SERVICE_IMPL`（退役门）的上下文里',
+    '产品 Rust 源码（已剥 `#[cfg(test)]`）里没有指向 node 解释器的字面量 —— 只允许出现在' +
+      ' `MIAO_NODE_EXEC`（①② 的 mock 替身解释器）或 `MIAO_SERVICE_IMPL`（退役门）的上下文里',
     sources.length > 0 && nodeHits.length === 0,
     nodeHits.length
       ? `产品路径里的 node 字面量：${nodeHits.join(' ｜ ')}`
@@ -569,8 +578,7 @@ const MUTATIONS = [
       {
         file: BASE_CONF,
         find: '"resources": {',
-        replace:
-          '"resources": {\n      "../service/": "service/",\n      "../vendor/node.zip": "node.zip",',
+        replace: '"resources": {\n      "../service/": "service/",\n      "../vendor/node.zip": "node.zip",',
       },
     ],
     expect: ['W5'],
@@ -670,7 +678,9 @@ const MUTATIONS = [
     // ⚠️ 锚点一律**单行**：本脚本的变异器不做 EOL 折算（配置与 .nsh 都是 CRLF），
     //    多行锚点会被判成"未找到"而**静默跳过** —— 跳过 ≠ 通过。
     name: 'E2：把 NSIS 安装器钩子的接线摘掉（长路径提示与卸载提示都不会再出现）',
-    edits: [{ file: WIN_CONF, find: '"installerHooks": "nsis/hooks.nsh"', replace: '"installerHooksOff": "nsis/hooks.nsh"' }],
+    edits: [
+      { file: WIN_CONF, find: '"installerHooks": "nsis/hooks.nsh"', replace: '"installerHooksOff": "nsis/hooks.nsh"' },
+    ],
     expect: ['W8'],
   },
   {
@@ -697,7 +707,8 @@ const MUTATIONS = [
       {
         file: NSIS_HOOKS,
         find: '  ReadRegDWORD $0 HKLM "SYSTEM\\CurrentControlSet\\Control\\FileSystem" "LongPathsEnabled"',
-        replace: '  WriteRegDWORD HKLM "SYSTEM\\CurrentControlSet\\Control\\FileSystem" "LongPathsEnabled" 1\n  ReadRegDWORD $0 HKLM "SYSTEM\\CurrentControlSet\\Control\\FileSystem" "LongPathsEnabled"',
+        replace:
+          '  WriteRegDWORD HKLM "SYSTEM\\CurrentControlSet\\Control\\FileSystem" "LongPathsEnabled" 1\n  ReadRegDWORD $0 HKLM "SYSTEM\\CurrentControlSet\\Control\\FileSystem" "LongPathsEnabled"',
       },
     ],
     expect: ['W9'],
@@ -715,8 +726,8 @@ const MUTATIONS = [
         file: NSIS_HOOKS,
         find: '  IfFileExists "$LOCALAPPDATA\\runtimes\\manga-translator\\*.*" 0 moor_no_runtimes',
         replace:
-          '  IfFileExists "$LOCALAPPDATA\\runtimes\\manga-translator\\*.*" 0 moor_no_runtimes\n'
-          + '    RMDir /r "$LOCALAPPDATA\\runtimes\\manga-translator"',
+          '  IfFileExists "$LOCALAPPDATA\\runtimes\\manga-translator\\*.*" 0 moor_no_runtimes\n' +
+          '    RMDir /r "$LOCALAPPDATA\\runtimes\\manga-translator"',
       },
     ],
     expect: ['W10'],
@@ -759,8 +770,8 @@ const MUTATIONS = [
         file: path.join(RUST_SRC, 'service.rs'),
         find: '    let name = if cfg!(windows) { "boxsvc.exe" } else { "boxsvc" };',
         replace:
-          '    let _ = std::process::Command::new("node").arg("service/src/server.mjs").spawn();\n'
-          + '    let name = if cfg!(windows) { "boxsvc.exe" } else { "boxsvc" };',
+          '    let _ = std::process::Command::new("node").arg("service/src/server.mjs").spawn();\n' +
+          '    let name = if cfg!(windows) { "boxsvc.exe" } else { "boxsvc" };',
       },
     ],
     expect: ['W14'],
@@ -803,7 +814,9 @@ const main = () => {
       if (!originals.has(e.file)) originals.set(e.file, readBytes(e.file));
       const txt = originals.get(e.file).toString('utf8');
       if (!txt.includes(e.find)) {
-        console.log(`⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`);
+        console.log(
+          `⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`,
+        );
         skipped += mut.expect.length;
         missing = true;
         continue;

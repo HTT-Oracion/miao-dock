@@ -78,19 +78,40 @@ function stripRustComments(src) {
     const c = src[i];
     const n = src[i + 1];
     if (inBlock) {
-      if (c === '*' && n === '/') { inBlock = false; i += 2; } else { i++; }
+      if (c === '*' && n === '/') {
+        inBlock = false;
+        i += 2;
+      } else {
+        i++;
+      }
       continue;
     }
     if (inStr) {
       out += c;
-      if (c === '\\') { out += n ?? ''; i += 2; continue; }
+      if (c === '\\') {
+        out += n ?? '';
+        i += 2;
+        continue;
+      }
       if (c === '"') inStr = false;
       i++;
       continue;
     }
-    if (c === '"') { inStr = true; out += c; i++; continue; }
-    if (c === '/' && n === '/') { while (i < src.length && src[i] !== '\n') i++; continue; }
-    if (c === '/' && n === '*') { inBlock = true; i += 2; continue; }
+    if (c === '"') {
+      inStr = true;
+      out += c;
+      i++;
+      continue;
+    }
+    if (c === '/' && n === '/') {
+      while (i < src.length && src[i] !== '\n') i++;
+      continue;
+    }
+    if (c === '/' && n === '*') {
+      inBlock = true;
+      i += 2;
+      continue;
+    }
     out += c;
     i++;
   }
@@ -136,7 +157,12 @@ function runAll() {
   {
     let cur = [];
     for (const b of bytes) {
-      if (b === 0x0a) { rawLines.push(Buffer.from(cur)); cur = []; } else { cur.push(b); }
+      if (b === 0x0a) {
+        rawLines.push(Buffer.from(cur));
+        cur = [];
+      } else {
+        cur.push(b);
+      }
     }
     if (cur.length) rawLines.push(Buffer.from(cur));
   }
@@ -187,8 +213,7 @@ const MUTATIONS = [
     name: 'M1 读子进程输出退回「严格 UTF-8 + 遇错即停」（= D-88 的原始缺陷形态）',
     // 锚点带上 `relay_lines(` 前缀以确保唯一定位（`map_while(Result::ok)` 已全仓不再出现）。
     find: '            relay_lines(out, |line| {',
-    replace:
-      '            for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {',
+    replace: '            for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {',
     expect: ['S1'],
   },
 ];
@@ -224,7 +249,8 @@ const main = () => {
 
   console.log('\n破坏源文件 → 断言必须变红 → 按字节还原\n');
   for (const mut of MUTATIONS) {
-    if (!originals.has(mut.file || SERVICE_RS)) originals.set(mut.file || SERVICE_RS, readBytes(mut.file || SERVICE_RS));
+    if (!originals.has(mut.file || SERVICE_RS))
+      originals.set(mut.file || SERVICE_RS, readBytes(mut.file || SERVICE_RS));
     const file = mut.file || SERVICE_RS;
     const txt = originals.get(file).toString('utf8');
     if (!txt.includes(mut.find)) {

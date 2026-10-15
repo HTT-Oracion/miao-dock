@@ -198,7 +198,16 @@ const STORE_FIELDS = [
 ];
 
 /** ⑦ 选项常量单一事实源应导出的常量 */
-const OPTION_EXPORTS = ['SKINS', 'QUALITY_OPTIONS', 'LYRICS_SIZE', 'LYRICS_COLORS', 'LYRICS_MODE_OPTIONS', 'LYRICS_MODE_DEF', 'VINYL_COLOR_DEF', 'LYRICS_COLOR_DEF'];
+const OPTION_EXPORTS = [
+  'SKINS',
+  'QUALITY_OPTIONS',
+  'LYRICS_SIZE',
+  'LYRICS_COLORS',
+  'LYRICS_MODE_OPTIONS',
+  'LYRICS_MODE_DEF',
+  'VINYL_COLOR_DEF',
+  'LYRICS_COLOR_DEF',
+];
 
 // ── 读文件 ───────────────────────────────────────────────────────────────
 const readMaybe = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : '');
@@ -219,8 +228,12 @@ function loadSources() {
     // 会因切片而假红（本次实测 8 条）。目录动态列举 ⇒ 以后每切一段自动覆盖。
     store: [
       F.store,
-      ...readdirSync(F.actionsDir).filter((n) => n.endsWith('.ts')).map((n) => path.join(F.actionsDir, n)),
-    ].map((p) => stripComments(readMaybe(p))).join('\n'),
+      ...readdirSync(F.actionsDir)
+        .filter((n) => n.endsWith('.ts'))
+        .map((n) => path.join(F.actionsDir, n)),
+    ]
+      .map((p) => stripComments(readMaybe(p)))
+      .join('\n'),
     options: readMaybe(F.options),
     expanded: readMaybe(F.expanded),
     musicScreen: readMaybe(F.musicScreen),
@@ -510,7 +523,8 @@ for (const r of RETIRED) {
     const items = (cat.mod.SETTINGS_SECTIONS ?? []).flatMap(flatItems);
     const problems = [];
     if (items.some((i) => i.id === r.id)) problems.push(`SETTINGS_SECTIONS 里又有项 id=${r.id}（已拍板整条删除）`);
-    if (items.some((i) => i.label === r.label)) problems.push(`SETTINGS_SECTIONS 里又有项 label=${r.label}（已拍板整条删除）`);
+    if (items.some((i) => i.label === r.label))
+      problems.push(`SETTINGS_SECTIONS 里又有项 label=${r.label}（已拍板整条删除）`);
     return { ok: problems.length === 0, detail: problems.join('；') };
   });
 }
@@ -569,7 +583,10 @@ add('COUNT.total', 'COUNT', (ctx) => {
     (n, sec) => n + (sec.groups ?? []).reduce((m, g) => m + (g.items ?? []).length, 0),
     0,
   );
-  return { ok: total === SPEC_TOTAL, detail: total === SPEC_TOTAL ? '' : `实际合计 ${total}（${perSection.join(', ')}），应为 ${SPEC_TOTAL}` };
+  return {
+    ok: total === SPEC_TOTAL,
+    detail: total === SPEC_TOTAL ? '' : `实际合计 ${total}（${perSection.join(', ')}），应为 ${SPEC_TOTAL}`,
+  };
 });
 add('COUNT.specMatches', 'COUNT', (ctx) => {
   const { cat } = ctx;
@@ -643,9 +660,7 @@ add('WIRING.itemRefs.exist', 'WIRING', (ctx) => {
    */
   const dataErr = CAT_ERR(ctx.cat);
   if (dataErr) return { ok: false, detail: dataErr };
-  const ids = new Set(
-    (ctx.cat.mod.SETTINGS_SECTIONS ?? []).flatMap(flatItems).map((i) => i.id),
-  );
+  const ids = new Set((ctx.cat.mod.SETTINGS_SECTIONS ?? []).flatMap(flatItems).map((i) => i.id));
   const refs = [...ctx.s.sections.matchAll(/itemOf\(\s*[\w$]+\s*,\s*'([\w-]+)'\s*\)/g)].map((m) => m[1]);
   const problems = [];
   for (const id of new Set(refs)) {
@@ -811,7 +826,10 @@ add('OPTIONS.expandedImportsSkins', 'OPTIONS', (ctx) => {
 });
 add('OPTIONS.expandedNoLocalSkins', 'OPTIONS', (ctx) => {
   const hit = /^\s*(?:const|let|var)\s+SKINS\b/m.test(ctx.s.expanded);
-  return { ok: !hit, detail: hit ? 'ExpandedPlayer.tsx 又自己定义了一份 SKINS —— 设置页与播放器会漂移成两套皮肤名' : '' };
+  return {
+    ok: !hit,
+    detail: hit ? 'ExpandedPlayer.tsx 又自己定义了一份 SKINS —— 设置页与播放器会漂移成两套皮肤名' : '',
+  };
 });
 add('OPTIONS.sectionsImportsSkins', 'OPTIONS', (ctx) => {
   const ok = /import\s*\{[^}]*\bSKINS\b[^}]*\}\s*from\s*['"][^'"]*player-options['"]/.test(ctx.s.sections);
@@ -859,7 +877,7 @@ add('CACHE.groupSkipsRow', 'CACHE', (ctx) => {
     detail: !branch
       ? "Group 里没有 layout==='block' 的分支（通栏项会被包进 Row）"
       : !ordered
-        ? "Group 的 block 分支排在 <Row 之后（包 Row 的分支会先执行，四格失效）"
+        ? 'Group 的 block 分支排在 <Row 之后（包 Row 的分支会先执行，四格失效）'
         : '',
   };
 });
@@ -872,12 +890,7 @@ add('CACHE.blockRendersFourCells', 'CACHE', (ctx) => {
    */
   const src = ctx.s.cacheBlock;
   if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx（四格实现不在预期位置）' };
-  const need = [
-    'set-cache-name',
-    'set-cache-path',
-    'set-cache-total',
-    'set-cache-acts',
-  ];
+  const need = ['set-cache-name', 'set-cache-path', 'set-cache-total', 'set-cache-acts'];
   const missing = need.filter((n) => !new RegExp(`${q(n)}`).test(src));
   return {
     ok: missing.length === 0,
@@ -1082,7 +1095,10 @@ add('ENGINE.groups.order', 'ENGINE', (ctx) => {
         : '',
   };
 });
-for (const [id, group] of [['ENGINE.layout.manageBlock', 'model-manage'], ['ENGINE.layout.diagBlock', 'engine-diag']]) {
+for (const [id, group] of [
+  ['ENGINE.layout.manageBlock', 'model-manage'],
+  ['ENGINE.layout.diagBlock', 'engine-diag'],
+]) {
   add(id, 'ENGINE', (ctx) => {
     const { err, items } = translateItems(ctx);
     if (err) return { ok: false, detail: err };
@@ -1160,12 +1176,11 @@ add('ENGINE.wiring.tierWarnFromServer', 'ENGINE', (ctx) => {
 add('ENGINE.wiring.accelMismatch', 'ENGINE', (ctx) => {
   const body = tsBody(ctx) ?? '';
   // 红条既可以写成裸 `<div className="notice is-bad">`，也可以是封装后的 `<Notice kind="bad">`；两者渲染等价。
-  const ok = body.includes('accel.mismatch') && /(?:notice is-bad|<Notice kind="bad")/.test(body) && /accel\.reason/.test(body);
+  const ok =
+    body.includes('accel.mismatch') && /(?:notice is-bad|<Notice kind="bad")/.test(body) && /accel\.reason/.test(body);
   return {
     ok,
-    detail: ok
-      ? ''
-      : '「用户指定的后端本机没有」没显示（或没说清实际按什么在跑）—— 用户会以为选的 CUDA 真的生效了',
+    detail: ok ? '' : '「用户指定的后端本机没有」没显示（或没说清实际按什么在跑）—— 用户会以为选的 CUDA 真的生效了',
   };
 });
 add('ENGINE.wiring.idleNumberInputs', 'ENGINE', (ctx) => {
@@ -1428,14 +1443,13 @@ add('ENGINE.diag.unknownStateSafe', 'ENGINE', (ctx) => {
   const allGuarded = all > 0 && all === guarded;
   return {
     ok: mapped && safe && allGuarded,
-    detail:
-      !mapped
-        ? '进程态映射表没有显式声明"可能不认识"（Record<string, … | undefined>）'
-        : !safe
-          ? '未知进程态回了 undefined 兜底（`view?.text ?? state` 缺失 ⇒ 遇到第五种态会整块崩）'
-          : !allGuarded
-            ? `有 ${all - guarded} 处 view?.text 没有 ?? state 兜底（那一处遇到第五种态就白屏）`
-            : '',
+    detail: !mapped
+      ? '进程态映射表没有显式声明"可能不认识"（Record<string, … | undefined>）'
+      : !safe
+        ? '未知进程态回了 undefined 兜底（`view?.text ?? state` 缺失 ⇒ 遇到第五种态会整块崩）'
+        : !allGuarded
+          ? `有 ${all - guarded} 处 view?.text 没有 ?? state 兜底（那一处遇到第五种态就白屏）`
+          : '',
   };
 });
 add('ENGINE.diag.stageLogReversed', 'ENGINE', (ctx) => {
@@ -1604,7 +1618,8 @@ add('ENGINE.manage.diskRow', 'ENGINE', (ctx) => {
   if (!/disk\.bytes/.test(src)) problems.push('没有显示占用字节');
   if (!/disk\.assembledAt/.test(src)) problems.push('没有显示最近落盘时间');
   // 适用条目数必须取自服务端的 `applicable`，不许自己按平台名硬筛（平台判据只有一处实现）
-  if (!/f\.applicable/.test(src)) problems.push('适用条目数没有取自服务端的 `applicable`（自己按平台名筛会与下载器分叉）');
+  if (!/f\.applicable/.test(src))
+    problems.push('适用条目数没有取自服务端的 `applicable`（自己按平台名筛会与下载器分叉）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 add('ENGINE.manage.listCapped', 'ENGINE', (ctx) => {
@@ -1674,9 +1689,7 @@ add('ENGINE.css.classes', 'ENGINE', (ctx) => {
    */
   const srcs = [ctx.s.sections, ctx.s.engineDiag, ctx.s.modelManage, ctx.s.parts].join('\n');
   const used = new Set();
-  for (const m of srcs.matchAll(
-    /\bset-(?:diag|manage|warn|hint|state|pnum|token|idle|note|row|run|src)[a-z0-9-]*/g,
-  )) {
+  for (const m of srcs.matchAll(/\bset-(?:diag|manage|warn|hint|state|pnum|token|idle|note|row|run|src)[a-z0-9-]*/g)) {
     used.add(m[0]);
   }
   const css = ctx.s.css;
@@ -1816,9 +1829,7 @@ add('FONT.stackFirstHasFace', 'FONT', (ctx) => {
    *   ②`main.tsx` 里 fontsource 包名（族名转 kebab 后）中找到 —— 二者皆无 ⇒ 静默回落。
    */
   const families = declaredFamilies();
-  const fontsource = new Set(
-    [...stripComments(ctx.s.main).matchAll(/@fontsource\/([a-z0-9-]+)\//g)].map((m) => m[1]),
-  );
+  const fontsource = new Set([...stripComments(ctx.s.main).matchAll(/@fontsource\/([a-z0-9-]+)\//g)].map((m) => m[1]));
   const tokens = stripComments(ctx.s.tokens);
   const problems = [];
 
@@ -1836,7 +1847,10 @@ add('FONT.stackFirstHasFace', 'FONT', (ctx) => {
       problems.push(`FONT.${key} 的首位取不到（字体栈写法变了）`);
       continue;
     }
-    const slug = first.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const slug = first
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
     if (!families.has(first) && !fontsource.has(slug)) {
       problems.push(`FONT.${key} 首位「${first}」在随仓 font.css 与 fontsource 清单里都找不到 ⇒ 该栈静默回落`);
     }
@@ -1932,7 +1946,9 @@ add('ENGINE.md.noRawAsterisks', 'ENGINE', (ctx) => {
   }
   return {
     ok: hits.length === 0,
-    detail: hits.length ? `JSX 裸文本里漏出 markdown 的 **（界面上会显示两个星号）：\n      ${hits.join('\n      ')}` : '',
+    detail: hits.length
+      ? `JSX 裸文本里漏出 markdown 的 **（界面上会显示两个星号）：\n      ${hits.join('\n      ')}`
+      : '',
   };
 });
 
@@ -2039,7 +2055,8 @@ add('NOTREADY.wiring.modeDegraded', 'NOTREADY', (ctx) => {
    * 另一处是 `runtimeUnready` 的**判定**（L0 分支的条件，与"显示"无关）。
    * 只判"出现过"时，把 chip 那处删掉、断言照旧绿 —— 反证轮实测就是这样一条假阳性。
    */
-  if (!/引擎模式\s*\{status\?\.mode/.test(src)) problems.push('没有显示 status.mode（"以为在跑真引擎、其实跑的替身"最难查）');
+  if (!/引擎模式\s*\{status\?\.mode/.test(src))
+    problems.push('没有显示 status.mode（"以为在跑真引擎、其实跑的替身"最难查）');
   if (!src.includes('status?.degraded')) problems.push('没有显示 degraded');
   if (!src.includes('status?.children')) problems.push('没有显示三进程 pid/alive');
   return { ok: problems.length === 0, detail: problems.join('；') };
@@ -2050,7 +2067,7 @@ add('NOTREADY.retry.byPhase', 'NOTREADY', (ctx) => {
   const code = stripComments(ctx.s.notReady);
   const problems = [];
   if (!/failed\s*&&\s*status\?\.phase === 'L2'/.test(code)) {
-    problems.push("没有按失败阶段分派重试（L2 失败应给「重新下载模型」）");
+    problems.push('没有按失败阶段分派重试（L2 失败应给「重新下载模型」）');
   }
   if (!code.includes('downloadEngineModels')) problems.push('没有真正调用下载端点（按钮会是个摆设）');
   return { ok: problems.length === 0, detail: problems.join('；') };
@@ -2185,7 +2202,10 @@ add('NOTREADY.l4.noLoading', 'NOTREADY', (ctx) => {
 // 混在一起，回归时就分不清是"能力掉了"还是"话又变长了"。
 
 /** 比对摘要与原文前，两侧都去掉空白与 `**` —— 星号是强调标记，不是内容 */
-const normNote = (t) => String(t ?? '').replace(/\s+/g, '').replace(/\*\*/g, '');
+const normNote = (t) =>
+  String(t ?? '')
+    .replace(/\s+/g, '')
+    .replace(/\*\*/g, '');
 
 add('SIMPLIFY.notesummary.verbatim', 'SIMPLIFY', (ctx) => {
   /*
@@ -2483,10 +2503,11 @@ add('SIMPLIFY.translate.noSpecRefs', 'SIMPLIFY', (ctx) => {
   const grp = (sec.groups ?? []).find((g) => g.id === 'source');
   if (!grp) problems.push('② 里找不到 source 组（翻译来源）');
   // 只展平**这一个组**：整段 TRANSLATE 会把模型与诊断那一项的《02》§5 也算进来（判据过宽）
-  else for (const it of flatItems({ groups: [grp] })) {
-    probe(`项 ${it.id}.why`, it.why);
-    probe(`项 ${it.id}.def`, it.def);
-  }
+  else
+    for (const it of flatItems({ groups: [grp] })) {
+      probe(`项 ${it.id}.why`, it.why);
+      probe(`项 ${it.id}.def`, it.def);
+    }
   const body = stripComments(ctx.s.sections);
   const a = body.indexOf('<SubTitle>翻译来源');
   const b = a < 0 ? -1 : body.indexOf('<SubTitle>服务与配对', a);
@@ -2616,7 +2637,8 @@ add('SIMPLIFY.warn.unified', 'SIMPLIFY', (ctx) => {
   } else if (!/display:\s*flex/.test(group[1]) || !/gap:/.test(group[1])) {
     problems.push('统一后的规则不是「色块 + 文字」的横排');
   }
-  const before = /\.settings-main\s+\.set-warn::before\s*,\s*\.settings-main\s+\.notice\.is-bad::before\s*\{([^}]*)\}/.exec(css);
+  const before =
+    /\.settings-main\s+\.set-warn::before\s*,\s*\.settings-main\s+\.notice\.is-bad::before\s*\{([^}]*)\}/.exec(css);
   if (!before) {
     problems.push('两处提示的 `::before` 不是同一枚');
   } else {
@@ -2692,9 +2714,7 @@ add('FEATURES.shell.pref', 'FEATURES', (ctx) => {
    */
   const strictDefault = src.match(/getItem\([A-Z_]+\)\s*!==\s*'0'/g) ?? [];
   if (strictDefault.length < 2)
-    problems.push(
-      `只有 ${strictDefault.length}/2 个偏好是「只有显式 0 才关闭」（缺键必须回落到既有形态）`,
-    );
+    problems.push(`只有 ${strictDefault.length}/2 个偏好是「只有显式 0 才关闭」（缺键必须回落到既有形态）`);
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -2718,8 +2738,7 @@ add('FEATURES.shell.sidebarBranch', 'FEATURES', (ctx) => {
     problems.push('几何没有随 labels 切换（appItem ↔ iconOnlyItem）');
   if (!/\{labels\s*\?\s*<span>\{a\.label\}<\/span>\s*:\s*null\}/.test(src))
     problems.push('「有没有文字」与「用哪套几何」不是同一个判断的两个输出');
-  if (!/aria-label=\{a\.label\}/.test(src))
-    problems.push('应用入口缺少 aria-label（关掉文字后它是唯一可读名称）');
+  if (!/aria-label=\{a\.label\}/.test(src)) problems.push('应用入口缺少 aria-label（关掉文字后它是唯一可读名称）');
   // 几何必须来自 tokens：组件里出现裸数字就意味着有了第二个来源
   const hard = src.match(/(?:width|height):\s*\d+px?/g) ?? [];
   if (hard.length > 0) problems.push(`出现 ${hard.length} 处硬编码宽高（${hard[0]}…）`);
@@ -2731,8 +2750,7 @@ add('FEATURES.shell.wired', 'FEATURES', (ctx) => {
   const set = stripComments(ctx.s.settingsScreen);
   const sec = stripComments(ctx.s.sections);
   const problems = [];
-  if (!/useState\(\(\)\s*=>\s*initialSidebarLabels\(\)\)/.test(app))
-    problems.push('App 没有从偏好初始化侧栏标签');
+  if (!/useState\(\(\)\s*=>\s*initialSidebarLabels\(\)\)/.test(app)) problems.push('App 没有从偏好初始化侧栏标签');
   if (!/persistSidebarLabels\(on\)/.test(app)) problems.push('App 没有持久化侧栏标签');
   if (!/labels=\{sidebarLabels\}/.test(app)) problems.push('App 没有把 labels 传给 Sidebar');
   if (!/sidebarLabels=\{sidebarLabels\}/.test(app)) problems.push('App 没有把 sidebarLabels 传给设置页');
@@ -2740,11 +2758,9 @@ add('FEATURES.shell.wired', 'FEATURES', (ctx) => {
   if (!/sidebarLabels=\{sidebarLabels\}/.test(set)) problems.push('设置页没有透传 sidebarLabels');
   if (!/onSidebarLabels=\{onSidebarLabels\}/.test(set)) problems.push('设置页没有透传 onSidebarLabels');
   if (!/on=\{sidebarLabels\}/.test(sec)) problems.push('① 通用组的开关没有读 sidebarLabels');
-  if (!/onToggle=\{\(\)\s*=>\s*onSidebarLabels\(!sidebarLabels\)\}/.test(sec))
-    problems.push('开关没有回写偏好');
+  if (!/onToggle=\{\(\)\s*=>\s*onSidebarLabels\(!sidebarLabels\)\}/.test(sec)) problems.push('开关没有回写偏好');
   // 接线了却仍渲染「待接入」= 一半改完
-  if (/PendingRow item=\{itemOf\(g, 'sidebar-labels'\)\}/.test(sec))
-    problems.push('sidebar-labels 仍渲染成待接入行');
+  if (/PendingRow item=\{itemOf\(g, 'sidebar-labels'\)\}/.test(sec)) problems.push('sidebar-labels 仍渲染成待接入行');
   const item = itemById(ctx.cat.mod, 'sidebar-labels');
   if (!item) problems.push('catalog 里找不到 sidebar-labels');
   else if (item.state !== 'live') problems.push(`catalog 里 sidebar-labels 仍是 ${item.state}`);
@@ -2830,8 +2846,7 @@ add('FEATURES.licenses.generated', 'FEATURES', (ctx) => {
       problems.push(`${side}: packages 有 ${s.packages.length} 条，与 total ${s.total} 不一致`);
     const nulls = s.packages.filter((p) => !p.license).length;
     if (nulls !== s.unknown) problems.push(`${side}: 无声明 ${nulls} 条，与 unknown ${s.unknown} 不一致`);
-    if (s.withLicense + s.unknown !== s.total)
-      problems.push(`${side}: withLicense + unknown ≠ total`);
+    if (s.withLicense + s.unknown !== s.total) problems.push(`${side}: withLicense + unknown ≠ total`);
   }
   if (!data.inputs) problems.push('缺少 inputs（生成物与来源文件对账的依据）');
   return { ok: problems.length === 0, detail: problems.join('；') };
@@ -2911,12 +2926,14 @@ add('FEATURES.licenses.engine', 'FEATURES', (ctx) => {
   }
   if (!Array.isArray(eng.assets) || eng.assets.length === 0) problems.push('engine.assets 为空');
   else {
-    if (eng.assets.length !== eng.total) problems.push(`engine: assets ${eng.assets.length} 条，与 total ${eng.total} 不一致`);
+    if (eng.assets.length !== eng.total)
+      problems.push(`engine: assets ${eng.assets.length} 条，与 total ${eng.total} 不一致`);
     const nulls = eng.assets.filter((a) => !a.license).length;
     if (nulls !== eng.unknown) problems.push(`engine: 无声明 ${nulls} 条，与 unknown ${eng.unknown} 不一致`);
     if (eng.withLicense + eng.unknown !== eng.total) problems.push('engine: withLicense + unknown ≠ total');
   }
-  if (!Array.isArray(eng.upstream) || eng.upstream.length === 0) problems.push('engine.upstream 为空（引擎/模型总许可没出处）');
+  if (!Array.isArray(eng.upstream) || eng.upstream.length === 0)
+    problems.push('engine.upstream 为空（引擎/模型总许可没出处）');
   else if (!eng.upstream.some((u) => /GPL/i.test(u.spdx ?? '')))
     problems.push('engine.upstream 里没有 GPL 声明（引擎上游是 GPL-3.0-only，缺了是漏项）');
   /*
@@ -2925,8 +2942,7 @@ add('FEATURES.licenses.engine', 'FEATURES', (ctx) => {
    * 由 `gen-licenses` 逐条比对文件名得出 —— 与 `check:bundle` 的 W7/W7b 是**不同层**的
    * 两条判据：那边钉配置，这边钉"生成物也说得出这件事"。
    */
-  if (eng.bundledCount !== 0)
-    problems.push(`随包分发物里有 ${eng.bundledCount} 条模型资产（C5：权重一律不随包）`);
+  if (eng.bundledCount !== 0) problems.push(`随包分发物里有 ${eng.bundledCount} 条模型资产（C5：权重一律不随包）`);
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -2977,8 +2993,7 @@ add('FEATURES.gen.script', 'FEATURES', (ctx) => {
     problems.push(`package.json 不可解析：${e.message}`);
   }
   if (!scripts['gen:licenses']) problems.push('package.json 没有注册 gen:licenses');
-  else if (!/gen-licenses\.mjs/.test(scripts['gen:licenses']))
-    problems.push('gen:licenses 指向的不是那个脚本');
+  else if (!/gen-licenses\.mjs/.test(scripts['gen:licenses'])) problems.push('gen:licenses 指向的不是那个脚本');
   // 必须真的从三处来源读 —— 否则就是"手写一份清单假装是枚举出来的"
   if (!/Cargo\.lock/.test(script)) problems.push('生成脚本没有读 Cargo.lock');
   if (!/package-lock\.json/.test(script)) problems.push('生成脚本没有读 package-lock.json');
@@ -3013,7 +3028,23 @@ async function runAll() {
   return res;
 }
 
-const GROUPS = ['EXCLUDED', 'RETIRED', 'ADDED', 'COUNT', 'NOTE', 'WIRING', 'STORE', 'PLAYER', 'OPTIONS', 'CACHE', 'ENGINE', 'NOTREADY', 'SIMPLIFY', 'FEATURES', 'FONT'];
+const GROUPS = [
+  'EXCLUDED',
+  'RETIRED',
+  'ADDED',
+  'COUNT',
+  'NOTE',
+  'WIRING',
+  'STORE',
+  'PLAYER',
+  'OPTIONS',
+  'CACHE',
+  'ENGINE',
+  'NOTREADY',
+  'SIMPLIFY',
+  'FEATURES',
+  'FONT',
+];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -3069,13 +3100,13 @@ const MUTATIONS = [
     file: F.catalog,
     find: "        {\n          id: 'temp-files',",
     replace:
-      "        {\n" +
+      '        {\n' +
       "          id: 'cache-clean',\n" +
       "          label: '缓存清理',\n" +
       "          state: 'pending',\n" +
       "          why: '反证',\n" +
-      "        },\n" +
-      "        {\n" +
+      '        },\n' +
+      '        {\n' +
       "          id: 'temp-files',",
     expect: ['RETIRED.cache-clean'],
   },
@@ -3131,7 +3162,7 @@ const MUTATIONS = [
     expect: ['PLAYER.inject.lyrHl'],
   },
   {
-    name: "把 is-disc 类名改成无条件添加（该视觉态会常亮）",
+    name: '把 is-disc 类名改成无条件添加（该视觉态会常亮）',
     file: F.expanded,
     find: "? 'is-disc' : ''",
     replace: "'is-disc'",
@@ -3187,16 +3218,16 @@ const MUTATIONS = [
     // COUNT.total 仍然对得上（那是**正确**的行为，不是假阳性）。
     // 判据是「真的导入 catalog 求和」，所以只有项真的少了它才会红。
     find:
-      "        {\n" +
+      '        {\n' +
       "          id: 'music-cache',\n" +
       "          label: '音乐缓存',\n" +
       "          state: 'live',\n" +
-      "          // 四格块：塞不进 Row 的窄右列（见 SettingItem.layout 的注释）\n" +
+      '          // 四格块：塞不进 Row 的窄右列（见 SettingItem.layout 的注释）\n' +
       "          layout: 'block',\n" +
-      "          why:\n" +
+      '          why:\n' +
       "            '在线播放的歌词与整首歌会落盘缓存，这里能看占用、按平台清除、打开缓存目录。' +\n" +
       "            '只统计**在线歌曲**的缓存 —— 你自己导入的本地文件不在其中。',\n" +
-      "        },\n",
+      '        },\n',
     replace: '',
     expect: ['ADDED.music-cache', 'COUNT.total'],
   },
@@ -3208,7 +3239,7 @@ const MUTATIONS = [
     expect: ['CACHE.layoutFlag'],
   },
   {
-    name: "把 sections.tsx 里 music-cache 的 case 改错（四格块不会被渲染）",
+    name: '把 sections.tsx 里 music-cache 的 case 改错（四格块不会被渲染）',
     file: F.secMedia,
     find: "      case 'music-cache':",
     replace: "      case 'music-cache-off':",
@@ -3218,17 +3249,17 @@ const MUTATIONS = [
     name: '把「歌词高亮方式」项整条从 catalog 里删掉（模拟「加了项但忘了算进项数」）',
     file: F.catalog,
     find:
-      "        {\n" +
+      '        {\n' +
       "          id: 'lyrics-mode',\n" +
       "          label: '歌词高亮方式',\n" +
       "          state: 'live',\n" +
       "          def: '逐字',\n" +
-      "        },\n",
+      '        },\n',
     replace: '',
     expect: ['ADDED.lyrics-mode', 'COUNT.total'],
   },
   {
-    name: "把 sections.tsx 里 lyrics-mode 的 case 改错（歌词高亮方式开关不渲染）",
+    name: '把 sections.tsx 里 lyrics-mode 的 case 改错（歌词高亮方式开关不渲染）',
     file: F.secMedia,
     find: "      case 'lyrics-mode':",
     replace: "      case 'lyrics-mode-off':",
@@ -3280,7 +3311,7 @@ const MUTATIONS = [
   {
     name: '把「引擎诊断」的 layout 字段去掉（一整块面板会被压成一行）',
     file: F.catalog,
-    find: '          // 通栏块：常驻的「运行状态」卡 + 折叠的「诊断详情」，是一整块面板而非一行\n          layout: \'block\',\n',
+    find: "          // 通栏块：常驻的「运行状态」卡 + 折叠的「诊断详情」，是一整块面板而非一行\n          layout: 'block',\n",
     replace: '',
     expect: ['ENGINE.layout.diagBlock'],
   },
@@ -3564,8 +3595,8 @@ const MUTATIONS = [
     name: '在 JSX 裸文本里塞回一个 markdown 粗体（这是本轮真实修掉的那个缺陷）',
     file: F.secTranslate,
     // 锚点取「改完要重启」提示条那一行（稳定的 JSX 裸文本行），末尾补一对星号即可触发
-    find: '      <b>{title}</b>：改 {keys.join(\' / \')} 需<b>重启引擎</b>才生效 ——',
-    replace: '      <b>{title}</b>：改 {keys.join(\' / \')} 需<b>重启引擎</b>才生效 ——**',
+    find: "      <b>{title}</b>：改 {keys.join(' / ')} 需<b>重启引擎</b>才生效 ——",
+    replace: "      <b>{title}</b>：改 {keys.join(' / ')} 需<b>重启引擎</b>才生效 ——**",
     expect: ['ENGINE.md.noRawAsterisks'],
   },
 
@@ -3723,7 +3754,8 @@ const MUTATIONS = [
     name: '把状态行的 is-chip 摘掉（状态又变回一串不可断的文本）',
     file: F.secTranslate,
     find: '<span className="set-state is-chip">\n                <Dot colorVar={state.colorVar} pulse={status?.state === \'starting\'} />',
-    replace: '<span className="set-state">\n                <Dot colorVar={state.colorVar} pulse={status?.state === \'starting\'} />',
+    replace:
+      '<span className="set-state">\n                <Dot colorVar={state.colorVar} pulse={status?.state === \'starting\'} />',
     expect: ['SIMPLIFY.state.chip'],
   },
   {
@@ -3786,14 +3818,14 @@ const MUTATIONS = [
   {
     name: '把 def 的字段注释改回旧口径（「当前没有任何组件渲染它」—— 实现已变，注释没变）',
     file: F.catalog,
-    find: "   * 只在 `Row`（`live` 项）渲染；`pending` 项不显示它（还没有能力，谈默认值没有对象）。",
+    find: '   * 只在 `Row`（`live` 项）渲染；`pending` 项不显示它（还没有能力，谈默认值没有对象）。',
     replace:
-      "   * 只在 `Row`（`live` 项）渲染；`pending` 项不显示它（还没有能力，谈默认值没有对象）。\n" +
+      '   * 只在 `Row`（`live` 项）渲染；`pending` 项不显示它（还没有能力，谈默认值没有对象）。\n' +
       '   * 当前没有任何组件渲染它。',
     expect: ['FEATURES.def.commentSynced'],
   },
   {
-    name: '把侧栏标签偏好的默认值写反（`!== \'0\'` → `=== \'1\'`：没写过的老用户被当成"关"）',
+    name: "把侧栏标签偏好的默认值写反（`!== '0'` → `=== '1'`：没写过的老用户被当成\"关\"）",
     file: F.shellPrefs,
     // ⚠️ 锚点里的常量名要跟着源码走（`STORAGE_KEY` 在 D-94 拆成 `SIDEBAR_KEY` /
     // `AUTO_START_KEY` 两个），否则这条会静默跳过（跳过 ≠ 通过）。
@@ -3802,7 +3834,7 @@ const MUTATIONS = [
     expect: ['FEATURES.shell.pref'],
   },
   {
-    name: '把自动启动偏好的默认值写反（`!== \'0\'` → `=== \'1\'`：没写过的老用户不再自动起服务）',
+    name: "把自动启动偏好的默认值写反（`!== '0'` → `=== '1'`：没写过的老用户不再自动起服务）",
     file: F.shellPrefs,
     find: "  return localStorage.getItem(AUTO_START_KEY) !== '0';",
     replace: "  return localStorage.getItem(AUTO_START_KEY) === '1';",
@@ -3974,11 +4006,11 @@ const MUTATIONS = [
     file: F.componentsStyle,
     find: '  padding: 0 0 10px;\n}\n.set-row-note code {',
     replace:
-      '  padding-top: 0;\n'
-      + '  padding-right: 0;\n'
-      + '  padding-bottom: 10px;\n'
-      + '  padding-left: 0;\n'
-      + '}\n.set-row-note code {',
+      '  padding-top: 0;\n' +
+      '  padding-right: 0;\n' +
+      '  padding-bottom: 10px;\n' +
+      '  padding-left: 0;\n' +
+      '}\n.set-row-note code {',
     expect: ['ENGINE.css.noticePadding'],
   },
 
@@ -4011,7 +4043,8 @@ const MUTATIONS = [
     name: '把 FONT.display 首位写成文件名（族名与随仓 face 不符 ⇒ 静默回落）',
     file: F.tokens,
     find: "display: \"'Swei Gothic CJK SC', 'Yozai', 'LXGW WenKai GB', 'Zen Maru Gothic', 'Noto Sans SC', system-ui, sans-serif\",",
-    replace: "display: \"'SweiGothicCJKsc-Regular', 'Yozai', 'LXGW WenKai GB', 'Zen Maru Gothic', 'Noto Sans SC', system-ui, sans-serif\",",
+    replace:
+      "display: \"'SweiGothicCJKsc-Regular', 'Yozai', 'LXGW WenKai GB', 'Zen Maru Gothic', 'Noto Sans SC', system-ui, sans-serif\",",
     expect: ['FONT.stackFirstHasFace'],
   },
   {
@@ -4042,16 +4075,15 @@ const MUTATIONS = [
     file: F.engineDiag,
     find: '          <div className="set-diag-ops">\n',
     replace:
-      '          <DiagSection title="最近阶段日志"><div /></DiagSection>\n'
-      + '          <div className="set-diag-ops">\n',
+      '          <DiagSection title="最近阶段日志"><div /></DiagSection>\n' +
+      '          <div className="set-diag-ops">\n',
     expect: ['ENGINE.run.noDupeLogSection'],
   },
   {
     name: '给「最后更新」补一个时间戳（引擎不报时刻，补一个就是编数据）',
     file: F.engineDiag,
     find: '最后更新：{relativeText(logs.length > 0 ? stampRef.current.at : 0, now)}',
-    replace:
-      '最后更新 14:22:07：{relativeText(logs.length > 0 ? stampRef.current.at : 0, now)}',
+    replace: '最后更新 14:22:07：{relativeText(logs.length > 0 ? stampRef.current.at : 0, now)}',
     expect: ['ENGINE.run.noTimestamp'],
   },
   {
@@ -4129,7 +4161,9 @@ const MUTATIONS = [
 // ── 主流程 ────────────────────────────────────────────────────────────────
 const refute = process.argv.includes('--refute');
 
-console.log('设置页断言（③ 播放·媒体「能实现/不能实现」重新裁定 + ② 翻译服务十三项与引擎诊断）' + (refute ? ' · 反证轮' : ''));
+console.log(
+  '设置页断言（③ 播放·媒体「能实现/不能实现」重新裁定 + ② 翻译服务十三项与引擎诊断）' + (refute ? ' · 反证轮' : ''),
+);
 console.log(`根目录：${ROOT}`);
 console.log(`断言总数：${A.length}（${GROUPS.join('/')}）`);
 

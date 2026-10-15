@@ -77,12 +77,7 @@ export function ModelManageBlock({ item, eng }: { item: SettingItem; eng: Engine
                   确认从头重下？
                 </Btn>
               ) : (
-                <Btn
-                  size="sm"
-                  disabled={busy}
-                  title="清掉 .part，从头重新下载"
-                  onClick={() => setConfirmFresh(true)}
-                >
+                <Btn size="sm" disabled={busy} title="清掉 .part，从头重新下载" onClick={() => setConfirmFresh(true)}>
                   重新下载
                 </Btn>
               )}
@@ -127,8 +122,7 @@ export function ModelManageBlock({ item, eng }: { item: SettingItem; eng: Engine
       <div className="set-manage-state">
         {disk ? (
           <>
-            已就绪 <b>{disk.readyEntries}</b> / {mineTotal} 条适用条目 · 模型资产占盘{' '}
-            <b>{humanBytes(disk.bytes)}</b>
+            已就绪 <b>{disk.readyEntries}</b> / {mineTotal} 条适用条目 · 模型资产占盘 <b>{humanBytes(disk.bytes)}</b>
             {disk.assembledAt ? <> · 最近一次落盘 {disk.assembledAt}</> : <> · 尚无就绪条目</>}
           </>
         ) : (
@@ -137,7 +131,9 @@ export function ModelManageBlock({ item, eng }: { item: SettingItem; eng: Engine
       </div>
 
       {eng.verifyError ? (
-        <Notice kind="bad" className="set-manage-state">校验失败：{eng.verifyError}</Notice>
+        <Notice kind="bad" className="set-manage-state">
+          校验失败：{eng.verifyError}
+        </Notice>
       ) : v ? (
         <>
           <div className={v.ok ? 'set-manage-state' : 'set-manage-state is-bad'}>
@@ -148,7 +144,9 @@ export function ModelManageBlock({ item, eng }: { item: SettingItem; eng: Engine
           {shown.length > 0 ? (
             <div className="set-manage-list">
               {shown.map((p) => (
-                <div key={p} className="set-manage-list-line">{p}</div>
+                <div key={p} className="set-manage-list-line">
+                  {p}
+                </div>
               ))}
               {rest > 0 ? <div className="set-manage-list-line">…还有 {rest} 条</div> : null}
             </div>

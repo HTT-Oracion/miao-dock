@@ -54,9 +54,7 @@ const SIDEBAR = {
 // NaN 参与比较时两边都是假，判据会变成"永远红"或"永远绿"，而报错信息里看不出原因。
 for (const [k, v] of Object.entries(SIDEBAR)) {
   if (Number.isNaN(v.w) || Number.isNaN(v.h)) {
-    console.error(
-      `✗ 无法从 tokens.ts 抽出 SIDEBAR.${k} 的几何（正则与源码形态已失配）—— 判据会因此假绿，先修抽取。`,
-    );
+    console.error(`✗ 无法从 tokens.ts 抽出 SIDEBAR.${k} 的几何（正则与源码形态已失配）—— 判据会因此假绿，先修抽取。`);
     process.exit(1);
   }
 }
@@ -134,7 +132,10 @@ function dom({
     ${
       viewOrder
         ? `<div class="viewtabs">${viewOrder
-            .map((v) => `<button class="viewtab${v === viewOrder[0] ? ' is-active' : ''}"><svg></svg><span>${v}</span></button>`)
+            .map(
+              (v) =>
+                `<button class="viewtab${v === viewOrder[0] ? ' is-active' : ''}"><svg></svg><span>${v}</span></button>`,
+            )
             .join('')}</div>`
         : ''
     }
@@ -166,7 +167,16 @@ function geometry(html) {
   const order = [];
   const re = /class="(nav-item is-app[^"]*|sidebar-divider|nav-item is-global[^"]*|sidebar-status)"/g;
   let m;
-  while ((m = re.exec(html))) order.push(m[1].startsWith('nav-item is-app') ? 'app' : m[1] === 'sidebar-divider' ? 'divider' : m[1] === 'sidebar-status' ? 'status' : 'global');
+  while ((m = re.exec(html)))
+    order.push(
+      m[1].startsWith('nav-item is-app')
+        ? 'app'
+        : m[1] === 'sidebar-divider'
+          ? 'divider'
+          : m[1] === 'sidebar-status'
+            ? 'status'
+            : 'global',
+    );
   return order;
 }
 
@@ -220,7 +230,9 @@ function judgeC9(html) {
   // ⚠️ 不能写成 `viewtab[^>]*><span>`：真实 DOM 里 Tab 是 `<svg/>` 在前、`<span>` 在后，
   // 那种写法只在自己理想化的脚手架 HTML 上成立，对真实输出恒不匹配 → C9 恒绿（假阳性）。
   // 这里用「不跨出当前 button」的惰性匹配，等价于浏览器里取 button 内的 span。
-  const tabs = [...html.matchAll(/viewtab[^>]*>(?:(?!<\/button>)[\s\S])*?<span>([^<]*)<\/span>/g)].map((m) => m[1].trim());
+  const tabs = [...html.matchAll(/viewtab[^>]*>(?:(?!<\/button>)[\s\S])*?<span>([^<]*)<\/span>/g)].map((m) =>
+    m[1].trim(),
+  );
   if (tabs.length === 0) return true;
   const want = ['投放', '队列', '漫画库'];
   return tabs.length === want.length && tabs.every((t, i) => t === want[i]);
@@ -357,7 +369,10 @@ const cases = [
   },
   {
     name: '反证 C10b：5 组全渲染（靠 CSS 隐藏而非单组挂载）',
-    spec: { ...BASE, settings: { groups: ['通用', '翻译服务', '播放·媒体', '资源与投放', '关于'], title: '通用', allGroups: true } },
+    spec: {
+      ...BASE,
+      settings: { groups: ['通用', '翻译服务', '播放·媒体', '资源与投放', '关于'], title: '通用', allGroups: true },
+    },
     refute: ['C10b'],
   },
   {
@@ -385,7 +400,10 @@ const ok = (cond, msg) => {
 };
 
 console.log('C8–C11 IA 结构断言 · 反证轮\n');
-console.log('令牌取自源码：', JSON.stringify({ sidebar: SHELL.sidebarWidth, nav: SETTINGS.navWidth, sticky: SETTINGS.navStickyTop }));
+console.log(
+  '令牌取自源码：',
+  JSON.stringify({ sidebar: SHELL.sidebarWidth, nav: SETTINGS.navWidth, sticky: SETTINGS.navStickyTop }),
+);
 console.log('');
 
 for (const c of cases) {
@@ -406,12 +424,17 @@ for (const c of cases) {
       ok(j[id] === false, `${id} 在此破坏下**变红**（实测 ${j[id] === false ? '红' : '仍绿 ← 假阳性!'}）`);
     }
   } else {
-    for (const [id, v] of Object.entries(c.want)) ok(v === true, `${id} 在正确实现下保持绿（实测 ${j[id] ? '绿' : '红 ← 误报!'}）`);
+    for (const [id, v] of Object.entries(c.want))
+      ok(v === true, `${id} 在正确实现下保持绿（实测 ${j[id] ? '绿' : '红 ← 误报!'}）`);
   }
   console.log('');
 }
 
 console.log('─'.repeat(56));
 console.log(`${pass} 通过 / ${fail} 失败`);
-console.log(fail === 0 ? '\n✓ 全部反证成立：四条断言都能捕捉到它们声称捕捉的改错。' : '\n✗ 存在假阳性：某条断言在破坏下仍绿，它测不到东西。');
+console.log(
+  fail === 0
+    ? '\n✓ 全部反证成立：四条断言都能捕捉到它们声称捕捉的改错。'
+    : '\n✗ 存在假阳性：某条断言在破坏下仍绿，它测不到东西。',
+);
 process.exit(fail === 0 ? 0 : 1);

@@ -5,7 +5,10 @@ import { LS_LOCAL, readLS, writeLS } from '@music/persist';
 import type { LocalSongInfo } from '@music/types';
 import type { MusicState, StoreGet, StoreSet } from '@music/slice';
 
-export const createLocalSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 'loadLocalSongs' | 'importLocal' | 'importFolder' | 'removeLocalSong' | 'clearLocalSongs'> => ({
+export const createLocalSlice = (
+  set: StoreSet,
+  get: StoreGet,
+): Pick<MusicState, 'loadLocalSongs' | 'importLocal' | 'importFolder' | 'removeLocalSong' | 'clearLocalSongs'> => ({
   loadLocalSongs: () => {
     const infos = readLS<LocalSongInfo[]>(LS_LOCAL, []);
     if (!Array.isArray(infos) || infos.length === 0) return;
@@ -57,7 +60,9 @@ export const createLocalSlice = (set: StoreSet, get: StoreGet): Pick<MusicState,
 
   clearLocalSongs: () => {
     // 回收封面缓存文件（失败不阻断清空）
-    const paths = get().localSongs.map((s) => s.cover_path).filter(Boolean);
+    const paths = get()
+      .localSongs.map((s) => s.cover_path)
+      .filter(Boolean);
     if (paths.length > 0) void ipc.deleteCoverCacheFiles(paths).catch(() => undefined);
     set({ localSongs: [], localQueue: [] });
     writeLS(LS_LOCAL, []);

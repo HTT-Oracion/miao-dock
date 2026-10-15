@@ -36,11 +36,7 @@ export function GeneralSection({
       <GroupNote summary={GENERAL.noteSummary}>{GENERAL.note as string}</GroupNote>
       <div className="set-group">
         <Row item={darkItem}>
-          <Switch
-            on={mode === 'dark'}
-            onToggle={() => onMode(mode === 'dark' ? 'light' : 'dark')}
-            label="深色模式"
-          />
+          <Switch on={mode === 'dark'} onToggle={() => onMode(mode === 'dark' ? 'light' : 'dark')} label="深色模式" />
         </Row>
 
         <Row item={itemOf(g, 'close-window')}>
@@ -56,15 +52,9 @@ export function GeneralSection({
         */}
         <Row item={specItem} />
         <div className="set-row-note set-row-note-body">
-          对离屏样张量取实际渲染尺寸与颜色，与设计常量逐一比对。
-          CSS 里改错了数值，这里会立刻报红。
+          对离屏样张量取实际渲染尺寸与颜色，与设计常量逐一比对。 CSS 里改错了数值，这里会立刻报红。
         </div>
-        <SpecCheckBlock
-          results={spec.results}
-          revealed={spec.revealed}
-          failed={spec.failed}
-          onRun={spec.run}
-        />
+        <SpecCheckBlock results={spec.results} revealed={spec.revealed} failed={spec.failed} onRun={spec.run} />
 
         {/*
           侧栏图标标签：**同一个 state 同时驱动两处**（`App` 的 `sidebarLabels`）——
@@ -72,14 +62,9 @@ export function GeneralSection({
           这里刻意不自己读 localStorage：那样会造出第二个真值来源。
         */}
         <Row item={itemOf(g, 'sidebar-labels')}>
-          <Switch
-            on={sidebarLabels}
-            onToggle={() => onSidebarLabels(!sidebarLabels)}
-            label="侧栏图标标签"
-          />
+          <Switch on={sidebarLabels} onToggle={() => onSidebarLabels(!sidebarLabels)} label="侧栏图标标签" />
         </Row>
       </div>
     </>
   );
 }
-

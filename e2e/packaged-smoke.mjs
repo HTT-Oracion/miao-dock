@@ -119,7 +119,10 @@ function startService(env) {
   });
   return new Promise((resolve, reject) => {
     let buf = '';
-    const to = setTimeout(() => { child.kill(); reject(new Error('boxsvc 20s 内未就绪')); }, 20000);
+    const to = setTimeout(() => {
+      child.kill();
+      reject(new Error('boxsvc 20s 内未就绪'));
+    }, 20000);
     child.stdout.on('data', (d) => {
       buf += d;
       const m = /MIAO_READY (\{.*\})/.exec(buf);
@@ -129,7 +132,10 @@ function startService(env) {
       }
     });
     child.stderr.on('data', (d) => (buf += d));
-    child.on('close', (code) => { clearTimeout(to); reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 600)}`)); });
+    child.on('close', (code) => {
+      clearTimeout(to);
+      reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 600)}`));
+    });
   });
 }
 
@@ -156,8 +162,7 @@ try {
 
   // ---- ① 安装层：A2 进包的资产在**真实产物**里 ----
   const manifest = path.join(installDir, 'engine', 'models.manifest.json');
-  check('P2 安装目录里有 engine/models.manifest.json（A1 落点 + A2 进包）',
-    fs.existsSync(manifest), manifest);
+  check('P2 安装目录里有 engine/models.manifest.json（A1 落点 + A2 进包）', fs.existsSync(manifest), manifest);
   // G3/W13b：wheel 清单与随包 wheel 也必须在真实产物里。
   // 🔴 为什么单独断言：`plan_crf()` 要读这份清单才能选中包内 wheel；清单不在包里
   //    ⇒ 产品"看不见"那颗明明随包了的 wheel，静默退回源码编译 ⇒ 没装 MSVC 的机器上装到一半失败。
@@ -167,13 +172,18 @@ try {
   //    release 产物两份都在、静默安装后只剩 wheel）。这条断言就是那个坑的守门人。
   const wheelsManifest = path.join(installDir, 'engine', 'wheel-manifest.json');
   const bundledWheel = path.join(installDir, 'engine', 'wheels', 'pydensecrf-1.0-cp311-cp311-win_amd64.whl');
-  check('P2b 安装目录里有 engine/wheel-manifest.json（产品侧 plan_crf 要读它才能选中包内 wheel）',
-    fs.existsSync(wheelsManifest), wheelsManifest);
-  check('P2c 安装目录里有随包的 pydensecrf wheel（G3：目标机零编译器的全部依据）',
-    fs.existsSync(bundledWheel), bundledWheel);
+  check(
+    'P2b 安装目录里有 engine/wheel-manifest.json（产品侧 plan_crf 要读它才能选中包内 wheel）',
+    fs.existsSync(wheelsManifest),
+    wheelsManifest,
+  );
+  check(
+    'P2c 安装目录里有随包的 pydensecrf wheel（G3：目标机零编译器的全部依据）',
+    fs.existsSync(bundledWheel),
+    bundledWheel,
+  );
   const nodePayload = ['service', 'node.zip'].filter((k) => fs.existsSync(path.join(installDir, k)));
-  check('P3 安装目录里没有 service/ 与 node.zip（F5 验收③ 在真实产物上复现）',
-    nodePayload.length === 0, nodePayload);
+  check('P3 安装目录里没有 service/ 与 node.zip（F5 验收③ 在真实产物上复现）', nodePayload.length === 0, nodePayload);
 
   if (REFUTE) {
     // R1：把刚验过的资产删掉 —— 下面几层必须因此红。
@@ -187,12 +197,17 @@ try {
     const emptyRepo = path.join(work, 'empty-repo');
     fs.mkdirSync(emptyRepo, { recursive: true });
     process.env.MIAO_REPO_ROOT = emptyRepo;
-    console.log('\n[反证] 已删掉安装目录里的 engine/models.manifest.json 与 engine/wheel-manifest.json，并切断仓库回退');
+    console.log(
+      '\n[反证] 已删掉安装目录里的 engine/models.manifest.json 与 engine/wheel-manifest.json，并切断仓库回退',
+    );
     // R3 的判据必须在**删除之后**复检才成立 —— 上面那批 check 跑在删除前，永远绿。
     // （P2/P2b/P2c 是"安装层"断言，删除影响的是资产层与服务层；但 R3 要证的恰恰是
     //  "清单不在盘上 ⇒ P2b 红"，所以补一次删除后的复检。）
-    check('P2b 反证：wheel 清单被删掉后本断言必须红（否则它钉不住"清单要在盘上"这件事）',
-      !fs.existsSync(wheelsManifest), wheelsManifest);
+    check(
+      'P2b 反证：wheel 清单被删掉后本断言必须红（否则它钉不住"清单要在盘上"这件事）',
+      !fs.existsSync(wheelsManifest),
+      wheelsManifest,
+    );
   }
 
   // ---- ③ 资产层：自检在同一资源目录上报 ok ----
@@ -210,9 +225,13 @@ try {
     let rep = null;
     try {
       rep = JSON.parse(assets.out);
-    } catch { /* 非 JSON：缺失时它走 stderr 文本 */ }
-    check('P4 资产自检在安装目录上报 ok=true（资源目录优先于仓库回退）',
-      assets.code === 0 && rep && rep.ok === true, { code: assets.code, out: assets.out.slice(0, 300) });
+    } catch {
+      /* 非 JSON：缺失时它走 stderr 文本 */
+    }
+    check('P4 资产自检在安装目录上报 ok=true（资源目录优先于仓库回退）', assets.code === 0 && rep && rep.ok === true, {
+      code: assets.code,
+      out: assets.out.slice(0, 300),
+    });
   }
 
   // ---- ② 服务层：从安装布局起服务，mock 档 ----
@@ -230,28 +249,43 @@ try {
       check('P5 装完能起服务：/health 200', h.status === 200, h.status);
       // `mode` 的两处可见面：启动配方的 `mode` 字段 + 服务内引擎替身的 `version=mock`
       // （`/engine/status` 顶层没有 `protocol` —— 那在 `/engine/options`，别照 G2 的键名猜）
-      const st = await fetch(`http://127.0.0.1:${svc.port}/api/v1/engine/status`, { headers: { 'x-box-token': TOKEN } });
+      const st = await fetch(`http://127.0.0.1:${svc.port}/api/v1/engine/status`, {
+        headers: { 'x-box-token': TOKEN },
+      });
       const stBody = await st.json().catch(() => null);
-      check('P6 服务内引擎是 mock 替身（version=mock，不是 real 档的残影）',
-        stBody?.engine?.version === 'mock', { version: stBody?.engine?.version });
+      check('P6 服务内引擎是 mock 替身（version=mock，不是 real 档的残影）', stBody?.engine?.version === 'mock', {
+        version: stBody?.engine?.version,
+      });
       // 清单路径必须指向**安装目录里那一份**（而不是回退到仓库）
       const pathsOut = await new Promise((resolve) => {
         const p = spawn(RELEASE_BOXSVC, ['--print-paths'], {
-          env: { ...process.env, MIAO_RESOURCE_DIR: installDir, MIAO_STATE_DIR: stateDir, MIAO_ROOT: path.join(work, 'root') },
+          env: {
+            ...process.env,
+            MIAO_RESOURCE_DIR: installDir,
+            MIAO_STATE_DIR: stateDir,
+            MIAO_ROOT: path.join(work, 'root'),
+          },
         });
         let o = '';
         p.stdout.on('data', (d) => (o += d));
         p.on('close', () => resolve(o));
       });
       const snap = JSON.parse(pathsOut);
-      check('P7 生效的清单路径落在**安装目录**内（A1：资源目录优先，不是回退仓库）',
+      check(
+        'P7 生效的清单路径落在**安装目录**内（A1：资源目录优先，不是回退仓库）',
         typeof snap.modelManifest === 'string' && snap.modelManifest.startsWith(installDir),
-        snap.modelManifest);
+        snap.modelManifest,
+      );
       // 台账原话「mode=mock 可见」：启动配方是它的权威出处。
       // ⚠️ `--print-launch-plan` 的 mode 是**位置参数**（不读 env，见 boxsvc.rs）⇒ 显式传 `mock`。
       const planOut = await new Promise((resolve) => {
         const p = spawn(RELEASE_BOXSVC, ['--print-launch-plan', 'mock'], {
-          env: { ...process.env, MIAO_RESOURCE_DIR: installDir, MIAO_STATE_DIR: stateDir, MIAO_ROOT: path.join(work, 'root') },
+          env: {
+            ...process.env,
+            MIAO_RESOURCE_DIR: installDir,
+            MIAO_STATE_DIR: stateDir,
+            MIAO_ROOT: path.join(work, 'root'),
+          },
         });
         let o = '';
         p.stdout.on('data', (d) => (o += d));
@@ -275,5 +309,7 @@ try {
 }
 
 console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed }));
-console.log(`\nA4 打包后冒烟：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`);
+console.log(
+  `\nA4 打包后冒烟：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`,
+);
 process.exit(failed === 0 ? 0 : 1);

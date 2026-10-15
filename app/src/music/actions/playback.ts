@@ -50,10 +50,7 @@ const HEARTBEAT_FETCH = 20;
  * 这三处只要有一处判得不一样，就会出现"按钮上是心动、实际按随机播"这种
  * 自相矛盾的状态 —— 而它不报错，只表现为行为怪异。判据必须只有一个来源。
  */
-export function canUseHeartbeat(state: {
-  playbackSource: MusicProvider;
-  queueFromLiked: boolean;
-}): boolean {
+export function canUseHeartbeat(state: { playbackSource: MusicProvider; queueFromLiked: boolean }): boolean {
   // 平台能力走 platform.supportsSimilar（唯一事实源），**不在这里硬编码 'netease'** ——
   // 两处各写一份平台名单，日后新增支持相似的平台时会漏改一处，
   // 表现为"接口有了、门禁仍拦着"（或反过来）。
@@ -106,11 +103,7 @@ function audioCacheId(provider: MusicProvider, song: Song): string {
  * 弹「播放失败」并**自动跳下一首** —— 症状是"缓存坏了就放不出歌"，
  * 而缓存本该是可有可无的。
  */
-async function lookupAudioCache(
-  song: Song,
-  provider: MusicProvider,
-  quality: string,
-): Promise<string | null> {
+async function lookupAudioCache(song: Song, provider: MusicProvider, quality: string): Promise<string | null> {
   /**
    * 本地歌曲**不入缓存链**。
    *
@@ -142,12 +135,7 @@ async function lookupAudioCache(
  * 所以这里既不弹提示也不重试：任何"下载缓存失败"的打扰都是净损失。
  * 静默放弃的是**这一次**缓存机会，不是播放。
  */
-function prefetchAudioCache(
-  song: Song,
-  provider: MusicProvider,
-  quality: string,
-  url: string,
-): void {
+function prefetchAudioCache(song: Song, provider: MusicProvider, quality: string, url: string): void {
   if (song._localPath) return;
   // `void` 明确表达"发出即弃"，`.catch` 保证拒绝不会变成未处理的 Promise
   void ipc.musicCacheDownload(provider, audioCacheId(provider, song), quality, url).catch(() => {});
@@ -241,7 +229,44 @@ export function registerAudioElement(el: HTMLAudioElement | null): void {
 const SEEK_PUSH_DEBOUNCE_MS = 120;
 let seekPushTimer: ReturnType<typeof setTimeout> | null = null;
 
-export const createPlaybackSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 'playSong' | 'playQueue' | 'playPlaylist' | 'enterHeartbeat' | 'togglePlay' | 'next' | 'handleTrackEnded' | 'prev' | 'seek' | 'setVolume' | 'toggleMute' | 'stepVolume' | 'closePlayback' | 'cycleMode' | 'setPlayMode' | 'setPlaybackQuality' | 'clearResumeAt' | 'setLyricsFontSize' | 'setLyricsHighlightColor' | 'setLyricsMode' | 'setDesktopLyricsFontSize' | 'setDesktopLyricsHighlightColor' | 'setDesktopLyricsBaseColor' | 'setDesktopLyricsLineCount' | 'resetDesktopLyricsPrefs' | 'setDynamicEnabled' | 'setDiscMode' | 'setVinylColorMode' | 'setVinylCustomColor' | 'setIslandView' | 'setProgress' | 'setDuration'> => ({
+export const createPlaybackSlice = (
+  set: StoreSet,
+  get: StoreGet,
+): Pick<
+  MusicState,
+  | 'playSong'
+  | 'playQueue'
+  | 'playPlaylist'
+  | 'enterHeartbeat'
+  | 'togglePlay'
+  | 'next'
+  | 'handleTrackEnded'
+  | 'prev'
+  | 'seek'
+  | 'setVolume'
+  | 'toggleMute'
+  | 'stepVolume'
+  | 'closePlayback'
+  | 'cycleMode'
+  | 'setPlayMode'
+  | 'setPlaybackQuality'
+  | 'clearResumeAt'
+  | 'setLyricsFontSize'
+  | 'setLyricsHighlightColor'
+  | 'setLyricsMode'
+  | 'setDesktopLyricsFontSize'
+  | 'setDesktopLyricsHighlightColor'
+  | 'setDesktopLyricsBaseColor'
+  | 'setDesktopLyricsLineCount'
+  | 'resetDesktopLyricsPrefs'
+  | 'setDynamicEnabled'
+  | 'setDiscMode'
+  | 'setVinylColorMode'
+  | 'setVinylCustomColor'
+  | 'setIslandView'
+  | 'setProgress'
+  | 'setDuration'
+> => ({
   playSong: async (song, queue, opts) => {
     const mySeq = ++playSeq;
 
@@ -421,11 +446,7 @@ export const createPlaybackSlice = (set: StoreSet, get: StoreGet): Pick<MusicSta
      * 与"从哪一首开始"无关，不该让它影响入口。
      */
     const startIndex =
-      opts?.index != null
-        ? opts.index
-        : get().playMode === 'shuffle'
-          ? Math.floor(Math.random() * songs.length)
-          : 0;
+      opts?.index != null ? opts.index : get().playMode === 'shuffle' ? Math.floor(Math.random() * songs.length) : 0;
     if (!songs[startIndex]) return;
 
     await get().playQueue(songs, startIndex, {
@@ -745,8 +766,7 @@ export const createPlaybackSlice = (set: StoreSet, get: StoreGet): Pick<MusicSta
        * 而界面毫无提示 —— 听感是"我点的歌自己跳走了"。置顶既保住了正在播的
        * 这首，又让它出现在列表第一行，语义自洽（下一首/上一首也从它往后走）。
        */
-      const restored =
-        cur && found < 0 ? [cur, ...snap.queue] : snap.queue;
+      const restored = cur && found < 0 ? [cur, ...snap.queue] : snap.queue;
       set({
         playMode: mode,
         queue: restored,

@@ -53,7 +53,10 @@ const MARK_PREFIX = '# miao-dock 补丁 D-';
 
 const results = [];
 let group = '';
-const setGroup = (g) => { group = g; console.log(`\n${g}`); };
+const setGroup = (g) => {
+  group = g;
+  console.log(`\n${g}`);
+};
 function add(id, ok, detail = '') {
   results.push({ group, id, ok: !!ok });
   console.log(`  ${ok ? '✓' : '✗'} ${id}${detail ? `  ${detail}` : ''}`);
@@ -67,8 +70,12 @@ function runCapture(args, opts = {}) {
     const c = spawn(args[0], args.slice(1), { stdio: ['ignore', 'pipe', 'pipe'], ...opts });
     let out = '';
     let err = '';
-    c.stdout.on('data', (d) => { out += d; });
-    c.stderr.on('data', (d) => { err += d; });
+    c.stdout.on('data', (d) => {
+      out += d;
+    });
+    c.stderr.on('data', (d) => {
+      err += d;
+    });
     c.on('error', reject);
     c.on('close', (code) => resolve({ code, stdout: out, stderr: err }));
   });
@@ -109,7 +116,8 @@ function firstDivergence(a, b) {
   if (a.length !== b.length) return `条数不同：Rust ${a.length} vs Node ${b.length}`;
   for (let i = 0; i < a.length; i++) {
     for (const k of ['id', 'mark', 'desc']) {
-      if (a[i][k] !== b[i][k]) return `第 ${i + 1} 条 ${k} 不同：Rust ${JSON.stringify(a[i][k])} vs Node ${JSON.stringify(b[i][k])}`;
+      if (a[i][k] !== b[i][k])
+        return `第 ${i + 1} 条 ${k} 不同：Rust ${JSON.stringify(a[i][k])} vs Node ${JSON.stringify(b[i][k])}`;
     }
     if (JSON.stringify(a[i].rel) !== JSON.stringify(b[i].rel)) {
       return `第 ${i + 1} 条（${a[i].id}）rel 不同：Rust ${JSON.stringify(a[i].rel)} vs Node ${JSON.stringify(b[i].rel)}`;
@@ -121,7 +129,13 @@ function firstDivergence(a, b) {
 // ------------------------------------------------------------------ 纯函数断言（正向/反证共用）
 
 /** 默认文件读取器：读不到返回 null（**不是**空串 —— "文件不存在"与"文件为空"要能分开）。 */
-const readReal = (f) => { try { return fs.readFileSync(f, 'utf8'); } catch { return null; } };
+const readReal = (f) => {
+  try {
+    return fs.readFileSync(f, 'utf8');
+  } catch {
+    return null;
+  }
+};
 
 /**
  * 对「一份补丁表 + 一个文件读取器」求值，返回**失败的断言 id 列表**。
@@ -135,13 +149,17 @@ function evaluate(patches, readFile = readReal) {
 
   // A2 结构完整 + id / mark 唯一
   let structOk = Array.isArray(patches) && patches.length > 0;
-  const ids = new Set(); const marks = new Set();
+  const ids = new Set();
+  const marks = new Set();
   for (const p of patches || []) {
-    if (!p || !p.id || !p.mark || !p.file || !p.desc
-      || !Array.isArray(p.edits) || p.edits.length === 0) { structOk = false; continue; }
+    if (!p || !p.id || !p.mark || !p.file || !p.desc || !Array.isArray(p.edits) || p.edits.length === 0) {
+      structOk = false;
+      continue;
+    }
     for (const e of p.edits) if (!e || !e.anchor || !e.patch) structOk = false;
     if (ids.has(p.id) || marks.has(p.mark)) structOk = false;
-    ids.add(p.id); marks.add(p.mark);
+    ids.add(p.id);
+    marks.add(p.mark);
   }
   if (!structOk) bad.push('A2');
 
@@ -149,7 +167,16 @@ function evaluate(patches, readFile = readReal) {
   if (!(patches || []).every((p) => String(p?.mark || '').startsWith(MARK_PREFIX))) bad.push('A3');
 
   // A4 目标源码都在（引擎未装 ⇒ 必须报错，不能静默当成"通过"）
-  if (!(patches || []).every((p) => { try { return fs.existsSync(p.file); } catch { return false; } })) bad.push('A4');
+  if (
+    !(patches || []).every((p) => {
+      try {
+        return fs.existsSync(p.file);
+      } catch {
+        return false;
+      }
+    })
+  )
+    bad.push('A4');
 
   // A5 每个 marker 都在目标文件里 = 补丁真的打上了
   let allApplied = true;
@@ -160,8 +187,8 @@ function evaluate(patches, readFile = readReal) {
   if (!allApplied) bad.push('A5');
 
   // A6 补丁体里**必须含自己的 marker** —— 否则幂等判据永不成立，重跑装配会堆第二份代码
-  const allSelfMarked = (patches || []).every(
-    (p) => (p?.edits || []).some((e) => String(e?.patch || '').includes(p.mark)),
+  const allSelfMarked = (patches || []).every((p) =>
+    (p?.edits || []).some((e) => String(e?.patch || '').includes(p.mark)),
   );
   if (!allSelfMarked) bad.push('A6');
 
@@ -184,13 +211,15 @@ async function main() {
     const mut = [
       {
         id: 'R1 表里少一条补丁 ⇒ A1 条数断言变红',
-        patches: ENGINE_PATCHES.slice(0, -1), readFile: real, expect: 'A1',
+        patches: ENGINE_PATCHES.slice(0, -1),
+        readFile: real,
+        expect: 'A1',
       },
       {
         id: 'R2 补丁体漏写自己的 marker ⇒ A6 幂等自含断言变红',
-        patches: ENGINE_PATCHES.map((p, i) => (i === 0
-          ? { ...p, edits: p.edits.map((e) => ({ ...e, patch: e.patch.split(p.mark).join('') })) }
-          : p)),
+        patches: ENGINE_PATCHES.map((p, i) =>
+          i === 0 ? { ...p, edits: p.edits.map((e) => ({ ...e, patch: e.patch.split(p.mark).join('') })) } : p,
+        ),
         readFile: real,
         expect: 'A6',
       },

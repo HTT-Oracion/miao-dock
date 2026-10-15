@@ -120,12 +120,7 @@ export function LicensesBlock({ item }: { item: SettingItem }) {
     <div className="set-lic">
       <div className="set-lic-head">
         <div className="set-lic-name">{item.label}</div>
-        <button
-          type="button"
-          className="set-lic-fold"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-        >
+        <button type="button" className="set-lic-fold" aria-expanded={open} onClick={() => setOpen(!open)}>
           {open ? '收起清单' : '查看清单'}
         </button>
       </div>
@@ -191,14 +186,10 @@ export function LicensesBlock({ item }: { item: SettingItem }) {
               <span className="set-lic-pkg">
                 {p.name}@{p.version}
               </span>
-              <span className={p.license ? 'set-lic-val' : 'set-lic-val is-unknown'}>
-                {p.license ?? '未取到声明'}
-              </span>
+              <span className={p.license ? 'set-lic-val' : 'set-lic-val is-unknown'}>{p.license ?? '未取到声明'}</span>
             </div>
           ))}
-          <div className="set-lic-list-title">
-            引擎上游与模型（版本锁的声明，逐条）
-          </div>
+          <div className="set-lic-list-title">引擎上游与模型（版本锁的声明，逐条）</div>
           {DATA.engine.upstream.map((u) => (
             <div className="set-lic-row" key={`up:${u.key}`}>
               <span className="set-lic-pkg">{u.key}</span>

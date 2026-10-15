@@ -6,11 +6,7 @@
       "mime": "image/png",
       "name": "real.ok_ja_zh",
       "ok": true,
-      "stageLines": [
-        "seq 1: 识别中…",
-        "seq 1: 排队位次 2",
-        "seq 1: 等待翻译实例"
-      ]
+      "stageLines": ["seq 1: 识别中…", "seq 1: 排队位次 2", "seq 1: 等待翻译实例"]
     },
     {
       "bytesB64": "iVBORw0KGgoAAAANSUhEUgAAABQAAAAYCAIAAAB1KUohAAAC90lEQVR4nAXBhwHDMAzAMHnKeybpuzy9gIhgBCs4wQtBiIIKSchCEarQhC4MYQpL2MIRriBiMAZrcAZvCIZoUEMyZEMxVEMzdMMwTMMybMMxXIOIxVisxVm8JViiRS3Jki3FUi3N0i3DMi3Lsi3Hci0iDuOwDufwjuCIDnUkR3YUR3U0R3cMx3Qsx3Ycx3WIeIzHepzHe4InetSTPNlTPNXTPN0zPNOzPNtzPNcjEjABG3ABHwiBGNBACuRACdRAC/TACMzACuzACdyASMREbMRFfCREYkQjKZIjJVIjLdIjIzIjK7IjJ3IjIopRrOIUrwQlKqokJStFqUpTujKUqSxlK0e5ikjCJGzCJXwiJGJCEymREyVREy3REyMxEyuxEydxEyIZk7EZl/GZkIkZzaRMzpRMzbRMz4zMzKzMzpzMzYgUTMEWXMEXQiEWtJAKuVAKtdAKvTAKs7AKu3AKtyBSMRVbcRVfCZVY0Uqq5Eqp1Eqr9MqozMqq7Mqp3IpIwzRswzV8IzRiQxupkRulURut0RujMRursRuncRsiHdOxHdfxndCJHe2kTu6UTu20Tu+Mzuyszu6czu2IDMzADtzAD8IgDnSQBnlQBnXQBn0wBnOwBntwBncgMjETO3ETPwmTONFJmuRJmdRJm/TJmMzJmuzJmdyJyMIs7MIt/CIs4kIXaZEXZVEXbdEXYzEXa7EXZ3EXIhuzsRu38ZuwiRvdpE3elE3dtE3fjM3crM3enM3diBzMwR7cwR/CIR70kA75UA710A79MA7zsA77cA73IHIxF3txF38Jl3jRS7rkS7nUS7v0y7jMy7rsy7nci8iDebAP7sE/hIf4oA/pIT+Uh/rQHvrDeJgP62E/nIf7IPJiXuyLe/Ev4SW+6Et6yS/lpb60l/4yXubLetkv5+W+iHyYD/vhPvxH+Igf+pE+8kf5qB/to3+Mj/mxPvbH+bgfIj/MD/vD/fA/wo/4Q3+kH/lH+VF/tB/9x/gxf6wf+8f5cX/8AQgAF3Dh96vWAAAAAElFTkSuQmCC",
@@ -18,11 +14,7 @@
       "mime": "image/png",
       "name": "real.ok_en_zh",
       "ok": true,
-      "stageLines": [
-        "seq 2: 识别中…",
-        "seq 2: 排队位次 2",
-        "seq 2: 等待翻译实例"
-      ]
+      "stageLines": ["seq 2: 识别中…", "seq 2: 排队位次 2", "seq 2: 等待翻译实例"]
     },
     {
       "code": "ENGINE_ERROR",
@@ -41,10 +33,7 @@
       "message": "引擎报告：boom",
       "name": "real.err_frame",
       "ok": false,
-      "stageLines": [
-        "seq 3: 识别中",
-        "seq 3: 引擎报错：boom"
-      ]
+      "stageLines": ["seq 3: 识别中", "seq 3: 引擎报错：boom"]
     },
     {
       "code": "ENGINE_BAD_OUTPUT",
@@ -58,9 +47,7 @@
       "message": "结果流里没有结果帧（code 0）",
       "name": "real.no_result_frame",
       "ok": false,
-      "stageLines": [
-        "seq 4: 识别中"
-      ]
+      "stageLines": ["seq 4: 识别中"]
     },
     {
       "code": "ENGINE_BAD_OUTPUT",
@@ -111,9 +98,7 @@
       "message": "引擎响应超时（700ms 内没等到结帧；期间收到 11 字节）",
       "name": "real.timeout_partial",
       "ok": false,
-      "stageLines": [
-        "seq 9: 开始"
-      ]
+      "stageLines": ["seq 9: 开始"]
     },
     {
       "code": "ENGINE_TIMEOUT",
@@ -132,10 +117,7 @@
       "message": "引擎响应超时（700ms 内没等到结帧；期间收到 22 字节）",
       "name": "real.queue_position_then_silent",
       "ok": false,
-      "stageLines": [
-        "seq 11: 排队位次 0",
-        "seq 11: recognizing"
-      ]
+      "stageLines": ["seq 11: 排队位次 0", "seq 11: recognizing"]
     },
     {
       "name": "real.probe_running",

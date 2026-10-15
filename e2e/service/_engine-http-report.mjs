@@ -51,18 +51,18 @@ const notFound = (res) => {
 
 const BEHAVIORS = {
   // ---- real：结果流 ----
-  ok: (res, p) => (p === '/translate/image/stream'
-    ? octet(res, Buffer.concat([frame(1, '识别中…'), frame(3, '2'), frame(4, ''), frame(0, PNG)]))
-    : notFound(res)),
-  err: (res, p) => (p === '/translate/image/stream'
-    ? octet(res, Buffer.concat([frame(1, '识别中'), frame(2, 'boom')]))
-    : notFound(res)),
-  nores: (res, p) => (p === '/translate/image/stream'
-    ? octet(res, Buffer.concat([frame(1, '识别中')]))
-    : notFound(res)),
-  badout: (res, p) => (p === '/translate/image/stream'
-    ? octet(res, Buffer.concat([frame(0, Buffer.from('not an image at all'))]))
-    : notFound(res)),
+  ok: (res, p) =>
+    p === '/translate/image/stream'
+      ? octet(res, Buffer.concat([frame(1, '识别中…'), frame(3, '2'), frame(4, ''), frame(0, PNG)]))
+      : notFound(res),
+  err: (res, p) =>
+    p === '/translate/image/stream' ? octet(res, Buffer.concat([frame(1, '识别中'), frame(2, 'boom')])) : notFound(res),
+  nores: (res, p) =>
+    p === '/translate/image/stream' ? octet(res, Buffer.concat([frame(1, '识别中')])) : notFound(res),
+  badout: (res, p) =>
+    p === '/translate/image/stream'
+      ? octet(res, Buffer.concat([frame(0, Buffer.from('not an image at all'))]))
+      : notFound(res),
   http422: (res) => {
     res.writeHead(422, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ detail: 'bad input' }));
@@ -92,8 +92,8 @@ const BEHAVIORS = {
   queue_stall: (res, p) => {
     if (p !== '/translate/image/stream') return notFound(res);
     res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
-    res.write(frame(3, '0'));           // 排队位次 0 —— 永远轮不到执行器
-    res.write(frame(1, 'recognizing'));  // 然后进入识别阶段……
+    res.write(frame(3, '0')); // 排队位次 0 —— 永远轮不到执行器
+    res.write(frame(1, 'recognizing')); // 然后进入识别阶段……
     // ……此后静默：不再有任何字节（上游卡在 Sakura 调用时的真实形状）
   },
   // ---- 就绪探针 ----
@@ -109,16 +109,50 @@ const BEHAVIORS = {
 
 // ------------------------------------------------------------------ 用例表
 export const CASES = [
-  { name: 'real.ok_ja_zh', protocol: 'real', kind: 'translate', scenario: 'ok', input: 'png', seq: 1, lang: { from: 'ja', to: 'zh' }, payload: true },
-  { name: 'real.ok_en_zh', protocol: 'real', kind: 'translate', scenario: 'ok', input: 'png', seq: 2, lang: { from: 'en', to: 'zh' }, payload: true },
+  {
+    name: 'real.ok_ja_zh',
+    protocol: 'real',
+    kind: 'translate',
+    scenario: 'ok',
+    input: 'png',
+    seq: 1,
+    lang: { from: 'ja', to: 'zh' },
+    payload: true,
+  },
+  {
+    name: 'real.ok_en_zh',
+    protocol: 'real',
+    kind: 'translate',
+    scenario: 'ok',
+    input: 'png',
+    seq: 2,
+    lang: { from: 'en', to: 'zh' },
+    payload: true,
+  },
   { name: 'real.err_frame', protocol: 'real', kind: 'translate', scenario: 'err', input: 'png', seq: 3 },
   { name: 'real.no_result_frame', protocol: 'real', kind: 'translate', scenario: 'nores', input: 'png', seq: 4 },
   { name: 'real.bad_output_bytes', protocol: 'real', kind: 'translate', scenario: 'badout', input: 'png', seq: 5 },
   { name: 'real.http_422', protocol: 'real', kind: 'translate', scenario: 'http422', input: 'png', seq: 6 },
   { name: 'real.http_500_plain', protocol: 'real', kind: 'translate', scenario: 'http500', input: 'png', seq: 7 },
   { name: 'real.empty_input', protocol: 'real', kind: 'translate', scenario: 'none', input: 'empty', seq: 8 },
-  { name: 'real.timeout_partial', protocol: 'real', kind: 'translate', scenario: 'slow', input: 'png', seq: 9, timeoutMs: 700 },
-  { name: 'real.queue_position_then_silent', protocol: 'real', kind: 'translate', scenario: 'queue_stall', input: 'png', seq: 11, timeoutMs: 700 },
+  {
+    name: 'real.timeout_partial',
+    protocol: 'real',
+    kind: 'translate',
+    scenario: 'slow',
+    input: 'png',
+    seq: 9,
+    timeoutMs: 700,
+  },
+  {
+    name: 'real.queue_position_then_silent',
+    protocol: 'real',
+    kind: 'translate',
+    scenario: 'queue_stall',
+    input: 'png',
+    seq: 11,
+    timeoutMs: 700,
+  },
   { name: 'real.probe_running', protocol: 'real', kind: 'probe', scenario: 'probe_running' },
   { name: 'real.probe_prewarming', protocol: 'real', kind: 'probe', scenario: 'probe_prewarming' },
   { name: 'real.probe_starting', protocol: 'real', kind: 'probe', scenario: 'probe_starting' },

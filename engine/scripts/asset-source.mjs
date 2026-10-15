@@ -35,8 +35,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(HERE, '..', '..');
 
 /** 运行时清单（`MIAO_RUNTIME_MANIFEST` 是验收夹具接缝，与 Rust 侧同名同义）。 */
-export const RUNTIME_MANIFEST =
-  process.env.MIAO_RUNTIME_MANIFEST || path.join(ROOT, 'engine', 'runtime.manifest.json');
+export const RUNTIME_MANIFEST = process.env.MIAO_RUNTIME_MANIFEST || path.join(ROOT, 'engine', 'runtime.manifest.json');
 
 /** PyPI 索引（收口原 `install-engine-deps.mjs` 里硬编码的清华镜像）。 */
 export const PYPI_INDEX = process.env.MIAO_PY_INDEX || 'https://pypi.tuna.tsinghua.edu.cn/simple';
@@ -176,8 +175,8 @@ export function verifyArchive(file, expected, id) {
   const e = new Error(
     volatileEntry
       ? `${id}：归档字节与清单实测值不符（${got.slice(0, 12)}… ≠ ${expected.slice(0, 12)}…）。` +
-        '这一条来自 codeload 的按需打包归档，**内容相同但字节会变**，通常不是被篡改。' +
-        '处置：用 MIAO_ASSET_BASE 指向一份固定归档，或改用上游的 release/commit zip。'
+          '这一条来自 codeload 的按需打包归档，**内容相同但字节会变**，通常不是被篡改。' +
+          '处置：用 MIAO_ASSET_BASE 指向一份固定归档，或改用上游的 release/commit zip。'
       : `${id}：sha256 不符（${got.slice(0, 12)}… ≠ ${expected.slice(0, 12)}…）—— 已装的东西不可信，请重下。`,
   );
   e.code = volatileEntry ? 'RUNTIME_SOURCE_TARBALL_CHANGED' : 'RUNTIME_SHA256_MISMATCH';

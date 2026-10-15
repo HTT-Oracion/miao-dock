@@ -54,13 +54,25 @@ import { RUST_BIN, REPO_ROOT } from './_service-harness.mjs';
 
 const KEEP = process.argv.includes('--keep');
 const log = (m) => console.log(`[offline-real] ${m}`);
-const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+const sleep = (ms) =>
+  new Promise((r) => {
+    setTimeout(r, ms);
+  });
 
 /** 产品默认落点（`<appData>/runtimes/manga-translator`）—— 不覆盖任何 `MIAO_*`，测的就是**默认路径**。 */
-const RT = process.platform === 'darwin'
-  ? path.join(os.homedir(), 'Library', 'Application Support', 'runtimes', 'manga-translator')
-  : path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'runtimes', 'manga-translator');
-const VENV_PY = path.join(RT, 'venv', process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python'));
+const RT =
+  process.platform === 'darwin'
+    ? path.join(os.homedir(), 'Library', 'Application Support', 'runtimes', 'manga-translator')
+    : path.join(
+        process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
+        'runtimes',
+        'manga-translator',
+      );
+const VENV_PY = path.join(
+  RT,
+  'venv',
+  process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python'),
+);
 const SAKURA_GGUF = path.join(RT, 'models', 'sakura', 'sakura-1.5b-qwen2.5-v1.0-fp16.gguf');
 
 /**
@@ -107,15 +119,22 @@ function check(name, cond, extra) {
 
 // ------------------------------------------------------------------ 小工具
 
-const portOpen = (port, timeoutMs = 400) => new Promise((resolve) => {
-  const s = net.connect({ host: '127.0.0.1', port });
-  let done = false;
-  const fin = (v) => { if (!done) { done = true; s.destroy(); resolve(v); } };
-  s.setTimeout(timeoutMs);
-  s.once('connect', () => fin(true));
-  s.once('timeout', () => fin(false));
-  s.once('error', () => fin(false));
-});
+const portOpen = (port, timeoutMs = 400) =>
+  new Promise((resolve) => {
+    const s = net.connect({ host: '127.0.0.1', port });
+    let done = false;
+    const fin = (v) => {
+      if (!done) {
+        done = true;
+        s.destroy();
+        resolve(v);
+      }
+    };
+    s.setTimeout(timeoutMs);
+    s.once('connect', () => fin(true));
+    s.once('timeout', () => fin(false));
+    s.once('error', () => fin(false));
+  });
 
 async function freePorts(base, n) {
   const out = [];
@@ -128,8 +147,12 @@ function runCli(args, extraEnv = {}) {
     const c = spawn(RUST_BIN, args, { env: { ...cleanEnv(), ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
-    c.stdout.on('data', (d) => { out += d; });
-    c.stderr.on('data', (d) => { err += d; });
+    c.stdout.on('data', (d) => {
+      out += d;
+    });
+    c.stderr.on('data', (d) => {
+      err += d;
+    });
     c.on('error', (e) => resolve({ code: -1, out, err: `${err}${e.message}` }));
     c.on('close', (code) => resolve({ code, out, err }));
   });
@@ -148,35 +171,57 @@ function cleanEnv() {
 function request(port, method, urlPath, { token, headers = {}, body, timeoutMs = 30_000 } = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request(
-      { host: '127.0.0.1', port, method, path: urlPath,
+      {
+        host: '127.0.0.1',
+        port,
+        method,
+        path: urlPath,
         headers: { ...(token ? { 'X-Box-Token': token } : {}), ...headers },
-        agent: false, timeout: timeoutMs },
+        agent: false,
+        timeout: timeoutMs,
+      },
       (res) => {
         const chunks = [];
         res.on('data', (c) => chunks.push(c));
         res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks) }));
       },
     );
-    req.on('timeout', () => { req.destroy(new Error(`请求超时 ${urlPath}`)); });
+    req.on('timeout', () => {
+      req.destroy(new Error(`请求超时 ${urlPath}`));
+    });
     req.on('error', reject);
     if (body) req.write(body);
     req.end();
   });
 }
 
-const asJson = (res) => { try { return JSON.parse(res.body.toString('utf8')); } catch { return null; } };
+const asJson = (res) => {
+  try {
+    return JSON.parse(res.body.toString('utf8'));
+  } catch {
+    return null;
+  }
+};
 
 function buildMultipart(payload, images) {
   const boundary = `----miaooff${crypto.randomBytes(8).toString('hex')}`;
   const parts = [];
   if (payload) {
-    parts.push(Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="payload"\r\n\r\n${JSON.stringify(payload)}\r\n`, 'utf8'));
+    parts.push(
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="payload"\r\n\r\n${JSON.stringify(payload)}\r\n`,
+        'utf8',
+      ),
+    );
   }
   for (const img of images) {
-    parts.push(Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="images"; filename="${img.filename}"\r\n`
-      + `Content-Type: ${img.contentType}\r\n\r\n`, 'utf8'));
+    parts.push(
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="images"; filename="${img.filename}"\r\n` +
+          `Content-Type: ${img.contentType}\r\n\r\n`,
+        'utf8',
+      ),
+    );
     parts.push(img.data);
     parts.push(Buffer.from('\r\n', 'utf8'));
   }
@@ -193,7 +238,9 @@ function killTree(child) {
     } else {
       process.kill(-child.pid, 'SIGKILL');
     }
-  } catch { /* 收尾尽力而为 */ }
+  } catch {
+    /* 收尾尽力而为 */
+  }
 }
 
 // ------------------------------------------------------------------ 前置
@@ -204,9 +251,9 @@ if (!fs.existsSync(RUST_BIN)) {
 }
 if (!IMAGE) {
   console.error(
-    '✗ 找不到测试素材（test-manga/ 未入库，属本机素材）。试过：\n  '
-    + IMAGE_CANDIDATES.map((c) => `test-manga/${c.rel}`).join('\n  ')
-    + '\n放在 <repo>/test-manga/ 下即可（**英文页优先** —— C4 要验的是 nllb 的 HF 缓存）。',
+    '✗ 找不到测试素材（test-manga/ 未入库，属本机素材）。试过：\n  ' +
+      IMAGE_CANDIDATES.map((c) => `test-manga/${c.rel}`).join('\n  ') +
+      '\n放在 <repo>/test-manga/ 下即可（**英文页优先** —— C4 要验的是 nllb 的 HF 缓存）。',
   );
   process.exit(1);
 }
@@ -216,7 +263,11 @@ if (!fs.existsSync(VENV_PY)) pre.push(`venv 解释器不在：${VENV_PY}`);
 if (!fs.existsSync(SAKURA_GGUF)) pre.push(`Sakura 权重不在：${SAKURA_GGUF}`);
 const filesRes = await runCli(['--engine-model-files']);
 let files = [];
-try { files = JSON.parse(filesRes.out).files ?? []; } catch { /* 下面判据会红 */ }
+try {
+  files = JSON.parse(filesRes.out).files ?? [];
+} catch {
+  /* 下面判据会红 */
+}
 const notReady = files.filter((f) => f.applicable && !f.ready).map((f) => `${f.id}(${f.path})`);
 if (files.length === 0) pre.push('--engine-model-files 没有输出任何条目（清单/落点不对？）');
 if (notReady.length) pre.push(`未就绪的模型资产：${notReady.join(' / ')}`);
@@ -239,7 +290,10 @@ fs.mkdirSync(STATE_DIR, { recursive: true });
 const [SERVICE_PORT] = await freePorts(5911, 1);
 let ENGINE_PORT = 0;
 for (let p = SERVICE_PORT + 2; p < SERVICE_PORT + 40; p++) {
-  if (!(await portOpen(p)) && !(await portOpen(p + 1))) { ENGINE_PORT = p; break; }
+  if (!(await portOpen(p)) && !(await portOpen(p + 1))) {
+    ENGINE_PORT = p;
+    break;
+  }
 }
 if (!ENGINE_PORT) throw new Error('找不到连续两个空闲端口给"引擎 + 执行器"（先清掉占用）');
 const [LLM_PORT] = await freePorts(ENGINE_PORT + 4, 1);
@@ -259,13 +313,13 @@ log(`端口：服务 ${SERVICE_PORT} · 引擎 ${ENGINE_PORT} · ③ ${LLM_PORT}
 
 const planRes = await runCli(['--print-launch-plan', 'real'], ENV_COMMON);
 let plan = null;
-try { plan = JSON.parse(planRes.out); } catch { /* 下面判据会红 */ }
+try {
+  plan = JSON.parse(planRes.out);
+} catch {
+  /* 下面判据会红 */
+}
 
-check(
-  'W1 前置齐备：venv + Sakura 权重 + **本平台全部模型资产就绪**（缺则点名，不静默跳过）',
-  pre.length === 0,
-  pre,
-);
+check('W1 前置齐备：venv + Sakura 权重 + **本平台全部模型资产就绪**（缺则点名，不静默跳过）', pre.length === 0, pre);
 if (pre.length > 0) {
   console.log('\n⇒ 前置不满足，本条无法进行（这是**硬前置**，不是跳过）。装法见 docs/install-guide-*.md');
   console.log(`\n通过 ${passed} / 失败 ${failed}`);
@@ -278,9 +332,10 @@ const hasOffline = (e) => e.HF_HUB_OFFLINE === '1' && e.TRANSFORMERS_OFFLINE ===
 const planEnv = plan?.engine?.env ?? {};
 
 check(
-  'W2 产品真档配方的 `engine.env` 含 `HF_HUB_OFFLINE=1` + `TRANSFORMERS_OFFLINE=1`'
-    + '（这是"断网加载"的**机制前提**，且是产品自己注入的 —— 本脚本已先清掉父环境里这三个键）',
-  hasOffline(planEnv), { env: planEnv },
+  'W2 产品真档配方的 `engine.env` 含 `HF_HUB_OFFLINE=1` + `TRANSFORMERS_OFFLINE=1`' +
+    '（这是"断网加载"的**机制前提**，且是产品自己注入的 —— 本脚本已先清掉父环境里这三个键）',
+  hasOffline(planEnv),
+  { env: planEnv },
 );
 
 const cmdFiles = [plan?.engine?.cmd?.[0], plan?.llm?.cmd?.[0]].filter((x) => typeof x === 'string');
@@ -292,10 +347,15 @@ check(
 
 const offRes = await runCli(['--print-launch-plan', 'real'], { ...ENV_COMMON, MIAO_NO_HF_OFFLINE: '1' });
 let offPlan = null;
-try { offPlan = JSON.parse(offRes.out); } catch { /* 下面判据会红 */ }
+try {
+  offPlan = JSON.parse(offRes.out);
+} catch {
+  /* 下面判据会红 */
+}
 check(
   'W2c 设 `MIAO_NO_HF_OFFLINE=1` ⇒ 两键消失（证明 W2 判的是**产品行为**，不是环境里本来就有的）',
-  !hasOffline(offPlan?.engine?.env ?? {}), { env: offPlan?.engine?.env ?? {} },
+  !hasOffline(offPlan?.engine?.env ?? {}),
+  { env: offPlan?.engine?.env ?? {} },
 );
 
 // ------------------------------------------------------------------ W3–W6：真起服务、真跑一张
@@ -320,8 +380,12 @@ const engine = engineSpec?.cmd
   : null;
 let engLog = '';
 if (engine) {
-  engine.stdout.on('data', (d) => { engLog += d.toString(); });
-  engine.stderr.on('data', (d) => { engLog += d.toString(); });
+  engine.stdout.on('data', (d) => {
+    engLog += d.toString();
+  });
+  engine.stderr.on('data', (d) => {
+    engLog += d.toString();
+  });
 }
 
 // 🔴 不设 `MIAO_NO_LLM_AUTOSTART`：③ **必须**由服务按配方拉起 ——
@@ -332,8 +396,12 @@ const svc = spawn(RUST_BIN, [], {
   detached: process.platform !== 'win32',
 });
 let svcLog = '';
-svc.stdout.on('data', (d) => { svcLog += d.toString(); });
-svc.stderr.on('data', (d) => { svcLog += d.toString(); });
+svc.stdout.on('data', (d) => {
+  svcLog += d.toString();
+});
+svc.stderr.on('data', (d) => {
+  svcLog += d.toString();
+});
 
 async function shutdown() {
   killTree(svc);
@@ -378,8 +446,8 @@ try {
     await sleep(700);
   }
   check(
-    'W3 `/api/v1/health` 200 且 `sidecar.state=running`，`engineVersion` == 清单 `engineCommit` 短 sha'
-    + '（真档的硬证据：mock 档这里恒为 "mock" ⇒ 否则这条路白测）',
+    'W3 `/api/v1/health` 200 且 `sidecar.state=running`，`engineVersion` == 清单 `engineCommit` 短 sha' +
+      '（真档的硬证据：mock 档这里恒为 "mock" ⇒ 否则这条路白测）',
     health?.status === 200 && hj?.sidecar?.state === 'running' && hj?.sidecar?.engineVersion === wantVer,
     { status: health?.status, sidecar: hj?.sidecar, wantVer, waitedMs: Date.now() - t0 },
   );
@@ -400,12 +468,13 @@ try {
     llmState = sj?.llm?.state ?? null;
     if (engineState === 'running' && llmState === 'running') break;
     if (svc.exitCode !== null) throw new Error(`服务中途退出：\n${svcLog.slice(-1500)}`);
-    if (engine && engine.exitCode !== null) throw new Error(`② 引擎退出（code=${engine.exitCode}）：\n${engLog.slice(-1500)}`);
+    if (engine && engine.exitCode !== null)
+      throw new Error(`② 引擎退出（code=${engine.exitCode}）：\n${engLog.slice(-1500)}`);
     await sleep(700);
   }
   check(
-    'W4 ② 与 ③ 在**离线键生效**的前提下都到达 `running`（真引擎 + 真 llama-server/Sakura 权重，'
-    + '不是"进程在但没就绪"）',
+    'W4 ② 与 ③ 在**离线键生效**的前提下都到达 `running`（真引擎 + 真 llama-server/Sakura 权重，' +
+      '不是"进程在但没就绪"）',
     engineState === 'running' && llmState === 'running',
     { engineState, llmState, waitedMs: Date.now() - t1 },
   );
@@ -426,13 +495,17 @@ try {
     [img],
   );
   const create = await request(port, 'POST', '/api/v1/tasks', {
-    token, headers: { 'Content-Type': mp.contentType, 'X-Box-Client': 'extension/2.3.0' }, body: mp.body,
+    token,
+    headers: { 'Content-Type': mp.contentType, 'X-Box-Client': 'extension/2.3.0' },
+    body: mp.body,
     timeoutMs: 60_000,
   });
   const cj = asJson(create);
   const taskId = cj?.taskId;
-  check('W5a `POST /api/v1/tasks` 201 + taskId', create.status === 201 && !!taskId,
-    { status: create.status, body: JSON.stringify(cj)?.slice(0, 200) });
+  check('W5a `POST /api/v1/tasks` 201 + taskId', create.status === 201 && !!taskId, {
+    status: create.status,
+    body: JSON.stringify(cj)?.slice(0, 200),
+  });
 
   let task = null;
   const t2 = Date.now();
@@ -471,7 +544,8 @@ try {
     const out = fs.readFileSync(transFile);
     check(
       'W5c 产物与原文**不同**（不是把原图抄了一份 —— "离线"不该以"其实没翻译"为代价）',
-      out.length > 0 && !out.equals(src), { srcBytes: src.length, outBytes: out.length },
+      out.length > 0 && !out.equals(src),
+      { srcBytes: src.length, outBytes: out.length },
     );
   }
 } catch (e) {
@@ -487,10 +561,7 @@ try {
 
 const stillOpen = [];
 for (const p of [SERVICE_PORT, ENGINE_PORT, LLM_PORT]) if (await portOpen(p, 700)) stillOpen.push(p);
-check(
-  'W6 进程树收干净：服务 / 引擎 / ③ 三个端口全部释放（不留占用给下一次）',
-  stillOpen.length === 0, { stillOpen },
-);
+check('W6 进程树收干净：服务 / 引擎 / ③ 三个端口全部释放（不留占用给下一次）', stillOpen.length === 0, { stillOpen });
 
 if (!KEEP) fs.rmSync(TMP, { recursive: true, force: true });
 else log(`保留现场：${TMP}`);

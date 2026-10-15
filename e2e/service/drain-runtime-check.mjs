@@ -84,7 +84,10 @@ function check(name, cond, extra) {
   }
 }
 
-const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+const sleep = (ms) =>
+  new Promise((r) => {
+    setTimeout(r, ms);
+  });
 
 function pngBytes(seed) {
   return encodePng(40, 60, (x, y, put) => {
@@ -100,20 +103,36 @@ function request(port, method, pathname, { headers = {}, body = null, token } = 
     if (token) h['X-Box-Token'] = token;
     if (body) h['Content-Length'] = body.length;
     let settled = false;
-    const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+    const done = (v) => {
+      if (!settled) {
+        settled = true;
+        resolve(v);
+      }
+    };
     const req = http.request({ host: '127.0.0.1', port, path: pathname, method, headers: h, agent: false }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
-      res.on('end', () => done({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks), ms: Date.now() - t0 }));
+      res.on('end', () =>
+        done({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks), ms: Date.now() - t0 }),
+      );
     });
     req.on('error', (e) => done({ status: 'ERR', err: String(e.message), ms: Date.now() - t0 }));
-    req.setTimeout(REQ_TIMEOUT_MS, () => { req.destroy(); done({ status: 'TIMEOUT', ms: Date.now() - t0 }); });
+    req.setTimeout(REQ_TIMEOUT_MS, () => {
+      req.destroy();
+      done({ status: 'TIMEOUT', ms: Date.now() - t0 });
+    });
     if (body) req.write(body);
     req.end();
   });
 }
 
-const json = (res) => { try { return JSON.parse(res.body.toString('utf8')); } catch { return null; } };
+const json = (res) => {
+  try {
+    return JSON.parse(res.body.toString('utf8'));
+  } catch {
+    return null;
+  }
+};
 
 function buildMultipart(comicName, count) {
   const boundary = `----miaodrain${crypto.randomUUID()}`;
@@ -123,7 +142,9 @@ function buildMultipart(comicName, count) {
   push(JSON.stringify({ comicName, idempotencyKey: crypto.randomUUID() }));
   push('\r\n');
   for (let i = 1; i <= count; i += 1) {
-    push(`--${boundary}\r\nContent-Disposition: form-data; name="images[]"; filename="${String(i).padStart(3, '0')}.png"\r\nContent-Type: image/png\r\n\r\n`);
+    push(
+      `--${boundary}\r\nContent-Disposition: form-data; name="images[]"; filename="${String(i).padStart(3, '0')}.png"\r\nContent-Type: image/png\r\n\r\n`,
+    );
     parts.push(pngBytes(i));
     push('\r\n');
   }
@@ -137,10 +158,20 @@ function spawnProc(entry, env, tag) {
   child.stdout.on('data', (d) => {
     state.out += d.toString();
     const m = /MIAO_(?:ENGINE_)?READY (\{.*\})/.exec(state.out);
-    if (m && !state.ready) { try { state.ready = JSON.parse(m[1]); } catch { /* 继续等 */ } }
+    if (m && !state.ready) {
+      try {
+        state.ready = JSON.parse(m[1]);
+      } catch {
+        /* 继续等 */
+      }
+    }
   });
-  child.stderr.on('data', (d) => { state.err += d.toString(); });
-  child.on('exit', (code) => { state.exitCode = code; });
+  child.stderr.on('data', (d) => {
+    state.err += d.toString();
+  });
+  child.on('exit', (code) => {
+    state.exitCode = code;
+  });
   return state;
 }
 
@@ -164,7 +195,8 @@ async function submit(port, comicName, count) {
     body: mp.body,
   });
   const body = json(res);
-  if (res.status !== 201 || !body?.taskId) throw new Error(`建单失败 status=${res.status} ms=${res.ms} body=${JSON.stringify(body)}`);
+  if (res.status !== 201 || !body?.taskId)
+    throw new Error(`建单失败 status=${res.status} ms=${res.ms} body=${JSON.stringify(body)}`);
   return body.taskId;
 }
 
@@ -204,14 +236,18 @@ async function main() {
   let pollers = null;
   try {
     const eng = await waitReady(engine);
-    service = spawnProc(SERVICE_ENTRY, {
-      MIAO_ROOT: path.join(TMP, 'root'),
-      MIAO_STATE_DIR: path.join(TMP, 'state'),
-      MIAO_TOKEN: TOKEN,
-      MIAO_ENGINE_PORT: String(eng.port),
-      // 🔴 反证钩子：把整段 drain 压回一把锁（D-150 的旧形态）。
-      ...(REFUTE ? { MIAO_DRAIN_HOLD_LOCK: '1' } : {}),
-    }, REFUTE ? 'service-refute' : 'service');
+    service = spawnProc(
+      SERVICE_ENTRY,
+      {
+        MIAO_ROOT: path.join(TMP, 'root'),
+        MIAO_STATE_DIR: path.join(TMP, 'state'),
+        MIAO_TOKEN: TOKEN,
+        MIAO_ENGINE_PORT: String(eng.port),
+        // 🔴 反证钩子：把整段 drain 压回一把锁（D-150 的旧形态）。
+        ...(REFUTE ? { MIAO_DRAIN_HOLD_LOCK: '1' } : {}),
+      },
+      REFUTE ? 'service-refute' : 'service',
+    );
     const svc = await waitReady(service);
     check('D150.ready — 服务就绪（模拟引擎 + boxsvc）', !!svc.port, svc);
     const port = svc.port;
@@ -234,10 +270,12 @@ async function main() {
     const queueJson = json(readQ);
 
     // 「运行期可读」的判据（正向必须成立、反证必须**不**成立 —— 一条断言的严格取反）。
-    const intermediateReadable = readA.status === 200 && readA.ms < READ_DEADLINE_MS
-      && taskAJson?.status === 'running' && itemsA.includes('translating');
-    const queueReadable = readQ.status === 200 && readQ.ms < READ_DEADLINE_MS
-      && queueJson?.running?.taskId === taskA;
+    const intermediateReadable =
+      readA.status === 200 &&
+      readA.ms < READ_DEADLINE_MS &&
+      taskAJson?.status === 'running' &&
+      itemsA.includes('translating');
+    const queueReadable = readQ.status === 200 && readQ.ms < READ_DEADLINE_MS && queueJson?.running?.taskId === taskA;
 
     // ---- 排队可见性：运行期再提交一个 ----
     const taskB = await submit(port, 'D150 乙', IMAGES);
@@ -255,22 +293,26 @@ async function main() {
         !queueReadable,
         { ms: readQ.ms, status: readQ.status, running: queueJson?.running?.taskId ?? null },
       );
-      check('D150.refuteAlive — 服务进程仍存活（是「被挡住」不是崩溃）', service.exitCode === null, { exitCode: service.exitCode });
+      check('D150.refuteAlive — 服务进程仍存活（是「被挡住」不是崩溃）', service.exitCode === null, {
+        exitCode: service.exitCode,
+      });
     } else {
       check(
         `D150.intermediateVisible — 运行期 GET /tasks 及时返回且如实给出中间态（${readA.ms}ms）`,
         intermediateReadable,
         { ms: readA.ms, taskStatus: taskAJson?.status, items: itemsA },
       );
-      check(
-        `D150.queueReadable — 运行期 GET /queue 及时返回且 running 就是它（${readQ.ms}ms）`,
-        queueReadable,
-        { ms: readQ.ms, running: queueJson?.running?.taskId ?? null, want: taskA },
-      );
+      check(`D150.queueReadable — 运行期 GET /queue 及时返回且 running 就是它（${readQ.ms}ms）`, queueReadable, {
+        ms: readQ.ms,
+        running: queueJson?.running?.taskId ?? null,
+        want: taskA,
+      });
       check(
         `D150.queuePositionVisible — 运行期提交的第二个任务在 /queue 里可见且位次为 1（${readQ2.ms}ms）`,
-        readQ2.status === 200 && readQ2.ms < READ_DEADLINE_MS
-          && queueJson2?.queued?.[0]?.taskId === taskB && queueJson2?.queued?.[0]?.position === 1,
+        readQ2.status === 200 &&
+          readQ2.ms < READ_DEADLINE_MS &&
+          queueJson2?.queued?.[0]?.taskId === taskB &&
+          queueJson2?.queued?.[0]?.position === 1,
         { ms: readQ2.ms, queued: queueJson2?.queued ?? [] },
       );
     }
@@ -285,7 +327,9 @@ async function main() {
 
     if (REFUTE) {
       // 反证轮不要求「跑到底」（持锁 + 读压下可能硬卡死）—— 只如实报出来，便于归因。
-      console.log(`  ℹ 反证轮：终态 A=${finA ? finA.status : '未拿到'} B=${finB ? finB.status : '未拿到'}；读压 ${n} 次，错误 ${errors} 次，最慢 ${maxMs}ms`);
+      console.log(
+        `  ℹ 反证轮：终态 A=${finA ? finA.status : '未拿到'} B=${finB ? finB.status : '未拿到'}；读压 ${n} 次，错误 ${errors} 次，最慢 ${maxMs}ms`,
+      );
     } else {
       check(
         'D150.drainsUnderLoad — 读压之下队列仍跑到底（两个任务都 done）',
@@ -309,10 +353,14 @@ await main();
 
 if (REFUTE) {
   console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed, refute: true }));
-  console.log(`\nD-150 队列可见性（反证轮）：${passed} / ${passed + failed}${failed ? `；未按预期：${failures.join('、')}` : ' —— 持锁确实挡中间态'}`);
+  console.log(
+    `\nD-150 队列可见性（反证轮）：${passed} / ${passed + failed}${failed ? `；未按预期：${failures.join('、')}` : ' —— 持锁确实挡中间态'}`,
+  );
   process.exit(failed === 0 ? 0 : 1);
 }
 
 console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed }));
-console.log(`\nD-150 队列可见性：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`);
+console.log(
+  `\nD-150 队列可见性：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`,
+);
 process.exit(failed === 0 ? 0 : 1);

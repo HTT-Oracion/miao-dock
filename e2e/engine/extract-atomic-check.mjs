@@ -105,9 +105,11 @@ const destSnapshot = (dest) => {
   const fnStart = setup.indexOf('function extract(');
   const fnEnd = fnStart < 0 ? -1 : setup.indexOf('\n}', fnStart);
   const body = fnStart >= 0 && fnEnd > fnStart ? setup.slice(fnStart, fnEnd + 2) : '';
-  check('EA.W1 `setup-engine.mjs` 的解包走 `atomic-extract.mjs`（引入 + 转调），且本地实现里没有「对 destDir 直接 rmSync」',
+  check(
+    'EA.W1 `setup-engine.mjs` 的解包走 `atomic-extract.mjs`（引入 + 转调），且本地实现里没有「对 destDir 直接 rmSync」',
     importsIt && /extractAtomic\(/.test(body) && !/rmSync\(\s*destDir/.test(body),
-    { importsIt, delegates: /extractAtomic\(/.test(body), deletesDest: /rmSync\(\s*destDir/.test(body) });
+    { importsIt, delegates: /extractAtomic\(/.test(body), deletesDest: /rmSync\(\s*destDir/.test(body) },
+  );
 }
 
 // ------------------------------------------------------------------ EA.W2 成功路径：整体替换
@@ -116,8 +118,11 @@ const destSnapshot = (dest) => {
   const dest = seedDest('ok');
   extractAtomic(goodArchive, dest, { strip: 1 });
   const got = destSnapshot(dest);
-  check('EA.W2 成功路径：新内容落位（`keep.txt` = 新内容），旧版本独有的文件随旧目录一起被换掉',
-    got && got['keep.txt'] === 'NEW-CONTENT\n' && !('old-only.txt' in got), got);
+  check(
+    'EA.W2 成功路径：新内容落位（`keep.txt` = 新内容），旧版本独有的文件随旧目录一起被换掉',
+    got && got['keep.txt'] === 'NEW-CONTENT\n' && !('old-only.txt' in got),
+    got,
+  );
 }
 
 // ------------------------------------------------------------------ EA.W3 失败路径（tar 失败）：destDir 一个字节都不动
@@ -132,8 +137,11 @@ const destSnapshot = (dest) => {
     threw = true;
   }
   const after = destSnapshot(dest);
-  check('EA.W3 解包失败（坏归档）⇒ 抛错，且 `destDir` **原封不动**（D-95 的原形态在这里会把旧目录先删掉）',
-    threw && JSON.stringify(before) === JSON.stringify(after), { threw, before, after });
+  check(
+    'EA.W3 解包失败（坏归档）⇒ 抛错，且 `destDir` **原封不动**（D-95 的原形态在这里会把旧目录先删掉）',
+    threw && JSON.stringify(before) === JSON.stringify(after),
+    { threw, before, after },
+  );
 }
 
 // ------------------------------------------------------------------ EA.W4 失败路径（verify 失败）：不动 destDir + 不留 .part
@@ -143,15 +151,22 @@ const destSnapshot = (dest) => {
   const before = destSnapshot(dest);
   let threw = false;
   try {
-    extractAtomic(goodArchive, dest, { strip: 1, verify: () => { throw new Error('校验没过（故意）'); } });
+    extractAtomic(goodArchive, dest, {
+      strip: 1,
+      verify: () => {
+        throw new Error('校验没过（故意）');
+      },
+    });
   } catch {
     threw = true;
   }
   const after = destSnapshot(dest);
   const left = leftovers(dest);
-  check('EA.W4 校验失败 ⇒ 抛错、`destDir` 原封不动、且**不留半成品**（`.part` 必须被清掉 —— 留着它下一次会被当成"上一次没跑完"）',
+  check(
+    'EA.W4 校验失败 ⇒ 抛错、`destDir` 原封不动、且**不留半成品**（`.part` 必须被清掉 —— 留着它下一次会被当成"上一次没跑完"）',
     threw && JSON.stringify(before) === JSON.stringify(after) && left.length === 0,
-    { threw, same: JSON.stringify(before) === JSON.stringify(after), leftovers: left });
+    { threw, same: JSON.stringify(before) === JSON.stringify(after), leftovers: left },
+  );
 }
 
 // ------------------------------------------------------------------ EA.W5 成功路径不留残渣
@@ -160,8 +175,7 @@ const destSnapshot = (dest) => {
   const dest = seedDest('clean');
   extractAtomic(goodArchive, dest, { strip: 1 });
   const left = leftovers(dest);
-  check('EA.W5 成功路径不留残渣（`.part` / `.old-*` 都不该剩下）',
-    left.length === 0, left);
+  check('EA.W5 成功路径不留残渣（`.part` / `.old-*` 都不该剩下）', left.length === 0, left);
 }
 
 // ------------------------------------------------------------------ EA.W6 上次中断留下的 .part 不干扰
@@ -176,9 +190,11 @@ const destSnapshot = (dest) => {
 
   extractAtomic(goodArchive, dest, { strip: 1 });
   const got = destSnapshot(dest);
-  check('EA.W6 上一次中断留下的 `.part` 不干扰本次解包（半成品被先清掉，不会把旧文件混进新内容），结束后也不留残渣',
+  check(
+    'EA.W6 上一次中断留下的 `.part` 不干扰本次解包（半成品被先清掉，不会把旧文件混进新内容），结束后也不留残渣',
     got && got['keep.txt'] === 'NEW-CONTENT\n' && !('stale-junk.txt' in got) && leftovers(dest).length === 0,
-    { got, leftovers: leftovers(dest) });
+    { got, leftovers: leftovers(dest) },
+  );
 }
 
 // ------------------------------------------------------------------ 反证轮
@@ -204,7 +220,11 @@ if (REFUTE) {
     });
 
   const hasRed = (out, name) => out.split('\n').some((l) => l.trimStart().startsWith('✗') && l.includes(name));
-  const redOn = (out) => out.split('\n').filter((l) => l.trimStart().startsWith('✗')).map((l) => l.trim().slice(0, 44));
+  const redOn = (out) =>
+    out
+      .split('\n')
+      .filter((l) => l.trimStart().startsWith('✗'))
+      .map((l) => l.trim().slice(0, 44));
 
   const MKDIR_PART = 'fs.mkdirSync(part, { recursive: true });';
   const CLEANUP_BODY = 'fs.rmSync(dir, { recursive: true, force: true });';
@@ -212,11 +232,17 @@ if (REFUTE) {
 
   // ---- M1：改回「先删后解」（D-95 的原形态）----
   {
-    const restore = mutateFile(ATOMIC_MJS, MKDIR_PART, `fs.rmSync(destDir, { recursive: true, force: true });\n  ${MKDIR_PART}`);
+    const restore = mutateFile(
+      ATOMIC_MJS,
+      MKDIR_PART,
+      `fs.rmSync(destDir, { recursive: true, force: true });\n  ${MKDIR_PART}`,
+    );
     const r = await runForward();
     const red = r.code !== 0 && hasRed(r.out, 'EA.W3');
-    check('M1 改回「先删后解」（解包前就把 `destDir` 删掉）⇒ EA.W3 红 —— 这正是 D-95 记的那个形态',
-      red, { code: r.code, redOn: redOn(r.out) });
+    check('M1 改回「先删后解」（解包前就把 `destDir` 删掉）⇒ EA.W3 红 —— 这正是 D-95 记的那个形态', red, {
+      code: r.code,
+      redOn: redOn(r.out),
+    });
     restore();
   }
 
@@ -225,8 +251,10 @@ if (REFUTE) {
     const restore = mutateFile(ATOMIC_MJS, CLEANUP_BODY, '/* M2：不清了 */');
     const r = await runForward();
     const red = r.code !== 0 && hasRed(r.out, 'EA.W4');
-    check('M2 `cleanupPart` 变空操作 ⇒ EA.W4 红（失败后留下半成品，下一次运行会被它误导）',
-      red, { code: r.code, redOn: redOn(r.out) });
+    check('M2 `cleanupPart` 变空操作 ⇒ EA.W4 红（失败后留下半成品，下一次运行会被它误导）', red, {
+      code: r.code,
+      redOn: redOn(r.out),
+    });
     restore();
   }
 
@@ -235,8 +263,10 @@ if (REFUTE) {
     const restore = mutateFile(ATOMIC_MJS, VERIFY_GUARD, 'if (false) {');
     const r = await runForward();
     const red = r.code !== 0 && hasRed(r.out, 'EA.W4');
-    check('M3 `verify` 被忽略（`if (false)`）⇒ EA.W4 红（校验没过也照样落位）',
-      red, { code: r.code, redOn: redOn(r.out) });
+    check('M3 `verify` 被忽略（`if (false)`）⇒ EA.W4 红（校验没过也照样落位）', red, {
+      code: r.code,
+      redOn: redOn(r.out),
+    });
     restore();
   }
 

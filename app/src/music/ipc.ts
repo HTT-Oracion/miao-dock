@@ -46,8 +46,7 @@ export const musicLogout = () => invoke<void>('music_logout');
 
 export const musicUserPlaylist = () => invoke<Playlist[]>('music_user_playlist');
 
-export const musicPlaylistTracks = (id: string) =>
-  invoke<[Playlist, Song[]]>('music_playlist_tracks', { id });
+export const musicPlaylistTracks = (id: string) => invoke<[Playlist, Song[]]>('music_playlist_tracks', { id });
 
 export const musicPlaylistTracksRange = (id: string, start: number, count: number) =>
   invoke<Song[]>('music_playlist_tracks_range', { id, start, count });
@@ -69,8 +68,7 @@ export const musicLyric = (id: string) => invoke<Lyrics>('music_lyric', { id });
 export const musicSongComments = (id: string, page?: number, pageSize?: number) =>
   invoke<CommentPage>('music_song_comments', { id, page: page ?? null, page_size: pageSize ?? null });
 
-export const musicSendComment = (id: string, content: string) =>
-  invoke<void>('music_send_comment', { id, content });
+export const musicSendComment = (id: string, content: string) => invoke<void>('music_send_comment', { id, content });
 
 export const musicPersonalized = () => invoke<Playlist[]>('music_personalized');
 
@@ -93,7 +91,8 @@ export const musicPlaylistSearch = (keywords: string, limit?: number) =>
 export const musicArtistSongs = (artistId: string, limit?: number, offset?: number) =>
   invoke<Song[]>('music_artist_songs', { artist_id: artistId, limit: limit ?? null, offset: offset ?? null });
 
-export const musicArtistDetail = (artistId: string) => invoke<ArtistDetail>('music_artist_detail', { artist_id: artistId });
+export const musicArtistDetail = (artistId: string) =>
+  invoke<ArtistDetail>('music_artist_detail', { artist_id: artistId });
 
 export const musicArtistAlbums = (artistId: string, limit?: number, offset?: number) =>
   invoke<Album[]>('music_artist_albums', { artist_id: artistId, limit: limit ?? null, offset: offset ?? null });
@@ -151,8 +150,7 @@ export const kugouLogout = () => invoke<void>('kugou_logout');
 
 export const kugouUserPlaylists = () => invoke<Playlist[]>('kugou_user_playlists');
 
-export const kugouPlaylistTracks = (id: string) =>
-  invoke<[Playlist, Song[]]>('kugou_playlist_tracks', { id });
+export const kugouPlaylistTracks = (id: string) => invoke<[Playlist, Song[]]>('kugou_playlist_tracks', { id });
 
 export const kugouPlaylistTracksRange = (id: string, start: number, count: number) =>
   invoke<Song[]>('kugou_playlist_tracks_range', { id, start, count });
@@ -164,8 +162,7 @@ export const kugouRankList = () => invoke<Playlist[]>('kugou_rank_list');
 export const kugouRankSongs = (rankId: string, limit?: number) =>
   invoke<Song[]>('kugou_rank_songs', { rank_id: rankId, limit: limit ?? null });
 
-export const kugouLikeToggle = (song: Song, like: boolean) =>
-  invoke<boolean>('kugou_like_toggle', { song, like });
+export const kugouLikeToggle = (song: Song, like: boolean) => invoke<boolean>('kugou_like_toggle', { song, like });
 
 export const kugouLikedHashes = () => invoke<string[]>('kugou_liked_hashes');
 
@@ -177,8 +174,7 @@ export const qqSearch = (keywords: string, limit?: number, offset?: number) =>
 export const qqSongUrl = (mid: string, mediaMid?: string, quality?: string) =>
   invoke<SongUrlResult>('qq_song_url', { mid, media_mid: mediaMid ?? null, quality: quality ?? null });
 
-export const qqLyric = (mid: string, id?: string) =>
-  invoke<Lyrics>('qq_lyric', { mid, id: id ?? null });
+export const qqLyric = (mid: string, id?: string) => invoke<Lyrics>('qq_lyric', { mid, id: id ?? null });
 
 export const qqLoginStatus = () => invoke<LoginInfo>('qq_login_status');
 
@@ -228,7 +224,11 @@ export const miguArtistSongs = (artistName: string, limit?: number, offset?: num
   invoke<Song[]>('migu_artist_songs', { artist_name: artistName, limit: limit ?? null, offset: offset ?? null });
 
 export const miguSongUrl = (contentId: string, copyrightId: string, quality?: string) =>
-  invoke<SongUrlResult>('migu_song_url', { content_id: contentId, copyright_id: copyrightId, quality: quality ?? null });
+  invoke<SongUrlResult>('migu_song_url', {
+    content_id: contentId,
+    copyright_id: copyrightId,
+    quality: quality ?? null,
+  });
 
 export const miguLyric = (contentId: string, copyrightId: string) =>
   invoke<Lyrics>('migu_lyric', { content_id: contentId, copyright_id: copyrightId });
@@ -253,16 +253,13 @@ export const miguRecommendPlaylists = () => invoke<Playlist[]>('migu_recommend_p
 
 // ------------------------------------------------------------------ 多平台管理
 
-export const musicGetLoginStatuses = () =>
-  invoke<Record<string, LoginInfo>>('music_get_login_statuses');
+export const musicGetLoginStatuses = () => invoke<Record<string, LoginInfo>>('music_get_login_statuses');
 
-export const musicSwitchProvider = (provider: string) =>
-  invoke<void>('music_switch_provider', { provider });
+export const musicSwitchProvider = (provider: string) => invoke<void>('music_switch_provider', { provider });
 
 export const musicGetPlaybackSource = () => invoke<string>('music_get_playback_source');
 
-export const musicOpenLoginWindow = (provider: string) =>
-  invoke<string>('music_open_login_window', { provider });
+export const musicOpenLoginWindow = (provider: string) => invoke<string>('music_open_login_window', { provider });
 
 // ------------------------------------------------------------------ 本地音乐
 
@@ -278,8 +275,7 @@ export const getLocalLyric = (path: string) => invoke<string>('get_local_lyric',
 export const verifyLocalCovers = (songs: { id: string; path: string; cover_path: string }[]) =>
   invoke<{ id: string; cover_path: string; cover_source: string }[]>('verify_local_covers', { songs });
 
-export const deleteCoverCacheFiles = (paths: string[]) =>
-  invoke<void>('delete_cover_cache_files', { paths });
+export const deleteCoverCacheFiles = (paths: string[]) => invoke<void>('delete_cover_cache_files', { paths });
 
 // ------------------------------------------------------------------ 桌面歌词窗口
 
@@ -404,8 +400,7 @@ export const lyricsWindowOpen = () => invoke<boolean>('lyrics_window_open');
  * 完整载荷（`LyricsPushPayload`）与只带偏好的轻量载荷（`LyricsPrefsPayload`）。
  * 窗口不存在时 Rust 侧静默成功，不报错。
  */
-export const lyricsPush = (payload: LyricsPushPayload | LyricsPrefsPayload) =>
-  invoke<void>('lyrics_push', { payload });
+export const lyricsPush = (payload: LyricsPushPayload | LyricsPrefsPayload) => invoke<void>('lyrics_push', { payload });
 
 /**
  * 歌词窗挂载后**主动补拉**最后一次状态（Rust 侧缓存的那份）。
@@ -414,12 +409,10 @@ export const lyricsPush = (payload: LyricsPushPayload | LyricsPrefsPayload) =>
  * 而那一刻歌词窗的 `listen` 还没注册，事件必然丢失（Rust 侧事件不缓存、不回放）。
  * 返回 `null` = 主窗还没推过任何东西（先开窗口后播歌），此时等事件即可。
  */
-export const getLyricsState = () =>
-  invoke<LyricsPushPayload | LyricsPrefsPayload | null>('get_lyrics_state');
+export const getLyricsState = () => invoke<LyricsPushPayload | LyricsPrefsPayload | null>('get_lyrics_state');
 
 /** 歌词窗 → 主窗：发一条播放控制指令（Rust 转发 `lyrics://control`） */
-export const lyricsControl = (payload: LyricsControlPayload) =>
-  invoke<void>('lyrics_control', { payload });
+export const lyricsControl = (payload: LyricsControlPayload) => invoke<void>('lyrics_control', { payload });
 
 // ------------------------------------------------------------------ 音频代理
 
@@ -487,5 +480,4 @@ export const musicCacheStats = () => invoke<CacheStats>('music_cache_stats');
  * 弹错误框只会让人困惑；且它只删**目录内容**、保留目录本身，
  * 所以清完之后「打开缓存目录」按钮依然可用（不会变成"刚做完的操作把自己的按钮弄坏"）。
  */
-export const musicCacheClear = (provider?: string) =>
-  invoke<void>('music_cache_clear', { provider: provider ?? null });
+export const musicCacheClear = (provider?: string) => invoke<void>('music_cache_clear', { provider: provider ?? null });

@@ -58,7 +58,10 @@ const TAURI_CONF = path.join(APP, 'src-tauri', 'tauri.conf.json');
  */
 function spdxOf(s) {
   if (typeof s !== 'string') return null;
-  const t = s.split(/[（(]|——|—/)[0].replace(/\*/g, '').trim();
+  const t = s
+    .split(/[（(]|——|—/)[0]
+    .replace(/\*/g, '')
+    .trim();
   return t || null;
 }
 
@@ -106,7 +109,9 @@ function readNpm() {
 function registryIndex() {
   const base = path.join(homedir(), '.cargo', 'registry', 'src');
   const dirs = existsSync(base)
-    ? readdirSync(base).map((d) => path.join(base, d)).filter((d) => existsSync(d))
+    ? readdirSync(base)
+        .map((d) => path.join(base, d))
+        .filter((d) => existsSync(d))
     : [];
   const index = new Map();
   for (const d of dirs) {
@@ -130,7 +135,10 @@ function readRust() {
     if (dir) {
       const toml = path.join(dir, 'Cargo.toml');
       if (existsSync(toml)) {
-        license = readFileSync(toml, 'utf8').match(/^\s*license\s*=\s*"([^"]+)"/m)?.[1]?.trim() ?? null;
+        license =
+          readFileSync(toml, 'utf8')
+            .match(/^\s*license\s*=\s*"([^"]+)"/m)?.[1]
+            ?.trim() ?? null;
       }
     }
     pkgs.push({ name, version, license });
@@ -151,9 +159,7 @@ function summarize(pkgs) {
     byLicense[p.license] = (byLicense[p.license] ?? 0) + 1;
   }
   // 计数降序；同数按名称升序 —— 让输出稳定（否则每次生成的文件都不同）
-  const sorted = Object.fromEntries(
-    Object.entries(byLicense).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
-  );
+  const sorted = Object.fromEntries(Object.entries(byLicense).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])));
   return { byLicense: sorted, unknown, withLicense: pkgs.length - unknown };
 }
 
@@ -247,8 +253,7 @@ const data = {
   /**
    * ⚠️ 界面与文档都必须把这句话带出去 —— 清单是"包自己说的"，不是"我们核准过的"。
    */
-  disclaimer:
-    '以下是各依赖**自己声明**的许可，由 package-lock.json / Cargo.lock / engine 清单与版本锁枚举得出，',
+  disclaimer: '以下是各依赖**自己声明**的许可，由 package-lock.json / Cargo.lock / engine 清单与版本锁枚举得出，',
   sources: {
     npm: 'app/package-lock.json + app/node_modules/**/package.json（不含 devDependencies）',
     rust: 'app/src-tauri/Cargo.lock + ~/.cargo/registry/src/**/Cargo.toml',
@@ -281,8 +286,10 @@ console.log(
   `  engine 资产 ${engine.total} 条 · 有声明 ${engine.withLicense} 条（缺 ${engine.unknown} 条）· 其中随包分发 ${engine.bundledCount} 条（必须是 0）`,
 );
 console.log(
-  `  engine 许可构成：${Object.entries(engine.bySpdx).map(([k, v]) => `${k} ${v}`).join(' · ') || '（无）'}`,
+  `  engine 许可构成：${
+    Object.entries(engine.bySpdx)
+      .map(([k, v]) => `${k} ${v}`)
+      .join(' · ') || '（无）'
+  }`,
 );
-console.log(
-  `  engine 上游声明：${engine.upstream.map((u) => `${u.key}=${u.spdx ?? '?'}`).join(' · ') || '（无）'}`,
-);
+console.log(`  engine 上游声明：${engine.upstream.map((u) => `${u.key}=${u.spdx ?? '?'}`).join(' · ') || '（无）'}`);

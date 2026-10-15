@@ -74,9 +74,9 @@ export const IconSectionAbout = () =>
   );
 
 export const SECTION_ICON: Record<SectionId, (props?: any) => React.ReactElement> = {
-  general: (props) => <SlidersHorizontal {...(props || {}) } />,
-  translate: (props) => <Languages {...(props || {}) } />,
-  media: (props) => <Activity {...(props || {}) } />,
-  resource: (props) => <FolderKanban {...(props || {}) } />,
-  about: (props) => <Info {...(props || {}) } />,
+  general: (props) => <SlidersHorizontal {...(props || {})} />,
+  translate: (props) => <Languages {...(props || {})} />,
+  media: (props) => <Activity {...(props || {})} />,
+  resource: (props) => <FolderKanban {...(props || {})} />,
+  about: (props) => <Info {...(props || {})} />,
 };

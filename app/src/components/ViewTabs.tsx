@@ -27,13 +27,7 @@ const ICONS: Record<TranslateView, () => React.ReactElement> = {
  * ⚠️ 顺序是断言对象（C9）：改这里必须同时改 `TRANSLATE_VIEWS`，
  * 且 C9 会变红。不要为了"看起来更合理"在本组件里重排。
  */
-export function ViewTabs({
-  view,
-  onView,
-}: {
-  view: TranslateView;
-  onView: (v: TranslateView) => void;
-}) {
+export function ViewTabs({ view, onView }: { view: TranslateView; onView: (v: TranslateView) => void }) {
   return (
     <div className="viewtabs" style={{ height: VIEW_TABS.height }} role="tablist" aria-label="漫画翻译视图">
       {TRANSLATE_VIEWS.map((v) => {

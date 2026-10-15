@@ -86,8 +86,7 @@ export function renderTranslatedPage(width, height, seq) {
       }
       for (const bb of bubbles) {
         if (x >= bb.bx && x < bb.bx + bb.bw && y >= bb.by && y < bb.by + bb.bh) {
-          const onEdge = x < bb.bx + 2 || x >= bb.bx + bb.bw - 2 ||
-            y < bb.by + 2 || y >= bb.by + bb.bh - 2;
+          const onEdge = x < bb.bx + 2 || x >= bb.bx + bb.bw - 2 || y < bb.by + 2 || y >= bb.by + bb.bh - 2;
           [r, g, b] = onEdge ? INK_MID : [255, 255, 255];
           break;
         }

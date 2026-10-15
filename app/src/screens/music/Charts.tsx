@@ -38,9 +38,7 @@ function ChartCard({
   const cover = coverProxyUrl(pl.cover, proxyPort);
   return (
     <div className="music-chart" title={pl.name} onClick={onOpen}>
-      <div className="music-chart-cv">
-        {cover ? <img src={cover} alt="" loading="lazy" /> : pl.name.slice(0, 1)}
-      </div>
+      <div className="music-chart-cv">{cover ? <img src={cover} alt="" loading="lazy" /> : pl.name.slice(0, 1)}</div>
       <span>{pl.name}</span>
     </div>
   );

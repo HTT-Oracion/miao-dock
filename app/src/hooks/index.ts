@@ -5,10 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 // 吐司的**唯一实现**在这里，本文件只做类型与 hook 转发（原因见本文件末尾的吐司段注释）
-import {
-  toastBus,
-  type BusToast,
-} from '@/toastBus';
+import { toastBus, type BusToast } from '@/toastBus';
 import {
   apiGet,
   errorText,

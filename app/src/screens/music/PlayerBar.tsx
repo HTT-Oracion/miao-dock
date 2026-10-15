@@ -53,8 +53,8 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
   const playMode = useMusicStore((s) => s.playMode);
   // 心动模式是否可用（判据只有一个出口：store 的 canUseHeartbeat）。
   // 不可用时模式按钮**不显示**心动档，而不是显示一个点不动的假控件。
-  const heartbeatAvailable = useMusicStore(
-    (s) => canUseHeartbeat({ playbackSource: s.playbackSource, queueFromLiked: s.queueFromLiked }),
+  const heartbeatAvailable = useMusicStore((s) =>
+    canUseHeartbeat({ playbackSource: s.playbackSource, queueFromLiked: s.queueFromLiked }),
   );
   const playbackQuality = useMusicStore((s) => s.playbackQuality);
   const currentQuality = useMusicStore((s) => s.currentQuality);
@@ -141,11 +141,7 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
           <IconButton title="下一首" onClick={() => next()}>
             <SkipForward size={17} />
           </IconButton>
-          <PlayModeButton
-            mode={playMode}
-            onCycle={() => cycleMode()}
-            heartbeatAvailable={heartbeatAvailable}
-          />
+          <PlayModeButton mode={playMode} onCycle={() => cycleMode()} heartbeatAvailable={heartbeatAvailable} />
         </div>
 
         {/* 右侧：音质（档位文字）+ 音量 + 桌面歌词 + 桌面歌词设置 + 播放队列 + 关闭播放 */}

@@ -53,9 +53,7 @@ export function PlayModeButton({
   // （'heartbeat' 的前一档是 'order'）—— 与 cycleMode 跳过它的落点保持一致，
   // 免得"按钮显示 order、点一下却到 shuffle"这种对不上的状态。
   const shownMode =
-    mode === 'heartbeat' && !heartbeatAvailable
-      ? CYCLE_ORDER[CYCLE_ORDER.indexOf('heartbeat') - 1]
-      : mode;
+    mode === 'heartbeat' && !heartbeatAvailable ? CYCLE_ORDER[CYCLE_ORDER.indexOf('heartbeat') - 1] : mode;
   const { title, Icon } = META[shownMode] ?? META.order;
   return (
     <IconButton title={title} onClick={onCycle}>

@@ -103,7 +103,10 @@ const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'store', 'exec.rs');
  */
 function buildRust() {
   const r = spawnSync('cargo', ['build', '--bin', 'boxsvc'], {
-    cwd: CARGO_DIR, encoding: 'utf8', maxBuffer: 40 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: CARGO_DIR,
+    encoding: 'utf8',
+    maxBuffer: 40 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
   const log = `${r.stdout || ''}${r.stderr || ''}`.trim();
   return { ok: r.status === 0, log: log.split('\n').slice(-6).join(' | ').slice(0, 400) };
@@ -423,7 +426,9 @@ async function runAll() {
     );
 
     // ---- L4：deleteFiles:false ⇒ 只隐藏（目录还在、库里不列、hidden 记名）----
-    const hid = json(await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC_A)}/delete`, { deleteFiles: false }));
+    const hid = json(
+      await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC_A)}/delete`, { deleteFiles: false }),
+    );
     const libAfterHide = await getLibrary(PORT, TOKEN);
     const hiddenFile = path.join(STATE_DIR, 'hidden-comics.json');
     let hiddenOnDisk = null;
@@ -457,7 +462,9 @@ async function runAll() {
     );
 
     // ---- L6：deleteFiles:true ⇒ 递归删目录，并清掉隐藏记录 ----
-    const rm = json(await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC_A)}/delete`, { deleteFiles: true }));
+    const rm = json(
+      await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC_A)}/delete`, { deleteFiles: true }),
+    );
     const libAfterRm = await getLibrary(PORT, TOKEN);
     check(
       'L6',
@@ -482,7 +489,9 @@ async function runAll() {
     // ---- L8：前端接线（源码断言）——队列删的是 /tasks/delete，库删带 deleteFiles ----
     // ⚠️ 先剥注释再判：注释里写着端点名（本仓惯例会写），不剥就会测到注释而非调用点。
     const appSrc = stripComments(fs.readFileSync(APP_SRC, 'utf8'));
-    const libSrc = stripComments(fs.readFileSync(path.join(ROOT, 'app', 'src', 'screens', 'LibraryScreen.tsx'), 'utf8'));
+    const libSrc = stripComments(
+      fs.readFileSync(path.join(ROOT, 'app', 'src', 'screens', 'LibraryScreen.tsx'), 'utf8'),
+    );
     check(
       'L8',
       '前端接线：队列删打 `/tasks/delete`；漫画库删打 `/delete` 且带 `deleteFiles` 勾选结果',
@@ -684,10 +693,17 @@ async function runAll() {
     const busyA = '占用重试甲 22.1';
     const busyADir = path.join(ROOT_DIR, busyA);
     fs.mkdirSync(busyADir, { recursive: true });
-    fs.writeFileSync(path.join(busyADir, '001.png'), encodePng(4, 4, (x, y, put) => put(10, 20, 30)));
+    fs.writeFileSync(
+      path.join(busyADir, '001.png'),
+      encodePng(4, 4, (x, y, put) => put(10, 20, 30)),
+    );
     const heldA = fs.openSync(path.join(busyADir, '001.png'), 'r');
     setTimeout(() => {
-      try { fs.closeSync(heldA); } catch { /* 已关 */ }
+      try {
+        fs.closeSync(heldA);
+      } catch {
+        /* 已关 */
+      }
     }, 350); // 350ms < 重试窗口（5 次 × 200ms）⇒ 必须被重试救回
     const mgHold = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(busyA)}/merge`, {
       targetBook: NEW_BOOK,
@@ -704,7 +720,10 @@ async function runAll() {
     const busyB = '占用重试乙 22.2';
     const busyBDir = path.join(ROOT_DIR, busyB);
     fs.mkdirSync(busyBDir, { recursive: true });
-    fs.writeFileSync(path.join(busyBDir, '001.png'), encodePng(4, 4, (x, y, put) => put(40, 50, 60)));
+    fs.writeFileSync(
+      path.join(busyBDir, '001.png'),
+      encodePng(4, 4, (x, y, put) => put(40, 50, 60)),
+    );
     const heldB = fs.openSync(path.join(busyBDir, '001.png'), 'r'); // 全程不释放 ⇒ 重试必然耗尽
     const mgLock = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(busyB)}/merge`, {
       targetBook: NEW_BOOK,
@@ -714,7 +733,9 @@ async function runAll() {
     check(
       'N8b',
       '占用重试耗尽 → 409 MERGE_SOURCE_LOCKED（可解释、可行动），不许再是 500 INTERNAL',
-      mgLock.status === 409 && mgLockJ?.error?.code === 'MERGE_SOURCE_LOCKED' && !fs.existsSync(path.join(newDir, '22.2_第22.2话')),
+      mgLock.status === 409 &&
+        mgLockJ?.error?.code === 'MERGE_SOURCE_LOCKED' &&
+        !fs.existsSync(path.join(newDir, '22.2_第22.2话')),
       `HTTP ${mgLock.status} code=${mgLockJ?.error?.code} dstCreated=${fs.existsSync(path.join(newDir, '22.2_第22.2话'))}`,
     );
     fs.closeSync(heldB);
@@ -753,7 +774,9 @@ async function runAll() {
     check(
       'N10b',
       '改到已被占用的话号（22.1 已在）→ 409 CHAPTER_NO_TAKEN，本话目录不被改动',
-      rnTak.status === 409 && rnTakJ?.error?.code === 'CHAPTER_NO_TAKEN' && fs.existsSync(path.join(newDir, '7.1_第7.1话')),
+      rnTak.status === 409 &&
+        rnTakJ?.error?.code === 'CHAPTER_NO_TAKEN' &&
+        fs.existsSync(path.join(newDir, '7.1_第7.1话')),
       `HTTP ${rnTak.status} code=${rnTakJ?.error?.code}`,
     );
 
@@ -761,16 +784,33 @@ async function runAll() {
     // 连塞两个任务再立刻改号：队列串行，第二个必然还挂着 ⇒ 判定与引擎快慢无关（N3 同一手筋）。
     // ⚠️ 返工必须给 seqs 限到 2 张：全量候选 = 整话原图（20 张）会撞 BATCH_LIMIT_EXCEEDED，
     //    任务根本建不起来 —— 门还没轮到测就漏了。
-    const rtA = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/retranslate`, { seqs: [1, 2] });
-    const rtB = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/retranslate`, { seqs: [3, 4] });
-    const rnBusy = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/renumber`, {
-      no: 8,
-    });
+    const rtA = await postJson(
+      PORT,
+      TOKEN,
+      `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/retranslate`,
+      { seqs: [1, 2] },
+    );
+    const rtB = await postJson(
+      PORT,
+      TOKEN,
+      `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/retranslate`,
+      { seqs: [3, 4] },
+    );
+    const rnBusy = await postJson(
+      PORT,
+      TOKEN,
+      `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/renumber`,
+      {
+        no: 8,
+      },
+    );
     const rnBusyJ = json(rnBusy);
     check(
       'N10c',
       '该话有未终态任务 → 409 CHAPTER_SOURCE_BUSY（翻译中改名 = 任务写向不存在的旧路径）',
-      rnBusy.status === 409 && rnBusyJ?.error?.code === 'CHAPTER_SOURCE_BUSY' && fs.existsSync(path.join(newDir, '7.1_第7.1话')),
+      rnBusy.status === 409 &&
+        rnBusyJ?.error?.code === 'CHAPTER_SOURCE_BUSY' &&
+        fs.existsSync(path.join(newDir, '7.1_第7.1话')),
       `HTTP ${rnBusy.status} code=${rnBusyJ?.error?.code} rtA=${rtA.status}(${json(rtA)?.error?.code ?? json(rtA)?.taskId}) rtB=${rtB.status}(${json(rtB)?.error?.code ?? json(rtB)?.taskId})`,
     );
     for (const t of [json(rtA)?.taskId, json(rtB)?.taskId]) {
@@ -779,9 +819,14 @@ async function runAll() {
 
     // ---- N10d：任务跑完后改号恢复可用（BUSY 是可恢复错误，不是永久拒绝）----
     // 目录名沿用同一套零填充规则：8 → `08_第8话`（N4 的 NN_第N话 约定）。
-    const rnFree = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/renumber`, {
-      no: 8,
-    });
+    const rnFree = await postJson(
+      PORT,
+      TOKEN,
+      `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/renumber`,
+      {
+        no: 8,
+      },
+    );
     check(
       'N10d',
       '任务到终态后改号 → 200：目录 7.1_第7.1话 消失、08_第8话 落位',
@@ -835,7 +880,8 @@ const MUTATIONS = [
       {
         file: RUST_EXEC_SRC,
         find: '            if !TASK_TERMINAL.contains(&self.tasks[idx].status.as_str()) {\n                skipped.push(DeleteSkip {\n                    task_id: task_id.clone(),\n                    reason: "not_deletable".to_string(),',
-        replace: '            if false { // refute：不再拦翻译中/排队中\n                skipped.push(DeleteSkip {\n                    task_id: task_id.clone(),\n                    reason: "not_deletable".to_string(),',
+        replace:
+          '            if false { // refute：不再拦翻译中/排队中\n                skipped.push(DeleteSkip {\n                    task_id: task_id.clone(),\n                    reason: "not_deletable".to_string(),',
       },
     ],
     expect: ['L1'],
@@ -898,7 +944,8 @@ const MUTATIONS = [
         file: RUST_HANDLERS_SRC,
         // 归并分支用 `src_name` 查在跑任务（改号分支用 `old.rel_dir`，两条锚点别互串）。
         find: '    let busy = lock(shell).active_tasks_for_dir(&src_name);\n    if !busy.is_empty() {',
-        replace: '    let busy: Vec<(String, String)> = Vec::new(); // refute：在跑任务门被去掉\n    if !busy.is_empty() {',
+        replace:
+          '    let busy: Vec<(String, String)> = Vec::new(); // refute：在跑任务门被去掉\n    if !busy.is_empty() {',
       },
     ],
     expect: ['N3'],
@@ -956,7 +1003,8 @@ const MUTATIONS = [
       {
         file: RUST_HANDLERS_SRC,
         find: '        if is_busy_fs_error(&e) {\n            return super::http::store_err(&StoreError::new(\n                "MERGE_SOURCE_LOCKED",',
-        replace: '        if false { // refute：占用不再归因\n            return super::http::store_err(&StoreError::new(\n                "MERGE_SOURCE_LOCKED",',
+        replace:
+          '        if false { // refute：占用不再归因\n            return super::http::store_err(&StoreError::new(\n                "MERGE_SOURCE_LOCKED",',
       },
     ],
     expect: ['N8b'],
@@ -980,7 +1028,8 @@ const MUTATIONS = [
         file: RUST_HANDLERS_SRC,
         // 改号分支查的是 `old.rel_dir`（归并分支查 `src_name`，两条锚点别互串）。
         find: '        let busy = lock(shell).active_tasks_for_dir(&old.rel_dir);\n        if !busy.is_empty() {',
-        replace: '        let busy: Vec<(String, String)> = Vec::new(); // refute：在跑任务门被去掉\n        if !busy.is_empty() {',
+        replace:
+          '        let busy: Vec<(String, String)> = Vec::new(); // refute：在跑任务门被去掉\n        if !busy.is_empty() {',
       },
     ],
     expect: ['N10c'],
@@ -1037,7 +1086,9 @@ const main = async () => {
       const find = e.find.split('\n').join(eol);
       const repl = e.replace.split('\n').join(eol);
       if (!txt.includes(find)) {
-        console.log(`⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`);
+        console.log(
+          `⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`,
+        );
         anchorMissing = true;
         break;
       }
@@ -1046,7 +1097,10 @@ const main = async () => {
     // 🔴 锚点缺失时**整条跳过**，不能只跳那一个 edit：继续往下跑 `runAll()`，测的还是
     //    未被破坏的产物 ⇒ 那条 expect 必然"该红没红"，被记成**假阳性** ——
     //    而真相是"这条根本没反证"。两种故障长得几乎一样，只有这条 flag 能分开它们。
-    if (anchorMissing) { skipped += mut.expect.length; continue; }
+    if (anchorMissing) {
+      skipped += mut.expect.length;
+      continue;
+    }
     // 🔴 改完 Rust 源码**必须重编**才作数：不编就等于拿旧产物跑断言，红的绿的都说明不了问题。
     const built = buildRust();
     if (!built.ok) {
@@ -1094,8 +1148,10 @@ const main = async () => {
   }
   // 源码还原了，**产物也必须还原** —— 否则留下一个「源码是好的、跑起来是坏的」的机器。
   const rebuilt = buildRust();
-  if (!rebuilt.ok) { restoreFail++; console.log(`  ✗ cargo build 还原失败：${rebuilt.log}`); }
-  else console.log('  ✓ cargo build 已把靶子重编回未破坏状态');
+  if (!rebuilt.ok) {
+    restoreFail++;
+    console.log(`  ✗ cargo build 还原失败：${rebuilt.log}`);
+  } else console.log('  ✓ cargo build 已把靶子重编回未破坏状态');
 
   console.log('\n' + '─'.repeat(56));
   console.log(`REFUTE: ${red}/${total} 条按预期变红（应执行 ${expectedTotal} 条）`);

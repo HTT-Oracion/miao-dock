@@ -6,13 +6,14 @@ import type { MusicState, StoreGet, StoreSet } from '@music/slice';
 /** 播放历史上限 */
 const MAX_HISTORY = 300;
 
-export const createPlayHistorySlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 'recordPlayHistory' | 'removePlayHistoryEntry' | 'clearPlayHistoryList'> => ({
+export const createPlayHistorySlice = (
+  set: StoreSet,
+  get: StoreGet,
+): Pick<MusicState, 'recordPlayHistory' | 'removePlayHistoryEntry' | 'clearPlayHistoryList'> => ({
   recordPlayHistory: (song, fromHistory) => {
     if (song.provider === 'local' && !song._localPath) return;
     const entry: PlayHistoryEntry = { song: sanitizeForStorage(song), playedAt: Date.now() };
-    const rest = get().playHistoryList.filter(
-      (e) => !(e.song.provider === song.provider && e.song.id === song.id),
-    );
+    const rest = get().playHistoryList.filter((e) => !(e.song.provider === song.provider && e.song.id === song.id));
     // 从历史点播 → 不重复置顶（参考实现同语义：避免自己推动自己）
     const list = fromHistory ? get().playHistoryList : [entry, ...rest].slice(0, MAX_HISTORY);
     set({ playHistoryList: list });

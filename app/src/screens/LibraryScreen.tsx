@@ -1,12 +1,5 @@
 import type { ReactElement } from 'react';
-import {
-  FolderUp,
-  GitMerge,
-  Pencil,
-  Play,
-  RotateCcw,
-  Trash2,
-} from 'lucide-react';
+import { FolderUp, GitMerge, Pencil, Play, RotateCcw, Trash2 } from 'lucide-react';
 import { apiDelete, apiPost, apiPostMultipart, errorText, openPath } from '@/ipc';
 import type {
   ChapterEntry,
@@ -20,7 +13,12 @@ import { chapterNoOf } from '@tools';
 import { ContextMenu, MenuItem, MenuSeparator, Notice } from '@components/units';
 import type { BookMetaIntent } from '@screens/library/modals';
 import {
-  DeleteComicModal, EditBookModal, EditChapterNoModal, HiddenComicsModal, MergeModal, NewBookModal,
+  DeleteComicModal,
+  EditBookModal,
+  EditChapterNoModal,
+  HiddenComicsModal,
+  MergeModal,
+  NewBookModal,
 } from '@screens/library/modals';
 import { Compare } from '@screens/library/viewer';
 import { retranslateMeta, resumeMeta } from '@screens/library/meta';
@@ -28,10 +26,6 @@ import { LeftRail } from '@screens/library/LeftRail';
 import { LibraryRight } from '@screens/library/LibraryRight';
 import { useLibraryModel } from '@hooks/useLibraryModel';
 import type { LibItem } from '@screens/library/libModel';
-
-
-
-
 
 // ------------------------------------------------------------------ 左栏视图件
 
@@ -43,9 +37,6 @@ import type { LibItem } from '@screens/library/libModel';
  * 就会长出两套几乎一样的 DOM。归一到 `LibItem` 后只有"取哪些字段"的差别，
  * 而那个差别已经由 `buildItems()` 一次性吸收掉了。
  */
-
-
-
 
 /**
  * 画面 X-D1 · 本地漫画库（《02》§5.5）。
@@ -215,10 +206,9 @@ export function LibraryScreen({
     if (!target) return;
     setDeleting(true);
     try {
-      const r = await apiPost<LibraryDeleteResponse>(
-        `/library/${encodeURIComponent(target.comicName)}/delete`,
-        { deleteFiles },
-      );
+      const r = await apiPost<LibraryDeleteResponse>(`/library/${encodeURIComponent(target.comicName)}/delete`, {
+        deleteFiles,
+      });
       if (r.deletedFiles) onToast(`已删除「${r.comicName}」及其本地目录`, 'good');
       else onToast(`已从库里移除「${r.comicName}」（本地文件保留，可在「已隐藏」里恢复）`, 'good');
       if (target.comicName === active) setActive(null);
@@ -233,8 +223,7 @@ export function LibraryScreen({
   };
 
   /** `LibItem.key` → 顶层目录条目（comics 含**所有**顶层目录，大类也在内） */
-  const comicOf = (key: string): ComicEntry | null =>
-    comics.find((c) => c.comicName === key) ?? null;
+  const comicOf = (key: string): ComicEntry | null => comics.find((c) => c.comicName === key) ?? null;
 
   const doUnhide = async (name: string) => {
     setUnhiding(true);
@@ -356,9 +345,7 @@ export function LibraryScreen({
   if (comics.length === 0 && hidden.length === 0) {
     return (
       <>
-        <Notice>
-          漫画库还是空的。点工具条的「新建漫画」创建一个，或从「本机投放」送翻译成品进来。
-        </Notice>
+        <Notice>漫画库还是空的。点工具条的「新建漫画」创建一个，或从「本机投放」送翻译成品进来。</Notice>
         {/* ⚠️ 空库也要渲染「新建漫画」弹窗：工具条上的按钮在 App 里、永远可点，
             若这里直接 return 掉弹窗，用户点「新建漫画」会看到**什么都没发生** */}
         {newBookOpen ? (
@@ -464,11 +451,7 @@ export function LibraryScreen({
             icon={<Pencil size={13} />}
             label="编辑信息"
             disabled={!bookOfItem}
-            title={
-              bookOfItem
-                ? '改封面（本地图片 / 取第 1 话首图 / 移除）与作者'
-                : '漫画信息还没就绪，稍后再试'
-            }
+            title={bookOfItem ? '改封面（本地图片 / 取第 1 话首图 / 移除）与作者' : '漫画信息还没就绪，稍后再试'}
             onClick={() => {
               close();
               if (bookOfItem) setEditBook(bookOfItem);
@@ -646,4 +629,3 @@ export function LibraryScreen({
     </div>
   );
 }
-

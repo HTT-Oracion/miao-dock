@@ -70,7 +70,10 @@ const STALL_SEQS = new Set(
 
 const bootedAt = Date.now();
 const log = (msg) => console.log(`[mangatranslator-mock] ${msg}`);
-const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+const sleep = (ms) =>
+  new Promise((r) => {
+    setTimeout(r, ms);
+  });
 
 /**
  * **最近一次 `/translate` 请求的方向**（取自 `X-Miao-From/To` 头）。
@@ -168,8 +171,8 @@ const handler = async (req, res) => {
         return sendJson(res, 500, {
           error: {
             code: 'ENGINE_OOM',
-            message: 'CUDA out of memory. Tried to allocate 1.20 GiB '
-              + '(GPU 0; 16.00 GiB total capacity; 220.00 MiB free)',
+            message:
+              'CUDA out of memory. Tried to allocate 1.20 GiB ' + '(GPU 0; 16.00 GiB total capacity; 220.00 MiB free)',
           },
         });
       }
@@ -220,7 +223,9 @@ for (let p = PORT_START; p <= PORT_END; p += 1) {
   }
 }
 if (!server) {
-  throw new Error(`端口 ${PORT_START}–${PORT_END} 全部被占用，模拟引擎启动失败。最后错误：${lastErr && lastErr.message}`);
+  throw new Error(
+    `端口 ${PORT_START}–${PORT_END} 全部被占用，模拟引擎启动失败。最后错误：${lastErr && lastErr.message}`,
+  );
 }
 
 // 父进程（Box 壳）若崩溃 / 被强杀，本进程自行退出，避免孤儿占住端口
@@ -231,7 +236,9 @@ log(`监听地址 : http://${HOST}:${port}`);
 log(`引擎     : sakura-mock（ja→zh）`);
 log(`单张耗时 : ${ITEM_MS}ms（±20% 抖动）`);
 log(`就绪延迟 : ${START_MS}ms`);
-log(`失败注入 : FAIL_SEQ=[${[...FAIL_SEQS].join(',')}] FAIL_RATE=${FAIL_RATE} OOM_TIMES=${OOM_TIMES} STALL_SEQ=[${[...STALL_SEQS].join(',')}]`);
+log(
+  `失败注入 : FAIL_SEQ=[${[...FAIL_SEQS].join(',')}] FAIL_RATE=${FAIL_RATE} OOM_TIMES=${OOM_TIMES} STALL_SEQ=[${[...STALL_SEQS].join(',')}]`,
+);
 // 机器可读就绪行：桌面端 Rust 层据此确认 sidecar 端口
 log(`MIAO_ENGINE_READY ${JSON.stringify({ port, engine: 'sakura-mock' })}`);
 log('========================================================');

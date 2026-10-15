@@ -72,9 +72,23 @@ const SAMPLE_ROWS: TaskRow[] = [
 
 /** 样张行动作：与真表同构（状态 → 按钮），避免内联长链三元 */
 function sampleActionBtn(status: TaskRow['status']) {
-  if (status === 'running' || status === 'queued') return <Btn kind="danger" size="sm">取消</Btn>;
-  if (status === 'failed' || status === 'partial_failed') return <Btn kind="primary" size="sm">重试</Btn>;
-  return <Btn kind="ghost" size="sm">查看</Btn>;
+  if (status === 'running' || status === 'queued')
+    return (
+      <Btn kind="danger" size="sm">
+        取消
+      </Btn>
+    );
+  if (status === 'failed' || status === 'partial_failed')
+    return (
+      <Btn kind="primary" size="sm">
+        重试
+      </Btn>
+    );
+  return (
+    <Btn kind="ghost" size="sm">
+      查看
+    </Btn>
+  );
 }
 
 /**
@@ -134,7 +148,9 @@ export function SpecFixture() {
               <div className="qt-c-action" style={{ width: QUEUE_TABLE.colAction }}>
                 {sampleActionBtn(t.status)}
                 {/* R3：每行尾部都有 [更多]（打开目录 / 删除）—— 样张与真表同构 */}
-                <Btn kind="ghost" size="sm">更多</Btn>
+                <Btn kind="ghost" size="sm">
+                  更多
+                </Btn>
               </div>
             </div>
           ))}
@@ -246,8 +262,7 @@ export function SpecCheckBlock({
         </Btn>
         {results ? (
           <span className="muted set-spec-count">
-            通过 <span className="num">{results.length - failed}</span> /{' '}
-            <span className="num">{results.length}</span>
+            通过 <span className="num">{results.length - failed}</span> / <span className="num">{results.length}</span>
             {failed ? (
               <>
                 {' · '}

@@ -72,7 +72,10 @@ const TOKEN = 'f'.repeat(64);
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-e4-'));
 const REFUTE = process.argv.includes('--refute');
 
-const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+const sleep = (ms) =>
+  new Promise((r) => {
+    setTimeout(r, ms);
+  });
 
 /** 声明的断言条数（分母写死：少执行一条即判红） */
 const DECLARED = 6;
@@ -93,20 +96,31 @@ function printResults(title) {
 
 // ------------------------------------------------------------------ 小工具
 
-const portOpen = (port, timeoutMs = 300) => new Promise((resolve) => {
-  const s = net.connect({ host: '127.0.0.1', port });
-  let settled = false;
-  const done = (v) => { if (!settled) { settled = true; s.destroy(); resolve(v); } };
-  s.setTimeout(timeoutMs);
-  s.once('connect', () => done(true));
-  s.once('timeout', () => done(false));
-  s.once('error', () => done(false));
-});
+const portOpen = (port, timeoutMs = 300) =>
+  new Promise((resolve) => {
+    const s = net.connect({ host: '127.0.0.1', port });
+    let settled = false;
+    const done = (v) => {
+      if (!settled) {
+        settled = true;
+        s.destroy();
+        resolve(v);
+      }
+    };
+    s.setTimeout(timeoutMs);
+    s.once('connect', () => done(true));
+    s.once('timeout', () => done(false));
+    s.once('error', () => done(false));
+  });
 
 async function findFreePort(start, need = 2) {
   for (let p = start; p < start + 400; p += 1) {
     let ok = true;
-    for (let i = 0; i < need; i += 1) if (await portOpen(p + i)) { ok = false; break; }
+    for (let i = 0; i < need; i += 1)
+      if (await portOpen(p + i)) {
+        ok = false;
+        break;
+      }
     if (ok) return p;
   }
   throw new Error(`从 ${start} 起找不到 ${need} 个连续空闲端口`);
@@ -115,13 +129,24 @@ async function findFreePort(start, need = 2) {
 function httpGetJson(port, pathname, token) {
   return new Promise((resolve, reject) => {
     const req = http.request(
-      { host: '127.0.0.1', port, path: pathname, method: 'GET', headers: token ? { 'X-Box-Token': token } : {}, agent: false },
+      {
+        host: '127.0.0.1',
+        port,
+        path: pathname,
+        method: 'GET',
+        headers: token ? { 'X-Box-Token': token } : {},
+        agent: false,
+      },
       (res) => {
         const chunks = [];
         res.on('data', (c) => chunks.push(c));
         res.on('end', () => {
           let body = null;
-          try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { /* 非 JSON */ }
+          try {
+            body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          } catch {
+            /* 非 JSON */
+          }
           resolve({ status: res.statusCode, body });
         });
       },
@@ -146,7 +171,10 @@ function rustSelftest() {
   delete env.MIAO_LLM_MODEL;
   delete env.MIAO_LLM_BIN;
   const r = spawnSync(RUST_BIN, ['--engine-selftest'], {
-    encoding: 'utf8', env, maxBuffer: 40 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+    encoding: 'utf8',
+    env,
+    maxBuffer: 40 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
   if (r.status !== 0) return { __error: `靶子退出码 ${r.status}：${String(r.stderr || '').slice(0, 300)}` };
   // 🔴 去 BOM：Windows 上控制台管道可能给 stdout 盖一个 BOM，不剥掉 `JSON.parse` 会在
@@ -162,7 +190,10 @@ function rustSelftest() {
 /** 编译 Rust 靶子（反证轮改完源码必须重编，否则断言验的是"上一份产物"）。 */
 function buildRust() {
   const r = spawnSync('cargo', ['build', '--bin', 'boxsvc'], {
-    cwd: CARGO_DIR, encoding: 'utf8', maxBuffer: 40 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: CARGO_DIR,
+    encoding: 'utf8',
+    maxBuffer: 40 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
   const log = `${r.stdout || ''}${r.stderr || ''}`.trim();
   return { ok: r.status === 0, log: log.split('\n').slice(-6).join(' | ').slice(0, 400) };
@@ -184,14 +215,20 @@ function startFakeEngine(port) {
       res.end();
     });
   });
-  const executor = net.createServer(() => { /* 哑 socket ⇒ running */ });
+  const executor = net.createServer(() => {
+    /* 哑 socket ⇒ running */
+  });
   return { server, executor };
 }
 
-const listen = (server, port) => new Promise((resolve, reject) => {
-  server.once('error', reject);
-  server.listen(port, '127.0.0.1', () => { server.removeListener('error', reject); resolve(); });
-});
+const listen = (server, port) =>
+  new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', () => {
+      server.removeListener('error', reject);
+      resolve();
+    });
+  });
 const closeAll = (servers) => Promise.all(servers.map((s) => new Promise((r) => s.close(() => r()))));
 
 function spawnService(env) {
@@ -200,9 +237,17 @@ function spawnService(env) {
   child.stdout.on('data', (d) => {
     st.out += d.toString();
     const m = /MIAO_READY (\{.*\})/.exec(st.out);
-    if (m && !st.ready) { try { st.ready = JSON.parse(m[1]); } catch { /* 继续等 */ } }
+    if (m && !st.ready) {
+      try {
+        st.ready = JSON.parse(m[1]);
+      } catch {
+        /* 继续等 */
+      }
+    }
   });
-  child.stderr.on('data', (d) => { st.err += d.toString(); });
+  child.stderr.on('data', (d) => {
+    st.err += d.toString();
+  });
   return st;
 }
 
@@ -231,24 +276,35 @@ async function runAll() {
   const launches = Object.fromEntries((sel?.pure?.llmLaunchByTier ?? []).map((x) => [x.tier, x]));
 
   // ---- E4.1：未纳入清单的档位是 `null`，不是空串、不是 tiny 的文件名 ----
-  check('E4.1 档位→权重表里 Small/Medium **显式声明为 null**（不是"没这个键"，也不是顺手填了 tiny 的文件名）',
-    typeof models?.tiny === 'string' && models.tiny !== ''
-      && Object.prototype.hasOwnProperty.call(models, 'small') && models.small === null
-      && Object.prototype.hasOwnProperty.call(models, 'medium') && models.medium === null,
-    JSON.stringify(models));
+  check(
+    'E4.1 档位→权重表里 Small/Medium **显式声明为 null**（不是"没这个键"，也不是顺手填了 tiny 的文件名）',
+    typeof models?.tiny === 'string' &&
+      models.tiny !== '' &&
+      Object.prototype.hasOwnProperty.call(models, 'small') &&
+      models.small === null &&
+      Object.prototype.hasOwnProperty.call(models, 'medium') &&
+      models.medium === null,
+    JSON.stringify(models),
+  );
 
   // ---- E4.2：未声明的档位必须**抛错**，不得静默回落 ----
   const smallLaunch = launches?.small;
-  check('E4.2 Small 权重未声明 ⇒ 路径为 null 且解析该档 ③ 配方时**显式报 TIER_MODEL_UNDECLARED**（绝不回落成 tiny 的权重）',
-    modelPaths.small === null && smallLaunch?.ok === false && smallLaunch?.code === 'TIER_MODEL_UNDECLARED'
-      && Array.isArray(smallLaunch?.detail?.available),
-    `tierModelPath('small')=${JSON.stringify(modelPaths.small)} / small 档配方=${JSON.stringify(smallLaunch)}`);
+  check(
+    'E4.2 Small 权重未声明 ⇒ 路径为 null 且解析该档 ③ 配方时**显式报 TIER_MODEL_UNDECLARED**（绝不回落成 tiny 的权重）',
+    modelPaths.small === null &&
+      smallLaunch?.ok === false &&
+      smallLaunch?.code === 'TIER_MODEL_UNDECLARED' &&
+      Array.isArray(smallLaunch?.detail?.available),
+    `tierModelPath('small')=${JSON.stringify(modelPaths.small)} / small 档配方=${JSON.stringify(smallLaunch)}`,
+  );
 
   // ---- E4.3：本进程真能跑的档位范围 ----
   const avail = sel?.pure?.availableTiers;
-  check('E4.3 real 协议下 `availableTiers()` 恰为 ["tiny"]（= 清单里真有权重的那些；本机没有 Small/Medium 权重）',
+  check(
+    'E4.3 real 协议下 `availableTiers()` 恰为 ["tiny"]（= 清单里真有权重的那些；本机没有 Small/Medium 权重）',
     Array.isArray(avail) && avail.length === 1 && avail[0] === 'tiny',
-    JSON.stringify(avail));
+    JSON.stringify(avail),
+  );
 
   // ---- 服务半边：配置 small（未纳入清单）→ 必须夹回 tiny 且**显式** ----
   const st = spawnService({
@@ -271,14 +327,19 @@ async function runAll() {
     let health = null;
     for (let i = 0; i < 50; i += 1) {
       const r = await httpGetJson(PORT, '/api/v1/health', TOKEN);
-      if (r.status === 200 && r.body?.sidecar?.state === 'running') { health = r.body; break; }
+      if (r.status === 200 && r.body?.sidecar?.state === 'running') {
+        health = r.body;
+        break;
+      }
       await sleep(150);
     }
     const sc = health?.sidecar;
 
-    check('E4.4 `/health.sidecar.tier` 报的是**生效档位**（small 未纳入清单 ⇒ 夹回 tiny），不是用户配置的 small',
+    check(
+      'E4.4 `/health.sidecar.tier` 报的是**生效档位**（small 未纳入清单 ⇒ 夹回 tiny），不是用户配置的 small',
       sc?.tier === 'tiny',
-      `配置=MIAO_ENGINE_TIER=small / 上报 tier=${JSON.stringify(sc?.tier)} / state=${JSON.stringify(sc?.state)}`);
+      `配置=MIAO_ENGINE_TIER=small / 上报 tier=${JSON.stringify(sc?.tier)} / state=${JSON.stringify(sc?.state)}`,
+    );
 
     // ---- E4.5：上报的 model 是**契约里的 model id 形态**（basename 去扩展名），不是本机绝对路径 ----
     // 契约《03》§5.1 的示例是 `"model": "sakura-1.5b-qwen2.5-v1.0-iq4xs"` —— 没有目录、没有扩展名。
@@ -288,18 +349,25 @@ async function runAll() {
     const tinyModel = launches?.tiny?.model ?? '';
     // 同时认正斜杠与反斜杠两种分隔符：Windows 盘上路径用反斜杠，只按 split(斜杠) 切会取到整条路径，
     // 于是「期望 id」变成绝对路径、E4.5 在 Windows 假红（本机即踩）。
-    const tinyId = String(tinyModel).split(/[\\/]/).pop().replace(/\.gguf$/i, '');
+    const tinyId = String(tinyModel)
+      .split(/[\\/]/)
+      .pop()
+      .replace(/\.gguf$/i, '');
     const reported = sc?.model ?? '';
-    check('E4.5 `sidecar.model` == tiny 权重的 **model id**（basename 去扩展名），不得把本机绝对路径报给 `/health`',
+    check(
+      'E4.5 `sidecar.model` == tiny 权重的 **model id**（basename 去扩展名），不得把本机绝对路径报给 `/health`',
       !!reported && reported === tinyId && !/[\\/]/.test(reported) && !/\.gguf$/i.test(reported),
-      `sidecar.model=${JSON.stringify(sc?.model)} / 期望 id=${JSON.stringify(tinyId)} / 含路径分隔符=${/[\\/]/.test(reported)} / 配方全路径=${tinyModel}`);
+      `sidecar.model=${JSON.stringify(sc?.model)} / 期望 id=${JSON.stringify(tinyId)} / 含路径分隔符=${/[\\/]/.test(reported)} / 配方全路径=${tinyModel}`,
+    );
 
     // ---- E4.6：那个文件**真的在盘上**（"与实际加载权重一致"的可核对形式） ----
     const onDisk = tinyModel ? fs.existsSync(tinyModel) : false;
     const inSakuraDir = /[\\/]models[\\/]sakura[\\/][^\\/]+\.gguf$/.test(tinyModel);
-    check('E4.6 该权重文件**在盘上真实存在**，且落在 `models/sakura/` 下（缺权重请先 `npm run fetch:models`）',
+    check(
+      'E4.6 该权重文件**在盘上真实存在**，且落在 `models/sakura/` 下（缺权重请先 `npm run fetch:models`）',
       onDisk && inSakuraDir,
-      `${tinyModel} 存在=${onDisk} 目录符合=${inSakuraDir}`);
+      `${tinyModel} 存在=${onDisk} 目录符合=${inSakuraDir}`,
+    );
   } finally {
     // 🔴 杀进程树（不是只杀主进程）：rust 服务派生的引擎②/③ 否则全成孤儿（D-202）
     if (st.child.exitCode === null) killTree(st.child);
@@ -322,12 +390,17 @@ const MUTATIONS = [
     //    在这里改，未声明档位会一路拿到 tiny 的路径并**成功**解析出配方，
     //    `TIER_MODEL_UNDECLARED` 压根不会被触发 —— 这正是"静默假绿"的完整形态。
     name: 'E4.2：让 `tier_model_path` 对未声明档位**回落成 tiny 的权重**（"看起来更友好"、实际是静默假绿）',
-    expect: ['E4.2 Small 权重未声明 ⇒ 路径为 null 且解析该档 ③ 配方时**显式报 TIER_MODEL_UNDECLARED**（绝不回落成 tiny 的权重）'],
-    edits: [{
-      file: RUST_ENGINE_SRC,
-      find: '    let name = TIER_LLM_MODELS.iter().find(|(k, _)| *k == tier).and_then(|(_, v)| *v)?;',
-      replace: '    let name = TIER_LLM_MODELS.iter().find(|(k, _)| *k == tier).map(|(_, v)| v.unwrap_or(TIER_LLM_MODELS[0].1.unwrap())).unwrap(); // refute：静默回落成 tiny 的权重',
-    }],
+    expect: [
+      'E4.2 Small 权重未声明 ⇒ 路径为 null 且解析该档 ③ 配方时**显式报 TIER_MODEL_UNDECLARED**（绝不回落成 tiny 的权重）',
+    ],
+    edits: [
+      {
+        file: RUST_ENGINE_SRC,
+        find: '    let name = TIER_LLM_MODELS.iter().find(|(k, _)| *k == tier).and_then(|(_, v)| *v)?;',
+        replace:
+          '    let name = TIER_LLM_MODELS.iter().find(|(k, _)| *k == tier).map(|(_, v)| v.unwrap_or(TIER_LLM_MODELS[0].1.unwrap())).unwrap(); // refute：静默回落成 tiny 的权重',
+      },
+    ],
   },
   {
     // 破坏点选在 **上报处**（`compose_sidecar` 取档位的那一行）而不是夹取处。
@@ -337,48 +410,61 @@ const MUTATIONS = [
     // 这里破坏的正是 E4.4 要防的那件事：**报用户配置的档位，而不是生效档位**。
     name: 'E4.4：让 `/health.sidecar.tier` 报**用户配置**的档位（而不是生效档位）',
     expect: ['E4.4 `/health.sidecar.tier` 报的是**生效档位**（small 未纳入清单 ⇒ 夹回 tiny），不是用户配置的 small'],
-    edits: [{
-      file: RUST_STATE_SRC,
-      find: '        let tier = self.tier_ctl.current_tier();',
-      replace: '        let tier = self.engine_tier_choice.clone().unwrap_or_else(|| self.tier_ctl.current_tier()); // refute：报配置档位',
-    }],
+    edits: [
+      {
+        file: RUST_STATE_SRC,
+        find: '        let tier = self.tier_ctl.current_tier();',
+        replace:
+          '        let tier = self.engine_tier_choice.clone().unwrap_or_else(|| self.tier_ctl.current_tier()); // refute：报配置档位',
+      },
+    ],
   },
   {
     // 这条盯的是 E4.5 的**形态**判据。恢复到"不做 basename"必须让 E4.5 变红，
     // 否则那条断言就只是把当前实现抄了一遍。
     name: 'E4.5-a：去掉 `model_id_of` 的 basename（把本机绝对路径泄进 `/health`）',
     expect: ['E4.5 `sidecar.model` == tiny 权重的 **model id**（basename 去扩展名），不得把本机绝对路径报给 `/health`'],
-    edits: [{
-      file: RUST_SUP_SRC,
-      find: '        return Some(strip_gguf(&basename(m)));',
-      replace: '        return Some(strip_gguf(m)); // refute：不 basename',
-    }],
+    edits: [
+      {
+        file: RUST_SUP_SRC,
+        find: '        return Some(strip_gguf(&basename(m)));',
+        replace: '        return Some(strip_gguf(m)); // refute：不 basename',
+      },
+    ],
   },
   {
     // 另一条分叉方式：上报一个**盘上不存在**的权重名（"看起来对得上配置、其实是编的"）。
     name: 'E4.5-b：让 `sidecar.model` 报一个盘上不存在的权重名（上报与实际拉起两处各说一套）',
     expect: ['E4.5 `sidecar.model` == tiny 权重的 **model id**（basename 去扩展名），不得把本机绝对路径报给 `/health`'],
-    edits: [{
-      file: RUST_STATE_SRC,
-      find: [
-        '        let model = if up {',
-        '            snap.model.clone().or_else(|| tier_model_name(&tier))',
-        '        } else {',
-        '            None',
-        '        };',
-      ].join('\r\n'),
-      replace: [
-        '        let model = if up {',
-        '            Some("sakura-7b-small-qwen2.5-v1.0-fp16".to_string()) // refute：报一个盘上没有的权重名',
-        '        } else {',
-        '            None',
-        '        };',
-      ].join('\r\n'),
-    }],
+    edits: [
+      {
+        file: RUST_STATE_SRC,
+        find: [
+          '        let model = if up {',
+          '            snap.model.clone().or_else(|| tier_model_name(&tier))',
+          '        } else {',
+          '            None',
+          '        };',
+        ].join('\r\n'),
+        replace: [
+          '        let model = if up {',
+          '            Some("sakura-7b-small-qwen2.5-v1.0-fp16".to_string()) // refute：报一个盘上没有的权重名',
+          '        } else {',
+          '            None',
+          '        };',
+        ].join('\r\n'),
+      },
+    ],
   },
 ];
 
-const readBytes = (f) => { try { return fs.readFileSync(f); } catch { return null; } };
+const readBytes = (f) => {
+  try {
+    return fs.readFileSync(f);
+  } catch {
+    return null;
+  }
+};
 
 const main = async () => {
   console.log(`E4 档位切换（《04》§14.2）${REFUTE ? ' · 反证轮' : ''}`);
@@ -419,7 +505,9 @@ const main = async () => {
       if (!originals.has(e.file)) originals.set(e.file, readBytes(e.file));
       const txt = originals.get(e.file).toString('utf8');
       if (!txt.includes(e.find)) {
-        console.log(`⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`);
+        console.log(
+          `⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`,
+        );
         anchorMissing = true;
         skipped += mut.expect.length;
         break;
@@ -450,12 +538,18 @@ const main = async () => {
       for (const [f, snap] of originals) fs.writeFileSync(f, snap);
     }
     console.log(`🔴 ${mut.name}`);
-    if (roundErr) console.log(`   ⚠ 本轮 runAll 抛异常（源码已被破坏，故服务起不来）：${String(roundErr.message).split('\n')[0]}`);
+    if (roundErr)
+      console.log(`   ⚠ 本轮 runAll 抛异常（源码已被破坏，故服务起不来）：${String(roundErr.message).split('\n')[0]}`);
     for (const id of mut.expect) {
       total++;
       const isRed = (res[id] && res[id].ok === false) || (!res[id] && roundErr !== null);
-      if (isRed) { red++; console.log(`  ✓ ${id.slice(0, 20)}… 按预期变红${res[id] ? '' : '（因服务未起来）'}`); }
-      else { falsePositives.push(id); console.log(`  ✗ ${id.slice(0, 20)}… 该红没红 ← 假阳性`); }
+      if (isRed) {
+        red++;
+        console.log(`  ✓ ${id.slice(0, 20)}… 按预期变红${res[id] ? '' : '（因服务未起来）'}`);
+      } else {
+        falsePositives.push(id);
+        console.log(`  ✗ ${id.slice(0, 20)}… 该红没红 ← 假阳性`);
+      }
       if (!wasGreen[id]) console.log('     注：该条基线本就是红，无法据此判定断言有效性');
     }
   }
@@ -470,8 +564,10 @@ const main = async () => {
   }
   // 源码还原了，**产物也必须还原** —— 否则留下一个「源码是好的、跑起来是坏的」的机器。
   const rebuilt = buildRust();
-  if (!rebuilt.ok) { restoreFail++; console.log(`  ✗ cargo build 还原失败：${rebuilt.log}`); }
-  else console.log('  ✓ cargo build 已把靶子重编回未破坏状态');
+  if (!rebuilt.ok) {
+    restoreFail++;
+    console.log(`  ✗ cargo build 还原失败：${rebuilt.log}`);
+  } else console.log('  ✓ cargo build 已把靶子重编回未破坏状态');
 
   console.log('\n' + '─'.repeat(56));
   console.log(`REFUTE: ${red}/${total} 条按预期变红（应执行 ${expectedTotal} 条）`);

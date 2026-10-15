@@ -311,10 +311,7 @@ export function DynamicIsland() {
       const r = el.getBoundingClientRect();
       const m = 24; // 容错边距
       const out =
-        e.clientX < r.left - m ||
-        e.clientX > r.right + m ||
-        e.clientY < r.top - m ||
-        e.clientY > r.bottom + m;
+        e.clientX < r.left - m || e.clientX > r.right + m || e.clientY < r.top - m || e.clientY > r.bottom + m;
       if (out && !pendingLeaveRef.current) {
         pendingLeaveRef.current = true;
         // 下一帧再判一次：鼠标在同帧内可能又回到边距内（抖动），避免误收
@@ -345,9 +342,7 @@ export function DynamicIsland() {
     <div className="di-wrap">
       <div
         ref={shellRef}
-        className={
-          'di-capsule is-music' + (phase === 'expanded' ? ' is-expanded' : '')
-        }
+        className={'di-capsule is-music' + (phase === 'expanded' ? ' is-expanded' : '')}
         role="status"
         aria-live="polite"
         style={{
@@ -431,12 +426,10 @@ function MusicCard({
   // 换歌要把"封面加载失败"重置掉，否则下一首永远显示占位块
   useEffect(() => setCoverFailed(false), [song.cover]);
 
-  const stop =
-    (fn: () => void) =>
-    (e: { stopPropagation: () => void }) => {
-      e.stopPropagation(); // 否则会冒泡到胶囊，被当成"点击岛体 → 收起"
-      fn();
-    };
+  const stop = (fn: () => void) => (e: { stopPropagation: () => void }) => {
+    e.stopPropagation(); // 否则会冒泡到胶囊，被当成"点击岛体 → 收起"
+    fn();
+  };
 
   /*
    * 歌词卡根节点要**自己注入一遍**歌词变量（--lyr-hl / --lyr-text / 字号）。
@@ -513,12 +506,7 @@ function MusicCard({
              * 挂在"大卡真正可见"时才渲染，RAF 就只在它有用时才存在。
              */}
             {cardOn && lines.length > 0 ? (
-              <KaraokeLyrics
-                lines={lines}
-                fontPx={ISLAND_LYR_SIZE}
-                windowSize={ISLAND_LYR_WINDOW}
-                scroll={false}
-              />
+              <KaraokeLyrics lines={lines} fontPx={ISLAND_LYR_SIZE} windowSize={ISLAND_LYR_WINDOW} scroll={false} />
             ) : (
               // 纯音乐 / 歌词还没到：给固定文案，**不留空白**（空白卡片像半成品）
               <div className="di-lyr-empty">♪ 纯音乐，请欣赏</div>
@@ -544,10 +532,7 @@ function MusicCard({
               （只做一个方向 = 进了歌词卡出不来）。包一层 .di-toggle 是为了在视觉上
               与上面的传输控件区分开 —— 它切的是"看什么"，不是"播什么"。 */}
           <span className="di-toggle">
-            <IconButton
-              title={view === 'lyrics' ? '播放' : '歌词'}
-              onClick={stop(onToggleView)}
-            >
+            <IconButton title={view === 'lyrics' ? '播放' : '歌词'} onClick={stop(onToggleView)}>
               {view === 'lyrics' ? <AudioLines size={15} /> : <ListMusic size={15} />}
             </IconButton>
           </span>

@@ -1,11 +1,22 @@
 // 队列切片 —— D-156 从 store.ts 按 action 段切出。
 import { songKey } from '@music/convert';
-import { writeResumeSnapshot, clearResumeSnapshot, truncateQueueForSnapshot, sanitizeForStorage, SNAPSHOT_VERSION } from '@music/persist';
+import {
+  writeResumeSnapshot,
+  clearResumeSnapshot,
+  truncateQueueForSnapshot,
+  sanitizeForStorage,
+  SNAPSHOT_VERSION,
+} from '@music/persist';
 import { MAX_PLAY_QUEUE } from '@music/slice';
 import type { MusicState, StoreGet, StoreSet } from '@music/slice';
 
-
-export const createQueueSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 'appendToQueue' | 'playNext' | 'removeFromQueue' | 'clearQueue' | 'persistSnapshot' | 'clearSnapshot' | 'setQueueOpen'> => ({
+export const createQueueSlice = (
+  set: StoreSet,
+  get: StoreGet,
+): Pick<
+  MusicState,
+  'appendToQueue' | 'playNext' | 'removeFromQueue' | 'clearQueue' | 'persistSnapshot' | 'clearSnapshot' | 'setQueueOpen'
+> => ({
   appendToQueue: (songs) => {
     const { queue } = get();
     const ids = new Set(queue.map(songKey));

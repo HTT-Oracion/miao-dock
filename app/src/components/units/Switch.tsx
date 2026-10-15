@@ -7,15 +7,7 @@
  * 类名 `.switch` 是中性名，不随本次抽离改名；它的几何由规格自检 C6 覆盖，
  * 所以这里不写任何尺寸，尺寸只在 app.css 一处。
  */
-export function Switch({
-  on,
-  onToggle,
-  label,
-}: {
-  on: boolean;
-  onToggle: () => void;
-  label: string;
-}) {
+export function Switch({ on, onToggle, label }: { on: boolean; onToggle: () => void; label: string }) {
   return (
     <button
       type="button"

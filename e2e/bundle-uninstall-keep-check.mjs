@@ -43,11 +43,12 @@ const ROOT = path.resolve(HERE, '..');
 const TARGET = path.join(ROOT, 'app', 'src-tauri', 'target');
 const NSIS_DIR = path.join(TARGET, 'release', 'bundle', 'nsis');
 
-const APP_DATA = process.platform === 'darwin'
-  ? path.join(os.homedir(), 'Library', 'Application Support')
-  : process.platform === 'win32'
-    ? (process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'))
-    : path.join(os.homedir(), '.local', 'share');
+const APP_DATA =
+  process.platform === 'darwin'
+    ? path.join(os.homedir(), 'Library', 'Application Support')
+    : process.platform === 'win32'
+      ? process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')
+      : path.join(os.homedir(), '.local', 'share');
 const RUNTIMES = path.join(APP_DATA, 'runtimes', 'manga-translator');
 /** 作品目录（`paths::default_root_dir`）—— 「绝不触碰」的那一个。 */
 const PICTURES = path.join(os.homedir(), 'Pictures', 'Box 漫画');
@@ -77,7 +78,11 @@ function findSetup() {
 function snapDir(p) {
   if (!fs.existsSync(p)) return { exists: false, entries: [] };
   let entries = [];
-  try { entries = fs.readdirSync(p).sort(); } catch { entries = ['<读不到>']; }
+  try {
+    entries = fs.readdirSync(p).sort();
+  } catch {
+    entries = ['<读不到>'];
+  }
   return { exists: true, entries };
 }
 
@@ -87,11 +92,21 @@ function runSetup(exe, args) {
     const p = spawn(exe, args, { stdio: 'ignore' });
     const timer = setTimeout(() => {
       // 「挂住」是这个脚本最该抓的失败形态：不是变红，是永远不返回（D-195）
-      try { p.kill(); } catch { /* ignore */ }
+      try {
+        p.kill();
+      } catch {
+        /* ignore */
+      }
       resolve({ ok: false, why: '超时未返回 —— 极可能是弹窗把静默档拦住了（D-195 的形态）' });
     }, 120_000);
-    p.on('error', (e) => { clearTimeout(timer); resolve({ ok: false, why: String(e.message || e) }); });
-    p.on('close', (code) => { clearTimeout(timer); resolve({ ok: code === 0, code }); });
+    p.on('error', (e) => {
+      clearTimeout(timer);
+      resolve({ ok: false, why: String(e.message || e) });
+    });
+    p.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ ok: code === 0, code });
+    });
   });
 }
 
@@ -103,11 +118,11 @@ if (!setup) {
 
 const rtBefore = snapDir(RUNTIMES);
 const picBefore = snapDir(PICTURES);
-check(
-  'P0 前置：真安装器在 + 本机真有引擎运行时（这条要验的就是"卸载不碰它"，缺它无从谈起）',
-  rtBefore.exists,
-  { setup: path.relative(ROOT, setup), runtimes: RUNTIMES, exists: rtBefore.exists },
-);
+check('P0 前置：真安装器在 + 本机真有引擎运行时（这条要验的就是"卸载不碰它"，缺它无从谈起）', rtBefore.exists, {
+  setup: path.relative(ROOT, setup),
+  runtimes: RUNTIMES,
+  exists: rtBefore.exists,
+});
 if (!rtBefore.exists) {
   console.error('\n⇒ 前置不满足：先装一份引擎（npm run setup:engine / deps:engine / fetch:models）。');
   console.log(`\n通过 ${passed} / 失败 ${failed}`);
@@ -128,10 +143,7 @@ try {
   const unOut = fs.existsSync(un)
     ? await runSetup(un, ['/S'])
     : { ok: false, why: 'uninstall.exe 不在（装完没生成卸载器？）' };
-  check(
-    'P2 静默卸载成功且**不挂住**（NSIS 的弹窗在 `/S` 下照样阻塞 ⇒ 钩子必须 `IfSilent` 跳过）',
-    unOut.ok, unOut,
-  );
+  check('P2 静默卸载成功且**不挂住**（NSIS 的弹窗在 `/S` 下照样阻塞 ⇒ 钩子必须 `IfSilent` 跳过）', unOut.ok, unOut);
 
   // 卸载器可能稍后才删完，给它一点时间（但不无限等）
   for (let i = 0; i < 20 && fs.existsSync(exe); i++) {

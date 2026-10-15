@@ -21,12 +21,7 @@ export function TopBar() {
     <div className="music-top">
       <div className="music-top-l">
         <span className="music-title">音乐播放器</span>
-        <button
-          type="button"
-          className="music-plat"
-          title="切换平台"
-          onClick={() => setPickerOpen(true)}
-        >
+        <button type="button" className="music-plat" title="切换平台" onClick={() => setPickerOpen(true)}>
           当前平台：{providerLabel(playbackSource)}
         </button>
       </div>

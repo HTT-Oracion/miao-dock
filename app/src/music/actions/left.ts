@@ -8,11 +8,22 @@ import type { Song } from '@music/types';
 /** 「我喜欢的音乐」的**统一显示名**（各平台原名不一，见 loadUserPlaylists 的注释） */
 export const LIKED_PLAYLIST_NAME = '我喜欢的音乐';
 
-export const createLeftSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 'setLeftView' | 'setPlaylistGroupOpen' | 'loadUserPlaylists' | 'openLeftPlaylist' | 'loadMoreLeft' | 'loadAllLeft' | 'backToPlaylists'> => ({
+export const createLeftSlice = (
+  set: StoreSet,
+  get: StoreGet,
+): Pick<
+  MusicState,
+  | 'setLeftView'
+  | 'setPlaylistGroupOpen'
+  | 'loadUserPlaylists'
+  | 'openLeftPlaylist'
+  | 'loadMoreLeft'
+  | 'loadAllLeft'
+  | 'backToPlaylists'
+> => ({
   setLeftView: (v) => set({ leftView: v }),
 
-  setPlaylistGroupOpen: (group, open) =>
-    set((s) => ({ playlistGroupOpen: { ...s.playlistGroupOpen, [group]: open } })),
+  setPlaylistGroupOpen: (group, open) => set((s) => ({ playlistGroupOpen: { ...s.playlistGroupOpen, [group]: open } })),
 
   loadUserPlaylists: async (p) => {
     const provider = p ?? get().playbackSource;
@@ -42,9 +53,7 @@ export const createLeftSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 
       const marked =
         likedIdx < 0
           ? list
-          : list.map((pl, i) =>
-              i === likedIdx ? { ...pl, name: LIKED_PLAYLIST_NAME, isLiked: true } : pl,
-            );
+          : list.map((pl, i) => (i === likedIdx ? { ...pl, name: LIKED_PLAYLIST_NAME, isLiked: true } : pl));
       set({ userPlaylists: marked, loadingUserPlaylists: false });
     } catch (e) {
       set({ loadingUserPlaylists: false, userPlaylistsError: String(e) });

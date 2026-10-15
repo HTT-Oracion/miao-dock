@@ -69,7 +69,9 @@
   gap: 3px;
   font-size: 11px;
   color: var(--md-muted);
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 /*
  * 应用层入口的宽高**不在这里** —— 由行内 style 给：
@@ -213,7 +215,10 @@
   align-items: center;
   gap: 6px;
   white-space: nowrap;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
 }
 /* 主推进：pink（《02》§5.2 操作列语义） */
 .btn-primary {
@@ -331,7 +336,6 @@
 .muted {
   color: var(--md-muted);
 }
-
 
 /* ================================================================ 通知堆叠（topRight）
  * 轻提示的唯一渲染层（components/NotificationStack.tsx）。形态参考 antd notification

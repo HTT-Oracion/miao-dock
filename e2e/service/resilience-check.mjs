@@ -55,22 +55,29 @@ function sliceFrom(src, marker, stopAt) {
  */
 function evaluate({ store }) {
   const out = [];
-  const add = (id, label, ok, detail) => out.push({ id, label, ok: !!ok, detail: detail === undefined ? '' : String(detail) });
+  const add = (id, label, ok, detail) =>
+    out.push({ id, label, ok: !!ok, detail: detail === undefined ? '' : String(detail) });
 
   // ---- A 组：任务状态原子写（Rust）----
   const persist = sliceFrom(store, 'pub(crate) fn persist_task(', '\n// ---');
-  add('A1', 'store 任务状态落盘走 atomic_write_json（不裸写）',
+  add(
+    'A1',
+    'store 任务状态落盘走 atomic_write_json（不裸写）',
     persist.includes('atomic_write_json(&file, &record_of(task))') && !/fs::write\(/.test(persist),
     persist
       ? `atomic=${persist.includes('atomic_write_json(&file, &record_of(task))')} bare=${/fs::write\(/.test(persist)}`
-      : '未找到 persist_task');
+      : '未找到 persist_task',
+  );
 
   const atomic = sliceFrom(store, 'pub fn atomic_write_text(', 'pub(crate) fn atomic_is_direct');
-  add('A2', 'atomic_write_text 是 tmp → fsync → rename',
+  add(
+    'A2',
+    'atomic_write_text 是 tmp → fsync → rename',
     atomic.includes('f.sync_all()?;') && atomic.includes('std::fs::rename(&tmp, file)?;'),
     atomic
       ? `fsync=${atomic.includes('f.sync_all()?;')} rename=${atomic.includes('std::fs::rename(&tmp, file)?;')}`
-      : '未找到 atomic_write_text');
+      : '未找到 atomic_write_text',
+  );
 
   return out;
 }
@@ -92,16 +99,28 @@ const SRC = () => ({ store: fs.readFileSync(STORE_RS, 'utf8') });
 /// 每条变异 = 把结构改回缺陷形态（内存变异），并声明哪些断言必须变红。
 /// `target` 指明改的是哪份源码。
 const MUTATIONS = [
-  { name: 'M1 persist_task 退回裸写（崩在中间留半截 JSON）', target: 'store',
-    apply: (s) => s.replace('    let _ = atomic_write_json(&file, &record_of(task));',
-      '    let _ = std::fs::write(&file, serde_json::to_vec(&record_of(task)).unwrap_or_default());'),
-    expect: ['A1'] },
-  { name: 'M2 atomic_write_text 去掉 fsync（rename 可能指向未落盘内容）', target: 'store',
+  {
+    name: 'M1 persist_task 退回裸写（崩在中间留半截 JSON）',
+    target: 'store',
+    apply: (s) =>
+      s.replace(
+        '    let _ = atomic_write_json(&file, &record_of(task));',
+        '    let _ = std::fs::write(&file, serde_json::to_vec(&record_of(task)).unwrap_or_default());',
+      ),
+    expect: ['A1'],
+  },
+  {
+    name: 'M2 atomic_write_text 去掉 fsync（rename 可能指向未落盘内容）',
+    target: 'store',
     apply: (s) => s.replace('        f.sync_all()?;', '        // no fsync'),
-    expect: ['A2'] },
-  { name: 'M3 atomic_write_text 去掉 rename（退回原地写）', target: 'store',
+    expect: ['A2'],
+  },
+  {
+    name: 'M3 atomic_write_text 去掉 rename（退回原地写）',
+    target: 'store',
     apply: (s) => s.replace('        std::fs::rename(&tmp, file)?;', '        std::fs::write(file, text)?;'),
-    expect: ['A2'] },
+    expect: ['A2'],
+  },
 ];
 
 const main = () => {

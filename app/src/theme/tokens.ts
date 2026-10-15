@@ -82,7 +82,8 @@ export const RADIUS = {
 export const FONT = {
   display: "'Swei Gothic CJK SC', 'Yozai', 'LXGW WenKai GB', 'Zen Maru Gothic', 'Noto Sans SC', system-ui, sans-serif",
   body: "'Yozai', 'LXGW WenKai GB', 'Swei Gothic CJK SC', 'Noto Sans SC', 'Zen Maru Gothic', system-ui, sans-serif",
-  numeric: "'Swei Gothic CJK SC', 'Yozai', 'LXGW WenKai GB', 'Zen Maru Gothic', 'Inter', 'Noto Sans SC', system-ui, sans-serif",
+  numeric:
+    "'Swei Gothic CJK SC', 'Yozai', 'LXGW WenKai GB', 'Zen Maru Gothic', 'Inter', 'Noto Sans SC', system-ui, sans-serif",
 } as const;
 
 /** 品牌色为冻结值 —— 不绑令牌、不随主题切换（《01》§9） */

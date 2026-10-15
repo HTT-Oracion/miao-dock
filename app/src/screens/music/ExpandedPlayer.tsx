@@ -107,8 +107,8 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const playMode = useMusicStore((s) => s.playMode);
   // 心动模式是否可用（判据只有一个出口：store 的 canUseHeartbeat）。
   // 不可用时模式按钮**不显示**心动档，而不是显示一个点不动的假控件。
-  const heartbeatAvailable = useMusicStore(
-    (s) => canUseHeartbeat({ playbackSource: s.playbackSource, queueFromLiked: s.queueFromLiked }),
+  const heartbeatAvailable = useMusicStore((s) =>
+    canUseHeartbeat({ playbackSource: s.playbackSource, queueFromLiked: s.queueFromLiked }),
   );
   const skin = useMusicStore((s) => s.skin);
   const parsedLyrics = useMusicStore((s) => s.parsedLyrics);
@@ -312,11 +312,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   }
 
   // 浅色皮肤（图标/控件要翻深色）：通透、彩胶恒定；现代/封面渐染跟随封面明暗
-  const skinIsLight = isModern
-    ? coverColor.isLight
-    : isCover
-      ? edgeColor.isLight
-      : !!skinMeta.light;
+  const skinIsLight = isModern ? coverColor.isLight : isCover ? edgeColor.isLight : !!skinMeta.light;
 
   // 封面渐染的上下压暗/提亮罩色，保证悬浮图标可读（浅缘配白雾、深缘配黑雾）
   const coverScrim = edgeColor.isLight ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.32)';
@@ -393,20 +389,14 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
       {/* ── 全屏场景层（z=1）：各皮肤专属视觉，铺在顶栏/控制栏之下 ───────── */}
       {/* 沉浸：多层径向扩散的波纹（简化版，纯 CSS 动画） */}
       {isImmersive ? (
-        <div
-          className="skin-ripple-layer"
-          style={{ '--ripple-c': vivid.deep } as CSSVarStyle}
-          aria-hidden
-        >
+        <div className="skin-ripple-layer" style={{ '--ripple-c': vivid.deep } as CSSVarStyle} aria-hidden>
           <span className="skin-ripple" />
           <span className="skin-ripple" />
           <span className="skin-ripple" />
         </div>
       ) : null}
       {/* 透明彩胶：右上角伸出的旋转唱片（暂停即停转） */}
-      {isVinyl ? (
-        <VinylDisc isPlaying={isPlaying} accentColor={vinylAccent} coverUrl={coverUrl} />
-      ) : null}
+      {isVinyl ? <VinylDisc isPlaying={isPlaying} accentColor={vinylAccent} coverUrl={coverUrl} /> : null}
       {/* 封面渐染：左侧满铺封面原图（伸到顶/底栏下方），右缘羽化融入右缘主色背景 */}
       {isCover && coverUrl ? (
         <div className="skin-cover-bleed" aria-hidden>
@@ -423,12 +413,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
       ) : null}
       {/* 音域回响：全屏频谱场景（真实频谱，取不到音频图时降级为 CSS 动画）。
           非该皮肤时组件内部直接 return null，不渲染也不跑 RAF。 */}
-      <SpectrumScene
-        active={isSpectrum}
-        isPlaying={isPlaying}
-        deep={vivid.deep}
-        light={vivid.light}
-      />
+      <SpectrumScene active={isSpectrum} isPlaying={isPlaying} deep={vivid.deep} light={vivid.light} />
 
       <div className="music-exp-topbar">
         <IconButton title="收起" onClick={() => closeExpanded()}>
@@ -445,9 +430,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
         {/* 左侧封面区：只有「现代 / 通透」保留标准方图（其余四种的封面各有专属呈现） */}
         {isPlainLayout ? (
           <div className="music-exp-left">
-            <div className="music-exp-cover">
-              {coverUrl ? <img src={coverUrl} alt="" /> : null}
-            </div>
+            <div className="music-exp-cover">{coverUrl ? <img src={coverUrl} alt="" /> : null}</div>
             <div className="music-exp-info">
               <b>{currentSong?.name ?? '未在播放'}</b>
               <span>{currentSong?.artist ?? ''}</span>
@@ -543,11 +526,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
                   if (currentSong) void toggleLike(currentSong);
                 }}
               >
-                <Heart
-                  size={20}
-                  color={isLiked ? '#e53e3e' : undefined}
-                  fill={isLiked ? '#e53e3e' : 'none'}
-                />
+                <Heart size={20} color={isLiked ? '#e53e3e' : undefined} fill={isLiked ? '#e53e3e' : 'none'} />
               </IconButton>
             ) : null}
 
@@ -631,10 +610,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
               <SkipForward size={22} />
             </IconButton>
             {/* 音量：图标常显，hover 时右侧展开滑块（宽度/透明度过渡，见 app.css 的 .music-exp-volwrap） */}
-            <div
-              className="music-exp-volwrap"
-              onWheel={(e) => stepVolume(e.deltaY < 0 ? 0.05 : -0.05)}
-            >
+            <div className="music-exp-volwrap" onWheel={(e) => stepVolume(e.deltaY < 0 ? 0.05 : -0.05)}>
               <IconButton title={muted ? '取消静音' : '静音'} onClick={() => toggleMute()}>
                 {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
               </IconButton>

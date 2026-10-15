@@ -59,10 +59,26 @@ async function allocPort() {
 export function buildLaunch(scenario, port) {
   if (scenario === 'never-ready') {
     // 起了个「永不监听端口」的进程：探针永远打不通 ⇒ 必须超时进 error
-    return { label: 'llm', tier: 'tiny', model: 'never-ready-proc', cmd: [NODE_EXEC, '-e', 'setTimeout(()=>{}, 60000)'], cwd: REPO_ROOT, env: {}, probes: [{ kind: 'tcp', port }] };
+    return {
+      label: 'llm',
+      tier: 'tiny',
+      model: 'never-ready-proc',
+      cmd: [NODE_EXEC, '-e', 'setTimeout(()=>{}, 60000)'],
+      cwd: REPO_ROOT,
+      env: {},
+      probes: [{ kind: 'tcp', port }],
+    };
   }
   if (scenario === 'stop-when-stopped') {
-    return { label: 'llm', tier: 'tiny', model: 'idle-proc', cmd: [NODE_EXEC, '-e', '0'], cwd: REPO_ROOT, env: {}, probes: [{ kind: 'tcp', port }] };
+    return {
+      label: 'llm',
+      tier: 'tiny',
+      model: 'idle-proc',
+      cmd: [NODE_EXEC, '-e', '0'],
+      cwd: REPO_ROOT,
+      env: {},
+      probes: [{ kind: 'tcp', port }],
+    };
   }
   // ready / double-start：真 mock-llm（/v1/models → 200）
   return {
@@ -104,7 +120,13 @@ export async function runRust(envExtra = {}) {
   }
   const cases = [];
   for (const c of CASES) {
-    cases.push({ name: c.name, scenario: c.scenario, watch: false, timeoutMs: c.timeoutMs, spec: buildLaunch(c.scenario, await allocPort()) });
+    cases.push({
+      name: c.name,
+      scenario: c.scenario,
+      watch: false,
+      timeoutMs: c.timeoutMs,
+      spec: buildLaunch(c.scenario, await allocPort()),
+    });
   }
   const out = await new Promise((resolve, reject) => {
     const c = spawn(RUST_BIN, ['--llm-selftest', JSON.stringify({ cases })], {
@@ -116,7 +138,9 @@ export async function runRust(envExtra = {}) {
     c.stdout.on('data', (d) => (o += d));
     c.stderr.on('data', (d) => (e += d));
     c.on('error', reject);
-    c.on('close', (code) => (code === 0 ? resolve(o) : reject(new Error(`--llm-selftest 退出码 ${code}：${e.slice(0, 600)}`))));
+    c.on('close', (code) =>
+      code === 0 ? resolve(o) : reject(new Error(`--llm-selftest 退出码 ${code}：${e.slice(0, 600)}`)),
+    );
   });
   const byName = new Map();
   for (const r of JSON.parse(out).results) byName.set(r.name, r);

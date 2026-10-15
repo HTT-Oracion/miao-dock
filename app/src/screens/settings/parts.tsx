@@ -138,12 +138,7 @@ export function GroupNote({ children, summary }: { children?: string; summary?: 
         >
           {open ? emphasis(children) : summary}
         </div>
-        <button
-          type="button"
-          className="set-note-more"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-        >
+        <button type="button" className="set-note-more" aria-expanded={open} onClick={() => setOpen(!open)}>
           {open ? '收起' : '为什么 ?'}
         </button>
       </div>

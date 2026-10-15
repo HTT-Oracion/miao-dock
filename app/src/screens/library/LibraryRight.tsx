@@ -170,12 +170,7 @@ export function LibraryRight({
                     <Btn kind="ghost" size="sm" disabled={chPage <= 1} onClick={() => onChPage(chPage - 1)}>
                       上一页
                     </Btn>
-                    <Btn
-                      kind="ghost"
-                      size="sm"
-                      disabled={chPage >= chPages}
-                      onClick={() => onChPage(chPage + 1)}
-                    >
+                    <Btn kind="ghost" size="sm" disabled={chPage >= chPages} onClick={() => onChPage(chPage + 1)}>
                       下一页
                     </Btn>
                   </span>

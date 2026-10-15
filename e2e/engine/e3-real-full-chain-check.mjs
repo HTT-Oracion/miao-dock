@@ -37,9 +37,10 @@ const ROOT = path.resolve(import.meta.dirname, '..', '..');
 //    读仓库 `runtimes/` 会「验收通过、产品找不到」，因为产品只认 appData 那份。
 const RT = process.env.MIAO_MODEL_ROOT || runtimesDir();
 // Windows 是 venv/Scripts/python.exe，POSIX 是 venv/bin/python
-const VENV_PY = process.platform === 'win32'
-  ? path.join(RT, 'venv', 'Scripts', 'python.exe')
-  : path.join(RT, 'venv', 'bin', 'python');
+const VENV_PY =
+  process.platform === 'win32'
+    ? path.join(RT, 'venv', 'Scripts', 'python.exe')
+    : path.join(RT, 'venv', 'bin', 'python');
 const SAKURA_GGUF = path.join(RT, 'models', 'sakura', 'sakura-1.5b-qwen2.5-v1.0-fp16.gguf');
 const TEST_IMAGE = path.join(ROOT, 'test-manga', 'test_0.webp');
 
@@ -69,7 +70,10 @@ const BATCH_LIMIT = 20;
 const TOTAL_IMAGES = 31;
 const TASK_TIMEOUT_MS = TOTAL_IMAGES * ITEM_BUDGET_MS + 120_000;
 
-const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+const sleep = (ms) =>
+  new Promise((r) => {
+    setTimeout(r, ms);
+  });
 const pad3 = (n) => String(n).padStart(3, '0');
 const log = (m) => console.log(`[e3-real] ${m}`);
 
@@ -94,15 +98,27 @@ function shutdown() {
     killTree(p);
   }
 }
-process.on('SIGINT', () => { shutdown(); process.exit(130); });
-process.on('SIGTERM', () => { shutdown(); process.exit(143); });
-process.on('exit', () => { if (!KEEP) shutdown(); });
+process.on('SIGINT', () => {
+  shutdown();
+  process.exit(130);
+});
+process.on('SIGTERM', () => {
+  shutdown();
+  process.exit(143);
+});
+process.on('exit', () => {
+  if (!KEEP) shutdown();
+});
 
 function spawnLogged(cmd, argv, opts, tag) {
   const child = spawn(cmd, argv, { ...opts, stdio: ['ignore', 'pipe', 'pipe'] });
   child.__log = '';
-  child.stdout.on('data', (d) => { child.__log += d.toString(); });
-  child.stderr.on('data', (d) => { child.__log += d.toString(); });
+  child.stdout.on('data', (d) => {
+    child.__log += d.toString();
+  });
+  child.stderr.on('data', (d) => {
+    child.__log += d.toString();
+  });
   child.on('exit', (code, sig) => log(`${tag} 退出 code=${code} sig=${sig}`));
   procs.push(child);
   return child;
@@ -113,36 +129,58 @@ function spawnLogged(cmd, argv, opts, tag) {
 function request(port, method, urlPath, { token, headers = {}, body, timeoutMs = 30_000 } = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request(
-      { host: '127.0.0.1', port, method, path: urlPath,
+      {
+        host: '127.0.0.1',
+        port,
+        method,
+        path: urlPath,
         headers: { ...(token ? { 'X-Box-Token': token } : {}), ...headers },
         // 关 keep-alive 复用：长任务里复用空闲 socket 会混进与契约无关的噪声
-        agent: false, timeout: timeoutMs },
+        agent: false,
+        timeout: timeoutMs,
+      },
       (res) => {
         const chunks = [];
         res.on('data', (c) => chunks.push(c));
         res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks) }));
       },
     );
-    req.on('timeout', () => { req.destroy(new Error(`请求超时 ${urlPath}`)); });
+    req.on('timeout', () => {
+      req.destroy(new Error(`请求超时 ${urlPath}`));
+    });
     req.on('error', reject);
     if (body) req.write(body);
     req.end();
   });
 }
 
-const asJson = (res) => { try { return JSON.parse(res.body.toString('utf8')); } catch { return null; } };
+const asJson = (res) => {
+  try {
+    return JSON.parse(res.body.toString('utf8'));
+  } catch {
+    return null;
+  }
+};
 
 function buildMultipart(payload, images) {
   const boundary = `----miaoe3${crypto.randomBytes(8).toString('hex')}`;
   const parts = [];
   if (payload) {
-    parts.push(Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="payload"\r\n\r\n${JSON.stringify(payload)}\r\n`, 'utf8'));
+    parts.push(
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="payload"\r\n\r\n${JSON.stringify(payload)}\r\n`,
+        'utf8',
+      ),
+    );
   }
   for (const img of images) {
-    parts.push(Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="images"; filename="${img.filename}"\r\n`
-      + `Content-Type: ${img.contentType}\r\n\r\n`, 'utf8'));
+    parts.push(
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="images"; filename="${img.filename}"\r\n` +
+          `Content-Type: ${img.contentType}\r\n\r\n`,
+        'utf8',
+      ),
+    );
     parts.push(img.data);
     parts.push(Buffer.from('\r\n', 'utf8'));
   }
@@ -163,15 +201,22 @@ function loadRealImages() {
   }));
 }
 
-const portOpen = (port, timeoutMs = 400) => new Promise((resolve) => {
-  const s = net.connect({ host: '127.0.0.1', port });
-  let done = false;
-  const fin = (v) => { if (!done) { done = true; s.destroy(); resolve(v); } };
-  s.setTimeout(timeoutMs);
-  s.once('connect', () => fin(true));
-  s.once('timeout', () => fin(false));
-  s.once('error', () => fin(false));
-});
+const portOpen = (port, timeoutMs = 400) =>
+  new Promise((resolve) => {
+    const s = net.connect({ host: '127.0.0.1', port });
+    let done = false;
+    const fin = (v) => {
+      if (!done) {
+        done = true;
+        s.destroy();
+        resolve(v);
+      }
+    };
+    s.setTimeout(timeoutMs);
+    s.once('connect', () => fin(true));
+    s.once('timeout', () => fin(false));
+    s.once('error', () => fin(false));
+  });
 
 // ------------------------------------------------------------------ 主流程
 
@@ -208,8 +253,12 @@ function runCapture(cmd, argv, env) {
     const c = spawn(cmd, argv, { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
-    c.stdout.on('data', (d) => { out += d; });
-    c.stderr.on('data', (d) => { err += d; });
+    c.stdout.on('data', (d) => {
+      out += d;
+    });
+    c.stderr.on('data', (d) => {
+      err += d;
+    });
     c.on('error', (e) => resolve({ code: -1, stdout: '', stderr: String(e) }));
     c.on('close', (code) => resolve({ code, stdout: out, stderr: err }));
   });
@@ -223,7 +272,8 @@ async function launchPlan() {
   if (r.code !== 0) throw new Error(`取启动配方失败（code=${r.code}）：${String(r.stderr).slice(0, 400)}`);
   const j = JSON.parse(String(r.stdout).replace(/^\uFEFF/, ''));
   const e = j.engine || {};
-  if (!Array.isArray(e.cmd) || e.cmd.length === 0) throw new Error(`配方里没有 engine.cmd：${String(r.stdout).slice(0, 300)}`);
+  if (!Array.isArray(e.cmd) || e.cmd.length === 0)
+    throw new Error(`配方里没有 engine.cmd：${String(r.stdout).slice(0, 300)}`);
   // 🔴 `env` **不能丢**：配方里的注入（`PYTHONIOENCODING` / `SAKURA_API_BASE` / no-proxy 合并值 …）
   //    正是 `check:engine-parity` 逐条钉住的东西 —— 少了它，引擎起得来但行为与产品不一样。
   return { cmd: e.cmd, cwd: e.cwd || process.cwd(), env: e.env || {}, executorPort: EXECUTOR_PORT };
@@ -259,8 +309,8 @@ log(`单张预算上限 ${ITEM_BUDGET_MS} ms ⇒ 任务上限 ${TASK_TIMEOUT_MS}
   }
   if (busy.length) {
     console.error(
-      `\n端口 ${busy.join(' / ')} 已被占用 —— 先清掉残留的引擎 / llama-server / 服务进程再跑。\n`
-      + '（不清就跑：断言会变绿，但绿的是那个残留进程，不是这一轮起的。）',
+      `\n端口 ${busy.join(' / ')} 已被占用 —— 先清掉残留的引擎 / llama-server / 服务进程再跑。\n` +
+        '（不清就跑：断言会变绿，但绿的是那个残留进程，不是这一轮起的。）',
     );
     process.exit(2);
   }
@@ -283,8 +333,10 @@ try {
   for (let i = 0; i < 1000; i += 1) {
     const p = await probeEngineLocal();
     if (p.state === 'running') break;
-    if (engine.exitCode !== null) throw new Error(`引擎进程已退出（code=${engine.exitCode}）；日志尾部：\n${engine.__log.slice(-2000)}`);
-    if (Date.now() - t0 > 5 * 60_000) throw new Error(`引擎 5 min 内未到 running；日志尾部：\n${engine.__log.slice(-2000)}`);
+    if (engine.exitCode !== null)
+      throw new Error(`引擎进程已退出（code=${engine.exitCode}）；日志尾部：\n${engine.__log.slice(-2000)}`);
+    if (Date.now() - t0 > 5 * 60_000)
+      throw new Error(`引擎 5 min 内未到 running；日志尾部：\n${engine.__log.slice(-2000)}`);
     await sleep(300);
   }
   report.engineReadyMs = Date.now() - t0;
@@ -296,26 +348,34 @@ try {
   // 🔴 起服务走 harness（原先硬拼 `node service/src/server.mjs` —— 那份文件已删，
   //    而硬拼入口正是 harness 要禁的第二份推导；现在靶子只有一个：boxsvc）。
   const svcTarget = targetFor(SERVICE_ENTRY);
-  const service = spawnLogged(svcTarget.command, svcTarget.args, {
-    env: {
-      ...process.env,
-      MIAO_ENGINE_PROTOCOL: 'real',
-      MIAO_ENGINE_PORT: String(ENGINE_PORT),
-      MIAO_ENGINE_PROBE_MS: '500',
-      MIAO_ENGINE_TIMEOUT_MS: String(ITEM_BUDGET_MS),
-      MIAO_ROOT: ROOT_DIR,
-      MIAO_STATE_DIR: STATE_DIR,
-      MIAO_PORT: String(SERVICE_PORT),
-      MIAO_LLM_PORT: String(LLAMA_PORT),
+  const service = spawnLogged(
+    svcTarget.command,
+    svcTarget.args,
+    {
+      env: {
+        ...process.env,
+        MIAO_ENGINE_PROTOCOL: 'real',
+        MIAO_ENGINE_PORT: String(ENGINE_PORT),
+        MIAO_ENGINE_PROBE_MS: '500',
+        MIAO_ENGINE_TIMEOUT_MS: String(ITEM_BUDGET_MS),
+        MIAO_ROOT: ROOT_DIR,
+        MIAO_STATE_DIR: STATE_DIR,
+        MIAO_PORT: String(SERVICE_PORT),
+        MIAO_LLM_PORT: String(LLAMA_PORT),
+      },
     },
-  }, 'service');
+    'service',
+  );
 
   const readyRe = /MIAO_READY (\{[^\n]*\})/;
   let svcInfo = null;
   const until = Date.now() + 30_000;
   while (Date.now() < until) {
     const m = readyRe.exec(service.__log);
-    if (m) { svcInfo = JSON.parse(m[1]); break; }
+    if (m) {
+      svcInfo = JSON.parse(m[1]);
+      break;
+    }
     await sleep(120);
   }
   if (!svcInfo) throw new Error(`服务未就绪：\n${service.__log.slice(-800)}`);
@@ -328,44 +388,74 @@ try {
 
   // ---- 4) D1 同形状：第一批 20 张建任务，第二批 11 张追加到**同一个** Task
   const PLUGIN = { 'X-Box-Client': 'extension/2.3.0' };
-  const mp1 = buildMultipart({ comicName: 'E3 真引擎全链路 31 张', idempotencyKey: crypto.randomUUID() }, images.slice(0, BATCH_LIMIT));
+  const mp1 = buildMultipart(
+    { comicName: 'E3 真引擎全链路 31 张', idempotencyKey: crypto.randomUUID() },
+    images.slice(0, BATCH_LIMIT),
+  );
   const r1 = await request(PORT, 'POST', '/api/v1/tasks', {
-    token: TOKEN, headers: { 'Content-Type': mp1.contentType, ...PLUGIN }, body: mp1.body,
+    token: TOKEN,
+    headers: { 'Content-Type': mp1.contentType, ...PLUGIN },
+    body: mp1.body,
   });
   const j1 = asJson(r1);
   const taskId = j1?.taskId;
-  check('E3a', '第一批 20 张建立任务（HTTP 201 + taskId）', r1.status === 201 && !!taskId,
-    `HTTP ${r1.status} / ${taskId ?? JSON.stringify(j1)}`);
+  check(
+    'E3a',
+    '第一批 20 张建立任务（HTTP 201 + taskId）',
+    r1.status === 201 && !!taskId,
+    `HTTP ${r1.status} / ${taskId ?? JSON.stringify(j1)}`,
+  );
 
   const mp2 = buildMultipart({ idempotencyKey: crypto.randomUUID() }, images.slice(BATCH_LIMIT));
   const r2 = await request(PORT, 'POST', `/api/v1/tasks/${taskId}/batches`, {
-    token: TOKEN, headers: { 'Content-Type': mp2.contentType, ...PLUGIN }, body: mp2.body,
+    token: TOKEN,
+    headers: { 'Content-Type': mp2.contentType, ...PLUGIN },
+    body: mp2.body,
   });
   const j2 = asJson(r2);
-  check('E3b', '第二批 11 张追加到**同一个** Task（GET 详情 taskId 不变）', r2.status === 200,
-    `HTTP ${r2.status} / ${JSON.stringify(j2)?.slice(0, 200)}`);
+  check(
+    'E3b',
+    '第二批 11 张追加到**同一个** Task（GET 详情 taskId 不变）',
+    r2.status === 200,
+    `HTTP ${r2.status} / ${JSON.stringify(j2)?.slice(0, 200)}`,
+  );
 
   // ---- 5) SSE 全程订阅（在等终态**之前**挂上，否则会漏掉前面的进度）
   const events = await collectEvents(PORT, TOKEN, taskId, TASK_TIMEOUT_MS);
   log(`SSE 收到 ${events.length} 个事件`);
 
   const task = await waitTask(PORT, TOKEN, taskId, TASK_TIMEOUT_MS);
-  report.task = { id: taskId, status: task?.status, batches: task?.batches?.length, items: task?.items?.length, progress: task?.progress };
+  report.task = {
+    id: taskId,
+    status: task?.status,
+    batches: task?.batches?.length,
+    items: task?.items?.length,
+    progress: task?.progress,
+  };
 
   const batches = task?.batches ?? [];
-  check('E3c', '恰好 2 个 Batch（一个 Task，不是两个），且 seq 连续无重号（1–20 / 21–31）',
-    batches.length === 2 && batches[0]?.seqFrom === 1 && batches[0]?.seqTo === 20
-      && batches[1]?.seqFrom === 21 && batches[1]?.seqTo === 31,
-    `batches=${batches.length} / ${batches.map((b) => `${b.seqFrom}-${b.seqTo}`).join(' / ')}`);
+  check(
+    'E3c',
+    '恰好 2 个 Batch（一个 Task，不是两个），且 seq 连续无重号（1–20 / 21–31）',
+    batches.length === 2 &&
+      batches[0]?.seqFrom === 1 &&
+      batches[0]?.seqTo === 20 &&
+      batches[1]?.seqFrom === 21 &&
+      batches[1]?.seqTo === 31,
+    `batches=${batches.length} / ${batches.map((b) => `${b.seqFrom}-${b.seqTo}`).join(' / ')}`,
+  );
 
   // ⚠️ 项状态字面量取自 store.mjs（`success` / `skipped` / `failed` / `translating` / `pending`）。
   //    这里**不写 'done'** —— 那是任务级终态的词，项级没有这个值；写错的话断言会恒红，
   //    而"恒红"看起来像"链路坏了"，实际是断言自己用错了词表。
   const ITEM_OK = ['success', 'skipped'];
   const badItems = (task?.items ?? []).filter((i) => !ITEM_OK.includes(i.status));
-  check('E3d', '31 个 item 全部成功（success / skipped，无 failed）',
+  check(
+    'E3d',
+    '31 个 item 全部成功（success / skipped，无 failed）',
     task?.items?.length === TOTAL_IMAGES && badItems.length === 0,
-    `items=${task?.items?.length} / 非成功=${badItems.map((i) => `${i.seq}:${i.status}`).join(',') || '无'}`);
+    `items=${task?.items?.length} / 非成功=${badItems.map((i) => `${i.seq}:${i.status}`).join(',') || '无'}`,
+  );
 
   // ---- 6) 落盘：31 对，序号连续 001..031 无缺
   const dirName = task?.normalizedComicName ?? task?.comicName;
@@ -375,9 +465,12 @@ try {
   const missingOriginal = wantSeq.filter((s) => !files.includes(`${pad3(s)}.webp`));
   const missingTranslated = wantSeq.filter((s) => !files.some((f) => f.startsWith(`${pad3(s)}_translated.`)));
   const diskTranslatedSeqs = wantSeq.filter((s) => files.some((f) => f.startsWith(`${pad3(s)}_translated.`)));
-  check('E3e', '31 对 NNN.webp + NNN_translated.* 全部落盘，序号 001–031 连续无缺',
+  check(
+    'E3e',
+    '31 对 NNN.webp + NNN_translated.* 全部落盘，序号 001–031 连续无缺',
     missingOriginal.length === 0 && missingTranslated.length === 0,
-    `缺原图 [${missingOriginal.join(',')}] / 缺译文 [${missingTranslated.join(',')}] / 目录实际 ${files.length} 个文件`);
+    `缺原图 [${missingOriginal.join(',')}] / 缺译文 [${missingTranslated.join(',')}] / 目录实际 ${files.length} 个文件`,
+  );
   report.landed = { dir: comicDir, fileCount: files.length, translated: diskTranslatedSeqs.length };
 
   // ---- 7) SSE 进度与落盘一致
@@ -385,19 +478,27 @@ try {
   //    服务端根本不发 progress 事件（事件类型只有 task.status / batch.status / item.status / heartbeat，
   //    见 store.mjs `_emit*`）。凭印象写一个 `data.current` 会**静默**取到 undefined，
   //    然后那条断言恒红或恒绿 —— 两种都是假绿家族。
-  const successEvents = events.filter((e) => e.event === 'item.status' && e.data?.status === 'success' && e.data?.saved === true);
+  const successEvents = events.filter(
+    (e) => e.event === 'item.status' && e.data?.status === 'success' && e.data?.saved === true,
+  );
   const sseSavedSeqs = [...new Set(successEvents.map((e) => e.data.seq))].sort((a, b) => a - b);
-  check('E3f', 'SSE 报「已落盘」的页集合 == 磁盘上真实存在的译文集合（两集合逐项相等，31 张）',
-    sseSavedSeqs.length === TOTAL_IMAGES
-      && sseSavedSeqs.join(',') === diskTranslatedSeqs.join(',')
-      && task?.progress?.done === TOTAL_IMAGES,
+  check(
+    'E3f',
+    'SSE 报「已落盘」的页集合 == 磁盘上真实存在的译文集合（两集合逐项相等，31 张）',
+    sseSavedSeqs.length === TOTAL_IMAGES &&
+      sseSavedSeqs.join(',') === diskTranslatedSeqs.join(',') &&
+      task?.progress?.done === TOTAL_IMAGES,
     `SSE 报 ${sseSavedSeqs.length} 张 / 磁盘 ${diskTranslatedSeqs.length} 张 / 差集=${JSON.stringify({
       onlySse: sseSavedSeqs.filter((s) => !diskTranslatedSeqs.includes(s)),
       onlyDisk: diskTranslatedSeqs.filter((s) => !sseSavedSeqs.includes(s)),
-    })} / progress.done=${task?.progress?.done}`);
+    })} / progress.done=${task?.progress?.done}`,
+  );
   report.sse = {
     totalEvents: events.length,
-    byType: events.reduce((acc, e) => { acc[e.event] = (acc[e.event] ?? 0) + 1; return acc; }, {}),
+    byType: events.reduce((acc, e) => {
+      acc[e.event] = (acc[e.event] ?? 0) + 1;
+      return acc;
+    }, {}),
     savedSeqs: sseSavedSeqs.length,
     lastEventId: events.at(-1)?.id ?? null,
   };
@@ -406,11 +507,13 @@ try {
   // 用引擎 venv 的 numpy/PIL 算，不自己实现解码；抽样首/中/尾三张，覆盖两个 Batch。
   const samples = [1, 16, 31];
   const translatedOf = (s) => files.find((f) => f.startsWith(`${pad3(s)}_translated.`));
-  const filesForPy = samples.map((s) => ({
-    seq: s,
-    src: path.join(comicDir, `${pad3(s)}.webp`),
-    out: path.join(comicDir, translatedOf(s)),
-  })).filter((x) => x.out && fs.existsSync(x.out));
+  const filesForPy = samples
+    .map((s) => ({
+      seq: s,
+      src: path.join(comicDir, `${pad3(s)}.webp`),
+      out: path.join(comicDir, translatedOf(s)),
+    }))
+    .filter((x) => x.out && fs.existsSync(x.out));
 
   let compare = null;
   if (filesForPy.length === samples.length) {
@@ -431,13 +534,21 @@ print(json.dumps(res, ensure_ascii=False))
 `;
     const r = spawnSync(VENV_PY, ['-c', py], { encoding: 'utf8' });
     const line = (r.stdout || '').trim().split('\n').pop();
-    try { compare = JSON.parse(line); } catch { compare = { raw: r.stdout, err: r.stderr }; }
+    try {
+      compare = JSON.parse(line);
+    } catch {
+      compare = { raw: r.stdout, err: r.stderr };
+    }
   }
   report.compare = compare;
-  check('E3g', '抽样 3 张（首/中/尾，跨两个 Batch）译文与原文逐像素不同 —— 翻译阶段真的执行了',
-    Array.isArray(compare) && compare.length === samples.length
-      && compare.every((c) => c.sameShape && c.changedPct > 0.5),
-    JSON.stringify(compare)?.slice(0, 400));
+  check(
+    'E3g',
+    '抽样 3 张（首/中/尾，跨两个 Batch）译文与原文逐像素不同 —— 翻译阶段真的执行了',
+    Array.isArray(compare) &&
+      compare.length === samples.length &&
+      compare.every((c) => c.sameShape && c.changedPct > 0.5),
+    JSON.stringify(compare)?.slice(0, 400),
+  );
 
   // ---- 9) 一页一译：同一张原图，不同 seq 的译文**必须不同**（否则说明产物串了/全抄一张）
   let distinctPairs = null;
@@ -445,14 +556,22 @@ print(json.dumps(res, ensure_ascii=False))
     const digests = filesForPy.map((f) => crypto.createHash('sha256').update(fs.readFileSync(f.out)).digest('hex'));
     distinctPairs = new Set(digests).size;
   }
-  check('E3h', '不同 seq 的译文互不相同（产物按页一一对应，没有整目录复写同一张）',
+  check(
+    'E3h',
+    '不同 seq 的译文互不相同（产物按页一一对应，没有整目录复写同一张）',
     distinctPairs === filesForPy.length,
-    `不同产物哈希数=${distinctPairs} / 抽样数=${filesForPy.length}`);
+    `不同产物哈希数=${distinctPairs} / 抽样数=${filesForPy.length}`,
+  );
 
   report.engineLogSnippet = engine.__log.slice(-1200);
   report.serviceLogSnippet = service.__log.slice(-1200);
 } catch (e) {
-  report.fatal = { message: String(e && e.message), stack: String(e && e.stack).split('\n').slice(0, 6) };
+  report.fatal = {
+    message: String(e && e.message),
+    stack: String(e && e.stack)
+      .split('\n')
+      .slice(0, 6),
+  };
   log(`❌ 中断：${report.fatal.message}`);
 } finally {
   // ---- 收口：账本与报告无论如何都要落盘，否则失败时只剩一句话
@@ -489,7 +608,14 @@ function collectEvents(port, token, taskId, timeoutMs) {
   return new Promise((resolve) => {
     const events = [];
     const req = http.request(
-      { host: '127.0.0.1', port, method: 'GET', path: `/api/v1/tasks/${taskId}/events`, headers: { 'X-Box-Token': token, Accept: 'text/event-stream' }, agent: false },
+      {
+        host: '127.0.0.1',
+        port,
+        method: 'GET',
+        path: `/api/v1/tasks/${taskId}/events`,
+        headers: { 'X-Box-Token': token, Accept: 'text/event-stream' },
+        agent: false,
+      },
       (res) => {
         let buf = '';
         res.on('data', (chunk) => {
@@ -497,7 +623,9 @@ function collectEvents(port, token, taskId, timeoutMs) {
           const frames = buf.split('\n\n');
           buf = frames.pop() ?? '';
           for (const frame of frames) {
-            let name = null; let idText = null; let dataText = '';
+            let name = null;
+            let idText = null;
+            let dataText = '';
             for (const line of frame.split('\n')) {
               if (line.startsWith('event:')) name = line.slice(6).trim();
               else if (line.startsWith('id:')) idText = line.slice(3).trim();
@@ -505,7 +633,11 @@ function collectEvents(port, token, taskId, timeoutMs) {
             }
             if (!dataText) continue;
             let data = null;
-            try { data = JSON.parse(dataText); } catch { continue; }
+            try {
+              data = JSON.parse(dataText);
+            } catch {
+              continue;
+            }
             events.push({ id: idText ? Number(idText) : null, event: name, data });
             if (name === 'task.status' && ['done', 'partial_failed', 'failed', 'canceled'].includes(data.status)) {
               clearTimeout(timer);
@@ -516,8 +648,14 @@ function collectEvents(port, token, taskId, timeoutMs) {
         });
       },
     );
-    const timer = setTimeout(() => { req.destroy(); resolve(events); }, timeoutMs);
-    req.on('error', () => { clearTimeout(timer); resolve(events); });
+    const timer = setTimeout(() => {
+      req.destroy();
+      resolve(events);
+    }, timeoutMs);
+    req.on('error', () => {
+      clearTimeout(timer);
+      resolve(events);
+    });
     req.end();
   });
 }

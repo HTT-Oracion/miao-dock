@@ -33,7 +33,14 @@ import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 // G2：url / sha256 / 解包参数一律从 `engine/runtime.manifest.json` 取（收口，见 asset-source.mjs 头注）
-import { mirrorUrls, readRuntimeManifest, resolveUrl, runtimeAsset, runtimeAssetForPlatform, verifyArchive } from './asset-source.mjs';
+import {
+  mirrorUrls,
+  readRuntimeManifest,
+  resolveUrl,
+  runtimeAsset,
+  runtimeAssetForPlatform,
+  verifyArchive,
+} from './asset-source.mjs';
 
 import { extractAtomic } from './atomic-extract.mjs';
 import { runtimesDir } from './runtime-root.mjs';
@@ -106,7 +113,9 @@ async function existsNonEmpty(dir) {
   try {
     const ents = await fsp.readdir(dir);
     return ents.length > 0;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -152,7 +161,11 @@ async function download(url, dest, { retries = 3 } = {}) {
   await fsp.mkdir(path.dirname(dest), { recursive: true });
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     let offset = 0;
-    try { offset = (await fsp.stat(dest)).size; } catch { offset = 0; }
+    try {
+      offset = (await fsp.stat(dest)).size;
+    } catch {
+      offset = 0;
+    }
     try {
       const headers = offset > 0 ? { Range: `bytes=${offset}-` } : {};
       const res = await fetch(url, { headers });
@@ -176,12 +189,17 @@ async function download(url, dest, { retries = 3 } = {}) {
           const pct = Math.floor((received / total) * 100);
           if (pct !== lastPct && pct % 5 === 0) {
             lastPct = pct;
-            process.stdout.write(`\r  ${path.basename(dest)} ${pct}%（${(received / 1048576).toFixed(0)}/${(total / 1048576).toFixed(0)} MB）`);
+            process.stdout.write(
+              `\r  ${path.basename(dest)} ${pct}%（${(received / 1048576).toFixed(0)}/${(total / 1048576).toFixed(0)} MB）`,
+            );
           }
         }
       }
       ws.end();
-      await new Promise((r, j) => { ws.on('finish', r); ws.on('error', j); });
+      await new Promise((r, j) => {
+        ws.on('finish', r);
+        ws.on('error', j);
+      });
       process.stdout.write('\r' + ' '.repeat(70) + '\r');
       return dest;
     } catch (e) {
@@ -208,7 +226,10 @@ function extract(archive, destDir, { strip = 1, verify } = {}) {
 }
 
 async function installPython(force) {
-  if (!force && await existsNonEmpty(PY_DIR)) { log(`[跳过] Python 运行时已就位：${PY_DIR}`); return; }
+  if (!force && (await existsNonEmpty(PY_DIR))) {
+    log(`[跳过] Python 运行时已就位：${PY_DIR}`);
+    return;
+  }
   const cache = path.join(CACHE, path.basename(decodeURIComponent(PY_URL)));
   log(`Python ${PY_VERSION}（${PY_TRIPLE}）`);
   log(`  URL: ${PY_URL}`);
@@ -231,7 +252,10 @@ async function installPython(force) {
  *    venv 就位判据用「解释器文件存在」而不是「venv/ 目录存在」—— 目录非空但缺 Scripts/bin 是残的。
  */
 async function installVenv(force) {
-  if (!force && fs.existsSync(venvExe())) { log(`[跳过] venv 已就位：${VENV_DIR}`); return; }
+  if (!force && fs.existsSync(venvExe())) {
+    log(`[跳过] venv 已就位：${VENV_DIR}`);
+    return;
+  }
   const exe = pyExe();
   if (!fs.existsSync(exe)) throw new Error(`Python 运行时不在 ${exe}（先跑一次 setup-engine.mjs --python）`);
   log(`建 venv → ${VENV_DIR}`);
@@ -242,7 +266,10 @@ async function installVenv(force) {
 }
 
 async function installSource(force) {
-  if (!force && await sourceReady()) { log(`[跳过] 引擎源码已就位：${SRC_DIR}`); return; }
+  if (!force && (await sourceReady())) {
+    log(`[跳过] 引擎源码已就位：${SRC_DIR}`);
+    return;
+  }
   const cache = path.join(CACHE, `manga-translator-${ENGINE_COMMIT.slice(0, 12)}.tar.gz`);
   log(`引擎源码 commit ${ENGINE_COMMIT.slice(0, 12)}`);
   await downloadAsset(SRC_ASSET, cache, '引擎源码', SRC_URL_OVERRIDE);
@@ -281,48 +308,52 @@ export const ENGINE_PATCHES = [
     mark: '# miao-dock 补丁 D-86',
     file: srcPy('manga_translator', 'translators', 'sakura.py'),
     desc: 'Sakura 翻译失败时不再 return list（上游会糊成 TypeError，D-86）',
-    edits: [{
-      // 锚点 = 上游原样三行。取整个 `except` 分支体（含缩进）而不是单独一句 `return prompt`，
-      // 因为 `return prompt` 在文件里可能有别的语境；带上前一行 logger.error 才唯一。
-      anchor: [
-        "                    self.logger.error(f'Sakura API请求失败。错误信息： {e}')",
-        '                    return prompt',
-        '',
-      ].join('\n'),
-      patch: [
-        "                    self.logger.error(f'Sakura API请求失败。错误信息： {e}')",
-        '                    # miao-dock 补丁 D-86：原样的 return prompt 返回的是 list（prompt 就是调用方',
-        '                    # 传进来的 queries），而上游调用点按 str 用它（_translate 里对 response 做字符串拼接）⇒',
-        '                    # TypeError: can only concatenate str (not "list") to str —— 把"翻译接口不可用"',
-        '                    # 这句真话糊成一句 python 内部错误（16 张图全 failed、对外只剩 engine_engine_error）。',
-        '                    # 改为显式抛错，让失败以真实原因上抛。',
-        '                    # 🔴 不能改成 return str(prompt)：prompt 是**日文原文**，那样会把原文当译文',
-        '                    #    静默输出，比失败更坏（用户拿到一页没翻译的"结果"却以为翻译过了）。',
-        "                    raise RuntimeError(f'Sakura API请求失败（已重试 {server_error_attempt} 次）：{e}')",
-        '',
-      ].join('\n'),
-    }],
+    edits: [
+      {
+        // 锚点 = 上游原样三行。取整个 `except` 分支体（含缩进）而不是单独一句 `return prompt`，
+        // 因为 `return prompt` 在文件里可能有别的语境；带上前一行 logger.error 才唯一。
+        anchor: [
+          "                    self.logger.error(f'Sakura API请求失败。错误信息： {e}')",
+          '                    return prompt',
+          '',
+        ].join('\n'),
+        patch: [
+          "                    self.logger.error(f'Sakura API请求失败。错误信息： {e}')",
+          '                    # miao-dock 补丁 D-86：原样的 return prompt 返回的是 list（prompt 就是调用方',
+          '                    # 传进来的 queries），而上游调用点按 str 用它（_translate 里对 response 做字符串拼接）⇒',
+          '                    # TypeError: can only concatenate str (not "list") to str —— 把"翻译接口不可用"',
+          '                    # 这句真话糊成一句 python 内部错误（16 张图全 failed、对外只剩 engine_engine_error）。',
+          '                    # 改为显式抛错，让失败以真实原因上抛。',
+          '                    # 🔴 不能改成 return str(prompt)：prompt 是**日文原文**，那样会把原文当译文',
+          '                    #    静默输出，比失败更坏（用户拿到一页没翻译的"结果"却以为翻译过了）。',
+          "                    raise RuntimeError(f'Sakura API请求失败（已重试 {server_error_attempt} 次）：{e}')",
+          '',
+        ].join('\n'),
+      },
+    ],
   },
   {
     id: 'translator-config-from-lang',
     mark: '# miao-dock 补丁 D-97a',
     file: srcPy('manga_translator', 'config.py'),
     desc: 'TranslatorConfig 增 from_lang，让「显式方向」有地方可放',
-    edits: [{
-      anchor: [
-        "    target_lang: str = 'ENG' #todo: validate VALID_LANGUAGES #todo: convert to enum",
-        '    """Destination language"""',
-      ].join('\n'),
-      patch: [
-        "    target_lang: str = 'ENG' #todo: validate VALID_LANGUAGES #todo: convert to enum",
-        '    """Destination language"""',
-        '    from_lang: Optional[str] = None',
-        '    """# miao-dock 补丁 D-97a：显式源语言（内部语言码，如 ENG）。',
-        '    上游只有 auto（交给 langid 自动检测），而实测该检测在本项目的英文漫画短句上判错',
-        '    ⇒ 由服务端按任务下发方向（用户显式选方向，不做静默兜底）。',
-        '    None = 完全保持上游的 auto 行为（默认值即此，故不影响日译中）。"""',
-      ].join('\n'),
-    }],
+    edits: [
+      {
+        anchor: [
+          "    target_lang: str = 'ENG' #todo: validate VALID_LANGUAGES #todo: convert to enum",
+          '    """Destination language"""',
+        ].join('\n'),
+        patch: [
+          "    target_lang: str = 'ENG' #todo: validate VALID_LANGUAGES #todo: convert to enum",
+          '    """Destination language"""',
+          '    from_lang: Optional[str] = None',
+          '    """# miao-dock 补丁 D-97a：显式源语言（内部语言码，如 ENG）。',
+          '    上游只有 auto（交给 langid 自动检测），而实测该检测在本项目的英文漫画短句上判错',
+          '    ⇒ 由服务端按任务下发方向（用户显式选方向，不做静默兜底）。',
+          '    None = 完全保持上游的 auto 行为（默认值即此，故不影响日译中）。"""',
+        ].join('\n'),
+      },
+    ],
   },
   {
     id: 'dispatch-explicit-src-lang',
@@ -337,38 +368,38 @@ export const ENGINE_PATCHES = [
           '        return queries',
           '',
           '    # miao-dock 补丁 D-97b：把「源语言」从写死的字面量改成可由调用方指定的参数。',
-          '    #   上游在本函数里 6 处硬编码 \'auto\'（chain.langs[flag] 与 tgt_lang 两侧），于是',
+          "    #   上游在本函数里 6 处硬编码 'auto'（chain.langs[flag] 与 tgt_lang 两侧），于是",
           '    #   TranslatorConfig 里配的方向**根本传不到翻译器**：nllb 只能靠 langid 自动检测，',
           '    #   实测对英文漫画短句判错 ⇒ 落 "Could not detect source language, skipping translation"，',
           '    #   整页译文变空串（用户看到「翻译跑过了、却一个字都没有」）。',
-          '    #   取值优先级：translator_config.from_lang（显式）> \'auto\'（上游原行为，逐字保留）。',
+          "    #   取值优先级：translator_config.from_lang（显式）> 'auto'（上游原行为，逐字保留）。",
           "    _src_lang = getattr(translator_config, 'from_lang', None) if translator_config is not None else None",
           "    _src_lang = _src_lang or 'auto'",
         ].join('\n'),
       },
       {
         anchor: "                await translator.load('auto', chain.langs[flag], device)",
-        patch: "                await translator.load(_src_lang, chain.langs[flag], device)",
+        patch: '                await translator.load(_src_lang, chain.langs[flag], device)',
       },
       {
         anchor: "                queries = await translator.translate('auto', chain.langs[flag], queries, args)",
-        patch: "                queries = await translator.translate(_src_lang, chain.langs[flag], queries, args)",
+        patch: '                queries = await translator.translate(_src_lang, chain.langs[flag], queries, args)',
       },
       {
         anchor: "                queries = await translator.translate('auto', chain.langs[flag], queries, use_mtpe)",
-        patch: "                queries = await translator.translate(_src_lang, chain.langs[flag], queries, use_mtpe)",
+        patch: '                queries = await translator.translate(_src_lang, chain.langs[flag], queries, use_mtpe)',
       },
       {
         anchor: "            await translator.load('auto', tgt_lang, device)",
-        patch: "            await translator.load(_src_lang, tgt_lang, device)",
+        patch: '            await translator.load(_src_lang, tgt_lang, device)',
       },
       {
         anchor: "            queries = await translator.translate('auto', tgt_lang, queries, args)",
-        patch: "            queries = await translator.translate(_src_lang, tgt_lang, queries, args)",
+        patch: '            queries = await translator.translate(_src_lang, tgt_lang, queries, args)',
       },
       {
         anchor: "            queries = await translator.translate('auto', tgt_lang, queries, use_mtpe)",
-        patch: "            queries = await translator.translate(_src_lang, tgt_lang, queries, use_mtpe)",
+        patch: '            queries = await translator.translate(_src_lang, tgt_lang, queries, use_mtpe)',
       },
     ],
   },
@@ -377,186 +408,198 @@ export const ENGINE_PATCHES = [
     mark: '# miao-dock 补丁 D-97c',
     file: srcPy('manga_translator', 'translators', 'nllb.py'),
     desc: 'nllb 加载：cache_dir 与 _download 一致，且预置权重时零网络（local_files_only）',
-    edits: [{
-      anchor: [
-        '        self.tokenizer = AutoTokenizer.from_pretrained(self._TRANSLATOR_MODEL)',
-        '        self.model = AutoModelForSeq2SeqLM.from_pretrained(self._TRANSLATOR_MODEL)',
-      ].join('\n'),
-      patch: [
-        '        # miao-dock 补丁 D-97c：加载端要满足两条，缺一条在「权重已预置」的产品形态下都会坏。',
-        '        #   ① **cache_dir 必须与 `_download()` 一致** —— 上游 `_download()` 写',
-        '        #      `cache_dir=self._MODEL_SUB_DIR`（= <引擎>/src/models/translators/nllb），而这里不传',
-        '        #      ⇒ 读的是默认 HF 缓存（~/.cache/huggingface）⇒「下载落 A、加载读 B」：',
-        '        #      默认缓存为空时必报 "couldn\'t connect to huggingface.co"。',
-        '        #   ② **即便 cache_dir 对了，`from_pretrained` 仍会为取 etag 发一次网络请求** ——',
-        '        #      本机 HF 不可达 / 系统代理拦路时会抛 ProxyError: 502 Bad Gateway（实测），',
-        '        #      把「权重已预置」变成「引擎起不来」。故先探一次缓存：命中即 local_files_only=True',
-        '        #      （零网络）；未命中才退回上游的联网行为（首次下载路径）。',
-        '        #      探针用 try_to_load_from_cache 的返回值类型判定：命中=str 路径；已知不存在=哨兵；未知=None。',
-        '        #   🔴 用 `self._MODEL_SUB_DIR` 而非字面量：NLLBBigTranslator 覆写了它，子类自动跟着对。',
-        '        import huggingface_hub',
-        '        def _miao_cached(name):',
-        '            return isinstance(huggingface_hub.try_to_load_from_cache(',
-        '                self._TRANSLATOR_MODEL, name, cache_dir=self._MODEL_SUB_DIR), str)',
-        "        _miao_local_only = _miao_cached('pytorch_model.bin') or _miao_cached('model.safetensors')",
-        '        self.tokenizer = AutoTokenizer.from_pretrained(',
-        '            self._TRANSLATOR_MODEL, cache_dir=self._MODEL_SUB_DIR, local_files_only=_miao_local_only)',
-        '        self.model = AutoModelForSeq2SeqLM.from_pretrained(',
-        '            self._TRANSLATOR_MODEL, cache_dir=self._MODEL_SUB_DIR, local_files_only=_miao_local_only)',
-      ].join('\n'),
-    }],
+    edits: [
+      {
+        anchor: [
+          '        self.tokenizer = AutoTokenizer.from_pretrained(self._TRANSLATOR_MODEL)',
+          '        self.model = AutoModelForSeq2SeqLM.from_pretrained(self._TRANSLATOR_MODEL)',
+        ].join('\n'),
+        patch: [
+          '        # miao-dock 补丁 D-97c：加载端要满足两条，缺一条在「权重已预置」的产品形态下都会坏。',
+          '        #   ① **cache_dir 必须与 `_download()` 一致** —— 上游 `_download()` 写',
+          '        #      `cache_dir=self._MODEL_SUB_DIR`（= <引擎>/src/models/translators/nllb），而这里不传',
+          '        #      ⇒ 读的是默认 HF 缓存（~/.cache/huggingface）⇒「下载落 A、加载读 B」：',
+          '        #      默认缓存为空时必报 "couldn\'t connect to huggingface.co"。',
+          '        #   ② **即便 cache_dir 对了，`from_pretrained` 仍会为取 etag 发一次网络请求** ——',
+          '        #      本机 HF 不可达 / 系统代理拦路时会抛 ProxyError: 502 Bad Gateway（实测），',
+          '        #      把「权重已预置」变成「引擎起不来」。故先探一次缓存：命中即 local_files_only=True',
+          '        #      （零网络）；未命中才退回上游的联网行为（首次下载路径）。',
+          '        #      探针用 try_to_load_from_cache 的返回值类型判定：命中=str 路径；已知不存在=哨兵；未知=None。',
+          '        #   🔴 用 `self._MODEL_SUB_DIR` 而非字面量：NLLBBigTranslator 覆写了它，子类自动跟着对。',
+          '        import huggingface_hub',
+          '        def _miao_cached(name):',
+          '            return isinstance(huggingface_hub.try_to_load_from_cache(',
+          '                self._TRANSLATOR_MODEL, name, cache_dir=self._MODEL_SUB_DIR), str)',
+          "        _miao_local_only = _miao_cached('pytorch_model.bin') or _miao_cached('model.safetensors')",
+          '        self.tokenizer = AutoTokenizer.from_pretrained(',
+          '            self._TRANSLATOR_MODEL, cache_dir=self._MODEL_SUB_DIR, local_files_only=_miao_local_only)',
+          '        self.model = AutoModelForSeq2SeqLM.from_pretrained(',
+          '            self._TRANSLATOR_MODEL, cache_dir=self._MODEL_SUB_DIR, local_files_only=_miao_local_only)',
+        ].join('\n'),
+      },
+    ],
   },
   {
     id: 'nllb-tokenizer-lang-id',
     mark: '# miao-dock 补丁 D-97d',
     file: srcPy('manga_translator', 'translators', 'nllb.py'),
     desc: 'nllb 不再用被 transformers>=5 移除的 lang_code_to_id（AttributeError 被 except 吞成静默空串）',
-    edits: [{
-      anchor: '            target_lang_id = self.tokenizer.lang_code_to_id[to_lang]',
-      patch: [
-        "            # miao-dock 补丁 D-97d：transformers>=5 移除了 `NllbTokenizer.lang_code_to_id`",
-        '            #   ⇒ 上游这行抛 AttributeError，而它被下面 `except Exception` **吞掉**，',
-        '            #   于是 _translate_batch 静默返回 [\'\'] * len(queries) —— 用户看到「翻译跑完了、',
-        '            #   却一个字都没有」。改用 `convert_tokens_to_ids`（新旧版本都在）。',
-        '            #   保留旧 API 优先：不是为兼容旧版，而是万一将来又恢复，行为不会变。',
-        "            if hasattr(self.tokenizer, 'lang_code_to_id'):",
-        '                target_lang_id = self.tokenizer.lang_code_to_id[to_lang]',
-        '            else:',
-        '                target_lang_id = self.tokenizer.convert_tokens_to_ids(to_lang)',
-      ].join('\n'),
-    }],
+    edits: [
+      {
+        anchor: '            target_lang_id = self.tokenizer.lang_code_to_id[to_lang]',
+        patch: [
+          '            # miao-dock 补丁 D-97d：transformers>=5 移除了 `NllbTokenizer.lang_code_to_id`',
+          '            #   ⇒ 上游这行抛 AttributeError，而它被下面 `except Exception` **吞掉**，',
+          "            #   于是 _translate_batch 静默返回 [''] * len(queries) —— 用户看到「翻译跑完了、",
+          '            #   却一个字都没有」。改用 `convert_tokens_to_ids`（新旧版本都在）。',
+          '            #   保留旧 API 优先：不是为兼容旧版，而是万一将来又恢复，行为不会变。',
+          "            if hasattr(self.tokenizer, 'lang_code_to_id'):",
+          '                target_lang_id = self.tokenizer.lang_code_to_id[to_lang]',
+          '            else:',
+          '                target_lang_id = self.tokenizer.convert_tokens_to_ids(to_lang)',
+        ].join('\n'),
+      },
+    ],
   },
   {
     id: 'text-render-no-bitmap',
     mark: '# miao-dock 补丁 D-102',
     file: srcPy('manga_translator', 'rendering', 'text_render.py'),
     desc: '正文渲染强制矢量轮廓（FT_LOAD_NO_BITMAP），消除带点阵字体在小字号下的发虚/锯齿（D-102）',
-    edits: [{
-      // 锚点 = 上游 get_char_glyph 里原样的 load_char 裸调用。取带前后两行以唯一（load_char 在
-      // 文件里另有一处 get_char_border 用的是带 flags 的形式，不会撞）。
-      anchor: [
-        "        face.load_char(cdpt)",
-        '        return Glyph(face.glyph)',
-      ].join('\n'),
-      patch: [
-        '        # miao-dock 补丁 D-102：强制矢量轮廓渲染，不加 FT_LOAD_NO_BITMAP 时，',
-        '        # msyh.ttc / msgothic.ttc 这类带嵌入点阵（bitmap strike）的字体在非整数倍字号下',
-        '        # 会直接采样点阵，导致笔画发虚、边缘锯齿（描边一直走矢量路径，故描边清晰、正文模糊）。',
-        '        # 🔴 必须同时带 FT_LOAD_RENDER：freetype-py 的 load_char 默认 flags=FT_LOAD_RENDER，',
-        '        #    显式指定 flags 后就不再隐式 render ⇒ bitmap 未渲染 ⇒ 读 buffer 报 NULL pointer。',
-        '        face.load_char(cdpt, freetype.FT_LOAD_NO_BITMAP | freetype.FT_LOAD_RENDER)',
-        '        return Glyph(face.glyph)',
-      ].join('\n'),
-    }],
+    edits: [
+      {
+        // 锚点 = 上游 get_char_glyph 里原样的 load_char 裸调用。取带前后两行以唯一（load_char 在
+        // 文件里另有一处 get_char_border 用的是带 flags 的形式，不会撞）。
+        anchor: ['        face.load_char(cdpt)', '        return Glyph(face.glyph)'].join('\n'),
+        patch: [
+          '        # miao-dock 补丁 D-102：强制矢量轮廓渲染，不加 FT_LOAD_NO_BITMAP 时，',
+          '        # msyh.ttc / msgothic.ttc 这类带嵌入点阵（bitmap strike）的字体在非整数倍字号下',
+          '        # 会直接采样点阵，导致笔画发虚、边缘锯齿（描边一直走矢量路径，故描边清晰、正文模糊）。',
+          '        # 🔴 必须同时带 FT_LOAD_RENDER：freetype-py 的 load_char 默认 flags=FT_LOAD_RENDER，',
+          '        #    显式指定 flags 后就不再隐式 render ⇒ bitmap 未渲染 ⇒ 读 buffer 报 NULL pointer。',
+          '        face.load_char(cdpt, freetype.FT_LOAD_NO_BITMAP | freetype.FT_LOAD_RENDER)',
+          '        return Glyph(face.glyph)',
+        ].join('\n'),
+      },
+    ],
   },
   {
     id: 'render-font-zen-first',
     mark: '# miao-dock 补丁 D-103',
     file: srcPy('manga_translator', 'rendering', 'text_render.py'),
     desc: 'FALLBACK 字体首选 Zen Maru Gothic 圆体（简体缺字由 msyh 逐字兜底），D-103',
-    edits: [{
-      // 锚点 = 上游原样 FALLBACK_FONTS 的前三条（含 `[` 行）。取到**第二条字体行**（msyh）以便
-      // 覆盖上游的 Arial 首选；替换后余下的 msgothic 行自然顺延 ⇒ 得到干净的 4 项列表。
-      anchor: [
-        'FALLBACK_FONTS = [',
-        "    os.path.join(BASE_PATH, 'fonts/Arial-Unicode-Regular.ttf'),",
-        "    os.path.join(BASE_PATH, 'fonts/msyh.ttc'),",
-      ].join('\n'),
-      patch: [
-        '# miao-dock 补丁 D-103：FALLBACK 字体首选 Zen Maru Gothic（圆体；Google Fonts，SIL OFL）。',
-        '# 缘起：原首选 Arial-Unicode-Regular 中文笔画太细，经 warpPerspective 插值后发虚。',
-        '# ⚠️ Zen Maru Gothic 是**日文字体**（JIS 汉字集），简体字缺约 27% ⇒ 靠紧随其后的 msyh.ttc',
-        '#    **逐字兜底**（get_char_glyph 遍历 FONT_SELECTION 逐字回退）⇒ 结果是「圆体 + 黑体」混排，',
-        '#    但不出豆腐块。想要不混排需换全简中的圆体（幼圆 / 资源圆体 Resource Han Rounded）。',
-        '# 🔴 Zen 的 TTF 不在上游包内，由 models.manifest.json 的 font_zen_maru_gothic 条目注入 fonts/；',
-        '#    它缺失时**静默回退**到 msyh（不报错）⇒ 换装后请确认该文件确实在 fonts/ 下。',
-        '# 用户显式配 font_path 时仍最优先。',
-        'FALLBACK_FONTS = [',
-        "    os.path.join(BASE_PATH, 'fonts/ZenMaruGothic-Regular.ttf'),",
-        "    os.path.join(BASE_PATH, 'fonts/msyh.ttc'),",
-        "    os.path.join(BASE_PATH, 'fonts/Arial-Unicode-Regular.ttf'),",
-      ].join('\n'),
-    }],
+    edits: [
+      {
+        // 锚点 = 上游原样 FALLBACK_FONTS 的前三条（含 `[` 行）。取到**第二条字体行**（msyh）以便
+        // 覆盖上游的 Arial 首选；替换后余下的 msgothic 行自然顺延 ⇒ 得到干净的 4 项列表。
+        anchor: [
+          'FALLBACK_FONTS = [',
+          "    os.path.join(BASE_PATH, 'fonts/Arial-Unicode-Regular.ttf'),",
+          "    os.path.join(BASE_PATH, 'fonts/msyh.ttc'),",
+        ].join('\n'),
+        patch: [
+          '# miao-dock 补丁 D-103：FALLBACK 字体首选 Zen Maru Gothic（圆体；Google Fonts，SIL OFL）。',
+          '# 缘起：原首选 Arial-Unicode-Regular 中文笔画太细，经 warpPerspective 插值后发虚。',
+          '# ⚠️ Zen Maru Gothic 是**日文字体**（JIS 汉字集），简体字缺约 27% ⇒ 靠紧随其后的 msyh.ttc',
+          '#    **逐字兜底**（get_char_glyph 遍历 FONT_SELECTION 逐字回退）⇒ 结果是「圆体 + 黑体」混排，',
+          '#    但不出豆腐块。想要不混排需换全简中的圆体（幼圆 / 资源圆体 Resource Han Rounded）。',
+          '# 🔴 Zen 的 TTF 不在上游包内，由 models.manifest.json 的 font_zen_maru_gothic 条目注入 fonts/；',
+          '#    它缺失时**静默回退**到 msyh（不报错）⇒ 换装后请确认该文件确实在 fonts/ 下。',
+          '# 用户显式配 font_path 时仍最优先。',
+          'FALLBACK_FONTS = [',
+          "    os.path.join(BASE_PATH, 'fonts/ZenMaruGothic-Regular.ttf'),",
+          "    os.path.join(BASE_PATH, 'fonts/msyh.ttc'),",
+          "    os.path.join(BASE_PATH, 'fonts/Arial-Unicode-Regular.ttf'),",
+        ].join('\n'),
+      },
+    ],
   },
   {
     id: 'render-font-lxgw-first',
     mark: '# miao-dock 补丁 D-105',
     file: srcPy('manga_translator', 'rendering', 'text_render.py'),
     desc: 'FALLBACK 字体首选霞鹜文楷 GB（LXGW WenKai GB，GB18030 简体全覆盖），D-105',
-    edits: [{
-      // 锚点 = D-103 打完后的 FALLBACK_FONTS 前三行（`[` + Zen 首选行 + msyh 行）。
-      // 🔴 本条**依赖 D-103 先应用**（靠数组顺序保证）；两条补丁的 mark 与锚点都互不相交 ⇒ 各自幂等：
-      //    全新环境：上游 →(D-103)→ Zen 首选 →(D-105)→ LXGW 首选；
-      //    已打过 D-103 的环境：D-103 跳过（mark 命中），本条单独命中自己的锚点。
-      anchor: [
-        'FALLBACK_FONTS = [',
-        "    os.path.join(BASE_PATH, 'fonts/ZenMaruGothic-Regular.ttf'),",
-        "    os.path.join(BASE_PATH, 'fonts/msyh.ttc'),",
-      ].join('\n'),
-      patch: [
-        '# miao-dock 补丁 D-105：FALLBACK 字体首选霞鹜文楷 GB（LXGW WenKai GB；GB18030 简体全覆盖的楷体）。',
-        '# 缘起：Zen Maru Gothic 是**日文字体**（JIS 汉字集），简体字缺约 27% ⇒ 由 msyh 逐字兜底后',
-        '#   呈「圆体 + 黑体」混排。霞鹜文楷 GB 简体基本同源 ⇒ 一篇简中译文不再混排。',
-        '# ⚠️ 霞鹜文楷**无 Bold 字重**（上游仅 Light / Regular / Medium）⇒ 取 **Medium** 档充当加粗观感。',
-        '# 🔴 其 TTF 不在上游包内，由 models.manifest.json 的 font_lxgw_wenkai_gb 条目注入 fonts/；',
-        '#    缺失时**静默回退**到紧随的 Zen / msyh（不报错）⇒ 换装后请确认该文件确实在 fonts/ 下。',
-        'FALLBACK_FONTS = [',
-        "    os.path.join(BASE_PATH, 'fonts/LXGWWenKaiGB-Medium.ttf'),",
-        "    os.path.join(BASE_PATH, 'fonts/ZenMaruGothic-Regular.ttf'),",
-        "    os.path.join(BASE_PATH, 'fonts/msyh.ttc'),",
-      ].join('\n'),
-    }],
+    edits: [
+      {
+        // 锚点 = D-103 打完后的 FALLBACK_FONTS 前三行（`[` + Zen 首选行 + msyh 行）。
+        // 🔴 本条**依赖 D-103 先应用**（靠数组顺序保证）；两条补丁的 mark 与锚点都互不相交 ⇒ 各自幂等：
+        //    全新环境：上游 →(D-103)→ Zen 首选 →(D-105)→ LXGW 首选；
+        //    已打过 D-103 的环境：D-103 跳过（mark 命中），本条单独命中自己的锚点。
+        anchor: [
+          'FALLBACK_FONTS = [',
+          "    os.path.join(BASE_PATH, 'fonts/ZenMaruGothic-Regular.ttf'),",
+          "    os.path.join(BASE_PATH, 'fonts/msyh.ttc'),",
+        ].join('\n'),
+        patch: [
+          '# miao-dock 补丁 D-105：FALLBACK 字体首选霞鹜文楷 GB（LXGW WenKai GB；GB18030 简体全覆盖的楷体）。',
+          '# 缘起：Zen Maru Gothic 是**日文字体**（JIS 汉字集），简体字缺约 27% ⇒ 由 msyh 逐字兜底后',
+          '#   呈「圆体 + 黑体」混排。霞鹜文楷 GB 简体基本同源 ⇒ 一篇简中译文不再混排。',
+          '# ⚠️ 霞鹜文楷**无 Bold 字重**（上游仅 Light / Regular / Medium）⇒ 取 **Medium** 档充当加粗观感。',
+          '# 🔴 其 TTF 不在上游包内，由 models.manifest.json 的 font_lxgw_wenkai_gb 条目注入 fonts/；',
+          '#    缺失时**静默回退**到紧随的 Zen / msyh（不报错）⇒ 换装后请确认该文件确实在 fonts/ 下。',
+          'FALLBACK_FONTS = [',
+          "    os.path.join(BASE_PATH, 'fonts/LXGWWenKaiGB-Medium.ttf'),",
+          "    os.path.join(BASE_PATH, 'fonts/ZenMaruGothic-Regular.ttf'),",
+          "    os.path.join(BASE_PATH, 'fonts/msyh.ttc'),",
+        ].join('\n'),
+      },
+    ],
   },
   {
     id: 'render-warp-cubic',
     mark: '# miao-dock 补丁 D-104',
     file: srcPy('manga_translator', 'rendering', '__init__.py'),
     desc: 'warpPerspective 用 INTER_CUBIC 替代 INTER_LINEAR（文字 box 放大映射时边缘更锐，D-104）',
-    edits: [{
-      anchor: '    rgba_region = cv2.warpPerspective(box, M, (img.shape[1], img.shape[0]), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)',
-      patch: [
-        '    # miao-dock 补丁 D-104：INTER_LINEAR → INTER_CUBIC。译文常比原文长 ⇒ 字号被调小 ⇒',
-        '    # 文字 box 映射到目标框时多为放大，双线性放大会把笔画边缘抹糊；三次插值明显更锐。',
-        '    rgba_region = cv2.warpPerspective(box, M, (img.shape[1], img.shape[0]), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0)',
-      ].join('\n'),
-    }],
+    edits: [
+      {
+        anchor:
+          '    rgba_region = cv2.warpPerspective(box, M, (img.shape[1], img.shape[0]), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)',
+        patch: [
+          '    # miao-dock 补丁 D-104：INTER_LINEAR → INTER_CUBIC。译文常比原文长 ⇒ 字号被调小 ⇒',
+          '    # 文字 box 映射到目标框时多为放大，双线性放大会把笔画边缘抹糊；三次插值明显更锐。',
+          '    rgba_region = cv2.warpPerspective(box, M, (img.shape[1], img.shape[0]), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0)',
+        ].join('\n'),
+      },
+    ],
   },
   {
     id: 'textblock-dehyphen',
     mark: '# miao-dock 补丁 D-98',
     file: srcPy('manga_translator', 'utils', 'textblock.py'),
     desc: 'TextBlock 拼接时合并断行连字符（消除 OCR 断词导致的整句译文崩坏）',
-    edits: [{
-      anchor: [
-        '        self.texts = texts if texts is not None else []',
-        '        self.text = texts[0]',
-        '        if self.text and len(texts) > 1:',
-        '            for txt in texts[1:]:',
-        String.raw`                first_cjk = '\u3000' <= self.text[-1] <= '\u9fff'`,
-      ].join('\n'),
-      patch: [
-        '        self.texts = texts if texts is not None else []',
-        '        self.text = texts[0]',
-        '        if self.text and len(texts) > 1:',
-        '            for txt in texts[1:]:',
-        '                # miao-dock 补丁 D-98：断行连字符合并。',
-        '                #   检测器会把一个词切成两个 region（实测 `ARE IN-` + `CREDIBLE.` 两块），',
-        '                #   而这里按行拼接时走拉丁分支 ⇒ 在 `-` 与后半截之间插了空格：',
-        '                #   "ARE IN-" + "CREDIBLE." = "ARE IN- CREDIBLE."，翻译器当两个词 ⇒ 整句语义崩坏',
-        '                #   （实测 nllb：「你真的是可信的」而不是「你真的是难以置信的」）。',
-        '                #   判据：上一行以 `-` 结尾、`-` 前是字母数字、下一行首字符也是字母数字 ⇒ 去 `-` 直接相连。',
-        '                #   🔴 只有这一步**同时知道「这是两行之间的接缝」**，所以只能在这里做：拼接前用全局',
-        '                #      正则（re.sub(r"-\\s+","")) 会把 `well- known` 这类正常写法一起合掉。',
-        '                #   ⚠️ 已知误伤：行尾破折号被打断（`I WANT TO-` + `NO!` → `I WANT TONO!`）。它与断行连字符',
-        '                #      在廉价规则下不可区分；且本字段只用于**翻译查询**（排版用 `region.lines`），',
-        '                #      误伤只坏一句译文、不动版面 ⇒ 接受。',
-        "                if (len(self.text) >= 2 and self.text.endswith('-')",
-        '                        and self.text[-2].isalnum() and txt[:1].isalnum()):',
-        '                    self.text = self.text[:-1] + txt',
-        '                    continue',
-        String.raw`                first_cjk = '\u3000' <= self.text[-1] <= '\u9fff'`,
-      ].join('\n'),
-    }],
+    edits: [
+      {
+        anchor: [
+          '        self.texts = texts if texts is not None else []',
+          '        self.text = texts[0]',
+          '        if self.text and len(texts) > 1:',
+          '            for txt in texts[1:]:',
+          String.raw`                first_cjk = '\u3000' <= self.text[-1] <= '\u9fff'`,
+        ].join('\n'),
+        patch: [
+          '        self.texts = texts if texts is not None else []',
+          '        self.text = texts[0]',
+          '        if self.text and len(texts) > 1:',
+          '            for txt in texts[1:]:',
+          '                # miao-dock 补丁 D-98：断行连字符合并。',
+          '                #   检测器会把一个词切成两个 region（实测 `ARE IN-` + `CREDIBLE.` 两块），',
+          '                #   而这里按行拼接时走拉丁分支 ⇒ 在 `-` 与后半截之间插了空格：',
+          '                #   "ARE IN-" + "CREDIBLE." = "ARE IN- CREDIBLE."，翻译器当两个词 ⇒ 整句语义崩坏',
+          '                #   （实测 nllb：「你真的是可信的」而不是「你真的是难以置信的」）。',
+          '                #   判据：上一行以 `-` 结尾、`-` 前是字母数字、下一行首字符也是字母数字 ⇒ 去 `-` 直接相连。',
+          '                #   🔴 只有这一步**同时知道「这是两行之间的接缝」**，所以只能在这里做：拼接前用全局',
+          '                #      正则（re.sub(r"-\\s+","")) 会把 `well- known` 这类正常写法一起合掉。',
+          '                #   ⚠️ 已知误伤：行尾破折号被打断（`I WANT TO-` + `NO!` → `I WANT TONO!`）。它与断行连字符',
+          '                #      在廉价规则下不可区分；且本字段只用于**翻译查询**（排版用 `region.lines`），',
+          '                #      误伤只坏一句译文、不动版面 ⇒ 接受。',
+          "                if (len(self.text) >= 2 and self.text.endswith('-')",
+          '                        and self.text[-2].isalnum() and txt[:1].isalnum()):',
+          '                    self.text = self.text[:-1] + txt',
+          '                    continue',
+          String.raw`                first_cjk = '\u3000' <= self.text[-1] <= '\u9fff'`,
+        ].join('\n'),
+      },
+    ],
   },
 ];
 
@@ -583,18 +626,23 @@ function patchEngineSource() {
     //    上游源码并非同一套行尾（实测 `utils/textblock.py` 是 CRLF，`config.py` 是 LF）——
     //    不归一化的后果不是报错而是**锚点永不命中**（然后被当成"源码变了"），排查起来极费时。
     // 幂等：marker 出现即已打过（重复打会在文件里堆第二份注释与语句）
-    if (cur.includes(p.mark)) { log(`[跳过] 源码补丁已应用：${p.id}`); continue; }
+    if (cur.includes(p.mark)) {
+      log(`[跳过] 源码补丁已应用：${p.id}`);
+      continue;
+    }
     for (const [i, e] of p.edits.entries()) {
       const anchor = norm(e.anchor);
       const patch = norm(e.patch);
       if (!cur.includes(anchor)) {
-        throw new Error([
-          `补丁 ${p.id} 的第 ${i + 1} 个锚点未找到（源码已变）。`,
-          `  文件：${p.file}`,
-          `  期望锚点：${JSON.stringify(e.anchor)}`,
-          '  ⇒ 换上游 commit 时必须**重新核对并更新** ENGINE_PATCHES 里的锚点/替换体',
-          '    （engine/VERSIONS.lock 的 ENGINE_COMMIT 与 setup-engine.mjs 的 ENGINE_COMMIT 同步改）。',
-        ].join('\n'));
+        throw new Error(
+          [
+            `补丁 ${p.id} 的第 ${i + 1} 个锚点未找到（源码已变）。`,
+            `  文件：${p.file}`,
+            `  期望锚点：${JSON.stringify(e.anchor)}`,
+            '  ⇒ 换上游 commit 时必须**重新核对并更新** ENGINE_PATCHES 里的锚点/替换体',
+            '    （engine/VERSIONS.lock 的 ENGINE_COMMIT 与 setup-engine.mjs 的 ENGINE_COMMIT 同步改）。',
+          ].join('\n'),
+        );
       }
       // 函数式替换：替换串里的 `$` 不会被当成 replace 的特殊记号（替换体里有 `{e}` 之类，别赌）
       cur = cur.replace(anchor, () => patch);
@@ -608,8 +656,11 @@ function patchEngineSource() {
 function sourcePatchState() {
   return ENGINE_PATCHES.map((p) => {
     let state;
-    try { state = fs.readFileSync(p.file, 'utf8').includes(p.mark) ? '✓ 已打' : '✗ 未打'; }
-    catch { state = '✗ 缺（源码未装）'; }
+    try {
+      state = fs.readFileSync(p.file, 'utf8').includes(p.mark) ? '✓ 已打' : '✗ 未打';
+    } catch {
+      state = '✗ 缺（源码未装）';
+    }
     return `  · ${p.id}：${state}`;
   }).join('\n');
 }
@@ -626,7 +677,7 @@ async function main() {
   if (check) {
     log(`Python(${PY_VERSION})：${fs.existsSync(pyExe()) ? '✓ 已装' : '✗ 缺'}`);
     log(`venv：${fs.existsSync(venvExe()) ? '✓ 已建' : '✗ 缺'}`);
-    log(`引擎源码：${await sourceReady() ? '✓ 已装' : '✗ 缺'}`);
+    log(`引擎源码：${(await sourceReady()) ? '✓ 已装' : '✗ 缺'}`);
     log(`源码补丁：${sourcePatchState()}`);
     return 0;
   }
@@ -647,5 +698,10 @@ async function main() {
 // 取 ENGINE_PATCHES 做取证）时**不得**触发下载/打补丁这类副作用。
 const invokedDirectly = process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
 if (invokedDirectly) {
-  main().then((c) => process.exit(c)).catch((e) => { console.error(`\n✗ ${e.stack || e.message}`); process.exit(1); });
+  main()
+    .then((c) => process.exit(c))
+    .catch((e) => {
+      console.error(`\n✗ ${e.stack || e.message}`);
+      process.exit(1);
+    });
 }

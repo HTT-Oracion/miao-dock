@@ -176,10 +176,7 @@ export function EngineDiag({
     return { text: view?.text ?? state ?? '—', colorVar: view?.colorVar ?? '--md-muted' };
   };
   const llmBase = chipText(s?.llm?.state);
-  const llmChip =
-    s?.llm?.state === 'running' && !s.warmed
-      ? { text: '未预热', colorVar: '--md-warning' }
-      : llmBase;
+  const llmChip = s?.llm?.state === 'running' && !s.warmed ? { text: '未预热', colorVar: '--md-warning' } : llmBase;
 
   /* 最新在上（引擎按发生顺序写入，界面要第一眼看到刚发生的那条） */
   const allLogs = [...logs].reverse();
@@ -229,12 +226,7 @@ export function EngineDiag({
             <span className="set-state-text">③ {llmChip.text}</span>
           </span>
           <span className="set-run-grow" />
-          <button
-            type="button"
-            className="set-run-fold"
-            aria-expanded={open}
-            onClick={() => setOpen(!open)}
-          >
+          <button type="button" className="set-run-fold" aria-expanded={open} onClick={() => setOpen(!open)}>
             {open ? '收起 ꜛ' : '诊断详情 ▾'}
           </button>
           <button type="button" className="set-run-all" onClick={() => setDrawer(true)}>
@@ -252,10 +244,7 @@ export function EngineDiag({
         <div className="set-run-log">
           {allLogs.length > 0 ? (
             shownLogs.map((line, i) => (
-              <div
-                key={`${i}-${line}`}
-                className={isFailedLine(line) ? 'set-run-line is-bad' : 'set-run-line'}
-              >
+              <div key={`${i}-${line}`} className={isFailedLine(line) ? 'set-run-line is-bad' : 'set-run-line'}>
                 {line}
               </div>
             ))
@@ -277,12 +266,7 @@ export function EngineDiag({
             最后更新：{relativeText(logs.length > 0 ? stampRef.current.at : 0, now)}
           </span>
           {allLogs.length > LOG_DEFAULT ? (
-            <button
-              type="button"
-              className="set-run-more"
-              aria-expanded={logMore}
-              onClick={() => setLogMore(!logMore)}
-            >
+            <button type="button" className="set-run-more" aria-expanded={logMore} onClick={() => setLogMore(!logMore)}>
               {logMore ? `收起到 ${LOG_DEFAULT} 行 ꜛ` : `展开到 ${LOG_EXPANDED} 行 ▾`}
             </button>
           ) : null}
@@ -294,15 +278,8 @@ export function EngineDiag({
         条上那句话就是"里面有什么"的清单 —— 不点开也能知道值不值得点。
       */}
       <div className="set-run-detail">
-        <span className="set-run-detail-t">
-          诊断详情 —— 进程表 / 生效配置 / 模型路径 / 重启 · 重下 · 释放
-        </span>
-        <button
-          type="button"
-          className="set-run-fold"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-        >
+        <span className="set-run-detail-t">诊断详情 —— 进程表 / 生效配置 / 模型路径 / 重启 · 重下 · 释放</span>
+        <button type="button" className="set-run-fold" aria-expanded={open} onClick={() => setOpen(!open)}>
           {open ? '收起 ꜛ' : '展开 ▾'}
         </button>
       </div>
@@ -342,8 +319,8 @@ export function EngineDiag({
               extra={s?.llm?.model ?? null}
             />
             <div className="set-diag-note">
-              「已预热」= {s ? (s.warmed ? '是' : '否') : '—'} —— ③ 被空闲卸载后进程态仍是 running，
-              但这一项会转 false，所以它不是「引擎没起来」，而是「首张稍慢」。
+              「已预热」= {s ? (s.warmed ? '是' : '否') : '—'} —— ③ 被空闲卸载后进程态仍是 running， 但这一项会转
+              false，所以它不是「引擎没起来」，而是「首张稍慢」。
             </div>
           </DiagSection>
 
@@ -410,9 +387,9 @@ export function EngineDiag({
             </Btn>
           </div>
           <div className="set-diag-note">
-            「重启引擎」重启的是<b>整条本地链路（①②③）</b>：② 由 Box 壳拉开，box-service 管不到它，
-            所以做不到「只重启 ②」。「强制释放模型」只停 ③ —— ② 与 ① 一根毫毛都不动，
-            这是它不需要二次确认的原因（③ 不在跑时它也只是如实告诉你「无需释放」）。
+            「重启引擎」重启的是<b>整条本地链路（①②③）</b>：② 由 Box 壳拉开，box-service 管不到它， 所以做不到「只重启
+            ②」。「强制释放模型」只停 ③ —— ② 与 ① 一根毫毛都不动， 这是它不需要二次确认的原因（③
+            不在跑时它也只是如实告诉你「无需释放」）。
           </div>
         </>
       ) : null}
@@ -429,9 +406,7 @@ export function EngineDiag({
           >
             <div className="set-run-drawer-head">
               <span className="set-run-drawer-title">全部日志</span>
-              <span className="set-run-drawer-sub">
-                最多 {LOG_DRAWER_MAX} 行 · 最新在上
-              </span>
+              <span className="set-run-drawer-sub">最多 {LOG_DRAWER_MAX} 行 · 最新在上</span>
               <span className="set-run-grow" />
               <Btn size="sm" onClick={() => void copyAll()}>
                 复制全部
@@ -439,22 +414,14 @@ export function EngineDiag({
               <Btn size="sm" onClick={() => void exportTxt()}>
                 导出 .txt
               </Btn>
-              <button
-                type="button"
-                className="set-run-drawer-x"
-                aria-label="关闭"
-                onClick={() => setDrawer(false)}
-              >
+              <button type="button" className="set-run-drawer-x" aria-label="关闭" onClick={() => setDrawer(false)}>
                 ✕
               </button>
             </div>
             <div className="set-run-drawer-body">
               {drawerLogs.length > 0 ? (
                 drawerLogs.map((line, i) => (
-                  <div
-                    key={`${i}-${line}`}
-                    className={isFailedLine(line) ? 'set-run-line is-bad' : 'set-run-line'}
-                  >
+                  <div key={`${i}-${line}`} className={isFailedLine(line) ? 'set-run-line is-bad' : 'set-run-line'}>
                     {line}
                   </div>
                 ))
@@ -579,11 +546,7 @@ function ModelGuide({ guidance, dir }: { guidance?: ModelGuidance; dir?: string 
   const loc = <code className="set-ro">{dir ?? '—'}</code>;
   // 清单读不到：不说"0 B"（那会被读成"不用占盘"），也不编一个数字，照实说算不出来。
   if (guidance.entries === 0) {
-    return (
-      <div className="set-diag-note">
-        落点 {loc} —— 清单读不到，体积无从算起。
-      </div>
-    );
+    return <div className="set-diag-note">落点 {loc} —— 清单读不到，体积无从算起。</div>;
   }
   return (
     <>
@@ -608,9 +571,9 @@ function ModelGuide({ guidance, dir }: { guidance?: ModelGuidance; dir?: string 
         </div>
       </div>
       <div className="set-diag-note">
-        这些都是<b>从网上下的</b>资产（不随安装包分发）：上手前按上面这个数留盘。
-        另需 Python 运行时与 venv 依赖（<code>torch</code> 那几 GB）—— 那部分体积由你的
-        环境决定，这里<b>不替你估</b>。分平台的命令与逐项自检见 <code>docs/install-guide-*.md</code>。
+        这些都是<b>从网上下的</b>资产（不随安装包分发）：上手前按上面这个数留盘。 另需 Python 运行时与 venv 依赖（
+        <code>torch</code> 那几 GB）—— 那部分体积由你的 环境决定，这里<b>不替你估</b>。分平台的命令与逐项自检见{' '}
+        <code>docs/install-guide-*.md</code>。
       </div>
     </>
   );
@@ -682,15 +645,22 @@ function ModelFiles({ files }: { files?: ModelFileStatus[] }) {
   return (
     <>
       <div className={missing.length ? 'set-diag-note is-bad' : 'set-diag-note'}>
-        清单共 {all.length} 条，适用本机 {mine.length} 条
-        {others > 0 ? `（另有 ${others} 条属其他平台，不列）` : ''}：
-        {missing.length ? <>其中 <b>{missing.length} 条未就绪</b></> : '全部就绪'}
+        清单共 {all.length} 条，适用本机 {mine.length} 条{others > 0 ? `（另有 ${others} 条属其他平台，不列）` : ''}：
+        {missing.length ? (
+          <>
+            其中 <b>{missing.length} 条未就绪</b>
+          </>
+        ) : (
+          '全部就绪'
+        )}
       </div>
       <div className="set-diag-files">
         {mine.map((f) => (
           <div key={f.id} className={f.ready ? 'set-diag-file' : 'set-diag-file is-bad'}>
             <span className="set-diag-file-id">{f.id}</span>
-            <span className="set-diag-file-path" title={f.path}>{f.path}</span>
+            <span className="set-diag-file-path" title={f.path}>
+              {f.path}
+            </span>
             <span className="set-diag-file-size">
               {f.sizeBytes ? humanBytes(f.sizeBytes) : '大小未声明'}
               {f.platform ? ` · ${f.platform}` : ''}
@@ -718,11 +688,7 @@ function readyText(v: boolean | undefined): string {
 function DownloadState({ view }: { view: ModelDownloadView | undefined }) {
   if (!view) return null;
   if (view.state === 'idle') {
-    return (
-      <div className="set-diag-note">
-        没有下载任务在跑。最近一次：从未（本进程启动以来）。
-      </div>
-    );
+    return <div className="set-diag-note">没有下载任务在跑。最近一次：从未（本进程启动以来）。</div>;
   }
   const label: Record<ModelDownloadView['state'], string> = {
     idle: '空闲',
@@ -759,14 +725,15 @@ function DownloadState({ view }: { view: ModelDownloadView | undefined }) {
       {tail.length > 0 ? (
         <div className="set-diag-log">
           {tail.map((line, i) => (
-            <div key={`${i}-${line}`} className="set-diag-log-line">{line}</div>
+            <div key={`${i}-${line}`} className="set-diag-log-line">
+              {line}
+            </div>
           ))}
         </div>
       ) : null}
       <div className="set-diag-note">
-        目标目录 <code className="set-ro">{view.rootDir}</code>。
-        已就绪的文件按清单的 (sha256, 大小, 时间) 复用 —— 重下<b>不会</b>把几个 GB 再下一遍，
-        只补齐缺失与不符的那几个。
+        目标目录 <code className="set-ro">{view.rootDir}</code>。 已就绪的文件按清单的 (sha256, 大小, 时间) 复用 —— 重下
+        <b>不会</b>把几个 GB 再下一遍， 只补齐缺失与不符的那几个。
       </div>
     </div>
   );

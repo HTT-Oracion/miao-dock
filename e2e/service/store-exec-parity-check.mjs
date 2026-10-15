@@ -159,7 +159,11 @@ if (golden && rust) {
       r.task ? r.task.status === expect : expect === null,
       r.task ? r.task.status : null,
     );
-    check(`SC.${g.name}.eventIdsConsecutive — 事件 id 严格 +1（原始 id）`, idsConsecutive(r.events), r.events.map((e) => e.id));
+    check(
+      `SC.${g.name}.eventIdsConsecutive — 事件 id 严格 +1（原始 id）`,
+      idsConsecutive(r.events),
+      r.events.map((e) => e.id),
+    );
   }
 
   // 定点断言：总预算耗尽 vs 单请求超时（两者 reason 相同，只能靠 errorMessage 分开）
@@ -173,13 +177,17 @@ if (golden && rust) {
   // G-11：失败页原图落盘、且没有译文
   const partial = rust['partial-failed'];
   const pdisk = (partial && partial.disk) || [];
-  check('SC.partial-failed.g11 — 失败页原图落盘且无译文', pdisk.includes('002.png') && !pdisk.includes('002_translated.png'), pdisk);
+  check(
+    'SC.partial-failed.g11 — 失败页原图落盘且无译文',
+    pdisk.includes('002.png') && !pdisk.includes('002_translated.png'),
+    pdisk,
+  );
   // 幂等短路：seq1 必须是 skipped(already_exists)，且**没有**被送引擎（无 001.png）
   const skip = rust['skip-existing'];
   const s1 = skip && skip.task && skip.task.batches[0] && skip.task.batches[0].items[0];
   check(
     'SC.skip-existing.short-circuit — seq1 skipped(already_exists) 且原图未落盘',
-    !!s1 && s1.status === 'skipped' && s1.reason === 'already_exists' && !((skip.disk) || []).includes('001.png'),
+    !!s1 && s1.status === 'skipped' && s1.reason === 'already_exists' && !(skip.disk || []).includes('001.png'),
     s1,
   );
   // 删除：逐条回报（一条删掉、两条不可删）
@@ -255,7 +263,9 @@ if (REFUTE) {
   let allRed = true;
   for (const m of mutations) {
     if (!m.red) allRed = false;
-    console.log(`  ${m.red ? '✓' : '✗'} ${m.id} ${m.what} → ${m.red ? '按预期变红' : '**没有红**（断言漏了它）'}${m.info ? ` ${JSON.stringify(m.info)}` : ''}`);
+    console.log(
+      `  ${m.red ? '✓' : '✗'} ${m.id} ${m.what} → ${m.red ? '按预期变红' : '**没有红**（断言漏了它）'}${m.info ? ` ${JSON.stringify(m.info)}` : ''}`,
+    );
   }
   console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed, allRed }));
   console.log(
@@ -265,5 +275,7 @@ if (REFUTE) {
 }
 
 console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed }));
-console.log(`\nF3-b store 执行态同源：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`);
+console.log(
+  `\nF3-b store 执行态同源：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`,
+);
 process.exit(failed === 0 ? 0 : 1);

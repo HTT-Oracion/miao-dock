@@ -50,9 +50,9 @@ export class ModelStoreError extends Error {
 export function refuteFlags(env = process.env) {
   return {
     noVerify: env.MIAO_NO_MODEL_VERIFY === '1', // 关掉 SHA256 校验
-    noResume: env.MIAO_NO_RESUME === '1',       // 关掉断点续传（每次从 0 重来）
-    noReady: env.MIAO_NO_READY === '1',         // 关掉 .ready 幂等标记
-    noLink: env.MIAO_NO_LINK === '1',           // 关掉"把 store 链进引擎树"这一步
+    noResume: env.MIAO_NO_RESUME === '1', // 关掉断点续传（每次从 0 重来）
+    noReady: env.MIAO_NO_READY === '1', // 关掉 .ready 幂等标记
+    noLink: env.MIAO_NO_LINK === '1', // 关掉"把 store 链进引擎树"这一步
     // 关掉「清单原 url 优先」⇒ 只试 sources（2026-10-16 之前的旧行为）。
     // 旧行为本身就是缺陷（sources 一非空就把 url 丢掉，见 sourceCandidates），
     // 留这个开关只为让"原 url 真的参与了候选"可反证：关掉它，H2 必须变红。
@@ -62,17 +62,25 @@ export function refuteFlags(env = process.env) {
 
 // ------------------------------------------------------------------ 基础工具
 
-const log = (fn, msg) => { if (fn) fn(msg); };
+const log = (fn, msg) => {
+  if (fn) fn(msg);
+};
 
 async function sizeOf(p) {
-  try { return (await fsp.stat(p)).size; } catch { return 0; }
+  try {
+    return (await fsp.stat(p)).size;
+  } catch {
+    return 0;
+  }
 }
 
 export async function statSafe(p) {
   try {
     const s = await fsp.stat(p);
     return { size: s.size, mtimeMs: s.mtimeMs, ino: s.ino, dev: s.dev };
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -88,7 +96,9 @@ export async function lstatSafe(p) {
   try {
     const s = await fsp.lstat(p);
     return { size: s.size, mtimeMs: s.mtimeMs, ino: s.ino, dev: s.dev, isSymbolicLink: s.isSymbolicLink() };
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 /** 流式算 sha256（不把文件读进内存 —— Sakura 权重有 3.3 GB）。 */
@@ -100,7 +110,8 @@ export async function sha256File(file, { signal } = {}) {
     signal?.addEventListener('abort', onAbort, { once: true });
     const done = (err, v) => {
       signal?.removeEventListener('abort', onAbort);
-      if (err) reject(err); else resolve(v);
+      if (err) reject(err);
+      else resolve(v);
     };
     rs.on('data', (c) => h.update(c));
     rs.on('error', (e) => done(e));
@@ -193,7 +204,9 @@ export function hfLayout(file, { rootDir, linkBase }) {
 export async function readMarker(rootDir) {
   try {
     return JSON.parse(await fsp.readFile(path.join(rootDir, READY_MARKER), 'utf8'));
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 export async function writeMarker(rootDir, manifest, records) {
@@ -219,8 +232,7 @@ export async function writeMarker(rootDir, manifest, records) {
  *    `integrity:'hash'` 始终可达，且诊断/验收路径走的就是它（见 D-72）。
  */
 export function markerMatches(rec, dest, st, sha256) {
-  return !!rec && rec.dest === dest && rec.sha256 === sha256
-    && rec.sizeBytes === st.size && rec.mtimeMs === st.mtimeMs;
+  return !!rec && rec.dest === dest && rec.sha256 === sha256 && rec.sizeBytes === st.size && rec.mtimeMs === st.mtimeMs;
 }
 
 // ------------------------------------------------------------------ 单文件取回
@@ -299,7 +311,9 @@ async function fetchToPart(partAbs, file, { urls, fetchImpl, signal, onProgress,
 
         const total = acceptsRange
           ? totalFromContentRange(res.headers.get('content-range'))
-          : (res.headers.get('content-length') != null ? Number(res.headers.get('content-length')) : null);
+          : res.headers.get('content-length') != null
+            ? Number(res.headers.get('content-length'))
+            : null;
 
         ws = fs.createWriteStream(partAbs, { flags: from > 0 ? 'a' : 'w' });
         const closed = finished(ws);
@@ -322,7 +336,11 @@ async function fetchToPart(partAbs, file, { urls, fetchImpl, signal, onProgress,
 
         return { url, resumedFrom: from, restarted, bytes: received };
       } catch (err) {
-        try { ws?.destroy(); } catch { /* 已关 */ }
+        try {
+          ws?.destroy();
+        } catch {
+          /* 已关 */
+        }
         // 用户主动中止 ⇒ 立刻上抛，不当作"这个源坏了"去试下一个（否则取消变成慢动作）。
         // 并且**只吐一个错误码**：底层可能是裸的 AbortError，也可能是我们自己的 —— 调用方
         // 不该被迫同时接两种形态（这是最容易漏、漏了就表现为"取消失败"的地方）。
@@ -358,16 +376,7 @@ async function fetchToPart(partAbs, file, { urls, fetchImpl, signal, onProgress,
  * @param {AbortSignal} [opts.signal]
  */
 export async function ensureModels(manifest, opts = {}) {
-  const {
-    rootDir,
-    ids,
-    set,
-    integrity = 'hash',
-    fetchImpl = globalThis.fetch,
-    onProgress,
-    signal,
-    logger,
-  } = opts;
+  const { rootDir, ids, set, integrity = 'hash', fetchImpl = globalThis.fetch, onProgress, signal, logger } = opts;
 
   const flags = refuteFlags();
   if (!rootDir) throw new ModelStoreError('MODEL_NO_ROOT', '缺少 rootDir');
@@ -381,10 +390,10 @@ export async function ensureModels(manifest, opts = {}) {
 
   const result = {
     total: files.length,
-    reused: [],        // 已就位且校验通过，本次未动
-    downloaded: [],    // 本次（重新）下载成功
-    redownloaded: [],  // 因校验不符触发**自动重下**的
-    resumeFrom: {},    // id → 续传起点（0 表示从头）
+    reused: [], // 已就位且校验通过，本次未动
+    downloaded: [], // 本次（重新）下载成功
+    redownloaded: [], // 因校验不符触发**自动重下**的
+    resumeFrom: {}, // id → 续传起点（0 表示从头）
     bytes: 0,
   };
 
@@ -499,7 +508,10 @@ export async function verifyModels(manifest, { rootDir, ids, set, signal, onProg
   for (const file of files) {
     const destAbs = path.join(rootDir, file.dest);
     const st = await statSafe(destAbs);
-    if (st == null) { out.missing.push(file.id); continue; }
+    if (st == null) {
+      out.missing.push(file.id);
+      continue;
+    }
     onProgress?.({ id: file.id, phase: 'verifying', received: 0, total: st.size });
     const got = await sha256File(destAbs, { signal });
     if (got === file.sha256) out.ok.push(file.id);
@@ -602,7 +614,9 @@ async function writeRefsIfChanged(refsTo, content) {
   await fsp.mkdir(path.dirname(refsTo), { recursive: true });
   try {
     if ((await fsp.readFile(refsTo, 'utf8')) === content) return false;
-  } catch { /* 不存在或读不动 ⇒ 写一份新的 */ }
+  } catch {
+    /* 不存在或读不动 ⇒ 写一份新的 */
+  }
   await fsp.writeFile(refsTo, content);
   return true;
 }
@@ -626,7 +640,11 @@ export async function verifyHfCache(manifest, { rootDir, linkBase, ids, set } = 
     const snap = await statSafe(l.snapshotTo);
     const store = await statSafe(l.blobFrom);
     let refOk = false;
-    try { refOk = (await fsp.readFile(l.refsTo, 'utf8')).trim() === l.refsContent.trim(); } catch { /* 缺 refs */ }
+    try {
+      refOk = (await fsp.readFile(l.refsTo, 'utf8')).trim() === l.refsContent.trim();
+    } catch {
+      /* 缺 refs */
+    }
     if (snap && store && refOk) out.ok.push(file.id);
     else out.missing.push({ id: file.id, snapshot: !!snap, store: !!store, refs: refOk });
   }

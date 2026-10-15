@@ -108,9 +108,11 @@ if (golden && live) {
   }
   // 🔴 分母写死：`live.results` 少一条时下面那个循环**根本不会执行到**，于是"少跑一例"看起来
   //    像"全部通过"。Rust 侧漏回一例、或某个用例被静默跳过，只有这条会红。
-  check(`HTTP.用例表 — live 取到 ${CASES.length} 例（与用例表同数）`,
-    live.results.length === CASES.length,
-    { live: live.results.length, cases: CASES.length, names: live.results.map((r) => r.name) });
+  check(`HTTP.用例表 — live 取到 ${CASES.length} 例（与用例表同数）`, live.results.length === CASES.length, {
+    live: live.results.length,
+    cases: CASES.length,
+    names: live.results.map((r) => r.name),
+  });
 }
 
 // ------------------------------------------------------------------ 反证
@@ -210,5 +212,7 @@ if (REFUTE) {
 }
 
 console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed }));
-console.log(`\nF4-b engine HTTP 同源：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`);
+console.log(
+  `\nF4-b engine HTTP 同源：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`,
+);
 process.exit(failed === 0 ? 0 : 1);

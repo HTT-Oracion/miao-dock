@@ -763,5 +763,4 @@ export const useMusicStore = create<MusicState>()((set, get) => ({
   ...createDesktopSlice(set, get),
   ...createUiSlice(set, get),
   ...createPlaybackSlice(set, get),
-
 }));

@@ -27,7 +27,8 @@ const LIVE_DOCS = [
   'docs/dev-setup.md',
   '.trae/rules/project_rules.md',
 ];
-const PATH_RE = /`((?:service|app|e2e|docs|scripts|engine|src-tauri)\/[\w./-]+\.(?:mjs|ts|tsx|rs|md|json|scss|css|html))`/g;
+const PATH_RE =
+  /`((?:service|app|e2e|docs|scripts|engine|src-tauri)\/[\w./-]+\.(?:mjs|ts|tsx|rs|md|json|scss|css|html))`/g;
 
 function runAll() {
   return LIVE_DOCS.map((d) => {
@@ -54,7 +55,7 @@ const MUTATIONS = [
     name: '在 AGENTS.md 里插一个不存在的仓库路径（文档漂移复发时的形状）',
     file: 'AGENTS.md',
     find: 'npm run check:docs',
-    replace: "npm run check:docs\n\n> 反证：`service/src/no-such-file.mjs` 应当不存在",
+    replace: 'npm run check:docs\n\n> 反证：`service/src/no-such-file.mjs` 应当不存在',
     expect: ['DOCS.path.AGENTS.md'],
   },
   {
@@ -67,7 +68,9 @@ const MUTATIONS = [
 ];
 
 if (process.argv.includes('--refute')) {
-  let total = 0, passed = 0, skipped = 0;
+  let total = 0,
+    passed = 0,
+    skipped = 0;
   for (const mut of MUTATIONS) {
     const file = path.resolve(ROOT, mut.file);
     const original = readFileSync(file);
@@ -84,8 +87,10 @@ if (process.argv.includes('--refute')) {
     for (const id of mut.expect) {
       total++;
       const r = res.find((x) => x.name === id);
-      if (r && !r.ok) { passed++; console.log(`🔴 ${mut.name} → ${id} 按预期变红`); }
-      else console.log(`✗ ${mut.name} → ${id} **没有变红**（假阳性！）`);
+      if (r && !r.ok) {
+        passed++;
+        console.log(`🔴 ${mut.name} → ${id} 按预期变红`);
+      } else console.log(`✗ ${mut.name} → ${id} **没有变红**（假阳性！）`);
     }
     clearOverrides();
   }

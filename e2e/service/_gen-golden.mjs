@@ -33,9 +33,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
 const GOLDEN_DIR = path.join(HERE, 'golden');
 
-const normStr = (s) => s
-  .replace(/[A-Za-z]:[\\/]+Users[\\/]+[A-Za-z0-9_.-]+/g, '<HOME>')
-  .replaceAll(REPO_ROOT, '<REPO>');
+const normStr = (s) =>
+  s.replace(/[A-Za-z]:[\\/]+Users[\\/]+[A-Za-z0-9_.-]+/g, '<HOME>').replaceAll(REPO_ROOT, '<REPO>');
 
 function canon(v) {
   if (Array.isArray(v)) return v.map(canon);
@@ -52,7 +51,11 @@ function canon(v) {
 }
 
 function run(args, env = {}) {
-  const r = spawnSync(RUST_BIN, args, { encoding: 'utf8', maxBuffer: 40 * 1024 * 1024, env: { ...process.env, ...env } });
+  const r = spawnSync(RUST_BIN, args, {
+    encoding: 'utf8',
+    maxBuffer: 40 * 1024 * 1024,
+    env: { ...process.env, ...env },
+  });
   if (r.status !== 0) throw new Error(`${args[0]} 退出码 ${r.status}：${(r.stderr || '').slice(0, 500)}`);
   return r.stdout;
 }
@@ -71,12 +74,38 @@ function genEngine() {
     const env = l.env || {};
     const has = (k) => Object.prototype.hasOwnProperty.call(env, k);
     const injected = {};
-    for (const k of ['PYTHONIOENCODING', 'SAKURA_API_BASE', 'MT_WEB_NONCE', 'HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE']) injected[k] = has(k) ? env[k] : null;
+    for (const k of ['PYTHONIOENCODING', 'SAKURA_API_BASE', 'MT_WEB_NONCE', 'HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE'])
+      injected[k] = has(k) ? env[k] : null;
     const noProxy = (has('NO_PROXY') ? env.NO_PROXY : has('no_proxy') ? env.no_proxy : null) ?? null;
-    return { label: l.label, cmd: l.cmd, cwd: l.cwd ?? null, executorPort: l.executorPort ?? null, probes: l.probes, envInjected: injected, noProxy };
+    return {
+      label: l.label,
+      cmd: l.cmd,
+      cwd: l.cwd ?? null,
+      executorPort: l.executorPort ?? null,
+      probes: l.probes,
+      envInjected: injected,
+      noProxy,
+    };
   };
-  const projLlm = (l) => (l && l.error ? { error: l.error } : { label: l.label, tier: l.tier ?? null, model: l.model ?? null, cmd: l.cmd, cwd: l.cwd ?? null, probes: l.probes });
-  const projFrames = (frames) => frames.map((f) => ({ name: f.name, resultB64: f.resultB64 ?? null, ext: f.ext ?? null, mime: f.mime ?? null, stageLines: f.stageLines }));
+  const projLlm = (l) =>
+    l && l.error
+      ? { error: l.error }
+      : {
+          label: l.label,
+          tier: l.tier ?? null,
+          model: l.model ?? null,
+          cmd: l.cmd,
+          cwd: l.cwd ?? null,
+          probes: l.probes,
+        };
+  const projFrames = (frames) =>
+    frames.map((f) => ({
+      name: f.name,
+      resultB64: f.resultB64 ?? null,
+      ext: f.ext ?? null,
+      mime: f.mime ?? null,
+      stageLines: f.stageLines,
+    }));
 
   const proj = (o) => ({
     constants: canon(o.constants),
@@ -88,8 +117,17 @@ function genEngine() {
     frames: o.pure.parseResultStream ? canon(projFrames(o.pure.parseResultStream)) : null,
   });
 
-  const real = JSON.parse(run(['--engine-selftest'], { MIAO_ENGINE_PROTOCOL: 'real', MIAO_ENGINE_PYTHON: '/py/python', NO_PROXY: 'parity.example', MIAO_ENGINE_PROBE_MS: '400' }));
-  const mock = JSON.parse(run(['--engine-selftest'], { MIAO_ENGINE_PROTOCOL: 'mock', MIAO_ENGINE_DETECTION_SIZE: '1024' }));
+  const real = JSON.parse(
+    run(['--engine-selftest'], {
+      MIAO_ENGINE_PROTOCOL: 'real',
+      MIAO_ENGINE_PYTHON: '/py/python',
+      NO_PROXY: 'parity.example',
+      MIAO_ENGINE_PROBE_MS: '400',
+    }),
+  );
+  const mock = JSON.parse(
+    run(['--engine-selftest'], { MIAO_ENGINE_PROTOCOL: 'mock', MIAO_ENGINE_DETECTION_SIZE: '1024' }),
+  );
   write('engine-selftest', { real: proj(real), mock: proj(mock) });
 }
 
@@ -144,4 +182,7 @@ else if (which === 'paths') await genPaths();
 else if (which === 'llm-supervisor') await genLlmSupervisor();
 else if (which === 'engine-http') await genEngineHttp();
 else if (which === 'translate') genTranslate();
-else throw new Error(`未知 golden 目标：${which}（现支持：engine / store-exec / paths / llm-supervisor / engine-http / translate）`);
+else
+  throw new Error(
+    `未知 golden 目标：${which}（现支持：engine / store-exec / paths / llm-supervisor / engine-http / translate）`,
+  );

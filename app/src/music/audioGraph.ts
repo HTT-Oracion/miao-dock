@@ -98,8 +98,7 @@ export function markNotWirable(el: HTMLAudioElement | null): void {
 function ensureContext(): AudioContext | null {
   if (hardFailed) return null;
   const Ctor =
-    window.AudioContext ??
-    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!Ctor) {
     hardFailed = true;
     return null;

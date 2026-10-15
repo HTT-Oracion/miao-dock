@@ -158,8 +158,9 @@
   pointer-events: none;
   transform: translate(44px, 21.6px) scale(0.6);
   opacity: 0;
-  transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1),
-              opacity 0.18s ease-out;
+  transition:
+    transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1),
+    opacity 0.18s ease-out;
 }
 .di-capsule.is-expanded .di-subname {
   /* top 32 与展开卡片的 padding-top 对齐，歌手行正好落在"歌名下方、进度条上方"的空档里
@@ -473,10 +474,14 @@
   min-height: 0;
   gap: 12px;
 }
-.music .grow { flex: 1; }
+.music .grow {
+  flex: 1;
+}
 
 /* 播放内核：不可见，仅承载 <audio> */
-.music-audio { display: none; }
+.music-audio {
+  display: none;
+}
 
 /* ---------------------------------------------------------------- 顶行 */
 .music-top {
@@ -507,7 +512,10 @@
   color: var(--md-ink-2);
   cursor: pointer;
 }
-.music-plat:hover { border-color: var(--md-pink); color: var(--md-ink); }
+.music-plat:hover {
+  border-color: var(--md-pink);
+  color: var(--md-ink);
+}
 
 .music-top-r {
   display: flex;
@@ -525,7 +533,9 @@
   border: none;
   cursor: pointer;
 }
-.music-user:hover { background: var(--md-surface-2); }
+.music-user:hover {
+  background: var(--md-surface-2);
+}
 .music-ava {
   width: 26px;
   height: 26px;
@@ -539,7 +549,12 @@
   overflow: hidden;
   flex-shrink: 0;
 }
-.music-ava img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.music-ava img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
 .music-nick {
   font-size: 12px;
   font-weight: 500;
@@ -625,13 +640,39 @@
   cursor: pointer;
   white-space: nowrap;
 }
-.music-btn.pri { background: var(--md-pink); color: #fff; }
-.music-btn.out { background: transparent; border: 1px solid var(--md-pink); color: var(--md-pink); }
-.music-btn:disabled { opacity: 0.5; cursor: default; }
+.music-btn.pri {
+  background: var(--md-pink);
+  color: #fff;
+}
+.music-btn.out {
+  background: transparent;
+  border: 1px solid var(--md-pink);
+  color: var(--md-pink);
+}
+.music-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 
-.music-hint { flex: 0 0 auto; font-size: 10.5px; color: var(--md-muted); padding: 0 8px 6px; }
-.music-inline-err { flex: 0 0 auto; font-size: 11px; color: var(--md-error); padding: 2px 2px 6px; }
-.music-more { flex: 0 0 auto; text-align: center; font-size: 10.5px; color: var(--md-muted); padding: 8px; }
+.music-hint {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: var(--md-muted);
+  padding: 0 8px 6px;
+}
+.music-inline-err {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--md-error);
+  padding: 2px 2px 6px;
+}
+.music-more {
+  flex: 0 0 auto;
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--md-muted);
+  padding: 8px;
+}
 
 /* ---------------------------------------------------------------- 左栏视图 Tab */
 .ltabs {
@@ -650,8 +691,14 @@
   font-family: var(--md-font-body);
   cursor: pointer;
 }
-.ltab:hover { color: var(--md-ink-2); }
-.ltab.is-on { background: var(--md-pink-soft); color: var(--md-pink); font-weight: 700; }
+.ltab:hover {
+  color: var(--md-ink-2);
+}
+.ltab.is-on {
+  background: var(--md-pink-soft);
+  color: var(--md-pink);
+  font-weight: 700;
+}
 
 /* ---------------------------------------------------------------- 搜索框 + 搜索源胶囊 */
 .music-search-row {
@@ -671,8 +718,13 @@
   background: var(--md-surface);
   font-family: var(--md-font-body);
 }
-.music-search::placeholder { color: var(--md-muted); }
-.music-search:focus { outline: none; border-color: var(--md-pink); }
+.music-search::placeholder {
+  color: var(--md-muted);
+}
+.music-search:focus {
+  outline: none;
+  border-color: var(--md-pink);
+}
 
 .cap-row {
   display: flex;
@@ -698,11 +750,33 @@
   white-space: nowrap;
   flex-shrink: 0;
 }
-.cap:hover:not(:disabled) { border-color: var(--md-pink); }
-.cap.is-on { border-color: var(--md-pink); background: var(--md-pink-soft); color: var(--md-pink); font-weight: 700; }
-.cap:disabled { opacity: 0.55; cursor: not-allowed; }
-.cap-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.cap-note { margin-left: auto; padding-left: 8px; font-size: 10px; color: var(--md-muted); white-space: nowrap; flex-shrink: 0; }
+.cap:hover:not(:disabled) {
+  border-color: var(--md-pink);
+}
+.cap.is-on {
+  border-color: var(--md-pink);
+  background: var(--md-pink-soft);
+  color: var(--md-pink);
+  font-weight: 700;
+}
+.cap:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.cap-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.cap-note {
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: 10px;
+  color: var(--md-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 
 /* ---------------------------------------------------------------- 歌曲列表 */
 .music-list {
@@ -714,7 +788,9 @@
   min-height: 0;
 }
 /* 队列抽屉的行容器自带上下留白（等价原 .music-drawer-list 的 padding: 6px 0） */
-.ui-vlist.is-drawer { padding: 6px 0; }
+.ui-vlist.is-drawer {
+  padding: 6px 0;
+}
 /*
  * 歌单分组头（创建的歌单 / 收藏的歌单）—— 可点击收起/展开，**默认展开**。
  *
@@ -765,7 +841,9 @@
   transition: transform 0.18s ease-out;
 }
 /* 收起时箭头朝右（-90°），展开时朝下 —— 与常见折叠控件一致 */
-.music-plgroup.is-shut .music-plgroup-chev { transform: rotate(-90deg); }
+.music-plgroup.is-shut .music-plgroup-chev {
+  transform: rotate(-90deg);
+}
 .music-row {
   display: flex;
   align-items: center;
@@ -774,9 +852,16 @@
   border-radius: var(--md-radius-sm);
   cursor: pointer;
 }
-.music-row:hover { background: var(--md-surface-2); }
-.music-row.is-hot { background: var(--md-pink-soft); }
-.music-row.is-hot .music-row-tx b { color: var(--md-pink); font-weight: 700; }
+.music-row:hover {
+  background: var(--md-surface-2);
+}
+.music-row.is-hot {
+  background: var(--md-pink-soft);
+}
+.music-row.is-hot .music-row-tx b {
+  color: var(--md-pink);
+  font-weight: 700;
+}
 .music-cover {
   width: 40px;
   height: 40px;
@@ -788,8 +873,16 @@
   align-items: center;
   justify-content: center;
 }
-.music-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.music-row-tx { flex: 1; min-width: 0; }
+.music-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.music-row-tx {
+  flex: 1;
+  min-width: 0;
+}
 .music-row-tx b {
   display: block;
   font-size: 12.5px;
@@ -813,7 +906,12 @@
   flex-shrink: 0;
   font-family: var(--md-font-numeric);
 }
-.music-row-act { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.music-row-act {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
 
 /* 播放历史的来源标签（品牌色圆点 + 平台名） */
 .his-src {
@@ -826,7 +924,12 @@
   font-size: 9px;
   color: var(--md-muted);
 }
-.his-dot { width: 8px; height: 8px; border-radius: 50%; display: block; }
+.his-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: block;
+}
 
 /* ---------------------------------------------------------------- 官方榜单 */
 .music-charts {
@@ -857,7 +960,12 @@
   font-size: 16px;
   font-weight: 700;
 }
-.music-chart-cv img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.music-chart-cv img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
 .music-chart span {
   display: block;
   font-size: 10.5px;
@@ -868,7 +976,9 @@
   text-overflow: ellipsis;
 }
 /* 「每日推荐」入口卡：设计稿指定渐变，仅网易云出现 */
-.music-chart-cv.is-daily { background: linear-gradient(135deg, #f6b26b, #e06666); }
+.music-chart-cv.is-daily {
+  background: linear-gradient(135deg, #f6b26b, #e06666);
+}
 /* 3 列网格形态（酷狗/QQ）：铺满整行，封面自适应为正方形 */
 .music-charts.is-grid {
   display: grid;
@@ -876,11 +986,21 @@
   gap: 9px;
   overflow: visible;
 }
-.music-charts.is-grid .music-chart { width: auto; }
-.music-charts.is-grid .music-chart-cv { width: 100%; height: auto; aspect-ratio: 1 / 1; }
-.music-charts.is-grid .music-chart span { white-space: normal; }
+.music-charts.is-grid .music-chart {
+  width: auto;
+}
+.music-charts.is-grid .music-chart-cv {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
+}
+.music-charts.is-grid .music-chart span {
+  white-space: normal;
+}
 /* 无封面清单（咪咕）：榜单名写在主题色渐变卡上，多行居中 */
-.music-chart.is-name { width: 78px; }
+.music-chart.is-name {
+  width: 78px;
+}
 .music-chart-name {
   width: 78px;
   height: 78px;
@@ -924,8 +1044,17 @@
   overflow: hidden;
   cursor: pointer;
 }
-.music-pb-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.music-pb-tx { min-width: 0; max-width: 200px; cursor: pointer; }
+.music-pb-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.music-pb-tx {
+  min-width: 0;
+  max-width: 200px;
+  cursor: pointer;
+}
 .music-pb-tx b {
   display: block;
   font-size: 12.5px;
@@ -987,11 +1116,7 @@
   appearance: none;
   border-radius: 3px;
   /* 已调节段 = 高亮色，未调节段 = 原轨道色；分界由组件按值注入的 --fill 决定 */
-  background: linear-gradient(
-    to right,
-    var(--fill-c) 0 var(--fill, 0%),
-    var(--track-c) var(--fill, 0%) 100%
-  );
+  background: linear-gradient(to right, var(--fill-c) 0 var(--fill, 0%), var(--track-c) var(--fill, 0%) 100%);
 }
 .music-vol input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -1015,7 +1140,9 @@
   background: var(--md-pink-soft);
   color: var(--md-pink);
 }
-.music-q-sel:hover { border-color: var(--md-line); }
+.music-q-sel:hover {
+  border-color: var(--md-line);
+}
 /* 实际码率（kbps）。与"档位"分开显示：档位是**要的**，码率是**实际拿到的** ——
    平台降级时这两个值会不一致，只显示档位等于把降级藏了起来。 */
 .music-br {
@@ -1050,11 +1177,7 @@
   border-radius: 3px;
   /* 已调节段（已播放）= 高亮色，未调节段 = 原轨道色。
      --fill 由组件按「当前值 / 最大值」注入，拖动与播放推进时实时更新。 */
-  background: linear-gradient(
-    to right,
-    var(--fill-c) 0 var(--fill, 0%),
-    var(--track-c) var(--fill, 0%) 100%
-  );
+  background: linear-gradient(to right, var(--fill-c) 0 var(--fill, 0%), var(--track-c) var(--fill, 0%) 100%);
 }
 .music-prog-bar::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -1098,7 +1221,11 @@
   justify-content: space-between;
   margin-bottom: 10px;
 }
-.pf-list { display: flex; flex-direction: column; gap: 6px; }
+.pf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 .pf-item {
   display: flex;
   align-items: center;
@@ -1107,7 +1234,9 @@
   border-radius: var(--md-radius-sm);
   cursor: pointer;
 }
-.pf-item:hover { background: var(--md-surface-2); }
+.pf-item:hover {
+  background: var(--md-surface-2);
+}
 .pf-chip {
   width: 26px;
   height: 26px;
@@ -1120,8 +1249,16 @@
   font-weight: 700;
   flex-shrink: 0;
 }
-.pf-txt { flex: 1; min-width: 0; }
-.pf-name { display: block; font-size: 12.5px; font-weight: 500; color: var(--md-ink); }
+.pf-txt {
+  flex: 1;
+  min-width: 0;
+}
+.pf-name {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--md-ink);
+}
 .pf-desc {
   display: block;
   font-size: 10.5px;
@@ -1130,14 +1267,38 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.pf-badge { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; flex-shrink: 0; }
-.pf-badge.is-cur { background: var(--md-pink-soft); color: var(--md-pink); font-weight: 700; }
-.pf-badge.is-on { background: var(--md-surface-2); color: #22c55e; }
-.pf-badge.is-off { background: var(--md-surface-2); color: var(--md-muted); }
-.pf-note { margin-top: 10px; font-size: 10.5px; color: var(--md-muted); line-height: 1.5; }
+.pf-badge {
+  font-size: 10.5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.pf-badge.is-cur {
+  background: var(--md-pink-soft);
+  color: var(--md-pink);
+  font-weight: 700;
+}
+.pf-badge.is-on {
+  background: var(--md-surface-2);
+  color: #22c55e;
+}
+.pf-badge.is-off {
+  background: var(--md-surface-2);
+  color: var(--md-muted);
+}
+.pf-note {
+  margin-top: 10px;
+  font-size: 10.5px;
+  color: var(--md-muted);
+  line-height: 1.5;
+}
 
 /* ---------------------------------------------------------------- 多平台切换菜单（账号） */
-.ac-backdrop { position: fixed; inset: 0; z-index: 80; }
+.ac-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+}
 .ac-menu {
   position: fixed;
   top: 54px;
@@ -1157,7 +1318,9 @@
   padding: 4px 6px 10px;
   border-bottom: 1px solid var(--md-line-soft);
 }
-.ac-txt { min-width: 0; }
+.ac-txt {
+  min-width: 0;
+}
 .ac-txt b {
   display: block;
   font-size: 12.5px;
@@ -1166,8 +1329,16 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ac-txt span { font-size: 10.5px; color: var(--md-muted); }
-.ac-list { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; }
+.ac-txt span {
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+.ac-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+}
 .ac-item {
   display: flex;
   align-items: center;
@@ -1180,8 +1351,15 @@
   cursor: pointer;
   text-align: left;
 }
-.ac-item:hover { background: var(--md-surface-2); }
-.ac-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.ac-item:hover {
+  background: var(--md-surface-2);
+}
+.ac-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
 .ac-name {
   flex: 1;
   min-width: 0;
@@ -1204,7 +1382,9 @@
   color: var(--md-error);
   font-size: 11.5px;
 }
-.ac-out:hover { background: var(--md-surface-2); }
+.ac-out:hover {
+  background: var(--md-surface-2);
+}
 
 /* ---------------------------------------------------------------- 队列抽屉 */
 .music-drawer-bd {
@@ -1220,8 +1400,12 @@
   animation: music-drawer-bd-in 0.24s ease-out both;
 }
 @keyframes music-drawer-bd-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 .music-drawer {
   position: fixed;
@@ -1243,8 +1427,12 @@
   animation: music-drawer-in 0.24s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 @keyframes music-drawer-in {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
 }
 .music-drawer-hd {
   display: flex;
@@ -1254,8 +1442,14 @@
   border-bottom: 1px solid var(--md-line);
   flex: 0 0 auto;
 }
-.music-drawer-ic { color: var(--md-pink); }
-.music-drawer-list { flex: 1; overflow: auto; padding: 6px 0; }
+.music-drawer-ic {
+  color: var(--md-pink);
+}
+.music-drawer-list {
+  flex: 1;
+  overflow: auto;
+  padding: 6px 0;
+}
 .music-qrow {
   display: flex;
   align-items: center;
@@ -1264,9 +1458,16 @@
   height: 52px;
   cursor: pointer;
 }
-.music-qrow:hover { background: var(--md-surface-2); }
-.music-qrow.is-hot { background: var(--md-pink-soft); }
-.music-qrow.is-hot .music-row-tx b { color: var(--md-pink); font-weight: 700; }
+.music-qrow:hover {
+  background: var(--md-surface-2);
+}
+.music-qrow.is-hot {
+  background: var(--md-pink-soft);
+}
+.music-qrow.is-hot .music-row-tx b {
+  color: var(--md-pink);
+  font-weight: 700;
+}
 .music-qrow-ix {
   width: 26px;
   text-align: center;
@@ -1302,18 +1503,27 @@
      简写从 `flow` 变回 `music-exp-up` ⇒ **已经播完的进场动画被重播一遍**，
      表现就是整屏上滑一次（用户看到的"闪一下"）。
      `animation-play-state` 不重启动画，只控制跑/停，所以拿它当开关。 */
-  animation: music-exp-up 0.34s cubic-bezier(0.4, 0, 0.2, 1) 1 both,
-             music-exp-flow 8s ease-in-out infinite paused;
+  animation:
+    music-exp-up 0.34s cubic-bezier(0.4, 0, 0.2, 1) 1 both,
+    music-exp-flow 8s ease-in-out infinite paused;
   animation-play-state: running, paused;
   background-size: 100% 100%;
 }
 @keyframes music-exp-up {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
 @keyframes music-exp-down {
-  from { transform: translateY(0); }
-  to { transform: translateY(100%); }
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
 }
 .music-exp.is-closing {
   animation: music-exp-down 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
@@ -1338,13 +1548,27 @@
   z-index: 3;
 }
 /* 深色皮肤下控制按钮取白色；浅色皮肤（.is-light）再翻回深色 */
-.music-exp .ui-cbtn { color: rgba(255, 255, 255, 0.9); }
-.music-exp .ui-cbtn:hover { background: rgba(255, 255, 255, 0.16); }
-.music-exp .ui-cbtn.main { color: #fff; }
-.music-exp .ui-cbtn.main:hover { background: var(--md-pink); }
-.music-exp.is-light .ui-cbtn { color: var(--md-ink-2); }
-.music-exp.is-light .ui-cbtn:hover { background: rgba(59, 51, 82, 0.1); }
-.music-exp.is-light .ui-cbtn.main { color: #fff; }
+.music-exp .ui-cbtn {
+  color: rgba(255, 255, 255, 0.9);
+}
+.music-exp .ui-cbtn:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+.music-exp .ui-cbtn.main {
+  color: #fff;
+}
+.music-exp .ui-cbtn.main:hover {
+  background: var(--md-pink);
+}
+.music-exp.is-light .ui-cbtn {
+  color: var(--md-ink-2);
+}
+.music-exp.is-light .ui-cbtn:hover {
+  background: rgba(59, 51, 82, 0.1);
+}
+.music-exp.is-light .ui-cbtn.main {
+  color: #fff;
+}
 
 .music-exp-body {
   flex: 1;
@@ -1375,14 +1599,21 @@
   overflow: hidden;
   flex-shrink: 0;
 }
-.music-exp-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.music-exp-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
 
 /* 碟片模式（设置项 disc-mode）：封面显示成旋转唱片。
    播放时转、暂停时用 is-paused 停住 —— 唱片静止是"暂停"的通用视觉语言。 */
 .music-exp.is-disc .music-exp-cover {
   border-radius: 50%;
   background: radial-gradient(circle at 50% 50%, #2a2a33 0%, #15151b 55%, #0d0d12 100%);
-  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 22px 50px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
   animation: music-disc-spin 9s linear infinite;
   position: relative;
 }
@@ -1396,10 +1627,16 @@
   top: 27%;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
 }
-.music-exp.is-disc.is-paused .music-exp-cover { animation-play-state: paused; }
+.music-exp.is-disc.is-paused .music-exp-cover {
+  animation-play-state: paused;
+}
 @keyframes music-disc-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 动态背景（设置项 dynamic-bg）：只有「现代 / 沉浸」有可流动的渐变，
@@ -1411,11 +1648,21 @@
   animation-play-state: running, running;
 }
 @keyframes music-exp-flow {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
 }
-.music-exp-info { text-align: center; min-width: 0; max-width: 100%; }
+.music-exp-info {
+  text-align: center;
+  min-width: 0;
+  max-width: 100%;
+}
 .music-exp-info b {
   font-family: var(--md-font-display);
   font-size: 19px;
@@ -1425,10 +1672,21 @@
   text-overflow: ellipsis;
   color: var(--skin-text, #fff);
 }
-.music-exp-info span { font-size: 12.5px; display: block; color: var(--skin-sub, rgba(255, 255, 255, 0.72)); margin-top: 3px; }
-.music-exp-info em { font-size: 11.5px; font-style: normal; color: var(--skin-sub, rgba(255, 255, 255, 0.55)); }
+.music-exp-info span {
+  font-size: 12.5px;
+  display: block;
+  color: var(--skin-sub, rgba(255, 255, 255, 0.72));
+  margin-top: 3px;
+}
+.music-exp-info em {
+  font-size: 11.5px;
+  font-style: normal;
+  color: var(--skin-sub, rgba(255, 255, 255, 0.55));
+}
 .music-exp.is-light .music-exp-info span,
-.music-exp.is-light .music-exp-info em { color: rgba(59, 51, 82, 0.7); }
+.music-exp.is-light .music-exp-info em {
+  color: rgba(59, 51, 82, 0.7);
+}
 
 .music-exp-lyrics {
   flex: 1;
@@ -1437,14 +1695,32 @@
   flex-direction: column;
 }
 /* 透明彩胶 / 封面渐染：文字栏只占一侧 —— 另一侧留给唱片（右上）/ 满铺封面（左侧） */
-.music-exp-body.is-vinyl .music-exp-lyrics { width: 52%; flex: 0 0 auto; }
-.music-exp-body.is-cover .music-exp-lyrics { width: 50%; flex: 0 0 auto; margin-left: auto; padding-right: 4vw; }
+.music-exp-body.is-vinyl .music-exp-lyrics {
+  width: 52%;
+  flex: 0 0 auto;
+}
+.music-exp-body.is-cover .music-exp-lyrics {
+  width: 50%;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-right: 4vw;
+}
 /* 沉浸：左封面隐藏后歌词占满整屏并放大居中（参考实现同款"全屏歌词可视化"的简化版） */
-.music-exp-body.is-immersive { padding: 40px 8vw 8px; }
-.music-exp-body.is-immersive .music-exp-lyrics { align-items: center; }
-.music-exp-body.is-immersive .music-exp-lyr-box { justify-content: center; width: 100%; }
+.music-exp-body.is-immersive {
+  padding: 40px 8vw 8px;
+}
+.music-exp-body.is-immersive .music-exp-lyrics {
+  align-items: center;
+}
+.music-exp-body.is-immersive .music-exp-lyr-box {
+  justify-content: center;
+  width: 100%;
+}
 /* 彩胶/封面渐染的歌名 + 歌手（左上角，参考实现同款） */
-.music-exp-title { flex: 0 0 auto; margin-bottom: 16px; }
+.music-exp-title {
+  flex: 0 0 auto;
+  margin-bottom: 16px;
+}
 .music-exp-title b {
   display: block;
   font-family: var(--md-font-display);
@@ -1456,7 +1732,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.music-exp-title span { display: block; margin-top: 4px; font-size: 13px; color: var(--skin-sub, rgba(255,255,255,0.7)); }
+.music-exp-title span {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--skin-sub, rgba(255, 255, 255, 0.7));
+}
 .music-exp-ltabs {
   display: flex;
   gap: 6px;
@@ -1474,9 +1755,19 @@
   color: var(--skin-sub, rgba(255, 255, 255, 0.7));
   cursor: pointer;
 }
-.music-exp-ltab.is-on { background: var(--md-pink); color: #fff; font-weight: 700; }
-.music-exp.is-light .music-exp-ltab { background: rgba(59, 51, 82, 0.08); color: var(--md-ink-2); }
-.music-exp.is-light .music-exp-ltab.is-on { background: var(--md-pink); color: #fff; }
+.music-exp-ltab.is-on {
+  background: var(--md-pink);
+  color: #fff;
+  font-weight: 700;
+}
+.music-exp.is-light .music-exp-ltab {
+  background: rgba(59, 51, 82, 0.08);
+  color: var(--md-ink-2);
+}
+.music-exp.is-light .music-exp-ltab.is-on {
+  background: var(--md-pink);
+  color: #fff;
+}
 
 /* 歌词：上下边缘 mask 渐隐，制造「向两端淡出」的纵深 */
 .music-exp-lyr-box {
@@ -1502,7 +1793,9 @@
    内容再被自己的 overflow:hidden 裁光 → 症状正是「当前句完全不显示，
    换到下一句后上一句突然出现、新的当前句又消失」。滚动列表的行本就不该被压缩，
    溢出交给 overflow:auto 滚动 —— 这才是正确语义（灵动岛 2 行窗口无收缩压力，所以一直正常）。 */
-.music-exp-lyr-box .music-lyr-line { flex-shrink: 0; }
+.music-exp-lyr-box .music-lyr-line {
+  flex-shrink: 0;
+}
 /* 歌词字号与高亮色走 CSS 变量（设置页「歌词」两项）：
    --lyr-size / --lyr-hl 由 ExpandedPlayer 以内联 style 注入。
    回落到 `#ffe066`（= player-options 的 `LYRICS_COLOR_DEF`）而**不是** `var(--md-yellow)`——
@@ -1544,10 +1837,17 @@
   留此说明以免被"顺手加回来"。
 */
 /* 左对齐歌词（透明彩胶 / 封面渐染）：整行靠左，容器不居中 */
-.music-exp-lyr-box.is-left .music-lyr-line { text-align: left; }
+.music-exp-lyr-box.is-left .music-lyr-line {
+  text-align: left;
+}
 /* 沉浸：歌词放大居中（字号在用户设定值上整体放大约 1.6 倍） */
-.music-exp-body.is-immersive .music-lyr-line { font-size: calc(var(--lyr-size, 16px) * 1.6); text-align: center; }
-.music-exp-body.is-immersive .music-lyr-line.is-on { font-size: calc(var(--lyr-size, 16px) * 1.9); }
+.music-exp-body.is-immersive .music-lyr-line {
+  font-size: calc(var(--lyr-size, 16px) * 1.6);
+  text-align: center;
+}
+.music-exp-body.is-immersive .music-lyr-line.is-on {
+  font-size: calc(var(--lyr-size, 16px) * 1.9);
+}
 
 /* ── 逐字歌词（卡拉OK）：双层叠加 + width 裁切 ─────────────────────────────
    为什么用双层而不是 background-clip:text 见 KaraokeLyrics.tsx 头部注释；
@@ -1616,11 +1916,17 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .kara-over { will-change: auto; }
+  .kara-over {
+    will-change: auto;
+  }
 }
 
-.music-exp .ui-empty { color: var(--skin-sub, rgba(255, 255, 255, 0.5)); }
-.music-exp.is-light .ui-empty { color: var(--md-muted); }
+.music-exp .ui-empty {
+  color: var(--skin-sub, rgba(255, 255, 255, 0.5));
+}
+.music-exp.is-light .ui-empty {
+  color: var(--md-muted);
+}
 
 /* 评论列表 */
 .music-exp-comments {
@@ -1632,7 +1938,11 @@
   gap: 8px;
   padding: 4px;
 }
-.music-exp-cm-sec { font-size: 11px; font-weight: 700; color: var(--md-pink); }
+.music-exp-cm-sec {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--md-pink);
+}
 .music-exp-cm {
   display: flex;
   gap: 8px;
@@ -1640,15 +1950,41 @@
   border-radius: var(--md-radius-sm);
   background: rgba(255, 255, 255, 0.06);
 }
-.music-exp.is-light .music-exp-cm { background: rgba(59, 51, 82, 0.06); }
-.music-exp-cm-body { flex: 1; min-width: 0; }
-.music-exp-cm-hd { display: flex; align-items: center; gap: 8px; font-size: 11px; }
-.music-exp-cm-hd b { font-size: 12px; color: var(--skin-text, #fff); }
-.music-exp.is-light .music-exp-cm-hd b { color: var(--md-ink); }
-.music-exp-cm-hd span { font-size: 10px; color: var(--skin-sub, rgba(255, 255, 255, 0.5)); }
-.music-exp.is-light .music-exp-cm-hd span { color: var(--md-muted); }
-.music-exp-cm-txt { font-size: 12px; margin-top: 4px; color: var(--skin-text, rgba(255, 255, 255, 0.85)); }
-.music-exp.is-light .music-exp-cm-txt { color: var(--md-ink-2); }
+.music-exp.is-light .music-exp-cm {
+  background: rgba(59, 51, 82, 0.06);
+}
+.music-exp-cm-body {
+  flex: 1;
+  min-width: 0;
+}
+.music-exp-cm-hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+.music-exp-cm-hd b {
+  font-size: 12px;
+  color: var(--skin-text, #fff);
+}
+.music-exp.is-light .music-exp-cm-hd b {
+  color: var(--md-ink);
+}
+.music-exp-cm-hd span {
+  font-size: 10px;
+  color: var(--skin-sub, rgba(255, 255, 255, 0.5));
+}
+.music-exp.is-light .music-exp-cm-hd span {
+  color: var(--md-muted);
+}
+.music-exp-cm-txt {
+  font-size: 12px;
+  margin-top: 4px;
+  color: var(--skin-text, rgba(255, 255, 255, 0.85));
+}
+.music-exp.is-light .music-exp-cm-txt {
+  color: var(--md-ink-2);
+}
 
 .music-exp-bottom {
   flex: 0 0 auto;
@@ -1662,7 +1998,13 @@
 }
 /* 三区都是绝对定位，brow 自身不产生高度 —— 显式给 min-height，
    否则 top:50% 没有参照高度，左右两区会贴到顶。高度取最大圆按钮（36–40px）的净高。 */
-.music-exp-brow { position: relative; display: flex; align-items: center; gap: 10px; min-height: 40px; }
+.music-exp-brow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+}
 /* ── 底部三区：左（贴左） / 中（.music-ctrl 绝对居中） / 右（贴右） ────────── */
 
 /* 左区：红心 / 碟片模式 / 切换样式 / 动态开关（按皮肤与登录态增减） */
@@ -1677,7 +2019,10 @@
 }
 
 /* 「切换样式」触发器：带图标 + 文字标签的按钮（不是纯图标按钮），右上角挂 NEW 角标 */
-.music-exp-stylewrap { position: relative; display: inline-flex; }
+.music-exp-stylewrap {
+  position: relative;
+  display: inline-flex;
+}
 .music-exp-stylebtn {
   display: inline-flex;
   align-items: center;
@@ -1691,9 +2036,15 @@
   font-family: var(--md-font-body);
   cursor: pointer;
 }
-.music-exp-stylebtn:hover { background: var(--skin-hover, rgba(255, 255, 255, 0.16)); }
-.music-exp.is-light .music-exp-stylebtn { color: var(--md-ink-2); }
-.music-exp.is-light .music-exp-stylebtn:hover { background: rgba(59, 51, 82, 0.1); }
+.music-exp-stylebtn:hover {
+  background: var(--skin-hover, rgba(255, 255, 255, 0.16));
+}
+.music-exp.is-light .music-exp-stylebtn {
+  color: var(--md-ink-2);
+}
+.music-exp.is-light .music-exp-stylebtn:hover {
+  background: rgba(59, 51, 82, 0.1);
+}
 /* NEW 角标：右上角红色小标签（照参考 top:-6 / right:-11 / 9px / full 圆角） */
 .music-exp-new {
   position: absolute;
@@ -1712,13 +2063,28 @@
 }
 
 /* 动态开关：文字「动态」+ Switch（仅「现代」样式出现） */
-.music-exp-dyn { display: flex; align-items: center; gap: 6px; margin-left: 4px; }
-.music-exp-dyn > span { font-size: 11.5px; font-weight: 500; color: rgba(255, 255, 255, 0.6); }
-.music-exp.is-light .music-exp-dyn > span { color: var(--md-muted); }
+.music-exp-dyn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+}
+.music-exp-dyn > span {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.6);
+}
+.music-exp.is-light .music-exp-dyn > span {
+  color: var(--md-muted);
+}
 
 /* 样式预览弹层：透明遮罩（点外部关闭）+ 深色毛玻璃卡片列。
    贴在触发器**上方**（bottom:100%）—— 它在屏幕底部，往下开会出界。 */
-.music-style-backdrop { position: fixed; inset: 0; z-index: 5; }
+.music-style-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+}
 .music-style-pop {
   position: absolute;
   bottom: calc(100% + 10px);
@@ -1739,7 +2105,9 @@
   flex-direction: column;
   gap: 4px;
 }
-.music-style-pop::-webkit-scrollbar { display: none; }
+.music-style-pop::-webkit-scrollbar {
+  display: none;
+}
 .music-style-card {
   display: block;
   width: 100%;
@@ -1752,9 +2120,14 @@
   outline-offset: 1px;
   transition: background 0.2s ease;
 }
-.music-style-card:hover { background: rgba(255, 255, 255, 0.14); }
+.music-style-card:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
 /* 当前项：描边走主题色（参考用 2px 主题色 outline） */
-.music-style-card.is-on { outline-color: var(--md-pink); background: rgba(255, 255, 255, 0.1); }
+.music-style-card.is-on {
+  outline-color: var(--md-pink);
+  background: rgba(255, 255, 255, 0.1);
+}
 .music-style-thumb {
   display: block;
   width: 100%;
@@ -1770,16 +2143,26 @@
   text-align: center;
   color: rgba(255, 255, 255, 0.7);
 }
-.music-style-card.is-on .music-style-lb { color: var(--md-pink); font-weight: 700; }
+.music-style-card.is-on .music-style-lb {
+  color: var(--md-pink);
+  font-weight: 700;
+}
 
 /* 展开播放器里的中区：把垂直居中显式钉死。
    PlayerBar 那边靠 flex 静态位置（align-items:center）居中已经够用；
    这里 brow 的三区全绝对定位，再显式给 top/translate 更稳，不依赖静态位置的实现细节。
    注意：hover 展开的音量滑块是绝对定位，不参与容器宽度 —— 所以展开时中区不会被顶偏。 */
-.music-exp .music-ctrl { top: 50%; transform: translate(-50%, -50%); }
+.music-exp .music-ctrl {
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
 
 /* 中区音量：图标常显，hover 时滑块向右展开（初始 width:0 / opacity:0） */
-.music-exp-volwrap { position: relative; display: flex; align-items: center; }
+.music-exp-volwrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
 .music-exp-vol-slider {
   position: absolute;
   left: 100%;
@@ -1795,16 +2178,21 @@
   /* 与播放条音量条同一套填充口径：高亮色已调节段 + 原轨道色未调节段 */
   --fill-c: var(--md-pink);
   --track-c: rgba(255, 255, 255, 0.28);
-  background: linear-gradient(
-    to right,
-    var(--fill-c) 0 var(--fill, 0%),
-    var(--track-c) var(--fill, 0%) 100%
-  );
+  background: linear-gradient(to right, var(--fill-c) 0 var(--fill, 0%), var(--track-c) var(--fill, 0%) 100%);
   cursor: pointer;
-  transition: width 0.25s ease, opacity 0.2s ease, margin-left 0.25s ease;
+  transition:
+    width 0.25s ease,
+    opacity 0.2s ease,
+    margin-left 0.25s ease;
 }
-.music-exp.is-light .music-exp-vol-slider { --track-c: var(--md-line); }
-.music-exp-volwrap:hover .music-exp-vol-slider { width: 80px; opacity: 1; margin-left: 6px; }
+.music-exp.is-light .music-exp-vol-slider {
+  --track-c: var(--md-line);
+}
+.music-exp-volwrap:hover .music-exp-vol-slider {
+  width: 80px;
+  opacity: 1;
+  margin-left: 6px;
+}
 .music-exp-vol-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 11px;
@@ -1824,8 +2212,15 @@
   gap: 8px;
 }
 /* 歌词字号：文字「A」+ 滑块 */
-.music-exp-alf { font-size: 12px; font-weight: 700; color: var(--skin-sub, rgba(255, 255, 255, 0.6)); flex-shrink: 0; }
-.music-exp.is-light .music-exp-alf { color: var(--md-muted); }
+.music-exp-alf {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--skin-sub, rgba(255, 255, 255, 0.6));
+  flex-shrink: 0;
+}
+.music-exp.is-light .music-exp-alf {
+  color: var(--md-muted);
+}
 .music-exp-size {
   width: 60px;
   height: 5px;
@@ -1835,7 +2230,9 @@
   background: rgba(255, 255, 255, 0.28);
   cursor: pointer;
 }
-.music-exp.is-light .music-exp-size { background: var(--md-line); }
+.music-exp.is-light .music-exp-size {
+  background: var(--md-line);
+}
 .music-exp-size::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 11px;
@@ -1844,14 +2241,24 @@
   background: var(--md-pink);
 }
 /* 展开播放器里的音质下拉：沿用播放条的胶囊外观，深色底上略放高一点 */
-.music-exp .music-q-sel { height: 24px; }
+.music-exp .music-q-sel {
+  height: 24px;
+}
 /* 展开播放器内的进度条配色（深/浅皮肤各一套）
    ⚠️ 只改**未调节段**的 --track-c：已调节段（--fill-c）的填充色由 .music-prog-bar
    的渐变统一提供，这里若再写 `background:` 会整条覆盖掉渐变 ⇒ 填充效果消失。 */
-.music-exp .music-prog-t { color: var(--skin-sub, rgba(255, 255, 255, 0.6)); }
-.music-exp.is-light .music-prog-t { color: var(--md-muted); }
-.music-exp .music-prog-bar { --track-c: rgba(255, 255, 255, 0.28); }
-.music-exp.is-light .music-prog-bar { --track-c: var(--md-line); }
+.music-exp .music-prog-t {
+  color: var(--skin-sub, rgba(255, 255, 255, 0.6));
+}
+.music-exp.is-light .music-prog-t {
+  color: var(--md-muted);
+}
+.music-exp .music-prog-bar {
+  --track-c: rgba(255, 255, 255, 0.28);
+}
+.music-exp.is-light .music-prog-bar {
+  --track-c: var(--md-line);
+}
 
 /* ---------------------------------------------------------------- 六皮肤专属视觉
    配色（背景/文字/毛玻璃）由 JS 注入的 CSS 变量承担（见 .music-exp 上方注释）；
@@ -1868,7 +2275,9 @@
    否则新写的注释自己也会被提前闭合（本项目已因此踩过一次）。 */
 
 /* 透明彩胶：统一从 --vinyl-accent（设置项「彩胶配色」，JS 注入）派生胶片强调色 */
-.sk-vinyl { --disc-accent: var(--vinyl-accent, #e8b04b); }
+.sk-vinyl {
+  --disc-accent: var(--vinyl-accent, #e8b04b);
+}
 
 /* 沉浸：全屏径向扩散波纹（简化版，纯 CSS 动画；参考实现是逐帧生成的多层径向渐变） */
 .skin-ripple-layer {
@@ -1890,11 +2299,21 @@
   opacity: 0;
   animation: skin-ripple-out 6s ease-out infinite;
 }
-.skin-ripple:nth-child(2) { animation-delay: 2s; }
-.skin-ripple:nth-child(3) { animation-delay: 4s; }
+.skin-ripple:nth-child(2) {
+  animation-delay: 2s;
+}
+.skin-ripple:nth-child(3) {
+  animation-delay: 4s;
+}
 @keyframes skin-ripple-out {
-  0% { transform: scale(0.22); opacity: 0.26; }
-  100% { transform: scale(1.7); opacity: 0; }
+  0% {
+    transform: scale(0.22);
+    opacity: 0.26;
+  }
+  100% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
 }
 
 /* 封面渐染：左侧满铺封面原图（伸到顶/底栏下方），右缘用 mask 羽化融入右缘主色背景 */
@@ -1909,13 +2328,34 @@
   -webkit-mask-image: linear-gradient(90deg, #000 78%, transparent 98%);
   mask-image: linear-gradient(90deg, #000 78%, transparent 98%);
 }
-.skin-cover-bleed img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.skin-cover-scrim { position: absolute; left: 0; right: 0; }
-.skin-cover-scrim-top { top: 0; height: 110px; }
-.skin-cover-scrim-bottom { bottom: 0; height: 130px; }
+.skin-cover-bleed img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.skin-cover-scrim {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+.skin-cover-scrim-top {
+  top: 0;
+  height: 110px;
+}
+.skin-cover-scrim-bottom {
+  bottom: 0;
+  height: 130px;
+}
 
 /* 透明彩胶：右上角伸出的半透明彩色唱片（尺寸由组件注入的 --disc 决定） */
-.skin-vinyl-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; }
+.skin-vinyl-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
 .skin-vinyl-glow {
   position: absolute;
   width: calc(var(--disc) * 1.7);
@@ -1935,7 +2375,12 @@
 }
 /* 旋转层：background / box-shadow 由组件按胶片色内联；这里只管旋转与形态。
    暂停即停转由组件的 animationPlayState 控制（见 VinylDisc）。 */
-.skin-vinyl-disc { position: absolute; inset: 0; border-radius: 50%; animation: skin-vinyl-spin 24s linear infinite; }
+.skin-vinyl-disc {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  animation: skin-vinyl-spin 24s linear infinite;
+}
 .skin-vinyl-label {
   position: absolute;
   width: 70%;
@@ -1945,22 +2390,65 @@
   border-radius: 50%;
   overflow: hidden;
   /* 片芯外圈用胶片色描一道细彩环 —— 让「彩胶」的彩在盘面正中可见 */
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3), 0 0 0 3px var(--disc-accent, #e8b04b), 0 6px 30px rgba(0, 0, 0, 0.18);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.3),
+    0 0 0 3px var(--disc-accent, #e8b04b),
+    0 6px 30px rgba(0, 0, 0, 0.18);
 }
-.skin-vinyl-label img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.skin-vinyl-label-empty { width: 100%; height: 100%; }
+.skin-vinyl-label img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.skin-vinyl-label-empty {
+  width: 100%;
+  height: 100%;
+}
 /* 高光层：conic 反光固定不随盘旋转（反光属于环境光，不该跟着转） */
 .skin-vinyl-sheen {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: conic-gradient(from 215deg at 50% 50%, rgba(255,255,255,0) 0deg, rgba(255,255,255,0.15) 34deg, rgba(255,255,255,0.04) 72deg, rgba(255,255,255,0) 118deg, rgba(255,255,255,0) 242deg, rgba(255,255,255,0.10) 292deg, rgba(255,255,255,0) 338deg);
+  background: conic-gradient(
+    from 215deg at 50% 50%,
+    rgba(255, 255, 255, 0) 0deg,
+    rgba(255, 255, 255, 0.15) 34deg,
+    rgba(255, 255, 255, 0.04) 72deg,
+    rgba(255, 255, 255, 0) 118deg,
+    rgba(255, 255, 255, 0) 242deg,
+    rgba(255, 255, 255, 0.1) 292deg,
+    rgba(255, 255, 255, 0) 338deg
+  );
 }
-@keyframes skin-vinyl-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-@keyframes skin-vinyl-glow { 0%, 100% { transform: scale(1); opacity: 0.85; } 50% { transform: scale(1.06); opacity: 1; } }
+@keyframes skin-vinyl-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes skin-vinyl-glow {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
 @keyframes skin-vinyl-in {
-  from { transform: translate(6%, -6%) scale(0.94); opacity: 0; }
-  to { transform: translate(0%, 0%) scale(1); opacity: 1; }
+  from {
+    transform: translate(6%, -6%) scale(0.94);
+    opacity: 0;
+  }
+  to {
+    transform: translate(0%, 0%) scale(1);
+    opacity: 1;
+  }
 }
 
 /* 音域回响：全屏频谱场景层（canvas 或降级 CSS 动画） */
@@ -1972,7 +2460,11 @@
   pointer-events: none;
   background: #05070c;
 }
-.skin-spectrum-canvas { width: 100%; height: 100%; display: block; }
+.skin-spectrum-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
 .skin-spectrum-fallback {
   position: absolute;
   inset: 0;
@@ -1991,8 +2483,15 @@
   animation: skin-spectrum-pulse 1.1s ease-in-out infinite;
 }
 @keyframes skin-spectrum-pulse {
-  0%, 100% { transform: scaleY(0.22); opacity: 0.7; }
-  50% { transform: scaleY(1); opacity: 1; }
+  0%,
+  100% {
+    transform: scaleY(0.22);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
 }
 
 /* 皮肤选择弹层 */
@@ -2010,8 +2509,17 @@
   z-index: 4;
   color: var(--md-ink);
 }
-.music-skin-hd { font-family: var(--md-font-display); font-size: 13px; font-weight: 700; margin-bottom: 12px; }
-.music-skins { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.music-skin-hd {
+  font-family: var(--md-font-display);
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.music-skins {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
 .music-skin {
   border: 1px solid var(--md-line);
   border-radius: var(--md-radius-md);
@@ -2020,8 +2528,14 @@
   padding: 0;
   cursor: pointer;
 }
-.music-skin.is-on { border-color: var(--md-pink); box-shadow: 0 0 0 2px var(--md-pink-soft); }
-.music-skin-thumb { height: 48px; display: block; }
+.music-skin.is-on {
+  border-color: var(--md-pink);
+  box-shadow: 0 0 0 2px var(--md-pink-soft);
+}
+.music-skin-thumb {
+  height: 48px;
+  display: block;
+}
 .music-skin-lb {
   font-size: 10.5px;
   text-align: center;
@@ -2030,7 +2544,10 @@
   border-top: 1px solid var(--md-line-soft);
   display: block;
 }
-.music-skin.is-on .music-skin-lb { color: var(--md-pink); font-weight: 700; }
+.music-skin.is-on .music-skin-lb {
+  color: var(--md-pink);
+  font-weight: 700;
+}
 
 /* ---------------------------------------------------------------- 登录弹窗 */
 .music-login-overlay {
@@ -2067,11 +2584,30 @@
   gap: 8px;
   padding: 14px 0 4px;
 }
-.music-login-note { font-size: 12px; color: var(--md-ink-2); text-align: center; line-height: 1.6; }
-.music-login-spin { color: var(--md-pink); animation: music-spin 0.9s linear infinite; }
-@keyframes music-spin { to { transform: rotate(360deg); } }
-.music-login-status { font-size: 12px; color: var(--md-ink-2); min-height: 18px; text-align: center; }
-.music-login .music-btn { align-self: center; }
+.music-login-note {
+  font-size: 12px;
+  color: var(--md-ink-2);
+  text-align: center;
+  line-height: 1.6;
+}
+.music-login-spin {
+  color: var(--md-pink);
+  animation: music-spin 0.9s linear infinite;
+}
+@keyframes music-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.music-login-status {
+  font-size: 12px;
+  color: var(--md-ink-2);
+  min-height: 18px;
+  text-align: center;
+}
+.music-login .music-btn {
+  align-self: center;
+}
 
 /* ---------------------------------------------------------------- 桌面歌词设置弹窗 */
 /* 与登录弹窗同一套遮罩/卡片观感，但独立成类：两者的内容与后续演化无关，混用会在改一处时波及另一处。
@@ -2209,7 +2745,10 @@
   color: var(--md-ink-2);
   font-size: 12px;
   font-weight: 500;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
 }
 .music-dlset-segbtn:hover {
   border-color: var(--md-pink);
@@ -2252,5 +2791,10 @@
   color: #fff;
   box-shadow: 0 12px 30px rgba(70, 60, 120, 0.25);
 }
-.music-toast.is-warning { background: var(--md-warning); }
-.music-toast.is-success { background: var(--md-success); color: var(--md-on-accent); }
+.music-toast.is-warning {
+  background: var(--md-warning);
+}
+.music-toast.is-success {
+  background: var(--md-success);
+  color: var(--md-on-accent);
+}

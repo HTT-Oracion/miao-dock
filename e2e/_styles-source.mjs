@@ -43,9 +43,9 @@ export function styleEntryOrder(stylesDir) {
   const entry = path.join(stylesDir, ENTRY);
   if (!existsSync(entry)) {
     throw new Error(
-      `样式入口不存在：${entry}\n`
-      + '样式只经 index.scss 一个入口（见《09》§2.4）。若确实要改入口文件名，'
-      + '请同步改本模块的 ENTRY 与三个检查脚本的引用。',
+      `样式入口不存在：${entry}\n` +
+        '样式只经 index.scss 一个入口（见《09》§2.4）。若确实要改入口文件名，' +
+        '请同步改本模块的 ENTRY 与三个检查脚本的引用。',
     );
   }
   const src = cachedReadText(entry);

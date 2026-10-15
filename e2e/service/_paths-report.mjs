@@ -82,7 +82,9 @@ export async function dumpRust(env) {
     c.stderr.on('data', (d) => (err += d));
     c.on('error', reject);
     c.on('close', (code) =>
-      code === 0 ? resolve(JSON.parse(out.trim())) : reject(new Error(`--print-paths 退出码 ${code}：${err.slice(0, 600)}`)),
+      code === 0
+        ? resolve(JSON.parse(out.trim()))
+        : reject(new Error(`--print-paths 退出码 ${code}：${err.slice(0, 600)}`)),
     );
   });
 }

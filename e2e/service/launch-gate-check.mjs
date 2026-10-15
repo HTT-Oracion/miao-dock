@@ -75,13 +75,21 @@ async function gate(mode, extraEnv) {
     });
     let out = '';
     let err = '';
-    c.stdout.on('data', (d) => { out += d; });
-    c.stderr.on('data', (d) => { err += d; });
+    c.stdout.on('data', (d) => {
+      out += d;
+    });
+    c.stderr.on('data', (d) => {
+      err += d;
+    });
     c.on('error', reject);
     c.on('close', (code) => resolve({ code, stdout: out, stderr: err }));
   });
   let json = null;
-  try { json = JSON.parse(r.stdout); } catch { /* 交给调用方判 */ }
+  try {
+    json = JSON.parse(r.stdout);
+  } catch {
+    /* 交给调用方判 */
+  }
   return { code: r.code, json, stdout: r.stdout, stderr: r.stderr, ms: Date.now() - t0 };
 }
 
@@ -111,16 +119,22 @@ if (!fs.existsSync(RUST_BIN)) {
   // G1：real 档 + 运行时整个不在 ⇒ 被拦、秒级、点名到每一项且带绝对路径
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-gate-empty-'));
   const r = await gate('real', { MIAO_RUNTIME_ROOT: path.join(base, 'nope') });
-  check('G1 real 档 + 运行时未装配 ⇒ 被拦（退出码 1 + blocked=true）',
-    r.code === 1 && r.json?.blocked === true, { code: r.code, body: r.json });
-  check('G1.failing — 五项全部点名（venvRoot/python/source/deps/patches）',
+  check('G1 real 档 + 运行时未装配 ⇒ 被拦（退出码 1 + blocked=true）', r.code === 1 && r.json?.blocked === true, {
+    code: r.code,
+    body: r.json,
+  });
+  check(
+    'G1.failing — 五项全部点名（venvRoot/python/source/deps/patches）',
     Array.isArray(r.json?.failing) && r.json.failing.length === 5,
-    r.json?.failing);
-  check('G1.msg — 文案以「运行时未装配：」开头且每项各带一次绝对路径',
-    typeof r.json?.message === 'string'
-    && r.json.message.startsWith('运行时未装配：')
-    && r.json.failing.every((id) => hasAbs(r.json.message.split(id)[1] ?? '')),
-    r.json?.message?.slice(0, 200));
+    r.json?.failing,
+  );
+  check(
+    'G1.msg — 文案以「运行时未装配：」开头且每项各带一次绝对路径',
+    typeof r.json?.message === 'string' &&
+      r.json.message.startsWith('运行时未装配：') &&
+      r.json.failing.every((id) => hasAbs(r.json.message.split(id)[1] ?? '')),
+    r.json?.message?.slice(0, 200),
+  );
   // D6 的卖点：秒级。对照物是 240 s 探针预算，故 5 s 已是极宽松的上界。
   check('G1.fast — 秒级收场（< 5 s；对照 real 档 240 s 探针预算）', r.ms < 5000, r.ms);
   fs.rmSync(base, { recursive: true, force: true });
@@ -130,8 +144,10 @@ if (!fs.existsSync(RUST_BIN)) {
   // G2：mock 档 + 同样的空运行时 ⇒ **放行**（30+ 个 mock e2e 靠它活着）
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-gate-mock-'));
   const r = await gate('mock', { MIAO_RUNTIME_ROOT: path.join(base, 'nope') });
-  check('G2 mock 档 + 运行时未装配 ⇒ 放行（退出码 0 + blocked=false）',
-    r.code === 0 && r.json?.blocked === false, { code: r.code, body: r.json });
+  check('G2 mock 档 + 运行时未装配 ⇒ 放行（退出码 0 + blocked=false）', r.code === 0 && r.json?.blocked === false, {
+    code: r.code,
+    body: r.json,
+  });
   fs.rmSync(base, { recursive: true, force: true });
 }
 
@@ -140,9 +156,11 @@ if (!fs.existsSync(RUST_BIN)) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-gate-ready-'));
   const fx = buildRuntime(base, []);
   const r = await gate('real', fx.env);
-  check('G3 real 档 + 运行时就绪 ⇒ 放行（退出码 0 + ready=true）',
+  check(
+    'G3 real 档 + 运行时就绪 ⇒ 放行（退出码 0 + ready=true）',
     r.code === 0 && r.json?.blocked === false && r.json?.ready === true,
-    { code: r.code, body: r.json });
+    { code: r.code, body: r.json },
+  );
   fs.rmSync(base, { recursive: true, force: true });
 }
 
@@ -152,20 +170,23 @@ if (!fs.existsSync(RUST_BIN)) {
   const fx = buildRuntime(base, ['patches']);
   const r = await gate('real', fx.env);
   const p = ENGINE_PATCHES[0];
-  check('G4 real 档 + 只缺一个补丁 ⇒ 被拦且点名到 patch id 与其文件',
-    r.code === 1 && r.json?.blocked === true
-    && r.json.failing.length === 1 && r.json.failing[0] === 'patches'
-    && r.json.message.includes(p.id)
-    && r.json.message.includes(path.join(fx.src, ...relOf(p))),
-    { failing: r.json?.failing, message: r.json?.message?.slice(0, 160) });
+  check(
+    'G4 real 档 + 只缺一个补丁 ⇒ 被拦且点名到 patch id 与其文件',
+    r.code === 1 &&
+      r.json?.blocked === true &&
+      r.json.failing.length === 1 &&
+      r.json.failing[0] === 'patches' &&
+      r.json.message.includes(p.id) &&
+      r.json.message.includes(path.join(fx.src, ...relOf(p))),
+    { failing: r.json?.failing, message: r.json?.message?.slice(0, 160) },
+  );
   fs.rmSync(base, { recursive: true, force: true });
 }
 
 {
   // G5：源码钉 —— 闸门调用必须接在 `service.rs` 的 spawn 之前
   const w = gateWiredBeforeEngineSpawn();
-  check('G5 源码钉 — service.rs 的 gate_message 调用早于 spawn 引擎（否则 CLI 全绿而产品没接线）',
-    w.ok, w.why);
+  check('G5 源码钉 — service.rs 的 gate_message 调用早于 spawn 引擎（否则 CLI 全绿而产品没接线）', w.ok, w.why);
 }
 
 // ------------------------------------------------------------------ 反证
@@ -222,10 +243,7 @@ if (REFUTE) {
     file: PROBE_RS,
     original: probeOriginal,
     edit: () => {
-      const weak = probeOriginal.replace(
-        'if mode != "real" || probe.ready {',
-        'if probe.ready {',
-      );
+      const weak = probeOriginal.replace('if mode != "real" || probe.ready {', 'if probe.ready {');
       if (weak === probeOriginal) throw new Error('M2 锚点未命中');
       fs.writeFileSync(PROBE_RS, weak);
     },
@@ -279,13 +297,19 @@ if (REFUTE) {
   }
   const restoredProbe = fs.readFileSync(PROBE_RS, 'utf8');
   const restoredService = fs.readFileSync(SERVICE_RS, 'utf8');
-  check('REFUTE.restore — runtime_probe.rs 与 service.rs 已按字节还原',
-    restoredProbe === probeOriginal && restoredService === serviceOriginal);
+  check(
+    'REFUTE.restore — runtime_probe.rs 与 service.rs 已按字节还原',
+    restoredProbe === probeOriginal && restoredService === serviceOriginal,
+  );
   console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed, allRed }));
-  console.log(`\nD6 启动前预检闸门：正向 ${passed} / ${passed + failed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`);
+  console.log(
+    `\nD6 启动前预检闸门：正向 ${passed} / ${passed + failed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`,
+  );
   process.exit(allRed && failed === 0 ? 0 : 1);
 }
 
 console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed }));
-console.log(`\nD6 启动前预检闸门：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`);
+console.log(
+  `\nD6 启动前预检闸门：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`,
+);
 process.exit(failed === 0 ? 0 : 1);

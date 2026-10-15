@@ -71,7 +71,14 @@ function check(name, cond, extra) {
 
 /** 跑打包前自检（显式清空 APPLE_*，否则本机偶然设了它们会让断言不确定）。 */
 function runPreflight(extraEnv = {}) {
-  const env = { ...process.env, APPLE_SIGNING_IDENTITY: '', APPLE_ID: '', APPLE_PASSWORD: '', APPLE_TEAM_ID: '', ...extraEnv };
+  const env = {
+    ...process.env,
+    APPLE_SIGNING_IDENTITY: '',
+    APPLE_ID: '',
+    APPLE_PASSWORD: '',
+    APPLE_TEAM_ID: '',
+    ...extraEnv,
+  };
   for (const k of ['APPLE_SIGNING_IDENTITY', 'APPLE_ID', 'APPLE_PASSWORD', 'APPLE_TEAM_ID']) {
     if (!(k in extraEnv)) env[k] = '';
   }
@@ -84,16 +91,24 @@ function runPreflight(extraEnv = {}) {
 
 {
   const text = fs.readFileSync(PLIST, 'utf8');
-  const missing = REQUIRED.filter((k) => !new RegExp(`<key>\\s*${k.replace(/\./g, '\\.')}\\s*</key>\\s*<true\\s*/>`).test(text));
-  check('W1 entitlements 四项必备且**都为 true**（缺任一条的症状都是"引擎起不来"，与缺 entitlement 看不出关系）',
-    missing.length === 0, { missing });
+  const missing = REQUIRED.filter(
+    (k) => !new RegExp(`<key>\\s*${k.replace(/\./g, '\\.')}\\s*</key>\\s*<true\\s*/>`).test(text),
+  );
+  check(
+    'W1 entitlements 四项必备且**都为 true**（缺任一条的症状都是"引擎起不来"，与缺 entitlement 看不出关系）',
+    missing.length === 0,
+    { missing },
+  );
   /*
    * ⚠️ 判据必须是「**键存在**」，不是「文件里出现过这个词」：
    * entitlements 的 doc 注释里正讨论着"刻意不加 app-sandbox"，拿裸词当判据会恒红
    * （同 `W10 绝不碰作品目录` 那次踩到的坑：判据只看代码，不看注释）。
    */
-  check('W1b entitlements **不含** app-sandbox 键（加了它，"拉起用户自装的外部可执行"整条路被堵死）',
-    !/<key>\s*com\.apple\.security\.app-sandbox\s*<\/key>/.test(text), null);
+  check(
+    'W1b entitlements **不含** app-sandbox 键（加了它，"拉起用户自装的外部可执行"整条路被堵死）',
+    !/<key>\s*com\.apple\.security\.app-sandbox\s*<\/key>/.test(text),
+    null,
+  );
 }
 
 // ------------------------------------------------------------------ W2 配置接线
@@ -102,9 +117,11 @@ function runPreflight(extraEnv = {}) {
   const conf = JSON.parse(fs.readFileSync(CONF, 'utf8'));
   const mac = conf?.bundle?.macOS ?? {};
   const ent = mac.entitlements ? path.resolve(path.dirname(CONF), mac.entitlements) : null;
-  check('W2 tauri.conf 的 `bundle.macOS` 接线到位：hardenedRuntime=true 且 entitlements 指向真实存在的文件',
+  check(
+    'W2 tauri.conf 的 `bundle.macOS` 接线到位：hardenedRuntime=true 且 entitlements 指向真实存在的文件',
     mac.hardenedRuntime === true && !!ent && fs.existsSync(ent),
-    { hardenedRuntime: mac.hardenedRuntime, entitlements: mac.entitlements, exists: ent ? fs.existsSync(ent) : false });
+    { hardenedRuntime: mac.hardenedRuntime, entitlements: mac.entitlements, exists: ent ? fs.existsSync(ent) : false },
+  );
 }
 
 // ------------------------------------------------------------------ W3/W4/W5 打包前自检的三种形态
@@ -112,14 +129,20 @@ function runPreflight(extraEnv = {}) {
 {
   const r = runPreflight();
   const names = ['APPLE_SIGNING_IDENTITY', 'APPLE_ID', 'APPLE_PASSWORD', 'APPLE_TEAM_ID'];
-  check('W3 缺变量时**非零退出**，且把缺的那几个逐个点名（缺公证三件套时 tauri 会跳过公证而不是报错）',
-    r.code === 1 && names.every((n) => r.out.includes(n)), { code: r.code, out: r.out.slice(0, 300) });
+  check(
+    'W3 缺变量时**非零退出**，且把缺的那几个逐个点名（缺公证三件套时 tauri 会跳过公证而不是报错）',
+    r.code === 1 && names.every((n) => r.out.includes(n)),
+    { code: r.code, out: r.out.slice(0, 300) },
+  );
 }
 
 {
   const r = runPreflight({ MIAO_NOTARIZE: '0' });
-  check('W4 `MIAO_NOTARIZE=0`（本机自用打包）⇒ 放行，但**必须告警"不得对外分发"**（不能悄悄放行）',
-    r.code === 0 && /不得对外分发/.test(r.out), { code: r.code, out: r.out.slice(0, 300) });
+  check(
+    'W4 `MIAO_NOTARIZE=0`（本机自用打包）⇒ 放行，但**必须告警"不得对外分发"**（不能悄悄放行）',
+    r.code === 0 && /不得对外分发/.test(r.out),
+    { code: r.code, out: r.out.slice(0, 300) },
+  );
 }
 
 {
@@ -129,18 +152,22 @@ function runPreflight(extraEnv = {}) {
     APPLE_PASSWORD: 'app-specific-password',
     APPLE_TEAM_ID: 'TEAM123456',
   });
-  check('W5 变量齐 ⇒ 放行，且**不再**提"本次不公证"',
-    r.code === 0 && !/本次不公证/.test(r.out), { code: r.code, out: r.out.slice(0, 300) });
+  check('W5 变量齐 ⇒ 放行，且**不再**提"本次不公证"', r.code === 0 && !/本次不公证/.test(r.out), {
+    code: r.code,
+    out: r.out.slice(0, 300),
+  });
 }
 
 // ------------------------------------------------------------------ W7 写进构建脚本
 
 {
   const scripts = JSON.parse(fs.readFileSync(PKG, 'utf8')).scripts ?? {};
-  check('W7 `sign:preflight` 已注册，且 `app:build:mac` **串上了它**（"写进构建脚本"= 打包路径上真的会跑）',
-    /mac-signing-preflight\.mjs/.test(scripts['sign:preflight'] ?? '')
-      && /sign:preflight/.test(scripts['app:build:mac'] ?? ''),
-    { sign_preflight: scripts['sign:preflight'], app_build_mac: scripts['app:build:mac'] });
+  check(
+    'W7 `sign:preflight` 已注册，且 `app:build:mac` **串上了它**（"写进构建脚本"= 打包路径上真的会跑）',
+    /mac-signing-preflight\.mjs/.test(scripts['sign:preflight'] ?? '') &&
+      /sign:preflight/.test(scripts['app:build:mac'] ?? ''),
+    { sign_preflight: scripts['sign:preflight'], app_build_mac: scripts['app:build:mac'] },
+  );
 }
 
 // ------------------------------------------------------------------ W6 unverified 记账
@@ -151,8 +178,11 @@ function runPreflight(extraEnv = {}) {
    * ⚠️ 「E1」与「unverified」各自出现在文件不同角落**不算**记账：那份台账里两者本来就都有。
    *    判据要求它们**在同一段**（400 字内）共现 —— 那才说明"E1 这条被标成未验"。
    */
-  check('W6 真机签名/公证**未验**这件事被如实记账（`unverified` 与 `E1` 在同一段共现），不许静默计入"已验"',
-    /E1[\s\S]{0,400}unverified|unverified[\s\S]{0,400}E1/.test(notes), null);
+  check(
+    'W6 真机签名/公证**未验**这件事被如实记账（`unverified` 与 `E1` 在同一段共现），不许静默计入"已验"',
+    /E1[\s\S]{0,400}unverified|unverified[\s\S]{0,400}E1/.test(notes),
+    null,
+  );
 }
 
 // ------------------------------------------------------------------ 反证轮
@@ -176,7 +206,11 @@ if (REFUTE) {
     return { code: r.status, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
   };
   const hasRed = (out, name) => out.split('\n').some((l) => l.trimStart().startsWith('✗') && l.includes(name));
-  const redOn = (out) => out.split('\n').filter((l) => l.trimStart().startsWith('✗')).map((l) => l.trim().slice(0, 44));
+  const redOn = (out) =>
+    out
+      .split('\n')
+      .filter((l) => l.trimStart().startsWith('✗'))
+      .map((l) => l.trim().slice(0, 44));
 
   const KEEP_JIT = '<key>com.apple.security.cs.allow-jit</key>';
   const CONF_ENT = '"entitlements": "entitlements.plist"';
@@ -186,8 +220,11 @@ if (REFUTE) {
   {
     const restore = mutateFile(PLIST, `${KEEP_JIT}\n  <true/>`, `${KEEP_JIT}\n  <false/>`);
     const r = runForward();
-    check('M1 把一条 entitlement 从 true 改成 false ⇒ W1 红（恒 true 的判据抓不到它）',
-      r.code !== 0 && hasRed(r.out, 'W1'), { code: r.code, redOn: redOn(r.out) });
+    check(
+      'M1 把一条 entitlement 从 true 改成 false ⇒ W1 红（恒 true 的判据抓不到它）',
+      r.code !== 0 && hasRed(r.out, 'W1'),
+      { code: r.code, redOn: redOn(r.out) },
+    );
     restore();
   }
 
@@ -195,8 +232,10 @@ if (REFUTE) {
   {
     const restore = mutateFile(CONF, CONF_ENT, '"entitlementsOff": "entitlements.plist"');
     const r = runForward();
-    check('M2 tauri.conf 的 entitlements 接线被摘掉 ⇒ W2 红', r.code !== 0 && hasRed(r.out, 'W2'),
-      { code: r.code, redOn: redOn(r.out) });
+    check('M2 tauri.conf 的 entitlements 接线被摘掉 ⇒ W2 红', r.code !== 0 && hasRed(r.out, 'W2'), {
+      code: r.code,
+      redOn: redOn(r.out),
+    });
     restore();
   }
 
@@ -204,23 +243,35 @@ if (REFUTE) {
   {
     const restore = mutateFile(PREFLIGHT, PREFLIGHT_GATE, 'if (false) {');
     const r = runForward();
-    check('M3 打包前自检恒通过（`if (false)`）⇒ W3 红 —— 一个不拦任何东西的自检比没有更坏',
-      r.code !== 0 && hasRed(r.out, 'W3'), { code: r.code, redOn: redOn(r.out) });
+    check(
+      'M3 打包前自检恒通过（`if (false)`）⇒ W3 红 —— 一个不拦任何东西的自检比没有更坏',
+      r.code !== 0 && hasRed(r.out, 'W3'),
+      { code: r.code, redOn: redOn(r.out) },
+    );
     restore();
   }
 
   // ---- M4：构建脚本不再串自检 ----
   {
-    const restore = mutateFile(PKG, 'npm run sign:preflight && npm --prefix app run tauri build',
-      'npm --prefix app run tauri build');
+    const restore = mutateFile(
+      PKG,
+      'npm run sign:preflight && npm --prefix app run tauri build',
+      'npm --prefix app run tauri build',
+    );
     const r = runForward();
-    check('M4 `app:build:mac` 不再跑自检 ⇒ W7 红（自检存在但打包路径上不会执行）',
-      r.code !== 0 && hasRed(r.out, 'W7'), { code: r.code, redOn: redOn(r.out) });
+    check(
+      'M4 `app:build:mac` 不再跑自检 ⇒ W7 红（自检存在但打包路径上不会执行）',
+      r.code !== 0 && hasRed(r.out, 'W7'),
+      { code: r.code, redOn: redOn(r.out) },
+    );
     restore();
   }
 
-  check('R1 变异收尾：四个文件按字节还原',
-    CONF_ORIGINAL.equals(fs.readFileSync(CONF)) && PLIST_ORIGINAL.equals(fs.readFileSync(PLIST)), null);
+  check(
+    'R1 变异收尾：四个文件按字节还原',
+    CONF_ORIGINAL.equals(fs.readFileSync(CONF)) && PLIST_ORIGINAL.equals(fs.readFileSync(PLIST)),
+    null,
+  );
 }
 
 console.log(`\n通过 ${passed} / 失败 ${failed}`);

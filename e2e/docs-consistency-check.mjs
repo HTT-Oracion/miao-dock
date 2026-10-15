@@ -112,9 +112,7 @@ for (const suite of SUITES) {
       'COUNT',
       `${doc} 声明的 ${suite.cmd} 条数与脚本一致`,
       claimed === actual,
-      claimed === actual
-        ? `${actual} 条`
-        : `文档写 ${claimed}，脚本实际 ${actual}`,
+      claimed === actual ? `${actual} 条` : `文档写 ${claimed}，脚本实际 ${actual}`,
     );
   }
 }
@@ -167,12 +165,7 @@ const banned = ['nex', 'box'].join('');
     }
   };
   for (const t of targets) walk(path.join(ROOT, t));
-  add(
-    'BANNED',
-    '被禁历史品牌标识 0 命中',
-    hits.length === 0,
-    hits.length ? `命中：${hits.join(', ')}` : '0 命中',
-  );
+  add('BANNED', '被禁历史品牌标识 0 命中', hits.length === 0, hits.length ? `命中：${hits.join(', ')}` : '0 命中');
 }
 
 // ── ④ GROUPS 声明 vs 实际用到的分组 ─────────────────────────────────────

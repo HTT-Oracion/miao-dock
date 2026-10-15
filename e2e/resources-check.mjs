@@ -34,7 +34,14 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const BIN = path.join(ROOT, 'app', 'src-tauri', 'target', 'debug', process.platform === 'win32' ? 'boxsvc.exe' : 'boxsvc');
+const BIN = path.join(
+  ROOT,
+  'app',
+  'src-tauri',
+  'target',
+  'debug',
+  process.platform === 'win32' ? 'boxsvc.exe' : 'boxsvc',
+);
 const SERVICE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'service.rs');
 const BASE_CONF = path.join(ROOT, 'app', 'src-tauri', 'tauri.conf.json');
 
@@ -117,7 +124,9 @@ async function runDynamic() {
       'D1',
       'dev 态**不报**资源缺失，且资产来源 = `repo`（证明 dev 态回退到仓库路径，行为未变）',
       r.code === 0 && !!rep && rep.ok === true && item && item.source === 'repo',
-      rep ? `exit=${r.code} ok=${rep.ok} source=${item && item.source}` : `exit=${r.code} 输出非 JSON：${r.err || r.out}`,
+      rep
+        ? `exit=${r.code} ok=${rep.ok} source=${item && item.source}`
+        : `exit=${r.code} 输出非 JSON：${r.err || r.out}`,
     );
   }
 
@@ -197,7 +206,9 @@ function runSourcePins() {
     'S1',
     '`service.rs::start_blocking` 里调用了 `paths::missing_assets()`（自检不接进启动路径 = 形同虚设）',
     body.includes('paths::missing_assets()'),
-    startIdx >= 0 ? `在 start_blocking 内${body.includes('paths::missing_assets()') ? '找到' : '未找到'}调用` : '未找到 start_blocking',
+    startIdx >= 0
+      ? `在 start_blocking 内${body.includes('paths::missing_assets()') ? '找到' : '未找到'}调用`
+      : '未找到 start_blocking',
   );
 
   // ---- S2 报错文本指向「资源缺失」，不是连接失败 ----
@@ -326,7 +337,9 @@ const main = async () => {
       const buf = originals.get(e.file);
       const txt = buf.toString('utf8');
       if (!txt.includes(e.find)) {
-        console.log(`⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`);
+        console.log(
+          `⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`,
+        );
         missing = true;
       }
     }

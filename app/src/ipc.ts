@@ -123,19 +123,16 @@ export const showWindow = () => invoke<void>('show_window');
  * 把主题同步给原生窗口（标题栏 / 红绿灯按钮配色）。
  * `mode` 为 `'light' | 'dark' | null`，null 表示跟随系统。
  */
-export const setWindowTheme = (mode: 'light' | 'dark' | null) =>
-  invoke<void>('set_theme', { mode });
+export const setWindowTheme = (mode: 'light' | 'dark' | null) => invoke<void>('set_theme', { mode });
 
 // ------------------------------------------------------------------ 契约端点代理
 
-export const apiGet = <T,>(path: string) => invoke<T>('api_get', { path });
+export const apiGet = <T>(path: string) => invoke<T>('api_get', { path });
 
-export const apiPost = <T,>(path: string, body?: unknown) =>
-  invoke<T>('api_post', { path, body: body ?? null });
+export const apiPost = <T>(path: string, body?: unknown) => invoke<T>('api_post', { path, body: body ?? null });
 
 /** `DELETE` 代理（带可选 JSON 体）。目前唯一用途是移除封面 —— 契约里它只有 DELETE 一种动词 */
-export const apiDelete = <T,>(path: string, body?: unknown) =>
-  invoke<T>('api_delete', { path, body: body ?? null });
+export const apiDelete = <T>(path: string, body?: unknown) => invoke<T>('api_delete', { path, body: body ?? null });
 
 /**
  * `multipart/form-data` 提交（契约 §5.2）：files 为本地绝对路径，前端已按 ≤20 分批。
@@ -143,12 +140,8 @@ export const apiDelete = <T,>(path: string, body?: unknown) =>
  * `field` = 文件分片的**字段名**，默认 `images[]`（批量投放用）。封面走同一条通道但
  * 服务端按契约认的是 `cover`，故那里必须显式传 `'cover'`。
  */
-export const apiPostMultipart = <T,>(
-  path: string,
-  payload: unknown,
-  files: string[],
-  field?: string,
-) => invoke<T>('api_post_multipart', { path, payload, files, field: field ?? null });
+export const apiPostMultipart = <T>(path: string, payload: unknown, files: string[], field?: string) =>
+  invoke<T>('api_post_multipart', { path, payload, files, field: field ?? null });
 
 /**
  * 取库内文件字节。返回 `ArrayBuffer`（Rust 侧走 `tauri::ipc::Response` 二进制通道），
@@ -170,8 +163,7 @@ export const expandPaths = (paths: string[]) => invoke<string[]>('expand_paths',
  * 路径来自系统保存对话框，本函数不拼接、不猜测、不创建目录 —— 因而也不需要宽泛的
  * 文件系统权限：能力边界正好是"用户自己选的那一个文件"。
  */
-export const writeTextFile = (path: string, contents: string) =>
-  invoke<void>('write_text_file', { path, contents });
+export const writeTextFile = (path: string, contents: string) => invoke<void>('write_text_file', { path, contents });
 
 // ------------------------------------------------------------------ 事件
 
@@ -180,5 +172,4 @@ export const onServiceState = (cb: (s: ServiceStatus) => void): Promise<Unlisten
   listen<ServiceStatus>('miao://service-state', (e) => cb(e.payload));
 
 /** 托盘「退出喵坞…」→ 前端弹二次确认（文案见契约 §2.1） */
-export const onQuitRequested = (cb: () => void): Promise<UnlistenFn> =>
-  listen('miao://quit-requested', () => cb());
+export const onQuitRequested = (cb: () => void): Promise<UnlistenFn> => listen('miao://quit-requested', () => cb());

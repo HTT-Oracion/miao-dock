@@ -61,9 +61,11 @@ export function buildRuntime(base, missing = []) {
     const f = path.join(src, ...relOf(p));
     fs.writeFileSync(f, fs.readFileSync(f, 'utf8').split(p.mark).join(''), 'utf8');
   }
-  if (missing.includes('python')) fs.rmSync(path.join(venv, process.platform === 'win32' ? 'Scripts' : 'bin'), { recursive: true, force: true });
+  if (missing.includes('python'))
+    fs.rmSync(path.join(venv, process.platform === 'win32' ? 'Scripts' : 'bin'), { recursive: true, force: true });
   if (missing.includes('source')) fs.rmSync(path.join(src, 'server'), { recursive: true, force: true });
-  if (missing.includes('deps')) fs.rmSync(path.join(venv, 'Lib', 'site-packages', 'torch'), { recursive: true, force: true });
+  if (missing.includes('deps'))
+    fs.rmSync(path.join(venv, 'Lib', 'site-packages', 'torch'), { recursive: true, force: true });
   if (missing.includes('venvRoot')) fs.rmSync(path.join(rt, 'manga-translator'), { recursive: true, force: true });
   return {
     rt,
@@ -72,7 +74,11 @@ export function buildRuntime(base, missing = []) {
     env: {
       MIAO_RUNTIME_ROOT: rt,
       MIAO_ENGINE_DIR: src,
-      MIAO_ENGINE_PYTHON: path.join(venv, process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python'),
+      MIAO_ENGINE_PYTHON: path.join(
+        venv,
+        process.platform === 'win32' ? 'Scripts' : 'bin',
+        process.platform === 'win32' ? 'python.exe' : 'python',
+      ),
     },
   };
 }

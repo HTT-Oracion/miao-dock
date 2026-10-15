@@ -78,8 +78,12 @@ function boxsvc(args, extraEnv = {}) {
     });
     let out = '';
     let err = '';
-    c.stdout.on('data', (d) => { out += d; });
-    c.stderr.on('data', (d) => { err += d; });
+    c.stdout.on('data', (d) => {
+      out += d;
+    });
+    c.stderr.on('data', (d) => {
+      err += d;
+    });
     c.on('error', (e) => resolve({ code: -1, out, err: e.message }));
     c.on('close', (code) => resolve({ code, out, err }));
   });
@@ -108,8 +112,12 @@ function runNode(args, extraEnv = {}) {
     });
     let out = '';
     let err = '';
-    c.stdout.on('data', (d) => { out += d; });
-    c.stderr.on('data', (d) => { err += d; });
+    c.stdout.on('data', (d) => {
+      out += d;
+    });
+    c.stderr.on('data', (d) => {
+      err += d;
+    });
     c.on('error', (e) => resolve({ code: -1, out, err: e.message }));
     c.on('close', (code) => resolve({ code, out, err }));
   });
@@ -128,8 +136,11 @@ function runNode(args, extraEnv = {}) {
   const body = venvRelBody();
   const hasWin = /PathBuf::from\("Scripts"\)\.join\("python\.exe"\)/.test(body);
   const hasPosix = /PathBuf::from\("bin"\)\.join\("python"\)/.test(body);
-  check('W1 `paths.rs` 的解释器推导**函数体内**两个平台形态都在（POSIX `bin/python` / Windows `Scripts/python.exe`）',
-    hasWin && hasPosix, { hasWin, hasPosix, bodyLen: body.length });
+  check(
+    'W1 `paths.rs` 的解释器推导**函数体内**两个平台形态都在（POSIX `bin/python` / Windows `Scripts/python.exe`）',
+    hasWin && hasPosix,
+    { hasWin, hasPosix, bodyLen: body.length },
+  );
 
   const p = await boxsvc(['--print-paths']);
   const paths = JSON.parse(p.out);
@@ -137,15 +148,19 @@ function runNode(args, extraEnv = {}) {
   const winForm = /[\\/]Scripts[\\/]python\.exe$/i.test(py);
   const posixForm = /[\\/]bin[\\/]python$/.test(py);
   const expectWin = process.platform === 'win32';
-  check('W1b 实跑 `--print-paths`：解释器形态与**当前平台**一致、且不与另一平台的形态串（Windows 上不许出现 `bin/python`）',
+  check(
+    'W1b 实跑 `--print-paths`：解释器形态与**当前平台**一致、且不与另一平台的形态串（Windows 上不许出现 `bin/python`）',
     expectWin ? winForm && !posixForm : posixForm && !winForm,
-    { enginePython: py, platform: process.platform });
+    { enginePython: py, platform: process.platform },
+  );
 
   const lp = await boxsvc(['--print-launch-plan', 'real']);
   const engineCmd0 = (JSON.parse(lp.out).engine?.cmd ?? [])[0] ?? '';
-  check('W1c 检测侧（`--print-paths`）与启动侧（`--print-launch-plan` 的 `cmd[0]`）**逐字节相同**（分叉只在推导里写一次）',
+  check(
+    'W1c 检测侧（`--print-paths`）与启动侧（`--print-launch-plan` 的 `cmd[0]`）**逐字节相同**（分叉只在推导里写一次）',
     engineCmd0 !== '' && path.resolve(engineCmd0) === path.resolve(py),
-    { launch: engineCmd0, print: py });
+    { launch: engineCmd0, print: py },
+  );
 }
 
 // ------------------------------------------------------------------ W2/W3：Windows 专用脚本在非 Windows 下**明确拒绝**
@@ -155,24 +170,33 @@ function runNode(args, extraEnv = {}) {
   //    把平台**假装**成 darwin-arm64（与 C3 的 `platform_key` 是同一个键）。
   const r = await runNode([DEPS_MJS], { MIAO_PLATFORM: 'darwin-arm64' });
   const text = `${r.out}${r.err}`;
-  check('W2 非 Windows 下调 Windows 专用脚本 ⇒ 退出码 2 + `PLATFORM_UNSUPPORTED` + 指向 macOS 引导（不是 `ENOENT python.exe`）',
+  check(
+    'W2 非 Windows 下调 Windows 专用脚本 ⇒ 退出码 2 + `PLATFORM_UNSUPPORTED` + 指向 macOS 引导（不是 `ENOENT python.exe`）',
     r.code === 2 && /PLATFORM_UNSUPPORTED/.test(text) && /install-guide-macos\.md/.test(text),
-    { code: r.code, text: text.slice(0, 240) });
-  check('W2b 拒绝文案里**不出现** `ENOENT`（出现即说明它是撞上了找不到解释器，而不是先拒绝了平台）',
-    !/ENOENT/.test(text), { text: text.slice(0, 240) });
-  check('W2c 拒绝分支**不落任何东西**（一个字节都不该写进用户目录）',
-    !/\[deps\]/.test(r.out), { out: r.out.slice(0, 160) });
+    { code: r.code, text: text.slice(0, 240) },
+  );
+  check(
+    'W2b 拒绝文案里**不出现** `ENOENT`（出现即说明它是撞上了找不到解释器，而不是先拒绝了平台）',
+    !/ENOENT/.test(text),
+    { text: text.slice(0, 240) },
+  );
+  check('W2c 拒绝分支**不落任何东西**（一个字节都不该写进用户目录）', !/\[deps\]/.test(r.out), {
+    out: r.out.slice(0, 160),
+  });
 
   // W3：守卫必须早于任何 fs / spawn。
   const src = fs.readFileSync(DEPS_MJS, 'utf8');
   const guardAt = src.indexOf('PLATFORM_UNSUPPORTED');
   const firstIo = Math.min(
-    ...[src.indexOf('fs.readFileSync('), src.indexOf('fs.writeFileSync('), src.indexOf('spawnSync(')]
-      .filter((i) => i >= 0),
+    ...[src.indexOf('fs.readFileSync('), src.indexOf('fs.writeFileSync('), src.indexOf('spawnSync(')].filter(
+      (i) => i >= 0,
+    ),
   );
-  check('W3 平台守卫出现在**任何 `fs` / `spawnSync` 之前**（否则报错仍会先撞上 ENOENT）',
+  check(
+    'W3 平台守卫出现在**任何 `fs` / `spawnSync` 之前**（否则报错仍会先撞上 ENOENT）',
     guardAt > 0 && Number.isFinite(firstIo) && guardAt < firstIo,
-    { guardAt, firstIo });
+    { guardAt, firstIo },
+  );
 }
 
 // ------------------------------------------------------------------ W4：文档分平台
@@ -180,19 +204,29 @@ function runNode(args, extraEnv = {}) {
 {
   const norm = (s) => s.replace(/\r\n/g, '\n');
   const macLines = norm(fs.readFileSync(GUIDE_MAC, 'utf8'))
-    .split('\n').map((l) => l.trim()).filter((l) => l.includes('deps:engine'));
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.includes('deps:engine'));
   const winLines = norm(fs.readFileSync(GUIDE_WIN, 'utf8'))
-    .split('\n').map((l) => l.trim()).filter((l) => /^\s*(npm run |\$\s*npm run )?deps:engine|npm run deps:engine/.test(l));
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => /^\s*(npm run |\$\s*npm run )?deps:engine|npm run deps:engine/.test(l));
 
   // 「不能用」的语境：那一行必须带否定词（不同平台引导里出现同一个命令，唯一正当的理由就是劝退）
   const NEG = /(不能|不要|禁止|别|不支持|仅 Windows|与 Windows 不同)/;
   const macPlain = macLines.filter((l) => !NEG.test(l));
-  check('W4 macOS 引导里**每一次** `deps:engine` 都出现在"不能用"的语境里（不许让 macOS 用户去跑 Windows 专用脚本）',
-    macLines.length > 0 && macPlain.length === 0, { macLines, macPlain });
+  check(
+    'W4 macOS 引导里**每一次** `deps:engine` 都出现在"不能用"的语境里（不许让 macOS 用户去跑 Windows 专用脚本）',
+    macLines.length > 0 && macPlain.length === 0,
+    { macLines, macPlain },
+  );
 
   const winPlain = winLines.filter((l) => !NEG.test(l));
-  check('W4b Windows 引导里有**普通调用**（不是用"别跑"绕过去）—— 两侧合起来才说明文档真的分平台了',
-    winPlain.length > 0, { winLines, winPlain });
+  check(
+    'W4b Windows 引导里有**普通调用**（不是用"别跑"绕过去）—— 两侧合起来才说明文档真的分平台了',
+    winPlain.length > 0,
+    { winLines, winPlain },
+  );
 }
 
 // ------------------------------------------------------------------ W5：unverified 记账
@@ -200,10 +234,16 @@ function runNode(args, extraEnv = {}) {
 {
   const igc = fs.readFileSync(INSTALL_GUIDE_CHECK, 'utf8');
   const readme = fs.readFileSync(README, 'utf8');
-  check('W5 `check:install-guide` 明写「macOS 侧真机验收归 D7」+ `unverified`（未真机验的项不许静默计入"已验"）',
-    /D7/.test(igc) && /unverified/.test(igc), null);
-  check('W5b `README.md` 的 macOS 说明同样标出真机未验证',
-    /macOS/.test(readme) && /(未验证|未真机|unverified)/.test(readme), null);
+  check(
+    'W5 `check:install-guide` 明写「macOS 侧真机验收归 D7」+ `unverified`（未真机验的项不许静默计入"已验"）',
+    /D7/.test(igc) && /unverified/.test(igc),
+    null,
+  );
+  check(
+    'W5b `README.md` 的 macOS 说明同样标出真机未验证',
+    /macOS/.test(readme) && /(未验证|未真机|unverified)/.test(readme),
+    null,
+  );
 }
 
 // ------------------------------------------------------------------ 反证轮
@@ -226,14 +266,22 @@ if (REFUTE) {
     new Promise((resolve) => {
       const c = spawn(process.execPath, [SELF], { cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
       let out = '';
-      c.stdout.on('data', (d) => { out += d; });
-      c.stderr.on('data', (d) => { out += d; });
+      c.stdout.on('data', (d) => {
+        out += d;
+      });
+      c.stderr.on('data', (d) => {
+        out += d;
+      });
       c.on('error', () => resolve({ code: -1, out }));
       c.on('close', (code) => resolve({ code, out }));
     });
 
   const hasRed = (out, name) => out.split('\n').some((l) => l.trimStart().startsWith('✗') && l.includes(name));
-  const redOn = (out) => out.split('\n').filter((l) => l.trimStart().startsWith('✗')).map((l) => l.trim().slice(0, 46));
+  const redOn = (out) =>
+    out
+      .split('\n')
+      .filter((l) => l.trimStart().startsWith('✗'))
+      .map((l) => l.trim().slice(0, 46));
 
   const LOSE_POSIX = 'PathBuf::from("bin").join("python")';
   // 🔴 锚点必须与**当前**守卫逐字一致。B4 给守卫加了只读旁路
@@ -255,8 +303,11 @@ if (REFUTE) {
     const built = await rebuild();
     const r = await runForward();
     const red = built && r.code !== 0 && hasRed(r.out, 'W1');
-    check('M0 把 POSIX 形态也写成 Windows 形态 ⇒ W1 红（另一平台的引擎会起不来，且本机测不出来）',
-      red, { built, code: r.code, redOn: redOn(r.out) });
+    check('M0 把 POSIX 形态也写成 Windows 形态 ⇒ W1 红（另一平台的引擎会起不来，且本机测不出来）', red, {
+      built,
+      code: r.code,
+      redOn: redOn(r.out),
+    });
     restore();
     await rebuild();
   }
@@ -268,8 +319,10 @@ if (REFUTE) {
     const restore = mutateFile(DEPS_MJS, GUARD, "if (PLATFORM.startsWith('win32')) {");
     const r = await runForward();
     const red = r.code !== 0 && hasRed(r.out, 'W2');
-    check('M1 守卫条件写反（"是 Windows 才拒绝"）⇒ W2 红（非 Windows 上它会一路跑到 `ENOENT`）',
-      red, { code: r.code, redOn: redOn(r.out) });
+    check('M1 守卫条件写反（"是 Windows 才拒绝"）⇒ W2 红（非 Windows 上它会一路跑到 `ENOENT`）', red, {
+      code: r.code,
+      redOn: redOn(r.out),
+    });
     restore();
   }
 
@@ -278,17 +331,26 @@ if (REFUTE) {
     const restore = mutateFile(DEPS_MJS, GUARD, 'if (false) {');
     const r = await runForward();
     const red = r.code !== 0 && hasRed(r.out, 'W2');
-    check('M2 守卫失效（`if (false)`）⇒ W2 红 —— 报错会退化成 `ENOENT python.exe`', red, { code: r.code, redOn: redOn(r.out) });
+    check('M2 守卫失效（`if (false)`）⇒ W2 红 —— 报错会退化成 `ENOENT python.exe`', red, {
+      code: r.code,
+      redOn: redOn(r.out),
+    });
     restore();
   }
 
   // ---- M3：macOS 引导里把"不能用"写成普通调用 ----
   {
-    const restore = mutateFile(GUIDE_MAC, '# ② 依赖：⚠️ 见下，macOS 这一步不能用 npm run deps:engine',
-      'npm run deps:engine     # ② 依赖');
+    const restore = mutateFile(
+      GUIDE_MAC,
+      '# ② 依赖：⚠️ 见下，macOS 这一步不能用 npm run deps:engine',
+      'npm run deps:engine     # ② 依赖',
+    );
     const r = await runForward();
     const red = r.code !== 0 && hasRed(r.out, 'W4');
-    check('M3 macOS 引导改成让用户直接跑 `deps:engine` ⇒ W4 红（平台文档串了）', red, { code: r.code, redOn: redOn(r.out) });
+    check('M3 macOS 引导改成让用户直接跑 `deps:engine` ⇒ W4 红（平台文档串了）', red, {
+      code: r.code,
+      redOn: redOn(r.out),
+    });
     restore();
   }
 
@@ -298,7 +360,8 @@ if (REFUTE) {
     // 收尾只看**推导函数体** —— 单测里那几行同样含这两个字面量，用它当判据会把未还原的推导判成"已还原"
     if (!venvRelBody().includes(LOSE_POSIX)) bad.push('paths.rs 的推导未还原（残留 M0）');
     if (!fs.readFileSync(DEPS_MJS, 'utf8').includes(GUARD)) bad.push('install-engine-deps.mjs 残留 M1/M2');
-    if (!fs.readFileSync(GUIDE_MAC, 'utf8').includes('macOS 这一步不能用 npm run deps:engine')) bad.push('install-guide-macos.md 残留 M3');
+    if (!fs.readFileSync(GUIDE_MAC, 'utf8').includes('macOS 这一步不能用 npm run deps:engine'))
+      bad.push('install-guide-macos.md 残留 M3');
     check('R1 变异收尾：三处文件按字节还原', bad.length === 0, bad);
   }
 }

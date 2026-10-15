@@ -24,7 +24,13 @@ function dlPrefsOf(s: {
   };
 }
 
-export const createDesktopSlice = (set: StoreSet, get: StoreGet): Pick<MusicState, 'setLyricsWindowOpen' | 'pushLyricsState' | 'pushLyricsPrefs' | 'setCommentTab' | 'loadComments'> => ({
+export const createDesktopSlice = (
+  set: StoreSet,
+  get: StoreGet,
+): Pick<
+  MusicState,
+  'setLyricsWindowOpen' | 'pushLyricsState' | 'pushLyricsPrefs' | 'setCommentTab' | 'loadComments'
+> => ({
   setLyricsWindowOpen: async (open) => {
     // 先改状态再调命令：让 UI 立刻响应，不被 IPC 往返卡住。
     // 失败时回滚 —— 否则会留下"开关显示已开、窗口却没起来"的假状态。
@@ -52,7 +58,7 @@ export const createDesktopSlice = (set: StoreSet, get: StoreGet): Pick<MusicStat
       songName: currentSong?.name ?? '',
       artist: currentSong?.artist ?? '',
       // 契约要的是**毫秒**，而 `parseLrc` 产出的 `time` 是**秒** —— 这里必须换算，
-    // 漏了会让整首歌的歌词都挤在开头几秒内（症状：歌词瞬间刷完然后不动）。
+      // 漏了会让整首歌的歌词都挤在开头几秒内（症状：歌词瞬间刷完然后不动）。
       lines: parsedLyrics.map((l) => ({ ms: Math.round(l.time * 1000), text: l.text })),
       playing: isPlaying,
       startedAtMs: progressMs,

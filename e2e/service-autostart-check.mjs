@@ -184,7 +184,9 @@ function runAll() {
       'A1',
       '`service_start` 走**幂等**入口 `start_once`（不用裸 `start` —— StrictMode 双跑/连点会起两套进程树抢端口）',
       /mgr\.start_once\(&app\)/.test(body) && !/mgr\.start\(&app\)/.test(body),
-      body ? `start_once=${/mgr\.start_once\(&app\)/.test(body)} 裸 start=${/mgr\.start\(&app\)/.test(body)}` : '未定位到 service_start 函数体',
+      body
+        ? `start_once=${/mgr\.start_once\(&app\)/.test(body)} 裸 start=${/mgr\.start\(&app\)/.test(body)}`
+        : '未定位到 service_start 函数体',
     );
   }
 
@@ -193,14 +195,13 @@ function runAll() {
     const body = fnBody(svc, 'pub fn start_once');
     const hasLock = /self\.inner\.lock\(\)/.test(body);
     const hasStates = /ServiceState::Starting \| ServiceState::Running \| ServiceState::Stopping/.test(body);
-    const earlyReturn = body.indexOf('return false') >= 0 && body.indexOf('return false') < body.indexOf('self.start(app)');
+    const earlyReturn =
+      body.indexOf('return false') >= 0 && body.indexOf('return false') < body.indexOf('self.start(app)');
     check(
       'A2',
       '`start_once` 判定+置位压在**同一把锁**内，且 `return false`（提前退出）在 `self.start(app)` **之前**',
       hasLock && hasStates && earlyReturn && /self\.start\(app\)/.test(body),
-      body
-        ? `锁=${hasLock} 三态判定=${hasStates} 提前 return=${earlyReturn}`
-        : '未定位到 start_once 函数体',
+      body ? `锁=${hasLock} 三态判定=${hasStates} 提前 return=${earlyReturn}` : '未定位到 start_once 函数体',
     );
   }
 
@@ -221,7 +222,9 @@ function runAll() {
       'A4',
       '`service_stop` 在 `mgr.stop()` 之后**补发** `mgr.emit(&app)`（stop() 自己不发事件，不补则界面永远停在「运行中」）',
       /mgr\.stop\(\);/.test(body) && /mgr\.emit\(&app\);/.test(body),
-      body ? `stop()=${/mgr\.stop\(\);/.test(body)} emit=${/mgr\.emit\(&app\);/.test(body)}` : '未定位到 service_stop 函数体',
+      body
+        ? `stop()=${/mgr\.stop\(\);/.test(body)} emit=${/mgr\.emit\(&app\);/.test(body)}`
+        : '未定位到 service_stop 函数体',
     );
   }
 
@@ -254,8 +257,18 @@ function runAll() {
     const call = app.indexOf('void serviceStart().catch(() => undefined);');
     const tail = call >= 0 ? app.slice(call, call + 200) : '';
     const m = tail.match(/\},\s*\[([^\]]*)\]\s*\)/);
-    const deps = m ? m[1].split(',').map((s) => s.trim()).filter(Boolean) : [];
-    const ok = call >= 0 && deps.length === 2 && deps.includes('screen') && deps.includes('autoStart') && !deps.includes('status');
+    const deps = m
+      ? m[1]
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+    const ok =
+      call >= 0 &&
+      deps.length === 2 &&
+      deps.includes('screen') &&
+      deps.includes('autoStart') &&
+      !deps.includes('status');
     check(
       'C1',
       '自动启动 effect 的依赖**恰为** `[screen, autoStart]`，**不含 `status`**（含 status ⇒ 用户刚点的「停止」被瞬间复活）',
@@ -306,7 +319,9 @@ function runAll() {
       'D1',
       '未就绪屏（X-C3）：`stopped` 态给「启动本地服务」(onStart)，其余态给「重启本地服务」(onRestart)',
       ok,
-      i < 0 ? '未定位到 state === \'stopped\' 的三元分支' : `真分支含 onStart=${/onStart/.test(trueBr)} 假分支含 onRestart=${/onRestart/.test(falseBr)}`,
+      i < 0
+        ? "未定位到 state === 'stopped' 的三元分支"
+        : `真分支含 onStart=${/onStart/.test(trueBr)} 假分支含 onRestart=${/onRestart/.test(falseBr)}`,
     );
   }
 
@@ -324,7 +339,7 @@ function runAll() {
   // ---- D3：ipc 命令名 ----
   check(
     'D3',
-    "`ipc.ts` 的 `serviceStart` / `serviceStop` 指向真实命令名 `service_start` / `service_stop`",
+    '`ipc.ts` 的 `serviceStart` / `serviceStop` 指向真实命令名 `service_start` / `service_stop`',
     /export const serviceStart = \(\) => invoke<ServiceStatus>\('service_start'\)/.test(ipc) &&
       /export const serviceStop = \(\) => invoke<ServiceStatus>\('service_stop'\)/.test(ipc),
     '',
@@ -351,7 +366,9 @@ function runAll() {
       'E1',
       '默认档（未设 `MIAO_SERVICE_IMPL`）⇒ 直接 `resolve_boxsvc()?`，**没有**退回 Node 的退路',
       /resolve_boxsvc\(\)\?/.test(body) && !/node_service_cmd/.test(body),
-      body ? `走 resolve_boxsvc=${/resolve_boxsvc\(\)\?/.test(body)} 无 node 退路=${!/node_service_cmd/.test(body)}` : noBody,
+      body
+        ? `走 resolve_boxsvc=${/resolve_boxsvc\(\)\?/.test(body)} 无 node 退路=${!/node_service_cmd/.test(body)}`
+        : noBody,
     );
 
     check(
@@ -394,9 +411,9 @@ function runAll() {
     })();
     const pkg = cargoToml.slice(pkgStart < 0 ? 0 : pkgStart, pkgEnd);
     const m = /^[ \t]*default-run[ \t]*=[ \t]*"([^"]+)"/m.exec(pkg);
-    const declared = [...cargoToml.matchAll(/^\[\[bin\]\][ \t]*\r?\n(?:.*\r?\n)*?[ \t]*name[ \t]*=[ \t]*"([^"]+)"/gm)].map(
-      (x) => x[1],
-    );
+    const declared = [
+      ...cargoToml.matchAll(/^\[\[bin\]\][ \t]*\r?\n(?:.*\r?\n)*?[ \t]*name[ \t]*=[ \t]*"([^"]+)"/gm),
+    ].map((x) => x[1]);
     const target = m ? m[1] : null;
 
     check(
@@ -489,7 +506,7 @@ const MUTATIONS = [
     expect: ['C1'],
   },
   {
-    name: "C2 去掉 effect 里的 !autoStart 守卫（开关关掉也照拉）",
+    name: 'C2 去掉 effect 里的 !autoStart 守卫（开关关掉也照拉）',
     file: APP_TSX,
     find: "if (screen !== 'translate' || !autoStart) return;",
     replace: "if (screen !== 'translate') return;",

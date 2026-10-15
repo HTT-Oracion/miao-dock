@@ -10,15 +10,7 @@ import type { ReactNode } from 'react';
  * 因为"这里为什么是空的"只有那块业务知道（这一点是空态最容易写坏的地方：
  * 组件里写死"暂无数据"，十处空态就会给出十句一样且没有信息量的话）。
  */
-export function Empty({
-  children,
-  bad,
-  inline,
-}: {
-  children: ReactNode;
-  bad?: boolean;
-  inline?: boolean;
-}) {
+export function Empty({ children, bad, inline }: { children: ReactNode; bad?: boolean; inline?: boolean }) {
   const cls = ['ui-empty', bad ? 'is-bad' : '', inline ? 'is-inline' : ''].filter(Boolean).join(' ');
   return <div className={cls}>{children}</div>;
 }

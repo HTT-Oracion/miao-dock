@@ -1,14 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FolderOpen, Trash2 } from 'lucide-react';
 import { QUEUE_TABLE } from '@/theme/tokens';
-import {
-  STATUS_DOT_VAR,
-  STATUS_LABEL,
-  SOURCE_LABEL,
-  isTerminal,
-  type TaskRow,
-  type TaskStatus,
-} from '@/types';
+import { STATUS_DOT_VAR, STATUS_LABEL, SOURCE_LABEL, isTerminal, type TaskRow, type TaskStatus } from '@/types';
 import { pageCount, pageSlice, relativeTime } from '@tools';
 import { Btn, Dot, MagicCircle, MenuButton, MenuItem } from '@components/units';
 
@@ -178,13 +171,7 @@ function Row({
       </div>
 
       <div className="qt-c-action" style={{ width: QUEUE_TABLE.colAction }}>
-        <PrimaryAction
-          t={t}
-          canceling={canceling}
-          onCancel={onCancel}
-          onRetry={onRetry}
-          onViewComic={onViewComic}
-        />
+        <PrimaryAction t={t} canceling={canceling} onCancel={onCancel} onRetry={onRetry} onViewComic={onViewComic} />
         <MenuButton label="更多" size="sm">
           {(close) => (
             <>
@@ -279,8 +266,7 @@ export function QueueTable({
   }, [rows]);
 
   const deletableOnPage = pageRows.filter((r) => isTerminal(r.status));
-  const allPickedOnPage =
-    deletableOnPage.length > 0 && deletableOnPage.every((r) => picked.has(r.taskId));
+  const allPickedOnPage = deletableOnPage.length > 0 && deletableOnPage.every((r) => picked.has(r.taskId));
 
   const togglePick = (id: string) =>
     setPicked((prev) => {
@@ -415,13 +401,7 @@ export function QueueTable({
  * 「去插件选图」这种说法兑现不了。这里给一条真能走通的路：跳到设置页的
  * 「令牌配对」（插件连不上、没配对的用户，要去的就是那里）。
  */
-export function QueueEmpty({
-  onGoSettings,
-  onGoDrop,
-}: {
-  onGoSettings: () => void;
-  onGoDrop: () => void;
-}) {
+export function QueueEmpty({ onGoSettings, onGoDrop }: { onGoSettings: () => void; onGoDrop: () => void }) {
   return (
     <div className="empty">
       <MagicCircle />

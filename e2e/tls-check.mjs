@@ -54,13 +54,10 @@ ok(/reqwest\s*=/.test(toml), 'Cargo.toml 声明了 reqwest');
 ok(
   /rustls-tls/.test(reqwestLine),
   'reqwest 启用 rustls-tls feature',
-  '未找到 rustls-tls —— 公网 HTTPS 会在运行时失败（D-25）'
+  '未找到 rustls-tls —— 公网 HTTPS 会在运行时失败（D-25）',
 );
 // 记录本组要断言的「反面」：关掉 TLS 是本项目 ver1.0 的真实历史状态
-ok(
-  !/native-tls/.test(reqwestLine),
-  '未误用 native-tls（避免 OpenSSL 系统依赖）'
-);
+ok(!/native-tls/.test(reqwestLine), '未误用 native-tls（避免 OpenSSL 系统依赖）');
 
 // ── 2. 锁文件层：TLS 栈是否真的进了依赖图 ──────────────────────────
 // 只看 Cargo.toml 不够 —— feature 名写对了但没生效的情况，靠锁文件才看得见。
@@ -90,7 +87,7 @@ if (lock) {
       false,
       '锁文件与配置同步',
       '配置已移除 rustls-tls，但 Cargo.lock 仍是上一次 build 的产物（含 TLS）。' +
-        '\n      这是过期信号，不能据此认为 HTTPS 可用 —— 请 cargo build 后复跑。'
+        '\n      这是过期信号，不能据此认为 HTTPS 可用 —— 请 cargo build 后复跑。',
     );
   } else {
     ok(true, '锁文件与配置同步');
@@ -125,11 +122,7 @@ if (vendorAvailable) {
   for (const [host, name] of hosts) {
     ok(vendorSrc.includes(host), `参考源码含 ${name} 域名（${host}）—— 确需公网 HTTPS`);
   }
-  ok(
-    vendorSrc.includes('https://'),
-    '参考源码使用 https 协议',
-    '若全为 http 则不需要 TLS，D-25 不适用'
-  );
+  ok(vendorSrc.includes('https://'), '参考源码使用 https 协议', '若全为 http 则不需要 TLS，D-25 不适用');
 } else {
   console.log('  · 参考源码不在位（vendor/ 未落盘），跳过源码层');
   console.log('    注：这不影响 D-25 本身 —— 配置层与锁文件层才是它的判据');

@@ -187,7 +187,7 @@ const MUTATIONS = [
     edits: [
       {
         file: APP_TSX,
-        find: 'void quitApp().catch((e: unknown) => push(errorText(e), \'bad\'));',
+        find: "void quitApp().catch((e: unknown) => push(errorText(e), 'bad'));",
         replace: 'void quitApp();',
       },
     ],
@@ -248,7 +248,9 @@ const main = () => {
       const find = e.find.split('\n').join(eol);
       const repl = e.replace.split('\n').join(eol);
       if (!txt.includes(find)) {
-        console.log(`⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`);
+        console.log(
+          `⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`,
+        );
         skipped += mut.expect.length;
         missing = true;
         continue;

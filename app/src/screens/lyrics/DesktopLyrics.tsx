@@ -25,24 +25,8 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import {
-  HeartPulse,
-  Lock,
-  Pause,
-  Play,
-  Repeat,
-  Repeat1,
-  Shuffle,
-  SkipBack,
-  SkipForward,
-  X,
-} from 'lucide-react';
-import {
-  DL_BASE_COLOR_DEF,
-  DL_HIGHLIGHT_COLOR_DEF,
-  DL_LINE_COUNT,
-  DL_LYRICS_SIZE,
-} from '@music/player-options';
+import { HeartPulse, Lock, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, X } from 'lucide-react';
+import { DL_BASE_COLOR_DEF, DL_HIGHLIGHT_COLOR_DEF, DL_LINE_COUNT, DL_LYRICS_SIZE } from '@music/player-options';
 
 // ------------------------------------------------------------------ 契约类型
 
@@ -652,10 +636,7 @@ export function DesktopLyrics() {
         `.dl-side` 用 0.86em、`.dl-cur` 用 1em 相对它换算 —— 逐行写死 px 就没法
         让副行随主行等比缩放，改字号时两行的比例会散架。
       */}
-      <div
-        className={`dl-bar${fresh ? ' is-fresh' : ''}`}
-        style={{ fontSize: `${prefs.fontSize}px` }}
-      >
+      <div className={`dl-bar${fresh ? ' is-fresh' : ''}`} style={{ fontSize: `${prefs.fontSize}px` }}>
         {!hasSong ? (
           // 无歌曲：窗口**保持存在**，只显示极简待播放态。
           // ⚠️ 绝不 `window.close()` —— 那是主窗的职责（它调 close_lyrics_window）。
@@ -695,11 +676,7 @@ export function DesktopLyrics() {
               // 其余行（上一句及更早）：用用户配的底色。桌面歌词的经典形态 ——
               // 前几句留在视野里，眼睛不用来回扫。
               return (
-                <div
-                  key={`side-${i}-${idx}`}
-                  className="dl-line dl-side"
-                  style={{ color: prefs.baseColor }}
-                >
+                <div key={`side-${i}-${idx}`} className="dl-line dl-side" style={{ color: prefs.baseColor }}>
                   {line?.text ?? ''}
                 </div>
               );

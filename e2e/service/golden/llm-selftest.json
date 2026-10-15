@@ -7,11 +7,7 @@
       "pidIsInt": true,
       "pidStable": null,
       "portMatchesSpec": true,
-      "states": [
-        "stopped",
-        "running",
-        "stopped"
-      ],
+      "states": ["stopped", "running", "stopped"],
       "stopResult": {
         "exited": true,
         "portFreed": true,
@@ -25,11 +21,7 @@
       "pidIsInt": null,
       "pidStable": null,
       "portMatchesSpec": null,
-      "states": [
-        "stopped",
-        "error",
-        "stopped"
-      ],
+      "states": ["stopped", "error", "stopped"],
       "stopResult": null
     },
     {
@@ -39,11 +31,7 @@
       "pidIsInt": true,
       "pidStable": true,
       "portMatchesSpec": true,
-      "states": [
-        "stopped",
-        "running",
-        "running"
-      ],
+      "states": ["stopped", "running", "running"],
       "stopResult": null
     },
     {
@@ -53,10 +41,7 @@
       "pidIsInt": null,
       "pidStable": null,
       "portMatchesSpec": null,
-      "states": [
-        "stopped",
-        "stopped"
-      ],
+      "states": ["stopped", "stopped"],
       "stopResult": {
         "stopped": false,
         "why": "未在运行"
@@ -71,13 +56,7 @@
       "pidStable": null,
       "portMatchesSpec": true,
       "restarts": 1,
-      "states": [
-        "stopped",
-        "running",
-        "stopped",
-        "running",
-        "stopped"
-      ],
+      "states": ["stopped", "running", "stopped", "running", "stopped"],
       "stopResult": null
     }
   ]

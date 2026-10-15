@@ -100,7 +100,9 @@ export function leftovers(destDir) {
   const parent = path.dirname(destDir);
   const base = path.basename(destDir);
   try {
-    return fs.readdirSync(parent).filter((n) => n.startsWith(`${base}${PART_SUFFIX}`) || n.startsWith(`${base}${OLD_SUFFIX}`));
+    return fs
+      .readdirSync(parent)
+      .filter((n) => n.startsWith(`${base}${PART_SUFFIX}`) || n.startsWith(`${base}${OLD_SUFFIX}`));
   } catch {
     return [];
   }

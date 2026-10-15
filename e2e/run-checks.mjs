@@ -158,7 +158,14 @@ function runCheck(check, timeoutMs) {
     }, timeoutMs);
     child.on('error', (err) => {
       clearTimeout(timer);
-      resolve({ check, ok: false, code: -1, ms: Date.now() - t0, out: `${out}\n[spawn error] ${err.message}`, timedOut });
+      resolve({
+        check,
+        ok: false,
+        code: -1,
+        ms: Date.now() - t0,
+        out: `${out}\n[spawn error] ${err.message}`,
+        timedOut,
+      });
     });
     child.on('exit', (code, signal) => {
       clearTimeout(timer);
@@ -206,13 +213,17 @@ function printList(entries) {
     console.log(`${pad(c.id, w)}  ${pad(c.tier, 8)}  ${c.script}${c.args ? ` ${c.args.join(' ')}` : ''}`);
     if (c.watch?.length) console.log(`${' '.repeat(w)}  watch: ${c.watch.join('  ')}`);
   }
-  console.log(`\n共 ${entries.length} 项（正跑 ${CHECKS.filter((c) => c.tier !== 'refute').length} + 反证轮 ${CHECKS.filter((c) => c.tier === 'refute').length}）`);
+  console.log(
+    `\n共 ${entries.length} 项（正跑 ${CHECKS.filter((c) => c.tier !== 'refute').length} + 反证轮 ${CHECKS.filter((c) => c.tier === 'refute').length}）`,
+  );
 }
 
 // ------------------------------------------------------------------ 主流程
 const opt = parseArgv(process.argv.slice(2));
 if (opt.help) {
-  console.log('用法：node e2e/run-checks.mjs [--tier static,service,nightly,refute,all] [--changed [--base <ref>]] [--only id1,id2] [--jobs N] [--list] [--timeout 秒]');
+  console.log(
+    '用法：node e2e/run-checks.mjs [--tier static,service,nightly,refute,all] [--changed [--base <ref>]] [--only id1,id2] [--jobs N] [--list] [--timeout 秒]',
+  );
   process.exit(0);
 }
 
@@ -284,7 +295,9 @@ for (const tier of TIER_ORDER) {
   if (inTier.length === 0) continue;
   const jobs = tier === 'static' ? opt.jobs : TIER_CONCURRENCY[tier];
   const timeoutMs = opt.timeout ?? TIER_TIMEOUT_MS[tier];
-  console.log(`── ${tier} 层：${inTier.length} 项，并行度 ${jobs}${jobs > 1 ? '' : '（串行：端口竞争，见 run-checks.mjs 文件头）'} ──`);
+  console.log(
+    `── ${tier} 层：${inTier.length} 项，并行度 ${jobs}${jobs > 1 ? '' : '（串行：端口竞争，见 run-checks.mjs 文件头）'} ──`,
+  );
   // eslint-disable-next-line no-await-in-loop
   await runPool(inTier, jobs, timeoutMs, (r) => {
     results.push(r);
@@ -298,12 +311,16 @@ for (const tier of TIER_ORDER) {
 const failed = results.filter((r) => !r.ok);
 const passed = results.length - failed.length;
 console.log('\n════════ 汇总 ════════');
-console.log(`通过 ${passed} / ${results.length}，总耗时 ${secs(Date.now() - t0)}${skipped.length ? `，跳过 ${skipped.length}` : ''}`);
+console.log(
+  `通过 ${passed} / ${results.length}，总耗时 ${secs(Date.now() - t0)}${skipped.length ? `，跳过 ${skipped.length}` : ''}`,
+);
 if (results.length) {
   const w = Math.max(...results.map((r) => r.check.id.length));
   console.log('\n按耗时降序：');
   for (const r of [...results].sort((a, b) => b.ms - a.ms)) {
-    console.log(`  ${pad(r.check.id, w)}  ${pad(secs(r.ms), 9)}  ${r.ok ? 'pass' : `FAIL(${r.timedOut ? 'timeout' : r.code})`}`);
+    console.log(
+      `  ${pad(r.check.id, w)}  ${pad(secs(r.ms), 9)}  ${r.ok ? 'pass' : `FAIL(${r.timedOut ? 'timeout' : r.code})`}`,
+    );
   }
 }
 for (const r of failed) {

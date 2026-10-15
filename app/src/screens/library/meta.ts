@@ -24,10 +24,7 @@ export function retranslateMeta(
 }
 
 /** 继续翻译菜单项文案。 */
-export function resumeMeta(
-  pending: number | null,
-  busy: boolean,
-): { title: string; sub: string; disabled: boolean } {
+export function resumeMeta(pending: number | null, busy: boolean): { title: string; sub: string; disabled: boolean } {
   if (busy) return { title: '正在提交…', sub: '提交中…', disabled: true };
   if (pending === 0) return { title: '该漫画没有待续做的页', sub: '没有待续做的页', disabled: true };
   const n = pending ?? '…';

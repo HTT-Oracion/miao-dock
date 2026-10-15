@@ -107,15 +107,23 @@ function buildFixture() {
     sets: { visual: { files: ['a'] }, translation: { files: ['hf1'] } },
     files: [
       {
-        id: 'a', set: 'visual', dest: 'models-store/a.bin', linkTo: 'models/a.bin',
-        sha256: sha(contentA), sizeBytes: Buffer.byteLength(contentA), url: 'http://127.0.0.1:1/a.bin',
+        id: 'a',
+        set: 'visual',
+        dest: 'models-store/a.bin',
+        linkTo: 'models/a.bin',
+        sha256: sha(contentA),
+        sizeBytes: Buffer.byteLength(contentA),
+        url: 'http://127.0.0.1:1/a.bin',
       },
       {
-        id: 'hf1', set: 'translation',
+        id: 'hf1',
+        set: 'translation',
         dest: `models-store/nllb/blobs/blobAAA`,
         linkTo: `${NLLB_CACHE}/blobs/blobAAA`,
         hf: { revision: REV, filename: 'pytorch_model.bin' },
-        sha256: sha(contentB), sizeBytes: Buffer.byteLength(contentB), url: 'http://127.0.0.1:1/blobAAA',
+        sha256: sha(contentB),
+        sizeBytes: Buffer.byteLength(contentB),
+        url: 'http://127.0.0.1:1/blobAAA',
       },
     ],
   };
@@ -156,8 +164,12 @@ function runAsync(args, env) {
     });
     let out = '';
     let err = '';
-    c.stdout.on('data', (d) => { out += d; });
-    c.stderr.on('data', (d) => { err += d; });
+    c.stdout.on('data', (d) => {
+      out += d;
+    });
+    c.stderr.on('data', (d) => {
+      err += d;
+    });
     c.on('error', (e) => resolve({ code: -1, out, err: `${err}${e.message}` }));
     c.on('close', (code) => resolve({ code, out, err }));
   });
@@ -208,8 +220,11 @@ const hasOfflineKeys = (plan) => {
 {
   const fx = buildFixture(); // 引擎树里**没有** snapshots ⇒ 权重未预置
   const plan = await planFor(fx);
-  check('W1a 权重**未**预置 ⇒ 配方的 `engine.env` 里**不含** HF 离线键（否则会把首次下载一并堵死）',
-    !hasOfflineKeys(plan), { env: plan?.engine?.env ?? {} });
+  check(
+    'W1a 权重**未**预置 ⇒ 配方的 `engine.env` 里**不含** HF 离线键（否则会把首次下载一并堵死）',
+    !hasOfflineKeys(plan),
+    { env: plan?.engine?.env ?? {} },
+  );
   fs.rmSync(fx.root, { recursive: true, force: true });
   fs.rmSync(fx.state, { recursive: true, force: true });
 }
@@ -219,8 +234,11 @@ const hasOfflineKeys = (plan) => {
   // 造出"权重已预置"的盘上事实：HF 快照目录存在（`translation_weights_present` 认的就是它）
   fs.mkdirSync(path.dirname(enginePaths(fx).snapshot), { recursive: true });
   const plan = await planFor(fx);
-  check('W1b 权重已预置 ⇒ 配方的 `engine.env` 含 `HF_HUB_OFFLINE=1` + `TRANSFORMERS_OFFLINE=1`（断网加载的前提）',
-    hasOfflineKeys(plan), { env: plan?.engine?.env ?? {} });
+  check(
+    'W1b 权重已预置 ⇒ 配方的 `engine.env` 含 `HF_HUB_OFFLINE=1` + `TRANSFORMERS_OFFLINE=1`（断网加载的前提）',
+    hasOfflineKeys(plan),
+    { env: plan?.engine?.env ?? {} },
+  );
 
   /*
    * ---- W4：逃生开关（**必须在清引擎树之前跑**）----
@@ -228,51 +246,70 @@ const hasOfflineKeys = (plan) => {
    * 于是"忽略开关"的变异会在那时伪装成"没问题"。放在这里，`present` 恰好为真。
    */
   const off = await planFor(fx, { MIAO_NO_HF_OFFLINE: '1' });
-  check('W4 `MIAO_NO_HF_OFFLINE=1` ⇒ 离线键消失（逃生开关真的在起作用；否则"永远注入"也会让 W1b 绿）',
-    !hasOfflineKeys(off), { env: off?.engine?.env ?? {} });
+  check(
+    'W4 `MIAO_NO_HF_OFFLINE=1` ⇒ 离线键消失（逃生开关真的在起作用；否则"永远注入"也会让 W1b 绿）',
+    !hasOfflineKeys(off),
+    { env: off?.engine?.env ?? {} },
+  );
 
   // ---- W3：清掉链接 ⇒ 引擎树那一层必须红（验收②）----
   const before = await engineTreeReady(fx);
-  check('W3a 链接尚未建立（store 里有、引擎树里没有）⇒ 「引擎真要打开的那条路径」两条全未就绪',
-    before.a === false && before.hf1 === false, before);
+  check(
+    'W3a 链接尚未建立（store 里有、引擎树里没有）⇒ 「引擎真要打开的那条路径」两条全未就绪',
+    before.a === false && before.hf1 === false,
+    before,
+  );
 
   // 🔴 与此同时 **store 那一路**是全绿 —— 两层判据确实分层，不是同一条判据的两个说法。
   //    没有这一条，把验收②写在 store 上（清链接后照样绿）这个错误也看不出来。
   const storeBefore = await checkReport(fx);
-  check('W3b 同一时刻 `--fetch-models --check`（判 **store 权威副本**）报 0 缺失 ⇒ 两层判据真的分层：'
-    + '"store 完好"与"引擎打不开"可以同时成立（R6 的陷阱正是它）',
+  check(
+    'W3b 同一时刻 `--fetch-models --check`（判 **store 权威副本**）报 0 缺失 ⇒ 两层判据真的分层：' +
+      '"store 完好"与"引擎打不开"可以同时成立（R6 的陷阱正是它）',
     missingIds(storeBefore).length === 0,
-    { missing: missingIds(storeBefore), hfMissing: storeBefore.hf?.missing?.map((m) => m.id) });
-
-  const link = await runAsync(
-    ['--fetch-models', '--link', '--manifest', fx.mp, '--root', fx.root],
-    envFor(fx),
+    { missing: missingIds(storeBefore), hfMissing: storeBefore.hf?.missing?.map((m) => m.id) },
   );
-  check('W2 `--link` 在 `url` 指向**不可达地址**时仍然成功 ⇒ 这条收尾路径真的零网络',
+
+  const link = await runAsync(['--fetch-models', '--link', '--manifest', fx.mp, '--root', fx.root], envFor(fx));
+  check(
+    'W2 `--link` 在 `url` 指向**不可达地址**时仍然成功 ⇒ 这条收尾路径真的零网络',
     link.code === 0 && /链接：/.test(link.out),
-    { code: link.code, out: link.out.slice(0, 200), err: link.err.slice(0, 200) });
+    { code: link.code, out: link.out.slice(0, 200), err: link.err.slice(0, 200) },
+  );
 
   const paths = enginePaths(fx);
-  check('W2b 重建后 `<root>/src/<linkTo>`（引擎实际打开的那一个）在位',
-    fs.existsSync(paths.visual), { want: paths.visual });
+  check('W2b 重建后 `<root>/src/<linkTo>`（引擎实际打开的那一个）在位', fs.existsSync(paths.visual), {
+    want: paths.visual,
+  });
 
   const after = await engineTreeReady(fx);
   const hfAfter = await checkReport(fx);
-  check('W2c 重建后：引擎树那一路两条都就绪（`ready=true`），且 HF 缓存布局'
-    + '（`snapshots/<rev>/<file>` + `refs/main`）全部可解析 —— 这才是"断网也加载得起来"',
-    after.a === true && after.hf1 === true
-      && (hfAfter.hf?.missing ?? []).length === 0
-      && fs.existsSync(paths.snapshot) && fs.existsSync(paths.refs),
-    { ready: after, hfMissing: hfAfter.hf?.missing?.map((m) => m.id), snapshot: fs.existsSync(paths.snapshot), refs: fs.existsSync(paths.refs) });
+  check(
+    'W2c 重建后：引擎树那一路两条都就绪（`ready=true`），且 HF 缓存布局' +
+      '（`snapshots/<rev>/<file>` + `refs/main`）全部可解析 —— 这才是"断网也加载得起来"',
+    after.a === true &&
+      after.hf1 === true &&
+      (hfAfter.hf?.missing ?? []).length === 0 &&
+      fs.existsSync(paths.snapshot) &&
+      fs.existsSync(paths.refs),
+    {
+      ready: after,
+      hfMissing: hfAfter.hf?.missing?.map((m) => m.id),
+      snapshot: fs.existsSync(paths.snapshot),
+      refs: fs.existsSync(paths.refs),
+    },
+  );
 
   // 验收②：清掉引擎树里的链接/快照 ⇒ 引擎树那一路必须重新红，**而 store 里的权威副本仍在**
   fs.rmSync(path.join(fx.engineDir, 'models'), { recursive: true, force: true });
   const storeIntact = fs.existsSync(path.join(fx.root, 'models-store', 'a.bin'));
   const cleared = await engineTreeReady(fx);
   const storeAfter = await checkReport(fx);
-  check('W3c 清掉引擎树里的链接/快照 ⇒ 两条立刻回到未就绪，而 store 里的权威副本**仍在**（该绿的一直绿、该红的立刻红）',
+  check(
+    'W3c 清掉引擎树里的链接/快照 ⇒ 两条立刻回到未就绪，而 store 里的权威副本**仍在**（该绿的一直绿、该红的立刻红）',
     storeIntact && cleared.a === false && cleared.hf1 === false && missingIds(storeAfter).length === 0,
-    { storeIntact, cleared, storeMissing: missingIds(storeAfter) });
+    { storeIntact, cleared, storeMissing: missingIds(storeAfter) },
+  );
 
   fs.rmSync(fx.root, { recursive: true, force: true });
   fs.rmSync(fx.state, { recursive: true, force: true });
@@ -305,14 +342,22 @@ if (REFUTE) {
     new Promise((resolve) => {
       const c = spawn(process.execPath, [SELF], { cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
       let out = '';
-      c.stdout.on('data', (d) => { out += d; });
-      c.stderr.on('data', (d) => { out += d; });
+      c.stdout.on('data', (d) => {
+        out += d;
+      });
+      c.stderr.on('data', (d) => {
+        out += d;
+      });
       c.on('error', () => resolve({ code: -1, out }));
       c.on('close', (code) => resolve({ code, out }));
     });
 
   const hasRed = (out, name) => out.split('\n').some((l) => l.trimStart().startsWith('✗') && l.includes(name));
-  const redOn = (out) => out.split('\n').filter((l) => l.trimStart().startsWith('✗')).map((l) => l.trim().slice(0, 46));
+  const redOn = (out) =>
+    out
+      .split('\n')
+      .filter((l) => l.trimStart().startsWith('✗'))
+      .map((l) => l.trim().slice(0, 46));
 
   const GUARD = 'if disabled || !present {';
 
@@ -322,8 +367,11 @@ if (REFUTE) {
     const built = await rebuild();
     const r = await runForward();
     const red = built && r.code !== 0 && hasRed(r.out, 'W1b');
-    check('M1 `hf_offline_env` 恒返回空（从不注入）⇒ W1b 红 —— 引擎会去联网重下几个 GB',
-      red, { built, code: r.code, redOn: redOn(r.out) });
+    check('M1 `hf_offline_env` 恒返回空（从不注入）⇒ W1b 红 —— 引擎会去联网重下几个 GB', red, {
+      built,
+      code: r.code,
+      redOn: redOn(r.out),
+    });
     restore();
     await rebuild();
   }
@@ -346,8 +394,11 @@ if (REFUTE) {
     const built = await rebuild();
     const r = await runForward();
     const red = built && r.code !== 0 && hasRed(r.out, 'W2c');
-    check('M3 `--link` 不再写 HF 的 `refs/main` ⇒ W2c 红（blob 在、HF 仍然看不见这份权重）',
-      red, { built, code: r.code, redOn: redOn(r.out) });
+    check('M3 `--link` 不再写 HF 的 `refs/main` ⇒ W2c 红（blob 在、HF 仍然看不见这份权重）', red, {
+      built,
+      code: r.code,
+      redOn: redOn(r.out),
+    });
     restore();
     await rebuild();
   }

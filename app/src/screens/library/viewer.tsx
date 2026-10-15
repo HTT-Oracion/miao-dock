@@ -335,7 +335,9 @@ function Lightbox({
             onPointerMove={onPointerMove}
             onPointerUp={endDrag}
             onPointerCancel={endDrag}
-            title={zoomed ? '拖动或双指滑动可调整显示区域 · 点一下隐藏工具栏' : 'Ctrl/⌘ + 滚轮（向上放大）· 点一下隐藏工具栏'}
+            title={
+              zoomed ? '拖动或双指滑动可调整显示区域 · 点一下隐藏工具栏' : 'Ctrl/⌘ + 滚轮（向上放大）· 点一下隐藏工具栏'
+            }
           />
         ) : (
           <span className="lightbox-msg">{blob.kind === 'loading' ? '加载中…' : '该侧文件缺失'}</span>
@@ -515,7 +517,12 @@ export function Compare({
       </div>
       <div className="compare-panes">
         <Pane path={view.imagePath(seq, 'original')} seq={seq} variant="original" onZoom={() => setZoom('original')} />
-        <Pane path={view.imagePath(seq, 'translated')} seq={seq} variant="translated" onZoom={() => setZoom('translated')} />
+        <Pane
+          path={view.imagePath(seq, 'translated')}
+          seq={seq}
+          variant="translated"
+          onZoom={() => setZoom('translated')}
+        />
       </div>
 
       {zoom ? (

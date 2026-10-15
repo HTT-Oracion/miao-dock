@@ -319,8 +319,7 @@ export interface ModelsVerifyResult {
   manifest: string;
 }
 
-export const verifyEngineModels = () =>
-  apiPost<ModelsVerifyResult>('/engine/models/verify', {});
+export const verifyEngineModels = () => apiPost<ModelsVerifyResult>('/engine/models/verify', {});
 
 /**
  * 发起「下载/重新下载模型」。

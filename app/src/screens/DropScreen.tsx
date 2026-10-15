@@ -109,7 +109,10 @@ export function DropScreen({
     if (typeof picked === 'string') await ingest([picked]);
   };
 
-  const batches = splitBatches(files.map((f) => f.path), BATCH_LIMIT);
+  const batches = splitBatches(
+    files.map((f) => f.path),
+    BATCH_LIMIT,
+  );
   const nameOk = comicName.trim().length > 0;
   const canSubmit = !busy && nameOk && files.length > 0;
 
@@ -149,11 +152,7 @@ export function DropScreen({
       );
       // B2…Bn：追加同一任务的后续批次（契约 §5.3「分批提交的唯一实现路径」）
       for (let i = 1; i < batches.length; i++) {
-        await apiPostMultipart(
-          `/tasks/${first.taskId}/batches`,
-          { idempotencyKey: uuid() },
-          batches[i],
-        );
+        await apiPostMultipart(`/tasks/${first.taskId}/batches`, { idempotencyKey: uuid() }, batches[i]);
       }
       setResult(first);
       setFiles([]);
@@ -221,8 +220,7 @@ export function DropScreen({
               待投放 <span className="num">{files.length}</span> 张
               {batches.length > 1 ? (
                 <>
-                  {' · '}
-                  分 <span className="num">{batches.length}</span> 批
+                  {' · '}分 <span className="num">{batches.length}</span> 批
                 </>
               ) : null}
             </span>

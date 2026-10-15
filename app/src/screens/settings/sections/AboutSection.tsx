@@ -51,8 +51,8 @@ export function AboutSection() {
         </Row>
         {failed ? (
           <RowNote>
-            读不到构建版本（WebView 未获 <code>core:app:allow-version</code> 授权时会这样）。
-            这里不用手写版本号顶上 —— 那会让你以为看的是当前这个包。
+            读不到构建版本（WebView 未获 <code>core:app:allow-version</code> 授权时会这样）。 这里不用手写版本号顶上 ——
+            那会让你以为看的是当前这个包。
           </RowNote>
         ) : null}
         {/* 原先这里还有一行「检查更新」—— 该项目已整条删除（缺的是更新源这个外部事实，

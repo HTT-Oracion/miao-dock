@@ -20,11 +20,7 @@ import { QUEUE_EMPTY } from '@/theme/tokens';
  */
 export function Dot({ colorVar, pulse = false }: { colorVar: string; pulse?: boolean }) {
   return (
-    <span
-      className={pulse ? 'dot dot-pulse' : 'dot'}
-      style={{ background: `var(${colorVar})` }}
-      aria-hidden="true"
-    />
+    <span className={pulse ? 'dot dot-pulse' : 'dot'} style={{ background: `var(${colorVar})` }} aria-hidden="true" />
   );
 }
 

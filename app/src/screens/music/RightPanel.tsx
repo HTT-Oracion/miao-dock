@@ -51,9 +51,7 @@ export function RightPanel() {
 
       {searchError ? <div className="music-inline-err">搜索失败：{searchError}</div> : null}
 
-      <div className="music-rightbody">
-        {searchActive ? <SearchResults /> : <Discover />}
-      </div>
+      <div className="music-rightbody">{searchActive ? <SearchResults /> : <Discover />}</div>
     </section>
   );
 }
@@ -128,8 +126,7 @@ function SearchResults() {
   return (
     <>
       <div className="music-hint">
-        在 {providerLabel(searchProvider)} 找到 {results.length} 首
-        {hasMore ? ' · 向下滚动加载更多' : ''}
+        在 {providerLabel(searchProvider)} 找到 {results.length} 首{hasMore ? ' · 向下滚动加载更多' : ''}
       </div>
       <VirtualList
         items={results}

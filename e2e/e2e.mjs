@@ -206,8 +206,7 @@ async function appendBatch(port, token, taskId, images, extra = {}) {
   return { status: res.status, json: json(res) };
 }
 
-const detail = async (port, token, taskId) =>
-  json(await request(port, 'GET', `/api/v1/tasks/${taskId}`, { token }));
+const detail = async (port, token, taskId) => json(await request(port, 'GET', `/api/v1/tasks/${taskId}`, { token }));
 
 const TERMINAL = ['done', 'partial_failed', 'failed', 'canceled'];
 
@@ -215,8 +214,7 @@ const TERMINAL = ['done', 'partial_failed', 'failed', 'canceled'];
 // 写死 60s 是模拟引擎口径；真引擎下 20 张就要 1 分钟以上，
 // 那时会先抛「未在 60000ms 内到终态」——**看起来像流程坏了，其实只是引擎慢**（D-0.8 的第二处口径）。
 const TASK_SLACK_MS = 30_000; // 队列排队 + 落盘 + 拉起引擎的余量
-const taskTimeoutFor = (n = BATCH_LIMIT) =>
-  Math.max(60_000, n * ITEM_JITTER * BUDGET_ITEM_MS + TASK_SLACK_MS);
+const taskTimeoutFor = (n = BATCH_LIMIT) => Math.max(60_000, n * ITEM_JITTER * BUDGET_ITEM_MS + TASK_SLACK_MS);
 
 async function waitTask(port, token, taskId, timeoutMs = taskTimeoutFor()) {
   const until = Date.now() + timeoutMs;
@@ -236,7 +234,14 @@ function collectEvents(port, token, taskId, { timeoutMs = taskTimeoutFor() } = {
     const events = [];
     let buf = '';
     const req = http.request(
-      { host: '127.0.0.1', port, method: 'GET', path: `/api/v1/tasks/${taskId}/events`, headers: { 'X-Box-Token': token }, agent: false },
+      {
+        host: '127.0.0.1',
+        port,
+        method: 'GET',
+        path: `/api/v1/tasks/${taskId}/events`,
+        headers: { 'X-Box-Token': token },
+        agent: false,
+      },
       (res) => {
         res.setEncoding('utf8');
         res.on('data', (chunk) => {
@@ -343,19 +348,11 @@ try {
 
     const t = await detail(PORT, TOKEN, taskId);
     const batches = t?.batches ?? [];
-    check(
-      'D1c',
-      '31 张 = 一个 Task 两个 Batch',
-      batches.length === 2,
-      `batches=${batches.length}`,
-    );
+    check('D1c', '31 张 = 一个 Task 两个 Batch', batches.length === 2, `batches=${batches.length}`);
     check(
       'D1d',
       'seqFrom/seqTo 连续无重号（1–20 / 21–31）',
-      batches[0]?.seqFrom === 1 &&
-        batches[0]?.seqTo === 20 &&
-        batches[1]?.seqFrom === 21 &&
-        batches[1]?.seqTo === 31,
+      batches[0]?.seqFrom === 1 && batches[0]?.seqTo === 20 && batches[1]?.seqFrom === 21 && batches[1]?.seqTo === 31,
       batches.map((b) => `${b.seqFrom}-${b.seqTo}`).join(' / '),
     );
 
@@ -451,7 +448,9 @@ try {
 
     // 「可续做」不能只是个说法：失败页必须真的出现在该漫画的续做清单里，
     // 否则库里那张卡只是**看着**像「待译」，点「继续翻译」却无事发生。
-    const plan = json(await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, { token: TOKEN }));
+    const plan = json(
+      await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, { token: TOKEN }),
+    );
     check(
       'D3f',
       `续做清单列出失败页 [${failSeqs.join(',')}] —— 这是 G-11 裁 A 的实际用途`,
@@ -489,8 +488,7 @@ try {
       check(
         'D3h',
         `重试的任务只含失败页 [${failSeq}]，且原因是 engine_*（说明原图真读到了，不是 original_missing）`,
-        JSON.stringify(retried) === JSON.stringify([failSeq]) &&
-          /^engine_/.test((retry.items ?? [])[0]?.reason ?? ''),
+        JSON.stringify(retried) === JSON.stringify([failSeq]) && /^engine_/.test((retry.items ?? [])[0]?.reason ?? ''),
         `items=[${retried.join(',')}] reason=${(retry.items ?? [])[0]?.reason}`,
       );
     }
@@ -508,8 +506,18 @@ try {
 
     // 原/译文件流可按同 seq 取（对照页的数据来源）
     const firstOk = okSeqs[0];
-    const orig = await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/files/${firstOk}?variant=original`, { token: TOKEN });
-    const trans = await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/files/${firstOk}?variant=translated`, { token: TOKEN });
+    const orig = await request(
+      PORT,
+      'GET',
+      `/api/v1/library/${encodeURIComponent(dirName)}/files/${firstOk}?variant=original`,
+      { token: TOKEN },
+    );
+    const trans = await request(
+      PORT,
+      'GET',
+      `/api/v1/library/${encodeURIComponent(dirName)}/files/${firstOk}?variant=translated`,
+      { token: TOKEN },
+    );
     check(
       'D3c',
       '对照页数据源：同 seq 的原图与译文都能取到真图',
@@ -534,9 +542,7 @@ try {
     check(
       'D5b',
       `失败页 seq=${failSeq} 在中间却不在已译集合里 —— 「seq <= 张数」的旧代理在此会说谎`,
-      !!comic &&
-        !comic.translatedSeqs.includes(failSeq) &&
-        failSeq <= comic.translatedCount,
+      !!comic && !comic.translatedSeqs.includes(failSeq) && failSeq <= comic.translatedCount,
       `代理说「已译」（${failSeq} <= ${comic?.translatedCount}），事实是没有译文；两集合差集 = [${failSeq}]`,
     );
     // G-11 裁定 A 之后失败页的原图在磁盘上，故 missingSeqs 应当**为空**；
@@ -573,9 +579,7 @@ try {
     // 「进度与 SSE 一致」验的是：SSE 上逐条推来的完成项，与最后查询到的完成项**对得上**。
     // 这条比读一个进度数字更有意义 —— 少推 / 多推 / 重复推都会被它抓住。
     const sseOk = new Set(
-      events
-        .filter((e) => e.event === 'item.status' && e.data && e.data.status === 'success')
-        .map((e) => e.data.seq),
+      events.filter((e) => e.event === 'item.status' && e.data && e.data.status === 'success').map((e) => e.data.seq),
     );
     const finalOk = new Set((done4.items ?? []).filter((i) => i.status === 'success').map((i) => i.seq));
     check(

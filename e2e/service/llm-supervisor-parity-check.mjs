@@ -102,17 +102,29 @@ if (REFUTE) {
   // M1：不等就绪就置 running ⇒ never-ready 必须与 golden 对不上
   {
     const m = await runRust({ MIAO_LLM_NO_WAIT_READY: '1' });
-    mutations.push({ id: 'M1', what: 'Rust MIAO_LLM_NO_WAIT_READY=1（不等就绪）→ never-ready', red: !sameJSON(m.get('never-ready'), gold('never-ready')) });
+    mutations.push({
+      id: 'M1',
+      what: 'Rust MIAO_LLM_NO_WAIT_READY=1（不等就绪）→ never-ready',
+      red: !sameJSON(m.get('never-ready'), gold('never-ready')),
+    });
   }
   // M2：探针恒真 ⇒ never-ready 必须与 golden 对不上
   {
     const m = await runRust({ MIAO_LLM_PROBE_ALWAYS_OK: '1' });
-    mutations.push({ id: 'M2', what: 'Rust MIAO_LLM_PROBE_ALWAYS_OK=1（探针恒真）→ never-ready', red: !sameJSON(m.get('never-ready'), gold('never-ready')) });
+    mutations.push({
+      id: 'M2',
+      what: 'Rust MIAO_LLM_PROBE_ALWAYS_OK=1（探针恒真）→ never-ready',
+      red: !sameJSON(m.get('never-ready'), gold('never-ready')),
+    });
   }
   // M3：stop 不终止也不等退出 ⇒ ready 必须与 golden 对不上
   {
     const m = await runRust({ MIAO_LLM_NO_KILL: '1' });
-    mutations.push({ id: 'M3', what: 'Rust MIAO_LLM_NO_KILL=1（stop 不杀不等）→ ready.stopResult', red: !sameJSON(m.get('ready'), gold('ready')) });
+    mutations.push({
+      id: 'M3',
+      what: 'Rust MIAO_LLM_NO_KILL=1（stop 不杀不等）→ ready.stopResult',
+      red: !sameJSON(m.get('ready'), gold('ready')),
+    });
   }
   // M4：篡改 golden 的 ready.states（自证比对不是恒真）
   {
@@ -140,5 +152,7 @@ if (REFUTE) {
 }
 
 console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed }));
-console.log(`\nF4-b2 supervisor 同源：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`);
+console.log(
+  `\nF4-b2 supervisor 同源：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`,
+);
 process.exit(failed === 0 ? 0 : 1);

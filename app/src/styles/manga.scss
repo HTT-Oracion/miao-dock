@@ -1029,7 +1029,9 @@
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 .dropzone.is-over {
   border-color: var(--md-pink);
@@ -1307,7 +1309,6 @@
   gap: 6px;
   margin-top: 6px;
 }
-
 
 /* ── 头部卡的补充信息（屏 B/C）────────────────────────────────────────── */
 /* 大类：作者 · N 话 · M 页（§7.1 同一口径）；话内：《书名》归因 */

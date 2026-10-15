@@ -84,7 +84,9 @@ const PYPI = PYPI_INDEX;
 
 const CRF_RE = /^pydensecrf\s*@\s*(\S+)/im;
 
-function log(...a) { console.log('[deps]', ...a); }
+function log(...a) {
+  console.log('[deps]', ...a);
+}
 
 /** 取目录下「版本号最大」的子目录名。 */
 function newestDir(parent) {
@@ -93,15 +95,17 @@ function newestDir(parent) {
     if (!vers.length) return null;
     vers.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     return vers[vers.length - 1];
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 /** MSVC 工具集（`…/VC/Tools/MSVC`）根的候选表 —— VS 安装路径不固定，逐个探测第一个存在的。 */
 function msvcVcRoots() {
   return [
     process.env.MIAO_VC_ROOT,
-    'C:/VS2022BT/VC/Tools/MSVC',                                                        // 本机实测落点（非默认路径）
-    'C:/Program Files/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC',           // 官方默认：生成工具
+    'C:/VS2022BT/VC/Tools/MSVC', // 本机实测落点（非默认路径）
+    'C:/Program Files/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC', // 官方默认：生成工具
     'C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC',
     'C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Tools/MSVC',
     'C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC',
@@ -117,13 +121,20 @@ function msvcSdkRoot() {
 function msvcEnv() {
   const KITS = msvcSdkRoot();
 
-  let VC_ROOT = null; let msvcVer = null;
+  let VC_ROOT = null;
+  let msvcVer = null;
   for (const r of msvcVcRoots()) {
     const v = newestDir(r);
-    if (v) { VC_ROOT = r; msvcVer = v; break; }
+    if (v) {
+      VC_ROOT = r;
+      msvcVer = v;
+      break;
+    }
   }
   if (!VC_ROOT) {
-    throw new Error(`找不到 MSVC 工具集（候选：${msvcVcRoots().join(' | ')}；可用 MIAO_VC_ROOT 指向你的 VC/Tools/MSVC）`);
+    throw new Error(
+      `找不到 MSVC 工具集（候选：${msvcVcRoots().join(' | ')}；可用 MIAO_VC_ROOT 指向你的 VC/Tools/MSVC）`,
+    );
   }
   const sdkVer = newestDir(path.join(KITS, 'Include'));
   if (!sdkVer) throw new Error(`找不到 Windows SDK Include：${KITS}/Include（可用 MIAO_SDK_ROOT 覆盖）`);
@@ -148,11 +159,7 @@ function msvcEnv() {
     `${incBase}/cppwinrt`,
     auxInclude,
   ].join(';');
-  const LIB = [
-    `${msvcBase}/lib/x64`,
-    `${libBase}/ucrt/x64`,
-    `${libBase}/um/x64`,
-  ].join(';');
+  const LIB = [`${msvcBase}/lib/x64`, `${libBase}/ucrt/x64`, `${libBase}/um/x64`].join(';');
 
   log(`MSVC ${msvcVer} · SDK ${sdkVer}`);
   log(`  VC 根：${VC_ROOT}`);
@@ -186,7 +193,10 @@ function runPip(env, pyArgs, label) {
  */
 function patchPydensecrfCompat() {
   const initPy = path.join(RT, 'venv', 'Lib', 'site-packages', 'pydensecrf', '__init__.py');
-  if (!fs.existsSync(initPy)) { log('⚠ 找不到 pydensecrf/__init__.py，跳过兼容补丁'); return; }
+  if (!fs.existsSync(initPy)) {
+    log('⚠ 找不到 pydensecrf/__init__.py，跳过兼容补丁');
+    return;
+  }
   const MARK = '# >>> miao-dock: pydensecrf 旧常量兼容补丁';
   const shim = [
     '',
@@ -202,7 +212,10 @@ function patchPydensecrfCompat() {
     '',
   ].join('\n');
   const cur = fs.readFileSync(initPy, 'utf8');
-  if (cur.includes(MARK)) { log('pydensecrf 兼容补丁已在'); return; }
+  if (cur.includes(MARK)) {
+    log('pydensecrf 兼容补丁已在');
+    return;
+  }
   fs.writeFileSync(initPy, cur + shim, 'utf8');
   log('已写入 pydensecrf 旧常量兼容补丁');
 }
@@ -282,7 +295,8 @@ function planCrf() {
   const { manifest, wheels, error } = readWheelsManifest();
   const key = platformKey();
   const tag = pythonTag();
-  if (error) return { route: 'source', reason: `wheel 清单读不到（${String(error).slice(0, 60)}）⇒ 走源码编译`, key, tag };
+  if (error)
+    return { route: 'source', reason: `wheel 清单读不到（${String(error).slice(0, 60)}）⇒ 走源码编译`, key, tag };
   if (!Array.isArray(manifest.wheels) || manifest.wheels.length === 0) {
     return { route: 'source', reason: 'wheel 清单里还没有任何条目 ⇒ 走源码编译', key, tag };
   }
@@ -298,14 +312,34 @@ function planCrf() {
     return { route: 'source', reason: `清单有本平台条目但 wheel 不在盘上（${abs}）⇒ 走源码编译`, key, tag, wheel: w };
   }
   if (!SHA256_RE.test(String(w.sha256 || ''))) {
-    return { route: 'source', reason: `清单条目的 sha256 形态不对（不是 64 位十六进制）⇒ 拒绝使用，走源码编译`, key, tag, wheel: w };
+    return {
+      route: 'source',
+      reason: `清单条目的 sha256 形态不对（不是 64 位十六进制）⇒ 拒绝使用，走源码编译`,
+      key,
+      tag,
+      wheel: w,
+    };
   }
   const got = crypto.createHash('sha256').update(fs.readFileSync(abs)).digest('hex');
   if (got !== w.sha256) {
-    return { route: 'source', reason: `wheel 的 sha256 与清单不符（清单 ${String(w.sha256).slice(0, 12)}… / 实际 ${got.slice(0, 12)}…）⇒ 拒绝使用，走源码编译`, key, tag, wheel: w };
+    return {
+      route: 'source',
+      reason: `wheel 的 sha256 与清单不符（清单 ${String(w.sha256).slice(0, 12)}… / 实际 ${got.slice(0, 12)}…）⇒ 拒绝使用，走源码编译`,
+      key,
+      tag,
+      wheel: w,
+    };
   }
   const from = bundled && abs === bundled ? '包内' : '本机目录';
-  return { route: 'wheel', reason: `命中清单条目 ${w.id || w.file}（平台 ${key} / ${tag}，来源 ${from}，sha256 已核对）`, key, tag, wheel: w, abs, from };
+  return {
+    route: 'wheel',
+    reason: `命中清单条目 ${w.id || w.file}（平台 ${key} / ${tag}，来源 ${from}，sha256 已核对）`,
+    key,
+    tag,
+    wheel: w,
+    abs,
+    from,
+  };
 }
 
 /**
@@ -361,8 +395,7 @@ function wheelEntryOf(file) {
  */
 async function buildFromSource(env, crfUrl) {
   const crfZip = await ensureCrfSdist(crfUrl);
-  const code = runPip(env,
-    ['-m', 'pip', 'install', '--no-build-isolation', crfZip], '批 B：编译 pydensecrf');
+  const code = runPip(env, ['-m', 'pip', 'install', '--no-build-isolation', crfZip], '批 B：编译 pydensecrf');
   if (code !== 0) {
     log('✗ pydensecrf 编译失败。排查：cython/numpy 是否已装、MSVC 组件是否完整、rc.exe 是否在 PATH。');
     log('  → 若不想装编译器，可改用预编译 wheel 通道：见 engine/wheels.manifest.json 的 fillHowTo。');
@@ -423,15 +456,23 @@ async function main() {
    */
   if (args.includes('--print-plan')) {
     const plan = planCrf();
-    console.log(JSON.stringify({
-      route: plan.route,
-      reason: plan.reason,
-      platform: plan.key,
-      pythonTag: plan.tag,
-      wheel: plan.wheel ? { id: plan.wheel.id ?? null, file: plan.wheel.file ?? null, sha256: plan.wheel.sha256 ?? null } : null,
-      wheelAbs: plan.abs ?? null,
-      manifest: WHEELS_MANIFEST,
-    }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          route: plan.route,
+          reason: plan.reason,
+          platform: plan.key,
+          pythonTag: plan.tag,
+          wheel: plan.wheel
+            ? { id: plan.wheel.id ?? null, file: plan.wheel.file ?? null, sha256: plan.wheel.sha256 ?? null }
+            : null,
+          wheelAbs: plan.abs ?? null,
+          manifest: WHEELS_MANIFEST,
+        },
+        null,
+        2,
+      ),
+    );
     return 0;
   }
 
@@ -451,8 +492,10 @@ async function main() {
       return 2;
     }
     console.log(JSON.stringify(wheelEntryOf(file), null, 2));
-    console.log('⚠ 把上面这条粘进 engine/wheels.manifest.json 的 wheels[]，并补上 url / sources（上传镜像通道之后）——'
-      + ' `check:pydensecrf-wheel` 的 WB.W1 要求每条都有 url。');
+    console.log(
+      '⚠ 把上面这条粘进 engine/wheels.manifest.json 的 wheels[]，并补上 url / sources（上传镜像通道之后）——' +
+        ' `check:pydensecrf-wheel` 的 WB.W1 要求每条都有 url。',
+    );
     return 0;
   }
 
@@ -489,7 +532,11 @@ async function main() {
     fs.mkdirSync(outDir, { recursive: true });
     const crfZip = await ensureCrfSdist(crfUrl);
     log(`构建 wheel → ${outDir}（MSVC ${process.env.MIAO_VC_ROOT ?? '自动探测'}）`);
-    const code = runPip(env, ['-m', 'pip', 'wheel', '--no-build-isolation', '--no-deps', '-w', outDir, crfZip], '构建 pydensecrf wheel');
+    const code = runPip(
+      env,
+      ['-m', 'pip', 'wheel', '--no-build-isolation', '--no-deps', '-w', outDir, crfZip],
+      '构建 pydensecrf wheel',
+    );
     if (code !== 0) {
       log('✗ 构建失败。这条命令**需要编译器**（本机无 MSVC/SDK 时属预期失败 —— 那就去有编译器的机器上跑）。');
       throw new Error(`--build-wheel 失败，exit=${code}`);
@@ -503,17 +550,21 @@ async function main() {
     log(`✓ 产出 ${abs}`);
     console.log('\n把下面这条粘进 engine/wheels.manifest.json 的 wheels[]：\n');
     console.log(JSON.stringify(wheelEntryOf(abs), null, 2));
-    console.log('\n⚠ `url` / `sources` 要等你把 wheel 传到镜像通道之后再补 —— 清单里每条都必须有 url（WB.W1 会检查）。');
+    console.log(
+      '\n⚠ `url` / `sources` 要等你把 wheel 传到镜像通道之后再补 —— 清单里每条都必须有 url（WB.W1 会检查）。',
+    );
     return 0;
   }
 
   // ---------- 批 A：除 pydensecrf 外的全部依赖 ----------
   if (!onlyCrf) {
     const tmpReq = path.join(os.tmpdir(), 'miao-engine-req-nocrf.txt');
-    const filtered = reqText.split(/\r?\n/).filter((l) => !CRF_RE.test(l)).join('\n');
+    const filtered = reqText
+      .split(/\r?\n/)
+      .filter((l) => !CRF_RE.test(l))
+      .join('\n');
     fs.writeFileSync(tmpReq, filtered, 'utf8');
-    const code = runPip(env,
-      ['-m', 'pip', 'install', '-r', tmpReq, '-i', PYPI], '批 A：安装主依赖');
+    const code = runPip(env, ['-m', 'pip', 'install', '-r', tmpReq, '-i', PYPI], '批 A：安装主依赖');
     if (code !== 0) throw new Error(`批 A 安装失败，exit=${code}`);
     log('✓ 批 A 完成');
   }
@@ -543,13 +594,21 @@ async function main() {
 
   // ---------- 校验 ----------
   log('▶ 导入自检');
-  spawnSync(VENV_PY,
-    ['-c', 'import pydensecrf.densecrf as d; assert hasattr(d, "DIAG_KERNEL") and hasattr(d, "NO_NORMALIZATION"); import pydensecrf.utils, torch, torchvision; from manga_translator.mask_refinement import dispatch; print("torch", torch.__version__, "cuda", torch.cuda.is_available()); print("import ok")'],
-    { stdio: 'inherit', cwd: SRC, env });
+  spawnSync(
+    VENV_PY,
+    [
+      '-c',
+      'import pydensecrf.densecrf as d; assert hasattr(d, "DIAG_KERNEL") and hasattr(d, "NO_NORMALIZATION"); import pydensecrf.utils, torch, torchvision; from manga_translator.mask_refinement import dispatch; print("torch", torch.__version__, "cuda", torch.cuda.is_available()); print("import ok")',
+    ],
+    { stdio: 'inherit', cwd: SRC, env },
+  );
   log('全部完成');
   return 0;
 }
 
 main()
   .then((code) => process.exit(code))
-  .catch((e) => { console.error('[deps] 失败：', e.message); process.exit(1); });
+  .catch((e) => {
+    console.error('[deps] 失败：', e.message);
+    process.exit(1);
+  });

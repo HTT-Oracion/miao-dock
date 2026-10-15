@@ -39,7 +39,11 @@ export function freshDirs(tag) {
 function normStr(s, ctx) {
   let out = s;
   // 🔴 顺序敏感：root/state 是 base 的子目录，先抹子目录才不会留下 `<TMP>\root` 这种半成品。
-  for (const [dir, tag] of [[ctx.root, '<ROOT>'], [ctx.state, '<STATE>'], [ctx.base, '<TMP>']]) {
+  for (const [dir, tag] of [
+    [ctx.root, '<ROOT>'],
+    [ctx.state, '<STATE>'],
+    [ctx.base, '<TMP>'],
+  ]) {
     if (!dir) continue;
     out = out.split(dir).join(tag);
     // JSON 转义层级（反斜杠被转义成两倍）也一次抹掉

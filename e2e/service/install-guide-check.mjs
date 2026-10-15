@@ -84,11 +84,8 @@ const GUIDES = [
     title: 'Windows',
     /** 文档里写的落点**模板**（模板里的占位符由 `expand` 代入本机环境）。 */
     rootTemplate: '%LOCALAPPDATA%\\runtimes\\manga-translator',
-    expand: (tpl) => tpl.replace(
-      '%LOCALAPPDATA%',
-      process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local'),
-    ),
-    appData: () => (process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local')),
+    expand: (tpl) => tpl.replace('%LOCALAPPDATA%', process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local')),
+    appData: () => process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local'),
     /** 平台专属解释器形态（B3 的同一处分叉）。 */
     pythonShape: 'venv\\Scripts\\python.exe',
     forbiddenShape: 'venv/bin/python',
@@ -140,7 +137,9 @@ function printPaths() {
   return new Promise((resolve, reject) => {
     const c = spawn(RUST_BIN, ['--print-paths'], { stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
-    c.stdout.on('data', (d) => { out += d; });
+    c.stdout.on('data', (d) => {
+      out += d;
+    });
     c.on('error', reject);
     c.on('close', (code) => {
       try {
@@ -186,9 +185,11 @@ for (const g of GUIDES) {
   const expanded = path.join(g.expand(g.rootTemplate));
   check(
     `${g.title} 落点与产品一致（模板代入本机后逐字节 == boxsvc --print-paths 推出的落点）`,
-    text.includes(g.rootTemplate) && path.normalize(expanded) === path.normalize(
-      g.os === process.platform ? PRODUCT_ROOT : path.join(g.appData(), 'runtimes', 'manga-translator'),
-    ),
+    text.includes(g.rootTemplate) &&
+      path.normalize(expanded) ===
+        path.normalize(
+          g.os === process.platform ? PRODUCT_ROOT : path.join(g.appData(), 'runtimes', 'manga-translator'),
+        ),
     { template: g.rootTemplate, expanded, product: PRODUCT_ROOT, platform: process.platform },
   );
 
@@ -199,9 +200,7 @@ for (const g of GUIDES) {
   // ③ 体积：标记 == 清单求和，且正文里的千分位数字与之一致
   const size = manifestSum(g.tag);
   const commas = size.bytes.toLocaleString('en-US');
-  const markerRe = new RegExp(
-    `install-guide:size\\s+platform=${g.tag.replace(/[-]/g, '\\-')}\\s+bytes=(\\d+)`,
-  );
+  const markerRe = new RegExp(`install-guide:size\\s+platform=${g.tag.replace(/[-]/g, '\\-')}\\s+bytes=(\\d+)`);
   const marker = text.match(markerRe);
   check(
     `${g.title} 体积与清单一致（标记 bytes == ${g.tag} 条目求和，且正文数字与之一致）`,
@@ -211,46 +210,61 @@ for (const g of GUIDES) {
 
   // ④ 五项就绪项全覆盖
   const absent = READY_IDS.filter((id) => !text.includes(id));
-  check(`${g.title} 覆盖全部 ${READY_IDS.length} 个就绪项（照文档装完要能全真）`,
-    absent.length === 0, absent.length ? `缺：${absent.join(', ')}` : undefined);
+  check(
+    `${g.title} 覆盖全部 ${READY_IDS.length} 个就绪项（照文档装完要能全真）`,
+    absent.length === 0,
+    absent.length ? `缺：${absent.join(', ')}` : undefined,
+  );
 
   // ⑤ 三条纪律
-  const missingDisc = DISCIPLINES
-    .filter((d) => !d.words.some((w) => text.includes(w)))
-    .map((d) => d.key);
-  check(`${g.title} 写明三条落点纪律（别挪 / 别放同步盘 / 别放临时目录）`,
-    missingDisc.length === 0, missingDisc.length ? `缺：${missingDisc.join('、')}` : undefined);
+  const missingDisc = DISCIPLINES.filter((d) => !d.words.some((w) => text.includes(w))).map((d) => d.key);
+  check(
+    `${g.title} 写明三条落点纪律（别挪 / 别放同步盘 / 别放临时目录）`,
+    missingDisc.length === 0,
+    missingDisc.length ? `缺：${missingDisc.join('、')}` : undefined,
+  );
 
   // ⑥ 平台形态（且互不串平台）
-  check(`${g.title} 解释器形态是 ${g.pythonShape} 且不出现另一平台的形态`,
+  check(
+    `${g.title} 解释器形态是 ${g.pythonShape} 且不出现另一平台的形态`,
     text.includes(g.pythonShape) && !text.includes(g.forbiddenShape),
-    { has: text.includes(g.pythonShape), forbidden: text.includes(g.forbiddenShape) });
+    { has: text.includes(g.pythonShape), forbidden: text.includes(g.forbiddenShape) },
+  );
 
   // ⑦ 引用的 npm 命令都存在
   const cmds = [...new Set([...text.matchAll(/npm run ([a-z0-9:-]+)/g)].map((m) => m[1]))];
   const missingCmd = cmds.filter((c) => !Object.prototype.hasOwnProperty.call(scripts, c));
-  check(`${g.title} 引用的 npm 命令都存在`, missingCmd.length === 0,
-    missingCmd.length ? `不存在：${missingCmd.join(', ')}` : `${cmds.length} 个命令`);
+  check(
+    `${g.title} 引用的 npm 命令都存在`,
+    missingCmd.length === 0,
+    missingCmd.length ? `不存在：${missingCmd.join(', ')}` : `${cmds.length} 个命令`,
+  );
 }
 
 // ⑧ 镜像表自身被产品钉住（当前平台）—— 另一平台的分支只能靠这一条间接保证
 {
   const branch = GUIDES.find((g) => g.os === process.platform);
-  const ok = !!branch
-    && path.normalize(path.join(branch.appData(), 'runtimes')) === path.normalize(paths.runtimeRoot);
+  const ok = !!branch && path.normalize(path.join(branch.appData(), 'runtimes')) === path.normalize(paths.runtimeRoot);
   check(
-    'IG.mirror — 当前平台的 appData 镜像表与产品 --print-paths 的 runtimeRoot 逐字节一致'
-    + '（另一平台的分支在本机对不到真二进制 ⇒ 归 D7 真机验收）',
+    'IG.mirror — 当前平台的 appData 镜像表与产品 --print-paths 的 runtimeRoot 逐字节一致' +
+      '（另一平台的分支在本机对不到真二进制 ⇒ 归 D7 真机验收）',
     ok,
-    { platform: process.platform, mirror: branch ? path.join(branch.appData(), 'runtimes') : null, product: paths.runtimeRoot },
+    {
+      platform: process.platform,
+      mirror: branch ? path.join(branch.appData(), 'runtimes') : null,
+      product: paths.runtimeRoot,
+    },
   );
 }
 
 // ⑨ 两份引导都让用户去问**产品**要落点（`--print-paths`），而不是只信文档里那行字
 {
   const missing = GUIDES.filter((g) => !read(g.file).includes('--print-paths')).map((g) => g.title);
-  check('两份引导都说清了「落点以产品为准」（含 `boxsvc --print-paths` 这一步）',
-    missing.length === 0, missing.length ? `缺：${missing.join('、')}` : undefined);
+  check(
+    '两份引导都说清了「落点以产品为准」（含 `boxsvc --print-paths` 这一步）',
+    missing.length === 0,
+    missing.length ? `缺：${missing.join('、')}` : undefined,
+  );
 }
 
 // ------------------------------------------------------------------ 反证
@@ -279,19 +293,26 @@ if (REFUTE) {
    * 🔴 并且要求红在**指定的那条断言**上 —— "红在别的断言上"（如条数守卫）是假反证：
    *    它只证明"脚本会失败"，不证明这条变异咬住了它该咬的机制（同 D-113 的锚点纪律）。
    */
-  const runOnce = (extraArgs = []) => new Promise((resolve) => {
-    const c = spawn(process.execPath, [SELF, ...extraArgs], {
-      cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe'],
+  const runOnce = (extraArgs = []) =>
+    new Promise((resolve) => {
+      const c = spawn(process.execPath, [SELF, ...extraArgs], {
+        cwd: REPO_ROOT,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let out = '';
+      c.stdout.on('data', (d) => {
+        out += d;
+      });
+      c.stderr.on('data', (d) => {
+        out += d;
+      });
+      c.on('error', () => resolve({ code: -1, out }));
+      c.on('close', (code) => resolve({ code, out }));
     });
-    let out = '';
-    c.stdout.on('data', (d) => { out += d; });
-    c.stderr.on('data', (d) => { out += d; });
-    c.on('error', () => resolve({ code: -1, out }));
-    c.on('close', (code) => resolve({ code, out }));
-  });
 
   /** 变异后输出里是否出现了指定断言的 ✗ 行。 */
-  const hasRedLine = (out, namePrefix) => out.split('\n').some((l) => l.trimStart().startsWith('✗') && l.includes(namePrefix));
+  const hasRedLine = (out, namePrefix) =>
+    out.split('\n').some((l) => l.trimStart().startsWith('✗') && l.includes(namePrefix));
 
   const mutations = [];
 
@@ -299,7 +320,8 @@ if (REFUTE) {
   mutations.push({
     id: 'M1',
     what: 'Windows 文档的落点写成 C:\\Box\\runtimes\\manga-translator',
-    edit: () => fs.writeFileSync(winFile, winOriginal.replace(wins.rootTemplate, 'C:\\Box\\runtimes\\manga-translator')),
+    edit: () =>
+      fs.writeFileSync(winFile, winOriginal.replace(wins.rootTemplate, 'C:\\Box\\runtimes\\manga-translator')),
     probe: async () => {
       const r = await runOnce();
       return r.code !== 0 && hasRedLine(r.out, `✗ ${wins.title} 落点与产品一致`);
@@ -339,9 +361,11 @@ if (REFUTE) {
       const m3 = mutations.find((x) => x.id === 'M3');
       const r = await runOnce(['--manifest', m3.manifest]);
       // 该条目不带 platform ⇒ 两个平台都可见 ⇒ 两份引导的体积断言都该红
-      return r.code !== 0
-        && hasRedLine(r.out, `✗ ${wins.title} 体积与清单一致`)
-        && hasRedLine(r.out, `✗ ${macs.title} 体积与清单一致`);
+      return (
+        r.code !== 0 &&
+        hasRedLine(r.out, `✗ ${wins.title} 体积与清单一致`) &&
+        hasRedLine(r.out, `✗ ${macs.title} 体积与清单一致`)
+      );
     },
   });
 
@@ -386,13 +410,19 @@ if (REFUTE) {
       fs.writeFileSync(macFile, macOriginal);
     }
   }
-  check('REFUTE.restore — 两份引导已按字节还原',
-    fs.readFileSync(winFile, 'utf8') === winOriginal && fs.readFileSync(macFile, 'utf8') === macOriginal);
+  check(
+    'REFUTE.restore — 两份引导已按字节还原',
+    fs.readFileSync(winFile, 'utf8') === winOriginal && fs.readFileSync(macFile, 'utf8') === macOriginal,
+  );
   console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed, allRed }));
-  console.log(`\nD5 分平台安装引导：正向 ${passed} / ${passed + failed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`);
+  console.log(
+    `\nD5 分平台安装引导：正向 ${passed} / ${passed + failed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`,
+  );
   process.exit(allRed && failed === 0 ? 0 : 1);
 }
 
 console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed }));
-console.log(`\nD5 分平台安装引导：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`);
+console.log(
+  `\nD5 分平台安装引导：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`,
+);
 process.exit(failed === 0 ? 0 : 1);

@@ -77,8 +77,23 @@ if (!fs.existsSync(RUST_BIN)) {
 
 /** 两条条目：`a` 就地读、`b` 走 `linkTo`（覆盖两种落点）。**不造真文件** ⇒ 校验很快。 */
 const FIX_FILES = [
-  { id: 'a', set: 'visual', dest: 'models-store/a.bin', sha256: 'a'.repeat(64), sizeBytes: 10, url: 'https://example.invalid/a' },
-  { id: 'b', set: 'visual', dest: 'models-store/b.bin', linkTo: 'models/b.bin', sha256: 'b'.repeat(64), sizeBytes: 10, url: 'https://example.invalid/b' },
+  {
+    id: 'a',
+    set: 'visual',
+    dest: 'models-store/a.bin',
+    sha256: 'a'.repeat(64),
+    sizeBytes: 10,
+    url: 'https://example.invalid/a',
+  },
+  {
+    id: 'b',
+    set: 'visual',
+    dest: 'models-store/b.bin',
+    linkTo: 'models/b.bin',
+    sha256: 'b'.repeat(64),
+    sizeBytes: 10,
+    url: 'https://example.invalid/b',
+  },
 ];
 
 /** 造一套夹具：清单 + 空模型根。`withStore` 时另造 store 里的权威副本（供 `--link` 用）。 */
@@ -110,8 +125,12 @@ function runAsync(cmd, args, opts = {}) {
     });
     let out = '';
     let err = '';
-    c.stdout.on('data', (d) => { out += d; });
-    c.stderr.on('data', (d) => { err += d; });
+    c.stdout.on('data', (d) => {
+      out += d;
+    });
+    c.stderr.on('data', (d) => {
+      err += d;
+    });
     c.on('error', (e) => resolve({ code: -1, out, err: `${err}${e.message}` }));
     c.on('close', (code) => resolve({ code, out, err }));
   });
@@ -133,7 +152,10 @@ function startService(extraEnv) {
   });
   return new Promise((resolve, reject) => {
     let buf = '';
-    const to = setTimeout(() => { killTree(child); reject(new Error('boxsvc 15s 内未就绪')); }, 15000);
+    const to = setTimeout(() => {
+      killTree(child);
+      reject(new Error('boxsvc 15s 内未就绪'));
+    }, 15000);
     child.stdout.on('data', (d) => {
       buf += d;
       const m = /MIAO_READY (\{.*\})/.exec(buf);
@@ -143,7 +165,10 @@ function startService(extraEnv) {
       }
     });
     child.stderr.on('data', (d) => (buf += d));
-    child.on('close', (code) => { clearTimeout(to); reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 500)}`)); });
+    child.on('close', (code) => {
+      clearTimeout(to);
+      reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 500)}`));
+    });
   });
 }
 
@@ -162,22 +187,29 @@ const headers = { 'x-box-token': TOKEN, 'content-type': 'application/json' };
     // 🔴 判据里必须有 **`path.isAbsolute`**：只比 `path.resolve()` 会被 cwd 掩盖 ——
     //    相对串 `app/src-tauri/target/debug/boxsvc.exe` 在本仓 cwd 下恰好解析成同一个文件，
     //    「装到用户机器上就不存在」这件事在断言里**看不出来**（M1 变异当初就是这么假绿的）。
-    check('W1 默认执行体 == **当前可执行文件自己**，且是绝对路径（相对路径在本机能跑、装完就没了）',
+    check(
+      'W1 默认执行体 == **当前可执行文件自己**，且是绝对路径（相对路径在本机能跑、装完就没了）',
       typeof dl.runner === 'string' && path.isAbsolute(dl.runner) && path.resolve(dl.runner) === path.resolve(RUST_BIN),
-      { got: dl.runner, want: RUST_BIN, isAbsolute: typeof dl.runner === 'string' ? path.isAbsolute(dl.runner) : null });
-    check('W1b `runnerExists` 为真（默认执行体必然在盘上：它就是正在跑的这个进程）',
-      dl.runnerExists === true, { runnerExists: dl.runnerExists });
+      { got: dl.runner, want: RUST_BIN, isAbsolute: typeof dl.runner === 'string' ? path.isAbsolute(dl.runner) : null },
+    );
+    check('W1b `runnerExists` 为真（默认执行体必然在盘上：它就是正在跑的这个进程）', dl.runnerExists === true, {
+      runnerExists: dl.runnerExists,
+    });
 
     const res = await fetch(api(svc.port, '/engine/models/verify'), { method: 'POST', headers, body: '{}' });
     const body = await res.json().catch(() => ({}));
     // 夹具清单的条目都不在盘上 ⇒ 校验"完成、发现缺失"，那是 200 + ok:false，
     // **不是** INTERNAL（INTERNAL 意味着"执行体跑不起来"，两件事必须在出口上分得开）。
-    check('W2 `POST /engine/models/verify` 用默认执行体真的跑得起来（200 + 结构化结果，不是 INTERNAL）',
+    check(
+      'W2 `POST /engine/models/verify` 用默认执行体真的跑得起来（200 + 结构化结果，不是 INTERNAL）',
       res.status === 200 && body.ok === false && typeof body.missing === 'number' && body.missing === 2,
-      { status: res.status, ok: body.ok, missing: body.missing, exitCode: body.exitCode });
-    check('W2b 校验结果如实标出用的是哪份清单（不是"静默用默认那本"）',
+      { status: res.status, ok: body.ok, missing: body.missing, exitCode: body.exitCode },
+    );
+    check(
+      'W2b 校验结果如实标出用的是哪份清单（不是"静默用默认那本"）',
       typeof body.manifest === 'string' && path.resolve(body.manifest) === path.resolve(mp),
-      { got: body.manifest, want: mp });
+      { got: body.manifest, want: mp },
+    );
   } finally {
     svc.kill();
     fs.rmSync(root, { recursive: true, force: true });
@@ -191,16 +223,20 @@ const headers = { 'x-box-token': TOKEN, 'content-type': 'application/json' };
   const svc = await startService({ MIAO_MODEL_MANIFEST: mp, MIAO_MODEL_ROOT: root, MIAO_MODEL_DOWNLOAD_RUNNER: ghost });
   try {
     const st = await (await fetch(api(svc.port, '/engine/status'), { headers })).json();
-    check('W3a 覆盖成一个不存在的执行体 ⇒ `runnerExists` 为假（界面据此把按钮变灰）',
+    check(
+      'W3a 覆盖成一个不存在的执行体 ⇒ `runnerExists` 为假（界面据此把按钮变灰）',
       st?.modelDownload?.runnerExists === false && path.resolve(st.modelDownload.runner) === path.resolve(ghost),
-      { runner: st?.modelDownload?.runner, want: ghost });
+      { runner: st?.modelDownload?.runner, want: ghost },
+    );
 
     const res = await fetch(api(svc.port, '/engine/models/verify'), { method: 'POST', headers, body: '{}' });
     const body = await res.json().catch(() => ({}));
     const text = JSON.stringify(body);
-    check('W3b 执行体不在盘上 ⇒ INTERNAL 且消息带路径（不是静默成功、也不是一句"失败"）',
+    check(
+      'W3b 执行体不在盘上 ⇒ INTERNAL 且消息带路径（不是静默成功、也不是一句"失败"）',
       res.status === 500 && /INTERNAL/.test(text) && text.includes('no-such-runner.exe'),
-      { status: res.status, body: text.slice(0, 200) });
+      { status: res.status, body: text.slice(0, 200) },
+    );
   } finally {
     svc.kill();
     fs.rmSync(root, { recursive: true, force: true });
@@ -211,27 +247,43 @@ const headers = { 'x-box-token': TOKEN, 'content-type': 'application/json' };
 {
   const { root, mp } = buildFixture({ withStore: true });
   const report = path.join(root, 'report.json');
-  const r = await runAsync(RUST_BIN, ['--fetch-models', '--link', '--manifest', mp, '--root', root, '--report', report], {});
+  const r = await runAsync(
+    RUST_BIN,
+    ['--fetch-models', '--link', '--manifest', mp, '--root', root, '--report', report],
+    {},
+  );
   const body = JSON.parse(fs.readFileSync(report, 'utf8'));
   const link = body.link ?? {};
-  check('W4 `--link` 收尾零网络跑通：该条目标为 `linked`，且**没有任何**跨卷降级',
+  check(
+    'W4 `--link` 收尾零网络跑通：该条目标为 `linked`，且**没有任何**跨卷降级',
     r.code === 0 && (link.linked ?? []).includes('b') && (link.cross_device ?? []).length === 0,
-    { code: r.code, linked: link.linked, cross: link.cross_device, stderr: r.err.slice(0, 120) });
+    { code: r.code, linked: link.linked, cross: link.cross_device, stderr: r.err.slice(0, 120) },
+  );
   fs.rmSync(root, { recursive: true, force: true });
 }
 
 {
   const { root, mp } = buildFixture({ withStore: true });
   const report = path.join(root, 'report.json');
-  const r = await runAsync(RUST_BIN, ['--fetch-models', '--link', '--manifest', mp, '--root', root, '--report', report], {
-    env: { MIAO_LINK_FORCE_CROSSDEV: '1' },
-  });
+  const r = await runAsync(
+    RUST_BIN,
+    ['--fetch-models', '--link', '--manifest', mp, '--root', root, '--report', report],
+    {
+      env: { MIAO_LINK_FORCE_CROSSDEV: '1' },
+    },
+  );
   const link = JSON.parse(fs.readFileSync(report, 'utf8')).link ?? {};
-  check('W5 跨卷 ⇒ 退化为复制，且**单独记账**在 `cross_device`（不是只写一行日志）',
-    r.code === 0 && (link.copied ?? []).includes('b') && (link.linked ?? []).length === 0 && (link.cross_device ?? []).includes('b'),
-    { code: r.code, copied: link.copied, linked: link.linked, cross: link.cross_device });
-  check('W5b 跨卷时 CLI 把这件事**说出来**（用户按"几个 GB"留的盘会不够，得让他知道）',
-    /跨卷/.test(r.out), { out: r.out.slice(0, 200) });
+  check(
+    'W5 跨卷 ⇒ 退化为复制，且**单独记账**在 `cross_device`（不是只写一行日志）',
+    r.code === 0 &&
+      (link.copied ?? []).includes('b') &&
+      (link.linked ?? []).length === 0 &&
+      (link.cross_device ?? []).includes('b'),
+    { code: r.code, copied: link.copied, linked: link.linked, cross: link.cross_device },
+  );
+  check('W5b 跨卷时 CLI 把这件事**说出来**（用户按"几个 GB"留的盘会不够，得让他知道）', /跨卷/.test(r.out), {
+    out: r.out.slice(0, 200),
+  });
   fs.rmSync(root, { recursive: true, force: true });
 }
 
@@ -244,22 +296,30 @@ const headers = { 'x-box-token': TOKEN, 'content-type': 'application/json' };
   const r = await runAsync(RUST_BIN, ['--fetch-models', '--link', '--manifest', mp, '--root', root], {
     env: { MIAO_LINK_FORCE_CROSSDEV: '1' },
   });
-  check('W6 跨卷且复制也失败 ⇒ 错误消息里出现「跨卷」（不是笼统的"硬链接失败"）',
+  check(
+    'W6 跨卷且复制也失败 ⇒ 错误消息里出现「跨卷」（不是笼统的"硬链接失败"）',
     r.code === 1 && /跨卷/.test(r.err) && /复制也失败/.test(r.err),
-    { code: r.code, err: r.err.slice(0, 200) });
+    { code: r.code, err: r.err.slice(0, 200) },
+  );
   fs.rmSync(root, { recursive: true, force: true });
 }
 
 // ------------------------------------------------------------------ W7~W8：源码钉
 {
   const st = fs.readFileSync(STATE_RS, 'utf8');
-  check('W7 `state.rs` 的默认执行体是 `current_exe()`（随包定位的唯一正确推导）',
-    /None => std::env::current_exe\(\)/.test(st), null);
+  check(
+    'W7 `state.rs` 的默认执行体是 `current_exe()`（随包定位的唯一正确推导）',
+    /None => std::env::current_exe\(\)/.test(st),
+    null,
+  );
 
   const fm = fs.readFileSync(FETCH_MODELS_RS, 'utf8');
   const calls = (fm.match(/print_cross_device\(&l\);/g) || []).length;
-  check('W8 CLI 的两条链接路径（`--link` 与下载后的自动建链）都会把跨卷说出来',
-    calls === 2 && /fn print_cross_device/.test(fm), { calls });
+  check(
+    'W8 CLI 的两条链接路径（`--link` 与下载后的自动建链）都会把跨卷说出来',
+    calls === 2 && /fn print_cross_device/.test(fm),
+    { calls },
+  );
 }
 
 // ------------------------------------------------------------------ 反证轮
@@ -289,25 +349,40 @@ if (REFUTE) {
     new Promise((resolve) => {
       const c = spawn(process.execPath, [SELF], { cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
       let out = '';
-      c.stdout.on('data', (d) => { out += d; });
-      c.stderr.on('data', (d) => { out += d; });
+      c.stdout.on('data', (d) => {
+        out += d;
+      });
+      c.stderr.on('data', (d) => {
+        out += d;
+      });
       c.on('error', () => resolve({ code: -1, out }));
       c.on('close', (code) => resolve({ code, out }));
     });
 
   const hasRed = (out, name) => out.split('\n').some((l) => l.trimStart().startsWith('✗') && l.includes(name));
-  const redOn = (out) => out.split('\n').filter((l) => l.trimStart().startsWith('✗')).map((l) => l.trim().slice(0, 46));
+  const redOn = (out) =>
+    out
+      .split('\n')
+      .filter((l) => l.trimStart().startsWith('✗'))
+      .map((l) => l.trim().slice(0, 46));
 
   // ---- M1：默认执行体退回**仓库相对路径**（台账 C2 要消灭的那个形态）----
   {
-    const restore = mutateFile(STATE_RS, 'None => std::env::current_exe().unwrap_or_else(|_| PathBuf::from("boxsvc")),',
-      'None => PathBuf::from("app/src-tauri/target/debug/boxsvc.exe"),');
+    const restore = mutateFile(
+      STATE_RS,
+      'None => std::env::current_exe().unwrap_or_else(|_| PathBuf::from("boxsvc")),',
+      'None => PathBuf::from("app/src-tauri/target/debug/boxsvc.exe"),',
+    );
     const built = await rebuild();
     const r = await runForward();
     // 判据是 W1 的**绝对性**那半句：相对串在"cwd 恰好是仓库根"的跑测环境里能解析到同一个
     // 文件，只有"必须绝对"这条能在本机把它抓出来（也正是装到用户机器后会断的那一点）。
     const red = built && r.code !== 0 && hasRed(r.out, 'W1');
-    check('M1 默认执行体改成仓库相对路径 ⇒ W1 红（本机能跑、装完就没）', red, { built, code: r.code, redOn: redOn(r.out) });
+    check('M1 默认执行体改成仓库相对路径 ⇒ W1 红（本机能跑、装完就没）', red, {
+      built,
+      code: r.code,
+      redOn: redOn(r.out),
+    });
     restore();
     await rebuild();
   }
@@ -318,7 +393,11 @@ if (REFUTE) {
     const built = await rebuild();
     const r = await runForward();
     const red = built && r.code !== 0 && hasRed(r.out, 'W5') && hasRed(r.out, 'W6');
-    check('M2 跨卷判定恒 false ⇒ W5/W6 红（"跨卷"这条分支再也走不到）', red, { built, code: r.code, redOn: redOn(r.out) });
+    check('M2 跨卷判定恒 false ⇒ W5/W6 红（"跨卷"这条分支再也走不到）', red, {
+      built,
+      code: r.code,
+      redOn: redOn(r.out),
+    });
     restore();
     await rebuild();
   }
@@ -328,15 +407,24 @@ if (REFUTE) {
     const restore = mutateFile(FETCH_MODELS_RS, 'print_cross_device(&l);', '', { all: true });
     const r = await runForward();
     const red = r.code !== 0 && hasRed(r.out, 'W8');
-    check('M3 删掉 CLI 里打印跨卷的两处调用 ⇒ W8 红（记账在，但从不告诉用户）', red, { code: r.code, redOn: redOn(r.out) });
+    check('M3 删掉 CLI 里打印跨卷的两处调用 ⇒ W8 红（记账在，但从不告诉用户）', red, {
+      code: r.code,
+      redOn: redOn(r.out),
+    });
     restore();
   }
 
   // 收尾：源码逐字节还原
   {
     const bad = [];
-    if (!fs.readFileSync(STATE_RS, 'utf8').includes('None => std::env::current_exe().unwrap_or_else(|_| PathBuf::from("boxsvc")),')) bad.push('state.rs 残留 M1');
-    if (!fs.readFileSync(MODEL_STORE_RS, 'utf8').includes('e.raw_os_error() == Some(17)')) bad.push('model_store.rs 残留 M2');
+    if (
+      !fs
+        .readFileSync(STATE_RS, 'utf8')
+        .includes('None => std::env::current_exe().unwrap_or_else(|_| PathBuf::from("boxsvc")),')
+    )
+      bad.push('state.rs 残留 M1');
+    if (!fs.readFileSync(MODEL_STORE_RS, 'utf8').includes('e.raw_os_error() == Some(17)'))
+      bad.push('model_store.rs 残留 M2');
     const fm = fs.readFileSync(FETCH_MODELS_RS, 'utf8');
     if ((fm.match(/print_cross_device\(&l\);/g) || []).length !== 2) bad.push('fetch_models.rs 残留 M3');
     check('R1 变异收尾：三处源码按字节还原', bad.length === 0, bad);

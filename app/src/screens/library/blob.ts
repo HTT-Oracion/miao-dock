@@ -56,12 +56,7 @@ export function filePath(comicName: string, seq: number, variant: Variant): stri
  * ⚠️ 缓存键必须含「书 + 话 + 页」三段。只按 `seq` 做键会让《A》第 1 话第 1 页与
  * 《B》第 1 话第 1 页命中同一条缓存 —— 那是"看起来正常、内容错了"这类最难发现的缺陷（D-117）。
  */
-export function chapterFilePath(
-  bookName: string,
-  no: number,
-  seq: number,
-  variant: Variant,
-): string {
+export function chapterFilePath(bookName: string, no: number, seq: number, variant: Variant): string {
   return `/library/${encodeURIComponent(bookName)}/chapters/${no}/files/${seq}?variant=${variant}`;
 }
 
@@ -138,10 +133,7 @@ export function topLevelFirstImagePath(dirName: string, ch: PageSet): string | n
  * 用作「无封面时显示首话首图」的回退（设计稿 §7.1 左上缩略、§7.3 头部卡封面）。
  * 全书一话都没有图 ⇒ `null` ⇒ 调用方显示占位（`line-soft` 底 + 书名首字）。
  */
-export function bookFirstImagePath(
-  bookName: string,
-  chapters: ({ no: number | null } & PageSet)[],
-): string | null {
+export function bookFirstImagePath(bookName: string, chapters: ({ no: number | null } & PageSet)[]): string | null {
   for (const ch of chapters) {
     if (ch.no === null) continue; // 大类里的话恒有话号；防御非话目录混进来
     const seq = firstPageOf(ch);

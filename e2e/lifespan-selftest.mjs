@@ -231,9 +231,7 @@ async function runE11() {
 
     // E1 的另一半：**日志里真的打出了生效参数快照**（不是"配置里写了"）。
     // 从外面读应用的 stdout —— 这与 `S2b` 在应用内读日志是两条独立取证路径。
-    const snap = out
-      .split('\n')
-      .filter((l) => l.includes('生效参数快照') || /\[miao-dock\] [①②③] /.test(l));
+    const snap = out.split('\n').filter((l) => l.includes('生效参数快照') || /\[miao-dock\] [①②③] /.test(l));
     console.log(`E1 生效参数快照（从应用 stdout 读回，共 ${snap.length} 行）：`);
     for (const l of snap) console.log(`  ${l.trim()}`);
     if (snap.length < 4) {
@@ -304,7 +302,9 @@ async function runB() {
       console.log(out.split('\n').slice(-12).join('\n'));
       failed = 1;
     } else {
-      console.log(`应用生命周期验收\n\n关窗与托盘（B1–B3）+ 三进程生命周期（S2）：${result.passed} / ${result.total} 通过`);
+      console.log(
+        `应用生命周期验收\n\n关窗与托盘（B1–B3）+ 三进程生命周期（S2）：${result.passed} / ${result.total} 通过`,
+      );
       for (const c of result.checks) console.log(`  ${c.ok ? '✓' : '✗'} ${c.id} — ${c.detail}`);
       failed = result.checks.filter((c) => !c.ok).length;
 

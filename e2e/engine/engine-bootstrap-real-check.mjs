@@ -102,8 +102,14 @@ if (!fs.existsSync(BOXSVC)) {
 }
 
 /** 真实落点（已被 `setup:engine` 填过的那份缓存）—— 只读，绝不写。 */
-const CACHE_SRC = process.env.MIAO_BOOTSTRAP_CACHE_SRC
-  || path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local'), 'runtimes', 'manga-translator', '.download-cache');
+const CACHE_SRC =
+  process.env.MIAO_BOOTSTRAP_CACHE_SRC ||
+  path.join(
+    process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local'),
+    'runtimes',
+    'manga-translator',
+    '.download-cache',
+  );
 
 /**
  * 落点：**本次专属的系统临时目录**（`mkdtemp`，与 `e3-real-full-chain-check` 同口径）。
@@ -116,8 +122,8 @@ const CACHE_SRC = process.env.MIAO_BOOTSTRAP_CACHE_SRC
  * 🔴 `CACHE_SRC` 只在**只读**侧用；绝不改动用户真实落点里的任何字节。
  */
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-bootstrap-real-'));
-const RUNTIME_ROOT = path.join(WORK, 'runtime');          // = MIAO_RUNTIME_ROOT
-const RT = path.join(RUNTIME_ROOT, 'manga-translator');   // = runtimes_dir()
+const RUNTIME_ROOT = path.join(WORK, 'runtime'); // = MIAO_RUNTIME_ROOT
+const RT = path.join(RUNTIME_ROOT, 'manga-translator'); // = runtimes_dir()
 const MODEL_ROOT = path.join(WORK, 'models');
 const STATE = path.join(WORK, 'state');
 
@@ -195,8 +201,8 @@ if (!sourceEntry || !findSourceArchive(sourceEntry)) {
 }
 if (missing.length > 0) {
   console.error(
-    `✗ 真实缓存里缺这些归档（目录：${CACHE_SRC}）：\n  · ${missing.join('\n  · ')}\n`
-    + '  先跑 npm run setup:engine 把它们下下来。',
+    `✗ 真实缓存里缺这些归档（目录：${CACHE_SRC}）：\n  · ${missing.join('\n  · ')}\n` +
+      '  先跑 npm run setup:engine 把它们下下来。',
   );
   process.exit(1);
 }
@@ -242,7 +248,9 @@ const SOURCE_BYTES = fs.readFileSync(findSourceArchive(sourceEntry));
 fs.writeFileSync(path.join(PAYLOAD_DIR, 'engine-src-from-url.tar.gz'), SOURCE_BYTES);
 
 const MOCK_SCRIPT = path.join(WORK, 'mock-server.mjs');
-fs.writeFileSync(MOCK_SCRIPT, `
+fs.writeFileSync(
+  MOCK_SCRIPT,
+  `
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -263,16 +271,22 @@ const srv = http.createServer((req, res) => {
   res.end(body);
 });
 srv.listen(0, '127.0.0.1', () => console.log('READY ' + srv.address().port));
-`);
+`,
+);
 
 const server = spawn(process.execPath, [MOCK_SCRIPT, PAYLOAD_DIR], { stdio: ['ignore', 'pipe', 'pipe'] });
 let serverErr = '';
-server.stderr.on('data', (d) => { serverErr += String(d); });
+server.stderr.on('data', (d) => {
+  serverErr += String(d);
+});
 const PORT = await new Promise((resolve, reject) => {
   const t = setTimeout(() => reject(new Error(`mock 服务器 5s 未就绪：${serverErr}`)), 5000);
   server.stdout.on('data', (d) => {
     const m = /READY (\d+)/.exec(String(d));
-    if (m) { clearTimeout(t); resolve(Number(m[1])); }
+    if (m) {
+      clearTimeout(t);
+      resolve(Number(m[1]));
+    }
   });
 }).catch((e) => {
   console.error(`✗ 起 mock 服务器失败：${e.message}`);
@@ -309,32 +323,51 @@ const CRF_LINE = 'pydensecrf@https://github.com/username/pydensecrf/archive/mast
 function writeFixtureManifest() {
   fs.writeFileSync(
     FIXTURE_MODELS,
-    JSON.stringify({
-      manifestVersion: 1,
-      engineCommit: runtime.engineCommit,
-      sets: { visual: { files: ['fixture_plain'] }, runtime: { files: ['fixture_archive'] }, llm: { files: ['fixture_llm'] } },
-      files: [
-        {
-          id: 'fixture_plain', set: 'visual', stage: 1,
-          dest: 'models-store/fixture/a.bin', linkTo: 'models/fixture-a.bin',
-          sha256: sha256(plainA), sizeBytes: plainA.length,
-          url: `${base}/fixture-a.bin`,
+    JSON.stringify(
+      {
+        manifestVersion: 1,
+        engineCommit: runtime.engineCommit,
+        sets: {
+          visual: { files: ['fixture_plain'] },
+          runtime: { files: ['fixture_archive'] },
+          llm: { files: ['fixture_llm'] },
         },
-        {
-          id: 'fixture_archive', set: 'runtime', stage: 1,
-          dest: 'fixture-arch.tar.gz',
-          extractTo: 'bin/fixture', extractStrip: 1,
-          sha256: sha256(tarBytes), sizeBytes: tarBytes.length,
-          url: `${base}/arch-from-url.tar.gz`,
-        },
-        {
-          id: 'fixture_llm', set: 'llm', stage: 2,
-          dest: 'models-store/fixture/c.bin',
-          sha256: sha256(plainC), sizeBytes: plainC.length,
-          url: `${base}/fixture-c.bin`,
-        },
-      ],
-    }, null, 2),
+        files: [
+          {
+            id: 'fixture_plain',
+            set: 'visual',
+            stage: 1,
+            dest: 'models-store/fixture/a.bin',
+            linkTo: 'models/fixture-a.bin',
+            sha256: sha256(plainA),
+            sizeBytes: plainA.length,
+            url: `${base}/fixture-a.bin`,
+          },
+          {
+            id: 'fixture_archive',
+            set: 'runtime',
+            stage: 1,
+            dest: 'fixture-arch.tar.gz',
+            extractTo: 'bin/fixture',
+            extractStrip: 1,
+            sha256: sha256(tarBytes),
+            sizeBytes: tarBytes.length,
+            url: `${base}/arch-from-url.tar.gz`,
+          },
+          {
+            id: 'fixture_llm',
+            set: 'llm',
+            stage: 2,
+            dest: 'models-store/fixture/c.bin',
+            sha256: sha256(plainC),
+            sizeBytes: plainC.length,
+            url: `${base}/fixture-c.bin`,
+          },
+        ],
+      },
+      null,
+      2,
+    ),
   );
 }
 writeFixtureManifest();
@@ -348,7 +381,13 @@ writeFixtureManifest();
 function writeFixtureReq(pkg = 'six') {
   fs.writeFileSync(
     FIXTURE_REQ,
-    ['# 夹具：只验两批的顺序与各自成功，不拉真 torch（这行有中文，顺带咬 GBK 解码那条路）', pkg, 'numpy', CRF_LINE, ''].join('\n'),
+    [
+      '# 夹具：只验两批的顺序与各自成功，不拉真 torch（这行有中文，顺带咬 GBK 解码那条路）',
+      pkg,
+      'numpy',
+      CRF_LINE,
+      '',
+    ].join('\n'),
   );
 }
 writeFixtureReq();
@@ -398,56 +437,81 @@ if (res.status !== 0) {
   const iSrc = out.indexOf('下载并解包引擎源码');
   const iPatch = out.indexOf('应用引擎源码补丁');
   const iBatchA = out.indexOf('批 A：安装主依赖');
-  check('B1 阶段顺序：源码解包与补丁在依赖安装之前（旧顺序 ⇒ 依赖阶段找不到清单）',
+  check(
+    'B1 阶段顺序：源码解包与补丁在依赖安装之前（旧顺序 ⇒ 依赖阶段找不到清单）',
     iSrc >= 0 && iPatch >= 0 && iBatchA >= 0 && iSrc < iBatchA && iPatch < iBatchA,
-    { iSrc, iPatch, iBatchA });
+    { iSrc, iPatch, iBatchA },
+  );
 }
 
 // ---- B2 批 A 真装了 ----
 {
   const sitePkgs = path.join(RT, 'venv', 'Lib', 'site-packages');
   const sixOk = fs.existsSync(path.join(sitePkgs, 'six.py')) || fs.existsSync(path.join(sitePkgs, 'six'));
-  check('B2 批 A 真装了（夹具里的 six 落在 venv 的 site-packages，不是只看日志）',
-    sixOk && out.includes('✓ 批 A 完成'), { sitePkgs, sixOk });
+  check(
+    'B2 批 A 真装了（夹具里的 six 落在 venv 的 site-packages，不是只看日志）',
+    sixOk && out.includes('✓ 批 A 完成'),
+    { sitePkgs, sixOk },
+  );
 }
 
 // ---- B3 批 B 命中随包 wheel，不联网、不编译 ----
-check('B3 批 B 命中**随包** wheel（`--no-index --no-deps`，未编译）',
+check(
+  'B3 批 B 命中**随包** wheel（`--no-index --no-deps`，未编译）',
   out.includes('预编译 wheel') && out.includes('✓ 批 B 完成（预编译 wheel，未编译）'),
-  { route: /pydensecrf 路线：[^\n]*/.exec(out)?.[0] });
+  { route: /pydensecrf 路线：[^\n]*/.exec(out)?.[0] },
+);
 
 // ---- B4 兼容补丁真写进 venv ----
 {
   const crfInit = path.join(RT, 'venv', 'Lib', 'site-packages', 'pydensecrf', '__init__.py');
   let t = '';
-  try { t = fs.readFileSync(crfInit, 'utf8'); } catch { /* 由断言报 */ }
-  check('B4 旧常量兼容补丁写进 venv 的 pydensecrf/__init__.py（marker 与仓库脚本逐字节相同）',
+  try {
+    t = fs.readFileSync(crfInit, 'utf8');
+  } catch {
+    /* 由断言报 */
+  }
+  check(
+    'B4 旧常量兼容补丁写进 venv 的 pydensecrf/__init__.py（marker 与仓库脚本逐字节相同）',
     t.includes('# >>> miao-dock: pydensecrf 旧常量兼容补丁') && t.includes('DIAG_KERNEL'),
-    { crfInit, hasMarker: t.includes('# >>> miao-dock: pydensecrf 旧常量兼容补丁') });
+    { crfInit, hasMarker: t.includes('# >>> miao-dock: pydensecrf 旧常量兼容补丁') },
+  );
 }
 
 // ---- B5 导入自检①真过了（pydensecrf 能 import、旧常量在；**不是**只看日志字样）----
 //      产品那条命令带 `assert hasattr(d, "DIAG_KERNEL")`：它真跑在 venv 里，过不了就没这行。
-check('B5 自检①真过：venv 里 `pydensecrf.densecrf` 可 import 且旧常量在（随包 wheel + 兼容补丁端到端生效）',
-  out.includes('✓ 自检①：pydensecrf 可 import，旧常量已回填'));
+check(
+  'B5 自检①真过：venv 里 `pydensecrf.densecrf` 可 import 且旧常量在（随包 wheel + 兼容补丁端到端生效）',
+  out.includes('✓ 自检①：pydensecrf 可 import，旧常量已回填'),
+);
 
 // ---- B5b 夹具旁路只关掉了自检②，且产品**明说**它被跳过了 ----
 {
   const skipped = out.includes('已按 MIAO_SKIP_ENGINE_IMPORT=1 跳过自检②');
   const halfOk = out.includes('✓ 自检①：pydensecrf 可 import，旧常量已回填');
-  check('B5b 夹具旁路只关掉自检②（引擎级），且日志如实声明被跳过 —— 自检① 仍然真跑',
-    skipped && halfOk, { skipped, halfOk });
+  check('B5b 夹具旁路只关掉自检②（引擎级），且日志如实声明被跳过 —— 自检① 仍然真跑', skipped && halfOk, {
+    skipped,
+    halfOk,
+  });
 }
 
 // ---- B6 长路径体检落进就绪标记 ----
 {
   const markerPath = path.join(RT, '.runtime.ready.json');
   let m = null;
-  try { m = JSON.parse(fs.readFileSync(markerPath, 'utf8')); } catch { /* 由断言报 */ }
-  check('B6 长路径体检写进 .runtime.ready.json 的 longPath 段（maxChars / limit=260 / margin 齐备）',
-    !!m && typeof m.longPath?.maxChars === 'number' && m.longPath?.limit === 260
-      && typeof m.longPath?.margin === 'number',
-    { longPath: m?.longPath });
+  try {
+    m = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+  } catch {
+    /* 由断言报 */
+  }
+  check(
+    'B6 长路径体检写进 .runtime.ready.json 的 longPath 段（maxChars / limit=260 / margin 齐备）',
+    !!m &&
+      typeof m.longPath?.maxChars === 'number' &&
+      m.longPath?.limit === 260 &&
+      typeof m.longPath?.margin === 'number',
+    { longPath: m?.longPath },
+  );
 }
 
 // ---- B7 解包按 dest 找归档（dest 与 url 末段不同名）----
@@ -455,23 +519,29 @@ check('B5 自检①真过：venv 里 `pydensecrf.densecrf` 可 import 且旧常�
   const hello = path.join(MODEL_ROOT, 'bin', 'fixture', 'hello.txt');
   const store = path.join(RT, '.download-cache', destName(runtimeFiles.find((f) => f.id === 'engine_source')));
   const srcTree = path.join(RT, 'src', 'manga_translator');
-  check('B7 解包按 `dest` 找归档（夹具里 dest 与 url 末段故意不同名）：运行时源码树与夹具归档都解出来了',
+  check(
+    'B7 解包按 `dest` 找归档（夹具里 dest 与 url 末段故意不同名）：运行时源码树与夹具归档都解出来了',
     fs.existsSync(srcTree) && fs.existsSync(hello) && fs.existsSync(store),
-    { srcTree, hello, store });
+    { srcTree, hello, store },
+  );
 }
 
 // ---- B8 模型侧：平铺件落 store + 按 linkTo 建链 ----
 {
   const storeFile = path.join(MODEL_ROOT, 'models-store', 'fixture', 'a.bin');
   const linkFile = path.join(MODEL_ROOT, 'src', 'models', 'fixture-a.bin');
-  check('B8 模型侧：平铺件落 store、并按 linkTo 在引擎树里建出链接',
+  check(
+    'B8 模型侧：平铺件落 store、并按 linkTo 在引擎树里建出链接',
     fs.existsSync(storeFile) && fs.existsSync(linkFile),
-    { storeFile, linkFile });
+    { storeFile, linkFile },
+  );
 }
 
 // ---- B9 夹具清单里 stage1/stage2 都下到了（全量跑不分阶段）----
-check('B9 全量跑（不带 --stage）：stage2 的夹具条目也下到了',
-  fs.existsSync(path.join(MODEL_ROOT, 'models-store', 'fixture', 'c.bin')));
+check(
+  'B9 全量跑（不带 --stage）：stage2 的夹具条目也下到了',
+  fs.existsSync(path.join(MODEL_ROOT, 'models-store', 'fixture', 'c.bin')),
+);
 
 // ---- B10 引擎源码是**产品自己下**的（第 1 阶段不许去解还没下载的归档）----
 //      🔴 照与反照成对：B7 看"解出来了"，B10 看"字节是从 mock 下下来的、哈希对得上" ——
@@ -479,9 +549,11 @@ check('B9 全量跑（不带 --stage）：stage2 的夹具条目也下到了',
 {
   const cached = path.join(RT, '.download-cache', destName(sourceEntry));
   const got = fs.existsSync(cached) ? sha256(fs.readFileSync(cached)) : null;
-  check('B10 引擎源码由产品在**第 3 阶段**从 mock http 下下来（按 `dest` 落缓存、哈希对得上）—— 预放缓存会把"第 1 阶段越界解包"盖住',
+  check(
+    'B10 引擎源码由产品在**第 3 阶段**从 mock http 下下来（按 `dest` 落缓存、哈希对得上）—— 预放缓存会把"第 1 阶段越界解包"盖住',
     got === sha256(SOURCE_BYTES),
-    { cached, gotHash: got ? got.slice(0, 12) : null, wantHash: sha256(SOURCE_BYTES).slice(0, 12) });
+    { cached, gotHash: got ? got.slice(0, 12) : null, wantHash: sha256(SOURCE_BYTES).slice(0, 12) },
+  );
 }
 
 // ------------------------------------------------------------------ 反证轮
@@ -499,13 +571,20 @@ if (REFUTE) {
     const backup = fs.readFileSync(FIXTURE_REQ, 'utf8');
     const emptyWheels = path.join(WORK, 'empty-wheels.json');
     fs.writeFileSync(emptyWheels, JSON.stringify({ wheels: [] }, null, 2));
-    fs.writeFileSync(FIXTURE_REQ, backup.split('\n').filter((l) => !l.startsWith('pydensecrf@')).join('\n'));
+    fs.writeFileSync(
+      FIXTURE_REQ,
+      backup
+        .split('\n')
+        .filter((l) => !l.startsWith('pydensecrf@'))
+        .join('\n'),
+    );
     const r = bootstrap({ manifest: emptyWheels });
-    const red = r.status !== 0
-      && !r.out.includes('✓ 批 B 完成（预编译 wheel，未编译）')
-      && /没有 pydensecrf 直链行/.test(r.out);
-    check('R1 清单无本平台 wheel 且 requirements 无直链行 ⇒ B3 红（两条路都断了，如实报错）',
-      red, { code: r.status, sawReason: /没有 pydensecrf 直链行/.test(r.out) });
+    const red =
+      r.status !== 0 && !r.out.includes('✓ 批 B 完成（预编译 wheel，未编译）') && /没有 pydensecrf 直链行/.test(r.out);
+    check('R1 清单无本平台 wheel 且 requirements 无直链行 ⇒ B3 红（两条路都断了，如实报错）', red, {
+      code: r.status,
+      sawReason: /没有 pydensecrf 直链行/.test(r.out),
+    });
     fs.writeFileSync(FIXTURE_REQ, backup);
   }
 
@@ -516,10 +595,12 @@ if (REFUTE) {
     for (const w of wj.wheels) w.sha256 = '0'.repeat(64);
     fs.writeFileSync(WHEELS_MANIFEST, JSON.stringify(wj, null, 2));
     const r = bootstrap({});
-    const red = r.status !== 0 && !r.out.includes('✓ 批 B 完成（预编译 wheel，未编译）')
-      && r.out.includes('sha256 与清单不符');
-    check('R2 wheel 清单 sha256 改坏 ⇒ B3 红（宁可回退源码编译，也不装没验过的东西）',
-      red, { code: r.status, sawReason: r.out.includes('sha256 与清单不符') });
+    const red =
+      r.status !== 0 && !r.out.includes('✓ 批 B 完成（预编译 wheel，未编译）') && r.out.includes('sha256 与清单不符');
+    check('R2 wheel 清单 sha256 改坏 ⇒ B3 红（宁可回退源码编译，也不装没验过的东西）', red, {
+      code: r.status,
+      sawReason: r.out.includes('sha256 与清单不符'),
+    });
     fs.writeFileSync(WHEELS_MANIFEST, backup);
   }
 
@@ -536,13 +617,18 @@ if (REFUTE) {
   {
     const r = bootstrap({ skipEngineImport: false });
     const red = r.status !== 0 && /自检②未通过/.test(r.out);
-    check('R4 不设 MIAO_SKIP_ENGINE_IMPORT ⇒ 自检② 真失败（夹具没有 torch，闸门确实在）',
-      red, { code: r.status, saw: /自检②未通过/.test(r.out) });
+    check('R4 不设 MIAO_SKIP_ENGINE_IMPORT ⇒ 自检② 真失败（夹具没有 torch，闸门确实在）', red, {
+      code: r.status,
+      saw: /自检②未通过/.test(r.out),
+    });
   }
 
-  check('R5 变异收尾：夹具 requirements 与 wheel 清单按字节还原',
-    fs.readFileSync(FIXTURE_REQ, 'utf8').includes('pydensecrf@') 
-    && JSON.parse(fs.readFileSync(WHEELS_MANIFEST, 'utf8')).wheels[0].sha256 === 'f4b5b28d8b5e600adb60b891cdbe3b2540fbe75c2bea4003faa007bbed313cbd');
+  check(
+    'R5 变异收尾：夹具 requirements 与 wheel 清单按字节还原',
+    fs.readFileSync(FIXTURE_REQ, 'utf8').includes('pydensecrf@') &&
+      JSON.parse(fs.readFileSync(WHEELS_MANIFEST, 'utf8')).wheels[0].sha256 ===
+        'f4b5b28d8b5e600adb60b891cdbe3b2540fbe75c2bea4003faa007bbed313cbd',
+  );
 }
 
 server.kill();

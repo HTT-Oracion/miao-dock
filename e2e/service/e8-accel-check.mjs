@@ -54,7 +54,10 @@ const TOKEN = 'e'.repeat(64);
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-e8-'));
 const REFUTE = process.argv.includes('--refute');
 
-const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+const sleep = (ms) =>
+  new Promise((r) => {
+    setTimeout(r, ms);
+  });
 
 /** 声明的断言条数（分母写死：少执行一条即判红） */
 const DECLARED = 6;
@@ -75,20 +78,31 @@ function printResults(title) {
 
 // ------------------------------------------------------------------ 小工具
 
-const portOpen = (port, timeoutMs = 300) => new Promise((resolve) => {
-  const s = net.connect({ host: '127.0.0.1', port });
-  let settled = false;
-  const done = (v) => { if (!settled) { settled = true; s.destroy(); resolve(v); } };
-  s.setTimeout(timeoutMs);
-  s.once('connect', () => done(true));
-  s.once('timeout', () => done(false));
-  s.once('error', () => done(false));
-});
+const portOpen = (port, timeoutMs = 300) =>
+  new Promise((resolve) => {
+    const s = net.connect({ host: '127.0.0.1', port });
+    let settled = false;
+    const done = (v) => {
+      if (!settled) {
+        settled = true;
+        s.destroy();
+        resolve(v);
+      }
+    };
+    s.setTimeout(timeoutMs);
+    s.once('connect', () => done(true));
+    s.once('timeout', () => done(false));
+    s.once('error', () => done(false));
+  });
 
 async function findFreePort(start, need = 2) {
   for (let p = start; p < start + 400; p += 1) {
     let ok = true;
-    for (let i = 0; i < need; i += 1) if (await portOpen(p + i)) { ok = false; break; }
+    for (let i = 0; i < need; i += 1)
+      if (await portOpen(p + i)) {
+        ok = false;
+        break;
+      }
     if (ok) return p;
   }
   throw new Error(`从 ${start} 起找不到 ${need} 个连续空闲端口`);
@@ -97,13 +111,24 @@ async function findFreePort(start, need = 2) {
 function httpGetJson(port, pathname, token) {
   return new Promise((resolve, reject) => {
     const req = http.request(
-      { host: '127.0.0.1', port, path: pathname, method: 'GET', headers: token ? { 'X-Box-Token': token } : {}, agent: false },
+      {
+        host: '127.0.0.1',
+        port,
+        path: pathname,
+        method: 'GET',
+        headers: token ? { 'X-Box-Token': token } : {},
+        agent: false,
+      },
       (res) => {
         const chunks = [];
         res.on('data', (c) => chunks.push(c));
         res.on('end', () => {
           let body = null;
-          try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { /* 非 JSON */ }
+          try {
+            body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          } catch {
+            /* 非 JSON */
+          }
           resolve({ status: res.statusCode, body });
         });
       },
@@ -142,7 +167,10 @@ function hardwareFacts() {
 /** 编译 Rust 靶子（反证轮改完源码必须重编，否则断言验的是"上一份产物"）。 */
 function buildRust() {
   const r = spawnSync('cargo', ['build', '--bin', 'boxsvc'], {
-    cwd: CARGO_DIR, encoding: 'utf8', maxBuffer: 40 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: CARGO_DIR,
+    encoding: 'utf8',
+    maxBuffer: 40 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
   const log = `${r.stdout || ''}${r.stderr || ''}`.trim();
   return { ok: r.status === 0, log: log.split('\n').slice(-6).join(' | ').slice(0, 400) };
@@ -164,14 +192,20 @@ function startFakeEngine(port) {
       res.end();
     });
   });
-  const executor = net.createServer(() => { /* 哑 socket ⇒ running */ });
+  const executor = net.createServer(() => {
+    /* 哑 socket ⇒ running */
+  });
   return { server, executor };
 }
 
-const listen = (server, port) => new Promise((resolve, reject) => {
-  server.once('error', reject);
-  server.listen(port, '127.0.0.1', () => { server.removeListener('error', reject); resolve(); });
-});
+const listen = (server, port) =>
+  new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', () => {
+      server.removeListener('error', reject);
+      resolve();
+    });
+  });
 const closeAll = (servers) => Promise.all(servers.map((s) => new Promise((r) => s.close(() => r()))));
 
 function spawnService(env) {
@@ -180,9 +214,17 @@ function spawnService(env) {
   child.stdout.on('data', (d) => {
     st.out += d.toString();
     const m = /MIAO_READY (\{.*\})/.exec(st.out);
-    if (m && !st.ready) { try { st.ready = JSON.parse(m[1]); } catch { /* 继续等 */ } }
+    if (m && !st.ready) {
+      try {
+        st.ready = JSON.parse(m[1]);
+      } catch {
+        /* 继续等 */
+      }
+    }
   });
-  child.stderr.on('data', (d) => { st.err += d.toString(); });
+  child.stderr.on('data', (d) => {
+    st.err += d.toString();
+  });
   return st;
 }
 
@@ -231,8 +273,14 @@ async function round({ env = {}, settings = null } = {}) {
     let health = null;
     for (let i = 0; i < 60; i += 1) {
       const r = await httpGetJson(PORT, '/api/v1/health', TOKEN);
-      if (r.status === 200 && r.body?.sidecar?.state === 'running') { health = r.body; break; }
-      if (r.status === 200 && r.body?.sidecar?.state === 'degraded') { health = r.body; break; }
+      if (r.status === 200 && r.body?.sidecar?.state === 'running') {
+        health = r.body;
+        break;
+      }
+      if (r.status === 200 && r.body?.sidecar?.state === 'degraded') {
+        health = r.body;
+        break;
+      }
       await sleep(150);
     }
     const eng = await httpGetJson(PORT, '/api/v1/engine/status', TOKEN);
@@ -255,53 +303,71 @@ async function runAll() {
   // 🔴 原先写死 `platform==='darwin' && arch==='arm64' && accel==='mps'` ⇒ 非 macOS 上恒红，
   //    会直接卡住双平台 CI（D-140）。改为**平台忠实**：darwin ⇒ metal/mps；非 darwin ⇒ **不**出现 mps。
   const hw = hardwareFacts();
-  const hwAccelOk = hw?.platform === 'darwin'
-    ? hw?.accel === 'mps' && hw?.gpu?.kind === 'metal'
-    : hw?.accel !== 'mps' && hw?.gpu?.kind !== 'metal';
-  check('E8.1 真机硬件探测与平台一致：darwin ⇒ accel=mps/gpu=metal；非 darwin ⇒ **不**出现 mps（"macOS 走 MPS"的实测依据）',
+  const hwAccelOk =
+    hw?.platform === 'darwin'
+      ? hw?.accel === 'mps' && hw?.gpu?.kind === 'metal'
+      : hw?.accel !== 'mps' && hw?.gpu?.kind !== 'metal';
+  check(
+    'E8.1 真机硬件探测与平台一致：darwin ⇒ accel=mps/gpu=metal；非 darwin ⇒ **不**出现 mps（"macOS 走 MPS"的实测依据）',
     hwAccelOk && !!hw?.recommendedTier,
-    `platform=${hw?.platform} arch=${hw?.arch} accel=${hw?.accel} gpu=${JSON.stringify(hw?.gpu)} tier=${hw?.recommendedTier} ram=${Number(hw?.totalRamGb).toFixed(1)}GB`);
+    `platform=${hw?.platform} arch=${hw?.arch} accel=${hw?.accel} gpu=${JSON.stringify(hw?.gpu)} tier=${hw?.recommendedTier} ram=${Number(hw?.totalRamGb).toFixed(1)}GB`,
+  );
 
   // ---- E8.2：对照组 —— 什么都不关时 `accel` 等于**本机推荐后端** + ok（证明下面的 degraded 不是"恒报"）----
   const normal = await round();
-  check('E8.2 对照组：不关 GPU 时 `accel` 等于本机推荐后端 且 `/health.status === "ok"`（degraded **不是**恒报）',
-    normal.health?.sidecar?.accel === hw?.accel && normal.health?.status === 'ok' && normal.health?.sidecar?.state === 'running',
-    `status=${normal.health?.status} state=${normal.health?.sidecar?.state} accel=${normal.health?.sidecar?.accel} 本机推荐=${hw?.accel}`);
+  check(
+    'E8.2 对照组：不关 GPU 时 `accel` 等于本机推荐后端 且 `/health.status === "ok"`（degraded **不是**恒报）',
+    normal.health?.sidecar?.accel === hw?.accel &&
+      normal.health?.status === 'ok' &&
+      normal.health?.sidecar?.state === 'running',
+    `status=${normal.health?.status} state=${normal.health?.sidecar?.state} accel=${normal.health?.sidecar?.accel} 本机推荐=${hw?.accel}`,
+  );
 
   // ---- E8.3：**真回退**要不静默（§7.4-3）：Rust 侧注入 USE_GPU=0，choice 仍是 auto ----
   const fallback = await round({ env: { MIAO_ENGINE_USE_GPU: '0' } });
-  check('E8.3 GPU 被关掉（choice=auto，即"启动失败后重拉"这条路径）⇒ `accel=cpu` + `state=degraded` + 顶层 `status=degraded`（§7.4-3「不静默」）',
-    fallback.health?.sidecar?.accel === 'cpu'
-    && fallback.health?.sidecar?.state === 'degraded'
-    && fallback.health?.status === 'degraded',
-    `status=${fallback.health?.status} state=${fallback.health?.sidecar?.state} accel=${fallback.health?.sidecar?.accel}`);
+  check(
+    'E8.3 GPU 被关掉（choice=auto，即"启动失败后重拉"这条路径）⇒ `accel=cpu` + `state=degraded` + 顶层 `status=degraded`（§7.4-3「不静默」）',
+    fallback.health?.sidecar?.accel === 'cpu' &&
+      fallback.health?.sidecar?.state === 'degraded' &&
+      fallback.health?.status === 'degraded',
+    `status=${fallback.health?.status} state=${fallback.health?.sidecar?.state} accel=${fallback.health?.sidecar?.accel}`,
+  );
 
   // ---- E8.4：**用户自选 CPU 不是故障** —— 设置页里真实存在这个选项，报 degraded 就是喊狼来了 ----
   const byChoice = await round({ settings: { accel: 'cpu' } });
-  check('E8.4 用户在设置里选了「强制 CPU」⇒ `accel=cpu` 但**不**报 degraded（`state=running` / `status=ok`）',
-    byChoice.health?.sidecar?.accel === 'cpu'
-    && byChoice.health?.sidecar?.state === 'running'
-    && byChoice.health?.status === 'ok',
-    `status=${byChoice.health?.status} state=${byChoice.health?.sidecar?.state} accel=${byChoice.health?.sidecar?.accel} choice=${byChoice.options?.accel?.choice} source=${byChoice.options?.accel?.source}`);
+  check(
+    'E8.4 用户在设置里选了「强制 CPU」⇒ `accel=cpu` 但**不**报 degraded（`state=running` / `status=ok`）',
+    byChoice.health?.sidecar?.accel === 'cpu' &&
+      byChoice.health?.sidecar?.state === 'running' &&
+      byChoice.health?.status === 'ok',
+    `status=${byChoice.health?.status} state=${byChoice.health?.sidecar?.state} accel=${byChoice.health?.sidecar?.accel} choice=${byChoice.options?.accel?.choice} source=${byChoice.options?.accel?.source}`,
+  );
 
   // ---- E8.5：两处同源 + 理由可分 —— 界面拿到的 effective 必须与 sidecar 同值 ----
-  const sameAll = normal.options?.accel?.effective === normal.health?.sidecar?.accel
-    && fallback.options?.accel?.effective === fallback.health?.sidecar?.accel
-    && byChoice.options?.accel?.effective === byChoice.health?.sidecar?.accel;
+  const sameAll =
+    normal.options?.accel?.effective === normal.health?.sidecar?.accel &&
+    fallback.options?.accel?.effective === fallback.health?.sidecar?.accel &&
+    byChoice.options?.accel?.effective === byChoice.health?.sidecar?.accel;
   const reasons = [fallback.options?.accel?.reason, byChoice.options?.accel?.reason].map((s) => String(s ?? ''));
-  check('E8.5 `/engine/options.accel.effective` 与 `/health.sidecar.accel` 三轮都同值；且两轮 cpu 的 `reason` **文案不同**（回退 vs 用户指定）',
+  check(
+    'E8.5 `/engine/options.accel.effective` 与 `/health.sidecar.accel` 三轮都同值；且两轮 cpu 的 `reason` **文案不同**（回退 vs 用户指定）',
     sameAll && reasons[0] && reasons[1] && reasons[0] !== reasons[1],
-    `同值三轮=${sameAll} / 回退理由=${JSON.stringify(reasons[0])} / 自选理由=${JSON.stringify(reasons[1])}`);
+    `同值三轮=${sameAll} / 回退理由=${JSON.stringify(reasons[0])} / 自选理由=${JSON.stringify(reasons[1])}`,
+  );
 
   // ---- E8.6：不给假控件 —— 候选必须**反映本机**（无 Metal 不出 mps、无 CUDA 不出 cuda）----
   const accels = (normal.options?.accel?.options ?? []).map((o) => o.value);
   const isMetal = hw?.gpu?.kind === 'metal';
   const isCuda = hw?.gpu?.kind === 'cuda';
-  check('E8.6 加速后端候选**反映本机**：含 auto/cpu 与本机推荐后端，且**不含**本机不可用的 mps/cuda（假控件比缺控件更伤）',
-    accels.includes('auto') && accels.includes('cpu') && accels.includes(hw?.accel)
-      && (isMetal ? accels.includes('mps') : !accels.includes('mps'))
-      && (isCuda ? accels.includes('cuda') : !accels.includes('cuda')),
-    `候选=[${accels.join(',')}] / 本机 gpu=${hw?.gpu?.kind} accel=${hw?.accel} hardwareRecommended=${normal.options?.accel?.hardwareRecommended}`);
+  check(
+    'E8.6 加速后端候选**反映本机**：含 auto/cpu 与本机推荐后端，且**不含**本机不可用的 mps/cuda（假控件比缺控件更伤）',
+    accels.includes('auto') &&
+      accels.includes('cpu') &&
+      accels.includes(hw?.accel) &&
+      (isMetal ? accels.includes('mps') : !accels.includes('mps')) &&
+      (isCuda ? accels.includes('cuda') : !accels.includes('cuda')),
+    `候选=[${accels.join(',')}] / 本机 gpu=${hw?.gpu?.kind} accel=${hw?.accel} hardwareRecommended=${normal.options?.accel?.hardwareRecommended}`,
+  );
 
   // 反证轮要按 id 取"这一轮的结果"，所以回一份 map（与 E4/E7 同形）。
   const map = {};
@@ -314,49 +380,71 @@ async function runAll() {
 const MUTATIONS = [
   {
     name: 'E8.3：让"真回退"**不报** degraded（把回退做成静默的）',
-    expect: ['E8.3 GPU 被关掉（choice=auto，即"启动失败后重拉"这条路径）⇒ `accel=cpu` + `state=degraded` + 顶层 `status=degraded`（§7.4-3「不静默」）'],
-    edits: [{
-      file: RUST_PROFILE_SRC,
-      find: '            degraded: !by_user_choice && hardware_accel != "cpu",',
-      replace: '            degraded: false, // refute：回退也静默',
-    }],
+    expect: [
+      'E8.3 GPU 被关掉（choice=auto，即"启动失败后重拉"这条路径）⇒ `accel=cpu` + `state=degraded` + 顶层 `status=degraded`（§7.4-3「不静默」）',
+    ],
+    edits: [
+      {
+        file: RUST_PROFILE_SRC,
+        find: '            degraded: !by_user_choice && hardware_accel != "cpu",',
+        replace: '            degraded: false, // refute：回退也静默',
+      },
+    ],
   },
   {
     name: 'E8.4：去掉"用户自选"的区分（把用户选的 CPU 也报成 degraded —— 喊狼来了）',
     expect: ['E8.4 用户在设置里选了「强制 CPU」⇒ `accel=cpu` 但**不**报 degraded（`state=running` / `status=ok`）'],
-    edits: [{
-      file: RUST_PROFILE_SRC,
-      find: '            degraded: !by_user_choice && hardware_accel != "cpu",',
-      replace: '            degraded: hardware_accel != "cpu", // refute：不区分用户自选',
-    }],
+    edits: [
+      {
+        file: RUST_PROFILE_SRC,
+        find: '            degraded: !by_user_choice && hardware_accel != "cpu",',
+        replace: '            degraded: hardware_accel != "cpu", // refute：不区分用户自选',
+      },
+    ],
   },
   {
     name: 'E8.1：真机探测不给出推荐档位（recommendedTier 置空）',
-    expect: ['E8.1 真机硬件探测与平台一致：darwin ⇒ accel=mps/gpu=metal；非 darwin ⇒ **不**出现 mps（"macOS 走 MPS"的实测依据）'],
+    expect: [
+      'E8.1 真机硬件探测与平台一致：darwin ⇒ accel=mps/gpu=metal；非 darwin ⇒ **不**出现 mps（"macOS 走 MPS"的实测依据）',
+    ],
     // 🔴 锚点选 `map_tier` 的**入口**（**每个平台都经过**），而不是 darwin 专有的 metal→mps 映射 ——
     //    后者在非 macOS 上根本不被执行 ⇒ 反证轮"该红没红"（假阴性），双平台 CI 会挂（D-140）。
     // ⚠️ 多行锚点必须按 **CRLF** 拼：Rust 源是 CRLF，用 `\n` 拼出来的 `includes()` 永远为假。
-    edits: [{
-      file: RUST_PROFILE_SRC,
-      find: 'pub fn map_tier(total_ram_gb: f64, gpu: &Gpu) -> String {\r\n    let _ = total_ram_gb;',
-      replace: 'pub fn map_tier(total_ram_gb: f64, gpu: &Gpu) -> String {\r\n    if true { return String::new(); } // refute：探测不给推荐档位\r\n    let _ = total_ram_gb;',
-    }],
+    edits: [
+      {
+        file: RUST_PROFILE_SRC,
+        find: 'pub fn map_tier(total_ram_gb: f64, gpu: &Gpu) -> String {\r\n    let _ = total_ram_gb;',
+        replace:
+          'pub fn map_tier(total_ram_gb: f64, gpu: &Gpu) -> String {\r\n    if true { return String::new(); } // refute：探测不给推荐档位\r\n    let _ = total_ram_gb;',
+      },
+    ],
   },
   {
     name: 'E8.6：让后端候选恒含全部后端（Metal 机器上也给"点了没用"的假控件）',
-    expect: ['E8.6 加速后端候选**反映本机**：含 auto/cpu 与本机推荐后端，且**不含**本机不可用的 mps/cuda（假控件比缺控件更伤）'],
-    edits: [{
-      file: RUST_STATE_SRC,
-      // 🔴 锚点选 `options_view()` 里的那处（**展示**），不是 `guard_settings()` 里的同一句（**校验**）。
-      //    两处文本几乎一样，只差缩进 —— 改错一处会得到"变异没红"却不报错：候选仍按硬件筛，
-      //    而校验放宽了谁也看不出来。（e4-tier 上刚踩过同族坑：破坏点必须选在断言真正读的那条路径。）
-      find: '                "options": profile::accel_options(&self.hardware_accel, self.refutes.accel_open)',
-      replace: '                "options": profile::accel_options(&self.hardware_accel, true) // refute：恒列全部后端',
-    }],
+    expect: [
+      'E8.6 加速后端候选**反映本机**：含 auto/cpu 与本机推荐后端，且**不含**本机不可用的 mps/cuda（假控件比缺控件更伤）',
+    ],
+    edits: [
+      {
+        file: RUST_STATE_SRC,
+        // 🔴 锚点选 `options_view()` 里的那处（**展示**），不是 `guard_settings()` 里的同一句（**校验**）。
+        //    两处文本几乎一样，只差缩进 —— 改错一处会得到"变异没红"却不报错：候选仍按硬件筛，
+        //    而校验放宽了谁也看不出来。（e4-tier 上刚踩过同族坑：破坏点必须选在断言真正读的那条路径。）
+        find: '                "options": profile::accel_options(&self.hardware_accel, self.refutes.accel_open)',
+        replace:
+          '                "options": profile::accel_options(&self.hardware_accel, true) // refute：恒列全部后端',
+      },
+    ],
   },
 ];
 
-const readBytes = (f) => { try { return fs.readFileSync(f); } catch { return null; } };
+const readBytes = (f) => {
+  try {
+    return fs.readFileSync(f);
+  } catch {
+    return null;
+  }
+};
 
 const main = async () => {
   console.log(`E8 加速后端（《04》§14.2）${REFUTE ? ' · 反证轮' : ''}`);
@@ -397,7 +485,9 @@ const main = async () => {
       if (!originals.has(e.file)) originals.set(e.file, readBytes(e.file));
       const txt = originals.get(e.file).toString('utf8');
       if (!txt.includes(e.find)) {
-        console.log(`⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`);
+        console.log(
+          `⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`,
+        );
         anchorMissing = true;
         skipped += mut.expect.length;
         break;
@@ -430,8 +520,13 @@ const main = async () => {
     for (const id of mut.expect) {
       total++;
       const isRed = (res[id] && res[id].ok === false) || (!res[id] && roundErr !== null);
-      if (isRed) { red++; console.log(`  ✓ ${id.slice(0, 22)}… 按预期变红${res[id] ? '' : '（因本轮未能执行）'}`); }
-      else { falsePositives.push(id); console.log(`  ✗ ${id.slice(0, 22)}… 该红没红 ← 假阳性`); }
+      if (isRed) {
+        red++;
+        console.log(`  ✓ ${id.slice(0, 22)}… 按预期变红${res[id] ? '' : '（因本轮未能执行）'}`);
+      } else {
+        falsePositives.push(id);
+        console.log(`  ✗ ${id.slice(0, 22)}… 该红没红 ← 假阳性`);
+      }
       if (!wasGreen[id]) console.log('     注：该条基线本就是红，无法据此判定断言有效性');
     }
   }
@@ -446,8 +541,10 @@ const main = async () => {
   }
   // 源码还原了，**产物也必须还原** —— 否则留下一个「源码是好的、跑起来是坏的」的机器。
   const rebuilt = buildRust();
-  if (!rebuilt.ok) { restoreFail++; console.log(`  ✗ cargo build 还原失败：${rebuilt.log}`); }
-  else console.log('  ✓ cargo build 已把靶子重编回未破坏状态');
+  if (!rebuilt.ok) {
+    restoreFail++;
+    console.log(`  ✗ cargo build 还原失败：${rebuilt.log}`);
+  } else console.log('  ✓ cargo build 已把靶子重编回未破坏状态');
 
   console.log('\n' + '─'.repeat(56));
   console.log(`REFUTE: ${red}/${total} 条按预期变红（应执行 ${expectedTotal} 条）`);

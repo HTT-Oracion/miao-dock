@@ -70,12 +70,8 @@ export function DownloadPanel({ view, requiredBytes, onContinue, onRedownload, o
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-blue)', letterSpacing: '.04em' }}>
             {stage.step}
           </div>
-          <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--md-ink)', marginTop: 4 }}>
-            {stage.title}
-          </div>
-          <div style={{ fontSize: 13, color: 'var(--md-muted)', marginTop: 6, lineHeight: 1.5 }}>
-            {stage.sub}
-          </div>
+          <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--md-ink)', marginTop: 4 }}>{stage.title}</div>
+          <div style={{ fontSize: 13, color: 'var(--md-muted)', marginTop: 6, lineHeight: 1.5 }}>{stage.sub}</div>
         </div>
       ) : null}
 
@@ -222,9 +218,7 @@ export function DownloadPanel({ view, requiredBytes, onContinue, onRedownload, o
                 重新下载
               </Btn>
             )}
-            <span style={{ fontSize: 12, color: 'var(--md-muted)', marginLeft: 'auto' }}>
-              已完成的部分不会丢失
-            </span>
+            <span style={{ fontSize: 12, color: 'var(--md-muted)', marginLeft: 'auto' }}>已完成的部分不会丢失</span>
           </>
         ) : (
           <Btn kind="ghost" onClick={onBack}>

@@ -1,12 +1,7 @@
 import { RotateCcw, Settings, X } from 'lucide-react';
 import { Btn, ColorPicker, IconButton, Range, Swatches } from '@components/units';
 import { useEsc } from '@hooks/useEsc';
-import {
-  DL_BASE_COLORS,
-  DL_HIGHLIGHT_COLORS,
-  DL_LINE_COUNT,
-  DL_LYRICS_SIZE,
-} from '@music/player-options';
+import { DL_BASE_COLORS, DL_HIGHLIGHT_COLORS, DL_LINE_COUNT, DL_LYRICS_SIZE } from '@music/player-options';
 import { useMusicStore } from '@music/store';
 
 /**
@@ -97,10 +92,7 @@ export function DesktopLyricsSettingsModal({ open, onClose }: { open: boolean; o
             >
               上一句歌词
             </div>
-            <div
-              className="music-dlset-pv-line"
-              style={{ fontSize: `${fontSize}px`, color: highlightColor }}
-            >
+            <div className="music-dlset-pv-line" style={{ fontSize: `${fontSize}px`, color: highlightColor }}>
               正在唱的这一句
             </div>
           </div>
@@ -134,11 +126,7 @@ export function DesktopLyricsSettingsModal({ open, onClose }: { open: boolean; o
                 value={highlightColor}
                 onPick={setHighlightColor}
               />
-              <ColorPicker
-                label="桌面歌词高亮色（自定义）"
-                value={highlightColor}
-                onChange={setHighlightColor}
-              />
+              <ColorPicker label="桌面歌词高亮色（自定义）" value={highlightColor} onChange={setHighlightColor} />
             </div>
             <div className="music-dlset-hint">正在唱的那一行的颜色。与展开播放器的歌词高亮色相互独立。</div>
           </div>
@@ -147,21 +135,10 @@ export function DesktopLyricsSettingsModal({ open, onClose }: { open: boolean; o
           <div className="music-dlset-row">
             <div className="music-dlset-label">底色（未唱）</div>
             <div className="music-dlset-ctl">
-              <Swatches
-                label="桌面歌词底色"
-                colors={DL_BASE_COLORS}
-                value={baseColor}
-                onPick={setBaseColor}
-              />
-              <ColorPicker
-                label="桌面歌词底色（自定义）"
-                value={baseColor}
-                onChange={setBaseColor}
-              />
+              <Swatches label="桌面歌词底色" colors={DL_BASE_COLORS} value={baseColor} onPick={setBaseColor} />
+              <ColorPicker label="桌面歌词底色（自定义）" value={baseColor} onChange={setBaseColor} />
             </div>
-            <div className="music-dlset-hint">
-              其余未高亮行（上一句及更早）的颜色，用来把焦点让给当前句。
-            </div>
+            <div className="music-dlset-hint">其余未高亮行（上一句及更早）的颜色，用来把焦点让给当前句。</div>
           </div>
 
           {/* 行数 */}
@@ -199,9 +176,7 @@ export function DesktopLyricsSettingsModal({ open, onClose }: { open: boolean; o
           </Btn>
         </div>
 
-        <div className="music-dlset-note">
-          改动会立即生效并记住；桌面歌词窗开着时即时可见，没开则下次打开时应用。
-        </div>
+        <div className="music-dlset-note">改动会立即生效并记住；桌面歌词窗开着时即时可见，没开则下次打开时应用。</div>
       </div>
     </div>
   );

@@ -8,7 +8,13 @@ import type { SectionId } from '@screens/settings/catalog';
 import { SECTION_ICON } from '@screens/settings/icons';
 import { emphasis } from '@screens/settings/parts';
 import { SpecFixtureHost } from '@screens/settings/SpecCheck';
-import { AboutSection, GeneralSection, MediaSection, ResourceSection, TranslateSection } from '@screens/settings/sections';
+import {
+  AboutSection,
+  GeneralSection,
+  MediaSection,
+  ResourceSection,
+  TranslateSection,
+} from '@screens/settings/sections';
 
 /**
  * 设置页 —— 两栏壳 + 5 分组 32 项（《09》§4.1 / §4.2）。
@@ -127,10 +133,7 @@ export function SettingsScreen({
                 aria-current={on ? 'page' : undefined}
                 onClick={() => setSection(s.id)}
               >
-                <span
-                  className="set-nav-icon"
-                  style={{ width: SETTINGS.navItemIcon, height: SETTINGS.navItemIcon }}
-                >
+                <span className="set-nav-icon" style={{ width: SETTINGS.navItemIcon, height: SETTINGS.navItemIcon }}>
                   <Icon size={14} />
                 </span>
                 <span className="set-nav-label">{s.name}</span>
@@ -146,9 +149,7 @@ export function SettingsScreen({
               {active.name}
             </div>
             {/* blurb 缺省即不渲染这一行（显隐由 catalog 数据决定，不留空行、不崩） */}
-            {active.blurb ? (
-              <div className="settings-blurb">{emphasis(active.blurb)}</div>
-            ) : null}
+            {active.blurb ? <div className="settings-blurb">{emphasis(active.blurb)}</div> : null}
           </header>
 
           {active.id === 'general' ? (
@@ -161,11 +162,7 @@ export function SettingsScreen({
             />
           ) : null}
           {active.id === 'translate' ? (
-            <TranslateSection
-              status={status}
-              autoStart={serviceAutoStart}
-              onAutoStart={onServiceAutoStart}
-            />
+            <TranslateSection status={status} autoStart={serviceAutoStart} onAutoStart={onServiceAutoStart} />
           ) : null}
           {active.id === 'media' ? <MediaSection /> : null}
           {active.id === 'resource' ? <ResourceSection lib={lib} /> : null}

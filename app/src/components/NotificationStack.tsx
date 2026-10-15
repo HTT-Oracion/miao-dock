@@ -92,13 +92,7 @@ function NotificationCard({
       <span className="ntf-dot" style={{ background: KIND_TO_COLOR[toast.kind] }} aria-hidden="true" />
       <span className="ntf-text">{toast.text}</span>
       <span className="ntf-close">
-        <button
-          type="button"
-          className="ui-cbtn"
-          title="关闭通知"
-          aria-label="关闭通知"
-          onClick={close}
-        >
+        <button type="button" className="ui-cbtn" title="关闭通知" aria-label="关闭通知" onClick={close}>
           <X size={13} />
         </button>
       </span>

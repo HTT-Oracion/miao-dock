@@ -58,7 +58,11 @@ function check(name, cond, extra) {
 function fixtureEnv(base) {
   const src = path.join(base, 'manga-translator', 'src');
   const venv = path.join(base, 'manga-translator', 'venv');
-  const py = path.join(venv, process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python');
+  const py = path.join(
+    venv,
+    process.platform === 'win32' ? 'Scripts' : 'bin',
+    process.platform === 'win32' ? 'python.exe' : 'python',
+  );
   fs.mkdirSync(path.join(src, 'server'), { recursive: true });
   fs.mkdirSync(path.dirname(py), { recursive: true });
   fs.writeFileSync(path.join(src, 'server', 'main.py'), '# fixture\n');
@@ -109,7 +113,10 @@ function probeInterpreter(env) {
   });
   return new Promise((resolve, reject) => {
     let buf = '';
-    const to = setTimeout(() => { child.kill(); reject(new Error('boxsvc 15s 内未就绪')); }, 15000);
+    const to = setTimeout(() => {
+      child.kill();
+      reject(new Error('boxsvc 15s 内未就绪'));
+    }, 15000);
     child.stdout.on('data', (d) => {
       buf += d;
       const m = /MIAO_READY (\{.*\})/.exec(buf);
@@ -123,10 +130,16 @@ function probeInterpreter(env) {
           const py = (body?.items ?? []).find((i) => i.id === 'python');
           resolve(py ? py.path : null);
         })
-        .catch((e) => { child.kill(); reject(e); });
+        .catch((e) => {
+          child.kill();
+          reject(e);
+        });
     });
     child.stderr.on('data', (d) => (buf += d));
-    child.on('close', (code) => { clearTimeout(to); reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 400)}`)); });
+    child.on('close', (code) => {
+      clearTimeout(to);
+      reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 400)}`));
+    });
   });
 }
 
@@ -143,9 +156,11 @@ if (!fs.existsSync(RUST_BIN)) {
   const env = fixtureEnv(base);
   const launch = await launchInterpreter(env);
   const probe = await probeInterpreter(env);
-  check('B3.a 检测到的解释器路径与启动命令里的逐字节相同（MIAO_ENGINE_PYTHON 覆盖）',
+  check(
+    'B3.a 检测到的解释器路径与启动命令里的逐字节相同（MIAO_ENGINE_PYTHON 覆盖）',
     typeof launch === 'string' && launch === probe && launch === env.MIAO_ENGINE_PYTHON,
-    { launch, probe, env: env.MIAO_ENGINE_PYTHON });
+    { launch, probe, env: env.MIAO_ENGINE_PYTHON },
+  );
   fs.rmSync(base, { recursive: true, force: true });
 }
 
@@ -157,9 +172,11 @@ if (!fs.existsSync(RUST_BIN)) {
   const env = { MIAO_RUNTIME_ROOT: base, MIAO_ROOT: path.join(base, 'root'), MIAO_STATE_DIR: path.join(base, 'state') };
   const launch = await launchInterpreter(env);
   const probe = await probeInterpreter(env);
-  check('B3.b 未覆盖时检测与启动仍逐字节相同（默认值也只在一处推导）',
+  check(
+    'B3.b 未覆盖时检测与启动仍逐字节相同（默认值也只在一处推导）',
     typeof launch === 'string' && launch === probe && launch.length > 0,
-    { launch, probe });
+    { launch, probe },
+  );
   fs.rmSync(base, { recursive: true, force: true });
 }
 
@@ -170,8 +187,11 @@ if (!fs.existsSync(RUST_BIN)) {
   const env = { MIAO_RUNTIME_ROOT: base };
   const launch = await launchInterpreter(env);
   const seg = process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python');
-  check('B3.c 两边都落在 venv 的平台分叉路径上（同一处分叉，没有第二份）',
-    typeof launch === 'string' && launch.endsWith(seg), { launch, seg });
+  check(
+    'B3.c 两边都落在 venv 的平台分叉路径上（同一处分叉，没有第二份）',
+    typeof launch === 'string' && launch.endsWith(seg),
+    { launch, seg },
+  );
   fs.rmSync(base, { recursive: true, force: true });
 }
 
@@ -179,34 +199,45 @@ if (!fs.existsSync(RUST_BIN)) {
 //   （带绝对路径 + 装法），而不是让用户白等 240 s 再看到一句 Connection error。
 //   同时钉住反面：**mock 档不报** —— mock 本来就不要真引擎，报了会误导用户去装一个用不上的运行时。
 {
-  const warnsFor = (protocol) => new Promise((resolve, reject) => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), `miao-single-${protocol}-`));
-    const child = spawn(RUST_BIN, [], {
-      env: {
-        ...process.env,
-        MIAO_TOKEN: TOKEN,
-        MIAO_ENGINE_PROTOCOL: protocol,
-        MIAO_RUNTIME_ROOT: base,
-        MIAO_ROOT: path.join(base, 'root'),
-        MIAO_STATE_DIR: path.join(base, 'state'),
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
+  const warnsFor = (protocol) =>
+    new Promise((resolve, reject) => {
+      const base = fs.mkdtempSync(path.join(os.tmpdir(), `miao-single-${protocol}-`));
+      const child = spawn(RUST_BIN, [], {
+        env: {
+          ...process.env,
+          MIAO_TOKEN: TOKEN,
+          MIAO_ENGINE_PROTOCOL: protocol,
+          MIAO_RUNTIME_ROOT: base,
+          MIAO_ROOT: path.join(base, 'root'),
+          MIAO_STATE_DIR: path.join(base, 'state'),
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let buf = '';
+      const to = setTimeout(() => {
+        child.kill();
+        resolve(buf);
+      }, 4000);
+      child.stdout.on('data', (d) => (buf += d));
+      child.stderr.on('data', (d) => (buf += d));
+      child.on('close', () => {
+        clearTimeout(to);
+        resolve(buf);
+      });
+      child.on('error', (e) => {
+        clearTimeout(to);
+        reject(e);
+      });
     });
-    let buf = '';
-    const to = setTimeout(() => { child.kill(); resolve(buf); }, 4000);
-    child.stdout.on('data', (d) => (buf += d));
-    child.stderr.on('data', (d) => (buf += d));
-    child.on('close', () => { clearTimeout(to); resolve(buf); });
-    child.on('error', (e) => { clearTimeout(to); reject(e); });
-  });
 
   const real = (await warnsFor('real')).split(/\r?\n/).filter((l) => l.includes('引擎运行时未就绪'));
   const mock = (await warnsFor('mock')).split(/\r?\n/).filter((l) => l.includes('引擎运行时未就绪'));
-  check('B3.d real 档 + runtime 未装配 ⇒ 启动日志逐项报「运行时未就绪」（B1 验收②）',
+  check(
+    'B3.d real 档 + runtime 未装配 ⇒ 启动日志逐项报「运行时未就绪」（B1 验收②）',
     real.length === 5 && real.every((l) => /· (venvRoot|python|source|deps|patches)：.*[A-Z]:\\|~\//.test(l)),
-    real);
-  check('B3.d2 mock 档**不**报运行时未就绪（mock 不要真引擎，报了会误导用户）',
-    mock.length === 0, mock);
+    real,
+  );
+  check('B3.d2 mock 档**不**报运行时未就绪（mock 不要真引擎，报了会误导用户）', mock.length === 0, mock);
 }
 if (REFUTE) {
   if (failed > 0) {
@@ -266,10 +297,14 @@ if (REFUTE) {
   }
   check('REFUTE.restore — runtime_probe.rs 已按字节还原', fs.readFileSync(PROBE_RS, 'utf8') === original);
   console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed, allRed }));
-  console.log(`\nB3 路径单源化：正向 ${passed} / ${passed + failed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`);
+  console.log(
+    `\nB3 路径单源化：正向 ${passed} / ${passed + failed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`,
+  );
   process.exit(allRed && failed === 0 ? 0 : 1);
 }
 
 console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed }));
-console.log(`\nB3 路径单源化：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`);
+console.log(
+  `\nB3 路径单源化：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`,
+);
 process.exit(failed === 0 ? 0 : 1);

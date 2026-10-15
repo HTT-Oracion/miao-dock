@@ -173,8 +173,7 @@ const MUTATIONS = [
     name: 'M1 Node 靶 killTree 退回「只 SIGKILL 才 /F」的条件式（先礼不带 /F ⇒ 孤儿执行器）',
     file: NODE_WATCH,
     find: "      spawn('taskkill', ['/PID', String(pid), '/T', '/F'], {",
-    replace:
-      "      spawn('taskkill', ['/PID', String(pid), '/T', ...(sig === 'SIGKILL' ? ['/F'] : [])], {",
+    replace: "      spawn('taskkill', ['/PID', String(pid), '/T', ...(sig === 'SIGKILL' ? ['/F'] : [])], {",
     expect: ['S1'],
   },
   {
@@ -248,10 +247,7 @@ function main() {
     }
 
     console.log(`🔴 ${mut.name}`);
-    if (roundErr)
-      console.log(
-        `   ⚠ 本轮 runAll 抛异常（源文件已被破坏）：${String(roundErr.message).split('\n')[0]}`,
-      );
+    if (roundErr) console.log(`   ⚠ 本轮 runAll 抛异常（源文件已被破坏）：${String(roundErr.message).split('\n')[0]}`);
     for (const id of mut.expect) {
       total++;
       const isRed = (res[id] && res[id].ok === false) || (!res[id] && roundErr !== null);

@@ -153,11 +153,10 @@ function spawnDyingParent(target, beat) {
 
   // ── Rust 靶：直接用产品同源的 Rust 父夹具 ──
   if (target.parentStdin === 'pipe') {
-    const p = spawn(
-      RUST_BIN,
-      ['--child-watch-parent', String(PARENT_ALIVE_MS), ...innerArgs],
-      { stdio: 'ignore', env },
-    );
+    const p = spawn(RUST_BIN, ['--child-watch-parent', String(PARENT_ALIVE_MS), ...innerArgs], {
+      stdio: 'ignore',
+      env,
+    });
     return { exit: new Promise((r) => p.once('exit', () => r(p))) };
   }
 

@@ -65,7 +65,10 @@ const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'store', 'exec.rs');
  */
 function buildRust() {
   const r = spawnSync('cargo', ['build', '--bin', 'boxsvc'], {
-    cwd: CARGO_DIR, encoding: 'utf8', maxBuffer: 40 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: CARGO_DIR,
+    encoding: 'utf8',
+    maxBuffer: 40 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
   const log = `${r.stdout || ''}${r.stderr || ''}`.trim();
   return { ok: r.status === 0, log: log.split('\n').slice(-6).join(' | ').slice(0, 400) };
@@ -246,8 +249,7 @@ async function engineSeenLang(port) {
   }
 }
 
-const detail = async (port, token, taskId) =>
-  json(await request(port, 'GET', `/api/v1/tasks/${taskId}`, { token }));
+const detail = async (port, token, taskId) => json(await request(port, 'GET', `/api/v1/tasks/${taskId}`, { token }));
 
 const TERMINAL = ['done', 'partial_failed', 'failed', 'canceled'];
 
@@ -341,8 +343,7 @@ async function runAll() {
     // ---- R5：同一个 taskId 真的重跑过了，且页集合不变 ----
     const second = await waitTask(PORT, TOKEN, taskId);
     const failedSeqs2 = (second?.items ?? []).filter((i) => i.status === 'failed').map((i) => i.seq);
-    const reRan =
-      Date.parse(second?.finishedAt || '') > Date.parse(first?.finishedAt || '');
+    const reRan = Date.parse(second?.finishedAt || '') > Date.parse(first?.finishedAt || '');
     check(
       'R5',
       '同一条任务**又跑了一遍**（终态时间戳前移）且页集合不变 ⇒ 是"同一件事再来一次"，不是新任务',
@@ -384,8 +385,9 @@ async function runAll() {
     check(
       'R10',
       '重试**不改方向**（复用同一 task ⇒ 继承原方向；重试后落库的 `lang` 与首次一致）',
-      afterRetry?.lang?.from === 'ja' && afterRetry?.lang?.to === 'zh'
-        && JSON.stringify(afterRetry.lang) === JSON.stringify(firstState?.lang),
+      afterRetry?.lang?.from === 'ja' &&
+        afterRetry?.lang?.to === 'zh' &&
+        JSON.stringify(afterRetry.lang) === JSON.stringify(firstState?.lang),
       `首次 ${JSON.stringify(firstState?.lang)} → 重试后 ${JSON.stringify(afterRetry?.lang)}`,
     );
 
@@ -398,7 +400,9 @@ async function runAll() {
       'R6',
       '前端「重试」打的是 `POST /tasks/{id}/retry`，**不再**打 `/library/{name}/resume`',
       seg.includes('/retry') && seg.includes('t.taskId') && !seg.includes('/resume'),
-      seg ? `retry 段 ${seg.length} 字：/retry=${seg.includes('/retry')} t.taskId=${seg.includes('t.taskId')} /resume=${seg.includes('/resume')}` : '未定位到 App.tsx 的 retry 段',
+      seg
+        ? `retry 段 ${seg.length} 字：/retry=${seg.includes('/retry')} t.taskId=${seg.includes('t.taskId')} /resume=${seg.includes('/resume')}`
+        : '未定位到 App.tsx 的 retry 段',
     );
   } finally {
     await killProc(service);
@@ -438,7 +442,8 @@ const MUTATIONS = [
       {
         file: RUST_EXEC_SRC,
         find: '        Ok(RetryOutcome { task_id: task_id.to_string(), reused })',
-        replace: '        Ok(RetryOutcome { task_id: format!("{task_id}-refute"), reused }) // refute：重试不再复用原 taskId',
+        replace:
+          '        Ok(RetryOutcome { task_id: format!("{task_id}-refute"), reused }) // refute：重试不再复用原 taskId',
       },
     ],
     expect: ['R2', 'R3', 'R4', 'R5'],
@@ -461,7 +466,8 @@ const MUTATIONS = [
         file: RUST_HANDLERS_SRC,
         // ⚠️ 多行锚点按 CRLF 拼（Rust 源是 CRLF，用 `\n` 拼的 `includes()` 永远为假）。
         find: 'fn is_supported_direction(d: &Lang) -> bool {\r\n    TRANSLATE_DIRECTIONS.iter().any(|(f, t)| *f == d.from && *t == d.to)\r\n}',
-        replace: 'fn is_supported_direction(d: &Lang) -> bool {\r\n    let _ = d;\r\n    true // refute：白名单恒通过\r\n}',
+        replace:
+          'fn is_supported_direction(d: &Lang) -> bool {\r\n    let _ = d;\r\n    true // refute：白名单恒通过\r\n}',
       },
     ],
     expect: ['R7'],
@@ -473,7 +479,8 @@ const MUTATIONS = [
         file: RUST_EXEC_SRC,
         // ⚠️ 多行锚点按 CRLF 拼；缩进照抄源码（12 空格，写错就变成"锚点未找到"）。
         find: '            lang_from: task.lang.from.clone(),\r\n            lang_to: task.lang.to.clone(),',
-        replace: '            lang_from: "ja".to_string(), // refute：方向写死\r\n            lang_to: "zh".to_string(),',
+        replace:
+          '            lang_from: "ja".to_string(), // refute：方向写死\r\n            lang_to: "zh".to_string(),',
       },
     ],
     expect: ['R9'],
@@ -531,7 +538,9 @@ const main = async () => {
       const find = e.find.replace(/\r?\n/g, eol);
       const replace = e.replace.replace(/\r?\n/g, eol);
       if (!txt.includes(find)) {
-        console.log(`⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`);
+        console.log(
+          `⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`,
+        );
         anchorMissing = true;
         break;
       }
@@ -540,7 +549,10 @@ const main = async () => {
     // 🔴 锚点缺失时**整条跳过**，不能只跳那一个 edit：继续往下跑 `runAll()`，测的还是
     //    未被破坏的产物 ⇒ 那条 expect 必然"该红没红"，被记成**假阳性** ——
     //    而真相是"这条根本没反证"。两种故障长得几乎一样，只有这条 flag 能分开它们。
-    if (anchorMissing) { skipped += mut.expect.length; continue; }
+    if (anchorMissing) {
+      skipped += mut.expect.length;
+      continue;
+    }
     // 🔴 改完 Rust 源码**必须重编**才作数：不编就等于拿旧产物跑断言，红的绿的都说明不了问题。
     const built = buildRust();
     if (!built.ok) {
@@ -589,8 +601,10 @@ const main = async () => {
   }
   // 源码还原了，**产物也必须还原** —— 否则留下一个「源码是好的、跑起来是坏的」的机器。
   const rebuilt = buildRust();
-  if (!rebuilt.ok) { restoreFail++; console.log(`  ✗ cargo build 还原失败：${rebuilt.log}`); }
-  else console.log('  ✓ cargo build 已把靶子重编回未破坏状态');
+  if (!rebuilt.ok) {
+    restoreFail++;
+    console.log(`  ✗ cargo build 还原失败：${rebuilt.log}`);
+  } else console.log('  ✓ cargo build 已把靶子重编回未破坏状态');
 
   console.log('\n' + '─'.repeat(56));
   console.log(`REFUTE: ${red}/${total} 条按预期变红（应执行 ${expectedTotal} 条）`);

@@ -31,4 +31,3 @@ export function ResourceSection({ lib }: { lib: LibraryResponse | null }) {
     </>
   );
 }
-

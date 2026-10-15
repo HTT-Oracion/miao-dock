@@ -11,13 +11,7 @@ export function itemOf(g: SettingGroup, id: string): SettingItem {
 }
 
 /** 整组小节按 catalog 顺序渲染；`live` 的项走 `render`，其余一律 PendingRow */
-export function Group({
-  group,
-  render,
-}: {
-  group: SettingGroup;
-  render?: (item: SettingItem) => ReactNode;
-}) {
+export function Group({ group, render }: { group: SettingGroup; render?: (item: SettingItem) => ReactNode }) {
   return (
     <div className="set-group">
       {group.title ? <SubTitle>{group.title}</SubTitle> : null}
@@ -34,7 +28,11 @@ export function Group({
          * 而通栏块里标题的位置由内容自己定，强行塞进去只会多一层嵌套。
          */
         if (item.layout === 'block') return <div key={item.id}>{render(item)}</div>;
-        return <Row key={item.id} item={item}>{render(item)}</Row>;
+        return (
+          <Row key={item.id} item={item}>
+            {render(item)}
+          </Row>
+        );
       })}
     </div>
   );

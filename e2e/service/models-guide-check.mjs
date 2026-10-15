@@ -77,8 +77,12 @@ async function modelFiles(extraEnv) {
     });
     let out = '';
     let err = '';
-    c.stdout.on('data', (d) => { out += d; });
-    c.stderr.on('data', (d) => { err += d; });
+    c.stdout.on('data', (d) => {
+      out += d;
+    });
+    c.stderr.on('data', (d) => {
+      err += d;
+    });
     c.on('error', reject);
     c.on('close', (code) => resolve({ code, out, err }));
   });
@@ -131,7 +135,10 @@ if (!fs.existsSync(RUST_BIN)) {
   const mism = [];
   m.files.forEach((f, i) => {
     const g = got[i];
-    if (!g) { mism.push(`#${i} 缺失`); return; }
+    if (!g) {
+      mism.push(`#${i} 缺失`);
+      return;
+    }
     if (g.id !== f.id) mism.push(`#${i} id ${g.id} ≠ ${f.id}（顺序也要一致）`);
     const want = absFor(f, root);
     if (g.path !== want) mism.push(`${f.id}: ${g.path} ≠ ${want}`);
@@ -142,12 +149,20 @@ if (!fs.existsSync(RUST_BIN)) {
   const appBad = m.files.filter((f, i) => got[i] && got[i].applicable !== applicableOf(f)).map((f) => f.id);
   check('W3 真清单：applicable 与下载器的平台判据一致', appBad.length === 0, appBad);
 
-  const sizeBad = m.files.filter((f, i) => got[i] && (got[i].sizeBytes ?? null) !== (f.sizeBytes ?? null)).map((f) => f.id);
+  const sizeBad = m.files
+    .filter((f, i) => got[i] && (got[i].sizeBytes ?? null) !== (f.sizeBytes ?? null))
+    .map((f) => f.id);
   check('W3b 真清单：sizeBytes 原样转发（界面要说"有多大"就不能自己估）', sizeBad.length === 0, sizeBad);
 
-  check('W4 空模型根 ⇒ 逐条 ready 全假、三个聚合布尔全假',
-    got.length > 0 && got.every((f) => f.ready === false) && body.visualReady === false && body.sakuraReady === false && body.lastVerifiedAt === null,
-    { anyReady: got.filter((f) => f.ready).map((f) => f.id) });
+  check(
+    'W4 空模型根 ⇒ 逐条 ready 全假、三个聚合布尔全假',
+    got.length > 0 &&
+      got.every((f) => f.ready === false) &&
+      body.visualReady === false &&
+      body.sakuraReady === false &&
+      body.lastVerifiedAt === null,
+    { anyReady: got.filter((f) => f.ready).map((f) => f.id) },
+  );
 
   fs.rmSync(root, { recursive: true, force: true });
 }
@@ -184,22 +199,36 @@ function buildSmallFixture(mutate) {
   const body = await modelFiles({ MIAO_MODEL_MANIFEST: mp, MIAO_MODEL_ROOT: root });
   const by = Object.fromEntries((body.files ?? []).map((f) => [f.id, f]));
 
-  check('W5 小清单：四条一条不少', (body.files ?? []).length === 4, (body.files ?? []).map((f) => f.id));
+  check(
+    'W5 小清单：四条一条不少',
+    (body.files ?? []).length === 4,
+    (body.files ?? []).map((f) => f.id),
+  );
 
-  check('W6 就绪判据 = 在位**且大小一致**（a/b 造了真文件 ⇒ 就绪；c/d 不在 ⇒ 未就绪）',
+  check(
+    'W6 就绪判据 = 在位**且大小一致**（a/b 造了真文件 ⇒ 就绪；c/d 不在 ⇒ 未就绪）',
     by.a?.ready === true && by.b?.ready === true && by.c?.ready === false && by.d?.ready === false,
-    { a: by.a?.ready, b: by.b?.ready, c: by.c?.ready, d: by.d?.ready });
+    { a: by.a?.ready, b: by.b?.ready, c: by.c?.ready, d: by.d?.ready },
+  );
 
-  check('W7 三个聚合布尔与逐条**算自同一份判据**（visual 全就绪 ⇒ true；清单无 llm set ⇒ false）',
-    body.visualReady === true && body.sakuraReady === false, { visualReady: body.visualReady, sakuraReady: body.sakuraReady });
+  check(
+    'W7 三个聚合布尔与逐条**算自同一份判据**（visual 全就绪 ⇒ true；清单无 llm set ⇒ false）',
+    body.visualReady === true && body.sakuraReady === false,
+    { visualReady: body.visualReady, sakuraReady: body.sakuraReady },
+  );
 
   const wantApp = Object.fromEntries(manifest.files.map((f) => [f.id, applicableOf(f)]));
-  check('W8 applicable 逐条与 Node 独立算的一致',
-    manifest.files.every((f) => by[f.id]?.applicable === wantApp[f.id]), { got: Object.fromEntries(Object.entries(by).map(([k, v]) => [k, v.applicable])), want: wantApp });
+  check(
+    'W8 applicable 逐条与 Node 独立算的一致',
+    manifest.files.every((f) => by[f.id]?.applicable === wantApp[f.id]),
+    { got: Object.fromEntries(Object.entries(by).map(([k, v]) => [k, v.applicable])), want: wantApp },
+  );
 
-  check('W9 有 linkTo ⇒ 目标是 <root>/src/<linkTo>，不是 <root>/<dest>（引擎实际打开的那一个）',
+  check(
+    'W9 有 linkTo ⇒ 目标是 <root>/src/<linkTo>，不是 <root>/<dest>（引擎实际打开的那一个）',
     by.b?.path === absFor(manifest.files[1], root) && by.b.path.includes(`${path.sep}src${path.sep}`),
-    { got: by.b?.path, want: absFor(manifest.files[1], root) });
+    { got: by.b?.path, want: absFor(manifest.files[1], root) },
+  );
 
   // W6b：**在位但大小与清单不符** ⇒ 该条必须未就绪。
   // 🔴 这一条专抓"存在即就绪"的退化：只靠 c/d（文件整个不在）是抓不住的 ——
@@ -207,8 +236,10 @@ function buildSmallFixture(mutate) {
   fs.writeFileSync(path.join(root, 'models-store', 'a.bin'), Buffer.alloc(4));
   const body2 = await modelFiles({ MIAO_MODEL_MANIFEST: mp, MIAO_MODEL_ROOT: root });
   const by2 = Object.fromEntries((body2.files ?? []).map((f) => [f.id, f]));
-  check('W6b 文件在、大小与清单不符 ⇒ 该条未就绪，其余不受影响',
-    by2.a?.ready === false && by2.b?.ready === true, { a: by2.a?.ready, b: by2.b?.ready });
+  check('W6b 文件在、大小与清单不符 ⇒ 该条未就绪，其余不受影响', by2.a?.ready === false && by2.b?.ready === true, {
+    a: by2.a?.ready,
+    b: by2.b?.ready,
+  });
 
   fs.rmSync(root, { recursive: true, force: true });
 }
@@ -218,12 +249,17 @@ function buildSmallFixture(mutate) {
 // 🔴 D8 验收②：证明清单是**渲染**出来的。若产品把落点/条目写死，改了副本也不会变 ⇒ 红。
 //    这也是本脚本**唯一**不依赖"再跑一遍产品"的证明方式（D-178：不能两边写死同一个常量）。
 {
-  const { root, mp, manifest } = buildSmallFixture((m) => { m.files[0].dest = 'models-store/moved-a.bin'; });
+  const { root, mp, manifest } = buildSmallFixture((m) => {
+    m.files[0].dest = 'models-store/moved-a.bin';
+  });
   const body = await modelFiles({ MIAO_MODEL_MANIFEST: mp, MIAO_MODEL_ROOT: root });
   const a = (body.files ?? []).find((f) => f.id === 'a');
   const want = absFor(manifest.files[0], root);
-  check('W10 改清单副本一条 dest ⇒ 渲染出的绝对路径跟着变（证明是渲染不是写死）',
-    a?.path === want && a.path.endsWith('moved-a.bin'), { got: a?.path, want });
+  check(
+    'W10 改清单副本一条 dest ⇒ 渲染出的绝对路径跟着变（证明是渲染不是写死）',
+    a?.path === want && a.path.endsWith('moved-a.bin'),
+    { got: a?.path, want },
+  );
   fs.rmSync(root, { recursive: true, force: true });
 }
 
@@ -233,13 +269,17 @@ function buildSmallFixture(mutate) {
 {
   const diag = fs.readFileSync(ENGINE_DIAG, 'utf8');
   const api = fs.readFileSync(ENGINE_API, 'utf8');
-  check('W11 前端：诊断视图把清单交给渲染组件，且用服务端给的 path（不是自己拼的）',
-    /<ModelFiles\s+files=\{s\?\.models\?\.files\}/.test(diag) && diag.includes('{f.path}') && /files:\s*ModelFileStatus\[\]/.test(api),
+  check(
+    'W11 前端：诊断视图把清单交给渲染组件，且用服务端给的 path（不是自己拼的）',
+    /<ModelFiles\s+files=\{s\?\.models\?\.files\}/.test(diag) &&
+      diag.includes('{f.path}') &&
+      /files:\s*ModelFileStatus\[\]/.test(api),
     {
       wired: /<ModelFiles\s+files=\{s\?\.models\?\.files\}/.test(diag),
       usesServerPath: diag.includes('{f.path}'),
       typed: /files:\s*ModelFileStatus\[\]/.test(api),
-    });
+    },
+  );
   // 清单条目的类型必须逐字来自服务端契约（少一个字段，界面就读到 undefined）
   const need = ['id', 'dest', 'applicable', 'ready', 'path'];
   const missing = need.filter((k) => !new RegExp(`\\b${k}\\b`).test(api));
@@ -283,8 +323,12 @@ if (REFUTE) {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       let out = '';
-      c.stdout.on('data', (d) => { out += d; });
-      c.stderr.on('data', (d) => { out += d; });
+      c.stdout.on('data', (d) => {
+        out += d;
+      });
+      c.stderr.on('data', (d) => {
+        out += d;
+      });
       c.on('error', () => resolve({ code: -1, out }));
       c.on('close', (code) => resolve({ code, out }));
     });
@@ -295,11 +339,17 @@ if (REFUTE) {
   {
     // 常量用**正斜杠**：Windows 上同样是合法路径，且彻底避开 Rust 字符串转义
     // （`"C:\fixed"` 里的 `\f` 是**编译错误**，会让"变异成功但编不过"冒充成"断言红了"）。
-    const restore = mutateFile(MODEL_STATUS_RS, 'root_dir.join(f.get("dest").and_then(|v| v.as_str()).unwrap_or(""))',
-      'PathBuf::from("C:/fixed-by-m1")');
+    const restore = mutateFile(
+      MODEL_STATUS_RS,
+      'root_dir.join(f.get("dest").and_then(|v| v.as_str()).unwrap_or(""))',
+      'PathBuf::from("C:/fixed-by-m1")',
+    );
     const built = await rebuild();
     const r = await runForward();
-    const redOn = r.out.split('\n').filter((l) => l.trimStart().startsWith('✗')).map((l) => l.trim().slice(0, 46));
+    const redOn = r.out
+      .split('\n')
+      .filter((l) => l.trimStart().startsWith('✗'))
+      .map((l) => l.trim().slice(0, 46));
     // 🔴 判据是 **W2 + W10**（不是 W9）：W9 走的是 `linkTo` 分支，而这个变异只动了 `dest`
     //    分支 —— 拿 W9 当判据会永远红不了，等于没反证。W10 才是"写死"的直接反面。
     const red = built && r.code !== 0 && hasRed(r.out, 'W2') && hasRed(r.out, 'W10');
@@ -345,8 +395,10 @@ if (REFUTE) {
   {
     const bad = [];
     if (fs.readFileSync(MODEL_STATUS_RS, 'utf8').includes('fixed-by-m1')) bad.push('model_status.rs 残留 M1');
-    if (!fs.readFileSync(MODEL_STATUS_RS, 'utf8').includes('Some(want) => got == want,')) bad.push('model_status.rs 残留 M2');
-    if (!fs.readFileSync(ENGINE_DIAG, 'utf8').includes('<ModelFiles files={s?.models?.files} />')) bad.push('EngineDiag.tsx 未还原');
+    if (!fs.readFileSync(MODEL_STATUS_RS, 'utf8').includes('Some(want) => got == want,'))
+      bad.push('model_status.rs 残留 M2');
+    if (!fs.readFileSync(ENGINE_DIAG, 'utf8').includes('<ModelFiles files={s?.models?.files} />'))
+      bad.push('EngineDiag.tsx 未还原');
     check('R1 变异收尾：两处源码按字节还原', bad.length === 0, bad);
   }
 }

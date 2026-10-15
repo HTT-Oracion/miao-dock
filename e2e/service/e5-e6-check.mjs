@@ -49,7 +49,10 @@ const IDLE_MS = 1500;
 /** 看护的巡检间隔（`createIdleWatcher` 默认 5s）。压小它，让"到点卸载"落在这个脚本的耐心内 */
 const IDLE_TICK_MS = 250;
 
-const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+const sleep = (ms) =>
+  new Promise((r) => {
+    setTimeout(r, ms);
+  });
 
 // ------------------------------------------------------------------ 进程 / 端口
 
@@ -57,7 +60,13 @@ function portOpen(port, timeoutMs = 300) {
   return new Promise((resolve) => {
     const s = net.connect({ host: '127.0.0.1', port });
     let settled = false;
-    const done = (v) => { if (!settled) { settled = true; s.destroy(); resolve(v); } };
+    const done = (v) => {
+      if (!settled) {
+        settled = true;
+        s.destroy();
+        resolve(v);
+      }
+    };
     s.setTimeout(timeoutMs);
     s.once('connect', () => done(true));
     s.once('timeout', () => done(false));
@@ -76,13 +85,15 @@ async function findFreePort(start, { avoid = [] } = {}) {
 /** 直连 ③ 的 HTTP 面（**独立于被测代码**的第二取证路径）。返回 `{status, body}` 或 `null` */
 function httpGet(port, pathname, timeoutMs = 800) {
   return new Promise((resolve) => {
-    const req = http.request({ host: '127.0.0.1', port, path: pathname, method: 'GET', timeout: timeoutMs },
-      (res) => {
-        const chunks = [];
-        res.on('data', (c) => chunks.push(c));
-        res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8') }));
-      });
-    req.on('timeout', () => { req.destroy(); resolve(null); });
+    const req = http.request({ host: '127.0.0.1', port, path: pathname, method: 'GET', timeout: timeoutMs }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8') }));
+    });
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(null);
+    });
     req.on('error', () => resolve(null));
     req.end();
   });
@@ -95,7 +106,9 @@ async function llmModelId(port) {
   try {
     const parsed = JSON.parse(res.body);
     return parsed?.data?.[0]?.id ?? null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function spawnProc(entry, env, tag, extraArgv = []) {
@@ -105,9 +118,17 @@ function spawnProc(entry, env, tag, extraArgv = []) {
   child.stdout.on('data', (d) => {
     st.out += d.toString();
     const m = /MIAO_(?:ENGINE_)?READY (\{.*\})/.exec(st.out);
-    if (m && !st.ready) { try { st.ready = JSON.parse(m[1]); } catch { /* 继续等 */ } }
+    if (m && !st.ready) {
+      try {
+        st.ready = JSON.parse(m[1]);
+      } catch {
+        /* 继续等 */
+      }
+    }
   });
-  child.stderr.on('data', (d) => { st.err += d.toString(); });
+  child.stderr.on('data', (d) => {
+    st.err += d.toString();
+  });
   return st;
 }
 
@@ -158,7 +179,13 @@ function request(port, method, pathname, { headers = {}, body = null, token } = 
   });
 }
 
-const json = (res) => { try { return JSON.parse(res.body.toString('utf8')); } catch { return null; } };
+const json = (res) => {
+  try {
+    return JSON.parse(res.body.toString('utf8'));
+  } catch {
+    return null;
+  }
+};
 
 /** 契约 §5.2：payload + images[]（单张就够 —— 本脚本测的是引擎生命周期，不是批量） */
 function buildMultipart({ payload, images }) {
@@ -169,8 +196,10 @@ function buildMultipart({ payload, images }) {
   push(JSON.stringify(payload));
   push('\r\n');
   for (const img of images) {
-    push(`--${boundary}\r\nContent-Disposition: form-data; name="images[]"; filename="${img.filename}"\r\n`
-      + `Content-Type: ${img.contentType || 'application/octet-stream'}\r\n\r\n`);
+    push(
+      `--${boundary}\r\nContent-Disposition: form-data; name="images[]"; filename="${img.filename}"\r\n` +
+        `Content-Type: ${img.contentType || 'application/octet-stream'}\r\n\r\n`,
+    );
     parts.push(img.data);
     push('\r\n');
   }
@@ -256,11 +285,15 @@ async function run() {
   const llmPort = await findFreePort(8900);
   const rootDir = path.join(TMP, 'Box 漫画');
 
-  const engine = spawnProc(ENGINE_ENTRY, {
-    MIAO_ENGINE_PORT: String(enginePort),
-    MIAO_ENGINE_ITEM_MS: '40',
-    MIAO_ENGINE_OOM_TIMES: '1', // E5 的现场条件：第 1 次翻译显存不足，第 2 次起正常
-  }, 'engine');
+  const engine = spawnProc(
+    ENGINE_ENTRY,
+    {
+      MIAO_ENGINE_PORT: String(enginePort),
+      MIAO_ENGINE_ITEM_MS: '40',
+      MIAO_ENGINE_OOM_TIMES: '1', // E5 的现场条件：第 1 次翻译显存不足，第 2 次起正常
+    },
+    'engine',
+  );
 
   let service = null;
   try {
@@ -280,7 +313,8 @@ async function run() {
       MIAO_IDLE_LLM_MS: String(IDLE_MS),
       MIAO_IDLE_TICK_MS: String(IDLE_TICK_MS),
     };
-    service = spawnProc(SERVICE_ENTRY, svcEnv, 'service');    const svc = await waitReady(service);
+    service = spawnProc(SERVICE_ENTRY, svcEnv, 'service');
+    const svc = await waitReady(service);
     const port = svc.port;
     console.log(`[e5e6] service=${port} engine=${eng.port} ③=${llmPort} 落盘=${rootDir}`);
 
@@ -291,12 +325,13 @@ async function run() {
       if (tierBefore) break;
       await sleep(100);
     }
-    check('E5.0 前置：③ 已按**用户配置档位**拉起（`MIAO_ENGINE_TIER=small` ⇒ 自己报 `sakura-mock:small`）'
-      + ' —— 否则"降档"根本没有可降的空间，后面的断言会变成空转',
-      tierBefore === 'sakura-mock:small', String(tierBefore));
-    const pidBefore = Number.parseInt(
-      (await waitLog(service, /③ LLM 就绪：[^（]*（pid=(\d+)）/))?.[1] ?? '', 10,
+    check(
+      'E5.0 前置：③ 已按**用户配置档位**拉起（`MIAO_ENGINE_TIER=small` ⇒ 自己报 `sakura-mock:small`）' +
+        ' —— 否则"降档"根本没有可降的空间，后面的断言会变成空转',
+      tierBefore === 'sakura-mock:small',
+      String(tierBefore),
     );
+    const pidBefore = Number.parseInt((await waitLog(service, /③ LLM 就绪：[^（]*（pid=(\d+)）/))?.[1] ?? '', 10);
 
     // ============================================================ E5 · 降档重试（§8）
     const r1 = await submitOne(port, 'E5 降档');
@@ -304,18 +339,24 @@ async function run() {
     const t1 = await waitTask(port, r1.json.taskId);
     const t1Items = t1.items || [];
 
-    check('E5.1 §8.2：OOM 后**降一档重试**，这一张最终仍成功（对用户是无感的，不是失败）',
+    check(
+      'E5.1 §8.2：OOM 后**降一档重试**，这一张最终仍成功（对用户是无感的，不是失败）',
       t1.status === 'done' && t1Items.length === 1 && t1Items[0].status === 'success',
-      `任务=${t1.status} 明细=${JSON.stringify(t1Items.map((i) => ({ seq: i.seq, status: i.status, reason: i.reason })))}`);
+      `任务=${t1.status} 明细=${JSON.stringify(t1Items.map((i) => ({ seq: i.seq, status: i.status, reason: i.reason })))}`,
+    );
 
-    check('E5.2 现场条件成立：引擎**确实**先报了一次显存不足（否则 E5.1 是"没遇到 OOM 也能过"的假绿）',
+    check(
+      'E5.2 现场条件成立：引擎**确实**先报了一次显存不足（否则 E5.1 是"没遇到 OOM 也能过"的假绿）',
       countOf(engine.out, '注入显存不足') === 1 && countOf(engine.out, 'OOM_TIMES=1') === 1,
-      `注入 ${countOf(engine.out, '注入显存不足')} 次`);
+      `注入 ${countOf(engine.out, '注入显存不足')} 次`,
+    );
 
-    check('E5.3 §8.1「仅降一次」+ §8.2 留痕：日志里「引擎已从 small 降至 tiny」**恰好一次**'
-      + '（出现两次就说明闩没生效；一次都不出现说明降档是"悄悄做的"）',
+    check(
+      'E5.3 §8.1「仅降一次」+ §8.2 留痕：日志里「引擎已从 small 降至 tiny」**恰好一次**' +
+        '（出现两次就说明闩没生效；一次都不出现说明降档是"悄悄做的"）',
       countOf(service.out, '引擎已从 small 降至 tiny') === 1,
-      `出现 ${countOf(service.out, '引擎已从 small 降至 tiny')} 次`);
+      `出现 ${countOf(service.out, '引擎已从 small 降至 tiny')} 次`,
+    );
 
     // 降档是否**真的落到引擎**：直接问新 ③ 自己是哪一档
     let tierAfter = null;
@@ -324,41 +365,60 @@ async function run() {
       if (tierAfter === 'sakura-mock:tiny') break;
       await sleep(100);
     }
-    check('E5.4 降档**真的落到引擎**：③ 现在自报 `sakura-mock:tiny`（不是只改了服务侧的一句日志）',
-      tierAfter === 'sakura-mock:tiny', String(tierAfter));
+    check(
+      'E5.4 降档**真的落到引擎**：③ 现在自报 `sakura-mock:tiny`（不是只改了服务侧的一句日志）',
+      tierAfter === 'sakura-mock:tiny',
+      String(tierAfter),
+    );
 
     const pids = [...service.out.matchAll(/③ LLM 就绪：[^（]*（pid=(\d+)）/g)].map((m) => Number.parseInt(m[1], 10));
-    check('E5.5 降档 = **换了一个进程**（换了权重就得换进程）：③ 的 pid 与降档前不同，且端口始终在同一个上听',
+    check(
+      'E5.5 降档 = **换了一个进程**（换了权重就得换进程）：③ 的 pid 与降档前不同，且端口始终在同一个上听',
       pids.length === 2 && pids[0] === pidBefore && pids[1] !== pids[0] && (await portOpen(llmPort)),
-      `pid ${pids.join(' → ')}（降档前=${pidBefore}）`);
+      `pid ${pids.join(' → ')}（降档前=${pidBefore}）`,
+    );
 
-    check('E5.6 §8.3 降档是**内部行为**、不新增客户端状态机节点：任务详情里 8 态仍是 done，'
-      + '页级 `retryCount` 为 0（一次 OOM 只走降档一次，**不额外计 item 重试**）',
+    check(
+      'E5.6 §8.3 降档是**内部行为**、不新增客户端状态机节点：任务详情里 8 态仍是 done，' +
+        '页级 `retryCount` 为 0（一次 OOM 只走降档一次，**不额外计 item 重试**）',
       t1Items[0].retryCount === 0 && t1.status === 'done',
-      `retryCount=${t1Items[0].retryCount}`);
+      `retryCount=${t1Items[0].retryCount}`,
+    );
 
     // ============================================================ E6 · 空闲卸载 + 懒加载恢复（§9）
     // 等 ③ 自己消失（阈值 1.5s、巡检 250ms，几秒内的事）
     let unloaded = false;
     const unloadDeadline = Date.now() + 20_000;
     while (Date.now() < unloadDeadline) {
-      if (!(await portOpen(llmPort, 200))) { unloaded = true; break; }
+      if (!(await portOpen(llmPort, 200))) {
+        unloaded = true;
+        break;
+      }
       await sleep(120);
     }
-    check('E6.1 §9.1 Tier1：空闲达阈值后 ③ **真的退出**（端口不通 —— 不是"以为退了"）',
-      unloaded, unloaded ? `端口 ${llmPort} 已不通` : `端口 ${llmPort} 20s 后仍在听，空闲卸载没发生`);
+    check(
+      'E6.1 §9.1 Tier1：空闲达阈值后 ③ **真的退出**（端口不通 —— 不是"以为退了"）',
+      unloaded,
+      unloaded ? `端口 ${llmPort} 已不通` : `端口 ${llmPort} 20s 后仍在听，空闲卸载没发生`,
+    );
 
     const health = await request(port, 'GET', '/api/v1/health');
     const hp = json(health);
-    check('E6.2 §9.4「卸载 ≠ 未就绪」：③ 卸载后服务**仍 running**、`/health` 照常 200'
-      + '（若这里退了，是"未就绪"而不是"卸载"，客户端文案必须能区分这两件事）',
-      health.status === 200 && hp?.status === 'ok' && hp?.sidecar?.state === 'running'
-        && !(await portOpen(llmPort, 200)),
-      `health=${health.status} status=${hp?.status} sidecar=${hp?.sidecar?.state} ③端口通=${await portOpen(llmPort, 200)}`);
+    check(
+      'E6.2 §9.4「卸载 ≠ 未就绪」：③ 卸载后服务**仍 running**、`/health` 照常 200' +
+        '（若这里退了，是"未就绪"而不是"卸载"，客户端文案必须能区分这两件事）',
+      health.status === 200 &&
+        hp?.status === 'ok' &&
+        hp?.sidecar?.state === 'running' &&
+        !(await portOpen(llmPort, 200)),
+      `health=${health.status} status=${hp?.status} sidecar=${hp?.sidecar?.state} ③端口通=${await portOpen(llmPort, 200)}`,
+    );
 
-    check('E6.3 卸载事件留痕：日志里有「空闲 … ⇒ 卸载 ③ LLM」（E6 的现场凭证，排障时按这句定位）',
+    check(
+      'E6.3 卸载事件留痕：日志里有「空闲 … ⇒ 卸载 ③ LLM」（E6 的现场凭证，排障时按这句定位）',
       /空闲 \d+s ≥ \d+s ⇒ 卸载 ③ LLM/.test(service.out),
-      (service.out.match(/空闲 \d+s ≥ \d+s ⇒ 卸载 ③ LLM/) || ['无'])[0]);
+      (service.out.match(/空闲 \d+s ≥ \d+s ⇒ 卸载 ③ LLM/) || ['无'])[0],
+    );
 
     // 懒加载恢复：再来一个任务，③ 必须被自动拉回来，且任务成功
     const r2 = await submitOne(port, 'E6 懒加载');
@@ -366,19 +426,26 @@ async function run() {
     const t2 = await waitTask(port, r2.json.taskId);
 
     const pids2 = [...service.out.matchAll(/③ LLM 就绪：[^（]*（pid=(\d+)）/g)].map((m) => Number.parseInt(m[1], 10));
-    check('E6.4 §9.3 懒加载恢复：③ 被自动拉起（**新 pid**）、端口重新在听，任务照常成功'
-      + '（对用户表现为"这张稍慢"，而不是失败）',
+    check(
+      'E6.4 §9.3 懒加载恢复：③ 被自动拉起（**新 pid**）、端口重新在听，任务照常成功' +
+        '（对用户表现为"这张稍慢"，而不是失败）',
       t2.status === 'done' && pids2.length === 3 && pids2[2] !== pids2[1] && (await portOpen(llmPort)),
-      `任务=${t2.status} pid 轨迹=${pids2.join(' → ')}`);
+      `任务=${t2.status} pid 轨迹=${pids2.join(' → ')}`,
+    );
 
-    check('E6.5 §8.3 与 §9.3 的交叉：**重启后仍跑降档后的档位**（tiny）'
-      + ' —— 降档只在本次运行期有效，但不该被一次空闲卸载抹掉',
-      (await llmModelId(llmPort)) === 'sakura-mock:tiny', String(await llmModelId(llmPort)));
+    check(
+      'E6.5 §8.3 与 §9.3 的交叉：**重启后仍跑降档后的档位**（tiny）' +
+        ' —— 降档只在本次运行期有效，但不该被一次空闲卸载抹掉',
+      (await llmModelId(llmPort)) === 'sakura-mock:tiny',
+      String(await llmModelId(llmPort)),
+    );
 
-    check('E6.6 §9.2 安全铁律的**运行时**表现：E5/E6 两个任务全程，日志里没有出现过'
-      + '「队列非空却卸载」这类越界动作（卸载次数 = 1，正好对上一次真正的空闲）',
+    check(
+      'E6.6 §9.2 安全铁律的**运行时**表现：E5/E6 两个任务全程，日志里没有出现过' +
+        '「队列非空却卸载」这类越界动作（卸载次数 = 1，正好对上一次真正的空闲）',
       countOf(service.out, '⇒ 卸载 ③ LLM') === 1,
-      `卸载 ${countOf(service.out, '⇒ 卸载 ③ LLM')} 次`);
+      `卸载 ${countOf(service.out, '⇒ 卸载 ③ LLM')} 次`,
+    );
 
     // ============================================================ E6.7 / E6.8 · 跨进程重启（§9.1 的边界）
     //
@@ -399,22 +466,30 @@ async function run() {
     // ③ 是异步预拉起的：先等它接客，再开始计时
     let restartedLlmUp = false;
     for (let i = 0; i < 300; i += 1) {
-      if (await llmModelId(llmPort)) { restartedLlmUp = true; break; }
+      if (await llmModelId(llmPort)) {
+        restartedLlmUp = true;
+        break;
+      }
       await sleep(100);
     }
     // ⚠️ 编号用 `E6.7a` 而不是 `E6.7 前置`：反证轮的 `matchById()` 是**前缀匹配**
     //    （`id.startsWith(code + ' ')`），若前置也叫 `E6.7 …`，它会命中前置那条，
     //    于是"主断言变红"可能被前置的绿盖住 ⇒ 反证误判。
-    check('E6.7a 前置：重启后 ③ **确实被重新拉起**（否则"没被卸"可能只是"压根没起来"，断言会变成空转）',
-      restartedLlmUp, restartedLlmUp ? `端口 ${llmPort} 已接客` : `端口 ${llmPort} 30s 内没接客`);
+    check(
+      'E6.7a 前置：重启后 ③ **确实被重新拉起**（否则"没被卸"可能只是"压根没起来"，断言会变成空转）',
+      restartedLlmUp,
+      restartedLlmUp ? `端口 ${llmPort} 已接客` : `端口 ${llmPort} 30s 内没接客`,
+    );
 
     // 观察窗口：阈值 1.5s、巡检 250ms ⇒ 6 次巡检。给足冗余，慢机器上也够判红。
     await sleep(Math.max(6 * IDLE_MS, 12 * IDLE_TICK_MS));
     const llmStillUp = await portOpen(llmPort, 300);
-    check('E6.7 §9.1 重启边界：状态目录里**带着上一轮的终态任务**时，本次运行还没跑过任务 ⇒ '
-      + '③ **不该**被判空闲卸载（"距上次活动 18 小时"是**上一次运行**的事，不是本次的热态）',
+    check(
+      'E6.7 §9.1 重启边界：状态目录里**带着上一轮的终态任务**时，本次运行还没跑过任务 ⇒ ' +
+        '③ **不该**被判空闲卸载（"距上次活动 18 小时"是**上一次运行**的事，不是本次的热态）',
       llmStillUp && countOf(service.out, '⇒ 卸载 ③ LLM') === 0,
-      `③端口通=${llmStillUp} · 本次运行卸载次数=${countOf(service.out, '⇒ 卸载 ③ LLM')}`);
+      `③端口通=${llmStillUp} · 本次运行卸载次数=${countOf(service.out, '⇒ 卸载 ③ LLM')}`,
+    );
 
     // 对照：不能把机制改死 —— 本次运行**跑过**任务之后，空闲卸载仍然必须生效
     // （注意用 `svc2.port`：服务端口是自选的，重启后不一定还落在同一个号上）
@@ -424,19 +499,30 @@ async function run() {
     let unloaded2 = false;
     const dl2 = Date.now() + 20_000;
     while (Date.now() < dl2) {
-      if (!(await portOpen(llmPort, 200))) { unloaded2 = true; break; }
+      if (!(await portOpen(llmPort, 200))) {
+        unloaded2 = true;
+        break;
+      }
       await sleep(120);
     }
-    check('E6.8 对照（防"把机制改死"）：重启后的新服务**跑过一个任务** ⇒ 空闲达阈值时 ③ 照常被卸载'
-      + '（只绿 E6.7 不绿本条，说明是把卸载关掉了，而不是修对了范围）',
+    check(
+      'E6.8 对照（防"把机制改死"）：重启后的新服务**跑过一个任务** ⇒ 空闲达阈值时 ③ 照常被卸载' +
+        '（只绿 E6.7 不绿本条，说明是把卸载关掉了，而不是修对了范围）',
       t3.status === 'done' && unloaded2 && countOf(service.out, '⇒ 卸载 ③ LLM') === 1,
-      `任务=${t3.status} · ③端口通=${await portOpen(llmPort, 200)} · 本次运行卸载次数=${countOf(service.out, '⇒ 卸载 ③ LLM')}`);
+      `任务=${t3.status} · ③端口通=${await portOpen(llmPort, 200)} · 本次运行卸载次数=${countOf(service.out, '⇒ 卸载 ③ LLM')}`,
+    );
   } finally {
     killProc(service);
     killProc(engine);
     await sleep(400);
     for (const st of [service, engine]) {
-      if (st && st.child.exitCode === null) { try { st.child.kill('SIGKILL'); } catch { /* ignore */ } }
+      if (st && st.child.exitCode === null) {
+        try {
+          st.child.kill('SIGKILL');
+        } catch {
+          /* ignore */
+        }
+      }
     }
   }
 }
@@ -487,7 +573,8 @@ async function runRefute() {
 
   for (const ref of REFUTATIONS) {
     const child = spawnSync(process.execPath, [import.meta.filename], {
-      encoding: 'utf8', env: { ...process.env, ...ref.env },
+      encoding: 'utf8',
+      env: { ...process.env, ...ref.env },
     });
     const line = (child.stdout || '').split('\n').find((l) => l.startsWith('[RESULT] '));
     executed += 1;
@@ -501,8 +588,10 @@ async function runRefute() {
     console.log(`🔴 ${ref.name}`);
     for (const code of ref.expect) {
       const hit = matchById(parsed.results, code);
-      console.log(`   ${hit?.ok === false ? '✓' : '✗'} ${code} `
-        + `${hit?.ok === false ? '按预期变红' : `**没有变红**（${hit ? hit.detail : '缺该条'}）`}`);
+      console.log(
+        `   ${hit?.ok === false ? '✓' : '✗'} ${code} ` +
+          `${hit?.ok === false ? '按预期变红' : `**没有变红**（${hit ? hit.detail : '缺该条'}）`}`,
+      );
     }
     if (missed.length === 0) asExpected += 1;
     else problems.push(`${ref.name}：${missed.join(',')} 未变红`);

@@ -86,8 +86,23 @@ function buildFixture() {
     engineCommit: 'deadbeef',
     sets: { visual: { files: ['a', 'b'] } },
     files: [
-      { id: 'a', set: 'visual', dest: 'models-store/a.bin', sha256: sha(contentA), sizeBytes: Buffer.byteLength(contentA), url: 'https://example.invalid/a' },
-      { id: 'b', set: 'visual', dest: 'models-store/b.bin', linkTo: 'models/b.bin', sha256: sha(contentB), sizeBytes: Buffer.byteLength(contentB), url: 'https://example.invalid/b' },
+      {
+        id: 'a',
+        set: 'visual',
+        dest: 'models-store/a.bin',
+        sha256: sha(contentA),
+        sizeBytes: Buffer.byteLength(contentA),
+        url: 'https://example.invalid/a',
+      },
+      {
+        id: 'b',
+        set: 'visual',
+        dest: 'models-store/b.bin',
+        linkTo: 'models/b.bin',
+        sha256: sha(contentB),
+        sizeBytes: Buffer.byteLength(contentB),
+        url: 'https://example.invalid/b',
+      },
     ],
   };
   const mp = path.join(root, 'models.manifest.json');
@@ -111,8 +126,12 @@ function runAsync(cmd, args, opts = {}) {
     });
     let out = '';
     let err = '';
-    c.stdout.on('data', (d) => { out += d; });
-    c.stderr.on('data', (d) => { err += d; });
+    c.stdout.on('data', (d) => {
+      out += d;
+    });
+    c.stderr.on('data', (d) => {
+      err += d;
+    });
     c.on('error', (e) => resolve({ code: -1, out, err: `${err}${e.message}` }));
     c.on('close', (code) => resolve({ code, out, err }));
   });
@@ -134,7 +153,10 @@ function startService(extraEnv) {
   });
   return new Promise((resolve, reject) => {
     let buf = '';
-    const to = setTimeout(() => { child.kill(); reject(new Error('boxsvc 15s 内未就绪')); }, 15000);
+    const to = setTimeout(() => {
+      child.kill();
+      reject(new Error('boxsvc 15s 内未就绪'));
+    }, 15000);
     child.stdout.on('data', (d) => {
       buf += d;
       const m = /MIAO_READY (\{.*\})/.exec(buf);
@@ -144,7 +166,10 @@ function startService(extraEnv) {
       }
     });
     child.stderr.on('data', (d) => (buf += d));
-    child.on('close', (code) => { clearTimeout(to); reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 500)}`)); });
+    child.on('close', (code) => {
+      clearTimeout(to);
+      reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 500)}`));
+    });
   });
 }
 
@@ -152,7 +177,11 @@ const api = (port, p) => `http://127.0.0.1:${port}/api/v1${p}`;
 const headers = { 'x-box-token': TOKEN, 'content-type': 'application/json' };
 
 /** 一份输出切成"界面会看到的那些行" —— 与 `spawn_tail_reader` 同口径（`\r` 也算分隔符）。 */
-const toLines = (s) => s.split(/\r\n|\r|\n/).map((x) => x.trim()).filter((x) => x !== '');
+const toLines = (s) =>
+  s
+    .split(/\r\n|\r|\n/)
+    .map((x) => x.trim())
+    .filter((x) => x !== '');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -179,8 +208,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let dl = {};
   try {
     const start = await fetch(api(svc.port, '/engine/models/download'), { method: 'POST', headers, body: '{}' });
-    check('W0 `POST /engine/models/download` 接受并起了一个下载任务',
-      start.status === 200, { status: start.status });
+    check('W0 `POST /engine/models/download` 接受并起了一个下载任务', start.status === 200, { status: start.status });
 
     // 轮询到终态（夹具很快，1 秒级；给足 20 s 余地）
     let st = {};
@@ -195,15 +223,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     svc.kill();
   }
 
-  check('W1 `modelDownload.tail` **逐行等于**子进程真实 stdout/stderr（顺序也一致）—— 有一行编造的就红',
+  check(
+    'W1 `modelDownload.tail` **逐行等于**子进程真实 stdout/stderr（顺序也一致）—— 有一行编造的就红',
     tail.length > 0 && tail.join('\n') === want.join('\n'),
-    { tail, want, code: own.code });
+    { tail, want, code: own.code },
+  );
 
-  check('W2 任务走到终态 `done` / 退出码 0（"真实输出"这件事得在真跑完的前提下说）',
-    dl.state === 'done' && dl.exitCode === 0, { state: dl.state, exitCode: dl.exitCode });
+  check(
+    'W2 任务走到终态 `done` / 退出码 0（"真实输出"这件事得在真跑完的前提下说）',
+    dl.state === 'done' && dl.exitCode === 0,
+    { state: dl.state, exitCode: dl.exitCode },
+  );
 
-  check('W3 终态下 `tail` 仍**在**（不是跑完就清空 —— 用户回来看到的最后一行不该被抹掉）',
-    tail.length > 0 && typeof dl.finishedAt === 'string', { len: tail.length, finishedAt: dl.finishedAt });
+  check(
+    'W3 终态下 `tail` 仍**在**（不是跑完就清空 —— 用户回来看到的最后一行不该被抹掉）',
+    tail.length > 0 && typeof dl.finishedAt === 'string',
+    { len: tail.length, finishedAt: dl.finishedAt },
+  );
 
   fs.rmSync(root, { recursive: true, force: true });
 }
@@ -238,41 +274,54 @@ function evalFn(text, name, params = ['log']) {
   const fn = evalFn(tsx, 'lastLogLine');
   const src = fn ? `function lastLogLine ${fn.toString().slice(fn.toString().indexOf('{'))}` : null;
 
-  check('W4 前端：`lastLogLine` 存在且可求值（判据作用在真函数上，不是"读源码相信"）',
-    typeof fn === 'function', { found: fn !== null });
+  check('W4 前端：`lastLogLine` 存在且可求值（判据作用在真函数上，不是"读源码相信"）', typeof fn === 'function', {
+    found: fn !== null,
+  });
 
   const real = '实测日志末行';
-  check('W4b 行为①：末个非空行原样返回（trim 后逐字节），空白行被跳过',
+  check(
+    'W4b 行为①：末个非空行原样返回（trim 后逐字节），空白行被跳过',
     fn && fn(['旧行', '', '   ', real]) === real && fn([real]) === real && fn(['  ' + real + '  ']) === real,
-    fn ? { got: [fn(['旧行', '', '   ', real]), fn([real]), fn(['  ' + real + '  '])] } : null);
+    fn ? { got: [fn(['旧行', '', '   ', real]), fn([real]), fn(['  ' + real + '  '])] } : null,
+  );
 
   // 🔴 D2 验收②的核心：**没有就不显示，不补一个占位数字**。
-  check('W4c 行为②：空数组 / 全空白 / undefined ⇒ `null`（**不许补占位值**）',
+  check(
+    'W4c 行为②：空数组 / 全空白 / undefined ⇒ `null`（**不许补占位值**）',
     fn && fn([]) === null && fn(['', '   ']) === null && fn(undefined) === null,
-    fn ? { empty: fn([]), blank: fn(['', '   ']), undef: fn(undefined) } : null);
+    fn ? { empty: fn([]), blank: fn(['', '   ']), undef: fn(undefined) } : null,
+  );
 
   // 结构性事实：体内没有**非空**字符串字面量 ⇒ 没有可编的材料。
   // ⚠️ 判据要放过 `?? ''` 这种空字面量（trim 的默认值），只抓"能显示给用户看的文字"。
   const bodyNoComment = (src ?? '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   const hasVisibleLiteral = /['"`][^'"`]+['"`]/.test(bodyNoComment);
-  check('W5 `lastLogLine` 函数体内没有非空字符串字面量（有字面量 = 有东西可编）',
-    src !== null && !hasVisibleLiteral, { hasVisibleLiteral });
+  check('W5 `lastLogLine` 函数体内没有非空字符串字面量（有字面量 = 有东西可编）', src !== null && !hasVisibleLiteral, {
+    hasVisibleLiteral,
+  });
 
   const diag = fs.readFileSync(ENGINE_DIAG, 'utf8');
-  check('W6 `EngineDiag` 的 `DownloadState`：「没有日志就不渲染」（`tail.length > 0` 守卫 + 逐行 `tail.map`）',
-    /const tail = view\.tail\.slice\(-6\);/.test(diag) && /\{tail\.length > 0 \? \(/.test(diag) && /\{tail\.map\(\(line, i\) => \(/.test(diag),
+  check(
+    'W6 `EngineDiag` 的 `DownloadState`：「没有日志就不渲染」（`tail.length > 0` 守卫 + 逐行 `tail.map`）',
+    /const tail = view\.tail\.slice\(-6\);/.test(diag) &&
+      /\{tail\.length > 0 \? \(/.test(diag) &&
+      /\{tail\.map\(\(line, i\) => \(/.test(diag),
     {
       slice: /const tail = view\.tail\.slice\(-6\);/.test(diag),
       guard: /\{tail\.length > 0 \? \(/.test(diag),
       map: /\{tail\.map\(\(line, i\) => \(/.test(diag),
-    });
+    },
+  );
 
-  check('W7 调用点：末行取自**真实日志**（`status?.log`），且渲染处只渲染它本身、无兜底常量',
-    /const detail = lastLogLine\(status\?\.log\);/.test(tsx) && /\{detail && \(kind === 'is-loading' \|\| kind === 'is-failed'\) \? \(/.test(tsx),
+  check(
+    'W7 调用点：末行取自**真实日志**（`status?.log`），且渲染处只渲染它本身、无兜底常量',
+    /const detail = lastLogLine\(status\?\.log\);/.test(tsx) &&
+      /\{detail && \(kind === 'is-loading' \|\| kind === 'is-failed'\) \? \(/.test(tsx),
     {
       call: /const detail = lastLogLine\(status\?\.log\);/.test(tsx),
       guard: /\{detail && \(kind === 'is-loading' \|\| kind === 'is-failed'\) \? \(/.test(tsx),
-    });
+    },
+  );
 }
 
 // ------------------------------------------------------------------ 反证轮
@@ -302,34 +351,51 @@ if (REFUTE) {
     new Promise((resolve) => {
       const c = spawn(process.execPath, [SELF], { cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
       let out = '';
-      c.stdout.on('data', (d) => { out += d; });
-      c.stderr.on('data', (d) => { out += d; });
+      c.stdout.on('data', (d) => {
+        out += d;
+      });
+      c.stderr.on('data', (d) => {
+        out += d;
+      });
       c.on('error', () => resolve({ code: -1, out }));
       c.on('close', (code) => resolve({ code, out }));
     });
 
   const hasRed = (out, name) => out.split('\n').some((l) => l.trimStart().startsWith('✗') && l.includes(name));
-  const redOn = (out) => out.split('\n').filter((l) => l.trimStart().startsWith('✗')).map((l) => l.trim().slice(0, 46));
+  const redOn = (out) =>
+    out
+      .split('\n')
+      .filter((l) => l.trimStart().startsWith('✗'))
+      .map((l) => l.trim().slice(0, 46));
 
   // ---- M1：数据源开始编造行 ----
   {
     // ⚠️ 编造的内容必须是**常量**：写成 `format!("…{}", d.tail.len())` 会触发
     //    `d.tail` 的借用冲突 ⇒ 编不过 ⇒ `built=false`，那场"变异失败"会被误读成"断言没红"。
-    const restore = mutateFile(STATE_RS, 'd.tail.push(t.to_string());',
-      'd.tail.push("正在校验模型文件…".to_string());');
+    const restore = mutateFile(
+      STATE_RS,
+      'd.tail.push(t.to_string());',
+      'd.tail.push("正在校验模型文件…".to_string());',
+    );
     const built = await rebuild();
     const r = await runForward();
     const red = built && r.code !== 0 && hasRed(r.out, 'W1');
-    check('M1 `spawn_tail_reader` 推送**编造的行**而不是读到的行 ⇒ W1 红（层一：数据源撒谎）',
-      red, { built, code: r.code, redOn: redOn(r.out) });
+    check('M1 `spawn_tail_reader` 推送**编造的行**而不是读到的行 ⇒ W1 红（层一：数据源撒谎）', red, {
+      built,
+      code: r.code,
+      redOn: redOn(r.out),
+    });
     restore();
     await rebuild();
   }
 
   // ---- M2：前端补一个占位值 ----
   {
-    const restore = mutateFile(NOT_READY_TSX, '    if (s) return s;\n  }\n  return null;',
-      '    if (s) return s;\n  }\n  return \'正在下载 42%\';');
+    const restore = mutateFile(
+      NOT_READY_TSX,
+      '    if (s) return s;\n  }\n  return null;',
+      "    if (s) return s;\n  }\n  return '正在下载 42%';",
+    );
     const r = await runForward();
     const red = r.code !== 0 && hasRed(r.out, 'W4c') && hasRed(r.out, 'W5');
     check('M2 `lastLogLine` 加占位兜底 ⇒ W4c/W5 红（层二：没有也编一个）', red, { code: r.code, redOn: redOn(r.out) });

@@ -175,14 +175,21 @@ try {
 if (golden && rustNorm.default && rustNorm.override) {
   for (const sc of scenarios) {
     const d = diffPaths(rustNorm[sc.id], golden[sc.id]);
-    check(`PATH.${sc.id} — ${sc.id === 'default' ? '无覆盖时 13 个路径' : 'env 覆盖后 13 个路径'}与 golden 逐字节相同`, d.length === 0, d);
+    check(
+      `PATH.${sc.id} — ${sc.id === 'default' ? '无覆盖时 13 个路径' : 'env 覆盖后 13 个路径'}与 golden 逐字节相同`,
+      d.length === 0,
+      d,
+    );
   }
 
   // PATH.keys：键集合一致（与 default 场景同物，但单独成条 —— 它是 M3 的目标）
   {
     const a = Object.keys(rustNorm.default).sort();
     const b = Object.keys(golden.default).sort();
-    check('PATH.keys — Rust 与 golden 的路径键集合完全一致', a.length > 0 && a.join(',') === b.join(','), { rust: a, golden: b });
+    check('PATH.keys — Rust 与 golden 的路径键集合完全一致', a.length > 0 && a.join(',') === b.join(','), {
+      rust: a,
+      golden: b,
+    });
   }
 
   // PATH.appData（B1 验收①）：未设 `MIAO_*` 时引擎落点必须锚在 `<appData>/runtimes`。
@@ -257,7 +264,11 @@ if (REFUTE) {
       engineDir: path.join(rt, 'manga-translator', 'src'),
       enginePython: path.join(rt, 'manga-translator', 'venv', 'Scripts', 'python.exe'),
     };
-    mutations.push({ id: 'M4', what: 'Rust 快照落点换成仓库根布局 ⇒ PATH.appData', red: appDataViolations(repo).length > 0 });
+    mutations.push({
+      id: 'M4',
+      what: 'Rust 快照落点换成仓库根布局 ⇒ PATH.appData',
+      red: appDataViolations(repo).length > 0,
+    });
   }
   // M5：装配脚本落点退回仓库 runtimes/ ⇒ PATH.tooling 必须红
   {
@@ -289,7 +300,9 @@ if (REFUTE) {
   let allRed = true;
   for (const m of mutations) {
     if (!m.red) allRed = false;
-    console.log(`  ${m.red ? '✓' : '✗'} ${m.id} ${m.what} → ${m.red ? '按预期变红' : '**没有红**（断言漏了它）'}${m.info ? ` ${JSON.stringify(m.info)}` : ''}`);
+    console.log(
+      `  ${m.red ? '✓' : '✗'} ${m.id} ${m.what} → ${m.red ? '按预期变红' : '**没有红**（断言漏了它）'}${m.info ? ` ${JSON.stringify(m.info)}` : ''}`,
+    );
   }
   console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed, allRed }));
   console.log(
@@ -299,5 +312,7 @@ if (REFUTE) {
 }
 
 console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed }));
-console.log(`\nF2 路径同源：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`);
+console.log(
+  `\nF2 路径同源：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`,
+);
 process.exit(failed === 0 ? 0 : 1);

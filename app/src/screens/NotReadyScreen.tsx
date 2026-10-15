@@ -190,8 +190,7 @@ export function NotReadyScreen({
             <div className="nr-sum-t">{summary.title}</div>
             <div className="nr-sum-d">
               {failed && err ? `原因：${err} ` : ''}
-              翻译来源已配置为在线平台，但漫画的投放、队列与漫画库仍由本地服务承载 ——
-              点下方按钮把本地服务拉起来。
+              翻译来源已配置为在线平台，但漫画的投放、队列与漫画库仍由本地服务承载 —— 点下方按钮把本地服务拉起来。
             </div>
           </div>
         </div>
@@ -493,11 +492,7 @@ export function NotReadyScreen({
         </Btn>
       </div>
 
-      {logOpen ? (
-        <div className="logbox">
-          {(status?.log ?? []).slice(-120).join('\n') || '（暂无日志）'}
-        </div>
-      ) : null}
+      {logOpen ? <div className="logbox">{(status?.log ?? []).slice(-120).join('\n') || '（暂无日志）'}</div> : null}
     </div>
   );
 }

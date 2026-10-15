@@ -2,10 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorText } from '@/ipc';
 import { useToasts } from '@hooks';
 import {
-  downloadEngineModels, engineOptions, engineStatus, saveEngineSettings, unloadEngineLlm, verifyEngineModels,
+  downloadEngineModels,
+  engineOptions,
+  engineStatus,
+  saveEngineSettings,
+  unloadEngineLlm,
+  verifyEngineModels,
 } from '@screens/settings/engine-api';
 import type {
-  EngineOptions, EngineSettingsPatch, EngineStatus, ModelsVerifyResult,
+  EngineOptions,
+  EngineSettingsPatch,
+  EngineStatus,
+  ModelsVerifyResult,
 } from '@screens/settings/engine-api';
 
 /** 正在跑的动作名（用来禁用按钮、避免同一个人点两遍） */
@@ -90,41 +98,48 @@ export function useEngineState() {
     }
   }, []);
 
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    void reload();
+  }, [reload]);
 
   // 下载跑着的时候轮询；它一停（done/error/idle）就自动收手
   const downloadRunning = status?.modelDownload?.running === true;
   useEffect(() => {
     if (!downloadRunning) return undefined;
-    const t = setInterval(() => { void reload(); }, 2000);
+    const t = setInterval(() => {
+      void reload();
+    }, 2000);
     return () => clearInterval(t);
   }, [downloadRunning, reload]);
 
   /** 保存设置。返回值给调用方判断"这次改了哪一类"（要重启 / 即时生效） */
-  const save = useCallback(async (patch: EngineSettingsPatch) => {
-    setAction('save');
-    try {
-      const r = await saveEngineSettings(patch);
-      await reload();
-      if (r.appliedNow.length > 0 && r.restartRequiredKeys.length === 0) {
-        onToast('已保存并立即生效', 'good');
-      } else if (r.restartRequiredKeys.length > 0) {
-        onToast('已保存 —— 需重启引擎后生效', 'info');
-      } else {
-        onToast('已保存', 'good');
+  const save = useCallback(
+    async (patch: EngineSettingsPatch) => {
+      setAction('save');
+      try {
+        const r = await saveEngineSettings(patch);
+        await reload();
+        if (r.appliedNow.length > 0 && r.restartRequiredKeys.length === 0) {
+          onToast('已保存并立即生效', 'good');
+        } else if (r.restartRequiredKeys.length > 0) {
+          onToast('已保存 —— 需重启引擎后生效', 'info');
+        } else {
+          onToast('已保存', 'good');
+        }
+        return r;
+      } catch (e) {
+        // 服务端的拒绝理由里有"可选什么"（如"可选：tiny / small"），原样透出 ——
+        // 换成一句"保存失败"会把用户留在原地。
+        onToast(errorText(e), 'bad');
+        // 保存失败后也要刷新：服务端的拒绝是因为盘上/硬件的事实，界面得回到事实那一边
+        await reload();
+        return null;
+      } finally {
+        setAction(null);
       }
-      return r;
-    } catch (e) {
-      // 服务端的拒绝理由里有"可选什么"（如"可选：tiny / small"），原样透出 ——
-      // 换成一句"保存失败"会把用户留在原地。
-      onToast(errorText(e), 'bad');
-      // 保存失败后也要刷新：服务端的拒绝是因为盘上/硬件的事实，界面得回到事实那一边
-      await reload();
-      return null;
-    } finally {
-      setAction(null);
-    }
-  }, [onToast, reload]);
+    },
+    [onToast, reload],
+  );
 
   const unload = useCallback(async () => {
     setAction('unload');
@@ -152,7 +167,11 @@ export function useEngineState() {
       // `ok:false` 是"校验完成、发现不符"，**不是操作失败** —— 文案必须体现这个区别，
       // 否则用户会以为"校验这个功能坏了"而不是"我的模型坏了"。
       if (r.ok) onToast(`校验通过：${r.pass}/${r.total} 个文件全部一致`, 'good');
-      else onToast(`校验完成：不符 ${r.bad} · 缺失 ${r.missing}${r.hf.broken ? ` · HF 布局不可解析 ${r.hf.broken}` : ''}（共 ${r.total}）`, 'bad');
+      else
+        onToast(
+          `校验完成：不符 ${r.bad} · 缺失 ${r.missing}${r.hf.broken ? ` · HF 布局不可解析 ${r.hf.broken}` : ''}（共 ${r.total}）`,
+          'bad',
+        );
       return r;
     } catch (e) {
       setVerifyResult(null);
@@ -199,8 +218,18 @@ export function useEngineState() {
   }, [onToast, reload]);
 
   return {
-    options, status, loadError, action, verifyResult, verifyError,
-    reload, save, unload, verifyModels, download, downloadFresh,
+    options,
+    status,
+    loadError,
+    action,
+    verifyResult,
+    verifyError,
+    reload,
+    save,
+    unload,
+    verifyModels,
+    download,
+    downloadFresh,
   };
 }
 

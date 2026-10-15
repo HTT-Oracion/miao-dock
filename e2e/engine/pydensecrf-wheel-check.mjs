@@ -145,39 +145,70 @@ if (hasBoxsvc) {
   {
     const rustProbe = rustPlan(rustEnvFor(path.join(tmp, 'empty.json'), tmp));
     const nodeProbe = probe;
-    check('WB.R1 Rust 出口自报的平台/ABI 与 Node 侧一致（双靶同源，否则两侧会选出不同的 wheel）',
+    check(
+      'WB.R1 Rust 出口自报的平台/ABI 与 Node 侧一致（双靶同源，否则两侧会选出不同的 wheel）',
       rustProbe.platform === nodeProbe.platform && rustProbe.pythonTag === nodeProbe.pythonTag,
-      { rust: [rustProbe.platform, rustProbe.pythonTag], node: [nodeProbe.platform, nodeProbe.pythonTag] });
+      { rust: [rustProbe.platform, rustProbe.pythonTag], node: [nodeProbe.platform, nodeProbe.pythonTag] },
+    );
   }
 
   // ---- WB.R2 四态：命中 / 哈希不符 / 文件不在 / 无本平台条目 ----
   {
-    const ok = writeManifest('rust-ok.json', [{
-      id: 'fixture', platform: PLATFORM, pythonTag: PY_TAG, file: REAL_FILE,
-      sha256: sha256(wheelBytes), sizeBytes: wheelBytes.length, bundled: false, path: '',
-    }]);
+    const ok = writeManifest('rust-ok.json', [
+      {
+        id: 'fixture',
+        platform: PLATFORM,
+        pythonTag: PY_TAG,
+        file: REAL_FILE,
+        sha256: sha256(wheelBytes),
+        sizeBytes: wheelBytes.length,
+        bundled: false,
+        path: '',
+      },
+    ]);
     const p1 = rustPlan(rustEnvFor(ok, tmp));
     check('WB.R2a Rust 出口：平台匹配 + 文件在盘 + sha256 相符 ⇒ route=wheel', p1.route === 'wheel', p1);
 
-    const bad = writeManifest('rust-bad.json', [{
-      id: 'fixture', platform: PLATFORM, pythonTag: PY_TAG, file: REAL_FILE,
-      sha256: '0'.repeat(64), sizeBytes: wheelBytes.length, bundled: false, path: '',
-    }]);
+    const bad = writeManifest('rust-bad.json', [
+      {
+        id: 'fixture',
+        platform: PLATFORM,
+        pythonTag: PY_TAG,
+        file: REAL_FILE,
+        sha256: '0'.repeat(64),
+        sizeBytes: wheelBytes.length,
+        bundled: false,
+        path: '',
+      },
+    ]);
     const p2 = rustPlan(rustEnvFor(bad, tmp));
-    check('WB.R2b Rust 出口：sha256 不符 ⇒ 拒绝并回退源码编译（宁可慢，也不装没验过的东西）',
-      p2.route === 'source' && /sha256 与清单不符/.test(String(p2.reason)), p2);
+    check(
+      'WB.R2b Rust 出口：sha256 不符 ⇒ 拒绝并回退源码编译（宁可慢，也不装没验过的东西）',
+      p2.route === 'source' && /sha256 与清单不符/.test(String(p2.reason)),
+      p2,
+    );
 
-    const missing = writeManifest('rust-missing.json', [{
-      id: 'fixture', platform: PLATFORM, pythonTag: PY_TAG, file: 'not-on-disk.whl',
-      sha256: sha256(wheelBytes), sizeBytes: wheelBytes.length, bundled: false, path: '',
-    }]);
+    const missing = writeManifest('rust-missing.json', [
+      {
+        id: 'fixture',
+        platform: PLATFORM,
+        pythonTag: PY_TAG,
+        file: 'not-on-disk.whl',
+        sha256: sha256(wheelBytes),
+        sizeBytes: wheelBytes.length,
+        bundled: false,
+        path: '',
+      },
+    ]);
     const p3 = rustPlan(rustEnvFor(missing, tmp));
-    check('WB.R2c Rust 出口：文件不在盘上 ⇒ 回退且**不报错**（便利件缺件不该让装配失败）',
-      p3.route === 'source' && /不在盘上/.test(String(p3.reason)), p3);
+    check(
+      'WB.R2c Rust 出口：文件不在盘上 ⇒ 回退且**不报错**（便利件缺件不该让装配失败）',
+      p3.route === 'source' && /不在盘上/.test(String(p3.reason)),
+      p3,
+    );
 
     const p4 = rustPlan(rustEnvFor(path.join(tmp, 'empty.json'), tmp));
-    check('WB.R2d Rust 出口：清单为空 ⇒ 回退源码编译（回退是前提，不是降级）',
-      p4.route === 'source', p4);
+    check('WB.R2d Rust 出口：清单为空 ⇒ 回退源码编译（回退是前提，不是降级）', p4.route === 'source', p4);
   }
 
   // ---- WB.R3 macOS 镜像：清单里只有 Windows 条目 ⇒ 如实说"没有本平台" ----
@@ -185,13 +216,24 @@ if (hasBoxsvc) {
   //     所以真机上 macOS 走的正是这条分支。它必须**说得出原因**（用户要知道自己为什么要装 CLT），
   //     而不是静默回退后让人在几分钟的编译失败里自己猜。
   {
-    const foreign = writeManifest('rust-foreign.json', [{
-      id: 'fixture', platform: 'win32-x64', pythonTag: 'cp311', file: otherFile,
-      sha256: sha256(wheelBytes), sizeBytes: wheelBytes.length, bundled: false, path: '',
-    }]);
+    const foreign = writeManifest('rust-foreign.json', [
+      {
+        id: 'fixture',
+        platform: 'win32-x64',
+        pythonTag: 'cp311',
+        file: otherFile,
+        sha256: sha256(wheelBytes),
+        sizeBytes: wheelBytes.length,
+        bundled: false,
+        path: '',
+      },
+    ]);
     const p = rustPlan({ ...rustEnvFor(foreign, tmp), MIAO_PLATFORM: 'darwin-arm64' });
-    check('WB.R3 macOS 镜像下 Rust 出口如实报「没有本平台条目 ⇒ 走源码编译」（不静默 —— 用户需要知道要装 Xcode CLT）',
-      p.route === 'source' && p.platform === 'darwin-arm64' && /没有本平台/.test(String(p.reason)), p);
+    check(
+      'WB.R3 macOS 镜像下 Rust 出口如实报「没有本平台条目 ⇒ 走源码编译」（不静默 —— 用户需要知道要装 Xcode CLT）',
+      p.route === 'source' && p.platform === 'darwin-arm64' && /没有本平台/.test(String(p.reason)),
+      p,
+    );
   }
 
   // ---- WB.R4 随包那一份优先（包内 > 本机目录）----
@@ -201,14 +243,16 @@ if (hasBoxsvc) {
     const manifest = JSON.parse(fs.readFileSync(WHEELS_JSON, 'utf8'));
     const bundledEntry = (manifest.wheels || []).find((w) => w.bundled === true);
     const p = rustPlan({ MIAO_MODEL_ROOT: tmp });
-    check('WB.R4 真仓库上 Rust 出口选中**随包**那份 wheel（from=包内、sha256 已核对）',
-      p.route === 'wheel' && p.from === '包内' && !!bundledEntry && fs.existsSync(repoWheel), p);
+    check(
+      'WB.R4 真仓库上 Rust 出口选中**随包**那份 wheel（from=包内、sha256 已核对）',
+      p.route === 'wheel' && p.from === '包内' && !!bundledEntry && fs.existsSync(repoWheel),
+      p,
+    );
   }
 } else {
   // 🔴 没有 boxsvc 时**不许静默跳过**：跳过 ≠ 通过（E4 纪律）。
   //    先 `cargo build --bin boxsvc` 再跑本脚本。
-  check('WB.R0 `boxsvc` 未构建（cargo build --bin boxsvc）—— Rust 侧产品出口因此无法取证',
-    false, { boxsvc: BOXSVC });
+  check('WB.R0 `boxsvc` 未构建（cargo build --bin boxsvc）—— Rust 侧产品出口因此无法取证', false, { boxsvc: BOXSVC });
 }
 
 // ------------------------------------------------------------------ WB.W1 清单结构
@@ -243,12 +287,16 @@ if (hasBoxsvc) {
     const hasUrl = typeof w.url === 'string' && w.url.trim() !== '';
     const states = [isBundled, isLocal, hasUrl].filter(Boolean).length;
     if (states > 1) problems.push(`${w.id ?? '?'}: 同时标了 bundled / local / url 中的多项（三态必须恰取其一）`);
-    if (states === 0) problems.push(`${w.id ?? '?'}: 既没标 bundled、也没有 url、也没标 local: true（这条到底怎么分发？谁来提供它？）`);
+    if (states === 0)
+      problems.push(`${w.id ?? '?'}: 既没标 bundled、也没有 url、也没标 local: true（这条到底怎么分发？谁来提供它？）`);
     if (isBundled && !w.path) problems.push(`${w.id ?? '?'}: 标了 bundled 却没有 path（包内那一份在哪儿？）`);
   }
-  check('WB.W1 `engine/wheels.manifest.json` 结构合法：条目（若有）逐条带 platform / pythonTag / file / 64 位 sha256 / 正数体积，'
-    + '且分发形态 **bundled / local / url 三态恰取其一**（"随包"与"尚未托管"都必须说出来），并写清了 purpose 与 fillHowTo',
-  problems.length === 0, problems);
+  check(
+    'WB.W1 `engine/wheels.manifest.json` 结构合法：条目（若有）逐条带 platform / pythonTag / file / 64 位 sha256 / 正数体积，' +
+      '且分发形态 **bundled / local / url 三态恰取其一**（"随包"与"尚未托管"都必须说出来），并写清了 purpose 与 fillHowTo',
+    problems.length === 0,
+    problems,
+  );
 }
 
 // ------------------------------------------------------------------ WB.W1b 随包那一份必须真实存在且哈希一致（G3）
@@ -272,11 +320,20 @@ if (hasBoxsvc) {
       continue;
     }
     const got = sha256(fs.readFileSync(abs));
-    if (got !== w.sha256) problems.push(`${w.id ?? '?'}: 包内 wheel 的 sha256 与清单不符（清单 ${String(w.sha256).slice(0, 12)}… / 实际 ${got.slice(0, 12)}…）`);
-    if (fs.statSync(abs).size !== w.sizeBytes) problems.push(`${w.id ?? '?'}: 包内 wheel 的体积与清单不符（清单 ${w.sizeBytes} / 实际 ${fs.statSync(abs).size}）`);
+    if (got !== w.sha256)
+      problems.push(
+        `${w.id ?? '?'}: 包内 wheel 的 sha256 与清单不符（清单 ${String(w.sha256).slice(0, 12)}… / 实际 ${got.slice(0, 12)}…）`,
+      );
+    if (fs.statSync(abs).size !== w.sizeBytes)
+      problems.push(
+        `${w.id ?? '?'}: 包内 wheel 的体积与清单不符（清单 ${w.sizeBytes} / 实际 ${fs.statSync(abs).size}）`,
+      );
   }
-  check(`WB.W1b 随包（bundled）条目的文件**真的在仓库里**且 sha256 / 体积与清单一致（G3 的成立前提；本清单 ${bundledCount} 条）`,
-    problems.length === 0 && bundledCount > 0, problems.length ? problems : { bundledCount });
+  check(
+    `WB.W1b 随包（bundled）条目的文件**真的在仓库里**且 sha256 / 体积与清单一致（G3 的成立前提；本清单 ${bundledCount} 条）`,
+    problems.length === 0 && bundledCount > 0,
+    problems.length ? problems : { bundledCount },
+  );
 }
 
 // ------------------------------------------------------------------ WB.W2 空清单 ⇒ 回退源码编译
@@ -284,21 +341,35 @@ if (hasBoxsvc) {
 {
   const empty = writeManifest('empty.json', []);
   const plan = printPlan(envFor(empty));
-  check('WB.W2 清单为空 ⇒ 走源码编译（**回退是前提**：清单空不该让装配整体失败），且 reason 说得出为什么',
-    plan.route === 'source' && /还没有任何条目/.test(String(plan.reason)), plan);
+  check(
+    'WB.W2 清单为空 ⇒ 走源码编译（**回退是前提**：清单空不该让装配整体失败），且 reason 说得出为什么',
+    plan.route === 'source' && /还没有任何条目/.test(String(plan.reason)),
+    plan,
+  );
 }
 
 // ------------------------------------------------------------------ WB.W3 命中 ⇒ 优先 wheel
 
 {
-  const ok = writeManifest('ok.json', [{
-    id: 'fixture', platform: PLATFORM, pythonTag: PY_TAG, file: REAL_FILE,
-    sha256: sha256(wheelBytes), sizeBytes: wheelBytes.length, url: 'https://example.invalid/whl',
-  }]);
+  const ok = writeManifest('ok.json', [
+    {
+      id: 'fixture',
+      platform: PLATFORM,
+      pythonTag: PY_TAG,
+      file: REAL_FILE,
+      sha256: sha256(wheelBytes),
+      sizeBytes: wheelBytes.length,
+      url: 'https://example.invalid/whl',
+    },
+  ]);
   const plan = printPlan(envFor(ok));
-  check('WB.W3 有本平台条目且 sha256 对得上 ⇒ 走 **wheel**（不编译 —— 这正是"无编译器也能装"的全部意义）',
-    plan.route === 'wheel' && /sha256 已核对/.test(String(plan.reason)) && plan.wheelAbs === path.join(wheelDir, REAL_FILE),
-    plan);
+  check(
+    'WB.W3 有本平台条目且 sha256 对得上 ⇒ 走 **wheel**（不编译 —— 这正是"无编译器也能装"的全部意义）',
+    plan.route === 'wheel' &&
+      /sha256 已核对/.test(String(plan.reason)) &&
+      plan.wheelAbs === path.join(wheelDir, REAL_FILE),
+    plan,
+  );
 }
 
 // ------------------------------------------------------------------ WB.W3b 包内（bundled）优先于本机目录（G3）
@@ -313,19 +384,33 @@ if (hasBoxsvc) {
    */
   const real = JSON.parse(fs.readFileSync(WHEELS_JSON, 'utf8')).wheels.find((w) => w.bundled === true);
   if (!real) {
-    check('WB.W3b `bundled` 条目优先于本机目录（清单里没有 bundled 条目 ⇒ 本条无从取证）', false, { reason: '清单无 bundled 条目' });
+    check('WB.W3b `bundled` 条目优先于本机目录（清单里没有 bundled 条目 ⇒ 本条无从取证）', false, {
+      reason: '清单无 bundled 条目',
+    });
   } else {
     const decoyPath = path.join(wheelDir, String(real.file));
     fs.writeFileSync(decoyPath, Buffer.from('decoy: same file name, different bytes\n'));
-    const mf = writeManifest('bundled-priority.json', [{
-      id: real.id, platform: real.platform, pythonTag: real.pythonTag, file: real.file,
-      sha256: real.sha256, sizeBytes: real.sizeBytes, bundled: true, path: real.path, local: false, url: null,
-    }]);
+    const mf = writeManifest('bundled-priority.json', [
+      {
+        id: real.id,
+        platform: real.platform,
+        pythonTag: real.pythonTag,
+        file: real.file,
+        sha256: real.sha256,
+        sizeBytes: real.sizeBytes,
+        bundled: true,
+        path: real.path,
+        local: false,
+        url: null,
+      },
+    ]);
     const plan = printPlan({ ...envFor(mf), MIAO_PLATFORM: real.platform, MIAO_PY_VERSION: '3.11' });
     const wantAbs = path.resolve(path.join(ROOT, 'engine'), String(real.path));
-    check('WB.W3b `bundled` 条目**优先于本机目录**（同名诱饵内容不同 ⇒ 必须取包内那一份，否则用户机上必然回退源码编译）',
+    check(
+      'WB.W3b `bundled` 条目**优先于本机目录**（同名诱饵内容不同 ⇒ 必须取包内那一份，否则用户机上必然回退源码编译）',
       plan.route === 'wheel' && plan.wheelAbs === wantAbs && /来源 包内/.test(String(plan.reason)),
-      { route: plan.route, wheelAbs: plan.wheelAbs, wantAbs, reason: plan.reason });
+      { route: plan.route, wheelAbs: plan.wheelAbs, wantAbs, reason: plan.reason },
+    );
     fs.rmSync(decoyPath, { force: true });
   }
 }
@@ -333,39 +418,69 @@ if (hasBoxsvc) {
 // ------------------------------------------------------------------ WB.W4 sha256 不符 ⇒ 拒绝
 
 {
-  const bad = writeManifest('badhash.json', [{
-    id: 'fixture', platform: PLATFORM, pythonTag: PY_TAG, file: REAL_FILE,
-    sha256: '0'.repeat(64), sizeBytes: wheelBytes.length, url: 'https://example.invalid/whl',
-  }]);
+  const bad = writeManifest('badhash.json', [
+    {
+      id: 'fixture',
+      platform: PLATFORM,
+      pythonTag: PY_TAG,
+      file: REAL_FILE,
+      sha256: '0'.repeat(64),
+      sizeBytes: wheelBytes.length,
+      url: 'https://example.invalid/whl',
+    },
+  ]);
   const plan = printPlan(envFor(bad));
-  check('WB.W4 sha256 与盘上不符 ⇒ **拒绝使用**并回退源码编译（宁可慢，也不装一个不是我们验过的东西）'
-    + '—— 这一条证明"清单化 sha256"真的在起作用，不只是个字段',
-    plan.route === 'source' && /sha256 与清单不符/.test(String(plan.reason)), plan);
+  check(
+    'WB.W4 sha256 与盘上不符 ⇒ **拒绝使用**并回退源码编译（宁可慢，也不装一个不是我们验过的东西）' +
+      '—— 这一条证明"清单化 sha256"真的在起作用，不只是个字段',
+    plan.route === 'source' && /sha256 与清单不符/.test(String(plan.reason)),
+    plan,
+  );
 }
 
 // ------------------------------------------------------------------ WB.W5 wheel 不在盘上 ⇒ 回退
 
 {
-  const missing = writeManifest('missing.json', [{
-    id: 'fixture', platform: PLATFORM, pythonTag: PY_TAG, file: 'not-downloaded-yet.whl',
-    sha256: sha256(wheelBytes), sizeBytes: wheelBytes.length, url: 'https://example.invalid/whl',
-  }]);
+  const missing = writeManifest('missing.json', [
+    {
+      id: 'fixture',
+      platform: PLATFORM,
+      pythonTag: PY_TAG,
+      file: 'not-downloaded-yet.whl',
+      sha256: sha256(wheelBytes),
+      sizeBytes: wheelBytes.length,
+      url: 'https://example.invalid/whl',
+    },
+  ]);
   const plan = printPlan(envFor(missing));
-  check('WB.W5 清单有本平台条目但 wheel 不在盘上 ⇒ 回退源码编译（**不报错**：便利通道缺件不该让装配失败）',
-    plan.route === 'source' && /不在盘上/.test(String(plan.reason)), plan);
+  check(
+    'WB.W5 清单有本平台条目但 wheel 不在盘上 ⇒ 回退源码编译（**不报错**：便利通道缺件不该让装配失败）',
+    plan.route === 'source' && /不在盘上/.test(String(plan.reason)),
+    plan,
+  );
 }
 
 // ------------------------------------------------------------------ WB.W6 别的平台的条目 ⇒ 不许用
 
 {
   const other = PLATFORM === 'win32-x64' ? 'darwin-arm64' : 'win32-x64';
-  const foreign = writeManifest('foreign.json', [{
-    id: 'fixture', platform: other, pythonTag: PY_TAG, file: otherFile,
-    sha256: sha256(wheelBytes), sizeBytes: wheelBytes.length, url: 'https://example.invalid/whl',
-  }]);
+  const foreign = writeManifest('foreign.json', [
+    {
+      id: 'fixture',
+      platform: other,
+      pythonTag: PY_TAG,
+      file: otherFile,
+      sha256: sha256(wheelBytes),
+      sizeBytes: wheelBytes.length,
+      url: 'https://example.invalid/whl',
+    },
+  ]);
   const plan = printPlan(envFor(foreign));
-  check('WB.W6 清单里只有**别的平台**的条目 ⇒ 回退源码编译（不许在 Windows 上装 macOS 的 wheel —— 平台过滤只该有一处实现）',
-    plan.route === 'source' && /没有本平台/.test(String(plan.reason)), { plan, other });
+  check(
+    'WB.W6 清单里只有**别的平台**的条目 ⇒ 回退源码编译（不许在 Windows 上装 macOS 的 wheel —— 平台过滤只该有一处实现）',
+    plan.route === 'source' && /没有本平台/.test(String(plan.reason)),
+    { plan, other },
+  );
 }
 
 // ------------------------------------------------------------------ WB.W9 跨平台可问：`--print-plan` 不受平台闸门限制
@@ -376,17 +491,23 @@ if (hasBoxsvc) {
    * 因为平台闸门直接退出 2，文档就给了一条跑不通的指令（而且看起来"照做了却什么都没发生"）。
    */
   const mac = printPlan({ MIAO_PLATFORM: 'darwin-arm64', MIAO_WHEELS_MANIFEST: path.join(tmp, 'empty.json') });
-  check('WB.W9 「非 Windows 就拒绝」的闸门**不覆盖** `--print-plan`：接缝设成 darwin-arm64 时它仍能打印计划',
+  check(
+    'WB.W9 「非 Windows 就拒绝」的闸门**不覆盖** `--print-plan`：接缝设成 darwin-arm64 时它仍能打印计划',
     mac.code === 0 && mac.platform === 'darwin-arm64' && mac.route === 'source',
-    { code: mac.code, platform: mac.platform, reason: mac.reason });
+    { code: mac.code, platform: mac.platform, reason: mac.reason },
+  );
 
   // 反过来：默认调用（不带 `--print-plan`）在非 Windows 下**必须**仍被闸门拦下（D7 验收②）
   const refused = spawnSync(process.execPath, [DEPS_MJS], {
-    cwd: ROOT, encoding: 'utf8', env: { ...process.env, MIAO_PLATFORM: 'darwin-arm64' },
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, MIAO_PLATFORM: 'darwin-arm64' },
   });
-  check('WB.W9b 同一接缝下**默认调用**仍被平台闸门拒绝（exit 2 + PLATFORM_UNSUPPORTED）—— 旁路只给只读的 `--print-plan`',
+  check(
+    'WB.W9b 同一接缝下**默认调用**仍被平台闸门拒绝（exit 2 + PLATFORM_UNSUPPORTED）—— 旁路只给只读的 `--print-plan`',
     refused.status === 2 && /PLATFORM_UNSUPPORTED/.test(`${refused.stdout}${refused.stderr}`),
-    { code: refused.status });
+    { code: refused.status },
+  );
 }
 
 // ------------------------------------------------------------------ WB.W11 `--wheel-entry` 也是只读模式（macOS 用户也要能算哈希）
@@ -410,12 +531,19 @@ if (hasBoxsvc) {
     //    （那行提示里没有 `}`，所以最后一个 `}` 就是 JSON 的收尾）。直接 `slice(indexOf('{'))` 会带上尾巴而解析失败。
     const out = String(r.stdout ?? '');
     entry = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1));
-  } catch { /* 下面判据会红 */ }
-  check('WB.W11 `--wheel-entry` 属于**只读模式**：非 Windows 下仍能用（算 sha256 + 出条目），'
-    + '且 `platform` 跟随接缝 —— 否则 macOS 引导里那条命令根本跑不通',
-  r.status === 0 && entry && entry.sha256 === sha256(wheelBytes)
-    && entry.sizeBytes === wheelBytes.length && entry.platform === 'darwin-arm64',
-  { status: r.status, entry, wantSha: sha256(wheelBytes).slice(0, 12) });
+  } catch {
+    /* 下面判据会红 */
+  }
+  check(
+    'WB.W11 `--wheel-entry` 属于**只读模式**：非 Windows 下仍能用（算 sha256 + 出条目），' +
+      '且 `platform` 跟随接缝 —— 否则 macOS 引导里那条命令根本跑不通',
+    r.status === 0 &&
+      entry &&
+      entry.sha256 === sha256(wheelBytes) &&
+      entry.sizeBytes === wheelBytes.length &&
+      entry.platform === 'darwin-arm64',
+    { status: r.status, entry, wantSha: sha256(wheelBytes).slice(0, 12) },
+  );
 }
 
 // ------------------------------------------------------------------ WB.W7 文档
@@ -423,9 +551,14 @@ if (hasBoxsvc) {
 {
   const win = fs.readFileSync(GUIDE_WIN, 'utf8');
   const mac = fs.readFileSync(GUIDE_MAC, 'utf8');
-  check('WB.W7 两份安装引导都把"预编译 wheel 通道 / 没有编译器也能装"写出来了（否则用户永远只知道要装 MSVC / Xcode CLT）',
-    /wheel/i.test(win) && /wheel/i.test(mac) && /wheels\.manifest\.json/.test(win) && /wheels\.manifest\.json/.test(mac),
-    { winHasWheel: /wheel/i.test(win), macHasWheel: /wheel/i.test(mac) });
+  check(
+    'WB.W7 两份安装引导都把"预编译 wheel 通道 / 没有编译器也能装"写出来了（否则用户永远只知道要装 MSVC / Xcode CLT）',
+    /wheel/i.test(win) &&
+      /wheel/i.test(mac) &&
+      /wheels\.manifest\.json/.test(win) &&
+      /wheels\.manifest\.json/.test(mac),
+    { winHasWheel: /wheel/i.test(win), macHasWheel: /wheel/i.test(mac) },
+  );
 }
 
 // ------------------------------------------------------------------ WB.W8 单源
@@ -434,9 +567,11 @@ if (hasBoxsvc) {
   const src = fs.readFileSync(DEPS_MJS, 'utf8');
   const planCalls = (src.match(/planCrf\(\)/g) ?? []).length;
   // `--print-plan` 与批 B 各调一次；再少就说明有一处自己另判了一遍
-  check('WB.W8 `--print-plan` 与批 B **共用** `planCrf()`（>= 2 处调用），没有第二份"平台匹配 + 哈希比对"的实现',
+  check(
+    'WB.W8 `--print-plan` 与批 B **共用** `planCrf()`（>= 2 处调用），没有第二份"平台匹配 + 哈希比对"的实现',
     planCalls >= 2 && !/(w\.platform === key)/.test(src.replace(/function planCrf[\s\S]*?\n}/, '')),
-    { planCalls });
+    { planCalls },
+  );
 }
 
 // ------------------------------------------------------------------ 反证轮
@@ -471,7 +606,11 @@ if (REFUTE) {
     return { code: r.status, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
   };
   const hasRed = (out, name) => out.split('\n').some((l) => l.trimStart().startsWith('✗') && l.includes(name));
-  const redOn = (out) => out.split('\n').filter((l) => l.trimStart().startsWith('✗')).map((l) => l.trim().slice(0, 44));
+  const redOn = (out) =>
+    out
+      .split('\n')
+      .filter((l) => l.trimStart().startsWith('✗'))
+      .map((l) => l.trim().slice(0, 44));
 
   const HASH_GUARD = 'if (got !== w.sha256) {';
   const PLATFORM_FILTER = 'w.platform === key && w.pythonTag === tag';
@@ -481,8 +620,10 @@ if (REFUTE) {
   {
     const restore = mutate(HASH_GUARD, 'if (false) {');
     const r = runForward();
-    check('MB1 去掉 sha256 比对（"清单里写了就信"）⇒ WB.W4 红', r.code !== 0 && hasRed(r.out, 'WB.W4'),
-      { code: r.code, redOn: redOn(r.out) });
+    check('MB1 去掉 sha256 比对（"清单里写了就信"）⇒ WB.W4 红', r.code !== 0 && hasRed(r.out, 'WB.W4'), {
+      code: r.code,
+      redOn: redOn(r.out),
+    });
     restore();
   }
 
@@ -490,8 +631,11 @@ if (REFUTE) {
   {
     const restore = mutate(PLATFORM_FILTER, 'true');
     const r = runForward();
-    check('MB2 去掉平台/ABI 过滤 ⇒ WB.W6 红（Windows 上会去装 macOS 的 wheel）',
-      r.code !== 0 && hasRed(r.out, 'WB.W6'), { code: r.code, redOn: redOn(r.out) });
+    check(
+      'MB2 去掉平台/ABI 过滤 ⇒ WB.W6 红（Windows 上会去装 macOS 的 wheel）',
+      r.code !== 0 && hasRed(r.out, 'WB.W6'),
+      { code: r.code, redOn: redOn(r.out) },
+    );
     restore();
   }
 
@@ -504,8 +648,11 @@ if (REFUTE) {
     //    （`null`）⇒ 变异其实没生效，反证轮会报假阳性。要改就改**已有的那个键**。
     const restore = mutateManifest('"url": null,', '"url": "https://example.invalid/whl",');
     const r = runForward();
-    check('MB4 给 `bundled: true` 的条目再补上 url ⇒ WB.W1 红（"随包"与"已托管"不能同时成立，三态恰取其一）',
-      r.code !== 0 && hasRed(r.out, 'WB.W1'), { code: r.code, redOn: redOn(r.out) });
+    check(
+      'MB4 给 `bundled: true` 的条目再补上 url ⇒ WB.W1 红（"随包"与"已托管"不能同时成立，三态恰取其一）',
+      r.code !== 0 && hasRed(r.out, 'WB.W1'),
+      { code: r.code, redOn: redOn(r.out) },
+    );
     restore();
   }
 
@@ -513,8 +660,11 @@ if (REFUTE) {
   {
     const restore = mutateManifest('"bundled": true,', '"bundled": false,');
     const r = runForward();
-    check('MB5 去掉 `bundled: true` 又不给 url / local ⇒ WB.W1 红（用户照清单去找却拿不到，且没人知道该怪谁）',
-      r.code !== 0 && hasRed(r.out, 'WB.W1'), { code: r.code, redOn: redOn(r.out) });
+    check(
+      'MB5 去掉 `bundled: true` 又不给 url / local ⇒ WB.W1 红（用户照清单去找却拿不到，且没人知道该怪谁）',
+      r.code !== 0 && hasRed(r.out, 'WB.W1'),
+      { code: r.code, redOn: redOn(r.out) },
+    );
     restore();
   }
 
@@ -525,27 +675,41 @@ if (REFUTE) {
       "const abs = path.join(wheelDir(), String(w.file || ''));",
     );
     const r = runForward();
-    check('MB7 摘掉"包内优先"（只看本机目录）⇒ WB.W3b 红（用户机上没有 .download-cache ⇒ 必然回退源码编译）',
-      r.code !== 0 && hasRed(r.out, 'WB.W3b'), { code: r.code, redOn: redOn(r.out) });
+    check(
+      'MB7 摘掉"包内优先"（只看本机目录）⇒ WB.W3b 红（用户机上没有 .download-cache ⇒ 必然回退源码编译）',
+      r.code !== 0 && hasRed(r.out, 'WB.W3b'),
+      { code: r.code, redOn: redOn(r.out) },
+    );
     restore();
   }
 
   // ---- MB8：bundled 的 path 指向一个不存在的文件 ----
   {
-    const restore = mutateManifest('"path": "wheels/pydensecrf-1.0-cp311-cp311-win_amd64.whl",', '"path": "wheels/no-such-file.whl",');
+    const restore = mutateManifest(
+      '"path": "wheels/pydensecrf-1.0-cp311-cp311-win_amd64.whl",',
+      '"path": "wheels/no-such-file.whl",',
+    );
     const r = runForward();
-    check('MB8 `bundled` 的 path 指向不存在的文件 ⇒ WB.W1b 红（清单可以写"随包"而仓库里什么都没有）',
-      r.code !== 0 && hasRed(r.out, 'WB.W1b'), { code: r.code, redOn: redOn(r.out) });
+    check(
+      'MB8 `bundled` 的 path 指向不存在的文件 ⇒ WB.W1b 红（清单可以写"随包"而仓库里什么都没有）',
+      r.code !== 0 && hasRed(r.out, 'WB.W1b'),
+      { code: r.code, redOn: redOn(r.out) },
+    );
     restore();
   }
 
   // ---- MB6：把 `--wheel-entry` 从只读白名单里摘掉（macOS 上那条命令会 exit 2）----
   {
-    const restore = mutate("const READONLY_MODES = ['--print-plan', '--wheel-entry'];",
-      "const READONLY_MODES = ['--print-plan'];");
+    const restore = mutate(
+      "const READONLY_MODES = ['--print-plan', '--wheel-entry'];",
+      "const READONLY_MODES = ['--print-plan'];",
+    );
     const r = runForward();
-    check('MB6 `--wheel-entry` 不再属于只读模式 ⇒ WB.W11 红（macOS 引导里让用户跑的命令会直接退出 2）',
-      r.code !== 0 && hasRed(r.out, 'WB.W11'), { code: r.code, redOn: redOn(r.out) });
+    check(
+      'MB6 `--wheel-entry` 不再属于只读模式 ⇒ WB.W11 红（macOS 引导里让用户跑的命令会直接退出 2）',
+      r.code !== 0 && hasRed(r.out, 'WB.W11'),
+      { code: r.code, redOn: redOn(r.out) },
+    );
     restore();
   }
 
@@ -553,14 +717,20 @@ if (REFUTE) {
   {
     const restore = mutate(HIT_RETURN, "return { route: 'source', reason: `命中清单条目");
     const r = runForward();
-    check('MB3 命中条目也返回 `source` ⇒ WB.W3 红（wheel 通道形同虚设，等于没做）',
-      r.code !== 0 && hasRed(r.out, 'WB.W3'), { code: r.code, redOn: redOn(r.out) });
+    check(
+      'MB3 命中条目也返回 `source` ⇒ WB.W3 红（wheel 通道形同虚设，等于没做）',
+      r.code !== 0 && hasRed(r.out, 'WB.W3'),
+      { code: r.code, redOn: redOn(r.out) },
+    );
     restore();
   }
 
   // 收尾：脚本与清单都要按字节还原（MB4/MB5/MB8 改的是清单，只查脚本会漏）
-  check('R1 变异收尾：`install-engine-deps.mjs` 与 `wheels.manifest.json` 都按字节还原',
-    MJS_ORIGINAL.equals(fs.readFileSync(DEPS_MJS)) && WHEELS_ORIGINAL.equals(fs.readFileSync(WHEELS_JSON)), null);
+  check(
+    'R1 变异收尾：`install-engine-deps.mjs` 与 `wheels.manifest.json` 都按字节还原',
+    MJS_ORIGINAL.equals(fs.readFileSync(DEPS_MJS)) && WHEELS_ORIGINAL.equals(fs.readFileSync(WHEELS_JSON)),
+    null,
+  );
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

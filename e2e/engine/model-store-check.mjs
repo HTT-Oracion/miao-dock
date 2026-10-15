@@ -80,7 +80,10 @@ const TARGETS = [
 
 const results = [];
 let group = '';
-const setGroup = (g) => { group = g; console.log(`\n${g}`); };
+const setGroup = (g) => {
+  group = g;
+  console.log(`\n${g}`);
+};
 function add(id, ok, detail = '') {
   results.push({ group, id, ok: !!ok });
   console.log(`  ${ok ? '✓' : '✗'} ${id}${detail ? `  ${detail}` : ''}`);
@@ -98,8 +101,15 @@ async function startFixture() {
     const p = req.url.split('?')[0];
     requests.push({ path: p, range: req.headers.range ?? null });
     const st = routes.get(p);
-    if (!st) { res.writeHead(404, { 'Content-Length': '0' }).end(); return; }
-    if (st.failTimes > 0) { st.failTimes -= 1; res.writeHead(500, { 'Content-Length': '4' }).end('boom'); return; }
+    if (!st) {
+      res.writeHead(404, { 'Content-Length': '0' }).end();
+      return;
+    }
+    if (st.failTimes > 0) {
+      st.failTimes -= 1;
+      res.writeHead(500, { 'Content-Length': '4' }).end('boom');
+      return;
+    }
 
     let body = st.buf;
     if (st.corruptTimes > 0 && st.corruptAt != null) {
@@ -109,7 +119,9 @@ async function startFixture() {
     }
 
     const total = body.length;
-    let start = 0; let status = 200; let contentRange = null;
+    let start = 0;
+    let status = 200;
+    let contentRange = null;
     const rm = req.headers.range ? /^bytes=(\d+)-(\d*)$/.exec(req.headers.range) : null;
     if (rm && st.supportsRange) {
       start = Number(rm[1]);
@@ -133,7 +145,10 @@ async function startFixture() {
     let i = 0;
     const pump = () => {
       if (i >= limit) {
-        if (cut && limit < slice.length) { res.socket.destroy(); return; }
+        if (cut && limit < slice.length) {
+          res.socket.destroy();
+          return;
+        }
         res.end();
         return;
       }
@@ -164,12 +179,22 @@ async function startFixture() {
     requests,
     def(p, opts) {
       routes.set(p, {
-        supportsRange: true, cutAfter: null, cutTimes: 0,
-        corruptAt: null, corruptTimes: 0, failTimes: 0, slowMs: 0, ...opts,
+        supportsRange: true,
+        cutAfter: null,
+        cutTimes: 0,
+        corruptAt: null,
+        corruptTimes: 0,
+        failTimes: 0,
+        slowMs: 0,
+        ...opts,
       });
     },
-    count(p) { return requests.filter((r) => r.path === p).length; },
-    ranged(p) { return requests.filter((r) => r.path === p && r.range).length; },
+    count(p) {
+      return requests.filter((r) => r.path === p).length;
+    },
+    ranged(p) {
+      return requests.filter((r) => r.path === p && r.range).length;
+    },
     close: () => new Promise((r) => server.close(r)),
   };
 }
@@ -179,7 +204,10 @@ async function startFixture() {
 function makeBytes(n, seed) {
   const buf = Buffer.alloc(n);
   let x = seed >>> 0;
-  for (let i = 0; i < n; i += 1) { x = (x * 1664525 + 1013904223) >>> 0; buf[i] = x >>> 24; }
+  for (let i = 0; i < n; i += 1) {
+    x = (x * 1664525 + 1013904223) >>> 0;
+    buf[i] = x >>> 24;
+  }
   return buf;
 }
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
@@ -243,17 +271,29 @@ function run(t, args, opts = {}) {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, ...REFUTE_ENV, ...(opts.env ?? {}) },
     });
-    let out = ''; let err = ''; let timer = null; let killed = false;
+    let out = '';
+    let err = '';
+    let timer = null;
+    let killed = false;
     p.stdout.setEncoding('utf8');
     p.stderr.setEncoding('utf8');
-    p.stdout.on('data', (d) => { out += d; });
-    p.stderr.on('data', (d) => { err += d; });
+    p.stdout.on('data', (d) => {
+      out += d;
+    });
+    p.stderr.on('data', (d) => {
+      err += d;
+    });
     if (opts.killWhen) {
       timer = setInterval(() => {
         if (killed) return;
-        Promise.resolve(opts.killWhen()).then((yes) => {
-          if (yes && !killed) { killed = true; p.kill(); }
-        }).catch(() => {});
+        Promise.resolve(opts.killWhen())
+          .then((yes) => {
+            if (yes && !killed) {
+              killed = true;
+              p.kill();
+            }
+          })
+          .catch(() => {});
       }, 30);
     }
     const done = (code) => {
@@ -266,13 +306,22 @@ function run(t, args, opts = {}) {
 }
 
 async function readReport(p) {
-  try { return JSON.parse(await fsp.readFile(p, 'utf8')); } catch { return null; }
+  try {
+    return JSON.parse(await fsp.readFile(p, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 async function readProgress(p) {
   try {
-    return (await fsp.readFile(p, 'utf8')).split('\n').filter(Boolean).map((l) => JSON.parse(l));
-  } catch { return []; }
+    return (await fsp.readFile(p, 'utf8'))
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l));
+  } catch {
+    return [];
+  }
 }
 
 /** 从 stderr 抽 `[CODE]` —— 两靶的错误文案都是 `✗ [CODE] msg`。 */
@@ -281,12 +330,32 @@ function errCode(errText) {
   return m ? m[1] : null;
 }
 
-const sizeOf = async (p) => { try { return (await fsp.stat(p)).size; } catch { return 0; } };
+const sizeOf = async (p) => {
+  try {
+    return (await fsp.stat(p)).size;
+  } catch {
+    return 0;
+  }
+};
 const exists = (p) => fs.existsSync(p);
-const sha256File = async (p) => crypto.createHash('sha256').update(await fsp.readFile(p)).digest('hex');
-const statSafe = async (p) => { try { return await fsp.stat(p); } catch { return null; } };
+const sha256File = async (p) =>
+  crypto
+    .createHash('sha256')
+    .update(await fsp.readFile(p))
+    .digest('hex');
+const statSafe = async (p) => {
+  try {
+    return await fsp.stat(p);
+  } catch {
+    return null;
+  }
+};
 const readMarker = async (root) => {
-  try { return JSON.parse(await fsp.readFile(path.join(root, '.models.ready.json'), 'utf8')); } catch { return null; }
+  try {
+    return JSON.parse(await fsp.readFile(path.join(root, '.models.ready.json'), 'utf8'));
+  } catch {
+    return null;
+  }
 };
 
 // ------------------------------------------------------------------ 场景（返回事实）
@@ -319,13 +388,20 @@ async function scnFreshIdempotent(fx, t, alpha, beta) {
   const totals = progress.filter((e) => e.id === 'alpha' && e.phase === 'downloading').map((e) => e.total);
 
   return {
-    downloaded: rep1?.ensure?.downloaded ?? [], reused1: rep1?.ensure?.reused ?? [], bytes: rep1?.ensure?.bytes ?? 0,
-    hashOk: hashA === alpha.sha256, sizeOk: st.size === alpha.sizeBytes, size: st.size,
+    downloaded: rep1?.ensure?.downloaded ?? [],
+    reused1: rep1?.ensure?.reused ?? [],
+    bytes: rep1?.ensure?.bytes ?? 0,
+    hashOk: hashA === alpha.sha256,
+    sizeOk: st.size === alpha.sizeBytes,
+    size: st.size,
     markerExists: !!marker,
     markerHashOk: marker?.files?.alpha?.sha256 === alpha.sha256,
     markerSizeOk: marker?.files?.alpha?.sizeBytes === alpha.sizeBytes,
-    reused2: rep2?.ensure?.reused ?? [], downloaded2: rep2?.ensure?.downloaded ?? [], newRequests,
-    progressMonotonic: monotonic, progressFinal: sizes.at(-1) ?? -1,
+    reused2: rep2?.ensure?.reused ?? [],
+    downloaded2: rep2?.ensure?.downloaded ?? [],
+    newRequests,
+    progressMonotonic: monotonic,
+    progressFinal: sizes.at(-1) ?? -1,
     progressTotalOk: totals.length > 0 && totals.every((x) => x === alpha.sizeBytes),
     progressEvents: sizes.length,
     root: s.root,
@@ -338,8 +414,19 @@ async function scnResume(fx, t, big) {
   fx.def('/big', { buf: big.buf, cutAfter: 400 * 1024, cutTimes: 1, slowMs: 8 });
   writeManifest(s.manifestPath, fixtureManifest(fx, [big]));
 
-  await run(t, ['--root', s.root, '--manifest', s.manifestPath, '--integrity', 'hash',
-    '--no-link', '--report', s.reportPath, '--progress-log', s.progPath]);
+  await run(t, [
+    '--root',
+    s.root,
+    '--manifest',
+    s.manifestPath,
+    '--integrity',
+    'hash',
+    '--no-link',
+    '--report',
+    s.reportPath,
+    '--progress-log',
+    s.progPath,
+  ]);
   const rep = await readReport(s.reportPath);
 
   const dest = path.join(s.root, 'big.bin');
@@ -348,9 +435,14 @@ async function scnResume(fx, t, big) {
   const partLeft = exists(`${dest}.part`);
 
   return {
-    hashOk, sizeOk: st.size === big.sizeBytes, size: st.size,
-    rangedRequests: fx.ranged('/big'), requests: fx.count('/big'),
-    resumedFrom: rep?.ensure?.resumeFrom?.big ?? 0, partLeft, downloaded: rep?.ensure?.downloaded ?? [],
+    hashOk,
+    sizeOk: st.size === big.sizeBytes,
+    size: st.size,
+    rangedRequests: fx.ranged('/big'),
+    requests: fx.count('/big'),
+    resumedFrom: rep?.ensure?.resumeFrom?.big ?? 0,
+    partLeft,
+    downloaded: rep?.ensure?.downloaded ?? [],
   };
 }
 
@@ -360,8 +452,17 @@ async function scnNoRange(fx, t, big) {
   fx.def('/big', { buf: big.buf, supportsRange: false, cutAfter: 400 * 1024, cutTimes: 1, slowMs: 8 });
   writeManifest(s.manifestPath, fixtureManifest(fx, [big]));
 
-  await run(t, ['--root', s.root, '--manifest', s.manifestPath, '--integrity', 'hash',
-    '--no-link', '--report', s.reportPath]);
+  await run(t, [
+    '--root',
+    s.root,
+    '--manifest',
+    s.manifestPath,
+    '--integrity',
+    'hash',
+    '--no-link',
+    '--report',
+    s.reportPath,
+  ]);
   const rep = await readReport(s.reportPath);
 
   const dest = path.join(s.root, 'big.bin');
@@ -369,8 +470,10 @@ async function scnNoRange(fx, t, big) {
   const hashOk = (await sha256File(dest)) === big.sha256;
 
   return {
-    hashOk, sizeOk: st.size === big.sizeBytes, size: st.size,
-    rangedRequests: fx.ranged('/big'),      // 我们发了 Range，但对方回 200
+    hashOk,
+    sizeOk: st.size === big.sizeBytes,
+    size: st.size,
+    rangedRequests: fx.ranged('/big'), // 我们发了 Range，但对方回 200
     requests: fx.count('/big'),
     resumedFrom: rep?.ensure?.resumeFrom?.big ?? 0, // 必须为 0（重新计）
   };
@@ -382,7 +485,17 @@ async function scnTamper(fx, t, alpha, beta) {
   fx.def('/alpha', { buf: alpha.buf });
   fx.def('/beta', { buf: beta.buf });
   writeManifest(s.manifestPath, fixtureManifest(fx, [alpha, beta]));
-  const base = ['--root', s.root, '--manifest', s.manifestPath, '--integrity', 'hash', '--no-link', '--report', s.reportPath];
+  const base = [
+    '--root',
+    s.root,
+    '--manifest',
+    s.manifestPath,
+    '--integrity',
+    'hash',
+    '--no-link',
+    '--report',
+    s.reportPath,
+  ];
 
   await run(t, base);
   const destA = path.join(s.root, 'alpha.bin');
@@ -420,11 +533,21 @@ async function scnAlwaysBad(fx, t, alpha) {
   writeManifest(s.manifestPath, fixtureManifest(fx, [alpha]));
   const before = fx.count('/alpha');
 
-  const res = await run(t, ['--root', s.root, '--manifest', s.manifestPath, '--integrity', 'hash',
-    '--no-link', '--report', s.reportPath]);
+  const res = await run(t, [
+    '--root',
+    s.root,
+    '--manifest',
+    s.manifestPath,
+    '--integrity',
+    'hash',
+    '--no-link',
+    '--report',
+    s.reportPath,
+  ]);
 
   return {
-    code: errCode(res.err), msg: res.err.trim().split('\n').at(-1) ?? '',
+    code: errCode(res.err),
+    msg: res.err.trim().split('\n').at(-1) ?? '',
     threw: errCode(res.err) === 'MODEL_SHA256_MISMATCH',
     fetchCount: fx.count('/alpha') - before,
     // REDOWNLOAD_LIMIT = 1 ⇒ 首次 + 重下一次 = 2
@@ -446,7 +569,17 @@ async function scnAbortResume(fx, t, big) {
   writeManifest(s.manifestPath, fixtureManifest(fx, [big]));
   const dest = path.join(s.root, 'big.bin');
   const part = `${dest}.part`;
-  const base = ['--root', s.root, '--manifest', s.manifestPath, '--integrity', 'hash', '--no-link', '--report', s.reportPath];
+  const base = [
+    '--root',
+    s.root,
+    '--manifest',
+    s.manifestPath,
+    '--integrity',
+    'hash',
+    '--no-link',
+    '--report',
+    s.reportPath,
+  ];
 
   const killed = await run(t, base, { killWhen: async () => (await sizeOf(part)) > 300 * 1024 });
 
@@ -459,7 +592,9 @@ async function scnAbortResume(fx, t, big) {
   const st = await statSafe(dest);
 
   return {
-    killed: killed.killed, partSize, destExistsAfterAbort,
+    killed: killed.killed,
+    partSize,
+    destExistsAfterAbort,
     resumedFrom: rep?.ensure?.resumeFrom?.big ?? 0,
     hashOk: hashOk === big.sha256,
     sizeOk: !!st && st.size === big.sizeBytes,
@@ -489,8 +624,10 @@ async function scnVerifyOffline(fx, t, alpha) {
   const ok2 = await readReport(s.reportPath);
 
   return {
-    cleanOk: (ok1?.verify?.ok ?? []).includes('alpha')
-      && (ok1?.verify?.bad ?? []).length === 0 && (ok1?.verify?.missing ?? []).length === 0,
+    cleanOk:
+      (ok1?.verify?.ok ?? []).includes('alpha') &&
+      (ok1?.verify?.bad ?? []).length === 0 &&
+      (ok1?.verify?.missing ?? []).length === 0,
     dirtyOk: (ok2?.verify?.bad ?? []).some((b) => b.id === 'alpha'),
     noNetwork: fx.requests.length === before,
   };
@@ -502,16 +639,33 @@ async function scnFallback(fx, t, alpha) {
   fx.def('/bad', { buf: alpha.buf, failTimes: 99 });
   fx.def('/good', { buf: alpha.buf });
   const m = {
-    manifestVersion: 999, engineCommit: 'fixture', sets: {},
-    files: [{
-      id: 'alpha', set: 'all', dest: 'alpha.bin',
-      sha256: alpha.sha256, sizeBytes: alpha.sizeBytes,
-      url: `${fx.base}/bad`, sources: [`${fx.base}/bad`, `${fx.base}/good`],
-    }],
+    manifestVersion: 999,
+    engineCommit: 'fixture',
+    sets: {},
+    files: [
+      {
+        id: 'alpha',
+        set: 'all',
+        dest: 'alpha.bin',
+        sha256: alpha.sha256,
+        sizeBytes: alpha.sizeBytes,
+        url: `${fx.base}/bad`,
+        sources: [`${fx.base}/bad`, `${fx.base}/good`],
+      },
+    ],
   };
   writeManifest(s.manifestPath, m);
-  await run(t, ['--root', s.root, '--manifest', s.manifestPath, '--integrity', 'hash',
-    '--no-link', '--report', s.reportPath]);
+  await run(t, [
+    '--root',
+    s.root,
+    '--manifest',
+    s.manifestPath,
+    '--integrity',
+    'hash',
+    '--no-link',
+    '--report',
+    s.reportPath,
+  ]);
   const rep = await readReport(s.reportPath);
   const hashOk = (await sha256File(path.join(s.root, 'alpha.bin'))) === alpha.sha256;
   return { hashOk, downloaded: rep?.ensure?.downloaded ?? [], badTried: fx.count('/bad'), goodUsed: fx.count('/good') };
@@ -532,16 +686,33 @@ async function scnUrlNotDropped(fx, t, alpha) {
   fx.def('/bad', { buf: alpha.buf, failTimes: 99 });
   fx.def('/good', { buf: alpha.buf });
   const m = {
-    manifestVersion: 999, engineCommit: 'fixture', sets: {},
-    files: [{
-      id: 'alpha', set: 'all', dest: 'alpha.bin',
-      sha256: alpha.sha256, sizeBytes: alpha.sizeBytes,
-      url: `${fx.base}/good`, sources: [`${fx.base}/bad`],
-    }],
+    manifestVersion: 999,
+    engineCommit: 'fixture',
+    sets: {},
+    files: [
+      {
+        id: 'alpha',
+        set: 'all',
+        dest: 'alpha.bin',
+        sha256: alpha.sha256,
+        sizeBytes: alpha.sizeBytes,
+        url: `${fx.base}/good`,
+        sources: [`${fx.base}/bad`],
+      },
+    ],
   };
   writeManifest(s.manifestPath, m);
-  await run(t, ['--root', s.root, '--manifest', s.manifestPath, '--integrity', 'hash',
-    '--no-link', '--report', s.reportPath]);
+  await run(t, [
+    '--root',
+    s.root,
+    '--manifest',
+    s.manifestPath,
+    '--integrity',
+    'hash',
+    '--no-link',
+    '--report',
+    s.reportPath,
+  ]);
   const rep = await readReport(s.reportPath);
   // 🔴 先判存在再读：反证态（丢掉原 url）下根本下不成、文件不在盘上，
   //    直接 `sha256File` 会抛 ENOENT 把**反证轮本身**炸掉 —— 那样看到的是"检查崩了"，
@@ -569,7 +740,17 @@ async function scnRelink(fx, t, alpha) {
   writeManifest(s.manifestPath, fixtureManifest(fx, [entry]));
 
   await run(t, ['--root', s.root, '--manifest', s.manifestPath, '--integrity', 'hash', '--no-link']);
-  await run(t, ['--root', s.root, '--manifest', s.manifestPath, '--link', '--link-base', linkBase, '--report', s.reportPath]);
+  await run(t, [
+    '--root',
+    s.root,
+    '--manifest',
+    s.manifestPath,
+    '--link',
+    '--link-base',
+    linkBase,
+    '--report',
+    s.reportPath,
+  ]);
   const l1 = (await readReport(s.reportPath))?.link ?? {};
 
   const enginePath = path.join(linkBase, 'models/alpha.bin');
@@ -582,15 +763,30 @@ async function scnRelink(fx, t, alpha) {
   await fsp.rm(linkBase, { recursive: true, force: true });
 
   const before = fx.requests.length;
-  await run(t, ['--root', s.root, '--manifest', s.manifestPath, '--link', '--link-base', linkBase, '--report', s.reportPath]);
+  await run(t, [
+    '--root',
+    s.root,
+    '--manifest',
+    s.manifestPath,
+    '--link',
+    '--link-base',
+    linkBase,
+    '--report',
+    s.reportPath,
+  ]);
   const l2 = (await readReport(s.reportPath))?.link ?? {};
   const newRequests = fx.requests.length - before; // 这一步**必须**是 0
   const restoredOk = exists(enginePath) ? (await sha256File(enginePath)) === alpha.sha256 : false;
   const storeIntact = (await sha256File(storePath)) === alpha.sha256;
 
   return {
-    linked1: l1.linked ?? [], copied1: l1.copied ?? [], sameInode,
-    relinked2: l2.linked ?? [], restoredOk, newRequests, storeIntact,
+    linked1: l1.linked ?? [],
+    copied1: l1.copied ?? [],
+    sameInode,
+    relinked2: l2.linked ?? [],
+    restoredOk,
+    newRequests,
+    storeIntact,
   };
 }
 
@@ -618,7 +814,17 @@ async function scnHfLayout(fx, t, alpha) {
   writeManifest(s.manifestPath, fixtureManifest(fx, [entry]));
 
   await run(t, ['--root', s.root, '--manifest', s.manifestPath, '--integrity', 'hash', '--no-link']);
-  await run(t, ['--root', s.root, '--manifest', s.manifestPath, '--link', '--link-base', linkBase, '--report', s.reportPath]);
+  await run(t, [
+    '--root',
+    s.root,
+    '--manifest',
+    s.manifestPath,
+    '--link',
+    '--link-base',
+    linkBase,
+    '--report',
+    s.reportPath,
+  ]);
   const l1 = (await readReport(s.reportPath))?.link ?? {};
 
   const store = path.join(s.root, entry.dest);
@@ -630,17 +836,47 @@ async function scnHfLayout(fx, t, alpha) {
   const sSnap = await statSafe(snapTo);
   const refs = exists(refsTo) ? fs.readFileSync(refsTo, 'utf8') : null;
 
-  await run(t, ['--root', s.root, '--manifest', s.manifestPath, '--check', '--link-base', linkBase, '--report', s.reportPath]);
+  await run(t, [
+    '--root',
+    s.root,
+    '--manifest',
+    s.manifestPath,
+    '--check',
+    '--link-base',
+    linkBase,
+    '--report',
+    s.reportPath,
+  ]);
   const v1 = (await readReport(s.reportPath))?.hf ?? {};
 
   // —— 模拟「引擎换版本」：整棵 src/ 被删（模型目录跟着没了）
   await fsp.rm(linkBase, { recursive: true, force: true });
   const before = fx.requests.length;
-  await run(t, ['--root', s.root, '--manifest', s.manifestPath, '--link', '--link-base', linkBase, '--report', s.reportPath]);
+  await run(t, [
+    '--root',
+    s.root,
+    '--manifest',
+    s.manifestPath,
+    '--link',
+    '--link-base',
+    linkBase,
+    '--report',
+    s.reportPath,
+  ]);
   const l2 = (await readReport(s.reportPath))?.link ?? {};
   const newRequests = fx.requests.length - before; // 必须 0
   const sSnap2 = await statSafe(snapTo);
-  await run(t, ['--root', s.root, '--manifest', s.manifestPath, '--check', '--link-base', linkBase, '--report', s.reportPath]);
+  await run(t, [
+    '--root',
+    s.root,
+    '--manifest',
+    s.manifestPath,
+    '--check',
+    '--link-base',
+    linkBase,
+    '--report',
+    s.reportPath,
+  ]);
   const v2 = (await readReport(s.reportPath))?.hf ?? {};
 
   // —— 反例：linkTo 不落在 blobs/ 下 ⇒ 必须失败退出，不许静默猜 <cache> 根
@@ -648,7 +884,10 @@ async function scnHfLayout(fx, t, alpha) {
   //    而 skip 发生在 `hfLayout` **之前** —— 副本不存在的话这条断言根本咬不到判据
   //    （实测两靶都返回 code=null）。让它指向刚下载好的那份，判据才会真正执行。
   const badEntry = {
-    ...alpha, id: 'bad', dest: entry.dest, linkTo: `${cache}/files/config.json`,
+    ...alpha,
+    id: 'bad',
+    dest: entry.dest,
+    linkTo: `${cache}/files/config.json`,
     hf: { revision: rev, filename: 'config.json' },
   };
   const badPath = path.join(TMP, `${t.id}-hf-bad.manifest.json`);
@@ -685,8 +924,7 @@ const PRED = {
   'E7-3a .ready 幂等标记存在且记录与清单一致': (f) => f.markerExists && f.markerHashOk && f.markerSizeOk,
   'E7-3b 第二次运行不联网（全复用）': (f) => f.newRequests === 0 && f.downloaded2.length === 0,
   // —— 多源（组 H）：H2 咬"原 url 被 sources 挤掉"，H1 咬不了它（见 scnUrlNotDropped 的注释）
-  'H2 清单原 url 可用 + sources 全挂 ⇒ 仍要下成（原 url 不许被 sources 挤掉）':
-    (f) => f.hashOk && f.goodUsed > 0,
+  'H2 清单原 url 可用 + sources 全挂 ⇒ 仍要下成（原 url 不许被 sources 挤掉）': (f) => f.hashOk && f.goodUsed > 0,
   'E7-4a 引擎树里那份是与 store 同一 inode 的硬链接': (f) => f.sameInode && f.linked1.includes('alpha'),
   'E7-4b 换版本（src/ 整棵被删）后重链即恢复且哈希正确': (f) => f.relinked2.includes('alpha') && f.restoredOk,
   'E7-4c 重链全程 0 次网络请求（这就是"换版本不重下"）': (f) => f.newRequests === 0,
@@ -694,10 +932,10 @@ const PRED = {
   'P1 带 hf 的条目补齐 snapshot 与 refs/main（HF 才看得见）': (f) => f.hfCount === 1 && f.refsOk,
   'P2 snapshot 与 store 权威副本同一 inode（硬链接，不多占盘）': (f) => f.snapshotLinked && f.blobLinked,
   'P3 verifyHfCache 认定可解析': (f) => f.verifyOk,
-  'P4 换版本后重链即恢复可解析（0 次网络）':
-    (f) => f.relinkedHf === 1 && f.restoredSnapshot && f.verifyOkAfterRelink && f.newRequests === 0,
-  'P5 linkTo 不落在 blobs/ 下 ⇒ 报 MODEL_HF_BAD_LINK（不静默猜）':
-    (f) => f.badCode === 'MODEL_HF_BAD_LINK' && f.badExit !== 0,
+  'P4 换版本后重链即恢复可解析（0 次网络）': (f) =>
+    f.relinkedHf === 1 && f.restoredSnapshot && f.verifyOkAfterRelink && f.newRequests === 0,
+  'P5 linkTo 不落在 blobs/ 下 ⇒ 报 MODEL_HF_BAD_LINK（不静默猜）': (f) =>
+    f.badCode === 'MODEL_HF_BAD_LINK' && f.badExit !== 0,
 };
 
 /** 取谓词并在缺失时**立刻炸**：拼错名字不该退化成"静默跳过"。 */
@@ -715,61 +953,98 @@ async function runTarget(fx, t, fixtures) {
 
   setGroup(`【${t.id}-A】首次下载 + 校验 + 幂等`);
   const fresh = await scnFreshIdempotent(fx, t, alpha, beta);
-  add('A1 两个文件都下成且哈希正确', fresh.downloaded.length === 2 && fresh.hashOk,
-    `downloaded=${fresh.downloaded.join(',')} hashOk=${fresh.hashOk}`);
+  add(
+    'A1 两个文件都下成且哈希正确',
+    fresh.downloaded.length === 2 && fresh.hashOk,
+    `downloaded=${fresh.downloaded.join(',')} hashOk=${fresh.hashOk}`,
+  );
   add('A2 落盘大小等于清单大小', fresh.sizeOk, `size=${fresh.size}`);
-  add('A3 进度按文件单调递增，且 total 等于文件大小', fresh.progressMonotonic && fresh.progressTotalOk,
-    `事件 ${fresh.progressEvents} 条，终值 ${fresh.progressFinal}`);
-  add('E7-3a .ready 幂等标记存在且记录与清单一致',
+  add(
+    'A3 进度按文件单调递增，且 total 等于文件大小',
+    fresh.progressMonotonic && fresh.progressTotalOk,
+    `事件 ${fresh.progressEvents} 条，终值 ${fresh.progressFinal}`,
+  );
+  add(
+    'E7-3a .ready 幂等标记存在且记录与清单一致',
     PRED['E7-3a .ready 幂等标记存在且记录与清单一致'](fresh),
-    `marker=${fresh.markerExists} hash=${fresh.markerHashOk} size=${fresh.markerSizeOk}`);
-  add('E7-3b 第二次运行不联网（全复用）',
+    `marker=${fresh.markerExists} hash=${fresh.markerHashOk} size=${fresh.markerSizeOk}`,
+  );
+  add(
+    'E7-3b 第二次运行不联网（全复用）',
     PRED['E7-3b 第二次运行不联网（全复用）'](fresh),
-    `新请求 ${fresh.newRequests} 次 · 复用 ${fresh.reused2.length} 个`);
+    `新请求 ${fresh.newRequests} 次 · 复用 ${fresh.reused2.length} 个`,
+  );
 
   setGroup(`【${t.id}-B】E7-1 中断续传（真切 socket）`);
   const resume = await scnResume(fx, t, big);
-  add('E7-1a 中断后仍下成完整正确的文件', PRED['E7-1a 中断后仍下成完整正确的文件'](resume),
-    `size=${resume.size} hashOk=${resume.hashOk}`);
-  add('E7-1b 续传确实发了 Range（不是整包重来）', PRED['E7-1b 续传确实发了 Range（不是整包重来）'](resume),
-    `Range 请求 ${resume.rangedRequests} 次 / 共 ${resume.requests} 次`);
-  add('E7-1c 续传起点 = 已落盘的部分', PRED['E7-1c 续传起点 = 已落盘的部分'](resume),
-    `resumedFrom=${resume.resumedFrom}`);
+  add(
+    'E7-1a 中断后仍下成完整正确的文件',
+    PRED['E7-1a 中断后仍下成完整正确的文件'](resume),
+    `size=${resume.size} hashOk=${resume.hashOk}`,
+  );
+  add(
+    'E7-1b 续传确实发了 Range（不是整包重来）',
+    PRED['E7-1b 续传确实发了 Range（不是整包重来）'](resume),
+    `Range 请求 ${resume.rangedRequests} 次 / 共 ${resume.requests} 次`,
+  );
+  add(
+    'E7-1c 续传起点 = 已落盘的部分',
+    PRED['E7-1c 续传起点 = 已落盘的部分'](resume),
+    `resumedFrom=${resume.resumedFrom}`,
+  );
   add('E7-1d 断点文件不残留', PRED['E7-1d 断点文件不残留'](resume), `partLeft=${resume.partLeft}`);
 
   setGroup(`【${t.id}-C】源不支持 Range ⇒ 必须截断重来（不能追加到 .part 后面）`);
   const noRange = await scnNoRange(fx, t, big);
   add('C1 对方回 200 时仍下成正确文件', noRange.hashOk, `hashOk=${noRange.hashOk}`);
-  add('C2 大小**没有**被追加成 2×（这正是"整包当续传"会出的错）', noRange.sizeOk && noRange.resumedFrom === 0,
-    `size=${noRange.size}（期望 ${big.sizeBytes}）resumedFrom=${noRange.resumedFrom}`);
+  add(
+    'C2 大小**没有**被追加成 2×（这正是"整包当续传"会出的错）',
+    noRange.sizeOk && noRange.resumedFrom === 0,
+    `size=${noRange.size}（期望 ${big.sizeBytes}）resumedFrom=${noRange.resumedFrom}`,
+  );
 
   setGroup(`【${t.id}-D】E7-2 篡改一字节 → SHA256 失败 → 自动重下`);
   const tamper = await scnTamper(fx, t, alpha, beta);
   add('D1 篡改前后哈希确实变了（先证明夹具真的破坏了内容）', tamper.tamperActuallyChanged, '');
-  add('E7-2a 篡改一字节被检出并标记重下', PRED['E7-2a 篡改一字节被检出并标记重下'](tamper),
-    `redownloaded=${tamper.redownloaded.join(',')}`);
+  add(
+    'E7-2a 篡改一字节被检出并标记重下',
+    PRED['E7-2a 篡改一字节被检出并标记重下'](tamper),
+    `redownloaded=${tamper.redownloaded.join(',')}`,
+  );
   add('E7-2b 重下后哈希恢复正确', PRED['E7-2b 重下后哈希恢复正确'](tamper), `fixed=${tamper.fixed}`);
-  add('D4 只有被篡改的那个文件重下（失败**单文件**重下）',
+  add(
+    'D4 只有被篡改的那个文件重下（失败**单文件**重下）',
     tamper.alphaRefetched > 0 && tamper.betaRefetched === 0 && tamper.betaUntouched,
-    `alpha 重取 ${tamper.alphaRefetched} 次 · beta 重取 ${tamper.betaRefetched} 次 · beta 未被动过=${tamper.betaUntouched}`);
+    `alpha 重取 ${tamper.alphaRefetched} 次 · beta 重取 ${tamper.betaRefetched} 次 · beta 未被动过=${tamper.betaUntouched}`,
+  );
 
   setGroup(`【${t.id}-E】源内容修不好 ⇒ 重下到位后必须报错`);
   const bad = await scnAlwaysBad(fx, t, alpha);
-  add('E7-2c 源内容坏到修不好 → 必须报错，不静默接受', PRED['E7-2c 源内容坏到修不好 → 必须报错，不静默接受'](bad),
-    `code=${bad.code}`);
-  add('E2 重试次数 = 1 + REDOWNLOAD_LIMIT（不无限重试）', bad.fetchCount === bad.expectedFetchCount,
-    `实际 ${bad.fetchCount} 次（期望 ${bad.expectedFetchCount}）`);
+  add(
+    'E7-2c 源内容坏到修不好 → 必须报错，不静默接受',
+    PRED['E7-2c 源内容坏到修不好 → 必须报错，不静默接受'](bad),
+    `code=${bad.code}`,
+  );
+  add(
+    'E2 重试次数 = 1 + REDOWNLOAD_LIMIT（不无限重试）',
+    bad.fetchCount === bad.expectedFetchCount,
+    `实际 ${bad.fetchCount} 次（期望 ${bad.expectedFetchCount}）`,
+  );
   add('E3 失败时不留半好文件（不留下会被静默使用的坏模型）', !bad.leftover, `leftover=${bad.leftover}`);
 
   setGroup(`【${t.id}-F】可暂停 / 恢复（杀进程 ⇒ .part 留存 ⇒ 从断点续下）`);
   const ab = await scnAbortResume(fx, t, big);
-  add('F1 中途被杀 ⇒ .part 留存且只是部分（断点就是它）',
+  add(
+    'F1 中途被杀 ⇒ .part 留存且只是部分（断点就是它）',
     ab.killed && ab.partSize > 0 && ab.partSize < ab.total,
-    `killed=${ab.killed} part=${ab.partSize} / ${ab.total}`);
+    `killed=${ab.killed} part=${ab.partSize} / ${ab.total}`,
+  );
   add('F2 被杀后不留半截正式文件', !ab.destExistsAfterAbort, '');
-  add('F3 再跑从断点恢复并下成正确文件',
+  add(
+    'F3 再跑从断点恢复并下成正确文件',
     ab.resumedFrom > 0 && ab.hashOk && ab.sizeOk && !ab.partLeft,
-    `resumedFrom=${ab.resumedFrom} hashOk=${ab.hashOk}`);
+    `resumedFrom=${ab.resumedFrom} hashOk=${ab.hashOk}`,
+  );
 
   setGroup(`【${t.id}-G】纯离线校验（诊断口径）`);
   const vf = await scnVerifyOffline(fx, t, alpha);
@@ -778,37 +1053,60 @@ async function runTarget(fx, t, fixtures) {
 
   setGroup(`【${t.id}-H】多源回退`);
   const fb = await scnFallback(fx, t, alpha);
-  add('H1 第一个源 500 → 自动换第二个源并下成', fb.hashOk && fb.goodUsed > 0,
-    `bad 尝试 ${fb.badTried} 次 · good 用上 ${fb.goodUsed} 次`);
+  add(
+    'H1 第一个源 500 → 自动换第二个源并下成',
+    fb.hashOk && fb.goodUsed > 0,
+    `bad 尝试 ${fb.badTried} 次 · good 用上 ${fb.goodUsed} 次`,
+  );
   const nu = await scnUrlNotDropped(fx, t, alpha);
-  add('H2 清单原 url 可用 + sources 全挂 ⇒ 仍要下成（原 url 不许被 sources 挤掉）',
+  add(
+    'H2 清单原 url 可用 + sources 全挂 ⇒ 仍要下成（原 url 不许被 sources 挤掉）',
     PRED['H2 清单原 url 可用 + sources 全挂 ⇒ 仍要下成（原 url 不许被 sources 挤掉）'](nu),
-    `hashOk=${nu.hashOk} · bad 尝试 ${nu.badTried} 次 · good 用上 ${nu.goodUsed} 次`);
+    `hashOk=${nu.hashOk} · bad 尝试 ${nu.badTried} 次 · good 用上 ${nu.goodUsed} 次`,
+  );
 
   setGroup(`【${t.id}-N】引擎换版本不重下模型（store + 硬链接）`);
   const rl = await scnRelink(fx, t, alpha);
-  add('E7-4a 引擎树里那份是与 store 同一 inode 的硬链接', P('E7-4a 引擎树里那份是与 store 同一 inode 的硬链接')(rl),
-    `新建 ${rl.linked1.length} 个 · 复制 ${rl.copied1.length} 个（复制=退化了，不是链接）`);
-  add('E7-4b 换版本（src/ 整棵被删）后重链即恢复且哈希正确', P('E7-4b 换版本（src/ 整棵被删）后重链即恢复且哈希正确')(rl),
-    `重链 ${rl.relinked2.length} 个 · 恢复后哈希正确=${rl.restoredOk}`);
-  add('E7-4c 重链全程 0 次网络请求（这就是"换版本不重下"）', P('E7-4c 重链全程 0 次网络请求（这就是"换版本不重下"）')(rl),
-    `新请求 ${rl.newRequests} 次`);
+  add(
+    'E7-4a 引擎树里那份是与 store 同一 inode 的硬链接',
+    P('E7-4a 引擎树里那份是与 store 同一 inode 的硬链接')(rl),
+    `新建 ${rl.linked1.length} 个 · 复制 ${rl.copied1.length} 个（复制=退化了，不是链接）`,
+  );
+  add(
+    'E7-4b 换版本（src/ 整棵被删）后重链即恢复且哈希正确',
+    P('E7-4b 换版本（src/ 整棵被删）后重链即恢复且哈希正确')(rl),
+    `重链 ${rl.relinked2.length} 个 · 恢复后哈希正确=${rl.restoredOk}`,
+  );
+  add(
+    'E7-4c 重链全程 0 次网络请求（这就是"换版本不重下"）',
+    P('E7-4c 重链全程 0 次网络请求（这就是"换版本不重下"）')(rl),
+    `新请求 ${rl.newRequests} 次`,
+  );
   add('N4 store 权威副本未被牵连', rl.storeIntact, '');
 
   setGroup(`【${t.id}-P】HF 缓存布局（blobs + snapshots/<rev>/<file> + refs/main）`);
   const hf = await scnHfLayout(fx, t, alpha);
-  add('P1 带 hf 的条目补齐 snapshot 与 refs/main（HF 才看得见）',
+  add(
+    'P1 带 hf 的条目补齐 snapshot 与 refs/main（HF 才看得见）',
     P('P1 带 hf 的条目补齐 snapshot 与 refs/main（HF 才看得见）')(hf),
-    `hf 条目 ${hf.hfCount} 个 · refs/main=${hf.refsOk ? '对' : hf.refsContent}`);
-  add('P2 snapshot 与 store 权威副本同一 inode（硬链接，不多占盘）',
+    `hf 条目 ${hf.hfCount} 个 · refs/main=${hf.refsOk ? '对' : hf.refsContent}`,
+  );
+  add(
+    'P2 snapshot 与 store 权威副本同一 inode（硬链接，不多占盘）',
     P('P2 snapshot 与 store 权威副本同一 inode（硬链接，不多占盘）')(hf),
-    `blob=${hf.blobLinked} snapshot=${hf.snapshotLinked}`);
+    `blob=${hf.blobLinked} snapshot=${hf.snapshotLinked}`,
+  );
   add('P3 verifyHfCache 认定可解析', P('P3 verifyHfCache 认定可解析')(hf), '');
-  add('P4 换版本后重链即恢复可解析（0 次网络）',
+  add(
+    'P4 换版本后重链即恢复可解析（0 次网络）',
     P('P4 换版本后重链即恢复可解析（0 次网络）')(hf),
-    `重链 ${hf.relinkedHf} 个 · 网络请求 ${hf.newRequests} 次`);
-  add('P5 linkTo 不落在 blobs/ 下 ⇒ 报 MODEL_HF_BAD_LINK（不静默猜）',
-    P('P5 linkTo 不落在 blobs/ 下 ⇒ 报 MODEL_HF_BAD_LINK（不静默猜）')(hf), `code=${hf.badCode}`);
+    `重链 ${hf.relinkedHf} 个 · 网络请求 ${hf.newRequests} 次`,
+  );
+  add(
+    'P5 linkTo 不落在 blobs/ 下 ⇒ 报 MODEL_HF_BAD_LINK（不静默猜）',
+    P('P5 linkTo 不落在 blobs/ 下 ⇒ 报 MODEL_HF_BAD_LINK（不静默猜）')(hf),
+    `code=${hf.badCode}`,
+  );
 
   setGroup(`【${t.id}-M】真实清单自洽（与实现无关，两靶同判）`);
   const real = JSON.parse(fs.readFileSync(path.join(REPO, 'engine', 'models.manifest.json'), 'utf8'));
@@ -823,14 +1121,22 @@ async function runTarget(fx, t, fixtures) {
   // hf 条目最容易出的一类错：linkTo 与 dest 的 blob 名走散（复制粘贴换了一个忘了另一个）
   // —— 那会让"下载落在 A、链接指到 B"，而两边都不报错。这里钉住这条等式。
   const hfFiles = real.files.filter((f) => f.hf);
-  const hfOk = hfFiles.length > 0 && hfFiles.every((f) => {
-    const segs = String(f.linkTo).split('/');
-    return !!f.hf.revision && !!f.hf.filename
-      && segs[segs.length - 2] === 'blobs'
-      && segs[segs.length - 1] === String(f.dest).split('/').pop();
-  });
-  add('M4 hf 条目契约：revision/filename 齐备 · linkTo 落在 blobs/ · blob 名与 dest 一致',
-    hfOk, `hf 条目 ${hfFiles.length} 个`);
+  const hfOk =
+    hfFiles.length > 0 &&
+    hfFiles.every((f) => {
+      const segs = String(f.linkTo).split('/');
+      return (
+        !!f.hf.revision &&
+        !!f.hf.filename &&
+        segs[segs.length - 2] === 'blobs' &&
+        segs[segs.length - 1] === String(f.dest).split('/').pop()
+      );
+    });
+  add(
+    'M4 hf 条目契约：revision/filename 齐备 · linkTo 落在 blobs/ · blob 名与 dest 一致',
+    hfOk,
+    `hf 条目 ${hfFiles.length} 个`,
+  );
 }
 
 async function main() {
@@ -839,7 +1145,10 @@ async function main() {
   const alpha = { id: 'alpha', path: '/alpha', buf: makeBytes(1500 * 1024, 11) };
   const beta = { id: 'beta', path: '/beta', buf: makeBytes(512 * 1024, 22) };
   const big = { id: 'big', path: '/big', buf: makeBytes(2048 * 1024, 33) };
-  for (const o of [alpha, beta, big]) { o.sha256 = sha(o.buf); o.sizeBytes = o.buf.length; }
+  for (const o of [alpha, beta, big]) {
+    o.sha256 = sha(o.buf);
+    o.sizeBytes = o.buf.length;
+  }
 
   if (!REFUTE) {
     console.log('S3 模型下载器 · E7 验收（正向轮 · 双靶）');
@@ -874,37 +1183,50 @@ async function main() {
 
   const refutes = [
     {
-      id: 'R1', env: 'MIAO_NO_MODEL_VERIFY', desc: '关掉 SHA256 校验',
+      id: 'R1',
+      env: 'MIAO_NO_MODEL_VERIFY',
+      desc: '关掉 SHA256 校验',
       target: 'E7-2a 篡改一字节被检出并标记重下',
       run: async (fx, t) => scnTamper(fx, t, alpha, beta),
     },
     {
-      id: 'R2', env: 'MIAO_NO_RESUME', desc: '关掉断点续传（每次从 0 全量下）',
+      id: 'R2',
+      env: 'MIAO_NO_RESUME',
+      desc: '关掉断点续传（每次从 0 全量下）',
       target: 'E7-1b 续传确实发了 Range（不是整包重来）',
       run: async (fx, t) => scnResume(fx, t, big),
     },
     {
-      id: 'R3', env: 'MIAO_NO_READY', desc: '关掉 .ready 幂等标记',
+      id: 'R3',
+      env: 'MIAO_NO_READY',
+      desc: '关掉 .ready 幂等标记',
       target: 'E7-3a .ready 幂等标记存在且记录与清单一致',
       run: async (fx, t) => scnFreshIdempotent(fx, t, alpha, beta),
     },
     {
-      id: 'R4', env: 'MIAO_NO_MODEL_VERIFY', desc: '关掉校验后，坏源也不会被拦下',
+      id: 'R4',
+      env: 'MIAO_NO_MODEL_VERIFY',
+      desc: '关掉校验后，坏源也不会被拦下',
       target: 'E7-2c 源内容坏到修不好 → 必须报错，不静默接受',
       run: async (fx, t) => scnAlwaysBad(fx, t, alpha),
     },
     {
-      id: 'R5', env: 'MIAO_NO_LINK', desc: '关掉"把 store 链进引擎树"这一步',
+      id: 'R5',
+      env: 'MIAO_NO_LINK',
+      desc: '关掉"把 store 链进引擎树"这一步',
       target: 'E7-4b 换版本（src/ 整棵被删）后重链即恢复且哈希正确',
       run: async (fx, t) => scnRelink(fx, t, alpha),
     },
     {
-      id: 'R6', env: 'MIAO_NO_LINK', desc: '关掉建链 ⇒ hf 条目的 snapshot / refs/main 也补不上',
+      id: 'R6',
+      env: 'MIAO_NO_LINK',
+      desc: '关掉建链 ⇒ hf 条目的 snapshot / refs/main 也补不上',
       target: 'P1 带 hf 的条目补齐 snapshot 与 refs/main（HF 才看得见）',
       run: async (fx, t) => scnHfLayout(fx, t, alpha),
     },
     {
-      id: 'R7', env: 'MIAO_NO_URL_FIRST',
+      id: 'R7',
+      env: 'MIAO_NO_URL_FIRST',
       desc: '关掉「清单原 url 优先」⇒ 退回只试 sources（D-217 之前的旧行为）',
       target: 'H2 清单原 url 可用 + sources 全挂 ⇒ 仍要下成（原 url 不许被 sources 挤掉）',
       run: async (fx, t) => scnUrlNotDropped(fx, t, alpha),
@@ -922,7 +1244,11 @@ async function main() {
     for (const r of refutes) {
       REFUTE_ENV = { [r.env]: '1' };
       let facts;
-      try { facts = await r.run(fx, t); } finally { REFUTE_ENV = {}; }
+      try {
+        facts = await r.run(fx, t);
+      } finally {
+        REFUTE_ENV = {};
+      }
       const predicate = PRED[r.target];
       if (!predicate) throw new Error(`反证 ${r.id} 指定的断言不存在：${r.target}`);
       const turnedRed = !predicate(facts);

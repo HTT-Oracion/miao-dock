@@ -152,13 +152,20 @@ const ENGINE_ENTRY = path.resolve(HERE, '..', '..', 'engine', 'src', 'server.mjs
 // H3 node 档已退役 ⇒ `MIAO_SERVICE_IMPL=node` 必须**抛错**（不是静默落回 rust）
 {
   const r = await runNode(
-    ['--input-type=module', '-e', `await import(${JSON.stringify('./' + HARNESS_FILE)}); process.stdout.write('done');`],
+    [
+      '--input-type=module',
+      '-e',
+      `await import(${JSON.stringify('./' + HARNESS_FILE)}); process.stdout.write('done');`,
+    ],
     { MIAO_SERVICE_IMPL: 'node' },
   );
   // 🔴 判据三条缺一不可：非 0 退出 + 文案里有「已退役」+ 指到 `service/`。
   //    只看"非 0"会被任何无关崩溃骗过（例如语法错）；只看文案则"抛没抛"没被验。
   const ok = r.code !== 0 && /已退役/.test(r.stderr || '') && /service\//.test(r.stderr || '');
-  check('HARNESS.nodeRetired — MIAO_SERVICE_IMPL=node ⇒ 抛错并指向「service/ 已删除」', ok, { code: r.code, stderr: (r.stderr || '').slice(0, 200) });
+  check('HARNESS.nodeRetired — MIAO_SERVICE_IMPL=node ⇒ 抛错并指向「service/ 已删除」', ok, {
+    code: r.code,
+    stderr: (r.stderr || '').slice(0, 200),
+  });
 }
 // H4 服务入口 ⇒ command=boxsvc（用临时假二进制占位，验「解析」而非「存在」）
 {
@@ -185,7 +192,10 @@ const ENGINE_ENTRY = path.resolve(HERE, '..', '..', 'engine', 'src', 'server.mjs
   fs.writeFileSync(dummy, '');
   try {
     const t = await probe({ MIAO_BOXSVC_BIN: dummy }, ENGINE_ENTRY);
-    const ok = t.ok && path.resolve(t.command) === path.resolve(process.execPath) && path.resolve(t.args[0]) === path.resolve(ENGINE_ENTRY);
+    const ok =
+      t.ok &&
+      path.resolve(t.command) === path.resolve(process.execPath) &&
+      path.resolve(t.args[0]) === path.resolve(ENGINE_ENTRY);
     check('HARNESS.engineUntouched — 模拟引擎入口仍走 node，不被靶子机制改写', ok, t);
   } finally {
     fs.rmSync(dummy, { force: true });
@@ -194,11 +204,17 @@ const ENGINE_ENTRY = path.resolve(HERE, '..', '..', 'engine', 'src', 'server.mjs
 // H7 未知值落回默认档（rust）且 stderr 可见（R16）
 {
   const r = await runNode(
-    ['--input-type=module', '-e', `await import(${JSON.stringify('./' + HARNESS_FILE)}); process.stdout.write('done');`],
+    [
+      '--input-type=module',
+      '-e',
+      `await import(${JSON.stringify('./' + HARNESS_FILE)}); process.stdout.write('done');`,
+    ],
     { MIAO_SERVICE_IMPL: 'RUSTT' },
   );
   const ok = /未知 MIAO_SERVICE_IMPL/.test(r.stderr || '') && /RUSTT/i.test(r.stderr || '');
-  check('HARNESS.implMislabeled — 未知 MIAO_SERVICE_IMPL 落回默认档（rust）且 stderr 可见', ok, { stderr: (r.stderr || '').trim() });
+  check('HARNESS.implMislabeled — 未知 MIAO_SERVICE_IMPL 落回默认档（rust）且 stderr 可见', ok, {
+    stderr: (r.stderr || '').trim(),
+  });
 }
 
 // ------------------------------------------------------------------ 反证
@@ -246,10 +262,14 @@ if (REFUTE) {
     console.log(`  ${red ? '✓' : '✗'} ${m.id} ${m.what} → ${red ? '按预期变红' : '**没有红**（断言漏了它）'}`);
   }
   console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed, refute: mutations.length, allRed }));
-  console.log(`\nF0 靶子抽象：正向 ${passed} / ${passed + failed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`);
+  console.log(
+    `\nF0 靶子抽象：正向 ${passed} / ${passed + failed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`,
+  );
   process.exit(allRed ? 0 : 1);
 }
 
 console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed }));
-console.log(`\nF0 靶子抽象：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`);
+console.log(
+  `\nF0 靶子抽象：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`,
+);
 process.exit(failed === 0 ? 0 : 1);
