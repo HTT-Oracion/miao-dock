@@ -75,6 +75,58 @@ fn url_name(url: &str) -> &str {
     url.rsplit('/').next().unwrap_or(url)
 }
 
+/// Windows 上给绝对路径加 `\\?\` verbatim 前缀（其他平台原样返回）。
+///
+/// 为什么只在**解包**这一步做：`tar`（bsdtar）是外部程序，它用 Win32 路径 API，受 260
+/// 字符上限约束；而 Rust 自己的 `fs` 调用对长绝对路径本就做了 verbatim 化。能改的只有
+/// "我们传给外部程序的那个字符串"。
+/// 🔴 UNC 路径（`\\server\share`）**不能**直接加这个前缀（合法形态是 `\\?\UNC\…`），
+///    而运行时落点在本地盘 ⇒ 只对盘符路径加，UNC 原样传。
+fn verbatim(p: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let s = p.to_string_lossy();
+        let is_drive = s.len() >= 2
+            && s.as_bytes()[0].is_ascii_alphabetic()
+            && s.as_bytes()[1] == b':'
+            && !s.starts_with(r"\\?\");
+        if is_drive {
+            return PathBuf::from(format!(r"\\?\{s}"));
+        }
+    }
+    p.to_path_buf()
+}
+
+/// 遍历 `root`，返回**最长路径的字符数**与那条路径（长路径体检用）。
+///
+/// 🔴 为什么装配期要量这个、而不是继续凭推测：`nsis/hooks.nsh` 与安装引导都写着
+///    "必须开 `LongPathsEnabled`，否则装配会在中途报『文件名或扩展名太长』"，但
+///    `engine/VERSIONS.lock` §6.2 记的三个 Windows 必踩坑里**没有长路径** ——
+///    这条一直是**预防性推测**。推测的代价是用户为了一个可能不存在的问题去改注册表；
+///    实测出的余量才能让"要不要改"变成有依据的事。
+/// 只在装配收尾跑一次（一次目录扫描，代价可忽略）。
+fn longest_path(root: &Path) -> Option<(usize, PathBuf)> {
+    fn walk(dir: &Path, best: &mut Option<(usize, PathBuf)>) {
+        let rd = match fs::read_dir(dir) {
+            Ok(rd) => rd,
+            Err(_) => return,
+        };
+        for ent in rd.flatten() {
+            let p = ent.path();
+            let len = p.to_string_lossy().chars().count();
+            if best.as_ref().map(|(n, _)| len > *n).unwrap_or(true) {
+                *best = Some((len, p.clone()));
+            }
+            if p.is_dir() {
+                walk(&p, best);
+            }
+        }
+    }
+    let mut best = None;
+    walk(root, &mut best);
+    best
+}
+
 /// 把带 `extractTo` 且匹配当前平台的条目解包到目标目录（复用 fetch_models 的 tar 调用口径）。
 fn extract_entries(manifest: &Manifest, root: &Path) -> Result<(), BootstrapError> {
     let key = model_store::platform_key();
@@ -95,7 +147,8 @@ fn extract_entries(manifest: &Manifest, root: &Path) -> Result<(), BootstrapErro
         // 归档一般带一个顶层目录 ⇒ 默认 strip 第 1 层，让内容直接落在 out。
         let strip = e.extract_strip.unwrap_or(1);
         let mut cmd = Command::new("tar");
-        cmd.arg("-xf").arg(&arc).arg("-C").arg(&out);
+        // 🔴 长路径：tar 是外部程序，不吃 Rust 的 verbatim 化 ⇒ 这里显式加前缀。
+        cmd.arg("-xf").arg(verbatim(&arc)).arg("-C").arg(verbatim(&out));
         if strip > 0 {
             cmd.arg(format!("--strip-components={strip}"));
         }
@@ -228,11 +281,44 @@ pub fn run_bootstrap(
     link_models(model_manifest, model_root, None, model_ids.as_deref(), None, Some(&log))
         .map_err(|e| BootstrapError::new("link", e.message))?;
 
-    // ---- 阶段 7：写运行时就绪标记 ----
+    // ---- 阶段 7：长路径体检（把"会不会撞 260"从推测变成事实） ----
+    let longpath = measure_long_path(rt_dir, &log);
+
+    // ---- 阶段 8：写运行时就绪标记 ----
     on_phase("runtime", "写运行时就绪标记");
-    write_runtime_ready(rt_dir, runtime_manifest, model_manifest)?;
+    write_runtime_ready(rt_dir, runtime_manifest, model_manifest, longpath.as_ref())?;
 
     Ok(())
+}
+
+/// Windows `MAX_PATH` 的传统上限（未开 `LongPathsEnabled` 时的实际约束）。
+const MAX_PATH_LIMIT: usize = 260;
+
+/// 量一遍落点下最长路径，把结论写进日志（并返回给就绪标记）。
+///
+/// 🔴 这一步**不改变任何行为**：不写注册表、不挪目录、不因为余量不足就失败。
+///    它只回答"这个落点离 260 还有多远"，让"要不要开长路径"从猜测变成可复算的事实 ——
+///    而安装器那段提示（`nsis/hooks.nsh`）继续作为兜底保留不动（D-189：只提示不代改）。
+fn measure_long_path(rt_dir: &Path, log: &dyn Fn(&str)) -> Option<(usize, PathBuf)> {
+    let (len, path) = longest_path(rt_dir)?;
+    let shown = path.display();
+    let margin = MAX_PATH_LIMIT as i64 - len as i64;
+    if margin < 0 {
+        log(&format!(
+            "⚠ 长路径体检：落点下最长路径 {len} 字符（{shown}），已超过 Windows 的 {MAX_PATH_LIMIT} 上限 {margin} 字符。\
+             若后续安装/解包报『文件名或扩展名太长』，请开启 LongPathsEnabled（安装完成后应该已经提示过）。"
+        ));
+    } else if margin < 40 {
+        log(&format!(
+            "⚠ 长路径体检：落点下最长路径 {len} 字符（{shown}），距 {MAX_PATH_LIMIT} 上限仅剩 {margin} 字符 —— \
+             再装更大的依赖包可能会撞上。"
+        ));
+    } else {
+        log(&format!(
+            "长路径体检：落点下最长路径 {len} 字符（{shown}），距 {MAX_PATH_LIMIT} 上限还有 {margin} 字符（余量充足）。"
+        ));
+    }
+    Some((len, path))
 }
 
 /// 依赖安装：**拆两批**（pip 事务性）+ `pydensecrf` 走预编译 wheel + 兼容补丁 + 导入自检。
@@ -410,12 +496,26 @@ fn requirements_path(rt_dir: &Path, override_env: Option<&str>) -> Option<PathBu
 }
 
 /// `.runtime.ready.json`：runtime_probe 的「运行时是否齐备」判据之一。
-fn write_runtime_ready(rt_dir: &Path, rt: &Manifest, _model: &Manifest) -> Result<(), BootstrapError> {
+///
+/// `longpath` = 装配时量到的 `(最长路径字符数, 那条路径)`。写进标记是为了让"要不要开
+/// `LongPathsEnabled`这件事在机器上**可复算** —— 否则它永远只是安装引导里的一句提示。
+fn write_runtime_ready(
+    rt_dir: &Path,
+    rt: &Manifest,
+    _model: &Manifest,
+    longpath: Option<&(usize, PathBuf)>,
+) -> Result<(), BootstrapError> {
     let engine_commit = rt.engine_commit.clone();
     let payload = json!({
         "engineCommit": engine_commit,
         "assembledAt": chrono::Utc::now().to_rfc3339(),
         "tool": "boxsvc --engine-bootstrap",
+        "longPath": longpath.map(|(len, p)| json!({
+            "maxChars": len,
+            "path": p.to_string_lossy(),
+            "limit": MAX_PATH_LIMIT,
+            "margin": MAX_PATH_LIMIT as i64 - *len as i64,
+        })),
         "note": "零配置装配产物；删掉本文件不会损坏已装内容，仅会让 runtime_probe 重新走一遍判定。",
     });
     let p = rt_dir.join(".runtime.ready.json");
@@ -458,5 +558,47 @@ mod tests {
         fs::write(&req, "torch\n").unwrap();
         assert_eq!(requirements_path(&tmp, None), Some(req));
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// 长路径体检：取的是**最长**那条，且字符数按 Unicode 字符算（不是字节）。
+    /// 判据是"最长"而不是"第一个"：按第一个算会在深目录晚出现时给出偏小的余量。
+    #[test]
+    fn longest_path_reports_the_deepest_entry() {
+        let tmp = std::env::temp_dir().join(format!("miao-longest-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let shallow = tmp.join("a.txt");
+        fs::write(&shallow, "x").unwrap();
+        let deep = tmp.join("venv").join("Lib").join("site-packages").join("torch").join("include").join("deep.h");
+        fs::create_dir_all(deep.parent().unwrap()).unwrap();
+        fs::write(&deep, "x").unwrap();
+        let (len, path) = longest_path(&tmp).expect("有文件就必须量到");
+        assert_eq!(path, deep, "必须取最长那条，而不是第一个");
+        assert_eq!(len, deep.to_string_lossy().chars().count(), "字符数要与路径一致");
+        // 目录本身也参与比较（`venv` 这条比 `a.txt` 长）。
+        assert!(len > tmp.join("a.txt").to_string_lossy().chars().count());
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// 空目录 ⇒ `None`（不是 0）。没有可量的东西却报"最长 0 字符"会让体检显得通过。
+    #[test]
+    fn longest_path_on_empty_dir_is_none() {
+        let tmp = std::env::temp_dir().join(format!("miao-longest-empty-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        assert_eq!(longest_path(&tmp), None);
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// verbatim 前缀：盘符路径加 `\\?\`，**已带前缀的不重复加**，UNC 不加。
+    /// （重复加会得到 `\\?\\?\C:\…`，UNC 直接加会得到非法路径 —— 两者都让 tar 失败。）
+    #[test]
+    fn verbatim_prefixes_only_plain_drive_paths() {
+        #[cfg(windows)]
+        {
+            assert_eq!(verbatim(Path::new(r"C:\a\b")), PathBuf::from(r"\\?\C:\a\b"));
+            assert_eq!(verbatim(Path::new(r"\\?\C:\a\b")), PathBuf::from(r"\\?\C:\a\b"), "已带前缀不得重复加");
+            assert_eq!(verbatim(Path::new(r"\\server\share\x")), PathBuf::from(r"\\server\share\x"), "UNC 原样传");
+        }
     }
 }

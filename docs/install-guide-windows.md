@@ -94,6 +94,11 @@ New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
 > 安装程序会在装完后**自己读一遍**这个开关（`HKLM\SYSTEM\CurrentControlSet\Control\FileSystem`）；
 > 没开就弹一段说明把上面这条命令原样给出来。它**不会**替你改（那是系统级设置、要提权），
 > 所以看到提示就照做 —— 否则首次装配会在中途报「文件名或扩展名太长」。
+>
+> 另外，装配结束时喵坞会**量一遍**落点下最长路径，把字符数与 260 的余量写进
+> `<落点>\.runtime.ready.json` 的 `longPath` 段。这条一直是预防性推测
+> （`engine/VERSIONS.lock` §6.2 记的三个 Windows 必踩坑里并没有它），量过之后
+> 「要不要开这个开关」才是可复算的事实：余量充足就不用管它。装配日志里也会打同一行。
 
 ### 1.1 安装包首次运行会被 SmartScreen 拦一下（正常现象）
 

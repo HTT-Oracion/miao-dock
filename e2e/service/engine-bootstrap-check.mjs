@@ -45,6 +45,8 @@ const STATE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 
 /// W9：**Rust 侧**面向用户的未就绪文案（`fix` + 闸门消息）也要零命令行 ——
 /// 前端 4 个文件干净不等于产品干净：`NotReadyScreen.tsx` 渲染的正是这里的字符串。
 const RUNTIME_PROBE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 'runtime_probe.rs');
+/// W13：装配编排（长路径体检住在那里）。
+const RUNTIME_SETUP_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 'runtime_setup.rs');
 const ENGINE_DOWNLOAD_TS = path.join(ROOT, 'app', 'src', 'engine-download.ts');
 /// W11：stage 归属的事实源。
 const MODELS_MANIFEST = path.join(ROOT, 'engine', 'models.manifest.json');
@@ -215,6 +217,19 @@ function check(name, cond, extra) {
   const noFalsePromise = stage1Body.length > 0 && !/即可开始翻译|就能开始翻译/.test(stage1Body);
   check('W12 第 1 阶段文案不承诺"即可开始翻译"（stage1 无 LLM，翻译要等第 2 轮）',
     noFalsePromise, { stage1Body: stage1Body.slice(0, 200) });
+
+  // ---- W13：长路径体检**存在且不替用户改系统** ----
+  //     两条一起钉：① 装配真的会量一遍最长路径并把结论写进就绪标记（否则"要不要开
+  //     LongPathsEnabled"永远只是安装引导里的一句推测）；② 它**只报告**，不写注册表、
+  //     不挪目录 —— 那是 D-189 已拍板的边界（`check:bundle` 的 M13 反证同理）。
+  const setupSrc = fs.readFileSync(RUNTIME_SETUP_RS, 'utf8');
+  const measures = setupSrc.includes('fn longest_path') && setupSrc.includes('fn measure_long_path');
+  const writesMarker = setupSrc.includes('"longPath"');
+  const noRegistryWrite = !/WriteRegDWORD|reg\s+add|LongPathsEnabled"\s*,\s*1/.test(setupSrc);
+  const tarVerbatim = setupSrc.includes('fn verbatim') && setupSrc.includes('verbatim(&arc)');
+  check('W13 装配期做长路径体检（量最长路径 + 写进就绪标记 + tar 走 verbatim 前缀），且只报告、不写注册表',
+    measures && writesMarker && noRegistryWrite && tarVerbatim,
+    { measures, writesMarker, noRegistryWrite, tarVerbatim });
 }
 
 // ------------------------------------------------------------------ 反证轮
@@ -346,6 +361,19 @@ if (REFUTE) {
     restore();
   }
 
+  // ---- M9：长路径体检量完却不落盘（结论只出现在日志里，重启后无从复算）⇒ W13 红 ----
+  {
+    const restore = mutateFile(
+      RUNTIME_SETUP_RS,
+      '        "longPath": longpath.map(|(len, p)| json!({',
+      '        "longPathOff": longpath.map(|(len, p)| json!({',
+    );
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W13');
+    check('M9 长路径体检结论不写进就绪标记 ⇒ W13 红（重启后无从复算）', red, { code: r.code, redOn: red });
+    restore();
+  }
+
   // 收尾：确认还原到位
   {
     const bad = [];
@@ -357,7 +385,8 @@ if (REFUTE) {
     if (!fs.readFileSync(STATE_RS, 'utf8').includes('if stage == Some(1) {')) bad.push('state.rs 残留 M6');
     if (fs.readFileSync(MODELS_MANIFEST, 'utf8').includes('"stage": 2,\n      "platform": "win32-x64",\n      "dest": "bin/llama')) bad.push('models.manifest.json 残留 M7');
     if (!fs.readFileSync(DOWNLOAD_PANEL_TSX, 'utf8').includes('这一步完成后本地引擎即可启动')) bad.push('DownloadPanel.tsx 残留 M8');
-    check('R1 变异收尾：八处源码/清单按字节还原', bad.length === 0, bad);
+    if (!fs.readFileSync(RUNTIME_SETUP_RS, 'utf8').includes('"longPath": longpath.map')) bad.push('runtime_setup.rs 残留 M9');
+    check('R1 变异收尾：九处源码/清单按字节还原', bad.length === 0, bad);
   }
 }
 
