@@ -1,5 +1,5 @@
 /**
- * 音乐模块前端类型 —— 与 Rust `app/src-tauri/src/music/models.rs` 一一对应。
+ * 音乐模块前端类型 —— 与 Rust `src-tauri/src/music/models.rs` 一一对应。
  *
  * 命名刻意用 snake_case（与 serde 序列化出的 JSON 字段名一致），前端不做驼峰转换，
  * 避免 IPC 边界上再引入一层字段映射。唯一例外是 `_local*` 前缀的本地导入扩展字段。

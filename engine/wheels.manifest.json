@@ -8,7 +8,7 @@
   "fillHowTo": [
     "① 在目标平台（且该平台有编译器）上：`node engine/scripts/install-engine-deps.mjs --build-wheel`（复用同脚本的 MSVC 环境探测与 sdist 缓存；缺省产出到通道目录 `<RT>/.download-cache/wheels/`）",
     "② 它**已经**把 sha256 / sizeBytes 算好并打印成可直接粘贴的条目（对已有的 whl 也可以：`--wheel-entry <x.whl>`）",
-    "③ **随包分发（首选，G3）**：把 .whl 放进仓库 `engine/wheels/`，条目写 `bundled: true` 与 `path`（相对 `engine/`，形如 `wheels/<文件名>`），并同步 `app/src-tauri/tauri.conf.json` 的 `bundle.resources`；跑 `node e2e/bundle-targets-check.mjs`（W13）与 `node e2e/engine/pydensecrf-wheel-check.mjs` 复核。⚠️ **不要**把它塞进 `REQUIRED_ASSETS`：那是「缺了就不许起服务」的口径，而 wheel 缺件有源码编译的合法回退 —— 塞进去会把「装不了」升级成「起不来」",
+    "③ **随包分发（首选，G3）**：把 .whl 放进仓库 `engine/wheels/`，条目写 `bundled: true` 与 `path`（相对 `engine/`，形如 `wheels/<文件名>`），并同步 `src-tauri/tauri.conf.json` 的 `bundle.resources`；跑 `node e2e/bundle-targets-check.mjs`（W13）与 `node e2e/engine/pydensecrf-wheel-check.mjs` 复核。⚠️ **不要**把它塞进 `REQUIRED_ASSETS`：那是「缺了就不许起服务」的口径，而 wheel 缺件有源码编译的合法回退 —— 塞进去会把「装不了」升级成「起不来」",
     "④ **或走镜像托管**：把 .whl 传到镜像通道，然后补 `url` / `sources` 并去掉 `local`（WB.W1 要求：三态**恰取其一**）",
     "⑤ 跑 `node e2e/engine/pydensecrf-wheel-check.mjs`（结构合法性 + sha256 形态 + 选择逻辑四态）",
     "⑥ 跑 `node e2e/engine/pydensecrf-wheel-install-check.mjs`（**真装一次**：`--no-index --no-deps` 成功 + 真二进制 + 构造 DenseCRF）"

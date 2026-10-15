@@ -675,7 +675,7 @@ mod tests {
     #[test]
     fn archive_path_comes_from_dest_not_url() {
         let rt: Manifest = serde_json::from_str(include_str!(
-            "../../../../../engine/runtime.manifest.json"
+            "../../../../engine/runtime.manifest.json"
         ))
         .expect("runtime 清单必须可解析");
         let py = rt.files.iter().find(|f| f.id == "python_runtime_win_x64").expect("清单里必须有它");
@@ -694,7 +694,7 @@ mod tests {
         );
 
         let mt: Manifest = serde_json::from_str(include_str!(
-            "../../../../../engine/models.manifest.json"
+            "../../../../engine/models.manifest.json"
         ))
         .expect("模型清单必须可解析");
         let llama = mt.files.iter().find(|f| f.id == "llama_cpp_win_cuda_x64").expect("清单里必须有它");
@@ -772,7 +772,7 @@ mod tests {
     #[test]
     fn phase_one_scope_excludes_the_not_yet_downloaded_source() {
         let rt: Manifest = serde_json::from_str(include_str!(
-            "../../../../../engine/runtime.manifest.json"
+            "../../../../engine/runtime.manifest.json"
         ))
         .expect("runtime 清单必须可解析");
         let py = set_ids(&rt, "python").expect("清单里必须有 python 组");
@@ -792,7 +792,7 @@ mod tests {
     #[test]
     fn in_extract_scope_matches_exact_ids_only() {
         let rt: Manifest = serde_json::from_str(include_str!(
-            "../../../../../engine/runtime.manifest.json"
+            "../../../../engine/runtime.manifest.json"
         ))
         .unwrap();
         let src = rt.files.iter().find(|f| f.id == "engine_source").expect("清单里必须有它");

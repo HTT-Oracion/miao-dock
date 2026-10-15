@@ -18,7 +18,7 @@
 //
 // ## 进程组信号为什么不在本文件
 // F4 原述「进程组信号（`kill(-pgid)` / `taskkill /T`）复用 `service.rs` 现有实现，不新写」——
-// 见 `app/src-tauri/src/service.rs::signal_tree` / `no_tree_kill`（含反证开关）。本文件只产出**配方**，
+// 见 `src-tauri/src/service.rs::signal_tree` / `no_tree_kill`（含反证开关）。本文件只产出**配方**，
 // 真正拉起/回收引擎的 supervisor 在 F4-b 接线时复用它。
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

@@ -285,7 +285,7 @@ local_entry  = `python -m manga_translator local -i <img>`       # **CLI 单图/
 #    让 setuptools/distutils **跳过 vcvarsall**、直接吃现成环境。
 # ② **`rc.exe` 不在 MSVC 目录，在 Windows SDK 的 `bin/<ver>/x64`**。漏进 PATH 会在**链接**阶段炸：
 #    `LINK : fatal error LNK1158: 无法运行"rc.exe"` —— 报错发生在 link、离"PATH 少了个 SDK bin"很远。
-# ③ `npm run app` 另外还因缺 `app/src-tauri/icons/icon.ico` 编译失败（tauri-build 的 Windows 资源文件）；
+# ③ `npm run app` 另外还因缺 `src-tauri/icons/icon.ico` 编译失败（tauri-build 的 Windows 资源文件）；
 #    已补（从 icon.png 转 PNG-compressed ICO）并把 `icon.ico` 加进 tauri.conf.json 的 `bundle.icon`。
 # 本机 MSVC/SDK 路径 = C:\VS2022BT\VC\Tools\MSVC\14.44.35207
 #                    + C:\Program Files (x86)\Windows Kits\10\{Include,Lib,bin}\10.0.22621.0

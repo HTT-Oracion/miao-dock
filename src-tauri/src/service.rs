@@ -1035,7 +1035,7 @@ fn resolve_service_cmd() -> Result<Vec<String>, String> {
 }
 
 /// 定位 `mangasvc` 可执行：`MIAO_MANGASVC_BIN` 优先，其次与 `miao-dock` 可执行**同目录**
-/// （开发态二者同在 `app/src-tauri/target/{debug,release}/`）。
+/// （开发态二者同在 `src-tauri/target/{debug,release}/`）。
 fn resolve_mangasvc() -> Result<PathBuf, String> {
     if let Ok(p) = std::env::var("MIAO_MANGASVC_BIN") {
         let pb = PathBuf::from(&p);
@@ -1054,7 +1054,7 @@ fn resolve_mangasvc() -> Result<PathBuf, String> {
         }
     }
     Err(format!(
-        "找不到 {name}（Rust 服务实现需要它）：先在 app/src-tauri 执行 `cargo build --bin mangasvc`，或设 MIAO_MANGASVC_BIN"
+        "找不到 {name}（Rust 服务实现需要它）：先在 src-tauri 执行 `cargo build --bin mangasvc`，或设 MIAO_MANGASVC_BIN"
     ))
 }
 

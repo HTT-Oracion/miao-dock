@@ -1,7 +1,7 @@
 ;
 ; 喵坞 · Windows 安装器钩子（E2 / E3）
 ; ================================================================
-; 由 `app/src-tauri/tauri.windows.conf.json` 的
+; 由 `src-tauri/tauri.windows.conf.json` 的
 ; `bundle.windows.nsis.installerHooks` 引入；Tauri 的 NSIS 模板会在相应时点调用
 ; 下面这几个 `!macro`。
 ;
