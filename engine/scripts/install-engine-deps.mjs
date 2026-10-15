@@ -223,6 +223,18 @@ function wheelDir() {
 }
 
 /**
+ * **随包分发**的 wheel 绝对路径（G3）—— `path` 相对 `engine/`（本文件在 `engine/scripts/`）。
+ *
+ * 🔴 为什么随包优先：打包后的用户机上既没有 `.download-cache`、也没有编译器，
+ *    包内那一份是**唯一**能命中的来源。顺序反了会表现为「装得上但走的是源码编译」——
+ *    症状是安装耗时几分钟且在没有 MSVC 的机器上直接失败，离"清单里明明有 wheel"极远。
+ */
+function bundledWheelPath(w) {
+  if (!w || w.bundled !== true || typeof w.path !== 'string' || w.path.length === 0) return null;
+  return path.resolve(HERE, '..', w.path);
+}
+
+/**
  * 与 `engine/models.manifest.json` 的 `platform` 字段同一口径（win32-x64 / darwin-arm64）。
  *
  * 🔴 `MIAO_PLATFORM` 是**取证专用**接缝，语义与 Rust `model_store::platform_key()` **逐字对齐**
@@ -260,9 +272,11 @@ const SHA256_RE = /^[0-9a-f]{64}$/;
  * 决定 pydensecrf 走哪条路。**纯函数式的决策**，供 `--print-plan` 与批 B 共用
  * —— 两处各判一次必然漂移（"打好计划却走了另一条路"是最难查的一类）。
  *
- * 返回 `{ route: 'wheel'|'source', reason, wheel?, abs? }`。
+ * 返回 `{ route: 'wheel'|'source', reason, wheel?, abs?, from? }`。
  * 🔴 顺序即优先级：平台匹配 → 文件在位 → **sha256 对得上** → 才走 wheel。
  *    哈希对不上时必须退回源码编译（宁可慢，也不要装一个不是我们验过的东西）。
+ * 🔴 文件来源也有优先级：**包内**（`bundled` + `path`，G3）> 本机通道目录。
+ *    包内那一份是零编译器机器上唯一能命中的来源，顺序反了会静默退化成源码编译。
  */
 function planCrf() {
   const { manifest, wheels, error } = readWheelsManifest();
@@ -277,7 +291,9 @@ function planCrf() {
     return { route: 'source', reason: `清单里没有本平台（${key} / ${tag}）的条目 ⇒ 走源码编译`, key, tag };
   }
   const w = mine[0];
-  const abs = path.join(wheelDir(), String(w.file || ''));
+  // 优先级：**包内**（G3）> 本机通道目录（`--build-wheel` / 镜像下载的落点）。
+  const bundled = bundledWheelPath(w);
+  const abs = bundled && fs.existsSync(bundled) ? bundled : path.join(wheelDir(), String(w.file || ''));
   if (!w.file || !fs.existsSync(abs)) {
     return { route: 'source', reason: `清单有本平台条目但 wheel 不在盘上（${abs}）⇒ 走源码编译`, key, tag, wheel: w };
   }
@@ -288,7 +304,8 @@ function planCrf() {
   if (got !== w.sha256) {
     return { route: 'source', reason: `wheel 的 sha256 与清单不符（清单 ${String(w.sha256).slice(0, 12)}… / 实际 ${got.slice(0, 12)}…）⇒ 拒绝使用，走源码编译`, key, tag, wheel: w };
   }
-  return { route: 'wheel', reason: `命中清单条目 ${w.id || w.file}（平台 ${key} / ${tag}，sha256 已核对）`, key, tag, wheel: w, abs };
+  const from = bundled && abs === bundled ? '包内' : '本机目录';
+  return { route: 'wheel', reason: `命中清单条目 ${w.id || w.file}（平台 ${key} / ${tag}，来源 ${from}，sha256 已核对）`, key, tag, wheel: w, abs, from };
 }
 
 /**
