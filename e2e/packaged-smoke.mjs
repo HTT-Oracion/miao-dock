@@ -23,6 +23,8 @@
  * ## 反证轮（--refute）
  * - R1 删掉安装目录里的 `engine/models.manifest.json` ⇒ 资产层 + 服务层都必须红
  *   （原台账写的"删 service/src/server.mjs"自 F5 起已作废：那个文件不进包了）。
+ * - R3 连 `engine/wheels.manifest.json` 一起删 ⇒ P2b/P2c 必须红
+ *   （G3 的"零编译器"全靠产品读得到这份清单；删掉它 = 用户机上静默退回源码编译）。
  * - R2 把安装目录里的 exe 挪走 ⇒ 安装层断言红。
  *
  * 用法：
@@ -156,6 +158,19 @@ try {
   const manifest = path.join(installDir, 'engine', 'models.manifest.json');
   check('P2 安装目录里有 engine/models.manifest.json（A1 落点 + A2 进包）',
     fs.existsSync(manifest), manifest);
+  // G3/W13b：wheel 清单与随包 wheel 也必须在真实产物里。
+  // 🔴 为什么单独断言：`plan_crf()` 要读这份清单才能选中包内 wheel；清单不在包里
+  //    ⇒ 产品"看不见"那颗明明随包了的 wheel，静默退回源码编译 ⇒ 没装 MSVC 的机器上装到一半失败。
+  //    这种失效在 dev 态永远测不出来（仓库就在旁边，代码会回退过去），只能在真产物上钉。
+  // 🔴 落点是 `engine/wheel-manifest.json` 而不是 `engine/wheels.manifest.json`：
+  //    后者与目录 `engine/wheels/` 同名，Tauri 的 NSIS 安装后会把它吞掉（真机复现：
+  //    release 产物两份都在、静默安装后只剩 wheel）。这条断言就是那个坑的守门人。
+  const wheelsManifest = path.join(installDir, 'engine', 'wheel-manifest.json');
+  const bundledWheel = path.join(installDir, 'engine', 'wheels', 'pydensecrf-1.0-cp311-cp311-win_amd64.whl');
+  check('P2b 安装目录里有 engine/wheel-manifest.json（产品侧 plan_crf 要读它才能选中包内 wheel）',
+    fs.existsSync(wheelsManifest), wheelsManifest);
+  check('P2c 安装目录里有随包的 pydensecrf wheel（G3：目标机零编译器的全部依据）',
+    fs.existsSync(bundledWheel), bundledWheel);
   const nodePayload = ['service', 'node.zip'].filter((k) => fs.existsSync(path.join(installDir, k)));
   check('P3 安装目录里没有 service/ 与 node.zip（F5 验收③ 在真实产物上复现）',
     nodePayload.length === 0, nodePayload);
@@ -166,10 +181,18 @@ try {
     //    「资源目录没有 **且** 仓库也没有」，而开发机上仓库就在旁边 ⇒ 不切断就会回退成功、
     //    P4 仍旧绿 —— 那是**假绿**（真实用户机器上没有仓库，删了就是缺）。
     if (fs.existsSync(manifest)) fs.rmSync(manifest);
+    // R3：连 wheel 清单一起删 —— P2b/P2c 必须红。
+    //    （`plan_crf` 在打包态正是靠它找到包内 wheel 的，删掉后用户机上必然退回源码编译。）
+    if (fs.existsSync(wheelsManifest)) fs.rmSync(wheelsManifest);
     const emptyRepo = path.join(work, 'empty-repo');
     fs.mkdirSync(emptyRepo, { recursive: true });
     process.env.MIAO_REPO_ROOT = emptyRepo;
-    console.log('\n[反证] 已删掉安装目录里的 engine/models.manifest.json，并切断仓库回退');
+    console.log('\n[反证] 已删掉安装目录里的 engine/models.manifest.json 与 engine/wheel-manifest.json，并切断仓库回退');
+    // R3 的判据必须在**删除之后**复检才成立 —— 上面那批 check 跑在删除前，永远绿。
+    // （P2/P2b/P2c 是"安装层"断言，删除影响的是资产层与服务层；但 R3 要证的恰恰是
+    //  "清单不在盘上 ⇒ P2b 红"，所以补一次删除后的复检。）
+    check('P2b 反证：wheel 清单被删掉后本断言必须红（否则它钉不住"清单要在盘上"这件事）',
+      !fs.existsSync(wheelsManifest), wheelsManifest);
   }
 
   // ---- ③ 资产层：自检在同一资源目录上报 ok ----

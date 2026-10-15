@@ -98,14 +98,22 @@ pub fn python_tag() -> String {
     format!("cp{major}{minor}")
 }
 
-/// 定位 `wheels.manifest.json`：环境变量 > 随包资源 > 仓库内（与 `patches_json_path` 同套推导）。
+/// 定位 wheel 清单：环境变量 > 随包资源 > 仓库内（与 `patches_json_path` 同套推导）。
+///
+/// 🔴 **包内落点是 `engine/wheel-manifest.json`，不是 `engine/wheels.manifest.json`**：
+///    Tauri 的 NSIS 打包会把**文件** `engine/wheels.manifest.json` 与**目录** `engine/wheels/`
+///    当成同名项 —— 真机复现过：release 产物里两份都在，静默安装后**只有 wheel、
+///    清单不见了**。而清单不见了的表现是 `plan_crf()` 恒回退源码编译
+///    （在没装 MSVC 的机器上装到一半失败），离根因极远。
+///    仓库内路径仍是 `engine/wheels.manifest.json`（Node 侧脚本与 e2e 都读它），
+///    只有**包内**落点避开 `wheels` 这个名字。
 pub fn wheels_manifest_path() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("MIAO_WHEELS_MANIFEST") {
         if !p.trim().is_empty() {
             return Some(PathBuf::from(p.trim()));
         }
     }
-    paths::asset("engine/wheels.manifest.json")
+    paths::asset("engine/wheel-manifest.json")
         .or_else(|| Some(paths::repo_root().join("engine").join("wheels.manifest.json")))
 }
 

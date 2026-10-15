@@ -389,6 +389,27 @@ function runAll() {
           : `随包 wheel：${JSON.stringify(wheelTargets)}`,
   );
 
+  // ---- W13b：wheel 清单本身必须随包 ----
+  //    为什么单独一条：产品侧选路（`boxsvc/engine/wheels.rs::plan_crf`）**要读这份清单**
+  //    才能决定走 wheel 还是源码编译。清单不在包里 ⇒ 选路恒回退源码编译。
+  //    🔴 失效形态与 W13 同样**不是变红而是静默退化**，且比 W13 更隐蔽：
+  //       wheel 明明在包里，产品却"看不见"它。
+  //    🔴 包内落点刻意用 `engine/wheel-manifest.json` 而不是 `engine/wheels.manifest.json`：
+  //       Tauri 的 NSIS 打包把**文件** `wheels.manifest.json` 与**目录** `wheels/` 当同名项
+  //       —— 真机复现：release 产物两份都在，静默安装后清单不见了（wheel 在）。
+  //       这条钉子同时钉住"落点不能改回那个会冲突的名字"（反证 M15）。
+  //    🔴 刻意**不进** `REQUIRED_ASSETS`：那是「缺了就不许起服务」的口径，而 wheel 缺件
+  //       有源码编译的合法回退 —— 塞进去会把「装不了」升级成「起不来」（同 wheels.manifest.json 的纪律）。
+  const WHEELS_MANIFEST_TARGET = 'engine/wheel-manifest.json';
+  check(
+    'W13b',
+    'wheel 清单**本身在随包资源里**且落点为 `engine/wheel-manifest.json`（产品侧 plan_crf 要读它才能选中包内 wheel；落点不许改回与 wheels/ 目录同名的 `wheels.manifest.json` —— NSIS 安装后它会消失）',
+    targets.has(WHEELS_MANIFEST_TARGET),
+    targets.has(WHEELS_MANIFEST_TARGET)
+      ? `targets 含 ${WHEELS_MANIFEST_TARGET}`
+      : `缺该条目；当前 targets=${JSON.stringify([...targets])}`,
+  );
+
   // ---- W8/W9/W10：NSIS 安装器钩子（E2 长路径提示 / E3 卸载提示）+ W11 文档 ----
   //    这三条都在**配置与钩子文件**上钉：真跑一次安装器要分钟级 + 真要弹窗，而"提示语
   //    写错一处"（默认按钮落在「删」那一支）的代价是用户几十分钟的装配成果没了。
@@ -615,6 +636,35 @@ const MUTATIONS = [
       },
     ],
     expect: ['W13'],
+  },
+  {
+    // W13b 的反证一：**wheel 清单本身**没进包。wheel 明明在包里，产品却读不到清单
+    // ⇒ 选路恒回退源码编译。这条比 M10 更隐蔽（产物看着是全的），所以必须单独有一条变异。
+    // ⚠️ 锚点**单行且不含换行**：本脚本的变异器不做 EOL 折算，带 `\n` 的锚点在 CRLF
+    //    文件里匹配不上 ⇒ 会被判成"未找到"而**静默跳过**（跳过 ≠ 通过）。
+    name: 'M14 抹掉 wheel 清单的资源条目（W13b：产品读不到清单 ⇒ 包内 wheel 明明在却选不中）',
+    edits: [
+      {
+        file: BASE_CONF,
+        find: '"../../engine/wheels.manifest.json": "engine/wheel-manifest.json",',
+        replace: '"../../engine/wheels.manifest.json.off": "engine/wheel-manifest.json.off",',
+      },
+    ],
+    expect: ['W13b'],
+  },
+  {
+    // W13b 的反证二：把落点**改回**与 `wheels/` 目录同名的 `wheels.manifest.json`。
+    // 这不是"理论上不好"—— 真机复现过：那样打包出来，静默安装后清单会消失（wheel 还在），
+    // 而消失的表现是目标机上静默退回源码编译。没有这条变异，"换个落点"随时可能被改回去。
+    name: 'M15 把 wheel 清单的包内落点改回 wheels.manifest.json（W13b：与 wheels/ 目录同名 ⇒ NSIS 安装后清单消失）',
+    edits: [
+      {
+        file: BASE_CONF,
+        find: '"../../engine/wheels.manifest.json": "engine/wheel-manifest.json",',
+        replace: '"../../engine/wheels.manifest.json": "engine/wheels.manifest.json",',
+      },
+    ],
+    expect: ['W13b'],
   },
   {
     // ⚠️ 锚点一律**单行**：本脚本的变异器不做 EOL 折算（配置与 .nsh 都是 CRLF），

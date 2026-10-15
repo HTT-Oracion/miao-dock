@@ -40,6 +40,7 @@
       "../../engine/models.manifest.json": "engine/models.manifest.json",
       "../../engine/runtime.manifest.json": "engine/runtime.manifest.json",
       "../../engine/patches.json": "engine/patches.json",
+      "../../engine/wheels.manifest.json": "engine/wheel-manifest.json",
       "../../engine/wheels/pydensecrf-1.0-cp311-cp311-win_amd64.whl": "engine/wheels/pydensecrf-1.0-cp311-cp311-win_amd64.whl"
     },
     "macOS": {
