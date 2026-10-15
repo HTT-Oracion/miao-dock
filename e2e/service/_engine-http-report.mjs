@@ -2,7 +2,7 @@
 /**
  * F4-b engine **HTTP 运行期** 的伪引擎 + 用例表 + Rust 侧取证 —— 共用唯一一份。
  * =============================================================================
- * 为什么单独一个文件：`check:engine-http` 原先是「Rust `boxsvc --engine-http-selftest` ⟷ Node
+ * 为什么单独一个文件：`check:engine-http` 原先是「Rust `mangasvc --engine-http-selftest` ⟷ Node
  * `engine-client.mjs`（逐例子进程）」双靶对拍。F5 摘除 Node 服务层后没有对照对象，改以冻结
  * golden 快照作**单向金标**。伪引擎与用例表是**夹具**（不是对照端），必须两边同一份 ——
  * 各写一遍 = 用例悄悄少一个都不会有人发现。
@@ -310,7 +310,7 @@ function runCmd(cmd, args, env) {
 
 async function runRust(list, protocol) {
   if (!fs.existsSync(RUST_BIN)) {
-    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   }
   const out = await runCmd(RUST_BIN, ['--engine-http-selftest', JSON.stringify(rustCases(list, protocol))], {
     MIAO_ENGINE_PROTOCOL: protocol,

@@ -7,7 +7,7 @@
  * 看起来在工作」。B3 的验收要求「检测与启动同出一源、逐字节相同」。
  *
  * ## 机制（F5 摘除 Node 后：Rust 输出 ⟷ 冻结 golden）
- *   · Rust 侧：`boxsvc --print-paths`（毫秒级，不起服务、不拉 node）打印 `paths.rs::snapshot()`
+ *   · Rust 侧：`mangasvc --print-paths`（毫秒级，不起服务、不拉 node）打印 `paths.rs::snapshot()`
  *   · golden 快照 `e2e/service/golden/paths-selftest.json` 是「Node 版 `config.mjs` 在同源
  *     对齐时代冻结的最后一份正确输出」（归一化后），此后作为**单向金标**：Rust 侧任何一次
  *     悄然漂移（默认落点 / 覆盖语义 / 键集合）这里必红。
@@ -33,7 +33,7 @@
  *   M6 真实分叉：Rust 用「只覆盖 MIAO_ROOT」的 env 跑 → PATH.override 变红（证明比的是本次运行）
  *
  * 用法：node e2e/service/paths-parity-check.mjs [--refute]
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  * 重新生成 golden：`node e2e/service/_gen-golden.mjs paths`
  */
 import { spawn } from 'node:child_process';
@@ -154,7 +154,7 @@ function diffTooling(tooling, snap) {
 
 // ------------------------------------------------------------------ 正向：Rust 输出 ⟷ golden
 
-console.log('=== F2 · 路径同源（Rust boxsvc --print-paths  ⟷  golden 快照）===');
+console.log('=== F2 · 路径同源（Rust mangasvc --print-paths  ⟷  golden 快照）===');
 
 let golden = null;
 const scenarios = buildScenarios();

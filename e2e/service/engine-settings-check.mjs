@@ -35,7 +35,7 @@
  *   node e2e/service/engine-settings-check.mjs            正向
  *   node e2e/service/engine-settings-check.mjs --refute   反证轮（逃生开关 → 指定断言必须变红）
  *
- * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（box-service 的段）。
+ * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（manga-service 的段）。
  */
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -217,7 +217,7 @@ function readSettingsFile(stateDir) {
  * 这些与"下载器实现得对不对"无关（那是 S3 的 `check:models` 在管）。
  *
  * ## 🔴 A3d 起夹具从「一个假脚本」改成「**一份夹具清单**」
- * 产品的执行体是 `boxsvc`（一个真 `.exe`），不再隐含解释器。那么"假执行体"就造不出来了：
+ * 产品的执行体是 `mangasvc`（一个真 `.exe`），不再隐含解释器。那么"假执行体"就造不出来了：
  * Windows 上 `spawn()` 一个 `.cmd`/`.bat` 会直接 **EINVAL**（Node 22 的安全策略，
  * 无 shell 不允许起批处理），而造一个真 `.exe` 又不现实。
  * ⇒ 改用已有的 `MIAO_MODEL_MANIFEST` 接缝控制行为：**执行体仍是产品那个**，
@@ -406,7 +406,7 @@ async function assertOptions(port, label, { expectTier, expectSource, expectMode
   const rk = v?.restartRequiredKeys ?? [];
   check(
     `G8 restartRequiredKeys 恰为 [tier, accel, modelDir, idleVisionMin] —— 四个：` +
-      'idleLlmMin **不在**其中（③ 归属 box-service，可即时重建看护）（《09》§4.3 + 《04》§9.1）',
+      'idleLlmMin **不在**其中（③ 归属 manga-service，可即时重建看护）（《09》§4.3 + 《04》§9.1）',
     rk.length === 4 && ['tier', 'accel', 'modelDir', 'idleVisionMin'].every((k) => rk.includes(k)),
     rk.join(','),
   );
@@ -458,7 +458,7 @@ async function runPositive() {
            * ---------------- D0 · 「重新下载模型」的**产品接缝** ----------------
            *
            * 这一台实例**不设** `MIAO_MODEL_DOWNLOAD_RUNNER`，所以它量的是产品路径：
-           * 执行体是不是真的那个 `boxsvc`（A3d 起模型下载 / 校验都走它，不再有 .mjs 脚本）。
+           * 执行体是不是真的那个 `mangasvc`（A3d 起模型下载 / 校验都走它，不再有 .mjs 脚本）。
            * 夹具轮（下面的 D 组）会把这条接缝替换掉 —— 于是"夹具生效"与
            * "产品路径正确"必须分开断言，否则替换成功反而会把产品路径写错这件事盖住。
            *
@@ -466,11 +466,11 @@ async function runPositive() {
            */
           const st = jsonOf(await get(info.port, '/api/v1/engine/status'));
           check(
-            'D0 /engine/status.modelDownload 初态 idle、running=false，且 runner 指向产品执行体 boxsvc（它真的在盘上）',
+            'D0 /engine/status.modelDownload 初态 idle、running=false，且 runner 指向产品执行体 mangasvc（它真的在盘上）',
             st?.modelDownload?.state === 'idle' &&
               st.modelDownload.running === false &&
               st.modelDownload.runnerExists === true &&
-              /boxsvc(\.exe)?$/.test(st.modelDownload.runner ?? ''),
+              /mangasvc(\.exe)?$/.test(st.modelDownload.runner ?? ''),
             JSON.stringify({
               state: st?.modelDownload?.state,
               exists: st?.modelDownload?.runnerExists,

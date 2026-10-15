@@ -4,7 +4,7 @@
  * =============================================================================
  * 对应计划文档 C2。⚠️ **这条台账写在 A3d 之前**，那时执行体是 `node fetch-models.mjs`，
  * 「随包」= 把脚本放进资源目录。A3d 把下载器 Rust 化之后，「随包定位」有了**更强的形态**：
- * 执行体就是 `boxsvc` 自己（`std::env::current_exe()`）—— `boxsvc` 本来就随包，于是
+ * 执行体就是 `mangasvc` 自己（`std::env::current_exe()`）—— `mangasvc` 本来就随包，于是
  * "包内跑得起来"不再依赖任何资源配置，也不依赖解释器。本脚本钉的就是这件事**真的成立**，
  * 而不是"注释里这么写的"。
  *
@@ -21,9 +21,9 @@
  *    "硬链接失败"；跨卷且复制也失败时，错误消息里必须出现「跨卷」。
  *
  * ## 取证接缝
- * · 服务侧：真起一个 `boxsvc`（mock 档）读 `/engine/status` 与 `POST /engine/models/verify`；
+ * · 服务侧：真起一个 `mangasvc`（mock 档）读 `/engine/status` 与 `POST /engine/models/verify`；
  *   清单/模型根走 `MIAO_MODEL_MANIFEST` / `MIAO_MODEL_ROOT`。
- * · 建链：直接跑 `boxsvc --fetch-models --link --manifest <夹具> --root <夹具> --report <p>`。
+ * · 建链：直接跑 `mangasvc --fetch-models --link --manifest <夹具> --root <夹具> --report <p>`。
  * · 跨卷：`MIAO_LINK_FORCE_CROSSDEV=1`（**夹具开关**，真跨卷要两块盘，跑测机器没有）。
  *
  * ## 反证轮（--refute）
@@ -34,7 +34,7 @@
  * 变异跑完**按字节还原**；M1/M2 还重编译（靶子是另一个进程）。
  *
  * 用法：node e2e/service/model-runner-check.mjs [--refute]
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -48,9 +48,9 @@ import { killTree, RUST_BIN, REPO_ROOT } from './_service-harness.mjs';
 const REFUTE = process.argv.includes('--refute');
 const SELF = fileURLToPath(import.meta.url);
 const TOKEN = 'a'.repeat(64);
-const STATE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'state.rs');
-const MODEL_STORE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'model_store.rs');
-const FETCH_MODELS_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'fetch_models.rs');
+const STATE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'state.rs');
+const MODEL_STORE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'model_store.rs');
+const FETCH_MODELS_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'fetch_models.rs');
 const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
 const CARGO = process.env.CARGO || 'cargo';
 
@@ -69,7 +69,7 @@ function check(name, cond, extra) {
 }
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   process.exit(1);
 }
 
@@ -136,7 +136,7 @@ function runAsync(cmd, args, opts = {}) {
   });
 }
 
-/** 起一个 boxsvc 服务并等 `MIAO_READY`。 */
+/** 起一个 mangasvc 服务并等 `MIAO_READY`。 */
 function startService(extraEnv) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-runner-svc-'));
   const child = spawn(RUST_BIN, [], {
@@ -154,7 +154,7 @@ function startService(extraEnv) {
     let buf = '';
     const to = setTimeout(() => {
       killTree(child);
-      reject(new Error('boxsvc 15s 内未就绪'));
+      reject(new Error('mangasvc 15s 内未就绪'));
     }, 15000);
     child.stdout.on('data', (d) => {
       buf += d;
@@ -167,7 +167,7 @@ function startService(extraEnv) {
     child.stderr.on('data', (d) => (buf += d));
     child.on('close', (code) => {
       clearTimeout(to);
-      reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 500)}`));
+      reject(new Error(`mangasvc 退出 ${code}：${buf.slice(0, 500)}`));
     });
   });
 }
@@ -185,7 +185,7 @@ const headers = { 'x-box-token': TOKEN, 'content-type': 'application/json' };
     //    `models` 报的是"盘上文件在不在"，`modelDownload` 报的是"下载/校验这件**任务**"。
     const dl = st?.modelDownload ?? {};
     // 🔴 判据里必须有 **`path.isAbsolute`**：只比 `path.resolve()` 会被 cwd 掩盖 ——
-    //    相对串 `src-tauri/target/debug/boxsvc.exe` 在本仓 cwd 下恰好解析成同一个文件，
+    //    相对串 `src-tauri/target/debug/mangasvc.exe` 在本仓 cwd 下恰好解析成同一个文件，
     //    「装到用户机器上就不存在」这件事在断言里**看不出来**（M1 变异当初就是这么假绿的）。
     check(
       'W1 默认执行体 == **当前可执行文件自己**，且是绝对路径（相对路径在本机能跑、装完就没了）',
@@ -329,7 +329,7 @@ if (REFUTE) {
 
   const rebuild = () =>
     new Promise((resolve) => {
-      const b = spawn(CARGO, ['build', '--bin', 'boxsvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
+      const b = spawn(CARGO, ['build', '--bin', 'mangasvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
       b.on('close', (c) => resolve(c === 0));
       b.on('error', () => resolve(false));
     });
@@ -370,8 +370,8 @@ if (REFUTE) {
   {
     const restore = mutateFile(
       STATE_RS,
-      'None => std::env::current_exe().unwrap_or_else(|_| PathBuf::from("boxsvc")),',
-      'None => PathBuf::from("src-tauri/target/debug/boxsvc.exe"),',
+      'None => std::env::current_exe().unwrap_or_else(|_| PathBuf::from("mangasvc")),',
+      'None => PathBuf::from("src-tauri/target/debug/mangasvc.exe"),',
     );
     const built = await rebuild();
     const r = await runForward();
@@ -420,7 +420,7 @@ if (REFUTE) {
     if (
       !fs
         .readFileSync(STATE_RS, 'utf8')
-        .includes('None => std::env::current_exe().unwrap_or_else(|_| PathBuf::from("boxsvc")),')
+        .includes('None => std::env::current_exe().unwrap_or_else(|_| PathBuf::from("mangasvc")),')
     )
       bad.push('state.rs 残留 M1');
     if (!fs.readFileSync(MODEL_STORE_RS, 'utf8').includes('e.raw_os_error() == Some(17)'))

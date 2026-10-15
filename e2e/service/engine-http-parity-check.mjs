@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * F4-b · engine **HTTP 运行期** 同源钉子 —— Rust(`boxsvc/engine/client.rs`) 对冻结 golden 快照
+ * F4-b · engine **HTTP 运行期** 同源钉子 —— Rust(`mangasvc/engine/client.rs`) 对冻结 golden 快照
  * =========================================================================================
  * F4-a（`engine-parity-check.mjs`）钉住的是**纯函数**（启动配方 / 参数快照 / 帧解析）。
  * 这条钉住的是**真的发了 HTTP 的那一半**：`requestOnce` / `probeTcp` / `translateImage`(real+mock)
@@ -10,7 +10,7 @@
  * ## 机制（F5 摘除 Node 后：Rust 输出 ⟷ 冻结 golden）
  *   · 本脚本按用例起一个 **Node http 伪引擎**（返回固定的 5 字节帧 / 状态码 / 慢响应），
  *     并**记录**收到的请求（method/path/headers/body）—— 它是**夹具**，不是对照端。
- *   · Rust 侧：`boxsvc --engine-http-selftest '<cases>'`（新建 tokio runtime 真发 HTTP）。
+ *   · Rust 侧：`mangasvc --engine-http-selftest '<cases>'`（新建 tokio runtime 真发 HTTP）。
  *   · golden 快照 `e2e/service/golden/engine-http-selftest.json` 是「Node 版 `engine-client.mjs`
  *     在同源对齐时代冻结的最后一份正确输出」，此后作为**单向金标**。
  *   · 伪引擎 / 用例表 / 「怎么跑 Rust」只有一份（`_engine-http-report.mjs`，生成器与本办法共用）。
@@ -29,7 +29,7 @@
  *   M6 删 golden 超时例里的「排队位次」那一帧        → translate 变红（超时不带走证据就不可归因）
  *
  * 用法：node e2e/service/engine-http-parity-check.mjs [--refute]
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  * 重新生成 golden：`node e2e/service/_gen-golden.mjs engine-http`
  */
 import fs from 'node:fs';
@@ -76,7 +76,7 @@ const kindOf = (name) => (CASES.find((c) => c.name === name) || {}).kind;
 
 // ------------------------------------------------------------------ 正向：Rust 输出 ⟷ golden
 
-console.log('=== F4-b · engine HTTP 运行期同源（Rust boxsvc --engine-http-selftest  ⟷  golden 快照）===');
+console.log('=== F4-b · engine HTTP 运行期同源（Rust mangasvc --engine-http-selftest  ⟷  golden 快照）===');
 
 let golden = null;
 let live = null;

@@ -31,7 +31,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-/** 半成品后缀（与 `boxsvc::engine::model_store` 的 `PART_SUFFIX` 同名同义）。 */
+/** 半成品后缀（与 `mangasvc::engine::model_store` 的 `PART_SUFFIX` 同名同义）。 */
 export const PART_SUFFIX = '.part';
 
 /** 被换下来的旧内容的后缀（换成功后立刻删掉；只有换的那一瞬间存在）。 */

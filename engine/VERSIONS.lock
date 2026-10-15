@@ -211,7 +211,7 @@ local_entry  = `python -m manga_translator local -i <img>`       # **CLI 单图/
              #    ⇒ 可用它**先把"引擎能跑完流水线"与"翻译质量"分开验**（本项目"管路通≠功能通"的引擎侧对应物）。
 
 # 进程树深度（🔴 比计划假设的深：计划按"服务 → 引擎"两层写）
-#   box-service → server.main(uvicorn, 8000) → manga_translator shared(执行器, 8001) → [llama-server]
+#   manga-service → server.main(uvicorn, 8000) → manga_translator shared(执行器, 8001) → [llama-server]
 #   ⚠️ `proc.terminate()` 只覆盖**一层**（`main.py:272 handle_exit_signals`），
 #     执行器再往下拉的东西（模型/LMM）不在它的信号范围内 ⇒ **孤儿回收风险比计划里写的高**，S2 重估。
 #   ⚠️ 它**不打印"就绪行"**（只先打 `Nonce: <hex>`，然后 uvicorn 的日志）

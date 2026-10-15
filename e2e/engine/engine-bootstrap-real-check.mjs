@@ -7,7 +7,7 @@
  * 兼容补丁真的写进 `site-packages`、导入自检真的过、解包真的按 `dest` 找到归档 ——
  * 这些只有跑起来才知道。
  *
- * ## 它真跑的是**产品自己的** `boxsvc --fetch-models --engine-bootstrap --extract`
+ * ## 它真跑的是**产品自己的** `mangasvc --fetch-models --engine-bootstrap --extract`
  * 不是仓库侧那套 Node 脚本（`setup-engine.mjs` / `install-engine-deps.mjs`）——
  * 打包用户机上根本没有 Node，跑的就是这一个二进制。
  *
@@ -60,7 +60,7 @@
  *   · 夹具缓存**不需要**跨轮复用：落点每轮都是新的（`mkdtemp`），100 MB 的夹具归档照价重放。
  *
  * ## 环境前提（缺任何一项都**非零退出并点名**，不静默跳过）
- *   · 已 `cargo build --bin boxsvc`
+ *   · 已 `cargo build --bin mangasvc`
  *   · 本机跑过 `npm run task -- setup:engine`（真实落点里有那两个 `.tar.gz`）
  *
  * 用法：node e2e/engine/engine-bootstrap-real-check.mjs [--refute]
@@ -75,7 +75,7 @@ import { fileURLToPath } from 'node:url';
 
 const REFUTE = process.argv.includes('--refute');
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const BOXSVC = path.join(ROOT, 'src-tauri', 'target', 'debug', 'boxsvc.exe');
+const MANGASVC = path.join(ROOT, 'src-tauri', 'target', 'debug', 'mangasvc.exe');
 const RUNTIME_MANIFEST = path.join(ROOT, 'engine', 'runtime.manifest.json');
 const MODELS_MANIFEST = path.join(ROOT, 'engine', 'models.manifest.json');
 const WHEELS_MANIFEST = path.join(ROOT, 'engine', 'wheels.manifest.json');
@@ -96,8 +96,8 @@ function check(name, cond, extra) {
 
 // ------------------------------------------------------------------ 硬前置
 
-if (!fs.existsSync(BOXSVC)) {
-  console.error(`✗ 找不到 ${BOXSVC}\n  先跑：cd src-tauri && cargo build --bin boxsvc`);
+if (!fs.existsSync(MANGASVC)) {
+  console.error(`✗ 找不到 ${MANGASVC}\n  先跑：cd src-tauri && cargo build --bin mangasvc`);
   process.exit(1);
 }
 
@@ -230,7 +230,7 @@ const tarBytes = fs.readFileSync(FIXTURE_TAR);
 /**
  * mock 服务器**跑在独立进程里**。
  *
- * 🔴 为什么不能是进程内 `http.createServer`：本脚本用 `spawnSync` 跑 boxsvc，
+ * 🔴 为什么不能是进程内 `http.createServer`：本脚本用 `spawnSync` 跑 mangasvc，
  *    而 `spawnSync` 会**阻塞 Node 的事件循环** —— 进程内的 server 一个请求都收不到。
  *    真机症状极具误导性：产品日志里是 `[重试] … 第 1/2/3 次中断` → `[源放弃]` → 整段装配失败，
  *    看起来像"网络不通"，而实际上是**我们自己的测试脚本把自己饿死了**。
@@ -420,7 +420,7 @@ function bootstrap({ stage, reqFile = FIXTURE_REQ, manifest = WHEELS_MANIFEST, s
   // 不认这个开关，所以"随包 wheel 装上时真能 import"这条仍然是被真跑的。
   if (skipEngineImport) env.MIAO_SKIP_ENGINE_IMPORT = '1';
   else delete env.MIAO_SKIP_ENGINE_IMPORT;
-  const r = spawnSync(BOXSVC, args, { cwd: ROOT, encoding: 'utf8', timeout: 900_000, env });
+  const r = spawnSync(MANGASVC, args, { cwd: ROOT, encoding: 'utf8', timeout: 900_000, env });
   return { ...r, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
 }
 

@@ -4,7 +4,7 @@
  * =============================================================================
  *
  * ## 验什么
- * Rust 门面 `src-tauri/src/boxsvc/translate/**`（门面 / 注册表 / 契约 / 设置三层 /
+ * Rust 门面 `src-tauri/src/mangasvc/translate/**`（门面 / 注册表 / 契约 / 设置三层 /
  * 密钥隔离 / 错误归一 / 四层超时 / 限流 / 流式解析）+ 5 条 `/api/v1/translate/*` 路由。
  * 断言分八组，每组一条硬纪律：
  *
@@ -16,15 +16,15 @@
  * | C  | 6  | 三层设置（env > 文件 > 默认）+ 双向不对称校验 + 坏文件不阻断 | §8.1/§8.2 |
  * | K  | 4  | 密钥隔离：只写不读回显、缺密钥不出网、保存校验与原子写 | §8.3 |
  * | A  | 8  | 契约与适配器：未知平台 / 语言码不猜 / 参数裁剪 / 首块锁定 / 非 2xx 先判死 | §4 / §5.4 / §7.3 |
- * | R  | 8  | 路由端到端：真起一个 boxsvc 子进程，5 条路由 + 鉴权 + SSE 三事件 | §6.3 |
+ * | R  | 8  | 路由端到端：真起一个 mangasvc 子进程，5 条路由 + 鉴权 + SSE 三事件 | §6.3 |
  * | P  | 6  | 纯逻辑面（统一码表 / 签名截断 / 语言码表 / 上游码映射 / 出网错误族 / 可重试） ⟷ 冻结 golden | §7.2 |
  *
  * ## 换靶（F5.5）
  * 原先 S/T/L/C/K/A 组是**进程内直调 Node 门面**（`service/src/manga/translate/**`）。Node 服务
- * 实现退役后，改为 `boxsvc --translate-cases '<json>'` —— 把每用例的 body / env 喂给 **Rust 门面**
+ * 实现退役后，改为 `mangasvc --translate-cases '<json>'` —— 把每用例的 body / env 喂给 **Rust 门面**
  * 让它真发 HTTP 打到本进程的假上游。断言面逐条对应，且比原来**更接近产品**（真门面 + 真出网 +
  * 真 `MIAO_*` 现读）。纯逻辑面（注册表是编译期常量、错误族由 reqwest 抛，**不经过路由**）走
- * `boxsvc --translate-selftest` 的确定性报告，由 `golden/translate-selftest.json` 冻结为金标。
+ * `mangasvc --translate-selftest` 的确定性报告，由 `golden/translate-selftest.json` 冻结为金标。
  *
  * ## 为什么是「假上游」而不是真有道
  * 真上游要**联网 + 真密钥 + 按量计费**，且不可重放（同一 salt 第二次必被 207 挡回）——
@@ -51,7 +51,7 @@
  *   node e2e/service/translate-check.mjs --refute   反证轮（8 个开关 → 8 个子进程）
  *
  * 约束：纯 Node、零第三方依赖；临时目录自建自清（成功即清、失败保留并打印路径）。
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  * 重新生成 golden：`node e2e/service/_gen-golden.mjs translate`
  */
 import { spawn } from 'node:child_process';
@@ -148,15 +148,15 @@ function printResults(title) {
 
 // ------------------------------------------------------------------ 调门面：唯一通路
 //
-// 🔴 全部经 `boxsvc --translate-cases`（**Rust 门面**）—— 本进程里没有一行 Node 产品代码。
+// 🔴 全部经 `mangasvc --translate-cases`（**Rust 门面**）—— 本进程里没有一行 Node 产品代码。
 //    子进程 env **继承**本进程（反证轮的 `MIAO_TRANSLATE_REFUTE_*` 就是靠这条传下去的），
 //    再叠加用例自己的 env（切址 / 切超时档 / 切落盘目录）。
 
-/** 起 boxsvc 子命令并收 stdout（🔴 本机 `execFileSync/spawnSync` 起子进程会 EBUSY，只能异步 spawn）。 */
+/** 起 mangasvc 子命令并收 stdout（🔴 本机 `execFileSync/spawnSync` 起子进程会 EBUSY，只能异步 spawn）。 */
 function runRust(args, env = {}) {
   return new Promise((resolve, reject) => {
     if (!fs.existsSync(RUST_BIN)) {
-      reject(new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`));
+      reject(new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`));
       return;
     }
     const c = spawn(RUST_BIN, args, { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -171,7 +171,7 @@ function runRust(args, env = {}) {
     c.on('error', reject);
     c.on('close', (code) => {
       if (code === 0) resolve(out);
-      else reject(new Error(`boxsvc ${args[0]} 退出码 ${code}：${(err || out).slice(0, 600)}`));
+      else reject(new Error(`mangasvc ${args[0]} 退出码 ${code}：${(err || out).slice(0, 600)}`));
     });
   });
 }
@@ -664,7 +664,7 @@ function spawnProc(entry, env, tag, args = []) {
   }
   let child;
   try {
-    // entry 是服务 ⇒ 按 harness 选靶子（只剩 boxsvc）；是 refute 子进程（SELF）⇒ 原样走 node
+    // entry 是服务 ⇒ 按 harness 选靶子（只剩 mangasvc）；是 refute 子进程（SELF）⇒ 原样走 node
     child = spawnTarget(entry, env, args);
   } finally {
     for (const [k, v] of stash) process.env[k] = v;
@@ -1508,7 +1508,7 @@ async function groupA() {
 // ================================================================ R · 路由端到端
 
 /**
- * R 组**真起一个 boxsvc 子进程**（不是进程内直调门面）：验的是路由层接线 ——
+ * R 组**真起一个 mangasvc 子进程**（不是进程内直调门面）：验的是路由层接线 ——
  * 鉴权、请求体形状、SSE 三事件的顺序与字段、错误信封、只写不读。
  * 子进程的 env 显式给全（`MIAO_TOKEN` 可覆盖，见 config），出网基址指向本进程的假上游。
  */
@@ -1538,7 +1538,7 @@ async function groupR() {
       MIAO_TRANSLATE_TTFB_MS: '5000',
       MIAO_TRANSLATE_IDLE_MS: '20000',
     },
-    'box-service(translate)',
+    'manga-service(translate)',
   );
   try {
     await waitReady(st);

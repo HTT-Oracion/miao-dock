@@ -56,7 +56,7 @@ const OUT = outIdx > -1 ? path.resolve(process.argv[outIdx + 1]) : path.join(ROO
 const ENGINE_PORT = 8000;
 const EXECUTOR_PORT = ENGINE_PORT + 1;
 const LLAMA_PORT = 8080;
-const SERVICE_PORT = 5199; // 避开 5180–5190（真实 box-service 的水位段）
+const SERVICE_PORT = 5199; // 避开 5180–5190（真实 manga-service 的水位段）
 
 /**
  * 单张耗时预算。
@@ -93,7 +93,7 @@ const check = (id, label, ok, detail) => {
 const procs = [];
 function shutdown() {
   for (const p of procs) {
-    // 🔴 `killTree` 而不是裸 `kill`：服务是 boxsvc 时会派生引擎②/③ 的子孙进程，
+    // 🔴 `killTree` 而不是裸 `kill`：服务是 mangasvc 时会派生引擎②/③ 的子孙进程，
     //    Windows 上裸 kill 只收主进程 ⇒ 真机一轮跑完留下孤儿（本轮 o)护的正是这条）。
     killTree(p);
   }
@@ -238,7 +238,7 @@ process.env.MIAO_ROOT = ROOT_DIR;
 
 // 🔴 原先是 `import { probeEngine, resolveEngineLaunch } from 'service/src/engine-client.mjs'`。
 //    该文件随 `service/` 删除（D-205）后，那两件事在 Rust 侧各有落点：
-//      · **启动配方** ⇒ `boxsvc --print-launch-plan real` —— Rust 的 `build_launch_plan` 就是
+//      · **启动配方** ⇒ `mangasvc --print-launch-plan real` —— Rust 的 `build_launch_plan` 就是
 //        "适配层自己拼的那条命令"（原 `resolveEngineLaunch` 的移植体），语义一致；
 //      · **引擎就绪** ⇒ 本地端口探测。原 `probeEngine` 会区分 stopped/starting/running，
 //        而本脚本只用它等 `running`（判据是"引擎起来了没有"）⇒ 端口探测等价。
@@ -320,8 +320,8 @@ log(`单张预算上限 ${ITEM_BUDGET_MS} ms ⇒ 任务上限 ${TASK_TIMEOUT_MS}
 try {
   // ② 引擎（uvicorn + 执行器），用**适配层自己拼的启动参数**
   //
-  // 🔴 ③ llama-server **不由本脚本拉起** —— S4 已把 ③ 的归属权移交给 box-service
-  //    （《04》§9.1；见 D-73 决策 1）。本脚本自己起一份 llama-server 但让 box-service 也去起，
+  // 🔴 ③ llama-server **不由本脚本拉起** —— S4 已把 ③ 的归属权移交给 manga-service
+  //    （《04》§9.1；见 D-73 决策 1）。本脚本自己起一份 llama-server 但让 manga-service 也去起，
   //    会得到「两个进程抢 8080 / 第二个静默复用第一个」这种**看起来绿、其实没测到归属权**的结果。
   //    所以这里只起 ②，③ 交给下面的服务进程 —— 那才是产品里真实的进程树。
   const launch = await launchPlan();
@@ -342,11 +342,11 @@ try {
   report.engineReadyMs = Date.now() - t0;
   log(`引擎就绪（${(report.engineReadyMs / 1000).toFixed(1)} s）`);
 
-  // ---- 2) box-service（真实服务进程；③ 由它按配方拉起）
+  // ---- 2) manga-service（真实服务进程；③ 由它按配方拉起）
   // 🔴 `MIAO_ENGINE_PROTOCOL=real` 必须**显式**给：默认虽也是 real，但显式声明让"这轮测的是真协议"
   //    写进进程环境，而不是靠默认值碰巧对上（mock 档默认值一改，这里会静默变成另一个东西）。
   // 🔴 起服务走 harness（原先硬拼 `node service/src/server.mjs` —— 那份文件已删，
-  //    而硬拼入口正是 harness 要禁的第二份推导；现在靶子只有一个：boxsvc）。
+  //    而硬拼入口正是 harness 要禁的第二份推导；现在靶子只有一个：mangasvc）。
   const svcTarget = targetFor(SERVICE_ENTRY);
   const service = spawnLogged(
     svcTarget.command,
@@ -381,7 +381,7 @@ try {
   if (!svcInfo) throw new Error(`服务未就绪：\n${service.__log.slice(-800)}`);
   const PORT = svcInfo.port;
   const TOKEN = svcInfo.token;
-  log(`box-service 就绪 @${PORT}`);
+  log(`manga-service 就绪 @${PORT}`);
   report.servicePort = PORT;
 
   const images = loadRealImages();

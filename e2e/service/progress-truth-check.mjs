@@ -12,7 +12,7 @@
  * 所以两层都要有，且**两层都要能反证**：
  *
  *   层一（数据源 · 真服务）：`tail` 必须**逐行等于**子进程真实 stdout 打出来的行。
- *     做法：真起一个 `boxsvc`（mock 档），用 `MIAO_MODEL_DOWNLOAD_RUNNER` 把它自己
+ *     做法：真起一个 `mangasvc`（mock 档），用 `MIAO_MODEL_DOWNLOAD_RUNNER` 把它自己
  *     设成下载执行体（**产品默认就是它**），`POST /engine/models/download` 之后
  *     再**单独跑同一条命令**抓 stdout，两边逐行比。
  *   ⚠️ 不这么做的话，「tail 里是一行编造文本」与「tail 里是真实输出」在只读 `tail` 的
@@ -29,7 +29,7 @@
  * - M3 `DownloadState` 去掉 `tail.length > 0` 守卫 ⇒ W6 红（"没有"时改成渲染空壳）。
  *
  * 用法：node e2e/service/progress-truth-check.mjs [--refute]
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  */
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -44,7 +44,7 @@ import { RUST_BIN, REPO_ROOT } from './_service-harness.mjs';
 const REFUTE = process.argv.includes('--refute');
 const SELF = fileURLToPath(import.meta.url);
 const TOKEN = 'a'.repeat(64);
-const STATE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'state.rs');
+const STATE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'state.rs');
 const NOT_READY_TSX = path.join(REPO_ROOT, 'src', 'screens', 'NotReadyScreen.tsx');
 const ENGINE_DIAG = path.join(REPO_ROOT, 'src', 'screens', 'settings', 'EngineDiag.tsx');
 const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
@@ -65,7 +65,7 @@ function check(name, cond, extra) {
 }
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   process.exit(1);
 }
 
@@ -137,7 +137,7 @@ function runAsync(cmd, args, opts = {}) {
   });
 }
 
-/** 起一个 boxsvc 服务并等 `MIAO_READY`。 */
+/** 起一个 mangasvc 服务并等 `MIAO_READY`。 */
 function startService(extraEnv) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-progress-svc-'));
   const child = spawn(RUST_BIN, [], {
@@ -155,7 +155,7 @@ function startService(extraEnv) {
     let buf = '';
     const to = setTimeout(() => {
       child.kill();
-      reject(new Error('boxsvc 15s 内未就绪'));
+      reject(new Error('mangasvc 15s 内未就绪'));
     }, 15000);
     child.stdout.on('data', (d) => {
       buf += d;
@@ -168,7 +168,7 @@ function startService(extraEnv) {
     child.stderr.on('data', (d) => (buf += d));
     child.on('close', (code) => {
       clearTimeout(to);
-      reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 500)}`));
+      reject(new Error(`mangasvc 退出 ${code}：${buf.slice(0, 500)}`));
     });
   });
 }
@@ -198,7 +198,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   fs.rmSync(ref.root, { recursive: true, force: true });
 
   const { root, mp } = buildFixture();
-  // 产品默认执行体就是 boxsvc 自己；这里**显式**指向它，让"起谁"不依赖宿主 PATH。
+  // 产品默认执行体就是 mangasvc 自己；这里**显式**指向它，让"起谁"不依赖宿主 PATH。
   const svc = await startService({
     MIAO_MODEL_MANIFEST: mp,
     MIAO_MODEL_ROOT: root,
@@ -331,7 +331,7 @@ if (REFUTE) {
 
   const rebuild = () =>
     new Promise((resolve) => {
-      const b = spawn(CARGO, ['build', '--bin', 'boxsvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
+      const b = spawn(CARGO, ['build', '--bin', 'mangasvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
       b.on('close', (c) => resolve(c === 0));
       b.on('error', () => resolve(false));
     });

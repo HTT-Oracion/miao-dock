@@ -1,10 +1,10 @@
-// 测试专用：充当 box-service 的「假父进程」
+// 测试专用：充当 manga-service 的「假父进程」
 //
 // 用途：验证父进程看守（service/src/parent-watch.mjs）。
 // 自测进程不能亲自当父进程 —— 要验证看守，就必须把一个父进程**强杀**掉，
 // 而 SIGKILL 会连自测一起带走。于是用一个中间进程顶替「Box 壳」的位置：
 //
-//   自测 ──spawn──> 假父进程 ──spawn──> box-service
+//   自测 ──spawn──> 假父进程 ──spawn──> manga-service
 //                     ↑ SIGKILL 这里，观察 service 是否自救
 //
 // **为什么子进程的 stdio 要落到文件而不是管道**：

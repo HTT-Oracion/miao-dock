@@ -1,4 +1,4 @@
-// box-service 契约自测 —— 覆盖 dev-plan.md §4 验收表 A1–A14
+// manga-service 契约自测 —— 覆盖 dev-plan.md §4 验收表 A1–A14
 //
 // 运行：node e2e/service/selftest.mjs
 // 原则：每个断言都对应契约里的一条明文规则，断言失败即契约不符合。
@@ -21,7 +21,7 @@ import { killTree, SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 // 真实协议路径的断言在 `check:engine-http`（真协议假引擎，喂帧）与 `check:e3:real`（真引擎全链路）。
 process.env.MIAO_ENGINE_PROTOCOL = 'mock';
 // 本套用例只关心**任务 / 队列 / 落盘 / 安全**契约，不验 ③ 的生命周期（那有自己的脚本：
-// `engine-profile-check.mjs`）。而本脚本会在 A1 里**反复起停** box-service 实例，
+// `engine-profile-check.mjs`）。而本脚本会在 A1 里**反复起停** manga-service 实例，
 // 每个实例都去抢 8080 会引入与代码无关的 flake（"上一实例的 ③ 还没退干净"）。
 // ⇒ 显式退出预拉起。**这是给夹具的开关，不是给产品的**（产品路径永远预拉起）。
 process.env.MIAO_NO_LLM_AUTOSTART = '1';
@@ -351,7 +351,7 @@ try {
     const res = await request(port, 'GET', '/api/v1/health'); // 刻意不带令牌
     const h = json(res);
     check('A2 /health 免鉴权（无令牌可访问）', res.status === 200);
-    check('A2 service === "box-service"', h && h.service === 'box-service', h);
+    check('A2 service === "manga-service"', h && h.service === 'manga-service', h);
     check('A2 apiVersion === "v1"', h && h.apiVersion === 'v1', h);
     check('A2 status ∈ ok|degraded|starting', h && ['ok', 'degraded', 'starting'].includes(h.status), h && h.status);
     check('A2 sidecar 真实探测为 running', h && h.sidecar && h.sidecar.state === 'running', h && h.sidecar);

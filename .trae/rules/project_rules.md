@@ -55,10 +55,10 @@ alwaysApply: true
   **断言里写死的路径**（不同步的后果是**静默跳过**，不是变红）· 脚本自己的用法注释。
 
 **服务端模块目录（硬规则，F5 起随实现搬进 Rust）**：原 Node 实现（`service/`）**已整目录删除**（D-209）——
-产品运行时不再启动任何 node 服务进程，① 是 `boxsvc`（Rust 可执行）；② ③ 里的 node 只是**测试替身**。
-服务端现住在 **`src-tauri/src/boxsvc/`**：外壳 `boxsvc.rs` · 路由表 `routes.rs` · 端点 `handlers.rs` ·
+产品运行时不再启动任何 node 服务进程，① 是 `mangasvc`（Rust 可执行）；② ③ 里的 node 只是**测试替身**。
+服务端现住在 **`src-tauri/src/mangasvc/`**：外壳 `mangasvc.rs` · 路由表 `routes.rs` · 端点 `handlers.rs` ·
 域模块 `store/`（队列落盘）· `library.rs`（库原语）· `translate/`（在线翻译）· `engine/`（引擎耦合点）。
-🔴 **新增服务端点一律落在 `boxsvc/handlers.rs` + `routes.rs`**，由 `npm run task -- check:routes` 盯着
+🔴 **新增服务端点一律落在 `mangasvc/handlers.rs` + `routes.rs`**，由 `npm run task -- check:routes` 盯着
 （`forwardedCount` 必须为 0 —— 只要还有转发分支，就说明还有第二条实现路径存在）。
 
 ## 4. 动手前后

@@ -68,18 +68,18 @@
  *      `service_stop` 这两个真实命令名（指错名字 → invoke 落空，按钮点了没反应）。
  *
  * ### 服务实现的**默认档**（service.rs · F5.8）
- *   E1 未设 `MIAO_SERVICE_IMPL` ⇒ **默认 Rust boxsvc**（默认分支必须调到 `resolve_boxsvc`）。
+ *   E1 未设 `MIAO_SERVICE_IMPL` ⇒ **默认 Rust mangasvc**（默认分支必须调到 `resolve_mangasvc`）。
  *      退回 node 是"摘除 Node"只写在文档里的形态：产品照旧起一份 Node 服务 —— 功能照常、
  *      e2e 全绿，而包里那份 Node 永远删不掉（计划文档 R3），验收标准①（转发数 = 0）
  *      也永远只是 `routes.rs` 里的一行注释。
  *
- *   E2 默认档拿不到 boxsvc 时退回 Node **必须可见**（`eprintln!` 带原因 + 构建指引）。
+ *   E2 默认档拿不到 mangasvc 时退回 Node **必须可见**（`eprintln!` 带原因 + 构建指引）。
  *      静默退回会让"Rust 没生效"彻底不可观测 —— 而这正是 F5.8 想消灭的那种状态。
  *
- *   E3 显式 `MIAO_SERVICE_IMPL=rust` 仍**硬失败**（`resolve_boxsvc()?` 直接传播）。
+ *   E3 显式 `MIAO_SERVICE_IMPL=rust` 仍**硬失败**（`resolve_mangasvc()?` 直接传播）。
  *      "说了算数"：显式切了却没生效、还悄悄换回 Node，等于切实现这件事没有可观测性。
  *      ⚠️ 与 E2 的分歧是**刻意的**：显式档硬失败、默认档可见退回（开发态只构建主 bin 时
- *      `target/debug/` 里没有 boxsvc，硬失败会把"跑起来看界面"变成"先读构建说明"）。
+ *      `target/debug/` 里没有 mangasvc，硬失败会把"跑起来看界面"变成"先读构建说明"）。
  *
  *   E4 显式 `=node` 档仍可达（对拍 / 排障要能把靶子换回去），且 Node 入口只在
  *      `node_service_cmd` 一处拼接 —— 两处各拼一份必然漂移。
@@ -89,7 +89,7 @@
  *
  * ### 开发态能跑起来（Cargo.toml）
  *   F1 `[package] default-run = "miao-dock"` 必须存在，且**指向一个真实声明的 `[[bin]]`**。
- *      F0 拆出第二个 `[[bin]] boxsvc` 之后裸 `cargo run` 就变歧义了 —— cargo 不猜
+ *      F0 拆出第二个 `[[bin]] mangasvc` 之后裸 `cargo run` 就变歧义了 —— cargo 不猜
  *      "哪个是应用"，直接报 `could not determine which binary to run`（本机实测）。
  *      开发态最常敲的就是裸 `cargo run`（Tauri 的 `beforeDevCommand` 也是它）。
  *      🔴 两条都断：① 键缺失 ⇒ 命令直接失败；② 键指向不存在的 bin ⇒ cargo 报
@@ -345,7 +345,7 @@ function runAll() {
     '',
   );
 
-  // ---- E（D-205）：服务实现的**靶子只剩 boxsvc** ----
+  // ---- E（D-205）：服务实现的**靶子只剩 mangasvc** ----
   // 🔴 本组原先是「默认档必须走 Rust、但允许退回 Node（可见警告）+ 显式 `=node` 仍可达」——
   //    那套判据在**有 Node 服务可退**时才成立。`service/` 删掉之后，"退回 Node"就是退回一个
   //    不存在的 `.mjs`；"对拍档"也没有对照对象了。
@@ -364,16 +364,16 @@ function runAll() {
 
     check(
       'E1',
-      '默认档（未设 `MIAO_SERVICE_IMPL`）⇒ 直接 `resolve_boxsvc()?`，**没有**退回 Node 的退路',
-      /resolve_boxsvc\(\)\?/.test(body) && !/node_service_cmd/.test(body),
+      '默认档（未设 `MIAO_SERVICE_IMPL`）⇒ 直接 `resolve_mangasvc()?`，**没有**退回 Node 的退路',
+      /resolve_mangasvc\(\)\?/.test(body) && !/node_service_cmd/.test(body),
       body
-        ? `走 resolve_boxsvc=${/resolve_boxsvc\(\)\?/.test(body)} 无 node 退路=${!/node_service_cmd/.test(body)}`
+        ? `走 resolve_mangasvc=${/resolve_mangasvc\(\)\?/.test(body)} 无 node 退路=${!/node_service_cmd/.test(body)}`
         : noBody,
     );
 
     check(
       'E2',
-      '显式 `=node` ⇒ **硬失败**（返回 `Err`，不静默落回 boxsvc），文案指向「service/ 已删」',
+      '显式 `=node` ⇒ **硬失败**（返回 `Err`，不静默落回 mangasvc），文案指向「service/ 已删」',
       /if impl_ == "node" \{/.test(body) && /return Err\(/.test(body) && /service\//.test(body),
       body ? `退役门=${/if impl_ == "node" \{/.test(body)}` : noBody,
     );
@@ -543,16 +543,16 @@ const MUTATIONS = [
   {
     name: 'E1 默认档加回"退回 node"的退路（就是本轮要消灭的那个形态）',
     file: SERVICE_RS,
-    // 把 `resolve_boxsvc()?` 降级成"失败也不传播" ⇒ E1 的 `?` 判据不再成立。
+    // 把 `resolve_mangasvc()?` 降级成"失败也不传播" ⇒ E1 的 `?` 判据不再成立。
     // 🔴 刻意**同时**引入 `node_service_cmd`：一次变异打中 E1 的两半判据（有 `?` / 无 node 退路），
     //    否则只能证明其中一半在场。
-    find: '    let bin = resolve_boxsvc()?;\n    Ok(vec![bin.to_string_lossy().into_owned()])',
+    find: '    let bin = resolve_mangasvc()?;\n    Ok(vec![bin.to_string_lossy().into_owned()])',
     replace:
-      '    let bin = match resolve_boxsvc() {\n        Ok(b) => b,\n        Err(_) => return node_service_cmd(), // refute：退回 node 的退路回来了\n    };\n    Ok(vec![bin.to_string_lossy().into_owned()])',
+      '    let bin = match resolve_mangasvc() {\n        Ok(b) => b,\n        Err(_) => return node_service_cmd(), // refute：退回 node 的退路回来了\n    };\n    Ok(vec![bin.to_string_lossy().into_owned()])',
     expect: ['E1'],
   },
   {
-    name: 'E2 `=node` 不再硬失败（静默落回 boxsvc —— "我要 node 靶子"说了不算）',
+    name: 'E2 `=node` 不再硬失败（静默落回 mangasvc —— "我要 node 靶子"说了不算）',
     file: SERVICE_RS,
     find: '    if impl_ == "node" {',
     replace: '    if false { // refute：退役门失效',
@@ -561,9 +561,9 @@ const MUTATIONS = [
   {
     name: 'E3 把 `node_service_cmd` 函数加回来（Node 服务入口复活）',
     file: SERVICE_RS,
-    find: 'fn resolve_boxsvc() -> Result<PathBuf, String> {',
+    find: 'fn resolve_mangasvc() -> Result<PathBuf, String> {',
     replace:
-      'fn node_service_cmd() -> Result<Vec<String>, String> {\n    Ok(vec!["node".into(), "service/src/server.mjs".into()])\n}\n\nfn resolve_boxsvc() -> Result<PathBuf, String> {',
+      'fn node_service_cmd() -> Result<Vec<String>, String> {\n    Ok(vec!["node".into(), "service/src/server.mjs".into()])\n}\n\nfn resolve_mangasvc() -> Result<PathBuf, String> {',
     expect: ['E3'],
   },
   {
@@ -571,9 +571,9 @@ const MUTATIONS = [
     file: SERVICE_RS,
     // ⚠️ 必须插**代码**行：E4 只看去注释后的文本，插注释不会红（那是刻意的 —— 注释里提历史是允许的）。
     //    这里插一条 `const`，它编译得过、也确实是"代码里还有 Node 入口"。
-    find: 'fn resolve_boxsvc() -> Result<PathBuf, String> {',
+    find: 'fn resolve_mangasvc() -> Result<PathBuf, String> {',
     replace:
-      'const LEGACY_SERVICE_ENTRY: &str = "service/src/server.mjs"; // refute：旧入口还在代码里\nfn resolve_boxsvc() -> Result<PathBuf, String> {',
+      'const LEGACY_SERVICE_ENTRY: &str = "service/src/server.mjs"; // refute：旧入口还在代码里\nfn resolve_mangasvc() -> Result<PathBuf, String> {',
     expect: ['E4'],
   },
   {

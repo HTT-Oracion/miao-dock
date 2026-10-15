@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * F4-b2 · 引擎③ supervisor **行为** 同源钉子 —— Rust(`boxsvc/engine/supervisor.rs`) 对冻结 golden 快照
+ * F4-b2 · 引擎③ supervisor **行为** 同源钉子 —— Rust(`mangasvc/engine/supervisor.rs`) 对冻结 golden 快照
  * ==========================================================================================================
  * 这条钉住的是**进程生命周期**：状态机（`stopped→starting→running→unloading→stopped`，异常进 `error`）、
  * 就绪探针、停止时「等 `exit` + 回探端口」、串行链语义。它改错时**一条契约断言都不会崩**——
@@ -9,7 +9,7 @@
  * ## 机制（F5 摘除 Node 后：Rust 输出 ⟷ 冻结 golden）
  *   · 每个用例一个**真进程**：mock 档喂 `engine/src/mock-llm.mjs`（`/v1/models` → 200），
  *     never-ready 档喂一个**永不监听**的进程。
- *   · Rust 侧：`boxsvc --llm-selftest '<cases>'`（内部 `std::process::Command` 起子进程 + 同步探针）。
+ *   · Rust 侧：`mangasvc --llm-selftest '<cases>'`（内部 `std::process::Command` 起子进程 + 同步探针）。
  *   · golden 快照 `e2e/service/golden/llm-selftest.json` 是「Node 版 `llm-supervisor.mjs` 在同源
  *     对齐时代冻结的最后一份正确输出」，此后作为**单向金标**。用例表与「怎么跑 Rust」只有一份
  *     （`_llm-report.mjs`，生成器与本办法共用）。
@@ -27,7 +27,7 @@
  *   M5 篡改 golden 的 ready.model                             → 变红
  *
  * 用法：node e2e/service/llm-supervisor-parity-check.mjs [--refute]
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  * 重新生成 golden：`node e2e/service/_gen-golden.mjs llm-supervisor`
  */
 import fs from 'node:fs';
@@ -69,7 +69,7 @@ const gold = (name) => golden.results.find((r) => r.name === name);
 
 // ------------------------------------------------------------------ 正向：Rust 输出 ⟷ golden
 
-console.log('=== F4-b2 · 引擎③ supervisor 行为同源（Rust boxsvc --llm-selftest  ⟷  golden 快照）===');
+console.log('=== F4-b2 · 引擎③ supervisor 行为同源（Rust mangasvc --llm-selftest  ⟷  golden 快照）===');
 
 let golden = null;
 let rustByName = new Map();

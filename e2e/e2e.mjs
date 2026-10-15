@@ -69,7 +69,7 @@ const check = (id, label, ok, detail) => {
 // ------------------------------------------------------------------ 进程
 
 function spawnProc(entry, env, tag) {
-  // 走 harness：服务入口 ⇒ boxsvc；非服务入口（本文件里的模拟引擎）⇒ 原样 node。
+  // 走 harness：服务入口 ⇒ mangasvc；非服务入口（本文件里的模拟引擎）⇒ 原样 node。
   const child = spawnTarget(entry, env);
   const state = { child, tag, out: '' };
   child.stdout.on('data', (b) => (state.out += b.toString('utf8')));
@@ -89,7 +89,7 @@ async function waitReady(state, re, timeoutMs = 20_000) {
 }
 
 function killProc(state) {
-  // 🔴 用 killTree 而不是 `child.kill()`：靶子是 boxsvc 时它会派生引擎②/③（llama-server 每个几 GB），
+  // 🔴 用 killTree 而不是 `child.kill()`：靶子是 mangasvc 时它会派生引擎②/③（llama-server 每个几 GB），
   //    Windows 上裸 kill 只收主进程 ⇒ 孙进程成孤儿（D-202 实测攒了 12 个把机器卡死）。
   if (state && state.child) killTree(state.child);
 }

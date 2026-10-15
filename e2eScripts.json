@@ -26,7 +26,7 @@
         { "id": "check:pydensecrf-wheel", "cmd": "node e2e/engine/pydensecrf-wheel-check.mjs", "desc": "B4 预编译 wheel 通道（三态互斥 / 哈希比对 / 包内优先 / 回退是前提）", "refute": true },
         { "id": "check:engine-bootstrap", "cmd": "node e2e/service/engine-bootstrap-check.mjs", "desc": "G4/G5 零配置装配链门（阶段顺序 / 进度来源 / 零命令行 / 按 dest 解包）", "refute": true },
         { "id": "check:resources", "cmd": "node e2e/resources-check.mjs", "desc": "随包资源寻址 A1/A2 三环境取证（dev / 打包齐备 / 打包缺失）", "refute": true },
-        { "id": "check:harness", "cmd": "node e2e/service/harness-check.mjs", "desc": "F0 服务靶子抽象钉子（入口解析唯一 / 靶子只有一个 boxsvc）", "refute": true },
+        { "id": "check:harness", "cmd": "node e2e/service/harness-check.mjs", "desc": "F0 服务靶子抽象钉子（入口解析唯一 / 靶子只有一个 mangasvc）", "refute": true },
         { "id": "check:registry", "cmd": "node e2e/registry-check.mjs", "desc": "注册表完整性：本清单 ↔ e2e/_check-registry.mjs 双向覆盖 + 各层条数写死", "refute": true }
       ]
     },
@@ -35,10 +35,10 @@
       "why": "🔴 恒串行（不是性能问题，是正确性问题）：各脚本用 findFreePort 从固定且互相重叠的区间（5300–5800）先探测再绑定，并行会让 A 的请求打到 B 的服务上，产出交叉污染的假结果。",
       "cmds": [
         { "id": "e2e", "cmd": "node e2e/e2e.mjs", "desc": "M5 端到端验收（D1–D5）：真实进程 + 真实落盘 + 真提交一张图" },
-        { "id": "selftest:service", "cmd": "node e2e/service/selftest.mjs", "desc": "box-service 契约自测（dev-plan §4 验收表 A1–A14）" },
+        { "id": "selftest:service", "cmd": "node e2e/service/selftest.mjs", "desc": "manga-service 契约自测（dev-plan §4 验收表 A1–A14）" },
         { "id": "selftest:engine", "cmd": "node e2e/engine/selftest.mjs", "desc": "mangatranslator-mock 引擎自测（dev-plan §3 M2 出口条件）" },
         { "id": "selftest:app", "cmd": "node e2e/lifespan-selftest.mjs", "desc": "应用生命周期验收（B 组：五态轨迹 / 生效参数快照 / 关窗行为）", "refute": true },
-        { "id": "check:launch-plan", "cmd": "node e2e/service/launch-plan-check.mjs", "desc": "S2 启动配方契约：boxsvc --print-launch-plan 的输出形状", "refute": true },
+        { "id": "check:launch-plan", "cmd": "node e2e/service/launch-plan-check.mjs", "desc": "S2 启动配方契约：mangasvc --print-launch-plan 的输出形状", "refute": true },
         { "id": "check:child-watch", "cmd": "node e2e/child-watch-check.mjs", "desc": "父死看守（E11）双靶双向取证：Node 对照端 + Rust 移植", "refute": true },
         { "id": "check:child-watch-kill", "cmd": "node e2e/child-watch-kill-check.mjs", "desc": "child-watch 的 Windows killTree 源码钉子（双靶）", "refute": true },
         { "id": "check:stdio", "cmd": "node e2e/child-output-check.mjs", "desc": "子进程输出读取的根因钉子（遇到非 UTF-8 不许停读）", "refute": true },
@@ -58,7 +58,7 @@
         { "id": "check:engine-settings", "cmd": "node e2e/service/engine-settings-check.mjs", "desc": "S6 设置页数据面验收（《02》§5 / 《09》§4.3·§6.2·§6.3）", "refute": true },
         { "id": "check:translate", "cmd": "node e2e/service/translate-check.mjs", "desc": "ver2.2 在线翻译服务：假上游正反断言（签名 v3 / 四层超时 / 限流 / 密钥隔离 / 5 路由）", "refute": true },
         { "id": "check:macos-compat", "cmd": "node e2e/service/macos-compat-check.mjs", "desc": "D7 macOS 兼容钉子：解释器形态分平台、Windows 专用脚本在非 Windows 下真拒绝", "refute": true },
-        { "id": "check:resilience", "cmd": "node e2e/service/resilience-check.mjs", "desc": "box-service 健壮性钉子（异常输入 / 边界 / 恢复路径）", "refute": true },
+        { "id": "check:resilience", "cmd": "node e2e/service/resilience-check.mjs", "desc": "manga-service 健壮性钉子（异常输入 / 边界 / 恢复路径）", "refute": true },
         { "id": "check:paths", "cmd": "node e2e/service/paths-parity-check.mjs", "desc": "F2 路径同源钉子：Rust(paths.rs) 对冻结 golden 快照", "refute": true },
         { "id": "check:runtime-probe", "cmd": "node e2e/service/runtime-probe-check.mjs", "desc": "B2/B5 运行时就绪检测：五项逐项翻转 + detail 必带绝对路径（只 warn 不 fail）", "refute": true },
         { "id": "check:path-single-source", "cmd": "node e2e/service/path-single-source-check.mjs", "desc": "B3 路径推导单源化：检测侧的 python.path 与启动配方的 cmd[0] 逐字节相同", "refute": true },
@@ -71,10 +71,10 @@
         { "id": "check:platform-guide", "cmd": "node e2e/service/platform-guide-check.mjs", "desc": "C3 llama-server 按平台分化：别在 Windows 上引导用户下 macOS 的包", "refute": true },
         { "id": "check:progress-truth", "cmd": "node e2e/service/progress-truth-check.mjs", "desc": "D2 进度只来自真实来源（不编数字）", "refute": true },
         { "id": "check:offline-fallback", "cmd": "node e2e/service/offline-fallback-check.mjs", "desc": "C4 离线兜底：权重已预置才注入 HF 离线旗标，--link 零网络重建", "refute": true },
-        { "id": "check:store", "cmd": "node e2e/service/store-parity-check.mjs", "desc": "F3 store 同源钉子：Rust(boxsvc/store.rs) 对冻结 golden 快照", "refute": true },
-        { "id": "check:store-exec", "cmd": "node e2e/service/store-exec-parity-check.mjs", "desc": "F3-b store 执行态同源钉子：Rust(boxsvc/store/exec.rs) 对冻结 golden 快照", "refute": true },
+        { "id": "check:store", "cmd": "node e2e/service/store-parity-check.mjs", "desc": "F3 store 同源钉子：Rust(mangasvc/store.rs) 对冻结 golden 快照", "refute": true },
+        { "id": "check:store-exec", "cmd": "node e2e/service/store-exec-parity-check.mjs", "desc": "F3-b store 执行态同源钉子：Rust(mangasvc/store/exec.rs) 对冻结 golden 快照", "refute": true },
         { "id": "check:routes", "cmd": "node e2e/service/routes-check.mjs", "desc": "F5 路由表 / 转发分支计数：未迁移端点透传必须是一张显式白名单", "refute": true },
-        { "id": "check:engine-parity", "cmd": "node e2e/service/engine-parity-check.mjs", "desc": "F4 engine 耦合点同源钉子：Rust(boxsvc/engine.rs) 对冻结 golden 快照", "refute": true },
+        { "id": "check:engine-parity", "cmd": "node e2e/service/engine-parity-check.mjs", "desc": "F4 engine 耦合点同源钉子：Rust(mangasvc/engine.rs) 对冻结 golden 快照", "refute": true },
         { "id": "check:engine-http", "cmd": "node e2e/service/engine-http-parity-check.mjs", "desc": "F4-b engine HTTP 运行期同源钉子：Rust(engine/client.rs) 对冻结 golden 快照", "refute": true },
         { "id": "check:llm-supervisor", "cmd": "node e2e/service/llm-supervisor-parity-check.mjs", "desc": "F4-b2 引擎③ supervisor 行为同源钉子：Rust(supervisor.rs) 对冻结 golden", "refute": true },
         { "id": "check:drain-runtime", "cmd": "node e2e/service/drain-runtime-check.mjs", "desc": "F5 队列驱动线程钉子（D-150）：引擎在飞时必须放锁，且队列仍要跑到底", "refute": true }
@@ -91,13 +91,13 @@
         { "id": "check:pydensecrf-wheel-install", "cmd": "node e2e/engine/pydensecrf-wheel-install-check.mjs", "desc": "B4 预编译 wheel 真装一次（--no-index --no-deps 成功 + 真二进制 + 真构造 DenseCRF）" },
         { "id": "check:offline-real", "cmd": "node e2e/service/offline-real-check.mjs", "desc": "C4 真引擎在 HF 离线旗标下真跑一张英译中" },
         { "id": "check:uninstall-keep", "cmd": "node e2e/bundle-uninstall-keep-check.mjs", "desc": "E3 真安装器静默卸载一次：不挂住 + 不碰用户自装运行时与作品目录" },
-        { "id": "check:engine-bootstrap-real", "cmd": "node e2e/engine/engine-bootstrap-real-check.mjs", "desc": "G4/G5 夹具版真装配：真跑产品自己的 boxsvc --engine-bootstrap", "refute": true },
+        { "id": "check:engine-bootstrap-real", "cmd": "node e2e/engine/engine-bootstrap-real-check.mjs", "desc": "G4/G5 夹具版真装配：真跑产品自己的 mangasvc --engine-bootstrap", "refute": true },
         { "id": "check:packaged", "cmd": "node e2e/packaged-smoke.mjs", "desc": "A4 打包后冒烟（mock 档）：安装层 → 资产层 → 服务层三层取证", "refute": true }
       ]
     },
     "supply": {
       "title": "供应链与装配 —— 下真资产 / 建运行时 / 生成清单",
-      "why": "产品运行期不跑这些脚本（打包用户机跑的是 boxsvc 自己的出口），故不属于任何分层门；跑它们会改盘上真实落点。",
+      "why": "产品运行期不跑这些脚本（打包用户机跑的是 mangasvc 自己的出口），故不属于任何分层门；跑它们会改盘上真实落点。",
       "cmds": [
         { "id": "fetch:models", "cmd": "node engine/scripts/fetch-models.mjs", "desc": "S3 模型下载器 CLI（Node 对照端）：--check 只校验 / --link 零网络重建引擎树里的链接" },
         { "id": "extract:models", "cmd": "node engine/scripts/fetch-models.mjs --extract", "desc": "只解包已下好的归档，不下载（fetch-models.mjs --extract）" },

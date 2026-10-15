@@ -6,12 +6,12 @@
  * 不就绪 ⇒ 直接进「运行时未装配」，不做 240 s 探针。
  *
  * ## 它钉的是什么
- * real 档引擎探针预算是 **240 s**（`boxsvc::engine::REAL_PROBE_TIMEOUT_MS`）。
+ * real 档引擎探针预算是 **240 s**（`mangasvc::engine::REAL_PROBE_TIMEOUT_MS`）。
  * 旧行为：② 起不来 → 降级继续 → L2 探针空等 240 s → 报一句离根因极远的「服务启动失败」。
  * 用户看到的是**卡住**，不是**没装**。闸门把这段变成秒级收场，且 `last_error` 里
  * 就是缺什么、缺在哪、怎么装。
  *
- * ## 取证入口：`boxsvc --check-runtime-gate [real|mock]`
+ * ## 取证入口：`mangasvc --check-runtime-gate [real|mock]`
  * 打的是服务侧 `start_blocking` 调的**同一个** `gate_message()` ⇒ 这里绿即那里绿。
  * 被拦 ⇒ 退出码 1；放行 ⇒ 0。它不起服务、不绑端口，毫秒级。
  *
@@ -28,7 +28,7 @@
  * 三个变异都改 Rust 源码、跑完**按字节还原**（含重编译产物）。
  *
  * 用法：node e2e/service/launch-gate-check.mjs [--refute]
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -43,7 +43,7 @@ import { ENGINE_PATCHES } from '../../engine/scripts/setup-engine.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REFUTE = process.argv.includes('--refute');
-const PROBE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'runtime_probe.rs');
+const PROBE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'runtime_probe.rs');
 const SERVICE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'service.rs');
 const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
 /// `cargo` 可执行：`CARGO` env 覆盖，否则交给 PATH（libuv 在 Windows 上会补 `.exe`）。
@@ -65,7 +65,7 @@ function check(name, cond, extra) {
 
 // ------------------------------------------------------------------ 打闸门
 
-/** 跑一次 `boxsvc --check-runtime-gate <mode>`，返回 { code, json, ms }。 */
+/** 跑一次 `mangasvc --check-runtime-gate <mode>`，返回 { code, json, ms }。 */
 async function gate(mode, extraEnv) {
   const t0 = Date.now();
   const r = await new Promise((resolve, reject) => {
@@ -109,7 +109,7 @@ function gateWiredBeforeEngineSpawn() {
 }
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   process.exit(1);
 }
 
@@ -191,10 +191,10 @@ if (!fs.existsSync(RUST_BIN)) {
 
 // ------------------------------------------------------------------ 反证
 
-/** 重编译 boxsvc。🔴 变异改了 Rust 源码，靶子是**另一个进程**，不重编等于没改。 */
+/** 重编译 mangasvc。🔴 变异改了 Rust 源码，靶子是**另一个进程**，不重编等于没改。 */
 function rebuild() {
   return new Promise((resolve) => {
-    const b = spawn(CARGO, ['build', '--bin', 'boxsvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
+    const b = spawn(CARGO, ['build', '--bin', 'mangasvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
     b.on('error', () => resolve(false));
     b.on('close', (c) => resolve(c === 0));
   });
@@ -265,7 +265,7 @@ if (REFUTE) {
       // 按文件实际 EOL 拼出整块再删 —— 手写 `}\n` 会在 CRLF 文件上找不到边界
       const eol = serviceOriginal.includes('\r\n') ? '\r\n' : '\n';
       const block = [
-        '        if let Some(msg) = boxsvc::engine::runtime_probe::gate_message(&plan.mode) {',
+        '        if let Some(msg) = mangasvc::engine::runtime_probe::gate_message(&plan.mode) {',
         '            return self.fail(app, Some("L0"), msg);',
         '        }',
       ].join(eol);

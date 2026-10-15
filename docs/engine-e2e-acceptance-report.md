@@ -104,20 +104,20 @@ cd src-tauri && cargo check
 **实测**（本轮）：
 
 ```
-[miao-dock] ③ llm    : …/llama-server -m …/sakura-1.5b-qwen2.5-v1.0-fp16.gguf --port 8080 -c 4096 -ngl 99（由 box-service 拉起，见《04》§9.1 Tier1）
+[miao-dock] ③ llm    : …/llama-server -m …/sakura-1.5b-qwen2.5-v1.0-fp16.gguf --port 8080 -c 4096 -ngl 99（由 manga-service 拉起，见《04》§9.1 Tier1）
 [miao-dock] ② engine : …/python main.py --host 127.0.0.1 --port 8000 --use-gpu --models-ttl 1800 --nonce None（经 child-watch 看守）
 [miao-dock] ② engine.cwd : …/runtimes/manga-translator/src/server
 [miao-dock] ① service: node service/src/server.mjs  env=（无）
-[miao-dock] ③ LLM 归属 box-service —— 本进程不 spawn（8080 由它负责）
+[miao-dock] ③ LLM 归属 manga-service —— 本进程不 spawn（8080 由它负责）
 ```
 
 5 行，**≥4 行**的判据满足。第 5 行尤其重要：它把**③ 的归属方**写进了快照，是 S4「归属权移交」的对外凭证。
 
-**③ 预拉起这条路径单独复核过**（手工起 box-service，real 协议）：
+**③ 预拉起这条路径单独复核过**（手工起 manga-service，real 协议）：
 
 ```
-[box-service] 拉起 ③ LLM：…/child-watch.mjs -- …/llama-server -m …/sakura-…-fp16.gguf --port 8080 -c 4096 -ngl 99
-[box-service] ③ LLM 就绪：sakura-1.5b-qwen2.5-v1.0-fp16 @ 8080（pid=79768）   ← 1.8 s
+[manga-service] 拉起 ③ LLM：…/child-watch.mjs -- …/llama-server -m …/sakura-…-fp16.gguf --port 8080 -c 4096 -ngl 99
+[manga-service] ③ LLM 就绪：sakura-1.5b-qwen2.5-v1.0-fp16 @ 8080（pid=79768）   ← 1.8 s
 ```
 
 > 🔴 **本项在本轮踩过一个坑**：第一次跑 `e11:real` 时 ③ 在 300 s 内**没起来**，看起来像 S4 的归属权移交坏了。
@@ -131,7 +131,7 @@ cd src-tauri && cargo check
 **判据**：一张真日文漫画图 → 落盘 `001_translated.png`；**肉眼可见中文译文**（不再是伪随机版式图）；
 **反证**：`translator=none` 时译文 = 原文。
 
-**做法**：`npm run task -- check:e3:real` 拉起真 ② + 真 ③（③ 由 box-service 按配方归属拉起），
+**做法**：`npm run task -- check:e3:real` 拉起真 ② + 真 ③（③ 由 manga-service 按配方归属拉起），
 31 张真日文漫画图走完整链路落盘，抽首/中/尾三张做逐像素比对。
 
 > ⚠️ **本条的执行体改过**（D-205）：原先由 `e2e/engine/s1-real-engine-check.mjs` 单张取证，
@@ -349,17 +349,17 @@ cd src-tauri && cargo check
 
 **跑在哪**：不再用自建夹具页，而是**真实漫画站** `jmanga.media` 的《転生ゴブリンだけど質問ある？》——
 chapter-112 的**全 18 页** + chapter-113 的**前 13 页** = 31 张，**跨两次提交**（18 + 13）。
-真引擎（`protocol=real` · tiny · MPS）+ 真 box-service（`:5180`）+ 真 ③（`llama-server` `:8080`）
+真引擎（`protocol=real` · tiny · MPS）+ 真 manga-service（`:5180`）+ 真 ③（`llama-server` `:8080`）
 全部由脚本自己拉起、自己收尾（含 `:8001` 执行器这个孙进程，见 §5-11）。
 
 **19 条断言（19/0）**：
 
 | 断言 | 结果 |
 |---|---|
-| E9.0 前置：box-service 自报**真引擎**协议 `protocol=real`（不是靠 mock 默认值碰巧对上） | `{"protocol":"real","effectiveTier":"tiny","hardwareAccel":"mps"}` |
+| E9.0 前置：manga-service 自报**真引擎**协议 `protocol=real`（不是靠 mock 默认值碰巧对上） | `{"protocol":"real","effectiveTier":"tiny","hardwareAccel":"mps"}` |
 | E9.1 真实站点 chapter-112 扫描到 **18 张**，且**页面 img 总数 = 20**（站点 logo 与统计像素被过滤规则正确排除） | 命中 18 / 总数 20 |
 | E9.2 面板只渲染第 1 页 = 18 格（≤ 单页上限 20，不分页）；提示行「本页 18 张 · 全页共 18 张」 | 同左 |
-| E9.3 面板头部徽标 = 「服务已就绪」—— 插件真的探到 `:5180` 上的真 box-service（**D1 的耦合点**） | `badge="服务已就绪"` |
+| E9.3 面板头部徽标 = 「服务已就绪」—— 插件真的探到 `:5180` 上的真 manga-service（**D1 的耦合点**） | `badge="服务已就绪"` |
 | E9.4 勾选 18 张后计数正确 | `已选 18 张 · 分布于 1 页` |
 | E9.5 第一批走完插件全流程到完成态（页面真回执 + 服务端任务 `done` + 18 项入账） | **104 s** · `summary="已保存到 漫画库 /"` |
 | E9.6 **回写生效**：页面 18 个原图被标记 `data-miao-translated`，`src` 换成 `blob:` | 标记 18 / `blob:` 18 |
@@ -436,16 +436,16 @@ chapter-112 的**全 18 页** + chapter-113 的**前 13 页** = 31 张，**跨�
 | 取证 | 结果 |
 |---|---|
 | 三进程拉起（**外部**等端口，不信自报） | 服务 `5180` · 引擎 `8000` · LLM `8080`；real 另含执行器 `8001`（引擎的**孙**进程 —— 只杀直接子进程时它会被 reparent 后继续占着） |
-| E1 生效参数快照（从**应用 stdout** 读回，不是配置、不是内存变量） | **6 行**：③ 由 box-service 拉起 + `② engine` + `② engine.cwd` + `① service` + 「③ LLM 归属 box-service」 |
+| E1 生效参数快照（从**应用 stdout** 读回，不是配置、不是内存变量） | **6 行**：③ 由 manga-service 拉起 + `② engine` + `② engine.cwd` + `① service` + 「③ LLM 归属 manga-service」 |
 | SIGKILL 主进程（不留任何清理机会）后 ①②③ 自退 | **14 个端口全部释放，无孤儿** |
 
 **反证**：`selftest:app:e11:refute`（`MIAO_NO_PARENT_WATCH=1` 关掉父死看守）⇒ 必然留孤儿、端口**不**释放（断言必须变红）。
 
 > 🔴 **本项第 1 次跑是红的，红的是一条真缺陷**（见 §3-4）：报 `LLM ✗` —— ③ 在 300 s 预算内**没起来**；
-> 而同一个 box-service **手工**拉起时 0.9–1.8 s 就绪。用 `MIAO_SERVICE_ENTRY` 落盘 box-service 日志拿到现场：
+> 而同一个 manga-service **手工**拉起时 0.9–1.8 s 就绪。用 `MIAO_SERVICE_ENTRY` 落盘 manga-service 日志拿到现场：
 > ```
-> [box-service] ③ LLM 就绪：sakura-1.5b-qwen2.5-v1.0-fp16 @ 8080（pid=83218）
-> [box-service] 空闲 66042s ≥ 300s ⇒ 卸载 ③ LLM（《04》§9.1 Tier1）   ← 刚拉起就被卸
+> [manga-service] ③ LLM 就绪：sakura-1.5b-qwen2.5-v1.0-fp16 @ 8080（pid=83218）
+> [manga-service] 空闲 66042s ≥ 300s ⇒ 卸载 ③ LLM（《04》§9.1 Tier1）   ← 刚拉起就被卸
 > ```
 > 「空闲 66042s」≈ 18.3 h，正是**上一轮** E11 结束到现在的时间差。根因不在 E11 脚本，在
 > `idle-policy.lastActivityAt()`（见 §3-4）——**修完重跑即绿**。
@@ -542,7 +542,7 @@ E11 用仓库内**固定**的 `.tmp-selftest`（注释写着"每次自检从空�
 
 ### 3-5 `selftest:app` 的 `S2c` **恒红**且长期无人发现（S7 全量门照出）
 
-S4 把 ③ 的归属权移交 box-service（《04》§9.1）之后，本 Manager 直接持有的子进程从 3 个变成 2 个，
+S4 把 ③ 的归属权移交 manga-service（《04》§9.1）之后，本 Manager 直接持有的子进程从 3 个变成 2 个，
 于是断言被改成 `st.children.len() == 2`。**但 `Children::view()` 是「固定三行的视图」** ——
 `service / engine / llm` 三项恒出，缺席的那项 `pid = None` ⇒ **长度恒为 3** ⇒ 这条断言**永远为假**。
 
@@ -553,7 +553,7 @@ S4 把 ③ 的归属权移交 box-service（《04》§9.1）之后，本 Manager
 ① 数长度（恒 3）不行；② 只数"`pid` 非空"的个数也不行（① 与 ② 混着数，"少起 ① + 多起 ③"能凑够 2）；
 ③ 放宽成 `>= 2` 更不行（那正是这条断言要防的"少起了一个进程"）。
 所以逐项断言：`service` 与 `engine` 各 `pid = Some` 且 `alive`，并**反向钉住** `llm.pid.is_none()`
-（③ 已归 box-service，是本进程的**孙**进程）。③ 自己的存活由 `/health.sidecar.llm` 那条链路负责
+（③ 已归 manga-service，是本进程的**孙**进程）。③ 自己的存活由 `/health.sidecar.llm` 那条链路负责
 （`check:contract` / `check:engine-settings` / E11），**不在本断言范围内** —— 反过来把它钉住，
 哪天 ③ 又被本进程拉起来，会红，而那不是噪音、是**契约变更的信号**。
 
@@ -647,7 +647,7 @@ S4 把 ③ 的归属权移交 box-service（《04》§9.1）之后，本 Manager
 ## 5. 环境陷阱（本轮实测踩到，写下来免得下次再踩）
 
 1. **两仓的端到端**不能并发**。`miao-trans` 的 `verify.mjs` 把 mock 服务**硬编码在 5180**，
-   而 miao-dock 的 box-service 也在 5180–5190 段；并发时 verify 会连到**真服务**上，
+   而 miao-dock 的 manga-service 也在 5180–5190 段；并发时 verify 会连到**真服务**上，
    报 `PERMISSION_DENIED` 并掉到 20/24（**那不是回归，是抢端口**）。串行重跑即 27/27。
 2. **E11 `real` 首次失败曾被误判成"内存抢用"**：现象是 ③ 在 300 s 预算内起不来。
    当时归因为"3.3 GB 的 llama-server 与 Chromium 抢内存"，但**真因是 §3-4 的空闲卸载缺陷**（跨轮状态污染）。
@@ -703,7 +703,7 @@ S4 把 ③ 的归属权移交 box-service（《04》§9.1）之后，本 Manager
     （异步恢复的到达时刻不保证；它若在填完名字之后才落地，会把状态翻回去并**清空刚做的选择**）。
     ⚠️ 「轮询一个值直到它等于期望值」是**错的方向** —— 竞态的定义就是"它会变回去"。
 15. 🔴 **WorkBuddy CLI 的 `safe-delete` shim 会经 `NODE_OPTIONS` 注入到"被测应用"里**，
-    而它的配额是**按工具调用**记的（阈值 50）。box-service 建单前要做可写性探测
+    而它的配额是**按工具调用**记的（阈值 50）。manga-service 建单前要做可写性探测
     （`server.mjs:151 assertRootWritable`：写 `out/.write-probe-*` 再 `unlinkSync`），
     配额一满，**应用删自己刚写的探针文件**也被拦：
     ```

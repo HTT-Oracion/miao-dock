@@ -145,7 +145,7 @@ export function useLibrary(enabled: boolean, refreshKey: number) {
 
 /**
  * 翻译来源（P-D1）：**服务的设置，不是任务的属性** —— 用户只在设置里选一次，
- * box-service 记住它；投放 / 队列 / 重试 / 返工 / 浏览器插件都不加来源控件。
+ * manga-service 记住它；投放 / 队列 / 重试 / 返工 / 浏览器插件都不加来源控件。
  *
  * 读一次 `/translate/options`。服务没起来（或请求被拒）时 `source=null`，
  * 调用方按**本地**处理：设置读失败不该把翻译屏锁死 —— 那意味着此刻没有任何

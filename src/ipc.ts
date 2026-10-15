@@ -1,7 +1,7 @@
 /**
  * 与 Rust 层的唯一通道。
  *
- * 桌面端**不直接从 WebView 请求 box-service**，一律经 IPC 转发，理由见
+ * 桌面端**不直接从 WebView 请求 manga-service**，一律经 IPC 转发，理由见
  * `src-tauri/src/commands.rs` 的文件头：① 契约 Origin 白名单不放行 WebView 的 Origin；
  * ② 令牌不进 WebView；③ 错误信封在 Rust 侧统一解析，前端拿到的是结构化错误。
  */
@@ -50,7 +50,7 @@ export interface RuntimeProbe {
 
 export interface ServiceStatus {
   state: ServiceState;
-  /** box-service 实际端口（5180–5190 段内探测得出） */
+  /** manga-service 实际端口（5180–5190 段内探测得出） */
   port: number | null;
   token: string | null;
   root_dir: string | null;

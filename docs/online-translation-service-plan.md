@@ -15,7 +15,7 @@
 
 | 问题 | 判定 | 依据 |
 |---|---|---|
-| 落点选哪一层？ | **`box-service`（`service/src/`）新增 `translate/` 模块**，不经引擎。 | 流式要打到 UI ⇒ 必须有 SSE 出口，而 SSE 与鉴权、错误信封、设置持久化都在 `service/`（§2） |
+| 落点选哪一层？ | **`manga-service`（`service/src/`）新增 `translate/` 模块**，不经引擎。 | 流式要打到 UI ⇒ 必须有 SSE 出口，而 SSE 与鉴权、错误信封、设置持久化都在 `service/`（§2） |
 | 现有代码能不能直接撑住？ | **能，且大半是现成的**：SSE 写出、错误信封、设置三层回退 + 原子写、单一耦合点范式都已存在。 | §2 逐条 |
 | 平台扩展性够不够？ | **够**：平台 = 「一个文件 + 注册表一行」，门面/路由/配置骨架都不动。 | §4.4 / §9 |
 | 最大的技术风险在哪？ | **不在架构，在两个协议细节**：① 签名 v3 的 `input` 截断规则（中文按**字符**算长度）；② 重试必须**重算 salt+curtime+sign**，否则撞有道防重放（`207`）。 | §5.1 / §7.3 |
@@ -72,7 +72,7 @@
             │ POST /api/v1/translate/text       │ POST /api/v1/translate/stream（SSE）
             │ （JSON 整体）                      │ （逐条 translate.delta）
 ┌───────────┴─────────────────────────────────┴─────────────────────────────────┐
-│                       box-service（service/src/）· 鉴权 / 错误信封 / SSE           │
+│                       manga-service（service/src/）· 鉴权 / 错误信封 / SSE           │
 │  ┌──────────────── translate/index.mjs（门面 facade）─────────────────┐         │
 │  │  translateText(req) → { text, langType }        ← 整体              │         │
 │  │  translateStream(req, emit) → void（回调逐块）  ← 流式              │         │
@@ -285,7 +285,7 @@ input = q                      当 len(q) <= 20
 ### 6.1 大模型翻译（流式）· 端到端
 
 ```
-前端 ──POST /translate/stream──▶ box-service
+前端 ──POST /translate/stream──▶ manga-service
                                    │ ① 鉴权(继承) → ② 入参校验 → ③ 语言码归一
                                    │ ④ registry 取适配器 + 查 capabilities('llm')
                                    │ ⑤ limiter.acquire(platform)          ← QPS/并发闸门
@@ -310,7 +310,7 @@ input = q                      当 len(q) <= 20
 ### 6.2 普通文本翻译（整体）· 端到端
 
 ```
-前端 ──POST /translate/text──▶ box-service
+前端 ──POST /translate/text──▶ manga-service
                                 │ ①②③ 同上
                                 │ ④ capabilities('text')
                                 │ ⑤ limiter.acquire
@@ -526,9 +526,9 @@ env（验收/排障的强制覆盖）  >  盘上文件（用户设置）  >  出
 
 | 编号 | 决策 | 关键点与影响 |
 |---|---|---|
-| **P-D1** | **来源是「服务的设置」，不是「任务的属性」** | 用户只在设置里选一次（本地引擎 / 在线 API），box-service 记住它；**投放 / 队列 / 重试 / 返工 / 浏览器插件都不加来源控件**。⇒ `TaskRow` **不加** `provider` 字段（避开与既有 `source` 的命名冲突）；不存在"重试继承来源"问题（永远用当前设置） |
+| **P-D1** | **来源是「服务的设置」，不是「任务的属性」** | 用户只在设置里选一次（本地引擎 / 在线 API），manga-service 记住它；**投放 / 队列 / 重试 / 返工 / 浏览器插件都不加来源控件**。⇒ `TaskRow` **不加** `provider` 字段（避开与既有 `source` 的命名冲突）；不存在"重试继承来源"问题（永远用当前设置） |
 | **P-D2** | **在线翻译并入 ② 「翻译服务」，不做独立左栏项** | 作为 ② 的**第一个小节「翻译来源」**（来源分段 + 平台 / appKey / appSecret）。左栏仍是 5 项。⚠️ **② 由「恰 3 个小节」变 4 个** ⇒ `check:settings` 的 C11 判据（数 `.set-subtitle`）必须同步 3 → 4，`SECTION_ITEM_TOTAL` / 项数一并复核 |
-| **P-D3** | **漫画翻译的准入判据按来源分档** | 现状 `blocked = state !== 'running'` ⇒ 整片让位给 X-C3（四段时间线全在讲本地引擎 ②③）。改为：`来源=本地` 维持现状；`来源=在线` **只看 ① box-service 是否在跑**（`state ∈ {stopped,error}` / `port` 空才拦），且用**精简页**（一句「本地服务未启动」+ 启动按钮，**不搬时间线**）；在线时 `degraded`（②③ 掉）**不拦** |
+| **P-D3** | **漫画翻译的准入判据按来源分档** | 现状 `blocked = state !== 'running'` ⇒ 整片让位给 X-C3（四段时间线全在讲本地引擎 ②③）。改为：`来源=本地` 维持现状；`来源=在线` **只看 ① manga-service 是否在跑**（`state ∈ {stopped,error}` / `port` 空才拦），且用**精简页**（一句「本地服务未启动」+ 启动按钮，**不搬时间线**）；在线时 `degraded`（②③ 掉）**不拦** |
 | **P-D4** | **来源=在线 ⇒ 引擎不随开机拉起** | 现 `llmAutostart` 默认 `true`、开机即烤 ③；在线用户完全不需要那份显存/内存 ⇒ 并入 ver2.2「按需化」一并做 |
 | **P-D5** | **「大模型流式 vs 文本整体」不进设置界面** | 两类都在适配器里实现（架构支持）；在线默认走**普通文本（整体）**（适配批量漫画），**流式留能力、界面先不暴露**；等出现需要逐字反馈的场景（如实时预览）再开 |
 | **P-D6** | **界面只留「选平台 + appKey + appSecret + 保存」** | 去掉语言对（方向已逐任务下发，平台语言码由适配层映射）、测试连接、输出预览、超时、分句、摘要 —— 均已从设计稿移除 |

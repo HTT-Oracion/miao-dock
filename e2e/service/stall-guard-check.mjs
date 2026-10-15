@@ -47,7 +47,7 @@
  *   node e2e/service/stall-guard-check.mjs            正向
  *   node e2e/service/stall-guard-check.mjs --refute   反证轮（去掉机制 → 断言必须变红）
  *
- * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（那是 box-service 的段）。
+ * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（那是 manga-service 的段）。
  */
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -68,8 +68,8 @@ const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const ENGINE_ENTRY = path.join(ROOT, 'engine', 'src', 'server.mjs');
 const CARGO_DIR = path.join(ROOT, 'src-tauri');
 /** 反证轮要破坏的 Rust 源码（三处，作用各不相同，别合并）。 */
-const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'store', 'exec.rs');
-const RUST_CLIENT_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'engine', 'client.rs');
+const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'store', 'exec.rs');
+const RUST_CLIENT_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'engine', 'client.rs');
 
 const REFUTE = process.argv.includes('--refute');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-stall-'));
@@ -369,7 +369,7 @@ async function queueEvidenceProbe() {
 
 /** 编译 Rust 靶子（反证轮改完源码必须重编，否则断言验的是"上一份产物"）。 */
 function buildRust() {
-  const r = spawnSync('cargo', ['build', '--bin', 'boxsvc'], {
+  const r = spawnSync('cargo', ['build', '--bin', 'mangasvc'], {
     cwd: CARGO_DIR,
     encoding: 'utf8',
     maxBuffer: 40 * 1024 * 1024,

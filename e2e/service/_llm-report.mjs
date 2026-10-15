@@ -2,7 +2,7 @@
 /**
  * F4-b2 引擎③ supervisor 的用例表 + Rust 侧取证 —— golden 生成器与对拍脚本**共用的唯一一份**。
  * =============================================================================
- * 为什么单独一个文件：`check:llm-supervisor` 原先是「Rust `boxsvc --llm-selftest` ⟷ Node
+ * 为什么单独一个文件：`check:llm-supervisor` 原先是「Rust `mangasvc --llm-selftest` ⟷ Node
  * 真 `LlmSupervisor`」双靶对拍。F5 摘除 Node 服务层后没有对照对象，改以冻结 golden 快照作
  * **单向金标**。用例表（场景 / 超时 / launch spec）与「怎么跑 Rust」必须两边同一份 ——
  * 各写一遍 = 用例悄悄少一个都不会有人发现。
@@ -113,10 +113,10 @@ export const CASES = [
 
 // ------------------------------------------------------------------ Rust 侧取证
 
-/** 跑一次 `boxsvc --llm-selftest`，返回 `Map<name, result>`（键序与 CASES 一致）。 */
+/** 跑一次 `mangasvc --llm-selftest`，返回 `Map<name, result>`（键序与 CASES 一致）。 */
 export async function runRust(envExtra = {}) {
   if (!fs.existsSync(RUST_BIN)) {
-    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   }
   const cases = [];
   for (const c of CASES) {

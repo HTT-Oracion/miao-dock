@@ -72,8 +72,8 @@ pub const REQUIRED_ASSETS: &[&str] = &[
 /// 资源目录（`$RESOURCE`）：`MIAO_RESOURCE_DIR` 覆盖，否则从**本可执行文件**推导。
 ///
 /// ## 为什么不用 Tauri 的 `AppHandle::path().resource_dir()`
-/// `boxsvc` 是**独立可执行**（F0 起的第二个 `[[bin]]`），它拿不到 `AppHandle`；而产品默认档
-/// 跑的正是 boxsvc。好在 `resolve_boxsvc()` 保证它与 `miao-dock` **同目录**，故从 exe 推导
+/// `mangasvc` 是**独立可执行**（F0 起的第二个 `[[bin]]`），它拿不到 `AppHandle`；而产品默认档
+/// 跑的正是 mangasvc。好在 `resolve_mangasvc()` 保证它与 `miao-dock` **同目录**，故从 exe 推导
 /// 在两端得到同一个值 —— 这条也是 A1 唯一可行的实现路线。
 ///
 /// 推导规则与 Tauri 的 `$RESOURCE` 一致：
@@ -133,7 +133,7 @@ pub fn missing_assets() -> Vec<String> {
         .collect()
 }
 
-/// 资产自检报告（给 `boxsvc --check-assets` 与启动前置门用）。
+/// 资产自检报告（给 `mangasvc --check-assets` 与启动前置门用）。
 pub fn assets_report() -> serde_json::Value {
     let dir = resource_dir();
     let items: Vec<serde_json::Value> = REQUIRED_ASSETS
@@ -300,7 +300,7 @@ pub fn engine_python() -> PathBuf {
 /// 🔴 F5.6 起**三级回退**（与 `config.mjs:480` 逐字对齐）：`MIAO_MODEL_ROOT` → 设置文件 `modelDir`
 ///    → `resolve(ENGINE_DIR, '..')`。少了中间那一级，「设置页把模型目录改到 D 盘」这件事
 ///    在 Rust 侧**读不到**，而它在 Node 侧读得到 ⇒ `--print-paths` 与产品行为一起分叉（R1）。
-/// ⚠️ 这里**只**做 `modelDir` 的裸读，不复用 `boxsvc::engine::settings`：`paths` 是底座
+/// ⚠️ 这里**只**做 `modelDir` 的裸读，不复用 `mangasvc::engine::settings`：`paths` 是底座
 ///    （`lib` 根），底座依赖服务域会把「域能单独理解」这个前提破掉（同 Node 的 layering 纪律）。
 pub fn model_root() -> PathBuf {
     if let Some(p) = env_path("MIAO_MODEL_ROOT") {
@@ -317,7 +317,7 @@ pub fn model_root() -> PathBuf {
 
 /// 裸读 `state/engine-settings.json` 的 `modelDir`（字符串且非空才有值）。
 ///
-/// 读不到 / 不是 JSON / 键缺失 一律 `None` —— 坏文件由 `boxsvc::engine::settings` 另行上报，
+/// 读不到 / 不是 JSON / 键缺失 一律 `None` —— 坏文件由 `mangasvc::engine::settings` 另行上报，
 /// 这里**不重复喊**（同一个坏文件喊两遍只会淹没日志）。
 fn settings_model_dir() -> Option<String> {
     let text = std::fs::read_to_string(state_dir().join("engine-settings.json")).ok()?;
@@ -436,7 +436,7 @@ pub fn engine_server_dir() -> PathBuf {
     env_path("MIAO_ENGINE_SERVER_DIR").unwrap_or_else(|| engine_dir().join("server"))
 }
 
-/// 全部路径的 **JSON 快照** —— 供 e2e「Rust 与 Node 同源」逐字节比对（`boxsvc --print-paths`）。
+/// 全部路径的 **JSON 快照** —— 供 e2e「Rust 与 Node 同源」逐字节比对（`mangasvc --print-paths`）。
 ///
 /// 键名与 `config.mjs` 的导出**一一对应**，比对脚本按同名键逐条比 —— 少一个键就是漏一条断言。
 pub fn snapshot() -> serde_json::Value {

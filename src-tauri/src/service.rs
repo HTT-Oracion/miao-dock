@@ -1,4 +1,4 @@
-//! ServiceManager —— box-service 与 sidecar 引擎栈的**三进程**生命周期管理
+//! ServiceManager —— manga-service 与 sidecar 引擎栈的**三进程**生命周期管理
 //!
 //! 契约依据：
 //!   · 《02》§2.1「**服务生命周期 = Box 进程的生命周期，与窗口可见性解耦**」
@@ -7,13 +7,13 @@
 //! ## 进程形状（比"服务 + 引擎"深一层）
 //! ```text
 //!   miao-dock(Rust)
-//!     ├── ① box-service        boxsvc(Rust 可执行)                 （动态端口 5180–5190）
+//!     ├── ① manga-service        mangasvc(Rust 可执行)                 （动态端口 5180–5190）
 //!     ├── ② 引擎               node engine/src/server.mjs(替身)    或 python main.py(真)
 //!     │     └── （真）执行器   python -m manga_translator          （port+1）
 //!     └── ③ LLM                node engine/src/mock-llm.mjs(替身)  或 llama-server(真)
 //! ```
 //! 🔴 **① 曾经是 `node service/src/server.mjs`，现在不是了**：F5 把 44 条端点全迁进 Rust、
-//!    本轮又把仓库里的 `service/` 删掉 ⇒ ① 是 `boxsvc` 这个 Rust 可执行文件。
+//!    本轮又把仓库里的 `service/` 删掉 ⇒ ① 是 `mangasvc` 这个 Rust 可执行文件。
 //!    **产品运行时不再启动任何 node 服务进程**（② ③ 里的 node 只是**测试替身**，
 //!    真机走 `python main.py` / `llama-server`；替身不进包）。
 //! ⚠️ **② 与 ③ 是"按进程类型分派 spawn"的落点**：Node 可执行 / Python 可执行 / llama-server 三种形态
@@ -23,7 +23,7 @@
 //! 1. **就绪 = 三重判定**（进程存活 + 端口监听 + HTTP 应答），**不是**"读 stdout 就绪行"。
 //!    stdout 那行仍然要读，但它只是**数据通道**（服务端口是动态的、令牌只在那行里），
 //!    它**不构成就绪判据** —— 否则「日志打出来了、其实还没能干活」会被当成 running。
-//!    探针列表由**本进程内**的启动配方给出（A3b 起不再问 JS：`boxsvc::engine::resolve_engine_launch`
+//!    探针列表由**本进程内**的启动配方给出（A3b 起不再问 JS：`mangasvc::engine::resolve_engine_launch`
 //!    与 `resolve_llm_launch_for` 是唯一来源，见 `load_plan`）。
 //! 2. **五态机** `stopped → starting(L0/L1/L2/L3) → running → stopping → stopped`。
 //!    `L0` 运行时预检闸门（D6）：real 档下引擎运行时就绪不过 ⇒ 一个子进程都不起，
@@ -40,7 +40,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
 // 子进程创建标志（隐藏黑框 / 新进程组）的**单一实现**住在 lib 的 child_watch 里：
-// boxsvc、supervisor、runtime_setup 等所有 spawn 点共用一份，避免两处各写一个值后漂移。
+// mangasvc、supervisor、runtime_setup 等所有 spawn 点共用一份，避免两处各写一个值后漂移。
 // ⚠️ 两个标志常量只在 windows 下有定义 ⇒ import 必须按平台分叉，
 //    否则 macOS 侧直接编译不过（而 macOS 打包正是要支持的平台）。
 #[cfg(windows)]
@@ -55,7 +55,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
-use crate::boxsvc;
+use crate::mangasvc;
 use miao_dock::paths;
 
 /// 状态变化事件名（前端订阅）
@@ -94,7 +94,7 @@ pub struct ChildView {
 #[derive(Clone, Serialize)]
 pub struct StatusView {
     pub state: ServiceState,
-    /// box-service 实际监听端口（5180–5190 内探测得出）
+    /// manga-service 实际监听端口（5180–5190 内探测得出）
     pub port: Option<u16>,
     /// 配对令牌；由 Rust 持有并下发给 UI（WebView 不直连服务）
     pub token: Option<String>,
@@ -146,7 +146,7 @@ fn view_of(g: &Inner) -> StatusView {
         last_error: g.last_error.clone(),
         // D1：运行时就绪检测与引擎启动同源（同一个 `runtime_probe::probe()`），
         // 故"服务说缺 python"与"`--check-runtime-gate` 说缺 python"不可能分叉。
-        runtime: boxsvc::engine::runtime_probe::runtime_view(),
+        runtime: mangasvc::engine::runtime_probe::runtime_view(),
     }
 }
 
@@ -193,10 +193,10 @@ struct LaunchSpec {
     #[serde(default)]
     watch: bool,
     /// **归属方**（S4 起新增）。`None` / `"manager"` ⇒ 本 Manager 负责 spawn（沿 S2 行为）；
-    /// `"service"` ⇒ 由 **box-service** 自己拉起，本 Manager **只打印不 spawn**。
+    /// `"service"` ⇒ 由 **manga-service** 自己拉起，本 Manager **只打印不 spawn**。
     ///
-    /// 为什么需要它：《04》§9.1 规定 Tier1 空闲卸载（停 ③ Sakura LLM）的实现方是 box-service
-    /// （③ 不在引擎 TTL 范围内）。若 Rust 照旧 spawn，就会与 box-service spawn 的那个
+    /// 为什么需要它：《04》§9.1 规定 Tier1 空闲卸载（停 ③ Sakura LLM）的实现方是 manga-service
+    /// （③ 不在引擎 TTL 范围内）。若 Rust 照旧 spawn，就会与 manga-service spawn 的那个
     /// **抢同一个 8080** —— 而"两个 llama-server 互相踩"的报错离根因极远。
     /// 保留这条 spec 而不是直接给 `llm: null`，是为了 E1 的「生效参数快照」仍然逐条列出
     /// **真正会被执行的东西**（包括 ③ 的完整命令行）；删掉它等于让快照悄悄少一块。
@@ -479,16 +479,16 @@ impl ServiceManager {
         //   而不是让用户白等 240 s 再看到一句 "Connection error"（那正是 B1 要消灭的报错形态）。
         // 🔴 只 warn 不 fail：mock 档本来就不要真引擎（30+ 个 mock e2e 靠它活着）；
         //    real 档的硬门归 D6（首启引导）—— 那里才有完整的"缺什么 → 怎么装"流程。
-        boxsvc::engine::runtime_probe::warn_unready_if_real(plan.mode == "mock");
+        mangasvc::engine::runtime_probe::warn_unready_if_real(plan.mode == "mock");
         // ---- 0.5) 运行时预检闸门（D6）----
         //    real 档下「装没装」是**能不能启动**的前提，不是"启动后再看"的事：
         //    缺 python 时旧行为是 ② 起不来 → 降级继续 → L2 探针空等 240 s
-        //    （`boxsvc::engine::REAL_PROBE_TIMEOUT_MS`）→ 报一句离根因极远的「服务启动失败」。
+        //    （`mangasvc::engine::REAL_PROBE_TIMEOUT_MS`）→ 报一句离根因极远的「服务启动失败」。
         //    用户看到的是卡住，不是没装 —— 这正是本闸门要消灭的形态。
         //    🔴 位置在**任何子进程之前**：一个都不起，秒级收场。
         //    🔴 mock 档不过闸（30+ 个 mock e2e 靠它活着）；判据与上面那句 warn
         //       共用同一份 `probe()` ⇒ 日志流与状态机不会各说各话。
-        if let Some(msg) = boxsvc::engine::runtime_probe::gate_message(&plan.mode) {
+        if let Some(msg) = mangasvc::engine::runtime_probe::gate_message(&plan.mode) {
             return self.fail(app, Some("L0"), msg);
         }
         // E1：**日志打印生效参数快照** —— 逐条列出真正会被执行的东西（不是"配置里写的"）。
@@ -496,10 +496,10 @@ impl ServiceManager {
         say(&log, &format!("MIAO_LAUNCH_PLAN mode={}", plan.mode));
         say(&log, "──────────── 生效参数快照（E1）────────────");
         if let Some(llm) = &plan.llm {
-            // S4：③ 的归属权可以是 box-service（`owner == "service"`）。快照照常打出**完整命令**，
+            // S4：③ 的归属权可以是 manga-service（`owner == "service"`）。快照照常打出**完整命令**，
             // 并注明执行者 —— 不然读日志的人会以为 Rust 该为 8080 负责（它不再负责了）。
             let by = match llm.owner.as_deref() {
-                Some("service") => "（由 box-service 拉起，见《04》§9.1 Tier1）",
+                Some("service") => "（由 manga-service 拉起，见《04》§9.1 Tier1）",
                 _ => "",
             };
             say(&log, &format!("[miao-dock] ③ llm    : {}{}", cmd_line(&llm.cmd), by));
@@ -528,7 +528,7 @@ impl ServiceManager {
             &log,
             &format!(
                 "[miao-dock] ① service: {}  env={}",
-                // 🔴 这里曾经**写死**成 "node service/src/server.mjs" —— 靶子换成 boxsvc 之后
+                // 🔴 这里曾经**写死**成 "node service/src/server.mjs" —— 靶子换成 mangasvc 之后
                 //    日志还在说 node，看日志的人会去找一个根本不存在的进程（而服务其实是好的）。
                 //    改成打印**真实的** service 命令：日志是排障的第一现场，不许编。
                 cmd_line(&service_cmd),
@@ -539,7 +539,7 @@ impl ServiceManager {
 
         // ---- 1) 拉起 ③ ② ① ----
         let mut spawn_errs: Vec<String> = Vec::new();
-        // ③ 的归属方可能是 **box-service**（S4 起，见 `LaunchSpec.owner` 注释）：那种情况下
+        // ③ 的归属方可能是 **manga-service**（S4 起，见 `LaunchSpec.owner` 注释）：那种情况下
         // 本 Manager **只打印不 spawn**，否则两个 llama-server 会抢同一个 8080。
         let llm_owned_by_service = plan
             .llm
@@ -548,7 +548,7 @@ impl ServiceManager {
             .map(|o| o == "service")
             .unwrap_or(false);
         if llm_owned_by_service {
-            say(&log, "[miao-dock] ③ LLM 归属 box-service —— 本进程不 spawn（8080 由它负责）");
+            say(&log, "[miao-dock] ③ LLM 归属 manga-service —— 本进程不 spawn（8080 由它负责）");
         } else if let Some(spec) = &plan.llm {
             match spawn_spec(spec, &log) {
                 Ok(p) => {
@@ -860,7 +860,7 @@ impl ServiceManager {
                             g.last_error = Some(notes.join("；"));
                             g.monitor_running = false;
                         } else {
-                            // ②③ 挂 = 降级：翻译会失败，但 box-service 本身仍活着（分级，不是整体崩）
+                            // ②③ 挂 = 降级：翻译会失败，但 manga-service 本身仍活着（分级，不是整体崩）
                             g.degraded = true;
                         }
                     }
@@ -918,12 +918,12 @@ fn resolve_mode() -> Result<String, String> {
 ///    Rust 去问它。本函数是那条唯一的跨语言依赖 —— 而它带来的代价是**打包后必然失败**
 ///    （A3「node 随包」已作废），报错还停在 `无法执行 node 打印启动配方` 这种
 ///    离根因很远的地方。
-///    现在配方逻辑已 Rust 化（`boxsvc::engine::{resolve_engine_launch, resolve_llm_launch}`，
+///    现在配方逻辑已 Rust 化（`mangasvc::engine::{resolve_engine_launch, resolve_llm_launch}`，
 ///    F4 移植时逐字对齐过），于是**不再需要任何子进程**。
 ///
 /// ⚠️ 协议由入参决定（`mode`），不读环境 —— 环境的读法在 `resolve_mode()` 已收口。
 fn load_plan(mode: &str) -> Result<LaunchPlan, String> {
-    let value = boxsvc::engine::build_launch_plan(mode)?;
+    let value = mangasvc::engine::build_launch_plan(mode)?;
     // 解析失败要**说清是形状不对**而不是把 serde 的行号倒给用户：这份 JSON 由本进程刚生成，
     // 解析失败等于"我们自己的输出坏了"，那是要立刻定位的实现缺陷，不是用户能修的。
     serde_json::from_value::<LaunchPlan>(value).map_err(|e| {
@@ -1003,48 +1003,48 @@ fn relay_lines<R: Read>(mut r: R, mut on_line: impl FnMut(String)) {
     }
 }
 
-/// 服务实现的**靶子**：**只有 `boxsvc`**（D-205 起）。**未设 ⇒ `boxsvc`**。
+/// 服务实现的**靶子**：**只有 `mangasvc`**（D-205 起）。**未设 ⇒ `mangasvc`**。
 ///
 /// 🔴 **这里曾经有三档，node 那一档连同它的"退路"一起删掉了**：
-///   · F1 过渡期默认 node（"打包把 boxsvc 放进安装包之前，产品路径一律不动"）；
-///   · F5.8 把默认翻成 rust，但**留了一条退路**：拿不到 boxsvc 时退回 Node 并打警告 ——
+///   · F1 过渡期默认 node（"打包把 mangasvc 放进安装包之前，产品路径一律不动"）；
+///   · F5.8 把默认翻成 rust，但**留了一条退路**：拿不到 mangasvc 时退回 Node 并打警告 ——
 ///     那是刻意的（开发态 `cargo run --bin miao-dock` 只构建主 bin、`target/debug/` 里没有
-///     `boxsvc`，硬失败会把"跑起来看看界面"变成"先读一篇构建说明"）。
+///     `mangasvc`，硬失败会把"跑起来看看界面"变成"先读一篇构建说明"）。
 ///   · 现在 `service/` 从仓库删了，**退路的落点没了**：再退回就是退回一个不存在的 `.mjs`，
 ///     把"缺少构建产物"这个清楚的问题，表现成"服务起不来 + 指向幽灵文件"的怪问题。
-///     ⇒ 改为硬失败，构建指引由 `resolve_boxsvc()` 的错误文本承担（它本来就该在那里）。
+///     ⇒ 改为硬失败，构建指引由 `resolve_mangasvc()` 的错误文本承担（它本来就该在那里）。
 ///
 /// 🔴 `MIAO_SERVICE_IMPL=node` ⇒ **硬失败**，不是静默落回。静默落回会让"我要 node 靶子"
-///    变成"悄悄跑了 boxsvc"，而这恰恰是最该吵一声的场景（原先 e2e 的 `harness-check`
+///    变成"悄悄跑了 mangasvc"，而这恰恰是最该吵一声的场景（原先 e2e 的 `harness-check`
 ///    钉的是同一条；这里与它口径一致）。
 ///
 /// ⚠️ 仍保留"取值先 `trim` + 小写"：它让 `NODE` / ` node ` 也落进退役分支，
-///    而不是掉进"未设"分支去起 boxsvc —— 后者正是上面那种"说了没算数"。
+///    而不是掉进"未设"分支去起 mangasvc —— 后者正是上面那种"说了没算数"。
 fn resolve_service_cmd() -> Result<Vec<String>, String> {
     let impl_ = std::env::var("MIAO_SERVICE_IMPL").unwrap_or_default();
     let impl_ = impl_.trim().to_ascii_lowercase();
     if impl_ == "node" {
         return Err(
             "MIAO_SERVICE_IMPL=node 已退役：Node 服务实现（service/）已从仓库删除，\
-             服务靶子只剩 boxsvc（去掉该环境变量即可）"
+             服务靶子只剩 mangasvc（去掉该环境变量即可）"
                 .to_string(),
         );
     }
-    let bin = resolve_boxsvc()?;
+    let bin = resolve_mangasvc()?;
     Ok(vec![bin.to_string_lossy().into_owned()])
 }
 
-/// 定位 `boxsvc` 可执行：`MIAO_BOXSVC_BIN` 优先，其次与 `miao-dock` 可执行**同目录**
+/// 定位 `mangasvc` 可执行：`MIAO_MANGASVC_BIN` 优先，其次与 `miao-dock` 可执行**同目录**
 /// （开发态二者同在 `app/src-tauri/target/{debug,release}/`）。
-fn resolve_boxsvc() -> Result<PathBuf, String> {
-    if let Ok(p) = std::env::var("MIAO_BOXSVC_BIN") {
+fn resolve_mangasvc() -> Result<PathBuf, String> {
+    if let Ok(p) = std::env::var("MIAO_MANGASVC_BIN") {
         let pb = PathBuf::from(&p);
         if pb.is_file() {
             return Ok(pb);
         }
-        return Err(format!("MIAO_BOXSVC_BIN 指向的文件不存在：{p}"));
+        return Err(format!("MIAO_MANGASVC_BIN 指向的文件不存在：{p}"));
     }
-    let name = if cfg!(windows) { "boxsvc.exe" } else { "boxsvc" };
+    let name = if cfg!(windows) { "mangasvc.exe" } else { "mangasvc" };
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let cand = dir.join(name);
@@ -1054,30 +1054,30 @@ fn resolve_boxsvc() -> Result<PathBuf, String> {
         }
     }
     Err(format!(
-        "找不到 {name}（Rust 服务实现需要它）：先在 app/src-tauri 执行 `cargo build --bin boxsvc`，或设 MIAO_BOXSVC_BIN"
+        "找不到 {name}（Rust 服务实现需要它）：先在 app/src-tauri 执行 `cargo build --bin mangasvc`，或设 MIAO_MANGASVC_BIN"
     ))
 }
 
-/// 父死看守器的**宿主可执行**（A3c）—— 与 `boxsvc` 同一个二进制。
+/// 父死看守器的**宿主可执行**（A3c）—— 与 `mangasvc` 同一个二进制。
 ///
 /// 🔴 为什么不新开一个 bin：看守器是**每引擎栈常驻**的子进程，多一个可执行文件就多一份
-///    随包物与一条寻址路径；而 `boxsvc` 本来就随包（F5 之后它是服务本体），复用它
+///    随包物与一条寻址路径；而 `mangasvc` 本来就随包（F5 之后它是服务本体），复用它
 ///    `bundle.resources` 一条都不用改。代价是"看守器失败"与"服务失败"共用一个 exe，
 ///    但两者不会同时发生（子命令在起服务之前就 return 了）。
 ///
-/// 寻址与 `resolve_boxsvc` **同一条路**（`MIAO_BOXSVC_BIN` → 同目录 → 报错）——
+/// 寻址与 `resolve_mangasvc` **同一条路**（`MIAO_MANGASVC_BIN` → 同目录 → 报错）——
 /// 🔴 两者必须一致：若这里另写一套，开发态会出现"服务起得来但看守器找不到"
-///    （boxsvc 被 build 了但寻址口径不同），症状是引擎一起来就死。
+///    （mangasvc 被 build 了但寻址口径不同），症状是引擎一起来就死。
 fn watch_host() -> Result<PathBuf, String> {
-    resolve_boxsvc()
+    resolve_mangasvc()
 }
 
 /// 看守器脚本路径的**退役说明**（A3c）。保留这个函数是为了让"它去哪了"有一处可查的落点，
 /// 而不是散落在注释里—— 日后有人按旧文档去找 `engine/scripts/child-watch.mjs` 时，
-/// 至少能在这里看到它已被 `child_watch::run` 取代、且断言改钉了 `boxsvc --child-watch`。
+/// 至少能在这里看到它已被 `child_watch::run` 取代、且断言改钉了 `mangasvc --child-watch`。
 #[allow(dead_code)]
 fn watch_entry_retired_note() -> &'static str {
-    "看守器已 Rust 化（A3c）：child_watch::run + `boxsvc --child-watch`，不再需要 node 解释器"
+    "看守器已 Rust 化（A3c）：child_watch::run + `mangasvc --child-watch`，不再需要 node 解释器"
 }
 
 type ReadyRx = mpsc::Receiver<serde_json::Value>;
@@ -1088,7 +1088,7 @@ fn spawn_spec(spec: &LaunchSpec, log: &Arc<Mutex<VecDeque<String>>>) -> Result<P
     Ok(proc)
 }
 
-/// 同上，但把 stdout 里**含 `{…}` 的行**当就绪数据回传（box-service 用它带出端口与令牌）
+/// 同上，但把 stdout 里**含 `{…}` 的行**当就绪数据回传（manga-service 用它带出端口与令牌）
 fn spawn_spec_with_ready(
     spec: &LaunchSpec,
     log: &Arc<Mutex<VecDeque<String>>>,
@@ -1109,7 +1109,7 @@ fn spawn_inner(
     // ⚠️ 包一层之后 Rust 持有的直接子进程是"看守"，真正的引擎/LLM 是它的子进程；
     // 所以回收才必须走**进程组**（`signal_tree`）而不是 `Child::kill()`。
     let (head, args): (String, Vec<String>) = if spec.watch {
-        // A3c：看守器 = `boxsvc --child-watch`（与宿主同一个可执行文件，零新增随包物）
+        // A3c：看守器 = `mangasvc --child-watch`（与宿主同一个可执行文件，零新增随包物）
         let mut a = vec!["--child-watch".to_string(), "--".to_string()];
         a.extend(spec.cmd.iter().cloned());
         (watch_host()?.to_string_lossy().into_owned(), a)
@@ -1150,7 +1150,7 @@ fn spawn_inner(
         cmd.process_group(0);
     }
     // Windows 上把子进程也挂进新进程组（taskkill /T 才有意义）
-    // 🔴 并且必须**同时**带 `CREATE_NO_WINDOW`：① `boxsvc` 是控制台程序，而父进程
+    // 🔴 并且必须**同时**带 `CREATE_NO_WINDOW`：① `mangasvc` 是控制台程序，而父进程
     //    （喵坞本体）是 `windows_subsystem="windows"` 的无控制台进程 ⇒ 不带这个标志
     //    就会**新开一个黑框**（"打开喵坞弹两个命令行窗口"的第一个）。
     //    ⚠️ 两个标志必须**一次合并写入**：std 的 `creation_flags()` 是覆盖语义，

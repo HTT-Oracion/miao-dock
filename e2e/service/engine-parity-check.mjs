@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * F4 · engine 耦合点同源钉子 —— Rust(`boxsvc/engine.rs`) 对冻结 golden 快照
+ * F4 · engine 耦合点同源钉子 —— Rust(`mangasvc/engine.rs`) 对冻结 golden 快照
  * =================================================================================
- * 为什么必须有它：`engine-client.mjs` 曾是 box-service 与翻译引擎之间的**唯一耦合点**：
+ * 为什么必须有它：`engine-client.mjs` 曾是 manga-service 与翻译引擎之间的**唯一耦合点**：
  * 启动配方（`python main.py`）、就绪档位、代理旁路（D-86）、HF 离线（B3/D-100）、
  * 引擎 stdio 编码（D-88）、结果流 5 字节帧…… 这些**没有一条会在改错时崩溃**——全都表现为
  * 「引擎起不来 / 翻译静默变差 / 日志乱码」，而根因离现象极远。Rust 化过程中最容易发生的就是
  * 「照记忆重写了一份、逐字节不同」。
  *
  * ## 机制（F5 摘除 Node 后：Rust 输出 ⟷ 冻结 golden）
- *   · `boxsvc --engine-selftest` 打印 `pure` / `launch` / `llmLaunch` / `configSnapshot` /
+ *   · `mangasvc --engine-selftest` 打印 `pure` / `launch` / `llmLaunch` / `configSnapshot` /
  *     `constants` / `engineVersion`（real 与 mock 两档各一份）。
  *   · golden 快照 `e2e/service/golden/engine-selftest.json` 是「Node 版 engine-client 在同源
  *     对齐时代冻结的最后一份正确输出」，此后作为单向金标：Rust 侧任何一次悄然漂移必红。
@@ -24,7 +24,7 @@
  *   M2–M5 篡改 golden（cmd / env / 阶段日志 / 权重路径）⇒ 对应断言变红
  *
  * 用法：node e2e/service/engine-parity-check.mjs [--refute]
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  * 重新生成 golden：`node e2e/service/_gen-golden.mjs engine`
  */
 import { spawn } from 'node:child_process';
@@ -98,7 +98,7 @@ const MOCK_ENV = { MIAO_ENGINE_PROTOCOL: 'mock', MIAO_ENGINE_DETECTION_SIZE: '10
 
 async function dumpRust(env) {
   if (!fs.existsSync(RUST_BIN)) {
-    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   }
   return JSON.parse((await run(RUST_BIN, ['--engine-selftest'], env)).trim());
 }
@@ -158,7 +158,7 @@ function project(o) {
 
 // ------------------------------------------------------------------ 正向：Rust 输出 ⟷ golden
 
-console.log('=== F4 · engine 耦合点同源（Rust boxsvc --engine-selftest  ⟷  golden 快照）===');
+console.log('=== F4 · engine 耦合点同源（Rust mangasvc --engine-selftest  ⟷  golden 快照）===');
 
 let golden = null;
 let realReport = null;

@@ -11,7 +11,7 @@
  *
  * ## A7：产品侧镜像必须与 SSOT 一致（B5）
  * 产品运行期没有 node（F5 + A3d），"补丁还在不在"的检测只能由 Rust 侧做 ——
- * 于是有了一份只读镜像 `boxsvc::engine::patches`（`boxsvc --engine-patches` 导出）。
+ * 于是有了一份只读镜像 `mangasvc::engine::patches`（`mangasvc --engine-patches` 导出）。
  * 两份表漂移的后果：装配按 A 打、检测按 B 判 ⇒ 「明明打够了却报缺补丁」或反过来，
  * 而两边都不报错。故 A7 逐条比对 `id/mark/rel/desc`（**同序同值** —— 顺序本身是信息：
  * D-105 依赖 D-103 先应用）。
@@ -25,7 +25,7 @@
  * （靶子是另一个进程，不重编等于没改 —— A1 的教训）。
  *
  * 用法：node e2e/engine/engine-patches-check.mjs [--refute]
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  */
 
 import fs from 'node:fs';
@@ -38,7 +38,7 @@ import { RUST_BIN, REPO_ROOT } from '../service/_service-harness.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REFUTE = process.argv.includes('--refute');
-const PATCHES_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'patches.rs');
+const PATCHES_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'patches.rs');
 const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
 /// `cargo` 可执行：`CARGO` env 覆盖，否则交给 PATH（libuv 在 Windows 上会补 `.exe`）。
 const CARGO = process.env.CARGO || 'cargo';
@@ -81,10 +81,10 @@ function runCapture(args, opts = {}) {
   });
 }
 
-/** 重编译 boxsvc。🔴 变异改了 Rust 源码，靶子是**另一个进程**，不重编等于没改。 */
+/** 重编译 mangasvc。🔴 变异改了 Rust 源码，靶子是**另一个进程**，不重编等于没改。 */
 function rebuild() {
   return new Promise((resolve) => {
-    const b = spawn(CARGO, ['build', '--bin', 'boxsvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
+    const b = spawn(CARGO, ['build', '--bin', 'mangasvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
     b.on('error', () => resolve(false));
     b.on('close', (c) => resolve(c === 0));
   });
@@ -102,10 +102,10 @@ function nodeMirror() {
   }));
 }
 
-/** Rust 侧镜像（`boxsvc --engine-patches`）归一成同样形状；拿不到就抛。 */
+/** Rust 侧镜像（`mangasvc --engine-patches`）归一成同样形状；拿不到就抛。 */
 async function rustMirror() {
   const r = await runCapture([RUST_BIN, '--engine-patches']);
-  if (r.code !== 0) throw new Error(`boxsvc --engine-patches 退出 ${r.code}：${r.stderr.slice(0, 300)}`);
+  if (r.code !== 0) throw new Error(`mangasvc --engine-patches 退出 ${r.code}：${r.stderr.slice(0, 300)}`);
   const j = JSON.parse(r.stdout);
   if (!Array.isArray(j.patches)) throw new Error('导出体缺 patches 数组');
   return j.patches.map((p) => ({ id: p.id, mark: p.mark, rel: p.rel, desc: p.desc }));
@@ -199,7 +199,7 @@ function evaluate(patches, readFile = readReal) {
 
 async function main() {
   if (!fs.existsSync(RUST_BIN)) {
-    console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+    console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
     process.exit(1);
   }
 

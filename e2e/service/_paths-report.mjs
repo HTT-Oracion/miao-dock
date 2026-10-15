@@ -66,10 +66,10 @@ export function normSnapshot(snap, ctx) {
   return out;
 }
 
-/** 跑一次 `boxsvc --print-paths`，返回 `paths.rs::snapshot()` 的原始 JSON。 */
+/** 跑一次 `mangasvc --print-paths`，返回 `paths.rs::snapshot()` 的原始 JSON。 */
 export async function dumpRust(env) {
   if (!fs.existsSync(RUST_BIN)) {
-    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   }
   return new Promise((resolve, reject) => {
     const c = spawn(RUST_BIN, ['--print-paths'], {

@@ -13,7 +13,7 @@
  * （视觉模型 + nllb 翻译都真的被加载并推理），就等于证明了"权重是从**本地**解析出来的"。
  * 这比"把网线拔了再跑一遍"更可复现，且**失败原因可归因**（离线模式下缺文件会直接报缺哪个）。
  *
- * 🔴 只走**产品**（`boxsvc`，Rust），不走 Node 对照端：C4 是关于**产品行为**的结论。
+ * 🔴 只走**产品**（`mangasvc`，Rust），不走 Node 对照端：C4 是关于**产品行为**的结论。
  *    Node 侧那份由 `check:engine-parity` 的配方同源对拍钉住（含这三条启动 env）。
  *
  * ## 一个必须显式处理的细节：配方的 env 是**差量**
@@ -27,7 +27,7 @@
  *   W1 前置：权重/引擎/llama-server 都在盘（缺则**失败并点名**，不静默跳过）
  *   W2 产品配方（真档、未关离线）里 `engine.env` 含两个离线键，且命令文件真实存在
  *   W2b 设 `MIAO_NO_HF_OFFLINE=1` ⇒ 两键消失（证明 W2 判的是**产品行为**，不是环境里本来就有）
- *   W3 起 `boxsvc`（real）⇒ `/health` 200 且 `sidecar.mode=real`（不是替身）
+ *   W3 起 `mangasvc`（real）⇒ `/health` 200 且 `sidecar.mode=real`（不是替身）
  *   W4 引擎到达 `running`（**离线键生效的前提下**起来的）
  *   W5 提交 1 张真图 ⇒ 任务终态 `done`、项 `success`、译文落盘且与原文不同
  *      ⇒ 视觉模型与 nllb 都是**本地**加载出来的
@@ -246,7 +246,7 @@ function killTree(child) {
 // ------------------------------------------------------------------ 前置
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`✗ 找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+  console.error(`✗ 找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   process.exit(1);
 }
 if (!IMAGE) {
@@ -361,13 +361,13 @@ check(
 // ------------------------------------------------------------------ W3–W6：真起服务、真跑一张
 
 /*
- * 🔴 **取证边界（必须说清）**：`boxsvc` **不负责**拉起 ② 引擎 —— ② 由 Box 外壳（Tauri app）
- * 按同一份配方 spawn，box-service 只是它的兄弟进程（所以 `/engine/status` 里 `engine.pid`
+ * 🔴 **取证边界（必须说清）**：`mangasvc` **不负责**拉起 ② 引擎 —— ② 由 Box 外壳（Tauri app）
+ * 按同一份配方 spawn，manga-service 只是它的兄弟进程（所以 `/engine/status` 里 `engine.pid`
  * 恒为 `null`，那是归属使然）。
  * 本脚本因此**扮演 Box 外壳那一半**：用 `--print-launch-plan real` 给出的
  * `cmd` / `cwd` / `env` 去 spawn ② —— 命令、工作目录、环境**全部来自产品**，
  * 测试只负责"谁来 spawn"。⇒ 结论落在产品行为上，不是夹具自造的启动方式。
- * （③ 仍由 `boxsvc` 自己按配方拉起 —— 那一半是真产品在管。）
+ * （③ 仍由 `mangasvc` 自己按配方拉起 —— 那一半是真产品在管。）
  */
 const engineSpec = plan?.engine;
 const engine = engineSpec?.cmd

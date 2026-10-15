@@ -3,10 +3,10 @@
  * S4-a/b 硬件探测 / 档位映射 / 加速后端 / ③ 看守 —— **换靶后的断言门**。
  *
  * ## 这一版为什么是「跑 Rust 单测」而不是「import Node 模块」
- * 产品早已是 Rust（`boxsvc`），而这些判据原本靠 `import service/src/settings/*.mjs` 进程内取证。
+ * 产品早已是 Rust（`mangasvc`），而这些判据原本靠 `import service/src/settings/*.mjs` 进程内取证。
  * `service/` 一经删除，那种写法连正向都跑不起来。于是判据**沉到实现层**：
  *   · H（档位映射 §7.2）· A（加速后端 §7.3/§7.4）· T（设置页档位 §5）· R（真机自检）
- *     → `boxsvc/engine/profile.rs` 的 `#[cfg(test)] mod tests`
+ *     → `mangasvc/engine/profile.rs` 的 `#[cfg(test)] mod tests`
  *   · D（降档 §8）→ `tier_downgrade.rs` · I（空闲卸载 §9）→ `idle_policy.rs`
  * 本门只做三件事：**跑全部具名用例并逐条断言**（条数写死）、**验 L 组归位指针**、**反证**。
  *
@@ -16,18 +16,18 @@
  *     见 `e2e/service/_llm-report.mjs` 的 `CASES`）；本门用 P3/P4 两条指针钉住"它真的在那儿"，
  *     否则"搬家"会静默变成"丢掉"。
  *   · L3（父死传播）→ 已由 `check:child-watch` 的**双靶**反证覆盖（那条门专门验 E11）。
- *   · L0（看守器路径）→ Node 版防的是"仓库根少算一级"；Rust 的看守器宿主是 `boxsvc` 自身，
+ *   · L0（看守器路径）→ Node 版防的是"仓库根少算一级"；Rust 的看守器宿主是 `mangasvc` 自身，
  *     改为 `supervisor.rs` 的 `l0_watch_host_is_self_when_not_overridden` 单测。
  *
  * ## 反证轮（--refute）
  * 每条破坏只针对一个机制，跑「该判据现在的家」看它变红；改过源码的按字节还原（12+2 条）：
  *   · `cargo`   —— 改 Rust 源码 → `cargo test --lib` → 断言**具名用例**变红（12 条）
- *   · `parity`  —— 改 Rust 源码 → 重编译 `boxsvc` → 跑 `check:llm-supervisor` → 断言指定
+ *   · `parity`  —— 改 Rust 源码 → 重编译 `mangasvc` → 跑 `check:llm-supervisor` → 断言指定
  *                  `LLM.*.behavior` 变红（M6 一条）
  *   · `parity`+env —— **不动源码**，走产品自带的反证钩子（M5 用 `MIAO_LLM_NO_KILL`：源码里跳过
  *                  `terminate` 会被随后的 `child.kill()` 兜住，子进程照样死 ⇒ 源码变异测不出来）
  * 两道保险：**起点**先验 `check:llm-supervisor` 基线全绿（基线不绿则 parity 反证是空跑）；**收尾**
- * 按字节还原源码后**再重编 `boxsvc`** —— `parity` 条目编出的二进制仍是变异版，不重编会污染下一次验收。
+ * 按字节还原源码后**再重编 `mangasvc`** —— `parity` 条目编出的二进制仍是变异版，不重编会污染下一次验收。
  *
  * 用法：node e2e/service/engine-profile-check.mjs [--refute]
  */
@@ -41,11 +41,11 @@ const SRC_TAURI = path.join(ROOT, 'src-tauri');
 const CARGO = process.env.CARGO || 'cargo';
 const REFUTE = process.argv.includes('--refute');
 
-const PROFILE_RS = path.join(SRC_TAURI, 'src', 'boxsvc', 'engine', 'profile.rs');
-const DOWNGRADE_RS = path.join(SRC_TAURI, 'src', 'boxsvc', 'engine', 'tier_downgrade.rs');
-const IDLE_RS = path.join(SRC_TAURI, 'src', 'boxsvc', 'engine', 'idle_policy.rs');
-const SUPERVISOR_RS = path.join(SRC_TAURI, 'src', 'boxsvc', 'engine', 'supervisor.rs');
-const MODEL_RS = path.join(SRC_TAURI, 'src', 'boxsvc', 'store', 'model.rs');
+const PROFILE_RS = path.join(SRC_TAURI, 'src', 'mangasvc', 'engine', 'profile.rs');
+const DOWNGRADE_RS = path.join(SRC_TAURI, 'src', 'mangasvc', 'engine', 'tier_downgrade.rs');
+const IDLE_RS = path.join(SRC_TAURI, 'src', 'mangasvc', 'engine', 'idle_policy.rs');
+const SUPERVISOR_RS = path.join(SRC_TAURI, 'src', 'mangasvc', 'engine', 'supervisor.rs');
+const MODEL_RS = path.join(SRC_TAURI, 'src', 'mangasvc', 'store', 'model.rs');
 
 const LLM_REPORT = path.join(ROOT, 'e2e', 'service', '_llm-report.mjs');
 const LLM_PARITY = path.join(ROOT, 'e2e', 'service', 'llm-supervisor-parity-check.mjs');
@@ -53,10 +53,10 @@ const LLM_GOLDEN = path.join(ROOT, 'e2e', 'service', 'golden', 'llm-selftest.jso
 
 // ------------------------------------------------------------------ 具名用例表（**条数写死**）
 
-const T = 'boxsvc::engine::profile::tests::';
-const G = 'boxsvc::engine::tier_downgrade::tests::';
-const I = 'boxsvc::engine::idle_policy::tests::';
-const S = 'boxsvc::engine::supervisor::tests::';
+const T = 'mangasvc::engine::profile::tests::';
+const G = 'mangasvc::engine::tier_downgrade::tests::';
+const I = 'mangasvc::engine::idle_policy::tests::';
+const S = 'mangasvc::engine::supervisor::tests::';
 
 /** 本门负责的具名用例。少一条 ⇒ 计数断言红（"分子绿、分母缩小"的防法）。 */
 const NAMED = [
@@ -204,7 +204,7 @@ function runPositive() {
  *
  * `runner`:
  *   · `cargo`  —— 改 Rust 源码 → `cargo test --lib` → 断言 `expect` 里的**具名用例**变红
- *   · `parity` —— 改 Rust 源码 → 重编译 boxsvc → 跑 check:llm-supervisor → 断言 `expect` 里的
+ *   · `parity` —— 改 Rust 源码 → 重编译 mangasvc → 跑 check:llm-supervisor → 断言 `expect` 里的
  *                 `LLM.*.behavior` 变红；带 `env` 的条目**不改源码**，只用环境钩子
  *
  * ⚠️ 有 `file` 的条目，锚点一律是**源码切片**：改那行源码必须同步这里的 `find`（本项目已踩过
@@ -268,8 +268,8 @@ const MUTATIONS = [
     name: 'M7 看守器宿主改成不存在的路径（"服务起得来但 ③ 拉不起来"的错位）',
     runner: 'cargo',
     file: SUPERVISOR_RS,
-    find: '    std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("boxsvc"))',
-    replace: '    std::path::PathBuf::from("C:\\\\no-such-dir\\\\boxsvc.exe") // refute',
+    find: '    std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("mangasvc"))',
+    replace: '    std::path::PathBuf::from("C:\\\\no-such-dir\\\\mangasvc.exe") // refute',
     expect: [`${S}l0_watch_host_is_self_when_not_overridden`],
   },
   {
@@ -354,7 +354,7 @@ function adaptEol(body, text) {
  */
 function runParity({ env = {}, rebuild = true } = {}) {
   if (rebuild) {
-    const build = spawnSync(CARGO, ['build', '--bin', 'boxsvc'], {
+    const build = spawnSync(CARGO, ['build', '--bin', 'mangasvc'], {
       cwd: SRC_TAURI,
       encoding: 'utf8',
       maxBuffer: 64 * 1024 * 1024,
@@ -390,22 +390,22 @@ function runRefute() {
       }
     }
   };
-  /** 编译靶子（`boxsvc`）；失败返回尾部日志。 */
+  /** 编译靶子（`mangasvc`）；失败返回尾部日志。 */
   const buildTarget = () => {
-    const rb = spawnSync(CARGO, ['build', '--bin', 'boxsvc'], {
+    const rb = spawnSync(CARGO, ['build', '--bin', 'mangasvc'], {
       cwd: SRC_TAURI,
       encoding: 'utf8',
       maxBuffer: 64 * 1024 * 1024,
     });
     return rb.status === 0 ? null : `${rb.stdout || ''}${rb.stderr || ''}`.slice(-200);
   };
-  // 🔴 源码还原 ≠ 靶子还原：`parity` 条目编译过 `boxsvc`，还原源码后那个**二进制仍是变异版**。
+  // 🔴 源码还原 ≠ 靶子还原：`parity` 条目编译过 `mangasvc`，还原源码后那个**二进制仍是变异版**。
   //    不收尾重编，就等于把"变异过的靶子"留给下一次验收 —— 比红更坏（后续门莫名红，甚至假绿）。
   const restoreAllAndRebuild = () => {
     restoreAll();
     const err = buildTarget();
     if (err) {
-      problems.push(`还原源码后重编 boxsvc 失败（靶子可能仍是变异版）：${err}`);
+      problems.push(`还原源码后重编 mangasvc 失败（靶子可能仍是变异版）：${err}`);
       process.exitCode = 1;
     }
   };
@@ -420,7 +420,7 @@ function runRefute() {
   //    （变异前后都红，看着"按预期变红"其实什么都没证明）。
   const baseErr = buildTarget();
   if (baseErr) {
-    problems.push(`反证轮起点：boxsvc 编译失败（${baseErr}）`);
+    problems.push(`反证轮起点：mangasvc 编译失败（${baseErr}）`);
   } else {
     const base = runParity({ rebuild: false });
     if (!base.built || base.reds.length > 0) {

@@ -360,7 +360,7 @@ export function App() {
 
   /*
    * 准入分档（P-D3）：来源是**本地**时维持 ver2.1 现状（服务没 running 就拦）；
-   * 来源是**在线**时只看 box-service 五态 —— `stopped` / `error` 才拦，
+   * 来源是**在线**时只看 manga-service 五态 —— `stopped` / `error` 才拦，
    * `starting` / `degraded` 都不拦（本地引擎起没起来不挡在线翻译的界面准入，
    * 真翻不动由服务端在任务上如实报，不在准入上预拦）。
    * 读不到来源（`null`：服务没起来 / 选项请求失败）按本地处理 —— 回落到最严判据，

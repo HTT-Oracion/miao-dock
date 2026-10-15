@@ -12,7 +12,7 @@
  * 这种自相矛盾会非常难查（同 B3 的理由，只是换了个位置）。
  *
  * 🔴 补丁文件按 **Node 侧 SSOT**（`ENGINE_PATCHES`）生成 ⇒ 顺带验证 Rust 镜像
- *    （`boxsvc::engine::patches`）的落点与 SSOT 一致：镜像若指错文件，
+ *    （`mangasvc::engine::patches`）的落点与 SSOT 一致：镜像若指错文件，
  *    「全就绪」场景就会报「缺补丁」。
  * 🔴 同一文件可能被多条补丁共享（`nllb.py` ×2、`text_render.py` ×3）⇒ **追加**而非覆写，
  *    否则先写的 mark 被后写的抹掉（症状：补丁明明打全了却报没打）。

@@ -17,7 +17,7 @@
  * ① **落点**：文档写的是模板（`%LOCALAPPDATA%\runtimes\manga-translator` /
  *    `~/Library/Application Support/runtimes/manga-translator`）。脚本把模板**代入**本机
  *    环境算出实际路径，与产品算的落点**逐字节**比。产品侧的答案有两个来源：
- *      · **当前平台** ⇒ `boxsvc --print-paths` 的 `runtimeRoot`（真二进制，最强）；
+ *      · **当前平台** ⇒ `mangasvc --print-paths` 的 `runtimeRoot`（真二进制，最强）；
  *      · **另一个平台** ⇒ 同源镜像表（`paths.rs::app_data_dir` / `config.mjs::defaultAppDataDir`
  *        的分叉规则）。镜像表本身由上面那条断言**在当前平台**钉住 ⇒ 两边不会一起走散。
  *    🔴 **诚实的取证边界**：本机只能跑一个平台的二进制，所以"另一个平台"的分支永远只能
@@ -44,7 +44,7 @@
  * 变异只动**文档**与**临时副本**（后者在 TMP 里，不碰仓库文件）；文档按字节还原。
  *
  * 用法：node e2e/service/install-guide-check.mjs [--refute] [--manifest <path>]
- * 前置：`cd src-tauri && cargo build --bin boxsvc`（拿产品的落点与清单路径）
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`（拿产品的落点与清单路径）
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -130,11 +130,11 @@ const read = (rel) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
 // ------------------------------------------------------------------ 产品侧答案
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   process.exit(1);
 }
 
-/** 跑一次 `boxsvc --print-paths`，拿产品报的落点与清单路径。 */
+/** 跑一次 `mangasvc --print-paths`，拿产品报的落点与清单路径。 */
 function printPaths() {
   return new Promise((resolve, reject) => {
     const c = spawn(RUST_BIN, ['--print-paths'], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -170,7 +170,7 @@ function manifestSum(tag) {
 /** 文档里「落点」出现的位置 vs 第一条安装命令的位置 —— "落点写成第一步"的机械判据。 */
 function rootBeforeFirstCommand(text, tpl) {
   const atRoot = text.indexOf(tpl);
-  // 安装命令：`npm run <入口>` / `npm run task -- <id>`；`boxsvc --print-paths` 不算（它是查落点，本身属于第一步）
+  // 安装命令：`npm run <入口>` / `npm run task -- <id>`；`mangasvc --print-paths` 不算（它是查落点，本身属于第一步）
   const atCmd = text.indexOf('npm run ');
   if (atRoot < 0) return { ok: false, why: '文档里找不到落点字面量' };
   if (atCmd < 0) return { ok: false, why: '文档里没有任何 npm run 命令（是不是写漏了？）' };
@@ -187,7 +187,7 @@ for (const g of GUIDES) {
   // ① 落点：模板在 + 代入后 == 产品算的落点
   const expanded = path.join(g.expand(g.rootTemplate));
   check(
-    `${g.title} 落点与产品一致（模板代入本机后逐字节 == boxsvc --print-paths 推出的落点）`,
+    `${g.title} 落点与产品一致（模板代入本机后逐字节 == mangasvc --print-paths 推出的落点）`,
     text.includes(g.rootTemplate) &&
       path.normalize(expanded) ===
         path.normalize(
@@ -278,7 +278,7 @@ for (const g of GUIDES) {
 {
   const missing = GUIDES.filter((g) => !read(g.file).includes('--print-paths')).map((g) => g.title);
   check(
-    '两份引导都说清了「落点以产品为准」（含 `boxsvc --print-paths` 这一步）',
+    '两份引导都说清了「落点以产品为准」（含 `mangasvc --print-paths` 这一步）',
     missing.length === 0,
     missing.length ? `缺：${missing.join('、')}` : undefined,
   );

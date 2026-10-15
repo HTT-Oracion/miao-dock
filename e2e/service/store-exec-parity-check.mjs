@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * F3-b · store **执行态**同源钉子 —— Rust(`boxsvc/store/exec.rs`) 对冻结 golden 快照
+ * F3-b · store **执行态**同源钉子 —— Rust(`mangasvc/store/exec.rs`) 对冻结 golden 快照
  * =============================================================================
  * 为什么必须有它：F3-a 的钉子只覆盖「纯函数 + serialize + 视图 + 计划」——那些是**静态**产物。
  * 真正会出事的是**执行态**：建单怎么记账、幂等短路什么时候生效、失败页保不保原图（G-11）、
@@ -8,7 +8,7 @@
  * 这些失效形态**都不是崩溃**：任务照样跑完、状态照样落盘，只是某一格悄悄不同。
  *
  * ## 机制（F5 摘除 Node 后：Rust 输出 ⟷ 冻结 golden）
- *   · `boxsvc --store-exec-selftest` 跑 7 个场景，打印 `{scenarios:[{...输入..., report:{...}}]}`
+ *   · `mangasvc --store-exec-selftest` 跑 7 个场景，打印 `{scenarios:[{...输入..., report:{...}}]}`
  *   · golden 快照 `e2e/service/golden/store-exec-selftest.json` 是「Node 版 `store.mjs` 在同源
  *     对齐时代冻结的最后一份正确输出」（归一化后），此后作为**单向金标**：Rust 侧任何一次
  *     悄然漂移（状态格 / 事件序列 / 盘面 / 幂等短路 / 预算语义）这里必红。
@@ -33,7 +33,7 @@
  *   M5 删 golden `happy.task.finalProgress` 一个键 ⇒ 变红
  *
  * 用法：node e2e/service/store-exec-parity-check.mjs [--refute]
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  * 重新生成 golden：`node e2e/service/_gen-golden.mjs store-exec`
  */
 import { spawn } from 'node:child_process';
@@ -82,7 +82,7 @@ function run(cmd, args, env) {
 /** 跑一次 `--store-exec-selftest`，返回归一化后的 `[{name, report}]`。 */
 async function dumpRust(dirs) {
   if (!fs.existsSync(RUST_BIN)) {
-    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   }
   const raw = await run(RUST_BIN, ['--store-exec-selftest'], {
     ...process.env,
@@ -129,7 +129,7 @@ const KEYS = ['outcome', 'result', 'error', 'task', 'events', 'itemErrors', 'dis
 
 // ------------------------------------------------------------------ 正向：Rust 输出 ⟷ golden
 
-console.log('=== F3-b · store 执行态同源（Rust boxsvc --store-exec-selftest  ⟷  golden 快照）===');
+console.log('=== F3-b · store 执行态同源（Rust mangasvc --store-exec-selftest  ⟷  golden 快照）===');
 
 let golden = null;
 let rust = null;

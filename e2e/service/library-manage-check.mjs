@@ -57,13 +57,13 @@
  *   M12 改号的占号复检被去掉 ⇒ 覆盖已有话 ⇒ N10b 变红；
  *   M13 改号的在跑任务门被去掉 ⇒ 翻译中也能改名 ⇒ N10c 变红。
  *
- * 🔴 **锚点全在 Rust 源码**（`src-tauri/src/boxsvc/**`）：`service/`（Node 实现）已退役，
- *    靶子只剩 `boxsvc` 一个 —— 打 Node 文件的变异**不会被执行**，只会变成"该红没红"的
- *    假阳性。改完 Rust 源码必须 `cargo build --bin boxsvc` 重编，否则验的是上一份产物。
+ * 🔴 **锚点全在 Rust 源码**（`src-tauri/src/mangasvc/**`）：`service/`（Node 实现）已退役，
+ *    靶子只剩 `mangasvc` 一个 —— 打 Node 文件的变异**不会被执行**，只会变成"该红没红"的
+ *    假阳性。改完 Rust 源码必须 `cargo build --bin mangasvc` 重编，否则验的是上一份产物。
  *
  * ⚠️ **编号从 M8 跳到 M10（原 M9/N9 已删除）**：原先的 M9/N9 咬的是「页图/封面读流退回
  *    `.pipe(res)` ⇒ 客户端中止不销毁源流 ⇒ 句柄泄漏 ⇒ 归并 `rename` 撞 EPERM」。那是
- *    **Node 流式实现**的缺陷形态；Rust 侧 `boxsvc.rs::image_response` 用 `std::fs::read`
+ *    **Node 流式实现**的缺陷形态；Rust 侧 `mangasvc.rs::image_response` 用 `std::fs::read`
  *    **一次读完即丢句柄**，结构上不存在这个形态 ⇒ 再留一条源码断言只是装饰（测的是死代码），
  *    故连断言一并删除。D-125 的根因腿现在由 N8 / N8b / N8c 三条行为断言覆盖。
  *
@@ -92,9 +92,9 @@ const ENGINE_ENTRY = path.join(ROOT, 'engine', 'src', 'server.mjs');
 const APP_SRC = path.join(ROOT, 'src', 'App.tsx'); // 前端源码**不属** service/，保留
 const CARGO_DIR = path.join(ROOT, 'src-tauri');
 /** 反证轮要破坏的 Rust 源码（三处，作用各不相同，别合并）。 */
-const RUST_HANDLERS_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'handlers.rs');
-const RUST_LIBRARY_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'library.rs');
-const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'store', 'exec.rs');
+const RUST_HANDLERS_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'handlers.rs');
+const RUST_LIBRARY_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'library.rs');
+const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'store', 'exec.rs');
 
 /**
  * 编译 Rust 靶子（反证轮改完源码必须重编，否则断言验的是"上一份产物"）。
@@ -102,7 +102,7 @@ const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'store', 'exec.rs');
  *    必须分开记，否则"反证没跑成"会被读成"反证通过"。
  */
 function buildRust() {
-  const r = spawnSync('cargo', ['build', '--bin', 'boxsvc'], {
+  const r = spawnSync('cargo', ['build', '--bin', 'mangasvc'], {
     cwd: CARGO_DIR,
     encoding: 'utf8',
     maxBuffer: 40 * 1024 * 1024,
@@ -838,7 +838,7 @@ async function runAll() {
     // 原先这里有一条源码级断言：页图/封面两条读流都走 `pipeline(fs.createReadStream(file), res)`
     // 且全文无 `.pipe(res)` 残留 —— 咬的是 **Node 流式实现**「客户端中止不销毁源流 ⇒ 句柄泄漏 ⇒
     // 归并 rename 撞 EPERM」（D-125 的根因腿）。
-    // 🔴 Rust 侧没有这个形态：`boxsvc.rs::image_response` 是 `std::fs::read(file)` **一次读完**
+    // 🔴 Rust 侧没有这个形态：`mangasvc.rs::image_response` 是 `std::fs::read(file)` **一次读完**
     //    即丢句柄，句柄不跨请求存活 ⇒ 断言无可咬之物，留一条只会是装饰（D-112 那类"测了死代码"
     //    的假绿）。故随 Node 靶子退役一并删除；D-125 由 N8 / N8b / N8c 三条行为断言承担。
   } finally {

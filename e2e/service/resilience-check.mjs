@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * box-service **健壮性钉子** —— 且必须可反证
+ * manga-service **健壮性钉子** —— 且必须可反证
  * ================================================================
  * ## A 组 · 任务状态原子写（D-139）
  *   A1 `store.rs::persist_task` 的任务状态落盘走 `atomic_write_json`，**不裸写**。
@@ -36,7 +36,7 @@ import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 /// 🔴 唯一事实源：Rust 侧的 store（`service/src/manga/store.mjs` 已随 Node 服务实现删除）。
-const STORE_RS = path.join(ROOT, 'src-tauri', 'src', 'boxsvc', 'store.rs');
+const STORE_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'store.rs');
 const REFUTE = process.argv.includes('--refute');
 
 /** 取某函数体的源码段：自 `marker` 起，到下一个 `stopAt`（或文件末） */
@@ -83,7 +83,7 @@ function evaluate({ store }) {
 }
 
 function printResults(rows) {
-  console.log('\n【box-service 健壮性钉子】');
+  console.log('\n【manga-service 健壮性钉子】');
   let fail = 0;
   for (const r of rows) {
     if (!r.ok) fail++;
@@ -124,7 +124,7 @@ const MUTATIONS = [
 ];
 
 const main = () => {
-  console.log(`box-service 健壮性钉子${REFUTE ? ' · 反证轮' : ''}`);
+  console.log(`manga-service 健壮性钉子${REFUTE ? ' · 反证轮' : ''}`);
   const src = SRC();
 
   if (!REFUTE) {

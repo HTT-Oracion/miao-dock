@@ -21,7 +21,7 @@
  *
  * ## 断言（正向：默认形态）
  *   D150.precondition          靶子是 rust（本钉子只对 Rust 驱动线程有意义）
- *   D150.ready                 服务就绪（模拟引擎 + boxsvc）
+ *   D150.ready                 服务就绪（模拟引擎 + mangasvc）
  *   D150.intermediateVisible   运行期 `GET /tasks/{id}` 及时返回，且如实给出 running + translating
  *   D150.queueReadable         运行期 `GET /queue` 及时返回，且 running 就是该任务
  *   D150.queuePositionVisible  运行期提交的第二个任务在 `/queue` 里可见且有位次 1
@@ -249,7 +249,7 @@ async function main() {
       REFUTE ? 'service-refute' : 'service',
     );
     const svc = await waitReady(service);
-    check('D150.ready — 服务就绪（模拟引擎 + boxsvc）', !!svc.port, svc);
+    check('D150.ready — 服务就绪（模拟引擎 + mangasvc）', !!svc.port, svc);
     const port = svc.port;
 
     pollers = startPollers(port);

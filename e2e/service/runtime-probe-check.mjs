@@ -3,7 +3,7 @@
  * B2 · 运行时就绪**检测**钉子 —— 「缺哪一项说得清，且说得具体」
  * =============================================================================
  * 对应计划文档 B2：检测项逐项独立报真伪，`detail` 必带绝对路径，`fix` 给装法。
- * 端点是 `GET /api/v1/engine/runtime`（Rust `boxsvc::engine::runtime_probe`）。
+ * 端点是 `GET /api/v1/engine/runtime`（Rust `mangasvc::engine::runtime_probe`）。
  *
  * ## 它钉的是什么
  * 检测若写成"一个大 if"或"全有或全无"，用户收到的就是"引擎没装好"这种无从下手的结论 ——
@@ -17,7 +17,7 @@
  * `MIAO_RUNTIME_ROOT` / `MIAO_ENGINE_DIR` / `MIAO_ENGINE_PYTHON` 把判据指到 TMP，
  * 与 `MIAO_ROOT` / `MIAO_STATE_DIR` 一律指 TMP 是同一条纪律。
  * 夹具里的补丁文件按 **Node 侧 SSOT**（`ENGINE_PATCHES`）生成 ⇒ 顺带验证 Rust 镜像
- * （`boxsvc::engine::patches`）的落点与 SSOT 一致：镜像若指错文件，S0 就会报"缺补丁"。
+ * （`mangasvc::engine::patches`）的落点与 SSOT 一致：镜像若指错文件，S0 就会报"缺补丁"。
  *
  * ## 反证轮（--refute）
  * - M1 把 `source` 判据从"`server/main.py` 存在"弱化成"`src/` 非空" ⇒ S2 不再翻转
@@ -28,7 +28,7 @@
  * 三个变异都改 `runtime_probe.rs` 源码、跑完**按字节还原**（含重编译产物）。
  *
  * 用法：node e2e/service/runtime-probe-check.mjs [--refute]
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -44,7 +44,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
 const REFUTE = process.argv.includes('--refute');
 const TOKEN = 'a'.repeat(64);
-const PROBE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'runtime_probe.rs');
+const PROBE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'runtime_probe.rs');
 const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
 /// `cargo` 可执行：`CARGO` env 覆盖，否则交给 PATH（libuv 在 Windows 上会补 `.exe`）。
 const CARGO = process.env.CARGO || 'cargo';
@@ -84,7 +84,7 @@ function startService(extraEnv) {
     let buf = '';
     const to = setTimeout(() => {
       child.kill();
-      reject(new Error('boxsvc 15s 内未就绪'));
+      reject(new Error('mangasvc 15s 内未就绪'));
     }, 15000);
     child.stdout.on('data', (d) => {
       buf += d;
@@ -97,7 +97,7 @@ function startService(extraEnv) {
     child.stderr.on('data', (d) => (buf += d));
     child.on('close', (code) => {
       clearTimeout(to);
-      reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 500)}`));
+      reject(new Error(`mangasvc 退出 ${code}：${buf.slice(0, 500)}`));
     });
   });
 }
@@ -125,7 +125,7 @@ const SCENARIOS = [
 ];
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   process.exit(1);
 }
 
@@ -251,9 +251,9 @@ for (const sc of SCENARIOS) {
   fs.rmSync(base, { recursive: true, force: true });
 }
 
-/** 重编译 boxsvc。🔴 变异改了 Rust 源码，靶子是**另一个进程**，不重编等于没改。 */
+/** 重编译 mangasvc。🔴 变异改了 Rust 源码，靶子是**另一个进程**，不重编等于没改。 */
 function rebuild() {
-  const build = spawn(CARGO, ['build', '--bin', 'boxsvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
+  const build = spawn(CARGO, ['build', '--bin', 'mangasvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
   return new Promise((resolve) => {
     build.on('close', (c) => resolve(c === 0));
     build.on('error', () => resolve(false));

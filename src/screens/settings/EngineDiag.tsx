@@ -95,7 +95,7 @@ export function EngineDiag({
   /** catalog 的 `engine-diag` 项 —— 标题与 why 都从它来（单一事实源，见下方文件头） */
   item: SettingItem;
   eng: EngineState;
-  /** ① box-service 自己的状态 —— 它不在 `/engine/status` 里（那是引擎的视角），得从 Rust 侧拿 */
+  /** ① manga-service 自己的状态 —— 它不在 `/engine/status` 里（那是引擎的视角），得从 Rust 侧拿 */
   service: ServiceStatus | null;
 }) {
   // 吐司单例总线：直接取用，不必由宿主透传（见 useToasts 注释）
@@ -144,7 +144,7 @@ export function EngineDiag({
    * 「重启引擎」走的其实是 **`service_restart`（整条本地链路 ①②③）**。
    *
    * 为什么不能只重启 ②：引擎② 由 **Box 壳（Rust）的 ServiceManager** 拉开，
-   * box-service 是它的**兄弟进程**，拿不到它的 pid、也管不到它的生死
+   * manga-service 是它的**兄弟进程**，拿不到它的 pid、也管不到它的生死
    * （`/engine/status.engine.pid` 恒为 null 就是这个事实的现场记录）。
    * 所以产品上这个动作的诚实表述是「重启引擎（整条链路）」——
    * 一个只重启 ③ 的按钮、和一个只改状态的按钮，都比"多做了一点"更糟：
@@ -297,7 +297,7 @@ export function EngineDiag({
         <>
           <DiagSection title="进程状态">
             <ProcRow
-              label="① box-service"
+              label="① manga-service"
               state={service?.state ?? null}
               port={service?.port ?? null}
               // ① 的 pid 面向前端的接口里没有（有也不该给：它在同一个进程组里，pid 无排障价值）
@@ -307,7 +307,7 @@ export function EngineDiag({
               label="② 翻译引擎"
               state={s?.engine?.state ?? null}
               port={s?.engine?.port ?? null}
-              // `/engine/status.engine.pid` 恒为 null：② 由 Box 壳 spawn，box-service 是兄弟进程
+              // `/engine/status.engine.pid` 恒为 null：② 由 Box 壳 spawn，manga-service 是兄弟进程
               pidNote="由 Box 壳持有"
               extra={s?.engine?.version ? `版本 ${s.engine.version}` : null}
             />
@@ -387,7 +387,7 @@ export function EngineDiag({
             </Btn>
           </div>
           <div className="set-diag-note">
-            「重启引擎」重启的是<b>整条本地链路（①②③）</b>：② 由 Box 壳拉开，box-service 管不到它， 所以做不到「只重启
+            「重启引擎」重启的是<b>整条本地链路（①②③）</b>：② 由 Box 壳拉开，manga-service 管不到它， 所以做不到「只重启
             ②」。「强制释放模型」只停 ③ —— ② 与 ① 一根毫毛都不动， 这是它不需要二次确认的原因（③
             不在跑时它也只是如实告诉你「无需释放」）。
           </div>
@@ -601,7 +601,7 @@ function ModelGuide({ guidance, dir }: { guidance?: ModelGuidance; dir?: string 
  * 🔴 每处措辞都在防一种误读，改动前先看清：
  *   · 占的是「**模型资产**」而不是"整个安装" —— Python / venv 那几 GB 由用户环境决定，
  *     我们算不出来；报一个包含它的数就是编数字（同 `ModelGuide` 的口径）；
- *   · 去重口径写在界面上 —— 硬链接（`boxsvc --fetch-models --link` 建的那种）是同一份
+ *   · 去重口径写在界面上 —— 硬链接（`mangasvc --fetch-models --link` 建的那种）是同一份
  *     inode，不说明的话用户会以为"6.9 GB 怎么显示成 13.8 GB 了"；
  *   · 时间是「**最近落盘**」而不是"装配于" —— 我们没有"装配完成"这个事件的记录，
  *     把文件 mtime 说成"装配时刻"就是在编数据；没有就绪条目时**不显示时间**。

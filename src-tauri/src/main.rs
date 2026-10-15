@@ -1,7 +1,7 @@
 // 喵坞 MiaoDock —— Box 桌面端（漫画翻译）
 //
 // 进程模型（契约《02》§2.1 的落地）：
-//   · box-service 与 sidecar 引擎是**本进程的子进程**，生命周期 = 喵坞进程的生命周期
+//   · manga-service 与 sidecar 引擎是**本进程的子进程**，生命周期 = 喵坞进程的生命周期
 //   · 窗口关闭仅 `hide()`，服务照跑 —— 因为「用户在浏览器里翻译时 Box 窗口没开」是常态
 //   · 托盘常驻；「退出喵坞」需二次确认（确认文案由前端给出，见 §2.1）
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -13,15 +13,15 @@ mod music;
 mod selftest;
 mod service;
 
-// 🔴 `boxsvc` 住在 **lib crate**（`miao_dock`）里，不在本 bin 的模块树里 —— 独立
-//    `[[bin]] boxsvc`（e2e 的 Rust 靶子）要复用同一份实现（见 lib.rs 文件头）。
-//    故这里必须 `use miao_dock::…` 而**不是** `mod boxsvc;`：后者会把同一份源码再编译一份，
+// 🔴 `mangasvc` 住在 **lib crate**（`miao_dock`）里，不在本 bin 的模块树里 —— 独立
+//    `[[bin]] mangasvc`（e2e 的 Rust 靶子）要复用同一份实现（见 lib.rs 文件头）。
+//    故这里必须 `use miao_dock::…` 而**不是** `mod mangasvc;`：后者会把同一份源码再编译一份，
 //    bin 与 lib 各有一套类型（`Shell` / `Paths` 互不连通），且两份实现会各自漂移。
-//    ⚠️ 必须是 `pub(crate) use`：私有 `use` 建立的绑定**不能**被子模块用 `crate::boxsvc` 访问
+//    ⚠️ 必须是 `pub(crate) use`：私有 `use` 建立的绑定**不能**被子模块用 `crate::mangasvc` 访问
 //    （Rust 2018 起 use 绑定默认私有）⇒ 那正是"加了 import 还是找不到模块"的成因。
-//    ⚠️ 漏掉这一行，`miao-dock` bin 从 A3b 起就编不过（`service.rs` 用 `boxsvc::engine::…`），
-//    而 `cargo build --bin boxsvc` / `cargo test --lib` 都不覆盖它 ⇒ 一直没暴露。
-pub(crate) use miao_dock::boxsvc;
+//    ⚠️ 漏掉这一行，`miao-dock` bin 从 A3b 起就编不过（`service.rs` 用 `mangasvc::engine::…`），
+//    而 `cargo build --bin mangasvc` / `cargo test --lib` 都不覆盖它 ⇒ 一直没暴露。
+pub(crate) use miao_dock::mangasvc;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;

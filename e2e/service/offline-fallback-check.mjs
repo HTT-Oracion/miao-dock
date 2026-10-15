@@ -45,7 +45,7 @@
  * 真机那一半在 `docs/spec-notes-1.md` 里按 `unverified` 记账，不计入"已验"。
  *
  * 用法：node e2e/service/offline-fallback-check.mjs [--refute]
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  */
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -59,8 +59,8 @@ import { RUST_BIN, REPO_ROOT } from './_service-harness.mjs';
 
 const REFUTE = process.argv.includes('--refute');
 const SELF = fileURLToPath(import.meta.url);
-const ENGINE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine.rs');
-const MODEL_STORE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'model_store.rs');
+const ENGINE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine.rs');
+const MODEL_STORE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'model_store.rs');
 const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
 const CARGO = process.env.CARGO || 'cargo';
 
@@ -83,7 +83,7 @@ function check(name, cond, extra) {
 }
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   process.exit(1);
 }
 
@@ -322,7 +322,7 @@ if (REFUTE) {
 
   const rebuild = () =>
     new Promise((resolve) => {
-      const b = spawn(CARGO, ['build', '--bin', 'boxsvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
+      const b = spawn(CARGO, ['build', '--bin', 'mangasvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
       b.on('close', (c) => resolve(c === 0));
       b.on('error', () => resolve(false));
     });

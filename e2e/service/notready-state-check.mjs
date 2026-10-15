@@ -24,7 +24,7 @@
  * 全部改源码、跑完**按字节还原**（无 Rust 变异 ⇒ 不需要重编译）。
  *
  * 用法：node e2e/service/notready-state-check.mjs [--refute]
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -39,7 +39,7 @@ const REFUTE = process.argv.includes('--refute');
 const TOKEN = 'a'.repeat(64);
 const SELF = fileURLToPath(import.meta.url);
 const SERVICE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'service.rs');
-const STATE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'state.rs');
+const STATE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'state.rs');
 const IPC_TS = path.join(REPO_ROOT, 'src', 'ipc.ts');
 const NOTREADY_TSX = path.join(REPO_ROOT, 'src', 'screens', 'NotReadyScreen.tsx');
 const APP_TSX = path.join(REPO_ROOT, 'src', 'App.tsx');
@@ -59,11 +59,11 @@ function check(name, cond, extra) {
 }
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   process.exit(1);
 }
 
-/** 起一个 boxsvc（mock 档）并等 `MIAO_READY`。 */
+/** 起一个 mangasvc（mock 档）并等 `MIAO_READY`。 */
 function startService(extraEnv) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-notready-'));
   const child = spawn(RUST_BIN, [], {
@@ -81,7 +81,7 @@ function startService(extraEnv) {
     let buf = '';
     const to = setTimeout(() => {
       killTree(child);
-      reject(new Error('boxsvc 15s 内未就绪'));
+      reject(new Error('mangasvc 15s 内未就绪'));
     }, 15000);
     child.stdout.on('data', (d) => {
       buf += d;
@@ -94,7 +94,7 @@ function startService(extraEnv) {
     child.stderr.on('data', (d) => (buf += d));
     child.on('close', (code) => {
       clearTimeout(to);
-      reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 500)}`));
+      reject(new Error(`mangasvc 退出 ${code}：${buf.slice(0, 500)}`));
     });
   });
 }
@@ -151,7 +151,7 @@ function sliceFn(src, sig) {
 
   check(
     'G2 `view_of` 里给 `runtime` 赋了 `runtime_probe::runtime_view()`（同一个 probe，不是另算一份）',
-    /runtime:\s*boxsvc::engine::runtime_probe::runtime_view\(\)/.test(svc),
+    /runtime:\s*mangasvc::engine::runtime_probe::runtime_view\(\)/.test(svc),
     null,
   );
 
@@ -298,7 +298,7 @@ if (REFUTE) {
     {
       id: 'M5',
       what: 'service.rs 里删掉 runtime 的赋值（CLI 有、产品没接上）',
-      mutate: () => mutateFile(SERVICE_RS, '        runtime: boxsvc::engine::runtime_probe::runtime_view(),\n', ''),
+      mutate: () => mutateFile(SERVICE_RS, '        runtime: mangasvc::engine::runtime_probe::runtime_view(),\n', ''),
       expect: 'G2',
     },
   ];
@@ -319,7 +319,7 @@ if (REFUTE) {
     if (!fs.readFileSync(NOTREADY_TSX, 'utf8').includes("text: '正在检查运行环境'"))
       bad.push('NotReadyScreen.tsx 残留 M1');
     if (!fs.readFileSync(NOTREADY_TSX, 'utf8').includes('需要先安装翻译引擎')) bad.push('NotReadyScreen.tsx 残留 M3');
-    if (!fs.readFileSync(SERVICE_RS, 'utf8').includes('runtime: boxsvc::engine::runtime_probe::runtime_view(),'))
+    if (!fs.readFileSync(SERVICE_RS, 'utf8').includes('runtime: mangasvc::engine::runtime_probe::runtime_view(),'))
       bad.push('service.rs 残留 M5');
     check('R1 变异收尾：三处源码按字节还原', bad.length === 0, bad);
   }

@@ -28,7 +28,7 @@
  *   node e2e/service/contract-delta-check.mjs            正向
  *   node e2e/service/contract-delta-check.mjs --refute   反证轮（**逃生开关**→ 指定断言必须变红）
  *
- * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（box-service 的段）。
+ * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（manga-service 的段）。
  */
 import { execFileSync, spawn } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -166,7 +166,7 @@ async function submit(port, comicName, images = [{ filename: '001.png', contentT
 
 // ------------------------------------------------------------------ 服务 / 引擎夹具
 
-/** 起一个 box-service 实例并等它就绪行；返回 {child, port} */
+/** 起一个 manga-service 实例并等它就绪行；返回 {child, port} */
 function spawnService(env, tag) {
   const child = spawnTarget(SERVICE_ENTRY, env);
   const st = { child, tag, out: '', err: '', ready: null };
@@ -582,7 +582,7 @@ async function runPositive() {
 
           const v = await assertEngineStatus(info.port, 'C', 'running');
           check(
-            'S5.7g engine.pid 恒为 null —— 引擎② 由 Rust 的 ServiceManager spawn，box-service 是它的**兄弟进程**，拿不到它的 pid（不编、也不去猜端口占用者）（C）',
+            'S5.7g engine.pid 恒为 null —— 引擎② 由 Rust 的 ServiceManager spawn，manga-service 是它的**兄弟进程**，拿不到它的 pid（不编、也不去猜端口占用者）（C）',
             v?.engine?.pid === null,
             String(v?.engine?.pid),
           );
@@ -803,7 +803,7 @@ async function runPositive() {
             String(v?.engine?.version),
           );
           check(
-            'S5.14d llm.pid 是**真 pid**（③ 归 box-service 所有，它有真值；对照 S5.7g 的 engine.pid=null）（H）',
+            'S5.14d llm.pid 是**真 pid**（③ 归 manga-service 所有，它有真值；对照 S5.7g 的 engine.pid=null）（H）',
             Number.isInteger(v?.llm?.pid) && v.llm.pid > 0,
             String(v?.llm?.pid),
           );

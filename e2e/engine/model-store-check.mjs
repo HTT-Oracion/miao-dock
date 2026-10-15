@@ -12,7 +12,7 @@
  *   · 记录每一条收到的请求（路径 + Range 头）—— 判"是否真续传"靠它，不靠日志文字
  *
  * ## 🔴 为什么改成**子进程驱动**（A3d 之前是直接 import 库调用）
- * Rust 那份是 **CLI**（`boxsvc --fetch-models`），不是可 import 的库。要让两靶跑
+ * Rust 那份是 **CLI**（`mangasvc --fetch-models`），不是可 import 的库。要让两靶跑
  * **同一份用例**，就只能统一到"起进程 → 读盘取证"这个口径。副作用是好的：
  *   · 取证不再依赖实现语言的内部 API ⇒ 「Node 版与 Rust 版行为一致」这件事才是真被验了
  *     （各调各的库 = 各验各的，两边都绿也说明不了它们一致）。
@@ -53,7 +53,13 @@ const REFUTE = process.argv.includes('--refute');
 const TMP = path.join(REPO, '.tmp', 'models', REFUTE ? 'refute' : 'pos');
 
 const NODE_SCRIPT = path.join(REPO, 'engine', 'scripts', 'fetch-models.mjs');
-const RUST_BIN = path.join(REPO, 'src-tauri', 'target', 'debug', `boxsvc${process.platform === 'win32' ? '.exe' : ''}`);
+const RUST_BIN = path.join(
+  REPO,
+  'src-tauri',
+  'target',
+  'debug',
+  `mangasvc${process.platform === 'win32' ? '.exe' : ''}`,
+);
 
 /** 两个靶子：**Node 对照端** vs **Rust 移植**（A3d），跑同一份用例、同一套谓词。 */
 const TARGETS = [
@@ -64,7 +70,7 @@ const TARGETS = [
   },
   {
     id: 'rust',
-    label: 'boxsvc --fetch-models（A3d Rust 移植）',
+    label: 'mangasvc --fetch-models（A3d Rust 移植）',
     argv: (a) => [RUST_BIN, ['--fetch-models', ...a]],
   },
 ];

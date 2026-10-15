@@ -18,7 +18,7 @@
  * —— 而那正是要防的。所以本脚本**自带**一条自证的变异：把夹具清单里一条 `dest` 改掉，
  * 输出的 `path` 必须**跟着变**。产品侧若把落点写死，这条当场红。
  *
- * ## 取证入口：`boxsvc --engine-model-files`
+ * ## 取证入口：`mangasvc --engine-model-files`
  * 打印 `ModelStatus` 的 JSON（逐条 + 三个聚合布尔）。清单与模型根走 `paths` 的接缝
  * （`MIAO_MODEL_MANIFEST` / `MIAO_MODEL_ROOT`），整套夹具搬进临时目录跑，不碰磁盘上的真资产。
  *
@@ -29,7 +29,7 @@
  * 三个变异跑完都**按字节还原**，M1/M2 还要重编译（靶子是另一个进程）。
  *
  * 用法：node e2e/service/models-guide-check.mjs [--refute]
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -45,7 +45,7 @@ const REFUTE = process.argv.includes('--refute');
  *  —— Windows 上后者会给出 `/F:/...`，`spawn` 起不来。 */
 const SELF = fileURLToPath(import.meta.url);
 const MANIFEST = path.join(REPO_ROOT, 'engine', 'models.manifest.json');
-const MODEL_STATUS_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'model_status.rs');
+const MODEL_STATUS_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'model_status.rs');
 const ENGINE_DIAG = path.join(REPO_ROOT, 'src', 'screens', 'settings', 'EngineDiag.tsx');
 const ENGINE_API = path.join(REPO_ROOT, 'src', 'screens', 'settings', 'engine-api.ts');
 const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
@@ -68,7 +68,7 @@ function check(name, cond, extra) {
 
 // ------------------------------------------------------------------ 取证入口
 
-/** 跑一次 `boxsvc --engine-model-files`，返回解析后的 JSON。 */
+/** 跑一次 `mangasvc --engine-model-files`，返回解析后的 JSON。 */
 async function modelFiles(extraEnv) {
   const r = await new Promise((resolve, reject) => {
     const c = spawn(RUST_BIN, ['--engine-model-files'], {
@@ -116,7 +116,7 @@ function copyManifest(dir, manifest) {
 }
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   process.exit(1);
 }
 
@@ -293,7 +293,7 @@ if (REFUTE) {
 
   const rebuild = () =>
     new Promise((resolve) => {
-      const b = spawn(CARGO, ['build', '--bin', 'boxsvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
+      const b = spawn(CARGO, ['build', '--bin', 'mangasvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
       b.on('close', (c) => resolve(c === 0));
       b.on('error', () => resolve(false));
     });

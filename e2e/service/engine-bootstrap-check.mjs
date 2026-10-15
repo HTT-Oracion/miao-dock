@@ -3,7 +3,7 @@
  * G5 · 「本地引擎开箱即用」引导链门 —— 一键下载编排 / 阶段顺序 / 中断可续 / 百分比来源真实 / 不出现命令行字样
  * =============================================================================
  * 对应计划「开箱即用」整组。本门**不重新发明下载器**：运行时资产（Python 运行时、
- * 引擎源码、预装 site-packages）走 `runtime.manifest.json`，由既有 `boxsvc::engine::model_store`
+ * 引擎源码、预装 site-packages）走 `runtime.manifest.json`，由既有 `mangasvc::engine::model_store`
  * 的 `ensure_models` 完成下载/校验/续传/解包；进度只来自 `--progress-log` 真实事件；
  * 中断态与续传能力由 `state.rs` 现算（盘上 `.part` 是否存在）。
  *
@@ -24,7 +24,7 @@
  *
  * ## W9 为什么必须打在 Rust 侧
  * W5/W6 只扫前端 4 个文件，而「运行时未装配」屏渲染的字符串来自
- * `boxsvc/engine/runtime_probe.rs`（经 `/engine/runtime` → `NotReadyScreen.tsx`）。
+ * `mangasvc/engine/runtime_probe.rs`（经 `/engine/runtime` → `NotReadyScreen.tsx`）。
  * 文案里的 `node engine/scripts/setup-engine.mjs` 既不会被前端扫描命中、也不匹配
  * 旧版 `CLI_JARGON` 的任何前缀 ⇒ 长时间全绿而产品一直在教用户跑命令行。
  *
@@ -41,13 +41,13 @@ const SELF = fileURLToPath(import.meta.url);
 
 const RUNTIME_MANIFEST = path.join(ROOT, 'engine', 'runtime.manifest.json');
 const WHEELS_MANIFEST = path.join(ROOT, 'engine', 'wheels.manifest.json');
-const HANDLERS_RS = path.join(ROOT, 'src-tauri', 'src', 'boxsvc', 'handlers.rs');
-const STATE_RS = path.join(ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'state.rs');
+const HANDLERS_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'handlers.rs');
+const STATE_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'state.rs');
 /// W9：**Rust 侧**面向用户的未就绪文案（`fix` + 闸门消息）也要零命令行 ——
 /// 前端 4 个文件干净不等于产品干净：`NotReadyScreen.tsx` 渲染的正是这里的字符串。
-const RUNTIME_PROBE_RS = path.join(ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'runtime_probe.rs');
+const RUNTIME_PROBE_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'runtime_probe.rs');
 /// W13：装配编排（长路径体检住在那里）。
-const RUNTIME_SETUP_RS = path.join(ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'runtime_setup.rs');
+const RUNTIME_SETUP_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'runtime_setup.rs');
 const ENGINE_DOWNLOAD_TS = path.join(ROOT, 'src', 'engine-download.ts');
 /// W11：stage 归属的事实源。
 const MODELS_MANIFEST = path.join(ROOT, 'engine', 'models.manifest.json');

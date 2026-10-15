@@ -66,8 +66,8 @@ const ENGINE_ENTRY = path.join(ROOT, 'engine', 'src', 'server.mjs');
 const CARGO_DIR = path.join(ROOT, 'src-tauri');
 /// 🔴 返工的四个反证锚点全在 Rust 侧（`service/src/manga/store.mjs` 已随 Node 实现删除）。
 /// `exec.rs` 管执行态（幂等短路豁免 / overwrite 落标 / 译文写回），`store.rs` 管计划取数口径。
-const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'store', 'exec.rs');
-const RUST_STORE_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'store.rs');
+const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'store', 'exec.rs');
+const RUST_STORE_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'store.rs');
 const LIB_SRC = path.join(ROOT, 'src', 'screens', 'LibraryScreen.tsx');
 // D-148：缩放的实现从 `LibraryScreen.tsx` 搬到 `screens/library/viewer.tsx`（Lightbox）。
 const VIEWER_SRC = path.join(ROOT, 'src', 'screens', 'library', 'viewer.tsx');
@@ -83,7 +83,7 @@ const ENGINE_PORT = 5027;
  *    必须分开记，否则"反证没跑成"会被读成"反证通过"。
  */
 function buildRust() {
-  const r = spawnSync('cargo', ['build', '--bin', 'boxsvc'], {
+  const r = spawnSync('cargo', ['build', '--bin', 'mangasvc'], {
     cwd: CARGO_DIR,
     encoding: 'utf8',
     maxBuffer: 40 * 1024 * 1024,
@@ -662,7 +662,7 @@ async function refute() {
     /**
      * 破坏必须**写磁盘**，不能只改内存覆盖层。
      *
-     * 本脚本的 `runAll` 起的是**真子进程**（引擎 + box-service），子进程读的是磁盘 ——
+     * 本脚本的 `runAll` 起的是**真子进程**（引擎 + manga-service），子进程读的是磁盘 ——
      * 用 `overrideFile` 只改本进程的内存视图，子进程压根看不见，破坏等于没做，
      * 于是每条变异都会"该红没红"（本脚本第一版就栽在这，改了 0/7）。
      * 前端的源码断言也一并读磁盘（`fs.readFileSync`），同样要求真落盘。

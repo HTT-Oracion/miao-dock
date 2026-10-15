@@ -1377,7 +1377,7 @@ add('ENGINE.diag.restartIsServiceRestart', 'ENGINE', (ctx) => {
   /*
    * 「重启引擎」必须真的调 `service_restart`（整条 ①②③ 链路），
    * 不能是一个"只改状态/只刷界面"的假动作。② 由 Box 壳 spawn，
-   * box-service 是兄弟进程管不到它 —— 所以这个动作诚实的表述就是"重启整条链路"。
+   * manga-service 是兄弟进程管不到它 —— 所以这个动作诚实的表述就是"重启整条链路"。
    */
   const ok = /await\s+serviceRestart\(\)/.test(src);
   return { ok, detail: ok ? '' : '「重启引擎」没有调用 serviceRestart()（那就是一个点了不出事的假按钮）' };
@@ -1385,7 +1385,7 @@ add('ENGINE.diag.restartIsServiceRestart', 'ENGINE', (ctx) => {
 add('ENGINE.diag.downloadDisabled', 'ENGINE', (ctx) => {
   const src = ctx.s.engineDiag;
   /*
-   * ⚠️ 字段名是 A3d 之后的 `runnerExists`（执行体从 `node fetch-models.mjs` 换成了 `boxsvc`）。
+   * ⚠️ 字段名是 A3d 之后的 `runnerExists`（执行体从 `node fetch-models.mjs` 换成了 `mangasvc`）。
    * 老断言判的是 `scriptExists` —— 产品早就改对了，而断言从那天起**再也绿不了**。
    * 一条基线就红的断言比没有更坏：它占着"这条已经覆盖了"的位置，实际什么都没在测
    * （反证轮还会把"仍然红"当成"按预期变红"）。§2 第 2 条：台账/断言与实际不符时以实际为准。
@@ -2078,7 +2078,7 @@ add('NOTREADY.retry.byPhase', 'NOTREADY', (ctx) => {
 
 add('NOTREADY.detail.noFabricatedProgress', 'NOTREADY', (ctx) => {
   /*
-   * X-C3 只在 **box-service 自己没起来**时出现 —— 此刻没有任何 HTTP 通道可读下载进度。
+   * X-C3 只在 **manga-service 自己没起来**时出现 —— 此刻没有任何 HTTP 通道可读下载进度。
    * 所以"L1/L2 显示可量化进度"只能由**真实来源**满足：谁真的在打进度行，那一行就原样显示。
    * 判据是"不许出现硬编码的字节/百分比字面量"，而不是"必须有进度" —— 后者会逼出编造。
    */

@@ -223,7 +223,7 @@ export interface ModelDownloadView {
   tail: string[];
   rootDir: string;
   manifest: string;
-  /** 模型下载/校验的**执行体**路径（A3d 起是 `boxsvc`，不再是那个 .mjs 脚本） */
+  /** 模型下载/校验的**执行体**路径（A3d 起是 `mangasvc`，不再是那个 .mjs 脚本） */
   runner: string;
   /** 执行体不在盘上 ⇒ 界面把按钮**变灰**（不让用户点了换一条报错） */
   runnerExists: boolean;

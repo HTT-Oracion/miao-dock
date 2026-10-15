@@ -26,7 +26,7 @@ import { apiGet, apiPost } from '@/ipc';
 
 /**
  * 翻译来源（P-D1）：**服务的设置，不是任务的属性** —— 用户只在设置里选一次，
- * box-service 记住它；投放 / 队列 / 重试 / 返工 / 浏览器插件都不加来源控件。
+ * manga-service 记住它；投放 / 队列 / 重试 / 返工 / 浏览器插件都不加来源控件。
  */
 export type TranslateSource = 'local' | 'online';
 

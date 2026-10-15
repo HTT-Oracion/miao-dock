@@ -15,7 +15,7 @@
 | 问题                   | 判定                                                                                                                                                                          | 依据            |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
 | 方案是否可行？              | **架构可行，但有前置闸门**。方案本身自洽（三层进程、单点适配层、契约增量而非重构），真正的不确定性全在"引擎能不能在这台机器上装通并跑起来"，而不是设计。                                                                                             | §4 测试 + §2 取证 |
-| 是否满足跨端要求？            | **服务层已满足；引擎层不满足（目前是纸面）**。`box-service` 与 `engine-client` 是纯 Node，路径/进程/监听均已按 darwin/win32 分叉；但 Python 运行时 + PyTorch 轮子 + `llama-server` 二进制、以及 Windows 的**进程树回收**，代码里一行都没有。 | §2 逐条         |
+| 是否满足跨端要求？            | **服务层已满足；引擎层不满足（目前是纸面）**。`manga-service` 与 `engine-client` 是纯 Node，路径/进程/监听均已按 darwin/win32 分叉；但 Python 运行时 + PyTorch 轮子 + `llama-server` 二进制、以及 Windows 的**进程树回收**，代码里一行都没有。 | §2 逐条         |
 | 现在能不能做"真实翻译"的测试？     | **不能**。缺三件：引擎源码、Python 运行时、模型权重。今天能做的是**服务层**的真实测试（已做，14/14）。                                                                                                               | §4.1          |
 | 实施顺序是否采纳"先 box 后插件"？ | **采纳，且这条建议本身就是对的**——插件对引擎**零感知**（《04》§2 铁律），所以引擎链路可以完全在 box 侧闭环验收，插件串联是纯粹的最后一公里。                                                                                            | §3.3          |
 
@@ -27,7 +27,7 @@
 
 | 项                   | 规格要求（《09》/《04》）                                             | 仓库现状（证据）                                                                                                                                         | 差距                                                                |
 | ------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| 进程数                 | **3**：box-service + 引擎② + LLM③                              | **2**：`ServiceManager.children{service, engine}`（`src-tauri/src/service.rs:46-49`），两个都用 `spawn_node` 拉 `node <entry>`                        | 缺 ③，且**只能用 Node 拉起**（`service.rs:287` 硬编码 `Command::new("node")`） |
+| 进程数                 | **3**：manga-service + 引擎② + LLM③                              | **2**：`ServiceManager.children{service, engine}`（`src-tauri/src/service.rs:46-49`），两个都用 `spawn_node` 拉 `node <entry>`                        | 缺 ③，且**只能用 Node 拉起**（`service.rs:287` 硬编码 `Command::new("node")`） |
 | 引擎实现                | `manga-image-translator`（Python FastAPI）                    | `engine/src/server.mjs` 模拟引擎：`sleep(300ms)` + `renderTranslatedPage()` 渲染**版式化占位图**（`engine/src/server.mjs:99-110`）                              | 整条真实链路缺失（D-09）                                                    |
 | 内部协议                | 以 `GET /docs` 的 OpenAPI 快照为准（《04》§4.4）                      | 自造协议：`POST /translate`（裸字节 + `X-Miao-{Seq,From,To}` 头）+ `GET /ready`（`service/src/engine-client.mjs:66,102`）                                     | 协议形状与真实引擎**未对齐**，且无快照                                             |
 | 状态机                 | 五态 + `starting` 细分 **L1–L4**（《09》§6.1）                      | 四态 `Stopped/Starting/Running/Error`（`service.rs:23-30`），无阶段细分；`sidecar.state` 只有 3 值 `stopped/starting/running`（`engine-client.mjs:100,103,107`） | 缺 `downloading/prewarming/unloading/degraded/error` 五值            |
@@ -51,7 +51,7 @@
 
 | 层                                   | 跨端现状                                                      | 结论         | 佐证                                                                                         |
 | ----------------------------------- | --------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------ |
-| **① box-service（Node）**             | 已跨端：路径分叉、`127.0.0.1` 监听、无平台特有 API                         | ✅ **满足**   | `config.mjs:63-80`；今日 macOS 实测 14/14（§4.1）                                                 |
+| **① manga-service（Node）**             | 已跨端：路径分叉、`127.0.0.1` 监听、无平台特有 API                         | ✅ **满足**   | `config.mjs:63-80`；今日 macOS 实测 14/14（§4.1）                                                 |
 | **② 引擎（Python + PyTorch）**          | 未落实：无 venv 引导、无按平台的 wheel 解析、无 Python 版本矩阵                | ❌ **纸面**   | 全仓无 `requirements.lock` / `runtimes/`                                                      |
 | **③ LLM（llama.cpp `llama-server`）** | 未落实：无按平台的二进制获取（macOS arm64 Metal / Windows CUDA / CPU 三套） | ❌ **纸面**   | `command -v llama-server` → 未安装                                                            |
 | **生命周期拉起**                          | 只能用 `node` 拉起（`service.rs:287`）                           | ❌ **需改造**  | 要按进程类型分派 spawn                                                                             |
@@ -89,7 +89,7 @@
 
 | 端点                            | 鉴权                         | 谁用                                            | 本轮增量                         |
 | ----------------------------- | -------------------------- | --------------------------------------------- | ---------------------------- |
-| `GET /health`                 | **免鉴权**（唯一例外）              | 插件端口探测（命中条件 `service === "box-service"`）+ Box | `sidecar` 对象 3 → 8 字段        |
+| `GET /health`                 | **免鉴权**（唯一例外）              | 插件端口探测（命中条件 `service === "manga-service"`）+ Box | `sidecar` 对象 3 → 8 字段        |
 | `POST /tasks`                 | `X-Box-Token`              | 插件                                            | 新增 `503 ENGINE_NOT_READY` 语义 |
 | `POST /tasks/{id}/batches`    | 同上                         | 插件                                            | 不变（≤20 张/请求）                 |
 | `GET /tasks/{id}`             | 同上                         | 插件                                            | 不变                           |
@@ -104,7 +104,7 @@
 ### 3.2 内部边界（**对客户端永久不可见**，《03》§1 铁律）
 
 ```
-box-service ──POST /translate(真实形状以 /docs 快照为准)──▶ 引擎②(5003)
+manga-service ──POST /translate(真实形状以 /docs 快照为准)──▶ 引擎②(5003)
 引擎②     ──POST 127.0.0.1:8080/v1/chat/completions────▶ 引擎③ Sakura(llama-server)
 ```
 
@@ -117,7 +117,7 @@ box-service ──POST /translate(真实形状以 /docs 快照为准)──▶ �
 ```
 ① 插件悬浮球 → ② 面板（选图 / 漫画名 / 14 项校验）
    ↓ POST /tasks   multipart: payload{comicName,idempotencyKey} + images[] + imageOrder[]
-   ↓ box-service：NFKC 漫画名规范化 → 校验 → 分配序号 → 存 pending 暂存区 → 入**串行**队列
+   ↓ manga-service：NFKC 漫画名规范化 → 校验 → 分配序号 → 存 pending 暂存区 → 入**串行**队列
    ↓ 轮到本任务 → 【ver2.0 新增分支】引擎未就绪？
         是 → 503 ENGINE_NOT_READY（**不建单、不分配序号、不排队**）→ 面板切「准备中」
         否 → 建目录 → 逐张调引擎：
@@ -133,8 +133,8 @@ box-service ──POST /translate(真实形状以 /docs 快照为准)──▶ �
 
 | #  | 依赖                | 方向        | 性质                                                           |
 | -- | ----------------- | --------- | ------------------------------------------------------------ |
-| D1 | 插件 → box-service  | **强、无旁路** | 插件**只能**经 `5180–5190` 说话；引擎对插件零可见。box 未运行 ⇒ 插件只能进「服务未就绪」态    |
-| D2 | box-service → 引擎② | 强、单点      | 全部经 `engine-client.mjs`                                      |
+| D1 | 插件 → manga-service  | **强、无旁路** | 插件**只能**经 `5180–5190` 说话；引擎对插件零可见。box 未运行 ⇒ 插件只能进「服务未就绪」态    |
+| D2 | manga-service → 引擎② | 强、单点      | 全部经 `engine-client.mjs`                                      |
 | D3 | 引擎② → 引擎③         | **软**     | ③ 挂了：翻译阶段失败、`item=failed`，但**视觉流水线仍可跑**（《04》§10.2）⇒ 错误分级必须区分 |
 
 ### 3.5 插件侧待改清单（最后一公里，共 4 处）
@@ -167,8 +167,8 @@ box-service ──POST /translate(真实形状以 /docs 快照为准)──▶ �
 | #  | 断言                                 | 结果                                                   |
 | -- | ---------------------------------- | ---------------------------------------------------- |
 | 1  | 模拟引擎启动并就绪                          | ✅ port=5003                                          |
-| 2  | box-service 启动并打出就绪行               | ✅ port=5180（该行正是 Rust 侧握手依据）                         |
-| 3  | 端口探测命中 `service === "box-service"` | ✅                                                    |
+| 2  | manga-service 启动并打出就绪行               | ✅ port=5180（该行正是 Rust 侧握手依据）                         |
+| 3  | 端口探测命中 `service === "manga-service"` | ✅                                                    |
 | 4  | `/health` 带回 `sidecar`             | ✅ `{state:"running",port:5003,engine:"sakura-mock"}` |
 | 5  | 令牌为 64 位 hex                       | ✅                                                    |
 | 6  | 读到测试原图                             | ✅ 291,828 字节                                         |
@@ -270,7 +270,7 @@ box-service ──POST /translate(真实形状以 /docs 快照为准)──▶ �
 |---|---|---|
 | 引擎是"一个进程、一个端口" | **`server.main` 自己会再拉起一个执行器子进程**（`server/main.py:244`，且 `__main__` 里 `args.start_instance = True` 是**强制的**）⇒ 端口**成对**：`8000`(web) + `8001`(executor) | **S2 重估** |
 | README 对端口有 8000/8001/5003 "四种说法"、"疑似漂移" | **不是漂移，是四个不同入口**：web=8000、`shared`(执行器)=5003、`ws`=5003、`local`=CLI。四种说法全部对上 | R4 的"漂移"部分**解除**，但**接口形状仍要锁 OpenAPI 快照** |
-| 进程树是"服务 → 引擎"两层 | 实际是 **`box-service → server.main(uvicorn) → manga_translator shared(执行器) → [llama-server]`**；而 `main.py:272` 的 `handle_exit_signals` 只 `terminate()` **一层** | **孤儿回收风险比计划里高**，S2 必须按四层设计，不能按两层 |
+| 进程树是"服务 → 引擎"两层 | 实际是 **`manga-service → server.main(uvicorn) → manga_translator shared(执行器) → [llama-server]`**；而 `main.py:272` 的 `handle_exit_signals` 只 `terminate()` **一层** | **孤儿回收风险比计划里高**，S2 必须按四层设计，不能按两层 |
 | 就绪靠"读 stdout 打的行" | 它**不打就绪行**（只先打 `Nonce: <hex>`，然后 uvicorn 自己的日志） | 「三重判定（进程存活 + 端口 + HTTP 应答）」是**必需的**，不是过度设计 |
 
 另外两处细节：执行器与 web 之间用 **`--nonce`（`X-Nonce` 头）**鉴权，默认随机生成 ⇒ 本项目要**自己掌握**它；
@@ -462,8 +462,8 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
 - 硬件探测 `HardwareProfile` + 映射表（**Metal `unified < 24 ⇒ Tiny`**；UI 不出 Medium；Small 标"不推荐"+强警告）。✅
 - 加速后端探测顺序 CUDA → MPS → CPU；GPU 启动失败 **自动回退 CPU 并以 `degraded` 上报，不静默**。✅（探测与启动参数已落地+断言；"GPU 启动失败→回退"的**现场**属 S7 真机项）
 - 降档重试：**仅一次**，**服务级**（后续所有 item 用新档），与 item 级重试**不叠加**。✅
-- 两级空闲卸载：Tier1 LLM 5 min（box-service 管，③ 不在引擎 TTL 内）；Tier2 视觉 30 min（引擎自带 `--models-ttl 1800`）。**前置条件：队列空闲**（无 running、无 queued、距最后一次完成 ≥ 阈值）。✅
-- 🔴 **③ 的归属权从 Rust 移交到 box-service**（《04》§9.1 与 S2 实现冲突；`print-launch-plan` 摘掉 `llm` 条目，Rust 只打印不拉起；E11 由 `child-watch` 保住）。见 D-73 决策 1。
+- 两级空闲卸载：Tier1 LLM 5 min（manga-service 管，③ 不在引擎 TTL 内）；Tier2 视觉 30 min（引擎自带 `--models-ttl 1800`）。**前置条件：队列空闲**（无 running、无 queued、距最后一次完成 ≥ 阈值）。✅
+- 🔴 **③ 的归属权从 Rust 移交到 manga-service**（《04》§9.1 与 S2 实现冲突；`print-launch-plan` 摘掉 `llm` 条目，Rust 只打印不拉起；E11 由 `child-watch` 保住）。见 D-73 决策 1。
 - **「从不卸载」选项**：✅ **已由实测关闭**（§7-③）—— 真 ③ 冷启动实测 **1.0–2.8s**，落在判据的"恢复快 ⇒ 不做独立选项"一支；机制层保留 `阈值 0 = 从不卸载`，S6 只做数字（分钟）控件，文案用实测数字（"下次翻译多等约 1–3 秒"）。见 D-73。
 - **「准备中」不给百分比**（已拍板 §7-④）：精确进度只在 Box 应用区展示，契约面（`/engine/status`）不出百分比字段。（S5/S6 落）
 
@@ -496,7 +496,7 @@ V 组 2 条阶段日志、P3b/P3c「安装事实 ≠ 进程事实」、P4b「uvi
   不用启动时冻结的 `config.*`（否则"改完刷新"会把用户刚写的值读成旧值）。
 - 两档空闲卸载**生效时机不同**（`idleLlmMin` 即时 / `idleVisionMin` 需重启）—— 提示条分开写，不合成一句。
 - 模型下载做成**任务**：启动即返回 + 并发 **`409 DOWNLOAD_IN_PROGRESS`**（不是 200「已在下载中」）。
-- X-C3 **不给百分比**（§7-④）：它只在 box-service 没起来时出现、此刻读不到 HTTP，
+- X-C3 **不给百分比**（§7-④）：它只在 manga-service 没起来时出现、此刻读不到 HTTP，
   所以判据反过来写 —— **不许出现硬编码进度字面量**，明细取真实日志末行。
 - **L4 不属启动期**（D-64）：状态词单列为「首图时完成」，不用「待开始」。
 - 🔴 顺带修掉一个**本轮之前就存在**的可见缺陷：catalog 里 108 处 `**重点**` 被原样渲染成两个星号
@@ -576,7 +576,7 @@ V 组 2 条阶段日志、P3b/P3c「安装事实 ≠ 进程事实」、P4b「uvi
 
 | 层级 | 卸什么 | 空闲多久触发 | 能省多少内存 | 谁来实现 |
 |---|---|---|---|---|
-| **Tier 1** | 停掉 Sakura LLM server（第 3 个进程） | **5 分钟** | 按档位：Tiny ≈ 1.5–2 GB / Small ≈ 5 GB / Medium ≈ 9–10 GB | box-service（引擎的 TTL 管不到这个独立进程） |
+| **Tier 1** | 停掉 Sakura LLM server（第 3 个进程） | **5 分钟** | 按档位：Tiny ≈ 1.5–2 GB / Small ≈ 5 GB / Medium ≈ 9–10 GB | manga-service（引擎的 TTL 管不到这个独立进程） |
 | **Tier 2** | 释放引擎自己的视觉模型 | **30 分钟** | ≈ 1–2 GB | 引擎自带参数 `--models-ttl 1800` |
 
 三条配套规则（《04》§9.2–9.4）：

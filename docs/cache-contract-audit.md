@@ -371,7 +371,7 @@ default:
 - **`ipc.ts` 里没有一层 try/catch** —— 全是裸 `invoke` 抛给调用方。这是明确的分层决定（`music/ipc.ts:5-6`：「这里只做类型化封装，不塞业务逻辑」）。
 - 错误文案在**消费侧**拼：`store.ts:2545` `get().toast(\`桌面歌词窗口${…}失败：${String(e)}\`)`、`store.ts:1740` `get().toast('切换音质失败，已保持原音质')`。
 - 静默忽略的写法：`store.ts:2577-2579`、`store.ts:2589-2591`（空 `catch {}` + 注释说明为什么可以吞）。
-- 根 `ipc.ts` 另有 `isApiError` / `errorText`（`src/ipc.ts:34-42`）**只服务于 box-service 的结构化错误信封**，音乐模块不用它。
+- 根 `ipc.ts` 另有 `isApiError` / `errorText`（`src/ipc.ts:34-42`）**只服务于 manga-service 的结构化错误信封**，音乐模块不用它。
 
 ### 类型声明位置
 

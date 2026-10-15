@@ -28,7 +28,7 @@
  * - M3 在 macOS 引导里把"不能用"写成普通调用 ⇒ W4 红。
  *
  * 用法：node e2e/service/macos-compat-check.mjs [--refute]
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -65,12 +65,12 @@ function check(name, cond, extra) {
 }
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   process.exit(1);
 }
 
-/** 跑一条 `boxsvc` 子命令（异步 —— 本机 `spawnSync` 稳定 EBUSY）。 */
-function boxsvc(args, extraEnv = {}) {
+/** 跑一条 `mangasvc` 子命令（异步 —— 本机 `spawnSync` 稳定 EBUSY）。 */
+function mangasvc(args, extraEnv = {}) {
   return new Promise((resolve) => {
     const c = spawn(RUST_BIN, args, {
       env: { ...process.env, ...extraEnv },
@@ -142,7 +142,7 @@ function runNode(args, extraEnv = {}) {
     { hasWin, hasPosix, bodyLen: body.length },
   );
 
-  const p = await boxsvc(['--print-paths']);
+  const p = await mangasvc(['--print-paths']);
   const paths = JSON.parse(p.out);
   const py = String(paths.enginePython ?? '');
   const winForm = /[\\/]Scripts[\\/]python\.exe$/i.test(py);
@@ -154,7 +154,7 @@ function runNode(args, extraEnv = {}) {
     { enginePython: py, platform: process.platform },
   );
 
-  const lp = await boxsvc(['--print-launch-plan', 'real']);
+  const lp = await mangasvc(['--print-launch-plan', 'real']);
   const engineCmd0 = (JSON.parse(lp.out).engine?.cmd ?? [])[0] ?? '';
   check(
     'W1c 检测侧（`--print-paths`）与启动侧（`--print-launch-plan` 的 `cmd[0]`）**逐字节相同**（分叉只在推导里写一次）',
@@ -294,7 +294,7 @@ if (REFUTE) {
 
   const rebuild = () =>
     new Promise((resolve) => {
-      const b = spawn(CARGO, ['build', '--bin', 'boxsvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
+      const b = spawn(CARGO, ['build', '--bin', 'mangasvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
       b.on('close', (c) => resolve(c === 0));
       b.on('error', () => resolve(false));
     });

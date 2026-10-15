@@ -5,7 +5,7 @@
 > 本文只讲**装配引擎运行时**（Python / 依赖 / 模型权重 / llama.cpp）。装完它，喵坞的
 > 真引擎档（默认档）才能起来；不装也能用，但只能跑 mock 替身（`MIAO_ENGINE_PROTOCOL=mock`）。
 >
-> 落点与体积的事实源是**产品自己**：路径来自 `boxsvc --print-paths`，体积来自
+> 落点与体积的事实源是**产品自己**：路径来自 `mangasvc --print-paths`，体积来自
 > `engine/models.manifest.json`。**本文的每个数字都可以复算**（§2 / §3 各给了命令）。
 
 ---
@@ -53,7 +53,7 @@
 查产品实际用的落点（**权威答案，不要靠猜**）：
 
 ```bash
-boxsvc --print-paths           # 打包版在 .app 的资源目录里；从仓库自建时用 ./src-tauri/target/debug/boxsvc
+mangasvc --print-paths           # 打包版在 .app 的资源目录里；从仓库自建时用 ./src-tauri/target/debug/mangasvc
 ```
 
 输出的 `runtimeRoot` 就是落点的父目录（产品落点 = `<runtimeRoot>/manga-translator`）。
@@ -238,7 +238,7 @@ node engine/scripts/fetch-models.mjs --link           # 只重建引擎树里的
 （`GET /api/v1/engine/runtime`，B2）。命令行侧同一个函数：
 
 ```bash
-boxsvc --check-runtime-gate real
+mangasvc --check-runtime-gate real
 ```
 
 输出里 `ready` 为 `true` 才算装齐；不是 `true` 时它会**逐项点名**缺哪一项、缺在哪个绝对路径、
@@ -285,7 +285,7 @@ GET http://127.0.0.1:8000/api/v1/engine/runtime
 | 4 | 若第 3 步报需要编译器 | 装 `xcode-select --install`（**这是 macOS 上唯一一处仍需人工准备的**，因为 darwin wheel 还没有）。装完回喵坞点 ▶ 继续即可，不必重来 |
 | 5 | 第 1 段跑完，切去「设置 → 翻译服务」 | 引擎状态从「需下载」变成**就绪**；此时在线翻译可用，本地翻译等第 2 段（翻译权重约 6 GB） |
 | 6 | 等第 2 段结束，翻译一张漫画 | 出译文。盘上核对：`<落点>/venv/lib/python3.x/site-packages` 里有 `torch` 与 `pydensecrf`；`<落点>/.runtime.ready.json` 存在 |
-| 7 | 可选：命令行侧核对 | `<安装目录>/boxsvc --check-runtime-gate real` 输出 `ready: true`，五项全齐 |
+| 7 | 可选：命令行侧核对 | `<安装目录>/mangasvc --check-runtime-gate real` 输出 `ready: true`，五项全齐 |
 
 **三件最容易误判的事**：
 
@@ -397,8 +397,8 @@ xattr -dr com.apple.quarantine "$HOME/Library/Application Support/runtimes/manga
 > 附录：命令速查（都可在落点已定后任意重跑）
 
 ```bash
-boxsvc --print-paths                    # 产品实际用的全部路径（落点的权威答案）
-boxsvc --check-runtime-gate real        # 五项就绪自检（缺哪项逐项点名）
+mangasvc --print-paths                    # 产品实际用的全部路径（落点的权威答案）
+mangasvc --check-runtime-gate real        # 五项就绪自检（缺哪项逐项点名）
 npm run task -- setup:engine                    # ① Python + venv + 源码 + 补丁
 # ② 手动：$RT/venv/bin/pip install -r "$RT/src/requirements.txt"（+ pydensecrf 兼容补丁）
 npm run task -- fetch:models                    # ③ 模型 + llama.cpp（按清单、按平台）

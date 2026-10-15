@@ -8,7 +8,7 @@
  * ## 机制
  * 两侧都从**同一个 env** 出发，各取各的路径，再逐字节比：
  *   · 检测侧：起服务打 `GET /api/v1/engine/runtime`，取 `python` 项的 `path`
- *   · 启动侧：`boxsvc --print-launch-plan`，取 `engine.cmd[0]`（真实启动命令的第一个参数）
+ *   · 启动侧：`mangasvc --print-launch-plan`，取 `engine.cmd[0]`（真实启动命令的第一个参数）
  * 任一侧自己拼路径（哪怕拼得"也对"）都会让这一条红 —— 这正是它要防的东西。
  *
  * 🔴 为什么不能只比"存在性"：另写一份推导在**装好了的机器上照样判得出真伪**（B2 全绿），
@@ -19,7 +19,7 @@
  *   两边字符串不同 ⇒ 变红。这一刀同时验证了「平台分叉只有一处」（`paths::venv_python_rel`）。
  *
  * 用法：node e2e/service/path-single-source-check.mjs [--refute]
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -34,7 +34,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
 const REFUTE = process.argv.includes('--refute');
 const TOKEN = 'a'.repeat(64);
-const PROBE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'runtime_probe.rs');
+const PROBE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'runtime_probe.rs');
 const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
 const CARGO = process.env.CARGO || 'cargo';
 
@@ -115,7 +115,7 @@ function probeInterpreter(env) {
     let buf = '';
     const to = setTimeout(() => {
       child.kill();
-      reject(new Error('boxsvc 15s 内未就绪'));
+      reject(new Error('mangasvc 15s 内未就绪'));
     }, 15000);
     child.stdout.on('data', (d) => {
       buf += d;
@@ -138,7 +138,7 @@ function probeInterpreter(env) {
     child.stderr.on('data', (d) => (buf += d));
     child.on('close', (code) => {
       clearTimeout(to);
-      reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 400)}`));
+      reject(new Error(`mangasvc 退出 ${code}：${buf.slice(0, 400)}`));
     });
   });
 }
@@ -146,7 +146,7 @@ function probeInterpreter(env) {
 // ------------------------------------------------------------------ 正向
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   process.exit(1);
 }
 
@@ -247,7 +247,7 @@ if (REFUTE) {
   const original = fs.readFileSync(PROBE_RS, 'utf8');
 
   function rebuild() {
-    const b = spawn(CARGO, ['build', '--bin', 'boxsvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
+    const b = spawn(CARGO, ['build', '--bin', 'mangasvc'], { cwd: SRC_TAURI, stdio: 'ignore' });
     return new Promise((resolve) => {
       b.on('close', (c) => resolve(c === 0));
       b.on('error', () => resolve(false));

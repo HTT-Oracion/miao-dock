@@ -55,8 +55,8 @@ const ENGINE_ENTRY = path.join(ROOT, 'engine', 'src', 'server.mjs');
 const APP_SRC = path.join(ROOT, 'src', 'App.tsx'); // 前端源码**不属** service/，保留
 const CARGO_DIR = path.join(ROOT, 'src-tauri');
 /** 反证轮要破坏的 Rust 源码（三处，作用各不相同，别合并）。 */
-const RUST_HANDLERS_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'handlers.rs');
-const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'store', 'exec.rs');
+const RUST_HANDLERS_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'handlers.rs');
+const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'store', 'exec.rs');
 
 /**
  * 编译 Rust 靶子（反证轮改完源码必须重编，否则断言验的是"上一份产物"）。
@@ -64,7 +64,7 @@ const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'store', 'exec.rs');
  *    必须分开记，否则"反证没跑成"会被读成"反证通过"。
  */
 function buildRust() {
-  const r = spawnSync('cargo', ['build', '--bin', 'boxsvc'], {
+  const r = spawnSync('cargo', ['build', '--bin', 'mangasvc'], {
     cwd: CARGO_DIR,
     encoding: 'utf8',
     maxBuffer: 40 * 1024 * 1024,

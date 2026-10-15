@@ -22,7 +22,7 @@
  *
  * ## 纯函数半边现在打哪（《05》F5 · Node 服务层摘除后）
  * 原先是**另起 node 子进程 import `service/src/engine-client.mjs`** 求值。该文件随 `service/`
- * 删除后无对象 ⇒ 改为问 Rust 靶子的**单源自证出口** `boxsvc --engine-selftest`：
+ * 删除后无对象 ⇒ 改为问 Rust 靶子的**单源自证出口** `mangasvc --engine-selftest`：
  *   · `constants.TIER_LLM_MODELS` —— 档位→权重表（E4.1）
  *   · `pure.tierModelPath` —— 每档权重路径，未声明为 `null`（E4.2）
  *   · `pure.llmLaunchByTier` —— 每档解析一次 ③ 配方；未声明档位**显式报错**（E4.2）
@@ -35,7 +35,7 @@
  *    而它看起来"跑过了"。这里每次都重新 exec 一次靶子，结论直接来自当次编译产物。
  *
  * ## 反证轮为什么多一步"重编译"
- * 破坏点搬到了 Rust 源码 ⇒ 光改文件没用，必须 `cargo build --bin boxsvc` 才算数
+ * 破坏点搬到了 Rust 源码 ⇒ 光改文件没用，必须 `cargo build --bin mangasvc` 才算数
  * （dev profile 改一个源文件实测 ~5s，可接受）。改完不编就是"看起来反证过了"——
  * 比不反证更坏，因为报告会写"5 变异全红"。
  *
@@ -50,7 +50,7 @@
  *   node e2e/service/e4-tier-check.mjs            正向
  *   node e2e/service/e4-tier-check.mjs --refute    反证轮（破坏源文件 → 重编译 → 断言必须变红 → 按字节还原）
  *
- * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（box-service 的段）。
+ * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（manga-service 的段）。
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -65,9 +65,9 @@ import { killTree, RUST_BIN, SERVICE_ENTRY, spawnTarget } from './_service-harne
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CARGO_DIR = path.join(ROOT, 'src-tauri');
 /** 反证轮要破坏的 Rust 源码（三处，作用各不相同，别合并）。 */
-const RUST_ENGINE_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'engine.rs');
-const RUST_STATE_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'engine', 'state.rs');
-const RUST_SUP_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'engine', 'supervisor.rs');
+const RUST_ENGINE_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'engine.rs');
+const RUST_STATE_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'engine', 'state.rs');
+const RUST_SUP_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'engine', 'supervisor.rs');
 const TOKEN = 'f'.repeat(64);
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-e4-'));
 const REFUTE = process.argv.includes('--refute');
@@ -189,7 +189,7 @@ function rustSelftest() {
 
 /** 编译 Rust 靶子（反证轮改完源码必须重编，否则断言验的是"上一份产物"）。 */
 function buildRust() {
-  const r = spawnSync('cargo', ['build', '--bin', 'boxsvc'], {
+  const r = spawnSync('cargo', ['build', '--bin', 'mangasvc'], {
     cwd: CARGO_DIR,
     encoding: 'utf8',
     maxBuffer: 40 * 1024 * 1024,

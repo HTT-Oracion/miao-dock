@@ -26,7 +26,7 @@
  *   node e2e/resources-check.mjs            正向跑（期望全绿）
  *   node e2e/resources-check.mjs --refute   反证轮（破坏 → 变红 → 按字节还原）
  *
- * 约束：纯 Node 零依赖；子进程只起 `boxsvc --check-assets`（**不起服务、不绑端口**，毫秒级）。
+ * 约束：纯 Node 零依赖；子进程只起 `mangasvc --check-assets`（**不起服务、不绑端口**，毫秒级）。
  *       源码钉不起进程；反证轮结束**必须**按字节还原。
  */
 import fs from 'node:fs';
@@ -34,7 +34,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const BIN = path.join(ROOT, 'src-tauri', 'target', 'debug', process.platform === 'win32' ? 'boxsvc.exe' : 'boxsvc');
+const BIN = path.join(ROOT, 'src-tauri', 'target', 'debug', process.platform === 'win32' ? 'mangasvc.exe' : 'mangasvc');
 const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service.rs');
 const BASE_CONF = path.join(ROOT, 'src-tauri', 'tauri.conf.json');
 
@@ -42,7 +42,7 @@ const REFUTE = process.argv.includes('--refute');
 
 /// 必需资产 —— 必须与 Rust 侧 `paths::REQUIRED_ASSETS` 和 `check:bundle` 的常量逐项一致。
 /// 🔴 这是**第二处事实源**（Rust 常量读不进 node），所以 X1 做交叉验证：
-///    拿 `boxsvc --check-assets` 报出来的必需资产与这里比对，漂移即红。
+///    拿 `mangasvc --check-assets` 报出来的必需资产与这里比对，漂移即红。
 const REQUIRED_ASSETS = ['engine/models.manifest.json', 'engine/runtime.manifest.json', 'engine/patches.json'];
 
 const results = [];
@@ -102,7 +102,7 @@ function makeFixture(name, { withAsset = true, dirOnly = false } = {}) {
 
 async function runDynamic() {
   if (!fs.existsSync(BIN)) {
-    check('D0', '`boxsvc` 可执行存在（先 `cargo build --bin boxsvc`）', false, `缺失：${BIN}`);
+    check('D0', '`mangasvc` 可执行存在（先 `cargo build --bin mangasvc`）', false, `缺失：${BIN}`);
     return;
   }
 

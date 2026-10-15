@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * 父死看守（E11）的**双靶双向取证** —— Node 版 `engine/scripts/child-watch.mjs`
- * 与 Rust 版 `boxsvc --child-watch`（A3c 移植）跑**同一份**用例。
+ * 与 Rust 版 `mangasvc --child-watch`（A3c 移植）跑**同一份**用例。
  *
  * ## 为什么值得单列一条行为钉子
  * 真模式下 ② python / ③ llama-server 是**外部二进制**，改不了它们，
@@ -41,7 +41,7 @@ const RUST_BIN = path.join(
   'src-tauri',
   'target',
   'debug',
-  'boxsvc' + (process.platform === 'win32' ? '.exe' : ''),
+  'mangasvc' + (process.platform === 'win32' ? '.exe' : ''),
 );
 
 /**
@@ -50,7 +50,7 @@ const RUST_BIN = path.join(
  * 🔴🔴 **两个靶子的"父进程"刻意用不同实现，这不是不一致，而是必需**（本轮实测踩出来的）：
  *
  *   · Node 靶：父是 node（`spawn` + 攥 `c.stdin`）—— Node 原版只看 ppid，够用。
- *   · Rust 靶：父是 **`boxsvc --child-watch-parent`**（Rust，按 `service.rs::spawn_inner`
+ *   · Rust 靶：父是 **`mangasvc --child-watch-parent`**（Rust，按 `service.rs::spawn_inner`
  *     的完全相同接线起看守器）—— 见 `child_watch::run_as_parent` 的注释。
  *
  * 为什么 Rust 靶不能用 node 当父：node 在 Windows 上给子进程的 stdio **不是裸匿名管道**，
@@ -69,7 +69,7 @@ const TARGETS = [
   },
   {
     id: 'rust',
-    label: 'boxsvc --child-watch（A3c Rust 移植，Rust 父 = 产品同源）',
+    label: 'mangasvc --child-watch（A3c Rust 移植，Rust 父 = 产品同源）',
     argv: [RUST_BIN, ['--child-watch']],
     parentStdin: 'pipe',
   },

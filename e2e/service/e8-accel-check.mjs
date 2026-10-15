@@ -33,7 +33,7 @@
  *   node e2e/service/e8-accel-check.mjs            正向
  *   node e2e/service/e8-accel-check.mjs --refute    反证轮（破坏源文件 → 重编译 → 断言必须变红 → 按字节还原）
  *
- * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（box-service 的段）。
+ * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（manga-service 的段）。
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -48,8 +48,8 @@ import { killTree, RUST_BIN, SERVICE_ENTRY, spawnTarget } from './_service-harne
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CARGO_DIR = path.join(ROOT, 'src-tauri');
 /** 反证轮要破坏的 Rust 源码（三处，作用各不相同，别合并）。 */
-const RUST_PROFILE_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'engine', 'profile.rs');
-const RUST_STATE_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'engine', 'state.rs');
+const RUST_PROFILE_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'engine', 'profile.rs');
+const RUST_STATE_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'engine', 'state.rs');
 const TOKEN = 'e'.repeat(64);
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-e8-'));
 const REFUTE = process.argv.includes('--refute');
@@ -166,7 +166,7 @@ function hardwareFacts() {
 
 /** 编译 Rust 靶子（反证轮改完源码必须重编，否则断言验的是"上一份产物"）。 */
 function buildRust() {
-  const r = spawnSync('cargo', ['build', '--bin', 'boxsvc'], {
+  const r = spawnSync('cargo', ['build', '--bin', 'mangasvc'], {
     cwd: CARGO_DIR,
     encoding: 'utf8',
     maxBuffer: 40 * 1024 * 1024,

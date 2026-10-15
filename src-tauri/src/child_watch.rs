@@ -70,9 +70,9 @@ const EARLY_CLOSE_MS: u64 = 300;
 ///
 /// 🔴 本仓桌面端是 `windows_subsystem = "windows"`（**没有控制台**）。这种父进程 spawn 一个
 ///    **控制台程序**时，Windows 会为子进程**新开一个控制台窗口** —— std 不代劳。症状就是
-///    「打开喵坞弹出两个黑框」：一个是 ① `boxsvc`，一个是 ③ `llama-server`
+///    「打开喵坞弹出两个黑框」：一个是 ① `mangasvc`，一个是 ③ `llama-server`
 ///    （`service.rs::spawn_inner` 与 `supervisor.rs` 两处都没带这个标志）。
-///    另几处同理会闪框：`pip` / `python -m venv` / `tar` / `nvidia-smi` / `boxsvc --fetch-models`。
+///    另几处同理会闪框：`pip` / `python -m venv` / `tar` / `nvidia-smi` / `mangasvc --fetch-models`。
 ///
 /// ⚠️ `child_watch.rs` 与 `service.rs` 原先各自在 `taskkill` 处带了这个标志，
 ///    但**真正 spawn 业务子进程的那几处全漏了** —— 这正是"只给收尾路径加、不给启动路径加"
@@ -113,7 +113,7 @@ impl WinFlags {
 
 /// 最常用的一档：**隐藏控制台窗口**（非 Windows 平台空操作）。
 ///
-/// 凡是产品 spawn 一个**可能是控制台程序**的子进程（`boxsvc` / `llama-server` / `python` /
+/// 凡是产品 spawn 一个**可能是控制台程序**的子进程（`mangasvc` / `llama-server` / `python` /
 /// `pip` / `tar` / `nvidia-smi` / `taskkill` …），spawn 前都要调它一次。
 pub fn hide_console(cmd: &mut Command) {
     #[cfg(windows)]
@@ -138,7 +138,7 @@ pub fn run(args: &[String]) -> i32 {
         None => Vec::new(),
     };
     if cmd.is_empty() {
-        eprintln!("用法：boxsvc --child-watch -- <cmd> [args...]");
+        eprintln!("用法：mangasvc --child-watch -- <cmd> [args...]");
         return 2;
     }
 
@@ -695,7 +695,7 @@ fn watch_enabled_now() -> bool {
 ///    「Rust 版 E11 失效」这个**错误结论**（本轮真的差点据此改坏产品）。
 ///    正确做法：父也用 Rust，与产品同源。
 ///
-/// 用法：`boxsvc --child-watch-parent <alive_ms> -- <cmd> [args...]`
+/// 用法：`mangasvc --child-watch-parent <alive_ms> -- <cmd> [args...]`
 pub fn run_as_parent(args: &[String]) -> i32 {
     let sep = args.iter().position(|a| a == "--");
     let (alive_ms, cmd): (u64, Vec<String>) = match sep {
@@ -708,11 +708,11 @@ pub fn run_as_parent(args: &[String]) -> i32 {
         None => (1000, Vec::new()),
     };
     if cmd.is_empty() {
-        eprintln!("用法：boxsvc --child-watch-parent <alive_ms> -- <cmd> [args...]");
+        eprintln!("用法：mangasvc --child-watch-parent <alive_ms> -- <cmd> [args...]");
         return 2;
     }
 
-    let watcher = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("boxsvc"));
+    let watcher = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("mangasvc"));
     let mut c = Command::new(&watcher);
     c.arg("--child-watch")
         .arg("--")

@@ -32,7 +32,7 @@
  *   node e2e/service/e10-security-check.mjs            正向
  *   node e2e/service/e10-security-check.mjs --refute    反证轮（破坏源文件 → 断言必须变红 → 按字节还原）
  *
- * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（box-service 的段）。
+ * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（manga-service 的段）。
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -295,7 +295,7 @@ async function runAll(extraEnv = {}) {
     MIAO_TOKEN: TOKEN,
     MIAO_STATE_DIR: path.join(TMP, 'state'),
     MIAO_ROOT: path.join(TMP, 'root'),
-    // ③ 由 box-service 持有；这里不让它真去拉 llama-server（E10 不考 ③）
+    // ③ 由 manga-service 持有；这里不让它真去拉 llama-server（E10 不考 ③）
     MIAO_NO_LLM_AUTOSTART: '1',
     // 🔴🔴 `MIAO_NO_LLM_AUTOSTART` **只挡预拉起**，挡不住"翻译那一刻"的**懒加载**
     //    （`server.mjs` 原注释：「它在翻译那一刻才被用到，而那条路有懒加载兜底」）——
@@ -355,7 +355,7 @@ async function runAll(extraEnv = {}) {
     check(
       'E10.3 【偏差锁定】nonce 显式置为字面量 `None`（执行器跳过校验）+ host 固定 127.0.0.1 —— E10 原文的「nonce 错误被拒」在本版上游不适用',
       nonceValue === 'None' && hostValue === '127.0.0.1',
-      `--nonce ${JSON.stringify(nonceValue)} / --host ${JSON.stringify(hostValue)}；配方来源 boxsvc --print-launch-plan real（上游 nonce 与单图翻译互斥）`,
+      `--nonce ${JSON.stringify(nonceValue)} / --host ${JSON.stringify(hostValue)}；配方来源 mangasvc --print-launch-plan real（上游 nonce 与单图翻译互斥）`,
     );
 
     // ---- E10.4 / E10.5：非图片字节 -> 400，且**不进引擎** ----

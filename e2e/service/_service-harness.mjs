@@ -11,9 +11,9 @@
 // 起的是 Node 版还是 Rust 版。⇒ 这就是文档 §0 说的「e2e 改靶子抽象、**不改断言**」。
 //
 // ## 靶子：**只剩一个**（node 档已随 `service/` 退役，D-205）
-//   `spawn(<boxsvc 可执行>, argv)`
-// Rust 靶子路径：`MIAO_BOXSVC_BIN` 显式覆盖 → 否则在 `<repo>/src-tauri/target/{debug,release}/` 里找
-// `boxsvc[.exe]`（迁移期用 dev profile，见计划文档 R8：release 编译以分钟计）。
+//   `spawn(<mangasvc 可执行>, argv)`
+// Rust 靶子路径：`MIAO_MANGASVC_BIN` 显式覆盖 → 否则在 `<repo>/src-tauri/target/{debug,release}/` 里找
+// `mangasvc[.exe]`（迁移期用 dev profile，见计划文档 R8：release 编译以分钟计）。
 //
 // 🔴 为什么只剩一个：F5 摘除 Node 服务层之后，本轮又把**仓库里的 `service/`** 删了。
 //    双靶（`MIAO_SERVICE_IMPL=rust|node`）存在的唯一理由是「两套实现打同一套断言、证明契约等价」——
@@ -56,7 +56,7 @@ export const IMPL = 'rust';
   if (raw === 'node') {
     throw new Error(
       'MIAO_SERVICE_IMPL=node 已退役：Node 服务实现（service/）已从仓库删除。\n' +
-        'e2e 现在只有一个靶子（boxsvc）。原先靠 node 档做对照端的检查已改**冻结 golden**\n' +
+        'e2e 现在只有一个靶子（mangasvc）。原先靠 node 档做对照端的检查已改**冻结 golden**\n' +
         '（D-199 / D-200 / D-203），不再需要第二个实现。',
     );
   }
@@ -66,14 +66,14 @@ export const IMPL = 'rust';
 })();
 
 /**
- * Rust 靶子（`boxsvc` 可执行）路径。
+ * Rust 靶子（`mangasvc` 可执行）路径。
  * 迁移期在 dev profile 下构建；找不到时**不在这里抛**（很多脚本只想跑 node，不该被带崩），
  * 只在真正要用 rust 且找不到时抛（见 `targetFor`）。
  */
 export function resolveRustBin() {
-  const fromEnv = process.env.MIAO_BOXSVC_BIN;
+  const fromEnv = process.env.MIAO_MANGASVC_BIN;
   if (fromEnv && fromEnv.trim() !== '') return path.resolve(fromEnv.trim());
-  const exe = process.platform === 'win32' ? 'boxsvc.exe' : 'boxsvc';
+  const exe = process.platform === 'win32' ? 'mangasvc.exe' : 'mangasvc';
   const base = path.join(REPO_ROOT, 'src-tauri', 'target');
   for (const profile of ['debug', 'release']) {
     const p = path.join(base, profile, exe);
@@ -107,7 +107,7 @@ export function isServiceEntry(entry) {
 /**
  * 把「入口 + 附加参数」解析成「真正要 spawn 的 command + args」。
  *
- * · 入口是服务 ⇒ `<boxsvc>, ...extraArgv`（`boxsvc` 自身读 `MIAO_*` 环境变量，无位置参数）
+ * · 入口是服务 ⇒ `<mangasvc>, ...extraArgv`（`mangasvc` 自身读 `MIAO_*` 环境变量，无位置参数）
  * · 入口**不是**服务（例如 mock 引擎、其它脚本）⇒ 原样走 node，**不受服务靶子影响**。
  *   这一点是刻意的：夹具里 engine / parent-harness / refute-child 都不是服务，
  *   混进来会让「换服务实现」意外改掉别的进程。
@@ -117,8 +117,8 @@ export function targetFor(entry, extraArgv = []) {
     if (!fs.existsSync(RUST_BIN)) {
       throw new Error(
         `找不到 Rust 靶子：${RUST_BIN}\n` +
-          `先构建：cd src-tauri && cargo build --bin boxsvc\n` +
-          `或设 MIAO_BOXSVC_BIN 指向已构建的 boxsvc。`,
+          `先构建：cd src-tauri && cargo build --bin mangasvc\n` +
+          `或设 MIAO_MANGASVC_BIN 指向已构建的 mangasvc。`,
       );
     }
     return { command: RUST_BIN, args: [...extraArgv] };

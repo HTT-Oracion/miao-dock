@@ -53,7 +53,7 @@
  *      （退役门，只做字符串比较、不派进程）的**上下文窗口**里 —— D-209 的源码级钉子。
  *      🔴 为什么不能只钉"配置里没有 node 载荷"（W5）：配置只描述**随包**有什么。真正会回归的
  *      形态是"代码里悄悄把 node 拉回来"（新增一处 `Command::new("node")`，或把退路从
- *      `resolve_boxsvc()` 退回 `service/src/server.mjs`）—— 那时包还是干净的，W5 全绿，
+ *      `resolve_mangasvc()` 退回 `service/src/server.mjs`）—— 那时包还是干净的，W5 全绿，
  *      而用户机上一重启就多一个 node 进程。W5 钉的是"**装进去了什么**"，
  *      W14 钉的是"**产品路径还会不会拉起 node**"，两条各挡一类。
  *      ⚠️ 判据必须**先剥 `#[cfg(test)]`**：测试夹具里写 `vec!["node", "x.mjs"]` 是正常的
@@ -117,7 +117,7 @@ const NODE_PAYLOAD = ['service/', 'service\\', 'node.zip'];
 
 /// 产品运行期**必需**的随包资产（A2）—— 必须与 Rust 侧 `paths::REQUIRED_ASSETS` 逐项一致。
 /// 🔴 这里是**第二处事实源**（Rust 常量读不进 node），所以另有一道交叉验证：
-///    `check:resources` 会拿 `boxsvc --check-assets` 报的必需资产与这里比对，
+///    `check:resources` 会拿 `mangasvc --check-assets` 报的必需资产与这里比对，
 ///    两边漂移就变红 —— 单一事实源做不到，就退而求其次让它**可观测地漂移**。
 const REQUIRED_ASSETS = ['engine/models.manifest.json', 'engine/runtime.manifest.json', 'engine/patches.json'];
 
@@ -323,7 +323,7 @@ function runAll() {
   // ---- W6：产品运行期**必需**的资产必须随包（A2）----
   //    A1 让 Rust 能找到资源目录，A2 保证目录里有东西 —— 缺了 A2，A1 只是"找到了一个空目录"。
   //    🔴 失效形态：dev 态**永远测不出来**（资产就在仓库里，代码会回退过去），
-  //    所以只能钉在**配置**上：这里漏一条，打包后 `boxsvc --check-assets` 才会报缺失。
+  //    所以只能钉在**配置**上：这里漏一条，打包后 `mangasvc --check-assets` 才会报缺失。
   const targets = new Set([...resTargets(resBase), ...resTargets(resWin)]);
   const absent = REQUIRED_ASSETS.filter((a) => !targets.has(a));
   // src 侧也要真存在：配置写了但文件挪走了 ⇒ 打包阶段才炸，且报错离根因很远。
@@ -393,7 +393,7 @@ function runAll() {
   );
 
   // ---- W13b：wheel 清单本身必须随包 ----
-  //    为什么单独一条：产品侧选路（`boxsvc/engine/wheels.rs::plan_crf`）**要读这份清单**
+  //    为什么单独一条：产品侧选路（`mangasvc/engine/wheels.rs::plan_crf`）**要读这份清单**
   //    才能决定走 wheel 还是源码编译。清单不在包里 ⇒ 选路恒回退源码编译。
   //    🔴 失效形态与 W13 同样**不是变红而是静默退化**，且比 W13 更隐蔽：
   //       wheel 明明在包里，产品却"看不见"它。
@@ -757,21 +757,21 @@ const MUTATIONS = [
   },
   {
     /*
-     * 🔴 D-209 要防的**真实回归形态**：`resolve_boxsvc()` 是"退路"的落点 —— F5.8 曾在这里
-     *    留过"拿不到 boxsvc 就退回 Node 服务"的路（那段注释现在还在函数上方）。把退路加回去
-     *    是**一次看起来最合理的改动**：包仍然干净（W5 绿）、e2e 仍全绿（开发态 boxsvc 就在
+     * 🔴 D-209 要防的**真实回归形态**：`resolve_mangasvc()` 是"退路"的落点 —— F5.8 曾在这里
+     *    留过"拿不到 mangasvc 就退回 Node 服务"的路（那段注释现在还在函数上方）。把退路加回去
+     *    是**一次看起来最合理的改动**：包仍然干净（W5 绿）、e2e 仍全绿（开发态 mangasvc 就在
      *    同目录、根本走不到退路），只有用户机上会多一个 node 进程。
      *    ⚠️ 锚点故意选在离 `MIAO_SERVICE_IMPL` 二十多行的地方：若插在退役门旁边，
      *    W14 的允许窗口会把它盖住 ⇒ 该条违反"反证必须真能打红"。
      */
-    name: 'M13 把 Node 服务退路加回 `resolve_boxsvc()`（包干净、e2e 全绿，只有用户机上多一个 node 进程）',
+    name: 'M13 把 Node 服务退路加回 `resolve_mangasvc()`（包干净、e2e 全绿，只有用户机上多一个 node 进程）',
     edits: [
       {
         file: path.join(RUST_SRC, 'service.rs'),
-        find: '    let name = if cfg!(windows) { "boxsvc.exe" } else { "boxsvc" };',
+        find: '    let name = if cfg!(windows) { "mangasvc.exe" } else { "mangasvc" };',
         replace:
           '    let _ = std::process::Command::new("node").arg("service/src/server.mjs").spawn();\n' +
-          '    let name = if cfg!(windows) { "boxsvc.exe" } else { "boxsvc" };',
+          '    let name = if cfg!(windows) { "mangasvc.exe" } else { "mangasvc" };',
       },
     ],
     expect: ['W14'],

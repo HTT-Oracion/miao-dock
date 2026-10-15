@@ -19,7 +19,7 @@
 | 编号 | 主题 | 涉及层 |
 |------|------|--------|
 | D-137 | 歌词整行高亮去掉推进动画（单层渲染 + 默认改整行） | app 前端 |
-| D-138 | box-service 顶层未捕获异常兜底（统一 shutdown + 非零退出） | service |
+| D-138 | manga-service 顶层未捕获异常兜底（统一 shutdown + 非零退出） | service |
 | D-139 | 抽 `atomic-file.mjs` 底座 + store 任务状态改原子写 | service |
 | D-140 | 接入 CI（双平台）+ 跨平台写死断言改平台忠实 | e2e / 基建 |
 | D-141 | `image.mjs` 上移底座 + 新增 `check:layering` 依赖方向钉子 | service |
@@ -49,7 +49,7 @@
 | D-165 | `validateRoot()` 黑名单移植：Windows 名单原样缺失 ⇒ 这道校验在 Windows 形同虚设 | engine |
 | D-166 | ③ 懒加载被"诊断快照"挡下：去掉前置判据 + 在状态跃迁处发布快照 | engine |
 | D-167 | `check:contract` S5.3 的"读取时刻"假红：`updatedAt` 是**读时** `nowIso()` | e2e |
-| D-168 | 服务实现默认档翻转为 Rust（`resolve_service_cmd`）+ 两档不同的"找不到 boxsvc"语义 | app / engine |
+| D-168 | 服务实现默认档翻转为 Rust（`resolve_service_cmd`）+ 两档不同的"找不到 mangasvc"语义 | app / engine |
 | D-169 | 第二个 `[[bin]]` 让裸 `cargo run` 变歧义 ⇒ `Cargo.toml` 必须钉 `default-run` | app / e2e |
 | D-170 | F 组收尾勘查：哪些文件**不能**删（`service/` 是七组对拍的对照端）+ `load_plan` 的 node 遗留 | docs / app |
 | D-171 | A3b 启动配方 Rust 化：退役 node 打印器与它的 24 条断言的**被测对象**；形参传反的三处静默失效 | engine / e2e |
@@ -144,14 +144,14 @@ el.style.width = `${p * 100}%`;
 
 ---
 
-## D-138 · box-service 顶层未捕获异常兜底 —— 崩溃也要先收子进程（2026-10-11）
+## D-138 · manga-service 顶层未捕获异常兜底 —— 崩溃也要先收子进程（2026-10-11）
 
 v2.2.1 结构/健壮性审计（`code-audit-report.md` §13.2a）发现：**全仓 0 个未捕获异常处理器**
 （`grep unhandledRejection|uncaughtException` 零命中）。
 
 ### 为什么是缺陷
 
-box-service 是 **①②③ 三个子进程的宿主**。Node ≥15 起，未处理的 promise rejection 默认
+manga-service 是 **①②③ 三个子进程的宿主**。Node ≥15 起，未处理的 promise rejection 默认
 **直接终止进程** —— 而进程一死，③（llama-server）就丢在那里成孤儿，8080 被占。
 E11（「主进程 SIGKILL 后不留孤儿」）防的是**不可捕获**的死法，防不住这条**可捕获**的死法。
 
@@ -1347,7 +1347,7 @@ QR 登录时用户 cookie 通常为空、行为不变。
 | 编号 | `docs/spec-notes.md` | `docs/spec-notes-1.md` |
 |------|----------------------|------------------------|
 | D-137 | 服务运行时 Rust 化：F0–F2 落地 | 歌词整行高亮去掉推进动画 |
-| D-138 | 迁移期两条本机环境纪律 | box-service 未捕获异常兜底 |
+| D-138 | 迁移期两条本机环境纪律 | manga-service 未捕获异常兜底 |
 | D-139 | 服务运行时 Rust 化：F3 store 内核 | 抽 `atomic-file.mjs` 底座 |
 | D-140 | 服务运行时 Rust 化：F4 engine 耦合点 | 接入 CI（双平台） |
 | D-141 | 服务运行时 Rust 化：F4-b1 引擎 HTTP | `image.mjs` 上移底座 |
@@ -1384,8 +1384,8 @@ F 组（服务 Rust 化）主线到此收口。
 |----|------|----------|
 | `tasks` / `queue` | 10 + 1 | `handlers.rs` 的 `tasks` / `queue` 段（读视图 + 写动作全部经 `store`） |
 | `library` | 22 | `handlers.rs` 的 `library` 段（列表/建库/看图/章节/续译/重译/重编号/元数据/封面/合并/揭示/删除/隐藏） |
-| `translate` | 5 | `handlers.rs` 的 `translate` 段 + `boxsvc/translate/` |
-| `engine` / `health` | 6 + 2 | `handlers.rs` 的 `engine`/`health` 段 + `boxsvc/engine/{state,profile,settings,model_status,tier_downgrade,idle_policy}.rs` + `sidecar.rs` |
+| `translate` | 5 | `handlers.rs` 的 `translate` 段 + `mangasvc/translate/` |
+| `engine` / `health` | 6 + 2 | `handlers.rs` 的 `engine`/`health` 段 + `mangasvc/engine/{state,profile,settings,model_status,tier_downgrade,idle_policy}.rs` + `sidecar.rs` |
 
 **F5 三条验收标准的「着力点」（关键是每条都有一处**会红**的地方）**
 
@@ -1396,7 +1396,7 @@ F 组（服务 Rust 化）主线到此收口。
    老版 M1 只调本文件里的 `gateFinal(forwardedCount, ['POST /api/v1/tasks'])` —— 那等于**自证**
    （证的只是"本文件那个 `if` 会返回 false"），注入**从未进过 Rust**，`--list-routes` 报的
    `forwardedCount` 会不会真涨、一点没验到。新版 M1 **真的去跑一遍**
-   `boxsvc --list-routes`（带 `MIAO_ROUTE_REFUTE`），断言 `forwardedCount === 2` 且两个 id 都在
+   `mangasvc --list-routes`（带 `MIAO_ROUTE_REFUTE`），断言 `forwardedCount === 2` 且两个 id 都在
    `forwarded[]` 里、且完成门转红。实测 `--refute` **4/4 全红**。
 3. **③ `bundle.resources` 内不再有 `service/` 与 `node.zip`** ⇒ `check:bundle` 新增 **W5**
    （基座 **与** windows 配置**两处**都不许出现，因为生效配置 = JSON Merge Patch(基座, windows)）
@@ -1433,7 +1433,7 @@ rust **单独多绿**一条 `drain-runtime` 7/7（rust-only 钉子，node 按设
 
 ## D-163 · 服务运行时 Rust 化：F5.8 摘除遗留后端（`backend.rs` / `proxy()` 删除）（2026-10-13）
 
-**删掉的东西**：`boxsvc/backend.rs`（210 行，整个文件）、`boxsvc.rs::proxy()`（~80 行）、
+**删掉的东西**：`mangasvc/backend.rs`（210 行，整个文件）、`mangasvc.rs::proxy()`（~80 行）、
 `is_hop_by_hop()`、`Shell.client` + `make_client()`、`Options.legacy_entry` 与其 `from_env` 分支、
 `Shell.backend_base` 字段、就绪行里的"遗留后端：…"、`backend::shutdown_legacy()`、
 `log` 打印里的 legacy 拼装。`MIAO_LEGACY_BACKEND` 三态解析一并删除（现在是 no-op 名字，
@@ -1445,10 +1445,10 @@ Node 服务（计划文档 **R3**）。
 
 **🔴 为什么"转发数为 0 时遗留后端是纯负担"（真实机理，不是省一个进程）**：遗留 Node 后端
 **自己也会** autostart ③ LLM（它有自己的一套 autostart 逻辑）。转发数为 0 时两个进程会
-**同时**去抢同一个 `MIAO_LLM_PORT`，后到的那个 `EADDRINUSE` 退出 ⇒ **boxsvc 侧** ③ 变成
+**同时**去抢同一个 `MIAO_LLM_PORT`，后到的那个 `EADDRINUSE` 退出 ⇒ **mangasvc 侧** ③ 变成
 `state=error`。实测症状：`check:engine-settings` 的 ③ 相关用例全红（52/61）；加上"转发数 = 0
 ⇒ 不拉遗留后端"之后 **55/6 —— 与 node 靶子逐字相同**（那 6 条是两边共有的存量环境问题，
-见 D-162）。③ 的归属方是 box-service（《04》§9.1），遗留后端本就不该再拉它。
+见 D-162）。③ 的归属方是 manga-service（《04》§9.1），遗留后端本就不该再拉它。
 
 **摘除之后必须补上两块"遗留后端曾经代劳"的东西**（漏一块就是静默失败）：
 - **令牌**：原先来自遗留后端的就绪行 ⇒ 现改为本进程自造，见 D-164。
@@ -1588,32 +1588,32 @@ node 靶子是 3/3 绿。看着像"rust 的 `updatedAt` 与 node 不一致"。
 ## D-168 · 服务实现默认档翻转为 Rust（`resolve_service_cmd`）+ 两档不同的失败语义（2026-10-13）
 
 **改动**：`service.rs::resolve_service_cmd()` 的**未设 `MIAO_SERVICE_IMPL`** 档，
-从"起 Node 服务入口（`service/src/` 下的 server）"翻转为"起 `boxsvc`"。
+从"起 Node 服务入口（`service/src/` 下的 server）"翻转为"起 `mangasvc`"。
 
-**为什么必须翻**：F1 时的裁定是"打包把 `boxsvc` 放进安装包之前，产品路径一律不动"——
+**为什么必须翻**：F1 时的裁定是"打包把 `mangasvc` 放进安装包之前，产品路径一律不动"——
 那在当时是对的。但 F5 已把**全部 44 条端点迁进 Rust**（`forwarded_count() == 0`，
 D-162 的完成门盯着）。此时默认仍是 node，等于"摘除 Node"**只写在文档里**：
 产品照旧起一份 Node 服务，正是 R3 说的那个形态（功能照常、e2e 全绿、node 永远删不掉）。
 
-**🔴 两档"找不到 boxsvc 时怎么办"刻意不同（这是本条的核心裁定）**
+**🔴 两档"找不到 mangasvc 时怎么办"刻意不同（这是本条的核心裁定）**
 
-| 档位 | boxsvc 找不到时 | 为什么 |
+| 档位 | mangasvc 找不到时 | 为什么 |
 |------|----------------|--------|
-| `MIAO_SERVICE_IMPL=rust`（显式） | **硬失败**（`resolve_boxsvc()?` 直接传播） | "说了算数"：显式切了却没生效、还悄悄换回 Node，会让"切实现"彻底失去可观测性（`check:harness` 的 H5 钉的是同一条） |
-| 未设（默认） | **退回 Node + `eprintln!` 可见警告**（带原因 + 构建指引） | 开发态 `cargo run --bin miao-dock` 只构建主 bin，`target/debug/` 里**没有** `boxsvc`；硬失败会把"跑起来看看界面"变成"先读一篇构建说明" |
+| `MIAO_SERVICE_IMPL=rust`（显式） | **硬失败**（`resolve_mangasvc()?` 直接传播） | "说了算数"：显式切了却没生效、还悄悄换回 Node，会让"切实现"彻底失去可观测性（`check:harness` 的 H5 钉的是同一条） |
+| 未设（默认） | **退回 Node + `eprintln!` 可见警告**（带原因 + 构建指引） | 开发态 `cargo run --bin miao-dock` 只构建主 bin，`target/debug/` 里**没有** `mangasvc`；硬失败会把"跑起来看看界面"变成"先读一篇构建说明" |
 
 ⚠️ 关键限定：默认档的退回**绝不静默**。Node 是过渡依赖、将来从包里删掉，
 这条警告是人**唯一**看得见"Rust 没生效、以及为什么"的地方；静默退回就等于回到
 "默认 node 而没人知道"（也即本条要消灭的那个状态）。
 
 **钉子**：`e2e/service-autostart-check.mjs` 新增 **E1–E5**（该文件既有的"钉成因、不钉风格"
-体例）：E1 默认分支必须调到 `resolve_boxsvc`；E2 退回必须可见（`eprintln!` + 「退回 Node」+
+体例）：E1 默认分支必须调到 `resolve_mangasvc`；E2 退回必须可见（`eprintln!` + 「退回 Node」+
 构建指引）；E3 显式 rust 仍硬失败；E4 显式 `=node` 仍可达、Node 入口只在
 `node_service_cmd` 一处拼接；E5 取值先 `trim` + 小写（`RUST` / ` rust ` 必须算**显式**档）。
 实测正向 **17/17**、`--refute` **17/17 全红**（含 E1–E5 五条新变异，各自按预期变红）。
 
 **⚠️ 边界（沿用该文件既有声明）**：本组证明的是**成因的写法被钉住了**，不是
-"默认档在真机上真的起了 boxsvc"—— 后者要靠人真跑一次（`npm run app`）。
+"默认档在真机上真的起了 mangasvc"—— 后者要靠人真跑一次（`npm run app`）。
 
 ## D-169 · 第二个 `[[bin]]` 让裸 `cargo run` 变歧义 ⇒ `Cargo.toml` 必须钉 `default-run`（2026-10-13）
 
@@ -1622,16 +1622,16 @@ D-162 的完成门盯着）。此时默认仍是 node，等于"摘除 Node"**只
 ```
 error: `cargo run` could not determine which binary to run.
 Use the `--bin` option to specify a binary, or the `default-run` manifest key.
-available binaries: boxsvc, miao-dock
+available binaries: mangasvc, miao-dock
 ```
 
 **根因**：F0 把桌面端拆成 `lib.rs` + **两个** `[[bin]]`（`miao-dock` 走 `src-tauri/src/main.rs`、
-`boxsvc` 是 e2e 的 rust 靶子走 `src-tauri/src/bin/boxsvc.rs`）。cargo **不猜**"哪个是应用"——
+`mangasvc` 是 e2e 的 rust 靶子走 `src-tauri/src/bin/mangasvc.rs`）。cargo **不猜**"哪个是应用"——
 一到两个及以上 bin 就报歧义。这不是 F5 引入的，但 F5 让它第一次被人真的敲到：
-现在默认档已经是 Rust boxsvc（D-168），开发流程从 `cargo run` 变成了日常动作。
+现在默认档已经是 Rust mangasvc（D-168），开发流程从 `cargo run` 变成了日常动作。
 
 **修法**：`Cargo.toml` 的 `[package]` 加 `default-run = "miao-dock"`。要跑服务靶子
-仍须显式 `--bin boxsvc`（e2e 与 `check:autostart` 一直显式给，**不许**改成靠默认档）。
+仍须显式 `--bin mangasvc`（e2e 与 `check:autostart` 一直显式给，**不许**改成靠默认档）。
 
 🔴 **为什么钉一条断言，而不只是"加一行配置"**：这个键的失效形态有**两种**，
 且**两种的报错完全同一句**：
@@ -1707,7 +1707,7 @@ F 组新增的 8 组钉子（上述七组 + `check:routes`）此前在 `AGENTS.m
 ## D-171 · A3b 启动配方 Rust 化：退役 node 打印器（2026-10-13）
 
 **改动**：`service/scripts/` 下那个 128 行的启动配方打印器**退役**（连目录一并消失），
-其职责移进 `boxsvc::engine::build_launch_plan(mode)` + 新的 `boxsvc --print-launch-plan` 子命令。
+其职责移进 `mangasvc::engine::build_launch_plan(mode)` + 新的 `mangasvc --print-launch-plan` 子命令。
 （脚本名不再出现在本文档里 —— `check:docpaths` 会把"引用已删除的路径"判红，
 连"说明它被退役了"这种历史叙述也不例外。）
 `service/scripts/` 目录随之消失。`service.rs::load_plan()` 不再 fork 任何进程 ——
@@ -1766,7 +1766,7 @@ F 组新增的 8 组钉子（上述七组 + `check:routes`）此前在 `AGENTS.m
 - 新增 **反证轮 6 条变异**（R1 分支传反 / R2 env 不压差量 / R3 watch 消失 /
   R4 mock 假地址 / R5 归属退回 manager / R6 预算压回 20s），实测 **6/6 全红**；
 - 🔴 反证轮收尾**必须重编译**：首轮跑完正向就红了（P-real-16），因为
-  `target/debug/boxsvc.exe` 还是最后一个变异编译出来的。**「源码已还原」与「产物已还原」
+  `target/debug/mangasvc.exe` 还是最后一个变异编译出来的。**「源码已还原」与「产物已还原」
   是两件事**，字节校验只能证明前者。现在末尾有「还原重编译」+ 跑完再验正向仍绿。
 
 **验收**：正向 **25/25**、反证 **6/6 全红**、`cargo test --lib` **98 passed**（94 → 98）、
@@ -1776,9 +1776,9 @@ F 组新增的 8 组钉子（上述七组 + `check:routes`）此前在 `AGENTS.m
 
 ## D-172 · A3c 父死看守 Rust 化：父死判定必须是**双通道**，且"判不出来" ≠ "父死"（2026-10-13）
 
-**改动**：新增 `src-tauri/src/child_watch.rs` + `boxsvc --child-watch`（复用已随包的 `boxsvc`，
+**改动**：新增 `src-tauri/src/child_watch.rs` + `mangasvc --child-watch`（复用已随包的 `mangasvc`，
 **不新增第三个可执行文件、不改 `bundle.resources`**）。`service.rs` 的 `watch` 档与
-`boxsvc::engine::supervisor::do_start` 都改走它；stdin 由 `Stdio::null()` 改成 `Stdio::piped()`
+`mangasvc::engine::supervisor::do_start` 都改走它；stdin 由 `Stdio::null()` 改成 `Stdio::piped()`
 + 注入 `MIAO_CHILD_WATCH_PIPE=1`，父侧用 `_watch_keepalive: Option<ChildStdin>` **攥住写端**。
 
 **为什么 `child-watch.mjs` 保留**（与 A3b 退役 `print-launch-plan.mjs` 的处置不同）：
@@ -1831,7 +1831,7 @@ ToolHelp32 快照在权限不足 / 进程数逼近上限时会失败。把它当
 而 ppid 通道又被缺陷 ③ 破坏 ⇒ 两条通道都判不出父死。
 
 ⇒ **产品的父是 Rust**（`service.rs` / `supervisor.rs`），测试就必须照实测走。
-新增产品同源夹具 `boxsvc --child-watch-parent <ms> -- <cmd>`：
+新增产品同源夹具 `mangasvc --child-watch-parent <ms> -- <cmd>`：
 按 `service.rs::spawn_inner` 的**完全相同**接线起看守器，活指定毫秒后 `process::exit(0)` 硬退。
 （⚠️ `Stdio::piped()` 在句柄耗尽的机器上返回 `ERROR_NO_SYSTEM_RESOURCES`(231)；
 夹具此时**显式**注入 `MIAO_CHILD_WATCH_PIPE=0` 并打可见警告，**不允许悄悄降级**。）
@@ -1854,9 +1854,9 @@ ToolHelp32 快照在权限不足 / 进程数逼近上限时会失败。把它当
 
 ## D-173 · A3d 模型下载 Rust 化：双靶对拍是唯一能挡住"静默移植缺陷"的手段（2026-10-13）
 
-**改动**：新增 `src-tauri/src/boxsvc/engine/model_store.rs`（下载内核，移植自 `engine/model-store.mjs` 603 行）
-+ `boxsvc --fetch-models`（CLI，移植自 `engine/scripts/fetch-models.mjs`）。
-沿用 A3b/A3c 同一个裁定：**复用已随包的 `boxsvc`，不新增第三个可执行文件、不改 `bundle.resources`**。
+**改动**：新增 `src-tauri/src/mangasvc/engine/model_store.rs`（下载内核，移植自 `engine/model-store.mjs` 603 行）
++ `mangasvc --fetch-models`（CLI，移植自 `engine/scripts/fetch-models.mjs`）。
+沿用 A3b/A3c 同一个裁定：**复用已随包的 `mangasvc`，不新增第三个可执行文件、不改 `bundle.resources`**。
 
 产品侧两处**运行期** node 启动点清零：
 
@@ -1928,7 +1928,7 @@ if (ok) schedule(); else res.once('drain', schedule);   // ✅ 同一次调用�
 
 ### 🔴 缺陷 ④：反证开关必须走**子进程 env**，进程内 `process.env` 只管得住 Node 靶
 
-`check:models` 的双靶里，Rust 靶是**另一个进程**（`boxsvc.exe`）。
+`check:models` 的双靶里，Rust 靶是**另一个进程**（`mangasvc.exe`）。
 反证开关若只设在 `process.env` ⇒ Rust 靶读不到 ⇒ **反证轮永远绿**。
 这是假绿里最坏的一种：它不报错、不失败，只是让"反证"这件事**不存在**。
 
@@ -1941,7 +1941,7 @@ D 组（模型下载视图）原夹具是"写一个假 `.cmd` 当下载脚本"�
 
 修法：放弃假可执行文件，改用已有的 **`MIAO_MODEL_MANIFEST` 接缝**控制行为 ——
 成功档 = 拷一份真清单；失败档 = 非法 JSON ⇒ 执行体报 `MODEL_MANIFEST_BAD` 非 0 退出。
-执行体仍是产品那个 `boxsvc.exe` ⇒ 现在量的是**产品真实执行体**的状态机。
+执行体仍是产品那个 `mangasvc.exe` ⇒ 现在量的是**产品真实执行体**的状态机。
 
 ### 🔴 缺陷 ⑥：反例条目的 `dest` 指错 ⇒ 判据根本没执行（场景设计漏洞，非实现缺陷）
 
@@ -1953,7 +1953,7 @@ P5（`MODEL_HF_BAD_LINK`）两靶都返回 `code=null`。排查后：`dest` 指�
 
 ### 断言处置
 
-- `check:models` 重写为**双靶**（Node 对照端 + Rust `boxsvc --fetch-models`）：
+- `check:models` 重写为**双靶**（Node 对照端 + Rust `mangasvc --fetch-models`）：
   37 条 × 2 靶 = **正向 74**；反证 6 条 × 2 靶 = **12**。
   驱动方式是**子进程取证**（起进程 → 读盘上的 report JSON / progress 日志），
   **不是** import 库调用 —— 后者测不到 CLI 的参数解析与退出码。
@@ -1981,7 +1981,7 @@ P5（`MODEL_HF_BAD_LINK`）两靶都返回 `code=null`。排查后：`dest` 指�
 
 - `paths.rs` 新增 `resource_dir()` / `asset()` / `missing_assets()` / `assets_report()` +
   常量 `REQUIRED_ASSETS`；`model_manifest()` 改为**资源目录优先、仓库回退**。
-- `boxsvc --check-assets`：打印自检 JSON，缺失 ⇒ 退出码 1 + stderr `✗ [RESOURCE_MISSING] 资源缺失：…`。
+- `mangasvc --check-assets`：打印自检 JSON，缺失 ⇒ 退出码 1 + stderr `✗ [RESOURCE_MISSING] 资源缺失：…`。
 - `service.rs::start_blocking` 在取启动配方（`load_plan`）**之前**加资产自检，缺失即 `fail("资源缺失：…")`。
 - `tauri.conf.json` 的 `bundle.resources` 改为 **map** 形式
   `{ "../../engine/models.manifest.json": "engine/models.manifest.json" }`。
@@ -2030,7 +2030,7 @@ Tauri v2 数组形式**保留原目录结构**并把 `../` 替换成 `_up_/` ⇒
 ### 🔴 缺陷 ⑤：`REQUIRED_ASSETS` 是三处事实源，只能退而求其次让它"可观测地漂移"
 
 Rust 常量、`check:bundle` 常量、`check:resources` 常量各一份，做不到单一事实源。
-⇒ 加 **X1** 交叉验证：`check:resources` 拿 `boxsvc --check-assets` 报出的必需资产与自己的常量比对，
+⇒ 加 **X1** 交叉验证：`check:resources` 拿 `mangasvc --check-assets` 报出的必需资产与自己的常量比对，
 漂移即红。这不是消除漂移，是让漂移**当场可见**。
 
 ### 已知问题（未修，留痕）
@@ -2079,7 +2079,7 @@ F5 + A3d 之后 **node 不再是产品依赖**（`Command::new("node")` 已清�
   （用户 venv 版本不受我们控制，写死即假红）。
 - `is_file` / `is_dir` 走 `symlink_metadata`（lstat）而非 `metadata()`，
   以兼容 Windows junction / 符号链接与硬链接。
-- `warn_unready_if_real(is_mock)` 供 app 与 `boxsvc` CLI 两入口共用。
+- `warn_unready_if_real(is_mock)` 供 app 与 `mangasvc` CLI 两入口共用。
 
 🔴 **只 warn，不 fail**：mock 档直接返回。mock 档**不该有真引擎**（30+ 个 e2e 靠它），
 在 mock 档也报未就绪等于给所有 mock 用例加噪声。real 档的硬门归 **D6**，不在这里顺手做。
@@ -2109,14 +2109,14 @@ config.mjs **import 即有副作用**（模块顶层 `fs.mkdirSync(STATE_DIR)`�
 ### B3 · 单源化的验收 = 两个入口读同一份推导
 
 新增 `e2e/service/path-single-source-check.mjs`：起服务打 `GET /api/v1/engine/runtime`
-取 `python.path`，与 `boxsvc --print-launch-plan` 的 `engine.cmd[0]` **逐字节比对**。
+取 `python.path`，与 `mangasvc --print-launch-plan` 的 `engine.cmd[0]` **逐字节比对**。
 这比「读源码看起来同源」强：它证的是**运行期实际取值**，且天然覆盖 Windows 的
 `venv\Scripts\python.exe` 分叉（另一份推导最容易在这里写死 `bin/python`）。
 
 ### A4 · 三条贵的教训
 
-**① 不起 GUI，起 release `boxsvc`。** 无头环境里 GUI 必失败 ⇒ 冒烟会**时红时绿**，
-比没有冒烟更坏（它训练人忽略红色）。改起 release `boxsvc` + `MIAO_RESOURCE_DIR`
+**① 不起 GUI，起 release `mangasvc`。** 无头环境里 GUI 必失败 ⇒ 冒烟会**时红时绿**，
+比没有冒烟更坏（它训练人忽略红色）。改起 release `mangasvc` + `MIAO_RESOURCE_DIR`
 指向真实安装目录。Node 侧不实现 `resource_dir()`（A1 裁定为 Rust 侧能力）⇒
 设了 `MIAO_RESOURCE_DIR` 两边取值不同 ⇒ **A4 只跑 Rust 靶**。
 
@@ -2126,16 +2126,16 @@ config.mjs **import 即有副作用**（模块顶层 `fs.mkdirSync(STATE_DIR)`�
 指向空目录。
 
 🔴 **③ A4 暴露了 A3b 起就存在的编译断裂：`miao-dock` bin 编不过。**
-`service.rs` 用 `boxsvc::engine::build_launch_plan` 与 `runtime_probe::…`，
-而 `main.rs` 既无 `mod boxsvc;` 也无 use ⇒ `error[E0433]`。
-**只因平时只跑 `cargo build --bin boxsvc` 与 `cargo test --lib`，两者都不覆盖
+`service.rs` 用 `mangasvc::engine::build_launch_plan` 与 `runtime_probe::…`，
+而 `main.rs` 既无 `mod mangasvc;` 也无 use ⇒ `error[E0433]`。
+**只因平时只跑 `cargo build --bin mangasvc` 与 `cargo test --lib`，两者都不覆盖
 `miao-dock` bin ⇒ 一直没暴露。**
 
-修法：`main.rs` 加 `pub(crate) use miao_dock::boxsvc;`，
-`service.rs` 改 `use crate::boxsvc; use miao_dock::paths;`。
-🔴 不能用 `mod boxsvc;` —— 那会把同一份源码**再编译一份**，bin/lib 各有一套类型、
-之后必然各自漂移；也不能 `use miao_dock::{boxsvc, paths};`
-（`boxsvc` 在 bin crate 里没被用到就报 unused import，而 paths 又必须由 lib 提供）。
+修法：`main.rs` 加 `pub(crate) use miao_dock::mangasvc;`，
+`service.rs` 改 `use crate::mangasvc; use miao_dock::paths;`。
+🔴 不能用 `mod mangasvc;` —— 那会把同一份源码**再编译一份**，bin/lib 各有一套类型、
+之后必然各自漂移；也不能 `use miao_dock::{mangasvc, paths};`
+（`mangasvc` 在 bin crate 里没被用到就报 unused import，而 paths 又必须由 lib 提供）。
 
 ### 顺带修掉 · `engine-client 那组钉子` 用了 `spawnSync`，正向崩掉 + 反证轮整轮失效
 
@@ -2180,13 +2180,13 @@ config.mjs **import 即有副作用**（模块顶层 `fs.mkdirSync(STATE_DIR)`�
 它并不重放补丁。把它塞进随包集合并换不来任何功能，却会放大 A1/A2 立起来的
 「`REQUIRED_ASSETS` 三处事实源（Rust / `check:bundle` / `check:resources`）交叉验证」面。
 
-⇒ `src-tauri/src/boxsvc/engine/patches.rs` 持 SSOT（`setup-engine.mjs` 的 `ENGINE_PATCHES`）
+⇒ `src-tauri/src/mangasvc/engine/patches.rs` 持 SSOT（`setup-engine.mjs` 的 `ENGINE_PATCHES`）
 的**只读镜像**，只存检测要用的四样：`id` / `mark` / `rel` / `desc`。
 
 ### 决策二：镜像漂移由 **A7 双靶交叉钉**挡住（这是镜像敢存在的唯一理由）
 
 两份表漂移的后果：**装配按 A 打、检测按 B 判** —— 「明明打够了却报缺补丁」或反过来，
-而两边都不报错。故 `boxsvc --engine-patches` 导出镜像，`engine-patches-check.mjs` 的 A7
+而两边都不报错。故 `mangasvc --engine-patches` 导出镜像，`engine-patches-check.mjs` 的 A7
 逐条比对 `id/mark/rel/desc`，**同序同值**。
 
 🔴 **顺序本身就是信息**：D-105 的锚点是「D-103 打完后的 FALLBACK_FONTS 前三行」，
@@ -2233,7 +2233,7 @@ B1 后产品只认 `<appData>/runtimes/manga-translator`，而本机 15 GB 引�
 
 ## D-177 · D6 启动前预检闸门：把「白等 240 s」换成秒级点名，顺带揪出一个假阴性 bug（2026-10-14）
 
-**背景**：real 档引擎探针预算 240 s（`boxsvc::engine::REAL_PROBE_TIMEOUT_MS`）。缺 python 时
+**背景**：real 档引擎探针预算 240 s（`mangasvc::engine::REAL_PROBE_TIMEOUT_MS`）。缺 python 时
 旧行为是「② 起不来 → 降级继续 → L2 探针空等 240 s → 报一句 `服务启动失败`」——
 用户看到的是**卡住**，不是**没装**，且那句报错离根因极远。
 
@@ -2251,7 +2251,7 @@ B1 后产品只认 `<appData>/runtimes/manga-translator`，而本机 15 GB 引�
 
 台账 D6 验收②写「绕过闸门 ⇒ 断言超时预算被打满（可测）」。本机**不起 GUI**
 （A4 已为同一原因裁定「时红时绿比没有更坏」），故 240 s 那一侧无法实跑；
-改为在**闸门本身**上取证：`boxsvc --check-runtime-gate [real|mock]` 打的是
+改为在**闸门本身**上取证：`mangasvc --check-runtime-gate [real|mock]` 打的是
 `start_blocking` 调的同一个 `gate_message()`，反证 **M1**（恒放行）/ **M2**（删 mock 旁路）
 各打红一条。240 s 由 `REAL_PROBE_TIMEOUT_MS` 与闸门位置**结构性**排除。
 
@@ -2306,7 +2306,7 @@ B1 后产品只认 `<appData>/runtimes/manga-translator`，而本机 15 GB 引�
 
 1. **文档里放的是"可复算的模板"，不是"两处写死的同一个常量"。**
    落点写成模板（`%LOCALAPPDATA%\runtimes\manga-translator`），脚本把模板**代入本机环境**
-   展开成实际路径，与产品（`boxsvc --print-paths` 的 `runtimeRoot`）**逐字节**比。
+   展开成实际路径，与产品（`mangasvc --print-paths` 的 `runtimeRoot`）**逐字节**比。
    🔴 若改成"文档写死 `C:\Users\X\...`、脚本也写死 `C:\Users\X\...`"，两边永远一致、
    产品搬了家也不报 —— 那是**假对拍**（比没有更坏：它给了一种"已经对过"的错觉）。
 2. **体积的清单路径取自产品报的 `modelManifest`**，不由脚本自己拼
@@ -2445,7 +2445,7 @@ M3 换 `--manifest` 指向**临时副本**并动一条 `sizeBytes`，两个平�
 
 ### 落在哪
 `ModelStatus` 增 `guidance`（`platform` / `entries` / `totalBytes` / 分档位 `sets`），随
-`GET /engine/status.models` 与 `boxsvc --engine-model-files` 一起出去；`EngineDiag.tsx` 的
+`GET /engine/status.models` 与 `mangasvc --engine-model-files` 一起出去；`EngineDiag.tsx` 的
 `ModelGuide` 渲染它，放在 D8 的逐条清单**之前**（先说要留多少盘、装到哪，再看逐条对账）。
 
 ### 三个决定
@@ -2481,9 +2481,9 @@ B2 的双靶与单测 —— `check:runtime-probe` 44/44 原样通过）。
 C2 原文写的是「`server.mjs:229-231` 的 `MODEL_DOWNLOAD_SCRIPT` 默认值改为随包资源路径
 （`REPO_ROOT` 仅作 dev 兜底）」。那是 **A3d 之前**的形态：执行体还是 `node
 engine/scripts/fetch-models.mjs`，"随包"只能指"把脚本放进资源目录"。
-A3d 把下载器 Rust 化（`boxsvc::engine::model_store` + `boxsvc --fetch-models`）之后，
+A3d 把下载器 Rust 化（`mangasvc::engine::model_store` + `mangasvc --fetch-models`）之后，
 「随包定位」有了**更强的形态**：`state.rs` 的 `download_runner` 默认就是
-`std::env::current_exe()` —— `boxsvc` 本来就随包，于是"装完之后这条通道跑得起来"**不依赖
+`std::env::current_exe()` —— `mangasvc` 本来就随包，于是"装完之后这条通道跑得起来"**不依赖
 任何资源配置、也不依赖解释器**。
 ⇒ 本条的实质工作从"改路径"变成：**把这条形态钉住**，并补上真正缺的那块（跨卷）。
 
@@ -2711,7 +2711,7 @@ python / `llama-server`？—— 这条**只能真机回答**，本仓按 `unver
 
 **读代码的结论**：两条链路都在 —— ① `engine.rs::hf_offline_env()` 在**权重确实在盘**时给
 引擎子进程注入 `HF_HUB_OFFLINE=1` + `TRANSFORMERS_OFFLINE=1`（没装时不注入，否则会把
-首次下载一并堵死）；② `boxsvc --fetch-models --link` **零网络**重建引擎树里的硬链接
+首次下载一并堵死）；② `mangasvc --fetch-models --link` **零网络**重建引擎树里的硬链接
 （含 HF 的 `snapshots/<rev>/<file>` 与 `refs/main`）。
 
 **🔴 本条最贵的一课（分层）**：验收②写的是"清掉 `src/models/` 的硬链接 ⇒ 变红"，
@@ -2786,7 +2786,7 @@ wheel 优先分支。
 跑 `check:settings` 时发现 4 条失败里 **3 条不是"存量环境性"、而是陈断言**：
 - `ENGINE.diag.downloadDisabled` / `ENGINE.manage.downloadDisabled` 判的是
   `scriptExists === false`，而 **A3d 早已把字段改名 `runnerExists`**（执行体从
-  `node fetch-models.mjs` 换成 `boxsvc`）⇒ 产品早就改对了，断言从那天起**再也绿不了**。
+  `node fetch-models.mjs` 换成 `mangasvc`）⇒ 产品早就改对了，断言从那天起**再也绿不了**。
 - `PLAYER.mounted` 判 `<ExpandedPlayer>` 在 `MusicScreen.tsx` 里，而它 **D-156 已搬到
   应用根 `App.tsx`**（全屏 fixed 浮层）⇒ 同样恒红。
 - 反证轮还揪出一条**假阳性**：`NOTREADY.wiring.modeDegraded` 判"文件里出现过
@@ -2890,9 +2890,9 @@ C4 的验收①是「断网后引擎**仍能加载** nllb 与视觉模型」—�
    "产品没注入"。⇒ 脚本**先从子进程环境里清掉**这三个键（`HF_HUB_OFFLINE` /
    `TRANSFORMERS_OFFLINE` / `MIAO_NO_HF_OFFLINE`）再起服务，让"谁注入的"没有歧义；
    并且补一条反向断言（`MIAO_NO_HF_OFFLINE=1` ⇒ 两键消失），证明判的是**产品行为**。
-2. **② 引擎不由 box-service 拉起**：② 由 Box 外壳按配方 spawn，box-service 是兄弟进程
+2. **② 引擎不由 manga-service 拉起**：② 由 Box 外壳按配方 spawn，manga-service 是兄弟进程
    （所以 `/engine/status` 的 `engine.pid` **恒 `null`** 是归属使然，不是没实现）。
-   第一次写成"只起 boxsvc"⇒ `sidecar.state` 六分钟都停在 `stopped`、提交任务得到 503
+   第一次写成"只起 mangasvc"⇒ `sidecar.state` 六分钟都停在 `stopped`、提交任务得到 503
    `UNAVAILABLE`。⇒ 脚本**扮演 Box 外壳那一半**：用 `--print-launch-plan real` 给出的
    `cmd`/`cwd`/`env` 去 spawn ② —— 命令、工作目录、环境**全部来自产品**，测试只负责"谁 spawn"。
 3. 🔴 **「引擎执行器端口 = 引擎端口 + 1」**：这是配方的约定（`resolve_engine_launch` 的
@@ -3074,7 +3074,7 @@ Rust，e2e 却还默认打 node ⇒「全绿」验的是仓库里那份即将删
    而真相是"结果早就对了，只是没人退房"。
 2. 🔴 **E10.3 在 rust 档下验的是 Node 的配方**。`launchPlanCmd()` 走「node 子进程 import
    `engine-client.mjs`」—— rust 档全绿、Node 侧悄悄漂移，没有一条断言会发现（而我们发出去的是
-   Rust 那份）。已按靶子切换：rust 档取证出口改成 D-171 立起来的 `boxsvc --print-launch-plan real`。
+   Rust 那份）。已按靶子切换：rust 档取证出口改成 D-171 立起来的 `mangasvc --print-launch-plan real`。
 3. 🔴 **4 条反证在 rust 档下不可能红**（实测 **1/4**）：它们的破坏对象是 `service/src/*.mjs`，
    rust 靶子不读那些文件。而唯一变红的那条（E10.3）恰恰是因为它**绕道 node 子进程**读 Node
    配方 —— 那是漏洞不是功劳。**已修**：Rust 侧补了两个反证钩子（`MIAO_SNIFF_SKIP` 管两层嗅探、
@@ -3086,13 +3086,13 @@ Rust，e2e 却还默认打 node ⇒「全绿」验的是仓库里那份即将删
 
 **现象**：`MIAO_SERVICE_IMPL=rust` 跑 `e10 --refute`（4 条变异 = 4 次起服务）⇒ 电脑卡死、
 其他应用跟着崩。现场：**12 个 `llama-server` 进程**（每个背着 3.5 GB 的 sakura 权重），
-可用内存被吃掉一半；另有 4 个孤儿 `boxsvc`。
+可用内存被吃掉一半；另有 4 个孤儿 `mangasvc`。
 
 **根因（两层叠加）**
 1. **`MIAO_NO_LLM_AUTOSTART` 只挡预拉起，挡不住懒加载**。`server.mjs` 的原注释就写着
    「③ 晚到不要紧：它在**翻译那一刻**才被用到，而那条路有懒加载兜底」—— E10.6 为了当
    「反证守卫」提交了一张**合法图片**，于是真翻译发生、③ 被懒加载拉起。Rust 侧同理
-   （`boxsvc.rs` 的预拉起受 `llm_autostart` 管，懒加载那条路没有开关）。⇒ **每轮测试
+   （`mangasvc.rs` 的预拉起受 `llm_autostart` 管，懒加载那条路没有开关）。⇒ **每轮测试
    拉一个 3.5 GB 进程**，4 轮反证 + 几轮回归就攒成十几个。
 2. **`child.kill()` 在 Windows 上只结束主进程**：rust 服务派生的引擎② / ③ 全成孤儿，
    下一轮再起新的 ⇒ 单调递增，直到把机器拖死。
@@ -3111,7 +3111,7 @@ Rust，e2e 却还默认打 node ⇒「全绿」验的是仓库里那份即将删
   钩子（`MIAO_ENGINE_NONCE`）它读不到，E10.3 的 rust 反证打不中。
 
 **验收（修复后实测）**：rust 档正向 **7/7** · rust 档反证 **4/4 全红** · node 档正向 **7/7** ·
-node 档反证 **4/4** · 每轮跑完 `llama-server` / `boxsvc` 残留均为 **0**，可用内存不降。
+node 档反证 **4/4** · 每轮跑完 `llama-server` / `mangasvc` 残留均为 **0**，可用内存不降。
 
 ⏭ **系统性问题（下一步）**：这不止 e10 —— service 层有 20+ 个检查会起服务，凡是**不显式设
 `MIAO_ENGINE_PROTOCOL=mock`** 且会触发真翻译的，都在悄悄拉 ③（本轮跑 service 层全量后就攒了
@@ -3133,7 +3133,7 @@ node 档反证 **4/4** · 每轮跑完 `llama-server` / `boxsvc` 残留均为 **
 
 **验收（修复后实测）**：`e10` rust 正向 **7/7** + 零残留 · `contract` rust **77/77** + 零残留 ·
 `svc-selftest` rust **134/1**（唯一失败是 `Unknown signal: SIGSTOP`，D-162 已登记的**既有**
-环境性失败，与本轮无关）+ 零残留 · `harness-check` 7/7 · 每轮跑完 `llama-server` / `boxsvc`
+环境性失败，与本轮无关）+ 零残留 · `harness-check` 7/7 · 每轮跑完 `llama-server` / `mangasvc`
 残留均为 **0**，可用内存不降（9.6 GB 持平）。
 
 ⏭ **仍待办**：其余 20+ 个经 `spawnTarget` 起服务的检查，`killService`/清理仍是"只杀主进程"
@@ -3160,7 +3160,7 @@ node 档反证 **4/4** · 每轮跑完 `llama-server` / `boxsvc` 残留均为 **
 **验收（本轮实测，rust 档）**：`drain-runtime` 7/7 · `e5-e6` 16/16 · `stall-guard` 7/7 ·
 `queue-retry` 10/10 · `e4-tier` 6/6 · `e8-accel` 6/6 · `model-runner` 12/12 ·
 `notready-state` 13/13 · `selftest` 134/1（唯一失败仍是 `Unknown signal: SIGSTOP` —— D-162
-已登记的**既有**环境性失败，A20 的语义性 kill 未被误伤）· 每轮跑完 `llama-server` / `boxsvc`
+已登记的**既有**环境性失败，A20 的语义性 kill 未被误伤）· 每轮跑完 `llama-server` / `mangasvc`
 残留均为 **0**。
 
 ## D-203 · 退役 `engine-client 那组钉子`：60 条 Node 断言的契约面已由两组 golden 等价覆盖（2026-10-15）
@@ -3224,7 +3224,7 @@ D-203 留了一张清单：`check:e4-tier` / `check:stall-guard` / `check:offlin
 
 | 项 | D-203 的记法 | 实测 |
 |---|---|---|
-| `offline-fallback` | 仍 import Node 源码 | **已是纯 Rust 检查**（只 import harness 的 `RUST_BIN`，反证打 `boxsvc/engine.rs` 与 `model_store.rs`）⇒ 本轮不动 |
+| `offline-fallback` | 仍 import Node 源码 | **已是纯 Rust 检查**（只 import harness 的 `RUST_BIN`，反证打 `mangasvc/engine.rs` 与 `model_store.rs`）⇒ 本轮不动 |
 | `e10-security` | 仍 import Node 源码 | 默认 rust 档**早已用 env 反证钩子**（`MIAO_SNIFF_SKIP` / `MIAO_TOKEN_ALWAYS_OK` / `MIAO_ENGINE_NONCE`），改源码那条只在 `MIAO_SERVICE_IMPL=node` 时走 ⇒ 见第四节 |
 
 另外 `engine/`（模拟引擎 + `mock-llm.mjs` + 装配脚本）**不属于**删除清单：摘 Node 摘的是产品运行时与随包，
@@ -3236,13 +3236,13 @@ D-203 留了一张清单：`check:e4-tier` / `check:stall-guard` / `check:offlin
 **取证工具**，不是对照端）。而发出去的是 Rust ⇒ 取证源必须换到 Rust 侧。三处各开一个出口，
 **形状刻意贴着原断言**：
 
-1. **`boxsvc --engine-selftest` 的 `pure.llmLaunchByTier`** —— 按档位各解析一次 ③ 配方，
+1. **`mangasvc --engine-selftest` 的 `pure.llmLaunchByTier`** —— 按档位各解析一次 ③ 配方，
    未声明档位显式报 `TIER_MODEL_UNDECLARED` + `detail.available`。
    放 `pure` 块 ⇒ 顺带被 `engine-parity` 的 golden 对拍钉住（key 列表同步加了一项）。
 2. **同出口的顶层 `hardware`** —— 硬件画像（`platform/arch/totalRamGb/gpu/accel/recommendedTier`）。
    🔴 **刻意放顶层、不进 `pure`**：它随机器而变（显卡 / 内存 / 平台），而 golden 是**跨机器金标** ——
    塞进 `pure` 会让每台机器跑出来的 golden 都不同，那道对拍钉子当场作废。
-3. **`boxsvc --engine-http-selftest` 错误分支的 `frames`** —— 超时/流内错时把
+3. **`mangasvc --engine-http-selftest` 错误分支的 `frames`** —— 超时/流内错时把
    `EngineError.detail.frames` 转发出来。原先这份证据被关在产品进程里，e2e 只能另起 node 子进程
    `import engine-client.mjs` 才拿得到。
 
@@ -3305,7 +3305,7 @@ registry-check         5/5（127 项：static=17 service=44 nightly=8 refute=58 
 docs-consistency      16/16
 docs-path-check        5/5
 check:harness          7/7（node 对照档**保留** ⇒ H3/H5/H7 照旧有对象）
-cargo build --bin boxsvc   改单文件后 ~4.7s
+cargo build --bin mangasvc   改单文件后 ~4.7s
 watch 目标核验         9/9 个路径真实存在（写错路径的 watch 会**恒不触发** ⇒ 静默漏跑）
 ```
 ```
@@ -3357,8 +3357,8 @@ watch 目标核验         9/9 个路径真实存在（写错路径的 watch 会
 | 检查 | 处置 | 验收（本轮实测） |
 |---|---|---|
 | `check:lib-manage` | 13 条反证锚点搬到 Rust；删 M9/N9（Node `.pipe(res)` 形态在 Rust 不存在，见上一条说明） | 正向 **23/23** · 反证 **12/12** · 零跳过零假阳性 |
-| `check:resilience` | A 组（原子写）改读 `boxsvc/store.rs`；**R 组整组退役** | 正向 **2/2** · 反证 **3/3** |
-| `check:retranslate` | 返工 4 条反证锚点搬到 `boxsvc/store/exec.rs` + `store.rs`；M5/M6 打前端 `viewer.tsx`，原样保留 | 正向 **12/12** · 反证 **9/9** |
+| `check:resilience` | A 组（原子写）改读 `mangasvc/store.rs`；**R 组整组退役** | 正向 **2/2** · 反证 **3/3** |
+| `check:retranslate` | 返工 4 条反证锚点搬到 `mangasvc/store/exec.rs` + `store.rs`；M5/M6 打前端 `viewer.tsx`，原样保留 | 正向 **12/12** · 反证 **9/9** |
 
 **R 组为什么是退役而不是搬**：它断言的是 Node 进程级兜底（`process.on('unhandledRejection')` /
 `process.on('uncaughtException')` / `shutdown()` 重入闸 / `llm.stop()`）。Rust 侧没有这个形态 ——
@@ -3376,7 +3376,7 @@ panic 默认不带进程走，「宿主死了别留孤儿」由**父死看守**�
 | 检查 | 卡点 |
 |---|---|
 | `engine-profile`（838 行 · 15 条变异） | 15 条变异里 14 条能逐字对到唯一 Rust 锚点，但**正向断言有整组没有 Rust 观测面**：`profile.rs` 全文无 `mod tests`；`--llm-selftest` 只有 ready/never-ready/double-start/stop-when-stopped 四个场景，**没有 restart 场景**（L5/L6 的 `restarts===1` 与两条日志断言）；`IdleWatcher` **无手动步进**（I7/I8）；I10（毫秒精度）有代码无钉子；H6–H8 的 `probeHardware` 注入面在 Rust 侧拆成了 `detect_gpu` + `map_tier`，无单一入口 |
-| `translate`（1575 行） | 它的**正向路径是进程内 `import` 8 个 Node 模块**（`index/settings/credentials/errors/contract/registry/http` + 根 `errors.mjs`）来搭夹具与算期望值；反证虽是 Rust env 钩子（`MIAO_TRANSLATE_REFUTE_*`，与 `boxsvc/translate/refute.rs` 同名同义），正向这半边要换成 Rust 自证出口才算换靶 |
+| `translate`（1575 行） | 它的**正向路径是进程内 `import` 8 个 Node 模块**（`index/settings/credentials/errors/contract/registry/http` + 根 `errors.mjs`）来搭夹具与算期望值；反证虽是 Rust env 钩子（`MIAO_TRANSLATE_REFUTE_*`，与 `mangasvc/translate/refute.rs` 同名同义），正向这半边要换成 Rust 自证出口才算换靶 |
 
 ⇒ 这两块的下一步是**产品侧新增 Rust 自证出口**（`--llm-selftest` 补 restart 场景与 `restarts` 输出、
 `profile.rs` 补单测、IdleWatcher 补可注入时钟、translate 补等价出口），不是检查脚本内部能收口的。
@@ -3417,7 +3417,7 @@ check:retranslate      12/12   --refute  9/9
 经 `GET /engine/runtime` → `NotReadyScreen.tsx:365` 逐条渲染（含 D6 闸门的 `last_error`）。
 
 **为什么两条门都没抓到**（可复用的教训 —— 判据的**扫描对象**与**模式**同时错位）：
-1. W5/W6 只扫**前端 4 个文件**，而这四行字符串住在 **Rust**（`boxsvc/engine/runtime_probe.rs`）；
+1. W5/W6 只扫**前端 4 个文件**，而这四行字符串住在 **Rust**（`mangasvc/engine/runtime_probe.rs`）；
 2. 旧版 `CLI_JARGON` 只列 `npm install|pip install|python -m venv|MSVC|…`，
    **不含** `node <脚本>` 与 `npm run <脚本>` 两种形态 ⇒ 即便扫到也不匹配。
 ⇒ 两边都对不上，于是「已覆盖零命令行」这条结论一直是**空的**。
@@ -3503,7 +3503,7 @@ check:docs                   16/0    check:docpaths 5/0
 但仓库里仍躺着 30 个 `.mjs` 的 Node 服务实现。它**不在运行时、也不在随包里**，
 却仍被两组检查直接 import —— 于是"Node 服务在不在"这件事一直有两份实现、两套真相。
 真正的风险不是"多几个文件"，而是**回归**：任何时候只要改回 Node 那一份、或把退路加回
-`resolve_boxsvc()`，e2e 会**全绿**（开发态 `boxsvc` 就在同目录，根本走不到退路），
+`resolve_mangasvc()`，e2e 会**全绿**（开发态 `mangasvc` 就在同目录，根本走不到退路），
 只有用户机上多一个 node 进程。
 
 **卡点（两块 import Node 产品源码的检查）**
@@ -3512,11 +3512,11 @@ check:docs                   16/0    check:docpaths 5/0
 
 **改了什么**
 1. **profile 换靶**（前一步）：H/T/A/D/I 的 27 条判定下沉进 `profile.rs` 的 `#[cfg(test)]`，
-   L 组归位 `boxsvc --llm-selftest`（新增 `restart` 场景）+ 冻结 golden；
+   L 组归位 `mangasvc --llm-selftest`（新增 `restart` 场景）+ 冻结 golden；
    检查改成「跑 `cargo test --lib`（全绿 + 具名用例条数写死 37）+ 对拍 golden」。
 2. **translate 换靶**（本步核心）：新增两个 Rust 自证出口 ——
-   `boxsvc --translate-cases`（逐用例布置 env 后驱动 **Rust 门面**，真发 HTTP 打 e2e 侧的假上游，
-   对应原先"进程内直调"的每一个位面）与 `boxsvc --translate-selftest`（纯逻辑确定性报告）。
+   `mangasvc --translate-cases`（逐用例布置 env 后驱动 **Rust 门面**，真发 HTTP 打 e2e 侧的假上游，
+   对应原先"进程内直调"的每一个位面）与 `mangasvc --translate-selftest`（纯逻辑确定性报告）。
    `translate-check.mjs` 重写为 8 组 54 条，本进程里**没有一行 Node 产品代码**；
    8 个 `MIAO_TRANSLATE_REFUTE_*` 开关仍一开关一子进程。
 3. **换靶顺手补上两个 Rust 缺口**（Node 侧原有、Rust 侧漏搬；不补则换靶当场红）：
@@ -3537,7 +3537,7 @@ check:docs                   16/0    check:docpaths 5/0
    🔴 判据必须**先剥 `#[cfg(test)]`**：夹具里写 `vec!["node", "x.mjs"]` 是正常的，不剥会常红 ——
    而常红的终点是"这条断言被注释掉"。
 7. **台账/文档同步**：`AGENTS.md` 删掉 `service/` 分层行并补 W14 与两组条数；`README.md` 的目录树与
-   F 组说明改写；`docs/dev-setup.md` / `.trae/rules/project_rules.md` 的分层表改指 `boxsvc/`；
+   F 组说明改写；`docs/dev-setup.md` / `.trae/rules/project_rules.md` 的分层表改指 `mangasvc/`；
    `docs-consistency-check` 的扫描目标去掉死目标（那个目录已不存在 ⇒ 只是静默跳过）；
    `check:profile` / `check:translate` 的注册表 `watch` 从整个 src 收窄到各自域。
 8. **D-205 同号两指的修正**：`service/` 的删除改用本条编号 **D-209**；
@@ -3553,7 +3553,7 @@ check:bundle                         15/15   --refute 20/20（含新增 M13 ⇒ 
 check:routes / registry / docs / docpaths / paths / path-single-source / engine-bootstrap / harness   全绿
 ```
 
-**反证锚点（W14 的 M13）**：把 Node 服务退路加回 `resolve_boxsvc()` ⇒ **只**打红 W14，
+**反证锚点（W14 的 M13）**：把 Node 服务退路加回 `resolve_mangasvc()` ⇒ **只**打红 W14，
 且反证轮按字节还原。锚点特意选在离退役门二十多行的地方：若插在它旁边，允许窗口会把它盖住。
 
 **欠账（如实记账，不是静默丢弃）**
@@ -3608,7 +3608,7 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
    `CRF_RE` 同源，写临时文件再装）；批 B 命中 wheel 则 `pip install --no-index --no-deps <whl>`
    （自足、不联网、不编译），否则回退源码编译并**如实点名**「需要 MSVC / Xcode CLT」。
 4. 装完的兼容补丁（旧常量回填，marker 与仓库脚本**同字**）+ 导入自检。
-5. 只读取证出口 `boxsvc --engine-crf-plan`（与 `--print-plan` 同口径：非 Windows 下也能跑）——
+5. 只读取证出口 `mangasvc --engine-crf-plan`（与 `--print-plan` 同口径：非 Windows 下也能跑）——
    四态判定可以在本机被断言与反证，不必读代码相信。
 
 **刻意不做**：wheel 与清单**都不进** `REQUIRED_ASSETS` —— 那是"缺了就不许起服务"的口径，
@@ -3673,7 +3673,7 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
 **唯一**判据，本机又复现不了干净机器。
 
 **做法**：新增 `e2e/engine/engine-bootstrap-real-check.mjs`（nightly，11 条 / 反证 5 条）。
-**跑的是产品自己的装配函数**（`boxsvc --fetch-models --engine-bootstrap --extract`），只把三处换成夹具：
+**跑的是产品自己的装配函数**（`mangasvc --fetch-models --engine-bootstrap --extract`），只把三处换成夹具：
 运行时用真归档（Python 46 MB 从真实落点只读复制；上游源码 53 MB 走 mock http，由产品在第 3 阶段真下）、
 模型用夹具清单 + 独立进程 mock http、依赖用夹具 requirements（`six` + `numpy` 真装，秒级）。
 
@@ -3770,7 +3770,7 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
 `check:docpaths` 命中的 spec-notes-1.md `wheel-manifest.json` 那一行（D-211 的**反例叙述**）/
 `check:music` 的 `RESTORE.restoringClosed` + `KEYS.manualPressNotMerged`）。
 ⚠️ **未跑 `cargo test --lib`**（本 shell 没有 MSVC 环境，`cl.exe` 不在 PATH）：Rust 半边由双靶 e2e 验到 ——
-`target/debug/boxsvc.exe` 的 mtime 晚于 `model_store.rs`（即跑的是含本次改动的产物），
+`target/debug/mangasvc.exe` 的 mtime 晚于 `model_store.rs`（即跑的是含本次改动的产物），
 且 R7 在 **rust 靶**上真的变红（若二进制是旧的，它只会"永远绿"）。
 
 **补记（同日 · 真装配复核）**：`check:engine-bootstrap-real`（夹具版真装配）**11/11**，退出码 0 ——
@@ -3779,4 +3779,61 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
 另把主地址**真下一次**：**56,098,334 字节**、sha256 与清单 pin 的值**逐字节一致**
 ⇒ 登记在 **G-A6** 的那条风险（codeload 按需重打包会改字节）**今天未命中**，原 `url` 可直接命中校验。
 仍未证的是「打包安装后的应用里点一次」，归 `check:packaged` 与两份引导里的干净机验收清单（真机）。
+
+## D-218 `boxsvc` → `mangasvc`、`box-service` → `manga-service`：全仓命名收束与它的边界（2026-10-16）
+
+**为什么要改**：`box` 前缀是历史遗留拼写的产物，而它已经长成三样东西的共用名字 ——
+可执行体 / CLI / Rust 模块名（`boxsvc`）、服务侧概念名与文档里的口语称呼（`box-service`）。
+这个名字既不指向它现在的职责（漫画翻译服务的宿主），也与「喵坞 / manga」的术语体系脱节。
+
+**改了什么**
+- 四个变体一次收束：`boxsvc` → `mangasvc`、`BOXSVC` → `MANGASVC`、
+  `box-service` → `manga-service`、`BoxService` → `MangaService`；
+  环境变量随之变成 `MIAO_MANGASVC_BIN`（原 `MIAO_BOXSVC_BIN`）。
+  实际改写 **124 个文件 / 1029 处**（脚本一次跑完）+ 2 处手改标识符（`hasBoxsvc` → `hasMangasvc`）。
+- 名称与语义一起动（`git mv`，**43 个文件**保住 rename 检测）：
+  src-tauri/src/boxsvc.rs → `src-tauri/src/mangasvc.rs`、
+  src-tauri/src/boxsvc/ → `src-tauri/src/mangasvc/`、
+  src-tauri/src/bin/boxsvc.rs → `src-tauri/src/bin/mangasvc.rs`。
+  ⚠️ **改名前的路径故意不加反引号**：`check:docpaths` 会把现行文档里反引号包裹的仓库路径当**存在性断言**，
+  给一个已经消失的路径加反引号就是自己制造一条假红。旧名只在此处作为叙述出现，不承担路径断言的角色。
+- `src-tauri/Cargo.toml` 的 `[[bin]] name` / `path` 同步 —— **这是唯一一处改名会改到运行期行为的地方**：
+  e2e 与 `check:autostart` 一直显式给 `--bin mangasvc`，默认档（`default-run`）不动，故
+  `cargo run` 的歧义裁定（D-169）不受影响。
+- 断言侧同步：`e2e/_check-registry.mjs` 里 72 处 `watch` 路径、各 check 里写死的
+  `target/debug/mangasvc.exe`、`e2eScripts.json` 的命令说明、两份安装引导、`README.md` / `AGENTS.md` / 规则。
+- `docs/spec-notes-1.md`（本文件）内的旧名也一并收束：它是 `check:docpaths` 的**现行文档**，
+  与封卷的 `docs/spec-notes.md` 不同 —— 索引行与正文里的引用若停在旧名，就成了「台账与实现脱节」。
+
+**刻意没做什么（如实记账）**
+- 🔴 **`docs/spec-notes.md` 一个字没改**（54 处旧名保留）。它已封卷于 D-136，`check:docpaths` 的文件头
+  明写「历史痕迹本身有价值，改它才是错」；同理 `docs/refs/engine/02-e9-plugin-real-engine.report.json`
+  与同名 `.stdout.log` 是**真机取证证据**，改它等于伪造取证。这两处是**裁定保留**，不是漏改。
+- 🔴 **独立成词的 `Box` 一律不动**：`X-Box-Token` / `X-Box-Client` 是《03》契约里的**请求头名**，
+  `Box/state` 与 `~/Pictures/Box 漫画` 是**盘上落点**（改它会迁移既有用户数据），`Box.app` 是 bundle 名。
+  它们与 `boxsvc` 不是同一层东西：本次只收「服务实现」这一层的名字，产品名与契约名要动须另起一条裁定。
+- `runtimes/manga-translator/.runtime.ready.json` 里那处旧名是**本机运行时产物**的自述文件
+  （已被 `.gitignore` 忽略），不入库、也不改。
+- `docs/engine-integration-plan.md` 里那处是**插件仓**的适配器文件名，不是本仓路径。
+- 只换名：不动一行逻辑，不顺手重命名其它标识符，不重排任何代码。
+
+**怎么钉住（缺一层就是假绿）**
+- **残留终检按大小写不敏感跑**：`boxsvc|box[-_]service|boxservice` 全仓命中只剩上面几处白名单 ⇒
+  漏改会**命中**而不是「静默跳过」。这是本次唯一能证明「没有半改」的判据，也是这类机械替换必须跑的那一条。
+- `check:registry`：注册表 127 项的 `watch` / `script` 路径改错会当场变红；反证 13 个变异全部按预期变红。
+- `check:docpaths`：现行文档里引用的仓库路径必须真实存在 ⇒ 文档写回旧路径立刻红；反证 2/2 按预期变红。
+
+**验收（本轮实测）**
+- `npm run check`（static 层）**228 / 3**，与改造前**逐条一致**：3 红全是既有
+  （`check:quit` 的 Q3 / `check:docpaths` 命中本文件里 D-211 写下的那处 wheel 清单包内名（此处不复写它，
+  免得给同一条假红的详情再加一份）/ `check:music` 的 `RESTORE.restoringClosed` + `KEYS.manualPressNotMerged`）。
+- `check:docs` **21 / 0** · `check:registry` 正向 **15 / 15** + 反证 **13 个变异全红** ·
+  `check:docpaths` 正向 **4 / 1**（那 1 红即 D-211 的既有假红）+ 反证 **2 / 2**。
+- ESLint **0 error / 134 warning**（warning 全是既有的 `react-hooks/*`）· `prettier --check` 全绿。
+- ⚠️ **未做真机验证**：本 shell 无 MSVC 环境（`cl.exe` 不在 PATH），且该 toolchain **没装 rustfmt / clippy 组件** ⇒
+  `cargo build --bin mangasvc` / `cargo fmt --check` / `cargo clippy` **一条都没跑**（需 vcvars 环境）。
+  因此 Rust 半边只做到「源码与配置按名同步」，**「改名后能编过、能起」未取证**。
+  在补验之前，凡起 `target/debug/mangasvc.exe` 的断言会因为**产物还没重建**而非零退出（红，不是跳过）。
+  另记：改名让 5 行 Rust 越过 100 列，其中 4 行**改造前就已越界**（可见 `cargo fmt` 从未被门禁约束），
+  剩下 1 行在字符串字面量里、rustfmt 本就不折行。
 

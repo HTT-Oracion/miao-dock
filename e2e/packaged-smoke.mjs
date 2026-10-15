@@ -12,12 +12,12 @@
  *      （F5 验收③ 在真实产物上的复现）。
  *   ② **服务层**：从安装布局起服务（release 构建、`MIAO_RESOURCE_DIR` 指向安装目录）⇒
  *      `/health` 200、`mode=mock` 可见。
- *   ③ **资产层**：`boxsvc --check-assets` 在同一资源目录上报 `ok=true`。
+ *   ③ **资产层**：`mangasvc --check-assets` 在同一资源目录上报 `ok=true`。
  *
- * ## 为什么不起 `miao-dock.exe`（GUI）而用 boxsvc
+ * ## 为什么不起 `miao-dock.exe`（GUI）而用 mangasvc
  * GUI 需要 WebView 与显示环境，无头机器上必然起不来 —— 那会让本钉子在不同机器上给出
  * 不同结论（时红时绿），而这种钉子比没有更坏。服务栈本身与 GUI 解耦（契约《02》§2.1：
- * 服务生命周期 ≠ 窗口），故用同一份 release 源码编出的 `boxsvc` 起服务、把资源目录指向
+ * 服务生命周期 ≠ 窗口），故用同一份 release 源码编出的 `mangasvc` 起服务、把资源目录指向
  * **真实安装产物**里的资产 —— 要证的"装完能起服务"因此是可判定的。
  *
  * ## 反证轮（--refute）
@@ -47,7 +47,7 @@ const TOKEN = 'a'.repeat(64);
 
 const TARGET = path.join(ROOT, 'src-tauri', 'target');
 const NSIS_DIR = path.join(TARGET, 'release', 'bundle', 'nsis');
-const RELEASE_BOXSVC = path.join(TARGET, 'release', process.platform === 'win32' ? 'boxsvc.exe' : 'boxsvc');
+const RELEASE_MANGASVC = path.join(TARGET, 'release', process.platform === 'win32' ? 'mangasvc.exe' : 'mangasvc');
 
 let passed = 0;
 let failed = 0;
@@ -106,9 +106,9 @@ function uninstallSilently(dir) {
 
 // ------------------------------------------------------------------ 服务层取证
 
-/** 起一个服务（release boxsvc），资源目录指向安装布局；返回 {port, kill, out}。 */
+/** 起一个服务（release mangasvc），资源目录指向安装布局；返回 {port, kill, out}。 */
 function startService(env) {
-  const child = spawn(RELEASE_BOXSVC, [], {
+  const child = spawn(RELEASE_MANGASVC, [], {
     env: {
       ...process.env,
       MIAO_TOKEN: TOKEN,
@@ -121,7 +121,7 @@ function startService(env) {
     let buf = '';
     const to = setTimeout(() => {
       child.kill();
-      reject(new Error('boxsvc 20s 内未就绪'));
+      reject(new Error('mangasvc 20s 内未就绪'));
     }, 20000);
     child.stdout.on('data', (d) => {
       buf += d;
@@ -134,7 +134,7 @@ function startService(env) {
     child.stderr.on('data', (d) => (buf += d));
     child.on('close', (code) => {
       clearTimeout(to);
-      reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 600)}`));
+      reject(new Error(`mangasvc 退出 ${code}：${buf.slice(0, 600)}`));
     });
   });
 }
@@ -146,8 +146,8 @@ if (!setup) {
   console.error(`找不到 NSIS 安装包：${NSIS_DIR}\\*-setup.exe\n先构建：npm run app:build`);
   process.exit(1);
 }
-if (!fs.existsSync(RELEASE_BOXSVC)) {
-  console.error(`找不到 release 服务靶子：${RELEASE_BOXSVC}\n先构建：npm run app:build`);
+if (!fs.existsSync(RELEASE_MANGASVC)) {
+  console.error(`找不到 release 服务靶子：${RELEASE_MANGASVC}\n先构建：npm run app:build`);
   process.exit(1);
 }
 console.log(`A4 打包后冒烟${REFUTE ? '（反证轮）' : ''}\n安装包：${path.relative(ROOT, setup)}`);
@@ -213,7 +213,7 @@ try {
   // ---- ③ 资产层：自检在同一资源目录上报 ok ----
   {
     const assets = await new Promise((resolve) => {
-      const p = spawn(RELEASE_BOXSVC, ['--check-assets'], {
+      const p = spawn(RELEASE_MANGASVC, ['--check-assets'], {
         env: { ...process.env, MIAO_RESOURCE_DIR: installDir },
       });
       let out = '';
@@ -258,7 +258,7 @@ try {
       });
       // 清单路径必须指向**安装目录里那一份**（而不是回退到仓库）
       const pathsOut = await new Promise((resolve) => {
-        const p = spawn(RELEASE_BOXSVC, ['--print-paths'], {
+        const p = spawn(RELEASE_MANGASVC, ['--print-paths'], {
           env: {
             ...process.env,
             MIAO_RESOURCE_DIR: installDir,
@@ -277,9 +277,9 @@ try {
         snap.modelManifest,
       );
       // 台账原话「mode=mock 可见」：启动配方是它的权威出处。
-      // ⚠️ `--print-launch-plan` 的 mode 是**位置参数**（不读 env，见 boxsvc.rs）⇒ 显式传 `mock`。
+      // ⚠️ `--print-launch-plan` 的 mode 是**位置参数**（不读 env，见 mangasvc.rs）⇒ 显式传 `mock`。
       const planOut = await new Promise((resolve) => {
-        const p = spawn(RELEASE_BOXSVC, ['--print-launch-plan', 'mock'], {
+        const p = spawn(RELEASE_MANGASVC, ['--print-launch-plan', 'mock'], {
           env: {
             ...process.env,
             MIAO_RESOURCE_DIR: installDir,

@@ -7,7 +7,7 @@
     "pythonTag": "20261003",
     "note": "🔴 这两个值是 `engine/VERSIONS.lock` §2 的机器可读副本。清单里放它们，是为了让「Python 版本」有**一处**可被代码读到的来源：`setup-engine.mjs` 原来把版本写死在常量里，本文件与那份 lock 各有一份 —— 换版本漏改一处，装出来的解释器就和文档说的不是同一个。本文件与 `VERSIONS.lock` 的一致性由 `check:runtime-manifest` 断言（比对时把 VERSIONS.lock 的对应行解析出来）。"
   },
-  "purpose": "引擎**运行时本体**的资产清单（G2 · 裁定 ⑤：零自建、零服务器，全部走公网现成源）。今天这两件事由仓库侧的 `engine/scripts/setup-engine.mjs` 用 node 跑（要仓库 + Node ≥22 + 命令行）；本清单让**产品自己**下载并解包，用户机不需要装任何环境。字段与 `models.manifest.json` 逐字同构，因此 Rust 侧复用同一个 `FileEntry` 解析器（`boxsvc/engine/model_store.rs`），不新写第二套清单结构。",
+  "purpose": "引擎**运行时本体**的资产清单（G2 · 裁定 ⑤：零自建、零服务器，全部走公网现成源）。今天这两件事由仓库侧的 `engine/scripts/setup-engine.mjs` 用 node 跑（要仓库 + Node ≥22 + 命令行）；本清单让**产品自己**下载并解包，用户机不需要装任何环境。字段与 `models.manifest.json` 逐字同构，因此 Rust 侧复用同一个 `FileEntry` 解析器（`mangasvc/engine/model_store.rs`），不新写第二套清单结构。",
   "channel": {
     "env": "MIAO_ASSET_BASE",
     "note": "**通道单点**（G2 验收②）：留空 = 用每条的 `url`（今天的行为，逐字节等价）；非空 = 把 `url` 换成 `<前缀>/<该条的文件名>`。换源 / 内网 / 离线盘都只改这一个环境变量，代码与清单都不用动。方案 C（对象存储）将来开放时，接的就是这一处。",

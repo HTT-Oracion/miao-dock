@@ -45,12 +45,12 @@
 | 引擎源码 | ✅ **已锁定**：commit `441d07c5…`（main @ 2026-09-25，97 MB，`runtimes/manga-translator/src/`）。⚠️ 上游自 2022-04 起**不再发 release** ⇒ "锁 tag"不成立，只能锁 commit；`git clone https` 被代理拒（CONNECT 502），走 **codeload 归档直下** |
 | 引擎依赖 | ✅ **已装成并自洽**（2026-10-05，47m47s，退出码 0）：torch 2.14.1 · torchvision 0.29.1 · numpy 1.26.4 · opencv 4.11.0 · transformers 5.18.0 · onnxruntime 1.30.0 · `rusty-manga-image-translator 0.12.1` · **`pip check` → No broken requirements found**。🔴 更正：**`pydensecrf` 是硬依赖**（`mask_refinement/text_mask_utils.py:68`），上一轮"先剔除该行"导致入口直接 ImportError ⇒ 已走 `ghfast.top` 镜像编译安装成功 |
 | `llama-server` / Sakura 权重 | ✅ **已就位**：llama.cpp **b11417**（macOS arm64，12 MB）+ Sakura **1.5B fp16，3.3 GB**（经 `hf-mirror`）。⚠️ 官方 GGUF 仓库**只有 fp16**，计划里 Tiny"≈1.1 GB"是 4-bit 的量。⚠️ **许可两层**：引擎 GPL-3.0-only（copyleft）+ Sakura **CC BY-NC-SA 4.0（禁止商用）** ⇒ 对外分发前必须先有法务结论 |
-| 引擎进程形状 | 🔴 **比计划假设深一层**：`box-service → server.main(uvicorn, 8000) → manga_translator shared(执行器, 8001) → [llama-server]`，而 `main.py` 的信号处理**只 terminate 一层** ⇒ **孤儿回收风险上调**，M3 按四层设计 |
-| 服务层（box-service） | ✅ 已实测跑通（真实进程 + 真实磁盘，e2e **23/23**） |
+| 引擎进程形状 | 🔴 **比计划假设深一层**：`manga-service → server.main(uvicorn, 8000) → manga_translator shared(执行器, 8001) → [llama-server]`，而 `main.py` 的信号处理**只 terminate 一层** ⇒ **孤儿回收风险上调**，M3 按四层设计 |
+| 服务层（manga-service） | ✅ 已实测跑通（真实进程 + 真实磁盘，e2e **23/23**） |
 | 翻译功能 | ✅ **已通**（G1）：`out-first/test_0.webp`，1125×1600，**1.6 分钟**（CPU），逐像素比对 **4.94% 有实质差异**。⚠️ 1.5B 档**译文质量一般**（属产品选型，非管线问题）——要"可用"得上 8B/14B，下载量与耗时要重估 |
 
 **环境陷阱（三条，都会"报错得像别的问题"）**：
-1. **主机的删除守卫会让 box-service 建单 500** —— 服务的可写性探针 `writeFileSync`→`unlinkSync`，
+1. **主机的删除守卫会让 manga-service 建单 500** —— 服务的可写性探针 `writeFileSync`→`unlinkSync`，
    unlink 被拦下抛**非 errno 错误** ⇒ 按设计变成 500。**取证物：失败后 `root/` 里留着 `.write-probe-*`。**
    解法：跑验收时 `CODEBUDDY_SAFE_DELETE_ENABLED=0`（**不改产品代码**）。
 2. **`MIAO_E2E_TMP` 不能指 `/tmp`** —— 服务端落盘黑名单会直接退出（症状是"服务未在 20000ms 内就绪"）。

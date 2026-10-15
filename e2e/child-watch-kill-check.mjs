@@ -23,7 +23,7 @@
  * 🔴 两靶都要钉，不能只留一个：
  *   · `service/src/settings/llm-supervisor.mjs` **仍在用** `child-watch.mjs`（Node 对照端
  *     是真实产品路径，不是死代码），删了 Node 侧判据就少一半覆盖面；
- *   · Rust 侧是 A3c 之后 `service.rs` 与 `boxsvc::engine::supervisor` 真正走的路径。
+ *   · Rust 侧是 A3c 之后 `service.rs` 与 `mangasvc::engine::supervisor` 真正走的路径。
  *
  * ## 用法
  *   node e2e/child-watch-kill-check.mjs            正向（期望全绿）

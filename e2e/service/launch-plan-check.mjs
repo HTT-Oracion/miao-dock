@@ -173,11 +173,11 @@ check(
 
 // ---------------------------------------------------------------- S4：③ 的归属权
 //
-// S4 起 ③ 由 box-service 拉起（《04》§9.1：Tier1 空闲卸载的实现方是 box-service）。
+// S4 起 ③ 由 manga-service 拉起（《04》§9.1：Tier1 空闲卸载的实现方是 manga-service）。
 // 配方里仍带着 ③ 的完整命令（供 E1 打印快照），但**归属字段必须是 service** ——
 // 若它退回 `manager`/缺省，Rust 会照旧 spawn，于是两个 llama-server 抢同一个 8080。
 check(
-  'P-llm-1 ③ 的 `owner` 是 `service`（两种模式都是）—— 退回 manager 会让 Rust 与 box-service 抢 8080',
+  'P-llm-1 ③ 的 `owner` 是 `service`（两种模式都是）—— 退回 manager 会让 Rust 与 manga-service 抢 8080',
   mock.llm.owner === 'service' && real.llm.owner === 'service',
   `mock=${mock.llm.owner} real=${real.llm.owner}`,
 );
@@ -220,7 +220,7 @@ const failed = results.filter((r) => !r.ok);
 //    没有反证轮就无法回答"它们真的在盯着东西吗" —— 改坏实现后全绿，是这类断言最常见的失效。
 //    做法：把 Rust 源码按变异改坏 → 重跑 → 对应断言**必须变红** → 按字节还原。
 const REFUTE = process.argv.includes('--refute');
-const ENGINE_RS = path.join(ROOT, 'src-tauri', 'src', 'boxsvc', 'engine.rs');
+const ENGINE_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'engine.rs');
 
 const MUTATIONS = [
   {
@@ -257,7 +257,7 @@ const MUTATIONS = [
   },
   {
     id: 'R5',
-    name: '③ 的归属退回 manager（Rust 会与 box-service 抢同一个 8080）⇒ P-llm-1 红',
+    name: '③ 的归属退回 manager（Rust 会与 manga-service 抢同一个 8080）⇒ P-llm-1 红',
     find: '            owner: LLM_OWNER,',
     replace: '            owner: "manager",',
     expect: ['P-llm-1'],
@@ -295,7 +295,7 @@ if (REFUTE) {
     fs.writeFileSync(ENGINE_RS, original.replace(anchor, m.replace));
     // 重编译并重跑（只取失败集合；子进程用异步 spawn，EBUSY 安全）
     const out = await new Promise((resolve, reject) => {
-      const c = spawn('cargo', ['build', '--bin', 'boxsvc'], {
+      const c = spawn('cargo', ['build', '--bin', 'mangasvc'], {
         cwd: path.join(ROOT, 'src-tauri'),
         env: { ...process.env, CARGO_INCREMENTAL: '0' },
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -335,12 +335,12 @@ if (REFUTE) {
   const after = fs.readFileSync(ENGINE_RS, 'utf8');
   const restored = after === original;
   console.log(`\n还原校验：${restored ? '✓ engine.rs 字节一致' : '✗ engine.rs **已被改坏**'}`);
-  // 🔴 还原后**必须重编译**：否则 `target/debug/boxsvc.exe` 还是最后一个变异（R6）编译出来的，
+  // 🔴 还原后**必须重编译**：否则 `target/debug/mangasvc.exe` 还是最后一个变异（R6）编译出来的，
   //    下一轮正向跑就会读到 `probe_timeout_ms=20_000` 的坏产物而假红。
   //    「源码已还原」与「产物已还原」是两件事 —— 字节校验只能证明前者。
   if (restored) {
     await new Promise((resolve, reject) => {
-      const c = spawn('cargo', ['build', '--bin', 'boxsvc'], {
+      const c = spawn('cargo', ['build', '--bin', 'mangasvc'], {
         cwd: path.join(ROOT, 'src-tauri'),
         env: { ...process.env, CARGO_INCREMENTAL: '0' },
         stdio: ['ignore', 'pipe', 'pipe'],

@@ -60,7 +60,7 @@ const CHECKS = [
     tier: 'static',
     refute: true,
     // `e2eScripts.json`：FEATURES.gen.script 判的是「gen:licenses 有没有地方注册着」（清单是其一）
-    watch: ['src/**', 'src-tauri/src/boxsvc/engine/**', 'e2eScripts.json', 'e2e/settings-media-check.mjs'],
+    watch: ['src/**', 'src-tauri/src/mangasvc/engine/**', 'e2eScripts.json', 'e2e/settings-media-check.mjs'],
   },
   {
     id: 'quit',
@@ -111,7 +111,7 @@ const CHECKS = [
     watch: [
       'src-tauri/src/paths.rs',
       'src-tauri/src/service.rs',
-      'src-tauri/src/bin/boxsvc.rs',
+      'src-tauri/src/bin/mangasvc.rs',
       'src-tauri/tauri.conf.json',
       'e2e/resources-check.mjs',
     ],
@@ -165,10 +165,10 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/engine/runtime_probe.rs',
-      'src-tauri/src/boxsvc/engine/patches.rs',
-      'src-tauri/src/boxsvc/routes.rs',
-      'src-tauri/src/boxsvc/handlers.rs',
+      'src-tauri/src/mangasvc/engine/runtime_probe.rs',
+      'src-tauri/src/mangasvc/engine/patches.rs',
+      'src-tauri/src/mangasvc/routes.rs',
+      'src-tauri/src/mangasvc/handlers.rs',
       'engine/scripts/setup-engine.mjs',
       'e2e/service/runtime-probe-check.mjs',
     ],
@@ -180,8 +180,8 @@ const CHECKS = [
     refute: true,
     watch: [
       'src-tauri/src/paths.rs',
-      'src-tauri/src/boxsvc/engine/runtime_probe.rs',
-      'src-tauri/src/boxsvc.rs',
+      'src-tauri/src/mangasvc/engine/runtime_probe.rs',
+      'src-tauri/src/mangasvc.rs',
       'e2e/service/path-single-source-check.mjs',
     ],
   },
@@ -192,8 +192,8 @@ const CHECKS = [
     refute: true,
     watch: [
       'src-tauri/src/service.rs',
-      'src-tauri/src/boxsvc/engine/runtime_probe.rs',
-      'src-tauri/src/bin/boxsvc.rs',
+      'src-tauri/src/mangasvc/engine/runtime_probe.rs',
+      'src-tauri/src/bin/mangasvc.rs',
       'e2e/service/launch-gate-check.mjs',
     ],
   },
@@ -219,7 +219,7 @@ const CHECKS = [
     refute: true,
     watch: [
       'src-tauri/src/service.rs',
-      'src-tauri/src/boxsvc/engine/state.rs',
+      'src-tauri/src/mangasvc/engine/state.rs',
       'src/screens/NotReadyScreen.tsx',
       'src/ipc.ts',
       'src/App.tsx',
@@ -232,9 +232,9 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/engine/model_status.rs',
-      'src-tauri/src/boxsvc/engine/model_store.rs',
-      'src-tauri/src/bin/boxsvc.rs',
+      'src-tauri/src/mangasvc/engine/model_status.rs',
+      'src-tauri/src/mangasvc/engine/model_store.rs',
+      'src-tauri/src/bin/mangasvc.rs',
       'src/screens/settings/EngineDiag.tsx',
       'src/screens/settings/engine-api.ts',
       'engine/models.manifest.json',
@@ -247,9 +247,9 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/engine/model_status.rs',
-      'src-tauri/src/boxsvc/engine/model_store.rs',
-      'src-tauri/src/bin/boxsvc.rs',
+      'src-tauri/src/mangasvc/engine/model_status.rs',
+      'src-tauri/src/mangasvc/engine/model_store.rs',
+      'src-tauri/src/bin/mangasvc.rs',
       'src/screens/settings/EngineDiag.tsx',
       'src/screens/settings/engine-api.ts',
       'src/styles/settings.scss',
@@ -265,10 +265,10 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/engine/state.rs',
-      'src-tauri/src/boxsvc/engine/model_store.rs',
-      'src-tauri/src/boxsvc/engine/fetch_models.rs',
-      'src-tauri/src/boxsvc/handlers.rs',
+      'src-tauri/src/mangasvc/engine/state.rs',
+      'src-tauri/src/mangasvc/engine/model_store.rs',
+      'src-tauri/src/mangasvc/engine/fetch_models.rs',
+      'src-tauri/src/mangasvc/handlers.rs',
       'src-tauri/src/service.rs',
       'e2e/service/model-runner-check.mjs',
     ],
@@ -279,9 +279,9 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/engine/model_store.rs',
-      'src-tauri/src/boxsvc/engine/model_status.rs',
-      'src-tauri/src/boxsvc/engine/fetch_models.rs',
+      'src-tauri/src/mangasvc/engine/model_store.rs',
+      'src-tauri/src/mangasvc/engine/model_status.rs',
+      'src-tauri/src/mangasvc/engine/fetch_models.rs',
       'engine/models.manifest.json',
       'e2e/service/platform-guide-check.mjs',
     ],
@@ -325,7 +325,7 @@ const CHECKS = [
     refute: true,
     watch: [
       'src/screens/NotReadyScreen.tsx',
-      'src-tauri/src/boxsvc/engine/state.rs',
+      'src-tauri/src/mangasvc/engine/state.rs',
       'src-tauri/src/ipc.ts',
       'src/App.tsx',
       'e2e/service/progress-truth-check.mjs',
@@ -337,9 +337,9 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/engine.rs',
-      'src-tauri/src/boxsvc/engine/model_store.rs',
-      'src-tauri/src/boxsvc/engine/fetch_models.rs',
+      'src-tauri/src/mangasvc/engine.rs',
+      'src-tauri/src/mangasvc/engine/model_store.rs',
+      'src-tauri/src/mangasvc/engine/fetch_models.rs',
       'e2e/service/offline-fallback-check.mjs',
     ],
   },
@@ -349,8 +349,8 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/store.rs',
-      'src-tauri/src/boxsvc/store/**',
+      'src-tauri/src/mangasvc/store.rs',
+      'src-tauri/src/mangasvc/store/**',
       'e2e/service/golden/store-selftest.json',
       'e2e/service/store-parity-check.mjs',
     ],
@@ -361,7 +361,7 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/store/**',
+      'src-tauri/src/mangasvc/store/**',
       'e2e/service/golden/store-exec-selftest.json',
       'e2e/service/_gen-golden.mjs',
       'e2e/service/_store-exec-report.mjs',
@@ -374,9 +374,9 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc.rs',
-      'src-tauri/src/boxsvc/routes.rs',
-      'src-tauri/src/boxsvc/handlers.rs',
+      'src-tauri/src/mangasvc.rs',
+      'src-tauri/src/mangasvc/routes.rs',
+      'src-tauri/src/mangasvc/handlers.rs',
       'e2e/service/routes-check.mjs',
     ],
   },
@@ -386,8 +386,8 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/engine.rs',
-      'src-tauri/src/boxsvc/engine/**',
+      'src-tauri/src/mangasvc/engine.rs',
+      'src-tauri/src/mangasvc/engine/**',
       'e2e/service/golden/engine-selftest.json',
       'e2e/service/_gen-golden.mjs',
       'e2e/service/engine-parity-check.mjs',
@@ -399,7 +399,7 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/engine/**',
+      'src-tauri/src/mangasvc/engine/**',
       'engine/src/png.mjs',
       'e2e/service/golden/engine-http-selftest.json',
       'e2e/service/_gen-golden.mjs',
@@ -413,7 +413,7 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/engine/supervisor.rs',
+      'src-tauri/src/mangasvc/engine/supervisor.rs',
       'engine/src/mock-llm.mjs',
       'e2e/service/golden/llm-selftest.json',
       'e2e/service/_gen-golden.mjs',
@@ -427,8 +427,8 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/drain.rs',
-      'src-tauri/src/boxsvc/store/exec.rs',
+      'src-tauri/src/mangasvc/drain.rs',
+      'src-tauri/src/mangasvc/store/exec.rs',
       'e2e/service/drain-runtime-check.mjs',
     ],
   },
@@ -449,18 +449,18 @@ const CHECKS = [
     watch: ['src-tauri/src/**'],
   },
   // ⚠️ watch 已从 `src-tauri/src/**` + `engine/src/**` 收窄到**翻译域**（F5.5 换靶）：
-  //    断言面 = `boxsvc::translate::**`（门面/设置/密钥/错误/协议） + 5 条路由（handlers/routes）
+  //    断言面 = `mangasvc::translate::**`（门面/设置/密钥/错误/协议） + 5 条路由（handlers/routes）
   //    + 纯逻辑面的冻结金标与生成器。继续挂着整个 src 会让任何一处无关改动都重跑这一组
-  //    （而它要起 8 个反证子进程、每个再 spawn 几十个 boxsvc 用例）。
+  //    （而它要起 8 个反证子进程、每个再 spawn 几十个 mangasvc 用例）。
   {
     id: 'translate',
     script: 'e2e/service/translate-check.mjs',
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/translate/**',
-      'src-tauri/src/boxsvc/handlers.rs',
-      'src-tauri/src/boxsvc/routes.rs',
+      'src-tauri/src/mangasvc/translate/**',
+      'src-tauri/src/mangasvc/handlers.rs',
+      'src-tauri/src/mangasvc/routes.rs',
       'e2e/service/golden/translate-selftest.json',
       'e2e/service/_gen-golden.mjs',
       'e2e/service/translate-check.mjs',
@@ -483,9 +483,9 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/engine/profile.rs',
-      'src-tauri/src/boxsvc/engine/supervisor.rs',
-      'src-tauri/src/boxsvc/engine/state.rs',
+      'src-tauri/src/mangasvc/engine/profile.rs',
+      'src-tauri/src/mangasvc/engine/supervisor.rs',
+      'src-tauri/src/mangasvc/engine/state.rs',
       'e2e/service/golden/llm-selftest.json',
       'e2e/service/_llm-report.mjs',
       'e2e/service/engine-profile-check.mjs',
@@ -514,9 +514,9 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/engine.rs',
-      'src-tauri/src/boxsvc/engine/state.rs',
-      'src-tauri/src/boxsvc/engine/supervisor.rs',
+      'src-tauri/src/mangasvc/engine.rs',
+      'src-tauri/src/mangasvc/engine/state.rs',
+      'src-tauri/src/mangasvc/engine/supervisor.rs',
       'e2e/service/e4-tier-check.mjs',
     ],
   },
@@ -526,8 +526,8 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/engine/profile.rs',
-      'src-tauri/src/boxsvc/engine/state.rs',
+      'src-tauri/src/mangasvc/engine/profile.rs',
+      'src-tauri/src/mangasvc/engine/state.rs',
       'engine/src/**',
       'e2e/service/e8-accel-check.mjs',
     ],
@@ -537,7 +537,7 @@ const CHECKS = [
     script: 'e2e/service/e10-security-check.mjs',
     tier: 'service',
     refute: true,
-    watch: ['src-tauri/src/boxsvc.rs', 'src-tauri/src/boxsvc/**', 'e2e/service/e10-security-check.mjs'],
+    watch: ['src-tauri/src/mangasvc.rs', 'src-tauri/src/mangasvc/**', 'e2e/service/e10-security-check.mjs'],
   },
   {
     id: 'stall',
@@ -545,8 +545,8 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/store/exec.rs',
-      'src-tauri/src/boxsvc/engine/client.rs',
+      'src-tauri/src/mangasvc/store/exec.rs',
+      'src-tauri/src/mangasvc/engine/client.rs',
       'e2e/service/stall-guard-check.mjs',
     ],
   },
@@ -556,8 +556,8 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/handlers.rs',
-      'src-tauri/src/boxsvc/store/exec.rs',
+      'src-tauri/src/mangasvc/handlers.rs',
+      'src-tauri/src/mangasvc/store/exec.rs',
       'src/App.tsx',
       'e2e/service/queue-retry-check.mjs',
     ],
@@ -591,7 +591,7 @@ const CHECKS = [
     watch: [
       'src-tauri/src/child_watch.rs',
       'src-tauri/src/service.rs',
-      'src-tauri/src/boxsvc/engine/supervisor.rs',
+      'src-tauri/src/mangasvc/engine/supervisor.rs',
       'engine/scripts/child-watch.mjs',
     ],
   },
@@ -625,8 +625,8 @@ const CHECKS = [
     watch: [
       'engine/model-store.mjs',
       'engine/scripts/fetch-models.mjs',
-      'src-tauri/src/boxsvc/engine/model_store.rs',
-      'src-tauri/src/boxsvc/engine/fetch_models.rs',
+      'src-tauri/src/mangasvc/engine/model_store.rs',
+      'src-tauri/src/mangasvc/engine/fetch_models.rs',
     ],
   },
   {
@@ -636,8 +636,8 @@ const CHECKS = [
     refute: true,
     watch: [
       'engine/scripts/**',
-      'src-tauri/src/boxsvc/engine/patches.rs',
-      'src-tauri/src/bin/boxsvc.rs',
+      'src-tauri/src/mangasvc/engine/patches.rs',
+      'src-tauri/src/bin/mangasvc.rs',
       'e2e/engine/engine-patches-check.mjs',
     ],
   },
@@ -677,9 +677,9 @@ const CHECKS = [
       'engine/VERSIONS.lock',
       'engine/wheels.manifest.json',
       'engine/models.manifest.json',
-      'src-tauri/src/boxsvc/handlers.rs',
-      'src-tauri/src/boxsvc/engine/state.rs',
-      'src-tauri/src/boxsvc/engine/runtime_setup.rs',
+      'src-tauri/src/mangasvc/handlers.rs',
+      'src-tauri/src/mangasvc/engine/state.rs',
+      'src-tauri/src/mangasvc/engine/runtime_setup.rs',
       'src/engine-download.ts',
       'src/screens/NotReadyScreen.tsx',
       'src/screens/engine/DownloadPanel.tsx',
@@ -736,8 +736,8 @@ const CHECKS = [
     script: 'e2e/service/offline-real-check.mjs',
     tier: 'nightly',
     watch: [
-      'src-tauri/src/boxsvc/engine.rs',
-      'src-tauri/src/boxsvc/engine/state.rs',
+      'src-tauri/src/mangasvc/engine.rs',
+      'src-tauri/src/mangasvc/engine/state.rs',
       'src-tauri/src/service.rs',
       'engine/models.manifest.json',
       'e2e/service/offline-real-check.mjs',
@@ -750,17 +750,17 @@ const CHECKS = [
     tier: 'nightly',
     watch: ['src-tauri/nsis/**', 'src-tauri/tauri.windows.conf.json', 'e2e/bundle-uninstall-keep-check.mjs'],
   },
-  // G4：**夹具版真装配** —— 真跑产品自己的 `boxsvc --engine-bootstrap`：
+  // G4：**夹具版真装配** —— 真跑产品自己的 `mangasvc --engine-bootstrap`：
   //   两批 pip 的顺序与各自成功、随包 wheel 端到端（自检①真 import）、兼容补丁落 venv、
   //   按 dest 解包、建链、长路径体检、就绪标记。
-  //   硬前置：`cargo build --bin boxsvc` + 本机跑过 `setup:engine` ⇒ 只在开发机上有意义，故归 nightly。
+  //   硬前置：`cargo build --bin mangasvc` + 本机跑过 `setup:engine` ⇒ 只在开发机上有意义，故归 nightly。
   {
     id: 'engine-bootstrap-real',
     script: 'e2e/engine/engine-bootstrap-real-check.mjs',
     tier: 'nightly',
     refute: true,
     watch: [
-      'src-tauri/src/boxsvc/engine/**',
+      'src-tauri/src/mangasvc/engine/**',
       'engine/runtime.manifest.json',
       'engine/models.manifest.json',
       'engine/wheels.manifest.json',

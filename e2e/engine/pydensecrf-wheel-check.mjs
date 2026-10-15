@@ -108,16 +108,16 @@ const envFor = (manifestPath) => ({ MIAO_WHEELS_MANIFEST: manifestPath, MIAO_WHE
 // ------------------------------------------------------------------ Rust 侧产品出口
 //
 // 上面 WB.W1–W12 全部走 Node 对照端（`install-engine-deps.mjs --print-plan`）。
-// 🔴 但**打包用户机上跑的是 Rust 侧** `boxsvc/engine/wheels.rs::plan_crf`
-//    （经 `boxsvc --engine-crf-plan`）—— 两边语义必须一致，而"一致"不能靠读代码相信。
+// 🔴 但**打包用户机上跑的是 Rust 侧** `mangasvc/engine/wheels.rs::plan_crf`
+//    （经 `mangasvc --engine-crf-plan`）—— 两边语义必须一致，而"一致"不能靠读代码相信。
 //    这一组判据直接打产品出口，与上面那组构成**双靶**。
 
-const BOXSVC = path.join(ROOT, 'src-tauri', 'target', 'debug', 'boxsvc.exe');
-const hasBoxsvc = fs.existsSync(BOXSVC);
+const MANGASVC = path.join(ROOT, 'src-tauri', 'target', 'debug', 'mangasvc.exe');
+const hasMangasvc = fs.existsSync(MANGASVC);
 
-/** 跑产品的 `boxsvc --engine-crf-plan`，返回解析后的 JSON。 */
+/** 跑产品的 `mangasvc --engine-crf-plan`，返回解析后的 JSON。 */
 function rustPlan(env = {}) {
-  const r = spawnSync(BOXSVC, ['--engine-crf-plan'], {
+  const r = spawnSync(MANGASVC, ['--engine-crf-plan'], {
     cwd: ROOT,
     encoding: 'utf8',
     env: { ...process.env, ...env },
@@ -140,7 +140,7 @@ const rustEnvFor = (manifestPath, modelRoot) => ({
   MIAO_MODEL_ROOT: modelRoot,
 });
 
-if (hasBoxsvc) {
+if (hasMangasvc) {
   // ---- WB.R1 平台/ABI 与 Node 侧同源 ----
   {
     const rustProbe = rustPlan(rustEnvFor(path.join(tmp, 'empty.json'), tmp));
@@ -250,9 +250,11 @@ if (hasBoxsvc) {
     );
   }
 } else {
-  // 🔴 没有 boxsvc 时**不许静默跳过**：跳过 ≠ 通过（E4 纪律）。
-  //    先 `cargo build --bin boxsvc` 再跑本脚本。
-  check('WB.R0 `boxsvc` 未构建（cargo build --bin boxsvc）—— Rust 侧产品出口因此无法取证', false, { boxsvc: BOXSVC });
+  // 🔴 没有 mangasvc 时**不许静默跳过**：跳过 ≠ 通过（E4 纪律）。
+  //    先 `cargo build --bin mangasvc` 再跑本脚本。
+  check('WB.R0 `mangasvc` 未构建（cargo build --bin mangasvc）—— Rust 侧产品出口因此无法取证', false, {
+    mangasvc: MANGASVC,
+  });
 }
 
 // ------------------------------------------------------------------ WB.W1 清单结构

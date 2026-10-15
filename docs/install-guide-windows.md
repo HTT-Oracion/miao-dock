@@ -5,7 +5,7 @@
 > 本文只讲**装配引擎运行时**（Python / 依赖 / 模型权重 / llama.cpp）。装完它，喵坞的
 > 真引擎档（默认档）才能起来；不装也能用，但只能跑 mock 替身（`MIAO_ENGINE_PROTOCOL=mock`）。
 >
-> 落点与体积的事实源是**产品自己**：路径来自 `boxsvc --print-paths`，体积来自
+> 落点与体积的事实源是**产品自己**：路径来自 `mangasvc --print-paths`，体积来自
 > `engine/models.manifest.json`。**本文的每个数字都可以复算**（§2 / §3 各给了命令）。
 
 ---
@@ -45,7 +45,7 @@
 查产品实际用的落点（**权威答案，不要靠猜**）：
 
 ```powershell
-boxsvc --print-paths           # 打包版在安装目录里；从仓库自建时用 .\app\src-tauri\target\debug\boxsvc.exe
+mangasvc --print-paths           # 打包版在安装目录里；从仓库自建时用 .\app\src-tauri\target\debug\mangasvc.exe
 ```
 
 输出的 `runtimeRoot` 就是落点的父目录（产品落点 = `<runtimeRoot>\manga-translator`）。
@@ -190,7 +190,7 @@ node engine/scripts/fetch-models.mjs --link           # 只重建引擎树里的
 （`GET /api/v1/engine/runtime`，B2）。命令行侧同一个函数：
 
 ```powershell
-boxsvc --check-runtime-gate real
+mangasvc --check-runtime-gate real
 ```
 
 输出里 `ready` 为 `true` 才算装齐；不是 `true` 时它会**逐项点名**缺哪一项、缺在哪个绝对路径、
@@ -234,7 +234,7 @@ GET http://127.0.0.1:8000/api/v1/engine/runtime
 | 5 | 等第 2 段（翻译权重，约 6 GB） | 两段之间**不出现**假的"已完成"（工具条一直显示下载中）。中途拔网线 ⇒ 变「下载中断」+ ▶；插回网线点 ▶ ⇒ 从已下位置续，**不从头重下** |
 | 6 | 全装完后翻译一张漫画 | 出译文。盘上核对：`<落点>\venv\Lib\site-packages` 里有 `torch` 与 `pydensecrf`；`<落点>\.runtime.ready.json` 存在 |
 | 7 | 长路径体检（可复算，不必命令行） | `.runtime.ready.json` 里有 `longPath.maxChars / limit=260 / margin`。若装配日志里出现「距 260 上限仅剩 N 字符」或「已超过上限」，说明该落点偏深 —— 报告它，不要自己去改注册表（D-189：产品只提示不代改） |
-| 8 | 可选：命令行侧核对 | 安装目录里的 `boxsvc.exe --check-runtime-gate real` 输出 `ready: true`，五项（`venvRoot` / `python` / `source` / `deps` / `patches`）全齐 |
+| 8 | 可选：命令行侧核对 | 安装目录里的 `mangasvc.exe --check-runtime-gate real` 输出 `ready: true`，五项（`venvRoot` / `python` / `source` / `deps` / `patches`）全齐 |
 
 **三件最容易误判的事**（先记在这里，免得当成缺陷来报）：
 
@@ -384,8 +384,8 @@ $env:PYTHONIOENCODING = "utf-8"
 > 附录：命令速查（都可在落点已定后任意重跑）
 
 ```powershell
-boxsvc --print-paths                    # 产品实际用的全部路径（落点的权威答案）
-boxsvc --check-runtime-gate real        # 五项就绪自检（缺哪项逐项点名）
+mangasvc --print-paths                    # 产品实际用的全部路径（落点的权威答案）
+mangasvc --check-runtime-gate real        # 五项就绪自检（缺哪项逐项点名）
 npm run task -- setup:engine                    # ① Python + venv + 源码 + 补丁
 npm run task -- deps:engine                     # ② venv 依赖（Windows 专用）
 npm run task -- fetch:models                    # ③ 模型 + llama.cpp（按清单、按平台）

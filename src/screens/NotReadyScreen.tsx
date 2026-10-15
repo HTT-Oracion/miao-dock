@@ -60,7 +60,7 @@ const NODE_KIND: Record<string, string> = {
 /**
  * 当前阶段明细：取**真实日志的末行**（Rust 的 LogBuffer，含三个子进程的 stdout）。
  *
- * 🔴 为什么不显示「2.1/4.6 GB」这种字节进度：X-C3 只在 **box-service 自己没起来**时出现，
+ * 🔴 为什么不显示「2.1/4.6 GB」这种字节进度：X-C3 只在 **manga-service 自己没起来**时出现，
  *    此刻没有任何 HTTP 通道可读下载进度，编一个数字就是撒谎。方案要的"可量化进度"
  *    由**真实来源**满足 —— 谁真的在打进度行（`fetch-models` / uvicorn / llama-server），
  *    那一行就会原样出现在这里。**没有就不显示，不补一个占位数字。**

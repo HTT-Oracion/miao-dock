@@ -11,7 +11,7 @@
  * ## 关键取证手段（都不信"自报"）
  *   · ③ 的**档位**：直接打它自己的 `GET /v1/models` 读 model id（`sakura-mock:<tier>`）——
  *     mock 替身把 `--model <tier>` 回显在模型列表里，故这是**该进程真实启动参数**的投影，
- *     而不是 box-service 日志里那句话。
+ *     而不是 manga-service 日志里那句话。
  *   · ③ 的**存活**：直接连它的端口。§9.4 特意把「卸载 ≠ 未就绪」写成铁律，
  *     所以卸载后还必须能读到 `/health` 的 `sidecar.state === 'running'` + 端口不通。
  *   · **卸载/重启/降档**的事件顺序：读服务 stdout（那是"什么时候发生的"的唯一时间线）。
@@ -25,7 +25,7 @@
  *   node e2e/service/e5-e6-check.mjs            正向跑
  *   node e2e/service/e5-e6-check.mjs --refute   反证轮（**逃生开关**：关掉机制 → 断言必须变红）
  *
- * 约束：纯 Node、零第三方依赖；临时目录自建自清；不碰用户目录；不占 5180–5190（那是 box-service 的段）。
+ * 约束：纯 Node、零第三方依赖；临时目录自建自清；不碰用户目录；不占 5180–5190（那是 manga-service 的段）。
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';

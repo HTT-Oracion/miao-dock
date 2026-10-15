@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * F3 · store 同源钉子 —— Rust(`boxsvc/store.rs`) 对冻结 golden 快照
+ * F3 · store 同源钉子 —— Rust(`mangasvc/store.rs`) 对冻结 golden 快照
  * =============================================================================
  * 为什么必须有它：`store.mjs` 曾是**最大也最厚**的一块（1918 行、JSON 持久化 + 三层状态机）。
  * 它的失效形态全都**不是崩溃**，而是「看起来在工作、结果悄悄不同」——落盘字段序变了、
@@ -8,7 +8,7 @@
  * 断言变红。于是这里把「Rust 版 store 在**同一份固定输入**下的产物」逐条钉住。
  *
  * ## 机制（F5 摘除 Node 后：Rust 输出 ⟷ 冻结 golden）
- *   · `boxsvc --store-selftest` 打印 `pure` / `serializedTask` / `views` / `plans` /
+ *   · `mangasvc --store-selftest` 打印 `pure` / `serializedTask` / `views` / `plans` /
  *     `hidden` / `persistedBytes` / `atomic` / `ulidOk`（输入 `pureInputs`/`fixtures` 只作
  *     见证，不再回填给 Node）。
  *   · golden 快照 `e2e/service/golden/store-selftest.json` 是「Node 版 store 在同源对齐时代
@@ -30,7 +30,7 @@
  *   M4 删掉 golden 一个键            ⇒ 变红
  *
  * 用法：node e2e/service/store-parity-check.mjs [--refute]
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  * 重新生成 golden：`--store-selftest` 的 canon 输出即 golden（Node 版已摘除，勿再回填 Node）
  */
 import { spawn } from 'node:child_process';
@@ -104,7 +104,7 @@ function sameJSON(a, b) {
 
 async function dumpRust(extraEnv = {}) {
   if (!fs.existsSync(RUST_BIN)) {
-    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   }
   const env = { MIAO_ATOMIC_DIRECT_WRITE: '', ...extraEnv };
   return JSON.parse((await run(RUST_BIN, ['--store-selftest'], env)).trim());
@@ -112,7 +112,7 @@ async function dumpRust(extraEnv = {}) {
 
 // ------------------------------------------------------------------ 正向：Rust 输出 ⟷ 冻结 golden
 
-console.log('=== F3 · store 同源（Rust boxsvc --store-selftest  ⟷  golden 快照）===');
+console.log('=== F3 · store 同源（Rust mangasvc --store-selftest  ⟷  golden 快照）===');
 
 let rustReport = null;
 let golden = null;

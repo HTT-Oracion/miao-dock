@@ -1,4 +1,4 @@
-//! 前端可调用的命令（IPC）—— **桌面端所有对 box-service 的请求都经这里转发**
+//! 前端可调用的命令（IPC）—— **桌面端所有对 manga-service 的请求都经这里转发**
 //!
 //! 为什么不从 WebView 直接 fetch：
 //! ① 契约 §2.1 的 Origin 白名单只放行 `chrome-extension://*` 与 `null`；Tauri 的 WebView

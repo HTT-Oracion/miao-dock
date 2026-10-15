@@ -9,7 +9,7 @@
  *   断言报出『仍有 N 条转发』」。本钉子就是这两条标准的着力点。
  *
  * ## 机制
- *   · Rust 侧 `boxsvc --list-routes` 吐出**全量路由表**（每条：id / group / method / pattern /
+ *   · Rust 侧 `mangasvc --list-routes` 吐出**全量路由表**（每条：id / group / method / pattern /
  *     tier）+ `migratedCount` / `forwardedCount` / `forwarded[]`（毫秒级，不起服务）。
  *   · 本钉子用一份**独立预言**（下面的 `EXPECTED`，手写、不是从 Rust 读来的）做**双向覆盖**：
  *     表里有而预言没有 = 多迁/幻觉；预言有而表里没有 = 漏了一条（正是 R3）。
@@ -33,7 +33,7 @@
  *
  * ## 反证轮（--refute，4 个变异）
  *   M1 `MIAO_ROUTE_REFUTE` 注入一条假转发 ⇒ `gateFinal` 报「仍有 N 条转发」变红
- *      🔴 这里**真的去跑一遍** `boxsvc --list-routes`（带注入 env），而不是只调本文件里的
+ *      🔴 这里**真的去跑一遍** `mangasvc --list-routes`（带注入 env），而不是只调本文件里的
  *      `gateFinal` —— 后者只证明"本文件那个 if 会返回 false"，注入根本没进过 Rust。
  *   M2 独立预言里去掉一条        ⇒ coverage 变红
  *   M3 把一条 Migrated 谎报成已实现（行为里喂"尚无实现"体）⇒ migrated 断言变红
@@ -41,7 +41,7 @@
  *
  * 用法：node e2e/service/routes-check.mjs [--refute] [--final]
  *   `--final`：启用 F5 完成门（`forwardedCount === 0`）。F5 迁移期间预期为红。
- * 前置：`cd src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin mangasvc`
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -163,7 +163,7 @@ function run(cmd, args, env) {
 
 async function listRoutes(env = {}) {
   if (!fs.existsSync(RUST_BIN)) {
-    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
+    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   }
   return JSON.parse((await run(RUST_BIN, ['--list-routes'], env)).trim());
 }
@@ -210,7 +210,7 @@ function startPureRust(extraEnv = {}) {
     let buf = '';
     const to = setTimeout(() => {
       child.kill();
-      reject(new Error('boxsvc 15s 内未就绪'));
+      reject(new Error('mangasvc 15s 内未就绪'));
     }, 15000);
     child.stdout.on('data', (d) => {
       buf += d;
@@ -224,7 +224,7 @@ function startPureRust(extraEnv = {}) {
     child.stderr.on('data', (d) => (buf += d));
     child.on('close', (code) => {
       clearTimeout(to);
-      reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 500)}`));
+      reject(new Error(`mangasvc 退出 ${code}：${buf.slice(0, 500)}`));
     });
   });
 }
@@ -373,7 +373,7 @@ if (REFUTE) {
   }
   const ids = table.routes.map((r) => r.id);
 
-  // 🔴 M1 必须**真的**走一遍 Rust 的注入路径：`boxsvc --list-routes` + `MIAO_ROUTE_REFUTE`。
+  // 🔴 M1 必须**真的**走一遍 Rust 的注入路径：`mangasvc --list-routes` + `MIAO_ROUTE_REFUTE`。
   //    只调本文件的 `gateFinal(...)` 等于自证——注入从未进过 Rust，报告的 `forwardedCount`
   //    是不是真的会涨，一点没验到。
   const INJECT = ['POST /api/v1/tasks', 'GET /api/v1/queue'];
