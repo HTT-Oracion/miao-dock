@@ -82,7 +82,10 @@ function startService(extraEnv) {
   });
   return new Promise((resolve, reject) => {
     let buf = '';
-    const to = setTimeout(() => { child.kill(); reject(new Error('boxsvc 15s 内未就绪')); }, 15000);
+    const to = setTimeout(() => {
+      child.kill();
+      reject(new Error('boxsvc 15s 内未就绪'));
+    }, 15000);
     child.stdout.on('data', (d) => {
       buf += d;
       const m = /MIAO_READY (\{.*\})/.exec(buf);
@@ -92,14 +95,19 @@ function startService(extraEnv) {
       }
     });
     child.stderr.on('data', (d) => (buf += d));
-    child.on('close', (code) => { clearTimeout(to); reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 500)}`)); });
+    child.on('close', (code) => {
+      clearTimeout(to);
+      reject(new Error(`boxsvc 退出 ${code}：${buf.slice(0, 500)}`));
+    });
   });
 }
 
 async function probeRuntime(extraEnv) {
   const svc = await startService(extraEnv);
   try {
-    const res = await fetch(`http://127.0.0.1:${svc.port}/api/v1/engine/runtime`, { headers: { 'x-box-token': TOKEN } });
+    const res = await fetch(`http://127.0.0.1:${svc.port}/api/v1/engine/runtime`, {
+      headers: { 'x-box-token': TOKEN },
+    });
     return { status: res.status, body: await res.json() };
   } finally {
     svc.kill();
@@ -142,43 +150,63 @@ for (const sc of SCENARIOS) {
   const { status, body } = await probeRuntime(fx.env);
   const items = byId(body);
   const expected = sc.missing ?? [];
-  const flips = Object.entries(items).filter(([, v]) => !v.ok).map(([k]) => k);
+  const flips = Object.entries(items)
+    .filter(([, v]) => !v.ok)
+    .map(([k]) => k);
   if (sc.missing === null) {
-    check(`${sc.id} ${sc.label}`,
-      status === 200 && body?.ready === true && flips.length === 0
-      && Object.values(items).every((v) => v.fix === null || v.fix === undefined),
-      { status, ready: body?.ready, flips });
+    check(
+      `${sc.id} ${sc.label}`,
+      status === 200 &&
+        body?.ready === true &&
+        flips.length === 0 &&
+        Object.values(items).every((v) => v.fix === null || v.fix === undefined),
+      { status, ready: body?.ready, flips },
+    );
   } else if (sc.missing.includes('venvRoot')) {
     // 级联场景：venvRoot 没了 ⇒ python/source/deps/patches 的判据路径都在它下面，必然一起翻。
     // 这里不断言"其余不动"（那是结构上不可能的），只钉 venvRoot **一定**翻、且 ready=false。
-    check(`${sc.id} ${sc.label}`,
-      status === 200 && flips[0] === 'venvRoot' && body?.ready === false
-      && items.venvRoot.fix && items.venvRoot.fix.length > 0,
-      { status, ready: body?.ready, flips });
+    check(
+      `${sc.id} ${sc.label}`,
+      status === 200 &&
+        flips[0] === 'venvRoot' &&
+        body?.ready === false &&
+        items.venvRoot.fix &&
+        items.venvRoot.fix.length > 0,
+      { status, ready: body?.ready, flips },
+    );
   } else if (sc.missing.length === 1) {
     // 单项场景：**只有**那一项翻转 —— 证明各判据作用在各自的绝对路径上
     const only = sc.missing[0];
-    check(`${sc.id} ${sc.label}`,
-      status === 200 && flips.length === 1 && flips[0] === only
-      && items[only].fix && items[only].fix.length > 0,
-      { status, flips, fix: items[only]?.fix });
+    check(
+      `${sc.id} ${sc.label}`,
+      status === 200 && flips.length === 1 && flips[0] === only && items[only].fix && items[only].fix.length > 0,
+      { status, flips, fix: items[only]?.fix },
+    );
     // B5 验收①：缺补丁必须**点名到 patch id**（只说"缺 1 个补丁"等于没说），
     // 且路径要落在**被抹掉 mark 的那个文件**上（不是笼统的源码目录）。
     if (only === 'patches') {
       const p = ENGINE_PATCHES[0];
       const abs = path.join(fx.src, ...relOf(p));
-      check('S5.named — detail 点名到 patch id 且带该补丁目标文件的绝对路径',
+      check(
+        'S5.named — detail 点名到 patch id 且带该补丁目标文件的绝对路径',
         items.patches.detail.includes(p.id) && items.patches.detail.includes(abs),
-        { id: p.id, abs, detail: items.patches.detail });
+        { id: p.id, abs, detail: items.patches.detail },
+      );
     }
   } else {
-    check(`${sc.id} ${sc.label}`,
-      status === 200 && flips.includes('venvRoot') && body?.ready === false,
-      { status, ready: body?.ready, flips });
+    check(`${sc.id} ${sc.label}`, status === 200 && flips.includes('venvRoot') && body?.ready === false, {
+      status,
+      ready: body?.ready,
+      flips,
+    });
   }
   // 验收③：每一项的 detail 必带它自己的绝对路径
   for (const [id, v] of Object.entries(items)) {
-    check(`${sc.id}.detail ${id} — detail 带绝对路径`, typeof v.detail === 'string' && v.detail.includes(v.path), v.detail);
+    check(
+      `${sc.id}.detail ${id} — detail 带绝对路径`,
+      typeof v.detail === 'string' && v.detail.includes(v.path),
+      v.detail,
+    );
   }
   fs.rmSync(base, { recursive: true, force: true });
 }
@@ -201,12 +229,22 @@ for (const sc of SCENARIOS) {
   const { status, body } = await probeRuntime({
     MIAO_RUNTIME_ROOT: linkBase,
     MIAO_ENGINE_DIR: path.join(link, 'src'),
-    MIAO_ENGINE_PYTHON: path.join(link, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python'),
+    MIAO_ENGINE_PYTHON: path.join(
+      link,
+      'venv',
+      process.platform === 'win32' ? 'Scripts' : 'bin',
+      process.platform === 'win32' ? 'python.exe' : 'python',
+    ),
   });
   const items = byId(body);
-  const flips = Object.entries(items).filter(([, v]) => !v.ok).map(([k]) => k);
-  check('S6 运行时根是链接（junction/软链）⇒ 五项仍全真（判据必须跟随链接）',
-    status === 200 && body?.ready === true && flips.length === 0, { status, ready: body?.ready, flips });
+  const flips = Object.entries(items)
+    .filter(([, v]) => !v.ok)
+    .map(([k]) => k);
+  check(
+    'S6 运行时根是链接（junction/软链）⇒ 五项仍全真（判据必须跟随链接）',
+    status === 200 && body?.ready === true && flips.length === 0,
+    { status, ready: body?.ready, flips },
+  );
   for (const [id, v] of Object.entries(items)) {
     check(`S6.detail ${id} — detail 带绝对路径`, typeof v.detail === 'string' && v.detail.includes(v.path), v.detail);
   }
@@ -236,10 +274,7 @@ if (REFUTE) {
     id: 'M1',
     what: 'source 判据弱化为「src/ 非空」',
     edit: () => {
-      const weak = original.replace(
-        /let src_ok = is_file\(&main_py\);/,
-        'let src_ok = paths::engine_dir().is_dir();',
-      );
+      const weak = original.replace(/let src_ok = is_file\(&main_py\);/, 'let src_ok = paths::engine_dir().is_dir();');
       if (weak === original) throw new Error('M1 锚点未命中（runtime_probe.rs 的 source 判据写法变了？）');
       fs.writeFileSync(PROBE_RS, weak);
     },
@@ -248,7 +283,9 @@ if (REFUTE) {
       const fx = buildRuntime(base, ['source']);
       const { body } = await probeRuntime(fx.env);
       const items = byId(body);
-      const flips = Object.entries(items).filter(([, v]) => !v.ok).map(([k]) => v);
+      const flips = Object.entries(items)
+        .filter(([, v]) => !v.ok)
+        .map(([k]) => k);
       fs.rmSync(base, { recursive: true, force: true });
       // 期望：source **不再**翻转（弱判据下 src/ 还在 ⇒ 报就绪）
       return !flips.includes('source');
@@ -299,7 +336,9 @@ if (REFUTE) {
       const fx = buildRuntime(base, ['patches']);
       const { body } = await probeRuntime(fx.env);
       const items = byId(body);
-      const flips = Object.entries(items).filter(([, v]) => !v.ok).map(([k]) => v);
+      const flips = Object.entries(items)
+        .filter(([, v]) => !v.ok)
+        .map(([k]) => k);
       fs.rmSync(base, { recursive: true, force: true });
       // 期望：patches **不再**翻转（弱判据下源码目录还在 ⇒ 报"全打过"）
       return !flips.includes('patches');
@@ -331,7 +370,12 @@ if (REFUTE) {
       const { body } = await probeRuntime({
         MIAO_RUNTIME_ROOT: linkBase,
         MIAO_ENGINE_DIR: path.join(link, 'src'),
-        MIAO_ENGINE_PYTHON: path.join(link, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python'),
+        MIAO_ENGINE_PYTHON: path.join(
+          link,
+          'venv',
+          process.platform === 'win32' ? 'Scripts' : 'bin',
+          process.platform === 'win32' ? 'python.exe' : 'python',
+        ),
       });
       const items = byId(body);
       fs.rmSync(base, { recursive: true, force: true });
@@ -360,10 +404,14 @@ if (REFUTE) {
   const restored = fs.readFileSync(PROBE_RS, 'utf8');
   check('REFUTE.restore — runtime_probe.rs 已按字节还原', restored === original);
   console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed, allRed }));
-  console.log(`\nB2 运行时就绪检测：正向 ${passed} / ${passed + failed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`);
+  console.log(
+    `\nB2 运行时就绪检测：正向 ${passed} / ${passed + failed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`,
+  );
   process.exit(allRed && failed === 0 ? 0 : 1);
 }
 
 console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed }));
-console.log(`\nB2 运行时就绪检测：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`);
+console.log(
+  `\nB2 运行时就绪检测：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`,
+);
 process.exit(failed === 0 ? 0 : 1);
