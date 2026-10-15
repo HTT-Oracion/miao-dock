@@ -19,7 +19,7 @@
 | # | 验收项（《04》§14.2 原文） | 状态 | 取证命令 | 断言 / 反证 |
 |---|---|---|---|---|
 | **E1** | 引擎真实启动：锁定版本引擎可被拉起；`/health`/`/docs` 就绪；日志打印**生效参数快照** | ✅ | `npm run selftest:app:e11:real` | 快照 **6 行**（≥4 判据）· 外部读回 |
-| **E2** | 真实翻译目视：真日文漫画图 → `001_translated.png`，**肉眼可见中文译文** | ✅ | `node e2e/engine/s1-real-engine-check.mjs` | 自动化半边：`ok=true` / 1 371 745 B / sha256 / 21 个真文本框 |
+| **E2** | 真实翻译目视：真日文漫画图 → `001_translated.png`，**肉眼可见中文译文** | ✅ | `npm run check:e3:real`（原 `s1-real-engine-check.mjs` 已删，D-205） | E3 的落盘产物抽样（首/中/尾三张）+ 逐像素 `changedPct>0.5`；**历史证据**：`docs/refs/engine/01-real-translation.report.json`（S1 那段留档） |
 | **E3** | 全链路：31 张 → 一个 Task 两个 Batch → 逐张翻译 → 落盘 → SSE 与落盘一致 | ✅ | `npm run check:e3:real` | **8/0**（真引擎，分钟级） |
 | **E4** | 档位切换：切 Tiny↔Small 后重启，`sidecar.tier` 与实际加载权重一致 | ✅⚠️ | `npm run check:e4[:refute]` | **6/0** · 反证 **4/4** |
 | **E5** | 降档重试：注入 OOM → 降一档重试一次 → 任务成功且日志留痕 | ✅ | `npm run check:e5e6[:refute]` | E5 共 7 条（含在 16/0 内）· 反证 **3/3** |
@@ -58,7 +58,10 @@ npm run check:e8:refute
 npm run check:e10                # E10 安全                    （秒级）
 npm run check:e10:refute
 npm run selftest:app:e11:real    # E1 + E11                    （分钟级）
-node e2e/engine/s1-real-engine-check.mjs   # E2 真译文 + 证据图
+npm run check:e3:real            # E2 的目视证据 + E3 全链路   （分钟级）
+# ⚠️ 原 `node e2e/engine/s1-real-engine-check.mjs` 已删除（D-205）：它取的三项证据
+#    （三态采样 / 真译文 / 逐像素比对）全被 `check:e3:real` 覆盖，且 E3 走**产品真实路径**
+#    （经服务面），而 S1 的"直测适配层"在适配层迁进 Rust 后已无对象。
 
 # 在 miao-trans 仓根目录（E9）
 npm run build && node e2e/e9-real-engine.mjs
@@ -128,8 +131,13 @@ cd app/src-tauri && cargo check
 **判据**：一张真日文漫画图 → 落盘 `001_translated.png`；**肉眼可见中文译文**（不再是伪随机版式图）；
 **反证**：`translator=none` 时译文 = 原文。
 
-**做法**：`e2e/engine/s1-real-engine-check.mjs` 拉起真 ② + 真 ③，送一张真日文漫画图，
-把产物与启动配方一起落到 `docs/refs/engine/`。
+**做法**：`npm run check:e3:real` 拉起真 ② + 真 ③（③ 由 box-service 按配方归属拉起），
+31 张真日文漫画图走完整链路落盘，抽首/中/尾三张做逐像素比对。
+
+> ⚠️ **本条的执行体改过**（D-205）：原先由 `e2e/engine/s1-real-engine-check.mjs` 单张取证，
+> 该脚本已删除 —— 它的三项证据（三态采样 / 真译文 / 逐像素比对）都被 E3 覆盖，而它"直测
+> Node 适配层"的姿态在适配层迁进 Rust 后已无对象。**历史留档仍有效**：
+> `docs/refs/engine/01-real-translation.report.json` 是 S1 那次真机跑的产物快照。
 
 **实测**：
 

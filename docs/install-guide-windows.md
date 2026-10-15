@@ -227,9 +227,9 @@ node engine/scripts/install-engine-deps.mjs --print-plan
 ```
 
 它只回答一件事：pydensecrf 这一项会走**预编译 wheel**（无需编译器）还是**源码编译**。
-判定顺序是「清单里有本平台 + 本 Python 版本的条目 → wheel 文件在位 → sha256 与清单一致」，
-任一条不成立就回退到源码编译（**回退是设计的一部分，不是降级**）。
-清单在 `engine/wheels.manifest.json`。
+判定顺序是「清单里有本平台 + 本 Python 版本的条目 → **包内那一份优先**（其次才是本机通道目录）
+→ 文件在位 → sha256 与清单一致」，任一条不成立就回退到源码编译
+（**回退是设计的一部分，不是降级**）。清单在 `engine/wheels.manifest.json`。
 
 **已经装了编译器、想给别人留一条免编译的路**（一条命令产出 wheel + 算好 sha256）：
 
@@ -243,7 +243,10 @@ node engine/scripts/install-engine-deps.mjs --build-wheel
 🔴 产出后本机就**立刻**走 wheel 不编译（同一台机器上重装更快）；
 要让**别人**也用得上，得把 wheel 传到镜像通道并在清单里补 `url`。
 
-清单里的条目目前是 `"local": true`（**尚未托管**）：只在跑过 `--build-wheel` 的机器上可用。
+**普通用户不需要做上面任何一步**：`win32-x64 / cp311` 那颗 wheel 自 G3 起**随安装包分发**
+（清单条目标 `bundled: true` + `path`，实测 sha256 与体积都在清单里），
+装完喵坞后它就在包内，`planCrf()` 会优先取它 —— 目标机**既不需要 MSVC、也不需要联网下载它**。
+（`--build-wheel` 与 `local` 那套现在只用于**补新平台**：例如给 macOS 或另一个 Python ABI 造条目。）
 
 - 缺 MSVC/SDK：装「Visual Studio 2022 生成工具」，勾 **MSVC v143 生成工具** +
   **Windows 11 SDK**（或 Windows 10 SDK 10.0.22621）。

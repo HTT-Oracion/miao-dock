@@ -147,7 +147,8 @@ RT="$HOME/Library/Application Support/runtimes/manga-translator"
 
 > **没有 Xcode 命令行工具（CLT）也能装**：`pydensecrf` 在 PyPI 上没有 macOS wheel，
 > 默认要走源码编译（需要 CLT）。若 `engine/wheels.manifest.json` 里登记了
-> **本平台 / 本 Python 版本**的预编译 wheel（通道与校验值都在那份清单里），
+> **本平台 / 本 Python 版本**的预编译 wheel（通道与校验值都在那份清单里；
+> 标了 `bundled: true` 的那条**直接随安装包分发**，无需另找），
 > 就把它单独装上，省掉整套编译工具链：
 >
 > ```bash
@@ -167,7 +168,9 @@ RT="$HOME/Library/Application Support/runtimes/manga-translator"
 >
 > 第二条命令**只需要读文件 + 算哈希**（在 macOS 上也能跑：它是脚本里的"只读模式"之一），
 > 会把 sha256 算好并打印成可粘贴的清单条目 —— 那个哈希**不允许凭记忆写**。
-> 把 wheel 传到镜像通道、补 `url` 并去掉 `local`，别人就也不必装 CLT 了。
+> 之后把 wheel 放进仓库 `engine/wheels/` 并标 `bundled: true` + `path`（**随安装包分发**，
+> 这是 G3 起 macOS 该走的路线，与 win32-x64 那条一致），或传到镜像通道补 `url` ——
+> 三态 `bundled` / `local` / `url` **恰取其一**，别混写。两条路选一条，别人就也不必装 CLT 了。
 
 **然后必须补一个兼容补丁**（否则掩码细化一步会炸，见 §5.1）：
 
