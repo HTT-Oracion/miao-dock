@@ -1,0 +1,335 @@
+{
+  "codes": [
+    {
+      "code": "TRANSLATE_NOT_CONFIGURED",
+      "status": 503
+    },
+    {
+      "code": "TRANSLATE_AUTH_FAILED",
+      "status": 502
+    },
+    {
+      "code": "TRANSLATE_INVALID_INPUT",
+      "status": 400
+    },
+    {
+      "code": "TRANSLATE_TEXT_TOO_LONG",
+      "status": 400
+    },
+    {
+      "code": "TRANSLATE_RATE_LIMITED",
+      "status": 429
+    },
+    {
+      "code": "TRANSLATE_QUOTA_EXCEEDED",
+      "status": 402
+    },
+    {
+      "code": "TRANSLATE_UNSUPPORTED_FEATURE",
+      "status": 400
+    },
+    {
+      "code": "TRANSLATE_UPSTREAM_ERROR",
+      "status": 502
+    },
+    {
+      "code": "TRANSLATE_UPSTREAM_UNREACHABLE",
+      "status": 502
+    },
+    {
+      "code": "TRANSLATE_TIMEOUT",
+      "status": 504
+    },
+    {
+      "code": "TRANSLATE_CAPABILITY_UNSUPPORTED",
+      "status": 400
+    },
+    {
+      "code": "INVALID_SETTING",
+      "status": 400
+    }
+  ],
+  "faults": [
+    {
+      "code": "TRANSLATE_TIMEOUT",
+      "name": "timeout_connect",
+      "stage": "connect",
+      "status": 504
+    },
+    {
+      "code": "TRANSLATE_TIMEOUT",
+      "name": "timeout_ttfb",
+      "stage": "ttfb",
+      "status": 504
+    },
+    {
+      "code": "TRANSLATE_TIMEOUT",
+      "name": "timeout_idle",
+      "stage": "idle",
+      "status": 504
+    },
+    {
+      "code": "TRANSLATE_TIMEOUT",
+      "name": "timeout_total",
+      "stage": "total",
+      "status": 504
+    },
+    {
+      "code": "TRANSLATE_UPSTREAM_UNREACHABLE",
+      "name": "unreachable",
+      "stage": null,
+      "status": 502
+    },
+    {
+      "code": "TRANSLATE_UPSTREAM_ERROR",
+      "name": "aborted",
+      "stage": null,
+      "status": 502
+    },
+    {
+      "code": "TRANSLATE_UPSTREAM_ERROR",
+      "name": "other",
+      "stage": null,
+      "status": 502
+    }
+  ],
+  "langCode": {
+    "llm": {
+      "ZH-CHS": null,
+      "auto": "auto",
+      "de": null,
+      "en": "en",
+      "es": null,
+      "fr": null,
+      "id": null,
+      "it": null,
+      "ja": "ja",
+      "ko": null,
+      "pt": null,
+      "ru": null,
+      "th": null,
+      "vi": null,
+      "xx": null,
+      "zh": "zh-CHS"
+    },
+    "text": {
+      "ZH-CHS": null,
+      "auto": "auto",
+      "de": "de",
+      "en": "en",
+      "es": "es",
+      "fr": "fr",
+      "id": "id",
+      "it": "it",
+      "ja": "ja",
+      "ko": "ko",
+      "pt": "pt",
+      "ru": "ru",
+      "th": "th",
+      "vi": "vi",
+      "xx": null,
+      "zh": "zh-CHS"
+    }
+  },
+  "retryable": [
+    {
+      "code": "TRANSLATE_UPSTREAM_UNREACHABLE",
+      "name": "unreachable",
+      "retryable": true
+    },
+    {
+      "code": "TRANSLATE_TIMEOUT",
+      "name": "timeout",
+      "retryable": true
+    },
+    {
+      "code": "TRANSLATE_UPSTREAM_ERROR",
+      "name": "upstream_5xx",
+      "retryable": true
+    },
+    {
+      "code": "TRANSLATE_UPSTREAM_ERROR",
+      "name": "upstream_4xx",
+      "retryable": false
+    },
+    {
+      "code": "TRANSLATE_UPSTREAM_ERROR",
+      "name": "upstream_303",
+      "retryable": true
+    },
+    {
+      "code": "TRANSLATE_UPSTREAM_ERROR",
+      "name": "upstream_302",
+      "retryable": false
+    },
+    {
+      "code": "TRANSLATE_AUTH_FAILED",
+      "name": "auth",
+      "retryable": false
+    },
+    {
+      "code": "TRANSLATE_RATE_LIMITED",
+      "name": "rate_limited",
+      "retryable": false
+    },
+    {
+      "code": "TRANSLATE_INVALID_INPUT",
+      "name": "invalid_input",
+      "retryable": false
+    }
+  ],
+  "truncate": [
+    {
+      "input": "",
+      "q": "",
+      "utf16": 0
+    },
+    {
+      "input": "abc",
+      "q": "abc",
+      "utf16": 3
+    },
+    {
+      "input": "12345678901234567890",
+      "q": "12345678901234567890",
+      "utf16": 20
+    },
+    {
+      "input": "1234567890212345678901",
+      "q": "123456789012345678901",
+      "utf16": 21
+    },
+    {
+      "input": "L001MMMMMM30MMMMMMMMMM",
+      "q": "L001MMMMMMMMMMMMMMMMMMMMMMMMMM",
+      "utf16": 30
+    },
+    {
+      "input": "日本語のテキストを翻23すこれは長い文章です",
+      "q": "日本語のテキストを翻訳しますこれは長い文章です",
+      "utf16": 23
+    },
+    {
+      "input": "🙂🙂🙂🙂🙂22🙂🙂🙂🙂🙂",
+      "q": "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂",
+      "utf16": 22
+    }
+  ],
+  "unknownCodeStatus": 502,
+  "upstream": [
+    {
+      "api": "text",
+      "code": "TRANSLATE_INVALID_INPUT",
+      "status": 400,
+      "upstreamCode": "101"
+    },
+    {
+      "api": "text",
+      "code": "TRANSLATE_TEXT_TOO_LONG",
+      "status": 400,
+      "upstreamCode": "103"
+    },
+    {
+      "api": "text",
+      "code": "TRANSLATE_AUTH_FAILED",
+      "status": 502,
+      "upstreamCode": "108"
+    },
+    {
+      "api": "text",
+      "code": "TRANSLATE_AUTH_FAILED",
+      "status": 502,
+      "upstreamCode": "202"
+    },
+    {
+      "api": "text",
+      "code": "TRANSLATE_UPSTREAM_ERROR",
+      "status": 502,
+      "upstreamCode": "301"
+    },
+    {
+      "api": "text",
+      "code": "TRANSLATE_UPSTREAM_ERROR",
+      "status": 502,
+      "upstreamCode": "302"
+    },
+    {
+      "api": "text",
+      "code": "TRANSLATE_UPSTREAM_ERROR",
+      "status": 502,
+      "upstreamCode": "304"
+    },
+    {
+      "api": "text",
+      "code": "TRANSLATE_UNSUPPORTED_FEATURE",
+      "status": 400,
+      "upstreamCode": "310"
+    },
+    {
+      "api": "text",
+      "code": "TRANSLATE_QUOTA_EXCEEDED",
+      "status": 402,
+      "upstreamCode": "401"
+    },
+    {
+      "api": "text",
+      "code": "TRANSLATE_RATE_LIMITED",
+      "status": 429,
+      "upstreamCode": "411"
+    },
+    {
+      "api": "text",
+      "code": "TRANSLATE_RATE_LIMITED",
+      "status": 429,
+      "upstreamCode": "412"
+    },
+    {
+      "api": "text",
+      "code": "TRANSLATE_UPSTREAM_ERROR",
+      "status": 502,
+      "upstreamCode": "999"
+    },
+    {
+      "api": "llm",
+      "code": "TRANSLATE_UPSTREAM_ERROR",
+      "status": 502,
+      "upstreamCode": "1"
+    },
+    {
+      "api": "llm",
+      "code": "TRANSLATE_INVALID_INPUT",
+      "status": 400,
+      "upstreamCode": "101"
+    },
+    {
+      "api": "llm",
+      "code": "TRANSLATE_AUTH_FAILED",
+      "status": 502,
+      "upstreamCode": "108"
+    },
+    {
+      "api": "llm",
+      "code": "TRANSLATE_AUTH_FAILED",
+      "status": 502,
+      "upstreamCode": "202"
+    },
+    {
+      "api": "llm",
+      "code": "TRANSLATE_AUTH_FAILED",
+      "status": 502,
+      "upstreamCode": "206"
+    },
+    {
+      "api": "llm",
+      "code": "TRANSLATE_UPSTREAM_ERROR",
+      "status": 502,
+      "upstreamCode": "902000"
+    },
+    {
+      "api": "llm",
+      "code": "TRANSLATE_UPSTREAM_ERROR",
+      "status": 502,
+      "upstreamCode": "999"
+    }
+  ]
+}

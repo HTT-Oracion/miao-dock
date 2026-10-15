@@ -17,6 +17,7 @@ pub mod errors;
 pub mod http;
 pub mod limiter;
 pub mod refute;
+pub mod selftest;
 pub mod settings;
 pub mod sse_parse;
 pub mod youdao;

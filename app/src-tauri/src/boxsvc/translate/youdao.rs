@@ -108,7 +108,7 @@ fn lang_pair_or_throw(req: &TranslateReq, api: &str) -> Result<(String, String),
 
 /// `input` 截断（方案 §5.1）：`len(q) <= 20` → q 原样；否则 q前10 + len(q) + q后10。
 /// 🔴 **len 按 UTF-16 码元**（照抄官方 JS demo，与上游实现对齐优先于「更正确」）。
-fn truncate_input(q: &str) -> String {
+pub(crate) fn truncate_input(q: &str) -> String {
     // 反证开关：去掉截断 ⇒ 长文本签名算错，假上游回 202
     if refute::get().no_truncate {
         return q.to_string();

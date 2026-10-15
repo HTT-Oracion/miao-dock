@@ -110,6 +110,22 @@ fn main() {
         println!("{}", serde_json::to_string(&s).unwrap_or_else(|_| "{}".to_string()));
         return;
     }
+    // `--translate-cases '<json>'`：把一组用例喂给翻译**门面**（text/stream/options/settings/
+    // credentials/batch），打印 `{results:[...]}`。用途：`check:translate` 的运行时断言面 ——
+    // Node 服务退役后，原先「进程内直调 Node 门面」改由这里驱动 Rust 门面（真发 HTTP 打 Node
+    // 侧假上游）。同样不起服务、不绑端口。
+    if let Some(i) = std::env::args().position(|a| a == "--translate-cases") {
+        let arg = std::env::args().nth(i + 1).unwrap_or_default();
+        println!("{}", miao_dock::boxsvc::translate::selftest::cases_report(&arg));
+        return;
+    }
+    // `--translate-selftest`：打印翻译**纯逻辑**报告（统一码表 / 签名 input 截断 / 语言码表 /
+    // 上游码映射 / 出网错误族归因 / 可重试判定）。用途：`check:translate` 的冻结 golden 金标
+    // —— 这些面不经过路由（注册表是编译期常量、错误族由 reqwest 抛），只能从这里取证。
+    if std::env::args().any(|a| a == "--translate-selftest") {
+        println!("{}", miao_dock::boxsvc::translate::selftest::pure_report());
+        return;
+    }
     // `--list-routes`：打印**显式路由表**（每条端点的 method/pattern/group/tier）+ 两个计数。
     // 用途：e2e 做「转发分支数 = 0」的验收（F5）—— 不起服务、不拉 node，毫秒级跑完。
     if std::env::args().any(|a| a == "--list-routes") {

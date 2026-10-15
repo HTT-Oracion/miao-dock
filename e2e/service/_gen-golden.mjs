@@ -12,8 +12,10 @@
  *   · 键排序 + 剔 `updatedAt`（canon）
  *   · 路径归一化：`C:\Users\<name>`（任意转义层级）→ `<HOME>`、仓库根 → `<REPO>`
  *   · 各检查的投影（只比契约面，规避动态端口 / env 大小写折叠）
+ *   · `store-exec` 的投影另有一份**共享**规则 `_store-exec-report.mjs`（时间抹平 / 运行目录 /
+ *     taskId / 事件 id 拉平）—— 生成与比对共用，避免规则走散。
  *
- * 用法：node e2e/service/_gen-golden.mjs <engine|store-exec|...>
+ * 用法：node e2e/service/_gen-golden.mjs <engine|store-exec>
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -22,6 +24,10 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { RUST_BIN } from './_service-harness.mjs';
+import { collect as collectEngineHttp } from './_engine-http-report.mjs';
+import { collectRust } from './_llm-report.mjs';
+import { buildScenarios, dumpRust, makeCtx, normSnapshot } from './_paths-report.mjs';
+import { freshDirs, projectScenario } from './_store-exec-report.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
@@ -54,7 +60,8 @@ function run(args, env = {}) {
 function write(name, obj) {
   fs.mkdirSync(GOLDEN_DIR, { recursive: true });
   const f = path.join(GOLDEN_DIR, `${name}.json`);
-  fs.writeFileSync(f, JSON.stringify(obj, null, 2));
+  // 🔴 行尾纪律：golden 是文本产物，与既有 golden 一样落 CRLF（`JSON.stringify` 只给 `\n`）
+  fs.writeFileSync(f, JSON.stringify(obj, null, 2).replace(/\n/g, '\r\n'));
   console.log(`✓ golden → ${path.relative(REPO_ROOT, f)}（${fs.statSync(f).size} 字节）`);
 }
 
@@ -86,7 +93,55 @@ function genEngine() {
   write('engine-selftest', { real: proj(real), mock: proj(mock) });
 }
 
+// ------------------------------------------------------------------ store-exec（F3-b）
+function genStoreExec() {
+  const dirs = freshDirs('gen');
+  const raw = run(['--store-exec-selftest'], {
+    MIAO_ROOT: dirs.root,
+    MIAO_STATE_DIR: dirs.state,
+    MIAO_TOKEN: 'a'.repeat(64),
+    MIAO_ENGINE_PROTOCOL: 'mock',
+  });
+  const scenarios = JSON.parse(raw).scenarios.map((sc) => projectScenario(sc, dirs));
+  write('store-exec-selftest', { scenarios });
+}
+
+// ------------------------------------------------------------------ paths（F2）
+async function genPaths() {
+  const scenarios = buildScenarios();
+  const out = {};
+  for (const sc of scenarios) {
+    const snap = await dumpRust(sc.env);
+    out[sc.id] = normSnapshot(snap, makeCtx(sc, REPO_ROOT));
+  }
+  write('paths-selftest', out);
+}
+
+// ------------------------------------------------------------------ llm-supervisor（F4-b2）
+async function genLlmSupervisor() {
+  const results = await collectRust();
+  write('llm-selftest', { results });
+}
+
+// ------------------------------------------------------------------ engine-http（F4-b）
+async function genEngineHttp() {
+  const { results, payloads } = await collectEngineHttp();
+  write('engine-http-selftest', { results, payloads });
+}
+
+// ------------------------------------------------------------------ translate（F5.5 纯逻辑面）
+// 只冻结 `--translate-selftest`（纯逻辑报告）：运行时用例要打 Node 侧假上游，
+// 是**活体**断言面（由 `check:translate` 的假上游 + 反证开关把守），不进 golden。
+function genTranslate() {
+  write('translate-selftest', JSON.parse(run(['--translate-selftest'])));
+}
+
 // ------------------------------------------------------------------ 入口
 const which = process.argv[2];
 if (which === 'engine') genEngine();
-else throw new Error(`未知 golden 目标：${which}（现支持：engine）`);
+else if (which === 'store-exec') genStoreExec();
+else if (which === 'paths') await genPaths();
+else if (which === 'llm-supervisor') await genLlmSupervisor();
+else if (which === 'engine-http') await genEngineHttp();
+else if (which === 'translate') genTranslate();
+else throw new Error(`未知 golden 目标：${which}（现支持：engine / store-exec / paths / llm-supervisor / engine-http / translate）`);
