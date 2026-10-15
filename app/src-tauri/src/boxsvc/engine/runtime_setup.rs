@@ -19,6 +19,8 @@ use std::process::Command;
 
 use serde_json::json;
 
+use crate::child_watch::hide_console;
+
 use super::model_store::{
     self, Manifest, ModelStoreError, ProgressEvent, ensure_models, link_models,
 };
@@ -93,6 +95,7 @@ fn extract_entries(manifest: &Manifest, root: &Path) -> Result<(), BootstrapErro
         if strip > 0 {
             cmd.arg(format!("--strip-components={strip}"));
         }
+        hide_console(&mut cmd);
         match cmd.status() {
             Ok(st) if st.success() => {}
             Ok(st) => {
@@ -155,7 +158,11 @@ pub fn run_bootstrap(
     let venv_py = venv_py(rt_dir);
     if !venv_py.exists() {
         on_phase("runtime", "创建虚拟环境");
-        match Command::new(&py).arg("-m").arg("venv").arg(rt_dir.join("venv")).status() {
+        let mut c = Command::new(&py);
+        c.arg("-m").arg("venv").arg(rt_dir.join("venv"));
+        // `python` 是控制台程序，boxsvc 无控制台 ⇒ 建 venv 期间会闪黑框。
+        hide_console(&mut c);
+        match c.status() {
             Ok(st) if st.success() => {}
             Ok(st) => {
                 return Err(BootstrapError::new("venv", format!("venv 创建失败（{st}）")))
@@ -176,17 +183,18 @@ pub fn run_bootstrap(
     }
     // 🔴 事务性：pip 默认「先收齐再统一装」，任一处失败整批回滚（VERSIONS.lock §6.3）。
     //     这里一次性装；将来要拆批 A/B 时，把 requirements 拆成两个文件、分两次调用即可。
-    match Command::new(&venv_py)
-        .arg("-m")
+    let mut pip = Command::new(&venv_py);
+    pip.arg("-m")
         .arg("pip")
         .arg("install")
         .arg("-r")
         .arg(&req)
         .arg("--index-url")
         .arg(pip_index)
-        .arg("--no-input")
-        .status()
-    {
+        .arg("--no-input");
+    // `pip` 是控制台程序，且这一跑就是几分钟 —— 不隐藏会一直挂着一个黑框。
+    hide_console(&mut pip);
+    match pip.status() {
         Ok(st) if st.success() => {}
         Ok(st) => {
             return Err(BootstrapError::new(

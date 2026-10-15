@@ -21,6 +21,8 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
+use crate::child_watch::hide_console;
+
 use crate::boxsvc::store::{StoreError, model};
 use crate::boxsvc::translate;
 use crate::paths;
@@ -741,6 +743,9 @@ impl EngineState {
         cmd.stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
+        // G4：这次会话里会起 `python -m venv` / `pip` / `tar` —— 全是控制台程序，
+        // 而 boxsvc 自己无控制台 ⇒ 不隐藏会让"开始下载"连闪好几个黑框。
+        hide_console(&mut cmd);
         let mut child = cmd.spawn().map_err(|e| {
             StoreError::new("INTERNAL", format!("无法启动模型下载进程：{e}"), json!({ "runner": self.download_runner.to_string_lossy() }))
         })?;

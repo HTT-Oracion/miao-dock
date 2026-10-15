@@ -20,6 +20,8 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+
+use crate::child_watch::hide_console;
 use std::process::Command;
 
 use serde_json::{json, Value};
@@ -473,6 +475,8 @@ pub fn run(argv: &[String]) -> i32 {
             if strip > 0 {
                 cmd.arg(format!("--strip-components={strip}"));
             }
+            // `tar` 是控制台程序，boxsvc 无控制台 ⇒ 解包期间会闪黑框。
+            hide_console(&mut cmd);
             match cmd.status() {
                 Ok(st) if st.success() => println!("  已解包 {} → {}", entry.id, out_dir.display()),
                 Ok(st) => {

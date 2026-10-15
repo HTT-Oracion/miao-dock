@@ -39,6 +39,11 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
+// `creation_flags` 是 `CommandExt` 上的方法：`WinFlags::apply()` / `kill_tree` 都要它，
+// 提到模块级（各函数里再 `use` 一遍会变成重复 import）。
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 /// 主循环巡检节奏。JS 版是 1000ms（因为它只能轮询 ppid）；本版读的是内核事件，
 /// 巡检只是为了**发现标志位**，可以很快。
 const POLL_MS: u64 = 50;
@@ -58,6 +63,64 @@ const PPID_POLL_MS: u64 = 1000;
 /// 「父进程通道在启动后这么快就闭合 ⇒ 大概率是父进程接线错了」的阈值。
 /// 真实父进程至少活过这一会儿；启动即闭合只可能来自 `Stdio::null()`/误关。
 const EARLY_CLOSE_MS: u64 = 300;
+
+// ------------------------------------------------------------------ Windows：别弹黑框
+
+/// Windows 创建标志：**不给子进程分配控制台窗口**。
+///
+/// 🔴 本仓桌面端是 `windows_subsystem = "windows"`（**没有控制台**）。这种父进程 spawn 一个
+///    **控制台程序**时，Windows 会为子进程**新开一个控制台窗口** —— std 不代劳。症状就是
+///    「打开喵坞弹出两个黑框」：一个是 ① `boxsvc`，一个是 ③ `llama-server`
+///    （`service.rs::spawn_inner` 与 `supervisor.rs` 两处都没带这个标志）。
+///    另几处同理会闪框：`pip` / `python -m venv` / `tar` / `nvidia-smi` / `boxsvc --fetch-models`。
+///
+/// ⚠️ `child_watch.rs` 与 `service.rs` 原先各自在 `taskkill` 处带了这个标志，
+///    但**真正 spawn 业务子进程的那几处全漏了** —— 这正是"只给收尾路径加、不给启动路径加"
+///    的典型漏法（收尾时闪一下没人注意，启动时闪两个黑框立刻被发现）。
+#[cfg(windows)]
+pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Windows 创建标志：新进程组（`taskkill /T` / POSIX 进程组语义的落点）。
+#[cfg(windows)]
+pub const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
+/// 累积的 Windows 创建标志，**一次 `apply()` 生效**。
+///
+/// 🔴 为什么要这个壳：std 的 `Command::creation_flags()` 是**覆盖**语义，而 `Command`
+///    **没有**读取已设标志的 getter ⇒ 一处 spawn 需要两个标志时（起 ① 既要
+///    `CREATE_NEW_PROCESS_GROUP` 又要 `CREATE_NO_WINDOW`），连写两次 `creation_flags()`
+///    会让前一个被后一个**静默冲掉**（症状是"明明加了隐藏黑框、却还在弹"，或反之
+///    "进程组没了、`taskkill /T` 收不干净"）。在本仓记一份、最后一次合并写入。
+#[derive(Clone, Copy, Default)]
+pub struct WinFlags(u32);
+
+impl WinFlags {
+    pub const fn new() -> Self {
+        Self(0)
+    }
+    pub const fn or(mut self, f: u32) -> Self {
+        self.0 |= f;
+        self
+    }
+    /// 写入 `Command`（非 Windows 平台是空操作）。
+    pub fn apply(&self, cmd: &mut Command) {
+        #[cfg(windows)]
+        cmd.creation_flags(self.0);
+        #[cfg(not(windows))]
+        let _ = cmd;
+    }
+}
+
+/// 最常用的一档：**隐藏控制台窗口**（非 Windows 平台空操作）。
+///
+/// 凡是产品 spawn 一个**可能是控制台程序**的子进程（`boxsvc` / `llama-server` / `python` /
+/// `pip` / `tar` / `nvidia-smi` / `taskkill` …），spawn 前都要调它一次。
+pub fn hide_console(cmd: &mut Command) {
+    #[cfg(windows)]
+    WinFlags::new().or(CREATE_NO_WINDOW).apply(cmd);
+    #[cfg(not(windows))]
+    let _ = cmd;
+}
 
 /// 看守自身被要求停 / 父进程已死的标志（信号处理器里只能改这个）。
 /// 0=无事，1=父进程已死，2=收到 SIGINT，3=收到 SIGTERM。
@@ -436,6 +499,9 @@ fn spawn_watched(cmd: &[String], cwd: Option<&str>) -> std::result::Result<Child
         use std::os::unix::process::CommandExt;
         c.process_group(0);
     }
+    // 🔴 但 `CREATE_NO_WINDOW` 必须给：父进程（喵坞本体）是 `windows_subsystem="windows"`
+    //    的无控制台进程，不带这个标志 spawn 控制台程序会**新开一个黑框**。
+    hide_console(&mut c);
     c.spawn()
 }
 
@@ -563,15 +629,14 @@ fn kill_tree(pid: u32, force: bool) {
     }
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
         // 🔴 Windows 上「先礼」（不带 /F）对**控制台进程无效**（D-89）：`taskkill /T` 不带
         // /F 对 node 返回 255、对 Python 返回 128，目标进程一个不死。所以 Windows 上无论
         // 先礼后兵都直接 /F —— 平台没有「优雅」这一档，硬保留先礼只会空等、
         // 还给孙进程（执行器）被 reparent 成孤儿占着 port+1 的窗口。
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         let mut c = Command::new("taskkill");
         c.args(["/PID", &pid.to_string(), "/T", "/F"]);
-        c.creation_flags(CREATE_NO_WINDOW);
+        // `CREATE_NO_WINDOW`：taskkill 也是控制台程序，父进程（GUI）没控制台 ⇒ 会闪黑框。
+        hide_console(&mut c);
         let _ = c.stdout(Stdio::null()).stderr(Stdio::null()).status();
         let _ = force; // 语义保留：unix 分支靠它区分 SIGTERM/SIGKILL；Windows 分支两档等价
     }
@@ -657,6 +722,8 @@ pub fn run_as_parent(args: &[String]) -> i32 {
     let mut child = match {
         c.stdin(Stdio::piped());
         c.env("MIAO_CHILD_WATCH_PIPE", "1");
+        // 看守器是控制台程序：父进程（这个夹具）可能是 GUI 宿主 ⇒ 不隐藏就会闪黑框。
+        hide_console(&mut c);
         c.spawn()
     } {
         Ok(ch) => ch,
@@ -671,6 +738,7 @@ pub fn run_as_parent(args: &[String]) -> i32 {
             c2.arg("--child-watch").arg("--").args(&cmd);
             c2.stdin(Stdio::null());
             c2.env("MIAO_CHILD_WATCH_PIPE", "0");
+            hide_console(&mut c2);
             match c2.spawn() {
                 Ok(ch) => ch,
                 Err(e2) => {

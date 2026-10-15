@@ -9,6 +9,8 @@
 //      把「Medium 在 16GB Mac 上不可行」**升级成了映射逻辑的一部分** —— 改它 = 改契约。
 use std::path::{Path, PathBuf};
 
+use crate::child_watch::hide_console;
+
 /// 档位枚举（顺序 = 设置页展示顺序，由低到高）
 pub const TIERS: &[&str] = &["tiny", "small", "medium"];
 /// 加速后端枚举（《03》§5.1 `sidecar.accel`）
@@ -223,10 +225,12 @@ pub fn detect_gpu(platform: &str, arch: &str, total_ram_gb: f64, nvidia: Option<
 /// 读 NVIDIA 显存总量（GiB）。`nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits`
 /// 输出单位是 **MiB**。读不到 → `None`（本机无独显；这不是错误）。
 fn default_nvidia_vram_gb() -> Option<f64> {
-    let out = std::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"])
-        .output()
-        .ok()?;
+    let mut cmd = std::process::Command::new("nvidia-smi");
+    cmd.args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"]);
+    // `nvidia-smi` 是控制台程序：boxsvc / 喵坞都没控制台 ⇒ 探测一次闪一个黑框。
+    // （这处是"启动时闪框"的高频来源：前端一进设置页就打 `/api/v1/engine/profile`。）
+    hide_console(&mut cmd);
+    let out = cmd.output().ok()?;
     if !out.status.success() {
         return None;
     }

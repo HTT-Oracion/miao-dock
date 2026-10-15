@@ -28,6 +28,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
+
+use crate::child_watch::hide_console;
 use serde_json::{json, Value};
 
 use super::{env_bool, env_str, resolve_llm_launch, EngineError, LaunchSpec, LlmLaunchOverrides};
@@ -399,6 +401,10 @@ fn do_start(
         cmd.stdin(Stdio::null());
     }
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    // 🔴 ③ `llama-server` / ② `python main.py` 都是**控制台程序**，而父进程（喵坞 /
+    //    boxsvc）在 Windows 上没有控制台 ⇒ 不带这个标志会**新开一个黑框**
+    //    （"打开喵坞弹两个命令行窗口"的第二个）。
+    hide_console(&mut cmd);
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
     let _watch_keepalive = child.stdin.take();
 

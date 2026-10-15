@@ -21,6 +21,7 @@ use axum::http::{header, HeaderMap, HeaderValue, Uri};
 use axum::response::Response;
 use serde_json::{json, Map, Value};
 
+use crate::child_watch::hide_console;
 use super::events;
 use super::library;
 use super::multipart;
@@ -820,6 +821,8 @@ fn run_verify_child(runner: &Path, manifest: &str, model_root: &str) -> (i64, St
     cmd.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+    // 执行体（`boxsvc`）是控制台程序，父进程（boxsvc 本体）无控制台 ⇒ 不隐藏会闪黑框。
+    hide_console(&mut cmd);
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         // 🔴 消息里必须**带上路径**：执行体不在盘上时，用户（和我们）看到的若只是

@@ -38,6 +38,15 @@ use std::collections::{BTreeMap, VecDeque};
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+
+// 子进程创建标志（隐藏黑框 / 新进程组）的**单一实现**住在 lib 的 child_watch 里：
+// boxsvc、supervisor、runtime_setup 等所有 spawn 点共用一份，避免两处各写一个值后漂移。
+// ⚠️ 两个标志常量只在 windows 下有定义 ⇒ import 必须按平台分叉，
+//    否则 macOS 侧直接编译不过（而 macOS 打包正是要支持的平台）。
+#[cfg(windows)]
+use miao_dock::child_watch::{hide_console, WinFlags, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
+#[cfg(not(windows))]
+use miao_dock::child_watch::hide_console;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -1141,12 +1150,16 @@ fn spawn_inner(
         cmd.process_group(0);
     }
     // Windows 上把子进程也挂进新进程组（taskkill /T 才有意义）
+    // 🔴 并且必须**同时**带 `CREATE_NO_WINDOW`：① `boxsvc` 是控制台程序，而父进程
+    //    （喵坞本体）是 `windows_subsystem="windows"` 的无控制台进程 ⇒ 不带这个标志
+    //    就会**新开一个黑框**（"打开喵坞弹两个命令行窗口"的第一个）。
+    //    ⚠️ 两个标志必须**一次合并写入**：std 的 `creation_flags()` 是覆盖语义，
+    //    分两次调用会让后一个把前一个冲掉（这正是 WinFlags 存在的原因）。
     #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        cmd.creation_flags(CREATE_NEW_PROCESS_GROUP);
-    }
+    WinFlags::new()
+        .or(CREATE_NEW_PROCESS_GROUP)
+        .or(CREATE_NO_WINDOW)
+        .apply(&mut cmd);
 
     let mut child = cmd
         .spawn()
@@ -1305,9 +1318,6 @@ fn signal_tree(pgid: u32, force: bool) {
 
 #[cfg(windows)]
 fn signal_tree(pgid: u32, force: bool) {
-    use std::os::windows::process::CommandExt;
-    // `CREATE_NO_WINDOW`：不给子进程分配控制台窗口。
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut c = Command::new("taskkill");
     c.args(["/PID", &pgid.to_string(), "/T"]);
     // 🔴 Windows 上「先礼」（不带 `/F`）对**控制台进程无效**（D-89）：
@@ -1325,7 +1335,8 @@ fn signal_tree(pgid: u32, force: bool) {
     // 应用本体是 `windows_subsystem = "windows"`（**没有**控制台），此时 spawn 一个
     // 控制台程序，Windows 会**新开一个黑框**闪一下。纯观感问题，但「点退出时蹦出一个
     // cmd 黑框」很容易被当成"是不是中毒了"，成本一行，消掉它。
-    c.creation_flags(CREATE_NO_WINDOW);
+    // （`hide_console` 的实现在 lib 的 `child_watch`，与启动路径共用一份。）
+    hide_console(&mut c);
     let _ = c.stdout(Stdio::null()).stderr(Stdio::null()).status();
     let _ = force; // 语义保留：unix 分支靠它区分 SIGTERM/SIGKILL；Windows 分支两档等价
 }
