@@ -102,7 +102,7 @@ const CHECKS = [
   // D3 / B4：纯文件 + 短 CLI（真 tar / `--print-plan`），不起服务、不占端口 ⇒ static 层并行跑
   { id: 'extract-atomic', script: 'e2e/engine/extract-atomic-check.mjs', tier: 'static', refute: true, watch: ['engine/scripts/atomic-extract.mjs', 'engine/scripts/setup-engine.mjs', 'e2e/engine/extract-atomic-check.mjs'] },
   { id: 'pydensecrf-wheel', script: 'e2e/engine/pydensecrf-wheel-check.mjs', tier: 'static', refute: true, watch: ['engine/wheels.manifest.json', 'engine/scripts/install-engine-deps.mjs', 'docs/install-guide-windows.md', 'docs/install-guide-macos.md', 'e2e/engine/pydensecrf-wheel-check.mjs'] },
-  { id: 'engine-bootstrap', script: 'e2e/service/engine-bootstrap-check.mjs', tier: 'static', refute: true, watch: ['engine/runtime.manifest.json', 'engine/wheels.manifest.json', 'app/src-tauri/src/boxsvc/handlers.rs', 'app/src-tauri/src/boxsvc/engine/state.rs', 'app/src/engine-download.ts', 'app/src/screens/NotReadyScreen.tsx', 'app/src/screens/engine/DownloadPanel.tsx', 'app/src/screens/settings/OnlineApiForm.tsx', 'app/src/components/units/ProgressRing.tsx', 'e2e/service/engine-bootstrap-check.mjs'] },
+  { id: 'engine-bootstrap', script: 'e2e/service/engine-bootstrap-check.mjs', tier: 'static', refute: true, watch: ['engine/runtime.manifest.json', 'engine/wheels.manifest.json', 'engine/models.manifest.json', 'app/src-tauri/src/boxsvc/handlers.rs', 'app/src-tauri/src/boxsvc/engine/state.rs', 'app/src-tauri/src/boxsvc/engine/runtime_setup.rs', 'app/src/engine-download.ts', 'app/src/screens/NotReadyScreen.tsx', 'app/src/screens/engine/DownloadPanel.tsx', 'app/src/screens/settings/OnlineApiForm.tsx', 'app/src/components/units/ProgressRing.tsx', 'e2e/service/engine-bootstrap-check.mjs'] },
 
   // ---- nightly：真实引擎 / 模型，分钟级，串行 ----
   { id: 'e3-real', script: 'e2e/engine/e3-real-full-chain-check.mjs', tier: 'nightly', watch: ['engine/**', 'app/src-tauri/src/**'] },
@@ -116,6 +116,11 @@ const CHECKS = [
   { id: 'offline-real', script: 'e2e/service/offline-real-check.mjs', tier: 'nightly', watch: ['app/src-tauri/src/boxsvc/engine.rs', 'app/src-tauri/src/boxsvc/engine/state.rs', 'app/src-tauri/src/service.rs', 'engine/models.manifest.json', 'e2e/service/offline-real-check.mjs'] },
   // E3：**真安装器**跑一次静默卸载 ⇒ 验「不挂住」+「不碰用户自装的运行时 / 作品目录」。
   { id: 'uninstall-keep', script: 'e2e/bundle-uninstall-keep-check.mjs', tier: 'nightly', watch: ['app/src-tauri/nsis/**', 'app/src-tauri/tauri.windows.conf.json', 'e2e/bundle-uninstall-keep-check.mjs'] },
+  // G4：**夹具版真装配** —— 真跑产品自己的 `boxsvc --engine-bootstrap`：
+  //   两批 pip 的顺序与各自成功、随包 wheel 端到端（自检①真 import）、兼容补丁落 venv、
+  //   按 dest 解包、建链、长路径体检、就绪标记。
+  //   硬前置：`cargo build --bin boxsvc` + 本机跑过 `setup:engine` ⇒ 只在开发机上有意义，故归 nightly。
+  { id: 'engine-bootstrap-real', script: 'e2e/engine/engine-bootstrap-real-check.mjs', tier: 'nightly', refute: true, watch: ['app/src-tauri/src/boxsvc/engine/**', 'engine/runtime.manifest.json', 'engine/models.manifest.json', 'engine/wheels.manifest.json', 'engine/wheels/**', 'e2e/engine/engine-bootstrap-real-check.mjs'] },
 ];
 
 /**

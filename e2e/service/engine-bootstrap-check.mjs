@@ -230,6 +230,37 @@ function check(name, cond, extra) {
   check('W13 装配期做长路径体检（量最长路径 + 写进就绪标记 + tar 走 verbatim 前缀），且只报告、不写注册表',
     measures && writesMarker && noRegistryWrite && tarVerbatim,
     { measures, writesMarker, noRegistryWrite, tarVerbatim });
+
+  // ---- W14：解包找归档必须用 `dest`，不是 `url` 的末段 ----
+  //     下载侧（`model_store::ensure_models`）落在 `root.join(file.dest)`；解包侧若按 url 找，
+  //     必然落空 —— 症状是**下完 100 MB 之后**报「待解包归档不存在」，而下载日志里那条
+  //     「[完成] …」看上去一切正常。两份清单里 dest 与 url 末段**真的不同名**
+  //     （`python-3.11.17-….tar.gz` vs `cpython-3.11.17%2B….tar.gz`），所以这不是理论问题。
+  const archiveFromDest = /fn archive_path\(root: &Path, e: &FileEntry\) -> PathBuf \{\s*root\.join\(&e\.dest\)/.test(setupSrc)
+    && setupSrc.includes('archive_path(root, e)');
+  // 反面：不许再出现"按 url 末段拼 .download-cache"那种写法。
+  const noUrlTailLookup = !/\.download-cache"\)\.join\(url_name\(/.test(setupSrc)
+    && !setupSrc.includes('fn url_name(');
+  check('W14 解包按 `dest` 找归档（与下载侧同一条路径），且不再按 url 末段拼 —— 两处不同名时按 url 必然落空',
+    archiveFromDest && noUrlTailLookup, { archiveFromDest, noUrlTailLookup });
+
+  // ---- W15：解包只解**刚下过的那一组** ----
+  //     装配是分组推进的（python 组 → source 组 → 模型组），而解包曾经是打开整份清单去解 ⇒
+  //     第 1 阶段刚下完 python 就会顺手去解还没下载的 `engine_source`，报「待解包归档不存在」。
+  //     🔴 这条只在**干净机器**上现形：本机缓存里恰好躺着 `setup:engine` 留下的那份归档，
+  //     于是本机跑装配一路绿灯 —— 正是"假绿"的标准形态，所以钉在源码上而不是靠跑一遍。
+  const scopedBySet = setupSrc.includes('fn set_ids(manifest: &Manifest, set: &str)')
+    && /let py_ids = set_ids\(runtime_manifest, "python"\)\?;/.test(setupSrc)
+    && /extract_entries\(runtime_manifest, runtime_root, Some\(&py_ids\)\)\?;/.test(setupSrc)
+    && /let src_ids = set_ids\(runtime_manifest, "source"\)\?;/.test(setupSrc)
+    && /extract_entries\(runtime_manifest, runtime_root, Some\(&src_ids\)\)\?;/.test(setupSrc);
+  // 反面①：运行时侧不许再有**不带范围**的解包。
+  const noUnscopedRuntimeExtract = !/extract_entries\(runtime_manifest, runtime_root\)\?;/.test(setupSrc);
+  // 反面②：模型侧的范围必须与 `--stage` 同源（`model_ids`），否则第 1 轮会去解第 2 轮的归档。
+  const modelsScopedByStage = /extract_entries\(model_manifest, model_root, model_ids\.as_deref\(\)\)\?;/.test(setupSrc);
+  check('W15 解包只解**刚下过的那一组**（运行时按 `set_ids`、模型按 `--stage` 同源）—— 否则干净机器第 1 阶段去解还没下的 engine_source',
+    scopedBySet && noUnscopedRuntimeExtract && modelsScopedByStage,
+    { scopedBySet, noUnscopedRuntimeExtract, modelsScopedByStage });
 }
 
 // ------------------------------------------------------------------ 反证轮
@@ -374,6 +405,36 @@ if (REFUTE) {
     restore();
   }
 
+  // ---- M10：解包改回按 url 末段找归档（下载侧仍写 dest）⇒ W14 红 ----
+  {
+    const restore = mutateFile(
+      RUNTIME_SETUP_RS,
+      'fn archive_path(root: &Path, e: &FileEntry) -> PathBuf {\n    root.join(&e.dest)\n}',
+      'fn archive_path(root: &Path, e: &FileEntry) -> PathBuf {\n    root.join(".download-cache").join(e.url.rsplit(\'/\').next().unwrap_or(&e.url))\n}',
+    );
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W14');
+    check('M10 解包改回按 url 末段找归档 ⇒ W14 红（下完之后报「待解包归档不存在」的那条路）',
+      red, { code: r.code, redOn: red });
+    restore();
+  }
+
+  // ---- M11：运行时解包退回"解整份清单"（干净机器第 1 阶段必失败）⇒ W15 红 ----
+  {
+    const restore = mutateFile(
+      RUNTIME_SETUP_RS,
+      'extract_entries(runtime_manifest, runtime_root, Some(&py_ids))?;',
+      // 变异体要**编得过**（`None` = 解整份清单），否则"没红"会被误读成断言无效 ——
+      // 少传一个参数是**编译错误**，那反证的不是断言而是语法。
+      'extract_entries(runtime_manifest, runtime_root, None)?;',
+    );
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W15');
+    check('M11 运行时解包退回"解整份清单" ⇒ W15 红（干净机器第 1 阶段报「待解包归档不存在」的那条路）',
+      red, { code: r.code, redOn: red });
+    restore();
+  }
+
   // 收尾：确认还原到位
   {
     const bad = [];
@@ -386,7 +447,8 @@ if (REFUTE) {
     if (fs.readFileSync(MODELS_MANIFEST, 'utf8').includes('"stage": 2,\n      "platform": "win32-x64",\n      "dest": "bin/llama')) bad.push('models.manifest.json 残留 M7');
     if (!fs.readFileSync(DOWNLOAD_PANEL_TSX, 'utf8').includes('这一步完成后本地引擎即可启动')) bad.push('DownloadPanel.tsx 残留 M8');
     if (!fs.readFileSync(RUNTIME_SETUP_RS, 'utf8').includes('"longPath": longpath.map')) bad.push('runtime_setup.rs 残留 M9');
-    check('R1 变异收尾：九处源码/清单按字节还原', bad.length === 0, bad);
+    if (!fs.readFileSync(RUNTIME_SETUP_RS, 'utf8').includes('extract_entries(runtime_manifest, runtime_root, Some(&py_ids))?;')) bad.push('runtime_setup.rs 残留 M11');
+    check('R1 变异收尾：十处源码/清单按字节还原', bad.length === 0, bad);
   }
 }
 

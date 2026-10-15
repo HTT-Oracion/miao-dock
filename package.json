@@ -96,6 +96,8 @@
     "check:pydensecrf-wheel-install": "node e2e/engine/pydensecrf-wheel-install-check.mjs",
     "check:engine-bootstrap": "node e2e/service/engine-bootstrap-check.mjs",
     "check:engine-bootstrap:refute": "node e2e/service/engine-bootstrap-check.mjs --refute",
+    "check:engine-bootstrap-real": "node e2e/engine/engine-bootstrap-real-check.mjs",
+    "check:engine-bootstrap-real:refute": "node e2e/engine/engine-bootstrap-real-check.mjs --refute",
     "check:resources": "node e2e/resources-check.mjs",
     "check:resources:refute": "node e2e/resources-check.mjs --refute",
     "check:resilience": "node e2e/service/resilience-check.mjs",
