@@ -58,6 +58,7 @@ export default [
     },
   },
   {
+    linterOptions: { reportUnusedDisableDirectives: 'off' },
     rules: {
       'no-useless-assignment': 'warn',
       'preserve-caught-error': 'warn',
