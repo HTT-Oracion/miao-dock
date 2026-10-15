@@ -61,7 +61,7 @@
  *
  * ## 环境前提（缺任何一项都**非零退出并点名**，不静默跳过）
  *   · 已 `cargo build --bin boxsvc`
- *   · 本机跑过 `npm run setup:engine`（真实落点里有那两个 `.tar.gz`）
+ *   · 本机跑过 `npm run task -- setup:engine`（真实落点里有那两个 `.tar.gz`）
  *
  * 用法：node e2e/engine/engine-bootstrap-real-check.mjs [--refute]
  */
@@ -170,7 +170,7 @@ function findSourceArchive(f) {
 }
 
 if (!fs.existsSync(CACHE_SRC)) {
-  console.error(`✗ 找不到真实缓存目录：${CACHE_SRC}\n  先跑：npm run setup:engine`);
+  console.error(`✗ 找不到真实缓存目录：${CACHE_SRC}\n  先跑：npm run task -- setup:engine`);
   process.exit(1);
 }
 
@@ -202,7 +202,7 @@ if (!sourceEntry || !findSourceArchive(sourceEntry)) {
 if (missing.length > 0) {
   console.error(
     `✗ 真实缓存里缺这些归档（目录：${CACHE_SRC}）：\n  · ${missing.join('\n  · ')}\n` +
-      '  先跑 npm run setup:engine 把它们下下来。',
+      '  先跑 npm run task -- setup:engine 把它们下下来。',
   );
   process.exit(1);
 }

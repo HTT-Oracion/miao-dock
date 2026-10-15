@@ -9,7 +9,7 @@
  *
  * 截图用的落盘目录是端到端那一轮的真实产物（默认 `.tmp/e2e/root`，可用 `MIAO_E2E_TMP` 覆盖，
  * 与 `e2e/e2e.mjs` 共用同一变量），所以漫画库里看到的是真数据、对照页里是真题，不是摆拍。
- * **先跑 `npm run e2e` 再跑这个。**
+ * **先跑 `npm run task -- e2e` 再跑这个。**
  *
  * 两道闸，都为了同一件事：**别把假图当证据收进仓**。
  *   ① 开跑前问系统是否锁屏 —— 锁屏时截到的是壁纸，尺寸和体积却都「正常」；
@@ -78,7 +78,7 @@ function screenLocked() {
 const rootDir = e2eRoot();
 const stateDir = e2eState();
 if (!existsSync(rootDir)) {
-  console.error(`没有可截的漫画库数据：${describeE2eTmp()}/root 不存在。\n先跑一次 npm run e2e。`);
+  console.error(`没有可截的漫画库数据：${describeE2eTmp()}/root 不存在。\n先跑一次 npm run task -- e2e。`);
   process.exit(2);
 }
 if (!existsSync(BIN)) {

@@ -8,7 +8,7 @@ import { Notice } from '@components/units';
  *
  * ## 数据从哪来、以及它**不是**什么
  *
- * `app/src/generated/licenses.json` 由 `npm run gen:licenses` 从
+ * `app/src/generated/licenses.json` 由 `npm run task -- gen:licenses` 从
  * `package-lock.json`、`node_modules` 下各级 `package.json`、`Cargo.lock`、
  * `~/.cargo/registry` 下各级 `Cargo.toml` 枚举得出（脚本见 `app/scripts/gen-licenses.mjs`）。
  *

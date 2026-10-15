@@ -26,7 +26,7 @@
 !macro NSIS_HOOK_POSTINSTALL
   ; 🔴 **静默模式必须直接跳过**（`IfSilent` 必须在**任何 MessageBox 之前**）：
   ;    NSIS 的 `MessageBox` 在 `/S` 静默安装下**照样弹窗并阻塞**（`/SD` 只决定"默认按钮是谁"、
-  ;    不决定"要不要弹"）⇒ 不跳过的话，`npm run check:packaged` 的静默安装会**挂住**：
+  ;    不决定"要不要弹"）⇒ 不跳过的话，`npm run task -- check:packaged` 的静默安装会**挂住**：
   ;    不是变红，是永远不返回。而"时红时绿"已经够坏了，"挂住"更坏。
   IfSilent moor_longpath_done
   SetRegView 64

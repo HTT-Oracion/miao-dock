@@ -468,7 +468,7 @@ function runAll() {
   /*
    * ---- W12：每个弹窗之前必须有 `IfSilent` 守卫（E2/E3 的**挂死**风险）----
    * NSIS 的 `MessageBox` 在 `/S` 静默安装/卸载下**照样弹窗并阻塞**（`/SD` 只决定"默认按钮是谁"）。
-   * 不守卫的后果不是变红，而是 `npm run check:packaged` 的静默安装/卸载**永远不返回** ——
+   * 不守卫的后果不是变红，而是 `npm run task -- check:packaged` 的静默安装/卸载**永远不返回** ——
    * "时红时绿"已经够坏，"挂住"更坏（CI 上表现为超时被 kill，根因却在一行 MessageBox）。
    *
    * ⚠️ 判据必须**剥 NSIS 注释**（`;` 到行尾）：本文件的注释里正写着"`IfSilent` 必须在任何

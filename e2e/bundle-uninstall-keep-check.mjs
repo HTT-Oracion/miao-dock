@@ -124,7 +124,7 @@ check('P0 前置：真安装器在 + 本机真有引擎运行时（这条要验�
   exists: rtBefore.exists,
 });
 if (!rtBefore.exists) {
-  console.error('\n⇒ 前置不满足：先装一份引擎（npm run setup:engine / deps:engine / fetch:models）。');
+  console.error('\n⇒ 前置不满足：先装一份引擎（npm run task -- setup:engine / deps:engine / fetch:models）。');
   console.log(`\n通过 ${passed} / 失败 ${failed}`);
   process.exit(1);
 }

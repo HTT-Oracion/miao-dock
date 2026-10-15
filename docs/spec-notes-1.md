@@ -2088,7 +2088,7 @@ F5 + A3d 之后 **node 不再是产品依赖**（`Command::new("node")` 已清�
 
 B1 只改了产品侧默认值，而**装配脚本**仍各自写死 `path.join(REPO, 'runtimes', 'manga-translator')`：
 `setup-engine.mjs` / `install-engine-deps.mjs` / `fetch-models.mjs` 三处。
-于是 `npm run setup:engine` 装进仓库 `runtimes/`、产品却只认 `<appData>/runtimes/` ——
+于是 `npm run task -- setup:engine` 装进仓库 `runtimes/`、产品却只认 `<appData>/runtimes/` ——
 **两边都不报错**，症状是"明明装过了却说起不来"。`config.mjs` 的 `engineModelDir` 注释
 本来就要求「fetch-models 的 ROOT 必须与服务同源」，B1 之后这条已经漂移。
 
@@ -2297,7 +2297,7 @@ B1 后产品只认 `<appData>/runtimes/manga-translator`，而本机 15 GB 引�
 
 **交付**：`docs/install-guide-windows.md` · `docs/install-guide-macos.md` —— 落点写成 §0 第一步、
 命令按平台分叉、体积按清单可复算、三条落点纪律、五项就绪项对照表、平台专属坑。
-文档与产品对拍成钉子：`npm run check:install-guide`（正向 16 / 反证 5）。
+文档与产品对拍成钉子：`npm run task -- check:install-guide`（正向 16 / 反证 5）。
 
 **D5 验收②的原话**：「反证：把文档里的落点写错 ⇒ 装完仍报未装配（证明文档真的被验证过，
 不是写完就忘）」。这句话的难点在**怎么让"写错"可被判红** —— 文档是散文，没有可执行面。
@@ -2596,7 +2596,7 @@ Sakura CC BY-NC-SA 4.0、nllb CC-BY-NC-4.0 —— 而它们恰是**唯一**会�
 
 **决策**：`docs/distribution-license-conclusion.md`。三档结论（**自用/内测可做** ·
 对外但**不随包权重**⇒待法务 · 含任一 NC 权重**或商用**⇒禁止），依据全部是可复算的仓库事实
-（`npm run gen:licenses` 的第三段）。四条技术边界各配机器判据，**不靠"我们记得不要打进去"**。
+（`npm run task -- gen:licenses` 的第三段）。四条技术边界各配机器判据，**不靠"我们记得不要打进去"**。
 
 **🔴 明确写进文档的第一句**：这不是法律意见。三项待法务复核（GPL 传播边界 / CUDA Runtime
 再分发 / `lama_large` 的许可标识）逐条列出，复核结论**只能补在这一节**（单一事实源）。
@@ -2806,7 +2806,7 @@ wheel 优先分支。
 **症状（自造，提交后自查发现）**：E2/E3 的 `hooks.nsh` 里两个 `MessageBox` 都没加 `IfSilent`
 守卫。NSIS 的 `MessageBox` 在 `/S` 静默安装/卸载下**照样弹窗并阻塞** —— `/SD IDOK` 只决定
 "默认按钮是谁"，**不决定"要不要弹"**。
-后果不是断言变红，而是 `npm run check:packaged` 的**静默安装/卸载永远不返回**：
+后果不是断言变红，而是 `npm run task -- check:packaged` 的**静默安装/卸载永远不返回**：
 在 CI 上表现为超时被 kill，而根因在一行 MessageBox —— "时红时绿"已经够坏，"挂住"更坏。
 
 **处置**：两个宏的**第一行**就是 `IfSilent <保留/结束标签>`（静默档 = 走默认档 = 保留运行时）。

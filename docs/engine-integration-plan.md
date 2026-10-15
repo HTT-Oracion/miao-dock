@@ -416,10 +416,10 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
 端口释放；Windows 无孤儿 —— **本机只能验 macOS 一半**）。
 
 **实测结果**：
-- `npm run selftest:app` —— **16/16**（含 `S2a` 轨迹 `starting→L1→L2→L3→running`、`S2b` 生效参数快照、
+- `npm run task -- selftest:app` —— **16/16**（含 `S2a` 轨迹 `starting→L1→L2→L3→running`、`S2b` 生效参数快照、
   `S2c` 三子进程 pid 齐备、`S2d` 外部杀掉 ③ 后 `state=running degraded=true`、`B4` 端口全释放）；
-- `npm run selftest:app:e11` —— mock 三进程，SIGKILL 主进程后 **13 个端口**（5180–5190/5003/8080）全释放；
-- `npm run selftest:app:e11:real` —— **真进程**：服务 + `python main.py`(8000) + 执行器(8001) + `llama-server`(8080)，
+- `npm run task -- selftest:app:e11` —— mock 三进程，SIGKILL 主进程后 **13 个端口**（5180–5190/5003/8080）全释放；
+- `npm run task -- selftest:app:e11:real` —— **真进程**：服务 + `python main.py`(8000) + 执行器(8001) + `llama-server`(8080)，
   SIGKILL 后 **14 个端口**全部释放、无孤儿；同一轮从应用 stdout 读回 E1 生效参数快照（真命令）。
 - 反证：`selftest:app:e11:refute`（`MIAO_NO_PARENT_WATCH=1`）⇒ 三进程全成孤儿（断言变红）；
   `MIAO_NO_CRASH_MONITOR=1` ⇒ `S2d` 变红；`check:child-watch` / `:refute` 秒级双向钉死看守机制。
@@ -447,7 +447,7 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
   `Content-Length` 在续传时是"剩余长度"不是"总长度"；校验失败只许自动重下**一次**）。
 
 **实测（2026-10-05）**：
-- `npm run check:models` —— **32/32**；`check:models:refute` —— 反证 **5/5** 按预期变红。
+- `npm run task -- check:models` —— **32/32**；`check:models:refute` —— 反证 **5/5** 按预期变红。
 - 真实清单：`fetch-models.mjs --check` → **6/6 通过**（含 3.3 GB Sakura 权重的 sha256 全部与盘上字节一致）；
   `--link` 幂等（第二次「新建 0 / 已是 4」）。
 - 迁移取证：`src/models/` 里 4 份与 `models-store/` 里对应文件的 **inode 完全相同**（68779986 / 68780091 两两相同）⇒ 是真硬链接不是复制。
@@ -468,8 +468,8 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
 - **「准备中」不给百分比**（已拍板 §7-④）：精确进度只在 Box 应用区展示，契约面（`/engine/status`）不出百分比字段。（S5/S6 落）
 
 **验收**：E5（注入 OOM → 降一档重试一次成功 + 日志留痕）、E6（空闲阈值 → LLM 退出且端口释放；再提交 → 自动拉起成功）。
-✅ `npm run check:e5e6` **13/0**；逃生开关反证 **2/2**（关掉降档 / 关掉空闲卸载，对应断言必红）。
-判定层 `npm run check:profile` **43/0** + 反证 **14/14**。真机数字见 `node e2e/service/llm-real-timing.mjs`。
+✅ `npm run task -- check:e5e6` **13/0**；逃生开关反证 **2/2**（关掉降档 / 关掉空闲卸载，对应断言必红）。
+判定层 `npm run task -- check:profile` **43/0** + 反证 **14/14**。真机数字见 `node e2e/service/llm-real-timing.mjs`。
 
 ### S5 · 契约增量 ✅ 已完成（D-74）
 
@@ -483,7 +483,7 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
 - **引擎的"准备/卸载/降档"都不新增客户端状态机节点**（《03》§4.5）。✅
 
 **验收**：契约自测新增条目 + **反证**（把 `ENGINE_NOT_READY` 改成 `UNAVAILABLE` → 断言必须变红）。
-✅ `npm run check:contract` **77/0**（8 个实例场景 A–H，真服务 + 按状态构造的假引擎）；
+✅ `npm run task -- check:contract` **77/0**（8 个实例场景 A–H，真服务 + 按状态构造的假引擎）；
 `check:contract:refute` **4/4** 逃生开关按预期变红。
 配套 `npm run check:engine-client` 由 32 条扩到 **42/0**、反证 5→**8/8**（新增 C 组 4 条配置快照、
 V 组 2 条阶段日志、P3b/P3c「安装事实 ≠ 进程事实」、P4b「uvicorn 未接客」）。

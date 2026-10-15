@@ -364,7 +364,7 @@ async function runAll() {
     const onDisk = tinyModel ? fs.existsSync(tinyModel) : false;
     const inSakuraDir = /[\\/]models[\\/]sakura[\\/][^\\/]+\.gguf$/.test(tinyModel);
     check(
-      'E4.6 该权重文件**在盘上真实存在**，且落在 `models/sakura/` 下（缺权重请先 `npm run fetch:models`）',
+      'E4.6 该权重文件**在盘上真实存在**，且落在 `models/sakura/` 下（缺权重请先 `npm run task -- fetch:models`）',
       onDisk && inSakuraDir,
       `${tinyModel} 存在=${onDisk} 目录符合=${inSakuraDir}`,
     );

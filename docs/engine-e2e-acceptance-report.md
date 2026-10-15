@@ -18,17 +18,17 @@
 
 | # | 验收项（《04》§14.2 原文） | 状态 | 取证命令 | 断言 / 反证 |
 |---|---|---|---|---|
-| **E1** | 引擎真实启动：锁定版本引擎可被拉起；`/health`/`/docs` 就绪；日志打印**生效参数快照** | ✅ | `npm run selftest:app:e11:real` | 快照 **6 行**（≥4 判据）· 外部读回 |
-| **E2** | 真实翻译目视：真日文漫画图 → `001_translated.png`，**肉眼可见中文译文** | ✅ | `npm run check:e3:real`（原 `s1-real-engine-check.mjs` 已删，D-205） | E3 的落盘产物抽样（首/中/尾三张）+ 逐像素 `changedPct>0.5`；**历史证据**：`docs/refs/engine/01-real-translation.report.json`（S1 那段留档） |
-| **E3** | 全链路：31 张 → 一个 Task 两个 Batch → 逐张翻译 → 落盘 → SSE 与落盘一致 | ✅ | `npm run check:e3:real` | **8/0**（真引擎，分钟级） |
-| **E4** | 档位切换：切 Tiny↔Small 后重启，`sidecar.tier` 与实际加载权重一致 | ✅⚠️ | `npm run check:e4[:refute]` | **6/0** · 反证 **4/4** |
-| **E5** | 降档重试：注入 OOM → 降一档重试一次 → 任务成功且日志留痕 | ✅ | `npm run check:e5e6[:refute]` | E5 共 7 条（含在 16/0 内）· 反证 **3/3** |
-| **E6** | 空闲卸载：空闲 → LLM 退出；再提交 → 自动拉起并成功 | ✅ | `npm run check:e5e6[:refute]` | E6 共 9 条（E6.1–E6.8＋E6.7a，含在 16/0 内）· 反证 **3/3** |
-| **E7** | 模型续传与校验：续传成功；篡改一字节 → 校验失败 → 自动重下 | ✅⚠️ | `npm run check:models[:refute]` + `npm run check:e7:real[:refute]` | 夹具 **32/0** · 反证 **5/5**；真机半边 **6/0** · 反证 **3/3** |
-| **E8** | 加速后端：macOS 走 MPS；GPU 启动失败 → 回退 CPU 且 `degraded` 上报（不静默） | ✅⚠️ | `npm run check:e8[:refute]` | **6/0** · 反证 **4/4** |
+| **E1** | 引擎真实启动：锁定版本引擎可被拉起；`/health`/`/docs` 就绪；日志打印**生效参数快照** | ✅ | `npm run task -- selftest:app:e11:real` | 快照 **6 行**（≥4 判据）· 外部读回 |
+| **E2** | 真实翻译目视：真日文漫画图 → `001_translated.png`，**肉眼可见中文译文** | ✅ | `npm run task -- check:e3:real`（原 `s1-real-engine-check.mjs` 已删，D-205） | E3 的落盘产物抽样（首/中/尾三张）+ 逐像素 `changedPct>0.5`；**历史证据**：`docs/refs/engine/01-real-translation.report.json`（S1 那段留档） |
+| **E3** | 全链路：31 张 → 一个 Task 两个 Batch → 逐张翻译 → 落盘 → SSE 与落盘一致 | ✅ | `npm run task -- check:e3:real` | **8/0**（真引擎，分钟级） |
+| **E4** | 档位切换：切 Tiny↔Small 后重启，`sidecar.tier` 与实际加载权重一致 | ✅⚠️ | `npm run task -- check:e4[:refute]` | **6/0** · 反证 **4/4** |
+| **E5** | 降档重试：注入 OOM → 降一档重试一次 → 任务成功且日志留痕 | ✅ | `npm run task -- check:e5e6[:refute]` | E5 共 7 条（含在 16/0 内）· 反证 **3/3** |
+| **E6** | 空闲卸载：空闲 → LLM 退出；再提交 → 自动拉起并成功 | ✅ | `npm run task -- check:e5e6[:refute]` | E6 共 9 条（E6.1–E6.8＋E6.7a，含在 16/0 内）· 反证 **3/3** |
+| **E7** | 模型续传与校验：续传成功；篡改一字节 → 校验失败 → 自动重下 | ✅⚠️ | `npm run task -- check:models[:refute]` + `npm run task -- check:e7:real[:refute]` | 夹具 **32/0** · 反证 **5/5**；真机半边 **6/0** · 反证 **3/3** |
+| **E8** | 加速后端：macOS 走 MPS；GPU 启动失败 → 回退 CPU 且 `degraded` 上报（不静默） | ✅⚠️ | `npm run task -- check:e8[:refute]` | **6/0** · 反证 **4/4** |
 | **E9** | 与插件联调：插件提交 31 张 → 同一队列、同一落盘规则、序号连续 | ✅⚠️ | `node e2e/e9-real-engine.mjs`（miao-trans 仓） | **19/0**（**真实漫画站** + 真引擎；两次提交 → 序号 001–031 连续 · 串行不交错 · 31 项全成功） |
-| **E10** | 安全：非 `127.0.0.1` 被拒；nonce 错误被拒；非图片字节不进引擎即 `INVALID_IMAGE` | ✅⚠️ | `npm run check:e10[:refute]` | **7/0** · 反证 **4/4** |
-| **E11** | 三进程树回收：主进程 SIGKILL 后 ②③ 自退、端口释放；Windows 无孤儿 | ✅⚠️ | `npm run selftest:app:e11:real` | **14/14 端口全释放 · 无孤儿** · E1 快照 6 行 |
+| **E10** | 安全：非 `127.0.0.1` 被拒；nonce 错误被拒；非图片字节不进引擎即 `INVALID_IMAGE` | ✅⚠️ | `npm run task -- check:e10[:refute]` | **7/0** · 反证 **4/4** |
+| **E11** | 三进程树回收：主进程 SIGKILL 后 ②③ 自退、端口释放；Windows 无孤儿 | ✅⚠️ | `npm run task -- selftest:app:e11:real` | **14/14 端口全释放 · 无孤儿** · E1 快照 6 行 |
 
 ✅ = 判据全部满足（本机可验部分）｜⚠️ = **有明确的未验半边**，见 §4 · ｜✅⚠️ 表示"验到了什么、没验到什么"都写清了
 ❌ = 未通过。
@@ -44,21 +44,21 @@ E2 的**自动化半边**通过、目视由 §2.2 的截图承担；E9 在**真�
 
 ```bash
 # 在 miao-dock 仓根目录
-npm run check:e3:real            # E3  真引擎 31 张全链路        （真权重，分钟级）
-npm run check:e4                 # E4  档位                    （秒级）
-npm run check:e4:refute
-npm run check:e5e6               # E5/E6 降档 + 空闲卸载        （约 60 s）
-npm run check:e5e6:refute
-npm run check:models             # E7  续传与校验（夹具层）      （秒级）
-npm run check:models:refute
-npm run check:e7:real            # E7  真机半边：3.6 GB 哈希    （约 30 s）
-npm run check:e7:real:refute
-npm run check:e8                 # E8  加速后端（起 3 轮真服务） （秒级）
-npm run check:e8:refute
-npm run check:e10                # E10 安全                    （秒级）
-npm run check:e10:refute
-npm run selftest:app:e11:real    # E1 + E11                    （分钟级）
-npm run check:e3:real            # E2 的目视证据 + E3 全链路   （分钟级）
+npm run task -- check:e3:real            # E3  真引擎 31 张全链路        （真权重，分钟级）
+npm run task -- check:e4                 # E4  档位                    （秒级）
+npm run task -- check:e4:refute
+npm run task -- check:e5e6               # E5/E6 降档 + 空闲卸载        （约 60 s）
+npm run task -- check:e5e6:refute
+npm run task -- check:models             # E7  续传与校验（夹具层）      （秒级）
+npm run task -- check:models:refute
+npm run task -- check:e7:real            # E7  真机半边：3.6 GB 哈希    （约 30 s）
+npm run task -- check:e7:real:refute
+npm run task -- check:e8                 # E8  加速后端（起 3 轮真服务） （秒级）
+npm run task -- check:e8:refute
+npm run task -- check:e10                # E10 安全                    （秒级）
+npm run task -- check:e10:refute
+npm run task -- selftest:app:e11:real    # E1 + E11                    （分钟级）
+npm run task -- check:e3:real            # E2 的目视证据 + E3 全链路   （分钟级）
 # ⚠️ 原 `node e2e/engine/s1-real-engine-check.mjs` 已删除（D-205）：它取的三项证据
 #    （三态采样 / 真译文 / 逐像素比对）全被 `check:e3:real` 覆盖，且 E3 走**产品真实路径**
 #    （经服务面），而 S1 的"直测适配层"在适配层迁进 Rust 后已无对象。
@@ -67,13 +67,13 @@ npm run check:e3:real            # E2 的目视证据 + E3 全链路   （分钟
 npm run build && node e2e/e9-real-engine.mjs
 
 # 全量回归（两仓**不要并发**，理由见 §5-1）
-npm run check:settings && npm run check:settings:refute
-npm run check:units && npm run check:units:refute
-npm run check:contract && npm run check:engine-settings && npm run check:engine-settings:refute
-npm run check:ia && npm run check:docs && npm run check:tls
+npm run task -- check:settings && npm run task -- check:settings:refute
+npm run task -- check:units && npm run task -- check:units:refute
+npm run task -- check:contract && npm run task -- check:engine-settings && npm run task -- check:engine-settings:refute
+npm run task -- check:ia && npm run task -- check:docs && npm run task -- check:tls
 npm run check:engine-client && npm run check:engine-client:refute
-npm run check:music && npm run check:music:refute
-npm run selftest && npm run selftest:app
+npm run task -- check:music && npm run task -- check:music:refute
+npm run selftest && npm run task -- selftest:app
 cd app && npx tsc --noEmit
 cd app/src-tauri && cargo check
 ```
@@ -131,7 +131,7 @@ cd app/src-tauri && cargo check
 **判据**：一张真日文漫画图 → 落盘 `001_translated.png`；**肉眼可见中文译文**（不再是伪随机版式图）；
 **反证**：`translator=none` 时译文 = 原文。
 
-**做法**：`npm run check:e3:real` 拉起真 ② + 真 ③（③ 由 box-service 按配方归属拉起），
+**做法**：`npm run task -- check:e3:real` 拉起真 ② + 真 ③（③ 由 box-service 按配方归属拉起），
 31 张真日文漫画图走完整链路落盘，抽首/中/尾三张做逐像素比对。
 
 > ⚠️ **本条的执行体改过**（D-205）：原先由 `e2e/engine/s1-real-engine-check.mjs` 单张取证，
@@ -161,7 +161,7 @@ cd app/src-tauri && cargo check
 
 **判据**：提交 31 张 → 一个 Task 两个 Batch → 逐张翻译 → 落盘 → SSE 进度与落盘一致。
 
-**做法**：`e2e/engine/e3-real-full-chain-check.mjs`（`npm run check:e3:real`）—— **真 ② + 真 ③**，
+**做法**：`e2e/engine/e3-real-full-chain-check.mjs`（`npm run task -- check:e3:real`）—— **真 ② + 真 ③**，
 提交 20 张建任务、再追加 11 张，全程用**适配层自己拼的启动参数**（不另写一份）。
 
 **实测 8/8**：
@@ -431,7 +431,7 @@ chapter-112 的**全 18 页** + chapter-113 的**前 13 页** = 31 张，**跨�
 **为什么必须"从外面看"**：SIGKILL 之下应用**没有任何机会执行清理代码** —— "我退干净了"这句话
 在 SIGKILL 之后毫无意义，只有外部观察者数端口才算数。
 
-**实测**（`npm run selftest:app:e11:real`，真进程；外部观察者读端口）：
+**实测**（`npm run task -- selftest:app:e11:real`，真进程；外部观察者读端口）：
 
 | 取证 | 结果 |
 |---|---|

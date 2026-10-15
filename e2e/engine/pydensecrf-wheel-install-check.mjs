@@ -72,7 +72,7 @@ function check(name, cond, extra) {
 }
 
 if (!fs.existsSync(VENV_PY)) {
-  console.error(`✗ 找不到引擎 venv：${VENV_PY}\n先跑 npm run setup:engine`);
+  console.error(`✗ 找不到引擎 venv：${VENV_PY}\n先跑 npm run task -- setup:engine`);
   process.exit(1);
 }
 

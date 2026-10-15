@@ -16,6 +16,13 @@
  *   refute true = 有 --refute 变体；传数组则用该数组作反证轮参数（如 e11）
  *   watch  --changed 的过滤 glob；缺省 = 任何变更都跑它（保守）
  *
+ * ## 与命令清单（`e2eScripts.json`）的关系
+ * 本文件是**分层路由**的唯一事实源（tier / watch / 反证轮的派生规则）；
+ * 「这条命令叫什么、怎么跑」在 `e2eScripts.json`（`npm run task -- <id>`）。
+ * 两侧的 id **不要求同名**（清单沿用 `npm run` 时代的名字：`check:units` / `selftest:service`…），
+ * 靠 `(script, args)` 连接键对上，由 `registry-check.mjs` 双向断言 —— 名字可以各自演进，
+ * "跑的东西是不是同一个"必须逐字节一致。
+ *
  * 🔴 service 层为何恒串行：各脚本用 findFreePort 从**固定且互相重叠的区间**
  * （5300–5800）「先探测再绑定」拿端口。并行时两个脚本可能同时探到同一端口空闲、
  * 随后都去 bind——轻则起不来，重则 A 的请求打到 B 的服务上，**产出交叉污染的
@@ -52,7 +59,8 @@ const CHECKS = [
     script: 'e2e/settings-media-check.mjs',
     tier: 'static',
     refute: true,
-    watch: ['app/src/**', 'app/src-tauri/src/boxsvc/engine/**', 'e2e/settings-media-check.mjs'],
+    // `e2eScripts.json`：FEATURES.gen.script 判的是「gen:licenses 有没有地方注册着」（清单是其一）
+    watch: ['app/src/**', 'app/src-tauri/src/boxsvc/engine/**', 'e2eScripts.json', 'e2e/settings-media-check.mjs'],
   },
   {
     id: 'quit',
@@ -72,7 +80,8 @@ const CHECKS = [
     id: 'docs',
     script: 'e2e/docs-consistency-check.mjs',
     tier: 'static',
-    watch: ['**/*.md', 'docs/**', 'package.json', 'e2e/docs-consistency-check.mjs'],
+    // 命令收束后「文档引用的命令是否存在」要同时对 package.json 与 e2eScripts.json 判 ⇒ 清单进 watch
+    watch: ['**/*.md', 'docs/**', 'package.json', 'e2eScripts.json', 'e2e/docs-consistency-check.mjs'],
   },
   {
     id: 'bundle',
@@ -125,7 +134,14 @@ const CHECKS = [
     script: 'e2e/registry-check.mjs',
     tier: 'static',
     refute: true,
-    watch: ['package.json', 'e2e/_check-registry.mjs', 'e2e/registry-check.mjs'],
+    // 收束之后它守的是**三方**：package.json（三类入口白名单）· e2eScripts.json（命令清单）· 本注册表
+    watch: [
+      'package.json',
+      'e2eScripts.json',
+      'e2e/_commands.mjs',
+      'e2e/_check-registry.mjs',
+      'e2e/registry-check.mjs',
+    ],
   },
 
   // ---- service：起真实子进程，串行（端口竞争，见文件头）----
@@ -191,6 +207,8 @@ const CHECKS = [
       'docs/install-guide-macos.md',
       'engine/models.manifest.json',
       'app/src-tauri/src/paths.rs',
+      'package.json',
+      'e2eScripts.json',
       'e2e/service/install-guide-check.mjs',
     ],
   },
@@ -292,7 +310,10 @@ const CHECKS = [
       'app/src-tauri/entitlements.plist',
       'app/src-tauri/tauri.conf.json',
       'app/scripts/mac-signing-preflight.mjs',
+      // W7 判的是「sign:preflight 登记着 + app:build:mac 串上了它」：
+      // 前者在 e2eScripts.json，后者在 package.json，两处都得进 watch
       'package.json',
+      'e2eScripts.json',
       'docs/spec-notes-1.md',
       'e2e/service/macos-signing-check.mjs',
     ],

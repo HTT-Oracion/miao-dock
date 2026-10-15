@@ -213,7 +213,7 @@ macOS「自动化」权限 —— `osascript` 一律返回 `-10004 权限违例`
 与真实渲染出的 DOM 文本比对，刻意不从组件里 `import` 那个常量（那样就变成「常量等于自己」）。
 
 **验收方式本身也做了反证**：`MIAO_CLOSE_QUITS=1` 让关窗直接退进程，此时这组断言必须
-**拿不到结果**（`npm run selftest:app:refute`）。正向绿、反向红，才说明它测的是「关窗仅隐藏」，
+**拿不到结果**（`npm run task -- selftest:app:refute`）。正向绿、反向红，才说明它测的是「关窗仅隐藏」，
 而不是别的什么顺带满足条件的东西。见 `~/.workbuddy/skills/falsifiable-verification`。
 
 ## D-14 规格自检自身的两处缺陷（**检查工具自己也需要被检查**）
@@ -362,7 +362,7 @@ D-15 记了两个前提（显示器唤醒、两脚本的临时路径一致）。
 
 ## D-17 `requestAnimationFrame` 在窗口被遮挡时不触发（C 组规格自检曾静默归零）
 
-**现象**：锁屏状态下跑 `npm run selftest:app`，S1 报 `SPEC total=0 failed=0` ——
+**现象**：锁屏状态下跑 `npm run task -- selftest:app`，S1 报 `SPEC total=0 failed=0` ——
 设置页确实切过去了、「运行自检」按钮也确实点到了（否则驱动脚本会回 `NO_SETTINGS_NAV` /
 `NO_SELFTEST_BUTTON`），但**一行结果都没有**。
 
@@ -450,7 +450,7 @@ Error: [safe-delete][SAFE_DELETE_BULK_CONFIRM_REQUIRED] {"count":197,"threshold"
 于是把 e2e 的临时根目录挪出去，整轮立刻全绿：
 
 ```bash
-MIAO_E2E_TMP="$(node -e 'console.log(require("os").tmpdir())')/miao-e2e" npm run e2e
+MIAO_E2E_TMP="$(node -e 'console.log(require("os").tmpdir())')/miao-e2e" npm run task -- e2e
 ```
 
 **在代理里跑 e2e 时请一律带上这个变量。** 仓库内的 `.tmp-e2e/` 连**开头那次批量清理**
@@ -733,7 +733,7 @@ MIAO_E2E_TMP="$(node -e 'console.log(require("os").tmpdir())')/miao-e2e" npm run
 | **D-28** | 设置 26 项按**能力诚实标注**：live 7 / pending 19 | 引擎（M1）与音乐模块未实现，故 26 项中 19 项渲染为**不可点 + 「待接入」徽章**，每项写明缺哪个上游能力。刻意**不用 `<button disabled>`** —— 那渲染出灰按钮，读作「暂时不可用等会儿就好」，而真相是「上游能力还不存在」。**假控件比缺控件更伤**。项数由 `catalog.ts` 数据算出并与 `SPEC_ITEM_TOTAL=26` 比对，不符即 `console.error` —— 否则「合计 26」只能人肉数五个文件 |
 | **D-29** | ⚠️ **C11 判据偏离文档**（成员 B 发现，已采纳） | 《09》§7.1 写「②恒含三小节，小节标题 uppercase」。但三个小节名是**中文**（服务与配对/推理引擎/模型与诊断），`text-transform:uppercase` 对中文**无任何视觉变化** —— 那条判据无论实现对错都恒真，是一条**测不出东西的假断言**。C11 改为判「②恰好渲染 3 个 `.set-subtitle`」，抹平小节会真的变红。CSS 里**保留** uppercase 属性（将来小节名改英文时立刻生效） |
 | **D-30** | 离屏样张必须挂在两栏壳**外面** | `SpecFixtureHost` 是普通 div（fixed 的是它内部样张），放进 `display:flex; gap:26px` 的 `.settings` 里就成了 0 宽 flex item，会把左栏硬推 26+26px，左栏 180 的断言**假性不成立**。这种错位在截图里只看得「好像歪了一点」，很难定位到 gap 上。已挂为壳的兄弟节点，且切分组不卸载（否则用户切回来点自检会量到全 0 的假失败） |
-| **D-31** | ⚠️ **反证脚本第一版自身有 4 处假阳性**，逐条修复后才可信 | `scripts/ia-structure-check.mjs`（`npm run check:ia`，24 条 / 12 条反证）第一版跑出 **18 通过 / 6 失败**，若只看正向就会把 6 条测不出东西的断言当成交付。四个真因：① `globalHasText` 分支误挂在 `apps` 循环里，而 `apps` 里根本没有 `'settings'` → 分支永不触发；② C9 的正则写成 `viewtab[^>]*><span>`，要求 `<span>` 紧跟 `>`，**但真实 DOM 里 `<svg/>` 在 span 之前** —— 那写法只在自己理想化的脚手架 HTML 上成立；③ 同源的 C11 正则；④ **judgeC9/judgeC11 返回布尔值却被 `{...obj}` 展开** —— 布尔值被静默丢弃，这两条**从未被评估过**，却一路显示为"红 ← 误报"。→ **D-20 新增两条子纪律**：**(a) 断言的定位正则必须对真实 DOM 稳健** —— 写完断言后要拿应用真实输出喂一遍，不能只喂自己构造的理想样本；**(b) 汇总多个判定时不要用对象展开合并可能返回标量的函数** —— 展开会静默吞掉它，用显式键值对，宁可啰嗦 |
+| **D-31** | ⚠️ **反证脚本第一版自身有 4 处假阳性**，逐条修复后才可信 | `scripts/ia-structure-check.mjs`（`npm run task -- check:ia`，24 条 / 12 条反证）第一版跑出 **18 通过 / 6 失败**，若只看正向就会把 6 条测不出东西的断言当成交付。四个真因：① `globalHasText` 分支误挂在 `apps` 循环里，而 `apps` 里根本没有 `'settings'` → 分支永不触发；② C9 的正则写成 `viewtab[^>]*><span>`，要求 `<span>` 紧跟 `>`，**但真实 DOM 里 `<svg/>` 在 span 之前** —— 那写法只在自己理想化的脚手架 HTML 上成立；③ 同源的 C11 正则；④ **judgeC9/judgeC11 返回布尔值却被 `{...obj}` 展开** —— 布尔值被静默丢弃，这两条**从未被评估过**，却一路显示为"红 ← 误报"。→ **D-20 新增两条子纪律**：**(a) 断言的定位正则必须对真实 DOM 稳健** —— 写完断言后要拿应用真实输出喂一遍，不能只喂自己构造的理想样本；**(b) 汇总多个判定时不要用对象展开合并可能返回标量的函数** —— 展开会静默吞掉它，用显式键值对，宁可啰嗦 |
 | **D-32** | 纯图标入口会打断按文字定位的自动化 | B 组自检 `S1` 用 `textContent.indexOf('设置')` 找设置入口，ver2.0 把该入口改为**纯图标**（无可见文字）后直接报 `NO_SETTINGS_NAV`。这不是实现坏了，是**断言的定位方式跟不上设计**。修法不是给图标塞回文字（那会撤销 IA 决策），而是让定位认**可访问名称**（`aria-label` → 可见文字 → `title` 三级兜底）。附带：自检脚本新增「显式回到①通用组」一步 —— ver2.0 设置页是两栏壳 + 深链分组，若停在别的组上「运行自检」不在屏上，会误报成"按钮丢失"。修后 `S1 — SPEC total=30 failed=0` |
 
 ---
@@ -746,7 +746,7 @@ MIAO_E2E_TMP="$(node -e 'console.log(require("os").tmpdir())')/miao-e2e" npm run
 | 编号 | 事项 | 结论 |
 |---|---|---|
 | **D-33** | 歌曲时长单位契约：`Song.duration` = **毫秒**（全链路） | 四个平台原始字段单位不一（网易云 `dt`、咪咕 `duration_ms` 本就是 ms；酷狗 `Duration`、QQ `interval` 是秒），**上游把归一化做在取用处**，所以到前端已是 ms，而字段本身**没有单位标注** —— 这是坑的根源。我们的前端曾把它当**秒**再乘 1000（4:29 显示成 4483:20），同时 `localToSong` 又把它除成秒 → **同一字段两种解读，"各对了一半"**（这个"对了一半"正是单位类 bug 的指纹）。裁定：`models.rs` 写明单位=毫秒（含四平台各自的原始单位），前端 4 处全部按 ms；唯一例外是**酷狗歌词接口参数确为秒**，在 `platform.ts` 显式 `/1000` 并注明。断言 `DUR.msContract` **双向**锁住（文档写明 + 前端未二次换算）—— 只锁注释等于没锁。 |
-| **D-34** | 前端目录分层与公共单元（units）：**按「依赖什么」定归属，不按「被用几次」** | 起因：`Select` 这类基础控件住在设置页目录 `screens/settings/parts.tsx` 里，"它属于谁"无人能答。裁定三层：`components/units/`（通用 UI 单元，**判据 = 不 import 业务层**：store/ipc/types/platform/根 hooks/nav）· `components/`（应用级：Sidebar/Toolbar/ViewTabs/QuitConfirm）· `screens/<屏>/`（屏内件）。**使用次数决定收益，依赖关系决定归属**：只用一次的 `Select` 仍属 units，被复用五次但与 `Song` 绑定的行仍属音乐屏。配套：类名统一 `ui-` 前缀、样式集中在 app.css「公共组件」分区、桶文件统一出口、**不保留兼容再导出**（留 `export *` 会让"组件住哪"永远有两个答案）。**反面纪律（同样重要）**：绑定单屏几何的排版件（设置页 `Row`/`SubTitle`/`PendingRow`）、与业务类型绑定的行（`SongRow`/`Cover`）、"形状相似但约束不同"的控件（音乐屏进度条 vs `Range`：**共享样式，不强行共享形状**）一律**不抽** —— 抽过头会把不相关的屏绑死。**规则落地靠断言而非自觉**：`npm run check:units`（16 条 + 反证 17 条），依赖纯净性用**白名单**（相对导入越出 units 且非设计令牌即违规），比罗列被禁来源更强。 |
+| **D-34** | 前端目录分层与公共单元（units）：**按「依赖什么」定归属，不按「被用几次」** | 起因：`Select` 这类基础控件住在设置页目录 `screens/settings/parts.tsx` 里，"它属于谁"无人能答。裁定三层：`components/units/`（通用 UI 单元，**判据 = 不 import 业务层**：store/ipc/types/platform/根 hooks/nav）· `components/`（应用级：Sidebar/Toolbar/ViewTabs/QuitConfirm）· `screens/<屏>/`（屏内件）。**使用次数决定收益，依赖关系决定归属**：只用一次的 `Select` 仍属 units，被复用五次但与 `Song` 绑定的行仍属音乐屏。配套：类名统一 `ui-` 前缀、样式集中在 app.css「公共组件」分区、桶文件统一出口、**不保留兼容再导出**（留 `export *` 会让"组件住哪"永远有两个答案）。**反面纪律（同样重要）**：绑定单屏几何的排版件（设置页 `Row`/`SubTitle`/`PendingRow`）、与业务类型绑定的行（`SongRow`/`Cover`）、"形状相似但约束不同"的控件（音乐屏进度条 vs `Range`：**共享样式，不强行共享形状**）一律**不抽** —— 抽过头会把不相关的屏绑死。**规则落地靠断言而非自觉**：`npm run task -- check:units`（16 条 + 反证 17 条），依赖纯净性用**白名单**（相对导入越出 units 且非设计令牌即违规），比罗列被禁来源更强。 |
 | **D-35** | 引入 `@radix-ui/react-select` —— 本项目**首个 UI 库依赖** | 原生 `select` 只能做到"外观像本项目"，**行为**做不到：弹层是系统的，无法放缩略图/色点、无法控宽度，键盘 typeahead 与读屏只是继承系统行为。裁定引入（用户拍板）。**代价如实记**：JS 产物 298 → 385 kB（gzip 97.8 → 128.7 kB，+30.8 kB），`@radix-ui/` 下 26 个原语包。**两条必须记住的实现细节**：① `<Select.Value>` **必须显式给 label** —— Radix 靠 ItemText 测量回显，而弹层从未打开时 Content 未挂载，首屏（刷新后直接进设置页）会**空白**；② **不要自己写 `:hover`** —— Radix 把鼠标悬停与键盘 ↑↓ 归到同一个 `data-highlighted`，自写 hover 会让键盘操作时没有高亮。组件已下沉 `components/units/Select.tsx`（见 D-34）。 |
 | **D-36** | 搜索分页：**参考实现本身没做**，本项目补齐四层 | 取证：上游 Rust 与前端**都没有搜索分页** —— netease `offset=0`、kugou `page=1`、QQ `full_song_search(kw, limit, 0)`、migu `search_page(kw, 1, …)` 全是硬编码，前端 store 也没有任何 offset/hasMore 状态。故"不能分页"**不是移植漏了**，而是照抄了一个没有该能力的实现。好消息：四个函数**内部**都已接收 page/offset，缺的只是把参数暴露出来（补的成本远低于从零实现）。补齐四层：Rust `offset: Option<u32>` → `platform.search(..., offset)` + `SEARCH_PAGE_SIZE` → `store.searchHasMore/loadMoreSearch` → 右栏 `VirtualList.onNearEnd` 触底续拉。⚠️ **各平台单页上限不同**（网易云 30 / 酷狗 20 / QQ 30 / 咪咕 50），判"是否到底"必须按各平台真实页大小 —— 统一按 30 会把**酷狗误判成已到底**。 |
 | **D-37** | 设置页「③ 播放·媒体」按**能实现 / 不能实现**重新裁定：补 8 项、剔除 5 项 | 判据两条缺一不可：**① 参考实现里真的有这个设置吗？② 本移植有能力让它真的生效吗？** 做不到 = **假控件**，而假控件比缺控件更伤（用户点得动就以为它有作用）。**剔除的必须把理由留在原处**（catalog 的组 `note`；直接删掉会让后来者不知道这些项被考虑过、也不知道为什么没有）：桌面歌词默认值（需独立置顶窗口 + 跨窗口同步）· **媒体键**（⚠️ 参考实现**不是键盘监听**，而是 Rust 侧 **Windows SMTC** 转发 `smtc:control` 事件；macOS 要另做 `MPRemoteCommandCenter`，**不是"接上就能用"**）· 音频输出（WebView 无法指定输出设备）· 均衡器（需"拖动即出声"，属播放器而非设置页）· 音频缓存目录（走代理流式透传不落盘）。补齐 8 项全部 WebView 内实现、**无需改 Rust**：音质档位 / 展开播放器皮肤 / 动态背景 / 碟片模式 / 歌词字号 / 歌词高亮色 / 彩胶配色 / 彩胶自定义色；选项常量集中在 `music/player-options.ts`（**单一事实源**，防设置页与播放器各写一套皮肤名）。**顺带修掉一个真实缺口**：偏好原先只在音乐屏挂载时水合 → 冷启动直接进设置页显示默认值（**同一偏好两个事实**）；抽出 `hydratePrefs()` 在 `main.tsx` 启动时调用，并加断言 `STORE.hydrate.atBoot` —— **"实现了"和"在对的时机被调用"是两层**，只断言函数存在测不到"没人调它"。 |
@@ -1661,7 +1661,7 @@ store 的 `progressMs` 只是 `onTimeUpdate`（~4Hz）驱动的**降级兜底**�
 `Bash` 工具**前台**命令在没有明显负载时也会被 **SIGTERM（exit 137）**，连 `echo alive` 都不例外；
 但**同一时刻的后台任务（`run_in_background: true`）能正常跑完**（本轮 47 分钟的 pip 安装就是这么跑完的）。
 ⇒ **判据：前台 `echo` 被 137 ⇒ 不要重试，改走后台任务；文件读写工具不受影响。**
-（上半轮同样的形态出现在 `npm run e2e` 期间，事后恢复正常。）
+（上半轮同样的形态出现在 `npm run task -- e2e` 期间，事后恢复正常。）
 > **追加实测（同日）**：后台任务"长时间无输出"另有原因 —— **Bash 工具有约 5 分钟的启动排队延迟**。
 > 判据：同一条命令里两次 `date +%T` 打出**同一秒**，而任务 `Duration` 是 5m31s ⇒
 > **命令本身不到 1 秒，时间全花在"开始执行前"**。⇒ **不要用"跑了 N 分钟还没输出"推断卡死**；
@@ -2013,7 +2013,7 @@ Rust 启动时问一次，然后按 `probes` 做三重判定。**"怎么拼"留�
 打印配方是只读操作 ⇒ 脚本顶部先 `process.env.MIAO_TOKEN ||= '0'.repeat(64)`，
 让 `ensureToken()` 走 override 分支不碰磁盘（断言 `P-15` 用一个全新空 state 目录取证）。
 
-**契约面要断言**：`service/scripts/launch-plan-check.mjs`，22 条（`npm run check:launch-plan`）。
+**契约面要断言**：`service/scripts/launch-plan-check.mjs`，22 条（`npm run task -- check:launch-plan`）。
 其中两条值得单独说：
 - **同源断言**：real 的 engine 探针必须**恰好**是 `tcp(port) + POST /queue-size + tcp(port+1)`
   —— 与 `probeEngine()` 的三重判定同源。否则 Rust 的"就绪"与适配层的"就绪"会各说各话，
@@ -2048,10 +2048,10 @@ SIGKILL 不可捕获、也不跑 atexit ⇒ **父进程里没有任何代码会�
 （只实现就绪探针用到的那一个端点 `GET /v1/models`，其余一律 404 —— 假装得越像越危险）。
 
 **证据**：
-- `npm run selftest:app:e11` —— mock 三进程，SIGKILL 主进程后 13 个端口（5180–5190/5003/8080）全释放；
-- `npm run selftest:app:e11:refute` —— 加 `MIAO_NO_PARENT_WATCH=1` ⇒ 5180/5003/8080 全被孤儿占住，
+- `npm run task -- selftest:app:e11` —— mock 三进程，SIGKILL 主进程后 13 个端口（5180–5190/5003/8080）全释放；
+- `npm run task -- selftest:app:e11:refute` —— 加 `MIAO_NO_PARENT_WATCH=1` ⇒ 5180/5003/8080 全被孤儿占住，
   **断言确实作用在看守机制上**（随后自动清理残留）；
-- `npm run check:child-watch` / `:refute` —— 把 child-watch 这条（真模式唯一依赖）在**秒级**钉死，
+- `npm run task -- check:child-watch` / `:refute` —— 把 child-watch 这条（真模式唯一依赖）在**秒级**钉死，
   见 D-68。
 
 ## D-67 · 回收：先礼后兵 + **对进程组**发信号（不是为了好看，是因为孙进程）
@@ -2094,7 +2094,7 @@ spawn 时加 `CREATE_NEW_PROCESS_GROUP`。**本机无法验证** ⇒ 不写"已�
 
 ## D-69 · 🔴 `_devserver.mjs` 只探 `127.0.0.1`，而 vite 5 + Node 22 只绑 `::1`
 
-**症状极具误导性**：`npm run selftest:app` 报「dev server 未在 15s 内就绪（端口 1420）」——
+**症状极具误导性**：`npm run task -- selftest:app` 报「dev server 未在 15s 内就绪（端口 1420）」——
 看着像"vite 起不来"。实测 `lsof` 显示 vite **在听**，只是绑在 `[::1]:1420`（IPv6），
 而 `scripts/_devserver.mjs` 的 `portOpen` 只连 `127.0.0.1`（IPv4）⇒ 恒失败。
 `curl 127.0.0.1:1420` → 000；`curl [::1]:1420` → 200。Node ≥17 起 `localhost` 优先解析 `::1`，
@@ -2157,7 +2157,7 @@ WebView 走 `::1` —— 强行只绑 IPv4 会把 WebView 弄坏。
 - **内核** `engine/model-store.mjs`：`ensureModels()`（下载+校验+幂等）/ `verifyModels()`（纯离线校验）/
   `linkModels()`（把 store 链进引擎树）。**CLI** `engine/scripts/fetch-models.mjs`
   （`--check` 只校验 · `--link` 零网络重建链接 · `--set/--id/--extract/--integrity`）。
-- **验收**：`npm run check:models` **32/32**；`check:models:refute` 反证 **5/5** 按预期变红。
+- **验收**：`npm run task -- check:models` **32/32**；`check:models:refute` 反证 **5/5** 按预期变红。
 
 ### 🔴 三个"看起来能用、其实静默出错"的点（都在代码里显式处理）
 
@@ -2189,7 +2189,7 @@ WebView 走 `::1` —— 强行只绑 IPv4 会把 WebView 弄坏。
 **解法：权威副本与"引擎要看到的路径"分离。**
 - 权威副本只存一份：`runtimes/manga-translator/models-store/<子目录>/`（manifest 的 `dest`）。
 - 引擎树里那几份是**硬链接**（manifest 的 `linkTo`，相对链接基准 `<模型根>/src`）。
-- 换版本后 `npm run fetch:models -- --link` ⇒ **毫秒级、零网络**恢复。
+- 换版本后 `npm run task -- fetch:models --link` ⇒ **毫秒级、零网络**恢复。
 - **为什么用硬链接而不是符号链接**：Python 侧对符号链接有一堆额外语义（`realpath`、`os.replace`、
   "写入跟随目标"），而硬链接在文件系统层面**就是一个普通文件** —— 引擎的 `os.path.exists` 与读取路径
   完全无感。跨设备/不支持链接时**退化为复制**，但**如实记账**（`copied` 与 `linked` 分开报，不假装是链接）。
@@ -2391,10 +2391,10 @@ mock 档的替身是我们自己的 Node 进程，内部已装 `engine/src/paren
 
 ### 断言与反证（分母写死）
 
-- `npm run check:profile` **42/0**；`check:profile:refute` **13/13** 按预期变红。
+- `npm run task -- check:profile` **42/0**；`check:profile:refute` **13/13** 按预期变红。
   ⚠️ 反证 `H`（把 OOM 签名放宽成"什么都算"）**只**该打红 `D3`；`J`（删掉排队保护）**同时**打红 `I2` 与 `I8`
   —— 两条 `expect` 互不相同是刻意的：两条破坏命中同一条断言时，它们会在各自的基线比对里互相掩盖（假绿家族第 5 类）。
-- `npm run check:e5e6` **13/0**；`check:e5e6:refute` **2/2**。反证用的是**逃生开关**
+- `npm run task -- check:e5e6` **13/0**；`check:e5e6:refute` **2/2**。反证用的是**逃生开关**
   （`MIAO_NO_TIER_DOWNGRADE` / `MIAO_NO_IDLE_UNLOAD`）而不是改源码 —— 关掉的是**产品里真实存在的开关**，
   比"改一行源码"更贴近"这个机制真的在起作用吗"这个问题。
 - E5 的关键取证：③ 的**档位**不是读日志，而是直接打它自己的 `GET /v1/models`
@@ -2554,7 +2554,7 @@ H 实例（mock 档）的阶段日志**如实的空** —— ver1.0 自定义协
 
 ### 实测（2026-10-05）
 
-- `npm run check:contract` **77/0**（8 个实例 A–H，`real` 2.60s）；`check:contract:refute` **4/4**（2.04s）。
+- `npm run task -- check:contract` **77/0**（8 个实例 A–H，`real` 2.60s）；`check:contract:refute` **4/4**（2.04s）。
 - `engine-client 那组钉子` **42/0**（含新增 `C` 组 4 条 / `V` 组 2 条 / `P3b` / `P3c` / `P4b`，「③ 就绪」由 `starting` 细分出 `prewarming`）；`:refute` **8/8**。
 - 全量门（12 个 suite）：`selftest`（服务 159 + 引擎 23）· `selftest:app` 16 · `e11` · `check:ia` 24 ·
   `check:tls` 14 · `check:docs` 14 · `check:launch-plan` 22 · `check:profile` 42 · `check:e5e6` 13 ·
@@ -2784,12 +2784,12 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 
 ### 断言（本轮的主证据）
 
-- `npm run check:e3:real` **8/8**（20+11 两批 / 一个 Task / 62 文件 / `changedPct 2.98·2.99·2.97`）
-- `npm run check:e4` **6/0** · `:refute` **4/4**
-- `npm run check:e5e6` **16/0**（原 13 + 新 3）· `:refute` **3/3**（原 2 + 新 1）
-- `npm run check:models` **32/0** · `:refute` **5/5**；`npm run check:e7:real` **6/0** · `:refute` **3/3**
-- `npm run check:e8` **6/0** · `:refute` **4/4**；`npm run check:e10` **7/0** · `:refute` **4/4**
-- `npm run selftest:app:e11:real`：三进程拉起 → SIGKILL → **14 个端口全释放、无孤儿**；E1 快照 **6 行**
+- `npm run task -- check:e3:real` **8/8**（20+11 两批 / 一个 Task / 62 文件 / `changedPct 2.98·2.99·2.97`）
+- `npm run task -- check:e4` **6/0** · `:refute` **4/4**
+- `npm run task -- check:e5e6` **16/0**（原 13 + 新 3）· `:refute` **3/3**（原 2 + 新 1）
+- `npm run task -- check:models` **32/0** · `:refute` **5/5**；`npm run task -- check:e7:real` **6/0** · `:refute` **3/3**
+- `npm run task -- check:e8` **6/0** · `:refute` **4/4**；`npm run task -- check:e10` **7/0** · `:refute` **4/4**
+- `npm run task -- selftest:app:e11:real`：三进程拉起 → SIGKILL → **14 个端口全释放、无孤儿**；E1 快照 **6 行**
 - E2：`s1-real-engine-check.mjs` **12 633 ms / 1 371 745 B / sha256 `18f8a240…` / 21 个真日文文本框**
 - E9：**19/0**（`node e2e/e9-real-engine.mjs`，miao-trans 仓）—— **真实漫画站**（`jmanga.media` 的《転生ゴブリンだけど質問ある？》）
   + 真引擎（`protocol=real` · tiny · MPS）+ 真 box-service + 真 ③。chapter-112 全 18 页 + chapter-113 前 13 页 = 31 张，
@@ -3104,7 +3104,7 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 ## D-80 · 🔴 `check:e5e6` 的「E6 整组偶发红」不是 flake，是**时间戳精度错配**：`nowIso()` 截到秒 vs `Date.now()` 毫秒（2026-10-06）
 
 ### 症状与它为什么极具误导性
-`npm run check:e5e6` 会**成串**地红：实测采样 `绿 红 红 红 红 绿`、`绿 红 红 红 红 绿`、
+`npm run task -- check:e5e6` 会**成串**地红：实测采样 `绿 红 红 红 红 绿`、`绿 红 红 红 红 绿`、
 另一组 `绿 红 红 红`。每次红的**恰好**是 E6 那 5 条（E6.1/E6.2/E6.3/E6.4/E6.6），
 而 E5 全绿、**第二个服务实例**的 E6.7/E6.8 也绿。失败详情长得像"看护没跑"：
 
@@ -3117,7 +3117,7 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 被自己的采样反证：单独连跑 6 轮一样成串红（绿红红红红绿）。
 
 ### 取证（三次实验，逐次缩小范围）
-1. **采样**：`for i in 1..6; npm run check:e5e6` ⇒ 红不是随机的，是**成串**的。
+1. **采样**：`for i in 1..6; npm run task -- check:e5e6` ⇒ 红不是随机的，是**成串**的。
 2. **排除自身改动**（关键）：把 `cd076fd^`（U10② 的 `config.mjs`/`store.mjs` 改动**之前**）
    签出到独立 worktree `/tmp/miao-pre` 跑同一条命令 ⇒ 照样 `11/5 · 16/0 · 11/5`。
    ⇒ **与 U10② 无关，也与 `e2e/` 搬迁无关**（搬迁对 `e5-e6-check.mjs` 只改了 1 行用法注释，
@@ -3354,7 +3354,7 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 |---|---|---|---|
 | 1 | ① **侧栏图标标签** | 新增 `app/src/shell-prefs.ts`（`initialSidebarLabels()` / `persistSidebarLabels()`，`localStorage` 键 `miao.sidebar-labels`）；`Sidebar.tsx` 收 `labels` prop，按它切 `SIDEBAR.appItem`（58×52）与**新增的** `SIDEBAR.iconOnlyItem`（44×44）；`App.tsx` 持 state，`SettingsScreen` → `GeneralSection` 透传 | 存 `'1'`/`'0'` 而非 JSON；**缺键必须回落到"显示"**（`!== '0'`）—— 它决定老用户升级后的观感。单开一个文件而不塞 `theme/apply.ts`（那是颜色令牌的家）或 music store（那是音乐域）。**几何必须跟形态一起变**，且两套都 ≥44（点击热区下限） |
 | 2 | ④ **存储占用** | 新增 `StorageBlock.tsx`（`layout: 'block'`）：三行分列 —— 译文库（`lib.totalBytes` + `lib.count`/`lib.totalImages`）/ 音频缓存（`musicCacheStats()`）/ 模型（**写死「未统计」**）；行首一行 `三处分开列 · 不合计` | **不合计**是硬立场，且**写进断言**（源码里出现 `.reduce(` 即判红）—— 合计等于把"没有接口的那一处"当成 0 算进去。三处「没有值」**分开说**（`读取中…` / `无` / `未统计`），因为它们是三件不同的事 |
-| 6 | ⑤ **第三方许可** | 新增 `app/scripts/gen-licenses.mjs`（`npm run gen:licenses`）枚举 npm 与 Rust 两侧，产出 `app/src/generated/licenses.json` 入库；新增 `LicensesBlock.tsx` 渲染：两段 `Scope`（覆盖数 `withLicense / total`）+ 免责声明 + 「查看清单 / 收起清单」 | 覆盖数**必须看得见**（实跑 **npm 57 / 57**、**Rust 342 / 516**）；`未取到声明` 的包**不得被过滤掉**（缺口要留在界面上）；`disclaimer` 必须渲染 —— 「包自己声明的」不等于「我们核准过的」 |
+| 6 | ⑤ **第三方许可** | 新增 `app/scripts/gen-licenses.mjs`（`npm run task -- gen:licenses`）枚举 npm 与 Rust 两侧，产出 `app/src/generated/licenses.json` 入库；新增 `LicensesBlock.tsx` 渲染：两段 `Scope`（覆盖数 `withLicense / total`）+ 免责声明 + 「查看清单 / 收起清单」 | 覆盖数**必须看得见**（实跑 **npm 57 / 57**、**Rust 342 / 516**）；`未取到声明` 的包**不得被过滤掉**（缺口要留在界面上）；`disclaimer` 必须渲染 —— 「包自己声明的」不等于「我们核准过的」 |
 | R3 | `SettingItem.def` | `parts.tsx` 新增 `DefaultChip`，挂在 `Row` 的**标题行内**（`.set-row-title` 改 flex + baseline + wrap） | **不另起一行**：另起一行会把 50px 行高顶到 70+，而这条信息是"出厂默认"，不是主要信息。文案必须带「默认」二字（否则被读成"你现在是这个"）。**只在 `Row` 用，`PendingRow` 刻意不用**（待接入项没有"当前值"可言） |
 | 4 | ④ 临时文件 | **不动**，仍 `pending` | 缺服务侧 `GET/DELETE /staging` 两条接口（低优先级） |
 | 7 | ⑤ 开源反馈 | **不动**，仍 `pending` | 缺一个真实可打开的仓库地址（项目未公开发布）—— 给一个打不开的链接不如不给 |
@@ -3398,7 +3398,7 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 - `check:docs` **14 / 0** · `check:units` **37 / 0** · `check:tls` **14 / 0** · `check:contract` **77 / 0** · `check:engine-settings` **61 / 0** · `engine-client 那组钉子` **42 / 0**
 - `check:music` **215 / 1** —— 唯一红是**既有**的 `ISLANDV.toggleBothWays`，与本轮无关（提交 `70e2844` 时即是同一状态）
 - `cd app && npx tsc --noEmit` **0 错** · `npx vite build` 通过（sass 全量编译）
-- `npm run gen:licenses` 实跑：npm 生产依赖 **57**（跳 dev 167，全部有声明）· Rust 第三方 crate **516**，取到声明 **342**、缺 **174** · 产出 `licenses.json` 38609 字节
+- `npm run task -- gen:licenses` 实跑：npm 生产依赖 **57**（跳 dev 167，全部有声明）· Rust 第三方 crate **516**，取到声明 **342**、缺 **174** · 产出 `licenses.json` 38609 字节
 
 ### 六、规格回写（**不改写历史、不动编号**）
 
@@ -3588,11 +3588,11 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
 
 ### 五之二、`check:docs` 在 Windows 上是**红的**，但**不是本条造成的**（读的人别误判）
 
-`npm run check:docs` 当前 **12 通过 / 2 失败**，两条都是
+`npm run task -- check:docs` 当前 **12 通过 / 2 失败**，两条都是
 「`AGENTS.md` / `README.md` 声明的 `check:music` 条数（写 **215**）与脚本自报（**213**）不一致」。
 根因在**音乐**那一摊，不在本条：
 
-- 实跑 `npm run check:music`：**213 通过 / 3 失败**（`ISLANDV 13/14` · `RESTORE 11/12` · `KEYS 11/12`）；
+- 实跑 `npm run task -- check:music`：**213 通过 / 3 失败**（`ISLANDV 13/14` · `RESTORE 11/12` · `KEYS 11/12`）；
 - 该脚本的 `add('…')` 静态条数与 `5becf39`（文档写下 215 的那次）**逐字相同（171 处）** ⇒ **不是"断言被删"**，
   而是**跑出来就是失败 3 条**，`check:docs` 的计数门拿"通过数"去比对，于是跟着红；
 - 本条改动的 4 个文件全在 `service/`、`engine/scripts/`、`e2e/service/`，而 `check:music` 只读 `app/`（`git status` 可证）⇒ **无交集**。
@@ -3670,18 +3670,18 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
 |---|---|
 | Rust `cargo check`（在 `app/src-tauri`） | **通过**，零错误零警告 |
 | 前端 `tsc --noEmit` | 退出码 0 |
-| `npm run check:quit` | **4 / 0**（Q1–Q4） |
-| `npm run check:retry` | **6 / 0**（R1–R6） |
-| `npm run check:units` | 37 / 0（未受本轮影响，回归确认） |
-| `npm run check:ia` | 32 / 0（同上） |
+| `npm run task -- check:quit` | **4 / 0**（Q1–Q4） |
+| `npm run task -- check:retry` | **6 / 0**（R1–R6） |
+| `npm run task -- check:units` | 37 / 0（未受本轮影响，回归确认） |
+| `npm run task -- check:ia` | 32 / 0（同上） |
 
 - **`check:retry` R5 的实证**：同一条任务 `tsk_01M49REKQJ5XP14TF72D0RPG12` 重跑，`finishedAt` `…23:18.854Z → …23:20.067Z` **前移**、`progress.total` 仍 **3**、失败页集合仍 `[2]` ⇒ 是"同一件事再来一次"，**不是**新任务；`GET /tasks` 的 `total` **1 → 1**（历史不冒新行）。R3 拿到 `status=running` ⇒ 用户要的"直接变成翻译中"。
 - **`check:quit` 是源码级钉子**：本机没有桌面自动化权限（`osascript` 被 TCC 拒、Windows 侧无可用点击注入），**点不了那个按钮**。能自动化的部分只剩"把会让退出失灵的写法钉住"。Q1–Q4 各钉**一处成因**（不是风格），谁改回去哪一条立刻变红。
 
 ### 四、反证（断言必须配反证，见 `AGENTS.md`）
 
-- `npm run check:quit:refute` → **REFUTE: 4/4**：M1 `quit_app` 退回同步命令 ⇒ **Q1** 红；M2 `reap()` 退回无界 `wait()` ⇒ **Q2** 红；M3 去掉 `CREATE_NO_WINDOW` ⇒ **Q3** 红；M4 前端退回静默 ⇒ **Q4** 红。三处源文件**按字节还原**校验一致。
-- `npm run check:retry:refute` → **REFUTE: 5/5**：M1 服务端 `/retry` 退回 `createResumeTask` ⇒ **R2/R3/R4/R5** 红；M2 前端退回 `/resume` ⇒ **R6** 红。源文件**按字节还原**校验一致。
+- `npm run task -- check:quit:refute` → **REFUTE: 4/4**：M1 `quit_app` 退回同步命令 ⇒ **Q1** 红；M2 `reap()` 退回无界 `wait()` ⇒ **Q2** 红；M3 去掉 `CREATE_NO_WINDOW` ⇒ **Q3** 红；M4 前端退回静默 ⇒ **Q4** 红。三处源文件**按字节还原**校验一致。
+- `npm run task -- check:retry:refute` → **REFUTE: 5/5**：M1 服务端 `/retry` 退回 `createResumeTask` ⇒ **R2/R3/R4/R5** 红；M2 前端退回 `/resume` ⇒ **R6** 红。源文件**按字节还原**校验一致。
 
 > **写脚本时踩到的两个坑**（都会造成"看着绿、其实没钉住"，记下来防复踩）：
 > 1. **`check:quit` 的 M1 一开始"该红没红"（假阳性）**：锚点 `#[tauri::command(async)]` 在全文命中 **2** 处 —— 一处是**真实的命令属性**，另一处是**我自己刚写进 `commands.rs` 的文档注释**里引用的字面量。refute 把注释那处替换掉了，真实属性仍在 ⇒ 断言误判"仍是 async"。**修法**：把那句注释改成「命令属性上的 `(async)`」（去掉字面括号形式），让真实属性**唯一**。教训同 **D-84**：着力点必须落在**唯一且真实**的那一处。
@@ -3692,7 +3692,7 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
 - 🔴 **`check:quit` 证明的是"四处成因的写法都被钉住了"，不是"Windows 上退出真的能退"** —— 沙箱点不了 GUI 按钮，**真机退出仍需人工点测**。脚本文件头与本节都如实标着；**别把"钉子绿"当"功能绿"**。
 - **未做全量构建**：Rust 侧只跑 `cargo check`（编译校验），**未跑 `app:build`**（Tauri 打包）。打包链路另行验证。
 - **代码未提交**：本轮（连同前一条 **D-86**）的全部改动仍在工作区，等确认后再 commit。
-- **`npm run check:docs` 在 Windows 上仍是红的**（**非本轮引入**）：2 条失败都是 `check:music` 文档声明 **215** vs 脚本自报 **213**（音乐那一摊既有问题，见 **D-86 §五之二**），与本轮 `service/` + `app/` 改动**无交集**。本轮新增的 `check:quit` / `check:retry` **不在** `check:docs` 的条数比对清单内（该门只比 `check:music` / `check:units` / `check:settings` 三套），故**不改变其红绿**。
+- **`npm run task -- check:docs` 在 Windows 上仍是红的**（**非本轮引入**）：2 条失败都是 `check:music` 文档声明 **215** vs 脚本自报 **213**（音乐那一摊既有问题，见 **D-86 §五之二**），与本轮 `service/` + `app/` 改动**无交集**。本轮新增的 `check:quit` / `check:retry` **不在** `check:docs` 的条数比对清单内（该门只比 `check:music` / `check:units` / `check:settings` 三套），故**不改变其红绿**。
 
 ### 六、改动文件
 
@@ -3756,11 +3756,11 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
 | 命令 | 结果 |
 |---|---|
 | Rust `cargo check`（在 `app/src-tauri`） | **通过**，零错误零警告（2.28s） |
-| `npm run check:stdio` | **2 / 0**（S1 源码钉子 + S2 行为对照） |
-| `npm run check:stdio:refute` | **1 / 1**（M1 → S1 红；`service.rs` 按字节还原一致） |
+| `npm run task -- check:stdio` | **2 / 0**（S1 源码钉子 + S2 行为对照） |
+| `npm run task -- check:stdio:refute` | **1 / 1**（M1 → S1 红；`service.rs` 按字节还原一致） |
 | `engine-client 那组钉子` | **46 / 0**（新增 **L12**） |
 | `engine-client 那组钉子的反证轮` | **10 / 10**（新增 **J** → L12 红） |
-| `npm run check:docs` | 12 / 2 —— 两条红仍是 `check:music` 文档 **215** vs 脚本 **213**（既有，与本轮无交集） |
+| `npm run task -- check:docs` | 12 / 2 —— 两条红仍是 `check:music` 文档 **215** vs 脚本 **213**（既有，与本轮无交集） |
 
 - **S2 把"约束"变成"后果"**：起一个**真子进程**用 `Buffer` 直写「ASCII 行 / 含非法 UTF-8（GBK『荒木宰』= `bb c4 c4 be d4 d7`）/ ASCII 行」，旧策略（严格 + 遇错即停）**只读到第 1 行**，新策略（lossy）**3 行一行不丢**。实测：`总行=3 旧=1（停在第2行） 新=3`。
 - **L12**：受控 env（先 `delete process.env.PYTHONIOENCODING`）后断言 `ioLaunch.env.PYTHONIOENCODING.toLowerCase() === 'utf-8'`。
@@ -3780,7 +3780,7 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
 - **真机端到端复核仍未做**：本轮是在**运行中的引擎**上直连复现并据此定位的；修复后**未再跑一张真图端到端**确认 `[Errno 22]` 真的消失（需真引擎 + 真 ③ 链路，分钟级）。**建议用户在真机上重跑一批图做最终确认**。
 - **沙箱编码掩盖陷阱**：沙箱 env 默认带 `PYTHONUTF8=1` / `PYTHONIOENCODING=utf-8`，会**掩盖** GBK 问题 —— 复现时必须 `env -u` 剥离后才看得到 `gbk`/`cp936`。这也正是**为什么只有真机（用户 env）才撞得上**。
 - **代码未提交**：本轮（连同 **D-86 / D-87**）全部改动仍在工作区，等确认后再 commit。
-- **`npm run check:docs` 在 Windows 上仍是红的**（**非本轮引入**）：两条失败都是 `check:music` 文档声明 **215** vs 脚本自报 **213**（音乐那一摊既有问题，见 **D-86 §五之二**）。`check:stdio` / `engine-client 那组钉子` **不在** `check:docs` 的条数比对清单内（该门只比 `check:music` / `check:units` / `check:settings` 三套），故**不改变其红绿**。
+- **`npm run task -- check:docs` 在 Windows 上仍是红的**（**非本轮引入**）：两条失败都是 `check:music` 文档声明 **215** vs 脚本自报 **213**（音乐那一摊既有问题，见 **D-86 §五之二**）。`check:stdio` / `engine-client 那组钉子` **不在** `check:docs` 的条数比对清单内（该门只比 `check:music` / `check:units` / `check:settings` 三套），故**不改变其红绿**。
 
 ### 七、改动文件
 
@@ -3849,8 +3849,8 @@ Windows 的 `signal_tree(force=false)` = `taskkill /PID <pid> /T`（**不带 /F*
 | 命令 | 结果 |
 |---|---|
 | Rust `cargo check`（`app/src-tauri`） | **通过**，零错误零警告（3.32s） |
-| `npm run check:quit` | **5 / 0**（新增 Q5） |
-| `npm run check:quit:refute` | **5 / 5**（新增 M5 → Q5 红；三文件按字节还原一致） |
+| `npm run task -- check:quit` | **5 / 0**（新增 Q5） |
+| `npm run task -- check:quit:refute` | **5 / 5**（新增 M5 → Q5 红；三文件按字节还原一致） |
 
 - **Q5**：Windows `signal_tree` 函数体（`Command::new("taskkill")` 到 `no_tree_kill` 之间）内，`c.arg("/F")` **无条件**出现、**不含** `if force {`。
 - **M5**：把 `c.arg("/F");` 改回 `if force { c.arg("/F"); }` ⇒ **Q5** 红。
@@ -3943,12 +3943,12 @@ R6 原钉「认 Ctrl/⌘ + 只处理 ↑/↓」，改滚轮后它**必然变红*
 |---|---|
 | `npx tsc --noEmit`（app） | **通过**，零错误 |
 | `npm --prefix app run build` | **通过**（`tsc --noEmit && vite build`） |
-| `npm run check:units` | **42 / 0**（新增 ZOOM 组 4 条） |
-| `npm run check:units:refute` | **52 / 52**（新增 ZOOM 组 7 条变异），零假阳性、字节还原一致 |
-| `npm run check:retranslate` | **12 / 0**（R6 重写） |
-| `npm run check:retranslate:refute` | **9 / 9**（M5 改写 + 新增 M6） |
-| `npm run check:lib-manage` | **8 / 0** |
-| `npm run check:docs` | `check:units` 计数门与 GROUPS 覆盖**全绿**；余 2 红是 `check:music` 既有问题（215/213），与本轮无关 |
+| `npm run task -- check:units` | **42 / 0**（新增 ZOOM 组 4 条） |
+| `npm run task -- check:units:refute` | **52 / 52**（新增 ZOOM 组 7 条变异），零假阳性、字节还原一致 |
+| `npm run task -- check:retranslate` | **12 / 0**（R6 重写） |
+| `npm run task -- check:retranslate:refute` | **9 / 9**（M5 改写 + 新增 M6） |
+| `npm run task -- check:lib-manage` | **8 / 0** |
+| `npm run task -- check:docs` | `check:units` 计数门与 GROUPS 覆盖**全绿**；余 2 红是 `check:music` 既有问题（215/213），与本轮无关 |
 
 - **ZOOM 组 4 条**：`wheelNonPassive`（非 passive + 对称卸载 + 无重复 `onWheel`）·
   `anchorZoom`（量光标 + 比例换算 + 未退回中心缩放）· `buttonFallback`（按钮 + 样式齐 + 已接逻辑）·
@@ -4033,8 +4033,8 @@ R6 原钉「认 Ctrl/⌘ + 只处理 ↑/↓」，改滚轮后它**必然变红*
 | `node e2e/units-structure-check.mjs` | **44 / 0** |
 | `node e2e/units-structure-check.mjs --refute` | **58 / 58 全红、零跳过** |
 | `node e2e/service/retranslate-check.mjs` / `--refute` | **12 / 0** / **9 / 9** |
-| `npm run check:lib-manage` | **8 / 0** |
-| `npm run check:docs` | check:units 计数门与 GROUPS 全绿；余 2 红是 `check:music` 既有问题（215/213），与本轮无关 |
+| `npm run task -- check:lib-manage` | **8 / 0** |
+| `npm run task -- check:docs` | check:units 计数门与 GROUPS 全绿；余 2 红是 `check:music` 既有问题（215/213），与本轮无关 |
 | 真机浏览器实测（真实构建 CSS，1440×900） | stage 1400×743、img **495×743**、溢出 **NO**、barH 31 |
 
 ### 七、边界
@@ -4137,10 +4137,10 @@ const find = txt.includes(mut.find) ? mut.find : mut.find.split('\n').join(eol);
 | `cargo check`（app/src-tauri） | **通过**（exit 0） |
 | `node e2e/music-platform-check.mjs` | **215 / 3**（新增 2 条全绿；余 3 条是既有失败，见 §七） |
 | `node e2e/music-platform-check.mjs --refute` | **182 / 182 全红、零跳过、零假阳性**（exit 0） |
-| `npm run check:units` / `:refute` | **44 / 0** / **58 / 58** |
-| `npm run check:retranslate` | **12 / 0** |
-| `npm run check:lib-manage` | **8 / 0** |
-| `npm run check:docs` | **14 / 0**（exit 0）—— 既有的 **2 条**音乐计数红一并消失：此前文档写 215 而脚本实际通过 213，本轮 +2 条断言正好补齐；同时更新 `AGENTS.md` 的反证条数 180 → 182 |
+| `npm run task -- check:units` / `:refute` | **44 / 0** / **58 / 58** |
+| `npm run task -- check:retranslate` | **12 / 0** |
+| `npm run task -- check:lib-manage` | **8 / 0** |
+| `npm run task -- check:docs` | **14 / 0**（exit 0）—— 既有的 **2 条**音乐计数红一并消失：此前文档写 215 而脚本实际通过 213，本轮 +2 条断言正好补齐；同时更新 `AGENTS.md` 的反证条数 180 → 182 |
 
 ### 七、边界
 
@@ -4223,7 +4223,7 @@ crate，而 `cl.exe` 靠环境变量 `INCLUDE` / `LIB` 找头文件与库；沙�
 > 与本仓既有记录的关系：`vcvars64.bat` 在本机**不可用**（它依赖被沙箱拦的 `reg.exe`）——
 > 所以这里走的是**手工导出 `INCLUDE`/`LIB`/`PATH`**（`MSVC/bin/HostX64/x64` + `Windows Kits/10/bin/<ver>/x64`）的路子。
 
-### 五、钉子：`npm run check:bundle`（4 条 / 反证 4 条）
+### 五、钉子：`npm run task -- check:bundle`（4 条 / 反证 4 条）
 
 | 断言 | 守什么 |
 |---|---|
@@ -4244,10 +4244,10 @@ crate，而 `cl.exe` 靠环境变量 `INCLUDE` / `LIB` 找头文件与库；沙�
 
 | 命令 | 结果 |
 |---|---|
-| `npm run check:bundle` | **4 / 0**（exit 0） |
-| `npm run check:bundle:refute` | **4 / 4 全红、零跳过、按字节还原一致** |
+| `npm run task -- check:bundle` | **4 / 0**（exit 0） |
+| `npm run task -- check:bundle:refute` | **4 / 4 全红、零跳过、按字节还原一致** |
 | `npm run app:build`（带 MSVC 环境，release） | **exit 0**，产出 `target/release/bundle/nsis/喵坞_2.0.0_x64-setup.exe`（**20.62 MiB / 21,623,790 B**）|
-| `npm run check:docs` | **14 / 0**（exit 0） |
+| `npm run task -- check:docs` | **14 / 0**（exit 0） |
 
 ### 七、边界
 
@@ -4348,7 +4348,7 @@ crate，而 `cl.exe` 靠环境变量 `INCLUDE` / `LIB` 找头文件与库；沙�
 `getItem(STORAGE_KEY)`（→ 拆成 `SIDEBAR_KEY`）。两条已同步；另**补 2 条新变异**（自动启动偏好的默认值写反 /
 key 写错）⇒ 反证条数 103 → **105**。
 
-### 六、新钉子：`npm run check:autostart`（12 条 / 反证 12 条，源码级、不起进程）
+### 六、新钉子：`npm run task -- check:autostart`（12 条 / 反证 12 条，源码级、不起进程）
 
 起因：这个功能的失效形态**全都不报错**（编译过、`cargo check` 过、`tsc` 过、界面照常渲染），
 只能把成因钉在源码里。逐条对应一个真实机制：
@@ -4392,14 +4392,14 @@ key 写错）⇒ 反证条数 103 → **105**。
 |---|---|
 | `cargo check`（`app/src-tauri`，带 MSVC 环境） | **exit 0** |
 | `app` 下 `tsc --noEmit` | **exit 0** |
-| `npm run check:autostart` | **12 / 0**（exit 0） |
-| `npm run check:autostart:refute` | **12 / 12 全红、0 跳过、按字节还原一致**（exit 0） |
-| `npm run check:settings` | **164 / 0**（exit 0） |
-| `npm run check:settings:refute` | **105 / 105 全红、0 跳过**（exit 0）—— 修掉基线 31 条静默跳过 |
-| `npm run check:docs` | **16 / 0**（exit 0） |
-| `npm run check:ia` / `check:units` / `:refute` | **32 / 0** · **44 / 0** · **58 / 58** |
-| `npm run check:music` | **215 / 3** —— 3 条既有失败（`ISLANDV` / `RESTORE` / `KEYS`），与本轮无关、本轮未动 |
-| `npm run check:engine-settings` | **55 / 6** —— 6 条是**该脚本按 macOS/Metal 写的**（如断言 `cuda` 必被拒），本机是 CUDA ⇒ 既有环境性失败，与本轮无关（脚本只读 `service/src`、`engine/src`，本轮**一个字节没碰**） |
+| `npm run task -- check:autostart` | **12 / 0**（exit 0） |
+| `npm run task -- check:autostart:refute` | **12 / 12 全红、0 跳过、按字节还原一致**（exit 0） |
+| `npm run task -- check:settings` | **164 / 0**（exit 0） |
+| `npm run task -- check:settings:refute` | **105 / 105 全红、0 跳过**（exit 0）—— 修掉基线 31 条静默跳过 |
+| `npm run task -- check:docs` | **16 / 0**（exit 0） |
+| `npm run task -- check:ia` / `check:units` / `:refute` | **32 / 0** · **44 / 0** · **58 / 58** |
+| `npm run task -- check:music` | **215 / 3** —— 3 条既有失败（`ISLANDV` / `RESTORE` / `KEYS`），与本轮无关、本轮未动 |
+| `npm run task -- check:engine-settings` | **55 / 6** —— 6 条是**该脚本按 macOS/Metal 写的**（如断言 `cuda` 必被拒），本机是 CUDA ⇒ 既有环境性失败，与本轮无关（脚本只读 `service/src`、`engine/src`，本轮**一个字节没碰**） |
 
 ### 九、边界
 
@@ -4597,7 +4597,7 @@ Vite 因此从未看见那 120 个 `url()`，资源自然不落盘。
    探针把 `url(/assets/` 批量改成 `url(./assets/` 后才 `check=true`。
    **这是探针的错，不是应用的错**（应用内 base 为 `/`，正常）。
 
-### 五、新钉子：`FONT` 组（`npm run check:settings`，3 条 / 反证 5 条）
+### 五、新钉子：`FONT` 组（`npm run task -- check:settings`，3 条 / 反证 5 条）
 
 | 判据 | 失效形态 | 反证 |
 |---|---|---|
@@ -4783,7 +4783,7 @@ nllb 档的权重按 **HF 缓存布局**落盘（`engine/models.manifest.json` �
 
 ### 五、新钉子
 
-`npm run check:engine-patches[:refute]` —— 6 条 / 反证 4 条（零网络零 GPU）。
+`npm run task -- check:engine-patches[:refute]` —— 6 条 / 反证 4 条（零网络零 GPU）。
 它守的是**表与实物**的一致性（条数/结构/marker 命名/目标存在/已应用/补丁体自含 marker），
 不重跑真引擎（真链路验证走 `.tmp/en-test/` 的实测，分钟级，不进常规门）。
 
@@ -4883,11 +4883,11 @@ nllb 档的权重按 **HF 缓存布局**落盘（`engine/models.manifest.json` �
 
 | 门 | 结果 |
 |---|---|
-| `npm run check:profile` | **43 / 0** |
+| `npm run task -- check:profile` | **43 / 0** |
 | `engine-client 那组钉子` | **50 / 0** |
-| `npm run check:docs` | **16 / 0** |
-| `npm run selftest:service` | 134 / 1（`Unknown signal: SIGSTOP` —— Windows 无 SIGSTOP，**既有环境性失败**） |
-| `npm run check:engine-settings` | 55 / 6（该门按 macOS+16GB 写；本机 Windows+CUDA，**既有环境性失败**） |
+| `npm run task -- check:docs` | **16 / 0** |
+| `npm run task -- selftest:service` | 134 / 1（`Unknown signal: SIGSTOP` —— Windows 无 SIGSTOP，**既有环境性失败**） |
+| `npm run task -- check:engine-settings` | 55 / 6（该门按 macOS+16GB 写；本机 Windows+CUDA，**既有环境性失败**） |
 
 ### 五、提交信息格式同步（ver2.2 起）
 

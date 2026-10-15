@@ -224,7 +224,7 @@ fs.mkdirSync(ROOT_DIR, { recursive: true });
 fs.mkdirSync(STATE_DIR, { recursive: true });
 fs.mkdirSync(OUT, { recursive: true });
 
-if (!fs.existsSync(SAKURA_GGUF)) throw new Error(`Sakura 权重不在：${SAKURA_GGUF}（先 npm run fetch:models）`);
+if (!fs.existsSync(SAKURA_GGUF)) throw new Error(`Sakura 权重不在：${SAKURA_GGUF}（先 npm run task -- fetch:models）`);
 if (!fs.existsSync(TEST_IMAGE)) throw new Error(`测试图不在：${TEST_IMAGE}`);
 
 // 适配层要在 import 之前拿到端口与协议（config 在模块顶层读 env）

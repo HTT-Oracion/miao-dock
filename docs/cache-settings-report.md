@@ -325,13 +325,13 @@ WIRING 全绿、项数全对，而页面上那一项被压成一条读不了的�
 | 门 | 结果 |
 |---|---|
 | `cd app && tsc --noEmit` | ✅ **0 错误** |
-| `npm run check:settings` | ✅ **83 通过 / 0 失败**（72 → 83） |
-| `npm run check:settings:refute` | ✅ **19/19 按预期变红**（应执行 19，0 跳过，0 假阳性，**5 个文件字节全部恢复一致**） |
-| `npm run check:units` | ✅ **37/37**（无回归；`LAYOUT.files` / `MANIFEST` / `BARREL_EXPORTS` / `NAMING` / `CALLERS` 均未受影响） |
-| `npm run check:docs` | ✅ **14 通过 / 0 失败**（条数已对账） |
-| `npm run check:ia` | ✅ 24/24（无回归） |
-| `npm run check:tls` | ✅ 14/14（无回归） |
-| `npm run check:music` | ⚠️ **193 通过 / 1 失败**（既有红条，见 §9.1；**无新增回归**） |
+| `npm run task -- check:settings` | ✅ **83 通过 / 0 失败**（72 → 83） |
+| `npm run task -- check:settings:refute` | ✅ **19/19 按预期变红**（应执行 19，0 跳过，0 假阳性，**5 个文件字节全部恢复一致**） |
+| `npm run task -- check:units` | ✅ **37/37**（无回归；`LAYOUT.files` / `MANIFEST` / `BARREL_EXPORTS` / `NAMING` / `CALLERS` 均未受影响） |
+| `npm run task -- check:docs` | ✅ **14 通过 / 0 失败**（条数已对账） |
+| `npm run task -- check:ia` | ✅ 24/24（无回归） |
+| `npm run task -- check:tls` | ✅ 14/14（无回归） |
+| `npm run task -- check:music` | ⚠️ **193 通过 / 1 失败**（既有红条，见 §9.1；**无新增回归**） |
 | 禁词（任何大小写） | ✅ **0 命中**（Grep 工具全仓扫描，含本轮所有新写文件与本报告） |
 | TS 引号风格 | ✅ 全单引号（仅 JSX 属性用双引号，那是语法要求） |
 | 未执行 commit / stash / checkout | ✅ |

@@ -38,18 +38,20 @@ jobs:
 
       # ── 源码级检查：只读源码/配置，零依赖、秒级、不起进程 ──────────────
       # check:docs 内部会跑 music/units/settings/autostart 四个套件对账，故一并覆盖。
+      # 命令收束后逐条命令住 e2eScripts.json：`npm run task -- <id>`（npm run task 看清单）。
       - name: 源码级检查
         run: |
-          npm run check:docs
-          npm run check:docpaths
-          npm run check:resilience
-          npm run check:bundle
-          npm run check:quit
-          npm run check:autostart
-          npm run check:ia
-          npm run check:units
-          npm run check:music
-          npm run check:settings
+          npm run task -- check:docs
+          npm run task -- check:docpaths
+          npm run task -- check:resilience
+          npm run task -- check:bundle
+          npm run task -- check:quit
+          npm run task -- check:autostart
+          npm run task -- check:ia
+          npm run task -- check:units
+          npm run task -- check:music
+          npm run task -- check:settings
+          npm run task -- check:registry
 
       # ── 契约自测：引擎 + 服务（用 mock 引擎，纯 Node，不碰真权重）──────
       - name: 引擎与服务契约自测
@@ -58,9 +60,9 @@ jobs:
       # ── 判定层：真服务 + 假引擎，秒级；已是平台忠实断言（D-140）──────
       - name: 判定层检查
         run: |
-          npm run check:e8
-          npm run check:e4
-          npm run check:e10
+          npm run task -- check:e8
+          npm run task -- check:e4
+          npm run task -- check:e10
 
       - name: 前端类型与构建
         run: cd app && npx tsc --noEmit && npx vite build

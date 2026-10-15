@@ -13,13 +13,16 @@
 //
 // ## 它检查什么
 // ① 四个 check 脚本里断言的条数 vs 文档里声明的条数（AGENTS.md / README.md / spec-notes）
-// ② 文档里引用的 npm 命令是否真实存在于 package.json
+// ② 文档里引用的命令是否真实存在：`npm run <入口>` 对 package.json，
+//    `npm run task -- <id>` 对 e2eScripts.json（两种形态**分别**判，见下方 ② 段落的说明）
 // ③ 文档里出现的「被禁历史品牌标识」必须为 0 命中
 // ④ 各 check 脚本的 GROUPS 声明与实际用到的分组是否一致（漏加分组会静默不打印）
 import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { buildCommands, dispatchable } from './_commands.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const APP = path.join(ROOT, 'app');
@@ -117,22 +120,41 @@ for (const suite of SUITES) {
   }
 }
 
-// ── ② 文档引用的 npm 命令必须存在 ────────────────────────────────────────
+// ── ② 文档引用的命令必须存在 ────────────────────────────────────────────
+// 🔴 命令收束（P0-c）之后文档里有**两种形态**，必须分别判定：
+//     · `npm run <入口>`    —— 只认 `package.json`（三类入口：校验 / 启停打包 / 测试入口）
+//     · `npm run task -- <id>` —— 只认 `e2eScripts.json`（check / selftest / 装配 / 反证轮）
+//    合并成一个集合判会让「`npm run check:units` 早就不存在了」判成存在 —— 那正是本脚本
+//    要消灭的那类假绿。两种形态各自对各自的事实源。
 const pkg = JSON.parse(read(path.join(ROOT, 'package.json')));
-const scripts = pkg.scripts || {};
+const pkgScripts = pkg.scripts || {};
+const manifestIds = new Set(buildCommands().map((c) => c.id));
 for (const doc of ALL_DOCS) {
   const text = read(path.join(ROOT, doc));
   if (!text) continue;
   // ⚠️ 命令名字符类**必须含 `-`**：`check:engine-client` 是全仓第一个带连字符的 npm 命令，
   //    而本行原先只写 `[a-z0-9:]` ⇒ 把它截成 `check:engine` ⇒ 误报「命令不存在」。
   //    这类"解析器自己太窄"的假红，最容易的错反应是**把文档改短去迁就脚本**。
-  const cmds = [...new Set([...text.matchAll(/npm run ([a-z0-9:-]+)/g)].map((m) => m[1]))];
-  const missing = cmds.filter((c) => !Object.prototype.hasOwnProperty.call(scripts, c));
+  const direct = new Set();
+  const dispatched = new Set();
+  for (const m of text.matchAll(/npm run (?:(task) -- )?([a-z0-9:-]+)/g)) {
+    // `npm run task -- --list` 这类：`--` 后面是 runner 自己的旗标，不是清单 id
+    if (m[2].startsWith('-')) continue;
+    (m[1] ? dispatched : direct).add(m[2]);
+  }
+  const missingDirect = [...direct].filter((c) => !dispatchable(pkgScripts, c));
+  const missingDispatched = [...dispatched].filter((c) => !manifestIds.has(c));
   add(
     'PKG',
-    `${doc} 引用的 npm 命令都存在`,
-    missing.length === 0,
-    missing.length ? `不存在：${missing.join(', ')}` : `${cmds.length} 个命令全部存在`,
+    `${doc} 引用的 npm 入口命令都存在`,
+    missingDirect.length === 0,
+    missingDirect.length ? `不存在：${missingDirect.join(', ')}` : `${direct.size} 个入口全部存在`,
+  );
+  add(
+    'PKG',
+    `${doc} 引用的 task 清单 id 都存在`,
+    missingDispatched.length === 0,
+    missingDispatched.length ? `清单里没有：${missingDispatched.join(', ')}` : `${dispatched.size} 个 id 全部存在`,
   );
 }
 

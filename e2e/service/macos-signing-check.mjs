@@ -23,7 +23,8 @@
  *   W4 `MIAO_NOTARIZE=0`（本机自用）⇒ 放行但**告警"不得对外分发"**
  *   W5 变量齐 ⇒ 放行
  *   W6 `unverified` 记账在位
- *   W7 `package.json` 注册了 `sign:preflight`，且 `app:build:mac` 串上了它（"写进构建脚本"）
+ *   W7 `sign:preflight` 已登记（`package.json` ∪ `e2eScripts.json`），且 `app:build:mac`
+ *      串上了它（"写进构建脚本"= 打包路径上真的会跑）
  *
  * ## 反证轮（--refute）
  *   M1 entitlements 少一条 ⇒ W1 红；M2 conf 摘掉 entitlements ⇒ W2 红；
@@ -36,6 +37,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+
+import { mergedScripts } from '../_commands.mjs';
 
 const REFUTE = process.argv.includes('--refute');
 const SELF = fileURLToPath(import.meta.url);
@@ -161,7 +164,9 @@ function runPreflight(extraEnv = {}) {
 // ------------------------------------------------------------------ W7 写进构建脚本
 
 {
-  const scripts = JSON.parse(fs.readFileSync(PKG, 'utf8')).scripts ?? {};
+  // 🔴 「已注册」要看两处合并后的视图：命令收束后 `sign:preflight` 在 `e2eScripts.json`、
+  //    `app:build:mac` 在 `package.json`。只看 `package.json` 会把"自检已经登记着"误报成没注册。
+  const scripts = mergedScripts(JSON.parse(fs.readFileSync(PKG, 'utf8')).scripts ?? {});
   check(
     'W7 `sign:preflight` 已注册，且 `app:build:mac` **串上了它**（"写进构建脚本"= 打包路径上真的会跑）',
     /mac-signing-preflight\.mjs/.test(scripts['sign:preflight'] ?? '') &&
@@ -255,7 +260,7 @@ if (REFUTE) {
   {
     const restore = mutateFile(
       PKG,
-      'npm run sign:preflight && npm --prefix app run tauri build',
+      'npm run task -- sign:preflight && npm --prefix app run tauri build',
       'npm --prefix app run tauri build',
     );
     const r = runForward();

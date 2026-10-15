@@ -47,7 +47,7 @@ pub struct EnginePatch {
 ///
 /// 🔴 **数组顺序必须与 SSOT 一致** —— A7 交叉钉按序比对，顺序变了即使集合相同也会红
 ///    （顺序本身就是信息：D-105 依赖 D-103 先应用，见 SSOT 里的注释）。
-/// 🔴 新增补丁只改 SSOT 与这里两处，然后跑 `npm run check:engine-patches` ——
+/// 🔴 新增补丁只改 SSOT 与这里两处，然后跑 `npm run task -- check:engine-patches` ——
 ///    A1（条数写死 10）与 A7（双靶一致）会同时盯住这次新增。
 pub const ENGINE_PATCHES: &[EnginePatch] = &[
     EnginePatch {

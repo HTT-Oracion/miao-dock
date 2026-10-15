@@ -30,7 +30,7 @@ Windows 上编 Rust **必须**在 MSVC 环境里（`ring` 要现场编译 C）�
 
 ```bash
 npm ci --prefix app                 # ① 装前端依赖
-npm run check:docs                  # ② 秒级：先确认基线是绿的
+npm run task -- check:docs                  # ② 秒级：先确认基线是绿的
 npm run app                         # ③ 起 dev（tauri dev）
 ```
 
@@ -40,7 +40,7 @@ npm run app                         # ③ 起 dev（tauri dev）
 > **真引擎不在仓库里**：`npm run app` 默认走 `MIAO_ENGINE_PROTOCOL=real`，要的是
 > `<appData>/runtimes/manga-translator/`（macOS `~/Library/Application Support/`、Windows `%LOCALAPPDATA%\`、
 > Linux `~/.local/share/`）下的 Python venv + 依赖 + 模型权重 —— **与装到哪个盘无关**（B1）。
-> 装配：`npm run setup:engine && npm run deps:engine && npm run fetch:models && npm run extract:models`
+> 装配：`npm run task -- setup:engine && npm run task -- deps:engine && npm run task -- fetch:models && npm run task -- extract:models`
 > （README §二）。不想碰引擎就用 `MIAO_ENGINE_PROTOCOL=mock npm run app` 跑替身快回路。
 > 装没装齐、缺哪一项：`GET /api/v1/engine/runtime`（B2）。
 > 分平台逐步引导（含体积、自检、平台专属坑）：`docs/install-guide-windows.md` · `docs/install-guide-macos.md`（D5）。
@@ -67,7 +67,7 @@ check:size-guide  check:model-runner                        # C1/C2：体积与�
 **分钟级 · 反证轮** —— 只有**改了断言本身**才跑（证明断言咬的是机制，不是碰巧绿）：
 
 ```
-任意 check 加 :refute，如 npm run check:music:refute
+任意 check 加 :refute，如 npm run task -- check:music:refute
 ```
 
 **nightly · 打包后冒烟** —— 只有 `npm run app:build` 产出真实安装包后才跑（A4）：

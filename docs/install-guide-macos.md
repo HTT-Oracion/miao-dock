@@ -57,7 +57,7 @@ boxsvc --print-paths           # 打包版在 .app 的资源目录里；从仓�
 ```
 
 输出的 `runtimeRoot` 就是落点的父目录（产品落点 = `<runtimeRoot>/manga-translator`）。
-它与本文这一行**逐字节一致** —— 改这一行或者改产品，`npm run check:install-guide` 会变红。
+它与本文这一行**逐字节一致** —— 改这一行或者改产品，`npm run task -- check:install-guide` 会变红。
 
 **三条纪律（每条都对应一类真实故障）：**
 
@@ -137,10 +137,10 @@ du -sh "$HOME/Library/Application Support/runtimes/manga-translator"
 > 不用自己敲下面任何一条命令。
 
 ```bash
-npm run setup:engine     # ① Python 3.11 运行时 + venv + 引擎源码（+ 打上游源码补丁）
-# ② 依赖：⚠️ 见下，macOS 这一步不能用 npm run deps:engine
-npm run fetch:models     # ③ 按清单下模型权重 + llama.cpp 归档
-npm run extract:models   # ④ 解包归档 → bin/llama/llama-b11417/llama-server
+npm run task -- setup:engine     # ① Python 3.11 运行时 + venv + 引擎源码（+ 打上游源码补丁）
+# ② 依赖：⚠️ 见下，macOS 这一步不能用 npm run task -- deps:engine
+npm run task -- fetch:models     # ③ 按清单下模型权重 + llama.cpp 归档
+npm run task -- extract:models   # ④ 解包归档 → bin/llama/llama-b11417/llama-server
 ```
 
 ### ② 依赖：手动 pip（这一步与 Windows 不同）
@@ -217,7 +217,7 @@ cd "$RT/src" && "$RT/venv/bin/python" -c "import pydensecrf.densecrf as d; asser
 | ④ | `bin/llama/llama-b11417/llama-server` · `src/models/` 里出现硬链接（不是拷贝） | — |
 
 > ③④ 之后引擎源码树里的模型是**硬链接**（`linkTo`），权威副本在 `models-store/`。
-> 换引擎版本（`src/` 被重装）后跑 `npm run fetch:models -- --link` 可**零网络**重建链接，
+> 换引擎版本（`src/` 被重装）后跑 `npm run task -- fetch:models --link` 可**零网络**重建链接，
 > 不必重下 6.3 GiB。
 
 **只装其中一部分**（排障/省流量）：
@@ -270,7 +270,7 @@ GET http://127.0.0.1:8000/api/v1/engine/runtime
 
 > ⚠️ **验证状态：`unverified`（macOS 侧整条都在等一台 Mac）**。本节没有在任何真机验证过。
 > 能自动化的那一半（装配函数本身：两批依赖、兼容补丁、按 `dest` 解包、阶段顺序、长路径体检）
-> 已经在 Windows 上对着**产品代码**真跑过（`npm run check:engine-bootstrap-real`，见 D-215/D-216）；
+> 已经在 Windows 上对着**产品代码**真跑过（`npm run task -- check:engine-bootstrap-real`，见 D-215/D-216）；
 > 但 macOS 特有的三件事 —— **Gatekeeper、`pydensecrf` 无预编译 wheel、MPS 档** ——
 > 只能在 Mac 上确认 ⇒ 归 D7 真机验收。
 
@@ -388,7 +388,7 @@ xattr -dr com.apple.quarantine "$HOME/Library/Application Support/runtimes/manga
 包内引导接入时不会另起一套。
 
 > ⚠️ **验证状态**：§0 的落点、§2 的体积、§3 的步骤与 §4 的判据都已与产品**对拍成钉子**
-> （`npm run check:install-guide`），但**本引导的 macOS 侧尚未在真机上跑过完整一遍**
+> （`npm run task -- check:install-guide`），但**本引导的 macOS 侧尚未在真机上跑过完整一遍**
 > —— 落点的 macOS 分支在本机（Windows）只能对**同源镜像表**，跑不到 macOS 的二进制。
 > 真机验收归 D7，在它完成前本文标 `unverified`，不计入「已验」。
 > **§4.1 是给"新电脑"准备的逐项验收清单**（含 Gatekeeper 的人工步骤、以及 darwin 暂无
@@ -399,11 +399,11 @@ xattr -dr com.apple.quarantine "$HOME/Library/Application Support/runtimes/manga
 ```bash
 boxsvc --print-paths                    # 产品实际用的全部路径（落点的权威答案）
 boxsvc --check-runtime-gate real        # 五项就绪自检（缺哪项逐项点名）
-npm run setup:engine                    # ① Python + venv + 源码 + 补丁
+npm run task -- setup:engine                    # ① Python + venv + 源码 + 补丁
 # ② 手动：$RT/venv/bin/pip install -r "$RT/src/requirements.txt"（+ pydensecrf 兼容补丁）
-npm run fetch:models                    # ③ 模型 + llama.cpp（按清单、按平台）
-npm run extract:models                  # ④ 解包
-npm run fetch:models -- --check         # 只校验，不联网
-npm run fetch:models -- --link          # 只重建链接，零网络
-npm run check:install-guide             # 这份文档本身与产品的对拍（开发者）
+npm run task -- fetch:models                    # ③ 模型 + llama.cpp（按清单、按平台）
+npm run task -- extract:models                  # ④ 解包
+npm run task -- fetch:models --check         # 只校验，不联网
+npm run task -- fetch:models --link          # 只重建链接，零网络
+npm run task -- check:install-guide             # 这份文档本身与产品的对拍（开发者）
 ```

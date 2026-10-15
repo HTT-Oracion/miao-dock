@@ -39,12 +39,12 @@
 ## 2. 事实：仓库里到底有哪些许可（可复算）
 
 ```bash
-npm run gen:licenses     # 产出 app/src/generated/licenses.json
+npm run task -- gen:licenses     # 产出 app/src/generated/licenses.json
 ```
 
 产出分三段，第三段（`engine`）是 E5 的**权威输入**：它逐条读 `engine/models.manifest.json`
 的 `license` 字段，并从 `engine/VERSIONS.lock` §6 读上游 / 模型的**总**许可。
-（`npm run check:settings` 的 `FEATURES.licenses.engine` 与 `FEATURES.gen.script` 会验证
+（`npm run task -- check:settings` 的 `FEATURES.licenses.engine` 与 `FEATURES.gen.script` 会验证
 「这两处来源真的被读进来了」，而不是把许可表手写在脚本里。）
 
 ### 2.1 关键许可一览（2026-10-14 实测产出）
@@ -64,8 +64,8 @@ npm run gen:licenses     # 产出 app/src/generated/licenses.json
 ### 2.2 技术边界（四条，均有机器判据）
 
 1. **权重一个字节都不随包** —— `app/src-tauri/tauri.conf.json` 的 `bundle.resources`
-   只有 `engine/models.manifest.json` 一条。判据：`npm run check:bundle` 的 **W7 / W7b**
-   （权重后缀黑名单 + 与清单逐条交叉），以及 `npm run gen:licenses` 的
+   只有 `engine/models.manifest.json` 一条。判据：`npm run task -- check:bundle` 的 **W7 / W7b**
+   （权重后缀黑名单 + 与清单逐条交叉），以及 `npm run task -- gen:licenses` 的
    `engine.bundledCount` 必须为 `0`（由 `check:settings` 的 `FEATURES.licenses.engine` 钉住）。
 2. **引擎本体不随包** —— 引擎由用户按 `docs/install-guide-windows.md` /
    `docs/install-guide-macos.md` 自装；包内没有引擎源码、没有 Python、没有 node。
@@ -112,13 +112,13 @@ npm run gen:licenses     # 产出 app/src/generated/licenses.json
 
 - [ ] 1. **§4 三项全部有复核结论** —— 未出 ⇒ **不得**对外分发（§1 的 B 档）
 - [ ] 2. 分发形态已记录：自用 / 内测 / 对外 · 是否收费 · 是否随包引擎
-- [ ] 3. `npm run check:bundle` 绿（W7 / W7b：随包 0 个模型权重）
-- [ ] 4. `npm run gen:licenses` 已重跑，产出的 `engine.bundledCount === 0`
-- [ ] 5. `npm run check:settings` 绿（界面许可段可见，禁商用有告警）
+- [ ] 3. `npm run task -- check:bundle` 绿（W7 / W7b：随包 0 个模型权重）
+- [ ] 4. `npm run task -- gen:licenses` 已重跑，产出的 `engine.bundledCount === 0`
+- [ ] 5. `npm run task -- check:settings` 绿（界面许可段可见，禁商用有告警）
 - [ ] 6. 若为**商用**：`nllb` 与 `sakura` 已换成可商用档位，且
       `engine/models.manifest.json` 的 `license` 字段已同步（换档后 `bySpdx` 会自己变）
-- [ ] 7. 包内无引擎源码 / 无 Python 运行时 / 无 node（`npm run check:resources` 与
-      `npm run check:packaged` 覆盖）
+- [ ] 7. 包内无引擎源码 / 无 Python 运行时 / 无 node（`npm run task -- check:resources` 与
+      `npm run task -- check:packaged` 覆盖）
 - [ ] 8. 分发物里带上了本文件的一处引用（安装引导或关于页），
       让领取人能看到"这是自用/内测"这件事
 
@@ -128,8 +128,8 @@ npm run gen:licenses     # 产出 app/src/generated/licenses.json
 
 | 担心的事 | 看哪条判据 |
 | - | - |
-| 有人把权重塞进了随包清单 | `npm run check:bundle`（W7 后缀 / W7b 与清单交叉） |
-| 生成物谎报"没有随包权重" | `npm run check:settings`（`FEATURES.licenses.engine` 的 `bundledCount`） |
-| 许可清单里漏了引擎/模型那一段 | `npm run check:settings`（`FEATURES.licenses.engine` / `FEATURES.gen.script`） |
-| 许可清单过期（清单改了没重跑生成脚本） | `npm run check:settings`（`FEATURES.licenses.fresh` 的 `engineAssets` 对账） |
-| 引擎本该由用户自装，却被塞进了包 | `npm run check:resources` · `npm run check:packaged` |
+| 有人把权重塞进了随包清单 | `npm run task -- check:bundle`（W7 后缀 / W7b 与清单交叉） |
+| 生成物谎报"没有随包权重" | `npm run task -- check:settings`（`FEATURES.licenses.engine` 的 `bundledCount`） |
+| 许可清单里漏了引擎/模型那一段 | `npm run task -- check:settings`（`FEATURES.licenses.engine` / `FEATURES.gen.script`） |
+| 许可清单过期（清单改了没重跑生成脚本） | `npm run task -- check:settings`（`FEATURES.licenses.fresh` 的 `engineAssets` 对账） |
+| 引擎本该由用户自装，却被塞进了包 | `npm run task -- check:resources` · `npm run task -- check:packaged` |

@@ -39,7 +39,7 @@
 
 ### 反证结果
 
-`npm run check:music:refute` → **REFUTE: 162/162 按预期变红**（应执行162，**0 跳过、0 假阳性**），
+`npm run task -- check:music:refute` → **REFUTE: 162/162 按预期变红**（应执行162，**0 跳过、0 假阳性**），
 `useMusicHotkeys.ts` 与 `MusicKernel.tsx` 等 31 个文件**字节全部恢复一致**。
 9 条新反证逐条单独确认变红（不是靠"总数对了"蒙混）。
 
@@ -164,13 +164,13 @@ store 的 `stepVolume` 只做 clamp，不提供步长常量。**三处口径现�
 
 | 门禁 | 结果 | 结论 |
 |---|---|---|
-| `npm run check:music` | **202 通过 / 1 失败** | ✅ 新增 9 条全绿；唯一红条是既有 `ISLANDV.toggleBothWays`（基线 `eb3fd1f` 改图标所致，**未动**） |
-| `npm run check:music:refute` | **162/162 按预期变红**（应执行 162） | ✅ 0 跳过、0 假阳性，31 个文件**字节全部恢复一致** |
-| `npm run check:docs` | **14 / 0** | ✅ 条数已对账（见下） |
-| `npm run check:units` | 37 / 0 | ✅ 无回归 |
-| `npm run check:settings` | 83 / 0 | ✅ 无回归 |
-| `npm run check:ia` | 24 / 0 | ✅ 无回归 |
-| `npm run check:tls` | 14 / 0 | ✅ 无回归 |
+| `npm run task -- check:music` | **202 通过 / 1 失败** | ✅ 新增 9 条全绿；唯一红条是既有 `ISLANDV.toggleBothWays`（基线 `eb3fd1f` 改图标所致，**未动**） |
+| `npm run task -- check:music:refute` | **162/162 按预期变红**（应执行 162） | ✅ 0 跳过、0 假阳性，31 个文件**字节全部恢复一致** |
+| `npm run task -- check:docs` | **14 / 0** | ✅ 条数已对账（见下） |
+| `npm run task -- check:units` | 37 / 0 | ✅ 无回归 |
+| `npm run task -- check:settings` | 83 / 0 | ✅ 无回归 |
+| `npm run task -- check:ia` | 24 / 0 | ✅ 无回归 |
+| `npm run task -- check:tls` | 14 / 0 | ✅ 无回归 |
 | `cd app && tsc --noEmit` | **0 错误** | ✅ |
 
 ### 条数对账（`check:docs` 比对的是脚本**自报的通过数**）

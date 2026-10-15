@@ -15,6 +15,11 @@ docs/
 **/generated/**
 engine/*.manifest.json
 engine/VERSIONS.lock
+
+# 命令清单（78 条基条目 + 派生的反证轮）：**一行一条**才对得上眼，
+# 重排只会把它从 100 行拉成 600 行、让 diff 与 review 都不可读。
+# 它的形状由 `check:registry` 逐条断言（id / cmd 形态 / 指向的文件 / 条数 / 分层），不靠格式化把关。
+e2eScripts.json
 src-tauri/gen/
 app/src-tauri/gen/
 src-tauri/icons/

@@ -49,7 +49,7 @@ boxsvc --print-paths           # 打包版在安装目录里；从仓库自建�
 ```
 
 输出的 `runtimeRoot` 就是落点的父目录（产品落点 = `<runtimeRoot>\manga-translator`）。
-它与本文这一行**逐字节一致** —— 改这一行或者改产品，`npm run check:install-guide` 会变红。
+它与本文这一行**逐字节一致** —— 改这一行或者改产品，`npm run task -- check:install-guide` 会变红。
 
 **三条纪律（每条都对应一类真实故障）：**
 
@@ -150,10 +150,10 @@ Get-ChildItem -Recurse "$env:LOCALAPPDATA\runtimes\manga-translator" | Measure-O
 > 不用自己敲下面任何一条命令。
 
 ```powershell
-npm run setup:engine     # ① Python 3.11 运行时 + venv + 引擎源码（+ 打上游源码补丁）
-npm run deps:engine      # ② 往 venv 里装引擎依赖（Windows 专用脚本，见 §5.1）
-npm run fetch:models     # ③ 按清单下模型权重 + llama.cpp / CUDA 运行库归档
-npm run extract:models   # ④ 解包归档 → bin\llama\llama-b11417\llama-server.exe
+npm run task -- setup:engine     # ① Python 3.11 运行时 + venv + 引擎源码（+ 打上游源码补丁）
+npm run task -- deps:engine      # ② 往 venv 里装引擎依赖（Windows 专用脚本，见 §5.1）
+npm run task -- fetch:models     # ③ 按清单下模型权重 + llama.cpp / CUDA 运行库归档
+npm run task -- extract:models   # ④ 解包归档 → bin\llama\llama-b11417\llama-server.exe
 ```
 
 **幂等**：四条都可以重复跑 —— 目标已存在且非空则跳过，不重复下载。中断了直接重跑。
@@ -169,7 +169,7 @@ npm run extract:models   # ④ 解包归档 → bin\llama\llama-b11417\llama-ser
 | ④ | `bin\llama\llama-b11417\llama-server.exe` · `src\models\` 里出现硬链接（不是拷贝） | — |
 
 > ③④ 之后引擎源码树里的模型是**硬链接**（`linkTo`），权威副本在 `models-store\`。
-> 换引擎版本（`src\` 被重装）后跑 `npm run fetch:models -- --link` 可**零网络**重建链接，
+> 换引擎版本（`src\` 被重装）后跑 `npm run task -- fetch:models --link` 可**零网络**重建链接，
 > 不必重下 6.9 GB。
 
 **只装其中一部分**（排障/省流量）：
@@ -218,7 +218,7 @@ GET http://127.0.0.1:8000/api/v1/engine/runtime
 ## 4.1 新电脑（干净机器）验收清单 —— 逐项对照，不靠"我觉得好了"
 
 > ⚠️ **验证状态：`unverified`**。本节**没有**在本机验证过 —— 本机是一台已经装好引擎的
-> 开发机，不是干净机器。能自动化的那一半已经**真跑**了（`npm run check:engine-bootstrap-real`
+> 开发机，不是干净机器。能自动化的那一半已经**真跑**了（`npm run task -- check:engine-bootstrap-real`
 > 在产品自己的装配函数上真下、真装、真 import，见 D-215/D-216），但"这台机器上真的没有
 > Node / Python / MSVC、也没有任何 `MIAO_*` 变量"只能在新机器上确认 ⇒ 归 D7 真机验收。
 
@@ -375,9 +375,9 @@ $env:PYTHONIOENCODING = "utf-8"
 包内引导接入时不会另起一套。
 
 > ⚠️ **验证状态**：§0 的落点、§2 的体积、§3 的步骤与 §4 的判据都已与产品**对拍成钉子**
-> （`npm run check:install-guide`）；**装配链本身**（两批依赖 / 随包 wheel / 兼容补丁 /
+> （`npm run task -- check:install-guide`）；**装配链本身**（两批依赖 / 随包 wheel / 兼容补丁 /
 > 按 `dest` 解包 / 阶段顺序 / 长路径体检）已在开发机上**真跑过产品自己的代码**
-> （`npm run check:engine-bootstrap-real`，见 D-215/D-216）。但**"这台机器没有 Node /
+> （`npm run task -- check:engine-bootstrap-real`，见 D-215/D-216）。但**"这台机器没有 Node /
 > Python / MSVC"** 这件事本机复现不了 ⇒ **§4.1 的新电脑验收清单标 `unverified`**，
 > 归 D7 真机验收，在它完成前不计入「已验」。
 
@@ -386,11 +386,11 @@ $env:PYTHONIOENCODING = "utf-8"
 ```powershell
 boxsvc --print-paths                    # 产品实际用的全部路径（落点的权威答案）
 boxsvc --check-runtime-gate real        # 五项就绪自检（缺哪项逐项点名）
-npm run setup:engine                    # ① Python + venv + 源码 + 补丁
-npm run deps:engine                     # ② venv 依赖（Windows 专用）
-npm run fetch:models                    # ③ 模型 + llama.cpp（按清单、按平台）
-npm run extract:models                  # ④ 解包
-npm run fetch:models -- --check         # 只校验，不联网
-npm run fetch:models -- --link          # 只重建链接，零网络
-npm run check:install-guide             # 这份文档本身与产品的对拍（开发者）
+npm run task -- setup:engine                    # ① Python + venv + 源码 + 补丁
+npm run task -- deps:engine                     # ② venv 依赖（Windows 专用）
+npm run task -- fetch:models                    # ③ 模型 + llama.cpp（按清单、按平台）
+npm run task -- extract:models                  # ④ 解包
+npm run task -- fetch:models --check         # 只校验，不联网
+npm run task -- fetch:models --link          # 只重建链接，零网络
+npm run task -- check:install-guide             # 这份文档本身与产品的对拍（开发者）
 ```

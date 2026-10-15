@@ -152,8 +152,8 @@ Vite + React 18 + TypeScript，样式用**原生 CSS + CSS 变量**（`cssVars(m
 **怎么跑（一条命令）**
 
 ```bash
-npm run selftest:app           # B1–B4 正向（期望全绿）
-npm run selftest:app:refute    # B1 的反证（期望「拿不到结果」）
+npm run task -- selftest:app           # B1–B4 正向（期望全绿）
+npm run task -- selftest:app:refute    # B1 的反证（期望「拿不到结果」）
 ```
 
 B1–B3 原本只能靠人点，而本机未授予「自动化」权限（`osascript` 被 TCC 以 `-10004` 拒绝，
@@ -197,8 +197,8 @@ B1–B3 原本只能靠人点，而本机未授予「自动化」权限（`osasc
 **怎么跑（一条命令）**
 
 ```bash
-npm run e2e        # D1–D5：起真实 engine + 真实 service，真提交、真落盘
-npm run capture    # 截图取证（需屏幕解锁，见下）
+npm run task -- e2e        # D1–D5：起真实 engine + 真实 service，真提交、真落盘
+npm run task -- capture    # 截图取证（需屏幕解锁，见下）
 ```
 
 `e2e` 与 `capture` 共用 `MIAO_E2E_TMP`（默认项目内 `.tmp/e2e/`）：端到端那轮的落盘产物

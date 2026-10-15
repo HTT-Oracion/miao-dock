@@ -210,7 +210,9 @@ function runNode(args, extraEnv = {}) {
   const winLines = norm(fs.readFileSync(GUIDE_WIN, 'utf8'))
     .split('\n')
     .map((l) => l.trim())
-    .filter((l) => /^\s*(npm run |\$\s*npm run )?deps:engine|npm run deps:engine/.test(l));
+    // 形态跟着命令收束走：`npm run task -- deps:engine`（老形态 `npm run deps:engine` 也认，
+    // 免得这条过滤器在文档换写法时**静默匹配到 0 行** ⇒ W4b 变成永远红的假判断）
+    .filter((l) => /^\s*(?:\$\s*)?(?:npm run (?:task -- )?)?deps:engine/.test(l));
 
   // 「不能用」的语境：那一行必须带否定词（不同平台引导里出现同一个命令，唯一正当的理由就是劝退）
   const NEG = /(不能|不要|禁止|别|不支持|仅 Windows|与 Windows 不同)/;
@@ -342,8 +344,8 @@ if (REFUTE) {
   {
     const restore = mutateFile(
       GUIDE_MAC,
-      '# ② 依赖：⚠️ 见下，macOS 这一步不能用 npm run deps:engine',
-      'npm run deps:engine     # ② 依赖',
+      '# ② 依赖：⚠️ 见下，macOS 这一步不能用 npm run task -- deps:engine',
+      'npm run task -- deps:engine     # ② 依赖',
     );
     const r = await runForward();
     const red = r.code !== 0 && hasRed(r.out, 'W4');
@@ -360,7 +362,7 @@ if (REFUTE) {
     // 收尾只看**推导函数体** —— 单测里那几行同样含这两个字面量，用它当判据会把未还原的推导判成"已还原"
     if (!venvRelBody().includes(LOSE_POSIX)) bad.push('paths.rs 的推导未还原（残留 M0）');
     if (!fs.readFileSync(DEPS_MJS, 'utf8').includes(GUARD)) bad.push('install-engine-deps.mjs 残留 M1/M2');
-    if (!fs.readFileSync(GUIDE_MAC, 'utf8').includes('macOS 这一步不能用 npm run deps:engine'))
+    if (!fs.readFileSync(GUIDE_MAC, 'utf8').includes('macOS 这一步不能用 npm run task -- deps:engine'))
       bad.push('install-guide-macos.md 残留 M3');
     check('R1 变异收尾：三处文件按字节还原', bad.length === 0, bad);
   }

@@ -2,7 +2,7 @@
 /**
  * 生成第三方许可清单 → `app/src/generated/licenses.json`（台账 D-84）。
  *
- * 跑法：`npm run gen:licenses`
+ * 跑法：`npm run task -- gen:licenses`
  *
  * ## 这个脚本**只做枚举**，不做核准
  *

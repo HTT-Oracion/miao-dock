@@ -54,8 +54,8 @@ const MUTATIONS = [
   {
     name: '在 AGENTS.md 里插一个不存在的仓库路径（文档漂移复发时的形状）',
     file: 'AGENTS.md',
-    find: 'npm run check:docs',
-    replace: 'npm run check:docs\n\n> 反证：`service/src/no-such-file.mjs` 应当不存在',
+    find: 'npm run task -- check:docs',
+    replace: 'npm run task -- check:docs\n\n> 反证：`service/src/no-such-file.mjs` 应当不存在',
     expect: ['DOCS.path.AGENTS.md'],
   },
   {

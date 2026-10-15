@@ -20,7 +20,7 @@
  *
  * 用法：
  *   node e2e/tls-check.mjs            正常跑（期望全绿）
- *   npm run check:tls                     同上
+ *   npm run task -- check:tls             同上
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';

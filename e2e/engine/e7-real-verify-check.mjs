@@ -153,7 +153,7 @@ async function runAll() {
     if (!f) throw new Error(`manifest 里找不到 ${f?.id ?? '?'} —— 清单被改过？`);
     const p = path.join(MODEL_ROOT, f.dest);
     if (!fs.existsSync(p)) {
-      throw new Error(`真机取证需要盘上有 ${f.id}：${p}\n请先 \`npm run fetch:models\` 或按预置流程放入权重。`);
+      throw new Error(`真机取证需要盘上有 ${f.id}：${p}\n请先 \`npm run task -- fetch:models\` 或按预置流程放入权重。`);
     }
   }
 

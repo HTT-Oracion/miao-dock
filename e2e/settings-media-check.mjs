@@ -47,6 +47,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { readStyleSource } from './_styles-source.mjs';
 import { clearFileCache } from './_file-cache.mjs';
+import { mergedScripts } from './_commands.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const APP = path.join(ROOT, 'app');
@@ -109,8 +110,10 @@ const F = {
   licensesBlock: path.join(APP, 'src', 'screens', 'settings', 'LicensesBlock.tsx'),
   licensesJson: path.join(APP, 'src', 'generated', 'licenses.json'),
   genScript: path.join(APP, 'scripts', 'gen-licenses.mjs'),
-  // 生成物与来源文件的对账需要它们（同 `ROOT` 下的 package.json / app 下的 lock）
+  // 生成物与来源文件的对账需要它们（同 `ROOT` 下的 package.json / 命令清单 / app 下的 lock）
   pkgJson: path.join(ROOT, 'package.json'),
+  // 命令收束后 `gen:licenses` 登记在命令清单里（`npm run task -- gen:licenses`），不再在 package.json
+  e2eScripts: path.join(ROOT, 'e2eScripts.json'),
   npmLock: path.join(APP, 'package-lock.json'),
   cargoLock: path.join(APP, 'src-tauri', 'Cargo.lock'),
   // C5：引擎资产清单 —— 许可段的第三处来源，也要参与过期对账
@@ -2824,7 +2827,10 @@ add('FEATURES.licenses.generated', 'FEATURES', (ctx) => {
   try {
     data = JSON.parse(ctx.s.licensesJson);
   } catch (e) {
-    return { ok: false, detail: `licenses.json 读不到或不是合法 JSON（跑 npm run gen:licenses）：${e.message}` };
+    return {
+      ok: false,
+      detail: `licenses.json 读不到或不是合法 JSON（跑 npm run task -- gen:licenses）：${e.message}`,
+    };
   }
   const problems = [];
   if (!data.disclaimer || !String(data.disclaimer).trim())
@@ -2879,7 +2885,7 @@ add('FEATURES.licenses.fresh', 'FEATURES', (ctx) => {
   ).length;
   if (data.inputs?.npmProdPackages !== prod)
     problems.push(
-      `npm 生产依赖数已变：清单里 ${data.inputs?.npmProdPackages}，实际 ${prod} —— 重跑 npm run gen:licenses`,
+      `npm 生产依赖数已变：清单里 ${data.inputs?.npmProdPackages}，实际 ${prod} —— 重跑 npm run task -- gen:licenses`,
     );
   const third = ctx.s.cargoLock
     .split('[[package]]')
@@ -2887,7 +2893,7 @@ add('FEATURES.licenses.fresh', 'FEATURES', (ctx) => {
     .filter((b) => /^\s*source\s*=/m.test(b)).length;
   if (data.inputs?.rustLockCrates !== third)
     problems.push(
-      `Cargo.lock 的第三方 crate 数已变：清单里 ${data.inputs?.rustLockCrates}，实际 ${third} —— 重跑 npm run gen:licenses`,
+      `Cargo.lock 的第三方 crate 数已变：清单里 ${data.inputs?.rustLockCrates}，实际 ${third} —— 重跑 npm run task -- gen:licenses`,
     );
   /*
    * C5：引擎资产**同样**要参与过期对账 —— 清单加了条目（新模型 / 新二进制）而没重跑生成脚本，
@@ -2902,7 +2908,7 @@ add('FEATURES.licenses.fresh', 'FEATURES', (ctx) => {
   }
   if (engineAssets !== null && data.inputs?.engineAssets !== engineAssets)
     problems.push(
-      `引擎资产条数已变：清单里 ${data.inputs?.engineAssets}，实际 ${engineAssets} —— 重跑 npm run gen:licenses`,
+      `引擎资产条数已变：清单里 ${data.inputs?.engineAssets}，实际 ${engineAssets} —— 重跑 npm run task -- gen:licenses`,
     );
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
@@ -2986,13 +2992,24 @@ add('FEATURES.gen.script', 'FEATURES', (ctx) => {
   const problems = [];
   const script = stripComments(ctx.s.genScript);
   if (!script) problems.push('缺少 app/scripts/gen-licenses.mjs');
-  let scripts = {};
+  let pkgScripts = {};
   try {
-    scripts = JSON.parse(ctx.s.pkgJson).scripts ?? {};
+    pkgScripts = JSON.parse(ctx.s.pkgJson).scripts ?? {};
   } catch (e) {
     problems.push(`package.json 不可解析：${e.message}`);
   }
-  if (!scripts['gen:licenses']) problems.push('package.json 没有注册 gen:licenses');
+  /*
+   * 「已注册」判的是 package.json ∪ e2eScripts.json 的**合并视图**：
+   * 命令收束后 `gen:licenses` 住在命令清单里（跑法 `npm run task -- gen:licenses`），
+   * 只看 package.json 会把"登记着"误报成没注册 —— 那会逼着人把命令加回去。
+   */
+  let scripts = {};
+  try {
+    scripts = mergedScripts(pkgScripts);
+  } catch (e) {
+    problems.push(`命令清单读不出来：${e.message}`);
+  }
+  if (!scripts['gen:licenses']) problems.push('package.json 与 e2eScripts.json 都没有注册 gen:licenses');
   else if (!/gen-licenses\.mjs/.test(scripts['gen:licenses'])) problems.push('gen:licenses 指向的不是那个脚本');
   // 必须真的从三处来源读 —— 否则就是"手写一份清单假装是枚举出来的"
   if (!/Cargo\.lock/.test(script)) problems.push('生成脚本没有读 Cargo.lock');
@@ -3939,10 +3956,11 @@ const MUTATIONS = [
     expect: ['FEATURES.licenses.ui'],
   },
   {
-    name: '把 gen:licenses 脚本从 package.json 摘掉（生成物从此无法重跑）',
-    file: F.pkgJson,
-    find: '    "gen:licenses": "node app/scripts/gen-licenses.mjs",\n',
-    replace: '',
+    // 命令收束后这条命令住在 e2eScripts.json 里；把 id 改名 = 摘掉登记（生成物从此无法重跑）
+    name: '把 gen:licenses 从命令清单里摘掉（生成物从此无法重跑）',
+    file: F.e2eScripts,
+    find: '"id": "gen:licenses",',
+    replace: '"id": "gen:licenses-moved",',
     expect: ['FEATURES.gen.script'],
   },
   {

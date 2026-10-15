@@ -164,13 +164,13 @@ playSong → resolvePlayUrl(song)
 | 门 | 结果 |
 |---|---|
 | `cd app && tsc --noEmit` | ✅ **0 错误** |
-| `npm run check:music` | ✅ **193 通过 / 1 失败**（失败为既有红，见 §5.1） |
-| `npm run check:music:refute` | ✅ **153/153 按预期变红**（应执行 153，0 跳过，0 假阳性，全部文件字节恢复一致） |
-| `npm run check:docs` | ✅ **14 通过 / 0 失败**（条数已对账） |
-| `npm run check:units` | ✅ 37/37（无回归） |
-| `npm run check:settings` | ✅ 72/72（无回归） |
-| `npm run check:ia` | ✅ 24/24（无回归） |
-| `npm run check:tls` | ✅ 14/14（无回归） |
+| `npm run task -- check:music` | ✅ **193 通过 / 1 失败**（失败为既有红，见 §5.1） |
+| `npm run task -- check:music:refute` | ✅ **153/153 按预期变红**（应执行 153，0 跳过，0 假阳性，全部文件字节恢复一致） |
+| `npm run task -- check:docs` | ✅ **14 通过 / 0 失败**（条数已对账） |
+| `npm run task -- check:units` | ✅ 37/37（无回归） |
+| `npm run task -- check:settings` | ✅ 72/72（无回归） |
+| `npm run task -- check:ia` | ✅ 24/24（无回归） |
+| `npm run task -- check:tls` | ✅ 14/14（无回归） |
 | 禁词（任何大小写） | ✅ 0 命中（Grep 工具全仓扫描） |
 | TS 引号风格 | ✅ 全单引号 |
 | `git status --short` | ✅ 仅上表文件 + Rust 侧的 6 个既有未提交文件 |

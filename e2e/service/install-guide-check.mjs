@@ -31,7 +31,8 @@
  *    —— 它们就是"照文档装完"的验收面（B2），漏一项文档就漏一步。
  * ④ **平台形态**：Windows 文档必须是 `venv\Scripts\python.exe` 形态、macOS 必须是
  *    `venv/bin/python` 形态，且**互不出现对方的形态**（B3 的同源分叉在文档侧的镜像）。
- * ⑤ **引用的 npm 命令必须存在**（文档里的 `npm run X` 与 `package.json` 对账）。
+ * ⑤ **引用的命令必须存在**：`npm run <入口>` 与 `package.json` 对账、
+ *    `npm run task -- <id>` 与 `e2eScripts.json` 的命令清单对账（两种形态分别判，见代码 ⑦ 段）。
  *
  * ## 反证轮（--refute）
  * - M1 改 Windows 文档的落点字面量 ⇒ 落点断言红（D5 验收②要求的那条）。
@@ -52,6 +53,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { buildCommands } from '../_commands.mjs';
 import { RUST_BIN, REPO_ROOT } from './_service-harness.mjs';
 
 const SELF = fileURLToPath(import.meta.url);
@@ -168,7 +170,7 @@ function manifestSum(tag) {
 /** 文档里「落点」出现的位置 vs 第一条安装命令的位置 —— "落点写成第一步"的机械判据。 */
 function rootBeforeFirstCommand(text, tpl) {
   const atRoot = text.indexOf(tpl);
-  // 安装命令：`npm run <脚本>`；`boxsvc --print-paths` 不算（它是查落点，本身属于第一步）
+  // 安装命令：`npm run <入口>` / `npm run task -- <id>`；`boxsvc --print-paths` 不算（它是查落点，本身属于第一步）
   const atCmd = text.indexOf('npm run ');
   if (atRoot < 0) return { ok: false, why: '文档里找不到落点字面量' };
   if (atCmd < 0) return { ok: false, why: '文档里没有任何 npm run 命令（是不是写漏了？）' };
@@ -177,6 +179,7 @@ function rootBeforeFirstCommand(text, tpl) {
 
 const pkg = JSON.parse(read('package.json'));
 const scripts = pkg.scripts || {};
+const manifestIds = new Set(buildCommands().map((c) => c.id));
 
 for (const g of GUIDES) {
   const text = read(g.file);
@@ -231,13 +234,27 @@ for (const g of GUIDES) {
     { has: text.includes(g.pythonShape), forbidden: text.includes(g.forbiddenShape) },
   );
 
-  // ⑦ 引用的 npm 命令都存在
-  const cmds = [...new Set([...text.matchAll(/npm run ([a-z0-9:-]+)/g)].map((m) => m[1]))];
-  const missingCmd = cmds.filter((c) => !Object.prototype.hasOwnProperty.call(scripts, c));
+  // ⑦ 引用的命令都存在
+  // 🔴 两种形态各对各自的事实源（合并判定会把"早就不能跑的 `npm run check:X`"判成存在）：
+  //    · `npm run <入口>`        → `package.json` 的三类入口
+  //    · `npm run task -- <id>`  → `e2eScripts.json` 的命令清单
+  const direct = new Set();
+  const dispatched = new Set();
+  for (const m of text.matchAll(/npm run (?:(task) -- )?([a-z0-9:-]+)/g)) {
+    if (m[2].startsWith('-')) continue; // runner 自己的旗标（如 `--list`）不是清单 id
+    (m[1] ? dispatched : direct).add(m[2]);
+  }
+  const missingCmd = [...direct].filter((c) => !Object.prototype.hasOwnProperty.call(scripts, c));
+  const missingId = [...dispatched].filter((c) => !manifestIds.has(c));
   check(
-    `${g.title} 引用的 npm 命令都存在`,
+    `${g.title} 引用的 npm 入口命令都存在`,
     missingCmd.length === 0,
-    missingCmd.length ? `不存在：${missingCmd.join(', ')}` : `${cmds.length} 个命令`,
+    missingCmd.length ? `不存在：${missingCmd.join(', ')}` : `${direct.size} 个入口`,
+  );
+  check(
+    `${g.title} 引用的 task 清单 id 都存在`,
+    missingId.length === 0,
+    missingId.length ? `清单里没有：${missingId.join(', ')}` : `${dispatched.size} 个 id`,
   );
 }
 
@@ -269,7 +286,7 @@ for (const g of GUIDES) {
 
 // ------------------------------------------------------------------ 反证
 
-const EXPECTED = 16; // 8 组 × 2 份 + 镜像 + 契约（写死分母，防"少跑一组还全绿"）
+const EXPECTED = 18; // 7 组 × 2 份 + 镜像 + 契约；其中 ⑦ 命令存在一组是**两种形态各一条**（写死分母，防"少跑一组还全绿"）
 if (!REFUTE && passed + failed !== EXPECTED) {
   console.log(`\n⚠️ 断言条数 ${passed + failed} ≠ 写死的 ${EXPECTED}（新增/删除断言必须同步这个数）`);
   process.exit(1);
