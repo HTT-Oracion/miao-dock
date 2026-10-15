@@ -134,6 +134,14 @@ export function platformKey(plat = process.platform, arch = process.arch) {
  *
  * 🔴 匹配范围含 `codeload.github.com`：原实现只匹配 `github.com`，而**引擎源码归档正是从
  * codeload 下的** ⇒ "有镜像回退"这件事在两个文件里各写了一半，漏的正好是最常失败的那个源。
+ *
+ * ⚠️ **2026-10-16 实测（D-217）：ghfast 不代理 codeload** —— `ghfast.top/https://codeload.github.com/…`
+ *    一律 403（gh-proxy 同形态则 200）。所以对 codeload 那条 url 而言，`ghfast` 这条回退是**废的**；
+ *    能兜住的只有"原 url 优先"（本函数返回的第一个就是它）与 gh-proxy。
+ *    ⇒ 别把镜像当主力：真正的兜底是**原 url**，以及产品侧"`sources` 不许挤掉原 url"（`sourceCandidates`）。
+ *    给 codeload 造一条真能用的镜像要换成 `github.com/<owner>/<repo>/archive/<commit>.tar.gz` 形态，
+ *    那是 URL 变换（release 资产与归档形态不同），本轮刻意不做 —— 代价只是废镜像白试 4 次，
+ *    而"装不成"这个后果已经由原 url 优先消除了。
  */
 export function mirrorUrls(manifestUrl) {
   const base = assetBase();

@@ -518,6 +518,45 @@ async function scnFallback(fx, t, alpha) {
 }
 
 /**
+ * I2：**清单原 `url` 可用 + `sources` 全挂** ⇒ 仍要下成（原 `url` 不许被 `sources` 挤掉）。
+ *
+ * 🔴 这条是 H1 的反照，专门咬 D-217 那个缺陷：`sources` 一旦非空，清单原 `url` 就被整个丢掉
+ *    （Node 侧 `sources?.length ? sources : [file.url]`、Rust 侧 `if sources.is_empty() {…}`）。
+ *    ⚠️ **H1 咬不住它**：H1 的夹具把坏路径同时写进 `url` 与 `sources[0]`，旧实现照样能过 ——
+ *    这正是"长期全绿却从未抓到 bug"的形态。H2 把**好的那个只放在 `url` 上**、坏的只放 `sources`：
+ *    丢掉 `url` 的实现必然下不成（= 2026-10-16 真机整段装配失败的形态）。
+ *    反证：`MIAO_NO_URL_FIRST=1`（退回旧行为）⇒ 本场景必红。
+ */
+async function scnUrlNotDropped(fx, t, alpha) {
+  const s = await setup(t, 'url-first');
+  fx.def('/bad', { buf: alpha.buf, failTimes: 99 });
+  fx.def('/good', { buf: alpha.buf });
+  const m = {
+    manifestVersion: 999, engineCommit: 'fixture', sets: {},
+    files: [{
+      id: 'alpha', set: 'all', dest: 'alpha.bin',
+      sha256: alpha.sha256, sizeBytes: alpha.sizeBytes,
+      url: `${fx.base}/good`, sources: [`${fx.base}/bad`],
+    }],
+  };
+  writeManifest(s.manifestPath, m);
+  await run(t, ['--root', s.root, '--manifest', s.manifestPath, '--integrity', 'hash',
+    '--no-link', '--report', s.reportPath]);
+  const rep = await readReport(s.reportPath);
+  // 🔴 先判存在再读：反证态（丢掉原 url）下根本下不成、文件不在盘上，
+  //    直接 `sha256File` 会抛 ENOENT 把**反证轮本身**炸掉 —— 那样看到的是"检查崩了"，
+  //    而不是"H2 按预期变红"（崩掉 ≠ 变红）。
+  const dest = path.join(s.root, 'alpha.bin');
+  const hashOk = exists(dest) && (await sha256File(dest)) === alpha.sha256;
+  return {
+    hashOk,
+    downloaded: rep?.ensure?.downloaded ?? [],
+    badTried: fx.count('/bad'),
+    goodUsed: fx.count('/good'),
+  };
+}
+
+/**
  * N：store + 硬链接 —— **引擎换版本不重下模型**
  * 模拟真实现状：引擎把模型路径硬编码在源码树里（BASE_PATH/models），
  * 于是"换版本"= 整棵 `src/` 被删掉再解包。权威副本在 store，引擎树里那份只是硬链接。
@@ -645,6 +684,9 @@ const PRED = {
   'E7-2c 源内容坏到修不好 → 必须报错，不静默接受': (f) => f.threw,
   'E7-3a .ready 幂等标记存在且记录与清单一致': (f) => f.markerExists && f.markerHashOk && f.markerSizeOk,
   'E7-3b 第二次运行不联网（全复用）': (f) => f.newRequests === 0 && f.downloaded2.length === 0,
+  // —— 多源（组 H）：H2 咬"原 url 被 sources 挤掉"，H1 咬不了它（见 scnUrlNotDropped 的注释）
+  'H2 清单原 url 可用 + sources 全挂 ⇒ 仍要下成（原 url 不许被 sources 挤掉）':
+    (f) => f.hashOk && f.goodUsed > 0,
   'E7-4a 引擎树里那份是与 store 同一 inode 的硬链接': (f) => f.sameInode && f.linked1.includes('alpha'),
   'E7-4b 换版本（src/ 整棵被删）后重链即恢复且哈希正确': (f) => f.relinked2.includes('alpha') && f.restoredOk,
   'E7-4c 重链全程 0 次网络请求（这就是"换版本不重下"）': (f) => f.newRequests === 0,
@@ -667,7 +709,7 @@ function P(name) {
 
 // ------------------------------------------------------------------ 主流程
 
-/** 一个靶子的**全部**正向断言（37 条）。两靶 ⇒ 74 条。 */
+/** 一个靶子的**全部**正向断言（38 条）。两靶 ⇒ 76 条。 */
 async function runTarget(fx, t, fixtures) {
   const { alpha, beta, big } = fixtures;
 
@@ -738,6 +780,10 @@ async function runTarget(fx, t, fixtures) {
   const fb = await scnFallback(fx, t, alpha);
   add('H1 第一个源 500 → 自动换第二个源并下成', fb.hashOk && fb.goodUsed > 0,
     `bad 尝试 ${fb.badTried} 次 · good 用上 ${fb.goodUsed} 次`);
+  const nu = await scnUrlNotDropped(fx, t, alpha);
+  add('H2 清单原 url 可用 + sources 全挂 ⇒ 仍要下成（原 url 不许被 sources 挤掉）',
+    PRED['H2 清单原 url 可用 + sources 全挂 ⇒ 仍要下成（原 url 不许被 sources 挤掉）'](nu),
+    `hashOk=${nu.hashOk} · bad 尝试 ${nu.badTried} 次 · good 用上 ${nu.goodUsed} 次`);
 
   setGroup(`【${t.id}-N】引擎换版本不重下模型（store + 硬链接）`);
   const rl = await scnRelink(fx, t, alpha);
@@ -809,7 +855,7 @@ async function main() {
     const pass = results.filter((r) => r.ok).length;
     const fail = results.length - pass;
     console.log(`\n${'─'.repeat(56)}`);
-    const EXPECTED_TOTAL = 37 * TARGETS.length;
+    const EXPECTED_TOTAL = 38 * TARGETS.length;
     if (results.length !== EXPECTED_TOTAL) {
       console.log(`✗ 断言条数 ${results.length} ≠ 写死的 ${EXPECTED_TOTAL}（分母必须写死并断言）`);
       process.exit(1);
@@ -856,6 +902,12 @@ async function main() {
       id: 'R6', env: 'MIAO_NO_LINK', desc: '关掉建链 ⇒ hf 条目的 snapshot / refs/main 也补不上',
       target: 'P1 带 hf 的条目补齐 snapshot 与 refs/main（HF 才看得见）',
       run: async (fx, t) => scnHfLayout(fx, t, alpha),
+    },
+    {
+      id: 'R7', env: 'MIAO_NO_URL_FIRST',
+      desc: '关掉「清单原 url 优先」⇒ 退回只试 sources（D-217 之前的旧行为）',
+      target: 'H2 清单原 url 可用 + sources 全挂 ⇒ 仍要下成（原 url 不许被 sources 挤掉）',
+      run: async (fx, t) => scnUrlNotDropped(fx, t, alpha),
     },
   ];
 

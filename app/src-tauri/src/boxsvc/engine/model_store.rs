@@ -264,6 +264,12 @@ pub struct RefuteFlags {
     pub no_ready: bool,
     /// 关掉"把 store 链进引擎树"这一步
     pub no_link: bool,
+    /// 关掉「**清单原 `url` 优先**」⇒ 只试 `sources`（2026-10-16 之前的旧行为）。
+    ///
+    /// 旧行为本身就是个缺陷（`sources` 一非空就把 `url` 丢掉，见 `source_candidates`），
+    /// 留这个开关是为了让"原 `url` 真的参与了候选"这件事**可反证** —— 关掉它，
+    /// `check:models` 的 H2 断言必须变红。
+    pub no_url_first: bool,
     /// 夹具：**在同盘上强制走"跨卷"分支**（C2）。
     ///
     /// 真跨卷要两个卷才造得出来（e2e 里不能要求跑测机器有两块盘），而"跨卷时说跨卷"
@@ -280,6 +286,7 @@ pub fn refute_flags() -> RefuteFlags {
         no_resume: one("MIAO_NO_RESUME"),
         no_ready: one("MIAO_NO_READY"),
         no_link: one("MIAO_NO_LINK"),
+        no_url_first: one("MIAO_NO_URL_FIRST"),
         force_crossdev: one("MIAO_LINK_FORCE_CROSSDEV"),
     }
 }
@@ -557,27 +564,56 @@ struct Fetched {
     bytes: u64,
 }
 
+/// 下载候选源：**清单原 `url` 优先，然后才是 `sources` 镜像**（去重、跳空）。
+///
+/// 顺序与 Node 侧 `asset-source.mjs::mirrorUrls()` 注释里那条**逐字一致**
+/// （通道前缀 → 原 `url` → 镜像）。两侧一致不是审美问题：`check:models` 拿同一份用例跑双靶，
+/// 顺序一散，同一个清单在两套实现上会表现得像两个下载器。
+///
+/// 🔴 旧实现是 `if file.sources.is_empty() { vec![url] } else { sources.clone() }` ——
+///    `sources` 一非空，清单原 `url` 就被**整个丢掉**。于是"备用镜像"变成了"唯一来源"：
+///    镜像一挂，即使原 `url` 好好的也永远试不到。2026-10-16 真跑装配就是这么整段失败的
+///    （`[ENGINE_BOOTSTRAP_FAILED] [source] HTTP 403 Forbidden`），而日志里每条源都如实报了错，
+///    离根因（镜像形态不被支持 + 原 `url` 被丢）极远。见 D-217。
+///
+/// `flags.no_url_first`（`MIAO_NO_URL_FIRST=1`）= **反证态**：退回"只试 `sources`"，
+/// 让 `check:models` 的 H2（原 `url` 可用 + 镜像全挂 ⇒ 仍要下成）变红。
+fn source_candidates(file: &FileEntry, flags: &RefuteFlags) -> Vec<String> {
+    let raw: Vec<&String> = if flags.no_url_first {
+        file.sources.iter().collect()
+    } else {
+        std::iter::once(&file.url).chain(file.sources.iter()).collect()
+    };
+    let mut out: Vec<String> = Vec::with_capacity(raw.len());
+    for u in raw {
+        let t = u.trim();
+        if t.is_empty() || out.iter().any(|x| x == t) {
+            continue;
+        }
+        out.push(t.to_string());
+    }
+    out
+}
+
 /// 把内容落到 `.part`（支持续传）。**不做哈希校验** —— 那是调用方的事。
 ///
 /// 🔴 每次尝试都**重新量一次盘上 `.part` 的大小**，而不是沿用入参：
 ///    上一轮（或上一次调用、或本函数的上一次重试）可能已经写下了一部分字节。
 ///    用旧值会算出错的 Range 起点 —— 症状是"续传成功但文件哈希永远不对"。
+/// 🔴 候选源由**调用方一处**（`source_candidates`）构造后传进来，本函数不再自己拼 ——
+///    拼在两层里，就会重演"一侧按 `sources`、一侧按 `url`"的分叉。
 fn fetch_to_part(
     part_abs: &Path,
     file: &FileEntry,
+    candidates: &[String],
     allow_resume: bool,
     client: &reqwest::blocking::Client,
     on_progress: &mut Option<&mut dyn FnMut(ProgressEvent)>,
     logger: Option<&dyn Fn(&str)>,
 ) -> Result<Fetched, ModelStoreError> {
-    let urls: Vec<String> = if file.sources.is_empty() {
-        vec![file.url.clone()]
-    } else {
-        file.sources.clone()
-    };
     let mut last_err: Option<ModelStoreError> = None;
 
-    for url in &urls {
+    for url in candidates {
         for attempt in 0..=RETRY_PER_SOURCE {
             // allow_resume=false 是**反证态**（MIAO_NO_RESUME=1）：连重试都不许从断点接，
             // 必须每次从 0 全量下 —— 否则"关掉续传"这个反证根本咬不到东西（见 D-72）。
@@ -820,7 +856,8 @@ pub fn ensure_models(
             if partial > 0 {
                 log(logger, &format!("  [续传] {} 从 {:.1} MB 接着下", file.id, partial as f64 / 1_048_576.0));
             }
-            let fetched = fetch_to_part(&part_abs, file, !flags.no_resume, &client, &mut on_progress, logger)?;
+            let candidates = source_candidates(file, &flags);
+            let fetched = fetch_to_part(&part_abs, file, &candidates, !flags.no_resume, &client, &mut on_progress, logger)?;
             result.resume_from.insert(file.id.clone(), fetched.resumed_from);
             result.bytes += fetched.bytes;
             if fetched.restarted && partial > 0 {
@@ -1277,6 +1314,19 @@ mod tests {
         }
     }
 
+    /// 全 false 的反证开关：**显式构造，不读 env** —— 单测是多线程的，
+    /// 读环境变量会串到别的用例（同 `cross_device_is_os_error_17_only` 的注释）。
+    fn no_flags() -> RefuteFlags {
+        RefuteFlags {
+            no_verify: false,
+            no_resume: false,
+            no_ready: false,
+            no_link: false,
+            no_url_first: false,
+            force_crossdev: false,
+        }
+    }
+
     fn manifest(files: Vec<FileEntry>) -> Manifest {
         Manifest {
             manifest_version: json!(1),
@@ -1388,6 +1438,61 @@ mod tests {
         let m = manifest(vec![]);
         let e = ensure_models(&m, Path::new("/nonexistent-root"), None, None, "sloppy", None, None).unwrap_err();
         assert_eq!(e.code, "MODEL_BAD_INTEGRITY");
+    }
+
+    /// 候选源的**顺序**：清单原 `url` 在最前，`sources` 照原样跟在后面。
+    /// 🔴 这条单测咬的就是 D-217（旧行为："`sources` 一非空就把原 `url` 丢掉"）——
+    ///    在单测这一层就该红，不必等到真机跑一次装配才发现"备用镜像成了唯一来源"。
+    #[test]
+    fn source_candidates_keeps_url_first() {
+        let mut f = entry("a", "a.bin");
+        f.url = "https://canonical/a".to_string();
+        f.sources = vec!["https://mirror/a".to_string(), "https://mirror2/a".to_string()];
+        assert_eq!(
+            source_candidates(&f, &no_flags()),
+            vec!["https://canonical/a", "https://mirror/a", "https://mirror2/a"],
+        );
+    }
+
+    /// 去重 + 跳空：清单里 `sources` 常把原 `url` 又写一遍（各自手写，早晚写重复），
+    /// 重复项会让**同一个坏源被试两遍**（每遍 `RETRY_PER_SOURCE` 次重试）。
+    #[test]
+    fn source_candidates_dedups_and_skips_blank() {
+        let mut f = entry("a", "a.bin");
+        f.url = "https://canonical/a".to_string();
+        f.sources = vec![
+            String::new(),
+            "   ".to_string(),
+            "https://canonical/a".to_string(),
+            " https://mirror/a ".to_string(),
+        ];
+        assert_eq!(
+            source_candidates(&f, &no_flags()),
+            vec!["https://canonical/a", "https://mirror/a"],
+        );
+    }
+
+    /// 反证态**语义本身**：`MIAO_NO_URL_FIRST=1` ⇒ 只剩 `sources`（即 2026-10-16 前的旧行为）。
+    /// 这条不是"验开关有用"，而是把"旧行为长什么样"钉下来：`check:models` 的 H2
+    /// 靠它把 H1 的假阳性（`url` 被丢掉却依然全绿）翻出来。
+    #[test]
+    fn source_candidates_refute_state_drops_url() {
+        let mut f = entry("a", "a.bin");
+        f.url = "https://canonical/a".to_string();
+        f.sources = vec!["https://mirror/a".to_string()];
+        let mut flags = no_flags();
+        flags.no_url_first = true;
+        assert_eq!(source_candidates(&f, &flags), vec!["https://mirror/a"]);
+    }
+
+    /// 什么都不声明 ⇒ 空候选：调用方据此报 `MODEL_NO_SOURCE`，
+    /// 而不是拿一个空串去发请求（那会得到一个"HTTP error"型的、离根因很远的报错）。
+    #[test]
+    fn source_candidates_empty_when_nothing_declared() {
+        let mut f = entry("a", "a.bin");
+        f.url = String::new();
+        f.sources = vec![];
+        assert!(source_candidates(&f, &no_flags()).is_empty());
     }
 
     /// C2：跨卷判定认的是 **os error 17**（POSIX `EXDEV` / Windows `ERROR_NOT_SAME_DEVICE` 同号）。

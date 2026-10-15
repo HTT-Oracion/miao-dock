@@ -14,12 +14,13 @@
  * 起服务反而会让这条门与端口竞争的服务层耦合，丧失「改一行源码就能立刻红」的灵敏度。
  *
  * ## 反证轮（--refute）
- * - M1 `engine-download.ts` 的运行态文案注入 `pip` 字样 ⇒ W5（无命令行字样）红。
- * - M2 `runtime.manifest.json` 抹掉某条的 `sha256` ⇒ W1（清单条目完整可下载）红。
- * - M3 `state.rs` 阶段映射 `stage1` 改成 `phase1` ⇒ W4（阶段顺序 stage1→stage2）红。
- * - M4 `runtime_probe.rs` 的 `FIX_SETUP` 注回 `node engine/scripts/…` ⇒ W9a 红。
- * - M5 未就绪文案抹掉产品内入口（只说缺什么）⇒ W9b 红。
- * 每条反证都按字节还原，收尾复核残留。
+ * - M1–M5：运行态文案注入命令行字样 ⇒ W5 · 清单抹掉 `sha256` ⇒ W1 · 阶段映射改名 ⇒ W4 ·
+ *   `FIX_SETUP` 注回 `node engine/scripts/…` ⇒ W9a · 未就绪文案抹掉产品内入口 ⇒ W9b。
+ * - M6–M9：第 2 轮也带 `--engine-bootstrap`（重跑 pip）⇒ W10 · llama.cpp 挪回 stage2 ⇒ W11 ·
+ *   stage1 文案承诺"即可开始翻译" ⇒ W12 · 长路径结论不落盘 ⇒ W13。
+ * - M10–M11：解包改回按 url 末段找归档 ⇒ W14 · 运行时解包退回"解整份清单" ⇒ W15。
+ * - M12–M13：镜像套回 codeload（ghfast 不代理它）⇒ W16 · 原 `url` 的 owner 拼错一个字母 ⇒ W16。
+ * 每条反证都按字节还原，收尾复核残留（R1）。
  *
  * ## W9 为什么必须打在 Rust 侧
  * W5/W6 只扫前端 4 个文件，而「运行时未装配」屏渲染的字符串来自
@@ -52,6 +53,8 @@ const ENGINE_DOWNLOAD_TS = path.join(ROOT, 'app', 'src', 'engine-download.ts');
 const MODELS_MANIFEST = path.join(ROOT, 'engine', 'models.manifest.json');
 /// W12：下载视图（第 1/第 2 阶段文案）。
 const DOWNLOAD_PANEL_TSX = path.join(ROOT, 'app', 'src', 'screens', 'engine', 'DownloadPanel.tsx');
+/// W16：版本锁（人读的事实源）—— `engine_source` 的 owner/repo/commit 以它为准。
+const VERSIONS_LOCK = path.join(ROOT, 'engine', 'VERSIONS.lock');
 const UI_FILES = [
   path.join(ROOT, 'app', 'src', 'screens', 'NotReadyScreen.tsx'),
   path.join(ROOT, 'app', 'src', 'screens', 'engine', 'DownloadPanel.tsx'),
@@ -79,6 +82,47 @@ function check(name, cond, extra) {
     failures.push(name);
     console.log(`  ✗ ${name}${extra !== undefined ? `  → ${JSON.stringify(extra)}` : ''}`);
   }
+}
+
+/**
+ * W16 判据：`engine_source` 的两处 URL 是否与 `engine/VERSIONS.lock` §1 **同形**。
+ *
+ * D-217 的真机事故：`url` 的 owner 拼成了 `zydnnys`、`sources[0]` 拼成了 `zydmnys`，
+ * 且把 **codeload 套在镜像前缀后面**（ghfast 不代理 codeload，实测一律 403）。
+ * 三处都"看起来对"：都是 https、都落在同一个仓库名与 commit 上 ——
+ * 只有**形态**判据分得开，而形态恰恰是人眼最容易放过的一层。
+ *
+ * 正向轮与反证收尾（R1）共用本函数：两处各写一份形态正则会各自漂移。
+ */
+function engineSourceShape() {
+  const lock = fs.readFileSync(VERSIONS_LOCK, 'utf8');
+  const repo = (/^\s*repo\s*=\s*(\S+)\s*$/m.exec(lock) || [])[1] || '';
+  const commit = (/^\s*commit\s*=\s*(\S+)\s*$/m.exec(lock) || [])[1] || '';
+  // 只认 `https://github.com/<owner>/<repo>`（`.git` 可省）—— 版本锁里就这一种写法。
+  const slug = /^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/.exec(repo);
+  if (!slug || !commit) {
+    return { lockRepo: repo, lockCommit: commit, error: '版本锁 §1 的 repo / commit 读不出来' };
+  }
+  const owner = slug[1];
+  const name = slug[2];
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // 原 `url`：codeload 的按需打包归档（上游源码的真实获取通道，见 §1 的实测注释）。
+  const urlForm = new RegExp(`^https://codeload\\.github\\.com/${esc(owner)}/${esc(name)}/tar\\.gz/${esc(commit)}$`);
+  // 镜像：`<前缀>https://github.com/<owner>/<repo>/archive/<commit>.tar.gz`。
+  // 🔴 套 codeload 的那条**是死链**（ghfast 不代理它）—— 形态判据在这里替网络说话。
+  const mirrorForm = new RegExp(`^https://[^/]+/https://github\\.com/${esc(owner)}/${esc(name)}/archive/${esc(commit)}\\.tar\\.gz$`);
+
+  const manifest = JSON.parse(fs.readFileSync(RUNTIME_MANIFEST, 'utf8'));
+  const entry = (manifest.files || []).find((f) => f.id === 'engine_source') || {};
+  const sources = Array.isArray(entry.sources) ? entry.sources.map((s) => String(s)) : [];
+  return {
+    lockRepo: repo,
+    lockCommit: commit,
+    url: entry.url || '',
+    urlOk: urlForm.test(entry.url || ''),
+    sources,
+    badSources: sources.filter((s) => !mirrorForm.test(s)),
+  };
 }
 
 // ------------------------------------------------------------------ 正向
@@ -261,6 +305,21 @@ function check(name, cond, extra) {
   check('W15 解包只解**刚下过的那一组**（运行时按 `set_ids`、模型按 `--stage` 同源）—— 否则干净机器第 1 阶段去解还没下的 engine_source',
     scopedBySet && noUnscopedRuntimeExtract && modelsScopedByStage,
     { scopedBySet, noUnscopedRuntimeExtract, modelsScopedByStage });
+
+  // ---- W16：清单里 `engine_source` 的两处 URL 必须与 `engine/VERSIONS.lock` §1 对得上 ----
+  //     这一条是**下载器的前提**：清单写错时下载器一句错都不报，只如实打出
+  //     「每条源都 403」（见 D-217 的真机日志），根因（镜像形态 + owner 拼写）离症状极远。
+  let w16 = false;
+  let w16Detail = null;
+  try {
+    const shape = engineSourceShape();
+    w16 = !shape.error && shape.urlOk && shape.sources.length > 0 && shape.badSources.length === 0;
+    w16Detail = shape;
+  } catch (e) {
+    w16Detail = String(e.message);
+  }
+  check('W16 `engine_source` 的两处 URL 与 `engine/VERSIONS.lock` §1 同形（原 `url` 走 codeload、镜像一律套 `github.com/<owner>/<repo>/archive/<commit>.tar.gz`，owner 不许拼错）',
+    w16, w16Detail);
 }
 
 // ------------------------------------------------------------------ 反证轮
@@ -435,11 +494,42 @@ if (REFUTE) {
     restore();
   }
 
+  // ---- M12：镜像套回 codeload（ghfast 不代理它 ⇒ 死链）⇒ W16 红 ----
+  {
+    const restore = mutateFile(
+      RUNTIME_MANIFEST,
+      'https://ghfast.top/https://github.com/zyddnys/manga-image-translator/archive/',
+      'https://ghfast.top/https://codeload.github.com/zyddnys/manga-image-translator/tar.gz/',
+    );
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W16');
+    check('M12 镜像套回 codeload（ghfast 不代理它，实测 403）⇒ W16 红',
+      red, { code: r.code, redOn: red });
+    restore();
+  }
+
+  // ---- M13：原 `url` 的 owner 拼错一个字母（`zyddnys` → `zydnnys`）⇒ W16 红 ----
+  {
+    const restore = mutateFile(
+      RUNTIME_MANIFEST,
+      'https://codeload.github.com/zyddnys/manga-image-translator/tar.gz/',
+      'https://codeload.github.com/zydnnys/manga-image-translator/tar.gz/',
+    );
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W16');
+    check('M13 原 `url` 的 owner 拼错一个字母 ⇒ W16 红', red, { code: r.code, redOn: red });
+    restore();
+  }
+
   // 收尾：确认还原到位
   {
     const bad = [];
     if (!fs.readFileSync(ENGINE_DOWNLOAD_TS, 'utf8').includes("text: '引擎下载中',")) bad.push('engine-download.ts 残留 M1');
     if (fs.readFileSync(RUNTIME_MANIFEST, 'utf8').includes('"sha256": ""')) bad.push('runtime.manifest.json 残留 M2');
+    {
+      const shape = engineSourceShape();
+      if (!shape.urlOk || shape.badSources.length > 0) bad.push('runtime.manifest.json 残留 M12 / M13（engine_source 的 URL 形态）');
+    }
     if (!fs.readFileSync(STATE_RS, 'utf8').includes('"runtime" => Some("stage1"')) bad.push('state.rs 残留 M3');
     if (!fs.readFileSync(RUNTIME_PROBE_RS, 'utf8').includes('点「开始下载」，喵坞会自动装配引擎运行时')) bad.push('runtime_probe.rs 残留 M4');
     if (!fs.readFileSync(RUNTIME_PROBE_RS, 'utf8').includes('装配会从公网镜像安装引擎依赖')) bad.push('runtime_probe.rs 残留 M5');
@@ -448,7 +538,7 @@ if (REFUTE) {
     if (!fs.readFileSync(DOWNLOAD_PANEL_TSX, 'utf8').includes('这一步完成后本地引擎即可启动')) bad.push('DownloadPanel.tsx 残留 M8');
     if (!fs.readFileSync(RUNTIME_SETUP_RS, 'utf8').includes('"longPath": longpath.map')) bad.push('runtime_setup.rs 残留 M9');
     if (!fs.readFileSync(RUNTIME_SETUP_RS, 'utf8').includes('extract_entries(runtime_manifest, runtime_root, Some(&py_ids))?;')) bad.push('runtime_setup.rs 残留 M11');
-    check('R1 变异收尾：十处源码/清单按字节还原', bad.length === 0, bad);
+    check('R1 变异收尾：十二处源码/清单按字节还原', bad.length === 0, bad);
   }
 }
 

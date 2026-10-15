@@ -75,8 +75,9 @@ const SRC_URL_OVERRIDE = process.env.MIAO_SRC_URL || '';
 const PY_URL = process.env.MIAO_PY_URL || resolveUrl(PY_ASSET.url);
 
 const SRC_URL = process.env.MIAO_SRC_URL || resolveUrl(SRC_ASSET.url);
-  // G2：引擎源码的 url 已改为从清单取（上一行）。旧硬编码已作废，注释掉以免留悬空表达式：
-  // zydnnys/manga-image-translator/tar.gz/${ENGINE_COMMIT}/zyddnys/manga-image-translator/tar.gz/${ENGINE_COMMIT}`;
+// G2：引擎源码的 url 已改为从清单取（上一行）。旧硬编码**已删除**而不是留成注释 ——
+// 旧值里连仓库名都是错的（`zydnnys`，正确见 `engine/VERSIONS.lock` §1 的 `zyddnys`），
+// 留着当"参考"只会让下一个人照抄（D-217）。
 
 const PY_DIR = path.join(RT, 'python-3.11');
 const VENV_DIR = path.join(RT, 'venv');

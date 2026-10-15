@@ -193,7 +193,7 @@ npm run check:engine-parity   # 引擎耦合点纯函数 24 条（Rust `--engine
 npm run check:engine-http     # 引擎 HTTP 运行期 18 条（真发 HTTP 打伪引擎：请求体 / 错误归一 / 三重就绪 / 超时带走证据）
 # ⚠️ `engine-client 那组钉子` 已退役（D-203）：它测的是 Node 侧 `engine-client.mjs` 的 60 条断言，
 #    契约面由上面两组 golden 等价覆盖；Node 产品源码随 F5 删除后它也没有对象了。
-npm run check:models          # S3 模型下载器 **双靶** 37×2 = 74 条 / 反证 6×2 = 12 条（本地 Range 夹具源：中断续传 / 服务端不支持 Range / 篡改一字节 / 换版本重链 / HF 缓存布局，秒级）。A3d 两靶同跑：Node 对照端 + Rust `boxsvc --fetch-models`（产品主路径）；反证开关走子进程 env
+npm run check:models          # S3 模型下载器 **双靶** 38×2 = 76 条 / 反证 7×2 = 14 条（本地 Range 夹具源：中断续传 / 服务端不支持 Range / 篡改一字节 / 换版本重链 / HF 缓存布局 / **清单原 `url` 不许被 `sources` 挤掉**（H2 · D-217），秒级）。A3d 两靶同跑：Node 对照端 + Rust `boxsvc --fetch-models`（产品主路径）；反证开关走子进程 env
 npm run check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）
 npm run check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run check:contract        # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status 77 条（反证：check:contract:refute）

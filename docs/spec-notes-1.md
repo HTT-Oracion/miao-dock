@@ -3713,3 +3713,63 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
 源码 → 真 pip 解析 `src/requirements.txt`）。它们**本来就是既有红**（见 D-209 末条），要回绿得让它们
 像 D-215 那样用夹具运行时 —— 另起一条，不在本轮范围。**本轮不动它们**。
 
+---
+
+## D-217 🔴 真机装配整段失败：三处 URL 形态 + 下载器把"备用镜像"当成唯一来源（2026-10-16）
+
+**症状**：真机跑装配，第 3 阶段（引擎源码）整段失败，日志里每条源都**如实**报错
+（`[ENGINE_BOOTSTRAP_FAILED] [source] HTTP 403 Forbidden`）。看上去像"网络不通 / 上游挂了"，
+实际是**清单里的 URL 写错了**，而下载器在"有 `sources`"时会**完全忽略原 `url`** —— 两个错误互相掩护。
+
+**三处缺陷**（都"看起来对"：都是 https、都落在同一个仓库名与 commit 上）：
+
+| # | 缺陷 | 为什么看不出来 |
+|---|---|---|
+| 1 | `engine_source.url` 的 owner 写成 `zydnnys` | 与正确值 `zyddnys` 只差一个字母，肉眼扫过像同一个词 |
+| 2 | 同条目 `sources[0]` 的 owner 写成 `zydmnys` | 同一件事**另一种**拼错（连错法都不一致） |
+| 3 | 镜像把 **codeload** 套在 `ghfast.top` 后面 | `ghfast` **不代理 codeload**（实测 403；`gh-proxy` 同形态 200） |
+
+**第四处、也是真正的放大器**：候选源写成 `sources?.length ? sources : [file.url]`（Node）/
+`if sources.is_empty() {…}`（Rust）—— `sources` 一非空，清单原 `url` 就被**整个丢掉**。
+于是"备用镜像"变成"唯一来源"：镜像一挂，即使原 `url` 好好的也永远试不到。
+⇒ 上游源码归档**只能**靠 codeload 直下（版本锁 §1 实测：`git clone` 被代理拒、release 资产 502），
+把它丢掉等于把唯一的活路交给两条死链。
+
+**改了什么**
+- `engine/runtime.manifest.json`：`engine_source` 的 `url`（codeload 形态）与两条镜像
+  （一律 `github.com/<owner>/<repo>/archive/<commit>.tar.gz`）的 owner/repo/commit
+  与 `engine/VERSIONS.lock` §1 **逐字一致**。
+- 候选源收口成**一处**：`model-store.mjs::sourceCandidates()` / Rust `model_store::source_candidates()`
+  = `[url, ...sources]`（去重、跳空），`fetchToPart` 不再自己拼 —— 拼在两层里就会重演"一侧按 sources、
+  一侧按 url"的分叉，而这正是本轮事故的形态。
+- 反证开关 `MIAO_NO_URL_FIRST=1` = 退回旧行为（只试 `sources`），让"原 `url` 真的参与了候选"可反证。
+- `engine/scripts/setup-engine.mjs`：删掉那段**含错 owner 的旧硬编码注释**（`zydnnys`）——
+  留成注释当"参考"只会让下一个人照抄。
+
+**怎么钉住（两层，缺一层就是假绿）**
+- `check:models` 的 **H2**（38 条 × 2 靶）+ 反证 **R7**（`MIAO_NO_URL_FIRST=1`）。
+  🔴 **H1 咬不住这条**：H1 的夹具把坏路径**同时**写进 `url` 与 `sources[0]`，旧实现照样能过 ——
+  正是"长期全绿却从未抓到 bug"的形态。H2 把好的只放 `url`、坏的只放 `sources`。
+  反证态下文件根本下不成、不在盘上，因此判据**先判存在再算哈希**：直接 `sha256File` 会抛 ENOENT
+  把反证轮本身炸掉 —— 那样看到的是"检查崩了"，而不是"H2 按预期变红"（崩掉 ≠ 变红）。
+- `check:engine-bootstrap` 的 **W16** + 反证 **M12/M13**：拿 `engine/VERSIONS.lock` §1 当事实源，
+  对拍清单里 `url` 与每条镜像的**形态**（M12 = 镜像套回 codeload、M13 = owner 拼错一个字母）。
+  纯文件分析 ⇒ 改一个字母立刻红，不需要真发请求；那份锁改了就重跑本门（已进 watch）。
+
+**刻意没做什么（如实记账）**
+- 不给 codeload 造"真能用的镜像"：那要换成 `github.com/<owner>/<repo>/archive/<commit>.tar.gz`
+  形态（是 URL 变换，不是加前缀）。代价只是废镜像白试 4 次，而"装不成"已由原 url 优先消除。
+- `engine/scripts/setup-engine.mjs` 的 `ENGINE_COMMIT` 仍是**第二份**硬编码（当前与锁一致，但无人钉）。
+  它服务的是 Node 对照端 / 开发机路径，产品主路径在 Rust ⇒ 登记为已知缺口，不在本轮范围。
+
+**验收（本轮实测）**：`check:engine-bootstrap` 正向 **18/0** · `--refute` **32/0**
+（M12 镜像套回 codeload、M13 owner 拼错一个字母，各自按预期变红 + R1 **十二处**字节还原复核）·
+`check:models` 正向 **76/0**（分母写死）· `--refute` **14/14 全红**（R7 打的是 H2）·
+`check:docs` 16/0 · `check:registry` 5/5（static=16 service=44 nightly=9 refute=58）·
+`npm run check` **228/3** —— 3 红均为**既有**且与本轮无交集（`check:quit` 的 Q3 `CREATE_NO_WINDOW` /
+`check:docpaths` 命中的 spec-notes-1.md `wheel-manifest.json` 那一行（D-211 的**反例叙述**）/
+`check:music` 的 `RESTORE.restoringClosed` + `KEYS.manualPressNotMerged`）。
+⚠️ **未跑 `cargo test --lib`**（本 shell 没有 MSVC 环境，`cl.exe` 不在 PATH）：Rust 半边由双靶 e2e 验到 ——
+`target/debug/boxsvc.exe` 的 mtime 晚于 `model_store.rs`（即跑的是含本次改动的产物），
+且 R7 在 **rust 靶**上真的变红（若二进制是旧的，它只会"永远绿"）。
+

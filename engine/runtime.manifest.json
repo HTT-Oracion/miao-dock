@@ -104,12 +104,13 @@
       "extractStrip": 1,
       "sha256": "4163ade8895653f33ccc38d7c594b1df62ee1b69401be997065c5a845a4a200d",
       "sizeBytes": 56098334,
-      "url": "https://codeload.github.com/zydnnys/manga-image-translator/tar.gz/441d07c59a735c7db3db2e7bb8b07920afd8a9cc",
+      "url": "https://codeload.github.com/zyddnys/manga-image-translator/tar.gz/441d07c59a735c7db3db2e7bb8b07920afd8a9cc",
       "sources": [
-        "https://ghfast.top/https://codeload.github.com/zydmnys/manga-image-translator/tar.gz/441d07c59a735c7db3db2e7bb8b07920afd8a9cc"
+        "https://ghfast.top/https://github.com/zyddnys/manga-image-translator/archive/441d07c59a735c7db3db2e7bb8b07920afd8a9cc.tar.gz",
+        "https://gh-proxy.com/https://github.com/zyddnys/manga-image-translator/archive/441d07c59a735c7db3db2e7bb8b07920afd8a9cc.tar.gz"
       ],
       "license": "GPL-3.0-only（上游 manga-image-translator）",
-      "note": "🔴 **本条没有 `platform` 字段** ⇒ 所有平台共用同一份归档（上游 commit 固定，与 `engine/VERSIONS.lock` §1 同一个 `engineCommit`）。解包到 `<落点>/src`，顶层目录是 `manga-image-translator-<commit7>/` ⇒ extractStrip=1；就绪判据 = `src/server/main.py` 在盘（**不是**「src 非空」—— 建链接会先把 `src/models/` 填上，那时 src 非空但根本没有源码）。\n\n⚠️ **这一条的 `sha256` 有性质上的例外**，必须知道才不会被它绊住：`sha256` 与 `sizeBytes` 是 **2026-10-14 实测**的，但 codeload 的源码归档是**按需重新打包**的（gzip 实现/压缩级别变化会改字节，内容不变）。所以：\n  · 校验不符时**不要**当成「被篡改」去报警 —— 报错要说清是「源码归档字节与 2026-10-14 的实测不符（上游重新打包）」，并给出处置：`MIAO_ASSET_BASE` 指向自备的固定归档，或改用上游 release/commit zip。\n  · 模型权重与 llama.cpp 那些条目**没有**这个例外（它们是 release 资产 / HF 文件，字节稳定）。\n  · 这条已登记为台账风险 **G-A6**。"
+      "note": "🔴 **本条没有 `platform` 字段** ⇒ 所有平台共用同一份归档（上游 commit 固定，与 `engine/VERSIONS.lock` §1 同一个 `engineCommit`）。解包到 `<落点>/src`，顶层目录是 `manga-image-translator-<commit7>/` ⇒ extractStrip=1；就绪判据 = `src/server/main.py` 在盘（**不是**「src 非空」—— 建链接会先把 `src/models/` 填上，那时 src 非空但根本没有源码）。\n\n⚠️ **这一条的 `sha256` 有性质上的例外**，必须知道才不会被它绊住：`sha256` 与 `sizeBytes` 是 **2026-10-14 实测**的，但 codeload 的源码归档是**按需重新打包**的（gzip 实现/压缩级别变化会改字节，内容不变）。所以：\n  · 校验不符时**不要**当成「被篡改」去报警 —— 报错要说清是「源码归档字节与 2026-10-14 的实测不符（上游重新打包）」，并给出处置：`MIAO_ASSET_BASE` 指向自备的固定归档，或改用上游 release/commit zip。\n  · 模型权重与 llama.cpp 那些条目**没有**这个例外（它们是 release 资产 / HF 文件，字节稳定）。\n  · 这条已登记为台账风险 **G-A6**。\n\n🔴 **2026-10-16（D-217）本条的两处 URL 曾写错，别再写回去**：① `url` 的 owner 写成了 `zydnnys`、② `sources[0]` 写成了 `zydmnys` 且把 **codeload 套在 ghfast 后面**（ghfast **不代理 codeload**，实测 403 Forbidden；而当时的下载器在 `sources` 非空时会**完全忽略 `url`** ⇒ 整段装配必失败）。正确形态：owner/repo/commit 一律与 `engine/VERSIONS.lock` §1 一致（`zyddnys/manga-image-translator` @ 441d07c5…），镜像一律套 **`github.com/<owner>/<repo>/archive/<commit>.tar.gz`**（ghfast / gh-proxy 实测均 200）。由 `check:engine-bootstrap` 的 **W16** 拿 §1 对拍本条两条 URL（反证 M12 镜像套回 codeload、M13 owner 拼错一个字母，各自即红）。"
     }
   ]
 }

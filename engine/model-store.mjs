@@ -53,6 +53,10 @@ export function refuteFlags(env = process.env) {
     noResume: env.MIAO_NO_RESUME === '1',       // 关掉断点续传（每次从 0 重来）
     noReady: env.MIAO_NO_READY === '1',         // 关掉 .ready 幂等标记
     noLink: env.MIAO_NO_LINK === '1',           // 关掉"把 store 链进引擎树"这一步
+    // 关掉「清单原 url 优先」⇒ 只试 sources（2026-10-16 之前的旧行为）。
+    // 旧行为本身就是缺陷（sources 一非空就把 url 丢掉，见 sourceCandidates），
+    // 留这个开关只为让"原 url 真的参与了候选"可反证：关掉它，H2 必须变红。
+    noUrlFirst: env.MIAO_NO_URL_FIRST === '1',
   };
 }
 
@@ -236,16 +240,43 @@ function totalFromContentRange(v) {
 export const RETRY_PER_SOURCE = 3;
 
 /**
+ * 下载候选源：**清单原 `url` 优先，然后才是 `sources` 镜像**（去重、跳空）。
+ *
+ * 顺序与 `asset-source.mjs::mirrorUrls()` 注释里那条**逐字一致**（通道前缀 → 原 url → 镜像）。
+ * 两侧一致不是审美问题：`check:models` 拿同一份用例跑**双靶**（Node 对照端 / Rust 移植），
+ * 顺序一散，同一个清单会在两套实现上表现得像两个下载器。
+ *
+ * 🔴 旧写法是 `const urls = sources?.length ? sources : [file.url]` —— `sources` 一非空，
+ *    清单原 `url` 就被**整个丢掉**。于是"备用镜像"变成了"唯一来源"：镜像一挂，
+ *    即使原 `url` 好好的也永远试不到。2026-10-16 真跑装配就是这么整段失败的
+ *    （`[ENGINE_BOOTSTRAP_FAILED] [source] HTTP 403 Forbidden`），
+ *    而日志里每条源都如实报了错，离根因（镜像形态不被支持 + 原 url 被丢）极远。见 D-217。
+ *
+ * `flags.noUrlFirst`（`MIAO_NO_URL_FIRST=1`）= **反证态**：退回"只试 sources"。
+ */
+export function sourceCandidates(file, flags = {}) {
+  const raw = flags.noUrlFirst ? (file.sources ?? []) : [file.url, ...(file.sources ?? [])];
+  const out = [];
+  for (const u of raw) {
+    const s = String(u ?? '').trim();
+    if (!s || out.includes(s)) continue;
+    out.push(s);
+  }
+  return out;
+}
+
+/**
  * 把内容落到 `.part`（支持续传）。**不做哈希校验** —— 那是调用方的事。
  *
  * 🔴 每次尝试都**重新量一次盘上 `.part` 的大小**，而不是沿用入参：
  *    上一轮（或上一次调用、或本函数的上一次重试）可能已经写下了一部分字节。
  *    用入参记的旧值会算出错的 Range 起点 —— 症状是"续传成功但文件哈希永远不对"。
+ * 🔴 候选源由**调用方一处**（`sourceCandidates`）构造后传进来，本函数不再自己拼 ——
+ *    拼在两层里，就会重演"一侧按 sources、一侧按 url"的分叉。
  *
  * @returns {{url:string, resumedFrom:number, restarted:boolean, bytes:number}}
  */
-async function fetchToPart(partAbs, file, { sources, fetchImpl, signal, onProgress, logger, allowResume = true }) {
-  const urls = sources?.length ? sources : [file.url];
+async function fetchToPart(partAbs, file, { urls, fetchImpl, signal, onProgress, logger, allowResume = true }) {
   let lastErr = null;
 
   for (const url of urls) {
@@ -404,7 +435,7 @@ export async function ensureModels(manifest, opts = {}) {
       const partial = await sizeOf(partAbs);
       if (partial > 0) log(logger, `  [续传] ${file.id} 从 ${(partial / 1048576).toFixed(1)} MB 接着下`);
       const fetched = await fetchToPart(partAbs, file, {
-        sources: file.sources,
+        urls: sourceCandidates(file, flags),
         fetchImpl,
         signal,
         onProgress,
