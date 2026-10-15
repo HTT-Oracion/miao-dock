@@ -360,7 +360,11 @@ if (REFUTE) {
   mutations.push({
     id: 'M5',
     what: 'Windows 文档删掉 patches 就绪项',
-    edit: () => fs.writeFileSync(winFile, winOriginal.replace(/`patches`/g, '`patch-x`')),
+    // 🔴 反引号**可选**：断言侧是 `text.includes('patches')`（裸字符串匹配），
+    //    所以变异体也必须把**裸写**的那种一并抹掉。只抹 `` `patches` `` 的话，
+    //    文档里任何一处顺笔写的 "patches"（例如验收清单里的"五项（… / patches）"）
+    //    都会让这条变异**咬空** ⇒ 反证看着绿、其实什么都没验（D-113 的锚点纪律）。
+    edit: () => fs.writeFileSync(winFile, winOriginal.replace(/`?patches`?/g, 'patch-x')),
     probe: async () => {
       const r = await runOnce();
       return r.code !== 0 && hasRedLine(r.out, `✗ ${wins.title} 覆盖全部`);

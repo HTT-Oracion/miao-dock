@@ -266,6 +266,37 @@ GET http://127.0.0.1:8000/api/v1/engine/runtime
 
 ---
 
+## 4.1 新电脑（干净机器）验收清单 —— 逐项对照，不靠"我觉得好了"
+
+> ⚠️ **验证状态：`unverified`（macOS 侧整条都在等一台 Mac）**。本节没有在任何真机验证过。
+> 能自动化的那一半（装配函数本身：两批依赖、兼容补丁、按 `dest` 解包、阶段顺序、长路径体检）
+> 已经在 Windows 上对着**产品代码**真跑过（`npm run check:engine-bootstrap-real`，见 D-215/D-216）；
+> 但 macOS 特有的三件事 —— **Gatekeeper、`pydensecrf` 无预编译 wheel、MPS 档** ——
+> 只能在 Mac 上确认 ⇒ 归 D7 真机验收。
+
+**前置**：从 dmg 装好喵坞。**刻意不装** Node / Python / Homebrew（Xcode CLT 见下面第 0 步）。
+
+| # | 做什么 | 期望看到什么（对不上就是缺陷，不是"环境问题"） |
+| --- | --- | --- |
+| 0 | 从 dmg 双击安装 | Gatekeeper 拦一次。**这是人工步骤**：到「访达 → 应用程序」**右键 → 打开**（§5.5.1）。签名/公证到位之前，这一步绕不过去 |
+| 1 | 打开喵坞 | 停在一张引导页（本机没有引擎时），主按钮只有一颗「开始下载」；**整页没有命令行、没有路径、没有专业名词** |
+| 2 | 点「开始下载」 | 工具条「引擎下载中」+ 细进度；下载页有百分比 / 速度 / 剩余 / 当前文件；**取不到总量时显示「准备中」而不是 0%** |
+| 3 | 看第 1 段的阶段名 | Python 运行时 → 虚拟环境 → 引擎源码 → 源码补丁 → **依赖** → 视觉模型。🔴 **`pydensecrf` 这一段**：darwin 目前**没有**预编译 wheel，装配会**如实**说"将走源码编译（需要 Xcode CLT）"，不会静默、也不会假装走 wheel |
+| 4 | 若第 3 步报需要编译器 | 装 `xcode-select --install`（**这是 macOS 上唯一一处仍需人工准备的**，因为 darwin wheel 还没有）。装完回喵坞点 ▶ 继续即可，不必重来 |
+| 5 | 第 1 段跑完，切去「设置 → 翻译服务」 | 引擎状态从「需下载」变成**就绪**；此时在线翻译可用，本地翻译等第 2 段（翻译权重约 6 GB） |
+| 6 | 等第 2 段结束，翻译一张漫画 | 出译文。盘上核对：`<落点>/venv/lib/python3.x/site-packages` 里有 `torch` 与 `pydensecrf`；`<落点>/.runtime.ready.json` 存在 |
+| 7 | 可选：命令行侧核对 | `<安装目录>/boxsvc --check-runtime-gate real` 输出 `ready: true`，五项全齐 |
+
+**三件最容易误判的事**：
+
+1. **第 1 段跑完还不能翻译** —— 设计如此：翻译权重（Sakura / nllb）在第 2 段。
+2. **"需要 Xcode CLT"不是零配置失败** —— 这是 darwin 侧**已知缺口**（没有预编译 wheel）。
+   窗口里那句话就是如实报告，不是 bug；补上 darwin wheel 之后这句话会消失（清单加一条即可）。
+3. **`pydensecrf` 旧常量补丁**（§5.1）是产品装配自己做的 —— 装完不需要你手动打，
+   venv 里 `site-packages/pydensecrf/__init__.py` 应当含有 `miao-dock: pydensecrf 旧常量兼容补丁` 这段 marker。
+
+---
+
 ## 5. macOS 上最容易踩的坑
 
 ### 5.1 掩码细化阶段 `AttributeError: module 'pydensecrf.densecrf' has no attribute 'DIAG_KERNEL'`
@@ -360,6 +391,8 @@ xattr -dr com.apple.quarantine "$HOME/Library/Application Support/runtimes/manga
 > （`npm run check:install-guide`），但**本引导的 macOS 侧尚未在真机上跑过完整一遍**
 > —— 落点的 macOS 分支在本机（Windows）只能对**同源镜像表**，跑不到 macOS 的二进制。
 > 真机验收归 D7，在它完成前本文标 `unverified`，不计入「已验」。
+> **§4.1 是给"新电脑"准备的逐项验收清单**（含 Gatekeeper 的人工步骤、以及 darwin 暂无
+> 预编译 wheel 的如实说明）—— 换机验收照它逐行对照即可，别凭印象判断"装好了"。
 
 > 附录：命令速查（都可在落点已定后任意重跑）
 

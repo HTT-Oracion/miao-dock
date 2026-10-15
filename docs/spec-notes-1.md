@@ -3564,3 +3564,152 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
   "注入一个假平台"这条测试路径不存在。⇒ A 组从 12 条降到 8 条，缺口记在这里。
 - 全量门里仍有几项与本条无关的既有红（`music` 前端三条 / `progress-truth` 需真下载 Python 运行时 /
   `engine-settings` 的下载与档位行受本机内存与缓存影响）—— 它们不读 `service/`，不属本条范围。
+
+---
+
+## D-210 装配阶段重排，依赖清单改读上游自带的那一份（2026-10-15）
+
+**症状（要防的形态）**：`runtime_setup.rs` 的 pip 阶段排在第 3 位、源码解包排在第 4 位，
+而它读的 `engine/requirements.txt` **全仓 0 命中**、也不在 `bundle.resources`。
+两层掩盖叠在一起：清单根本不存在这件事，被"阶段顺序让它先跑"盖住了；
+而它失败时的消息是「requirements 不存在」，离"顺序错了"很远。真正的清单在上游源码树的
+`src/requirements.txt`（仓库侧 `install-engine-deps.mjs` 读的也正是它）。
+
+**改了什么**：阶段改为 `python 解包 → 建 venv → 源码解包 → 重放补丁 → 依赖 → 模型 / llama.cpp
+→ 测量长路径 → 写就绪标记`；`requirements_path()` 改读 `<rt>/src/requirements.txt`，
+保留 `MIAO_REQUIREMENTS` 覆盖；**不新增第二份清单**（新增一份就是引入第二个事实源：
+上游一变就漂移，而漂移的表现是"装出的依赖与引擎要求不一致、且不报错"）。
+
+**为什么必须同时改顺序**：清单在源码树里 ⇒ 依赖只能在源码解包之后；而"先起服务、依赖后补"
+不成立（引擎 import 就会失败）。
+
+**锚点约束**：`check:engine-bootstrap` 的 W4 判的是 `on_phase` 的**通道名**（取值只有
+`runtime` / `models`），重排阶段**内部**顺序不影响它 —— 改造时必须保持这两个取值不变。
+
+---
+
+## D-211 `pydensecrf` 预编译 wheel 进产品路径：清单随包 + `plan_crf()` 四态选路（2026-10-15）
+
+**症状**：`app/src-tauri/src` 对 `pydensecrf` / `wheels.manifest.json` / wheel 的引用是 **0 处** ——
+随包那颗 213 KB wheel 一次都用不上；目标机没有 MSVC 时会去 GitHub 拉 `master.zip` 现场编译而必然失败。
+失败消息是「源码编译失败」，看起来像"用户没装编译器"，实际上是**产品没走那条已经备好的路**。
+
+**改了什么**
+1. 清单进包：`tauri.conf.json` 的 `bundle.resources` 加一条。🔴 **包内落点写成
+   `engine/wheel-manifest.json`**：Tauri 打包会把**文件** `engine/wheels.manifest.json` 与
+   **目录** `engine/wheels/` 当成同名项 —— 真机复现过：release 产物里两份都在，静默安装后
+   **只有 wheel、清单不见了**。而清单不见了的唯一表现是 `plan_crf()` 恒回退源码编译
+   （在没装编译器的机器上装到一半失败），离根因极远。仓库内路径仍是 `engine/wheels.manifest.json`
+   （Node 侧脚本与 e2e 都读它），只有**包内**落点避开这个名字。
+2. `wheels.rs::plan_crf()`：平台匹配 → 文件在位 → **sha256 对得上** → 才走 wheel；
+   文件来源「包内 `bundled` > 本机通道目录」；任一条不成立即回退源码编译。
+   **回退是前提而不是降级**：清单为空也必须能装。
+3. 两批 pip：批 A 读 `<rt>/src/requirements.txt` 并剔掉 `pydensecrf` 行（过滤语义与仓库脚本
+   `CRF_RE` 同源，写临时文件再装）；批 B 命中 wheel 则 `pip install --no-index --no-deps <whl>`
+   （自足、不联网、不编译），否则回退源码编译并**如实点名**「需要 MSVC / Xcode CLT」。
+4. 装完的兼容补丁（旧常量回填，marker 与仓库脚本**同字**）+ 导入自检。
+5. 只读取证出口 `boxsvc --engine-crf-plan`（与 `--print-plan` 同口径：非 Windows 下也能跑）——
+   四态判定可以在本机被断言与反证，不必读代码相信。
+
+**刻意不做**：wheel 与清单**都不进** `REQUIRED_ASSETS` —— 那是"缺了就不许起服务"的口径，
+而 wheel 缺件有源码编译这条合法回退（与清单自身的说明同口径）。改为在 `check:bundle` 上钉
+「清单在随包清单里 + `bundled` 条目文件真实存在且 sha256 / 体积一致」。
+
+---
+
+## D-212 下载改"真两阶段"，并把 stage1 如实定义为「运行环境就绪」（2026-10-15）
+
+**症状**：`start_model_download` 构造命令**不带 `--stage`** ⇒ 一次会话全量下（含 3.31 GiB Sakura
++ 2.29 GiB nllb）；界面上的「第 1 步 / 共 2 步」只是**阶段事件映射**，不是真的先 stage1 再 stage2。
+内容上还自相矛盾：`models.manifest.json` 的 stage1 只有 6 条视觉模型、**没有任何 LLM**，
+而引导里写着「先装好运行环境（约 1 分钟就能开始翻译）」。
+
+**改了什么**：`start_model_download` 改**两轮子进程**（stage1 成功后自动接 stage2；第 2 轮**不带**
+`--engine-bootstrap` —— 那个旗标会重跑 pip 与补丁）；llama.cpp 与 cudart 归 stage1
+（否则第 1 轮结束时 ③ 仍可能缺 CUDA DLL）；两处阶段文案改成诚实表述
+（「引擎已就绪，正在下载翻译权重（约 X GB）；期间可先用在线翻译」）。
+
+**取舍（代价写在这里）**：把 Sakura 提到 stage1 会让"先可用"从 ~1 GB 变成 4.3 GiB，体验更差；
+而 stage1 不提 llama.cpp，则第 2 轮结束后仍可能缺 DLL。**如实定义 + 诚实文案**是唯一不违反
+「不编造进度、不装作可用」的选择。
+
+---
+
+## D-213 长路径：不改安装器、不写 HKLM，先测量再按结果规避（2026-10-15）
+
+**依据（不是懒）**：① D-189 已拍板「长路径只提示不代改」，`check:bundle` 的反证 M13
+「替用户写 HKLM」专门打这一条；② `LongPathsEnabled` 通常要**重启**才生效 ——
+那等于把"零配置"换成"装完重启"。
+
+**事实校正**：`engine/VERSIONS.lock` §6.2 记的三个 Windows 必踩坑里**没有长路径**，
+§6 真机跑通的落点是仓库内 `runtimes/manga-translator/` ⇒ "会不会撞 260"当时是**预防性推测**，
+不是实测结论。
+
+**改了什么**：装配期遍历落点**实测**最长路径与 260 的余量，写进进度日志与 `.runtime.ready.json`
+（把推测变成事实，成本极低）；`tar` 解包加 `\\?\` verbatim 前缀并**归一分隔符**
+（`\\?\C:/a/b/...` 会被 bsdtar 拒，报「Failed to open」，而文件明明在那儿）；
+安装器那段提示**保留为兜底**（用户把运行时挪到深目录的情形），一处不改。
+
+**欠账**：若新电脑实测余量仍不足（源头上是落点太深），下一手是「短落点 + 给旧落点建 junction
+保持兼容」，那要同步 `paths::default_runtime_root`、两份引导与 `check:install-guide` /
+`check:paths` 的期望值。**现在不预先改** —— 改了就是**在没测量之前动落点**，而落点一动，
+所有已验路径都得重验。
+
+---
+
+## D-214 macOS 侧接线到底，缺口如实标出来（2026-10-15）
+
+平台分支早已双形态（`py_exe_rel()` / `venv_py()`，由 `check:macos-compat` 钉住），
+缺的是 **darwin 的预编译 wheel**（`wheels.manifest.json` 只有 `win32-x64` 一条），而造它必须有 Mac。
+所以：`plan_crf()` 在没有本平台条目时**如实报**「无预编译 wheel，将走源码编译（需要 Xcode CLT）」，
+不静默、不假装；darwin 条目留成"加一条即可"（四态判据已由 `check:pydensecrf-wheel` 覆盖）。
+未签名包从 dmg 安装会被 Gatekeeper 拦（「右键打开」属**人工步骤**）—— 写进 macOS 引导并标 `unverified`。
+
+---
+
+## D-215 夹具版真装配：把 6 GB 的慢路径变成分钟级可测的门（2026-10-15）
+
+**问题**：真装依赖要 4–6 GB、分钟级，进不了常规门；而"干净机器点一下能不能装成"是这整套改动的
+**唯一**判据，本机又复现不了干净机器。
+
+**做法**：新增 `e2e/engine/engine-bootstrap-real-check.mjs`（nightly，11 条 / 反证 5 条）。
+**跑的是产品自己的装配函数**（`boxsvc --fetch-models --engine-bootstrap --extract`），只把三处换成夹具：
+运行时用真归档（Python 46 MB 从真实落点只读复制；上游源码 53 MB 走 mock http，由产品在第 3 阶段真下）、
+模型用夹具清单 + 独立进程 mock http、依赖用夹具 requirements（`six` + `numpy` 真装，秒级）。
+
+**为什么"跑产品代码"必须做到**：另写一套"测试自己的装配逻辑"会给出**假绿** ——
+它验的是测试的假设，不是产品的行为。
+
+**三个环境陷阱（都真撞过）**：`spawnSync` 会饿死进程内 mock 服务器（症状像"网络不通"，实为脚本自杀）；
+落点必须放**系统临时目录**（真 Python + venv 上万个文件，"删这样一棵树"在开发机上会被安全垫拦下
+`SAFE_DELETE_BULK_CONFIRM_REQUIRED`，脚本会在**开头**就炸）；夹具缓存不必跨轮复用（落点每轮全新）。
+
+**干净机器的验收**：本机做不了，因此两份安装引导各加了一节「新电脑验收清单」（逐项动作 + 期望输出，
+含"对不上就是缺陷不是环境问题"的口径与三件最容易误判的事），标 `unverified` 归 D7 真机验收。
+
+---
+
+## D-216 🔴 真装配路径上三处"只有真跑才现形"的缺陷（本机为什么全绿）（2026-10-15）
+
+写 D-215 那件器具的过程中，产品自己的装配在**干净机器**上根本走不完。三处缺陷在本机都是绿的：
+
+| # | 缺陷 | 本机为什么绿 | 干净机器上的症状 |
+| --- | --- | --- | --- |
+| 1 | `patches.rs::norm_eol` 把 CRLF 归成 `\n\n`（旧实现 split('\r') 后 join） | 仓库内落点的 `src/` 树是 **LF** | 上游 `utils/textblock.py` 是 **CRLF** ⇒ 锚点永不命中，报「锚点未找到（源码已变）」，而源码一个字都没变 |
+| 2 | `extract_entries` 打开**整份**运行时清单去解包 | 缓存里恰好躺着 `setup:engine` 留下的那份 `manga-translator-*.tar.gz` | 第 1 阶段刚下完 python 就去解**还没下载**的 `engine_source` ⇒ 「待解包归档不存在」（消息里显示的是下载条目名，而下载日志看上去一切正常） |
+| 3 | `verbatim()` 未归一分隔符 | 本机落点没有长到需要前缀的路径 | 打包后落点更深 ⇒ `\\?\C:/a/b/...` 被 bsdtar 拒（「Failed to open」，而文件在那儿） |
+
+**怎么钉住（三层，缺一层就是假绿）**
+- 单测：`phase_one_scope_excludes_the_not_yet_downloaded_source`（用**真清单**，不编假条目，
+  因为编的数据挡不住"清单改了、范围又对不上"）+ `in_extract_scope_matches_exact_ids_only`
+  （逐 id 相等，不是前缀/子串）+ CRLF / LF 两条**真打补丁**用例
+- `check:engine-bootstrap` 的 W14 / W15 + 反证 M10 / M11。🔴 M11 的变异体必须写成**编得过**的
+  `None`：少传一个参数是**编译错误**，那反证的是语法、不是断言
+- `check:engine-bootstrap-real` 的 B7 + B10：**源码归档不许预放进夹具缓存**，必须由产品自己下 ——
+  预放会把"第 1 阶段越界解包"整条盖住。实测把阶段 1 解包退回"解整份清单"后**本检查 0/11 全红**
+
+**对全量门的影响（如实记账）**：修好第 2 条之后，本机那两项既有红（`progress-truth` /
+`engine-settings` 的下载行）不再"第 1 阶段秒失败"，而是**真跑一次装配**（python 复用 → 真下 53 MB
+源码 → 真 pip 解析 `src/requirements.txt`）。它们**本来就是既有红**（见 D-209 末条），要回绿得让它们
+像 D-215 那样用夹具运行时 —— 另起一条，不在本轮范围。**本轮不动它们**。
+
