@@ -63,14 +63,14 @@ import { killTree, SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const ENGINE_ENTRY = path.join(ROOT, 'engine', 'src', 'server.mjs');
-const CARGO_DIR = path.join(ROOT, 'app', 'src-tauri');
+const CARGO_DIR = path.join(ROOT, 'src-tauri');
 /// 🔴 返工的四个反证锚点全在 Rust 侧（`service/src/manga/store.mjs` 已随 Node 实现删除）。
 /// `exec.rs` 管执行态（幂等短路豁免 / overwrite 落标 / 译文写回），`store.rs` 管计划取数口径。
 const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'store', 'exec.rs');
 const RUST_STORE_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'store.rs');
-const LIB_SRC = path.join(ROOT, 'app', 'src', 'screens', 'LibraryScreen.tsx');
+const LIB_SRC = path.join(ROOT, 'src', 'screens', 'LibraryScreen.tsx');
 // D-148：缩放的实现从 `LibraryScreen.tsx` 搬到 `screens/library/viewer.tsx`（Lightbox）。
-const VIEWER_SRC = path.join(ROOT, 'app', 'src', 'screens', 'library', 'viewer.tsx');
+const VIEWER_SRC = path.join(ROOT, 'src', 'screens', 'library', 'viewer.tsx');
 
 const REFUTE = process.argv.includes('--refute');
 /// 起的是模拟引擎；不声明会让服务按 real 协议去打替身。

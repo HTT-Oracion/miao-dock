@@ -31,10 +31,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: app/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: 安装前端依赖
-        run: npm ci --prefix app
+        run: npm ci
 
       # ── 源码级检查：只读源码/配置，零依赖、秒级、不起进程 ──────────────
       # check:docs 内部会跑 music/units/settings/autostart 四个套件对账，故一并覆盖。
@@ -65,4 +65,4 @@ jobs:
           npm run task -- check:e10
 
       - name: 前端类型与构建
-        run: cd app && npx tsc --noEmit && npx vite build
+        run: npm run build

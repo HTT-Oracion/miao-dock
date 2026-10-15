@@ -33,7 +33,7 @@
  *   M6 真实分叉：Rust 用「只覆盖 MIAO_ROOT」的 env 跑 → PATH.override 变红（证明比的是本次运行）
  *
  * 用法：node e2e/service/paths-parity-check.mjs [--refute]
- * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin boxsvc`
  * 重新生成 golden：`node e2e/service/_gen-golden.mjs paths`
  */
 import { spawn } from 'node:child_process';

@@ -24,7 +24,7 @@
  * 全部改源码、跑完**按字节还原**（无 Rust 变异 ⇒ 不需要重编译）。
  *
  * 用法：node e2e/service/notready-state-check.mjs [--refute]
- * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin boxsvc`
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -38,11 +38,11 @@ import { killTree, RUST_BIN, REPO_ROOT } from './_service-harness.mjs';
 const REFUTE = process.argv.includes('--refute');
 const TOKEN = 'a'.repeat(64);
 const SELF = fileURLToPath(import.meta.url);
-const SERVICE_RS = path.join(REPO_ROOT, 'app', 'src-tauri', 'src', 'service.rs');
-const STATE_RS = path.join(REPO_ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 'state.rs');
-const IPC_TS = path.join(REPO_ROOT, 'app', 'src', 'ipc.ts');
-const NOTREADY_TSX = path.join(REPO_ROOT, 'app', 'src', 'screens', 'NotReadyScreen.tsx');
-const APP_TSX = path.join(REPO_ROOT, 'app', 'src', 'App.tsx');
+const SERVICE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'service.rs');
+const STATE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'state.rs');
+const IPC_TS = path.join(REPO_ROOT, 'src', 'ipc.ts');
+const NOTREADY_TSX = path.join(REPO_ROOT, 'src', 'screens', 'NotReadyScreen.tsx');
+const APP_TSX = path.join(REPO_ROOT, 'src', 'App.tsx');
 
 let passed = 0;
 let failed = 0;
@@ -59,7 +59,7 @@ function check(name, cond, extra) {
 }
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
   process.exit(1);
 }
 

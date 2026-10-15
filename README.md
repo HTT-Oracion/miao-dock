@@ -17,20 +17,23 @@
 
 两者**共用同一份接口契约**（《03》）：同一条串行队列、同一套落盘规则、同一条 20 张/批上限。
 `miao-trans/mock-service` 是插件端 e2e 的**测试替身**，与本仓库互不影响 —— 本仓库的服务端实现
-已**整体 Rust 化**（`app/src-tauri/src/boxsvc/`），仓库里不再有 Node 服务实现（D-209）。
+已**整体 Rust 化**（`src-tauri/src/boxsvc/`），仓库里不再有 Node 服务实现（D-209）。
 
 ## 目录
 
 ```
 miao-dock/
-├── app/          Tauri v2 桌面端：Rust 壳（`app/src-tauri/`）+ Vite/React 前端（`app/src/`）
-│   ├── src-tauri/src/music/  音乐模块 Rust 侧：四平台（`netease`/`kugou`/`qqmusic`/`migu`）+ 音频代理 + 加密 + 歌词 + 缓存（汽水延后）
-│   ├── src-tauri/src/lyrics_window.rs  桌面歌词**独立置顶窗**
-│   ├── src-tauri/src/boxsvc/  **服务端实现**（唯一翻译入口，127.0.0.1:5180–5190）：`boxsvc.rs` 外壳 · `routes.rs` 路由表（44 条）· `handlers.rs` 端点 · `store/` 队列落盘 · `library.rs` 库原语 · `translate/` 在线翻译 · `engine/` 引擎耦合点
-│   ├── src/screens/  六个屏入口：投放 / 队列 / 漫画库 / 音乐 / 设置 / 未就绪（`music/`·`lyrics/`·`settings/`·`library/` 为屏内件）
-│   ├── src/music/    音乐领域态（zustand store · ipc · platform · 播放器选项）
-│   ├── src/components/units/  通用 UI 单元（判据：**不 import 业务层**）
-│   └── src/tools/    共享纯函数（`@tools`：格式化 / 分页 / 模糊匹配 / UUID / MIME 嗅探），**不 import 业务层**
+├── src/          Vite/React 前端源码（根目录只留 `main.tsx` / `App.tsx`，其余按职责分目录）
+│   ├── screens/  六个屏入口：投放 / 队列 / 漫画库 / 音乐 / 设置 / 未就绪（`music/`·`lyrics/`·`settings/`·`library/` 为屏内件）
+│   ├── music/    音乐领域态（zustand store · ipc · platform · 播放器选项）
+│   ├── components/units/  通用 UI 单元（判据：**不 import 业务层**）
+│   └── tools/    共享纯函数（`@tools`：格式化 / 分页 / 模糊匹配 / UUID / MIME 嗅探），**不 import 业务层**
+├── src-tauri/    Tauri v2 桌面壳（Rust）
+│   ├── src/music/  音乐模块 Rust 侧：四平台（`netease`/`kugou`/`qqmusic`/`migu`）+ 音频代理 + 加密 + 歌词 + 缓存（汽水延后）
+│   ├── src/lyrics_window.rs  桌面歌词**独立置顶窗**
+│   └── src/boxsvc/  **服务端实现**（唯一翻译入口，127.0.0.1:5180–5190）：`boxsvc.rs` 外壳 · `routes.rs` 路由表（44 条）· `handlers.rs` 端点 · `store/` 队列落盘 · `library.rs` 库原语 · `translate/` 在线翻译 · `engine/` 引擎耦合点
+├── public/       不经构建处理的静态资源（歌词样式预览图）
+├── scripts/      仓库级脚本：`gen-licenses.mjs`（许可清单生成）· `mac-signing-preflight.mjs`（macOS 打包前自检）
 ├── engine/       翻译引擎的**接缝层**（真引擎装在 `<appData>/runtimes/manga-translator/`，不在库）
 │   ├── VERSIONS.lock         引擎 / 权重 / 外部二进制的**版本锁**（换版本照它来）
 │   ├── models.manifest.json  模型清单：来源 URL + sha256 + 字节数（权威副本在 `…/models-store/`）
@@ -53,7 +56,7 @@ miao-dock/
 
 > **目录约定（动目录之前先读这几条）**
 >
-> 1. **产品 / 验收分家**：`app/src-tauri/src/`（含服务端 `boxsvc/`）、`engine/src`、`app/src` 是**产品**；`e2e/` 是**验收**。
+> 1. **产品 / 验收分家**：`src-tauri/src/`（含服务端 `boxsvc/`）、`engine/src`、`src` 是**产品**；`e2e/` 是**验收**。
 >    判据不是"像不像测试"，而是**产品代码在运行期会不会 fork 它** —— 会 fork 的
 >    留在各自模块的 `scripts/` 下，**不搬进 `e2e/`**。
 >    ⚠️ 反向也成立：**产品主路径一旦改走 Rust**（`print-launch-plan.mjs` A3b 退役、
@@ -154,7 +157,7 @@ MIAO_ENGINE_PROTOCOL=mock npm run app   # 替身快回路：不需要引擎运�
 
 ```bash
 # 服务层（可独立启动，不依赖桌面端）：Rust 可执行，读 MIAO_* 环境变量
-cd app/src-tauri && cargo build --bin boxsvc && ./target/debug/boxsvc
+cd src-tauri && cargo build --bin boxsvc && ./target/debug/boxsvc
 
 # 测试替身（模拟引擎 + 模拟 LLM）—— 只有测试用，产品走真引擎
 node engine/src/server.mjs

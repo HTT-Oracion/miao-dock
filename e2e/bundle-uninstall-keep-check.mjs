@@ -40,7 +40,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
-const TARGET = path.join(ROOT, 'app', 'src-tauri', 'target');
+const TARGET = path.join(ROOT, 'src-tauri', 'target');
 const NSIS_DIR = path.join(TARGET, 'release', 'bundle', 'nsis');
 
 const APP_DATA =

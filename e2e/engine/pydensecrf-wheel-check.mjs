@@ -112,7 +112,7 @@ const envFor = (manifestPath) => ({ MIAO_WHEELS_MANIFEST: manifestPath, MIAO_WHE
 //    （经 `boxsvc --engine-crf-plan`）—— 两边语义必须一致，而"一致"不能靠读代码相信。
 //    这一组判据直接打产品出口，与上面那组构成**双靶**。
 
-const BOXSVC = path.join(ROOT, 'app', 'src-tauri', 'target', 'debug', 'boxsvc.exe');
+const BOXSVC = path.join(ROOT, 'src-tauri', 'target', 'debug', 'boxsvc.exe');
 const hasBoxsvc = fs.existsSync(BOXSVC);
 
 /** 跑产品的 `boxsvc --engine-crf-plan`，返回解析后的 JSON。 */

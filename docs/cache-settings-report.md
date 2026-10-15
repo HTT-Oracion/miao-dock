@@ -12,10 +12,10 @@
 
 | 文件 | 性质 | 说明 |
 |---|---|---|
-| `app/src/screens/settings/CacheBlock.tsx` | **新增** | 四格块 + 下拉 + 二次确认 + 打开目录边界（共 3 个组件：`CacheBlock` / `ClearMenu` / `ClearConfirm`） |
-| `app/src/screens/settings/catalog.ts` | 修改 | `SettingItem` 加 `layout?: 'block'` 形态字段；`playback` 小节加 `music-cache` 项；`SPEC_ITEM_TOTAL` 31→32；`MEDIA.note` 补本项与「音频缓存目录」剔除口径的关系 |
-| `app/src/screens/settings/sections.tsx` | 修改 | `Group` 加 `layout==='block'` 分支（不包 `Row`）；`render` 加 `case 'music-cache'`；引入 `CacheBlock` |
-| `app/src/styles/settings.scss` | 修改 | 新增 `set-cache-*` 样式段（四格 / 下拉 / 菜单项） |
+| `src/screens/settings/CacheBlock.tsx` | **新增** | 四格块 + 下拉 + 二次确认 + 打开目录边界（共 3 个组件：`CacheBlock` / `ClearMenu` / `ClearConfirm`） |
+| `src/screens/settings/catalog.ts` | 修改 | `SettingItem` 加 `layout?: 'block'` 形态字段；`playback` 小节加 `music-cache` 项；`SPEC_ITEM_TOTAL` 31→32；`MEDIA.note` 补本项与「音频缓存目录」剔除口径的关系 |
+| `src/screens/settings/sections.tsx` | 修改 | `Group` 加 `layout==='block'` 分支（不包 `Row`）；`render` 加 `case 'music-cache'`；引入 `CacheBlock` |
+| `src/styles/settings.scss` | 修改 | 新增 `set-cache-*` 样式段（四格 / 下拉 / 菜单项） |
 | `e2e/settings-media-check.mjs` | 修改 | `SPEC_TOTAL` 31→32；反证锚点 31→32；`ADDED` 加 1 条；**新增 `CACHE` 组 9 条断言 + 3 条反证**；修 `fnBody`（见 §7.1） |
 | `AGENTS.md` / `README.md` | 修改 | `check:settings` 条数 72→**83**、反证 15→**19** |
 
@@ -130,7 +130,7 @@ title={bytes <= 0 ? `${PROVIDER_LABEL[p]}暂无缓存` : undefined}
 
 | # | 位置 | 原值 | 新值 | 说明 |
 |---|---|---|---|---|
-| 1 | `app/src/screens/settings/catalog.ts`（`SPEC_ITEM_TOTAL`） | `31` | **`32`** | 加 1 项后由 31 变 32；不与 `SECTION_ITEM_TOTAL` 一致会触发启动自校 `console.error` |
+| 1 | `src/screens/settings/catalog.ts`（`SPEC_ITEM_TOTAL`） | `31` | **`32`** | 加 1 项后由 31 变 32；不与 `SECTION_ITEM_TOTAL` 一致会触发启动自校 `console.error` |
 | 2 | `e2e/settings-media-check.mjs:86`（`SPEC_TOTAL`） | `31` | **`32`** | 与 ① 是**两份独立手写**的同一数字（脚本读不到 catalog 的常量，只能自己抄）；不一致时 `COUNT.total` 红 |
 | 3 | `e2e/settings-media-check.mjs` 反证锚点（原 `:625`） | `'export const SPEC_ITEM_TOTAL = 31;'` | **`'export const SPEC_ITEM_TOTAL = 32;'`** | ⚠️ **漏改不会变红、只会「跳过」**，而脚本把 `skipped` 计入失败（`:793`）—— 看起来是"守住了一条"，实际那条已失效 |
 | 4 | `e2e/settings-media-check.mjs`（`ADDED`） | 10 条 | **11 条**（加 `{ id: 'music-cache', label: '音乐缓存' }`） | 这一步**连带自动多出 2 条断言**：`ADDED.music-cache` + `WIRING.item.music-cache` |
@@ -187,7 +187,7 @@ Esc 用 `useEsc(onCancel)`，点遮罩取消、`e.stopPropagation()` 防点内�
 
 ### 6.2 实际取证：Rust 侧已经刻意规避了
 
-读 `app/src-tauri/src/music/cache_store.rs:373-420`（Rust 内核，本轮未改）：
+读 `src-tauri/src/music/cache_store.rs:373-420`（Rust 内核，本轮未改）：
 
 ```rust
 /// 清掉**整个缓存根**下的内容，但保留根目录本身。
@@ -305,7 +305,7 @@ WIRING 全绿、项数全对，而页面上那一项被压成一条读不了的�
 但本轮仍按"不依赖跨语言保证"的思路做了两道前端处置（§6.3），
 理由写进了组件头注释 —— 依赖是跨命令的，不能只靠另一条命令的刻意设计。
 
-### ⚠️ 3. 底账 ⑤ 说 `CacheStats` 类型应放 `app/src/music/types.ts` —— 已在上一轮落地
+### ⚠️ 3. 底账 ⑤ 说 `CacheStats` 类型应放 `src/music/types.ts` —— 已在上一轮落地
 
 前端报告 §6.1 给的 `CacheStats` 结构（`providers: Record<MusicProvider, CacheProviderStat>`）
 与 `types.ts:181-213` 现存定义逐字一致，本轮**未改**该文件，未重复实现。

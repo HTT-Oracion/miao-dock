@@ -34,16 +34,9 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const BIN = path.join(
-  ROOT,
-  'app',
-  'src-tauri',
-  'target',
-  'debug',
-  process.platform === 'win32' ? 'boxsvc.exe' : 'boxsvc',
-);
-const SERVICE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'service.rs');
-const BASE_CONF = path.join(ROOT, 'app', 'src-tauri', 'tauri.conf.json');
+const BIN = path.join(ROOT, 'src-tauri', 'target', 'debug', process.platform === 'win32' ? 'boxsvc.exe' : 'boxsvc');
+const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service.rs');
+const BASE_CONF = path.join(ROOT, 'src-tauri', 'tauri.conf.json');
 
 const REFUTE = process.argv.includes('--refute');
 

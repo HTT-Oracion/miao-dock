@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 「公共组件抽离到 app/src/components/units/」结构断言 —— 且必须**可反证**。
+ * 「公共组件抽离到 src/components/units/」结构断言 —— 且必须**可反证**。
  *
  * 为什么需要它：
  *   把一批组件搬进 `units/` 这件事，验收标准不是「文件建好了」，而是三件互不覆盖的
@@ -25,7 +25,7 @@
  *   node e2e/units-structure-check.mjs            正向跑（期望 LAYOUT/PURITY/NAMING/CALLERS/KEEP/HOOKS/ALIAS/STATE 全绿）
  *   node e2e/units-structure-check.mjs --refute   反证轮（破坏源文件 → 断言必须变红 → 按字节恢复）
  *
- * 约束：纯 Node、零依赖；只读 `app/src/**`（--refute 轮临时破坏并保证按字节还原）。
+ * 约束：纯 Node、零依赖；只读 `src/**`（--refute 轮临时破坏并保证按字节还原）。
  * 本脚本源码里刻意**不出现**任何被禁的历史品牌标识（需要提及时一律写「参考实现」）。
  */
 import { readFileSync, writeFileSync, existsSync, readdirSync, renameSync, unlinkSync } from 'node:fs';
@@ -34,7 +34,7 @@ import { readStyleSource } from './_styles-source.mjs';
 import { cachedReadText, cachedReadBytes, overrideFile, clearOverrides } from './_file-cache.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const APP = path.join(ROOT, 'app');
+const APP = ROOT;
 const SRC = path.join(APP, 'src');
 
 const F = {
@@ -143,7 +143,7 @@ const PKG_ALLOW_SCOPE = ['@radix-ui/'];
  *  对别名形式（`@/theme/tokens`）同样成立：正则只看"以 theme/tokens 结尾"。 */
 const THEME_TOKENS_RE = /(^|\/)theme\/tokens(\.\w+)?$/;
 
-/** 路径别名 → 真实目录（与 app/vite.config.ts、app/tsconfig.json **三处保持一致**）。
+/** 路径别名 → 真实目录（与 vite.config.ts、tsconfig.json **三处保持一致**）。
  *  前缀互不重叠（匹配要求「相等 或 前缀后紧跟 /」），'@tauri' 不会吃掉 '@tauri-apps/*' 包。 */
 const ALIASES = {
   '@tauri': path.join(APP, 'src-tauri'),
@@ -781,7 +781,7 @@ add('ALIAS.noRelativeUp', 'ALIAS', (s) => {
   return {
     ok: bad.length === 0,
     detail: bad.length
-      ? `app/src 内仍有相对上跳引用（应写别名；同目录 './' 允许）：${bad.slice(0, 5).join('；')}${bad.length > 5 ? ` …共 ${bad.length} 处` : ''}`
+      ? `src 内仍有相对上跳引用（应写别名；同目录 './' 允许）：${bad.slice(0, 5).join('；')}${bad.length > 5 ? ` …共 ${bad.length} 处` : ''}`
       : '',
   };
 });

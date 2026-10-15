@@ -29,7 +29,7 @@ import { ensureDevServer } from './_devserver.mjs';
 import { describeE2eTmp, e2eRoot, e2eState } from './_e2e-paths.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const BIN = path.join(ROOT, 'app', 'src-tauri', 'target', 'debug', 'miao-dock');
+const BIN = path.join(ROOT, 'src-tauri', 'target', 'debug', 'miao-dock');
 const OUT = path.join(ROOT, 'docs', 'refs', 'e2e');
 
 /** 取证图的文件名与它们各自该拍到什么（缺失或重复都算这一张没截到） */
@@ -82,7 +82,7 @@ if (!existsSync(rootDir)) {
   process.exit(2);
 }
 if (!existsSync(BIN)) {
-  console.error(`找不到二进制：${BIN}\n先在 app/src-tauri 下 cargo build`);
+  console.error(`找不到二进制：${BIN}\n先在 src-tauri 下 cargo build`);
   process.exit(2);
 }
 
@@ -110,7 +110,7 @@ caffeinate.on('error', () => {
 });
 
 const child = spawn(BIN, [], {
-  cwd: path.join(ROOT, 'app', 'src-tauri'),
+  cwd: path.join(ROOT, 'src-tauri'),
   env: {
     ...process.env,
     // 截图是**表现层**取证，不该被引擎栈拖住：不显式声明时 Rust 侧默认 `real`，

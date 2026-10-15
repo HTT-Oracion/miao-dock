@@ -33,7 +33,7 @@
  * 三个变异跑完都**按字节还原**，M1/M2 还要重编译（靶子是另一个进程）。
  *
  * 用法：node e2e/service/size-guide-check.mjs [--refute]
- * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin boxsvc`
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -48,10 +48,10 @@ const REFUTE = process.argv.includes('--refute');
 /** 本脚本自身（反证轮要重跑一次不含 `--refute` 的它）。 */
 const SELF = fileURLToPath(import.meta.url);
 const MANIFEST = path.join(REPO_ROOT, 'engine', 'models.manifest.json');
-const MODEL_STATUS_RS = path.join(REPO_ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 'model_status.rs');
-const ENGINE_DIAG = path.join(REPO_ROOT, 'app', 'src', 'screens', 'settings', 'EngineDiag.tsx');
-const ENGINE_API = path.join(REPO_ROOT, 'app', 'src', 'screens', 'settings', 'engine-api.ts');
-const SRC_TAURI = path.join(REPO_ROOT, 'app', 'src-tauri');
+const MODEL_STATUS_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'model_status.rs');
+const ENGINE_DIAG = path.join(REPO_ROOT, 'src', 'screens', 'settings', 'EngineDiag.tsx');
+const ENGINE_API = path.join(REPO_ROOT, 'src', 'screens', 'settings', 'engine-api.ts');
+const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
 const CARGO = process.env.CARGO || 'cargo';
 
 let passed = 0;
@@ -121,7 +121,7 @@ function docSizeOf(file, platform) {
 }
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
   process.exit(1);
 }
 

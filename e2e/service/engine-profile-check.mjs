@@ -37,7 +37,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
-const SRC_TAURI = path.join(ROOT, 'app', 'src-tauri');
+const SRC_TAURI = path.join(ROOT, 'src-tauri');
 const CARGO = process.env.CARGO || 'cargo';
 const REFUTE = process.argv.includes('--refute');
 

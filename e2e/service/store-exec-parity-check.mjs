@@ -33,7 +33,7 @@
  *   M5 删 golden `happy.task.finalProgress` 一个键 ⇒ 变红
  *
  * 用法：node e2e/service/store-exec-parity-check.mjs [--refute]
- * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin boxsvc`
  * 重新生成 golden：`node e2e/service/_gen-golden.mjs store-exec`
  */
 import { spawn } from 'node:child_process';
@@ -82,7 +82,7 @@ function run(cmd, args, env) {
 /** 跑一次 `--store-exec-selftest`，返回归一化后的 `[{name, report}]`。 */
 async function dumpRust(dirs) {
   if (!fs.existsSync(RUST_BIN)) {
-    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`);
+    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
   }
   const raw = await run(RUST_BIN, ['--store-exec-selftest'], {
     ...process.env,

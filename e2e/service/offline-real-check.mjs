@@ -246,7 +246,7 @@ function killTree(child) {
 // ------------------------------------------------------------------ 前置
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`✗ 找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`);
+  console.error(`✗ 找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
   process.exit(1);
 }
 if (!IMAGE) {

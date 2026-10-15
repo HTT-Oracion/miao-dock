@@ -70,7 +70,7 @@
 - **裁定**：本机投放按**文件名自然序**（连续数字段按数值比较：`2.png` < `10.png`）排序后再提交，`001/002/...` 由投放入口重新编号。
 - **理由**：这是「阅读顺序」在本地文件语境下的等效语义——同人本/扫图包几乎都按文件名编号，自然序即作者的页序意图。
 - **影响面**：仅影响 X-B1 入口；插件端仍走坐标排序，两者互不影响（同一个契约端点，不同的排序来源）。
-- **回写落点**：本文件；实现处 `app/src-tauri/src/commands.rs::expand_paths`（含 `natural_cmp`）。
+- **回写落点**：本文件；实现处 `src-tauri/src/commands.rs::expand_paths`（含 `natural_cmp`）。
 
 ---
 
@@ -170,11 +170,11 @@
   `徽标 40` → `导航项 · 漫画翻译（选中）` → `导航项` → `导航项` → `弹性占位` → `服务状态点 10` → `设置 40`。
   —— 侧栏只有**一个**应用入口（选中态那个，「漫画翻译」），后两个是空占位。
 - **《02》原文**：① §2 架构图把「任务队列（X-C1）/ 漫画库（X-D1）/ 本机投放（X-B1）」列为 **「漫画翻译应用」的子项**，并标注该应用是「本迭代唯一应用」；② §5.1 侧边导航 = 「徽标 40 + **应用入口** + 服务状态点 + 设置」——应用入口也是**单数**。
-- **实现现状**：`app/src/components/Sidebar.tsx::NAV` 把三屏做成了侧栏**三个并列导航项**（队列 / 漫画库 / 投放），图标为自绘。
+- **实现现状**：`src/components/Sidebar.tsx::NAV` 把三屏做成了侧栏**三个并列导航项**（队列 / 漫画库 / 投放），图标为自绘。
 - **为什么这是实打实的偏离**：设计稿里「任务队列」与「漫画库」两个窗口的侧栏**像素级相同**——同一个「漫画翻译」入口始终处于选中态，画面切换发生在**应用区**（工具条标题由「任务队列」变为「漫画库」）。做成三个一级入口，视觉上就把「同一个应用的三个画面」读成了「三个并列的功能模块」——这正是「Box 里多出两个功能」这一观感的来源。
 - **待裁定**：① 侧栏是否严格回归设计稿的单应用入口形态（本文倾向 **是**，设计稿与 §5.1 两处独立一致）；② 若回归，应用内「队列 ↔ 漫画库」的切换控件**设计稿与文档均未定义**（S7 工具条无返回控件、侧栏亦无第二入口），需指定形态。
 - **裁定（2026-10-03，用户）**：**本轮维持现状**——侧栏保留「队列 / 漫画库 / 投放」三个并列入口，暂不改。本偏离作为**已知项**在案：设计稿与实现仍有差异，属**有意识保留**而非未察觉。后续若要回归设计稿形态，改动面收敛在 `Sidebar.tsx` + `App.tsx` 两处。
-- **回写落点**：`app/src/components/Sidebar.tsx`、`app/src/App.tsx`、本文件。
+- **回写落点**：`src/components/Sidebar.tsx`、`src/App.tsx`、本文件。
 
 ---
 
@@ -187,7 +187,7 @@
 - **实现现状**：按**文档**实现了投放，并（连同队列、漫画库）给了它一个侧栏一级入口。
 - **待裁定**：① 投放保留（按文档）还是本轮不做（按设计稿）；② 若保留，入口形态为何——「队列空态按钮」（文档写法）／侧栏二级／其它；③ 空态是否补上文档要求的两个按钮（**补则与设计稿不符，不补则与文档不符**，两者必居其一）。
 - **裁定（2026-10-03，用户）**：**本轮维持现状**——投放按文档保留、入口留在侧栏，空态维持现状。本偏离作为**已知项**在案。后续若要按设计稿收敛，改动面在 `Sidebar.tsx` / `DropScreen.tsx` / `QueueScreen.tsx` 三处。
-- **回写落点**：`app/src/components/Sidebar.tsx`、`app/src/screens/DropScreen.tsx`、`app/src/screens/QueueScreen.tsx`、本文件。
+- **回写落点**：`src/components/Sidebar.tsx`、`src/screens/DropScreen.tsx`、`src/screens/QueueScreen.tsx`、本文件。
 
 ---
 
@@ -305,7 +305,7 @@ seq <= translatedCount   ← 用「译了几页」推「哪几页译了」
   （失败项在磁盘上不留任何文件 → 故判「缺页」而非「待译」）。
 
 **回写落点**：本文件；实现处 `service/src/server.mjs::scanLibrary`、
-`app/src/screens/LibraryScreen.tsx`（`BlobState` / `GridState`）；
+`src/screens/LibraryScreen.tsx`（`BlobState` / `GridState`）；
 **建议方案文档下一版把 `GET /library` 的字段形状固化进契约 §5.8**。
 
 ---
@@ -313,7 +313,7 @@ seq <= translatedCount   ← 用「译了几页」推「哪几页译了」
 ## D-15 截图取证通道的两个环境前提（一次「四张全黑」的教训）
 
 M5 的截图取证通道是「应用自己算窗口区域 → 调 `screencapture -R`」
-（理由见 `app/src-tauri/src/capture.rs` 顶部：`osascript` 拿不到窗口坐标，而应用自己最清楚）。
+（理由见 `src-tauri/src/capture.rs` 顶部：`osascript` 拿不到窗口坐标，而应用自己最清楚）。
 这条通道**依赖两个环境前提**，都不在方案文档里，各踩过一次：
 
 | 前提 | 违反时的现象 | 处置 |
@@ -555,7 +555,7 @@ MIAO_E2E_TMP="$(node -e 'console.log(require("os").tmpdir())')/miao-e2e" npm run
 两个含义相反的「缺」—— 左栏说「缺 1」（那一页有原图，只是待译），网格卡说「缺页」（专指**没有原图**）。
 字面同源、意思相反，正是 G-11 里「同一张图、两屏两个故事」的翻版，只是这次发生在
 **同一个屏内**。改为与网格卡同一套词汇：`待译 N` / `缺页 M` / `已译完`
-（`progressLabel()`，`app/src/screens/LibraryScreen.tsx`），逐页集合已能分开算，就没理由继续含糊。
+（`progressLabel()`，`src/screens/LibraryScreen.tsx`），逐页集合已能分开算，就没理由继续含糊。
 规格自检测不到它（`SpecFixture` 里的漫画库是静态骨架，`.lib-left-list` 为空），
 故这条靠**截图肉眼核对**：改后 `02-library.png` 左栏为「待译 1」、第 003 格为「待译」、页头为「继续翻译（1）」。
 
@@ -712,11 +712,11 @@ MIAO_E2E_TMP="$(node -e 'console.log(require("os").tmpdir())')/miao-e2e" npm run
 
 | 编号 | 事项 | 结论 |
 |---|---|---|
-| **D-21** | 参考实现源码获取与授权 | 一个公开的五平台音乐桌面实现 **可 clone**（首次 404 是代理缓存，重试 200 —— 用已知可访问的私有仓库做对照组才定位到这点）。许可证 **GPL-3.0**：约束分发不约束自用，**个人自用不触发开源义务**（已由项目所有者裁定不管法务）。⚠️ 若将来对外分发（免费也算），GPL-3.0 传染性会要求整个项目开源；届时若不愿开源必须**重写**。故移植代码**集中在 `app/src-tauri/src/music/` 单一目录**做物理隔离，将来抽离是删目录，不与自研逻辑纠缠 |
+| **D-21** | 参考实现源码获取与授权 | 一个公开的五平台音乐桌面实现 **可 clone**（首次 404 是代理缓存，重试 200 —— 用已知可访问的私有仓库做对照组才定位到这点）。许可证 **GPL-3.0**：约束分发不约束自用，**个人自用不触发开源义务**（已由项目所有者裁定不管法务）。⚠️ 若将来对外分发（免费也算），GPL-3.0 传染性会要求整个项目开源；届时若不愿开源必须**重写**。故移植代码**集中在 `src-tauri/src/music/` 单一目录**做物理隔离，将来抽离是删目录，不与自研逻辑纠缠 |
 | **D-22** | 音乐模块实现策略：**逻辑搬、界面重写** | 参考实现音乐模块实测 **Rust 16,193 行 / 前端 11,532 行 / 106 条 Tauri 命令**，含五平台接口完整实现。上一轮「五平台需逆向」的核心判断**作废** —— 不再从零逆向，改为移植。分层：**Rust 侧近乎直接搬**（纯逻辑、无 UI、实测跨平台）；**前端不可逐字搬**（`MusicPage.tsx` 含 **376 处 Chakra UI**，与 Box 令牌体系冲突，设计稿已定不迁 Chakra），按设计稿重写。⚠️ 这条推翻《06》「从零实现五平台接口」的整个工作量估算，排期须按新策略重估 |
 | **D-23** | 平台耦合实测：几乎为零 | 全模块仅 **2 处 Windows-only**，都在 `qishui.rs`（`std::os::windows::process::CommandExt`）。**核心能力（网易云/酷狗/QQ/咪咕 + 代理 + 加密 + 歌词）纯跨平台**，依赖（reqwest/axum/aes/sha1/base64）全跨平台。而汽水正是《06》拍板「不做」的 —— **砍掉它平台耦合即归零**。故汽水由「不做」改为**延后**（代码保留，不排首批） |
 | **D-24** | 首个验证平台是 **Windows 而非 macOS** | 与 Box 现状相反（当前 macOS 优先）。理由：参考实现是 Windows-only 项目，其五平台接口只在 Windows 上被验证过 —— **在原生环境验问题最少**，先在 macOS 验反而会把「参考实现本身没验过的问题」误判成「移植引入的问题」 |
-| **M-0**（已完成） | 参考源码落盘 `vendor/music-reference/` | 只取音乐相关部分（174M → **1.3M**），非编译依赖、不入库（`.gitignore` 加 `vendor/`）。`README.md` 记录来源、commit、许可影响、文件清单与使用纪律。⚠️ 参考文件**保持原样不改**，改动全在 `app/src-tauri/src/music/` 侧，便于 diff「移植的」vs「Box 特有的」 |
+| **M-0**（已完成） | 参考源码落盘 `vendor/music-reference/` | 只取音乐相关部分（174M → **1.3M**），非编译依赖、不入库（`.gitignore` 加 `vendor/`）。`README.md` 记录来源、commit、许可影响、文件清单与使用纪律。⚠️ 参考文件**保持原样不改**，改动全在 `src-tauri/src/music/` 侧，便于 diff「移植的」vs「Box 特有的」 |
 | **D-25** | ⚠️ **移植前必修**：`reqwest` 缺 TLS，与音乐模块需求**直接冲突** | Box 现有 `Cargo.toml`：`reqwest = { default-features = false, features = ["blocking","json","multipart"] }`，注释明写「**只走 http://127.0.0.1，不需要 TLS** → 关掉默认 features 省掉 openssl/rustls 的编译成本」。而音乐模块要访问**公网 HTTPS**（实测域名：`music.163.com` / `gateway.kugou.com` / `c.y.qq.com` / `app.c.nf.migu.cn` 等）。**这个冲突是静默的** —— 依赖装得上、`cargo build` 全绿、运行时才炸：`https` 请求会在 client 构造或发送时报「URL scheme not supported / builder error」，而这类错误不在任何现有断言的覆盖范围内（本项目断言只覆盖 `127.0.0.1`）。**处理**：移植 M1 时必须给 Box 的 `reqwest` 补 TLS feature（`rustls-tls`，避免 openssl 的系统依赖）。⚠️ 代价要说清：原本为体积刻意关掉的 TLS 要重新引入，编译成本与产物体积都会上升 —— 这是接入在线音源的**必要成本**，不是引入浪费。**这正是 D-20「每层都要断言」的另一个实例**：依赖层的语义缺失，tsc / cargo / 现有断言全部无感 |
 | **D-25a** | `check:tls` 断言（含一次自我修正） | `scripts/tls-check.mjs`，14 条，三层：**配置层**（Cargo.toml 声明了 rustls-tls、没误用 native-tls）· **锁文件层**（rustls/hyper-rustls/tokio-rustls/ring 在依赖图里）· **源码层**（参考源码确实在用 https + 四个平台域名，证「TLS 是刚需不是过度配置」）。⚠️ **写第一版时它测错了东西**：反证（移除 rustls-tls）只让 1 条变红，锁文件层 4 条仍全绿 —— 因为 `Cargo.lock` 是**上一次 build 的产物**，那一刻它在报告「上次编译有 TLS」而不是「现在有没有 TLS」。已加「锁文件与配置同步」判据：配置与锁文件不一致时**直接判红并说明是过期信号**，不给「已具备 HTTPS 能力」这个结论。修正后反证为 **2 条红**、正向 14/14。这是 D-20 的第三次应用：**锁文件/缓存类产物参与判据时，必须先判它是不是新鲜的**，否则它会把 stale 状态报成 healthy |
 
@@ -728,7 +728,7 @@ MIAO_E2E_TMP="$(node -e 'console.log(require("os").tmpdir())')/miao-e2e" npm run
 
 | 编号 | 事项 | 结论 |
 |---|---|---|
-| **D-26** | IA 拆两级：新增 `app/src/nav.ts` 作为**唯一事实源** | `Screen = AppId \| 'settings'`（2 应用 + 1 全局），`TranslateView = 'drop'\|'queue'\|'library'`（应用内视图）。**刻意不让三个视图进 `Screen` 枚举** —— 它们是 Tab 不是屏，这样 `showNotReady` 只需在一处判定（`isBlockedWhenNotReady`），拦截纪律不会散落失效。`TRANSLATE_VIEWS` 刻意不给排序参数：一旦允许调用方决定顺序，C9 就没有稳定判据 |
+| **D-26** | IA 拆两级：新增 `src/nav.ts` 作为**唯一事实源** | `Screen = AppId \| 'settings'`（2 应用 + 1 全局），`TranslateView = 'drop'\|'queue'\|'library'`（应用内视图）。**刻意不让三个视图进 `Screen` 枚举** —— 它们是 Tab 不是屏，这样 `showNotReady` 只需在一处判定（`isBlockedWhenNotReady`），拦截纪律不会散落失效。`TRANSLATE_VIEWS` 刻意不给排序参数：一旦允许调用方决定顺序，C9 就没有稳定判据 |
 | **D-27** | ⚠️ **音乐屏不受服务未就绪拦截** | 沿用 ver1.0 拦截纪律时若忘了开这个例外，音乐会在引擎未就绪时整片不可用 —— 而这与「音乐是独立应用」的立意直接矛盾。判定集中在 `isBlockedWhenNotReady`：仅 `translate` 让位，设置页与音乐屏均不让位。音乐屏做成**诚实占位屏**（说明做什么/到哪了/不联网不读本地音频），不做空按钮也不预置假数据 |
 | **D-28** | 设置 26 项按**能力诚实标注**：live 7 / pending 19 | 引擎（M1）与音乐模块未实现，故 26 项中 19 项渲染为**不可点 + 「待接入」徽章**，每项写明缺哪个上游能力。刻意**不用 `<button disabled>`** —— 那渲染出灰按钮，读作「暂时不可用等会儿就好」，而真相是「上游能力还不存在」。**假控件比缺控件更伤**。项数由 `catalog.ts` 数据算出并与 `SPEC_ITEM_TOTAL=26` 比对，不符即 `console.error` —— 否则「合计 26」只能人肉数五个文件 |
 | **D-29** | ⚠️ **C11 判据偏离文档**（成员 B 发现，已采纳） | 《09》§7.1 写「②恒含三小节，小节标题 uppercase」。但三个小节名是**中文**（服务与配对/推理引擎/模型与诊断），`text-transform:uppercase` 对中文**无任何视觉变化** —— 那条判据无论实现对错都恒真，是一条**测不出东西的假断言**。C11 改为判「②恰好渲染 3 个 `.set-subtitle`」，抹平小节会真的变红。CSS 里**保留** uppercase 属性（将来小节名改英文时立刻生效） |
@@ -751,7 +751,7 @@ MIAO_E2E_TMP="$(node -e 'console.log(require("os").tmpdir())')/miao-e2e" npm run
 | **D-36** | 搜索分页：**参考实现本身没做**，本项目补齐四层 | 取证：上游 Rust 与前端**都没有搜索分页** —— netease `offset=0`、kugou `page=1`、QQ `full_song_search(kw, limit, 0)`、migu `search_page(kw, 1, …)` 全是硬编码，前端 store 也没有任何 offset/hasMore 状态。故"不能分页"**不是移植漏了**，而是照抄了一个没有该能力的实现。好消息：四个函数**内部**都已接收 page/offset，缺的只是把参数暴露出来（补的成本远低于从零实现）。补齐四层：Rust `offset: Option<u32>` → `platform.search(..., offset)` + `SEARCH_PAGE_SIZE` → `store.searchHasMore/loadMoreSearch` → 右栏 `VirtualList.onNearEnd` 触底续拉。⚠️ **各平台单页上限不同**（网易云 30 / 酷狗 20 / QQ 30 / 咪咕 50），判"是否到底"必须按各平台真实页大小 —— 统一按 30 会把**酷狗误判成已到底**。 |
 | **D-37** | 设置页「③ 播放·媒体」按**能实现 / 不能实现**重新裁定：补 8 项、剔除 5 项 | 判据两条缺一不可：**① 参考实现里真的有这个设置吗？② 本移植有能力让它真的生效吗？** 做不到 = **假控件**，而假控件比缺控件更伤（用户点得动就以为它有作用）。**剔除的必须把理由留在原处**（catalog 的组 `note`；直接删掉会让后来者不知道这些项被考虑过、也不知道为什么没有）：桌面歌词默认值（需独立置顶窗口 + 跨窗口同步）· **媒体键**（⚠️ 参考实现**不是键盘监听**，而是 Rust 侧 **Windows SMTC** 转发 `smtc:control` 事件；macOS 要另做 `MPRemoteCommandCenter`，**不是"接上就能用"**）· 音频输出（WebView 无法指定输出设备）· 均衡器（需"拖动即出声"，属播放器而非设置页）· 音频缓存目录（走代理流式透传不落盘）。补齐 8 项全部 WebView 内实现、**无需改 Rust**：音质档位 / 展开播放器皮肤 / 动态背景 / 碟片模式 / 歌词字号 / 歌词高亮色 / 彩胶配色 / 彩胶自定义色；选项常量集中在 `music/player-options.ts`（**单一事实源**，防设置页与播放器各写一套皮肤名）。**顺带修掉一个真实缺口**：偏好原先只在音乐屏挂载时水合 → 冷启动直接进设置页显示默认值（**同一偏好两个事实**）；抽出 `hydratePrefs()` 在 `main.tsx` 启动时调用，并加断言 `STORE.hydrate.atBoot` —— **"实现了"和"在对的时机被调用"是两层**，只断言函数存在测不到"没人调它"。 |
 | **D-38** | 长列表虚拟滚动：**分页 ≠ 节点数受控** | 已有的"歌单分页"只减少**首屏数据量**，不减少**节点数** —— 滚到底把后续页追加后 DOM 照样线性增长（每行还带封面 `img`）。裁定改用定高窗口化（`components/units/VirtualList.tsx`，行高 52 + 间距 2，共 8 个渲染点）。**三个易漏点**：① 分页触发改 `onNearEnd`（距底两行，按行高算，不再硬编码 60px）；② **切歌单必须复位滚动**（`resetKey`），否则显示到新列表中段；③ **首片撑不满视口时要立刻续拉**，否则用户没有滚动机会、分页永远停在第一页。断言刻意**只锁"窗口化"的本质**（`items.slice(` + 撑高元素），**不锁** rAF / ResizeObserver —— 换掉它们不影响"是否虚拟滚动"，锁死只会让合法重构误红。 |
-| **D-39** | ⚠️ 两次「工作区被污染」的教训（并发写入 + 反证未还原）+ 两条环境坑 | **① 同仓库并发写入**：另一会话在 `app/src` 改文件（图标全改 lucide）并**自己 commit + push**，导致我的 `tsc` 报错在我没改过的文件上。判定手法：`stat` 看 mtime、`git log -1` 看 HEAD 是否被推进、`shasum` 前后比对（隔 25s 取两次哈希）。处置：改别人**未提交**的文件必须用 `git stash`（可恢复），**不要 `git checkout --`**（不可恢复 —— 我抹掉过对方一处改动）。**② 我自己的反证实验没还原干净**：把 `MIAO_ENGINE_START_MS` 从 `'1200'` 改成 `'0'` 验证就绪探针后，还原步骤失效 → 引擎立即就绪 → 「首次应答须 503」必红；我却先怀疑"端口绑定竞态"，还测了绑定耗时（385/421ms）来"佐证"，**好几分钟都在错误方向上**。纪律：手工破坏性实验必须**在同一动作里闭合还原并做字节校验**；现象与预期不符时**先 `git diff` 确认工作区没被自己改过**，再怀疑环境 —— 「环境问题」因为不可证伪，最容易被接受也最误事。**③ 环境坑**：cargo 在沙箱里**删不掉** `target/debug/build/*/build-script-build`（先 `rm -f` 再前台构建）；批量 `sed -i` 会留下 `xxx<随机后缀>` **临时快照文件**（做完看一眼 `git status`）。 |
+| **D-39** | ⚠️ 两次「工作区被污染」的教训（并发写入 + 反证未还原）+ 两条环境坑 | **① 同仓库并发写入**：另一会话在 `src` 改文件（图标全改 lucide）并**自己 commit + push**，导致我的 `tsc` 报错在我没改过的文件上。判定手法：`stat` 看 mtime、`git log -1` 看 HEAD 是否被推进、`shasum` 前后比对（隔 25s 取两次哈希）。处置：改别人**未提交**的文件必须用 `git stash`（可恢复），**不要 `git checkout --`**（不可恢复 —— 我抹掉过对方一处改动）。**② 我自己的反证实验没还原干净**：把 `MIAO_ENGINE_START_MS` 从 `'1200'` 改成 `'0'` 验证就绪探针后，还原步骤失效 → 引擎立即就绪 → 「首次应答须 503」必红；我却先怀疑"端口绑定竞态"，还测了绑定耗时（385/421ms）来"佐证"，**好几分钟都在错误方向上**。纪律：手工破坏性实验必须**在同一动作里闭合还原并做字节校验**；现象与预期不符时**先 `git diff` 确认工作区没被自己改过**，再怀疑环境 —— 「环境问题」因为不可证伪，最容易被接受也最误事。**③ 环境坑**：cargo 在沙箱里**删不掉** `target/debug/build/*/build-script-build`（先 `rm -f` 再前台构建）；批量 `sed -i` 会留下 `xxx<随机后缀>` **临时快照文件**（做完看一眼 `git status`）。 |
 
 ---
 
@@ -759,7 +759,7 @@ MIAO_E2E_TMP="$(node -e 'console.log(require("os").tmpdir())')/miao-e2e" npm run
 
 | 编号 | 事项 | 结论 |
 |---|---|---|
-| **D-40** | 引用全面别名化：`app/src` 内**不写相对 import** | 六个别名：`@`（src 根）/ `@tauri`（src-tauri，预留）/ `@components` / `@screens` / `@music` / `@hooks`。理由不是"好看"：**相对路径随文件移动而失效，而移动文件正是重构的常态**；别名让"引用指向哪一层"在源码里一眼可读，也让 units 的纯净性判据可以**只靠静态扫描**成立（引用别名化之前，只认相对路径的判据对一半 import 是失明的）。**同目录 `./` 仍允许**；**CSS/SVG 等副作用导入也走别名**（只豁免 `import { }` 等于每晚一步都有人忘）。**必须 `vite.config.ts` 与 `tsconfig.json` 双处同步**（vite 侧 `resolve.alias`、TS 侧 `paths`）：少改一处产生**静默漂移** —— vite 认识而 tsc 不认识（编辑器报红但能跑）或反之（dev 能跑、build 报错）。⚠️ 别名为**零依赖**实现：求绝对路径用 `new URL(p, import.meta.url)` + `decodeURIComponent`，不引 `node:path`（本工程未装 `@types/node`，为零依赖场景引包不划算）。⚠️ Vite alias 按「精确相等或前缀后紧跟 `/`」匹配，故 `@tauri` **不会**误伤 npm 包 `@tauri-apps/*`，键顺序无关。断言：`ALIAS.keysComplete` / `ALIAS.twoPlaceSync` / `ALIAS.noRelativeUp` / `ALIAS.pkgNotShadowed`。 |
+| **D-40** | 引用全面别名化：`src` 内**不写相对 import** | 六个别名：`@`（src 根）/ `@tauri`（src-tauri，预留）/ `@components` / `@screens` / `@music` / `@hooks`。理由不是"好看"：**相对路径随文件移动而失效，而移动文件正是重构的常态**；别名让"引用指向哪一层"在源码里一眼可读，也让 units 的纯净性判据可以**只靠静态扫描**成立（引用别名化之前，只认相对路径的判据对一半 import 是失明的）。**同目录 `./` 仍允许**；**CSS/SVG 等副作用导入也走别名**（只豁免 `import { }` 等于每晚一步都有人忘）。**必须 `vite.config.ts` 与 `tsconfig.json` 双处同步**（vite 侧 `resolve.alias`、TS 侧 `paths`）：少改一处产生**静默漂移** —— vite 认识而 tsc 不认识（编辑器报红但能跑）或反之（dev 能跑、build 报错）。⚠️ 别名为**零依赖**实现：求绝对路径用 `new URL(p, import.meta.url)` + `decodeURIComponent`，不引 `node:path`（本工程未装 `@types/node`，为零依赖场景引包不划算）。⚠️ Vite alias 按「精确相等或前缀后紧跟 `/`」匹配，故 `@tauri` **不会**误伤 npm 包 `@tauri-apps/*`，键顺序无关。断言：`ALIAS.keysComplete` / `ALIAS.twoPlaceSync` / `ALIAS.noRelativeUp` / `ALIAS.pkgNotShadowed`。 |
 | **D-41** | hooks 收口到 `src/hooks/`：`use*` 一律住这里 | 原先 `useEsc` 住在 `components/units/`（理由：纯 DOM 行为、无业务依赖），而业务 hook 在根 `src/hooks.ts` —— 同一个概念被"纯 DOM / 业务"这条**与目录无关的轴**切成了两处。收口后：业务数据类（`useService`/`useTasks`/`useLibrary`/`useQuitRequest`/`useToasts`）进**业务桶** `hooks/index.ts`（经 `@hooks` 引）；纯行为类（`useEsc`）单文件（经 `@hooks/useEsc` 引）。**两条配套约束**：① **旧单文件 `src/hooks.ts` 不得与 `src/hooks/` 目录并存** —— `./hooks` 解析到 `hooks.ts` 还是 `hooks/index.ts` 属于**静默二选一**（编译不报错、行为不同）；② **`units/` 不得 import `@hooks`（整个目录）** —— UI 单元对 hooks 层零依赖，哪怕那个 hook 本身无业务性（units 判据因此收紧为"不依赖业务数据 **且** 不依赖 hooks 层"）。断言：`HOOKS.layout` / `HOOKS.barrelExports` / `HOOKS.callers`。 |
 | **D-42** | 状态管理统一 **zustand**，全仓**零 React Context** | 现状核查：全仓仅 `@music/store` 用 zustand（`create()` + 选择器订阅），`createContext`/`useContext` **零命中**，也没有模块级可变导出、自定义事件总线、`window` 全局挂载。裁定维持并写成规则，理由是**这个项目的共享状态必须能在组件树之外被读写**：播放内核在闭包里更新进度、IPC 事件回调里改服务状态、设置页与播放器读写**同一份偏好** —— 用 Context 要么做不到（provider 之外拿不到），要么被迫把同一份状态拆成两套事实。⚠️ **"统一 zustand"管的是跨组件共享，不是"所有状态都塞进全局"**：只需一处持有或仅父子一层传递的照旧 `useState`（如 `App` 的当前屏/视图、抽屉开合）。判据：**状态要被两个以上不相邻的组件读写时才进 store**。断言：`STATE.noReactContext`。 |
 
@@ -1015,7 +1015,7 @@ check:ia 24/24、check:tls 14/14、服务 159/159、引擎 23/23。
 - 项目的 `tauri.conf.json` 里 **`devUrl = http://localhost:1420`**。
   `WebviewUrl::App("lyrics.html")` 在 **dev 模式下解析成 `http://localhost:1420/lyrics.html`** ——
   即向 **vite dev server** 请求该文件，而不是读 `dist/`。
-- 而 `app/lyrics.html` 虽然在**项目根**（Vite 会把它当第二个入口打进 dist），
+- 而 `lyrics.html` 虽然在**项目根**（Vite 会把它当第二个入口打进 dist），
   但 **dev server 未必把它当可路由的页面**返回 —— 多入口只保证 `build` 产物有两份 html，
   `dev` 模式下访问 `/lyrics.html` 是否命中磁盘上的该文件，取决于 Vite 的多页处理，
   **本项目没有为此验证过**。
@@ -1132,7 +1132,7 @@ JS 增量 +1.56 kB（gzip +0.5 kB）。
 
 `scripts/music-platform-check.mjs` 与 `scripts/settings-media-check.mjs` 里
 P2 的 `HEARTBEAT` 6 条 + P3 的 `LYRICS` 9 条断言**只存在于工作区** ——
-两次提交时 `git add` 只列了 `app/src`、`units-structure-check.mjs`、`docs/spec-notes.md`。
+两次提交时 `git add` 只列了 `src`、`units-structure-check.mjs`、`docs/spec-notes.md`。
 后果：**已推送的 HEAD 上，文档写着「check:music 101 条 / 反证 54 条」，而 HEAD 里的脚本只有 86 条**。
 换台机器 clone 下来跑出来是 86，与文档不符。
 
@@ -1221,7 +1221,7 @@ P3 的灵动岛波形接管了 `<audio>`（做法本身对），但元素**没�
 **"本地有声、网络无声"这个现象只有这一种解释。**
 ⚠️ 这类故障**不抛错、不打日志** —— 静音是沉默的。
 
-**修法**（`c90cbca`）：新建 `app/src/music/audioGraph.ts` 作**全项目唯一接管入口**
+**修法**（`c90cbca`）：新建 `src/music/audioGraph.ts` 作**全项目唯一接管入口**
 （`createMediaElementSource` 对同一元素只能调一次，第二个调用方抛 `InvalidStateError`
 且现象是"波形不出来"），并在其中**拒绝接管非 CORS 模式的元素**；
 `MusicKernel` 声明 `crossOrigin="anonymous"` + **加载失败回退**
@@ -1929,11 +1929,11 @@ A+B 合起来才证明**预算确实随基准缩放**（即旋钮真的接管了
 `service/src/server.mjs`（`sidecarState()` 只挑 ver1.0 三字段内传，避免未经评审的契约变更；启动日志加 `protocol=`）·
 `service/scripts/engine-client-check.mjs`（**新**，正向 32 + 反证 5）·
 `engine/scripts/s1-real-engine-check.mjs`（**新**）·
-`service/scripts/selftest.mjs`、`scripts/e2e.mjs`、`app/src-tauri/src/service.rs`（显式注入 `MIAO_ENGINE_PROTOCOL=mock`；
+`service/scripts/selftest.mjs`、`scripts/e2e.mjs`、`src-tauri/src/service.rs`（显式注入 `MIAO_ENGINE_PROTOCOL=mock`；
 **S2 改起真引擎时必须删这三行**）· `package.json`（`engine-client 那组钉子[:refute]`）·
 `AGENTS.md` / `README.md`（验收命令）· 本文件。
 
-**未做（明确登记，不得写成"已完成"）**：**产品链路仍未接真引擎** —— `app/src-tauri/src/service.rs`
+**未做（明确登记，不得写成"已完成"）**：**产品链路仍未接真引擎** —— `src-tauri/src/service.rs`
 起的是**模拟引擎**；切真引擎属 **S2 / M3**（G2 闸门）。Windows 分支仍未写。
 
 ---
@@ -1972,7 +1972,7 @@ A+B 合起来才证明**预算确实随基准缩放**（即旋钮真的接管了
 
 ## D-64 · S2 三进程生命周期：就绪判据从「读 stdout 就绪行」换成**三重判定**
 
-**改了什么**：`app/src-tauri/src/service.rs` 从「两个子进程（服务 + 引擎）」升级为
+**改了什么**：`src-tauri/src/service.rs` 从「两个子进程（服务 + 引擎）」升级为
 `Children{service, engine, llm}`；四态机 `stopped/starting/running/error` → 五态机
 `stopped → starting(L1/L2/L3) → running → stopping → stopped`。
 
@@ -2114,8 +2114,8 @@ WebView 走 `::1` —— 强行只绑 IPv4 会把 WebView 弄坏。
 `print-launch-plan.mjs` 必须**在 import config 之前**把 `MIAO_ENGINE_PROTOCOL` 钉成请求的那个模式，
 否则 mock 配方会拿到 8000（实测踩到，见 P-mock-3/P-mock-8 的断言值）。
 
-**本节新增/修改的文件**：`app/src-tauri/src/service.rs`（重写）· `app/src-tauri/src/selftest.rs`（+S2 组）·
-`app/src-tauri/Cargo.toml`（+libc）· `service/src/engine-client.mjs`（+`resolveLlmLaunch`、`label`/`probes`）·
+**本节新增/修改的文件**：`src-tauri/src/service.rs`（重写）· `src-tauri/src/selftest.rs`（+S2 组）·
+`src-tauri/Cargo.toml`（+libc）· `service/src/engine-client.mjs`（+`resolveLlmLaunch`、`label`/`probes`）·
 `service/src/config.mjs`（端口分档）· `service/scripts/print-launch-plan.mjs`（新）·
 `service/scripts/launch-plan-check.mjs`（新）· `engine/src/mock-llm.mjs`（新）·
 `engine/scripts/child-watch.mjs`（新）· `scripts/child-watch-check.mjs`（新）·
@@ -2277,7 +2277,7 @@ cd runtimes/manga-translator/src          # ⚠️ 必须在 src/ 下：包是 s
 | `service/scripts/engine-profile-check.mjs`（新） | 判定层断言 **42 条**（H/A/T/D/I/L/R 七组）+ 反证 **13 条** |
 | `service/scripts/e5-e6-check.mjs`（新） | **端到端** E5/E6 断言 **13 条**（真服务 + 真引擎 + 真 ③）+ 反证 **2 条**（逃生开关） |
 | `service/scripts/llm-real-timing.mjs`（新） | 真 ③（`llama-server`）冷启动耗时与内存实测 —— 走**产品路径**（`LlmSupervisor` + child-watch） |
-| 改动 | `service/src/server.mjs`（装配 ③ 与看护 / 退出时先停 ③）、`service/src/store.mjs`（§9.3 懒加载钩子 + §8 OOM 降档接线）、`service/src/config.mjs`（档位 / 两级阈值 / 巡检周期 / 两个反证开关）、`service/src/engine-client.mjs`（`resolveLlmLaunch` 按协议分两支 + `availableTiers` 协议感知）、`service/scripts/print-launch-plan.mjs`（**摘掉 `llm` 条目**）、`app/src-tauri/src/service.rs` + `selftest.rs`（③ 归属移交后的三处调整）、`engine/src/mock-llm.mjs`（替身认档位）、`engine/src/server.mjs`（OOM 注入）、`service/scripts/selftest.mjs`（夹具显式退出预拉起） |
+| 改动 | `service/src/server.mjs`（装配 ③ 与看护 / 退出时先停 ③）、`service/src/store.mjs`（§9.3 懒加载钩子 + §8 OOM 降档接线）、`service/src/config.mjs`（档位 / 两级阈值 / 巡检周期 / 两个反证开关）、`service/src/engine-client.mjs`（`resolveLlmLaunch` 按协议分两支 + `availableTiers` 协议感知）、`service/scripts/print-launch-plan.mjs`（**摘掉 `llm` 条目**）、`src-tauri/src/service.rs` + `selftest.rs`（③ 归属移交后的三处调整）、`engine/src/mock-llm.mjs`（替身认档位）、`engine/src/server.mjs`（OOM 注入）、`service/scripts/selftest.mjs`（夹具显式退出预拉起） |
 
 ### 🔴 决策 1：③ 的归属权从 Rust 移交到 box-service（《04》§9.1 与 S2 现状的冲突）
 
@@ -2409,7 +2409,7 @@ mock 档的替身是我们自己的 Node 进程，内部已装 `engine/src/paren
 `service/scripts/llm-real-timing.mjs`（新）· `service/src/server.mjs` · `service/src/store.mjs` ·
 `service/src/config.mjs` · `service/src/engine-client.mjs` · `service/scripts/print-launch-plan.mjs` ·
 `service/scripts/launch-plan-check.mjs` · `service/scripts/selftest.mjs` · `engine/src/mock-llm.mjs` ·
-`engine/src/server.mjs` · `app/src-tauri/src/service.rs` · `app/src-tauri/src/selftest.rs` ·
+`engine/src/server.mjs` · `src-tauri/src/service.rs` · `src-tauri/src/selftest.rs` ·
 `package.json` · 本文件 · `docs/engine-integration-plan.md`（§5 S4）·
 `docs/engine-integration-delivery-plan.md`（M5 / §4.1）· `AGENTS.md` · `README.md`。
 
@@ -2589,12 +2589,12 @@ H 实例（mock 档）的阶段日志**如实的空** —— ver1.0 自定义协
 
 | 文件 | 作用 |
 |---|---|
-| `app/src/screens/settings/engine-api.ts`（新） | 六个 **Box 专用**端点的形状与调用收口（`/engine/options` · `/engine/status` · `PUT /engine/settings` · `/engine/unload` · `/engine/models/verify` · `/engine/models/download`）。**每个字段都标了 `\| null`** —— 服务端"答不出来"和"答了 null"是两件事，界面必须两者都能表达 |
-| `app/src/screens/settings/engine-state.ts`（新） | `useEngineState()`：`options` / `status` 的加载与动作；**只在 `status.modelDownload.running` 时每 2s 轮询**（其余时候不挂定时器）；失败时把两份数据**都清成 `null`**，不留旧值 |
-| `app/src/screens/settings/EngineDiag.tsx`（新） | 引擎诊断面板（《09》§6.2）：进程状态 / 生效配置 / 模型状态 + 下载实况 / 最近阶段日志 / 三个操作 |
-| `app/src/screens/settings/ModelManageBlock.tsx`（新） | 「模型管理」通栏块：重新下载 + 校验完整性 + 逐条不符清单（只列前 8 条） |
-| `app/src/components/units/NumberInput.tsx`（新） | 带提交语义的窄数字框（**不用 `<input type="number">`**，理由见决策 5） |
-| 改动 | `service/src/server.mjs`（模型下载后台任务 + `/engine/models/download` 路由 + `engineStatusView()` 第 9 键 `modelDownload`）· `service/src/errors.mjs`（`DOWNLOAD_IN_PROGRESS: 409`）· `service/src/config.mjs`（第 5 个逃生开关 `downloadOpen`）· `app/src/screens/settings/{catalog,sections,parts,CacheBlock,SpecCheck}.tsx` · `app/src/screens/{SettingsScreen,NotReadyScreen,App}.tsx` · `app/src/{ipc,nav}.ts` · `app/src/styles/{components,settings,manga}.scss` · `service/scripts/{contract-delta-check,engine-settings-check}.mjs` · `scripts/{settings-media-check,units-structure-check}.mjs` · `AGENTS.md` · `README.md` |
+| `src/screens/settings/engine-api.ts`（新） | 六个 **Box 专用**端点的形状与调用收口（`/engine/options` · `/engine/status` · `PUT /engine/settings` · `/engine/unload` · `/engine/models/verify` · `/engine/models/download`）。**每个字段都标了 `\| null`** —— 服务端"答不出来"和"答了 null"是两件事，界面必须两者都能表达 |
+| `src/screens/settings/engine-state.ts`（新） | `useEngineState()`：`options` / `status` 的加载与动作；**只在 `status.modelDownload.running` 时每 2s 轮询**（其余时候不挂定时器）；失败时把两份数据**都清成 `null`**，不留旧值 |
+| `src/screens/settings/EngineDiag.tsx`（新） | 引擎诊断面板（《09》§6.2）：进程状态 / 生效配置 / 模型状态 + 下载实况 / 最近阶段日志 / 三个操作 |
+| `src/screens/settings/ModelManageBlock.tsx`（新） | 「模型管理」通栏块：重新下载 + 校验完整性 + 逐条不符清单（只列前 8 条） |
+| `src/components/units/NumberInput.tsx`（新） | 带提交语义的窄数字框（**不用 `<input type="number">`**，理由见决策 5） |
+| 改动 | `service/src/server.mjs`（模型下载后台任务 + `/engine/models/download` 路由 + `engineStatusView()` 第 9 键 `modelDownload`）· `service/src/errors.mjs`（`DOWNLOAD_IN_PROGRESS: 409`）· `service/src/config.mjs`（第 5 个逃生开关 `downloadOpen`）· `src/screens/settings/{catalog,sections,parts,CacheBlock,SpecCheck}.tsx` · `src/screens/{SettingsScreen,NotReadyScreen,App}.tsx` · `src/{ipc,nav}.ts` · `src/styles/{components,settings,manga}.scss` · `service/scripts/{contract-delta-check,engine-settings-check}.mjs` · `scripts/{settings-media-check,units-structure-check}.mjs` · `AGENTS.md` · `README.md` |
 
 ### 🔴 决策 1：「**已配置**」与「**已生效**」是两个值，不能合成一个
 
@@ -2712,12 +2712,12 @@ X-C3 与引擎诊断视图都把 `mode` 摆在明面上；`degraded` 同理 —�
   它验的是**任务语义**（启动即返回 / 409 / 终态 / tail / 可重试），不是**速度**。
 - **Windows 侧未验**，沿用 S2/S5 的 `unverified`。
 
-**本节新增/修改的文件**：`app/src/screens/settings/{engine-api.ts, engine-state.ts, EngineDiag.tsx, ModelManageBlock.tsx}`（新）·
-`app/src/components/units/NumberInput.tsx`（新）· `service/src/{server.mjs, errors.mjs, config.mjs}` ·
+**本节新增/修改的文件**：`src/screens/settings/{engine-api.ts, engine-state.ts, EngineDiag.tsx, ModelManageBlock.tsx}`（新）·
+`src/components/units/NumberInput.tsx`（新）· `service/src/{server.mjs, errors.mjs, config.mjs}` ·
 `service/scripts/{contract-delta-check.mjs, engine-settings-check.mjs}` ·
-`app/src/screens/settings/{catalog.ts, sections.tsx, parts.tsx, CacheBlock.tsx, SpecCheck.tsx}` ·
-`app/src/screens/{SettingsScreen.tsx, NotReadyScreen.tsx}` · `app/src/App.tsx` · `app/src/{ipc.ts, nav.ts}` ·
-`app/src/components/units/index.ts` · `app/src/styles/{components.scss, settings.scss, manga.scss}` ·
+`src/screens/settings/{catalog.ts, sections.tsx, parts.tsx, CacheBlock.tsx, SpecCheck.tsx}` ·
+`src/screens/{SettingsScreen.tsx, NotReadyScreen.tsx}` · `src/App.tsx` · `src/{ipc.ts, nav.ts}` ·
+`src/components/units/index.ts` · `src/styles/{components.scss, settings.scss, manga.scss}` ·
 `scripts/{settings-media-check.mjs, units-structure-check.mjs}` · `package.json` · 本文件 ·
 `docs/engine-integration-plan.md`（§5 阶段总览 / S6）· `AGENTS.md` · `README.md`。
 
@@ -2741,7 +2741,7 @@ X-C3 与引擎诊断视图都把 `mode` 摆在明面上；`degraded` 同理 —�
 | `service/scripts/e8-accel-check.mjs`（新） | E8 加速后端：起 **3 轮真服务**（不关 GPU / 关 GPU / 用户自选 CPU）。**6/0** · 反证 **4/4** |
 | `service/scripts/e10-security-check.mjs`（新） | E10 安全：**7/0** · 反证 **4/4** |
 | `miao-trans/e2e/e9-real-engine.mjs`（新，另一仓） | E9 插件 ↔ box ↔ **真引擎**：**真实漫画站**（`jmanga.media`）chapter-112 全 18 页 + 113 前 13 页 = **31 张**，两次提交。`DECLARED = 19` · **19/0** |
-| 改动 | `service/src/{store,idle-policy,config,server}.mjs`（🔴 **真缺陷修复**，见决策 1）· `app/src-tauri/src/selftest.rs` + `scripts/units-structure-check.mjs`（**全量门照出的两条**，见决策 1）· `app/src/screens/settings/engine-state.ts`（StrictMode 守卫）· `service/scripts/e5-e6-check.mjs`（+3 断言 / +1 反证）· `scripts/lifespan-selftest.mjs`（临时根改 `mkdtempSync`）· `docs/refs/e2e/{05,06}-*.png`（新）· `docs/refs/engine/{01,02}-*.png`（新）· `AGENTS.md` · `README.md` · `package.json` |
+| 改动 | `service/src/{store,idle-policy,config,server}.mjs`（🔴 **真缺陷修复**，见决策 1）· `src-tauri/src/selftest.rs` + `scripts/units-structure-check.mjs`（**全量门照出的两条**，见决策 1）· `src/screens/settings/engine-state.ts`（StrictMode 守卫）· `service/scripts/e5-e6-check.mjs`（+3 断言 / +1 反证）· `scripts/lifespan-selftest.mjs`（临时根改 `mkdtempSync`）· `docs/refs/e2e/{05,06}-*.png`（新）· `docs/refs/engine/{01,02}-*.png`（新）· `AGENTS.md` · `README.md` · `package.json` |
 
 ### 🔴 决策 1：验收照出的 6 个真缺陷 —— **修实现，不放宽断言**
 
@@ -2861,8 +2861,8 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 `engine/scripts/{e3-real-full-chain-check,e7-real-verify-check}.mjs`（新）·
 `service/scripts/{e4-tier-check,e8-accel-check,e10-security-check,e5-e6-check}.mjs` ·
 `service/src/{store,idle-policy,config,server,engine-profile,llm-supervisor}.mjs` · `scripts/lifespan-selftest.mjs` ·
-`scripts/units-structure-check.mjs`（还原动作包 try/catch）· `app/src-tauri/src/selftest.rs`（S2c 按名字点名）·
-`app/src/screens/settings/engine-state.ts`（StrictMode 守卫）· `docs/refs/e2e/{05-settings-engine,06-settings-diag}.png`（新）·
+`scripts/units-structure-check.mjs`（还原动作包 try/catch）· `src-tauri/src/selftest.rs`（S2c 按名字点名）·
+`src/screens/settings/engine-state.ts`（StrictMode 守卫）· `docs/refs/e2e/{05-settings-engine,06-settings-diag}.png`（新）·
 `docs/refs/engine/{01-real-translation,02-e9-panel-18,02-e9-page-translated}.png`（新）· `docs/refs/e2e/{01..04}-*.png`（重截）·
 `package.json` · 本文件 · `docs/engine-integration-plan.md`（§5 阶段总览 / S7）· `AGENTS.md` · `README.md`。
 （另一仓 `miao-trans`：`e2e/e9-real-engine.mjs`（新）· `e2e/verify.mjs` · `.gitignore`。）
@@ -3096,7 +3096,7 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 
 **本节新增/修改的文件**：`e2e/**`（`scripts/` 整体迁入 + `service/scripts/`、`engine/scripts/` 的验收件迁入）·
 `package.json` · `.gitignore` · `README.md`（新增「目录」一节 + 新增目录须同步的约定）· `AGENTS.md` ·
-`app/src-tauri/src/{capture,selftest}.rs`（注释）· `engine/{VERSIONS.lock,models.manifest.json,src/render.mjs}` ·
+`src-tauri/src/{capture,selftest}.rs`（注释）· `engine/{VERSIONS.lock,models.manifest.json,src/render.mjs}` ·
 `service/src/{config,engine-profile}.mjs`（注释）· `docs/` 若干 · `.trae/rules/project_rules.md`（§3 补目录约定）· 本文件。
 
 ---
@@ -3200,7 +3200,7 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 
 ### 新增 / 修改的文件
 
-`app/src/screens/settings/catalog.ts` · `EngineDiag.tsx` · `app/src/screens/SettingsScreen.tsx` · `sections.tsx` · `app/src/screens/QueueScreen.tsx` · `App.tsx` · `DropScreen.tsx` · `e2e/settings-media-check.mjs`（`SPEC_TOTAL` 33→31、`RETIRED`/`NOTE` 两组、`fiveStates` 扩三头、3 条反证、`GROUPS` 与那行写死的分组名改由 `GROUPS` 生成）· `AGENTS.md` / `README.md`（`check:settings` 135→138、反证 63→66）· 本文件。
+`src/screens/settings/catalog.ts` · `EngineDiag.tsx` · `src/screens/SettingsScreen.tsx` · `sections.tsx` · `src/screens/QueueScreen.tsx` · `App.tsx` · `DropScreen.tsx` · `e2e/settings-media-check.mjs`（`SPEC_TOTAL` 33→31、`RETIRED`/`NOTE` 两组、`fiveStates` 扩三头、3 条反证、`GROUPS` 与那行写死的分组名改由 `GROUPS` 生成）· `AGENTS.md` / `README.md`（`check:settings` 135→138、反证 63→66）· 本文件。
 
 
 ## D-82 · 画面 X-C3 重做：一行摘要 / 时间线 / 补显式 loading 态（2026-10-07）
@@ -3257,7 +3257,7 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 
 ### 新增 / 修改的文件
 
-`app/src/screens/NotReadyScreen.tsx`（整文件重写）· `app/src/styles/manga.scss`（X-C3 区块第 162 行起整段替换）· `e2e/settings-media-check.mjs`（`F.mangaStyle` + `NOTREADY.css.classes` 抽取表重写 + 3 组新断言 + 4 条反证 + 反证锚点同步）· `e2e/_file-cache.mjs`（`clearFileCache()`）· `AGENTS.md` / `README.md`（`check:settings` 138→**141**、反证 66→**70**）· 仓库外 `/Users/doro/WorkBuddy/Claw/插件与box ver2.0/02-Box-技术方案-ver2.0.md`（§3 追注 + §4 边界块）· 本文件。
+`src/screens/NotReadyScreen.tsx`（整文件重写）· `src/styles/manga.scss`（X-C3 区块第 162 行起整段替换）· `e2e/settings-media-check.mjs`（`F.mangaStyle` + `NOTREADY.css.classes` 抽取表重写 + 3 组新断言 + 4 条反证 + 反证锚点同步）· `e2e/_file-cache.mjs`（`clearFileCache()`）· `AGENTS.md` / `README.md`（`check:settings` 138→**141**、反证 66→**70**）· 仓库外 `/Users/doro/WorkBuddy/Claw/插件与box ver2.0/02-Box-技术方案-ver2.0.md`（§3 追注 + §4 边界块）· 本文件。
 
 > 附：本轮同期还落了 D-81 之后的一批（用户诉求① 文案清理 + 诉求⑤ 选图 50 → 分批排队），其中「选图 50」见 `miao-trans` 的 **D-07**（50 = 20 + 20 + 10，末批不满是要求的一部分；Box 侧刻意不加 50 上限）。
 
@@ -3336,7 +3336,7 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 
 ### 六、改动文件
 
-`app/src/screens/settings/catalog.ts`（`noteSummary` 5 组 + `engine-diag.why` 口径 + 注释）+ `parts.tsx`（`GroupNote` 折叠 / `Row`+`PendingRow` 的 `is-one`）+ `sections.tsx`（5 处 `<GroupNote>` 接摘要、状态行 chip、令牌只读输入框、两处下拉贴最右、空闲卸载合卡、`EngineDiag` 传 `item`、删残留引用、修裸注释）+ `EngineDiag.tsx`（折叠态 + chip 摘要行 + 标题/why 取自 catalog）+ `app/src/styles/settings.scss`（`.set-note*` / `.set-idle*` / `.set-diag-strip` / `.set-diag-fold` / 三处提示统一）+ `app/src/styles/components.scss`（`.set-state.is-chip` / `.set-pnum` / `.set-token*`）+ `e2e/settings-media-check.mjs`（新组 `SIMPLIFY` 9 条 + `WIRING.itemRefs.exist` + `ENGINE.diag.fromCatalog` + 2 条改口径 + **13 条新反证** + 5 条反证锚点修复）+ `AGENTS.md` / `README.md`（`check:settings` 141→**152**、反证 70→**84**）· 仓库外 `02-Box-技术方案-ver2.0.md`（§5 追注 + §10-2 追注）· 本文件。
+`src/screens/settings/catalog.ts`（`noteSummary` 5 组 + `engine-diag.why` 口径 + 注释）+ `parts.tsx`（`GroupNote` 折叠 / `Row`+`PendingRow` 的 `is-one`）+ `sections.tsx`（5 处 `<GroupNote>` 接摘要、状态行 chip、令牌只读输入框、两处下拉贴最右、空闲卸载合卡、`EngineDiag` 传 `item`、删残留引用、修裸注释）+ `EngineDiag.tsx`（折叠态 + chip 摘要行 + 标题/why 取自 catalog）+ `src/styles/settings.scss`（`.set-note*` / `.set-idle*` / `.set-diag-strip` / `.set-diag-fold` / 三处提示统一）+ `src/styles/components.scss`（`.set-state.is-chip` / `.set-pnum` / `.set-token*`）+ `e2e/settings-media-check.mjs`（新组 `SIMPLIFY` 9 条 + `WIRING.itemRefs.exist` + `ENGINE.diag.fromCatalog` + 2 条改口径 + **13 条新反证** + 5 条反证锚点修复）+ `AGENTS.md` / `README.md`（`check:settings` 141→**152**、反证 70→**84**）· 仓库外 `02-Box-技术方案-ver2.0.md`（§5 追注 + §10-2 追注）· 本文件。
 
 > ⚠️ **未提交**：两仓改动仍按用户裁定攒批（见 D-82 末）。
 
@@ -3352,9 +3352,9 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 
 | # | 项 | 实现 | 关键取舍 |
 |---|---|---|---|
-| 1 | ① **侧栏图标标签** | 新增 `app/src/shell-prefs.ts`（`initialSidebarLabels()` / `persistSidebarLabels()`，`localStorage` 键 `miao.sidebar-labels`）；`Sidebar.tsx` 收 `labels` prop，按它切 `SIDEBAR.appItem`（58×52）与**新增的** `SIDEBAR.iconOnlyItem`（44×44）；`App.tsx` 持 state，`SettingsScreen` → `GeneralSection` 透传 | 存 `'1'`/`'0'` 而非 JSON；**缺键必须回落到"显示"**（`!== '0'`）—— 它决定老用户升级后的观感。单开一个文件而不塞 `theme/apply.ts`（那是颜色令牌的家）或 music store（那是音乐域）。**几何必须跟形态一起变**，且两套都 ≥44（点击热区下限） |
+| 1 | ① **侧栏图标标签** | 新增 `src/shell-prefs.ts`（`initialSidebarLabels()` / `persistSidebarLabels()`，`localStorage` 键 `miao.sidebar-labels`）；`Sidebar.tsx` 收 `labels` prop，按它切 `SIDEBAR.appItem`（58×52）与**新增的** `SIDEBAR.iconOnlyItem`（44×44）；`App.tsx` 持 state，`SettingsScreen` → `GeneralSection` 透传 | 存 `'1'`/`'0'` 而非 JSON；**缺键必须回落到"显示"**（`!== '0'`）—— 它决定老用户升级后的观感。单开一个文件而不塞 `theme/apply.ts`（那是颜色令牌的家）或 music store（那是音乐域）。**几何必须跟形态一起变**，且两套都 ≥44（点击热区下限） |
 | 2 | ④ **存储占用** | 新增 `StorageBlock.tsx`（`layout: 'block'`）：三行分列 —— 译文库（`lib.totalBytes` + `lib.count`/`lib.totalImages`）/ 音频缓存（`musicCacheStats()`）/ 模型（**写死「未统计」**）；行首一行 `三处分开列 · 不合计` | **不合计**是硬立场，且**写进断言**（源码里出现 `.reduce(` 即判红）—— 合计等于把"没有接口的那一处"当成 0 算进去。三处「没有值」**分开说**（`读取中…` / `无` / `未统计`），因为它们是三件不同的事 |
-| 6 | ⑤ **第三方许可** | 新增 `app/scripts/gen-licenses.mjs`（`npm run task -- gen:licenses`）枚举 npm 与 Rust 两侧，产出 `app/src/generated/licenses.json` 入库；新增 `LicensesBlock.tsx` 渲染：两段 `Scope`（覆盖数 `withLicense / total`）+ 免责声明 + 「查看清单 / 收起清单」 | 覆盖数**必须看得见**（实跑 **npm 57 / 57**、**Rust 342 / 516**）；`未取到声明` 的包**不得被过滤掉**（缺口要留在界面上）；`disclaimer` 必须渲染 —— 「包自己声明的」不等于「我们核准过的」 |
+| 6 | ⑤ **第三方许可** | 新增 `scripts/gen-licenses.mjs`（`npm run task -- gen:licenses`）枚举 npm 与 Rust 两侧，产出 `src/generated/licenses.json` 入库；新增 `LicensesBlock.tsx` 渲染：两段 `Scope`（覆盖数 `withLicense / total`）+ 免责声明 + 「查看清单 / 收起清单」 | 覆盖数**必须看得见**（实跑 **npm 57 / 57**、**Rust 342 / 516**）；`未取到声明` 的包**不得被过滤掉**（缺口要留在界面上）；`disclaimer` 必须渲染 —— 「包自己声明的」不等于「我们核准过的」 |
 | R3 | `SettingItem.def` | `parts.tsx` 新增 `DefaultChip`，挂在 `Row` 的**标题行内**（`.set-row-title` 改 flex + baseline + wrap） | **不另起一行**：另起一行会把 50px 行高顶到 70+，而这条信息是"出厂默认"，不是主要信息。文案必须带「默认」二字（否则被读成"你现在是这个"）。**只在 `Row` 用，`PendingRow` 刻意不用**（待接入项没有"当前值"可言） |
 | 4 | ④ 临时文件 | **不动**，仍 `pending` | 缺服务侧 `GET/DELETE /staging` 两条接口（低优先级） |
 | 7 | ⑤ 开源反馈 | **不动**，仍 `pending` | 缺一个真实可打开的仓库地址（项目未公开发布）—— 给一个打不开的链接不如不给 |
@@ -3408,7 +3408,7 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 
 ### 七、改动文件
 
-`app/src/shell-prefs.ts`（新）· `app/src/screens/settings/StorageBlock.tsx`（新）· `app/src/screens/settings/LicensesBlock.tsx`（新）· `app/scripts/gen-licenses.mjs`（新）· `app/src/generated/licenses.json`（新，入库）· `catalog.ts`（三项 `pending → live` + `def` 注释 + 三组 `note`/`noteSummary`）· `parts.tsx`（`DefaultChip` + `.set-row-title` 结构）· `sections.tsx`（① 组接开关 · ④ 组接 `StorageBlock` · ⑤ 组接 `LicensesBlock`）· `Sidebar.tsx`（`labels` prop + 两套几何 + `aria-label`）· `tokens.ts`（`SIDEBAR.iconOnlyItem`）· `App.tsx` / `SettingsScreen.tsx`（偏好 state 与 `lib` 透传）· `styles/app.scss`（删掉 `.nav-item.is-app` 的第二份宽高）· `styles/settings.scss`（`.set-row-def` / `.set-storage*` / `.set-lic*`）· `spec-check.ts`（C8a 改可访问名称 + 新增 C8d）· `e2e/ia-structure-check.mjs`（`pair()` + 两条基线两条反证）· `e2e/settings-media-check.mjs`（新组 `FEATURES` 12 条 + **19 条新反证** + 1 条既有反证锚点迁移）· `package.json`（`gen:licenses`）· `AGENTS.md` / `README.md`（`check:settings` 152→**164**、反证 84→**103**；`check:ia` 24→**32**）· 仓库外《09》§4.2 追注 · 仓库外 `设置页文案与功能梳理.md` §2.5 · 本文件。
+`src/shell-prefs.ts`（新）· `src/screens/settings/StorageBlock.tsx`（新）· `src/screens/settings/LicensesBlock.tsx`（新）· `scripts/gen-licenses.mjs`（新）· `src/generated/licenses.json`（新，入库）· `catalog.ts`（三项 `pending → live` + `def` 注释 + 三组 `note`/`noteSummary`）· `parts.tsx`（`DefaultChip` + `.set-row-title` 结构）· `sections.tsx`（① 组接开关 · ④ 组接 `StorageBlock` · ⑤ 组接 `LicensesBlock`）· `Sidebar.tsx`（`labels` prop + 两套几何 + `aria-label`）· `tokens.ts`（`SIDEBAR.iconOnlyItem`）· `App.tsx` / `SettingsScreen.tsx`（偏好 state 与 `lib` 透传）· `styles/app.scss`（删掉 `.nav-item.is-app` 的第二份宽高）· `styles/settings.scss`（`.set-row-def` / `.set-storage*` / `.set-lic*`）· `spec-check.ts`（C8a 改可访问名称 + 新增 C8d）· `e2e/ia-structure-check.mjs`（`pair()` + 两条基线两条反证）· `e2e/settings-media-check.mjs`（新组 `FEATURES` 12 条 + **19 条新反证** + 1 条既有反证锚点迁移）· `package.json`（`gen:licenses`）· `AGENTS.md` / `README.md`（`check:settings` 152→**164**、反证 84→**103**；`check:ia` 24→**32**）· 仓库外《09》§4.2 追注 · 仓库外 `设置页文案与功能梳理.md` §2.5 · 本文件。
 
 > ⚠️ **本条改动未提交**（两仓已提交的那两笔见本条目开头）。
 
@@ -3465,7 +3465,7 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 
 1. **`vcvars64.bat` 不可用**：它靠 `reg.exe` 查注册表定位 SDK，本机 sandbox **拦 `reg.exe`** ⇒ 得到**缺 ucrt/um 头的残缺 INCLUDE**。处置：手动拼 `INCLUDE/LIB/PATH` + `DISTUTILS_USE_SDK=1`/`MSSdk=1`，**不 call vcvars**。
 2. **`rc.exe` 在 Windows SDK 的 `bin/<ver>/x64`**，不在 MSVC 目录；漏进 PATH 会在**链接**阶段炸 `LNK1158: 无法运行"rc.exe"`（报错点离根因很远）。
-3. **缺 `app/src-tauri/icons/icon.ico`** ⇒ tauri-build 在 Windows 编译失败；已补 ICO（PNG-compressed）并加进 `bundle.icon`。
+3. **缺 `src-tauri/icons/icon.ico`** ⇒ tauri-build 在 Windows 编译失败；已补 ICO（PNG-compressed）并加进 `bundle.icon`。
 4. 移动靶：**pydensecrf master 把模块级常量迁进了枚举**（`dcrf.DIAG_KERNEL` → `dcrf.KernelType.DIAG_KERNEL`），引擎源码用旧写法 ⇒ **掩码细化**一步 `AttributeError`（检测/OCR/翻译都已跑完才炸，易误判成"翻译坏了"）。处置：**幂等兼容补丁**回填旧常量。⚠️ 未做：把 requirements 那行直链钉到具体 commit。
 
 ### 六、验收（现场）
@@ -3490,7 +3490,7 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
 
 ### 九、改动文件
 
-`service/src/config.mjs` · `service/src/engine-client.mjs` · `engine/model-store.mjs` · `engine/models.manifest.json` · `engine/scripts/fetch-models.mjs` · `engine/scripts/setup-engine.mjs`（新）· `engine/scripts/install-engine-deps.mjs`（新）· `engine/VERSIONS.lock`（§6）· `e2e/engine/s1-real-engine-check.mjs` · `e2e/engine/e3-real-full-chain-check.mjs` · `app/src-tauri/tauri.conf.json` · `app/src-tauri/icons/icon.ico`（新）· `package.json`（`setup:engine` / `deps:engine` / `extract:models`）· 本文件。
+`service/src/config.mjs` · `service/src/engine-client.mjs` · `engine/model-store.mjs` · `engine/models.manifest.json` · `engine/scripts/fetch-models.mjs` · `engine/scripts/setup-engine.mjs`（新）· `engine/scripts/install-engine-deps.mjs`（新）· `engine/VERSIONS.lock`（§6）· `e2e/engine/s1-real-engine-check.mjs` · `e2e/engine/e3-real-full-chain-check.mjs` · `src-tauri/tauri.conf.json` · `src-tauri/icons/icon.ico`（新）· `package.json`（`setup:engine` / `deps:engine` / `extract:models`）· 本文件。
 
 ---
 
@@ -3632,10 +3632,10 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
 
 | # | 文件 | 改动 | 为什么 |
 |---|---|---|---|
-| A1 | `app/src-tauri/src/commands.rs` | `#[tauri::command]` → `#[tauri::command(async)]` | 命令属性上的 `(async)` 让它跑在 tauri **异步运行时**的线程池、**不在主线程** ⇒ `AppHandle::exit` 正常生效。这是**功能开关**，不是风格 |
-| A2 | `app/src-tauri/src/service.rs` | 新增 `const REAP_GRACE = 2s`；收尸段改为 `try_wait()` 循环 + `REAP_GRACE` 上界（超时打日志后放过） | 宁可放过一个孤儿（还有 `child-watch` / `parent-watch` 一层兜底，见 **D-12**），也**绝不无限等**。收尸失败=后台多一个进程；退不掉=用户自己解决不了 |
+| A1 | `src-tauri/src/commands.rs` | `#[tauri::command]` → `#[tauri::command(async)]` | 命令属性上的 `(async)` 让它跑在 tauri **异步运行时**的线程池、**不在主线程** ⇒ `AppHandle::exit` 正常生效。这是**功能开关**，不是风格 |
+| A2 | `src-tauri/src/service.rs` | 新增 `const REAP_GRACE = 2s`；收尸段改为 `try_wait()` 循环 + `REAP_GRACE` 上界（超时打日志后放过） | 宁可放过一个孤儿（还有 `child-watch` / `parent-watch` 一层兜底，见 **D-12**），也**绝不无限等**。收尸失败=后台多一个进程；退不掉=用户自己解决不了 |
 | A3 | 同上 · Windows `signal_tree` | `taskkill` 加 `creation_flags(CREATE_NO_WINDOW)` | 应用本体是 `windows_subsystem = "windows"`（**没有**控制台），spawn `taskkill` 会**蹦出一个 cmd 黑框**。纯观感问题，但"点退出时闪出黑框"很容易被当成中毒 |
-| A4 | `app/src/App.tsx` | `void quitApp()` → `void quitApp().catch((e) => push(errorText(e), 'bad'))` | 失败**不再静默**：把原因摆到灵动岛上，至少能知道该往哪儿查 |
+| A4 | `src/App.tsx` | `void quitApp()` → `void quitApp().catch((e) => push(errorText(e), 'bad'))` | 失败**不再静默**：把原因摆到灵动岛上，至少能知道该往哪儿查 |
 
 **与 `main.rs` 的 `RunEvent::ExitRequested` 是两道清理，不是重复**：`quit_app` 走**正常路径**（先收干净再退，端口立刻释放）；那一道兜底 `Cmd+Q` 与其它退出路径。子进程表在 `stop()` 里已被 `take_all()` 掏空，所以第二遍是空操作。
 
@@ -3654,8 +3654,8 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
 | `service/src/store.mjs` | 新增 `retryTask(taskId)`：把 `failed` 页复位为 `pending` + `fromDisk:true`，清 `saved / outputFile / sha256 / durationMs / retryCount / reason / errorMessage`；清 `finishedAt / cancelRequested / lastError`；`_syncBatchStatuses`；`_enqueueOrStart`（**空闲 ⇒ 立刻 `running`**，即用户要的"直接变翻译中"；忙 ⇒ 排队尾、显示"等待中"才是诚实的——引擎同一时刻只跑一个任务）。`reused === 0` 抛 `TASK_NOT_RETRYABLE` |
 | `service/src/server.mjs` | 路由段（`batches \| events \| cancel \| retry`）加入 `retry`；新增 `handleRetry()`：`assertSidecarReady` + `assertRootWritable` → `store.retryTask` → **200**（复用既有任务，**不是 201 新建**）+ `createView` |
 | `service/src/errors.mjs` | 新增 `TASK_NOT_RETRYABLE: 409`（与 `TASK_NOT_CANCELABLE` / `TASK_NOT_APPENDABLE` 同家族：**当前状态不允许该动作**，别混成 404 / 500）。两个分支都走到它：任务还在跑却被点重试、或任务没有任何失败页（如 `done`） |
-| `app/src/App.tsx` | `retry()` 改打 `/tasks/{taskId}/retry`；去掉不再需要的 `isApiError` 分支（404 那句"没有待续做的页"已不适用）；提示文案改为「已重新加入队列」 |
-| `app/src/screens/QueueScreen.tsx` | 失败行「重试」按钮 `title` 改为「重跑这一行里失败的页（仍是同一个任务）」 |
+| `src/App.tsx` | `retry()` 改打 `/tasks/{taskId}/retry`；去掉不再需要的 `isApiError` 分支（404 那句"没有待续做的页"已不适用）；提示文案改为「已重新加入队列」 |
+| `src/screens/QueueScreen.tsx` | 失败行「重试」按钮 `title` 改为「重跑这一行里失败的页（仍是同一个任务）」 |
 
 **只复位 `failed`**：`success` / `skipped` 的页是**已拿到结果**的（`skipped` 多为 `already_exists`），重跑它们既浪费、又与"不覆盖"冲突。
 **字节来源**：失败页原图已按 **G-11**（`_keepOriginalOnFailure`）落盘，而上传那份暂存字节在任务收尾时已被清扫（`_sweepStaged` / `_forgetBlobs`）⇒ 复位时置 `fromDisk:true`，走"**从磁盘读原图**"那条路，**不重传字节**。若某页连原图都没留下（G-11 的降级路径），重跑会以 `original_missing` **再次如实失败** —— 不掩盖成成功。
@@ -3668,7 +3668,7 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
 
 | 命令 | 结果 |
 |---|---|
-| Rust `cargo check`（在 `app/src-tauri`） | **通过**，零错误零警告 |
+| Rust `cargo check`（在 `src-tauri`） | **通过**，零错误零警告 |
 | 前端 `tsc --noEmit` | 退出码 0 |
 | `npm run task -- check:quit` | **4 / 0**（Q1–Q4） |
 | `npm run task -- check:retry` | **6 / 0**（R1–R6） |
@@ -3696,7 +3696,7 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
 
 ### 六、改动文件
 
-`app/src-tauri/src/commands.rs` · `app/src-tauri/src/service.rs` · `app/src/App.tsx` · `app/src/screens/QueueScreen.tsx` ·
+`src-tauri/src/commands.rs` · `src-tauri/src/service.rs` · `src/App.tsx` · `src/screens/QueueScreen.tsx` ·
 `service/src/store.mjs` · `service/src/server.mjs` · `service/src/errors.mjs` ·
 `e2e/e2e.mjs`（D3g 注释澄清 resume vs retry）· `e2e/quit-command-check.mjs`（**新**，`check:quit`）· `e2e/service/queue-retry-check.mjs`（**新**，`check:retry`）· `package.json`（新增 4 条脚本）· 本文件。
 
@@ -3745,7 +3745,7 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
 
 | # | 文件 | 改动 | 为什么 |
 |---|---|---|---|
-| 1 | `app/src-tauri/src/service.rs` | 新增 `relay_lines<R: Read>`：**按字节**读、以 `\n` 切行、`String::from_utf8_lossy` 解码、去尾 `\r`、**读错误只结束本条流、不关全局**；`spawn_inner` 的 stdout / stderr 两处 reader 由 `BufReader::new(out).lines().map_while(Result::ok)` 改为 `relay_lines(out, ...)` | 读日志的一端**永不因编码停读** ⇒ 不关管道 ⇒ 子进程写 stderr 不再 EINVAL；日志里的非法字节被 lossy 成 `�`，**不丢行** |
+| 1 | `src-tauri/src/service.rs` | 新增 `relay_lines<R: Read>`：**按字节**读、以 `\n` 切行、`String::from_utf8_lossy` 解码、去尾 `\r`、**读错误只结束本条流、不关全局**；`spawn_inner` 的 stdout / stderr 两处 reader 由 `BufReader::new(out).lines().map_while(Result::ok)` 改为 `relay_lines(out, ...)` | 读日志的一端**永不因编码停读** ⇒ 不关管道 ⇒ 子进程写 stderr 不再 EINVAL；日志里的非法字节被 lossy 成 `�`，**不丢行** |
 | 2 | `service/src/engine-client.mjs` | `resolveEngineLaunch` 的 env 注入 `PYTHONIOENCODING: 'utf-8'`（与 D-86 的 `NO_PROXY` 并列） | 从根上让引擎 stdio **就是合法 UTF-8**：日文日志不再产生非法字节（消除 ①） |
 
 - 只钉 **stdio**（`PYTHONIOENCODING`），**不用 `PYTHONUTF8`**：后者连带改 locale / 文件系统编码，影响面远超"日志可读"这一个诉求。
@@ -3755,7 +3755,7 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
 
 | 命令 | 结果 |
 |---|---|
-| Rust `cargo check`（在 `app/src-tauri`） | **通过**，零错误零警告（2.28s） |
+| Rust `cargo check`（在 `src-tauri`） | **通过**，零错误零警告（2.28s） |
 | `npm run task -- check:stdio` | **2 / 0**（S1 源码钉子 + S2 行为对照） |
 | `npm run task -- check:stdio:refute` | **1 / 1**（M1 → S1 红；`service.rs` 按字节还原一致） |
 | `engine-client 那组钉子` | **46 / 0**（新增 **L12**） |
@@ -3784,7 +3784,7 @@ D-76 的 unverified register 里的 **U3（Windows 侧三项：Job Object 回收
 
 ### 七、改动文件
 
-`app/src-tauri/src/service.rs` · `service/src/engine-client.mjs` ·
+`src-tauri/src/service.rs` · `service/src/engine-client.mjs` ·
 `e2e/child-output-check.mjs`（**新**，`check:stdio`）· `e2e/service/engine-client-check.mjs`（+L12 / +变异 J，分母 9→10）·
 `package.json`（新增 `check:stdio` / `check:stdio:refute`）· `AGENTS.md` · `README.md` · 本文件。
 
@@ -3839,7 +3839,7 @@ Windows 的 `signal_tree(force=false)` = `taskkill /PID <pid> /T`（**不带 /F*
 
 | # | 文件 | 改动 | 为什么 |
 |---|---|---|---|
-| 1 | `app/src-tauri/src/service.rs` | Windows `signal_tree` 的 `/F` 由 `if force { c.arg("/F") }` 改为**无条件** `c.arg("/F")`（`force` 参数保留但用 `let _ = force;` 显式消费） | Windows 没有「优雅终止」这一档（不带 /F 对控制台进程无效），`force=false/true` 都必须走 /F。代价是跳过引擎 `main.py` 的 `handle_exit_signals` 优雅路径 —— 但那条路径在 Windows 上本来就收不到 SIGTERM、不会触发，**没有损失** |
+| 1 | `src-tauri/src/service.rs` | Windows `signal_tree` 的 `/F` 由 `if force { c.arg("/F") }` 改为**无条件** `c.arg("/F")`（`force` 参数保留但用 `let _ = force;` 显式消费） | Windows 没有「优雅终止」这一档（不带 /F 对控制台进程无效），`force=false/true` 都必须走 /F。代价是跳过引擎 `main.py` 的 `handle_exit_signals` 优雅路径 —— 但那条路径在 Windows 上本来就收不到 SIGTERM、不会触发，**没有损失** |
 
 - **不碰 unix 分支**（macOS 的 `kill(-pgid, SIGTERM)` 是真实优雅终止，Python 能捕获 SIGTERM → `proc.terminate()` 执行器，逐字节不变）。
 - **不影响 `CREATE_NO_WINDOW`**（黑框问题）与 `MIAO_NO_TREE_KILL` 反证开关。
@@ -3848,7 +3848,7 @@ Windows 的 `signal_tree(force=false)` = `taskkill /PID <pid> /T`（**不带 /F*
 
 | 命令 | 结果 |
 |---|---|
-| Rust `cargo check`（`app/src-tauri`） | **通过**，零错误零警告（3.32s） |
+| Rust `cargo check`（`src-tauri`） | **通过**，零错误零警告（3.32s） |
 | `npm run task -- check:quit` | **5 / 0**（新增 Q5） |
 | `npm run task -- check:quit:refute` | **5 / 5**（新增 M5 → Q5 红；三文件按字节还原一致） |
 
@@ -3869,7 +3869,7 @@ Windows 的 `signal_tree(force=false)` = `taskkill /PID <pid> /T`（**不带 /F*
 
 ### 九、改动文件
 
-`app/src-tauri/src/service.rs`（Windows `signal_tree` 无条件 /F）· `engine/scripts/child-watch.mjs`（Windows `killTree` 无条件 /F）· `e2e/quit-command-check.mjs`（+Q5 / +M5）· `e2e/child-watch-kill-check.mjs`（**新**，`check:child-watch-kill`，S1 / M1）· `package.json`（新增 2 条脚本）· `AGENTS.md` · `README.md` · 本文件。
+`src-tauri/src/service.rs`（Windows `signal_tree` 无条件 /F）· `engine/scripts/child-watch.mjs`（Windows `killTree` 无条件 /F）· `e2e/quit-command-check.mjs`（+Q5 / +M5）· `e2e/child-watch-kill-check.mjs`（**新**，`check:child-watch-kill`，S1 / M1）· `package.json`（新增 2 条脚本）· `AGENTS.md` · `README.md` · 本文件。
 
 ## D-90 · 全屏看图缩放改用 `Ctrl/⌘ + 滚轮` + **锚点缩放**；macOS 触控板**捏合不可依赖** ⇒ 必须留非手势兜底（2026-10-07）
 
@@ -3942,7 +3942,7 @@ R6 原钉「认 Ctrl/⌘ + 只处理 ↑/↓」，改滚轮后它**必然变红*
 | 命令 | 结果 |
 |---|---|
 | `npx tsc --noEmit`（app） | **通过**，零错误 |
-| `npm --prefix app run build` | **通过**（`tsc --noEmit && vite build`） |
+| `npm run build` | **通过**（`tsc --noEmit && vite build`） |
 | `npm run task -- check:units` | **42 / 0**（新增 ZOOM 组 4 条） |
 | `npm run task -- check:units:refute` | **52 / 52**（新增 ZOOM 组 7 条变异），零假阳性、字节还原一致 |
 | `npm run task -- check:retranslate` | **12 / 0**（R6 重写） |
@@ -4029,7 +4029,7 @@ R6 原钉「认 Ctrl/⌘ + 只处理 ↑/↓」，改滚轮后它**必然变红*
 | 命令 | 结果 |
 |---|---|
 | `npx tsc --noEmit`（app） | 通过 |
-| `npm --prefix app run build` | 通过 |
+| `npm run build` | 通过 |
 | `node e2e/units-structure-check.mjs` | **44 / 0** |
 | `node e2e/units-structure-check.mjs --refute` | **58 / 58 全红、零跳过** |
 | `node e2e/service/retranslate-check.mjs` / `--refute` | **12 / 0** / **9 / 9** |
@@ -4046,7 +4046,7 @@ R6 原钉「认 Ctrl/⌘ + 只处理 ↑/↓」，改滚轮后它**必然变红*
 ### 八、踩到的工具坑（已写进 falsifiable-verification 技能）
 
 `node xxx-check.mjs --refute | tail -n` 会让 **SIGPIPE 打断脚本**，`restore()` 来不及跑 ⇒
-变异创建的垃圾文件（`app/src/components/atoms.tsx`、`app/src/hooks.ts`，11 字节 `export {};`）
+变异创建的垃圾文件（`src/components/atoms.tsx`、`src/hooks.ts`，11 字节 `export {};`）
 留在工作区 ⇒ **下一次**跑反证轮会有 2 条"锚点已存在、无法反证"被**静默跳过**
 （跳过 ≠ 通过，但总量仍显示 56/56 很容易骗过眼睛）。
 **跑反证轮一律重定向到文件再读，不要接 `head`/`tail`。**
@@ -4134,7 +4134,7 @@ const find = txt.includes(mut.find) ? mut.find : mut.find.split('\n').join(eol);
 
 | 命令 | 结果 |
 |---|---|
-| `cargo check`（app/src-tauri） | **通过**（exit 0） |
+| `cargo check`（src-tauri） | **通过**（exit 0） |
 | `node e2e/music-platform-check.mjs` | **215 / 3**（新增 2 条全绿；余 3 条是既有失败，见 §七） |
 | `node e2e/music-platform-check.mjs --refute` | **182 / 182 全红、零跳过、零假阳性**（exit 0） |
 | `npm run task -- check:units` / `:refute` | **44 / 0** / **58 / 58** |
@@ -4161,7 +4161,7 @@ const find = txt.includes(mut.find) ? mut.find : mut.find.split('\n').join(eol);
 
 用户报「好像不支持打包成 Windows」。核实到三件事：
 
-- `app/src-tauri/tauri.conf.json` 的 `bundle.targets` 是 **`["app","dmg"]`** —— `app`（`.app` 目录）与
+- `src-tauri/tauri.conf.json` 的 `bundle.targets` 是 **`["app","dmg"]`** —— `app`（`.app` 目录）与
   `dmg`（磁盘映像）**都是 macOS 专属包型**。Windows 上没有任何可用包型 ⇒ 这就是"不支持打包"的**直接成因**。
 - 仓库里**一次都没成功打包过**：`target/` 下只有 `debug/`，**无 `release/`、无 `bundle/`**。
 - 没有任何平台专用配置文件（`tauri.windows.conf.json` 等**不存在**）。
@@ -4171,7 +4171,7 @@ const find = txt.includes(mut.find) ? mut.find : mut.find.split('\n').join(eol);
 Tauri v2 会把 `tauri.<platform>.conf.json` 与基座按 **JSON Merge Patch** 合并，且**数组是整体替换**
 （不是追加、不是去重）。于是新增一个只含一个键的文件：
 
-`app/src-tauri/tauri.windows.conf.json`
+`src-tauri/tauri.windows.conf.json`
 
 ```json
 { "bundle": { "targets": ["nsis"] } }
@@ -4270,7 +4270,7 @@ crate，而 `cl.exe` 靠环境变量 `INCLUDE` / `LIB` 找头文件与库；沙�
 
 - **不存在任何"切模块触发启动"的代码**。真身是 `main.rs` 的 setup 里**无条件**一句 `mgr.start(&handle);`
   （旧 `main.rs:215` 附近）。看着像"切到漫画翻译才起"，是因为**应用初始屏恰好就是漫画翻译**
-  （`app/src/App.tsx:47` `useState<Screen>('translate')`）—— 所以"一打开就拉起"与"切到漫画翻译就拉起"
+  （`src/App.tsx:47` `useState<Screen>('translate')`）—— 所以"一打开就拉起"与"切到漫画翻译就拉起"
   在观感上无法区分。用户的描述是**观测**，不是机制。
 - **没有任何"停服务"的入口**：`commands.rs` 只有 `service_status` / `service_restart`，没有 `service_stop`。
 - ⇒ 需求 = **两件事**：① 把"要不要自动拉起"变成可配置；② 补一对手动启停（用户经选项确认：**启停都做**，
@@ -4278,7 +4278,7 @@ crate，而 `cl.exe` 靠环境变量 `INCLUDE` / `LIB` 找头文件与库；沙�
 
 ### 二、设计：偏好住 localStorage，由**前端**决定何时拉起；Rust 侧的无条件启动**撤掉**
 
-「自动启动」这个偏好的家只能有一个。它落在 **`localStorage`**（`app/src/shell-prefs.ts`），
+「自动启动」这个偏好的家只能有一个。它落在 **`localStorage`**（`src/shell-prefs.ts`），
 **不能**放进 Rust 侧读：localStorage 只有 WebView 读得到，Rust 要读它就得再把偏好抄一份到 tauri-store ——
 那就成了"同一事实两处来源"，两处必然漂移（D-94 之前 D-86 已经在 env 上栽过一次同款）。
 
@@ -4390,7 +4390,7 @@ key 写错）⇒ 反证条数 103 → **105**。
 
 | 命令 | 结果 |
 |---|---|
-| `cargo check`（`app/src-tauri`，带 MSVC 环境） | **exit 0** |
+| `cargo check`（`src-tauri`，带 MSVC 环境） | **exit 0** |
 | `app` 下 `tsc --noEmit` | **exit 0** |
 | `npm run task -- check:autostart` | **12 / 0**（exit 0） |
 | `npm run task -- check:autostart:refute` | **12 / 12 全红、0 跳过、按字节还原一致**（exit 0） |
@@ -4532,7 +4532,7 @@ if (rc.status !== 0) throw new Error(...);              // 失败时目录已空
 
 ### 一、需求与落点
 
-「正文首选字体改为源柔ゴシックP Medium」。落点是**单点**：`app/src/theme/tokens.ts`
+「正文首选字体改为源柔ゴシックP Medium」。落点是**单点**：`src/theme/tokens.ts`
 的 `FONT.body`（`var(--md-font-body)` 在 6 个样式文件里被引用 70+ 次，但只有这一处定义）。
 `display` / `numeric` **不动**（用户明确"本次只改 body"）。
 
@@ -4559,7 +4559,7 @@ fontsource 官方 API 亦自证：`"subsets":["latin"]`、`"unicodeRange":{}`。
 | 项 | 值 |
 |---|---|
 | 来源 | `github.com/shogo82148/genjyuugothic-subsets` release `2022-06-16` |
-| 落点 | `app/src/assets/fonts/genjyuu-gothic-p-medium/`（120 woff2 + `font.css`） |
+| 落点 | `src/assets/fonts/genjyuu-gothic-p-medium/`（120 woff2 + `font.css`） |
 | 授权 | SIL OFL 1.1（商用 + 应用内嵌均允许） |
 
 ### 三、🔴 真身：Sass 对「带 `.css` 后缀的 `@use`」是**静默丢弃**
@@ -4855,7 +4855,7 @@ nllb 档的权重按 **HF 缓存布局**落盘（`engine/models.manifest.json` �
 |---|---|---|
 | 漫画翻译 | `service/src/manga/` | `store.mjs`（队列与落盘）· `image.mjs` · `names.mjs` · `sse.mjs` |
 | 设置 / 引擎 / 诊断 | `service/src/settings/` | `engine-settings.mjs` · `engine-profile.mjs` · `model-status.mjs` · `idle-policy.mjs` · `tier-downgrade.mjs` · `llm-supervisor.mjs` |
-| 音乐 | `service/src/music/` | **空目录（占位）** —— 音乐逻辑在 Rust 侧 `app/src-tauri/src/music/`，服务端暂无对应代码 |
+| 音乐 | `service/src/music/` | **空目录（占位）** —— 音乐逻辑在 Rust 侧 `src-tauri/src/music/`，服务端暂无对应代码 |
 
 `service/src/` 根**只留跨模块底座**：`server.mjs`（装配入口）· `config.mjs` · `errors.mjs` ·
 `engine-client.mjs`（引擎适配，唯一耦合点）· `multipart.mjs` · `parent-watch.mjs`。
@@ -4960,8 +4960,8 @@ Python `py_compile` 通过 · 渲染冒烟（16/20/24/32px 抗锯齿像素占比
   patch 在其前插入 LXGW 行 ⇒ 终态 `[LXGW, Zen, msyh, Arial, msgothic]`。两条补丁的 mark 与锚点
   都互不相交 ⇒ **各自幂等**：全新环境 `上游 →(D-103)→ Zen →(D-105)→ LXGW`；已打 D-103 的环境
   D-103 跳过、D-105 单独命中。🔴 换 `runtimes/` 源码必须同步 `ENGINE_PATCHES`（D-103 的教训）。
-- **前端同改**：`app/src/theme/tokens.ts` 的 `FONT.display/body/numeric` **三栈首位**统一前置
-  `'LXGW WenKai GB'`；随仓字体放 `app/src/assets/fonts/lxgw-wenkai-gb/`（**Medium 档**单体 TTF
+- **前端同改**：`src/theme/tokens.ts` 的 `FONT.display/body/numeric` **三栈首位**统一前置
+  `'LXGW WenKai GB'`；随仓字体放 `src/assets/fonts/lxgw-wenkai-gb/`（**Medium 档**单体 TTF
   + `font.css`，`@font-face` 声明 `font-weight: 400`），由 `main.tsx` 从 JS 侧 import（同 GenJyuu
   那份的坑：Sass 对带 `.css` 的 `@use` 静默丢弃）。
 
@@ -4987,7 +4987,7 @@ Python `py_compile` 通过 · 渲染冒烟（16/20/24/32px 抗锯齿像素占比
   ⇒ CSS 里自定 `font-family: 'Yozai'`（`@font-face` 的族名由我们声明，与文件 name table 无关）。
 - ⚠️ release **v0.868 无 Bold**（只发 Light / Regular / Medium）⇒ `font.css` **400→Regular、
   700→Medium**（把 Medium 当加粗字重，避免浏览器合成加粗发糊）。
-- **前端同改**：新增 `app/src/assets/fonts/yozai-font/`（`Yozai-Regular.ttf` + `Yozai-Medium.ttf`
+- **前端同改**：新增 `src/assets/fonts/yozai-font/`（`Yozai-Regular.ttf` + `Yozai-Medium.ttf`
   + `font.css`，由 `main.tsx` 从 JS 侧 import）；`tokens.ts` 三栈首位前置 `'Yozai'`，
   LXGW / GenJyuu / Zen 退居回退位。**LXGW 前端资产暂留**（用户未要求删）。
 - **取证**：前端 `vite build` 通过 · `dist/` 含 `Yozai-Regular-*.ttf` + `Yozai-Medium-*.ttf`。
@@ -5005,7 +5005,7 @@ Python `py_compile` 通过 · 渲染冒烟（16/20/24/32px 抗锯齿像素占比
 - 🔴 **「每字重一个独立 family」坑**：狮尾的 Family(1) 是**逐档命名**的（`… SC Regular` / `… SC Bold`，
   霞鹜文楷 Medium 档同款套路）⇒ CSS 族名**必须**用 TypoFamily(16) 的 `'Swei Gothic CJK SC'`，
   再由 `font-weight` 区分两档；写 Family(1) 的名字 ⇒ 700 取不到 Bold 那条 face。
-- **前端同改**：新增 `app/src/assets/fonts/swei-gothic/`（两档 woff2 + `font.css`，由 `main.tsx` 从 JS 侧
+- **前端同改**：新增 `src/assets/fonts/swei-gothic/`（两档 woff2 + `font.css`，由 `main.tsx` 从 JS 侧
   import）；`tokens.ts` 三栈首位统一 `'Swei Gothic CJK SC'`，Yozai / LXGW / GenJyuu / Zen 退居回退位
   （**已下载字体全部保留**，回退链完整）。
 - **取样核对**（name table，fontTools）：Regular/Bold 的 TypoFamily(en) 均为 `Swei Gothic CJK SC`；
@@ -5026,11 +5026,11 @@ Python `py_compile` 通过 · 渲染冒烟（16/20/24/32px 抗锯齿像素占比
 **用户定案**：`display` / `numeric` = **狮尾圆体 · 简体（Swei Gothic CJK SC）**、`body` = **悠哉字体（Yozai）**；
 **漫画译文**渲染字体仍为引擎侧 `LXGWWenKaiGB-Medium`（D-105，本轮**未动**）。要求**删除 GenJyuuGothicP 的资源与相关引用**。
 
-- **字体栈**（`app/src/theme/tokens.ts`，三栈均去掉 `GenJyuuGothicP`；`Inter` 保留）：
+- **字体栈**（`src/theme/tokens.ts`，三栈均去掉 `GenJyuuGothicP`；`Inter` 保留）：
   - `display` = `Swei Gothic CJK SC → Yozai → LXGW WenKai GB → Zen Maru Gothic → Noto Sans SC`
   - `body` = `Yozai → LXGW WenKai GB → Swei Gothic CJK SC → Noto Sans SC → Zen Maru Gothic`
   - `numeric` = `Swei Gothic CJK SC → Yozai → LXGW WenKai GB → Zen Maru Gothic → Inter → Noto Sans SC`
-- **删除的资源**：`app/src/assets/fonts/genjyuu-gothic-p-medium/`（121 个文件 = 120 片 woff2 + `font.css`，
+- **删除的资源**：`src/assets/fonts/genjyuu-gothic-p-medium/`（121 个文件 = 120 片 woff2 + `font.css`，
   git 记 121 条删除）；`main.tsx` 去掉其 import 与专属注释段（通用告诫「Sass 静默丢弃 `.css`」保留，
   升格为随仓字体段头的统一说明）；三份随仓 `font.css` 注释里指向 GenJyuu 的措辞一并改写。
 - **e2e `FONT` 组中性化**（原三条断言写死 GenJyuu ⇒ 一旦删字体就全红，正是本轮的连带工作）：
@@ -5058,7 +5058,7 @@ Python `py_compile` 通过 · 渲染冒烟（16/20/24/32px 抗锯齿像素占比
 **背景（用户三条要求）**：① 内联多级三元（`title={a ? 'x' : b ? 'y' : c ? 'z' : w}`）不可读 → 抽变量；
 ② 「点击展开下拉」要封装成组件；③ 注释只描述功能、核心改动才追加。①③ 列入项目约束。
 
-- **新增通用单元**（`app/src/components/units/`，均**不 import 业务层**、类名 `ui-` 前缀）：
+- **新增通用单元**（`src/components/units/`，均**不 import 业务层**、类名 `ui-` 前缀）：
   - `MenuButton` + `MenuItem`：触发按钮 + Portal 弹层，`position:fixed` **脱离 `.content` 的 `overflow:auto` 裁剪**；
     关闭时机 = 点外部 / Esc（`stopPropagation` 不冒泡）/ 滚动 / 缩放。`children(close)` 让项内点击后收起。
   - `Notice`：盒式提示条，等价原 `.notice` / `.notice.is-bad`，`kind="bad"` 走错误配色，支持 `className` 追加。
@@ -5093,14 +5093,14 @@ Python `py_compile` 通过 · 渲染冒烟（16/20/24/32px 抗锯齿像素占比
 - **取证**：`check:music` 回到 **216/3**（新自检 +1，基线三条环境性失败不变）· `check:music:refute` **182/182 按预期变红**、
   全部被改文件**字节一致**恢复。
 
-## D-111 · 共享纯函数收口 `app/src/tools/`（`util.ts` 迁入 + `dupKey` 上提 + `@tools` 别名）（2026-10-10）
+## D-111 · 共享纯函数收口 `src/tools/`（`util.ts` 迁入 + `dupKey` 上提 + `@tools` 别名）（2026-10-10）
 
 **背景（用户要求）**：工具函数有必要的话抽离到 `tools` 目录，**与 `components/` 同级**，放最后做。
 
-- **动作**：`app/src/util.ts` → `app/src/tools/index.ts`；新增 `@tools` 别名（`app/vite.config.ts` + `app/tsconfig.json` `paths`，
+- **动作**：`src/util.ts` → `src/tools/index.ts`；新增 `@tools` 别名（`vite.config.ts` + `tsconfig.json` `paths`，
   与既有 `@components` / `@hooks` 同风格）。
 - **上提**：`DropScreen.tsx` 的局部纯函数 `dupKey`（重名规范化）移入 `tools/index.ts` —— 纯函数、跨屏语义，不再散在屏内。
-- **判定（写进 `AGENTS.md` §1 / `project_rules.md` §3 / `README.md` 目录树）**：`app/src/tools/` 判据 = **跨屏可复用 + 不 import 业务层**
+- **判定（写进 `AGENTS.md` §1 / `project_rules.md` §3 / `README.md` 目录树）**：`src/tools/` 判据 = **跨屏可复用 + 不 import 业务层**
   （与 `components/units/` 同源）；**只服务单屏的逻辑仍留屏内**，不为"集中"硬搬。
 - **取证**：`tsc --noEmit` 0 · `vite build` 通过（`@tools` 解析正常）· 5 处 `@/util` 引用全改指 `@tools`（0 残留）。
 
@@ -5108,7 +5108,7 @@ Python `py_compile` 通过 · 渲染冒烟（16/20/24/32px 抗锯齿像素占比
 
 **症状**：漫画库一屏几十张缩略图（`api_bytes`）重拉时窗口消息泵被冻住，点击「像没反应」；另一路的表现是加载直接崩。
 
-- **根因（同一文件 `app/src-tauri/src/commands.rs` 上两条，必须成对看）**：
+- **根因（同一文件 `src-tauri/src/commands.rs` 上两条，必须成对看）**：
   - ① **「命令是否 `async`」≠「函数体是否阻塞」**。`#[tauri::command]` 的**同步**命令跑在**主线程**上，`api_get` / `api_bytes` 原本就是这一档 ⇒ 一次 HTTP 就把窗口冻住。（`api_post` 原本挂的是 `#[tauri::command(async)]`，那只是把**函数体**挪到异步线程池，与「命令声明成 `async fn`」不是一回事。）
   - ② 四个命令底层一律 `reqwest::blocking::*`。blocking 客户端**自带一个 Tokio 运行时**，在 async 上下文里被 drop 会直接 panic：`Cannot drop a runtime in a context where blocking is not allowed`。
 - **修法**：四个代理命令统一为 `#[tauri::command] pub async fn` + `reqwest::Client`（非阻塞；`.send().await` / `.text().await` / `.bytes().await`），multipart 同步换 `reqwest::multipart`。
@@ -5130,7 +5130,7 @@ Python `py_compile` 通过 · 渲染冒烟（16/20/24/32px 抗锯齿像素占比
 **症状**：漫画库搜索框每敲一个键都卡。
 
 - **根因**：逐键过滤本身很便宜，**贵的是它的级联** —— 过滤改 `filtered` ⇒ 选中项可能被挤到别的漫画上 ⇒ 右栏页网格重挂载并**重拉十几张缩略图**。
-- **修法**：新增 `app/src/hooks/useDebouncedValue.ts`（纯 DOM 行为 hook、无业务依赖，与 `useEsc` 同档，走 `@hooks/useDebouncedValue` 单文件引用、**不进业务桶**）；`LibraryScreen` 的输入框受控值用**原始态** `queryInput`（保证按键即时回显、不错字），喂给 `filtered` 的是**防抖 200ms 后**的 `query`。
+- **修法**：新增 `src/hooks/useDebouncedValue.ts`（纯 DOM 行为 hook、无业务依赖，与 `useEsc` 同档，走 `@hooks/useDebouncedValue` 单文件引用、**不进业务桶**）；`LibraryScreen` 的输入框受控值用**原始态** `queryInput`（保证按键即时回显、不错字），喂给 `filtered` 的是**防抖 200ms 后**的 `query`。
 - **连带**：新增 hook 须同步 `e2e/units-structure-check.mjs` 的 `HOOKS_MANIFEST`（hooks 唯一收口白名单，D-41）—— 漏登记就是「全绿 + 该文件无人管」。
 - **取证**：`tsc --noEmit` 0 · `check:units` 44/0（含 hooks 清单一致性）。
 
@@ -5218,8 +5218,8 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 - 新服务模块落 `service/src/manga/library.mjs`（既有 `manga/` 域目录内，**不新增目录**）。
 - 页级扫描逻辑**不得抄第二份**：抽成 `scanChapterPages(dir)`，「单话目录」与「大类内的话目录」**共用同一个函数**
   （照抄 `_writeOriginal` 的「单一入口、多调用点」纪律）。
-- 前端新增屏内件落 `app/src/screens/library/`（`modals.tsx` / `ChapterCard.tsx` / `blob.ts`），
-  `LibraryScreen.tsx` **不搬迁**（理由见 D-119）；纯函数写进**既有桶文件** `app/src/tools/index.ts`。
+- 前端新增屏内件落 `src/screens/library/`（`modals.tsx` / `ChapterCard.tsx` / `blob.ts`），
+  `LibraryScreen.tsx` **不搬迁**（理由见 D-119）；纯函数写进**既有桶文件** `src/tools/index.ts`。
 
 ## D-116 · 封面：接口字段叫 `coverPath`、字节读走新增的 `GET /library/{book}/cover`（2026-10-10）
 
@@ -5307,7 +5307,7 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
    `e2e/service/retranslate-check.mjs:66`、`e2e/service/library-manage-check.mjs:426` 也写死同一路径。
    搬一次要同步 3 个脚本 4 处路径，而 **AGENTS §3 尾明说：路径不同步的后果是"静默跳过"，不是变红**
    —— 那等于把 6 条 ZOOM 断言和 R6/R8/L8 悄悄变成永不执行的装饰。
-2. **新件落 `app/src/screens/library/`**（`modals.tsx`、`blob.ts`）：specifier 是
+2. **新件落 `src/screens/library/`**（`modals.tsx`、`blob.ts`）：specifier 是
    `@screens/library/Xxx`，与 `@screens/LibraryScreen` **不同名、无解析歧义**，
    不触发 `hooks.ts` + `hooks/` 那条同名禁令。
 3. **`blob.ts` 是纯提取 + 两点新增**：
@@ -5322,7 +5322,7 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
    - `URL_CACHE` 是**模块级 Map**，其键必须是"书 + 话 + 页"三段。若沿用"只按 seq"，
      《A》第 1 话第 1 页与《B》第 1 话第 1 页会命中同一条缓存 —— 跨书串图（且是"看起来正常、
      内容错了"这类最难发现的缺陷）。
-4. **前端纯函数写进既有桶文件** `app/src/tools/index.ts`（`chapterNoOf` / `padChapterNo` /
+4. **前端纯函数写进既有桶文件** `src/tools/index.ts`（`chapterNoOf` / `padChapterNo` /
    `coverFileName` / `groupSearchResults` / `matchIndices`），**不新开文件** ⇒ 零 barrel 同步、零断言同步。
    - `fuzzyMatch` 改为**委托** `matchIndices`：命中判定与高亮切分只能有一份实现，
      否则会出现"整行判为命中、却没有一个字被高亮"的矛盾帧。
@@ -5354,7 +5354,7 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 **背景**：`POST /library/{book}/cover` 与 `DELETE /library/{book}/cover` 是设计稿 §7.6.2「编辑信息」
 的三条封面来源，但前端两条能力都缺：
 
-1. **没有 `DELETE` 代理** —— `app/src/ipc.ts` 只有 `apiGet` / `apiPost` / `apiPostMultipart` / `apiBytes`。
+1. **没有 `DELETE` 代理** —— `src/ipc.ts` 只有 `apiGet` / `apiPost` / `apiPostMultipart` / `apiBytes`。
    没有它，「移除封面」无路可走，只能退化成"改 manifest 而不删文件"，而 `readCoverName()` 的
    readdir 兜底会把**已删但不该再认**的 `cover.*` 又认回来。
 2. **`api_post_multipart` 的文件分片字段名写死 `images[]`**，而封面端点按契约认的是 `cover`
@@ -5793,7 +5793,7 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 
 **范围裁定（F3 拆两步）**：`store.mjs`（1918 行）一半是**纯状态机 + JSON 持久化**，一半是**执行/队列**（`createTask`/`_processTask`/`_runLoop`/`_writeItem`/`finalize`/`cancel`/`retry`）。后者依赖 F4 的 `engine.rs`（要起 Python 子进程）与 SSE 布线 ⇒ 本轮只做 **F3-a 内核**：`model`/`pure`/持久化/`init`/暂存/查询/`resume`·`retranslate` 计划/HTTP 视图。**F3-b（执行/队列）显式留待 F4 之后** —— 理由：不可调用的代码无法验证，是「假绿温床」（写进 `store.rs` 顶部注释）。
 
-**模块结构（`app/src-tauri/src/boxsvc/store/`）**
+**模块结构（`src-tauri/src/boxsvc/store/`）**
 - `model.rs`：数据模型 + 常量 + 时间/ID 生成。字段顺序**逐字复刻** `serialize()` 的键序（`serde` 默认按声明序）；`Item` 的 `mime`/`overwrite`/`error_message` 是**运行期字段**，`#[serde(skip_serializing)]`（Node `serialize()` 不吐它们）。`Task.queue_position` 必须 `Option<i64>` + `skip_serializing_if` —— Node 的 `undefined` 是**省略键**，写成 `i64` 会吐 `0`，键集合就分了叉。
 - `pure.rs`：无 IO/无时钟纯函数（`matchOriginal`/`matchTranslated`/`isValidFileName`/`sniffImageType`/`isSafeDirName`/`orderImagesIndices`/`endStatusOf`/`batchStatusOf`/`formatEtaText`）。`formatEtaText` 用 U+2013 en-dash（`预计 1–3 分钟`），不是连字符 —— 逐字节对拍时才不返工。
 - `view.rs`：HTTP 视图投影（`create`/`detail`/`list`/`queue`/`taskList`/`batchBrief`/`itemBrief`/`eta`）。同样靠**声明序**对齐 Node 键序。
@@ -5818,7 +5818,7 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 
 **范围裁定（F4 拆两步，同 F3 纪律）**：`engine-client.mjs`（894 行）是「box-service ↔ 翻译引擎」的**唯一耦合点**（《04》§3.3），一半是**纯协议/配方**（启动配方、就绪档位、参数快照、代理旁路、HF 离线、结果流解析），一半是**网络 I/O + 执行态**（`translateImage` 的 real/mock HTTP、`probeEngine` 三重判定）。本轮只做 **F4-a 纯协议/配方层**（无网络、无子进程）：可调、可对拍、可反证。**F4-b（网络 I/O + 真正持有引擎子进程句柄的 supervisor）留待下轮。**
 
-**模块结构（`app/src-tauri/src/boxsvc/engine.rs` + `engine/selftest.rs`）**
+**模块结构（`src-tauri/src/boxsvc/engine.rs` + `engine/selftest.rs`）**
 - 纯函数：`mime_of_ext` / `parse_result_stream`（**5 字节帧**：1 字节 code + 4 字节大端长度）/ `record_frame`（code 4=等待实例、1=阶段原话、3=排队位次、2=引擎报错）/ `engine_config_snapshot`（camelCase 7 键）/ `engine_local_no_proxy` / `hf_offline_env` / `engine_version`（读 manifest `engineCommit` 短 sha）/ `translation_snapshot_dir`·`weights_present` / `available_tiers`·`tier_model_path` / `resolve_engine_launch` / `resolve_llm_launch`（real+mock 分支）。
 - 常量：`ENGINE_DEFAULT_DETECTION_SIZE=2048` / `LLAMA_VERSION_DIR=llama-b11417` / `LLM_OWNER=service` / `TIER_LLM_MODELS`（仅 tiny 有权重，small/medium 显式 None ⇒ 调用方**必须报错，绝不回落 tiny**）。
 
@@ -5841,7 +5841,7 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 
 **范围裁定（F4-b 再拆，同 F3/F4-a 纪律）**：F4-b 的「网络 I/O」与「真正持有引擎子进程句柄的 supervisor」是两件事。经查证——真引擎（Python / llama-server）的**起停由 app 侧 `service.rs` 负责**（`signal_tree` / `no_tree_kill`，含 Windows `taskkill /T /F`），`engine-client.mjs` 的注释亦明言「本文件不该持有 llama-server 的进程句柄」。故 F4-b 的 supervisor 侧**已在 Rust**（F4 原述「复用现有实现，不新写」自动满足），本轮只补**协议运行期**（`boxsvc/engine/client.rs`）。**F4-b2（LLM supervisor，`settings/llm-supervisor.mjs` 366 行，起 llama-server + 三段探针 + 停）+ F3-b 执行/队列 留待下轮** —— F3-b 依赖本轮的 `translate_image`。
 
-**模块结构（`app/src-tauri/src/boxsvc/engine/client.rs`）**
+**模块结构（`src-tauri/src/boxsvc/engine/client.rs`）**
 - 阶段日志环（模块级 `Mutex<Vec<String>>`，同 Node 的 `STAGE_LOG`）：`push_stage` / `push_stage_line` / `recent_stage_log(n)` / `clear_stage_log`。
 - HTTP 运行期：`request_once`（reqwest）/ `probe_tcp`（tokio `net`）/ `real_translate_image` / `mock_translate_image` / `translate_image`（按 `cfg.protocol` 派发）/ `real_probe` / `mock_probe` / `probe_engine`（三重判定）。
 - 配套纯函数并入 `engine.rs`：`engine_lang_code` / `build_engine_config`（逐请求方向叠加：`en>zh` ⇒ 换 `nllb`；映射不出引擎码时**不下发** `from_lang`）。
@@ -5863,7 +5863,7 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 
 ## D-142 · 服务运行时 Rust 化：F4-b2 LLM supervisor 落地（2026-10-13）
 
-**范围**：D-141 留下的 F4-b2 —— `service/src/settings/llm-supervisor.mjs`（366 行：起 llama-server + 三段探针 + 停/重启/换档）→ `app/src-tauri/src/boxsvc/engine/supervisor.rs`。
+**范围**：D-141 留下的 F4-b2 —— `service/src/settings/llm-supervisor.mjs`（366 行：起 llama-server + 三段探针 + 停/重启/换档）→ `src-tauri/src/boxsvc/engine/supervisor.rs`。
 
 **结构**
 - 状态机：`LlmState`（Stopped/Starting/Running/Unloading/Error + `as_str()`）、`LLM_STATES`（5 态，供对拍枚举比对）。
@@ -5890,7 +5890,7 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 
 ## D-143 · 服务运行时 Rust 化：F3-b store 执行/队列落地 + 执行态同源钉子（2026-10-13）
 
-**范围**：D-139 留下的 F3-b —— `store.mjs` 的**执行段**（建单 / 追加批次 / 续做 / 返工 / 重试 / 删除 / 调度 / 单图处理 / 落盘 / 终态 / 取消）→ `app/src-tauri/src/boxsvc/store/exec.rs`。
+**范围**：D-139 留下的 F3-b —— `store.mjs` 的**执行段**（建单 / 追加批次 / 续做 / 返工 / 重试 / 删除 / 调度 / 单图处理 / 落盘 / 终态 / 取消）→ `src-tauri/src/boxsvc/store/exec.rs`。
 
 **三条裁定（不这么做就假绿）**
 1. **翻译是注入的，不是 import 的**：Node 直接 `import { translateImage }`；Rust 改为 `trait Translator` 注入点。两个理由：`translate_image` 是 async(tokio) 而 store 是**同步模型**；且注入让「调度 / 重试 / 落盘 / 终态」的**编排语义**能脱离真实引擎被确定性验证（引擎本身已由 `check:engine-http` 钉住）。

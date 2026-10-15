@@ -106,7 +106,7 @@
 
 **症状**：点「桌面歌词」无反应（窗口实际已创建，开关也变「已开」，但看不见）。
 
-**根因**（`app/src-tauri/src/lyrics_window.rs:90-113`）：
+**根因**（`src-tauri/src/lyrics_window.rs:90-113`）：
 
 ```rust
 let h = app.primary_monitor()...map(|m| m.size().height as f64)  // ← 物理像素
@@ -133,8 +133,8 @@ let h = app.primary_monitor()...map(|m| m.size().height as f64)  // ← 物理�
 
 **症状**：本地歌单已导入（导入只读文件系统，故能成功），但点播放无声/无反应。
 
-**根因**：`app/src/music/store.ts:557` 用 `convertFileSrc(song._localPath)` 生成 `asset://` URL，
-而 `app/src-tauri/tauri.conf.json` 的 `app.security` **只有 `csp: null`**，没有 `assetProtocol`。
+**根因**：`src/music/store.ts:557` 用 `convertFileSrc(song._localPath)` 生成 `asset://` URL，
+而 `src-tauri/tauri.conf.json` 的 `app.security` **只有 `csp: null`**，没有 `assetProtocol`。
 
 Tauri v2 官方默认值（已核对文档）：
 
@@ -193,7 +193,7 @@ Tauri v2 官方默认值（已核对文档）：
 | P2-1 | 底部改**左/中/右三区**绝对定位布局 | 参考：左 `left:0`，中 `justify:center`，右 `right:0` |
 | P2-2 | 顶部加**全屏切换**（进入/退出）+ 光标静止自动隐藏 UI | 全屏需确认 Tauri 侧能力（见 R2） |
 | P2-3 | 左区：红心 + 碟片模式（含按样式条件隐藏）+ 动态开关（仅现代） | |
-| P2-4 | **切换样式**：改为「图标+文字」按钮 + NEW 角标 + **图片预览弹层**（点击即切） | 图片已就位：`app/public/style-previews/*.webp` |
+| P2-4 | **切换样式**：改为「图标+文字」按钮 + NEW 角标 + **图片预览弹层**（点击即切） | 图片已就位：`public/style-previews/*.webp` |
 | P2-5 | 中区：播放模式 + 音量（**悬停向右展开** 80px） | |
 | P2-6 | 右区：歌词颜色（色块）+ 歌词字号（滑块）+ 音质 + 桌面歌词 + 播放队列 | |
 | P2-7 | 透明彩胶下「歌词颜色」联动为「胶片/歌词颜色」+「跟随封面颜色」按钮 | 与参考同语义 |
@@ -232,7 +232,7 @@ Tauri v2 官方默认值（已核对文档）：
 |---|---|---|---|
 | **R1** | 灵动岛是否要做**独立窗口** | 参考是独立置顶窗口 + 鼠标穿透 + 快照同步（`island_window.rs`）。我们目前渲染在主窗 App 根 —— 窗口化意味着**架构级改动**（跨窗同步、穿透轮询、焦点不抢占） | **先做 P3-1~P3-5 的形态与交互**（在主窗内即可验收），窗口化单独立项评估 |
 | **R2** | 展开播放器「全屏」如何实现 | 参考用 `createPortal` 到 `body` 铺满窗口（页面级全屏，非 OS 全屏） | 我们的 App 有带 `transform` 的祖先容器，`fixed` 会失效 → 同样需要 portal。**无需 Tauri 全屏 API**，风险低 |
-| **R3** | 6 张样式预览图的使用 | 已从参考实现取用并放入 `app/public/style-previews/`（GPL-3.0，个人自用不触发分发义务，依据 `vendor/music-reference/README.md`） | 无需额外动作；**若将来对外分发需重新评估** |
+| **R3** | 6 张样式预览图的使用 | 已从参考实现取用并放入 `public/style-previews/`（GPL-3.0，个人自用不触发分发义务，依据 `vendor/music-reference/README.md`） | 无需额外动作；**若将来对外分发需重新评估** |
 | **R4** | macOS 点击穿透能力 | 此前记录「macOS 无点击穿透」**不准确**：Tauri `set_ignore_cursor_events` 在 macOS 有对应实现（`NSWindow.ignoresMouseEvents`） | 真机实测后再定；**不要在文案里承诺未验证的能力** |
 | **R5** | 桌面歌词「解锁按钮」交互 | 参考用 **Rust 鼠标钩子**（`get_cursor_position` + 穿透区判定）实现"锁定后小区域内可点" | 属平台相关增强，**建议降级**：锁定后双击歌词条解锁（无需钩子） |
 | **R6** | 全流程均无 GUI 自动化 | 本机 `osascript`/窗口查询被 TCC 拦截，**手感类只能人工确认** | 每阶段交付后由你点一遍；我把「未验证项」逐条列出 |

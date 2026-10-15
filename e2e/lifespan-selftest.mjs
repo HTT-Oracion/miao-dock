@@ -30,7 +30,7 @@ import process from 'node:process';
 import { ensureDevServer, portOpen } from './_devserver.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const APP = path.join(ROOT, 'app');
+const APP = ROOT;
 const BIN = path.join(APP, 'src-tauri', 'target', 'debug', 'miao-dock');
 /// 落盘根目录与状态目录都指到仓库内的临时目录：既别碰用户的 ~/Pictures/Box 漫画，
 /// 也让每次自检从空目录开始（否则续做/编号会受上一轮残留影响）。
@@ -78,7 +78,7 @@ const ALL_PORTS = [...SERVICE_PORTS, ENGINE_PORT, LLM_PORT, ...(MODE === 'real' 
 
 function requireBin() {
   if (!existsSync(BIN)) {
-    console.error(`找不到二进制：${BIN}\n先在 app/src-tauri 下 cargo build`);
+    console.error(`找不到二进制：${BIN}\n先在 src-tauri 下 cargo build`);
     process.exit(2);
   }
 }

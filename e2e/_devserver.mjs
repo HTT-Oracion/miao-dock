@@ -42,13 +42,13 @@ export function portOpen(port, timeout = 500) {
  */
 export async function ensureDevServer({ root, port = 1420 } = {}) {
   if (await portOpen(port)) return null;
-  const vite = path.join(root, 'app', 'node_modules', '.bin', 'vite');
+  const vite = path.join(root, 'node_modules', '.bin', 'vite');
   if (!existsSync(vite)) {
-    console.error(`找不到 vite：${vite}\n先在 app/ 下 npm install`);
+    console.error(`找不到 vite：${vite}\n先在仓库根 npm install`);
     process.exit(2);
   }
   const child = spawn(vite, ['--port', String(port), '--strictPort'], {
-    cwd: path.join(root, 'app'),
+    cwd: root,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   for (let i = 0; i < 60; i++) {

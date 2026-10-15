@@ -57,7 +57,7 @@
  *   M12 改号的占号复检被去掉 ⇒ 覆盖已有话 ⇒ N10b 变红；
  *   M13 改号的在跑任务门被去掉 ⇒ 翻译中也能改名 ⇒ N10c 变红。
  *
- * 🔴 **锚点全在 Rust 源码**（`app/src-tauri/src/boxsvc/**`）：`service/`（Node 实现）已退役，
+ * 🔴 **锚点全在 Rust 源码**（`src-tauri/src/boxsvc/**`）：`service/`（Node 实现）已退役，
  *    靶子只剩 `boxsvc` 一个 —— 打 Node 文件的变异**不会被执行**，只会变成"该红没红"的
  *    假阳性。改完 Rust 源码必须 `cargo build --bin boxsvc` 重编，否则验的是上一份产物。
  *
@@ -89,8 +89,8 @@ import { killTree, SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const ENGINE_ENTRY = path.join(ROOT, 'engine', 'src', 'server.mjs');
-const APP_SRC = path.join(ROOT, 'app', 'src', 'App.tsx'); // 前端源码**不属** service/，保留
-const CARGO_DIR = path.join(ROOT, 'app', 'src-tauri');
+const APP_SRC = path.join(ROOT, 'src', 'App.tsx'); // 前端源码**不属** service/，保留
+const CARGO_DIR = path.join(ROOT, 'src-tauri');
 /** 反证轮要破坏的 Rust 源码（三处，作用各不相同，别合并）。 */
 const RUST_HANDLERS_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'handlers.rs');
 const RUST_LIBRARY_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'library.rs');
@@ -489,9 +489,7 @@ async function runAll() {
     // ---- L8：前端接线（源码断言）——队列删的是 /tasks/delete，库删带 deleteFiles ----
     // ⚠️ 先剥注释再判：注释里写着端点名（本仓惯例会写），不剥就会测到注释而非调用点。
     const appSrc = stripComments(fs.readFileSync(APP_SRC, 'utf8'));
-    const libSrc = stripComments(
-      fs.readFileSync(path.join(ROOT, 'app', 'src', 'screens', 'LibraryScreen.tsx'), 'utf8'),
-    );
+    const libSrc = stripComments(fs.readFileSync(path.join(ROOT, 'src', 'screens', 'LibraryScreen.tsx'), 'utf8'));
     check(
       'L8',
       '前端接线：队列删打 `/tasks/delete`；漫画库删打 `/delete` 且带 `deleteFiles` 勾选结果',

@@ -102,7 +102,7 @@
 | 类别 | 项 |
 |---|---|
 | Rust | `lyrics_window.rs` **整个文件**（8 个命令）、`main.rs` 注册、`capabilities` 的 `desktop-lyrics` 白名单 |
-| 构建 | `tauri.conf.json` / `vite.config.ts` 的 `lyrics.html` 多入口、`app/lyrics.html`、`screens/lyrics/**` |
+| 构建 | `tauri.conf.json` / `vite.config.ts` 的 `templates/lyrics.html` 多入口、`templates/lyrics.html`、`screens/lyrics/**` |
 | store | `lyricsWindowOpen` / `setLyricsWindowOpen`、`pushLyricsState` / `pushLyricsPrefs`、`desktopLyrics*` 4 偏好与 setter、`resetDesktopLyricsPrefs` |
 | ipc | `openLyricsWindow` / `closeLyricsWindow` / `lyricsWindowOpen` / `lyricsPush` / `getLyricsState` / `lyricsControl` 及类型 |
 | UI | `PlayerBar`（开关 + 齿轮）、`ExpandedPlayer`（桌面歌词按钮）、`DesktopLyricsSettingsModal`、`App.tsx` 入口判断 |

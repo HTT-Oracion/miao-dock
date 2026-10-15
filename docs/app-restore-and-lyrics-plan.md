@@ -85,7 +85,7 @@ if (isPlaying) play(); else pause();
 | 收起按钮 | **`ChevronLeft`**（不是 `ChevronDown`），顶栏只有这一个按钮 | `ExpandedPlayer.tsx:414-418` |
 | 收起入口 | 按钮 + Esc；**无下滑手势** | `MusicScreen.tsx:43-54` |
 | 展开播放器定位 | **`position: fixed; inset: 0`**（已铺满视口） | `app.css:2682` |
-| 全屏相关代码 | `app/src` 内**零命中**（无状态、无 API） | — |
+| 全屏相关代码 | `src` 内**零命中**（无状态、无 API） | — |
 
 ### 2.2 ⚠️ 矛盾点：我们的播放器**本来就已经铺满全屏**
 

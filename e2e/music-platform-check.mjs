@@ -5,11 +5,11 @@
  * 为什么需要它（D-20「每层都要断言」+ D-31「假阳性比没测试更危险」）：
  *
  *   一条「四平台接通」的改动横跨五层：
- *     RUST     app/src-tauri/src/music/mod.rs 定义 + main.rs 的 generate_handler! 注册
- *     IPC      app/src/music/ipc.ts 的 invoke('<command>') 封装
- *     PLATFORM app/src/music/platform.ts 的能力矩阵 + 派发分支
- *     STORE    app/src/music/store.ts 的平台感知状态与 action
- *     UI       app/src/screens/MusicScreen.tsx + screens/music/* + styles/*.scss
+ *     RUST     src-tauri/src/music/mod.rs 定义 + main.rs 的 generate_handler! 注册
+ *     IPC      src/music/ipc.ts 的 invoke('<command>') 封装
+ *     PLATFORM src/music/platform.ts 的能力矩阵 + 派发分支
+ *     STORE    src/music/store.ts 的平台感知状态与 action
+ *     UI       src/screens/MusicScreen.tsx + screens/music/* + styles/*.scss
  *
  *   这五层的静默失败各不相同、互不覆盖：
  *     · Rust 命令**定义了但漏注册** → 编译全绿，运行时才报 "command not found"。
@@ -37,7 +37,7 @@ import { readStyleSource } from './_styles-source.mjs';
 import { cachedReadText, cachedReadBytes, overrideFile, clearOverrides } from './_file-cache.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const APP = path.join(ROOT, 'app');
+const APP = ROOT;
 
 const F = {
   rustMod: path.join(APP, 'src-tauri', 'src', 'music', 'mod.rs'),
@@ -60,7 +60,7 @@ const F = {
   tauriConf: path.join(APP, 'src-tauri', 'tauri.conf.json'),
   cargoToml: path.join(APP, 'src-tauri', 'Cargo.toml'),
   viteConfig: path.join(APP, 'vite.config.ts'),
-  lyricsHtml: path.join(APP, 'lyrics.html'),
+  lyricsHtml: path.join(APP, 'templates', 'lyrics.html'),
   desktopLyrics: path.join(APP, 'src', 'screens', 'lyrics', 'DesktopLyrics.tsx'),
   musicScreen: path.join(APP, 'src', 'screens', 'MusicScreen.tsx'),
   app: path.join(APP, 'src', 'App.tsx'),
@@ -678,7 +678,7 @@ const CAP_KEYS = [
 // ── 断言表：每条 { id, group, run(s) -> {ok, detail} } ─────────────────────
 const A = [];
 const add = (id, group, run) => A.push({ id, group, run });
-const UI_GAP = 'UI 尚未落地（app/src/screens/music/ 缺失或缺关键片段）/待负责人复核';
+const UI_GAP = 'UI 尚未落地（src/screens/music/ 缺失或缺关键片段）/待负责人复核';
 
 // ============================ RUST ============================
 for (const [plat, cmds] of Object.entries(CONTRACT)) {
@@ -899,7 +899,7 @@ const ROW_LISTS = {
 // 后者被替换掉不影响「是否虚拟滚动」这个事实，锁死它们只会让断言在合法重构时误红。
 add('UI.virtualList', 'UI', (s) => {
   const v = readMaybe(F.virtualList);
-  if (!v) return { ok: false, detail: uiNote(s, '未读到 app/src/components/units/VirtualList.tsx') };
+  if (!v) return { ok: false, detail: uiNote(s, '未读到 src/components/units/VirtualList.tsx') };
   const need = [
     [/items\.slice\(/, '按窗口切片渲染（items.slice）'],
     [/ui-vlist-inner/, '撑高元素（否则滚动条长度不反映真实内容）'],
@@ -1014,7 +1014,7 @@ add('UI.playerBarRule', 'UI', (s) => {
  */
 add('PLAYER.kernelExists', 'PLAYER', (s) => {
   const k = stripComments(s.kernel);
-  if (!k) return { ok: false, detail: '未读到 app/src/components/MusicKernel.tsx' };
+  if (!k) return { ok: false, detail: '未读到 src/components/MusicKernel.tsx' };
   const missing = [];
   if (!/<audio\b/.test(k)) missing.push('未持有 <audio> 元素');
   if (!/\buseMusicStore\b/.test(k)) missing.push('未接 store（useMusicStore）');
@@ -1597,14 +1597,14 @@ add('LYRICS.sameOrigin', 'LYRICS', (s) => {
   // localStorage 隔离 → 歌词窗读不到主窗写的字号/高亮色/锁定态。
   // 与官方登录窗口（用 External）是**不同场景**，照抄就错。
   if (!s.rustLyrics) return { ok: false, detail: 'lyrics_window.rs 不存在' };
-  const usesApp = /WebviewUrl::App\(\s*"lyrics\.html"/.test(s.rustLyrics);
+  const usesApp = /WebviewUrl::App\(\s*"templates\/lyrics\.html"/.test(s.rustLyrics);
   if (!usesApp) {
     const usesExternal = /WebviewUrl::External/.test(s.rustLyrics);
     return {
       ok: false,
       detail: usesExternal
         ? '歌词窗用了 WebviewUrl::External → 跨 origin → localStorage 隔离（读不到偏好）'
-        : '未找到 WebviewUrl::App("lyrics.html")（歌词窗必须加载应用自身页面才同 origin）',
+        : '未找到 WebviewUrl::App("templates/lyrics.html")（歌词窗必须加载应用自身页面才同 origin）',
     };
   }
   return { ok: true, detail: '' };
@@ -1643,11 +1643,11 @@ add('LYRICS.dragPermission', 'LYRICS', (s) => {
   return { ok: true, detail: '' };
 });
 add('LYRICS.viteMultiEntry', 'LYRICS', (s) => {
-  // 单入口时 dist 里没有 lyrics.html，Rust 的 WebviewUrl::App("lyrics.html") 会加载失败
-  if (!s.viteConfig) return { ok: false, detail: 'app/vite.config.ts 不存在' };
-  if (!/lyrics:\s*new URL\(\s*['"]\.\/lyrics\.html['"]/.test(s.viteConfig))
-    return { ok: false, detail: 'vite 未把 lyrics.html 配成第二个入口（dist 里不会有它）' };
-  if (!s.lyricsHtml) return { ok: false, detail: 'app/lyrics.html 不存在' };
+  // 单入口时 dist 里没有 lyrics.html，Rust 的 WebviewUrl::App("templates/lyrics.html") 会加载失败
+  if (!s.viteConfig) return { ok: false, detail: 'vite.config.ts 不存在' };
+  if (!/lyrics:\s*new URL\(\s*['"]\.\/templates\/lyrics\.html['"]/.test(s.viteConfig))
+    return { ok: false, detail: 'vite 未把 templates/lyrics.html 配成第二个入口（dist 里不会有它）' };
+  if (!s.lyricsHtml) return { ok: false, detail: 'templates/lyrics.html 不存在' };
   return { ok: true, detail: '' };
 });
 add('LYRICS.progressNotPushed', 'LYRICS', (s) => {
@@ -3084,7 +3084,7 @@ add('ISLANDV.desktopLyricsKept', 'ISLANDV', (s) => {
     missing.push('screens/lyrics/DesktopLyrics.tsx 不在或没了 DesktopLyrics');
   if (!existsSync(F.rustLyrics) || !/open_lyrics_window/.test(s.rustLyrics ?? ''))
     missing.push('src-tauri/src/lyrics_window.rs 不在或没了 open_lyrics_window');
-  if (!existsSync(F.lyricsHtml)) missing.push('app/lyrics.html 不在');
+  if (!existsSync(F.lyricsHtml)) missing.push('templates/lyrics.html 不在');
   const store = stripComments(s.store ?? '');
   if (!hasMethodImpl(store, 'pushLyricsState')) missing.push('store 的 pushLyricsState 实现没了');
   if (!/\bdesktopLyricsFontSize\b/.test(store)) missing.push('desktopLyrics* 偏好没了');
@@ -4672,7 +4672,7 @@ const MUTATIONS = [
   {
     name: '歌词窗改用 WebviewUrl::External（跨 origin → 读不到偏好）',
     file: F.rustLyrics,
-    find: 'WebviewUrl::App("lyrics.html".into())',
+    find: 'WebviewUrl::App("templates/lyrics.html".into())',
     replace: 'WebviewUrl::External("https://example.com/lyrics.html".parse().unwrap())',
     expect: ['LYRICS.sameOrigin'],
   },
@@ -4693,7 +4693,7 @@ const MUTATIONS = [
   {
     name: '把 vite 的第二入口 lyrics 删掉（dist 里将没有 lyrics.html）',
     file: F.viteConfig,
-    find: "lyrics: new URL('./lyrics.html', import.meta.url).pathname,",
+    find: "lyrics: new URL('./templates/lyrics.html', import.meta.url).pathname,",
     replace: '',
     expect: ['LYRICS.viteMultiEntry'],
   },
@@ -4783,35 +4783,35 @@ const MUTATIONS = [
   },
   {
     name: '去掉 <audio> 的 crossOrigin（网络歌曲被音频图接管后静音）',
-    file: 'app/src/components/MusicKernel.tsx',
+    file: 'src/components/MusicKernel.tsx',
     find: "      crossOrigin={corsMode ? 'anonymous' : undefined}",
     replace: '      crossOrigin={undefined}',
     expect: ['AUDIO.corsMode'],
   },
   {
     name: '去掉 CORS 回退里的 markNotWirable 标记（回退后在非 CORS 下被接管 → 静音）',
-    file: 'app/src/components/MusicKernel.tsx',
+    file: 'src/components/MusicKernel.tsx',
     find: '          markNotWirable(a);',
     replace: '          void a;',
     expect: ['AUDIO.fallback'],
   },
   {
     name: '让 isWirable 不再检查 CORS 模式（非 CORS 元素也会被接管）',
-    file: 'app/src/music/audioGraph.ts',
+    file: 'src/music/audioGraph.ts',
     find: "  return el.crossOrigin === 'anonymous';",
     replace: '  return true;',
     expect: ['AUDIO.refuseNonCors'],
   },
   {
     name: '去掉 gain → destination 的连接（接管即静音）',
-    file: 'app/src/music/audioGraph.ts',
+    file: 'src/music/audioGraph.ts',
     find: '      gain.connect(ctx.destination); // 唯一出口：不接回 destination = 静音',
     replace: '      void gain; // 反证：不接回出口',
     expect: ['AUDIO.connectDestination'],
   },
   {
     name: '在灵动岛里再建一次音频图（第二个调用方会抛 InvalidStateError）',
-    file: 'app/src/components/DynamicIsland.tsx',
+    file: 'src/components/DynamicIsland.tsx',
     find: '      const got = await attachAnalyser(findAudioElement());',
     replace:
       '      const got = await attachAnalyser(findAudioElement());\n      const __probe = (window as unknown as { createMediaElementSource?: unknown })\n        .createMediaElementSource;\n      void __probe;',
@@ -4819,35 +4819,35 @@ const MUTATIONS = [
   },
   {
     name: 'Rust 不再把载荷写入缓存（歌词窗补拉永远拿到空 → 打开还是没歌词）',
-    file: 'app/src-tauri/src/lyrics_window.rs',
+    file: 'src-tauri/src/lyrics_window.rs',
     find: '        *g = Some(payload.clone());',
     replace: '        let _ = &mut g;',
     expect: ['LYRICS.stateBackfill'],
   },
   {
     name: '歌词窗去掉挂载后的补拉（回到"暂停再播放才显示"）',
-    file: 'app/src/screens/lyrics/DesktopLyrics.tsx',
+    file: 'src/screens/lyrics/DesktopLyrics.tsx',
     find: "        const cached = await invoke<LyricsPayload | LyricsPrefsPayload | null>('get_lyrics_state');",
     replace: '        const cached = null as LyricsPayload | LyricsPrefsPayload | null;',
     expect: ['LYRICS.stateBackfill'],
   },
   {
     name: 'main.rs 不注册 lyrics_control（调用报"命令不存在"，被 catch 吞掉）',
-    file: 'app/src-tauri/src/main.rs',
+    file: 'src-tauri/src/main.rs',
     find: '            lyrics_window::lyrics_control,',
     replace: '            // lyrics_window::lyrics_control,',
     expect: ['LYRICS.controlBridge'],
   },
   {
     name: '主窗不处理 next 动作（该按钮点了没反应）',
-    file: 'app/src/components/MusicKernel.tsx',
+    file: 'src/components/MusicKernel.tsx',
     find: "            case 'next':\n              s.next();\n              break;",
     replace: "            case 'unused-next':\n              break;",
     expect: ['LYRICS.controlBridge'],
   },
   {
     name: 'cycle-mode 后不补推状态（歌词窗模式图标滞后，像点了没反应）',
-    file: 'app/src/components/MusicKernel.tsx',
+    file: 'src/components/MusicKernel.tsx',
     find: '              void s.pushLyricsState();',
     replace: '              void 0;',
     expect: ['LYRICS.modeIconSync'],
@@ -5003,14 +5003,14 @@ const MUTATIONS = [
   },
   {
     name: '从音频图里去掉 GainNode（音量退回依赖元素 volume，部分平台会失效）',
-    file: 'app/src/music/audioGraph.ts',
+    file: 'src/music/audioGraph.ts',
     find: '    gain = gain ?? ctx.createGain();',
     replace: '    gain = gain ?? null;',
     expect: ['AUDIO.connectDestination'],
   },
   {
     name: '把 onEnded 改回直接调 next()（单曲循环失效）',
-    file: 'app/src/components/MusicKernel.tsx',
+    file: 'src/components/MusicKernel.tsx',
     find: '      onEnded={() => handleTrackEnded()}',
     replace: '      onEnded={() => void 0}',
     expect: ['AUDIO.trackEndedOne'],
@@ -5182,14 +5182,14 @@ const MUTATIONS = [
   // ── ISLANDV 灵动岛第 4 态（歌词卡）──────────────────────────────────────
   {
     name: 'islandView 的默认值改成 lyrics（首次使用就落在歌词卡）',
-    file: 'app/src/music/store.ts',
+    file: 'src/music/store.ts',
     find: "  islandView: 'play',\n",
     replace: "  islandView: 'lyrics',\n",
     expect: ['ISLANDV.pref.default'],
   },
   {
     name: 'IslandView 放宽成 string（localStorage 里的脏值能一路流到渲染层）',
-    file: 'app/src/music/store.ts',
+    file: 'src/music/store.ts',
     find: "export type IslandView = 'play' | 'lyrics';",
     replace: 'export type IslandView = string;',
     expect: ['ISLANDV.pref.type'],
@@ -5336,7 +5336,7 @@ const MUTATIONS = [
     name: '把网易云登录窗改成加载应用自身页面（照抄歌词窗写法 ⇒ 登录页不出现）',
     file: F.rustMod,
     find: '            WebviewUrl::External("about:blank".parse().map_err(|e: url::ParseError| e.to_string())?),',
-    replace: '            WebviewUrl::App("index.html".into()),',
+    replace: '            WebviewUrl::App("templates/index.html".into()),',
     expect: ['WEBVIEW.loginExternal'],
   },
 

@@ -63,7 +63,7 @@ import process from 'node:process';
 import { killTree, RUST_BIN, SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
-const CARGO_DIR = path.join(ROOT, 'app', 'src-tauri');
+const CARGO_DIR = path.join(ROOT, 'src-tauri');
 /** 反证轮要破坏的 Rust 源码（三处，作用各不相同，别合并）。 */
 const RUST_ENGINE_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'engine.rs');
 const RUST_STATE_SRC = path.join(CARGO_DIR, 'src', 'boxsvc', 'engine', 'state.rs');

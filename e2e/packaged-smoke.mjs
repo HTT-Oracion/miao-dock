@@ -45,7 +45,7 @@ const ROOT = path.resolve(HERE, '..');
 const REFUTE = process.argv.includes('--refute');
 const TOKEN = 'a'.repeat(64);
 
-const TARGET = path.join(ROOT, 'app', 'src-tauri', 'target');
+const TARGET = path.join(ROOT, 'src-tauri', 'target');
 const NSIS_DIR = path.join(TARGET, 'release', 'bundle', 'nsis');
 const RELEASE_BOXSVC = path.join(TARGET, 'release', process.platform === 'win32' ? 'boxsvc.exe' : 'boxsvc');
 

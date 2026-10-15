@@ -1,6 +1,6 @@
 # 音乐模块键盘快捷键 —— 实现报告
 
-- **实现**：`app/src/hooks/useMusicHotkeys.ts`（新增） + `app/src/components/MusicKernel.tsx`（挂载调用）
+- **实现**：`src/hooks/useMusicHotkeys.ts`（新增） + `src/components/MusicKernel.tsx`（挂载调用）
 - **门禁同步**：`e2e/units-structure-check.mjs` 的 `HOOKS_MANIFEST` 补了一个文件名（原因见 §6）
 - **基线**：`8337a4b`，工作区干净，未 commit（按纪律交给负责人）
 

@@ -52,9 +52,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const COMMANDS_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'commands.rs');
-const SERVICE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'service.rs');
-const APP_TSX = path.join(ROOT, 'app', 'src', 'App.tsx');
+const COMMANDS_RS = path.join(ROOT, 'src-tauri', 'src', 'commands.rs');
+const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service.rs');
+const APP_TSX = path.join(ROOT, 'src', 'App.tsx');
 
 const REFUTE = process.argv.includes('--refute');
 

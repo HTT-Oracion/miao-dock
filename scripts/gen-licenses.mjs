@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 生成第三方许可清单 → `app/src/generated/licenses.json`（台账 D-84）。
+ * 生成第三方许可清单 → `src/generated/licenses.json`（台账 D-84）。
  *
  * 跑法：`npm run task -- gen:licenses`
  *
@@ -37,17 +37,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const APP = path.resolve(HERE, '..');
-const ROOT = path.resolve(APP, '..');
+/** 仓库根（本脚本在 `scripts/` 下；前端与 `src-tauri` 都在根级，故这里就是它们的父目录） */
+const ROOT = path.resolve(HERE, '..');
 
-const PKG_LOCK = path.join(APP, 'package-lock.json');
-const CARGO_LOCK = path.join(APP, 'src-tauri', 'Cargo.lock');
-const OUT = path.join(APP, 'src', 'generated', 'licenses.json');
+const PKG_LOCK = path.join(ROOT, 'package-lock.json');
+const CARGO_LOCK = path.join(ROOT, 'src-tauri', 'Cargo.lock');
+const OUT = path.join(ROOT, 'src', 'generated', 'licenses.json');
 /// 引擎侧来源（C5）：资产许可在清单里逐条声明，上游/模型的总许可在版本锁 §6。
 const ENGINE_MANIFEST = path.join(ROOT, 'engine', 'models.manifest.json');
 const ENGINE_VERSIONS = path.join(ROOT, 'engine', 'VERSIONS.lock');
 /// 分发物配置：用来**推导**"这条资产有没有被打进包"（C5 的正面陈述）。
-const TAURI_CONF = path.join(APP, 'src-tauri', 'tauri.conf.json');
+const TAURI_CONF = path.join(ROOT, 'src-tauri', 'tauri.conf.json');
 
 /**
  * 声明串 → 归一后的许可标识。
@@ -86,7 +86,7 @@ function readNpm() {
       skippedDev++;
       continue;
     }
-    const manifest = path.join(APP, key, 'package.json');
+    const manifest = path.join(ROOT, key, 'package.json');
     let license = null;
     if (existsSync(manifest)) {
       try {
@@ -255,8 +255,8 @@ const data = {
    */
   disclaimer: '以下是各依赖**自己声明**的许可，由 package-lock.json / Cargo.lock / engine 清单与版本锁枚举得出，',
   sources: {
-    npm: 'app/package-lock.json + app/node_modules/**/package.json（不含 devDependencies）',
-    rust: 'app/src-tauri/Cargo.lock + ~/.cargo/registry/src/**/Cargo.toml',
+    npm: 'package-lock.json + node_modules/**/package.json（不含 devDependencies）',
+    rust: 'src-tauri/Cargo.lock + ~/.cargo/registry/src/**/Cargo.toml',
     engine: 'engine/models.manifest.json（逐条 license）+ engine/VERSIONS.lock §6（上游/模型总许可）',
   },
   /** 供门槛脚本对账：来源文件的规模（依赖变了而没重跑本脚本 ⇒ 不一致 ⇒ 红） */

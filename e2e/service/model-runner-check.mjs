@@ -34,7 +34,7 @@
  * 变异跑完**按字节还原**；M1/M2 还重编译（靶子是另一个进程）。
  *
  * 用法：node e2e/service/model-runner-check.mjs [--refute]
- * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin boxsvc`
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -48,10 +48,10 @@ import { killTree, RUST_BIN, REPO_ROOT } from './_service-harness.mjs';
 const REFUTE = process.argv.includes('--refute');
 const SELF = fileURLToPath(import.meta.url);
 const TOKEN = 'a'.repeat(64);
-const STATE_RS = path.join(REPO_ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 'state.rs');
-const MODEL_STORE_RS = path.join(REPO_ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 'model_store.rs');
-const FETCH_MODELS_RS = path.join(REPO_ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 'fetch_models.rs');
-const SRC_TAURI = path.join(REPO_ROOT, 'app', 'src-tauri');
+const STATE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'state.rs');
+const MODEL_STORE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'model_store.rs');
+const FETCH_MODELS_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'fetch_models.rs');
+const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
 const CARGO = process.env.CARGO || 'cargo';
 
 let passed = 0;
@@ -69,7 +69,7 @@ function check(name, cond, extra) {
 }
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
   process.exit(1);
 }
 
@@ -185,7 +185,7 @@ const headers = { 'x-box-token': TOKEN, 'content-type': 'application/json' };
     //    `models` 报的是"盘上文件在不在"，`modelDownload` 报的是"下载/校验这件**任务**"。
     const dl = st?.modelDownload ?? {};
     // 🔴 判据里必须有 **`path.isAbsolute`**：只比 `path.resolve()` 会被 cwd 掩盖 ——
-    //    相对串 `app/src-tauri/target/debug/boxsvc.exe` 在本仓 cwd 下恰好解析成同一个文件，
+    //    相对串 `src-tauri/target/debug/boxsvc.exe` 在本仓 cwd 下恰好解析成同一个文件，
     //    「装到用户机器上就不存在」这件事在断言里**看不出来**（M1 变异当初就是这么假绿的）。
     check(
       'W1 默认执行体 == **当前可执行文件自己**，且是绝对路径（相对路径在本机能跑、装完就没了）',
@@ -371,7 +371,7 @@ if (REFUTE) {
     const restore = mutateFile(
       STATE_RS,
       'None => std::env::current_exe().unwrap_or_else(|_| PathBuf::from("boxsvc")),',
-      'None => PathBuf::from("app/src-tauri/target/debug/boxsvc.exe"),',
+      'None => PathBuf::from("src-tauri/target/debug/boxsvc.exe"),',
     );
     const built = await rebuild();
     const r = await runForward();

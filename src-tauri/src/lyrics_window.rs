@@ -143,7 +143,7 @@ pub fn open_lyrics_window(app: AppHandle) -> Result<(), String> {
 
     // 窗口本体只做一条极简歌词：无边框、始终置顶、跳过任务栏。
     // 尺寸刻意小 —— 桌面歌词是"一条浮在桌面上的文字"，做成半屏会变成第二个播放器。
-    WebviewWindowBuilder::new(&app, LYRICS_WINDOW, WebviewUrl::App("lyrics.html".into()))
+    WebviewWindowBuilder::new(&app, LYRICS_WINDOW, WebviewUrl::App("templates/lyrics.html".into()))
         .title("桌面歌词")
         .inner_size(win_w, win_h)
         .decorations(false)

@@ -140,7 +140,7 @@ el.style.width = `${p * 100}%`;
 ### 回写落点
 
 本文件 + `docs/spec-notes.md` D-55（原始开关的来龙去脉，标注其后继为 D-137）
-+ `app/src/screens/music/KaraokeLyrics.tsx` 头部注释 + `player-options.ts` 常量注释。
++ `src/screens/music/KaraokeLyrics.tsx` 头部注释 + `player-options.ts` 常量注释。
 
 ---
 
@@ -393,7 +393,7 @@ ubuntu + macos 双平台，Node 22。必过门：
 
 ### 改法
 
-1. 新增 `app/src/components/units/Modal.tsx`：蒙层 + 卡片 + 标题/正文/操作三段。
+1. 新增 `src/components/units/Modal.tsx`：蒙层 + 卡片 + 标题/正文/操作三段。
    `busy` 时蒙层点击失效（提交中误关）。**只做结构去重，行为一字不动。**
 2. 替换 5 处：`components/QuitConfirm.tsx` · `screens/library/modals.tsx`（原 `Sheet` 外壳，
    4 个调用点一并改 `<Modal>`）· `screens/LibraryScreen.tsx`（删除确认 / 已隐藏管理）·
@@ -531,7 +531,7 @@ HTTP 语义耦合）仍留在 `server.mjs`；`store` 仍反向依赖 server 注�
 > 中断后 **M10/M12 两处变异残留在工作区**，导致后续正向跑出 `20/4`（N8/N10b/c/d），
 > 一度被误判为「搬迁引入的回归」。用 `git worktree add … HEAD` 跑**基线对照**（24/0）才定性。
 > **教训**：本仓「原地变异」型反证轮**必须整轮跑完**（后台 + 足时），跑完**必查 `git status`**；
-> 中断后先 `grep -rn "refute：" service/src app/src` 清残留，再下任何结论。
+> 中断后先 `grep -rn "refute：" service/src src` 清残留，再下任何结论。
 
 ---
 
@@ -672,7 +672,7 @@ refute 13/13（字节还原校验全过）** · `check:contract` 77/0 · `check:
 > ⚠️ **仍未做**：屏本体 `LibraryScreen()` 自身仍是 **1,174 行**（25 个 `useState`）——
 > 它的内部拆分（左栏 / 网格 / 详情各自成件）需按 props 重新划边界，风险高于本轮，留作独立一轮。
 
-> 📌 **环境坑**：`vite build` 会先清空 `app/dist/`（661 个文件），被本机沙箱的
+> 📌 **环境坑**：`vite build` 会先清空 `dist/`（661 个文件），被本机沙箱的
 > safe-delete 守卫拦下（`SAFE_DELETE_BULK_CONFIRM_REQUIRED`，阈值 50）。**不是代码问题**：
 > 把 `dist/` 移走再 build 即可。
 
@@ -685,7 +685,7 @@ refute 13/13（字节还原校验全过）** · `check:contract` 77/0 · `check:
 
 ### 移出的内容
 
-`screens` 无关的**零依赖纯函数** → 新建 `app/src/tools/lyrics.ts`（228 行）：
+`screens` 无关的**零依赖纯函数** → 新建 `src/tools/lyrics.ts`（228 行）：
 `LyricWord` / `ParsedLyricLine` 类型 · `parseLrc` · `finalizeLineDurations` · `parseYrc` ·
 `mergeTranslation` · `lyricIndexAt`。
 
@@ -748,7 +748,7 @@ refute 13/13（字节还原校验全过）** · `check:contract` 77/0 · `check:
 ### 新的目录结构
 
 ```
-app/src/screens/settings/sections/
+src/screens/settings/sections/
   index.tsx             桶文件（5 行）—— 外部引用 `@screens/settings/sections` 路径**不变**
   shared.tsx            共享件：itemOf · Group
   GeneralSection.tsx    ① 通用
@@ -804,7 +804,7 @@ app/src/screens/settings/sections/
 `<aside>`（**204 行** JSX）→ 新建 `screens/library/LeftRail.tsx`（253 行）：
 
 ```
-app/src/screens/library/
+src/screens/library/
   LeftRail.tsx    左栏：搜索框 + 列表（浏览态 / 搜索分组态 / 无分层平铺态）+ 容量脚 + 分页器
   libModel.ts     共享小件：LIB_PAGE_SIZE · AUTHOR_FALLBACK · PageCounts · progressLabel · LibItem
 ```
@@ -894,7 +894,7 @@ app/src/screens/library/
 **背景**：审计 §3.3 说 `store.ts` 混了四层职责（纯函数 / 持久化 / 网络 / 播放状态机）。
 D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层。
 
-### 移出的内容 → `app/src/music/persist.ts`（135 行）
+### 移出的内容 → `src/music/persist.ts`（135 行）
 
 `readLS` · `writeLS` · `LS_SNAPSHOT` · `SNAPSHOT_VERSION` · `SNAPSHOT_MAX_QUEUE` ·
 `SNAPSHOT_PERSIST_INTERVAL_MS` · `ResumeSnapshot` · `truncateQueueForSnapshot` ·
@@ -942,7 +942,7 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 （`useMemo`：`items`/`searchGroups`/`gridView`/`chapterRows`/…）+ 它们的重置副作用**，
 与"渲染什么、点了做什么"是两件事。
 
-### 移出的内容 → `app/src/hooks/useLibraryModel.ts`（472 行）
+### 移出的内容 → `src/hooks/useLibraryModel.ts`（472 行）
 
 一整段连续块（原 149–479 行，330 行）：25 个 `useState` · 全部 `useMemo` 派生 · 随之而来的
 `useEffect`（页码夹回、换词复位、`focus` 定位、预取返工计划…）· `flatViewOf`/`chapterViewOf`
@@ -960,7 +960,7 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 
 第一版把钩子放在 `screens/library/useLibraryModel.ts`，`check:units` 的
 `HOOKS.noMisplacedUse` **立刻变红**：「文件名以 use + 大写字母开头的文件必须住在 `src/hooks/` 内」。
-这条**没有豁免机制** —— 于是钩子落到 `app/src/hooks/useLibraryModel.ts`，并**登记进
+这条**没有豁免机制** —— 于是钩子落到 `src/hooks/useLibraryModel.ts`，并**登记进
 `HOOKS_MANIFEST`**（显式白名单，与 units 的 `MANIFEST` 同一套做法）。
 ⚠️ 不登记的话，`HOOKS` 组会报"hooks 目录多了一个没登记的件" —— 同样是红。
 
@@ -1066,7 +1066,7 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 - 新增 `F.actionsDir`；**16 条变异锚**的 `file:/ 有**两种**写法，自动扫描漏了 6 条
 
 我写脚本扫「`file: F.store` 且 `find` 已不在 `store.ts`」的锚来自动改指，只改了 10 条；
-剩 6 条是 **`file: "app/src/music/store.ts"` 字符串字面量**（不是 `F.store`）⇒ 脚本看不见。
+剩 6 条是 **`file: "src/music/store.ts"` 字符串字面量**（不是 `F.store`）⇒ 脚本看不见。
 最后是 `--refute` 报「破坏锚点未找到：6 条」才暴露的。
 
 **纪律**：批量改 `file:/），若有 action 名写错，`Pick<MusicState, ...>` 会当场报错 ——
@@ -1082,7 +1082,7 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 `check:autostart` 12/0 · `check:docs` 17/0。
 
 > ⚠️ `vite build` 与 `check:settings` **本轮未能验证**：收尾时发现工作区有**另一场会话的在途改动**
-> （正在移除翻译模块：已删 `app/src/screens/settings/translate-api.ts`、`service/src/manga/translate/*` 11 个文件、
+> （正在移除翻译模块：已删 `src/screens/settings/translate-api.ts`、`service/src/manga/translate/*` 11 个文件、
 > `e2e/service/translate-check.mjs`，并改了 `catalog.ts` / `App.tsx` / `package.json` 等，**尚未完成**）。
 > 表现：`build` 报 `TranslateSection.tsx` 引用了不存在的 `translate-api`；`check:settings` 126/50。
 > **与 D-156 无关**（`tsc` 的错误全部落在 `TranslateSection.tsx` / `App.tsx`，本次改的文件 0 错）。
@@ -1121,7 +1121,7 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 类型区（`PlayerSkin`/`LeftView`/`RightView`/`SearchTab`/`CommentTab`/`IslandView` + `MusicState` 接口 418 行）
 + 初始 state + **12 行切片 spread**。`MusicState` 是 store 的公开形状，刻意留在此处。
 
-`app/src/music/` 现在按层分文件：`store.ts`（状态机装配）· `actions/*.ts`（12 段）·
+`src/music/` 现在按层分文件：`store.ts`（状态机装配）· `actions/*.ts`（12 段）·
 `convert.ts`（纯转换）· `prefs.ts`（偏好层）· `persist.ts`（持久化）· `slice.ts`（切片公共件）·
 `lyrics.ts`（歌词解析）· `ipc.ts` / `platform.ts` / `types.ts` / `player-options.ts` / `audioGraph.ts`。
 
@@ -1174,8 +1174,8 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 | `docs/spec-notes.md` | 已**封卷于 D-136**（文件头明写），D-137 起的新条目按规定写 `spec-notes-1.md` —— 本次 D-147~D-157 都在续篇里，无缺失 |
 | `docs/spec-notes-1.md` | D-147~D-157 全部在册（本次改造的完整台账） |
 | `.trae/rules/project_rules.md` | D-148/D-150/D-154 已把范式指针改指 `screens/library/meta.ts` |
-| `README.md` | 无 app/src 结构描述，不存在过期陈述 |
-| `AGENTS.md` | 范式指针 / check 条数（music 216 · settings 180 · units 45 · ia 32 · autostart 12，check:docs 17/0 实证一致）；**补写**了前端 `app/src/music/` 按层分文件的说明（§1 原先只描述服务端域目录，D-156 的新分层没进去） |
+| `README.md` | 无 src 结构描述，不存在过期陈述 |
+| `AGENTS.md` | 范式指针 / check 条数（music 216 · settings 180 · units 45 · ia 32 · autostart 12，check:docs 17/0 实证一致）；**补写**了前端 `src/music/` 按层分文件的说明（§1 原先只描述服务端域目录，D-156 的新分层没进去） |
 
 ### 验收
 
@@ -1204,7 +1204,7 @@ e2e 无锚该消息串；回归 contract 77/0 · lib-manage 24/0 · e10 7/0 · r
 
 **规则刻意收窄**（实测零误报后才定稿）：
 
-- 反引号包裹 + 已知顶层目录（service/app/e2e/docs/scripts/engine/src-tauri）+ 带扩展名的**文件**路径；
+- 反引号包裹 + 已知顶层目录（src/src-tauri/public/scripts/e2e/docs/engine，另**故意留着**旧形态 service/app 当回退陷阱）+ 带扩展名的**文件**路径；
 - **不收目录**（`service/src/manga/` 这类在文档里常被泛泛提及，误报率高）；
 - **不收裸文本**（会把"曾经的 foo.ts"这种叙述算进来）。
 
@@ -1360,7 +1360,7 @@ QR 登录时用户 cookie 通常为空、行为不变。
 
 **处置（只做认定，不做重编号）**：
 - 🔴 **不改旧编号**。两份台账同权（本文件规则第 2 条），而 `D-xxx` 已经被**文档、提交信息、
-  代码注释**大量引用（例：`grep -rn "D-13[7-9]" app/ e2e/` 命中一堆）。重编号会把这些引用
+  代码注释**大量引用（例：`grep -rn "D-13[7-9]" src/ src-tauri/ e2e/` 命中一堆）。重编号会把这些引用
   全部变成指向错误条目的**静默错链** —— 比"两条 D-139"更糟。
 - 🔴 **新条目自 `D-161` 起**（本文件最大编号 D-160 + 1）。`spec-notes.md` 侧不再追加 F 组条目
   （F 组后续一律进本文件，避免再撞）。
@@ -1625,8 +1625,8 @@ Use the `--bin` option to specify a binary, or the `default-run` manifest key.
 available binaries: boxsvc, miao-dock
 ```
 
-**根因**：F0 把桌面端拆成 `lib.rs` + **两个** `[[bin]]`（`miao-dock` 走 `src/main.rs`、
-`boxsvc` 是 e2e 的 rust 靶子走 `src/bin/boxsvc.rs`）。cargo **不猜**"哪个是应用"——
+**根因**：F0 把桌面端拆成 `lib.rs` + **两个** `[[bin]]`（`miao-dock` 走 `src-tauri/src/main.rs`、
+`boxsvc` 是 e2e 的 rust 靶子走 `src-tauri/src/bin/boxsvc.rs`）。cargo **不猜**"哪个是应用"——
 一到两个及以上 bin 就报歧义。这不是 F5 引入的，但 F5 让它第一次被人真的敲到：
 现在默认档已经是 Rust boxsvc（D-168），开发流程从 `cargo run` 变成了日常动作。
 
@@ -1776,7 +1776,7 @@ F 组新增的 8 组钉子（上述七组 + `check:routes`）此前在 `AGENTS.m
 
 ## D-172 · A3c 父死看守 Rust 化：父死判定必须是**双通道**，且"判不出来" ≠ "父死"（2026-10-13）
 
-**改动**：新增 `app/src-tauri/src/child_watch.rs` + `boxsvc --child-watch`（复用已随包的 `boxsvc`，
+**改动**：新增 `src-tauri/src/child_watch.rs` + `boxsvc --child-watch`（复用已随包的 `boxsvc`，
 **不新增第三个可执行文件、不改 `bundle.resources`**）。`service.rs` 的 `watch` 档与
 `boxsvc::engine::supervisor::do_start` 都改走它；stdin 由 `Stdio::null()` 改成 `Stdio::piped()`
 + 注入 `MIAO_CHILD_WATCH_PIPE=1`，父侧用 `_watch_keepalive: Option<ChildStdin>` **攥住写端**。
@@ -1844,7 +1844,7 @@ ToolHelp32 快照在权限不足 / 进程数逼近上限时会失败。把它当
 - `check:child-watch-kill` 改**双靶源码钉**（Node `child-watch.mjs` + Rust `child_watch.rs`），
   保住 D-89「Windows `taskkill` 的 `/F` **无条件**」在两端都成立；反证 **2/2 全红**。
   🔴 判据前必须 `stripComments`：本仓库注释**主动写出了被禁的写法**，不剥就是把注释当代码匹配（D-149 同源）。
-- 注册表 `watch` 从 `['service/src/` 下的 parent-watch.mjs, 'app/src-tauri/**']`（**指向一个与本钉子无关的文件**）
+- 注册表 `watch` 从 `['service/src/` 下的 parent-watch.mjs, 'src-tauri/**']`（**指向一个与本钉子无关的文件**）
   改为真实的四个：`child_watch.rs` / `service.rs` / `supervisor.rs` / `child-watch.mjs`。
 
 **验收**：`check:child-watch` 正向 **3/3**、反证 **1/1 有效**（另 1 靶按结构跳过）；
@@ -1854,7 +1854,7 @@ ToolHelp32 快照在权限不足 / 进程数逼近上限时会失败。把它当
 
 ## D-173 · A3d 模型下载 Rust 化：双靶对拍是唯一能挡住"静默移植缺陷"的手段（2026-10-13）
 
-**改动**：新增 `app/src-tauri/src/boxsvc/engine/model_store.rs`（下载内核，移植自 `engine/model-store.mjs` 603 行）
+**改动**：新增 `src-tauri/src/boxsvc/engine/model_store.rs`（下载内核，移植自 `engine/model-store.mjs` 603 行）
 + `boxsvc --fetch-models`（CLI，移植自 `engine/scripts/fetch-models.mjs`）。
 沿用 A3b/A3c 同一个裁定：**复用已随包的 `boxsvc`，不新增第三个可执行文件、不改 `bundle.resources`**。
 
@@ -2023,7 +2023,7 @@ Tauri v2 数组形式**保留原目录结构**并把 `../` 替换成 `_up_/` ⇒
 
 ### 🔴 缺陷 ④：src 相对路径的基准是 `tauri.conf.json` 所在目录 —— 差点写成错的
 
-首版写 `../engine/models.manifest.json`，从 `app/src-tauri/` 解析是 `app/engine/`（**不存在**）。
+首版写 `../engine/models.manifest.json`，从 `src-tauri/` 解析是 `engine/`（**不存在**）。
 正确是 `../../engine/...`。**W6 当场抓到**（它顺带断言 src 文件真实存在）—— 这条断言的收益
 在写完的下一秒就兑现了。
 
@@ -2180,7 +2180,7 @@ config.mjs **import 即有副作用**（模块顶层 `fs.mkdirSync(STATE_DIR)`�
 它并不重放补丁。把它塞进随包集合并换不来任何功能，却会放大 A1/A2 立起来的
 「`REQUIRED_ASSETS` 三处事实源（Rust / `check:bundle` / `check:resources`）交叉验证」面。
 
-⇒ `app/src-tauri/src/boxsvc/engine/patches.rs` 持 SSOT（`setup-engine.mjs` 的 `ENGINE_PATCHES`）
+⇒ `src-tauri/src/boxsvc/engine/patches.rs` 持 SSOT（`setup-engine.mjs` 的 `ENGINE_PATCHES`）
 的**只读镜像**，只存检测要用的四样：`id` / `mark` / `rel` / `desc`。
 
 ### 决策二：镜像漂移由 **A7 双靶交叉钉**挡住（这是镜像敢存在的唯一理由）
@@ -2604,7 +2604,7 @@ Sakura CC BY-NC-SA 4.0、nllb CC-BY-NC-4.0 —— 而它们恰是**唯一**会�
 
 ## D-187 · D7 macOS 兼容：差异收缩成"写对一处即可"，但**另一平台的分支本机跑不到**（2026-10-14）
 
-**两处差异的实际状态**：① 解释器路径分叉（`app/src-tauri/src/paths.rs` 的 `venv_python_rel()`）**已经在推导函数里
+**两处差异的实际状态**：① 解释器路径分叉（`src-tauri/src/paths.rs` 的 `venv_python_rel()`）**已经在推导函数里
 一次写对**（两个形态都在，返回 `PathBuf` 以免留下正斜杠破坏逐字节比对），且检测侧与
 启动侧逐字节相同（B3 已钉，本组复验）；② 安装命令分叉是纯文档（两份引导都在）。
 
@@ -2632,12 +2632,12 @@ Sakura CC BY-NC-SA 4.0、nllb CC-BY-NC-4.0 —— 而它们恰是**唯一**会�
 而多出来一条**更难的**：带 hardened runtime 的父进程能否拉起**用户自己装的、未签名的**
 python / `llama-server`？—— 这条**只能真机回答**，本仓按 `unverified` 记账（不假装验过）。
 
-**能做的部分全做了**：`app/src-tauri/entitlements.plist`（四项：
+**能做的部分全做了**：`src-tauri/entitlements.plist`（四项：
 `disable-library-validation` / `allow-unsigned-executable-memory` / `allow-jit` /
 `allow-dyld-environment-variables` —— 缺任一条的症状都是"引擎起不来"，与缺 entitlement
 看不出关系；刻意**不含** `app-sandbox`，它会把"拉起外部可执行"整条路堵死）·
 `tauri.conf.json` 的 `hardenedRuntime` + `entitlements` 接线 ·
-**打包前自检** `app/scripts/mac-signing-preflight.mjs` 并接进 `app:build:mac`。
+**打包前自检** `scripts/mac-signing-preflight.mjs` 并接进 `app:build:mac`。
 
 **为什么自检值得单写一个脚本**：签名/公证的失败方式全都**不显眼** ——
 缺 `APPLE_SIGNING_IDENTITY` ⇒ 产出 ad-hoc 签名的包（**本机不报错**，别人机器上被拦）；
@@ -2657,7 +2657,7 @@ python / `llama-server`？—— 这条**只能真机回答**，本仓按 `unver
 
 ## D-189 · E2/E3 Windows 安装器：长路径**只提示不代改**，卸载**默认保留**（2026-10-14）
 
-**决策**：`app/src-tauri/nsis/hooks.nsh`（由 `tauri.windows.conf.json` 的
+**决策**：`src-tauri/nsis/hooks.nsh`（由 `tauri.windows.conf.json` 的
 `bundle.windows.nsis.installerHooks` 引入）只做两件用户看得见的事 ——
 
 - **装完检查长路径开关**：读 64 位视图（`SetRegView 64`）的
@@ -3332,7 +3332,7 @@ watch 目标核验         9/9 个路径真实存在（写错路径的 watch 会
 改成读 Rust 自证出口 + 破坏 Rust 源码之后，**同一句断言咬的换成了产品本身**。这不是"减覆盖换删目录"，是**换靶**。
 
 **🔴 换靶的必备跟随项（初稿漏了，本轮补上）**：注册表里这 5 条（`e4`/`e8`/`e10`/`stall`/`retry`）的 `watch`
-还指着 `service/src/**` —— 反证轮改打 Rust 源码后，**改了 `app/src-tauri/src/**` 却不重跑这些检查**
+还指着 `service/src/**` —— 反证轮改打 Rust 源码后，**改了 `src-tauri/src/**` 却不重跑这些检查**
 （watch 正是"改了哪些文件要重跑哪些检查"的判据）⇒ **静默漏跑**。已照既有惯例（`store` / `engine-parity` /
 `engine-http` 的写法：列具体 Rust 文件 + 自身脚本）改指各自真正依赖的 Rust 源码。
 
@@ -3590,7 +3590,7 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
 
 ## D-211 `pydensecrf` 预编译 wheel 进产品路径：清单随包 + `plan_crf()` 四态选路（2026-10-15）
 
-**症状**：`app/src-tauri/src` 对 `pydensecrf` / `wheels.manifest.json` / wheel 的引用是 **0 处** ——
+**症状**：`src-tauri/src` 对 `pydensecrf` / `wheels.manifest.json` / wheel 的引用是 **0 处** ——
 随包那颗 213 KB wheel 一次都用不上；目标机没有 MSVC 时会去 GitHub 拉 `master.zip` 现场编译而必然失败。
 失败消息是「源码编译失败」，看起来像"用户没装编译器"，实际上是**产品没走那条已经备好的路**。
 

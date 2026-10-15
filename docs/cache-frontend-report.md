@@ -12,14 +12,14 @@
 
 | 文件 | 性质 | 说明 |
 |---|---|---|
-| `app/src/music/ipc.ts` | 修改 | 4 个缓存命令封装（+`CacheStats` 类型导入、头部命令数 94→98） |
-| `app/src/music/store.ts` | 修改 | 播放链路接入缓存查命中 + 后台预热（新增 3 个模块级私有函数） |
-| `app/src/music/types.ts` | 修改 | 新增 `CacheStats` / `CacheProviderStat`（Rust `models.rs` 的逐字镜像） |
+| `src/music/ipc.ts` | 修改 | 4 个缓存命令封装（+`CacheStats` 类型导入、头部命令数 94→98） |
+| `src/music/store.ts` | 修改 | 播放链路接入缓存查命中 + 后台预热（新增 3 个模块级私有函数） |
+| `src/music/types.ts` | 修改 | 新增 `CacheStats` / `CacheProviderStat`（Rust `models.rs` 的逐字镜像） |
 | `e2e/music-platform-check.mjs` | 修改 | 新增 `CACHE` 组 **10 条断言** + **13 条反证** + 3 个判据辅助函数 |
 | `AGENTS.md` / `README.md` | 修改 | `check:music` 条数 184→193（对账用） |
 | `docs/cache-rust-report.md` | 修改 | **仅一行**：删掉报告自身写出的禁词字面量（见 §5.3） |
 
-`openPath` **未重复封装** —— 它在 `app/src/ipc.ts:78`，不在 `music/ipc.ts`。设置页要用时
+`openPath` **未重复封装** —— 它在 `src/ipc.ts:78`，不在 `music/ipc.ts`。设置页要用时
 直接从 `@/ipc` 导入即可（见 §6.3）。
 
 ### 新增的 3 个模块级私有函数（store.ts）
@@ -227,12 +227,12 @@ const stats = await musicCacheStats();
 await musicCacheClear();          // 全清
 await musicCacheClear('kugou');   // 只清酷狗
 
-// ③ 打开缓存目录：**复用 app/src/ipc.ts:78 的 openPath，不要重复封装**
+// ③ 打开缓存目录：**复用 src/ipc.ts:78 的 openPath，不要重复封装**
 import { openPath } from '@/ipc';
 await openPath(stats.root);
 ```
 
-`CacheStats`（`app/src/music/types.ts`，字段名是 **snake_case 跨语言契约**，勿改）：
+`CacheStats`（`src/music/types.ts`，字段名是 **snake_case 跨语言契约**，勿改）：
 
 ```ts
 {

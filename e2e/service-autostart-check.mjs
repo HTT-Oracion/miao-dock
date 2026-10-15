@@ -112,16 +112,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const COMMANDS_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'commands.rs');
-const SERVICE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'service.rs');
-const MAIN_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'main.rs');
-const APP_TSX = path.join(ROOT, 'app', 'src', 'App.tsx');
-const NOT_READY = path.join(ROOT, 'app', 'src', 'screens', 'NotReadyScreen.tsx');
+const COMMANDS_RS = path.join(ROOT, 'src-tauri', 'src', 'commands.rs');
+const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service.rs');
+const MAIN_RS = path.join(ROOT, 'src-tauri', 'src', 'main.rs');
+const APP_TSX = path.join(ROOT, 'src', 'App.tsx');
+const NOT_READY = path.join(ROOT, 'src', 'screens', 'NotReadyScreen.tsx');
 // D-150：`sections.tsx` 已按 Section 拆到 `sections/*.tsx`。A9/D2 只看"代码里有没有这些调用"，
 // 故读全部 Section 的**拼接**；D2 的变异锚落到 TranslateSection（服务启停 UI 在那儿）。
 // ⚠️ 拼接必须**每次 runAll 重读**（不能做成模块级常量）—— 反证轮改的是磁盘上的文件，
 //    常量只算一次 ⇒ 读到旧内容 ⇒ 该红不红（D2 实测假阳性）。
-const SECTIONS_DIR = path.join(ROOT, 'app', 'src', 'screens', 'settings', 'sections');
+const SECTIONS_DIR = path.join(ROOT, 'src', 'screens', 'settings', 'sections');
 const readSections = () =>
   fs
     .readdirSync(SECTIONS_DIR)
@@ -129,8 +129,8 @@ const readSections = () =>
     .map((n) => fs.readFileSync(path.join(SECTIONS_DIR, n), 'utf8'))
     .join('\n');
 const SECTION_TRANSLATE = path.join(SECTIONS_DIR, 'TranslateSection.tsx');
-const IPC_TS = path.join(ROOT, 'app', 'src', 'ipc.ts');
-const CARGO_TOML = path.join(ROOT, 'app', 'src-tauri', 'Cargo.toml');
+const IPC_TS = path.join(ROOT, 'src', 'ipc.ts');
+const CARGO_TOML = path.join(ROOT, 'src-tauri', 'Cargo.toml');
 
 const REFUTE = process.argv.includes('--refute');
 

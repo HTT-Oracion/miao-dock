@@ -84,8 +84,8 @@
 | 资产 | 来源 | 复用方式 |
 |---|---|---|
 | 契约服务端实现 | `miao-trans/mock-service`（已验证：真落盘、任务清单持久化、幂等表、路径三次校验、端口探测、SSE） | **提取为 `service/` 并「去伪造」**：根目录改 `~/Pictures/Box 漫画`、令牌改 CSPRNG 落 0600 文件、翻译改走真实引擎适配层、补 `ServiceManager` 需要的启动参数 |
-| 设计令牌（18 色 Light/Dark + 圆角 + 字体分工） | 插件 `extension/src/theme/tokens.ts`（与设计稿变量集 `3:2` 逐字一致） | 直接迁入 `app/src/theme/tokens.ts`，保证「与插件共用同一套令牌」（《02》§5） |
-| 品牌图形 | 方案文档 `logo/`（7 档 PNG + SVG 母版） | 迁入 `app/src/assets/`，托盘图标取 32/64 档 |
+| 设计令牌（18 色 Light/Dark + 圆角 + 字体分工） | 插件 `extension/src/theme/tokens.ts`（与设计稿变量集 `3:2` 逐字一致） | 直接迁入 `src/theme/tokens.ts`，保证「与插件共用同一套令牌」（《02》§5） |
+| 品牌图形 | 方案文档 `logo/`（7 档 PNG + SVG 母版） | 迁入 `src/assets/`，托盘图标取 32/64 档 |
 
 > **注意**：`miao-trans/mock-service` **保持原样不动**——它是插件端 27 项 e2e 的测试替身（固定令牌 + `.runtime` 目录 + 伪造图片），不能被「真实化」污染。Box 用的是它的**契约实现**，不是它的运行实例。
 

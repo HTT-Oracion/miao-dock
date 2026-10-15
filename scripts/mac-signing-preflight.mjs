@@ -31,8 +31,9 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const APP = path.resolve(HERE, '..');
-const CONF = path.join(APP, 'src-tauri', 'tauri.conf.json');
+/** 仓库根（本脚本在 `scripts/` 下） */
+const ROOT = path.resolve(HERE, '..');
+const CONF = path.join(ROOT, 'src-tauri', 'tauri.conf.json');
 
 /** entitlements 里必须有的四条 —— 缺哪条的症状都是"引擎起不来"，与缺 entitlement 看不出关系。 */
 const REQUIRED_ENTITLEMENTS = [

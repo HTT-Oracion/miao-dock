@@ -220,7 +220,7 @@ const failed = results.filter((r) => !r.ok);
 //    没有反证轮就无法回答"它们真的在盯着东西吗" —— 改坏实现后全绿，是这类断言最常见的失效。
 //    做法：把 Rust 源码按变异改坏 → 重跑 → 对应断言**必须变红** → 按字节还原。
 const REFUTE = process.argv.includes('--refute');
-const ENGINE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine.rs');
+const ENGINE_RS = path.join(ROOT, 'src-tauri', 'src', 'boxsvc', 'engine.rs');
 
 const MUTATIONS = [
   {
@@ -296,7 +296,7 @@ if (REFUTE) {
     // 重编译并重跑（只取失败集合；子进程用异步 spawn，EBUSY 安全）
     const out = await new Promise((resolve, reject) => {
       const c = spawn('cargo', ['build', '--bin', 'boxsvc'], {
-        cwd: path.join(ROOT, 'app', 'src-tauri'),
+        cwd: path.join(ROOT, 'src-tauri'),
         env: { ...process.env, CARGO_INCREMENTAL: '0' },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -341,7 +341,7 @@ if (REFUTE) {
   if (restored) {
     await new Promise((resolve, reject) => {
       const c = spawn('cargo', ['build', '--bin', 'boxsvc'], {
-        cwd: path.join(ROOT, 'app', 'src-tauri'),
+        cwd: path.join(ROOT, 'src-tauri'),
         env: { ...process.env, CARGO_INCREMENTAL: '0' },
         stdio: ['ignore', 'pipe', 'pipe'],
       });

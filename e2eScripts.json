@@ -17,7 +17,7 @@
         { "id": "check:ia", "cmd": "node e2e/ia-structure-check.mjs", "desc": "信息架构结构断言（屏级导航 / 侧栏 / 标签 / 返回栈的接线）" },
         { "id": "check:music", "cmd": "node e2e/music-platform-check.mjs", "desc": "音乐模块「四平台完整接通」验收（除汽水外）", "refute": true },
         { "id": "check:settings", "cmd": "node e2e/settings-media-check.mjs", "desc": "设置页五组接线验收：播放·媒体 / 翻译服务 / 运行状态卡 / 功能梳理 / 许可清单", "refute": true },
-        { "id": "check:units", "cmd": "node e2e/units-structure-check.mjs", "desc": "「公共组件抽离到 app/src/components/units/」结构断言（命名 / 依赖方向 / 别名 / 样式分层）", "refute": true },
+        { "id": "check:units", "cmd": "node e2e/units-structure-check.mjs", "desc": "「公共组件抽离到 src/components/units/」结构断言（命名 / 依赖方向 / 别名 / 样式分层）", "refute": true },
         { "id": "check:docs", "cmd": "node e2e/docs-consistency-check.mjs", "desc": "文档 ↔ 实现一致性：断言条数 / 引用的命令是否存在 / 禁词 / GROUPS 分组" },
         { "id": "check:docpaths", "cmd": "node e2e/docs-path-check.mjs", "desc": "现行文档里引用的仓库路径必须真实存在", "refute": true },
         { "id": "check:bundle", "cmd": "node e2e/bundle-targets-check.mjs", "desc": "打包配置的根因钉子（平台分叉 / 随包资产 / NSIS 钩子 / 产品路径零 node）", "refute": true },
@@ -103,8 +103,8 @@
         { "id": "extract:models", "cmd": "node engine/scripts/fetch-models.mjs --extract", "desc": "只解包已下好的归档，不下载（fetch-models.mjs --extract）" },
         { "id": "setup:engine", "cmd": "node engine/scripts/setup-engine.mjs", "desc": "装配引擎运行时到 <appData>/runtimes/manga-translator（拉归档 / 原子解包 / 建 venv / 打补丁）" },
         { "id": "deps:engine", "cmd": "node engine/scripts/install-engine-deps.mjs", "desc": "装引擎 Python 依赖（venv 内 pip；随包预编译 wheel 优先，缺则回退源码编译）" },
-        { "id": "gen:licenses", "cmd": "node app/scripts/gen-licenses.mjs", "desc": "从 Cargo.lock / package-lock.json / 引擎清单枚举并生成 app/src/generated/licenses.json" },
-        { "id": "sign:preflight", "cmd": "node app/scripts/mac-signing-preflight.mjs", "desc": "E1 macOS 打包前自检：entitlements 四项就位 + 签名/公证变量齐（缺变量非零退出）" }
+        { "id": "gen:licenses", "cmd": "node scripts/gen-licenses.mjs", "desc": "从 Cargo.lock / package-lock.json / 引擎清单枚举并生成 src/generated/licenses.json" },
+        { "id": "sign:preflight", "cmd": "node scripts/mac-signing-preflight.mjs", "desc": "E1 macOS 打包前自检：entitlements 四项就位 + 签名/公证变量齐（缺变量非零退出）" }
       ]
     },
     "dev": {
@@ -113,7 +113,7 @@
       "cmds": [
         { "id": "engine", "cmd": "node engine/src/server.mjs", "desc": "起本地引擎 dev server（替身/真引擎由 MIAO_ENGINE_PROTOCOL 决定）" },
         { "id": "capture", "cmd": "node e2e/capture.mjs", "desc": "M5 截图取证：让应用自己把四个屏各截一张（需先跑 e2e，且需屏幕解锁）" },
-        { "id": "probe:png", "cmd": "node e2e/make-probe-png.mjs", "desc": "生成 app/src-tauri/testdata/probe.png（自检里「关窗后提交一张图」用的样张）" }
+        { "id": "probe:png", "cmd": "node e2e/make-probe-png.mjs", "desc": "生成 src-tauri/testdata/probe.png（自检里「关窗后提交一张图」用的样张）" }
       ]
     }
   }

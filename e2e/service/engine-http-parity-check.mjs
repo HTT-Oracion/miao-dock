@@ -29,7 +29,7 @@
  *   M6 删 golden 超时例里的「排队位次」那一帧        → translate 变红（超时不带走证据就不可归因）
  *
  * 用法：node e2e/service/engine-http-parity-check.mjs [--refute]
- * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin boxsvc`
  * 重新生成 golden：`node e2e/service/_gen-golden.mjs engine-http`
  */
 import fs from 'node:fs';

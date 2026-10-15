@@ -29,7 +29,7 @@
  * - M3 `DownloadState` 去掉 `tail.length > 0` 守卫 ⇒ W6 红（"没有"时改成渲染空壳）。
  *
  * 用法：node e2e/service/progress-truth-check.mjs [--refute]
- * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin boxsvc`
  */
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -44,10 +44,10 @@ import { RUST_BIN, REPO_ROOT } from './_service-harness.mjs';
 const REFUTE = process.argv.includes('--refute');
 const SELF = fileURLToPath(import.meta.url);
 const TOKEN = 'a'.repeat(64);
-const STATE_RS = path.join(REPO_ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 'state.rs');
-const NOT_READY_TSX = path.join(REPO_ROOT, 'app', 'src', 'screens', 'NotReadyScreen.tsx');
-const ENGINE_DIAG = path.join(REPO_ROOT, 'app', 'src', 'screens', 'settings', 'EngineDiag.tsx');
-const SRC_TAURI = path.join(REPO_ROOT, 'app', 'src-tauri');
+const STATE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'state.rs');
+const NOT_READY_TSX = path.join(REPO_ROOT, 'src', 'screens', 'NotReadyScreen.tsx');
+const ENGINE_DIAG = path.join(REPO_ROOT, 'src', 'screens', 'settings', 'EngineDiag.tsx');
+const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
 const CARGO = process.env.CARGO || 'cargo';
 
 let passed = 0;
@@ -65,7 +65,7 @@ function check(name, cond, extra) {
 }
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
   process.exit(1);
 }
 

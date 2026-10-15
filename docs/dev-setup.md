@@ -9,9 +9,9 @@
 
 | 目录 | 职责 | 语言 |
 |---|---|---|
-| `app/` | 前端 UI + 状态（`app/src` 才是源码，`app/src-tauri` 是壳） | React + TS + zustand + Vite |
-| `app/src-tauri/` | Tauri 壳：窗口 / 系统能力 / Rust 侧音乐逻辑 | Rust |
-| `app/src-tauri/src/boxsvc/` | box-service：HTTP API + 任务队列 + 落盘（原 `service/` 的 Node 实现已删，D-209） | Rust |
+| `src/` | 前端 UI + 状态（根目录只留 `main.tsx` / `App.tsx`，其余按职责分目录） | React + TS + zustand + Vite |
+| `src-tauri/` | Tauri 壳：窗口 / 系统能力 / Rust 侧音乐逻辑 | Rust |
+| `src-tauri/src/boxsvc/` | box-service：HTTP API + 任务队列 + 落盘（原 `service/` 的 Node 实现已删，D-209） | Rust |
 | `engine/` | 推理引擎侧装配（mock 可跑，真权重需另装） | Node + Python |
 
 ## 1. 环境要求
@@ -20,7 +20,7 @@
 |---|---|---|
 | Node | ≥ 22（本仓用 managed 22.22.2） | 一直 |
 | npm | 随 Node | 一直 |
-| Rust + cargo | stable | 编 `app/src-tauri` 才需要 |
+| Rust + cargo | stable | 编 `src-tauri` 才需要 |
 | Python | 3.13 | 引擎侧装配 / 脚本才需要 |
 
 Windows 上编 Rust **必须**在 MSVC 环境里（`ring` 要现场编译 C）—— 见 `AGENTS.md` §5，那里的
@@ -29,7 +29,7 @@ Windows 上编 Rust **必须**在 MSVC 环境里（`ring` 要现场编译 C）�
 ## 2. 第一次上手
 
 ```bash
-npm ci --prefix app                 # ① 装前端依赖
+npm ci                 # ① 装前端依赖
 npm run task -- check:docs                  # ② 秒级：先确认基线是绿的
 npm run app                         # ③ 起 dev（tauri dev）
 ```
@@ -88,21 +88,21 @@ check:packaged          # 静默安装 → 资产自检 → 起服务打 /health
    进程被中断 ⇒ 变异残留在工作区。跑完**必查 `git status`**；中断后先清残留再下结论。
 3. **别用 shell `grep` 判"有没有"**：`\|`、`--include=*.tsx` 这类写法会**静默失配**
    （曾把"确实有"判成 0 命中，白排查一轮）。用专用搜索工具。
-4. **`vite build` 前先把 `app/dist/` 挪走**：沙箱的 safe-delete 守卫会拦"批量删 > 50 文件"。
+4. **`vite build` 前先把 `dist/` 挪走**：沙箱的 safe-delete 守卫会拦"批量删 > 50 文件"。
 5. **动手前先 `git status`**：本仓库可能有并发会话在同一工作区改动。提交**路径限定 `git add`**，别 `-A`。
 
 ## 5. 代码地图（改之前先看这里）
 
 | 位置 | 放什么 |
 |---|---|
-| `app/src-tauri/src/boxsvc/store/` | 队列落盘：`exec`（执行体）· `view`（视图）· `pure`（纯函数）· `atomic`（原子写） |
-| `app/src-tauri/src/boxsvc/` 根 | 服务外壳与域模块：`boxsvc.rs`（鉴权/装配）· `routes.rs`（44 条路由）· `handlers.rs`（端点）· `library.rs` · `translate/` · `engine/` |
-| `app/src/screens/` | 各屏；屏内复用件放 `screens/<域>/`（如 `screens/library/`） |
-| `app/src/components/units/` | 跨屏通用 UI（`Btn`/`Notice`/`MenuButton`/`Modal`…），新通用件必须落这里 |
-| `app/src/components/` | 业务组件（非通用） |
-| `app/src/hooks/` | **所有 `use*` 文件必须住这里**（`check:units` 硬断言，无豁免） |
-| `app/src/tools/` | 跨屏复用的**纯函数**（不 import 业务层） |
-| `app/src/music/` | 音乐：`store.ts`（装配）· `actions/*.ts`（12 段切片）· `convert.ts` · `prefs.ts` · `persist.ts` · `slice.ts` |
+| `src-tauri/src/boxsvc/store/` | 队列落盘：`exec`（执行体）· `view`（视图）· `pure`（纯函数）· `atomic`（原子写） |
+| `src-tauri/src/boxsvc/` 根 | 服务外壳与域模块：`boxsvc.rs`（鉴权/装配）· `routes.rs`（44 条路由）· `handlers.rs`（端点）· `library.rs` · `translate/` · `engine/` |
+| `src/screens/` | 各屏；屏内复用件放 `screens/<域>/`（如 `screens/library/`） |
+| `src/components/units/` | 跨屏通用 UI（`Btn`/`Notice`/`MenuButton`/`Modal`…），新通用件必须落这里 |
+| `src/components/` | 业务组件（非通用） |
+| `src/hooks/` | **所有 `use*` 文件必须住这里**（`check:units` 硬断言，无豁免） |
+| `src/tools/` | 跨屏复用的**纯函数**（不 import 业务层） |
+| `src/music/` | 音乐：`store.ts`（装配）· `actions/*.ts`（12 段切片）· `convert.ts` · `prefs.ts` · `persist.ts` · `slice.ts` |
 | `e2e/` | 全部验收断言（`*-check.mjs`）；`e2e/service/` 是起真服务的判定层 |
 
 ## 6. 规范与台账在哪
@@ -116,4 +116,4 @@ check:packaged          # 静默安装 → 资产自检 → 起服务打 /health
 | `../code-audit-report.md` | 结构审计报告与改造执行记录（**在仓库外**的 `manga/` 目录） |
 
 > 提交信息格式：`类型(模块): 功能简述 + 关键点简述`（类型 = feat/chore/fix/style/test/docs；
-> 模块 = music/settings/manga · 层 app/service/engine/e2e · docs）。
+> 模块 = music/settings/manga · 层 service/engine/e2e · docs）。

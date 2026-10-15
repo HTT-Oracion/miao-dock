@@ -4,7 +4,7 @@
  * =============================================================================
  *
  * ## 验什么
- * Rust 门面 `app/src-tauri/src/boxsvc/translate/**`（门面 / 注册表 / 契约 / 设置三层 /
+ * Rust 门面 `src-tauri/src/boxsvc/translate/**`（门面 / 注册表 / 契约 / 设置三层 /
  * 密钥隔离 / 错误归一 / 四层超时 / 限流 / 流式解析）+ 5 条 `/api/v1/translate/*` 路由。
  * 断言分八组，每组一条硬纪律：
  *
@@ -51,7 +51,7 @@
  *   node e2e/service/translate-check.mjs --refute   反证轮（8 个开关 → 8 个子进程）
  *
  * 约束：纯 Node、零第三方依赖；临时目录自建自清（成功即清、失败保留并打印路径）。
- * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin boxsvc`
  * 重新生成 golden：`node e2e/service/_gen-golden.mjs translate`
  */
 import { spawn } from 'node:child_process';
@@ -156,7 +156,7 @@ function printResults(title) {
 function runRust(args, env = {}) {
   return new Promise((resolve, reject) => {
     if (!fs.existsSync(RUST_BIN)) {
-      reject(new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`));
+      reject(new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`));
       return;
     }
     const c = spawn(RUST_BIN, args, { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });

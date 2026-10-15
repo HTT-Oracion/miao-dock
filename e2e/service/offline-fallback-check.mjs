@@ -45,7 +45,7 @@
  * 真机那一半在 `docs/spec-notes-1.md` 里按 `unverified` 记账，不计入"已验"。
  *
  * 用法：node e2e/service/offline-fallback-check.mjs [--refute]
- * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin boxsvc`
  */
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -59,9 +59,9 @@ import { RUST_BIN, REPO_ROOT } from './_service-harness.mjs';
 
 const REFUTE = process.argv.includes('--refute');
 const SELF = fileURLToPath(import.meta.url);
-const ENGINE_RS = path.join(REPO_ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine.rs');
-const MODEL_STORE_RS = path.join(REPO_ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 'model_store.rs');
-const SRC_TAURI = path.join(REPO_ROOT, 'app', 'src-tauri');
+const ENGINE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine.rs');
+const MODEL_STORE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'model_store.rs');
+const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
 const CARGO = process.env.CARGO || 'cargo';
 
 /** HF 缓存根（相对 `<root>/src`）—— 与清单 `linkTo` 的 `<缓存>/blobs/<blob>` 约定一致。 */
@@ -83,7 +83,7 @@ function check(name, cond, extra) {
 }
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
   process.exit(1);
 }
 

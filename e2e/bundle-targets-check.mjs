@@ -83,10 +83,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const BASE_CONF = path.join(ROOT, 'app', 'src-tauri', 'tauri.conf.json');
-const WIN_CONF = path.join(ROOT, 'app', 'src-tauri', 'tauri.windows.conf.json');
+const BASE_CONF = path.join(ROOT, 'src-tauri', 'tauri.conf.json');
+const WIN_CONF = path.join(ROOT, 'src-tauri', 'tauri.windows.conf.json');
 /** NSIS 安装器钩子文件（E2/E3）—— 与 `tauri.windows.conf.json` 里那条引用同一处。 */
-const NSIS_HOOKS = path.join(ROOT, 'app', 'src-tauri', 'nsis', 'hooks.nsh');
+const NSIS_HOOKS = path.join(ROOT, 'src-tauri', 'nsis', 'hooks.nsh');
 
 const REFUTE = process.argv.includes('--refute');
 
@@ -125,7 +125,7 @@ const REQUIRED_ASSETS = ['engine/models.manifest.json', 'engine/runtime.manifest
 const CONF_DIR = path.dirname(BASE_CONF);
 
 /// 产品 Rust 源码根（W14 的扫描面）。
-const RUST_SRC = path.join(ROOT, 'app', 'src-tauri', 'src');
+const RUST_SRC = path.join(ROOT, 'src-tauri', 'src');
 
 /// 允许 node 字面量出现的**上下文标记**（见文件头 W14 条）。
 const NODE_LITERAL_ALLOW = ['MIAO_NODE_EXEC', 'MIAO_SERVICE_IMPL'];

@@ -116,7 +116,7 @@ export const CASES = [
 /** 跑一次 `boxsvc --llm-selftest`，返回 `Map<name, result>`（键序与 CASES 一致）。 */
 export async function runRust(envExtra = {}) {
   if (!fs.existsSync(RUST_BIN)) {
-    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`);
+    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
   }
   const cases = [];
   for (const c of CASES) {

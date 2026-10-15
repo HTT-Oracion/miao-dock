@@ -39,7 +39,7 @@
 ## 2. 事实：仓库里到底有哪些许可（可复算）
 
 ```bash
-npm run task -- gen:licenses     # 产出 app/src/generated/licenses.json
+npm run task -- gen:licenses     # 产出 src/generated/licenses.json
 ```
 
 产出分三段，第三段（`engine`）是 E5 的**权威输入**：它逐条读 `engine/models.manifest.json`
@@ -63,7 +63,7 @@ npm run task -- gen:licenses     # 产出 app/src/generated/licenses.json
 
 ### 2.2 技术边界（四条，均有机器判据）
 
-1. **权重一个字节都不随包** —— `app/src-tauri/tauri.conf.json` 的 `bundle.resources`
+1. **权重一个字节都不随包** —— `src-tauri/tauri.conf.json` 的 `bundle.resources`
    只有 `engine/models.manifest.json` 一条。判据：`npm run task -- check:bundle` 的 **W7 / W7b**
    （权重后缀黑名单 + 与清单逐条交叉），以及 `npm run task -- gen:licenses` 的
    `engine.bundledCount` 必须为 `0`（由 `check:settings` 的 `FEATURES.licenses.engine` 钉住）。
@@ -72,7 +72,7 @@ npm run task -- gen:licenses     # 产出 app/src/generated/licenses.json
 3. **`nllb` / `sakura` 不随包、不代为分发** —— 下载发生在**用户机器上、用用户自己的网络**，
    我们只提供引导清单与校验建链（开发计划的 C 组）。
 4. **许可结论本身是生成物** —— 界面上「第三方许可」直接渲染 §2 的产出
-   （`app/src/screens/settings/LicensesBlock.tsx`），NC 类许可会单独告警。
+   （`src/screens/settings/LicensesBlock.tsx`），NC 类许可会单独告警。
 
 ---
 

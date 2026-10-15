@@ -53,14 +53,7 @@ const REFUTE = process.argv.includes('--refute');
 const TMP = path.join(REPO, '.tmp', 'models', REFUTE ? 'refute' : 'pos');
 
 const NODE_SCRIPT = path.join(REPO, 'engine', 'scripts', 'fetch-models.mjs');
-const RUST_BIN = path.join(
-  REPO,
-  'app',
-  'src-tauri',
-  'target',
-  'debug',
-  `boxsvc${process.platform === 'win32' ? '.exe' : ''}`,
-);
+const RUST_BIN = path.join(REPO, 'src-tauri', 'target', 'debug', `boxsvc${process.platform === 'win32' ? '.exe' : ''}`);
 
 /** 两个靶子：**Node 对照端** vs **Rust 移植**（A3d），跑同一份用例、同一套谓词。 */
 const TARGETS = [

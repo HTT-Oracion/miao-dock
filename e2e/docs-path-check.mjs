@@ -13,6 +13,8 @@
 //
 // ## 匹配规则（刻意收得很窄，避免误报）
 //   反引号包裹 + 已知顶层目录 + 带扩展名的**文件**路径。
+//   🔴 顶层目录表里**故意留着 `app/` 与 `service/`** —— 它们都是「现在不该存在」的旧形态：
+//   留着不是遗漏，而是让"文档又写回 `app/src/...`"这种回退**当场变红**（表里删掉就变成静默跳过）。
 //   不收目录（`service/src/manga/` 这类在文档里常被泛泛提及，误报率高），
 //   不收裸文本（会把"曾经的 foo.ts"这种叙述算进来）。
 import { existsSync, readFileSync } from 'node:fs';
@@ -28,7 +30,7 @@ const LIVE_DOCS = [
   '.trae/rules/project_rules.md',
 ];
 const PATH_RE =
-  /`((?:service|app|e2e|docs|scripts|engine|src-tauri)\/[\w./-]+\.(?:mjs|ts|tsx|rs|md|json|scss|css|html))`/g;
+  /`((?:src|src-tauri|public|scripts|e2e|docs|engine|service|app)\/[\w./-]+\.(?:mjs|ts|tsx|rs|md|json|scss|css|html))`/g;
 
 function runAll() {
   return LIVE_DOCS.map((d) => {
@@ -62,7 +64,7 @@ const MUTATIONS = [
     name: '在 project_rules.md 里插一个不存在的路径',
     file: '.trae/rules/project_rules.md',
     find: 'screens/library/meta.ts',
-    replace: 'screens/library/meta.ts` 与 `app/src/nope/gone.ts',
+    replace: 'screens/library/meta.ts` 与 `src/nope/gone.ts',
     expect: ['DOCS.path..trae/rules/project_rules.md'],
   },
 ];

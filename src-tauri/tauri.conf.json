@@ -13,6 +13,7 @@
     "windows": [
       {
         "label": "main",
+        "url": "templates/index.html",
         "title": "喵坞 MiaoDock",
         "width": 1180,
         "height": 780,
@@ -37,11 +38,11 @@
     "targets": ["app", "dmg"],
     "icon": ["icons/icon.icns", "icons/icon.ico", "icons/icon.png"],
     "resources": {
-      "../../engine/models.manifest.json": "engine/models.manifest.json",
-      "../../engine/runtime.manifest.json": "engine/runtime.manifest.json",
-      "../../engine/patches.json": "engine/patches.json",
-      "../../engine/wheels.manifest.json": "engine/wheel-manifest.json",
-      "../../engine/wheels/pydensecrf-1.0-cp311-cp311-win_amd64.whl": "engine/wheels/pydensecrf-1.0-cp311-cp311-win_amd64.whl"
+      "../engine/models.manifest.json": "engine/models.manifest.json",
+      "../engine/runtime.manifest.json": "engine/runtime.manifest.json",
+      "../engine/patches.json": "engine/patches.json",
+      "../engine/wheels.manifest.json": "engine/wheel-manifest.json",
+      "../engine/wheels/pydensecrf-1.0-cp311-cp311-win_amd64.whl": "engine/wheels/pydensecrf-1.0-cp311-cp311-win_amd64.whl"
     },
     "macOS": {
       "minimumSystemVersion": "10.15",

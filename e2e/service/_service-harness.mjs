@@ -12,7 +12,7 @@
 //
 // ## 靶子：**只剩一个**（node 档已随 `service/` 退役，D-205）
 //   `spawn(<boxsvc 可执行>, argv)`
-// Rust 靶子路径：`MIAO_BOXSVC_BIN` 显式覆盖 → 否则在 `<repo>/app/src-tauri/target/{debug,release}/` 里找
+// Rust 靶子路径：`MIAO_BOXSVC_BIN` 显式覆盖 → 否则在 `<repo>/src-tauri/target/{debug,release}/` 里找
 // `boxsvc[.exe]`（迁移期用 dev profile，见计划文档 R8：release 编译以分钟计）。
 //
 // 🔴 为什么只剩一个：F5 摘除 Node 服务层之后，本轮又把**仓库里的 `service/`** 删了。
@@ -74,7 +74,7 @@ export function resolveRustBin() {
   const fromEnv = process.env.MIAO_BOXSVC_BIN;
   if (fromEnv && fromEnv.trim() !== '') return path.resolve(fromEnv.trim());
   const exe = process.platform === 'win32' ? 'boxsvc.exe' : 'boxsvc';
-  const base = path.join(REPO_ROOT, 'app', 'src-tauri', 'target');
+  const base = path.join(REPO_ROOT, 'src-tauri', 'target');
   for (const profile of ['debug', 'release']) {
     const p = path.join(base, profile, exe);
     if (fs.existsSync(p)) return p;
@@ -117,7 +117,7 @@ export function targetFor(entry, extraArgv = []) {
     if (!fs.existsSync(RUST_BIN)) {
       throw new Error(
         `找不到 Rust 靶子：${RUST_BIN}\n` +
-          `先构建：cd app/src-tauri && cargo build --bin boxsvc\n` +
+          `先构建：cd src-tauri && cargo build --bin boxsvc\n` +
           `或设 MIAO_BOXSVC_BIN 指向已构建的 boxsvc。`,
       );
     }

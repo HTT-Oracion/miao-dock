@@ -27,7 +27,7 @@
  *   M5 篡改 golden 的 ready.model                             → 变红
  *
  * 用法：node e2e/service/llm-supervisor-parity-check.mjs [--refute]
- * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin boxsvc`
  * 重新生成 golden：`node e2e/service/_gen-golden.mjs llm-supervisor`
  */
 import fs from 'node:fs';

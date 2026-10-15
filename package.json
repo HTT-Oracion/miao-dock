@@ -10,9 +10,13 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "app": "npm --prefix app run tauri dev",
-    "app:build": "npm --prefix app run tauri build",
-    "app:build:mac": "npm run task -- sign:preflight && npm --prefix app run tauri build",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "app": "tauri dev",
+    "app:build": "tauri build",
+    "app:build:mac": "npm run task -- sign:preflight && tauri build",
     "check": "node e2e/run-checks.mjs --tier static",
     "check:full": "node e2e/run-checks.mjs --tier static,service",
     "check:nightly": "node e2e/run-checks.mjs --tier all",
@@ -24,8 +28,25 @@
   "engines": {
     "node": ">=20"
   },
+  "dependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/noto-sans-sc": "^5.3.0",
+    "@fontsource/zen-maru-gothic": "^5.3.0",
+    "@radix-ui/react-select": "^2.3.7",
+    "@tauri-apps/api": "^2.1.1",
+    "@tauri-apps/plugin-dialog": "^2.0.1",
+    "lucide-react": "^0.468.0",
+    "qrcode.react": "^4.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.7"
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@tauri-apps/cli": "^2.1.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
@@ -33,7 +54,9 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.6.0",
     "prettier": "^3.9.10",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.71.2"
+    "sass-embedded": "^1.105.1",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.71.2",
+    "vite": "^5.4.10"
   }
 }

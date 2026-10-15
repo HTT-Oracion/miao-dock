@@ -35,10 +35,10 @@ alwaysApply: true
 
 ## 3. 目录分层（《09》§2.2）
 
-- `app/src/components/units/` = 通用 UI 单元，**判据：不 import 业务层**（store / ipc / types / platform / 根 hooks）。类名一律 `ui-` 前缀。
-- `app/src/components/` = 应用级（Sidebar / Toolbar / ViewTabs / QuitConfirm）。
-- `app/src/screens/<屏>/` = 屏内件。
-- `app/src/tools/` = 共享纯函数（经 `@tools` 引入，与 `components/` 同级）：跨屏复用、**不 import 业务层**。
+- `src/components/units/` = 通用 UI 单元，**判据：不 import 业务层**（store / ipc / types / platform / 根 hooks）。类名一律 `ui-` 前缀。
+- `src/components/` = 应用级（Sidebar / Toolbar / ViewTabs / QuitConfirm）。
+- `src/screens/<屏>/` = 屏内件。
+- `src/tools/` = 共享纯函数（经 `@tools` 引入，与 `components/` 同级）：跨屏复用、**不 import 业务层**。
 - **按「依赖什么」定归属，不按「被用几次」**。新组件先看它 import 什么，再决定放哪。
 - 不要为了"复用"把绑定单屏几何/业务类型的件抽走（反面清单见 `docs/spec-notes.md` D-34）。
 
@@ -56,7 +56,7 @@ alwaysApply: true
 
 **服务端模块目录（硬规则，F5 起随实现搬进 Rust）**：原 Node 实现（`service/`）**已整目录删除**（D-209）——
 产品运行时不再启动任何 node 服务进程，① 是 `boxsvc`（Rust 可执行）；② ③ 里的 node 只是**测试替身**。
-服务端现住在 **`app/src-tauri/src/boxsvc/`**：外壳 `boxsvc.rs` · 路由表 `routes.rs` · 端点 `handlers.rs` ·
+服务端现住在 **`src-tauri/src/boxsvc/`**：外壳 `boxsvc.rs` · 路由表 `routes.rs` · 端点 `handlers.rs` ·
 域模块 `store/`（队列落盘）· `library.rs`（库原语）· `translate/`（在线翻译）· `engine/`（引擎耦合点）。
 🔴 **新增服务端点一律落在 `boxsvc/handlers.rs` + `routes.rs`**，由 `npm run task -- check:routes` 盯着
 （`forwardedCount` 必须为 0 —— 只要还有转发分支，就说明还有第二条实现路径存在）。

@@ -310,7 +310,7 @@ function runCmd(cmd, args, env) {
 
 async function runRust(list, protocol) {
   if (!fs.existsSync(RUST_BIN)) {
-    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`);
+    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
   }
   const out = await runCmd(RUST_BIN, ['--engine-http-selftest', JSON.stringify(rustCases(list, protocol))], {
     MIAO_ENGINE_PROTOCOL: protocol,

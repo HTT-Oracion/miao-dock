@@ -28,7 +28,7 @@
  * - M3 在 macOS 引导里把"不能用"写成普通调用 ⇒ W4 红。
  *
  * 用法：node e2e/service/macos-compat-check.mjs [--refute]
- * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin boxsvc`
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -40,13 +40,13 @@ import { RUST_BIN, REPO_ROOT } from './_service-harness.mjs';
 
 const REFUTE = process.argv.includes('--refute');
 const SELF = fileURLToPath(import.meta.url);
-const PATHS_RS = path.join(REPO_ROOT, 'app', 'src-tauri', 'src', 'paths.rs');
+const PATHS_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'paths.rs');
 const DEPS_MJS = path.join(REPO_ROOT, 'engine', 'scripts', 'install-engine-deps.mjs');
 const GUIDE_WIN = path.join(REPO_ROOT, 'docs', 'install-guide-windows.md');
 const GUIDE_MAC = path.join(REPO_ROOT, 'docs', 'install-guide-macos.md');
 const INSTALL_GUIDE_CHECK = path.join(REPO_ROOT, 'e2e', 'service', 'install-guide-check.mjs');
 const README = path.join(REPO_ROOT, 'README.md');
-const SRC_TAURI = path.join(REPO_ROOT, 'app', 'src-tauri');
+const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
 /** `cargo` 可执行：`CARGO` env 覆盖，否则交给 PATH。 */
 const CARGO = process.env.CARGO || 'cargo';
 
@@ -65,7 +65,7 @@ function check(name, cond, extra) {
 }
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
   process.exit(1);
 }
 

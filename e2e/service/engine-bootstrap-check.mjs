@@ -41,25 +41,25 @@ const SELF = fileURLToPath(import.meta.url);
 
 const RUNTIME_MANIFEST = path.join(ROOT, 'engine', 'runtime.manifest.json');
 const WHEELS_MANIFEST = path.join(ROOT, 'engine', 'wheels.manifest.json');
-const HANDLERS_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'handlers.rs');
-const STATE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 'state.rs');
+const HANDLERS_RS = path.join(ROOT, 'src-tauri', 'src', 'boxsvc', 'handlers.rs');
+const STATE_RS = path.join(ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'state.rs');
 /// W9：**Rust 侧**面向用户的未就绪文案（`fix` + 闸门消息）也要零命令行 ——
 /// 前端 4 个文件干净不等于产品干净：`NotReadyScreen.tsx` 渲染的正是这里的字符串。
-const RUNTIME_PROBE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 'runtime_probe.rs');
+const RUNTIME_PROBE_RS = path.join(ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'runtime_probe.rs');
 /// W13：装配编排（长路径体检住在那里）。
-const RUNTIME_SETUP_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 'runtime_setup.rs');
-const ENGINE_DOWNLOAD_TS = path.join(ROOT, 'app', 'src', 'engine-download.ts');
+const RUNTIME_SETUP_RS = path.join(ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'runtime_setup.rs');
+const ENGINE_DOWNLOAD_TS = path.join(ROOT, 'src', 'engine-download.ts');
 /// W11：stage 归属的事实源。
 const MODELS_MANIFEST = path.join(ROOT, 'engine', 'models.manifest.json');
 /// W12：下载视图（第 1/第 2 阶段文案）。
-const DOWNLOAD_PANEL_TSX = path.join(ROOT, 'app', 'src', 'screens', 'engine', 'DownloadPanel.tsx');
+const DOWNLOAD_PANEL_TSX = path.join(ROOT, 'src', 'screens', 'engine', 'DownloadPanel.tsx');
 /// W16：版本锁（人读的事实源）—— `engine_source` 的 owner/repo/commit 以它为准。
 const VERSIONS_LOCK = path.join(ROOT, 'engine', 'VERSIONS.lock');
 const UI_FILES = [
-  path.join(ROOT, 'app', 'src', 'screens', 'NotReadyScreen.tsx'),
-  path.join(ROOT, 'app', 'src', 'screens', 'engine', 'DownloadPanel.tsx'),
-  path.join(ROOT, 'app', 'src', 'screens', 'settings', 'OnlineApiForm.tsx'),
-  path.join(ROOT, 'app', 'src', 'components', 'units', 'ProgressRing.tsx'),
+  path.join(ROOT, 'src', 'screens', 'NotReadyScreen.tsx'),
+  path.join(ROOT, 'src', 'screens', 'engine', 'DownloadPanel.tsx'),
+  path.join(ROOT, 'src', 'screens', 'settings', 'OnlineApiForm.tsx'),
+  path.join(ROOT, 'src', 'components', 'units', 'ProgressRing.tsx'),
 ];
 
 /**
@@ -232,7 +232,7 @@ function engineSourceShape() {
   });
 
   // W7 进度环：无真实进度时如实显示「准备中」，不画假的 0%。
-  const ring = fs.readFileSync(path.join(ROOT, 'app', 'src', 'components', 'units', 'ProgressRing.tsx'), 'utf8');
+  const ring = fs.readFileSync(path.join(ROOT, 'src', 'components', 'units', 'ProgressRing.tsx'), 'utf8');
   check('W7 `ProgressRing` 无真实进度时显示「准备中」而非假的 0%', ring.includes("'准备中'"), {
     hasPreparing: ring.includes("'准备中'"),
   });

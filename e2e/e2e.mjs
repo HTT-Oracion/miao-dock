@@ -468,7 +468,7 @@ try {
     //    而本脚本没有，所以两者分开：这里测 resume 的续做语义，那里测 retry 的任务身份。
     //
     // 带上 X-Box-Client：真实应用是经 Rust 层转发的，那层给每个请求都打这个头
-    // （`app/src-tauri/src/commands.rs`），故「来源」列才会显示「本机投放」。
+    // （`src-tauri/src/commands.rs`），故「来源」列才会显示「本机投放」。
     // 不带的话截图里会是一条「—」，看起来像缺陷，其实只是用例没照抄真实请求形状。
     const rs = await request(PORT, 'POST', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, {
       token: TOKEN,

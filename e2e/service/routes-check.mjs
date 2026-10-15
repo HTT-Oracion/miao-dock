@@ -41,7 +41,7 @@
  *
  * 用法：node e2e/service/routes-check.mjs [--refute] [--final]
  *   `--final`：启用 F5 完成门（`forwardedCount === 0`）。F5 迁移期间预期为红。
- * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin boxsvc`
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -163,7 +163,7 @@ function run(cmd, args, env) {
 
 async function listRoutes(env = {}) {
   if (!fs.existsSync(RUST_BIN)) {
-    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`);
+    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
   }
   return JSON.parse((await run(RUST_BIN, ['--list-routes'], env)).trim());
 }

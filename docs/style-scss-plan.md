@@ -41,7 +41,7 @@ ia 24、tls 14、docs 14 —— 全绿。
 | `app.css` | 3716 行 / 109KB |
 | `base.css` | 94 行（重置 + 排版基座 + 滚动条 + 可达性）——**正好就是计划里的 base** |
 | 顶层选择器 | 约 950 条 |
-| 样式入口 | `app/src/main.tsx:11-12`，两条 `import` |
+| 样式入口 | `src/main.tsx:11-12`，两条 `import` |
 | sass 依赖 | **无** |
 | vite 配置 | 无 `css.preprocessorOptions`；alias 里**没有** `@styles` |
 | 双入口 | `lyrics.html` **刻意不引** base/app（桌面歌词样式全内联在 `DesktopLyrics.tsx`） |
@@ -65,7 +65,7 @@ ia 24、tls 14、docs 14 —— 全绿。
 - `music-platform-check.mjs:79` → `s.css`，含 `[^}]*` 取块、`@keyframes` includes、`transition` 时长跨句正则
 - `units-structure-check.mjs:69` → `s.appCss`，`:886` 跨句取 `.di-capsule` 退场时长
 - `settings-media-check.mjs:48` → `ctx.s.css`，`:530` 逐名 `includes`
-- 反证条目里 `file: F.css` 与硬编码 `'app/src/styles/app.css'` 多处
+- 反证条目里 `file: F.css` 与硬编码 `'src/styles/app.css'` 多处
 
 拆文件后这些判据会**大面积变红**（不是真回归，是读不到文件了）。**这是本次改造的工程主体。**
 
@@ -81,7 +81,7 @@ ia 24、tls 14、docs 14 —— 全绿。
 ## 二、目标结构（已拍板）
 
 ```
-app/src/styles/
+src/styles/
   index.scss      唯一入口。@use 顺序 = 层叠顺序（全局唯一需手工维护的东西）
   base.scss       重置 / 排版基座 / 滚动条 / 可达性        ← 原 base.css 1:1 搬
   app.scss        应用外壳 / 工具条 / 原子件

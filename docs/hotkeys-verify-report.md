@@ -1,6 +1,6 @@
 # 音乐快捷键 —— 测试验收报告（独立复核）
 
-- **被测对象**：`app/src/hooks/useMusicHotkeys.ts`（新增，245 行）+ `app/src/components/MusicKernel.tsx`（挂载调用）
+- **被测对象**：`src/hooks/useMusicHotkeys.ts`（新增，245 行）+ `src/components/MusicKernel.tsx`（挂载调用）
 - **基线**：`8337a4b`，工作区未 commit（按纪律交给负责人）
 - **本轮改动**：只加断言（`e2e/music-platform-check.mjs` 新增 `KEYS` 组 9 条 + 9 条反证）+ 同步 `AGENTS.md` / `README.md` 条数。**未改任何实现**
 - **独立复核结论**：**实现正确**，9 条规格全部落地且行为符合预期。发现 **3 个⚠️ 问题**（1 个真实缺陷 + 2 个体验/一致性风险），均**只报告未改**，见 §3

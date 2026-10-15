@@ -2,10 +2,10 @@
 node_modules/
 dist/
 dist-verify/
-app/src-tauri/target/
+src-tauri/target/
 
 # Tauri 生成的 schema / 清单缓存（构建期自动产出，不入库）
-app/src-tauri/gen/schemas/
+src-tauri/gen/schemas/
 
 # ── 临时落盘：**全仓唯一**的临时目录 ────────────────────────────────────
 # 约定：任何"本机临时产物"一律写进 `.tmp/<用途>/`，不再在仓库根另起
@@ -28,7 +28,7 @@ vite.config.ts.timestamp-*.mjs
 !docs/refs/engine/*.stdout.log
 
 # 音乐参考源码（GPL-3.0，开发期只读参考，不入库）
-# 移植产物在 app/src-tauri/src/music/，详见 vendor/music-reference/README.md
+# 移植产物在 src-tauri/src/music/，详见 vendor/music-reference/README.md
 vendor/
 
 # 编辑器本地历史（VS Code Local History 插件产物，纯本机噪声）

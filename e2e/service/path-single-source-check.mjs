@@ -19,7 +19,7 @@
  *   两边字符串不同 ⇒ 变红。这一刀同时验证了「平台分叉只有一处」（`paths::venv_python_rel`）。
  *
  * 用法：node e2e/service/path-single-source-check.mjs [--refute]
- * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin boxsvc`
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -34,8 +34,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
 const REFUTE = process.argv.includes('--refute');
 const TOKEN = 'a'.repeat(64);
-const PROBE_RS = path.join(REPO_ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 'runtime_probe.rs');
-const SRC_TAURI = path.join(REPO_ROOT, 'app', 'src-tauri');
+const PROBE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'boxsvc', 'engine', 'runtime_probe.rs');
+const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
 const CARGO = process.env.CARGO || 'cargo';
 
 let passed = 0;
@@ -146,7 +146,7 @@ function probeInterpreter(env) {
 // ------------------------------------------------------------------ 正向
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
   process.exit(1);
 }
 

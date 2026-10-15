@@ -12,24 +12,24 @@
 
 四个封装**全部是对象传参**，键名与 Rust 侧形参逐字对齐（snake_case）：
 
-`app/src/music/ipc.ts:66`（网易云）
+`src/music/ipc.ts:66`（网易云）
 ```ts
 export const musicLyric = (id: string) => invoke<Lyrics>('music_lyric', { id });
 ```
 
-`app/src/music/ipc.ts:139-140`（酷狗）
+`src/music/ipc.ts:139-140`（酷狗）
 ```ts
 export const kugouLyric = (hash: string, albumAudioId?: string, duration?: number) =>
   invoke<Lyrics>('kugou_lyric', { hash, album_audio_id: albumAudioId ?? null, duration: duration ?? null });
 ```
 
-`app/src/music/ipc.ts:176-177`（QQ）
+`src/music/ipc.ts:176-177`（QQ）
 ```ts
 export const qqLyric = (mid: string, id?: string) =>
   invoke<Lyrics>('qq_lyric', { mid, id: id ?? null });
 ```
 
-`app/src/music/ipc.ts:229-230`（咪咕）
+`src/music/ipc.ts:229-230`（咪咕）
 ```ts
 export const miguLyric = (contentId: string, copyrightId: string) =>
   invoke<Lyrics>('migu_lyric', { content_id: contentId, copyright_id: copyrightId });
@@ -63,7 +63,7 @@ export const miguLyric = (contentId: string, copyrightId: string) =>
 
 ## ② Song 各平台的稳定 id 字段
 
-### `Song` 接口（`app/src/music/types.ts:9-38`）
+### `Song` 接口（`src/music/types.ts:9-38`）
 
 ```ts
 export interface Song {
@@ -96,7 +96,7 @@ export interface Song {
 
 ### `loadLyrics` 的分派 —— 实际代码
 
-`app/src/music/store.ts:2505-2531`（**注意：store 不直接分派**）
+`src/music/store.ts:2505-2531`（**注意：store 不直接分派**）
 ```ts
 loadLyrics: async (song) => {
   try {
@@ -116,7 +116,7 @@ loadLyrics: async (song) => {
 },
 ```
 
-真正的分派在 `app/src/music/platform.ts:411-423`：
+真正的分派在 `src/music/platform.ts:411-423`：
 ```ts
 export function lyric(provider: MusicProvider, song: Song): Promise<Lyrics> {
   switch (provider) {
@@ -159,12 +159,12 @@ export function songKey(s: Song): string { return `${s.provider}:${s.id}`; }
 
 ### 档位枚举（全部 5 档）
 
-`app/src/music/types.ts:165`
+`src/music/types.ts:165`
 ```ts
 export type PlaybackQuality = 'jymaster' | 'hires' | 'lossless' | 'exhigh' | 'standard';
 ```
 
-设置页选项表 `app/src/music/player-options.ts:57-63`
+设置页选项表 `src/music/player-options.ts:57-63`
 ```ts
 export const QUALITY_OPTIONS: { value: PlaybackQuality; label: string; desc: string }[] = [
   { value: 'standard', label: '标准', desc: '128k' },
@@ -210,7 +210,7 @@ useMusicStore.setState({ currentQuality: r.quality || r.level || '' });     // :
 
 ### 现状签名与调用链
 
-`app/src-tauri/src/music/audio_proxy.rs:88`
+`src-tauri/src/music/audio_proxy.rs:88`
 ```rust
 async fn audio_proxy(Query(query): Query<ProxyQuery>, headers: HeaderMap) -> Response {
 ```
@@ -222,7 +222,7 @@ struct ProxyQuery { url: String, }
 启动函数无参（`:195`）：`pub async fn start_audio_proxy() -> Result<u16, String>`，Router 构建在 `:202-204`。
 
 **`start_audio_proxy` 的全部调用点（`Grep` 全仓，仅 2 处）**：
-- `app/src-tauri/src/main.rs:221` —— 在 `tauri::async_runtime::spawn` 内，**同一个闭包里 `music_handle` 就是 AppHandle**（`main.rs:218-224`）：
+- `src-tauri/src/main.rs:221` —— 在 `tauri::async_runtime::spawn` 内，**同一个闭包里 `music_handle` 就是 AppHandle**（`main.rs:218-224`）：
   ```rust
   let music_handle = app.handle().clone();
   tauri::async_runtime::spawn(async move {
@@ -231,11 +231,11 @@ struct ProxyQuery { url: String, }
   });
   ```
   → **AppHandle 在启动处可得，改签名传进去零成本。**
-- `app/src-tauri/src/music/audio_proxy.rs:240` —— 在 `#[tauri::command] cmd_get_proxy_port` 内。该命令当前签名无 app（`:235`），**可以照 ① 的结论直接加 `app: AppHandle`**。
+- `src-tauri/src/music/audio_proxy.rs:240` —— 在 `#[tauri::command] cmd_get_proxy_port` 内。该命令当前签名无 app（`:235`），**可以照 ① 的结论直接加 `app: AppHandle`**。
 
 ### axum 版本与 `with_state` 可用性
 
-- `app/src-tauri/Cargo.toml:29`：`axum = "0.7"`；`Cargo.lock` 锁定 **0.7.9**。
+- `src-tauri/Cargo.toml:29`：`axum = "0.7"`；`Cargo.lock` 锁定 **0.7.9**。
 - `Router::with_state` 在该版本**存在**：`axum-0.7.9/src/routing/mod.rs:370`
   ```rust
   pub fn with_state<S2>(self, state: S) -> Router<S2> {
@@ -314,7 +314,7 @@ default:
 
 | 位置 | 内容 |
 |---|---|
-| `app/src/screens/settings/catalog.ts:429` | `export const SPEC_ITEM_TOTAL = 31;`（手写自校常量；`:437-442` 与算出来的 `SECTION_ITEM_TOTAL` 不一致时 `console.error`） |
+| `src/screens/settings/catalog.ts:429` | `export const SPEC_ITEM_TOTAL = 31;`（手写自校常量；`:437-442` 与算出来的 `SECTION_ITEM_TOTAL` 不一致时 `console.error`） |
 | `e2e/settings-media-check.mjs:86` | `const SPEC_TOTAL = 31;`（注释在 `:85` 记着演进 26 → 29 → 31） |
 | `settings-media-check.mjs:363-376` | `COUNT.total`：**真导入** `catalog.ts`（`:141-149` 的 `loadCatalog()` 用 `import(...?v=N)` 绕 ESM 缓存）后逐分组逐小节 `.reduce` 求和，与 `SPEC_TOTAL` 比 |
 | `settings-media-check.mjs:377-390` | `COUNT.specMatches`：拿 `catalog.mod.SPEC_ITEM_TOTAL` 与实际合计互校（抓自校常量漂移） |
@@ -371,21 +371,21 @@ default:
 - **`ipc.ts` 里没有一层 try/catch** —— 全是裸 `invoke` 抛给调用方。这是明确的分层决定（`music/ipc.ts:5-6`：「这里只做类型化封装，不塞业务逻辑」）。
 - 错误文案在**消费侧**拼：`store.ts:2545` `get().toast(\`桌面歌词窗口${…}失败：${String(e)}\`)`、`store.ts:1740` `get().toast('切换音质失败，已保持原音质')`。
 - 静默忽略的写法：`store.ts:2577-2579`、`store.ts:2589-2591`（空 `catch {}` + 注释说明为什么可以吞）。
-- 根 `ipc.ts` 另有 `isApiError` / `errorText`（`app/src/ipc.ts:34-42`）**只服务于 box-service 的结构化错误信封**，音乐模块不用它。
+- 根 `ipc.ts` 另有 `isApiError` / `errorText`（`src/ipc.ts:34-42`）**只服务于 box-service 的结构化错误信封**，音乐模块不用它。
 
 ### 类型声明位置
 
-- **业务类型统一在 `app/src/music/types.ts`**，`ipc.ts` 用 `import type { … } from '@music/types'`（`music/ipc.ts:9-23`）。新增缓存相关类型（`CacheStats` 等）应放这里。
+- **业务类型统一在 `src/music/types.ts`**，`ipc.ts` 用 `import type { … } from '@music/types'`（`music/ipc.ts:9-23`）。新增缓存相关类型（`CacheStats` 等）应放这里。
 - **跨窗口协议类型就地定义在 `ipc.ts`**：`LyricsPushLine`（`:292`）、`DesktopLyricsPrefs`（`:308`）、`LyricsPushPayload`（`:319`）、`LyricsPrefsPayload`（`:363`）、`LyricsControlPayload`（`:383`）—— 带大段「为什么这么定」的注释，是本文件的既有风格。
 
 ### `openPath` 的确切签名
 
-`app/src/ipc.ts:78`
+`src/ipc.ts:78`
 ```ts
 /** 在系统文件管理器里定位路径（契约 §5.8：reveal 由 Box 执行） */
 export const openPath = (path: string) => invoke<void>('open_path', { path });
 ```
-Rust 侧 `app/src-tauri/src/commands.rs:262-263`：
+Rust 侧 `src-tauri/src/commands.rs:262-263`：
 ```rust
 #[tauri::command]
 pub fn open_path(path: String) -> Result<(), String> {
@@ -413,14 +413,14 @@ openPath(current.outputDir).catch((e: unknown) => onToast(errorText(e), 'bad'))
 | 4 | 音频缓存：代理边下边写 | 新增前置步骤：**缓存 key 必须由前端随 query 传进代理**（`store.ts:1000` 拼 URL 处补 `&key=…`）。`ProxyQuery` 未加 `deny_unknown_fields`，加参数**不破坏**现有调用。同时确定 AppHandle 方案：**推荐 `Router::with_state`（`axum 0.7.9` 有该 API，`routing/mod.rs:370`；项目首例无先例）**，次选 `OnceLock<AppHandle>`（合本文件既有风格）。`start_audio_proxy` 的两个调用点都拿得到 AppHandle（`main.rs:218-221`、`audio_proxy.rs:235-240`，后者可直接加 `app: AppHandle`） | ④ |
 | 5 | 设置页「音乐缓存」项：③ 组 + 专用渲染，**不复用普通设置项模板** | **这一条当前结构下做不到**：`Group` 对每个 live 项强制包 `Row`，`Row` 是固定两栏、右列窄（`sections.tsx:44` + `parts.tsx:53-58`）。须在三方案中拍板：甲（给 `SettingItem` 加形态字段）/ 乙（做成独立小节，**须同步改 `MEDIA_GROUPS`，`settings-media-check.mjs:82`**）/ 丙（不 catalog 化，违反项数单一事实源，不推荐） | ⑤ |
 | 6 | 加项后须同步「该常量 + AGENTS.md + README.md」 | 补全为**6 处**：`catalog.ts:429`（31→32）、`settings-media-check.mjs:86`、`:625`（反证锚点，同步漏改会退化成「跳过」而非变红）、`settings-media-check.mjs:68-79` 的 `ADDED` 加一条、**`AGENTS.md:62` 与 `README.md:73` 的「72 条」→ 74**（`check:docs` 比对的是**断言条数**，不是 31） | ⑤ |
-| 7 | 「打开目录」复用 `openPath` | 成立（`app/src/ipc.ts:78`），但**补一条边界**：`open_path` 先判 `p.exists()`，不存在返回 `Err`（`commands.rs:265-267`）。清空全部缓存若删了目录，这个按钮会报错 —— 要么只删文件不删目录，要么先查 stats | ⑥ |
+| 7 | 「打开目录」复用 `openPath` | 成立（`src/ipc.ts:78`），但**补一条边界**：`open_path` 先判 `p.exists()`，不存在返回 `Err`（`commands.rs:265-267`）。清空全部缓存若删了目录，这个按钮会报错 —— 要么只删文件不删目录，要么先查 stats | ⑥ |
 | 8 | （文档未提）新命令零断言覆盖 | `music-platform-check.mjs:447-454` 只判「冻结清单里的命令必须存在」，**新增 `music_audio_cached` / `music_cache_stats` / `music_cache_clear` 不会让它变红，也就天然零覆盖**。按项目纪律须主动补断言（含反证） | ① |
 | 9 | （文档未提）下拉与二次确认都要新写 | `Select` 是受控值选择器、`QuitConfirm` 文案是契约冻结字面量（`QuitConfirm.tsx:17`，`spec-check.ts:315-318` 的 B3 组盯着），**都不能复用**。新组件**放 `screens/settings/`**（不能放 `units/` —— `units-structure-check.mjs:79-91` 的 `MANIFEST` 锁死 11 个文件，多一个即红）；弹层样式可直接用 `.modal-*`（`components.scss:435-470`），Esc 用 `useEsc`。类名别带 `music-`（`settings.scss` 禁该前缀，`:991`） | ⑤ |
 | 10 | （文档未提）「打开目录」按钮的可用性 | 拍板「某平台无缓存时怎么显示」的同时要定：全部缓存为 0 时「打开目录」是否置灰（无缓存就没有目录）—— 与 §5.7 那个「尚未拍板」项是同一个决策 | ⑥ |
 
 ### 建议新增的 Rust 模块落点
 
-`music-cache` 相关代码建议新建 `app/src-tauri/src/music/cache.rs`（与 `local.rs` 同级），在 `music/mod.rs:1-9` 加 `pub mod cache;`，命令在 `main.rs:184` 附近（`audio_proxy::cmd_get_proxy_port` 之后）注册。**不要**塞进 `mod.rs` —— 那里已有 1500+ 行且混着四平台命令。
+`music-cache` 相关代码建议新建 `src-tauri/src/music/cache.rs`（与 `local.rs` 同级），在 `music/mod.rs:1-9` 加 `pub mod cache;`，命令在 `main.rs:184` 附近（`audio_proxy::cmd_get_proxy_port` 之后）注册。**不要**塞进 `mod.rs` —— 那里已有 1500+ 行且混着四平台命令。
 
 ---
 

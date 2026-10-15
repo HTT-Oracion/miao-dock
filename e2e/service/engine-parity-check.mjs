@@ -24,7 +24,7 @@
  *   M2–M5 篡改 golden（cmd / env / 阶段日志 / 权重路径）⇒ 对应断言变红
  *
  * 用法：node e2e/service/engine-parity-check.mjs [--refute]
- * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin boxsvc`
  * 重新生成 golden：`node e2e/service/_gen-golden.mjs engine`
  */
 import { spawn } from 'node:child_process';
@@ -98,7 +98,7 @@ const MOCK_ENV = { MIAO_ENGINE_PROTOCOL: 'mock', MIAO_ENGINE_DETECTION_SIZE: '10
 
 async function dumpRust(env) {
   if (!fs.existsSync(RUST_BIN)) {
-    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`);
+    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
   }
   return JSON.parse((await run(RUST_BIN, ['--engine-selftest'], env)).trim());
 }

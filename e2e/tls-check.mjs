@@ -27,8 +27,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const CARGO_TOML = path.join(ROOT, 'app', 'src-tauri', 'Cargo.toml');
-const CARGO_LOCK = path.join(ROOT, 'app', 'src-tauri', 'Cargo.lock');
+const CARGO_TOML = path.join(ROOT, 'src-tauri', 'Cargo.toml');
+const CARGO_LOCK = path.join(ROOT, 'src-tauri', 'Cargo.lock');
 
 let pass = 0;
 let fail = 0;

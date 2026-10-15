@@ -17,9 +17,9 @@
 
 | 层 | 技术 | 位置 |
 |---|---|---|
-| 桌面壳 | Tauri v2（Rust） | `app/src-tauri/` |
-| 前端 | Vite + React 18 + TS，**原生 CSS + CSS 变量**（无 Tailwind；UI 库仅 `@radix-ui/react-select`） | `app/src/` |
-| 翻译服务 | Rust（127.0.0.1:5180–5190）：§2 的 ① 是 `boxsvc` 可执行文件 | `app/src-tauri/src/boxsvc/` |
+| 桌面壳 | Tauri v2（Rust） | `src-tauri/` |
+| 前端 | Vite + React 18 + TS，**原生 CSS + CSS 变量**（无 Tailwind；UI 库仅 `@radix-ui/react-select`） | `src/` |
+| 翻译服务 | Rust（127.0.0.1:5180–5190）：§2 的 ① 是 `boxsvc` 可执行文件 | `src-tauri/src/boxsvc/` |
 | 翻译引擎 | **接缝层**：真引擎装在 `<appData>/runtimes/manga-translator/`（不在库，B1 起与安装位置无关），本目录放版本锁 `VERSIONS.lock` / 模型清单与下载器 / 子进程看守；`engine/src/` 是**测试替身**（mock 引擎 + mock LLM） | `engine/` |
 | 验收与取证脚本 | 纯 Node 零依赖（`e2e/service/`、`e2e/engine/` 按来源分） | `e2e/` |
 | 参考实现切片 | 只读参考，**保持原样不改** | `vendor/music-reference/`（不入库） |
@@ -40,11 +40,11 @@
 
 **目录分层（硬规则，见《09》§2.2）**：
 
-- `app/src/components/units/` —— 通用 UI 单元。**判据：不 import 业务层**（store / ipc / types / platform / `@hooks` 整个目录 / nav）。类名一律 `ui-` 前缀。
-- `app/src/components/` —— 应用级组件（Sidebar / Toolbar / ViewTabs / QuitConfirm）。
-- `app/src/screens/<屏>/` —— 屏内件（`library/blob.ts`·`library/chapters.tsx`·`library/modals.tsx`、`settings/parts.tsx`、`music/shared.tsx`）。
-- `app/src/hooks/` —— **hooks 唯一收口**：`use*` 命名的 hook 一律住这里（业务 hook 进桶文件 `index.ts`，经 `@hooks` 引入；纯行为 hook 如 `useEsc`、`useCoverColor` 单放同目录）。旧的 `src/hooks.ts` 单文件**不得**与目录并存 —— 模块解析会**静默二选一**（`HOOKS.layout` 盯死）。
-- `app/src/tools/` —— **共享纯函数收口**（与 `components/` 同级，经 `@tools` 引入）：跨屏复用、与业务类型解耦的小工具（格式化 / 分页 / 模糊匹配 / UUID / MIME 嗅探 / 重名规范化 …）。只服务单个屏的逻辑仍留屏内。
+- `src/components/units/` —— 通用 UI 单元。**判据：不 import 业务层**（store / ipc / types / platform / `@hooks` 整个目录 / nav）。类名一律 `ui-` 前缀。
+- `src/components/` —— 应用级组件（Sidebar / Toolbar / ViewTabs / QuitConfirm）。
+- `src/screens/<屏>/` —— 屏内件（`library/blob.ts`·`library/chapters.tsx`·`library/modals.tsx`、`settings/parts.tsx`、`music/shared.tsx`）。
+- `src/hooks/` —— **hooks 唯一收口**：`use*` 命名的 hook 一律住这里（业务 hook 进桶文件 `index.ts`，经 `@hooks` 引入；纯行为 hook 如 `useEsc`、`useCoverColor` 单放同目录）。旧的单文件 `hooks.ts`（落在 `src/` 根）**不得**与目录并存 —— 模块解析会**静默二选一**（`HOOKS.layout` 盯死）。
+- `src/tools/` —— **共享纯函数收口**（与 `components/` 同级，经 `@tools` 引入）：跨屏复用、与业务类型解耦的小工具（格式化 / 分页 / 模糊匹配 / UUID / MIME 嗅探 / 重名规范化 …）。只服务单个屏的逻辑仍留屏内。
 - **按「依赖什么」定归属，不按「被用几次」定归属。** 抽离规则与反面纪律（什么**不**该抽）见 `docs/spec-notes.md` D-34 与《09》§2.2。
 
 **服务端模块目录（硬规则）**：
@@ -53,7 +53,7 @@
   `service/src/*.mjs` 逐块失去对象（同源对拍改**冻结 golden**、取证改读 Rust 自证出口、
   反证锚点搬进 Rust 源码），最终整目录删除。**产品运行时不再启动任何 node 服务进程** ——
   ① 是 `boxsvc`（Rust 可执行），② ③ 里的 node 只是**测试替身**（真机走 `python main.py` / `llama-server`，替身不进包）。
-- 服务实现现在住在 **`app/src-tauri/src/boxsvc/`**，分层如下（原 Node 侧的硬规则随之平移）：
+- 服务实现现在住在 **`src-tauri/src/boxsvc/`**，分层如下（原 Node 侧的硬规则随之平移）：
   `boxsvc.rs`（外壳：鉴权 / CORS / 路由装配）· `routes.rs`（路由表，44 条 `Tier::Migrated`）·
   `handlers.rs`（各端点 handler，逐条对齐原 Node 函数的**状态码 / 错误码 / details 键 / 字段序**）·
   `store/`（队列落盘：`exec` / `view` / `pure` / `atomic`）· `library.rs`（本→话→页落盘原语与寻址）·
@@ -67,11 +67,11 @@
   **该钉子已随目录退役**（D-209，命令已从 `package.json` 摘除），Rust 侧暂无同等的
   "模块分层方向"机器判据，登记为已知缺口。
 
-**引用一律走路径别名（2026-10-04 起）**：`@`（src 根）· `@tauri`（src-tauri，预留）· `@components` · `@screens` · `@music` · `@hooks`；**`app/src` 内不写相对 import**（含 CSS/SVG 副作用导入；同目录 `./` 仍可用）。规则全文见《09》§2.3 与 `docs/spec-notes.md` D-40。增改别名**必须 `vite.config.ts` 与 `tsconfig.json` 双处同步**，且 TS 侧每个别名要**同时**有 `@x` 与 `@x/*` 两条。
+**引用一律走路径别名（2026-10-04 起）**：`@`（src 根）· `@tauri`（src-tauri，预留）· `@components` · `@screens` · `@music` · `@hooks`；**`src` 内不写相对 import**（含 CSS/SVG 副作用导入；同目录 `./` 仍可用）。规则全文见《09》§2.3 与 `docs/spec-notes.md` D-40。增改别名**必须 `vite.config.ts` 与 `tsconfig.json` 双处同步**，且 TS 侧每个别名要**同时**有 `@x` 与 `@x/*` 两条。
 
 **状态管理统一 zustand**：跨组件共享状态一律 zustand（`@music/store` 是先例），**不引入 React Context**（全仓 `createContext` 为零，维持此状 —— `STATE.noReactContext`）。注意它管的是**跨组件共享**，不是"所有状态都塞进全局"：只需一处持有或仅父子一层传递的照旧 `useState`。理由见《09》§2.3.3 与 `docs/spec-notes.md` D-42。
 
-**前端 `app/src/music/` 按层分文件（D-156，与 §1 服务端域目录同思路）**：`store.ts`（zustand 装配：`MusicState` 接口 + 初始 state + 切片 spread，647 行）· `actions/*.ts`（12 个 action 段切片，工厂签名 `Pick<MusicState, ...keys>` 显式列名）· `convert.ts`（纯转换：`songKey`/`fmtTime`/`coverProxyUrl`/`localToSong`/`qualityLabel`）· `prefs.ts`（偏好层：`Prefs` + `savePrefs`）· `persist.ts`（localStorage 读写 + 启动恢复快照，D-153）· `slice.ts`（切片公共件：`StoreSet`/`StoreGet` + 跨段常量）· `tools/lyrics.ts`（歌词解析，D-149）。
+**前端 `src/music/` 按层分文件（D-156，与 §1 服务端域目录同思路）**：`store.ts`（zustand 装配：`MusicState` 接口 + 初始 state + 切片 spread，647 行）· `actions/*.ts`（12 个 action 段切片，工厂签名 `Pick<MusicState, ...keys>` 显式列名）· `convert.ts`（纯转换：`songKey`/`fmtTime`/`coverProxyUrl`/`localToSong`/`qualityLabel`）· `prefs.ts`（偏好层：`Prefs` + `savePrefs`）· `persist.ts`（localStorage 读写 + 启动恢复快照，D-153）· `slice.ts`（切片公共件：`StoreSet`/`StoreGet` + 跨段常量）· `tools/lyrics.ts`（歌词解析，D-149）。
 🔴 **切片文件与 `store.ts` 不得互相 import 值**（`MusicState` 等类型可 type-only）—— 被多段共用的东西一律先下沉到上面某个分层文件，否则成环。判据源已改成「`store.ts` + `music/actions/*.ts`」动态拼接，新增切片不必改断言。
 
 ## 2. 工程纪律（本项目硬性要求，不得绕过）
@@ -146,7 +146,7 @@ npm run task -- check:engine-http[:refute]     # 引擎 HTTP 运行期（真发 
 # ⚠️ `engine-client 那组钉子` 已退役（D-203）：它测的是 Node 侧 `engine-client.mjs` 的 60 条断言，
 #    契约面由上面两组 golden 等价覆盖；Node 产品源码随 F5 删除后它也没有对象了。
 npm run task -- check:retry[:refute]  # 队列「重试」任务身份：复用**同一** taskId（不冒历史行）+ 翻译方向（白名单/落库/送到引擎/重试继承） 10 条 / 反证 7 条（mock 引擎 + 真服务子进程，秒级）
-npm run task -- check:lib-manage[:refute] # 漫画库管理取证：队列删除（仅终端态可删）/ 隐藏与恢复 / 越界名 403 / 前端接线 / 新建（manifest 同步落盘 + 同名 409）/ 归并（在跑拒绝 + NN_第N话 物理移动 + episodes 回写）/ 封面（嗅探命名 + json 同步）/ 话号一位小数（14.1 落位与寻址 + 两位小数/.0 拒绝）23 条 / 反证 12 条（mock 引擎 + Rust 靶子 `boxsvc`，反证锚点全在 `app/src-tauri/src/boxsvc/**`，每轮重编译，秒级）
+npm run task -- check:lib-manage[:refute] # 漫画库管理取证：队列删除（仅终端态可删）/ 隐藏与恢复 / 越界名 403 / 前端接线 / 新建（manifest 同步落盘 + 同名 409）/ 归并（在跑拒绝 + NN_第N话 物理移动 + episodes 回写）/ 封面（嗅探命名 + json 同步）/ 话号一位小数（14.1 落位与寻址 + 两位小数/.0 拒绝）23 条 / 反证 12 条（mock 引擎 + Rust 靶子 `boxsvc`，反证锚点全在 `src-tauri/src/boxsvc/**`，每轮重编译，秒级）
 npm run task -- check:retranslate[:refute] # 单张漫画返工重译 + 全屏缩放快捷键：返工**覆盖**译文（塞假译文验真被顶掉）/ 不碰原图 / 与 resume 分工 / 裸 ↑↓ 不缩放（不抢音量键）12 条 / 反证 5 条（mock 引擎 + 真服务子进程，秒级）
 npm run task -- check:models[:refute] # S3 模型下载器 E7 **双靶**：38 条 × 2 靶 = 正向 **76** / 反证 7 × 2 = **14**（本地 Range 夹具源，秒级，不碰真权重；含 HF 缓存布局 blobs+snapshots+refs）。🔴 **H2（D-217）「清单原 `url` 优先，`sources` 只是镜像」**：旧写法 `sources` 一非空就把原 `url` 整个丢掉，把"备用镜像"变成"唯一来源"；反证 R7（`MIAO_NO_URL_FIRST=1`）退回旧行为 ⇒ H2 必红（**H1 咬不住它** —— H1 的夹具把坏路径同时写进 `url` 与 `sources[0]`）。A3d 起两靶同跑：Node 对照端 `fetch-models.mjs` + Rust `boxsvc --fetch-models`（**产品主路径**）。🔴 反证开关走**子进程 env** —— 进程内 `process.env` 只管得住 Node 靶 ⇒ Rust 靶永远绿，是最坏的假绿
 npm run task -- check:engine-patches[:refute] # 上游源码补丁表（ENGINE_PATCHES）↔ 实物一致性 **+ 产品侧只读镜像双靶交叉钉** 7 条 / 反证 6 条（零网络零 GPU：条数写死 / 结构 / marker 命名 / 目标存在 / 已应用 / 补丁体自含 marker / **A7 Rust 镜像与 SSOT 的 id/mark/rel/desc 同序同值**）。🔴 A4/A5 看的是**产品落点** `<appData>/runtimes/manga-translator/src`（B1）；本机引擎装在别处时用 `MIAO_MODEL_ROOT=<...>/manga-translator` 重跑
@@ -207,12 +207,12 @@ npm run task -- check:llm-supervisor[:refute] # F4-b2 ③ supervisor 冻结 gold
 npm run task -- check:harness[:refute] # F0 服务靶子抽象 7 条 / 反证 3 条（**靶子只有一个 boxsvc**：入口解析唯一 · `MIAO_SERVICE_IMPL=node` ⇒ **抛错**（退役门，静默落回 = 假绿）· 未知取值必须**吵一声**）
 npm run task -- check:routes[:refute]  # F5 路由表 / 转发计数 9 条（`--final` 10 条 = 完成门）/ 反证 4 条（44 条全 `Tier::Migrated`、**转发数 = 0**；反证 M1 真跑 `--list-routes` + `MIAO_ROUTE_REFUTE` 注入假转发 ⇒ 完成门报「仍有 N 条转发」变红）
 npm run task -- check:docpaths[:refute] # 现行文档引用的仓库路径必须真实存在 5 条 / 反证 2 条（查 AGENTS/README/spec-notes-1/dev-setup/project_rules；spec-notes.md 已封卷于 D-136，历史路径明确不查；源码级，内存变异反证；D-158）
-npm run task -- sign:preflight         # **E1 macOS 打包前自检**（`app/scripts/mac-signing-preflight.mjs`）：entitlements 四项就位 + 签名/公证变量齐。🔴 缺变量就**非零退出**：缺 `APPLE_SIGNING_IDENTITY` 会产出 ad-hoc 签名的包（本机不报错、别人机器上被拦）；缺公证三件套时 tauri 会**跳过**公证而不是报错 ⇒ 包装得上、跑不起来。本机自用打包请显式设 `MIAO_NOTARIZE=0`
+npm run task -- sign:preflight         # **E1 macOS 打包前自检**（`scripts/mac-signing-preflight.mjs`）：entitlements 四项就位 + 签名/公证变量齐。🔴 缺变量就**非零退出**：缺 `APPLE_SIGNING_IDENTITY` 会产出 ad-hoc 签名的包（本机不报错、别人机器上被拦）；缺公证三件套时 tauri 会**跳过**公证而不是报错 ⇒ 包装得上、跑不起来。本机自用打包请显式设 `MIAO_NOTARIZE=0`
 npm run app:build:mac          # macOS 打包 = **自检 + tauri build**（"写进构建脚本"= 打包路径上真的会跑；`app:build` 仍是不带自检的通用入口）
 docs/dev-setup.md              # 新人上手：环境 / 装依赖 / 跑检查 / 五个最容易踩的坑 / 代码地图（D-158）
 docs/distribution-license-conclusion.md # **E5 分发许可结论**（工程侧事实清单 + 三档结论（自用可 / 对外待法务 / 含 NC 权重禁止）+ 待法务复核三项 + 发布 checklist + 判据索引）。🔴 **对外分发的前置门**：结论未出不得对外分发；它不是法律意见
 cd app && npx tsc --noEmit && npx vite build   # 前端类型与构建
-cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
+cd src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 ```
 
 > **改了断言覆盖的东西，就要同时更新断言**；搬迁文件尤其注意：
@@ -274,7 +274,7 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
   **B4 的 darwin wheel**（要一台装了 CLT 的 Mac）；
   以及 **E5 的三项法务复核**（`docs/distribution-license-conclusion.md` §4）——外加 B4 的
   `win32-x64` 那一颗**待托管**（需要分发通道）。⇒ **结论未出不得对外分发**。
-- Windows 侧**已能产出 NSIS 安装包**（`app/src-tauri/tauri.windows.conf.json` 平台分叉，`npm run task -- check:bundle` 钉住；macOS 包型仍 `app`+`dmg`，未动），
+- Windows 侧**已能产出 NSIS 安装包**（`src-tauri/tauri.windows.conf.json` 平台分叉，`npm run task -- check:bundle` 钉住；macOS 包型仍 `app`+`dmg`，未动），
   A4 起**已能在真实安装产物上冒烟**（`npm run task -- check:packaged`：静默安装 → `--check-assets` → 起服务打 `/health` + mock 替身 + 启动配方）；
   引擎运行时本身**不随包**（用户自装，B1/B2）· Windows **进程树回收三项**
   （仍 `unverified`：Job Object / 无孤儿 `llama-server.exe` / `taskkill /T`；注：Windows **真引擎装配 + S1 已真机跑通**，见 D-85）·
@@ -301,7 +301,7 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
   做法：用「x64 Native Tools Command Prompt for VS 2022」，或手工导出 `INCLUDE` / `LIB` 后再跑。
   这与 `npm run app`（dev）还是 `npm run app:build`（release）无关 —— 两者都要编译 ring。
 - **cargo 在沙箱里删不掉构建产物**：报 `failed to remove file ... build-script-build`。
-  做法：先 `rm -f app/src-tauri/target/debug/build/*/build-script-build`，再前台构建。
+  做法：先 `rm -f src-tauri/target/debug/build/*/build-script-build`，再前台构建。
 - **`vite build` 需 `--no-emptyOutDir`**：本机沙箱拦截批量删 `dist/`（与代码无关）。
 - **跑 e2e 要把临时目录挪到系统临时区**（安全删除守卫会拦仓库内 `.tmp/e2e/`）：
   `MIAO_E2E_TMP="$(node -e 'console.log(require("os").tmpdir())')/miao-e2e" npm run task -- e2e`

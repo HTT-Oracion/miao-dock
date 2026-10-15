@@ -27,7 +27,7 @@
 
 | 项                   | 规格要求（《09》/《04》）                                             | 仓库现状（证据）                                                                                                                                         | 差距                                                                |
 | ------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| 进程数                 | **3**：box-service + 引擎② + LLM③                              | **2**：`ServiceManager.children{service, engine}`（`app/src-tauri/src/service.rs:46-49`），两个都用 `spawn_node` 拉 `node <entry>`                        | 缺 ③，且**只能用 Node 拉起**（`service.rs:287` 硬编码 `Command::new("node")`） |
+| 进程数                 | **3**：box-service + 引擎② + LLM③                              | **2**：`ServiceManager.children{service, engine}`（`src-tauri/src/service.rs:46-49`），两个都用 `spawn_node` 拉 `node <entry>`                        | 缺 ③，且**只能用 Node 拉起**（`service.rs:287` 硬编码 `Command::new("node")`） |
 | 引擎实现                | `manga-image-translator`（Python FastAPI）                    | `engine/src/server.mjs` 模拟引擎：`sleep(300ms)` + `renderTranslatedPage()` 渲染**版式化占位图**（`engine/src/server.mjs:99-110`）                              | 整条真实链路缺失（D-09）                                                    |
 | 内部协议                | 以 `GET /docs` 的 OpenAPI 快照为准（《04》§4.4）                      | 自造协议：`POST /translate`（裸字节 + `X-Miao-{Seq,From,To}` 头）+ `GET /ready`（`service/src/engine-client.mjs:66,102`）                                     | 协议形状与真实引擎**未对齐**，且无快照                                             |
 | 状态机                 | 五态 + `starting` 细分 **L1–L4**（《09》§6.1）                      | 四态 `Stopped/Starting/Running/Error`（`service.rs:23-30`），无阶段细分；`sidecar.state` 只有 3 值 `stopped/starting/running`（`engine-client.mjs:100,103,107`） | 缺 `downloading/prewarming/unloading/degraded/error` 五值            |
@@ -533,7 +533,7 @@ V 组 2 条阶段日志、P3b/P3c「安装事实 ≠ 进程事实」、P4b「uvi
 
 - **关键路径：S0 → S1 → S2 → (S5) → S7 → S8**。S1 必须在 S0 之后（快照是它的唯一依据），**不能先写适配层**。
 - **可并行**：S3（模型管理）与 S2（生命周期）互不阻塞；S6（UI）只依赖 S5 的字段定义，可与 S7 前半并行。
-- **不可并行**：`service/src/engine-client.mjs`、`app/src-tauri/src/service.rs`、`docs/spec-notes.md` 是共享写入点 —— 沿用本项目纪律**串行派发**。
+- **不可并行**：`service/src/engine-client.mjs`、`src-tauri/src/service.rs`、`docs/spec-notes.md` 是共享写入点 —— 沿用本项目纪律**串行派发**。
 
 ### 每个阶段收尾必做
 

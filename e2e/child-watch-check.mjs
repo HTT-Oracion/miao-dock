@@ -38,7 +38,6 @@ const REFUTE = process.argv.includes('--refute');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const RUST_BIN = path.join(
   ROOT,
-  'app',
   'src-tauri',
   'target',
   'debug',

@@ -44,7 +44,7 @@
  * 变异只动**文档**与**临时副本**（后者在 TMP 里，不碰仓库文件）；文档按字节还原。
  *
  * 用法：node e2e/service/install-guide-check.mjs [--refute] [--manifest <path>]
- * 前置：`cd app/src-tauri && cargo build --bin boxsvc`（拿产品的落点与清单路径）
+ * 前置：`cd src-tauri && cargo build --bin boxsvc`（拿产品的落点与清单路径）
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -130,7 +130,7 @@ const read = (rel) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
 // ------------------------------------------------------------------ 产品侧答案
 
 if (!fs.existsSync(RUST_BIN)) {
-  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`);
+  console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
   process.exit(1);
 }
 

@@ -75,7 +75,7 @@ import { fileURLToPath } from 'node:url';
 
 const REFUTE = process.argv.includes('--refute');
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const BOXSVC = path.join(ROOT, 'app', 'src-tauri', 'target', 'debug', 'boxsvc.exe');
+const BOXSVC = path.join(ROOT, 'src-tauri', 'target', 'debug', 'boxsvc.exe');
 const RUNTIME_MANIFEST = path.join(ROOT, 'engine', 'runtime.manifest.json');
 const MODELS_MANIFEST = path.join(ROOT, 'engine', 'models.manifest.json');
 const WHEELS_MANIFEST = path.join(ROOT, 'engine', 'wheels.manifest.json');
@@ -97,7 +97,7 @@ function check(name, cond, extra) {
 // ------------------------------------------------------------------ 硬前置
 
 if (!fs.existsSync(BOXSVC)) {
-  console.error(`✗ 找不到 ${BOXSVC}\n  先跑：cd app/src-tauri && cargo build --bin boxsvc`);
+  console.error(`✗ 找不到 ${BOXSVC}\n  先跑：cd src-tauri && cargo build --bin boxsvc`);
   process.exit(1);
 }
 

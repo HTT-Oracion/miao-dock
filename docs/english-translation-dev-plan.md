@@ -56,7 +56,7 @@
 | **C2** | `translateImage` 传语言 | 请求体带上 `from_lang` | `engine-client.mjs::realTranslateImage` | **P1** | 下发体含 `config.translator.from_lang` | ☑ |
 | **C3** | 任务语言白名单 | 非法方向 400 | `service/src/server.mjs` + `errors.mjs` | P1 | 非法 `lang` → 400 | ☑ |
 | **C4** | 重试/续做继承方向 | 对齐 D-87（复用 taskId） | `store.mjs::retryTask` | P1 | 重试后方向不变 | ☑ |
-| **C5** | 设置页「翻译方向」项 | ②翻译服务 11 → 12 项 | `app/src/screens/settings/catalog.ts` 等 | P1 | 项数断言 + `GROUPS` 登记同步 | ☑ |
+| **C5** | 设置页「翻译方向」项 | ②翻译服务 11 → 12 项 | `src/screens/settings/catalog.ts` 等 | P1 | 项数断言 + `GROUPS` 登记同步 | ☑ |
 | **C6** | 计数门连锁同步 | 防「全绿但少一节」的假绿 | `AGENTS.md` / `README.md` / `check:docs` / `GROUPS` | P1 | 四处一次同步 | ☑ |
 | **C7** | 诊断视图展示 `from → to` | 界面与事实对齐 | `EngineDiag.tsx` + `engine-state.ts` | P2 | 快照含 `fromLang` | ☑ |
 

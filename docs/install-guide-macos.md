@@ -53,7 +53,7 @@
 查产品实际用的落点（**权威答案，不要靠猜**）：
 
 ```bash
-boxsvc --print-paths           # 打包版在 .app 的资源目录里；从仓库自建时用 ./app/src-tauri/target/debug/boxsvc
+boxsvc --print-paths           # 打包版在 .app 的资源目录里；从仓库自建时用 ./src-tauri/target/debug/boxsvc
 ```
 
 输出的 `runtimeRoot` 就是落点的父目录（产品落点 = `<runtimeRoot>/manga-translator`）。

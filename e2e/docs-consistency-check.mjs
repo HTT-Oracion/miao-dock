@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { buildCommands, dispatchable } from './_commands.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const APP = path.join(ROOT, 'app');
+const APP = ROOT;
 
 const read = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : '');
 const results = [];
@@ -163,8 +163,8 @@ for (const doc of ALL_DOCS) {
 const banned = ['nex', 'box'].join('');
 {
   const targets = [
-    'app/src',
-    'app/src-tauri/src',
+    'src',
+    'src-tauri/src',
     'e2e',
     // ⚠️ 原本还有 `service/src`：那份 Node 服务实现已整目录删除（D-209），
     //    留着只是个**静默跳过**的死目标（walk 遇到不存在的目录直接 return），

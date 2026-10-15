@@ -75,7 +75,7 @@ npm run check:engine-client && npm run check:engine-client:refute
 npm run task -- check:music && npm run task -- check:music:refute
 npm run selftest && npm run task -- selftest:app
 cd app && npx tsc --noEmit
-cd app/src-tauri && cargo check
+cd src-tauri && cargo check
 ```
 
 ### 证据物料
@@ -561,7 +561,7 @@ S4 把 ③ 的归属权移交 box-service（《04》§9.1）之后，本 Manager
 
 ### 3-6 设置页「②翻译服务」自取消守卫被 `StrictMode` 双调用永久置假（S6 取证图照出）
 
-`app/src/screens/settings/engine-state.ts` 里有一个"组件还在吗"的守卫：卸载时把 `alive.current` 置 `false`，
+`src/screens/settings/engine-state.ts` 里有一个"组件还在吗"的守卫：卸载时把 `alive.current` 置 `false`，
 异步回来后据此丢弃结果。写法是 `useEffect(() => () => { alive.current = false; }, [])` —— **只写了卸载那一半**。
 
 `main.tsx` 开着 `React.StrictMode`，开发模式下 mount 的 effect 会跑两遍：

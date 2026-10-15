@@ -11,12 +11,12 @@
 
 | 文件 | 性质 | 行数 |
 |---|---|---|
-| `app/src-tauri/src/music/cache_store.rs` | **新增** · 缓存内核（歌词/音频共用） | ~600 |
-| `app/src-tauri/src/music/lyric_cache.rs` | **新增** · 歌词缓存层 | ~150 |
-| `app/src-tauri/src/music/audio_cache.rs` | **新增** · 音频缓存层（**未改 `audio_proxy.rs`**） | ~310 |
-| `app/src-tauri/src/music/models.rs` | 修改 · 新增 `CacheStats` / `CacheProviderStat` | +33 |
-| `app/src-tauri/src/music/mod.rs` | 修改 · 3 个 `pub mod` + 四个聚合歌词命令接入 | +69 −5 |
-| `app/src-tauri/src/main.rs` | 修改 · `invoke_handler` 注册 4 个新命令 | +6 |
+| `src-tauri/src/music/cache_store.rs` | **新增** · 缓存内核（歌词/音频共用） | ~600 |
+| `src-tauri/src/music/lyric_cache.rs` | **新增** · 歌词缓存层 | ~150 |
+| `src-tauri/src/music/audio_cache.rs` | **新增** · 音频缓存层（**未改 `audio_proxy.rs`**） | ~310 |
+| `src-tauri/src/music/models.rs` | 修改 · 新增 `CacheStats` / `CacheProviderStat` | +33 |
+| `src-tauri/src/music/mod.rs` | 修改 · 3 个 `pub mod` + 四个聚合歌词命令接入 | +69 −5 |
+| `src-tauri/src/main.rs` | 修改 · `invoke_handler` 注册 4 个新命令 | +6 |
 
 **零改动确认**：`audio_proxy.rs` 未被触碰（Range/206 透传完全未动）；`atoms.tsx` /
 `SettingsScreen.tsx` / `settings/icons.tsx` 未被触碰（另一会话的 stash 涉及这三个文件）；
@@ -128,7 +128,7 @@ key = `{provider}:{stable_id}:{quality}`。漏掉 quality 是**功能性 bug 级
 ## 三、与底账不符 / 需澄清之处
 
 > ⚠️ **1. 底账建议的落点是单文件 `cache.rs`，实际拆成了三个文件。**
-> 底账「建议新增的 Rust 模块落点」写的是 `app/src-tauri/src/music/cache.rs`。
+> 底账「建议新增的 Rust 模块落点」写的是 `src-tauri/src/music/cache.rs`。
 > 本次按交付要求拆为 `cache_store.rs`（内核）+ `lyric_cache.rs` + `audio_cache.rs` 三层。
 > 理由：音频层要含 4 个 `#[tauri::command]`、歌词层要含泛型回源闭包，
 > 塞进一个文件会让「内核」与「命令」耦合，且歌词/音频的缓存 key 语义差异大到需要各自的模块级注释。

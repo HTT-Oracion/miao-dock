@@ -43,9 +43,9 @@ import { mergedScripts } from '../_commands.mjs';
 const REFUTE = process.argv.includes('--refute');
 const SELF = fileURLToPath(import.meta.url);
 const ROOT = path.resolve(path.dirname(SELF), '..', '..');
-const CONF = path.join(ROOT, 'app', 'src-tauri', 'tauri.conf.json');
-const PLIST = path.join(ROOT, 'app', 'src-tauri', 'entitlements.plist');
-const PREFLIGHT = path.join(ROOT, 'app', 'scripts', 'mac-signing-preflight.mjs');
+const CONF = path.join(ROOT, 'src-tauri', 'tauri.conf.json');
+const PLIST = path.join(ROOT, 'src-tauri', 'entitlements.plist');
+const PREFLIGHT = path.join(ROOT, 'scripts', 'mac-signing-preflight.mjs');
 const PKG = path.join(ROOT, 'package.json');
 const SPEC_NOTES = path.join(ROOT, 'docs', 'spec-notes-1.md');
 const CONF_ORIGINAL = fs.readFileSync(CONF);
@@ -258,11 +258,7 @@ if (REFUTE) {
 
   // ---- M4：构建脚本不再串自检 ----
   {
-    const restore = mutateFile(
-      PKG,
-      'npm run task -- sign:preflight && npm --prefix app run tauri build',
-      'npm --prefix app run tauri build',
-    );
+    const restore = mutateFile(PKG, 'npm run task -- sign:preflight && tauri build', 'tauri build');
     const r = runForward();
     check(
       'M4 `app:build:mac` 不再跑自检 ⇒ W7 红（自检存在但打包路径上不会执行）',

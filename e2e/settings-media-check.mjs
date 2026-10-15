@@ -12,11 +12,11 @@
  * ③ 那次改动的本质是「把 5 项做不到的剔除、把 8 项能做到的补全」，它同时横跨五层，
  * 每层的静默失败各不相同：
  *
- *   CATALOG  app/src/screens/settings/catalog.ts        数据源（剔除了吗 / 补进了吗 / 项数对得上吗）
- *   WIRING   app/src/screens/settings/sections.tsx      设置页是否真的渲染控件、是否遍历三小节
- *   STORE    app/src/music/store.ts                     六个偏好字段（默认值 / setter / 持久化）
- *   PLAYER   app/src/screens/music/ExpandedPlayer.tsx   偏好是否真的落到播放器（CSS 变量 / 条件类名）
- *   OPTIONS  app/src/music/player-options.ts            选项常量的单一事实源（防设置页/播放器两套皮肤名）
+ *   CATALOG  src/screens/settings/catalog.ts        数据源（剔除了吗 / 补进了吗 / 项数对得上吗）
+ *   WIRING   src/screens/settings/sections.tsx      设置页是否真的渲染控件、是否遍历三小节
+ *   STORE    src/music/store.ts                     六个偏好字段（默认值 / setter / 持久化）
+ *   PLAYER   src/screens/music/ExpandedPlayer.tsx   偏好是否真的落到播放器（CSS 变量 / 条件类名）
+ *   OPTIONS  src/music/player-options.ts            选项常量的单一事实源（防设置页/播放器两套皮肤名）
  *
  * 最危险的两种假绿，本脚本专门防：
  *   ① 「只在数据里标 live、UI 不渲染控件」—— 于是分四层断言：catalog 有 live 项、
@@ -50,7 +50,7 @@ import { clearFileCache } from './_file-cache.mjs';
 import { mergedScripts } from './_commands.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const APP = path.join(ROOT, 'app');
+const APP = ROOT;
 
 const F = {
   catalog: path.join(APP, 'src', 'screens', 'settings', 'catalog.ts'),
@@ -1764,7 +1764,7 @@ add('ENGINE.css.noticePadding', 'ENGINE', (ctx) => {
 });
 
 // ============================ FONT 组 ============================
-// 随仓字体（`app/src/assets/fonts/<dir>/font.css` + 字体文件）有两条**编译得过、构建成功、
+// 随仓字体（`src/assets/fonts/<dir>/font.css` + 字体文件）有两条**编译得过、构建成功、
 // 页面照常显示**的静默失效路径，本组专治这两条：
 //   ① 清单没走 JS 侧引入 —— Sass 对带 `.css` 的 `@use` 静默丢弃 ⇒ 字体资源全不进构建；
 //   ② 字体栈首位族名与随仓 face 对不上 ⇒ 浏览器认不出，整个首位静默回落。
@@ -2991,7 +2991,7 @@ add('FEATURES.licenses.ui', 'FEATURES', (ctx) => {
 add('FEATURES.gen.script', 'FEATURES', (ctx) => {
   const problems = [];
   const script = stripComments(ctx.s.genScript);
-  if (!script) problems.push('缺少 app/scripts/gen-licenses.mjs');
+  if (!script) problems.push('缺少 scripts/gen-licenses.mjs');
   let pkgScripts = {};
   try {
     pkgScripts = JSON.parse(ctx.s.pkgJson).scripts ?? {};

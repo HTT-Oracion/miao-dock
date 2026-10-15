@@ -30,7 +30,7 @@
  *   M4 删掉 golden 一个键            ⇒ 变红
  *
  * 用法：node e2e/service/store-parity-check.mjs [--refute]
- * 前置：`cd app/src-tauri && cargo build --bin boxsvc`
+ * 前置：`cd src-tauri && cargo build --bin boxsvc`
  * 重新生成 golden：`--store-selftest` 的 canon 输出即 golden（Node 版已摘除，勿再回填 Node）
  */
 import { spawn } from 'node:child_process';
@@ -104,7 +104,7 @@ function sameJSON(a, b) {
 
 async function dumpRust(extraEnv = {}) {
   if (!fs.existsSync(RUST_BIN)) {
-    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd app/src-tauri && cargo build --bin boxsvc`);
+    throw new Error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin boxsvc`);
   }
   const env = { MIAO_ATOMIC_DIRECT_WRITE: '', ...extraEnv };
   return JSON.parse((await run(RUST_BIN, ['--store-selftest'], env)).trim());

@@ -56,6 +56,10 @@ export const KEPT_SCRIPTS = [
   'format',
   'format:check',
   // ② app 启停与打包
+  'dev',
+  'build',
+  'preview',
+  'tauri',
   'app',
   'app:build',
   'app:build:mac',

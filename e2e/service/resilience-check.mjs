@@ -36,7 +36,7 @@ import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 /// 🔴 唯一事实源：Rust 侧的 store（`service/src/manga/store.mjs` 已随 Node 服务实现删除）。
-const STORE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'store.rs');
+const STORE_RS = path.join(ROOT, 'src-tauri', 'src', 'boxsvc', 'store.rs');
 const REFUTE = process.argv.includes('--refute');
 
 /** 取某函数体的源码段：自 `marker` 起，到下一个 `stopAt`（或文件末） */
