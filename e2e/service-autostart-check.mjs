@@ -11,7 +11,7 @@
  *
  * 钉的**不是风格**，是**成因**（每条都对应一个真实机制）：
  *
- * ### 手动启停命令（Rust · commands.rs / service.rs）
+ * ### 手动启停命令（Rust · commands/mod.rs / service.rs）
  *   A1 `service_start` 必须走**幂等**入口 `start_once`，不能用裸 `start`。
  *      `React.StrictMode` 在开发期**故意把 effect 跑两遍**，加上"进入翻译模块自动启动"
  *      与用户连点，同一瞬间进来两三次是常态。非幂等的启动会让**两套三进程树去抢同一批
@@ -34,8 +34,9 @@
  *      `stopped` 就结束"，没有后续 emit ⇒ 不补这一发，前端订阅的 `miao://service-state`
  *      永远收不到，界面会一直停在「运行中」。
  *
- *   A5 `main.rs` 的 `generate_handler!` 必须注册 `service_start` / `service_stop`。
+ *   A5 `commands/mod.rs` 的 `generate_handler!` 必须注册 `service_start` / `service_stop`。
  *      漏注册的症状是前端 `invoke` 报 "command not found"，而这与"服务坏了"长得一样。
+ *      （P3-a 起命令注册从 `main.rs` 下沉到命令层，`main.rs` 只做装配。）
  *
  * ### 启动门（main.rs · D-94 的核心改动）
  *   B1 `main.rs` **不再无条件启动**服务：启动被收进测试通道
@@ -112,7 +113,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const COMMANDS_RS = path.join(ROOT, 'src-tauri', 'src', 'commands.rs');
+const COMMANDS_MOD = path.join(ROOT, 'src-tauri', 'src', 'commands', 'mod.rs');
 const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service.rs');
 const MAIN_RS = path.join(ROOT, 'src-tauri', 'src', 'main.rs');
 const APP_TSX = path.join(ROOT, 'src', 'App.tsx');
@@ -168,7 +169,7 @@ function attrBefore(src, sig) {
 function runAll() {
   results.length = 0;
 
-  const cmds = read(COMMANDS_RS);
+  const cmds = read(COMMANDS_MOD);
   const svc = read(SERVICE_RS);
   const main = read(MAIN_RS);
   const app = read(APP_TSX);
@@ -231,9 +232,9 @@ function runAll() {
   // ---- A5：命令已注册 ----
   check(
     'A5',
-    '`main.rs` 的 `generate_handler!` 注册了 `service_start` 与 `service_stop`（漏注册 ⇒ invoke 报 command not found）',
-    /commands::service_start,/.test(main) && /commands::service_stop,/.test(main),
-    `service_start=${/commands::service_start,/.test(main)} service_stop=${/commands::service_stop,/.test(main)}`,
+    '`commands/mod.rs` 的 `generate_handler!` 注册了 `service_start` 与 `service_stop`（漏注册 ⇒ invoke 报 command not found）',
+    /commands::service_start,/.test(cmds) && /commands::service_stop,/.test(cmds),
+    `service_start=${/commands::service_start,/.test(cmds)} service_stop=${/commands::service_stop,/.test(cmds)}`,
   );
 
   // ---- B1：启动收进测试通道；旧的无条件启动已撤干净 ----
@@ -451,7 +452,7 @@ function printResults(title) {
 const MUTATIONS = [
   {
     name: 'A1 service_start 退回非幂等的裸 start（StrictMode 双跑 ⇒ 两套进程树抢端口）',
-    file: COMMANDS_RS,
+    file: COMMANDS_MOD,
     find: 'mgr.start_once(&app);',
     replace: 'mgr.start(&app);',
     expect: ['A1'],
@@ -465,22 +466,22 @@ const MUTATIONS = [
   },
   {
     name: 'A3 service_stop 退回同步命令（阻塞 stop 最坏 5s 冻住主线程）',
-    file: COMMANDS_RS,
+    file: COMMANDS_MOD,
     find: '#[tauri::command(async)]\npub fn service_stop',
     replace: '#[tauri::command]\npub fn service_stop',
     expect: ['A3'],
   },
   {
     name: 'A4 service_stop 去掉补发的 emit（前端永远收不到"已停止"，界面停在「运行中」）',
-    file: COMMANDS_RS,
+    file: COMMANDS_MOD,
     find: '    mgr.stop();\n    mgr.emit(&app);\n',
     replace: '    mgr.stop();\n',
     expect: ['A4'],
   },
   {
     name: 'A5 从 generate_handler! 摘掉 service_start 注册（前端 invoke 报 command not found）',
-    file: MAIN_RS,
-    find: '            commands::service_start,\n',
+    file: COMMANDS_MOD,
+    find: '        crate::commands::service_start,\n',
     replace: '',
     expect: ['A5'],
   },

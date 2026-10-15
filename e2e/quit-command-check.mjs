@@ -10,7 +10,7 @@
  *
  * 钉的**不是风格**，是**成因**（每一条都对应一个真实机制，不是"看起来更整洁"）：
  *
- *   Q1 `commands.rs` 的 `quit_app` 必须是 **async 命令**。
+ *   Q1 `commands/mod.rs` 的 `quit_app` 必须是 **async 命令**。
  *      Tauri 的**同步**命令跑在**主线程**上，而 `AppHandle::exit` 在主线程上调用时
  *      **不保证真的退出**（官方讨论 tauri#3555 的原话：
  *      「you shouldn't call `AppHandle::exit` on the main thread」）——
@@ -52,7 +52,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const COMMANDS_RS = path.join(ROOT, 'src-tauri', 'src', 'commands.rs');
+const COMMANDS_MOD = path.join(ROOT, 'src-tauri', 'src', 'commands', 'mod.rs');
 const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service.rs');
 const APP_TSX = path.join(ROOT, 'src', 'App.tsx');
 
@@ -70,7 +70,7 @@ const read = (f) => fs.readFileSync(f, 'utf8');
 function runAll() {
   results.length = 0;
 
-  const cmds = read(COMMANDS_RS);
+  const cmds = read(COMMANDS_MOD);
   const svc = read(SERVICE_RS);
   const app = read(APP_TSX);
 
@@ -159,7 +159,7 @@ const MUTATIONS = [
     //    Q1 不会变红，整条反证变成假绿。
     edits: [
       {
-        file: COMMANDS_RS,
+        file: COMMANDS_MOD,
         find: '#[tauri::command(async)]\npub fn quit_app',
         replace: '#[tauri::command]\npub fn quit_app',
       },

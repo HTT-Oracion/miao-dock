@@ -5,7 +5,7 @@
  * 为什么需要它（D-20「每层都要断言」+ D-31「假阳性比没测试更危险」）：
  *
  *   一条「四平台接通」的改动横跨五层：
- *     RUST     src-tauri/src/music/mod.rs 定义 + main.rs 的 generate_handler! 注册
+ *     RUST     src-tauri/src/music/mod.rs 定义 + commands/mod.rs 的 generate_handler! 注册
  *     IPC      src/music/ipc.ts 的 invoke('<command>') 封装
  *     PLATFORM src/music/platform.ts 的能力矩阵 + 派发分支
  *     STORE    src/music/store.ts 的平台感知状态与 action
@@ -42,7 +42,7 @@ const APP = ROOT;
 const F = {
   rustMod: path.join(APP, 'src-tauri', 'src', 'music', 'mod.rs'),
   rustModels: path.join(APP, 'src-tauri', 'src', 'music', 'models.rs'),
-  rustMain: path.join(APP, 'src-tauri', 'src', 'main.rs'),
+  rustRegistry: path.join(APP, 'src-tauri', 'src', 'commands', 'mod.rs'),
   ipc: path.join(APP, 'src', 'music', 'ipc.ts'),
   platform: path.join(APP, 'src', 'music', 'platform.ts'),
   store: path.join(APP, 'src', 'music', 'store.ts'),
@@ -193,7 +193,7 @@ const PLATFORM_KEYS = ['netease', 'kugou', 'qqmusic', 'migu'];
  * ⚠️ 这份清单**独立于**上面的 `CONTRACT`：那份是负责人冻结的平台能力清单，
  * 它的判据是"命令名必须出现在 ipc.ts"，而缓存命令是后加的 —— 不进 `CONTRACT`
  * 就意味着漏接线不会让任何一条断言变红（这是本组存在的全部理由）。
- * 所以这里单独列出，并在 `CACHE.ipcWrapped` 里**同时**判 Rust 侧的 `main.rs` 注册。
+ * 所以这里单独列出，并在 `CACHE.ipcWrapped` 里**同时**判 Rust 侧命令注册表的注册。
  */
 const CACHE_CMDS = ['music_audio_cached', 'music_cache_download', 'music_cache_stats', 'music_cache_clear'];
 
@@ -249,7 +249,7 @@ function loadSources() {
   const SF = [F.store, ...ACTIONS]; // store 本体 + 全部切片
   const s = {
     rustMod: readMaybe(F.rustMod),
-    rustMain: readMaybe(F.rustMain),
+    rustRegistry: readMaybe(F.rustRegistry),
     ipc: readMaybe(F.ipc),
     platform: readMaybe(F.platform),
     store: SF.map((p) => stripComments(readMaybe(p))).join('\n'),
@@ -689,18 +689,18 @@ for (const [plat, cmds] of Object.entries(CONTRACT)) {
 }
 for (const [plat, cmds] of Object.entries(CONTRACT)) {
   add(`RUST.registered.${plat}`, 'RUST', (s) => {
-    const missing = cmds.filter((c) => !new RegExp(`music::${esc(c)}\\s*,`).test(s.rustMain));
+    const missing = cmds.filter((c) => !new RegExp(`music::${esc(c)}\\s*,`).test(s.rustRegistry));
     return {
       ok: missing.length === 0,
-      detail: missing.length ? `main.rs generate_handler! 未注册：${missing.join(', ')}` : '',
+      detail: missing.length ? `commands/mod.rs 的 generate_handler! 未注册：${missing.join(', ')}` : '',
     };
   });
 }
 add('RUST.noqishui', 'RUST', (s) => {
   // 汽水延后后不应有任何汽水命令：generate_handler! 块与 music/mod.rs 里都不得出现该标识
   const block = (() => {
-    const i = s.rustMain.indexOf('generate_handler!');
-    return i < 0 ? '' : s.rustMain.slice(i, s.rustMain.indexOf('])', i));
+    const i = s.rustRegistry.indexOf('generate_handler!');
+    return i < 0 ? '' : s.rustRegistry.slice(i, s.rustRegistry.indexOf('])', i));
   })();
   const inHandler = /qishui/i.test(block);
   const inMod = new RegExp(`fn\\s+\\w*qishui\\w*`, 'i').test(s.rustMod);
@@ -1586,10 +1586,13 @@ add('LYRICS.rustCommands', 'LYRICS', (s) => {
   if (!s.rustLyrics) return { ok: false, detail: 'src-tauri/src/lyrics_window.rs 不存在' };
   const need = ['open_lyrics_window', 'close_lyrics_window', 'lyrics_push'];
   const missing = need.filter((n) => !new RegExp(`fn\\s+${n}\\s*\\(`).test(s.rustLyrics));
-  const notRegd = need.filter((n) => !new RegExp(`lyrics_window::${n}`).test(s.rustMain));
+  const notRegd = need.filter((n) => !new RegExp(`lyrics_window::${n}`).test(s.rustRegistry));
   if (missing.length) return { ok: false, detail: `未定义：${missing.join('、')}` };
   if (notRegd.length)
-    return { ok: false, detail: `已定义但未在 main.rs 注册（调用会抛 command not found）：${notRegd.join('、')}` };
+    return {
+      ok: false,
+      detail: `已定义但未在 commands/mod.rs 注册（调用会抛 command not found）：${notRegd.join('、')}`,
+    };
   return { ok: true, detail: '' };
 });
 add('LYRICS.sameOrigin', 'LYRICS', (s) => {
@@ -1809,7 +1812,7 @@ add('LYRICS.windowAutoHeight', 'LYRICS', (s) => {
   const dl = stripComments(s.desktopLyrics ?? '');
   const missing = [];
   if (!/fn\s+resize_lyrics_window/.test(rust)) missing.push('Rust 缺 resize_lyrics_window');
-  if (!/lyrics_window::resize_lyrics_window/.test(s.rustMain)) missing.push('main.rs 未注册');
+  if (!/lyrics_window::resize_lyrics_window/.test(s.rustRegistry)) missing.push('commands/mod.rs 未注册');
   if (!/fn\s+window_height_for_lines/.test(rust)) missing.push('缺高度公式函数');
   if (!/MAX_H/.test(rust)) missing.push('高度未限上限');
   if (!/set_position/.test(rust)) missing.push('未同时调整位置（变高会往屏幕下方溢出）');
@@ -1933,11 +1936,12 @@ add('CACHE.ipcWrapped', 'CACHE', (s) => {
   const ipc = stripComments(s.ipc ?? '');
   const missing = CACHE_CMDS.filter((c) => !new RegExp(`invoke<[^>]*>\\(\\s*'${c}'`).test(ipc));
   if (missing.length) return { ok: false, detail: `ipc.ts 缺封装：${missing.join('、')}（Rust 已实现但前端调不到）` };
-  // 反向：Rust 侧实现了却没在 main.rs 注册 → 运行时 "command not found"。
+  // 反向：Rust 侧实现了却没在 commands/mod.rs 注册 → 运行时 "command not found"。
   // 注册这一环同样零覆盖（冻结清单不含新命令），必须单独判。
-  const main = stripComments(s.rustMain ?? '');
+  const main = stripComments(s.rustRegistry ?? '');
   const notReg = CACHE_CMDS.filter((c) => !main.includes(`music::audio_cache::${c}`));
-  if (notReg.length) return { ok: false, detail: `main.rs 未注册：${notReg.join('、')}（定义存在但运行时找不到命令）` };
+  if (notReg.length)
+    return { ok: false, detail: `commands/mod.rs 未注册：${notReg.join('、')}（定义存在但运行时找不到命令）` };
   return { ok: true, detail: '' };
 });
 
@@ -2147,10 +2151,10 @@ add('LYRICS.stateBackfill', 'LYRICS', (s) => {
   // 根因：主窗建窗后**立刻**推送，而那一刻歌词窗的 `listen` 尚未注册，
   // 那条事件必然丢失（Tauri 事件不缓存、不回放）。
   // 修法三环节缺任一，症状都会原样复现：
-  //   Rust 缓存 → get_lyrics_state 命令 → **在 main.rs 注册** → 歌词窗挂载后补拉
+  //   Rust 缓存 → get_lyrics_state 命令 → **在 commands/mod.rs 注册** → 歌词窗挂载后补拉
   const rust = stripComments(s.rustLyrics ?? '');
   const dl = stripComments(s.desktopLyrics ?? '');
-  const main = stripComments(s.rustMain ?? '');
+  const main = stripComments(s.rustRegistry ?? '');
   const missing = [];
   // ⚠️ 判据必须精确到"**写入**那一步"，不能只查标识符存在：
   // 把 `*g = Some(payload.clone())` 删掉（缓存永不写入＝机制等于没有）断言仍会绿；
@@ -2159,7 +2163,7 @@ add('LYRICS.stateBackfill', 'LYRICS', (s) => {
     missing.push('Rust 未把载荷写入缓存');
   if (!/fn\s+get_lyrics_state/.test(rust)) missing.push('缺 get_lyrics_state 命令');
   // 定义了但没注册 → 调用时报"命令不存在"（且被 catch 吞掉），是经典的不报错失效
-  if (!/get_lyrics_state/.test(main)) missing.push('get_lyrics_state 未在 main.rs 注册');
+  if (!/get_lyrics_state/.test(main)) missing.push('get_lyrics_state 未在 commands/mod.rs 注册');
   if (!/get_lyrics_state/.test(dl)) missing.push('歌词窗未补拉（挂载后仍是空的）');
   // 顺序：**先 listen 再补拉**。反过来的话，注册与拉取之间的事件会漏掉。
   const iListen = dl.indexOf("listen<LyricsPayload | LyricsPrefsPayload>('lyrics://state'");
@@ -2174,12 +2178,12 @@ add('LYRICS.controlBridge', 'LYRICS', (s) => {
   //   ① 歌词窗没发指令 ② Rust 没定义命令 ③ 定义了没注册 ④ 主窗没监听
   const dl = stripComments(s.desktopLyrics ?? '');
   const rust = stripComments(s.rustLyrics ?? '');
-  const main = stripComments(s.rustMain ?? '');
+  const main = stripComments(s.rustRegistry ?? '');
   const kernel = stripComments(s.kernel ?? '');
   const missing = [];
   if (!/lyrics_control/.test(dl)) missing.push('歌词窗未发控制指令');
   if (!/fn\s+lyrics_control/.test(rust)) missing.push('Rust 缺 lyrics_control 命令');
-  if (!/lyrics_control/.test(main)) missing.push('lyrics_control 未在 main.rs 注册');
+  if (!/lyrics_control/.test(main)) missing.push('lyrics_control 未在 commands/mod.rs 注册');
   if (!/lyrics:\/\/control/.test(rust)) missing.push('Rust 未 emit lyrics://control');
   if (!/listen<LyricsControlPayload>\(\s*'lyrics:\/\/control'/.test(kernel))
     missing.push('主窗未监听 lyrics://control');
@@ -4125,9 +4129,9 @@ const MUTATIONS = [
     expect: ['STORE.actions'],
   },
   {
-    name: '从 main.rs 的 generate_handler! 里摘掉 migu_rank_songs 注册（定义仍在）',
-    file: F.rustMain,
-    find: '            music::migu_rank_songs,\n',
+    name: '从 commands/mod.rs 的 generate_handler! 里摘掉 migu_rank_songs 注册（定义仍在）',
+    file: F.rustRegistry,
+    find: '        crate::music::migu_rank_songs,\n',
     replace: '',
     expect: ['RUST.registered.migu'],
   },
@@ -4663,9 +4667,9 @@ const MUTATIONS = [
 
   // ── LYRICS 桌面歌词 ──────────────────────────────────────────────────
   {
-    name: '从 main.rs 摘掉 lyrics_push 注册（定义仍在但调不到）',
-    file: F.rustMain,
-    find: '            lyrics_window::lyrics_push,',
+    name: '从 commands/mod.rs 摘掉 lyrics_push 注册（定义仍在但调不到）',
+    file: F.rustRegistry,
+    find: '        crate::lyrics_window::lyrics_push,',
     replace: '',
     expect: ['LYRICS.rustCommands'],
   },
@@ -4832,10 +4836,10 @@ const MUTATIONS = [
     expect: ['LYRICS.stateBackfill'],
   },
   {
-    name: 'main.rs 不注册 lyrics_control（调用报"命令不存在"，被 catch 吞掉）',
-    file: 'src-tauri/src/main.rs',
-    find: '            lyrics_window::lyrics_control,',
-    replace: '            // lyrics_window::lyrics_control,',
+    name: 'commands/mod.rs 不注册 lyrics_control（调用报"命令不存在"，被 catch 吞掉）',
+    file: 'src-tauri/src/commands/mod.rs',
+    find: '        crate::lyrics_window::lyrics_control,\n',
+    replace: '',
     expect: ['LYRICS.controlBridge'],
   },
   {
@@ -5509,9 +5513,9 @@ const MUTATIONS = [
     expect: ['CACHE.ipcWrapped'],
   },
   {
-    name: '从 main.rs 的 generate_handler! 里摘掉 music_cache_stats 注册（定义仍在）',
-    file: F.rustMain,
-    find: '            music::audio_cache::music_cache_stats,\n',
+    name: '从 commands/mod.rs 的 generate_handler! 里摘掉 music_cache_stats 注册（定义仍在）',
+    file: F.rustRegistry,
+    find: '        crate::music::audio_cache::music_cache_stats,\n',
     replace: '',
     expect: ['CACHE.ipcWrapped'],
   },
