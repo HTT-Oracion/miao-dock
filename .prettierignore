@@ -1,0 +1,24 @@
+node_modules/
+dist/
+dist-verify/
+**/target/
+vendor/
+runtimes/
+.tmp/
+.github/
+
+# 中文文档与台账：换行语义被断言按行匹配，单独处理
+docs/
+*.md
+
+# 生成物与数据清单：由脚本生成 / 手写对齐，不参与格式化
+**/generated/**
+engine/*.manifest.json
+engine/VERSIONS.lock
+src-tauri/gen/
+app/src-tauri/gen/
+src-tauri/icons/
+app/src-tauri/icons/
+app/src-tauri/capabilities/
+app/src-tauri/testdata/
+engine/wheels/

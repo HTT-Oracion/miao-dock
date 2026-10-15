@@ -5,6 +5,11 @@
   "type": "module",
   "description": "喵坞 MiaoDock · Box 桌面端（漫画翻译 + 音乐应用 ver2.0）",
   "scripts": {
+    "prepare": "husky",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "engine": "node engine/src/server.mjs",
     "selftest:service": "node e2e/service/selftest.mjs",
     "selftest:engine": "node e2e/engine/selftest.mjs",
@@ -152,5 +157,17 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.12.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
+    "prettier": "^3.9.10",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.2"
   }
 }
