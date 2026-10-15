@@ -146,7 +146,9 @@ const banned = ['nex', 'box'].join('');
     'app/src',
     'app/src-tauri/src',
     'e2e',
-    'service/src',
+    // ⚠️ 原本还有 `service/src`：那份 Node 服务实现已整目录删除（D-209），
+    //    留着只是个**静默跳过**的死目标（walk 遇到不存在的目录直接 return），
+    //    会让"扫了哪些目录"这句话与事实不符。
     'engine/src',
     'AGENTS.md',
     'README.md',

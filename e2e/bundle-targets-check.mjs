@@ -48,6 +48,20 @@
  *      🔴 W7b 里显式断言"清单解析成功且资产名非空"：清单读不到时交叉集合为空 ⇒
  *      判据**永远绿**（空断言），那比没有更坏。
  *
+ *   W14 产品 Rust 源码里**不存在**指向 node 解释器的字面量（`"node"` / `'node'` / `node.exe`），
+ *      除非它就在 `MIAO_NODE_EXEC`（① ② 的 mock 替身解释器）或 `MIAO_SERVICE_IMPL`
+ *      （退役门，只做字符串比较、不派进程）的**上下文窗口**里 —— D-209 的源码级钉子。
+ *      🔴 为什么不能只钉"配置里没有 node 载荷"（W5）：配置只描述**随包**有什么。真正会回归的
+ *      形态是"代码里悄悄把 node 拉回来"（新增一处 `Command::new("node")`，或把退路从
+ *      `resolve_boxsvc()` 退回 `service/src/server.mjs`）—— 那时包还是干净的，W5 全绿，
+ *      而用户机上一重启就多一个 node 进程。W5 钉的是"**装进去了什么**"，
+ *      W14 钉的是"**产品路径还会不会拉起 node**"，两条各挡一类。
+ *      ⚠️ 判据必须**先剥 `#[cfg(test)]`**：测试夹具里写 `vec!["node", "x.mjs"]` 是正常的
+ *      （`supervisor.rs` 的替身启动用例），不剥会把它算成产品路径 ⇒ 常红 ⇒ 断言迟早被注释掉。
+ *      ⚠️ 判据取**字面量**而不是"有没有 spawn"：本仓的派生态是
+ *      `LaunchSpec { cmd: vec![node_exec, …] }`（真正 fork 发生在 `supervisor.rs`，那里看不到
+ *      "node"），钉 spawn 点会**一条都钉不住**。
+ *
  * ## 反证轮（`--refute`）
  *   逐条把上面的写法**改回缺陷形态** → 对应断言**必须变红** → 按字节还原。
  *
@@ -110,8 +124,66 @@ const REQUIRED_ASSETS = ['engine/models.manifest.json', 'engine/runtime.manifest
 /// `bundle.resources` 的目录（src 相对它解析）。
 const CONF_DIR = path.dirname(BASE_CONF);
 
+/// 产品 Rust 源码根（W14 的扫描面）。
+const RUST_SRC = path.join(ROOT, 'app', 'src-tauri', 'src');
+
+/// 允许 node 字面量出现的**上下文标记**（见文件头 W14 条）。
+const NODE_LITERAL_ALLOW = ['MIAO_NODE_EXEC', 'MIAO_SERVICE_IMPL'];
+/// 上下文窗口半径（行）—— 取值要够宽到盖住"取解释器 → 拼 launch spec"的那几行。
+const NODE_LITERAL_WINDOW = 8;
+
+/// 仓库里所有产品 `.rs`（不含 `target/`）。
+function rustSources() {
+  const out = [];
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (p.endsWith('.rs')) out.push(p);
+    }
+  };
+  walk(RUST_SRC);
+  return out;
+}
+
+/**
+ * 剥掉被 `#[cfg(test)]` 卫住的**整个条目**（含大括号配对）。
+ * 🔴 只删那一行不行：测试体留在文本里，W14 会被夹具常红 —— 而假红的终点是
+ *    "这条断言被注释掉"，比没有更糟。
+ * 括号配对是**启发式**（不认字符串/注释里的括号）：本仓的测试体里没有裸 `{`/`}`
+ * 字符串，够用；真要误判，症状是**剥多**（W14 少扫几行）而不是剥少（假红）。
+ */
+function stripCfgTest(src) {
+  let s = src;
+  for (;;) {
+    const at = s.indexOf('#[cfg(test)]');
+    if (at < 0) return s;
+    let i = at + '#[cfg(test)]'.length;
+    while (i < s.length && /\s/.test(s[i])) i += 1;
+    const semi = s.indexOf(';', i);
+    const brace = s.indexOf('{', i);
+    if (brace < 0 || (semi >= 0 && semi < brace)) {
+      s = s.slice(0, at) + s.slice(semi + 1);
+      continue;
+    }
+    let depth = 0;
+    let j = brace;
+    for (; j < s.length; j += 1) {
+      if (s[j] === '{') depth += 1;
+      else if (s[j] === '}') {
+        depth -= 1;
+        if (depth === 0) { j += 1; break; }
+      }
+    }
+    s = s.slice(0, at) + s.slice(j);
+  }
+}
+
 /// 模型清单（C5 的交叉判据要读它）。
 const MODELS_MANIFEST = path.join(ROOT, 'engine', 'models.manifest.json');
+
+/// wheel 清单（G3 的交叉判据要读它）—— "哪些 wheel 声明随包"的**权威事实源**。
+const WHEELS_MANIFEST = path.join(ROOT, 'engine', 'wheels.manifest.json');
 
 /// Windows 安装引导（E2 的 SmartScreen / 长路径说明）。
 const GUIDE_WIN = path.join(ROOT, 'docs', 'install-guide-windows.md');
@@ -294,6 +366,29 @@ function runAll() {
           : `与清单 ${assetNames.size} 个资产名逐条比过，0 命中`,
   );
 
+  // ---- W13：清单里声明"随包"的 wheel 必须真的在随包资源里（G3）----
+  //    事实源是 `wheels.manifest.json`（不是这里的常量）：清单说有 ⇒ 包里必须有。
+  //    🔴 漏配的后果**不是变红而是静默退化**：用户机上既没有 `.download-cache`、也没有编译器，
+  //       依赖安装会退回源码编译 ⇒ 在没装 MSVC / Xcode CLT 的机器上装到一半失败，离根因极远。
+  //    反证 M12 把那条资源删掉 ⇒ 本断言红。
+  const wheelsManifest = readJson(WHEELS_MANIFEST);
+  const wheelsMisread = !wheelsManifest || !Array.isArray(wheelsManifest.wheels);
+  const bundledWheels = wheelsMisread ? [] : wheelsManifest.wheels.filter((w) => w && w.bundled === true);
+  const wheelTargets = bundledWheels.map((w) => `engine/wheels/${path.basename(String(w.path || w.file || ''))}`);
+  const wheelAbsent = wheelTargets.filter((t) => !targets.has(t));
+  check(
+    'W13',
+    '`wheels.manifest.json` 里标了 `bundled: true` 的 wheel **确实在随包资源里**（G3：零编译器机器上包内那一份是唯一来源）',
+    !wheelsMisread && bundledWheels.length > 0 && wheelAbsent.length === 0,
+    wheelsMisread
+      ? '清单读不到 ⇒ 判据会**永远绿**（空断言），必须当作失败'
+      : bundledWheels.length === 0
+        ? '清单里没有任何 bundled 条目 ⇒ 同上'
+        : wheelAbsent.length
+          ? `缺条目：${JSON.stringify(wheelAbsent)}`
+          : `随包 wheel：${JSON.stringify(wheelTargets)}`,
+  );
+
   // ---- W8/W9/W10：NSIS 安装器钩子（E2 长路径提示 / E3 卸载提示）+ W11 文档 ----
   //    这三条都在**配置与钩子文件**上钉：真跑一次安装器要分钟级 + 真要弹窗，而"提示语
   //    写错一处"（默认按钮落在「删」那一支）的代价是用户几十分钟的装配成果没了。
@@ -370,6 +465,34 @@ function runAll() {
     'Windows 安装引导里写清了两件事：SmartScreen 怎么过 + 长路径为什么必须开',
     /SmartScreen/.test(guide) && /LongPathsEnabled/.test(guide),
     `smartScreen=${/SmartScreen/.test(guide)} longPaths=${/LongPathsEnabled/.test(guide)}`,
+  );
+
+  /*
+   * ---- W14：产品 Rust 源码里**零 node 字面量**（D-209）----
+   * W5 钉的是"随包里没装 node"；这条钉的是"产品路径**再也不会**拉起 node"。
+   * 判据、窗口、以及"为什么钉字面量而不是 spawn 点"见文件头 W14 条。
+   */
+  const sources = rustSources();
+  const nodeHits = [];
+  for (const f of sources) {
+    const lines = stripCfgTest(read(f)).split(/\r?\n/);
+    for (let i = 0; i < lines.length; i += 1) {
+      if (!/"node"|'node'|node\.exe/.test(lines[i])) continue;
+      const lo = Math.max(0, i - NODE_LITERAL_WINDOW);
+      const win = lines.slice(lo, i + NODE_LITERAL_WINDOW + 1).join('\n');
+      if (NODE_LITERAL_ALLOW.some((m) => win.includes(m))) continue;
+      const rel = path.relative(ROOT, f).split(path.sep).join('/');
+      nodeHits.push(`${rel}:${i + 1} ${lines[i].trim()}`);
+    }
+  }
+  check(
+    'W14',
+    '产品 Rust 源码（已剥 `#[cfg(test)]`）里没有指向 node 解释器的字面量 —— 只允许出现在'
+      + ' `MIAO_NODE_EXEC`（①② 的 mock 替身解释器）或 `MIAO_SERVICE_IMPL`（退役门）的上下文里',
+    sources.length > 0 && nodeHits.length === 0,
+    nodeHits.length
+      ? `产品路径里的 node 字面量：${nodeHits.join(' ｜ ')}`
+      : `扫了 ${sources.length} 个 .rs（已剥 #[cfg(test)]）`,
   );
 }
 
@@ -480,6 +603,20 @@ const MUTATIONS = [
     expect: ['W7b'],
   },
   {
+    // G3：清单声明"随包"，而资源里那条被改成了别的名字 ⇒ 包内那份没进包。
+    // 失效形态是**静默退化**（用户机上退回源码编译，在没有编译器的机器上装不上），
+    // 不是"看起来缺个文件"—— 所以必须有这条变异。
+    name: 'M10 抹掉随包 wheel 的资源条目（G3：包内那一份没进包 ⇒ 用户机静默退回源码编译）',
+    edits: [
+      {
+        file: BASE_CONF,
+        find: '"../../engine/wheels/pydensecrf-1.0-cp311-cp311-win_amd64.whl": "engine/wheels/pydensecrf-1.0-cp311-cp311-win_amd64.whl"',
+        replace: '"../../engine/wheels/other.whl": "engine/wheels/other.whl"',
+      },
+    ],
+    expect: ['W13'],
+  },
+  {
     // ⚠️ 锚点一律**单行**：本脚本的变异器不做 EOL 折算（配置与 .nsh 都是 CRLF），
     //    多行锚点会被判成"未找到"而**静默跳过** —— 跳过 ≠ 通过。
     name: 'E2：把 NSIS 安装器钩子的接线摘掉（长路径提示与卸载提示都不会再出现）',
@@ -556,6 +693,27 @@ const MUTATIONS = [
       },
     ],
     expect: ['W11'],
+  },
+  {
+    /*
+     * 🔴 D-209 要防的**真实回归形态**：`resolve_boxsvc()` 是"退路"的落点 —— F5.8 曾在这里
+     *    留过"拿不到 boxsvc 就退回 Node 服务"的路（那段注释现在还在函数上方）。把退路加回去
+     *    是**一次看起来最合理的改动**：包仍然干净（W5 绿）、e2e 仍全绿（开发态 boxsvc 就在
+     *    同目录、根本走不到退路），只有用户机上会多一个 node 进程。
+     *    ⚠️ 锚点故意选在离 `MIAO_SERVICE_IMPL` 二十多行的地方：若插在退役门旁边，
+     *    W14 的允许窗口会把它盖住 ⇒ 该条违反"反证必须真能打红"。
+     */
+    name: 'M13 把 Node 服务退路加回 `resolve_boxsvc()`（包干净、e2e 全绿，只有用户机上多一个 node 进程）',
+    edits: [
+      {
+        file: path.join(RUST_SRC, 'service.rs'),
+        find: '    let name = if cfg!(windows) { "boxsvc.exe" } else { "boxsvc" };',
+        replace:
+          '    let _ = std::process::Command::new("node").arg("service/src/server.mjs").spawn();\n'
+          + '    let name = if cfg!(windows) { "boxsvc.exe" } else { "boxsvc" };',
+      },
+    ],
+    expect: ['W14'],
   },
 ];
 

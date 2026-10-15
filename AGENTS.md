@@ -19,7 +19,7 @@
 |---|---|---|
 | 桌面壳 | Tauri v2（Rust） | `app/src-tauri/` |
 | 前端 | Vite + React 18 + TS，**原生 CSS + CSS 变量**（无 Tailwind；UI 库仅 `@radix-ui/react-select`） | `app/src/` |
-| 翻译服务 | Node（127.0.0.1:5180–5190） | `service/` |
+| 翻译服务 | Rust（127.0.0.1:5180–5190）：§2 的 ① 是 `boxsvc` 可执行文件 | `app/src-tauri/src/boxsvc/` |
 | 翻译引擎 | **接缝层**：真引擎装在 `<appData>/runtimes/manga-translator/`（不在库，B1 起与安装位置无关），本目录放版本锁 `VERSIONS.lock` / 模型清单与下载器 / 子进程看守；`engine/src/` 是**测试替身**（mock 引擎 + mock LLM） | `engine/` |
 | 验收与取证脚本 | 纯 Node 零依赖（`e2e/service/`、`e2e/engine/` 按来源分） | `e2e/` |
 | 参考实现切片 | 只读参考，**保持原样不改** | `vendor/music-reference/`（不入库） |
@@ -27,10 +27,10 @@
 **目录约定（硬规则，全文与理由见 `README.md` §目录 · `docs/spec-notes.md` D-79）**：
 
 - **产品 / 验收分家**：判据不是"像不像测试"，而是**产品代码运行期会不会 fork 它**。会 fork 的留在原处
-  （`engine/scripts/fetch-models.mjs` 等），其余全部在 `e2e/`。搬迁脚本时**按来源分子目录**以保住相对深度（`service/scripts/x` → `e2e/service/x`）。
+  （`engine/scripts/fetch-models.mjs` 等），其余全部在 `e2e/`。搬迁脚本时**按来源分子目录**以保住相对深度（原 Node 服务侧那批自检脚本即整体平移到 `e2e/service/` 下）。
   ⚠️ **反向也成立**：产品主路径一旦改走 Rust，那个脚本就**降级为对照端**——
   `print-launch-plan.mjs` **已退役**（配方收进 `boxsvc::engine::build_launch_plan`，A3b）；
-  `child-watch.mjs` A3c 起降为**对照端**（产品主路径换 `boxsvc --child-watch`，但 `service/src/settings/llm-supervisor.mjs` 仍 import 它 ⇒ **不许删**）；
+  `child-watch.mjs` A3c 起降为**对照端**（产品主路径换 `boxsvc --child-watch`；Node 侧那一份由 `check:child-watch` 行为对照与 `check:child-watch-kill` 的源码钉子继续使唤 ⇒ **不许删**）；
   `fetch-models.mjs` 与 `model-store.mjs` A3d 起**同样降为对照端**（产品主路径换 `boxsvc --fetch-models`，但它们是 `check:models` / `check:engine-settings` 的**双靶另一边** ⇒ **不许删**）。
   🔴 **降级 ≠ 删**：删之前先 `grep` 还有谁引用。A3b/A3c/A3d 处置不同就是这条的三种结果。
   🔴 **降级后仍必须同步改**：对照端是"同一契约的另一实现"，产品侧改了字段/参数而对照端没跟上 ⇒ 双靶对拍会**红**，红才是对的。
@@ -47,13 +47,25 @@
 - `app/src/tools/` —— **共享纯函数收口**（与 `components/` 同级，经 `@tools` 引入）：跨屏复用、与业务类型解耦的小工具（格式化 / 分页 / 模糊匹配 / UUID / MIME 嗅探 / 重名规范化 …）。只服务单个屏的逻辑仍留屏内。
 - **按「依赖什么」定归属，不按「被用几次」定归属。** 抽离规则与反面纪律（什么**不**该抽）见 `docs/spec-notes.md` D-34 与《09》§2.2。
 
-**服务端模块目录（硬规则，ver2.2 起，见 `docs/spec-notes.md` D-101）**：
+**服务端模块目录（硬规则）**：
 
-- `service/src/` 根**只留跨模块底座**：装配入口 `server.mjs` · `config.mjs` · `errors.mjs` · `engine-client.mjs`（引擎适配，唯一耦合点）· `multipart.mjs` · `parent-watch.mjs` · `atomic-file.mjs`（原子写 JSON，跨 manga/settings 复用；D-139）· `image.mjs`（图片字节嗅探，D-141 从 `manga/` 上移）。
-  方向由 `npm run check:layering` 机器核查：**除装配入口 `server.mjs` 外**，底座层不得 import `manga/**`；对 `settings/**` 的导入仅限 `engine-settings.mjs`（`config` 作为组合根读用户设置的唯一入口）。
-- **按业务域分子目录**：`service/src/manga/`（漫画翻译：`store` 队列落盘 · `library` 本→话→页落盘原语 · 库扫描/视图 · 寻址（`resolveComicDir`/`resolveBookDir`/`resolveChapterDir`/`mustChapterDir`，`root` 由宿主注入）（D-115/D-145/D-147）· `names` · `sse` · `translate` 在线翻译：契约 / 注册 / 门面 / http / sse-parse / limiter / 设置 / 密钥 / `platforms/youdao`）· `service/src/settings/`（设置 / 引擎档位 / 诊断：`engine-settings` · `engine-profile` · `model-status` · `idle-policy` · `tier-downgrade` · `llm-supervisor`）· `service/src/music/`（音乐：逻辑主要在 Rust 侧 `app/src-tauri/src/music/`，服务端此目录为**占位**）。
-- 🔴 **新增服务模块必须归入对应域目录**，不得再平铺回 `service/src/` 根；**只有跨域共用**才允许上提到根。
-- 搬迁 / 新增后必须同步：**断言里写死的路径**（`e2e/` 下大量 `path.join(ROOT,'service','src',…)`，不同步的后果是**静默跳过**）· 模块内相对导入 · 本节分层 · `README.md` 目录节 · `.trae/rules/project_rules.md`。
+- 🔴 **`service/`（Node 实现）已从仓库删除**（D-209）：F5 把 44 条端点全迁进 Rust 后，
+  `service/src/*.mjs` 逐块失去对象（同源对拍改**冻结 golden**、取证改读 Rust 自证出口、
+  反证锚点搬进 Rust 源码），最终整目录删除。**产品运行时不再启动任何 node 服务进程** ——
+  ① 是 `boxsvc`（Rust 可执行），② ③ 里的 node 只是**测试替身**（真机走 `python main.py` / `llama-server`，替身不进包）。
+- 服务实现现在住在 **`app/src-tauri/src/boxsvc/`**，分层如下（原 Node 侧的硬规则随之平移）：
+  `boxsvc.rs`（外壳：鉴权 / CORS / 路由装配）· `routes.rs`（路由表，44 条 `Tier::Migrated`）·
+  `handlers.rs`（各端点 handler，逐条对齐原 Node 函数的**状态码 / 错误码 / details 键 / 字段序**）·
+  `store/`（队列落盘：`exec` / `view` / `pure` / `atomic`）· `library.rs`（本→话→页落盘原语与寻址）·
+  `translate/`（在线翻译：门面 / 注册表 / http / sse-parse / limiter / 设置 / 密钥 / `platforms/youdao`）·
+  `engine/`（引擎耦合点：`client` / `state` / `profile` / `supervisor` / `model_store` / `runtime_probe` / `selftest`）。
+- 🔴 **新增服务端点一律落在 `boxsvc/handlers.rs` + `routes.rs`**，由 `npm run check:routes` 盯着
+  （`forwardedCount` 必须为 0 —— 只要还有转发分支，就说明还有第二条实现路径存在）。
+- 搬迁 / 新增后必须同步：**断言里写死的路径与键名**（`e2e/` 下大量 `path.join(ROOT,'app','src-tauri',…)` 与 `boxsvc --engine-selftest` 的出口键；不同步的后果是**静默跳过**）· 本节分层 · `README.md` 目录节 · `.trae/rules/project_rules.md`。
+- ⚠️ 历史分层（`service/src/` 根只留跨平台底座、按 `manga`/`settings`/`music` 分域、
+  方向由「分层方向钉子」机器核查）见 `docs/spec-notes.md` D-101 / D-141 ——
+  **该钉子已随目录退役**（D-209，命令已从 `package.json` 摘除），Rust 侧暂无同等的
+  "模块分层方向"机器判据，登记为已知缺口。
 
 **引用一律走路径别名（2026-10-04 起）**：`@`（src 根）· `@tauri`（src-tauri，预留）· `@components` · `@screens` · `@music` · `@hooks`；**`app/src` 内不写相对 import**（含 CSS/SVG 副作用导入；同目录 `./` 仍可用）。规则全文见《09》§2.3 与 `docs/spec-notes.md` D-40。增改别名**必须 `vite.config.ts` 与 `tsconfig.json` 双处同步**，且 TS 侧每个别名要**同时**有 `@x` 与 `@x/*` 两条。
 
@@ -120,23 +132,27 @@ npm run check:ia              # IA 结构 32 条（含 C8d：侧栏两套几何 
 npm run check:tls             # TLS 依赖链 14 条（三层）
 npm run check:quit[:refute]   # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW / 前端不静默 / Windows signal_tree 无条件 /F；不起进程）
 npm run check:autostart[:refute] # 翻译服务「自动启动 / 手动启停」根因钉子 18 条 / 反证 19 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / 自动启动 effect 依赖不含 status / 未就绪屏 stopped 给「启动」/ 设置页启停行 / 服务实现默认档 = Rust（E1–E5）/ Cargo.toml `default-run` 指向真实 bin（F1）；不起进程；D-94 · D-168 · D-169）
-npm run check:engine-client[:refute] # 翻译引擎适配层 50 条 / 反证 12 条（真协议用 openapi 快照「假引擎」，秒级）。⚠️ L4 要引擎**真装在默认落点**（`<appData>/runtimes/manga-translator/`）—— 两种对齐方式：① 把仓库 `runtimes/manga-translator` 用 **junction** 链到默认落点（零拷贝、`rmdir` 即可摘，别复制 15 GB）；② 一次性覆盖 `MIAO_RUNTIME_ROOT=<repo>/runtimes`（B1）
+npm run check:engine-parity[:refute]   # 引擎耦合点纯函数（Rust `--engine-selftest` ⟷ 冻结 golden，real/mock 两档）
+npm run check:engine-http[:refute]     # 引擎 HTTP 运行期（真发 HTTP 打伪引擎：请求体 / 错误归一 / 三重就绪 / 超时带走证据）
+# ⚠️ `engine-client 那组钉子` 已退役（D-203）：它测的是 Node 侧 `engine-client.mjs` 的 60 条断言，
+#    契约面由上面两组 golden 等价覆盖；Node 产品源码随 F5 删除后它也没有对象了。
 npm run check:retry[:refute]  # 队列「重试」任务身份：复用**同一** taskId（不冒历史行）+ 翻译方向（白名单/落库/送到引擎/重试继承） 10 条 / 反证 7 条（mock 引擎 + 真服务子进程，秒级）
-npm run check:lib-manage[:refute] # 漫画库管理取证：队列删除（仅终端态可删）/ 隐藏与恢复 / 越界名 403 / 前端接线 / 新建（manifest 同步落盘 + 同名 409）/ 归并（在跑拒绝 + NN_第N话 物理移动 + episodes 回写）/ 封面（嗅探命名 + json 同步）/ 话号一位小数（14.1 落位与寻址 + 两位小数/.0 拒绝）16 条 / 反证 8 条（mock 引擎 + 真服务子进程，秒级）
+npm run check:lib-manage[:refute] # 漫画库管理取证：队列删除（仅终端态可删）/ 隐藏与恢复 / 越界名 403 / 前端接线 / 新建（manifest 同步落盘 + 同名 409）/ 归并（在跑拒绝 + NN_第N话 物理移动 + episodes 回写）/ 封面（嗅探命名 + json 同步）/ 话号一位小数（14.1 落位与寻址 + 两位小数/.0 拒绝）23 条 / 反证 12 条（mock 引擎 + Rust 靶子 `boxsvc`，反证锚点全在 `app/src-tauri/src/boxsvc/**`，每轮重编译，秒级）
 npm run check:retranslate[:refute] # 单张漫画返工重译 + 全屏缩放快捷键：返工**覆盖**译文（塞假译文验真被顶掉）/ 不碰原图 / 与 resume 分工 / 裸 ↑↓ 不缩放（不抢音量键）12 条 / 反证 5 条（mock 引擎 + 真服务子进程，秒级）
 npm run check:models[:refute] # S3 模型下载器 E7 **双靶**：37 条 × 2 靶 = 正向 **74** / 反证 6 × 2 = **12**（本地 Range 夹具源，秒级，不碰真权重；含 HF 缓存布局 blobs+snapshots+refs）。A3d 起两靶同跑：Node 对照端 `fetch-models.mjs` + Rust `boxsvc --fetch-models`（**产品主路径**）。🔴 反证开关走**子进程 env** —— 进程内 `process.env` 只管得住 Node 靶 ⇒ Rust 靶永远绿，是最坏的假绿
 npm run check:engine-patches[:refute] # 上游源码补丁表（ENGINE_PATCHES）↔ 实物一致性 **+ 产品侧只读镜像双靶交叉钉** 7 条 / 反证 6 条（零网络零 GPU：条数写死 / 结构 / marker 命名 / 目标存在 / 已应用 / 补丁体自含 marker / **A7 Rust 镜像与 SSOT 的 id/mark/rel/desc 同序同值**）。🔴 A4/A5 看的是**产品落点** `<appData>/runtimes/manga-translator/src`（B1）；本机引擎装在别处时用 `MIAO_MODEL_ROOT=<...>/manga-translator` 重跑
 npm run check:extract-atomic[:refute] # **D3 原子解包**（修 D-95 待修项）6 条 / 反证 3 条（真 `tar` + 夹具归档：**失败时 `destDir` 一个字节都不动**、失败后**不留 `.part`**、成功才换（旧内容 rename 走）、上次中断的 `.part` 不干扰本次）。🔴 判据必须**跑失败路径**：旧写法（`fs.rmSync(destDir)` 在前、`tar` 在后）在源码里长得几乎一样，只有跑出来才看得见"旧目录已被删掉"。反证 M1 就是**改回旧写法** ⇒ W3 红）
-npm run check:pydensecrf-wheel[:refute] # **B4 预编译 wheel 通道** **11** 条 / 反证 **6** 条（`engine/wheels.manifest.json` 结构合法（64 位 sha256 形态 + **`local` 与 `url` 二选一互斥**："尚未托管"必须说出来）· 走产品自己的出口 `install-engine-deps.mjs --print-plan` 判定四态：**命中且哈希对得上 ⇒ 走 wheel** / 哈希不符 ⇒ **拒绝并回退** / 文件不在盘上 ⇒ 回退 / 只有别的平台条目 ⇒ 回退 · **只读模式（`--print-plan` / `--wheel-entry`）不受平台闸门限制**（macOS 用户也要能问与算哈希；默认调用与 `--build-wheel` 仍被拒） · 两份安装引导都写了这条通道）。🔴 **回退是前提不是降级**：清单为空必须仍能装。反证：去掉哈希比对 / 去掉平台过滤 / 命中也返回 source / 去掉只读旁路 / 给未托管条目补 url / 摘掉 local 又不给 url ⇒ 各自红）
+npm run check:engine-bootstrap[:refute] # **G5 开箱即用引导链门** 11 条 / 反证 5 条（static 层，纯文件分析）：清单条目完整可下载 · wheel 条目 `local`/`url` 互斥 · `/engine/models/download` 接线 + G5 进度字段齐 · 阶段顺序 stage1→stage2 · **零命令行三处**（芯片文案 / 前端 4 件 / **Rust `FIX_*` 与闸门消息**，W9a/b/c）。🔴 W9 必须打在 Rust 侧：`NotReadyScreen` 渲染的字符串来自 `boxsvc/engine/runtime_probe.rs`，只扫前端会让"教用户跑 node"长期全绿（D-207）；W9b 还要求每条文案**给出产品内入口** —— 只说"缺什么"同样不合格。反证 M1–M5 + R1 五处字节还原
+npm run check:pydensecrf-wheel[:refute] # **B4/G3 预编译 wheel 通道** **13** 条 / 反证 **8** 条（`engine/wheels.manifest.json` 结构合法（64 位 sha256 形态 + 分发形态 **`bundled` / `local` / `url` 三态恰取其一**——"随包"与"尚未托管"都必须说出来）· **W1b 随包条目的文件真的在仓库里且 sha256/体积一致**（G3 成立的前提）· 走产品自己的出口 `install-engine-deps.mjs --print-plan` 判定四态：**命中且哈希对得上 ⇒ 走 wheel** / 哈希不符 ⇒ **拒绝并回退** / 文件不在盘上 ⇒ 回退 / 只有别的平台条目 ⇒ 回退 · **W3b 包内那一份优先于本机目录**（用户机上没有 `.download-cache`，只看本机目录必然退回源码编译） · **只读模式（`--print-plan` / `--wheel-entry`）不受平台闸门限制**（macOS 用户也要能问与算哈希；默认调用与 `--build-wheel` 仍被拒） · 两份安装引导都写了这条通道）。🔴 **回退是前提不是降级**：清单为空必须仍能装。反证：去掉哈希比对 / 去掉平台过滤 / 命中也返回 source / 去掉只读旁路 / 三态混写 / 抹掉 bundled 又不给 url / **摘掉包内优先** / **path 指向不存在的文件** ⇒ 各自红）
 npm run check:pydensecrf-wheel-install # **B4 真装一次**（nightly 层）5 条：硬前置是有 `--build-wheel` 产出的 wheel（没有 ⇒ **失败并点名该命令**，"跳过 ≠ 通过"）；`pip install --no-index --no-deps` 成功 ⇒ **自足、不联网、不触发编译**（这比"换一台没有编译器的机器"更强）· 装出来的是**真二进制**（PE/ELF/Mach-O 魔术头，不是 `.py` 冒充）· `import` + 构造 `DenseCRF(10,10)` + 枚举成员在（产品的兼容补丁在 wheel 产物上同样成立）· wheel 文件名 tag 与产品自报的 `platform`/`pythonTag` 一致
 npm run check:offline-real   # **C4 真引擎离线加载**（nightly 层，分钟级，**要真权重 + 真引擎**）**10/10**：产品 real 档配方注入 `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`（且 `MIAO_NO_HF_OFFLINE=1` 能让它消失 —— 证明判的是产品行为，不是环境里本来就有）· ② 与 ③ 都在离线旗标下到 `running` · **真跑一张英译中**（`lang:{from:'en',to:'zh'}` ⇒ 走 nllb 的 HF 缓存）⇒ 译文落盘且与原文不同 · 收尾端口全释放。🔴 **取证边界**：② 由脚本按**产品自己的配方**（`--print-launch-plan real` 的 cmd/cwd/env）spawn —— box-service 不管 ②（`engine.pid` 恒 `null` 是归属使然）· 端口必须避开配方的「执行器 = 引擎端口 + 1」（撞了会变成 404，见 D-197）
 npm run check:uninstall-keep # **E3 真卸载一次**（nightly 层，要 NSIS 安装包 + 本机真有一份引擎运行时）**7/7**：静默卸载**不挂住**（NSIS 弹窗在 `/S` 下照样阻塞 ⇒ 钩子必须 `IfSilent`；挂住是**超时**不是变红）· 卸载真生效 · `<appData>/runtimes/manga-translator` **原封不动**（硬要求①）· 作品目录原封不动（硬要求②）。🔴 前置缺一 ⇒ **失败并点名**，不软跳过
 npm run check:offline-fallback[:refute] # **C4 离线兜底** 9 条 / 反证 3 条（夹具夹具清单 + `url` 指向**不可达地址**：权重未预置 ⇒ 配方**不**注入 HF 离线键（否则堵死首次下载）；已预置 ⇒ 注入 `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`；`--link` 零网络重建**引擎真要打开的那条路径**（`<root>/src/<linkTo>` + HF 的 `snapshots/<rev>/<file>` + `refs/main`）；清掉链接 ⇒ 立刻未就绪，而 **store 那一路始终全绿**（两层判据真的分层，R6 的陷阱正是它））。🔴 **取证边界**：真引擎在断网下真加载那一步要真权重，归 nightly；本脚本证明的是它的上游条件。反证：恒不注入 / 忽略逃生开关 / 不写 `refs/main` ⇒ 各自红）
 npm run fetch:models          # S3 模型下载器 CLI **Node 对照端**（开发机用）：--check 只校验 / --link 只重建引擎树里的链接（零网络）。⚠️ **产品运行期跑的是 `boxsvc --fetch-models`**
-npm run check:profile[:refute] # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）
+npm run check:profile[:refute] # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）**42** 条 / 反证 14 条（F5.5 换靶：H/T/A/D/I 纯判定下沉进 `profile.rs` 的 `cargo test`（`--lib` 全绿 + 具名用例条数写死 37），真进程那部分走 `boxsvc --llm-selftest` ⟷ golden；约 10s）
 npm run check:e5e6[:refute]    # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run check:contract[:refute] # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status，77 条（8 个实例场景 A–H）/ 逃生开关反证 4 条（各约 3s / 2s）
-npm run check:translate[:refute] # ver2.2 在线翻译服务（有道智云）：签名 v3 / 四层超时 / 限流 / 三层设置 / 密钥隔离 / 契约适配器 / 5 路由端到端 54 条 / 反证 8 开关（假上游冒你有道——默认发真 SSE 帧，零网络秒级；D-129/D-130）
+npm run check:translate[:refute] # ver2.2 在线翻译服务（有道智云）：签名 v3 / 四层超时 / 限流 / 三层设置 / 密钥隔离 / 契约与适配器 / 5 路由端到端 **54** 条（52 条业务断言 + 条数自检 + RUN）/ 反证 8 开关（假上游冒充有道——默认发真 SSE 帧，零网络秒级；D-129/D-130）。🔴 F5.5 换靶：本进程里**没有一行 Node 产品代码** —— S/T/L/C/K/A 经 `boxsvc --translate-cases` 驱动 **Rust 门面**（真发 HTTP 打假上游），纯逻辑面（码表 / 签名截断 / 语言码 / 上游码 / 错误族 / 可重试）经 `boxsvc --translate-selftest` ⟷ 冻结 golden
 # —— S7 真机端到端 E1–E11（逐项取证；总表见 docs/engine-e2e-acceptance-report.md）——
 npm run check:e3:real         # E3 真引擎全链路 31 张（一个 Task 两个 Batch + 落盘 + SSE 一致）8 条 · **真权重，分钟级，不进常规门**
 npm run check:e4[:refute]     # E4 档位切换：生效档位 vs 配置档位 / 未声明档位必须抛错（真服务 + 假引擎，秒级）6 条 / 反证 4 条
@@ -150,7 +166,7 @@ node e2e/service/llm-real-timing.mjs  # 真 ③（llama-server）冷启动与内
 npm run check:music[:refute]  # 音乐平台 / 播放模式五档 / 心动模式 / 播放列表入口与抽屉 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 228 条 / 反证 212 条
 npm run check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3「准备中」时间线 + ④ 功能梳理（侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / 行内 def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染（自守）+ **C5 许可清单的引擎/模型段** + **D4 运行时实况行** **183** 条 / 反证 **138** 条。⚠️ 本轮顺手修掉三条**基线就红的陈断言**（A3d 把 `scriptExists` 改名 `runnerExists`、`ExpandedPlayer` 从 `MusicScreen` 搬到 `App.tsx` 后没同步；以及 `NOTREADY.wiring.modeDegraded` 判的是"文件里出现过 `status?.mode`"，而它出现两处 ⇒ 摘掉 chip 也不红）—— 一条**永远绿不了**的断言比没有更坏：它占着"这条已覆盖"的位置，反证轮还会把"仍然红"当成"按预期变红"
 npm run check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 看图缩放 / 样式分层 45 条 / 反证 59 条
-npm run check:bundle[:refute] # 打包配置钉子 **13** 条 / 反证 **18** 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip` ——「文件不在」是永远绿的空断言，因 `vendor/node.zip` 从未存在；**W6** 必需资产条目在**且** src 文件真实存在；**W7/W7b（C5）随包 0 个模型权重** —— 后缀黑名单 + 与 `models.manifest.json` **逐条交叉**，且显式断言"清单读到了、资产名非空"（否则交叉判据是空断言）；**W8–W11（E2/E3）NSIS 安装器钩子** —— 接线指向真实 `.nsh`、长路径只读检查（`SetRegView` + `ReadRegDWORD` + 给命令，**不许 `WriteRegDWORD` 替用户改 HKLM**）、卸载提示**默认保留**（`MB_DEFBUTTON2` 且 `RMDir` 出现在 `IDYES` 之后）且不碰作品目录、Windows 引导写明 SmartScreen 与长路径；**W12** 每个 `MessageBox` 之前必须有 `IfSilent` 守卫 —— NSIS 的弹窗在 `/S` 静默模式下**照样弹并阻塞**，后果不是变红而是 `check:packaged` 的静默安装/卸载**永远不返回**。源码级，不起进程）
+npm run check:bundle[:refute] # 打包配置钉子 **15** 条 / 反证 **20** 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip` ——「文件不在」是永远绿的空断言，因 `vendor/node.zip` 从未存在；**W14（D-209）产品 Rust 源码里零 node 字面量** —— 剥掉 `#[cfg(test)]` 后，`"node"` / `'node'` / `node.exe` 只允许出现在 `MIAO_NODE_EXEC`（①② 的 mock 替身解释器）或 `MIAO_SERVICE_IMPL`（退役门）的上下文窗口里；W5 钉"装进去了什么"、W14 钉"产品路径还会不会拉起 node"，两条各挡一类 —— 反证 M13 把 Node 服务退路加回 `resolve_boxsvc()`（包干净、e2e 全绿，只有用户机上多一个 node 进程）只打红 W14；**W6** 必需资产条目在**且** src 文件真实存在；**W7/W7b（C5）随包 0 个模型权重** —— 后缀黑名单 + 与 `models.manifest.json` **逐条交叉**，且显式断言"清单读到了、资产名非空"（否则交叉判据是空断言）；**W13（G3）** `wheels.manifest.json` 里标 `bundled: true` 的 wheel **确实在随包资源里** —— 漏配的后果不是变红而是**静默退化**（用户机无 `.download-cache`、无编译器 ⇒ 退回源码编译，装到一半失败）；**W8–W11（E2/E3）NSIS 安装器钩子** —— 接线指向真实 `.nsh`、长路径只读检查（`SetRegView` + `ReadRegDWORD` + 给命令，**不许 `WriteRegDWORD` 替用户改 HKLM**）、卸载提示**默认保留**（`MB_DEFBUTTON2` 且 `RMDir` 出现在 `IDYES` 之后）且不碰作品目录、Windows 引导写明 SmartScreen 与长路径；**W12** 每个 `MessageBox` 之前必须有 `IfSilent` 守卫 —— NSIS 的弹窗在 `/S` 静默模式下**照样弹并阻塞**，后果不是变红而是 `check:packaged` 的静默安装/卸载**永远不返回**。源码级，不起进程）
 npm run check:macos-compat[:refute] # **D7 macOS 兼容** 11 条 / 反证 4 条（解释器推导**函数体内**两个平台形态都在（⚠️ 判据限定在函数体：单测里也有同样的字面量，全文件搜会被它骗）+ 实跑 `--print-paths` 的形态与当前平台一致且不串 + 检测侧与 `--print-launch-plan` 的 `cmd[0]` 逐字节相同；**Windows 专用脚本在非 Windows 下真的拒绝**（`MIAO_PLATFORM=darwin-arm64` 接缝 ⇒ exit 2 + `PLATFORM_UNSUPPORTED` + 指向 macOS 引导 + **不含 `ENOENT`**），且守卫必须早于任何 `fs`/`spawn`；文档分平台（macOS 引导里每次 `deps:engine` 都在"不能用"的语境里）；`unverified` 记账在位）。🔴 真机验收归 macOS 机器）
 npm run check:macos-signing[:refute] # **E1 macOS 签名 + 公证** 8 条 / 反证 4 条（`entitlements.plist` 四项必备且**都为 true**、**不含 app-sandbox 键**（判据只看键：注释里正讨论着"刻意不加它"）· `tauri.conf` 接线（`hardenedRuntime` + `entitlements` 指向真实文件）· 打包前自检三种形态：**缺变量 ⇒ 非零退出并逐个点名**（缺公证三件套时 tauri 会**跳过**公证而不是报错 ⇒ 包装得上、跑不起来）/ `MIAO_NOTARIZE=0` ⇒ 放行但**告警"不得对外分发"** / 变量齐 ⇒ 放行 · `sign:preflight` 注册且 `app:build:mac` 串上了它 · `unverified` 记账）。🔴 **落点已变**：F5 + B1 之后引擎运行时在 `~/Library/Application Support/runtimes/…`，**包内几乎无可执行对象**；"对 `Contents/` 内所有可执行逐个签名"没有对象了，多出来的是"带 hardened runtime 的父进程能否拉起用户自装的未签名 python/llama" —— 只能真机答，标 `unverified`）
 npm run check:resources[:refute] # 随包资源寻址 **A1/A2** 三环境取证 8 条 / 反证 4 条（dev 态不误报且来源=repo · 打包齐备来源=resource · 打包缺失报 `RESOURCE_MISSING` 且退出码≠0 · 两边都有时资源目录优先 · 必需资产三处事实源交叉验证 · S1/S2/S3 源码钉）。🔴 dev 态与打包态**必须都跑**：只跑 dev 态**永远绿**（资产就在仓库里，打包态的错测不出来），只跑打包态会把 dev 态误判成缺失
@@ -166,19 +182,19 @@ npm run check:platform-guide[:refute] # **C3 `llama-server` 按平台分化** 12
 npm run check:progress-truth[:refute] # **D2 进度只来自真实来源** 10 条 / 反证 3 条（跨三层：① 数据源 —— `state.rs` 的 tail 只推**读到的行**、`\\r` 覆盖式进度也算分隔符；② 取值 —— `lastLogLine()` 取末个非空行原样返回、**没有就不显示**；③ 渲染 —— 没有行时整块不渲染，且代码里**不存在**占位数字）。反证三层各一：推送编造的行 / `lastLogLine` 加占位兜底 / 去掉"没有就不渲染"的守卫 ⇒ 各自红）
 npm run check:model-runner[:refute] # **C2 校验/建链执行体随包定位** 12 条 / 反证 3 条（真起服务读 `/engine/status.modelDownload.runner`：默认值 == **当前可执行文件自己**且**是绝对路径** —— 相对路径在本机能跑、装完就没，判据必须含 `path.isAbsolute`，否则"cwd 恰好是仓库根"会把差异掩盖成**假绿** · `POST /engine/models/verify` 用它真的跑得起来（200 + 结构化结果，**不是 INTERNAL**）· 执行体不在盘上 ⇒ INTERNAL **且消息里带路径** · `--link` 收尾零网络跑通 · **跨卷**降级为复制并**单独记账**在 `cross_device`，跨卷且复制也失败时错误消息出现「跨卷」）。🔴 **台账 C2 的落点已过期**：它写在 A3d 之前（执行体还是 `node fetch-models.mjs`），A3d 之后"随包"的最优形态是 `current_exe()`。反证：默认执行体改成仓库相对路径 / 跨卷判定恒 false / 删 CLI 打印跨卷 ⇒ 各自红在**指定的那条断言**上
 npm run check:resilience[:refute] # box-service 健壮性钉子 9 条 / 反证 14 条（源码级：R1–R7 顶层未捕获异常兜底（走同一 shutdown / 收 ③ / 重入闸 / 非零退出）· A1–A2 任务状态原子写（store 走 atomicWriteJson · tmp→fsync→rename）；不起进程；内存变异反证；D-138/D-139）
-npm run check:layering[:refute] # service 依赖方向钉子 3 条 / 反证 3 条（源码级：L0 底座文件集 == 白名单 · L1 底座不得 import manga/** · L2 底座对 settings/ 仅限 engine-settings.mjs；装配入口 server.mjs 豁免；不起进程；内存变异反证；D-141）
 npm run check:docs            # 文档 ↔ 实现一致性 17 条（条数对账 / 命令存在 / 禁词 0 命中 / GROUPS 覆盖）
-# —— F 组「服务 Rust 化」的同源对拍钉子（F0–F5 已全部 ☑，见 docs/packaging-local-engine-dev-plan.md）——
-#    每组都**双靶子**跑同一份断言：`MIAO_SERVICE_IMPL=node` 吃 `service/src/server.mjs`，
-#    `=rust` 吃 `target/debug/boxsvc`。⇒ `service/src/*.mjs` 虽已从**产品运行时**摘除，
-#    但作为这七组的**对照端**必须保留；删它 = 连带作废全部对拍（不是"顺手清理"）。
+# —— F 组「服务 Rust 化」的契约钉子（F0–F5 已全部 ☑，见 docs/packaging-local-engine-dev-plan.md）——
+#    🔴 原先是**双靶子**跑同一份断言（`MIAO_SERVICE_IMPL=node` 吃仓库里那份 Node 服务入口、
+#    `=rust` 吃 `target/debug/boxsvc`）。D-209 起 node 靶子随 `service/` 删除**整体退役**：
+#    七组对拍逐块改成**冻结 golden**（D-199/200/203）或改读 Rust 自证出口 —— 不再需要第二份实现。
+#    ⇒ `service/src/*.mjs` 不再是"必须保留的对照端"，整目录已删（含旧的分层方向钉子）。
 npm run check:paths[:refute]    # F2 路径解析与 `config.mjs` **逐字节**对拍 5 条 / 反证 5 条（`boxsvc --print-paths` 对拍；含 `normalize_lexical` 与 `assert_inside_root` 两处真缺陷的回归钉；**PATH.appData** B1 落点 + **PATH.tooling** 装配脚本同源）
 npm run check:store[:refute]   # F3 任务库内核同源对拍 24 条 / 反证 24 条（🔴 serde 字段**声明序**必须逐字复刻 Node `serialize()` 键序；`Option` 保留 `undefined`→省略键；`Vec` 保插入序）
 npm run check:store-exec[:refute] # F3-b 执行/队列同源对拍 74 条 / 反证（7 场景**连定义都单源**；🔴 `itemErrors` 必须比 —— 「总预算耗尽」与「单请求超时」`reason` 同为 `engine_engine_timeout`，只有 `errorMessage` 能分开）
-npm run check:engine-parity[:refute] # F4 引擎纯协议/配方层同源对拍 24 条 / 反证（`resolve_engine_launch` 走 `python main.py` 非 `-m server.main`；三条少一个键真机必挂的启动 env 都在 Rust 复刻）
-npm run check:engine-http[:refute]  # F4-b1 引擎 HTTP 运行期同源对拍 18 条 / 反证（伪引擎服务器喂帧；三条：`.no_proxy()` · **空闲**超时非总时长 · 超时携带部分字节）
-npm run check:llm-supervisor[:refute] # F4-b2 ③ supervisor 同源对拍 4 条 / 反证（起**真** `mock-llm` 子进程；两条：两层锁否则诊断排在 180s `start()` 后 · 探针同步不走 reqwest）
-npm run check:harness[:refute] # F0 双靶子 harness 7 条 / 反证（`MIAO_SERVICE_IMPL=node|rust` 同断言；未知取值必须**吵一声**否则「两边都绿」其实是 node 跑了两遍）
+npm run check:engine-parity[:refute] # F4 引擎纯协议/配方层冻结 golden 25 条 / 反证（`resolve_engine_launch` 走 `python main.py` 非 `-m server.main`；三条少一个键真机必挂的启动 env 都在 Rust 复刻；含 `pure.llmLaunchByTier` 按档位解析）
+npm run check:engine-http[:refute]  # F4-b1 引擎 HTTP 运行期冻结 golden 20 条 / 反证（伪引擎服务器喂帧；三条：`.no_proxy()` · **空闲**超时非总时长 · 超时携带部分字节；含超时帧 `frames` 与用例表分母断言）
+npm run check:llm-supervisor[:refute] # F4-b2 ③ supervisor 冻结 golden 4 条 / 反证（起**真** `mock-llm` 子进程；两条：两层锁否则诊断排在 180s `start()` 后 · 探针同步不走 reqwest）
+npm run check:harness[:refute] # F0 服务靶子抽象 7 条 / 反证 3 条（**靶子只有一个 boxsvc**：入口解析唯一 · `MIAO_SERVICE_IMPL=node` ⇒ **抛错**（退役门，静默落回 = 假绿）· 未知取值必须**吵一声**）
 npm run check:routes[:refute]  # F5 路由表 / 转发计数 9 条（`--final` 10 条 = 完成门）/ 反证 4 条（44 条全 `Tier::Migrated`、**转发数 = 0**；反证 M1 真跑 `--list-routes` + `MIAO_ROUTE_REFUTE` 注入假转发 ⇒ 完成门报「仍有 N 条转发」变红）
 npm run check:docpaths[:refute] # 现行文档引用的仓库路径必须真实存在 5 条 / 反证 2 条（查 AGENTS/README/spec-notes-1/dev-setup/project_rules；spec-notes.md 已封卷于 D-136，历史路径明确不查；源码级，内存变异反证；D-158）
 npm run sign:preflight         # **E1 macOS 打包前自检**（`app/scripts/mac-signing-preflight.mjs`）：entitlements 四项就位 + 签名/公证变量齐。🔴 缺变量就**非零退出**：缺 `APPLE_SIGNING_IDENTITY` 会产出 ad-hoc 签名的包（本机不报错、别人机器上被拦）；缺公证三件套时 tauri 会**跳过**公证而不是报错 ⇒ 包装得上、跑不起来。本机自用打包请显式设 `MIAO_NOTARIZE=0`
@@ -209,9 +225,9 @@ cd app/src-tauri && cargo build                # Rust（见 §5 环境陷阱）
   改这段前先读 D-74 决策 1–3。
 - 🔴 **③（Sakura LLM）的归属权在 S4 从 Rust 移交给了 box-service**（《04》§9.1：Tier1 空闲卸载的实现方
   必须是持有任务队列的那一侧）。`print-launch-plan.mjs` 因此**不再输出 `llm` 条目**，
-  Rust 只从配方里取命令文本用于**打印**（E1 参数快照），拉起/停止由 `service/src/settings/llm-supervisor.mjs` 负责。
+  Rust 只从配方里取命令文本用于**打印**（E1 参数快照），拉起/停止由 `boxsvc::engine::supervisor` 负责。
   E11（不留孤儿）靠 `child-watch` 包一层保住 —— **改这段前先读 D-73 决策 1**，漏改一处就是"两个 llama-server 抢 8080"。
-  🔴 A3c 起该层是 `boxsvc --child-watch`（Rust）；`service/src/settings/llm-supervisor.mjs` 仍走 `child-watch.mjs`（Node 对照端）—— **两处都要改，否则一半的 ③ 不受 E11 保护**。
+  🔴 A3c 起该层是 `boxsvc --child-watch`（Rust）；Node 侧 `child-watch.mjs` 只剩**对照端**身份（`check:child-watch` 行为对照 + `check:child-watch-kill` 的源码钉子）—— **改 Windows `/F` 那条缺陷时两处都要改，否则对照端再也钉不住它**。
   🔴 父死判定是**双通道**（stdin 管道 + ppid/进程身份）且**"判不出来" ≠ "父死"**，改任何一条前先读 D-172。
   ⚠️ 父侧必须给 `Stdio::piped()` + `MIAO_CHILD_WATCH_PIPE=1` 并**攥住 `ChildStdin`**（`_watch_keepalive`）——
   少任一条，看守器拿不到权威判据，E11 静默失效。

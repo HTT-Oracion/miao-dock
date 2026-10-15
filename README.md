@@ -16,7 +16,8 @@
 | **喵坞 MiaoDock** | 本仓库 | 桌面端，**服务的宿主与可视窗口**（队列 / 漫画库 / 本机投放） |
 
 两者**共用同一份接口契约**（《03》）：同一条串行队列、同一套落盘规则、同一条 20 张/批上限。
-`miao-trans/mock-service` 是插件端 e2e 的**测试替身**，与本仓库 `service/` 是同源的两份实现，互不影响。
+`miao-trans/mock-service` 是插件端 e2e 的**测试替身**，与本仓库互不影响 —— 本仓库的服务端实现
+已**整体 Rust 化**（`app/src-tauri/src/boxsvc/`），仓库里不再有 Node 服务实现（D-209）。
 
 ## 目录
 
@@ -25,22 +26,17 @@ miao-dock/
 ├── app/          Tauri v2 桌面端：Rust 壳（`app/src-tauri/`）+ Vite/React 前端（`app/src/`）
 │   ├── src-tauri/src/music/  音乐模块 Rust 侧：四平台（`netease`/`kugou`/`qqmusic`/`migu`）+ 音频代理 + 加密 + 歌词 + 缓存（汽水延后）
 │   ├── src-tauri/src/lyrics_window.rs  桌面歌词**独立置顶窗**
+│   ├── src-tauri/src/boxsvc/  **服务端实现**（唯一翻译入口，127.0.0.1:5180–5190）：`boxsvc.rs` 外壳 · `routes.rs` 路由表（44 条）· `handlers.rs` 端点 · `store/` 队列落盘 · `library.rs` 库原语 · `translate/` 在线翻译 · `engine/` 引擎耦合点
 │   ├── src/screens/  六个屏入口：投放 / 队列 / 漫画库 / 音乐 / 设置 / 未就绪（`music/`·`lyrics/`·`settings/`·`library/` 为屏内件）
 │   ├── src/music/    音乐领域态（zustand store · ipc · platform · 播放器选项）
 │   ├── src/components/units/  通用 UI 单元（判据：**不 import 业务层**）
 │   └── src/tools/    共享纯函数（`@tools`：格式化 / 分页 / 模糊匹配 / UUID / MIME 嗅探），**不 import 业务层**
-├── service/      box-service —— **唯一翻译入口**：鉴权 / 串行队列 / 编号分配 / 落盘（Node，127.0.0.1:5180–5190）
-│   ├── src/        **产品代码**：`server.mjs` 装配路由 · `config.mjs` / `errors.mjs` / `engine-client.mjs`（引擎适配，唯一耦合点）等**跨模块底座**
-│   │   ├── manga/     漫画翻译域：`store.mjs` 队列与落盘 · `image.mjs` · `names.mjs` · `sse.mjs` · `translate/` 在线翻译（契约 / 注册 / 门面 / http / sse-parse / limiter / 设置 / 密钥 / `platforms/youdao.mjs`）
-│   │   ├── settings/  设置域：`engine-settings` · `engine-profile` · `model-status` · `idle-policy` · `tier-downgrade` · `llm-supervisor`
-│   │   └── music/     音乐域：服务端**占位**（逻辑在 Rust 侧 `app/src-tauri/src/music/`）
-│   └── （无 `scripts/` —— 启动配方已于 A3b 收进 Rust `boxsvc::engine::build_launch_plan`）
 ├── engine/       翻译引擎的**接缝层**（真引擎装在 `<appData>/runtimes/manga-translator/`，不在库）
 │   ├── VERSIONS.lock         引擎 / 权重 / 外部二进制的**版本锁**（换版本照它来）
 │   ├── models.manifest.json  模型清单：来源 URL + sha256 + 字节数（权威副本在 `…/models-store/`）
 │   ├── model-store.mjs       下载内核（**Node 对照端**，A3d；产品主路径是 Rust `boxsvc::engine::model_store`）
 │   ├── src/                  **测试替身**：模拟引擎 + 模拟 LLM（产品默认走真引擎 `MIAO_ENGINE_PROTOCOL=real`）
-│   └── scripts/              `setup-engine.mjs` / `install-engine-deps.mjs`（本机环境引导）｜`fetch-models.mjs` 与 `child-watch.mjs` 均为 **Node 对照端**（产品主路径分别是 Rust `boxsvc --fetch-models`(A3d) / `boxsvc --child-watch`(A3c)；`child-watch.mjs` 仍被 `service/src/settings/llm-supervisor.mjs` 引用）｜`runtime-root.mjs` = 装配脚本共用的**运行时落点**单一事实源（B1）
+│   └── scripts/              `setup-engine.mjs` / `install-engine-deps.mjs`（本机环境引导）｜`fetch-models.mjs` 与 `child-watch.mjs` 均为 **Node 对照端**（产品主路径分别是 Rust `boxsvc --fetch-models`(A3d) / `boxsvc --child-watch`(A3c)；`child-watch.mjs` 现在只被 `check:child-watch` 行为对照与 `check:child-watch-kill` 的源码钉子使唤）｜`runtime-root.mjs` = 装配脚本共用的**运行时落点**单一事实源（B1）
 ├── e2e/          **全部验收与取证脚本**（纯 Node 零依赖；一条命令一组断言，正向与反证成对）
 │   ├── *.mjs                  生命周期 / 端到端 / 截图取证 / 文档与结构对账
 │   ├── service/               box-service 侧（`selftest.mjs` = A 组契约自测 · `stall-guard-check.mjs` = U10② 取证）
@@ -57,21 +53,21 @@ miao-dock/
 
 > **目录约定（动目录之前先读这几条）**
 >
-> 1. **产品 / 验收分家**：`service/src`、`engine/src`、`app/src` 是**产品**；`e2e/` 是**验收**。
+> 1. **产品 / 验收分家**：`app/src-tauri/src/`（含服务端 `boxsvc/`）、`engine/src`、`app/src` 是**产品**；`e2e/` 是**验收**。
 >    判据不是"像不像测试"，而是**产品代码在运行期会不会 fork 它** —— 会 fork 的
 >    留在各自模块的 `scripts/` 下，**不搬进 `e2e/`**。
 >    ⚠️ 反向也成立：**产品主路径一旦改走 Rust**（`print-launch-plan.mjs` A3b 退役、
 >    `child-watch.mjs` A3c 降为对照端、`fetch-models.mjs` A3d 降为对照端），留在 `scripts/` 里就不再是"产品"，
->    但**不许顺手删** —— 先查还有谁 import 它（`llm-supervisor.mjs` 仍用 `child-watch.mjs`）；
+>    但**不许顺手删** —— 先查还有谁 import 它（`child-watch.mjs` 仍被 `check:child-watch` / `check:child-watch-kill` 用着）；
 >    🔴 更常见的是它**还是双靶对拍的另一边**（`fetch-models.mjs` / `model-store.mjs` 是 `check:models` 的 Node 靶），
 >    删掉等于让对拍退化成"只有一边的自证"。
 > 2. **临时产物一律写进 `.tmp/<用途>/`**，不要在仓库根另起 `.tmp-xxx/` 或 `tmp-xxx/`
 >    （历史上散着 `.tmp-e2e` / `.tmp-models` / `.tmp-selftest` / `tmp-engine-test` 四个，已合并 —— 见 `docs/spec-notes.md` D-79）。
 > 3. **新增 / 搬迁目录必须同步更新本节**。同时检查：`AGENTS.md` §1 的分层表 · `.trae/rules/project_rules.md` ·
 >    以及**断言里写死的路径** —— 路径不同步的后果不是变红，而是**静默跳过**。
-> 4. **服务端按域分子目录**（ver2.2 起）：`service/src/manga/`（漫画翻译）· `service/src/settings/`（设置 / 档位 / 诊断）·
->    `service/src/music/`（音乐，服务端占位）。`service/src/` 根**只留跨模块底座**；**新增服务模块必须归入对应域目录**，
->    只有**跨域共用**才上提到根（判据与理由见 `docs/spec-notes.md` D-101）。
+> 4. **服务端按域分子目录**（ver2.2 起，F5 起随实现搬进 Rust）：`boxsvc/store/`（队列落盘）· `boxsvc/library.rs`（库原语）·
+>    `boxsvc/translate/`（在线翻译）· `boxsvc/engine/`（引擎耦合点）。产品运行时**不再有 Node 服务进程**：
+>    ① 是 `boxsvc`；②③ 里的 node 只是**测试替身**（真机走 `python main.py` / `llama-server`）。
 
 ## 快速开始（装环境 → 装配引擎 → 启动）
 
@@ -157,8 +153,8 @@ MIAO_ENGINE_PROTOCOL=mock npm run app   # 替身快回路：不需要引擎运�
 ## 开发
 
 ```bash
-# 服务层（可独立启动，不依赖桌面端）
-node service/src/server.mjs
+# 服务层（可独立启动，不依赖桌面端）：Rust 可执行，读 MIAO_* 环境变量
+cd app/src-tauri && cargo build --bin boxsvc && ./target/debug/boxsvc
 
 # 测试替身（模拟引擎 + 模拟 LLM）—— 只有测试用，产品走真引擎
 node engine/src/server.mjs
@@ -193,7 +189,10 @@ npm run check:ia              # IA 结构 32 条（侧栏两级 / 视图 Tab / �
 npm run check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
 npm run check:quit            # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW / 前端不静默 / Windows signal_tree 无条件 /F）
 npm run check:autostart       # 翻译服务「自动启动 / 手动启停」根因钉子 18 条 / 反证 19 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / effect 依赖不含 status / stopped 给「启动」/ 服务实现默认档 = Rust / default-run 指向真实 bin；不起进程）
-npm run check:engine-client   # 翻译引擎适配层 50 条 / 反证 12 条（真协议用 openapi 快照「假引擎」，秒级可复跑；L4 要引擎装在默认落点：把仓库 runtimes/manga-translator 用 junction 链过去，或一次性用 MIAO_RUNTIME_ROOT 指过去）
+npm run check:engine-parity   # 引擎耦合点纯函数 24 条（Rust `--engine-selftest` ⟷ 冻结 golden；real/mock 两档）
+npm run check:engine-http     # 引擎 HTTP 运行期 18 条（真发 HTTP 打伪引擎：请求体 / 错误归一 / 三重就绪 / 超时带走证据）
+# ⚠️ `engine-client 那组钉子` 已退役（D-203）：它测的是 Node 侧 `engine-client.mjs` 的 60 条断言，
+#    契约面由上面两组 golden 等价覆盖；Node 产品源码随 F5 删除后它也没有对象了。
 npm run check:models          # S3 模型下载器 **双靶** 37×2 = 74 条 / 反证 6×2 = 12 条（本地 Range 夹具源：中断续传 / 服务端不支持 Range / 篡改一字节 / 换版本重链 / HF 缓存布局，秒级）。A3d 两靶同跑：Node 对照端 + Rust `boxsvc --fetch-models`（产品主路径）；反证开关走子进程 env
 npm run check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）
 npm run check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
@@ -203,7 +202,7 @@ npm run check:settings        # 设置页「播放·媒体」+「翻译服务」
 npm run check:units           # 前端分层 / hooks / 别名 / 状态 / 灵动岛 / 看图缩放 / 样式分层 45 条（反证：check:units:refute）
 npm run check:stall           # U10② 引擎卡死：「静默有上界 + 每次尝试留痕 + 进行中落盘」7 条 / 反证 3 条（mock 引擎对指定 seq「永不回包」）
 npm run check:retry           # 队列「重试」任务身份：复用**同一** taskId / 不冒历史行 + 翻译方向贯通 10 条 / 反证 7 条（mock 引擎 + 真服务子进程）
-npm run check:lib-manage      # 队列多选删除 + 漫画库隐藏/删除：仅终端态可删 / deleteFiles 勾选 / 越界名 403 / 前端接线 8 条 / 反证 4 条（反证：check:lib-manage:refute）
+npm run check:lib-manage      # 队列多选删除 + 漫画库隐藏/删除/新建/归并/封面/改号：仅终端态可删 / deleteFiles 勾选 / 越界名 403 / 前端接线 23 条 / 反证 12 条（反证锚点在 **Rust** 源码：check:lib-manage:refute）
 npm run check:retranslate     # 单张漫画返工重译 + 全屏缩放：覆盖译文 / 不碰原图 / 与 resume 分工 / 缩放不抢音量键 12 条 / 反证 5 条（反证：check:retranslate:refute）
 npm run check:engine-settings # S6 引擎设置面：档位 / 后端 / 空闲 / 模型目录 + 模型下载状态 61 条（反证：check:engine-settings:refute）
 npm run check:translate      # ver2.2 在线翻译服务（有道智云）：签名 v3 / 四层超时 / 限流 / 三层设置 / 密钥隔离 / 契约适配器 / 5 路由端到端 54 条（反证：check:translate:refute，8 开关；假上游默认发真 SSE 帧，零网络秒级）
@@ -231,8 +230,10 @@ npm run check:macos-compat   # **D7 macOS 兼容** 11 条 / 反证 4 条（解�
 npm run check:macos-signing  # **E1 macOS 签名 + 公证** 8 条 / 反证 4 条（entitlements 四项为 true 且无 app-sandbox · `hardenedRuntime` + entitlements 接线 · 打包前自检：缺变量非零退出并点名 / `MIAO_NOTARIZE=0` 放行但告警 / 变量齐放行 · `app:build:mac` 串上自检）
 ```
 
-**F 组「服务 Rust 化」的同源对拍钉子**（F0–F5 已全部完成，见 `docs/packaging-local-engine-dev-plan.md`）——
-每组都**双靶子**跑同一份断言：`MIAO_SERVICE_IMPL=node` 吃 `service/src/server.mjs`，`=rust` 吃 `target/debug/boxsvc`：
+**F 组「服务 Rust 化」的契约钉子**（F0–F5 已全部完成，见 `docs/packaging-local-engine-dev-plan.md`）——
+D-209 起**靶子只剩一个**（`target/debug/boxsvc`）：对照端逐块改成**冻结 golden**
+（`e2e/service/golden/*.json`）或 Rust 自证出口（`boxsvc --*-selftest` / `--print-paths`），
+`MIAO_SERVICE_IMPL=node` 现在**抛错**（退役门，静默落回 = 假绿）：
 
 ```bash
 npm run check:paths          # F2 路径解析与 config.mjs 逐字节对拍 5 条 / 反证 5 条（13 键快照 + B1 的 appData 落点 + B1 收尾的装配脚本同源）
@@ -245,8 +246,11 @@ npm run check:harness        # F0 双靶子 harness 7 条 / 反证（未知 IMPL
 npm run check:routes         # F5 路由表/转发计数 9 条（--final 10 条 = 完成门）/ 反证 4 条（转发数必须 0）
 ```
 
-> ⚠️ **为什么 `service/src/*.mjs` 还留着**：它已从**产品运行时与随包**摘除（F5.8），
-> 但仍是上面七组的**对照端**。删它 = 连带作废全部对拍，不是"顺手清理"。
+> ⚠️ **仓库里那份 Node 服务实现（`service/`）已整目录删除**（D-209）：它先被摘出
+> **产品运行时与随包**（F5.8），随后逐块失去对照对象 —— 同源对拍改**冻结 golden**、
+> 取证改读 Rust 自证出口、反证锚点搬进 Rust 源码 —— 于是整目录退场。
+> 留在仓库里的 Node 只有**测试替身**（`engine/src/*`）与**开发/装配脚本**（`engine/scripts/*`），
+> 两者都不进包、不在产品运行时里。
 
 **S7 真机端到端 E1–E11**（逐项取证总表：`docs/engine-e2e-acceptance-report.md`）—— 这几条**不进常规门**，按需手动跑：
 
@@ -280,7 +284,7 @@ npm run selftest:app:e11:real    # E11 三进程树回收 + E1 生效参数快�
 **✅ 已完成**
 
 - **ver1.0 · 漫画翻译**：本机投放 · 串行队列（多选删除 / 重试**复用同一 taskId** / 继续翻译 / 单张返工重译）· 漫画库（搜索 + 分页 + 隐藏删除）· 设置页 + **引擎诊断视图** · 全屏看图（`Ctrl/⌘ + 滚轮`锚点缩放 + 拖拽，含**非手势兜底按钮**）。
-- **翻译引擎接入 S0–S8 全部完成**：S1 适配层（D-62）· S2 三进程生命周期（D-64…D-70，`ServiceManager` 管 `Children{service, engine}`，就绪为**三重判定**：进程存活 + 端口 + HTTP）· S3 模型管理（D-72，断点续传 + store 硬链接）· S4 档位 / 加速后端 / 降档重试 / 两级空闲卸载（D-73，**③ 的归属权从 Rust 移交 box-service** 的 `llm-supervisor.mjs`）· S5 契约增量 9 键 sidecar + 三个 503 分流 + 需鉴权的 `GET /engine/status`（D-74）· **S6 Box UI 诊断视图 + X-C3「准备中」时间线**（D-75）· **S7 真机端到端 E1–E11**（D-76，逐项总表 `docs/engine-e2e-acceptance-report.md`）· **S8 插件串联 P-1…P-4**（D-77）。
+- **翻译引擎接入 S0–S8 全部完成**：S1 适配层（D-62）· S2 三进程生命周期（D-64…D-70，`ServiceManager` 管 `Children{service, engine}`，就绪为**三重判定**：进程存活 + 端口 + HTTP）· S3 模型管理（D-72，断点续传 + store 硬链接）· S4 档位 / 加速后端 / 降档重试 / 两级空闲卸载（D-73，**③ 的归属权从 Rust 移交服务端** 的 `boxsvc::engine::supervisor`）· S5 契约增量 9 键 sidecar + 三个 503 分流 + 需鉴权的 `GET /engine/status`（D-74）· **S6 Box UI 诊断视图 + X-C3「准备中」时间线**（D-75）· **S7 真机端到端 E1–E11**（D-76，逐项总表 `docs/engine-e2e-acceptance-report.md`）· **S8 插件串联 P-1…P-4**（D-77）。
 - **ver2.0 · 音乐模块**：网易云 / 酷狗 / QQ / 咪咕**四平台**（登录 / 搜索分页 / 歌单 / 播放 / 评论 · 歌手详情——后两者**仅网易云**）+ 音频代理 + 加密 + 歌词；心动模式 · **桌面歌词（独立置顶窗）** · 逐字歌词（卡拉OK）· 翻译歌词 · 演唱行 · 六皮肤 · 歌曲右键菜单 · 灵动岛歌词卡 · 音乐缓存 · 搜索虚拟滚动 · 音乐快捷键。
 - **ver2.0 · 设置页与 IA**：两级侧栏 · 两栏设置壳 · 「播放·媒体」/「翻译服务」分组 · 侧栏标签开关 / 存储占用 / 第三方许可（D-26…D-38、D-81…D-84）。
 - **Windows 10**：真引擎装配已平台化 + S1 真机已出真译文（D-85）；`[Errno 22]` 日志风暴（D-88）与重启后孤儿执行器占 8001（D-89）已修。

@@ -8,12 +8,17 @@
 //    Node 版逐字对齐（`MIAO_*` 覆盖优先，其次平台默认），迁移期靠 e2e 双靶比对。
 use std::path::{Path, PathBuf};
 
-/// 仓库根：`engine/` `service/` `app/` 都在它下面。
+/// 仓库根：`engine/` `e2e/` `app/` 都在它下面。
 ///
-/// 🔴 **唯一事实源**是 `service/src/config.mjs` 的 `REPO_ROOT`（锚在永不需要搬动的
-/// `config.mjs` 上）。Rust 侧是**新增的第二个消费者**，因此这里必须与它算出同一个值：
-/// 以「本可执行文件向上找仓库根」的方式推导 —— 找同时含 `service/` 与 `engine/` 的目录。
+/// 🔴 原本的**唯一事实源**是服务侧 `config.mjs` 的 `REPO_ROOT`（锚在永不需要搬动的
+/// `config.mjs` 上）；D-209 把那份 Node 实现整目录删除后，锚点改成**两个只在仓库里才存在**
+/// 的目录：以「本可执行文件向上找仓库根」的方式推导 —— 找同时含 `e2e/` 与 `engine/` 的目录。
 /// 找不到则退回 `MIAO_REPO_ROOT` 或当前工作目录，绝不手写 dots 数（搬文件即静默算错根）。
+///
+/// ⚠️ 为什么不锚 `service/`（旧判据）：它已被删除（D-209）—— 锚点指向一个不存在的目录时，
+/// 推导会**静默回落**成「cwd = 找不到」，于是 dev 态的资源回退路径全部失效，
+/// 而失效形态是"包看起来正常、点下载才报清单读不到"（假红把真缺失淹没掉）。
+/// ⚠️ 为什么不锚 `app/`：安装后的产品目录里也有 `app` 侧痕迹，锚在它上面会在打包态误命中。
 pub fn repo_root() -> PathBuf {
     if let Ok(p) = std::env::var("MIAO_REPO_ROOT") {
         if !p.is_empty() {
@@ -34,11 +39,14 @@ pub fn repo_root() -> PathBuf {
     PathBuf::from(".")
 }
 
-/// 从 `start` 起向上找**同时含 `service/` 与 `engine/`** 的目录（仓库根的判据）。
+/// 从 `start` 起向上找**同时含 `e2e/` 与 `engine/`** 的目录（仓库根的判据）。
+///
+/// 🔴 两个标记目录都必须**只在仓库里存在**：`e2e/` 是验收层（不随包），`engine/` 是接缝层。
+/// 少一个都可能让打包态的安装目录被误判成仓库根。
 fn walk_up_for_root(start: Option<&Path>) -> Option<PathBuf> {
     let mut cur = start?;
     loop {
-        if cur.join("service").is_dir() && cur.join("engine").is_dir() {
+        if cur.join("e2e").is_dir() && cur.join("engine").is_dir() {
             return Some(cur.to_path_buf());
         }
         cur = cur.parent()?;
@@ -180,7 +188,7 @@ pub fn default_state_dir() -> PathBuf {
 
 /// 🔴 B1：引擎运行时的**落点**（`<appData>/runtimes`）。
 ///
-/// 为什么从仓库根搬到 appData：打包后 `repo_root()` 向上找不到同时含 `service/` 与 `engine/`
+/// 为什么从仓库根搬到 appData：打包后 `repo_root()` 向上找不到同时含 `e2e/` 与 `engine/`
 /// 的目录（两者都不进包，见 A1/A2）⇒ 退回 cwd ⇒ 引擎路径算错。而 appData **始终可写**
 /// 且与安装位置无关 —— 这正是「引擎由用户自装」唯一稳定的锚点。
 pub fn default_runtime_root() -> PathBuf {
@@ -324,7 +332,7 @@ fn settings_model_dir() -> Option<String> {
 
 /// 生效的**模型清单**（`MIAO_MODEL_MANIFEST` 是验收夹具接缝；产品路径永远用入库的那一份）。
 ///
-/// 🔴 A1 起**先查资源目录**：打包后 `repo_root()` 算不出真仓库根（`service/` 与 `engine/`
+/// 🔴 A1 起**先查资源目录**：打包后 `repo_root()` 算不出真仓库根（`e2e/` 与 `engine/`
 /// 原先一个字节都没进包 ⇒ 向上找永远找不到 ⇒ 退回 cwd），清单会静默指向一个不存在的位置。
 /// 开发态资源目录里没有它 ⇒ 回退到 `repo_root()`，**行为逐字节不变**。
 pub fn model_manifest() -> PathBuf {
@@ -601,9 +609,9 @@ mod tests {
     }
 
     #[test]
-    fn repo_root_has_service_and_engine() {
+    fn repo_root_has_e2e_and_engine() {
         let r = repo_root();
-        assert!(r.join("service").is_dir(), "repo_root 未定位到仓库根：{r:?}");
+        assert!(r.join("e2e").is_dir(), "repo_root 未定位到仓库根：{r:?}");
         assert!(r.join("engine").is_dir(), "repo_root 未定位到仓库根：{r:?}");
     }
 

@@ -54,12 +54,12 @@ alwaysApply: true
 - **新增 / 搬迁目录后必须同步**：`README.md` 目录节（唯一入口）· 本文件 · `AGENTS.md` §1 · `package.json` 命令 ·
   **断言里写死的路径**（不同步的后果是**静默跳过**，不是变红）· 脚本自己的用法注释。
 
-**服务端模块目录（硬规则，ver2.2 起）**：`service/src/` 根**只留跨模块底座**
-（`server.mjs` / `config.mjs` / `errors.mjs` / `engine-client.mjs` / `multipart.mjs` / `parent-watch.mjs`）；
-业务域分子目录 `service/src/manga/`（漫画翻译：`store` / `image` / `names` / `sse` / `translate` 在线翻译）·
-`service/src/settings/`（设置 / 档位 / 诊断：`engine-settings` / `engine-profile` / `model-status` / `idle-policy` / `tier-downgrade` / `llm-supervisor`）·
-`service/src/music/`（音乐，服务端**占位**，逻辑在 Rust 侧 `app/src-tauri/src/music/`）。
-🔴 **新增服务模块必须归入对应域目录**，不得平铺回 `service/src/` 根；只有**跨域共用**才上提到根。
+**服务端模块目录（硬规则，F5 起随实现搬进 Rust）**：原 Node 实现（`service/`）**已整目录删除**（D-209）——
+产品运行时不再启动任何 node 服务进程，① 是 `boxsvc`（Rust 可执行）；② ③ 里的 node 只是**测试替身**。
+服务端现住在 **`app/src-tauri/src/boxsvc/`**：外壳 `boxsvc.rs` · 路由表 `routes.rs` · 端点 `handlers.rs` ·
+域模块 `store/`（队列落盘）· `library.rs`（库原语）· `translate/`（在线翻译）· `engine/`（引擎耦合点）。
+🔴 **新增服务端点一律落在 `boxsvc/handlers.rs` + `routes.rs`**，由 `npm run check:routes` 盯着
+（`forwardedCount` 必须为 0 —— 只要还有转发分支，就说明还有第二条实现路径存在）。
 
 ## 4. 动手前后
 

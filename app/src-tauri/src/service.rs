@@ -7,11 +7,15 @@
 //! ## 进程形状（比"服务 + 引擎"深一层）
 //! ```text
 //!   miao-dock(Rust)
-//!     ├── ① box-service        node service/src/server.mjs        （动态端口 5180–5190）
+//!     ├── ① box-service        boxsvc(Rust 可执行)                 （动态端口 5180–5190）
 //!     ├── ② 引擎               node engine/src/server.mjs(替身)    或 python main.py(真)
 //!     │     └── （真）执行器   python -m manga_translator          （port+1）
 //!     └── ③ LLM                node engine/src/mock-llm.mjs(替身)  或 llama-server(真)
 //! ```
+//! 🔴 **① 曾经是 `node service/src/server.mjs`，现在不是了**：F5 把 44 条端点全迁进 Rust、
+//!    本轮又把仓库里的 `service/` 删掉 ⇒ ① 是 `boxsvc` 这个 Rust 可执行文件。
+//!    **产品运行时不再启动任何 node 服务进程**（② ③ 里的 node 只是**测试替身**，
+//!    真机走 `python main.py` / `llama-server`；替身不进包）。
 //! ⚠️ **② 与 ③ 是"按进程类型分派 spawn"的落点**：Node 可执行 / Python 可执行 / llama-server 三种形态
 //! 都要能起 —— 这是 S2 相对 ver1.0「两子进程」的实质增量，也是 E11 之所以按"三进程树"写的原因。
 //!
@@ -430,7 +434,7 @@ impl ServiceManager {
         let log = self.log();
 
         // ---- -1) 随包资产自检（A1/A2）----
-        //     🔴 必须**最先**做：打包后 `repo_root()` 算不出真仓库根（`service/` 与 `engine/`
+        //     🔴 必须**最先**做：打包后 `repo_root()` 算不出真仓库根（`e2e/` 与 `engine/`
         //     原先一个字节都没进包 ⇒ 向上找永远找不到 ⇒ 退回 cwd），于是清单/引擎路径会静默
         //     指向不存在的位置，而用户看到的报错停在几层之外（"连接失败" / "启动超时"）。
         //     这里在**任何子进程被起之前**就把「资源缺失」说成资源缺失。
@@ -504,10 +508,21 @@ impl ServiceManager {
         if let Some(cwd) = &plan.engine.cwd {
             say(&log, &format!("[miao-dock] ② engine.cwd : {cwd}"));
         }
+        // ① 的命令**在日志之前**解析（原先它排在 ③② 之后，于是快照只能把命令写死）。
+        // 🔴 顺带修好一个更实的问题：解析失败时**一个子进程都还没起** ——
+        //    原先的顺序是"先拉 ③②、再发现 ① 起不来"，等于白起一整套引擎栈。
+        let service_cmd = match resolve_service_cmd() {
+            Ok(c) => c,
+            Err(e) => return self.fail(app, None, e),
+        };
         say(
             &log,
             &format!(
-                "[miao-dock] ① service: node service/src/server.mjs  env={}",
+                "[miao-dock] ① service: {}  env={}",
+                // 🔴 这里曾经**写死**成 "node service/src/server.mjs" —— 靶子换成 boxsvc 之后
+                //    日志还在说 node，看日志的人会去找一个根本不存在的进程（而服务其实是好的）。
+                //    改成打印**真实的** service 命令：日志是排障的第一现场，不许编。
+                cmd_line(&service_spec.cmd),
                 fmt_env(&plan.service_env)
             ),
         );
@@ -547,10 +562,7 @@ impl ServiceManager {
             Err(e) => spawn_errs.push(format!("引擎启动失败（降级继续）：{e}")),
         }
 
-        let service_cmd = match resolve_service_cmd() {
-            Ok(c) => c,
-            Err(e) => return self.fail(app, None, e),
-        };
+        // `service_cmd` 已在日志段之前解析（见上）。
         let service_spec = LaunchSpec {
             label: Some("service".into()),
             cmd: service_cmd,
@@ -982,45 +994,35 @@ fn relay_lines<R: Read>(mut r: R, mut on_line: impl FnMut(String)) {
     }
 }
 
-/// 服务实现的**靶子**：`MIAO_SERVICE_IMPL=rust|boxsvc` ⇒ `boxsvc`；`=node` ⇒ Node
-/// `service/src/server.mjs`；**未设 ⇒ 默认 `boxsvc`（F5.8 起）**。
+/// 服务实现的**靶子**：**只有 `boxsvc`**（D-205 起）。**未设 ⇒ `boxsvc`**。
 ///
-/// 🔴 **默认已翻转**：F1 过渡期默认 node（"打包把 boxsvc 放进安装包之前，产品路径一律不动"），
-///    而 F5 已把**全部** 44 条端点迁进 Rust（`routes::forwarded_count() == 0`，由
-///    `check:routes --final` 的完成门盯着）。此时默认仍是 node，等于"摘除 Node"只写在文档里
-///    —— 产品照旧起一份 Node 服务，正是计划文档 R3 说的那个形态。与 e2e 共用同一个
-///    `MIAO_SERVICE_IMPL` 名字是**刻意的**：app 与验收脚本切的是同一个东西。
+/// 🔴 **这里曾经有三档，node 那一档连同它的"退路"一起删掉了**：
+///   · F1 过渡期默认 node（"打包把 boxsvc 放进安装包之前，产品路径一律不动"）；
+///   · F5.8 把默认翻成 rust，但**留了一条退路**：拿不到 boxsvc 时退回 Node 并打警告 ——
+///     那是刻意的（开发态 `cargo run --bin miao-dock` 只构建主 bin、`target/debug/` 里没有
+///     `boxsvc`，硬失败会把"跑起来看看界面"变成"先读一篇构建说明"）。
+///   · 现在 `service/` 从仓库删了，**退路的落点没了**：再退回就是退回一个不存在的 `.mjs`，
+///     把"缺少构建产物"这个清楚的问题，表现成"服务起不来 + 指向幽灵文件"的怪问题。
+///     ⇒ 改为硬失败，构建指引由 `resolve_boxsvc()` 的错误文本承担（它本来就该在那里）。
 ///
-/// 三档的分歧点在于**找不到 boxsvc 时怎么办**，两档刻意不同：
-///   · `=rust`（显式）⇒ **硬失败**。说了算数：显式切了却没生效、还悄悄换回 Node，
-///     会让"切实现"这件事彻底失去可观测性（`harness-check` 的 H5 钉的是同一条）。
-///   · 未设（默认）⇒ **退回 Node 并打印可见警告**。开发态 `cargo run --bin miao-dock`
-///     只构建了主 bin，`target/debug/` 里没有 `boxsvc` —— 这时硬失败会把
-///     "跑起来看看界面"变成"先读一篇构建说明"。⚠️ 但退回**绝不静默**：Node 是过渡依赖、
-///     将来从包里删掉，警告必须让人看得见"Rust 没生效以及为什么"。
+/// 🔴 `MIAO_SERVICE_IMPL=node` ⇒ **硬失败**，不是静默落回。静默落回会让"我要 node 靶子"
+///    变成"悄悄跑了 boxsvc"，而这恰恰是最该吵一声的场景（原先 e2e 的 `harness-check`
+///    钉的是同一条；这里与它口径一致）。
+///
+/// ⚠️ 仍保留"取值先 `trim` + 小写"：它让 `NODE` / ` node ` 也落进退役分支，
+///    而不是掉进"未设"分支去起 boxsvc —— 后者正是上面那种"说了没算数"。
 fn resolve_service_cmd() -> Result<Vec<String>, String> {
     let impl_ = std::env::var("MIAO_SERVICE_IMPL").unwrap_or_default();
     let impl_ = impl_.trim().to_ascii_lowercase();
-    match impl_.as_str() {
-        "rust" | "boxsvc" => Ok(vec![resolve_boxsvc()?.to_string_lossy().into_owned()]),
-        "node" => node_service_cmd(),
-        // 未设（或无法识别的值）⇒ 默认 Rust；拿不到 boxsvc 才退回 Node（可见警告）。
-        _ => match resolve_boxsvc() {
-            Ok(bin) => Ok(vec![bin.to_string_lossy().into_owned()]),
-            Err(e) => {
-                // ⚠️ 退回**绝不静默**：Node 是过渡依赖、将来要从包里删掉，这条警告是人唯一
-                //    看得见"Rust 没生效、以及为什么"的地方（静默退回 = R3 的形态）。
-                eprintln!("[miao-dock] ⚠ 默认档应为 Rust boxsvc，但{e}；本次退回 Node。想让默认档跑起来：cargo build --bin boxsvc");
-                node_service_cmd()
-            }
-        },
+    if impl_ == "node" {
+        return Err(
+            "MIAO_SERVICE_IMPL=node 已退役：Node 服务实现（service/）已从仓库删除，\
+             服务靶子只剩 boxsvc（去掉该环境变量即可）"
+                .to_string(),
+        );
     }
-}
-
-/// Node 服务入口（**过渡 / 对拍**用，非默认档）。
-fn node_service_cmd() -> Result<Vec<String>, String> {
-    let entry = resolve_entry("service/src/server.mjs", "MIAO_SERVICE_ENTRY")?;
-    Ok(vec!["node".into(), entry.to_string_lossy().into_owned()])
+    let bin = resolve_boxsvc()?;
+    Ok(vec![bin.to_string_lossy().into_owned()])
 }
 
 /// 定位 `boxsvc` 可执行：`MIAO_BOXSVC_BIN` 优先，其次与 `miao-dock` 可执行**同目录**
@@ -1045,40 +1047,6 @@ fn resolve_boxsvc() -> Result<PathBuf, String> {
     Err(format!(
         "找不到 {name}（Rust 服务实现需要它）：先在 app/src-tauri 执行 `cargo build --bin boxsvc`，或设 MIAO_BOXSVC_BIN"
     ))
-}
-
-/// 定位入口脚本：环境变量优先，其次从可执行文件/工作目录向上找（开发期在 src-tauri 下运行）
-fn resolve_entry(rel: &str, env_key: &str) -> Result<PathBuf, String> {
-    if let Ok(p) = std::env::var(env_key) {
-        let pb = PathBuf::from(&p);
-        if pb.is_file() {
-            return Ok(pb);
-        }
-        return Err(format!("{env_key} 指向的文件不存在：{p}"));
-    }
-    let mut bases: Vec<PathBuf> = Vec::new();
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            bases.push(dir.to_path_buf());
-        }
-    }
-    if let Ok(cwd) = std::env::current_dir() {
-        bases.push(cwd);
-    }
-    for base in bases {
-        let mut cur = base;
-        for _ in 0..6 {
-            let cand = cur.join(rel);
-            if cand.is_file() {
-                return Ok(cand);
-            }
-            match cur.parent() {
-                Some(p) => cur = p.to_path_buf(),
-                None => break,
-            }
-        }
-    }
-    Err(format!("找不到 {rel}（可用环境变量 {env_key} 指定绝对路径）"))
 }
 
 /// 父死看守器的**宿主可执行**（A3c）—— 与 `boxsvc` 同一个二进制。

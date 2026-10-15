@@ -11,7 +11,7 @@
 |---|---|---|
 | `app/` | 前端 UI + 状态（`app/src` 才是源码，`app/src-tauri` 是壳） | React + TS + zustand + Vite |
 | `app/src-tauri/` | Tauri 壳：窗口 / 系统能力 / Rust 侧音乐逻辑 | Rust |
-| `service/` | box-service：HTTP API + 任务队列 + 落盘 | Node（ESM） |
+| `app/src-tauri/src/boxsvc/` | box-service：HTTP API + 任务队列 + 落盘（原 `service/` 的 Node 实现已删，D-209） | Rust |
 | `engine/` | 推理引擎侧装配（mock 可跑，真权重需另装） | Node + Python |
 
 ## 1. 环境要求
@@ -51,7 +51,7 @@ npm run app                         # ③ 起 dev（tauri dev）
 
 ```
 check:docs  check:docpaths  check:units  check:ia  check:music  check:settings
-check:bundle  check:resilience  check:layering  check:quit  check:autostart
+check:bundle  check:resilience  check:quit  check:autostart
 ```
 
 **十秒级 · 判定层（真服务 + 假引擎）** —— 改了 service/engine 契约必跑：
@@ -95,9 +95,8 @@ check:packaged          # 静默安装 → 资产自检 → 起服务打 /health
 
 | 位置 | 放什么 |
 |---|---|
-| `service/src/manga/` | 漫画域：`store`（队列落盘）· `library`（落盘原语/扫描/视图/寻址）· `names` · `sse` · `translate` |
-| `service/src/settings/` | 设置 / 引擎档位 / 诊断 |
-| `service/src/` 根 | 只放跨模块底座（`server.mjs` 装配入口 · `config.mjs` · `errors.mjs` · `atomic-file.mjs` · `image.mjs` …） |
+| `app/src-tauri/src/boxsvc/store/` | 队列落盘：`exec`（执行体）· `view`（视图）· `pure`（纯函数）· `atomic`（原子写） |
+| `app/src-tauri/src/boxsvc/` 根 | 服务外壳与域模块：`boxsvc.rs`（鉴权/装配）· `routes.rs`（44 条路由）· `handlers.rs`（端点）· `library.rs` · `translate/` · `engine/` |
 | `app/src/screens/` | 各屏；屏内复用件放 `screens/<域>/`（如 `screens/library/`） |
 | `app/src/components/units/` | 跨屏通用 UI（`Btn`/`Notice`/`MenuButton`/`Modal`…），新通用件必须落这里 |
 | `app/src/components/` | 业务组件（非通用） |

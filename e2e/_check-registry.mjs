@@ -75,7 +75,10 @@ const CHECKS = [
   { id: 'translate', script: 'e2e/service/translate-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc/translate/**', 'app/src-tauri/src/boxsvc/handlers.rs', 'app/src-tauri/src/boxsvc/routes.rs', 'e2e/service/golden/translate-selftest.json', 'e2e/service/_gen-golden.mjs', 'e2e/service/translate-check.mjs'] },
 
   { id: 'launch-plan', script: 'e2e/service/launch-plan-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/**', 'app/src-tauri/**'] },
-  { id: 'profile', script: 'e2e/service/engine-profile-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/**', 'engine/src/**'] },
+  // ⚠️ watch 收窄到**档位/加速/看守判定**所在的三个落点 + 纯判定面的金标（F5.5 换靶）：
+  //    断言面 = `profile.rs`（H/T/A/D/I 判定）+ `supervisor.rs`（L 组 `--llm-selftest` 场景表）
+  //    + `golden/llm-selftest.json`（真进程取证的金标）。挂着整个 src 会让无关改动重跑这一组。
+  { id: 'profile', script: 'e2e/service/engine-profile-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/boxsvc/engine/profile.rs', 'app/src-tauri/src/boxsvc/engine/supervisor.rs', 'app/src-tauri/src/boxsvc/engine/state.rs', 'e2e/service/golden/llm-selftest.json', 'e2e/service/_llm-report.mjs', 'e2e/service/engine-profile-check.mjs'] },
   { id: 'engine-settings', script: 'e2e/service/engine-settings-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/**', 'app/src/screens/settings/**'] },
   { id: 'e5e6', script: 'e2e/service/e5-e6-check.mjs', tier: 'service', refute: true, watch: ['app/src-tauri/src/**', 'engine/src/**'] },
   // ⚠️ e4 / e8 / e10 / stall / retry 的 watch 已从 `service/src/**` 改为 **Rust 源码**：

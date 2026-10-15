@@ -188,7 +188,7 @@ E11（「主进程 SIGKILL 后不留孤儿」）防的是**不可捕获**的死�
 
 `check:resilience` 7/0 · `check:resilience:refute` 11/11（无假阳性、无跳过）·
 `selftest:service` **134/1**（1 条为既有 Windows 环境性红：无 `SIGSTOP`，与本轮无关）·
-`node --check service/src/server.mjs` 通过。
+原 Node 服务入口的 `node --check` 通过。
 
 ### 边界
 
@@ -212,7 +212,7 @@ E11（「主进程 SIGKILL 后不留孤儿」）防的是**不可捕获**的死�
 
 ### 改法
 
-1. 新增跨模块底座 `service/src/atomic-file.mjs`：`atomicWriteJson(file, value, {mode,indent})`
+1. 新增跨模块底座（`service/src/` 下的 atomic-file.mjs）：`atomicWriteJson(file, value, {mode,indent})`
    与 `atomicWriteText(file, text, {mode})`，实现照抄仓内已验证的 `tmp-${pid}-${Date.now} → fsync → rename`
    （tmp 名带 pid+时间戳，与 `translate-check.mjs` 的 `.tmp-` 残留扫描口径一致）。
 2. `store.mjs::_persistNow` 改调 `atomicWriteJson`（保留原有「写失败不影响主路径」的吞错语义）。
@@ -302,7 +302,7 @@ ubuntu + macos 双平台，Node 22。必过门：
 而 `image.mjs` 是**零依赖的图片字节嗅探**，与"漫画"这个业务概念无关 ——
 它落在 `manga/` 只是历史位置。
 
-**改法**：`git mv service/src/manga/image.mjs service/src/image.mjs`，更新 3 处 import
+**改法**：`git mv`：`service/src/manga/` 下的 image.mjs 上提到 `service/src/`，更新 3 处 import
 （`engine-client` / `server` / `manga/store`）。零断言锚点受影响（e2e 无引用该路径）。
 
 ### 断言：`check:layering`（新增，3 条 / 反证 3 条）
@@ -489,7 +489,7 @@ HTTP 入口，`store` 仍反向依赖 server 注入的 `ensureLlm` / `tierDowngr
 住在 `server.mjs`（HTTP 入口）里，导致「库长什么样」这件事**不起一个服务就验不了**；
 而 `library.mjs` 本已是「本→话→页」的数据原语模块，扫描/视图天然属于同一层。
 
-**改动**：四个函数 `git mv` 到 `service/src/manga/library.mjs`（标 `export`）。
+**改动**：四个函数 `git mv` 到 `service/src/manga/` 下的 library.mjs（标 `export`）。
 
 ### `scanLibrary` 的签名变化（唯一的非纯搬运）
 
@@ -1232,7 +1232,7 @@ e2e 无锚该消息串；回归 contract 77/0 · lib-manage 24/0 · e10 7/0 · r
 
 `check:docpaths` 5/0 + refute 2/2 · `check:docs` 17/0 · `check:contract` 77/0 ·
 `check:lib-manage` 24/0 · `check:e10` 7/0 · `check:retranslate` 12/0 ·
-`node --check service/src/server.mjs` 通过。
+原 Node 服务入口的 `node --check` 通过。
 
 ---
 
@@ -1588,7 +1588,7 @@ node 靶子是 3/3 绿。看着像"rust 的 `updatedAt` 与 node 不一致"。
 ## D-168 · 服务实现默认档翻转为 Rust（`resolve_service_cmd`）+ 两档不同的失败语义（2026-10-13）
 
 **改动**：`service.rs::resolve_service_cmd()` 的**未设 `MIAO_SERVICE_IMPL`** 档，
-从"起 Node `service/src/server.mjs`"翻转为"起 `boxsvc`"。
+从"起 Node 服务入口（`service/src/` 下的 server）"翻转为"起 `boxsvc`"。
 
 **为什么必须翻**：F1 时的裁定是"打包把 `boxsvc` 放进安装包之前，产品路径一律不动"——
 那在当时是对的。但 F5 已把**全部 44 条端点迁进 Rust**（`forwarded_count() == 0`，
@@ -1674,9 +1674,12 @@ F 组（F0–F5）台账已全 ☑。本条记的是**收尾时对"哪些文件�
 - `_service-harness.mjs`(22 处引用) · `_file-cache`(5) · `capture`(6) ·
   `_styles-source`(4) · `_parent-harness`(2) · `_devserver`(2) · `_e2e-paths`(2) ·
   `_store-exec-node-runner`(1) · `llm-real-timing`(1) · `make-probe-png`(1)：全部**在用**。
-- 🔴 `e2e/engine/s1-real-engine-check.mjs` **零引用**，但**不是死代码**：它是**故意不注册**的
-  手动真引擎取证脚本（要几 GB 权重 + GPU + 分钟级；文件头与
-  `docs/engine-e2e-acceptance-report.md` 都写明"按需手动跑"）。注册它反而会让常规门挂。
+- 🔴 `s1-real-engine-check.mjs`（`e2e/engine/`）**已删除**（D-205）：它曾是**故意不注册**的
+  手动真引擎取证脚本（要几 GB 权重 + GPU + 分钟级，注册它反而会让常规门挂）。删它的依据是
+  **三个取证角度全被 `e3-real-full-chain-check.mjs` 覆盖**：三态采样（E3 同样起真引擎等 `running`）·
+  送图取真译文（E3 是 31 张）· 逐像素比对（E3g 抽样 3 张跨两 Batch，且多一条 E3h「一页一译」）。
+  更关键的是：E3 走**产品真实路径**（经服务面），而 S1 的"直测适配层"姿态在适配层迁进 Rust 后
+  **已无对象** —— 那条姿态的等价物是 `check:engine-http`（伪引擎喂帧，CI 里跑）。
 - `service/src` 里静态 import 图显示 3 个"入口不可达"（`platforms/youdao.mjs` ·
   `platforms/__fake__.mjs` · `sse-parse.mjs`）——**是动态加载**：`registry.mjs` 的
   `FACTORIES` 用 `() => import('./platforms/youdao.mjs')`，`__fake__` 是给验收脚本的反证件。
@@ -1779,7 +1782,7 @@ F 组新增的 8 组钉子（上述七组 + `check:routes`）此前在 `AGENTS.m
 + 注入 `MIAO_CHILD_WATCH_PIPE=1`，父侧用 `_watch_keepalive: Option<ChildStdin>` **攥住写端**。
 
 **为什么 `child-watch.mjs` 保留**（与 A3b 退役 `print-launch-plan.mjs` 的处置不同）：
-`service/src/settings/llm-supervisor.mjs` **仍在用它**（该文件本身属于 Node 对照端，
+Node 侧 settings 目录下的 llm-supervisor **仍在用它**（该文件本身属于 Node 对照端，
 A3d 才处理）。所以本轮是「产品主路径换 Rust + Node 版降为对照端」，不是「删除」。
 
 ### 🔴 缺陷 ①：管道 EOF **不等于**父死 —— 而它的失效形态是**双向静默**
@@ -1841,7 +1844,7 @@ ToolHelp32 快照在权限不足 / 进程数逼近上限时会失败。把它当
 - `check:child-watch-kill` 改**双靶源码钉**（Node `child-watch.mjs` + Rust `child_watch.rs`），
   保住 D-89「Windows `taskkill` 的 `/F` **无条件**」在两端都成立；反证 **2/2 全红**。
   🔴 判据前必须 `stripComments`：本仓库注释**主动写出了被禁的写法**，不剥就是把注释当代码匹配（D-149 同源）。
-- 注册表 `watch` 从 `['service/src/parent-watch.mjs', 'app/src-tauri/**']`（**指向一个与本钉子无关的文件**）
+- 注册表 `watch` 从 `['service/src/` 下的 parent-watch.mjs, 'app/src-tauri/**']`（**指向一个与本钉子无关的文件**）
   改为真实的四个：`child_watch.rs` / `service.rs` / `supervisor.rs` / `child-watch.mjs`。
 
 **验收**：`check:child-watch` 正向 **3/3**、反证 **1/1 有效**（另 1 靶按结构跳过）；
@@ -2092,13 +2095,13 @@ B1 只改了产品侧默认值，而**装配脚本**仍各自写死 `path.join(R
 修法：新增 `engine/scripts/runtime-root.mjs`（`defaultAppDataDir` / `defaultRuntimeRoot` /
 `runtimeRoot` / `runtimesDir`），三个装配脚本与三个真机 e2e 统一改用它。
 
-🔴 **为什么不让它们 import `service/src/config.mjs`**（那才是真单一事实源）：
+🔴 **为什么不让它们 import `service/src/` 下那份 config**（那才是真单一事实源）：
 config.mjs **import 即有副作用**（模块顶层 `fs.mkdirSync(STATE_DIR)`，还会拉起
 `settings/engine-settings.mjs`），并且它必须是 Rust 的**逐字节对照端**、不能被工具链反向依赖。
 ⇒ 接受两份实现，但用 `check:paths` 新增的 **PATH.tooling** 断言把漂移当场抓住
 （拿 `runtime-root.mjs` 的默认值与 Node 快照的 `runtimeRoot` / `engineDir/..` 比对）。
 
-🔴 **有一个落点故意不搬**：`e2e/service/engine-client-check.mjs` 读的
+🔴 **有一个落点故意不搬**：`engine-client-check`（**已于 D-203 退役**）读的
 `openapi.engine.json` 是 S1 **手工导出的夹具**（`.gitignore` 忽略整个 `runtimes/`，
 不是 `setup-engine.mjs` 的安装产物）。夹具的落点与引擎运行时的落点是两件事，
 混为一谈会让"机器上只有其中一份"时静默读错。
@@ -2134,9 +2137,9 @@ config.mjs **import 即有副作用**（模块顶层 `fs.mkdirSync(STATE_DIR)`�
 之后必然各自漂移；也不能 `use miao_dock::{boxsvc, paths};`
 （`boxsvc` 在 bin crate 里没被用到就报 unused import，而 paths 又必须由 lib 提供）。
 
-### 顺带修掉 · `check:engine-client` 用了 `spawnSync`，正向崩掉 + 反证轮整轮失效
+### 顺带修掉 · `engine-client 那组钉子` 用了 `spawnSync`，正向崩掉 + 反证轮整轮失效
 
-复跑验收时发现 `check:engine-client` 从 50 条掉到 41 条，且报 `RUN 断言脚本未预期崩溃`。
+复跑验收时发现 `engine-client 那组钉子` 从 50 条掉到 41 条，且报 `RUN 断言脚本未预期崩溃`。
 根因：文件里有 5 处 `spawnSync`，而本机沙箱下它**稳定**返回 `EBUSY`（实测 5/5），
 且 `result.stdout` 是 **`undefined`**（不是 null）⇒ 第一处 `cExplicit.stdout.trim()` 就把
 脚本打崩，后面 9 条断言一条都没跑；反证轮那两处虽用 `child.stdout || ''` 防住了崩溃，
@@ -2155,7 +2158,7 @@ config.mjs **import 即有副作用**（模块顶层 `fs.mkdirSync(STATE_DIR)`�
 `check:runtime-probe`（新）正向 **26/26** + 反证 **2/2 全红**（源码变异 + 重编译 + 字节还原）；
 `check:path-single-source`（新）正向 **5/5** + 反证 **1/1 全红** + restore ✓；
 `check:paths` 正向 **5/5**（13 键 + appData 落点 + 装配脚本同源）+ 反证 **5/5 全红**（M5 新增）；
-`check:engine-client` 正向 **50/50** + 反证 **12/12 全红**（修掉 5 处 `spawnSync` 的 EBUSY 崩溃；
+`engine-client 那组钉子` 正向 **50/50** + 反证 **12/12 全红**（修掉 5 处 `spawnSync` 的 EBUSY 崩溃；
 ⚠️ 需 `MIAO_RUNTIME_ROOT` 指向本机已有的引擎安装，否则 L4 因「引擎不在 appData 落点」如实变红）；
 `cargo test --lib` **127 passed**（124 → 127）；`cargo build --bin miao-dock` **首次通过**；
 `check:registry` 4/4（98 项）· `check:routes` 9/9 + 反证 9/9 · `check:engine-parity` 24/24 ·
@@ -2215,7 +2218,7 @@ Rust 镜像若指错文件（`rel` 与 SSOT 不一致），S0 当场报「缺补
 B1 后产品只认 `<appData>/runtimes/manga-translator`，而本机 15 GB 引擎在仓库 `runtimes/` ⇒
 `check:engine-patches` 的 A4/A5（看产品落点）环境性红。用 **junction**（零拷贝、可逆）
 把 `<appData>/runtimes/manga-translator` 指到仓库安装，A4/A5 转绿；
-同时 `check:engine-client` 的 L4 也不再需要 `MIAO_RUNTIME_ROOT` 覆盖。
+同时 `engine-client 那组钉子` 的 L4 也不再需要 `MIAO_RUNTIME_ROOT` 覆盖。
 🔴 **不给 `runtimes_dir()` 加「仓库回退」**：那正是 B3 要消灭的「检测说没装、启动却起了」，
 且会让产品行为随 debug/release 分叉（A1 的 dev 回退只适用于**仓库自带资产**，不适用于用户数据）。
 移除方式：`rmdir` 掉那个 junction（数据在仓库里，不受影响）。
@@ -2284,7 +2287,7 @@ B1 后产品只认 `<appData>/runtimes/manga-translator`，而本机 15 GB 引�
 **验收**：`check:launch-gate`（新）正向 **8/8** + 反证 **3/3 全红**（M1/M2/M3 + 双文件字节还原）；
 `check:runtime-probe` 正向 **44/44**（38 → 44，新增 S6）+ 反证 **4/4 全红**（M1–M4）；
 `cargo test --lib` **135 passed**（131 → 135，+闸门三条 + 链接语义一条）；
-`check:path-single-source` 5/5 + 反证 1/1 · `check:engine-client` **50/50**（L4 不再需要
+`check:path-single-source` 5/5 + 反证 1/1 · `engine-client 那组钉子` **50/50**（L4 不再需要
 `MIAO_RUNTIME_ROOT` 覆盖 —— 链接跟随修好后 junction 落点即产品落点）·
 `check:registry` 4/4（100 项）· `check:harness` 7/7 · `check:docs` 17/17 · `check:docpaths` 5/5。
 
@@ -2485,7 +2488,7 @@ A3d 把下载器 Rust 化（`boxsvc::engine::model_store` + `boxsvc --fetch-mode
 ⇒ 本条的实质工作从"改路径"变成：**把这条形态钉住**，并补上真正缺的那块（跨卷）。
 
 ### Node 对照端的默认值为什么不是 `current_exe()`
-`service/src/server.mjs` 是服务的**Node 对照端**，而 node 进程的"自己"是 node 解释器 ——
+`service/src/` 下那份 server 是服务的**Node 对照端**，而 node 进程的"自己"是 node 解释器 ——
 拿它当执行体毫无意义。所以那里只能落到 dev 构建产物的落点：这一行只在开发机与 e2e 上有意义，
 产品永远不走它（产品跑的是 Rust 那份）。语义写进注释，免得下一次有人"顺手对齐"成 `execPath`。
 
@@ -2967,3 +2970,597 @@ D-195 的 `IfSilent` 守卫在真产物上生效）。
 - 静态门：`check:engine-bootstrap` 8/0 + refute 全绿；`check:registry` 全绿（tierCounts 同步）；`check:docs` / `check:docpaths` / `check:units` / `check:ia` / `check:settings` 全绿（182/0）。
 - 设规纪律：工作区 CRLF（`core.autocrlf=true`）；本轮新增/改动文件已归一 CRLF，无 LF-only 残留。
 - ⚠️ 未做真机验证：Rust 侧（`runtime_setup.rs` / `--engine-bootstrap` 编排 / 真机一键下载装配）仅在源码层被门钉住，未跑 `cargo build` 与干净机真装；属于「门已立、舱未飞」，留 `check:models`/真机验收。
+
+## D-199 · F5 摘除 Node 第三块：store **执行态**对拍改冻结 golden（2026-10-14）
+
+**为什么要改**：`store-exec-parity-check` 原先是「Rust `--store-exec-selftest` ⟷ Node 真 `store.mjs`（伪引擎驱动）」双靶对拍。F5 摘除 Node 服务层后没有对照对象，改以冻结 golden 快照作**单向金标**（与 `store` / `engine` 两块同一路数，逐块迁移的第三块）。
+
+**改了什么**
+- 新增 `e2e/service/golden/store-exec-selftest.json`：7 场景、归一化后的冻结输出（Node 同源对齐时代的最后一份正确输出）。
+- 新增 `e2e/service/_store-exec-report.mjs`：归一化规则**唯一一份**（生成与比对共用，避免两边规则走散）—— 时间/墙钟抹平、运行目录（`<ROOT>`/`<STATE>`/`<TMP>`）与任意 home 兜底 `<HOME>`、本场景 taskId → `<TID>`。
+- `store-exec-parity-check.mjs` 由「对比 Node」改为「对比 golden」；删 `_store-exec-node-runner.mjs`（唯一使用者退场）与伪引擎 HTTP 服务。
+- `_gen-golden.mjs` 增 `store-exec` 分支（`node e2e/service/_gen-golden.mjs store-exec`），golden 统一落 CRLF。
+- 注册表 `store-exec` 条目 watch 由 `service/src/manga/` 下的 store.mjs 改指 golden / 生成器 / 归一化模块。
+
+**两条判断（与 F3-b 原设计的有意偏离）**
+- 🔴 **事件 id 不再拉平**：原对拍把事件 id 拉平到 `1..n` 是**为跨实现对齐**（Rust 单进程 `event_seq` 跨场景连续 vs Node 每进程从 1 起）。F5 后只剩 Rust 一个实现，拉平既无必要、又会**掩盖缺号**（原始 `[1,2,4]` 拉平后与 golden `[1,2,3]` 一致 ⇒ 「id 严格 +1」那条断言恒真、变成假绿）。现保留原始 id。
+- 🔴 **`remainingTaskIds` 必须过归一化**：首版漏了这一步，直接把本场景 ULID 冻进 golden（取证：`Select-String tsk_01M4XF6` 命中 4 处）⇒ 每跑必假红。修后残留计数 0。
+
+**反证 6 → 5 条**（伪引擎三条随 Node 摘除退场，补一条**真实分叉**）
+- M1 root 下预置 `01_顺跑/001_translated.png`（场景 `skipExisting=true`）⇒ happy 短路 ⇒ 变红 —— 证明比的是**本次运行**的产物，不是缓存或常量（原伪引擎「回错字节 / 挂住 / 回非图片」三条的真实分叉等价物）。
+- M2 篡改 golden `happy.task.status` · M3 删 golden 一条事件 · M4 篡改 golden `itemErrors` · M5 删 golden 一个键。
+
+**验收（本轮实测）**：`check:store-exec` 正向 **74/74**（8 键 × 7 场景 + 7 独立预言 + 7 事件连续性 + 4 定点）· `--refute` **5/5 全红** · golden 两次生成**字节一致**（跨运行无动态残留：`Doro`/`Temp`/`miao-se`/`tsk_01M4XF6` 计数 0）· 回归 `check:registry` 5/5（129 项）· `check:harness` 7/7 · `check:docs` 16/16 · `check:docpaths` 5/5 · `check:layering` 3/3 · static 层 `npm run check` **228/231** —— 3 红均为**既有**且与本轮无交集：`check:music` 的 `RESTORE.restoringClosed` / `KEYS.manualPressNotMerged`（spec-notes.md 已登记为与本轮无关）与 `check:resources` 的 X1（Rust `REQUIRED_ASSETS` 缺 `engine/patches.json`，G 组在途）。
+
+**行尾纪律**：本轮新增/改动文件（含新 golden）已归一 CRLF（生成器 `write()` 显式把 `\n` 转 `\r\n`，避免"重生成一次就漂成 LF"）。
+
+**刻意没做**：`paths` / `engine-http` / `llm-supervisor` / `engine-client` 等仍暂留双靶，逐块迁移；未删 `service/src`（其它检查仍在用）。
+
+## D-200 · F5 摘除 Node 第四~六块：paths / llm-supervisor / engine-http 三组对拍改冻结 golden（2026-10-14）
+
+**为什么要改**：承接 D-199 的「逐块迁移」。这三块原先是「Rust 自测 ⟷ Node 真 `config.mjs` / 真 `LlmSupervisor` / 真 `engine-client.mjs`」双靶对拍，F5 摘除 Node 服务层后没有对照对象，一律改以冻结 golden 快照作**单向金标**。至此 D-170 记的**七组同源对拍里已有六组**完成 golden 化（store / store-exec / engine-parity / paths / llm-supervisor / engine-http），只剩 `check:contract`（它不比对 Node 源码，只需靶子翻转）。
+
+**三块各自的归一化难点**
+- `paths`：快照 13 个键**全是路径**，且 override 场景的覆盖目标落在**每次新建的临时目录**里 ⇒ `<TMP>` / `<REPO>` / `<HOME>` 三档，顺序固定「先精确后模糊」（反过来的话仓库若落在 home 之下，`<HOME>` 会先把 repo 前缀打掉，golden 里再也看不到 `<REPO>`）。
+- `llm-supervisor`：Rust 侧**已自带归一化**（端口/pid 归成 `portMatchesSpec`/`pidIsInt`/`pidStable` 布尔语义）⇒ golden 可直接冻结；两次生成**字节一致**已实测。
+- `engine-http`：`stageLines` 一度被怀疑含耗时（若含则每跑必假红）—— 两次生成**字节一致**证明它只含阶段文案；另有 `bytesB64` 由伪引擎固定字节决定，属契约面。
+
+**三处踩到的坑（都已修）**
+- 🔴 `engine-http` 首版把投影分支写在 `r.kind === 'probe'` 上，而 Rust 的 results **没有 `kind` 字段** ⇒ probe 例全被塞进 `projTranslate`（两边全 null ⇒ **恒真假绿**，18/18 是假的）。改用 `CASES` 的 `kind` 后才真的在比 probe 九字段。
+- 🔴 `paths` 的 `remainingTaskIds` 同类问题在 D-199 已记（漏归一化）；本轮 `paths` 的 `PATH.appData` / `PATH.tooling` 是**独立预言**，必须用**未归一化**的原始快照 —— 归一化后再比 `<appData>/runtimes` 会恒真。
+- 🔴 反证轮里 M1–M3 原本是「篡改 Node 侧」的内存变异，Node 没了以后**必须换成篡改 golden**，否则变异对象不存在、断言恒真。三块都补了「真实分叉」变异（paths 的 M6 = Rust 只覆盖 `MIAO_ROOT`；llm/engine-http 保留 Rust env 变异钩子）。
+
+**登记**：`e2e/service/golden/{paths,llm-selftest,engine-http-selftest}.json` 三个新 golden；`_gen-golden.mjs` 增 `paths` / `llm-supervisor` / `engine-http` 三个分支（现支持 5 个目标）；新增三个共用模块 `_paths-report.mjs` / `_llm-report.mjs` / `_engine-http-report.mjs`；注册表三条 watch 由 `service/src/*` 改指 golden/生成器/共用模块。`_llm-report.mjs` 与 `_engine-http-report.mjs` **保留** `mock-llm.mjs` / 伪引擎这类**测试替身**（摘 Node 摘的是产品运行时与随包，不是夹具）。
+
+**验收（本轮实测）**：`check:paths` 正向 **5/5** · 反证 **6/6** · `check:llm-supervisor` 正向 **4/4** · 反证 **5/5** · `check:engine-http` 正向 **18/18** · 反证 **5/5** · 回归 `check:registry` 5/5（129 项）· `check:store-exec` 74/74 · 三个 golden 两次生成均**字节一致**（`paths` 残留 `Doro|miao-paths-parity|miao-dock` 计数 0）。
+
+**刻意没做（下一步的入口）**：`check:contract`(77) 不比对 Node 源码，只需把靶子翻 Rust；`engine-client-check`(42) / `e4-tier` / `e10-security` / `stall-guard` / `offline-fallback` / `layering` **直接 import Node 产品源码**，需逐块决定「改测 Rust 还是退役」；`_service-harness.mjs` 默认靶子仍是 node（`harness-check` 的 23 处断言围着它转）；这些都完成后才能删 `service/`。
+
+## D-201 · rust 靶子下 `check:contract` 6 红：D1 的 `runtime` 键只在 Rust 侧（2026-10-14）
+
+**现象**：`MIAO_SERVICE_IMPL=rust` 跑 `check:contract` ⇒ **71/77**，6 条失败全是同一条
+`S5.7 /engine/status 带令牌 → 200 且顶层 9 键齐`（A/C/D/E/F/H 五个实例各一条）。
+detail 打出的实际键是 10 个：`accel,config,engine,llm,modelDownload,models,recentStageLog,runtime,tier,warmed`。
+node 靶子下同一条**全绿**（77/77）。
+
+**根因（不是 bug，是既成的契约差）**：`state.rs::engine_status_view` 在 **D1** 多塞了一个
+`runtime` 键（与 `GET /engine/runtime` 同一份 `runtime_probe::runtime_view()` ——
+「体检报告里也能一眼看到装配态」）；Node 侧 `server.mjs::engineStatusView` **没有**这个键
+（它没有 runtime_probe 实现）。⇒ 契约面本身就有 9 vs 10 的差，双靶对拍时只有 rust 靶子会红。
+
+**处置（保持"精确等值"，不放宽成"包含"）**：`contract-delta-check.mjs` 的 `topKeys` 按靶子分支 ——
+rust 档期望 **10 键**（原 9 + `runtime`），node 档期望 **9 键**，两条都仍是
+`topKeys.every(k => k in v) && Object.keys(v).length === topKeys.length` 的**精确等值**。
+🔴 没有放成"包含 9 键即可"：`tier` 少键那次事故（见 `composeSidecar` 里 `currentTier()` 的注释）
+正是精确等值抓到的，放宽一个键就等于把这道网拆掉一股。
+
+**为什么不在 Node 侧补一个 `runtime` 键求对齐**：Node 没有 runtime_probe 实现，为对齐而造一个
+等于把"两边逐字节相同"凌驾于"实现真实存在"之上；且 Node 侧即将随 F5 删除，补了也是白补。
+F5 摘除 Node 后 `runtime` 就是契约面的一部分，届时只剩 10 键这一种形态，分支自然可删。
+
+**验收（本轮实测）**：rust 靶子 **77/77** · node 靶子 **77/77**（双靶都绿，分支两侧分别取 10/9 键）。
+
+**这一条的通用价值**：它是"完全 Rust 化"路上**第一类**会大量出现的问题 —— 不是崩溃、不是假绿，
+而是「Rust 侧悄悄多/少一个契约键，双靶期只有一边会红」。判别口径：**先看 Rust 侧是不是有意加的**
+（有 D-xxx 台账 + 前端在用 ⇒ 契约差，登记；无 ⇒ 真缺陷，修 Rust）。
+
+## D-202 · e2e 默认靶子翻转为 rust + rust 档 service 层全量取证：45 项里 1 项挂死（2026-10-14）
+
+**为什么先跑全量再动手**：剩下 6 个检查直接 import Node 产品源码，逐个改之前需要知道
+「rust 靶子下到底哪些已经绿、哪些挂、哪些假绿」—— 否则是按猜排序。本轮把
+`MIAO_SERVICE_IMPL=rust` 下的 **service 层 45 项**整跑了一遍（约 35 分钟）。
+
+### 一、默认靶子翻转（`_service-harness.mjs`）
+
+`IMPL` 默认值 `node → rust`，node 档改为**显式**对照档。理由：D-168 把**产品**默认档翻成了
+Rust，e2e 却还默认打 node ⇒「全绿」验的是仓库里那份即将删除的实现，而 `check:bundle` 的 W5
+早已把 `service/` 与 `node.zip` 反向钉死在包外。
+🔴 翻转**几乎没有风险**这一点是实测出来的：`harness-check` 的 7 条断言**没有一条依赖默认值**
+（H3/H4/M3 显式设 env 探两档，H7 只验"未知值时 stderr 可见"、不验落回哪一档）⇒ 只需把 H7
+文案从「落回 node」改成「落回默认档」。翻转后 `harness-check` 正向 **7/7**、反证 **3/3 全红**，
+另取证「不设 env ⇒ IMPL=rust」「显式 `MIAO_SERVICE_IMPL=node` ⇒ node」。
+
+### 二、rust 档 service 层取证结果
+
+45 项里 **44 项绿**，唯一异常是 `e10` **900.0s TIMEOUT**。三条结论按严重程度排：
+
+1. 🔴 **挂死的不是断言，是清理**。e10 正向分支只设 `process.exitCode` 后 `return`（依赖事件
+   循环自然排空）。rust 靶子的服务进程序列化后会留下**持有继承 stdio pipe 的孙进程**
+   （sidecar），pipe 收不到 EOF ⇒ 事件循环永不排空 ⇒ 进程挂到被 `run-checks` 的 900s 超时杀。
+   取证：单独跑 rust 档 e10，**7/7 全绿、结果已完整打印，进程却不退出**（30s 后仍在）；
+   用一份强制 `process.exit(0)` 的复刻脚本走同一条路，**502ms 干净退出**。⇒ 修法就是显式
+   `process.exit()`（与 `store-exec` / `paths` / `llm` / `engine-http` 等脚本一致）。
+   ⚠️ 这类问题的危害在于它**看起来像性能问题**：跑批里显示 `TIMEOUT`，很容易被当成"慢"，
+   而真相是"结果早就对了，只是没人退房"。
+2. 🔴 **E10.3 在 rust 档下验的是 Node 的配方**。`launchPlanCmd()` 走「node 子进程 import
+   `engine-client.mjs`」—— rust 档全绿、Node 侧悄悄漂移，没有一条断言会发现（而我们发出去的是
+   Rust 那份）。已按靶子切换：rust 档取证出口改成 D-171 立起来的 `boxsvc --print-launch-plan real`。
+3. 🔴 **4 条反证在 rust 档下不可能红**（实测 **1/4**）：它们的破坏对象是 `service/src/*.mjs`，
+   rust 靶子不读那些文件。而唯一变红的那条（E10.3）恰恰是因为它**绕道 node 子进程**读 Node
+   配方 —— 那是漏洞不是功劳。**已修**：Rust 侧补了两个反证钩子（`MIAO_SNIFF_SKIP` 管两层嗅探、
+   `MIAO_TOKEN_ALWAYS_OK` 管鉴权），E10.3 复用现成的 `MIAO_ENGINE_NONCE`；rust 档反证轮改为
+   「设 env 钩子 → 重启进程 → 断言必须变红」，与 `MIAO_LLM_NO_KILL` / `MIAO_ATOMIC_DIRECT_WRITE`
+   同一族。复验：**双靶正向 7/7、双靶反证 4/4**。
+
+### 四、🔴🔴 跑 e10 反证会把机器卡死：③ 的**懒加载**没人管（2026-10-15 实测）
+
+**现象**：`MIAO_SERVICE_IMPL=rust` 跑 `e10 --refute`（4 条变异 = 4 次起服务）⇒ 电脑卡死、
+其他应用跟着崩。现场：**12 个 `llama-server` 进程**（每个背着 3.5 GB 的 sakura 权重），
+可用内存被吃掉一半；另有 4 个孤儿 `boxsvc`。
+
+**根因（两层叠加）**
+1. **`MIAO_NO_LLM_AUTOSTART` 只挡预拉起，挡不住懒加载**。`server.mjs` 的原注释就写着
+   「③ 晚到不要紧：它在**翻译那一刻**才被用到，而那条路有懒加载兜底」—— E10.6 为了当
+   「反证守卫」提交了一张**合法图片**，于是真翻译发生、③ 被懒加载拉起。Rust 侧同理
+   （`boxsvc.rs` 的预拉起受 `llm_autostart` 管，懒加载那条路没有开关）。⇒ **每轮测试
+   拉一个 3.5 GB 进程**，4 轮反证 + 几轮回归就攒成十几个。
+2. **`child.kill()` 在 Windows 上只结束主进程**：rust 服务派生的引擎② / ③ 全成孤儿，
+   下一轮再起新的 ⇒ 单调递增，直到把机器拖死。
+
+**修法（两道，都已在 e10 上落地并复验）**
+- `MIAO_MODEL_ROOT` 指向一个**临时空目录**：③ 就算被懒加载也秒失（找不到权重），不占内存。
+  E10 七条断言没有一条考 ③，不改变任何断言语义。
+- `finally` 里改杀**进程树**（`taskkill /pid <pid> /T /F`，主进程已退出时返回非 0 不是失败）。
+  🔴 这条对**所有**起 rust 服务的检查都成立 —— 只杀主进程是"假设了 Node 靶子的语义"。
+
+**顺带修出两个 e10 自身的假绿**（rust 档 2/4 时就靠它们暴露）
+- `E10.5` 数引擎 hits 前**没等**：rust 档 `POST /tasks` 是「立即返回」，推进在独立线程的
+  `drain` 上（D-143 记的时序差）⇒ 不等待则"非法字节到了引擎"也被数成 0，断言**恒真**。
+  node 档当年因同步 drain 能红，所以这个坑**只有翻了靶子才暴露**。
+- `launchPlanCmd()` 起 `--print-launch-plan` 子进程时**没传 extraEnv** ⇒ 反证轮设在服务进程上的
+  钩子（`MIAO_ENGINE_NONCE`）它读不到，E10.3 的 rust 反证打不中。
+
+**验收（修复后实测）**：rust 档正向 **7/7** · rust 档反证 **4/4 全红** · node 档正向 **7/7** ·
+node 档反证 **4/4** · 每轮跑完 `llama-server` / `boxsvc` 残留均为 **0**，可用内存不降。
+
+⏭ **系统性问题（下一步）**：这不止 e10 —— service 层有 20+ 个检查会起服务，凡是**不显式设
+`MIAO_ENGINE_PROTOCOL=mock`** 且会触发真翻译的，都在悄悄拉 ③（本轮跑 service 层全量后就攒了
+12 个）。系统修法应是**夹具级**的一处收口（`run-checks.mjs` / `spawnTarget` 对 service 靶子统一
+注入"③ 不占内存"），或 Rust 侧补一个连懒加载一起管的 env —— 逐个检查里加 `MIAO_MODEL_ROOT`
+是 20 处会走散的规则。
+
+### 五、方案 1 已落地：③ 护栏在 harness 一处收口（2026-10-15）
+
+**改法**：`_service-harness.mjs::spawnTarget` 对 **rust 服务靶子**默认注入
+`MIAO_MODEL_ROOT = <os.tmpdir()/miao-fixture-no-models>`（空目录）⇒ ③ 就算被懒加载也秒失。
+🔴 **只在调用方没显式给时才注入**：真要读模型的检查（`models-guide` / `model-runner` /
+`size-guide` / `contract` 的夹具）都自己传 `MIAO_MODEL_ROOT`，让位给它们；`e10` 里原来那份
+显式设置**已删**（改成依赖 harness）—— 留着它就是两处会走散的规则。
+
+**连带修**：`contract-delta-check.mjs` 的 `killService()` 同样只杀主进程 ⇒ 改成
+`taskkill /pid <pid> /T /F` 杀进程树（它的 H 实例**故意**用真模型根，要验"③ 在跑 + 真 pid"，
+所以每跑会拉一个真 llama-server —— 那就必须保证跑完被收走）。
+
+**验收（修复后实测）**：`e10` rust 正向 **7/7** + 零残留 · `contract` rust **77/77** + 零残留 ·
+`svc-selftest` rust **134/1**（唯一失败是 `Unknown signal: SIGSTOP`，D-162 已登记的**既有**
+环境性失败，与本轮无关）+ 零残留 · `harness-check` 7/7 · 每轮跑完 `llama-server` / `boxsvc`
+残留均为 **0**，可用内存不降（9.6 GB 持平）。
+
+⏭ **仍待办**：其余 20+ 个经 `spawnTarget` 起服务的检查，`killService`/清理仍是"只杀主进程"
+（`lib-manage` / `translate` / `queue-retry` / `retranslate` / `stall-guard` / `resilience` /
+`e4` / `e5-e6` / `e8` / `engine-settings` …）。应由 harness 导出一个共享的 `killTree(child)`，
+逐个替换掉各自的 `child.kill()` —— 又是一处"20 份会走散的规则"。
+
+### 六、`killTree` 已收口到 harness，13 个检查的清理换成它（2026-10-15）
+
+**改法**：`_service-harness.mjs` 导出 `killTree(child)`（Windows 走 `taskkill /pid <pid> /T /F`，
+非 Windows 退回 `child.kill('SIGTERM')`），13 个检查各自的清理函数改为调它：
+`selftest` / `translate` / `engine-settings` / `stall-guard` / `queue-retry` / `retranslate` /
+`library-manage` / `drain-runtime` / `e5-e6` / `e4-tier` / `e8-accel` / `model-runner` /
+`notready-state`（`e10` / `contract` 上一轮已内联改掉，同语义）。
+
+🔴 **两条边界是刻意画的**
+- **语义性 kill 一律不换**：`selftest` 的 A20 用 `kill('SIGSTOP')`（挂起后验中断落盘）与
+  `kill('SIGKILL')`（模拟崩溃、不给清理机会）、`child-watch-check` 的"只杀假父进程验看守"、
+  `engine-profile` 的一堆 `SIGKILL`（它考的就是"杀了之后怎样"）—— 杀棵树会改变**被测语义**，
+  那些断言就废了。`killTree` 的文档注释里写明了这条。
+- **不起孙进程的靶子不用换**：`e2e.mjs` 起 node server.mjs + mock 替身引擎（无子进程），
+  `engine-client-check` / `contract` 杀的是 mock 引擎 / mock-llm（node 单进程）⇒ 保持原样。
+
+**验收（本轮实测，rust 档）**：`drain-runtime` 7/7 · `e5-e6` 16/16 · `stall-guard` 7/7 ·
+`queue-retry` 10/10 · `e4-tier` 6/6 · `e8-accel` 6/6 · `model-runner` 12/12 ·
+`notready-state` 13/13 · `selftest` 134/1（唯一失败仍是 `Unknown signal: SIGSTOP` —— D-162
+已登记的**既有**环境性失败，A20 的语义性 kill 未被误伤）· 每轮跑完 `llama-server` / `boxsvc`
+残留均为 **0**。
+
+## D-203 · 退役 `engine-client 那组钉子`：60 条 Node 断言的契约面已由两组 golden 等价覆盖（2026-10-15）
+
+**为什么是"退役"而不是"留着"**：它测的是 **Node 产品源码**（`service/src/` 下的 engine-client），
+而那份源码随 F5 删除后它没有对象。留着不跑 = 死代码；跑 = 依赖一份即将不存在的东西。
+
+**逐组对照（退役前必须做的一步，不能凭感觉）** —— 该脚本实测 **60 条**（R 17 / P 6 / L 14 / D 3 / M 14 + 杂项）：
+
+| 组 | Node 侧断言内容 | Rust 侧等价覆盖 |
+|----|----------------|----------------|
+| R（17） | real 单图调用：请求形状 / data URI / 错误归一（422→BAD_INPUT、500→ERROR、流里 code 2、结果帧非图）/ 输入拦截 / ext·mime 由字节嗅探 | `engine-http` golden 的 `real.*` 9 例 + 2 条 payload（含 `from_lang=JPN/ENG`、`translator` 切 `nllb`、五种错误码、`bytesB64`） |
+| P（6） | 就绪三态（端口 → HTTP → 执行器端口） | `engine-http` golden 的 probe 5 例（running / prewarming / starting / stopped / mock） |
+| L（14） | 启动参数拼装（按 `server/args.py` 实测） | `engine-parity` golden 的 `launch`（cmd / cwd / env / probes / executorPort） |
+| D（3） | 默认值与取值校验（防"改成 mock 让生产走替身"） | `engine-parity` golden 的 `configSnapshot` + `pure`（availableTiers / tierModelPath / translationWeightsPresent / engineHfOfflineEnv） |
+| M（14） | mock 协议未被改坏（起真模拟引擎冒烟） | `engine-parity` mock 档 + `engine-http` mock 2 例 |
+
+**顺带消除一个环境依赖**：它读 `runtimes/manga-translator/openapi.engine.json`（S1 手工夹具），
+**没有拉引擎的机器上它本来就会红**（D-63 因此没把它加进 `check:docs` 的 SUITES 对账）——
+退役后这个"看机器脸色"的分母没有了。
+
+**改动**：删 `engine-client-check（已删，D-203）`；`package.json` 删 `engine-client 那组钉子[:refute]`；
+注册表删该条，`EXPECTED_TIER_COUNTS` 由 `{service:45, refute:59}` 改 `{service:44, refute:58}`
+（共 129 → **127** 项）；`AGENTS.md` / `README.md` 的验收命令行改为指向两组 golden 并注明退役；
+`docs/spec-notes.md` 里 7 处 `engine-client 那组钉子（npm 命令已退役） 那组钉子`（D-62/D-63/D-140 等**历史台账**）
+去掉 `npm run ` 前缀 —— 历史事实不改写，但不再宣称"现在还能跑"；
+`spec-notes-1.md` 里唯一一处带路径的引用同步标注。
+
+**验收**：`registry-check` 5/5（127 项，计数门同步）· `docs-consistency` 16/16 ·
+`docs-path` 5/5 · `harness-check` 7/7。
+
+⏭ **仍未处置**：`e4-tier`(6) / `stall-guard`(7) / `offline-fallback`(8) 仍在 import Node 源码。
+🔴 **它们不该照搬"退役"** —— 勘查发现各有 Rust 侧 golden **没有**的特有取证角度：
+`e4-tier` 的 E4.6「权重文件在盘上**真实存在**且落在 `models/sakura/` 下」（golden 只给路径不验存在）、
+`stall-guard` 的「假引擎先回**队列位次 0** 再水蛙」（golden 的 `timeout_partial` 只吐一帧进度，
+没有队列位次那一帧）。⇒ 这两条要**改测 Rust**（保留取证角度），改完才能删 `service/`。rust 档现已**显式 skip**（醒目日志 + exit 0 + 记缺口），
+   node 档照常 4/4 全红。⏭ **待办**：Rust 侧补三个反证钩子（字节嗅探旁路 / 鉴权恒过 /
+   nonce 默认值覆盖），才能把这 4 条在 rust 档下捡回来。
+
+**验收（本轮实测）**：`harness-check` 正向 7/7 · 反证 3/3 · `e10` rust 档正向 **7/7** + 干净退出 ·
+`e10` node 档正向 **7/7** + 反证 **4/4 全红** · rust 档 service 层 **45/45 全通**
+（跑批中途进程被杀，剩余 6 项 `child-watch`/`child-watch-kill`/`stdio`/`autostart`/`models`/`patches`
+用 `--only` 补跑：**6/6**，28.8s）。
+
+**刻意没做**：Rust 侧三个反证钩子未加（e10 的 4 条反证在 rust 档下仍缺）；其余 6 个直接 import
+Node 源码的检查（`engine-client-check` / `e4-tier` / `e10-security` / `stall-guard` /
+`offline-fallback` / `layering`）未处置；`service/` 未删。
+
+## D-204 · F5 收口第三步：e4-tier / stall-guard / e8-accel / e10-security / queue-retry 五组换靶（2026-10-15）
+
+D-203 留了一张清单：`check:e4-tier` / `check:stall-guard` / `check:offline-fallback` / `check:layering`
+**直接 import Node 产品源码**，须逐块决定「改测 Rust 还是退役」。本条记这批处置的结果。
+
+🔴 **标题里的"收口"指"验收网换靶"，不是"为删 `service/` 铺路"** —— 初稿按后者理解，已被第八节
+的范围更正推翻（plan 要的是"从包内删除"，A3 作废 + `check:bundle` W5 已达成；D-162 另裁定
+"不删仓库源码"）。读到本节任一处"删 `service/`"的动因表述，**以第八节为准**。
+
+### 一、先校准清单（记忆不能当证据）
+
+按当前工作区实测，D-203 的清单**有两处过期**：
+
+| 项 | D-203 的记法 | 实测 |
+|---|---|---|
+| `offline-fallback` | 仍 import Node 源码 | **已是纯 Rust 检查**（只 import harness 的 `RUST_BIN`，反证打 `boxsvc/engine.rs` 与 `model_store.rs`）⇒ 本轮不动 |
+| `e10-security` | 仍 import Node 源码 | 默认 rust 档**早已用 env 反证钩子**（`MIAO_SNIFF_SKIP` / `MIAO_TOKEN_ALWAYS_OK` / `MIAO_ENGINE_NONCE`），改源码那条只在 `MIAO_SERVICE_IMPL=node` 时走 ⇒ 见第四节 |
+
+另外 `engine/`（模拟引擎 + `mock-llm.mjs` + 装配脚本）**不属于**删除清单：摘 Node 摘的是产品运行时与随包，
+不是测试替身与本机装配引导（README §目录、AGENTS §1 均已明写）。
+
+### 二、三个新开的 Rust 自证出口（为什么必须开，不能靠读源码顶替）
+
+这三条原先都要**另起 node 子进程 `import` Node 源码**来算一个值 / 取一份证据（Node 在这里的角色是
+**取证工具**，不是对照端）。而发出去的是 Rust ⇒ 取证源必须换到 Rust 侧。三处各开一个出口，
+**形状刻意贴着原断言**：
+
+1. **`boxsvc --engine-selftest` 的 `pure.llmLaunchByTier`** —— 按档位各解析一次 ③ 配方，
+   未声明档位显式报 `TIER_MODEL_UNDECLARED` + `detail.available`。
+   放 `pure` 块 ⇒ 顺带被 `engine-parity` 的 golden 对拍钉住（key 列表同步加了一项）。
+2. **同出口的顶层 `hardware`** —— 硬件画像（`platform/arch/totalRamGb/gpu/accel/recommendedTier`）。
+   🔴 **刻意放顶层、不进 `pure`**：它随机器而变（显卡 / 内存 / 平台），而 golden 是**跨机器金标** ——
+   塞进 `pure` 会让每台机器跑出来的 golden 都不同，那道对拍钉子当场作废。
+3. **`boxsvc --engine-http-selftest` 错误分支的 `frames`** —— 超时/流内错时把
+   `EngineError.detail.frames` 转发出来。原先这份证据被关在产品进程里，e2e 只能另起 node 子进程
+   `import engine-client.mjs` 才拿得到。
+
+### 三、四个检查的处置
+
+| 检查 | 处置 | 验收 |
+|---|---|---|
+| `check:e4-tier` | 纯函数半边改读上面 1/2 号出口；服务半边（E4.4~E4.6）本来靶子无关，只把"取 tiny 配方"换成 `pure.llmLaunchByTier` | 正向 **6/6**，反证 **4/4** |
+| `check:stall-guard` | S6 改跑 `_engine-http-report.mjs` 的 `real.queue_position_then_silent` 用例（伪引擎与用例表与 `check:engine-http` 共用同一份） | 正向 **7/7**，反证 **3/3**；engine-http **20/20**、反证 **6/6**（新增 M6 专盯帧） |
+| `check:e8-accel` | E8.1 读 `hardware` 出口 | 正向 **6/6**，反证 **4/4** |
+| `check:e10-security` | **退役 node 反证轨**（默认靶子已翻转为 rust ⇒ 那条轨压根没在跑，退役它不减覆盖），反证统一为 Rust env 钩子 | 正向 **7/7**，反证 **4/4** |
+| `check:queue-retry` | 三个 node 反证锚点搬进 Rust 源码（M1 重试不复用原 taskId / M3 方向白名单 / M4 方向透传）；M2 打前端 `App.tsx`，**不属** `service/` ⇒ 原样保留 | 正向 **10/10**，反证 **7/7** |
+
+`engine-http` 用例表 16 → **17** 条，并补一条**分母断言**（`live.results.length === CASES.length`）：
+少跑一例时下面那个循环根本不会执行到，"少跑一例"原本看起来像"全部通过"。
+
+### 四、e10 为什么是"退役一轨"而不是"搬迁一轨"
+
+这是本条唯一一处**减法**，照规矩得说清依据：e10 的反证**本来就是双轨**——node 档"破坏 `service/src/*.mjs`"、
+rust 档"设 Rust env 钩子"。默认靶子早就翻成 rust（D-202），所以 node 那条轨**当前根本没在跑**，
+退役它不减任何覆盖。反过来若把它"搬迁"成打 Rust 源码的变异，等于**新造**一条此前不存在的轨 ——
+那才是加法，也才需要逐条论证反证有效性。
+
+（对比：`e4-tier` / `stall-guard` / `e8-accel` 三条是**单轨**，唯一的反证轨就绑在 Node 源码上，
+只能搬不能删。这三组本轮各搬一条、每条都验到"按预期变红"。）
+
+### 五、反证轮搬进 Rust 后的两个新代价（已量化）
+
+1. **必须重编译**：改 Rust 源码不 `cargo build` 就等于拿旧产物跑断言，红的绿的都说明不了问题。
+   dev profile 改一个源文件实测 **~4.7s**，四组反证轮各自加一次"开跑前 build"与"收尾 build"可接受。
+   ⇒ 脚本里**编译失败 ≠ 失败**：它记 `skipped`（"破坏锚点选错行"与"跳过 ≠ 通过"同族处理）。
+2. **多行锚点必须按 CRLF 拼**：Rust 源是 CRLF，`find` 用 `\n` 拼出来的 `includes()` **永远为假**，
+   而失败形态是"锚点未找到 ⇒ 本条无法反证"——看起来像覆盖不足，其实只是行尾。踩了两次（e4-tier 的 E4.2、stall-guard 的 S5）。
+
+### 六、两条刻意画的边界
+
+- **破坏点必须选在"断言真正读的那条路径"上**。E8.6 第一版把 `accel_options(..., refutes.accel_open)`
+  改成 `true`，结果是**该红没红**：那处是 `guard_settings()` 的**写入校验**，而断言读的是
+  `options_view()` 的**展示**（同一句调用，只差缩进）。改对之后 4/4。⇒ 破坏点选错**不报错**，只会假阴性。
+- **E4.4 的破坏点选上报处而非夹取处**。第一版改 `clamp_tier_to_available`（让"配的档没权重也照用"），
+  编译能过但**服务启动即崩** → `runAll()` 抛异常、断言根本没机会跑。那种红是"服务都起不来了"，
+  不是"断言抓到了上报 bug"。改到 `compose_sidecar` 的取值行之后才是精准命中。
+
+### 七、连带修的文档与配置
+
+- `engine-parity-check`：`pure.llmLaunchByTier` 并入对拍 key 列表 + 重冻 golden（diff **只新增这一块**，无其它漂移）。
+- `engine-http-parity-check`：投影加 `frames`、加用例表分母断言、加反证 M6、条数 18 → **20**。
+
+### 八、验收数据（本条全部实测）
+
+```
+check:e4-tier          6/6   --refute 4/4（每条都精准命中，无一靠"服务起不来"）
+check:stall-guard      7/7   --refute 3/3
+check:e8-accel         6/6   --refute 4/4
+check:e10-security     7/7   --refute 4/4
+check:queue-retry     10/10  --refute 7/7
+check:engine-parity   25/25
+check:engine-http     20/20  --refute 6/6
+registry-check         5/5（127 项：static=17 service=44 nightly=8 refute=58 —— 5 条 watch 改写后条数不变）
+docs-consistency      16/16
+docs-path-check        5/5
+check:harness          7/7（node 对照档**保留** ⇒ H3/H5/H7 照旧有对象）
+cargo build --bin boxsvc   改单文件后 ~4.7s
+watch 目标核验         9/9 个路径真实存在（写错路径的 watch 会**恒不触发** ⇒ 静默漏跑）
+```
+```
+
+### 八、范围更正：`service/` **不删** —— 这一轮是「换靶」，不是「清目录」
+
+**⚠️ 本节替换掉初稿里「下一步是删 `service/`」的框架 —— 那是错的。**
+
+初稿把这一轮写成"为删除 `service/` 铺路"。两处既成事实把它否掉，**先纠正，再谈剩余**：
+
+- **plan 要的"删除"是「从包内删除」，不是删仓库源码**。`docs/packaging-local-engine-dev-plan.md` §0 裁定① 原文：
+  「node 仅为**过渡**依赖（A3），**F5 完成后从包内删除**」。而 A3 已标 **✗ 作废**（不再随包 node），
+  `check:bundle` 的 **W5 把 `service/` 与 `node.zip` 反向钉死**（包内不许出现）⇒ **该目标已达成**。
+- **D-162 早就"仓库里的 `service/`"做过范围裁定**：「摘的是产品运行时与随包，不是仓库源码」——
+  `service/src/*.mjs` 留着，且仍有钉子跑它。本轮 `grep` 复核：真正还会**执行** Node 源码的只剩
+  `e2e/engine/{s1-real-engine-check,e3-real-full-chain-check}.mjs` 两个**真机脚本**（nightly · 按需手动跑 · 要几 GB 模型）。
+
+⇒ **`service/` 不删**。连带**保留**（不是待清理项，是"仍在该在的位置"）：`check:layering`（它验的正是
+仍留在仓库的 `service/src/` 结构）、harness 的 node 对照档（`MIAO_SERVICE_IMPL=node`）、
+`service.rs::node_service_cmd`、`package.json` 的 `service` 脚本、`e2e/e2e.mjs` 的起服务路径。
+
+**那这一轮在做什么**：让**验收网对准真正发出去的那份实现**。原先 e4 / stall / e8 要另起 node 子进程
+`import` Node 源码来取证（Node 当**取证工具**），反证则是改 Node 源码 —— 而发出去的是 Rust。
+改成读 Rust 自证出口 + 破坏 Rust 源码之后，**同一句断言咬的换成了产品本身**。这不是"减覆盖换删目录"，是**换靶**。
+
+**🔴 换靶的必备跟随项（初稿漏了，本轮补上）**：注册表里这 5 条（`e4`/`e8`/`e10`/`stall`/`retry`）的 `watch`
+还指着 `service/src/**` —— 反证轮改打 Rust 源码后，**改了 `app/src-tauri/src/**` 却不重跑这些检查**
+（watch 正是"改了哪些文件要重跑哪些检查"的判据）⇒ **静默漏跑**。已照既有惯例（`store` / `engine-parity` /
+`engine-http` 的写法：列具体 Rust 文件 + 自身脚本）改指各自真正依赖的 Rust 源码。
+
+**仍未做（诚实记账）**：
+
+1. Rust 侧三个新出口（`pure.llmLaunchByTier` / 顶层 `hardware` / http-selftest 的 `frames`）**未补 `cargo test` 单测** ——
+   它们已被 e4/e8/stall-guard 的断言与 golden 钉住，但 `cargo test` 侧仍是空的。
+2. **plan 里未完成的 5 项全在 macOS / 分发侧，本机（Windows）做不了**：B4（macOS 侧 `--build-wheel`）、
+   D7（macOS 真机按文档装完跑通）、E1（macOS 签名 `entitlements`）、E5（分发许可结论 · 待法务）、A3（已作废）。
+   逐条核对过 `docs/packaging-local-engine-dev-plan.md` 的状态列：**F 组（服务运行时 Rust 化）整组 ☑**。
+
+---
+
+## D-206 · F5 收口第四步（进行中）：6 组直接 import Node 源码的检查逐块处置（2026-10-15）
+
+承接 D-203/D-204 的清单：还有 6 个检查**直接依赖 `service/src/**`**（`library-manage` · `resilience` ·
+`llm-real-timing` · `retranslate` · `engine-profile` · `translate`），须逐块决定「改测 Rust 还是退役」。
+本条记**已完成的 3 块**与**剩下 2 块为什么不能只改检查**。
+
+### 一、已完成的三块
+
+| 检查 | 处置 | 验收（本轮实测） |
+|---|---|---|
+| `check:lib-manage` | 13 条反证锚点搬到 Rust；删 M9/N9（Node `.pipe(res)` 形态在 Rust 不存在，见上一条说明） | 正向 **23/23** · 反证 **12/12** · 零跳过零假阳性 |
+| `check:resilience` | A 组（原子写）改读 `boxsvc/store.rs`；**R 组整组退役** | 正向 **2/2** · 反证 **3/3** |
+| `check:retranslate` | 返工 4 条反证锚点搬到 `boxsvc/store/exec.rs` + `store.rs`；M5/M6 打前端 `viewer.tsx`，原样保留 | 正向 **12/12** · 反证 **9/9** |
+
+**R 组为什么是退役而不是搬**：它断言的是 Node 进程级兜底（`process.on('unhandledRejection')` /
+`process.on('uncaughtException')` / `shutdown()` 重入闸 / `llm.stop()`）。Rust 侧没有这个形态 ——
+panic 默认不带进程走，「宿主死了别留孤儿」由**父死看守**承担，且已有
+`check:child-watch` · `check:child-watch-kill` · `check:drain-runtime` · `check:lifespan`(e11) 四组在钉。
+照 D-204 第四节的纪律：那条轨**本来就不在跑**，搬过去是加法不是换靶，故删除并在脚本头写明替代覆盖。
+
+**`llm-real-timing.mjs` 为什么删**：它 `import` Node 的 `LlmSupervisor`，且是 **macOS-only 手工计时**
+脚本（`ps`/`pgrep`/`vm_stat`）、**不注册**为门。Rust ③ 的状态机已由 `check:llm-supervisor`（冻结 golden）
++ `check:e4-tier` 覆盖；真实冷启动计时要新增 Rust selftest 场景才算数 —— 记为已知缺口，
+不留一个 import 不到模块就跑不起来的脚本。
+
+### 二、剩下 2 块卡在哪：**不是改检查能解决的**
+
+| 检查 | 卡点 |
+|---|---|
+| `engine-profile`（838 行 · 15 条变异） | 15 条变异里 14 条能逐字对到唯一 Rust 锚点，但**正向断言有整组没有 Rust 观测面**：`profile.rs` 全文无 `mod tests`；`--llm-selftest` 只有 ready/never-ready/double-start/stop-when-stopped 四个场景，**没有 restart 场景**（L5/L6 的 `restarts===1` 与两条日志断言）；`IdleWatcher` **无手动步进**（I7/I8）；I10（毫秒精度）有代码无钉子；H6–H8 的 `probeHardware` 注入面在 Rust 侧拆成了 `detect_gpu` + `map_tier`，无单一入口 |
+| `translate`（1575 行） | 它的**正向路径是进程内 `import` 8 个 Node 模块**（`index/settings/credentials/errors/contract/registry/http` + 根 `errors.mjs`）来搭夹具与算期望值；反证虽是 Rust env 钩子（`MIAO_TRANSLATE_REFUTE_*`，与 `boxsvc/translate/refute.rs` 同名同义），正向这半边要换成 Rust 自证出口才算换靶 |
+
+⇒ 这两块的下一步是**产品侧新增 Rust 自证出口**（`--llm-selftest` 补 restart 场景与 `restarts` 输出、
+`profile.rs` 补单测、IdleWatcher 补可注入时钟、translate 补等价出口），不是检查脚本内部能收口的。
+在此之前 `service/` **不能删** —— 删了这两个检查连正向都跑不起来。
+
+### 三、踩到的坑（可复用）
+
+**锚点不唯一 ⇒ 破坏落在无关路径上 ⇒ "该红没红"（假阴性，比假阳性更难查）**。
+`retranslate` 的 M4 第一版用裸行 `for f in self.list_dir(&dir) {`，而它在 `store.rs` 里出现两次
+（`next_seq_for` 与 `retranslate_plan`），`String.replace` 命中**前一个** ⇒ 破坏的是编号分配、
+断言盯的是返工取数 ⇒ R1/R2 全绿。补上 `let mut candidates: …` 那一行消歧后才 9/9。
+⇒ **判据：跨行锚点优先，且要能唯一标识"断言真正读的那个函数"**（与 D-204 第六节同源）。
+
+### 四、验收数据（本条全部实测）
+
+```
+check:lib-manage       23/23   --refute 12/12（含字节还原 + cargo 重编回未破坏状态）
+check:resilience        2/2    --refute  3/3
+check:retranslate      12/12   --refute  9/9
+```
+
+### 五、刻意没做（**已在第四步 D-209 收口**）
+
+- **未删 `service/`**（因此也谈不上 layering/docs/registry 的删除同步）：被上面第二节的两块卡着。
+  ⇒ D-209 里两块换靶完成后整目录删除，layering / docs / registry / package.json 的同步一并做完。
+- **未改 `AGENTS.md` 的 D-205 归属**：该文件写「`service/`（Node 实现）已从仓库删除（D-205）」，
+  而 `docs/spec-notes-1.md:1677` 记的 D-205 是「删 `s1-real-engine-check.mjs`」，**同号两指**；
+  且 `service/` 当时仍在盘上。⇒ D-209 里改成实际编号：**`service/` 删除 = D-209**，
+  D-205 从此专指 s1 那条。
+
+---
+
+## D-207 · 未就绪文案不该教用户跑 node —— 裁定④的最后一处残留，以及「门扫了一圈却漏了产品文案」的盲区（2026-10-15）
+
+**症状**：`check:engine-bootstrap` 的 W5/W6（「用户全程零命令行」）长期全绿，
+而用户在「运行时未装配」屏上看到的**正是命令行** —— `runtime_probe.rs` 的四条 `FIX_*` 还写着
+「运行 **node** engine/scripts/setup-engine.mjs …」「运行 **npm run** deps:engine …」，
+经 `GET /engine/runtime` → `NotReadyScreen.tsx:365` 逐条渲染（含 D6 闸门的 `last_error`）。
+
+**为什么两条门都没抓到**（可复用的教训 —— 判据的**扫描对象**与**模式**同时错位）：
+1. W5/W6 只扫**前端 4 个文件**，而这四行字符串住在 **Rust**（`boxsvc/engine/runtime_probe.rs`）；
+2. 旧版 `CLI_JARGON` 只列 `npm install|pip install|python -m venv|MSVC|…`，
+   **不含** `node <脚本>` 与 `npm run <脚本>` 两种形态 ⇒ 即便扫到也不匹配。
+⇒ 两边都对不上，于是「已覆盖零命令行」这条结论一直是**空的**。
+
+**改了什么**：
+- 四条文案改为产品内动作（裁定④：装配由产品代做）：`FIX_SETUP` /`FIX_VENV` /`FIX_DEPS`
+  指向「设置 → 翻译服务 → 开始下载」，`FIX_PATCHES` 指向「重新下载模型」（幂等重放补丁）。
+- `gate_message` 尾巴同步：主路径 = 产品内一键装配，`docs/install-guide-*.md` **降为排障附录**
+  （不做用户动作 —— D5 的文档已写明"普通用户不需要看"）。
+- `CLI_JARGON` 补 `npm run` 与 `node\s+\S+\.mjs` / `node\s+engine/`。
+- 新增打在 **Rust 侧**的三条：**W9a** `FIX_*` 四条字面值零命令行；
+  **W9b** 每条必须**给出产品内入口**（只说"缺什么"同样不合格 —— 用户仍无处可去）；
+  **W9c** 闸门消息那一行零命令行。
+  🔴 判据只取**字符串字面值**与闸门那一行，**不扫全文** —— 文件注释里正讨论着"不许写命令行"，
+  扫全文会把规则条文本身当违规（与 D-8/§2-8「禁词扫描自污染」同源）。
+- 反证 **M4**（`FIX_SETUP` 注回 `node engine/scripts/…` ⇒ W9a 红）、
+  **M5**（`FIX_DEPS` 抹掉产品内入口 ⇒ W9b 红）；R1 收尾扩成**五处**字节还原。
+
+**验收（本轮实测）**：
+```
+check:engine-bootstrap            11/11   --refute 17/17（M1–M5 全按预期红 + R1 五处还原）
+check:runtime-probe               44/44
+check:launch-gate                  8/8    --refute 3/3（runtime_probe.rs 已字节还原）
+check:notready-state              13/13（G9 仍判 `it.fix` 逐项渲染）
+cargo test --lib runtime_probe     8/8
+```
+
+**刻意没做**：没有把 `FIX_*` 改成"打开某份文档"。文案必须给**可点的动作**，
+而文档入口已由 `NotReadyScreen` 的 G10（`onOpenGuide`）承担 —— 两者各说一遍只会分叉。
+
+---
+
+## D-208 · G3：把 pydensecrf wheel **随包发**（win32-x64 半边），顺带修好一条过期锚点（2026-10-15）
+
+**为什么 G3 是「零配置」里唯一还缺口子的一环**：B4 的 wheel 通道一直存在，但清单里那条是
+`local: true` —— 只在「跑过 `--build-wheel` 的那台机器」上可用。目标机既没有
+`.download-cache`、也没有 MSVC ⇒ `planCrf()` 静默退回源码编译；在没有编译器的机器上，
+症状是"装到一半失败"，离根因（清单里其实有 wheel，只是没进包）极远。
+
+**改了什么**：
+1. `engine/wheels/pydensecrf-1.0-cp311-cp311-win_amd64.whl` 入仓（212 943 B，
+   sha256 `f4b5b28d…` 与本机 `--build-wheel` 产物**逐字节一致**）。
+2. 清单分发形态由「`local` / `url` 二选一」升为**三态恰取其一**：
+   `bundled: true` + `path`（随包）· `local: true`（尚未托管）· `url`（托管）。
+   🔴 多出的 `bundled` 不是第三种"下载源"，而是**落地位置**：混进 `url` 那一态会让优先级失去意义。
+3. `install-engine-deps.mjs` 的 `planCrf()` 新增 `bundledWheelPath()`，优先级
+   **包内 > 本机通道目录 > 源码编译**，`reason` 里带来源标记（`来源 包内`）便于排障。
+4. `tauri.conf.json` 的 `bundle.resources` 增加该 wheel；**刻意不进 `REQUIRED_ASSETS`** ——
+   那是「缺了就不许起服务」的口径，而 wheel 缺件有源码编译的**合法回退**，
+   塞进去会把「装不了」升级成「起不来」。
+5. 新断言：`check:bundle` **W13**（清单声明随包 ⇒ 资源里必须有，反证 M10）·
+   `check:pydensecrf-wheel` **WB.W1b**（包内文件真的在、sha256/体积一致，反证 MB8）·
+   **WB.W3b**（包内优先于本机目录 —— 用同名诱饵 + 平台接缝，跨平台可测，反证 MB7）。
+   WB.W1 同步改三态；`check:engine-bootstrap` 的 W2 同步三态。
+6. 两份安装引导同步：Windows 写明「普通用户不需要做任何一步」；
+   macOS 写明该走 `bundled` 路线、三态别混写。
+
+**顺带修好一条**：`check:macos-compat --refute` 从 B4 之后就**红着退出** ——
+B4 给平台守卫加了只读旁路（`&& !ONLY_READONLY`，让 macOS 用户也能 `--print-plan`），
+而反证轮的 `GUARD` 常量还是旧切片 ⇒ 一进 M1 就抛「反证锚点未命中」。
+教训与 A7 同源：**反证锚点是源码切片，改那行源码必须同步常量**。
+
+**验收（本轮实测）**：
+```
+check:engine-bootstrap      11/11   --refute 17/17
+check:bundle                14/14   --refute 19/19（含 M10；条数 13→14）
+check:pydensecrf-wheel      13/13   --refute  8/8（含 MB7/MB8；条数 11→13、反证 6→8）
+check:macos-compat          11/11   --refute 16/16（修复前：一轮抛锚点未命中）
+check:resources              8/8
+check:install-guide         16/16
+check:docs                   16/0    check:docpaths 5/0
+```
+
+**未做（仍是 G3 的另一半）**：macOS 侧没有 wheel 条目（本机是 Windows，无法真构建
+`darwin-arm64` 的 pydensecrf）⇒ 那份条目只能在一台装了 CLT 的 Mac 上造出来，
+归 D7/macOS 真机那批。本轮的 `bundled` 通道与判据已经为它备好，加条目即可。
+
+---
+
+## D-209 · F5 收口第五步：删掉 Node 服务源码 `service/`，并把「产品内零 node」钉在源码上（2026-10-15）
+
+**症状（要防的形态）**：产品主路径早已全在 Rust（44 条端点、`check:routes` 转发数 0），
+但仓库里仍躺着 30 个 `.mjs` 的 Node 服务实现。它**不在运行时、也不在随包里**，
+却仍被两组检查直接 import —— 于是"Node 服务在不在"这件事一直有两份实现、两套真相。
+真正的风险不是"多几个文件"，而是**回归**：任何时候只要改回 Node 那一份、或把退路加回
+`resolve_boxsvc()`，e2e 会**全绿**（开发态 `boxsvc` 就在同目录，根本走不到退路），
+只有用户机上多一个 node 进程。
+
+**卡点（两块 import Node 产品源码的检查）**
+- `check:profile`：档位/加速/降档/空闲卸载的判定层原先 import Node 侧那份 profile 模块。
+- `check:translate`：S/T/L/C/K/A 六组原先**进程内直调 Node 门面**。
+
+**改了什么**
+1. **profile 换靶**（前一步）：H/T/A/D/I 的 27 条判定下沉进 `profile.rs` 的 `#[cfg(test)]`，
+   L 组归位 `boxsvc --llm-selftest`（新增 `restart` 场景）+ 冻结 golden；
+   检查改成「跑 `cargo test --lib`（全绿 + 具名用例条数写死 37）+ 对拍 golden」。
+2. **translate 换靶**（本步核心）：新增两个 Rust 自证出口 ——
+   `boxsvc --translate-cases`（逐用例布置 env 后驱动 **Rust 门面**，真发 HTTP 打 e2e 侧的假上游，
+   对应原先"进程内直调"的每一个位面）与 `boxsvc --translate-selftest`（纯逻辑确定性报告）。
+   `translate-check.mjs` 重写为 8 组 54 条，本进程里**没有一行 Node 产品代码**；
+   8 个 `MIAO_TRANSLATE_REFUTE_*` 开关仍一开关一子进程。
+3. **换靶顺手补上两个 Rust 缺口**（Node 侧原有、Rust 侧漏搬；不补则换靶当场红）：
+   `http.rs` 的**建连层归因**（`connect_timeout` 命中要报 `stage=connect`，原笼统落 `total`）与
+   **`post_form` 的 idle 档**（读体按块施加空闲超时 + total 兜底；原只有 total
+   ⇒"卡住"与"慢慢吐"都变成"等满总时长"，T3 永远取不到 idle）。
+4. **删除 `service/`**（31 个文件）：两个检查正向 + 反证全绿之后整目录 `git rm`。
+5. **`repo_root()` 的锚点换人**：原判据是"同时含 `service/` 与 `engine/`"。
+   `service/` 一删，推导会**静默回落**成"找不到 ⇒ 退回 cwd" —— 后果是 dev 态资源回退全部失效
+   （`missing_assets()` 报三条缺失、`engine/patches.json` 读不到），
+   而症状是"包看起来正常、点下载才报清单读不到"。改成"同时含 `e2e/` 与 `engine/`"
+   （两个标记都只在仓库里存在），测试同步改名。
+6. **新增打包门 W14「产品内零 node」**（`check:bundle`，源码级）：剥掉 `#[cfg(test)]` 后，
+   `"node"` / `'node'` / `node.exe` 只允许出现在 `MIAO_NODE_EXEC`（①② 的 mock 替身解释器）
+   或 `MIAO_SERVICE_IMPL`（退役门，只做字符串比较、不派进程）的**上下文窗口**里。
+   🔴 判据取**字面量**而不是"有没有 spawn"：本仓的派生态是 `LaunchSpec { cmd: vec![node_exec, …] }`，
+   真正 fork 发生在 `supervisor.rs`（那里看不到 node 字样），钉 spawn 点一条都钉不住。
+   🔴 判据必须**先剥 `#[cfg(test)]`**：夹具里写 `vec!["node", "x.mjs"]` 是正常的，不剥会常红 ——
+   而常红的终点是"这条断言被注释掉"。
+7. **台账/文档同步**：`AGENTS.md` 删掉 `service/` 分层行并补 W14 与两组条数；`README.md` 的目录树与
+   F 组说明改写；`docs/dev-setup.md` / `.trae/rules/project_rules.md` 的分层表改指 `boxsvc/`；
+   `docs-consistency-check` 的扫描目标去掉死目标（那个目录已不存在 ⇒ 只是静默跳过）；
+   `check:profile` / `check:translate` 的注册表 `watch` 从整个 src 收窄到各自域。
+8. **D-205 同号两指的修正**：`service/` 的删除改用本条编号 **D-209**；
+   D-205 从此专指"删 `s1-real-engine-check.mjs`"（`AGENTS.md` 三处引用已同步）。
+
+**验收数据（本条全部实测）**
+
+```
+cargo test --lib                     176/176
+check:translate                      54/54   --refute  8/8 开关按预期变红（无额外变红）
+check:profile                        42/42   --refute 14/14
+check:bundle                         15/15   --refute 20/20（含新增 M13 ⇒ 只打红 W14）
+check:routes / registry / docs / docpaths / paths / path-single-source / engine-bootstrap / harness   全绿
+```
+
+**反证锚点（W14 的 M13）**：把 Node 服务退路加回 `resolve_boxsvc()` ⇒ **只**打红 W14，
+且反证轮按字节还原。锚点特意选在离退役门二十多行的地方：若插在它旁边，允许窗口会把它盖住。
+
+**欠账（如实记账，不是静默丢弃）**
+- 老 S13「与根侧统一码表**逐字一致**」那条交叉验证**没有等价物**了：被比对的那份 Node 表已随目录删除，
+  只剩 Rust 侧一张表（新增的 P1 用**硬编码契约**钉住它 —— 比"从实现里取表"更强）。
+- 老 A1/A3/A4/A12（假平台注册 + 8 种缺法契约自检 + 归一函数三分支）**无 Rust 等价物**：
+  Rust 侧注册表是编译期常量、能力集是静态数组、平台只有 youdao，
+  "注入一个假平台"这条测试路径不存在。⇒ A 组从 12 条降到 8 条，缺口记在这里。
+- 全量门里仍有几项与本条无关的既有红（`music` 前端三条 / `progress-truth` 需真下载 Python 运行时 /
+  `engine-settings` 的下载与档位行受本机内存与缓存影响）—— 它们不读 `service/`，不属本条范围。
