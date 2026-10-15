@@ -17,6 +17,9 @@ app/src-tauri/gen/schemas/
 # vite 每次热重启都会把 vite.config.ts 转译到这个时间戳文件里，是纯噪声
 vite.config.ts.timestamp-*.mjs
 
+# tsc -b 的增量缓存（本机产物，不入库）
+*.tsbuildinfo
+
 # 系统与编辑器噪声
 .DS_Store
 *.log
