@@ -62,6 +62,46 @@ pub fn probe_hardware() -> HwFacts {
     HwFacts { platform, arch, total_ram_gb, gpu }
 }
 
+/// 采集结论的**完整画像**：硬件事实 + 由它推出的加速后端与推荐档位。
+///
+/// 为什么要有一个"合起来的入口"：这三样在设置页/诊断视图里是**一起**出现的，
+/// 而它们必须来自**同一次**探测 —— 分成三次调用，中间的硬件事实就可能被各自重算，
+/// 出现「gpu 说 cuda、accel 说 cpu」这种自相矛盾的界面。
+#[derive(Debug, Clone)]
+pub struct Profile {
+    pub platform: String,
+    pub arch: String,
+    pub total_ram_gb: f64,
+    pub gpu: Gpu,
+    pub accel: String,
+    pub recommended_tier: String,
+}
+
+/// 采集画像（**硬件事实可注入** —— 断言靠它跑遍各档边界，不必依赖跑测机器的真实显卡）。
+pub fn profile_view(platform: &str, arch: &str, total_ram_gb: f64, nvidia: Option<Option<f64>>) -> Profile {
+    let gpu = detect_gpu(platform, arch, total_ram_gb, nvidia);
+    let accel = detect_accel(&gpu);
+    let recommended_tier = map_tier(total_ram_gb, &gpu);
+    Profile {
+        platform: platform.to_string(),
+        arch: arch.to_string(),
+        total_ram_gb,
+        gpu,
+        accel,
+        recommended_tier,
+    }
+}
+
+/// 采集**本机**画像（真实环境入口）。
+pub fn probe_profile() -> Profile {
+    profile_view(
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        bytes_to_gb(total_ram_bytes()),
+        None,
+    )
+}
+
 /// 读整机内存字节数 —— 与 Node `os.totalmem()` 同源（各自平台的同一系统调用）。
 pub fn total_ram_bytes() -> u64 {
     #[cfg(windows)]
@@ -414,4 +454,193 @@ pub fn tier_options(total_ram_gb: f64, gpu: &Gpu, recommended_tier: &str) -> Vec
 /// 与「硬件吃不吃得住」是两回事，混为一谈会出现「界面可点、点了被静默夹回」）。
 pub fn model_dir_default(engine_dir: &Path) -> PathBuf {
     engine_dir.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| engine_dir.to_path_buf())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ------- 假硬件构造器：与断言里的 `metal()/cuda()/cpuGpu` 同形 -------
+
+    fn metal(unified_gb: f64) -> Gpu {
+        Gpu { kind: "metal".into(), vram_gb: None, unified_gb: Some(unified_gb), name: "fake-metal".into() }
+    }
+    fn cuda(vram_gb: f64) -> Gpu {
+        Gpu { kind: "cuda".into(), vram_gb: Some(vram_gb), unified_gb: None, name: "fake-cuda".into() }
+    }
+    fn cpu_gpu() -> Gpu {
+        Gpu { kind: "cpu".into(), vram_gb: None, unified_gb: None, name: "fake-cpu".into() }
+    }
+
+    // ================================================================ H · 档位映射（《04》§7.2 逐行）
+
+    #[test]
+    fn h1_mac16_falls_to_tiny() {
+        // §7.2 的 `else` 分支那一格：16GB Mac 够不着 Small。
+        assert_eq!(map_tier(16.0, &metal(16.0)), "tiny");
+    }
+
+    #[test]
+    fn h2_metal_thresholds_are_exact_at_every_boundary() {
+        // 边界值全部显式：阈值本身与"刚低于阈值"必须分开。
+        for (gb, want) in [(16.0, "tiny"), (23.9, "tiny"), (24.0, "small"), (31.9, "small"), (32.0, "medium"), (64.0, "medium")] {
+            assert_eq!(map_tier(gb, &metal(gb)), want, "metal {gb} 应落 {want}");
+        }
+    }
+
+    #[test]
+    fn h3_cuda_thresholds_are_exact_at_every_boundary() {
+        for (gb, want) in
+            [(2.0, "tiny"), (4.0, "tiny"), (9.9, "tiny"), (10.0, "small"), (15.9, "small"), (16.0, "medium"), (24.0, "medium")]
+        {
+            assert_eq!(map_tier(32.0, &cuda(gb)), want, "cuda {gb} 应落 {want}");
+        }
+    }
+
+    #[test]
+    fn h4_cpu_is_tiny_regardless_of_ram() {
+        assert_eq!(map_tier(128.0, &cpu_gpu()), "tiny");
+        assert_eq!(map_tier(8.0, &cpu_gpu()), "tiny");
+    }
+
+    #[test]
+    fn h5_unknown_or_missing_gpu_kind_is_tiny_and_never_panics() {
+        // 宁可保守，不可乐观给高档。
+        let unknown = Gpu { kind: "npu".into(), vram_gb: None, unified_gb: None, name: String::new() };
+        let empty = Gpu { kind: String::new(), vram_gb: None, unified_gb: None, name: String::new() };
+        assert_eq!(map_tier(64.0, &unknown), "tiny");
+        assert_eq!(map_tier(64.0, &empty), "tiny");
+        // 缺显存的事实（cuda 但 vram 未知）同样不得给出高档
+        let no_vram = Gpu { kind: "cuda".into(), vram_gb: None, unified_gb: None, name: String::new() };
+        assert_eq!(map_tier(64.0, &no_vram), "tiny");
+    }
+
+    #[test]
+    fn h6_profile_view_injection_yields_medium_on_32gb_mac() {
+        // 注入生效 ⇒ 推荐档随注入变，说明没有读死本机。
+        let p = profile_view("macos", "aarch64", 32.0, None);
+        assert_eq!(p.total_ram_gb, 32.0);
+        assert_eq!(p.gpu.kind, "metal");
+        assert_eq!(p.accel, "mps");
+        assert_eq!(p.recommended_tier, "medium");
+    }
+
+    #[test]
+    fn h7_profile_view_non_darwin_branch_uses_nvidia_vram() {
+        let p = profile_view("windows", "x86_64", 32.0, Some(Some(12.0)));
+        assert_eq!(p.gpu.kind, "cuda");
+        assert_eq!(p.gpu.vram_gb, Some(12.0));
+        assert_eq!(p.accel, "cuda");
+        assert_eq!(p.recommended_tier, "small"); // §7.2 CUDA >= 10 行
+    }
+
+    #[test]
+    fn h8_bytes_are_converted_to_gb_and_metal24_is_small() {
+        assert_eq!(bytes_to_gb(24 * 1024 * 1024 * 1024), 24.0);
+        assert_eq!(profile_view("macos", "aarch64", bytes_to_gb(24 * 1024 * 1024 * 1024), None).recommended_tier, "small");
+    }
+
+    // ================================================================ A · 加速后端（《04》§7.3/§7.4）
+
+    #[test]
+    fn a1_accel_mapping_covers_metal_cuda_cpu_and_unknown() {
+        assert_eq!(detect_accel(&metal(16.0)), "mps");
+        assert_eq!(detect_accel(&cuda(16.0)), "cuda");
+        assert_eq!(detect_accel(&cpu_gpu()), "cpu");
+        let unknown = Gpu { kind: "npu".into(), vram_gb: None, unified_gb: None, name: String::new() };
+        assert_eq!(detect_accel(&unknown), "cpu");
+    }
+
+    #[test]
+    fn a2_accel_launch_flags() {
+        assert_eq!(accel_launch_flags("cpu"), (false, 0));
+        assert_eq!(accel_launch_flags("mps"), (true, -1));
+        assert_eq!(accel_launch_flags("cuda"), (true, -1));
+    }
+
+    #[test]
+    fn a3_detect_gpu_order_is_metal_then_nvidia_then_cpu() {
+        let g_mac = detect_gpu("macos", "aarch64", 16.0, None);
+        assert_eq!(g_mac.kind, "metal");
+        assert_eq!(g_mac.unified_gb, Some(16.0));
+
+        let g_nv = detect_gpu("windows", "x86_64", 32.0, Some(Some(12.0)));
+        assert_eq!(g_nv.kind, "cuda");
+        assert_eq!(g_nv.vram_gb, Some(12.0));
+
+        // nvidia-smi 读不到 / 抛错 都只是"本机没独显"，**不是**错误
+        assert_eq!(detect_gpu("windows", "x86_64", 32.0, Some(None)).kind, "cpu");
+        assert_eq!(detect_gpu("linux", "x86_64", 32.0, Some(None)).kind, "cpu");
+
+        // 显存为 0 / 非有限值同样退 CPU（不能因为"读到了一个 0"就报 cuda）
+        assert_eq!(detect_gpu("windows", "x86_64", 32.0, Some(Some(0.0))).kind, "cpu");
+        assert_eq!(detect_gpu("windows", "x86_64", 32.0, Some(Some(f64::NAN))).kind, "cpu");
+    }
+
+    // ================================================================ T · 设置页档位选项（《02》§5）
+
+    #[test]
+    fn t1_feasible_tiers_on_mac16_exclude_medium() {
+        let feas = feasible_tiers(16.0, &metal(16.0));
+        assert_eq!(feas, vec!["tiny".to_string(), "small".to_string()]);
+        assert!(!feas.iter().any(|t| t == "medium"), "Medium 物理不可行（17.6 > 16）不得出现");
+    }
+
+    #[test]
+    fn t2_tier_options_mark_small_as_not_recommended() {
+        let opts = tier_options(16.0, &metal(16.0), "tiny");
+        assert_eq!(opts.len(), 2);
+        assert_eq!(opts[0].tier, "tiny");
+        assert!(opts[0].recommended);
+        assert!(opts[0].warning.is_none());
+        assert_eq!(opts[1].tier, "small");
+        assert!(!opts[1].recommended);
+        assert!(opts[1].warning.is_some());
+        assert!(!opts.iter().any(|o| o.tier == "medium"));
+    }
+
+    #[test]
+    fn t3_tier_peak_gb_matches_the_spec_table() {
+        assert_eq!(tier_peak_gb("tiny"), Some(9.4));
+        assert_eq!(tier_peak_gb("small"), Some(12.8));
+        assert_eq!(tier_peak_gb("medium"), Some(17.6));
+        assert_eq!(tier_peak_gb("nope"), None);
+        for o in tier_options(64.0, &metal(64.0), "medium") {
+            assert_eq!(o.peak_gb, tier_peak_gb(&o.tier), "{} 的预估内存必须与表一致", o.tier);
+        }
+    }
+
+    #[test]
+    fn t4_feasible_tiers_are_decided_per_backend() {
+        // metal/cpu 按整机峰值判；cuda 按显存阈值判（与整机 RAM 无关）
+        assert_eq!(feasible_tiers(64.0, &metal(64.0)).len(), 3);
+        assert_eq!(feasible_tiers(32.0, &cuda(16.0)).len(), 3);
+        assert_eq!(feasible_tiers(32.0, &cuda(8.0)), vec!["tiny".to_string()]);
+    }
+
+    #[test]
+    fn t5_tiers_enum_is_display_order_low_to_high() {
+        assert_eq!(TIERS.join(","), "tiny,small,medium");
+        assert_eq!(ACCELS.join(","), "cuda,mps,cpu");
+        assert_eq!(GPU_KINDS.join(","), "cuda,metal,cpu");
+    }
+
+    // ================================================================ R · 真机自检（**非契约**，只作交叉核对）
+
+    #[test]
+    fn r1_real_probe_is_platform_faithful() {
+        // 平台忠实：非 macOS 上也要真判（原先非 darwin 分支写 `: true` ⇒ 零校验假绿）。
+        let p = probe_profile();
+        if p.platform == "macos" {
+            assert_eq!(p.gpu.kind, "metal", "macOS 必须是 Metal（统一内存）");
+            assert_eq!(p.accel, "mps");
+        } else {
+            assert_ne!(p.gpu.kind, "metal", "非 macOS 不得报 Metal");
+            assert_ne!(p.accel, "mps");
+        }
+        println!(
+            "[R1] platform={} arch={} ram={}GB gpu={:?} accel={} tier={}",
+            p.platform, p.arch, p.total_ram_gb, p.gpu.kind, p.accel, p.recommended_tier
+        );
+    }
 }

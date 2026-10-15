@@ -839,6 +839,8 @@ fn run_case(c: &Value) -> Value {
     let mut pid_is_int: Value = Value::Null;
     let mut stop_result: Value = Value::Null;
     let mut pid_stable: Value = Value::Null;
+    let mut restarts: Value = Value::Null;
+    let mut pid_changed: Value = Value::Null;
 
     match scenario {
         "ready" => {
@@ -871,10 +873,30 @@ fn run_case(c: &Value) -> Value {
             stop_result = serde_json::to_value(&r).unwrap_or(Value::Null);
             states.push(sup.snapshot().state);
         }
+        // 懒加载恢复（§9.3）：停掉之后必须能**重新真拉起**，且新 pid 与旧的不同。
+        // 只报数不真拉起（`restart` 里漏掉 `op_start`）是最容易犯的错，故把 `pidChanged` 一并取证。
+        "restart" => {
+            let s1 = sup.start(timeout);
+            states.push(s1.state.clone());
+            port_matches = Value::Bool(s1.port == expected_port);
+            pid_is_int = Value::Bool(s1.pid.is_some());
+            sup.stop("", 8000);
+            states.push(sup.snapshot().state);
+            let s2 = sup.restart(timeout);
+            states.push(s2.state.clone());
+            pid_changed = Value::Bool(match (s1.pid, s2.pid) {
+                (Some(a), Some(b)) => a != b,
+                _ => false,
+            });
+            port_matches = Value::Bool(s2.port == expected_port);
+            restarts = json!(sup.restarts());
+            sup.stop("", 8000);
+            states.push(sup.snapshot().state);
+        }
         _ => {}
     }
 
-    json!({
+    let mut out = json!({
         "name": name,
         "states": states,
         "model": sup.snapshot().model,
@@ -883,7 +905,14 @@ fn run_case(c: &Value) -> Value {
         "stopResult": stop_result,
         "errorPresent": sup.last_error().is_some(),
         "pidStable": pid_stable,
-    })
+    });
+    // 🔴 只给 `restart` 用例加这两把尺子：给**全部**用例加 Null 会改掉既有 golden 的形状，
+    //    让"重启可观测"这条断言顺带把另外四个用例的基线也搅动一遍（改了不该改的东西）。
+    if scenario == "restart" {
+        out["restarts"] = restarts;
+        out["pidChanged"] = pid_changed;
+    }
+    out
 }
 
 // ================================================================ 单测
@@ -972,6 +1001,19 @@ mod tests {
         assert_eq!(r.why.as_deref(), Some("未在运行"));
         assert_eq!(r.exited, None);
         assert_eq!(r.port_freed, None);
+    }
+
+    #[test]
+    fn l0_watch_host_is_self_when_not_overridden() {
+        // A3c：看守器宿主 = 与 `boxsvc` **同一个可执行文件**（零新增随包物）。
+        // 寻址口径必须与 app 侧 `service.rs::watch_host` 一致；口径错了的表现是
+        // 「服务起得来但 ③ 拉不起来」，而报错停在「未在 180s 内就绪」，离根因极远。
+        if std::env::var("MIAO_CHILD_WATCH_HOST").is_ok() {
+            return; // 环境覆盖态由 e2e 取证（env 是进程全局的，单测里不制造竞态）
+        }
+        let host = watch_host();
+        assert_eq!(host, std::env::current_exe().unwrap(), "无覆盖时必须指向自身");
+        assert!(host.is_file(), "宿主必须真实存在，否则 `do_start` 的存在性检查形同虚设");
     }
 
     #[test]

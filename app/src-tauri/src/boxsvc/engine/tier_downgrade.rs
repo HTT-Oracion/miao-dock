@@ -172,11 +172,7 @@ impl TierDowngrade {
             inner.current = to.clone();
             inner.history.push(json!({ "from": from, "to": to, "at": crate::boxsvc::store::model::now_iso() }));
         }
-        println!(
-            "[box-service] ⚠ 引擎 OOM ⇒ 引擎已从 {from} 降至 {to}（权重 {} → {}；《04》§8.2 —— 仅降一次 / 服务级 / 本次运行期有效，重启后回到用户配置）",
-            tier_label(&from),
-            tier_label(&to)
-        );
+        println!("[box-service] ⚠ 引擎 OOM ⇒ {}（《04》§8.2 —— 仅降一次 / 服务级 / 本次运行期有效，重启后回到用户配置）", downgrade_log_line(&from, &to));
         if let Err(msg) = apply(&to) {
             println!("[box-service] 降档落地失败：{msg}（档位已记为 {to}，任务将按失败处理）");
             return DowngradeResult {
@@ -188,6 +184,19 @@ impl TierDowngrade {
         }
         DowngradeResult { downgraded: true, reason: None, from: Some(from), to: Some(to) }
     }
+}
+
+/// 降档的留痕文案（§8.2 原话）。
+///
+/// 🔴 为什么抽成**纯函数**：`println!` 的输出断言抓不到，而"降档留痕"是 §8.2 明确要求的可观测行为
+///    （排障的人按这句 grep）。抽出来才能既保留人读的措辞、又让断言钉得住它。
+/// 文案里**同时**给档位名与权重文件名：档位名对上设置页，权重名对上 ③ 的实际命令行。
+pub fn downgrade_log_line(from: &str, to: &str) -> String {
+    format!(
+        "引擎已从 {from} 降至 {to}（权重 {} → {}）",
+        tier_label(from),
+        tier_label(to)
+    )
 }
 
 /// 档位 → 权重文件名（仅用于日志留痕）；未声明时回落档位名本身（同 Node `modelOf(t) || t`）。
@@ -252,5 +261,84 @@ mod tests {
         assert_eq!(off.plan().reason, "disabled");
         assert!(next_lower_tier("small") == Some("tiny"));
         assert!(next_lower_tier("nope").is_none());
+    }
+
+    // ---------------------------------------------------------------- 以下为「删 service/」时补的断言
+
+    #[test]
+    fn d1_next_lower_tier_walks_down_and_stops_at_the_bottom() {
+        // 方向：往**低**走（medium → small → tiny），不是反过来。
+        assert_eq!(next_lower_tier("medium"), Some("small"));
+        assert_eq!(next_lower_tier("small"), Some("tiny"));
+        // 最低档明确给 None，**不回绕**到最高档。
+        assert_eq!(next_lower_tier("tiny"), None);
+        assert_eq!(next_lower_tier("某个没听过的档"), None);
+    }
+
+    #[test]
+    fn d2_d3_all_four_oom_classes_hit_and_normal_failures_do_not() {
+        // §8.1 的四类触发在现实里被**不同的层**用**不同的文案**报出来；只认一种写法 ⇒ 真 OOM 了却没降档。
+        let oom_samples = [
+            "CUDA out of memory. Tried to allocate 1.20 GiB (GPU 0; 16.00 GiB total capacity)",
+            "MPS backend out of memory (MPS allocated: 1.51 GiB, other allocations: 128.00 MiB)",
+            "RuntimeError: Cannot allocate memory",
+            "failed to allocate 6144.00 MB of memory for model weights",
+            "llama.cpp: unable to allocate buffer of size 4096",
+            "MemoryError",
+        ];
+        for t in oom_samples {
+            assert!(is_oom_error(&err("E", t)), "漏识别：{t}");
+        }
+        // 反面同样重要：误判 ⇒ 白白降一档，用户看到质量莫名下降且无从追溯。
+        let not_oom = [
+            "connect ECONNREFUSED 127.0.0.1:5003",
+            "引擎返回 500",
+            "结果流里没有结果帧（code 0）",
+            "request timeout after 30000ms",
+            "输入字节不是可识别图片",
+            "ENGINE_INFERENCE_FAILED: 推理失败（seq=3，注入）",
+        ];
+        for t in not_oom {
+            assert!(!is_oom_error(&err("E", t)), "误判成 OOM：{t}");
+        }
+    }
+
+    #[test]
+    fn d4_oom_signature_penetrates_detail_and_flatten_keeps_json() {
+        // 引擎常把真正的原因放在 detail，message 只剩一句"推理失败" ⇒ 必须能穿透。
+        assert!(is_oom_error(&EngineError::with_detail("E", "引擎报告：推理失败", json!({ "cause": "CUDA out of memory" }))));
+        assert!(is_oom_error(&EngineError::with_detail("E", "EngineError", json!("failed to allocate 4096 MB"))));
+        assert!(flatten_error(&EngineError::with_detail("E", "a", json!({ "b": 1 }))).contains("\"b\":1"));
+    }
+
+    #[test]
+    fn d7_apply_runs_once_history_has_one_entry_and_log_names_both() {
+        // 留痕文案：排障的人按这句 grep，于是它必须是**可断言**的（抽成纯函数）。
+        let line = downgrade_log_line("small", "tiny");
+        assert!(line.contains("引擎已从 small 降至 tiny"), "文案：{line}");
+        assert!(line.contains("sakura-1.5b-qwen2.5-v1.0-fp16.gguf"), "留痕必须带真实权重名：{line}");
+
+        let d = TierDowngrade::new("medium", false);
+        let mut applied: Vec<String> = Vec::new();
+        let r = d.try_downgrade(|t| {
+            applied.push(t.to_string());
+            Ok(())
+        });
+        assert!(r.downgraded);
+        assert_eq!(applied, vec!["small".to_string()], "apply 只调一次");
+        assert_eq!(d.history().len(), 1);
+        assert_eq!(d.current_tier(), "small");
+    }
+
+    #[test]
+    fn d8_apply_failure_does_not_roll_back_the_latch() {
+        // 否则每次 OOM 都再重启一次 ③，越修越忙。
+        let d = TierDowngrade::new("small", false);
+        let r = d.try_downgrade(|_| Err("拉起失败".into()));
+        assert!(!r.downgraded);
+        assert_eq!(r.reason.as_deref(), Some("apply-failed"));
+        assert_eq!(d.plan().reason, "already-downgraded");
+        // §8.2：档位已记为 tiny，不退还
+        assert_eq!(d.current_tier(), "tiny");
     }
 }

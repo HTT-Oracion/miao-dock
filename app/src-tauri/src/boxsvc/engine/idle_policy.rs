@@ -208,27 +208,11 @@ where
                 if stop2.load(Ordering::SeqCst) {
                     break;
                 }
-                let decision = {
-                    let s = match store.lock() {
-                        Ok(g) => g,
-                        Err(p) => p.into_inner(),
-                    };
-                    // 🔴 "任务活动"的**范围**：默认只算本次运行（`runtime`）—— 不加下界，
-                    //    进程重启后 ③ 会被"上一轮的活动"判成空闲 18 小时而**拉起即被卸**。
-                    let since = if cfg.activity_scope == "all" { None } else { runtime_start_ms(&s) };
-                    let last = last_activity_at(collect_task_timestamps(&s), since);
-                    let (running, queued) = queue_facts(&s);
-                    decide_unload_llm(
-                        now_ms(),
-                        last,
-                        running,
-                        queued,
-                        cfg.idle_ms,
-                        cfg.never_unload,
-                        cfg.disabled,
-                    )
+                let s = match store.lock() {
+                    Ok(g) => g,
+                    Err(p) => p.into_inner(),
                 };
-                if decision.unload {
+                let d = idle_tick(&cfg, &s, now_ms(), |decision| {
                     let idle = decision.idle_for_ms.unwrap_or(0);
                     println!(
                         "[box-service] 空闲 {}s ≥ {}s ⇒ 卸载 ③ LLM（《04》§9.1 Tier1）",
@@ -236,11 +220,33 @@ where
                         (cfg.idle_ms as f64 / 1000.0).round() as i64
                     );
                     on_unload();
-                }
+                });
+                let _ = d;
             }
         })
         .ok();
     IdleWatcher { stop, handle }
+}
+
+/// **一次巡检**：判定 + 动作。看护线程与手动步进**必须走同一段** ——
+/// 否则断言测的是"另一条路"，而真跑的那条没人验。
+///
+/// `now` 由调用方给（`IdleWatcher` 传 `now_ms()`，断言传可控值）⇒「等 5 分钟」这种
+/// 不可反证的断言就不必存在了。
+pub fn idle_tick<F>(cfg: &IdleCfg, store: &Store, now: i64, mut on_unload: F) -> Decision
+where
+    F: FnMut(&Decision),
+{
+    // 🔴 "任务活动"的**范围**：默认只算本次运行（`runtime`）—— 不加下界，
+    //    进程重启后 ③ 会被"上一轮的活动"判成空闲 18 小时而**拉起即被卸**。
+    let since = if cfg.activity_scope == "all" { None } else { runtime_start_ms(store) };
+    let last = last_activity_at(collect_task_timestamps(store), since);
+    let (running, queued) = queue_facts(store);
+    let d = decide_unload_llm(now, last, running, queued, cfg.idle_ms, cfg.never_unload, cfg.disabled);
+    if d.unload {
+        on_unload(&d);
+    }
+    d
 }
 
 fn now_ms() -> i64 {
@@ -288,5 +294,141 @@ mod tests {
         assert_eq!(last_activity_at(vec![1000, 6000], None), Some(6000));
         // 非法时间戳（ts_of 给 0）被跳过
         assert_eq!(last_activity_at(vec![0, 0], None), None);
+    }
+
+    // ---------------------------------------------------------------- 以下为「删 service/」时补的断言
+
+    use crate::boxsvc::store::model::Task;
+    use crate::boxsvc::store::Store;
+
+    fn tmpdir(tag: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir()
+            .join(format!("miao-idle-{tag}-{}-{}", std::process::id(), now_ms()));
+        let _ = std::fs::create_dir_all(&p);
+        p
+    }
+
+    /// 毫秒 ISO（与 `model::now_iso_ms` 同格式）—— 断言要构造**精确到毫秒**的时间戳。
+    fn iso(ms: i64) -> String {
+        chrono::DateTime::from_timestamp_millis(ms).unwrap().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
+    }
+
+    fn task_at(created: i64, finished: Option<i64>) -> Task {
+        let mut t = Task::new("c".into(), "c".into(), None, vec![], None, None, None, None, &tmpdir("task"));
+        t.created_at = iso(created);
+        t.finished_at = finished.map(iso);
+        t
+    }
+
+    fn test_cfg(idle_ms: i64) -> IdleCfg {
+        IdleCfg {
+            idle_ms,
+            interval_ms: 1000,
+            never_unload: false,
+            disabled: false,
+            activity_scope: "runtime".into(),
+        }
+    }
+
+    const T0: i64 = 1_700_000_000_000;
+
+    #[test]
+    fn i0_reason_tokens_are_machine_readable_and_all_distinct() {
+        // 取值被断言依赖就是契约 —— 不能同时兼任给人看的中文文案。
+        let all = [
+            REASON_IDLE,
+            REASON_BUSY_QUEUED,
+            REASON_BUSY_RUNNING,
+            REASON_NEVER_RAN,
+            REASON_NOT_IDLE_ENOUGH,
+            REASON_DISABLED,
+            REASON_NEVER,
+        ];
+        assert_eq!(all.len(), 7);
+        let unique: std::collections::BTreeSet<&str> = all.iter().copied().collect();
+        assert_eq!(unique.len(), 7, "七个取值必须互不相同（否则判定分支会互相掩盖）");
+        for t in all {
+            assert!(t.chars().all(|c| c.is_ascii_lowercase() || c == '_'), "令牌须是 snake_case：{t}");
+        }
+    }
+
+    #[test]
+    fn i5_queue_facts_uses_current_task_id_not_an_object_as_counter() {
+        // 若改拿 `queue_snapshot().current`（对象或 null）当计数器，`null>0`/`{}>0` 恒 false ⇒ 恒判空闲。
+        let mut s = Store::new(&tmpdir("qfacts"));
+        s.runtime_started_at_ms = 0;
+        assert_eq!(queue_facts(&s), (0, 0));
+        s.current_task_id = Some("t1".into());
+        assert_eq!(queue_facts(&s), (1, 0));
+        s.current_task_id = None;
+        s.queue.push("q1".into());
+        s.queue.push("q2".into());
+        assert_eq!(queue_facts(&s), (0, 2));
+    }
+
+    #[test]
+    fn i6_last_activity_takes_the_larger_of_created_and_finished() {
+        let mut s = Store::new(&tmpdir("lastact"));
+        s.runtime_started_at_ms = 0;
+        // 「任务刚创建、还在排队」也要把计时推后（偏保守）。
+        s.tasks.push(task_at(T0 - 900_000, Some(T0 - 800_000)));
+        s.tasks.push(task_at(T0 - 100_000, None));
+        assert_eq!(last_activity_at(collect_task_timestamps(&s), None), Some(T0 - 100_000));
+        // 空任务表 ⇒ None（没有热态可卸）
+        let empty = Store::new(&tmpdir("lastact-empty"));
+        assert_eq!(last_activity_at(collect_task_timestamps(&empty), None), None);
+    }
+
+    #[test]
+    fn i7_manual_step_unloads_only_after_the_threshold() {
+        // 手动步进（注入可控时钟）：到点前不卸、到点后卸一次并带原因。
+        // 「等 5 分钟」的断言不可反证：等不到就重跑，永远分不清是坏了还是慢。
+        let mut s = Store::new(&tmpdir("step"));
+        s.runtime_started_at_ms = 0;
+        s.tasks.push(task_at(T0 - 100_000, None));
+        let cfg = test_cfg(300_000);
+
+        let mut stops: Vec<String> = Vec::new();
+        let d1 = idle_tick(&cfg, &s, T0, |dec| stops.push(dec.reason.clone()));
+        assert!(!d1.unload);
+        assert_eq!(d1.reason, REASON_NOT_IDLE_ENOUGH);
+        let d2 = idle_tick(&cfg, &s, T0 + 300_000, |dec| stops.push(dec.reason.clone()));
+        assert!(d2.unload);
+        assert_eq!(d2.reason, REASON_IDLE);
+        assert_eq!(stops, vec![REASON_IDLE.to_string()], "只动作一次，且原因是空闲卸载");
+    }
+
+    #[test]
+    fn i8_queued_task_vetoes_on_the_real_wiring() {
+        // §9.2 安全铁律在**真实接线**（`idle_tick`）上的执行点：任务等着，引擎**不许**被停。
+        let mut s = Store::new(&tmpdir("veto"));
+        s.runtime_started_at_ms = 0;
+        s.tasks.push(task_at(T0 - 3_600_000, None));
+        s.queue.push("q1".into());
+        let mut stops = 0;
+        let d = idle_tick(&test_cfg(300_000), &s, T0 + 3_600_000, |_| stops += 1);
+        assert!(!d.unload);
+        assert_eq!(d.reason, REASON_BUSY_QUEUED);
+        assert_eq!(stops, 0, "空闲一小时也不许动作");
+    }
+
+    #[test]
+    fn i10_task_timestamp_keeps_millisecond_precision() {
+        // 下界是毫秒、任务却被截到秒 ⇒ 「与 Store 构造同一秒内创建的任务」会被判成上一轮历史而过滤掉
+        // ⇒ 本次运行永远 neverRan ⇒ 空闲卸载整轮不生效（③ 常驻不释放）。
+        // ⚠️ 断言必须落在**产品路径**（`Task::new`）上：`task_at` 自己覆盖了 `created_at`，
+        //    只断言它就成假阳性 —— 把 `Task::new` 退回秒精度也不会红。
+        let fresh = Task::new("c".into(), "c".into(), None, vec![], None, None, None, None, &tmpdir("ts"));
+        let t = task_at(crate::boxsvc::store::model::now_ms(), None);
+        for ts in [&fresh.created_at, &t.created_at] {
+            assert!(ts.ends_with('Z'), "任务时间戳须是 UTC：{ts}");
+            let (_, frac) = ts.trim_end_matches('Z').split_once('.').expect("任务时间戳必须带毫秒小数位");
+            assert_eq!(frac.len(), 3, "必须保留 3 位毫秒：{ts}");
+        }
+        // 秒精度的时间戳（`now_iso`）**不得**被用来当任务时间戳：它与毫秒下界比大小会引入最多 1 秒偏斜。
+        let secs = crate::boxsvc::store::model::now_iso();
+        assert!(!secs.contains('.'), "`now_iso` 是给人看的、截掉毫秒：{secs}");
+        let lower_bound = crate::boxsvc::store::model::now_ms();
+        assert!(crate::boxsvc::store::model::ts_of(&fresh.created_at) >= lower_bound - 1000);
     }
 }
