@@ -1403,7 +1403,7 @@ const MUTATIONS = [
   {
     name: '从 vite.config.ts 删掉 @hooks 别名（模拟两处漏改一处）',
     file: F.viteConfig,
-    find: '      "@hooks": aliasPath("./src/hooks"),\n',
+    find: "@hooks': aliasPath('./src/hooks')",
     replace: '',
     expect: ['ALIAS.keysComplete', 'ALIAS.twoPlaceSync'],
   },

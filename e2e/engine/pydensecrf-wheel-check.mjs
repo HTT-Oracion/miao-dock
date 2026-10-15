@@ -614,7 +614,7 @@ if (REFUTE) {
 
   const HASH_GUARD = 'if (got !== w.sha256) {';
   const PLATFORM_FILTER = 'w.platform === key && w.pythonTag === tag';
-  const HIT_RETURN = "return { route: 'wheel', reason: `命中清单条目";
+  const HIT_RETURN = "route: 'wheel',";
 
   // ---- MB1：不比对哈希（"清单里写了就信"）----
   {
@@ -715,7 +715,7 @@ if (REFUTE) {
 
   // ---- MB3：命中也不走 wheel（便利通道形同虚设）----
   {
-    const restore = mutate(HIT_RETURN, "return { route: 'source', reason: `命中清单条目");
+    const restore = mutate(HIT_RETURN, "route: 'source',");
     const r = runForward();
     check(
       'MB3 命中条目也返回 `source` ⇒ WB.W3 红（wheel 通道形同虚设，等于没做）',

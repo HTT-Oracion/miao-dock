@@ -1645,7 +1645,7 @@ add('LYRICS.dragPermission', 'LYRICS', (s) => {
 add('LYRICS.viteMultiEntry', 'LYRICS', (s) => {
   // 单入口时 dist 里没有 lyrics.html，Rust 的 WebviewUrl::App("lyrics.html") 会加载失败
   if (!s.viteConfig) return { ok: false, detail: 'app/vite.config.ts 不存在' };
-  if (!/lyrics:\s*new URL\(\s*"\.\/lyrics\.html"/.test(s.viteConfig))
+  if (!/lyrics:\s*new URL\(\s*['"]\.\/lyrics\.html['"]/.test(s.viteConfig))
     return { ok: false, detail: 'vite 未把 lyrics.html 配成第二个入口（dist 里不会有它）' };
   if (!s.lyricsHtml) return { ok: false, detail: 'app/lyrics.html 不存在' };
   return { ok: true, detail: '' };
@@ -4261,7 +4261,7 @@ const MUTATIONS = [
     file: F.musicScss,
     // 锚点随 2026-10-12 的改版更新：进场动画不再独占一行，而是与动态背景流动
     // 写在同一个 animation 列表里（分开写会让动态开关重播进场动画 ⇒ 整屏闪一下）。
-    find: '  animation: music-exp-up 0.34s cubic-bezier(0.4, 0, 0.2, 1) 1 both,\n',
+    find: 'music-exp-up 0.34s cubic-bezier(0.4, 0, 0.2, 1) 1 both,',
     replace: '',
     expect: ['PLAYER.animEnter'],
   },
@@ -4468,8 +4468,8 @@ const MUTATIONS = [
   {
     name: '播放条漏传 heartbeatAvailable（非喜欢歌单时模式按钮仍显示心动档）',
     file: F.playerBar,
-    find: '            heartbeatAvailable={heartbeatAvailable}',
-    replace: '            heartbeatAvailable={true}',
+    find: 'heartbeatAvailable={heartbeatAvailable}',
+    replace: 'heartbeatAvailable={true}',
     expect: ['HEARTBEAT.noRandomDegrade'],
   },
   {
@@ -4552,8 +4552,8 @@ const MUTATIONS = [
   {
     name: '切离心动时不把"不在原列表里的当前歌"置顶（会悄悄换成另一首）',
     file: path.join(F.actionsDir, 'playback.ts'),
-    find: '        cur && found < 0 ? [cur, ...snap.queue] : snap.queue;',
-    replace: '        snap.queue;',
+    find: 'cur && found < 0 ? [cur, ...snap.queue] : snap.queue;',
+    replace: 'snap.queue;',
     expect: ['HEARTBEAT.restoresQueueOnLeave'],
   },
   {
@@ -4568,8 +4568,8 @@ const MUTATIONS = [
   {
     name: '播放全部恒定从第一首起（随机档退化成顺序播）',
     file: path.join(F.actionsDir, 'playback.ts'),
-    find: '          ? Math.floor(Math.random() * songs.length)',
-    replace: '          ? 0',
+    find: 'Math.floor(Math.random() * songs.length)',
+    replace: '0',
     expect: ['PLAYLIST.startIndexByMode'],
   },
   {
@@ -4619,8 +4619,8 @@ const MUTATIONS = [
   {
     name: '不把「我喜欢的音乐」改名（界面仍显示接口原名，各平台叫法不一）',
     file: path.join(F.actionsDir, 'left.ts'),
-    find: '              i === likedIdx ? { ...pl, name: LIKED_PLAYLIST_NAME, isLiked: true } : pl,',
-    replace: '              i === likedIdx ? { ...pl, isLiked: true } : pl,',
+    find: 'i === likedIdx ? { ...pl, name: LIKED_PLAYLIST_NAME, isLiked: true } : pl',
+    replace: 'i === likedIdx ? { ...pl, isLiked: true } : pl',
     expect: ['PLAYLIST.likedAutoHeartbeat'],
   },
   {
@@ -4649,8 +4649,8 @@ const MUTATIONS = [
   {
     name: '抽屉进场起点改成从下方（不再是"从右往左"）',
     file: F.musicScss,
-    find: '  from { transform: translateX(100%); }',
-    replace: '  from { transform: translateY(100%); }',
+    find: 'transform: translateX(100%);',
+    replace: 'transform: translateY(100%);',
     expect: ['QUEUE.drawerSlidesIn'],
   },
   {
@@ -4693,7 +4693,7 @@ const MUTATIONS = [
   {
     name: '把 vite 的第二入口 lyrics 删掉（dist 里将没有 lyrics.html）',
     file: F.viteConfig,
-    find: '        lyrics: new URL("./lyrics.html", import.meta.url).pathname,\n',
+    find: "lyrics: new URL('./lyrics.html', import.meta.url).pathname,",
     replace: '',
     expect: ['LYRICS.viteMultiEntry'],
   },
@@ -4974,8 +4974,8 @@ const MUTATIONS = [
   {
     name: '波纹层类名改坏（沉浸专属视觉丢失）',
     file: F.expanded,
-    find: '          className="skin-ripple-layer"',
-    replace: '          className="skin-ripple-layer-off"',
+    find: 'className="skin-ripple-layer"',
+    replace: 'className="skin-ripple-layer-off"',
     expect: ['SKIN.bgImmersive'],
   },
   {
@@ -4997,8 +4997,8 @@ const MUTATIONS = [
   {
     name: '歌词行 flex-shrink:0 被删（当前句被 flex 收缩压扁 → 整行消失、换句后上一句才出现）',
     file: F.musicScss,
-    find: '.music-exp-lyr-box .music-lyr-line { flex-shrink: 0; }',
-    replace: '.music-exp-lyr-box .music-lyr-line { /* removed */ }',
+    find: '.music-exp-lyr-box .music-lyr-line {',
+    replace: '.music-exp-lyr-box .music-lyr-line-off {',
     expect: ['SKIN.lyrNoFlexShrink'],
   },
   {
@@ -5174,8 +5174,8 @@ const MUTATIONS = [
   {
     name: '右键菜单去掉 z-index 78（被队列抽屉 / 展开播放器压住看不见）',
     file: F.componentsScss,
-    find: '.ui-menu.ui-ctx { z-index: 78; }',
-    replace: '.ui-menu.ui-ctx { }',
+    find: 'z-index: 78',
+    replace: 'z-index: 7',
     expect: ['MENU.css'],
   },
 
@@ -5253,7 +5253,7 @@ const MUTATIONS = [
   {
     name: '切换键只留一个方向（进了歌词卡出不来）',
     file: F.island,
-    find: "              title={view === 'lyrics' ? '播放' : '歌词'}",
+    find: "title={view === 'lyrics' ? '播放' : '歌词'}",
     replace: '              title="歌词"',
     expect: ['ISLANDV.toggleBothWays'],
   },
@@ -5754,7 +5754,7 @@ const MUTATIONS = [
   {
     name: '把进度条轨道的渐变填充改回纯色（已调节段不再有高亮色）',
     file: F.musicScss,
-    find: '  background: linear-gradient(\n    to right,\n    var(--fill-c) 0 var(--fill, 0%),\n    var(--track-c) var(--fill, 0%) 100%\n  );\n}\n.music-prog-bar::-webkit-slider-thumb',
+    find: '  background: linear-gradient(to right, var(--fill-c) 0 var(--fill, 0%), var(--track-c) var(--fill, 0%) 100%);\n}\n.music-prog-bar::-webkit-slider-thumb',
     replace: '  background: var(--md-line);\n}\n.music-prog-bar::-webkit-slider-thumb',
     expect: ['LYRICS.sliderFill'],
   },

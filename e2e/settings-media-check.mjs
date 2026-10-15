@@ -3703,7 +3703,7 @@ const MUTATIONS = [
   {
     name: '把「翻译服务」的一行摘要删掉（该组有组说明却没摘要）',
     file: F.catalog,
-    find: "  noteSummary:\n    '本组 13 项 · 改档位/后端/模型目录要重启引擎才生效 · 两个空闲卸载阈值生效时机不同',\n",
+    find: "noteSummary: '本组 13 项 · 改档位/后端/模型目录要重启引擎才生效 · 两个空闲卸载阈值生效时机不同',",
     replace: '',
     expect: ['SIMPLIFY.notesummary.verbatim'],
   },
@@ -3724,8 +3724,8 @@ const MUTATIONS = [
   {
     name: '把页标题下的 blurb 改回无条件渲染（缺 blurb 时这一行会崩或留空）',
     file: F.settingsScreen,
-    find: 'active.blurb ? (',
-    replace: 'true ? (',
+    find: 'active.blurb ? <div className="settings-blurb">',
+    replace: 'true ? <div className="settings-blurb">',
     expect: ['SIMPLIFY.optional.selfGuard'],
   },
   {
@@ -3871,8 +3871,8 @@ const MUTATIONS = [
   {
     name: '把①组开关的回写断掉（拨了开关只改一半，偏好不落盘）',
     file: F.secGeneral,
-    find: '            onToggle={() => onSidebarLabels(!sidebarLabels)}',
-    replace: '            onToggle={() => undefined}',
+    find: 'onToggle={() => onSidebarLabels(!sidebarLabels)}',
+    replace: 'onToggle={() => undefined}',
     expect: ['FEATURES.shell.wired'],
   },
   {
