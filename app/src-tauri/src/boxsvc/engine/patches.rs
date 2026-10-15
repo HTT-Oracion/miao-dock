@@ -183,9 +183,20 @@ struct PatchEdit {
     patch: String,
 }
 
-/// 把文本按行归一（CRLF → LF），与 Node 侧 `norm()` 同口径 —— 否则锚点会「永不命中」。
-fn norm_eol(s: &str) -> String {
-    s.split('\r').map(|p| p.split('\n').collect::<Vec<_>>().join("\n")).collect::<Vec<_>>().join("\n")
+/// 把补丁表里**用 `\n` 书写**的文本，转成**目标文件实际的行尾**（与 Node 侧 `norm()` 同口径）。
+///
+/// 🔴 上游源码并非同一套行尾：实测 `utils/textblock.py` 是 **CRLF**，而 `config.py` 是 LF
+/// （见 `setup-engine.mjs` 同一处的注释）。所以只能**按文件**归一，不能全局假定一种。
+///
+/// 🔴 这里曾经写错过，症状极具误导性：旧实现是 `s.split('\r')…join("\n")`，
+///    对 CRLF 输入会得到 `\n\n`（多插一个空行）⇒ 于是把**内容**也"归一"成双倍行高的文本，
+///    与 LF 书写的锚点对不上，报「锚点未找到（源码已变）」。而源码其实一个字都没变 ——
+///    错误信息把根因指向了完全无关的方向（会让人去查引擎版本）。
+///    正确做法是**别动内容**，只把锚点/替换体转成文件的行尾。
+fn to_eol(s: &str, eol: &str) -> String {
+    // 先一律收敛成 LF（同时吃掉落单的 `\r`），再按需展开成目标行尾。
+    let lf = s.replace("\r\n", "\n").replace('\r', "\n");
+    if eol == "\n" { lf } else { lf.replace('\n', eol) }
 }
 
 /// 定位 `patches.json`：环境变量 > 随包资源 > 仓库内。
@@ -207,7 +218,17 @@ pub fn apply_engine_patches(src_dir: &Path) -> Result<Vec<(String, bool)>, Strin
     let json_path = patches_json_path().ok_or_else(|| {
         "找不到 engine/patches.json（零配置装配需要它来打源码补丁；设 MIAO_ENGINE_PATCHES 指向它）".to_string()
     })?;
-    let raw = std::fs::read_to_string(&json_path)
+    apply_engine_patches_at(src_dir, &json_path)
+}
+
+/// 同上，但**补丁表路径由调用方给**（不读环境变量）。
+///
+/// 🔴 为什么要把这一步拆出来：`cargo test` 默认**多线程**跑用例，而"设 `MIAO_ENGINE_PATCHES`
+///    再跑再删"是所有用例共享的进程级状态 —— 两个用例一个设一个删会把彼此的结果冲掉，
+///    症状是**时绿时红**（比稳定失败更坏：会被当成偶发而忽略）。`wheels.rs::plan_crf_with_manifest`
+///    就是为了同一个原因把清单路径提成参数。用例一律走这个函数，不碰环境变量。
+fn apply_engine_patches_at(src_dir: &Path, json_path: &Path) -> Result<Vec<(String, bool)>, String> {
+    let raw = std::fs::read_to_string(json_path)
         .map_err(|e| format!("读 patches.json 失败（{}）：{e}", json_path.display()))?;
     let doc: serde_json::Value = serde_json::from_str(&raw)
         .map_err(|e| format!("patches.json 不是合法 JSON：{e}"))?;
@@ -229,10 +250,12 @@ pub fn apply_engine_patches(src_dir: &Path) -> Result<Vec<(String, bool)>, Strin
             out.push((p.id, false)); // 已打过
             continue;
         }
-        let mut cur = norm_eol(&content);
+        // 按**这个文件**的实际行尾归一（上游源码里 CRLF 与 LF 混着有）。
+        let eol = if content.contains("\r\n") { "\r\n" } else { "\n" };
+        let mut cur = content;
         for (i, e) in p.edits.iter().enumerate() {
-            let anchor = norm_eol(&e.anchor);
-            let patch = norm_eol(&e.patch);
+            let anchor = to_eol(&e.anchor, eol);
+            let patch = to_eol(&e.patch, eol);
             if !cur.contains(&anchor) {
                 return Err(format!(
                     "补丁 {} 的第 {} 个锚点未找到（源码已变）；文件：{}；期望锚点首行：{}",
@@ -244,7 +267,7 @@ pub fn apply_engine_patches(src_dir: &Path) -> Result<Vec<(String, bool)>, Strin
             }
             cur = cur.replacen(&anchor, &patch, 1);
         }
-        // 写回 LF（与 Node 侧 `norm()` 同口径）
+        // 写回**保持该文件原本的行尾**（与 Node 侧同口径：CRLF 的文件打完补丁还是 CRLF）。
         std::fs::write(&file, cur)
             .map_err(|e| format!("写补丁 {} 失败：{e}", p.id))?;
         out.push((p.id, true));
@@ -283,14 +306,12 @@ mod apply_tests {
             } ] }).to_string(),
         )
         .unwrap();
-        std::env::set_var("MIAO_ENGINE_PATCHES", &json);
-
-        let r1 = apply_engine_patches(&base).unwrap();
+        let r1 = apply_engine_patches_at(&base, &json).unwrap();
         assert!(r1.iter().any(|(_, a)| *a), "首次应打上");
         let c = std::fs::read_to_string(base.join("manga_translator/translators/sakura.py")).unwrap();
         assert!(c.contains("# miao-dock 补丁 D-86"), "mark 应出现");
 
-        let r2 = apply_engine_patches(&base).unwrap();
+        let r2 = apply_engine_patches_at(&base, &json).unwrap();
         assert!(!r2.iter().any(|(_, a)| *a), "第二次应幂等跳过");
         let _ = std::fs::remove_dir_all(&base);
     }
@@ -309,9 +330,72 @@ mod apply_tests {
             } ] }).to_string(),
         )
         .unwrap();
-        std::env::set_var("MIAO_ENGINE_PATCHES", &json);
         // 🔴 锚点缺失必须报错：源码已变、装出来的引擎不是我们验过的那份。静默跳过 = 带病上线。
-        assert!(apply_engine_patches(&base).is_err(), "锚点缺失应报错，不得静默跳过");
+        assert!(apply_engine_patches_at(&base, &json).is_err(), "锚点缺失应报错，不得静默跳过");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 🔴 CRLF 文件必须打得进补丁，且**保持 CRLF**。
+    ///
+    /// 这条是从真机上咬出来的：夹具版真装配（`engine-bootstrap-real-check.mjs`）跑真源码时，
+    /// 补丁阶段报「锚点未找到（源码已变）」—— 而源码一个字都没变。根因是旧的 `norm_eol`
+    /// 把 CRLF 归一成 `\n\n`，锚点于是对不上。上游 `utils/textblock.py` 实测就是 CRLF，
+    /// 所以这条在真机上**每次装配都会撞**。
+    #[test]
+    fn apply_works_on_crlf_files_and_keeps_crlf() {
+        let base = std::env::temp_dir().join(format!("miao-patch-crlf-{}", std::process::id()));
+        // 源码是 CRLF，而补丁表里一律用 `\n` 书写（与 Node 侧同一约定）。
+        write_tree(
+            &base,
+            &[("manga_translator/utils/textblock.py", "class A:\r\n    def f(self):\r\n        return 1\r\n")],
+        );
+        let json = base.join("patches.json");
+        std::fs::write(
+            &json,
+            serde_json::json!({ "patches": [ {
+                "id": "crlf", "mark": "# miao-dock 补丁 D-99",
+                "rel": ["manga_translator", "utils", "textblock.py"],
+                "edits": [ { "anchor": "    def f(self):\n        return 1\n",
+                            "patch": "    def f(self):\n        # miao-dock 补丁 D-99\n        return 2\n" } ]
+            } ] }).to_string(),
+        )
+        .unwrap();
+        let r = apply_engine_patches_at(&base, &json).unwrap();
+        assert!(r.iter().any(|(_, a)| *a), "CRLF 文件也必须真打上");
+        let raw = std::fs::read_to_string(base.join("manga_translator/utils/textblock.py")).unwrap();
+        assert!(raw.contains("# miao-dock 补丁 D-99"), "mark 应在");
+        assert!(raw.contains("return 2"), "替换体应生效");
+        assert!(raw.contains("\r\n"), "行尾必须保持 CRLF（不许被归一成 LF）");
+        assert!(!raw.contains("\n\n\n"), "不许出现双空行（旧 norm_eol 的症状）");
+
+        // 幂等：第二次应跳过。
+        let r2 = apply_engine_patches_at(&base, &json).unwrap();
+        assert!(!r2.iter().any(|(_, a)| *a), "第二次应幂等跳过");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// LF 文件同样要能打（上游两种行尾混着有 ⇒ 归一必须**按文件**做，不能全局假定）。
+    #[test]
+    fn apply_works_on_lf_files() {
+        let base = std::env::temp_dir().join(format!("miao-patch-lf-{}", std::process::id()));
+        write_tree(
+            &base,
+            &[("manga_translator/config.py", "x = 1\ny = 2\n")],
+        );
+        let json = base.join("patches.json");
+        std::fs::write(
+            &json,
+            serde_json::json!({ "patches": [ {
+                "id": "lf", "mark": "# miao-dock 补丁 D-100",
+                "rel": ["manga_translator", "config.py"],
+                "edits": [ { "anchor": "x = 1\n", "patch": "x = 1\n# miao-dock 补丁 D-100\n" } ]
+            } ] }).to_string(),
+        )
+        .unwrap();
+        apply_engine_patches_at(&base, &json).unwrap();
+        let raw = std::fs::read_to_string(base.join("manga_translator/config.py")).unwrap();
+        assert!(raw.contains("# miao-dock 补丁 D-100"));
+        assert!(!raw.contains("\r"), "LF 文件不许被写成 CRLF");
         let _ = std::fs::remove_dir_all(&base);
     }
 

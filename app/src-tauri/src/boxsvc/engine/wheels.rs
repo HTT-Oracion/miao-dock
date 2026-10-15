@@ -349,23 +349,56 @@ pub fn apply_crf_compat_patch(venv: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
-/// 导入自检：pydensecrf 真的能 import、旧常量在、且引擎的掩码细化模块可加载。
+/// 导入自检①：`pydensecrf` 本体可用、且**旧常量已回填**（不依赖 torch）。
 ///
-/// 与 Node 侧同一条命令（`install-engine-deps.mjs` 的「导入自检」）。放在装配里而不是
-/// 只放在验收里：**装完当时就发现**比让用户在第一次翻译时才发现便宜得多。
-pub fn crf_import_check(venv_py: &Path, src_dir: &Path) -> Result<(), String> {
+/// 🔴 为什么把这一条与下面那条拆开（原来是合成一条命令的）：
+///   ① **诊断**：合成一条时失败信息是"pydensecrf / 引擎依赖装得不完整"—— 既可能是 wheel 没选对，
+///      也可能是 torch 没下全，用户与我们都得从头猜。拆开后每一半各自点名。
+///   ② **可被夹具真跑**：这一半只依赖 `pydensecrf` + `numpy`（几十 MB），
+///      于是"随包 wheel 装出来真的能 import、兼容补丁真的补上了旧常量"这条能被**真跑**验掉，
+///      而不必为了它去下 6 GB 的 torch（见 `e2e/engine/engine-bootstrap-real-check.mjs`）。
+pub fn crf_import_check(venv_py: &Path) -> Result<(), String> {
     let mut c = Command::new(venv_py);
     c.arg("-c").arg(
         "import pydensecrf.densecrf as d; assert hasattr(d, \"DIAG_KERNEL\") and hasattr(d, \"NO_NORMALIZATION\"); \
-         import pydensecrf.utils, torch, torchvision; from manga_translator.mask_refinement import dispatch; \
-         print(\"torch\", torch.__version__, \"cuda\", torch.cuda.is_available()); print(\"import ok\")",
+         import pydensecrf.utils; print(\"crf import ok\")",
     );
-    c.current_dir(src_dir);
+    super::runtime_setup::python_utf8(&mut c);
     hide_console(&mut c);
     match c.status() {
         Ok(st) if st.success() => Ok(()),
-        Ok(st) => Err(format!("导入自检未通过（{st}）：pydensecrf / 引擎依赖装得不完整")),
-        Err(e) => Err(format!("起解释器做导入自检失败：{e}")),
+        Ok(st) => Err(format!(
+            "自检①未通过（{st}）：pydensecrf 装得不完整或旧常量兼容补丁没生效\
+             （对照 engine/wheels.manifest.json 确认本平台条目与包内 wheel 一致）"
+        )),
+        Err(e) => Err(format!("起解释器做自检①失败：{e}")),
+    }
+}
+
+/// 导入自检②：**引擎级**依赖整体可加载（torch / torchvision / 掩码细化模块）。
+///
+/// 与 Node 侧同一条命令（`install-engine-deps.mjs` 的「导入自检」）。放在装配里而不是
+/// 只放在验收里：**装完当时就发现**比让用户在第一次翻译时才发现便宜得多。
+///
+/// `MIAO_SKIP_ENGINE_IMPORT=1` 是**只给夹具/验收**用的旁路（`engine-bootstrap-real-check.mjs`
+/// 用它跳过这一步：真 torch 要 4–6 GB，而那个脚本验的是装配链本身）。它**只**能跳过这一半
+/// ——自检①（pydensecrf）不认这个开关，否则"零编译器"那条最关键的保证就能被一个环境变量关掉。
+pub fn engine_import_check(venv_py: &Path, src_dir: &Path) -> Result<(), String> {
+    let mut c = Command::new(venv_py);
+    c.arg("-c").arg(
+        "import torch, torchvision; from manga_translator.mask_refinement import dispatch; \
+         print(\"torch\", torch.__version__, \"cuda\", torch.cuda.is_available()); print(\"engine import ok\")",
+    );
+    c.current_dir(src_dir);
+    // 与装配侧同一套 UTF-8 环境：中文 Windows 的默认 GBK 会让中文路径/输出出乱码。
+    super::runtime_setup::python_utf8(&mut c);
+    hide_console(&mut c);
+    match c.status() {
+        Ok(st) if st.success() => Ok(()),
+        Ok(st) => Err(format!(
+            "自检②未通过（{st}）：引擎依赖装得不完整（torch / torchvision / 掩码细化模块加载失败）"
+        )),
+        Err(e) => Err(format!("起解释器做自检②失败：{e}")),
     }
 }
 

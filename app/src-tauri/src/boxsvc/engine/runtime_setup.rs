@@ -11,6 +11,8 @@
 //
 //  设计要点（与计划 §关键决策 同）：
 //  · 下载 / 校验 / 续传 / 原子解包 / 链接 **全部复用 model_store**（不写第二套下载器）。
+//  · **按组推进**：python 组 → source 组 → 模型组；每一组「下载 + 解包」共用同一份 id 列表
+//    （`set_ids`），否则解包会去碰还没下载的归档 —— 干净机器上第 1 阶段就直接失败。
 //  · 补丁**亲自重放**（patches::apply_engine_patches）—— 产品无 node，补丁变换不能依赖仓库脚本。
 //  · venv **本地重建**（python -m venv）：runtimes 整目录含绝对路径、不能分发（install-guide §6）。
 //  · 依赖走 pip `--index-url` 公网镜像（A 方案，零自建）：目标机无 MSVC / Xcode ⇒ 必须预编译。
@@ -26,7 +28,7 @@ use serde_json::json;
 use crate::child_watch::hide_console;
 
 use super::model_store::{
-    self, Manifest, ModelStoreError, ProgressEvent, ensure_models, link_models,
+    self, FileEntry, Manifest, ModelStoreError, ProgressEvent, ensure_models, link_models,
 };
 
 /// 装配的结局。
@@ -70,9 +72,20 @@ fn venv_py(rt_dir: &Path) -> PathBuf {
     }
 }
 
-/// url 的最后一段（归档文件名）。
-fn url_name(url: &str) -> &str {
-    url.rsplit('/').next().unwrap_or(url)
+/// 一条带 `extractTo` 的条目，其**归档在盘上的绝对路径**。
+///
+/// 🔴 这里必须是 `dest`，不能是 `url` 的最后一段 —— 两者**真的不一样**：
+///    · `runtime.manifest.json` 的 `python_runtime_win_x64`：dest = `python-3.11.17-x86_64-pc-windows-msvc.tar.gz`
+///      而 url 末段 = `cpython-3.11.17%2B20261003-x86_64-pc-windows-msvc-install_only.tar.gz`；
+///    · `models.manifest.json` 的 `llama_cpp_win_cuda_x64`：dest = `llama-b11417-win-cuda-12.4-x64.zip`
+///      而 url 末段 = `llama-b11417-**bin**-win-cuda-12.4-x64.zip`。
+/// 下载侧（`model_store::ensure_models`）写的是 `root_dir.join(file.dest)`，所以按 url 找
+/// 必然找不到 —— 症状是**下完 100 MB 之后**在解包阶段报「待解包归档不存在」，而下载日志里
+/// 那条「[完成] …」看上去一切正常，离根因极远。
+///
+/// 收成一个函数是为了让它可被断言：`dest` 是两份清单的**共同事实源**。
+fn archive_path(root: &Path, e: &FileEntry) -> PathBuf {
+    root.join(&e.dest)
 }
 
 /// Windows 上给绝对路径加 `\\?\` verbatim 前缀（其他平台原样返回）。
@@ -85,7 +98,11 @@ fn url_name(url: &str) -> &str {
 fn verbatim(p: &Path) -> PathBuf {
     #[cfg(windows)]
     {
-        let s = p.to_string_lossy();
+        // 🔴 先把分隔符归一成 `\`：清单里的 `dest` 写作 `.download-cache/xxx.tar.gz`（正斜杠），
+        //    而 `\\?\` 前缀**要求**后面的路径是规范形态 —— 混着 `/` 传过去会被 bsdtar 拒绝
+        //    （真机症状：`tar: Error opening archive: Failed to open '\\?\F:\...\.download-cache/python-…'`，
+        //     明明文件就在那儿）。不带前缀时 tar 对 `/` 是宽容的，所以这条只在加前缀时才会暴露。
+        let s = p.to_string_lossy().replace('/', "\\");
         let is_drive = s.len() >= 2
             && s.as_bytes()[0].is_ascii_alphabetic()
             && s.as_bytes()[1] == b':'
@@ -93,7 +110,9 @@ fn verbatim(p: &Path) -> PathBuf {
         if is_drive {
             return PathBuf::from(format!(r"\\?\{s}"));
         }
+        return PathBuf::from(s);
     }
+    #[cfg(not(windows))]
     p.to_path_buf()
 }
 
@@ -127,19 +146,46 @@ fn longest_path(root: &Path) -> Option<(usize, PathBuf)> {
     best
 }
 
+/// 条目是否在本次解包的范围内（`ids = None` ⇒ 全部都要）。
+///
+/// 谓词单独抽出来是为了它**可被单测**：范围判错的症状是"解包去碰还没下的东西"，
+/// 那条路要真跑装配才看得见（`check:engine-bootstrap` 的 W15 钉调用点、
+/// `check:engine-bootstrap-real` 真跑一遍），中间这一层放在这里。
+fn in_extract_scope(e: &FileEntry, ids: Option<&[String]>) -> bool {
+    match ids {
+        None => true,
+        Some(v) => v.iter().any(|id| id == &e.id),
+    }
+}
+
 /// 把带 `extractTo` 且匹配当前平台的条目解包到目标目录（复用 fetch_models 的 tar 调用口径）。
-fn extract_entries(manifest: &Manifest, root: &Path) -> Result<(), BootstrapError> {
+///
+/// `ids` = **只解刚下过的那一批**（`None` = 清单里全部带 `extractTo` 的条目）。
+///
+/// 🔴 为什么必须能收窄：装配是**分组推进**的（python 组 → source 组 → 模型组），
+///    而解包曾经是打开整份清单去解。于是「第 1 阶段刚下完 python」就会顺手去解
+///    `engine_source` —— 而它要到第 3 阶段才下载 ⇒ 干净机器上第 1 阶段必报
+///    「待解包归档不存在：…manga-translator-<sha>.tar.gz」。本机因为缓存里恰好
+///    躺着那份归档（`setup:engine` 下的）而**看不出来**，正是"只在干净机器上现形"的形态。
+fn extract_entries(manifest: &Manifest, root: &Path, ids: Option<&[String]>) -> Result<(), BootstrapError> {
     let key = model_store::platform_key();
     for e in &manifest.files {
         let Some(dest) = &e.extract_to else { continue };
         if !model_store::matches_platform(e, &key) {
             continue;
         }
-        let arc = root.join(".download-cache").join(url_name(&e.url));
+        if !in_extract_scope(e, ids) {
+            continue;
+        }
+        let arc = archive_path(root, e);
         if !arc.exists() {
             return Err(BootstrapError::new(
                 "extract",
-                format!("待解包归档不存在：{}（请先完成下载阶段）", arc.display()),
+                format!(
+                    "待解包归档不存在：{}（条目 {} 的 dest；请先完成下载阶段）",
+                    arc.display(),
+                    e.id
+                ),
             ));
         }
         let out = root.join(dest);
@@ -169,6 +215,16 @@ fn extract_entries(manifest: &Manifest, root: &Path) -> Result<(), BootstrapErro
     Ok(())
 }
 
+/// 清单里某一组在**本平台**适用的条目 id（装配按组推进：python 组 / source 组 / 模型组）。
+///
+/// 🔴 下载与解包**共用同一份**：两处各算一遍，迟早会出现"下的是这一组、解的是另一组"的偏差
+///    （症状是解包去碰还没下的归档，而它在干净机器上是第 1 阶段直接失败）。
+fn set_ids(manifest: &Manifest, set: &str) -> Result<Vec<String>, BootstrapError> {
+    model_store::select_files(manifest, None, Some(set))
+        .map(|v| v.into_iter().map(|f| f.id).collect())
+        .map_err(|e| BootstrapError::new("manifest", format!("清单里没有 set「{set}」：{}", e.message)))
+}
+
 /// 主装配：把 runtime 清单 + 模型清单都装到位。
 ///
 /// `runtime_root` = 运行时根（python / 源码归档下载与解包都落这里 = `runtimes_dir`）；
@@ -191,17 +247,28 @@ pub fn run_bootstrap(
 
     // ---- 阶段 1：Python 运行时（解包） ----
     on_phase("runtime", "下载并解包 Python 运行时");
+    // 🔴 下载与解包**共用同一份 id 列表**（`set_ids` 已按当前平台筛过）：解包曾经是打开整份
+    //    清单去解的 ⇒ 第 1 阶段顺手去解还没下载的 `engine_source`，干净机器上直接失败。
+    let py_ids = set_ids(runtime_manifest, "python")?;
+    // 空名单**必须显式报错**：`select_files` 把"空 ids"当作"没点名"（回落到全量），
+    // 那样本阶段会去下另一个平台的全部条目 —— 一个静默的错误比一个明确的失败坏得多。
+    if py_ids.is_empty() {
+        return Err(BootstrapError::new(
+            "python",
+            format!("清单的 python 组在本平台（{}）没有任何条目", model_store::platform_key()),
+        ));
+    }
     ensure_models(
         runtime_manifest,
         runtime_root,
+        Some(&py_ids),
         None,
-        Some("python"),
         "cached",
         Some(&log),
         Some(on_progress),
     )
     .map_err(|e| BootstrapError::new("python", e.message))?;
-    extract_entries(runtime_manifest, runtime_root)?;
+    extract_entries(runtime_manifest, runtime_root, Some(&py_ids))?;
 
     let py = rt_dir.join("python-3.11").join(py_exe_rel());
     if !py.exists() {
@@ -217,6 +284,7 @@ pub fn run_bootstrap(
         on_phase("runtime", "创建虚拟环境");
         let mut c = Command::new(&py);
         c.arg("-m").arg("venv").arg(rt_dir.join("venv"));
+        python_utf8(&mut c);
         // `python` 是控制台程序，boxsvc 无控制台 ⇒ 建 venv 期间会闪黑框。
         hide_console(&mut c);
         match c.status() {
@@ -232,17 +300,24 @@ pub fn run_bootstrap(
 
     // ---- 阶段 3：引擎源码（解包）—— 必须在依赖之前（依赖清单就是它自带的那个） ----
     on_phase("runtime", "下载并解包引擎源码");
+    let src_ids = set_ids(runtime_manifest, "source")?;
+    if src_ids.is_empty() {
+        return Err(BootstrapError::new(
+            "source",
+            format!("清单的 source 组在本平台（{}）没有任何条目", model_store::platform_key()),
+        ));
+    }
     ensure_models(
         runtime_manifest,
         runtime_root,
+        Some(&src_ids),
         None,
-        Some("source"),
         "cached",
         Some(&log),
         Some(on_progress),
     )
     .map_err(|e| BootstrapError::new("source", e.message))?;
-    extract_entries(runtime_manifest, runtime_root)?;
+    extract_entries(runtime_manifest, runtime_root, Some(&src_ids))?;
 
     // ---- 阶段 4：重放源码补丁（零配置下由 Rust 亲自打） ----
     on_phase("runtime", "应用引擎源码补丁");
@@ -277,7 +352,9 @@ pub fn run_bootstrap(
         Some(on_progress),
     )
     .map_err(|e| BootstrapError::new("models", e.message))?;
-    extract_entries(model_manifest, model_root)?;
+    // 解包范围与下载范围**同一份**（`model_ids` 已按 `--stage` 筛过）：否则第 1 轮会去解
+    // 属于第 2 轮的归档 —— 那正是"分两阶段"最容易被绕过的地方。
+    extract_entries(model_manifest, model_root, model_ids.as_deref())?;
     link_models(model_manifest, model_root, None, model_ids.as_deref(), None, Some(&log))
         .map_err(|e| BootstrapError::new("link", e.message))?;
 
@@ -319,6 +396,23 @@ fn measure_long_path(rt_dir: &Path, log: &dyn Fn(&str)) -> Option<(usize, PathBu
         ));
     }
     Some((len, path))
+}
+
+/// 给所有跑 Python 的子进程统一设 **UTF-8 环境**。
+///
+/// 🔴 为什么必须显式设，而不能听任系统区域设置：
+///   ① 中文 Windows 上进程默认编码是 **GBK**（`locale.getpreferredencoding(False)`）。pip 读
+///      requirements 走 `pip._internal.utils.encoding.auto_decode`，**没有 BOM 时回落到 locale
+///      编码** —— 清单里只要出现一个非 ASCII 字符（注释里的中文、包名里的重音字母），装配就会
+///      以 `UnicodeDecodeError: 'gbk' codec can't decode byte 0x…` 整段炸掉，而那个报错离
+///      「区域设置」这个根因极远。（上游 `requirements.txt` 今天是纯 ASCII，所以这是**潜在**风险；
+///      但"上游某天加了一行中文注释"不该是一次线上事故。）
+///   ② pip / python 的中文输出按 GBK 写进管道，而我们的 tail reader 按 UTF-8 解码 ⇒
+///      用户会在下载页上看到乱码日志 —— 这不是小事：它就是用户唯一的进度信息来源。
+///   条件是 Python 3.7+ 的 UTF-8 模式，`python-build-standalone` 的 3.11 天然满足。
+pub(super) fn python_utf8(cmd: &mut Command) -> &mut Command {
+    cmd.env("PYTHONUTF8", "1").env("PYTHONIOENCODING", "utf-8");
+    cmd
 }
 
 /// 依赖安装：**拆两批**（pip 事务性）+ `pydensecrf` 走预编译 wheel + 兼容补丁 + 导入自检。
@@ -375,6 +469,7 @@ fn install_deps(
         .arg("--index-url")
         .arg(pip_index)
         .arg("--no-input");
+    python_utf8(&mut a);
     hide_console(&mut a);
     match a.status() {
         Ok(st) if st.success() => {}
@@ -400,6 +495,7 @@ fn install_deps(
             // `--no-deps`：它的 numpy/cython 已就位，不让 pip 再解析一遍。
             let mut b = Command::new(venv_py);
             b.arg("-m").arg("pip").arg("install").arg("--no-index").arg("--no-deps").arg(&abs);
+            python_utf8(&mut b);
             hide_console(&mut b);
             match b.status() {
                 Ok(st) if st.success() => log("✓ 批 B 完成（预编译 wheel，未编译）"),
@@ -425,8 +521,19 @@ fn install_deps(
     }
 
     // ---------- 导入自检：装完当时就发现，比第一次翻译时才发现便宜得多 ----------
-    super::wheels::crf_import_check(venv_py, src_dir)
-        .map_err(|e| BootstrapError::new("deps", e))?;
+    // ① pydensecrf 本体 + 旧常量回填（**不依赖 torch**，所以夹具也能真跑它）。
+    super::wheels::crf_import_check(venv_py).map_err(|e| BootstrapError::new("deps", e))?;
+    log("✓ 自检①：pydensecrf 可 import，旧常量已回填");
+    // ② 引擎级整体可加载。
+    //    `MIAO_SKIP_ENGINE_IMPORT=1` 只给夹具/验收用（真 torch 要 4–6 GB）——它**只**能跳过这一半；
+    //    自检①不认这个开关，否则「零编译器」那一条最关键的保证就能被一个环境变量关掉。
+    if std::env::var("MIAO_SKIP_ENGINE_IMPORT").as_deref() == Ok("1") {
+        log("⚠ 已按 MIAO_SKIP_ENGINE_IMPORT=1 跳过自检②（引擎级导入；仅夹具/验收用，打包产品绝不设它）");
+    } else {
+        super::wheels::engine_import_check(venv_py, src_dir)
+            .map_err(|e| BootstrapError::new("deps", e))?;
+        log("✓ 自检②：引擎依赖可加载（torch / torchvision / 掩码细化）");
+    }
     log("✓ 依赖安装完成（含导入自检）");
     Ok(())
 }
@@ -460,6 +567,7 @@ fn build_crf_from_source(
     log(&format!("▶ 批 B：从源码编译 pydensecrf（{url}）"));
     let mut b = Command::new(venv_py);
     b.arg("-m").arg("pip").arg("install").arg("--no-build-isolation").arg(&url);
+    python_utf8(&mut b);
     hide_console(&mut b);
     match b.status() {
         Ok(st) if st.success() => {
@@ -560,6 +668,44 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
+    /// 🔴 归档路径必须来自 `dest`，**不是** `url` 的末段 —— 这条曾经真的错过：
+    /// 下载侧按 `dest` 落盘，解包侧按 url 末段去找，于是"下载成功、解包报文件不存在"。
+    /// 判据用**两份真清单**里真实存在的那两条（它们俩的 dest 与 url 末段正好都不同名），
+    /// 而不是编一对假数据 —— 编的数据挡不住"清单改了、两边又对不上"。
+    #[test]
+    fn archive_path_comes_from_dest_not_url() {
+        let rt: Manifest = serde_json::from_str(include_str!(
+            "../../../../../engine/runtime.manifest.json"
+        ))
+        .expect("runtime 清单必须可解析");
+        let py = rt.files.iter().find(|f| f.id == "python_runtime_win_x64").expect("清单里必须有它");
+        let root = Path::new("R");
+        assert_eq!(
+            archive_path(root, py),
+            root.join(".download-cache").join("python-3.11.17-x86_64-pc-windows-msvc.tar.gz"),
+            "必须取 dest"
+        );
+        // 反面：url 末段是另一个名字（带 %2B 与日期），拿它去找必然落空。
+        let url_tail = py.url.rsplit('/').next().unwrap();
+        assert_ne!(
+            archive_path(root, py),
+            root.join(".download-cache").join(url_tail),
+            "url 末段与 dest 不同名 —— 这正是当初错的那一处"
+        );
+
+        let mt: Manifest = serde_json::from_str(include_str!(
+            "../../../../../engine/models.manifest.json"
+        ))
+        .expect("模型清单必须可解析");
+        let llama = mt.files.iter().find(|f| f.id == "llama_cpp_win_cuda_x64").expect("清单里必须有它");
+        assert_eq!(archive_path(root, llama), root.join("bin").join("llama-b11417-win-cuda-12.4-x64.zip"));
+        assert_ne!(
+            archive_path(root, llama),
+            root.join("bin").join(llama.url.rsplit('/').next().unwrap()),
+            "模型清单里 dest 少了 `bin-` 这一段，url 末段与 dest 同样不同名"
+        );
+    }
+
     /// 长路径体检：取的是**最长**那条，且字符数按 Unicode 字符算（不是字节）。
     /// 判据是"最长"而不是"第一个"：按第一个算会在深目录晚出现时给出偏小的余量。
     #[test]
@@ -600,5 +746,60 @@ mod tests {
             assert_eq!(verbatim(Path::new(r"\\?\C:\a\b")), PathBuf::from(r"\\?\C:\a\b"), "已带前缀不得重复加");
             assert_eq!(verbatim(Path::new(r"\\server\share\x")), PathBuf::from(r"\\server\share\x"), "UNC 原样传");
         }
+    }
+
+    /// 🔴 分隔符归一：清单的 `dest` 用正斜杠（`.download-cache/x.tar.gz`），
+    /// 而 `\\?\` 前缀要求规范形态 —— 混用会被 bsdtar 拒绝（"Failed to open"，
+    /// 但文件明明在那儿）。这条曾经真错过一次。
+    #[test]
+    fn verbatim_normalizes_separators_before_prefixing() {
+        #[cfg(windows)]
+        {
+            let mixed = Path::new("C:/a/b").join(".download-cache/x.tar.gz");
+            let out = verbatim(&mixed).to_string_lossy().to_string();
+            assert!(out.starts_with(r"\\?\C:\a\b\.download-cache\x.tar.gz"), "得到 {out}");
+            assert!(!out.contains('/'), "加了前缀的路径里不许残留正斜杠：{out}");
+            // 不带前缀的分支（UNC）也要归一，否则同样有问题。
+            assert_eq!(verbatim(Path::new(r"\\srv/share/x")), PathBuf::from(r"\\srv\share\x"));
+        }
+    }
+
+    /// 🔴 解包范围必须**只覆盖刚下过的那一批**。
+    ///
+    /// 判据用**真清单**而不是编一对假条目：真清单里 `engine_source` 要到第 3 阶段才下载，
+    /// 而解包曾经是打开整份清单去解的 ⇒ 干净机器上第 1 阶段就报「待解包归档不存在」。
+    /// 编的数据挡不住"清单改了、范围又对不上"。
+    #[test]
+    fn phase_one_scope_excludes_the_not_yet_downloaded_source() {
+        let rt: Manifest = serde_json::from_str(include_str!(
+            "../../../../../engine/runtime.manifest.json"
+        ))
+        .expect("runtime 清单必须可解析");
+        let py = set_ids(&rt, "python").expect("清单里必须有 python 组");
+        let src = set_ids(&rt, "source").expect("清单里必须有 source 组");
+        assert!(!py.is_empty(), "python 组在本平台至少要有一条");
+        assert!(
+            py.iter().all(|id| id.starts_with("python_runtime_")),
+            "第 1 阶段的范围只许是 python 运行时：{py:?}"
+        );
+        assert_eq!(src, vec!["engine_source".to_string()], "第 3 阶段的范围就是引擎源码这一条");
+        // 两条范围**不相交** —— 相交的条目会被解包两次（白做功，且掩盖范围写错）。
+        assert!(py.iter().all(|id| !src.contains(id)), "python 组不得含 source 组的条目：{py:?}");
+    }
+
+    /// 范围判据是**逐 id 相等**，不是前缀 / 子串 —— 前缀匹配会把 `engine_source_x`、
+    /// `engine` 这类名字一起放进来（解包于是去碰一个根本不是它的归档）。
+    #[test]
+    fn in_extract_scope_matches_exact_ids_only() {
+        let rt: Manifest = serde_json::from_str(include_str!(
+            "../../../../../engine/runtime.manifest.json"
+        ))
+        .unwrap();
+        let src = rt.files.iter().find(|f| f.id == "engine_source").expect("清单里必须有它");
+        assert!(in_extract_scope(src, None), "None ⇒ 全都要");
+        assert!(in_extract_scope(src, Some(&["engine_source".to_string()])), "点名就得进");
+        assert!(!in_extract_scope(src, Some(&["engine".to_string()])), "前缀不得命中");
+        assert!(!in_extract_scope(src, Some(&["engine_source_x".to_string()])), "更长的 id 不得命中");
+        assert!(!in_extract_scope(src, Some(&[])), "空名单 ⇒ 一个都不解");
     }
 }
