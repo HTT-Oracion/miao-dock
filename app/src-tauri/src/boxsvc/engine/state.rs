@@ -728,178 +728,15 @@ impl EngineState {
             }
         }
 
-        let mut cmd = std::process::Command::new(&self.download_runner);
-        cmd.arg("--fetch-models");
-        // G4：零配置装配总入口（裁定④）。带它 ⇒ 一次会话完成 python+源码+依赖+模型+解包+建链。
-        cmd.arg("--engine-bootstrap");
-        // 🔴 今天的产品调用漏了 `--extract` ⇒ `bin/llama/.../llama-server` 永远不会出现（G4 验收④）。
-        cmd.arg("--extract");
-        cmd.arg("--root").arg(&self.model_root);
-        cmd.arg("--manifest").arg(&self.model_manifest);
-        // G5：结构化进度（百分比/速度/剩余/阶段）走这里，不靠解析 stdout 文本（违反"不编造进度"纪律）。
-        let progress_log = paths::state_dir().join("engine-download-progress.jsonl");
-        cmd.arg("--progress-log").arg(&progress_log);
-        cmd.env("MIAO_MODEL_ROOT", &self.model_root);
-        cmd.stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        // G4：这次会话里会起 `python -m venv` / `pip` / `tar` —— 全是控制台程序，
-        // 而 boxsvc 自己无控制台 ⇒ 不隐藏会让"开始下载"连闪好几个黑框。
-        hide_console(&mut cmd);
-        let mut child = cmd.spawn().map_err(|e| {
-            StoreError::new("INTERNAL", format!("无法启动模型下载进程：{e}"), json!({ "runner": self.download_runner.to_string_lossy() }))
-        })?;
-
-        {
-            let mut d = self.lock_download();
-            d.state = "running".to_string();
-            d.started_at = Some(model::now_iso_ms());
-            d.finished_at = None;
-            d.exit_code = None;
-            d.timed_out = false;
-            d.tail = Vec::new();
-            // G5：重置进度快照（不显示上次的残留数字）。
-            d.percent = None;
-            d.received_bytes = None;
-            d.total_bytes = None;
-            d.speed_bps = None;
-            d.eta_ms = None;
-            d.stage = None;
-            d.current_id = None;
-            d.interrupted_reason = None;
-            // 🔴 `can_resume` 不在这里置 false：视图时现算 `can_resume_now()`，
-            //    即使刚点「继续」、`.part` 还在，也应如实显示可续。
-            d.persist();
-        }
-        println!(
-            "[box-service] 模型下载已启动：{} --fetch-models → {}",
-            self.download_runner.display(),
-            self.model_root.display()
-        );
-
-        let dl = self.download.clone();
-        let dp = self.download_progress.clone();
-        let progress_path = progress_log.clone();
-        if let Some(out) = child.stdout.take() {
-            spawn_tail_reader(out, dl.clone());
-        }
-        if let Some(err) = child.stderr.take() {
-            spawn_tail_reader(err, dl.clone());
-        }
-        // G5：进度解析线程（独立线程，与 `spawn_tail_reader` 同一范式）：增量聚合 `.part` 进度
-        //    JSONL → `ModelDownload` 的 `percent` / `received_bytes` / `total_bytes` / `speed_bps` / `eta_ms`。
-        //    HTTP 侧只读聚合后的结构体，不阻塞；每条事件 O(1) 更新。
-        spawn_progress_reader(progress_path, dl.clone(), dp.clone());
-
-        // 超时看护：到点**真杀**（只改状态不杀的话进程会一直在后台写盘，下次点重下就会和它撞）。
-        // 🔴 杀与等待**分工**：本线程只 `kill()`（`&mut self`，不需要等它退出）；终态由下面的
-        //    `try_wait` 轮询线程统一落账 —— 两边都去 `wait()` 会有一方拿不到子进程句柄，
-        //    于是状态永远停在 `running`（D4/D6 会红）。
-        let child_slot = self.download_child.clone();
-        let dl2 = self.download.clone();
-        let model_root = self.model_root.clone();
-        let runtime_root = paths::runtimes_dir();
-        let timeout_ms = MODEL_DOWNLOAD_TIMEOUT_MS;
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(timeout_ms as u64));
-            let still_running = {
-                let d = match dl2.lock() {
-                    Ok(g) => g,
-                    Err(p) => p.into_inner(),
-                };
-                d.state == "running"
-            };
-            if !still_running {
-                return;
-            }
-            {
-                let mut slot = child_slot.lock().unwrap_or_else(|p| p.into_inner());
-                if let Some(c) = slot.as_mut() {
-                    let _ = c.kill();
-                }
-            }
-            let mut d = match dl2.lock() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
-            d.timed_out = true;
-            d.tail.push(format!("✗ 下载超时（{} min），已终止", timeout_ms / 60_000));
-            // 超时 ⇒ 可续传的中断（盘上有 `.part`）。
-            let resumable = has_part_files(&model_root) || has_part_files(&runtime_root);
-            if resumable {
-                d.state = "interrupted".to_string();
-                d.interrupted_reason = Some("下载超时（超过 1 小时）；可继续下载补齐已下部分".to_string());
-            } else {
-                d.state = "error".to_string();
-            }
-            d.persist();
-        });
-
-        *self.download_child.lock().unwrap_or_else(|p| p.into_inner()) = Some(child);
-
-        // 终态轮询线程：`try_wait()` 不阻塞，故超时看护随时能拿到锁去 `kill()`。
-        let child_slot2 = self.download_child.clone();
-        let dl3 = self.download.clone();
-        let model_root = self.model_root.clone();
-        let runtime_root = paths::runtimes_dir();
-        std::thread::spawn(move || loop {
-            let done: Option<i64> = {
-                let mut slot = child_slot2.lock().unwrap_or_else(|p| p.into_inner());
-                match slot.as_mut() {
-                    Some(c) => match c.try_wait() {
-                        Ok(Some(status)) => {
-                            let code = status.code().map(|n| n as i64).unwrap_or(-1);
-                            slot.take();
-                            Some(code)
-                        }
-                        Ok(None) => None,
-                        Err(_) => {
-                            slot.take();
-                            Some(-1)
-                        }
-                    },
-                    None => None,
-                }
-            };
-            match done {
-                Some(code) => {
-                    let mut d = match dl3.lock() {
-                        Ok(g) => g,
-                        Err(p) => p.into_inner(),
-                    };
-                    if d.state == "running" {
-                        d.exit_code = Some(code);
-                        d.finished_at = Some(model::now_iso_ms());
-                        if code == 0 && !d.timed_out {
-                            d.state = "done".to_string();
-                        } else {
-                            // 非零退出：有 `.part` 即视为可续传的中断（断网 / 磁盘满 / 被强关）；
-                            // 否则是不可续传的失败（只能从头重下）。
-                            let resumable = has_part_files(&model_root) || has_part_files(&runtime_root);
-                            if resumable {
-                                d.state = "interrupted".to_string();
-                                if d.interrupted_reason.is_none() {
-                                    d.interrupted_reason = Some(
-                                        "下载中断；已完成的部分不会丢失，可继续下载补齐".to_string(),
-                                    );
-                                }
-                            } else {
-                                d.state = "error".to_string();
-                            }
-                        }
-                        println!(
-                            "[box-service] 模型下载结束：state={} exitCode={}{}",
-                            d.state,
-                            code,
-                            if d.timed_out { "（超时被杀）" } else { "" }
-                        );
-                        d.persist();
-                    }
-                    return;
-                }
-                None => std::thread::sleep(std::time::Duration::from_millis(150)),
-            }
-        });
+        spawn_download_round(
+            &self.download_runner,
+            &self.model_root,
+            &self.model_manifest,
+            Some(1),
+            &self.download,
+            &self.download_progress,
+            &self.download_child,
+        )?;
 
         Ok(self.model_download_view())
     }
@@ -972,6 +809,254 @@ fn clamp_tier_to_available(desired: &str) -> String {
         i -= 1;
     }
     avail.first().cloned().unwrap_or_else(|| "tiny".to_string())
+}
+
+/// 起**一轮**下载子进程，并把 tail / 进度 / 超时看护 / 终态落账四个线程接好。
+///
+/// ## 为什么是"轮"而不是"一次会话"
+/// 交付口径是「先让引擎能起来，再在后台补翻译权重」。`--stage 1` 只下运行环境与视觉模型
+/// （含 llama.cpp 与 CUDA 运行库，否则 ③ 起不来），`--stage 2` 才是 Sakura / nllb 那 6 GB。
+/// 拆成两轮而不是一次全量：用户在第一轮结束就能开始翻译，而 6 GB 的等待发生在后台。
+///
+/// ## 为什么第 2 轮不带 `--engine-bootstrap`
+/// 那个旗标会重跑 python 解包 / venv / 源码 / 补丁 / **依赖安装**（pip 不是幂等廉价的，
+/// 每次都解析一轮）。第 1 轮已把这些做完，第 2 轮只需要下权重 ⇒ 只传 `--stage 2`。
+///
+/// ## 串联规则
+/// `stage == Some(1)` 且退出码 0 ⇒ 自动接第 2 轮（`stage` 保持 `running`，不出现假的 `done`）；
+/// 任一轮失败 ⇒ 按 `.part` 判可续性并落 `interrupted` / `error`，**不串下一轮**。
+#[allow(clippy::too_many_arguments)]
+fn spawn_download_round(
+    runner: &Path,
+    model_root: &Path,
+    model_manifest: &Path,
+    stage: Option<u8>,
+    dl: &Arc<Mutex<ModelDownload>>,
+    dp: &Arc<Mutex<DownloadProgressState>>,
+    child_slot: &Arc<Mutex<Option<std::process::Child>>>,
+) -> Result<(), StoreError> {
+    // 终态线程要在第 1 轮成功后**递归起第 2 轮**，而 `spawn` 要求 `'static` ⇒
+    // 那两个路径参数必须先拿到 owned 副本（借用会逃逸，E0521）。
+    let runner_owned = runner.to_path_buf();
+    let manifest_owned = model_manifest.to_path_buf();
+    let mut cmd = std::process::Command::new(runner);
+    cmd.arg("--fetch-models");
+    // G4：零配置装配总入口（裁定④）—— 只第 1 轮带（见函数注释）。
+    if stage == Some(1) {
+        cmd.arg("--engine-bootstrap");
+    }
+    // 🔴 `--extract` 必须在：没有它 `bin/llama/llama-b11417/llama-server[.exe]` 永远不会出现。
+    cmd.arg("--extract");
+    if let Some(n) = stage {
+        cmd.arg("--stage").arg(n.to_string());
+    }
+    cmd.arg("--root").arg(model_root);
+    cmd.arg("--manifest").arg(model_manifest);
+    // G5：结构化进度（百分比/速度/剩余/阶段）走这里，不靠解析 stdout 文本（违反"不编造进度"纪律）。
+    let progress_log = paths::state_dir().join("engine-download-progress.jsonl");
+    cmd.arg("--progress-log").arg(&progress_log);
+    cmd.env("MIAO_MODEL_ROOT", model_root);
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    // G4：这次会话里会起 `python -m venv` / `pip` / `tar` —— 全是控制台程序，
+    // 而 boxsvc 自己无控制台 ⇒ 不隐藏会让"开始下载"连闪好几个黑框。
+    hide_console(&mut cmd);
+    let mut child = cmd.spawn().map_err(|e| {
+        StoreError::new("INTERNAL", format!("无法启动模型下载进程：{e}"), json!({ "runner": runner.to_string_lossy() }))
+    })?;
+
+    {
+        let mut d = match dl.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        d.state = "running".to_string();
+        if stage != Some(2) {
+            // 第 1 轮（或未分阶段的旧调用）才算"这一次下载"的起点；
+            // 第 2 轮是同一场下载的延续，`started_at` 必须保持第一次的时间。
+            d.started_at = Some(model::now_iso_ms());
+        }
+        d.finished_at = None;
+        d.exit_code = None;
+        d.timed_out = false;
+        d.tail = Vec::new();
+        // G5：重置进度快照（不显示上次的残留数字）。
+        d.percent = None;
+        d.received_bytes = None;
+        d.total_bytes = None;
+        d.speed_bps = None;
+        d.eta_ms = None;
+        d.stage = None;
+        d.current_id = None;
+        d.interrupted_reason = None;
+        // 🔴 `can_resume` 不在这里置 false：视图时现算 `can_resume_now()`，
+        //    即使刚点「继续」、`.part` 还在，也应如实显示可续。
+        d.persist();
+    }
+    println!(
+        "[box-service] 模型下载已启动：{} --fetch-models{} → {}",
+        runner.display(),
+        stage.map(|n| format!(" --stage {n}")).unwrap_or_default(),
+        model_root.display()
+    );
+
+    if let Some(out) = child.stdout.take() {
+        spawn_tail_reader(out, dl.clone());
+    }
+    if let Some(err) = child.stderr.take() {
+        spawn_tail_reader(err, dl.clone());
+    }
+    // G5：进度解析线程（独立线程，与 `spawn_tail_reader` 同一范式）：增量聚合 `.part` 进度
+    //    JSONL → `ModelDownload` 的 `percent` / `received_bytes` / `total_bytes` / `speed_bps` / `eta_ms`。
+    //    HTTP 侧只读聚合后的结构体，不阻塞；每条事件 O(1) 更新。
+    spawn_progress_reader(progress_log, dl.clone(), dp.clone());
+
+    // 超时看护：到点**真杀**（只改状态不杀的话进程会一直在后台写盘，下次点重下就会和它撞）。
+    // 🔴 杀与等待**分工**：本线程只 `kill()`（`&mut self`，不需要等它退出）；终态由下面的
+    //    `try_wait` 轮询线程统一落账 —— 两边都去 `wait()` 会有一方拿不到子进程句柄，
+    //    于是状态永远停在 `running`（D4/D6 会红）。
+    let child_slot_kill = child_slot.clone();
+    let dl_kill = dl.clone();
+    let model_root_kill = model_root.to_path_buf();
+    let runtime_root = paths::runtimes_dir();
+    let runtime_root_kill = runtime_root.clone();
+    let timeout_ms = MODEL_DOWNLOAD_TIMEOUT_MS;
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(timeout_ms as u64));
+        let still_running = {
+            let d = match dl_kill.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            d.state == "running"
+        };
+        if !still_running {
+            return;
+        }
+        {
+            let mut slot = child_slot_kill.lock().unwrap_or_else(|p| p.into_inner());
+            if let Some(c) = slot.as_mut() {
+                let _ = c.kill();
+            }
+        }
+        let mut d = match dl_kill.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        d.timed_out = true;
+        d.tail.push(format!("✗ 下载超时（{} min），已终止", timeout_ms / 60_000));
+        // 超时 ⇒ 可续传的中断（盘上有 `.part`）。
+        let resumable = has_part_files(&model_root_kill) || has_part_files(&runtime_root_kill);
+        if resumable {
+            d.state = "interrupted".to_string();
+            d.interrupted_reason = Some("下载超时（超过 1 小时）；可继续下载补齐已下部分".to_string());
+        } else {
+            d.state = "error".to_string();
+        }
+        d.persist();
+    });
+
+    *child_slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(child);
+
+    // 终态轮询线程：`try_wait()` 不阻塞，故超时看护随时能拿到锁去 `kill()`。
+    let child_slot_wait = child_slot.clone();
+    let dl_wait = dl.clone();
+    let dp_wait = dp.clone();
+    let model_root_wait = model_root.to_path_buf();
+    let runtime_root_wait = runtime_root.clone();
+    std::thread::spawn(move || loop {
+        let done: Option<i64> = {
+            let mut slot = child_slot_wait.lock().unwrap_or_else(|p| p.into_inner());
+            match slot.as_mut() {
+                Some(c) => match c.try_wait() {
+                    Ok(Some(status)) => {
+                        let code = status.code().map(|n| n as i64).unwrap_or(-1);
+                        slot.take();
+                        Some(code)
+                    }
+                    Ok(None) => None,
+                    Err(_) => {
+                        slot.take();
+                        Some(-1)
+                    }
+                },
+                None => None,
+            }
+        };
+        match done {
+            Some(code) => {
+                let mut d = match dl_wait.lock() {
+                    Ok(g) => g,
+                    Err(p) => p.into_inner(),
+                };
+                if d.state == "running" {
+                    d.exit_code = Some(code);
+                    if code == 0 && !d.timed_out {
+                        if stage == Some(1) {
+                            // 第 1 轮成功 ⇒ **直接接第 2 轮**，不落 `done`。
+                            // （落一次 `done` 再改回 `running` 会让界面闪一下"已完成"，
+                            //  而那 6 GB 其实还没动。）
+                            d.finished_at = None;
+                            d.persist();
+                            drop(d);
+                            println!("[box-service] 第 1 阶段就绪，继续下载翻译权重");
+                            match spawn_download_round(
+                                &runner_owned,
+                                &model_root_wait,
+                                &manifest_owned,
+                                Some(2),
+                                &dl_wait,
+                                &dp_wait,
+                                &child_slot_wait,
+                            ) {
+                                Ok(()) => return,
+                                Err(e) => {
+                                    let mut d2 = match dl_wait.lock() {
+                                        Ok(g) => g,
+                                        Err(p) => p.into_inner(),
+                                    };
+                                    d2.state = "error".to_string();
+                                    d2.interrupted_reason = Some(e.message);
+                                    d2.persist();
+                                    return;
+                                }
+                            }
+                        }
+                        d.state = "done".to_string();
+                        d.finished_at = Some(model::now_iso_ms());
+                    } else {
+                        d.finished_at = Some(model::now_iso_ms());
+                        // 非零退出：有 `.part` 即视为可续传的中断（断网 / 磁盘满 / 被强关）；
+                        // 否则是不可续传的失败（只能从头重下）。
+                        let resumable =
+                            has_part_files(&model_root_wait) || has_part_files(&runtime_root_wait);
+                        if resumable {
+                            d.state = "interrupted".to_string();
+                            if d.interrupted_reason.is_none() {
+                                d.interrupted_reason = Some(
+                                    "下载中断；已完成的部分不会丢失，可继续下载补齐".to_string(),
+                                );
+                            }
+                        } else {
+                            d.state = "error".to_string();
+                        }
+                    }
+                    println!(
+                        "[box-service] 模型下载结束：state={} exitCode={}{}",
+                        d.state,
+                        code,
+                        if d.timed_out { "（超时被杀）" } else { "" }
+                    );
+                    d.persist();
+                }
+                return;
+            }
+            None => std::thread::sleep(std::time::Duration::from_millis(150)),
+        }
+    });
+
+    Ok(())
 }
 
 /// `Math.round(ms / 60_000)`。

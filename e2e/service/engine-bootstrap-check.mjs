@@ -46,6 +46,10 @@ const STATE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 
 /// 前端 4 个文件干净不等于产品干净：`NotReadyScreen.tsx` 渲染的正是这里的字符串。
 const RUNTIME_PROBE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'boxsvc', 'engine', 'runtime_probe.rs');
 const ENGINE_DOWNLOAD_TS = path.join(ROOT, 'app', 'src', 'engine-download.ts');
+/// W11：stage 归属的事实源。
+const MODELS_MANIFEST = path.join(ROOT, 'engine', 'models.manifest.json');
+/// W12：下载视图（第 1/第 2 阶段文案）。
+const DOWNLOAD_PANEL_TSX = path.join(ROOT, 'app', 'src', 'screens', 'engine', 'DownloadPanel.tsx');
 const UI_FILES = [
   path.join(ROOT, 'app', 'src', 'screens', 'NotReadyScreen.tsx'),
   path.join(ROOT, 'app', 'src', 'screens', 'engine', 'DownloadPanel.tsx'),
@@ -169,6 +173,48 @@ function check(name, cond, extra) {
   const gateLine = probeSrc.split('\n').find((l) => l.includes('运行时未装配：'));
   const gateClean = !!gateLine && !CLI_JARGON.test(gateLine);
   check('W9c D6 闸门消息不含命令行字样（它是 `last_error`，用户会看到）', gateClean, { gateLine });
+
+  // ---- W10：产品调用必须真的分两轮（`--stage 1` → 成功后 `--stage 2`）----
+  //     只跑一次全量的形态：用户要等 6 GB 权重下完才能开始翻译，而引导页与安装文档
+  //     承诺的是"先准备好运行环境、权重在后台继续"。判据取**源码结构**而不是行为：
+  //     ① `start_model_download` 起的是 `Some(1)`；② 有一个函数把第 2 轮接上。
+  const startsStage1 = /spawn_download_round\(\s*&self\.download_runner,[\s\S]{0,400}?Some\(1\)/.test(state);
+  const chainsStage2 = state.includes('Some(2)') && state.includes('第 1 阶段就绪，继续下载翻译权重');
+  // 第 2 轮**不得**再带 `--engine-bootstrap`：那会重跑 pip（不幂等廉价）。
+  const bootstrapOnlyInFirst = /if stage == Some\(1\) \{\s*cmd\.arg\("--engine-bootstrap"\)/.test(state);
+  check('W10 下载真的分两轮：第 1 轮 `--stage 1`（运行环境就绪）成功后自动接第 2 轮（翻译权重）',
+    startsStage1 && chainsStage2 && bootstrapOnlyInFirst,
+    { startsStage1, chainsStage2, bootstrapOnlyInFirst });
+
+  // ---- W11：stage 归属必须让「运行环境就绪」自洽 ----
+  //     stage1 若只有视觉模型而没有 llama-server，则第 1 轮结束时 ③ 仍起不来
+  //     （CUDA DLL 与 llama-server.exe 必须同目录）⇒ "先可用"是假的。
+  //     事实源是 `models.manifest.json` 本身，不在这里另列一份集合。
+  let stageOk = false;
+  let stageDetail = null;
+  try {
+    const m = JSON.parse(fs.readFileSync(MODELS_MANIFEST, 'utf8'));
+    const st = (f) => (f.stage === undefined ? 1 : f.stage);
+    const llama = m.files.filter((f) => f.set === 'runtime');
+    const sakura = m.files.find((f) => f.id === 'sakura_1_5b_fp16');
+    stageOk = llama.length > 0
+      && llama.every((f) => st(f) === 1)
+      && !!sakura && st(sakura) === 2;
+    stageDetail = { runtimeStage: llama.map((f) => [f.id, st(f)]), sakuraStage: sakura ? st(sakura) : null };
+  } catch (e) {
+    stageDetail = String(e.message);
+  }
+  check('W11 `models.manifest.json` 里 llama.cpp / cudart 归 stage1、Sakura 权重归 stage2（否则第 1 轮结束 ③ 仍起不来）',
+    stageOk, stageDetail);
+
+  // ---- W12：阶段文案必须与两轮实现一致（不许承诺"1 分钟就能翻译"）----
+  //     stage1 不含任何 LLM ⇒ 翻译必须等 stage2。文案不实 = 欺骗性进度。
+  const panel = fs.readFileSync(DOWNLOAD_PANEL_TSX, 'utf8');
+  const stage1Text = /stage1:\s*\{[\s\S]*?\}/.exec(panel);
+  const stage1Body = stage1Text ? stage1Text[0] : '';
+  const noFalsePromise = stage1Body.length > 0 && !/即可开始翻译|就能开始翻译/.test(stage1Body);
+  check('W12 第 1 阶段文案不承诺"即可开始翻译"（stage1 无 LLM，翻译要等第 2 轮）',
+    noFalsePromise, { stage1Body: stage1Body.slice(0, 200) });
 }
 
 // ------------------------------------------------------------------ 反证轮
@@ -261,6 +307,45 @@ if (REFUTE) {
     restore();
   }
 
+  // ---- M6：第 2 轮也带上 `--engine-bootstrap`（会重跑 pip，几分钟白等）⇒ W10 红 ----
+  {
+    const restore = mutateFile(
+      STATE_RS,
+      '    if stage == Some(1) {\n        cmd.arg("--engine-bootstrap");\n    }',
+      '    cmd.arg("--engine-bootstrap");',
+    );
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W10');
+    check('M6 第 2 轮也带 `--engine-bootstrap`（重跑 pip）⇒ W10 红', red, { code: r.code, redOn: red });
+    restore();
+  }
+
+  // ---- M7：把 llama.cpp 挪回 stage2（第 1 轮结束 ③ 仍起不来）⇒ W11 红 ----
+  {
+    const original = fs.readFileSync(MODELS_MANIFEST, 'utf8');
+    const m = JSON.parse(original);
+    const llama = m.files.filter((f) => f.set === 'runtime');
+    for (const f of llama) f.stage = 2;
+    fs.writeFileSync(MODELS_MANIFEST, JSON.stringify(m, null, 2));
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W11');
+    check('M7 llama.cpp / cudart 挪回 stage2 ⇒ W11 红（第 1 轮结束 ③ 起不来）', red, { code: r.code, redOn: red });
+    fs.writeFileSync(MODELS_MANIFEST, original);
+  }
+
+  // ---- M8：stage1 文案承诺"即可开始翻译"（stage1 无 LLM，是假承诺）⇒ W12 红 ----
+  {
+    const restore = mutateFile(
+      DOWNLOAD_PANEL_TSX,
+      "sub: '下载并解包 Python 运行时、引擎源码与视觉模型 —— 这一步完成后本地引擎即可启动，翻译权重在后台继续。',",
+      "sub: '下载并解包 Python 运行时、引擎源码与视觉模型 —— 这一步完成即可开始翻译。',",
+    );
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W12');
+    check('M8 stage1 文案承诺"即可开始翻译"（stage1 无 LLM）⇒ W12 红', red, { code: r.code, redOn: red });
+    restore();
+  }
+
   // 收尾：确认还原到位
   {
     const bad = [];
@@ -269,7 +354,10 @@ if (REFUTE) {
     if (!fs.readFileSync(STATE_RS, 'utf8').includes('"runtime" => Some("stage1"')) bad.push('state.rs 残留 M3');
     if (!fs.readFileSync(RUNTIME_PROBE_RS, 'utf8').includes('点「开始下载」，喵坞会自动装配引擎运行时')) bad.push('runtime_probe.rs 残留 M4');
     if (!fs.readFileSync(RUNTIME_PROBE_RS, 'utf8').includes('装配会从公网镜像安装引擎依赖')) bad.push('runtime_probe.rs 残留 M5');
-    check('R1 变异收尾：五处源码/清单按字节还原', bad.length === 0, bad);
+    if (!fs.readFileSync(STATE_RS, 'utf8').includes('if stage == Some(1) {')) bad.push('state.rs 残留 M6');
+    if (fs.readFileSync(MODELS_MANIFEST, 'utf8').includes('"stage": 2,\n      "platform": "win32-x64",\n      "dest": "bin/llama')) bad.push('models.manifest.json 残留 M7');
+    if (!fs.readFileSync(DOWNLOAD_PANEL_TSX, 'utf8').includes('这一步完成后本地引擎即可启动')) bad.push('DownloadPanel.tsx 残留 M8');
+    check('R1 变异收尾：八处源码/清单按字节还原', bad.length === 0, bad);
   }
 }
 

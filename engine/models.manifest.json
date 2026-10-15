@@ -138,7 +138,7 @@
     {
       "id": "llama_cpp_macos_arm64",
       "set": "runtime",
-      "stage": 2,
+      "stage": 1,
       "platform": "darwin-arm64",
       "dest": "bin/llama-b11417-macos-arm64.tar.gz",
       "extractTo": "bin/llama/llama-b11417",
@@ -155,7 +155,7 @@
     {
       "id": "llama_cpp_win_cuda_x64",
       "set": "runtime",
-      "stage": 2,
+      "stage": 1,
       "platform": "win32-x64",
       "dest": "bin/llama-b11417-win-cuda-12.4-x64.zip",
       "extractTo": "bin/llama/llama-b11417",
@@ -172,7 +172,7 @@
     {
       "id": "cudart_win_cuda_x64",
       "set": "runtime",
-      "stage": 2,
+      "stage": 1,
       "platform": "win32-x64",
       "dest": "bin/cudart-llama-win-cuda-12.4-x64.zip",
       "extractTo": "bin/llama/llama-b11417",
