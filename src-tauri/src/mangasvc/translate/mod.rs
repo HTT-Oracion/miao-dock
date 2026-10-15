@@ -29,7 +29,7 @@ use std::time::Duration;
 use serde_json::{json, Map, Value};
 use tokio::sync::mpsc;
 
-use crate::paths;
+use crate::platform::paths;
 use errors::{is_retryable, TranslateError};
 use youdao::{Credentials, TranslateReq, TranslateResult};
 

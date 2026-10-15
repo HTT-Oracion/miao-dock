@@ -22,7 +22,7 @@ use serde_json::{json, Value};
 
 use crate::mangasvc::engine::client::{TranslateOk, TranslateOpts};
 use crate::mangasvc::engine::EngineError;
-use crate::paths;
+use crate::platform::paths;
 
 use super::exec::{CreatePayload, InputImage, Translator};
 use super::model::{Lang, Task};

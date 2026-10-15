@@ -55,7 +55,7 @@ const F = {
   persist: path.join(APP, 'src', 'music', 'persist.ts'),
   types: path.join(APP, 'src', 'music', 'types.ts'),
   // ── 桌面歌词（P3）──
-  rustLyrics: path.join(APP, 'src-tauri', 'src', 'lyrics_window.rs'),
+  rustLyrics: path.join(APP, 'src-tauri', 'src', 'commands', 'lyrics_window.rs'),
   capabilities: path.join(APP, 'src-tauri', 'capabilities', 'default.json'),
   tauriConf: path.join(APP, 'src-tauri', 'tauri.conf.json'),
   cargoToml: path.join(APP, 'src-tauri', 'Cargo.toml'),
@@ -1583,7 +1583,7 @@ add('QUEUE.drawerSlidesIn', 'QUEUE', (s) => {
 // 只是某个功能在真机上悄悄不工作。所以必须逐条锁死。
 add('LYRICS.rustCommands', 'LYRICS', (s) => {
   // 只定义不注册 = 不可调用，两层都要独立测到（与 RUST 组的判据同源）
-  if (!s.rustLyrics) return { ok: false, detail: 'src-tauri/src/lyrics_window.rs 不存在' };
+  if (!s.rustLyrics) return { ok: false, detail: 'src-tauri/src/commands/lyrics_window.rs 不存在' };
   const need = ['open_lyrics_window', 'close_lyrics_window', 'lyrics_push'];
   const missing = need.filter((n) => !new RegExp(`fn\\s+${n}\\s*\\(`).test(s.rustLyrics));
   const notRegd = need.filter((n) => !new RegExp(`lyrics_window::${n}`).test(s.rustRegistry));
@@ -3087,7 +3087,7 @@ add('ISLANDV.desktopLyricsKept', 'ISLANDV', (s) => {
   if (!existsSync(F.desktopLyrics) || !/export function DesktopLyrics\b/.test(stripComments(s.desktopLyrics ?? '')))
     missing.push('screens/lyrics/DesktopLyrics.tsx 不在或没了 DesktopLyrics');
   if (!existsSync(F.rustLyrics) || !/open_lyrics_window/.test(s.rustLyrics ?? ''))
-    missing.push('src-tauri/src/lyrics_window.rs 不在或没了 open_lyrics_window');
+    missing.push('src-tauri/src/commands/lyrics_window.rs 不在或没了 open_lyrics_window');
   if (!existsSync(F.lyricsHtml)) missing.push('templates/lyrics.html 不在');
   const store = stripComments(s.store ?? '');
   if (!hasMethodImpl(store, 'pushLyricsState')) missing.push('store 的 pushLyricsState 实现没了');
@@ -4669,7 +4669,7 @@ const MUTATIONS = [
   {
     name: '从 commands/mod.rs 摘掉 lyrics_push 注册（定义仍在但调不到）',
     file: F.rustRegistry,
-    find: '        crate::lyrics_window::lyrics_push,',
+    find: '        crate::commands::lyrics_window::lyrics_push,',
     replace: '',
     expect: ['LYRICS.rustCommands'],
   },
@@ -4823,7 +4823,7 @@ const MUTATIONS = [
   },
   {
     name: 'Rust 不再把载荷写入缓存（歌词窗补拉永远拿到空 → 打开还是没歌词）',
-    file: 'src-tauri/src/lyrics_window.rs',
+    file: 'src-tauri/src/commands/lyrics_window.rs',
     find: '        *g = Some(payload.clone());',
     replace: '        let _ = &mut g;',
     expect: ['LYRICS.stateBackfill'],
@@ -4838,7 +4838,7 @@ const MUTATIONS = [
   {
     name: 'commands/mod.rs 不注册 lyrics_control（调用报"命令不存在"，被 catch 吞掉）',
     file: 'src-tauri/src/commands/mod.rs',
-    find: '        crate::lyrics_window::lyrics_control,\n',
+    find: '        crate::commands::lyrics_window::lyrics_control,\n',
     replace: '',
     expect: ['LYRICS.controlBridge'],
   },

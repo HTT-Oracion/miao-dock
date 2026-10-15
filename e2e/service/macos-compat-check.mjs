@@ -40,7 +40,7 @@ import { RUST_BIN, REPO_ROOT } from './_service-harness.mjs';
 
 const REFUTE = process.argv.includes('--refute');
 const SELF = fileURLToPath(import.meta.url);
-const PATHS_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'paths.rs');
+const PATHS_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'platform', 'paths.rs');
 const DEPS_MJS = path.join(REPO_ROOT, 'engine', 'scripts', 'install-engine-deps.mjs');
 const GUIDE_WIN = path.join(REPO_ROOT, 'docs', 'install-guide-windows.md');
 const GUIDE_MAC = path.join(REPO_ROOT, 'docs', 'install-guide-macos.md');

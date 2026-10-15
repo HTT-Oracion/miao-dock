@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::paths;
+use crate::platform::paths;
 
 use super::patches;
 
@@ -252,7 +252,7 @@ pub fn runtime_view() -> serde_json::Value {
     if let Some(o) = v.as_object_mut() {
         o.insert(
             "requiredBytes".to_string(),
-            serde_json::json!(super::model_status::platform_total_bytes(&crate::paths::model_manifest())),
+            serde_json::json!(super::model_status::platform_total_bytes(&crate::platform::paths::model_manifest())),
         );
     }
     v

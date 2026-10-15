@@ -9,7 +9,7 @@
 //      把「Medium 在 16GB Mac 上不可行」**升级成了映射逻辑的一部分** —— 改它 = 改契约。
 use std::path::{Path, PathBuf};
 
-use crate::child_watch::hide_console;
+use crate::platform::child_watch::hide_console;
 
 /// 档位枚举（顺序 = 设置页展示顺序，由低到高）
 pub const TIERS: &[&str] = &["tiny", "small", "medium"];

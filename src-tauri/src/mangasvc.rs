@@ -179,7 +179,7 @@ fn ensure_token() -> Option<String> {
             return Some(v);
         }
     }
-    let file = crate::paths::token_file();
+    let file = crate::platform::paths::token_file();
     if let Ok(raw) = std::fs::read_to_string(&file) {
         let t = raw.trim();
         if t.len() == 64 && t.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -250,14 +250,14 @@ pub fn validate_root(root: &str) -> Result<PathBuf, String> {
     if root.trim().is_empty() {
         return Err(format!("落盘根目录必须是绝对路径：{root}"));
     }
-    let abs = crate::paths::resolve_abs(Path::new(root));
-    let canon = crate::paths::canonicalize(&abs);
+    let abs = crate::platform::paths::resolve_abs(Path::new(root));
+    let canon = crate::platform::paths::canonicalize(&abs);
     if let Some(hit) = blacklist_hit(&canon) {
         return Err(format!("落盘根目录不合法（命中黑名单 {hit}）：{}", abs.display()));
     }
     std::fs::create_dir_all(&abs)
         .map_err(|e| format!("落盘根目录不可用（{}）：{e}", abs.display()))?;
-    Ok(crate::paths::canonicalize(&abs))
+    Ok(crate::platform::paths::canonicalize(&abs))
 }
 
 /// 命中返回**名单里那一条原文**（不是规范化后的路径）—— 报给用户的是"撞上了哪一条规则"，
@@ -265,12 +265,12 @@ pub fn validate_root(root: &str) -> Result<PathBuf, String> {
 fn blacklist_hit(canon: &Path) -> Option<String> {
     let s = canon.to_string_lossy().into_owned();
     for raw in blacklist_exact() {
-        if s == crate::paths::canonicalize(Path::new(&raw)).to_string_lossy() {
+        if s == crate::platform::paths::canonicalize(Path::new(&raw)).to_string_lossy() {
             return Some(raw);
         }
     }
     for raw in blacklist_prefix() {
-        let cb = crate::paths::canonicalize(Path::new(&raw)).to_string_lossy().into_owned();
+        let cb = crate::platform::paths::canonicalize(Path::new(&raw)).to_string_lossy().into_owned();
         // 与 Node 逐字同构：`canonicalAbs === cb || canonicalAbs.startsWith(cb + sep)`。
         // 🔴 用 `startsWith(cb + sep)` 而**不是** `Path::strip_prefix`：后者按**组件**比，
         //    会把 `C:\` 当成 `C:\Windows` 的前缀而命中；Node 那边 `'C:\\' + '\\'` 永不前缀命中，
@@ -288,7 +288,7 @@ fn blacklist_exact() -> Vec<String> {
     let home_s = home.to_string_lossy().into_owned();
     let mut list = vec![
         // `path.parse(path.resolve('/')).root` —— Windows 下即当前盘的 `C:\`
-        crate::paths::resolve_abs(Path::new("/")).to_string_lossy().into_owned(),
+        crate::platform::paths::resolve_abs(Path::new("/")).to_string_lossy().into_owned(),
         "/Users".to_string(),
         home_s.clone(),
         "/private".to_string(),
@@ -352,7 +352,7 @@ pub fn run_blocking(opts: Options) -> Result<(), String> {
     // 1) 令牌 + 落盘根 —— F5.8 摘除 Node 之后**没有遗留后端**可继承这两样，本进程自造
     //    （`ensureToken()` / `config.rootDir` 的对应物，同一份 `state/` 与同一份 env 事实源）。
     let token = ensure_token();
-    let root_dir = crate::paths::root_dir().to_string_lossy().into_owned();
+    let root_dir = crate::platform::paths::root_dir().to_string_lossy().into_owned();
     // 契约 §8.2 校验点 1：根目录不撞黑名单；顺带"启动即建目录"。
     // 🔴 取**校验后的规范化结果**作为后续一切路径拼接的基准（Node 的 `config.rootDir` 亦然）：
     //    否则 `MIAO_ROOT=C:/x/y` 这类写法会让"上报的根"与"实际落盘的根"是两个字符串。
@@ -708,7 +708,7 @@ pub mod http {
     /// Node `sendImageBytes` / 封面读端点的对应物：先做**打开前**的越界复校验（防 TOCTOU），
     /// 再回 `inline` 附件。
     pub fn image_response(root: &Path, file: &Path, name: &str, disposition: bool) -> Response {
-        if crate::paths::assert_inside_root(root, file).is_err() {
+        if crate::platform::paths::assert_inside_root(root, file).is_err() {
             eprintln!("[manga-service][security] 文件读取越界：{}", file.display());
             return store_err(&store::StoreError::new(
                 "PERMISSION_DENIED",

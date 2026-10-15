@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::paths;
+use crate::platform::paths;
 
 pub mod selftest;
 pub mod client;

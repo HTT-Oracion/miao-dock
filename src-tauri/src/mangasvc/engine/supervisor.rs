@@ -29,7 +29,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
-use crate::child_watch::hide_console;
+use crate::platform::child_watch::hide_console;
 use serde_json::{json, Value};
 
 use super::{env_bool, env_str, resolve_llm_launch, EngineError, LaunchSpec, LlmLaunchOverrides};

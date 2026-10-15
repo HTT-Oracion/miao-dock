@@ -4,8 +4,8 @@
 // 复用 —— 而 F 组要求有一个能独立跑起来的服务靶子（`[[bin]] mangasvc`），好让 e2e 用
 // `MIAO_SERVICE_IMPL=node|rust` 打两套实现、跑同一套断言。
 //
-// 因此本库只放**服务侧**（mangasvc）与**跨端共用**的纯逻辑（paths）；Tauri 装配仍留在
-// `main.rs`（它只管进程、窗口、托盘、IPC 命令）。拆出来是**机械搬移**，不改逻辑。
+// 因此本库只放**服务侧**（mangasvc）与**跨端共用**的跨平台底座（platform：paths /
+// child_watch）；Tauri 装配仍留在 `main.rs`（它只管进程、窗口、托盘、IPC 命令）。
+// 拆出来是**机械搬移**，不改逻辑。
 pub mod mangasvc;
-pub mod child_watch;
-pub mod paths;
+pub mod platform;

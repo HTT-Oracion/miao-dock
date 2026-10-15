@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Serialize, Serializer};
 
-use crate::paths;
+use crate::platform::paths;
 
 use model::{is_item_terminal, is_task_terminal, seq3, Item, Progress, Task};
 use pure::{is_valid_file_name, match_original, match_translated};

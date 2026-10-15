@@ -25,7 +25,7 @@ use std::process::Command;
 
 use serde_json::json;
 
-use crate::child_watch::hide_console;
+use crate::platform::child_watch::hide_console;
 
 use super::model_store::{
     self, FileEntry, Manifest, ModelStoreError, ProgressEvent, ensure_models, link_models,

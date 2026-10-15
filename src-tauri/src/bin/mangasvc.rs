@@ -10,7 +10,7 @@ fn main() {
     // 用途：e2e 做「Rust 与 Node 路径同源」比对（R1 的钉子）—— 必须能在毫秒级跑完，
     // 所以它绝不允许走到 `run_blocking`（那会去绑端口、拉 node）。
     if std::env::args().any(|a| a == "--print-paths") {
-        println!("{}", miao_dock::paths::snapshot());
+        println!("{}", miao_dock::platform::paths::snapshot());
         return;
     }
     // `--engine-patches`：打印**上游源码补丁表镜像**（B5）后退出，不起服务。
@@ -62,7 +62,7 @@ fn main() {
     // 而不是静默回退到仓库路径（那样 dev 态永远绿、打包态永远错）。
     // 缺失 ⇒ 退出码 1，且不打印任何"起服务"的迹象（它本来就不起服务）。
     if std::env::args().any(|a| a == "--check-assets") {
-        let r = miao_dock::paths::assets_report();
+        let r = miao_dock::platform::paths::assets_report();
         println!("{r}");
         let ok = r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
         if !ok {
@@ -103,8 +103,8 @@ fn main() {
     // 清单读不到 ⇒ 仍打印（`files: []` + 三个 false），退出码 0：那也是一种真实状态。
     if std::env::args().any(|a| a == "--engine-model-files") {
         let s = miao_dock::mangasvc::engine::model_status::model_status(
-            &miao_dock::paths::model_manifest(),
-            &miao_dock::paths::model_root(),
+            &miao_dock::platform::paths::model_manifest(),
+            &miao_dock::platform::paths::model_root(),
             None,
         );
         println!("{}", serde_json::to_string(&s).unwrap_or_else(|_| "{}".to_string()));
@@ -119,7 +119,7 @@ fn main() {
     // 与 `--print-plan` 同口径：**只读**，非 Windows 下也能跑（macOS 用户同样要能问
     // 「有没有本平台的预编译 wheel」），不做任何平台闸门。
     if std::env::args().any(|a| a == "--engine-crf-plan") {
-        let plan = miao_dock::mangasvc::engine::wheels::plan_crf(&miao_dock::paths::model_root());
+        let plan = miao_dock::mangasvc::engine::wheels::plan_crf(&miao_dock::platform::paths::model_root());
         println!(
             "{}",
             serde_json::json!({
@@ -179,7 +179,7 @@ fn main() {
     // 不给子进程可用的匿名管道 ⇒ 测出来的结论对产品不成立。详见 `run_as_parent` 的注释。
     if let Some(i) = std::env::args().position(|a| a == "--child-watch-parent") {
         let args: Vec<String> = std::env::args().skip(i + 1).collect();
-        std::process::exit(miao_dock::child_watch::run_as_parent(&args));
+        std::process::exit(miao_dock::platform::child_watch::run_as_parent(&args));
     }
     // `--child-watch -- <cmd> [args...]`：把命令包一层**父死看守**（A3c）。
     // 用途：真档下 ② `python main.py` / ③ `llama-server` 是**外部二进制**，主进程被
@@ -193,7 +193,7 @@ fn main() {
     //    （子命令在起服务之前就 `return` 了）。
     if let Some(i) = std::env::args().position(|a| a == "--child-watch") {
         let args: Vec<String> = std::env::args().skip(i + 1).collect();
-        std::process::exit(miao_dock::child_watch::run(&args));
+        std::process::exit(miao_dock::platform::child_watch::run(&args));
     }
     // `--fetch-models [...]`：S3 模型下载器 / 校验器（A3d）。
     // 用途：`POST /engine/models/verify` 与「重新下载模型」两个**产品运行期**路径都起它 ——

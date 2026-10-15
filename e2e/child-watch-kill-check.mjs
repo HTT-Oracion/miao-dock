@@ -17,7 +17,7 @@
  * ## 判据（源码级，不起进程）
  *   S1 Node 靶：`engine/scripts/child-watch.mjs` 的 `taskkill` 参数数组里 `/F` **无条件**出现，
  *      不得写成 `...(sig === 'SIGKILL' ? ['/F'] : [])` 这种「只 SIGKILL 才 /F」的条件式。
- *   S2 Rust 靶：`src-tauri/src/child_watch.rs` 的 `kill_tree` 里 `taskkill` 参数数组
+ *   S2 Rust 靶：`src-tauri/src/platform/child_watch.rs` 的 `kill_tree` 里 `taskkill` 参数数组
  *      同样**无条件**含 `"/F"`，且不得出现「按 `force` 决定加不加 `/F`」的写法。
  *
  * 🔴 两靶都要钉，不能只留一个：
@@ -37,7 +37,7 @@ import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const NODE_WATCH = path.join(ROOT, 'engine', 'scripts', 'child-watch.mjs');
-const RUST_WATCH = path.join(ROOT, 'src-tauri', 'src', 'child_watch.rs');
+const RUST_WATCH = path.join(ROOT, 'src-tauri', 'src', 'platform', 'child_watch.rs');
 const REFUTE = process.argv.includes('--refute');
 
 const read = (f) => fs.readFileSync(f, 'utf8');

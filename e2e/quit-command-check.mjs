@@ -53,7 +53,7 @@ import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const COMMANDS_MOD = path.join(ROOT, 'src-tauri', 'src', 'commands', 'mod.rs');
-const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service.rs');
+const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service', 'mod.rs');
 const APP_TSX = path.join(ROOT, 'src', 'App.tsx');
 
 const REFUTE = process.argv.includes('--refute');

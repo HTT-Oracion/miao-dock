@@ -101,13 +101,13 @@ fn is_usable_model_dir(v: &Value) -> bool {
     if !Path::new(raw).is_absolute() {
         return false;
     }
-    let abs = crate::paths::resolve(PathBuf::from(raw));
+    let abs = crate::platform::paths::resolve(PathBuf::from(raw));
     // `path.parse(abs).root === abs` 的等价物：根目录没有父。
     if abs.parent().is_none() {
         return false;
     }
     if let Some(home) = dirs::home_dir() {
-        if crate::paths::resolve(home) == abs {
+        if crate::platform::paths::resolve(home) == abs {
             return false;
         }
     }
@@ -156,7 +156,7 @@ fn normalize_value(key: &str, v: &Value) -> Value {
     match key {
         "modelDir" => {
             let raw = v.as_str().unwrap_or("").trim().to_string();
-            Value::String(crate::paths::resolve(PathBuf::from(raw)).to_string_lossy().into_owned())
+            Value::String(crate::platform::paths::resolve(PathBuf::from(raw)).to_string_lossy().into_owned())
         }
         "idleLlmMin" | "idleVisionMin" => Value::Number(serde_json::Number::from(js_int(v).unwrap_or(0))),
         _ => v.clone(),

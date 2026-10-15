@@ -26,7 +26,7 @@
  * 反证变异是那里的 **J**）。
  *
  * ## 判据
- *   S1 **源码钉子（回归钉子）**：`src-tauri/src/service.rs` 读子进程输出
+ *   S1 **源码钉子（回归钉子）**：`src-tauri/src/service/mod.rs` 读子进程输出
  *      **代码里不得**出现 `map_while(Result::ok)`；**必须**走按字节 + `from_utf8_lossy` 的 `relay_lines`。
  *      谁把代码改回去，S1 立刻变红。
  *      ⚠️ 判定前先把行注释与块注释剥掉 —— 该文件里正好有一段注释在解释「为什么不能用它」，
@@ -56,7 +56,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service.rs');
+const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service', 'mod.rs');
 const REFUTE = process.argv.includes('--refute');
 
 const results = [];

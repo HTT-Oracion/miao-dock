@@ -98,8 +98,8 @@ const CHECKS = [
     watch: [
       'src-tauri/tauri.conf.json',
       'src-tauri/tauri.windows.conf.json',
-      'src-tauri/src/paths.rs',
-      'src-tauri/src/service.rs',
+      'src-tauri/src/platform/paths.rs',
+      'src-tauri/src/service/mod.rs',
       'e2e/packaged-smoke.mjs',
     ],
   },
@@ -109,8 +109,8 @@ const CHECKS = [
     tier: 'static',
     refute: true,
     watch: [
-      'src-tauri/src/paths.rs',
-      'src-tauri/src/service.rs',
+      'src-tauri/src/platform/paths.rs',
+      'src-tauri/src/service/mod.rs',
       'src-tauri/src/bin/mangasvc.rs',
       'src-tauri/tauri.conf.json',
       'e2e/resources-check.mjs',
@@ -152,7 +152,7 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/paths.rs',
+      'src-tauri/src/platform/paths.rs',
       'e2e/service/golden/paths-selftest.json',
       'e2e/service/_gen-golden.mjs',
       'e2e/service/_paths-report.mjs',
@@ -179,7 +179,7 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/paths.rs',
+      'src-tauri/src/platform/paths.rs',
       'src-tauri/src/mangasvc/engine/runtime_probe.rs',
       'src-tauri/src/mangasvc.rs',
       'e2e/service/path-single-source-check.mjs',
@@ -191,7 +191,7 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/service.rs',
+      'src-tauri/src/service/mod.rs',
       'src-tauri/src/mangasvc/engine/runtime_probe.rs',
       'src-tauri/src/bin/mangasvc.rs',
       'e2e/service/launch-gate-check.mjs',
@@ -206,7 +206,7 @@ const CHECKS = [
       'docs/install-guide-windows.md',
       'docs/install-guide-macos.md',
       'engine/models.manifest.json',
-      'src-tauri/src/paths.rs',
+      'src-tauri/src/platform/paths.rs',
       'package.json',
       'e2eScripts.json',
       'e2e/service/install-guide-check.mjs',
@@ -218,7 +218,7 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/service.rs',
+      'src-tauri/src/service/mod.rs',
       'src-tauri/src/mangasvc/engine/state.rs',
       'src/screens/NotReadyScreen.tsx',
       'src/ipc.ts',
@@ -269,7 +269,7 @@ const CHECKS = [
       'src-tauri/src/mangasvc/engine/model_store.rs',
       'src-tauri/src/mangasvc/engine/fetch_models.rs',
       'src-tauri/src/mangasvc/handlers.rs',
-      'src-tauri/src/service.rs',
+      'src-tauri/src/service/mod.rs',
       'e2e/service/model-runner-check.mjs',
     ],
   },
@@ -292,7 +292,7 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/paths.rs',
+      'src-tauri/src/platform/paths.rs',
       'engine/scripts/install-engine-deps.mjs',
       'docs/install-guide-macos.md',
       'docs/install-guide-windows.md',
@@ -589,8 +589,8 @@ const CHECKS = [
     tier: 'service',
     refute: true,
     watch: [
-      'src-tauri/src/child_watch.rs',
-      'src-tauri/src/service.rs',
+      'src-tauri/src/platform/child_watch.rs',
+      'src-tauri/src/service/mod.rs',
       'src-tauri/src/mangasvc/engine/supervisor.rs',
       'engine/scripts/child-watch.mjs',
     ],
@@ -600,7 +600,7 @@ const CHECKS = [
     script: 'e2e/child-watch-kill-check.mjs',
     tier: 'service',
     refute: true,
-    watch: ['src-tauri/src/child_watch.rs', 'engine/scripts/child-watch.mjs'],
+    watch: ['src-tauri/src/platform/child_watch.rs', 'engine/scripts/child-watch.mjs'],
   },
   {
     id: 'stdio',
@@ -738,7 +738,7 @@ const CHECKS = [
     watch: [
       'src-tauri/src/mangasvc/engine.rs',
       'src-tauri/src/mangasvc/engine/state.rs',
-      'src-tauri/src/service.rs',
+      'src-tauri/src/service/mod.rs',
       'engine/models.manifest.json',
       'e2e/service/offline-real-check.mjs',
     ],

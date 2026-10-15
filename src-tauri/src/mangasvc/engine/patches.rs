@@ -206,8 +206,8 @@ fn patches_json_path() -> Option<PathBuf> {
             return Some(PathBuf::from(p.trim()));
         }
     }
-    crate::paths::asset("engine/patches.json")
-        .or_else(|| Some(crate::paths::repo_root().join("engine").join("patches.json")))
+    crate::platform::paths::asset("engine/patches.json")
+        .or_else(|| Some(crate::platform::paths::repo_root().join("engine").join("patches.json")))
 }
 
 /// 在 `src_dir` 下重放全部补丁（幂等：mark 命中即跳过该条）。
@@ -402,7 +402,7 @@ mod apply_tests {
     #[test]
     fn patches_json_present_and_is_array() {
         // 真实 patches.json 必须存在且含 patches 数组（与 Node SSOT 同序由 A7 钉）。
-        let p = crate::paths::repo_root().join("engine").join("patches.json");
+        let p = crate::platform::paths::repo_root().join("engine").join("patches.json");
         assert!(p.exists(), "engine/patches.json 必须存在（零配置装配要它打补丁）");
         let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert!(v.get("patches").and_then(|a| a.as_array()).map(|a| !a.is_empty()).unwrap_or(false));

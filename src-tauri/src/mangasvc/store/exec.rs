@@ -32,7 +32,7 @@ use serde_json::{json, Value};
 
 use crate::mangasvc::engine::client::{LangPair, TranslateOk, TranslateOpts};
 use crate::mangasvc::engine::EngineError;
-use crate::paths;
+use crate::platform::paths;
 
 use super::model::{
     is_degradable_write_errno, now_iso_ms, now_ms, seq3, Batch, Item, Lang, Task, TaskEvent,

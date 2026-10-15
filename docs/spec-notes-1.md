@@ -1776,7 +1776,7 @@ F 组新增的 8 组钉子（上述七组 + `check:routes`）此前在 `AGENTS.m
 
 ## D-172 · A3c 父死看守 Rust 化：父死判定必须是**双通道**，且"判不出来" ≠ "父死"（2026-10-13）
 
-**改动**：新增 `src-tauri/src/child_watch.rs` + `mangasvc --child-watch`（复用已随包的 `mangasvc`，
+**改动**：新增 `src-tauri/src/platform/child_watch.rs` + `mangasvc --child-watch`（复用已随包的 `mangasvc`，
 **不新增第三个可执行文件、不改 `bundle.resources`**）。`service.rs` 的 `watch` 档与
 `mangasvc::engine::supervisor::do_start` 都改走它；stdin 由 `Stdio::null()` 改成 `Stdio::piped()`
 + 注入 `MIAO_CHILD_WATCH_PIPE=1`，父侧用 `_watch_keepalive: Option<ChildStdin>` **攥住写端**。
@@ -2604,7 +2604,7 @@ Sakura CC BY-NC-SA 4.0、nllb CC-BY-NC-4.0 —— 而它们恰是**唯一**会�
 
 ## D-187 · D7 macOS 兼容：差异收缩成"写对一处即可"，但**另一平台的分支本机跑不到**（2026-10-14）
 
-**两处差异的实际状态**：① 解释器路径分叉（`src-tauri/src/paths.rs` 的 `venv_python_rel()`）**已经在推导函数里
+**两处差异的实际状态**：① 解释器路径分叉（`src-tauri/src/platform/paths.rs` 的 `venv_python_rel()`）**已经在推导函数里
 一次写对**（两个形态都在，返回 `PathBuf` 以免留下正斜杠破坏逐字节比对），且检测侧与
 启动侧逐字节相同（B3 已钉，本组复验）；② 安装命令分叉是纯文档（两份引导都在）。
 
@@ -3830,10 +3830,86 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
 - `check:docs` **21 / 0** · `check:registry` 正向 **15 / 15** + 反证 **13 个变异全红** ·
   `check:docpaths` 正向 **4 / 1**（那 1 红即 D-211 的既有假红）+ 反证 **2 / 2**。
 - ESLint **0 error / 134 warning**（warning 全是既有的 `react-hooks/*`）· `prettier --check` 全绿。
-- ⚠️ **未做真机验证**：本 shell 无 MSVC 环境（`cl.exe` 不在 PATH），且该 toolchain **没装 rustfmt / clippy 组件** ⇒
-  `cargo build --bin mangasvc` / `cargo fmt --check` / `cargo clippy` **一条都没跑**（需 vcvars 环境）。
-  因此 Rust 半边只做到「源码与配置按名同步」，**「改名后能编过、能起」未取证**。
-  在补验之前，凡起 `target/debug/mangasvc.exe` 的断言会因为**产物还没重建**而非零退出（红，不是跳过）。
+- **Rust 半边已实测编过**（不是「源码看起来对」）：本机 MSVC 生成工具装在 `C:\VS2022BT`，
+  用 `cmd /c "call C:\VS2022BT\VC\Auxiliary\Build\vcvars64.bat && cargo …"` 就能拿到编译器。
+  🔴 这条值得记住：**「本 shell 没有 MSVC」说的是这个 shell 没 source 过 vcvars，不是机器上没装** ——
+  不要把「没 source」当成「没有工具链」而放弃编译取证。
+  实测 `cargo build`（两个 bin）与 `cargo check --all-targets` 全过；`cargo test --lib` 当时是 4 条
+  `include_str!` 编不过（**P1 漏改的相对路径，与改名无关，见 D-219**），修完 198 passed / 0 failed。
+  ⚠️ `cargo fmt --check` / `cargo clippy` **仍未跑**：该 toolchain 没装这两个组件（未执行 `rustup component add`）。
   另记：改名让 5 行 Rust 越过 100 列，其中 4 行**改造前就已越界**（可见 `cargo fmt` 从未被门禁约束），
   剩下 1 行在字符串字面量里、rustfmt 本就不折行。
+
+## D-219 P3 后端按域重整：命令注册下沉、六文件归位，以及三个坑（2026-10-16）
+
+**P3-a 命令注册下沉**（`refactor(rust): 命令注册下沉到子模块，main.rs 只留启动装配`）：
+`main.rs` 从 296 行降到 167 行，只剩 `Builder` 装配与启动；`generate_handler!` 那份 130 行清单搬进
+`commands/mod.rs` 的 `pub fn handler()`，`main.rs` 改成 `.invoke_handler(commands::handler())`。
+清单**按域分段**（服务与窗口 / 桌面歌词 / 音乐四平台 + 本地 + 音频代理 + 缓存），逐条写成 `crate::` 全限定路径。
+
+**两处「顺手改好就会编不过」的硬约束（都实测踩过，已写进 `handler()` 的文档注释）**
+- 🔴 **不能拆成「各域各出一个 `xxx_commands!()` 宏再汇总」**：`generate_handler!` 是 proc macro，
+  它的入参**不做**宏展开（`syn::Path` 解析不了 `!`）⇒ 拆开必然编不过。形态只能是
+  「**一处展开、按域分段**」—— 这正是 `main.rs` 里那句宏没有被拆散的原因。
+- 🔴 **`handler()` 的运行时必须写死 `tauri::Wry`，不能写成 `handler<R: tauri::Runtime>()`**：
+  命令签名里的 `AppHandle` / `State<'_, T>` 用的是**默认运行时**，泛型化之后 `R` 不落地，
+  `AppHandle: CommandArg<'_, R>` 当场不成立 —— 实测直接爆 **73 条 E0277**。
+- 路径必须 `crate::` 全限定：`#[tauri::command]` 会把命令名宏 `use` 到**与命令同路径**的位置，
+  宏展开出的 `crate::<域>::__tauri_command_name_<命令>!()` 依赖这个路径逐字对上。
+
+**P1 漏改的收尾**（`fix(repo): 修正搬家漏改的相对路径与旧路径引用`）：搬家把 `app/src-tauri/…`
+抬到 `src-tauri/…`，深度少了一层，但 `runtime_setup.rs` 里 4 处
+`include_str!("../../../../../engine/…")` **漏改一层** ⇒ `cargo test --lib` 从那时起就编不过。
+🔴 它一直没暴露，是因为那 4 行在 `#[cfg(test)] mod tests` 里 —— **`cargo build` 覆盖不到，
+「能构建」与「能测」在这里是两件事**。同批清掉 7 处 `app/src-tauri/…` 旧路径，其中包含
+`service.rs` 里那句**给用户看的**排障文案（`先在 app/src-tauri 执行 cargo build --bin mangasvc`）。
+
+**P3-b 后端按域重整**（`refactor(rust): 后端源码按域重整目录`）：六文件归位，`src-tauri/src/` 根
+只剩 `main.rs` / `lib.rs` + 六个域：
+
+| 旧位置 | 新位置 | 域 |
+| --- | --- | --- |
+| service.rs | `src-tauri/src/service/mod.rs` | 子进程生命周期 |
+| lyrics_window.rs | `src-tauri/src/commands/lyrics_window.rs` | IPC 命令层 |
+| selftest.rs | `src-tauri/src/selftest/mod.rs` | 自检通道 |
+| capture.rs | `src-tauri/src/selftest/capture.rs` | 自检通道（截图取证） |
+| paths.rs | `src-tauri/src/platform/paths.rs` | 跨平台底座 |
+| child_watch.rs | `src-tauri/src/platform/child_watch.rs` | 跨平台底座 |
+
+- 🔴 **`mangasvc/` 原地不动**：它本身就是「服务实现」这一域，内部已按 `engine/ store/ translate/` 分层，
+  且 P2 刚把它的名字从 `boxsvc` 收束成 `mangasvc` —— 再改一次是纯 churn，没有一个理由能补回来。
+- `platform/` 由 `paths` + `child_watch` 合并：判据是「**依赖什么定归属**」—— 两者都只认识平台
+  （盘符 / `CREATE_NO_WINDOW` / `taskkill` / POSIX 信号），不认识任何业务概念，且 lib 侧与 bin 侧同时依赖。
+- `selftest/`（第 6 个域）是计划里那 5 个名字之外的扩展：`selftest` 与 `capture` 同属「测试通道」，
+  按业务域归不进 `commands` / `service` / `platform` 任何一个，硬塞进去就是错归属。
+- 路径**逐字同步**：9 个 e2e 脚本常量（6 个 `SERVICE_RS` / `PATHS_RS` / `RUST_WATCH` / `rustLyrics`）、
+  10 个文件里 29 处字符串、注册表 15 处 `watch`、2 条反证锚点、本台账 2 处现行引用。
+
+**三个坑（都属于「断言跟着代码走」这一类，值得反复吃）**
+1. **编译期读文件的相对路径会随文件下沉而失效**：`selftest.rs` → `selftest/mod.rs` 之后，
+   `include_bytes!("../testdata/probe.png")` 必须改成 `../../testdata/…`。
+   🔴 搬家审计里 `include_str!` / `include_bytes!` 是最容易漏的一类 —— 它**不在**
+   `grep 'src-tauri/src/xxx.rs'` 的命中集里（搜的是「谁引用了这个文件」，而它是「这个文件引用了谁」）。
+2. **反证锚点是「逐字复制源码」**：`crate::lyrics_window::lyrics_push,` 变成
+   `crate::commands::lyrics_window::lyrics_push,` 之后，`music` 反证轮立刻报 2 条「锚点未找到」。
+   跳过 ≠ 通过 ⇒ 改了路径就必须回改锚点，否则覆盖率**静默降级**。
+3. **「注释掉一行」型反证在 `commands/mod.rs` 上会变成假阳性**：把 `crate::lyrics_window::lyrics_control,`
+   改成 `// crate::lyrics_window::lyrics_control,` 之后断言**仍绿**（根因未深挖，怀疑是该脚本的
+   `stripComments` 状态机在 Rust 的字面量/生命周期上失同步）⇒ 改成**整行删掉**立刻变红。
+   教训：反证锚点优先用「删掉」，「注释掉」在 Rust 文本上不可靠。
+
+**验收（本轮实测，vcvars 环境下）**
+- `cargo build`（两个 bin）· `cargo check --all-targets` · `cargo test --lib` **198 passed / 0 failed**。
+- `npm run check`（static 层）**228 / 3**，与改造前逐条一致（`quit` Q3 / `docpaths` 的 D-211 假红 /
+  `music` 三条）· `check:registry` **15 / 15** · `check:docs` **21 / 0** · `check:docpaths` **4 / 1**
+  （那 1 红仍是 D-211 写下的那处 wheel 清单包内名，既知假红，此处不复写它）。
+- 受影响 check 的反证轮：`autostart` **19/19** · `music` **221/221** · `stdio` 1/1 · `child-watch` 1/1 ·
+  `child-watch-kill` 2/2 · `resources` 4/4 · `launch-gate` / `macos-compat` 全绿 · `quit` **4/4**（另 1 条锚点缺失属既有）。
+- ⚠️ **未做真机验证**：GUI 行为（窗口 / 托盘 / 歌词窗 / 服务真实启停）本轮一行没跑；
+  `cargo fmt --check` 与 `cargo clippy` 因组件未安装未跑。**「能编过、单测过」不等于「能起、点得动」**。
+- **既有红（逐条对过台账，不是本轮引入）**：`progress-truth` 8/2 与 `engine-settings` 53/8
+  （D-217 一节 G8 行已登记这两条）· `svc-selftest` 134/1（`SIGSTOP`，Windows 无此信号）·
+  `lifespan`（`vite` ENOENT）· `quit:refute` 的 M3 锚点（`c.creation_flags(CREATE_NO_WINDOW);`
+  在 `899e3ea` 与改名前的 HEAD 里都**不存在**，与 Q3 是同一条既有回归）·
+  `notready-state:refute` 的 `NotReadyScreen.tsx` 锚点（同样在改名前的 HEAD 里就不存在）。
 

@@ -44,9 +44,9 @@ use std::process::{Child, Command, Stdio};
 // ⚠️ 两个标志常量只在 windows 下有定义 ⇒ import 必须按平台分叉，
 //    否则 macOS 侧直接编译不过（而 macOS 打包正是要支持的平台）。
 #[cfg(windows)]
-use miao_dock::child_watch::{hide_console, WinFlags, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
+use miao_dock::platform::child_watch::{hide_console, WinFlags, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
 #[cfg(not(windows))]
-use miao_dock::child_watch::hide_console;
+use miao_dock::platform::child_watch::hide_console;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -56,7 +56,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 use crate::mangasvc;
-use miao_dock::paths;
+use miao_dock::platform::paths;
 
 /// 状态变化事件名（前端订阅）
 pub const STATE_EVENT: &str = "miao://service-state";

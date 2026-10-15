@@ -21,11 +21,11 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
-use crate::child_watch::hide_console;
+use crate::platform::child_watch::hide_console;
 
 use crate::mangasvc::store::{StoreError, model};
 use crate::mangasvc::translate;
-use crate::paths;
+use crate::platform::paths;
 
 use super::supervisor::LlmSnapshot;
 use super::{engine_config_snapshot, engine_version, available_tiers, profile, settings as esettings};

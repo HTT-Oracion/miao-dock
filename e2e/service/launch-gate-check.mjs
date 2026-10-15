@@ -44,7 +44,7 @@ import { ENGINE_PATCHES } from '../../engine/scripts/setup-engine.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REFUTE = process.argv.includes('--refute');
 const PROBE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'runtime_probe.rs');
-const SERVICE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'service.rs');
+const SERVICE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'service', 'mod.rs');
 const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
 /// `cargo` 可执行：`CARGO` env 覆盖，否则交给 PATH（libuv 在 Windows 上会补 `.exe`）。
 const CARGO = process.env.CARGO || 'cargo';

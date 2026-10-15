@@ -198,7 +198,7 @@ fn atomic_probe(dir: &Path) -> (bool, bool) {
 
 /// 打印整份自检报告。
 pub fn report() -> Value {
-    let root = crate::paths::root_dir();
+    let root = crate::platform::paths::root_dir();
     let store = Store::new(&root);
 
     // ============ 纯函数：输入 + 输出（同一张表产出两侧，杜绝走散）============
@@ -338,7 +338,7 @@ pub fn report() -> Value {
     };
 
     // 持久化字节（逐字节）+ 原子写探针
-    let persist_dir = crate::paths::state_dir().join("selftest");
+    let persist_dir = crate::platform::paths::state_dir().join("selftest");
     let _ = std::fs::create_dir_all(&persist_dir);
     let persist_file = persist_dir.join("probe-persist");
     let persisted_bytes = {

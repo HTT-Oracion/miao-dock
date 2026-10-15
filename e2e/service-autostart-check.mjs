@@ -40,11 +40,11 @@
  *
  * ### 启动门（main.rs · D-94 的核心改动）
  *   B1 `main.rs` **不再无条件启动**服务：启动被收进测试通道
- *      （`if selftest::enabled() || capture::enabled()`）。
+ *      （`if selftest::enabled() || selftest::capture::enabled()`）。
  *      两条反向的失效都记在这一条上：
  *        · 退回无条件启动 ⇒ 用户把开关关掉也照拉，功能等于没做；
- *        · 把启动**整段删掉**（以为前端会管）⇒ `selftest.rs` 的 S2 组断言五态轨迹、
- *          `capture.rs` 截真实界面全都失据，而且红的原因看着像"状态机坏了"。
+ *        · 把启动**整段删掉**（以为前端会管）⇒ `selftest/mod.rs` 的 S2 组断言五态轨迹、
+ *          `selftest/capture.rs` 截真实界面全都失据，而且红的原因是"状态机坏了"的样子。
  *
  * ### 前端自动启动策略（App.tsx）
  *   C1 自动启动 effect 的依赖**恰为** `[screen, autoStart]`，**不含 `status`**。
@@ -114,7 +114,7 @@ import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const COMMANDS_MOD = path.join(ROOT, 'src-tauri', 'src', 'commands', 'mod.rs');
-const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service.rs');
+const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service', 'mod.rs');
 const MAIN_RS = path.join(ROOT, 'src-tauri', 'src', 'main.rs');
 const APP_TSX = path.join(ROOT, 'src', 'App.tsx');
 const NOT_READY = path.join(ROOT, 'src', 'screens', 'NotReadyScreen.tsx');
@@ -239,7 +239,7 @@ function runAll() {
 
   // ---- B1：启动收进测试通道；旧的无条件启动已撤干净 ----
   {
-    const gate = 'if selftest::enabled() || capture::enabled() {';
+    const gate = 'if selftest::enabled() || selftest::capture::enabled() {';
     const gi = main.indexOf(gate);
     const gated = gi >= 0 && /start\(&handle\)/.test(main.slice(gi, gi + 220));
     // 「旧形态已撤干净」：setup 里那句裸的 `mgr.start(&handle);` 必须 0 命中。
@@ -489,7 +489,7 @@ const MUTATIONS = [
     name: 'B1 启动门退回无条件启动（关掉开关也照拉 —— 功能等于没做）',
     file: MAIN_RS,
     find:
-      '            if selftest::enabled() || capture::enabled() {\n' +
+      '            if selftest::enabled() || selftest::capture::enabled() {\n' +
       '                let handle = app.handle().clone();\n' +
       '                app.state::<ServiceManager>().start(&handle);\n' +
       '            }\n',

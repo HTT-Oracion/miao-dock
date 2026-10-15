@@ -28,8 +28,8 @@ use std::process::Command;
 
 use serde::Deserialize;
 
-use crate::child_watch::hide_console;
-use crate::paths;
+use crate::platform::child_watch::hide_console;
+use crate::platform::paths;
 
 use super::model_store::{platform_key, sha256_file};
 use super::runtime_probe::site_packages;

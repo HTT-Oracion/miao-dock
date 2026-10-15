@@ -17,6 +17,8 @@
 //! 关于反证开关：跑了绿不等于测对了。若把「关窗」换成真退出后这组断言**仍然全绿**，
 //! 那它测的就不是「关窗仅隐藏」。所以这个开关是刻意留的，配合脚本做双向验证
 //! （见 ~/.workbuddy/skills/falsifiable-verification）。
+pub mod capture;
+
 use std::net::{SocketAddr, TcpStream};
 use std::time::Duration;
 
@@ -30,7 +32,7 @@ const CLOSE_QUITS_ENV: &str = "MIAO_CLOSE_QUITS";
 /// B1 后半条要用的样张：40×60 真 PNG（生成脚本 `e2e/make-probe-png.mjs`）。
 /// 必须是**真的** PNG —— 服务端有魔数嗅探（契约 §8.2），塞假字节只会得到 INVALID_IMAGE，
 /// 那样验出来的只是「校验还在」，不是「关窗后还能干活」。
-static PROBE_PNG: &[u8] = include_bytes!("../testdata/probe.png");
+static PROBE_PNG: &[u8] = include_bytes!("../../testdata/probe.png");
 
 /// 等服务起来、前端也挂上（首次启动要探端口段 + 拉引擎）
 const BOOT_WAIT: Duration = Duration::from_secs(7);

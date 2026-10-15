@@ -14,7 +14,7 @@ use serde::Serialize;
 use crate::mangasvc::names::normalize_comic_name;
 use crate::mangasvc::store::pure::{is_safe_dir_name, match_original, match_translated, sniff_image_type};
 use crate::mangasvc::store::StoreError;
-use crate::paths;
+use crate::platform::paths;
 
 const MANIFEST_FILE: &str = "manifest.json";
 const MAX_CHAPTER_NO: i64 = 999;

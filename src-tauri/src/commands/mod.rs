@@ -6,6 +6,11 @@
 //!    Rust 侧发起的是原生 HTTP 请求，不带 Origin —— 与「Box 桌面端是原生客户端」的契约定位一致。
 //! ② 令牌由 Rust 持有并注入请求头，**不进入 WebView**（减少一个泄露面）。
 //! ③ 错误信封（契约 §2.2）在这里统一解析成结构化错误，前端拿到的是 code/message/details。
+//!
+//! 自带一个子模块：`lyrics_window`（桌面歌词独立窗口的命令）—— 它同样是 IPC 命令集合，
+//! 按「依赖什么定归属」属于命令层，不再散在 crate 根。
+pub mod lyrics_window;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
@@ -495,14 +500,14 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         crate::commands::service_restart,
         crate::commands::quit_app,
         // ── 桌面歌词（独立窗口）──
-        crate::lyrics_window::open_lyrics_window,
-        crate::lyrics_window::close_lyrics_window,
-        crate::lyrics_window::lyrics_window_open,
-        crate::lyrics_window::save_lyrics_window_state,
-        crate::lyrics_window::lyrics_push,
-        crate::lyrics_window::get_lyrics_state,
-        crate::lyrics_window::lyrics_control,
-        crate::lyrics_window::resize_lyrics_window,
+        crate::commands::lyrics_window::open_lyrics_window,
+        crate::commands::lyrics_window::close_lyrics_window,
+        crate::commands::lyrics_window::lyrics_window_open,
+        crate::commands::lyrics_window::save_lyrics_window_state,
+        crate::commands::lyrics_window::lyrics_push,
+        crate::commands::lyrics_window::get_lyrics_state,
+        crate::commands::lyrics_window::lyrics_control,
+        crate::commands::lyrics_window::resize_lyrics_window,
         crate::commands::hide_window,
         crate::commands::show_window,
         crate::commands::set_theme,

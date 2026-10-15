@@ -21,7 +21,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use crate::child_watch::hide_console;
+use crate::platform::child_watch::hide_console;
 use std::process::Command;
 
 use serde_json::{json, Value};
@@ -32,7 +32,7 @@ use super::model_store::{
 };
 use super::runtime_setup::{run_bootstrap, to_store_error};
 
-use crate::paths;
+use crate::platform::paths;
 
 struct Args {
     ids: Vec<String>,

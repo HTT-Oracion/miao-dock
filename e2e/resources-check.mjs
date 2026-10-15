@@ -35,7 +35,7 @@ import { spawn } from 'node:child_process';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const BIN = path.join(ROOT, 'src-tauri', 'target', 'debug', process.platform === 'win32' ? 'mangasvc.exe' : 'mangasvc');
-const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service.rs');
+const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service', 'mod.rs');
 const BASE_CONF = path.join(ROOT, 'src-tauri', 'tauri.conf.json');
 
 const REFUTE = process.argv.includes('--refute');

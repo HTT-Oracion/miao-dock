@@ -21,7 +21,7 @@ use axum::http::{header, HeaderMap, HeaderValue, Uri};
 use axum::response::Response;
 use serde_json::{json, Map, Value};
 
-use crate::child_watch::hide_console;
+use crate::platform::child_watch::hide_console;
 use super::events;
 use super::library;
 use super::multipart;
@@ -33,7 +33,7 @@ use super::store::model::{Lang, Task, MAX_SEQ};
 use super::store::{Store, StoreError};
 use super::translate::errors::TranslateError;
 use super::Shell;
-use crate::paths;
+use crate::platform::paths;
 
 /// 服务端最大请求体（同 Node `MAX_BODY`：20 张高分辨率原图的宽松上限）。
 const MAX_BODY: usize = 256 * 1024 * 1024;

@@ -6,9 +6,7 @@
 //   · 托盘常驻；「退出喵坞」需二次确认（确认文案由前端给出，见 §2.1）
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod capture;
 mod commands;
-mod lyrics_window;
 mod music;
 mod selftest;
 mod service;
@@ -113,11 +111,11 @@ fn main() {
             //   · `selftest.rs` 的 S2 组断言**五态轨迹**（starting→L1→L2→L3→running）与
             //     E1 生效参数快照，它只 `mgr.status()` 读结果、**不会自己去启动** ——
             //     不在这里拉起，整组恒红，而且红的原因看着像"状态机坏了"。
-            //   · `capture.rs` 截的是真实界面；服务没起来时翻译三屏全落在"未就绪"，
+            //   · `selftest/capture.rs` 截的是真实界面；服务没起来时翻译三屏全落在"未就绪"，
             //     截出来的不是要取证的那一屏。
             // 两者都由环境变量开启（`MIAO_SELFTEST` / `MIAO_CAPTURE_DIR`），属测试通道，
             // 与用户偏好无关 —— 见 `e2e/lifespan-selftest.mjs` 与 `e2e/capture.mjs`。
-            if selftest::enabled() || capture::enabled() {
+            if selftest::enabled() || selftest::capture::enabled() {
                 let handle = app.handle().clone();
                 app.state::<ServiceManager>().start(&handle);
             }
@@ -138,8 +136,8 @@ fn main() {
                 selftest::spawn(app.handle().clone());
             }
             // ---- M5 截图取证：依次切屏并各截一张 ----
-            if capture::enabled() {
-                capture::spawn(app.handle().clone());
+            if selftest::capture::enabled() {
+                selftest::capture::spawn(app.handle().clone());
             }
             Ok(())
         })
