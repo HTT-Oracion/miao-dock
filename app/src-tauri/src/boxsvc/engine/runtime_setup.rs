@@ -2,8 +2,12 @@
 //  零配置装配编排（裁定④：装配由产品代做，用户只点一下）
 // =============================================================================
 //  把「仓库侧四步手工装配」串成一次会话里的阶段机：
-//    python 解包 → 本地建 venv → pip 装依赖 → 源码解包 → 重放补丁
-//    → 模型下载 + 解包 llama.cpp + 建链 → 写 .runtime.ready.json
+//    python 解包 → 本地建 venv → 源码解包 → 重放补丁
+//    → 依赖两批安装 → 模型下载 + 解包 llama.cpp + 建链 → 写 .runtime.ready.json
+//
+//  🔴 **为什么源码/补丁在依赖之前**：依赖清单是上游源码树**自带**的 `src/requirements.txt`
+//     （见 `requirements_path`）。旧顺序把 pip 放在源码解包之前，那时清单还不存在 ⇒
+//     依赖阶段必然报"依赖清单不存在"。
 //
 //  设计要点（与计划 §关键决策 同）：
 //  · 下载 / 校验 / 续传 / 原子解包 / 链接 **全部复用 model_store**（不写第二套下载器）。
@@ -173,16 +177,38 @@ pub fn run_bootstrap(
         on_phase("runtime", "虚拟环境已存在，跳过创建");
     }
 
-    // ---- 阶段 3：pip 装依赖（A 方案：公网镜像） ----
+    // ---- 阶段 3：引擎源码（解包）—— 必须在依赖之前（依赖清单就是它自带的那个） ----
+    on_phase("runtime", "下载并解包引擎源码");
+    ensure_models(
+        runtime_manifest,
+        runtime_root,
+        None,
+        Some("source"),
+        "cached",
+        Some(&log),
+        Some(on_progress),
+    )
+    .map_err(|e| BootstrapError::new("source", e.message))?;
+    extract_entries(runtime_manifest, runtime_root)?;
+
+    // ---- 阶段 4：重放源码补丁（零配置下由 Rust 亲自打） ----
+    on_phase("runtime", "应用引擎源码补丁");
+    let src_dir = rt_dir.join("src");
+    super::patches::apply_engine_patches(&src_dir)
+        .map_err(|e| BootstrapError::new("patches", e))?;
+
+    // ---- 阶段 5：pip 装依赖（A 方案：公网镜像） ----
     on_phase("runtime", "安装引擎依赖");
-    let req = requirements_path().ok_or_else(|| {
-        BootstrapError::new("deps", "找不到 engine/requirements.txt（依赖清单）".to_string())
-    })?;
-    if !req.exists() {
-        return Err(BootstrapError::new("deps", format!("依赖清单不存在：{}", req.display())));
-    }
-    // 🔴 事务性：pip 默认「先收齐再统一装」，任一处失败整批回滚（VERSIONS.lock §6.3）。
-    //     这里一次性装；将来要拆批 A/B 时，把 requirements 拆成两个文件、分两次调用即可。
+    let req = requirements_path(&rt_dir, std::env::var("MIAO_REQUIREMENTS").ok().as_deref())
+        .ok_or_else(|| {
+            BootstrapError::new(
+                "deps",
+                format!(
+                    "找不到依赖清单 {}（引擎源码解包后它应自带 requirements.txt）",
+                    rt_dir.join("src").join("requirements.txt").display()
+                ),
+            )
+        })?;
     let mut pip = Command::new(&venv_py);
     pip.arg("-m")
         .arg("pip")
@@ -204,26 +230,6 @@ pub fn run_bootstrap(
         }
         Err(e) => return Err(BootstrapError::new("deps", format!("起 pip 失败：{e}"))),
     }
-
-    // ---- 阶段 4：引擎源码（解包） ----
-    on_phase("runtime", "下载并解包引擎源码");
-    ensure_models(
-        runtime_manifest,
-        runtime_root,
-        None,
-        Some("source"),
-        "cached",
-        Some(&log),
-        Some(on_progress),
-    )
-    .map_err(|e| BootstrapError::new("source", e.message))?;
-    extract_entries(runtime_manifest, runtime_root)?;
-
-    // ---- 阶段 5：重放源码补丁（零配置下由 Rust 亲自打） ----
-    on_phase("runtime", "应用引擎源码补丁");
-    let src_dir = rt_dir.join("src");
-    super::patches::apply_engine_patches(&src_dir)
-        .map_err(|e| BootstrapError::new("patches", e))?;
 
     // ---- 阶段 6：模型权重（下载 + 解包 + 建链） ----
     on_phase("models", "下载模型权重");
@@ -253,15 +259,18 @@ pub fn run_bootstrap(
     Ok(())
 }
 
-/// 依赖清单路径：环境变量 > 随包资源 > 仓库内。
-fn requirements_path() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var("MIAO_REQUIREMENTS") {
-        if !p.trim().is_empty() {
-            return Some(PathBuf::from(p.trim()));
-        }
+/// 依赖清单路径：`MIAO_REQUIREMENTS` 覆盖 > **上游源码树自带**的 `<rt>/src/requirements.txt`。
+///
+/// 🔴 为什么读上游那一份、而不是在仓库里放一份 `engine/requirements.txt`：
+///    依赖清单的权威就是上游的 `requirements.txt`。仓库里再放一份等于引入**第二事实源**，
+///    上游一改就会漂移，而漂移的表现是"装出来的依赖与引擎要求不一致、且两边都不报错"。
+///    （旧实现假定存在 `engine/requirements.txt`，而它**全仓不存在** ⇒ 依赖阶段必失败。）
+fn requirements_path(rt_dir: &Path, override_env: Option<&str>) -> Option<PathBuf> {
+    if let Some(p) = override_env.map(str::trim).filter(|s| !s.is_empty()) {
+        return Some(PathBuf::from(p));
     }
-    crate::paths::asset("engine/requirements.txt")
-        .or_else(|| Some(crate::paths::repo_root().join("engine").join("requirements.txt")))
+    let p = rt_dir.join("src").join("requirements.txt");
+    p.exists().then_some(p)
 }
 
 /// `.runtime.ready.json`：runtime_probe 的「运行时是否齐备」判据之一。
@@ -281,4 +290,37 @@ fn write_runtime_ready(rt_dir: &Path, rt: &Manifest, _model: &Manifest) -> Resul
 /// 把 BootstrapError 转成既有的 ModelStoreError（让 fetch_models 的 fail() 能统一处理）。
 pub fn to_store_error(e: BootstrapError) -> ModelStoreError {
     ModelStoreError::with_detail("ENGINE_BOOTSTRAP_FAILED", e.to_string(), json!({ "stage": e.stage }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 覆盖优先，且**空串不算覆盖**（与其余 `MIAO_*` 同口径）。
+    #[test]
+    fn requirements_path_prefers_env_override() {
+        let tmp = std::env::temp_dir().join(format!("miao-req-env-{}", std::process::id()));
+        let _ = fs::create_dir_all(&tmp);
+        let got = requirements_path(&tmp, Some("/tmp/whatever.txt"));
+        assert_eq!(got, Some(PathBuf::from("/tmp/whatever.txt")));
+        // 空串 / 纯空白不得当成覆盖 —— 否则"设了但值为空"会静默退化成上游那份。
+        assert_eq!(requirements_path(&tmp, Some("  ")), None);
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// 默认读上游源码树自带那份；**文件不在盘上 ⇒ None**（而不是编一个路径出来）。
+    /// 判据是"在盘上"而不是"路径拼得出来"：拼得出来但不存在 = 依赖阶段必失败，
+    /// 而那种失败在跑起来之前看不出来。
+    #[test]
+    fn requirements_path_defaults_to_upstream_and_requires_existence() {
+        let tmp = std::env::temp_dir().join(format!("miao-req-src-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let src = tmp.join("src");
+        fs::create_dir_all(&src).unwrap();
+        assert_eq!(requirements_path(&tmp, None), None, "清单不在盘上必须判 None");
+        let req = src.join("requirements.txt");
+        fs::write(&req, "torch\n").unwrap();
+        assert_eq!(requirements_path(&tmp, None), Some(req));
+        let _ = fs::remove_dir_all(&tmp);
+    }
 }
