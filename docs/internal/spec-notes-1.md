@@ -4501,3 +4501,35 @@ Ctrl/Cmd+U、Ctrl/Cmd+Shift+I/J/C 与 F12；`contextmenu` 一律取消，**例�
 手工反证（改回旧口径）**G1 按预期红**、源码按字节还原 · `notready-state` **13/13** ·
 `check:resources` **8/0** · static 门 **17/17**。
 
+## D-231 首启装配状态四段化 + 启动卡死四条根因（2026-10-17）
+
+**起因**：用户装完安装包启动本地服务一直"卡着"，日志里有三处看不懂的东西（`✗ engine 探针
+超时（240s）：TCP 127.0.0.1:5004 未在监听` / `③ LLM 未在 180s 内就绪` / `[shared] CUDA or
+Metal compatible device could not be found`）。本条按"一 bug 一提交"分七节落，下面逐节记。
+
+### D-231① 前置：`DESKTOP.guards` 是条**没人守**的陈断言（不是回归，是断言早就瞎了）
+
+**怎么发现的**：为查 240s 那条去跑 static 门，发现 **14/17**（`settings` 183/184 → `docs`
+20/21 → `counts` 1/1 级联）。追下去发现**与本次改动无关**：`038dc7d`（oracion，10-16 21:58）
+把桌面守卫实现从 `src/main.tsx` 搬进了 `src/tools/desktopGards.ts`（main.tsx 只剩
+`installDesktopGuards();` 一行），而 `settings-media-check.mjs` 的 `DESKTOP.guards` 仍只读
+`ctx.s.main` ⇒ ②–④（开发态放行 / R / F5 / F / U / contextmenu / 可编辑元素例外）**恒红**，
+实测 `main.tsx` 里 `contextmenu|import.meta.env.DEV` 出现 **0** 次、`desktopGards.ts` 里 7 处。
+
+🔴 **比"门变红"严重的是另一面**：判据停在 main.tsx 上时，把 `contextmenu` 那整段从
+`desktopGards.ts` 里删掉，这条断言**照样绿** —— 桌面守卫实际上已经没有任何断言在守，
+而账面看起来是有覆盖的。这正是纪律第 3 条说的"长期全绿却从未抓到 bug 的断言，先怀疑它测错了
+东西"的反面：它连红都不红了。
+
+**改法（不是放宽断言，是把判据落回真正放代码的文件）**：`F` 表加 `desktopGuards` 源、
+`loadSources` 读它（`readMaybe` 读不到时返回 `''` ⇒ ②–④ 自动全红，不会静默跳过）；`DESKTOP.guards`
+拆两半 —— ① 仍钉 `main.tsx` 的 `^installDesktopGuards\(\);`，②–④ 改在
+`stripComments(desktopGards)` 上判。**并补一条新变异**（删掉实现里的整个 `contextmenu`
+监听 ⇒ 必须红）：它是"判据真的读到了那个文件"的哨兵 —— 若判据哪天又滑回 main.tsx，
+这条变异会立刻暴露。另把既有的"去掉开发态放行"那条变异的 `file` 从 `F.main` 改成
+`F.desktopGuards`（否则锚点在新文件里，变异自身就失败）。
+
+**验收**：`check:settings` **184/0** · `--refute` **142/142 全红**（141 → 142）·
+static 门 **17/17**（改前 14/17）· 三条 DESKTOP 变异逐条按预期变红、
+`src\tools\desktopGards.ts` 字节一致。
+

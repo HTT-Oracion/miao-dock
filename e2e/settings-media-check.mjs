@@ -68,6 +68,11 @@ const F = {
   expanded: path.join(APP, 'src', 'screens', 'music', 'ExpandedPlayer.tsx'),
   musicScreen: path.join(APP, 'src', 'screens', 'MusicScreen.tsx'),
   main: path.join(APP, 'src', 'main.tsx'),
+  // 🔴 桌面守卫的**实现**在 `tools/desktopGards.ts`（2026-10-16 由 038dc7d 从 main.tsx 搬出）。
+  //    main.tsx 只剩 `installDesktopGuards();` 这一行调用 —— 断言若继续只读 main.tsx，
+  //    就变成"只钉住调用、没钉住实现"：把 contextmenu 那段从 desktopGards.ts 删掉它照样绿。
+  //    两处必须**都**读：调用在 main.tsx，实现在这里。
+  desktopGuards: path.join(APP, 'src', 'tools', 'desktopGards.ts'),
   // 「音乐缓存」通栏四格的实现（放 screens/settings/ 而非 components/units/ ——
   // 后者的文件清单被 units-structure-check 的 MANIFEST 锁死为 12 个，多一个即红）
   cacheBlock: path.join(APP, 'src', 'screens', 'settings', 'CacheBlock.tsx'),
@@ -247,6 +252,7 @@ function loadSources() {
     expanded: readMaybe(F.expanded),
     musicScreen: readMaybe(F.musicScreen),
     main: readMaybe(F.main),
+    desktopGuards: readMaybe(F.desktopGuards),
     entryHtml: readMaybe(F.entryHtml),
     cacheBlock: readMaybe(F.cacheBlock),
     engineApi: readMaybe(F.engineApi),
@@ -775,14 +781,19 @@ add('STORE.hydrate.atBoot', 'STORE', (ctx) => {
 // 装在 main.tsx 入口是唯一收口处（装屏里换屏失效，装 App 里每次渲染重挂）。
 add('DESKTOP.guards', 'DESKTOP', (ctx) => {
   const main = stripComments(ctx.s.main);
+  // 🔴 守卫的**实现**在 `tools/desktopGards.ts`，main.tsx 只剩一行调用（038dc7d 起）。
+  //    ②–④ 必须判在实现文件上：判在 main.tsx 上时，把 contextmenu 那段从实现里删掉
+  //    断言照样绿 —— 那正是"守卫没人守"的形态，2026-10-16 真机基线红里实测踩到过。
+  const guard = stripComments(ctx.s.desktopGuards);
   const missing = [];
+  if (!ctx.s.desktopGuards) missing.push('读不到 src/tools/desktopGards.ts（守卫实现不在？文件被搬走了？）');
   // ① 真的装了守卫，且装在启动处（只定义不调用 = 没装）。
   //    锚定**行首的调用语句**：写成 /installDesktopGuards\s*\(/ 会同时匹配函数定义
   //    （`function installDesktopGuards(): void {`），摘掉调用后仍然绿 —— 假阳性，实测踩过。
   if (!/^installDesktopGuards\(\);/m.test(main))
     missing.push('main.tsx 未调用 installDesktopGuards()（定义了没装等于没装）');
   // ② 开发态必须放行：否则 dev 里 Ctrl+R 失效，排障时会被误判成"代码没生效"
-  if (!/import\.meta\.env\.DEV/.test(main))
+  if (!/import\.meta\.env\.DEV/.test(guard))
     missing.push('守卫没有开发态放行（import.meta.env.DEV）—— dev 里禁刷新会妨碍排障');
   // ③ 四类快捷键一个都不能漏：R（刷新）/ F5（刷新）/ F（页内查找）/ U（查看源码）
   for (const [id, re] of [
@@ -791,11 +802,11 @@ add('DESKTOP.guards', 'DESKTOP', (ctx) => {
     ['Ctrl/Cmd+F', /k === 'f'/],
     ['Ctrl/Cmd+U', /k === 'u'/],
   ]) {
-    if (!re.test(main)) missing.push(`守卫未覆盖 ${id}`);
+    if (!re.test(guard)) missing.push(`守卫未覆盖 ${id}`);
   }
   // ④ 右键菜单取消（可编辑元素例外：那里要留剪切/复制/粘贴）
-  if (!/contextmenu/.test(main)) missing.push('守卫未处理 contextmenu（默认右键菜单还在）');
-  if (!/input, textarea, \[contenteditable/.test(main))
+  if (!/contextmenu/.test(guard)) missing.push('守卫未处理 contextmenu（默认右键菜单还在）');
+  if (!/input, textarea, \[contenteditable/.test(guard))
     missing.push('右键菜单没有给可编辑元素留例外（粘贴会只剩快捷键一条路）');
   return { ok: missing.length === 0, detail: missing.length ? `桌面守卫：${missing.join('、')}` : '' };
 });
@@ -3289,11 +3300,28 @@ const MUTATIONS = [
     expect: ['DESKTOP.guards'],
   },
   {
-    // 另一半：守卫不再区分开发态 ⇒ dev 里 Ctrl+R 失效，排障被误判成"代码没生效"
+    // 另一半：守卫不再区分开发态 ⇒ dev 里 Ctrl+R 失效，排障被误判成"代码没生效"。
+    // ⚠️ 变异目标随 038dc7d 一起搬到了 `tools/desktopGards.ts`（仍在 F.main 上找会找不到
+    //    锚点，变异自身就失败）。
     name: '把桌面守卫的开发态放行去掉（dev 里也禁刷新，排障被误导）',
-    file: F.main,
+    file: F.desktopGuards,
     find: '  if (import.meta.env.DEV) return;',
     replace: '  if (false) return;',
+    expect: ['DESKTOP.guards'],
+  },
+  {
+    // 新增（随"实现搬进 desktopGards.ts"补的变异）：判据改读实现文件后，得有一条变异
+    // 证明**真的在读那个文件**。删掉右键菜单处理 ⇒ `DESKTOP.guards` 必须红；
+    // 若判据还停在 main.tsx 上，这条变异会"按预期变红"——所以它是防"读错文件"的哨兵。
+    name: '把守卫实现里的右键菜单处理删掉（默认右键菜单会回来，粘贴只剩快捷键一条路）',
+    file: F.desktopGuards,
+    find:
+      "  window.addEventListener('contextmenu', (e) => {\n" +
+      '    const t = e.target as HTMLElement | null;\n' +
+      '    if (t?.closest(\'input, textarea, [contenteditable="true"]\')) return;\n' +
+      '    e.preventDefault();\n' +
+      '  });\n',
+    replace: '',
     expect: ['DESKTOP.guards'],
   },
   /*
