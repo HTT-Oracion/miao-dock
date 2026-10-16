@@ -1,11 +1,9 @@
 import type { ReactElement } from 'react';
-import type { ServiceState } from '@/ipc';
 import { SHELL, SIDEBAR } from '@/themes/tokens';
-import { Dot } from '@components/units';
 // 公共资源：不经构建、原样复制到 dist/assets/icons/，故用**绝对 URL** 而不是 import
 // （import 会让 Vite 多产一份带指纹的副本，而这里要的就是"路径可预测"）。
 const LOGO_SRC = '/assets/icons/miao-logo.png';
-import { APP_LABEL, stateView, type AppId, type Screen } from '@/stores/nav';
+import { APP_LABEL, type AppId, type Screen } from '@/stores/nav';
 import { Languages, Music4, Settings } from 'lucide-react';
 
 /** 应用层入口（《09》§3.1）—— 恒为 2 项。C8 断言的判据之一，故不在别处重复定义。 */
@@ -23,7 +21,6 @@ const APPS: { id: AppId; label: string; icon: () => ReactElement }[] = [
  * │ 漫画翻译 │ ← 应用层 58×52（active = pink-soft）
  * │  音乐    │ ← 应用层 58×52
  * │  ────    │ ← 分隔线 34×1（居中短横线，非通栏）
- * │  ◍ 状态点 │ ← 全局层
  * │   ⚙      │ ← 全局层（纯图标 44×44，去文字）
  * └─────────┘
  * ```
@@ -32,9 +29,9 @@ const APPS: { id: AppId; label: string; icon: () => ReactElement }[] = [
  * 「音乐」平级，会读成「音乐是翻译的第四步」。现在应用层只有两项，
  * 翻译的三个视图下沉为 Tab（见 `TRANSLATE_VIEWS`）。
  *
- * ⚠️ 状态点与设置都在**分隔线以下** —— 这不是装饰，是断言 C8 的判据：
+ * ⚠️ 设置在**分隔线以下** —— 这不是装饰，是断言 C8 的判据：
  * 分隔线是「应用 / 全局」的分界，跨层放置会让两级结构失去意义。
- * 全局层通过 `.sidebar-status` 的 `margin-top: auto` 贴到侧栏底部 —— 这只是
+ * 全局层通过设置按钮的 `margin-top: auto` 贴到侧栏底部 —— 这只是
  * 撑开分隔线以下的空隙，分隔线仍在应用层之下、全局层之上，C8c 不受影响。
  *
  * ## 应用入口的两种形态（台账 D-84，「侧栏图标标签」偏好）
@@ -54,16 +51,13 @@ const APPS: { id: AppId; label: string; icon: () => ReactElement }[] = [
 export function Sidebar({
   screen,
   onScreen,
-  state,
   labels,
 }: {
   screen: Screen;
   onScreen: (s: Screen) => void;
-  state: ServiceState;
   /** 是否显示应用入口的文字标签（`shell-prefs.ts` 的偏好，设置页①可改） */
   labels: boolean;
 }) {
-  const v = stateView(state);
   // 尺寸与标签同源：一个 `labels` 同时决定"有没有 span"与"用哪套几何"
   const appItem = labels ? SIDEBAR.appItem : SIDEBAR.iconOnlyItem;
   return (
@@ -100,17 +94,12 @@ export function Sidebar({
         aria-hidden="true"
       />
 
-      {/* ── 全局层 ── */}
-      <div className="sidebar-status" title={v.text}>
-        <Dot colorVar={v.colorVar} pulse={state === 'starting'} />
-        <span>{v.text}</span>
-      </div>
-
       {/*
-       * 全局层设置：去掉了文字，所以 `title` 不是锦上添花而是唯一的可发现性线索。
-       * 但 `title` 单独兜不住无障碍 —— 它不进可访问名称的计算优先级前列，
-       * 读屏与键盘焦点都可能读不出「这是什么按钮」。故 `aria-label` 给名称、
-       * `title` 给鼠标悬停提示，两者是分工不是重复。
+       * ── 全局层设置 ──
+       * 纯图标，所以 `title` 不是锦上添花而是唯一的可发现性线索；但 `title` 单独兜不住
+       * 无障碍（不进可访问名称的计算优先级前列），故 `aria-label` 给名称、`title` 给悬停提示。
+       * `margin-top: auto` 由 CSS（`.nav-item.is-global`）给：它把全局层压到侧栏底部，
+       * 分隔线仍夹在应用层与全局层之间，C8c 的上下序不变。
        */}
       <button
         type="button"

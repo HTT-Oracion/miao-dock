@@ -4332,6 +4332,17 @@ cookie 文件 17:00 由开发态写入，17:50 起的安装版进去直接是登
 搅动 `llm-supervisor-parity` 的基线。验收：`cargo build` 零告警 ·
 `llm-supervisor-parity` **5/5**（含 `LLM.restart.behavior` 相同）。
 
+**⑤ 侧栏去掉服务状态点**（`refactor(app)`）：`Sidebar.tsx` 的 `state` props、`stateView` 取用与
+`.sidebar-status` 的色点/文字一并移除；贴底的 `margin-top: auto` 随之移到 `.nav-item.is-global`
+（视觉位置不变，C8c 的上下序不受影响）。`stateView()` **保留** —— 设置页「服务与配对」与
+`EngineDiag` 仍在用；去掉的是侧栏这**第三处**重复，不是状态本身。
+断言：`check:ia` 新增 **C8e**（读**真实** `Sidebar.tsx`：不得出现 `sidebar-status` / `stateView` /
+`<Dot`）+ 注入破坏反证（把状态点加回去必须变红，跑完按字节还原并复核）。
+合成快照里的 `statusEl` 与 `geometry()` 的 status 分支同步删除 —— 镜像不跟着改就会漂移成
+"合成一套规则、产品另一套"，而那正是假绿的标准形态。条数 32→35，`AGENTS.md` / `README.md` 同步。
+验收：`check:ia` **35/0**（C8e 绿 + 反证红 + 还原一致）· static 门 **17/17**（含 counts 对账）·
+`tsc --noEmit` 0。
+
 ## D-229 首启引导的死结：闸门只挡引擎、不挡服务本体（2026-10-16）
 
 **症状（用户实测）**：装完包进应用 → 看到 D1 引导页 → 点「开始下载」→

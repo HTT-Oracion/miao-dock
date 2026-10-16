@@ -177,7 +177,7 @@ npm run task -- check:launch-plan[:refute] # S2/A3b 启动配方契约 25 条 / 
 npm run task -- check:child-watch[:refute]   # 外部二进制父死看守**双靶**取证 3 条（秒级；真模式 E11 的唯一依赖）。A3c 起双靶：Node 原版 + Rust `mangasvc --child-watch`；Rust 靶用**产品同源 Rust 父** `mangasvc --child-watch-parent`（用 node 当父测的是产品里不存在的场景 ⇒ 会得出「E11 失效」的错误结论）。含 W2 接线错误防护（父没攥住 stdin 管道时不得自杀）。反证轮**只判 Rust 靶**，Node 靶按结构跳过并标注原因
 npm run task -- check:child-watch-kill[:refute] # child-watch Windows killTree 无条件 /F **双靶源码钉** 2 条 / 反证 2 条（不起进程；D-89 崩溃路径孤儿执行器）。判据**先 stripComments** —— 注释里主动写出了被禁写法
 npm run task -- e2e                   # D 组端到端
-npm run task -- check:ia              # IA 结构 32 条（含 C8d：侧栏两套几何 58×52 / 44×44 随标签形态成对切换）
+npm run task -- check:ia              # IA 结构 35 条（含 C8d：侧栏两套几何 58×52 / 44×44 随标签形态成对切换 · C8e：侧栏不渲染服务状态点，读真实 Sidebar.tsx 判 + 注入反证）
 npm run task -- check:tls             # TLS 依赖链 14 条（三层）
 npm run task -- check:quit[:refute]   # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW（`signal_tree` 经 `hide_console` 施加）/ 前端不静默 / Windows signal_tree 无条件 /F；不起进程）
 npm run task -- check:autostart[:refute] # 翻译服务「自动启动 / 手动启停」根因钉子 18 条 / 反证 19 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / 自动启动 effect 依赖不含 status / 未就绪屏 stopped 给「启动」/ 设置页启停行 / 服务实现默认档 = Rust（E1–E5）/ Cargo.toml `default-run` 指向真实 bin（F1）；不起进程；D-94 · D-168 · D-169）

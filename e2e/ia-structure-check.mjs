@@ -15,12 +15,14 @@
  *
  * ✅ 验的是：**断言的判据是否真的能捕捉到它声称捕捉的那种改错**。
  *    —— 塞回 4 项、改回逆序、抹平小节、渲染两组，各自会不会让对应条目变红。
+ *    —— 以及末尾的「产品镜像」小节：直接读真实 `Sidebar.tsx` 判一次（合成快照与产品
+ *       是两套东西，只验前者会在文件漂移时静默失效）。
  * ❌ 不验：真实浏览器里的布局像素。几何由应用内 C 组自检负责（那里有真实 getComputedStyle）。
  *
  * 两者互补。缺了这个脚本，断言可能恒真而没人知道；缺了应用内自检，
  * 像素就没人量。但**只有这个脚本能回答"我的断言会不会是假阳性"**。
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 // ── 与应用共享的令牌（直接读源，避免脚本与应用漂移成两套数）──────────────────
 const TOKENS = readFileSync(new URL('../src/themes/tokens.ts', import.meta.url), 'utf8');
@@ -112,13 +114,12 @@ function dom({
     })
     .join('');
   const dividerEl = divider ? '<div class="sidebar-divider"></div>' : '';
-  const statusEl = '<div class="sidebar-status"></div>';
 
-  // 正确形态：应用 → 分隔线 → 状态点 → 设置
-  // 混层形态：应用 → 设置 → 分隔线 → 状态点（设置跑到分界之上）
+  // 正确形态：应用 → 分隔线 → 设置
+  // 混层形态：应用 → 设置 → 分隔线（设置跑到分界之上）
   const globalTail = globalAboveDivider
-    ? `${globalBtn(screens.app === 'settings')}${dividerEl}${statusEl}`
-    : `${dividerEl}${statusEl}${globalBtn(screens.app === 'settings')}`;
+    ? `${globalBtn(screens.app === 'settings')}${dividerEl}`
+    : `${dividerEl}${globalBtn(screens.app === 'settings')}`;
 
   return `
 <div class="shell">
@@ -165,18 +166,10 @@ function dom({
 /** 从 DOM 文本里抽出侧栏几何（模拟 getBoundingClientRect 的纵向序） */
 function geometry(html) {
   const order = [];
-  const re = /class="(nav-item is-app[^"]*|sidebar-divider|nav-item is-global[^"]*|sidebar-status)"/g;
+  const re = /class="(nav-item is-app[^"]*|sidebar-divider|nav-item is-global[^"]*)"/g;
   let m;
   while ((m = re.exec(html)))
-    order.push(
-      m[1].startsWith('nav-item is-app')
-        ? 'app'
-        : m[1] === 'sidebar-divider'
-          ? 'divider'
-          : m[1] === 'sidebar-status'
-            ? 'status'
-            : 'global',
-    );
+    order.push(m[1].startsWith('nav-item is-app') ? 'app' : m[1] === 'sidebar-divider' ? 'divider' : 'global');
   return order;
 }
 
@@ -430,11 +423,58 @@ for (const c of cases) {
   console.log('');
 }
 
+// ── 产品镜像：真实 Sidebar.tsx 不得再渲染服务状态点（D-230 ⑤）────────────────
+/*
+ * 上面整个脚本都在**合成 DOM**里跑：全绿只证明"判据在合成快照上咬得住"，
+ * 不证明"真实文件里没有状态点"—— 两者是两套东西，漂移了没人知道。
+ * 故这里直接读产品源码判一次，并用"把状态点加回去"的注入破坏反证。
+ *
+ * 判据取三个信号（任一出现即回归）：`.sidebar-status` 容器 · `stateView` 取用 ·
+ * `<Dot` 渲染。服务状态本身没有消失（设置页「服务与配对」+ 托盘图标仍在），
+ * 消失的是侧栏这**第三处**重复。
+ */
+const SIDEBAR_TSX = readFileSync(new URL('../src/components/Sidebar.tsx', import.meta.url), 'utf8');
+const judgeProductSidebar = (src) => ({
+  C8e: !src.includes('sidebar-status') && !/stateView/.test(src) && !/<Dot/.test(src),
+});
+
+{
+  const j = judgeProductSidebar(SIDEBAR_TSX);
+  console.log('🟢 基线 · 产品镜像：真实 Sidebar.tsx');
+  ok(j.C8e === true, `C8e 侧栏不渲染服务状态点（实测 ${j.C8e ? '绿' : '红 ← 误报!'}）`);
+  console.log('');
+}
+
+{
+  // 🔴 按文件实际 EOL 拼锚点：本仓文件是 CRLF，手写 `\n` 会找不到边界
+  //    （同类坑在 settings-media / launch-gate 的变异里都记过）。
+  const eol = SIDEBAR_TSX.includes('\r\n') ? '\r\n' : '\n';
+  const anchor = [
+    '      <button',
+    '        type="button"',
+    "        className={screen === 'settings' ? 'nav-item is-global is-active' : 'nav-item is-global'}",
+  ].join(eol);
+  const injected = ['      <div className="sidebar-status">{stateView(\'running\').text}</div>', anchor].join(eol);
+  const fileUrl = new URL('../src/components/Sidebar.tsx', import.meta.url);
+  if (SIDEBAR_TSX.includes(anchor)) {
+    writeFileSync(fileUrl, SIDEBAR_TSX.replace(anchor, injected));
+    const j = judgeProductSidebar(readFileSync(fileUrl, 'utf8'));
+    console.log('🔴 反证 · 产品镜像：把服务状态点加回侧栏');
+    ok(j.C8e === false, `C8e 在此破坏下**变红**（实测 ${j.C8e === false ? '红' : '仍绿 ← 假阳性!'}）`);
+    // 按字节还原并复核：留着被改坏的产品文件比没测更糟
+    writeFileSync(fileUrl, SIDEBAR_TSX);
+    ok(readFileSync(fileUrl, 'utf8') === SIDEBAR_TSX, 'Sidebar.tsx 已按字节还原');
+  } else {
+    ok(false, '反证锚点未找到（Sidebar.tsx 的设置按钮写法变了？）—— 本条无法反证');
+  }
+  console.log('');
+}
+
 console.log('─'.repeat(56));
 console.log(`${pass} 通过 / ${fail} 失败`);
 console.log(
   fail === 0
-    ? '\n✓ 全部反证成立：四条断言都能捕捉到它们声称捕捉的改错。'
+    ? '\n✓ 全部反证成立：合成快照与产品镜像两侧的断言都能捕捉到它们声称捕捉的改错。'
     : '\n✗ 存在假阳性：某条断言在破坏下仍绿，它测不到东西。',
 );
 process.exit(fail === 0 ? 0 : 1);

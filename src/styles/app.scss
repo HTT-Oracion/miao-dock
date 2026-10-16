@@ -110,6 +110,9 @@
   width: 44px;
   height: 44px;
   border-radius: var(--md-radius-sm);
+  /* 全局层贴侧栏底部（原由服务状态点的 auto margin 承担，D-230 状态点去掉后移到这）。
+     只撑开分隔线以下的空隙，不改应用层/全局层的上下序，C8c 不受影响。 */
+  margin-top: auto;
 }
 
 /*
@@ -128,23 +131,9 @@
   margin: 6px 0;
 }
 
-/* 服务状态点：色相承载状态，文字同步给出（颜色不作唯一信息载体）
- *
- * `margin-top: auto` 把全局层（状态点 + 设置按钮）压到侧栏底部 —— 这是刻意
- * 恢复 ver1.0 的「全局层贴底」布局。分隔线仍夹在应用层与全局层之间不动，
- * C8c 的判据（应用恒在上、全局恒在下）不受影响：auto margin 只是把全局层
- * 与分隔线之间的空隙撑开，不改变二者的上下顺序。 */
-.sidebar-status {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--md-muted);
-  padding: 6px 0;
-  margin-top: auto;
-}
+/* 服务状态点曾在这里（色点 + 文字），D-230 按需求去掉：侧栏不再重复服务状态 ——
+ * 状态在设置页「服务与配对」与托盘图标两处可查，去掉的是"第三处重复"，不是状态本身。
+ * 原先由它带的 `margin-top: auto`（全局层贴底）移到 `.nav-item.is-global`。 */
 
 /* ================================================================ 工具条 */
 

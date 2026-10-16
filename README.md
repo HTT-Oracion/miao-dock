@@ -207,7 +207,7 @@ npm run task -- e2e                   # D1–D5 端到端（真实 engine + 真�
 npm run task -- capture               # 截图取证（需屏幕解锁；不满足条件会拒绝出图而非交假证据）
 
 # 结构断言（每条都带反证轮，见 docs/internal/spec-notes.md 与 AGENTS.md §3）
-npm run task -- check:ia              # IA 结构 32 条（侧栏两级 / 视图 Tab / 设置两栏壳 / 小节分层 / 侧栏两套几何 C8d）
+npm run task -- check:ia              # IA 结构 35 条（侧栏两级 / 视图 Tab / 设置两栏壳 / 小节分层 / 侧栏两套几何 C8d / 侧栏不渲染服务状态点 C8e）
 npm run task -- check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
 npm run task -- check:quit            # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW / 前端不静默 / Windows signal_tree 无条件 /F）
 npm run task -- check:autostart       # 翻译服务「自动启动 / 手动启停」根因钉子 18 条 / 反证 19 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / effect 依赖不含 status / stopped 给「启动」/ 服务实现默认档 = Rust / default-run 指向真实 bin；不起进程）

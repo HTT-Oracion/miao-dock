@@ -568,7 +568,7 @@ export function App() {
 
   return (
     <div className="shell">
-      <Sidebar screen={screen} onScreen={setScreen} state={status?.state ?? 'starting'} labels={sidebarLabels} />
+      <Sidebar screen={screen} onScreen={setScreen} labels={sidebarLabels} />
 
       <div className="main">
         <Toolbar title={toolbar.title} subtitle={toolbar.subtitle} actions={toolbar.actions} />
