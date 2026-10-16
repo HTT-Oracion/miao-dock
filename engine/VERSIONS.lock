@@ -1,6 +1,6 @@
 # VERSIONS.lock —— 真实翻译引擎的版本锁（miao-dock ver2.0）
 #
-# 依据：docs/engine-integration-plan.md §S0 / §S3（《04》§2 三层进程）
+# 依据：docs/internal/engine-integration-plan.md §S0 / §S3（《04》§2 三层进程）
 # 目的：把「引擎源码 commit / Python / PyTorch / llama.cpp」四件事钉死。
 #       换版本 = 改这个文件 + 走 D-xx 评审，不允许"顺手升级"。
 # ⚠️ 本文件在仓库内（`engine/`），**可版本控制**。
@@ -75,7 +75,7 @@ rusty-manga-image-translator = 0.12.1   # ← 来自 frederik-uni 额外索引
 #      `FileExistsError`，却被抛成**包着 `EEXIST` 文案的 `PermissionError`** ⇒ 按正确 errno
 #      忽略"已存在"的调用方（**pip 解包 sdist 就是**）接不到，报成"安装失败"。
 #      ⇒ 安装走 `.tmp/engine-test/pip-mkdir-fix.py`（**只在该目录确实存在时**纠正类型；
-#        不存在的路径**原样抛出** ⇒ 不放大任何权限）。详见 `docs/spec-notes.md` D-59 §5③。
+#        不存在的路径**原样抛出** ⇒ 不放大任何权限）。详见 `docs/internal/spec-notes.md` D-59 §5③。
 # ✅ 已补齐（2026-10-05）：
 #   · `pip check` → **No broken requirements found**（依赖自洽）
 #   · `pydensecrf 1.0` → **已编译安装成功**（cp311 macosx_11_0_arm64 wheel，222 KB）

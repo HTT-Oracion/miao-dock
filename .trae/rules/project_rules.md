@@ -6,8 +6,8 @@ alwaysApply: true
 # 喵坞 MiaoDock · 项目常驻规则
 
 **开工第一件事：读仓库根的 `AGENTS.md`**（它是本项目的完整协作上下文入口），
-再按它的索引读 `docs/spec-notes.md`（决策与偏离留痕，`D-xx`/`G-xx` 编号）。
-本文件只列**必须常驻遵守**的条款；与 `AGENTS.md` / `docs/spec-notes.md` 冲突时，以它们为准。
+再按它的索引读 `docs/internal/spec-notes.md`（决策与偏离留痕，`D-xx`/`G-xx` 编号）。
+本文件只列**必须常驻遵守**的条款；与 `AGENTS.md` / `docs/internal/spec-notes.md` 冲突时，以它们为准。
 
 ## 1. 语言
 
@@ -25,8 +25,8 @@ alwaysApply: true
 6. **关键节点独立 commit**，提交信息说明该节点内容与**为什么**；跨里程碑修正另起 `fix(...)`。
 7. **非平凡决策与踩过的坑写进台账**（编号接续，勿重复占用编号）——
    这是跨工具、跨会话唯一能共享的记忆。
-   ⚠️ **D-137 起新条目写 `docs/spec-notes-1.md`**（`docs/spec-notes.md` 已封卷于 D-136）；
-   编号全局接续，动手前先 `grep "^## D-" docs/spec-notes*.md | tail -3` 确认最新编号。
+   ⚠️ **D-137 起新条目写 `docs/internal/spec-notes-1.md`**（`docs/internal/spec-notes.md` 已封卷于 D-136）；
+   编号全局接续，动手前先 `grep "^## D-" docs/internal/spec-notes*.md | tail -3` 确认最新编号。
 8. **禁止内联长链三元**：`title={a ? 'x' : b ? 'y' : c ? 'z' : w}` 这类多级三元必须抽成**具名变量 / 早返回函数**
    （范式见 `screens/library/meta.ts` 的 `retranslateMeta` / `resumeMeta`），让每个分支可读、可单测。
 9. **注释只描述功能**：说明"做了什么"即可；仅**核心改动**才追加"为什么"，且保持精简 —— 禁止大段复述代码。
@@ -42,11 +42,12 @@ alwaysApply: true
 - `src/router/` = 屏级路由（**URL 是「屏 + 应用内视图」的唯一事实源**）：`routes.ts` 是「路径 ↔ 屏」的事实源，`use-nav.ts` 是读写口，`index.tsx` 是装配，`panes/` 是屏装配件（经 `<Outlet context>` 取壳层数据，**不自己持状态**；翻译屏兼管让位守卫）。**新增屏要同时进路由表与 `src/stores/nav.ts` 的 IA 模型**。
 - `src/stores/` = **跨组件共享状态的收口（非域）**：`nav` / `toastBus` / `shell-prefs`。**域内状态留域里** —— `src/music/store.ts`（zustand）不往这里搬。
 - `src/ipc/` = 与后端通信（`ipc.ts` 命令 + `engine-download.ts`）；`src/types/` = 跨域类型与环境声明；`src/themes/` = 设计令牌与主题应用（🔴 令牌数值是**断言对象**，改它要同时看断言）。
+- `public/assets/` = **公共资源（不经过构建，用绝对 URL 引）**：`fonts/`（三份清单由入口 HTML 的 `<link>` 加载）· `icons/`；`installer/` = NSIS 安装钩子 `hooks.nsh`（由 `tauri.windows.conf.json` 相对 `src-tauri/` 引用）。判据是「**要不要过构建**」。
 - `src-tauri/src/` 根只留 `main.rs`（装配与启动）/ `lib.rs`，其余六域：`commands/`（IPC 命令层，**`handler()` 是唯一的命令注册点**）· `service/`（子进程生命周期）· `selftest/`（自检 + 截图取证）· `platform/`（跨平台底座）· `music/` · `mangasvc/`。
 - **按「依赖什么」定归属，不按「被用几次」**。新组件先看它 import 什么，再决定放哪。
-- 不要为了"复用"把绑定单屏几何/业务类型的件抽走（反面清单见 `docs/spec-notes.md` D-34）。
+- 不要为了"复用"把绑定单屏几何/业务类型的件抽走（反面清单见 `docs/internal/spec-notes.md` D-34）。
 
-**目录约定（硬规则，全文见 `README.md` §目录 · `docs/spec-notes.md` D-79）**：
+**目录约定（硬规则，全文见 `README.md` §目录 · `docs/internal/spec-notes.md` D-79）**：
 
 - **产品 / 验收分家**：验收脚本一律在 `e2e/`（按来源分子目录：`e2e/service/` · `e2e/engine/`）。
   判据不是"像不像测试"，而是**产品代码运行期会不会 fork 它** —— 会 fork 的留在原处。

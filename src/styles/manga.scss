@@ -87,7 +87,7 @@
 /*
  * 当前运行行：surface 底 + line 描边（《02》§5.2）。
  * 表格整体浮在 board 上，只有运行行被「抬」到 surface —— 这是该规格唯一自洽的读法，
- * 否则表面底与描边都无法与普通行区隔。已记入 docs/spec-notes.md G-06。
+ * 否则表面底与描边都无法与普通行区隔。已记入 docs/internal/spec-notes.md G-06。
  */
 .qt-row.is-running {
   background: var(--md-surface);

@@ -10,6 +10,8 @@
       为什么是 <link> 而不是 main.tsx 的 import：这些是**不经过构建**的公共资源，
       Vite 原样复制到 `dist/assets/fonts/`；走构建只会多拿一份带指纹的副本，而加载它们
       本来就不需要任何编译期处理。入口只此一处，读代码的人一眼能看到"这个窗口装了哪些字体"。
+      ⚠️ 复制过去的 `dist/assets/fonts/**` 与构建产出的 `dist/assets/main-*.js` 等**同目录** ——
+      不冲突（原样复制的文件按源名，构建产物带内容指纹），这不是配置疏漏。
 
       🔴 两条不能碰的红线（都由 `check:settings` 的 FONT 组钉着）：
         ① **不许**写进 `styles/index.scss` 的 `@use` —— Sass 对带 `.css` 后缀的 `@use`

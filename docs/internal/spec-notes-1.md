@@ -4144,3 +4144,48 @@ Rust 六域表与「命令注册只能一处展开 + `Wry` 不能泛型化」两
 **同步的条数声明**（`check:docs` 取脚本**通过数**、`check:counts` 取 AGENTS §3）：
 `AGENTS.md` docpaths 4→5 · quit 4→5 · music 231→234；`README.md` music 231→234（quit 本就是 5/5）。
 
+## D-225 开源改造收口第二轮：屏交路由 · 资源二分（推翻 D-220 结论）· NSIS 归置 · 采集扩到八步 · 条数机器对账（2026-10-16）
+
+**提交序列**（顺序即依赖顺序，每条自身可跑）：
+
+| # | 提交 | 交付 |
+| --- | --- | --- |
+| 1 | `refactor(app): 路由维护屏，App 只留壳与常驻层` | `routes.ts` 成为「路径 ↔ 屏」的唯一事实源；`App.tsx` 退化为 layout（侧栏 / 工具条 / 常驻层），屏内容经 `<Outlet />` |
+| 2 | `refactor(app): 补齐屏装配件的断言与 watch，清掉三处静默缺口` | `check:units` 的 ROUTER 分派组 + 屏装配件相关 watch |
+| 3 | `refactor(app): 静态资源二分到 public/assets` | 三份字体清单与品牌图搬到公共资源；加载方式从 `main.tsx` import 改为入口 HTML 的 `<link>` |
+| 4 | `refactor(scripts): 条数声明改为机器对账` | 新增 `check:counts`；`AGENTS.md` §3 的 static 条数声明不再靠人维护 |
+| 5 | `chore(oss): NSIS 安装脚本归置到 installer/` | `hooks.nsh` 归位；`tauri.windows.conf.json` 以 `../installer/hooks.nsh` 引用 |
+| 6 | `refactor(capture): 截图序列纳入音乐屏与桌面歌词窗` | `capture.rs` 六步 → 八步；`shoot()` 改写为按窗口 label 截，取不到窗口**报错而不回落主窗** |
+
+**B1 为什么要重修**：上一轮引入 react-router 后，三条路由都渲染同一个 `<App />` —— 路由只声明了"哪些路径合法"，"当前是哪一屏"仍由壳内的三元链决定。本轮把**屏**交给路由表：`SCREEN_ROUTES` 由 `TRANSLATE_VIEWS` 生成（"加了视图却忘了加路由"在类型上发生不了），屏装配件落在 `router/panes/`，`App.tsx` 只留壳与常驻层。
+
+**勘误一处（计划写 props，实现走 `<Outlet context>`）**：屏装配件不再是壳的子组件 ⇒ `props` 递不进去。`Outlet context` 传的是壳层那一份**只读视图 + setter**，状态本身仍住壳里，故这不是"把跨组件共享状态塞进 Provider"：`createContext` 全仓仍为 0（`STATE.noReactContext` 不变）。理由写进 `shell-context.ts` 文件头与 `AGENTS.md` §1。两个语义原样保住：让位兜底（`showNotReady`，判定仍只在 `isBlockedWhenNotReady` 一处，落在 `TranslatePane`）· 下载覆盖层仍是壳上的覆盖层而不是一条路由。
+
+**推翻上轮结论一处（D-220 第 2 条）**：`src/assets/` 不再"全部留在构建内"。判据不是笼统的"要不要过构建"，而是**要不要指纹化** —— 留构建内的收益是 Vite 处理 `url()` 并给字体加指纹，代价是路径不可预测（`import` 会多一份带指纹的副本）；本轮按计划搬到 `public/assets/`，换成"路径可预测"（logo 走绝对 URL，dev 态与打包态同一条路径）。
+🔴 因此断言必须**整体改写**而不是随搬家顺手改：旧判据钉「三份 `font.css` 必须由 `main.tsx` 从 JS 侧 import」（真实事故驱动：字体写进 `index.scss` 的 `@use` ⇒ 编译过、构建成功、字体不生效）。新判据同时防三类失效：入口 HTML 漏 `<link>` · 被挪回 sass 的 `@use` · 清单里的 `url()` 指向错的绝对路径。
+⚠️ 一处**有意不做**：`templates/lyrics.html`（桌面歌词窗）不引这套字体栈 —— 给它加 `<link>` 是行为变更，需另议。
+⚠️ 另记一处**容易被当成配置疏漏**的点：`public/` 复制过去的 `dist/assets/fonts/**` 与构建产出的 `dist/assets/main-*.js` **同目录**（前者按源名、后者带内容指纹，文件名不冲突），已写进入口 HTML 的机制说明。
+
+**条数对账的口径（写进脚本头与 `AGENTS.md` §3）**：① 只对 **static 层**（秒级可跑）；② 只对**正向**条数（反证轮要把每个脚本再跑一遍，且各脚本汇总行格式不统一）；③ `check:docs` 已对账的四个套件（music / units / settings / autostart）跳过，避免把快闸门从 10s 抬到 60s；④ service / nightly 与反证条数是**人工快照**，脚本不碰。
+反证轮**覆盖漂移的两端**：改小文档数字 ⇒ `staticParity` 红 · 把「N 条」改成「N 项」⇒ `staticDeclared` 红 · **删掉某个脚本里的一条钉子**（自报 9→8）⇒ `staticParity` 红。🔴 第三条只能**真改盘**：被对账的脚本是子进程，内存覆盖层对它不可见 —— 故跑完**按字节还原并复核**（与 `settings-media-check.mjs` 同款机制）。
+
+**同步面（本轮真正的工作量在"别人读得对"）**：
+
+- **断言锚点随屏搬家**：`notready-state` 的 G10 锚点（`onOpenGuide` → 设置页）落到 `TranslatePane`；`units` 的调用点清单与灵动岛挂载判据、`music` 的音乐内核挂载、`settings` 的展开播放器挂载、`autostart` 的 C1–C3、`quit` 的 Q4/Q5 一并核对。
+- **注册表 watch 补齐（静默跳过纪律）**：`music` 补 `src-tauri/src/selftest/capture.rs` 与 `e2e/capture.mjs`（CAPTURE 三组跨这两个文件），以及脚本真的在读、此前却没进 watch 的 `src-tauri/src/commands/**` · `capabilities/**` · `tauri.conf.json` · `Cargo.toml` · `templates/lyrics.html` · `vite.config.ts`；`settings` 补 `templates/**` 与 `public/**`（FONT 组的判据源整体搬出了 `src/**`）；`counts` 补 `e2e/_commands.mjs` 与 `e2e/**`（它的判据源含**被对账的那些脚本自身** —— 脚本条数一变就该重跑对账）。
+- **文档归置的引用面**：产品代码注释、`e2e/`、`engine/`、`README.md` / `AGENTS.md` / `project_rules.md` 全部改成 `docs/internal/…`；封卷台账正文一字不动。上一轮的残留扫描器只认 `md|mjs|ts|tsx|rs|json|yml` 六种扩展名，于是 `.scss` / `.lock` / `.toml` 里的漂移整类漏过（本轮补扫，见验收）。
+- **目录表补齐**：`AGENTS.md` §1 与 `.trae/rules/project_rules.md` §3 补 `public/assets/`（公共资源）与 `installer/`（NSIS 钩子）两条 —— README 目录节此前已有，两份分层表缺失。
+
+**验收（本轮实测）**：`node e2e/run-checks.mjs --tier static` **17/17**（12.2s，含 `counts` 12s 量级 / `docs` / `music`）；反证轮 `settings` **139/139** · `music` **224/224** · `units` **61/61** · `bundle` **22/22** · `quit` **5/5** · `counts` **3/3**（含脚本侧那条，改盘后按字节还原、复核无残留） · `registry` **15/15** · `docpaths` **2/2** · `notready-state` **19/0** · `autostart` **19/19**。
+**顺手清掉最后一处既有反证锚点缺失**：`notready-state` 的 M4 盯的是早先那句整句文案「（模型资产约 X GB）」，而实现早已改成由 `gb` 变量拼装 ⇒ 锚点未命中时脚本**直接抛错**（不是"跳过"，也不是变红）。修法：锚点跟着实现走（把拼装处换成字面量），并在脚本里写明另一半判据（是否仍引用 `rt.requiredBytes`）**不需要**单独配变异 —— 去掉引用会让 `gb` 悬空，`tsc` 当场报错，那是编译期失效而非本组要防的静默失效。
+**残留扫描取证**：扩全扩展名 + 加一遍"`docs/….md` 存在性"扫描后，全仓漂移 0 处（封卷台账里 4 处历史痕迹按口径保留；`e2e/bundle-targets-check.mjs` 注释里的 `src-tauri/nsis/` 是"从哪搬来的"叙述，保留）。
+
+**🔴 明确「没验」的清单（不得当成已验证）**：
+
+- **打包链路仍未跑**：本机无 `makensis` ⇒ `npm run app:build` 的 NSIS 段与 nightly 的 `npm run task -- check:packaged` / `npm run task -- check:uninstall-keep` 均未跑。`installer/` 归置**只是**接线与内容级断言（`check:bundle` 的 W8–W12）绿。
+- **采集真图仍缺**：该通道是 macOS 专用（`screencapture -R` / `caffeinate`）⇒ `07-music.png` / `08-lyrics-window.png` 仍待补；本轮只做到"代码 + 断言 + 标签如实"（两屏都是空态）。
+- **GUI 真机行为一行没点**：URL 驱动的换屏（点侧栏 / 点 Tab / 刷新回原屏 / 未知路径兜底）只有类型与结构断言背书，没有人眼与真机。
+- **`cargo fmt --check` / `cargo clippy` 未跑**：toolchain 未装这两个组件，本轮改过 Rust 侧注释与文档，格式未经工具检查。
+- **CI 未真跑**：本机没有 GitHub runner。
+- **service 层既有 4 条红仍在**（与本轮无关，已登记）：`progress-truth` · `engine-settings` · `svc-selftest` · `lifespan`。
+

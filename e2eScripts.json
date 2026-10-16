@@ -113,7 +113,7 @@
       "why": "人手跑的入口，同样不进分层门。",
       "cmds": [
         { "id": "engine", "cmd": "node engine/src/server.mjs", "desc": "起本地引擎 dev server（替身/真引擎由 MIAO_ENGINE_PROTOCOL 决定）" },
-        { "id": "capture", "cmd": "node e2e/capture.mjs", "desc": "M5 截图取证：让应用自己把四个屏各截一张（需先跑 e2e，且需屏幕解锁）" },
+        { "id": "capture", "cmd": "node e2e/capture.mjs", "desc": "M5 截图取证：让应用自己把八个画面各截一张（六个主窗屏 + 音乐屏 + 桌面歌词窗；需先跑 e2e，且需屏幕解锁）" },
         { "id": "probe:png", "cmd": "node e2e/make-probe-png.mjs", "desc": "生成 src-tauri/testdata/probe.png（自检里「关窗后提交一张图」用的样张）" }
       ]
     }
