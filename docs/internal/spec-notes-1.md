@@ -4409,6 +4409,37 @@ Ctrl/Cmd+U、Ctrl/Cmd+Shift+I/J/C 与 F12；`contextmenu` 一律取消，**例�
 `macos` · 打包态 `hydratePlatform` 真能拿到值（开发态浏览器里它是 false，**看不出**对错）。
 验收：`tsc --noEmit` 0 · static 门 **17/17** · `cargo build` **零告警**（新命令已真编译）。
 
+**⑦ 未就绪屏：行内样式清零 + 迁入 `screens/library/`**（`refactor(app)`）：D1 引导页那 25 处
+`style={{…}}` 全部抽成 `.nr-guide*` 类，规则落 `manga.scss` 的 X-C3 段（`.notready` 之后），
+组件用 `git mv` 搬进 `src/screens/library/NotReadyScreen.tsx`（未就绪屏是**投放屏的一种形态**，
+由 `router/panes/TranslatePane.tsx` 的让位守卫渲染，不是独立屏入口 —— `screens/` 根因此从
+"六个屏入口"变成五个）。🔴 抽样式时发现一处**真问题**：原先写的是
+`var(--md-card, #fff)` / `var(--md-row, rgba(128,128,128,0.06))`，这两个自定义属性**全仓不存在**
+⇒ 一直是兜底值在生效，整页在深色主题下仍是一块白底（切主题跟这块无关）。改走 `--md-surface` /
+`--md-surface-2` 后主题才真的跟得上；圆角并入令牌阶梯（卡片 `--md-radius-md` 16、对照格
+`--md-radius-sm` 10），标题族统一 `--md-font-display` + 700（与 `.nr-sum-t` / `.lib-head-name`
+同款），两栏按钮上间距 14/12 的**不一致**（同一功能位差 2px）并成一条 `.nr-guide-acts`。
+刻意没做：不碰 L1–L4 冻结文案与 `summaryOf` / `lastLogLine` 逻辑（逐字锚点原样保留）。
+断言：`NOTREADY.css.classes` 的**抽取表补上 `nr-guide` 族**（不补 = 新类名不在判据里 = 这次
+"迁移"只做了一半），并把 `nr-guide-toggle` 加进变体宿主表（要求 `.nr-guide-toggle.is-quiet`
+真有规则）；手工反证跑过：把 `nr-guide-note` 改成 `nr-guide-note-x` ⇒ `NOTREADY.css.classes` 变红、
+跑完按字节还原且 SHA256 一致。同步：`settings-media-check` / `service-autostart-check` /
+`engine-bootstrap-check` / `notready-state-check` / `progress-truth-check` 五处硬编码路径 +
+`_check-registry.mjs` 三处 watch + `README.md` 目录树 + `AGENTS.md` §1 分层表。
+验收：`check:settings` 反证 **141/141** · `notready-state` **13/0**（反证 **19/0**）·
+`autostart` **18/0**（反证 **19/19**）· `progress-truth` **11/0**（反证 **15/0**）·
+`engine-bootstrap` 反证 **32/0** · static 门 **17/17** · `tsc` 0。
+
+**D-230 收口**：八项各一提交（⑧→⑤→②→③→①→④→⑥→⑦，顺序按"先小后大、风险递增"），
+改动面 = 侧栏 / 退出确认层级 / 歌词定位 / 歌词翻译合并 / 桌面快捷键 / 桌面歌词入口 / 未就绪屏，
+全程**不引新依赖、不改跨模块数据流**。新增断言集中在既有门（`check:music` +3 条、
+`check:settings` +1 组 `DESKTOP`、抽取表两处），**没有新开检查项**。
+⚠️ **未验清单**（如实登记，不当作已验证）：① ④ 只能在**打包态**验（快捷键与右键），
+本机只跑了源码层判据；⑥ 全按用户要求**未写自测脚本**，mac 真机上按钮是否消失、
+`desktop_platform` 真机返回值均未验；① 的 `mergeTranslation` 只有静态锚点 + 人工推演，
+**没有真实歌词数据跑过**；⑦ 的视觉变化（深色主题下卡片/对照格跟主题、圆角并入阶梯、标题族）
+**未在真机比对**，两栏按钮上间距 14/12 的合并也未逐项目测观感。
+
 ## D-229 首启引导的死结：闸门只挡引擎、不挡服务本体（2026-10-16）
 
 **症状（用户实测）**：装完包进应用 → 看到 D1 引导页 → 点「开始下载」→

@@ -41,7 +41,7 @@ const SELF = fileURLToPath(import.meta.url);
 const SERVICE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'service', 'mod.rs');
 const STATE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'state.rs');
 const IPC_TS = path.join(REPO_ROOT, 'src', 'ipc', 'index.ts');
-const NOTREADY_TSX = path.join(REPO_ROOT, 'src', 'screens', 'NotReadyScreen.tsx');
+const NOTREADY_TSX = path.join(REPO_ROOT, 'src', 'screens', 'library', 'NotReadyScreen.tsx');
 // B1 起未就绪屏（含它的入口）住在**翻译屏装配件**里，App 只持有 setScreen 本身
 const TRANSLATE_PANE = path.join(REPO_ROOT, 'src', 'router', 'panes', 'TranslatePane.tsx');
 

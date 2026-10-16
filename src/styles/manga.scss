@@ -310,6 +310,106 @@
   overflow-wrap: anywhere;
 }
 
+/* ── D1 引导页本体（`.nr-guide`）：缺什么 + 两条路并列 + 两处折叠 ──
+   🔴 卡片底色**必须走令牌**：这一页原先写的是 `var(--md-card, #fff)` /
+   `var(--md-row, rgba(128,128,128,0.06))` —— 这两个自定义属性**在项目里根本不存在**，
+   所以一直是兜底值生效，整页在深色主题下也还是一块白底（切主题跟这块无关）。
+   抽成 `--md-surface` / `--md-surface-2` 后才真的跟得上主题。 */
+.nr-guide {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 28px 24px 48px;
+}
+.nr-guide-title {
+  font-family: var(--md-font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--md-ink);
+}
+.nr-guide-sub {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--md-muted);
+}
+/* 两条路并列：等宽两栏，哪条都不该看起来比另一条次要 */
+.nr-guide-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 22px;
+  align-items: start;
+}
+.nr-guide-card {
+  padding: 18px;
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-md);
+  background: var(--md-surface);
+}
+.nr-guide-card-t {
+  font-family: var(--md-font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--md-ink);
+}
+.nr-guide-card-d {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--md-muted);
+}
+.nr-guide-acts {
+  margin-top: 14px;
+}
+.nr-guide-note {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--md-muted);
+}
+.nr-guide-compare {
+  margin-top: 22px;
+}
+/* 纯文字折叠开关：无边框无底色。蓝色=主问题（两者有什么区别），灰色=次要（排障信息）。
+   `is-quiet` 不是修饰主题而是**降一级**：两个开关同形，差别只在颜色与字号。 */
+.nr-guide-toggle {
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 13px;
+  color: var(--md-blue);
+  cursor: pointer;
+}
+.nr-guide-toggle.is-quiet {
+  font-size: 12px;
+  color: var(--md-muted);
+}
+.nr-guide-cmp {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--md-muted);
+}
+.nr-guide-cmp-cell {
+  padding: 12px;
+  border-radius: var(--md-radius-sm);
+  background: var(--md-surface-2);
+}
+.nr-guide-cmp-t {
+  color: var(--md-ink);
+}
+.nr-guide-trouble {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+/* 折叠展开后的三段（缺项单 / 去设置页 / 日志）之间的间距，之前是三处行内 margin-top */
+.nr-guide-gap {
+  margin-top: 10px;
+}
+
 /* ② 时间线：节点 + 连线 + 状态词（步数与序号由 STAGES 单源派生） */
 .tl-step {
   display: flex;

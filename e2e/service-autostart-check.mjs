@@ -117,7 +117,7 @@ const COMMANDS_MOD = path.join(ROOT, 'src-tauri', 'src', 'commands', 'mod.rs');
 const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service', 'mod.rs');
 const MAIN_RS = path.join(ROOT, 'src-tauri', 'src', 'main.rs');
 const APP_TSX = path.join(ROOT, 'src', 'App.tsx');
-const NOT_READY = path.join(ROOT, 'src', 'screens', 'NotReadyScreen.tsx');
+const NOT_READY = path.join(ROOT, 'src', 'screens', 'library', 'NotReadyScreen.tsx');
 // D-150：`sections.tsx` 已按 Section 拆到 `sections/*.tsx`。A9/D2 只看"代码里有没有这些调用"，
 // 故读全部 Section 的**拼接**；D2 的变异锚落到 TranslateSection（服务启停 UI 在那儿）。
 // ⚠️ 拼接必须**每次 runAll 重读**（不能做成模块级常量）—— 反证轮改的是磁盘上的文件，

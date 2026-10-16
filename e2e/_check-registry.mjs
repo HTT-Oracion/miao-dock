@@ -255,7 +255,7 @@ const CHECKS = [
     watch: [
       'src-tauri/src/service/mod.rs',
       'src-tauri/src/mangasvc/engine/state.rs',
-      'src/screens/NotReadyScreen.tsx',
+      'src/screens/library/NotReadyScreen.tsx',
       'src/ipc/index.ts',
       'src/router/**',
       'e2e/service/notready-state-check.mjs',
@@ -362,7 +362,7 @@ const CHECKS = [
     // （原先还挂着 `src/App.tsx` / `src/router/**` / `src/ipc/index.ts` —— 脚本一处都不读，
     //   改了只会白跑一个起真进程的 service 检查；`--changed` 的命中精度就是这么被稀释的。）
     watch: [
-      'src/screens/NotReadyScreen.tsx',
+      'src/screens/library/NotReadyScreen.tsx',
       'src/screens/settings/EngineDiag.tsx',
       'src-tauri/src/mangasvc/engine/state.rs',
       'engine/models.manifest.json',
@@ -723,7 +723,7 @@ const CHECKS = [
       'src-tauri/src/mangasvc/engine/state.rs',
       'src-tauri/src/mangasvc/engine/runtime_setup.rs',
       'src/ipc/engine-download.ts',
-      'src/screens/NotReadyScreen.tsx',
+      'src/screens/library/NotReadyScreen.tsx',
       'src/screens/engine/DownloadPanel.tsx',
       'src/screens/settings/OnlineApiForm.tsx',
       'src/components/units/ProgressRing.tsx',

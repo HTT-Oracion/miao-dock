@@ -25,7 +25,7 @@
 ```
 miao-dock/
 ├── src/          Vite/React 前端源码（根目录只留 `main.tsx` / `App.tsx`，其余按职责分目录）
-│   ├── screens/  六个屏入口：投放 / 队列 / 漫画库 / 音乐 / 设置 / 未就绪（`music/`·`lyrics/`·`settings/`·`library/` 为屏内件）
+│   ├── screens/  五个屏入口：投放 / 队列 / 漫画库 / 音乐 / 设置（`music/`·`lyrics/`·`settings/`·`library/` 为屏内件，未就绪屏 `library/NotReadyScreen.tsx` 是投放屏的一种形态）
 │   ├── router/  屏级路由：`routes.ts` 路径表 · `use-nav.ts` 读写口 · `panes/` 屏装配件（**hash 路由**：URL 是「屏 + 应用内视图」的唯一事实源）
 │   ├── music/    音乐领域态（zustand store · ipc · platform · 播放器选项）
 │   ├── stores/   跨组件共享状态与壳层偏好（导航态机 / 轻提示通道 / 外观偏好）

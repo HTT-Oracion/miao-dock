@@ -9,7 +9,7 @@
  */
 import { useOutletContext } from 'react-router-dom';
 import type { ShellCtx } from '@/router/panes/shell-context';
-import { NotReadyScreen } from '@screens/NotReadyScreen';
+import { NotReadyScreen } from '@screens/library/NotReadyScreen';
 import { QueueEmpty, QueueTable } from '@screens/QueueScreen';
 import { LibraryScreen } from '@screens/LibraryScreen';
 import { DropScreen } from '@screens/DropScreen';

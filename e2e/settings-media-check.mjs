@@ -82,7 +82,7 @@ const F = {
   settingsScreen: path.join(APP, 'src', 'screens', 'SettingsScreen.tsx'),
   // X-C3「准备中」屏（S6 的「L1–L4 文案 + 首张稍慢」）。它不在设置页里，
   // 但它与设置页共享同一条事实源（Rust 的 StatusView），所以放同一轮断言。
-  notReady: path.join(APP, 'src', 'screens', 'NotReadyScreen.tsx'),
+  notReady: path.join(APP, 'src', 'screens', 'library', 'NotReadyScreen.tsx'),
   ipc: path.join(APP, 'src', 'ipc', 'index.ts'),
   nav: path.join(APP, 'src', 'stores', 'nav.ts'),
   // 断言读到的 css 是全分片拼接（见 loadSources）。
@@ -2158,7 +2158,7 @@ add('NOTREADY.css.classes', 'NOTREADY', (ctx) => {
   const used = new Set();
   // ① 基础类名：逐族列出，不用 `[\w-]*` 一把捞（那会把 `stage-meta` 这类前缀也算进要求）
   for (const m of src.matchAll(
-    /\b(?:stage-(?:hint|detail|meta|meta-item)|tl-(?:step|rail|node|line|body|head|title|state|detail)|nr-(?:sum|sum-t|sum-d|dot|meta|acts)|mchip)[a-z0-9-]*/g,
+    /\b(?:stage-(?:hint|detail|meta|meta-item)|tl-(?:step|rail|node|line|body|head|title|state|detail)|nr-(?:sum|sum-t|sum-d|dot|meta|acts|guide)|mchip)[a-z0-9-]*/g,
   )) {
     used.add(m[0]);
   }
@@ -2167,7 +2167,7 @@ add('NOTREADY.css.classes', 'NOTREADY', (ctx) => {
    *    否则「把 is-done 换成 is-donex」会因为宿主 `.tl-node` 存在而蒙混过关。
    *    这里的 `is-*` 都是字面量（组件用的是 switch 返回定值，不是模板拼接），所以抽得到。
    */
-  for (const m of src.matchAll(/\b(tl-step|tl-node|nr-sum|mchip)((?:\s+[a-z][a-z0-9-]*)*)/g)) {
+  for (const m of src.matchAll(/\b(tl-step|tl-node|nr-sum|nr-guide-toggle|mchip)((?:\s+[a-z][a-z0-9-]*)*)/g)) {
     for (const extra of m[2].trim().split(/\s+/).filter(Boolean)) {
       if (extra === 'num') continue; // `.num` 是 base.scss 的全局工具类，不属本组
       used.add(`${m[1]}.${extra}`);

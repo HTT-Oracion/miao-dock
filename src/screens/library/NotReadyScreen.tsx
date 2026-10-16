@@ -237,105 +237,56 @@ export function NotReadyScreen({
     const failing = rt.items.filter((i) => !i.ok);
 
     return (
-      <div style={{ maxWidth: 880, margin: '0 auto', padding: '28px 24px 48px' }}>
+      <div className="nr-guide">
         {/* 顶部：现状 + 边界 */}
-        <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--md-ink)' }}>
-          需要先安装翻译引擎{gb ? `（约 ${gb} GB）` : ''}
-        </div>
-        <div style={{ fontSize: 14, color: 'var(--md-muted)', marginTop: 8, lineHeight: 1.6 }}>
-          翻译引擎不随安装包分发 —— 第一次使用要在本机装配 Python 运行时与模型权重。
-          下面两条路任选其一，都不需要懂命令行。
+        <div className="nr-guide-title">需要先安装翻译引擎{gb ? `（约 ${gb} GB）` : ''}</div>
+        <div className="nr-guide-sub">
+          翻译引擎不随安装包分发 —— 第一次使用要在本机装配 Python
+          运行时与模型权重。下面两条路任选其一，都不需要懂命令行。
         </div>
 
         {/* 中部：两条路并列 */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: 16,
-            marginTop: 22,
-            alignItems: 'start',
-          }}
-        >
+        <div className="nr-guide-grid">
           {/* 主路径：下载本地引擎 */}
-          <div
-            style={{
-              border: '1px solid var(--md-line, rgba(128,128,128,0.22))',
-              borderRadius: 14,
-              padding: 18,
-              background: 'var(--md-card, #fff)',
-            }}
-          >
-            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--md-ink)' }}>下载本地引擎</div>
-            <div style={{ fontSize: 13, color: 'var(--md-muted)', marginTop: 6, lineHeight: 1.6 }}>
+          <div className="nr-guide-card">
+            <div className="nr-guide-card-t">下载本地引擎</div>
+            <div className="nr-guide-card-d">
               一键下载并自动装配。装完即可离线翻译，图片不出本机。
               {gb ? ` 本次约需下载 ${gb} GB` : ''}。
             </div>
-            <div style={{ marginTop: 14 }}>
+            <div className="nr-guide-acts">
               <Btn kind="primary" disabled={busy} onClick={() => void start()}>
                 {busy ? '正在发起…' : '开始下载'}
               </Btn>
             </div>
-            <div style={{ fontSize: 12, color: 'var(--md-muted)', marginTop: 10 }}>
-              下载分两段：先装运行环境（约 1 分钟可开始翻译），权重在后台继续。
-            </div>
+            <div className="nr-guide-note">下载分两段：先装运行环境（约 1 分钟可开始翻译），权重在后台继续。</div>
           </div>
 
           {/* 备路径：使用在线翻译 */}
-          <div
-            style={{
-              border: '1px solid var(--md-line, rgba(128,128,128,0.22))',
-              borderRadius: 14,
-              padding: 18,
-              background: 'var(--md-card, #fff)',
-            }}
-          >
-            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--md-ink)' }}>使用在线翻译</div>
-            <div style={{ fontSize: 13, color: 'var(--md-muted)', marginTop: 6, lineHeight: 1.6 }}>
-              不下载引擎，填一次密钥即可。需要联网，按平台计费。
-            </div>
-            <div style={{ marginTop: 12 }}>
+          <div className="nr-guide-card">
+            <div className="nr-guide-card-t">使用在线翻译</div>
+            <div className="nr-guide-card-d">不下载引擎，填一次密钥即可。需要联网，按平台计费。</div>
+            <div className="nr-guide-acts">
               <OnlineApiForm onSaved={onStart} />
             </div>
           </div>
         </div>
 
         {/* 底部：两者对照（默认收起） */}
-        <div style={{ marginTop: 22 }}>
-          <button
-            type="button"
-            onClick={() => setCompare(!compare)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--md-blue)',
-              fontSize: 13,
-              cursor: 'pointer',
-              padding: 0,
-            }}
-          >
+        <div className="nr-guide-compare">
+          <button type="button" className="nr-guide-toggle" onClick={() => setCompare(!compare)}>
             {compare ? '收起对照' : '两者有什么区别？'}
           </button>
           {compare ? (
-            <div
-              style={{
-                marginTop: 10,
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: 12,
-                fontSize: 13,
-                color: 'var(--md-muted)',
-                lineHeight: 1.6,
-              }}
-            >
-              <div style={{ padding: 12, borderRadius: 10, background: 'var(--md-row, rgba(128,128,128,0.06))' }}>
-                <b style={{ color: 'var(--md-ink)' }}>本地引擎</b>
+            <div className="nr-guide-cmp">
+              <div className="nr-guide-cmp-cell">
+                <b className="nr-guide-cmp-t">本地引擎</b>
                 <div>· 占用约 {gb ? `${gb} GB` : '数 GB'} 磁盘</div>
                 <div>· 首次下载较久，之后不联网</div>
                 <div>· 图片不出本机，隐私最好</div>
               </div>
-              <div style={{ padding: 12, borderRadius: 10, background: 'var(--md-row, rgba(128,128,128,0.06))' }}>
-                <b style={{ color: 'var(--md-ink)' }}>在线翻译</b>
+              <div className="nr-guide-cmp-cell">
+                <b className="nr-guide-cmp-t">在线翻译</b>
                 <div>· 不占磁盘，无需下载</div>
                 <div>· 始终需要联网</div>
                 <div>· 按平台计费，密钥只出站</div>
@@ -345,24 +296,13 @@ export function NotReadyScreen({
         </div>
 
         {/* 右下：排障信息（默认收起） */}
-        <div style={{ marginTop: 18, display: 'flex', justifyContent: 'flex-end' }}>
-          <button
-            type="button"
-            onClick={() => setTrouble(!trouble)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--md-muted)',
-              fontSize: 12,
-              cursor: 'pointer',
-              padding: 0,
-            }}
-          >
+        <div className="nr-guide-trouble">
+          <button type="button" className="nr-guide-toggle is-quiet" onClick={() => setTrouble(!trouble)}>
             {trouble ? '收起排障信息' : '查看排障信息'}
           </button>
         </div>
         {trouble ? (
-          <div style={{ marginTop: 10 }}>
+          <div className="nr-guide-gap">
             <div className="nr-rt">
               {failing.map((it) => (
                 <div key={it.id} className="nr-rt-item">
@@ -374,15 +314,13 @@ export function NotReadyScreen({
                 </div>
               ))}
             </div>
-            <div style={{ marginTop: 10 }}>
+            <div className="nr-guide-gap">
               <Btn kind="ghost" onClick={onOpenGuide}>
                 打开设置页查看完整诊断
               </Btn>
             </div>
             {logOpen ? (
-              <div className="logbox" style={{ marginTop: 10 }}>
-                {(status?.log ?? []).slice(-120).join('\n') || '（暂无日志）'}
-              </div>
+              <div className="logbox nr-guide-gap">{(status?.log ?? []).slice(-120).join('\n') || '（暂无日志）'}</div>
             ) : null}
           </div>
         ) : null}
