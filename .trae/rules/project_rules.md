@@ -39,6 +39,10 @@ alwaysApply: true
 - `src/components/` = 应用级（Sidebar / Toolbar / ViewTabs / QuitConfirm）。
 - `src/screens/<屏>/` = 屏内件。
 - `src/tools/` = 共享纯函数（经 `@tools` 引入，与 `components/` 同级）：跨屏复用、**不 import 业务层**。
+- `src/router/` = 屏级路由（**URL 是「屏 + 应用内视图」的唯一事实源**）：`routes.ts` 是「路径 ↔ 屏」的事实源，`use-nav.ts` 是读写口。**新增屏要同时进路由表与 `src/stores/nav.ts` 的 IA 模型**。
+- `src/stores/` = **跨组件共享状态的收口（非域）**：`nav` / `toastBus` / `shell-prefs`。**域内状态留域里** —— `src/music/store.ts`（zustand）不往这里搬。
+- `src/ipc/` = 与后端通信（`ipc.ts` 命令 + `engine-download.ts`）；`src/types/` = 跨域类型与环境声明；`src/themes/` = 设计令牌与主题应用（🔴 令牌数值是**断言对象**，改它要同时看断言）。
+- `src-tauri/src/` 根只留 `main.rs`（装配与启动）/ `lib.rs`，其余六域：`commands/`（IPC 命令层，**`handler()` 是唯一的命令注册点**）· `service/`（子进程生命周期）· `selftest/`（自检 + 截图取证）· `platform/`（跨平台底座）· `music/` · `mangasvc/`。
 - **按「依赖什么」定归属，不按「被用几次」**。新组件先看它 import 什么，再决定放哪。
 - 不要为了"复用"把绑定单屏几何/业务类型的件抽走（反面清单见 `docs/spec-notes.md` D-34）。
 
@@ -67,12 +71,11 @@ alwaysApply: true
 - 收工前：跑受影响的验收命令（清单见 `AGENTS.md` §3），并在回复里如实区分「已验证」与「未做真机验证」。
 - **搬迁/重命名文件时，同步更新断言里写死的路径** —— 不同步的后果不是变红，而是**静默跳过**。
 
-## 5. 提交信息规范（ver2.2 起）
+## 5. 提交信息规范（对外开源改造轮起）
 
-- 格式：`类型(模块): 功能简述 + 关键点简述`
-  （例：`feat(manga): 在线翻译来源并入②翻译服务 + 来源分段控件与密钥落盘` · `refactor(service): 拆分 manga/settings 模块目录（music 占位）`）。
-  - **类型**取 `feat` / `chore` / `fix` / `style` / `test`，或其他（如 `docs` / `refactor` / `perf`）。
-  - **模块** = 改动主要落在的域：产品模块（`music` / `settings` / `manga`）· 层（`app` / `service` / `engine` / `e2e`）· `docs` 等。
-  - `功能简述` 说"做了什么"；`+` 后的 `关键点简述` 列本次要点 / 坑（多项用 `+` 或 `·` 分隔）。
-- 正文写清：**为什么要改**（问题/取证结论）、**改了什么**、**刻意没做什么与理由**、**验收结果**（哪几条断言、多少通过）。
-- 不要把多个不相关节点塞进同一个 commit。
+- 格式：`类型(模块): 一句话` —— **单行**；不列开发细节、不写文件清单、不写「通过了 N 条断言」、不加句号、不用 emoji / 列表。
+  - **类型**：`refactor`（结构 / 命名 / 抽离）· `chore`（工具链引入、开源配套等非代码结构调整）· `style`（纯格式化，无逻辑变化）· `docs`（文档 / 台账 / 命令说明）· `fix`（跨里程碑修正，见 §2 第 6 条）。
+  - **模块**（小集合，便于 `git log --grep` 按层筛）：`repo` · `scripts` · `naming` · `rust` · `app` · `router` · `oss` · `docs`。
+- 正文默认为空；**唯一例外**：引入新依赖的提交补**一行**代价说明（包数 / 体积 / 运行时还是仅开发期）。
+- 全文与正反例见 `CONTRIBUTING.md` §二；⚠️ 更早的历史提交用的是旧格式（`功能简述 + 关键点简述`，类型含 `feat` / `test`）—— **不改历史**。
+- 不要把多个不相关节点塞进同一个 commit；**每个提交自身可跑**（不留坏基线）；**目录搬家必须原子**；**纯格式化单独一个提交**。

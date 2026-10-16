@@ -4046,3 +4046,61 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
 **遗留（写进待办，不在本轮）**：`installer/` 归置 · 重链内部文档（台账 / 计划 / 报告）的 `docs/internal/` 归置 ·
 音乐应用与桌面歌词窗的展示截图。
 
+## D-223 对外开源改造收口：11 条提交、全量门与「哪些没验」（2026-10-16）
+
+**提交序列**（顺序即依赖顺序，每条自身可跑）：
+
+| # | 提交 | 交付 |
+| --- | --- | --- |
+| 1 | `chore(repo): 引入 husky、eslint 与 prettier` | 校验链落地，`npm run lint` 立刻 0 error |
+| 2 | `style(repo): 全量应用 prettier 格式化` | 单独一条，便于 `git blame` 跳过 |
+| 3 | `refactor(scripts): 命令收束到 e2eScripts.json，package.json 只留必要入口` | 149 → 19 条入口；`npm run task -- <id>` |
+| 4 | `refactor(repo): 前端与 src-tauri 上提到仓库根` | `app/` 消失，两份 `package.json` 合成一份 |
+| 5 | `refactor(naming): boxsvc 统一更名为 mangasvc` | 二进制 / 目录 / CLI / 环境变量 / 断言 / 文档 |
+| 6 | `fix(repo): 修正搬家漏改的相对路径与旧路径引用` | 收 P1 的尾：`include_str!` 层数 + 7 处旧路径 |
+| 7 | `refactor(rust): 命令注册下沉到子模块，main.rs 只留启动装配` | `commands::handler()` 一处展开、按域分段 |
+| 8 | `refactor(rust): 后端源码按域重整目录` | 六文件归位，根只留 `main.rs` / `lib.rs` |
+| 9 | `refactor(app): src 根只留入口与装配，目录按职责重整` | 十个散文件归位（`router` 除外） |
+| 10 | `refactor(router): 引入 react-router，统一管理页面` | URL 成为「屏 + 视图」的事实源 |
+| 11 | `chore(oss): 补 MIT 许可与对外 README，内部文档归置到 docs/internal` | 许可 / 贡献 / 环境变量 / 展示图 / CI |
+
+**全量门（static 16 项 + service 44 项，vcvars 环境下实跑）**
+
+- static 层 **不一致项恰为 3 条既有红**：`quit`（Q3 `CREATE_NO_WINDOW`）· `docpaths`（D-211 那处解析器过窄的
+  假红）· `music`（`RESTORE.restoringClosed` + `KEYS.manualPressNotMerged`）；`check:music` 套件本身 **228 / 3**。
+- service 层 **不一致项恰为 4 条既有红**：`progress-truth`（8/2）· `engine-settings`（53/8）·
+  `svc-selftest`（134/1，`SIGSTOP`）· `lifespan`（`vite` ENOENT）。四条都已在本台账 D-217/D-219 节登记过。
+- 🔴 **如实记一条偶发**：本次全量门里 `e10` 红一条（`E10.6` 反证守卫：合法图片到达引擎 0 次），
+  **单跑两次均绿** ⇒ 判定为「真服务 + 假引擎」启动竞态的偶发，**不是本轮引入**，也未登记为已知红。
+  下一次全量门若再出现，应优先怀疑这条守卫的等待条件而不是产品路径。
+- 受影响 check 的反证轮全部照跑：`units` 59/59 · `settings` 138/138 · `music` 221/221 · `autostart` 19/19 ·
+  `stdio` 1/1 · `child-watch` 1/1 · `child-watch-kill` 2/2 · `resources` 4/4 · `registry` 13/13 变异 ·
+  `quit` 4/4 · `launch-gate` / `macos-compat` / `engine-bootstrap` 全绿。
+- **两处「既有锚点缺失」照旧**（`quit:refute` 的 M3、`notready-state:refute` 的 `NotReadyScreen.tsx`）：
+  已在 D-219 用「在改名前的 HEAD 里就不存在」取证过，**不是跳过**，脚本按非零退出处理。
+
+**收口对齐的三处（P6 的硬要求）**
+
+1. `check:registry` 的层条数常量**未变**（static 16 · service 44 · nightly 9 · refute 58，共 127）——
+   本轮没有增删 check，只有 watch 与条数声明被修正。
+2. `check:docs` 的 4 个套件条数声明全绿（music 228 / units 45 / settings 183 / autostart 19，均与脚本自报一致）。
+3. `check:docpaths` 的现行文档路径：**AGENTS.md 里那两处 `'app','src-tauri'` 形状的旧示例已修**，
+   剩 1 条既知假红（D-211 写下的包内错误名，按台账口径**不改文档迁就脚本**）。
+
+**本轮同步过的文档**：`AGENTS.md`（§1 新增 `router/` / `stores/` / `ipc/` / `types/` / `themes/` 五条分层、
+Rust 六域表与「命令注册只能一处展开 + `Wry` 不能泛型化」两条硬约束；§2 第 9 条换成新提交格式，
+并注明**不改历史**；§3 补 `lint` / `lint:fix` / `format` / `format:check` 四条，注册表条数 14/12 → **15/13**）·
+`.trae/rules/project_rules.md`（§3 分层、§5 提交格式）· `README.md`（P5 已改）· 新建 `CONTRIBUTING.md`。
+
+**🔴 明确「没验」的清单（不得当成已验证）**
+
+- **GUI 真机行为一行没跑**：本轮改的是工程结构，但 P4-b 换了导航实现（URL 驱动）——
+  「点侧栏 / 点 Tab / 刷新回到正确屏」**只有类型与结构断言背书，没有人眼与真机**。
+- **打包链路未跑**：本机无 `makensis` ⇒ `npm run app:build` 的 NSIS 段与 `check:packaged`（nightly）均未跑；
+  这也是 `installer/` 归置推迟的原因（D-222 第 4 条）。
+- **CI 未真跑**：本机没有 GitHub runner；`ci.yml` 里新增的两条（`lint` / `format:check`）只是本地同命令的移植。
+- **`cargo fmt --check` / `cargo clippy` 未跑**：该 toolchain 没装这两个组件（未执行 `rustup component add`）。
+  本轮改过大量 Rust 文件，**格式与 lint 未经工具检查**，只有编译器与单测背书。
+- `check:docs` 只机器核对**四个套件**的条数；`AGENTS.md` §3 里其余几十个 check 的条数声明
+  **本轮未逐条复核**（只修了注册表那一处），如实登记为缺口。
+

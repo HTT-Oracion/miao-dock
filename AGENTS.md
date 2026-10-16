@@ -45,9 +45,26 @@
 - `src/screens/<屏>/` —— 屏内件（`library/blob.ts`·`library/chapters.tsx`·`library/modals.tsx`、`settings/parts.tsx`、`music/shared.tsx`）。
 - `src/hooks/` —— **hooks 唯一收口**：`use*` 命名的 hook 一律住这里（业务 hook 进桶文件 `index.ts`，经 `@hooks` 引入；纯行为 hook 如 `useEsc`、`useCoverColor` 单放同目录）。旧的单文件 `hooks.ts`（落在 `src/` 根）**不得**与目录并存 —— 模块解析会**静默二选一**（`HOOKS.layout` 盯死）。
 - `src/tools/` —— **共享纯函数收口**（与 `components/` 同级，经 `@tools` 引入）：跨屏复用、与业务类型解耦的小工具（格式化 / 分页 / 模糊匹配 / UUID / MIME 嗅探 / 重名规范化 …）。只服务单个屏的逻辑仍留屏内。
+- `src/router/` —— **屏级路由**（`routes.ts` 是「路径 ↔ 屏」的唯一事实源 · `use-nav.ts` 是导航读写口 · `index.tsx` 是装配）。URL 是「屏 + 应用内视图」的唯一事实源，侧栏 / 视图 Tab 只发导航意图；**新增屏必须同时进路由表与 `stores/nav.ts` 的 IA 模型**（后者回答"有哪些屏、哪个屏让位"，前者回答"路径怎么走"）。
+- `src/stores/` —— **跨组件共享状态的收口（非域）**：导航态机 `nav.ts` · 轻提示通道 `toastBus.ts` · 壳层偏好 `shell-prefs.ts`。**域内状态留在域里**（`src/music/store.ts` 是 zustand 的先例，不往 `stores/` 搬）。
+- `src/ipc/` —— **与后端通信**：`ipc.ts`（翻译服务命令 + 错误信封解析）· `engine-download.ts`（引擎下载的三态文案）。跨屏复用的调用收口在这里。
+- `src/types/` —— 跨域类型（`types.ts` + `vite-env.d.ts` 环境声明）；只服务单个屏的类型仍留屏内。
+- `src/themes/` —— 设计令牌与主题应用（`tokens.ts` / `apply.ts`）。🔴 令牌数值是**断言对象**（`check:ia` 直接读 `themes/tokens.ts`），改它要同时看断言。
 - **按「依赖什么」定归属，不按「被用几次」定归属。** 抽离规则与反面纪律（什么**不**该抽）见 `docs/spec-notes.md` D-34 与《09》§2.2。
 
 **服务端模块目录（硬规则）**：
+
+🔴 **Rust 侧按域分层（ver2.2 目录重整起）**：`src-tauri/src/` 根只留 `main.rs`（`Builder` 装配与启动）
+与 `lib.rs`（库根），其余六个域：`commands/`（IPC 命令层）· `service/`（本地服务子进程生命周期）·
+`selftest/`（自检通道 + 截图取证）· `platform/`（跨平台底座：`paths.rs` 落点 / `child_watch.rs` 父死看守）·
+`music/`（音乐域）· `mangasvc/`（服务实现）。判据同前：**按「依赖什么」定归属**；
+`platform/` 之所以单独成域，是因为它 lib 侧与 bin 侧同时依赖、且**不认识任何业务概念**。
+
+- 🔴 **新增命令一律落在 `commands/mod.rs` 的 `handler()` 清单里**：`generate_handler!` 是 proc macro，
+  它的**入参不做宏展开**（`syn::Path` 解析不了 `!`）⇒ 形态只能是「**一处展开、按域分段**」，
+  不能拆成「各域各出一个 `xxx_commands!()` 再汇总」。
+- 🔴 `handler()` 的运行时**必须写死 `tauri::Wry`**，不能泛型化成 `handler<R: tauri::Runtime>()`：
+  命令签名里的 `AppHandle` / `State` 用的是**默认运行时**，泛型化后 `R` 不落地 ⇒ 实测爆 **73 条 E0277**。
 
 - 🔴 **`service/`（Node 实现）已从仓库删除**（D-209）：F5 把 44 条端点全迁进 Rust 后，
   `service/src/*.mjs` 逐块失去对象（同源对拍改**冻结 golden**、取证改读 Rust 自证出口、
@@ -61,7 +78,7 @@
   `engine/`（引擎耦合点：`client` / `state` / `profile` / `supervisor` / `model_store` / `runtime_probe` / `selftest`）。
 - 🔴 **新增服务端点一律落在 `mangasvc/handlers.rs` + `routes.rs`**，由 `npm run task -- check:routes` 盯着
   （`forwardedCount` 必须为 0 —— 只要还有转发分支，就说明还有第二条实现路径存在）。
-- 搬迁 / 新增后必须同步：**断言里写死的路径与键名**（`e2e/` 下大量 `path.join(ROOT,'app','src-tauri',…)` 与 `mangasvc --engine-selftest` 的出口键；不同步的后果是**静默跳过**）· 本节分层 · `README.md` 目录节 · `.trae/rules/project_rules.md`。
+- 搬迁 / 新增后必须同步：**断言里写死的路径与键名**（`e2e/` 下大量 `path.join(ROOT,'src-tauri',…)` 与 `mangasvc --engine-selftest` 的出口键；不同步的后果是**静默跳过**）· 本节分层 · `README.md` 目录节 · `.trae/rules/project_rules.md`。
 - ⚠️ 历史分层（`service/src/` 根只留跨平台底座、按 `manga`/`settings`/`music` 分域、
   方向由「分层方向钉子」机器核查）见 `docs/spec-notes.md` D-101 / D-141 ——
   **该钉子已随目录退役**（D-209，命令已从 `package.json` 摘除），Rust 侧暂无同等的
@@ -91,11 +108,17 @@
 8. **不得出现历史上那批被禁的品牌标识**（本项目已彻底清除，需要提及时一律写「参考实现」）。
    ⚠️ 连**规则条文本身**也不写出它 —— 否则"全仓扫描无命中"这条纪律会被规则文件自己污染
    （本项目已有先例：断言脚本里就是用「被禁的历史品牌标识」指代的）。
-9. **提交信息格式（ver2.2 起）**：`类型(模块): 功能简述 + 关键点简述`。
-   - **类型**取 `feat` / `chore` / `fix` / `style` / `test`，或其他（如 `docs` / `refactor` / `perf`）。
-   - **模块** = 改动主要落在的域：产品模块（`music` / `settings` / `manga`）· 层（`app` / `service` / `engine` / `e2e`）· `docs` 等。
-   - `功能简述` 说"做了什么"；`+` 后的 `关键点简述` 列本次要点 / 坑（多项用 `+` 或 `·` 分隔）。
-   - 例：`feat(manga): 在线翻译来源并入②翻译服务 + 来源分段控件与密钥落盘` · `refactor(service): 拆分 manga/settings 模块目录（music 占位）` · `chore(app): 版本号升到 2.1.0 + 五处版本文件同步`。
+9. **提交信息格式（对外开源改造轮起）**：`类型(模块): 一句话` —— **单行**；
+   不列开发细节、不写文件清单、不写「通过了 N 条断言」、不加句号、不用 emoji / `【】` / 列表。
+   - **类型**：`refactor`（结构 / 命名 / 抽离，行为不变）· `chore`（工具链引入、开源配套等非代码结构调整）·
+     `style`（纯格式化，无逻辑变化）· `docs`（文档 / 台账 / 命令说明）· `fix`（跨里程碑修正，见第 5 条）。
+   - **模块**是一个小集合，便于 `git log --grep` 按层筛：`repo`（仓库级配置与目录搬家）· `scripts`（命令收束）·
+     `naming`（命名统一）· `rust`（Rust 侧结构）· `app`（前端结构）· `router`（路由）· `oss`（许可与对外文档）· `docs`（文档同步）。
+   - **正文默认为空**；**唯一例外**：引入新依赖的提交补**一行**代价说明（包数 / 体积 / 运行时还是仅开发期）——
+     那是第 7 条「引入依赖必须写清代价」的下限要求。
+   - 全文与正反例见 `CONTRIBUTING.md` §二。
+   - ⚠️ 在此之前的历史提交用的是旧格式（`类型(模块): 功能简述 + 关键点简述`，类型含 `feat` / `test`）——
+     **不改历史**，`git log` 里两种形态并存是正常的。
 10. **禁止内联长链三元。** 形如 `title={a ? 'x' : b ? 'y' : c ? 'z' : w}` 的多级内联三元必须抽成
     **具名变量或早返回函数**（范式：`screens/library/meta.ts` 的 `retranslateMeta` / `resumeMeta` 返回
     `{ title, sub, blocked }`），让每个分支可读、可单测。
@@ -122,12 +145,17 @@
 npm run task                                        # 列清单（136 条 = 78 基条目 + 58 派生反证轮），退出码 2
 npm run task -- --list [分组]                        # 同上但退出码 0（static/service/nightly/refute/supply/dev）
 npm run task -- <id>                                # 派发一条，如 npm run task -- check:units（id 后参数原样透传）
+# —— 代码校验（本地由 husky 的 pre-commit 守着，CI 里是强制点）——
+npm run lint                 # eslint（flat config；全量 —— 暂存钩子只查暂存文件）
+npm run lint:fix             # eslint --fix
+npm run format               # prettier --write
+npm run format:check         # prettier --check（CI 跑这条）
 # —— 自测聚合入口（分层 + 并行 + git 变更过滤；注册表在 e2e/_check-registry.mjs）——
 npm run check                # static 快闸门 16 项（8 路并行，约 10s）——每次提交
 npm run check:changed        # 只跑与 git 变更相关的（static+service；跳过项显式列出）——日常开发主力
 npm run check:full           # static + service 全量（service 串行，约 4 分钟）——push / PR 前
 npm run check:nightly        # 全量：含 nightly（真引擎/模型）与全部反证轮——定期 / 合并前
-npm run task -- check:registry[:refute] # 命令清单 ↔ 分层注册表 **14** 条 / 反证 **12** 变异（双向覆盖（清单↔注册表，两个方向各一条）+ 清单 cmd 形态/脚本存在/id 唯一/反证只许派生/分组条数写死 + `package.json` 只剩三类入口 + tier 合法/唯一/存在/各层条数 == 写死的常量）。🔴 两条计数门是 E4 的同一件事在两侧各钉一次：删一条钉子、或把它的 tier 写错，输出依旧全绿而**没有任何一行会变红** —— 分子变绿、分母变小；把分母钉住，减一条就得先改常量（反证 M5/M12 正是"删一条"、M7 是"把命令加回 package.json"）
+npm run task -- check:registry[:refute] # 命令清单 ↔ 分层注册表 **正向 15** 条 / 反证 **13** 变异（双向覆盖（清单↔注册表，两个方向各一条）+ 清单 cmd 形态/脚本存在/id 唯一/反证只许派生/分组条数写死 + `package.json` 只剩三类入口 + tier 合法/唯一/存在/各层条数 == 写死的常量）。🔴 两条计数门是 E4 的同一件事在两侧各钉一次：删一条钉子、或把它的 tier 写错，输出依旧全绿而**没有任何一行会变红** —— 分子变绿、分母变小；把分母钉住，减一条就得先改常量（反证 M5/M12 正是"删一条"、M7 是"把命令加回 package.json"）
 
 npm run selftest              # A 组服务契约 159 条 + 引擎自测 23 条
 npm run task -- selftest:app[:refute] # B 组应用生命周期 16 条（含 S2a–S2d：五态轨迹 / E1 参数快照 / 三子进程 / 崩溃分级；含反证）
