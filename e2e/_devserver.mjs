@@ -39,15 +39,21 @@ export function portOpen(port, timeout = 500) {
 /**
  * 确保 dev server 在跑。返回它自己起的子进程（已有的则返回 null）。
  * 找不到 vite 或超时就 exit(2) —— 这是环境没准备好，不是测试失败。
+ *
+ * ## 为什么起 `node vite.js` 而不是 `node_modules/.bin/vite`
+ * npm 在 **Windows 上也会**放一份**无扩展名**的 sh 脚本（给 Git-Bash 用），
+ * 于是 `existsSync('.bin/vite')` 通过、`spawn('.bin/vite')` 却必然 ENOENT
+ * （Windows 认不出这个解释器行）—— 表现是"环境没准备好"把测试挂死。
+ * 换成「本进程的 node + vite 的 JS 入口」：三个平台一致，也不经 shell。
  */
 export async function ensureDevServer({ root, port = 1420 } = {}) {
   if (await portOpen(port)) return null;
-  const vite = path.join(root, 'node_modules', '.bin', 'vite');
-  if (!existsSync(vite)) {
-    console.error(`找不到 vite：${vite}\n先在仓库根 npm install`);
+  const viteJs = path.join(root, 'node_modules', 'vite', 'bin', 'vite.js');
+  if (!existsSync(viteJs)) {
+    console.error(`找不到 vite：${viteJs}\n先在仓库根 npm install`);
     process.exit(2);
   }
-  const child = spawn(vite, ['--port', String(port), '--strictPort'], {
+  const child = spawn(process.execPath, [viteJs, '--port', String(port), '--strictPort'], {
     cwd: root,
     stdio: ['ignore', 'pipe', 'pipe'],
   });

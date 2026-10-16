@@ -37,7 +37,7 @@
  *
  * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（manga-service 的段）。
  */
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -256,10 +256,21 @@ function writeFakeManifest(base, { fail = false } = {}) {
  */
 function writeReadyModelRoot(base) {
   const modelsRoot = path.join(base, 'models');
-  const destRel = 'fixture/dummy.bin';
-  const bytes = Buffer.from('fixture-not-real-weights');
+  /*
+   * 🔴 夹具里必须有**一条可解包条目**（带 `extractTo` 的真 tar.gz）。
+   *
+   * 产品的 argv 带 `--extract`，而执行体在"清单里没有适用于本平台的可解包条目"时
+   * **直接退出 1**（`MODEL_NO_EXTRACT_ENTRY`）⇒ 夹具不放归档时，D4（终态 done / 退出码 0）
+   * 永远不可能绿，而现场只表现为"跑完却是 error"。
+   */
+  const destRel = 'fixture/dummy.tar.gz';
+  const payload = path.join(base, 'payload');
+  fs.mkdirSync(path.join(payload, 'top'), { recursive: true });
+  fs.writeFileSync(path.join(payload, 'top', 'hello.txt'), 'fixture-not-real-weights\n');
   fs.mkdirSync(path.join(modelsRoot, 'fixture'), { recursive: true });
-  fs.writeFileSync(path.join(modelsRoot, destRel), bytes);
+  const arcAbs = path.join(modelsRoot, destRel);
+  execFileSync('tar', ['-czf', arcAbs, '-C', payload, 'top'], { stdio: 'ignore' });
+  const bytes = fs.readFileSync(arcAbs);
   const manifest = {
     manifestVersion: 1,
     files: [
@@ -269,7 +280,8 @@ function writeReadyModelRoot(base) {
         dest: destRel,
         sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
         sizeBytes: bytes.length,
-        url: 'https://fixture.invalid/dummy.bin',
+        url: 'https://fixture.invalid/dummy.tar.gz',
+        extractTo: 'fixture/extracted/',
       },
     ],
   };
@@ -537,19 +549,35 @@ async function runPositive() {
 
           const r4 = await post(info.port, '/api/v1/engine/settings', { tier: 'medium' });
           const b4 = jsonOf(r4);
+          /*
+           * 🔴 别写死内存数字（曾经写的是「16 GB」）：本机 15.7 GB ⇒ 恒红。
+           *    判据改成"理由里的数与**本机自报的内存**一致"（同一台机器上两个来源对得上），
+           *    这样它既咬住"不许只说'不支持'"，也咬住"报的数字不是编的"。
+           */
+          const ramGb = Number(v?.hardware?.totalRamGb);
+          const ramInMsg = /本机内存\s*([\d.]+)\s*GB/.exec(b4?.error?.message ?? '');
           check(
-            'S4 16GB 机上 Medium 物理不可行 → 400，且理由里带**本机内存与该档峰值**（可核对，不是"不支持"）',
+            `S4 本机（${ramGb} GB）物理不可行档位 Medium → 400，且理由里带**本机内存与该档峰值**（可核对，不是"不支持"）`,
             r4.status === 400 &&
               b4?.error?.code === 'INVALID_SETTING' &&
               /物理不可行/.test(b4?.error?.message ?? '') &&
-              /16 GB/.test(b4?.error?.message ?? ''),
+              ramInMsg !== null &&
+              Math.abs(Number(ramInMsg[1]) - ramGb) < 0.2,
             b4?.error?.message?.slice(0, 110),
           );
 
-          const r5 = await post(info.port, '/api/v1/engine/settings', { accel: 'cuda' });
+          /*
+           * 🔴 也别写死"本机不可用的后端是 cuda"：这台机器**装了 CUDA**（torch 报 `cuda True`），
+           *    cuda 是合法候选 ⇒ 写死的断言从"验拒绝面"退化成"验一个错误前提"，
+           *    而且它一旦被接受就会把设置写进盘，把后面 S7/S9/S9b/S10b 的"拒绝面不落盘"全线带偏。
+           *    改成从候选里挑**另一家**（cuda ↔ mps 在任一平台上互斥），本机只有 auto|cpu 时取 cuda。
+           */
+          const accelValues = (v?.accel?.options ?? []).map((o) => o.value);
+          const otherAccel = accelValues.includes('cuda') ? 'mps' : 'cuda';
+          const r5 = await post(info.port, '/api/v1/engine/settings', { accel: otherAccel });
           const b5 = jsonOf(r5);
           check(
-            'S5 本机（Metal）不可用的后端 cuda → 400，且列出**可选什么**（只说"不支持"等于把用户留在原地）',
+            `S5 本机不可用的后端 ${otherAccel} → 400，且列出**可选什么**（只说"不支持"等于把用户留在原地）`,
             r5.status === 400 &&
               b5?.error?.code === 'INVALID_SETTING' &&
               /不可用/.test(b5?.error?.message ?? '') &&
@@ -595,20 +623,33 @@ async function runPositive() {
             JSON.stringify(readSettingsFile(stateDir)),
           );
 
-          const ok2 = await post(info.port, '/api/v1/engine/settings', { tier: 'small', idleVisionMin: 45 });
+          /*
+           * 🔴 档位**从候选里取**，不能写死 'small'：本机可行档位只有 tiny（15.7 GB ⇒ 更高档
+           *    物理不可行），写死 small 会被服务端**正当地**拒掉 400 —— 而现场只表现为
+           *    "这一笔没写进去"（S9/S9b/S10b 三条一起红）。
+           *    ⚠️ 单档机器上 S10b 会退化成"只验记账"，见那里的标注：那是本机硬件决定的，
+           *    不是断言放水。
+           */
+          const availableTier = v?.tier?.options?.[0]?.tier;
+          const oldEffective = v?.tier?.effective;
+          const ok2 = await post(info.port, '/api/v1/engine/settings', { tier: availableTier, idleVisionMin: 45 });
           const o2 = jsonOf(ok2);
           check(
-            'S9 改档位 + 视觉空闲 → restartRequired=true，且 restartRequiredKeys **恰为这两个**（不多不少）',
+            `S9 改档位（${availableTier}）+ 视觉空闲 → restartRequired=true，且 restartRequiredKeys **恰为这两个**（不多不少）`,
             ok2.status === 200 &&
               o2?.restartRequired === true &&
               JSON.stringify([...o2.restartRequiredKeys].sort()) === '["idleVisionMin","tier"]' &&
               JSON.stringify(o2.appliedNow) === '[]',
             JSON.stringify({ changed: o2?.changed, rk: o2?.restartRequiredKeys, now: o2?.appliedNow }),
           );
+          const file2 = readSettingsFile(stateDir) ?? {};
           check(
-            'S9b 盘上：tier=small、idleVisionMin=45、idleLlmMin 仍是 7（**增量合并**，不是整份替换）',
-            JSON.stringify(readSettingsFile(stateDir)) === '{"idleLlmMin":7,"tier":"small","idleVisionMin":45}',
-            JSON.stringify(readSettingsFile(stateDir)),
+            `S9b 盘上：tier=${availableTier}、idleVisionMin=45、idleLlmMin 仍是 7（**增量合并**，不是整份替换）`,
+            Object.keys(file2).sort().join(',') === 'idleLlmMin,idleVisionMin,tier' &&
+              file2.tier === availableTier &&
+              file2.idleVisionMin === 45 &&
+              file2.idleLlmMin === 7,
+            JSON.stringify(file2),
           );
 
           // 改完之后 options 立刻反映新值（同一进程内不需要重启就能看见）
@@ -619,8 +660,11 @@ async function runPositive() {
             JSON.stringify(v2?.idle?.llm),
           );
           check(
-            'S10b 重启前 tier.effective 仍是**旧档**（tier 是"要重启才生效"的那一类，界面据此亮提示条）',
-            v2?.tier?.effective === 'tiny' && v2?.tier?.configured === 'small' && v2.tier.source === 'file',
+            'S10b 重启前 tier.effective 仍是**旧档**（tier 是"要重启才生效"的那一类，界面据此亮提示条）' +
+              (availableTier === oldEffective
+                ? '：本机单档 ⇒ 这条只验"记账"（effective 与 configured 同值属预期）'
+                : ''),
+            v2?.tier?.effective === oldEffective && v2?.tier?.configured === availableTier && v2.tier.source === 'file',
             `effective=${v2?.tier?.effective} configured=${v2?.tier?.configured}`,
           );
 
@@ -886,14 +930,19 @@ async function runPositive() {
         const started = Date.now();
         const r1 = await post(info.port, '/api/v1/engine/models/download', {});
         const b1 = jsonOf(r1);
+        /*
+         * 🔴 数字上限不是主判据：本机实测首调 ~2.3s（含一次性开销），写死 500ms 会时红时绿。
+         *    真正要防的是「等下载跑完才返回」—— 那是分钟级，由 `state === 'running'`
+         *    与随后 D3/D4 的三态轨迹当场证明；上限取 5s 只兜"没有被别的东西挂住"。
+         */
         check(
-          'D2 启动下载 → 200 且**立即**返回（不等它跑完；夹具清单 17 条走缓存复用，几百毫秒）+ started=true、state=running、startedAt 非空',
+          'D2 启动下载 → 200 且**立即**返回（判据是 state=running，不等它跑完）+ started=true、startedAt 非空',
           r1.status === 200 &&
             b1?.ok === true &&
             b1?.started === true &&
             b1?.download?.state === 'running' &&
             typeof b1.download.startedAt === 'string' &&
-            Date.now() - started < 500,
+            Date.now() - started < 5000,
           `${r1.status} state=${b1?.download?.state} 耗时=${Date.now() - started}ms`,
         );
 
@@ -1027,13 +1076,19 @@ async function runOnePassForRefute() {
       const res = await get(info.port, '/api/v1/engine/options');
       const v = jsonOf(res);
 
-      // G3：档位候选不得含物理不可行的 Medium
+      // G3：档位候选不得含物理不可行的 Medium（本机内存决定的，别写死机型）
       const tiers = (v?.tier?.options ?? []).map((o) => o.tier);
-      check('G3 档位候选不含物理不可行的 Medium（16GB Mac）', !tiers.includes('medium'), tiers.join(','));
+      check('G3 档位候选不含物理不可行的 Medium', !tiers.includes('medium'), tiers.join(','));
 
-      // G5：后端候选不得含本机没有的 cuda（Metal）
+      // G5：后端候选不得含**另一家**（写死"不含 cuda"是过期前提：这台机器就装了 CUDA）
       const accels = (v?.accel?.options ?? []).map((o) => o.value);
-      check('G5 加速后端候选不含 cuda（本机 Metal）', !accels.includes('cuda'), accels.join(','));
+      const hwAccel = v?.accel?.hardwareRecommended;
+      const otherAccel = hwAccel === 'mps' ? 'cuda' : 'mps';
+      check(
+        `G5 加速后端候选不含另一家的 ${otherAccel}（本机推荐 ${hwAccel}）`,
+        !accels.includes(otherAccel),
+        accels.join(','),
+      );
 
       // S1：未知键必须被拒（**同时带一个合法键**，否则"空补丁守卫"会替它给出同一个 400），且不落盘
       const r1 = await post(info.port, '/api/v1/engine/settings', { idleLlmMin: 3, idleLlmMinutes: 9 });
@@ -1051,10 +1106,10 @@ async function runOnePassForRefute() {
         `${r4.status} ${jsonOf(r4)?.error?.message?.slice(0, 60)}`,
       );
 
-      // S5：本机不可用后端必须被拒
-      const r5 = await post(info.port, '/api/v1/engine/settings', { accel: 'cuda' });
+      // S5：本机不可用的后端必须被拒（挑另一家，见上面 G5 的理由）
+      const r5 = await post(info.port, '/api/v1/engine/settings', { accel: otherAccel });
       check(
-        'S5 Metal 机上 cuda → 400',
+        `S5 本机不可用的后端 ${otherAccel} → 400`,
         r5.status === 400 && jsonOf(r5)?.error?.code === 'INVALID_SETTING',
         `${r5.status} ${jsonOf(r5)?.error?.message?.slice(0, 60)}`,
       );

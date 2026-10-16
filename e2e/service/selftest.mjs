@@ -212,6 +212,20 @@ function killProc(state) {
 }
 
 /**
+ * 冻结子进程：让"观察"与"强杀"之间**没有时间窗口**（否则暂停的这一瞬它可能刚好把第 1 张
+ * 落盘，断言就成了看运气）。
+ *
+ * 🔴 Windows **没有 SIGSTOP**，Node 直接抛 `ERR_UNKNOWN_SIGNAL`（整轮自检因此中断，
+ *    表现成"运行期异常"而不是某条断言红）；该平台也没有可用的挂起原语 ⇒ 退回"观察完立刻杀"。
+ *    竞态的影响面是两个**前置**断言（漫画目录里一张都没有 / 暂存区仍有 4 份），
+ *    它们的失败形态只会是"多出一张已落盘的原图"，不会掩盖"丢字节"本身；
+ *    真正的不变量（重启后 4 张齐）在 SIGKILL 之后断言，与冻结与否无关。
+ */
+function freeze(child) {
+  if (process.platform !== 'win32') child.kill('SIGSTOP');
+}
+
+/**
  * 端口是否可连。
  * A18 必须用它而不是 `child.exitCode` 来判断存活：那里的 child 是「假父进程」，
  * 而我们要观察的是父进程死后、**另一个进程**（服务）是否还在监听。
@@ -1567,10 +1581,11 @@ try {
       );
 
       // ---- ② 冻结进程再观察，然后强杀 ----
-      // 先 SIGSTOP 再断言，是为了让「观察」与「杀」之间**没有时间窗口**：
+      // 先冻结再断言，是为了让「观察」与「杀」之间**没有时间窗口**：
       // 否则暂停的这一瞬它可能刚好把第 1 张落盘，断言就成了看运气。
+      // （Windows 无 SIGSTOP ⇒ `freeze()` 在该平台只做"立刻杀"这一步，理由见它的注释）
       check('A20 前置：第 1 张已进入 translating', await waitFirstTranslating(g12port, taskId));
-      g12svc.child.kill('SIGSTOP');
+      freeze(g12svc.child);
       await sleep(120);
       check(
         'A20 打断前：漫画目录里一张都没有（这一轮丢的就是它们）',
@@ -1661,7 +1676,7 @@ try {
       const taskId2 = r2.json.taskId;
       const comicDir2 = path.join(g12Root, r2.json.normalizedComicName);
       check('A20 反证前置：第 2 条任务也卡在 translating', await waitFirstTranslating(g12port, taskId2));
-      g12svc.child.kill('SIGSTOP');
+      freeze(g12svc.child);
       await sleep(120);
       const stolen = (filesIn(stageDirOf(taskId2)) || []).length;
       fs.rmSync(stageDirOf(taskId2), { recursive: true, force: true }); // 把唯一的字节副本偷走

@@ -31,7 +31,15 @@ import { ensureDevServer, portOpen } from './_devserver.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const APP = ROOT;
-const BIN = path.join(APP, 'src-tauri', 'target', 'debug', 'miao-dock');
+// 平台后缀按需补：Windows 上的可执行文件是 `miao-dock.exe`，写死不带后缀会
+// 在 `existsSync` 就判"没构建"（与 dev server 那处写死 `.bin/vite` 同一类错）。
+const BIN = path.join(
+  APP,
+  'src-tauri',
+  'target',
+  'debug',
+  process.platform === 'win32' ? 'miao-dock.exe' : 'miao-dock',
+);
 /// 落盘根目录与状态目录都指到仓库内的临时目录：既别碰用户的 ~/Pictures/Box 漫画，
 /// 也让每次自检从空目录开始（否则续做/编号会受上一轮残留影响）。
 const TMP = mkdtempSync(path.join(os.tmpdir(), 'miao-e11-'));

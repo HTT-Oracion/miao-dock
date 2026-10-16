@@ -78,9 +78,38 @@ if (!fs.existsSync(RUST_BIN)) {
 const contentA = 'miao-fixture-a\n';
 const contentB = 'miao-fixture-b\n';
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
+const shaBytes = (b) => crypto.createHash('sha256').update(b).digest('hex');
 
-function buildFixture() {
+/**
+ * 夹具归档：**只造一份字节，两边复制同一份**。
+ *
+ * `tar -czf` 两次产物的大小/时间戳可能不同（gzip 头带 mtime），而 W1 是"逐行等于"——
+ * 差一个字节就会红。故这棵树用同一份字节喂两个夹具（哈希与体积也照它算）。
+ */
+let ARC_BYTES = null;
+async function fixtureArchive() {
+  if (ARC_BYTES) return ARC_BYTES;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-progress-arc-'));
+  fs.mkdirSync(path.join(dir, 'top'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'top', 'hello.txt'), contentA);
+  const out = path.join(dir, 'a.tar.gz');
+  const r = await runAsync('tar', ['-czf', out, '-C', dir, 'top']);
+  if (r.code !== 0) throw new Error(`造夹具归档失败（本机需要 tar）：${r.err || r.out}`);
+  ARC_BYTES = fs.readFileSync(out);
+  fs.rmSync(dir, { recursive: true, force: true });
+  return ARC_BYTES;
+}
+
+/**
+ * 夹具：①带 `extractTo` 的**真实归档** + ②普通权重（带 `linkTo`）。
+ *
+ * 🔴 ① 不能省：产品的 argv 带 `--extract`，而 runner 在"清单里没有可解包条目"时**直接退出 1**
+ *    （`MODEL_NO_EXTRACT_ENTRY`）—— 夹具里不放归档，W2 就永远不可能绿，
+ *    而表现为"两边的输出差一行"，很容易被误读成"数据源撒谎"。
+ */
+async function buildFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-progress-'));
+  const arc = await fixtureArchive();
   const manifest = {
     manifestVersion: 1,
     engineCommit: 'deadbeef',
@@ -89,10 +118,11 @@ function buildFixture() {
       {
         id: 'a',
         set: 'visual',
-        dest: 'models-store/a.bin',
-        sha256: sha(contentA),
-        sizeBytes: Buffer.byteLength(contentA),
+        dest: 'models-store/a.tar.gz',
+        sha256: shaBytes(arc),
+        sizeBytes: arc.length,
         url: 'https://example.invalid/a',
+        extractTo: 'extracted/',
       },
       {
         id: 'b',
@@ -108,13 +138,57 @@ function buildFixture() {
   const mp = path.join(root, 'models.manifest.json');
   fs.writeFileSync(mp, JSON.stringify(manifest, null, 2));
   fs.mkdirSync(path.join(root, 'models-store'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'models-store', 'a.bin'), contentA);
+  fs.writeFileSync(path.join(root, 'models-store', 'a.tar.gz'), arc);
   fs.writeFileSync(path.join(root, 'models-store', 'b.bin'), contentB);
   return { root, mp };
 }
 
-/** 服务**真的**会用这条 argv 起下载执行体（`state.rs::start_model_download`）。 */
-const runnerArgs = (root, mp) => ['--fetch-models', '--root', root, '--manifest', mp];
+/** 检查侧镜像的 flag 集合（与 `state.rs::spawn_download_round` 逐项对齐，见 W1b） */
+const MIRRORED_FLAGS = [
+  '--fetch-models',
+  '--engine-bootstrap',
+  '--extract',
+  '--stage',
+  '--root',
+  '--manifest',
+  '--progress-log',
+];
+
+/**
+ * 服务**真的**会用这套 argv 起下载执行体（`state.rs::spawn_download_round`）。
+ *
+ * ⚠️ 只写 `--fetch-models --root --manifest` 是**错的**（曾经就是）：产品还会带
+ * `--engine-bootstrap`（**只第 1 轮**）、`--extract`、`--stage N`、`--progress-log`，
+ * 少任何一项都会让两边输出分叉，而分叉的样子与"数据源编造行"完全同形 ⇒ W1 假红/假绿。
+ * `withBootstrap` 这个形参是必要的：第 2 轮产品**不带**该旗标（`spawn_download_round` 的注释：
+ * 它会重跑 venv/源码/pip，所以只第 1 轮带）。
+ */
+const runnerArgs = (root, mp, stage, progressLog, withBootstrap) => [
+  '--fetch-models',
+  ...(withBootstrap ? ['--engine-bootstrap'] : []),
+  '--extract',
+  '--stage',
+  String(stage),
+  '--root',
+  root,
+  '--manifest',
+  mp,
+  '--progress-log',
+  progressLog,
+];
+
+/**
+ * 检查侧跑同一条命令时要带的那份 env。
+ *
+ * 🔴 子进程**继承服务的整份 env**（`spawn` 不另建环境）⇒ 只给 `MIAO_MODEL_ROOT` 是错的：
+ * 实测那次 runner 去读了**仓库里那份真清单**并真的装配了 appData 里的运行时（跑 pip、
+ * 打印上百行），而产品侧读的是夹具清单 —— 两边输出完全对不上，W1 于是在"比另一条命令"。
+ */
+const mirrorEnv = (fx) => ({
+  MIAO_ENGINE_PROTOCOL: 'mock',
+  MIAO_MODEL_MANIFEST: fx.mp,
+  MIAO_MODEL_ROOT: fx.root,
+});
 
 /** 异步跑一个子进程（本机 `spawnSync` 稳定 EBUSY ⇒ 一律异步）。 */
 function runAsync(cmd, args, opts = {}) {
@@ -192,12 +266,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   //    先跑完的那一侧会把"新建 1"变成"已是 1" —— 那点差异与"编造行"长得一样，
   //    会让 W1 变成一条**时红时绿**的断言（比没有更坏）。故造两份内容等价的夹具，
   //    再把两边唯一的变量（临时根目录名）归一化成 `<ROOT>`。
-  const ref = buildFixture();
-  const own = await runAsync(RUST_BIN, runnerArgs(ref.root, ref.mp), { env: { MIAO_MODEL_ROOT: ref.root } });
-  const want = toLines(own.out + own.err).map((l) => l.split(ref.root).join('<ROOT>'));
+  const ref = await buildFixture();
+  const refLog = path.join(ref.root, 'progress.jsonl');
+  // 与产品同构：第 1 轮（带 `--engine-bootstrap`）成功才接第 2 轮，**第 2 轮不带那个旗标**。
+  const r1 = await runAsync(RUST_BIN, runnerArgs(ref.root, ref.mp, 1, refLog, true), { env: mirrorEnv(ref) });
+  const r2 =
+    r1.code === 0
+      ? await runAsync(RUST_BIN, runnerArgs(ref.root, ref.mp, 2, refLog, false), { env: mirrorEnv(ref) })
+      : null;
+  // 🔴 期望值 = **最后一轮**的输出：产品的 `spawn_download_round` 每轮开头都 `d.tail = Vec::new()`
+  //    （state.rs 的轮次重置块）⇒ 界面看到的永远只是最后那一轮的日志。把两轮拼起来比是错的。
+  const last = r2 ?? r1;
+  const want = toLines(last.out + last.err).map((l) => l.split(ref.root).join('<ROOT>'));
   fs.rmSync(ref.root, { recursive: true, force: true });
 
-  const { root, mp } = buildFixture();
+  const { root, mp } = await buildFixture();
   // 产品默认执行体就是 mangasvc 自己；这里**显式**指向它，让"起谁"不依赖宿主 PATH。
   const svc = await startService({
     MIAO_MODEL_MANIFEST: mp,
@@ -226,8 +309,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check(
     'W1 `modelDownload.tail` **逐行等于**子进程真实 stdout/stderr（顺序也一致）—— 有一行编造的就红',
     tail.length > 0 && tail.join('\n') === want.join('\n'),
-    { tail, want, code: own.code },
+    { tail, want, code: last.code },
   );
+
+  // W1b：检查侧镜像的 flag 集合 == 产品构造的 argv 集合。
+  // 没有这一条，argv 漂移的表现是"W1 悄悄变成在比另一条命令"——红了不知道，绿了也不算数。
+  {
+    const src = fs.readFileSync(STATE_RS, 'utf8');
+    const fn = src.slice(src.indexOf('fn spawn_download_round'));
+    const built = [...new Set([...fn.matchAll(/cmd\.arg\("(--[a-z-]+)"\)/g)].map((m) => m[1]))];
+    const onlyBuilt = built.filter((f) => !MIRRORED_FLAGS.includes(f));
+    const onlyMirrored = MIRRORED_FLAGS.filter((f) => !built.includes(f));
+    check(
+      'W1b 检查侧镜像的 argv 与产品构造的 argv **同集**（少一项就红，不让 W1 悄悄比错命令）',
+      built.length > 0 && onlyBuilt.length === 0 && onlyMirrored.length === 0,
+      { built, onlyBuilt, onlyMirrored },
+    );
+  }
 
   check(
     'W2 任务走到终态 `done` / 退出码 0（"真实输出"这件事得在真跑完的前提下说）',
