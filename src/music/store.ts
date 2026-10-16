@@ -304,6 +304,15 @@ export interface MusicState {
    */
   lyricsWindowOpen: boolean;
 
+  /**
+   * 桌面歌词窗在本平台是否提供（2026-10-16 裁定：**只有 Windows 提供**）。
+   *
+   * mac 上不显示入口（播放条与展开播放器两处按钮），设置页里那项保持可交互但不产生效果。
+   * 值由 `hydratePlatform()` 在**挂载前**从 Rust 取一次（平台是编译期常量，取不到按 false：
+   * 藏一个入口好过留一个不符合预期的入口）。默认 false 也意味着"未取到前按钮不渲染"。
+   */
+  desktopLyricsSupported: boolean;
+
   // ---- UI ----
   queueOpen: boolean;
   expanded: boolean;
@@ -579,6 +588,8 @@ export interface MusicState {
    * 不推的话它会一直停在「待播放」，直到下一次换歌/播放态变化才显示内容。
    */
   setLyricsWindowOpen: (open: boolean) => Promise<void>;
+  /** 取一次桌面平台，写出 `desktopLyricsSupported`（由入口在**挂载前**调用） */
+  hydratePlatform: () => Promise<void>;
   /**
    * 把当前播放状态推给桌面歌词窗（换歌 / 歌词就绪 / 播放态变化 / 开窗时调用）。
    *
@@ -734,6 +745,8 @@ export const useMusicStore = create<MusicState>()((set, get) => ({
   // ---- 桌面歌词 ----
   // 冷启动时窗口一定不存在（窗口不跨进程重启保留），所以初值 false 是事实而非猜测
   lyricsWindowOpen: false,
+  // 平台能力未知前一律 false：入口宁可晚渲染一瞬，也不能在 mac 上先闪一个按钮再消失
+  desktopLyricsSupported: false,
 
   // ---- UI ----
   queueOpen: false,

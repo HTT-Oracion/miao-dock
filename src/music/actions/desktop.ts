@@ -29,9 +29,29 @@ export const createDesktopSlice = (
   get: StoreGet,
 ): Pick<
   MusicState,
-  'setLyricsWindowOpen' | 'pushLyricsState' | 'pushLyricsPrefs' | 'setCommentTab' | 'loadComments'
+  'hydratePlatform' | 'setLyricsWindowOpen' | 'pushLyricsState' | 'pushLyricsPrefs' | 'setCommentTab' | 'loadComments'
 > => ({
+  /**
+   * 取一次桌面平台，写出桌面歌词能力位。
+   *
+   * 为什么是**入口挂载前**的一次性调用：平台是编译期常量，整局不会变；
+   * 挂载后再补会让两处入口按钮先按 false（不渲染）画一帧，或反过来先按旧值闪一下。
+   * 取不到（浏览器里直接开主窗 / IPC 失败）按 false 兜底 —— 藏一个入口好过留一个
+   * 在本平台并不工作的入口。
+   */
+  hydratePlatform: async () => {
+    try {
+      const p = await ipc.fetchDesktopPlatform();
+      set({ desktopLyricsSupported: p === 'windows' });
+    } catch {
+      set({ desktopLyricsSupported: false });
+    }
+  },
+
   setLyricsWindowOpen: async (open) => {
+    // 本平台不提供桌面歌词窗时直接空转：设置页那项保持可交互（用户要求），
+    // 但不能走到 IPC —— 那一侧没有对应窗口，硬开会报一句对用户无意义的错。
+    if (!get().desktopLyricsSupported) return;
     // 先改状态再调命令：让 UI 立刻响应，不被 IPC 往返卡住。
     // 失败时回滚 —— 否则会留下"开关显示已开、窗口却没起来"的假状态。
     const prev = get().lyricsWindowOpen;

@@ -149,6 +149,8 @@ export function MediaSection() {
       case 'lyrics-window':
         // 窗口生死归主窗管：这一项与播放条上的按钮调的是同一个 action，
         // 两处读同一份 store 状态，不会出现「设置页说开着、播放条说关着」。
+        // 本平台不提供桌面歌词窗时（mac）**仍渲染且可点**，只是 action 直接空转 ——
+        // 用户要求设置项保持可交互，不给一个点了没反应的禁用控件。
         return (
           <Switch
             on={lyricsWindowOpen}

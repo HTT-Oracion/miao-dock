@@ -104,6 +104,17 @@ pub fn service_restart(app: AppHandle, mgr: State<'_, ServiceManager>) -> Status
     mgr.status()
 }
 
+/// 平台事实的唯一出处（`"windows"` / `"macos"` / `"linux"`）。
+///
+/// 为什么值得单开一条命令：前端**没有可信的平台判定源** —— UA 会撒谎，
+/// `@tauri-apps/api` 又不带 os 模块（那是 plugin-os）。而"桌面歌词窗只在 Windows 提供"
+/// 这类能力裁决必须有一个权威答案，否则 mac 上就会留着入口、点开却不符合预期。
+/// 取编译期常量，与运行期实际情况不可能脱节。
+#[tauri::command]
+pub fn desktop_platform() -> &'static str {
+    std::env::consts::OS
+}
+
 /// 手动启动本地翻译服务。
 ///
 /// 两条调用路径：
@@ -494,6 +505,7 @@ fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 /// 宏展开出的 `crate::<域>::__tauri_command_name_<命令>!()` 依赖这个路径逐字对上。
 pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
+        crate::commands::desktop_platform,
         crate::commands::service_status,
         crate::commands::service_start,
         crate::commands::service_stop,

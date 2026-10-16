@@ -127,6 +127,8 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   // ---- 底部右区/左区要用的播放与账号状态 ----
   const playbackQuality = useMusicStore((s) => s.playbackQuality);
   const lyricsWindowOpen = useMusicStore((s) => s.lyricsWindowOpen);
+  // 本平台不提供桌面歌词窗时右下区不渲染该开关（mac：见 store 的 desktopLyricsSupported）
+  const desktopLyricsSupported = useMusicStore((s) => s.desktopLyricsSupported);
   const queueOpen = useMusicStore((s) => s.queueOpen);
   const loginInfo = useMusicStore((s) => s.loginInfo);
   const likedSongIds = useMusicStore((s) => s.likedSongIds);
@@ -689,14 +691,16 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
               onChange={(v) => void setPlaybackQuality(v)}
             />
 
-            {/* 桌面歌词窗口开关 */}
-            <IconButton
-              title={lyricsWindowOpen ? '关闭桌面歌词' : '开启桌面歌词'}
-              active={lyricsWindowOpen}
-              onClick={() => void setLyricsWindowOpen(!lyricsWindowOpen)}
-            >
-              <MonitorSpeaker size={19} />
-            </IconButton>
+            {/* 桌面歌词窗口开关：本平台不提供该窗口时整块不渲染 */}
+            {desktopLyricsSupported && (
+              <IconButton
+                title={lyricsWindowOpen ? '关闭桌面歌词' : '开启桌面歌词'}
+                active={lyricsWindowOpen}
+                onClick={() => void setLyricsWindowOpen(!lyricsWindowOpen)}
+              >
+                <MonitorSpeaker size={19} />
+              </IconButton>
+            )}
 
             {/* 播放队列（已打开时禁用，参考同款） */}
             <IconButton title="播放队列" disabled={queueOpen} onClick={() => setQueueOpen(true)}>

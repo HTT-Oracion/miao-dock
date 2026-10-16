@@ -386,9 +386,17 @@ export interface LyricsControlPayload {
   value?: number;
 }
 
+/**
+ * 平台事实（Rust `desktop_platform` 是唯一出处，见该命令的注释）。
+ *
+ * 为什么不用 UA 判：UA 会撒谎（Edge/WebView2 的 UA 字符串不保证含平台词），
+ * 而这里要拿它做**能力裁决**（桌面歌词窗提不提供），判错的代价是"留着入口但不符合预期"。
+ */
+export type DesktopPlatform = 'windows' | 'macos' | 'linux';
+export const fetchDesktopPlatform = () => invoke<DesktopPlatform>('desktop_platform');
+
 /** 打开桌面歌词窗口；已存在则聚焦（幂等） */
 export const openLyricsWindow = () => invoke<void>('open_lyrics_window');
-
 /** 关闭桌面歌词窗口；不存在时静默成功（幂等） */
 export const closeLyricsWindow = () => invoke<void>('close_lyrics_window');
 

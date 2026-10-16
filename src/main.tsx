@@ -81,11 +81,19 @@ function installDesktopGuards(): void {
 }
 installDesktopGuards();
 
-const el = document.getElementById('root');
-if (!el) throw new Error('缺少 #root 挂载点');
-
-createRoot(el).render(
-  <React.StrictMode>
-    <AppRouter />
-  </React.StrictMode>,
-);
+/**
+ * 挂载前先取桌面平台：桌面歌词入口（播放条 / 展开播放器两处按钮）按它决定渲染与否，
+ * 挂载后再补就会先画一帧不该出现的按钮再消失。
+ * 平台取不到时按"不支持"兜底（见 `hydratePlatform`），取平台失败不阻断启动。
+ */
+async function bootstrap(): Promise<void> {
+  await useMusicStore.getState().hydratePlatform();
+  const el = document.getElementById('root');
+  if (!el) throw new Error('缺少 #root 挂载点');
+  createRoot(el).render(
+    <React.StrictMode>
+      <AppRouter />
+    </React.StrictMode>,
+  );
+}
+bootstrap();

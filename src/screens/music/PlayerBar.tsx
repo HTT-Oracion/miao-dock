@@ -60,6 +60,9 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
   const currentQuality = useMusicStore((s) => s.currentQuality);
   const currentBitrate = useMusicStore((s) => s.currentBitrate);
   const lyricsWindowOpen = useMusicStore((s) => s.lyricsWindowOpen);
+  // 本平台不提供桌面歌词窗时不渲染这个开关（2026-10-16 用户要求：mac 上看不到该入口）。
+  // 右邻的「桌面歌词设置」**照旧显示** —— 设置类入口按用户要求保持可交互。
+  const desktopLyricsSupported = useMusicStore((s) => s.desktopLyricsSupported);
 
   const togglePlay = useMusicStore((s) => s.togglePlay);
   const next = useMusicStore((s) => s.next);
@@ -179,14 +182,17 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
           </div>
           {/* 桌面歌词：独立置顶小窗。title 随状态切换，让同一个按钮的「下一步」始终明确 ——
               开着时看到「关闭桌面歌词」比看到「桌面歌词」更能说明再点一下会发生什么。
-              active 走 IconButton 自带的 is-on，与旁边按钮的激活态同一套视觉。 */}
-          <IconButton
-            title={lyricsWindowOpen ? '关闭桌面歌词' : '桌面歌词'}
-            active={lyricsWindowOpen}
-            onClick={() => void setLyricsWindowOpen(!lyricsWindowOpen)}
-          >
-            <MonitorSpeaker size={16} />
-          </IconButton>
+              active 走 IconButton 自带的 is-on，与旁边按钮的激活态同一套视觉。
+              本平台不提供该窗口时整块不渲染（mac：见 store 的 desktopLyricsSupported）。 */}
+          {desktopLyricsSupported && (
+            <IconButton
+              title={lyricsWindowOpen ? '关闭桌面歌词' : '桌面歌词'}
+              active={lyricsWindowOpen}
+              onClick={() => void setLyricsWindowOpen(!lyricsWindowOpen)}
+            >
+              <MonitorSpeaker size={16} />
+            </IconButton>
+          )}
           {/* 桌面歌词设置：打开独立弹窗（内容项后续任务补，这里只给入口） */}
           <IconButton title="桌面歌词设置" onClick={() => setDlSettingsOpen(true)}>
             <Settings size={16} />

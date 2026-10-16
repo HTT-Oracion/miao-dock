@@ -4392,6 +4392,23 @@ Ctrl/Cmd+U、Ctrl/Cmd+Shift+I/J/C 与 F12；`contextmenu` 一律取消，**例�
 条数：settings 183→184、反证 138→141。验收：`check:settings` **184/0** · `--refute` **141/141 全红** ·
 `check:docs` **21/0** · static 门 **17/17** · `tsc` 0。
 
+**⑥ mac 端不显示桌面歌词入口**（`fix(music)`，2026-10-16 用户要求）：本平台不提供桌面歌词窗时，
+播放条与展开播放器两处开关**不渲染**，设置页那一项**保持可交互但点了没反应**。
+平台事实取自 Rust 新命令 `desktop_platform`（`std::env::consts::OS`，与 `platform/paths.rs` 同源）——
+前端没有可信判定源：UA 会撒谎，`@tauri-apps/api` 又不带 os 模块（那是 plugin-os，引它等于为一个
+`if` 付包数与平台耦合的代价 ⇒ 不引）。入口 `main.tsx` 在 `createRoot().render()` **之前**
+`await hydratePlatform()` 一次写进 store 的 `desktopLyricsSupported`（只有 Windows 为 true）：
+挂载后再补会让两处按钮先按 false 画一帧、或反过来闪一下再消失；取不到按 false ——
+藏一个入口好过留一个不符合预期的入口，顺带让浏览器 dev 直开主窗也不去调必然失败的命令。
+`setLyricsWindowOpen` 在不支持时**直接空转**：那一侧根本没有对应窗口，硬开会报一句对用户无意义的错。
+「桌面歌词设置」按钮与设置页各项**照旧保留**（设置类入口按用户要求保持可交互），
+其中「锁定」项的 `disabled={!lyricsWindowOpen}` 是**既有**逻辑，本项未改 ——
+它在 Windows 上关窗时同样是禁用态，不该为 mac 单独开一条分叉。
+⚠️ **本项按用户要求不写自测脚本**（原话：不写自测脚本、自行验证、只改代码）⇒ 断言层零新增，
+只由既有门兜着。登记为未验：mac 真机上两处按钮确实不出现 · `desktop_platform` 真机返回
+`macos` · 打包态 `hydratePlatform` 真能拿到值（开发态浏览器里它是 false，**看不出**对错）。
+验收：`tsc --noEmit` 0 · static 门 **17/17** · `cargo build` **零告警**（新命令已真编译）。
+
 ## D-229 首启引导的死结：闸门只挡引擎、不挡服务本体（2026-10-16）
 
 **症状（用户实测）**：装完包进应用 → 看到 D1 引导页 → 点「开始下载」→
