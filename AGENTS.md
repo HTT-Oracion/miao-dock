@@ -311,8 +311,8 @@ cd src-tauri && cargo build                # Rust（见 §5 环境陷阱）
   的父进程能否拉起用户自装的未签名 python / `llama-server`）· **E1 macOS 真机签名 + 公证**
   （配置、entitlements 与打包前自检都已就位并有钉子，但"从 dmg 装完引擎能起"只能真机验）·
   **B4 的 darwin wheel**（要一台装了 CLT 的 Mac）；
-  以及 **E5 的三项法务复核**（`docs/distribution-license-conclusion.md` §4）——外加 B4 的
-  `win32-x64` 那一颗**待托管**（需要分发通道）。⇒ **结论未出不得对外分发**。
+  **E5 的三项法务复核已于 2026-10-16 全部通过**（`docs/distribution-license-conclusion.md` §4）
+  ⇒ 对外分发的那个前置门解除；剩下的是 B4 的 `win32-x64` 那一颗**待托管**（需要分发通道，与许可无关）。
 - Windows 侧**已能产出 NSIS 安装包**（`src-tauri/tauri.windows.conf.json` 平台分叉，`npm run task -- check:bundle` 钉住；macOS 包型仍 `app`+`dmg`，未动），
   A4 起**已能在真实安装产物上冒烟**（`npm run task -- check:packaged`：静默安装 → `--check-assets` → 起服务打 `/health` + mock 替身 + 启动配方）；
   引擎运行时本身**不随包**（用户自装，B1/B2）· Windows **进程树回收三项**

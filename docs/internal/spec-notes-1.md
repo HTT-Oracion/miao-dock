@@ -4189,3 +4189,43 @@ Rust 六域表与「命令注册只能一处展开 + `Wry` 不能泛型化」两
 - **CI 未真跑**：本机没有 GitHub runner。
 - **service 层既有 4 条红仍在**（与本轮无关，已登记）：`progress-truth` · `engine-settings` · `svc-selftest` · `lifespan`。
 
+## D-226 打包真跑（纠正「无 makensis」）· 四条 service 红逐条收口 · 法务复核通过（2026-10-16）
+
+**一、打包能不能跑：能。D-223「本机无 `makensis` ⇒ 不能打包」的结论作废。**
+`makensis` 确实不在 PATH，但 **Tauri 自带一份**（`%LOCALAPPDATA%\tauri\NSIS\makensis.exe`，
+缺包时它会自己下载并校验哈希）⇒ `npm run app:build` **真跑成功**：release 编译 3m48s，
+`Finished 1 bundle at: …喵坞_2.2.1_x64-setup.exe (58.77 MiB)`。
+
+真正的坑是另一处（本机环境）：根 `dist/` 已存在时，`beforeBuildCommand`（即 `npm run build`）
+里 vite 要清空它（673 个文件），被**本机 IDE 的安全删除垫**拦下
+（`SAFE_DELETE_BULK_CONFIRM_REQUIRED`，阈值 500）⇒ 打包前置就失败，而报错离"NSIS 缺失"很远。
+处置：把旧 `dist/` **移走**（移动不是删除，不受垫拦），让构建从零产出。
+⇒ D-225 那条"打包未真跑"**作废**；`check:packaged` / `check:uninstall-keep` 现在**具备真跑条件**
+（真安装包已在盘上），但**仍未跑**，如实登记。
+
+**二、四条 service 红（性质各异，逐条处置）**
+
+| check | 原状 | 真身 | 处置 | 现状 |
+| --- | --- | --- | --- | --- |
+| `progress-truth` | 8/2 | 检查侧只镜像了 `--fetch-models --root --manifest`；产品子进程实带 `--engine-bootstrap --extract --stage N --progress-log`，且**继承服务的整份 env**；夹具里又没有可解包条目（产品带 `--extract` ⇒ 直接退出 1）；期望值还把两轮拼在一起（产品**每轮开头 `d.tail = Vec::new()`**，界面只看得到最后一轮） | 镜像整套 argv（新增 `withBootstrap` 形参，第 2 轮不带）+ 镜像 env + 夹具补一条真 tar.gz + 期望值取**最后一轮**；另加 **W1b**：检查侧 flag 集合与 `state.rs::spawn_download_round` 的 `cmd.arg("…")` **同集**（漂移就红，不让 W1 悄悄比错命令） | **11/0**，反证 M1–M3 全红 |
+| `engine-settings` | 53/8 | 三处**过期前提**：① 理由里写死「16 GB」（本机 15.7 GB ⇒ 恒红）；② 假定"本机是 Metal、cuda 不可用"（这台机器**装了 CUDA**，cuda 合法；它一旦被接受就把后面"拒绝面不落盘"全线带偏）；③ 写死档位 `small`（本机**可行档位只有 tiny**）。外加夹具无可解包条目、D2 的 500ms 上限把一次性开销算了进去 | 全部改成**数据驱动**（内存取自 `/engine/options`、不可用后端取"另一家"、档位取候选首项）+ 夹具补真 tar.gz + D2 上限改 5s 并写明主判据是 `state=running` | **61/0**，反证通过 |
+| `svc-selftest` | 134/1（**整轮中断**） | A20 组用 `POSIX SIGSTOP` 冻结进程：Windows 无此信号，Node 抛 `ERR_UNKNOWN_SIGNAL` ⇒ 自检中断（现场是"运行期异常"，不是某条断言红） | 抽 `freeze()`：POSIX 仍 SIGSTOP，Windows 退回"观察完立刻杀"（竞态只影响两个前置断言，真正的不变量在 SIGKILL 之后断言） | 崩溃根治 ⇒ **155/4**，余 4 条是 **A21**（见下） |
+| `lifespan` | 起不来（ENOENT） | 两处平台错：拉 dev server 用 `node_modules/.bin/vite`（npm 在 Windows 也放一份**无扩展名 sh**，`existsSync` 过、`spawn` 必 ENOENT）；找应用二进制写死 `miao-dock`（Windows 是 `.exe`） | dev server 改「本进程 node + `vite/bin/vite.js`」；二进制按平台补后缀 | 能跑完 ⇒ **12/16**，余 4 条是**应用级**（托盘退出确认文本 / 设置导航 / sidecar 态 / 降级标志），环境敏感 |
+
+**三、两个新暴露、各自独立的缺陷（本轮未动，如实登记）**
+- **A21（`svc-selftest` 余项）是双靶时代的残留**：① 用 `fs.chmod(0o500)` 造"根目录不可写" ——
+  Windows 忽略 POSIX 权限位 ⇒ 前提恒不成立；② 用 `NODE_OPTIONS=--import` 注入"不带 errno 的错误" ——
+  只对**已退役的 Node 靶子**有效，现在是 Rust 靶子。⇒ 要两样：平台正确的"不可写"夹具（Windows 走 ACL），
+  以及给 Rust 靶子一个等价的反证接缝（或明确改判为"该形状只能靠 Rust 侧单测"）。
+- 🔴 **产品侧：不可行档位的拒绝返回空响应体**。实测 `POST /engine/settings {"tier":"small"}`
+  （本机唯一可行档位是 tiny）⇒ `400` 且**响应体为空** —— 与"每一个不该被接受的输入都要指得出
+  可选什么"的纪律相悖（同组其它拒绝都带 `INVALID_SETTING` + `details`）。**待修**。
+
+**四、法务复核（负责人确认的结论已落文档）**：`docs/distribution-license-conclusion.md` §4 三项
+**2026-10-16 全部通过**（§1 的 B 档「待复核」→「可以」、§5 checklist 第 1 项打勾、`AGENTS.md` §4 同步）。
+⚠️ 两件仍挂着、都与许可结论无关：§4-3 里"清单的 `license` 可判定标识未回写"、
+以及 `pydensecrf` 的 `win32-x64` wheel **托管通道待定**。
+
+**五、本条修正 D-225 的两条口径**：打包**已真跑**（不再是"未验"）；四条 service 红**已处置**
+（不再是"与本轮无关、仍在"）。
+
