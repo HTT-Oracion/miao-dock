@@ -4261,3 +4261,35 @@ Rust 六域表与「命令注册只能一处展开 + `Wry` 不能泛型化」两
   实际早已是 11（本轮加 P9 后 12）。nightly 层的条数声明仍靠人维护（`check:counts` 只覆盖 static 层），
   这是它第一次被实测抓到漂移。
 
+## D-227 参考实现切片退役：清掉 `vendor/` 与相关说明，`check:tls` 的源码层换靶（2026-10-16）
+
+**背景**：`vendor/music-reference/`（移植期的本地只读参考切片，GPL-3.0，`.gitignore` 忽略、不入库）
+已从本机移除 ⇒ 那条 ignore 规则与所有**指向它**的说明都成了悬空指针。
+
+**改动**（全是"删指针/换靶"，不动任何产品行为）：
+
+- `.gitignore`：删掉 `vendor/` 与它的两行注释（其中一行正写着"详见 `vendor/music-reference/README.md`"）。
+- `eslint.config.mjs`：删掉 `**/vendor/**`（已成死配置的 ignore）。
+- `AGENTS.md` §1 目录表 · `README.md` 目录树：删掉"参考实现切片"那一行。
+- `docs/internal/ui-parity-plan.md`：修两处悬空指针（抬头"依据 `vendor/…`"、R3 行"依据 vendor README"）。
+  🔴 R3 那处**不能只删指针**：`public/style-previews/*.png` 六张预览图是 **GPL-3.0** 资产，
+  "个人自用不触发分发义务"这个结论的留痕改指**台账自己**（`spec-notes.md` 的 M-0 / D-22）——
+  删掉引用等于把许可依据一起删掉。
+- `src/styles/music.scss` · `src/components/DynamicIsland.tsx` · `src/screens/music/KaraokeLyrics.tsx`：
+  代码注释里的 `vendor/...` 路径去掉，**保留**"从参考实现移植"的叙述（移植出处本身是可追溯性）。
+- 🔴 `e2e/tls-check.mjs` 的**源码层判据源换靶**：原来读 `vendor/music-reference/rust-music_api/*.rs`
+  证"参考实现需要 HTTPS"；切片退役后那一层**只能永远跳过**（"跳过 ≠ 通过"，等于留一层盲区）。
+  改读**我方实现** `src-tauri/src/music/{netease,kugou,qqmusic,migu}.rs` —— 判据反而更硬
+  （证的是**我们自己发不发**这些公网请求）。读不到不再静默跳过（路径写错时那 5 条直接红）。
+  ⇒ 条数回到 **14 条**，顺手修掉一处**早已存在的不一致**：`README.md` 一直写 14 条、`AGENTS.md` 写 9 条
+  —— 切片不在盘上时脚本自报 9，而 `check:counts` 只对 AGENTS 一侧，于是两边谁也不报错。
+
+**保留不动的**：`e2e/bundle-targets-check.mjs` 里 `../vendor/node.zip` 那条**反证变异字符串**
+（它只是"假想被写进 `bundle.resources`"的坏配置；台账 D-08 明说该路径从来不存在 ——
+"文件在不在"是空断言，这条钉的是**配置**，删它会削弱那条反证的理由）；
+两份**封卷台账**里的历史记录一字不动。
+
+**验收**：`check:tls` **14/14**；手工反证（摘掉 `reqwest` 的 `rustls-tls`）⇒ **2 条按预期红**
+（配置层 + 锁文件同步守卫，正是它该有的两处），跑完 `Cargo.toml` **按字节还原**、无残留；
+static 门 **17/17**（含 `check:counts` 对账：AGENTS 的 14 ↔ 脚本自报 14）。
+

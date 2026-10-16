@@ -22,7 +22,7 @@
 | 翻译服务 | Rust（127.0.0.1:5180–5190）：§2 的 ① 是 `mangasvc` 可执行文件 | `src-tauri/src/mangasvc/` |
 | 翻译引擎 | **接缝层**：真引擎装在 `<appData>/runtimes/manga-translator/`（不在库，B1 起与安装位置无关），本目录放版本锁 `VERSIONS.lock` / 模型清单与下载器 / 子进程看守；`engine/src/` 是**测试替身**（mock 引擎 + mock LLM） | `engine/` |
 | 验收与取证脚本 | 纯 Node 零依赖（`e2e/service/`、`e2e/engine/` 按来源分） | `e2e/` |
-| 参考实现切片 | 只读参考，**保持原样不改** | `vendor/music-reference/`（不入库） |
+| 参考实现切片 | 只读参考，**保持原样不改** | 已退役（原有本地切片不入库；移植产物在 `src-tauri/src/music/`） |
 
 **目录约定（硬规则，全文与理由见 `README.md` §目录 · `docs/internal/spec-notes.md` D-79）**：
 
@@ -177,7 +177,7 @@ npm run task -- check:child-watch[:refute]   # 外部二进制父死看守**双�
 npm run task -- check:child-watch-kill[:refute] # child-watch Windows killTree 无条件 /F **双靶源码钉** 2 条 / 反证 2 条（不起进程；D-89 崩溃路径孤儿执行器）。判据**先 stripComments** —— 注释里主动写出了被禁写法
 npm run task -- e2e                   # D 组端到端
 npm run task -- check:ia              # IA 结构 32 条（含 C8d：侧栏两套几何 58×52 / 44×44 随标签形态成对切换）
-npm run task -- check:tls             # TLS 依赖链 9 条（三层）
+npm run task -- check:tls             # TLS 依赖链 14 条（三层）
 npm run task -- check:quit[:refute]   # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW（`signal_tree` 经 `hide_console` 施加）/ 前端不静默 / Windows signal_tree 无条件 /F；不起进程）
 npm run task -- check:autostart[:refute] # 翻译服务「自动启动 / 手动启停」根因钉子 18 条 / 反证 19 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / 自动启动 effect 依赖不含 status / 未就绪屏 stopped 给「启动」/ 设置页启停行 / 服务实现默认档 = Rust（E1–E5）/ Cargo.toml `default-run` 指向真实 bin（F1）；不起进程；D-94 · D-168 · D-169）
 npm run task -- check:engine-parity[:refute]   # 引擎耦合点纯函数（Rust `--engine-selftest` ⟷ 冻结 golden，real/mock 两档）

@@ -19,7 +19,6 @@ export default [
       '**/dist/**',
       '**/dist-verify/**',
       '**/target/**',
-      '**/vendor/**',
       '**/runtimes/**',
       '**/.tmp/**',
       '**/generated/**',

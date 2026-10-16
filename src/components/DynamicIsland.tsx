@@ -14,7 +14,7 @@ import { KaraokeLyrics } from '@screens/music/KaraokeLyrics';
  * 灵动岛 —— 拍板第 4 项（方案 B = 播放态）。
  *
  * ## 形态与交互契约取自哪里
- * 取自 vendor 里的参考实现（`upstream-v10/components/dynamic-island.tsx`，只读不改）。
+ * 取自参考实现（当时只读切片里的 `components/dynamic-island.tsx`，只读不改；切片已退役，出处留痕见台账）。
  * 它是 framer-motion 的 `useAnimationControls().start({width,height})` 驱动形变，
  * 本项目是**原生 CSS 路线**，所以逐项换成等效机制：
  *

@@ -32,10 +32,6 @@ vite.config.ts.timestamp-*.mjs
 # 上面那条 `*.log` 的无斜杠写法会连它一起忽略，这里按目录显式放行。
 !docs/refs/engine/*.stdout.log
 
-# 音乐参考源码（GPL-3.0，开发期只读参考，不入库）
-# 移植产物在 src-tauri/src/music/，详见 vendor/music-reference/README.md
-vendor/
-
 # 编辑器本地历史（VS Code Local History 插件产物，纯本机噪声）
 .history/
 

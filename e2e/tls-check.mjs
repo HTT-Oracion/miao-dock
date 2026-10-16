@@ -99,20 +99,24 @@ if (lock) {
   }
 }
 
-// ── 3. 源码层：音乐模块需要的凭据确实在用 ─────────────────────────
+// ── 3. 源码层：**我们自己的**音乐实现确实在访问公网 HTTPS ─────────
 // 防止「TLS 加了但音乐模块根本没接上」—— 那时本组会绿，但功能不存在。
+//
+// 🔴 判据源 2026-10-16 从参考切片改成**我方实现**（`src-tauri/src/music/*.rs`）：
+//    参考切片已退役（不入库、不再落盘），而"到底需不需要 TLS"该看的是**我们自己发不发**这些请求
+//    —— 判据反而更硬（原来证的只是"参考实现需要"）。
+//    ⚠️ 读不到就**红**（不再"跳过源码层"）：路径写错时静默跳过，等于这一层永远绿。
 console.log('\n源码层');
-const VENDOR = path.join(ROOT, 'vendor', 'music-reference', 'rust-music_api');
-let vendorAvailable = true;
-let vendorSrc = '';
+const MUSIC_SRC_DIR = path.join(ROOT, 'src-tauri', 'src', 'music');
+let musicSrc = '';
 try {
-  vendorSrc = ['netease.rs', 'kugou.rs', 'qqmusic.rs', 'migu.rs']
-    .map((f) => readFileSync(path.join(VENDOR, f), 'utf8'))
+  musicSrc = ['netease.rs', 'kugou.rs', 'qqmusic.rs', 'migu.rs']
+    .map((f) => readFileSync(path.join(MUSIC_SRC_DIR, f), 'utf8'))
     .join('\n');
-} catch {
-  vendorAvailable = false;
+} catch (e) {
+  console.log(`  · 读不到我方音乐源码（路径或文件变了？）：${e.message}`);
 }
-if (vendorAvailable) {
+{
   const hosts = [
     ['music.163.com', '网易云'],
     ['gateway.kugou.com', '酷狗'],
@@ -120,12 +124,9 @@ if (vendorAvailable) {
     ['migu.cn', '咪咕'],
   ];
   for (const [host, name] of hosts) {
-    ok(vendorSrc.includes(host), `参考源码含 ${name} 域名（${host}）—— 确需公网 HTTPS`);
+    ok(musicSrc.includes(host), `我方实现含 ${name} 域名（${host}）—— 确需公网 HTTPS`);
   }
-  ok(vendorSrc.includes('https://'), '参考源码使用 https 协议', '若全为 http 则不需要 TLS，D-25 不适用');
-} else {
-  console.log('  · 参考源码不在位（vendor/ 未落盘），跳过源码层');
-  console.log('    注：这不影响 D-25 本身 —— 配置层与锁文件层才是它的判据');
+  ok(musicSrc.includes('https://'), '我方实现使用 https 协议', '若全为 http 则不需要 TLS，D-25 不适用');
 }
 
 console.log(`\n${pass} 通过 / ${fail} 失败`);

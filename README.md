@@ -63,7 +63,6 @@ miao-dock/
 ├── test-manga/   本机验收素材：真实漫画（**不入库**）
 ├── test-music/   本机验收素材：音乐（**不入库**）
 ├── runtimes/     **开发机遗留的引擎资产目录**（**不入库**）：B1 起产品的默认落点已搬到 `<appData>/runtimes/manga-translator/`；这里只在用 `MIAO_RUNTIME_ROOT=<repo>/runtimes` 显式覆盖时才被读到
-├── vendor/       参考实现切片（只读，**不入库**）
 ├── .tmp/         **全仓唯一的临时落盘目录**（**不入库**）：`e2e/` · `selftest/` · `models/` · `engine-test/`
 ├── snapshots/    对外展示截图（与 `docs/refs/` 的**取证图**分家，两者不互为副本）
 ├── AGENTS.md     AI 协作上下文入口（任何工具进仓库先读它）
