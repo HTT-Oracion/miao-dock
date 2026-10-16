@@ -4315,7 +4315,8 @@ cookie 文件 17:00 由开发态写入，17:50 起的安装版进去直接是登
   dev 是 `http://localhost:1420`，打包是 Tauri 自定义协议）。
 
 **两处顺带记录（未改）**：
-- `%APPDATA%\NexBox\music-cookies.json` 是**改名前的旧 identifier** 残留，现已不再被读。
+- `%APPDATA%` 下还有**另一份** `music-cookies.json`（属于改名前的**旧应用标识**，现已不再被读）——
+  升级用户机上会有这类残留，别把它当成"当前生效的登录态"。
 - `profile_cache_path()` 用的是**硬编码字面量** `dirs::data_local_dir()/MiaoDock`，而不是按 identifier
   推导 —— 与 store 的落点口径不一致（功能没问题，但"哪天 identifier 再改一次"时它不会跟着走）。
 
