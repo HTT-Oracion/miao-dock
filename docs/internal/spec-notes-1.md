@@ -4323,6 +4323,15 @@ cookie 文件 17:00 由开发态写入，17:50 起的安装版进去直接是登
 **想隔离 dev 与正式版**：今天**没有**接缝（store 落点由 Tauri 的 app data dir 决定，无 `MIAO_*` 覆盖）；
 可行的是换 identifier 或换 Windows 用户。若要加"可指到临时目录"的接缝（便于验收/并行），按新增接缝的纪律另开一条。
 
+## D-230 桌面端八项缺陷修复（一 bug 一提交，2026-10-16）
+
+**⑧ 构建告警清零**（`chore(engine)`）：`supervisor.rs` 自检报告的 `restart` 分支里，`port_matches`
+先赋"重启前端口"、同分支末尾又赋"重启后端口"，而 `json!` 只读一次 ⇒ 第一次赋值永远读不到
+（`unused_assignments`）。删第一次赋值即可：`portMatchesSpec` 仍取重启后那次，
+**自检输出逐字节不变**。刻意**不**做成"两个字段分别报前后端口"——那会改 golden 形状、
+搅动 `llm-supervisor-parity` 的基线。验收：`cargo build` 零告警 ·
+`llm-supervisor-parity` **5/5**（含 `LLM.restart.behavior` 相同）。
+
 ## D-229 首启引导的死结：闸门只挡引擎、不挡服务本体（2026-10-16）
 
 **症状（用户实测）**：装完包进应用 → 看到 D1 引导页 → 点「开始下载」→

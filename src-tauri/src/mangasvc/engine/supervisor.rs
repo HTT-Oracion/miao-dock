@@ -884,7 +884,8 @@ fn run_case(c: &Value) -> Value {
         "restart" => {
             let s1 = sup.start(timeout);
             states.push(s1.state.clone());
-            port_matches = Value::Bool(s1.port == expected_port);
+            // `portMatchesSpec` 只取**重启后**那一次（下面的 s2）：重启前赋值会被覆盖，
+            // 写了也读不到（曾触发 unused_assignments 告警）。
             pid_is_int = Value::Bool(s1.pid.is_some());
             sup.stop("", 8000);
             states.push(sup.snapshot().state);
