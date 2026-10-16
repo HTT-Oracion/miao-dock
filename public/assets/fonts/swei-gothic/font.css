@@ -17,8 +17,10 @@ Medium / Bold / Black）。SIL Open Font License 1.1，可自由分发与商用�
    作为统一族名，再由 `font-weight` 在同一族内区分两档文件。
    改成 TC / JP 子集时同理：族名要跟着换成 `Swei Gothic CJK TC` / `… CJK JP`。
 
-⚠️ 本清单必须由 **JS 侧**（`main.tsx`）import：Sass 对「带 `.css` 后缀的 `@use`」静默丢弃，
-   字体不会进构建（同 lxgw-wenkai-gb / yozai-font 那几份的坑）。
+🔴 本清单必须由**入口 HTML**（`templates/index.html`）用 `<link>` 引到：它住在
+   `public/assets/fonts/`，是**不经过构建**的公共资源；更不能写进 `styles/index.scss`
+   的 `@use` —— Sass 对带 `.css` 后缀的 `@use` 是**静默丢弃**的（同 lxgw-wenkai-gb /
+   yozai-font 那几份的坑）。清单里的 `url()` 保持**同目录相对路径**（public 下没人改写它）。
 
 用 WebFont 目录的 **woff2**（每档约 6 MB），而不是 CJK SC 目录的 TTF（每档约 16 MB）：
 同为桌面端下载，woff2 体积小约 63%、解析更快，字形无差别。两版 name table 已实测

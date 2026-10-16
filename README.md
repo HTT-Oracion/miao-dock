@@ -41,7 +41,10 @@ miao-dock/
 │   ├── src/platform/  跨平台底座（`paths.rs` 落点 / `child_watch.rs` 父死看守）
 │   ├── src/music/     音乐模块 Rust 侧：四平台（`netease`/`kugou`/`qqmusic`/`migu`）+ 音频代理 + 加密 + 歌词 + 缓存（汽水延后）
 │   └── src/mangasvc/  **服务端实现**（唯一翻译入口，127.0.0.1:5180–5190）：`mangasvc.rs` 外壳 · `routes.rs` 路由表（44 条）· `handlers.rs` 端点 · `store/` 队列落盘 · `library.rs` 库原语 · `translate/` 在线翻译 · `engine/` 引擎耦合点
-├── public/       不经构建处理的静态资源（歌词样式预览图）
+├── public/       不经构建处理的静态资源（原样复制到 dist/，**没有指纹、没有 url() 改写**）
+│   ├── assets/fonts/   随仓字体：三份 `<dir>/font.css` 清单 + 字体文件（由入口 HTML 的 `<link>` 加载）
+│   ├── assets/icons/   品牌图（logo-48 / logo-512 / logo，用绝对 URL 引）
+│   └── style-previews/ 歌词样式预览图
 ├── templates/    两个 HTML 入口：`index.html`（主窗）/ `lyrics.html`（桌面歌词**独立窗**），登记在 `vite.config.ts` 的 `rollupOptions.input`
 ├── scripts/      仓库级脚本：`gen-licenses.mjs`（许可清单生成）· `mac-signing-preflight.mjs`（macOS 打包前自检）
 ├── engine/       翻译引擎的**接缝层**（真引擎装在 `<appData>/runtimes/manga-translator/`，不在库）

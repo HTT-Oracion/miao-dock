@@ -64,7 +64,7 @@ export const RADIUS = {
 /**
  * 字体分工（《02》§5，2026-10-10 定案）：**标题/强调与纯数字 = 狮尾圆体 · 简体（Swei Gothic CJK SC）**、
  * **正文 = 悠哉字体（Yozai）**；回退位依次为霞鹜文楷 GB、Zen Maru Gothic、Noto Sans SC。
- * 桌面端随应用分发字体文件（`src/assets/fonts`），不依赖用户系统是否装了这几款字体。
+ * 桌面端随应用分发字体文件（`public/assets/fonts`），不依赖用户系统是否装了这几款字体。
  * （**漫画译文**的渲染字体是另一条线：引擎侧 `LXGWWenKaiGB-Medium`，见 D-105，与本文件无关。）
  *
  * 🔴 族名必须与对应 `font.css` 里的 `font-family` 逐字一致，写错 ⇒ 该栈**首位静默失效**、回落下一项：
@@ -72,9 +72,9 @@ export const RADIUS = {
  *    独立 family**，写 Family(1) 的名字 700 就取不到 Bold 那条 face）、`'Yozai'`、`'LXGW WenKai GB'`。
  *
  * 随仓分发三类字体，引入方式**不同**、别搞混：
- *   · Swei Gothic CJK SC —— **woff2**（Regular + **原生 Bold**），清单在 `src/assets/fonts/swei-gothic/font.css`；
- *   · Yozai —— 单体 TTF（Regular + Medium，无 Bold ⇒ 清单里 700 映射到 Medium），清单在 `src/assets/fonts/yozai-font/font.css`；
- *   · LXGW WenKai GB —— 单体 TTF（**Medium 档**，无 Bold），清单在 `src/assets/fonts/lxgw-wenkai-gb/font.css`。
+ *   · Swei Gothic CJK SC —— **woff2**（Regular + **原生 Bold**），清单在 `public/assets/fonts/swei-gothic/font.css`；
+ *   · Yozai —— 单体 TTF（Regular + Medium，无 Bold ⇒ 清单里 700 映射到 Medium），清单在 `public/assets/fonts/yozai-font/font.css`；
+ *   · LXGW WenKai GB —— 单体 TTF（**Medium 档**，无 Bold），清单在 `public/assets/fonts/lxgw-wenkai-gb/font.css`。
  *   三者都由 `main.tsx` 从 **JS 侧** import（不能走 `styles/index.scss` 的 `@use`——Sass 对带 `.css`
  *   后缀的 `@use` 静默丢弃，字体不会进构建）。
  *   ⚠️ 原「源柔ゴシックP Medium（GenJyuuGothicP，120 片 woff2）」已于 2026-10-10 弃用并移除。

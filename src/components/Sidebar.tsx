@@ -2,7 +2,9 @@ import type { ReactElement } from 'react';
 import type { ServiceState } from '@/ipc';
 import { SHELL, SIDEBAR } from '@/themes/tokens';
 import { Dot } from '@components/units';
-import logo from '@/assets/brand/miao-logo.png';
+// 公共资源：不经构建、原样复制到 dist/assets/icons/，故用**绝对 URL** 而不是 import
+// （import 会让 Vite 多产一份带指纹的副本，而这里要的就是"路径可预测"）。
+const LOGO_SRC = '/assets/icons/miao-logo.png';
 import { APP_LABEL, stateView, type AppId, type Screen } from '@/stores/nav';
 import { Languages, Music4, Settings } from 'lucide-react';
 
@@ -67,7 +69,7 @@ export function Sidebar({
   return (
     <nav className="sidebar" style={{ width: SHELL.sidebarWidth, flexBasis: SHELL.sidebarWidth }}>
       <div className="sidebar-logo" style={{ width: SHELL.logoSize, height: SHELL.logoSize }}>
-        <img src={logo} alt="喵坞" width={40} height={40} />
+        <img src={LOGO_SRC} alt="喵坞" width={40} height={40} />
       </div>
 
       {/* ── 应用层 ──

@@ -104,7 +104,11 @@ const F = {
   // 随仓字体根目录（每个子目录 = 一份 `<dir>/font.css` 清单 + 其字体文件）。
   // FONT 组按目录**扫描**而不写死具体字体名 —— 字体更替（GenJyuu → LXGW / Yozai / Swei）
   // 不该逼着断言跟着改名（2026-10-10 那次替换踩过：三条断言写死 GenJyuu，删字体时全红）。
-  fontsDir: path.join(APP, 'src', 'assets', 'fonts'),
+  // 随仓字体根目录（每个子目录 = 一份 `<dir>/font.css` 清单 + 其字体文件）。
+  // 🔴 2026-10-16 起它们在 `public/assets/fonts/`（公共资源，不经过构建）——
+  //    判据随搬家改写为"入口 HTML 有没有 link 它"，见 FONT 组。
+  fontsDir: path.join(APP, 'public', 'assets', 'fonts'),
+  entryHtml: path.join(APP, 'templates', 'index.html'),
   appMain: path.join(APP, 'src', 'App.tsx'),
   // B1 起设置屏是**路由表里的屏装配件**，壳层 → 设置页那三个 prop 的接线落在它身上
   settingsPane: path.join(APP, 'src', 'router', 'panes', 'SettingsPane.tsx'),
@@ -243,6 +247,7 @@ function loadSources() {
     expanded: readMaybe(F.expanded),
     musicScreen: readMaybe(F.musicScreen),
     main: readMaybe(F.main),
+    entryHtml: readMaybe(F.entryHtml),
     cacheBlock: readMaybe(F.cacheBlock),
     engineApi: readMaybe(F.engineApi),
     engineState: readMaybe(F.engineState),
@@ -1767,10 +1772,11 @@ add('ENGINE.css.noticePadding', 'ENGINE', (ctx) => {
 });
 
 // ============================ FONT 组 ============================
-// 随仓字体（`src/assets/fonts/<dir>/font.css` + 字体文件）有两条**编译得过、构建成功、
-// 页面照常显示**的静默失效路径，本组专治这两条：
-//   ① 清单没走 JS 侧引入 —— Sass 对带 `.css` 的 `@use` 静默丢弃 ⇒ 字体资源全不进构建；
-//   ② 字体栈首位族名与随仓 face 对不上 ⇒ 浏览器认不出，整个首位静默回落。
+// 随仓字体（`public/assets/fonts/<dir>/font.css` + 字体文件）有三条**编译得过、构建成功、
+// 页面照常显示**的静默失效路径，本组专治这三条：
+//   ① 清单没被任何入口引用 ⇒ 字体根本不加载（搬进 public 前的旧形态是"没走 JS 侧 import"）；
+//   ② 清单被写进 sass 的 `@use` —— Sass 对带 `.css` 的 `@use` 静默丢弃 ⇒ 字体资源全不进构建；
+//   ③ 清单里的 `url()` 指错位置 ⇒ public 下的 css **不被构建改写**，路径错就是 404。
 // 本组按**目录扫描**，不写死具体字体名（换字体不必改断言）。
 
 /** 采集「带 font.css 清单」的随仓字体目录名 */
@@ -1791,32 +1797,46 @@ const declaredFamilies = () => {
   return out;
 };
 
-// —— ① 每份随仓 font.css 都必须由 JS 侧引入，且**不得**走 sass 的 @use ——
+// —— ① 每份随仓 font.css 都必须被入口 HTML 用 <link> 引到，且**不得**走 sass 的 @use ——
 add('FONT.viaJsModule', 'FONT', (ctx) => {
   /*
-   * 失效形态（**实测踩过**）：把某份 `font.css` 写成 `styles/index.scss` 里的
-   * `@use '../assets/fonts/<dir>/font.css';`
+   * 失效形态（**实测踩过**，2026-10-16 前的旧形态）：把某份 `font.css` 写成
+   * `styles/index.scss` 里的 `@use '../assets/fonts/<dir>/font.css';`
    *
-   * 后果：Sass 对「带 `.css` 后缀的 `@use`」是**静默丢弃** —— 不报错、不产出、
+   * 后果：Sass 对「带 `.css` 后缀的 `@use`」是**静默丢弃**的 —— 不报错、不产出、
    * 也不改写其中的 `url()`。于是 `npm run build` 照常成功、
    * 但 `dist/assets/` 里**一个该字体的分片都没有**（实测 0 个），
    * 页面照常渲染，只是**回落**到下一个字体 —— 与"没改过"完全同形。
    *
-   * 判据：
-   *   ① `main.tsx` 必须 import 每一份 font.css（走 JS 侧，Vite 才会处理 url() 并落盘资源）；
-   *   ② `index.scss` 里**不许**出现指向任何 font.css 的 `@use`（防有人"顺手挪回去"）。
+   * 2026-10-16 起字体搬进 `public/assets/fonts/`（公共资源，不经过构建），
+   * 加载方式随之从"main.tsx import"改为"入口 HTML `<link>`"。判据跟着搬家改写，
+   * 但要防的是**同一类失效**：
+   *   ① `templates/index.html` 必须 `<link>` 每一份 font.css（漏一条 ⇒ 该字体不加载）；
+   *   ② `index.scss` 里**不许**出现指向任何 font.css 的 `@use`（防有人"顺手挪回去"）；
+   *   ③ 清单里的 `url()` 必须是同目录相对路径或 `/assets/fonts/` 前缀 ——
+   *      public 下的 css 不被构建改写，写错就是 404，且同样不报错。
    */
-  const main = stripComments(ctx.s.main);
-  const entry = stripComments(readMaybe(path.join(F.stylesDir, 'index.scss')));
+  const entry = stripComments(ctx.s.entryHtml);
+  const scss = stripComments(readMaybe(path.join(F.stylesDir, 'index.scss')));
   const problems = [];
 
   for (const dir of fontDirsWithCss()) {
-    if (!main.includes(`assets/fonts/${dir}/font.css`)) {
-      problems.push(`main.tsx 没有 import ${dir}/font.css（Vite 不处理 url() ⇒ 该字体资源不进构建）`);
+    if (!new RegExp(`<link[^>]+href="/assets/fonts/${dir}/font\\.css"`).test(entry)) {
+      problems.push(`入口 HTML 没有 link ${dir}/font.css（该字体根本不会加载）`);
+    }
+    const css = readFileSync(path.join(F.fontsDir, dir, 'font.css'), 'utf8');
+    for (const m of css.matchAll(/url\(\s*['"]?([^'")\s]+)['"]?\s*\)/g)) {
+      const u = m[1];
+      // 同目录相对：`./x` 或不带斜杠的 `x`。⚠️ 别把"以 / 开头"算进相对 —— 那正是绝对路径。
+      const okRel = u.startsWith('./') || !u.startsWith('/');
+      const okAbs = u.startsWith(`/assets/fonts/${dir}/`);
+      if (!okRel && !okAbs) {
+        problems.push(`${dir}/font.css 的 url() 指向 ${u} —— public 下的 css 不被构建改写，该路径会 404`);
+      }
     }
   }
   // 入口里出现指向 font.css 的 @use ⇒ 一定是被挪回 sass 了（那会静默丢弃）
-  if (/@use\s+['"][^'"]*font\.css['"]/.test(entry)) {
+  if (/@use\s+['"][^'"]*font\.css['"]/.test(scss)) {
     problems.push('index.scss 用 @use 引了 font.css —— Sass 会静默丢弃该 .css（字体资源不会进构建）');
   }
   return { ok: problems.length === 0, detail: problems.join('；') };
@@ -4038,12 +4058,22 @@ const MUTATIONS = [
     expect: ['ENGINE.css.noticePadding'],
   },
 
-  // —— FONT 组三条判据各配反证（锚点按**当前真实字体**写；换字体时须同步，否则跳过=判红）——
+  // —— FONT 组判据各配反证（锚点按**当前真实字体与当前加载方式**写；换字体/换加载方式时须同步，
+  //    否则反证会以"锚点未找到"跳过，而那正是覆盖率静默降级）——
   {
-    name: '把狮尾 font.css 的 import 从 main.tsx 删掉（字体资源不进构建，首位静默回落）',
-    file: F.main,
-    find: "import '@/assets/fonts/swei-gothic/font.css';\n",
+    name: '把狮尾 font.css 的 link 从入口 HTML 摘掉（该字体根本不加载，首位静默回落）',
+    file: F.entryHtml,
+    find: '    <link rel="stylesheet" href="/assets/fonts/swei-gothic/font.css" />\n',
     replace: '',
+    expect: ['FONT.viaJsModule'],
+  },
+  {
+    // public 下的 css **不被构建改写**：url() 写错就是 404，而且构建照常成功、页面照常渲染
+    // （回落下一档字体）—— 与"没改过"完全同形，所以必须有一条专门盯它。
+    name: '把狮尾清单的 url() 改成错误的绝对路径（public 下没人改写它 ⇒ 404，字体静默回落）',
+    file: path.join(F.fontsDir, 'swei-gothic', 'font.css'),
+    find: 'url(./SweiGothicCJKsc-Regular.woff2)',
+    replace: 'url(/fonts/SweiGothicCJKsc-Regular.woff2)',
     expect: ['FONT.viaJsModule'],
   },
   {
