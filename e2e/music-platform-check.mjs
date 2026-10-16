@@ -2458,6 +2458,11 @@ add('LYRICS.modeLineRender', 'LYRICS', (s) => {
 add('LYRICS.translationMerge', 'LYRICS', (s) => {
   // 翻译合并：ParsedLyricLine 有 translation 字段 + mergeTranslation 函数 + loadLyrics 真调用。
   // 防「字段/函数定义了但 loadLyrics 没接」—— 那会永远不显示翻译。
+  //
+  // 另钉三件算法上的事（2026-10-16 用户报"有的歌词有翻译、有的没有"后加的）：
+  //  ① 容差必须**宽于** 0.5s：实测有平台译文时间戳整体偏移过半秒，卡 0.5s 会整段丢翻译；
+  //  ② 译文**不重复用**：否则相邻行抢同一版译文，真正该用它的那行反而空着；
+  //  ③ **同文本复用**：副歌在原文里重复出现而译文只有一版，第二处必须沿用它自己第一处的译文。
   const store = s.storeLyrics ?? '';
   const missing = [];
   if (!/translation\?:\s*string/.test(store)) missing.push('ParsedLyricLine 缺 translation? 字段');
@@ -2466,6 +2471,15 @@ add('LYRICS.translationMerge', 'LYRICS', (s) => {
   if (body == null) missing.push('store 缺 loadLyrics 实现');
   else if (!/mergeTranslation\s*\(\s*lines\s*,\s*l\.translation\s*\|\|\s*['"]['"]/.test(body))
     missing.push("loadLyrics 未调用 mergeTranslation(lines, l.translation||'')");
+  // ① 容差：从实现里读出那个常量，必须 > 0.5（读不出来按红算，不按绿算）
+  const tol = /const TOL = (\d+(?:\.\d+)?)/.exec(store);
+  if (!tol) missing.push('mergeTranslation 里读不到容差常量 TOL');
+  else if (!(Number(tol[1]) > 0.5)) missing.push(`容差 ${tol[1]}s 仍卡在旧的 0.5s（平台整体偏移时会整段丢翻译）`);
+  // ② 译文不重复用
+  if (!/if \(used\[j\]\) continue;/.test(store)) missing.push('译文没有"已用掉"标记（相邻行会抢同一版译文）');
+  // ③ 同文本复用（重复句/副歌）
+  if (!/if \(reuse\) line\.translation = reuse;/.test(store))
+    missing.push('没有同文本复用（副歌第二处等重复句永远拿不到译文）');
   return { ok: missing.length === 0, detail: missing.length ? `翻译合并：${missing.join('、')}` : '' };
 });
 
@@ -5138,6 +5152,22 @@ const MUTATIONS = [
     find: '    if (seeking) {',
     replace: '    if (false) {',
     expect: ['LYRICS.seekDeferLocate'],
+  },
+  {
+    // 复现用户报的"有的歌词有翻译、有的没有"：同文本复用被摘掉 ⇒ 副歌第二处等重复句永远没译文
+    name: 'mergeTranslation 去掉同文本复用（副歌第二处等重复句永远拿不到译文）',
+    file: F.lyrics,
+    find: '    if (reuse) line.translation = reuse;',
+    replace: '    if (false) line.translation = reuse;',
+    expect: ['LYRICS.translationMerge'],
+  },
+  {
+    // 同一缺陷的另一半：容差卡回 0.5s ⇒ 平台整体偏移时整段丢翻译
+    name: 'mergeTranslation 容差卡回 0.5s（平台时间戳整体偏移时整段丢翻译）',
+    file: F.lyrics,
+    find: '  const TOL = 1.5;',
+    replace: '  const TOL = 0.5;',
+    expect: ['LYRICS.translationMerge'],
   },
   {
     name: '不在队列的歌不接进队列（历史点歌会与 currentIndex 不一致）',

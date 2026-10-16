@@ -181,38 +181,61 @@ export function parseYrc(yrc: string): ParsedLyricLine[] {
 }
 
 /**
- * 把翻译 LRC 合并进解析后的歌词行（按时间精确匹配 + 0.5s 容差模糊匹配）。
+ * 把翻译 LRC 合并进解析后的歌词行（按时间就近对齐 + 同文本复用）。
  *
- * 参考实现 `buildKaraokeLines` 的合并逻辑：翻译 LRC 先解析成 `Map<时间,文本>`，
- * 再对每行按时间匹配。为什么不能按 index 对齐 —— 翻译通常把重复句（副歌）合并成一行，
- * 行数与原文不一致，按 index 会整体错位。0.5s 容差吸收平台间毫秒级抖动。
+ * 为什么不能按 index 对齐：翻译通常把重复句（副歌）合并成一行，行数与原文不一致，
+ * 按 index 会整体错位。故按时间匹配，并在此之上补两件事：
+ *
+ *  · **译文不重复用**（`used` 标记）：一行译文只归属一个原文行，否则相邻两行会抢到
+ *    同一版译文，而后面真正该用它的那一行反而空着。
+ *  · **同文本复用**（`byText`）：副歌在原文里出现多次、译文只有一版，第二处按时间
+ *    匹配不到 —— 复用第一处的译文。这正是"有的歌词有翻译、有的没有"的主要来源。
+ *
+ * 容差取 1.5s 而不是 0.5s：实测有平台的译文时间戳整体偏移过半秒，卡在 0.5s 上会整段丢翻译；
+ * 1.5s 内取**最近**的那一版，配合"不重复用"不会张冠李戴。
  */
 export function mergeTranslation(lines: ParsedLyricLine[], translationLrc: string): void {
   if (!translationLrc || !translationLrc.trim()) return;
-  const transMap = new Map<number, string>();
+  const trans: { t: number; text: string }[] = [];
   for (const line of translationLrc.split('\n')) {
     const m = line.match(/\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]/);
     if (!m) continue;
     const time = Number(m[1]) * 60 + Number(m[2]) + (m[3] ? Number(m[3].padEnd(3, '0')) / 1000 : 0);
     const text = line.replace(/\[[^\]]*\]/g, '').trim();
-    if (text) transMap.set(time, text);
+    if (text) trans.push({ t: time, text });
   }
-  if (transMap.size === 0) return;
+  if (trans.length === 0) return;
+  trans.sort((a, b) => a.t - b.t);
+
+  // ① 就近对齐：每行认**还没被用掉**的最近一版译文
+  const used = new Array<boolean>(trans.length).fill(false);
+  const TOL = 1.5;
   for (const line of lines) {
-    if (transMap.has(line.time)) {
-      line.translation = transMap.get(line.time);
-      continue;
-    }
-    let best: string | undefined;
+    let best = -1;
     let bestDiff = Infinity;
-    for (const [t, txt] of transMap) {
-      const diff = Math.abs(t - line.time);
-      if (diff < bestDiff && diff < 0.5) {
+    for (let j = 0; j < trans.length; j++) {
+      if (used[j]) continue;
+      const diff = Math.abs(trans[j].t - line.time);
+      if (diff < bestDiff) {
         bestDiff = diff;
-        best = txt;
+        best = j;
       }
     }
-    if (best) line.translation = best;
+    if (best >= 0 && bestDiff <= TOL) {
+      line.translation = trans[best].text;
+      used[best] = true;
+    }
+  }
+
+  // ② 同文本复用：原文里重复出现的句子，沿用它自己第一处的译文
+  const byText = new Map<string, string>();
+  for (const line of lines) {
+    if (line.translation) {
+      if (!byText.has(line.text)) byText.set(line.text, line.translation);
+      continue;
+    }
+    const reuse = byText.get(line.text);
+    if (reuse) line.translation = reuse;
   }
 }
 
