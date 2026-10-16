@@ -212,6 +212,15 @@ export interface ModelStatus {
 
 // ------------------------------------------------------------------ /engine/status
 
+/**
+ * 装配四段的段号（D-231④）—— `modelDownload.step` 的值域，服务端 `state.rs` 是唯一来源。
+ *
+ * 🔴 这里的三个值**不覆盖** `stage` 的两步：下载详情页那个指示器只认 `stage1` / `stage2`
+ * （`DownloadPanel.tsx` 的 `STAGE_TEXT`），而「环境准备」这一段在它眼里仍属于第 1 步。
+ * 第四段「就绪」**没有**对应事件 —— 它由 `runtime.ready` 推导，不是装配发出来的。
+ */
+export type AssemblyStep = 'prepare' | 'runtime' | 'models';
+
 export interface ModelDownloadView {
   state: 'idle' | 'running' | 'interrupted' | 'done' | 'failed';
   running: boolean;
@@ -238,6 +247,13 @@ export interface ModelDownloadView {
   etaMs: number | null;
   /** 当前阶段：`stage1`（准备运行环境）| `stage2`（下载权重，后台继续）| `null` */
   stage: 'stage1' | 'stage2' | null;
+  /**
+   * 装配四段的当前段（D-231④）：环境准备 / 运行环境装配 / 本地引擎装配；`null` = 还没有真实阶段事件。
+   *
+   * 🔴 与 `stage` **并存而非取代**：`stage` 的取值空间被下载详情页的 `STAGE_TEXT`（只有两格）钉死，
+   * 扩成四段会让那个指示器在准备期整块消失。四段时间线走这一个字段。
+   */
+  step: AssemblyStep | null;
   /** 当前正在处理的条目 id（文件名 / 阶段名）；无真实来源为 `null` */
   currentId: string | null;
   // ---- G5：中断 / 续传 ----

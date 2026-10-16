@@ -115,7 +115,18 @@ pub struct ModelDownload {
     pub speed_bps: Option<f64>,
     pub eta_ms: Option<i64>,
     /// 当前阶段：`stage1`（准备运行环境）| `stage2`（下载权重，后台继续）| `null`。
+    ///
+    /// 🔴 这是**下载详情页**那个两步指示器的数据源（`DownloadPanel.tsx` 的 `STAGE_TEXT`
+    /// 只有两格），它的取值空间**不可扩**。四段装配时间线走下面的 `step`。
     pub stage: Option<String>,
+    /// 装配四段的当前段（D-231④）：`prepare`（环境准备）/ `runtime`（运行环境装配）/
+    /// `models`（本地引擎装配）/ `null`（还没有真实事件，或只有真实事件之外的态）。
+    ///
+    /// 🔴 **为什么与 `stage` 并存而不是把 `stage` 改成四段**：`STAGE_TEXT['prepare']`
+    /// 会是 `undefined` ⇒ `stage` 取到 `null` ⇒ 下载详情页的阶段指示器在准备期
+    /// **整块消失**。那是明确的功能回退，而用户并没有要求改那个页面。
+    #[serde(default)]
+    pub step: Option<String>,
     /// 当前正在处理的条目 id（文件名 / 阶段名），没有真实来源时为 `null`。
     pub current_id: Option<String>,
     // ---- G5：中断 / 续传 ----
@@ -140,6 +151,7 @@ impl Default for ModelDownload {
             speed_bps: None,
             eta_ms: None,
             stage: None,
+            step: None,
             current_id: None,
             can_resume: false,
             interrupted_reason: None,
@@ -678,6 +690,9 @@ impl EngineState {
             "speedBps": d.speed_bps,
             "etaMs": d.eta_ms,
             "stage": d.stage,
+            // D-231④：四段装配时间线的当前段。**加在 `modelDownload` 内部**（不是顶层）
+            // ⇒ `/engine/status` 的顶层键数不变，`check:contract` 的 S5.7 精确等值不受影响。
+            "step": d.step,
             "currentId": d.current_id,
             // ---- G5：中断 / 续传 ----
             // 🔴 `canResume` 在视图时**现算**（不存）：盘上有 `.part` 或 `.ready` 未覆盖全部选中条目
@@ -1220,8 +1235,22 @@ fn spawn_progress_reader(
                 let mut d = dl.lock().unwrap_or_else(|p| p.into_inner());
                 if e.phase == "stage" {
                     // 阶段标记事件：更新当前阶段（不碰字节账、不更新 current_id）。
+                    //
+                    // 🔴 两张表**刻意不是同一张**（D-231④）：
+                    //   · `stage` 是下载详情页那个**两步**指示器的数据源，`STAGE_TEXT` 只有两格。
+                    //     `prepare` 必须**归到 stage1** —— 落到下面的兜底分支就会变成
+                    //     `"prepare"`，`STAGE_TEXT['prepare']` 是 `undefined` ⇒ 指示器整块消失。
+                    //   · `step` 是未就绪屏**四段**时间线的数据源，值域是闭集
+                    //     （prepare / runtime / models）；**未知阶段名不猜**，保持上一段，
+                    //     否则界面会拿到一个它不认识的段号（前端只能把它当"就绪前"渲染）。
+                    d.step = match e.id.as_str() {
+                        "prepare" => Some("prepare".to_string()),
+                        "runtime" => Some("runtime".to_string()),
+                        "models" => Some("models".to_string()),
+                        _ => d.step.take(),
+                    };
                     d.stage = match e.id.as_str() {
-                        "runtime" => Some("stage1".to_string()),
+                        "prepare" | "runtime" => Some("stage1".to_string()),
                         "models" => Some("stage2".to_string()),
                         other => Some(other.to_string()),
                     };

@@ -20,6 +20,7 @@
  *   stage1 文案承诺"即可开始翻译" ⇒ W12 · 长路径结论不落盘 ⇒ W13。
  * - M10–M11：解包改回按 url 末段找归档 ⇒ W14 · 运行时解包退回"解整份清单" ⇒ W15。
  * - M12–M13：镜像套回 codeload（ghfast 不代理它）⇒ W16 · 原 `url` 的 owner 拼错一个字母 ⇒ W16。
+ * - M14–M15（D-231④）：`prepare` 不再归 `stage1` ⇒ W4 · `step` 不映射 `models` 段 ⇒ W4。
  * 每条反证都按字节还原，收尾复核残留（R1）。
  *
  * ## W9 为什么必须打在 Rust 侧
@@ -201,6 +202,7 @@ function engineSourceShape() {
     '"speedBps"',
     '"etaMs"',
     '"stage"',
+    '"step"',
     '"currentId"',
     '"canResume"',
     '"interruptedReason"',
@@ -213,8 +215,24 @@ function engineSourceShape() {
   );
 
   // W4 阶段顺序：runtime→stage1，models→stage2（先可翻译、后补权重）。
-  const stageMap = state.includes('"runtime" => Some("stage1"') && state.includes('"models" => Some("stage2"');
-  check('W4 阶段顺序：运行环境=stage1、权重=stage2（先可用后完整）', stageMap, { stageMap });
+  // 🔴 D-231④ 起这里钉的是**两张表同时**成立：`stage`（下载详情页那个两步指示器，
+  //    `prepare` 必须归 stage1，否则 `STAGE_TEXT['prepare']` 是 undefined ⇒ 指示器整块消失）
+  //    与 `step`（未就绪屏四段时间线）。只钉 stage 会漏掉"step 根本没接上"，
+  //    只钉 step 会漏掉"prepare 把下载详情页打没了"。
+  const setupForPhases = fs.readFileSync(RUNTIME_SETUP_RS, 'utf8');
+  const stageMap =
+    state.includes('"prepare" | "runtime" => Some("stage1"') && state.includes('"models" => Some("stage2"');
+  const stepMap =
+    state.includes('"prepare" => Some("prepare".to_string())') &&
+    state.includes('"runtime" => Some("runtime".to_string())') &&
+    state.includes('"models" => Some("models".to_string())');
+  // 装配侧必须真的发出 `prepare` 段（发不出来 ⇒ 四段时间线的第 1 段永远不亮）。
+  const emitsPrepare = /on_phase\("prepare",\s*"[^"]+"\)/.test(setupForPhases);
+  check(
+    'W4 阶段顺序：运行环境=stage1、权重=stage2（先可用后完整）· `prepare` 归 stage1 且四段 `step` 各自有映射',
+    stageMap && stepMap && emitsPrepare,
+    { stageMap, stepMap, emitsPrepare },
+  );
 
   // W5 工具条芯片映射：运行态/中断态/缺件未开始三态文案，且**不含命令行字样**。
   const ed = fs.readFileSync(ENGINE_DOWNLOAD_TS, 'utf8');
@@ -596,6 +614,31 @@ if (REFUTE) {
     restore();
   }
 
+  // ---- M14（D-231④）：把 `prepare` 从 `stage` 的映射里摘掉 ⇒ W4 红 ----
+  // 🔴 这个变异反的是**最容易被忽略的退化路径**：`prepare` 落到 `other => Some(other)` 兜底
+  //    ⇒ `stage = "prepare"` ⇒ `DownloadPanel` 的 `STAGE_TEXT['prepare']` 是 `undefined`
+  //    ⇒ 阶段指示器在准备期**整块消失**。它不会让任何服务起不来，所以没有任何别的断言会红。
+  {
+    const restore = mutateFile(
+      STATE_RS,
+      '"prepare" | "runtime" => Some("stage1".to_string()),',
+      '"runtime" => Some("stage1".to_string()),',
+    );
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W4');
+    check('M14 `prepare` 不再归 stage1（下载详情页阶段指示器会整块消失）⇒ W4 红', red, { code: r.code, redOn: red });
+    restore();
+  }
+
+  // ---- M15（D-231④）：`step` 映射整个不接（未就绪屏四段时间线永远是第一段）⇒ W4 红 ----
+  {
+    const restore = mutateFile(STATE_RS, '"models" => Some("models".to_string()),', '"models" => d.step.take(),');
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W4');
+    check('M15 `step` 不映射 models 段（四段时间线永远停在第 1 段）⇒ W4 红', red, { code: r.code, redOn: red });
+    restore();
+  }
+
   // 收尾：确认还原到位
   {
     const bad = [];
@@ -629,7 +672,11 @@ if (REFUTE) {
         .includes('extract_entries(runtime_manifest, runtime_root, Some(&py_ids))?;')
     )
       bad.push('runtime_setup.rs 残留 M11');
-    check('R1 变异收尾：十二处源码/清单按字节还原', bad.length === 0, bad);
+    if (!fs.readFileSync(STATE_RS, 'utf8').includes('"prepare" | "runtime" => Some("stage1"'))
+      bad.push('state.rs 残留 M14');
+    if (!fs.readFileSync(STATE_RS, 'utf8').includes('"models" => Some("models".to_string())'))
+      bad.push('state.rs 残留 M15');
+    check('R1 变异收尾：十四处源码/清单按字节还原', bad.length === 0, bad);
   }
 }
 

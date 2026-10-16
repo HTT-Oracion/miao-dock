@@ -4626,3 +4626,56 @@ static 门 **17/17**。
 "只装完第 1 轮"的完整装配（需要一台干净机器 + 6.9 GB 下载）。权重第 2 轮为何零产出
 仍需现场日志，不在本次范围内。
 
+### D-231④ 装配阶段事件细化：新增 `prepare` 段与细粒度 `step`（`stage` 一字不改）
+
+**为什么要做**：D-231③ 让"缺什么"说得准了，但用户点下「开始下载」之后仍然看不懂时间线 ——
+点下去到出现第一个字节之间有一段**静默**（校验清单、算总量、落点探测），界面上什么都不变，
+于是用户以为没反应又点一次（下载器被打回"已有一条任务"）。
+
+**根因**：`on_phase` 只有 `runtime` / `models` 两个 id，所以 `modelDownload.stage` 只有两格；
+而「环境准备」这件事**根本没有对应事件**，界面只能拿 `stage`（粗两步）去冒充进度事实源。
+
+**关键取舍：为什么不把 `stage` 扩成四段**：`stage` 被下载详情页
+`src/screens/engine/DownloadPanel.tsx` 的 `STAGE_TEXT` 消费，它只有 `stage1` / `stage2`
+两格。加一个 `prepare` ⇒ `STAGE_TEXT['prepare']` 是 `undefined` ⇒ `stage` 取到 `null` ⇒
+**那个页面的阶段指示器在准备期整块消失**。那是明确的功能回退，而用户并没有要求改那个页面。
+⇒ 采用**双字段**：`stage`（不动，`stage1`/`stage2`）+ **新增 `step`**
+（`prepare` / `runtime` / `models`，闭集）。
+
+**改了什么**：
+
+- `src-tauri/src/mangasvc/engine/runtime_setup.rs`：
+  - `run_bootstrap` 新增**阶段 0** `on_phase("prepare", "准备装配环境")`（在阶段 1 之前）。
+    这一段**什么都没做**，它只把"准备落点、校验清单"显式说给界面听。
+  - 顺带补上**阶段 5（依赖安装）缺失的阶段标记** —— 原来界面会一直显示上一句
+    「应用引擎源码补丁」，而 pip 那一段是整个第 2 段里最久的（真机几分钟起步）。
+    用户看到的是"卡在补丁上"，可补丁早就打完了。
+- `src-tauri/src/mangasvc/engine/state.rs`：`ModelDownload` 增 `step` 字段（**`#[serde(default)]`**
+  —— `load_persisted()` 是 `from_str().unwrap_or_else(default)`，不加 `default` 会让
+  **所有存量机器**的 `engine-download.json` 解析失败 ⇒ 升级后下载态被静默重置成 `idle`）；
+  阶段标记处同时维护两张表：`step` 未知阶段名**保持上一段**（闭集，界面不猜），
+  `stage` 保持原兜底行为但把 `prepare` 显式归到 `stage1`；
+  `model_download_view()` 加 `"step": d.step`（**加在 `modelDownload` 内部**，顶层键数不变 ⇒
+  `check:contract` 的 S5.7 精确等值不受影响）。
+- `src/screens/settings/engine-api.ts`：新增 `AssemblyStep` 类型 + `ModelDownloadView.step`。
+
+**刻意没做什么**
+
+- 不改 `stage` 的取值空间，不动 `DownloadPanel.tsx` 的 `STAGE_TEXT`。
+- 第四段「就绪」**不**由装配发事件 —— 它由 `runtime.ready` 推导。让"就绪"变成一个需要
+  事件才能到达的态，等于给"装配成功但判据不过"留一个永远停在第 3 段的界面。
+- 不加轮询：1.5 s 的既有轮询已经够，多一次 `step` 读取不花钱。
+
+**验收**：`cargo build` **0 warning / 0 error** · `check:engine-bootstrap` 正向 **18/18** ·
+`--refute` **34/34 全红**（新增 **M14**「`prepare` 不归 stage1」⇒ W4 红、**M15**「`step`
+不映射 models 段」⇒ W4 红，反证 13 → 15；R1 残留复核加到十四处）· `check:contract` **77/77** ·
+static 层 **17/17** · `npx tsc --noEmit` 无输出 · prettier / eslint 干净。
+
+⚠️ **本机环境受限、如实登记**：`check:progress-truth` 的 W1/W2 与 `check:engine-settings`
+的 D4 在本机**红**（`通过 9/失败 2`、`60/1`）。取证：子进程 tail 的末行是
+`✗ [ENGINE_BOOTSTRAP_FAILED] [deps] 批 A 安装失败（exit code: 1）`，其上是 pip 的
+`SSLEOFError / UNEXPECTED_EOF_WHILE_READING`；同一台机器上 Node 的 `fetch` 对该镜像返回
+**200**，而 Python 直接 `urlopen` 报 `URLError [Errno 2]` ⇒ **本机 Python 栈访问不了
+pypi 镜像**，装配停在依赖安装。这三条判的是"依赖真装上了"，与本次改动（阶段标记）无关，
+但本条**没有**在能联网的机器上复跑过 ⇒ 记为未验，不当作已通过。
+
