@@ -2967,6 +2967,23 @@ add('ISLANDV.windowMode', 'ISLANDV', (s) => {
   return { ok: missing.length === 0, detail: missing.length ? `窗口模式：${missing.join('、')}` : '' };
 });
 
+add('LYRICS.seekDeferLocate', 'LYRICS', (s) => {
+  /*
+   * 诉求（2026-10-16 用户报）：拖进度条时歌词不要跟着跳 —— 拖拽中不定位，松手后等 2s 再定位。
+   *
+   * 三条判据分别钉"参数存在 / 真的作用于定位 / 松手有延时"，再加一条钉调用侧：
+   * 只加 prop 不传等于没接（那种实现下所有静态断言仍全绿，而界面照旧跳）。
+   */
+  const kara = karaSrc(s);
+  const missing = [];
+  if (!/seeking\?: boolean;/.test(kara)) missing.push('KaraokeLyrics 没有 seeking 可选参数');
+  if (!/if \(seeking\) \{/.test(kara)) missing.push('seeking 未作用于定位效果（拖拽中仍会定位）');
+  if (!/setTimeout\([\s\S]{0,160}2000\)/.test(kara)) missing.push('松手后没有 2s 延时定位');
+  const exp = s.expanded ?? '';
+  if (!/seeking=\{/.test(exp)) missing.push('ExpandedPlayer 未把拖拽态传给 KaraokeLyrics（prop 加了没接）');
+  return { ok: missing.length === 0, detail: missing.length ? `拖拽避让：${missing.join('、')}` : '' };
+});
+
 add('ISLANDV.windowIdleStart', 'ISLANDV', (s) => {
   // ★ 本组最关键的一条：还没唱到第一句（前奏 / 间奏 / 刚起播）时 `activeIndex === -1`，
   // 窗口起点若直接取它，切片拿到的是 `[-1, 1)` 这样的**空区间** —— 歌词卡一片空白，
@@ -5113,6 +5130,14 @@ const MUTATIONS = [
     find: '  z-index: 95;',
     replace: '  z-index: 40;',
     expect: ['UI.modalAboveExpanded'],
+  },
+  {
+    // 复现用户报的"边拖边跳"：定位效果不再避让拖拽 ⇒ 拖拽中歌词跟着播放头连续跳
+    name: 'KaraokeLyrics 的定位不再避让拖拽（拖进度条时歌词跟着跳）',
+    file: F.karaoke,
+    find: '    if (seeking) {',
+    replace: '    if (false) {',
+    expect: ['LYRICS.seekDeferLocate'],
   },
   {
     name: '不在队列的歌不接进队列（历史点歌会与 currentIndex 不一致）',

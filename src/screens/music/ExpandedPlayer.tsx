@@ -131,6 +131,26 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const loginInfo = useMusicStore((s) => s.loginInfo);
   const likedSongIds = useMusicStore((s) => s.likedSongIds);
 
+  /*
+   * 进度条的「拖拽会话」状态（与 `PlayerBar` 同一套范式）：非 null 表示用户正在拖/敲键盘，
+   * 界面显示 dragMs；null 表示跟随 store 的实时进度。
+   *
+   * 两个理由，缺一不可：
+   *  ① 拖拽中每次都 onSeek 会让 <audio> 跟着不断 seek（卡顿/爆音），松手前的中间值本无意义；
+   *  ② 歌词定位要避让 —— 拖拽中播放头连续变化，`KaraokeLyrics` 的 activeIndex 会一路跳，
+   *     观感就是"边拖边跳"。故 `seeking` 透传给歌词组件，松手后由它等 2s 再定位。
+   */
+  const [dragMs, setDragMs] = useState<number | null>(null);
+  const shownMs = dragMs ?? Math.min(progressMs, Math.max(durationMs, 1));
+  /** 拖拽中 ⇒ 歌词不定位（见上） */
+  const seeking = dragMs !== null;
+  /** 提交一次拖拽结果：闭包每次渲染重建，读到的总是最新的 dragMs */
+  const commitSeek = () => {
+    if (dragMs === null) return;
+    onSeek(dragMs);
+    setDragMs(null);
+  };
+
   const setSkin = useMusicStore((s) => s.setSkin);
   // 收起走 store 的 closeExpanded（带电）—— 直接 setExpanded(false) 会跳过退场动画
   const closeExpanded = useMusicStore((s) => s.closeExpanded);
@@ -204,11 +224,9 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
    * 渐变写在 `.music-prog-bar` / `.music-exp-vol-slider`（见 music.scss）：
    * 已调节段取高亮色，未调节段保持原轨道色（各皮肤只覆盖 `--track-c`）。
    * 除数与两个 input 的 `max` 同口径，避免填充比例与滑块位置对不上。
+   * 取 `shownMs`（拖拽中含本地值）⇒ 拖动时填充同步跟随，不必等松手。
    */
-  const progFill = Math.max(
-    0,
-    Math.min(100, (Math.min(progressMs, Math.max(durationMs, 1)) / Math.max(durationMs, 1)) * 100),
-  );
+  const progFill = Math.max(0, Math.min(100, (shownMs / Math.max(durationMs, 1)) * 100));
   const volFill = Math.max(0, Math.min(100, volume * 100));
 
   /**
@@ -506,6 +524,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
                   fontPx={lyricsFontSize}
                   align={isVinyl || isCover ? 'left' : 'center'}
                   showTranslation
+                  seeking={seeking}
                   headerLine={currentSong?.artist ? `演唱：${currentSong.artist}` : undefined}
                 />
               </>
@@ -687,16 +706,20 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
         </div>
 
         <div className="music-prog">
-          <span className="music-prog-t">{fmtTime(progressMs)}</span>
+          <span className="music-prog-t">{fmtTime(shownMs)}</span>
           <input
             type="range"
             className="music-prog-bar"
             min={0}
             max={Math.max(durationMs, 1)}
             step={1000}
-            value={Math.min(progressMs, Math.max(durationMs, 1))}
+            value={shownMs}
             style={{ '--fill': `${progFill.toFixed(2)}%` } as CSSVarStyle}
-            onChange={(e) => onSeek(Number(e.target.value))}
+            // 拖拽中只改本地显示（不 seek：避免 <audio> 连续 seek 的卡顿/爆音），
+            // 松手/键盘抬起才提交一次；鼠标与键盘两条路径都要收（否则键盘调完不生效）。
+            onChange={(e) => setDragMs(Number(e.target.value))}
+            onPointerUp={commitSeek}
+            onKeyUp={commitSeek}
           />
           <span className="music-prog-t">{fmtTime(durationMs)}</span>
         </div>

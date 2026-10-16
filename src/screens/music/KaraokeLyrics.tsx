@@ -73,6 +73,14 @@ interface KaraokeLyricsProps {
    */
   scroll?: boolean;
   /**
+   * 用户是否正在拖进度条（默认 false）。
+   *
+   * 拖拽期间 `activeIndex` 会随播放头连续变化，若照旧定位就是"边拖边跳"——
+   * 用户想看的那一行永远被拽走。故拖拽中**完全不定位**；松手后也不立即定位，
+   * 而是等 2s（用户要先看清拖到的位置），再滚到当前句。
+   */
+  seeking?: boolean;
+  /**
    * 是否在每行歌词下方显示翻译（默认 false = 不显示）。
    * 展开播放器传 true；灵动岛**不传**（空间不够，翻译行会撑爆 320×150 的卡片）。
    * ⚠️ 做成 prop 而非全局开关：灵动岛复用同一个 KaraokeLyrics，不能一开全开。
@@ -153,6 +161,7 @@ export function KaraokeLyrics({
   align = 'center',
   windowSize,
   scroll = true,
+  seeking = false,
   showTranslation = false,
   headerLine,
 }: KaraokeLyricsProps) {
@@ -242,12 +251,32 @@ export function KaraokeLyrics({
     // 空依赖：RAF 循环只建一次；数据经 ref 读取，避免每帧重建
   }, []);
 
-  // 当前行滚到容器中央（与改造前的观感一致；切歌/换行/拖动进度都跟随）
+  /*
+   * 当前行滚到容器中央。
+   *
+   * 三种情形分开处理（诉求：拖进度条时歌词别跟着跳）：
+   *  · 正常播放换行 ⇒ **立即**定位（既有观感，一秒都不能慢）；
+   *  · 拖拽中 ⇒ 不定位（拖拽时 activeIndex 连续变化，定位等于把用户要看的那行拽走）；
+   *  · 刚松手 ⇒ 等 2s 再定位（用户要先看清拖到的位置；立即定位就是"跳"）。
+   */
+  const justDraggedRef = useRef(false);
   useEffect(() => {
+    if (seeking) {
+      justDraggedRef.current = true;
+      return;
+    }
+    const justDragged = justDraggedRef.current;
+    justDraggedRef.current = false;
     if (activeIndex < 0) return;
     if (!scroll) return; // 窗口模式（灵动岛）：只有两行，滚动既不必要也会顶掉布局
+    if (justDragged) {
+      const t = setTimeout(() => {
+        activeRowRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }, 2000);
+      return () => clearTimeout(t);
+    }
     activeRowRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [activeIndex, scroll]);
+  }, [activeIndex, scroll, seeking]);
 
   /*
    * 窗口区间的起点。
