@@ -3955,3 +3955,49 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
 `check:docpaths` 4/1 · 受影响反证轮：`units` **59/59** · `settings` **138/138** · `music` **221/221** ·
 `autostart` 19/19 · `engine-bootstrap` 全绿。⚠️ GUI 真机行为仍未跑。
 
+## D-221 引入 react-router（hash 路由）：URL 成为「屏 + 视图」的唯一事实源（2026-10-16）
+
+**做了什么**（`refactor(router): 引入 react-router，统一管理页面`）：新增 `src/router/`
+（`routes.ts` 路由表 + `use-nav.ts` 读写口 + `index.tsx` 装配），`App.tsx` 里两个
+`useState<Screen>` / `useState<TranslateView>` 换成 `useNav()`，`main.tsx` 改挂 `AppRouter`。
+
+- **路由表由 `TRANSLATE_VIEWS` 生成**：视图清单仍只在 `stores/nav.ts` 维护一份，
+  「加了视图却忘了加路由」在类型上发生不了。
+- **形状与旧 `useState` 对偶**（`screen` / `view` / `setScreen` / `setView` 同名同签名）：
+  侧栏、视图 Tab、未就绪屏的「去设置」这些调用点一行都没改 —— 断言里断「谁在改导航」的锚点
+  （`onOpenGuide={() => setScreen('settings')}`、自动启动 effect 的 `[screen, autoStart]`）
+  因此**逐字保持**。变的只有一处：这两个值住进 URL。
+- **三条路由都渲染同一个外壳**：外壳不能随导航重挂载（音乐在壳上常驻播放，设置页与未就绪屏的
+  状态也住在壳里）⇒ 路由在这里的职责是「声明哪些路径合法、各自对应哪一屏」，切屏仍在壳内部
+  按 URL 换内容，而不是换组件树。
+- **守卫**：未知路径（手工改 hash、视图改名后的旧链）**不落进任何一屏**，由兜底路由
+  `replace` 回默认落点 —— 用 `replace` 免得在历史里留一条死链。
+
+**偏离计划一处（有据）：桌面歌词窗不套路由**
+计划写的是「歌词窗口按路由参数区分」，但歌词窗是**第二个 HTML 入口下的独立文档**，且刻意不引
+主窗的全局样式（理由写在 `templates/lyrics.html` 与 `src/screens/lyrics/index.ts` 的文件头：
+置顶小窗不吃主窗那套壳样式；后者还明写「歌词窗没有 `App.tsx`、没有路由」）。给它套主窗路由
+只会把主窗的样式依赖一起拖进那个小窗，收益为零 —— 故保持原样，并在 `routes.ts` 文件头写明
+「歌词窗不在本表内，这是有意的」。
+
+**代价（引入依赖必写清）**：`react-router-dom@^7`（v7 起与 `react-router` 同版本，
+`react-router-dom` 只是 DOM 侧的再导出）。主 chunk **425.9 KB → 464.5 KB**（minified，+38.6 KB）；
+歌词窗 chunk 15.1 KB 与 `window-*.js` 160.4 KB **均未变**（路由没进那两个入口）。
+属**运行时依赖**，不只是开发期。
+
+**引入依赖的连带修复**：`react-router-dom` 进了生产依赖 ⇒ `src/generated/licenses.json`
+必须重生成（`npm run task -- gen:licenses`），否则 `check:settings` 的 `FEATURES.licenses.fresh`
+变红（实测：该红还会**连带**让 `check:docs` 报「README 写 183、脚本实际 182」—— 少的那一条
+正是被这一失效挡掉的断言）。已重生成（npm 生产依赖 60 个）。
+
+**顺带修掉的既有静默缺陷**：`autostart` 与 `quit` 的 watch 只写了 `src-tauri/**`，
+但两者各自有断言在读 `src/App.tsx`（B1/C1–C3 与 Q4/Q5）⇒ 只改前端时这两条在 `--changed`
+模式下**不会被触发**。已补 `src/App.tsx`，并把 `src/router/**` 加进四条读导航的 check
+（`notready-state` / `progress-truth` / `retry` / `autostart`）的 watch。
+
+**验收**：`npx tsc --noEmit` 0 错 · `npx vite build` 成功 · static 层 **228 / 3** 与改造前逐条一致 ·
+`check:registry` 15/15 · `check:docs` 21/0 · `check:docpaths` 4/1 · 受影响反证轮：`autostart` 19/19 ·
+`units` 59/59 · `music` 221/221 · `settings` 138/138 · `stdio` 1/1 · `resources` 4/4 ·
+`quit` 4/4（另 1 条锚点缺失属既有）。⚠️ **未做真机验证**：本轮只证明了「类型过、构建过、
+结构断言过」，**没有真的点过侧栏与 Tab**。
+

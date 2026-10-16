@@ -38,7 +38,7 @@ import '@/assets/fonts/lxgw-wenkai-gb/font.css';
 // 都写在那个文件里，这里不再逐个 import —— 绕过入口就绕过了顺序约定。
 import '@/styles/index.scss';
 
-import { App } from '@/App';
+import { AppRouter } from '@/router';
 import { useMusicStore } from '@music/store';
 
 // 启动即水合音乐偏好：设置页「播放·媒体」要在**不打开音乐屏**的情况下显示上次存的值，
@@ -50,6 +50,6 @@ if (!el) throw new Error('缺少 #root 挂载点');
 
 createRoot(el).render(
   <React.StrictMode>
-    <App />
+    <AppRouter />
   </React.StrictMode>,
 );

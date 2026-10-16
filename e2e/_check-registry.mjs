@@ -67,7 +67,7 @@ const CHECKS = [
     script: 'e2e/quit-command-check.mjs',
     tier: 'static',
     refute: true,
-    watch: ['src-tauri/**', 'e2e/quit-command-check.mjs'],
+    watch: ['src-tauri/**', 'src/App.tsx', 'e2e/quit-command-check.mjs'],
   },
   {
     id: 'docpaths',
@@ -223,6 +223,7 @@ const CHECKS = [
       'src/screens/NotReadyScreen.tsx',
       'src/ipc/index.ts',
       'src/App.tsx',
+      'src/router/**',
       'e2e/service/notready-state-check.mjs',
     ],
   },
@@ -328,6 +329,7 @@ const CHECKS = [
       'src-tauri/src/mangasvc/engine/state.rs',
       'src/ipc/index.ts',
       'src/App.tsx',
+      'src/router/**',
       'e2e/service/progress-truth-check.mjs',
     ],
   },
@@ -559,6 +561,7 @@ const CHECKS = [
       'src-tauri/src/mangasvc/handlers.rs',
       'src-tauri/src/mangasvc/store/exec.rs',
       'src/App.tsx',
+      'src/router/**',
       'e2e/service/queue-retry-check.mjs',
     ],
   },
@@ -614,7 +617,8 @@ const CHECKS = [
     script: 'e2e/service-autostart-check.mjs',
     tier: 'service',
     refute: true,
-    watch: ['src-tauri/src/**', 'src-tauri/**'],
+    // B1 / C1–C3 断的是 `src/App.tsx`（启动门与自动启动 effect）⇒ 前端那两处也必须在 watch 里
+    watch: ['src-tauri/src/**', 'src-tauri/**', 'src/App.tsx', 'src/router/**'],
   },
   // A3d 起是**双靶**（Node 对照端 + Rust 移植）⇒ 两侧源码都得进 watch，少一边就是"改了不红"。
   {

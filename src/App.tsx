@@ -30,7 +30,8 @@ import { SettingsScreen } from '@screens/SettingsScreen';
 // 它是 `position: fixed; inset: 0` 的全屏浮层，数据全部来自 store，本就不依赖任何一屏的 DOM。
 import { ExpandedPlayer } from '@screens/music/ExpandedPlayer';
 import { useMusicStore } from '@music/store';
-import { isBlockedWhenNotReady, stateView, type Screen, type TranslateView } from '@/stores/nav';
+import { isBlockedWhenNotReady, stateView } from '@/stores/nav';
+import { useNav } from '@/router/use-nav';
 import type { TranslateSource } from '@screens/settings/translate-api';
 import { engineStatus, downloadEngineModels, type ModelDownloadView } from '@screens/settings/engine-api';
 import { engineDownloadChip, isDownloadActive } from '@/ipc/engine-download';
@@ -49,8 +50,7 @@ import { formatBytes } from '@tools';
  * 判定集中在 `isBlockedWhenNotReady` 一处，避免拦截纪律散落到多处失效。
  */
 export function App() {
-  const [screen, setScreen] = useState<Screen>('translate');
-  const [view, setView] = useState<TranslateView>('drop');
+  const { screen, view, setScreen, setView } = useNav();
   const [mode, setMode] = useState<ThemeMode>(() => initialMode());
   /**
    * 侧栏是否显示文字标签（`shell-prefs.ts`）。
