@@ -231,7 +231,7 @@ npm run task -- check:translate      # ver2.2 在线翻译服务（有道智云�
 npm run task -- check:docs            # 文档 ↔ 实现一致性 21 条：条数对账 / 两种形态的命令存在（`npm run <入口>` 对 package.json、`npm run task -- <id>` 对命令清单）/ 禁词 0 命中 / 分组覆盖
 npm run task -- check:bundle          # 打包配置钉子 13 条 / 反证 18 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip`；**W6** 必需资产条目在且 src 真实存在；**W7/W7b（C5）** 随包 **0 个模型权重**（后缀黑名单 + 与 `engine/models.manifest.json` 逐条交叉）；**W8–W11（E2/E3）** NSIS 安装器钩子：长路径**只读提示**（不替用户改 `HKLM`）+ 卸载**默认保留**引擎运行时且不碰作品目录 + 引导写明 SmartScreen + **每个弹窗都有 `IfSilent` 守卫**（否则静默安装/卸载会被弹窗挂死，不是变红是不返回）；源码级，不起进程）
 npm run task -- check:resources       # 随包资源寻址 **A1/A2** 三环境取证 8 条 / 反证 4 条（dev 态不误报 · 打包齐备取资源目录 · 打包缺失报 `RESOURCE_MISSING` · 优先级 · 必需资产交叉验证 · 源码钉）
-npm run task -- check:packaged        # **A4 打包后冒烟**：真实安装包三层取证 9 条（nightly 层；NSIS 静默安装 → `--check-assets` → 起服务打 `/health` + mock 替身 + 启动配方）
+npm run task -- check:packaged        # **A4 打包后冒烟**：真实安装包三层取证 12 条（nightly 层；NSIS 静默安装 → `--check-assets` + `--engine-crf-plan` 命中包内 wheel → 起服务打 `/health` + mock 替身 + 启动配方）
 npm run task -- check:runtime-probe   # **B2/B5 引擎运行时五项只读检测** 44 条 / 反证 4 条（`GET /api/v1/engine/runtime`；`venvRoot`/`python`/`source`/`deps`/`patches` 逐项独立翻转 + `detail` 必带绝对路径 + 缺补丁点名到 patch id + mock 档不 warn + junction 场景三项 env 判定穿过链接）
 npm run task -- check:path-single-source # **B3 检测与启动同源** 5 条 / 反证 1 条（`/engine/runtime` 的 `python.path` vs `--print-launch-plan` 的 `engine.cmd[0]` 逐字节比对）
 npm run task -- check:launch-gate    # **D6 real 档启动前预检闸门** 8 条 / 反证 3 条（real+未就绪 ⇒ 一个子进程都不起、秒级返回 `L0` 并逐项点名；mock 档不过闸；含源码钉「`gate_message(` 早于 `spawn_spec(&plan.engine`」）
