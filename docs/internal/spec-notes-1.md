@@ -4323,3 +4323,64 @@ cookie 文件 17:00 由开发态写入，17:50 起的安装版进去直接是登
 **想隔离 dev 与正式版**：今天**没有**接缝（store 落点由 Tauri 的 app data dir 决定，无 `MIAO_*` 覆盖）；
 可行的是换 identifier 或换 Windows 用户。若要加"可指到临时目录"的接缝（便于验收/并行），按新增接缝的纪律另开一条。
 
+## D-229 首启引导的死结：闸门只挡引擎、不挡服务本体（2026-10-16）
+
+**症状（用户实测）**：装完包进应用 → 看到 D1 引导页 → 点「开始下载」→
+「本地翻译服务未运行（请确认喵坞的服务已启动）」。
+
+**根因**：D6 的启动闸门原先写成 `if let Some(msg) = gate_message(..) { return self.fail(app, Some("L0"), msg); }`
+—— **一个子进程都不起**。而 D1 引导页恰恰只在"运行时未装配"时出现，它唯一的行动按钮
+`downloadEngineModels()` 是 `POST /engine/models/download`，**打的是本地服务 ①**：
+服务被闸门挡下 ⇒ 没有接收方 ⇒ `commands/mod.rs::ApiErrorView::service_down()` 的兜底文案。
+两个特性各自都对，合起来是死结；此前没发现，是因为**没有一条断言真的点过那个按钮**
+（`check:packaged` 验安装/资产/服务层；`check:progress-truth` / `check:engine-settings`
+是**直接对服务**发 POST，那时服务本来起着）。
+
+**修法（闸门只挡引擎 ②/③）**：
+- `service.rs::start_blocking`：闸门命中时不再 `return self.fail(...)`，改为记 `engine_blocked`、
+  **跳过 ②/③**、**① 照常起**，并给 ① 的 env 注入 `MIAO_NO_LLM_AUTOSTART=1`
+  （否则 ① 会自己预拉起 ③，对着未装配的运行时开火）；收尾 `degraded = true`，
+  日志改成「① 服务就绪；引擎未装配（②/③ 按闸门跳过）」—— 不留"服务与引擎栈就绪"这种假话。
+- `NotReadyScreen.tsx`：引导页判据**只看** `real 档 + runtime.ready=false`，去掉
+  `state !== 'running'` 这个附加条件 —— 它成立只是因为当时服务也被挡着；① 能跑之后 `state`
+  就是 running 了。⇒「引擎就绪与否」只能由 `runtime.ready` 回答，不能拿服务状态代理。
+- `App.tsx`：装配完成（`modelDownload.state === 'done'` 且 `runtime.ready`）后**自动重启一次服务链**，
+  把 ②/③ 拉起来（否则用户"下完了却还是不能用"，而正确动作没有任何地方提示）。
+  一次性，按 `startedAt` 记账（1.5s 轮询会反复触发）。
+
+**断言（两条，都带反证）**：
+- `check:launch-gate` 新增 **G6 源码钉**：闸门不得再一命中就 `return self.fail(...)`。
+  反证 **M3** 同步改为"把闸门改回旧口径"⇒ G6 必须红（原来的 M3 是"删闸门调用"，
+  而那种删法会让 `engine_blocked` 悬空、**编译不过** ⇒ 变异本身失败、验不到东西 ——
+  "锚点必须随实现走"的又一例）。
+- `e2e/lifespan-selftest.mjs` 新增 **引导组**（`--guide`，注册表 id `guide`，service 层）：
+  real 档 + 空运行时根 + 无害下载执行体 ⇒ **G1** `POST /engine/models/download → 200 started=true`、
+  **G2** ②/③ 一个都没起。手工反证：把闸门改回旧口径 + 重编译 ⇒ **G1 红**（45s 拿不到 started），
+  随后按字节还原 + 重编译。
+
+**取证时踩到的四个坑（都记下来，免得下次再花一遍时间）**：
+1. 这一组**不能用 release 构建**：本机 `npm run build` 会被安全删除垫挡在 `emptyDir`
+   （清 `dist/assets` 673 个文件超阈值 500）⇒ 一度误判"`dist/index.html` 丢了"，
+   其实**入口一直在 `dist/templates/index.html`**（`frontendDist` 是 `../dist`，HTML 在 `templates/`
+   子目录里）。看错文件名差点得出错误结论。
+2. 这一组**不能依赖 webview**：起服务有两条产品路径 —— "进入翻译模块自动启动"是**前端** effect
+   （`App.tsx`：`screen === 'translate' && autoStart`），`MIAO_SELFTEST=1` / `MIAO_CAPTURE_DIR`
+   才由 **Rust 侧**直接 `ServiceManager::start()`（见 `main.rs`）。前者在"dev server 没起来 /
+   前端没挂上"时会让断言红在与产品无关的地方（实测踩过）。
+3. 但那两条测试通道**干完活就退**（并把 ① 带走）⇒ 探针只能**一个请求**：
+   `POST /engine/models/download` 循环重试（"先 /health 再 POST"实测必输：
+   第二个请求撞上"对端已关闭"）。另用**本次应用自己写下的令牌**认服务 ——
+   残留的旧服务也占着 5180–5190，只看端口会让本组假绿。
+4. 残留进程/锁会把检查打成"连汇总行都没打出来"：`check:resources` 的 `makeFixture`
+   清旧夹具失败时整个脚本崩（实测 `[safe-delete] Some operations were aborted`，
+   目录连移动都被拒）⇒ 修成"清不掉就换一个全新目录"（夹具自足，换落地不影响判据）。
+
+**未验（如实登记）**：引导页**真的显示**这一半没有机器断言（本组只证明"未装配时 ① 可用、
+按钮能落地"；`check:notready-state` 钉的是它的结构与文案）· **装配完成 ⇒ 自动重启**那一段
+没有断言（要真装配一次 = 真下 ~6.9 GB）· 我未在**安装版**上复跑（安装版仍是旧构建，
+用户手上的包需重新打包才会带上这一修）。
+
+**验收（本轮实测）**：`check:launch-gate` **9/9** · `lifespan --guide` **2/2、exit 0** ·
+手工反证（改回旧口径）**G1 按预期红**、源码按字节还原 · `notready-state` **13/13** ·
+`check:resources` **8/0** · static 门 **17/17**。
+

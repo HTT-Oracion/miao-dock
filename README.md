@@ -198,6 +198,7 @@ npm run task -- selftest:app          # B 组应用生命周期 16 条（程序�
 npm run task -- selftest:app:refute   # 上一项的反证——它必须**变红**，绿的那轮才作数
 npm run task -- selftest:app:e11      # E11 三进程树回收（mock）：SIGKILL 主进程 → 13 端口全释放
 npm run task -- selftest:app:e11:real # 同上但真进程（python+执行器+llama-server）；分钟级，按需手动跑
+npm run task -- selftest:app:guide    # D-229 未装配时 ① 必须可用：服务起得来 + 下载端点能落地 + ②/③ 一个不起（要 release 构建）
 npm run task -- check:launch-plan     # S2 启动配方契约 24 条（含 ③ 归属移交后的 P-llm-* 断言）
 npm run task -- check:child-watch     # 外部二进制父死看守**双靶**取证（Node 原版 + A3c Rust 移植，Rust 靶用产品同源 Rust 父 `mangasvc --child-watch-parent`；含接线错误防护 W2；反证轮只判 Rust 靶，Node 靶按结构跳过并标注原因）
 npm run task -- check:child-watch-kill # child-watch Windows killTree 无条件 /F **双靶源码钉**（Node `child-watch.mjs` + Rust `child_watch.rs`，源码级不起进程；反证 2 条）
@@ -233,7 +234,7 @@ npm run task -- check:resources       # 随包资源寻址 **A1/A2** 三环境�
 npm run task -- check:packaged        # **A4 打包后冒烟**：真实安装包三层取证 12 条（nightly 层；NSIS 静默安装 → `--check-assets` + `--engine-crf-plan` 命中包内 wheel → 起服务打 `/health` + mock 替身 + 启动配方）
 npm run task -- check:runtime-probe   # **B2/B5 引擎运行时五项只读检测** 44 条 / 反证 4 条（`GET /api/v1/engine/runtime`；`venvRoot`/`python`/`source`/`deps`/`patches` 逐项独立翻转 + `detail` 必带绝对路径 + 缺补丁点名到 patch id + mock 档不 warn + junction 场景三项 env 判定穿过链接）
 npm run task -- check:path-single-source # **B3 检测与启动同源** 5 条 / 反证 1 条（`/engine/runtime` 的 `python.path` vs `--print-launch-plan` 的 `engine.cmd[0]` 逐字节比对）
-npm run task -- check:launch-gate    # **D6 real 档启动前预检闸门** 8 条 / 反证 3 条（real+未就绪 ⇒ 一个子进程都不起、秒级返回 `L0` 并逐项点名；mock 档不过闸；含源码钉「`gate_message(` 早于 `spawn_spec(&plan.engine`」）
+npm run task -- check:launch-gate    # **D6 real 档启动前预检闸门** 9 条 / 反证 3 条（real+未就绪 ⇒ **②/③ 一个不起、① 照常起**（D-229）并逐项点名；mock 档不过闸；含两条源码钉：「`gate_message(` 早于 `spawn_spec(&plan.engine`」+「闸门不得连 ① 一起挡」）
 npm run task -- check:install-guide  # **D5 安装引导与产品对拍** 18 条 / 反证 5 条（两份引导的落点模板代入本机后 == `mangasvc --print-paths` 推出的落点、体积标记 == 清单按平台求和、五项就绪项 · 三条落点纪律 · 平台形态互不串 · 两种命令形态都存在）
 npm run task -- check:notready-state # **D1「运行时未装配」独立成态** 13 条 / 反证 5 条（两条链路都带 `runtime` 块 · L1–L4 四句文案逐字冻结 · 新分支不混进 L1 失败 · 「约 X GB」来自服务端 `requiredBytes`）
 npm run task -- check:models-guide   # **D8 模型引导清单（渲染而非编写）** 14 条 / 反证 4 条（逐条目标绝对路径 ⟷ Node 独立算 · 就绪 = 在位且大小一致 · 改清单副本 ⇒ 输出跟着变）
