@@ -21,6 +21,7 @@
  * - M10–M11：解包改回按 url 末段找归档 ⇒ W14 · 运行时解包退回"解整份清单" ⇒ W15。
  * - M12–M13：镜像套回 codeload（ghfast 不代理它）⇒ W16 · 原 `url` 的 owner 拼错一个字母 ⇒ W16。
  * - M14–M15（D-231④）：`prepare` 不再归 `stage1` ⇒ W4 · `step` 不映射 `models` 段 ⇒ W4。
+ * - M16–M17（D-231⑤）：`persist()` 退回直写目标文件 ⇒ W17 · `isDownloadActive` 退回只认三态 ⇒ W18。
  * 每条反证都按字节还原，收尾复核残留（R1）。
  *
  * ## W9 为什么必须打在 Rust 侧
@@ -406,6 +407,33 @@ function engineSourceShape() {
     w16,
     w16Detail,
   );
+
+  // ---- W17（D-231⑤）状态文件必须**原子写** ----
+  //     `persist()` 在**每个进度事件**上都调，而 `fs::write` 是"截断后逐段写"
+  //     ⇒ 前端 1.5 s 轮询有很高概率读到**半截/空**文件 ⇒ `load_persisted()` 的
+  //     `from_str().unwrap_or_else(default)` 整个吞掉 ⇒ `state` 回落 `idle`
+  //     ⇒ `isDownloadActive` 为假 ⇒ 下载视图被卸载、用户被**弹回引导页**，
+  //     再点「开始下载」又被下载器打回"已有一条任务"。
+  //     钉死"写 `.tmp` + `rename` 覆盖"这两个动作；直写目标文件必须红。
+  const persistFn = /fn persist\(&self\)[\s\S]*?\n {4}\}/.exec(state);
+  const persistBody = persistFn ? persistFn[0] : '';
+  const persistAtomic = persistBody.includes('with_extension("json.tmp")') && persistBody.includes('fs::rename');
+  const persistDirectWrite = /fs::write\(\s*&p\b/.test(persistBody);
+  check(
+    'W17 下载状态文件**原子写**（`.tmp` + `rename` 覆盖）—— 否则前端读到半截文件就被弹回引导页',
+    persistAtomic && !persistDirectWrite,
+    { persistAtomic, persistDirectWrite, persistBody: persistBody.slice(0, 200) },
+  );
+
+  // ---- W18（D-231⑤）前端防御：`isDownloadActive` 必须把"开过一场下载却读到 idle"也算进行中 ----
+  //     🔴 只钉"`state` 含 idle"不够：那样会把「装好、从未下载」的机器**永久钉在下载视图**，
+  //     那比弹回引导页更糟。判据必须同时落在 `startedAt` 上（反证 M17）。
+  const idleGuard = /state === 'idle' && view\.startedAt != null/.test(ed);
+  check(
+    'W18 `isDownloadActive` 把「已开场下载却读到 idle」也算进行中（读抖动不卸载下载视图；判据落在 `startedAt` 上）',
+    idleGuard,
+    { idleGuard },
+  );
 }
 
 // ------------------------------------------------------------------ 反证轮
@@ -639,6 +667,32 @@ if (REFUTE) {
     restore();
   }
 
+  // ---- M16（D-231⑤）：`persist()` 退回直写目标文件（非原子）⇒ W17 红 ----
+  {
+    const restore = mutateFile(
+      STATE_RS,
+      'if std::fs::write(&tmp, &s).is_err() {',
+      'if std::fs::write(&p, &s).is_err() {',
+    );
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W17');
+    check('M16 `persist()` 退回直写目标文件（读到半截文件 ⇒ 弹回引导页）⇒ W17 红', red, { code: r.code, redOn: red });
+    restore();
+  }
+
+  // ---- M17（D-231⑤）：`isDownloadActive` 退回只认三态 ⇒ W18 红 ----
+  {
+    const restore = mutateFile(
+      ENGINE_DOWNLOAD_TS,
+      "  return view.state === 'idle' && view.startedAt != null;",
+      '  return false;',
+    );
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W18');
+    check('M17 `isDownloadActive` 退回只认三态（抖动又会把下载视图卸载掉）⇒ W18 红', red, { code: r.code, redOn: red });
+    restore();
+  }
+
   // 收尾：确认还原到位
   {
     const bad = [];
@@ -676,7 +730,11 @@ if (REFUTE) {
       bad.push('state.rs 残留 M14');
     if (!fs.readFileSync(STATE_RS, 'utf8').includes('"models" => Some("models".to_string())'))
       bad.push('state.rs 残留 M15');
-    check('R1 变异收尾：十四处源码/清单按字节还原', bad.length === 0, bad);
+    if (!fs.readFileSync(STATE_RS, 'utf8').includes('if std::fs::write(&tmp, &s).is_err() {'))
+      bad.push('state.rs 残留 M16');
+    if (!fs.readFileSync(ENGINE_DOWNLOAD_TS, 'utf8').includes("view.state === 'idle' && view.startedAt != null"))
+      bad.push('engine-download.ts 残留 M17');
+    check('R1 变异收尾：十六处源码/清单按字节还原', bad.length === 0, bad);
   }
 }
 

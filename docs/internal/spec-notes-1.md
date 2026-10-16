@@ -4679,3 +4679,51 @@ static 层 **17/17** · `npx tsc --noEmit` 无输出 · prettier / eslint 干净
 pypi 镜像**，装配停在依赖安装。这三条判的是"依赖真装上了"，与本次改动（阶段标记）无关，
 但本条**没有**在能联网的机器上复跑过 ⇒ 记为未验，不当作已通过。
 
+### D-231⑤ 「下载中弹回引导页」：状态文件改原子写 + 前端加抖动防御
+
+**现象**：点「开始下载」进了下载详情页，十几秒后被**弹回引导页**；再点「开始下载」，
+下载器打回"已有一条任务"。用户视角就是"点了没用，界面自己跳回去"。
+
+**根因（服务端那一半）**：`state.rs::ModelDownload::persist()` 用 `std::fs::write` ——
+那是"**截断后逐段写**"，不是原子写。而 `persist()` 在**每个进度事件**上都调
+（`spawn_progress_reader` 每读一行 JSONL 就落一次盘），前端又是 1.5 s 轮询
+`/engine/status` ⇒ 命中"读到半截/空文件"的窗口概率极高。
+半截文件 ⇒ `load_persisted()` 的 `serde_json::from_str(&s).unwrap_or_else(|_| default())`
+把整个文件吞掉 ⇒ `state` 回落 `idle` ⇒ `isDownloadActive` 只认
+`running|interrupted|failed` ⇒ 为假 ⇒ `App.tsx` 那个三元表达式落到 `<Outlet>` ⇒
+D-229 之后 `status.state` 是 `degraded`（不是 `running`）⇒ `showNotReady` ⇒ **引导页**。
+
+**根因（前端那一半）**：即便服务端写对了，一次网络抖动 / 一次解析失败仍然会把下载视图卸载。
+界面不该因为一次读抖动把用户正在看的东西收走。
+
+**改法（一处根因 + 一处防御，不是二选一）**
+
+1. **`persist()` 改原子写**：写同目录 `engine-download.json.tmp` → `fs::rename` 覆盖。
+   同目录同卷上 `rename` 是原子的，读者要么看到旧文件、要么看到新文件，看不到中间态。
+   🔴 `std::fs::rename` 在 Windows 上走 `MoveFileEx` + `MOVEFILE_REPLACE_EXISTING`，
+   **不需要先删旧文件** —— 先删反而开出一个"文件不存在"的窗口，比原问题更糟。
+   两条失败分支都顺手 `remove_file(&tmp)`，免得坏 `.tmp` 留在盘上被误认成状态文件。
+2. **`isDownloadActive` 加抖动防御**：`state === 'idle' && startedAt != null` 也算 active。
+   🔴 判据**必须落在 `startedAt` 上**，不能只看 `state`：只看 `state === 'idle'` 会让
+   「已装好、从未下载过」的机器**永远停在下载视图** —— 那比弹回引导页更糟（用户根本没有
+   可下载的东西，却看到一条永远转不完的进度）。`startedAt` 非空 = 确实开过一场。
+
+**断言**（`check:engine-bootstrap`，18 → 20 条、反证 15 → 17 条）
+
+- **W17** 抽 `fn persist(&self)` 的函数体，要求它同时含 `with_extension("json.tmp")`
+  与 `fs::rename`，且**不含** `fs::write(&p`（直写目标文件）。正反两面一起钉，是因为
+  "加了 `.tmp` 却忘了 rename"与"根本没写 `.tmp`"是同一种退化。
+- **W18** 要求 `isDownloadActive` 里出现 `state === 'idle' && view.startedAt != null`
+  —— 钉**完整的表达式**而不是"含 idle"，正是为了卡住上面那条"只看 state"的退化。
+- 反证 **M16**（`persist()` 退回直写 ⇒ W17 红）、**M17**（`isDownloadActive` 退回只认三态 ⇒
+  W18 红），R1 残留复核加到十六处。
+
+**验收**：`cargo build` **0 warning / 0 error** · `check:engine-bootstrap` 正向 **20/20**、
+`--refute` **38/38 全红** · static 层 **17/17** · `npx tsc --noEmit` 无输出 ·
+prettier 全绿 · eslint **0 error**（134 warning 为既有基线）。
+
+⚠️ **取证边界（如实登记）**：W17/W18 是**源码层**判据（与本门"纯文件分析"的性质一致）。
+"读到半截文件"这件事在真机上**一次都没有被复现过** —— 要观察它得跑完一次 6.9 GB 的下载。
+行为层取证需要一个刻意注入（把写入拉长 / 把轮询频率对齐到写入窗口），本轮**未做**，
+登记为待办。
+

@@ -1088,10 +1088,27 @@ fn default_model_dir() -> PathBuf {
 /// `ModelDownload` 的持久化（G5：中断态需跨进程重启存活）。
 impl ModelDownload {
     /// 写 `state/engine-download.json`。失败静默（磁盘不可写不应让主流程崩）。
+    ///
+    /// 🔴 **必须原子写**（先写 `.tmp` 再 `rename` 覆盖），这是 D-231⑤ 那次"下载中弹回引导页"的
+    ///    根因修复：`fs::write` 是"截断后逐段写"，而 `persist()` 在**每个进度事件**上都调 ⇒
+    ///    前端 1.5 s 轮询有很高概率读到**半截/空**文件 ⇒ `load_persisted()` 的
+    ///    `from_str().unwrap_or_else(default)` 把它整个吞掉 ⇒ `state` 回落 `idle` ⇒
+    ///    `isDownloadActive` 为假 ⇒ 下载视图被卸载、用户被弹回引导页。
+    ///    `rename` 在同目录同卷上是原子的，读者要么看到旧文件要么看到新文件，看不到中间态。
     fn persist(&self) {
         let p = paths::state_dir().join("engine-download.json");
-        if let Ok(s) = serde_json::to_string(self) {
-            let _ = std::fs::write(&p, s);
+        let Ok(s) = serde_json::to_string(self) else {
+            return;
+        };
+        let tmp = p.with_extension("json.tmp");
+        if std::fs::write(&tmp, &s).is_err() {
+            let _ = std::fs::remove_file(&tmp);
+            return;
+        }
+        // 🔴 `rename` 覆盖已有目标：Windows 上 `std::fs::rename` 走 `MoveFileEx` +
+        //    `MOVEFILE_REPLACE_EXISTING`，不需要先删旧文件（先删反而会开一个"文件不存在"的窗口）。
+        if std::fs::rename(&tmp, &p).is_err() {
+            let _ = std::fs::remove_file(&tmp);
         }
     }
 

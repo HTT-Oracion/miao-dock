@@ -88,8 +88,21 @@ export function engineDownloadChip(
   }
 }
 
-/** 下载态是否「进行中或待续」（决定内容区要不要切到下载视图） */
+/**
+ * 下载态是否「进行中或待续」（决定内容区要不要切到下载视图）。
+ *
+ * 🔴 **「已开场下载却读到 idle」也算 active**（D-231⑤）。
+ * 现象：点「开始下载」进了下载详情页，十几秒后被弹回引导页；再点「开始下载」又被下载器
+ * 打回"已有一条任务"。根因在服务端把状态文件写成了**半截**（`fs::write` 非原子 + 每个进度
+ * 事件都写）⇒ 前端读到解析失败的 `idle`。根因已修（`state.rs::persist` 改 tmp+rename），
+ * 这一条是**防御**：读抖动不该让界面卸载下载视图。
+ *
+ * 🔴 判据必须落在 `startedAt` 上，不能只看 `state`：
+ * 只看 `state === 'idle'` 会让「已装好、从未下载过」的机器**永远停在下载视图**，
+ * 那比弹回引导页更糟（用户根本没有可下载的东西）。`startedAt` 非空 = 确实开过一场。
+ */
 export function isDownloadActive(view: ModelDownloadView | null | undefined): boolean {
   if (!view) return false;
-  return view.state === 'running' || view.state === 'interrupted' || view.state === 'failed';
+  if (view.state === 'running' || view.state === 'interrupted' || view.state === 'failed') return true;
+  return view.state === 'idle' && view.startedAt != null;
 }
