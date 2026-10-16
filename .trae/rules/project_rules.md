@@ -39,7 +39,7 @@ alwaysApply: true
 - `src/components/` = 应用级（Sidebar / Toolbar / ViewTabs / QuitConfirm）。
 - `src/screens/<屏>/` = 屏内件。
 - `src/tools/` = 共享纯函数（经 `@tools` 引入，与 `components/` 同级）：跨屏复用、**不 import 业务层**。
-- `src/router/` = 屏级路由（**URL 是「屏 + 应用内视图」的唯一事实源**）：`routes.ts` 是「路径 ↔ 屏」的事实源，`use-nav.ts` 是读写口。**新增屏要同时进路由表与 `src/stores/nav.ts` 的 IA 模型**。
+- `src/router/` = 屏级路由（**URL 是「屏 + 应用内视图」的唯一事实源**）：`routes.ts` 是「路径 ↔ 屏」的事实源，`use-nav.ts` 是读写口，`index.tsx` 是装配，`panes/` 是屏装配件（经 `<Outlet context>` 取壳层数据，**不自己持状态**；翻译屏兼管让位守卫）。**新增屏要同时进路由表与 `src/stores/nav.ts` 的 IA 模型**。
 - `src/stores/` = **跨组件共享状态的收口（非域）**：`nav` / `toastBus` / `shell-prefs`。**域内状态留域里** —— `src/music/store.ts`（zustand）不往这里搬。
 - `src/ipc/` = 与后端通信（`ipc.ts` 命令 + `engine-download.ts`）；`src/types/` = 跨域类型与环境声明；`src/themes/` = 设计令牌与主题应用（🔴 令牌数值是**断言对象**，改它要同时看断言）。
 - `src-tauri/src/` 根只留 `main.rs`（装配与启动）/ `lib.rs`，其余六域：`commands/`（IPC 命令层，**`handler()` 是唯一的命令注册点**）· `service/`（子进程生命周期）· `selftest/`（自检 + 截图取证）· `platform/`（跨平台底座）· `music/` · `mangasvc/`。

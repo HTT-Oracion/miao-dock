@@ -222,7 +222,6 @@ const CHECKS = [
       'src-tauri/src/mangasvc/engine/state.rs',
       'src/screens/NotReadyScreen.tsx',
       'src/ipc/index.ts',
-      'src/App.tsx',
       'src/router/**',
       'e2e/service/notready-state-check.mjs',
     ],
@@ -324,12 +323,14 @@ const CHECKS = [
     script: 'e2e/service/progress-truth-check.mjs',
     tier: 'service',
     refute: true,
+    // 判据源只有四处：NotReadyScreen / EngineDiag / state.rs / 模型清单。
+    // （原先还挂着 `src/App.tsx` / `src/router/**` / `src/ipc/index.ts` —— 脚本一处都不读，
+    //   改了只会白跑一个起真进程的 service 检查；`--changed` 的命中精度就是这么被稀释的。）
     watch: [
       'src/screens/NotReadyScreen.tsx',
+      'src/screens/settings/EngineDiag.tsx',
       'src-tauri/src/mangasvc/engine/state.rs',
-      'src/ipc/index.ts',
-      'src/App.tsx',
-      'src/router/**',
+      'engine/models.manifest.json',
       'e2e/service/progress-truth-check.mjs',
     ],
   },
@@ -448,7 +449,8 @@ const CHECKS = [
     script: 'e2e/service/library-manage-check.mjs',
     tier: 'service',
     refute: true,
-    watch: ['src-tauri/src/**'],
+    // L8 与它的反证锚读 `src/App.tsx`（队列删打 `/tasks/delete`）⇒ 前端那两处必须进 watch
+    watch: ['src-tauri/src/**', 'src/App.tsx', 'src/router/**'],
   },
   // ⚠️ watch 已从 `src-tauri/src/**` + `engine/src/**` 收窄到**翻译域**（F5.5 换靶）：
   //    断言面 = `mangasvc::translate::**`（门面/设置/密钥/错误/协议） + 5 条路由（handlers/routes）
@@ -570,7 +572,8 @@ const CHECKS = [
     script: 'e2e/service/retranslate-check.mjs',
     tier: 'service',
     refute: true,
-    watch: ['src-tauri/src/**'],
+    // 源码断言读 `screens/LibraryScreen.tsx` 与 `screens/library/viewer.tsx`
+    watch: ['src-tauri/src/**', 'src/screens/**'],
   },
   {
     id: 'resilience',

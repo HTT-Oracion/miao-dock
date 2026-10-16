@@ -70,6 +70,8 @@ const F = {
   // 灵动岛的样式在 music.scss 里（.di-capsule 等），故反证指向它。
   musicScss: path.join(SRC, 'styles', 'music.scss'),
   stylesDir: path.join(SRC, 'styles'),
+  // B1 起屏由路由表维护，屏装配件的分派表是"哪一屏渲染哪个组件"的落点
+  routerPanes: path.join(SRC, 'router', 'panes', 'index.tsx'),
 };
 
 // ── 冻结的契约（负责人冻结，本脚本照抄，不改口径） ────────────────────────
@@ -361,6 +363,8 @@ function loadSources() {
   s.musicToast = readMaybe(F.musicToast);
   // 悬停提示（Tooltip 宽限期）
   s.tooltip = readMaybe(F.tooltip);
+  // 屏装配件分派表（B1）
+  s.routerPanes = readMaybe(F.routerPanes);
   // ZOOM：全屏看图缩放（Lightbox 在 viewer.tsx —— 屏本体已拆分，D-148）。
   // 判据读「屏本体 + `screens/library/*.tsx`」的**拼接源码**，只关心"关键字在不在"。
   // 🔴 **逐文件单独 `stripComments` 再拼**：`stripComments` 是带状态机的（反引号 ≠ 字符串/正则
@@ -821,6 +825,24 @@ add('STATE.zustandInUse', 'STATE', (s) => {
   };
 });
 
+// ============================ ROUTER（B1：屏装配件分派表）============================
+// B1 起"哪一屏渲染哪个组件"由 `router/panes/index.tsx` 的 SCREEN_PANES 决定。
+// 要防的是**静默退化**：把某一屏从表里摘掉、或换成空组件，`tsc` 不会报
+// （Record 的键仍是穷尽的，值仍是合法组件），而那一屏从此消失且没有任何门会响。
+add('ROUTER.panesWired', 'ROUTER', (s) => {
+  const src = stripComments(s.routerPanes ?? '');
+  const missing = [];
+  if (!/translate:\s*TranslatePane,/.test(src)) missing.push('translate 没有指向 TranslatePane');
+  if (!/music:\s*MusicPane,/.test(src)) missing.push('music 没有指向 MusicPane');
+  if (!/settings:\s*SettingsPane,/.test(src)) missing.push('settings 没有指向 SettingsPane');
+  if (!/const Pane = SCREEN_PANES\[pane\];/.test(src)) missing.push('ScreenPane 没有按 pane 取组件');
+  if (!/return <Pane \/>;/.test(src)) missing.push('ScreenPane 没有渲染取到的组件');
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `屏装配件分派表不全：${missing.join('、')}` : '',
+  };
+});
+
 // ============================ ISLAND（灵动岛 · 拍板第 4 项）============================
 // 灵动岛要防的是「两套提示并存」与「退场动画时长两处不一致」——
 // 两者都不报错，只是用户看到同一条提示出现两次或胶囊突然消失。
@@ -1218,6 +1240,7 @@ const GROUPS = [
   'HOOKS',
   'ALIAS',
   'STATE',
+  'ROUTER',
   'ISLAND',
   'TOOLTIP',
   'ZOOM',
@@ -1450,6 +1473,21 @@ const MUTATIONS = [
     expect: ['STATE.zustandInUse'],
   },
 
+  // ── ROUTER 屏装配件分派表（B1）──────────────────────────────────────────────
+  {
+    name: '把音乐屏从分派表里摘掉（/music 从此不渲染任何东西，而没有任何门会响）',
+    file: F.routerPanes,
+    find: '  music: MusicPane,\n',
+    replace: '',
+    expect: ['ROUTER.panesWired'],
+  },
+  {
+    name: '让 ScreenPane 不再按 pane 取组件（三个屏都渲染同一个东西）',
+    file: F.routerPanes,
+    find: '  const Pane = SCREEN_PANES[pane];\n',
+    replace: '  const Pane = TranslatePane;\n',
+    expect: ['ROUTER.panesWired'],
+  },
   // ── ISLAND 灵动岛（拍板第 4 项）──────────────────────────────────────
   {
     name: '把 App.tsx 里的 <DynamicIsland /> 删掉（实现了但没人挂）',
