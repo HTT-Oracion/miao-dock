@@ -56,6 +56,9 @@ const F = {
   types: path.join(APP, 'src', 'music', 'types.ts'),
   // ── 桌面歌词（P3）──
   rustLyrics: path.join(APP, 'src-tauri', 'src', 'commands', 'lyrics_window.rs'),
+  // ── M5 截图取证通道（2026-10-16：音乐屏与歌词窗纳入序列）──
+  captureRs: path.join(APP, 'src-tauri', 'src', 'selftest', 'capture.rs'),
+  captureMjs: path.join(APP, 'e2e', 'capture.mjs'),
   capabilities: path.join(APP, 'src-tauri', 'capabilities', 'default.json'),
   tauriConf: path.join(APP, 'src-tauri', 'tauri.conf.json'),
   cargoToml: path.join(APP, 'src-tauri', 'Cargo.toml'),
@@ -261,6 +264,8 @@ function loadSources() {
     storePersist: [...SF, F.persist].map((p) => stripComments(readMaybe(p))).join('\n'),
     types: readMaybe(F.types),
     rustLyrics: readMaybe(F.rustLyrics),
+    captureRs: readMaybe(F.captureRs),
+    captureMjs: readMaybe(F.captureMjs),
     capabilities: readMaybe(F.capabilities),
     tauriConf: readMaybe(F.tauriConf),
     cargoToml: readMaybe(F.cargoToml),
@@ -3410,6 +3415,7 @@ const GROUPS = [
   'RESTORE',
   'KEYS',
   'WEBVIEW',
+  'CAPTURE',
 ];
 function printGrouped(res) {
   let pass = 0;
@@ -4079,6 +4085,54 @@ add('KEYS.debouncePerKey', 'KEYS', (s) => {
     missing.push(`切歌两键传了同一个合并 key（${keys.join('/')}）⇒ 等于共用一个窗口，其中一键会按不动`);
   if (keys.length !== 2) missing.push(`autoRepeatBlocked 的调用点数是 ${keys.length}（应恰为 2：prev/next 各一）`);
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+// ============================ 截图取证通道（CAPTURE） ============================
+/*
+ * 为什么音乐域管这个：**音乐屏与桌面歌词窗这两个画面在这一轮被纳入取证序列**。
+ * 它跨两个文件、两份手写的清单：
+ *   Rust `selftest/capture.rs` 的 steps  —— 真正截哪几张
+ *   `e2e/capture.mjs` 的 SHOTS           —— 入库前要收哪几张
+ * 两者漂移时**不会报错**：Rust 多截一张（图没人收，白截）、JS 多要一张
+ * （要到真在 macOS 上跑一次 capture 才报"没截到"）。故钉在源码上。
+ */
+add('CAPTURE.musicStep', 'CAPTURE', (s) => {
+  const src = s.captureRs ?? '';
+  const missing = [];
+  if (!/"07-music\.png"/.test(src)) missing.push('取证序列里没有音乐屏那一步');
+  // 侧栏标签可被用户关掉（D-84）⇒ 必须按 aria-label 定位；
+  // 按 textContent 过滤会在「关掉图标标签」时永远找不到入口（轮询超时 → 截到上一屏）。
+  if (!src.includes('.nav-item.is-app[aria-label=\\"音乐\\"]'))
+    missing.push('音乐屏那一步没按 aria-label 定位侧栏入口（关掉标签偏好后会找不到它）');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+add('CAPTURE.lyricsStep', 'CAPTURE', (s) => {
+  const src = s.captureRs ?? '';
+  const missing = [];
+  if (!/"08-lyrics-window\.png"/.test(src)) missing.push('取证序列里没有桌面歌词窗那一步');
+  // 🔴 必须截**歌词窗自己**：写回 MAIN_WIN 就会产出「文件名说歌词窗、内容是主窗」的假证据
+  if (!/shot_win:\s*LYRICS_WINDOW/.test(src)) missing.push('歌词窗那一步没有把 shot_win 指到 LYRICS_WINDOW');
+  if (!/action:\s*Some\(open_lyrics_act\)/.test(src)) missing.push('歌词窗那一步没有走产品自己的 open_lyrics_window');
+  // 歌词窗是第二个 HTML 入口下的独立文档，**不挂**主窗主题 provider ⇒ 没有 dataset.theme 可回读。
+  // 硬塞一条主题自证只会得到恒红（更坏的是被人改成恒真）。
+  if (!/want_theme:\s*None/.test(src)) missing.push('歌词窗那一步仍在要求主题自证（该窗口没有 dataset.theme）');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+add('CAPTURE.assetsMatchJs', 'CAPTURE', (s) => {
+  // 两份清单必须**逐名对齐**：Rust 截的 == JS 收的
+  const rustNames = [...(s.captureRs ?? '').matchAll(/"(0\d-[a-z-]+\.png)"/g)].map((m) => m[1]);
+  const jsNames = [...(s.captureMjs ?? '').matchAll(/\['(0\d-[a-z-]+\.png)'/g)].map((m) => m[1]);
+  const missing = [];
+  const onlyRust = rustNames.filter((n) => !jsNames.includes(n));
+  const onlyJs = jsNames.filter((n) => !rustNames.includes(n));
+  if (onlyRust.length) missing.push(`Rust 截了但 JS 不收：${onlyRust.join('、')}`);
+  if (onlyJs.length) missing.push(`JS 要收但 Rust 不截：${onlyJs.join('、')}`);
+  if (rustNames.length === 0 || jsNames.length === 0)
+    missing.push(`有一侧清单解析为空（rust=${rustNames.length} / js=${jsNames.length}）—— 判据本身失效`);
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? missing.join('；') : `${rustNames.length} 张两侧逐名对齐`,
+  };
 });
 
 const MUTATIONS = [
@@ -5768,6 +5822,27 @@ const MUTATIONS = [
     find: "style={{ '--fill': `${progFill.toFixed(2)}%` } as FillStyle}",
     replace: 'style={{} as FillStyle}',
     expect: ['LYRICS.sliderFill'],
+  },
+  {
+    name: '把歌词窗那一步的 shot_win 改回主窗（文件名说歌词窗、内容是主窗）',
+    file: F.captureRs,
+    find: 'shot_win: LYRICS_WINDOW,',
+    replace: 'shot_win: MAIN_WIN,',
+    expect: ['CAPTURE.lyricsStep'],
+  },
+  {
+    name: '把音乐屏那一步的侧栏定位从 aria-label 换成文字（关掉图标标签后找不到入口）',
+    file: F.captureRs,
+    find: 'click_when_ready(".nav-item.is-app[aria-label=\\"音乐\\"]", None)',
+    replace: 'click_when_ready(".nav-item.is-app", Some("音乐"))',
+    expect: ['CAPTURE.musicStep'],
+  },
+  {
+    name: '从 e2e/capture.mjs 的 SHOTS 里删掉音乐屏那张（Rust 截了，入库清单不收）',
+    file: F.captureMjs,
+    find: "['07-music.png', '音乐应用（未播放 / 未登录时的空态）'],",
+    replace: '',
+    expect: ['CAPTURE.assetsMatchJs'],
   },
 ];
 

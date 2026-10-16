@@ -7,7 +7,15 @@
 //! 只截自己那一块，不碰桌面上其它内容。
 //!
 //! 用法：`MIAO_CAPTURE_DIR=<绝对目录> miao-dock`
-//! 它会依次：切到漫画库 → 打开对照页 → 切到设置页并开深色 → 每步截一张，然后退出。
+//! 它会依次：切到漫画库 → 打开对照页 → 切到设置页并开深色 → 切到音乐屏 → 拉起桌面歌词窗
+//! → 每步截一张，然后退出。
+//!
+//! ## 截哪个窗口是**逐步声明**的（2026-10-16 起）
+//! 早先 `drive` / `shoot` / `read_theme` 都写死 `get_webview_window("main")`，
+//! 于是「截图序列」天然只能覆盖主窗 —— 桌面歌词是**独立窗口**（label `desktop-lyrics`），
+//! 在那种写法下根本没有被截到的可能。现在每一步自己声明 `drive_win` 与 `shot_win`，
+//! 驱动与截取可以是**两个不同的窗口**：歌词窗那一步是在主窗上点「桌面歌词」，
+//! 截的却是歌词窗 —— 这正是它在用户那里发生的样子。
 //!
 //! 注意 Retina：`outer_position()` 给的是**物理像素**，而 `screencapture -R` 要的是
 //! **逻辑点**，所以要先除以 `scale_factor()`。不换算的话，截出来的会是左下角一块错位区域。
@@ -27,10 +35,14 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
 
+use crate::commands::lyrics_window::{open_lyrics_window, LYRICS_WINDOW};
 use crate::selftest::on_main;
 use crate::service::ServiceManager;
 
 const CAPTURE_DIR_ENV: &str = "MIAO_CAPTURE_DIR";
+
+/// 主窗 label。写死成常量而不是到处写字面量，是为了让「哪一步截哪个窗口」一眼可读。
+const MAIN_WIN: &str = "main";
 
 /// 真实界面截图的下限（1180×781 @2x ≈ 10 万字节）；纯黑/空屏是 1–2 KB 级别。
 /// 取 8 KB 是留足余量又不至于把正常的深色屏误判掉。
@@ -149,17 +161,20 @@ pub fn enabled() -> bool {
 }
 
 /// 切屏/点击都靠 `eval` 驱动**真实界面**，不另做一套渲染 —— 截到的就是用户会看到的。
-fn drive(app: &AppHandle, js: &str) {
-    if let Some(w) = app.get_webview_window("main") {
+fn drive(app: &AppHandle, win: &str, js: &str) {
+    if let Some(w) = app.get_webview_window(win) {
         let _ = w.set_focus();
         let _ = w.eval(js);
     }
 }
 
-fn shoot(app: &AppHandle, out: &Path) -> Result<String, String> {
-    let (region, logical) = on_main(app, |a| {
-        let Some(w) = a.get_webview_window("main") else {
-            return Err("找不到 main 窗口".to_string());
+/// 截**指定窗口**。`win_label` 取不到窗口时**报错而不是回落到主窗** ——
+/// 回落会产出「文件名说歌词窗、内容是主窗」的假证据，那正是本通道头号要防的东西。
+fn shoot(app: &AppHandle, win_label: &str, out: &Path) -> Result<String, String> {
+    let label = win_label.to_string();
+    let (region, logical) = on_main(app, move |a| {
+        let Some(w) = a.get_webview_window(&label) else {
+            return Err(format!("找不到 {label} 窗口"));
         };
         let _ = w.set_focus();
         let pos = w.outer_position().map_err(|e| e.to_string())?;
@@ -213,13 +228,14 @@ fn shoot(app: &AppHandle, out: &Path) -> Result<String, String> {
 ///
 /// 这是「让这张图自证」的那一步：`04-settings-dark.png` 声称深色，就必须真的是深色。
 /// 否则一次「点击落空」会安静地产出一张**名不副实的证据**（正是踩过的坑）。
-fn read_theme(app: &AppHandle) -> Option<String> {
-    let w = app.get_webview_window("main")?;
+fn read_theme(app: &AppHandle, win: &str) -> Option<String> {
+    let w = app.get_webview_window(win)?;
     let _ = w.eval(PROBE_THEME_JS);
     std::thread::sleep(Duration::from_millis(400));
 
-    let (title, frag) = on_main(app, |a| {
-        let w = a.get_webview_window("main");
+    let label = win.to_string();
+    let (title, frag) = on_main(app, move |a| {
+        let w = a.get_webview_window(&label);
         let title = w.as_ref().and_then(|w| w.title().ok()).unwrap_or_default();
         let frag = w
             .as_ref()
@@ -230,7 +246,7 @@ fn read_theme(app: &AppHandle) -> Option<String> {
     })
     .unwrap_or_default();
 
-    if let Some(w) = app.get_webview_window("main") {
+    if let Some(w) = app.get_webview_window(win) {
         let _ = w.eval(RESTORE_TITLE_JS);
     }
 
@@ -240,6 +256,57 @@ fn read_theme(app: &AppHandle) -> Option<String> {
     (!got.is_empty()).then_some(got)
 }
 
+/// 一步取证：先在 `drive_win` 上驱动（JS 或产品动作），等待，然后截 `shot_win`。
+///
+/// 🔴 驱动窗口与截取窗口**分开声明**，因为桌面歌词是独立窗口：要在主窗上把它拉起来，
+/// 而截的是它自己。早先两者都写死 `main`，这类步骤**根本没有表达方式**（只能不截）。
+struct Step {
+    file: &'static str,
+    drive_win: &'static str,
+    js: Option<String>,
+    /// 截图前要跑的**产品侧动作**（不是 JS 驱动）—— 目前只有「拉起歌词窗」用它
+    action: Option<fn(&AppHandle)>,
+    wait_ms: u64,
+    shot_win: &'static str,
+    label: &'static str,
+    /// 期望主题；`None` = 该窗口不自证主题
+    want_theme: Option<&'static str>,
+}
+
+/// 主窗上的普通一步：驱动与截图都在主窗。
+/// 只覆盖主窗的常规情形，特殊步骤（如歌词窗）请直接写 `Step { … }`，让差异**看得见**。
+fn step(
+    file: &'static str,
+    js: Option<String>,
+    wait_ms: u64,
+    label: &'static str,
+    want_theme: Option<&'static str>,
+) -> Step {
+    Step {
+        file,
+        drive_win: MAIN_WIN,
+        js,
+        action: None,
+        wait_ms,
+        shot_win: MAIN_WIN,
+        label,
+        want_theme,
+    }
+}
+
+/// 切到音乐屏。用 `aria-label` 而不是 `textContent`：侧栏标签可被用户关掉
+/// （D-84 的「侧栏图标标签」偏好），关掉之后按钮里**没有文字** —— 按文字过滤会永远找不到它，
+/// 表现是轮询 8s 超时、截到上一屏（好在主题自证会把这种图拒收）。
+fn music_screen_js() -> String {
+    click_when_ready(".nav-item.is-app[aria-label=\"音乐\"]", None)
+}
+
+/// 截图前拉起桌面歌词窗。走**产品自己的命令**（`open_lyrics_window`，幂等：已开则聚焦）——
+/// 不在这里另写一套建窗逻辑，否则「取证时建的窗」与「用户点出来的窗」就是两回事了。
+fn open_lyrics_act(app: &AppHandle) {
+    let _ = open_lyrics_window(app.clone());
+}
+
 pub fn spawn(app: AppHandle) {
     std::thread::spawn(move || {
         let Some(dir) = dir() else { return };
@@ -247,79 +314,101 @@ pub fn spawn(app: AppHandle) {
         std::thread::sleep(BOOT_WAIT);
 
         // 先把主题钉回浅色再重载 —— 让这几张图与「上一轮存了什么主题」无关
-        if let Some(w) = app.get_webview_window("main") {
+        if let Some(w) = app.get_webview_window(MAIN_WIN) {
             let _ = w.eval(FORCE_LIGHT_JS);
         }
         std::thread::sleep(RELOAD_WAIT);
 
         // 每步都带上**预期主题**：截完立刻回读自证，不符就判 ✗（整批不入库，见 capture.mjs）
-        let steps: [(&str, Option<String>, u64, &str, &str); 6] = [
+        let steps: [Step; 8] = [
             // 🔴 默认视图是「投放」，不是队列 —— 直接截会得到投放页（上一版就这么静静错了）
-            (
+            step(
                 "01-queue.png",
                 Some(click_when_ready(".viewtab", Some("队列"))),
                 400,
                 "任务队列",
-                "light",
+                Some("light"),
             ),
-            (
+            step(
                 "02-library.png",
                 Some(click_when_ready(".viewtab", Some("漫画库"))),
                 1500,
                 "本地漫画库（真实数据：上一轮 D 组端到端跑出来的落盘产物）",
-                "light",
+                Some("light"),
             ),
-            (
+            step(
                 "03-compare.png",
                 Some(COMPARE_JS.to_string()),
                 2200,
                 "原译对照（等图片解码完再截）",
-                "light",
+                Some("light"),
             ),
-            (
-                "04-settings-dark.png",
-                Some(toggle_dark_js()),
-                2000,
-                "设置页（深色模式）",
-                "dark",
-            ),
-            (
+            step("04-settings-dark.png", Some(toggle_dark_js()), 2000, "设置页（深色模式）", Some("dark")),
+            step(
                 // 跟在 04 之后 ⇒ 主题已是深色（`toggle_dark_js` 幂等）。等待要更长：
                 // 这一屏挂载后还要 `/engine/options` + `/engine/status` 两个请求回来才有内容。
                 "05-settings-engine.png",
                 Some(settings_engine_js()),
                 3600,
                 "设置 ②翻译服务（S6：服务与配对 / 推理引擎 / 模型与诊断 / 引擎诊断）",
-                "dark",
+                Some("dark"),
             ),
-            (
+            step(
                 "06-settings-diag.png",
                 Some(settings_diag_js()),
                 1500,
                 "设置 ②翻译服务 · 滚到底（「模型管理」与「引擎诊断」面板：进程状态 / 生效配置 / 模型状态 / 阶段日志 / 三个操作）",
-                "dark",
+                Some("dark"),
             ),
+            // ---- 音乐屏与桌面歌词窗（2026-10-16 新增的两张）----
+            // 标签如实写「未播放 / 未登录」：这一轮跑的是 mock 引擎 + D 组那套落盘数据，
+            // 里面**没有音乐库**、也没有登录态 ⇒ 截到的就是那个空态，不摆拍、也不假装是满态。
+            step(
+                "07-music.png",
+                Some(music_screen_js()),
+                2500,
+                "音乐应用（未播放 / 未登录时的空态）",
+                Some("dark"),
+            ),
+            Step {
+                file: "08-lyrics-window.png",
+                drive_win: MAIN_WIN,
+                js: None,
+                action: Some(open_lyrics_act),
+                wait_ms: 2500,
+                shot_win: LYRICS_WINDOW,
+                label: "桌面歌词独立置顶窗（未播放时的空态）",
+                // 歌词窗不挂主窗那套主题 provider（它是第二个 HTML 入口下的独立文档）
+                // ⇒ 没有 `dataset.theme` 可回读。不硬塞一条自证，改成如实标注「不自证主题」。
+                want_theme: None,
+            },
         ];
 
         let mut lines: Vec<String> = Vec::new();
-        for (file, js, wait_ms, label, want_theme) in steps {
-            if let Some(js) = js {
-                drive(&app, &js);
+        for st in steps {
+            if let Some(act) = st.action {
+                act(&app);
             }
-            std::thread::sleep(Duration::from_millis(wait_ms));
-            let out = dir.join(file);
-            let res: Result<String, String> = shoot(&app, &out).and_then(|detail| {
-                match read_theme(&app) {
-                    Some(got) if got == want_theme => Ok(format!("{detail}；主题={got}")),
+            if let Some(js) = st.js {
+                drive(&app, st.drive_win, &js);
+            }
+            std::thread::sleep(Duration::from_millis(st.wait_ms));
+            let out = dir.join(st.file);
+            let res: Result<String, String> = shoot(&app, st.shot_win, &out).and_then(|detail| {
+                let Some(want) = st.want_theme else {
+                    return Ok(format!("{detail}；窗口={}（该窗口不自证主题）", st.shot_win));
+                };
+                match read_theme(&app, st.shot_win) {
+                    Some(got) if got == want => Ok(format!("{detail}；窗口={}；主题={got}", st.shot_win)),
                     other => Err(format!(
-                        "主题应为 {want_theme}，实际读到「{}」—— 这张图与文件名不符，拒收（{detail}）",
+                        "主题应为 {want}，实际读到「{}」—— 这张图与文件名不符，拒收（{detail}）",
                         other.unwrap_or_else(|| "读不到".into())
                     )),
                 }
             });
             match res {
-                Ok(detail) => lines.push(format!("✓ {file} — {label}；{detail}")),
-                Err(e) => lines.push(format!("✗ {file} — {label}；{e}")),
+                Ok(detail) => lines.push(format!("✓ {} — {}；{detail}", st.file, st.label)),
+                Err(e) => lines.push(format!("✗ {} — {}；{e}", st.file, st.label)),
             }
         }
 
