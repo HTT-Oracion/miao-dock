@@ -341,7 +341,7 @@ pub fn run(argv: &[String]) -> i32 {
         }
 
         // —— HF 缓存布局：光有 blobs 不够，HF 认的是 snapshots/<rev>/<file> + refs/main。
-        //    这一节是"链接建完了、权重还是不被引擎认"的唯一承担者（见 docs/spec-notes.md D-99）。
+        //    这一节是"链接建完了、权重还是不被引擎认"的唯一承担者（见 docs/internal/spec-notes.md D-99）。
         let hf = match verify_hf_cache(&manifest, &root, args.link_base.as_deref(), ids_ref, set_ref) {
             Ok(v) => v,
             Err(e) => return fail(&e),

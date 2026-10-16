@@ -47,7 +47,7 @@ process.env.MIAO_ENGINE_PROTOCOL = 'mock';
 // ------------------------------------------------------------------ D4 时效的「时间口径」（D-0.8）
 // ⚠️ 旧写法把预算**写死成 30s** —— 那是**模拟引擎**的口径（单张 300ms，`MIAO_ENGINE_ITEM_MS` 默认值）。
 // 真实引擎是**秒级/张**：20 张可达 1 分钟以上。接入真引擎那天该断言必红，
-// 而且会被误读成「接入失败」（见 `docs/engine-integration-plan.md` R6）。
+// 而且会被误读成「接入失败」（见 `docs/internal/engine-integration-plan.md` R6）。
 //
 // 现改为**预算由单张耗时推导**，接真引擎时只需给 `MIAO_E2E_ITEM_MS` 实测值，**不必改断言**：
 //     预算 = MIAO_E2E_ITEM_MS × BATCH_LIMIT × 抖动 + 管道余量
@@ -528,7 +528,7 @@ try {
       `seq ${firstOk}：原图 ${orig.status}/${orig.body.length}B，译文 ${trans.status}/${trans.body.length}B`,
     );
 
-    // ============================================================== D5 逐页集合（spec-notes.md G-10）
+    // ============================================================== D5 逐页集合（docs/internal/spec-notes.md G-10）
     // 这组必须用**真实失败注入**来测，而且失败页必须落在**中间**（seq=3）：
     // 「哪一页已译」如果只靠 translatedCount，`seq <= translatedCount` 会把第 3 页
     // 说成已译 —— 代理指标只在「尾部缺页」时碰巧对，在「中间缺页」时必错。

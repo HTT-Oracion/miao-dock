@@ -1,11 +1,11 @@
 # AGENTS.md —— 本仓库的 AI 协作上下文（唯一入口）
 
 > 本文件是**任何 AI 编程工具**（WorkBuddy / Trae / Cursor / CodeBuddy…）进入本仓库时的**第一份必读**。
-> 它是入口与硬约束，不是完整事实源：**完整事实源 = `README.md` + `docs/dev-plan.md` + `docs/spec-notes*.md`**。
-> 冲突时，以 `docs/spec-notes*.md`（裁定与偏离留痕）为准，并把结论回写到本文件所在仓库。
+> 它是入口与硬约束，不是完整事实源：**完整事实源 = `README.md` + `docs/internal/dev-plan.md` + `docs/internal/spec-notes*.md`**。
+> 冲突时，以 `docs/internal/spec-notes*.md`（裁定与偏离留痕）为准，并把结论回写到本文件所在仓库。
 >
-> 📌 **台账已分流**：`docs/spec-notes.md`（D-01~D-136）+ `docs/spec-notes-1.md`（**D-137 起新增写这里**）。
-> 两者同权；新增前先 `grep "^## D-" docs/spec-notes*.md | tail -3` 确认最新编号（规则详见续篇文件头）。
+> 📌 **台账已分流**：`docs/internal/spec-notes.md`（D-01~D-136）+ `docs/internal/spec-notes-1.md`（**D-137 起新增写这里**）。
+> 两者同权；新增前先 `grep "^## D-" docs/internal/spec-notes*.md | tail -3` 确认最新编号（规则详见续篇文件头）。
 
 **工作语言：中文**（注释、提交信息、文档一律中文；代码标识符除外）。
 
@@ -24,7 +24,7 @@
 | 验收与取证脚本 | 纯 Node 零依赖（`e2e/service/`、`e2e/engine/` 按来源分） | `e2e/` |
 | 参考实现切片 | 只读参考，**保持原样不改** | `vendor/music-reference/`（不入库） |
 
-**目录约定（硬规则，全文与理由见 `README.md` §目录 · `docs/spec-notes.md` D-79）**：
+**目录约定（硬规则，全文与理由见 `README.md` §目录 · `docs/internal/spec-notes.md` D-79）**：
 
 - **产品 / 验收分家**：判据不是"像不像测试"，而是**产品代码运行期会不会 fork 它**。会 fork 的留在原处
   （`engine/scripts/fetch-models.mjs` 等），其余全部在 `e2e/`。搬迁脚本时**按来源分子目录**以保住相对深度（原 Node 服务侧那批自检脚本即整体平移到 `e2e/service/` 下）。
@@ -52,7 +52,7 @@
 - `src/ipc/` —— **与后端通信**：`ipc.ts`（翻译服务命令 + 错误信封解析）· `engine-download.ts`（引擎下载的三态文案）。跨屏复用的调用收口在这里。
 - `src/types/` —— 跨域类型（`types.ts` + `vite-env.d.ts` 环境声明）；只服务单个屏的类型仍留屏内。
 - `src/themes/` —— 设计令牌与主题应用（`tokens.ts` / `apply.ts`）。🔴 令牌数值是**断言对象**（`check:ia` 直接读 `themes/tokens.ts`），改它要同时看断言。
-- **按「依赖什么」定归属，不按「被用几次」定归属。** 抽离规则与反面纪律（什么**不**该抽）见 `docs/spec-notes.md` D-34 与《09》§2.2。
+- **按「依赖什么」定归属，不按「被用几次」定归属。** 抽离规则与反面纪律（什么**不**该抽）见 `docs/internal/spec-notes.md` D-34 与《09》§2.2。
 
 **服务端模块目录（硬规则）**：
 
@@ -82,13 +82,13 @@
   （`forwardedCount` 必须为 0 —— 只要还有转发分支，就说明还有第二条实现路径存在）。
 - 搬迁 / 新增后必须同步：**断言里写死的路径与键名**（`e2e/` 下大量 `path.join(ROOT,'src-tauri',…)` 与 `mangasvc --engine-selftest` 的出口键；不同步的后果是**静默跳过**）· 本节分层 · `README.md` 目录节 · `.trae/rules/project_rules.md`。
 - ⚠️ 历史分层（`service/src/` 根只留跨平台底座、按 `manga`/`settings`/`music` 分域、
-  方向由「分层方向钉子」机器核查）见 `docs/spec-notes.md` D-101 / D-141 ——
+  方向由「分层方向钉子」机器核查）见 `docs/internal/spec-notes.md` D-101 / D-141 ——
   **该钉子已随目录退役**（D-209，命令已从 `package.json` 摘除），Rust 侧暂无同等的
   "模块分层方向"机器判据，登记为已知缺口。
 
-**引用一律走路径别名（2026-10-04 起）**：`@`（src 根）· `@tauri`（src-tauri，预留）· `@components` · `@screens` · `@music` · `@hooks`；**`src` 内不写相对 import**（含 CSS/SVG 副作用导入；同目录 `./` 仍可用）。规则全文见《09》§2.3 与 `docs/spec-notes.md` D-40。增改别名**必须 `vite.config.ts` 与 `tsconfig.json` 双处同步**，且 TS 侧每个别名要**同时**有 `@x` 与 `@x/*` 两条。
+**引用一律走路径别名（2026-10-04 起）**：`@`（src 根）· `@tauri`（src-tauri，预留）· `@components` · `@screens` · `@music` · `@hooks`；**`src` 内不写相对 import**（含 CSS/SVG 副作用导入；同目录 `./` 仍可用）。规则全文见《09》§2.3 与 `docs/internal/spec-notes.md` D-40。增改别名**必须 `vite.config.ts` 与 `tsconfig.json` 双处同步**，且 TS 侧每个别名要**同时**有 `@x` 与 `@x/*` 两条。
 
-**状态管理统一 zustand**：跨组件共享状态一律 zustand（`@music/store` 是先例），**不引入 React Context**（全仓 `createContext` 为零，维持此状 —— `STATE.noReactContext`）。注意它管的是**跨组件共享**，不是"所有状态都塞进全局"：只需一处持有或仅父子一层传递的照旧 `useState`。理由见《09》§2.3.3 与 `docs/spec-notes.md` D-42。
+**状态管理统一 zustand**：跨组件共享状态一律 zustand（`@music/store` 是先例），**不引入 React Context**（全仓 `createContext` 为零，维持此状 —— `STATE.noReactContext`）。注意它管的是**跨组件共享**，不是"所有状态都塞进全局"：只需一处持有或仅父子一层传递的照旧 `useState`。理由见《09》§2.3.3 与 `docs/internal/spec-notes.md` D-42。
 
 **前端 `src/music/` 按层分文件（D-156，与 §1 服务端域目录同思路）**：`store.ts`（zustand 装配：`MusicState` 接口 + 初始 state + 切片 spread，647 行）· `actions/*.ts`（12 个 action 段切片，工厂签名 `Pick<MusicState, ...keys>` 显式列名）· `convert.ts`（纯转换：`songKey`/`fmtTime`/`coverProxyUrl`/`localToSong`/`qualityLabel`）· `prefs.ts`（偏好层：`Prefs` + `savePrefs`）· `persist.ts`（localStorage 读写 + 启动恢复快照，D-153）· `slice.ts`（切片公共件：`StoreSet`/`StoreGet` + 跨段常量）· `tools/lyrics.ts`（歌词解析，D-149）。
 🔴 **切片文件与 `store.ts` 不得互相 import 值**（`MusicState` 等类型可 type-only）—— 被多段共用的东西一律先下沉到上面某个分层文件，否则成环。判据源已改成「`store.ts` + `music/actions/*.ts`」动态拼接，新增切片不必改断言。
@@ -103,8 +103,8 @@
 4. **断言要覆盖"所有层"，不能只测最上面那层。** 写完先自问：**「如果这一层坏了，它会红吗？」**
    用户能感知的行为常横跨 JS 判定层与原生前提层，只测上层时下层坏掉照样全绿。
 5. **关键节点独立 commit**，提交信息说明该节点内容；跨里程碑修正另起 `fix(...)`，不混入。
-6. **所有设计/实现决策与踩过的坑，记入 `docs/spec-notes*.md`**（`D-xx` = 决策/陷阱，`G-xx` = 待裁定缺口）。
-   ⚠️ **D-137 起新条目写 `docs/spec-notes-1.md`**（原文件已 5700+ 行）；编号全局接续，勿重复占用。
+6. **所有设计/实现决策与踩过的坑，记入 `docs/internal/spec-notes*.md`**（`D-xx` = 决策/陷阱，`G-xx` = 待裁定缺口）。
+   ⚠️ **D-137 起新条目写 `docs/internal/spec-notes-1.md`**（原文件已 5700+ 行）；编号全局接续，勿重复占用。
    **在本仓库做的任何非平凡决定，都要落在这里** —— 这是跨工具、跨会话唯一能共享的记忆。
 7. **不引入未经确认的新依赖。** 确需引入时，在提交信息与台账里写清代价（体积/包数/平台耦合）。
 8. **不得出现历史上那批被禁的品牌标识**（本项目已彻底清除，需要提及时一律写「参考实现」）。
@@ -176,7 +176,7 @@ npm run task -- check:child-watch-kill[:refute] # child-watch Windows killTree �
 npm run task -- e2e                   # D 组端到端
 npm run task -- check:ia              # IA 结构 32 条（含 C8d：侧栏两套几何 58×52 / 44×44 随标签形态成对切换）
 npm run task -- check:tls             # TLS 依赖链 9 条（三层）
-npm run task -- check:quit[:refute]   # 「退出喵坞」根因钉子 4 条 / 反证 4 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW / 前端不静默 / Windows signal_tree 无条件 /F；不起进程。⚠️ M3 那条反证的锚点 `c.creation_flags(CREATE_NO_WINDOW);` 在**改造前的 HEAD 里就不存在**，属既有缺口，与 Q3 同源）
+npm run task -- check:quit[:refute]   # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW（`signal_tree` 经 `hide_console` 施加）/ 前端不静默 / Windows signal_tree 无条件 /F；不起进程）
 npm run task -- check:autostart[:refute] # 翻译服务「自动启动 / 手动启停」根因钉子 18 条 / 反证 19 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / 自动启动 effect 依赖不含 status / 未就绪屏 stopped 给「启动」/ 设置页启停行 / 服务实现默认档 = Rust（E1–E5）/ Cargo.toml `default-run` 指向真实 bin（F1）；不起进程；D-94 · D-168 · D-169）
 npm run task -- check:engine-parity[:refute]   # 引擎耦合点纯函数（Rust `--engine-selftest` ⟷ 冻结 golden，real/mock 两档）
 npm run task -- check:engine-http[:refute]     # 引擎 HTTP 运行期（真发 HTTP 打伪引擎：请求体 / 错误归一 / 三重就绪 / 超时带走证据）
@@ -200,7 +200,7 @@ npm run task -- check:profile[:refute] # S4 档位映射 / 加速后端 / 降档
 npm run task -- check:e5e6[:refute]    # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run task -- check:contract[:refute] # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status，77 条（8 个实例场景 A–H）/ 逃生开关反证 4 条（各约 3s / 2s）
 npm run task -- check:translate[:refute] # ver2.2 在线翻译服务（有道智云）：签名 v3 / 四层超时 / 限流 / 三层设置 / 密钥隔离 / 契约与适配器 / 5 路由端到端 **54** 条（52 条业务断言 + 条数自检 + RUN）/ 反证 8 开关（假上游冒充有道——默认发真 SSE 帧，零网络秒级；D-129/D-130）。🔴 F5.5 换靶：本进程里**没有一行 Node 产品代码** —— S/T/L/C/K/A 经 `mangasvc --translate-cases` 驱动 **Rust 门面**（真发 HTTP 打假上游），纯逻辑面（码表 / 签名截断 / 语言码 / 上游码 / 错误族 / 可重试）经 `mangasvc --translate-selftest` ⟷ 冻结 golden
-# —— S7 真机端到端 E1–E11（逐项取证；总表见 docs/engine-e2e-acceptance-report.md）——
+# —— S7 真机端到端 E1–E11（逐项取证；总表见 docs/internal/engine-e2e-acceptance-report.md）——
 npm run task -- check:e3:real         # E3 真引擎全链路 31 张（一个 Task 两个 Batch + 落盘 + SSE 一致）8 条 · **真权重，分钟级，不进常规门**
 npm run task -- check:e4[:refute]     # E4 档位切换：生效档位 vs 配置档位 / 未声明档位必须抛错（真服务 + 假引擎，秒级）6 条 / 反证 4 条
 npm run task -- check:e7:real[:refute] # E7 模型续传与校验 · **真机半边**：3.6 GB 真权重的 sha256 跑得完 + 篡改必检出（约 30s）6 条 / 反证 3 条
@@ -210,7 +210,7 @@ npm run task -- check:e10[:refute]    # E10 安全：只监听回环 / 非图片
 #   真实漫画站 31 张 + 真引擎，19 条断言，约 10 分钟；产物落该仓 `.temp-translate-test/`（已 gitignore）。
 #   脚本自己拉起并收尾 manga-service / 引擎 / ③ / `:8001` 执行器。
 node e2e/service/llm-real-timing.mjs  # 真 ③（llama-server）冷启动与内存实测（**真权重，分钟级，不进常规门**）
-npm run task -- check:music[:refute]  # 音乐平台 / 播放模式五档 / 心动模式 / 播放列表入口与抽屉 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 / 截图取证序列（音乐屏 + 歌词窗）231 条 / 反证 224 条
+npm run task -- check:music[:refute]  # 音乐平台 / 播放模式五档 / 心动模式 / 播放列表入口与抽屉 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 / 截图取证序列（音乐屏 + 歌词窗）234 条 / 反证 224 条
 npm run task -- check:settings[:refute] # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3「准备中」时间线 + ④ 功能梳理（侧栏标签开关 / 存储占用拆三行 / 第三方许可清单 / 行内 def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染（自守）+ **C5 许可清单的引擎/模型段** + **D4 运行时实况行** **183** 条 / 反证 **139** 条。⚠️ 本轮顺手修掉三条**基线就红的陈断言**（A3d 把 `scriptExists` 改名 `runnerExists`、`ExpandedPlayer` 从 `MusicScreen` 搬到 `App.tsx` 后没同步；以及 `NOTREADY.wiring.modeDegraded` 判的是"文件里出现过 `status?.mode`"，而它出现两处 ⇒ 摘掉 chip 也不红）—— 一条**永远绿不了**的断言比没有更坏：它占着"这条已覆盖"的位置，反证轮还会把"仍然红"当成"按预期变红"
 npm run task -- check:units[:refute]  # 前端分层 / hooks / 别名 / 状态 / 屏装配件分派 / 灵动岛 / 看图缩放 / 样式分层 46 条 / 反证 61 条
 npm run task -- check:bundle[:refute] # 打包配置钉子 **16** 条 / 反证 **20** 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip` ——「文件不在」是永远绿的空断言，因 `vendor/node.zip` 从未存在；**W14（D-209）产品 Rust 源码里零 node 字面量** —— 剥掉 `#[cfg(test)]` 后，`"node"` / `'node'` / `node.exe` 只允许出现在 `MIAO_NODE_EXEC`（①② 的 mock 替身解释器）或 `MIAO_SERVICE_IMPL`（退役门）的上下文窗口里；W5 钉"装进去了什么"、W14 钉"产品路径还会不会拉起 node"，两条各挡一类 —— 反证 M13 把 Node 服务退路加回 `resolve_mangasvc()`（包干净、e2e 全绿，只有用户机上多一个 node 进程）只打红 W14；**W6** 必需资产条目在**且** src 文件真实存在；**W7/W7b（C5）随包 0 个模型权重** —— 后缀黑名单 + 与 `models.manifest.json` **逐条交叉**，且显式断言"清单读到了、资产名非空"（否则交叉判据是空断言）；**W13（G3）** `wheels.manifest.json` 里标 `bundled: true` 的 wheel **确实在随包资源里** —— 漏配的后果不是变红而是**静默退化**（用户机无 `.download-cache`、无编译器 ⇒ 退回源码编译，装到一半失败）；**W8–W11（E2/E3）NSIS 安装器钩子** —— 接线指向真实 `.nsh`、长路径只读检查（`SetRegView` + `ReadRegDWORD` + 给命令，**不许 `WriteRegDWORD` 替用户改 HKLM**）、卸载提示**默认保留**（`MB_DEFBUTTON2` 且 `RMDir` 出现在 `IDYES` 之后）且不碰作品目录、Windows 引导写明 SmartScreen 与长路径；**W12** 每个 `MessageBox` 之前必须有 `IfSilent` 守卫 —— NSIS 的弹窗在 `/S` 静默模式下**照样弹并阻塞**，后果不是变红而是 `check:packaged` 的静默安装/卸载**永远不返回**。源码级，不起进程）
@@ -230,7 +230,7 @@ npm run task -- check:progress-truth[:refute] # **D2 进度只来自真实来源
 npm run task -- check:model-runner[:refute] # **C2 校验/建链执行体随包定位** 12 条 / 反证 3 条（真起服务读 `/engine/status.modelDownload.runner`：默认值 == **当前可执行文件自己**且**是绝对路径** —— 相对路径在本机能跑、装完就没，判据必须含 `path.isAbsolute`，否则"cwd 恰好是仓库根"会把差异掩盖成**假绿** · `POST /engine/models/verify` 用它真的跑得起来（200 + 结构化结果，**不是 INTERNAL**）· 执行体不在盘上 ⇒ INTERNAL **且消息里带路径** · `--link` 收尾零网络跑通 · **跨卷**降级为复制并**单独记账**在 `cross_device`，跨卷且复制也失败时错误消息出现「跨卷」）。🔴 **台账 C2 的落点已过期**：它写在 A3d 之前（执行体还是 `node fetch-models.mjs`），A3d 之后"随包"的最优形态是 `current_exe()`。反证：默认执行体改成仓库相对路径 / 跨卷判定恒 false / 删 CLI 打印跨卷 ⇒ 各自红在**指定的那条断言**上
 npm run task -- check:resilience[:refute] # manga-service 健壮性钉子 9 条 / 反证 14 条（源码级：R1–R7 顶层未捕获异常兜底（走同一 shutdown / 收 ③ / 重入闸 / 非零退出）· A1–A2 任务状态原子写（store 走 atomicWriteJson · tmp→fsync→rename）；不起进程；内存变异反证；D-138/D-139）
 npm run task -- check:docs            # 文档 ↔ 实现一致性 21 条（条数对账 / **两种形态**的命令存在：`npm run <入口>` 对 package.json、`npm run task -- <id>` 对命令清单 / 禁词 0 命中 / GROUPS 覆盖）
-# —— F 组「服务 Rust 化」的契约钉子（F0–F5 已全部 ☑，见 docs/packaging-local-engine-dev-plan.md）——
+# —— F 组「服务 Rust 化」的契约钉子（F0–F5 已全部 ☑，见 docs/internal/packaging-local-engine-dev-plan.md）——
 #    🔴 原先是**双靶子**跑同一份断言（`MIAO_SERVICE_IMPL=node` 吃仓库里那份 Node 服务入口、
 #    `=rust` 吃 `target/debug/mangasvc`）。D-209 起 node 靶子随 `service/` 删除**整体退役**：
 #    七组对拍逐块改成**冻结 golden**（D-199/200/203）或改读 Rust 自证出口 —— 不再需要第二份实现。
@@ -243,7 +243,7 @@ npm run task -- check:engine-http[:refute]  # F4-b1 引擎 HTTP 运行期冻结 
 npm run task -- check:llm-supervisor[:refute] # F4-b2 ③ supervisor 冻结 golden 4 条 / 反证（起**真** `mock-llm` 子进程；两条：两层锁否则诊断排在 180s `start()` 后 · 探针同步不走 reqwest）
 npm run task -- check:harness[:refute] # F0 服务靶子抽象 7 条 / 反证 3 条（**靶子只有一个 mangasvc**：入口解析唯一 · `MIAO_SERVICE_IMPL=node` ⇒ **抛错**（退役门，静默落回 = 假绿）· 未知取值必须**吵一声**）
 npm run task -- check:routes[:refute]  # F5 路由表 / 转发计数 9 条（`--final` 10 条 = 完成门）/ 反证 4 条（44 条全 `Tier::Migrated`、**转发数 = 0**；反证 M1 真跑 `--list-routes` + `MIAO_ROUTE_REFUTE` 注入假转发 ⇒ 完成门报「仍有 N 条转发」变红）
-npm run task -- check:docpaths[:refute] # 现行文档引用的仓库路径必须真实存在 4 条 / 反证 2 条（查 AGENTS/README/spec-notes-1/dev-setup/project_rules；spec-notes.md 已封卷于 D-136，历史路径明确不查；源码级，内存变异反证；D-158）
+npm run task -- check:docpaths[:refute] # 现行文档引用的仓库路径必须真实存在 5 条 / 反证 2 条（查 AGENTS/README/spec-notes-1/dev-setup/project_rules；spec-notes.md 已封卷于 D-136，历史路径明确不查；包内落点按 `bundle.resources` 放行；源码级，内存变异反证；D-158 · D-224）
 npm run task -- sign:preflight         # **E1 macOS 打包前自检**（`scripts/mac-signing-preflight.mjs`）：entitlements 四项就位 + 签名/公证变量齐。🔴 缺变量就**非零退出**：缺 `APPLE_SIGNING_IDENTITY` 会产出 ad-hoc 签名的包（本机不报错、别人机器上被拦）；缺公证三件套时 tauri 会**跳过**公证而不是报错 ⇒ 包装得上、跑不起来。本机自用打包请显式设 `MIAO_NOTARIZE=0`
 npm run app:build:mac          # macOS 打包 = **自检 + tauri build**（"写进构建脚本"= 打包路径上真的会跑；`app:build` 仍是不带自检的通用入口）
 docs/dev-setup.md              # 新人上手：环境 / 装依赖 / 跑检查 / 五个最容易踩的坑 / 代码地图（D-158）
@@ -352,7 +352,7 @@ cd src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 - **真机 GUI 自动化被 TCC 挡**：`osascript`（-10004）、`CGWindowList` 取不到窗口（无辅助功能/屏幕录制授权）。
   「鼠标真的能不能拖」这类**只能手动确认**，别反复尝试自动化。
 - **截图取证的四个前提**（否则会产出"纯白/全黑/壁纸"的假证据）：窗口不被遮挡、屏幕不锁屏、
-  rAF 不被节流、主题不串轮次 —— 细节见 `docs/spec-notes.md` D-15~D-18。
+  rAF 不被节流、主题不串轮次 —— 细节见 `docs/internal/spec-notes.md` D-15~D-18。
 
 ## 6. 外部方案文档（可能不在本机）
 
@@ -372,7 +372,7 @@ cd src-tauri && cargo build                # Rust（见 §5 环境陷阱）
 - [ ] `git status` / `git log -1` 看过？基线是自己的吗？有没有并发写入者？
 - [ ] 改动属于哪一层？新组件 import 业务层了吗（决定它放 units 还是屏内）？新 hook 住进 `src/hooks/` 了吗？
 - [ ] 新引用用别名了吗？改别名是否 `vite.config.ts` + `tsconfig.json` 双处同步（含 `@x` 与 `@x/*`）？
-- [ ] 有新决策/新坑吗？→ `docs/spec-notes-1.md` 留痕（D-137 起；编号全局接续，不要重复编号）
+- [ ] 有新决策/新坑吗？→ `docs/internal/spec-notes-1.md` 留痕（D-137 起；编号全局接续，不要重复编号）
 - [ ] 断言改了吗？**反证能变红吗？**条数写死了吗？
       ⚠️ 判据若要"切出一段源码"来检查，**切点不能用被测特征本身**（会被反证带着跑掉 ⇒ 假阳性）——
       用结构上恒定、反证改不动的标记（如「第二个 `return (`」）。此类缺陷正向轮恒绿，只有反证轮抓得到。

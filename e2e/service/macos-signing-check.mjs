@@ -47,7 +47,7 @@ const CONF = path.join(ROOT, 'src-tauri', 'tauri.conf.json');
 const PLIST = path.join(ROOT, 'src-tauri', 'entitlements.plist');
 const PREFLIGHT = path.join(ROOT, 'scripts', 'mac-signing-preflight.mjs');
 const PKG = path.join(ROOT, 'package.json');
-const SPEC_NOTES = path.join(ROOT, 'docs', 'spec-notes-1.md');
+const SPEC_NOTES = path.join(ROOT, 'docs', 'internal', 'spec-notes-1.md');
 const CONF_ORIGINAL = fs.readFileSync(CONF);
 const PLIST_ORIGINAL = fs.readFileSync(PLIST);
 

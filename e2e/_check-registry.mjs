@@ -322,7 +322,7 @@ const CHECKS = [
       // 前者在 e2eScripts.json，后者在 package.json，两处都得进 watch
       'package.json',
       'e2eScripts.json',
-      'docs/spec-notes-1.md',
+      'docs/internal/spec-notes-1.md',
       'e2e/service/macos-signing-check.mjs',
     ],
   },

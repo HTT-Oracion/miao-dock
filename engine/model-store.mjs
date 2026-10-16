@@ -163,7 +163,7 @@ export function matchesPlatform(file, key = platformKey()) {
 /**
  * 带 `hf` 的条目在 **HuggingFace 缓存布局**下的落点（纯函数，便于断言）。
  *
- * 为什么需要它（见 docs/spec-notes.md D-99）：英译中的离线档走 `huggingface_hub`，
+ * 为什么需要它（见 docs/internal/spec-notes.md D-99）：英译中的离线档走 `huggingface_hub`，
  * 而 HF 的缓存不是"一个目录里平铺文件"：`try_to_load_from_cache()`（引擎 `_check_downloaded`
  * 与 D-97c 的探针都用它判"权重在不在"）解析的是
  *   `<cache>/models--<org>--<name>/snapshots/<revision>/<filename>`

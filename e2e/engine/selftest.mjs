@@ -1,4 +1,4 @@
-// mangatranslator-mock 自测 —— 覆盖 dev-plan.md §3 M2 的出口条件
+// mangatranslator-mock 自测 —— 覆盖 docs/internal/dev-plan.md §3 M2 的出口条件
 //
 // 运行：node e2e/engine/selftest.mjs
 // 覆盖：① 渲染确定性与尺寸一致 ② 顶部色带 == (seq*47)%360（可像素级校验）

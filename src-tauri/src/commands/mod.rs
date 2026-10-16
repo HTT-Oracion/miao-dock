@@ -410,7 +410,7 @@ pub fn write_text_file(path: String, contents: String) -> Result<(), String> {
 ///
 /// 「阅读顺序」在浏览器里是坐标排序（契约 §7.3），而本机投放的对象是磁盘上的文件，
 /// 没有坐标可言 —— 因此按文件名自然序（`1,2,10` 而非 `1,10,2`）排序，这是本地投放的
-/// 等效语义，已在 docs/spec-notes.md G-05 记录。
+/// 等效语义，已在 docs/internal/spec-notes.md G-05 记录。
 #[tauri::command]
 pub fn expand_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
     const IMAGE_EXTS: [&str; 4] = ["png", "jpg", "jpeg", "webp"];

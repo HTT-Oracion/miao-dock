@@ -111,8 +111,8 @@ check:packaged          # 静默安装 → 资产自检 → 起服务打 /health
 |---|---|
 | `AGENTS.md` | **工程纪律 + 验收命令清单 + 本机环境陷阱**（动手前必读） |
 | `.trae/rules/project_rules.md` | 代码约束细则（三条禁项 / 命名 / 注释） |
-| `docs/spec-notes.md` | 偏离与裁定台账 **D-01 ~ D-136**（已封卷，历史痕迹不改） |
-| `docs/spec-notes-1.md` | 台账续篇 **D-137 起**（新决策写这里，编号全局接续） |
+| `docs/internal/spec-notes.md` | 偏离与裁定台账 **D-01 ~ D-136**（已封卷，历史痕迹不改） |
+| `docs/internal/spec-notes-1.md` | 台账续篇 **D-137 起**（新决策写这里，编号全局接续） |
 | `../code-audit-report.md` | 结构审计报告与改造执行记录（**在仓库外**的 `manga/` 目录） |
 
 > 提交信息格式：`类型(模块): 功能简述 + 关键点简述`（类型 = feat/chore/fix/style/test/docs；

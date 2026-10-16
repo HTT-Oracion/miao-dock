@@ -146,7 +146,7 @@ async function main() {
     for (const m of r.missing) console.log(`  ✗ ${m}：缺失`);
 
     // —— HF 缓存布局（带 `hf` 的条目）：光有 blobs 不够，HF 认的是 snapshots/<rev>/<file> + refs/main。
-    //    这一节是"链接建完了、权重还是不被引擎认"的唯一承担者（见 docs/spec-notes.md D-99）。
+    //    这一节是"链接建完了、权重还是不被引擎认"的唯一承担者（见 docs/internal/spec-notes.md D-99）。
     const hf = await verifyHfCache(manifest, { rootDir: ROOT, ids: args.ids, set: args.set, linkBase: args.linkBase });
     if (hf.total) {
       console.log(`HF 缓存布局：可解析 ${hf.ok.length} / 不可解析 ${hf.missing.length}（共 ${hf.total}）`);

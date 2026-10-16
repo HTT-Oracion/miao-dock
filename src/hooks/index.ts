@@ -70,7 +70,7 @@ const POLL_IDLE_MS = 4000;
  * **为什么是轮询而不是 SSE**：桌面端所有请求都经 Rust IPC 转发，而 `api_get` 是
  * 缓冲式请求-响应，无法承载事件流（SSE 是给插件端用的，契约 §5.5）。轮询读的是
  * **同一个 store**，所以进度数字与插件端 SSE 看到的一致 —— 只是到达方式不同。
- * 已记入 docs/spec-notes.md D-11。
+ * 已记入 docs/internal/spec-notes.md D-11。
  *
  * 有任务在跑时 1s 一次，空转时 4s 一次 —— 空闲时不要拿轮询去磨电池。
  */

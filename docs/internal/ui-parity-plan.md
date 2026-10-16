@@ -250,7 +250,7 @@ Tauri v2 官方默认值（已核对文档）：
 | P4/P5 | 桌面歌词设置弹窗可用；设置页与弹窗无同义重复项；项数自校通过 |
 
 **通用**：`tsc` / `vite build` / `cargo check` 0 错误；`check:music`、`check:units`、`check:settings`、`check:docs` 正反两轮全绿；
-每阶段提交独立 commit 并记账（`docs/spec-notes.md`）。
+每阶段提交独立 commit 并记账（`docs/internal/spec-notes.md`）。
 
 ---
 

@@ -44,7 +44,7 @@
  * ⇒ 「切到 Small 后 `/health` 显示 small」这件事**本机做不到**，因为 Small 的权重文件名与
  * 校验值都还没有来源。本脚本因此**反向**取证：在这台机器上，`MIAO_ENGINE_TIER=small`
  * 必须被**夹回 tiny** 且**显式**（不能静默），而"切到 Small 真生效"这一半列在
- * `docs/engine-e2e-acceptance-report.md` 的 unverified register 里，**不计入已完成**。
+ * `docs/internal/engine-e2e-acceptance-report.md` 的 unverified register 里，**不计入已完成**。
  *
  * 用法：
  *   node e2e/service/e4-tier-check.mjs            正向

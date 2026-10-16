@@ -42,7 +42,7 @@
  * 「真引擎在断网下真的加载了 nllb 与视觉模型」这一步**没有**在本脚本里跑：
  * 它需要真权重（≈13 GB）与真引擎，属 `nightly` 层。本脚本证明的是**上游条件**：
  * 离线键按盘上事实注入、零网络能重建出引擎真要打开的那条路径。
- * 真机那一半在 `docs/spec-notes-1.md` 里按 `unverified` 记账，不计入"已验"。
+ * 真机那一半在 `docs/internal/spec-notes-1.md` 里按 `unverified` 记账，不计入"已验"。
  *
  * 用法：node e2e/service/offline-fallback-check.mjs [--refute]
  * 前置：`cd src-tauri && cargo build --bin mangasvc`

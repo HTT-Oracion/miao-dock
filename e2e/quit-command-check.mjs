@@ -54,6 +54,8 @@ import path from 'node:path';
 const ROOT = path.resolve(import.meta.dirname, '..');
 const COMMANDS_MOD = path.join(ROOT, 'src-tauri', 'src', 'commands', 'mod.rs');
 const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service', 'mod.rs');
+// 黑框抑制（`CREATE_NO_WINDOW`）的唯一实现住在 lib 侧，`signal_tree` 调用它的 `hide_console`
+const CHILD_WATCH_RS = path.join(ROOT, 'src-tauri', 'src', 'platform', 'child_watch.rs');
 const APP_TSX = path.join(ROOT, 'src', 'App.tsx');
 
 const REFUTE = process.argv.includes('--refute');
@@ -72,6 +74,7 @@ function runAll() {
 
   const cmds = read(COMMANDS_MOD);
   const svc = read(SERVICE_RS);
+  const childWatch = read(CHILD_WATCH_RS);
   const app = read(APP_TSX);
 
   // ---- Q1：quit_app 是 async 命令（不在主线程跑）----
@@ -97,12 +100,21 @@ function runAll() {
   );
 
   // ---- Q3：Windows taskkill 不弹黑框 ----
-  check(
-    'Q3',
-    'Windows signal_tree 的 taskkill 带 `CREATE_NO_WINDOW`（否则点退出会蹦出一个 cmd 黑框）',
-    svc.includes('CREATE_NO_WINDOW') && svc.includes('creation_flags(CREATE_NO_WINDOW)'),
-    `CREATE_NO_WINDOW=${svc.includes('CREATE_NO_WINDOW')} creation_flags=${svc.includes('creation_flags(CREATE_NO_WINDOW)')}`,
-  );
+  // 施加方式已收敛为共享助手 `hide_console`（`CREATE_NO_WINDOW` 的唯一实现住在 child_watch.rs），
+  // `signal_tree` 的 Windows 分支调用它。两处都要钉：调用位被删、或助手不再施加这个标志，各自要红。
+  {
+    const tk = svc.indexOf('Command::new("taskkill")');
+    const ntk = svc.indexOf('pub fn no_tree_kill');
+    const winSignalTree = tk >= 0 && ntk > tk ? svc.slice(tk, ntk) : '';
+    const hideAt = childWatch.indexOf('pub fn hide_console');
+    const hideBody = hideAt >= 0 ? childWatch.slice(hideAt, hideAt + 300) : '';
+    check(
+      'Q3',
+      'Windows signal_tree 的 taskkill 带 `CREATE_NO_WINDOW`（否则点退出会蹦出一个 cmd 黑框）',
+      winSignalTree.includes('hide_console(&mut c)') && hideBody.includes('CREATE_NO_WINDOW'),
+      `signal_tree 调 hide_console=${winSignalTree.includes('hide_console(&mut c)')} 助手施 CREATE_NO_WINDOW=${hideBody.includes('CREATE_NO_WINDOW')}`,
+    );
+  }
 
   // ---- Q4：前端退出失败不静默 ----
   check(
@@ -178,8 +190,8 @@ const MUTATIONS = [
     expect: ['Q2'],
   },
   {
-    name: 'M3 taskkill 去掉 CREATE_NO_WINDOW',
-    edits: [{ file: SERVICE_RS, find: '    c.creation_flags(CREATE_NO_WINDOW);', replace: '    // refute' }],
+    name: 'M3 taskkill 不再抑制黑框（移除 signal_tree 里的 hide_console 调用）',
+    edits: [{ file: SERVICE_RS, find: '    hide_console(&mut c);', replace: '    // refute：不再抑制黑框' }],
     expect: ['Q3'],
   },
   {

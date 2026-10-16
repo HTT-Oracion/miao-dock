@@ -23,7 +23,7 @@
  * 而本项目的权重是**预置**的（见 `offline-engine-bringup` 的结论）。
  * 这一半的取证停在夹具层（真 Range 请求），已足够证明**代码路径**正确；
  * 但"上游真实 CDN 的 `Content-Range` 行为"这一条列进
- * `docs/engine-e2e-acceptance-report.md` 的 unverified register。
+ * `docs/internal/engine-e2e-acceptance-report.md` 的 unverified register。
  *
  * 用法：
  *   node e2e/engine/e7-real-verify-check.mjs            正向

@@ -11,7 +11,7 @@
  *   「URL scheme not supported」/ builder error。
  *
  *   也就是说：这个缺陷在「除了真去发一个 https 请求」之外的每一层都是绿的。
- *   这正是 docs/spec-notes.md D-20 说的「每层都要断言」——
+ *   这正是 docs/internal/spec-notes.md D-20 说的「每层都要断言」——
  *   依赖层的语义缺失，编译器看不见、截图看不见、单测看不见。
  *
  * 反证怎么做的（关键，否则这条断言也是假阳性）：

@@ -177,7 +177,7 @@
    若确认要改上游源码，按"vendored 补丁 + 记入 `VERSIONS.lock`"的方式做。
 2. **过度合并抽检**：在 `test-manga/` 与后续真实素材上统计合并是否正确（建议抽样 ≥20 页）。
 3. **翻译模型档位**：这是**独立于 OCR 的另一条线**——1.5B 只能验"通"，要"可用"得上 8B/14B。
-4. 拍板后补 `docs/spec-notes.md` 的一条 D-xx，并把 §3 的第 4/6 项写进 `engine/VERSIONS.lock`。
+4. 拍板后补 `docs/internal/spec-notes.md` 的一条 D-xx，并把 §3 的第 4/6 项写进 `engine/VERSIONS.lock`。
 
 ---
 

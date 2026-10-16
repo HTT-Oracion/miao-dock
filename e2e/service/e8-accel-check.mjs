@@ -21,7 +21,7 @@
  * 这一步是真机事实。但「MPS 启动**真的失败**并触发回退」这一半本机**做不到**：
  * 本机 M4 的 MPS 是好的，人为把它搞挂需要改引擎/系统层。所以 E8 验的是
  * "**回退发生之后**服务怎么上报"，而"回退是**谁**触发的"（Rust 侧 `ServiceManager` 的失败检测）
- * 列在 `docs/engine-e2e-acceptance-report.md` 的 unverified register，**不计入已完成**。
+ * 列在 `docs/internal/engine-e2e-acceptance-report.md` 的 unverified register，**不计入已完成**。
  *
  * ## 硬件画像现在打哪（Node 服务层摘除后）
  * 原先是另起 node 子进程 `import service/src/settings/engine-profile.mjs` 调 `probeHardware()`；

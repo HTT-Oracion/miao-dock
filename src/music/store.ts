@@ -34,7 +34,7 @@
  * 因此桌面歌词窗口**可以继续用 localStorage**，不必切 Tauri Store。
  * ⚠️ 两条前提若改变需重测：① 给窗口加了 `with_data_store_identifier`（会各自分配独立 store）；
  * ② 桌面歌词窗口若加载**外部 origin**（localStorage 按 origin 隔离，就不共享了）。
- * 实测记录：lsm-probe（工作区内，2026-10-04）；台账见 docs/spec-notes.md D-47。
+ * 实测记录：lsm-probe（工作区内，2026-10-04）；台账见 docs/internal/spec-notes.md D-47。
  */
 import { create } from 'zustand';
 import type { ParsedLyricLine } from '@tools/lyrics';

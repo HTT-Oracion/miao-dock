@@ -1,5 +1,5 @@
 /**
- * 规格自检 —— 把 dev-plan.md §4 的 C1–C7 与 B3 从「肉眼看」变成「当场量」。
+ * 规格自检 —— 把 docs/internal/dev-plan.md §4 的 C1–C7 与 B3 从「肉眼看」变成「当场量」。
  *
  * 做法：在设置页挂一份**离屏样张**（队列表 + 空态魔法阵 + 漫画库左栏与网格卡），
  * 然后对实际渲染出来的 DOM 取 `getBoundingClientRect` / `getComputedStyle`，

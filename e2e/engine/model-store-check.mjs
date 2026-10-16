@@ -796,7 +796,7 @@ async function scnRelink(fx, t, alpha) {
  * D-97c 的探针都靠它）**不认**"文件在 src/models/ 下"这件事，它认的是
  * `<cache>/models--<org>--<name>/snapshots/<revision>/<filename>` + `refs/main`。
  * 只把 blob 硬链接过去 = 「链接建好了、权重还是不被认」⇒ 引擎联网重下 ⇒ 本机 `ProxyError 502`。
- * 本组是这一整类问题的唯一承担者（见 docs/spec-notes.md D-99）。
+ * 本组是这一整类问题的唯一承担者（见 docs/internal/spec-notes.md D-99）。
  */
 async function scnHfLayout(fx, t, alpha) {
   const s = await setup(t, 'hf');

@@ -22,7 +22,7 @@ pub struct Song {
     /// 酷狗 `Duration` 是秒（取用时 `* 1000`）、QQ `interval` 是秒（取用时 `* 1000`）、
     /// 咪咕给的就是毫秒。上游把「归一成毫秒」这件事做在了各平台取用处，
     /// 于是这个结构体字段本身没有单位标注，下游很容易再乘一次 1000（曾因此把
-    /// 4:29 显示成 4483:20，详见 docs/spec-notes.md D-33）。
+    /// 4:29 显示成 4483:20，详见 docs/internal/spec-notes.md D-33）。
     pub duration: u64,
     pub fee: i32,
     pub playable: bool,

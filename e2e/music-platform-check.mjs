@@ -222,7 +222,10 @@ const DISPATCH = {
 };
 
 // ── 读文件 ───────────────────────────────────────────────────────────────
-const readMaybe = cachedReadText;
+// 读文本统一折算成 LF：工作区是 CRLF（core.autocrlf=true），而断言里的多行锚点按 LF 写。
+// 不折算 ⇒ `includes` / `occurrences` 恒不命中 ⇒ 判据长期"假红"（D-148 记过这个坑）。
+// 只折"给断言看的文本"；反证轮改盘/还原走 readBytes（原样字节），两者互不影响。
+const readMaybe = (p) => cachedReadText(p).replace(/\r\n/g, '\n');
 const readBytes = cachedReadBytes;
 
 /** 递归拼接某目录下所有指定后缀文件（缺目录 → 空串，不抛） */
@@ -2995,7 +2998,8 @@ add('ISLANDV.toggleBothWays', 'ISLANDV', (s) => {
   const missing = [];
   // 双向：歌词态要能回播放卡，播放态要能进歌词卡 —— 只做一个方向 = 进去出不来
   if (!/title=\{view === 'lyrics' \? '播放' : '歌词'\}/.test(isl)) missing.push('切换键的 title 不是双向的');
-  if (!/view === 'lyrics' \? <Play[\s\S]{0,60}?:\s*<ListMusic/.test(isl))
+  // 图标名允许随设计调整（当前歌词态用 `AudioLines`，见提交 eb3fd1f）；钉的是「两个方向各有一个图标」
+  if (!/view === 'lyrics' \? <[A-Z]\w*[\s\S]{0,60}?:\s*<ListMusic/.test(isl))
     missing.push('切换键的图标不是双向的（歌词态→播放、播放态→歌词）');
   if (!/onToggleView=\{toggleIslandView\}/.test(isl)) missing.push('切换键未接回写偏好的 action');
   return { ok: missing.length === 0, detail: missing.length ? `视图切换：${missing.join('、')}` : '' };

@@ -6,8 +6,8 @@
 // 本脚本把这一类变成可执行检查：路径不存在就非零退出。
 //
 // ## 检查范围（**只查现行文档**）
-//   AGENTS.md · README.md · docs/spec-notes-1.md · .trae/rules/project_rules.md
-// 🔴 `docs/spec-notes.md` **明确不在范围**：它已封卷于 D-136（文件头明写），
+//   AGENTS.md · README.md · docs/internal/spec-notes-1.md · .trae/rules/project_rules.md
+// 🔴 `docs/internal/spec-notes.md` **明确不在范围**：它已封卷于 D-136（文件头明写），
 //    里面有大量历史路径（`service/scripts/selftest.mjs` 等，实际已迁到 `e2e/service/`）——
 //    历史痕迹本身有价值，改它才是错。要查旧路径请查续篇。
 //
@@ -17,6 +17,11 @@
 //   留着不是遗漏，而是让"文档又写回 `app/src/...`"这种回退**当场变红**（表里删掉就变成静默跳过）。
 //   不收目录（`service/src/manga/` 这类在文档里常被泛泛提及，误报率高），
 //   不收裸文本（会把"曾经的 foo.ts"这种叙述算进来）。
+//   🔴 例外：tauri 配置里声明的**包内落点**（`bundle.resources` 的「值」）不按仓库路径判 ——
+//   它们本就只存在于包里，最典型是 D-211：`engine/wheels.manifest.json` 在包内改名成
+//   `engine/wheel-manifest.json`（避开与 `engine/wheels/` 目录同名）。文档把包内落点写成
+//   反引号路径是**对的**，判据只该钉「仓库里该有的文件」，故把配置声明的落点并入允许集合。
+//   依据是**配置本身**：配置里删掉这条落点，文档的引用就会重新变红（不会假绿）。
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { cachedReadText, overrideFile, clearOverrides } from './_file-cache.mjs';
@@ -25,14 +30,34 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname).replac
 const LIVE_DOCS = [
   'AGENTS.md',
   'README.md',
-  'docs/spec-notes-1.md',
+  'docs/internal/spec-notes-1.md',
   'docs/dev-setup.md',
   '.trae/rules/project_rules.md',
 ];
 const PATH_RE =
   /`((?:src|src-tauri|public|scripts|e2e|docs|engine|service|app)\/[\w./-]+\.(?:mjs|ts|tsx|rs|md|json|scss|css|html))`/g;
 
+/** tauri 配置里声明的**包内落点**（`bundle.resources` 的「值」）。这些是装进包里的名字，
+ *  仓库里本就不该有同名文件（D-211 的 `engine/wheel-manifest.json` 即为避开与
+ *  `engine/wheels/` 目录同名而改的名）。依据是配置本身，不是给某个名字开后门。 */
+function bundleTargets() {
+  const out = new Set();
+  for (const cfg of ['tauri.conf.json', 'tauri.windows.conf.json']) {
+    const txt = cachedReadText(path.join(ROOT, 'src-tauri', cfg));
+    if (!txt) continue;
+    try {
+      const res = JSON.parse(txt)?.bundle?.resources;
+      const vals = Array.isArray(res) ? res : res && typeof res === 'object' ? Object.values(res) : [];
+      for (const v of vals) if (typeof v === 'string') out.add(v);
+    } catch {
+      // 配置读不动就当没有包内落点：判据退回「只认仓库路径」（只会假红，不会假绿）
+    }
+  }
+  return out;
+}
+
 function runAll() {
+  const BUNDLE = bundleTargets();
   return LIVE_DOCS.map((d) => {
     const abs = path.join(ROOT, d);
     if (!existsSync(abs)) return { name: `DOCS.path.${d}`, ok: false, detail: '文档自身不存在' };
@@ -41,7 +66,9 @@ function runAll() {
     PATH_RE.lastIndex = 0;
     let m;
     while ((m = PATH_RE.exec(txt))) {
-      if (!existsSync(path.join(ROOT, m[1]))) missing.push(m[1]);
+      if (existsSync(path.join(ROOT, m[1]))) continue;
+      if (BUNDLE.has(m[1])) continue; // 包内落点：仓库里没有是**对的**
+      missing.push(m[1]);
     }
     return {
       name: `DOCS.path.${d}`,

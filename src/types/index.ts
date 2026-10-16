@@ -9,7 +9,7 @@
 
 export type TaskStatus = 'queued' | 'running' | 'done' | 'partial_failed' | 'failed' | 'canceled';
 
-/** 来源归因（服务端按 `X-Box-Client` 判定，见 docs/spec-notes.md G-04） */
+/** 来源归因（服务端按 `X-Box-Client` 判定，见 docs/internal/spec-notes.md G-04） */
 export type TaskSource = 'extension' | 'desktop' | 'unknown';
 
 export interface TaskProgress {
@@ -20,7 +20,7 @@ export interface TaskProgress {
   current: number;
 }
 
-/** `GET /tasks` 的一行（契约外增量端点，spec-notes.md G-04） */
+/** `GET /tasks` 的一行（契约外增量端点，docs/internal/spec-notes.md G-04） */
 export interface TaskRow {
   taskId: string;
   comicName: string;

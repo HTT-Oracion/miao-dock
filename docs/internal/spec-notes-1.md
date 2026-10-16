@@ -1,17 +1,17 @@
 # 喵坞 MiaoDock · 偏离与裁定留痕（续篇）
 
-> 本文件是 `docs/spec-notes.md` 的**续篇**，承接其编号（D-137 起）。
+> 本文件是 `docs/internal/spec-notes.md` 的**续篇**，承接其编号（D-137 起）。
 > 原文件已 5700+ 行，单文件过大会让"新增一条要翻半天的历史"变成日常成本，故自 D-137 起分流。
 
 ## 规则（编号与归属）
 
 - **编号接续**：新条目从 `D-137` 起顺延，**不重复占用** `spec-notes.md` 已用过的编号。
-  查旧编号 `grep -n "^## D-" docs/spec-notes.md`。
-- **两个文件同等有效**：`docs/spec-notes.md`（D-01~D-136）与本文件（D-137~）都是**裁定与偏离的事实源**。
-  与 `AGENTS.md` / `README.md` / `docs/dev-plan.md` 冲突时，**以台账为准**（两份台账同权）。
+  查旧编号 `grep -n "^## D-" docs/internal/spec-notes.md`。
+- **两个文件同等有效**：`docs/internal/spec-notes.md`（D-01~D-136）与本文件（D-137~）都是**裁定与偏离的事实源**。
+  与 `AGENTS.md` / `README.md` / `docs/internal/dev-plan.md` 冲突时，**以台账为准**（两份台账同权）。
 - **不得整体搬移**：既有条目留在原文件不动（历史痕迹本身有价值，见 `e2e/docs-consistency-check.mjs`
   关于"台账记录历史、不参与条数比对"的裁定）。本文件只承接**新增**内容。
-- **新增前的必查**：① `grep "^## D-" docs/spec-notes*.md | tail -3` 确认最新编号；
+- **新增前的必查**：① `grep "^## D-" docs/internal/spec-notes*.md | tail -3` 确认最新编号；
   ② 确认该决策**没有**已存在的条目（同一问题换个措辞再记一条是最常见的台账污染）。
 
 ## 索引
@@ -139,7 +139,7 @@ el.style.width = `${p * 100}%`;
 
 ### 回写落点
 
-本文件 + `docs/spec-notes.md` D-55（原始开关的来龙去脉，标注其后继为 D-137）
+本文件 + `docs/internal/spec-notes.md` D-55（原始开关的来龙去脉，标注其后继为 D-137）
 + `src/screens/music/KaraokeLyrics.tsx` 头部注释 + `player-options.ts` 常量注释。
 
 ---
@@ -643,7 +643,7 @@ refute 13/13（字节还原校验全过）** · `check:contract` 77/0 · `check:
 留在 `LibraryScreen.tsx` 会形成 `viewer.tsx → LibraryScreen.tsx`（值导入 `Compare`）
 与 `LibraryScreen.tsx → viewer.tsx` 的**循环 import**。故下沉到零依赖的 `meta.ts`。
 连带同步 3 处把它当「范式」引用的规范文档：`AGENTS.md` §2.10 · `.trae/rules/project_rules.md` §2.8 ·
-`docs/spec-notes.md`（范式指针从 `LibraryScreen.tsx` 改为 `screens/library/meta.ts`）。
+`docs/internal/spec-notes.md`（范式指针从 `LibraryScreen.tsx` 改为 `screens/library/meta.ts`）。
 
 ### 🔴 最坑的一处：`stripComments` **跨文件失同步**（实测假阳性）
 
@@ -1171,8 +1171,8 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 
 | 文档 | 结论 |
 |---|---|
-| `docs/spec-notes.md` | 已**封卷于 D-136**（文件头明写），D-137 起的新条目按规定写 `spec-notes-1.md` —— 本次 D-147~D-157 都在续篇里，无缺失 |
-| `docs/spec-notes-1.md` | D-147~D-157 全部在册（本次改造的完整台账） |
+| `docs/internal/spec-notes.md` | 已**封卷于 D-136**（文件头明写），D-137 起的新条目按规定写 `spec-notes-1.md` —— 本次 D-147~D-157 都在续篇里，无缺失 |
+| `docs/internal/spec-notes-1.md` | D-147~D-157 全部在册（本次改造的完整台账） |
 | `.trae/rules/project_rules.md` | D-148/D-150/D-154 已把范式指针改指 `screens/library/meta.ts` |
 | `README.md` | 无 src 结构描述，不存在过期陈述 |
 | `AGENTS.md` | 范式指针 / check 条数（music 216 · settings 180 · units 45 · ia 32 · autostart 12，check:docs 17/0 实证一致）；**补写**了前端 `src/music/` 按层分文件的说明（§1 原先只描述服务端域目录，D-156 的新分层没进去） |
@@ -1208,9 +1208,9 @@ e2e 无锚该消息串；回归 contract 77/0 · lib-manage 24/0 · e10 7/0 · r
 - **不收目录**（`service/src/manga/` 这类在文档里常被泛泛提及，误报率高）；
 - **不收裸文本**（会把"曾经的 foo.ts"这种叙述算进来）。
 
-**检查范围只限现行文档**：`AGENTS.md` · `README.md` · `docs/spec-notes-1.md` · `docs/dev-setup.md` ·
+**检查范围只限现行文档**：`AGENTS.md` · `README.md` · `docs/internal/spec-notes-1.md` · `docs/dev-setup.md` ·
 `.trae/rules/project_rules.md`。
-🔴 `docs/spec-notes.md` **明确不查** —— 它已封卷于 D-136（文件头明写），
+🔴 `docs/internal/spec-notes.md` **明确不查** —— 它已封卷于 D-136（文件头明写），
 里面有大量历史路径（原 `service/scripts/` 下那批自检脚本，实际已迁到 `e2e/service/` 下）。
 历史痕迹本身有价值，**改它才是错**；这是审计 §9「文档漂移」被误判成缺陷的一处。
 
@@ -1341,10 +1341,10 @@ QR 登录时用户 cookie 通常为空、行为不变。
 
 ## D-161 · 台账编号碰撞：`D-137`~`D-143` 在两份台账里各有一份（新条目自 `D-161` 起）（2026-10-13）
 
-**发现**：写 F5 的条目时按本文件的规则"新增前先 `grep "^## D-" docs/spec-notes*.md | tail -3`"，
+**发现**：写 F5 的条目时按本文件的规则"新增前先 `grep "^## D-" docs/internal/spec-notes*.md | tail -3`"，
 发现 `D-137`~`D-143` **两份台账里都有一条**，且内容毫不相干：
 
-| 编号 | `docs/spec-notes.md` | `docs/spec-notes-1.md` |
+| 编号 | `docs/internal/spec-notes.md` | `docs/internal/spec-notes-1.md` |
 |------|----------------------|------------------------|
 | D-137 | 服务运行时 Rust 化：F0–F2 落地 | 歌词整行高亮去掉推进动画 |
 | D-138 | 迁移期两条本机环境纪律 | manga-service 未捕获异常兜底 |
@@ -3185,7 +3185,7 @@ node 档反证 **4/4** · 每轮跑完 `llama-server` / `mangasvc` 残留均为 
 **改动**：删 `engine-client-check（已删，D-203）`；`package.json` 删 `engine-client 那组钉子[:refute]`；
 注册表删该条，`EXPECTED_TIER_COUNTS` 由 `{service:45, refute:59}` 改 `{service:44, refute:58}`
 （共 129 → **127** 项）；`AGENTS.md` / `README.md` 的验收命令行改为指向两组 golden 并注明退役；
-`docs/spec-notes.md` 里 7 处 `engine-client 那组钉子（npm 命令已退役） 那组钉子`（D-62/D-63/D-140 等**历史台账**）
+`docs/internal/spec-notes.md` 里 7 处 `engine-client 那组钉子（npm 命令已退役） 那组钉子`（D-62/D-63/D-140 等**历史台账**）
 去掉 `npm run ` 前缀 —— 历史事实不改写，但不再宣称"现在还能跑"；
 `spec-notes-1.md` 里唯一一处带路径的引用同步标注。
 
@@ -3316,7 +3316,7 @@ watch 目标核验         9/9 个路径真实存在（写错路径的 watch 会
 
 初稿把这一轮写成"为删除 `service/` 铺路"。两处既成事实把它否掉，**先纠正，再谈剩余**：
 
-- **plan 要的"删除"是「从包内删除」，不是删仓库源码**。`docs/packaging-local-engine-dev-plan.md` §0 裁定① 原文：
+- **plan 要的"删除"是「从包内删除」，不是删仓库源码**。`docs/internal/packaging-local-engine-dev-plan.md` §0 裁定① 原文：
   「node 仅为**过渡**依赖（A3），**F5 完成后从包内删除**」。而 A3 已标 **✗ 作废**（不再随包 node），
   `check:bundle` 的 **W5 把 `service/` 与 `node.zip` 反向钉死**（包内不许出现）⇒ **该目标已达成**。
 - **D-162 早就"仓库里的 `service/`"做过范围裁定**：「摘的是产品运行时与随包，不是仓库源码」——
@@ -3342,7 +3342,7 @@ watch 目标核验         9/9 个路径真实存在（写错路径的 watch 会
    它们已被 e4/e8/stall-guard 的断言与 golden 钉住，但 `cargo test` 侧仍是空的。
 2. **plan 里未完成的 5 项全在 macOS / 分发侧，本机（Windows）做不了**：B4（macOS 侧 `--build-wheel`）、
    D7（macOS 真机按文档装完跑通）、E1（macOS 签名 `entitlements`）、E5（分发许可结论 · 待法务）、A3（已作废）。
-   逐条核对过 `docs/packaging-local-engine-dev-plan.md` 的状态列：**F 组（服务运行时 Rust 化）整组 ☑**。
+   逐条核对过 `docs/internal/packaging-local-engine-dev-plan.md` 的状态列：**F 组（服务运行时 Rust 化）整组 ☑**。
 
 ---
 
@@ -3403,7 +3403,7 @@ check:retranslate      12/12   --refute  9/9
 - **未删 `service/`**（因此也谈不上 layering/docs/registry 的删除同步）：被上面第二节的两块卡着。
   ⇒ D-209 里两块换靶完成后整目录删除，layering / docs / registry / package.json 的同步一并做完。
 - **未改 `AGENTS.md` 的 D-205 归属**：该文件写「`service/`（Node 实现）已从仓库删除（D-205）」，
-  而 `docs/spec-notes-1.md:1677` 记的 D-205 是「删 `s1-real-engine-check.mjs`」，**同号两指**；
+  而 `docs/internal/spec-notes-1.md:1677` 记的 D-205 是「删 `s1-real-engine-check.mjs`」，**同号两指**；
   且 `service/` 当时仍在盘上。⇒ D-209 里改成实际编号：**`service/` 删除 = D-209**，
   D-205 从此专指 s1 那条。
 
@@ -3802,11 +3802,11 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
   `cargo run` 的歧义裁定（D-169）不受影响。
 - 断言侧同步：`e2e/_check-registry.mjs` 里 72 处 `watch` 路径、各 check 里写死的
   `target/debug/mangasvc.exe`、`e2eScripts.json` 的命令说明、两份安装引导、`README.md` / `AGENTS.md` / 规则。
-- `docs/spec-notes-1.md`（本文件）内的旧名也一并收束：它是 `check:docpaths` 的**现行文档**，
-  与封卷的 `docs/spec-notes.md` 不同 —— 索引行与正文里的引用若停在旧名，就成了「台账与实现脱节」。
+- `docs/internal/spec-notes-1.md`（本文件）内的旧名也一并收束：它是 `check:docpaths` 的**现行文档**，
+  与封卷的 `docs/internal/spec-notes.md` 不同 —— 索引行与正文里的引用若停在旧名，就成了「台账与实现脱节」。
 
 **刻意没做什么（如实记账）**
-- 🔴 **`docs/spec-notes.md` 一个字没改**（54 处旧名保留）。它已封卷于 D-136，`check:docpaths` 的文件头
+- 🔴 **`docs/internal/spec-notes.md` 一个字没改**（54 处旧名保留）。它已封卷于 D-136，`check:docpaths` 的文件头
   明写「历史痕迹本身有价值，改它才是错」；同理 `docs/refs/engine/02-e9-plugin-real-engine.report.json`
   与同名 `.stdout.log` 是**真机取证证据**，改它等于伪造取证。这两处是**裁定保留**，不是漏改。
 - 🔴 **独立成词的 `Box` 一律不动**：`X-Box-Token` / `X-Box-Client` 是《03》契约里的**请求头名**，
@@ -3814,7 +3814,7 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
   它们与 `boxsvc` 不是同一层东西：本次只收「服务实现」这一层的名字，产品名与契约名要动须另起一条裁定。
 - `runtimes/manga-translator/.runtime.ready.json` 里那处旧名是**本机运行时产物**的自述文件
   （已被 `.gitignore` 忽略），不入库、也不改。
-- `docs/engine-integration-plan.md` 里那处是**插件仓**的适配器文件名，不是本仓路径。
+- `docs/internal/engine-integration-plan.md` 里那处是**插件仓**的适配器文件名，不是本仓路径。
 - 只换名：不动一行逻辑，不顺手重命名其它标识符，不重排任何代码。
 
 **怎么钉住（缺一层就是假绿）**
@@ -4032,7 +4032,7 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
    `engine-integration-plan.md`（16）· `engine-e2e-acceptance-report.md`（13）· `engine-integration-delivery-plan.md`（9）·
    `packaging-local-engine-dev-plan.md`（8）—— 它们被**产品代码注释**与**已封卷台账**引用，搬它们要改几十处，
    其中一部分落在封卷文档里（本仓纪律：**封卷不改**，历史痕迹本身有价值）。
-   🔴 已封卷的 `docs/spec-notes.md` **刻意未同步**它对已迁文档的引用 —— 那是历史痕迹，不是漂移。
+   🔴 已封卷的 `docs/internal/spec-notes.md` **刻意未同步**它对已迁文档的引用 —— 那是历史痕迹，不是漂移。
    `docs/refs/`、`docs/install-guide-*.md`、`docs/dev-setup.md`、`docs/distribution-license-conclusion.md`
    保持在 `docs/`（对外 / 贡献者可见）。
 6. **CI 只加 eslint + prettier 两道**：静态层当前是 **228 / 3 的既有红**，
@@ -4103,4 +4103,44 @@ Rust 六域表与「命令注册只能一处展开 + `Wry` 不能泛型化」两
   本轮改过大量 Rust 文件，**格式与 lint 未经工具检查**，只有编译器与单测背书。
 - `check:docs` 只机器核对**四个套件**的条数；`AGENTS.md` §3 里其余几十个 check 的条数声明
   **本轮未逐条复核**（只修了注册表那一处），如实登记为缺口。
+
+## D-224 清掉 static 门最后三条「既有红」：docpaths 的包内落点、quit 的黑框助手锚点、music 的图标/换行（2026-10-16）
+
+**为什么要改**：`cap-final.cmd`（static 聚合闸门）长期留 `docpaths=1`、`static=1`，落点是三条**已知**
+红（D-223 已登记，D-148 与 AGENTS §3 也把它们注释成"既有 / 假红"）。但"已知"不等于"该留"：
+它们占着三层断言的覆盖位，其中两条的**判据本身写错了**（假红），按 §2 第 3 条「假阳性比没测试更危险」
+应当修掉判据，而不是让它常驻。**三条都不是产品缺口** —— 代码/文档是对的，错的是锚点与读法。
+
+**三条各自的真身与改法**
+
+1. `check:docpaths` —— **判据过窄的假红**。（按台账口径：**不改文档迁就脚本**。）
+   文档（D-211 节）写「包内落点写成 `engine/wheel-manifest.json`」是**对的**：它是 `bundle.resources`
+   的**值**（包内改名以避开与 `engine/wheels/` 目录同名），仓库里本就不该有同名文件。而 `PATH_RE`
+   只看反引号 + 顶节目录 + 扩展名的**形状**，把它当成"仓库路径"⇒ 假红。
+   改法：`e2e/docs-path-check.mjs` 新增 `bundleTargets()` —— 把 tauri 配置里 `bundle.resources` 的落点
+   并入允许集合，只对**真仓库路径**做存在性断言。依据是**配置本身**：配置里删掉这条落点，文档的
+   引用就会重新变红（不是给某个名字开后门）。
+
+2. `check:quit` 的 **Q3** —— **锚点随合法重构过期**。
+   黑框抑制已收敛为共享助手 `hide_console`（`CREATE_NO_WINDOW` 的唯一实现住在
+   `src-tauri/src/platform/child_watch.rs`），`signal_tree` 调它；旧判据却仍在
+   `src-tauri/src/service/mod.rs` 里找字面量 `creation_flags(CREATE_NO_WINDOW)`（改造后已不存在）⇒
+   恒红 + M3 反证锚点"缺失"。改法：Q3 改为「Windows `signal_tree` 调 `hide_console(&mut c)`」**且**
+   「助手体内出现 `CREATE_NO_WINDOW`」两条一起判（调用位被删、或助手不再施加标志，各自变红）；
+   M3 反证锚点同步换成 `    hide_console(&mut c);`。
+
+3. `check:music` 的 **ISLANDV.toggleBothWays** 与 **RESTORE.restoringClosed / KEYS.manualPressNotMerged** ——
+   一条**锚点过期** + 两条 **EOL 假红**。
+   · 切换键图标：提交 eb3fd1f 有意把歌词态的图标从 `Play` 改成 `AudioLines`，判据仍写死 `<Play>` ⇒ 恒红。
+     改法：判据钉"两个方向各有一个图标"（`<Xxx` 组件名不再写死），仍要求 `: <ListMusic` 那一支。
+   · 两条 EOL 假红：判据里的多行锚点按 **LF** 写，而工作区是 **CRLF**（`core.autocrlf=true`）⇒
+     `includes` / `occurrences` 恒不命中（D-148 记过这个坑）。改法：`readMaybe` 统一把 `\r\n` 折成 `\n`
+     （**只折给断言看的文本**；反证轮改盘 / 还原走 `readBytes`，原样字节，互不影响）。
+
+**验收（本轮实测）**：`node e2e/docs-path-check.mjs` **5/0** · `--refute` **2/2**；
+`check:quit` **5/0** · `--refute` **5/5**（M3 不再"锚点未找到"）；`check:music` **234/0** · `--refute`
+**224/224、零跳过、零假阳性**；`cap-final.cmd` **pretty=0 lint=0 docs=0 docpaths=0 registry=0 counts=0 static=0**。
+
+**同步的条数声明**（`check:docs` 取脚本**通过数**、`check:counts` 取 AGENTS §3）：
+`AGENTS.md` docpaths 4→5 · quit 4→5 · music 231→234；`README.md` music 231→234（quit 本就是 5/5）。
 

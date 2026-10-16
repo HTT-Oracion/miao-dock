@@ -4,8 +4,8 @@
 
 - **两个应用**：**漫画翻译**（投放 / 队列 / 漫画库）· **音乐**（网易云 / 酷狗 / QQ / 咪咕 四平台）
 - 依据：《00-决策纪要》《02-Box-技术方案》《03-翻译服务接口契约》《09-技术方案-ver2.0-最终版》
-- 开发方案与验收标准：`docs/dev-plan.md` · 引擎接入里程碑与现状：`docs/engine-integration-plan.md`
-- 偏离与裁定留痕：`docs/spec-notes.md`（D-01~D-136）· `docs/spec-notes-1.md`（**D-137 起新增写这里**）
+- 开发方案与验收标准：`docs/internal/dev-plan.md` · 引擎接入里程碑与现状：`docs/internal/engine-integration-plan.md`
+- 偏离与裁定留痕：`docs/internal/spec-notes.md`（D-01~D-136）· `docs/internal/spec-notes-1.md`（**D-137 起新增写这里**）
 - **AI 协作上下文入口：`AGENTS.md`**（任何 AI 工具进入本仓库先读它；Trae 另见 `.trae/rules/project_rules.md`）
 - **许可**：[MIT](LICENSE) —— 见下方 §许可。**贡献**：先读 [`CONTRIBUTING.md`](CONTRIBUTING.md)（提交规范 / 验收命令 / 目录纪律）
 
@@ -58,7 +58,8 @@ miao-dock/
 │   ├── *.mjs                  生命周期 / 端到端 / 截图取证 / 文档与结构对账
 │   ├── service/               manga-service 侧（`selftest.mjs` = A 组契约自测 · `stall-guard-check.mjs` = U10② 取证）
 │   └── engine/                引擎侧（引擎自测 / 真引擎全链路 / 真机 sha256 与断点续传）
-├── docs/         事实源与取证：`dev-plan.md`（方案与判据）· `spec-notes.md`（**台账：裁定与偏离留痕**，D-01~D-136）· `spec-notes-1.md`（**台账续篇，D-137 起新条目写这里**）· `refs/`（入库的图与报告）
+├── docs/         **对外 / 贡献者**文档：`install-guide-{windows,macos}.md`（安装引导）· `dev-setup.md`（开发环境）· `distribution-license-conclusion.md`（第三方许可结论）· `refs/`（入库的取证图与报告）
+│   └── internal/ **内部工作文档**（不对外）：`spec-notes.md`（**台账：裁定与偏离留痕**，D-01~D-136，**已封卷**）· `spec-notes-1.md`（**台账续篇，D-137 起新条目写这里**）· `dev-plan.md`（方案与判据）· 各轮计划与验收报告
 ├── test-manga/   本机验收素材：真实漫画（**不入库**）
 ├── test-music/   本机验收素材：音乐（**不入库**）
 ├── runtimes/     **开发机遗留的引擎资产目录**（**不入库**）：B1 起产品的默认落点已搬到 `<appData>/runtimes/manga-translator/`；这里只在用 `MIAO_RUNTIME_ROOT=<repo>/runtimes` 显式覆盖时才被读到
@@ -83,7 +84,7 @@ miao-dock/
 >    🔴 更常见的是它**还是双靶对拍的另一边**（`fetch-models.mjs` / `model-store.mjs` 是 `check:models` 的 Node 靶），
 >    删掉等于让对拍退化成"只有一边的自证"。
 > 2. **临时产物一律写进 `.tmp/<用途>/`**，不要在仓库根另起 `.tmp-xxx/` 或 `tmp-xxx/`
->    （历史上散着 `.tmp-e2e` / `.tmp-models` / `.tmp-selftest` / `tmp-engine-test` 四个，已合并 —— 见 `docs/spec-notes.md` D-79）。
+>    （历史上散着 `.tmp-e2e` / `.tmp-models` / `.tmp-selftest` / `tmp-engine-test` 四个，已合并 —— 见 `docs/internal/spec-notes.md` D-79）。
 > 3. **新增 / 搬迁目录必须同步更新本节**。同时检查：`AGENTS.md` §1 的分层表 · `.trae/rules/project_rules.md` ·
 >    以及**断言里写死的路径** —— 路径不同步的后果不是变红，而是**静默跳过**。
 > 4. **服务端按域分子目录**（ver2.2 起，F5 起随实现搬进 Rust）：`mangasvc/store/`（队列落盘）· `mangasvc/library.rs`（库原语）·
@@ -187,7 +188,7 @@ node engine/src/server.mjs
 > 环境变量 `MIAO_ROOT` 可覆盖落盘根目录（验收用临时目录），默认 `~/Pictures/Box 漫画`。
 > 运行期状态在平台应用数据目录下的 `Box/state/`（`MIAO_STATE_DIR` 可覆盖）：
 > `tasks/` 任务清单、`pending/` **上传字节暂存区**、`token`、`idempotency.json`。
-> 暂存区是「服务崩溃后未落盘的原图还能救回」的依据（见 `docs/spec-notes.md` G-12）——
+> 暂存区是「服务崩溃后未落盘的原图还能救回」的依据（见 `docs/internal/spec-notes.md` G-12）——
 > 它在漫画目录**之外**，所以取消任务不会在漫画目录留下残缺文件。
 
 ## 验收
@@ -205,7 +206,7 @@ npm run task -- fetch:models          # S3 模型下载器 **Node 对照端**（
 npm run task -- e2e                   # D1–D5 端到端（真实 engine + 真实 service，真落盘）
 npm run task -- capture               # 截图取证（需屏幕解锁；不满足条件会拒绝出图而非交假证据）
 
-# 结构断言（每条都带反证轮，见 docs/spec-notes.md 与 AGENTS.md §3）
+# 结构断言（每条都带反证轮，见 docs/internal/spec-notes.md 与 AGENTS.md §3）
 npm run task -- check:ia              # IA 结构 32 条（侧栏两级 / 视图 Tab / 设置两栏壳 / 小节分层 / 侧栏两套几何 C8d）
 npm run task -- check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
 npm run task -- check:quit            # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW / 前端不静默 / Windows signal_tree 无条件 /F）
@@ -218,7 +219,7 @@ npm run task -- check:models          # S3 模型下载器 **双靶** 38×2 = 76
 npm run task -- check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）
 npm run task -- check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run task -- check:contract        # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status 77 条（反证：check:contract:refute）
-npm run task -- check:music           # 音乐平台 / 播放模式五档 / 心动模式 / 播放列表入口与抽屉 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 231 条（反证：check:music:refute，224 条）
+npm run task -- check:music           # 音乐平台 / 播放模式五档 / 心动模式 / 播放列表入口与抽屉 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 234 条（反证：check:music:refute，224 条）
 npm run task -- check:settings        # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3 裁定结果 + ④ 功能梳理（侧栏标签 / 存储占用 / 第三方许可 / def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染 + **C5 许可清单的引擎/模型段** + **D4 运行时实况行** 183 条（反证：check:settings:refute，138 条）
 npm run task -- check:units           # 前端分层 / hooks / 别名 / 状态 / 屏装配件分派 / 灵动岛 / 看图缩放 / 样式分层 46 条（反证：check:units:refute）
 npm run task -- check:stall           # U10② 引擎卡死：「静默有上界 + 每次尝试留痕 + 进行中落盘」7 条 / 反证 3 条（mock 引擎对指定 seq「永不回包」）
@@ -251,7 +252,7 @@ npm run task -- check:macos-compat   # **D7 macOS 兼容** 11 条 / 反证 4 条
 npm run task -- check:macos-signing  # **E1 macOS 签名 + 公证** 8 条 / 反证 4 条（entitlements 四项为 true 且无 app-sandbox · `hardenedRuntime` + entitlements 接线 · 打包前自检：缺变量非零退出并点名 / `MIAO_NOTARIZE=0` 放行但告警 / 变量齐放行 · `app:build:mac` 串上自检）
 ```
 
-**F 组「服务 Rust 化」的契约钉子**（F0–F5 已全部完成，见 `docs/packaging-local-engine-dev-plan.md`）——
+**F 组「服务 Rust 化」的契约钉子**（F0–F5 已全部完成，见 `docs/internal/packaging-local-engine-dev-plan.md`）——
 D-209 起**靶子只剩一个**（`target/debug/mangasvc`）：对照端逐块改成**冻结 golden**
 （`e2e/service/golden/*.json`）或 Rust 自证出口（`mangasvc --*-selftest` / `--print-paths`），
 `MIAO_SERVICE_IMPL=node` 现在**抛错**（退役门，静默落回 = 假绿）：
@@ -273,7 +274,7 @@ npm run task -- check:routes         # F5 路由表/转发计数 9 条（--final
 > 留在仓库里的 Node 只有**测试替身**（`engine/src/*`）与**开发/装配脚本**（`engine/scripts/*`），
 > 两者都不进包、不在产品运行时里。
 
-**S7 真机端到端 E1–E11**（逐项取证总表：`docs/engine-e2e-acceptance-report.md`）—— 这几条**不进常规门**，按需手动跑：
+**S7 真机端到端 E1–E11**（逐项取证总表：`docs/internal/engine-e2e-acceptance-report.md`）—— 这几条**不进常规门**，按需手动跑：
 
 ```bash
 npm run task -- check:e3:real            # E3  真引擎全链路 31 张              （真权重，分钟级）
@@ -288,25 +289,25 @@ npm run task -- selftest:app:e11:real    # E11 三进程树回收 + E1 生效参
 > 真实漫画站 31 张 + 真引擎，19 条断言，约 10 分钟；产物落该仓 `.temp-translate-test/`（已 gitignore）。
 > 脚本自己拉起并收尾 manga-service / 引擎 / ③ / `:8001` 执行器（**孙进程**，漏杀会让下一轮全 `engine_engine_error`）。
 
-各组判据与「为什么这么测」见 `docs/dev-plan.md` §4；一路踩过的环境陷阱见 `docs/spec-notes.md`。
+各组判据与「为什么这么测」见 `docs/internal/dev-plan.md` §4；一路踩过的环境陷阱见 `docs/internal/spec-notes.md`。
 
 > **在代理（沙箱）里跑 e2e 时，请把临时目录挪到系统临时区**：
 > ```bash
 > MIAO_E2E_TMP="$(node -e 'console.log(require("os").tmpdir())')/miao-e2e" npm run task -- e2e
 > ```
 > 运行时的「安全删除守卫」会拦截仓库内 `.tmp/e2e/` 的批量删除（连开头那次清理都起不来），
-> 而它对系统临时目录下的路径整条绕过。一件事两样症状、排查全过程见 `docs/spec-notes.md` D-19。
+> 而它对系统临时目录下的路径整条绕过。一件事两样症状、排查全过程见 `docs/internal/spec-notes.md` D-19。
 
 ## 状态总览（截至 2026-10-16）
 
-> 逐条留痕见 `docs/spec-notes.md`（D-01~D-136）与 `docs/spec-notes-1.md`（最新 **D-221**）·
-> 里程碑逐项见 `docs/engine-integration-plan.md`。
+> 逐条留痕见 `docs/internal/spec-notes.md`（D-01~D-136）与 `docs/internal/spec-notes-1.md`（最新 **D-221**）·
+> 里程碑逐项见 `docs/internal/engine-integration-plan.md`。
 > **类型检查 + 断言通过 ≠ 功能可用** —— 下列「未验证」项即按此口径如实标注。
 
 **✅ 已完成**
 
 - **ver1.0 · 漫画翻译**：本机投放 · 串行队列（多选删除 / 重试**复用同一 taskId** / 继续翻译 / 单张返工重译）· 漫画库（搜索 + 分页 + 隐藏删除）· 设置页 + **引擎诊断视图** · 全屏看图（`Ctrl/⌘ + 滚轮`锚点缩放 + 拖拽，含**非手势兜底按钮**）。
-- **翻译引擎接入 S0–S8 全部完成**：S1 适配层（D-62）· S2 三进程生命周期（D-64…D-70，`ServiceManager` 管 `Children{service, engine}`，就绪为**三重判定**：进程存活 + 端口 + HTTP）· S3 模型管理（D-72，断点续传 + store 硬链接）· S4 档位 / 加速后端 / 降档重试 / 两级空闲卸载（D-73，**③ 的归属权从 Rust 移交服务端** 的 `mangasvc::engine::supervisor`）· S5 契约增量 9 键 sidecar + 三个 503 分流 + 需鉴权的 `GET /engine/status`（D-74）· **S6 Box UI 诊断视图 + X-C3「准备中」时间线**（D-75）· **S7 真机端到端 E1–E11**（D-76，逐项总表 `docs/engine-e2e-acceptance-report.md`）· **S8 插件串联 P-1…P-4**（D-77）。
+- **翻译引擎接入 S0–S8 全部完成**：S1 适配层（D-62）· S2 三进程生命周期（D-64…D-70，`ServiceManager` 管 `Children{service, engine}`，就绪为**三重判定**：进程存活 + 端口 + HTTP）· S3 模型管理（D-72，断点续传 + store 硬链接）· S4 档位 / 加速后端 / 降档重试 / 两级空闲卸载（D-73，**③ 的归属权从 Rust 移交服务端** 的 `mangasvc::engine::supervisor`）· S5 契约增量 9 键 sidecar + 三个 503 分流 + 需鉴权的 `GET /engine/status`（D-74）· **S6 Box UI 诊断视图 + X-C3「准备中」时间线**（D-75）· **S7 真机端到端 E1–E11**（D-76，逐项总表 `docs/internal/engine-e2e-acceptance-report.md`）· **S8 插件串联 P-1…P-4**（D-77）。
 - **ver2.0 · 音乐模块**：网易云 / 酷狗 / QQ / 咪咕**四平台**（登录 / 搜索分页 / 歌单 / 播放 / 评论 · 歌手详情——后两者**仅网易云**）+ 音频代理 + 加密 + 歌词；心动模式 · **桌面歌词（独立置顶窗）** · 逐字歌词（卡拉OK）· 翻译歌词 · 演唱行 · 六皮肤 · 歌曲右键菜单 · 灵动岛歌词卡 · 音乐缓存 · 搜索虚拟滚动 · 音乐快捷键。
 - **ver2.0 · 设置页与 IA**：两级侧栏 · 两栏设置壳 · 「播放·媒体」/「翻译服务」分组 · 侧栏标签开关 / 存储占用 / 第三方许可（D-26…D-38、D-81…D-84）。
 - **Windows 10**：真引擎装配已平台化 + S1 真机已出真译文（D-85）；`[Errno 22]` 日志风暴（D-88）与重启后孤儿执行器占 8001（D-89）已修。

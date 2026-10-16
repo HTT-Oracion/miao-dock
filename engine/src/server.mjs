@@ -1,7 +1,7 @@
 // mangatranslator-mock —— sidecar 模拟引擎（内部件，对客户端不可见）
 //
 // 契约依据：§1 服务拓扑（sidecar 监听 127.0.0.1，端口自动探测，默认 5003；**客户端永久不可见**）
-// 顶替理由：真实模型未就绪（docs/spec-notes.md D-09）。本文件实现**内部 HTTP 边界**，
+// 顶替理由：真实模型未就绪（docs/internal/spec-notes.md D-09）。本文件实现**内部 HTTP 边界**，
 // 真实引擎接入时替换本进程即可——Service 侧只依赖 service/src/engine-client.mjs 一处。
 //
 // 边界：

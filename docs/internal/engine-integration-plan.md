@@ -4,7 +4,7 @@
 > 依据：《09》§6/§9、《03》全篇、《04》全篇、《01》§4、《02》§2.1；以及 **2026-10-05 在 `miao-dock` 仓库逐文件核实**的事实。  
 > 纪律：本文中每条"现状"都带文件证据；每个"待实测"都写清测法。**未实测的数字一律给区间，不给精确值。**
 >
-> **分工 / 里程碑 / 交付物 / 验收流程** 见配套文件 `docs/engine-integration-delivery-plan.md`（本文只管技术方案与阶段划分）。
+> **分工 / 里程碑 / 交付物 / 验收流程** 见配套文件 `docs/internal/engine-integration-delivery-plan.md`（本文只管技术方案与阶段划分）。
 
 
 
@@ -356,7 +356,7 @@ M4 Metal / Sakura-1.5B 官方速度基线 40–60 tok/s（《04》§11.3）。�
 | S4 | 档位 / 加速后端 / 降档重试 / 空闲卸载 | S2 | ✅ **通过**：E5/E6 可验（判定层 42 + 反证 13/13 · 端到端 16 + 反证 3/3，D-73）；真机项 E4/E8 归 S7 |
 | S5 | 契约增量（2 错误码 + `/health` 扩展 + `/engine/status`） | S2 | ✅ **通过**：契约断言 77/0 + 反证 4/4（D-74） |
 | S6 | Box UI（设置② 10 项 + 引擎诊断 + 准备中/首张稍慢） | S5 | ✅ **通过**：设置页 **135/0** + 反证 **63/63** · 契约 77/0 · 服务端设置 61/0（D-75；收尾修 StrictMode 守卫，见 D-76 决策 1-6） |
-| S7 | 真机端到端 E1–E11 | S2–S6 | ✅ **通过（本机可验部分）**：E1–E11 逐条取证 → `docs/engine-e2e-acceptance-report.md`；11 条里 4 条 ✅、7 条 ✅⚠️（未验半边**逐条登记、不计入已完成**）。6 个真缺陷修实现不放宽断言（D-76） |
+| S7 | 真机端到端 E1–E11 | S2–S6 | ✅ **通过（本机可验部分）**：E1–E11 逐条取证 → `docs/internal/engine-e2e-acceptance-report.md`；11 条里 4 条 ✅、7 条 ✅⚠️（未验半边**逐条登记、不计入已完成**）。6 个真缺陷修实现不放宽断言（D-76） |
 | S8 | 插件串联（P-1…P-4） | S7 | ✅ **通过**：单测 201 · verify 27/27 · noservice 探针 10/10 · 反证 3 条 + 4 项 FAIL；**真引擎下复跑 E9 = 19/0**（D-77） |
 
 ### S0 · 环境闸门（**先做这个，不写业务代码**）
@@ -516,7 +516,7 @@ V 组 2 条阶段日志、P3b/P3c「安装事实 ≠ 进程事实」、P4b「uvi
 
 **验收环境 = macOS（已拍板 §7-①）**；Windows 并入 M5 的 Windows 机器上做，本机不排。
 
-**结果**：正向交付 = `docs/engine-e2e-acceptance-report.md`（E1–E11 逐条：结论速览 + 复现命令 + 逐项实测 +
+**结果**：正向交付 = `docs/internal/engine-e2e-acceptance-report.md`（E1–E11 逐条：结论速览 + 复现命令 + 逐项实测 +
 **unverified register 10 条** + **环境陷阱 19 条**）。11 条里 **4 条 ✅ 全绿、7 条 ✅⚠️**（未验半边逐条登记，
 **一条都不计入"已完成"**）。过程中照出并修掉 **6 个真缺陷**（4 实现 / 1 断言 / 1 工程脚本），全部**修实现、不放宽断言**。
 
@@ -533,14 +533,14 @@ V 组 2 条阶段日志、P3b/P3c「安装事实 ≠ 进程事实」、P4b「uvi
 
 - **关键路径：S0 → S1 → S2 → (S5) → S7 → S8**。S1 必须在 S0 之后（快照是它的唯一依据），**不能先写适配层**。
 - **可并行**：S3（模型管理）与 S2（生命周期）互不阻塞；S6（UI）只依赖 S5 的字段定义，可与 S7 前半并行。
-- **不可并行**：`service/src/engine-client.mjs`、`src-tauri/src/service.rs`、`docs/spec-notes.md` 是共享写入点 —— 沿用本项目纪律**串行派发**。
+- **不可并行**：`service/src/engine-client.mjs`、`src-tauri/src/service.rs`、`docs/internal/spec-notes.md` 是共享写入点 —— 沿用本项目纪律**串行派发**。
 
 ### 每个阶段收尾必做
 
 1. `npm run selftest` / `check:ia` / `check:tls` / `check:music:refute` / `check:settings:refute` / `check:units:refute` / `check:docs` 全绿；
 2. **改 `e2e/e2e.mjs:492` 的 D4a 口径**（R6，早在 S1 就要做，不要留到 S7）；
 3. 条数一变同步 `AGENTS.md` / `README.md`（`check:docs` 会对账，漂移即红）；
-4. 台账回写 `docs/spec-notes.md`（D-xx 续号，当前到 D-74）；
+4. 台账回写 `docs/internal/spec-notes.md`（D-xx 续号，当前到 D-74）；
 5. 每个"机制类"断言配反证轮，**反证变红才算数**。
 
 ---
@@ -560,7 +560,7 @@ V 组 2 条阶段日志、P3b/P3c「安装事实 ≠ 进程事实」、P4b「uvi
 
 ## 7. 拍板结果
 
-> 2026-10-05 用户拍板，5 项全部关闭。**组织与交付（分工 / 里程碑 / 交付物 / 验收流程）见 `docs/engine-integration-delivery-plan.md`。**
+> 2026-10-05 用户拍板，5 项全部关闭。**组织与交付（分工 / 里程碑 / 交付物 / 验收流程）见 `docs/internal/engine-integration-delivery-plan.md`。**
 
 | # | 事项 | 拍板 | 落点 |
 |---|---|---|---|

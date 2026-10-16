@@ -130,14 +130,14 @@ Vite + React 18 + TypeScript，样式用**原生 CSS + CSS 变量**（`cssVars(m
 | A12 | SSE | 四类事件齐备；`heartbeat` 每 15s；带 `Last-Event-ID` 可续传、不重放已推事件 |
 | A13 | 队列 | 纯 FIFO 无插队；`GET /queue` 是位次与 eta 的**唯一来源**（客户端不估算） |
 | A14 | 安全 | 路径三次校验任一失败 → 403 + 安全日志；伪造 `filename="evil.png"` 但字节是 WEBP → 落盘扩展名取**嗅探结果**；根目录黑名单（`/`、`C:\`、家目录本身、`/tmp`、系统目录）拒绝 |
-| A15 | 任务列表（**契约外增量**） | `GET /tasks` 返回 running → queued → 终态（`finishedAt` 倒序）；终态行**留在列表里**（X-C1 的历史行来源）；来源归因取 `X-Box-Client`（`extension/*`→`extension`／`box-desktop/*`→`desktop`／缺省→`unknown`）；`status`/`limit` 过滤正确且 `limit=0 → 400`；**新增端点不得污染 `/queue` 语义**、不得改变 §5.2 响应形状；跨重启靠 `STATE_DIR/tasks/*.json` 恢复。依据见 `docs/spec-notes.md` G-04 |
+| A15 | 任务列表（**契约外增量**） | `GET /tasks` 返回 running → queued → 终态（`finishedAt` 倒序）；终态行**留在列表里**（X-C1 的历史行来源）；来源归因取 `X-Box-Client`（`extension/*`→`extension`／`box-desktop/*`→`desktop`／缺省→`unknown`）；`status`/`limit` 过滤正确且 `limit=0 → 400`；**新增端点不得污染 `/queue` 语义**、不得改变 §5.2 响应形状；跨重启靠 `STATE_DIR/tasks/*.json` 恢复。依据见 `docs/internal/spec-notes.md` G-04 |
 | A16 | 漫画库 | `GET /library` 逐漫画给出 `imageCount`/`translatedCount`/`byteSize`，且 `byteSize` **等于目录内所有文件字节数之和**（G-01 口径，与磁盘实测一致）；顶层 `totalImages`/`totalBytes` 为全库聚合；原/译文件流同 `seq` 可用；不存在的 `seq` → `404`（不返回空文件）；`reveal` 返回实际目录；受鉴权保护 |
-| A16b | 漫画库·逐页集合（**契约外增量**） | `translatedSeqs` / `missingSeqs` **逐页精确**，且**双向反证**成立：中间缺口（003 有原图、无译文）下旧的「`seq <= translatedCount`」代理给出 `[1,2,3]`、事实是 `[1,2,4]` —— 第 3 页**假阳性**（没有译文却报已译）、第 4 页**假阴性**（有译文却报待译），两个方向同时错；`seqMax` 不因缺口被截断；外部删掉一张原图后 `missingSeqs` 精确为 `[2]`（「缺页」态仍可达）。依据见 `docs/spec-notes.md` G-10 |
-| A17 | 本地续做（**契约外增量**） | `GET /library/{name}/resume` 只列出「有原图、缺译文」的页；`POST` 建单后进入**同一条**串行队列；**不新增原图编号、不改动已存在原图的字节**（§7.2 永不覆盖）；无缺页 / 指定已有译文的页 → `404`；`seqs` 非数组 → `400`；受鉴权保护。依据见 `docs/spec-notes.md` G-07 |
-| A19 | 失败页保原图（**裁定增量**） | 引擎失败的页，**原图落盘**、不留译文（3 原 + 2 译 = 5 个文件，而非 4 个）；`/library` 把它算作「待译」（`missingSeqs` **不含**它，否则库里会报成「缺页」＝像用户没给过这页）；`GET/POST /library/{n}/resume` 能列出并续做它；续做时失败原因是 `engine_*` 而非 `original_missing`（证明真拿到了原图）；续做不改动原图字节。依据见 `docs/spec-notes.md` G-11 |
-| A20 | 上传字节暂存（**裁定增量**） | 上传即把字节落一份到 `state/pending/<taskId>/`（**漫画目录之外**），而**漫画目录仍不存在**（§4.1 惰性创建 / §4.3 不提前留痕未被破坏）；`SIGKILL` 后原地重启，未落盘页的**原图被搬回漫画目录**、无译文、暂存区收干净；任务仍 `failed(service_restarted)`（姿态：不做后台自动续做，由用户点「继续翻译」）；库里是 **4 页 / `seqMax` 4**（修复前静默缩水成 1 页）、逐页集合全在「待译」、无一页「缺页」；清单 `[1,2,3,4]`、`POST /resume` 返 201、续做失败原因是 `engine_*` 而非 `original_missing`（证明送进引擎的是**恢复出来的**原图）。**反证**：偷走暂存再走一遍 → 漫画目录依旧不存在、库里连条目都没有（排除「救回另有来源」）。`A10` 另补「取消后暂存区被清干净」。依据见 `docs/spec-notes.md` G-12 |
-| A21 | 落盘根目录可写性（**契约 §2.2 `DISK_FULL`**） | 根目录去掉写位（`chmod 0500`）→ `POST /tasks` 回 **507 `DISK_FULL`**、`details.reason === 'EACCES'`（原因带得出来）、不留 probe 残留文件；**反方向**：用 `NODE_OPTIONS=--import` 注入一个**刻意不带 errno** 的探测写入错误 → 必须回 **500 `INTERNAL`** 而**不是** 507「磁盘满或权限不足」，且原因留在 `details.reason` 里。依据见 `docs/spec-notes.md` D-19 |
-| A18 | 子进程守护（**契约 B4 的异常分支**） | 父进程被 SIGKILL（不可捕获）后，子进程仍自行退出、端口释放；父进程健在时**不误杀**（跨 2 个看守周期）。harness 刻意让子进程 stdout 走**文件**而非管道，避免 EPIPE 冒充「看守生效」（反证：`MIAO_NO_PARENT_WATCH=1` 时该断言必失败）。依据见 `docs/spec-notes.md` D-12 |
+| A16b | 漫画库·逐页集合（**契约外增量**） | `translatedSeqs` / `missingSeqs` **逐页精确**，且**双向反证**成立：中间缺口（003 有原图、无译文）下旧的「`seq <= translatedCount`」代理给出 `[1,2,3]`、事实是 `[1,2,4]` —— 第 3 页**假阳性**（没有译文却报已译）、第 4 页**假阴性**（有译文却报待译），两个方向同时错；`seqMax` 不因缺口被截断；外部删掉一张原图后 `missingSeqs` 精确为 `[2]`（「缺页」态仍可达）。依据见 `docs/internal/spec-notes.md` G-10 |
+| A17 | 本地续做（**契约外增量**） | `GET /library/{name}/resume` 只列出「有原图、缺译文」的页；`POST` 建单后进入**同一条**串行队列；**不新增原图编号、不改动已存在原图的字节**（§7.2 永不覆盖）；无缺页 / 指定已有译文的页 → `404`；`seqs` 非数组 → `400`；受鉴权保护。依据见 `docs/internal/spec-notes.md` G-07 |
+| A19 | 失败页保原图（**裁定增量**） | 引擎失败的页，**原图落盘**、不留译文（3 原 + 2 译 = 5 个文件，而非 4 个）；`/library` 把它算作「待译」（`missingSeqs` **不含**它，否则库里会报成「缺页」＝像用户没给过这页）；`GET/POST /library/{n}/resume` 能列出并续做它；续做时失败原因是 `engine_*` 而非 `original_missing`（证明真拿到了原图）；续做不改动原图字节。依据见 `docs/internal/spec-notes.md` G-11 |
+| A20 | 上传字节暂存（**裁定增量**） | 上传即把字节落一份到 `state/pending/<taskId>/`（**漫画目录之外**），而**漫画目录仍不存在**（§4.1 惰性创建 / §4.3 不提前留痕未被破坏）；`SIGKILL` 后原地重启，未落盘页的**原图被搬回漫画目录**、无译文、暂存区收干净；任务仍 `failed(service_restarted)`（姿态：不做后台自动续做，由用户点「继续翻译」）；库里是 **4 页 / `seqMax` 4**（修复前静默缩水成 1 页）、逐页集合全在「待译」、无一页「缺页」；清单 `[1,2,3,4]`、`POST /resume` 返 201、续做失败原因是 `engine_*` 而非 `original_missing`（证明送进引擎的是**恢复出来的**原图）。**反证**：偷走暂存再走一遍 → 漫画目录依旧不存在、库里连条目都没有（排除「救回另有来源」）。`A10` 另补「取消后暂存区被清干净」。依据见 `docs/internal/spec-notes.md` G-12 |
+| A21 | 落盘根目录可写性（**契约 §2.2 `DISK_FULL`**） | 根目录去掉写位（`chmod 0500`）→ `POST /tasks` 回 **507 `DISK_FULL`**、`details.reason === 'EACCES'`（原因带得出来）、不留 probe 残留文件；**反方向**：用 `NODE_OPTIONS=--import` 注入一个**刻意不带 errno** 的探测写入错误 → 必须回 **500 `INTERNAL`** 而**不是** 507「磁盘满或权限不足」，且原因留在 `details.reason` 里。依据见 `docs/internal/spec-notes.md` D-19 |
+| A18 | 子进程守护（**契约 B4 的异常分支**） | 父进程被 SIGKILL（不可捕获）后，子进程仍自行退出、端口释放；父进程健在时**不误杀**（跨 2 个看守周期）。harness 刻意让子进程 stdout 走**文件**而非管道，避免 EPIPE 冒充「看守生效」（反证：`MIAO_NO_PARENT_WATCH=1` 时该断言必失败）。依据见 `docs/internal/spec-notes.md` D-12 |
 
 ### B. 服务生命周期
 
@@ -147,7 +147,7 @@ Vite + React 18 + TypeScript，样式用**原生 CSS + CSS 变量**（`cssVars(m
 | B2 | 托盘常驻 | 托盘图标在；状态点反映 `running/starting/stopped/error` 四态 |
 | B3 | 退出确认 | 托盘退出 → 二次确认，文案含「退出后浏览器插件将无法提交翻译任务」 |
 | B4 | 退出清理 | 退出后 `5180` 端口释放、子进程无残留（`ps` 无 `manga-service`） |
-| B5 | 异常退出清理（**易漏**） | 主进程**被强杀 / 崩溃**（SIGKILL 不可捕获）后，子进程仍能自行退出、`5180`/`5003` 释放。依据见 `docs/spec-notes.md` D-12；自测 A18 覆盖 |
+| B5 | 异常退出清理（**易漏**） | 主进程**被强杀 / 崩溃**（SIGKILL 不可捕获）后，子进程仍能自行退出、`5180`/`5003` 释放。依据见 `docs/internal/spec-notes.md` D-12；自测 A18 覆盖 |
 
 **怎么跑（一条命令）**
 
@@ -191,8 +191,8 @@ B1–B3 原本只能靠人点，而本机未授予「自动化」权限（`osasc
 | D1 | 与插件同契约联调 | 插件提交 31 张 → **一个 Task 两个 Batch**，队列中占**一个**位置；`seqFrom/seqTo` 连续无重号 |
 | D2 | 本机投放同队列 | 投放 21 张 → 进入**同一条**串行队列；>20 → 同一 `BATCH_LIMIT_EXCEEDED` |
 | D3 | 落盘可见 | 翻译完成后 `~/Pictures/Box 漫画/<漫画名>/` 出现成对的 `NNN.png` + `NNN_translated.png`（31 原 + 30 译 = **61** 个文件：失败的页**留原图、不留译文**，见 G-11）；漫画库能看到；对照页可左右翻页；「打开目录」能唤起访达；**队列屏「重试」在 `partial_failed` 任务上真的可用**（走 `POST /resume`，旧语义下它会 404） |
-| D4 | 时效 | 20 张在**时效预算**内完成（预算 = `MIAO_E2E_ITEM_MS` 单张基准 × 20 × 1.2 抖动 + 10s 管道余量；基准默认 300ms = 模拟引擎口径），且进度与 SSE 一致。**已不再写死 30s** —— 真引擎是秒级/张，写死会在接入那天必红（`docs/spec-notes.md` D-58） |
-| D5 | 漫画库逐页判定（**缺陷回归**） | 中间缺口时 `translatedSeqs` **精确**、且与旧的「张数代理」结论**双向相反**（一个方向的假阳性 + 另一个方向的假阴性）；失败页不得被判成「已译」、不得永远停在「加载中…」、也**不得被报成「缺页」**（那读起来像用户根本没给过这一页）。依据见 `docs/spec-notes.md` G-10 |
+| D4 | 时效 | 20 张在**时效预算**内完成（预算 = `MIAO_E2E_ITEM_MS` 单张基准 × 20 × 1.2 抖动 + 10s 管道余量；基准默认 300ms = 模拟引擎口径），且进度与 SSE 一致。**已不再写死 30s** —— 真引擎是秒级/张，写死会在接入那天必红（`docs/internal/spec-notes.md` D-58） |
+| D5 | 漫画库逐页判定（**缺陷回归**） | 中间缺口时 `translatedSeqs` **精确**、且与旧的「张数代理」结论**双向相反**（一个方向的假阳性 + 另一个方向的假阴性）；失败页不得被判成「已译」、不得永远停在「加载中…」、也**不得被报成「缺页」**（那读起来像用户根本没给过这一页）。依据见 `docs/internal/spec-notes.md` G-10 |
 
 **怎么跑（一条命令）**
 
@@ -204,12 +204,12 @@ npm run task -- capture    # 截图取证（需屏幕解锁，见下）
 `e2e` 与 `capture` 共用 `MIAO_E2E_TMP`（默认项目内 `.tmp/e2e/`）：端到端那轮的落盘产物
 **故意保留**，正是截图要拍的真数据 —— 清理只发生在**下一次运行的开头**，所以先 `e2e` 再 `capture`。
 
-`capture` 有三个环境前提，都不在方案文档里、各踩过一次（`docs/spec-notes.md` D-15、D-16）：
+`capture` 有三个环境前提，都不在方案文档里、各踩过一次（`docs/internal/spec-notes.md` D-15、D-16）：
 显示器**唤醒**、屏幕**解锁**、两个脚本的临时路径**一致**。任一不满足时它会**拒绝出图并退出 2**，
 而不是交出一批看起来「有产物」的假证据。
 
 `selftest:app` 也一度要求屏幕解锁（规格自检里的 `requestAnimationFrame` 在窗口被遮挡时不触发，
-结果静默归零）—— 那条已改成定时器兜底，现在**锁屏下也能跑出 12/12**，见 `docs/spec-notes.md` D-17。
+结果静默归零）—— 那条已改成定时器兜底，现在**锁屏下也能跑出 12/12**，见 `docs/internal/spec-notes.md` D-17。
 **验收不该因为没人看着就悄悄降级。**
 
 ---

@@ -3,7 +3,7 @@
 > 本文件记录**实现相对方案文档的偏离**与**规格未覆盖处的裁定**。
 > 每条必须写明：为什么、影响面、回写落点。方案文档未明确处不擅自"发明"规则，一律在此留痕。
 
-> 📌 **本文件已封卷于 D-136**（5700+ 行）。**D-137 起的新条目写 `docs/spec-notes-1.md`**。
+> 📌 **本文件已封卷于 D-136**（5700+ 行）。**D-137 起的新条目写 `docs/internal/spec-notes-1.md`**。
 > 两者同权、编号全局接续；既有条目一律留在本文件不动（历史痕迹本身有价值）。
 
 ---
@@ -14,7 +14,7 @@
 - **裁定**：`box-service` 用 **Node 实现，作为 Tauri 的子进程拉起**；Rust 层只做 `ServiceManager`（生命周期 + 四态机 + 端口探测 + 日志转发）。
 - **理由**：① 契约服务端语义（NFKC 10 步规范化、Task/Batch/Item 三层、幂等续做、SSE、编号分配）在插件端 `mock-service` 已有**经 27 项 e2e 验证过的同源实现**，用 Rust 重写等于推倒重来；② 语言选择不影响任何对外行为——**契约是唯一事实源，客户端看不见实现语言**。
 - **影响面**：需要对「服务随窗口生命周期」做正确的进程管理（见 D-08）；多一个子进程的资源开销（可接受）。
-- **回写落点**：本文件 + `docs/dev-plan.md` §2.2 R-a。
+- **回写落点**：本文件 + `docs/internal/dev-plan.md` §2.2 R-a。
 
 ## D-08 运行时来源：本迭代用系统 `node`（自带运行时列为 v2）
 
@@ -22,7 +22,7 @@
 - **裁定**：本迭代取 **①**；② 记入 v2 演进项。
 - **理由**：本轮交付目标是**功能与契约的完整性验证**，本机 node v22 已具备；打包分发不在本轮验收面内（方案 §9 也把「独立系统服务/开机自启」列为 v2）。把运行时打包塞进本轮只会推迟功能验收，不产生可验证价值。
 - **影响面**：**分发给最终用户前必须补齐**，否则「即开即用」承诺不成立（《02》§2.2）。已在 README 与 dev-plan 风险表标注。
-- **回写落点**：本文件 + `docs/dev-plan.md` §2.2 R-b / §5 风险 3。
+- **回写落点**：本文件 + `docs/internal/dev-plan.md` §2.2 R-b / §5 风险 3。
 
 ## D-09 sidecar 顶替：模拟翻译引擎（真实模型未就绪）
 
@@ -30,7 +30,7 @@
 - **裁定**：本轮实现一个**模拟引擎** `engine/`，跑在 `127.0.0.1:5003`，实现 **box-service 与引擎之间的内部 HTTP 边界**：接收单张原图字节 + 语向 → 返回译文图字节；可注入失败与耗时以覆盖 `failed` / `partial_failed` / 重试路径。
 - **理由**：这保证「建单 → 排队 → 逐张翻译 → 落盘 → SSE 推送」**全链路真实可跑**，且落盘产物是**真实图片文件**（可打开目视验证）。真实引擎接入时**只替换适配层实现**，契约侧零改动。
 - **影响面**：译文内容是程序化生成（非真翻译），因此「译文质量」不在本轮验收面内；验收对象是**流程、落盘、状态与契约**。
-- **回写落点**：本文件 + `docs/dev-plan.md` §2.2 R-c。
+- **回写落点**：本文件 + `docs/internal/dev-plan.md` §2.2 R-c。
 
 ---
 
@@ -39,7 +39,7 @@
 - **问题**：契约规定根目录为 `~/Pictures/Box 漫画/`（可在设置中修改）。验收与自动化测试若直接写用户真实图片目录，会污染用户数据、且难以清理。
 - **裁定**：实现保留契约默认值，同时支持环境变量 `MIAO_ROOT` 覆盖（用于验收与测试）；**UI 与 `/health` 上报的根目录始终以实际生效值为准**，不硬编码。
 - **理由**：把「可测试性」与「契约默认值」解耦，避免为了测试去改契约；也让「设置中修改根目录」这一既有能力有了实现落点。
-- **回写落点**：本文件 + `docs/dev-plan.md` §5 风险 5。
+- **回写落点**：本文件 + `docs/internal/dev-plan.md` §5 风险 5。
 
 ---
 
@@ -59,7 +59,7 @@
   - `unknown` 不猜成「来自浏览器插件」：宁可显示「—」，也不给用户一个看起来确定、实际是编的归因。
 - **跨重启**：列表数据源是 `store.tasks`，而 `init()` 启动时已把 `STATE_DIR/tasks/*.json` 清单**全部恢复**（非终态任务按 `service_restarted` 收尾为 `failed`）。因此列表**天然跨重启**——队列页的「已完成」行是上次会话留下的真实记录，不是内存残影。**无需新增加载逻辑，只加了一个视图函数。**
 - **影响面**：`GET /tasks` 是**桌面端专用增量**。插件端那份契约服务端副本（`miao-trans/mock-service`，27 项 e2e 的测试替身）**不跟着改**——它必须继续严格等于契约。两份实现的差异**仅此一项**，且方向是「桌面端多一个只读端点」，不会让任一侧的既有断言失败。
-- **回写落点**：本文件 + `docs/dev-plan.md` §4 验收 A15；**建议方案文档下一版把 `GET /tasks` 补进契约 §5**，否则每个 Box 端实现都要重新发明一次。
+- **回写落点**：本文件 + `docs/internal/dev-plan.md` §4 验收 A15；**建议方案文档下一版把 `GET /tasks` 补进契约 §5**，否则每个 Box 端实现都要重新发明一次。
 
 ---
 
@@ -1132,7 +1132,7 @@ JS 增量 +1.56 kB（gzip +0.5 kB）。
 
 `scripts/music-platform-check.mjs` 与 `scripts/settings-media-check.mjs` 里
 P2 的 `HEARTBEAT` 6 条 + P3 的 `LYRICS` 9 条断言**只存在于工作区** ——
-两次提交时 `git add` 只列了 `src`、`units-structure-check.mjs`、`docs/spec-notes.md`。
+两次提交时 `git add` 只列了 `src`、`units-structure-check.mjs`、`docs/internal/spec-notes.md`。
 后果：**已推送的 HEAD 上，文档写着「check:music 101 条 / 反证 54 条」，而 HEAD 里的脚本只有 86 条**。
 换台机器 clone 下来跑出来是 86，与文档不符。
 
@@ -1281,7 +1281,7 @@ P3 的灵动岛波形接管了 `<audio>`（做法本身对），但元素**没�
 
 ## D-55 · 三项歌词优化：逐字/整行开关 + 同步翻译 + 演唱行（2026-10-05）
 
-> 📌 **后继见 `docs/spec-notes-1.md` D-137**：本条的「整行模式」实现（双层 + width 写死 100%）
+> 📌 **后继见 `docs/internal/spec-notes-1.md` D-137**：本条的「整行模式」实现（双层 + width 写死 100%）
 > 已被 D-137 替换为**单层渲染**，默认值也从「逐字」改为「整行」。下文按当时事实保留，不改历史。
 
 拍板（原文在本次对话）：
@@ -1430,8 +1430,8 @@ store 的 `progressMs` 只是 `onTimeUpdate`（~4Hz）驱动的**降级兜底**�
 ⑤ Windows 侧代码**本轮就写、不验收**，`#[cfg(windows)]` 隔离 + 验收标记 `unverified`。
 
 ### 交付物
-- `docs/engine-integration-plan.md`（技术方案与阶段划分，368 行）
-- `docs/engine-integration-delivery-plan.md`（**分工 / 里程碑 / 交付物 / 验收流程**，本次新增）
+- `docs/internal/engine-integration-plan.md`（技术方案与阶段划分，368 行）
+- `docs/internal/engine-integration-delivery-plan.md`（**分工 / 里程碑 / 交付物 / 验收流程**，本次新增）
 - `tmp-engine-test/probe.mjs`（服务层探针，可复现；`tmp-*/` 已 gitignore，不写用户真实图片目录）
 
 ### 事实性纠错（方案与仓库不符，实施前必须先纠正）
@@ -1505,9 +1505,9 @@ store 的 `progressMs` 只是 `onTimeUpdate`（~4Hz）驱动的**降级兜底**�
 
 ### 六、本节新增/修改的文件
 `.gitignore`（+`test-manga/`、+`runtimes/`）· `engine/VERSIONS.lock`（新）·
-`scripts/e2e.mjs`（三处口径）· `docs/dev-plan.md`（D4 判据同步）·
-`docs/engine-integration-plan.md`（磁盘/网络/R1/R6/R9–R12/§4.5）·
-`docs/engine-integration-delivery-plan.md`（环境事实与 M1 进度）·
+`scripts/e2e.mjs`（三处口径）· `docs/internal/dev-plan.md`（D4 判据同步）·
+`docs/internal/engine-integration-plan.md`（磁盘/网络/R1/R6/R9–R12/§4.5）·
+`docs/internal/engine-integration-delivery-plan.md`（环境事实与 M1 进度）·
 `tmp-engine-test/mps-probe.py`（新，探针）。
 
 ---
@@ -1702,8 +1702,8 @@ A+B 合起来才证明**预算确实随基准缩放**（即旋钮真的接管了
 
 ### 八、本节新增/修改的文件
 `engine/VERSIONS.lock`（引擎 commit + Python 3.11 纠正 + 引擎形状 + 许可）、
-`docs/engine-integration-plan.md`（§4.2 表 + **§4.6 新增**）、
-`docs/spec-notes.md`（本节）· `scripts/e2e.mjs`（`dumpProcLogs()`）·
+`docs/internal/engine-integration-plan.md`（§4.2 表 + **§4.6 新增**）、
+`docs/internal/spec-notes.md`（本节）· `scripts/e2e.mjs`（`dumpProcLogs()`）·
 `runtimes/manga-translator/`（源码 `src/`、`python-3.11/`、`python-3.12-probe/`、`venv/`、`venv-3.12-probe/`）。
 
 ---
@@ -1795,7 +1795,7 @@ A+B 合起来才证明**预算确实随基准缩放**（即旋钮真的接管了
 `tmp-engine-test/broker-ab.sh`（新，四臂对照）·
 `runtimes/manga-translator/openapi.engine.json`（新，S1 的快照来源）·
 `runtimes/manga-translator/out-first/test_0.webp`（新，G1 产物）·
-`docs/engine-integration-plan.md` · `docs/engine-integration-delivery-plan.md`（M1 状态回填）。
+`docs/internal/engine-integration-plan.md` · `docs/internal/engine-integration-delivery-plan.md`（M1 状态回填）。
 
 ---
 
@@ -2124,15 +2124,15 @@ WebView 走 `::1` —— 强行只绑 IPv4 会把 WebView 弄坏。
 ## D-71 · 🔴 台账**自己**成了 `check:docs` 的恒红：被扫描的文档里**不得写不存在命令的字面量**（2026-10-05）
 
 **现象**：S2 收口跑全量门时 `check:docs` 报 **13/1**（此前记录为 14/0）：
-`docs/spec-notes.md 引用的 npm 命令都存在 [不存在：check:no-such-command-x]`。
+`docs/internal/spec-notes.md 引用的 npm 命令都存在 [不存在：check:no-such-command-x]`。
 
 **根因（两个各自都合理的改动叠加）**：
 ① D-63 记录反证时，把那句杜撰命令**按字面量**写进了本文件（当时本文件**不在** `ALL_DOCS` 里，无害）；
-② 后来 `scripts/docs-consistency-check.mjs` 的 `ALL_DOCS = [...DOCS, 'docs/spec-notes.md']`
+② 后来 `scripts/docs-consistency-check.mjs` 的 `ALL_DOCS = [...DOCS, 'docs/internal/spec-notes.md']`
 把台账也纳入**命令存在性**检查（台账**不参与条数比对**，但参与这一项）⇒ 台账里那句历史记录**变成恒红**。
 
 **判据（为什么定位成"文档错"而不是"断言太宽"）**：
-`git show HEAD:docs/spec-notes.md` 里该行**同样存在**，且脚本本次**未被修改**（不在 diff 里）
+`git show HEAD:docs/internal/spec-notes.md` 里该行**同样存在**，且脚本本次**未被修改**（不在 diff 里）
 ⇒ 这是**既有红**、非本轮引入；且"引用一个真实存在的命令"才是这条断言的本意，
 台账举例用的是**杜撰命令**，属于文档写得歧义 ⇒ **该改文档，不该放宽断言**。
 
@@ -2260,7 +2260,7 @@ cd runtimes/manga-translator/src          # ⚠️ 必须在 src/ 下：包是 s
 **本节新增/修改的文件**：`engine/models.manifest.json`（新）· `engine/model-store.mjs`（新）·
 `engine/scripts/fetch-models.mjs`（新）· `engine/scripts/model-store-check.mjs`（新）·
 `package.json`（+3 命令）· `.gitignore`（+`.tmp-models/`）· 本文件 ·
-`docs/engine-integration-plan.md`（§S3）· `docs/engine-integration-delivery-plan.md`（M4 / §4.1）·
+`docs/internal/engine-integration-plan.md`（§S3）· `docs/internal/engine-integration-delivery-plan.md`（M4 / §4.1）·
 `AGENTS.md` · `README.md`。
 
 
@@ -2410,8 +2410,8 @@ mock 档的替身是我们自己的 Node 进程，内部已装 `engine/src/paren
 `service/src/config.mjs` · `service/src/engine-client.mjs` · `service/scripts/print-launch-plan.mjs` ·
 `service/scripts/launch-plan-check.mjs` · `service/scripts/selftest.mjs` · `engine/src/mock-llm.mjs` ·
 `engine/src/server.mjs` · `src-tauri/src/service.rs` · `src-tauri/src/selftest.rs` ·
-`package.json` · 本文件 · `docs/engine-integration-plan.md`（§5 S4）·
-`docs/engine-integration-delivery-plan.md`（M5 / §4.1）· `AGENTS.md` · `README.md`。
+`package.json` · 本文件 · `docs/internal/engine-integration-plan.md`（§5 S4）·
+`docs/internal/engine-integration-delivery-plan.md`（M5 / §4.1）· `AGENTS.md` · `README.md`。
 
 ---
 
@@ -2579,7 +2579,7 @@ H 实例（mock 档）的阶段日志**如实的空** —— ver1.0 自定义协
 **本节新增/修改的文件**：`service/src/model-status.mjs`（新）· `service/scripts/contract-delta-check.mjs`（新）·
 `service/src/errors.mjs` · `service/src/config.mjs` · `service/src/server.mjs` · `service/src/engine-client.mjs` ·
 `service/scripts/engine-client-check.mjs` · `package.json` · 本文件 ·
-`docs/engine-integration-plan.md`（§5 阶段总览 / S1 / S5）· `AGENTS.md` · `README.md`。
+`docs/internal/engine-integration-plan.md`（§5 阶段总览 / S1 / S5）· `AGENTS.md` · `README.md`。
 
 ---
 
@@ -2719,7 +2719,7 @@ X-C3 与引擎诊断视图都把 `mode` 摆在明面上；`degraded` 同理 —�
 `src/screens/{SettingsScreen.tsx, NotReadyScreen.tsx}` · `src/App.tsx` · `src/{ipc.ts, nav.ts}` ·
 `src/components/units/index.ts` · `src/styles/{components.scss, settings.scss, manga.scss}` ·
 `scripts/{settings-media-check.mjs, units-structure-check.mjs}` · `package.json` · 本文件 ·
-`docs/engine-integration-plan.md`（§5 阶段总览 / S6）· `AGENTS.md` · `README.md`。
+`docs/internal/engine-integration-plan.md`（§5 阶段总览 / S6）· `AGENTS.md` · `README.md`。
 
 
 ---
@@ -2728,13 +2728,13 @@ X-C3 与引擎诊断视图都把 `mode` 摆在明面上；`degraded` 同理 —�
 
 > S7 是**验收**阶段：《04》§14.2 的 E1–E11 逐条在这台机器上验，**不改产品行为** ——
 > 唯一的例外是"被断言照出来的缺陷"（**5 个**，见决策 1；第 5 个由**全量门**照出）。所以本节点的交付物主要是**取证**，
-> 而不是功能。判据原文取自《04》§14.2，报告 `docs/engine-e2e-acceptance-report.md` 是本节点的正面交付。
+> 而不是功能。判据原文取自《04》§14.2，报告 `docs/internal/engine-e2e-acceptance-report.md` 是本节点的正面交付。
 
 ### 交付
 
 | 文件 | 作用 |
 |---|---|
-| `docs/engine-e2e-acceptance-report.md`（新） | E1–E11 逐项：结论速览 + 复现命令 + 逐项实测 + **unverified register 10 条**（**不计入"已完成"**）+ 环境陷阱 **19 条** |
+| `docs/internal/engine-e2e-acceptance-report.md`（新） | E1–E11 逐项：结论速览 + 复现命令 + 逐项实测 + **unverified register 10 条**（**不计入"已完成"**）+ 环境陷阱 **19 条** |
 | `engine/scripts/e3-real-full-chain-check.mjs`（新） | E3 真引擎全链路：31 张（20+11 两批）→ 一个 Task → **SSE 页集合与磁盘译文集合逐项相等**。**8/8** |
 | `service/scripts/e4-tier-check.mjs`（新） | E4 档位：**6/0** · 反证 **4/4** |
 | `engine/scripts/e7-real-verify-check.mjs`（新） | E7 真机半边：3.6 GB 权重 sha256 **2.3 s**，篡改中间/末尾字节都检出。**6/0** · 反证 **3/3** |
@@ -2857,14 +2857,14 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
    与 E9 的产物口径一致；并把 `J1 最终截图` 从**恒真**的 `check(..., true)` 改成**真断言**（文件存在且非空）。
 
 
-**本节新增/修改的文件**：`docs/engine-e2e-acceptance-report.md`（新）·
+**本节新增/修改的文件**：`docs/internal/engine-e2e-acceptance-report.md`（新）·
 `engine/scripts/{e3-real-full-chain-check,e7-real-verify-check}.mjs`（新）·
 `service/scripts/{e4-tier-check,e8-accel-check,e10-security-check,e5-e6-check}.mjs` ·
 `service/src/{store,idle-policy,config,server,engine-profile,llm-supervisor}.mjs` · `scripts/lifespan-selftest.mjs` ·
 `scripts/units-structure-check.mjs`（还原动作包 try/catch）· `src-tauri/src/selftest.rs`（S2c 按名字点名）·
 `src/screens/settings/engine-state.ts`（StrictMode 守卫）· `docs/refs/e2e/{05-settings-engine,06-settings-diag}.png`（新）·
 `docs/refs/engine/{01-real-translation,02-e9-panel-18,02-e9-page-translated}.png`（新）· `docs/refs/e2e/{01..04}-*.png`（重截）·
-`package.json` · 本文件 · `docs/engine-integration-plan.md`（§5 阶段总览 / S7）· `AGENTS.md` · `README.md`。
+`package.json` · 本文件 · `docs/internal/engine-integration-plan.md`（§5 阶段总览 / S7）· `AGENTS.md` · `README.md`。
 （另一仓 `miao-trans`：`e2e/e9-real-engine.mjs`（新）· `e2e/verify.mjs` · `.gitignore`。）
 
 ---
@@ -2873,7 +2873,7 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 
 > S8 是**最后一公里**：插件在**真引擎**下跑通《01》§4.1/§4.2 的两态与文案。代码在**另一仓**
 > `miao-trans`（两个 commit：`a1d8aa5` 主体 + `0195952` 两处落点修正），验收回到本仓 D-76 的 E9。
-> 本节点**没有**新的规格偏差（`miao-trans/docs/spec-notes.md` 的 D 系列未新增）—— 两处落错是**实现**错，不是文档错。
+> 本节点**没有**新的规格偏差（`miao-trans/docs/internal/spec-notes.md` 的 D 系列未新增）—— 两处落错是**实现**错，不是文档错。
 
 ### 交付（`miao-trans` 仓）
 
@@ -2936,7 +2936,7 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
   ③ 恢复 `DEMO_BYPASS_SERVICE_READY` 语义（浮层按 `ready` 渲染）⇒ noservice 探针 **4 项 FAIL**。
 - **真机验收**（本节点唯一"只能在真环境发生"的一条）：**真引擎下复跑 E9 = 19/0**
   （真实漫画站 `jmanga.media` + 真 box-service + 真 ③；详表见 D-76 断言段与
-  `docs/engine-e2e-acceptance-report.md` §2.9）。
+  `docs/internal/engine-e2e-acceptance-report.md` §2.9）。
 
 ### 未做 / 边界
 
@@ -3085,13 +3085,13 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 
 ### 三、文档策略：**台账不改历史，只加映射**
 
-`docs/spec-notes.md` 里几十处旧路径（`service/scripts/…` / `tmp-engine-test/…` / `.tmp-e2e/`）**一律不改** ——
+`docs/internal/spec-notes.md` 里几十处旧路径（`service/scripts/…` / `tmp-engine-test/…` / `.tmp-e2e/`）**一律不改** ——
 它们记录的是**当时的事实**；按本仓既有原则（`check:docs` 刻意不让台账参与现状比对），
 历史条目不该被现状反向改写。**读者按本节的两张表做映射即可。**
 
 会**真的被照着敲**的文档则全部改到位：`engine/VERSIONS.lock`（版本锁）· `engine/models.manifest.json` ·
-`docs/engine-integration-plan.md` · `docs/engine-integration-delivery-plan.md` · `docs/dev-plan.md` ·
-`docs/manga-ocr-ocr-backend-assessment.md`（复现配方）· `docs/engine-e2e-acceptance-report.md`（复现命令列）
+`docs/internal/engine-integration-plan.md` · `docs/internal/engine-integration-delivery-plan.md` · `docs/internal/dev-plan.md` ·
+`docs/manga-ocr-ocr-backend-assessment.md`（复现配方）· `docs/internal/engine-e2e-acceptance-report.md`（复现命令列）
 · `AGENTS.md` · `README.md` · 各脚本自己的用法注释。
 
 **本节新增/修改的文件**：`e2e/**`（`scripts/` 整体迁入 + `service/scripts/`、`engine/scripts/` 的验收件迁入）·
@@ -3172,7 +3172,7 @@ E4（档位）/ E8（加速后端）都有"判据层能算、但结论不算数"
 ### 本节新增/修改的文件
 `service/src/store.mjs`（`nowIsoMs()` + 两处时间戳 + 订正 §81-93 的注释口径）·
 `e2e/service/engine-profile-check.mjs`（I10 + 反证 N + `EXPECTED_MUTATIONS` 13→14）·
-`AGENTS.md` / `README.md` / `docs/engine-integration-plan.md`（`check:profile` 42→43、反证 13→14）· 本文件。
+`AGENTS.md` / `README.md` / `docs/internal/engine-integration-plan.md`（`check:profile` 42→43、反证 13→14）· 本文件。
 
 
 ## D-81 · 设置页文案清理 + 整条删除两项（缓存清理 / 检查更新）（2026-10-07）
@@ -5761,7 +5761,7 @@ export const CHAPTER_DIR_RE = /^(\d{2})_第(\d{1,3})话$/;
 
 ## D-137 · 服务运行时 Rust 化：F0–F2 落地（2026-10-13）
 
-**背景**：计划 `docs/packaging-local-engine-dev-plan.md` v3.0 把「服务运行时 Rust 化」定为 F 组主线（裁定①：先 Rust 化、后打包）。本轮实现 F0/F1/F2，F3–F5 留待后轮。
+**背景**：计划 `docs/internal/packaging-local-engine-dev-plan.md` v3.0 把「服务运行时 Rust 化」定为 F 组主线（裁定①：先 Rust 化、后打包）。本轮实现 F0/F1/F2，F3–F5 留待后轮。
 
 **F0 · Rust 可独立运行的服务靶子**
 - 拆 `lib.rs`（`pub mod boxsvc; pub mod paths;`）+ `[[bin]] boxsvc`；`Cargo.toml` 加 `[lib]`/`[[bin]] x2`，tokio 加 `signal`。三目标均编译通过。
