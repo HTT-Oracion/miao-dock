@@ -717,7 +717,9 @@ impl ServiceManager {
             v
         };
         for (label, probe, timeout) in list {
-            wait_probe(label, &probe, timeout).map_err(|e| {
+            // 🔴 存活检查走 `all_alive`：它在**每个子进程**上 `try_wait()`，任一进程已退出
+            //    就立刻返回并点名是哪一个。锁在快照块结束时已释放，这里再取不会自锁。
+            wait_probe(label, &probe, timeout, || self.all_alive("引擎与服务栈")).map_err(|e| {
                 push_log(&self.log(), &format!("[miao-dock] ✗ {e}"));
                 e
             })?;
@@ -1275,12 +1277,27 @@ fn wait_ready(rx: &ReadyRx, timeout: Duration) -> Result<serde_json::Value, Stri
 
 // ------------------------------------------------------------------ 就绪探针
 
-fn wait_probe(label: &str, probe: &Probe, timeout: Duration) -> Result<(), String> {
+/// 等单条探针通过；`is_alive` 用来在**子进程已经退出**时立刻返回。
+///
+/// 🔴 为什么不能只等超时（2026-10-17 真机实测，D-231②）：③ 的 `wait_ready` 早就有
+///    "进程死了就别等满超时"的短路（`inner.child.try_wait()`），而 ② 这条没有。
+///    现场是 venv 装成 `torch 2.14.1+cpu`、配方却恒带 `--use-gpu`，引擎一起来就
+///    `CUDA or Metal compatible device could not be found` 退出；而探针循环只看端口与
+///    deadline ⇒ 每次启动白等满 **240s**（real 档探针预算），报的还是一句指向执行器端口的
+///    **假线索**（真因只在 stderr）。③ 的同一处毛病见 D-231⑤（文案写死"启动超时"）。
+fn wait_probe(
+    label: &str,
+    probe: &Probe,
+    timeout: Duration,
+    is_alive: impl Fn() -> Result<(), String>,
+) -> Result<(), String> {
     let deadline = Instant::now() + timeout;
     loop {
         if run_probe(probe).is_ok() {
             return Ok(());
         }
+        // 进程已经退出 ⇒ 这个端口永远不会来，立刻返回并点名是哪个进程死的
+        is_alive()?;
         if Instant::now() >= deadline {
             return Err(format!(
                 "{label} 探针超时（{}s）：{}",

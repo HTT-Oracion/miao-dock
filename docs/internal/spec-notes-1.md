@@ -4533,3 +4533,31 @@ Metal compatible device could not be found`）。本条按"一 bug 一提交"分
 static 门 **17/17**（改前 14/17）· 三条 DESKTOP 变异逐条按预期变红、
 `src\tools\desktopGards.ts` 字节一致。
 
+### D-231② ② 引擎秒死时不再空等 240s：`wait_probe` 加子进程存活短路
+
+**现场**（用户机器，`miao-dock` 装在 `F:\software\喵坞`）：`✗ engine 探针超时（240s）：
+TCP 127.0.0.1:5004 未在监听`，连着两轮（每轮 4 分钟）。而 stderr 里真正的错就在失败前 20 行：
+`[shared] Exception: CUDA or Metal compatible device could not be found in torch whilst
+--use-gpu args was set`。
+
+**根因**：`src-tauri/src/service/mod.rs` 的 `wait_probe` 只看**端口 + deadline**，从不看子进程死没死；
+真引擎的就绪判定是三重（uvicorn 在听 + `POST /queue-size` 应答 + **执行器端口 port+1 在听**），
+引擎一起来就退 ⇒ 5004 永远没人 listen ⇒ 干等满 real 档的 240s 预算，报的还是一句指向
+执行器端口的**假线索**。③ 的 `wait_ready`（`supervisor.rs`）早就有这个短路（`child.try_wait()`）
+—— 同一个仓库两种写法，坏的那份恰好在天天用的链路上。
+
+**改法**：`wait_probe` 增一个 `is_alive: impl Fn() -> Result<(), String>` 参数，在
+`Instant::now() >= deadline` **之前**问一句；`wait_probes` 的调用点传
+`|| self.all_alive("引擎与服务栈")`（它在每个子进程上 `try_wait()`，任一退出即返回并点名是哪一个）。
+锁在快照块结束处已释放，闭包里再取不会自锁。
+
+**效果**：上面那台机器下次启动会**秒级**拿到
+`✗ 引擎与服务栈 失败：engine 进程已退出（exit status: 1）`，
+而不是 4 分钟后一句指向 5004 的假线索。
+
+**验收**：`cargo build` **0 warning / 0 error** · `check:launch-gate` 正向 **10/10**（9 → 10）·
+`--refute` **4 个变异全部按预期变红**（M1–M3 保持、M4 新增）+ `service.rs` 按字节还原 ·
+static 门 **17/17**。
+⚠️ 注：本条第一次落地时改动被回退过一次（`git status` 干净、文件里 `is_alive` 为 0 处），
+按纪律第 2 条"记忆不能当证据"重做了一遍并重新验证 —— 计划里写的"已改好、已验证"以工作区为准。
+

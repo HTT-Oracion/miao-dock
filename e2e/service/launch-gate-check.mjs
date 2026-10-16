@@ -142,6 +142,36 @@ function gateOnlyBlocksEngines() {
   };
 }
 
+/**
+ * ② 起不来时**不许空等满探针预算**（D-231②，2026-10-17 真机实测）。
+ *
+ * 🔴 现场：这台机器的 venv 装的是 `torch 2.14.1+cpu`，而配方默认恒带 `--use-gpu`
+ *    ⇒ 引擎一起来就 `CUDA or Metal compatible device could not be found` 退出。
+ *    但 L2 的探针循环只看端口与 deadline，**从不看子进程死没死** ⇒ 每次启动白等
+ *    240 s，报的还是一句指向执行器端口的**假线索**（真因只在 stderr 里）。
+ *    ③ 的 `wait_ready` 早就有"进程死了就别等满超时"的短路，② 这条漏了。
+ *    修法：`wait_probe` 收一个 `is_alive` 闭包，探针不过先问一句"还活着吗"。
+ */
+function probeWaitsOnChildLiveness() {
+  const src = fs.readFileSync(SERVICE_RS, 'utf8');
+  const fn = src.match(/fn wait_probe\([\s\S]*?\n\}/);
+  if (!fn) return { ok: false, why: 'service.rs 里找不到 wait_probe 函数（写法变了？）' };
+  const body = fn[0];
+  const live = body.indexOf('is_alive()?;');
+  const deadline = body.indexOf('Instant::now() >= deadline');
+  if (live < 0) {
+    return { ok: false, why: 'wait_probe 里没有 is_alive()? —— 引擎秒死也会等满 240s 探针预算（D-231②）' };
+  }
+  if (deadline < 0) return { ok: false, why: 'wait_probe 里找不到超时判断（写法变了？）' };
+  if (live > deadline) {
+    return { ok: false, why: '存活检查排在超时判断之后 ⇒ 仍然会先空等到超时才返回' };
+  }
+  if (!/wait_probe\(\s*label,\s*&probe,\s*timeout,\s*\|\|\s*self\.all_alive\(/.test(src)) {
+    return { ok: false, why: 'wait_probes 的调用点没把存活检查接进来（签名改了、调用点没跟上？）' };
+  }
+  return { ok: true, why: '探针不过先看子进程生死' };
+}
+
 if (!fs.existsSync(RUST_BIN)) {
   console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   process.exit(1);
@@ -227,6 +257,12 @@ if (!fs.existsSync(RUST_BIN)) {
   // G6：闸门**只挡引擎**（D-229）—— 它不得再 `return self.fail(...)`（那会把 ① 一起挡下）
   const g = gateOnlyBlocksEngines();
   check('G6 闸门只挡 ②/③、不得连 ① 服务一起挡（否则引导页的「开始下载」是死结，见 D-229）', g.ok, g.why);
+}
+
+{
+  // G7：闸门放行之后，②/① 的**存活**由探针循环自己盯 —— 进程死了必须立刻返回，不能空等满预算
+  const w = probeWaitsOnChildLiveness();
+  check('G7 源码钉 — wait_probe 探针不过先查子进程存活（引擎秒死不空等 240s；D-231②）', w.ok, w.why);
 }
 
 // ------------------------------------------------------------------ 反证
@@ -324,6 +360,24 @@ if (REFUTE) {
       const g = gateOnlyBlocksEngines();
       return !g.ok; // 期望：G6 源码钉红
     },
+  });
+
+  // M4：删掉 `wait_probe` 的存活检查 ⇒ G7 红（回到「死了也等满 240s」的旧行为）
+  //    ⚠️ 变异写成 `let _ = &is_alive;` 而不是直接删语句：删掉会让参数变成未使用
+  //    （`unused_variables` 告警），而这仓不 deny warnings —— 用引用既保持"编得过"，
+  //    又不会靠告警说话。
+  mutations.push({
+    id: 'M4',
+    what: '删掉 wait_probe 的子进程存活检查（回到「引擎死了也等满 240s」的旧行为）',
+    file: SERVICE_RS,
+    original: serviceOriginal,
+    edit: () => {
+      const anchor = '        is_alive()?;';
+      if (!serviceOriginal.includes(anchor))
+        throw new Error('M4 锚点未命中（wait_probe 里的 is_alive 调用写法变了？）');
+      fs.writeFileSync(SERVICE_RS, serviceOriginal.replace(anchor, '        let _ = &is_alive; // 变异：不再查存活'));
+    },
+    probe: async () => !probeWaitsOnChildLiveness().ok, // 期望：G7 源码钉红
   });
 
   let allRed = true;
