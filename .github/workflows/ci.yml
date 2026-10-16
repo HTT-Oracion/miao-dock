@@ -64,5 +64,11 @@ jobs:
           npm run task -- check:e4
           npm run task -- check:e10
 
+      # ── 代码校验：eslint + prettier（本地由 husky 的 pre-commit 守着，这里是强制点）──
+      - name: 代码校验（eslint + prettier）
+        run: |
+          npm run lint
+          npm run format:check
+
       - name: 前端类型与构建
         run: npm run build

@@ -1,7 +1,7 @@
 # 《09》§5.7 设置页「音乐缓存」实施报告
 
 > 实施时间：2026-10-05　基线：`eb3fd1f`
-> 上游底账：`docs/cache-contract-audit.md`（只读核实）、`docs/cache-frontend-report.md`（前端契约说明）
+> 上游底账：`docs/internal/cache-contract-audit.md`（只读核实）、`docs/internal/cache-frontend-report.md`（前端契约说明）
 > 交付范围：**设置页「音乐缓存」项**（③ 播放·媒体 组第 11 项，通栏四格）
 > 未执行任何 `git commit` / `stash` / `checkout`；未触碰 `atoms.tsx` / `SettingsScreen.tsx` /
 > `settings/icons.tsx` / `DynamicIsland.tsx`（并发写入者的文件）。

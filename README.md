@@ -7,6 +7,7 @@
 - 开发方案与验收标准：`docs/dev-plan.md` · 引擎接入里程碑与现状：`docs/engine-integration-plan.md`
 - 偏离与裁定留痕：`docs/spec-notes.md`（D-01~D-136）· `docs/spec-notes-1.md`（**D-137 起新增写这里**）
 - **AI 协作上下文入口：`AGENTS.md`**（任何 AI 工具进入本仓库先读它；Trae 另见 `.trae/rules/project_rules.md`）
+- **许可**：[MIT](LICENSE) —— 见下方 §许可。**贡献**：先读 [`CONTRIBUTING.md`](CONTRIBUTING.md)（提交规范 / 验收命令 / 目录纪律）
 
 ## 与插件端的关系
 
@@ -25,14 +26,23 @@
 miao-dock/
 ├── src/          Vite/React 前端源码（根目录只留 `main.tsx` / `App.tsx`，其余按职责分目录）
 │   ├── screens/  六个屏入口：投放 / 队列 / 漫画库 / 音乐 / 设置 / 未就绪（`music/`·`lyrics/`·`settings/`·`library/` 为屏内件）
+│   ├── router/  屏级路由表 + 导航读写口（**hash 路由**：URL 是「屏 + 应用内视图」的唯一事实源）
 │   ├── music/    音乐领域态（zustand store · ipc · platform · 播放器选项）
+│   ├── stores/   跨组件共享状态与壳层偏好（导航态机 / 轻提示通道 / 外观偏好）
+│   ├── ipc/      与后端通信（`ipc.ts` 翻译服务命令 + `engine-download.ts` 引擎下载）
+│   ├── types/    跨域类型声明（`types.ts` + `vite-env.d.ts`）
+│   ├── themes/   设计令牌与主题应用（`tokens.ts` / `apply.ts`）
 │   ├── components/units/  通用 UI 单元（判据：**不 import 业务层**）
 │   └── tools/    共享纯函数（`@tools`：格式化 / 分页 / 模糊匹配 / UUID / MIME 嗅探），**不 import 业务层**
-├── src-tauri/    Tauri v2 桌面壳（Rust）
-│   ├── src/music/  音乐模块 Rust 侧：四平台（`netease`/`kugou`/`qqmusic`/`migu`）+ 音频代理 + 加密 + 歌词 + 缓存（汽水延后）
-│   ├── src/lyrics_window.rs  桌面歌词**独立置顶窗**
+├── src-tauri/    Tauri v2 桌面壳（Rust）—— `src/` 根只留 `main.rs` / `lib.rs`，其余按域分层
+│   ├── src/commands/  IPC 命令层（`mod.rs` = 唯一命令注册点；`lyrics_window.rs` = 桌面歌词**独立置顶窗**的命令）
+│   ├── src/service/   本地服务子进程的生命周期（`ServiceManager`）
+│   ├── src/selftest/  自检通道（`mod.rs` 生命周期自检 + `capture.rs` 截图取证）
+│   ├── src/platform/  跨平台底座（`paths.rs` 落点 / `child_watch.rs` 父死看守）
+│   ├── src/music/     音乐模块 Rust 侧：四平台（`netease`/`kugou`/`qqmusic`/`migu`）+ 音频代理 + 加密 + 歌词 + 缓存（汽水延后）
 │   └── src/mangasvc/  **服务端实现**（唯一翻译入口，127.0.0.1:5180–5190）：`mangasvc.rs` 外壳 · `routes.rs` 路由表（44 条）· `handlers.rs` 端点 · `store/` 队列落盘 · `library.rs` 库原语 · `translate/` 在线翻译 · `engine/` 引擎耦合点
 ├── public/       不经构建处理的静态资源（歌词样式预览图）
+├── templates/    两个 HTML 入口：`index.html`（主窗）/ `lyrics.html`（桌面歌词**独立窗**），登记在 `vite.config.ts` 的 `rollupOptions.input`
 ├── scripts/      仓库级脚本：`gen-licenses.mjs`（许可清单生成）· `mac-signing-preflight.mjs`（macOS 打包前自检）
 ├── engine/       翻译引擎的**接缝层**（真引擎装在 `<appData>/runtimes/manga-translator/`，不在库）
 │   ├── VERSIONS.lock         引擎 / 权重 / 外部二进制的**版本锁**（换版本照它来）
@@ -50,7 +60,11 @@ miao-dock/
 ├── runtimes/     **开发机遗留的引擎资产目录**（**不入库**）：B1 起产品的默认落点已搬到 `<appData>/runtimes/manga-translator/`；这里只在用 `MIAO_RUNTIME_ROOT=<repo>/runtimes` 显式覆盖时才被读到
 ├── vendor/       参考实现切片（只读，**不入库**）
 ├── .tmp/         **全仓唯一的临时落盘目录**（**不入库**）：`e2e/` · `selftest/` · `models/` · `engine-test/`
+├── snapshots/    对外展示截图（与 `docs/refs/` 的**取证图**分家，两者不互为副本）
 ├── AGENTS.md     AI 协作上下文入口（任何工具进仓库先读它）
+├── CONTRIBUTING.md  贡献指南（提交规范 / 验收命令 / 目录与改名纪律）
+├── LICENSE       MIT
+├── .env.example  环境变量的**参考清单**（🔴 不自动加载，见该文件抬头）
 └── README.md     本文件
 ```
 
@@ -148,7 +162,7 @@ npm run task -- extract:models   # ④ 解包归档 → bin/llama/llama-b11417/l
 ### 三、启动
 
 ```bash
-cd app && npm install && cd ..
+npm install
 npm run app                             # 真引擎（默认）：python main.py(8000) + 执行器(8001) + llama-server(8080)
 MIAO_ENGINE_PROTOCOL=mock npm run app   # 替身快回路：不需要引擎运行时
 ```
@@ -279,9 +293,10 @@ npm run task -- selftest:app:e11:real    # E11 三进程树回收 + E1 生效参
 > 运行时的「安全删除守卫」会拦截仓库内 `.tmp/e2e/` 的批量删除（连开头那次清理都起不来），
 > 而它对系统临时目录下的路径整条绕过。一件事两样症状、排查全过程见 `docs/spec-notes.md` D-19。
 
-## 状态总览（截至 2026-10-08）
+## 状态总览（截至 2026-10-16）
 
-> 逐条留痕见 `docs/spec-notes.md`（最新 **D-92**）· 里程碑逐项见 `docs/engine-integration-plan.md`。
+> 逐条留痕见 `docs/spec-notes.md`（D-01~D-136）与 `docs/spec-notes-1.md`（最新 **D-221**）·
+> 里程碑逐项见 `docs/engine-integration-plan.md`。
 > **类型检查 + 断言通过 ≠ 功能可用** —— 下列「未验证」项即按此口径如实标注。
 
 **✅ 已完成**
@@ -309,3 +324,23 @@ npm run task -- selftest:app:e11:real    # E11 三进程树回收 + E1 生效参
 - **引擎 `pydensecrf` 的 GitHub 直链未钉到具体 commit**（移动靶，见上「快速开始」②）。
 
 > 🔴 **引擎栈模式默认 `real`**：`npm run app` 起的**已经是真引擎**（`python main.py` + `llama-server`，需要 `<appData>/runtimes/manga-translator/`，见 `engine/VERSIONS.lock`）。模拟引擎只在测试里被显式注入（`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs` / `check:e5e6` / `check:contract`）。**本机没拉引擎（运行时目录不在）时产品链路起不起来** —— 缺哪一项由 `GET /api/v1/engine/runtime` 逐项报出（B2）。
+
+## 许可
+
+[MIT](LICENSE)。
+
+⚠️ 这只覆盖**本仓库自己的代码**。翻译引擎与模型权重是**用户自装、不随包**的第三方资产，
+它们各自的许可是另一回事（引擎侧有 GPL-3.0-only 与 CC-BY-NC 系条目）：
+逐条结论与「能不能随包」的判定见 `docs/distribution-license-conclusion.md`；
+仓库内会随应用分发的那些依赖（npm / Cargo / 字体）由 `npm run task -- gen:licenses`
+生成 `src/generated/licenses.json`，并在设置页「关于」组里呈现。
+
+## 贡献
+
+先读 [`CONTRIBUTING.md`](CONTRIBUTING.md)：提交信息格式（单行 `类型(模块): 一句话`）、
+验收命令清单、目录分层与改名纪律、以及本仓库最要紧的那条 —— **每条源码断言都要配一条反证轮**。
+
+## 截图
+
+对外展示图放 [`snapshots/`](snapshots/README.md)；`docs/refs/` 里的是**验收取证图**（只增不改）。
+两者不互为副本，界与现有素材清单见 `snapshots/README.md`。

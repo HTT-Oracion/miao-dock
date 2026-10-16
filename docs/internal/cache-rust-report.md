@@ -267,7 +267,7 @@ music_cache_clear({ provider: string | null }) → Promise<void>
 | `#[tauri::command]` 属性完好（逐文件回读） | ✅ 4 个新命令 + 4 个歌词命令均正常 |
 | 禁词（被禁历史品牌标识，任何大小写） | ✅ 0 命中（已用 Grep 工具全 `src` 扫描） |
 | Rust 侧双引号 | ✅ 全程 `"` |
-| `git status --short` 干净 | ✅ 仅 6 个应改文件 + 底账 `docs/cache-contract-audit.md`（原有） |
+| `git status --short` 干净 | ✅ 仅 6 个应改文件 + 底账 `docs/internal/cache-contract-audit.md`（原有） |
 | 歌词侧前端零改动 | ✅ |
 | `audio_proxy.rs` 零改动 | ✅ |
 | 未触碰 `atoms.tsx` / `SettingsScreen.tsx` / `settings/icons.tsx` | ✅ |

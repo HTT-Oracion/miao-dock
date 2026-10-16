@@ -4,6 +4,11 @@ dist/
 dist-verify/
 src-tauri/target/
 
+# 本机环境变量（清单见 `.env.example`；仓库里没有任何 dotenv 自动加载，这份只是给人抄）
+.env
+.env.local
+.env.*.local
+
 # Tauri 生成的 schema / 清单缓存（构建期自动产出，不入库）
 src-tauri/gen/schemas/
 

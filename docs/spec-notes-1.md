@@ -4001,3 +4001,48 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
 `quit` 4/4（另 1 条锚点缺失属既有）。⚠️ **未做真机验证**：本轮只证明了「类型过、构建过、
 结构断言过」，**没有真的点过侧栏与 Tab**。
 
+## D-222 开源配套：MIT + 贡献指南 + 环境变量清单 + 内部文档归置（2026-10-16）
+
+**做了什么**（`chore(oss): 补 MIT 许可与对外 README，内部文档归置到 docs/internal`）：
+新增 `LICENSE`（MIT）· `CONTRIBUTING.md`（提交规范 / 验收命令 / 目录与改名纪律 / 反证纪律）·
+`.env.example`（环境变量参考清单）· `snapshots/`（对外展示图目录）；`.gitignore` 补 `.env*`；
+`README.md` 补「许可 / 贡献 / 截图」三节并修掉两处 P1 残留（`cd app && npm install` 与目录树里
+`src-tauri` 的旧文件名），状态总览日期与「最新 D」对齐；CI 加 eslint + prettier 两道强制点；
+`docs/internal/` 收 13 篇内部工作文档。
+
+**四处关键决定（都留理由）**
+1. **MIT 只覆盖本仓库自己的代码**。翻译引擎与模型权重是**用户自装、不随包**的第三方资产
+   （引擎侧含 GPL-3.0-only 与 CC-BY-NC 系条目），逐条结论仍在 `docs/distribution-license-conclusion.md`；
+   会随应用分发的 npm / Cargo / 字体依赖由 `npm run task -- gen:licenses` 生成清单并在设置页呈现。
+2. **`.env.example` 是「清单」，不是会被自动加载的配置**。实测仓库里**没有任何 dotenv 加载**
+   （Vite 的 `envPrefix` 只放行 `VITE_` / `TAURI_`，`MIAO_*` 一律由进程环境传入）⇒ 这句话写在文件抬头，
+   免得有人以为丢一个 `.env` 进去就生效。`.env` 同时进 `.gitignore`。
+3. **`snapshots/` 与 `docs/refs/` 划界：展示图 vs 取证图，两者不互为副本**（复制一份会各自漂移，
+   而"哪份是真的"没人说得清）。🔴 **本轮没有新增真机截图**：没有 GUI 取证条件，
+   故只落「目录 + 界 + 现有素材索引」，并如实登记**缺音乐应用与桌面歌词窗的展示图**。
+4. **`installer/` 归置本轮不做**（偏离计划，有据）：`src-tauri/nsis/hooks.nsh` 由 Tauri 在**打包期**
+   解析，而本机**没有 `makensis`**（`Get-Command makensis` 为空）⇒ 移动它等于往 Windows 打包路径上
+   塞一个「**没有任何本机命令能验证**」的改动，与「每个提交自身可跑」直接冲突。
+   留到能跑 `npm run app:build` 的机器上做。
+5. **`docs/internal/` 只收「低入链」的 13 篇**（`hotkeys-report` / `hotkeys-verify-report` /
+   `island-lyrics-design` / `online-translation-service-plan` / `app-restore-and-lyrics-plan` /
+   `cache-{contract-audit,rust-report,frontend-report,settings-report}` / `english-translation-dev-plan` /
+   `style-scss-plan` / `manga-ocr-ocr-backend-assessment` / `ui-parity-plan`）。
+   重链的那几篇**留在 `docs/`**：`spec-notes.md`（96 处入链）· `dev-plan.md`（26）· `spec-notes-1.md`（19）·
+   `engine-integration-plan.md`（16）· `engine-e2e-acceptance-report.md`（13）· `engine-integration-delivery-plan.md`（9）·
+   `packaging-local-engine-dev-plan.md`（8）—— 它们被**产品代码注释**与**已封卷台账**引用，搬它们要改几十处，
+   其中一部分落在封卷文档里（本仓纪律：**封卷不改**，历史痕迹本身有价值）。
+   🔴 已封卷的 `docs/spec-notes.md` **刻意未同步**它对已迁文档的引用 —— 那是历史痕迹，不是漂移。
+   `docs/refs/`、`docs/install-guide-*.md`、`docs/dev-setup.md`、`docs/distribution-license-conclusion.md`
+   保持在 `docs/`（对外 / 贡献者可见）。
+6. **CI 只加 eslint + prettier 两道**：静态层当前是 **228 / 3 的既有红**，
+   整层进 CI 会让它变成"永远红的摆设"（CI 文件头自己写着这条纪律）；**pre-push 钩子同样不加**。
+
+**验收**：`npm run lint` 0 error（134 warning）· `npm run format:check` 全绿 · `check:registry` 15/15 ·
+`check:docs` 21/0 · `check:docpaths` 4/1（同一处既知假红）· static 层 **228 / 3** 与改造前逐条一致 ·
+`check:units:refute` **59/59**（脚本里只有一处注释提到已迁文档的路径，仍照跑一遍）。
+⚠️ **未做验证**：CI 是否真跑通（本机没有 GitHub runner）· `npm run app:build` 的打包（无 makensis）。
+
+**遗留（写进待办，不在本轮）**：`installer/` 归置 · 重链内部文档（台账 / 计划 / 报告）的 `docs/internal/` 归置 ·
+音乐应用与桌面歌词窗的展示截图。
+

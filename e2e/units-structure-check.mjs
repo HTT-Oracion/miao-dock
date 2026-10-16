@@ -1180,7 +1180,7 @@ add('STYLE.noScssSyntax', 'STYLE', (s) => {
   // 分片内保持**扁平写法**：本阶段不用 SCSS 语法糖。
   // 理由不是审美，是断言：本仓检查脚本大量用 `[^}]*` 取块，嵌套会改变块结构 →
   // 判据静默失效或恒红。（开 nesting 的前置条件是给脚本装 SCSS AST 解析器，
-  //  留待后续单独评估 —— 见 docs/style-scss-plan.md。）
+  //  留待后续单独评估 —— 见 docs/internal/style-scss-plan.md。）
   // 同时禁 SCSS 变量承载颜色：令牌只走 var(--md-*)，否则「深色模式只换变量」不成立。
   const hits = [];
   for (const [file, code] of Object.entries(s.styleShardCode || {})) {

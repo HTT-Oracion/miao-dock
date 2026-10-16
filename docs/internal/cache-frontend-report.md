@@ -1,7 +1,7 @@
 # 《09》§5.7 缓存接入 · 前端播放链路实施报告
 
 > 实施时间：2026-10-05　基线：`eb3fd1f`（Rust 缓存内核在其后已交付，处于未提交状态）
-> 上游底账：`docs/cache-contract-audit.md`（只读核实）、`docs/cache-rust-report.md`（Rust 侧报告，命令签名以其为准）
+> 上游底账：`docs/internal/cache-contract-audit.md`（只读核实）、`docs/internal/cache-rust-report.md`（Rust 侧报告，命令签名以其为准）
 > 交付范围：**前端播放链路**。设置页**未做**（见 §6 契约说明）。
 > 未执行任何 `git commit` / `stash` / `checkout`；未触碰 `atoms.tsx` / `SettingsScreen.tsx` /
 > `settings/icons.tsx` / `DynamicIsland.tsx`。
@@ -17,7 +17,7 @@
 | `src/music/types.ts` | 修改 | 新增 `CacheStats` / `CacheProviderStat`（Rust `models.rs` 的逐字镜像） |
 | `e2e/music-platform-check.mjs` | 修改 | 新增 `CACHE` 组 **10 条断言** + **13 条反证** + 3 个判据辅助函数 |
 | `AGENTS.md` / `README.md` | 修改 | `check:music` 条数 184→193（对账用） |
-| `docs/cache-rust-report.md` | 修改 | **仅一行**：删掉报告自身写出的禁词字面量（见 §5.3） |
+| `docs/internal/cache-rust-report.md` | 修改 | **仅一行**：删掉报告自身写出的禁词字面量（见 §5.3） |
 
 `openPath` **未重复封装** —— 它在 `src/ipc.ts:78`，不在 `music/ipc.ts`。设置页要用时
 直接从 `@/ipc` 导入即可（见 §6.3）。
@@ -198,13 +198,13 @@ playSong → resolvePlayUrl(song)
 
 ### 5.2 Rust 侧报告的自述已过时
 
-`docs/cache-rust-report.md` 第三节第 6 条写「`check:docs` 有 2 条红」。
+`docs/internal/cache-rust-report.md` 第三节第 6 条写「`check:docs` 有 2 条红」。
 实测基线是 **3 条**：除两条条数对账外，还有 1 条 BANNED 命中（见下）。
 本轮改动后 `check:docs` 已全绿。
 
 ### 5.3 我改了别人的报告一行（唯一一次越界，已最小化）
 
-`docs/cache-rust-report.md:268` 那行表格里，为了说明"检查了禁词"，
+`docs/internal/cache-rust-report.md:268` 那行表格里，为了说明"检查了禁词"，
 **把禁词字面量本身写了进去**（而同一行还写着"✅ 0 命中"）——
 `check:docs` 的 BANNED 组因此报红，且该文件在扫描范围内（`docs/`）。
 
