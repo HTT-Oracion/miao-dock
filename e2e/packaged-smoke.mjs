@@ -21,11 +21,15 @@
  * **真实安装产物**里的资产 —— 要证的"装完能起服务"因此是可判定的。
  *
  * ## 反证轮（--refute）
- * - R1 删掉安装目录里的 `engine/models.manifest.json` ⇒ 资产层 + 服务层都必须红
- *   （原台账写的"删 service/src/server.mjs"自 F5 起已作废：那个文件不进包了）。
- * - R3 连 `engine/wheels.manifest.json` 一起删 ⇒ P2b/P2c 必须红
- *   （G3 的"零编译器"全靠产品读得到这份清单；删掉它 = 用户机上静默退回源码编译）。
- * - R2 把安装目录里的 exe 挪走 ⇒ 安装层断言红。
+ * 先取**基线**（变异前那几条必须绿），再破坏，再要求它们**变红** ——
+ * 只报"红了几条"而不报"该红的是不是这几条"，是反证轮最常见的自我欺骗。
+ *   R1 删掉安装目录里的 `engine/models.manifest.json` **并切断仓库回退**
+ *      （`MIAO_REPO_ROOT` 指空目录：开发机上仓库就在旁边，不切断会回退成功 ⇒ P4 假绿）
+ *      ⇒ **P4 / P7 必须红**；
+ *   R3 连 `engine/wheel-manifest.json` 一起删 ⇒ **P9 必须红**（产品退回源码编译）。
+ *   ⚠️ 不配"把 exe 挪走 ⇒ 安装层断言红"那条：安装层断言本身就是 FS 事实，挪走 exe 之后
+ *      再断言"文件不在"，是同义反复 —— 它不测产品，属**假反证**，故不写。
+ * 退出码：反证成立（基线绿 + 指定三条红 + 无预期外的红）⇒ 0；否则 1。
  *
  * 用法：
  *   node e2e/packaged-smoke.mjs            正向（先 `npm run app:build`）
@@ -52,7 +56,11 @@ const RELEASE_MANGASVC = path.join(TARGET, 'release', process.platform === 'win3
 let passed = 0;
 let failed = 0;
 const failures = [];
+/** 断言 id → 结论（反证轮要按 id 判定"该红的那几条红没红"，只数总数做不到）。 */
+const results = new Map();
 function check(name, cond, extra) {
+  const id = String(name).split(/[\s：]/)[0];
+  if (!results.has(id)) results.set(id, cond);
   if (cond) {
     passed++;
     console.log(`  ✓ ${name}`);
@@ -62,6 +70,9 @@ function check(name, cond, extra) {
     console.log(`  ✗ ${name}${extra !== undefined ? `  → ${JSON.stringify(extra)}` : ''}`);
   }
 }
+
+/** 反证轮必须变红的断言（与 `R0` 基线一起构成"反证成立"的判据） */
+const EXPECT_RED = ['P4', 'P7', 'P9'];
 
 // ------------------------------------------------------------------ 安装产物
 
@@ -102,6 +113,66 @@ function uninstallSilently(dir) {
     p.on('error', () => resolve(false));
     p.on('close', (c) => resolve(c === 0));
   });
+}
+
+// ------------------------------------------------------------------ 产品出口（只读 CLI）
+
+/**
+ * 跑 release `mangasvc` 的**只读出口**，资源目录指向**安装布局**。
+ *
+ * 🔴 收成一个出口的理由不只是省行数：反证轮要在**变异前**先取一次基线
+ *    （不然"变异后变红"与"基线本来就红"长得一模一样）。三处断言若各自内联一份 spawn，
+ *    基线就得再抄三份 —— 抄出来的第二份迟早与第一份不同源。
+ */
+function runCli(args, extraEnv = {}) {
+  return new Promise((resolve) => {
+    const p = spawn(RELEASE_MANGASVC, args, {
+      env: { ...process.env, MIAO_RESOURCE_DIR: installDir, ...extraEnv },
+    });
+    let out = '';
+    p.stdout.on('data', (d) => (out += d));
+    p.stderr.on('data', (d) => (out += d));
+    p.on('error', (e) => resolve({ code: -1, out: String(e.message || e) }));
+    p.on('close', (code) => resolve({ code, out }));
+  });
+}
+
+/** 资产自检（`--check-assets`）⇒ {code, rep}。非 JSON（缺失时它走 stderr 文本）时 rep=null。 */
+async function assetsProbe() {
+  const { code, out } = await runCli(['--check-assets']);
+  let rep = null;
+  try {
+    rep = JSON.parse(out);
+  } catch {
+    /* 保持 null */
+  }
+  return { code, rep, out };
+}
+
+/** 生效路径快照（`--print-paths`）⇒ 解析后的对象，解析不了给 null（让断言自己红）。 */
+async function pathsProbe(extraEnv = {}) {
+  const { out } = await runCli(['--print-paths'], extraEnv);
+  try {
+    return JSON.parse(out);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * CRF wheel 计划（`--engine-crf-plan`）—— **产品自己的出口**。
+ *
+ * 🔴 为什么这条比"文件在盘上"重要：装完包只断言 `engine/wheels/*.whl` 存在，
+ *    测的是**安装器**；而"用户机上到底走 wheel 还是退回源码编译"取决于**产品读不读得到**它
+ *    （读不到 = 没装编译器的机器上装配到一半失败，且 dev 态永远测不出来：仓库就在旁边会回退成功）。
+ */
+async function crfPlan() {
+  const { code, out } = await runCli(['--engine-crf-plan']);
+  try {
+    return { ...JSON.parse(out), code };
+  } catch {
+    return { code, route: null, reason: out.slice(0, 200) };
+  }
 }
 
 // ------------------------------------------------------------------ 服务层取证
@@ -186,13 +257,29 @@ try {
   check('P3 安装目录里没有 service/ 与 node.zip（F5 验收③ 在真实产物上复现）', nodePayload.length === 0, nodePayload);
 
   if (REFUTE) {
-    // R1：把刚验过的资产删掉 —— 下面几层必须因此红。
+    // ---- 基线（变异**前**）：下面要变红的那三条，此刻必须**先绿** ----
+    // 这一步不能省：只跑"变异后"的话，"该红的红了"与"基线本来就是红的"完全同形。
+    const baseState = path.join(work, 'base-state');
+    fs.mkdirSync(baseState, { recursive: true });
+    const baseAssets = await assetsProbe();
+    const basePaths = await pathsProbe({ MIAO_STATE_DIR: baseState, MIAO_ROOT: path.join(work, 'root') });
+    const basePlan = await crfPlan();
+    check(
+      'R0 基线（变异前）：P4/P7/P9 三条必须先绿 —— 否则"变异后变红"无法与"基线本来就红"区分',
+      baseAssets.code === 0 &&
+        baseAssets.rep?.ok === true &&
+        typeof basePaths?.modelManifest === 'string' &&
+        basePaths.modelManifest.startsWith(installDir) &&
+        basePlan.route === 'wheel',
+      { assetsOk: baseAssets.rep?.ok, manifest: basePaths?.modelManifest, route: basePlan.route },
+    );
+
+    // R1：把刚验过的资产删掉 —— 资产层与服务层必须因此红。
     // 🔴 必须**同时切断仓库回退**（`MIAO_REPO_ROOT` 指到空目录）：`missing_assets()` 的判据是
     //    「资源目录没有 **且** 仓库也没有」，而开发机上仓库就在旁边 ⇒ 不切断就会回退成功、
     //    P4 仍旧绿 —— 那是**假绿**（真实用户机器上没有仓库，删了就是缺）。
     if (fs.existsSync(manifest)) fs.rmSync(manifest);
-    // R3：连 wheel 清单一起删 —— P2b/P2c 必须红。
-    //    （`plan_crf` 在打包态正是靠它找到包内 wheel 的，删掉后用户机上必然退回源码编译。）
+    // R3：连 wheel 清单一起删 ⇒ **P9** 必须红（`plan_crf` 在打包态正是靠它找到包内 wheel 的）。
     if (fs.existsSync(wheelsManifest)) fs.rmSync(wheelsManifest);
     const emptyRepo = path.join(work, 'empty-repo');
     fs.mkdirSync(emptyRepo, { recursive: true });
@@ -200,38 +287,23 @@ try {
     console.log(
       '\n[反证] 已删掉安装目录里的 engine/models.manifest.json 与 engine/wheel-manifest.json，并切断仓库回退',
     );
-    // R3 的判据必须在**删除之后**复检才成立 —— 上面那批 check 跑在删除前，永远绿。
-    // （P2/P2b/P2c 是"安装层"断言，删除影响的是资产层与服务层；但 R3 要证的恰恰是
-    //  "清单不在盘上 ⇒ P2b 红"，所以补一次删除后的复检。）
-    check(
-      'P2b 反证：wheel 清单被删掉后本断言必须红（否则它钉不住"清单要在盘上"这件事）',
-      !fs.existsSync(wheelsManifest),
-      wheelsManifest,
-    );
   }
 
-  // ---- ③ 资产层：自检在同一资源目录上报 ok ----
+  // ---- ③ 资产层：自检在同一资源目录上报 ok；且**产品自己的出口**认得出包内 wheel ----
   {
-    const assets = await new Promise((resolve) => {
-      const p = spawn(RELEASE_MANGASVC, ['--check-assets'], {
-        env: { ...process.env, MIAO_RESOURCE_DIR: installDir },
-      });
-      let out = '';
-      p.stdout.on('data', (d) => (out += d));
-      p.stderr.on('data', (d) => (out += d));
-      p.on('error', (e) => resolve({ code: -1, out: String(e.message || e) }));
-      p.on('close', (code) => resolve({ code, out }));
+    const { code, rep, out } = await assetsProbe();
+    check('P4 资产自检在安装目录上报 ok=true（资源目录优先于仓库回退）', code === 0 && rep?.ok === true, {
+      code,
+      out: out.slice(0, 300),
     });
-    let rep = null;
-    try {
-      rep = JSON.parse(assets.out);
-    } catch {
-      /* 非 JSON：缺失时它走 stderr 文本 */
-    }
-    check('P4 资产自检在安装目录上报 ok=true（资源目录优先于仓库回退）', assets.code === 0 && rep && rep.ok === true, {
-      code: assets.code,
-      out: assets.out.slice(0, 300),
-    });
+    // P9：只断言"wheel 文件在盘上"测的是**安装器**；这一条测**产品读不读得到它** ——
+    //     读不到 ⇒ 没装编译器的机器上装配退回源码编译，而 dev 态永远测不出来（仓库就在旁边会回退成功）。
+    const plan = await crfPlan();
+    check(
+      'P9 打包态 wheel 计划命中**包内** wheel（`--engine-crf-plan` 是产品出口，G3 零编译器的依据）',
+      plan.code === 0 && plan.route === 'wheel' && plan.from === '包内',
+      plan,
+    );
   }
 
   // ---- ② 服务层：从安装布局起服务，mock 档 ----
@@ -257,42 +329,25 @@ try {
         version: stBody?.engine?.version,
       });
       // 清单路径必须指向**安装目录里那一份**（而不是回退到仓库）
-      const pathsOut = await new Promise((resolve) => {
-        const p = spawn(RELEASE_MANGASVC, ['--print-paths'], {
-          env: {
-            ...process.env,
-            MIAO_RESOURCE_DIR: installDir,
-            MIAO_STATE_DIR: stateDir,
-            MIAO_ROOT: path.join(work, 'root'),
-          },
-        });
-        let o = '';
-        p.stdout.on('data', (d) => (o += d));
-        p.on('close', () => resolve(o));
-      });
-      const snap = JSON.parse(pathsOut);
+      const snap = await pathsProbe({ MIAO_STATE_DIR: stateDir, MIAO_ROOT: path.join(work, 'root') });
       check(
         'P7 生效的清单路径落在**安装目录**内（A1：资源目录优先，不是回退仓库）',
-        typeof snap.modelManifest === 'string' && snap.modelManifest.startsWith(installDir),
-        snap.modelManifest,
+        typeof snap?.modelManifest === 'string' && snap.modelManifest.startsWith(installDir),
+        snap?.modelManifest,
       );
       // 台账原话「mode=mock 可见」：启动配方是它的权威出处。
       // ⚠️ `--print-launch-plan` 的 mode 是**位置参数**（不读 env，见 mangasvc.rs）⇒ 显式传 `mock`。
-      const planOut = await new Promise((resolve) => {
-        const p = spawn(RELEASE_MANGASVC, ['--print-launch-plan', 'mock'], {
-          env: {
-            ...process.env,
-            MIAO_RESOURCE_DIR: installDir,
-            MIAO_STATE_DIR: stateDir,
-            MIAO_ROOT: path.join(work, 'root'),
-          },
-        });
-        let o = '';
-        p.stdout.on('data', (d) => (o += d));
-        p.on('close', () => resolve(o));
+      const { out: planOut } = await runCli(['--print-launch-plan', 'mock'], {
+        MIAO_STATE_DIR: stateDir,
+        MIAO_ROOT: path.join(work, 'root'),
       });
-      const plan = JSON.parse(planOut);
-      check('P8 启动配方 mode=mock（台账原话的那一半）', plan.mode === 'mock', plan.mode);
+      let launch = null;
+      try {
+        launch = JSON.parse(planOut);
+      } catch {
+        /* 解析不了 ⇒ 让断言自己红（别把解析异常伪装成"服务没起来"） */
+      }
+      check('P8 启动配方 mode=mock（台账原话的那一半）', launch?.mode === 'mock', launch?.mode);
     } catch (e) {
       check('P5 装完能起服务：/health 200', false, String(e.message || e).slice(0, 300));
       check('P6 /health 里 mode=mock 可见', false, '服务没起来');
@@ -312,4 +367,25 @@ console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed }));
 console.log(
   `\nA4 打包后冒烟：${passed} / ${passed + failed} 通过${failures.length ? `；失败：${failures.join('、')}` : ''}`,
 );
+
+/*
+ * 反证轮的成败**不能**用"失败为 0"判：这一轮本来就要让三条变红（失败数必然 > 0）。
+ * 判据是两件事同时成立：
+ *   ① 基线绿（R0）—— 否则"该红的红了"与"基线本来就是红的"同形，反证归因不成立；
+ *   ② 红的就是指定那三条，且**没有预期外的红**。
+ * 用退出码表达，`npm run task -- check:packaged:refute` 才能进 CI；只印一行"红了几条"
+ * 的反证轮等于永远红（这正是它此前的问题：跑对了也 exit 1）。
+ */
+if (REFUTE) {
+  const reds = EXPECT_RED.filter((id) => results.get(id) === false);
+  const unexpected = [...results.entries()]
+    .filter(([id, ok]) => ok === false && id !== 'R0' && !EXPECT_RED.includes(id))
+    .map(([id]) => id);
+  console.log('\n' + '─'.repeat(56));
+  console.log(`REFUTE: ${reds.length}/${EXPECT_RED.length} 条按预期变红（应执行 ${EXPECT_RED.length} 条）`);
+  if (results.get('R0') !== true) console.log('✗ 基线（变异前）就没绿 —— 本轮反证不成立，先修基线');
+  if (unexpected.length) console.log(`✗ 预期外的红：${unexpected.join('、')}（反证轮只该让指定那几条变红）`);
+  const ok = reds.length === EXPECT_RED.length && results.get('R0') === true && unexpected.length === 0;
+  process.exit(ok ? 0 : 1);
+}
 process.exit(failed === 0 ? 0 : 1);
