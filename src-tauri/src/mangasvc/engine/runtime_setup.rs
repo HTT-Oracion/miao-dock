@@ -118,7 +118,7 @@ fn verbatim(p: &Path) -> PathBuf {
 
 /// 遍历 `root`，返回**最长路径的字符数**与那条路径（长路径体检用）。
 ///
-/// 🔴 为什么装配期要量这个、而不是继续凭推测：`nsis/hooks.nsh` 与安装引导都写着
+/// 🔴 为什么装配期要量这个、而不是继续凭推测：`installer/hooks.nsh` 与安装引导都写着
 ///    "必须开 `LongPathsEnabled`，否则装配会在中途报『文件名或扩展名太长』"，但
 ///    `engine/VERSIONS.lock` §6.2 记的三个 Windows 必踩坑里**没有长路径** ——
 ///    这条一直是**预防性推测**。推测的代价是用户为了一个可能不存在的问题去改注册表；
@@ -375,7 +375,7 @@ const MAX_PATH_LIMIT: usize = 260;
 ///
 /// 🔴 这一步**不改变任何行为**：不写注册表、不挪目录、不因为余量不足就失败。
 ///    它只回答"这个落点离 260 还有多远"，让"要不要开长路径"从猜测变成可复算的事实 ——
-///    而安装器那段提示（`nsis/hooks.nsh`）继续作为兜底保留不动（D-189：只提示不代改）。
+///    而安装器那段提示（`installer/hooks.nsh`）继续作为兜底保留不动（D-189：只提示不代改）。
 fn measure_long_path(rt_dir: &Path, log: &dyn Fn(&str)) -> Option<(usize, PathBuf)> {
     let (len, path) = longest_path(rt_dir)?;
     let shown = path.display();

@@ -4,7 +4,7 @@
     "targets": ["nsis"],
     "windows": {
       "nsis": {
-        "installerHooks": "nsis/hooks.nsh"
+        "installerHooks": "../installer/hooks.nsh"
       }
     }
   }

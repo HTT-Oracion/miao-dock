@@ -46,6 +46,7 @@ miao-dock/
 │   ├── assets/icons/   品牌图（logo-48 / logo-512 / logo，用绝对 URL 引）
 │   └── style-previews/ 歌词样式预览图
 ├── templates/    两个 HTML 入口：`index.html`（主窗）/ `lyrics.html`（桌面歌词**独立窗**），登记在 `vite.config.ts` 的 `rollupOptions.input`
+├── installer/    安装器材料（Windows NSIS 钩子 `hooks.nsh`，由 `tauri.windows.conf.json` 的 `installerHooks` 以 `../installer/…` 相对 `src-tauri/` 引用）
 ├── scripts/      仓库级脚本：`gen-licenses.mjs`（许可清单生成）· `mac-signing-preflight.mjs`（macOS 打包前自检）
 ├── engine/       翻译引擎的**接缝层**（真引擎装在 `<appData>/runtimes/manga-translator/`，不在库）
 │   ├── VERSIONS.lock         引擎 / 权重 / 外部二进制的**版本锁**（换版本照它来）

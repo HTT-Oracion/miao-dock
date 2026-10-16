@@ -85,8 +85,11 @@ import path from 'node:path';
 const ROOT = path.resolve(import.meta.dirname, '..');
 const BASE_CONF = path.join(ROOT, 'src-tauri', 'tauri.conf.json');
 const WIN_CONF = path.join(ROOT, 'src-tauri', 'tauri.windows.conf.json');
-/** NSIS 安装器钩子文件（E2/E3）—— 与 `tauri.windows.conf.json` 里那条引用同一处。 */
-const NSIS_HOOKS = path.join(ROOT, 'src-tauri', 'nsis', 'hooks.nsh');
+/** NSIS 安装器钩子文件（E2/E3）—— 与 `tauri.windows.conf.json` 里那条引用同一处。
+ *  2026-10-16 起它从 `src-tauri/nsis/` 归置到仓库根的 `installer/`（打包材料的家），
+ *  故配置里写 `../installer/hooks.nsh` —— **相对 `src-tauri/` 解析**（Tauri 的
+ *  `installerHooks` 以配置文件所在目录为基准，见 `nsisHooksFile()`）。 */
+const NSIS_HOOKS = path.join(ROOT, 'installer', 'hooks.nsh');
 
 const REFUTE = process.argv.includes('--refute');
 
@@ -588,8 +591,8 @@ const MUTATIONS = [
     edits: [
       {
         file: BASE_CONF,
-        find: '"../../engine/models.manifest.json": "engine/models.manifest.json"',
-        replace: '"../../engine/VERSIONS.lock": "engine/VERSIONS.lock"',
+        find: '"../engine/models.manifest.json": "engine/models.manifest.json"',
+        replace: '"../engine/VERSIONS.lock": "engine/VERSIONS.lock"',
       },
     ],
     expect: ['W6'],
@@ -599,8 +602,8 @@ const MUTATIONS = [
     edits: [
       {
         file: BASE_CONF,
-        find: '"../../engine/models.manifest.json": "engine/models.manifest.json"',
-        replace: '"../../engine/nope.json": "engine/models.manifest.json"',
+        find: '"../engine/models.manifest.json": "engine/models.manifest.json"',
+        replace: '"../engine/nope.json": "engine/models.manifest.json"',
       },
     ],
     expect: ['W6'],
@@ -612,7 +615,7 @@ const MUTATIONS = [
       {
         file: BASE_CONF,
         find: '"resources": {',
-        replace: '"resources": {\n      "../../engine/models/sakura-1.5b-q4.gguf": "models/sakura-1.5b-q4.gguf",',
+        replace: '"resources": {\n      "../engine/models/sakura-1.5b-q4.gguf": "models/sakura-1.5b-q4.gguf",',
       },
     ],
     expect: ['W7'],
@@ -626,7 +629,7 @@ const MUTATIONS = [
         file: BASE_CONF,
         find: '"resources": {',
         replace:
-          '"resources": {\n      "../../engine/models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/c266c2cfd19758b6d09c1fc31ecdf1e485509035f6b51dfe84f1ada83eefcc42": "models/c266c2cfd19758b6d09c1fc31ecdf1e485509035f6b51dfe84f1ada83eefcc42.json",',
+          '"resources": {\n      "../engine/models-store/translators/nllb/models--facebook--nllb-200-distilled-600M/blobs/c266c2cfd19758b6d09c1fc31ecdf1e485509035f6b51dfe84f1ada83eefcc42": "models/c266c2cfd19758b6d09c1fc31ecdf1e485509035f6b51dfe84f1ada83eefcc42.json",',
       },
     ],
     expect: ['W7b'],
@@ -639,8 +642,8 @@ const MUTATIONS = [
     edits: [
       {
         file: BASE_CONF,
-        find: '"../../engine/wheels/pydensecrf-1.0-cp311-cp311-win_amd64.whl": "engine/wheels/pydensecrf-1.0-cp311-cp311-win_amd64.whl"',
-        replace: '"../../engine/wheels/other.whl": "engine/wheels/other.whl"',
+        find: '"../engine/wheels/pydensecrf-1.0-cp311-cp311-win_amd64.whl": "engine/wheels/pydensecrf-1.0-cp311-cp311-win_amd64.whl"',
+        replace: '"../engine/wheels/other.whl": "engine/wheels/other.whl"',
       },
     ],
     expect: ['W13'],
@@ -654,8 +657,8 @@ const MUTATIONS = [
     edits: [
       {
         file: BASE_CONF,
-        find: '"../../engine/wheels.manifest.json": "engine/wheel-manifest.json",',
-        replace: '"../../engine/wheels.manifest.json.off": "engine/wheel-manifest.json.off",',
+        find: '"../engine/wheels.manifest.json": "engine/wheel-manifest.json",',
+        replace: '"../engine/wheels.manifest.json.off": "engine/wheel-manifest.json.off",',
       },
     ],
     expect: ['W13b'],
@@ -668,8 +671,8 @@ const MUTATIONS = [
     edits: [
       {
         file: BASE_CONF,
-        find: '"../../engine/wheels.manifest.json": "engine/wheel-manifest.json",',
-        replace: '"../../engine/wheels.manifest.json": "engine/wheels.manifest.json",',
+        find: '"../engine/wheels.manifest.json": "engine/wheel-manifest.json",',
+        replace: '"../engine/wheels.manifest.json": "engine/wheels.manifest.json",',
       },
     ],
     expect: ['W13b'],
@@ -679,13 +682,17 @@ const MUTATIONS = [
     //    多行锚点会被判成"未找到"而**静默跳过** —— 跳过 ≠ 通过。
     name: 'E2：把 NSIS 安装器钩子的接线摘掉（长路径提示与卸载提示都不会再出现）',
     edits: [
-      { file: WIN_CONF, find: '"installerHooks": "nsis/hooks.nsh"', replace: '"installerHooksOff": "nsis/hooks.nsh"' },
+      {
+        file: WIN_CONF,
+        find: '"installerHooks": "../installer/hooks.nsh"',
+        replace: '"installerHooksOff": "nsis/hooks.nsh"',
+      },
     ],
     expect: ['W8'],
   },
   {
     name: 'E2：钩子指向一个不存在的文件（打包阶段才会炸，报错离根因很远）',
-    edits: [{ file: WIN_CONF, find: '"nsis/hooks.nsh"', replace: '"nsis/nope.nsh"' }],
+    edits: [{ file: WIN_CONF, find: '"../installer/hooks.nsh"', replace: '"../installer/nope.nsh"' }],
     expect: ['W8'],
   },
   {
@@ -749,8 +756,11 @@ const MUTATIONS = [
     edits: [
       {
         file: GUIDE_WIN,
-        find: '### 1.1 安装包首次运行会被 SmartScreen 拦一下（正常现象）',
-        replace: '### 1.1 安装包首次运行说明',
+        find: 'SmartScreen',
+        replace: '系统保护提示',
+        // 🔴 必须 all：引导里有两处（§1.1 标题 + § troubleshooting 正文），只改第一处
+        //    断言照绿 ⇒ 这条反证会变成假反证（实测过）。
+        all: true,
       },
     ],
     expect: ['W11'],
@@ -767,7 +777,7 @@ const MUTATIONS = [
     name: 'M13 把 Node 服务退路加回 `resolve_mangasvc()`（包干净、e2e 全绿，只有用户机上多一个 node 进程）',
     edits: [
       {
-        file: path.join(RUST_SRC, 'service.rs'),
+        file: path.join(RUST_SRC, 'service', 'mod.rs'),
         find: '    let name = if cfg!(windows) { "mangasvc.exe" } else { "mangasvc" };',
         replace:
           '    let _ = std::process::Command::new("node").arg("service/src/server.mjs").spawn();\n' +
@@ -821,7 +831,12 @@ const main = () => {
         missing = true;
         continue;
       }
-      fs.writeFileSync(e.file, txt.replace(e.find, e.replace));
+      /*
+       * `all: true` 用于「同一处改错在文件里天然出现多遍」的情形 —— 只改第一处时
+       * 断言仍然绿，这条反证就退化成**假反证**（看起来覆盖到了，其实什么都没测到）。
+       * 实例：SmartScreen 在安装引导里有标题与正文两处，只改标题那处 ⇒ W11 照绿。
+       */
+      fs.writeFileSync(e.file, e.all ? txt.split(e.find).join(e.replace) : txt.replace(e.find, e.replace));
     }
     if (missing) {
       for (const [f, snap] of originals) fs.writeFileSync(f, snap); // 还原已改的那几处

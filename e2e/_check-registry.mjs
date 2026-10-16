@@ -763,7 +763,7 @@ const CHECKS = [
     id: 'uninstall-keep',
     script: 'e2e/bundle-uninstall-keep-check.mjs',
     tier: 'nightly',
-    watch: ['src-tauri/nsis/**', 'src-tauri/tauri.windows.conf.json', 'e2e/bundle-uninstall-keep-check.mjs'],
+    watch: ['installer/**', 'src-tauri/tauri.windows.conf.json', 'e2e/bundle-uninstall-keep-check.mjs'],
   },
   // G4：**夹具版真装配** —— 真跑产品自己的 `mangasvc --engine-bootstrap`：
   //   两批 pip 的顺序与各自成功、随包 wheel 端到端（自检①真 import）、兼容补丁落 venv、

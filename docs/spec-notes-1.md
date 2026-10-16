@@ -2657,7 +2657,7 @@ python / `llama-server`？—— 这条**只能真机回答**，本仓按 `unver
 
 ## D-189 · E2/E3 Windows 安装器：长路径**只提示不代改**，卸载**默认保留**（2026-10-14）
 
-**决策**：`src-tauri/nsis/hooks.nsh`（由 `tauri.windows.conf.json` 的
+**决策**：`installer/hooks.nsh`（由 `tauri.windows.conf.json` 的
 `bundle.windows.nsis.installerHooks` 引入）只做两件用户看得见的事 ——
 
 - **装完检查长路径开关**：读 64 位视图（`SetRegView 64`）的
@@ -4020,7 +4020,7 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
 3. **`snapshots/` 与 `docs/refs/` 划界：展示图 vs 取证图，两者不互为副本**（复制一份会各自漂移，
    而"哪份是真的"没人说得清）。🔴 **本轮没有新增真机截图**：没有 GUI 取证条件，
    故只落「目录 + 界 + 现有素材索引」，并如实登记**缺音乐应用与桌面歌词窗的展示图**。
-4. **`installer/` 归置本轮不做**（偏离计划，有据）：`src-tauri/nsis/hooks.nsh` 由 Tauri 在**打包期**
+4. **`installer/` 归置本轮不做**（偏离计划，有据）：`installer/hooks.nsh` 由 Tauri 在**打包期**
    解析，而本机**没有 `makensis`**（`Get-Command makensis` 为空）⇒ 移动它等于往 Windows 打包路径上
    塞一个「**没有任何本机命令能验证**」的改动，与「每个提交自身可跑」直接冲突。
    留到能跑 `npm run app:build` 的机器上做。
