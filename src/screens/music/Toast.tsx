@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useMusicStore } from '@music/store';
-import { toastBus } from '@/toastBus';
+import { toastBus } from '@/stores/toastBus';
 
 /**
  * 音乐模块轻提示 —— 现在是**转发器**，不再自己渲染。
@@ -18,7 +18,7 @@ import { toastBus } from '@/toastBus';
  * 因为**应用级 toast 有 6 处业务在用**（服务重启 / 漫画库 / 打开目录 / 设置页），
  * 它们走的是 `useToasts().push`。若音乐屏另起一条通道，就会有两个互不相通的 toast 源，
  * 而灵动岛只能显示一套 —— 那等于音乐屏的提示又丢了。
- * `toastBus`（src/toastBus.ts）是那条**唯一通道**的出口（见 DynamicIsland 的说明）。
+ * `toastBus`（src/stores/toastBus.ts）是那条**唯一通道**的出口（见 DynamicIsland 的说明）。
  */
 export function Toast() {
   const musicToast = useMusicStore((s) => s.musicToast);

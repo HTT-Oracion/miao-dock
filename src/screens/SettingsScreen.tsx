@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ServiceStatus } from '@/ipc';
 import type { LibraryResponse } from '@/types';
-import type { ThemeMode } from '@/theme/tokens';
-import { SETTINGS } from '@/theme/tokens';
+import type { ThemeMode } from '@/themes/tokens';
+import { SETTINGS } from '@/themes/tokens';
 import { SETTINGS_SECTIONS, parseSection, sectionItemCount } from '@screens/settings/catalog';
 import type { SectionId } from '@screens/settings/catalog';
 import { SECTION_ICON } from '@screens/settings/icons';

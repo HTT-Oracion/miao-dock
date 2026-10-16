@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { RefObject } from 'react';
-import { runSpecCheck, type SpecResult } from '@/spec-check';
-import type { ThemeMode } from '@/theme/tokens';
-import { LIBRARY, QUEUE_TABLE } from '@/theme/tokens';
+import { runSpecCheck, type SpecResult } from '@/tools/spec-check';
+import type { ThemeMode } from '@/themes/tokens';
+import { LIBRARY, QUEUE_TABLE } from '@/themes/tokens';
 import type { TaskRow } from '@/types';
 import { STATUS_DOT_VAR, STATUS_LABEL, SOURCE_LABEL } from '@/types';
 import { Btn, Dot, MagicCircle } from '@components/units';

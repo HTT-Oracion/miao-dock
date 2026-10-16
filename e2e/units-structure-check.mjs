@@ -59,7 +59,7 @@ const F = {
   platformMenu: path.join(SRC, 'screens', 'music', 'PlatformMenu.tsx'),
   // ── 灵动岛（拍板第 4 项）
   island: path.join(SRC, 'components', 'DynamicIsland.tsx'),
-  toastBus: path.join(SRC, 'toastBus.ts'),
+  toastBus: path.join(SRC, 'stores', 'toastBus.ts'),
   musicToast: path.join(SRC, 'screens', 'music', 'Toast.tsx'),
   tooltip: path.join(SRC, 'components', 'units', 'Tooltip.tsx'),
   library: path.join(SRC, 'screens', 'LibraryScreen.tsx'),
@@ -139,9 +139,9 @@ const HOOKS_BARREL_EXPORTS = ['useService', 'useTasks', 'useLibrary', 'useQuitRe
 const PKG_ALLOW = [/^react(\/.+)?$/, /^react-dom(\/.+)?$/, /^lucide-react$/];
 /** 允许的 scoped 包前缀 */
 const PKG_ALLOW_SCOPE = ['@radix-ui/'];
-/** 相对导入唯一允许"越出 units"的目标（theme/tokens 是设计令牌，纯数据）。
- *  对别名形式（`@/theme/tokens`）同样成立：正则只看"以 theme/tokens 结尾"。 */
-const THEME_TOKENS_RE = /(^|\/)theme\/tokens(\.\w+)?$/;
+/** 相对导入唯一允许"越出 units"的目标（themes/tokens 是设计令牌，纯数据）。
+ *  对别名形式（`@/themes/tokens`）同样成立：正则只看"以 themes/tokens 结尾"。 */
+const THEME_TOKENS_RE = /(^|\/)themes\/tokens(\.\w+)?$/;
 
 /** 路径别名 → 真实目录（与 vite.config.ts、tsconfig.json **三处保持一致**）。
  *  前缀互不重叠（匹配要求「相等 或 前缀后紧跟 /」），'@tauri' 不会吃掉 '@tauri-apps/*' 包。 */
@@ -307,7 +307,7 @@ function resolvesToFile(baseDir, spec) {
   return cands.some((c) => existsSync(c));
 }
 
-/** 某一 units 文件里出现的违规 import（越出 units 且非 theme/tokens，或非法裸包）。
+/** 某一 units 文件里出现的违规 import（越出 units 且非 themes/tokens，或非法裸包）。
  *  别名按 ALIASES 还原成真实路径后判定 —— 否则 '@music/store' 会被当成"未知裸包"，口径就错了。 */
 function badImportsOf(absFile, text) {
   const stripped = stripComments(text);
@@ -841,7 +841,7 @@ add('ISLAND.singleSource', 'ISLAND', (s) => {
   // ⚠️ 本条是本组最关键的一条：原先 App 与 MusicScreen 各有一份 toast 队列
   //（useState 每次调用各得一份），灵动岛只订阅其中一份 → 另一份推的提示永远收不到。
   // 反过来若两处都自己渲染，同一条提示会**出现两次**。
-  if (!s.toastBus) return { ok: false, detail: 'src/toastBus.ts 不存在' };
+  if (!s.toastBus) return { ok: false, detail: 'src/stores/toastBus.ts 不存在' };
   const bus = stripComments(s.toastBus);
   const hooks = stripComments(s.hooksIndex);
   const missing = [];
@@ -1430,7 +1430,7 @@ const MUTATIONS = [
   },
   {
     name: '把 ipc.ts 的 npm 包 @tauri-apps/api/core 误写成别名 @tauri/api/core',
-    file: path.join(SRC, 'ipc.ts'),
+    file: path.join(SRC, 'ipc', 'index.ts'),
     find: "from '@tauri-apps/api/core';",
     replace: "from '@tauri/api/core';",
     expect: ['ALIAS.pkgNotShadowed'],
@@ -1495,7 +1495,7 @@ const MUTATIONS = [
     // D-156：`coverProxyUrl`/`fmtTime` 已随纯函数搬到 @music/convert，此处只剩 useMusicStore
     find: "import { useMusicStore } from '@music/store';",
     replace:
-      "import { useMusicStore } from '@music/store';\nimport { useToastList } from '@/toastBus'; // 反证：提示通道重新接入",
+      "import { useMusicStore } from '@music/store';\nimport { useToastList } from '@/stores/toastBus'; // 反证：提示通道重新接入",
     expect: ['ISLAND.noToastChannel'],
   },
 

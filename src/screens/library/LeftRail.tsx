@@ -5,7 +5,7 @@
 // 「零 Context」的裁定），屏本体只留状态与编排。
 import type { MouseEvent } from 'react';
 import { ChevronDown, EyeOff, GitMerge, Search, X } from 'lucide-react';
-import { LIBRARY } from '@/theme/tokens';
+import { LIBRARY } from '@/themes/tokens';
 import { Btn, Tooltip } from '@components/units';
 import { formatBytes, groupSearchResults, pageSlice } from '@tools';
 import { CoverThumb, Highlight } from '@screens/library/cards';

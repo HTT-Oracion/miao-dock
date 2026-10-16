@@ -1,6 +1,6 @@
 // 设置页 —— 由 sections.tsx 按 Section 拆分（D-150）。
 import type { RefObject } from 'react';
-import type { ThemeMode } from '@/theme/tokens';
+import type { ThemeMode } from '@/themes/tokens';
 import { Switch } from '@components/units';
 import { GroupNote, ReadOnly, Row, RowNote } from '@screens/settings/parts';
 import { GENERAL } from '@screens/settings/catalog';

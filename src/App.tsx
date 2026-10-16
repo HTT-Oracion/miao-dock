@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiPost, errorText, openPath, quitApp, serviceRestart, serviceStart } from '@/ipc';
 import type { ServiceState } from '@/ipc';
 import { useLibrary, useQuitRequest, useService, useTasks, useToasts, useTranslateSource } from '@hooks';
-import { initialMode, persistMode, useThemeTokens } from '@/theme/apply';
+import { initialMode, persistMode, useThemeTokens } from '@/themes/apply';
 import {
   initialServiceAutoStart,
   initialSidebarLabels,
   persistServiceAutoStart,
   persistSidebarLabels,
-} from '@/shell-prefs';
-import type { ThemeMode } from '@/theme/tokens';
+} from '@/stores/shell-prefs';
+import type { ThemeMode } from '@/themes/tokens';
 import { Badge, Btn, Notice, Pill } from '@components/units';
 import { ProgressRing } from '@components/units';
 import { DynamicIsland } from '@components/DynamicIsland';
@@ -30,10 +30,10 @@ import { SettingsScreen } from '@screens/SettingsScreen';
 // 它是 `position: fixed; inset: 0` 的全屏浮层，数据全部来自 store，本就不依赖任何一屏的 DOM。
 import { ExpandedPlayer } from '@screens/music/ExpandedPlayer';
 import { useMusicStore } from '@music/store';
-import { isBlockedWhenNotReady, stateView, type Screen, type TranslateView } from '@/nav';
+import { isBlockedWhenNotReady, stateView, type Screen, type TranslateView } from '@/stores/nav';
 import type { TranslateSource } from '@screens/settings/translate-api';
 import { engineStatus, downloadEngineModels, type ModelDownloadView } from '@screens/settings/engine-api';
-import { engineDownloadChip, isDownloadActive } from '@/engine-download';
+import { engineDownloadChip, isDownloadActive } from '@/ipc/engine-download';
 import type { CancelResponse, DeleteTasksResponse, LibraryResponse, TaskRow } from '@/types';
 import { formatBytes } from '@tools';
 

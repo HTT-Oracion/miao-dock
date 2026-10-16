@@ -40,7 +40,7 @@ const TOKEN = 'a'.repeat(64);
 const SELF = fileURLToPath(import.meta.url);
 const SERVICE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'service', 'mod.rs');
 const STATE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'state.rs');
-const IPC_TS = path.join(REPO_ROOT, 'src', 'ipc.ts');
+const IPC_TS = path.join(REPO_ROOT, 'src', 'ipc', 'index.ts');
 const NOTREADY_TSX = path.join(REPO_ROOT, 'src', 'screens', 'NotReadyScreen.tsx');
 const APP_TSX = path.join(REPO_ROOT, 'src', 'App.tsx');
 

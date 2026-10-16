@@ -1,8 +1,8 @@
 /*
  * 应用外壳与各画面的样式。
  *
- * 几何取自《02》§5.1 / §5.2 / §5.5，数值与 `src/theme/tokens.ts` 的 SHELL / QUEUE_TABLE /
- * LIBRARY 常量**必须一致**——`src/spec-check.ts` 会把实际渲染尺寸与常量比对，
+ * 几何取自《02》§5.1 / §5.2 / §5.5，数值与 `src/themes/tokens.ts` 的 SHELL / QUEUE_TABLE /
+ * LIBRARY 常量**必须一致**——`src/tools/spec-check.ts` 会把实际渲染尺寸与常量比对，
  * 不一致即在设置页的「规格自检」里报红。所以这里改数值必须同步改常量。
  */
 

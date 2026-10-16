@@ -130,7 +130,7 @@ const readSections = () =>
     .map((n) => fs.readFileSync(path.join(SECTIONS_DIR, n), 'utf8'))
     .join('\n');
 const SECTION_TRANSLATE = path.join(SECTIONS_DIR, 'TranslateSection.tsx');
-const IPC_TS = path.join(ROOT, 'src', 'ipc.ts');
+const IPC_TS = path.join(ROOT, 'src', 'ipc', 'index.ts');
 const CARGO_TOML = path.join(ROOT, 'src-tauri', 'Cargo.toml');
 
 const REFUTE = process.argv.includes('--refute');

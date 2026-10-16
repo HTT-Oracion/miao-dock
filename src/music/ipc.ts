@@ -1,7 +1,7 @@
 /**
  * 音乐模块 IPC 层 —— 封装 Rust `music/` 模块的 98 条 Tauri 命令。
  *
- * 与 `../ipc.ts`（翻译服务的 IPC）同源：`invoke` 走 Tauri 的 IPC 通道，
+ * 与 `../ipc/index.ts`（翻译服务的 IPC）同源：`invoke` 走 Tauri 的 IPC 通道，
  * 参数/返回值与 Rust `#[tauri::command]` 的签名一一对应。这里只做类型化封装，
  * 不塞业务逻辑 —— 业务逻辑在 `store.ts` 的状态机里。
  */

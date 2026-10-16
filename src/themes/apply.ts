@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { setWindowTheme } from '@/ipc';
-import { cssVars, type ThemeMode } from '@/theme/tokens';
+import { cssVars, type ThemeMode } from '@/themes/tokens';
 
 const STORAGE_KEY = 'miao.theme';
 

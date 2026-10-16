@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { QUEUE_EMPTY } from '@/theme/tokens';
+import { QUEUE_EMPTY } from '@/themes/tokens';
 
 /*
  * 原子件（通用单元）—— 最早沉淀下来的一批"界面最小积木"。

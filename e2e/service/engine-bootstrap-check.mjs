@@ -48,7 +48,7 @@ const STATE_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'stat
 const RUNTIME_PROBE_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'runtime_probe.rs');
 /// W13：装配编排（长路径体检住在那里）。
 const RUNTIME_SETUP_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'runtime_setup.rs');
-const ENGINE_DOWNLOAD_TS = path.join(ROOT, 'src', 'engine-download.ts');
+const ENGINE_DOWNLOAD_TS = path.join(ROOT, 'src', 'ipc', 'engine-download.ts');
 /// W11：stage 归属的事实源。
 const MODELS_MANIFEST = path.join(ROOT, 'engine', 'models.manifest.json');
 /// W12：下载视图（第 1/第 2 阶段文案）。

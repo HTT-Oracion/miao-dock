@@ -23,7 +23,7 @@
 import { readFileSync } from 'node:fs';
 
 // ── 与应用共享的令牌（直接读源，避免脚本与应用漂移成两套数）──────────────────
-const TOKENS = readFileSync(new URL('../src/theme/tokens.ts', import.meta.url), 'utf8');
+const TOKENS = readFileSync(new URL('../src/themes/tokens.ts', import.meta.url), 'utf8');
 const num = (k) => {
   const m = TOKENS.match(new RegExp(`\\b${k}:\\s*([\\d.]+)`));
   return m ? Number.parseFloat(m[1]) : NaN;

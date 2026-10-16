@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { SETTINGS } from '@/theme/tokens';
+import { SETTINGS } from '@/themes/tokens';
 import { Badge } from '@components/units';
 import type { SettingItem } from '@screens/settings/catalog';
 

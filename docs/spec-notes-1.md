@@ -3913,3 +3913,45 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
   在 `899e3ea` 与改名前的 HEAD 里都**不存在**，与 Q3 是同一条既有回归）·
   `notready-state:refute` 的 `NotReadyScreen.tsx` 锚点（同样在改名前的 HEAD 里就不存在）。
 
+## D-220 前端 src 根收束：十个文件归位，以及 assets 与 music 为何原地不动（2026-10-16）
+
+**做了什么**（`refactor(app): src 根只留入口与装配，目录按职责重整`）：`src/` 根从 9 个散文件收成
+「`App.tsx` + `main.tsx` + 12 个目录」：
+
+| 旧位置 | 新位置 | 判据（依赖什么定归属） |
+| --- | --- | --- |
+| ipc.ts | `src/ipc/index.ts` | 与后端通信 |
+| engine-download.ts | `src/ipc/engine-download.ts` | 同上（也走 IPC） |
+| types.ts | `src/types/index.ts` | 跨域类型 |
+| vite-env.d.ts | `src/types/vite-env.d.ts` | 环境类型声明 |
+| nav.ts | `src/stores/nav.ts` | 跨组件共享状态（侧栏 / 标签 / 返回栈状态机） |
+| toastBus.ts | `src/stores/toastBus.ts` | 同上（轻提示通道） |
+| shell-prefs.ts | `src/stores/shell-prefs.ts` | 同上（偏好持久化） |
+| spec-check.ts | `src/tools/spec-check.ts` | 工具（应用内自检的判据集） |
+| theme/ | `src/themes/` | 目录复数化 |
+
+**两条「计划里写了、但按判据不该做」的处置（都写理由，不静默跳过）**
+- 🔴 **`src/assets/` 全部留在构建内，不二分到 `public/assets/`**。计划给的是判据（「是否经过构建」），
+  而实测判据指向相反：三份字体清单 `src/assets/fonts/<dir>/font.css` 由 `main.tsx` **从 JS 侧 import**，
+  目的正是让 Vite 处理 `url()` 并把字体**指纹化**落进构建产物（`main.tsx` 里写着这段理由）；
+  品牌图标由 `Sidebar.tsx` import，同为构建期资源。搬进 `public/` 会**丢掉指纹**、并把 `url()`
+  变成需要手写绝对路径 —— 那是回退，不是整理。`public/` 只放**不经过构建**的东西，现状即
+  `public/style-previews/*.png`（歌词样式图，按绝对 URL 引用）—— 已经对了，不需要动。
+- **`src/stores/` 收的是「非域共享状态」，音乐域的 store 留在域内**：全仓只有一处 `zustand` 的
+  `create()`，就是音乐域的 `src/music/store.ts`（actions 已切片到 `music/actions/*`）。
+  它属于音乐域，按同一条判据不该抽到 `stores/`；抽出去只会把音乐域拆成两处。
+
+**同步清单（缺一处就是静默跳过）**：`check:units`（`toastBus` 路径常量 + 一条反证锚点 +
+`THEME_TOKENS_RE` 正则 + 一条 ipc 反证的文件路径）· `check:ia`（`TOKENS` 直读 `src/themes/tokens.ts`）·
+`check:settings`（`nav` / `shellPrefs` / `tokens` / `ipc` 四个路径常量）· `check:engine-bootstrap`
+（`ENGINE_DOWNLOAD_TS`）· `check:notready-state` 与 `check:autostart`（各一个 `IPC_TS`）·
+注册表 3 处 `watch`。**顺带修掉一处既有静默缺陷**：注册表里 `progress-truth` 的 watch 写的是
+`src-tauri/` 下的 ipc.ts（**该文件从来不存在**）⇒ 改 `src/ipc/**` 时这条 check 在 `--changed` 模式下
+**不会被触发**。已改成 `src/ipc/index.ts`。
+
+**验收**：`npx tsc --noEmit` **0 错** · `npx vite build` **1799 modules transformed** 成功
+（用 `--outDir .tmp` 绕开 IDE 沙箱的批量删除守卫；默认 `dist/` 是在 `emptyOutDir` 那一步被该守卫拦下，
+**与代码无关**）· static 层 **228 / 3** 与改造前逐条一致 · `check:registry` 15/15 · `check:docs` 21/0 ·
+`check:docpaths` 4/1 · 受影响反证轮：`units` **59/59** · `settings` **138/138** · `music` **221/221** ·
+`autostart` 19/19 · `engine-bootstrap` 全绿。⚠️ GUI 真机行为仍未跑。
+

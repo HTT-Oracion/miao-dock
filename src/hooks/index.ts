@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 // 吐司的**唯一实现**在这里，本文件只做类型与 hook 转发（原因见本文件末尾的吐司段注释）
-import { toastBus, type BusToast } from '@/toastBus';
+import { toastBus, type BusToast } from '@/stores/toastBus';
 import {
   apiGet,
   errorText,
@@ -212,7 +212,7 @@ export function useQuitRequest(onRequest: () => void) {
 // ------------------------------------------------------------------ 吐司
 
 /**
- * 吐司类型。**实现在 `src/toastBus.ts`（基础设施，与 ipc/types 同级）**（模块级单例），这里只做类型转发。
+ * 吐司类型。**实现在 `src/stores/toastBus.ts`（基础设施，与 ipc/types 同级）**（模块级单例），这里只做类型转发。
  *
  * 迁移原因（结构问题，不是偏好）：原先状态是 `useState`，而 **useState 每次调用各得一份** ——
  * `App.tsx` 的 push 与 `MusicScreen` 的 push 是两个互不相通的队列。

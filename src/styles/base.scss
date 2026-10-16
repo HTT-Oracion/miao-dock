@@ -4,7 +4,7 @@
  * ⚠️ 本文件是**样式分片**之一，由 `index.scss` 用 `@use` 引入 —— 任何地方都不得
  * 直接 import 它（样式只经一个入口，规则见《09》§2.4）。
  *
- * 设计令牌**不在这里硬编码**——它们由 `src/theme/apply.ts` 用 `cssVars(mode)` 写进
+ * 设计令牌**不在这里硬编码**——它们由 `src/themes/apply.ts` 用 `cssVars(mode)` 写进
  * `document.documentElement` 的 style。这样「深色模式只换变量、不换结构」（《01》§9）
  * 成为**结构性事实**：要换主题只能改变量，没有第二处可以偷偷写死颜色。
  *

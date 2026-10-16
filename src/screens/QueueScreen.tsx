@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FolderOpen, Trash2 } from 'lucide-react';
-import { QUEUE_TABLE } from '@/theme/tokens';
+import { QUEUE_TABLE } from '@/themes/tokens';
 import { STATUS_DOT_VAR, STATUS_LABEL, SOURCE_LABEL, isTerminal, type TaskRow, type TaskStatus } from '@/types';
 import { pageCount, pageSlice, relativeTime } from '@tools';
 import { Btn, Dot, MagicCircle, MenuButton, MenuItem } from '@components/units';

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToasts } from '@hooks';
 import type { ServiceStatus } from '@/ipc';
-import { stateView } from '@/nav';
+import { stateView } from '@/stores/nav';
 import { useEngineState } from '@screens/settings/engine-state';
 import { ACCEL_LABEL } from '@screens/settings/engine-api';
 import { errorText, openPath, serviceStart, serviceStop } from '@/ipc';

@@ -83,8 +83,8 @@ const F = {
   // X-C3「准备中」屏（S6 的「L1–L4 文案 + 首张稍慢」）。它不在设置页里，
   // 但它与设置页共享同一条事实源（Rust 的 StatusView），所以放同一轮断言。
   notReady: path.join(APP, 'src', 'screens', 'NotReadyScreen.tsx'),
-  ipc: path.join(APP, 'src', 'ipc.ts'),
-  nav: path.join(APP, 'src', 'nav.ts'),
+  ipc: path.join(APP, 'src', 'ipc', 'index.ts'),
+  nav: path.join(APP, 'src', 'stores', 'nav.ts'),
   // 断言读到的 css 是全分片拼接（见 loadSources）。
   // `mangaStyle` 是 X-C3 那组规则所在的分片，仅在"反证要定点破坏某条 CSS 规则"时用
   // （`stylesDir` 是目录，没法直接改）。
@@ -98,9 +98,9 @@ const F = {
   // D-84 · 功能梳理落地的四个接入点：
   //   def 渲染（parts 的 DefaultChip）· 侧栏标签偏好（shell-prefs + Sidebar + App）
   //   · 存储占用三行（StorageBlock）· 第三方许可（生成物 + 块 + 生成脚本）
-  shellPrefs: path.join(APP, 'src', 'shell-prefs.ts'),
+  shellPrefs: path.join(APP, 'src', 'stores', 'shell-prefs.ts'),
   sidebar: path.join(APP, 'src', 'components', 'Sidebar.tsx'),
-  tokens: path.join(APP, 'src', 'theme', 'tokens.ts'),
+  tokens: path.join(APP, 'src', 'themes', 'tokens.ts'),
   // 随仓字体根目录（每个子目录 = 一份 `<dir>/font.css` 清单 + 其字体文件）。
   // FONT 组按目录**扫描**而不写死具体字体名 —— 字体更替（GenJyuu → LXGW / Yozai / Swei）
   // 不该逼着断言跟着改名（2026-10-10 那次替换踩过：三条断言写死 GenJyuu，删字体时全红）。

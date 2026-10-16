@@ -3,7 +3,7 @@
  *
  * 来源：设计稿文件 732136506189423 的 Color 变量集（id `3:2`），Light `3:1` / Dark `3:3`。
  * 共 18 色（ver1.0 新增 warning）。`$3:n` 是设计稿变量 id，保留以便对账。
- * 取值与 `extension/src/theme/tokens.ts` 保持同步 —— 两侧不一致即为缺陷。
+ * 取值与 `extension/src/themes/tokens.ts` 保持同步 —— 两侧不一致即为缺陷。
  */
 
 export const COLOR_TOKENS_LIGHT = {

@@ -18,9 +18,9 @@ import {
   COLOR_TOKENS_DARK,
   COLOR_TOKENS_LIGHT,
   type ThemeMode,
-} from '@/theme/tokens';
+} from '@/themes/tokens';
 import type { ServiceState } from '@/ipc';
-import { APP_LABEL, stateView, TRANSLATE_VIEWS } from '@/nav';
+import { APP_LABEL, stateView, TRANSLATE_VIEWS } from '@/stores/nav';
 
 export interface SpecResult {
   id: string;

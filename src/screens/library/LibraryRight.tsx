@@ -4,7 +4,7 @@
 // 屏本体的 return 由「左栏 + 右栏 + 一排弹窗」三块组成，前两块各自成件后
 // 屏本体只剩状态与编排。只传 props（守本仓「零 Context」）。
 import { ArrowLeft, RefreshCw } from 'lucide-react';
-import { LIBRARY } from '@/theme/tokens';
+import { LIBRARY } from '@/themes/tokens';
 import { Btn, IconButton, Notice } from '@components/units';
 import { ChapterCard } from '@screens/library/chapters';
 import { GRID_LABEL, Thumb } from '@screens/library/cards';

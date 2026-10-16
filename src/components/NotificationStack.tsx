@@ -1,7 +1,7 @@
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { toastBus, useToastList } from '@/toastBus';
-import type { BusToast, ToastKind } from '@/toastBus';
+import { toastBus, useToastList } from '@/stores/toastBus';
+import type { BusToast, ToastKind } from '@/stores/toastBus';
 
 /**
  * 通知堆叠（topRight）—— 轻提示的**唯一**渲染层（2026-10-11 改版）。
