@@ -4293,3 +4293,32 @@ Rust 六域表与「命令注册只能一处展开 + `Wry` 不能泛型化」两
 （配置层 + 锁文件同步守卫，正是它该有的两处），跑完 `Cargo.toml` **按字节还原**、无残留；
 static 门 **17/17**（含 `check:counts` 对账：AGENTS 的 14 ↔ 脚本自报 14）。
 
+## D-228 音乐登录态与用户数据的落点：dev 与安装包**共用一份**（2026-10-16）
+
+**现象（开发者会疑惑的那一问）**：开发态登录了音乐，装完安装包进去**也是登录态** —— 这是不是把登录态打进包了？
+
+**结论：不是。** 包内只有 exe 与 `engine/*.json`（A2 的必需资产），登录态是**运行时**从用户目录读的：
+
+| 内容 | 落点（实测） | 载体 |
+| --- | --- | --- |
+| 各平台 cookie · uid · `playback_source` | `%APPDATA%\com.miaodock.desktop\music-cookies.json` | `tauri-plugin-store`（`music/cookie.rs` 的 `app.store(STORE_FILE)`） |
+| 登录用户信息缓存（含 VIP 标识） | `%LOCALAPPDATA%\MiaoDock\music_profiles.json` | `music/mod.rs::profile_cache_path()` |
+
+**为什么共用**：`app.store(...)` 落在 Tauri 的 **app data dir（按 identifier 分）**，而 dev 与安装版用**同一个
+identifier**（`com.miaodock.desktop`，两侧都读同一份 `tauri.conf.json`）⇒ 同一份文件。
+这是"同一 Windows 用户 + 同一应用标识"的自然结果，**不是配置错误**。实测时间线也吻合：
+cookie 文件 17:00 由开发态写入，17:50 起的安装版进去直接是登录态。
+
+**随之而来的一条口径（别混）**：用户数据**一半共享、一半不共享** ——
+- **共享**：登录态 / 播放源（后端 store，按「用户 + identifier」存放）；
+- **不共享**：播放历史 / 偏好 / 启动恢复快照（前端 **WebView localStorage**，按 **origin** 隔离：
+  dev 是 `http://localhost:1420`，打包是 Tauri 自定义协议）。
+
+**两处顺带记录（未改）**：
+- `%APPDATA%\NexBox\music-cookies.json` 是**改名前的旧 identifier** 残留，现已不再被读。
+- `profile_cache_path()` 用的是**硬编码字面量** `dirs::data_local_dir()/MiaoDock`，而不是按 identifier
+  推导 —— 与 store 的落点口径不一致（功能没问题，但"哪天 identifier 再改一次"时它不会跟着走）。
+
+**想隔离 dev 与正式版**：今天**没有**接缝（store 落点由 Tauri 的 app data dir 决定，无 `MIAO_*` 覆盖）；
+可行的是换 identifier 或换 Windows 用户。若要加"可指到临时目录"的接缝（便于验收/并行），按新增接缝的纪律另开一条。
+
