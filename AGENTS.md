@@ -52,6 +52,8 @@
 - `src/ipc/` —— **与后端通信**：`ipc.ts`（翻译服务命令 + 错误信封解析）· `engine-download.ts`（引擎下载的三态文案）。跨屏复用的调用收口在这里。
 - `src/types/` —— 跨域类型（`types.ts` + `vite-env.d.ts` 环境声明）；只服务单个屏的类型仍留屏内。
 - `src/themes/` —— 设计令牌与主题应用（`tokens.ts` / `apply.ts`）。🔴 令牌数值是**断言对象**（`check:ia` 直接读 `themes/tokens.ts`），改它要同时看断言。
+- `public/assets/` —— **公共资源（不经过构建）**：`fonts/`（三份 `<dir>/font.css` 清单 + 字重文件，由 `templates/index.html` 的 `<link>` 加载）· `icons/`（品牌图，用**绝对 URL** 引）。判据是"**要不要过构建**"：需要指纹化的放 `src/`，需要路径可预测的放这里 —— 走 `import` 会多拿一份带指纹的副本（`check:settings` 的 FONT 组同时钉入口 `link` 与清单里的 `url()`）。
+- `installer/` —— **安装器材料**：Windows NSIS 钩子 `hooks.nsh`，由 `tauri.windows.conf.json` 的 `bundle.windows.nsis.installerHooks` 以 `../installer/hooks.nsh`（**相对 `src-tauri/` 解析**）引用；打包期才被消费，故 `check:bundle` 的 W8–W12 钉的是**内容与接线**而非编译产物。
 - **按「依赖什么」定归属，不按「被用几次」定归属。** 抽离规则与反面纪律（什么**不**该抽）见 `docs/internal/spec-notes.md` D-34 与《09》§2.2。
 
 **服务端模块目录（硬规则）**：
@@ -164,7 +166,7 @@ npm run check:nightly        # 全量：含 nightly（真引擎/模型）与全�
 > （各脚本汇总行格式不统一，且反证轮要把每个脚本再跑一遍）。
 
 npm run task -- check:registry[:refute] # 命令清单 ↔ 分层注册表 **正向 15** 条 / 反证 **13** 变异（双向覆盖（清单↔注册表，两个方向各一条）+ 清单 cmd 形态/脚本存在/id 唯一/反证只许派生/分组条数写死 + `package.json` 只剩三类入口 + tier 合法/唯一/存在/各层条数 == 写死的常量）。🔴 两条计数门是 E4 的同一件事在两侧各钉一次：删一条钉子、或把它的 tier 写错，输出依旧全绿而**没有任何一行会变红** —— 分子变绿、分母变小；把分母钉住，减一条就得先改常量（反证 M5/M12 正是"删一条"、M7 是"把命令加回 package.json"）
-npm run task -- check:counts[:refute] # **条数对账**：本节 static 层那批的「N 条」必须与脚本自报一致 2 条 / 反证 2 条。漂移**不会报错**（文档说 14、脚本跑出 9，两处各自都"正常"）—— 2026-10-16 首次核对就抓到五处：tls 14→9 · bundle 15→16 · pydensecrf-wheel 13→20 · docpaths 5→4 · quit 5→4（后者有一条既有反证锚点缺失）
+npm run task -- check:counts[:refute] # **条数对账**：本节 static 层那批的「N 条」必须与脚本自报一致 2 条 / 反证 3 条（改小文档数字 · 「N 条」改成「N 项」· 删掉某个脚本里的一条钉子 —— 漂移的两端各测一次）。漂移**不会报错**（文档说 14、脚本跑出 9，两处各自都"正常"）—— 2026-10-16 首次核对就抓到五处：tls 14→9 · bundle 15→16 · pydensecrf-wheel 13→20 · docpaths 5→4 · quit 5→4（后者有一条既有反证锚点缺失）
 
 npm run selftest              # A 组服务契约 159 条 + 引擎自测 23 条
 npm run task -- selftest:app[:refute] # B 组应用生命周期 16 条（含 S2a–S2d：五态轨迹 / E1 参数快照 / 三子进程 / 崩溃分级；含反证）

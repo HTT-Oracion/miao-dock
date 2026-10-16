@@ -291,9 +291,15 @@ if (REFUTE) {
     },
     {
       id: 'M4',
-      what: 'GB 数字写死成 6.9',
+      what: 'GB 数字写死成 6.9（清单加一条权重后界面就开始撒谎）',
+      /*
+       * 锚点跟着实现走：读数由 `gb` 变量拼出（`const gb = rt.requiredBytes > 0 ? … : null`），
+       * "写死"的形态因此是**把拼装处换成字面量**（旧锚点盯的是早先那句整句文案，早已不存在）。
+       * 另一半判据（是否仍引用 `rt.requiredBytes`）不必单独配变异：去掉引用会让 `gb` 悬空，
+       * `tsc` 当场报错 —— 那是编译期失效，不是本组要防的静默失效。
+       */
       mutate: () =>
-        mutateFile(NOTREADY_TSX, '（模型资产约 ${(rt.requiredBytes / GIB).toFixed(1)} GB）', '（模型资产约 6.9 GB）'),
+        mutateFile(NOTREADY_TSX, "需要先安装翻译引擎{gb ? `（约 ${gb} GB）` : ''}", '需要先安装翻译引擎（约 6.9 GB）'),
       expect: 'G8',
     },
     {

@@ -18,7 +18,16 @@
 //    对 AGENTS.md / README.md / project_rules.md 三处声明一起钉着。
 // ④ 因此 §3 里 service / nightly 那批的数字是**人工快照**，本脚本不碰它们 ——
 //    这一点写在 AGENTS.md §3 的口径说明里，读者不会误以为它们也被钉着。
+//
+// ## 反证轮要覆盖**两个方向**
+// 漂移有两端，只测一端等于没测：文档改了（脚本没变）与**脚本变了**（文档没跟）。
+// 故三条破坏是：改小文档数字 ⇒ `staticParity` 红 · 把「N 条」改成「N 项」⇒
+// `staticDeclared` 红 · **删掉某个脚本里的一条钉子**（自报 9→8）⇒ `staticParity` 红。
+// 🔴 第三条必须**真改盘**：被对账的脚本是本进程用 `execFileSync` 起的**子进程**，
+//    内存覆盖层对它不可见（见 `_file-cache.mjs` 里「改盘 vs 覆盖」的说明），
+//    因此跑完按字节还原并复核 —— 留下一个被改坏的脚本比没测更糟。
 import { execFileSync } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -142,19 +151,33 @@ if (!REFUTE) {
   console.log(`通过 ${pass} / 失败 ${results.length - pass}`);
   if (pass !== results.length) process.exitCode = 1;
 } else {
-  // 反证轮：改 AGENTS.md（内存覆盖层，不写盘）⇒ 指定断言必须变红
+  /*
+   * 反证轮：三条破坏，覆盖漂移的**两端**。
+   * 破坏面有两种，机制不同（不是绕路，是被测对象决定的）：
+   *  · `AGENTS.md` —— 本进程自己读它 ⇒ 走内存覆盖层（不写盘）。
+   *  · 被对账的脚本 —— 本进程把它当子进程跑 ⇒ 覆盖层不可见，只能真改盘。
+   */
   const MUTATIONS = [
     {
       name: '把 check:tls 的条数改小（文档说 9、脚本跑出 9 以外的任何数）',
+      file: AGENTS,
       find: 'npm run task -- check:tls             # TLS 依赖链 9 条（三层）',
       replace: 'npm run task -- check:tls             # TLS 依赖链 8 条（三层）',
       expect: ['COUNTS.staticParity'],
     },
     {
       name: '把 check:ia 的条数从「N 条」改成「N 项」（声明消失，而没人会发现）',
+      file: AGENTS,
       find: 'npm run task -- check:ia              # IA 结构 32 条',
       replace: 'npm run task -- check:ia              # IA 结构 32 项',
       expect: ['COUNTS.staticDeclared'],
+    },
+    {
+      name: '删掉 check:tls 的一条钉子（脚本自报 9 → 8，文档没跟）—— 漂移的另一端',
+      file: path.join(ROOT, 'e2e', 'tls-check.mjs'),
+      find: "ok(/reqwest\\s*=/.test(toml), 'Cargo.toml 声明了 reqwest');",
+      replace: '// 反证：这条钉子被删掉（模拟"脚本少了一条、文档没跟"）',
+      expect: ['COUNTS.staticParity'],
     },
   ];
 
@@ -165,17 +188,10 @@ if (!REFUTE) {
   let red = 0;
   let total = 0;
   let skipped = 0;
-  console.log('\n破坏 AGENTS.md 的条数声明 → 断言必须变红 → 还原\n');
-  for (const mut of MUTATIONS) {
-    const original = cachedReadText(AGENTS);
-    if (!original.includes(mut.find)) {
-      console.log(`⚠ ${mut.name}\n    破坏锚点未找到（AGENTS.md 的写法变了？）—— 本条无法反证`);
-      skipped += mut.expect.length;
-      continue;
-    }
-    overrideFile(AGENTS, original.replace(mut.find, mut.replace));
-    results.length = 0;
-    runAll();
+  let restoreFail = 0;
+
+  /** 一条破坏跑完后的判定（两种破坏面共用） */
+  const judge = (mut) => {
     console.log(`🔴 ${mut.name}`);
     for (const id of mut.expect) {
       total++;
@@ -188,6 +204,43 @@ if (!REFUTE) {
       }
       if (!base[id]) console.log(`     注：${id} 基线本就是红，无法据此判定断言有效性`);
     }
+  };
+
+  console.log('\n破坏源文件 → 断言必须变红 → 还原\n');
+  for (const mut of MUTATIONS) {
+    if (mut.file !== AGENTS) {
+      // 改盘的那条：跑完必须**按字节还原**并复核（坏脚本留在盘上比没测更糟）
+      const original = readFileSync(mut.file);
+      if (!original.toString('utf8').includes(mut.find)) {
+        console.log(`⚠ ${mut.name}\n    破坏锚点未找到（脚本写法变了？）—— 本条无法反证`);
+        skipped += mut.expect.length;
+        continue;
+      }
+      writeFileSync(mut.file, original.toString('utf8').replace(mut.find, mut.replace));
+      try {
+        results.length = 0;
+        runAll();
+        judge(mut);
+      } finally {
+        writeFileSync(mut.file, original);
+        if (!readFileSync(mut.file).equals(original)) {
+          restoreFail++;
+          console.log(`  ✗ ${path.relative(ROOT, mut.file)} 未按字节还原！`);
+        }
+      }
+      continue;
+    }
+
+    const original = cachedReadText(AGENTS);
+    if (!original.includes(mut.find)) {
+      console.log(`⚠ ${mut.name}\n    破坏锚点未找到（AGENTS.md 的写法变了？）—— 本条无法反证`);
+      skipped += mut.expect.length;
+      continue;
+    }
+    overrideFile(AGENTS, original.replace(mut.find, mut.replace));
+    results.length = 0;
+    runAll();
+    judge(mut);
     overrideFile(AGENTS, null);
   }
   clearOverrides();
@@ -195,5 +248,6 @@ if (!REFUTE) {
   console.log('\n' + '─'.repeat(56));
   console.log(`REFUTE: ${red}/${total} 条按预期变红（应执行 ${total} 条）`);
   if (skipped) console.log(`✗ 有 ${skipped} 条未能反证（锚点未找到）—— 跳过 ≠ 通过`);
-  if (red !== total) process.exitCode = 1;
+  if (restoreFail) console.log(`✗ 有 ${restoreFail} 个文件未按字节还原`);
+  if (red !== total || skipped || restoreFail) process.exitCode = 1;
 }

@@ -52,7 +52,23 @@ const CHECKS = [
     script: 'e2e/music-platform-check.mjs',
     tier: 'static',
     refute: true,
-    watch: ['src/**', 'src-tauri/src/music/**', 'e2e/music-platform-check.mjs'],
+    // 判据源分四块，各自都真的被脚本读，缺哪块都是「改了却不重跑」= 静默跳过：
+    //   ① `src/**` 音乐域与歌词域的前端源码；② Rust 侧音乐域与命令注册（`lyrics_window.rs` 在其中）；
+    //   ③ 窗口与打包配置（capabilities / tauri.conf / Cargo.toml / `templates/lyrics.html` / vite）；
+    //   ④ M5 截图取证通道 —— CAPTURE 组判「Rust 截哪几张 ↔ JS 收哪几张」，跨 `capture.rs` 与 `capture.mjs`。
+    watch: [
+      'src/**',
+      'src-tauri/src/music/**',
+      'src-tauri/src/commands/**',
+      'src-tauri/src/selftest/capture.rs',
+      'src-tauri/capabilities/**',
+      'src-tauri/tauri.conf.json',
+      'src-tauri/Cargo.toml',
+      'templates/lyrics.html',
+      'vite.config.ts',
+      'e2e/capture.mjs',
+      'e2e/music-platform-check.mjs',
+    ],
   },
   {
     id: 'settings',
@@ -60,7 +76,16 @@ const CHECKS = [
     tier: 'static',
     refute: true,
     // `e2eScripts.json`：FEATURES.gen.script 判的是「gen:licenses 有没有地方注册着」（清单是其一）
-    watch: ['src/**', 'src-tauri/src/mangasvc/engine/**', 'e2eScripts.json', 'e2e/settings-media-check.mjs'],
+    // `templates/` 与 `public/`：FONT 组的判据源是入口 HTML 的 `<link>` 与公共资源里的 `font.css`
+    // （2026-10-16 字体从 `src/assets/` 二分开来 ⇒ 判据源整体搬出了 `src/**`）
+    watch: [
+      'src/**',
+      'src-tauri/src/mangasvc/engine/**',
+      'templates/**',
+      'public/**',
+      'e2eScripts.json',
+      'e2e/settings-media-check.mjs',
+    ],
   },
   {
     id: 'quit',
@@ -81,8 +106,10 @@ const CHECKS = [
     script: 'e2e/counts-parity-check.mjs',
     tier: 'static',
     refute: true,
-    // 判据源是 AGENTS.md §3 的条数声明 + 被对账的那批脚本自身 ⇒ 两处都进 watch
-    watch: ['AGENTS.md', 'e2eScripts.json', 'e2e/counts-parity-check.mjs'],
+    // 判据源是 AGENTS.md §3 的条数声明、被对账的那批 static 脚本**自身**，以及命令清单的解析器
+    // （`_commands.mjs`：它决定"哪些算 static 层、跑的是哪条 cmd"）。
+    // 🔴 缺了脚本侧那一半 = 脚本条数一变就静默跳过对账 —— 而那正是本 check 要防的漂移源。
+    watch: ['AGENTS.md', 'e2eScripts.json', 'e2e/_commands.mjs', 'e2e/**'],
   },
   {
     id: 'docs',
