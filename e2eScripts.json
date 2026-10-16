@@ -27,7 +27,8 @@
         { "id": "check:engine-bootstrap", "cmd": "node e2e/service/engine-bootstrap-check.mjs", "desc": "G4/G5 零配置装配链门（阶段顺序 / 进度来源 / 零命令行 / 按 dest 解包）", "refute": true },
         { "id": "check:resources", "cmd": "node e2e/resources-check.mjs", "desc": "随包资源寻址 A1/A2 三环境取证（dev / 打包齐备 / 打包缺失）", "refute": true },
         { "id": "check:harness", "cmd": "node e2e/service/harness-check.mjs", "desc": "F0 服务靶子抽象钉子（入口解析唯一 / 靶子只有一个 mangasvc）", "refute": true },
-        { "id": "check:registry", "cmd": "node e2e/registry-check.mjs", "desc": "注册表完整性：本清单 ↔ e2e/_check-registry.mjs 双向覆盖 + 各层条数写死", "refute": true }
+        { "id": "check:registry", "cmd": "node e2e/registry-check.mjs", "desc": "注册表完整性：本清单 ↔ e2e/_check-registry.mjs 双向覆盖 + 各层条数写死", "refute": true },
+        { "id": "check:counts", "cmd": "node e2e/counts-parity-check.mjs", "desc": "条数对账：AGENTS.md §3 里 static 层那批的「N 条」必须与脚本自报一致", "refute": true }
       ]
     },
     "service": {

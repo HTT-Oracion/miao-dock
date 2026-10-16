@@ -77,6 +77,14 @@ const CHECKS = [
     watch: ['**/*.md', 'docs/**', 'e2e/docs-path-check.mjs'],
   },
   {
+    id: 'counts',
+    script: 'e2e/counts-parity-check.mjs',
+    tier: 'static',
+    refute: true,
+    // 判据源是 AGENTS.md §3 的条数声明 + 被对账的那批脚本自身 ⇒ 两处都进 watch
+    watch: ['AGENTS.md', 'e2eScripts.json', 'e2e/counts-parity-check.mjs'],
+  },
+  {
     id: 'docs',
     script: 'e2e/docs-consistency-check.mjs',
     tier: 'static',
