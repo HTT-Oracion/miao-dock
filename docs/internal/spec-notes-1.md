@@ -4217,9 +4217,25 @@ Rust 六域表与「命令注册只能一处展开 + `Wry` 不能泛型化」两
   Windows 忽略 POSIX 权限位 ⇒ 前提恒不成立；② 用 `NODE_OPTIONS=--import` 注入"不带 errno 的错误" ——
   只对**已退役的 Node 靶子**有效，现在是 Rust 靶子。⇒ 要两样：平台正确的"不可写"夹具（Windows 走 ACL），
   以及给 Rust 靶子一个等价的反证接缝（或明确改判为"该形状只能靠 Rust 侧单测"）。
-- 🔴 **产品侧：不可行档位的拒绝返回空响应体**。实测 `POST /engine/settings {"tier":"small"}`
-  （本机唯一可行档位是 tiny）⇒ `400` 且**响应体为空** —— 与"每一个不该被接受的输入都要指得出
-  可选什么"的纪律相悖（同组其它拒绝都带 `INVALID_SETTING` + `details`）。**待修**。
+- ⚠️ **更正（同日复核）：先前那条「不可行档位的拒绝返回空响应体」是我的误判，不是产品缺陷。**
+  我用的探测工具是 PowerShell 的 `Invoke-WebRequest`，它在**异常路径**上读不到响应体
+  （`$_.Exception.Response.GetResponseStream()` 拿到空流）⇒ 我把"工具读不到"当成了"产品没给"。
+  换 Node `fetch` 复测，产品返回的是**完整、可核对、且指出可选值**的拒绝：
+
+  ```json
+  {"error":{"code":"INVALID_SETTING",
+            "details":{"key":"tier","totalRamGb":15.7,"value":"small"},
+            "message":"档位 small 在本机物理不可行（本机内存 15.7 GB，该档预估峰值 12.8 GB）—— 可选：tiny"}}
+  ```
+
+  （`accel` 同理：`"加速后端 mps 在本机不可用（硬件探测为 CUDA）—— 可选：auto / cuda / cpu"`）
+  ⇒ **纪律沉淀**：复核响应体**不要**用 `Invoke-WebRequest`；用 Node `fetch` 或 `curl`。
+  假证据的代价不只是白跑一趟 —— 它会写进台账当成"待修缺陷"。
+- 🟡 这次误判顺带暴露一个**真问题（小，待修）**：本机有 CUDA 时，档位可行性按**显存**判
+  （`profile::feasible_tiers`：`gpu.kind == "cuda"` 走 vram 阈值，**与整机 RAM 无关**），
+  而拒绝理由与 `details` 只报**内存**（`totalRamGb` + 该档峰值）⇒ 现场读起来像
+  "峰值 12.8 GB < 内存 15.7 GB 却被判不可行"（**我自己就是被这句话误导的**）。
+  修法二选一：理由按**判定池**报数（cuda 侧报显存），或把 `vramGb` 一并塞进 `details`。
 
 **四、法务复核（负责人确认的结论已落文档）**：`docs/distribution-license-conclusion.md` §4 三项
 **2026-10-16 全部通过**（§1 的 B 档「待复核」→「可以」、§5 checklist 第 1 项打勾、`AGENTS.md` §4 同步）。
