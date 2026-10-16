@@ -234,7 +234,11 @@ if (!fs.existsSync(RUST_BIN)) {
   const mock = (await warnsFor('mock')).split(/\r?\n/).filter((l) => l.includes('引擎运行时未就绪'));
   check(
     'B3.d real 档 + runtime 未装配 ⇒ 启动日志逐项报「运行时未就绪」（B1 验收②）',
-    real.length === 5 && real.every((l) => /· (venvRoot|python|source|deps|patches)：.*[A-Z]:\\|~\//.test(l)),
+    // 🔴 判据 id 必须**跟着 `runtime_probe::probe()` 一起长**：七项（D-231③ 追加了
+    //    `llm` / `weights`）。少写一个 id 不会红，只会让那一行不再被这条断言覆盖 ——
+    //    而"日志里逐项点名"的价值正在点名完整。
+    real.length === 7 &&
+      real.every((l) => /· (venvRoot|python|source|deps|patches|llm|weights)：.*[A-Z]:\\|~\//.test(l)),
     real,
   );
   check('B3.d2 mock 档**不**报运行时未就绪（mock 不要真引擎，报了会误导用户）', mock.length === 0, mock);

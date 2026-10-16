@@ -232,10 +232,10 @@ npm run task -- check:docs            # 文档 ↔ 实现一致性 21 条：条�
 npm run task -- check:bundle          # 打包配置钉子 13 条 / 反证 18 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip`；**W6** 必需资产条目在且 src 真实存在；**W7/W7b（C5）** 随包 **0 个模型权重**（后缀黑名单 + 与 `engine/models.manifest.json` 逐条交叉）；**W8–W11（E2/E3）** NSIS 安装器钩子：长路径**只读提示**（不替用户改 `HKLM`）+ 卸载**默认保留**引擎运行时且不碰作品目录 + 引导写明 SmartScreen + **每个弹窗都有 `IfSilent` 守卫**（否则静默安装/卸载会被弹窗挂死，不是变红是不返回）；源码级，不起进程）
 npm run task -- check:resources       # 随包资源寻址 **A1/A2** 三环境取证 8 条 / 反证 4 条（dev 态不误报 · 打包齐备取资源目录 · 打包缺失报 `RESOURCE_MISSING` · 优先级 · 必需资产交叉验证 · 源码钉）
 npm run task -- check:packaged        # **A4 打包后冒烟**：真实安装包三层取证 12 条（nightly 层；NSIS 静默安装 → `--check-assets` + `--engine-crf-plan` 命中包内 wheel → 起服务打 `/health` + mock 替身 + 启动配方）
-npm run task -- check:runtime-probe   # **B2/B5 引擎运行时五项只读检测** 44 条 / 反证 4 条（`GET /api/v1/engine/runtime`；`venvRoot`/`python`/`source`/`deps`/`patches` 逐项独立翻转 + `detail` 必带绝对路径 + 缺补丁点名到 patch id + mock 档不 warn + junction 场景三项 env 判定穿过链接）
+npm run task -- check:runtime-probe   # **B2/B5 引擎运行时七项只读检测** 74 条 / 反证 4 条（`GET /api/v1/engine/runtime`；`venvRoot`/`python`/`source`/`deps`/`patches`/`llm`/`weights` 逐项独立翻转 + `detail` 必带绝对路径 + 缺补丁点名到 patch id + mock 档不 warn + junction 场景三项 env 判定穿过链接。末两项属**模型链**（D-231③），前五项全绿但缺它们时 `ready` 仍为 false）
 npm run task -- check:path-single-source # **B3 检测与启动同源** 5 条 / 反证 1 条（`/engine/runtime` 的 `python.path` vs `--print-launch-plan` 的 `engine.cmd[0]` 逐字节比对）
-npm run task -- check:launch-gate    # **D6 real 档启动前预检闸门** 9 条 / 反证 3 条（real+未就绪 ⇒ **②/③ 一个不起、① 照常起**（D-229）并逐项点名；mock 档不过闸；含两条源码钉：「`gate_message(` 早于 `spawn_spec(&plan.engine`」+「闸门不得连 ① 一起挡」）
-npm run task -- check:install-guide  # **D5 安装引导与产品对拍** 18 条 / 反证 5 条（两份引导的落点模板代入本机后 == `mangasvc --print-paths` 推出的落点、体积标记 == 清单按平台求和、五项就绪项 · 三条落点纪律 · 平台形态互不串 · 两种命令形态都存在）
+npm run task -- check:launch-gate    # **D6 real 档启动前预检闸门** 10 条 / 反证 4 条（real+未就绪 ⇒ **②/③ 一个不起、① 照常起**（D-229）并逐项点名七项；mock 档不过闸；含三条源码钉：「`gate_message(` 早于 `spawn_spec(&plan.engine`」+「闸门不得连 ① 一起挡」+「`wait_probe` 先查子进程存活再谈超时（D-231②）」）
+npm run task -- check:install-guide  # **D5 安装引导与产品对拍** 18 条 / 反证 6 条（两份引导的落点模板代入本机后 == `mangasvc --print-paths` 推出的落点、体积标记 == 清单按平台求和、七项就绪项 · 三条落点纪律 · 平台形态互不串 · 两种命令形态都存在）
 npm run task -- check:notready-state # **D1「运行时未装配」独立成态** 13 条 / 反证 5 条（两条链路都带 `runtime` 块 · L1–L4 四句文案逐字冻结 · 新分支不混进 L1 失败 · 「约 X GB」来自服务端 `requiredBytes`）
 npm run task -- check:models-guide   # **D8 模型引导清单（渲染而非编写）** 14 条 / 反证 4 条（逐条目标绝对路径 ⟷ Node 独立算 · 就绪 = 在位且大小一致 · 改清单副本 ⇒ 输出跟着变）
 npm run task -- check:size-guide     # **C1 体积与落点如实告知** 16 条 / 反证 3 条（`guidance.totalBytes` == 本平台清单 `sizeBytes` 求和且与 D1 同数 · 分档之和恒等于总量 · 与安装引导文档三方闭环 · 界面无写死 GB）

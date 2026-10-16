@@ -4561,3 +4561,68 @@ static 门 **17/17**。
 ⚠️ 注：本条第一次落地时改动被回退过一次（`git status` 干净、文件里 `is_alive` 为 0 处），
 按纪律第 2 条"记忆不能当证据"重做了一遍并重新验证 —— 计划里写的"已改好、已验证"以工作区为准。
 
+### D-231③ 判据从五项扩到七项：引擎与权重缺失不再被说成「装好了」
+
+**起因**：现场同一台机器上，`--check-runtime-gate real` 与引导页都说"引擎已装配"，启动却报
+`③ LLM 未在 180s 内就绪`，`[llm:err]` 末行是 `os error 3`（找不到 llama 可执行体）。
+D-231② 让它**秒级失败**了，但那只是把"干等 240s"变成"秒级失败"——**"缺什么"仍然没说对**。
+
+**根因**：`src-tauri/src/mangasvc/engine/runtime_probe.rs` 的 `probe()` 只有五项
+（`venvRoot` / `python` / `source` / `deps` / `patches`），而这五项**全部**来自
+`--engine-bootstrap` 那条链。③ 的可执行体（`bin/llama/<版本>/llama-server`）与翻译权重来自
+**另一条链**（`engine/models.manifest.json` + `--fetch-models --extract`），两条链**互不覆盖**：
+只跑完"第 1 轮（运行环境）"的机器，`models/` 与 `bin/` **目录压根没建**，五项仍全真 ⇒
+界面说装好了、闸门放行、启动秒退。判据不齐，"还缺什么"这句话就没有事实依据。
+
+**改法**（判据加两项，不改既有五项的语义与顺序）：
+
+- **⑥ `llm`**：`is_file(default_llm_server_bin())`。落点复用
+  `src-tauri/src/mangasvc/engine.rs` 的 `default_llm_server_bin()`（为此把该函数由私有改为
+  `pub`）与 `LLAMA_VERSION_DIR` —— **不新写第二份路径字面量**，两处各拼一遍迟早漂移。
+- **⑦ `weights`**：直接调 `model_status::model_status(&paths::model_manifest(), &paths::model_root(), None)`
+  并**排除 `runtime` 组**（那一组是 ①–③ 的同一件事，混进来会把一次缺件报两遍）。
+  🔴 落点用 `model_root()` 而不是 `runtimes_dir()`：前者是界面那份清单的根
+  （`MIAO_MODEL_ROOT` / 设置项可改），两者默认值相同但**不是同一个事实**。
+  🔴 就位判据必须"清单读得到 **且** 当前平台有条目 **且** 全部在位"（`!wanted.is_empty() &&
+  absent.is_empty()`）—— 空集合静默通过会把"清单根本没读到"变成"权重齐备"。
+  刻意**复用** `model_status` 而不另写一套：另写一套就会与界面那份"你还缺什么"分叉。
+- 两项的 `fix` 用新常量 `FIX_MODELS`，与前五项的文案分开：说"重装引擎"会把用户指到重下
+  6.9 GB 的方向，而这两样其实只差一步（解 llama / 拉权重）。**仍然不得出现命令行**
+  （`check:engine-bootstrap` W9 钉着），命令行只留在 `docs/install-guide-*.md` 的排障附录。
+- 两项的 `detail` **逐条点名 + 带绝对路径**（沿用 `every_detail_carries_absolute_path` 的纪律）。
+
+**连带必须一起改的地方**（漏改就是"静默跳过"而不是变红）：
+
+- `runtime_probe.rs` 单测 `probe_five_items_stable_ids` → `probe_seven_items_stable_ids`；
+  `synth()` 白名单与两条 `gate_*` 用例的 ok 列表；新增
+  `gate_names_llm_and_weights_when_only_bootstrap_is_done`（钉的正是那台机器的形态）。
+- `e2e/service/_runtime-fixture.mjs` 补 `seedLlmBin` / `seedWeights`：③ 可执行体与权重**造在
+  运行时根之外**的 `model-root` 里，清单用**小清单 + `Buffer.alloc(sizeBytes)` 精确大小**
+  （沿用 `e2e/service/models-guide-check.mjs` 的既有做法，真清单的权重是 GB 级造不出来）；
+  `env` 补 `MIAO_MODEL_MANIFEST` / `MIAO_MODEL_ROOT` 两个接缝，否则会读到仓库里那份真清单。
+  🔴 补种必须发生在 `missing` 拆除**之前**：`missing: ['venvRoot']` 那个级联场景要的是
+  "整个运行时候选"，拆完再补种会把 `manga-translator/` 建回来 ⇒ `venvRoot` 反被判成在位
+  （S4 假红，本轮真的踩到了）。
+- `e2e/service/runtime-probe-check.mjs`：新增 S7 / S8 两个单项场景，并把 S6（junction）的
+  文案与 env 一起补齐 —— 链接场景**必须**同时接上模型链两个接缝，否则 S6 变成在测别的东西。
+- `e2e/service/launch-gate-check.mjs` 的 G1.failing、`e2e/service/notready-state-check.mjs`
+  的 G0（`items.length`）、`e2e/service/path-single-source-check.mjs` 的 B3.d
+  （`real.length === 5` 与那条逐项 id 正则）—— 三处都是**写死的项数/项名**。
+- `e2e/service/install-guide-check.mjs` 的 `READY_IDS` 与两份 `docs/install-guide-*.md`
+  的就绪项对照表（末两行 + §3 步骤表的"就绪项"列从 `—` 填上）。**并补 M6 变异**：
+  M5 只证明"老 id 有覆盖"，证不了新加的 `weights` 真被文档覆盖着。
+- `e2e/service/engine-bootstrap-check.mjs` 的 **W9a / W9b 分母**（`fixLiterals.length === 4`）：
+  新增的 `FIX_MODELS` 让它变成 5。**写死 5 而不是"至少 4"** —— 比率型判据恰好会把
+  "新加的那条文案里混进了 `node engine/scripts/…`"这类事故放过（那正是 W9 存在的理由）。
+
+**验收**：`cargo build` **0 warning / 0 error** · `cargo test -p miao-dock runtime_probe`
+**9 passed / 0 failed**（8 → 9）· `check:runtime-probe` 正向 **74/74**（44 → 74）·
+`--refute` **4/4 全红**（M1–M4）+ `runtime_probe.rs` 按字节还原 · `check:launch-gate` **10/10** ·
+`check:notready-state` **13/13** · `check:path-single-source` **5/5** ·
+`check:install-guide` **18/18**、`--refute` **6/6 全红**（5 → 6）+ 两份引导按字节还原 ·
+static 门 **17/17**。
+
+⚠️ **未验项如实登记**：本条只验了判据与文档对拍，**没有**在真机上跑过一次
+"只装完第 1 轮"的完整装配（需要一台干净机器 + 6.9 GB 下载）。权重第 2 轮为何零产出
+仍需现场日志，不在本次范围内。
+

@@ -165,8 +165,8 @@ npm run task -- extract:models   # ④ 解包归档 → bin\llama\llama-b11417\l
 | --- | --- | --- |
 | ① | `python-3.11\python.exe` · `venv\Scripts\python.exe` · `src\server\main.py` · `src\` 里带 `# miao-dock 补丁 D-xxx` 标记 | `venvRoot` `python` `source` `patches` |
 | ② | `venv\Lib\site-packages\` 下有 `torch/` `onnxruntime/` `transformers/` `pydensecrf/` … | `deps` |
-| ③ | `models-store\`（权威副本）· `models\sakura\*.gguf` · `bin\*.zip` | — |
-| ④ | `bin\llama\llama-b11417\llama-server.exe` · `src\models\` 里出现硬链接（不是拷贝） | — |
+| ③ | `models-store\`（权威副本）· `models\sakura\*.gguf` · `bin\*.zip` | `weights` |
+| ④ | `bin\llama\llama-b11417\llama-server.exe` · `src\models\` 里出现硬链接（不是拷贝） | `llm` |
 
 > ③④ 之后引擎源码树里的模型是**硬链接**（`linkTo`），权威副本在 `models-store\`。
 > 换引擎版本（`src\` 被重装）后跑 `npm run task -- fetch:models --link` 可**零网络**重建链接，
@@ -194,7 +194,7 @@ mangasvc --check-runtime-gate real
 ```
 
 输出里 `ready` 为 `true` 才算装齐；不是 `true` 时它会**逐项点名**缺哪一项、缺在哪个绝对路径、
-以及怎么补（`fix`）。五项与 §3 的对应关系：
+以及怎么补（`fix`）。七项与 §3 的对应关系：
 
 | 就绪项 | 判据 | 没就绪时补哪一步 |
 | --- | --- | --- |
@@ -203,6 +203,13 @@ mangasvc --check-runtime-gate real
 | `source` | `src\server\main.py` 在盘上 | ① `setup:engine --source` |
 | `deps` | venv 的 `site-packages` 里有引擎依赖（含 torch / pydensecrf） | ② `deps:engine` |
 | `patches` | 上游源码补丁**逐条**都在（缺哪条报哪个 patch id） | ① 重跑 `setup:engine --source` |
+| `llm` | `bin\llama\llama-b11417\llama-server.exe` 在盘上 | ④ `extract:models` |
+| `weights` | 清单里当前平台可见的权重条目**齐且大小一致**（缺哪条报哪个 id 与绝对路径） | ③ `fetch:models` + ④ `extract:models` |
+
+> 最后两项与前五项**不是同一条链**：前五项来自 `setup:engine`，后两项来自模型清单
+> （`fetch:models` / `extract:models`）。只跑完 ① ② 的机器，`ready` 仍然是 `false` ——
+> 这是刻意的（D-231③）：真机上曾出现"引导页显示装好了，启动却报
+> `系统找不到指定的路径 (os error 3)`"，根因就是这里只查了前五项。
 
 服务起起来之后，同一个事实也可以从 HTTP 看：
 
@@ -234,7 +241,7 @@ GET http://127.0.0.1:8000/api/v1/engine/runtime
 | 5 | 等第 2 段（翻译权重，约 6 GB） | 两段之间**不出现**假的"已完成"（工具条一直显示下载中）。中途拔网线 ⇒ 变「下载中断」+ ▶；插回网线点 ▶ ⇒ 从已下位置续，**不从头重下** |
 | 6 | 全装完后翻译一张漫画 | 出译文。盘上核对：`<落点>\venv\Lib\site-packages` 里有 `torch` 与 `pydensecrf`；`<落点>\.runtime.ready.json` 存在 |
 | 7 | 长路径体检（可复算，不必命令行） | `.runtime.ready.json` 里有 `longPath.maxChars / limit=260 / margin`。若装配日志里出现「距 260 上限仅剩 N 字符」或「已超过上限」，说明该落点偏深 —— 报告它，不要自己去改注册表（D-189：产品只提示不代改） |
-| 8 | 可选：命令行侧核对 | 安装目录里的 `mangasvc.exe --check-runtime-gate real` 输出 `ready: true`，五项（`venvRoot` / `python` / `source` / `deps` / `patches`）全齐 |
+| 8 | 可选：命令行侧核对 | 安装目录里的 `mangasvc.exe --check-runtime-gate real` 输出 `ready: true`，七项（`venvRoot` / `python` / `source` / `deps` / `patches` / `llm` / `weights`）全齐 |
 
 **三件最容易误判的事**（先记在这里，免得当成缺陷来报）：
 

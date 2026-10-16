@@ -116,10 +116,10 @@ function sliceFn(src, sig) {
     const res = await fetch(`http://127.0.0.1:${svc.port}/api/v1/engine/status`, { headers: { 'x-box-token': TOKEN } });
     const body = await res.json();
     check(
-      'G0 GET /engine/status 带 `runtime` 块（五项 + requiredBytes）与 `models.files`（D8 逐条）',
+      'G0 GET /engine/status 带 `runtime` 块（七项 + requiredBytes）与 `models.files`（D8 逐条）',
       res.status === 200 &&
         Array.isArray(body?.runtime?.items) &&
-        body.runtime.items.length === 5 &&
+        body.runtime.items.length === 7 &&
         typeof body.runtime.requiredBytes === 'number' &&
         Array.isArray(body?.models?.files) &&
         body.models.files.length > 0,
@@ -132,7 +132,7 @@ function sliceFn(src, sig) {
     );
     // 运行时就绪检测的每一项仍带绝对路径（B2 的验收在**新出口**上同样成立）
     const badPath = (body?.runtime?.items ?? []).filter((i) => !i.path || !i.detail.includes(i.path)).map((i) => i.id);
-    check('G0b 新出口上的五项判据仍带绝对路径（不是"另写一套"）', badPath.length === 0, badPath);
+    check('G0b 新出口上的七项判据仍带绝对路径（不是"另写一套"）', badPath.length === 0, badPath);
   } finally {
     svc.kill();
   }

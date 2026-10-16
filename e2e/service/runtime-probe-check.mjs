@@ -7,7 +7,8 @@
  *
  * ## 它钉的是什么
  * 检测若写成"一个大 if"或"全有或全无"，用户收到的就是"引擎没装好"这种无从下手的结论 ——
- * 而五项（B2 四项 + B5 补丁一项）的装法完全不同（建 venv / 解源码 / pip 依赖 / 重放补丁）。
+ * 而七项（前五项 = B2 四项 + B5 补丁一项，后两项 = D-231③ 的 `llm` / `weights`）
+ * 的装法完全不同（建 venv / 解源码 / pip 依赖 / 重放补丁 / 解 llama / 拉权重）。
  * 故本钉子逐个**拆掉一样**，断言**只有对应那一项**翻转，其余纹丝不动。这一条同时证明了
  * 各判据真的作用在各自的绝对路径上（而不是在查同一个东西）。
  *
@@ -116,12 +117,16 @@ async function probeRuntime(extraEnv) {
 
 /** 场景 → 期望翻转的项（`null` = 期望全就位）。 */
 const SCENARIOS = [
-  { id: 'S0', missing: null, label: 'runtime 全就位 ⇒ 五项全真、ready=true、无 fix' },
+  { id: 'S0', missing: null, label: 'runtime 全就位 ⇒ 七项全真、ready=true、无 fix' },
   { id: 'S1', missing: ['python'], label: '只拆解释器 ⇒ **只有 python** 翻转' },
   { id: 'S2', missing: ['source'], label: '只拆 server/main.py ⇒ **只有 source** 翻转' },
   { id: 'S3', missing: ['deps'], label: '只拆 torch ⇒ **只有 deps** 翻转' },
   { id: 'S4', missing: ['venvRoot'], label: '整个运行时候选 ⇒ venvRoot 翻转（级联允许）' },
   { id: 'S5', missing: ['patches'], label: '只抹一个补丁的 mark ⇒ **只有 patches** 翻转且点名到 patch id' },
+  // D-231③：后两项属**模型链**（③ 可执行体 / 翻译权重），与前五项互不覆盖 ——
+  // 真机那台机器就是"前五项全绿、这两项全红"，界面上却显示"装好了"。
+  { id: 'S7', missing: ['llm'], label: '只删 llama-server ⇒ **只有 llm** 翻转' },
+  { id: 'S8', missing: ['weights'], label: '只删权重文件 ⇒ **只有 weights** 翻转' },
 ];
 
 if (!fs.existsSync(RUST_BIN)) {
@@ -211,7 +216,7 @@ for (const sc of SCENARIOS) {
   fs.rmSync(base, { recursive: true, force: true });
 }
 
-// S6：运行时根是**链接**（用户把 15 GB 挪到别盘后 junction / 软链回来）⇒ 五项仍全真。
+// S6：运行时根是**链接**（用户把 15 GB 挪到别盘后 junction / 软链回来）⇒ 七项仍全真。
 // 🔴 判据必须**跟随**链接：Windows 的 junction 在 lstat 下报成 symlink（`is_dir()==false`）⇒
 //    判据若停在链接本身上，「装好了却报没装」这种假阴性直接冒出来 —— 正是 B1/B3 要消灭的。
 //    （原实现用的是 `symlink_metadata`，与它注释里的意图相反；本仓从未触发过，因为生产里
@@ -225,7 +230,10 @@ for (const sc of SCENARIOS) {
   const target = path.join(fx.rt, 'manga-translator');
   // junction 不需要提权（符号链接要），Windows 上优先它；POSIX 用目录软链
   fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
-  // 三项 env 全部**穿过链接**：只穿一项等于只测一项
+  // 三项 env 全部**穿过链接**：只穿一项等于只测一项。
+  // ⚠️ 模型链那两项（`llm` 的落点在链接下的 `bin/`，`weights` 的落点由 `MIAO_MODEL_ROOT`
+  //    指到模型根）也必须一起传：漏了它们就会读到仓库里那份真清单 ⇒ `weights` 恒红，
+  //    S6 变成在测别的东西。
   const { status, body } = await probeRuntime({
     MIAO_RUNTIME_ROOT: linkBase,
     MIAO_ENGINE_DIR: path.join(link, 'src'),
@@ -235,13 +243,15 @@ for (const sc of SCENARIOS) {
       process.platform === 'win32' ? 'Scripts' : 'bin',
       process.platform === 'win32' ? 'python.exe' : 'python',
     ),
+    MIAO_MODEL_MANIFEST: fx.env.MIAO_MODEL_MANIFEST,
+    MIAO_MODEL_ROOT: fx.env.MIAO_MODEL_ROOT,
   });
   const items = byId(body);
   const flips = Object.entries(items)
     .filter(([, v]) => !v.ok)
     .map(([k]) => k);
   check(
-    'S6 运行时根是链接（junction/软链）⇒ 五项仍全真（判据必须跟随链接）',
+    'S6 运行时根是链接（junction/软链）⇒ 七项仍全真（判据必须跟随链接）',
     status === 200 && body?.ready === true && flips.length === 0,
     { status, ready: body?.ready, flips },
   );

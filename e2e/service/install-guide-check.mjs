@@ -27,8 +27,8 @@
  *    `platform` 过滤清单求和后比对；**正文里那个千分位数字也必须一致** ⇒
  *    "文档写一个好看的数字、清单里是另一个"会被抓出来。清单路径取自 `--print-paths`
  *    的 `modelManifest`（产品报的清单），不是本脚本自己拼的路径。
- * ③ **五项就绪项**：`venvRoot`/`python`/`source`/`deps`/`patches` 五个 id 必须都在文档里
- *    —— 它们就是"照文档装完"的验收面（B2），漏一项文档就漏一步。
+ * ③ **七项就绪项**：`venvRoot`/`python`/`source`/`deps`/`patches`/`llm`/`weights` 七个 id
+ *    必须都在文档里 —— 它们就是"照文档装完"的验收面（B2 + D-231③），漏一项文档就漏一步。
  * ④ **平台形态**：Windows 文档必须是 `venv\Scripts\python.exe` 形态、macOS 必须是
  *    `venv/bin/python` 形态，且**互不出现对方的形态**（B3 的同源分叉在文档侧的镜像）。
  * ⑤ **引用的命令必须存在**：`npm run <入口>` 与 `package.json` 对账、
@@ -40,7 +40,9 @@
  * - M3 **改清单副本**（`--manifest` 指向临时副本，动一条 `sizeBytes`）⇒ 体积断言红
  *      —— 证明数字是"从清单算的"，不是"两边写死同一个常量"（否则 M2 单独就能满足）。
  * - M4 把 macOS 文档的解释器路径改成 Windows 形态 ⇒ 平台形态断言红。
- * - M5 删掉 Windows 文档里的 `patches` 项 ⇒ 五项断言红。
+ * - M5 删掉 Windows 文档里的 `patches` 项 ⇒ 就绪项断言红。
+ * - M6 删掉 Windows 文档里的 `weights` 项（D-231③ 追加的那一项）⇒ 同一条断言红 ——
+ *      证明新 id 不是"抄进列表就万事大吉"，文档里真的必须有它。
  * 变异只动**文档**与**临时副本**（后者在 TMP 里，不碰仓库文件）；文档按字节还原。
  *
  * 用法：node e2e/service/install-guide-check.mjs [--refute] [--manifest <path>]
@@ -61,8 +63,10 @@ const SELF = fileURLToPath(import.meta.url);
 // 用户主目录：与 `paths::home_dir()`（`dirs::home_dir()`）同义。
 const HOME = os.homedir();
 
-/// 产品的**五项就绪项** id（B2/B5）。它们就是"照文档装完"要验的东西。
-const READY_IDS = ['venvRoot', 'python', 'source', 'deps', 'patches'];
+/// 产品的**七项就绪项** id（B2/B5 + D-231③）。它们就是"照文档装完"要验的东西。
+/// 🔴 必须与 `runtime_probe::probe()` 的项集合**同序同值** —— 少写一个不会红，
+///    只会让文档悄悄漏掉那一步（这正是本脚本要消灭的那类"脱节且不报错"）。
+const READY_IDS = ['venvRoot', 'python', 'source', 'deps', 'patches', 'llm', 'weights'];
 
 /// 三条纪律的关键词（每条对应一类真实故障，见引导 §0）。
 const DISCIPLINES = [
@@ -211,7 +215,7 @@ for (const g of GUIDES) {
     { marker: marker?.[1] ?? null, manifest: size.bytes, commas, entries: size.count, manifestPath: MANIFEST },
   );
 
-  // ④ 五项就绪项全覆盖
+  // ④ 七项就绪项全覆盖
   const absent = READY_IDS.filter((id) => !text.includes(id));
   check(
     `${g.title} 覆盖全部 ${READY_IDS.length} 个就绪项（照文档装完要能全真）`,
@@ -397,15 +401,28 @@ if (REFUTE) {
     },
   });
 
-  // M5：Windows 文档漏掉一个就绪项 ⇒ 五项断言红
+  // M5：Windows 文档漏掉一个就绪项 ⇒ 就绪项断言红
   mutations.push({
     id: 'M5',
     what: 'Windows 文档删掉 patches 就绪项',
     // 🔴 反引号**可选**：断言侧是 `text.includes('patches')`（裸字符串匹配），
     //    所以变异体也必须把**裸写**的那种一并抹掉。只抹 `` `patches` `` 的话，
-    //    文档里任何一处顺笔写的 "patches"（例如验收清单里的"五项（… / patches）"）
+    //    文档里任何一处顺笔写的 "patches"（例如验收清单里的"七项（… / patches）"）
     //    都会让这条变异**咬空** ⇒ 反证看着绿、其实什么都没验（D-113 的锚点纪律）。
     edit: () => fs.writeFileSync(winFile, winOriginal.replace(/`?patches`?/g, 'patch-x')),
+    probe: async () => {
+      const r = await runOnce();
+      return r.code !== 0 && hasRedLine(r.out, `✗ ${wins.title} 覆盖全部`);
+    },
+  });
+
+  // M6（D-231③）：删掉新追加的那个就绪项 ⇒ 同一条断言必须红。
+  // 🔴 为什么必须单独加一条：M5 证明的是"老 id 有覆盖"，它**证明不了**新加的 `weights`
+  //    真被文档覆盖着 —— 少写一个 id 进 READY_IDS 而断言照绿，正是这里要堵的洞。
+  mutations.push({
+    id: 'M6',
+    what: 'Windows 文档删掉 weights 就绪项（D-231③ 新增项）',
+    edit: () => fs.writeFileSync(winFile, winOriginal.replace(/`?weights`?/g, 'weight-x')),
     probe: async () => {
       const r = await runOnce();
       return r.code !== 0 && hasRedLine(r.out, `✗ ${wins.title} 覆盖全部`);

@@ -26,10 +26,56 @@ import { ENGINE_PATCHES, SRC_DIR } from '../../engine/scripts/setup-engine.mjs';
 export const relOf = (p) => path.relative(SRC_DIR, p.file).split(path.sep);
 
 /**
+ * 假引擎运行时里那些**走另一条链**的东西（D-231③）。
+ *
+ * 🔴 为什么要单独造：③ 的可执行体与翻译权重来自模型清单 + `--fetch-models --extract`，
+ *    与前五项的 `--engine-bootstrap` **互不覆盖**。夹具不造它们 ⇒ 「全就位」场景会被
+ *    新增的 `llm` / `weights` 两项判成未就绪，那不是回归，是夹具没跟上判据。
+ *
+ * 权重用**小清单 + 精确大小**（`models-guide-check.mjs` 的 `buildSmallFixture` 同款做法）：
+ * 真清单的权重是 GB 级，夹具造不出来；而 `model_status` 的就绪判据是"在位且大小一致"，
+ * 所以夹具自己写一份清单、清单里的 `sizeBytes` 就等于夹具写出的字节数。
+ */
+export const LLAMA_VERSION_DIR = 'llama-b11417';
+
+/** 造 `bin/llama/<版本>/llama-server[.exe]`；返回它的绝对路径。 */
+function seedLlmBin(rt) {
+  const name = process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
+  const p = path.join(rt, 'manga-translator', 'bin', 'llama', LLAMA_VERSION_DIR, name);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, process.platform === 'win32' ? 'MZ-fixture' : '#!/bin/sh\n');
+  return p;
+}
+
+/** 造一份小模型清单 + 两个权重文件；返回 `{ manifest, root }`。 */
+function seedWeights(base) {
+  const root = path.join(base, 'model-root');
+  const manifest = path.join(base, 'models.manifest.json');
+  const files = [
+    { id: 'fx-visual', set: 'visual', dest: 'models/fx/visual.bin', sizeBytes: 3 },
+    { id: 'fx-llm', set: 'llm', dest: `models/sakura/${LLAMA_VERSION_DIR}.gguf`, sizeBytes: 4 },
+  ];
+  for (const f of files) {
+    const p = path.join(root, f.dest);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, Buffer.alloc(f.sizeBytes));
+  }
+  fs.writeFileSync(
+    manifest,
+    JSON.stringify({
+      files,
+      sets: { visual: { files: ['fx-visual'] }, llm: { files: ['fx-llm'] } },
+    }),
+  );
+  return { manifest, root, files };
+}
+
+/**
  * 建一份「全就位」的假引擎运行时；`missing` 指定要拆掉哪几样。
  *
  * 可选值：`python` / `source` / `deps` / `patches` / `venvRoot`（后者是级联场景：
- * 整个运行时候选 ⇒ 其余各项的判据路径都在它下面，必然一起翻）。
+ * 整个运行时候选 ⇒ 其余各项的判据路径都在它下面，必然一起翻）/ `llm` / `weights`
+ * （后两项属模型链，见上面的说明）。
  *
  * @returns {{ rt: string, src: string, venv: string, env: Record<string,string> }}
  */
@@ -61,12 +107,25 @@ export function buildRuntime(base, missing = []) {
     const f = path.join(src, ...relOf(p));
     fs.writeFileSync(f, fs.readFileSync(f, 'utf8').split(p.mark).join(''), 'utf8');
   }
+
+  // ---- D-231③：模型链那两样（③ 可执行体 + 翻译权重）----
+  // 🔴 必须在下面那批 `missing` 拆除**之前**造：llama 可执行体就落在运行时根底下，
+  //    `missing: ['venvRoot']` 那个级联场景要的是"整个运行时候选 ⇒ 里面全没"，
+  //    若拆完再补种就会把 `manga-translator/` 又建回来 ⇒ `venvRoot` 反而判成在位
+  //    （S4 直接红，且是夹具自己造出来的假红）。
+  const llmBin = seedLlmBin(rt);
+  const weights = seedWeights(base);
+
   if (missing.includes('python'))
     fs.rmSync(path.join(venv, process.platform === 'win32' ? 'Scripts' : 'bin'), { recursive: true, force: true });
   if (missing.includes('source')) fs.rmSync(path.join(src, 'server'), { recursive: true, force: true });
   if (missing.includes('deps'))
     fs.rmSync(path.join(venv, 'Lib', 'site-packages', 'torch'), { recursive: true, force: true });
   if (missing.includes('venvRoot')) fs.rmSync(path.join(rt, 'manga-translator'), { recursive: true, force: true });
+  if (missing.includes('llm')) fs.rmSync(llmBin, { force: true });
+  if (missing.includes('weights')) {
+    for (const f of weights.files) fs.rmSync(path.join(weights.root, f.dest), { force: true });
+  }
   return {
     rt,
     src,
@@ -79,6 +138,10 @@ export function buildRuntime(base, missing = []) {
         process.platform === 'win32' ? 'Scripts' : 'bin',
         process.platform === 'win32' ? 'python.exe' : 'python',
       ),
+      // 判据侧的 `llm` / `weights` 两项走模型清单这条接缝，不接就会读到仓库里那份真清单
+      // （真清单的权重是 GB 级，夹具永远判不 ready ⇒ 「全就位」场景恒红）。
+      MIAO_MODEL_MANIFEST: weights.manifest,
+      MIAO_MODEL_ROOT: weights.root,
     },
   };
 }

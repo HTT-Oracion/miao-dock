@@ -246,17 +246,22 @@ function engineSourceShape() {
   // W9 Rust 侧面向用户的未就绪文案：**零命令行**，且必须给出产品内动作。
   //    判据只取 `const FIX_*` 的**字面值**与闸门消息那一行 —— 文件注释里正讨论着
   //    「不许写命令行」，扫全文会把规则本身当成违规（历史上踩过：规则条文自身污染扫描）。
+  // 🔴 分母**写死**且必须跟着判据一起长：D-231③ 加了第 5 条 `FIX_MODELS`
+  //    （③ 可执行体 / 翻译权重，它走模型链那条，文案与前四条刻意分开）。
+  //    写死而不是"至少 4 条"：比率型判据会把"新增的文案里混进了命令行"这类事故放过。
+  const EXPECTED_FIX_LITERALS = 5;
   const probeSrc = fs.readFileSync(RUNTIME_PROBE_RS, 'utf8');
   const fixLiterals = [...probeSrc.matchAll(/const FIX_[A-Z_]+: &str = "([^"]*)";/g)].map((m) => m[1]);
-  const fixClean = fixLiterals.length === 4 && fixLiterals.every((t) => t.length > 0 && !CLI_JARGON.test(t));
-  check('W9a Rust `FIX_*` 未就绪文案四条齐全且零命令行字样（node / npm run / engine/scripts）', fixClean, {
+  const fixClean =
+    fixLiterals.length === EXPECTED_FIX_LITERALS && fixLiterals.every((t) => t.length > 0 && !CLI_JARGON.test(t));
+  check('W9a Rust `FIX_*` 未就绪文案五条齐全且零命令行字样（node / npm run / engine/scripts）', fixClean, {
     count: fixLiterals.length,
     dirty: fixLiterals.filter((t) => CLI_JARGON.test(t)),
   });
 
   // W9b 文案必须落到**产品内动作**上：只说"缺什么"而不给可点的入口，用户仍无处可去。
   const IN_APP_ENTRY = /开始下载|重新下载模型/;
-  const fixActionable = fixLiterals.length === 4 && fixLiterals.every((t) => IN_APP_ENTRY.test(t));
+  const fixActionable = fixLiterals.length === EXPECTED_FIX_LITERALS && fixLiterals.every((t) => IN_APP_ENTRY.test(t));
   check('W9b 每条未就绪文案都指向产品内入口（「开始下载」/「重新下载模型」），不是命令行', fixActionable, {
     notActionable: fixLiterals.filter((t) => !IN_APP_ENTRY.test(t)),
   });

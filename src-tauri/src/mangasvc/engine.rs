@@ -535,7 +535,11 @@ fn engine_rt() -> PathBuf {
 }
 
 /// `llama-server` 可执行文件的默认路径（按平台分叉文件名后缀）。
-fn default_llm_server_bin() -> PathBuf {
+///
+/// 🔴 `pub`（D-231③）：`runtime_probe` 的第六项 `llm` 判的就是这个路径。此前它私有，
+///    检测侧只能自己再拼一遍 `bin/llama/<版本>/…` —— 两处拼法漂移的后果是
+///    「检测说没装、启动却起了」或反过来，正是 B2 要消灭的那类故障。
+pub fn default_llm_server_bin() -> PathBuf {
     let name = if cfg!(windows) { "llama-server.exe" } else { "llama-server" };
     engine_rt().join("bin").join("llama").join(LLAMA_VERSION_DIR).join(name)
 }

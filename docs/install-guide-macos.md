@@ -213,8 +213,8 @@ cd "$RT/src" && "$RT/venv/bin/python" -c "import pydensecrf.densecrf as d; asser
 | --- | --- | --- |
 | ① | `python-3.11/bin/python3` · `venv/bin/python` · `src/server/main.py` · `src/` 里带 `# miao-dock 补丁 D-xxx` 标记 | `venvRoot` `python` `source` `patches` |
 | ② | `venv/lib/python3.11/site-packages/` 下有 `torch/` `onnxruntime/` `transformers/` `pydensecrf/` … | `deps` |
-| ③ | `models-store/`（权威副本）· `models/sakura/*.gguf` · `bin/*.tar.gz` | — |
-| ④ | `bin/llama/llama-b11417/llama-server` · `src/models/` 里出现硬链接（不是拷贝） | — |
+| ③ | `models-store/`（权威副本）· `models/sakura/*.gguf` · `bin/*.tar.gz` | `weights` |
+| ④ | `bin/llama/llama-b11417/llama-server` · `src/models/` 里出现硬链接（不是拷贝） | `llm` |
 
 > ③④ 之后引擎源码树里的模型是**硬链接**（`linkTo`），权威副本在 `models-store/`。
 > 换引擎版本（`src/` 被重装）后跑 `npm run task -- fetch:models --link` 可**零网络**重建链接，
@@ -232,9 +232,9 @@ node engine/scripts/fetch-models.mjs --link           # 只重建引擎树里的
 
 ---
 
-## 4. 装完自检：五个就绪项，逐项点名
+## 4. 装完自检：七个就绪项，逐项点名
 
-产品把「引擎运行时是否装配好」拆成**五项**，每项独立判定、独立报路径
+产品把「引擎运行时是否装配好」拆成**七项**，每项独立判定、独立报路径
 （`GET /api/v1/engine/runtime`，B2）。命令行侧同一个函数：
 
 ```bash
@@ -242,7 +242,7 @@ mangasvc --check-runtime-gate real
 ```
 
 输出里 `ready` 为 `true` 才算装齐；不是 `true` 时它会**逐项点名**缺哪一项、缺在哪个绝对路径、
-以及怎么补（`fix`）。五项与 §3 的对应关系：
+以及怎么补（`fix`）。七项与 §3 的对应关系：
 
 | 就绪项 | 判据 | 没就绪时补哪一步 |
 | --- | --- | --- |
@@ -251,6 +251,12 @@ mangasvc --check-runtime-gate real
 | `source` | `src/server/main.py` 在盘上 | ① `setup:engine --source` |
 | `deps` | venv 的 `site-packages` 里有引擎依赖（含 torch / pydensecrf） | ② 手动 pip（见 §3） |
 | `patches` | 上游源码补丁**逐条**都在（缺哪条报哪个 patch id） | ① 重跑 `setup:engine --source` |
+| `llm` | `bin/llama/llama-b11417/llama-server` 在盘上 | ④ 解包 llama 归档 |
+| `weights` | 清单里当前平台可见的权重条目**齐且大小一致**（缺哪条报哪个 id 与绝对路径） | ③ 拉权重 + ④ 解包 |
+
+> 最后两项与前五项**不是同一条链**：前五项来自 `setup:engine`，后两项来自模型清单
+> （拉权重 / 解包）。只跑完 ① ② 的机器，`ready` 仍然是 `false` —— 这是刻意的（D-231③）：
+> 真机上曾出现"引导页显示装好了，启动却报 `os error 3`"，根因就是这里只查了前五项。
 
 > 解释器路径的两个平台写法（`venv/bin/python` 与 Windows 的 `venv/Scripts/python.exe`）
 > 在**检测侧与启动侧是同一个推导**（B3）：手拼路径会踩到分叉，用上面两条命令拿结果即可。
@@ -285,7 +291,7 @@ GET http://127.0.0.1:8000/api/v1/engine/runtime
 | 4 | 若第 3 步报需要编译器 | 装 `xcode-select --install`（**这是 macOS 上唯一一处仍需人工准备的**，因为 darwin wheel 还没有）。装完回喵坞点 ▶ 继续即可，不必重来 |
 | 5 | 第 1 段跑完，切去「设置 → 翻译服务」 | 引擎状态从「需下载」变成**就绪**；此时在线翻译可用，本地翻译等第 2 段（翻译权重约 6 GB） |
 | 6 | 等第 2 段结束，翻译一张漫画 | 出译文。盘上核对：`<落点>/venv/lib/python3.x/site-packages` 里有 `torch` 与 `pydensecrf`；`<落点>/.runtime.ready.json` 存在 |
-| 7 | 可选：命令行侧核对 | `<安装目录>/mangasvc --check-runtime-gate real` 输出 `ready: true`，五项全齐 |
+| 7 | 可选：命令行侧核对 | `<安装目录>/mangasvc --check-runtime-gate real` 输出 `ready: true`，七项全齐 |
 
 **三件最容易误判的事**：
 
@@ -384,7 +390,7 @@ xattr -dr com.apple.quarantine "$HOME/Library/Application Support/runtimes/manga
 
 本文的四条 `npm run …` 命令**来自仓库**（需要 Node ≥ 22 与仓库工作区）—— 也就是说，
 本引导面向**从仓库自建自装**的用户。打包版把这些装配动作收进包内（并接到同一套落点与
-同一份清单）是 C2/D8 的收尾工作；**落点、体积、五项就绪判据三件事已经同源**，
+同一份清单）是 C2/D8 的收尾工作；**落点、体积、七项就绪判据三件事已经同源**，
 包内引导接入时不会另起一套。
 
 > ⚠️ **验证状态**：§0 的落点、§2 的体积、§3 的步骤与 §4 的判据都已与产品**对拍成钉子**
@@ -398,7 +404,7 @@ xattr -dr com.apple.quarantine "$HOME/Library/Application Support/runtimes/manga
 
 ```bash
 mangasvc --print-paths                    # 产品实际用的全部路径（落点的权威答案）
-mangasvc --check-runtime-gate real        # 五项就绪自检（缺哪项逐项点名）
+mangasvc --check-runtime-gate real        # 七项就绪自检（缺哪项逐项点名）
 npm run task -- setup:engine                    # ① Python + venv + 源码 + 补丁
 # ② 手动：$RT/venv/bin/pip install -r "$RT/src/requirements.txt"（+ pydensecrf 兼容补丁）
 npm run task -- fetch:models                    # ③ 模型 + llama.cpp（按清单、按平台）

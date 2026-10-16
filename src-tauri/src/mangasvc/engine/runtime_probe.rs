@@ -12,6 +12,16 @@
 // 而它的装法与上面四项完全不同（不是装东西，是重放补丁）⇒ 必须独立成项、点名到 patch id。
 // 补丁表本体在 `super::patches`（SSOT 的只读镜像，双靶由 `check:engine-patches` A7 钉住）。
 //
+// ## 为什么又追加第六、七项（2026-10-17 真机实测，D-231③）
+// 前五项**全部**来自 `--engine-bootstrap` 那条链（python 运行时 / 引擎源码 / 依赖 / 补丁），
+// 而 ③ 的可执行体与翻译权重来自**另一条链**（模型清单 + `--fetch-models --extract`）。
+// 两条链互不覆盖 ⇒ 一台只跑完第 1 轮（运行环境）的机器被判成"运行时已装配"，
+// 引导页显示"装好了"，启动时 ③ 报 `系统找不到指定的路径 (os error 3)` ——
+// 用户看到的是"引擎明明装好了却起不来"，离根因十万八千里。
+// ⇒ 第六项 `llm`（`bin/llama/<版本>/llama-server[.exe]` 在不在）、第七项 `weights`
+// （清单里除 `runtime` 组外的条目齐不齐）。这也正是需求"第 2 段跑完后若 engine/llm
+// 仍缺件就显示下载引导页"能成立的前提 —— 判据不齐，那句话就没有事实依据。
+//
 // ## 判据必须与装机脚本同源
 // `engine/scripts/setup-engine.mjs` 是用户唯一的口径：
 //   · `sourceReady()` = `src/server/main.py` 存在（**不能**用"src/ 非空"——
@@ -47,7 +57,7 @@ pub struct RuntimeItem {
     pub fix: Option<String>,
 }
 
-/// 检测报告。`ready` = 五项全真（引擎具备启动的最低条件）。
+/// 检测报告。`ready` = 七项全真（引擎具备启动的最低条件）。
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeProbe {
@@ -118,10 +128,13 @@ const FIX_VENV: &str = "点「开始下载」即可 —— 装配会把 Python �
 const FIX_DEPS: &str = "点「开始下载」即可 —— 装配会从公网镜像安装引擎依赖（无需命令行）";
 /// 补丁没打的装法：重放（幂等）而不是重装 —— 源码早就在是常见情形。
 const FIX_PATCHES: &str = "点「重新下载模型」重跑一次装配，缺失的源码补丁会被重放（幂等）";
+/// ③ 可执行体 / 翻译权重的装法（D-231③）。与前五项分开写文案：这两样走的是**另一条链**
+/// （模型清单 + `--fetch-models --extract`），说"重装引擎"会把用户指到重下 6.9 GB 的方向。
+const FIX_MODELS: &str = "点「开始下载」（或「重新下载模型」）继续 —— 引擎可执行体与翻译权重还没到位";
 
-/// 跑一遍五项检测。
+/// 跑一遍七项检测。
 pub fn probe() -> RuntimeProbe {
-    let mut items = Vec::with_capacity(5);
+    let mut items = Vec::with_capacity(7);
 
     // ---- ① venvRoot：运行时根本身在不在 ----
     let rt = paths::runtimes_dir();
@@ -203,6 +216,76 @@ pub fn probe() -> RuntimeProbe {
     // 🔴 单独一项，不与 deps 合并：装法完全不同（重放补丁 vs pip 依赖），
     //    且「补丁没打」的症状是静默的（译文空串但流程全绿）—— 用户需要被**点名**。
     items.push(patches_item(&paths::engine_dir()));
+
+    // ---- ⑥ llm：③ 的可执行体在不在盘上（D-231③）----
+    // 🔴 **为什么必须单列**：③ 的可执行体走的是**模型清单**那条链
+    //    （`llama_cpp_win_cuda_x64` → `--fetch-models --extract` 解到 `bin/llama/<版本>/`），
+    //    而前五项全部来自 `--engine-bootstrap` 那条链（venv / 源码 / 依赖 / 补丁）。
+    //    两条链互不覆盖 ⇒ 只查五项时，`bin/` 与 `models/` **目录压根没建**的机器
+    //    也会被判成"运行时已装配"：引导页说"装好了"，启动时 ③ 报
+    //    `系统找不到指定的路径 (os error 3)`，而那句话离根因极远（2026-10-17 真机实测）。
+    let llm_bin = super::default_llm_server_bin();
+    let llm_ok = is_file(&llm_bin);
+    items.push(RuntimeItem {
+        id: "llm",
+        ok: llm_ok,
+        path: s(&llm_bin),
+        detail: if llm_ok {
+            format!("翻译模型运行时在位：{}", llm_bin.display())
+        } else {
+            format!(
+                "翻译模型运行时缺失：{}（它在 `llama/{}` 解包目录下，与引擎源码不是同一条链）",
+                llm_bin.display(),
+                super::LLAMA_VERSION_DIR
+            )
+        },
+        fix: (!llm_ok).then(|| FIX_MODELS.to_string()),
+    });
+
+    // ---- ⑦ weights：翻译权重（引擎视觉模型 + ③ 的 gguf）齐不齐（D-231③）----
+    //    判据直接用 `model_status`（它已经在读清单、筛当前平台、逐条比大小），
+    //    **不另写一套** —— 另写一套就会与界面那份"你还缺什么"分叉。
+    //    🔴 落点用 `model_root()` 而不是 `runtimes_dir()`：前者是界面那份清单的根
+    //    （`MIAO_MODEL_ROOT` / 设置项可改），两者默认值相同但**不是同一个事实**。
+    //    🔴 排除 `runtime` 组：那一组（python 运行时 / 引擎源码归档）是前 ①–③ 项的同一件事，
+    //    混进来会让一次缺件被报两遍。
+    let model_root = paths::model_root();
+    let ms = super::model_status::model_status(&paths::model_manifest(), &model_root, None);
+    let wanted: Vec<&super::model_status::ModelFileStatus> = ms
+        .files
+        .iter()
+        .filter(|f| f.applicable && !matches!(f.set.as_deref(), Some("runtime")))
+        .collect();
+    let absent: Vec<&super::model_status::ModelFileStatus> = wanted.iter().copied().filter(|f| !f.ready).collect();
+    let weights_ok = !wanted.is_empty() && absent.is_empty();
+    let weights_detail = if wanted.is_empty() {
+        format!(
+            "权重清单读不到或当前平台无条目，权重状态无从判定：{}",
+            paths::model_manifest().display()
+        )
+    } else if weights_ok {
+        format!(
+            "翻译权重齐备：{}/{} 项在位（{}）",
+            wanted.len(),
+            wanted.len(),
+            model_root.display()
+        )
+    } else {
+        let list = absent
+            .iter()
+            .map(|f| format!("{}（{}）", f.id, f.path))
+            .collect::<Vec<_>>()
+            .join("、");
+        format!("翻译权重缺 {} 项：{}；模型根 {}", absent.len(), list, model_root.display())
+    };
+    items.push(RuntimeItem {
+        id: "weights",
+        ok: weights_ok,
+        // 判据作用在**模型根**（`model_status` 的落点），缺项逐条点名在 detail 里。
+        path: s(&model_root),
+        detail: weights_detail,
+        fix: (!weights_ok).then(|| FIX_MODELS.to_string()),
+    });
 
     let ready = items.iter().all(|i| i.ok);
     RuntimeProbe { items, ready }
@@ -325,12 +408,18 @@ pub fn gate_message_for(mode: &str, probe: &RuntimeProbe) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// 判据必须打在**真实路径**上：五项各自翻转、互不影响（B2 验收②的可反证形式）。
+    /// 判据必须打在**真实路径**上：七项各自翻转、互不影响（B2 验收②的可反证形式）。
+    ///
+    /// 🔴 项数与 id 顺序是**契约**：`gate_message` 的文案、e2e 的 `G1.failing`
+    /// （断言 failing 条数）、`launch-gate` 的合成报告都按它写。增删项时四处一起改。
     #[test]
-    fn probe_five_items_stable_ids() {
+    fn probe_seven_items_stable_ids() {
         let p = probe();
         let ids: Vec<&str> = p.items.iter().map(|i| i.id).collect();
-        assert_eq!(ids, vec!["venvRoot", "python", "source", "deps", "patches"]);
+        assert_eq!(
+            ids,
+            vec!["venvRoot", "python", "source", "deps", "patches", "llm", "weights"]
+        );
         assert_eq!(p.ready, p.items.iter().all(|i| i.ok));
     }
 
@@ -413,7 +502,7 @@ mod tests {
 
     /// 造一份合成报告（闸门单测用：要能造「就差一项」而不动真实落点）。
     fn synth(ok_ids: &[&str]) -> RuntimeProbe {
-        let all = ["venvRoot", "python", "source", "deps", "patches"];
+        let all = ["venvRoot", "python", "source", "deps", "patches", "llm", "weights"];
         let items = all
             .iter()
             .map(|id| RuntimeItem {
@@ -437,7 +526,7 @@ mod tests {
     /// D6：real 档 + 装好了 ⇒ 放行（不能把装好的用户挡在门外）。
     #[test]
     fn gate_lets_ready_real_through() {
-        let p = synth(&["venvRoot", "python", "source", "deps", "patches"]);
+        let p = synth(&["venvRoot", "python", "source", "deps", "patches", "llm", "weights"]);
         assert_eq!(gate_message_for("real", &p), None);
     }
 
@@ -445,14 +534,27 @@ mod tests {
     #[test]
     fn gate_blocks_unready_real_naming_every_failing_item() {
         // 只差 python 一项：文案必须只围绕它说，不许把好的那几项也报一遍
-        let p = synth(&["venvRoot", "source", "deps", "patches"]);
+        let p = synth(&["venvRoot", "source", "deps", "patches", "llm", "weights"]);
         let msg = gate_message_for("real", &p).expect("real + 未就绪必须被拦");
         assert!(msg.starts_with("运行时未装配："), "{msg}");
         assert!(msg.contains("python"), "{msg}");
         assert!(msg.contains("C:\\synth\\python"), "文案未带绝对路径：{msg}");
         assert!(msg.contains("python 的装法"), "文案未带装法：{msg}");
-        for ok in ["venvRoot", "source", "deps", "patches"] {
+        for ok in ["venvRoot", "source", "deps", "patches", "llm", "weights"] {
             assert!(!msg.contains(ok), "把好的那几项也报了一遍（噪声）：{msg}");
         }
+    }
+
+    /// D-231③：只装完第 1 轮（运行环境）时**必须**判未就绪，且点名到 `llm` 与 `weights`。
+    ///
+    /// 🔴 这条钉的就是真机那台机器的形态：venv / 源码 / 依赖 / 补丁全在，
+    /// 而 `bin/llama/<版本>/llama-server.exe` 与 `models/sakura/*.gguf` **目录都没建**。
+    /// 没有它，"七项"就只是多了两项标签，判据仍可能整体为真。
+    #[test]
+    fn gate_names_llm_and_weights_when_only_bootstrap_is_done() {
+        let p = synth(&["venvRoot", "python", "source", "deps", "patches"]);
+        let msg = gate_message_for("real", &p).expect("只有第 1 轮 ⇒ 必须被拦");
+        assert!(msg.contains("llm"), "未点名 ③ 可执行体：{msg}");
+        assert!(msg.contains("weights"), "未点名翻译权重：{msg}");
     }
 }

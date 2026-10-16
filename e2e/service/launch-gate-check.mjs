@@ -188,8 +188,8 @@ if (!fs.existsSync(RUST_BIN)) {
     body: r.json,
   });
   check(
-    'G1.failing — 五项全部点名（venvRoot/python/source/deps/patches）',
-    Array.isArray(r.json?.failing) && r.json.failing.length === 5,
+    'G1.failing — 七项全部点名（venvRoot/python/source/deps/patches/llm/weights）',
+    Array.isArray(r.json?.failing) && r.json.failing.length === 7,
     r.json?.failing,
   );
   check(
