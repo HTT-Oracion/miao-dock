@@ -862,7 +862,27 @@ add('UI.drawerAboveExpanded', 'UI', (s) => {
     return { ok: false, detail: '未解析到 .music-exp / .music-drawer 的 z-index（选择器或写法变了）' };
   return {
     ok: drawer > exp,
-    detail: drawer > exp ? '' : `播放队列(z)=\${drawer} 被展开播放器(z)=\${exp} 盖住 —— 点「播放队列」会看不到任何东西`,
+    detail: drawer > exp ? '' : `播放队列(z)=${drawer} 被展开播放器(z)=${exp} 盖住 —— 点「播放队列」会看不到任何东西`,
+  };
+});
+add('UI.modalAboveExpanded', 'UI', (s) => {
+  // 「退出喵坞」二次确认是 `.modal-mask`，而展开播放器是 `fixed z-index:70` 的整屏覆盖层。
+  // 模态若 ≤ 70，铺满的播放器会把确认框整个盖住：用户点了退出"没有任何反应"且不报错
+  // （2026-10-16 真机实测，D-230）。判据直接比两者的 z-index，改任何一个都要重新确认。
+  const css = stripComments(s.css ?? '');
+  const pickZ = (sel) => {
+    const m = css.match(new RegExp(sel + '\\s*\\{([^}]*)\\}'));
+    if (!m) return null;
+    const z = m[1].match(/z-index:\s*(\d+)/);
+    return z ? Number(z[1]) : null;
+  };
+  const exp = pickZ('\\.music-exp');
+  const modal = pickZ('\\.modal-mask');
+  if (exp === null || modal === null)
+    return { ok: false, detail: '未解析到 .music-exp / .modal-mask 的 z-index（选择器或写法变了）' };
+  return {
+    ok: modal > exp,
+    detail: modal > exp ? '' : `退出确认(z)=${modal} 被展开播放器(z)=${exp} 盖住 —— 点「退出喵坞」不会有任何反应`,
   };
 });
 add('UI.platformSwitch', 'UI', (s) => ({
@@ -5085,6 +5105,14 @@ const MUTATIONS = [
     find: '  z-index: 72;',
     replace: '  z-index: 60;',
     expect: ['UI.drawerAboveExpanded'],
+  },
+  {
+    // 复现 2026-10-16 的真机缺陷：模态 ≤ 展开播放器 ⇒ 退出确认被盖住且不报错
+    name: '把模态遮罩降回展开播放器之下（点「退出喵坞」的二次确认被铺满的播放器盖住，且不报错）',
+    file: F.componentsScss,
+    find: '  z-index: 95;',
+    replace: '  z-index: 40;',
+    expect: ['UI.modalAboveExpanded'],
   },
   {
     name: '不在队列的歌不接进队列（历史点歌会与 currentIndex 不一致）',
