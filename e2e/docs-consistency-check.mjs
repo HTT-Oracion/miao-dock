@@ -198,6 +198,9 @@ for (const suite of SUITES) {
   const gm = src.match(/const GROUPS\s*=\s*\[([^\]]*)\]/);
   if (!gm) continue;
   const declared = gm[1]
+    // 先剥掉行注释再按逗号 split：GROUPS 数组里写注释会把同行的下一个分组名污染成
+    // `// …\n  'DESKTOP'`，从而误报"未在 GROUPS 里声明"（2026-10-16 实测踩过）。
+    .replace(/\/\/[^\n]*/g, '')
     .split(',')
     .map((x) => x.trim().replace(/^["']|["']$/g, ''))
     .filter(Boolean);

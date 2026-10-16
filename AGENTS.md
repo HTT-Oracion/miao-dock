@@ -146,7 +146,7 @@
 
 ```bash
 # —— 命令清单：check / selftest / 装配 / 开发辅助都住根 e2eScripts.json ——
-npm run task                                        # 列清单（138 条 = 79 基条目 + 59 派生反证轮），退出码 2
+npm run task                                        # 列清单（139 条 = 80 基条目 + 59 派生反证轮），退出码 2
 npm run task -- --list [分组]                        # 同上但退出码 0（static/service/nightly/refute/supply/dev）
 npm run task -- <id>                                # 派发一条，如 npm run task -- check:units（id 后参数原样透传）
 # —— 代码校验（本地由 husky 的 pre-commit 守着，CI 里是强制点）——

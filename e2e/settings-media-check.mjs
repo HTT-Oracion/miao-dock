@@ -771,6 +771,35 @@ add('STORE.hydrate.atBoot', 'STORE', (ctx) => {
   };
 });
 
+// 桌面应用守卫（2026-10-16 用户要求"当作一个桌面应用"）：禁刷新/查找快捷键 + 取消默认右键。
+// 装在 main.tsx 入口是唯一收口处（装屏里换屏失效，装 App 里每次渲染重挂）。
+add('DESKTOP.guards', 'DESKTOP', (ctx) => {
+  const main = stripComments(ctx.s.main);
+  const missing = [];
+  // ① 真的装了守卫，且装在启动处（只定义不调用 = 没装）。
+  //    锚定**行首的调用语句**：写成 /installDesktopGuards\s*\(/ 会同时匹配函数定义
+  //    （`function installDesktopGuards(): void {`），摘掉调用后仍然绿 —— 假阳性，实测踩过。
+  if (!/^installDesktopGuards\(\);/m.test(main))
+    missing.push('main.tsx 未调用 installDesktopGuards()（定义了没装等于没装）');
+  // ② 开发态必须放行：否则 dev 里 Ctrl+R 失效，排障时会被误判成"代码没生效"
+  if (!/import\.meta\.env\.DEV/.test(main))
+    missing.push('守卫没有开发态放行（import.meta.env.DEV）—— dev 里禁刷新会妨碍排障');
+  // ③ 四类快捷键一个都不能漏：R（刷新）/ F5（刷新）/ F（页内查找）/ U（查看源码）
+  for (const [id, re] of [
+    ['Ctrl/Cmd+R', /k === 'r'/],
+    ['F5', /'F5'/],
+    ['Ctrl/Cmd+F', /k === 'f'/],
+    ['Ctrl/Cmd+U', /k === 'u'/],
+  ]) {
+    if (!re.test(main)) missing.push(`守卫未覆盖 ${id}`);
+  }
+  // ④ 右键菜单取消（可编辑元素例外：那里要留剪切/复制/粘贴）
+  if (!/contextmenu/.test(main)) missing.push('守卫未处理 contextmenu（默认右键菜单还在）');
+  if (!/input, textarea, \[contenteditable/.test(main))
+    missing.push('右键菜单没有给可编辑元素留例外（粘贴会只剩快捷键一条路）');
+  return { ok: missing.length === 0, detail: missing.length ? `桌面守卫：${missing.join('、')}` : '' };
+});
+
 // ============================ ⑥ PLAYER ============================
 const CSS_VARS = [
   { id: 'lyrSize', name: '--lyr-size' },
@@ -3071,6 +3100,9 @@ async function runAll() {
   return res;
 }
 
+// 分组打印顺序。🔴 数组里**不要写行注释**：`check:docs` 的 GROUPS 覆盖检查按逗号 split
+// 解析这个数组，注释会把同行的下一个分组名污染成 `// …\n  'DESKTOP'` ⇒ 误报"未声明"（实测踩过）。
+// 桌面应用行为（快捷键守卫 / 右键菜单）的判据源是入口 main.tsx，分组名 DESKTOP。
 const GROUPS = [
   'EXCLUDED',
   'RETIRED',
@@ -3087,6 +3119,7 @@ const GROUPS = [
   'SIMPLIFY',
   'FEATURES',
   'FONT',
+  'DESKTOP',
 ];
 function printGrouped(res) {
   let pass = 0;
@@ -3246,6 +3279,22 @@ const MUTATIONS = [
     find: 'hydratePrefs();',
     replace: 'void 0;',
     expect: ['STORE.hydrate.atBoot'],
+  },
+  {
+    // 复现用户报的"不像桌面应用"：守卫装了却没调用（或调用被摘掉）⇒ 刷新快捷键与右键菜单全都回来
+    name: '把 main.tsx 的桌面守卫调用摘掉（刷新快捷键与默认右键菜单全都回来）',
+    file: F.main,
+    find: 'installDesktopGuards();',
+    replace: 'void installDesktopGuards;',
+    expect: ['DESKTOP.guards'],
+  },
+  {
+    // 另一半：守卫不再区分开发态 ⇒ dev 里 Ctrl+R 失效，排障被误判成"代码没生效"
+    name: '把桌面守卫的开发态放行去掉（dev 里也禁刷新，排障被误导）',
+    file: F.main,
+    find: '  if (import.meta.env.DEV) return;',
+    replace: '  if (false) return;',
+    expect: ['DESKTOP.guards'],
   },
   /*
    * 以下三条守「音乐缓存」这一项。

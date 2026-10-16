@@ -4376,6 +4376,22 @@ seek 导致 <audio> 连续 seek（卡顿/爆音）"的隐患，`seeking` 透传�
 故算法正确性只有静态锚点 + 人工推演背书，**没有真实歌词数据跑过** —— 登记为未验，不当作已验证。
 验收：`check:music` **236/0** · `--refute` **228/228 全红** · static 门 **17/17** · `tsc` 0。
 
+**④ 打包后禁刷新快捷键与默认右键**（`fix(app)`）：`src/main.tsx` 入口装 `installDesktopGuards()`
+（capture 阶段 `preventDefault`）—— 禁 Ctrl/Cmd+R（含 Shift 硬刷新）、F5、Ctrl/Cmd+F5、Ctrl/Cmd+F、
+Ctrl/Cmd+U、Ctrl/Cmd+Shift+I/J/C 与 F12；`contextmenu` 一律取消，**例外是可编辑元素**
+（input/textarea/contenteditable：那里要留剪切/复制/粘贴，一刀切会让粘贴只剩快捷键一条路）。
+🔴 **开发态放行**（`import.meta.env.DEV`）：dev 里禁掉 Ctrl+R 会让人误判"我改的代码没生效"；
+这条守卫**只能在打包态验**（未验项之一）。
+断言：`check:settings` 新增 **`DESKTOP.guards`**（新分组 `DESKTOP`）+ 两条反证
+（摘掉调用 / 去掉开发态放行都必须红）。
+⚠️ 第一条反证**当场抓到我自己的假阳性**：锚点写成 `/installDesktopGuards\s*\(/` 会同时匹配
+函数定义，摘掉调用后仍然绿 ⇒ 改锚定行首调用语句 `^installDesktopGuards\(\);`。
+顺手修的两处：`check:docs` 的 GROUPS 解析器按逗号 split，**数组里写行注释会把下一个分组名污染**
+成 `// …\n  'DESKTOP'` ⇒ 误报"未在 GROUPS 里声明"（已加固为先剥注释，并把注释移出数组）；
+`AGENTS.md` 的清单条数 138→139（上一轮加 `guide` 项后漂移，`--list` 自报 139）。
+条数：settings 183→184、反证 138→141。验收：`check:settings` **184/0** · `--refute` **141/141 全红** ·
+`check:docs` **21/0** · static 门 **17/17** · `tsc` 0。
+
 ## D-229 首启引导的死结：闸门只挡引擎、不挡服务本体（2026-10-16）
 
 **症状（用户实测）**：装完包进应用 → 看到 D1 引导页 → 点「开始下载」→
