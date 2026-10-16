@@ -42,7 +42,8 @@ const SERVICE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'service', 'mod.rs')
 const STATE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'state.rs');
 const IPC_TS = path.join(REPO_ROOT, 'src', 'ipc', 'index.ts');
 const NOTREADY_TSX = path.join(REPO_ROOT, 'src', 'screens', 'NotReadyScreen.tsx');
-const APP_TSX = path.join(REPO_ROOT, 'src', 'App.tsx');
+// B1 起未就绪屏（含它的入口）住在**翻译屏装配件**里，App 只持有 setScreen 本身
+const TRANSLATE_PANE = path.join(REPO_ROOT, 'src', 'router', 'panes', 'TranslatePane.tsx');
 
 let passed = 0;
 let failed = 0;
@@ -228,10 +229,10 @@ const tsx = fs.readFileSync(NOTREADY_TSX, 'utf8');
 
 // ------------------------------------------------------------------ G10：入口接上
 {
-  const app = fs.readFileSync(APP_TSX, 'utf8');
+  const pane = fs.readFileSync(TRANSLATE_PANE, 'utf8');
   check(
-    'G10 `App.tsx` 把指引入口传给未就绪屏（onOpenGuide → 设置页）',
-    /onOpenGuide=\{\(\) => setScreen\('settings'\)\}/.test(app),
+    'G10 翻译屏装配件把指引入口传给未就绪屏（onOpenGuide → 设置页）',
+    /onOpenGuide=\{\(\) => setScreen\('settings'\)\}/.test(pane),
     null,
   );
 }

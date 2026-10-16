@@ -106,6 +106,8 @@ const F = {
   // 不该逼着断言跟着改名（2026-10-10 那次替换踩过：三条断言写死 GenJyuu，删字体时全红）。
   fontsDir: path.join(APP, 'src', 'assets', 'fonts'),
   appMain: path.join(APP, 'src', 'App.tsx'),
+  // B1 起设置屏是**路由表里的屏装配件**，壳层 → 设置页那三个 prop 的接线落在它身上
+  settingsPane: path.join(APP, 'src', 'router', 'panes', 'SettingsPane.tsx'),
   storageBlock: path.join(APP, 'src', 'screens', 'settings', 'StorageBlock.tsx'),
   licensesBlock: path.join(APP, 'src', 'screens', 'settings', 'LicensesBlock.tsx'),
   licensesJson: path.join(APP, 'src', 'generated', 'licenses.json'),
@@ -257,6 +259,7 @@ function loadSources() {
     sidebar: readMaybe(F.sidebar),
     tokens: readMaybe(F.tokens),
     appMain: readMaybe(F.appMain),
+    settingsPane: readMaybe(F.settingsPane),
     storageBlock: readMaybe(F.storageBlock),
     licensesBlock: readMaybe(F.licensesBlock),
     licensesJson: readMaybe(F.licensesJson),
@@ -2752,12 +2755,14 @@ add('FEATURES.shell.wired', 'FEATURES', (ctx) => {
   const app = stripComments(ctx.s.appMain);
   const set = stripComments(ctx.s.settingsScreen);
   const sec = stripComments(ctx.s.sections);
+  // B1 起「壳层 → 设置页」的三个 prop 由屏装配件接线（App 只持有状态本身）
+  const pane = stripComments(ctx.s.settingsPane ?? '');
   const problems = [];
   if (!/useState\(\(\)\s*=>\s*initialSidebarLabels\(\)\)/.test(app)) problems.push('App 没有从偏好初始化侧栏标签');
   if (!/persistSidebarLabels\(on\)/.test(app)) problems.push('App 没有持久化侧栏标签');
   if (!/labels=\{sidebarLabels\}/.test(app)) problems.push('App 没有把 labels 传给 Sidebar');
-  if (!/sidebarLabels=\{sidebarLabels\}/.test(app)) problems.push('App 没有把 sidebarLabels 传给设置页');
-  if (!/onSidebarLabels=\{setLabels\}/.test(app)) problems.push('App 没有把 setLabels 传给设置页');
+  if (!/sidebarLabels=\{sidebarLabels\}/.test(pane)) problems.push('屏装配件没有把 sidebarLabels 传给设置页');
+  if (!/onSidebarLabels=\{setLabels\}/.test(pane)) problems.push('屏装配件没有把 setLabels 传给设置页');
   if (!/sidebarLabels=\{sidebarLabels\}/.test(set)) problems.push('设置页没有透传 sidebarLabels');
   if (!/onSidebarLabels=\{onSidebarLabels\}/.test(set)) problems.push('设置页没有透传 onSidebarLabels');
   if (!/on=\{sidebarLabels\}/.test(sec)) problems.push('① 通用组的开关没有读 sidebarLabels');
@@ -2795,12 +2800,13 @@ add('FEATURES.storage.rows', 'FEATURES', (ctx) => {
 add('FEATURES.storage.wired', 'FEATURES', (ctx) => {
   const set = stripComments(ctx.s.settingsScreen);
   const sec = stripComments(ctx.s.sections);
-  const app = stripComments(ctx.s.appMain);
+  // B1 起 `lib` 由屏装配件透传到设置页（App 仍是数据的持有者）
+  const pane = stripComments(ctx.s.settingsPane ?? '');
   const problems = [];
   if (!/lib: LibraryResponse \| null/.test(set) && !/lib:\s*LibraryResponse\s*\|\s*null/.test(set))
     problems.push('设置页没有声明 lib prop（译文库占用要由它传进来）');
   if (!/<ResourceSection lib=\{lib\}/.test(set)) problems.push('设置页没有把 lib 传给④资源与投放');
-  if (!/lib=\{lib\}/.test(app)) problems.push('App 没有把 lib 传给设置页');
+  if (!/lib=\{lib\}/.test(pane)) problems.push('屏装配件没有把 lib 传给设置页');
   if (!/StorageBlock item=\{item\} lib=\{lib\}/.test(sec)) problems.push('④ 组没有把 lib 交给 StorageBlock');
   /*
    * storage-usage 自己必须是 live —— 否则「三行分列做了、却仍标待接入」能蒙过去。

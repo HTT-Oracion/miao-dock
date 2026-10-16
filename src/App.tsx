@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Outlet } from 'react-router-dom';
 import { apiPost, errorText, openPath, quitApp, serviceRestart, serviceStart } from '@/ipc';
 import type { ServiceState } from '@/ipc';
 import { useLibrary, useQuitRequest, useService, useTasks, useToasts, useTranslateSource } from '@hooks';
@@ -19,19 +20,14 @@ import { QuitConfirm } from '@components/QuitConfirm';
 import { Sidebar } from '@components/Sidebar';
 import { Toolbar } from '@components/Toolbar';
 import { ViewTabs } from '@components/ViewTabs';
-import { QueueEmpty, QueueTable } from '@screens/QueueScreen';
-import { NotReadyScreen } from '@screens/NotReadyScreen';
 import { DownloadPanel } from '@screens/engine/DownloadPanel';
-import { LibraryScreen } from '@screens/LibraryScreen';
-import { DropScreen } from '@screens/DropScreen';
-import { MusicScreen } from '@screens/MusicScreen';
-import { SettingsScreen } from '@screens/SettingsScreen';
 // 展开播放器挂在**应用根**（不在 MusicScreen 内）—— 判据见渲染处注释：
 // 它是 `position: fixed; inset: 0` 的全屏浮层，数据全部来自 store，本就不依赖任何一屏的 DOM。
 import { ExpandedPlayer } from '@screens/music/ExpandedPlayer';
 import { useMusicStore } from '@music/store';
 import { isBlockedWhenNotReady, stateView } from '@/stores/nav';
 import { useNav } from '@/router/use-nav';
+import type { ShellCtx } from '@/router/panes/shell-context';
 import type { TranslateSource } from '@screens/settings/translate-api';
 import { engineStatus, downloadEngineModels, type ModelDownloadView } from '@screens/settings/engine-api';
 import { engineDownloadChip, isDownloadActive } from '@/ipc/engine-download';
@@ -500,6 +496,57 @@ export function App() {
   // 翻译应用的视图 Tab 行；音乐屏不加（《09》§3.3），设置页是全局页也不加
   const showViewTabs = !showNotReady && screen === 'translate';
 
+  /**
+   * 壳层交给屏装配件的唯一一份数据（`panes/shell-context.ts`）。
+   *
+   * 刻意**不包** useMemo：这些值本来就随壳每帧重算，屏组件过去也是壳的子组件
+   * （同样的重渲染频率）；包一层 memo 只会多一份要手写全依赖的负担，而漏一项
+   * 就是"屏里读到旧值"那种最难查的 bug。
+   */
+  const shell: ShellCtx = {
+    screen,
+    view,
+    setScreen,
+    setView,
+    status,
+    source,
+    platform,
+    running,
+    ipcError,
+    showNotReady,
+    startService,
+    restart,
+    rows,
+    hasRows,
+    queueDepth,
+    cancelingIds,
+    cancel,
+    retry,
+    viewComic,
+    openTaskDir,
+    deleteTasks,
+    lib,
+    libRoot,
+    libSummary,
+    libraryFocus,
+    setLibraryFocus,
+    newBookRequest,
+    setNewBookRequest,
+    refreshAll,
+    refreshKey,
+    rootDir: status?.root_dir ?? null,
+    download,
+    engineMissing,
+    downloadViewOpen,
+    setDownloadViewOpen,
+    mode,
+    setTheme,
+    sidebarLabels,
+    setLabels,
+    autoStart,
+    setServiceAutoStart,
+  };
+
   return (
     <div className="shell">
       <Sidebar screen={screen} onScreen={setScreen} state={status?.state ?? 'starting'} labels={sidebarLabels} />
@@ -516,9 +563,10 @@ export function App() {
             </Notice>
           ) : null}
 
+          {/* G5：下载视图（屏 2 / 屏 3）。**覆盖**内容区但不弹模态、不拦截其它屏 ——
+              用户可随时点工具条芯片关掉它去漫画库 / 设置 / 音乐，下载在后台照常继续。
+              它优先于屏内容：开着它的时候后面那一屏照常在，只是被盖住。 */}
           {downloadViewOpen && isDownloadActive(download) && download ? (
-            // G5：下载视图（屏 2 / 屏 3）。**覆盖**内容区但不弹模态、不拦截其它屏 ——
-            // 用户可随时点工具条芯片关掉它去漫画库 / 设置 / 音乐，下载在后台照常继续。
             <DownloadPanel
               view={download}
               requiredBytes={status?.runtime?.requiredBytes}
@@ -526,63 +574,8 @@ export function App() {
               onRedownload={() => void downloadEngineModels(true)}
               onBack={() => setDownloadViewOpen(false)}
             />
-          ) : showNotReady ? (
-            <NotReadyScreen
-              status={status}
-              source={source}
-              onStart={() => void startService()}
-              onRestart={() => void restart()}
-              // D1：「运行时未装配」态上的指引入口 —— 送到设置页（翻译服务组里有引擎诊断与装法）
-              onOpenGuide={() => setScreen('settings')}
-              // G5：点「开始下载」⇒ 发起下载并把内容区切到下载视图。
-              onOpenDownload={() => setDownloadViewOpen(true)}
-            />
-          ) : screen === 'music' ? (
-            <MusicScreen />
-          ) : screen === 'translate' ? (
-            view === 'queue' ? (
-              hasRows ? (
-                <QueueTable
-                  rows={rows}
-                  cancelingIds={cancelingIds}
-                  onCancel={cancel}
-                  onRetry={retry}
-                  onViewComic={viewComic}
-                  onOpenDir={openTaskDir}
-                  onDelete={deleteTasks}
-                />
-              ) : (
-                <QueueEmpty onGoSettings={() => setScreen('settings')} onGoDrop={() => setView('drop')} />
-              )
-            ) : view === 'library' ? (
-              <LibraryScreen
-                lib={lib}
-                tasks={rows}
-                focus={libraryFocus}
-                onFocusHandled={() => setLibraryFocus(null)}
-                newBookSignal={newBookRequest}
-                onNewBookHandled={() => setNewBookRequest(false)}
-                onRefresh={refreshAll}
-                refreshKey={refreshKey}
-              />
-            ) : (
-              <DropScreen
-                rootDir={status?.root_dir ?? null}
-                onSubmitted={refreshAll}
-                onGoLibrary={() => setView('library')}
-              />
-            )
           ) : (
-            <SettingsScreen
-              status={status}
-              mode={mode}
-              onMode={setTheme}
-              sidebarLabels={sidebarLabels}
-              onSidebarLabels={setLabels}
-              serviceAutoStart={autoStart}
-              onServiceAutoStart={setServiceAutoStart}
-              lib={lib}
-            />
+            <Outlet context={shell} />
           )}
 
           {tasksError ? <Notice kind="bad">任务列表读取失败：{tasksError}</Notice> : null}
