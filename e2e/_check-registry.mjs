@@ -760,6 +760,15 @@ const CHECKS = [
     tier: 'nightly',
     watch: ['src-tauri/src/**', 'src-tauri/**'],
   },
+  // D-229：**未装配时 ① 必须可用**（引导页那个「开始下载」才落地得了）。
+  // 走 `MIAO_SELFTEST=1`（Rust 侧直接起服务，不依赖 webview）⇒ 与同脚本的 B 组同层。
+  {
+    id: 'guide',
+    script: 'e2e/lifespan-selftest.mjs',
+    args: ['--guide'],
+    tier: 'service',
+    watch: ['src-tauri/src/service/mod.rs', 'src-tauri/src/mangasvc/engine/runtime_probe.rs', 'src/**'],
+  },
   // B4：**真装一次** wheel（`--no-index --no-deps` 成功 + 真二进制 + 构造 DenseCRF）。
   // 硬前置：盘上得有一颗 `--build-wheel` 产出的 wheel ⇒ 只在跑过构建的机器上有意义，故归 nightly。
   {

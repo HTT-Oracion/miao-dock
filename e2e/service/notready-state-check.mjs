@@ -183,10 +183,12 @@ const tsx = fs.readFileSync(NOTREADY_TSX, 'utf8');
   check('G4 L1–L4 四句文案逐字未改（冻结字面量）', wrong.length === 0, wrong);
 
   // G5：新分支的**判据**与**标题**都在，且是真的会走（不是 `if (false)`）
+  // ⚠️ 判据在 D-229 收窄成「real 档 + 运行时未就绪」：**不再看服务状态**
+  //    （闸门允许 ① 在未装配时照常起，state 会是 running，而这一页恰恰那时最需要）。
   check(
-    'G5 「运行时未装配」分支存在且判据可走（real 档 + 未就绪 + 非 running）',
+    'G5 「运行时未装配」分支存在且判据可走（real 档 + 运行时未就绪；服务状态不是判据，见 D-229）',
     /const runtimeUnready = status\?\.mode === 'real' && !!rt && !rt\.ready;/.test(tsx) &&
-      /if \(runtimeUnready && rt && state !== 'running'\) \{/.test(tsx) &&
+      /if \(runtimeUnready && rt\) \{/.test(tsx) &&
       tsx.includes('需要先安装翻译引擎'),
     null,
   );
@@ -200,7 +202,7 @@ const tsx = fs.readFileSync(NOTREADY_TSX, 'utf8');
   );
 
   // G7：它必须在**时间线之前** return —— 否则用户仍会先看到一条走到 L1 就停的进度条
-  const atBranch = tsx.indexOf("if (runtimeUnready && rt && state !== 'running')");
+  const atBranch = tsx.indexOf('if (runtimeUnready && rt) {');
   const atTimeline = tsx.indexOf('{STAGES.map((s, i) =>');
   check(
     'G7 新分支在时间线渲染之前 return（用户不会先看到卡住的进度条）',
@@ -280,7 +282,7 @@ if (REFUTE) {
     {
       id: 'M2',
       what: '新分支条件改成 if (false)（分支在，但永远不走）',
-      mutate: () => mutateFile(NOTREADY_TSX, "if (runtimeUnready && rt && state !== 'running') {", 'if (false) {'),
+      mutate: () => mutateFile(NOTREADY_TSX, 'if (runtimeUnready && rt) {', 'if (false) {'),
       expect: 'G5',
     },
     {

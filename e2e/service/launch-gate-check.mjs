@@ -11,6 +11,13 @@
  * 用户看到的是**卡住**，不是**没装**。闸门把这段变成秒级收场，且 `last_error` 里
  * 就是缺什么、缺在哪、怎么装。
  *
+ * 🔴 **D-229（2026-10-16）改了闸门的口径：只挡引擎 ②/③，不挡服务本体 ①。**
+ *    原因：闸门原来 `return self.fail(...)`（一个子进程都不起），而 D1 引导页恰恰只在
+ *    "运行时未装配"时出现 —— 它唯一的行动按钮必须 POST 到 ① 的 `/engine/models/download`
+ *    ⇒ 真机实测现场是「点开始下载 → 本地翻译服务未运行（请确认喵坞的服务已启动）」。
+ *    现在 ① 照常起（下载/进度/续传仍以服务为唯一事实源），②/③ 跳过、状态报 `degraded`，
+ *    引导页照旧由 `runtime.ready === false` 驱动。**G6 就是钉这条口径的**。
+ *
  * ## 取证入口：`mangasvc --check-runtime-gate [real|mock]`
  * 打的是服务侧 `start_blocking` 调的**同一个** `gate_message()` ⇒ 这里绿即那里绿。
  * 被拦 ⇒ 退出码 1；放行 ⇒ 0。它不起服务、不绑端口，毫秒级。
@@ -24,7 +31,8 @@
  * ## 反证轮（--refute）
  * - M1 `gate_message_for` 恒返 None（绕过闸门）⇒ G1 不再被拦。
  * - M2 删掉 mock 旁路 ⇒ G2（mock 放行）变红 —— 证明「mock 不过闸」不是碰巧。
- * - M3 删掉 `service.rs` 里的闸门调用 ⇒ G5 源码钉变红。
+ * - M3 把闸门改回**旧口径**（一命中就 `return self.fail`）⇒ G6 源码钉变红
+ *   （G5 仍绿：调用仍在 spawn 之前 —— 两条钉钉的是不同的东西）。
  * 三个变异都改 Rust 源码、跑完**按字节还原**（含重编译产物）。
  *
  * 用法：node e2e/service/launch-gate-check.mjs [--refute]
@@ -108,6 +116,32 @@ function gateWiredBeforeEngineSpawn() {
   return { ok: at < spawn, why: `调用在 ${at}、spawn 在 ${spawn}` };
 }
 
+/**
+ * 闸门**只挡引擎**（②/③），不把服务本体（①）一起挡下。
+ *
+ * 🔴 为什么这条必须钉住（D-229，2026-10-16 真机实测）：原先闸门是
+ *    `if let Some(msg) = gate_message(..) { return self.fail(app, Some("L0"), msg); }`
+ *    —— **一个子进程都不起**。于是 D1 引导页成了死结：那一页恰恰只在"运行时未装配"时
+ *    出现，而它唯一的行动按钮必须 POST 到 ① 的 `/engine/models/download`
+ *    ⇒ 现场表现就是「点开始下载 → 本地翻译服务未运行（请确认喵坞的服务已启动）」。
+ *    现在的口径：① 照常起（下载/进度/续传仍以服务为唯一事实源），②/③ 跳过，
+ *    状态报 `degraded`，引导页照旧由 `runtime.ready === false` 驱动。
+ */
+function gateOnlyBlocksEngines() {
+  const src = fs.readFileSync(SERVICE_RS, 'utf8');
+  if (!src.includes('runtime_probe::gate_message(')) {
+    return { ok: false, why: 'service.rs 里没有 gate_message 调用（闸门没接上线）' };
+  }
+  // 旧口径的指纹：闸门一出结果就 `return self.fail(app, Some("L0"), …)`（把 ① 也挡了）
+  const bailsOut = /runtime_probe::gate_message\([^)]*\)[\s\S]{0,120}?return self\.fail\(\s*app,\s*Some\("L0"\)/.test(
+    src,
+  );
+  return {
+    ok: !bailsOut,
+    why: bailsOut ? '闸门一命中就 return self.fail(...) —— ① 服务会被一起挡下，引导页的下载按钮是死结' : '只挡引擎',
+  };
+}
+
 if (!fs.existsSync(RUST_BIN)) {
   console.error(`找不到 Rust 靶子：${RUST_BIN}\n先构建：cd src-tauri && cargo build --bin mangasvc`);
   process.exit(1);
@@ -189,6 +223,12 @@ if (!fs.existsSync(RUST_BIN)) {
   check('G5 源码钉 — service.rs 的 gate_message 调用早于 spawn 引擎（否则 CLI 全绿而产品没接线）', w.ok, w.why);
 }
 
+{
+  // G6：闸门**只挡引擎**（D-229）—— 它不得再 `return self.fail(...)`（那会把 ① 一起挡下）
+  const g = gateOnlyBlocksEngines();
+  check('G6 闸门只挡 ②/③、不得连 ① 服务一起挡（否则引导页的「开始下载」是死结，见 D-229）', g.ok, g.why);
+}
+
 // ------------------------------------------------------------------ 反证
 
 /** 重编译 mangasvc。🔴 变异改了 Rust 源码，靶子是**另一个进程**，不重编等于没改。 */
@@ -205,6 +245,11 @@ if (REFUTE) {
     console.log('\n正向未全绿 ⇒ 反证轮不收场（先修正向）');
     process.exit(1);
   }
+
+  // 正向条数在变异之前定格：反证阶段还会插一条「按字节还原」断言，
+  // 不定格的话汇总会把还原检查也算进正向（报 10/10 而实际正向 9 条）。
+  const fwdPassed = passed;
+  const fwdFailed = failed;
 
   const emptyEnv = () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-gate-refute-'));
@@ -255,26 +300,29 @@ if (REFUTE) {
     },
   });
 
-  // M3：把 service.rs 里的闸门调用删掉 ⇒ G5 源码钉变红（而 G1–G4 仍绿）
+  // M3：把闸门改回**旧口径**（连 ① 一起挡）⇒ G6 源码钉变红（G5 仍绿：调用仍在 spawn 之前）
+  //    ⚠️ 这条在 2026-10-16（D-229）改过形态：原来它删的是"闸门调用"，
+  //    现在那种删法会让 `engine_blocked` 悬空 ⇒ **编译不过**，变异本身就失败（验不到东西）。
   mutations.push({
     id: 'M3',
-    what: '删掉 service.rs 的闸门调用（产品没接线）',
+    what: '闸门改回旧口径：一命中就 return self.fail（把 ① 服务一起挡下 ⇒ 引导页死结）',
     file: SERVICE_RS,
     original: serviceOriginal,
     edit: () => {
-      // 按文件实际 EOL 拼出整块再删 —— 手写 `}\n` 会在 CRLF 文件上找不到边界
+      const call = '        let engine_blocked = mangasvc::engine::runtime_probe::gate_message(&plan.mode);';
+      if (!serviceOriginal.includes(call)) throw new Error('M3 锚点未命中（service.rs 的闸门调用写法变了？）');
       const eol = serviceOriginal.includes('\r\n') ? '\r\n' : '\n';
-      const block = [
-        '        if let Some(msg) = mangasvc::engine::runtime_probe::gate_message(&plan.mode) {',
-        '            return self.fail(app, Some("L0"), msg);',
+      const oldStyle = [
+        call,
+        '        if let Some(msg) = &engine_blocked {',
+        '            return self.fail(app, Some("L0"), msg.clone());',
         '        }',
       ].join(eol);
-      if (!serviceOriginal.includes(block)) throw new Error('M3 锚点未命中（service.rs 的闸门调用块写法变了？）');
-      fs.writeFileSync(SERVICE_RS, serviceOriginal.replace(block + eol, ''));
+      fs.writeFileSync(SERVICE_RS, serviceOriginal.replace(call, oldStyle));
     },
     probe: async () => {
-      const w = gateWiredBeforeEngineSpawn();
-      return !w.ok; // 期望：源码钉红
+      const g = gateOnlyBlocksEngines();
+      return !g.ok; // 期望：G6 源码钉红
     },
   });
 
@@ -301,9 +349,9 @@ if (REFUTE) {
     'REFUTE.restore — runtime_probe.rs 与 service.rs 已按字节还原',
     restoredProbe === probeOriginal && restoredService === serviceOriginal,
   );
-  console.log('\n[RESULT] ' + JSON.stringify({ pass: passed, fail: failed, allRed }));
+  console.log('\n[RESULT] ' + JSON.stringify({ pass: fwdPassed, fail: fwdFailed, allRed }));
   console.log(
-    `\nD6 启动前预检闸门：正向 ${passed} / ${passed + failed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`,
+    `\nD6 启动前预检闸门：正向 ${fwdPassed} / ${fwdPassed + fwdFailed}，反证 ${mutations.length} 个变异${allRed ? '全部按预期变红' : '存在未变红项'}`,
   );
   process.exit(allRed && failed === 0 ? 0 : 1);
 }

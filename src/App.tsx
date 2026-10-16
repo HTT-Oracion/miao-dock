@@ -268,6 +268,25 @@ export function App() {
   }, [push]);
 
   /**
+   * 首启流程最后一步：**装配完成 ⇒ 自动重启一次服务链**，把 ②/③ 拉起来。
+   *
+   * 🔴 为什么必须有：D6 闸门在"运行时未装配"时只放 ① 服务进来（否则引导页那个
+   *    「开始下载」会报"本地翻译服务未运行"，见 D-229）。而 ②/③ 是应用**按启动配方**
+   *    起的 —— 只有重启服务才会重走一遍配方。少了这一步，用户会觉得"下完了却还是不能
+   *    用"，而正确动作（去设置页点重启）没有任何地方提示他。
+   *
+   * 一次性：按 `startedAt` 记账，同一次下载只重启一次 —— 否则 1.5s 轮询会让它反复重启。
+   */
+  const restartedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (download?.state !== 'done' || !status?.runtime?.ready) return;
+    const key = download.startedAt ?? 'done';
+    if (restartedFor.current === key) return;
+    restartedFor.current = key;
+    void restart();
+  }, [download?.state, download?.startedAt, status?.runtime?.ready, restart]);
+
+  /**
    * 手动启动（未就绪屏「启动本地服务」）。与上面的自动启动走**同一条** IPC，
    * 区别只在"谁点的"与要不要给反馈 —— 用户点的必须给一句，自动拉起的不能给（会变噪音）。
    */

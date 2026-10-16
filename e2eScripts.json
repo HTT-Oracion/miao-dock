@@ -78,7 +78,8 @@
         { "id": "check:engine-parity", "cmd": "node e2e/service/engine-parity-check.mjs", "desc": "F4 engine 耦合点同源钉子：Rust(mangasvc/engine.rs) 对冻结 golden 快照", "refute": true },
         { "id": "check:engine-http", "cmd": "node e2e/service/engine-http-parity-check.mjs", "desc": "F4-b engine HTTP 运行期同源钉子：Rust(engine/client.rs) 对冻结 golden 快照", "refute": true },
         { "id": "check:llm-supervisor", "cmd": "node e2e/service/llm-supervisor-parity-check.mjs", "desc": "F4-b2 引擎③ supervisor 行为同源钉子：Rust(supervisor.rs) 对冻结 golden", "refute": true },
-        { "id": "check:drain-runtime", "cmd": "node e2e/service/drain-runtime-check.mjs", "desc": "F5 队列驱动线程钉子（D-150）：引擎在飞时必须放锁，且队列仍要跑到底", "refute": true }
+        { "id": "check:drain-runtime", "cmd": "node e2e/service/drain-runtime-check.mjs", "desc": "F5 队列驱动线程钉子（D-150）：引擎在飞时必须放锁，且队列仍要跑到底", "refute": true },
+        { "id": "selftest:app:guide", "cmd": "node e2e/lifespan-selftest.mjs --guide", "desc": "D-229 未装配时 ① 必须可用：服务起得来 + 下载端点能落地 + ②/③ 一个不起" }
       ]
     },
     "nightly": {

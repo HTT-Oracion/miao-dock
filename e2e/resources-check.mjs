@@ -79,8 +79,19 @@ const parseReport = (out) => {
 
 /// 造一棵模拟的资源目录树。`withAsset=false` 时**只建目录不放资产**（R1 的夹具）。
 function makeFixture(name, { withAsset = true, dirOnly = false } = {}) {
-  const base = path.join(ROOT, '.tmp', 'resources-check', name);
-  fs.rmSync(base, { recursive: true, force: true });
+  let base = path.join(ROOT, '.tmp', 'resources-check', name);
+  /*
+   * 🔴 清旧夹具失败（本机可能的形态：目录被别的东西占着 / 本机安全删除垫把 `rmSync` 转交
+   *    trash 时报「Some operations were aborted」）时，**换一个全新目录**继续，而不是让
+   *    整个检查崩在设计之外的地方 —— 夹具本来就是自足的，换个落地不影响任何判据。
+   *    实测代价：2026-10-16 一次残留把本检查打成"连汇总行都没打出来"，而它真正要验的东西
+   *    （资源寻址三环境）一行都没跑。
+   */
+  try {
+    fs.rmSync(base, { recursive: true, force: true });
+  } catch {
+    base = `${base}-${Date.now().toString(36)}`;
+  }
   if (dirOnly) return { resources: path.join(base, 'Resources'), repo: path.join(base, 'empty') };
   fs.mkdirSync(path.join(base, 'Resources', 'engine'), { recursive: true });
   fs.mkdirSync(path.join(base, 'empty'), { recursive: true });

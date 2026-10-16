@@ -212,7 +212,16 @@ export function NotReadyScreen({
   // ---- 引导页（D1 运行时未装配）----
   const rt = status?.runtime;
   const runtimeUnready = status?.mode === 'real' && !!rt && !rt.ready;
-  if (runtimeUnready && rt && state !== 'running') {
+  /*
+   * 🔴 判据**只看**「real 档 + 运行时未就绪」，**不再附加 `state !== 'running'`**。
+   *
+   * 原先那个附加条件在 2026-10-16 被证明是错的（D-229）：D6 闸门当时连 ① 服务一起挡下
+   * （一个子进程都不起），于是"未装配"时服务必不在、state 必不是 running —— 两个条件
+   * **恰好同时成立**，看不出问题。闸门改成"只挡 ②/③、① 照常起"之后，① 活着 ⇒ state 是
+   * running，而引擎仍未装配 —— 这时**恰恰最需要这一页**（它的「开始下载」要 POST 到 ①）。
+   * ⇒ 「引擎就绪与否」只能由 `runtime.ready` 回答，不能拿服务状态代理。
+   */
+  if (runtimeUnready && rt) {
     const gb = rt.requiredBytes > 0 ? (rt.requiredBytes / GIB).toFixed(1) : null;
     const start = async () => {
       setBusy(true);

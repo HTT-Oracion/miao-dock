@@ -481,15 +481,25 @@ impl ServiceManager {
         //    real 档的硬门归 D6（首启引导）—— 那里才有完整的"缺什么 → 怎么装"流程。
         mangasvc::engine::runtime_probe::warn_unready_if_real(plan.mode == "mock");
         // ---- 0.5) 运行时预检闸门（D6）----
-        //    real 档下「装没装」是**能不能启动**的前提，不是"启动后再看"的事：
+        //    real 档下「装没装」是**引擎能不能起**的前提，不是"启动后再看"的事：
         //    缺 python 时旧行为是 ② 起不来 → 降级继续 → L2 探针空等 240 s
         //    （`mangasvc::engine::REAL_PROBE_TIMEOUT_MS`）→ 报一句离根因极远的「服务启动失败」。
         //    用户看到的是卡住，不是没装 —— 这正是本闸门要消灭的形态。
-        //    🔴 位置在**任何子进程之前**：一个都不起，秒级收场。
+        //
+        //    🔴 **2026-10-16 改口径：闸门只挡引擎（②/③），不挡服务本体（①）。**
+        //    原先它是 `return self.fail(...)`（一个子进程都不起）—— 于是 D1 引导页成了死结：
+        //    那一页恰恰只在"运行时未装配"时出现，而它唯一的行动按钮必须 POST 到 ① 的
+        //    `/engine/models/download`。真机实测的现场就是「点开始下载 → 本地翻译服务未运行」。
+        //    现在：① 照常起（下载 / 进度 / 续传仍以服务为**唯一事实源**），②/③ 跳过，
+        //    状态如实报 `degraded`，引导页照旧由 `runtime.ready === false` 驱动。
         //    🔴 mock 档不过闸（30+ 个 mock e2e 靠它活着）；判据与上面那句 warn
         //       共用同一份 `probe()` ⇒ 日志流与状态机不会各说各话。
-        if let Some(msg) = mangasvc::engine::runtime_probe::gate_message(&plan.mode) {
-            return self.fail(app, Some("L0"), msg);
+        let engine_blocked = mangasvc::engine::runtime_probe::gate_message(&plan.mode);
+        if let Some(msg) = &engine_blocked {
+            say(
+                &log,
+                &format!("[miao-dock] 运行时未装配 ⇒ 只起 ① 服务、跳过 ②/③（首启引导负责装配）：{msg}"),
+            );
         }
         // E1：**日志打印生效参数快照** —— 逐条列出真正会被执行的东西（不是"配置里写的"）。
         // 走 `say`（环 + stdout 双写），让应用之外也能取证。
@@ -524,6 +534,13 @@ impl ServiceManager {
             Ok(c) => c,
             Err(e) => return self.fail(app, None, e),
         };
+        // 🔴 闸门放 ① 进来时，**别让 ① 自己去预拉起 ③**：那会对着没装配的运行时开火，
+        //    拉起一个必然失败的 llama-server（闸门"一个引擎子进程都不起"就白设了）。
+        //    `MIAO_NO_LLM_AUTOSTART` 正是那条开关（见 `EngineState::from_env`）。
+        let mut service_env = plan.service_env.clone();
+        if engine_blocked.is_some() {
+            service_env.insert("MIAO_NO_LLM_AUTOSTART".to_string(), "1".to_string());
+        }
         say(
             &log,
             &format!(
@@ -532,7 +549,7 @@ impl ServiceManager {
                 //    日志还在说 node，看日志的人会去找一个根本不存在的进程（而服务其实是好的）。
                 //    改成打印**真实的** service 命令：日志是排障的第一现场，不许编。
                 cmd_line(&service_cmd),
-                fmt_env(&plan.service_env)
+                fmt_env(&service_env)
             ),
         );
         say(&log, "──────────────────────────────────────────");
@@ -549,6 +566,8 @@ impl ServiceManager {
             .unwrap_or(false);
         if llm_owned_by_service {
             say(&log, "[miao-dock] ③ LLM 归属 manga-service —— 本进程不 spawn（8080 由它负责）");
+        } else if engine_blocked.is_some() {
+            say(&log, "[miao-dock] ③ LLM 跳过（运行时未装配，闸门只放 ①）");
         } else if let Some(spec) = &plan.llm {
             match spawn_spec(spec, &log) {
                 Ok(p) => {
@@ -561,14 +580,18 @@ impl ServiceManager {
             }
         }
 
-        match spawn_spec(&plan.engine, &log) {
-            Ok(p) => {
-                let port = first_port(&p.probes);
-                self.inner.lock().unwrap().sidecar_port = port;
-                self.inner.lock().unwrap().children.engine = Some(p);
+        if engine_blocked.is_some() {
+            say(&log, "[miao-dock] ② engine 跳过（运行时未装配，闸门只放 ①）");
+        } else {
+            match spawn_spec(&plan.engine, &log) {
+                Ok(p) => {
+                    let port = first_port(&p.probes);
+                    self.inner.lock().unwrap().sidecar_port = port;
+                    self.inner.lock().unwrap().children.engine = Some(p);
+                }
+                // ② 起不来也继续：服务 `/health` 会报 degraded（画面 X-C3）
+                Err(e) => spawn_errs.push(format!("引擎启动失败（降级继续）：{e}")),
             }
-            // ② 起不来也继续：服务 `/health` 会报 degraded（画面 X-C3）
-            Err(e) => spawn_errs.push(format!("引擎启动失败（降级继续）：{e}")),
         }
 
         // `service_cmd` 已在日志段之前解析（见上）。
@@ -576,7 +599,7 @@ impl ServiceManager {
             label: Some("service".into()),
             cmd: service_cmd,
             cwd: None,
-            env: plan.service_env.clone(),
+            env: service_env,
             probes: Vec::new(),
             probe_timeout_ms: None,
             watch: false,
@@ -644,10 +667,21 @@ impl ServiceManager {
             let mut g = self.inner.lock().unwrap();
             g.state = ServiceState::Running;
             g.phase = None;
-            g.degraded = !spawn_errs.is_empty();
+            // 闸门放行时 ②/③ 是**按设计缺席**（不是"起失败了"），但它确实让翻译不可用 ⇒ 如实报 degraded。
+            g.degraded = !spawn_errs.is_empty() || engine_blocked.is_some();
         }
         self.mark(app, "running");
-        push_log(&log, "[miao-dock] 服务与引擎栈就绪（三重判定通过：进程存活 + 端口 + HTTP）");
+        if let Some(msg) = &engine_blocked {
+            push_log(
+                &log,
+                &format!(
+                    "[miao-dock] ① 服务就绪；引擎未装配（②/③ 按闸门跳过）—— \
+                     去「设置 → 翻译服务」点「开始下载」装配：{msg}"
+                ),
+            );
+        } else {
+            push_log(&log, "[miao-dock] 服务与引擎栈就绪（三重判定通过：进程存活 + 端口 + HTTP）");
+        }
         self.spawn_monitor(app);
     }
 
