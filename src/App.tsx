@@ -126,6 +126,15 @@ export function App() {
   const visibleDownload = svcDown ? null : download;
   /** ① 停掉后 ②/③ 快照一并置空：屏里不残留「上一份 running」的假象。 */
   const visibleEngineProcess = svcDown ? EMPTY_ENGINE_PROCESS : engineProcess;
+  /*
+   * 视觉资产（② 的视觉模型）是否就位。
+   *
+   * 🔴 在线翻译**只替代 ③ LLM**：图片仍要经 ② 做检测 / OCR / 抹字，
+   *    视觉没装好时哪怕在线能用也翻不出东西 ⇒ 准入必须连它一起看。
+   *    `entries === 0` = 当前平台没有这一档（不算缺失），与 `setOf` 同口径。
+   */
+  const visualSet = status?.runtime?.sets?.visual;
+  const visualReady = !!visualSet && visualSet.entries > 0 && visualSet.ready;
   /** 侧栏入口形态（三处共用同一份映射，不各自判断）。 */
   const downloadEntry = downloadEntryState(visibleDownload, dismissedDownload);
 
@@ -434,9 +443,11 @@ export function App() {
   /*
    * local 来源下「① 服务在跑」不等于「能翻译」：D6 闸门会只放 ① 进来、把 ②/③ 跳过，
    * 此时 state 仍是 running（degraded=true）。准入必须同时看 `engineMissing`，
-   * 否则装配流程页在最需要它的那一刻被挡掉。online 来源不需要本地引擎，维持原判据。
+   * 否则装配流程页在最需要它的那一刻被挡掉。
+   * 🔴 online 来源**不是**「不需要本地引擎」：它只替代 ③ LLM，图片仍要 ② 处理，
+   *    所以在线分支也要看视觉资产就位（`visualReady`）—— 视觉没装好就不放行。
    */
-  const blocked = source === 'online' ? svcDown : !running || engineMissing;
+  const blocked = source === 'online' ? svcDown || !visualReady : !running || engineMissing;
   // 哪些屏在服务未就绪时让位，判定集中在 nav.ts 一处（设置页与音乐屏有例外）
   const showNotReady = blocked && isBlockedWhenNotReady(screen);
 
@@ -515,18 +526,7 @@ export function App() {
           ),
         };
     }
-  }, [
-    libRoot,
-    libSummary,
-    platform,
-    push,
-    queueDepth,
-    screen,
-    showNotReady,
-    source,
-    status?.state,
-    view,
-  ]);
+  }, [libRoot, libSummary, platform, push, queueDepth, screen, showNotReady, source, status?.state, view]);
 
   // 翻译应用的视图 Tab 行；音乐屏不加（《09》§3.3），设置页是全局页也不加；
   // 下载页是覆盖层，也不该顶着翻译视图 Tab。

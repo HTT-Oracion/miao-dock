@@ -176,6 +176,24 @@ export function TranslateSection({
 
   // —— 翻译来源的派生值与两个保存动作 ——
   const srcOnline = draftSource === 'online';
+  /*
+   * 视觉资产（② 的视觉模型）是否就位。
+   *
+   * 🔴 在线翻译**只替代 ③ LLM**：图片仍要经 ② 做检测 / OCR / 抹字，
+   *    视觉没装好时切过去也翻不出来 ⇒ 保存前必须挡一道。
+   *    `entries === 0` = 当前平台没有这一档（不算缺失），与 `setOf` 同口径。
+   */
+  const visualSet = status?.runtime?.sets?.visual;
+  const visualReady = !!visualSet && visualSet.entries > 0 && visualSet.ready;
+  /** 选了在线但视觉没就位 ⇒ 在线这条路的入口此刻是关着的（保存挡、准入拦） */
+  const onlineBlocked = srcOnline && !visualReady;
+  /*
+   * 小节的定位说明：在线翻译**只替代 ③**，图片仍要 ② 处理 —— 这条常驻，
+   * 免得用户以为"切了在线就不用装引擎了"；视觉没装好时补一句当前会被拦。
+   */
+  const srcNote = `在线翻译只替代本地 LLM（③）的文字翻译；图片处理仍需要本地视觉引擎（②）。${
+    onlineBlocked ? '当前视觉引擎尚未装配好，切到在线会被拦下。' : ''
+  }`;
   /** 生效值（服务端那份）：草稿与它比较才知道"有没有改动" */
   const savedSource = srcOpts?.settings.source ?? null;
   const savedPlatform = srcOpts?.settings.platform ?? null;
@@ -200,6 +218,14 @@ export function TranslateSection({
 
   const saveSrcSettings = async () => {
     if (!srcOpts) return;
+    /*
+     * 🔴 切到在线前挡一道：在线只替代 ③ LLM，图片仍要经 ② 处理，
+     *    视觉资产没就位就切过去，用户会拿到"来源已切在线"却一页都翻不出来。
+     */
+    if (srcOnline && !visualReady) {
+      onToast('视觉引擎还没装配好 —— 在线翻译只替代本地 LLM（③），图片处理仍要靠它', 'bad');
+      return;
+    }
     // 只发**改动过**的字段：整份提交会把没动的键也写一遍，服务端回的 changed 清单会失去意义
     const patch: TranslateSettingsPatch = {};
     if (draftSource !== savedSource) patch.source = draftSource;
@@ -289,6 +315,10 @@ export function TranslateSection({
       {/* 小节一：翻译来源（1）—— ver2.2 在线翻译并入 ② 的第一个小节（P-D2） */}
       <div className="set-group">
         <SubTitle>翻译来源</SubTitle>
+        {/* 定位说明常驻（视觉没就位时转告警色）：免得用户以为「切了在线就不用装引擎」 */}
+        <Notice kind={onlineBlocked ? 'bad' : undefined} className="set-row-note">
+          {srcNote}
+        </Notice>
 
         <Row item={itemOf(source, 'translate-source')}>
           {srcOpts ? (
