@@ -23,7 +23,8 @@ export function TranslatePane() {
     startService,
     restart,
     setScreen,
-    setDownloadViewOpen,
+    openEngineDownload,
+    applyDownload,
     view,
     setView,
     hasRows,
@@ -56,8 +57,9 @@ export function TranslatePane() {
         onRestart={() => void restart()}
         // D1：「运行时未装配」态上的指引入口 —— 送到设置页（翻译服务组里有引擎诊断与装法）
         onOpenGuide={() => setScreen('settings')}
-        // G5：点「开始下载」⇒ 发起下载并把内容区切到下载视图。
-        onOpenDownload={() => setDownloadViewOpen(true)}
+        // G5：点「开始下载」⇒ 发起下载并切到独立下载页。
+        onOpenDownload={openEngineDownload}
+        onDownloadStarted={applyDownload}
       />
     );
   }

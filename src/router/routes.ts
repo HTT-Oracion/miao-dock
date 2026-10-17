@@ -26,11 +26,16 @@
  */
 import { TRANSLATE_VIEWS, type Screen, type TranslateView } from '@/stores/nav';
 
+/** 壳层覆盖层（不属于 `Screen` 枚举，避免破坏「两个应用 + 全局设置」的 IA）。 */
+export type OverlayId = 'engine-download';
+
 /** 屏级路由：`screen` 是壳层屏；`view` 只有漫画翻译应用有（音乐自成工作区，不加 Tab）。 */
 export interface ScreenRoute {
   path: string;
   screen: Screen;
   view?: TranslateView;
+  /** 覆盖层路由：命中时内容区换成对应面板，但侧栏仍按 `screen` 高亮 */
+  overlay?: OverlayId;
 }
 
 /** 视图清单的第一项 —— 翻译应用的默认落点（顺序即 `TRANSLATE_VIEWS` 的顺序） */
@@ -55,16 +60,24 @@ export const SCREEN_ROUTES: ScreenRoute[] = [
   { path: '/settings', screen: 'settings' },
 ];
 
+/**
+ * 覆盖层路由：**不是屏**，不参与侧栏/视图 Tab，也不会在服务未就绪时让位。
+ * 它挂在 App layout 下渲染成面板，`screen` 只用于侧栏高亮与返回上下文。
+ */
+export const OVERLAY_ROUTES: ScreenRoute[] = [
+  { path: '/engine-download', screen: 'translate', overlay: 'engine-download' },
+];
+
 /** 末位斜杠与多余的重复斜杠都不算另一条路由（`/music/` 与 `/music` 同屏） */
 function normalize(pathname: string): string {
   const p = pathname.replace(/\/{2,}/g, '/');
   return p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p;
 }
 
-/** 路径 → 屏。**未命中返回 `null`**（由调用方决定去哪，不在这里静默兜底） */
+/** 路径 → 屏/覆盖层。**未命中返回 `null`**（由调用方决定去哪，不在这里静默兜底） */
 export function parseScreen(pathname: string): ScreenRoute | null {
   const p = normalize(pathname);
-  return SCREEN_ROUTES.find((r) => r.path === p) ?? null;
+  return [...SCREEN_ROUTES, ...OVERLAY_ROUTES].find((r) => r.path === p) ?? null;
 }
 
 /** 屏 → 路径（侧栏点击）。翻译应用落回它的第一视图 */

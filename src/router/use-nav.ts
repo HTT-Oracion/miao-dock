@@ -11,11 +11,13 @@
 import { useCallback, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { Screen, TranslateView } from '@/stores/nav';
-import { FIRST_VIEW, parseScreen, pathOfScreen, pathOfView } from '@/router/routes';
+import { FIRST_VIEW, parseScreen, pathOfScreen, pathOfView, type OverlayId } from '@/router/routes';
 
 export interface Nav {
   screen: Screen;
   view: TranslateView;
+  /** 覆盖层命中（如 `/engine-download`）；`null` = 正常屏内容 */
+  overlay: OverlayId | null;
   setScreen: (s: Screen) => void;
   setView: (v: TranslateView) => void;
 }
@@ -31,9 +33,10 @@ export function useNav(): Nav {
   // 渲染外壳的代价远小于让整个窗口白屏。
   const screen: Screen = hit?.screen ?? 'translate';
   const view: TranslateView = hit?.view ?? FIRST_VIEW;
+  const overlay: OverlayId | null = hit?.overlay ?? null;
 
   const setScreen = useCallback((s: Screen) => navigate(pathOfScreen(s, view)), [navigate, view]);
   const setView = useCallback((v: TranslateView) => navigate(pathOfView(v)), [navigate]);
 
-  return { screen, view, setScreen, setView };
+  return { screen, view, overlay, setScreen, setView };
 }

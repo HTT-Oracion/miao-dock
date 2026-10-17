@@ -4,7 +4,8 @@ import { SHELL, SIDEBAR } from '@/themes/tokens';
 // （import 会让 Vite 多产一份带指纹的副本，而这里要的就是"路径可预测"）。
 const LOGO_SRC = '/assets/icons/miao-logo.png';
 import { APP_LABEL, type AppId, type Screen } from '@/stores/nav';
-import { Languages, Music4, Settings } from 'lucide-react';
+import type { DownloadEntryState } from '@/ipc/engine-download';
+import { CircleCheck, CirclePause, Download, Languages, Loader2, Music4, Settings } from 'lucide-react';
 
 /** 应用层入口（《09》§3.1）—— 恒为 2 项。C8 断言的判据之一，故不在别处重复定义。 */
 const APPS: { id: AppId; label: string; icon: () => ReactElement }[] = [
@@ -48,15 +49,35 @@ const APPS: { id: AppId; label: string; icon: () => ReactElement }[] = [
  * 的注释里说过的那个坑。所以尺寸与 `labels` 是**同一个判断**的两个输出，
  * 不许分开写。
  */
+/** 下载入口三态 → 图标与无障碍文案。完成态只用图标，不渲染可见文字。 */
+const DOWNLOAD_META: Record<Exclude<DownloadEntryState, 'hidden'>, { label: string; icon: () => ReactElement }> = {
+  running: {
+    label: '引擎下载中',
+    icon: () => (
+      <span className="nav-dl-badge">
+        <Download size={20} />
+        <Loader2 size={11} className="nav-dl-spin nav-dl-sub" />
+      </span>
+    ),
+  },
+  paused: { label: '下载已中断，点击继续', icon: () => <CirclePause size={20} /> },
+  done: { label: '引擎下载完成', icon: () => <CircleCheck size={20} /> },
+};
+
 export function Sidebar({
   screen,
   onScreen,
   labels,
+  downloadEntry,
+  onOpenDownload,
 }: {
   screen: Screen;
   onScreen: (s: Screen) => void;
   /** 是否显示应用入口的文字标签（`shell-prefs.ts` 的偏好，设置页①可改） */
   labels: boolean;
+  /** 侧栏下载入口形态（`hidden` 时不渲染） */
+  downloadEntry: DownloadEntryState;
+  onOpenDownload: () => void;
 }) {
   // 尺寸与标签同源：一个 `labels` 同时决定"有没有 span"与"用哪套几何"
   const appItem = labels ? SIDEBAR.appItem : SIDEBAR.iconOnlyItem;
@@ -95,23 +116,41 @@ export function Sidebar({
       />
 
       {/*
-       * ── 全局层设置 ──
-       * 纯图标，所以 `title` 不是锦上添花而是唯一的可发现性线索；但 `title` 单独兜不住
-       * 无障碍（不进可访问名称的计算优先级前列），故 `aria-label` 给名称、`title` 给悬停提示。
-       * `margin-top: auto` 由 CSS（`.nav-item.is-global`）给：它把全局层压到侧栏底部，
+       * ── 全局层（分隔线以下）──
+       * 下载入口在设置之上，两者都靠 `.sidebar-global` 的 `margin-top:auto` 贴底；
        * 分隔线仍夹在应用层与全局层之间，C8c 的上下序不变。
+       * 下载入口是**纯图标**，故 `aria-label` 给名称、`title` 给悬停提示。
        */}
-      <button
-        type="button"
-        className={screen === 'settings' ? 'nav-item is-global is-active' : 'nav-item is-global'}
-        style={{ width: SIDEBAR.globalItem.w, height: SIDEBAR.globalItem.h }}
-        aria-current={screen === 'settings' ? 'page' : undefined}
-        aria-label="设置"
-        title="设置"
-        onClick={() => onScreen('settings')}
-      >
-        <Settings size={20} />
-      </button>
+      <div className="sidebar-global">
+        {downloadEntry !== 'hidden' ? (
+          <button
+            type="button"
+            className="nav-item is-global is-download"
+            style={{ width: SIDEBAR.globalItem.w, height: SIDEBAR.globalItem.h }}
+            aria-label={DOWNLOAD_META[downloadEntry].label}
+            title={DOWNLOAD_META[downloadEntry].label}
+            onClick={onOpenDownload}
+          >
+            {DOWNLOAD_META[downloadEntry].icon()}
+          </button>
+        ) : null}
+
+        {/*
+         * 全局层设置：纯图标，所以 `title` 不是锦上添花而是唯一的可发现性线索；
+         * 但 `title` 单独兜不住无障碍，故 `aria-label` 给名称、`title` 给悬停提示。
+         */}
+        <button
+          type="button"
+          className={screen === 'settings' ? 'nav-item is-global is-active' : 'nav-item is-global'}
+          style={{ width: SIDEBAR.globalItem.w, height: SIDEBAR.globalItem.h }}
+          aria-current={screen === 'settings' ? 'page' : undefined}
+          aria-label="设置"
+          title="设置"
+          onClick={() => onScreen('settings')}
+        >
+          <Settings size={20} />
+        </button>
+      </div>
     </nav>
   );
 }

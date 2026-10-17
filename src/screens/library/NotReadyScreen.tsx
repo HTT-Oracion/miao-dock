@@ -1,81 +1,39 @@
 import { useState } from 'react';
-import { Btn } from '@components/units';
+import { Play } from 'lucide-react';
+import { Btn, Pill } from '@components/units';
+import { formatBytes } from '@tools';
 import { errorText } from '@/ipc';
-import { useToasts } from '@hooks';
+import { stateView } from '@/stores/nav';
+import { useEngineDownload, useToasts } from '@hooks';
 import type { ServiceStatus } from '@/ipc';
 import { downloadEngineModels } from '@screens/settings/engine-api';
-import type { AssemblyStep, ModelDownloadView } from '@screens/settings/engine-api';
+import type { ModelDownloadView } from '@screens/settings/engine-api';
 import { OnlineApiForm } from '@screens/settings/OnlineApiForm';
 import type { TranslateSource } from '@screens/settings/translate-api';
+import {
+  ASSEMBLY_PHASES,
+  assemblyNotes,
+  engineInstallView,
+  type EngineInstallView,
+  type StageNote,
+} from '@screens/library/assembly';
+import { AssemblyTimeline } from '@screens/library/AssemblyTimeline';
 
 /**
- * 装配四段（D-231⑥）—— **取代** L1–L4「服务启动分层」。
+ * 画面 X-C3 · 服务未就绪 / 启动中 / 引擎装配（《02》§4）。
  *
- * 退役理由：L1–L4 描述的是**服务启动**（检查环境 → 准备模型 → 预热 → 首图），
- * 而这一屏在绝大多数时候讲的是**装配**（还没装好 / 装好了但服务没起来）。
- * 拿 `status.phase`（L1/L2/L3）当进度事实源，等于把**两台不同的状态机**画在同一条时间线上 ——
- * 用户看到的「第 2 段」一会儿指「准备模型」、一会儿指「在装 Python」，谁也说不准自己在第几段。
+ * 三种形态：
+ *  ① **在线精简页**（来源=在线）：只一句现状 + 一枚启动按钮。
+ *  ② **装配流程页**（D-233）：五段时间线 + 第一个未完成模型段下的两条路。
+ *  ③ **服务状态页**：资产已装配、只是本地服务没起来（stopped/error/running/starting）。
  *
- * 四段与 `modelDownload.step` 一一对应（服务端 `state.rs` 是唯一来源）：
- *   ① `prepare` 环境准备 —— 装 Python 运行时**之前**（校验清单、准备落点）
- *   ② `runtime` 运行环境装配 —— Python → venv → 源码 → 补丁 → 依赖
- *   ③ `models`  本地引擎装配 —— 引擎可执行体（llama.cpp）与翻译权重下载、解包、建链
- *   ④ `ready`  就绪 —— **没有对应事件**：它由 `runtime.ready` 推导，不是装配发出来的
- *
- * `status.phase` 本身**保留不动**（它属 `/engine/status` 契约，被 `check:autostart` /
- * `check:contract` 断言）；退役的只是「前端拿它当进度事实源」这件事。它仍被用来决定
- * **动作**（失败时要不要给「重新下载模型」）—— 那是动作判据，不是进度判据。
+ * ## 五段与「下载两步」不是同一台状态机
+ * `modelDownload.step`（prepare/runtime/visual/llm）回答装配到哪一段；
+ * `modelDownload.stage`（stage1/stage2）只服务下载详情页的两轮指示器。
+ * 本屏只消费前者与 `runtime.sets`，不再拿 `status.phase` 当进度事实源。
  */
-const ASSEMBLY_PHASES = [
-  { id: 'prepare', text: '环境准备' },
-  { id: 'runtime', text: '运行环境装配' },
-  { id: 'models', text: '本地引擎装配' },
-  { id: 'ready', text: '就绪' },
-] as const;
 
-/** `modelDownload.step` → 段下标。**只有前三段有事件**；`ready` 不在这里（它不是事件）。 */
-const STEP_INDEX: Record<AssemblyStep, number> = { prepare: 0, runtime: 1, models: 2 };
-
-/**
- * 已完成的段数。
- *
- * 「就绪」不是第四个事件，而是 `runtime.ready` 这个**判据**（D-231③ 起是七项全真）。
- * 让它变成「要等一个事件才到达」的态，等于给「装配跑完了但判据不过」留一个永远停在第 3 段的界面。
- *
- * @param step  最近一次真实阶段事件（`null` = 还没有，或这台机器上从没下过）
- * @param ready 运行时判据是否全真
- */
-function assemblyReached(step: AssemblyStep | null | undefined, ready: boolean): number {
-  if (ready) return ASSEMBLY_PHASES.length;
-  if (!step) return 0;
-  return STEP_INDEX[step];
-}
-
-/** 1 GiB。写成常量而**不用 `1024 ** 3`**（`**` 与 markdown 粗体同形，见 `EngineDiag.tsx` 同款说明）。 */
-const GIB = 1024 * 1024 * 1024;
-
-/**
- * 状态词 → 时间线节点形态。
- *
- * 🔴 「进行中」是**唯一**带外圈旋转环的一支 —— 本屏新增的**显式 loading 态**。
- *    把"状态词 → 形态"收在**一处**，才不会出现「状态写着进行中、圈却不转」这种自相矛盾的画法。
- *    而旋转是用户区分"在动"与"卡住了"的**唯一**信号：不动的「进行中」看起来与卡住一模一样。
- */
-const NODE_KIND: Record<string, string> = {
-  已完成: 'is-done',
-  进行中: 'is-loading',
-  失败: 'is-failed',
-  待开始: '',
-};
-
-/**
- * 当前阶段明细：取**真实日志的末行**（Rust 的 LogBuffer，含三个子进程的 stdout）。
- *
- * 🔴 为什么不显示「2.1/4.6 GB」这种字节进度：X-C3 只在 **manga-service 自己没起来**时出现，
- *    此刻没有任何 HTTP 通道可读下载进度，编一个数字就是撒谎。方案要的"可量化进度"
- *    由**真实来源**满足 —— 谁真的在打进度行（`fetch-models` / uvicorn / llama-server），
- *    那一行就会原样出现在这里。**没有就不显示，不补一个占位数字。**
- */
+/** 真实日志末行（Rust 的 LogBuffer，含三个子进程的 stdout）。没有就不显示，不补占位。 */
 function lastLogLine(log: string[] | undefined): string | null {
   if (!log || log.length === 0) return null;
   for (let i = log.length - 1; i >= 0; i--) {
@@ -86,96 +44,10 @@ function lastLogLine(log: string[] | undefined): string | null {
 }
 
 /**
- * 装配四段时间线 —— 引导页与"已装配但服务没起来"两处**共用**同一个组件。
- *
- * 抽出来的理由：两处一旦各画各的，同一件事就会在两个页面显示成两个样子（段数、当前段、
- * 状态词各不相同），而用户根本分不清自己是"在装"还是"在启动"。
- *
- * 样式全部沿用 `.tl-*`（`src/styles/manga.scss` X-C3 段），**不新增 CSS**。
- */
-function AssemblyTimeline({
-  reached,
-  failed,
-  detail,
-}: {
-  /** 已完成段数（`assemblyReached()` 的返回值） */
-  reached: number;
-  /** 当前段该标「失败」而不是「进行中」 */
-  failed: boolean;
-  /** 真实日志末行；只在当前段显示 */
-  detail: string | null;
-}) {
-  const noteOf = (i: number) => {
-    if (i < reached) return '已完成';
-    if (i === reached) return failed ? '失败' : '进行中';
-    return '待开始';
-  };
-
-  const nodeClass = (note: string) => {
-    switch (NODE_KIND[note]) {
-      case 'is-done':
-        return 'tl-node num is-done';
-      case 'is-loading':
-        return 'tl-node num is-loading';
-      case 'is-failed':
-        return 'tl-node num is-failed';
-      default:
-        return 'tl-node num';
-    }
-  };
-
-  const stepClass = (note: string) => {
-    switch (NODE_KIND[note]) {
-      case 'is-done':
-        return 'tl-step is-done-step';
-      case 'is-loading':
-        return 'tl-step is-current';
-      case 'is-failed':
-        return 'tl-step is-failed';
-      default:
-        return 'tl-step';
-    }
-  };
-
-  const nodeMark = (note: string, i: number) => {
-    const kind = NODE_KIND[note];
-    if (kind === 'is-done') return '✓';
-    if (kind === 'is-failed') return '✕';
-    return i + 1;
-  };
-
-  return (
-    <>
-      {ASSEMBLY_PHASES.map((s, i) => {
-        const note = noteOf(i);
-        const kind = NODE_KIND[note];
-        return (
-          <div key={s.id} className={stepClass(note)}>
-            <div className="tl-rail">
-              <span className={nodeClass(note)}>{nodeMark(note, i)}</span>
-              <span className="tl-line" />
-            </div>
-            <div className="tl-body">
-              <div className="tl-head">
-                <span className="tl-title">{s.text}</span>
-                <span className="tl-state">{note}</span>
-              </div>
-              {detail && (kind === 'is-loading' || kind === 'is-failed') ? (
-                <div className="tl-detail">{detail}</div>
-              ) : null}
-            </div>
-          </div>
-        );
-      })}
-    </>
-  );
-}
-
-/**
  * 摘要行：一行主句 + 一句副行。
  *
- * 🔴 这里**只讲服务现状**，不掺装配进度 —— 装配进度归下面的四段时间线。
- *    两个状态机混进同一句话，就会出现"文案说正在预热、时间线说在装 Python"这种自相矛盾。
+ * 🔴 只讲**服务现状**，不掺装配进度 —— 装配进度归五段时间线。
+ * 两个状态机混进同一句话，就会出现"文案说正在预热、时间线说在装 Python"这种自相矛盾。
  */
 function summaryOf(state: string, err: string | null, degraded: boolean): { bad: boolean; title: string; sub: string } {
   if (state === 'error') {
@@ -220,14 +92,33 @@ function summaryOf(state: string, err: string | null, degraded: boolean): { bad:
   };
 }
 
-/**
- * 画面 X-C3 · 服务未就绪 / 启动中（《02》§4）。
- *
- * 三种形态：
- *  ① **在线精简页**（来源=在线）：只一句现状 + 一枚启动按钮。
- *  ② **引导页（D1 运行时未装配）**：本地引擎一键下载 + 页内在线 API 表单 + 两者对照 + 排障折叠。
- *  ③ **四段时间线**：引擎已装配、只是本地服务没起来（stopped/error/running/starting）。
- */
+/** 「第一个未完成模型段」的提示句。体积只算这一段，不用全局总量。 */
+function installTitleOf(install: EngineInstallView): string {
+  const name = install.stage === 'visual' ? '视觉模型' : 'LLM 翻译模型';
+  if (install.readyBytes > 0) {
+    return `${name}装配未完成（还差约 ${formatBytes(install.missingBytes)}）`;
+  }
+  return `${name}尚未安装（约 ${formatBytes(install.totalBytes)}）`;
+}
+
+/** 下载按钮文案：只按真实 `step` 说，取不到就退回通用句。 */
+function downloadLabelOf(busy: boolean, download: ModelDownloadView | null): string {
+  if (busy) return '正在发起…';
+  const state = download?.state;
+  if (state === 'interrupted' || state === 'failed') return '继续下载';
+  if (state !== 'running') return '开始下载';
+  if (download?.step === 'visual') return '视觉模型下载中';
+  if (download?.step === 'llm' || download?.step === 'models') return '翻译模型下载中';
+  return '下载引擎中';
+}
+
+/** 下载态徽标：进行中/中断才出现；完成由下载页的「关闭下载」收尾。 */
+function DownloadPill({ state }: { state: ModelDownloadView['state'] | undefined }) {
+  if (state === 'running') return <Pill colorVar="--md-blue">引擎下载中</Pill>;
+  if (state === 'interrupted' || state === 'failed') return <Pill colorVar="--md-error">下载已中断</Pill>;
+  return null;
+}
+
 export function NotReadyScreen({
   status,
   source,
@@ -236,31 +127,27 @@ export function NotReadyScreen({
   onRestart,
   onOpenGuide,
   onOpenDownload,
+  onDownloadStarted,
 }: {
   status: ServiceStatus | null;
-  /**
-   * 翻译来源（P-D1 / P-D3）。`online` 时本屏走**精简页**；
-   * `local` / `null`（读不到来源，按本地档处理）时维持引导页 / 时间线现状。
-   */
+  /** 翻译来源（P-D1 / P-D3）。`online` 时本屏走**精简页** */
   source: TranslateSource | null;
-  /**
-   * 引擎下载态 —— 四段时间线**唯一**的进度事实源（`step` 段号 + `runtime.ready` 收尾）。
-   *
-   * 🔴 壳层 `ShellCtx` 里本来就有它（工具条芯片与下载视图都读它），这里只是**透传**，
-   *    不扩壳层契约。`null` = 还没读到 `/engine/status` ⇒ 四段全灰，第一段也不点亮。
-   */
+  /** 引擎下载态 —— 五段时间线的唯一进度事实源 */
   download: ModelDownloadView | null;
-  /** 手动启动（仅 `stopped` 时用）。 */
+  /** 手动启动（仅 `stopped` 时用） */
   onStart: () => void;
   onRestart: () => void;
-  /** D1：「运行时未装配」态上的**指引入口** —— 跳到设置页（翻译服务 → 引擎诊断/安装引导）。 */
+  /** 运行时尚缺件时的指引入口（设置页完整诊断） */
   onOpenGuide: () => void;
-  /** G5：点「开始下载」⇒ 发起下载并把内容区切到下载视图。 */
+  /** 开始/继续下载后切到下载页 */
   onOpenDownload: () => void;
+  /** 把刚发起的下载视图写回壳层（下载页立刻有内容） */
+  onDownloadStarted: (view: ModelDownloadView | null) => void;
 }) {
   const { push: onToast } = useToasts();
+  const { busy, start } = useEngineDownload();
   const [userLog, setUserLog] = useState<boolean | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [choice, setChoice] = useState<'download' | 'online' | null>(null);
   const [compare, setCompare] = useState(false);
   const [trouble, setTrouble] = useState(false);
 
@@ -268,13 +155,16 @@ export function NotReadyScreen({
   const err = status?.last_error ?? null;
   const failed = state === 'error';
   const degraded = !!status?.degraded;
+  const running = state === 'running';
   const logOpen = userLog ?? failed;
 
-  const runtimeReady = !!status?.runtime?.ready;
-  const reached = assemblyReached(download?.step, runtimeReady);
-
+  const notes = assemblyNotes(status, download);
+  const activeIndex = notes.findIndex((n: StageNote) => n === 'active' || n === 'failed');
   const detail = lastLogLine(status?.log);
   const summary = summaryOf(state, err, degraded);
+  const downloading = download?.state === 'running' || download?.state === 'interrupted';
+  const stepLabel = activeIndex >= 0 ? ASSEMBLY_PHASES[activeIndex]?.text : null;
+  const install = engineInstallView(status, download);
 
   // ---- 在线精简页 ----
   if (source === 'online') {
@@ -305,85 +195,115 @@ export function NotReadyScreen({
     );
   }
 
-  // ---- 引导页（D1 运行时未装配）----
+  // ---- 装配流程页（D1 运行时未装配）----
   const rt = status?.runtime;
   const runtimeUnready = status?.mode === 'real' && !!rt && !rt.ready;
   /*
    * 🔴 判据**只看**「real 档 + 运行时未就绪」，**不再附加 `state !== 'running'`**。
-   *
-   * 原先那个附加条件在 2026-10-16 被证明是错的（D-229）：D6 闸门当时连 ① 服务一起挡下
-   * （一个子进程都不起），于是"未装配"时服务必不在、state 必不是 running —— 两个条件
-   * **恰好同时成立**，看不出问题。闸门改成"只挡 ②/③、① 照常起"之后，① 活着 ⇒ state 是
-   * running，而引擎仍未装配 —— 这时**恰恰最需要这一页**（它的「开始下载」要 POST 到 ①）。
-   * ⇒ 「引擎就绪与否」只能由 `runtime.ready` 回答，不能拿服务状态代理。
+   * D6 闸门只挡 ②/③、① 照常起，此时 state 仍是 running 而引擎仍未装配 ——
+   * 「引擎就绪与否」只能由 `runtime.ready` 回答，不能拿服务状态代理。
    */
   if (runtimeUnready && rt) {
-    const gb = rt.requiredBytes > 0 ? (rt.requiredBytes / GIB).toFixed(1) : null;
-    const start = async () => {
-      setBusy(true);
+    const totalText = rt.requiredBytes > 0 ? formatBytes(rt.requiredBytes) : null;
+
+    const beginDownload = async () => {
       try {
-        await downloadEngineModels();
+        const r = await start(false);
+        onDownloadStarted(r.view);
+        // 单飞守卫（已在下载）也直接去下载页：用户要的是看进度，不是看报错。
         onOpenDownload();
       } catch (e) {
         onToast(errorText(e), 'bad');
-      } finally {
-        setBusy(false);
       }
     };
-    const failing = rt.items.filter((i) => !i.ok);
-    // 「当前处于第几段」只在**真的在下载**时说：装完之后再说"当前处于第 4 段"是废话，
-    // 而"第 4 段还没到"会被读成"卡住了"。
-    const downloading = download?.state === 'running' || download?.state === 'interrupted';
-    const stepLabel = download?.step ? ASSEMBLY_PHASES[STEP_INDEX[download.step]]?.text : null;
+
+    const decision = install ? (
+      <div className="nr-guide-decide">
+        <div className="nr-guide-decide-t">{installTitleOf(install)}</div>
+        <div className="nr-guide-decide-d">
+          可选择「下载本地引擎」在本机装配，或改用在线翻译（需要联网，按平台计费）。
+        </div>
+        <div className="nr-guide-acts">
+          <Btn kind={choice === 'download' ? 'primary' : 'ghost'} onClick={() => setChoice('download')}>
+            下载本地引擎
+          </Btn>
+          <Btn kind={choice === 'online' ? 'primary' : 'ghost'} onClick={() => setChoice('online')}>
+            使用在线翻译
+          </Btn>
+        </div>
+      </div>
+    ) : null;
+
+    const extra = install ? { [install.stage]: decision } : undefined;
+
+    const effectiveChoice = choice ?? (downloading ? 'download' : null);
+    const showDownload = effectiveChoice === 'download';
+    const showOnline = effectiveChoice === 'online';
 
     return (
       <div className="nr-guide">
-        {/* 顶部：现状 + 边界 */}
-        <div className="nr-guide-title">需要先安装翻译引擎{gb ? `（约 ${gb} GB）` : ''}</div>
+        {/* 服务状态：装配页顶部同样给五态文本 + 启动入口（① 没起来时，下载要先靠它） */}
+        <div className="nr-sum">
+          <div className="nr-sum-body">
+            <div className="nr-sum-t">{stateView(state).text}</div>
+          </div>
+          {state === 'stopped' ? (
+            <Btn kind="ghost" size="sm" title="启动服务" onClick={onStart}>
+              <Play size={16} />
+            </Btn>
+          ) : null}
+        </div>
+        <div className="nr-guide-title">需要先装配本地引擎</div>
         <div className="nr-guide-sub">
-          翻译引擎不随安装包分发 —— 第一次使用要在本机装配 Python
-          运行时与模型权重。下面两条路任选其一，都不需要懂命令行。
+          翻译引擎不随安装包分发 —— 第一次使用要在本机装配运行环境、
+          视觉模型与翻译模型。下面两条路任选其一，都不需要懂命令行。
+          {totalText ? ` 首次装配共约 ${totalText}。` : ''}
         </div>
 
-        {/* 装配四段时间线：引导页最需要回答的问题就是"我现在在第几段"。
-            类名复用 `.nr-guide-note`（一行说明文字的既有形态）⇒ 不新增 CSS。 */}
         <div className="nr-guide-note">
           {downloading && stepLabel
-            ? `当前处于第 ${reached + 1} 段：${stepLabel}`
-            : '装配分四段，全部就位后即可离线翻译。'}
+            ? `当前处于第 ${activeIndex + 1} 段：${stepLabel}`
+            : state === 'stopped'
+              ? '本地服务未启动；下面是磁盘装配状态 —— 已装好的段会打勾，缺的段等你选下面两条路。'
+              : '装配分五段：环境 → 运行环境 → 视觉模型 → 翻译模型 → 就绪。'}
         </div>
         <div className="nr-guide-gap" />
 
-        <AssemblyTimeline reached={reached} failed={false} detail={detail} />
+        <AssemblyTimeline notes={notes} detail={detail} extra={extra} />
 
-        {/* 中部：两条路并列 */}
-        <div className="nr-guide-grid">
-          {/* 主路径：下载本地引擎 */}
-          <div className="nr-guide-card">
+        {showDownload ? (
+          <div className="nr-guide-card nr-guide-card-wide">
             <div className="nr-guide-card-t">下载本地引擎</div>
             <div className="nr-guide-card-d">
               一键下载并自动装配。装完即可离线翻译，图片不出本机。
-              {gb ? ` 本次约需下载 ${gb} GB` : ''}。
+              {install && install.stage === 'visual' ? ' 先装运行环境与视觉模型，翻译模型在后台继续。' : ''}
             </div>
             <div className="nr-guide-acts">
-              <Btn kind="primary" disabled={busy} onClick={() => void start()}>
-                {busy ? '正在发起…' : '开始下载'}
+              <Btn kind="primary" disabled={busy || download?.state === 'running'} onClick={() => void beginDownload()}>
+                {downloadLabelOf(busy, download)}
               </Btn>
+              <DownloadPill state={download?.state} />
             </div>
-            <div className="nr-guide-note">
-              下载分两轮：先装运行环境（约 1 分钟可开始翻译），翻译权重与引擎可执行体在后台继续。
-            </div>
+            <div className="nr-guide-note">下载分两轮：先装运行环境与视觉模型，翻译模型与引擎可执行体在后台继续。</div>
           </div>
+        ) : null}
 
-          {/* 备路径：使用在线翻译 */}
-          <div className="nr-guide-card">
+        {showOnline ? (
+          <div className="nr-guide-card nr-guide-card-wide">
             <div className="nr-guide-card-t">使用在线翻译</div>
             <div className="nr-guide-card-d">不下载引擎，填一次密钥即可。需要联网，按平台计费。</div>
-            <div className="nr-guide-acts">
+            {running ? (
               <OnlineApiForm onSaved={onStart} />
-            </div>
+            ) : (
+              <div className="nr-guide-acts">
+                <div className="nr-guide-note">在线翻译仍由本地服务承载投放、队列与漫画库，先把服务拉起来。</div>
+                <Btn kind="primary" onClick={onStart}>
+                  启动本地服务
+                </Btn>
+              </div>
+            )}
           </div>
-        </div>
+        ) : null}
 
         {/* 底部：两者对照（默认收起） */}
         <div className="nr-guide-compare">
@@ -394,7 +314,7 @@ export function NotReadyScreen({
             <div className="nr-guide-cmp">
               <div className="nr-guide-cmp-cell">
                 <b className="nr-guide-cmp-t">本地引擎</b>
-                <div>· 占用约 {gb ? `${gb} GB` : '数 GB'} 磁盘</div>
+                <div>· 占用约 {totalText ?? '数 GB'} 磁盘</div>
                 <div>· 首次下载较久，之后不联网</div>
                 <div>· 图片不出本机，隐私最好</div>
               </div>
@@ -417,15 +337,17 @@ export function NotReadyScreen({
         {trouble ? (
           <div className="nr-guide-gap">
             <div className="nr-rt">
-              {failing.map((it) => (
-                <div key={it.id} className="nr-rt-item">
-                  <div className="nr-rt-head">
-                    <span className="nr-rt-id">{it.id}</span>
-                    <span className="nr-rt-detail">{it.detail}</span>
+              {rt.items
+                .filter((i) => !i.ok)
+                .map((it) => (
+                  <div key={it.id} className="nr-rt-item">
+                    <div className="nr-rt-head">
+                      <span className="nr-rt-id">{it.id}</span>
+                      <span className="nr-rt-detail">{it.detail}</span>
+                    </div>
+                    {it.fix ? <div className="nr-rt-fix">{it.fix}</div> : null}
                   </div>
-                  {it.fix ? <div className="nr-rt-fix">{it.fix}</div> : null}
-                </div>
-              ))}
+                ))}
             </div>
             <div className="nr-guide-gap">
               <Btn kind="ghost" onClick={onOpenGuide}>
@@ -443,17 +365,24 @@ export function NotReadyScreen({
 
   return (
     <div className="notready">
-      {/* ① 一行摘要 */}
-      <div className={summary.bad ? 'nr-sum is-bad' : 'nr-sum'}>
-        <span className="nr-dot" />
-        <div>
-          <div className="nr-sum-t">{summary.title}</div>
+      {/* ① 服务状态：文本跟 `stateView`（`pill` 的同一张表）一致，只显示文本 */}
+      <div className="nr-sum">
+        <div className="nr-sum-body">
+          <div className="nr-sum-t">{stateView(state).text}</div>
           <div className="nr-sum-d">{summary.sub}</div>
         </div>
+        {state === 'stopped' ? (
+          <Btn kind="ghost" size="sm" title="启动服务" onClick={onStart}>
+            <Play size={16} />
+          </Btn>
+        ) : null}
       </div>
 
-      {/* ② 装配四段时间线（已装配 ⇒ 四段全打勾；未到就绪时不会有进行中段） */}
-      <AssemblyTimeline reached={reached} failed={failed} detail={detail} />
+      {/* ② 五段时间线（已装配 ⇒ 前四段全打勾；启动期只有「就绪」在进行中） */}
+      {state === 'stopped' ? (
+        <div className="nr-guide-note">本地服务未启动；点右上角「启动服务」后进入就绪。</div>
+      ) : null}
+      <AssemblyTimeline notes={notes} detail={detail} />
 
       {/* ③ 一行 meta */}
       <div className="nr-meta">
@@ -476,15 +405,11 @@ export function NotReadyScreen({
             {busy ? '正在发起…' : '重新下载模型'}
           </Btn>
         ) : null}
-        {state === 'stopped' ? (
-          <Btn kind="primary" onClick={onStart}>
-            启动本地服务
-          </Btn>
-        ) : (
+        {state !== 'stopped' ? (
           <Btn kind={failed && status?.phase === 'L2' ? 'ghost' : 'primary'} onClick={onRestart}>
             重启本地服务
           </Btn>
-        )}
+        ) : null}
         <Btn kind="ghost" onClick={() => setUserLog(!logOpen)}>
           {logOpen ? '收起日志' : '查看日志'}
         </Btn>
@@ -495,7 +420,7 @@ export function NotReadyScreen({
   );
 }
 
-/** 「重新下载模型」：保留原有能力（时间线分支 L2 失败时）。 */
+/** 「重新下载模型」：保留原有能力（L2 失败时）。 */
 async function redownload(push: (msg: string, kind?: 'info' | 'bad' | 'good') => void) {
   try {
     await downloadEngineModels();

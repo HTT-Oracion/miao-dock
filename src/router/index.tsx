@@ -16,8 +16,9 @@
  */
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { App } from '@/App';
-import { DEFAULT_PATH, SCREEN_ROUTES } from '@/router/routes';
+import { DEFAULT_PATH, OVERLAY_ROUTES, SCREEN_ROUTES } from '@/router/routes';
 import { ScreenPane } from '@/router/panes';
+import { DownloadPane } from '@/router/panes/DownloadPane';
 
 export function AppRouter() {
   return (
@@ -26,6 +27,9 @@ export function AppRouter() {
         <Route element={<App />}>
           {SCREEN_ROUTES.map((r) => (
             <Route key={r.path} path={r.path} element={<ScreenPane pane={r.screen} />} />
+          ))}
+          {OVERLAY_ROUTES.map((r) => (
+            <Route key={r.path} path={r.path} element={<DownloadPane />} />
           ))}
         </Route>
         <Route path="/" element={<Navigate to={DEFAULT_PATH} replace />} />
