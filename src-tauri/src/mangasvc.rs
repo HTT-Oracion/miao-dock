@@ -436,11 +436,9 @@ pub fn run_blocking(opts: Options) -> Result<(), String> {
         "rootDir": shell.root_dir,
     });
     println!("[manga-service] MIAO_READY {ready}");
-    println!(
-        "[manga-service] mangasvc 监听 127.0.0.1:{port}（纯 Rust：{} 条端点本地实现，未迁移 {} 条）",
-        routes::migrated_count(),
-        routes::forwarded_count()
-    );
+    // 🔴 只报监听地址 —— 曾经的「（纯 Rust：N 条端点本地实现，未迁移 N 条）」是给迁移期看的
+    //    内部统计，经 stdout → 服务日志 → 前端日志区，会原样漏给用户（且迁移早已收口）。
+    println!("[manga-service] mangasvc 监听 127.0.0.1:{port}");
 
     // 8) 跑 axum（阻塞）
     let app = router(shell);
