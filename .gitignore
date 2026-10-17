@@ -9,6 +9,10 @@ src-tauri/target/
 .env.local
 .env.*.local
 
+# 本机开发：环境切换脚本
+dev-env.ps1
+dev-env-off.ps1
+
 # Tauri 生成的 schema / 清单缓存（构建期自动产出，不入库）
 src-tauri/gen/schemas/
 
