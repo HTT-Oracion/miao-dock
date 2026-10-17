@@ -337,7 +337,7 @@ pub fn run_bootstrap(
     //    而 pip 这一段是整个第 2 段里最久的（真机几分钟起步）。用户看到的是
     //    "卡在补丁上"，而补丁其实早就打完了。
     on_phase("runtime", "安装引擎依赖");
-    install_deps(
+    let cuda = install_deps(
         rt_dir,
         &venv_py,
         &src_dir,
@@ -374,7 +374,7 @@ pub fn run_bootstrap(
 
     // ---- 阶段 8：写运行时就绪标记 ----
     on_phase("runtime", "写运行时就绪标记");
-    write_runtime_ready(rt_dir, runtime_manifest, model_manifest, longpath.as_ref())?;
+    write_runtime_ready(rt_dir, runtime_manifest, model_manifest, longpath.as_ref(), cuda)?;
 
     Ok(())
 }
@@ -439,6 +439,87 @@ pub(super) fn python_utf8(cmd: &mut Command) -> &mut Command {
 /// **如实点名需要 MSVC / Xcode CLT** —— 不静默、不假装成功。
 ///
 /// `cache_root` = `.download-cache` 的宿主目录（`model_root`），与 Node 侧 `RT` 同源。
+/// NVIDIA wheels 的 torch 索引（CUDA 12.6 构建）。
+///
+/// 🔴 只在**真的探测到 NVIDIA GPU** 时才挂 `--extra-index-url`：
+///    给一台没有 NVIDIA 卡的机器装 CUDA 版 torch，会多下几个 GB 且那份 torch 跑起来
+///    第一件事就是报 `CUDA or Metal compatible device could not be found` 然后退出。
+const TORCH_CUDA_INDEX: &str = "https://download.pytorch.org/whl/cu126";
+
+/// 探测本机有没有 NVIDIA GPU：先看 `nvidia-smi`（最准），再看 Windows 的 `$NVSMI_HOME`
+/// / 常见安装路径，最后看 CUDA 目录在不在。返回一句话说明（进日志）。
+///
+/// 🔴 为什么不让 `--use-gpu` 恒真（`env_bool(..., true)` 的老写法）：那台 CPU 版 torch 的
+///    机器上，配方会带上 `--use-gpu`，引擎起来第一件事就是找 CUDA、找不到就自杀，
+///    报出来的却是"③ LLM 未在 180s 内就绪"（见 D-231⑦）。**根因在装配期**：
+///    该忠的是"这台机器到底有没有卡"，不是"用户可能想要 GPU"。
+fn detect_nvidia_gpu() -> Option<String> {
+    let smi = if let Ok(p) = std::env::var("NVSMI_HOME") {
+        Some(std::path::PathBuf::from(p).join("nvidia-smi.exe"))
+    } else {
+        None
+    };
+    let candidates: Vec<std::path::PathBuf> = match smi {
+        Some(p) => vec![p],
+        None => {
+            let mut v = vec![std::path::PathBuf::from("nvidia-smi")];
+            if cfg!(windows) {
+                v.push(std::path::PathBuf::from(
+                    r"C:\Windows\System32\nvidia-smi.exe",
+                ));
+            }
+            v
+        }
+    };
+    for c in &candidates {
+        let mut cmd = Command::new(c);
+        cmd.arg("-L");
+        hide_console(&mut cmd);
+        if let Ok(out) = cmd.output() {
+            if out.status.success() {
+                let s = String::from_utf8_lossy(&out.stdout);
+                let first = s.lines().next().unwrap_or("").trim();
+                return Some(if first.is_empty() {
+                    "nvidia-smi 可用，但没列出具体设备".to_string()
+                } else {
+                    first.to_string()
+                });
+            }
+        }
+    }
+    // 退一步：驱动目录在不在（没有 `nvidia-smi` 但有 CUDA 运行时的机器也常见）。
+    if let Ok(p) = std::env::var("CUDA_PATH") {
+        let p = p.trim();
+        // ⚠️ 不用 let-chain（`if let ... && ...`）：本 crate 的 edition 还编译不过它。
+        if !p.is_empty() && std::path::Path::new(p).exists() {
+            return Some(format!("CUDA_PATH 存在（{p}）—— 按有 NVIDIA 卡处理"));
+        }
+    }
+    None
+}
+
+/// 装完之后当场问 torch 自己："`torch.cuda.is_available()` 是什么"。
+///
+/// 🔴 这是**唯一可信的结论**：上面的 GPU 探测只是"看起来有卡"，驱动版本对不上、
+///    torch 装成了 CPU 构建都会让有卡的机器也答 False。而 `--use-gpu` 一旦忠的不是这个
+///    结论，引擎就是"一起来就自杀"（D-231⑦）。返回 `None` = 没问出来。
+fn torch_cuda_available(venv_py: &Path) -> Option<bool> {
+    let mut cmd = Command::new(venv_py);
+    cmd.args(["-c", "import torch;print('1' if torch.cuda.is_available() else '0')"]);
+    python_utf8(&mut cmd);
+    hide_console(&mut cmd);
+    let out = cmd.output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    match s.as_str() {
+        "1" => Some(true),
+        "0" => Some(false),
+        _ => None,
+    }
+}
+
 fn install_deps(
     rt_dir: &Path,
     venv_py: &Path,
@@ -446,7 +527,7 @@ fn install_deps(
     cache_root: &Path,
     pip_index: &str,
     log: &dyn Fn(&str),
-) -> BootstrapResult {
+) -> Result<Option<bool>, BootstrapError> {
     let req = requirements_path(rt_dir, std::env::var("MIAO_REQUIREMENTS").ok().as_deref()).ok_or_else(|| {
         BootstrapError::new(
             "deps",
@@ -470,7 +551,15 @@ fn install_deps(
     //    （Node 侧用 `os.tmpdir()` 的固定名，这是本模块与它唯一的有意差异）。
     fs::write(&batch_a, filtered)
         .map_err(|e| BootstrapError::new("deps", format!("写批 A 清单失败（{}）：{e}", batch_a.display())))?;
-    log("▶ 批 A：安装主依赖（不含 pydensecrf）");
+    // 🔴 **按本机 GPU 选 torch 构建**（D-231⑦）：有 NVIDIA 卡才挂 cu126 索引，
+    //    否则就装纯 CPU 版。二者用错方向的代价不对称：
+    //      · 有卡装 CPU 版 ⇒ 只是慢（2–10 倍），用户能用；
+    //      · 没卡装 CUDA 版 ⇒ 多下几个 GB，且引擎一起来就自杀，报的还是"启动超时"。
+    let nvidia = detect_nvidia_gpu();
+    match &nvidia {
+        Some(what) => log(&format!("▶ 批 A：安装主依赖（不含 pydensecrf）· 检出 NVIDIA GPU：{what} ⇒ torch 走 {TORCH_CUDA_INDEX}")),
+        None => log("▶ 批 A：安装主依赖（不含 pydensecrf）· 未检出 NVIDIA GPU ⇒ torch 走纯 CPU 构建"),
+    }
     let mut a = Command::new(venv_py);
     a.arg("-m")
         .arg("pip")
@@ -480,6 +569,9 @@ fn install_deps(
         .arg("--index-url")
         .arg(pip_index)
         .arg("--no-input");
+    if nvidia.is_some() {
+        a.arg("--extra-index-url").arg(TORCH_CUDA_INDEX);
+    }
     python_utf8(&mut a);
     hide_console(&mut a);
     match a.status() {
@@ -545,8 +637,17 @@ fn install_deps(
             .map_err(|e| BootstrapError::new("deps", e))?;
         log("✓ 自检②：引擎依赖可加载（torch / torchvision / 掩码细化）");
     }
+    // ③ CUDA 自检：把"这台机器的 `--use-gpu` 该不该默认为真"变成**实测结论**。
+    //    🔴 自检①/② 失败会中止装配，这一条**不中止** —— 它只是一个要给启动期的布尔值，
+    //       问不出来就写 `null`（"没测出来"），让启动期还能按环境变量覆盖。
+    let cuda = torch_cuda_available(venv_py);
+    match cuda {
+        Some(true) => log("✓ 自检③：torch.cuda.is_available() = True ⇒ 启动期默认启用 GPU 加速"),
+        Some(false) => log("✓ 自检③：torch.cuda.is_available() = False ⇒ 启动期默认走 CPU（配 `--use-gpu` 会在引擎侧报错退出）"),
+        None => log("⚠ 自检③：没能问出 torch.cuda.is_available()（跳过装养老 torch 或 import 失败）⇒ 记为「未检出」，启动期按环境变量处理"),
+    }
     log("✓ 依赖安装完成（含导入自检）");
-    Ok(())
+    Ok(cuda)
 }
 
 /// 路线名（人读）。
@@ -623,6 +724,7 @@ fn write_runtime_ready(
     rt: &Manifest,
     _model: &Manifest,
     longpath: Option<&(usize, PathBuf)>,
+    cuda_available: Option<bool>,
 ) -> Result<(), BootstrapError> {
     let engine_commit = rt.engine_commit.clone();
     let payload = json!({
@@ -635,6 +737,10 @@ fn write_runtime_ready(
             "limit": MAX_PATH_LIMIT,
             "margin": MAX_PATH_LIMIT as i64 - *len as i64,
         })),
+        // 🔴 本机 GPU 的**实测结论**（D-231⑦），与 `longPath` 同属"机器事实"：
+        //    启动期 `--use-gpu` 的默认值读它，而不是恒 `true`。写 `null` 表示"没测出来"，
+        //    与"测出来不可用"必须分得开 —— 前者还能按环境变量覆盖，后者不该再猜。
+        "cudaAvailable": cuda_available,
         "note": "零配置装配产物；删掉本文件不会损坏已装内容，仅会让 runtime_probe 重新走一遍判定。",
     });
     let p = rt_dir.join(".runtime.ready.json");

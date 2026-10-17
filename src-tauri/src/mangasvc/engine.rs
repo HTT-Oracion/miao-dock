@@ -626,6 +626,51 @@ fn default_models_ttl() -> i64 {
     env_int("MIAO_ENGINE_MODELS_TTL", 1800)
 }
 
+/// `--use-gpu` 的默认值：**先读装配期写下的 CUDA 自检结论**，不再恒 `true`（D-231⑦）。
+///
+/// 🔴 为什么不能恒真：那台装了 `torch 2.14.1+cpu`（本机没有 NVIDIA 卡）的机器上，配方会带上
+///    `--use-gpu`，引擎起来第一件事就是找 CUDA、找不到就退出 —— 报出来的却是
+///    「③ LLM 未在 180s 内就绪」（详见 `engine/supervisor.rs` 的 `WaitOutcome`）。
+///    这不是"慢"，是"它已经死了"，
+///    而恒真的默认值把这两件事混成了一个。
+///
+/// 取值顺序（前面的赢）：
+///   ① `MIAO_ENGINE_USE_GPU` 显式设了 ⇒ 用它的值（人可以比机器更清楚，也留给 e2e 注入）；
+///   ② `.runtime.ready.json` 的 `cudaAvailable` 是 `true`/`false` ⇒ 用装配期实测的结论；
+///   ③ 是 `null` / 文件不在 ⇒ 退回 `false`。
+///      ⚠️ 第 ③ 条一定只能是 `false`：`null` 表示"没测出来"，而失败模式要选代价小的那个 ——
+///      误判成 False 只是慢，误判成 True 是"一起来就自杀"。
+fn default_use_gpu() -> bool {
+    if let Some(v) = env_flag_opt("MIAO_ENGINE_USE_GPU") {
+        return v;
+    }
+    match read_cuda_available() {
+        Some(true) => true,
+        Some(false) => false,
+        None => false,
+    }
+}
+
+/// 读 `env` 里的布尔值；**没设**返回 `None`（`env_bool` 会把"没设"和"设错"混成同一个默认值）。
+fn env_flag_opt(name: &str) -> Option<bool> {
+    match std::env::var(name).ok().as_deref() {
+        Some("1" | "true" | "TRUE" | "True") => Some(true),
+        Some("0" | "false" | "FALSE" | "False") => Some(false),
+        _ => None,
+    }
+}
+
+/// 从 `.runtime.ready.json` 读装配期记下的 `cudaAvailable`。
+///
+/// 🔴 它是"机器事实"文件里的一格（与长路径体检结论同处），不是配置：**用户改它没意义**，
+///    改了下次装配也会被覆盖。真正给人用的是上面的环境变量。
+fn read_cuda_available() -> Option<bool> {
+    let p = paths::runtimes_dir().join(".runtime.ready.json");
+    let txt = std::fs::read_to_string(p).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&txt).ok()?;
+    v.get("cudaAvailable")?.as_bool()
+}
+
 /// 拼装引擎启动命令行（纯函数）。
 ///
 /// ⚠️ 两条都与**直觉相反**（实测 D-62）：① 命令是 `python main.py`、cwd = `src/server`，**不是** `-m server.main`
@@ -635,7 +680,7 @@ pub fn resolve_engine_launch(o: &EngineLaunchOverrides) -> LaunchSpec {
     let python_bin = o.python_bin.clone().unwrap_or_else(paths::engine_python);
     let host = o.host.clone().unwrap_or_else(|| "127.0.0.1".to_string());
     let port = o.port.unwrap_or_else(default_engine_port);
-    let use_gpu = o.use_gpu.unwrap_or_else(|| env_bool("MIAO_ENGINE_USE_GPU", true));
+    let use_gpu = o.use_gpu.unwrap_or_else(default_use_gpu);
     let models_ttl = o.models_ttl.unwrap_or_else(default_models_ttl);
     // 🔴 默认必须是**字面串 `"None"`**（= 禁用鉴权），不是"没设"：传空串会生成随机 nonce ⇒ 主进程调执行器必 401。
     let nonce = o

@@ -422,15 +422,30 @@ fn do_start(
     inner.child = Some(child);
     inner._watch_keepalive = _watch_keepalive;
 
-    let ok = wait_ready(logs, inner, timeout_ms);
-    if !ok {
+    let outcome = wait_ready(logs, inner, timeout_ms);
+    if outcome != WaitOutcome::Ready {
         // 起不来不阻断服务本身：没有 LLM 只是翻译阶段会失败（S2 的崩溃分级口径）。
         // ⚠️ 调 `do_stop`（内部实现）而非公开 `stop()` —— 后者会再进一次串行链 = 自己等自己。
-        do_stop(logs, diag, inner, "启动超时", 8000);
-        return Err(format!(
-            "③ LLM 未在 {}s 内就绪",
-            (timeout_ms as f64 / 1000.0).round() as i64
-        ));
+        //
+        // 🔴 `do_stop` 的 reason 与返回给用户的 Err **都必须按真实原因写**（D-231⑦）。
+        //    一律写成"启动超时"会让"一起来就自杀"变成"再等等就好了"。
+        let secs = (timeout_ms as f64 / 1000.0).round() as i64;
+        let tail = last_llm_err(logs);
+        let (reason, headline) = match outcome {
+            WaitOutcome::Exited(code) => {
+                let c = code.map(|c| format!("exit status: {c}")).unwrap_or_else(|| "被信号终止".to_string());
+                (String::from("子进程已退出"), format!("③ LLM 进程已退出（{c}），不是慢 —— 再等也不会好"))
+            }
+            WaitOutcome::Timeout => (
+                String::from("启动超时"),
+                format!("③ LLM 未在 {secs}s 内就绪（进程仍存活；模型加载慢，或端口被别的进程占着）"),
+            ),
+            WaitOutcome::Ready => unreachable!(),
+        };
+        log(logs, format!("[manga-service] {headline}"));
+        do_stop(logs, diag, inner, &reason, 8000);
+        let tail_part = tail.map(|t| format!("；末行日志：{t}")).unwrap_or_default();
+        return Err(format!("{headline}{tail_part}"));
     }
     inner.state = LlmState::Running;
     log(
@@ -461,9 +476,37 @@ fn relay(reader: BufReader<impl Read>, logs: Arc<Mutex<LogSink>>, tag: &str) {
     }
 }
 
-fn wait_ready(logs: &Arc<Mutex<LogSink>>, inner: &mut Inner, timeout_ms: u64) -> bool {
+/// ③ 没能在预算内就绪的**真实原因**。
+///
+/// 🔴 为什么不能用 `bool`：调用点只能把 `false` 一律说成"启动超时"。真机上那句
+///    `③ LLM 未在 180s 内就绪` + 停止原因 `启动超时` 把用户和排障都引向"是不是慢"，
+///    而真相常常是"它一起来就死了"（例如 CPU 版 torch 配上恒真的 `--use-gpu`，见 D-231⑦）。
+///    **再等也不会好**与**可能只是慢**是两件事，错误文案必须能分开。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WaitOutcome {
+    /// 探针全过。
+    Ready,
+    /// 子进程已经退出（`None` = 被信号杀死、拿不到退出码，Unix 常见）。
+    Exited(Option<i32>),
+    /// 进程还活着、探针却一直不过 —— 可能是真的在慢慢加载，也可能端口被别的进程占着。
+    Timeout,
+}
+
+/// 从环形日志里取 ③ 的最后一行 stderr。
+///
+/// 🔴 用户真机是靠这一句定位的：类型（例如 `os error 3`）通常比任何我们自己写的
+///    错误分级都准。取不到就返回 `None`，调用点据此决定要不要带这一句。
+fn last_llm_err(logs: &Arc<Mutex<LogSink>>) -> Option<String> {
+    let Ok(v) = logs.lock() else { return None };
+    v.lines
+        .iter()
+        .rev()
+        .find_map(|l| l.strip_prefix("[llm:err]").map(|s| s.trim().to_string()))
+}
+
+fn wait_ready(logs: &Arc<Mutex<LogSink>>, inner: &mut Inner, timeout_ms: u64) -> WaitOutcome {
     if env_bool("MIAO_LLM_NO_WAIT_READY", false) {
-        return true; // 反证：不等就绪就宣布就绪
+        return WaitOutcome::Ready; // 反证：不等就绪就宣布就绪
     }
     let probes: Vec<Value> = if !inner.launch.probes.is_empty() {
         inner.launch.probes.clone()
@@ -480,11 +523,13 @@ fn wait_ready(logs: &Arc<Mutex<LogSink>>, inner: &mut Inner, timeout_ms: u64) ->
         // 进程已经死了就别再等满超时（否则「端口被占/参数写错」要等 3 分钟才报）
         match inner.child.as_mut() {
             Some(c) => {
-                if matches!(c.try_wait(), Ok(Some(_))) {
-                    return false;
+                if let Ok(Some(st)) = c.try_wait() {
+                    // 🔴 把退出码带上：它是"子进程自杀"这件事唯一的物证。
+                    //    `code()` 在 Unix 信号致死时会是 `None`，故整体是 `Option<i32>`。
+                    return WaitOutcome::Exited(st.code());
                 }
             }
-            None => return false,
+            None => return WaitOutcome::Exited(None),
         }
         let mut all = true;
         for p in &probes {
@@ -504,10 +549,13 @@ fn wait_ready(logs: &Arc<Mutex<LogSink>>, inner: &mut Inner, timeout_ms: u64) ->
             }
         }
         if all {
-            return true;
+            return WaitOutcome::Ready;
         }
         if now_ms() > until {
-            return false;
+            // 走到这里意味着：进程还活着、但探针就是不过（模型在慢慢加载 / 端口被别的进程占着）。
+            // 🔴 它与"子进程死了"是**两件不同的事**，措辞不能混 —— 前者可能真的只是慢，
+            //    后者再等也不会好。
+            return WaitOutcome::Timeout;
         }
         if !announced && now_ms() - started > 8000 {
             announced = true;

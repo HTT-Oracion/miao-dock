@@ -22,6 +22,8 @@
  * - M12–M13：镜像套回 codeload（ghfast 不代理它）⇒ W16 · 原 `url` 的 owner 拼错一个字母 ⇒ W16。
  * - M14–M15（D-231④）：`prepare` 不再归 `stage1` ⇒ W4 · `step` 不映射 `models` 段 ⇒ W4。
  * - M16–M17（D-231⑤）：`persist()` 退回直写目标文件 ⇒ W17 · `isDownloadActive` 退回只认三态 ⇒ W18。
+ * - M18–M20（D-231⑦）：③ 失败文案退回一律「启动超时」⇒ W19 · `--use-gpu` 退回恒真 ⇒ W20 ·
+ *   CUDA 自检结论不落盘 ⇒ W21。
  * 每条反证都按字节还原，收尾复核残留（R1）。
  *
  * ## W9 为什么必须打在 Rust 侧
@@ -48,8 +50,13 @@ const STATE_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'stat
 /// W9：**Rust 侧**面向用户的未就绪文案（`fix` + 闸门消息）也要零命令行 ——
 /// 前端 4 个文件干净不等于产品干净：`NotReadyScreen.tsx` 渲染的正是这里的字符串。
 const RUNTIME_PROBE_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'runtime_probe.rs');
-/// W13：装配编排（长路径体检住在那里）。
+/// W13：装配编排（长路径体检住在那里）；D-231④ 的阶段 0 与 D-231⑦ 的 torch 索引也住在那里。
 const RUNTIME_SETUP_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'runtime_setup.rs');
+/// D-231⑦：③ 的等待/失败原因分支。
+const SUPERVISOR_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'supervisor.rs');
+/// D-231⑦：`--use-gpu` 默认值的取值处。
+const ENGINE_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'engine.rs');
+/// W17 / W18（D-231⑤）：下载状态文件的原子写 + `isDownloadActive` 的抖动防御。
 const ENGINE_DOWNLOAD_TS = path.join(ROOT, 'src', 'ipc', 'engine-download.ts');
 /// W11：stage 归属的事实源。
 const MODELS_MANIFEST = path.join(ROOT, 'engine', 'models.manifest.json');
@@ -434,6 +441,51 @@ function engineSourceShape() {
     idleGuard,
     { idleGuard },
   );
+
+  // ---- W19（D-231⑦）③ 起不来的文案必须按**真实原因**写 ----
+  //     现场症状：引擎一起来就自杀，界面与日志却一律报「③ LLM 未在 180s 内就绪」+ 停止原因
+  //     「启动超时」。用户和排障被引向"是不是慢"，而真相是"它已经死了、再等也不会好"。
+  //      -> `wait_ready` 必须返回**原因枚举**（不再是 bool），三个分支都得有人在血清里点名。
+  const supervisor = fs.readFileSync(SUPERVISOR_RS, 'utf8');
+  const hasOutcome = /enum WaitOutcome/.test(supervisor);
+  const hasExited = /WaitOutcome::Exited/.test(supervisor);
+  const hasTimeout = /WaitOutcome::Timeout/.test(supervisor);
+  // 🔴 两种结局的**措辞不同**也算进来：共用一句"启动超时"就把"再等也不会好"
+  //    和"可能只是慢"又混成了一个 —— 那正是这条要修的事。
+  const distinctWords = /子进程已退出/.test(supervisor) && /启动超时/.test(supervisor);
+  // 子进程的最后一行 stderr 往往是唯一物证（真机就是靠 `os error 3` 定位的），必须带进错误。
+  const carriesTail = /last_llm_err\(logs\)/.test(supervisor);
+  check(
+    'W19 ③ 起不来时按真实原因分支（进程已退出 / 真超时），且把 `[llm:err]` 末行带进错误信息',
+    hasOutcome && hasExited && hasTimeout && distinctWords && carriesTail,
+    { hasOutcome, hasExited, hasTimeout, distinctWords, carriesTail },
+  );
+
+  // ---- W20（D-231⑦）`--use-gpu` 的默认值不再恒真，而是读装配期的 CUDA 自检结论 ----
+  //     `env_bool("MIAO_ENGINE_USE_GPU", true)` 对一台装着 `torch 2.14.1+cpu` 的机器就是
+  //     「配方恒带 --use-gpu ⇒ 引擎起来第一件事就找 CUDA ⇒ 找不到就自杀」。
+  const engineSrc = fs.readFileSync(ENGINE_RS, 'utf8');
+  const noHardTrue = !/env_bool\("MIAO_ENGINE_USE_GPU",\s*true\)/.test(engineSrc);
+  const readsFact =
+    /o\.use_gpu\.unwrap_or_else\(default_use_gpu\)/.test(engineSrc) && /read_cuda_available\(\)/.test(engineSrc);
+  check(
+    'W20 `--use-gpu` 默认值读装配期自检的 `cudaAvailable`，不再 `env_bool(..., true)` 恒真',
+    noHardTrue && readsFact,
+    { noHardTrue, readsFact },
+  );
+
+  // ---- W21（D-231⑦）装配期按本机 GPU 选 torch 构建，并当场自检 `torch.cuda.is_available()` ----
+  //     🔴 有 NVIDIA 才挂 CUDA 索引：给没卡的机器装 CUDA 版 torch 的代价不只是多下几个 GB，
+  //        那份 torch 跑起来第一件事就是报找不到设备然后退出 —— 与 W20 是同一条因果链的两端。
+  const setupForGpu = fs.readFileSync(RUNTIME_SETUP_RS, 'utf8');
+  const picksIndex = /TORCH_CUDA_INDEX/.test(setupForGpu) && /detect_nvidia_gpu\(\)/.test(setupForGpu);
+  const selfChecks = /fn torch_cuda_available/.test(setupForGpu) && /torch\.cuda\.is_available\(\)/.test(setupForGpu);
+  const persisted = /"cudaAvailable":\s*cuda_available/.test(setupForGpu);
+  check(
+    'W21 装依赖时按本机 GPU 选 torch 构建 + 事后自检 `cuda_available` 并写进 `.runtime.ready.json`',
+    picksIndex && selfChecks && persisted,
+    { picksIndex, selfChecks, persisted },
+  );
 }
 
 // ------------------------------------------------------------------ 反证轮
@@ -693,6 +745,47 @@ if (REFUTE) {
     restore();
   }
 
+  // ---- M18（D-231⑦）：③ 的失败文案退回一律"启动超时" ⇒ W19 红 ----
+  {
+    const restore = mutateFile(
+      SUPERVISOR_RS,
+      '                (String::from("子进程已退出"), format!("③ LLM 进程已退出（{c}），不是慢 —— 再等也不会好"))',
+      '                (String::from("启动超时"), format!("③ LLM 未在 {secs}s 内就绪"))',
+    );
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W19');
+    check('M18 ③ 进程已退出也报「启动超时」（排障被引向"是不是慢"）⇒ W19 红', red, { code: r.code, redOn: red });
+    restore();
+  }
+
+  // ---- M19（D-231⑦）：`--use-gpu` 退回恒真（CPU 版 torch 的机器 ⇒ 引擎一起来就自杀）⇒ W20 红 ----
+  {
+    const restore = mutateFile(
+      ENGINE_RS,
+      '    let use_gpu = o.use_gpu.unwrap_or_else(default_use_gpu);',
+      '    let use_gpu = o.use_gpu.unwrap_or_else(|| env_bool("MIAO_ENGINE_USE_GPU", true));',
+    );
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W20');
+    check('M19 `--use-gpu` 退回恒 true（机器没 GPU 时引擎起来就自杀）⇒ W20 红', red, { code: r.code, redOn: red });
+    restore();
+  }
+
+  // ---- M20（D-231⑦）：自检结论不落盘（启动期又只能回去猜 ⇒ W21 红 ----
+  //      🔴 为什么不改别的：这条是 W20 与 W21 之间**唯一**的接缝 —— 不落盘，`default_use_gpu()`
+  //         读到的永远是 `null`，装配期测得再准也没用。把 py 索引那一节改成恒 CU 反而
+  //         **不会**让这条断言红（它钉的是"这套东西存在"，不是"分支怎么走"），那是假反证。
+  {
+    const restore = mutateFile(RUNTIME_SETUP_RS, '        "cudaAvailable": cuda_available,\n', '');
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W21');
+    check('M20 CUDA 自检结论不写进 `.runtime.ready.json`（启动期又只能回去猜）⇒ W21 红', red, {
+      code: r.code,
+      redOn: red,
+    });
+    restore();
+  }
+
   // 收尾：确认还原到位
   {
     const bad = [];
@@ -734,7 +827,12 @@ if (REFUTE) {
       bad.push('state.rs 残留 M16');
     if (!fs.readFileSync(ENGINE_DOWNLOAD_TS, 'utf8').includes("view.state === 'idle' && view.startedAt != null"))
       bad.push('engine-download.ts 残留 M17');
-    check('R1 变异收尾：十六处源码/清单按字节还原', bad.length === 0, bad);
+    if (!fs.readFileSync(SUPERVISOR_RS, 'utf8').includes('子进程已退出')) bad.push('supervisor.rs 残留 M18');
+    if (!fs.readFileSync(ENGINE_RS, 'utf8').includes('o.use_gpu.unwrap_or_else(default_use_gpu)'))
+      bad.push('engine.rs 残留 M19');
+    if (!fs.readFileSync(RUNTIME_SETUP_RS, 'utf8').includes('"cudaAvailable": cuda_available,'))
+      bad.push('runtime_setup.rs 残留 M20');
+    check('R1 变异收尾：十九处源码/清单按字节还原', bad.length === 0, bad);
   }
 }
 

@@ -4784,4 +4784,72 @@ static 层 **17/17** · `npx tsc --noEmit` 无输出 · prettier 全绿 · eslin
 （本机 Python 栈访问不了 pypi 镜像 ⇒ 装配跑不到模型那一段，见 D-231④）。「当前处于第 N 段」
 在真下载中的观感、以及 mac 上的表现，都待真机验收。
 
+### D-231⑦ 引擎起不来的两条根因：③ 按真实原因报错 + `--use-gpu` 不再恒真
+
+**现象**：同一台机器上「语法表明了装好了」，启动却报 `③ LLM 未在 180s 内就绪`，
+停止原因一律是 `启动超时`，而 `[llm:err]` 末行写着 `os error 3`。
+
+**根因一：③ 的失败文案是写死的**。`supervisor.rs::wait_ready` 返回 `bool`，调用点只能把它
+一律说成"启动超时"。而"进程已经死了、再等也不会好"与"还在慢慢加载、可能真的只是慢"是
+**两件不同的事**；一律说"超时"把用户和排障都引向"是不是慢" —— 这正是这条链上最难查的形态。
+
+**根因二：`--use-gpu` 恒真 + CPU 版 torch**。`resolve_engine_launch` 的
+`env_bool("MIAO_ENGINE_USE_GPU", true)` 对一台装着 `torch 2.14.1+cpu`（本机没有 NVIDIA 卡）
+的机器意味着：配方恒带 `--use-gpu` ⇒ 引擎起来第一件事就是找 CUDA ⇒ 找不到就自杀。
+报出来的是「③ 未在 180s 内就绪」，离根因极远。
+
+**改法**
+
+- **③ 按真实原因报错**：`wait_ready` 返回 `WaitOutcome`（`Ready` / `Exited(Option<i32>)` /
+  `Timeout`）。两种结局的**措辞不同**：「③ LLM 进程已退出（exit status: N），不是慢 ——
+  再等也不会好」/「③ LLM 未在 Xs 内就绪（进程仍存活；模型加载慢，或端口被别的进程占着）」，
+  `do_stop` 的 reason 也跟着分成「子进程已退出」/「启动超时」。并把 `[llm:err]` 的最后一行
+  （`last_llm_err()`）拼进错误 —— 真机就是靠那一句 `os error 3` 定位到"可执行体压根没解包"的。
+- **按本机 GPU 选 torch + 自检** —— 三者是同一条因果链的两端：
+  装配期 `detect_nvidia_gpu()`（`nvidia-smi -L` → `CUDA_PATH`）决定要不要挂
+  `--extra-index-url https://download.pytorch.org/whl/cu126`（常量 `TORCH_CUDA_INDEX`）；
+  装完 `torch_cuda_available()` 当场问 `torch.cuda.is_available()`，结论写进
+  `.runtime.ready.json` 的 **`cudaAvailable`**（与既有 `longPath` 同属"机器事实"那一格）；
+  启动期 `default_use_gpu()` 按顺序取 `MIAO_ENGINE_USE_GPU` → `cudaAvailable` → `false`。
+  🔴 最后一档**只能**是 `false`：`null` 表示"没测出来"，而两种误判代价不对称 ——
+  误判成 False 只是慢，误判成 True 是"引擎一起来就自杀"。
+  🔴 给没卡的机器装 CUDA 版 torch 的代价也不只是多下几个 GB：那份 torch 跑起来第一件事
+  就是报找不到设备然后退出。所以索引要按**本机实测**挂，不能默认挂。
+
+**刻意没做什么**
+
+- 不做"③ 起来失败后自动注入 `MIAO_ENGINE_USE_GPU=0` 重拉"：那要在
+  `src-tauri/src/service/mod.rs` 的串行链
+  里插一次进程重拉（spawn → 探针 → 停 → 重拉），涉及 E11 进程树回收的时序，风险与验收成本
+  都高。**设计里 §7.4-3 的真回退目前仍只有 e2e 注入，产品侧这一环还是缺的** ⇒ 登记为待办。
+- 不动 golden 快照：`e2e/service/golden/llm-selftest.json` 记的是 `errorPresent`（布尔）而不是
+  错误文案 —— 文案进 golden 会让每次措辞调整都变成"要改金标"，那正是把判据变成橡皮章的做法。
+  ⇒ 新行为的可反证改由上面的源码层断言（W19–W21 + M18–M20）承担。
+
+**断言**（`check:engine-bootstrap` 20 → 23 条、反证 17 → 20 条；全是源码层判据，无需重编译）
+
+- **W19** `enum WaitOutcome` 存在且 `Exited` / `Timeout` 两支都有人分支，两种结局的**措辞不同**，
+  并且 `last_llm_err(logs)` 真的被接进错误。
+- **W20** `resolve_engine_launch` 里不得再出现 `env_bool("MIAO_ENGINE_USE_GPU", true)`，
+  必须是 `o.use_gpu.unwrap_or_else(default_use_gpu)` + `read_cuda_available()`。
+- **W21** `install_deps` 侧必须同时看到 `TORCH_CUDA_INDEX` + `detect_nvidia_gpu()` +
+  `torch_cuda_available()` + `"cudaAvailable": cuda_available`。
+- 反证 **M18**（③ 进程已退出也报"启动超时" ⇒ W19 红）· **M19**（`--use-gpu` 退回恒真 ⇒ W20 红）·
+  **M20**（自检结论不落盘 ⇒ W21 红；这是 W20 与 W21 之间**唯一**的接缝 —— 把"索引那节改成恒 CU"
+  反而**不会**让断言红，那才是假反证）。R1 残留复核扩到十九处。
+
+**验收**：`cargo build` **0 warning / 0 error** · `cargo test -p miao-dock runtime_probe`
+**9 passed / 0 failed** · `check:engine-bootstrap` 正向 **23/23**、`--refute` **44/44 全红** ·
+`check:llm-supervisor` **5/5** · `check:autostart` **42/42** · `check:bundle` **16/16** ·
+`check:launch-gate` 全绿 · static 层 **17/17** · `npx tsc --noEmit` 无输出 · prettier 全绿。
+
+⚠️ **本机环境受限、如实登记**
+
+- `check:profile`（e4-tier）的 **E4.6 在本机红**：`models/sakura/sakura-1.5b-…-fp16.gguf`
+  **不在盘上**（这台机器上从没下过 4.6 GB 的权重），与本条改动无关。
+- torch CUDA 索引 / `--use-gpu` 的真实效果**没有**在真 GPU 机器上跑过；`detect_nvidia_gpu()`
+  的三条路径里只实测过"没有 NVIDIA 卡"那一条。有卡的机器是否真的会装到 cu126 构建、CUDA
+  自检是否真能答 True，都还没验。
+- 产品侧仍缺"③ 起来失败 ⇒ 自动降级到 CPU 重拉"（见上）。
+
 
