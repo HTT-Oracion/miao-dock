@@ -8,15 +8,8 @@ import { useEngineDownload, useToasts } from '@hooks';
 import type { ServiceStatus } from '@/ipc';
 import { downloadEngineModels } from '@screens/settings/engine-api';
 import type { ModelDownloadView } from '@screens/settings/engine-api';
-import { OnlineApiForm } from '@screens/settings/OnlineApiForm';
 import type { TranslateSource } from '@screens/settings/translate-api';
-import {
-  ASSEMBLY_PHASES,
-  assemblyNotes,
-  engineInstallView,
-  type EngineInstallView,
-  type StageNote,
-} from '@screens/library/assembly';
+import { ASSEMBLY_PHASES, assemblyNotes, type StageNote } from '@screens/library/assembly';
 import { AssemblyTimeline } from '@screens/library/AssemblyTimeline';
 
 /**
@@ -92,15 +85,6 @@ function summaryOf(state: string, err: string | null, degraded: boolean): { bad:
   };
 }
 
-/** 「第一个未完成模型段」的提示句。体积只算这一段，不用全局总量。 */
-function installTitleOf(install: EngineInstallView): string {
-  const name = install.stage === 'visual' ? '视觉模型' : 'LLM 翻译模型';
-  if (install.readyBytes > 0) {
-    return `${name}装配未完成（还差约 ${formatBytes(install.missingBytes)}）`;
-  }
-  return `${name}尚未安装（约 ${formatBytes(install.totalBytes)}）`;
-}
-
 /** 下载按钮文案：只按真实 `step` 说，取不到就退回通用句。 */
 function downloadLabelOf(busy: boolean, download: ModelDownloadView | null): string {
   if (busy) return '正在发起…';
@@ -147,15 +131,12 @@ export function NotReadyScreen({
   const { push: onToast } = useToasts();
   const { busy, start } = useEngineDownload();
   const [userLog, setUserLog] = useState<boolean | null>(null);
-  const [choice, setChoice] = useState<'download' | 'online' | null>(null);
-  const [compare, setCompare] = useState(false);
   const [trouble, setTrouble] = useState(false);
 
   const state = status?.state ?? 'starting';
   const err = status?.last_error ?? null;
   const failed = state === 'error';
   const degraded = !!status?.degraded;
-  const running = state === 'running';
   const logOpen = userLog ?? failed;
 
   const notes = assemblyNotes(status, download);
@@ -164,7 +145,6 @@ export function NotReadyScreen({
   const summary = summaryOf(state, err, degraded);
   const downloading = download?.state === 'running' || download?.state === 'interrupted';
   const stepLabel = activeIndex >= 0 ? ASSEMBLY_PHASES[activeIndex]?.text : null;
-  const install = engineInstallView(status, download);
 
   // ---- 在线精简页 ----
   if (source === 'online') {
@@ -217,28 +197,22 @@ export function NotReadyScreen({
       }
     };
 
-    const decision = install ? (
-      <div className="nr-guide-decide">
-        <div className="nr-guide-decide-t">{installTitleOf(install)}</div>
-        <div className="nr-guide-decide-d">
-          可选择「下载本地引擎」在本机装配，或改用在线翻译（需要联网，按平台计费）。
-        </div>
-        <div className="nr-guide-acts">
-          <Btn kind={choice === 'download' ? 'primary' : 'ghost'} onClick={() => setChoice('download')}>
-            下载本地引擎
-          </Btn>
-          <Btn kind={choice === 'online' ? 'primary' : 'ghost'} onClick={() => setChoice('online')}>
-            使用在线翻译
-          </Btn>
-        </div>
+    /*
+     * LLM 段的「使用在线翻译」提示：**纯文本、不可点**。
+     *
+     * 🔴 在线翻译**只替代 ③ LLM**：图片仍要经 ② 视觉引擎处理，
+     *    所以启用入口收敛到设置页 —— 流程页不再承担密钥填写，
+     *    也不再给「下载 / 在线」二选一的岔路（下载按钮统一放在时间线下方）。
+     */
+    const onlineTip = (
+      <div className="nr-guide-online">
+        <span className="nr-guide-online-text">使用在线翻译</span>
+        <span className="nr-guide-online-tip" title="请到设置页启用">
+          ⓘ
+        </span>
       </div>
-    ) : null;
-
-    const extra = install ? { [install.stage]: decision } : undefined;
-
-    const effectiveChoice = choice ?? (downloading ? 'download' : null);
-    const showDownload = effectiveChoice === 'download';
-    const showOnline = effectiveChoice === 'online';
+    );
+    const extra = { llm: onlineTip };
 
     return (
       <div className="nr-guide">
@@ -271,61 +245,16 @@ export function NotReadyScreen({
 
         <AssemblyTimeline notes={notes} detail={detail} extra={extra} />
 
-        {showDownload ? (
-          <div className="nr-guide-card nr-guide-card-wide">
-            <div className="nr-guide-card-t">下载本地引擎</div>
-            <div className="nr-guide-card-d">
-              一键下载并自动装配。装完即可离线翻译，图片不出本机。
-              {install && install.stage === 'visual' ? ' 先装运行环境与视觉模型，翻译模型在后台继续。' : ''}
-            </div>
-            <div className="nr-guide-acts">
-              <Btn kind="primary" disabled={busy || download?.state === 'running'} onClick={() => void beginDownload()}>
-                {downloadLabelOf(busy, download)}
-              </Btn>
-              <DownloadPill state={download?.state} />
-            </div>
-            <div className="nr-guide-note">下载分两轮：先装运行环境与视觉模型，翻译模型与引擎可执行体在后台继续。</div>
-          </div>
-        ) : null}
-
-        {showOnline ? (
-          <div className="nr-guide-card nr-guide-card-wide">
-            <div className="nr-guide-card-t">使用在线翻译</div>
-            <div className="nr-guide-card-d">不下载引擎，填一次密钥即可。需要联网，按平台计费。</div>
-            {running ? (
-              <OnlineApiForm onSaved={onStart} />
-            ) : (
-              <div className="nr-guide-acts">
-                <div className="nr-guide-note">在线翻译仍由本地服务承载投放、队列与漫画库，先把服务拉起来。</div>
-                <Btn kind="primary" onClick={onStart}>
-                  启动本地服务
-                </Btn>
-              </div>
-            )}
-          </div>
-        ) : null}
-
-        {/* 底部：两者对照（默认收起） */}
-        <div className="nr-guide-compare">
-          <button type="button" className="nr-guide-toggle" onClick={() => setCompare(!compare)}>
-            {compare ? '收起对照' : '两者有什么区别？'}
-          </button>
-          {compare ? (
-            <div className="nr-guide-cmp">
-              <div className="nr-guide-cmp-cell">
-                <b className="nr-guide-cmp-t">本地引擎</b>
-                <div>· 占用约 {totalText ?? '数 GB'} 磁盘</div>
-                <div>· 首次下载较久，之后不联网</div>
-                <div>· 图片不出本机，隐私最好</div>
-              </div>
-              <div className="nr-guide-cmp-cell">
-                <b className="nr-guide-cmp-t">在线翻译</b>
-                <div>· 不占磁盘，无需下载</div>
-                <div>· 始终需要联网</div>
-                <div>· 按平台计费，密钥只出站</div>
-              </div>
-            </div>
-          ) : null}
+        {/*
+          时间线下方：唯一的下载入口。
+          🔴 点了就走，按钮文本随下载态切换（「视觉模型下载中 / 翻译模型下载中」）——
+             不再展开卡片，也不再让用户在「下载 / 在线」之间先选一条路。
+        */}
+        <div className="nr-guide-dl">
+          <Btn kind="primary" disabled={busy || download?.state === 'running'} onClick={() => void beginDownload()}>
+            {downloadLabelOf(busy, download)}
+          </Btn>
+          <DownloadPill state={download?.state} />
         </div>
 
         {/* 右下：排障信息（默认收起） */}

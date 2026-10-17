@@ -199,7 +199,7 @@ export function DownloadPanel({ view, requiredBytes, onContinue, onRedownload, o
           color: 'var(--md-ink)',
         }}
       >
-        <span style={{ color: 'var(--md-muted)' }}>当前文件</span>
+        <span style={{ color: 'var(--md-muted)' }}>当前进度</span>
         <span
           style={{
             flex: 1,

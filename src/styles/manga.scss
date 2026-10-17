@@ -337,6 +337,31 @@
   line-height: 1.6;
   color: var(--md-muted);
 }
+/* 时间线下方的下载入口：装配只有一条路，按钮文本自己承载全部下载态 */
+.nr-guide-dl {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+}
+/* LLM 段内的「使用在线翻译」提示：弱化的次要信息，ⓘ 靠右，不抢时间线主体 */
+.nr-guide-online {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--md-muted);
+}
+.nr-guide-online-text {
+  color: var(--md-muted);
+}
+.nr-guide-online-tip {
+  margin-left: auto;
+  cursor: help;
+  font-size: 12px;
+  color: var(--md-muted);
+}
 /* 两条路并列：等宽两栏，哪条都不该看起来比另一条次要 */
 .nr-guide-grid {
   display: grid;
