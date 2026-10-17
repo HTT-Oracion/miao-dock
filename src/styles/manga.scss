@@ -241,6 +241,11 @@
   gap: 9px;
   padding-bottom: 16px;
 }
+/* 文本占满，右侧的「启动服务」icon 按钮靠右 */
+.nr-sum-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .nr-dot {
   width: 8px;
   height: 8px;
@@ -355,6 +360,29 @@
 .nr-guide-card-d {
   margin-top: 6px;
   font-size: 13px;
+  line-height: 1.6;
+  color: var(--md-muted);
+}
+/* 时间线下方的单张卡（下载 / 在线表单）：不占两栏，避免半边空白 */
+.nr-guide-card-wide {
+  margin-top: 18px;
+}
+/* 第一个未完成模型段下的决策区：贴在段内容里，像"这一段的下一步" */
+.nr-guide-decide {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-left: 2px solid var(--md-blue);
+  border-radius: 8px;
+  background: var(--md-row, rgba(128, 128, 128, 0.06));
+}
+.nr-guide-decide-t {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--md-ink);
+}
+.nr-guide-decide-d {
+  margin-top: 4px;
+  font-size: 12px;
   line-height: 1.6;
   color: var(--md-muted);
 }
