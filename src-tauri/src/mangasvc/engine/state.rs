@@ -183,12 +183,16 @@ impl DownloadProgressState {
     }
 
     /// 喂一条进度事件，返回聚合后的快照（直接写进 `ModelDownload`）。
+    ///
+    /// 🔴 `received` 必须与 `total` 取**同一份集合**（只统计总量已知的条目）：
+    ///    源没给 Content-Length 时该条目的 total 是 None，若把它的字节累加进分子、
+    ///    却不进分母 ⇒ 分数破 100%（实测界面出现过 111%）。
     fn ingest(&mut self, e: &ProgressEvent, now_ms: i64) -> (u64, u64, Option<u64>) {
         // 阶段标记事件（total=None，phase="stage"）：只更新当前阶段，不动字节账。
         if e.phase == "stage" {
             self.last_event_ms = now_ms;
             let total: u64 = self.entries.values().filter_map(|(_, t)| *t).sum();
-            let received: u64 = self.entries.values().map(|(r, _)| *r).sum();
+            let received: u64 = self.entries.values().filter_map(|(r, t)| t.map(|_| *r)).sum();
             return (received, total, None);
         }
         let total = e.total.unwrap_or_else(|| {
@@ -199,7 +203,7 @@ impl DownloadProgressState {
         self.entries.insert(e.id.clone(), (e.received, entry_total));
         self.last_event_ms = now_ms;
         let total: u64 = self.entries.values().filter_map(|(_, t)| *t).sum();
-        let received: u64 = self.entries.values().map(|(r, _)| *r).sum();
+        let received: u64 = self.entries.values().filter_map(|(r, t)| t.map(|_| *r)).sum();
         (received, total, e.total)
     }
 }
@@ -1275,7 +1279,7 @@ fn spawn_progress_reader(
                 };
                 let mut d = dl.lock().unwrap_or_else(|p| p.into_inner());
                 if e.phase == "stage" {
-                    // 阶段标记事件：更新当前阶段（不碰字节账、不更新 current_id）。
+                    // 阶段标记事件：更新当前阶段与「当前进度」文本（不碰字节账）。
                     //
                     // 🔴 两张表**刻意不是同一张**（D-231④）：
                     //   · `stage` 是下载详情页那个**两步**指示器的数据源，`STAGE_TEXT` 只有两格。
@@ -1299,6 +1303,10 @@ fn spawn_progress_reader(
                         "llm" | "models" => Some("stage2".to_string()),
                         other => Some(other.to_string()),
                     };
+                    // 无字节阶段（建 venv / 打补丁 / pip 装依赖…）也要告诉界面「现在在做什么」：
+                    // 否则「当前进度」行会一直停在上一份文件（实测停在 engine_source），
+                    // 配上静止环就坐实了「卡住了」的误判。
+                    d.current_id = e.msg.clone().filter(|m| !m.is_empty()).or(Some(e.id.clone()));
                 } else {
                     d.current_id = Some(e.id.clone());
                     let (speed, eta) = {
@@ -1307,8 +1315,9 @@ fn spawn_progress_reader(
                     };
                     d.received_bytes = Some(received);
                     d.total_bytes = if total > 0 { Some(total) } else { None };
+                    // 🔴 夹到 100：续传 / 换源重下会让单条目的 received 短暂超过 total
                     d.percent = if total > 0 {
-                        Some((received as f64 / total as f64) * 100.0)
+                        Some(((received as f64 / total as f64) * 100.0).min(100.0))
                     } else {
                         None
                     };

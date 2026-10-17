@@ -150,6 +150,13 @@ pub struct ProgressEvent {
     pub total: Option<u64>,
     pub url: Option<String>,
     pub resumed: bool,
+    /// 阶段标记事件的人类可读描述（「安装引擎依赖」「下载并解包引擎源码」等）；
+    /// downloading / verifying 事件为 None —— 那些阶段的文件名本身就是描述。
+    ///
+    /// 🔴 `#[serde(default)]` **不能省**：旧的 `--progress-log` 行没有这个键，
+    ///    少了它反序列化会整行失败 ⇒ 进度全丢，且 `check:progress-truth` 会假红。
+    #[serde(default)]
+    pub msg: Option<String>,
 }
 
 /// `.ready` 里的一条记录。字段**声明序**即 JSON 输出序（与 Node 版一致）。
@@ -707,6 +714,7 @@ fn write_body(
                 total,
                 url: Some(url.to_string()),
                 resumed: from > 0,
+                msg: None,
             });
         }
     };
@@ -938,6 +946,7 @@ fn emit_verifying(file: &FileEntry, total: u64, on_progress: &mut Option<&mut dy
             total: Some(total),
             url: None,
             resumed: false,
+            msg: None,
         });
     }
 }

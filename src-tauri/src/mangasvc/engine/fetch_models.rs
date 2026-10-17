@@ -268,6 +268,9 @@ pub fn run(argv: &[String]) -> i32 {
                 total: None,
                 url: None,
                 resumed: false,
+                // 阶段描述一并写进 JSONL：建 venv / 打补丁 / pip 装依赖这些阶段没有字节，
+                // 界面要靠这句话才知道「现在在做什么」而不是卡住了
+                msg: Some(msg.to_string()),
             });
         };
         let rt_dir = paths::runtimes_dir();
@@ -408,6 +411,7 @@ pub fn run(argv: &[String]) -> i32 {
             total: None,
             url: None,
             resumed: false,
+            msg: Some("下载翻译模型".to_string()),
         });
     }
     let r = match ensure_models(
