@@ -5027,4 +5027,54 @@ engine-parity 的 `translationWeightsPresent`（要 appData 引擎树）、svc-s
 **没有**在真机上看过一眼 —— 本机跑不到引导页那张卡片（需要 runtime 未装配 + real 档，
 而本机 Python 栈访问不了 pypi 镜像）。按钮的实际宽度与两行的观感待真机比对。
 
+## D-234 下载进度显示修正 + 在线翻译仅替代 ③ + 流程页简化（2026-10-18）
+
+**用户反馈**：下载详情页在 pip 装依赖阶段「百分比 0%（静止环）持续很久 + 当前文件停在
+`engine_source` + 详情一直刷 `using cached ...`」，且**百分比会显示 111%**。
+
+**根因（三条真缺口）**
+- **percent 破 100%**：`DownloadProgressState::ingest` 的 `received` 累加**所有**条目
+  （含 `total=None` 者），而 `total` 只累加 `Some(t)` 者 ⇒ 源没给 Content-Length 的文件
+  把字节进分子、却不进分母，分数自然破 100%。stage 分支那两行 sum 同样错。
+  修法：分子分母取**同一份集合**（只统计总量已知条目），并在 `spawn_progress_reader`
+  算 percent 时 `.min(100.0)` 双保险。
+- **无字节阶段进度停住**：`phase="stage"` 事件（建 venv / 打补丁 / pip 装依赖）此前只更新
+  `step` / `stage`、**刻意不更新 `current_id`** ⇒ 「当前文件」行一直停在上一份文件。
+  修法：`ProgressEvent` 加 `msg`（`#[serde(default)]`，兼容旧 JSONL），`on_phase` 把阶段
+  描述写进事件，stage 分支据此更新 `current_id`。
+- **标签**：「当前文件」→「当前进度」（用户确认）—— 该行现在既可能是文件名也可能是阶段名。
+
+**刻意没伪造**：`percent` 为空时环保持静止、不画假的 0% 弧（既有纪律）；靠「当前进度」行
+显示阶段描述回答「是不是卡住了」，而不是靠动画假装在工作。
+
+**在线翻译只替代 ③（语义纠正）**：旧判据 `source === 'online' ? svcDown : …` 与事实相反 ——
+在线只替代 LLM 的文字翻译，图片仍要经 ② 视觉引擎做检测 / OCR / 抹字。现改为在线分支也看
+视觉资产：`visualReady = sets.visual（entries > 0 && ready）`，
+`blocked = source === 'online' ? svcDown || !visualReady : !running || engineMissing`。
+联动三处（用户选定）：App 准入、设置页保存前校验并提示、流程页在线入口；**Toolbar 来源
+chip 不动**。设置页「翻译来源」新增常驻说明（视觉没就位时转告警色）。
+`check:autostart` C4 的字面正则同步放开 online 分支（钉的仍是 local 必须含 `engineMissing`），
+反证锚点一并更新 —— 反证 23/23 仍按预期变红，说明没把断言改废。
+
+**流程页简化**：移除决策区与「下载本地引擎」「使用在线翻译」两张卡片及两者对照块；下载入口
+收敛为**时间线下方一枚按钮**，点击后文本随下载态切换（「视觉模型下载中 / 翻译模型下载中」），
+不再展开卡片；「使用在线翻译」改为 **LLM 段内的纯文本（不可点）+ 右上角 ⓘ tips「请到设置页
+启用」**，配置入口收敛到设置页。连根清掉 `choice / compare / OnlineApiForm /
+installTitleOf / install / running` 等只服务于被移除模块的死代码。
+
+**顺带修掉的一处**：服务启动行 `[manga-service] mangasvc 监听 …（纯 Rust：N 条端点本地实现，
+未迁移 N 条）` 的括号统计经 stdout → 服务日志 → 前端日志区漏给用户，已去掉；
+`--list-routes` 的 `report()`（e2e 取证通道）与文件头注释**保留**。
+
+**验收（2026-10-18）**：`tsc --noEmit` 无输出 · `cargo check --lib` 通过 ·
+`check:units` 46/46 · `check:settings` 186/186（类名规则校验当场抓住漏写的
+`.nr-guide-online-text`）· `check:ia` 37/37 + 反证 · `check:notready-state` 21/21 ·
+`check:autostart` 21/21 + 反证 23/23 · `check:engine-download-entry` 7/7 ·
+`check:progress-truth` 11/11 · `check:models` 76/76（A3 双靶：node 14 / rust 12 条事件）·
+`check:store` 24/24 · `check:engine-bootstrap` 23/23。
+
+⚠️ **未验项如实登记**：`percent` 修复只在**结构层**验过（`check:models` 的 A3 用夹具下载，
+其源给了 Content-Length）；**真机 111% 那条路径**（源不返回 Content-Length）没有复现环境 ——
+修法（同集合 + clamp）逻辑上封住了，但没在真机上看过一眼。
+
 

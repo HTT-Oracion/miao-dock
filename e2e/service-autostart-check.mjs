@@ -305,7 +305,12 @@ function runAll() {
   check(
     'C4',
     'local 来源准入含 `engineMissing`（D6 闸门只放 ①，state 仍是 running ⇒ 只看 running 会把装配页挡掉）',
-    /const blocked = source === 'online' \? svcDown : !running \|\| engineMissing;/.test(app),
+    /*
+     * 🔴 online 分支允许带**额外**条件（视觉资产没就位也要拦，见 `visualReady`），
+     *    故这里不钉死它的字符串；钉的是 **local 分支必须含 `engineMissing`** ——
+     *    少了它，① running 而引擎未装配时装配页会被挡掉（D6 闸门只放 ①）。
+     */
+    /const blocked = source === 'online' \? [^:]* : !running \|\| engineMissing;/.test(app),
     '',
   );
 
@@ -566,8 +571,8 @@ const MUTATIONS = [
   {
     name: 'C4 准入去掉 engineMissing（① running 但引擎没装时装配页被挡掉）',
     file: APP_TSX,
-    find: "const blocked = source === 'online' ? svcDown : !running || engineMissing;",
-    replace: "const blocked = source === 'online' ? svcDown : !running;",
+    find: "const blocked = source === 'online' ? svcDown || !visualReady : !running || engineMissing;",
+    replace: "const blocked = source === 'online' ? svcDown || !visualReady : !running;",
     expect: ['C4'],
   },
   {
