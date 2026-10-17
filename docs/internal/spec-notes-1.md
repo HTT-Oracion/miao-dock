@@ -4727,3 +4727,61 @@ prettier 全绿 · eslint **0 error**（134 warning 为既有基线）。
 行为层取证需要一个刻意注入（把写入拉长 / 把轮询频率对齐到写入窗口），本轮**未做**，
 登记为待办。
 
+### D-231⑥ 未就绪屏四段化：L1–L4「服务启动分层」退役
+
+**为什么要退役**：L1–L4（正在检查运行环境 → 正在准备翻译模型 → 正在预热 → 首张稍慢）
+描述的是**服务启动**；而这一屏在绝大多数时候讲的是**装配**（还没装好 / 装好了服务还没起来）。
+前端拿 `status.phase`（L1/L2/L3）当进度事实源，等于把**两台不同的状态机**画在同一条时间线上 ——
+用户看到的「第 2 段」一会儿指"准备模型"、一会儿指"在装 Python"，谁也说不准自己在第几段。
+装配第一期最需要回答的问题（"我现在在第几段、还差什么"）在旧口径下根本没有答案。
+
+**新口径：装配四段**（与 `modelDownload.step` 一一对应）
+
+| 段 | 文案 | 事实源 |
+| --- | --- | --- |
+| ① | 环境准备 | `step: prepare`（D-231④ 新增的阶段 0 事件） |
+| ② | 运行环境装配 | `step: runtime` |
+| ③ | 本地引擎装配 | `step: models` |
+| ④ | 就绪 | **没有事件** —— 由 `runtime.ready` 推导 |
+
+🔴 第四段刻意**不设事件**：让它变成"要等一个事件才到达"的态，等于给"装配跑完了但判据不过"
+的机器留一个永远停在第 3 段、又看不出缺什么的界面。判据（D-231③ 的七项全真）才是"就绪"的定义。
+
+🔴 `status.phase` 本身**保留不动** —— 它属 `/engine/status` 契约，被 `check:autostart` /
+`check:contract` 断言。退役的只是"前端拿它当进度事实源"。它仍作为**动作判据**：
+`failed && status?.phase === 'L2'` ⇒ 给「重新下载模型」按钮（`NOTREADY.retry.byPhase` 仍钉着）。
+
+**改了什么**
+
+- `src/screens/library/NotReadyScreen.tsx`：`STAGES` / `STARTUP_COUNT` / `PHASE_INDEX` /
+  `NODE_KIND` 的「首图时完成」分支一并删净 ⇒ `ASSEMBLY_PHASES` + `STEP_INDEX` +
+  `assemblyReached(step, ready)`。`summaryOf` 去掉 `phase === 'L3'` 分支（服务现状与装配进度
+  两条轴，混进同一句话就自相矛盾）。新增 `download` prop。
+- 抽出 `AssemblyTimeline` 组件：**引导页**与「已装配但服务没起来」两处共用 ——
+  两处各画各的 ⇒ 同一件事在两个页面显示成两个样子。样式全部沿用 `.tl-*`，**不新增 CSS**；
+  「当前处于第 N 段」那一行复用既有的 `.nr-guide-note`。
+- `src/router/panes/TranslatePane.tsx`：`ShellCtx` 里本来就有 `download`，只透传，**不扩壳层契约**。
+- 引导页只在**真的在下载**时（`state ∈ {running, interrupted}`）说"当前处于第 N 段"：
+  装完之后再说"你在第 4 段"是废话，而"第 4 段还没到"会被读成"卡住了"。
+
+**断言**（`check:notready-state` 13 → 19 条、反证 5 → 9 条；`check:settings` NOTREADY 组同步）
+
+- G4 四句逐字冻结；**G4b 旧阶段表真的删干净**（`STARTUP_COUNT`/`PHASE_INDEX`/`id: 'L1'`…
+  /「首图时完成」一律不许留）—— 退役必须看得见，"新表在旁边、旧表还留着"是最容易蒙混的形态。
+- G11 段号只来自 `download.step` + `runtime.ready`；G12 两处共用同一个 `AssemblyTimeline`；
+  G13 下载进行中的「当前处于第 N 段」；G10b 透传 `download`；G6b `summaryOf` 不再有 `phase` 分支。
+- `settings` 侧：`NOTREADY.stages.phaseDriven` 反过来钉**不许**再读 `status.phase` 当进度；
+  新增 `NOTREADY.phase.readyNotEvent`（`STEP_INDEX` 里不许有 `ready`）与
+  `NOTREADY.phase.readyTerminal`（`assemblyReached` 必须有 ready 收尾，否则第 4 段永远转）
+  取代已退役的 `NOTREADY.l4.notStartup` / `NOTREADY.l4.noLoading`；三条变异一起改到新锚点上。
+- 反证新增 M6–M9，R1 残留复核扩到九处。
+
+**验收**：`check:notready-state` 正向 **19/19**、`--refute` **29/29 全红** ·
+`check:settings` 正向 **184/184**、`--refute` **142/142 全红**（NOTREADY 组 11/11）·
+static 层 **17/17** · `npx tsc --noEmit` 无输出 · prettier 全绿 · eslint **0 error**。
+
+⚠️ **未验项如实登记**：只看过源码与断言，**没有**在真机上目视过一次引导页的四段时间线
+（本机 Python 栈访问不了 pypi 镜像 ⇒ 装配跑不到模型那一段，见 D-231④）。「当前处于第 N 段」
+在真下载中的观感、以及 mac 上的表现，都待真机验收。
+
+

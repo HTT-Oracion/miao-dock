@@ -2025,12 +2025,15 @@ add('ENGINE.md.noRawAsterisks', 'ENGINE', (ctx) => {
 // （`phase` / `mode` / `children` / `degraded`）—— 所以放同一轮断言，
 // 免得"Rust 加了字段、TS 类型没跟"这类缺口两边都漏。
 
-/** 《02》§3 与《09》§6.1 两张表里**逐字一致**的四句用户感知文案 */
+/**
+ * 装配四段的四句用户感知文案（D-231⑥，取代 L1–L4「服务启动分层」）。
+ * 🔴 与 `src/screens/library/NotReadyScreen.tsx` 的 `ASSEMBLY_PHASES` 逐字一致。
+ */
 const NOTREADY_TEXTS = [
-  ['L1', '正在检查运行环境'],
-  ['L2', '正在准备翻译模型'],
-  ['L3', '正在预热'],
-  ['L4', '首张稍慢，后续加快'],
+  ['prepare', '环境准备'],
+  ['runtime', '运行环境装配'],
+  ['models', '本地引擎装配'],
+  ['ready', '就绪'],
 ];
 
 add('NOTREADY.stages.texts', 'NOTREADY', (ctx) => {
@@ -2039,38 +2042,57 @@ add('NOTREADY.stages.texts', 'NOTREADY', (ctx) => {
   const at = NOTREADY_TEXTS.map(([id]) => src.indexOf(`id: '${id}'`));
   const ordered = at.every((v, i) => v >= 0 && (i === 0 || v > at[i - 1]));
   const problems = [];
-  if (missing.length) problems.push(`文案与方案表不一致（或缺失）：${missing.join('、')}`);
-  if (!ordered) problems.push('四段顺序不是 L1→L2→L3→L4');
+  if (missing.length) problems.push(`装配四段文案缺失：${missing.join('、')}`);
+  if (!ordered) problems.push('四段顺序不是 环境准备 → 运行环境装配 → 本地引擎装配 → 就绪');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
 add('NOTREADY.stages.phaseDriven', 'NOTREADY', (ctx) => {
   /*
-   * 这一条盯着本轮真实修掉的缺陷：早先进度是 `sidecar_port ? 2 : 1` —— 拿"引擎端口在不在"
-   * 猜阶段。两处必错：① 端口先于阶段就绪时把 L1 显示成 L2；② ② 已起但 ③ 还没答 HTTP 时
-   * L3 永远点不亮，用户看到的是"卡在第二段"。判据里必须**同时**有"读了 phase"与
-   * "旧写法已消失"，只判前者会让旧写法以旁路形式留下来。
+   * 这一条盯的是**进度事实源**。历史上它盯 `sidecar_port ? 2 : 1`（拿"引擎端口在不在"
+   * 猜阶段），D-231⑥ 起改盯 `download.step` + `runtime.ready`：
+   *   ① 段号只能来自服务端的 `modelDownload.step`（`assemblyReached(download?.step, …)`）；
+   *   ② 第四段由 `runtime.ready` 这个**判据**收尾，不是第四个事件；
+   *   ③ `status.phase` **不得**再被当进度事实源 —— 它是**服务启动**阶段（L1/L2/L3），
+   *      与装配是两台不同的状态机，混进同一条时间线会出现"文案说预热、时间线说在装 Python"。
+   *      🔴 它仍**保留在动作判据里**（失败时要不要给「重新下载模型」），所以不能粗暴地
+   *      一刀切"源码里不许出现 phase"。
+   * ④ 旧写法 `sidecar_port ? 2 : 1` 仍要钉死 —— 那是"用事实猜状态"的反面教材。
    */
   const code = stripComments(ctx.s.notReady);
   const problems = [];
-  if (!/status\?\.phase\s*\?/.test(code)) problems.push('没有读 status.phase');
-  if (!code.includes('PHASE_INDEX')) problems.push('没有 L1/L2/L3 → 阶段下标的映射表');
+  if (!/assemblyReached\(download\?\.step, runtimeReady\)/.test(code)) {
+    problems.push('段号没有来自 `download.step`（四段时间线与装配事实源脱钩）');
+  }
+  if (!code.includes('STEP_INDEX')) problems.push('没有 step → 段下标的映射表');
+  if (!/if \(ready\) return ASSEMBLY_PHASES\.length;/.test(code)) {
+    problems.push('第四段「就绪」没有由 `runtime.ready` 收尾（就绪后最后一段永远停在「进行中」）');
+  }
+  if (/status\?\.phase\s*\?/.test(code)) {
+    problems.push('又把 `status.phase` 当进度事实源了（它是服务启动阶段，不是装配阶段）');
+  }
   if (/sidecar_port\s*\?\s*2\s*:\s*1/.test(code)) {
     problems.push('仍在用 sidecar_port 猜阶段（端口在听 ≠ 阶段已过）');
   }
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
-add('NOTREADY.l4.notStartup', 'NOTREADY', (ctx) => {
+add('NOTREADY.phase.readyNotEvent', 'NOTREADY', (ctx) => {
   /*
-   * L4 不属启动期（《04》§4.5：引擎的准备/卸载/降档都不新增客户端状态机节点）。
-   * 它单列一支状态词「首图时完成」；沿用「待开始」会让用户以为卡在最后一段、
-   * 一直在等一段永远不会自己走完的进度。
+   * 「就绪」**不是第四个事件**，而是从判据推导出来的（D-231③ 起是七项全真）。
+   * 两条写错都会让用户卡在一个永远走不完的界面上：
+   *   ① 让它变成事件 ⇒ "装配跑完了但判据不过"的机器永远停在第 3 段，看不出到底缺什么；
+   *   ② 让它有进度事件但没收尾 ⇒ 判据全真之后第 4 段永远显示「进行中」。
+   * 所以 `STEP_INDEX` 里**必须没有** `ready`，而 `assemblyReached` 必须有 ready 收尾那支。
+   * （原 `NOTREADY.l4.notStartup` 盯的是 L4「首图时完成」那支状态词，随 L1–L4 一并退役。）
    */
   const code = stripComments(ctx.s.notReady);
   const problems = [];
-  if (!code.includes("STAGES[i]?.id === 'L4' ? '首图时完成' : '待开始'")) {
-    problems.push('L4 的状态词没有单列一支（会沿用「待开始」）');
+  if (/STEP_INDEX[^=]*= *\{[^}]*\bready\b/.test(code)) {
+    problems.push('`STEP_INDEX` 里出现了 `ready`（就绪不是事件，是判据）');
+  }
+  if (!/if \(ready\) return ASSEMBLY_PHASES\.length;/.test(code)) {
+    problems.push('`assemblyReached` 没有 ready 收尾（就绪后最后一段永远停在「进行中」）');
   }
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
@@ -2193,15 +2215,15 @@ add('NOTREADY.css.classes', 'NOTREADY', (ctx) => {
 
 add('NOTREADY.timeline.derivedFromStages', 'NOTREADY', (ctx) => {
   /*
-   * 时间线**恰 4 步**，且步数与序号都由 STAGES 单源派生 —— 不是写死的 1/2/3/4。
+   * 时间线**恰 4 步**，且步数与序号都由 `ASSEMBLY_PHASES` 单源派生 —— 不是写死的 1/2/3/4。
    * 为什么要单列一条：`NOTREADY.stages.texts` 只查"那四句在不在、顺序对不对"，
    * 它管不住"多渲染一行"或"序号写成 `i + 2`"这类**与数据脱钩**的改法。
    */
   const code = stripComments(ctx.s.notReady);
   const problems = [];
-  const ids = [...code.matchAll(/id: '(L\d)'/g)].map((m) => m[1]);
-  if (ids.length !== 4) problems.push(`STAGES 不是 4 步（实为 ${ids.length}：${ids.join('/') || '无'}）`);
-  if (!/STAGES\.map\(/.test(code)) problems.push('时间线不是由 STAGES 渲染的（步数会与数据脱钩）');
+  const ids = [...code.matchAll(/id: '(prepare|runtime|models|ready)'/g)].map((m) => m[1]);
+  if (ids.length !== 4) problems.push(`ASSEMBLY_PHASES 不是 4 段（实为 ${ids.length}：${ids.join('/') || '无'}）`);
+  if (!/ASSEMBLY_PHASES\.map\(/.test(code)) problems.push('时间线不是由 ASSEMBLY_PHASES 渲染的（步数会与数据脱钩）');
   if (!/i \+ 1/.test(code)) problems.push('节点序号不是下标派生（i + 1）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
@@ -2227,23 +2249,28 @@ add('NOTREADY.timeline.explicitLoading', 'NOTREADY', (ctx) => {
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
-add('NOTREADY.l4.noLoading', 'NOTREADY', (ctx) => {
+add('NOTREADY.phase.readyTerminal', 'NOTREADY', (ctx) => {
   /*
-   * L4 必须**结构性**拿不到 loading / 已完成 —— 它是第 4 段，不属启动期（见组件注释）。
-   * 两种写错都会让用户以为最后一段也在启动流程里、还要等它走完：
-   *   ① `reached` 的上界写成 `STAGES.length` ⇒ L4 满足 `i < reached` ⇒ 显示「已完成」；
-   *   ② 当前段分支少了 `i < STARTUP_COUNT` 保护 ⇒ running 时 L4 会显示「进行中」。
-   * 这条与 `NOTREADY.l4.notStartup`（盯状态词那支三元）互补：那条盯文案，这条盯**结构**。
+   * 第四段「就绪」在判据全真之后必须**结构性地**拿到「已完成」，且**永远拿不到**「进行中」。
+   * 两种写错都会让用户以为最后一段还在走：
+   *   ① `assemblyReached` 少了 ready 收尾 ⇒ `reached` 卡在 3 ⇒ 第 4 段（i === 3）显示「进行中」，
+   *      而且是**永远**转下去 —— 就绪判据明明已经全真了；
+   *   ② 反过来把 `ready` 塞进 `STEP_INDEX` ⇒ `reached` 可能是 3，但语义上多了一个事件。
+   * 这条与 `NOTREADY.phase.readyNotEvent`（盯"就绪不是事件"）互补：那条盯语义，这条盯结构。
    */
   const code = stripComments(ctx.s.notReady);
   const problems = [];
-  const m = code.match(/const reached = ([^;]+);/);
-  if (!m) problems.push('找不到 reached 的定义');
+  // ⚠️ 签名里有返回类型（`: number`），故不能写 `\)\s*\{` —— 那样锚点会整个咬空，
+  //    而咬空的正则会让这条断言变成"找不到定义"恒红 / 或改成分母漂移型的假绿。
+  const m = /function assemblyReached\([\s\S]{0,300}?\n\}/.exec(code);
+  if (!m) problems.push('找不到 `assemblyReached` 的定义');
   else {
-    if (!m[1].includes('STARTUP_COUNT')) problems.push('reached 的上界不是启动期步数（STARTUP_COUNT）');
-    if (m[1].includes('STAGES.length')) problems.push('reached 用了 STAGES.length（把 L4 也算进了启动期）');
+    if (!m[0].includes('if (ready) return ASSEMBLY_PHASES.length;'))
+      problems.push('`assemblyReached` 没有 ready 收尾（第 4 段会永远显示「进行中」）');
+    if (/if \(ready\) return ASSEMBLY_PHASES\.length - 1;/.test(m[0]))
+      problems.push('ready 收尾少算了一段（第 4 段拿不到「已完成」）');
   }
-  if (!/i < STARTUP_COUNT/.test(code)) problems.push('当前段分支没有排除 L4（第 4 段会显示「进行中」）');
+  if (!/i === reached/.test(code)) problems.push('当前段分支不是 `i === reached`（第 4 段的判定会脱钩）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -3722,25 +3749,25 @@ const MUTATIONS = [
 
   // —— X-C3「准备中」 ——
   {
-    name: '给 L2 编一个字节进度（X-C3 此刻读不到任何 HTTP，编出来的数字就是撒谎）',
+    name: '给第 2 段编一个字节进度（未就绪屏此刻读不到任何 HTTP，编出来的数字就是撒谎）',
     file: F.notReady,
-    find: "{ id: 'L2', text: '正在准备翻译模型' },",
-    replace: "{ id: 'L2', text: '正在准备翻译模型 · 2.1/4.6 GB' },",
+    find: "{ id: 'runtime', text: '运行环境装配' },",
+    replace: "{ id: 'runtime', text: '运行环境装配 · 2.1/4.6 GB' },",
     expect: ['NOTREADY.detail.noFabricatedProgress'],
   },
   {
-    name: '退回用 sidecar_port 猜阶段（端口先于阶段就绪时 L1 会显示成 L2）',
+    name: '段号改回用 `status.phase` 猜（服务启动阶段 ≠ 装配阶段，两条轴混在一条时间线上）',
     file: F.notReady,
-    find: "  const reached = state === 'running' ? STARTUP_COUNT : idx;",
-    replace: "  const reached = state === 'running' ? STAGES.length : status?.sidecar_port ? 2 : 1;",
+    find: 'const reached = assemblyReached(download?.step, runtimeReady);',
+    replace: "const reached = status?.phase === 'L3' ? 3 : status?.phase === 'L2' ? 2 : 1;",
     expect: ['NOTREADY.stages.phaseDriven'],
   },
   {
-    name: 'L4 的状态词退回「待开始」（用户会以为卡在最后一段、一直在等它走完）',
+    name: '把「就绪」塞回 `STEP_INDEX`（它变成第四个事件 ⇒ 判据不过时永远停在第 3 段）',
     file: F.notReady,
-    find: "STAGES[i]?.id === 'L4' ? '首图时完成' : '待开始'",
-    replace: "'待开始'",
-    expect: ['NOTREADY.l4.notStartup'],
+    find: 'const STEP_INDEX: Record<AssemblyStep, number> = { prepare: 0, runtime: 1, models: 2 };',
+    replace: 'const STEP_INDEX: Record<string, number> = { prepare: 0, runtime: 1, models: 2, ready: 3 };',
+    expect: ['NOTREADY.phase.readyNotEvent'],
   },
   {
     name: 'TS 侧把第五态 stopping 删掉（Rust 已是五态；stateView() 会返回 undefined 而崩）',
@@ -3800,11 +3827,11 @@ const MUTATIONS = [
     expect: ['NOTREADY.timeline.explicitLoading'],
   },
   {
-    name: '让 reached 的上界退回 STAGES.length（L4 被算进启动期 ⇒ 显示「已完成」）',
+    name: '摘掉 `assemblyReached` 的 ready 收尾（判据已全真，第 4 段却永远显示「进行中」）',
     file: F.notReady,
-    find: "  const reached = state === 'running' ? STARTUP_COUNT : idx;",
-    replace: "  const reached = state === 'running' ? STAGES.length : idx;",
-    expect: ['NOTREADY.l4.noLoading'],
+    find: '  if (ready) return ASSEMBLY_PHASES.length;\n',
+    replace: '',
+    expect: ['NOTREADY.phase.readyTerminal'],
   },
 
   // ——— ② 分组简洁化（2026-10-07）—— 每条新增断言都必须有一条能把它打红的破坏 ———

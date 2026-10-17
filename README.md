@@ -236,7 +236,7 @@ npm run task -- check:runtime-probe   # **B2/B5 引擎运行时七项只读检�
 npm run task -- check:path-single-source # **B3 检测与启动同源** 5 条 / 反证 1 条（`/engine/runtime` 的 `python.path` vs `--print-launch-plan` 的 `engine.cmd[0]` 逐字节比对）
 npm run task -- check:launch-gate    # **D6 real 档启动前预检闸门** 10 条 / 反证 4 条（real+未就绪 ⇒ **②/③ 一个不起、① 照常起**（D-229）并逐项点名七项；mock 档不过闸；含三条源码钉：「`gate_message(` 早于 `spawn_spec(&plan.engine`」+「闸门不得连 ① 一起挡」+「`wait_probe` 先查子进程存活再谈超时（D-231②）」）
 npm run task -- check:install-guide  # **D5 安装引导与产品对拍** 18 条 / 反证 6 条（两份引导的落点模板代入本机后 == `mangasvc --print-paths` 推出的落点、体积标记 == 清单按平台求和、七项就绪项 · 三条落点纪律 · 平台形态互不串 · 两种命令形态都存在）
-npm run task -- check:notready-state # **D1「运行时未装配」独立成态** 13 条 / 反证 5 条（两条链路都带 `runtime` 块 · L1–L4 四句文案逐字冻结 · 新分支不混进 L1 失败 · 「约 X GB」来自服务端 `requiredBytes`）
+npm run task -- check:notready-state # **D1「运行时未装配」独立成态** 19 条 / 反证 9 条（两条链路都带 `runtime` 块 · 七项判据含模型链的 `llm`/`weights`（D-231③）· **装配四段取代 L1–L4**（D-231⑥）：四句文案逐字冻结 + 旧阶段表真的删干净 + 段号只来自 `download.step`、第四段「就绪」由 `runtime.ready` 收尾而不是第四个事件 + 引导页与时间线共用同一个 `AssemblyTimeline` · 新分支不混进服务失败 · 「约 X GB」来自服务端 `requiredBytes`）
 npm run task -- check:models-guide   # **D8 模型引导清单（渲染而非编写）** 14 条 / 反证 4 条（逐条目标绝对路径 ⟷ Node 独立算 · 就绪 = 在位且大小一致 · 改清单副本 ⇒ 输出跟着变）
 npm run task -- check:size-guide     # **C1 体积与落点如实告知** 16 条 / 反证 3 条（`guidance.totalBytes` == 本平台清单 `sizeBytes` 求和且与 D1 同数 · 分档之和恒等于总量 · 与安装引导文档三方闭环 · 界面无写死 GB）
 npm run task -- check:model-runner   # **C2 执行体随包定位** 12 条 / 反证 3 条（默认执行体 == 当前可执行文件的**绝对路径** · verify 跑得起来、不是 INTERNAL · 不在盘上时报路径 · 跨卷单独记账）

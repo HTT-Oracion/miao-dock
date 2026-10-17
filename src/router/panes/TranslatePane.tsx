@@ -19,6 +19,7 @@ export function TranslatePane() {
     showNotReady,
     status,
     source,
+    download,
     startService,
     restart,
     setScreen,
@@ -48,6 +49,9 @@ export function TranslatePane() {
       <NotReadyScreen
         status={status}
         source={source}
+        // D-231⑥：四段装配时间线的进度事实源。壳层 `download` 本来就有（工具条芯片与
+        // 下载视图都读它），这里只透传，**不扩壳层契约**。
+        download={download}
         onStart={() => void startService()}
         onRestart={() => void restart()}
         // D1：「运行时未装配」态上的指引入口 —— 送到设置页（翻译服务组里有引擎诊断与装法）

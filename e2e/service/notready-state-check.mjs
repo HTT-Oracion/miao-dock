@@ -3,24 +3,33 @@
  * D1 · 「运行时未装配」独立成态钉子 —— 「缺引擎时说人话，而不是让人对着 L1 转圈」
  * =============================================================================
  * 对应计划文档 D1：`GET /engine/status` 与 `service_status` 各带一个 `runtime` 块；
- * `NotReadyScreen.tsx` 增一条与 L1–L4 **并列**的分支（**不混进 L1 失败**）。
+ * `NotReadyScreen.tsx` 增一条与装配时间线**并列**的分支（**不混进服务失败**）。
+ *
+ * ⚠️ **D-231⑥ 起这条门也跟着换了轴**：原先 G4 冻结的是 L1–L4「服务启动分层」那四句，
+ *    现已退役；G4 冻结的是**装配四段**（环境准备 / 运行环境装配 / 本地引擎装配 / 就绪），
+ *    G4b 另钉「旧表真的删干净了」。`status.phase` 本身**保留不动**（属 `/engine/status`
+ *    契约，被 `check:autostart` / `check:contract` 断言），退役的只是「前端拿它当进度事实源」。
  *
  * ## 它钉的是什么
  * ① 服务侧真的把运行时就绪检测发出去了（`/engine/status` 的 `runtime` 块 + Tauri 命令的
  *    `ServiceStatus.runtime`）—— **两条链路都要有**：HTTP 那条在"服务起来了但引擎没装"时
  *    能用，进程内那条在"一个子进程都没起"（D6 闸门）时仍能答；
- * ② 界面上那四句 L1–L4 文案**逐字未改**（冻结字面量，取自《02》§3 /《09》§6.1）；
- * ③ 新分支与 L1–L4 **并列而不是混进去**：`summaryOf` 里不许出现新分支的措辞，
- *    且它必须在时间线之前 `return`（否则用户还是先看到一条走到 L1 就停的进度条）；
+ * ② 界面上装配四段的四句**逐字未改**（冻结字面量，D-231⑥）；
+ * ③ 新分支与装配时间线**并列而不是混进去**：`summaryOf` 里不许出现新分支的措辞、
+ *    也不许再按 `phase === 'L3'` 分支，且它必须在时间线之前 `return`；
  * ④ 「约 X GB」的数字**不是写死的**：界面读数必须来自服务端的 `requiredBytes`
  *    （写死的话，清单加一条权重就会让界面开始撒谎，且没人会发现）。
  *
  * ## 反证轮（--refute）
- * - M1 改 L1 一句文案 ⇒ G4 红（"逐字未改"是钉的，不是口号）。
+ * - M1 改四段里某一句文案一字 ⇒ G4 红（"逐字未改"是钉的，不是口号）。
  * - M2 把新分支的条件改成 `if (false)` ⇒ G5 红（分支在，但永远不会走）。
- * - M3 把新分支的标题塞进 `summaryOf` ⇒ G6 红（这就是"混进 L1 失败"）。
+ * - M3 把新分支的标题塞进 `summaryOf` ⇒ G6 红（这就是"混进服务失败"）。
  * - M4 把 GB 数字写死 ⇒ G8 红。
  * - M5 删 `service.rs` 里 `runtime` 的赋值 ⇒ G2 红（CLI 有、产品没接上）。
+ * - M6 四段进度丢掉 `download.step` ⇒ G11 红（永远停在第 1 段）。
+ * - M7 引导页不再画时间线 ⇒ G12 红（同一件事两个样子）。
+ * - M8 翻译屏装配件不再透传 `download` ⇒ G10b 红（四段永远全灰）。
+ * - M9 把退役的旧阶段表塞回来 ⇒ G4b 红（"退役"必须是真的删干净）。
  * 全部改源码、跑完**按字节还原**（无 Rust 变异 ⇒ 不需要重编译）。
  *
  * 用法：node e2e/service/notready-state-check.mjs [--refute]
@@ -172,15 +181,25 @@ function sliceFn(src, sig) {
 // ------------------------------------------------------------------ G4~G9：界面
 const tsx = fs.readFileSync(NOTREADY_TSX, 'utf8');
 {
-  // G4：L1–L4 四句**逐字**（冻结字面量 —— 取自《02》§3 /《09》§6.1，不是从源码抄的）
-  const L_TEXT = [
-    ['L1', '正在检查运行环境'],
-    ['L2', '正在准备翻译模型'],
-    ['L3', '正在预热'],
-    ['L4', '首张稍慢，后续加快'],
+  // G4：装配四段**逐字**（冻结字面量 —— 取代 L1–L4 的四句，见 D-231⑥）
+  const PHASE_TEXT = [
+    ['prepare', '环境准备'],
+    ['runtime', '运行环境装配'],
+    ['models', '本地引擎装配'],
+    ['ready', '就绪'],
   ];
-  const wrong = L_TEXT.filter(([id, text]) => !tsx.includes(`{ id: '${id}', text: '${text}' }`));
-  check('G4 L1–L4 四句文案逐字未改（冻结字面量）', wrong.length === 0, wrong);
+  const wrong = PHASE_TEXT.filter(([id, text]) => !tsx.includes(`{ id: '${id}', text: '${text}' }`));
+  check('G4 装配四段文案逐字未改（冻结字面量；取代 L1–L4）', wrong.length === 0, wrong);
+
+  // G4b：**退役**是真的删干净了，而不是"新表在旁边、旧表还留着"
+  const retired = ['STARTUP_COUNT', 'PHASE_INDEX', "id: 'L1'", "id: 'L2'", "id: 'L3'", "id: 'L4'", '首图时完成'].filter(
+    (k) => tsx.includes(k),
+  );
+  check(
+    'G4b L1–L4 已退役（旧阶段表 / STARTUP_COUNT / PHASE_INDEX / 「首图时完成」都不在源码里）',
+    retired.length === 0,
+    retired,
+  );
 
   // G5：新分支的**判据**与**标题**都在，且是真的会走（不是 `if (false)`）
   // ⚠️ 判据在 D-229 收窄成「real 档 + 运行时未就绪」：**不再看服务状态**
@@ -193,17 +212,24 @@ const tsx = fs.readFileSync(NOTREADY_TSX, 'utf8');
     null,
   );
 
-  // G6：**不混进 L1 失败** —— `summaryOf`（L1 那条链路的措辞源）里不许出现新分支的话
+  // G6：**不混进 L1 失败** —— `summaryOf`（服务现状的措辞源）里不许出现新分支的话
   const sum = sliceFn(tsx, 'function summaryOf(');
   check(
-    'G6 新分支的措辞不在 `summaryOf` 里（与 L1–L4 并列，不混进 L1 失败）',
+    'G6 新分支的措辞不在 `summaryOf` 里（与四段时间线并列，不混进服务失败）',
     sum.length > 0 && !sum.includes('需要先安装翻译引擎'),
     { summaryLen: sum.length },
   );
 
+  // G6b：`summaryOf` 也不许再拿 `status.phase` 当分支（L1–L4 退役的最后一处残留）
+  check(
+    "G6b `summaryOf` 不再按 `phase === 'L3'` 分支（服务现状与装配进度是两条轴，混进同一句话就自相矛盾）",
+    sum.length > 0 && !sum.includes("'L3'") && !/phase/.test(sum),
+    { hasPhase: /phase/.test(sum) },
+  );
+
   // G7：它必须在**时间线之前** return —— 否则用户仍会先看到一条走到 L1 就停的进度条
   const atBranch = tsx.indexOf('if (runtimeUnready && rt) {');
-  const atTimeline = tsx.indexOf('{STAGES.map((s, i) =>');
+  const atTimeline = tsx.indexOf('<AssemblyTimeline reached={reached}');
   check(
     'G7 新分支在时间线渲染之前 return（用户不会先看到卡住的进度条）',
     atBranch > 0 && atTimeline > 0 && atBranch < atTimeline,
@@ -227,6 +253,32 @@ const tsx = fs.readFileSync(NOTREADY_TSX, 'utf8');
     tsx.includes('{it.detail}') && tsx.includes('{it.fix}'),
     null,
   );
+
+  // G11（D-231⑥）：四段进度**只**来自 `download.step` 与 `runtime.ready`，不再从 `status.phase` 取。
+  //     `ready` 由判据收尾而不是等第四个事件 —— 否则"装配跑完了但判据不过"会永远停在第 3 段。
+  check(
+    'G11 四段进度只来自 `download.step` + `runtime.ready`（`assemblyReached`），不再取 `status.phase`',
+    /assemblyReached\(download\?\.step, runtimeReady\)/.test(tsx) &&
+      /if \(ready\) return ASSEMBLY_PHASES\.length;/.test(tsx),
+    null,
+  );
+
+  // G12：引导页与时间线分支**共用**同一个 `AssemblyTimeline`。
+  //     两处各画各的 ⇒ 同一件事在两个页面显示成两个样子（段数、当前段、状态词各不相同）。
+  const guideTl = tsx.indexOf('<AssemblyTimeline reached={reached}', atBranch);
+  const timelineTl = tsx.lastIndexOf('<AssemblyTimeline reached={reached}');
+  check(
+    'G12 引导页与「已装配但服务没起来」两处共用同一个 `AssemblyTimeline`（不是各画各的）',
+    guideTl > atBranch && timelineTl > guideTl,
+    { guideTl, timelineTl },
+  );
+
+  // G13：下载进行中时引导页顶部落一句"当前处于第几段"（用户点完按钮最想知道的就是这句）
+  check(
+    'G13 引导页在下载进行中时显示「当前处于第 N 段」（且只在真的在下载时说）',
+    tsx.includes('当前处于第') && /downloading && stepLabel/.test(tsx),
+    null,
+  );
 }
 
 // ------------------------------------------------------------------ G10：入口接上
@@ -235,6 +287,11 @@ const tsx = fs.readFileSync(NOTREADY_TSX, 'utf8');
   check(
     'G10 翻译屏装配件把指引入口传给未就绪屏（onOpenGuide → 设置页）',
     /onOpenGuide=\{\(\) => setScreen\('settings'\)\}/.test(pane),
+    null,
+  );
+  check(
+    'G10b 翻译屏装配件把 `download` 透传给未就绪屏（四段进度的唯一事实源；壳层本来就有它）',
+    /download=\{download\}/.test(pane) && /\bdownload,\s*\n\s*startService,/.test(pane),
     null,
   );
 }
@@ -275,8 +332,8 @@ if (REFUTE) {
   const cases = [
     {
       id: 'M1',
-      what: 'L1 文案被改了一个字',
-      mutate: () => mutateFile(NOTREADY_TSX, "text: '正在检查运行环境'", "text: '正在检查运行环境…'"),
+      what: '四段里某一段的文案被改了一个字',
+      mutate: () => mutateFile(NOTREADY_TSX, "text: '环境准备'", "text: '环境准备…'"),
       expect: 'G4',
     },
     {
@@ -310,6 +367,45 @@ if (REFUTE) {
       mutate: () => mutateFile(SERVICE_RS, '        runtime: mangasvc::engine::runtime_probe::runtime_view(),\n', ''),
       expect: 'G2',
     },
+    {
+      id: 'M6',
+      what: '四段进度改回只由判据收尾（丢掉 `download.step` ⇒ 永远停在第 1 段）',
+      mutate: () =>
+        mutateFile(
+          NOTREADY_TSX,
+          'assemblyReached(download?.step, runtimeReady)',
+          'assemblyReached(null, runtimeReady)',
+        ),
+      expect: 'G11',
+    },
+    {
+      id: 'M7',
+      what: '引导页不再画时间线（只剩另一处画 ⇒ 同一件事两个样子）',
+      mutate: () =>
+        mutateFile(
+          NOTREADY_TSX,
+          '<AssemblyTimeline reached={reached} failed={false} detail={detail} />',
+          '<div className="nr-guide-note">装配分四段。</div>',
+        ),
+      expect: 'G12',
+    },
+    {
+      id: 'M8',
+      what: '翻译屏装配件不再透传 `download`（四段拿不到段号，四段永远全灰）',
+      mutate: () => mutateFile(TRANSLATE_PANE, '        download={download}\n', ''),
+      expect: 'G10b',
+    },
+    {
+      id: 'M9',
+      what: '把退役的旧阶段表（`id: L1` 那张）塞回来（新旧两表并存 = "退役"是假的）',
+      mutate: () =>
+        mutateFile(
+          NOTREADY_TSX,
+          'const ASSEMBLY_PHASES = [',
+          "const STAGES = [{ id: 'L1', text: '正在检查运行环境' }];\nconst ASSEMBLY_PHASES = [",
+        ),
+      expect: 'G4b',
+    },
   ];
 
   for (const c of cases) {
@@ -325,12 +421,18 @@ if (REFUTE) {
   // 收尾：源码逐字节还原
   {
     const bad = [];
-    if (!fs.readFileSync(NOTREADY_TSX, 'utf8').includes("text: '正在检查运行环境'"))
-      bad.push('NotReadyScreen.tsx 残留 M1');
+    if (!fs.readFileSync(NOTREADY_TSX, 'utf8').includes("text: '环境准备'")) bad.push('NotReadyScreen.tsx 残留 M1');
     if (!fs.readFileSync(NOTREADY_TSX, 'utf8').includes('需要先安装翻译引擎')) bad.push('NotReadyScreen.tsx 残留 M3');
+    if (!fs.readFileSync(NOTREADY_TSX, 'utf8').includes('assemblyReached(download?.step, runtimeReady)'))
+      bad.push('NotReadyScreen.tsx 残留 M6');
+    if (!fs.readFileSync(NOTREADY_TSX, 'utf8').includes('<AssemblyTimeline reached={reached} failed={false}'))
+      bad.push('NotReadyScreen.tsx 残留 M7');
+    if (!fs.readFileSync(NOTREADY_TSX, 'utf8').includes('const ASSEMBLY_PHASES = ['))
+      bad.push('NotReadyScreen.tsx 残留 M9');
+    if (!fs.readFileSync(TRANSLATE_PANE, 'utf8').includes('download={download}')) bad.push('TranslatePane.tsx 残留 M8');
     if (!fs.readFileSync(SERVICE_RS, 'utf8').includes('runtime: mangasvc::engine::runtime_probe::runtime_view(),'))
       bad.push('service.rs 残留 M5');
-    check('R1 变异收尾：三处源码按字节还原', bad.length === 0, bad);
+    check('R1 变异收尾：七处源码按字节还原', bad.length === 0, bad);
   }
 }
 

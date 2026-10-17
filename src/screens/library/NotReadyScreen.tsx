@@ -4,40 +4,52 @@ import { errorText } from '@/ipc';
 import { useToasts } from '@hooks';
 import type { ServiceStatus } from '@/ipc';
 import { downloadEngineModels } from '@screens/settings/engine-api';
+import type { AssemblyStep, ModelDownloadView } from '@screens/settings/engine-api';
 import { OnlineApiForm } from '@screens/settings/OnlineApiForm';
 import type { TranslateSource } from '@screens/settings/translate-api';
 
 /**
- * L1–L4 启动分层（《02》§3 / 《09》§6.1）。
+ * 装配四段（D-231⑥）—— **取代** L1–L4「服务启动分层」。
  *
- * 四层是「即开即用」的时间轴：用户看到的每一段等待都有名字，而不是一个转圈。
+ * 退役理由：L1–L4 描述的是**服务启动**（检查环境 → 准备模型 → 预热 → 首图），
+ * 而这一屏在绝大多数时候讲的是**装配**（还没装好 / 装好了但服务没起来）。
+ * 拿 `status.phase`（L1/L2/L3）当进度事实源，等于把**两台不同的状态机**画在同一条时间线上 ——
+ * 用户看到的「第 2 段」一会儿指「准备模型」、一会儿指「在装 Python」，谁也说不准自己在第几段。
  *
- * 🔴 **文案逐字取自方案表，不得"顺手美化"** —— 这四句是《02》§3 表格与《09》§6.1 表格
- * 里同时写死的那一份，界面是它唯一的落点。改这里等于改方案。
+ * 四段与 `modelDownload.step` 一一对应（服务端 `state.rs` 是唯一来源）：
+ *   ① `prepare` 环境准备 —— 装 Python 运行时**之前**（校验清单、准备落点）
+ *   ② `runtime` 运行环境装配 —— Python → venv → 源码 → 补丁 → 依赖
+ *   ③ `models`  本地引擎装配 —— 引擎可执行体（llama.cpp）与翻译权重下载、解包、建链
+ *   ④ `ready`  就绪 —— **没有对应事件**：它由 `runtime.ready` 推导，不是装配发出来的
  *
- * ⚠️ **L4 不属启动期**（《04》§4.5 已定：引擎的准备/卸载/降档都不新增客户端状态机节点）。
- * 所以这一段**永远不会被点亮成"进行中"**，它的状态词是「首图时完成」而不是「待开始」——
- * 用「待开始」会让用户以为卡在最后一段、一直在等它走完。
+ * `status.phase` 本身**保留不动**（它属 `/engine/status` 契约，被 `check:autostart` /
+ * `check:contract` 断言）；退役的只是「前端拿它当进度事实源」这件事。它仍被用来决定
+ * **动作**（失败时要不要给「重新下载模型」）—— 那是动作判据，不是进度判据。
  */
-const STAGES = [
-  { id: 'L1', text: '正在检查运行环境' },
-  { id: 'L2', text: '正在准备翻译模型' },
-  { id: 'L3', text: '正在预热' },
-  { id: 'L4', text: '首张稍慢，后续加快' },
+const ASSEMBLY_PHASES = [
+  { id: 'prepare', text: '环境准备' },
+  { id: 'runtime', text: '运行环境装配' },
+  { id: 'models', text: '本地引擎装配' },
+  { id: 'ready', text: '就绪' },
 ] as const;
 
-/**
- * 启动期**只含** L1–L3。
- *
- * 🔴 它同时是 `reached` 的**上界**、和「L4 永远拿不到进行中 / 已完成」这条性质的
- * **结构性保证**：第 4 段既不可能 `i < reached`、也不可能 `i === reached`。
- * 用 `STAGES.length` 当上界会把 L4 也算成"走完了"，它就变成「已完成」——
- * 用户于是以为最后一段也在启动流程里、还要等它。
- */
-const STARTUP_COUNT = STAGES.length - 1;
+/** `modelDownload.step` → 段下标。**只有前三段有事件**；`ready` 不在这里（它不是事件）。 */
+const STEP_INDEX: Record<AssemblyStep, number> = { prepare: 0, runtime: 1, models: 2 };
 
-/** Rust `phase` 值 → 阶段下标。**唯一**的进度事实源，见下面 `reached` 的注释。 */
-const PHASE_INDEX: Record<string, number> = { L1: 0, L2: 1, L3: 2 };
+/**
+ * 已完成的段数。
+ *
+ * 「就绪」不是第四个事件，而是 `runtime.ready` 这个**判据**（D-231③ 起是七项全真）。
+ * 让它变成「要等一个事件才到达」的态，等于给「装配跑完了但判据不过」留一个永远停在第 3 段的界面。
+ *
+ * @param step  最近一次真实阶段事件（`null` = 还没有，或这台机器上从没下过）
+ * @param ready 运行时判据是否全真
+ */
+function assemblyReached(step: AssemblyStep | null | undefined, ready: boolean): number {
+  if (ready) return ASSEMBLY_PHASES.length;
+  if (!step) return 0;
+  return STEP_INDEX[step];
+}
 
 /** 1 GiB。写成常量而**不用 `1024 ** 3`**（`**` 与 markdown 粗体同形，见 `EngineDiag.tsx` 同款说明）。 */
 const GIB = 1024 * 1024 * 1024;
@@ -54,7 +66,6 @@ const NODE_KIND: Record<string, string> = {
   进行中: 'is-loading',
   失败: 'is-failed',
   待开始: '',
-  首图时完成: '',
 };
 
 /**
@@ -75,14 +86,98 @@ function lastLogLine(log: string[] | undefined): string | null {
 }
 
 /**
- * 摘要行：一行主句 + 一句副行。
+ * 装配四段时间线 —— 引导页与"已装配但服务没起来"两处**共用**同一个组件。
+ *
+ * 抽出来的理由：两处一旦各画各的，同一件事就会在两个页面显示成两个样子（段数、当前段、
+ * 状态词各不相同），而用户根本分不清自己是"在装"还是"在启动"。
+ *
+ * 样式全部沿用 `.tl-*`（`src/styles/manga.scss` X-C3 段），**不新增 CSS**。
  */
-function summaryOf(
-  state: string,
-  err: string | null,
-  phase: string | null | undefined,
-  degraded: boolean,
-): { bad: boolean; title: string; sub: string } {
+function AssemblyTimeline({
+  reached,
+  failed,
+  detail,
+}: {
+  /** 已完成段数（`assemblyReached()` 的返回值） */
+  reached: number;
+  /** 当前段该标「失败」而不是「进行中」 */
+  failed: boolean;
+  /** 真实日志末行；只在当前段显示 */
+  detail: string | null;
+}) {
+  const noteOf = (i: number) => {
+    if (i < reached) return '已完成';
+    if (i === reached) return failed ? '失败' : '进行中';
+    return '待开始';
+  };
+
+  const nodeClass = (note: string) => {
+    switch (NODE_KIND[note]) {
+      case 'is-done':
+        return 'tl-node num is-done';
+      case 'is-loading':
+        return 'tl-node num is-loading';
+      case 'is-failed':
+        return 'tl-node num is-failed';
+      default:
+        return 'tl-node num';
+    }
+  };
+
+  const stepClass = (note: string) => {
+    switch (NODE_KIND[note]) {
+      case 'is-done':
+        return 'tl-step is-done-step';
+      case 'is-loading':
+        return 'tl-step is-current';
+      case 'is-failed':
+        return 'tl-step is-failed';
+      default:
+        return 'tl-step';
+    }
+  };
+
+  const nodeMark = (note: string, i: number) => {
+    const kind = NODE_KIND[note];
+    if (kind === 'is-done') return '✓';
+    if (kind === 'is-failed') return '✕';
+    return i + 1;
+  };
+
+  return (
+    <>
+      {ASSEMBLY_PHASES.map((s, i) => {
+        const note = noteOf(i);
+        const kind = NODE_KIND[note];
+        return (
+          <div key={s.id} className={stepClass(note)}>
+            <div className="tl-rail">
+              <span className={nodeClass(note)}>{nodeMark(note, i)}</span>
+              <span className="tl-line" />
+            </div>
+            <div className="tl-body">
+              <div className="tl-head">
+                <span className="tl-title">{s.text}</span>
+                <span className="tl-state">{note}</span>
+              </div>
+              {detail && (kind === 'is-loading' || kind === 'is-failed') ? (
+                <div className="tl-detail">{detail}</div>
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * 摘要行：一行主句 + 一句副行。
+ *
+ * 🔴 这里**只讲服务现状**，不掺装配进度 —— 装配进度归下面的四段时间线。
+ *    两个状态机混进同一句话，就会出现"文案说正在预热、时间线说在装 Python"这种自相矛盾。
+ */
+function summaryOf(state: string, err: string | null, degraded: boolean): { bad: boolean; title: string; sub: string } {
   if (state === 'error') {
     return {
       bad: true,
@@ -118,17 +213,10 @@ function summaryOf(
       sub: '子进程树回收需要几秒；完成后再点「重启本地服务」。',
     };
   }
-  if (phase === 'L3') {
-    return {
-      bad: false,
-      title: '正在准备本地翻译服务',
-      sub: '正在预热 —— 这一步没有可量化的进度，属不定态，走完即就绪。',
-    };
-  }
   return {
     bad: false,
     title: '正在准备本地翻译服务',
-    sub: '首次启动需要装载模型；这一步之后，翻译是纯本地的，不会把图片传到任何远端。',
+    sub: '引擎已装好，服务正在把它拉起来；这一步没有可量化的进度，走完即就绪。',
   };
 }
 
@@ -143,6 +231,7 @@ function summaryOf(
 export function NotReadyScreen({
   status,
   source,
+  download,
   onStart,
   onRestart,
   onOpenGuide,
@@ -154,6 +243,13 @@ export function NotReadyScreen({
    * `local` / `null`（读不到来源，按本地档处理）时维持引导页 / 时间线现状。
    */
   source: TranslateSource | null;
+  /**
+   * 引擎下载态 —— 四段时间线**唯一**的进度事实源（`step` 段号 + `runtime.ready` 收尾）。
+   *
+   * 🔴 壳层 `ShellCtx` 里本来就有它（工具条芯片与下载视图都读它），这里只是**透传**，
+   *    不扩壳层契约。`null` = 还没读到 `/engine/status` ⇒ 四段全灰，第一段也不点亮。
+   */
+  download: ModelDownloadView | null;
   /** 手动启动（仅 `stopped` 时用）。 */
   onStart: () => void;
   onRestart: () => void;
@@ -174,11 +270,11 @@ export function NotReadyScreen({
   const degraded = !!status?.degraded;
   const logOpen = userLog ?? failed;
 
-  const idx = status?.phase ? (PHASE_INDEX[status.phase] ?? 0) : 0;
-  const reached = state === 'running' ? STARTUP_COUNT : idx;
+  const runtimeReady = !!status?.runtime?.ready;
+  const reached = assemblyReached(download?.step, runtimeReady);
 
   const detail = lastLogLine(status?.log);
-  const summary = summaryOf(state, err, status?.phase, degraded);
+  const summary = summaryOf(state, err, degraded);
 
   // ---- 在线精简页 ----
   if (source === 'online') {
@@ -235,6 +331,10 @@ export function NotReadyScreen({
       }
     };
     const failing = rt.items.filter((i) => !i.ok);
+    // 「当前处于第几段」只在**真的在下载**时说：装完之后再说"当前处于第 4 段"是废话，
+    // 而"第 4 段还没到"会被读成"卡住了"。
+    const downloading = download?.state === 'running' || download?.state === 'interrupted';
+    const stepLabel = download?.step ? ASSEMBLY_PHASES[STEP_INDEX[download.step]]?.text : null;
 
     return (
       <div className="nr-guide">
@@ -244,6 +344,17 @@ export function NotReadyScreen({
           翻译引擎不随安装包分发 —— 第一次使用要在本机装配 Python
           运行时与模型权重。下面两条路任选其一，都不需要懂命令行。
         </div>
+
+        {/* 装配四段时间线：引导页最需要回答的问题就是"我现在在第几段"。
+            类名复用 `.nr-guide-note`（一行说明文字的既有形态）⇒ 不新增 CSS。 */}
+        <div className="nr-guide-note">
+          {downloading && stepLabel
+            ? `当前处于第 ${reached + 1} 段：${stepLabel}`
+            : '装配分四段，全部就位后即可离线翻译。'}
+        </div>
+        <div className="nr-guide-gap" />
+
+        <AssemblyTimeline reached={reached} failed={false} detail={detail} />
 
         {/* 中部：两条路并列 */}
         <div className="nr-guide-grid">
@@ -259,7 +370,9 @@ export function NotReadyScreen({
                 {busy ? '正在发起…' : '开始下载'}
               </Btn>
             </div>
-            <div className="nr-guide-note">下载分两段：先装运行环境（约 1 分钟可开始翻译），权重在后台继续。</div>
+            <div className="nr-guide-note">
+              下载分两轮：先装运行环境（约 1 分钟可开始翻译），翻译权重与引擎可执行体在后台继续。
+            </div>
           </div>
 
           {/* 备路径：使用在线翻译 */}
@@ -328,48 +441,6 @@ export function NotReadyScreen({
     );
   }
 
-  /**
-   * 阶段状态词。
-   */
-  const noteOf = (i: number) => {
-    if (i < reached) return '已完成';
-    if (i === reached && i < STARTUP_COUNT) return failed ? '失败' : '进行中';
-    return STAGES[i]?.id === 'L4' ? '首图时完成' : '待开始';
-  };
-
-  const nodeClass = (note: string) => {
-    switch (NODE_KIND[note]) {
-      case 'is-done':
-        return 'tl-node num is-done';
-      case 'is-loading':
-        return 'tl-node num is-loading';
-      case 'is-failed':
-        return 'tl-node num is-failed';
-      default:
-        return 'tl-node num';
-    }
-  };
-
-  const stepClass = (note: string) => {
-    switch (NODE_KIND[note]) {
-      case 'is-done':
-        return 'tl-step is-done-step';
-      case 'is-loading':
-        return 'tl-step is-current';
-      case 'is-failed':
-        return 'tl-step is-failed';
-      default:
-        return 'tl-step';
-    }
-  };
-
-  const nodeMark = (note: string, i: number) => {
-    const kind = NODE_KIND[note];
-    if (kind === 'is-done') return '✓';
-    if (kind === 'is-failed') return '✕';
-    return i + 1;
-  };
-
   return (
     <div className="notready">
       {/* ① 一行摘要 */}
@@ -381,28 +452,8 @@ export function NotReadyScreen({
         </div>
       </div>
 
-      {/* ② 时间线：节点 + 连线 + 状态词 */}
-      {STAGES.map((s, i) => {
-        const note = noteOf(i);
-        const kind = NODE_KIND[note];
-        return (
-          <div key={s.id} className={stepClass(note)}>
-            <div className="tl-rail">
-              <span className={nodeClass(note)}>{nodeMark(note, i)}</span>
-              <span className="tl-line" />
-            </div>
-            <div className="tl-body">
-              <div className="tl-head">
-                <span className="tl-title">{s.text}</span>
-                <span className="tl-state">{note}</span>
-              </div>
-              {detail && (kind === 'is-loading' || kind === 'is-failed') ? (
-                <div className="tl-detail">{detail}</div>
-              ) : null}
-            </div>
-          </div>
-        );
-      })}
+      {/* ② 装配四段时间线（已装配 ⇒ 四段全打勾；未到就绪时不会有进行中段） */}
+      <AssemblyTimeline reached={reached} failed={failed} detail={detail} />
 
       {/* ③ 一行 meta */}
       <div className="nr-meta">
