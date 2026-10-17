@@ -88,6 +88,9 @@ const F = {
   // X-C3「准备中」屏（S6 的「L1–L4 文案 + 首张稍慢」）。它不在设置页里，
   // 但它与设置页共享同一条事实源（Rust 的 StatusView），所以放同一轮断言。
   notReady: path.join(APP, 'src', 'screens', 'library', 'NotReadyScreen.tsx'),
+  // D-233：五段常量与纯函数（assembly.ts）+ 时间线渲染（AssemblyTimeline.tsx）
+  assembly: path.join(APP, 'src', 'screens', 'library', 'assembly.ts'),
+  timeline: path.join(APP, 'src', 'screens', 'library', 'AssemblyTimeline.tsx'),
   // 未就绪屏「使用在线翻译」卡片里的内嵌表单（同一屏的另一半，判据同源）
   onlineApi: path.join(APP, 'src', 'screens', 'settings', 'OnlineApiForm.tsx'),
   ipc: path.join(APP, 'src', 'ipc', 'index.ts'),
@@ -266,6 +269,8 @@ function loadSources() {
     specCheck: readMaybe(F.specCheck),
     settingsScreen: readMaybe(F.settingsScreen),
     notReady: readMaybe(F.notReady),
+    assembly: readMaybe(F.assembly),
+    timeline: readMaybe(F.timeline),
     onlineApi: readMaybe(F.onlineApi),
     ipc: readMaybe(F.ipc),
     nav: readMaybe(F.nav),
@@ -2035,18 +2040,19 @@ add('ENGINE.md.noRawAsterisks', 'ENGINE', (ctx) => {
 const NOTREADY_TEXTS = [
   ['prepare', '环境准备'],
   ['runtime', '运行环境装配'],
-  ['models', '本地引擎装配'],
+  ['visual', '视觉模型装配'],
+  ['llm', 'LLM 翻译模型装配'],
   ['ready', '就绪'],
 ];
 
 add('NOTREADY.stages.texts', 'NOTREADY', (ctx) => {
-  const src = ctx.s.notReady;
+  const src = ctx.s.assembly;
   const missing = NOTREADY_TEXTS.filter(([, t]) => !src.includes(`text: '${t}'`)).map(([id]) => id);
   const at = NOTREADY_TEXTS.map(([id]) => src.indexOf(`id: '${id}'`));
   const ordered = at.every((v, i) => v >= 0 && (i === 0 || v > at[i - 1]));
   const problems = [];
-  if (missing.length) problems.push(`装配四段文案缺失：${missing.join('、')}`);
-  if (!ordered) problems.push('四段顺序不是 环境准备 → 运行环境装配 → 本地引擎装配 → 就绪');
+  if (missing.length) problems.push(`装配五段文案缺失：${missing.join('、')}`);
+  if (!ordered) problems.push('五段顺序不是 环境准备 → 运行环境装配 → 视觉模型装配 → LLM 翻译模型装配 → 就绪');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -2063,13 +2069,17 @@ add('NOTREADY.stages.phaseDriven', 'NOTREADY', (ctx) => {
    * ④ 旧写法 `sidecar_port ? 2 : 1` 仍要钉死 —— 那是"用事实猜状态"的反面教材。
    */
   const code = stripComments(ctx.s.notReady);
+  const asm = stripComments(ctx.s.assembly);
   const problems = [];
-  if (!/assemblyReached\(download\?\.step, runtimeReady\)/.test(code)) {
-    problems.push('段号没有来自 `download.step`（四段时间线与装配事实源脱钩）');
+  if (!/assemblyNotes\(status, download\)/.test(code)) {
+    problems.push('段号没有来自 `download.step`（五段时间线与装配事实源脱钩）');
   }
-  if (!code.includes('STEP_INDEX')) problems.push('没有 step → 段下标的映射表');
-  if (!/if \(ready\) return ASSEMBLY_PHASES\.length;/.test(code)) {
-    problems.push('第四段「就绪」没有由 `runtime.ready` 收尾（就绪后最后一段永远停在「进行中」）');
+  if (!asm.includes('STEP_INDEX')) problems.push('没有 step → 段下标的映射表');
+  if (!/STEP_INDEX\[download\.step\]/.test(asm)) {
+    problems.push('`STEP_INDEX` 没有真的接 `download.step`');
+  }
+  if (!/notes\[4\] = 'done'/.test(asm)) {
+    problems.push('第五段「就绪」没有由真实判据收尾（就绪后最后一段永远停在「进行中」）');
   }
   if (/status\?\.phase\s*\?/.test(code)) {
     problems.push('又把 `status.phase` 当进度事实源了（它是服务启动阶段，不是装配阶段）');
@@ -2089,13 +2099,13 @@ add('NOTREADY.phase.readyNotEvent', 'NOTREADY', (ctx) => {
    * 所以 `STEP_INDEX` 里**必须没有** `ready`，而 `assemblyReached` 必须有 ready 收尾那支。
    * （原 `NOTREADY.l4.notStartup` 盯的是 L4「首图时完成」那支状态词，随 L1–L4 一并退役。）
    */
-  const code = stripComments(ctx.s.notReady);
+  const asm = stripComments(ctx.s.assembly);
   const problems = [];
-  if (/STEP_INDEX[^=]*= *\{[^}]*\bready\b/.test(code)) {
+  if (/STEP_INDEX[^=]*= *\{[^}]*\bready\b/.test(asm)) {
     problems.push('`STEP_INDEX` 里出现了 `ready`（就绪不是事件，是判据）');
   }
-  if (!/if \(ready\) return ASSEMBLY_PHASES\.length;/.test(code)) {
-    problems.push('`assemblyReached` 没有 ready 收尾（就绪后最后一段永远停在「进行中」）');
+  if (!/notes\[4\] = 'done'/.test(asm)) {
+    problems.push('`assemblyNotes` 没有 ready 收尾（就绪后最后一段永远停在「进行中」）');
   }
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
@@ -2171,9 +2181,10 @@ add('NOTREADY.detail.noFabricatedProgress', 'NOTREADY', (ctx) => {
    * 判据是"不许出现硬编码的字节/百分比字面量"，而不是"必须有进度" —— 后者会逼出编造。
    */
   const code = stripComments(ctx.s.notReady);
+  const asm = stripComments(ctx.s.assembly);
   const problems = [];
   if (!/lastLogLine\(status\?\.log\)/.test(code)) problems.push('L2 明细不是取自真实日志');
-  const fake = code.match(/['"][^'"]*?(?:\d[\d.]*\s*(?:GB|MB|KB)|[\d.]+\s*%)[^'"]*?['"]/g);
+  const fake = (code + '\n' + asm).match(/['"][^'"]*?(?:\d[\d.]*\s*(?:GB|MB|KB)|[\d.]+\s*%)[^'"]*?['"]/g);
   if (fake) problems.push(`出现了硬编码的进度数字：${fake.join('、')}`);
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
@@ -2266,12 +2277,13 @@ add('NOTREADY.timeline.derivedFromStages', 'NOTREADY', (ctx) => {
    * 为什么要单列一条：`NOTREADY.stages.texts` 只查"那四句在不在、顺序对不对"，
    * 它管不住"多渲染一行"或"序号写成 `i + 2`"这类**与数据脱钩**的改法。
    */
-  const code = stripComments(ctx.s.notReady);
+  const asm = stripComments(ctx.s.assembly);
+  const tl = stripComments(ctx.s.timeline);
   const problems = [];
-  const ids = [...code.matchAll(/id: '(prepare|runtime|models|ready)'/g)].map((m) => m[1]);
-  if (ids.length !== 4) problems.push(`ASSEMBLY_PHASES 不是 4 段（实为 ${ids.length}：${ids.join('/') || '无'}）`);
-  if (!/ASSEMBLY_PHASES\.map\(/.test(code)) problems.push('时间线不是由 ASSEMBLY_PHASES 渲染的（步数会与数据脱钩）');
-  if (!/i \+ 1/.test(code)) problems.push('节点序号不是下标派生（i + 1）');
+  const ids = [...asm.matchAll(/id: '(prepare|runtime|visual|llm|ready)'/g)].map((m) => m[1]);
+  if (ids.length !== 5) problems.push(`ASSEMBLY_PHASES 不是 5 段（实为 ${ids.length}：${ids.join('/') || '无'}）`);
+  if (!/ASSEMBLY_PHASES\.map\(/.test(tl)) problems.push('时间线不是由 ASSEMBLY_PHASES 渲染的（步数会与数据脱钩）');
+  if (!/i \+ 1/.test(tl)) problems.push('节点序号不是下标派生（i + 1）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -2284,10 +2296,10 @@ add('NOTREADY.timeline.explicitLoading', 'NOTREADY', (ctx) => {
    * 只查 ① 会漏"类名对、圈不转"；只查 ② 会漏"样式在、根本没有一段代码进入这个态"。
    * 旋转是用户区分"在动"与"卡住了"的**唯一**信号 —— 不动的「进行中」看起来与卡住一样。
    */
-  const code = stripComments(ctx.s.notReady);
+  const tl = stripComments(ctx.s.timeline);
   const css = ctx.s.css;
   const problems = [];
-  if (!/进行中:\s*'is-loading'/.test(code)) problems.push('「进行中」没有映射到 is-loading');
+  if (!/active:\s*'is-loading'/.test(tl)) problems.push('「进行中」没有映射到 is-loading');
   if (!/\.tl-node\.is-loading\s*\{/.test(css)) problems.push('样式表没有 .tl-node.is-loading 规则');
   if (!/\.tl-node\.is-loading::after\s*\{[^}]*animation:\s*tlspin/.test(css)) {
     problems.push('节点外圈没有挂旋转动画（「进行中」会与"卡住了"看起来一模一样）');
@@ -2305,19 +2317,14 @@ add('NOTREADY.phase.readyTerminal', 'NOTREADY', (ctx) => {
    *   ② 反过来把 `ready` 塞进 `STEP_INDEX` ⇒ `reached` 可能是 3，但语义上多了一个事件。
    * 这条与 `NOTREADY.phase.readyNotEvent`（盯"就绪不是事件"）互补：那条盯语义，这条盯结构。
    */
-  const code = stripComments(ctx.s.notReady);
+  const asm = stripComments(ctx.s.assembly);
   const problems = [];
-  // ⚠️ 签名里有返回类型（`: number`），故不能写 `\)\s*\{` —— 那样锚点会整个咬空，
-  //    而咬空的正则会让这条断言变成"找不到定义"恒红 / 或改成分母漂移型的假绿。
-  const m = /function assemblyReached\([\s\S]{0,300}?\n\}/.exec(code);
-  if (!m) problems.push('找不到 `assemblyReached` 的定义');
-  else {
-    if (!m[0].includes('if (ready) return ASSEMBLY_PHASES.length;'))
-      problems.push('`assemblyReached` 没有 ready 收尾（第 4 段会永远显示「进行中」）');
-    if (/if \(ready\) return ASSEMBLY_PHASES\.length - 1;/.test(m[0]))
-      problems.push('ready 收尾少算了一段（第 4 段拿不到「已完成」）');
+  if (!/if \(status\.state === 'running' && status\.runtime\?\.ready && !status\.degraded\) \{/.test(asm)) {
+    problems.push('第五段「就绪」没有由「七项全真 + 服务 running + 非降级」收尾（会永远显示「进行中」）');
   }
-  if (!/i === reached/.test(code)) problems.push('当前段分支不是 `i === reached`（第 4 段的判定会脱钩）');
+  if (!/notes\[4\] = 'done'/.test(asm)) {
+    problems.push('没有把最后一段结构性地置为 done');
+  }
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -3797,23 +3804,23 @@ const MUTATIONS = [
   // —— X-C3「准备中」 ——
   {
     name: '给第 2 段编一个字节进度（未就绪屏此刻读不到任何 HTTP，编出来的数字就是撒谎）',
-    file: F.notReady,
+    file: F.assembly,
     find: "{ id: 'runtime', text: '运行环境装配' },",
     replace: "{ id: 'runtime', text: '运行环境装配 · 2.1/4.6 GB' },",
     expect: ['NOTREADY.detail.noFabricatedProgress'],
   },
   {
-    name: '段号改回用 `status.phase` 猜（服务启动阶段 ≠ 装配阶段，两条轴混在一条时间线上）',
+    name: '段号改回不用 download.step（五段时间线与装配事实源脱钩）',
     file: F.notReady,
-    find: 'const reached = assemblyReached(download?.step, runtimeReady);',
-    replace: "const reached = status?.phase === 'L3' ? 3 : status?.phase === 'L2' ? 2 : 1;",
+    find: 'assemblyNotes(status, download)',
+    replace: 'assemblyNotes(status, null)',
     expect: ['NOTREADY.stages.phaseDriven'],
   },
   {
-    name: '把「就绪」塞回 `STEP_INDEX`（它变成第四个事件 ⇒ 判据不过时永远停在第 3 段）',
-    file: F.notReady,
-    find: 'const STEP_INDEX: Record<AssemblyStep, number> = { prepare: 0, runtime: 1, models: 2 };',
-    replace: 'const STEP_INDEX: Record<string, number> = { prepare: 0, runtime: 1, models: 2, ready: 3 };',
+    name: '把「就绪」塞回 `STEP_INDEX`（它变成第四个事件 ⇒ 判据不过时永远停在最后一段）',
+    file: F.assembly,
+    find: 'models: 3,',
+    replace: 'models: 3, ready: 4,',
     expect: ['NOTREADY.phase.readyNotEvent'],
   },
   {
@@ -3872,17 +3879,17 @@ const MUTATIONS = [
   {
     // 时间线是"一条线"：序号写死就没有"还剩几步"这回事了，且步数可能与数据脱钩
     name: '把时间线节点序号写成死值（序号不再由下标派生）',
-    file: F.notReady,
-    find: 'return i + 1;',
-    replace: 'return 1;',
+    file: F.timeline,
+    find: 'String(i + 1)',
+    replace: 'String(1)',
     expect: ['NOTREADY.timeline.derivedFromStages'],
   },
   {
     // 组件侧那一半：状态词还在，但不再映射到 loading —— 圈就永远不会转
     name: '「进行中」不再映射到 loading 态（退回一个不动的节点）',
-    file: F.notReady,
-    find: "  进行中: 'is-loading',",
-    replace: "  进行中: '',",
+    file: F.timeline,
+    find: "  active: 'is-loading',",
+    replace: "  active: '',",
     expect: ['NOTREADY.timeline.explicitLoading'],
   },
   {
@@ -3895,9 +3902,9 @@ const MUTATIONS = [
     expect: ['NOTREADY.timeline.explicitLoading'],
   },
   {
-    name: '摘掉 `assemblyReached` 的 ready 收尾（判据已全真，第 4 段却永远显示「进行中」）',
-    file: F.notReady,
-    find: '  if (ready) return ASSEMBLY_PHASES.length;\n',
+    name: '摘掉 `assemblyNotes` 的 ready 收尾（判据已全真，最后一段却永远显示「进行中」）',
+    file: F.assembly,
+    find: "    notes[4] = 'done';\n",
     replace: '',
     expect: ['NOTREADY.phase.readyTerminal'],
   },

@@ -23,6 +23,8 @@ interface DownloadPanelProps {
   onContinue: () => void;
   onRedownload: () => void;
   onBack: () => void;
+  /** 完成态「关闭下载」：写 dismissal 并移除侧栏入口 */
+  onClose: () => void;
 }
 
 function fmtEta(ms: number | null): string {
@@ -36,26 +38,51 @@ function fmtEta(ms: number | null): string {
   return `约 ${h} 小时 ${m % 60} 分`;
 }
 
-const STAGE_TEXT: Record<string, { step: string; title: string; sub: string }> = {
-  stage1: {
-    step: '第 1 步 / 共 2 步',
-    title: '正在准备运行环境',
-    sub: '下载并解包 Python 运行时、引擎源码与视觉模型 —— 这一步完成后本地引擎即可启动，翻译权重在后台继续。',
+/**
+ * 五段标题（与装配流程页同一套段号）。
+ *
+ * `models` 是全量 CLI 的兼容值，文案与 `llm` 一致；`stage` 只负责上面的
+ * 「第 N 轮 / 共 2 轮」小字 —— 两者不是同一台状态机。
+ */
+const STEP_TEXT: Record<string, { title: string; sub: string }> = {
+  prepare: {
+    title: '正在准备装配环境',
+    sub: '校验清单、探测落点 —— 这段没有可量化的进度，走完即进入下载。',
   },
-  stage2: {
-    step: '第 2 步 / 共 2 步',
-    title: '正在下载翻译权重',
-    sub: '翻译权重体积较大，正在后台下载；期间可先用在线翻译，下完自动切回本地引擎。',
+  runtime: {
+    title: '正在装配运行环境',
+    sub: 'Python 运行时 → venv → 引擎源码 → 补丁 → 依赖。',
+  },
+  visual: {
+    title: '正在下载视觉模型',
+    sub: '检测 / OCR / 抹字 / 字体，以及 llama.cpp 与 CUDA 运行库。',
+  },
+  llm: {
+    title: '正在下载翻译模型',
+    sub: 'Sakura 权重与 nllb（英译中）；期间可先用在线翻译，下完可在设置里切回本地引擎。',
+  },
+  models: {
+    title: '正在下载翻译模型',
+    sub: 'Sakura 权重与 nllb（英译中）；期间可先用在线翻译，下完可在设置里切回本地引擎。',
   },
 };
 
-export function DownloadPanel({ view, requiredBytes, onContinue, onRedownload, onBack }: DownloadPanelProps) {
+const ROUND_TEXT: Record<string, string> = {
+  stage1: '第 1 轮 / 共 2 轮',
+  stage2: '第 2 轮 / 共 2 轮',
+};
+
+export function DownloadPanel({ view, requiredBytes, onContinue, onRedownload, onBack, onClose }: DownloadPanelProps) {
   const [logOpen, setLogOpen] = useState(false);
   const [confirmRedo, setConfirmRedo] = useState(false);
 
   const interrupted = view.state === 'interrupted' || view.state === 'failed';
+  const done = view.state === 'done';
   const percent = view.percent;
-  const stage = view.stage ? STAGE_TEXT[view.stage] : null;
+  const step = view.step ? STEP_TEXT[view.step] : null;
+  const round = view.stage ? ROUND_TEXT[view.stage] : null;
+  // 完成态的环是终态示意（不是过程数字）；中心文案仍写「完成」而非伪造的百分比。
+  const ringPercent = done ? (percent ?? 100) : percent;
 
   // 当前文件行：把 id 拆成「文件名 + 序号」—— 没有真实来源时不美化（如实显示 id 或留空）。
   const currentLabel = view.currentId ?? null;
@@ -64,14 +91,20 @@ export function DownloadPanel({ view, requiredBytes, onContinue, onRedownload, o
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '28px 24px 40px' }}>
-      {/* 顶部：阶段指示 */}
-      {!interrupted && stage ? (
+      {/* 顶部：两轮小字 + 五段标题 */}
+      {!interrupted && (round || step || done) ? (
         <div style={{ marginBottom: 22 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-blue)', letterSpacing: '.04em' }}>
-            {stage.step}
+          {round ? (
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-blue)', letterSpacing: '.04em' }}>
+              {round}
+            </div>
+          ) : null}
+          <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--md-ink)', marginTop: 4 }}>
+            {done ? '下载完成' : (step?.title ?? '正在下载')}
           </div>
-          <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--md-ink)', marginTop: 4 }}>{stage.title}</div>
-          <div style={{ fontSize: 13, color: 'var(--md-muted)', marginTop: 6, lineHeight: 1.5 }}>{stage.sub}</div>
+          <div style={{ fontSize: 13, color: 'var(--md-muted)', marginTop: 6, lineHeight: 1.5 }}>
+            {done ? '本地引擎已装配完成。关闭本页会移除侧栏下载入口。' : (step?.sub ?? '进度只来自真实下载事件。')}
+          </div>
         </div>
       ) : null}
 
@@ -109,10 +142,10 @@ export function DownloadPanel({ view, requiredBytes, onContinue, onRedownload, o
         <div style={{ position: 'relative', width: 132, height: 132, flex: '0 0 auto' }}>
           <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
             <ProgressRing
-              percent={percent}
+              percent={ringPercent}
               size={132}
               stroke={9}
-              colorVar={ringColor}
+              colorVar={done ? '--md-success' : ringColor}
               spinning={view.state === 'running' && percent == null}
             />
           </div>
@@ -128,7 +161,7 @@ export function DownloadPanel({ view, requiredBytes, onContinue, onRedownload, o
               fontVariantNumeric: 'tabular-nums',
             }}
           >
-            {percent == null ? '准备中' : `${Math.round(percent)}%`}
+            {done ? '完成' : percent == null ? '准备中' : `${Math.round(percent)}%`}
           </div>
         </div>
 
@@ -204,7 +237,14 @@ export function DownloadPanel({ view, requiredBytes, onContinue, onRedownload, o
 
       {/* 底部动作 */}
       <div style={{ display: 'flex', gap: 12, marginTop: 24, alignItems: 'center' }}>
-        {interrupted ? (
+        {done ? (
+          <>
+            <Btn kind="primary" onClick={onClose}>
+              关闭下载
+            </Btn>
+            <span style={{ fontSize: 12, color: 'var(--md-muted)' }}>关闭后移除侧栏入口，下载记录仍保留</span>
+          </>
+        ) : interrupted ? (
           <>
             <Btn kind="primary" onClick={onContinue}>
               ▶ 继续下载
@@ -218,11 +258,14 @@ export function DownloadPanel({ view, requiredBytes, onContinue, onRedownload, o
                 重新下载
               </Btn>
             )}
+            <Btn kind="ghost" onClick={onBack}>
+              返回
+            </Btn>
             <span style={{ fontSize: 12, color: 'var(--md-muted)', marginLeft: 'auto' }}>已完成的部分不会丢失</span>
           </>
         ) : (
           <Btn kind="ghost" onClick={onBack}>
-            暂停并关闭此页面（下载在后台继续）
+            返回（下载在后台继续）
           </Btn>
         )}
       </div>

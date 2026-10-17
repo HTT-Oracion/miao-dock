@@ -46,6 +46,8 @@ const SELF = fileURLToPath(import.meta.url);
 const TOKEN = 'a'.repeat(64);
 const STATE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'state.rs');
 const NOT_READY_TSX = path.join(REPO_ROOT, 'src', 'screens', 'library', 'NotReadyScreen.tsx');
+/// D-233：明细渲染搬进时间线组件（`detail` 的守卫也一起搬了）。
+const TIMELINE_TSX = path.join(REPO_ROOT, 'src', 'screens', 'library', 'AssemblyTimeline.tsx');
 const ENGINE_DIAG = path.join(REPO_ROOT, 'src', 'screens', 'settings', 'EngineDiag.tsx');
 const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
 const CARGO = process.env.CARGO || 'cargo';
@@ -411,13 +413,16 @@ function evalFn(text, name, params = ['log']) {
     },
   );
 
+  const timeline = fs.readFileSync(TIMELINE_TSX, 'utf8');
   check(
     'W7 调用点：末行取自**真实日志**（`status?.log`），且渲染处只渲染它本身、无兜底常量',
     /const detail = lastLogLine\(status\?\.log\);/.test(tsx) &&
-      /\{detail && \(kind === 'is-loading' \|\| kind === 'is-failed'\) \? \(/.test(tsx),
+      /const showDetail = !!detail && \(note === 'active' \|\| note === 'failed'\);/.test(timeline) &&
+      /\{showDetail \? <div className="tl-detail">\{detail\}<\/div> : null\}/.test(timeline),
     {
       call: /const detail = lastLogLine\(status\?\.log\);/.test(tsx),
-      guard: /\{detail && \(kind === 'is-loading' \|\| kind === 'is-failed'\) \? \(/.test(tsx),
+      guard: /const showDetail = !!detail/.test(timeline),
+      render: /\{showDetail \? <div className="tl-detail">\{detail\}<\/div> : null\}/.test(timeline),
     },
   );
 }

@@ -110,9 +110,42 @@
   width: 44px;
   height: 44px;
   border-radius: var(--md-radius-sm);
-  /* 全局层贴侧栏底部（原由服务状态点的 auto margin 承担，D-230 状态点去掉后移到这）。
-     只撑开分隔线以下的空隙，不改应用层/全局层的上下序，C8c 不受影响。 */
+}
+
+/* 全局层容器：把「下载入口 + 设置」一起压到侧栏底部。
+   原先 auto margin 挂在设置按钮上；加入下载入口后必须上移到容器，
+   否则只有设置被推到底、下载入口会浮在半空。 */
+.sidebar-global {
   margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 下载中：下载图标 + 右下角小旋转环 —— 静止的图标看起来与卡住一样。 */
+.nav-dl-badge {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.nav-dl-sub {
+  position: absolute;
+  right: -6px;
+  bottom: -4px;
+}
+.nav-dl-spin {
+  animation: nav-dl-spin 1s linear infinite;
+}
+@keyframes nav-dl-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-dl-spin {
+    animation: none;
+  }
 }
 
 /*

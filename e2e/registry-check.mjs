@@ -112,13 +112,13 @@ const SCRIPTS_ON_DISK = walkMjs(path.join(ROOT, 'e2e')).filter(
  *
  * 🔴 改这个常量时，请顺手确认 AGENTS.md §3 的条数也同步（`check:docs` 管不到那一节）。
  */
-const EXPECTED_TIER_COUNTS = { static: 17, service: 45, nightly: 9, refute: 59 };
+const EXPECTED_TIER_COUNTS = { static: 18, service: 45, nightly: 9, refute: 60 };
 
 /**
  * 清单各分组条数写死（与上面的分层常量**分别写死**：一个写错不该让另一个跟着错）。
  * `supply` / `dev` 不是分层门，它们只需要"别丢、别串"。
  */
-const EXPECTED_GROUP_COUNTS = { static: 17, service: 45, nightly: 9, supply: 6, dev: 3 };
+const EXPECTED_GROUP_COUNTS = { static: 18, service: 45, nightly: 9, supply: 6, dev: 3 };
 
 /** (script,args) → 出现次数（两份列表都要先变成这张表，才能做双向覆盖） */
 const keyCount = (list) => {

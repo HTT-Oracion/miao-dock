@@ -134,9 +134,17 @@ const HOOKS_MANIFEST = [
   'useMusicHotkeys.ts',
   'useDebouncedValue.ts',
   'useLibraryModel.ts',
+  'use-engine-download.ts',
 ];
 /** hooks/index.ts 业务桶应出口的业务 hook 名 */
-const HOOKS_BARREL_EXPORTS = ['useService', 'useTasks', 'useLibrary', 'useQuitRequest', 'useToasts'];
+const HOOKS_BARREL_EXPORTS = [
+  'useService',
+  'useTasks',
+  'useLibrary',
+  'useQuitRequest',
+  'useToasts',
+  'useEngineDownload',
+];
 /** 允许被 units import 的裸包（其余裸包一律判红：新依赖需负责人确认） */
 const PKG_ALLOW = [/^react(\/.+)?$/, /^react-dom(\/.+)?$/, /^lucide-react$/];
 /** 允许的 scoped 包前缀 */
@@ -296,7 +304,9 @@ function declaresName(stripped, name) {
 /** 是否"导出"了某顶层名字 */
 function exportsName(stripped, name) {
   const re = new RegExp(`(?:^|\\n)\\s*export\\s+(?:async\\s+)?(?:function|const|let|var|class)\\s+${esc(name)}\\b`);
-  return re.test(stripped);
+  // 桶文件允许 `export { x } from './x'` 这种**再导出**形态；只认 `export function` 会把它误判成缺件。
+  const reexport = new RegExp(`(?:^|\\n)\\s*export\\s*(?:type\\s*)?\\{[^}]*\\b${esc(name)}\\b[^}]*\\}`);
+  return re.test(stripped) || reexport.test(stripped);
 }
 
 const esc = (n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

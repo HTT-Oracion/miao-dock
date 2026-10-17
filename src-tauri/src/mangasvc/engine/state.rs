@@ -1113,13 +1113,37 @@ impl ModelDownload {
     }
 
     /// 从 `state/engine-download.json` 读回；读不到 / 解析失败 ⇒ 默认态（`idle`）。
+    ///
+    /// 🔴 重启对账：上次退出时落盘的 `running` 已经没有对应子进程（父进程被回收），
+    ///    原样读回会让 `start_model_download` 的 409 单飞守卫把「继续下载」也挡掉。
+    ///    这里只把 `running` 校正为 `interrupted`，`done / interrupted / idle` 一律不动。
     fn load_persisted() -> ModelDownload {
         let p = paths::state_dir().join("engine-download.json");
-        match std::fs::read_to_string(&p) {
+        let d = match std::fs::read_to_string(&p) {
             Ok(s) => serde_json::from_str(&s).unwrap_or_else(|_| ModelDownload::default()),
             Err(_) => ModelDownload::default(),
+        };
+        let (d, changed) = normalize_loaded(d);
+        if changed {
+            d.persist();
         }
+        d
     }
+}
+
+/// 进程重启后的下载态对账：`running` 已无子进程 ⇒ 如实报 `interrupted`。
+///
+/// 返回 `(校正后的状态, 是否发生变化)`；变化时调用方负责原子落盘。
+fn normalize_loaded(mut d: ModelDownload) -> (ModelDownload, bool) {
+    if d.state != "running" {
+        return (d, false);
+    }
+    d.state = "interrupted".to_string();
+    d.interrupted_reason = Some("应用已退出，下载已暂停".to_string());
+    // 速度与剩余时间是上一轮进程的瞬时值，重启后继续显示等于编造。
+    d.speed_bps = None;
+    d.eta_ms = None;
+    (d, true)
 }
 
 impl DownloadProgressState {
@@ -1257,18 +1281,22 @@ fn spawn_progress_reader(
                     //   · `stage` 是下载详情页那个**两步**指示器的数据源，`STAGE_TEXT` 只有两格。
                     //     `prepare` 必须**归到 stage1** —— 落到下面的兜底分支就会变成
                     //     `"prepare"`，`STAGE_TEXT['prepare']` 是 `undefined` ⇒ 指示器整块消失。
-                    //   · `step` 是未就绪屏**四段**时间线的数据源，值域是闭集
-                    //     （prepare / runtime / models）；**未知阶段名不猜**，保持上一段，
-                    //     否则界面会拿到一个它不认识的段号（前端只能把它当"就绪前"渲染）。
+                    //   · `step` 是未就绪屏**五段**时间线的数据源，值域是闭集
+                    //     （prepare / runtime / visual / llm，外加全量 CLI 的兼容值 models）；
+                    //     **未知阶段名不猜**，保持上一段，否则界面会拿到一个它不认识的段号。
                     d.step = match e.id.as_str() {
                         "prepare" => Some("prepare".to_string()),
                         "runtime" => Some("runtime".to_string()),
+                        "visual" => Some("visual".to_string()),
+                        "llm" => Some("llm".to_string()),
                         "models" => Some("models".to_string()),
                         _ => d.step.take(),
                     };
+                    // `visual` 属第 1 轮（视觉模型与 llama.cpp 同轮），不能错标成 stage2；
+                    // `llm` 才是第 2 轮（Sakura + nllb）。
                     d.stage = match e.id.as_str() {
-                        "prepare" | "runtime" => Some("stage1".to_string()),
-                        "models" => Some("stage2".to_string()),
+                        "prepare" | "runtime" | "visual" => Some("stage1".to_string()),
+                        "llm" | "models" => Some("stage2".to_string()),
                         other => Some(other.to_string()),
                     };
                 } else {
@@ -1383,4 +1411,36 @@ pub fn assert_ready_via(
 /// 当前翻译来源（`local` / `online`）—— 见 `translate::current_source()`。
 pub fn translate_source() -> String {
     translate::current_source()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_loaded_turns_running_into_interrupted() {
+        let mut d = ModelDownload::default();
+        d.state = "running".to_string();
+        d.started_at = Some("2026-10-17T00:00:00Z".to_string());
+        d.speed_bps = Some(1024.0);
+        d.eta_ms = Some(5000);
+
+        let (d, changed) = normalize_loaded(d);
+        assert!(changed, "running 必须被校正，否则续传会被 409 挡住");
+        assert_eq!(d.state, "interrupted");
+        assert_eq!(d.interrupted_reason.as_deref(), Some("应用已退出，下载已暂停"));
+        assert_eq!(d.started_at.as_deref(), Some("2026-10-17T00:00:00Z"), "续传键不能丢");
+        assert!(d.speed_bps.is_none() && d.eta_ms.is_none(), "上一轮的瞬时值不能留");
+    }
+
+    #[test]
+    fn normalize_loaded_keeps_terminal_states() {
+        for state in ["idle", "interrupted", "done", "failed"] {
+            let mut d = ModelDownload::default();
+            d.state = state.to_string();
+            let (d, changed) = normalize_loaded(d);
+            assert!(!changed, "{state} 不得被改写");
+            assert_eq!(d.state, state);
+        }
+    }
 }

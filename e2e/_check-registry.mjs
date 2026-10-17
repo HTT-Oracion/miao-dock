@@ -48,6 +48,13 @@ const CHECKS = [
     watch: ['src/**', 'e2e/ia-structure-check.mjs'],
   },
   {
+    id: 'engine-download-entry',
+    script: 'e2e/engine-download-entry-check.mjs',
+    tier: 'static',
+    refute: true,
+    watch: ['src/**', 'src-tauri/src/mangasvc/engine/state.rs', 'e2e/engine-download-entry-check.mjs'],
+  },
+  {
     id: 'music',
     script: 'e2e/music-platform-check.mjs',
     tier: 'static',

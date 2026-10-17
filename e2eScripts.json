@@ -15,6 +15,7 @@
         { "id": "check:quit", "cmd": "node e2e/quit-command-check.mjs", "desc": "「退出喵坞」没反应的根因钉子（菜单项 / 菜单栏 / 快捷键三处都真的接了退出）", "refute": true },
         { "id": "check:tls", "cmd": "node e2e/tls-check.mjs", "desc": "reqwest 的 TLS 能力真的可用（D-25）" },
         { "id": "check:ia", "cmd": "node e2e/ia-structure-check.mjs", "desc": "信息架构结构断言（屏级导航 / 侧栏 / 标签 / 返回栈的接线）" },
+        { "id": "check:engine-download-entry", "cmd": "node e2e/engine-download-entry-check.mjs", "desc": "引擎下载入口 / 独立下载页 / 完成关闭 / 重启对账（D-233）", "refute": true },
         { "id": "check:music", "cmd": "node e2e/music-platform-check.mjs", "desc": "音乐模块「四平台完整接通」验收（除汽水外）", "refute": true },
         { "id": "check:settings", "cmd": "node e2e/settings-media-check.mjs", "desc": "设置页五组接线验收：播放·媒体 / 翻译服务 / 运行状态卡 / 功能梳理 / 许可清单", "refute": true },
         { "id": "check:units", "cmd": "node e2e/units-structure-check.mjs", "desc": "「公共组件抽离到 src/components/units/」结构断言（命名 / 依赖方向 / 别名 / 样式分层）", "refute": true },

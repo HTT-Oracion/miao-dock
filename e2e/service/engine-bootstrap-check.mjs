@@ -52,6 +52,8 @@ const STATE_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'stat
 const RUNTIME_PROBE_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'runtime_probe.rs');
 /// W13：装配编排（长路径体检住在那里）；D-231④ 的阶段 0 与 D-231⑦ 的 torch 索引也住在那里。
 const RUNTIME_SETUP_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'runtime_setup.rs');
+/// D-233：第 2 轮（无 bootstrap）的 `llm` 阶段事件。
+const FETCH_MODELS_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'fetch_models.rs');
 /// D-231⑦：③ 的等待/失败原因分支。
 const SUPERVISOR_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'supervisor.rs');
 /// D-231⑦：`--use-gpu` 默认值的取值处。
@@ -228,18 +230,27 @@ function engineSourceShape() {
   //    与 `step`（未就绪屏四段时间线）。只钉 stage 会漏掉"step 根本没接上"，
   //    只钉 step 会漏掉"prepare 把下载详情页打没了"。
   const setupForPhases = fs.readFileSync(RUNTIME_SETUP_RS, 'utf8');
+  const fetchForPhases = fs.readFileSync(FETCH_MODELS_RS, 'utf8');
   const stageMap =
-    state.includes('"prepare" | "runtime" => Some("stage1"') && state.includes('"models" => Some("stage2"');
+    state.includes('"prepare" | "runtime" | "visual" => Some("stage1"') &&
+    state.includes('"llm" | "models" => Some("stage2"');
   const stepMap =
     state.includes('"prepare" => Some("prepare".to_string())') &&
     state.includes('"runtime" => Some("runtime".to_string())') &&
+    state.includes('"visual" => Some("visual".to_string())') &&
+    state.includes('"llm" => Some("llm".to_string())') &&
     state.includes('"models" => Some("models".to_string())');
-  // 装配侧必须真的发出 `prepare` 段（发不出来 ⇒ 四段时间线的第 1 段永远不亮）。
+  // 装配侧必须真的发出 `prepare` 段（发不出来 ⇒ 五段时间线的第 1 段永远不亮）；
+  // `visual` 由 bootstrap 发，`llm` 由第 2 轮的 fetch-models 发 —— 两侧各缺一条都会让流程停住。
   const emitsPrepare = /on_phase\("prepare",\s*"[^"]+"\)/.test(setupForPhases);
+  const emitsVisual =
+    /on_phase\(model_phase,\s*"[^"]+"\)/.test(setupForPhases) && /Some\(1\)\s*\{\s*"visual"/.test(setupForPhases);
+  const emitsLlm =
+    /id:\s*"llm"\.to_string\(\)/.test(fetchForPhases) && /args\.max_stage == Some\(2\)/.test(fetchForPhases);
   check(
-    'W4 阶段顺序：运行环境=stage1、权重=stage2（先可用后完整）· `prepare` 归 stage1 且四段 `step` 各自有映射',
-    stageMap && stepMap && emitsPrepare,
-    { stageMap, stepMap, emitsPrepare },
+    'W4 五段顺序：visual=stage1、llm=stage2（先可用后完整）· `prepare`/`visual`/`llm` 各有真实事件与 step 映射',
+    stageMap && stepMap && emitsPrepare && emitsVisual && emitsLlm,
+    { stageMap, stepMap, emitsPrepare, emitsVisual, emitsLlm },
   );
 
   // W5 工具条芯片映射：运行态/中断态/缺件未开始三态文案，且**不含命令行字样**。
@@ -336,10 +347,11 @@ function engineSourceShape() {
   // ---- W12：阶段文案必须与两轮实现一致（不许承诺"1 分钟就能翻译"）----
   //     stage1 不含任何 LLM ⇒ 翻译必须等 stage2。文案不实 = 欺骗性进度。
   const panel = fs.readFileSync(DOWNLOAD_PANEL_TSX, 'utf8');
-  const stage1Text = /stage1:\s*\{[\s\S]*?\}/.exec(panel);
+  // D-233：两轮指示器仍在，但文案按五段 `step` 取；stage1 对应 `visual` 段。
+  const stage1Text = /visual:\s*\{[\s\S]*?\}/.exec(panel);
   const stage1Body = stage1Text ? stage1Text[0] : '';
   const noFalsePromise = stage1Body.length > 0 && !/即可开始翻译|就能开始翻译/.test(stage1Body);
-  check('W12 第 1 阶段文案不承诺"即可开始翻译"（stage1 无 LLM，翻译要等第 2 轮）', noFalsePromise, {
+  check('W12 第 1 阶段（visual）文案不承诺"即可开始翻译"（stage1 无 LLM，翻译要等第 2 轮）', noFalsePromise, {
     stage1Body: stage1Body.slice(0, 200),
   });
 
@@ -549,7 +561,11 @@ if (REFUTE) {
 
   // ---- M3：阶段映射改名 ----
   {
-    const restore = mutateFile(STATE_RS, '"runtime" => Some("stage1"', '"runtime" => Some("phase1"');
+    const restore = mutateFile(
+      STATE_RS,
+      '"prepare" | "runtime" | "visual" => Some("stage1"',
+      '"prepare" | "runtime" | "visual" => Some("phase1"',
+    );
     const r = await runForward();
     const red = r.code !== 0 && hasRed(r.out, 'W4');
     check('M3 阶段映射 stage1 改名 ⇒ W4 红', red, { code: r.code, redOn: red });
@@ -608,16 +624,16 @@ if (REFUTE) {
     fs.writeFileSync(MODELS_MANIFEST, original);
   }
 
-  // ---- M8：stage1 文案承诺"即可开始翻译"（stage1 无 LLM，是假承诺）⇒ W12 红 ----
+  // ---- M8：visual 文案承诺"即可开始翻译"（stage1 无 LLM，是假承诺）⇒ W12 红 ----
   {
     const restore = mutateFile(
       DOWNLOAD_PANEL_TSX,
-      "sub: '下载并解包 Python 运行时、引擎源码与视觉模型 —— 这一步完成后本地引擎即可启动，翻译权重在后台继续。',",
+      "sub: '检测 / OCR / 抹字 / 字体，以及 llama.cpp 与 CUDA 运行库。',",
       "sub: '下载并解包 Python 运行时、引擎源码与视觉模型 —— 这一步完成即可开始翻译。',",
     );
     const r = await runForward();
     const red = r.code !== 0 && hasRed(r.out, 'W12');
-    check('M8 stage1 文案承诺"即可开始翻译"（stage1 无 LLM）⇒ W12 红', red, { code: r.code, redOn: red });
+    check('M8 visual 文案承诺"即可开始翻译"（stage1 无 LLM）⇒ W12 红', red, { code: r.code, redOn: red });
     restore();
   }
 
@@ -694,28 +710,37 @@ if (REFUTE) {
     restore();
   }
 
-  // ---- M14（D-231④）：把 `prepare` 从 `stage` 的映射里摘掉 ⇒ W4 红 ----
+  // ---- M14（D-233）：把 `prepare` 从 `stage` 的映射里摘掉 ⇒ W4 红 ----
   // 🔴 这个变异反的是**最容易被忽略的退化路径**：`prepare` 落到 `other => Some(other)` 兜底
-  //    ⇒ `stage = "prepare"` ⇒ `DownloadPanel` 的 `STAGE_TEXT['prepare']` 是 `undefined`
-  //    ⇒ 阶段指示器在准备期**整块消失**。它不会让任何服务起不来，所以没有任何别的断言会红。
+  //    ⇒ `stage = "prepare"` ⇒ `DownloadPanel` 的 `ROUND_TEXT['prepare']` 是 `undefined`
+  //    ⇒ 两轮指示器在准备期**整块消失**。它不会让任何服务起不来，所以没有任何别的断言会红。
   {
     const restore = mutateFile(
       STATE_RS,
-      '"prepare" | "runtime" => Some("stage1".to_string()),',
-      '"runtime" => Some("stage1".to_string()),',
+      '"prepare" | "runtime" | "visual" => Some("stage1".to_string()),',
+      '"runtime" | "visual" => Some("stage1".to_string()),',
     );
     const r = await runForward();
     const red = r.code !== 0 && hasRed(r.out, 'W4');
-    check('M14 `prepare` 不再归 stage1（下载详情页阶段指示器会整块消失）⇒ W4 红', red, { code: r.code, redOn: red });
+    check('M14 `prepare` 不再归 stage1（下载页两轮指示器会整块消失）⇒ W4 红', red, { code: r.code, redOn: red });
     restore();
   }
 
-  // ---- M15（D-231④）：`step` 映射整个不接（未就绪屏四段时间线永远是第一段）⇒ W4 红 ----
+  // ---- M15（D-233）：`step` 映射不接 visual（五段时间线永远停在 runtime）⇒ W4 红 ----
   {
-    const restore = mutateFile(STATE_RS, '"models" => Some("models".to_string()),', '"models" => d.step.take(),');
+    const restore = mutateFile(STATE_RS, '"visual" => Some("visual".to_string()),', '"visual" => d.step.take(),');
     const r = await runForward();
     const red = r.code !== 0 && hasRed(r.out, 'W4');
-    check('M15 `step` 不映射 models 段（四段时间线永远停在第 1 段）⇒ W4 红', red, { code: r.code, redOn: red });
+    check('M15 `step` 不映射 visual 段（五段时间线永远停在第 2 段）⇒ W4 红', red, { code: r.code, redOn: red });
+    restore();
+  }
+
+  // ---- M15b（D-233）：第 2 轮不再发 `llm` 阶段事件 ⇒ W4 红 ----
+  {
+    const restore = mutateFile(FETCH_MODELS_RS, 'if args.max_stage == Some(2) {', 'if false {');
+    const r = await runForward();
+    const red = r.code !== 0 && hasRed(r.out, 'W4');
+    check('M15b 第 2 轮不发 llm 事件（流程停在视觉段）⇒ W4 红', red, { code: r.code, redOn: red });
     restore();
   }
 
@@ -797,7 +822,8 @@ if (REFUTE) {
       if (!shape.urlOk || shape.badSources.length > 0)
         bad.push('runtime.manifest.json 残留 M12 / M13（engine_source 的 URL 形态）');
     }
-    if (!fs.readFileSync(STATE_RS, 'utf8').includes('"runtime" => Some("stage1"')) bad.push('state.rs 残留 M3');
+    if (!fs.readFileSync(STATE_RS, 'utf8').includes('"prepare" | "runtime" | "visual" => Some("stage1"'))
+      bad.push('state.rs 残留 M3');
     if (!fs.readFileSync(RUNTIME_PROBE_RS, 'utf8').includes('点「开始下载」，喵坞会自动装配引擎运行时'))
       bad.push('runtime_probe.rs 残留 M4');
     if (!fs.readFileSync(RUNTIME_PROBE_RS, 'utf8').includes('装配会从公网镜像安装引擎依赖'))
@@ -809,7 +835,7 @@ if (REFUTE) {
         .includes('"stage": 2,\n      "platform": "win32-x64",\n      "dest": "bin/llama')
     )
       bad.push('models.manifest.json 残留 M7');
-    if (!fs.readFileSync(DOWNLOAD_PANEL_TSX, 'utf8').includes('这一步完成后本地引擎即可启动'))
+    if (!fs.readFileSync(DOWNLOAD_PANEL_TSX, 'utf8').includes('检测 / OCR / 抹字 / 字体'))
       bad.push('DownloadPanel.tsx 残留 M8');
     if (!fs.readFileSync(RUNTIME_SETUP_RS, 'utf8').includes('"longPath": longpath.map'))
       bad.push('runtime_setup.rs 残留 M9');
@@ -819,7 +845,7 @@ if (REFUTE) {
         .includes('extract_entries(runtime_manifest, runtime_root, Some(&py_ids))?;')
     )
       bad.push('runtime_setup.rs 残留 M11');
-    if (!fs.readFileSync(STATE_RS, 'utf8').includes('"prepare" | "runtime" => Some("stage1"'))
+    if (!fs.readFileSync(STATE_RS, 'utf8').includes('"prepare" | "runtime" | "visual" => Some("stage1"'))
       bad.push('state.rs 残留 M14');
     if (!fs.readFileSync(STATE_RS, 'utf8').includes('"models" => Some("models".to_string())'))
       bad.push('state.rs 残留 M15');

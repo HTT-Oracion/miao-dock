@@ -167,6 +167,13 @@ for (const sc of SCENARIOS) {
         Object.values(items).every((v) => v.fix === null || v.fix === undefined),
       { status, ready: body?.ready, flips },
     );
+    // D-233：分档总和必须等于 requiredBytes（同一份清单求和，不是两套数字）。
+    const setSum = Object.values(body?.sets ?? {}).reduce((n, s) => n + (s?.totalBytes ?? 0), 0);
+    check(
+      `${sc.id}b 分档 totalBytes 之和 == requiredBytes（同一份清单）`,
+      setSum === body?.requiredBytes && body?.sets?.visual?.ready === true && body?.sets?.llm?.ready === true,
+      { setSum, requiredBytes: body?.requiredBytes, sets: body?.sets },
+    );
   } else if (sc.missing.includes('venvRoot')) {
     // 级联场景：venvRoot 没了 ⇒ python/source/deps/patches 的判据路径都在它下面，必然一起翻。
     // 这里不断言"其余不动"（那是结构上不可能的），只钉 venvRoot **一定**翻、且 ready=false。
@@ -213,6 +220,29 @@ for (const sc of SCENARIOS) {
       v.detail,
     );
   }
+  fs.rmSync(base, { recursive: true, force: true });
+}
+
+// S9–S11（D-233）：分档粒度 —— 只拆一档时，只有对应的 `sets.*` 翻转。
+// 这三条是「五段流程真的分得开 visual / llm / nllb」的唯一证据；
+// 只测 S8（整包 weights）时，三档合成一个布尔也会全绿。
+for (const [id, missing, set, others] of [
+  ['S9', 'visual', 'visual', ['llm', 'translation']],
+  ['S10', 'sakura', 'llm', ['visual', 'translation']],
+  ['S11', 'nllb', 'translation', ['visual', 'llm']],
+]) {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), `miao-rt-${id}-`));
+  const fx = buildRuntime(base, [missing]);
+  const { status, body } = await probeRuntime(fx.env);
+  const sets = body?.sets ?? {};
+  check(
+    `${id} 只拆 ${missing} ⇒ 只有 sets.${set} 翻转（其余档保持就绪）`,
+    status === 200 &&
+      sets[set]?.ready === false &&
+      others.every((k) => sets[k]?.ready === true) &&
+      body?.ready === false,
+    { sets, ready: body?.ready },
+  );
   fs.rmSync(base, { recursive: true, force: true });
 }
 
@@ -391,6 +421,26 @@ if (REFUTE) {
       fs.rmSync(base, { recursive: true, force: true });
       // 期望：venvRoot 翻转（链接本身被判成"不存在"）⇒ 不再全真
       return body?.ready !== true;
+    },
+  });
+
+  // M5（D-233）：四个分档共用一个统计 ⇒ S9–S11 的"只翻对应档"不再成立。
+  // 这正是"只改前端文案、后端仍是合并布尔"的形态；S8（整包 weights）会照旧全绿。
+  mutations.push({
+    id: 'M5',
+    what: '四个分档共用 visual 的统计（后端仍是合并布尔）',
+    edit: () => {
+      const weak = original.replace(/let st = ms\.set_stat\(id\);/, 'let st = ms.set_stat("visual");');
+      if (weak === original) throw new Error('M5 锚点未命中（runtime_probe.rs 的 set_stat 调用写法变了？）');
+      fs.writeFileSync(PROBE_RS, weak);
+    },
+    probe: async () => {
+      const base = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-rt-M5-'));
+      const fx = buildRuntime(base, ['sakura']);
+      const { body } = await probeRuntime(fx.env);
+      fs.rmSync(base, { recursive: true, force: true });
+      // 期望：sets.llm 仍报就绪（共用 visual 的统计）⇒ 分档断言红
+      return body?.sets?.llm?.ready === true;
     },
   });
 

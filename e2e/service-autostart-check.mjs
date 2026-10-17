@@ -118,6 +118,7 @@ const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service', 'mod.rs');
 const MAIN_RS = path.join(ROOT, 'src-tauri', 'src', 'main.rs');
 const APP_TSX = path.join(ROOT, 'src', 'App.tsx');
 const NOT_READY = path.join(ROOT, 'src', 'screens', 'library', 'NotReadyScreen.tsx');
+const MANGASVC_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc.rs');
 // D-150：`sections.tsx` 已按 Section 拆到 `sections/*.tsx`。A9/D2 只看"代码里有没有这些调用"，
 // 故读全部 Section 的**拼接**；D2 的变异锚落到 TranslateSection（服务启停 UI 在那儿）。
 // ⚠️ 拼接必须**每次 runAll 重读**（不能做成模块级常量）—— 反证轮改的是磁盘上的文件，
@@ -177,6 +178,7 @@ function runAll() {
   const sec = readSections(); // D-150：每次重读（反证轮改了磁盘上的文件）
   const ipc = read(IPC_TS);
   const cargoToml = read(CARGO_TOML);
+  const mangasvc = read(MANGASVC_RS);
 
   // ---- A1：service_start 走幂等入口 ----
   {
@@ -253,7 +255,7 @@ function runAll() {
     );
   }
 
-  // ---- C1：effect 依赖恰为 [screen, autoStart] ----
+  // ---- C1：effect 依赖恰为 [autoStart] ----
   {
     const call = app.indexOf('void serviceStart().catch(() => undefined);');
     const tail = call >= 0 ? app.slice(call, call + 200) : '';
@@ -265,26 +267,26 @@ function runAll() {
           .filter(Boolean)
       : [];
     const ok =
-      call >= 0 &&
-      deps.length === 2 &&
-      deps.includes('screen') &&
-      deps.includes('autoStart') &&
-      !deps.includes('status');
+      call >= 0 && deps.length === 1 && deps[0] === 'autoStart' && !deps.includes('screen') && !deps.includes('status');
     check(
       'C1',
-      '自动启动 effect 的依赖**恰为** `[screen, autoStart]`，**不含 `status`**（含 status ⇒ 用户刚点的「停止」被瞬间复活）',
+      '自动启动 effect 的依赖**恰为** `[autoStart]`：不含 `screen`（应用启动即拉起）、不含 `status`（停止后不被原地复活）',
       ok,
       call < 0 ? '未定位到自动启动 effect 的 serviceStart() 调用' : `deps=[${deps.join(', ')}]`,
     );
   }
 
-  // ---- C2：两个守卫都在 ----
-  check(
-    'C2',
-    "自动启动 effect 两个守卫都在：`screen !== 'translate'`（进模块才起）与 `!autoStart`（关掉不拉）",
-    /if \(screen !== 'translate' \|\| !autoStart\) return;/.test(app),
-    '',
-  );
+  // ---- C2：唯一守卫是 !autoStart，且不得再出现 screen 守卫 ----
+  {
+    const effStart = app.lastIndexOf('useEffect(', app.indexOf('void serviceStart().catch(() => undefined);'));
+    const effText = effStart >= 0 ? app.slice(effStart, effStart + 420) : '';
+    check(
+      'C2',
+      '自动启动 effect 只有一个守卫 `!autoStart`；**不得**再按 `screen` 分支（退回「进翻译屏才起」会再次漏拉）',
+      /if \(!autoStart\) return;/.test(effText) && !/screen !== 'translate'/.test(effText),
+      effText ? '' : '未定位到自动启动 effect',
+    );
+  }
 
   // ---- C3：自动拉起用 serviceStart，不是 serviceRestart ----
   {
@@ -296,6 +298,40 @@ function runAll() {
       '自动拉起用 `serviceStart()`（**不是** `serviceRestart()` —— restart 会多走一次最坏 5s 的阻塞 stop）',
       effStart >= 0 && /serviceStart\(\)/.test(effText) && !/serviceRestart\(/.test(effText),
       effStart < 0 ? '未定位到自动启动 effect' : '',
+    );
+  }
+
+  // ---- C4：准入必须含 engineMissing（① running 但引擎没装配时流程页要出现） ----
+  check(
+    'C4',
+    'local 来源准入含 `engineMissing`（D6 闸门只放 ①，state 仍是 running ⇒ 只看 running 会把装配页挡掉）',
+    /const blocked = source === 'online' \? svcDown : !running \|\| engineMissing;/.test(app),
+    '',
+  );
+
+  // ---- C5：done → restart 只认本次会话内的跃迁 ----
+  {
+    const hasPrev = /prevDownloadState/.test(app);
+    const hasPending = /pendingRestart/.test(app);
+    const onlyTransition = /\(prev === 'running' \|\| prev === 'interrupted'\) && state === 'done'/.test(app);
+    check(
+      'C5',
+      '`done → restart` 只认本次会话 running/interrupted → done 的跃迁（历史 done 不得在每次启动时多重启一次）',
+      hasPrev && hasPending && onlyTransition,
+      `prev=${hasPrev} pending=${hasPending} 跃迁判据=${onlyTransition}`,
+    );
+  }
+
+  // ---- C6：在线来源只跳过 ③，② 仍由闸门决定 ----
+  {
+    const onlineSkipsLlm = /translate_source\s*!=\s*"online"/.test(mangasvc);
+    const body = fnBody(svc, 'fn start_blocking');
+    const engineIndependent = /spawn_spec\(&plan\.engine/.test(body) && !/translate_source/.test(body);
+    check(
+      'C6',
+      '在线来源只跳过 ③（`translate_source != "online"`）；② 的 spawn 与来源无关 —— 否则「在线连视觉引擎都不起」会静默复活',
+      onlineSkipsLlm && engineIndependent,
+      `onlineSkipsLlm=${onlineSkipsLlm} engineIndependent=${engineIndependent}`,
     );
   }
 
@@ -500,17 +536,24 @@ const MUTATIONS = [
     expect: ['B1'],
   },
   {
-    name: 'C1 自动启动 effect 的依赖里塞进 status（用户刚点的「停止」被瞬间复活）',
+    name: 'C1 自动启动 effect 的依赖里塞回 screen/status（启动不拉 + 停止被复活）',
     file: APP_TSX,
-    find: '}, [screen, autoStart]);',
-    replace: '}, [screen, autoStart, status]);',
+    find: '}, [autoStart]);',
+    replace: '}, [autoStart, screen, status]);',
     expect: ['C1'],
   },
   {
     name: 'C2 去掉 effect 里的 !autoStart 守卫（开关关掉也照拉）',
     file: APP_TSX,
-    find: "if (screen !== 'translate' || !autoStart) return;",
-    replace: "if (screen !== 'translate') return;",
+    find: 'if (!autoStart) return;',
+    replace: 'if (false) return;',
+    expect: ['C2'],
+  },
+  {
+    name: 'C2b 把 screen 守卫塞回 effect（退回「进翻译屏才起」）',
+    file: APP_TSX,
+    find: 'if (!autoStart) return;',
+    replace: "if (screen !== 'translate' || !autoStart) return;",
     expect: ['C2'],
   },
   {
@@ -519,6 +562,27 @@ const MUTATIONS = [
     find: 'void serviceStart().catch(',
     replace: 'void serviceRestart().catch(',
     expect: ['C3'],
+  },
+  {
+    name: 'C4 准入去掉 engineMissing（① running 但引擎没装时装配页被挡掉）',
+    file: APP_TSX,
+    find: "const blocked = source === 'online' ? svcDown : !running || engineMissing;",
+    replace: "const blocked = source === 'online' ? svcDown : !running;",
+    expect: ['C4'],
+  },
+  {
+    name: 'C5 done 重启退回「读到 done 就重启」（每次启动多重启一次）',
+    file: APP_TSX,
+    find: "(prev === 'running' || prev === 'interrupted') && state === 'done'",
+    replace: "state === 'done'",
+    expect: ['C5'],
+  },
+  {
+    name: 'C6 在线来源把 ③ 的跳过扩成整套引擎跳过（② 也不起）',
+    file: MANGASVC_RS,
+    find: 'translate_source != "online"',
+    replace: 'true',
+    expect: ['C6'],
   },
   {
     name: 'D1 未就绪屏 stopped 态退回「重启本地服务」(onRestart)（对停止的服务说"重启"是错的）',

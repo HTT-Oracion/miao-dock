@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useNavigate } from 'react-router-dom';
 import { apiPost, errorText, openPath, quitApp, serviceRestart, serviceStart } from '@/ipc';
 import type { ServiceState } from '@/ipc';
 import { useLibrary, useQuitRequest, useService, useTasks, useToasts, useTranslateSource } from '@hooks';
@@ -12,7 +12,6 @@ import {
 } from '@/stores/shell-prefs';
 import type { ThemeMode } from '@/themes/tokens';
 import { Badge, Btn, Notice, Pill } from '@components/units';
-import { ProgressRing } from '@components/units';
 import { DynamicIsland } from '@components/DynamicIsland';
 import { NotificationStack } from '@components/NotificationStack';
 import { MusicKernel } from '@components/MusicKernel';
@@ -20,19 +19,22 @@ import { QuitConfirm } from '@components/QuitConfirm';
 import { Sidebar } from '@components/Sidebar';
 import { Toolbar } from '@components/Toolbar';
 import { ViewTabs } from '@components/ViewTabs';
-import { DownloadPanel } from '@screens/engine/DownloadPanel';
 // 展开播放器挂在**应用根**（不在 MusicScreen 内）—— 判据见渲染处注释：
 // 它是 `position: fixed; inset: 0` 的全屏浮层，数据全部来自 store，本就不依赖任何一屏的 DOM。
 import { ExpandedPlayer } from '@screens/music/ExpandedPlayer';
 import { useMusicStore } from '@music/store';
 import { isBlockedWhenNotReady, stateView } from '@/stores/nav';
 import { useNav } from '@/router/use-nav';
-import type { ShellCtx } from '@/router/panes/shell-context';
+import type { EngineProcessView, ShellCtx } from '@/router/panes/shell-context';
 import type { TranslateSource } from '@screens/settings/translate-api';
-import { engineStatus, downloadEngineModels, type ModelDownloadView } from '@screens/settings/engine-api';
-import { engineDownloadChip, isDownloadActive } from '@/ipc/engine-download';
+import { engineStatus, type ModelDownloadView } from '@screens/settings/engine-api';
+import { downloadEntryState } from '@/ipc/engine-download';
+import { initialDismissedDownload, persistDismissedDownload } from '@/stores/download-dismiss';
 import type { CancelResponse, DeleteTasksResponse, LibraryResponse, TaskRow } from '@/types';
 import { formatBytes } from '@tools';
+
+/** ②/③ 进程快照的「空」值：① 停掉后壳层交给屏的占位，不保留上一份 running 假象。 */
+const EMPTY_ENGINE_PROCESS: EngineProcessView = { engine: null, llm: null, warmed: false };
 
 /**
  * 喵坞应用外壳（《02》§5.1 / 《09》§3）：侧栏 78 + 工具条 62 + 应用区。
@@ -46,7 +48,8 @@ import { formatBytes } from '@tools';
  * 判定集中在 `isBlockedWhenNotReady` 一处，避免拦截纪律散落到多处失效。
  */
 export function App() {
-  const { screen, view, setScreen, setView } = useNav();
+  const { screen, view, overlay, setScreen, setView } = useNav();
+  const navigate = useNavigate();
   const [mode, setMode] = useState<ThemeMode>(() => initialMode());
   /**
    * 侧栏是否显示文字标签（`shell-prefs.ts`）。
@@ -86,18 +89,45 @@ export function App() {
   const [newBookRequest, setNewBookRequest] = useState(false);
 
   /**
-   * 引擎下载视图开关（G5）。下载在后台继续，用户可随时打开/关闭本视图去别的屏。
-   * 🔴 与 `isBlockedWhenNotReady` 的纪律不冲突：下载视图是**信息主场**，不是拦截屏；
-   *    它开着时漫画库 / 设置 / 音乐照常可用（下载不阻塞任何一屏）。
+   * 已完成下载的「关闭」确认（按 `startedAt` 记账）。
+   * `done` 是持久态；没有它，侧栏完成图标关不掉、重启又冒出来。
    */
-  const [downloadViewOpen, setDownloadViewOpen] = useState(false);
-  /** `/engine/status` 的 `modelDownload` —— 工具条芯片与下载视图的唯一真实来源。 */
+  const [dismissedDownload, setDismissedDownload] = useState<string | null>(() => initialDismissedDownload());
+  /** `/engine/status` 的 `modelDownload` —— 工具条芯片、侧栏入口与下载页的唯一真实来源。 */
   const [download, setDownload] = useState<ModelDownloadView | null>(null);
+  /** ②/③ 进程运行态快照（`/engine/status` 的 `engine.state` / `llm.state` / `warmed`）。 */
+  const [engineProcess, setEngineProcess] = useState<EngineProcessView>(EMPTY_ENGINE_PROCESS);
+
+  const openEngineDownload = useCallback(() => {
+    if (overlay === 'engine-download') return;
+    navigate('/engine-download');
+  }, [navigate, overlay]);
+  const dismissDownload = useCallback(() => {
+    const key = download?.startedAt ?? 'done';
+    setDismissedDownload(key);
+    persistDismissedDownload(key);
+  }, [download?.startedAt]);
+  /** 发起下载后立刻把返回的视图写回壳层：下载页不必等下一次 1.5s 轮询才有内容。 */
+  const applyDownload = useCallback((view: ModelDownloadView | null) => {
+    if (view) setDownload(view);
+  }, []);
 
   useThemeTokens(mode);
 
   const { status, ipcError } = useService();
   const running = status?.state === 'running';
+
+  /*
+   * 服务停掉后 `/engine/status` 读不到：保留上一次的 `running` 会让侧栏一直转圈。
+   * 这里用**派生值**而不是 effect 里 setState：后者会多一轮渲染，且 lint 会判
+   * "setState in effect"；派生值在下一帧直接生效。
+   */
+  const svcDown = status?.state === 'stopped' || status?.state === 'error';
+  const visibleDownload = svcDown ? null : download;
+  /** ① 停掉后 ②/③ 快照一并置空：屏里不残留「上一份 running」的假象。 */
+  const visibleEngineProcess = svcDown ? EMPTY_ENGINE_PROCESS : engineProcess;
+  /** 侧栏入口形态（三处共用同一份映射，不各自判断）。 */
+  const downloadEntry = downloadEntryState(visibleDownload, dismissedDownload);
 
   /**
    * 轮询 `modelDownload`（G5）：进度/中断态只来自真实事件，前端不编造。
@@ -108,7 +138,14 @@ export function App() {
     const tick = () => {
       engineStatus()
         .then((r) => {
-          if (alive) setDownload(r.modelDownload);
+          if (alive) {
+            setDownload(r.modelDownload);
+            setEngineProcess({
+              engine: r.engine.state,
+              llm: r.llm.state,
+              warmed: r.warmed,
+            });
+          }
         })
         .catch(() => undefined);
     };
@@ -150,15 +187,15 @@ export function App() {
   /**
    * 自动启动本地翻译服务（「设置 → 翻译服务 → 服务与配对 → 自动启动翻译服务」）。
    *
-   * ## 触发时机是"进入漫画翻译应用"，不是"应用一启动"
-   * 关掉这个开关的人要的是「**我不翻译就别把引擎拉起来**」—— 引擎是重资源
-   *（真模式下 python + llama-server + 执行器，GB 级内存与显存）。所以挂在 `screen` 上。
+   * ## 触发时机是"应用启动"，不是"进入漫画翻译屏"
+   * 偏好开着的人希望一打开喵坞就能投放/翻译，不必先切到某一屏；关掉的人要的是
+   * 「**我不翻译就别把引擎拉起来**」—— 引擎是重资源（python + llama-server + 执行器，
+   * GB 级内存与显存），所以关着时这里什么都不做，由未就绪页的「启动本地服务」手动拉起。
    *
-   * ## 🔴 依赖里**不能**放 `status`
-   * 放了就会变成"只要服务不是 running 就拉一次"：用户刚在设置页点完
-   * 「停止本地服务」，下一秒就被这个 effect 原地复活 —— 开关看着像失灵，
-   * 而且现场表现是"停不掉"。判定必须在**屏切换那一瞬**做完，之后不再回头。
-   * 顺带也省掉了"失败后无限重试"（那会让一个坏掉的引擎反复冷启动）。
+   * ## 🔴 依赖里**不能**放 `screen` / `status`
+   * `screen` 会把语义退回"进翻译屏才拉"；`status` 会变成"只要服务不是 running 就拉一次"——
+   * 用户刚在设置页点完「停止本地服务」，下一秒就被原地复活，现场表现是"停不掉"。
+   * 打开开关（关 → 开）时立即拉起是期望行为，所以依赖保留 `autoStart` 一个。
    *
    * ## 幂等由 Rust 兜底，前端不做去重
    * `service_start` 在 Rust 侧是幂等的（`ServiceManager::start_once`），
@@ -166,9 +203,9 @@ export function App() {
    * 去重只会把"到底谁负责"弄糊。失败也不弹吐司：未就绪屏自己会解释原因（X-C3）。
    */
   useEffect(() => {
-    if (screen !== 'translate' || !autoStart) return;
+    if (!autoStart) return;
     void serviceStart().catch(() => undefined);
-  }, [screen, autoStart]);
+  }, [autoStart]);
 
   /**
    * 翻译来源的**补读时机**（P-D3 分档的保鲜）—— `useTranslateSource` 挂载时只读一次，
@@ -278,13 +315,26 @@ export function App() {
    * 一次性：按 `startedAt` 记账，同一次下载只重启一次 —— 否则 1.5s 轮询会让它反复重启。
    */
   const restartedFor = useRef<string | null>(null);
+  const prevDownloadState = useRef<string | null>(null);
+  const pendingRestart = useRef(false);
   useEffect(() => {
-    if (download?.state !== 'done' || !status?.runtime?.ready) return;
-    const key = download.startedAt ?? 'done';
+    const state = visibleDownload?.state ?? null;
+    const prev = prevDownloadState.current;
+    prevDownloadState.current = state;
+
+    // 只认**本次会话内**的跃迁（running/interrupted → done）。应用启动时读到的历史
+    // done 不能触发重启，否则每次开应用都会先起服务再白等一次 stop。
+    if ((prev === 'running' || prev === 'interrupted') && state === 'done') {
+      pendingRestart.current = true;
+    }
+    if (state !== 'done' || !pendingRestart.current || !status?.runtime?.ready) return;
+
+    const key = visibleDownload?.startedAt ?? 'done';
     if (restartedFor.current === key) return;
     restartedFor.current = key;
+    pendingRestart.current = false;
     void restart();
-  }, [download?.state, download?.startedAt, status?.runtime?.ready, restart]);
+  }, [visibleDownload?.state, visibleDownload?.startedAt, status?.runtime?.ready, restart]);
 
   /**
    * 手动启动（未就绪屏「启动本地服务」）。与上面的自动启动走**同一条** IPC，
@@ -381,8 +431,12 @@ export function App() {
    * 读不到来源（`null`：服务没起来 / 选项请求失败）按本地处理 —— 回落到最严判据，
    * 不会比 ver2.1 更松（理由见 `useTranslateSource` 注释）。
    */
-  const svcDown = status?.state === 'stopped' || status?.state === 'error';
-  const blocked = source === 'online' ? svcDown : !running;
+  /*
+   * local 来源下「① 服务在跑」不等于「能翻译」：D6 闸门会只放 ① 进来、把 ②/③ 跳过，
+   * 此时 state 仍是 running（degraded=true）。准入必须同时看 `engineMissing`，
+   * 否则装配流程页在最需要它的那一刻被挡掉。online 来源不需要本地引擎，维持原判据。
+   */
+  const blocked = source === 'online' ? svcDown : !running || engineMissing;
   // 哪些屏在服务未就绪时让位，判定集中在 nav.ts 一处（设置页与音乐屏有例外）
   const showNotReady = blocked && isBlockedWhenNotReady(screen);
 
@@ -393,42 +447,6 @@ export function App() {
   }, [lib]);
 
   const toolbar = useMemo(() => {
-    // G5：下载态优先于服务五态 —— 引擎在下载/中断/缺件时，工具条右侧显示「引擎下载中 /
-    // 下载中断 / 需下载引擎」芯片（带细环或播放按钮），点击回下载视图。
-    // 🔴 不替换服务五态的语义：下载完（done）芯片消失、回落服务五态（见 engineDownloadChip）。
-    const downloadChip = engineDownloadChip(download, engineMissing);
-    if (downloadChip) {
-      return {
-        title: downloadChip.isAlert ? '下载中断' : '引擎下载中',
-        subtitle: downloadChip.isAlert ? '点这里继续下载或从头重下' : '下载在后台继续，可随时去漫画库、设置或音乐页',
-        actions: (
-          <>
-            <Badge>{sourceChipLabel(source, platform)}</Badge>
-            <button
-              type="button"
-              onClick={() => setDownloadViewOpen((v) => !v)}
-              title={downloadChip.isAlert ? '继续下载 / 重新下载' : '查看下载进度'}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                background: 'none',
-                border: 'none',
-                padding: 0,
-                cursor: 'pointer',
-              }}
-            >
-              {downloadChip.showRing ? (
-                <ProgressRing percent={downloadChip.percent} size={16} />
-              ) : downloadChip.isAlert ? (
-                <span style={{ color: 'var(--md-error)', fontSize: 13 }}>▶</span>
-              ) : null}
-              <Pill colorVar={downloadChip.colorVar}>{downloadChip.text}</Pill>
-            </button>
-          </>
-        ),
-      };
-    }
     if (showNotReady) {
       return {
         title: '服务未就绪',
@@ -508,12 +526,11 @@ export function App() {
     source,
     status?.state,
     view,
-    download,
-    engineMissing,
   ]);
 
-  // 翻译应用的视图 Tab 行；音乐屏不加（《09》§3.3），设置页是全局页也不加
-  const showViewTabs = !showNotReady && screen === 'translate';
+  // 翻译应用的视图 Tab 行；音乐屏不加（《09》§3.3），设置页是全局页也不加；
+  // 下载页是覆盖层，也不该顶着翻译视图 Tab。
+  const showViewTabs = !showNotReady && screen === 'translate' && overlay === null;
 
   /**
    * 壳层交给屏装配件的唯一一份数据（`panes/shell-context.ts`）。
@@ -531,6 +548,7 @@ export function App() {
     source,
     platform,
     running,
+    engineProcess: visibleEngineProcess,
     ipcError,
     showNotReady,
     startService,
@@ -554,10 +572,12 @@ export function App() {
     refreshAll,
     refreshKey,
     rootDir: status?.root_dir ?? null,
-    download,
+    download: visibleDownload,
     engineMissing,
-    downloadViewOpen,
-    setDownloadViewOpen,
+    downloadEntry,
+    openEngineDownload,
+    dismissDownload,
+    applyDownload,
     mode,
     setTheme,
     sidebarLabels,
@@ -568,7 +588,13 @@ export function App() {
 
   return (
     <div className="shell">
-      <Sidebar screen={screen} onScreen={setScreen} labels={sidebarLabels} />
+      <Sidebar
+        screen={screen}
+        onScreen={setScreen}
+        labels={sidebarLabels}
+        downloadEntry={downloadEntry}
+        onOpenDownload={openEngineDownload}
+      />
 
       <div className="main">
         <Toolbar title={toolbar.title} subtitle={toolbar.subtitle} actions={toolbar.actions} />
@@ -582,20 +608,9 @@ export function App() {
             </Notice>
           ) : null}
 
-          {/* G5：下载视图（屏 2 / 屏 3）。**覆盖**内容区但不弹模态、不拦截其它屏 ——
-              用户可随时点工具条芯片关掉它去漫画库 / 设置 / 音乐，下载在后台照常继续。
-              它优先于屏内容：开着它的时候后面那一屏照常在，只是被盖住。 */}
-          {downloadViewOpen && isDownloadActive(download) && download ? (
-            <DownloadPanel
-              view={download}
-              requiredBytes={status?.runtime?.requiredBytes}
-              onContinue={() => void downloadEngineModels()}
-              onRedownload={() => void downloadEngineModels(true)}
-              onBack={() => setDownloadViewOpen(false)}
-            />
-          ) : (
-            <Outlet context={shell} />
-          )}
+          {/* 下载页走独立路由（`/engine-download`），由 `DownloadPane` 渲染；
+              切页 / 返回不卸载壳层，下载继续在后台跑。 */}
+          <Outlet context={shell} />
 
           {tasksError ? <Notice kind="bad">任务列表读取失败：{tasksError}</Notice> : null}
           {libError ? <Notice kind="bad">漫画库读取失败：{libError}</Notice> : null}

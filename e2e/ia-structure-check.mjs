@@ -445,14 +445,40 @@ const judgeProductSidebar = (src) => ({
   console.log('');
 }
 
+/**
+ * C8f（D-233）：侧栏下载入口 —— 设置之上、纯图标、有 aria-label、按状态条件渲染。
+ *
+ * 判据直接读产品源码（不另造一份合成 DOM）：这条入口是三态图标 + 条件渲染，
+ * 合成快照只能验证其中一半。
+ */
+const judgeDownloadEntry = (src) => {
+  const dl = src.indexOf('nav-item is-global is-download');
+  const settings = src.indexOf("screen === 'settings' ? 'nav-item is-global is-active'");
+  const hasAria = src.includes('aria-label={DOWNLOAD_META[downloadEntry].label}');
+  const conditional = src.includes("downloadEntry !== 'hidden' ? (");
+  const noText = !/is-download[\s\S]{0,600}?<span>/.test(src);
+  return dl > 0 && settings > dl && hasAria && conditional && noText;
+};
+
+{
+  const okBase = judgeDownloadEntry(SIDEBAR_TSX);
+  console.log('🟢 基线 · 产品镜像：侧栏下载入口');
+  ok(okBase, `C8f 下载入口在设置之上、纯图标、有 aria-label、按状态条件渲染（实测 ${okBase ? '绿' : '红 ← 误报!'}）`);
+  const mutated = SIDEBAR_TSX.replace('aria-label={DOWNLOAD_META[downloadEntry].label}', 'aria-label=""');
+  const okMut = judgeDownloadEntry(mutated);
+  console.log('🔴 反证 · 产品镜像：去掉下载入口的 aria-label');
+  ok(!okMut, `C8f 在此破坏下**变红**（实测 ${!okMut ? '红' : '仍绿 ← 假阳性!'}）`);
+  console.log('');
+}
+
 {
   // 🔴 按文件实际 EOL 拼锚点：本仓文件是 CRLF，手写 `\n` 会找不到边界
   //    （同类坑在 settings-media / launch-gate 的变异里都记过）。
   const eol = SIDEBAR_TSX.includes('\r\n') ? '\r\n' : '\n';
   const anchor = [
-    '      <button',
-    '        type="button"',
-    "        className={screen === 'settings' ? 'nav-item is-global is-active' : 'nav-item is-global'}",
+    '        <button',
+    '          type="button"',
+    "          className={screen === 'settings' ? 'nav-item is-global is-active' : 'nav-item is-global'}",
   ].join(eol);
   const injected = ['      <div className="sidebar-status">{stateView(\'running\').text}</div>', anchor].join(eol);
   const fileUrl = new URL('../src/components/Sidebar.tsx', import.meta.url);

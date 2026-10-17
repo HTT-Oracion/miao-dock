@@ -54,6 +54,8 @@ function seedWeights(base) {
   const files = [
     { id: 'fx-visual', set: 'visual', dest: 'models/fx/visual.bin', sizeBytes: 3 },
     { id: 'fx-llm', set: 'llm', dest: `models/sakura/${LLAMA_VERSION_DIR}.gguf`, sizeBytes: 4 },
+    // D-233：翻译权重（nllb）单独一档，用来证明 `sets` 真的把 visual / llm / translation 分开。
+    { id: 'fx-nllb', set: 'translation', dest: 'models/translators/nllb.bin', sizeBytes: 2 },
   ];
   for (const f of files) {
     const p = path.join(root, f.dest);
@@ -64,7 +66,11 @@ function seedWeights(base) {
     manifest,
     JSON.stringify({
       files,
-      sets: { visual: { files: ['fx-visual'] }, llm: { files: ['fx-llm'] } },
+      sets: {
+        visual: { files: ['fx-visual'] },
+        llm: { files: ['fx-llm'] },
+        translation: { files: ['fx-nllb'] },
+      },
     }),
   );
   return { manifest, root, files };
@@ -75,7 +81,8 @@ function seedWeights(base) {
  *
  * 可选值：`python` / `source` / `deps` / `patches` / `venvRoot`（后者是级联场景：
  * 整个运行时候选 ⇒ 其余各项的判据路径都在它下面，必然一起翻）/ `llm` / `weights`
- * （后两项属模型链，见上面的说明）。
+ * （后两项属模型链，见上面的说明）；以及分档粒度 `visual` / `sakura` / `nllb`
+ * （只拆对应 model set，D-233）。
  *
  * @returns {{ rt: string, src: string, venv: string, env: Record<string,string> }}
  */
@@ -125,6 +132,17 @@ export function buildRuntime(base, missing = []) {
   if (missing.includes('llm')) fs.rmSync(llmBin, { force: true });
   if (missing.includes('weights')) {
     for (const f of weights.files) fs.rmSync(path.join(weights.root, f.dest), { force: true });
+  }
+  // D-233：分档粒度 —— 只拆某一档，用来证明 `sets` 不是把三档合成一个布尔。
+  for (const [key, id] of [
+    ['visual', 'fx-visual'],
+    ['sakura', 'fx-llm'],
+    ['nllb', 'fx-nllb'],
+  ]) {
+    if (missing.includes(key)) {
+      const f = weights.files.find((x) => x.id === id);
+      if (f) fs.rmSync(path.join(weights.root, f.dest), { force: true });
+    }
   }
   return {
     rt,
