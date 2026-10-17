@@ -207,10 +207,10 @@ npm run task -- e2e                   # D1–D5 端到端（真实 engine + 真�
 npm run task -- capture               # 截图取证（需屏幕解锁；不满足条件会拒绝出图而非交假证据）
 
 # 结构断言（每条都带反证轮，见 docs/internal/spec-notes.md 与 AGENTS.md §3）
-npm run task -- check:ia              # IA 结构 35 条（侧栏两级 / 视图 Tab / 设置两栏壳 / 小节分层 / 侧栏两套几何 C8d / 侧栏不渲染服务状态点 C8e）
+npm run task -- check:ia              # IA 结构 37 条（侧栏两级 / 视图 Tab / 设置两栏壳 / 小节分层 / 侧栏两套几何 C8d / 侧栏不渲染服务状态点 C8e / 下载入口 C8f）
 npm run task -- check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
 npm run task -- check:quit            # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW / 前端不静默 / Windows signal_tree 无条件 /F）
-npm run task -- check:autostart       # 翻译服务「自动启动 / 手动启停」根因钉子 18 条 / 反证 19 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / effect 依赖不含 status / stopped 给「启动」/ 服务实现默认档 = Rust / default-run 指向真实 bin；不起进程）
+npm run task -- check:autostart       # 翻译服务「自动启动 / 手动启停」根因钉子 21 条 / 反证 23 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / effect 依赖不含 status / stopped 给「启动」/ 服务实现默认档 = Rust / default-run 指向真实 bin；不起进程）
 npm run task -- check:engine-parity   # 引擎耦合点纯函数 24 条（Rust `--engine-selftest` ⟷ 冻结 golden；real/mock 两档）
 npm run task -- check:engine-http     # 引擎 HTTP 运行期 18 条（真发 HTTP 打伪引擎：请求体 / 错误归一 / 三重就绪 / 超时带走证据）
 # ⚠️ `engine-client 那组钉子` 已退役（D-203）：它测的是 Node 侧 `engine-client.mjs` 的 60 条断言，
@@ -232,11 +232,11 @@ npm run task -- check:docs            # 文档 ↔ 实现一致性 21 条：条�
 npm run task -- check:bundle          # 打包配置钉子 13 条 / 反证 18 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip`；**W6** 必需资产条目在且 src 真实存在；**W7/W7b（C5）** 随包 **0 个模型权重**（后缀黑名单 + 与 `engine/models.manifest.json` 逐条交叉）；**W8–W11（E2/E3）** NSIS 安装器钩子：长路径**只读提示**（不替用户改 `HKLM`）+ 卸载**默认保留**引擎运行时且不碰作品目录 + 引导写明 SmartScreen + **每个弹窗都有 `IfSilent` 守卫**（否则静默安装/卸载会被弹窗挂死，不是变红是不返回）；源码级，不起进程）
 npm run task -- check:resources       # 随包资源寻址 **A1/A2** 三环境取证 8 条 / 反证 4 条（dev 态不误报 · 打包齐备取资源目录 · 打包缺失报 `RESOURCE_MISSING` · 优先级 · 必需资产交叉验证 · 源码钉）
 npm run task -- check:packaged        # **A4 打包后冒烟**：真实安装包三层取证 12 条（nightly 层；NSIS 静默安装 → `--check-assets` + `--engine-crf-plan` 命中包内 wheel → 起服务打 `/health` + mock 替身 + 启动配方）
-npm run task -- check:runtime-probe   # **B2/B5 引擎运行时七项只读检测** 74 条 / 反证 4 条（`GET /api/v1/engine/runtime`；`venvRoot`/`python`/`source`/`deps`/`patches`/`llm`/`weights` 逐项独立翻转 + `detail` 必带绝对路径 + 缺补丁点名到 patch id + mock 档不 warn + junction 场景三项 env 判定穿过链接。末两项属**模型链**（D-231③），前五项全绿但缺它们时 `ready` 仍为 false）
+npm run task -- check:runtime-probe   # **B2/B5 引擎运行时七项只读检测** 78 条 / 反证 5 条（`GET /api/v1/engine/runtime`；`venvRoot`/`python`/`source`/`deps`/`patches`/`llm`/`weights` 逐项独立翻转 + `detail` 必带绝对路径 + 缺补丁点名到 patch id + mock 档不 warn + junction 场景三项 env 判定穿过链接。末两项属**模型链**（D-231③），前五项全绿但缺它们时 `ready` 仍为 false）
 npm run task -- check:path-single-source # **B3 检测与启动同源** 5 条 / 反证 1 条（`/engine/runtime` 的 `python.path` vs `--print-launch-plan` 的 `engine.cmd[0]` 逐字节比对）
 npm run task -- check:launch-gate    # **D6 real 档启动前预检闸门** 10 条 / 反证 4 条（real+未就绪 ⇒ **②/③ 一个不起、① 照常起**（D-229）并逐项点名七项；mock 档不过闸；含三条源码钉：「`gate_message(` 早于 `spawn_spec(&plan.engine`」+「闸门不得连 ① 一起挡」+「`wait_probe` 先查子进程存活再谈超时（D-231②）」）
 npm run task -- check:install-guide  # **D5 安装引导与产品对拍** 18 条 / 反证 6 条（两份引导的落点模板代入本机后 == `mangasvc --print-paths` 推出的落点、体积标记 == 清单按平台求和、七项就绪项 · 三条落点纪律 · 平台形态互不串 · 两种命令形态都存在）
-npm run task -- check:notready-state # **D1「运行时未装配」独立成态** 19 条 / 反证 9 条（两条链路都带 `runtime` 块 · 七项判据含模型链的 `llm`/`weights`（D-231③）· **装配四段取代 L1–L4**（D-231⑥）：四句文案逐字冻结 + 旧阶段表真的删干净 + 段号只来自 `download.step`、第四段「就绪」由 `runtime.ready` 收尾而不是第四个事件 + 引导页与时间线共用同一个 `AssemblyTimeline` · 新分支不混进服务失败 · 「约 X GB」来自服务端 `requiredBytes`）
+npm run task -- check:notready-state # **D1「运行时未装配」独立成态** 21 条 / 反证 10 条（两条链路都带 `runtime` 块 · 七项判据含模型链的 `llm`/`weights`（D-231③）· **装配五段取代 L1–L4**（D-233，承 D-231⑥）：五句文案逐字冻结 + 旧阶段表真的删干净 + 段号只来自 `download.step`、第五段「就绪」由 `runtime.ready` 收尾而不是第五个事件 + 引导页与时间线共用同一个 `AssemblyTimeline` · 新分支不混进服务失败 · 「约 X GB」来自服务端 `requiredBytes`）
 npm run task -- check:models-guide   # **D8 模型引导清单（渲染而非编写）** 14 条 / 反证 4 条（逐条目标绝对路径 ⟷ Node 独立算 · 就绪 = 在位且大小一致 · 改清单副本 ⇒ 输出跟着变）
 npm run task -- check:size-guide     # **C1 体积与落点如实告知** 16 条 / 反证 3 条（`guidance.totalBytes` == 本平台清单 `sizeBytes` 求和且与 D1 同数 · 分档之和恒等于总量 · 与安装引导文档三方闭环 · 界面无写死 GB）
 npm run task -- check:model-runner   # **C2 执行体随包定位** 12 条 / 反证 3 条（默认执行体 == 当前可执行文件的**绝对路径** · verify 跑得起来、不是 INTERNAL · 不在盘上时报路径 · 跨卷单独记账）

@@ -4940,6 +4940,89 @@ static 层 **17/17** · `npx tsc --noEmit` 无输出 · prettier 全绿 · eslin
 static 层 **17/17**（含 `check:counts` 对账）· `npx tsc --noEmit` 无输出 ·
 prettier 全绿 · eslint **0 error**（134 warning 为既有基线）。
 
+## D-233 装配流程四段 → 五段：visual / llm 分开 + 下载入口提升为独立页（2026-10-17）
+
+**用户要求**：① 应用启动即按「自动启动翻译服务」拉起；② 「本地引擎装配」拆成
+**visual 装配**与 **llm 装配**两段；③ 在第一个未完成的模型段下方给「下载本地引擎 /
+使用在线翻译」两条路；④ 下载期间侧栏设置上方出现三态入口，独立下载页可返回、完成可关闭；
+⑤ 应用内切页不中断下载，退出后下次可手动续传。
+
+**为什么不能只改前端文案**：改前的事实源回答不了「visual 装完没有 / llm 装完没有」——
+`runtime_probe.items.weights` 把 `visual + llm + translation` 合成一个布尔；
+`modelDownload.step` 只有 `prepare / runtime / models`，且 stage1 下视觉模型时
+`on_phase("models")` 会把 `stage` 错标成 `stage2`。只改 `ASSEMBLY_PHASES` 会画出一条
+永远推不动、或永远跳两段的流程。
+
+**后端（数据先到位）**
+- `ModelDownloadView.step` 扩为 `prepare / runtime / visual / llm`，保留 `models` 作为
+  全量 CLI（不带 `--stage`）的兼容值。`runtime_setup.rs` 第 1 轮的模型下载发 `visual`；
+  `fetch_models.rs` 第 2 轮（`--stage 2`、无 bootstrap）在下载前补发 `llm` —— 少了它，
+  流程会一直停在 visual。
+- `stage` 仍是下载页的两步指示器，映射改为 `prepare/runtime/visual → stage1`、
+  `llm/models → stage2`。这顺手修掉「视觉模型还在下、下载页已显示第 2 步」的错标。
+- `RuntimeProbe` **保留七项 items**（不动 D-231③ 的契约），新增
+  `sets: { visual, translation, llm, runtime }`，每项 `{ entries, ready, totalBytes, readyBytes }`。
+  归属由 `ModelStatus.set_of`（来自清单 `sets.<name>.files`）一处决定，`set_stat()`
+  不再按条目自身 `set` 猜两套。
+- **`llm` 段必须覆盖 nllb**：英译中走 `translation` 档，不看 `llm` 档；只判 Sakura 会让
+  英译中用户看到「LLM 已就绪」却翻不出来。
+- `load_persisted() → normalize_loaded()` 只把 `running` 校正为 `interrupted`
+  （原因「应用已退出，下载已暂停」）并原子落盘，清掉上一轮的瞬时速度/剩余时间；
+  `done / interrupted / idle` 不动。不自动续传（用户确认的取舍：下次手动「继续下载」）。
+
+**前端**
+- `src/screens/library/assembly.ts` 是五段常量、`STEP_INDEX`、`assemblyNotes()`、
+  `engineInstallView()` 的唯一出处；`AssemblyTimeline.tsx` 只做渲染，段内插槽承载
+  「第一个未完成模型段」的决策区。
+- 安装提示挂在**第一个未完成模型段**（visual 未就绪 → visual 下；visual 完成、llm 未就绪
+  → 自动移到 llm 下），体积用该段 `totalBytes / readyBytes`，不用全局 `requiredBytes`。
+- `App` 的自动启动 effect 改为应用启动即执行，依赖**恰为** `[autoStart]`：不含 `screen`
+  （会退回「进翻译屏才起」），不含 `status`（停止后会被原地复活）。`check:autostart`
+  C1/C2 按 AGENTS §2.5 改成正向判据，并新增 C4（准入含 `engineMissing`）、
+  C5（done→restart 只认本次会话跃迁）、C6（在线只跳过 ③，② 与来源无关）。
+- local 来源准入改为 `!running || engineMissing`：D6 闸门让 ① 以 `running + degraded`
+  起来时，只认 `!running` 会把最需要这一页的机器挡掉（这是「启动服务但没启动引擎」的
+  直接感知来源）。
+- 下载入口：`downloadEntryState(view, dismissedStartedAt)` 统一映射
+  `hidden / running / paused / done`；侧栏入口是纯图标（`Loader2` 旋转 + 暂停 + 勾选），
+  `done` 按 `startedAt` 与 dismissal 比对，关闭后不复活、新下载自动重现。
+- 下载页改为独立路由 `/engine-download`（`OVERLAY_ROUTES`，不塞进 `Screen` 枚举）：
+  返回走 `navigate(-1)`，无历史回落默认屏；完成态才给「关闭下载」。
+  `done` 不再让页面卸载（`DownloadPane` 用 `downloadEntry` 判可见性）。
+
+**刻意没做**：不改退出流程、不加退出拦截；不自动续传；不新增依赖；不把七项拆成八项；
+不把 `stage` 扩成五段（那是 `step` 的事）。
+
+**断言与条数**：`check:notready-state` 20 条（G4 五句 / G0c sets / G11 assemblyNotes）·
+`check:runtime-probe` 78 条 + 5 变异（S9–S11 分档只翻对应档）·
+`check:engine-bootstrap` 23 条 + 22 变异（W4 加 visual/llm 事件、M14/M15/M15b）·
+`check:autostart` 21 条 + 23 变异 · `check:ia` 37 条（新增 C8f）·
+新 `check:engine-download-entry` 7 条 + 6 变异（内存态反证，不写盘）·
+`check:models` / `check:size-guide` / `check:contract` 的既有口径不变。
+
+**已知边界**：全量 `--fetch-models` 不带 `--stage` 时仍会发 `models`，前端映射到
+第一个未就绪模型段；在线来源下 `llm` 段是「已跳过」而不是失败（online 精简页接管）；
+`runtime.ready` 仍是七项全真，只用于「就绪」收尾，不能拿来判断 visual/llm 各自完成。
+
+**A 口径修正（2026-10-17）**：用户反馈「没开自动启动，流程图却显示运行环境装配已完成」。
+根因是五段时间线把**磁盘装配状态**画成了「本次启动进度」：前两段只查
+`venvRoot/python/source/deps/patches`，与 `autoStart` 无关；而缺项又被标成 `active`，
+看起来像「正在装」。现在缺项在**没有下载/启动活动**时一律 `waiting`（只有
+`download.step` 才能真正点亮 `active`），并在 `state === 'stopped'` 时于时间线上方
+明确写「本地服务未启动；下面是磁盘装配状态」。已装好的段仍打勾 —— 那是事实，
+不是谎；变的是不再假装它正在发生。新增 G14 与反证 M10 钉住这条口径。
+
+**验收（2026-10-17）**：static 闸门 18/18 · `check:autostart` 21/21 + 反证 23/23 ·
+`check:notready-state` 21/21 + 反证 32/32 · `check:runtime-probe` 78/78 + 5 变异全红 ·
+`check:engine-bootstrap` 23/23 + 22 变异全红 · `check:ia` 37/37 + 反证全红 ·
+`check:engine-download-entry` 7/7 + 6 变异全红 · `check:settings` 186/186 + 145 变异全红 ·
+`check:units` 46/46 + 61 变异全红 · `check:contract` 77/77 · `check:size-guide` 16/16 ·
+`check:models` 76/76 · `check:progress-truth` 11/11 · `cargo test --lib` 202/202 ·
+`tsc --noEmit` 无输出 · `vite build` 通过。`check:full` 仍有**本机既有环境失败**：
+engine-parity 的 `translationWeightsPresent`（要 appData 引擎树）、svc-selftest 的 A21
+（沙箱权限）、lifespan 的窗口自动化、e4（缺真权重）—— 与本轮改动无关，按 AGENTS §3
+的真机/环境依赖项如实标注，不当作回归。
+
 ⚠️ **未验项如实登记**：只验了结构（类名 / 无行内样式 / 动作行是 flex），
 **没有**在真机上看过一眼 —— 本机跑不到引导页那张卡片（需要 runtime 未装配 + real 档，
 而本机 Python 栈访问不了 pypi 镜像）。按钮的实际宽度与两行的观感待真机比对。
