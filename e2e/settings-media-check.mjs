@@ -88,6 +88,8 @@ const F = {
   // X-C3「准备中」屏（S6 的「L1–L4 文案 + 首张稍慢」）。它不在设置页里，
   // 但它与设置页共享同一条事实源（Rust 的 StatusView），所以放同一轮断言。
   notReady: path.join(APP, 'src', 'screens', 'library', 'NotReadyScreen.tsx'),
+  // 未就绪屏「使用在线翻译」卡片里的内嵌表单（同一屏的另一半，判据同源）
+  onlineApi: path.join(APP, 'src', 'screens', 'settings', 'OnlineApiForm.tsx'),
   ipc: path.join(APP, 'src', 'ipc', 'index.ts'),
   nav: path.join(APP, 'src', 'stores', 'nav.ts'),
   // 断言读到的 css 是全分片拼接（见 loadSources）。
@@ -264,6 +266,7 @@ function loadSources() {
     specCheck: readMaybe(F.specCheck),
     settingsScreen: readMaybe(F.settingsScreen),
     notReady: readMaybe(F.notReady),
+    onlineApi: readMaybe(F.onlineApi),
     ipc: readMaybe(F.ipc),
     nav: readMaybe(F.nav),
     shellPrefs: readMaybe(F.shellPrefs),
@@ -2213,6 +2216,50 @@ add('NOTREADY.css.classes', 'NOTREADY', (ctx) => {
   };
 });
 
+add('NOTREADY.onlineForm.noInlineStyle', 'NOTREADY', (ctx) => {
+  /*
+   * 未就绪屏「使用在线翻译」卡片里的内嵌表单（`OnlineApiForm`）**不写行内样式**。
+   *
+   * 为什么单列一条：它原先整份是 `style={{…}}`（外层 column、两个 label、两个 input
+   * 各 8 条），改样式必须进 `.scss`，否则① 深色主题下写死的颜色不跟令牌走；
+   * ② 同一屏里同一种控件会有两种长相（设置页那份走 `.set-src-in`）；
+   * ③ 行内样式无法被"类名 → 样式表"这类反向判据覆盖。
+   *
+   * 🔴 判据是"不许出现 `style={`"，而不是"必须有多少个类" —— 后者会把
+   *    "换了一套行内写法"放行（那是绕过，不是迁移）。
+   */
+  const code = stripComments(ctx.s.onlineApi);
+  const problems = [];
+  const inline = [...code.matchAll(/style=\{\{/g)].length;
+  if (inline > 0) problems.push(`仍有 ${inline} 处行内样式`);
+  if (!/className="nr-form"/.test(code)) problems.push('表单没有落到 `nr-form` 类');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
+add('NOTREADY.onlineForm.actsNotFullWidth', 'NOTREADY', (ctx) => {
+  /*
+   * 「保存并使用在线翻译」**不占一整行**。
+   *
+   * 为什么它会占：`.nr-form` 是 `flex-direction: column`，而 flex 容器默认
+   * `align-items: stretch` ⇒ 按钮作为**直接子项**会被拉成整行宽，一枚「保存」
+   * 看起来像一个面板而不是一个动作。所以必须有一层只放按钮的 flex 行。
+   *
+   * 🔴 组件侧与样式侧**两边都要钉**：只钉组件 ⇒ 把 `.nr-form-acts` 的
+   *    `display: flex` 去掉照样绿（那时按钮仍被 stretch）；只钉样式 ⇒ 把那层容器
+   *    删掉、按钮直接进 column 也照样绿。两边都钉才叫"验过"。
+   */
+  const code = stripComments(ctx.s.onlineApi);
+  const css = ctx.s.css;
+  const problems = [];
+  if (!/<div className="nr-form-acts">\s*<Btn/.test(code)) {
+    problems.push('保存按钮不在 `nr-form-acts` 这一层里（会作为 column 的直接子项被拉成整行）');
+  }
+  const acts = /\.nr-form-acts\s*\{([^}]*)\}/.exec(css);
+  if (!acts) problems.push('样式表没有 `.nr-form-acts` 规则');
+  else if (!/display:\s*flex/.test(acts[1])) problems.push('`.nr-form-acts` 不是 flex（按钮仍会被 stretch）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+
 add('NOTREADY.timeline.derivedFromStages', 'NOTREADY', (ctx) => {
   /*
    * 时间线**恰 4 步**，且步数与序号都由 `ASSEMBLY_PHASES` 单源派生 —— 不是写死的 1/2/3/4。
@@ -3768,6 +3815,27 @@ const MUTATIONS = [
     find: 'const STEP_INDEX: Record<AssemblyStep, number> = { prepare: 0, runtime: 1, models: 2 };',
     replace: 'const STEP_INDEX: Record<string, number> = { prepare: 0, runtime: 1, models: 2, ready: 3 };',
     expect: ['NOTREADY.phase.readyNotEvent'],
+  },
+  {
+    name: '在线表单退回行内样式（颜色不再跟令牌、同屏同一种控件两种长相）',
+    file: F.onlineApi,
+    find: '        <span className="nr-form-k">App Secret</span>',
+    replace: '        <span className="nr-form-k" style={{ color: "#888" }}>App Secret</span>',
+    expect: ['NOTREADY.onlineForm.noInlineStyle'],
+  },
+  {
+    name: '摘掉 `nr-form-acts` 那层（按钮直接进 column ⇒ 被 stretch 成整行宽）',
+    file: F.onlineApi,
+    find: '      <div className="nr-form-acts">\n        <Btn kind="primary"',
+    replace: '      <div>\n        <Btn kind="primary"',
+    expect: ['NOTREADY.onlineForm.actsNotFullWidth'],
+  },
+  {
+    name: '`.nr-form-acts` 不再 flex（类名还在，但按钮仍会被 stretch 成整行）',
+    file: F.mangaStyle,
+    find: '.nr-form-acts {\n  display: flex;',
+    replace: '.nr-form-acts {\n  display: block;',
+    expect: ['NOTREADY.onlineForm.actsNotFullWidth'],
   },
   {
     name: 'TS 侧把第五态 stopping 删掉（Rust 已是五态；stateView() 会返回 undefined 而崩）',

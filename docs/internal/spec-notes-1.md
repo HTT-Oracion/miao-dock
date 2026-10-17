@@ -4900,4 +4900,48 @@ static 层 **17/17** · `npx tsc --noEmit` 无输出 · prettier 全绿 · eslin
   自检是否真能答 True，都还没验。
 - 产品侧仍缺"③ 起来失败 ⇒ 自动降级到 CPU 重拉"（见上）。
 
+## D-232 在线 API 内嵌表单：行内样式清零 + 保存按钮不再占整行（2026-10-17）
+
+**用户要求**：`src/screens/settings/OnlineApiForm.tsx` ① 不要写行内样式；② 保存按钮不要占一整行。
+
+**改前的样子**：整份表单 25 处 `style={{…}}` —— 外层 column/gap、平台块、两个 `label`、
+两个 `input`（各 6–8 条：宽 100% / 内边距 / 圆角 / 边框 / 背景 / 字号），连「（无可用平台）」
+都是行内。它是 D-230⑦「未就绪屏行内样式清零」那次**漏掉的一半**：那次搬的是
+`NotReadyScreen.tsx`（`.nr-guide*`），而这个组件是同一屏另一张卡片里的内嵌表单，没跟着走。
+
+**为什么不复用设置页那套 `.set-src-*`**：`.set-src` 自带一条**面板内分区线**（`border-top`
++ 上下 padding），那是设置页「翻译来源」分组内的分区语义；这里是引导卡片的内嵌表单，
+套上去会凭空多出一条横线，读成"卡片里又分了一屏"。⇒ 只把**控件几何**落成新的一族
+`nr-form-*`，落在 `src/styles/manga.scss` 的 X-C3 段（与 `.nr-guide*` 同族），
+颜色与圆角仍走 `--md-*` 令牌（与设置页同源）。
+几何刻意与 `.set-src-in` 不同：那里是 11px 数字字体的窄行（塞在设置的窄右列里），
+这里是卡片里的主填写区，14px 才读得清。
+
+**为什么按钮会占一整行（不是 `.btn` 的问题）**：`.btn` 自己是 `inline-flex`，但 `.nr-form`
+是 `flex-direction: column`，而 flex 容器默认 `align-items: stretch` ⇒ 按钮作为**直接子项**
+会被拉成整行宽。所以修法是加一层只放按钮的 flex 行（`.nr-form-acts`），
+而不是给按钮写 `width: fit-content`（那要在每一枚按钮上重复一遍，且换容器就失效）。
+
+**断言**（`check:settings` 184 → 186 条、反证 142 → 145 条）
+
+- `NOTREADY.onlineForm.noInlineStyle`：判据是"不许出现 `style={`"（数出几处），
+  不是"必须有多少个类" —— 后者会把"换了一套行内写法"放行。
+- `NOTREADY.onlineForm.actsNotFullWidth`：**组件侧与样式侧两边都钉** ——
+  组件侧要求 `<div className="nr-form-acts">` 直接包着 `<Btn`；
+  样式侧要求 `.nr-form-acts` 规则里真的有 `display: flex`。
+  🔴 只钉一边都是假绿：只钉组件 ⇒ 把 `display:flex` 去掉照样绿（按钮仍被 stretch）；
+  只钉样式 ⇒ 把那层容器删掉、按钮直接进 column 也照样绿。
+- 三条变异各自打在上面两条上：加回一行行内样式 / 摘掉 `nr-form-acts` 那层 / 把
+  `.nr-form-acts` 改成 `display: block`。
+- `F` 表与 `loadSources` 补 `onlineApi` 源（`readMaybe` 读不到返回 `''` ⇒ 自动全红，
+  不会静默跳过 —— 与 D-231① 同一条纪律）。
+
+**验收**：`check:settings` 正向 **186/186** · `--refute` **145/145 全红**（142 → 145）·
+static 层 **17/17**（含 `check:counts` 对账）· `npx tsc --noEmit` 无输出 ·
+prettier 全绿 · eslint **0 error**（134 warning 为既有基线）。
+
+⚠️ **未验项如实登记**：只验了结构（类名 / 无行内样式 / 动作行是 flex），
+**没有**在真机上看过一眼 —— 本机跑不到引导页那张卡片（需要 runtime 未装配 + real 档，
+而本机 Python 栈访问不了 pypi 镜像）。按钮的实际宽度与两行的观感待真机比对。
+
 

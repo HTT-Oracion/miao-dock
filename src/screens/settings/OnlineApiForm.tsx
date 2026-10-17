@@ -54,9 +54,9 @@ export function OnlineApiForm({ onSaved }: { onSaved?: () => void }) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ fontSize: 13, color: 'var(--md-muted)' }}>
-        平台
+    <div className="nr-form">
+      <div className="nr-form-line">
+        <span className="nr-form-k">平台</span>
         {platforms.length > 0 ? (
           <Select
             value={platform}
@@ -65,56 +65,39 @@ export function OnlineApiForm({ onSaved }: { onSaved?: () => void }) {
             label="翻译平台"
           />
         ) : (
-          <div style={{ marginTop: 4, fontSize: 14, color: 'var(--md-muted)' }}>（无可用平台）</div>
+          <span className="nr-form-empty">（无可用平台）</span>
         )}
       </div>
 
-      <label style={{ fontSize: 13, color: 'var(--md-muted)' }}>
-        App Key
+      <label className="nr-form-line">
+        <span className="nr-form-k">App Key</span>
         <input
+          className="nr-form-in"
           type="text"
           value={appKey}
           onChange={(e) => setAppKey(e.target.value)}
           placeholder="粘贴平台分配的 App Key"
-          style={{
-            display: 'block',
-            width: '100%',
-            marginTop: 4,
-            padding: '8px 10px',
-            borderRadius: 8,
-            border: '1px solid var(--md-line, rgba(128,128,128,0.25))',
-            background: 'var(--md-field, #fff)',
-            color: 'var(--md-ink)',
-            fontSize: 14,
-          }}
         />
       </label>
 
-      <label style={{ fontSize: 13, color: 'var(--md-muted)' }}>
-        App Secret
+      <label className="nr-form-line">
+        <span className="nr-form-k">App Secret</span>
         <input
+          className="nr-form-in"
           type="password"
           value={appSecret}
           onChange={(e) => setAppSecret(e.target.value)}
           placeholder="只出站，不回显"
           autoComplete="new-password"
-          style={{
-            display: 'block',
-            width: '100%',
-            marginTop: 4,
-            padding: '8px 10px',
-            borderRadius: 8,
-            border: '1px solid var(--md-line, rgba(128,128,128,0.25))',
-            background: 'var(--md-field, #fff)',
-            color: 'var(--md-ink)',
-            fontSize: 14,
-          }}
         />
       </label>
 
-      <Btn kind="primary" disabled={busy} onClick={() => void save()}>
-        {busy ? '保存中…' : '保存并使用在线翻译'}
-      </Btn>
+      {/* 🔴 这一层不能省：`nr-form` 是 column flex，按钮直接放进去会被拉成整行宽。 */}
+      <div className="nr-form-acts">
+        <Btn kind="primary" disabled={busy} onClick={() => void save()}>
+          {busy ? '保存中…' : '保存并使用在线翻译'}
+        </Btn>
+      </div>
     </div>
   );
 }
