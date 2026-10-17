@@ -187,7 +187,7 @@ export const TRANSLATE: SettingSection = {
           label: '自动启动翻译服务',
           state: 'live',
           def: '开',
-          why: '开：进入「漫画翻译」时自动拉起本地服务（默认）。' + '关：通过「启动本地服务」手动拉起 —— ',
+          why: '开：启动喵坞时自动拉起本地服务（默认）。' + '关：通过「启动本地服务」手动拉起 —— ',
         },
         { id: 'token-pairing', label: '令牌配对', state: 'live' },
         { id: 'root-dir', label: '落盘根目录', state: 'live' },

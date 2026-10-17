@@ -229,3 +229,9 @@ export function useToasts() {
   // 渲染由 components/NotificationStack 承担（它自己 useToastList 订阅全量），这里只出「推」
   return { push, dismiss: toastBus.dismiss };
 }
+
+// ------------------------------------------------------------------ 引擎下载
+
+// 先确保 ① 在运行、再发起下载的服务层 hook（单飞守卫不当错误处理）。
+export { useEngineDownload } from './use-engine-download';
+export type { StartDownloadResult } from './use-engine-download';

@@ -40,10 +40,28 @@ export interface RuntimeItem {
   fix?: string;
 }
 
+/**
+ * 一个装配档位的就绪与字节（D-233 五段流程）。
+ *
+ * `entries === 0` = 当前平台没有该档位（不是"已就绪"）；`readyBytes` 只算在位条目。
+ */
+export interface RuntimeSetView {
+  entries: number;
+  ready: boolean;
+  totalBytes: number;
+  readyBytes: number;
+}
+
 export interface RuntimeProbe {
   items: RuntimeItem[];
-  /** 五项全真 = 引擎具备启动的最低条件 */
+  /** 七项全真 = 引擎具备启动的最低条件 */
   ready: boolean;
+  /**
+   * 按清单档位细分：`visual` / `translation` / `llm` / `runtime`。
+   *
+   * 🔴 只用于五段流程逐段推进；`ready` 仍是七项全真，不能拿 `sets` 取代它。
+   */
+  sets?: Record<string, RuntimeSetView>;
   /** 当前平台要下的**模型资产**字节和（不含用户自己的 Python/torch；0 = 清单读不到） */
   requiredBytes: number;
 }

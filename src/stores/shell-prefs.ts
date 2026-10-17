@@ -49,7 +49,7 @@ export function persistSidebarLabels(on: boolean): void {
  * 只有明确写过 `'0'` 才是关。判据同 `initialSidebarLabels`。
  *
  * 语义（谁读它、什么时候读到，都在这两处）：
- *   · `App.tsx` 的 `autoStart` —— 进入「漫画翻译」应用时据此决定要不要拉服务；
+ *   · `App.tsx` 的 `autoStart` —— **应用启动**时据此决定要不要拉服务；
  *   · `catalog.ts` 的「自动启动翻译服务」项 —— 设置页据此渲染开关。
  * 值本身只住在这里，两处读的是**同一份**，不存在两个真值来源。
  */

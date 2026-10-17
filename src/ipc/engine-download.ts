@@ -14,6 +14,37 @@ import type { ModelDownloadView } from '@screens/settings/engine-api';
  *     避免两种语义相互冒充。
  *   · 文案严格区分「继续下载」（补齐缺口）与「重新下载」（从头再来），不编一种。
  */
+/** 侧栏下载入口的形态（`hidden` = 不渲染按钮）。 */
+export type DownloadEntryState = 'hidden' | 'running' | 'paused' | 'done';
+
+/**
+ * 由下载态 + dismissal 推导侧栏入口形态。
+ *
+ * - 进行中 → running；中断/失败 → paused；完成且未被关闭 → done；
+ * - `idle + startedAt` 视为 paused（D-231⑤ 的读抖动防御：确实开过一场下载）。
+ *
+ * `dismissedStartedAt` 以 `startedAt` 为键：新下载的键不同 ⇒ done 自动重现。
+ */
+export function downloadEntryState(
+  view: ModelDownloadView | null,
+  dismissedStartedAt: string | null,
+): DownloadEntryState {
+  if (!view) return 'hidden';
+  if (view.state === 'running') return 'running';
+  if (view.state === 'interrupted' || view.state === 'failed') return 'paused';
+  if (view.state === 'done') {
+    const key = view.startedAt ?? 'done';
+    return dismissedStartedAt === key ? 'hidden' : 'done';
+  }
+  // idle：只有"确实开过一场"时才给入口（D-231⑤）
+  return view.startedAt != null ? 'paused' : 'hidden';
+}
+
+/** 是否应该在下载页展示内容（空态由页面自己画）。 */
+export function isDownloadVisible(view: ModelDownloadView | null, dismissedStartedAt: string | null): boolean {
+  return downloadEntryState(view, dismissedStartedAt) !== 'hidden';
+}
+
 export interface DownloadChip {
   /** 芯片文案 */
   text: string;

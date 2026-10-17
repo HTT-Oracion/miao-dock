@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from '@/ipc';
+import { apiGet, apiPost, type RuntimeProbe } from '@/ipc';
 
 /**
  * ② 翻译服务 ·「推理引擎 / 模型与诊断」两小节的**服务端接口收口**。
@@ -213,13 +213,16 @@ export interface ModelStatus {
 // ------------------------------------------------------------------ /engine/status
 
 /**
- * 装配四段的段号（D-231④）—— `modelDownload.step` 的值域，服务端 `state.rs` 是唯一来源。
+ * 装配五段的段号（D-233）—— `modelDownload.step` 的值域，服务端 `state.rs` 是唯一来源。
  *
- * 🔴 这里的三个值**不覆盖** `stage` 的两步：下载详情页那个指示器只认 `stage1` / `stage2`
- * （`DownloadPanel.tsx` 的 `STAGE_TEXT`），而「环境准备」这一段在它眼里仍属于第 1 步。
- * 第四段「就绪」**没有**对应事件 —— 它由 `runtime.ready` 推导，不是装配发出来的。
+ * 🔴 这里的值**不覆盖** `stage` 的两步：下载详情页那个指示器只认 `stage1` / `stage2`
+ * （`DownloadPanel.tsx` 的 `STAGE_TEXT`），`visual` 在它眼里仍属第 1 步、`llm` 属第 2 步。
+ * 第五段「就绪」**没有**对应事件 —— 它由 `runtime.ready` 推导，不是装配发出来的。
+ *
+ * `models` 是**全量 CLI**（`--fetch-models` 不带 `--stage`）的兼容值：产品主路径只会发
+ * `prepare / runtime / visual / llm`，前端把它映射到第一个未就绪的模型段。
  */
-export type AssemblyStep = 'prepare' | 'runtime' | 'models';
+export type AssemblyStep = 'prepare' | 'runtime' | 'visual' | 'llm' | 'models';
 
 export interface ModelDownloadView {
   state: 'idle' | 'running' | 'interrupted' | 'done' | 'failed';
@@ -281,6 +284,8 @@ export interface EngineStatus {
     inpainter: string;
   };
   models: ModelStatus;
+  /** 运行时就绪检测（七项 + 分档 `sets`）；与 `ServiceStatus.runtime` 同一份 */
+  runtime: RuntimeProbe;
   /** 引擎原始阶段名（`seq N: 原话`）。**不进插件契约**，只给 Box 诊断看 */
   recentStageLog: string[];
   modelDownload: ModelDownloadView;
