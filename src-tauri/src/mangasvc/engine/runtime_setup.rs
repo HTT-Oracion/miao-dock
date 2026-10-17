@@ -347,7 +347,10 @@ pub fn run_bootstrap(
     )?;
 
     // ---- 阶段 6：模型权重（下载 + 解包 + 建链） ----
-    on_phase("models", "下载模型权重");
+    // 第 1 轮（`--stage 1`）下的只有视觉模型与 llama.cpp/CUDA —— 五段流程把这一段叫
+    // `visual`；全量 CLI（不带 `--stage`）一次会把翻译权重也带上，仍沿用旧的 `models`。
+    let model_phase = if max_stage == Some(1) { "visual" } else { "models" };
+    on_phase(model_phase, "下载模型权重");
     let model_ids: Option<Vec<String>> = max_stage.map(|s| {
         model_store::select_files_staged(model_manifest, None, None, Some(s))
             .map(|v| v.into_iter().map(|f| f.id).collect())

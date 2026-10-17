@@ -14,6 +14,7 @@
 //    · 声明了 `linkTo` 的文件 → 引擎实际打开的是 `<rootDir>/src/<linkTo>`（硬链接）；
 //    · 没声明 `linkTo` 的（Sakura 权重 / llama 归档）→ 就地读 `<rootDir>/<dest>`。
 //    只看 `dest` 会漏掉「store 里有、但没链进引擎树」这一种**真的跑不起来**的状态。
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
@@ -36,6 +37,22 @@ pub struct ModelStatus {
     pub guidance: ModelGuidance,
     /// 盘上实况（D4）：就绪资产的**真实占用**与最近一次落盘时间。
     pub disk: ModelDisk,
+    /// `id → set` 归属（**不进契约**）：来自清单 `sets.<name>.files` 的权威映射，
+    /// 用于按档位算就绪/字节，避免再写一份归属判据。`#[serde(skip)]` 保证
+    /// `models` 块的对外形状不变。
+    #[serde(skip)]
+    pub set_of: BTreeMap<String, String>,
+}
+
+/// 一个档位的就绪与字节（五段装配流程用）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ModelSetStat {
+    /// 当前平台可见条目数；0 = 清单里没有这一档（不是"已就绪"）
+    pub entries: usize,
+    pub total_bytes: u64,
+    /// 已就绪条目按 `sizeBytes` 求和（部分装配时 UI 用它与 total 算"还差多少"）
+    pub ready_bytes: u64,
+    pub ready: bool,
 }
 
 /// 盘上实况（D4 · 设置页「模型与诊断」扩到运行时）。
@@ -148,6 +165,27 @@ impl ModelStatus {
                 sets: Vec::new(),
             },
             disk: ModelDisk::empty(),
+            set_of: BTreeMap::new(),
+        }
+    }
+
+    /// 一个档位的就绪与字节。归属走 `set_of`（清单 `sets.<name>.files` 的权威映射），
+    /// **不按条目自身 `set` 猜** —— 两套归属判据会给出两个答案。
+    ///
+    /// `entries == 0` 表示当前平台没有这一档；此时 `ready = false`（空集合 ≠ 已就绪）。
+    pub fn set_stat(&self, set: &str) -> ModelSetStat {
+        let mine: Vec<&ModelFileStatus> = self
+            .files
+            .iter()
+            .filter(|f| f.applicable && self.set_of.get(&f.id).map(|s| s == set).unwrap_or(false))
+            .collect();
+        let total_bytes = mine.iter().filter_map(|f| f.size_bytes).sum();
+        let ready_bytes = mine.iter().filter(|f| f.ready).filter_map(|f| f.size_bytes).sum();
+        ModelSetStat {
+            entries: mine.len(),
+            total_bytes,
+            ready_bytes,
+            ready: !mine.is_empty() && mine.iter().all(|f| f.ready),
         }
     }
 }
@@ -167,7 +205,11 @@ const SET_UNASSIGNED: &str = "unassigned";
 ///
 /// `in_set` 是「set 名 → 该 set 的 id 列表」（清单 `sets.<name>.files`），它是**归属的权威**；
 /// 条目自身的 `set` 字段只作补充（清单只写了条目 `set` 而没在 `sets` 里登记 id 时兜住）。
-fn guidance_from(files: &[ModelFileStatus], platform: &str, in_set: &dyn Fn(&str) -> Vec<String>) -> ModelGuidance {
+fn guidance_from(
+    files: &[ModelFileStatus],
+    platform: &str,
+    in_set: &dyn Fn(&str) -> Vec<String>,
+) -> (ModelGuidance, BTreeMap<String, String>) {
     use std::collections::BTreeMap;
 
     let mine: Vec<&ModelFileStatus> = files.iter().filter(|f| f.applicable).collect();
@@ -231,7 +273,10 @@ fn guidance_from(files: &[ModelFileStatus], platform: &str, in_set: &dyn Fn(&str
         });
     }
 
-    ModelGuidance { platform: platform.to_string(), entries: mine.len(), total_bytes, sets }
+    (
+        ModelGuidance { platform: platform.to_string(), entries: mine.len(), total_bytes, sets },
+        by_id,
+    )
 }
 
 /// 读取 `.ready` 标记（S3 写入；不存在 ⇒ `None`，不报错）。
@@ -354,7 +399,7 @@ pub fn model_status(manifest_path: &Path, root_dir: &Path, link_base: Option<&Pa
         .collect();
 
     let marker = read_ready_marker(root_dir);
-    let guidance = guidance_from(&files_out, &key, &in_set);
+    let (guidance, set_of) = guidance_from(&files_out, &key, &in_set);
     let disk = disk_usage(&files, root_dir, &base);
     ModelStatus {
         visual_ready: all_ready("visual"),
@@ -367,6 +412,7 @@ pub fn model_status(manifest_path: &Path, root_dir: &Path, link_base: Option<&Pa
         files: files_out,
         guidance,
         disk,
+        set_of,
     }
 }
 
@@ -451,6 +497,38 @@ mod tests {
         let p = dir.join("models.manifest.json");
         std::fs::write(&p, serde_json::to_string(manifest).unwrap()).unwrap();
         p
+    }
+
+    /// `set_stat`：按档位算就绪与字节，部分就绪时 readyBytes 只算在位的那几条。
+    #[test]
+    fn set_stat_reports_ready_and_bytes_per_set() {
+        let tmp = std::env::temp_dir().join(format!("miao-setstat-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("models-store")).unwrap();
+        std::fs::create_dir_all(tmp.join("src").join("models")).unwrap();
+        std::fs::write(tmp.join("models-store").join("a.bin"), b"abc").unwrap();
+        std::fs::write(tmp.join("src").join("models").join("b.bin"), b"abcd").unwrap();
+
+        let mp = write_fixture(&tmp, &fixture_manifest());
+        let s = model_status(&mp, &tmp, None);
+        let visual = s.set_stat("visual");
+        assert_eq!(visual.entries, 2);
+        assert_eq!(visual.total_bytes, 7);
+        assert_eq!(visual.ready_bytes, 7);
+        assert!(visual.ready);
+
+        // 拆掉 b ⇒ 视觉档不再就绪，且 readyBytes 只剩 a 的 3 字节（不是"全有或全无"）
+        std::fs::remove_file(tmp.join("src").join("models").join("b.bin")).unwrap();
+        let s2 = model_status(&mp, &tmp, None);
+        let visual2 = s2.set_stat("visual");
+        assert!(!visual2.ready, "缺一条就必须判未就绪");
+        assert_eq!(visual2.ready_bytes, 3, "已就绪字节只算在位的那条");
+
+        // 清单里没有这一档 ⇒ entries=0 且 ready=false（空集合 ≠ 已就绪）
+        let translation = s2.set_stat("translation");
+        assert_eq!(translation.entries, 0);
+        assert!(!translation.ready);
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     /// D8 验收①：每条都带**目标绝对路径**，且路径口径按"谁真会去开它"选。

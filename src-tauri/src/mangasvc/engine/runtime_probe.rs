@@ -34,6 +34,7 @@
 //   ① 诊断视图可以被反复打开，每次 `import torch` 是秒级操作；
 //   ② 起解释器有副作用（写 `__pycache__`、可能触发首次编译），检测不该改动机器状态。
 // 判据的代价是"目录在 ≠ 版本对"—— 由 `fix` 引导用户跑装机命令自查，而不是我们替他跑。
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -63,6 +64,21 @@ pub struct RuntimeItem {
 pub struct RuntimeProbe {
     pub items: Vec<RuntimeItem>,
     pub ready: bool,
+    /// 按清单档位细分的就绪与字节（五段装配流程的数据源）。
+    ///
+    /// 🔴 **不替代七项**：`ready` 仍是七项全真；`sets` 只回答「视觉 / 翻译 / LLM 各自
+    /// 完成到哪」，供流程页逐段推进。`entries == 0` = 当前平台没有该档位。
+    pub sets: BTreeMap<String, RuntimeSetView>,
+}
+
+/// 一个装配档位的对外视图（`/engine/runtime` 与 `ServiceStatus.runtime` 共用）。
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeSetView {
+    pub entries: usize,
+    pub ready: bool,
+    pub total_bytes: u64,
+    pub ready_bytes: u64,
 }
 
 /// venv 目录（`<runtimeRoot>/manga-translator/venv`）。
@@ -287,8 +303,24 @@ pub fn probe() -> RuntimeProbe {
         fix: (!weights_ok).then(|| FIX_MODELS.to_string()),
     });
 
+    // 分档视图：复用上面那次 `model_status`，不二次读清单（两套判据会漂）。
+    // 四个键恒定存在：`entries == 0` 表示该档在当前平台没有条目，不是"已就绪"。
+    let mut sets = BTreeMap::new();
+    for id in ["visual", "translation", "llm", "runtime"] {
+        let st = ms.set_stat(id);
+        sets.insert(
+            id.to_string(),
+            RuntimeSetView {
+                entries: st.entries,
+                ready: st.ready,
+                total_bytes: st.total_bytes,
+                ready_bytes: st.ready_bytes,
+            },
+        );
+    }
+
     let ready = items.iter().all(|i| i.ok);
-    RuntimeProbe { items, ready }
+    RuntimeProbe { items, ready, sets }
 }
 
 /// 第五项 `patches` 的构造（抽成函数是为了能拿临时目录单测 —— `probe()` 用的是真实落点）。
@@ -514,7 +546,7 @@ mod tests {
             })
             .collect();
         let ready = ok_ids.len() == all.len();
-        RuntimeProbe { items, ready }
+        RuntimeProbe { items, ready, sets: BTreeMap::new() }
     }
 
     /// D6：mock 档**不过闸**（30+ 个 mock e2e 靠它活着）—— 反证 M2 钉的就是这一条。

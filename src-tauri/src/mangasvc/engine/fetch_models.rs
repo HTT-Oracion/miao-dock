@@ -397,6 +397,19 @@ pub fn run(argv: &[String]) -> i32 {
 
     // ---------------------------------------------------------------- 下载
     let mut sink = ProgressSink::new(&args.progress_log);
+    // 第 2 轮（`--stage 2`、不带 `--engine-bootstrap`）只下 llm + translation；
+    // 它没有 bootstrap 的 `on_phase` 回调，这里补一条阶段事件 —— 否则五段流程
+    // 会一直停在 visual，用户看不到「翻译模型下载中」。
+    if args.max_stage == Some(2) {
+        sink.push(&ProgressEvent {
+            id: "llm".to_string(),
+            phase: "stage".to_string(),
+            received: 0,
+            total: None,
+            url: None,
+            resumed: false,
+        });
+    }
     let r = match ensure_models(
         &manifest,
         &root,
