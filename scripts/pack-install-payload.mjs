@@ -34,6 +34,16 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TAURI_CONF = path.join(ROOT, 'src-tauri', 'tauri.conf.json');
 const APP_EXE = path.join(ROOT, 'src-tauri', 'target', 'release', 'miao-dock.exe');
+/**
+ * 服务本体 `mangasvc.exe` —— **必须随包**。
+ *
+ * 🔴 主程序启动时按「与自身**同目录**」找它（`service/mod.rs::resolve_mangasvc()`），
+ *    漏了它的表现不是"服务起不来"，而是**一启动就报「找不到 mangasvc.exe」**
+ *    （2026-10-18 用户实测：单文件安装器第一版漏了它，装完点开就报这个）。
+ * 🔴 它与 `miao-dock.exe` 同属同一个 crate 的第二个 bin，不在 `bundle.resources` 里 ——
+ *    所以"照抄 resources 清单"永远漏它，必须在这里显式列一条。
+ */
+const SERVICE_EXE = path.join(ROOT, 'src-tauri', 'target', 'release', 'mangasvc.exe');
 const UNINSTALLER_EXE = path.join(ROOT, 'uninstaller', 'src-tauri', 'target', 'release', 'miaodock-uninstaller.exe');
 const PAYLOAD_DIR = path.join(ROOT, 'installer', 'src-tauri', 'payload');
 const PAYLOAD_ZIP = path.join(PAYLOAD_DIR, 'payload.zip');
@@ -175,6 +185,11 @@ const appResources = [];
 
 const appData = mustExist(APP_EXE, '先跑 `npm run app:build` 产出主程序 exe');
 entries.push({ name: 'miao-dock.exe', data: appData });
+
+// 服务本体：与主程序同目录（`resolve_mangasvc()` 的判据），不属于 `bundle.resources`
+const serviceData = mustExist(SERVICE_EXE, '先跑 `npm run app:build` 产出 mangasvc.exe');
+entries.push({ name: 'mangasvc.exe', data: serviceData });
+appResources.push('mangasvc.exe');
 
 for (const [from, to] of Object.entries(resources)) {
   const source = path.resolve(ROOT, 'src-tauri', from);

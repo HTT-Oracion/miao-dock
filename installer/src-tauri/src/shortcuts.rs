@@ -47,7 +47,10 @@ pub fn create(lnk: &Path, target: &Path, workdir: &Path, icon: &Path) -> Result<
     let mut link = ShellLink::new(target)
         .map_err(|e| format!("建不了快捷方式（目标 {}）：{e}", target.display()))?;
     link.set_working_dir(Some(workdir.to_string_lossy().into_owned()));
-    link.set_icon_location(Some(format!("{},0", icon.display())));
+    // 🔴 只给**路径**，不要自己拼 `,0`：`IconLocation` 里逗号后面那个是**图标索引**，
+    //    系统默认就是 0。自己拼一次会得到 `path,0,0`（索引成了 `0,0`）⇒ 快捷方式**没有图标**
+    //    （2026-10-18 用户实测：桌面那枚是白纸图标）。
+    link.set_icon_location(Some(icon.to_string_lossy().into_owned()));
     link.create_lnk(lnk)
         .map_err(|e| format!("写不了快捷方式（{}）：{e}", lnk.display()))
 }

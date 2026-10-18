@@ -55,6 +55,16 @@ const RELEASE_DIR = path.join(ROOT, 'release');
 const BUILT_INSTALLER = path.join(ROOT, 'installer', 'src-tauri', 'target', 'release', 'miaodock-installer.exe');
 const RELEASE_MANGASVC = path.join(TARGET, 'release', process.platform === 'win32' ? 'mangasvc.exe' : 'mangasvc');
 
+/**
+ * 取证用的服务二进制 —— 安装成功后**换成安装目录里那一份**。
+ *
+ * 🔴 这是本轮补的一课：以前一直用**仓库**产出的 `mangasvc.exe` 取证，
+ *    于是"安装器漏装服务本体"这种缺陷在本脚本里**完全看不出来**（仓库那份永远在），
+ *    而真机上点开就是「找不到 mangasvc.exe」（2026-10-18 用户实测）。
+ *    现在先断言它在安装目录里，再用它自己起服务 —— 断的是**发出去的那份**。
+ */
+let serviceBin = RELEASE_MANGASVC;
+
 let passed = 0;
 let failed = 0;
 const failures = [];
@@ -147,7 +157,7 @@ function uninstallSilently(dir) {
  */
 function runCli(args, extraEnv = {}) {
   return new Promise((resolve) => {
-    const p = spawn(RELEASE_MANGASVC, args, {
+    const p = spawn(serviceBin, args, {
       env: { ...process.env, MIAO_RESOURCE_DIR: installDir, ...extraEnv },
     });
     let out = '';
@@ -200,7 +210,7 @@ async function crfPlan() {
 
 /** 起一个服务（release mangasvc），资源目录指向安装布局；返回 {port, kill, out}。 */
 function startService(env) {
-  const child = spawn(RELEASE_MANGASVC, [], {
+  const child = spawn(serviceBin, [], {
     env: {
       ...process.env,
       MIAO_TOKEN: TOKEN,
@@ -254,6 +264,16 @@ try {
   check('P0 单文件安装器静默安装成功', ins.ok, ins);
   const exe = await waitForExe(installDir);
   check('P1 安装目录里有 miao-dock.exe（装完真的有桌面端）', !!exe, installDir);
+
+  // P1c：**服务本体必须随包**。主程序按"与自身同目录"找它，漏了就是点开即报
+  // 「找不到 mangasvc.exe」—— 这条以前用仓库产物取证，所以一直没被抓住。
+  const installedSvc = path.join(installDir, process.platform === 'win32' ? 'mangasvc.exe' : 'mangasvc');
+  check(
+    'P1c 安装目录里有 mangasvc.exe（产品启动时与主程序同目录找它；漏了＝点开就报找不到）',
+    fs.existsSync(installedSvc),
+    installedSvc,
+  );
+  if (fs.existsSync(installedSvc)) serviceBin = installedSvc;
 
   // ---- ① 安装层：A2 进包的资产在**真实产物**里 ----
   const manifest = path.join(installDir, 'engine', 'models.manifest.json');
