@@ -111,7 +111,7 @@
         { "id": "installer:build", "cmd": "node scripts/build-install-ui.mjs installer", "desc": "构建安装向导（独立安装器程序的前端）：注入字体 → tsc → vite build，产物在 installer/dist/" },
         { "id": "uninstaller:build", "cmd": "node scripts/build-install-ui.mjs uninstaller", "desc": "构建卸载页（独立卸载器程序的前端）：注入字体 → tsc → vite build，产物在 uninstaller/dist/" },
         { "id": "install:pack", "cmd": "node scripts/pack-install-payload.mjs", "desc": "打安装器载荷（主程序 exe + 资源 + 卸载器 exe → installer/src-tauri/payload/payload.zip）" },
-        { "id": "install:kit", "cmd": "node scripts/package-install-ui.mjs", "desc": "组装单文件安装器（卸载器宿主 → 载荷 → 安装器宿主）到 release/MiaoDock-Setup.exe" }
+        { "id": "install:kit", "cmd": "node scripts/package-install-ui.mjs", "desc": "组装单文件安装器（卸载器宿主 → 载荷 → 安装器宿主）到 release/MiaoDock_<版本>_x64-setup.exe" }
       ]
     },
     "dev": {

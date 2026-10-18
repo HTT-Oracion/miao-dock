@@ -3,7 +3,8 @@
  * 组装「单文件安装器」—— 本地分发件，不写进版本库。
  *
  * 产物（`release/`）**只有一份**：
- *   MiaoDock-Setup.exe   安装器（自带界面 + 内嵌载荷：主程序 / 资源 / 卸载器）
+ *   MiaoDock_<版本>_<架构>-setup.exe   安装器（自带界面 + 内嵌载荷：主程序 / 资源 / 卸载器）
+ *                                     例：`MiaoDock_2.2.1_x64-setup.exe`（版本取自 tauri.conf.json）
  *
  * 🔴 落点是仓库根的 `release/`（已 gitignore），**不是** `.tmp/`：
  *    `.tmp/` 是"跑完就能删的中间件"，而这份是**要交给人的成品** ——
@@ -13,7 +14,7 @@
  *   ① 卸载器宿主（`uninstaller/`：Tauri CLI，前端内嵌）
  *   ② 载荷（`scripts/pack-install-payload.mjs`：主程序 exe + 资源 + 卸载器 exe → payload.zip）
  *   ③ 安装器宿主（`installer/`：Tauri CLI，`include_bytes!` 把载荷嵌进 exe）
- *   ④ 复制成 `MiaoDock-Setup.exe`
+ *   ④ 复制成 `MiaoDock_<版本>_<架构>-setup.exe`（版本取自 `src-tauri/tauri.conf.json`）
  * ②→③ 反了会嵌进上一次的旧载荷（甚至编译不过：载荷缺失时 `build.rs` 只补占位）。
  *
  * ## 🔴 必须走 Tauri CLI，不能直接 `cargo build`
@@ -39,15 +40,34 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TAURI_CLI = path.join(ROOT, 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
 const OUT = path.join(ROOT, 'release');
 
-/** 交付文件名（唯一分发物） */
-const DELIVERABLE = 'MiaoDock-Setup.exe';
-
 const APP_EXE = path.join(ROOT, 'src-tauri', 'target', 'release', 'miao-dock.exe');
 const UNINSTALLER_EXE = path.join(ROOT, 'uninstaller', 'src-tauri', 'target', 'release', 'miaodock-uninstaller.exe');
 const INSTALLER_EXE = path.join(ROOT, 'installer', 'src-tauri', 'target', 'release', 'miaodock-installer.exe');
 
-/** 上一代套件留下的文件名（`miao-installer` 时代 + NSIS 安装包），顺手清掉免得混淆 */
-const LEGACY = ['miao-installer.exe', 'miao-uninstaller.exe'];
+/**
+ * 交付文件名：`MiaoDock_<版本>_<架构>-setup.exe`（与 NSIS 那套命名同形）。
+ *
+ * 🔴 版本号**从 `src-tauri/tauri.conf.json` 读**，不许在这里写死 —— 写死之后每次发版
+ *    要么改脚本、要么发一个名字与版本对不上的包（后者更常见，也更难查）。
+ * 🔴 架构取 `process.arch`：`x64` → `x64`，`arm64` → `arm64`（与 Tauri 的命名一致）。
+ */
+function deliverableName() {
+  const conf = JSON.parse(fs.readFileSync(path.join(ROOT, 'src-tauri', 'tauri.conf.json'), 'utf8'));
+  const version = String(conf.version ?? '').trim();
+  if (!/^\d+\.\d+\.\d+/.test(version)) {
+    console.error(`✗ tauri.conf.json 的 version 读不出：${JSON.stringify(conf.version)}`);
+    process.exit(1);
+  }
+  const arch = process.arch === 'x64' ? 'x64' : process.arch;
+  return { name: `MiaoDock_${version}_${arch}-setup.exe`, version };
+}
+
+const { name: DELIVERABLE, version: APP_VERSION } = deliverableName();
+
+/** 上一代套件留下的文件名（`miao-installer` 时代 + 早期无版本号的交付名），顺手清掉免得混淆 */
+const LEGACY = ['miao-installer.exe', 'miao-uninstaller.exe', 'MiaoDock-Setup.exe'];
+/** 交付名带版本号 ⇒ 清旧产物只能按形态匹配（换版本时旧包不能留在 release/ 里） */
+const DELIVERABLE_SHAPE = /^MiaoDock_.+_x64-setup\.exe$/i;
 
 function run(node, args, cwd) {
   return new Promise((resolve) => {
@@ -122,7 +142,7 @@ mustExist(INSTALLER_EXE, '安装器宿主构建产物不在（见上一步日志
 //    这里只按文件名清掉旧件，再覆盖同名文件。
 fs.mkdirSync(OUT, { recursive: true });
 
-const stale = [...LEGACY, ...fs.readdirSync(OUT).filter((f) => /\.old\.exe$/i.test(f) || /-setup\.exe$/i.test(f))];
+const stale = [...LEGACY, ...fs.readdirSync(OUT).filter((f) => /\.old\.exe$/i.test(f) || DELIVERABLE_SHAPE.test(f))];
 for (const name of new Set(stale)) {
   if (name === DELIVERABLE) continue;
   try {
@@ -141,7 +161,7 @@ if (await copyInto(INSTALLER_EXE, path.join(OUT, DELIVERABLE))) {
   locked.push(DELIVERABLE);
 }
 
-console.log(`\n套件在 ${path.relative(ROOT, OUT)}`);
+console.log(`\n套件在 ${path.relative(ROOT, OUT)}（版本 ${APP_VERSION}）`);
 console.log(`用法：把 ${DELIVERABLE} 单独交给用户，双击即装（管理员授权一次）。`);
 
 if (locked.length) {

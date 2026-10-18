@@ -5143,7 +5143,8 @@ macOS 不在本轮范围（无安装 / 卸载宿主，已定暂不考虑）。
   （不加会被 WOW64 重定向到 `WOW6432Node`，64 位控制面板看不到该项）。
   ⚠️ **D-235 里写的「HKCU 免管理员」单一口径已被本轮改判**：现在是 HKLM + 「仅为我安装」开关二选一。
 - 命名统一（用户要求）：安装目录末段 `MiaoDock`（`C:\Program Files\MiaoDock` /
-  `%LOCALAPPDATA%\Programs\MiaoDock`）、交付名 `MiaoDock-Setup.exe`、载荷内卸载器
+  `%LOCALAPPDATA%\Programs\MiaoDock`）、交付名 `MiaoDock_<版本>_<架构>-setup.exe`（版本取自
+  `tauri.conf.json`，见本轮追加的"发布路径"）、载荷内卸载器
   `MiaoDock-Uninstaller.exe`、crate 名 `miaodock-installer` / `miaodock-uninstaller`、注册表子键 `MiaoDock`；
   显示层保留中文（`喵坞`、`喵坞 MiaoDock`）。**主程序 exe 仍是 `miao-dock.exe`**（改它牵动服务拉起
   路径与既有断言，另起一轮）。

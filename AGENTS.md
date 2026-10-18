@@ -59,14 +59,15 @@
 - 🔴 界面与"干活的外壳"之间**只有 `installer/src/host.ts` / `uninstaller/src/host.ts` 一个接缝**：两套默认目录、载荷体积、可用空间、长路径开关、日志路径、三类本地数据的目录 / 体积 / 存在性，全部由宿主**实时探测**后注入（`probe()`），界面不写死任何一个数；纯浏览器里跑时用同文件内的预览替身。
 - 🔴 宿主**窗口形态**：`decorations: false` + `transparent: true`（圆角与猫耳就是窗口的真实形状，卡面即窗口）；标题栏用 `data-tauri-drag-region` 拖动，**权限 `core:window:allow-start-dragging` 必须显式声明** —— `core:default` 不含它，漏了的表现是"拖不动且不报错"（2026-10-18 实测踩过）。窗口宽度 780（设计稿的 660 在真机上偏窄）。
 - 🔴 **分发与安装形态（2026-10-18 起，D-236）**：
-  - 对外**只有 1 个 exe**：`MiaoDock-Setup.exe`（= 安装器）。主程序 exe + 资源 + 卸载器 exe 打成 `payload.zip`，**编译期**由 `include_bytes!` 嵌进安装器；运行时先解到同级 `<目标>.miaoinstall`，全部写完才原子改名 —— 失败只留一个可删的临时目录。
+  - 对外**只有 1 个 exe**：`MiaoDock_<版本>_<架构>-setup.exe`（如 `MiaoDock_2.2.1_x64-setup.exe`，= 安装器）。版本号**从 `src-tauri/tauri.conf.json` 读**，脚本里不许写死。主程序 exe + 资源 + 卸载器 exe 打成 `payload.zip`，**编译期**由 `include_bytes!` 嵌进安装器；运行时先解到同级 `<目标>.miaoinstall`，全部写完才原子改名 —— 失败只留一个可删的临时目录。
   - 命名口径：安装目录 `C:\Program Files\MiaoDock`（全机）/ `%LOCALAPPDATA%\Programs\MiaoDock`（仅为我）；crate 名 `miaodock-installer` / `miaodock-uninstaller`；载荷内卸载器 `MiaoDock-Uninstaller.exe`；注册表 Uninstall 子键 `MiaoDock`；显示名保留中文「喵坞」「喵坞 MiaoDock」。主程序 exe 仍是 `miao-dock.exe`（改它牵动服务拉起路径与既有断言，另起一轮）。
   - **安装范围二选一**：默认全机 ⇒ `Program Files` + **HKLM** 卸载项，启动即弹一次 UAC；勾「仅为我安装」⇒ `%LOCALAPPDATA%` + **HKCU**，不提权。注册表一律显式 `KEY_WOW64_64KEY`（不加会被 WOW64 重定向到 `WOW6432Node`，64 位控制面板看不到该项）。
   - 卸载项：`UninstallString` **不带** `--silent`（控制面板点「卸载」要看得到界面），`QuietUninstallString` 带（自动化 / 包管理器）。卸载器**住在安装目录里** ⇒ `current_exe()` 的父目录就是安装目录（外部记录文件那套落点契约已退役），删完靠 detached `cmd` 自删。
   - **构建顺序是硬约束**：卸载器宿主 → `npm run task -- install:pack`（打载荷）→ 安装器宿主。反了会嵌进上一次的旧载荷；载荷缺失时 `installer/build.rs` 只补单字节占位（编译能过、装不了），报错话术会点名打包命令。
   - 静默档：安装器 `--silent [--dir <目录>] [--per-user] [--no-shortcuts]`；卸载器 `--silent`（**只删程序 / 入口 / 注册表项，绝不碰用户数据**）。`check:packaged` / `check:uninstall-keep` 就靠它取证。
   - 发布**一条命令**：`npm run app:build`（= 主应用 `tauri build` + `install:kit`；先有 `miao-dock.exe` 才有载荷）。
-    产物 `release/MiaoDock-Setup.exe`（已 gitignore）。只用 `install:kit` 时须先有主程序 exe。
+    产物 `release/MiaoDock_<版本>_<架构>-setup.exe`（已 gitignore）。只用 `install:kit` 时须先有主程序 exe。
+    消费这条产物的地方（e2e 两条）**按形态找** `/^MiaoDock_.+_x64-setup\.exe$/`，不写死版本号。
     ⚠️ 它顺手产出的 NSIS 包（`src-tauri/target/release/bundle/nsis/*-setup.exe`）是**旧界面**，不是分发物。
   - 🔴 宿主**只能**用 `npm run tauri -- build` 构建：`cargo build` 出来的 exe 不内嵌前端（只连 dev 服务），双击是一片空白 —— 2026-10-18 实测（7.5 MB vs CLI 的 46 MB；带载荷的交付件 145 MB，大头是两个程序的字体）。
 - **按「依赖什么」定归属，不按「被用几次」定归属。** 抽离规则与反面纪律（什么**不**该抽）见 `docs/internal/spec-notes.md` D-34 与《09》§2.2。

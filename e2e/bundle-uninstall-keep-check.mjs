@@ -42,7 +42,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
 /** 交付物优先；没有就退回构建产物 */
-const KIT_INSTALLER = path.join(ROOT, 'release', 'MiaoDock-Setup.exe');
+const RELEASE_DIR = path.join(ROOT, 'release');
 const BUILT_INSTALLER = path.join(ROOT, 'installer', 'src-tauri', 'target', 'release', 'miaodock-installer.exe');
 
 const APP_DATA =
@@ -69,12 +69,16 @@ function check(name, cond, extra) {
   }
 }
 
-/** 找单文件安装器；没有 ⇒ **报错**（不静默跳过）。 */
+/** 找单文件安装器；没有 ⇒ **报错**（不静默跳过）。交付名带版本号 ⇒ 按形态找。 */
 function findInstaller() {
-  for (const candidate of [KIT_INSTALLER, BUILT_INSTALLER]) {
-    if (fs.existsSync(candidate)) return candidate;
+  if (fs.existsSync(RELEASE_DIR)) {
+    const hits = fs
+      .readdirSync(RELEASE_DIR)
+      .filter((f) => /^MiaoDock_.+_x64-setup\.exe$/i.test(f))
+      .map((f) => path.join(RELEASE_DIR, f));
+    if (hits.length) return hits.sort().at(-1);
   }
-  return null;
+  return fs.existsSync(BUILT_INSTALLER) ? BUILT_INSTALLER : null;
 }
 
 /** 目录快照：存在与否 + 一层条目名（**不递归算大小** —— 13 GB 的目录没必要为此全量遍历）。 */
@@ -113,8 +117,8 @@ function runTool(exe, args) {
 const installer = findInstaller();
 if (!installer) {
   console.error(
-    `✗ 找不到单文件安装器：\n  ${path.relative(ROOT, KIT_INSTALLER)}\n  ${path.relative(ROOT, BUILT_INSTALLER)}\n` +
-      '先构建：npm run task -- install:kit',
+    `✗ 找不到单文件安装器：\n  ${path.relative(ROOT, RELEASE_DIR)}\\MiaoDock_<版本>_x64-setup.exe\n  ${path.relative(ROOT, BUILT_INSTALLER)}\n` +
+      '先构建：npm run app:build',
   );
   process.exit(1);
 }

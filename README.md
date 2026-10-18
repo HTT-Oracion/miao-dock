@@ -65,7 +65,7 @@ miao-dock/
 ├── test-music/   本机验收素材：音乐（**不入库**）
 ├── runtimes/     **开发机遗留的引擎资产目录**（**不入库**）：B1 起产品的默认落点已搬到 `<appData>/runtimes/manga-translator/`；这里只在用 `MIAO_RUNTIME_ROOT=<repo>/runtimes` 显式覆盖时才被读到
 ├── .tmp/         **全仓唯一的临时落盘目录**（**不入库**）：`e2e/` · `selftest/` · `models/` · `engine-test/`
-├── release/      **交付物落点**（**不入库**）：`npm run app:build` 产出的 `MiaoDock-Setup.exe`（单文件安装器，约 145 MB）—— 与 `.tmp/` 分家，因为它是要交给人的成品，不是跑完就删的中间件
+├── release/      **交付物落点**（**不入库**）：`npm run app:build` 产出的 `MiaoDock_<版本>_<架构>-setup.exe`（单文件安装器，约 145 MB；版本取自 `tauri.conf.json`，如 `MiaoDock_2.2.1_x64-setup.exe`）—— 与 `.tmp/` 分家，因为它是要交给人的成品，不是跑完就删的中间件
 ├── snapshots/    对外展示截图（与 `docs/refs/` 的**取证图**分家，两者不互为副本）
 ├── AGENTS.md     AI 协作上下文入口（任何工具进仓库先读它）
 ├── CONTRIBUTING.md  贡献指南（提交规范 / 验收命令 / 目录与改名纪律）
@@ -98,10 +98,10 @@ miao-dock/
 >    构建：仓库根 `npm run task -- installer:build` / `uninstaller:build`（注入字体 → tsc → vite build）。
 >    🔴 **必须走 Tauri CLI**：`cargo build` 出来的 exe 不内嵌前端、只会去连 dev 服务（实测 7.5 MB，启动一片空白）；
 >    CLI 产物才把 `dist/` 打进 exe。
->    **分发形态：对外只有 1 个 exe**（`MiaoDock-Setup.exe`）。主程序 exe + 资源 + 卸载器 exe 打成 `payload.zip`，
+>    **分发形态：对外只有 1 个 exe**（`MiaoDock_<版本>_<架构>-setup.exe`，如 `MiaoDock_2.2.1_x64-setup.exe`）。主程序 exe + 资源 + 卸载器 exe 打成 `payload.zip`，
 >    编译期嵌进安装器（`install:pack`），运行时解包落盘、写卸载项、按完成页勾选建桌面/开始菜单入口。
 >    构建顺序是硬约束：卸载器宿主 → `install:pack` → 安装器宿主；一条命令串起来：`npm run task -- install:kit`
->    （产物 `release/MiaoDock-Setup.exe`，约 145 MB，大头是两个程序的字体）。
+>    （产物 `release/MiaoDock_<版本>_<架构>-setup.exe`，约 145 MB，大头是两个程序的字体；版本号跟着 `tauri.conf.json` 走，脚本里不写死）。
 >    🔴 **发布就一条命令**：`npm run app:build` = 主应用 `tauri build` + `install:kit`（先有 `miao-dock.exe` 才有载荷）。
 >    它顺手产出的 NSIS 包（`src-tauri/target/release/bundle/nsis/*-setup.exe`）是旧界面，**不是**分发物。
 >    安装范围：默认全机（`C:\Program Files\MiaoDock` + HKLM 卸载项，启动弹一次 UAC）；「仅为我安装」⇒
