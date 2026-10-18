@@ -61,6 +61,8 @@ impl StoreError {
             // 409
             "TASK_NOT_APPENDABLE" | "TASK_NOT_CANCELABLE" | "TASK_NOT_RETRYABLE"
             | "TASK_NOT_DELETABLE" | "SEQUENCE_OVERFLOW" | "DOWNLOAD_IN_PROGRESS"
+            // 「暂停」在"没在下"时用它 —— 与「已在跑却再启动」对称（D-237）
+            | "DOWNLOAD_NOT_RUNNING"
             | "BOOK_NAME_TAKEN" | "ALREADY_MERGED" | "MERGE_SOURCE_BUSY" | "CHAPTER_NO_TAKEN"
             | "MERGE_CROSS_DEVICE" | "MERGE_SOURCE_LOCKED" | "CHAPTER_SOURCE_BUSY"
             | "CHAPTER_SOURCE_LOCKED" => 409,
