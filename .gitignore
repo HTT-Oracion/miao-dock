@@ -53,3 +53,7 @@ runtimes/
 # 复制进各自目录（三份字体合计约 65 MB，两个程序各存一份就是 130 MB 的仓库重复）
 installer/public/fonts/
 uninstaller/public/fonts/
+
+# 安装器的内嵌载荷：构建期产物（主程序 exe + 资源 + 卸载器 exe），按版本变、体积在 100 MB 量级。
+# 由 scripts/pack-install-payload.mjs 生成；缺失时 installer/build.rs 会补单字节占位让编译能过。
+installer/src-tauri/payload/

@@ -12,6 +12,12 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod elevate;
+mod manifest;
+mod payload;
+mod registry;
+mod shortcuts;
+
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};

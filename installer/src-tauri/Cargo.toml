@@ -1,7 +1,7 @@
 [package]
-name = "miao-installer"
+name = "miaodock-installer"
 version = "2.2.1"
-description = "喵坞安装器 · 独立的 WebView 小窗，驱动 NSIS 安装包静默安装"
+description = "喵坞安装器 · 自带界面的 WebView 安装向导，内嵌载荷自解包安装"
 edition = "2021"
 rust-version = "1.77"
 
@@ -14,13 +14,22 @@ tauri = { version = "2.12", features = [] }
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# 载荷解包：只读内嵌的 zip。纯 Rust，无 C++ 工具链、无系统依赖（代价：编译产物 +约 0.3 MB）
+zip = { version = "2", default-features = false, features = ["deflate"] }
+# 写 .lnk：几十 KB 量级，纯 Rust 拼 Shell Link 结构，避免引 COM / OLE（代价：仅运行时）
+mslnk = "0.1"
 
-# 只读两样系统信息：目标盘可用空间、长路径开关（都是只读，不改注册表）
+# 系统信息与安装动作：磁盘可用空间、长路径开关（**只读**）、卸载注册表项（HKLM / HKCU）、
+# 已知文件夹（桌面真实路径）、自检提权（ShellExecuteW + runas）。
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Security",
     "Win32_Storage_FileSystem",
     "Win32_System_Registry",
+    "Win32_System_Com",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
 ] }
 
 [profile.release]
