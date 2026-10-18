@@ -5128,4 +5128,69 @@ uninstaller」目前**不成立**。下一步方向（已与用户对齐，未�
 未验证；`npm run tauri -- build` 只验到能启动与窗口形态，**没在真机上完整装一遍再卸载**。
 macOS 不在本轮范围（无安装 / 卸载宿主，已定暂不考虑）。
 
+## D-236 单文件载荷式安装/卸载：安装器自己就是安装引擎（2026-10-18）
+
+**背景**：D-235 交付的两个程序并排运行（安装器与 `*-setup.exe` 同目录），用户双击的仍是旧 NSIS 界面。
+本轮把「安装包的引导页 = 安装器」「装完的卸载程序 = 卸载器」真正串起来 —— 对外**只有 1 个 exe**。
+
+**决策（用户逐项选定，勿再改）**：
+- 载荷（主程序 exe + `bundle.resources` 现有条目 + 卸载器 exe）打成 `payload.zip`，**编译期**
+  `include_bytes!` 嵌进安装器；运行时解到同级 `<目标>.miaoinstall`，全部写完再原子改名。
+- 提权：全机安装要写 `Program Files` 与 HKLM ⇒ `ShellExecuteW` + `runas` 自检提权重启自身
+  （**未改 exe 清单**：Tauri v2 没有配置化的清单注入位）；静默档与 `--per-user` **不自动提权**
+  （自动化里"起个提权子进程然后自己退出"会让调用方拿不到退出码）。
+- 注册表：全机 ⇒ `HKLM\...\Uninstall\MiaoDock`，仅为我 ⇒ `HKCU\...`；**一律显式 `KEY_WOW64_64KEY`**
+  （不加会被 WOW64 重定向到 `WOW6432Node`，64 位控制面板看不到该项）。
+  ⚠️ **D-235 里写的「HKCU 免管理员」单一口径已被本轮改判**：现在是 HKLM + 「仅为我安装」开关二选一。
+- 命名统一（用户要求）：安装目录末段 `MiaoDock`（`C:\Program Files\MiaoDock` /
+  `%LOCALAPPDATA%\Programs\MiaoDock`）、交付名 `MiaoDock-Setup.exe`、载荷内卸载器
+  `MiaoDock-Uninstaller.exe`、crate 名 `miaodock-installer` / `miaodock-uninstaller`、注册表子键 `MiaoDock`；
+  显示层保留中文（`喵坞`、`喵坞 MiaoDock`）。**主程序 exe 仍是 `miao-dock.exe`**（改它牵动服务拉起
+  路径与既有断言，另起一轮）。
+- 快捷方式两处可勾选（默认都勾）：桌面 + 开始菜单；开始菜单全机落 `ProgramData`、仅为我落 `%APPDATA%`，
+  桌面一律走 `SHGetKnownFolderPath(FOLDERID_Desktop)`（OneDrive 接管桌面后拼 `%USERPROFILE%\Desktop` 会打空）。
+- 卸载器**住在安装目录里**：`current_exe()` 的父目录就是安装目录 ⇒ D-235 那套
+  `install-location.txt` / `%LOCALAPPDATA%\喵坞卸载器\` 外部记录契约整体退役。
+- 自删用 detached `cmd`（`ping` 当 sleep + 20 轮 `del`/`rmdir` 重试），不落临时脚本；关窗时再排一次
+  （第一轮常因自己还占着 exe 而失败）。用 `CommandExt::raw_arg` 原样递命令 —— cmd.exe 不认 Rust 的 `\"` 转义。
+- 静默档是**机器可驱动性**的一部分：安装器 `--silent [--dir] [--per-user] [--no-shortcuts]`，
+  卸载器 `--silent`（只删程序/入口/注册表项，**不碰用户数据**，与旧 NSIS `/S` 同语义）。
+- NSIS 钩子退役：`installer/hooks.nsh` 删除，`tauri.windows.conf.json` 只留 `targets: ["nsis"]`
+  （主应用打包产物不动）。覆盖关系：长路径提示 → 向导步骤 2（`data.ts` 的可复制命令 + Rust 只读探测）；
+  卸载问询 → 卸载页三类数据勾选（默认不删）。
+
+**代价（如实登记）**：交付件 **145 MB**（载荷 98.7 MB + 安装器自身前端与字体）。原因不是载荷没压 ——
+是两个程序各自都内嵌了约 65 MB 字体（截图/界面用），而它们现在被同一个 exe 装着。后续可选优化：
+字体子集化（**本轮不做**，另起一轮并同步 W 组断言）。桌面端分发一次性下载 145 MB 可接受，
+但"再加一个程序进载荷"之前必须先解决字体。
+
+**踩坑（真机实测）**：
+- **载荷布局 = 安装目录布局**：一开始把载荷写成 `app/miao-dock.exe`，解包后所有东西都落进
+  `<安装目录>/app/` —— 主程序与 `engine/` 资源必须**同层**（产品侧就按 exe 同级找资源）。
+- **`manifest.json` 不许落盘**：它是给安装器读的，跟着解包会出现在用户的程序目录里（脏，且暴露打包细节）。
+- **注册表写失败必须回滚已落盘的文件**：否则留下「装了但控制面板里没有」的状态 —— 用户既卸不掉也重装不了。
+- **`zip-slip` 只在一个地方挡**：`manifest::safe_relative()` 拒绝绝对路径/盘符/`..`，
+  清单与 zip 条目共用它；解包时用管理员权限写盘，这里漏一个就是任意路径写。
+- **`cargo build` 的产物没有前端**（D-235 已记），加了载荷之后更隐蔽：`include_bytes!` 的路径缺文件时
+  `build.rs` 补单字节占位让编译过，于是"能编能跑但装不了"。报错话术必须点名 `install:pack`。
+
+**验收（2026-10-18，本机真机）**：
+- `cargo test`：安装器 26 / 卸载器 14 全绿（含 zip-slip、清单校验、提权策略、自删命令串、注册表值格式）。
+- `npm run check` 18/18；`check:bundle` 16/16 + **反证 20/20**（新靶：加回钩子接线 / 改掉长路径常量 /
+  注入写注册表调用 / 摘掉 `guard()` / 静默档删数据 / 塞阻塞弹窗，逐条都真变红并字节还原）。
+- `check:packaged` 12/12（**在真交付物上**静默装 → 资产 → 服务全过）+ `check:packaged:refute` 3/3。
+- 手工闭环：`MiaoDock-Setup.exe --silent --per-user --no-shortcuts --dir <tmp>` → 落盘
+  `miao-dock.exe`/`MiaoDock-Uninstaller.exe`/`engine/*` + HKCU 卸载项（`UninstallString` 不带 `--silent`、
+  `QuietUninstallString` 带、`EstimatedSize`/`InstallDate` 正确）→ 跑 `<dir>\MiaoDock-Uninstaller.exe --silent`
+  → 目录（含卸载器自己）消失 + HKCU 键消失。
+
+⚠️ **未验项如实登记**：
+- **GUI 全链路（UAC → 三步向导 → 完成页勾选 → 桌面/开始菜单入口 → 控制面板点卸载进卸载器界面）没走**：
+  本轮只跑了静默档与单元/结构断言。`runas` 自提权、`.lnk` 落点、`launch_app` 经 `explorer` 去提权、
+  卸载器 GUI 的进度回调都只验到"代码路径存在"，**没在真机点过一遍**。
+- `check:uninstall-keep` 需要本机真有引擎运行时（`<appData>/runtimes/manga-translator`），本机没有 ⇒
+  只在代码层改完、**没跑**。
+- 全机安装（HKLM）路径未验：本机壳不是管理员，只验了 `--per-user` 的 HKCU 分支。
+- macOS 仍不在范围（无安装/卸载宿主）。
+
 

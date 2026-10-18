@@ -46,9 +46,9 @@ miao-dock/
 │   ├── assets/icons/   品牌图（logo-48 / logo-512 / logo，用绝对 URL 引）
 │   └── style-previews/ 歌词样式预览图
 ├── templates/    两个 HTML 入口：`index.html`（主窗）/ `lyrics.html`（桌面歌词**独立窗**），登记在 `vite.config.ts` 的 `rollupOptions.input`
-├── installer/    **安装器程序**（独立工程：前端 + Tauri 宿主，不并进主构建）：`index.html` 入口 · `src/` 安装引导三步（目录 / 长路径 / 完成；默认目录、安装包体积、可用空间、长路径开关、日志路径**全部由宿主实时探测**）· `src-tauri/` 宿主（WebView 小窗：探测环境、选目录、以 `/S` 驱动安装包、开日志、关窗）· `package.json`（`npm run dev` = 1444 端口预览）· `public/assets/` 品牌图 · `hooks.nsh`（Windows NSIS 钩子，由 `tauri.windows.conf.json` 的 `installerHooks` 以 `../installer/…` 相对 `src-tauri/` 引用；**本轮未切换**新旧 UI）
-├── uninstaller/  **卸载器程序**（同上，独立工程）：`index.html` 入口 · `src/` 卸载页三态（告别确认 / 卸载进行中 / 完成；三类数据的目录、体积、存在性**全部由宿主实时探测**）· `src-tauri/` 宿主（实时探测 / 安全删除 / 驱动 `uninstall.exe /S` / 进度回调）· `package.json`（`npm run dev` = 1555 端口预览）· `public/assets/` 品牌图
-├── scripts/      仓库级脚本：`gen-licenses.mjs`（许可清单生成）· `mac-signing-preflight.mjs`（macOS 打包前自检）
+├── installer/    **单文件安装器**（独立工程：前端 + Tauri 宿主，不并进主构建）：`index.html` 入口 · `src/` 安装引导三步（安装范围与目录 / 长路径 / 完成；两套默认目录、载荷体积、可用空间、长路径开关、日志路径**全部由宿主实时探测**）· `src-tauri/` 宿主 = 安装引擎（解包内嵌载荷 + 写卸载项 + 建入口 + 自检提权）+ `payload.rs` / `manifest.rs` / `registry.rs` / `shortcuts.rs` / `elevate.rs` · `package.json`（`npm run dev` = 1444 端口预览）· `public/assets/` 品牌图
+├── uninstaller/  **卸载器**（同上，独立工程，随安装落进安装目录）：`index.html` 入口 · `src/` 卸载页三态（告别确认 / 卸载进行中 / 完成；三类数据的目录、体积、存在性**全部由宿主实时探测**）· `src-tauri/` 宿主（实时探测 / 清入口与注册表项 / 安全删数据 / 安排自删）+ `registry.rs` / `shortcuts.rs` / `selfdelete.rs` · `package.json`（`npm run dev` = 1555 端口预览）· `public/assets/` 品牌图
+├── scripts/      仓库级脚本：`gen-licenses.mjs`（许可清单生成）· `mac-signing-preflight.mjs`（macOS 打包前自检）· `build-install-ui.mjs`（两个程序的前端构建）· `pack-install-payload.mjs`（打安装器载荷）· `package-install-ui.mjs`（组装单文件安装器）
 ├── engine/       翻译引擎的**接缝层**（真引擎装在 `<appData>/runtimes/manga-translator/`，不在库）
 │   ├── VERSIONS.lock         引擎 / 权重 / 外部二进制的**版本锁**（换版本照它来）
 │   ├── models.manifest.json  模型清单：来源 URL + sha256 + 字节数（权威副本在 `…/models-store/`）
@@ -90,17 +90,20 @@ miao-dock/
 > 4. **服务端按域分子目录**（ver2.2 起，F5 起随实现搬进 Rust）：`mangasvc/store/`（队列落盘）· `mangasvc/library.rs`（库原语）·
 >    `mangasvc/translate/`（在线翻译）· `mangasvc/engine/`（引擎耦合点）。产品运行时**不再有 Node 服务进程**：
 >    ① 是 `mangasvc`；②③ 里的 node 只是**测试替身**（真机走 `python main.py` / `llama-server`）。
-> 5. **安装向导与卸载页是两个各自独立的程序**（`installer/` · `uninstaller/`）：自带 `package.json` / vite 配置 / tsconfig /
+> 5. **安装器与卸载器是两个各自独立的程序**（`installer/` · `uninstaller/`）：自带 `package.json` / vite 配置 / tsconfig /
 >    `src-tauri` 宿主与产物目录，**不并进主构建**，彼此不许互相引用，也不 import 主工程源码（令牌与纯函数是各自目录内的镜像副本，理由写在文件头）。
 >    日常：进各自目录跑 `npm run dev`（安装器 1444 / 卸载器 1555）看界面，`npm run tauri -- dev` 起真实小窗；
->    构建：仓库根 `npm run task -- installer:build` / `uninstaller:build`（注入字体 → tsc → vite build），
->    宿主：`npm run tauri -- build`（在各自目录里跑）。🔴 **必须走 Tauri CLI**：`cargo build` 出来的 exe
->    不内嵌前端、只会去连 dev 服务（实测 7.5 MB，启动一片空白）；CLI 产物才把 `dist/` 打进 exe（约 46 MB，字体是大头）。
->    套件：`npm run task -- install:kit`（两个宿主 exe + 主应用安装包 → `.tmp/install-kit/`）。
->    落点：安装器与 `*-setup.exe` **同目录**运行；装成功后它把 `miao-uninstaller.exe` 复制到
->    `%LOCALAPPDATA%\喵坞卸载器\` 并写下 `install-location.txt`（卸载器据此找到应用安装目录，
->    用户装在别的盘也对得上）。卸载器**不许**放在安装目录里 —— 会被 `uninstall.exe` 因占用跳过。
->    界面与"干活的外壳"之间只有 `installer/src/host.ts` / `uninstaller/src/host.ts` 一个接缝：默认目录、体积、可用空间、
+>    构建：仓库根 `npm run task -- installer:build` / `uninstaller:build`（注入字体 → tsc → vite build）。
+>    🔴 **必须走 Tauri CLI**：`cargo build` 出来的 exe 不内嵌前端、只会去连 dev 服务（实测 7.5 MB，启动一片空白）；
+>    CLI 产物才把 `dist/` 打进 exe。
+>    **分发形态：对外只有 1 个 exe**（`MiaoDock-Setup.exe`）。主程序 exe + 资源 + 卸载器 exe 打成 `payload.zip`，
+>    编译期嵌进安装器（`install:pack`），运行时解包落盘、写卸载项、按完成页勾选建桌面/开始菜单入口。
+>    构建顺序是硬约束：卸载器宿主 → `install:pack` → 安装器宿主；一条命令串起来：`npm run task -- install:kit`
+>    （产物 `.tmp/install-kit/MiaoDock-Setup.exe`，约 145 MB，大头是两个程序的字体）。
+>    安装范围：默认全机（`C:\Program Files\MiaoDock` + HKLM 卸载项，启动弹一次 UAC）；「仅为我安装」⇒
+>    `%LOCALAPPDATA%\Programs\MiaoDock` + HKCU。卸载器住在安装目录里，删完靠 detached `cmd` 自删。
+>    静默档：安装器 `--silent [--dir <目录>] [--per-user] [--no-shortcuts]`，卸载器 `--silent`（不碰用户数据）。
+>    界面与"干活的外壳"之间只有 `installer/src/host.ts` / `uninstaller/src/host.ts` 一个接缝：两套默认目录、体积、可用空间、
 >    长路径开关、日志路径、三类数据的目录与体积**全部由宿主实时探测后注入**，界面不写死任何一个数；纯浏览器里跑时用文件内的预览替身（取样值即设计稿演示值）。
 
 ## 快速开始（装环境 → 装配引擎 → 启动）

@@ -53,12 +53,20 @@
 - `src/types/` —— 跨域类型（`types.ts` + `vite-env.d.ts` 环境声明）；只服务单个屏的类型仍留屏内。
 - `src/themes/` —— 设计令牌与主题应用（`tokens.ts` / `apply.ts`）。🔴 令牌数值是**断言对象**（`check:ia` 直接读 `themes/tokens.ts`），改它要同时看断言。
 - `public/assets/` —— **公共资源（不经过构建）**：`fonts/`（三份 `<dir>/font.css` 清单 + 字重文件，由 `templates/index.html` 的 `<link>` 加载）· `icons/`（品牌图，用**绝对 URL** 引）。判据是"**要不要过构建**"：需要指纹化的放 `src/`，需要路径可预测的放这里 —— 走 `import` 会多拿一份带指纹的副本（`check:settings` 的 FONT 组同时钉入口 `link` 与清单里的 `url()`）。
-- `installer/` —— **安装器程序**（自成一体的独立工程，不并进主构建）：`index.html` 入口 · `src/` 安装引导三步（选目录 / 确认长路径 / 完成）· `src-tauri/` **宿主**（WebView 小窗：`probe_env` / `pick_dir` / `run_install`（NSIS `/S`）/ `open_log` / `close_window`）· `package.json`（`npm run dev` = 1444 预览、`npm run tauri -- dev` 起小窗）· `vite.config.ts` + `tsconfig.json` + `dist` · `public/assets/` 品牌图。另 `hooks.nsh` 是 Windows NSIS 钩子，由 `tauri.windows.conf.json` 的 `bundle.windows.nsis.installerHooks` 以 `../installer/hooks.nsh`（**相对 `src-tauri/` 解析**）引用；打包期才被消费，故 `check:bundle` 的 W8–W12 钉的是**内容与接线**而非编译产物（本轮**未切换**新旧 UI）。
-- `uninstaller/` —— **卸载器程序**（同为独立工程）：`index.html` 入口 · `src/` 卸载页三态（告别确认 / 进行中 / 完成）· `src-tauri/` 宿主（`probe` 实时探测三类数据 / `run_uninstall` 安全删除并驱动 `uninstall.exe /S`，进度走 IPC Channel / `close_window`）· `package.json`（`npm run dev` = 1555 预览）· 自带 vite 配置、tsconfig 与产物目录。
+- `installer/` —— **单文件安装器**（自成一体的独立工程，不并进主构建）：`index.html` 入口 · `src/` 安装引导三步（安装范围与目录 / 确认长路径 / 完成）· `src-tauri/` **宿主 = 安装引擎**：命令层 `probe_env` / `pick_dir` / `run_install`（解包内嵌载荷 + 写卸载项）/ `create_shortcuts` / `launch_app` / `open_log` / `close_window`，模块 `payload.rs`（内嵌载荷解包 + zip-slip 防护 + 原子改名）/ `manifest.rs`（载荷清单）/ `registry.rs`（卸载项读写）/ `shortcuts.rs`（`.lnk`）/ `elevate.rs`（自检提权 + `--silent` 参数）· `package.json`（`npm run dev` = 1444 预览、`npm run tauri -- dev` 起小窗）· `vite.config.ts` + `tsconfig.json` + `dist` · `public/assets/` 品牌图。
+- `uninstaller/` —— **卸载器**（同为独立工程，随安装落进安装目录）：`index.html` 入口 · `src/` 卸载页三态（告别确认 / 进行中 / 完成）· `src-tauri/` 宿主（`probe` 实时探测三类数据 / `run_uninstall`＝清入口 → 删程序文件与注册表项 → 逐项删勾选数据 → 安排自删，进度走 IPC Channel / `close_window`）+ `registry.rs` / `shortcuts.rs` / `selfdelete.rs` · `package.json`（`npm run dev` = 1555 预览）。
 - 🔴 这两个程序**彼此不许互相引用**，也**不 import 主工程源码**：设计令牌（`src/themes/` 的镜像）与共享纯函数（`formatBytes` 等）在各自目录内各持一份副本，代价（可能漂移）与理由写在文件头。构建走 `npm run task -- installer:build` / `uninstaller:build`（注入字体 → tsc → vite build；字体二进制不入库，合计约 65 MB × 2 的重复）。
-- 🔴 界面与"干活的外壳"之间**只有 `installer/src/host.ts` / `uninstaller/src/host.ts` 一个接缝**：默认目录、安装包体积、可用空间、长路径开关、日志路径、三类本地数据的目录 / 体积 / 存在性，全部由宿主**实时探测**后注入（`probe()`），界面不写死任何一个数；纯浏览器里跑时用同文件内的预览替身。
+- 🔴 界面与"干活的外壳"之间**只有 `installer/src/host.ts` / `uninstaller/src/host.ts` 一个接缝**：两套默认目录、载荷体积、可用空间、长路径开关、日志路径、三类本地数据的目录 / 体积 / 存在性，全部由宿主**实时探测**后注入（`probe()`），界面不写死任何一个数；纯浏览器里跑时用同文件内的预览替身。
 - 🔴 宿主**窗口形态**：`decorations: false` + `transparent: true`（圆角与猫耳就是窗口的真实形状，卡面即窗口）；标题栏用 `data-tauri-drag-region` 拖动，**权限 `core:window:allow-start-dragging` 必须显式声明** —— `core:default` 不含它，漏了的表现是"拖不动且不报错"（2026-10-18 实测踩过）。窗口宽度 780（设计稿的 660 在真机上偏窄）。
-- 🔴 宿主的**落点契约**：安装器与 `*-setup.exe` **同目录**运行；安装成功后它把 `miao-uninstaller.exe` 复制到 `%LOCALAPPDATA%\喵坞卸载器\`，并写下 `install-location.txt`（应用装在哪）——这是两程序之间唯一的落点契约，卸载器据此找到安装目录，用户装在别的盘也对得上。卸载器**不许**放进安装目录（躺在里面会被 `uninstall.exe` 因文件占用跳过，留下孤儿 exe）。本地套件：`npm run task -- install:kit` → `.tmp/install-kit/`。🔴 宿主**只能**用 `npm run tauri -- build` 构建：`cargo build` 出来的 exe 不内嵌前端（只连 dev 服务），双击是一片空白 —— 这一点 2026-10-18 实测过（7.5 MB vs CLI 的 46 MB）。
+- 🔴 **分发与安装形态（2026-10-18 起，D-236）**：
+  - 对外**只有 1 个 exe**：`MiaoDock-Setup.exe`（= 安装器）。主程序 exe + 资源 + 卸载器 exe 打成 `payload.zip`，**编译期**由 `include_bytes!` 嵌进安装器；运行时先解到同级 `<目标>.miaoinstall`，全部写完才原子改名 —— 失败只留一个可删的临时目录。
+  - 命名口径：安装目录 `C:\Program Files\MiaoDock`（全机）/ `%LOCALAPPDATA%\Programs\MiaoDock`（仅为我）；crate 名 `miaodock-installer` / `miaodock-uninstaller`；载荷内卸载器 `MiaoDock-Uninstaller.exe`；注册表 Uninstall 子键 `MiaoDock`；显示名保留中文「喵坞」「喵坞 MiaoDock」。主程序 exe 仍是 `miao-dock.exe`（改它牵动服务拉起路径与既有断言，另起一轮）。
+  - **安装范围二选一**：默认全机 ⇒ `Program Files` + **HKLM** 卸载项，启动即弹一次 UAC；勾「仅为我安装」⇒ `%LOCALAPPDATA%` + **HKCU**，不提权。注册表一律显式 `KEY_WOW64_64KEY`（不加会被 WOW64 重定向到 `WOW6432Node`，64 位控制面板看不到该项）。
+  - 卸载项：`UninstallString` **不带** `--silent`（控制面板点「卸载」要看得到界面），`QuietUninstallString` 带（自动化 / 包管理器）。卸载器**住在安装目录里** ⇒ `current_exe()` 的父目录就是安装目录（外部记录文件那套落点契约已退役），删完靠 detached `cmd` 自删。
+  - **构建顺序是硬约束**：卸载器宿主 → `npm run task -- install:pack`（打载荷）→ 安装器宿主。反了会嵌进上一次的旧载荷；载荷缺失时 `installer/build.rs` 只补单字节占位（编译能过、装不了），报错话术会点名打包命令。
+  - 静默档：安装器 `--silent [--dir <目录>] [--per-user] [--no-shortcuts]`；卸载器 `--silent`（**只删程序 / 入口 / 注册表项，绝不碰用户数据**）。`check:packaged` / `check:uninstall-keep` 就靠它取证。
+  - 套件：`npm run task -- install:kit` → `.tmp/install-kit/MiaoDock-Setup.exe`。
+  - 🔴 宿主**只能**用 `npm run tauri -- build` 构建：`cargo build` 出来的 exe 不内嵌前端（只连 dev 服务），双击是一片空白 —— 2026-10-18 实测（7.5 MB vs CLI 的 46 MB；带载荷的交付件 145 MB，大头是两个程序的字体）。
 - **按「依赖什么」定归属，不按「被用几次」定归属。** 抽离规则与反面纪律（什么**不**该抽）见 `docs/internal/spec-notes.md` D-34 与《09》§2.2。
 
 **服务端模块目录（硬规则）**：
