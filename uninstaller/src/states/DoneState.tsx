@@ -14,13 +14,11 @@ import { buildOutcome } from '../tools/summary';
 export function DoneState({
   probe,
   targets,
-  onFeedback,
   onFinish,
 }: {
   probe: UninstallProbe;
   /** 最终真的删掉的几类 */
   targets: DataKind[];
-  onFeedback: () => void;
   onFinish: () => void;
 }) {
   const { deleted, kept } = buildOutcome(probe.data, targets);
@@ -32,9 +30,6 @@ export function DoneState({
       foot={
         <>
           <span className="uns-foot-grow" />
-          <button type="button" className="uns-btn uns-btn-ghost" onClick={onFeedback}>
-            {UNINSTALL.feedbackBtn}
-          </button>
           <button type="button" className="uns-btn uns-btn-primary" onClick={onFinish}>
             {UNINSTALL.finishBtn}
           </button>

@@ -98,7 +98,6 @@ function Flow({ host, probe }: { host: UninstallerHost; probe: UninstallProbe })
   const cancel = (): void => host.close();
   const background = (): void => host.close();
   const finish = (): void => host.close();
-  const feedback = (): void => {};
 
   if (phase === 'running') {
     const lines = markRunning(plan, done);
@@ -108,7 +107,7 @@ function Flow({ host, probe }: { host: UninstallerHost; probe: UninstallProbe })
   }
 
   if (phase === 'done') {
-    return <DoneState probe={probe} targets={targets} onFeedback={feedback} onFinish={finish} />;
+    return <DoneState probe={probe} targets={targets} onFinish={finish} />;
   }
 
   return (

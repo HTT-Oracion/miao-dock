@@ -97,7 +97,6 @@ export const UNINSTALL = {
     '如需重新使用，可再次运行安装包。',
   /** 完成页的补充说明：同样用真实落点，不写死盘符与目录名 */
   engineHint: (runtimesRoot: string) => `引擎数据目录位于 ${runtimesRoot}，未勾选时可手动清理。`,
-  feedbackBtn: '打开反馈问卷（30 秒）',
   finishBtn: '完成',
 } as const;
 
