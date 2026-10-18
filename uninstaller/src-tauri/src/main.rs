@@ -180,7 +180,8 @@ fn uninstall(targets: &[String], on_progress: &tauri::ipc::Channel<u32>) -> Resu
 /// （全机 + 仅为我），全杀掉是可接受的代价，而留着占用的 exe 会导致"卸载不干净"。
 fn terminate_running_app() -> usize {
     let mut killed = 0;
-    for image in ["miao-dock.exe", "mangasvc.exe"] {
+    // 三个镜像：桌面端 + 漫画服务 + 动漫服务（D-242；后者是独立 exe，占着文件就删不干净）
+    for image in ["miao-dock.exe", "mangasvc.exe", "animesvc.exe"] {
         let ok = Command::new("taskkill")
             .args(["/F", "/T", "/IM", image])
             .stdout(std::process::Stdio::null())

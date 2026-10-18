@@ -244,6 +244,58 @@ pub fn runtimes_dir() -> PathBuf {
     manga_runtime_root().join("manga-translator")
 }
 
+// ------------------------------------------------------------------ 动漫域落点（D-242）
+//
+// 与漫画域同构（state / 作品库 / 运行时都挂 `<数据根>/anime/`），但**三样都不共用**：
+// 🔴 漫画库扫描（`mangasvc/library.rs`）会把根下**每个顶层目录**都当成漫画，且不要求
+//    manifest。两个域若共用根，番剧会出现在漫画库里、`totalBytes` 也算错 —— 这不是
+//    "显示上的小瑕疵"，而是数据被另一域误读。隔离由 `check:anime` 的 A4 断言把守。
+
+/// 动漫服务状态目录（`MIAO_ANIME_STATE_DIR` 覆盖）：`<数据根>/anime/state`。
+///
+/// 与漫画 state 分开是**必须**的：令牌各自一份（漫画令牌不能调动漫端点），
+/// 队列/幂等表也各有一套 schema。
+pub fn anime_state_dir() -> PathBuf {
+    resolve(env_path("MIAO_ANIME_STATE_DIR").unwrap_or_else(|| data_root().join("anime").join("state")))
+}
+
+/// 动漫作品库默认位置：`<数据根>/anime/resources`。
+///
+/// 与漫画库（`~/Pictures/MiaoDock Mangas`）不同：漫画译文是用户成果，动漫库是产品数据。
+pub fn default_anime_root_dir() -> PathBuf {
+    data_root().join("anime").join("resources")
+}
+
+/// 生效的**动漫库根**（`MIAO_ANIME_ROOT_DIR` 覆盖）。总是绝对化。
+pub fn anime_root_dir() -> PathBuf {
+    resolve(env_path("MIAO_ANIME_ROOT_DIR").unwrap_or_else(default_anime_root_dir))
+}
+
+/// 动漫引擎运行时根（`MIAO_ANIME_RUNTIME_ROOT` 覆盖）：`<数据根>/anime/runtimes`。
+pub fn anime_runtime_root() -> PathBuf {
+    resolve(env_path("MIAO_ANIME_RUNTIME_ROOT").unwrap_or_else(|| data_root().join("anime").join("runtimes")))
+}
+
+/// 动漫服务令牌文件：`<animeStateDir>/token`。
+pub fn anime_token_file() -> PathBuf {
+    anime_state_dir().join("token")
+}
+
+/// 动漫侧路径快照（`animesvc --print-paths`）。
+///
+/// 🔴 **单独一份**，不并进 `snapshot()`：后者的键集是 `check:paths` 的 golden 断言对象，
+///    把两个服务的落点混进同一条金标，会让"漫画路径漂移"与"动漫路径漂移"互相掩盖。
+pub fn anime_snapshot() -> serde_json::Value {
+    let s = |p: PathBuf| p.to_string_lossy().into_owned();
+    serde_json::json!({
+        "dataRoot": s(data_root()),
+        "animeStateDir": s(anime_state_dir()),
+        "animeRootDir": s(anime_root_dir()),
+        "animeRuntimeRoot": s(anime_runtime_root()),
+        "animeTokenFile": s(anime_token_file()),
+    })
+}
+
 fn home_dir() -> PathBuf {
     // 复用 `dirs`（已在 Cargo.toml）：跨平台，含中文 Windows 的 USERPROFILE 处理。
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))

@@ -5450,4 +5450,55 @@ Sakura 权重）· `check:engine-parity` 的 `translationWeightsPresent` 两条�
 独立预言表，属既有脱节）· `selftest:service` 的 A21 组（Windows 上 `chmod 0500` 不阻止在
 目录内建文件，属平台语义）· `selftest:app` 的 B1e/S2d（缺引擎）与 B3f/S1（既有）。
 
+## D-242 动漫服务独立成 exe：`animesvc` 与 `mangasvc` 同时运行（2026-10-19）
+
+**为什么要独立进程**：动漫域将来要自带引擎栈与数据源，依赖集与漫画翻译互不相干。
+一个进程里混两套依赖，任何一侧的崩溃 / 内存峰值都会拖垮另一侧。代价是壳层要多跟踪
+一个服务 —— 本轮**不做壳层集成**（桌面端仍只拉起 ① 漫画服务），范围只到"两个 exe
+能同时正常运行"。
+
+**新落点（`platform::paths`，三个 env 各自独立）**
+
+| 层 | 默认 | env |
+|---|---|---|
+| 动漫 state（含令牌） | `<数据根>/anime/state` | `MIAO_ANIME_STATE_DIR` |
+| 动漫库 | `<数据根>/anime/resources` | `MIAO_ANIME_ROOT_DIR` |
+| 动漫 runtime | `<数据根>/anime/runtimes` | `MIAO_ANIME_RUNTIME_ROOT` |
+| 动漫令牌文件 | `<animeStateDir>/token` | `MIAO_ANIME_TOKEN`（只读覆盖） |
+| 端口 | 5180–5190 探测（`MIAO_ANIME_PORT` 显式） | — |
+
+**同时运行的四个前提（每条都有断言）**
+1. **端口**：两个进程各自"先探测再绑定" ⇒ 漫画 5180、动漫 5181（`check:anime` A3）。
+2. **令牌**：各持 `<state>/token`，值不同 ⇒ 拿漫画令牌打动漫端点 403（A3/A6）。
+3. **库根**：`<数据根>/anime/resources` vs `~/Pictures/MiaoDock Mangas`，**双向隔离**
+   （A4：番剧不进漫画库、漫画不进番剧库）。🔴 这条是必须的：漫画库扫描把根下**每个
+   顶层目录**都当漫画且不要求 manifest，共用根就是数据被另一域误读。
+4. **无单实例锁、无父子关系**：动漫退出后漫画照旧 200（A5）。
+
+**结构改动**
+- 新增 `src-tauri/src/animesvc.rs`（服务本体）+ `src-tauri/src/bin/animesvc.rs`（入口，含
+  `--print-paths` 打印**独立快照** `anime_snapshot()`，不并进漫画金标）
+- `Cargo.toml` 加 `[[bin]] animesvc`；`lib.rs` 注册模块
+- **落盘根安全闸下沉**：`validate_root` + 黑名单从 `mangasvc.rs` 抽到
+  `platform/root_guard.rs`，两个服务共用一份 —— 避免 `animesvc → mangasvc` 的横向依赖，
+  也避免复制一份黑名单后两边走散
+- 打包：`scripts/pack-install-payload.mjs` 显式带 `animesvc.exe`（同 `mangasvc.exe`
+  的坑：它不在 `bundle.resources` 里，"照抄清单"必漏）；`packaged-smoke` 补 P1d
+- 卸载器 `terminate_running_app()` 的镜像清单加 `animesvc.exe`（不然运行中的动漫服务
+  会让卸载删不干净）
+
+**端点（本轮最小面）**：`GET /api/v1/health`（无鉴权）· `GET /api/v1/anime/library`
+（`X-Box-Token`）· `GET /api/v1/anime/library/:name`（`X-Box-Token`）· 兜底 404 明确
+"这是动漫服务，不是 mangasvc"（两个服务同时在跑时最常见的误接）。
+
+**刻意没做什么**
+- 壳层 `ServiceManager` 仍是单服务槽；前端 `ServiceStatus`/`useService` 未动 ——
+  "两个服务"只是进程能力，不是 UI 事实，等接动漫那一轮再按服务组重画。
+- 动漫端点不复刻漫画的 44 条路由：先立"进程 + 落点 + 隔离"三件事，业务端点随审核
+  与播放器落地再长。
+
+**验收（2026-10-19）**：`cargo test --lib` 207/207 · 三个 bin 构建通过 ·
+`check:anime` **20/20** + 反证 **21/21** · `check:paths` 5/5 + 反证 6/6（安全闸下沉后回归）·
+`npm run check`（static）18/18 · `check:registry` 15/15（service 45→46 / refute 60→61）。
+
 

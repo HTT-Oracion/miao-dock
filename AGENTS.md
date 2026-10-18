@@ -20,6 +20,7 @@
 | 桌面壳 | Tauri v2（Rust） | `src-tauri/` |
 | 前端 | Vite + React 18 + TS，**原生 CSS + CSS 变量**（无 Tailwind；UI 库仅 `@radix-ui/react-select`） | `src/` |
 | 翻译服务 | Rust（127.0.0.1:5180–5190）：§2 的 ① 是 `mangasvc` 可执行文件 | `src-tauri/src/mangasvc/` |
+| 动漫服务 | Rust（同一端口段，**独立 exe `animesvc`**）：落点 `<数据根>/anime/{state,resources,runtimes}`，与漫画服务零共用（state / 令牌 / 库根各一份），两进程可同时运行 | `src-tauri/src/animesvc.rs` |
 | 翻译引擎 | **接缝层**：真引擎装在 `<appData>/MiaoDock/manga/runtimes/manga-translator/`（不在库，B1 起与安装位置无关），本目录放版本锁 `VERSIONS.lock` / 模型清单与下载器 / 子进程看守；`engine/src/` 是**测试替身**（mock 引擎 + mock LLM） | `engine/` |
 | 验收与取证脚本 | 纯 Node 零依赖（`e2e/service/`、`e2e/engine/` 按来源分） | `e2e/` |
 | 参考实现切片 | 只读参考，**保持原样不改** | 已退役（原有本地切片不入库；移植产物在 `src-tauri/src/music/`） |
@@ -256,6 +257,7 @@ npm run task -- check:docs            # 文档 ↔ 实现一致性 21 条（条�
 #    `=rust` 吃 `target/debug/mangasvc`）。D-209 起 node 靶子随 `service/` 删除**整体退役**：
 #    七组对拍逐块改成**冻结 golden**（D-199/200/203）或改读 Rust 自证出口 —— 不再需要第二份实现。
 #    ⇒ `service/src/*.mjs` 不再是"必须保留的对照端"，整目录已删（含旧的分层方向钉子）。
+npm run task -- check:anime[:refute]   # **D-242 动漫服务共存** 20 条 / 反证 1 条：两个 exe **同时**起（端口探测落不同口）· 动漫侧 `--print-paths` 5 键与三个 `MIAO_ANIME_*` 覆盖 · 令牌各持一份（拿漫画令牌打动漫端点 ⇒ 403）· **库根双向隔离**（番剧不进漫画库、漫画不进番剧库）· 动漫退出后漫画照旧；反证把动漫库根故意指到漫画库根 ⇒ 隔离断言必须变红
 npm run task -- check:paths[:refute]    # F2 路径解析与 `config.mjs` **逐字节**对拍 5 条 / 反证 5 条（`mangasvc --print-paths` 对拍；含 `normalize_lexical` 与 `assert_inside_root` 两处真缺陷的回归钉；**PATH.appData** B1 落点 + **PATH.tooling** 装配脚本同源）
 npm run task -- check:store[:refute]   # F3 任务库内核同源对拍 24 条 / 反证 24 条（🔴 serde 字段**声明序**必须逐字复刻 Node `serialize()` 键序；`Option` 保留 `undefined`→省略键；`Vec` 保插入序）
 npm run task -- check:store-exec[:refute] # F3-b 执行/队列同源对拍 74 条 / 反证（7 场景**连定义都单源**；🔴 `itemErrors` 必须比 —— 「总预算耗尽」与「单请求超时」`reason` 同为 `engine_engine_timeout`，只有 `errorMessage` 能分开）

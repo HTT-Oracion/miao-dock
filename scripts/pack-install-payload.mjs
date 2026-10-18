@@ -44,6 +44,13 @@ const APP_EXE = path.join(ROOT, 'src-tauri', 'target', 'release', 'miao-dock.exe
  *    所以"照抄 resources 清单"永远漏它，必须在这里显式列一条。
  */
 const SERVICE_EXE = path.join(ROOT, 'src-tauri', 'target', 'release', 'mangasvc.exe');
+/**
+ * 动漫服务 `animesvc.exe` —— 同样**必须随包**（D-242）。
+ *
+ * 本轮桌面壳还不拉起它（壳层仍只跟踪 ①），但它是独立 exe：产品后续接动漫时
+ * 按"与主程序同目录"寻址，装完再补就等于让用户重装一次。
+ */
+const ANIME_SERVICE_EXE = path.join(ROOT, 'src-tauri', 'target', 'release', 'animesvc.exe');
 const UNINSTALLER_EXE = path.join(ROOT, 'uninstaller', 'src-tauri', 'target', 'release', 'miaodock-uninstaller.exe');
 const PAYLOAD_DIR = path.join(ROOT, 'installer', 'src-tauri', 'payload');
 const PAYLOAD_ZIP = path.join(PAYLOAD_DIR, 'payload.zip');
@@ -190,6 +197,11 @@ entries.push({ name: 'miao-dock.exe', data: appData });
 const serviceData = mustExist(SERVICE_EXE, '先跑 `npm run app:build` 产出 mangasvc.exe');
 entries.push({ name: 'mangasvc.exe', data: serviceData });
 appResources.push('mangasvc.exe');
+
+// 动漫服务：同一 crate 的第三个 bin，同样不在 `bundle.resources` 里
+const animeServiceData = mustExist(ANIME_SERVICE_EXE, '先跑 `npm run app:build` 产出 animesvc.exe');
+entries.push({ name: 'animesvc.exe', data: animeServiceData });
+appResources.push('animesvc.exe');
 
 for (const [from, to] of Object.entries(resources)) {
   const source = path.resolve(ROOT, 'src-tauri', from);

@@ -189,6 +189,21 @@ const CHECKS = [
   // ---- service：起真实子进程，串行（端口竞争，见文件头）----
   { id: 'e2e', script: 'e2e/e2e.mjs', tier: 'service', watch: ['src-tauri/src/**', 'engine/src/**', 'e2e/**'] },
   {
+    id: 'anime',
+    script: 'e2e/service/anime-service-check.mjs',
+    tier: 'service',
+    refute: true,
+    // 断言面 = 动漫落点（paths）+ 安全闸（root_guard）+ 进程本体与入口 + 打包目标
+    watch: [
+      'src-tauri/src/animesvc.rs',
+      'src-tauri/src/bin/animesvc.rs',
+      'src-tauri/src/platform/paths.rs',
+      'src-tauri/src/platform/root_guard.rs',
+      'src-tauri/Cargo.toml',
+      'e2e/service/anime-service-check.mjs',
+    ],
+  },
+  {
     id: 'paths',
     script: 'e2e/service/paths-parity-check.mjs',
     tier: 'service',

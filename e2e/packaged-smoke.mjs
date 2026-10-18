@@ -275,6 +275,14 @@ try {
   );
   if (fs.existsSync(installedSvc)) serviceBin = installedSvc;
 
+  // P1d：动漫服务也必须随包（D-242）。它是独立 exe，漏了要等"接动漫那一轮"才发现。
+  const installedAnimeSvc = path.join(installDir, process.platform === 'win32' ? 'animesvc.exe' : 'animesvc');
+  check(
+    'P1d 安装目录里有 animesvc.exe（独立服务 exe 随包，后续接动漫不必重装）',
+    fs.existsSync(installedAnimeSvc),
+    installedAnimeSvc,
+  );
+
   // ---- ① 安装层：A2 进包的资产在**真实产物**里 ----
   const manifest = path.join(installDir, 'engine', 'models.manifest.json');
   check('P2 安装目录里有 engine/models.manifest.json（A1 落点 + A2 进包）', fs.existsSync(manifest), manifest);

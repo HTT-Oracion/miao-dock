@@ -38,9 +38,10 @@ miao-dock/
 │   ├── src/commands/  IPC 命令层（`mod.rs` = 唯一命令注册点；`lyrics_window.rs` = 桌面歌词**独立置顶窗**的命令）
 │   ├── src/service/   本地服务子进程的生命周期（`ServiceManager`）
 │   ├── src/selftest/  自检通道（`mod.rs` 生命周期自检 + `capture.rs` 截图取证）
-│   ├── src/platform/  跨平台底座（`paths.rs` 落点 / `child_watch.rs` 父死看守）
+│   ├── src/platform/  跨平台底座（`paths.rs` 落点 / `root_guard.rs` 落盘根安全闸 / `child_watch.rs` 父死看守）
 │   ├── src/music/     音乐模块 Rust 侧：四平台（`netease`/`kugou`/`qqmusic`/`migu`）+ 音频代理 + 加密 + 歌词 + 缓存（汽水延后）
-│   └── src/mangasvc/  **服务端实现**（唯一翻译入口，127.0.0.1:5180–5190）：`mangasvc.rs` 外壳 · `routes.rs` 路由表（44 条）· `handlers.rs` 端点 · `store/` 队列落盘 · `library.rs` 库原语 · `translate/` 在线翻译 · `engine/` 引擎耦合点
+│   ├── src/mangasvc/  **服务端实现**（唯一翻译入口，127.0.0.1:5180–5190）：`mangasvc.rs` 外壳 · `routes.rs` 路由表（44 条）· `handlers.rs` 端点 · `store/` 队列落盘 · `library.rs` 库原语 · `translate/` 在线翻译 · `engine/` 引擎耦合点
+│   └── src/animesvc.rs  **动漫服务**（独立 exe `animesvc`，同端口段探测）：自己的 state / 令牌 / 库根（`<数据根>/anime/*`），与漫画服务**可同时运行**且互不读取对方的库
 ├── public/       不经构建处理的静态资源（原样复制到 dist/，**没有指纹、没有 url() 改写**）
 │   ├── assets/fonts/   随仓字体：三份 `<dir>/font.css` 清单 + 字体文件（由入口 HTML 的 `<link>` 加载）
 │   ├── assets/icons/   品牌图（logo-48 / logo-512 / logo，用绝对 URL 引）

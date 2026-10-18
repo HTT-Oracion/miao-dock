@@ -62,6 +62,7 @@
         { "id": "check:macos-compat", "cmd": "node e2e/service/macos-compat-check.mjs", "desc": "D7 macOS 兼容钉子：解释器形态分平台、Windows 专用脚本在非 Windows 下真拒绝", "refute": true },
         { "id": "check:resilience", "cmd": "node e2e/service/resilience-check.mjs", "desc": "manga-service 健壮性钉子（异常输入 / 边界 / 恢复路径）", "refute": true },
         { "id": "check:paths", "cmd": "node e2e/service/paths-parity-check.mjs", "desc": "F2 路径同源钉子：Rust(paths.rs) 对冻结 golden 快照", "refute": true },
+        { "id": "check:anime", "cmd": "node e2e/service/anime-service-check.mjs", "desc": "D-242 动漫服务进程：与 mangasvc 同时运行 + 落点 / 令牌 / 库隔离", "refute": true },
         { "id": "check:runtime-probe", "cmd": "node e2e/service/runtime-probe-check.mjs", "desc": "B2/B5 运行时就绪检测：五项逐项翻转 + detail 必带绝对路径（只 warn 不 fail）", "refute": true },
         { "id": "check:path-single-source", "cmd": "node e2e/service/path-single-source-check.mjs", "desc": "B3 路径推导单源化：检测侧的 python.path 与启动配方的 cmd[0] 逐字节相同", "refute": true },
         { "id": "check:launch-gate", "cmd": "node e2e/service/launch-gate-check.mjs", "desc": "D6 real 档启动前预检闸门：缺件时一个子进程都不起 + G5 源码钉", "refute": true },
