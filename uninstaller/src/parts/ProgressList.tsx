@@ -18,7 +18,8 @@ const MARK_BY_STATE: Record<LineState, ReactNode> = {
 export function ProgressList({ lines, percent }: { lines: ProgressLine[]; percent: number }) {
   return (
     <div className="uns-prog">
-      <div className="uns-bar">
+      {/* 类名带 `prog`：`.uns-bar` 是窗口标题栏的（同名过一次，把标题压成了 7px 高） */}
+      <div className="uns-prog-bar">
         <i style={{ width: `${percent}%` }} />
       </div>
       {lines.map((line) => (

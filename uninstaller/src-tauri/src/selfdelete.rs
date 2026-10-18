@@ -43,9 +43,17 @@ mod platform {
     use std::os::windows::process::CommandExt;
     use std::process::{Command, Stdio};
 
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    pub const DETACHED_PROCESS: u32 = 0x0000_0008;
+    pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    pub const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
+    /// 真正传给 `CreateProcess` 的创建标志。
+    ///
+    /// 🔴 **不许加 `DETACHED_PROCESS`**：它让 cmd **完全没有控制台**，于是 cmd 里那些
+    /// 控制台子进程（`ping` 是外部程序，一轮一个）会被系统**各自新分配一个可见的控制台窗口**
+    /// —— 20 轮重试 = 屏幕上闪 20 个黑窗口（2026-10-18 用户实测反馈）。
+    /// `CREATE_NO_WINDOW` 给 cmd 一个**隐藏**控制台，`ping` 继承它 ⇒ 全程看不到窗口。
+    pub const CREATION_FLAGS: u32 = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP;
 
     pub fn spawn_cmd(line: &str) -> Result<(), String> {
         // 🔴 `raw_arg` 而不是 `arg`：cmd.exe 不认 Rust 那套 `\"` 转义，
@@ -53,7 +61,7 @@ mod platform {
         Command::new("cmd")
             .raw_arg("/c")
             .raw_arg(format!("\"{line}\""))
-            .creation_flags(DETACHED_PROCESS | CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP)
+            .creation_flags(CREATION_FLAGS)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -113,5 +121,19 @@ mod tests {
         let line = cleanup_command(Path::new("D:\\a%20b"), Path::new("D:\\a%20b\\u.exe"));
         assert!(line.contains("a%%20b"));
         assert!(!line.contains("a%20b"));
+    }
+
+    /// 🔴 创建标志里不许出现 `DETACHED_PROCESS`：那会让 cmd 没有控制台，
+    ///    于是每一轮 `ping` 都被系统分配一个**可见**窗口（用户看到的就是"多次 cmd 闪窗"）。
+    #[cfg(windows)]
+    #[test]
+    fn spawn_flags_keep_a_hidden_console() {
+        use super::platform::{CREATE_NO_WINDOW, CREATION_FLAGS, DETACHED_PROCESS};
+        assert_eq!(
+            CREATION_FLAGS & DETACHED_PROCESS,
+            0,
+            "DETACHED_PROCESS 会让 ping 各自弹一个可见控制台窗口"
+        );
+        assert_ne!(CREATION_FLAGS & CREATE_NO_WINDOW, 0, "必须有隐藏控制台");
     }
 }

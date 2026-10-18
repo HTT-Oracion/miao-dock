@@ -64,7 +64,11 @@
   padding: 8px 0 4px;
 }
 
-.uns-bar {
+/* 🔴 类名必须与窗口标题栏的 `.uns-bar` 区分开：两者曾经同名，而本文件在
+   `styles/index.scss` 里**排在 shell.scss 之后**、特异性又相同 ⇒ 这里的
+   `height: 7px` + `overflow: hidden` 把标题栏（46px）压成一条、文字上下被切掉。
+   症状是"标题行显示不全"，根因却在进度条上 —— 所以名字里必须带 `prog`。 */
+.uns-prog-bar {
   height: 7px;
   margin: 10px 0 4px;
   overflow: hidden;
@@ -72,7 +76,7 @@
   border-radius: 999px;
 }
 
-.uns-bar i {
+.uns-prog-bar i {
   display: block;
   height: 100%;
   background: linear-gradient(90deg, var(--md-pink), var(--md-lavender));
