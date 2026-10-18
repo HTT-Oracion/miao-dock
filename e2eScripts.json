@@ -107,7 +107,10 @@
         { "id": "setup:engine", "cmd": "node engine/scripts/setup-engine.mjs", "desc": "装配引擎运行时到 <appData>/runtimes/manga-translator（拉归档 / 原子解包 / 建 venv / 打补丁）" },
         { "id": "deps:engine", "cmd": "node engine/scripts/install-engine-deps.mjs", "desc": "装引擎 Python 依赖（venv 内 pip；随包预编译 wheel 优先，缺则回退源码编译）" },
         { "id": "gen:licenses", "cmd": "node scripts/gen-licenses.mjs", "desc": "从 Cargo.lock / package-lock.json / 引擎清单枚举并生成 src/generated/licenses.json" },
-        { "id": "sign:preflight", "cmd": "node scripts/mac-signing-preflight.mjs", "desc": "E1 macOS 打包前自检：entitlements 四项就位 + 签名/公证变量齐（缺变量非零退出）" }
+        { "id": "sign:preflight", "cmd": "node scripts/mac-signing-preflight.mjs", "desc": "E1 macOS 打包前自检：entitlements 四项就位 + 签名/公证变量齐（缺变量非零退出）" },
+        { "id": "installer:build", "cmd": "node scripts/build-install-ui.mjs installer", "desc": "构建安装向导（独立安装器程序的前端）：注入字体 → tsc → vite build，产物在 installer/dist/" },
+        { "id": "uninstaller:build", "cmd": "node scripts/build-install-ui.mjs uninstaller", "desc": "构建卸载页（独立卸载器程序的前端）：注入字体 → tsc → vite build，产物在 uninstaller/dist/" },
+        { "id": "install:kit", "cmd": "node scripts/package-install-ui.mjs", "desc": "组装安装器套件（两个宿主的 exe + 主应用安装包）到 .tmp/install-kit/，供本地分发验证" }
       ]
     },
     "dev": {
