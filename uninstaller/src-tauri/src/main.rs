@@ -21,8 +21,11 @@ mod shortcuts;
 
 use serde::Serialize;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 /// 卸载动作是否已经跑完 —— 关窗时据此决定要不要再排一次自删
 static UNINSTALLED: AtomicBool = AtomicBool::new(false);
@@ -79,6 +82,12 @@ async fn run_uninstall(
     tauri::async_runtime::spawn_blocking(move || uninstall(&targets, &on_progress))
         .await
         .map_err(|e| format!("卸载线程异常：{e}"))?
+        // 失败要把日志路径带上：界面上那句"请查看安装日志"得能落到具体文件
+        .map_err(with_log_hint)
+}
+
+fn with_log_hint(message: String) -> String {
+    format!("{message}（详见日志 {}）", log_path().display())
 }
 
 #[tauri::command]
@@ -122,13 +131,26 @@ fn uninstall(targets: &[String], on_progress: &tauri::ipc::Channel<u32>) -> Resu
         let _ = progress.send(done);
     };
 
+    log(&format!(
+        "开始卸载 v{}，安装目录 {}，勾选数据 {:?}",
+        env!("CARGO_PKG_VERSION"),
+        install_dir.display(),
+        targets
+    ));
+
     // ① 入口：桌面（当前用户 + 公共）与开始菜单（全机 + 当前用户）四处置都清
     shortcuts::remove_all()?;
+    log("入口已移除");
     tick(on_progress);
 
-    // ② 程序文件（跳过自己）与卸载注册表项
+    // ② 先让**正在运行的主程序与服务**退出，再删程序文件与注册表项。
+    //    🔴 不先退出会怎样：`miao-dock.exe` / `mangasvc.exe` 被占用 ⇒ 删到一半报错，
+    //    进度停在第 2 步（用户看到的就是"进度条卡住"），而且目录里剩下的东西再也不会被清。
+    let killed = terminate_running_app();
+    log(&format!("已结束运行中的进程：{killed}"));
     remove_program_files(&install_dir, &self_exe)?;
     registry::delete()?;
+    log("程序文件与注册表项已移除");
     tick(on_progress);
 
     // ③ 逐项删除勾选的数据目录（没勾的一律不碰）
@@ -138,25 +160,84 @@ fn uninstall(targets: &[String], on_progress: &tauri::ipc::Channel<u32>) -> Resu
         if dir.is_dir() {
             remove_dir_safely(&dir)?;
         }
+        log(&format!("已删除数据目录 {kind}：{}", dir.display()));
         tick(on_progress);
     }
 
     // ④ 安排自删：本程序与安装目录的空壳由后台 cmd 清掉
     selfdelete::schedule(&install_dir, &self_exe)?;
     UNINSTALLED.store(true, Ordering::SeqCst);
+    log("已安排自删（关窗后由后台清理程序与安装目录）");
     tick(on_progress);
 
     Ok(())
+}
+
+/// 结束正在运行的主程序与其服务（`taskkill /T` 连子进程一起）。
+///
+/// 返回成功结束掉几个镜像 —— 只进日志，**不算失败**：没在运行是常态。
+/// 为什么按镜像名而不是按路径：`taskkill` 只认镜像名；本产品一台机器上最多两份安装
+/// （全机 + 仅为我），全杀掉是可接受的代价，而留着占用的 exe 会导致"卸载不干净"。
+fn terminate_running_app() -> usize {
+    let mut killed = 0;
+    for image in ["miao-dock.exe", "mangasvc.exe"] {
+        let ok = Command::new("taskkill")
+            .args(["/F", "/T", "/IM", image])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok {
+            killed += 1;
+        }
+    }
+    if killed > 0 {
+        // 句柄释放要一点时间：立刻删会撞上"文件仍在使用中"
+        std::thread::sleep(Duration::from_millis(800));
+    }
+    killed
+}
+
+/// 卸载日志 —— 失败时界面让人"查看安装日志"，这份就是那个日志。
+fn log_path() -> PathBuf {
+    std::env::temp_dir().join("miao-dock-uninstall.log")
+}
+
+fn log(message: &str) {
+    let line = format!("[uninstaller] {message}\n");
+    if let Ok(mut file) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path())
+    {
+        let _ = file.write_all(line.as_bytes());
+    }
 }
 
 /// 静默档：只删程序、入口、注册表项（**不碰用户数据**），跑完即排自删并退出
 fn run_silent() -> i32 {
     let install_dir = install_dir();
     let self_exe = current_exe();
-    let result = shortcuts::remove_all()
-        .and_then(|_| remove_program_files(&install_dir, &self_exe))
-        .and_then(|_| registry::delete().map(|_| ()))
-        .and_then(|_| selfdelete::schedule(&install_dir, &self_exe));
+    log(&format!(
+        "静默卸载 v{}，安装目录 {}",
+        env!("CARGO_PKG_VERSION"),
+        install_dir.display()
+    ));
+
+    let result = (|| -> Result<(), String> {
+        shortcuts::remove_all()?;
+        log("入口已移除");
+        // 与界面档同一条纪律：先结束占用 exe 的进程，否则删一半就报错
+        let killed = terminate_running_app();
+        log(&format!("已结束运行中的进程：{killed}"));
+        remove_program_files(&install_dir, &self_exe)?;
+        registry::delete()?;
+        log("程序文件与注册表项已移除");
+        selfdelete::schedule(&install_dir, &self_exe)?;
+        log("已安排自删");
+        Ok(())
+    })();
 
     match result {
         Ok(()) => {
@@ -164,7 +245,7 @@ fn run_silent() -> i32 {
             0
         }
         Err(error) => {
-            eprintln!("卸载失败：{error}");
+            eprintln!("卸载失败：{}", with_log_hint(error));
             1
         }
     }

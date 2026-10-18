@@ -89,7 +89,6 @@ export const UNINSTALL = {
   runningSub: '卸载正在进行，请稍候。',
   runningFootLeft: '卸载会完整执行到最后一步',
   runningNote: '删除中的项目按你的勾选实时显示；未勾选的数据会明确写「已保留」',
-  backgroundBtn: '后台卸载',
   /** 卸载失败时摆在进度屏顶上的提示（失败原因由宿主给成人话） */
   failure: (reason: string) => `卸载未正常结束：${reason}。可重新运行本卸载器；若反复失败，请查看安装日志。`,
   doneTitle: '卸载完成',

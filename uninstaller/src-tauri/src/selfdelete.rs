@@ -58,7 +58,12 @@ mod platform {
     pub fn spawn_cmd(line: &str) -> Result<(), String> {
         // 🔴 `raw_arg` 而不是 `arg`：cmd.exe 不认 Rust 那套 `\"` 转义，
         //    只有原样把 `"<整条命令>"` 递进去，里面的引号才会被当成路径边界。
+        // 🔴 `current_dir` 必须换成临时目录：子进程**继承调用方的工作目录**，
+        //    而卸载器的工作目录通常就是安装目录 ⇒ `rmdir /s /q <安装目录>` 会报
+        //    「另一个程序正在使用此文件」(因为它是自己的 CWD)，目录永远删不掉
+        //    （2026-10-18 用户实测：卸载后安装目录还在，内容已空）。
         Command::new("cmd")
+            .current_dir(std::env::temp_dir())
             .raw_arg("/c")
             .raw_arg(format!("\"{line}\""))
             .creation_flags(CREATION_FLAGS)

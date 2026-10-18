@@ -502,11 +502,23 @@ function runAll() {
   const guardFirst = guardAt >= 0 && removeAt >= 0 && guardAt < removeAt;
   const silentTouchesData = /data_dir\(|remove_dir_safely/.test(silentBody);
   const rawRemoveAll = uninstallerMain.split('fs::remove_dir_all').length - 1;
+  /*
+   * ④ 删程序文件之前**必须先结束占用 exe 的进程**（2026-10-18 用户实测的回归形态）：
+   *    `miao-dock.exe` / `mangasvc.exe` 还在跑 ⇒ 删到一半报错 ⇒ 进度停在第 2 步、
+   *    目录留下残缺内容，而且再也不会被清。
+   *    界面档与静默档都要做，所以两段各判一次。
+   */
+  const killAt = uninstallBody.indexOf('terminate_running_app()');
+  const filesAt = uninstallBody.indexOf('remove_program_files(');
+  const killsFirst = killAt >= 0 && filesAt >= 0 && killAt < filesAt;
+  const silentKills = /terminate_running_app\(\)/.test(silentBody);
   check(
     'W10',
-    '删用户数据前必过安全闸（`guard()` 先于删除）+ 静默档不碰数据 + 直接 `remove_dir_all` 只有一处（在带链接判定的 `remove_dir_safely` 里）',
-    guardFirst && !silentTouchesData && rawRemoveAll === 1,
-    `guardFirst=${guardFirst} guardAt=${guardAt} removeAt=${removeAt} silentTouchesData=${silentTouchesData} rawRemoveAll=${rawRemoveAll}`,
+    '删用户数据前必过安全闸（`guard()` 先于删除）+ 静默档不碰数据 + 直接 `remove_dir_all` 只有一处（在带链接判定的 `remove_dir_safely` 里）' +
+      ' + 删程序文件前先结束运行中的程序（界面档与静默档都要 —— 否则占用导致删一半、进度卡住、目录留残）',
+    guardFirst && !silentTouchesData && rawRemoveAll === 1 && killsFirst && silentKills,
+    `guardFirst=${guardFirst} silentTouchesData=${silentTouchesData} rawRemoveAll=${rawRemoveAll} ` +
+      `killsFirst=${killsFirst} silentKills=${silentKills}`,
   );
 
   /*
@@ -849,6 +861,18 @@ const MUTATIONS = [
         file: path.join(ROOT, 'uninstaller', 'src-tauri', 'src', 'main.rs'),
         find: 'fn run_silent() -> i32 {',
         replace: 'fn run_silent() -> i32 {\n    let _ = remove_dir_safely(&root_dir());',
+      },
+    ],
+    expect: ['W10'],
+  },
+  {
+    // 回归形态：不先结束运行中的主程序就删文件 ⇒ 删一半报错、进度卡住、目录留残。
+    name: 'E3：卸载前不结束运行中的主程序（删一半报错，目录留残）',
+    edits: [
+      {
+        file: path.join(ROOT, 'uninstaller', 'src-tauri', 'src', 'main.rs'),
+        find: '    let killed = terminate_running_app();',
+        replace: '    let killed = 0usize;',
       },
     ],
     expect: ['W10'],

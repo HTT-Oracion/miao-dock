@@ -96,14 +96,11 @@ function Flow({ host, probe }: { host: UninstallerHost; probe: UninstallProbe })
   }
 
   const cancel = (): void => host.close();
-  const background = (): void => host.close();
   const finish = (): void => host.close();
 
   if (phase === 'running') {
     const lines = markRunning(plan, done);
-    return (
-      <ProgressState lines={lines} percent={progressPercent(plan, done)} failure={failure} onBackground={background} />
-    );
+    return <ProgressState lines={lines} percent={progressPercent(plan, done)} failure={failure} />;
   }
 
   if (phase === 'done') {

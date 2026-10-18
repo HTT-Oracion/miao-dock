@@ -22,7 +22,7 @@ mod service;
 pub(crate) use miao_dock::mangasvc;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
 use service::ServiceManager;
@@ -46,6 +46,8 @@ pub(crate) fn tray_action(app: &AppHandle, id: &str) {
     match id {
         "show" => {
             if let Some(w) = app.get_webview_window("main") {
+                // 最小化状态下只 `show()` 不会把它从任务栏弹回来，必须先 `unminimize()`
+                let _ = w.unminimize();
                 let _ = w.show();
                 let _ = w.set_focus();
             }
@@ -83,6 +85,21 @@ fn main() {
 
             TrayIconBuilder::with_id("main")
                 .menu(&menu)
+                // 🔴 左键单击 = 直接打开主窗口，右键才弹菜单（用户口径）。
+                //    `show_menu_on_left_click(false)` 把左键从菜单手里拿回来；
+                //    再由 `on_tray_icon_event` 接住 **Left + Up** —— 用 Down 会与
+                //    "按下即弹菜单"的默认行为打架，Up 才是"点完就开"（松开才动作）。
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        tray_action(tray.app_handle(), "show");
+                    }
+                })
                 .tooltip("喵坞 · 本地翻译服务常驻中")
                 .icon(app.default_window_icon().cloned().ok_or("缺少应用图标")?)
                 .on_menu_event(|app, event| {

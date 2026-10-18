@@ -15,13 +15,11 @@ export function ProgressState({
   lines,
   percent,
   failure,
-  onBackground,
 }: {
   lines: ProgressLine[];
   percent: number;
   /** 卸载失败原因（人话）；null = 正常进行中 */
   failure: string | null;
-  onBackground: () => void;
 }) {
   return (
     <WinShell
@@ -32,9 +30,6 @@ export function ProgressState({
         <>
           <span className="uns-foot-left">{UNINSTALL.runningFootLeft}</span>
           <span className="uns-foot-grow" />
-          <button type="button" className="uns-btn uns-btn-ghost" onClick={onBackground}>
-            {UNINSTALL.backgroundBtn}
-          </button>
         </>
       }
     >
