@@ -45,9 +45,9 @@ const REFUTE = process.argv.includes('--refute');
 const SELF = fileURLToPath(import.meta.url);
 const TOKEN = 'a'.repeat(64);
 const STATE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'state.rs');
-const NOT_READY_TSX = path.join(REPO_ROOT, 'src', 'screens', 'library', 'NotReadyScreen.tsx');
+const NOT_READY_TSX = path.join(REPO_ROOT, 'src', 'screens', 'manga', 'NotReadyScreen.tsx');
 /// D-233：明细渲染搬进时间线组件（`detail` 的守卫也一起搬了）。
-const TIMELINE_TSX = path.join(REPO_ROOT, 'src', 'screens', 'library', 'AssemblyTimeline.tsx');
+const TIMELINE_TSX = path.join(REPO_ROOT, 'src', 'screens', 'manga', 'AssemblyTimeline.tsx');
 const ENGINE_DIAG = path.join(REPO_ROOT, 'src', 'screens', 'settings', 'EngineDiag.tsx');
 const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
 const CARGO = process.env.CARGO || 'cargo';

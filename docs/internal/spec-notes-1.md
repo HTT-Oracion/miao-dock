@@ -395,8 +395,8 @@ ubuntu + macos 双平台，Node 22。必过门：
 
 1. 新增 `src/components/units/Modal.tsx`：蒙层 + 卡片 + 标题/正文/操作三段。
    `busy` 时蒙层点击失效（提交中误关）。**只做结构去重，行为一字不动。**
-2. 替换 5 处：`components/QuitConfirm.tsx` · `screens/library/modals.tsx`（原 `Sheet` 外壳，
-   4 个调用点一并改 `<Modal>`）· `screens/LibraryScreen.tsx`（删除确认 / 已隐藏管理）·
+2. 替换 5 处：`components/QuitConfirm.tsx` · `screens/manga/modals.tsx`（原 `Sheet` 外壳，
+   4 个调用点一并改 `<Modal>`）· `screens/manga/LibraryScreen.tsx`（删除确认 / 已隐藏管理）·
    `screens/settings/CacheBlock.tsx`。
 3. `units/index.ts` barrel + `units-structure-check.mjs` 的 `MANIFEST`（16→17）/`BARREL_EXPORTS` 同步登记。
 
@@ -621,18 +621,18 @@ refute 13/13（字节还原校验全过）** · `check:contract` 77/0 · `check:
 ## D-148 · 拆 `LibraryScreen.tsx`：「看图/对照」簇 + 8 个子组件全部外移（2026-10-11）
 
 **背景**：审计 §3.3。`LibraryScreen.tsx` 2,122 行，单文件里塞了 8 个子组件 + 2 个弹窗
-（而 `screens/library/modals.tsx` 已存在）。`screens/library/` 目录已有 `blob.ts` / `chapters.tsx`
+（而 `screens/manga/modals.tsx` 已存在）。`screens/manga/` 目录已有 `blob.ts` / `chapters.tsx`
 / `modals.tsx` 的拆分范式，本轮沿用。
 
 ### 移出的内容
 
 | 新去处 | 内容 | 理由 |
 |---|---|---|
-| `screens/library/viewer.tsx`（新，536 行） | `Pane` + ZOOM 常量/`clampZoom` + `Lightbox` + `Compare` | 「看图 / 对照」是一个独立关切（含 200+ 行缩放/平移交互说明），与「列表 / 搜索 / 分页」无关 |
-| `screens/library/cards.tsx`（新，112 行） | `CoverThumb` · `Highlight` · `Thumb` · `GridState`/`GRID_LABEL` | 纯展示小件，无状态机依赖 |
-| `screens/library/modals.tsx`（+105 行） | `DeleteComicModal` · `HiddenComicsModal` | 与既有的新建/编辑/归并弹窗同类，收在一处 |
-| `screens/library/meta.ts`（新，35 行） | `retranslateMeta` · `resumeMeta` | 见下「为什么要单开」 |
-| `screens/library/blob.ts`（+25 行） | `PageView` 接口 | `Viewer` 与屏本体都要它；留在屏内会成环 |
+| `screens/manga/viewer.tsx`（新，536 行） | `Pane` + ZOOM 常量/`clampZoom` + `Lightbox` + `Compare` | 「看图 / 对照」是一个独立关切（含 200+ 行缩放/平移交互说明），与「列表 / 搜索 / 分页」无关 |
+| `screens/manga/cards.tsx`（新，112 行） | `CoverThumb` · `Highlight` · `Thumb` · `GridState`/`GRID_LABEL` | 纯展示小件，无状态机依赖 |
+| `screens/manga/modals.tsx`（+105 行） | `DeleteComicModal` · `HiddenComicsModal` | 与既有的新建/编辑/归并弹窗同类，收在一处 |
+| `screens/manga/meta.ts`（新，35 行） | `retranslateMeta` · `resumeMeta` | 见下「为什么要单开」 |
+| `screens/manga/blob.ts`（+25 行） | `PageView` 接口 | `Viewer` 与屏本体都要它；留在屏内会成环 |
 
 `LibraryScreen.tsx` **2,122 → 1,344 行**（-37%）。**8 个子组件 + 2 个弹窗已全部移出**；
 屏本体只留编排、列表与状态机。
@@ -643,11 +643,11 @@ refute 13/13（字节还原校验全过）** · `check:contract` 77/0 · `check:
 留在 `LibraryScreen.tsx` 会形成 `viewer.tsx → LibraryScreen.tsx`（值导入 `Compare`）
 与 `LibraryScreen.tsx → viewer.tsx` 的**循环 import**。故下沉到零依赖的 `meta.ts`。
 连带同步 3 处把它当「范式」引用的规范文档：`AGENTS.md` §2.10 · `.trae/rules/project_rules.md` §2.8 ·
-`docs/internal/spec-notes.md`（范式指针从 `LibraryScreen.tsx` 改为 `screens/library/meta.ts`）。
+`docs/internal/spec-notes.md`（范式指针从 `LibraryScreen.tsx` 改为 `screens/manga/meta.ts`）。
 
 ### 🔴 最坑的一处：`stripComments` **跨文件失同步**（实测假阳性）
 
-`check:units` 的 ZOOM 组读的是屏源码。拆文件后我把 `s.library` 改成「屏本体 + `screens/library/*.tsx`」
+`check:units` 的 ZOOM 组读的是屏源码。拆文件后我把 `s.library` 改成「屏本体 + `screens/manga/*.tsx`」
 **拼接**。第一版直接拼**原文**再让判据 `stripComments` ⇒ `ZOOM.wheelNonPassive` **该红没红**（假阳性）。
 
 根因：`stripComments` 是**带状态机**的（反引号/引号/正则字面量都可能让它跑偏，D-110 同类）。
@@ -801,10 +801,10 @@ src/screens/settings/sections/
 
 ### 移出的内容
 
-`<aside>`（**204 行** JSX）→ 新建 `screens/library/LeftRail.tsx`（253 行）：
+`<aside>`（**204 行** JSX）→ 新建 `screens/manga/LeftRail.tsx`（253 行）：
 
 ```
-src/screens/library/
+src/screens/manga/
   LeftRail.tsx    左栏：搜索框 + 列表（浏览态 / 搜索分组态 / 无分层平铺态）+ 容量脚 + 分页器
   libModel.ts     共享小件：LIB_PAGE_SIZE · AUTHOR_FALLBACK · PageCounts · progressLabel · LibItem
 ```
@@ -824,7 +824,7 @@ src/screens/library/
 
 ### 断言锚
 
-**零变异锚受影响** —— `check:units` 的 ZOOM 组读的是「`LibraryScreen.tsx` + `screens/library/*.tsx`」
+**零变异锚受影响** —— `check:units` 的 ZOOM 组读的是「`LibraryScreen.tsx` + `screens/manga/*.tsx`」
 的拼接（D-148 建的机制），而左栏里没有任何缩放代码。故本轮只跑检查、没改断言。
 
 ### 验收
@@ -846,11 +846,11 @@ src/screens/library/
 
 ### 移出的内容
 
-`<section className="lib-right">`（201 行）→ 新建 `screens/library/LibraryRight.tsx`（283 行）。
+`<section className="lib-right">`（201 行）→ 新建 `screens/manga/LibraryRight.tsx`（283 行）。
 
 `LibraryScreen.tsx` **1,126 → 950 行**；屏本体 **1,174 → 约 830 行**（-29%）。
 
-至此 `screens/library/` 目录：
+至此 `screens/manga/` 目录：
 
 | 文件 | 内容 |
 |---|---|
@@ -874,7 +874,7 @@ src/screens/library/
 ### 断言锚
 
 **零变异锚受影响**（与 D-151 同）：`check:units` 的 ZOOM 组读「`LibraryScreen.tsx` +
-`screens/library/*.tsx`」拼接，而右栏没有缩放代码。
+`screens/manga/*.tsx`」拼接，而右栏没有缩放代码。
 
 ### 验收
 
@@ -954,24 +954,24 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 `renumberChapter`/`renderComicMenu` 这些**动作** —— 它们要发请求、要弹 toast，属于"用户做了什么"，
 不是"数据长什么样"。这条界线是本刀的分界依据。
 
-`GRID_PAGE_SIZE` / `CHAPTER_PAGE_SIZE` 随之下沉 `screens/library/libModel.ts`（与 `LIB_PAGE_SIZE` 团聚）。
+`GRID_PAGE_SIZE` / `CHAPTER_PAGE_SIZE` 随之下沉 `screens/manga/libModel.ts`（与 `LIB_PAGE_SIZE` 团聚）。
 
 ### 🔴 踩到 D-41 的硬约束：`use*` 文件必须住 `src/hooks/`
 
-第一版把钩子放在 `screens/library/useLibraryModel.ts`，`check:units` 的
+第一版把钩子放在 `screens/manga/useLibraryModel.ts`，`check:units` 的
 `HOOKS.noMisplacedUse` **立刻变红**：「文件名以 use + 大写字母开头的文件必须住在 `src/hooks/` 内」。
 这条**没有豁免机制** —— 于是钩子落到 `src/hooks/useLibraryModel.ts`，并**登记进
 `HOOKS_MANIFEST`**（显式白名单，与 units 的 `MANIFEST` 同一套做法）。
 ⚠️ 不登记的话，`HOOKS` 组会报"hooks 目录多了一个没登记的件" —— 同样是红。
 
-**代价与取舍**：钩子住在共享的 `hooks/`，却 import `@screens/library/{libModel,blob}`（屏内小件）。
+**代价与取舍**：钩子住在共享的 `hooks/`，却 import `@screens/manga/{libModel,blob}`（屏内小件）。
 这是"use* 一律住 hooks"与"屏内逻辑留屏内"两条约定的**交叠处**：本仓的 D-41 是硬约束，
 故按它办；若将来出现第二个屏级钩子，值得为"屏级 hooks"单开一条豁免规则（而不是继续往
 共享 `hooks/` 里堆屏内概念）。
 
 ### 断言锚
 
-**零变异锚新增/改指** —— `check:units` 的 ZOOM 组读「`LibraryScreen.tsx` + `screens/library/*.tsx`」
+**零变异锚新增/改指** —— `check:units` 的 ZOOM 组读「`LibraryScreen.tsx` + `screens/manga/*.tsx`」
 拼接，本刀只动状态/派生（`.ts` 钩子不在 `.tsx` glob 里，且里面没有缩放代码）。唯一改的是
 `HOOKS_MANIFEST` 加一项。
 
@@ -1173,7 +1173,7 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 |---|---|
 | `docs/internal/spec-notes.md` | 已**封卷于 D-136**（文件头明写），D-137 起的新条目按规定写 `spec-notes-1.md` —— 本次 D-147~D-157 都在续篇里，无缺失 |
 | `docs/internal/spec-notes-1.md` | D-147~D-157 全部在册（本次改造的完整台账） |
-| `.trae/rules/project_rules.md` | D-148/D-150/D-154 已把范式指针改指 `screens/library/meta.ts` |
+| `.trae/rules/project_rules.md` | D-148/D-150/D-154 已把范式指针改指 `screens/manga/meta.ts` |
 | `README.md` | 无 src 结构描述，不存在过期陈述 |
 | `AGENTS.md` | 范式指针 / check 条数（music 216 · settings 180 · units 45 · ia 32 · autostart 12，check:docs 17/0 实证一致）；**补写**了前端 `src/music/` 按层分文件的说明（§1 原先只描述服务端域目录，D-156 的新分层没进去） |
 
@@ -4409,9 +4409,9 @@ Ctrl/Cmd+U、Ctrl/Cmd+Shift+I/J/C 与 F12；`contextmenu` 一律取消，**例�
 `macos` · 打包态 `hydratePlatform` 真能拿到值（开发态浏览器里它是 false，**看不出**对错）。
 验收：`tsc --noEmit` 0 · static 门 **17/17** · `cargo build` **零告警**（新命令已真编译）。
 
-**⑦ 未就绪屏：行内样式清零 + 迁入 `screens/library/`**（`refactor(app)`）：D1 引导页那 25 处
+**⑦ 未就绪屏：行内样式清零 + 迁入 `screens/manga/`**（`refactor(app)`）：D1 引导页那 25 处
 `style={{…}}` 全部抽成 `.nr-guide*` 类，规则落 `manga.scss` 的 X-C3 段（`.notready` 之后），
-组件用 `git mv` 搬进 `src/screens/library/NotReadyScreen.tsx`（未就绪屏是**投放屏的一种形态**，
+组件用 `git mv` 搬进 `src/screens/manga/NotReadyScreen.tsx`（未就绪屏是**投放屏的一种形态**，
 由 `router/panes/TranslatePane.tsx` 的让位守卫渲染，不是独立屏入口 —— `screens/` 根因此从
 "六个屏入口"变成五个）。🔴 抽样式时发现一处**真问题**：原先写的是
 `var(--md-card, #fff)` / `var(--md-row, rgba(128,128,128,0.06))`，这两个自定义属性**全仓不存在**
@@ -4801,7 +4801,7 @@ prettier 全绿 · eslint **0 error**（134 warning 为既有基线）。
 
 **改了什么**
 
-- `src/screens/library/NotReadyScreen.tsx`：`STAGES` / `STARTUP_COUNT` / `PHASE_INDEX` /
+- `src/screens/manga/NotReadyScreen.tsx`：`STAGES` / `STARTUP_COUNT` / `PHASE_INDEX` /
   `NODE_KIND` 的「首图时完成」分支一并删净 ⇒ `ASSEMBLY_PHASES` + `STEP_INDEX` +
   `assemblyReached(step, ready)`。`summaryOf` 去掉 `phase === 'L3'` 分支（服务现状与装配进度
   两条轴，混进同一句话就自相矛盾）。新增 `download` prop。
@@ -4971,7 +4971,7 @@ prettier 全绿 · eslint **0 error**（134 warning 为既有基线）。
   `done / interrupted / idle` 不动。不自动续传（用户确认的取舍：下次手动「继续下载」）。
 
 **前端**
-- `src/screens/library/assembly.ts` 是五段常量、`STEP_INDEX`、`assemblyNotes()`、
+- `src/screens/manga/assembly.ts` 是五段常量、`STEP_INDEX`、`assemblyNotes()`、
   `engineInstallView()` 的唯一出处；`AssemblyTimeline.tsx` 只做渲染，段内插槽承载
   「第一个未完成模型段」的决策区。
 - 安装提示挂在**第一个未完成模型段**（visual 未就绪 → visual 下；visual 完成、llm 未就绪
@@ -5336,5 +5336,35 @@ W1/W2 钉着它），那是**旧界面**、不是分发物 —— 要根治得�
 ⚠️ **未验项如实登记**：0.1s 的**主观观感**（"稍停一下播放头跟上"是否可感知、会不会嫌迟钝）
 **没在真机确认**；只验到"源码结构 + 行为契约"两层。「松手后 0.1s 内再次拖拽」的边角
 （旧目标作废那条分支）靠 `latestDragMsRef` 判据与反证结构上钉住，**没有真机复现过**。
+
+## D-239 漫画屏层收拢到 `screens/manga/`：三屏同目录 + barrel 出口（2026-10-19）
+
+**为什么要改**：`screens/library/` 把**视图名**当成了**模块名** —— 里面住着
+`NotReadyScreen`（投放视图的未就绪形态）与 `assembly`（装配阶段共享件），事实上早就是
+「漫画翻译应用」的屏层；而样式层早已叫 `manga.scss`，同一层前端两个名字。动漫模块落地前
+把口径统一到 `manga`，`library` 回归「漫画库视图」的本义（`TRANSLATE_VIEWS` 的 id 不动）。
+
+**改了什么**
+- `git mv` 15 个文件：`screens/{DropScreen,QueueScreen,LibraryScreen}.tsx` + `screens/library/` 12 件
+  → `src/screens/manga/`；新增 `src/screens/manga/index.ts`（barrel：三屏 + `NotReadyScreen` +
+  `QueueTable` / `QueueEmpty`）。
+- `TranslatePane.tsx` 4 条 import 收成 1 条 barrel；`useLibraryModel.ts` 与屏内件的
+  `@screens/library/*` 共 22 处改 `@screens/manga/*`（纯别名替换，无相对上跳）。
+- 断言侧：`check:units` 的 `F.queueScreen` / `F.library` / `F.libraryViewer` 与 ZOOM 语料目录；
+  `check:registry` 三处 `NotReadyScreen` watch；`check:retranslate` / `check:lib-manage` 读屏源码的
+  路径；`check:docpaths` 的反证锚点（`screens/manga/meta.ts`）。
+- 文档：`AGENTS.md` 目录分层与范式指针、`README.md` 目录节、`.trae/rules/project_rules.md`、
+  `docs/dev-setup.md`、本台账正文引用。
+- 🔴 **ZOOM 语料显式排除 `DropScreen.tsx` / `QueueScreen.tsx`**：三屏同目录后若照单全收，
+  关键字断言会多出与看图缩放无关的来源（假阳性）。排除后语料与搬迁前等价。
+
+**刻意没做什么**
+- `LibraryScreen.tsx` 文件名不动 —— 它与 `TRANSLATE_VIEWS` 的 `library` id 同名，是深链与
+  `check:ia` 的断言对象，改名等于改 URL。
+- `docs/internal/spec-notes.md` 一个字没改（封卷于 D-136，不在 `check:docpaths` 范围）。
+- 未顺手建 `src/modules/manga/`：域模块切分（ipc / types / 模型纯函数）留待动漫落地前那一轮。
+
+**验收（2026-10-19）**：`tsc --noEmit` 无输出 · `check:units` 46/46 + 反证 61/61 ·
+`check:docpaths` 5/5 + 反证 2/2 · `check:registry` 15/15 · `check:ia` 37/37。
 
 

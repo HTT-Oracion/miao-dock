@@ -42,7 +42,7 @@
 
 - `src/components/units/` —— 通用 UI 单元。**判据：不 import 业务层**（store / ipc / types / platform / `@hooks` 整个目录 / nav）。类名一律 `ui-` 前缀。
 - `src/components/` —— 应用级组件（Sidebar / Toolbar / ViewTabs / QuitConfirm）。
-- `src/screens/<屏>/` —— 屏内件（`library/blob.ts`·`library/chapters.tsx`·`library/modals.tsx`·`library/NotReadyScreen.tsx`（未就绪屏是投放屏的一种形态，D-230）、`settings/parts.tsx`、`music/shared.tsx`）。
+- `src/screens/<应用>/` —— 屏层（屏入口 + 屏内件）：`manga/`（投放 / 队列 / 漫画库三屏同目录，`index.ts` 是唯一出口；`manga/NotReadyScreen.tsx` 是投放屏的一种形态，D-230）、`settings/parts.tsx`、`music/shared.tsx`。**判据**：`screens/` 是「一个应用一组屏」的住地，域逻辑（store / ipc / 播放器等）住 `src/modules/<应用>/` —— 两层同名是分层事实，不是待消除的歧义。
 - `src/hooks/` —— **hooks 唯一收口**：`use*` 命名的 hook 一律住这里（业务 hook 进桶文件 `index.ts`，经 `@hooks` 引入；纯行为 hook 如 `useEsc`、`useCoverColor` 单放同目录）。旧的单文件 `hooks.ts`（落在 `src/` 根）**不得**与目录并存 —— 模块解析会**静默二选一**（`HOOKS.layout` 盯死）。
 - `src/tools/` —— **共享纯函数收口**（与 `components/` 同级，经 `@tools` 引入）：跨屏复用、与业务类型解耦的小工具（格式化 / 分页 / 模糊匹配 / UUID / MIME 嗅探 / 重名规范化 …）。只服务单个屏的逻辑仍留屏内。
 - `src/router/` —— **屏级路由**（`routes.ts` 是「路径 ↔ 屏」的唯一事实源 · `use-nav.ts` 是导航读写口 · `index.tsx` 是装配 · `panes/` 是**屏装配件**）。URL 是「屏 + 应用内视图」的唯一事实源，侧栏 / 视图 Tab 只发导航意图；**新增屏必须同时进路由表与 `stores/nav.ts` 的 IA 模型**（后者回答"有哪些屏、哪个屏让位"，前者回答"路径怎么走"）。
@@ -140,7 +140,7 @@
    - ⚠️ 在此之前的历史提交用的是旧格式（`类型(模块): 功能简述 + 关键点简述`，类型含 `feat` / `test`）——
      **不改历史**，`git log` 里两种形态并存是正常的。
 10. **禁止内联长链三元。** 形如 `title={a ? 'x' : b ? 'y' : c ? 'z' : w}` 的多级内联三元必须抽成
-    **具名变量或早返回函数**（范式：`screens/library/meta.ts` 的 `retranslateMeta` / `resumeMeta` 返回
+    **具名变量或早返回函数**（范式：`screens/manga/meta.ts` 的 `retranslateMeta` / `resumeMeta` 返回
     `{ title, sub, blocked }`），让每个分支可读、可单测。
 11. **注释只描述功能。** 注释写"做了什么"即可；**只有核心改动**（跨文件契约 / 易踩坑 / 反直觉处）
     才追加"为什么"，且保持精简。禁止大段复述代码或写流水账。

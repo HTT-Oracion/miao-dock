@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ASSEMBLY_PHASES, type PhaseId, type StageNote } from '@screens/library/assembly';
+import { ASSEMBLY_PHASES, type PhaseId, type StageNote } from '@screens/manga/assembly';
 
 /**
  * 装配五段时间线 —— 引导页与「已装配但服务没起来」两处**共用**同一个组件。

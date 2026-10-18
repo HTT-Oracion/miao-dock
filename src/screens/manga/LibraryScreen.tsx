@@ -11,7 +11,7 @@ import type {
 } from '@/types';
 import { chapterNoOf } from '@tools';
 import { ContextMenu, MenuItem, MenuSeparator, Notice } from '@components/units';
-import type { BookMetaIntent } from '@screens/library/modals';
+import type { BookMetaIntent } from '@screens/manga/modals';
 import {
   DeleteComicModal,
   EditBookModal,
@@ -19,13 +19,13 @@ import {
   HiddenComicsModal,
   MergeModal,
   NewBookModal,
-} from '@screens/library/modals';
-import { Compare } from '@screens/library/viewer';
-import { retranslateMeta, resumeMeta } from '@screens/library/meta';
-import { LeftRail } from '@screens/library/LeftRail';
-import { LibraryRight } from '@screens/library/LibraryRight';
+} from '@screens/manga/modals';
+import { Compare } from '@screens/manga/viewer';
+import { retranslateMeta, resumeMeta } from '@screens/manga/meta';
+import { LeftRail } from '@screens/manga/LeftRail';
+import { LibraryRight } from '@screens/manga/LibraryRight';
 import { useLibraryModel } from '@hooks/useLibraryModel';
-import type { LibItem } from '@screens/library/libModel';
+import type { LibItem } from '@screens/manga/libModel';
 
 // ------------------------------------------------------------------ 左栏视图件
 

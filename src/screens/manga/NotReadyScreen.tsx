@@ -9,8 +9,8 @@ import type { ServiceStatus } from '@/ipc';
 import { downloadEngineModels } from '@screens/settings/engine-api';
 import type { ModelDownloadView } from '@screens/settings/engine-api';
 import type { TranslateSource } from '@screens/settings/translate-api';
-import { ASSEMBLY_PHASES, assemblyNotes, type StageNote } from '@screens/library/assembly';
-import { AssemblyTimeline } from '@screens/library/AssemblyTimeline';
+import { ASSEMBLY_PHASES, assemblyNotes, type StageNote } from '@screens/manga/assembly';
+import { AssemblyTimeline } from '@screens/manga/AssemblyTimeline';
 
 /**
  * 画面 X-C3 · 服务未就绪 / 启动中 / 引擎装配（《02》§4）。

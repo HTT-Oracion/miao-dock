@@ -97,7 +97,7 @@ check:packaged          # 静默安装 → 资产自检 → 起服务打 /health
 |---|---|
 | `src-tauri/src/mangasvc/store/` | 队列落盘：`exec`（执行体）· `view`（视图）· `pure`（纯函数）· `atomic`（原子写） |
 | `src-tauri/src/mangasvc/` 根 | 服务外壳与域模块：`mangasvc.rs`（鉴权/装配）· `routes.rs`（44 条路由）· `handlers.rs`（端点）· `library.rs` · `translate/` · `engine/` |
-| `src/screens/` | 各屏；屏内复用件放 `screens/<域>/`（如 `screens/library/`） |
+| `src/screens/` | 屏层；一个应用一组屏（屏入口 + 屏内件同目录，如 `screens/manga/`） |
 | `src/components/units/` | 跨屏通用 UI（`Btn`/`Notice`/`MenuButton`/`Modal`…），新通用件必须落这里 |
 | `src/components/` | 业务组件（非通用） |
 | `src/hooks/` | **所有 `use*` 文件必须住这里**（`check:units` 硬断言，无豁免） |

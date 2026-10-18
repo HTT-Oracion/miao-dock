@@ -90,8 +90,8 @@ const MUTATIONS = [
   {
     name: '在 project_rules.md 里插一个不存在的路径',
     file: '.trae/rules/project_rules.md',
-    find: 'screens/library/meta.ts',
-    replace: 'screens/library/meta.ts` 与 `src/nope/gone.ts',
+    find: 'screens/manga/meta.ts',
+    replace: 'screens/manga/meta.ts` 与 `src/nope/gone.ts',
     expect: ['DOCS.path..trae/rules/project_rules.md'],
   },
 ];

@@ -12,16 +12,10 @@ import { useDebouncedValue } from '@hooks/useDebouncedValue';
 import { apiGet, isApiError } from '@/ipc';
 import { fuzzyMatch, groupSearchResults, pageCount, pageSlice } from '@tools';
 import type { BookEntry, ChapterEntry, ComicEntry, LibraryResponse, RetranslatePlan, TaskRow } from '@/types';
-import {
-  bookFirstImagePath,
-  chapterFilePath,
-  coverPath,
-  filePath,
-  topLevelFirstImagePath,
-} from '@screens/library/blob';
-import type { PageView } from '@screens/library/blob';
-import { CHAPTER_PAGE_SIZE, GRID_PAGE_SIZE, LIB_PAGE_SIZE } from '@screens/library/libModel';
-import type { LibItem } from '@screens/library/libModel';
+import { bookFirstImagePath, chapterFilePath, coverPath, filePath, topLevelFirstImagePath } from '@screens/manga/blob';
+import type { PageView } from '@screens/manga/blob';
+import { CHAPTER_PAGE_SIZE, GRID_PAGE_SIZE, LIB_PAGE_SIZE } from '@screens/manga/libModel';
+import type { LibItem } from '@screens/manga/libModel';
 
 export function useLibraryModel({
   lib,

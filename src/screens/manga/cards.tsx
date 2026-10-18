@@ -3,7 +3,7 @@
 // 为什么从 `LibraryScreen.tsx` 抽出来（D-148）：它们是"给数据、画像素"的无状态件，
 // 与屏本体的状态机 / 编排无关；单独成文件后屏本体只留编排与列表。
 import { matchIndices } from '@tools';
-import { useBlobUrl } from '@screens/library/blob';
+import { useBlobUrl } from '@screens/manga/blob';
 
 /**
  * 网格卡三态 —— 判定依据是 `/library` 给出的**逐页**集合（`translatedSeqs` / `missingSeqs`），

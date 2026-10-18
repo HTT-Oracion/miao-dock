@@ -43,7 +43,7 @@ const F = {
   app: path.join(SRC, 'App.tsx'),
   viteConfig: path.join(APP, 'vite.config.ts'),
   tsconfig: path.join(APP, 'tsconfig.json'),
-  queueScreen: path.join(SRC, 'screens', 'QueueScreen.tsx'),
+  queueScreen: path.join(SRC, 'screens', 'manga', 'QueueScreen.tsx'),
   rightPanel: path.join(SRC, 'screens', 'music', 'RightPanel.tsx'),
   queueDrawer: path.join(SRC, 'screens', 'music', 'QueueDrawer.tsx'),
   // D-150：`sections.tsx` 已拆到 `sections/*.tsx`，本表见下方 CALLER_IMPORT_FILES。
@@ -62,9 +62,9 @@ const F = {
   toastBus: path.join(SRC, 'stores', 'toastBus.ts'),
   musicToast: path.join(SRC, 'screens', 'music', 'Toast.tsx'),
   tooltip: path.join(SRC, 'components', 'units', 'Tooltip.tsx'),
-  library: path.join(SRC, 'screens', 'LibraryScreen.tsx'),
+  library: path.join(SRC, 'screens', 'manga', 'LibraryScreen.tsx'),
   // D-148：`LibraryScreen.tsx` 拆出「看图/对照」簇；ZOOM 组的锚点随之落到 viewer.tsx
-  libraryViewer: path.join(SRC, 'screens', 'library', 'viewer.tsx'),
+  libraryViewer: path.join(SRC, 'screens', 'manga', 'viewer.tsx'),
   // 断言读到的 s.appCss 是全分片拼接（见下方 readStyleSource 调用处）；
   // 下面这个 musicScss **只给反证机制用**（按 file 路径临时改源文件）。
   // 灵动岛的样式在 music.scss 里（.di-capsule 等），故反证指向它。
@@ -178,7 +178,7 @@ function resolveSpec(baseDir, spec) {
 /** 调用点必须真的从 units 引 */
 const CALLER_IMPORT_FILES = {
   'App.tsx': F.app,
-  'screens/QueueScreen.tsx': F.queueScreen,
+  'screens/manga/QueueScreen.tsx': F.queueScreen,
   'screens/music/RightPanel.tsx': F.rightPanel,
   'screens/music/QueueDrawer.tsx': F.queueDrawer,
   // D-150：`sections.tsx` 已拆成 `sections/*.tsx` ⇒ 取其中引 units 最多的 TranslateSection 作代表
@@ -376,16 +376,20 @@ function loadSources() {
   // 屏装配件分派表（B1）
   s.routerPanes = readMaybe(F.routerPanes);
   // ZOOM：全屏看图缩放（Lightbox 在 viewer.tsx —— 屏本体已拆分，D-148）。
-  // 判据读「屏本体 + `screens/library/*.tsx`」的**拼接源码**，只关心"关键字在不在"。
+  // 判据读「屏本体 + `screens/manga/*.tsx`」的**拼接源码**，只关心"关键字在不在"。
   // 🔴 **逐文件单独 `stripComments` 再拼**：`stripComments` 是带状态机的（反引号 ≠ 字符串/正则
   //    字面量都可能让它跑偏，见 D-110）。直接拼原文再 strip，前一个文件的失同步会**污染**
   //    后一个文件（实测：viewer.tsx 的块注释因此没被剥掉 ⇒ ZOOM.wheelNonPassive 假阳性）。
   //    逐文件 strip 后每个文件都从 `code` 态起步，互不牵连；再 strip 一次是幂等的。
+  // 🔴 投放/队列两屏搬进 manga 目录后**必须排除**：它们与看图缩放无关，拼进语料等于
+  //    给关键字断言多开一个来源（关键词恰巧命中别的屏 = 假阳性）。排除后语料与搬迁前等价。
+  const MANGA_DIR = path.join(SRC, 'screens', 'manga');
+  const NON_LIBRARY_SCREENS = new Set(['DropScreen.tsx', 'QueueScreen.tsx']);
   s.library = [
     F.library,
-    ...listFiles(path.join(SRC, 'screens', 'library'))
-      .filter((n) => n.endsWith('.tsx'))
-      .map((n) => path.join(SRC, 'screens', 'library', n)),
+    ...listFiles(MANGA_DIR)
+      .filter((n) => n.endsWith('.tsx') && !NON_LIBRARY_SCREENS.has(n))
+      .map((n) => path.join(MANGA_DIR, n)),
   ]
     .map((p) => stripComments(readMaybe(p)))
     .join('\n');
@@ -974,7 +978,7 @@ add('TOOLTIP.graceHide', 'TOOLTIP', (s) => {
 // 判据一律先 stripComments：本组多条在注释里主动写出了反面写法
 // （`onWheel`、`passive`、捏合被吃等），不剥注释会恒红或恒绿 —— 两种都是假信号。
 add('ZOOM.wheelNonPassive', 'ZOOM', (s) => {
-  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  if (!s.library) return { ok: false, detail: 'screens/manga/LibraryScreen.tsx 不存在' };
   const lib = stripComments(s.library);
   const missing = [];
   if (!/addEventListener\('wheel'/.test(lib))
@@ -987,7 +991,7 @@ add('ZOOM.wheelNonPassive', 'ZOOM', (s) => {
 });
 
 add('ZOOM.anchorZoom', 'ZOOM', (s) => {
-  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  if (!s.library) return { ok: false, detail: 'screens/manga/LibraryScreen.tsx 不存在' };
   const lib = stripComments(s.library);
   const from = lib.indexOf('const zoomAt = (');
   const to = lib.indexOf('useEffect', from);
@@ -1008,7 +1012,7 @@ add('ZOOM.anchorZoom', 'ZOOM', (s) => {
 });
 
 add('ZOOM.buttonFallback', 'ZOOM', (s) => {
-  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  if (!s.library) return { ok: false, detail: 'screens/manga/LibraryScreen.tsx 不存在' };
   const lib = stripComments(s.library);
   const missing = [];
   if (!/className="lightbox-zoom-btn"/.test(lib))
@@ -1031,7 +1035,7 @@ add('ZOOM.buttonFallback', 'ZOOM', (s) => {
 });
 
 add('ZOOM.twoFingerPan', 'ZOOM', (s) => {
-  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  if (!s.library) return { ok: false, detail: 'screens/manga/LibraryScreen.tsx 不存在' };
   const lib = stripComments(s.library);
   // ⚠️ 段首锚点必须在 `addEventListener('wheel'` **之前** —— 裸滚轮平移的分支写在
   //    onWheel 函数体里（注册语句在函数之后），从注册语句起算会把要判的代码切掉。
@@ -1053,7 +1057,7 @@ add('ZOOM.twoFingerPan', 'ZOOM', (s) => {
 // 取 `1 - deltaY·k`；写成 `1 + deltaY·k` 方向就反了。图能缩能放、类型也过，
 // 只有源码钉子拦得住 —— 2026-10-08 就是用户报「ctrl+↓ 才是放大」才发现写反的。
 add('ZOOM.wheelDirection', 'ZOOM', (s) => {
-  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  if (!s.library) return { ok: false, detail: 'screens/manga/LibraryScreen.tsx 不存在' };
   const lib = stripComments(s.library);
   const from = lib.indexOf('const onWheel = (e: WheelEvent)');
   const to = lib.indexOf("addEventListener('wheel'", from);
@@ -1077,7 +1081,7 @@ add('ZOOM.wheelDirection', 'ZOOM', (s) => {
 //   ⇒ 舞台 347×352、图被渲染成 345×517，纵向溢出 165px 并被 `overflow:hidden` 裁掉。
 //   换 flex 居中后是 233×350 —— 恰好铺满。故判据里必须钉住 flex 居中。
 add('ZOOM.fitToWindow', 'ZOOM', (s) => {
-  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  if (!s.library) return { ok: false, detail: 'screens/manga/LibraryScreen.tsx 不存在' };
   const lib = stripComments(s.library);
   const missing = [];
   // 初始 / 换页复位都必须落在「恰好铺满」档（不是缩放下限，否则开图小一半）

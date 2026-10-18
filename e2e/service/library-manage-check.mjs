@@ -489,7 +489,9 @@ async function runAll() {
     // ---- L8：前端接线（源码断言）——队列删的是 /tasks/delete，库删带 deleteFiles ----
     // ⚠️ 先剥注释再判：注释里写着端点名（本仓惯例会写），不剥就会测到注释而非调用点。
     const appSrc = stripComments(fs.readFileSync(APP_SRC, 'utf8'));
-    const libSrc = stripComments(fs.readFileSync(path.join(ROOT, 'src', 'screens', 'LibraryScreen.tsx'), 'utf8'));
+    const libSrc = stripComments(
+      fs.readFileSync(path.join(ROOT, 'src', 'screens', 'manga', 'LibraryScreen.tsx'), 'utf8'),
+    );
     check(
       'L8',
       '前端接线：队列删打 `/tasks/delete`；漫画库删打 `/delete` 且带 `deleteFiles` 勾选结果',

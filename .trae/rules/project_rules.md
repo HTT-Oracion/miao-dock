@@ -28,7 +28,7 @@ alwaysApply: true
    ⚠️ **D-137 起新条目写 `docs/internal/spec-notes-1.md`**（`docs/internal/spec-notes.md` 已封卷于 D-136）；
    编号全局接续，动手前先 `grep "^## D-" docs/internal/spec-notes*.md | tail -3` 确认最新编号。
 8. **禁止内联长链三元**：`title={a ? 'x' : b ? 'y' : c ? 'z' : w}` 这类多级三元必须抽成**具名变量 / 早返回函数**
-   （范式见 `screens/library/meta.ts` 的 `retranslateMeta` / `resumeMeta`），让每个分支可读、可单测。
+   （范式见 `screens/manga/meta.ts` 的 `retranslateMeta` / `resumeMeta`），让每个分支可读、可单测。
 9. **注释只描述功能**：说明"做了什么"即可；仅**核心改动**才追加"为什么"，且保持精简 —— 禁止大段复述代码。
 10. **通用 UI 一律走 `components/units/`**：下拉命令菜单用 `MenuButton` + `MenuItem`、盒式提示用 `Notice`、
     按钮用 `Btn`；不在各屏自造同类 DOM / 样式（各屏业务样式件如列表项 / Tab / 卡片仍留屏内）。
@@ -37,7 +37,7 @@ alwaysApply: true
 
 - `src/components/units/` = 通用 UI 单元，**判据：不 import 业务层**（store / ipc / types / platform / 根 hooks）。类名一律 `ui-` 前缀。
 - `src/components/` = 应用级（Sidebar / Toolbar / ViewTabs / QuitConfirm）。
-- `src/screens/<屏>/` = 屏内件。
+- `src/screens/<应用>/` = 屏层（屏入口 + 屏内件同目录，如 `manga/` 三屏 + `index.ts` 唯一出口）；域逻辑住 `src/modules/<应用>/`，两层同名是分层事实。
 - `src/tools/` = 共享纯函数（经 `@tools` 引入，与 `components/` 同级）：跨屏复用、**不 import 业务层**。
 - `src/router/` = 屏级路由（**URL 是「屏 + 应用内视图」的唯一事实源**）：`routes.ts` 是「路径 ↔ 屏」的事实源，`use-nav.ts` 是读写口，`index.tsx` 是装配，`panes/` 是屏装配件（经 `<Outlet context>` 取壳层数据，**不自己持状态**；翻译屏兼管让位守卫）。**新增屏要同时进路由表与 `src/stores/nav.ts` 的 IA 模型**。
 - `src/stores/` = **跨组件共享状态的收口（非域）**：`nav` / `toastBus` / `shell-prefs`。**域内状态留域里** —— `src/music/store.ts`（zustand）不往这里搬。

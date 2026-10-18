@@ -67,7 +67,7 @@ const DOWNLOAD_PANEL_TSX = path.join(ROOT, 'src', 'screens', 'engine', 'Download
 /// W16：版本锁（人读的事实源）—— `engine_source` 的 owner/repo/commit 以它为准。
 const VERSIONS_LOCK = path.join(ROOT, 'engine', 'VERSIONS.lock');
 const UI_FILES = [
-  path.join(ROOT, 'src', 'screens', 'library', 'NotReadyScreen.tsx'),
+  path.join(ROOT, 'src', 'screens', 'manga', 'NotReadyScreen.tsx'),
   path.join(ROOT, 'src', 'screens', 'engine', 'DownloadPanel.tsx'),
   path.join(ROOT, 'src', 'screens', 'settings', 'OnlineApiForm.tsx'),
   path.join(ROOT, 'src', 'components', 'units', 'ProgressRing.tsx'),

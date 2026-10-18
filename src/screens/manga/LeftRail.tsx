@@ -8,9 +8,9 @@ import { ChevronDown, EyeOff, GitMerge, Search, X } from 'lucide-react';
 import { LIBRARY } from '@/themes/tokens';
 import { Btn, Tooltip } from '@components/units';
 import { formatBytes, groupSearchResults, pageSlice } from '@tools';
-import { CoverThumb, Highlight } from '@screens/library/cards';
-import { AUTHOR_FALLBACK, LIB_PAGE_SIZE, progressLabel } from '@screens/library/libModel';
-import type { LibItem } from '@screens/library/libModel';
+import { CoverThumb, Highlight } from '@screens/manga/cards';
+import { AUTHOR_FALLBACK, LIB_PAGE_SIZE, progressLabel } from '@screens/manga/libModel';
+import type { LibItem } from '@screens/manga/libModel';
 
 export function LeftRail({
   queryInput,

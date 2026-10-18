@@ -18,7 +18,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { Btn, Modal, Select } from '@components/units';
 import { chapterNoOf, coverFileName, dupKey, padChapterNo, shortPath } from '@tools';
 import type { BookEntry, ChapterEntry, ComicEntry } from '@/types';
-import { bookFirstImagePath, coverPath, useBlobUrl } from '@screens/library/blob';
+import { bookFirstImagePath, coverPath, useBlobUrl } from '@screens/manga/blob';
 
 /** Windows/POSIX 双料的非法文件名字符（与 `tools.dupKey()` 剥的是同一批） */
 const ILLEGAL_NAME_RE = /[/\\:*?"<>|]/;

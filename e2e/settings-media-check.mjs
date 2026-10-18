@@ -87,10 +87,10 @@ const F = {
   settingsScreen: path.join(APP, 'src', 'screens', 'SettingsScreen.tsx'),
   // X-C3「准备中」屏（S6 的「L1–L4 文案 + 首张稍慢」）。它不在设置页里，
   // 但它与设置页共享同一条事实源（Rust 的 StatusView），所以放同一轮断言。
-  notReady: path.join(APP, 'src', 'screens', 'library', 'NotReadyScreen.tsx'),
+  notReady: path.join(APP, 'src', 'screens', 'manga', 'NotReadyScreen.tsx'),
   // D-233：五段常量与纯函数（assembly.ts）+ 时间线渲染（AssemblyTimeline.tsx）
-  assembly: path.join(APP, 'src', 'screens', 'library', 'assembly.ts'),
-  timeline: path.join(APP, 'src', 'screens', 'library', 'AssemblyTimeline.tsx'),
+  assembly: path.join(APP, 'src', 'screens', 'manga', 'assembly.ts'),
+  timeline: path.join(APP, 'src', 'screens', 'manga', 'AssemblyTimeline.tsx'),
   // 未就绪屏「使用在线翻译」卡片里的内嵌表单（同一屏的另一半，判据同源）
   onlineApi: path.join(APP, 'src', 'screens', 'settings', 'OnlineApiForm.tsx'),
   ipc: path.join(APP, 'src', 'ipc', 'index.ts'),
@@ -2035,7 +2035,7 @@ add('ENGINE.md.noRawAsterisks', 'ENGINE', (ctx) => {
 
 /**
  * 装配四段的四句用户感知文案（D-231⑥，取代 L1–L4「服务启动分层」）。
- * 🔴 与 `src/screens/library/NotReadyScreen.tsx` 的 `ASSEMBLY_PHASES` 逐字一致。
+ * 🔴 与 `src/screens/manga/NotReadyScreen.tsx` 的 `ASSEMBLY_PHASES` 逐字一致。
  */
 const NOTREADY_TEXTS = [
   ['prepare', '环境准备'],

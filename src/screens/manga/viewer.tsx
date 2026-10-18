@@ -10,9 +10,9 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, RotateCcw, Search, X } from 'lucide-react';
 import { Btn, IconButton, MenuButton, MenuItem } from '@components/units';
 import type { RetranslatePlan } from '@/types';
-import { useBlobUrl } from '@screens/library/blob';
-import type { PageView, Variant } from '@screens/library/blob';
-import { retranslateMeta } from '@screens/library/meta';
+import { useBlobUrl } from '@screens/manga/blob';
+import type { PageView, Variant } from '@screens/manga/blob';
+import { retranslateMeta } from '@screens/manga/meta';
 
 function Pane({
   path,

@@ -6,11 +6,11 @@
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { LIBRARY } from '@/themes/tokens';
 import { Btn, IconButton, Notice } from '@components/units';
-import { ChapterCard } from '@screens/library/chapters';
-import { GRID_LABEL, Thumb } from '@screens/library/cards';
-import type { GridState } from '@screens/library/cards';
-import { AUTHOR_FALLBACK } from '@screens/library/libModel';
-import type { PageView } from '@screens/library/blob';
+import { ChapterCard } from '@screens/manga/chapters';
+import { GRID_LABEL, Thumb } from '@screens/manga/cards';
+import type { GridState } from '@screens/manga/cards';
+import { AUTHOR_FALLBACK } from '@screens/manga/libModel';
+import type { PageView } from '@screens/manga/blob';
 import type { BookEntry, ChapterEntry, ComicEntry } from '@/types';
 
 export function LibraryRight({

@@ -15,7 +15,7 @@ import { FolderUp, Pencil, Play, RotateCcw, Trash2 } from 'lucide-react';
 
 import { Badge, Dot, MenuButton, MenuItem } from '@components/units';
 import type { ChapterEntry } from '@/types';
-import { chapterImagePath, useBlobUrl } from '@screens/library/blob';
+import { chapterImagePath, useBlobUrl } from '@screens/manga/blob';
 
 // ------------------------------------------------------------------ 状态
 
