@@ -43,6 +43,11 @@ export const INSTALL = {
   welcome: '请选择喵坞的安装目录。建议放在固态硬盘上，读取会更快一些。',
   dirTip: '译稿、模型与缓存不存放在此目录，卸载时也不会被移除。此目录仅包含程序本身。',
   estimate: '预计耗时约 1 分钟',
+  scopeTitle: '安装范围',
+  perUserTitle: '仅为我安装',
+  perUserDesc: '装到当前用户目录、不需要管理员权限；换个 Windows 账户就看不到喵坞了。',
+  installing: '正在安装…',
+  installingFoot: '正在释放程序文件，请勿关闭窗口',
 } as const;
 
 export const LONG_PATH = {
@@ -80,19 +85,22 @@ export const LONG_PATH_CMD = [
 
 export const DONE = {
   hero: '安装完成',
-  heroSub: '以下是最后两项可选设置，默认勾选，可按需取消。',
+  heroSub: '以下是最后三项可选设置，默认勾选，可按需取消。',
   shortcut: '创建桌面快捷方式',
   shortcutDesc: '在桌面创建快捷方式，便于下次启动。（不勾选也可从开始菜单找到喵坞）',
+  startMenu: '创建开始菜单快捷方式',
+  startMenuDesc: '在开始菜单里放一枚喵坞入口；卸载时桌面与开始菜单两处会一并清除。',
   launch: '立即打开喵坞',
   launchDesc: '首次打开时会引导下载翻译引擎（约 10 GB，可跳过），也可以稍后在应用内下载。',
   /** 只在宿主探测到"长路径未开"时显示（`null` = 探测不到，也按未开处理） */
   longPathTip:
     '检测到系统尚未开启长路径。这不影响本次安装，但首次装配引擎时可能报出「文件名或扩展名太长」。' +
     '届时可按步骤 2 中的命令处理，应用内也会再次提醒。',
+  shortcutFailedTitle: '有入口没能创建好（程序本身已装好，可照常使用）',
   footNote: (version: string, logPath: string) => `版本 v${version} · 安装日志：${logPath}`,
 } as const;
 
-/** 安装失败时摆在长路径这一步顶上的提示（退出码由宿主给） */
-export function installFailureText(code: number, logPath: string): string {
-  return `安装失败（退出码 ${code}）。可重试一次；反复失败请查看安装日志 ${logPath}。`;
+/** 安装失败时摆在长路径这一步顶上的提示（失败原因由宿主给成人话，不再有退出码） */
+export function installFailureText(reason: string, logPath: string): string {
+  return `安装失败：${reason}。可重试一次；反复失败请查看安装日志 ${logPath}。`;
 }

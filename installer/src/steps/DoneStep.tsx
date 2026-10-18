@@ -11,23 +11,30 @@ const CONFETTI = [0, 1, 2, 3, 4, 5];
 /**
  * 步骤 3 / 3 · 安装完成。
  *
- * 收尾只留两件**可反悔**的事：要不要桌面快捷方式、要不要现在就打开。两者默认勾选 ——
- * 首次打开会顺带引导下载翻译引擎，所以第二段说明把这件事提前讲明（它不在安装向导里做）。
+ * 收尾只留三件**可反悔**的事：桌面快捷方式、开始菜单快捷方式、要不要现在就打开。
+ * 三者默认勾选，点「完成」时才真正执行（取消勾选的会顺手清掉已存在的同一处入口）。
  * 长路径那条提示**只在宿主探测到"没开"时**才出现（已开 / 探测不到都不打扰）。
  */
 export function DoneStep({
   env,
   shortcut,
+  startMenu,
   launch,
+  failures,
   onToggleShortcut,
+  onToggleStartMenu,
   onToggleLaunch,
   onViewLog,
   onFinish,
 }: {
   env: InstallEnv;
   shortcut: boolean;
+  startMenu: boolean;
   launch: boolean;
+  /** 补建入口时的失败说明（空数组 = 全成功） */
+  failures: string[];
   onToggleShortcut: () => void;
+  onToggleStartMenu: () => void;
   onToggleLaunch: () => void;
   onViewLog: () => void;
   onFinish: () => void;
@@ -70,8 +77,15 @@ export function DoneStep({
 
       <div className="isr-opt-list">
         <CheckRow checked={shortcut} title={DONE.shortcut} desc={DONE.shortcutDesc} onToggle={onToggleShortcut} />
+        <CheckRow checked={startMenu} title={DONE.startMenu} desc={DONE.startMenuDesc} onToggle={onToggleStartMenu} />
         <CheckRow checked={launch} title={DONE.launch} desc={DONE.launchDesc} onToggle={onToggleLaunch} />
       </div>
+
+      {failures.length > 0 ? (
+        <NoticeBar kind="warn">
+          {DONE.shortcutFailedTitle}：{failures.join('；')}
+        </NoticeBar>
+      ) : null}
 
       {longPathMissing ? <NoticeBar kind="warn">{DONE.longPathTip}</NoticeBar> : null}
     </WinShell>

@@ -19,3 +19,14 @@ export function formatBytes(n: number): string {
   const digits = i === 0 ? 0 : v >= 100 ? 0 : v >= 10 ? 1 : 2;
   return `${v.toFixed(digits)} ${units[i]}`;
 }
+
+/**
+ * 路径所在的盘符标签（`C:\Program Files\MiaoDock` → `C:`）。
+ *
+ * 界面上「可用空间」必须标**用户选的那个盘**：写死 `C:` 会让 D 盘安装的人
+ * 看到一句与事实无关的容量。认不出盘符时给空串，界面就只显示"可用空间"。
+ */
+export function driveOf(path: string): string {
+  const matched = /^[A-Za-z]:/.exec(path.trim());
+  return matched === null ? '' : matched[0].toUpperCase();
+}

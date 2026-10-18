@@ -16,33 +16,37 @@ import { WinShell } from '../parts/WinShell';
 export function LongPathStep({
   checked,
   failure,
+  installing,
   logPath,
   onToggle,
   onBack,
   onInstall,
 }: {
   checked: boolean;
-  /** 上一次安装的退出码；非 null 时在顶部摆出失败提示 */
-  failure: number | null;
+  /** 上一次安装的失败原因；非 null 时在顶部摆出提示 */
+  failure: string | null;
+  /** 正在解包落盘：按钮全禁用，避免重复触发 */
+  installing: boolean;
   /** 安装日志的绝对路径（失败提示里要指出来） */
   logPath: string;
   onToggle: () => void;
   onBack: () => void;
   onInstall: () => void;
 }) {
+  const footNote = installing ? INSTALL.installingFoot : LONG_PATH.footNote;
   return (
     <WinShell
       title={INSTALL.winTitle}
       tag={stepMeta('longpath').tag}
       foot={
         <>
-          <span className="isr-foot-left">{LONG_PATH.footNote}</span>
+          <span className="isr-foot-left">{footNote}</span>
           <span className="isr-foot-grow" />
-          <button type="button" className="isr-btn isr-btn-ghost" onClick={onBack}>
+          <button type="button" className="isr-btn isr-btn-ghost" onClick={onBack} disabled={installing}>
             ← 上一步
           </button>
-          <button type="button" className="isr-btn isr-btn-primary" onClick={onInstall}>
-            开始安装
+          <button type="button" className="isr-btn isr-btn-primary" onClick={onInstall} disabled={installing}>
+            {installing ? INSTALL.installing : '开始安装'}
           </button>
         </>
       }

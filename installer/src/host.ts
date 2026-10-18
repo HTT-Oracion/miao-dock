@@ -1,8 +1,9 @@
 /**
  * 宿主接缝 —— 向导界面（这一侧）与安装器程序（外壳）之间**唯一**的通道。
  *
- * 界面自己不起子进程、不碰文件系统：读环境、选目录、以 `/S` 静默跑安装包、
- * 打开日志、关窗口，全部由宿主实现后**注入**给界面；界面只发意图、渲染结果。
+ * 界面自己不起子进程、不解包、不碰文件系统与注册表：读环境、选目录、解包安装、
+ * 建入口、启动应用、打开日志、关窗口，全部由宿主实现后**注入**给界面；
+ * 界面只发意图、渲染结果。
  *
  * 三种实现，优先级从高到低：
  *   ① `window.miaoInstallerHost` —— 外部注入（自动化 / 走查时可替换，不常用）；
@@ -13,14 +14,20 @@ import { invoke } from '@tauri-apps/api/core';
 
 /** 安装环境画像 —— 全部由宿主**实时探测**，界面不写死任何一个数 */
 export interface InstallEnv {
-  /** 默认安装目录（当前用户目录 ⇒ 免管理员） */
-  defaultDir: string;
-  /** 安装包体积（字节） */
-  sizeBytes: number;
+  /** 为所有用户的默认目录（`C:\Program Files\MiaoDock`） */
+  machineDir: string;
+  /** 仅为我安装的默认目录（`%LOCALAPPDATA%\Programs\MiaoDock`） */
+  userDir: string;
+  /** 内嵌载荷压缩后的体积（字节）—— 界面「安装包体积」的数据源 */
+  payloadBytes: number;
   /** 目标盘可用空间（字节） */
   freeBytes: number;
-  /** 安装模式说明 */
-  mode: string;
+  /** 默认是否「仅为我安装」 */
+  perUserDefault: boolean;
+  /** 为所有用户的模式说明（宿主给，界面不写死） */
+  modeMachine: string;
+  /** 仅为我安装的模式说明 */
+  modeUser: string;
   /**
    * 系统「长路径」开关是否已开。
    * `null` = 探测不到 —— 界面按**未开**处理（保守：宁可多提示一次，不可默默放过）。
@@ -31,12 +38,16 @@ export interface InstallEnv {
 }
 
 export interface InstallerHost {
-  /** 探测安装环境（默认目录 / 体积 / 可用空间 / 长路径开关） */
+  /** 探测安装环境（两套默认目录 / 体积 / 可用空间 / 长路径开关） */
   probe(): Promise<InstallEnv>;
   /** 弹出目录选择；返回用户选的目录，取消返回 `null` */
   pickDir(current: string): Promise<string | null>;
-  /** 以 `/S` 静默执行安装包，装到 `installDir`；返回进程退出码（0 = 成功） */
-  runInstall(installDir: string): Promise<number>;
+  /** 解包安装到 `dir`；`perUser` 决定卸载项 hive 与入口落点。失败即抛错（人话） */
+  runInstall(dir: string, perUser: boolean): Promise<void>;
+  /** 完成页按勾选建 / 删入口；返回失败说明（空数组 = 全成功） */
+  createShortcuts(dir: string, perUser: boolean, desktop: boolean, startMenu: boolean): Promise<string[]>;
+  /** 「立即打开喵坞」—— 启动安装目录内的主程序（不继承安装器权限） */
+  launchApp(dir: string): Promise<void>;
   /** 打开安装日志 */
   openLog(path: string): Promise<void>;
   /** 关闭向导窗口 */
@@ -47,7 +58,10 @@ export interface InstallerHost {
 const tauriHost: InstallerHost = {
   probe: () => invoke<InstallEnv>('probe_env'),
   pickDir: (current) => invoke<string | null>('pick_dir', { current }),
-  runInstall: (installDir) => invoke<number>('run_install', { installDir }),
+  runInstall: (dir, perUser) => invoke<void>('run_install', { dir, perUser }),
+  createShortcuts: (dir, perUser, desktop, startMenu) =>
+    invoke<string[]>('create_shortcuts', { dir, perUser, desktop, startMenu }),
+  launchApp: (dir) => invoke<void>('launch_app', { dir }),
   openLog: (path) => invoke<void>('open_log', { path }),
   close: async () => {
     await invoke('close_window');
@@ -56,10 +70,13 @@ const tauriHost: InstallerHost = {
 
 /** 预览替身的取样值 —— 即设计稿里的演示值；真值一律由宿主实时探测 */
 const PREVIEW_ENV: InstallEnv = {
-  defaultDir: 'C:\\Users\\Doro\\AppData\\Local\\Programs\\喵坞',
-  sizeBytes: 327_155_712, // 312 MB
+  machineDir: 'C:\\Program Files\\MiaoDock',
+  userDir: 'C:\\Users\\Doro\\AppData\\Local\\Programs\\MiaoDock',
+  payloadBytes: 327_155_712, // 312 MB
   freeBytes: 127_122_767_052, // 118.4 GB
-  mode: '当前用户（无需管理员）',
+  perUserDefault: false,
+  modeMachine: '所有用户（需要管理员授权）',
+  modeUser: '当前用户（无需管理员）',
   // 默认按"未开"给 —— 与设计稿的默认引导态（状态 B）一致
   longPathEnabled: false,
   logPath: 'C:\\Users\\Doro\\AppData\\Local\\Temp\\miao-dock-install.log',
@@ -77,7 +94,13 @@ const previewHost: InstallerHost = {
   },
   async runInstall() {
     await sleep(900);
-    return 0;
+  },
+  async createShortcuts() {
+    await sleep(200);
+    return [];
+  },
+  async launchApp() {
+    /* 预览：不真的起进程 */
   },
   async openLog() {
     /* 预览：没有日志可看 */

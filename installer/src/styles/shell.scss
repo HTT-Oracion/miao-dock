@@ -231,6 +231,13 @@ body {
   filter: brightness(1.04);
 }
 
+/* 安装进行中：按钮禁用，视觉上要能看出"点不动"，而不是点了没反应 */
+.isr-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  filter: none;
+}
+
 .isr-btn-ghost {
   font-weight: 400;
   color: var(--md-ink-2);

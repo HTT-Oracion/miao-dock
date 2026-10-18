@@ -102,9 +102,8 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 mod platform {
     use super::{Entry, Scope, DISPLAY_NAME, SUBKEY};
     use windows_sys::Win32::System::Registry::{
-        RegCloseKey, RegCreateKeyExW, RegDeleteTreeW, RegOpenKeyExW, RegSetValueExW,
-        HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_64KEY, KEY_WRITE,
-        REG_DWORD, REG_OPTION_NON_VOLATILE, REG_SZ,
+        RegCloseKey, RegCreateKeyExW, RegOpenKeyExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER,
+        HKEY_LOCAL_MACHINE, KEY_WOW64_64KEY, KEY_WRITE, REG_DWORD, REG_OPTION_NON_VOLATILE, REG_SZ,
     };
 
     fn hive(scope: Scope) -> HKEY {
@@ -197,43 +196,8 @@ mod platform {
         result
     }
 
-    /// 删卸载项；返回「原先是否存在」
-    pub fn delete(scope: Scope) -> Result<bool, String> {
-        if !exists(scope) {
-            return Ok(false);
-        }
-        let sub = wide(SUBKEY);
-        let code = unsafe { RegDeleteTreeW(hive(scope), sub.as_ptr()) };
-        if code != 0 {
-            return Err(format!(
-                "删不掉卸载项注册表键（{}，错误码 {code}）—— 为所有用户安装需要管理员权限",
-                scope.label()
-            ));
-        }
-        Ok(true)
-    }
-
-    /// 卸载项是否在该 hive 下存在
-    pub fn exists(scope: Scope) -> bool {
-        match open(scope, KEY_READ) {
-            Some(handle) => {
-                unsafe { RegCloseKey(handle) };
-                true
-            }
-            None => false,
-        }
-    }
-
-    /// 先 HKLM 再 HKCU —— 卸载器据此知道该删哪一个 hive
-    pub fn find_scope() -> Option<Scope> {
-        [Scope::Machine, Scope::User]
-            .into_iter()
-            .find(|scope| exists(*scope))
-    }
-
     /// 能否对 HKLM 的 `Uninstall` 根键申请写权限 —— 等价于「当前进程是否已提权」
     pub fn can_write_machine() -> bool {
-        use windows_sys::Win32::System::Registry::KEY_WOW64_64KEY as VIEW_64;
         let sub = wide("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall");
         let mut key: HKEY = std::ptr::null_mut();
         let code = unsafe {
@@ -241,7 +205,7 @@ mod platform {
                 HKEY_LOCAL_MACHINE,
                 sub.as_ptr(),
                 0,
-                KEY_WRITE | VIEW_64,
+                KEY_WRITE | KEY_WOW64_64KEY,
                 &mut key,
             )
         };
@@ -250,15 +214,6 @@ mod platform {
         }
         unsafe { RegCloseKey(key) };
         true
-    }
-
-    fn open(scope: Scope, access: windows_sys::Win32::System::Registry::REG_SAM_FLAGS) -> Option<HKEY> {
-        let sub = wide(SUBKEY);
-        let mut key: HKEY = std::ptr::null_mut();
-        let code = unsafe {
-            RegOpenKeyExW(hive(scope), sub.as_ptr(), 0, access | KEY_WOW64_64KEY, &mut key)
-        };
-        (code == 0).then_some(key)
     }
 }
 
@@ -270,24 +225,12 @@ mod platform {
         Err("卸载项注册表只在 Windows 上写".to_string())
     }
 
-    pub fn delete(_scope: Scope) -> Result<bool, String> {
-        Ok(false)
-    }
-
-    pub fn exists(_scope: Scope) -> bool {
-        false
-    }
-
-    pub fn find_scope() -> Option<Scope> {
-        None
-    }
-
     pub fn can_write_machine() -> bool {
         false
     }
 }
 
-pub use platform::{can_write_machine, delete, exists, find_scope, write};
+pub use platform::{can_write_machine, write};
 
 #[cfg(test)]
 mod tests {
