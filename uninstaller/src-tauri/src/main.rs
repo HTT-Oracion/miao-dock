@@ -50,11 +50,14 @@ struct UninstallProbe {
     data: DataProfiles,
     /// 程序本体实测体积（"已移除程序文件与注册表项（312 MB）"那一行）
     program_size_bytes: u64,
+    /// 产品版本号 —— 取自 `Cargo.toml`；界面**不许**自己写一份（写死会与包名/配置漂移）。
+    version: String,
 }
 
 #[tauri::command]
 fn probe() -> UninstallProbe {
     UninstallProbe {
+        version: env!("CARGO_PKG_VERSION").to_string(),
         program_size_bytes: dir_size(&install_dir()),
         data: DataProfiles {
             music: profile(music_cache_dir()),

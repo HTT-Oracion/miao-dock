@@ -5171,6 +5171,23 @@ macOS 不在本轮范围（无安装 / 卸载宿主，已定暂不考虑）。
 `release/` 已 gitignore。⚠️ `app:build` 仍会顺手产出 NSIS 包（`bundle.targets` 还是 `["nsis"]`，
 W1/W2 钉着它），那是**旧界面**、不是分发物 —— 要根治得连 W1/W2 一起改，本轮未做。
 
+**交付名与版本单一事实源（2026-10-18 追加，用户要求）**：
+- 交付名 = `MiaoDock_<版本>_<架构>-setup.exe`（如 `MiaoDock_2.2.1_x64-setup.exe`），
+  **版本号从 `src-tauri/tauri.conf.json` 读**、架构取 `process.arch`，脚本里不写死；
+  清旧产物按**形态**匹配（换版本时旧包不许留在 `release/` 里）。
+  消费方（`check:packaged` / `check:uninstall-keep`）同样按形态找，不写死版本号。
+- **版本号原本有 5 处硬编码**（三份 `tauri.conf.json`、两个 `Cargo.toml`、`installer/src/data.ts:39`
+  与 `uninstaller/src/data.ts:62` 各一份 `'2.2.1'`）。只改主应用时：文件名会变成新版本，
+  而向导完成页与卸载页标题旁仍印旧版本 —— **同一个包里两个版本号**，这是最难被发现的一类失真。
+  修法分两步（用户指定顺序）：
+  1. **界面版本由宿主注入**：`InstallEnv.version` / `UninstallProbe.version` 取
+     `env!("CARGO_PKG_VERSION")`，`data.ts` 那两处删除；预览替身写 `0.0.0-preview`
+     （故意与真版本不同 —— 一眼就知道是浏览器预览，而不是第三处硬编码）。
+     真机截图核对：卸载页标题旁的标签显示 `v2.2.1 · 再见页`，来源是宿主。
+  2. **W15 钉住一致性**：三份 `tauri.conf.json` + 两个 `Cargo.toml` + 两份 `package.json` 必须相等，
+     且两个前端源码里不许出现该版本号字面量；两条反证各挡一类（改后端 conf / 前端写死回去）。
+     `check:bundle` 因此 16→17 条、反证 20→22 条，`check:counts` 对账通过。
+
 **踩坑（真机实测）**：
 - **载荷布局 = 安装目录布局**：一开始把载荷写成 `app/miao-dock.exe`，解包后所有东西都落进
   `<安装目录>/app/` —— 主程序与 `engine/` 资源必须**同层**（产品侧就按 exe 同级找资源）。

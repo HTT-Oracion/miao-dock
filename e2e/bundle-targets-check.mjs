@@ -569,6 +569,72 @@ function runAll() {
       ? `产品路径里的 node 字面量：${nodeHits.join(' ｜ ')}`
       : `扫了 ${sources.length} 个 .rs（已剥 #[cfg(test)]）`,
   );
+
+  /*
+   * ---- W15：产品版本号只有一处事实源（2026-10-18）----
+   * 交付名改成 `MiaoDock_<版本>_<架构>-setup.exe` 之后，版本号**直接进了文件名** ——
+   * 于是"三份 tauri.conf / 两份 Cargo.toml / 两份 package.json / 两处前端文案"里任何一处漏改，
+   * 都会得到「包名 2.3.0、界面印 2.2.1」这种最难发现的形态（两处各自都"正常"，只有人去对才发现）。
+   *
+   * 判据三层：
+   *   ① 三份 `tauri.conf.json` 的 `version` 必须相等；
+   *   ② 两个宿主的 `Cargo.toml` 的 `[package] version` 与两份 `package.json` 的 `version` 也要相等 ——
+   *      宿主侧 `env!("CARGO_PKG_VERSION")` 给界面用的就是它；
+   *   ③ 两个前端源码里**不许**再出现那个版本号字面量：界面版本一律由宿主探测注入
+   *      （预览替身写的是 `0.0.0-preview`，故意与真版本不同 ⇒ 一眼能看出是浏览器预览）。
+   * 🔴 第 ③ 条是这轮的实际修法：`data.ts` 里原本各写死一份 `'2.2.1'`。
+   */
+  const versionOf = (confFile) => {
+    const conf = readJson(confFile);
+    return conf && typeof conf.version === 'string' ? conf.version : null;
+  };
+  const cargoVersionOf = (file) => {
+    if (!fs.existsSync(file)) return null;
+    const hit = read(file).match(/^version\s*=\s*"([^"]+)"/m);
+    return hit ? hit[1] : null;
+  };
+  const versionSources = {
+    'tauri.conf.json（基座）': versionOf(BASE_CONF),
+    'installer/tauri.conf.json': versionOf(path.join(ROOT, 'installer', 'src-tauri', 'tauri.conf.json')),
+    'uninstaller/tauri.conf.json': versionOf(path.join(ROOT, 'uninstaller', 'src-tauri', 'tauri.conf.json')),
+    'installer/Cargo.toml': cargoVersionOf(path.join(ROOT, 'installer', 'src-tauri', 'Cargo.toml')),
+    'uninstaller/Cargo.toml': cargoVersionOf(path.join(ROOT, 'uninstaller', 'src-tauri', 'Cargo.toml')),
+    'installer/package.json': versionOf(path.join(ROOT, 'installer', 'package.json')),
+    'uninstaller/package.json': versionOf(path.join(ROOT, 'uninstaller', 'package.json')),
+  };
+  const declared = versionSources['tauri.conf.json（基座）'];
+  const drifted = Object.entries(versionSources)
+    .filter(([, v]) => v !== declared)
+    .map(([name, v]) => `${name}=${v ?? '读不到'}`);
+  // ③ 前端源码里不许出现这个版本号字面量
+  const frontendFiles = (dir) => {
+    const out = [];
+    const walk = (d) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (p.endsWith('.ts') || p.endsWith('.tsx')) out.push(p);
+      }
+    };
+    if (fs.existsSync(dir)) walk(dir);
+    return out;
+  };
+  const frontendLeaks = [];
+  for (const dir of [path.join(ROOT, 'installer', 'src'), path.join(ROOT, 'uninstaller', 'src')]) {
+    for (const file of frontendFiles(dir)) {
+      if (declared && read(file).includes(declared)) {
+        frontendLeaks.push(`${path.relative(ROOT, file)} 含 ${declared}`);
+      }
+    }
+  }
+  check(
+    'W15',
+    '产品版本号只有一处事实源：三份 `tauri.conf.json` + 两个 `Cargo.toml` + 两份 `package.json` 必须一致，' +
+      '且两个前端源码里**不许**出现该版本号字面量（界面版本由宿主注入）',
+    !!declared && drifted.length === 0 && frontendLeaks.length === 0,
+    `版本=${declared ?? '读不到'} 漂移=${drifted.length ? drifted.join('、') : '无'} ` +
+      `前端硬编码=${frontendLeaks.length ? frontendLeaks.join('、') : '无'}`,
+  );
 }
 
 // ------------------------------------------------------------------ 输出
@@ -835,6 +901,31 @@ const MUTATIONS = [
       },
     ],
     expect: ['W14'],
+  },
+  {
+    // W15 的反证一：**宿主侧**版本漂移。包名会变成 MiaoDock_9.9.9_...，而主应用还是 2.2.1。
+    name: 'W15：安装器宿主的版本号与主应用不一致（包名 9.9.9、主程序 2.2.1）',
+    edits: [
+      {
+        file: path.join(ROOT, 'installer', 'src-tauri', 'tauri.conf.json'),
+        find: '"version": "2.2.1"',
+        replace: '"version": "9.9.9"',
+      },
+    ],
+    expect: ['W15'],
+  },
+  {
+    // W15 的反证二：**前端**把版本号又写死回去。这条与上一条各挡一类 ——
+    // 只改后端 conf 时界面读到的是新值，而前端写死的那份永远是旧值。
+    name: 'W15：前端把版本号写死回去（界面印 2.2.1、包名却是新版本）',
+    edits: [
+      {
+        file: path.join(ROOT, 'installer', 'src', 'data.ts'),
+        find: "winTitle: '喵坞 安装向导',",
+        replace: "winTitle: '喵坞 安装向导',\n  version: '2.2.1',",
+      },
+    ],
+    expect: ['W15'],
   },
 ];
 

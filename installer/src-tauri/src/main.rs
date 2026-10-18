@@ -38,6 +38,9 @@ struct InstallEnv {
     payload_bytes: u64,
     /// 目标盘可用空间（字节）
     free_bytes: u64,
+    /// 产品版本号 —— 取自 `Cargo.toml`；界面**不许**自己写一份（写死之后发版时完成页
+    /// 会印一个与包名对不上的版本，而这种不一致最难被发现）。`check:bundle` 的 W15 钉着一致性。
+    version: String,
     /// 默认是否「仅为我安装」（当前为否：默认全机）
     per_user_default: bool,
     /// 两种范围的模式说明（宿主给，界面不写死）
@@ -57,6 +60,7 @@ fn probe_env() -> InstallEnv {
         free_bytes: free_bytes_of(&machine_dir).unwrap_or(0),
         machine_dir: machine_dir.to_string_lossy().into_owned(),
         payload_bytes: payload::Payload::packed_len(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
         per_user_default: false,
         mode_machine: "所有用户（需要管理员授权）".to_string(),
         mode_user: "当前用户（无需管理员）".to_string(),

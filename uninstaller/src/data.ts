@@ -59,7 +59,8 @@ export const DATA_ITEMS: DataItem[] = [
 
 export const UNINSTALL = {
   winTitle: '卸载 喵坞 MiaoDock',
-  confirmTag: 'v2.2.1 · 再见页',
+  /** 版本号由宿主给（`probe.version`）—— 前端写死会与包名/配置漂移 */
+  confirmTag: (version: string) => `v${version} · 再见页`,
   runningTagPrefix: '告别中…',
   doneTag: '再见完成',
   probing: '正在统计本地数据…',

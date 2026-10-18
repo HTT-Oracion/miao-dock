@@ -36,7 +36,6 @@ export function stepIndex(key: StepKey): number {
 
 export const INSTALL = {
   winTitle: '喵坞 安装向导',
-  version: '2.2.1',
   probing: '正在读取安装环境…',
   probingFoot: '正在与安装器通信',
   dirHint: '一般使用默认值即可',

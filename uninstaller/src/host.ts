@@ -36,6 +36,11 @@ export interface UninstallProbe {
   data: DataProfiles;
   /** 程序本体的实测体积（字节）—— "已移除程序文件与注册表项（…）"那一行用它 */
   programSizeBytes: number;
+  /**
+   * 产品版本号（宿主从 `Cargo.toml` 给）。
+   * 🔴 界面**不许**自己写一份：写死之后发版时标题旁的标签会印一个与包名对不上的版本。
+   */
+  version: string;
 }
 
 export interface UninstallerHost {
@@ -86,6 +91,8 @@ const PREVIEW_PROBE: UninstallProbe = {
     },
   },
   programSizeBytes: 327_155_712, // 312 MB
+  // 预览替身**不搬真版本号**：搬了就是前端的第三处硬编码（真值由宿主从 Cargo.toml 给）
+  version: '0.0.0-preview',
 };
 
 /** 浏览器预览替身：不真的卸载，只把三态流程跑通，便于开发时看界面 */

@@ -48,7 +48,8 @@ export function DoneStep({
       tag={stepMeta('done').tag}
       foot={
         <>
-          <span className="isr-foot-left">{DONE.footNote(INSTALL.version, env.logPath)}</span>
+          {/* 版本号由宿主给（`env.version`）：前端写一份就会与包名/配置漂移 */}
+          <span className="isr-foot-left">{DONE.footNote(env.version, env.logPath)}</span>
           <span className="isr-foot-grow" />
           <button type="button" className="isr-btn isr-btn-ghost" onClick={onViewLog}>
             查看安装日志

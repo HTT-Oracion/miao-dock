@@ -41,7 +41,7 @@ export function ConfirmState({
   return (
     <WinShell
       title={UNINSTALL.winTitle}
-      tag={UNINSTALL.confirmTag}
+      tag={UNINSTALL.confirmTag(probe.version)}
       note={UNINSTALL.footNoteBottom(runtimesRoot(probe.data.engine.path))}
       foot={
         <>

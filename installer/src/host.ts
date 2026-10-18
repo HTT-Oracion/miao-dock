@@ -20,6 +20,11 @@ export interface InstallEnv {
   userDir: string;
   /** 内嵌载荷压缩后的体积（字节）—— 界面「安装包体积」的数据源 */
   payloadBytes: number;
+  /**
+   * 产品版本号（宿主从 `Cargo.toml` 给）。
+   * 🔴 界面**不许**自己写一份：写死之后发版时完成页会印一个与包名对不上的版本。
+   */
+  version: string;
   /** 目标盘可用空间（字节） */
   freeBytes: number;
   /** 默认是否「仅为我安装」 */
@@ -73,6 +78,9 @@ const PREVIEW_ENV: InstallEnv = {
   machineDir: 'C:\\Program Files\\MiaoDock',
   userDir: 'C:\\Users\\Doro\\AppData\\Local\\Programs\\MiaoDock',
   payloadBytes: 327_155_712, // 312 MB
+  // 预览替身**不搬真版本号**：搬了就是前端的第三处硬编码（真值由宿主从 Cargo.toml 给）。
+  // 界面上看到 `0.0.0-preview` 一眼就知道这是浏览器预览，不是装好的程序。
+  version: '0.0.0-preview',
   freeBytes: 127_122_767_052, // 118.4 GB
   perUserDefault: false,
   modeMachine: '所有用户（需要管理员授权）',
