@@ -3,29 +3,30 @@
  * E3 · 「卸载不碰用户自装的引擎运行时」—— 用**真安装器**验一次（nightly 层）
  * =============================================================================
  * E3 的验收②是两条**硬要求**：
- *   ① 卸载脚本**绝不**自动删除 `<appData>/runtimes`；
+ *   ① 卸载**绝不**自动删除 `<appData>/runtimes`；
  *   ② 也绝不触碰作品目录 `~/Pictures/Box 漫画`。
  *
- * `check:bundle` 的 W10 只在**源码层**钉了形态（默认保留 + `RMDir` 在 `IDYES` 之后 +
- * 不出现作品目录字样）。而这条要求一旦被写错，代价是**用户几十分钟的装配成果被删掉** ——
+ * `check:bundle` 的 W10 在**源码层**钉了形态（删数据前必过 `guard()`、静默档不碰数据）。
+ * 而这条要求一旦被写错，代价是**用户几十分钟的装配成果被删掉** ——
  * 那种错不能只靠"读源码看着对"。⇒ 这里用真安装器跑一次静默卸载，看它**到底动了什么**。
  *
  * ## 为什么必须显式验"静默档"
- * NSIS 的 `MessageBox` 在 `/S` 下**照样弹并阻塞**（D-195）。我们的钩子在静默档直接跳过问询
- * （走默认 = 保留）—— 于是"静默卸载"同时是两条判据的交汇点：
+ * 静默档是两条判据的交汇点：
  *   · 它必须**不挂住**（挂住 = CI 超时，不是变红）；
- *   · 它必须**保留**用户资产（跳过问询 ≠ 顺手删掉）。
+ *   · 它必须**保留**用户资产（"只删程序"不等于"顺手把数据也删了"）。
+ * 2026-10-18 起安装/卸载由单文件安装器与卸载器自己完成（NSIS 钩子退役），
+ * 静默档的参数是 `--silent`（旧的 `/S` 已不存在）。
  *
  * ## 硬前置（不软跳过）
- * 安装器得先构建：`npm run app:build`；且本机得真有一份引擎运行时
+ * 安装器得先构建：`npm run task -- install:kit`；且本机得真有一份引擎运行时
  * （`<appData>/runtimes/manga-translator`）—— 这条要验的就是"卸载不碰它"，
  * 没有它这条就无从谈起（缺则**失败并点名**，不是"跳过"）。
  *
  * 断言：
  *   P0 前置：安装器在 + 引擎运行时在（记录卸载前快照）
- *   P1 NSIS 静默安装成功
+ *   P1 单文件安装器静默安装成功
  *   P2 静默**卸载**成功且**不挂住**（挂住的话脚本根本走不到这里）
- *   P3 安装目录被清掉（卸载真的生效，不是"点了没反应"）
+ *   P3 安装目录被清掉（含卸载器自删 —— 卸载真的生效，不是"点了没反应"）
  *   P4 引擎运行时**原封不动**（E3 硬要求①：默认保留）
  *   P5 作品目录**原封不动**（E3 硬要求②：绝不触碰）
  *
@@ -40,8 +41,9 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
-const TARGET = path.join(ROOT, 'src-tauri', 'target');
-const NSIS_DIR = path.join(TARGET, 'release', 'bundle', 'nsis');
+/** 交付物优先；没有就退回构建产物 */
+const KIT_INSTALLER = path.join(ROOT, '.tmp', 'install-kit', 'MiaoDock-Setup.exe');
+const BUILT_INSTALLER = path.join(ROOT, 'installer', 'src-tauri', 'target', 'release', 'miaodock-installer.exe');
 
 const APP_DATA =
   process.platform === 'darwin'
@@ -67,11 +69,12 @@ function check(name, cond, extra) {
   }
 }
 
-/** 找 NSIS 安装包；没有 ⇒ **报错**（不静默跳过）。 */
-function findSetup() {
-  if (!fs.existsSync(NSIS_DIR)) return null;
-  const hits = fs.readdirSync(NSIS_DIR).filter((f) => /-setup\.exe$/i.test(f));
-  return hits.length ? path.join(NSIS_DIR, hits.sort().at(-1)) : null;
+/** 找单文件安装器；没有 ⇒ **报错**（不静默跳过）。 */
+function findInstaller() {
+  for (const candidate of [KIT_INSTALLER, BUILT_INSTALLER]) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
 }
 
 /** 目录快照：存在与否 + 一层条目名（**不递归算大小** —— 13 GB 的目录没必要为此全量遍历）。 */
@@ -86,19 +89,18 @@ function snapDir(p) {
   return { exists: true, entries };
 }
 
-function runSetup(exe, args) {
+function runTool(exe, args) {
   return new Promise((resolve) => {
-    // ⚠️ `/D` 必须**最后**且不加引号（NSIS 自己的规矩）
     const p = spawn(exe, args, { stdio: 'ignore' });
     const timer = setTimeout(() => {
-      // 「挂住」是这个脚本最该抓的失败形态：不是变红，是永远不返回（D-195）
+      // 「挂住」是这个脚本最该抓的失败形态：不是变红，是永远不返回
       try {
         p.kill();
       } catch {
         /* ignore */
       }
-      resolve({ ok: false, why: '超时未返回 —— 极可能是弹窗把静默档拦住了（D-195 的形态）' });
-    }, 120_000);
+      resolve({ ok: false, why: '超时未返回 —— 静默档被某个模态交互拦住了' });
+    }, 180_000);
     p.on('error', (e) => {
       clearTimeout(timer);
       resolve({ ok: false, why: String(e.message || e) });
@@ -110,16 +112,19 @@ function runSetup(exe, args) {
   });
 }
 
-const setup = findSetup();
-if (!setup) {
-  console.error(`✗ 找不到 NSIS 安装包：${NSIS_DIR}\\*-setup.exe\n先构建：npm run app:build`);
+const installer = findInstaller();
+if (!installer) {
+  console.error(
+    `✗ 找不到单文件安装器：\n  ${path.relative(ROOT, KIT_INSTALLER)}\n  ${path.relative(ROOT, BUILT_INSTALLER)}\n` +
+      '先构建：npm run task -- install:kit',
+  );
   process.exit(1);
 }
 
 const rtBefore = snapDir(RUNTIMES);
 const picBefore = snapDir(PICTURES);
 check('P0 前置：真安装器在 + 本机真有引擎运行时（这条要验的就是"卸载不碰它"，缺它无从谈起）', rtBefore.exists, {
-  setup: path.relative(ROOT, setup),
+  installer: path.relative(ROOT, installer),
   runtimes: RUNTIMES,
   exists: rtBefore.exists,
 });
@@ -133,27 +138,28 @@ const work = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-unkeep-'));
 const installDir = path.join(work, 'install');
 
 try {
-  const ins = await runSetup(setup, ['/S', `/D=${installDir}`]);
-  check('P1 NSIS 静默安装成功', ins.ok, ins);
+  // 断言用 `--per-user`：不写 HKLM、不进 Program Files，测试不需要管理员
+  const ins = await runTool(installer, ['--silent', '--per-user', '--no-shortcuts', '--dir', installDir]);
+  check('P1 单文件安装器静默安装成功', ins.ok, ins);
 
   const exe = path.join(installDir, 'miao-dock.exe');
   check('P1b 安装目录里有 miao-dock.exe', fs.existsSync(exe), installDir);
 
-  const un = path.join(installDir, 'uninstall.exe');
+  const un = path.join(installDir, 'MiaoDock-Uninstaller.exe');
   const unOut = fs.existsSync(un)
-    ? await runSetup(un, ['/S'])
-    : { ok: false, why: 'uninstall.exe 不在（装完没生成卸载器？）' };
-  check('P2 静默卸载成功且**不挂住**（NSIS 的弹窗在 `/S` 下照样阻塞 ⇒ 钩子必须 `IfSilent` 跳过）', unOut.ok, unOut);
+    ? await runTool(un, ['--silent'])
+    : { ok: false, why: '卸载器不在（安装器没把它解包出来？）' };
+  check('P2 静默卸载成功且**不挂住**（静默档全程不开窗 —— 不返回比变红更难查）', unOut.ok, unOut);
 
-  // 卸载器可能稍后才删完，给它一点时间（但不无限等）
-  for (let i = 0; i < 20 && fs.existsSync(exe); i++) {
+  // 卸载器先删内容、再起后台清理自己与目录：给它一点时间（但不无限等）
+  for (let i = 0; i < 60 && fs.existsSync(installDir); i++) {
     await new Promise((r) => setTimeout(r, 500));
   }
-  check('P3 安装目录被清掉（卸载真的生效，不是"点了没反应"）', !fs.existsSync(exe), installDir);
+  check('P3 安装目录被清掉（含卸载器自删 —— 卸载真的生效，不是"点了没反应"）', !fs.existsSync(installDir), installDir);
 
   const rtAfter = snapDir(RUNTIMES);
   check(
-    'P4 引擎运行时**原封不动**（E3 硬要求①：默认保留 —— 跳过问询 ≠ 顺手删掉）',
+    'P4 引擎运行时**原封不动**（E3 硬要求①：默认保留 —— 静默档不碰数据）',
     rtAfter.exists && rtAfter.entries.join('|') === rtBefore.entries.join('|'),
     { before: rtBefore.entries, after: rtAfter.entries, dir: RUNTIMES },
   );
@@ -165,7 +171,12 @@ try {
     { before: picBefore, after: picAfter, dir: PICTURES },
   );
 } finally {
-  fs.rmSync(work, { recursive: true, force: true });
+  // 自删是异步的：清理失败不该让验收变成"环境残留"的假象，但要说出来
+  try {
+    fs.rmSync(work, { recursive: true, force: true });
+  } catch (error) {
+    console.warn(`⚠ 临时目录没清掉（后台清理可能还在跑）：${String(error.message || error)}`);
+  }
 }
 
 console.log(`\n通过 ${passed} / 失败 ${failed}`);

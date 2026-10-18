@@ -21,7 +21,7 @@
         { "id": "check:units", "cmd": "node e2e/units-structure-check.mjs", "desc": "「公共组件抽离到 src/components/units/」结构断言（命名 / 依赖方向 / 别名 / 样式分层）", "refute": true },
         { "id": "check:docs", "cmd": "node e2e/docs-consistency-check.mjs", "desc": "文档 ↔ 实现一致性：断言条数 / 引用的命令是否存在 / 禁词 / GROUPS 分组" },
         { "id": "check:docpaths", "cmd": "node e2e/docs-path-check.mjs", "desc": "现行文档里引用的仓库路径必须真实存在", "refute": true },
-        { "id": "check:bundle", "cmd": "node e2e/bundle-targets-check.mjs", "desc": "打包配置的根因钉子（平台分叉 / 随包资产 / NSIS 钩子 / 产品路径零 node）", "refute": true },
+        { "id": "check:bundle", "cmd": "node e2e/bundle-targets-check.mjs", "desc": "打包配置与安装/卸载宿主的根因钉子（平台分叉 / 随包资产 / 长路径只读 / 删数据闸门 / 产品路径零 node）", "refute": true },
         { "id": "check:macos-signing", "cmd": "node e2e/service/macos-signing-check.mjs", "desc": "E1 macOS 签名 + 公证钉子（entitlements / 接线 / 自检三形态）", "refute": true },
         { "id": "check:extract-atomic", "cmd": "node e2e/engine/extract-atomic-check.mjs", "desc": "D3 原子解包：失败时 destDir 一个字节都不动、不留 .part", "refute": true },
         { "id": "check:pydensecrf-wheel", "cmd": "node e2e/engine/pydensecrf-wheel-check.mjs", "desc": "B4 预编译 wheel 通道（三态互斥 / 哈希比对 / 包内优先 / 回退是前提）", "refute": true },

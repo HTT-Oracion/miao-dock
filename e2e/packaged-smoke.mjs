@@ -7,7 +7,7 @@
  * 本脚本就是那一次。
  *
  * ## 它验的三层（由外到内）
- *   ① **安装层**：NSIS 静默安装到 TMP ⇒ 安装目录里真有 `miao-dock.exe` 与
+ *   ① **安装层**：单文件安装器 `--silent --per-user` 装到 TMP ⇒ 安装目录里真有 `miao-dock.exe` 与
  *      `engine/models.manifest.json`（A1 的落点 + A2 的进包），且**没有** `service/`、`node.zip`
  *      （F5 验收③ 在真实产物上的复现）。
  *   ② **服务层**：从安装布局起服务（release 构建、`MIAO_RESOURCE_DIR` 指向安装目录）⇒
@@ -50,7 +50,9 @@ const REFUTE = process.argv.includes('--refute');
 const TOKEN = 'a'.repeat(64);
 
 const TARGET = path.join(ROOT, 'src-tauri', 'target');
-const NSIS_DIR = path.join(TARGET, 'release', 'bundle', 'nsis');
+/** 单文件安装器：优先用套件里的**交付名**（对外分发物就是它），退回构建产物 */
+const KIT_INSTALLER = path.join(ROOT, '.tmp', 'install-kit', 'MiaoDock-Setup.exe');
+const BUILT_INSTALLER = path.join(ROOT, 'installer', 'src-tauri', 'target', 'release', 'miaodock-installer.exe');
 const RELEASE_MANGASVC = path.join(TARGET, 'release', process.platform === 'win32' ? 'mangasvc.exe' : 'mangasvc');
 
 let passed = 0;
@@ -76,17 +78,27 @@ const EXPECT_RED = ['P4', 'P7', 'P9'];
 
 // ------------------------------------------------------------------ 安装产物
 
-/** 找 NSIS 安装包；没有 ⇒ **报错**（不静默跳过）。 */
-function findSetup() {
-  if (!fs.existsSync(NSIS_DIR)) return null;
-  const hits = fs.readdirSync(NSIS_DIR).filter((f) => /-setup\.exe$/i.test(f));
-  return hits.length ? path.join(NSIS_DIR, hits.sort().at(-1)) : null;
+/** 找单文件安装器；没有 ⇒ **报错**（不静默跳过）。 */
+function findInstaller() {
+  for (const candidate of [KIT_INSTALLER, BUILT_INSTALLER]) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
 }
 
-/** NSIS 静默安装到 `dest`。`/D` 必须是最后一个参数且**不能加引号**（NSIS 自己的规矩）。 */
-function installSilently(setup, dest) {
+/**
+ * 静默安装到 `dest`。
+ *
+ * 🔴 断言用 `--per-user`：不写 HKLM、不进 `Program Files`，测试不需要管理员，
+ *    也不会在开发机上留一条系统级卸载项。
+ * 🔴 `--no-shortcuts`：验收不该往用户的桌面/开始菜单塞东西。
+ */
+function installSilently(installer, dest) {
   return new Promise((resolve) => {
-    const p = spawn(setup, ['/S', `/D=${dest}`], { stdio: 'ignore', detached: false });
+    const p = spawn(installer, ['--silent', '--per-user', '--no-shortcuts', '--dir', dest], {
+      stdio: 'ignore',
+      detached: false,
+    });
     // 安装器是独立进程，`close` 即装完
     p.on('error', (e) => resolve({ ok: false, why: String(e.message || e) }));
     p.on('close', (code) => resolve({ ok: code === 0, code }));
@@ -104,12 +116,12 @@ async function waitForExe(dir, timeoutMs = 60_000) {
   return null;
 }
 
-/** 静默卸载（Tauri NSIS 会生成 uninstall.exe）。失败不阻断 —— TMP 终究会被清掉。 */
+/** 静默卸载（安装器把卸载器一起装进安装目录）。失败不阻断 —— TMP 终究会被清掉。 */
 function uninstallSilently(dir) {
-  const un = path.join(dir, 'uninstall.exe');
+  const un = path.join(dir, 'MiaoDock-Uninstaller.exe');
   if (!fs.existsSync(un)) return Promise.resolve(false);
   return new Promise((resolve) => {
-    const p = spawn(un, ['/S'], { stdio: 'ignore' });
+    const p = spawn(un, ['--silent'], { stdio: 'ignore' });
     p.on('error', () => resolve(false));
     p.on('close', (c) => resolve(c === 0));
   });
@@ -212,22 +224,25 @@ function startService(env) {
 
 // ------------------------------------------------------------------ 主流程
 
-const setup = findSetup();
-if (!setup) {
-  console.error(`找不到 NSIS 安装包：${NSIS_DIR}\\*-setup.exe\n先构建：npm run app:build`);
+const installer = findInstaller();
+if (!installer) {
+  console.error(
+    `找不到单文件安装器：\n  ${path.relative(ROOT, KIT_INSTALLER)}\n  ${path.relative(ROOT, BUILT_INSTALLER)}\n` +
+      '先构建：npm run task -- install:kit',
+  );
   process.exit(1);
 }
 if (!fs.existsSync(RELEASE_MANGASVC)) {
   console.error(`找不到 release 服务靶子：${RELEASE_MANGASVC}\n先构建：npm run app:build`);
   process.exit(1);
 }
-console.log(`A4 打包后冒烟${REFUTE ? '（反证轮）' : ''}\n安装包：${path.relative(ROOT, setup)}`);
+console.log(`A4 打包后冒烟${REFUTE ? '（反证轮）' : ''}\n安装器：${path.relative(ROOT, installer)}`);
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-packaged-'));
 const installDir = path.join(work, 'install');
 try {
-  const ins = await installSilently(setup, installDir);
-  check('P0 NSIS 静默安装成功', ins.ok, ins);
+  const ins = await installSilently(installer, installDir);
+  check('P0 单文件安装器静默安装成功', ins.ok, ins);
   const exe = await waitForExe(installDir);
   check('P1 安装目录里有 miao-dock.exe（装完真的有桌面端）', !!exe, installDir);
 

@@ -85,10 +85,8 @@ import path from 'node:path';
 const ROOT = path.resolve(import.meta.dirname, '..');
 const BASE_CONF = path.join(ROOT, 'src-tauri', 'tauri.conf.json');
 const WIN_CONF = path.join(ROOT, 'src-tauri', 'tauri.windows.conf.json');
-/** NSIS 安装器钩子文件（E2/E3）—— 与 `tauri.windows.conf.json` 里那条引用同一处。
- *  2026-10-16 起它从 `src-tauri/nsis/` 归置到仓库根的 `installer/`（打包材料的家），
- *  故配置里写 `../installer/hooks.nsh` —— **相对 `src-tauri/` 解析**（Tauri 的
- *  `installerHooks` 以配置文件所在目录为基准，见 `nsisHooksFile()`）。 */
+/** NSIS 安装器钩子的历史落点 —— 2026-10-18 起已退役（安装器自带载荷自解包）。
+ *  W8 要断言的就是「它不在、也没被重新接线」：留着接线等于同一件事有两套实现。 */
 const NSIS_HOOKS = path.join(ROOT, 'installer', 'hooks.nsh');
 
 const REFUTE = process.argv.includes('--refute');
@@ -135,9 +133,10 @@ const NODE_LITERAL_ALLOW = ['MIAO_NODE_EXEC', 'MIAO_SERVICE_IMPL'];
 /// 上下文窗口半径（行）—— 取值要够宽到盖住"取解释器 → 拼 launch spec"的那几行。
 const NODE_LITERAL_WINDOW = 8;
 
-/// 仓库里所有产品 `.rs`（不含 `target/`）。
-function rustSources() {
+/// 某个目录下所有产品 `.rs`（递归；目录不在时返回空表，不抛 —— 让判据自己红）
+function rustSourcesIn(dir) {
   const out = [];
+  if (!fs.existsSync(dir)) return out;
   const walk = (d) => {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const p = path.join(d, e.name);
@@ -145,8 +144,36 @@ function rustSources() {
       else if (p.endsWith('.rs')) out.push(p);
     }
   };
-  walk(RUST_SRC);
+  walk(dir);
   return out;
+}
+
+/// 仓库里所有产品 `.rs`（不含 `target/`）。
+function rustSources() {
+  return rustSourcesIn(RUST_SRC);
+}
+
+/**
+ * 取某个 `fn name(` 的**函数体**（含大括号，按配对切）。
+ *
+ * 为什么要切函数而不是整文件判：W10 的两条判据（"闸在删除之前"、"静默档不碰数据"）
+ * 说的都是**某一段代码内部**的顺序与内容；整文件判的话，"静默档删数据"这种最危险的回归
+ * 会被别处的正常调用盖住 ⇒ 判据恒绿。
+ */
+function sliceFn(src, name) {
+  const at = src.indexOf(`fn ${name}(`);
+  if (at < 0) return '';
+  const brace = src.indexOf('{', at);
+  if (brace < 0) return '';
+  let depth = 0;
+  for (let i = brace; i < src.length; i += 1) {
+    if (src[i] === '{') depth += 1;
+    else if (src[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return src.slice(brace, i + 1);
+    }
+  }
+  return src.slice(brace);
 }
 
 /**
@@ -201,10 +228,6 @@ const nsisHooksRef = (win) => {
       ? win.bundle.windows.nsis.installerHooks
       : undefined;
   return typeof p === 'string' && p.trim() ? p.trim() : null;
-};
-const nsisHooksFile = (win) => {
-  const ref = nsisHooksRef(win);
-  return ref ? path.resolve(path.dirname(WIN_CONF), ref) : null;
 };
 
 /// 模型权重的**后缀黑名单**（C5：别把 NC 权重打进包）。
@@ -416,80 +439,99 @@ function runAll() {
       : `缺该条目；当前 targets=${JSON.stringify([...targets])}`,
   );
 
-  // ---- W8/W9/W10：NSIS 安装器钩子（E2 长路径提示 / E3 卸载提示）+ W11 文档 ----
-  //    这三条都在**配置与钩子文件**上钉：真跑一次安装器要分钟级 + 真要弹窗，而"提示语
-  //    写错一处"（默认按钮落在「删」那一支）的代价是用户几十分钟的装配成果没了。
+  // ---- W8/W9/W10/W12：干活的人从 NSIS 钩子换成了两个宿主程序（2026-10-18）----
+  //    安装器自带载荷（单文件 exe）自解包安装、卸载器自己删入口与注册表项后再自删，
+  //    于是 NSIS 钩子 `hooks.nsh` 整个退役。三条判据随之**搬家到宿主源码**上 ——
+  //    钉「谁在真的干活」，而不是钉一个已经没人读的 `.nsh`。
+  //      · 长路径提示 → 安装器 Rust 只读探测 + 前端给的可复制命令（W9）；
+  //      · 「删数据前必须有闸」→ 卸载器 Rust 的 `guard()` 与"静默档不碰数据"（W10）；
+  //      · 「静默档不许被弹窗挂住」→ 宿主源码里**没有阻塞式弹窗**（W12）。
+  const installerSrcDir = path.join(ROOT, 'installer', 'src-tauri', 'src');
+  const uninstallerSrcDir = path.join(ROOT, 'uninstaller', 'src-tauri', 'src');
+
   const hooksRef = nsisHooksRef(win);
-  const hooksFile = nsisHooksFile(win);
   check(
     'W8',
-    'Windows 平台配置把 NSIS 安装器钩子接上了（`bundle.windows.nsis.installerHooks` → 文件真实存在）',
-    !!hooksRef && !!hooksFile && fs.existsSync(hooksFile),
-    `ref=${hooksRef} exists=${hooksFile ? fs.existsSync(hooksFile) : false}`,
+    'Windows 打包**不再接** NSIS 安装器钩子（`bundle.windows.nsis.installerHooks` 未接线 + `installer/hooks.nsh` 已退役）' +
+      '—— 两套安装逻辑并存时，用户会看到哪一套取决于谁先跑完',
+    !hooksRef && !fs.existsSync(NSIS_HOOKS),
+    `ref=${hooksRef} hooksExists=${fs.existsSync(NSIS_HOOKS)}`,
   );
 
-  const nsh = hooksFile && fs.existsSync(hooksFile) ? read(hooksFile) : '';
   /*
-   * 🔴 判据只看**代码**，不看注释：`;` 开头的整行是 NSIS 注释。
-   * 不剥注释的话会两头出错 —— ① 注释里提一句 `Pictures` 就让"绝不碰作品目录"假红
-   * （本文件尾注就写明了不碰它）；② 反过来，把检查注释掉也能让断言照绿。
+   * ---- W9：长路径开关**只读**（迁自 hooks.nsh）----
+   * 安装器探测 `LongPathsEnabled` 只为"要不要提示"，**不许替用户改**：那是系统级设置，
+   * 改它要提权，且改坏了影响的是整台机器。
+   * 判据两层：
+   *   ① 真有读取：出现 `"LongPathsEnabled"` **字符串字面量**的文件里必须有 `RegQueryValueExW`；
+   *   ② 绝无写入：同一批文件里不许出现任何写注册表调用（`RegSetValueExW` / `RegCreateKeyExW`）。
+   * 🔴 认**带引号的字面量**而不是裸词：注释里写一句 `LongPathsEnabled` 就该算"读过它"吗？
+   *    不算 —— 实测过：把 `const VALUE` 改名成 `LongPathsDisabled` 后，光靠注释里的裸词
+   *    这条判据照样绿（假阳性）。字面量才代表"真的要读这个键"。
+   * 🔴 第 ② 条按**整文件**判而不是逐行：写调用与那个常量在源码里天然不在同一行，
+   *    逐行判会漏掉"常量在文件头、写调用在下方函数里"这种最可能的写法。
    */
-  const nshCode = nsh
-    .split(/\r?\n/)
-    .filter((l) => !l.trim().startsWith(';'))
-    .join('\n');
-  const nshFacts = [
-    `ReadRegDWORD=${/ReadRegDWORD/.test(nshCode)}`,
-    `LongPathsEnabled=${/LongPathsEnabled/.test(nshCode)}`,
-    `SetRegView=${/SetRegView/.test(nshCode)}`,
-    `New-ItemProperty=${/New-ItemProperty/.test(nshCode)}`,
-    `WriteRegDWORD=${/WriteRegDWORD/.test(nshCode)}`,
-  ].join(' ');
+  const installerFiles = rustSourcesIn(installerSrcDir);
+  const longPathFiles = installerFiles.filter((f) => /["']LongPathsEnabled["']/.test(read(f)));
+  const longPathReads = longPathFiles.filter((f) => /RegQueryValueExW/.test(read(f)));
+  const longPathWrites = longPathFiles.filter((f) => /RegSetValueExW|RegCreateKeyExW/.test(read(f)));
+  // 修复命令（可复制）在向导前端里；它是"不替用户改"的另一半 —— 总得告诉人怎么开
+  const wizardData = read(path.join(ROOT, 'installer', 'src', 'data.ts'));
+  const fixCommand = /LongPathsEnabled/.test(wizardData) && /New-ItemProperty/.test(wizardData);
   check(
     'W9',
-    '钩子里有**长路径开关的只读检查**（读 64 位视图 + 给出可执行修复命令），且**不替用户改系统设置**' +
-      '（写 `HKLM` 要提权，安装器是当前用户模式 ⇒ 只提示）',
-    /ReadRegDWORD/.test(nshCode) &&
-      /LongPathsEnabled/.test(nshCode) &&
-      /SetRegView/.test(nshCode) &&
-      /New-ItemProperty/.test(nshCode) &&
-      !/WriteRegDWORD/.test(nshCode),
-    nshFacts,
-  );
-
-  // 🔴 E3 的两条硬要求：① 默认是**保留**；② 删除动作只发生在用户明确点「是」之后。
-  //    第 ② 条用结构判据：`RMDir /r` 必须出现在某个 `IDYES` **之后**（而不是无条件执行）。
-  const rmAt = nshCode.indexOf('RMDir /r "$LOCALAPPDATA\\runtimes');
-  const yesAt = rmAt >= 0 ? nshCode.lastIndexOf('IDYES', rmAt) : -1;
-  check(
-    'W10',
-    '卸载提示：默认**保留**（`MB_DEFBUTTON2`）+ 删除只在明确选「是」之后（`RMDir` 出现在 `IDYES` 之后）+ 绝不碰作品目录',
-    /MB_DEFBUTTON2/.test(nshCode) && rmAt > 0 && yesAt > 0 && !/Pictures/i.test(nshCode),
-    `defaultKeep=${/MB_DEFBUTTON2/.test(nshCode)} rmAt=${rmAt} yesAt=${yesAt} touchesPictures=${/Pictures/i.test(nshCode)}`,
+    '长路径开关**只读**：安装器宿主读到它（`RegQueryValueExW`）且提到它的文件里**没有任何写注册表调用**，' +
+      '向导给出可复制的修复命令（`New-ItemProperty`）',
+    longPathReads.length > 0 && longPathWrites.length === 0 && fixCommand,
+    `readFiles=${longPathReads.map((f) => path.basename(f))} writeFiles=${longPathWrites.map((f) => path.basename(f))} fixCommand=${fixCommand}`,
   );
 
   /*
-   * ---- W12：每个弹窗之前必须有 `IfSilent` 守卫（E2/E3 的**挂死**风险）----
-   * NSIS 的 `MessageBox` 在 `/S` 静默安装/卸载下**照样弹窗并阻塞**（`/SD` 只决定"默认按钮是谁"）。
-   * 不守卫的后果不是变红，而是 `npm run task -- check:packaged` 的静默安装/卸载**永远不返回** ——
-   * "时红时绿"已经够坏，"挂住"更坏（CI 上表现为超时被 kill，根因却在一行 MessageBox）。
-   *
-   * ⚠️ 判据必须**剥 NSIS 注释**（`;` 到行尾）：本文件的注释里正写着"`IfSilent` 必须在任何
-   * `MessageBox` 之前"——拿原文判的话，`indexOf` 命中的是注释里的那两个词，判据恒绿。
+   * ---- W10：删用户数据前必须有闸（迁自 hooks.nsh 的"默认保留 + 明确选是才删"）----
+   * 现在的删除由卸载页勾选驱动、由卸载器 Rust 执行，所以判据钉在 `uninstaller/src-tauri/src/main.rs`：
+   *   ① 逐项删除循环里 `guard(&dir)?` 必须**先于** `remove_dir_safely(&dir)?`；
+   *   ② 静默档（`--silent`）**不许碰**用户数据（与旧 NSIS `/S` 同语义，e2e 靠它取证）；
+   *   ③ 直接 `fs::remove_dir_all` 全仓只许出现一次（就在 `remove_dir_safely` 里，
+   *      链接只摘链接、不许递归跟进去删）。
    */
-  const macros = [...nshCode.matchAll(/!macro\s+(\w+)([\s\S]*?)!macroend/g)].map((m) => ({ name: m[1], body: m[2] }));
-  const unguarded = [];
-  for (const mac of macros) {
-    const at = mac.body.indexOf('MessageBox');
-    if (at < 0) continue;
-    const silent = mac.body.indexOf('IfSilent');
-    if (silent < 0 || silent > at) unguarded.push(mac.name);
-  }
+  const uninstallerMain = read(path.join(uninstallerSrcDir, 'main.rs'));
+  const uninstallBody = sliceFn(uninstallerMain, 'uninstall');
+  const silentBody = sliceFn(uninstallerMain, 'run_silent');
+  const guardAt = uninstallBody.indexOf('guard(&dir)?');
+  const removeAt = uninstallBody.indexOf('remove_dir_safely(&dir)?');
+  const guardFirst = guardAt >= 0 && removeAt >= 0 && guardAt < removeAt;
+  const silentTouchesData = /data_dir\(|remove_dir_safely/.test(silentBody);
+  const rawRemoveAll = uninstallerMain.split('fs::remove_dir_all').length - 1;
+  check(
+    'W10',
+    '删用户数据前必过安全闸（`guard()` 先于删除）+ 静默档不碰数据 + 直接 `remove_dir_all` 只有一处（在带链接判定的 `remove_dir_safely` 里）',
+    guardFirst && !silentTouchesData && rawRemoveAll === 1,
+    `guardFirst=${guardFirst} guardAt=${guardAt} removeAt=${removeAt} silentTouchesData=${silentTouchesData} rawRemoveAll=${rawRemoveAll}`,
+  );
+
+  /*
+   * ---- W12：宿主源码里**没有阻塞式弹窗**（迁自 hooks.nsh 的 `IfSilent` 守卫）----
+   * 旧坑：NSIS 的 `MessageBox` 在 `/S` 静默档下照样弹窗并阻塞 ⇒ `check:packaged` 的
+   * 静默安装/卸载**永远不返回**（不是变红，是超时）。
+   * 新形态下静默档由 `--silent` 参数决定、全程不开窗口，唯一允许的模态交互是
+   * **用户主动点出来的选目录对话框**。所以判据是：两个宿主的 Rust 源码里
+   * 出现 `MessageBox` / `blocking_show` 即红；`blocking_pick_folder` 只许出现在安装器
+   * 那个 `pick_dir` 命令的实现里。
+   */
+  const hostFiles = [...rustSourcesIn(installerSrcDir), ...rustSourcesIn(uninstallerSrcDir)];
+  const modalHits = hostFiles.filter((f) => /MessageBox|blocking_show/.test(read(f)));
+  const pickerFiles = hostFiles.filter((f) => /blocking_pick_folder/.test(read(f)));
+  const pickerOk =
+    pickerFiles.length === 0 ||
+    (pickerFiles.length === 1 &&
+      pickerFiles[0] === path.join(installerSrcDir, 'main.rs') &&
+      /fn pick_dir\(/.test(read(pickerFiles[0])));
   check(
     'W12',
-    '每个 `MessageBox` 之前都有 `IfSilent` 守卫（静默安装/卸载不得被弹窗挂住 —— 那不是变红，是不返回）',
-    macros.length > 0 && unguarded.length === 0,
-    { macros: macros.map((m) => m.name), unguarded },
+    '宿主源码里没有阻塞式弹窗（`MessageBox` / `blocking_show`）；`blocking_pick_folder` 只出现在安装器的 `pick_dir` 里' +
+      ' —— 静默档被弹窗拦住的失败形态是**不返回**，不是变红',
+    modalHits.length === 0 && pickerOk,
+    `modal=${modalHits.map((f) => path.basename(f))} picker=${pickerFiles.map((f) => path.basename(f))} pickerOk=${pickerOk}`,
   );
 
   const guide = fs.existsSync(GUIDE_WIN) ? read(GUIDE_WIN) : '';
@@ -678,30 +720,27 @@ const MUTATIONS = [
     expect: ['W13b'],
   },
   {
-    // ⚠️ 锚点一律**单行**：本脚本的变异器不做 EOL 折算（配置与 .nsh 都是 CRLF），
+    // ⚠️ 锚点一律**单行**：本脚本的变异器不做 EOL 折算（配置是 CRLF），
     //    多行锚点会被判成"未找到"而**静默跳过** —— 跳过 ≠ 通过。
-    name: 'E2：把 NSIS 安装器钩子的接线摘掉（长路径提示与卸载提示都不会再出现）',
+    // 回归形态：把钩子接线加回来。两套安装逻辑并存时，用户看到哪一套取决于谁先跑完。
+    name: 'E2：把 NSIS 安装器钩子的接线加回来（两套安装逻辑并存）',
     edits: [
       {
         file: WIN_CONF,
-        find: '"installerHooks": "../installer/hooks.nsh"',
-        replace: '"installerHooksOff": "nsis/hooks.nsh"',
+        find: '"targets": ["nsis"]',
+        replace: '"targets": ["nsis"], "windows": { "nsis": { "installerHooks": "../installer/hooks.nsh" } }',
       },
     ],
     expect: ['W8'],
   },
   {
-    name: 'E2：钩子指向一个不存在的文件（打包阶段才会炸，报错离根因很远）',
-    edits: [{ file: WIN_CONF, find: '"../installer/hooks.nsh"', replace: '"../installer/nope.nsh"' }],
-    expect: ['W8'],
-  },
-  {
-    name: 'E2：长路径检查被删掉（用户一路装到一半才报"文件名太长"）',
+    // 回归形态：长路径探测被删。用户一路装到一半才报"文件名太长"，报错位置离根因很远。
+    name: 'E2：安装器不再读系统长路径开关（用户装到一半才报「文件名或扩展名太长」）',
     edits: [
       {
-        file: NSIS_HOOKS,
-        find: '  ReadRegDWORD $0 HKLM "SYSTEM\\CurrentControlSet\\Control\\FileSystem" "LongPathsEnabled"',
-        replace: '  ;M12 长路径检查被删',
+        file: path.join(ROOT, 'installer', 'src-tauri', 'src', 'main.rs'),
+        find: 'const VALUE: &str = "LongPathsEnabled";',
+        replace: 'const VALUE: &str = "LongPathsDisabled";',
       },
     ],
     expect: ['W9'],
@@ -712,43 +751,54 @@ const MUTATIONS = [
     name: 'E2：安装器**替用户改**系统级长路径开关（提权 + 不声不响改 HKLM）',
     edits: [
       {
-        file: NSIS_HOOKS,
-        find: '  ReadRegDWORD $0 HKLM "SYSTEM\\CurrentControlSet\\Control\\FileSystem" "LongPathsEnabled"',
+        file: path.join(ROOT, 'installer', 'src-tauri', 'src', 'main.rs'),
+        find: 'const VALUE: &str = "LongPathsEnabled";',
         replace:
-          '  WriteRegDWORD HKLM "SYSTEM\\CurrentControlSet\\Control\\FileSystem" "LongPathsEnabled" 1\n  ReadRegDWORD $0 HKLM "SYSTEM\\CurrentControlSet\\Control\\FileSystem" "LongPathsEnabled"',
+          'const VALUE: &str = "LongPathsEnabled";\n' +
+          '    fn _w(key: windows_sys::Win32::System::Registry::HKEY) {\n' +
+          '        let one: u32 = 1;\n' +
+          '        unsafe { windows_sys::Win32::System::Registry::RegSetValueExW(key, std::ptr::null(), 0, 4, &one as *const u32 as *const u8, 4) };\n' +
+          '    }',
       },
     ],
     expect: ['W9'],
   },
   {
-    // 🔴 E3 最危险的一种写法：默认按钮落在「是」上 ⇒ 用户回车就删掉几十分钟的装配成果。
-    name: 'E3：卸载提示的默认按钮落在「删除」上（回车 = 删掉引擎运行时）',
-    edits: [{ file: NSIS_HOOKS, find: '|MB_DEFBUTTON2', replace: '' }],
-    expect: ['W10'],
-  },
-  {
-    name: 'E3：删除动作变成无条件（提示还在，但还没等用户选就删了）',
+    // 🔴 最危险的一种回归：安全闸被摘掉。删的是用户几十分钟的装配成果与译稿。
+    name: 'E3：卸载器删数据前不再过 `guard()`（路径闸被摘 ⇒ 可能删到安装目录之外）',
     edits: [
       {
-        file: NSIS_HOOKS,
-        find: '  IfFileExists "$LOCALAPPDATA\\runtimes\\manga-translator\\*.*" 0 moor_no_runtimes',
-        replace:
-          '  IfFileExists "$LOCALAPPDATA\\runtimes\\manga-translator\\*.*" 0 moor_no_runtimes\n' +
-          '    RMDir /r "$LOCALAPPDATA\\runtimes\\manga-translator"',
+        file: path.join(ROOT, 'uninstaller', 'src-tauri', 'src', 'main.rs'),
+        find: '        guard(&dir)?;',
+        replace: '        // M：安全闸被摘',
       },
     ],
     expect: ['W10'],
   },
   {
-    // 🔴 去掉静默守卫 ⇒ 静默卸载被 MessageBox 拦死 ⇒ `check:packaged` 的收尾永远跑不完。
-    //    "挂住"是最坏的一种失败：没有红字，只有超时。
-    name: 'E3：卸载弹窗去掉 `IfSilent` 守卫（静默卸载会挂住，不是变红）',
-    edits: [{ file: NSIS_HOOKS, find: '  IfSilent moor_keep_runtimes', replace: '  ;M 守卫被摘' }],
-    expect: ['W12'],
+    // 静默档（`QuietUninstallString` / 包管理器）悄悄删数据 —— 用户没点过任何勾选。
+    name: 'E3：静默卸载也删用户数据（`--silent` 不再"只删程序"）',
+    edits: [
+      {
+        file: path.join(ROOT, 'uninstaller', 'src-tauri', 'src', 'main.rs'),
+        find: 'fn run_silent() -> i32 {',
+        replace: 'fn run_silent() -> i32 {\n    let _ = remove_dir_safely(&root_dir());',
+      },
+    ],
+    expect: ['W10'],
   },
   {
-    name: 'E2：安装后长路径提示去掉 `IfSilent` 守卫（静默安装会挂住）',
-    edits: [{ file: NSIS_HOOKS, find: '  IfSilent moor_longpath_done', replace: '  ;M 守卫被摘' }],
+    // 🔴 阻塞弹窗在静默档里"挂住"是最坏的一种失败：没有红字，只有超时。
+    name: 'E2：安装器宿主里塞一个阻塞弹窗（静默档会挂住，不是变红）',
+    edits: [
+      {
+        file: path.join(ROOT, 'installer', 'src-tauri', 'src', 'main.rs'),
+        find: 'fn close_window(window: tauri::Window) {',
+        replace:
+          'fn close_window(window: tauri::Window) {\n' +
+          '    unsafe { windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxW(std::ptr::null_mut(), std::ptr::null(), std::ptr::null(), 0) };',
+      },
+    ],
     expect: ['W12'],
   },
   {
