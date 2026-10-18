@@ -8,6 +8,7 @@
  *
  * 文件分两段：**展开播放器**用的一组（LYRICS_* / SKINS / QUALITY_OPTIONS / VINYL_*），
  * 与**桌面歌词独立**的一组（DL_*）。两段刻意不共用常量，理由见 DL_* 段开头。
+ * 另有一条进度条交互常量 `SEEK_COMMIT_DELAY_MS`（播放条与展开播放器共用，见其注释）。
  */
 import type { PlayerSkin } from '@music/store';
 import type { LyricsMode, PlaybackQuality } from '@music/types';
@@ -88,6 +89,16 @@ export const LYRICS_MODE_DEF: LyricsMode = 'line';
 
 /** 透明彩胶自定义色（参考实现 `vinylCustomColor`） */
 export const VINYL_COLOR_DEF = '#E8B04B';
+
+/**
+ * 进度条拖拽结束后、真正 seek 之前的静默期（0.1s）。
+ *
+ * 用户 2026-10-19 要求：拖拽中不更新播放进度，拖拽结束后也**不是立即**更新，而是再等 0.1s。
+ * 松手瞬间立即 seek，播放头是"硬跳"过去的；且指针抬起 / 键盘抬起 / 失焦三条收尾路径
+ * 可能连着触发，立即提交会连 seek 好几次。
+ * 播放条与展开播放器**共用这一个值** —— 两条进度条行为必须一致，各写一个 100 就会漂移。
+ */
+export const SEEK_COMMIT_DELAY_MS = 100;
 
 // ------------------------------------------------------------------ 桌面歌词（独立于展开播放器）
 //

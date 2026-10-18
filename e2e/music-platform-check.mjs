@@ -1280,6 +1280,9 @@ add('PLAYER.bar.closePlayback', 'PLAYER', (s) => ({
 add('PLAYER.bar.dragSession', 'PLAYER', (s) => {
   // 进度条拖拽会话：拖动只改本地 dragMs，松手/抬键才提交一次。
   // 「onChange 里不得直接调 onSeek」是这条的本质 —— 否则退回"每动一格提交一次"（卡顿/爆音）。
+  // 2026-10-19 用户要求再钉一层：提交必须**延 0.1s** —— 拖拽中不更新播放进度，
+  // 拖拽结束后也不是立即更新。判据抓 setTimeout(…, SEEK_COMMIT_DELAY_MS)：
+  // 退回"松手即 seek"（onSeek 直接调、没有定时器）必须红。
   const pb = stripComments(s.playerBar);
   const missing = [];
   if (!/\buseState\b/.test(pb)) missing.push('未用 useState 保存拖拽会话');
@@ -1288,7 +1291,29 @@ add('PLAYER.bar.dragSession', 'PLAYER', (s) => {
   if (/onChange=\{[^}]*onSeek\s*\(/.test(pb)) missing.push('onChange 里直接调 onSeek(（退回逐帧提交）');
   if (!/\bonPointerUp\s*=/.test(pb)) missing.push('缺 onPointerUp 提交');
   if (!/\bonKeyUp\s*=/.test(pb)) missing.push('缺 onKeyUp 提交');
+  // 松手后的 0.1s 静默期：定时器与延时常量两个部件都要在（缺任一即是"立即更新"）
+  if (!/\bsetTimeout\s*\(/.test(pb)) missing.push('提交未走 setTimeout（拖拽一结束就 seek）');
+  if (!/,\s*SEEK_COMMIT_DELAY_MS\s*\)/.test(pb)) missing.push('缺 0.1s 延时常量 SEEK_COMMIT_DELAY_MS');
   return { ok: missing.length === 0, detail: missing.length ? `播放条进度条拖拽会话：${missing.join('、')}` : '' };
+});
+add('PLAYER.exp.dragSession', 'PLAYER', (s) => {
+  // 展开播放器的进度条与播放条是**同一套拖拽会话的两份实现**（含 2026-10-19 的 0.1s 延时提交）。
+  // 为什么单独立一条而不是复用播放条那条：两条进度条各写一份，坏任何一条另一条全绿 ——
+  // "同一个范式抄两遍"正是静默分化的起点（播放条加了延时、展开播放器忘了加，此前没有人会红）。
+  const exp = stripComments(s.expanded ?? '');
+  const missing = [];
+  if (!/\buseState\b/.test(exp)) missing.push('未用 useState 保存拖拽会话');
+  if (!/\bdragMs\b/.test(exp) || !/\bsetDragMs\s*\(/.test(exp)) missing.push('缺本地拖拽状态 dragMs');
+  if (!/onChange=\{[^}]*setDragMs\s*\(/.test(exp)) missing.push('onChange 未只做 setDragMs(');
+  if (/onChange=\{[^}]*onSeek\s*\(/.test(exp)) missing.push('onChange 里直接调 onSeek(（退回逐帧提交）');
+  if (!/\bonPointerUp\s*=/.test(exp)) missing.push('缺 onPointerUp 提交');
+  if (!/\bonKeyUp\s*=/.test(exp)) missing.push('缺 onKeyUp 提交');
+  if (!/\bsetTimeout\s*\(/.test(exp)) missing.push('提交未走 setTimeout（拖拽一结束就 seek）');
+  if (!/,\s*SEEK_COMMIT_DELAY_MS\s*\)/.test(exp)) missing.push('缺 0.1s 延时常量 SEEK_COMMIT_DELAY_MS');
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `展开播放器进度条拖拽会话：${missing.join('、')}` : '',
+  };
 });
 add('PLAYER.resolveWrites', 'PLAYER', (s) => {
   // D 组防回归：resolveOnlineUrl 此前从不写 currentQuality/currentBitrate → 播放条音质标签是假 UI
@@ -4488,6 +4513,57 @@ const MUTATIONS = [
     find: 'onChange={(e) => setDragMs(Number(e.target.value))}',
     replace: 'onChange={(e) => onSeek(Number(e.target.value))}',
     expect: ['PLAYER.bar.dragSession'],
+  },
+  {
+    name: '把 PlayerBar 的提交改回松手即 seek（去掉 0.1s 静默期）',
+    file: F.playerBar,
+    find: `  const commit = () => {
+    if (dragMs === null) return;
+    const target = dragMs;
+    if (seekCommitTimer.current !== null) clearTimeout(seekCommitTimer.current);
+    seekCommitTimer.current = setTimeout(() => {
+      seekCommitTimer.current = null;
+      // 这 0.1s 里用户又拖过了 ⇒ 旧目标作废，等下一次松手重新提交
+      if (latestDragMsRef.current !== target) return;
+      onSeek(target);
+      setDragMs(null);
+    }, SEEK_COMMIT_DELAY_MS);
+  };`,
+    replace: `  const commit = () => {
+    if (dragMs === null) return;
+    onSeek(dragMs);
+    setDragMs(null);
+  };`,
+    expect: ['PLAYER.bar.dragSession'],
+  },
+  {
+    name: '把 ExpandedPlayer 的 onChange 改回 onSeek(...)（退回逐帧提交）',
+    file: F.expanded,
+    find: 'onChange={(e) => setDragMs(Number(e.target.value))}',
+    replace: 'onChange={(e) => onSeek(Number(e.target.value))}',
+    expect: ['PLAYER.exp.dragSession'],
+  },
+  {
+    name: '把 ExpandedPlayer 的提交改回松手即 seek（去掉 0.1s 静默期）',
+    file: F.expanded,
+    find: `  const commitSeek = () => {
+    if (dragMs === null) return;
+    const target = dragMs;
+    if (seekCommitTimer.current !== null) clearTimeout(seekCommitTimer.current);
+    seekCommitTimer.current = setTimeout(() => {
+      seekCommitTimer.current = null;
+      // 这 0.1s 里用户又拖过了 ⇒ 旧目标作废，等下一次松手重新提交
+      if (latestDragMsRef.current !== target) return;
+      onSeek(target);
+      setDragMs(null);
+    }, SEEK_COMMIT_DELAY_MS);
+  };`,
+    replace: `  const commitSeek = () => {
+    if (dragMs === null) return;
+    onSeek(dragMs);
+    setDragMs(null);
+  };`,
+    expect: ['PLAYER.exp.dragSession'],
   },
 
   // ── PLAYER · D 实际音质回写 ───────────────────────────────────────────

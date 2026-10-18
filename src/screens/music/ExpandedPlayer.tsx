@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { capsOf } from '@music/platform';
-import { LYRICS_SIZE, QUALITY_OPTIONS, SKINS, STYLE_PREVIEW_ORDER } from '@music/player-options';
+import { LYRICS_SIZE, QUALITY_OPTIONS, SEEK_COMMIT_DELAY_MS, SKINS, STYLE_PREVIEW_ORDER } from '@music/player-options';
 import { useMusicStore } from '@music/store';
 import { canUseHeartbeat } from '@music/actions/playback';
 import { coverProxyUrl, fmtTime, songKey } from '@music/convert';
@@ -144,13 +144,40 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
    */
   const [dragMs, setDragMs] = useState<number | null>(null);
   const shownMs = dragMs ?? Math.min(progressMs, Math.max(durationMs, 1));
-  /** 拖拽中 ⇒ 歌词不定位（见上） */
+  /** 拖拽中（含松手后 0.1s 的提交静默期）⇒ 歌词不定位（见上） */
   const seeking = dragMs !== null;
-  /** 提交一次拖拽结果：闭包每次渲染重建，读到的总是最新的 dragMs */
+  /** 松手后延时提交用的定时器句柄（null = 没有待提交的拖拽结果） */
+  const seekCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** dragMs 的最新镜像：延时提交回调靠它判断「排定之后用户有没有又拖过」（见 commitSeek） */
+  const latestDragMsRef = useRef<number | null>(null);
+  useEffect(() => {
+    latestDragMsRef.current = dragMs;
+  }, [dragMs]);
+  // 卸载时收掉未到时的提交：组件没了还去 seek，会打到下一次挂载后的播放器上
+  useEffect(
+    () => () => {
+      if (seekCommitTimer.current !== null) clearTimeout(seekCommitTimer.current);
+    },
+    [],
+  );
+  /**
+   * 提交一次拖拽结果：松手（或键盘抬起）后**再等 0.1s** 才真正 seek
+   * （2026-10-19 用户要求：拖拽中不更新播放进度，拖拽结束后 0.1s 再更新）。
+   * 等待期间 dragMs 尚未清空，界面仍显示拖到的位置 —— 观感是「松手 → 稍停 → 播放头跟上」。
+   * 闭包每次渲染重建，读到的总是最新的 dragMs；`dragMs === null` 早退（键盘抬起没经历拖动时是空操作）；
+   * 已排定则清零重排：指针 / 键盘两条收尾路径可能连着触发，重复触发无副作用。
+   */
   const commitSeek = () => {
     if (dragMs === null) return;
-    onSeek(dragMs);
-    setDragMs(null);
+    const target = dragMs;
+    if (seekCommitTimer.current !== null) clearTimeout(seekCommitTimer.current);
+    seekCommitTimer.current = setTimeout(() => {
+      seekCommitTimer.current = null;
+      // 这 0.1s 里用户又拖过了 ⇒ 旧目标作废，等下一次松手重新提交
+      if (latestDragMsRef.current !== target) return;
+      onSeek(target);
+      setDragMs(null);
+    }, SEEK_COMMIT_DELAY_MS);
   };
 
   const setSkin = useMusicStore((s) => s.setSkin);

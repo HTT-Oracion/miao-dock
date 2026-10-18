@@ -10,8 +10,8 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
-import { useState } from 'react';
-import { QUALITY_OPTIONS } from '@music/player-options';
+import { useEffect, useRef, useState } from 'react';
+import { QUALITY_OPTIONS, SEEK_COMMIT_DELAY_MS } from '@music/player-options';
 import { useMusicStore } from '@music/store';
 import { canUseHeartbeat } from '@music/actions/playback';
 import { fmtTime, qualityLabel } from '@music/convert';
@@ -83,11 +83,29 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
   /**
    * 进度条的「拖拽会话」状态：非 null 表示用户正在拖/敲键盘，界面显示 dragMs；null 表示跟随 store 的实时进度。
    * 存在的理由：range 的 onChange 在拖动中会连续触发，若每次都 onSeek 会让 <audio> 跟着不断 seek（卡顿/爆音），
-   * 且松手前的中间值本就无意义 —— 拖拽期间只改本地显示，松手（或键盘抬起）才提交一次。
+   * 且松手前的中间值本就无意义 —— 拖拽期间只改本地显示，松手（或键盘抬起）再等 0.1s 才提交。
    *
    * 必须放在 `if (hidden) return null` 之前：Hook 的调用顺序不能在渲染之间变化。
    */
   const [dragMs, setDragMs] = useState<number | null>(null);
+
+  /** 松手后延时提交用的定时器句柄（null = 没有待提交的拖拽结果） */
+  const seekCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * dragMs 的最新镜像（渲染后同步）：延时提交的回调靠它判断「排定之后用户有没有又拖过」——
+   * 定时器闭包捕获的是排定那一刻的值，0.1s 内又拖一次时旧目标必须作废。
+   */
+  const latestDragMsRef = useRef<number | null>(null);
+  useEffect(() => {
+    latestDragMsRef.current = dragMs;
+  }, [dragMs]);
+  // 卸载时收掉未到时的提交：组件没了还去 seek，会打到下一次挂载后的播放器上
+  useEffect(
+    () => () => {
+      if (seekCommitTimer.current !== null) clearTimeout(seekCommitTimer.current);
+    },
+    [],
+  );
 
   // 拖拽中显示本地值，否则显示 store 的实时进度；同时夹住上界，避免 duration 尚未就绪时滑块越界。
   const shownMs = dragMs ?? Math.min(progressMs, Math.max(durationMs, 1));
@@ -106,15 +124,26 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
   type FillStyle = React.CSSProperties & Record<'--fill', string>;
 
   /**
-   * 提交一次拖拽结果。
+   * 提交一次拖拽结果：松手（或键盘抬起）后**再等 0.1s** 才真正 seek
+   * （2026-10-19 用户要求：拖拽中不更新播放进度，拖拽结束后 0.1s 再更新）。
+   * 等待期间 dragMs 尚未清空，界面仍显示拖到的位置 —— 观感是「松手 → 稍停 → 播放头跟上」。
+   *
    * 闭包说明：本函数在每次渲染时重建，因此 `dragMs` 读到的总是「本次渲染」的值；
    * 而 onChange 的 setDragMs 会触发重渲染，pointerup/keyup 拿到的就是最新的那个闭包 —— 不会用到首次渲染的旧值。
    * `dragMs === null` 早退：键盘抬起（如 Tab）没经历拖动时是空操作，避免拖着 seek 到无关位置。
+   * 已排定则清零重排：指针抬起 / 键盘抬起 / 失焦三条收尾路径可能连着触发，重复触发无副作用。
    */
   const commit = () => {
     if (dragMs === null) return;
-    onSeek(dragMs);
-    setDragMs(null);
+    const target = dragMs;
+    if (seekCommitTimer.current !== null) clearTimeout(seekCommitTimer.current);
+    seekCommitTimer.current = setTimeout(() => {
+      seekCommitTimer.current = null;
+      // 这 0.1s 里用户又拖过了 ⇒ 旧目标作废，等下一次松手重新提交
+      if (latestDragMsRef.current !== target) return;
+      onSeek(target);
+      setDragMs(null);
+    }, SEEK_COMMIT_DELAY_MS);
   };
 
   if (hidden) return null;
