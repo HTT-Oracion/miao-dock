@@ -22,6 +22,8 @@ interface DownloadPanelProps {
   requiredBytes?: number;
   onContinue: () => void;
   onRedownload: () => void;
+  /** 暂停下载（`.part` 留盘 ⇒ 「继续下载」接着下）；只在进行中可用 */
+  onPause: () => void;
   onBack: () => void;
   /** 完成态「关闭下载」：写 dismissal 并移除侧栏入口 */
   onClose: () => void;
@@ -72,17 +74,34 @@ const ROUND_TEXT: Record<string, string> = {
   stage2: '第 2 轮 / 共 2 轮',
 };
 
-export function DownloadPanel({ view, requiredBytes, onContinue, onRedownload, onBack, onClose }: DownloadPanelProps) {
+export function DownloadPanel({
+  view,
+  requiredBytes,
+  onContinue,
+  onRedownload,
+  onPause,
+  onBack,
+  onClose,
+}: DownloadPanelProps) {
   const [logOpen, setLogOpen] = useState(false);
   const [confirmRedo, setConfirmRedo] = useState(false);
 
   const interrupted = view.state === 'interrupted' || view.state === 'failed';
   const done = view.state === 'done';
-  const percent = view.percent;
   const step = view.step ? STEP_TEXT[view.step] : null;
   const round = view.stage ? ROUND_TEXT[view.stage] : null;
+  /*
+   * 环用**整体装配进度**（段加权），不是字节百分比。
+   *
+   * 🔴 为什么要换：`percent` 只覆盖"下载字节"。venv / **pip 装依赖** / 打补丁这几段
+   *    一个字节都不进账本（pip 命中 `Using cached` 时更是一个都不下），
+   *    于是环会停在上一段的数值上 —— 实测就是「一直 0%，像卡死」。
+   *    段加权把这些段也纳入进度，段内不可测时配旋转弧（`assemblyIndeterminate`）。
+   */
+  const overall = view.assemblyPercent;
+  const indeterminate = view.assemblyIndeterminate;
   // 完成态的环是终态示意（不是过程数字）；中心文案仍写「完成」而非伪造的百分比。
-  const ringPercent = done ? (percent ?? 100) : percent;
+  const ringPercent = done ? (overall ?? 100) : overall;
 
   // 当前文件行：把 id 拆成「文件名 + 序号」—— 没有真实来源时不美化（如实显示 id 或留空）。
   const currentLabel = view.currentId ?? null;
@@ -146,7 +165,8 @@ export function DownloadPanel({ view, requiredBytes, onContinue, onRedownload, o
               size={132}
               stroke={9}
               colorVar={done ? '--md-success' : ringColor}
-              spinning={view.state === 'running' && percent == null}
+              // 段内不可测（venv / pip / 补丁）⇒ 转起来：让人看出"在跑，只是这一段没有分母"
+              spinning={view.state === 'running' && (overall == null || indeterminate)}
             />
           </div>
           <div
@@ -161,7 +181,7 @@ export function DownloadPanel({ view, requiredBytes, onContinue, onRedownload, o
               fontVariantNumeric: 'tabular-nums',
             }}
           >
-            {done ? '完成' : percent == null ? '准备中' : `${Math.round(percent)}%`}
+            {done ? '完成' : overall == null ? '准备中' : `${Math.round(overall)}%`}
           </div>
         </div>
 
@@ -211,8 +231,8 @@ export function DownloadPanel({ view, requiredBytes, onContinue, onRedownload, o
         >
           {currentLabel ?? '—'}
         </span>
-        {/* 极细行内进度：没有真实 percent 时不画 */}
-        {percent != null ? (
+        {/* 极细行内进度：与环同一口径（整体装配），没有真实阶段事件时不画 */}
+        {overall != null ? (
           <span
             style={{
               width: 90,
@@ -227,7 +247,7 @@ export function DownloadPanel({ view, requiredBytes, onContinue, onRedownload, o
               style={{
                 display: 'block',
                 height: '100%',
-                width: `${Math.min(100, percent)}%`,
+                width: `${Math.min(100, overall)}%`,
                 background: `var(${ringColor})`,
               }}
             />
@@ -264,9 +284,18 @@ export function DownloadPanel({ view, requiredBytes, onContinue, onRedownload, o
             <span style={{ fontSize: 12, color: 'var(--md-muted)', marginLeft: 'auto' }}>已完成的部分不会丢失</span>
           </>
         ) : (
-          <Btn kind="ghost" onClick={onBack}>
-            返回（下载在后台继续）
-          </Btn>
+          <>
+            {/* 暂停：只在下载进行中出现（完成 / 中断态的兜底动作在上面两支里） */}
+            <Btn kind="ghost" onClick={onPause}>
+              ⏸ 暂停下载
+            </Btn>
+            <Btn kind="ghost" onClick={onBack}>
+              返回（下载在后台继续）
+            </Btn>
+            <span style={{ fontSize: 12, color: 'var(--md-muted)', marginLeft: 'auto' }}>
+              暂停后已下的部分保留，可继续下载
+            </span>
+          </>
         )}
       </div>
 

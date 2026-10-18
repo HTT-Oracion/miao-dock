@@ -382,6 +382,7 @@ async fn route(shell: &Arc<Shell>, m: Match, uri: &Uri, headers: &HeaderMap, bod
         "POST /api/v1/engine/unload" => engine_unload(shell).await,
         "POST /api/v1/engine/models/verify" => models_verify(shell).await,
         "POST /api/v1/engine/models/download" => models_download(shell, uri).await,
+        "POST /api/v1/engine/models/download/pause" => models_download_pause(shell).await,
         // 声明为 Migrated 但没有实现 —— 由 `check:routes` 的 `ROUTES.migrated` 断言抓出来。
         other => super::http::store_err(&StoreError::new(
             "INTERNAL",
@@ -794,6 +795,17 @@ async fn models_download(shell: &Arc<Shell>, uri: &Uri) -> Response {
     let fresh = query_get(uri, "fresh").map(|v| v == "1" || v == "true").unwrap_or(false);
     match shell.engine.start_model_download(fresh) {
         Ok(view) => super::http::json_body(200, &json!({ "ok": true, "started": true, "download": view })),
+        Err(e) => super::http::store_err(&e),
+    }
+}
+
+/// `POST /engine/models/download/pause` —— 「暂停下载」。
+///
+/// 语义：杀掉下载子进程，`.part` 留在盘上 ⇒ 下次「继续下载」接着下（Range 续传）。
+/// 🔴 与启动端点对称：没在下就 **409**（`DOWNLOAD_NOT_RUNNING`），不返回 200 假装暂停成功。
+async fn models_download_pause(shell: &Arc<Shell>) -> Response {
+    match shell.engine.pause_download() {
+        Ok(view) => super::http::json_body(200, &json!({ "ok": true, "download": view })),
         Err(e) => super::http::store_err(&e),
     }
 }

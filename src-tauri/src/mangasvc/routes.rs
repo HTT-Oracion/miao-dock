@@ -75,6 +75,8 @@ pub const ROUTES: &[RouteDef] = &[
     route!("engine", "POST", "/api/v1/engine/unload", Migrated),
     route!("engine", "POST", "/api/v1/engine/models/verify", Migrated),
     route!("engine", "POST", "/api/v1/engine/models/download", Migrated),
+    // 暂停（2026-10-18）：杀子进程、`.part` 留盘 ⇒ 下次同一端点继续下载（Range 续传）
+    route!("engine", "POST", "/api/v1/engine/models/download/pause", Migrated),
     // ---- translate ----（F5.5 已迁：handlers.rs `translate` 段 + mangasvc/translate/）
     route!("translate", "POST", "/api/v1/translate/text", Migrated),
     route!("translate", "POST", "/api/v1/translate/stream", Migrated),

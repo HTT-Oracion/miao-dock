@@ -156,7 +156,12 @@ export function ModelManageBlock({ item, eng }: { item: SettingItem; eng: Engine
         // 🔴 真实进度只来自 `modelDownload` 的聚合字段；`null` 就如实留空，不编占位数字。
         <div className={`set-manage-state${interrupted || failed ? ' is-bad' : ''}`}>
           {running ? '正在下载模型' : interrupted ? '下载中断（可继续）' : '下载失败（需从头重下）'}
-          {download?.percent != null ? ` · 进度 ${Math.round(download.percent)}%` : ' · 准备中'}
+          {/* 与下载页同一口径（整体装配进度）：两处各用一个数会互相打脸 */}
+          {download?.assemblyPercent != null
+            ? ` · 进度 ${Math.round(download.assemblyPercent)}%${
+                download.assemblyIndeterminate ? '（本段不可测）' : ''
+              }`
+            : ' · 准备中'}
           {download?.receivedBytes != null
             ? ` · 已下 ${humanBytes(download.receivedBytes)}${
                 download?.totalBytes != null ? ` / ${humanBytes(download.totalBytes)}` : ''

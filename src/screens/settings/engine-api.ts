@@ -259,6 +259,20 @@ export interface ModelDownloadView {
   step: AssemblyStep | null;
   /** 当前正在处理的条目 id（文件名 / 阶段名）；无真实来源为 `null` */
   currentId: string | null;
+  /**
+   * **整体装配进度**（段加权，0..100；`null` = 还没有真实阶段事件）。
+   *
+   * 🔴 与 `percent` 的区别：`percent` 是**网络字节**口径，只覆盖下载；
+   *    这个值把「准备 / 运行环境装配（venv + pip + 补丁）」也算进去 ——
+   *    那几段没有字节账（pip 命中缓存时一个字节都不下），否则环会在最长的一段上停住不动。
+   *    权重由服务端给（`state.rs` 的 `STEP_WEIGHTS`），前端**不重算**。
+   */
+  assemblyPercent: number | null;
+  /**
+   * 当前段**没有可测字节进度**（准备 / 运行环境装配）⇒ 环配旋转弧，
+   * 而不是把上一段留下的数字当成本段在走。
+   */
+  assemblyIndeterminate: boolean;
   // ---- G5：中断 / 续传 ----
   /** 可续传：盘上存在 `.part`，或 `.ready` 未覆盖全部选中条目 */
   canResume: boolean;
@@ -353,3 +367,12 @@ export const downloadEngineModels = (fresh = false) =>
     fresh ? '/engine/models/download?fresh=1' : '/engine/models/download',
     {},
   );
+
+/**
+ * 暂停正在进行的下载。
+ *
+ * 🔴 语义 = 杀掉下载子进程、`.part` 留盘 ⇒ 再调 `downloadEngineModels()` 即续传（Range）。
+ * 没在下的时候服务端回 409（`DOWNLOAD_NOT_RUNNING`）—— 不返回 200 假装暂停成功。
+ */
+export const pauseEngineDownload = () =>
+  apiPost<{ ok: true; download: ModelDownloadView }>('/engine/models/download/pause', {});

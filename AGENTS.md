@@ -303,6 +303,7 @@ cd src-tauri && cargo build                # Rust（见 §5 环境陷阱）
   `mangasvc::engine::model_store` 负责下载（断点续传 / 逐文件 SHA256 / 失败单文件重下 / `.ready` 幂等 / 传输中断一次重下），
   CLI 是 `mangasvc --fetch-models`（**A3d 起为产品主路径**；`engine/model-store.mjs` + `engine/scripts/fetch-models.mjs` 保留为**双靶对照端**）。
   🔴 有意差异：Rust 版**不实现** `AbortSignal` —— 产品跑的是 CLI，「暂停」的真实形态就是杀进程，`.part` 留下即断点。
+  该形态对外就是一个端点：`POST /api/v1/engine/models/download/pause`（D-237；没在下 ⇒ 409 `DOWNLOAD_NOT_RUNNING`）。
   🔴 **权威副本在 `<appData>/runtimes/manga-translator/models-store/`，引擎源码树 `src/models/` 里那几份只是硬链接** ——
   因为引擎把模型路径硬编码在自己源码树里（`utils/inference.py:94` + `utils/generic.py:24-25`，且
   `server/args.py` 没有 `--model-dir`）⇒ **换引擎版本后跑 `npm run task -- fetch:models --link` 即可零网络恢复**，

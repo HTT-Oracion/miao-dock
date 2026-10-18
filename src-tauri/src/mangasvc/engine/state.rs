@@ -129,6 +129,13 @@ pub struct ModelDownload {
     pub step: Option<String>,
     /// 当前正在处理的条目 id（文件名 / 阶段名），没有真实来源时为 `null`。
     pub current_id: Option<String>,
+    /// 用户主动点了「暂停下载」（见 `pause_download`）。
+    ///
+    /// 🔴 为什么需要它：暂停 = 杀掉下载子进程，退出码非零 ⇒ 终态线程按"能不能续"判
+    ///    `interrupted` / `error`。刚开下就暂停时盘上还没有 `.part`，会被判成**不可续的失败**
+    ///    （界面上「继续下载」会变成「重新下载」）。有这个标记就一律按可续的中断处理。
+    #[serde(default)]
+    pub paused_by_user: bool,
     // ---- G5：中断 / 续传 ----
     /// 可续传：盘上存在 `.part`，或 `.ready` 未覆盖全部选中条目。
     pub can_resume: bool,
@@ -153,6 +160,7 @@ impl Default for ModelDownload {
             stage: None,
             step: None,
             current_id: None,
+            paused_by_user: false,
             can_resume: false,
             interrupted_reason: None,
         }
@@ -698,12 +706,56 @@ impl EngineState {
             // ⇒ `/engine/status` 的顶层键数不变，`check:contract` 的 S5.7 精确等值不受影响。
             "step": d.step,
             "currentId": d.current_id,
+            // 整体装配进度（段加权）：段内只有"有字节账"的两段才细分，其余停在段首。
+            // 🔴 为什么不在前端算：权重是产品判断（哪一段更费时），两处各写一份必然漂移。
+            "assemblyPercent": assembly_percent(d.step.as_deref(), d.percent),
+            // 当前段**没有可测字节进度**（prepare / runtime 的 venv、pip、补丁）⇒ 界面配旋转弧，
+            // 而不是把上一段留下的数字当成本段在走。
+            "assemblyIndeterminate": matches!(d.step.as_deref(), Some("prepare") | Some("runtime")),
             // ---- G5：中断 / 续传 ----
             // 🔴 `canResume` 在视图时**现算**（不存）：盘上有 `.part` 或 `.ready` 未覆盖全部选中条目
             //    ⇒ true。这样即使进程重启、内存态清空，也能如实告诉界面「有东西可续」。
             "canResume": self.can_resume_now(),
             "interruptedReason": d.interrupted_reason,
         })
+    }
+
+    /// 暂停下载：杀掉子进程（`.part` 留在盘上 ⇒ 可续），状态落 `interrupted`。
+    ///
+    /// 语义与「中断」一致、只是原因不同：界面据此显示「继续下载」而不是「重新下载」。
+    /// 没在下就 409（`DOWNLOAD_NOT_RUNNING`）—— 与启动端点"已在跑就 409"同一条纪律：
+    /// 不让用户以为这一下生效了。
+    pub fn pause_download(&self) -> Result<Value, StoreError> {
+        let taken = self
+            .download_child
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+        let Some(mut child) = taken else {
+            return Err(StoreError::new(
+                "DOWNLOAD_NOT_RUNNING",
+                "当前没有正在进行的下载",
+                json!({}),
+            ));
+        };
+
+        // 先打标记再杀：终态线程看到 `paused_by_user` 就把非零退出记成**可续的中断**，
+        // 不会因为"还没写出 .part"而判成不可续的失败。
+        {
+            let mut d = self.lock_download();
+            d.paused_by_user = true;
+            d.state = "interrupted".to_string();
+            d.interrupted_reason =
+                Some("已暂停（你点了「暂停下载」）；已下的部分不会丢失，可继续".to_string());
+            // 瞬时速度 / 剩余时间是上一段的读数，暂停后继续显示等于编造
+            d.speed_bps = None;
+            d.eta_ms = None;
+            d.persist();
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+        println!("[manga-service] 模型下载已暂停（用户操作）");
+        Ok(self.model_download_view())
     }
 
     /// 盘上此刻能否续传：模型根或运行时根下存在 `.part`，或存在未覆盖全部的就绪标记。
@@ -908,6 +960,7 @@ fn spawn_download_round(
         d.eta_ms = None;
         d.stage = None;
         d.current_id = None;
+        d.paused_by_user = false;
         d.interrupted_reason = None;
         // 🔴 `can_resume` 不在这里置 false：视图时现算 `can_resume_now()`，
         //    即使刚点「继续」、`.part` 还在，也应如实显示可续。
@@ -1050,7 +1103,9 @@ fn spawn_download_round(
                         // 否则是不可续传的失败（只能从头重下）。
                         let resumable =
                             has_part_files(&model_root_wait) || has_part_files(&runtime_root_wait);
-                        if resumable {
+                        // 用户主动暂停：即使盘上还没有 `.part`（刚开下就暂停）也算"可续的中断"，
+                        // 否则界面会把「继续下载」变成「重新下载」。
+                        if resumable || d.paused_by_user {
                             d.state = "interrupted".to_string();
                             if d.interrupted_reason.is_none() {
                                 d.interrupted_reason = Some(
@@ -1135,6 +1190,36 @@ impl ModelDownload {
     }
 }
 
+/// 四段装配的权重（合计 100）。
+///
+/// 权重是**产品判断**（哪一段更费时），只在这里写一份：前端按 `assemblyPercent` 显示，
+/// 自己不重算 —— 两处各写一份权重，必然漂移成"环走到 70% 却说还在装依赖"。
+const STEP_WEIGHTS: [(&str, f64); 4] = [
+    ("prepare", 10.0),
+    ("runtime", 35.0),
+    ("visual", 25.0),
+    ("llm", 30.0),
+];
+
+/// 整体装配百分比（段加权）。
+///
+/// - `prepare` / `runtime`：这段没有字节账（venv / **pip 装依赖** / 打补丁），
+///   停在**段首**；界面配一圈旋转弧表示"在跑但不可测"，绝不拿上一段的数字冒充本段。
+///   （2026-10-18 用户反馈：pip 全命中 `Using cached` ⇒ 环停在 0% 好几分钟，看着像卡死。）
+/// - `visual` / `llm`：这两段共用同一份字节账 ⇒ 合成一个区间 `[45, 100]`，
+///   段切换时数字**不跳**（各自映射会让 45→70 之间凭空跳一下）。
+fn assembly_percent(step: Option<&str>, byte_percent: Option<f64>) -> Option<f64> {
+    let step = step?;
+    let idx = STEP_WEIGHTS.iter().position(|(name, _)| *name == step)?;
+    let before: f64 = STEP_WEIGHTS[..idx].iter().map(|(_, weight)| *weight).sum();
+    if !matches!(step, "visual" | "llm") {
+        return Some(before);
+    }
+    let bytes_start: f64 = STEP_WEIGHTS[..2].iter().map(|(_, weight)| *weight).sum();
+    let pct = byte_percent?;
+    Some((bytes_start + (100.0 - bytes_start) * (pct / 100.0)).min(100.0))
+}
+
 /// 进程重启后的下载态对账：`running` 已无子进程 ⇒ 如实报 `interrupted`。
 ///
 /// 返回 `(校正后的状态, 是否发生变化)`；变化时调用方负责原子落盘。
@@ -1165,12 +1250,28 @@ impl DownloadProgressState {
         }
         let (t0, b0) = self.samples[0];
         let (t1, b1) = *self.samples.last().unwrap();
+        // 🔴 `received` 会**变小**：某条目重试 / 换源会把它的已收字节清零，而它是聚合和的一项。
+        //    直接 `b1 - b0` 在 u64 上会**下溢**成 ~1.8e19，除以几秒 ⇒ 界面出现过
+        //    `1129627 TB/s`（2026-10-18 用户实测）。下溢还是一次性的：样本窗里那一对
+        //    会一直参与计算，速度要等 15s 后滑出窗口才恢复正常。
+        //    处理：发现回退就当"新的一轮"——清空样本窗，这一拍不报速度。
+        if b1 < b0 {
+            self.samples.clear();
+            self.samples.push((now_ms, b1));
+            return (None, None);
+        }
         let dt = (t1 - t0) as f64 / 1000.0;
         if dt <= 0.0 {
             return (None, None);
         }
         let speed = (b1 - b0) as f64 / dt;
         if speed <= 0.0 {
+            return (None, None);
+        }
+        // 物理上限兜底：某条目"总量后到"时会一次性把它已收的字节并进聚合和，速度会瞬间跳一下。
+        // 超过 100 GB/s 一律不报 —— 宁可空着，也不显示 `1129627 TB/s` 这种数字。
+        const MAX_PLAUSIBLE_BPS: f64 = 100.0 * 1024.0 * 1024.0 * 1024.0;
+        if !speed.is_finite() || speed > MAX_PLAUSIBLE_BPS {
             return (None, None);
         }
         if total == 0 {
@@ -1451,5 +1552,56 @@ mod tests {
             assert!(!changed, "{state} 不得被改写");
             assert_eq!(d.state, state);
         }
+    }
+
+    /// 段加权：非字节段停在段首，字节段映射到 `[45, 100]`。
+    #[test]
+    fn assembly_percent_weights_the_four_steps() {
+        assert_eq!(assembly_percent(Some("prepare"), None), Some(0.0));
+        assert_eq!(assembly_percent(Some("runtime"), Some(0.0)), Some(10.0));
+        assert_eq!(assembly_percent(Some("visual"), Some(0.0)), Some(45.0));
+        assert_eq!(assembly_percent(Some("visual"), Some(50.0)), Some(72.5));
+        assert_eq!(assembly_percent(Some("llm"), Some(100.0)), Some(100.0));
+        // 字节段没有字节账 ⇒ 不给数（界面走"准备中"），绝不用上一段的数字顶上
+        assert_eq!(assembly_percent(Some("llm"), None), None);
+        // 没有阶段事件 / 兼容值（`models`）不参与加权
+        assert_eq!(assembly_percent(None, Some(50.0)), None);
+        assert_eq!(assembly_percent(Some("models"), Some(50.0)), None);
+    }
+
+    /// 整体进度**单调不回退** —— 这正是"停在 0% 好几分钟"要消灭的形态
+    #[test]
+    fn assembly_percent_never_goes_backwards() {
+        let seq = [
+            assembly_percent(Some("prepare"), None).unwrap(),
+            assembly_percent(Some("runtime"), None).unwrap(),
+            assembly_percent(Some("visual"), Some(0.0)).unwrap(),
+            assembly_percent(Some("visual"), Some(30.0)).unwrap(),
+            assembly_percent(Some("llm"), Some(60.0)).unwrap(),
+            assembly_percent(Some("llm"), Some(100.0)).unwrap(),
+        ];
+        assert!(seq.windows(2).all(|w| w[0] <= w[1]), "整体进度不许回退：{seq:?}");
+        assert_eq!(seq[0], 0.0);
+        assert_eq!(*seq.last().unwrap(), 100.0);
+    }
+
+    /// 聚合和回退（某条目重试把它已收字节清零）时**不许报速度** ——
+    /// u64 下溢会让界面出现 `1129627 TB/s`（2026-10-18 用户实测）。
+    #[test]
+    fn speed_is_none_when_bytes_go_backwards() {
+        let mut p = DownloadProgressState::new();
+        p.samples.push((0, 10_000));
+        let (speed, eta) = p.recompute(1_000, 5_000, 0);
+        assert!(speed.is_none(), "回退时不许报速度：{speed:?}");
+        assert!(eta.is_none());
+    }
+
+    /// 荒谬速度一律不报（上限兜底），免得 ETA 也算成天文数字
+    #[test]
+    fn speed_is_capped_at_a_plausible_rate() {
+        let mut p = DownloadProgressState::new();
+        p.samples.push((0, 0));
+        let (speed, _) = p.recompute(1, 10_000_000_000, 0); // 10 GB / 1 ms
+        assert!(speed.is_none(), "超过 100 GB/s 不报：{speed:?}");
     }
 }

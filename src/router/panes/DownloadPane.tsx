@@ -5,6 +5,7 @@ import { useEngineDownload, useToasts } from '@hooks';
 import { DEFAULT_PATH } from '@/router/routes';
 import type { ShellCtx } from '@/router/panes/shell-context';
 import { DownloadPanel } from '@screens/engine/DownloadPanel';
+import { pauseEngineDownload } from '@screens/settings/engine-api';
 
 /**
  * 独立下载页（`/engine-download`）的屏装配件。
@@ -40,6 +41,19 @@ export function DownloadPane() {
     }
   };
 
+  /**
+   * 暂停：服务端杀下载子进程、`.part` 留盘 ⇒ 之后「继续下载」接着下。
+   * 失败（例如刚好自己下完了，服务端回 409 `DOWNLOAD_NOT_RUNNING`）如实弹错，不假装成功。
+   */
+  const pause = async () => {
+    try {
+      const r = await pauseEngineDownload();
+      applyDownload(r.download);
+    } catch (e) {
+      push(errorText(e), 'bad');
+    }
+  };
+
   if (!download || downloadEntry === 'hidden') {
     return (
       <div className="notready">
@@ -65,6 +79,7 @@ export function DownloadPane() {
       requiredBytes={status?.runtime?.requiredBytes}
       onContinue={() => void run(false)}
       onRedownload={() => void run(true)}
+      onPause={() => void pause()}
       onBack={back}
       onClose={() => {
         dismissDownload();
