@@ -352,7 +352,7 @@ pub fn run_blocking(opts: Options) -> Result<(), String> {
     // 1) 令牌 + 落盘根 —— F5.8 摘除 Node 之后**没有遗留后端**可继承这两样，本进程自造
     //    （`ensureToken()` / `config.rootDir` 的对应物，同一份 `state/` 与同一份 env 事实源）。
     let token = ensure_token();
-    let root_dir = crate::platform::paths::root_dir().to_string_lossy().into_owned();
+    let root_dir = crate::platform::paths::manga_root_dir().to_string_lossy().into_owned();
     // 契约 §8.2 校验点 1：根目录不撞黑名单；顺带"启动即建目录"。
     // 🔴 取**校验后的规范化结果**作为后续一切路径拼接的基准（Node 的 `config.rootDir` 亦然）：
     //    否则 `MIAO_ROOT=C:/x/y` 这类写法会让"上报的根"与"实际落盘的根"是两个字符串。

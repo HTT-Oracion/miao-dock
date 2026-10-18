@@ -151,7 +151,7 @@ const envFor = (fx, extra = {}) => ({
   MIAO_MODEL_MANIFEST: fx.mp,
   MIAO_MODEL_ROOT: fx.root,
   MIAO_ENGINE_DIR: fx.engineDir,
-  MIAO_STATE_DIR: fx.state,
+  MIAO_MANGA_STATE_DIR: fx.state,
   ...extra,
 });
 

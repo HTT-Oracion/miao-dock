@@ -306,7 +306,10 @@ try {
     const baseState = path.join(work, 'base-state');
     fs.mkdirSync(baseState, { recursive: true });
     const baseAssets = await assetsProbe();
-    const basePaths = await pathsProbe({ MIAO_STATE_DIR: baseState, MIAO_ROOT: path.join(work, 'root') });
+    const basePaths = await pathsProbe({
+      MIAO_MANGA_STATE_DIR: baseState,
+      MIAO_MANGA_ROOT_DIR: path.join(work, 'root'),
+    });
     const basePlan = await crfPlan();
     check(
       'R0 基线（变异前）：P4/P7/P9 三条必须先绿 —— 否则"变异后变红"无法与"基线本来就红"区分',
@@ -358,8 +361,8 @@ try {
     try {
       svc = await startService({
         MIAO_RESOURCE_DIR: installDir,
-        MIAO_STATE_DIR: stateDir,
-        MIAO_ROOT: path.join(work, 'root'),
+        MIAO_MANGA_STATE_DIR: stateDir,
+        MIAO_MANGA_ROOT_DIR: path.join(work, 'root'),
       });
       const h = await fetch(`http://127.0.0.1:${svc.port}/api/v1/health`, { headers: { 'x-box-token': TOKEN } });
       check('P5 装完能起服务：/health 200', h.status === 200, h.status);
@@ -373,7 +376,7 @@ try {
         version: stBody?.engine?.version,
       });
       // 清单路径必须指向**安装目录里那一份**（而不是回退到仓库）
-      const snap = await pathsProbe({ MIAO_STATE_DIR: stateDir, MIAO_ROOT: path.join(work, 'root') });
+      const snap = await pathsProbe({ MIAO_MANGA_STATE_DIR: stateDir, MIAO_MANGA_ROOT_DIR: path.join(work, 'root') });
       check(
         'P7 生效的清单路径落在**安装目录**内（A1：资源目录优先，不是回退仓库）',
         typeof snap?.modelManifest === 'string' && snap.modelManifest.startsWith(installDir),
@@ -382,8 +385,8 @@ try {
       // 台账原话「mode=mock 可见」：启动配方是它的权威出处。
       // ⚠️ `--print-launch-plan` 的 mode 是**位置参数**（不读 env，见 mangasvc.rs）⇒ 显式传 `mock`。
       const { out: planOut } = await runCli(['--print-launch-plan', 'mock'], {
-        MIAO_STATE_DIR: stateDir,
-        MIAO_ROOT: path.join(work, 'root'),
+        MIAO_MANGA_STATE_DIR: stateDir,
+        MIAO_MANGA_ROOT_DIR: path.join(work, 'root'),
       });
       let launch = null;
       try {

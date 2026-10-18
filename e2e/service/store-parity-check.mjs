@@ -31,7 +31,8 @@
  *
  * 用法：node e2e/service/store-parity-check.mjs [--refute]
  * 前置：`cd src-tauri && cargo build --bin mangasvc`
- * 重新生成 golden：`--store-selftest` 的 canon 输出即 golden（Node 版已摘除，勿再回填 Node）
+ * 重新生成 golden：`node e2e/service/store-parity-check.mjs --write-golden`
+ *   （= `--store-selftest` 的 canon 输出；Node 版已摘除，勿再回填 Node）
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -45,6 +46,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
 const GOLDEN = path.join(HERE, 'golden', 'store-selftest.json');
 const REFUTE = process.argv.includes('--refute');
+const WRITE_GOLDEN = process.argv.includes('--write-golden');
 
 // 路径归一化：golden 里凡是本机 home / 仓库根的绝对路径，都归一成占位符，
 // 否则 golden 跨机器（不同用户名 / 不同仓库位置）会假红。
@@ -121,6 +123,14 @@ try {
   golden = JSON.parse(fs.readFileSync(GOLDEN, 'utf8'));
 } catch (e) {
   check('SETUP — 取 Rust 报告 / 读 golden', false, String(e.message || e));
+}
+
+// 🔴 重冻是**有意变更契约**时的动作（默认路径/字段序变了才用），不是"红了就重冻"。
+//    生成物与比对共用同一份 `canon`，故不会出现"生成与比对规则走散"的假绿。
+if (WRITE_GOLDEN && rustReport) {
+  fs.writeFileSync(GOLDEN, JSON.stringify(canon(rustReport), null, 2).replace(/\n/g, '\r\n'));
+  console.log(`✓ golden → ${path.relative(REPO_ROOT, GOLDEN)}（${fs.statSync(GOLDEN).size} 字节）`);
+  process.exit(0);
 }
 
 if (rustReport && golden) {

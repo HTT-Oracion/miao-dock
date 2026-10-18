@@ -82,8 +82,8 @@ function startService(extraEnv) {
     env: {
       ...process.env,
       MIAO_TOKEN: TOKEN,
-      MIAO_ROOT: path.join(tmp, 'root'),
-      MIAO_STATE_DIR: path.join(tmp, 'state'),
+      MIAO_MANGA_ROOT_DIR: path.join(tmp, 'root'),
+      MIAO_MANGA_STATE_DIR: path.join(tmp, 'state'),
       MIAO_ENGINE_PROTOCOL: 'mock',
       ...extraEnv,
     },

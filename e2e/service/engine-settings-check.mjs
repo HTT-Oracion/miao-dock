@@ -248,7 +248,7 @@ function writeFakeManifest(base, { fail = false } = {}) {
  * 🔴 B1 起不能只拷真清单了：模型根默认值从「仓库 runtimes/」搬到了 `<appData>/runtimes`
  *    （打包后仓库根必然算错，A1 已论证），而 appData 那份在验收机上**是空的** ——
  *    只拷清单 ⇒ 执行体真去下 294 MB ⇒ D4/D5 轮询超时，而且**往用户真实环境里写数据**。
- *    验收夹具绝不允许碰用户目录（同 `MIAO_ROOT` / `MIAO_STATE_DIR` 一律指 TMP）。
+ *    验收夹具绝不允许碰用户目录（同 `MIAO_MANGA_ROOT_DIR` / `MIAO_MANGA_STATE_DIR` 一律指 TMP）。
  *
  * 做法：一条 1 字节的条目 + 预先写好且 sha256 正确的文件 ⇒ `ensureModels` 判"存在且哈希对"
  * 就直接复用（不打网络），`--link` 也按 `linkBase` 建链。D 组验的是**状态机**（立即返回 /
@@ -293,8 +293,8 @@ function writeReadyModelRoot(base) {
 function baseEnv(svcPort, stateDir, extra = {}) {
   return {
     MIAO_PORT: String(svcPort),
-    MIAO_ROOT: path.join(TMP, `root-${svcPort}`),
-    MIAO_STATE_DIR: stateDir,
+    MIAO_MANGA_ROOT_DIR: path.join(TMP, `root-${svcPort}`),
+    MIAO_MANGA_STATE_DIR: stateDir,
     MIAO_TOKEN: TOKEN,
     // 本脚本关心的是**设置面**，不是三进程生命周期（那有专门的脚本）。
     // 除 U 组那条"真释放 ③"以外，一律不起 ③，免得几个实例互抢端口。

@@ -2,7 +2,7 @@
 //
 // 运行：node e2e/service/selftest.mjs
 // 原则：每个断言都对应契约里的一条明文规则，断言失败即契约不符合。
-// 全部 I/O 落在临时目录（MIAO_ROOT / MIAO_STATE_DIR），不触碰用户真实图片目录。
+// 全部 I/O 落在临时目录（MIAO_MANGA_ROOT_DIR / MIAO_MANGA_STATE_DIR），不触碰用户真实图片目录。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -264,8 +264,8 @@ async function portSegmentTests() {
   const probe = spawnProc(
     SERVICE_ENTRY,
     {
-      MIAO_ROOT: path.join(TMP, 'root-probe'),
-      MIAO_STATE_DIR: path.join(TMP, 'state-probe'),
+      MIAO_MANGA_ROOT_DIR: path.join(TMP, 'root-probe'),
+      MIAO_MANGA_STATE_DIR: path.join(TMP, 'state-probe'),
       MIAO_TOKEN: TOKEN,
     },
     'service-probe',
@@ -291,8 +291,8 @@ async function portSegmentTests() {
   const full = spawnProc(
     SERVICE_ENTRY,
     {
-      MIAO_ROOT: path.join(TMP, 'root-full'),
-      MIAO_STATE_DIR: path.join(TMP, 'state-full'),
+      MIAO_MANGA_ROOT_DIR: path.join(TMP, 'root-full'),
+      MIAO_MANGA_STATE_DIR: path.join(TMP, 'state-full'),
       MIAO_TOKEN: TOKEN,
     },
     'service-full',
@@ -346,8 +346,8 @@ try {
   service = spawnProc(
     SERVICE_ENTRY,
     {
-      MIAO_ROOT: rootDir,
-      MIAO_STATE_DIR: stateDir,
+      MIAO_MANGA_ROOT_DIR: rootDir,
+      MIAO_MANGA_STATE_DIR: stateDir,
       MIAO_TOKEN: TOKEN,
       MIAO_ENGINE_PORT: String(eng.port),
     },
@@ -1072,12 +1072,12 @@ try {
     );
     if (traversal.status === 201) await waitTask(port, TOKEN, traversal.json.taskId);
 
-    // 根目录黑名单：另起一个进程，MIAO_ROOT=/tmp
+    // 根目录黑名单：另起一个进程，MIAO_MANGA_ROOT_DIR=/tmp
     const bad = spawnProc(
       SERVICE_ENTRY,
       {
-        MIAO_ROOT: '/tmp',
-        MIAO_STATE_DIR: path.join(TMP, 'state-bad'),
+        MIAO_MANGA_ROOT_DIR: '/tmp',
+        MIAO_MANGA_STATE_DIR: path.join(TMP, 'state-bad'),
         MIAO_TOKEN: TOKEN,
       },
       'service-bad-root',
@@ -1532,8 +1532,8 @@ try {
     check('A20 前置：假引擎就绪（/ready 答 200，/translate 永不回应）', fakePort > 0, fakePort);
 
     const g12Env = {
-      MIAO_ROOT: g12Root,
-      MIAO_STATE_DIR: g12State,
+      MIAO_MANGA_ROOT_DIR: g12Root,
+      MIAO_MANGA_STATE_DIR: g12State,
       MIAO_TOKEN: TOKEN,
       MIAO_ENGINE_PORT: String(fakePort),
       MIAO_ENGINE_TIMEOUT_MS: '700',
@@ -1722,8 +1722,8 @@ try {
     const roSvc = spawnProc(
       SERVICE_ENTRY,
       {
-        MIAO_ROOT: roRoot,
-        MIAO_STATE_DIR: path.join(TMP, 'ro-state'),
+        MIAO_MANGA_ROOT_DIR: roRoot,
+        MIAO_MANGA_STATE_DIR: path.join(TMP, 'ro-state'),
         MIAO_TOKEN: TOKEN,
         MIAO_ENGINE_PORT: String(eng.port),
       },
@@ -1780,8 +1780,8 @@ try {
     const injSvc = spawnProc(
       SERVICE_ENTRY,
       {
-        MIAO_ROOT: path.join(TMP, 'inj-root'),
-        MIAO_STATE_DIR: path.join(TMP, 'inj-state'),
+        MIAO_MANGA_ROOT_DIR: path.join(TMP, 'inj-root'),
+        MIAO_MANGA_STATE_DIR: path.join(TMP, 'inj-state'),
         MIAO_TOKEN: TOKEN,
         MIAO_ENGINE_PORT: String(eng.port),
         NODE_OPTIONS: `--import ${pathToFileURL(hook).href}`,
@@ -1816,8 +1816,8 @@ try {
     const down = spawnProc(
       SERVICE_ENTRY,
       {
-        MIAO_ROOT: path.join(TMP, 'root-down'),
-        MIAO_STATE_DIR: path.join(TMP, 'state-down'),
+        MIAO_MANGA_ROOT_DIR: path.join(TMP, 'root-down'),
+        MIAO_MANGA_STATE_DIR: path.join(TMP, 'state-down'),
         MIAO_TOKEN: TOKEN,
         MIAO_SIDECAR_DOWN: '1',
         MIAO_PORT: '5179',
@@ -1846,8 +1846,8 @@ try {
       HARNESS,
       {
         MIAO_PORT: String(WATCH_PORT),
-        MIAO_ROOT: path.join(TMP, 'root-watch'),
-        MIAO_STATE_DIR: path.join(TMP, 'state-watch'),
+        MIAO_MANGA_ROOT_DIR: path.join(TMP, 'root-watch'),
+        MIAO_MANGA_STATE_DIR: path.join(TMP, 'state-watch'),
         MIAO_TOKEN: TOKEN,
         MIAO_HARNESS_LOG: path.join(TMP, 'watch-service.log'),
       },

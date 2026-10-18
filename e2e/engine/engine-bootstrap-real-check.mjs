@@ -106,6 +106,8 @@ const CACHE_SRC =
   process.env.MIAO_BOOTSTRAP_CACHE_SRC ||
   path.join(
     process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local'),
+    'MiaoDock',
+    'manga',
     'runtimes',
     'manga-translator',
     '.download-cache',
@@ -122,7 +124,7 @@ const CACHE_SRC =
  * 🔴 `CACHE_SRC` 只在**只读**侧用；绝不改动用户真实落点里的任何字节。
  */
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-bootstrap-real-'));
-const RUNTIME_ROOT = path.join(WORK, 'runtime'); // = MIAO_RUNTIME_ROOT
+const RUNTIME_ROOT = path.join(WORK, 'runtime'); // = MIAO_MANGA_RUNTIME_ROOT
 const RT = path.join(RUNTIME_ROOT, 'manga-translator'); // = runtimes_dir()
 const MODEL_ROOT = path.join(WORK, 'models');
 const STATE = path.join(WORK, 'state');
@@ -404,9 +406,9 @@ function bootstrap({ stage, reqFile = FIXTURE_REQ, manifest = WHEELS_MANIFEST, s
   args.push('--root', MODEL_ROOT, '--manifest', FIXTURE_MODELS);
   const env = {
     ...process.env,
-    MIAO_RUNTIME_ROOT: RUNTIME_ROOT,
+    MIAO_MANGA_RUNTIME_ROOT: RUNTIME_ROOT,
     MIAO_MODEL_ROOT: MODEL_ROOT,
-    MIAO_STATE_DIR: STATE,
+    MIAO_MANGA_STATE_DIR: STATE,
     MIAO_RUNTIME_MANIFEST: FIXTURE_RUNTIME,
     MIAO_WHEELS_MANIFEST: manifest,
     MIAO_REQUIREMENTS: reqFile,

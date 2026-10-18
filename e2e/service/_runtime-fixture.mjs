@@ -4,8 +4,8 @@
  * =============================================================================
  * 判据的默认落点是 `<appData>/runtimes/manga-translator`（B1）⇒ 验收若用真实落点，
  * 就会去 `stat` 用户机器上的引擎安装，结果随机器而变、且会误判。故各场景都用
- * `MIAO_RUNTIME_ROOT` / `MIAO_ENGINE_DIR` / `MIAO_ENGINE_PYTHON` 把判据指到 TMP，
- * 与 `MIAO_ROOT` / `MIAO_STATE_DIR` 一律指 TMP 是同一条纪律。
+ * `MIAO_MANGA_RUNTIME_ROOT` / `MIAO_ENGINE_DIR` / `MIAO_ENGINE_PYTHON` 把判据指到 TMP，
+ * 与 `MIAO_MANGA_ROOT_DIR` / `MIAO_MANGA_STATE_DIR` 一律指 TMP 是同一条纪律。
  *
  * 谁在用：`runtime-probe-check.mjs`（B2/B5 的逐项翻转）、`launch-gate-check.mjs`（D6 闸门）。
  * 抽成共享模块而不是各写一份：两份夹具漂移时，「A 脚本说就绪、B 脚本说没就绪」
@@ -149,7 +149,7 @@ export function buildRuntime(base, missing = []) {
     src,
     venv,
     env: {
-      MIAO_RUNTIME_ROOT: rt,
+      MIAO_MANGA_RUNTIME_ROOT: rt,
       MIAO_ENGINE_DIR: src,
       MIAO_ENGINE_PYTHON: path.join(
         venv,

@@ -38,7 +38,7 @@ npm run app                         # ③ 起 dev（tauri dev）
 （`AGENTS.md` §3 有清单），对不上就说明基线已经被动过。
 
 > **真引擎不在仓库里**：`npm run app` 默认走 `MIAO_ENGINE_PROTOCOL=real`，要的是
-> `<appData>/runtimes/manga-translator/`（macOS `~/Library/Application Support/`、Windows `%LOCALAPPDATA%\`、
+> `<appData>/MiaoDock/manga/runtimes/manga-translator/`（macOS `~/Library/Application Support/`、Windows `%LOCALAPPDATA%\`、
 > Linux `~/.local/share/`）下的 Python venv + 依赖 + 模型权重 —— **与装到哪个盘无关**（B1）。
 > 装配：`npm run task -- setup:engine && npm run task -- deps:engine && npm run task -- fetch:models && npm run task -- extract:models`
 > （README §二）。不想碰引擎就用 `MIAO_ENGINE_PROTOCOL=mock npm run app` 跑替身快回路。

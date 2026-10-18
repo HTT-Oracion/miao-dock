@@ -366,8 +366,8 @@ async function runAll() {
       {
         MIAO_ENGINE_PORT: String(engineInfo.port),
         MIAO_ENGINE_PROTOCOL: ENGINE_PROTOCOL,
-        MIAO_ROOT: ROOT_DIR,
-        MIAO_STATE_DIR: STATE_DIR,
+        MIAO_MANGA_ROOT_DIR: ROOT_DIR,
+        MIAO_MANGA_STATE_DIR: STATE_DIR,
       },
       'service',
     );

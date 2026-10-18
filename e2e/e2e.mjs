@@ -24,7 +24,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { encodePng } from '../engine/src/png.mjs';
-import { TMP_ENV, describeE2eTmp, e2eRoot, e2eState, e2eTmp } from './_e2e-paths.mjs';
+import { TMP_ENV, describeE2eTmp, e2eData, e2eRoot, e2eRuntime, e2eState, e2eTmp } from './_e2e-paths.mjs';
 // F0：服务靶子解析的唯一事实源。
 // 🔴 本文件原先**自己拼** `service/src/server.mjs` 并用裸 `spawn(process.execPath, [entry])` 起它 ——
 //    那是 harness 之外的第二份入口推导，harness-check 的 H1/H2 只扫 `e2e/service/` 所以没抓到它。
@@ -36,6 +36,8 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const TMP = e2eTmp();
 const ROOT_DIR = e2eRoot();
 const STATE_DIR = e2eState();
+const DATA_DIR = e2eData();
+const RUNTIME_DIR = e2eRuntime();
 const BATCH_LIMIT = 20;
 
 // 🔴 本套用例起的是**模拟引擎**（`engine/src/server.mjs`）——ver1.0 的自定义协议，
@@ -296,6 +298,8 @@ console.log(`临时目录：${describeE2eTmp()}${process.env[TMP_ENV] ? `（来�
 fs.rmSync(TMP, { recursive: true, force: true });
 fs.mkdirSync(ROOT_DIR, { recursive: true });
 fs.mkdirSync(STATE_DIR, { recursive: true });
+fs.mkdirSync(DATA_DIR, { recursive: true });
+fs.mkdirSync(RUNTIME_DIR, { recursive: true });
 
 let engine = null;
 let service = null;
@@ -317,8 +321,10 @@ try {
     SERVICE_ENTRY,
     {
       MIAO_ENGINE_PORT: String(engineInfo.port),
-      MIAO_ROOT: ROOT_DIR,
-      MIAO_STATE_DIR: STATE_DIR,
+      MIAO_ROOT: DATA_DIR,
+      MIAO_MANGA_ROOT_DIR: ROOT_DIR,
+      MIAO_MANGA_STATE_DIR: STATE_DIR,
+      MIAO_MANGA_RUNTIME_ROOT: RUNTIME_DIR,
     },
     'service',
   );

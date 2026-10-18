@@ -265,7 +265,7 @@ impl EngineState {
     /// 从环境变量装配。与 Node `config.mjs` 一样：**取值非法直接失败**（不静默回退）。
     pub fn from_env() -> Result<Self, String> {
         let protocol = super::engine_protocol();
-        let settings_file = paths::state_dir().join("engine-settings.json");
+        let settings_file = paths::manga_state_dir().join("engine-settings.json");
 
         let refutes = Refutes {
             no_whitelist: esettings::env_bool("MIAO_SETTINGS_NO_WHITELIST", false),
@@ -924,7 +924,7 @@ fn spawn_download_round(
     cmd.arg("--root").arg(model_root);
     cmd.arg("--manifest").arg(model_manifest);
     // G5：结构化进度（百分比/速度/剩余/阶段）走这里，不靠解析 stdout 文本（违反"不编造进度"纪律）。
-    let progress_log = paths::state_dir().join("engine-download-progress.jsonl");
+    let progress_log = paths::manga_state_dir().join("engine-download-progress.jsonl");
     cmd.arg("--progress-log").arg(&progress_log);
     cmd.env("MIAO_MODEL_ROOT", model_root);
     cmd.stdin(std::process::Stdio::null())
@@ -1155,7 +1155,7 @@ impl ModelDownload {
     ///    `isDownloadActive` 为假 ⇒ 下载视图被卸载、用户被弹回引导页。
     ///    `rename` 在同目录同卷上是原子的，读者要么看到旧文件要么看到新文件，看不到中间态。
     fn persist(&self) {
-        let p = paths::state_dir().join("engine-download.json");
+        let p = paths::manga_state_dir().join("engine-download.json");
         let Ok(s) = serde_json::to_string(self) else {
             return;
         };
@@ -1177,7 +1177,7 @@ impl ModelDownload {
     ///    原样读回会让 `start_model_download` 的 409 单飞守卫把「继续下载」也挡掉。
     ///    这里只把 `running` 校正为 `interrupted`，`done / interrupted / idle` 一律不动。
     fn load_persisted() -> ModelDownload {
-        let p = paths::state_dir().join("engine-download.json");
+        let p = paths::manga_state_dir().join("engine-download.json");
         let d = match std::fs::read_to_string(&p) {
             Ok(s) => serde_json::from_str(&s).unwrap_or_else(|_| ModelDownload::default()),
             Err(_) => ModelDownload::default(),

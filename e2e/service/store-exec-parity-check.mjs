@@ -86,8 +86,8 @@ async function dumpRust(dirs) {
   }
   const raw = await run(RUST_BIN, ['--store-exec-selftest'], {
     ...process.env,
-    MIAO_ROOT: dirs.root,
-    MIAO_STATE_DIR: dirs.state,
+    MIAO_MANGA_ROOT_DIR: dirs.root,
+    MIAO_MANGA_STATE_DIR: dirs.state,
     MIAO_TOKEN: TOKEN,
     MIAO_ENGINE_PROTOCOL: 'mock',
   });

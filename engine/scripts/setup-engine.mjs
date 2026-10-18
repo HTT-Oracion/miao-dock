@@ -19,8 +19,8 @@
  *   node engine/scripts/setup-engine.mjs --check    # 只报告现状，不下载
  *
  * 环境变量：
- *   MIAO_MODEL_ROOT   模型根目录（默认 <appData>/runtimes/manga-translator）
- *   MIAO_RUNTIME_ROOT 覆盖运行时根本身（默认 <appData>/runtimes）
+ *   MIAO_MODEL_ROOT   模型根目录（默认 <appData>/MiaoDock/manga/runtimes/manga-translator）
+ *   MIAO_MANGA_RUNTIME_ROOT 覆盖运行时根本身（默认 <appData>/MiaoDock/manga/runtimes）
  *   MIAO_PY_URL / MIAO_SRC_URL  覆盖下载地址（换镜像用）
  *
  * ⚠️ 幂等：目标目录已存在且非空则跳过；`--force` 才重下。

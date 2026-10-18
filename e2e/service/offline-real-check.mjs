@@ -62,9 +62,11 @@ const sleep = (ms) =>
 /** 产品默认落点（`<appData>/runtimes/manga-translator`）—— 不覆盖任何 `MIAO_*`，测的就是**默认路径**。 */
 const RT =
   process.platform === 'darwin'
-    ? path.join(os.homedir(), 'Library', 'Application Support', 'runtimes', 'manga-translator')
+    ? path.join(os.homedir(), 'Library', 'Application Support', 'MiaoDock', 'manga', 'runtimes', 'manga-translator')
     : path.join(
         process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
+        'MiaoDock',
+        'manga',
         'runtimes',
         'manga-translator',
       );
@@ -305,8 +307,8 @@ const ENV_COMMON = {
   MIAO_LLM_PORT: String(LLM_PORT),
   MIAO_ENGINE_TIMEOUT_MS: '180000',
   MIAO_TOKEN: TOKEN,
-  MIAO_ROOT: OUT_ROOT,
-  MIAO_STATE_DIR: STATE_DIR,
+  MIAO_MANGA_ROOT_DIR: OUT_ROOT,
+  MIAO_MANGA_STATE_DIR: STATE_DIR,
   PYTHONIOENCODING: 'utf-8',
 };
 log(`端口：服务 ${SERVICE_PORT} · 引擎 ${ENGINE_PORT} · ③ ${LLM_PORT}`);

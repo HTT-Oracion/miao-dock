@@ -676,7 +676,7 @@ pub fn must_chapter_dir(root: &Path, book_raw: &str, no_raw: &str) -> LibResult<
 
 /// 归并归档目录（`state/merge-archive/`），按需创建。
 pub fn merge_archive_dir() -> PathBuf {
-    let dir = paths::state_dir().join(MERGE_ARCHIVE_DIR);
+    let dir = paths::manga_state_dir().join(MERGE_ARCHIVE_DIR);
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

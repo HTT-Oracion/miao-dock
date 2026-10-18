@@ -300,14 +300,14 @@ async function run() {
     const eng = await waitReady(engine);
 
     // 服务进程的环境变量抽出来，因为 E6.7 要**用同一份配置重启**服务：
-    // `MIAO_ROOT` / `MIAO_STATE_DIR` 必须与第一次完全一致，否则"上一轮的终态任务"
+    // `MIAO_MANGA_ROOT_DIR` / `MIAO_MANGA_STATE_DIR` 必须与第一次完全一致，否则"上一轮的终态任务"
     // 根本不在盘上，那组断言就变成了空转（绿得毫无意义）。
     const svcEnv = {
       MIAO_ENGINE_PROTOCOL: 'mock',
       MIAO_ENGINE_PORT: String(eng.port),
       MIAO_LLM_PORT: String(llmPort),
-      MIAO_ROOT: rootDir,
-      MIAO_STATE_DIR: path.join(TMP, 'state'),
+      MIAO_MANGA_ROOT_DIR: rootDir,
+      MIAO_MANGA_STATE_DIR: path.join(TMP, 'state'),
       MIAO_TOKEN: TOKEN,
       MIAO_ENGINE_TIER: 'small', // 用户配置档位 = small（本机硬件推荐是 tiny，故"降档"有空间可降）
       MIAO_IDLE_LLM_MS: String(IDLE_MS),
@@ -454,7 +454,7 @@ async function run() {
     //    最大时刻直接当成"本次运行的活动" ⇒ 重启后第一次判定就是
     //    「距上次活动 N 小时 ≥ 阈值 ⇒ 卸载 ③」——③ 刚被拉起就被卸掉。
     //    用户看到的是"重启 Box 之后翻译一直起不来"；而在**全新状态目录**下跑（本脚本原先那样）
-    //    永远不复现。所以这里**故意复用同一个 `MIAO_STATE_DIR`** 重启服务，把它变成可反证的断言。
+    //    永远不复现。所以这里**故意复用同一个 `MIAO_MANGA_STATE_DIR`** 重启服务，把它变成可反证的断言。
     //    反证开关 `MIAO_IDLE_SCOPE=all` 恢复旧口径 ⇒ E6.7 必须变红。
     killProc(service);
     await waitChildGone(service);

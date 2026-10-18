@@ -51,9 +51,9 @@ const APP_DATA =
     : process.platform === 'win32'
       ? process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')
       : path.join(os.homedir(), '.local', 'share');
-const RUNTIMES = path.join(APP_DATA, 'runtimes', 'manga-translator');
-/** 作品目录（`paths::default_root_dir`）—— 「绝不触碰」的那一个。 */
-const PICTURES = path.join(os.homedir(), 'Pictures', 'Box 漫画');
+const RUNTIMES = path.join(APP_DATA, 'MiaoDock', 'manga', 'runtimes', 'manga-translator');
+/** 作品目录（`paths::default_manga_root_dir`）—— 「绝不触碰」的那一个。 */
+const PICTURES = path.join(os.homedir(), 'Pictures', 'MiaoDock Mangas');
 
 let passed = 0;
 let failed = 0;

@@ -49,7 +49,7 @@ miao-dock/
 ├── installer/    **单文件安装器**（独立工程：前端 + Tauri 宿主，不并进主构建）：`index.html` 入口 · `src/` 安装引导三步（安装范围与目录 / 长路径 / 完成；两套默认目录、载荷体积、可用空间、长路径开关、日志路径**全部由宿主实时探测**）· `src-tauri/` 宿主 = 安装引擎（解包内嵌载荷 + 写卸载项 + 建入口 + 自检提权）+ `payload.rs` / `manifest.rs` / `registry.rs` / `shortcuts.rs` / `elevate.rs` · `package.json`（`npm run dev` = 1444 端口预览）· `public/assets/` 品牌图
 ├── uninstaller/  **卸载器**（同上，独立工程，随安装落进安装目录）：`index.html` 入口 · `src/` 卸载页三态（告别确认 / 卸载进行中 / 完成；三类数据的目录、体积、存在性**全部由宿主实时探测**）· `src-tauri/` 宿主（实时探测 / 清入口与注册表项 / 安全删数据 / 安排自删）+ `registry.rs` / `shortcuts.rs` / `selfdelete.rs` · `package.json`（`npm run dev` = 1555 端口预览）· `public/assets/` 品牌图
 ├── scripts/      仓库级脚本：`gen-licenses.mjs`（许可清单生成）· `mac-signing-preflight.mjs`（macOS 打包前自检）· `build-install-ui.mjs`（两个程序的前端构建）· `pack-install-payload.mjs`（打安装器载荷）· `package-install-ui.mjs`（组装单文件安装器）
-├── engine/       翻译引擎的**接缝层**（真引擎装在 `<appData>/runtimes/manga-translator/`，不在库）
+├── engine/       翻译引擎的**接缝层**（真引擎装在 `<appData>/MiaoDock/manga/runtimes/manga-translator/`，不在库）
 │   ├── VERSIONS.lock         引擎 / 权重 / 外部二进制的**版本锁**（换版本照它来）
 │   ├── models.manifest.json  模型清单：来源 URL + sha256 + 字节数（权威副本在 `…/models-store/`）
 │   ├── model-store.mjs       下载内核（**Node 对照端**，A3d；产品主路径是 Rust `mangasvc::engine::model_store`）
@@ -63,7 +63,7 @@ miao-dock/
 │   └── internal/ **内部工作文档**（不对外）：`spec-notes.md`（**台账：裁定与偏离留痕**，D-01~D-136，**已封卷**）· `spec-notes-1.md`（**台账续篇，D-137 起新条目写这里**）· `dev-plan.md`（方案与判据）· 各轮计划与验收报告
 ├── test-manga/   本机验收素材：真实漫画（**不入库**）
 ├── test-music/   本机验收素材：音乐（**不入库**）
-├── runtimes/     **开发机遗留的引擎资产目录**（**不入库**）：B1 起产品的默认落点已搬到 `<appData>/runtimes/manga-translator/`；这里只在用 `MIAO_RUNTIME_ROOT=<repo>/runtimes` 显式覆盖时才被读到
+├── runtimes/     **开发机遗留的引擎资产目录**（**不入库**）：B1 起产品的默认落点已搬到 `<appData>/MiaoDock/manga/runtimes/manga-translator/`；这里只在用 `MIAO_MANGA_RUNTIME_ROOT=<repo>/runtimes` 显式覆盖时才被读到
 ├── .tmp/         **全仓唯一的临时落盘目录**（**不入库**）：`e2e/` · `selftest/` · `models/` · `engine-test/`
 ├── release/      **交付物落点**（**不入库**）：`npm run app:build` 产出的 `MiaoDock_<版本>_<架构>-setup.exe`（单文件安装器，约 145 MB；版本取自 `tauri.conf.json`，如 `MiaoDock_2.2.1_x64-setup.exe`）—— 与 `.tmp/` 分家，因为它是要交给人的成品，不是跑完就删的中间件
 ├── snapshots/    对外展示截图（与 `docs/refs/` 的**取证图**分家，两者不互为副本）
@@ -113,7 +113,7 @@ miao-dock/
 ## 快速开始（装环境 → 装配引擎 → 启动）
 
 > **产品默认走真引擎**（`MIAO_ENGINE_PROTOCOL=real`）：`npm run app` 起的链路需要**引擎运行时**（按平台、**不入库**，见 `engine/VERSIONS.lock`）。
-> 落点固定在**平台应用数据目录**下的 `runtimes/manga-translator/`（macOS `~/Library/Application Support/`、Windows `%LOCALAPPDATA%\`、Linux `~/.local/share/`）—— 与**装到哪个盘**无关，打包后才能找到（B1）。
+> 落点固定在**平台应用数据目录**下的 `MiaoDock/manga/runtimes/manga-translator/`（macOS `~/Library/Application Support/`、Windows `%LOCALAPPDATA%\`、Linux `~/.local/share/`）—— 与**装到哪个盘**无关，打包后才能找到（B1）。
 > 只想跑前端 / 服务、不碰引擎：用下面 §开发 里的 `MIAO_ENGINE_PROTOCOL=mock` 快回路。
 
 ### 依赖总览
@@ -123,7 +123,7 @@ miao-dock/
 | 跑服务 / 脚本 | **Node ≥ 20**（见 `package.json` 的 `engines`） | 服务、引擎脚本、全部验收脚本都是纯 Node |
 | 构建桌面端 | **Rust 工具链**（rustup / cargo）+ 平台 C 工具链 | Tauri v2 需要 cargo + 系统链接器 |
 | 运行桌面端 | macOS 自带 WebKit · Windows **WebView2** | Win11 自带；Win10 常见随 Edge 已装，缺则装 Evergreen Runtime |
-| **真翻译引擎** | ① Python 3.11 运行时 ② venv + 依赖 ③ 模型权重 ④ llama.cpp 二进制 | 全落在 `<appData>/runtimes/manga-translator/`（**不入库**），由本节脚本装配 |
+| **真翻译引擎** | ① Python 3.11 运行时 ② venv + 依赖 ③ 模型权重 ④ llama.cpp 二进制 | 全落在 `<appData>/MiaoDock/manga/runtimes/manga-translator/`（**不入库**），由本节脚本装配 |
 
 ### 一、装核心依赖
 
@@ -152,17 +152,17 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # 装完确保 
 > macOS：把 `export PATH="$HOME/.cargo/bin:$PATH"` 加进 `~/.zshrc` 再 `source`；
 > Windows：重开终端，或在「系统属性 → 环境变量」里把 `%USERPROFILE%\.cargo\bin` 补进 `Path`。
 
-### 二、装配翻译引擎（`<appData>/runtimes/manga-translator/`，四条命令按序、幂等）
+### 二、装配翻译引擎（`<appData>/MiaoDock/manga/runtimes/manga-translator/`，四条命令按序、幂等）
 
 ```bash
-npm run task -- setup:engine     # ① Python 3.11 运行时 + venv（+ 引擎源码）→ <appData>/runtimes/manga-translator/
+npm run task -- setup:engine     # ① Python 3.11 运行时 + venv（+ 引擎源码）→ <appData>/MiaoDock/manga/runtimes/manga-translator/
 npm run task -- deps:engine      # ② 往 venv 里装引擎依赖（平台差异见下）
 npm run task -- fetch:models     # ③ 下模型权重 + llama.cpp 运行时归档
 npm run task -- extract:models   # ④ 解包归档 → bin/llama/llama-b11417/llama-server[.exe]
 ```
 
-> **落点**：默认 `<appData>/runtimes/manga-translator/`（B1 起与产品同源，装配与读取不可能再分叉）。
-> 要挪地方用 `MIAO_RUNTIME_ROOT`（改运行时根本身）或 `MIAO_MODEL_ROOT`（只改模型根，语义 = `…/manga-translator`）。
+> **落点**：默认 `<appData>/MiaoDock/manga/runtimes/manga-translator/`（B1 起与产品同源，装配与读取不可能再分叉）。
+> 要挪地方用 `MIAO_MANGA_RUNTIME_ROOT`（改运行时根本身）或 `MIAO_MODEL_ROOT`（只改模型根，语义 = `…/manga-translator`）。
 > 换机重装 = 重跑本节四条命令 —— 这套资产**不入库**，也不随安装包分发。
 >
 > 📖 **分平台逐步引导**（落点写成第一步、体积按清单可复算、装完怎么自检、平台专属坑）：
@@ -175,13 +175,13 @@ npm run task -- extract:models   # ④ 解包归档 → bin/llama/llama-b11417/l
   换机排障：`node engine/scripts/install-engine-deps.mjs --print-env` 会打印探测到的 MSVC / SDK 路径。
 - **macOS**：该脚本是 Windows 专用，手动装：
   ```bash
-  RT="$HOME/Library/Application Support/runtimes/manga-translator"
+  RT="$HOME/Library/Application Support/MiaoDock/manga/runtimes/manga-translator"
   "$RT/venv/bin/pip" install -r "$RT/src/requirements.txt"
   ```
   ⚠️ `pydensecrf`（requirements 里那行 GitHub 直链）是**移动靶**：上游已把模块级常量迁进了枚举，而引擎源码仍用旧写法 ⇒ 会在**掩码细化**一步报 `AttributeError: ... has no attribute 'DIAG_KERNEL'`（检测 / OCR / 翻译都已跑完才炸，易误判成"翻译坏了"）。命中时按 `engine/scripts/install-engine-deps.mjs` 的 `patchPydensecrfCompat()` 同一原理，把枚举成员回填成模块级同名常量（Windows 脚本自动做，macOS 需手动）。
 
 > **版本与落点以 `engine/VERSIONS.lock` 为准**：§3 = macOS，§6 = Windows（含真机实测与三个必踩坑）。
-> `<appData>/runtimes/` 按平台且**不入库** —— 换机重装 = 重跑本节四条命令。
+> `<appData>/MiaoDock/manga/runtimes/` 按平台且**不入库** —— 换机重装 = 重跑本节四条命令。
 
 ### 三、启动
 
@@ -204,8 +204,8 @@ node engine/src/server.mjs
 #   服务 + 引擎 + LLM。默认 real ⇒ python main.py(8000) + 执行器(8001) + llama-server(8080)。
 ```
 
-> 环境变量 `MIAO_ROOT` 可覆盖落盘根目录（验收用临时目录），默认 `~/Pictures/Box 漫画`。
-> 运行期状态在平台应用数据目录下的 `Box/state/`（`MIAO_STATE_DIR` 可覆盖）：
+> 环境变量 `MIAO_MANGA_ROOT_DIR` 可覆盖落盘根目录（验收用临时目录），默认 `~/Pictures/MiaoDock Mangas`。
+> 运行期状态在平台应用数据目录下的 `MiaoDock/manga/state/`（`MIAO_MANGA_STATE_DIR` 可覆盖）：
 > `tasks/` 任务清单、`pending/` **上传字节暂存区**、`token`、`idempotency.json`。
 > 暂存区是「服务崩溃后未落盘的原图还能救回」的依据（见 `docs/internal/spec-notes.md` G-12）——
 > 它在漫画目录**之外**，所以取消任务不会在漫画目录留下残缺文件。
@@ -348,7 +348,7 @@ npm run task -- selftest:app:e11:real    # E11 三进程树回收 + E1 生效参
 - **G-18 遗留**：Windows 无 macOS `Transparent` 标题栏等价物（本机走 `backgroundColor`），**未装机验证**。
 - **引擎 `pydensecrf` 的 GitHub 直链未钉到具体 commit**（移动靶，见上「快速开始」②）。
 
-> 🔴 **引擎栈模式默认 `real`**：`npm run app` 起的**已经是真引擎**（`python main.py` + `llama-server`，需要 `<appData>/runtimes/manga-translator/`，见 `engine/VERSIONS.lock`）。模拟引擎只在测试里被显式注入（`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs` / `check:e5e6` / `check:contract`）。**本机没拉引擎（运行时目录不在）时产品链路起不起来** —— 缺哪一项由 `GET /api/v1/engine/runtime` 逐项报出（B2）。
+> 🔴 **引擎栈模式默认 `real`**：`npm run app` 起的**已经是真引擎**（`python main.py` + `llama-server`，需要 `<appData>/MiaoDock/manga/runtimes/manga-translator/`，见 `engine/VERSIONS.lock`）。模拟引擎只在测试里被显式注入（`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs` / `check:e5e6` / `check:contract`）。**本机没拉引擎（运行时目录不在）时产品链路起不起来** —— 缺哪一项由 `GET /api/v1/engine/runtime` 逐项报出（B2）。
 
 ## 许可
 

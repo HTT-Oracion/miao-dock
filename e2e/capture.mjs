@@ -30,7 +30,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { ensureDevServer } from './_devserver.mjs';
-import { describeE2eTmp, e2eRoot, e2eState } from './_e2e-paths.mjs';
+import { describeE2eTmp, e2eData, e2eRoot, e2eRuntime, e2eState } from './_e2e-paths.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const BIN = path.join(ROOT, 'src-tauri', 'target', 'debug', 'miao-dock');
@@ -125,8 +125,10 @@ const child = spawn(BIN, [], {
     // 会去起 Python + 几 GB 权重（分钟级），截图任务会因此超时/失败。
     MIAO_ENGINE_PROTOCOL: 'mock',
     MIAO_CAPTURE_DIR: STAGE,
-    MIAO_ROOT: rootDir,
-    MIAO_STATE_DIR: stateDir,
+    MIAO_ROOT: e2eData(),
+    MIAO_MANGA_ROOT_DIR: rootDir,
+    MIAO_MANGA_STATE_DIR: stateDir,
+    MIAO_MANGA_RUNTIME_ROOT: e2eRuntime(),
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });

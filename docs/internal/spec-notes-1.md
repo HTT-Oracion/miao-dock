@@ -1505,7 +1505,7 @@ Windows 上**没有一条**会前缀命中 ⇒ 用户可以把落盘根指到 `C
 **两条匹配语义不能合并（合并会误伤合法路径）**
 - **EXACT = 只拒"目录本身"**。这些是**容器目录**，其下仍可能是合法落盘位置：
   `/Users` 之下是各用户目录、macOS 的 `/private/var` 之下是 TMPDIR。按前缀拒会把合法的
-  `C:\Users\<me>\Pictures\Box 漫画` 一并挡掉。
+  `C:\Users\<me>\Pictures\MiaoDock Mangas` 一并挡掉。
 - **PREFIX = 连子路径一并拒**。这些才是真正的系统目录（`/tmp`、`C:\Windows`…）。
 
 **三个容易踩的实现细节**
@@ -2058,9 +2058,9 @@ B2 让「缺什么」可读且读得具体；B3 堵住本方向最大风险（R1
 
 `paths.rs` 新增 `app_data_dir()` 平台分叉单一事实源（macOS `Library/Application Support` /
 Windows `LOCALAPPDATA`，取不到再退回 `~/AppData/Local` / 其余 `~/.local/share`），
-`default_runtime_root()` = `<appData>/runtimes`，`runtimes_dir()` = `<appData>/runtimes/manga-translator`；
+`default_runtime_root()` = `<appData>/MiaoDock/manga/runtimes`，`runtimes_dir()` = `<appData>/MiaoDock/manga/runtimes/manga-translator`；
 `engine_dir()` / `engine_python()` 的默认值从 `repo_root()/runtimes` 改为 `runtimes_dir()/…`
-（`MIAO_ENGINE_DIR` / `MIAO_ENGINE_PYTHON` / `MIAO_RUNTIME_ROOT` 覆盖语义不变）。
+（`MIAO_ENGINE_DIR` / `MIAO_ENGINE_PYTHON` / `MIAO_MANGA_RUNTIME_ROOT` 覆盖语义不变）。
 Node 对照端 `config.mjs` 同构同步，并新增导出 `RUNTIME_ROOT`、`MODEL_MANIFEST`。
 
 🔴 **13 键对拍不是「11 键加两个键」就完事**：`snapshot()` 每加一键，
@@ -2088,7 +2088,7 @@ F5 + A3d 之后 **node 不再是产品依赖**（`Command::new("node")` 已清�
 
 B1 只改了产品侧默认值，而**装配脚本**仍各自写死 `path.join(REPO, 'runtimes', 'manga-translator')`：
 `setup-engine.mjs` / `install-engine-deps.mjs` / `fetch-models.mjs` 三处。
-于是 `npm run task -- setup:engine` 装进仓库 `runtimes/`、产品却只认 `<appData>/runtimes/` ——
+于是 `npm run task -- setup:engine` 装进仓库 `runtimes/`、产品却只认 `<appData>/MiaoDock/manga/runtimes/` ——
 **两边都不报错**，症状是"明明装过了却说起不来"。`config.mjs` 的 `engineModelDir` 注释
 本来就要求「fetch-models 的 ROOT 必须与服务同源」，B1 之后这条已经漂移。
 
@@ -2150,8 +2150,8 @@ config.mjs **import 即有副作用**（模块顶层 `fs.mkdirSync(STATE_DIR)`�
 内部不 merge `process.env`，否则「delete 掉某个 `MIAO_*` 再起进程」会被悄悄加回去）。
 
 🔴 **L4 仍红，但那是真断言**：`cwd === engineServerDir && existsSync(cwd/main.py)` 因引擎没装在
-`<appData>/runtimes/manga-translator/` 而红 —— 这正是 B1 要的「缺什么说得清」。
-把 `MIAO_RUNTIME_ROOT` 指到本机现有的仓库安装后 **50/50**、反证 **12/12 全红**，
+`<appData>/MiaoDock/manga/runtimes/manga-translator/` 而红 —— 这正是 B1 要的「缺什么说得清」。
+把 `MIAO_MANGA_RUNTIME_ROOT` 指到本机现有的仓库安装后 **50/50**、反证 **12/12 全红**，
 证明断言本身没问题，缺的只是装配（而装配脚本本轮已修，见上节）。
 
 **验收**：`check:packaged`（新，nightly）正向 **9/9** + 反证 **2/2 按预期红**（P4/P7）；
@@ -2159,7 +2159,7 @@ config.mjs **import 即有副作用**（模块顶层 `fs.mkdirSync(STATE_DIR)`�
 `check:path-single-source`（新）正向 **5/5** + 反证 **1/1 全红** + restore ✓；
 `check:paths` 正向 **5/5**（13 键 + appData 落点 + 装配脚本同源）+ 反证 **5/5 全红**（M5 新增）；
 `engine-client 那组钉子` 正向 **50/50** + 反证 **12/12 全红**（修掉 5 处 `spawnSync` 的 EBUSY 崩溃；
-⚠️ 需 `MIAO_RUNTIME_ROOT` 指向本机已有的引擎安装，否则 L4 因「引擎不在 appData 落点」如实变红）；
+⚠️ 需 `MIAO_MANGA_RUNTIME_ROOT` 指向本机已有的引擎安装，否则 L4 因「引擎不在 appData 落点」如实变红）；
 `cargo test --lib` **127 passed**（124 → 127）；`cargo build --bin miao-dock` **首次通过**；
 `check:registry` 4/4（98 项）· `check:routes` 9/9 + 反证 9/9 · `check:engine-parity` 24/24 ·
 `check:store` 24/24 · `check:harness` 7/7 · `check:engine-settings` 55/6（存量）。
@@ -2215,10 +2215,10 @@ Rust 镜像若指错文件（`rel` 与 SSOT 不一致），S0 当场报「缺补
 
 ### 环境对齐：junction（开发机 ↔ 产品语义）
 
-B1 后产品只认 `<appData>/runtimes/manga-translator`，而本机 15 GB 引擎在仓库 `runtimes/` ⇒
+B1 后产品只认 `<appData>/MiaoDock/manga/runtimes/manga-translator`，而本机 15 GB 引擎在仓库 `runtimes/` ⇒
 `check:engine-patches` 的 A4/A5（看产品落点）环境性红。用 **junction**（零拷贝、可逆）
-把 `<appData>/runtimes/manga-translator` 指到仓库安装，A4/A5 转绿；
-同时 `engine-client 那组钉子` 的 L4 也不再需要 `MIAO_RUNTIME_ROOT` 覆盖。
+把 `<appData>/MiaoDock/manga/runtimes/manga-translator` 指到仓库安装，A4/A5 转绿；
+同时 `engine-client 那组钉子` 的 L4 也不再需要 `MIAO_MANGA_RUNTIME_ROOT` 覆盖。
 🔴 **不给 `runtimes_dir()` 加「仓库回退」**：那正是 B3 要消灭的「检测说没装、启动却起了」，
 且会让产品行为随 debug/release 分叉（A1 的 dev 回退只适用于**仓库自带资产**，不适用于用户数据）。
 移除方式：`rmdir` 掉那个 junction（数据在仓库里，不受影响）。
@@ -2261,7 +2261,7 @@ B1 后产品只认 `<appData>/runtimes/manga-translator`，而本机 15 GB 引�
 
 ### 🔴🔴 顺带揪出的真 bug：判据用错了 lstat/stat，链接全被判成「没装」
 
-为了让开发机与产品语义一致（B1 后产品只认 `<appData>/runtimes`），把 15 GB 引擎用
+为了让开发机与产品语义一致（B1 后产品只认 `<appData>/MiaoDock/manga/runtimes`），把 15 GB 引擎用
 **junction** 接到了产品落点上 —— 结果 `venvRoot` 报「运行时根不存在」，而它明明在。
 
 根因：`runtime_probe.rs` 的 `is_dir`/`is_file` 用的是 `symlink_metadata`（**lstat**），
@@ -2288,7 +2288,7 @@ B1 后产品只认 `<appData>/runtimes/manga-translator`，而本机 15 GB 引�
 `check:runtime-probe` 正向 **44/44**（38 → 44，新增 S6）+ 反证 **4/4 全红**（M1–M4）；
 `cargo test --lib` **135 passed**（131 → 135，+闸门三条 + 链接语义一条）；
 `check:path-single-source` 5/5 + 反证 1/1 · `engine-client 那组钉子` **50/50**（L4 不再需要
-`MIAO_RUNTIME_ROOT` 覆盖 —— 链接跟随修好后 junction 落点即产品落点）·
+`MIAO_MANGA_RUNTIME_ROOT` 覆盖 —— 链接跟随修好后 junction 落点即产品落点）·
 `check:registry` 4/4（100 项）· `check:harness` 7/7 · `check:docs` 17/17 · `check:docpaths` 5/5。
 
 ---
@@ -2627,7 +2627,7 @@ Sakura CC BY-NC-SA 4.0、nllb CC-BY-NC-4.0 —— 而它们恰是**唯一**会�
 
 **🔴 台账落点已过期（本条最贵的一课）**：E1 写于 F5 / B1 `之前` —— 那时打算把引擎运行时
 （Python / `llama-server`）放进 `Contents/` 逐个签名。现在它们由用户自己装到
-`~/Library/Application Support/runtimes/manga-translator/`，**包内几乎没有可执行对象了**
+`~/Library/Application Support/MiaoDock/manga/runtimes/manga-translator/`，**包内几乎没有可执行对象了**
 （只剩 app 自己）。所以"对 `Contents/` 内所有可执行逐个签名"**没有对象**；
 而多出来一条**更难的**：带 hardened runtime 的父进程能否拉起**用户自己装的、未签名的**
 python / `llama-server`？—— 这条**只能真机回答**，本仓按 `unverified` 记账（不假装验过）。
@@ -2672,7 +2672,7 @@ python / `llama-server`？—— 这条**只能真机回答**，本仓按 `unver
 与长路径为什么必须开；卸载那一段改成与实现一致（会问一句、默认保留）。
 
 **判据纪律（又一次假阳性）**：「绝不触碰作品目录」必须**剥掉 NSIS 注释**再判 ——
-那个文件的尾注正写着"明确不碰 `Pictures\Box 漫画`"，判裸词会**恒红**；
+那个文件的尾注正写着"明确不碰 `Pictures\MiaoDock Mangas`"，判裸词会**恒红**；
 而反过来，把检查**注释掉**也能让断言照绿。⇒ 判据只看代码。
 
 **验收**：`check:bundle` 的 **W8–W11** 四条 + 反证 **5 条**（摘接线 / 指向不存在的文件 /
@@ -2933,8 +2933,8 @@ D-195 的 `IfSilent` 守卫在真产物上生效）。
 - **P2「静默卸载不挂住」**：NSIS 的 `MessageBox` 在 `/S` 下照样弹并阻塞，钩子必须 `IfSilent` 跳过
   —— 挂住的形态是**超时**而不是变红，所以脚本自己带 120s 超时并把它写成一条断言；
 - **P3 卸载真生效**（安装目录被清掉）—— 不然"没删东西"可能只是"压根没卸载"；
-- **P4 `<appData>/runtimes/manga-translator` 原封不动**（硬要求①）；
-- **P5 作品目录 `~/Pictures/Box 漫画` 原封不动**（硬要求②）。
+- **P4 `<appData>/MiaoDock/manga/runtimes/manga-translator` 原封不动**（硬要求①）；
+- **P5 作品目录 `~/Pictures/MiaoDock Mangas` 原封不动**（硬要求②）。
 
 ⚠️ 两条判据的**空转风险**如实处理：`P5` 在作品目录不存在时会"对比两个 false"而通过
 （detail 里把 before/after 都带出来，看得见）；`P0` 则对"本机没有引擎运行时"**直接失败并点名**
@@ -3007,8 +3007,8 @@ D-195 的 `IfSilent` 守卫在真产物上生效）。
 
 **三处踩到的坑（都已修）**
 - 🔴 `engine-http` 首版把投影分支写在 `r.kind === 'probe'` 上，而 Rust 的 results **没有 `kind` 字段** ⇒ probe 例全被塞进 `projTranslate`（两边全 null ⇒ **恒真假绿**，18/18 是假的）。改用 `CASES` 的 `kind` 后才真的在比 probe 九字段。
-- 🔴 `paths` 的 `remainingTaskIds` 同类问题在 D-199 已记（漏归一化）；本轮 `paths` 的 `PATH.appData` / `PATH.tooling` 是**独立预言**，必须用**未归一化**的原始快照 —— 归一化后再比 `<appData>/runtimes` 会恒真。
-- 🔴 反证轮里 M1–M3 原本是「篡改 Node 侧」的内存变异，Node 没了以后**必须换成篡改 golden**，否则变异对象不存在、断言恒真。三块都补了「真实分叉」变异（paths 的 M6 = Rust 只覆盖 `MIAO_ROOT`；llm/engine-http 保留 Rust env 变异钩子）。
+- 🔴 `paths` 的 `remainingTaskIds` 同类问题在 D-199 已记（漏归一化）；本轮 `paths` 的 `PATH.appData` / `PATH.tooling` 是**独立预言**，必须用**未归一化**的原始快照 —— 归一化后再比 `<appData>/MiaoDock/manga/runtimes` 会恒真。
+- 🔴 反证轮里 M1–M3 原本是「篡改 Node 侧」的内存变异，Node 没了以后**必须换成篡改 golden**，否则变异对象不存在、断言恒真。三块都补了「真实分叉」变异（paths 的 M6 = Rust 只覆盖 `MIAO_MANGA_ROOT_DIR`；llm/engine-http 保留 Rust env 变异钩子）。
 
 **登记**：`e2e/service/golden/{paths,llm-selftest,engine-http-selftest}.json` 三个新 golden；`_gen-golden.mjs` 增 `paths` / `llm-supervisor` / `engine-http` 三个分支（现支持 5 个目标）；新增三个共用模块 `_paths-report.mjs` / `_llm-report.mjs` / `_engine-http-report.mjs`；注册表三条 watch 由 `service/src/*` 改指 golden/生成器/共用模块。`_llm-report.mjs` 与 `_engine-http-report.mjs` **保留** `mock-llm.mjs` / 伪引擎这类**测试替身**（摘 Node 摘的是产品运行时与随包，不是夹具）。
 
@@ -3178,7 +3178,7 @@ node 档反证 **4/4** · 每轮跑完 `llama-server` / `mangasvc` 残留均为 
 | D（3） | 默认值与取值校验（防"改成 mock 让生产走替身"） | `engine-parity` golden 的 `configSnapshot` + `pure`（availableTiers / tierModelPath / translationWeightsPresent / engineHfOfflineEnv） |
 | M（14） | mock 协议未被改坏（起真模拟引擎冒烟） | `engine-parity` mock 档 + `engine-http` mock 2 例 |
 
-**顺带消除一个环境依赖**：它读 `runtimes/manga-translator/openapi.engine.json`（S1 手工夹具），
+**顺带消除一个环境依赖**：它读 `MiaoDock/manga/runtimes/manga-translator/openapi.engine.json`（S1 手工夹具），
 **没有拉引擎的机器上它本来就会红**（D-63 因此没把它加进 `check:docs` 的 SUITES 对账）——
 退役后这个"看机器脸色"的分母没有了。
 
@@ -3642,7 +3642,7 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
 那等于把"零配置"换成"装完重启"。
 
 **事实校正**：`engine/VERSIONS.lock` §6.2 记的三个 Windows 必踩坑里**没有长路径**，
-§6 真机跑通的落点是仓库内 `runtimes/manga-translator/` ⇒ "会不会撞 260"当时是**预防性推测**，
+§6 真机跑通的落点是仓库内 `MiaoDock/manga/runtimes/manga-translator/` ⇒ "会不会撞 260"当时是**预防性推测**，
 不是实测结论。
 
 **改了什么**：装配期遍历落点**实测**最长路径与 260 的余量，写进进度日志与 `.runtime.ready.json`
@@ -3810,9 +3810,9 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
   明写「历史痕迹本身有价值，改它才是错」；同理 `docs/refs/engine/02-e9-plugin-real-engine.report.json`
   与同名 `.stdout.log` 是**真机取证证据**，改它等于伪造取证。这两处是**裁定保留**，不是漏改。
 - 🔴 **独立成词的 `Box` 一律不动**：`X-Box-Token` / `X-Box-Client` 是《03》契约里的**请求头名**，
-  `Box/state` 与 `~/Pictures/Box 漫画` 是**盘上落点**（改它会迁移既有用户数据），`Box.app` 是 bundle 名。
+  `MiaoDock/manga/state` 与 `~/Pictures/MiaoDock Mangas` 是**盘上落点**（改它会迁移既有用户数据），`Box.app` 是 bundle 名。
   它们与 `boxsvc` 不是同一层东西：本次只收「服务实现」这一层的名字，产品名与契约名要动须另起一条裁定。
-- `runtimes/manga-translator/.runtime.ready.json` 里那处旧名是**本机运行时产物**的自述文件
+- `MiaoDock/manga/runtimes/manga-translator/.runtime.ready.json` 里那处旧名是**本机运行时产物**的自述文件
   （已被 `.gitignore` 忽略），不入库、也不改。
 - `docs/internal/engine-integration-plan.md` 里那处是**插件仓**的适配器文件名，不是本仓路径。
 - 只换名：不动一行逻辑，不顺手重命名其它标识符，不重排任何代码。
@@ -5253,7 +5253,7 @@ W1/W2 钉着它），那是**旧界面**、不是分发物 —— 要根治得�
   只验到**首屏渲染**（截图核对：安装向导步骤 1 的目录 / 双选项 / 体积 / 可用空间都对；卸载页标题栏
   在改名后完整显示、不再被裁）。`runas` 自提权（本机 shell 本来就提权，没触发那条分支）、
   `.lnk` 落点、`launch_app` 经 `explorer` 去提权、卸载器 GUI 的进度回调仍只验到"代码路径存在"。
-- `check:uninstall-keep` 需要本机真有引擎运行时（`<appData>/runtimes/manga-translator`），本机没有 ⇒
+- `check:uninstall-keep` 需要本机真有引擎运行时（`<appData>/MiaoDock/manga/runtimes/manga-translator`），本机没有 ⇒
   只在代码层改完、**没跑**。
 - 全机安装（HKLM）路径未验：本机壳不是管理员，只验了 `--per-user` 的 HKCU 分支。
 - macOS 仍不在范围（无安装/卸载宿主）。
@@ -5392,5 +5392,62 @@ W1/W2 钉着它），那是**旧界面**、不是分发物 —— 要根治得�
 **验收（2026-10-19）**：`tsc --noEmit` 无输出 · `check:units` 46/46 + 反证 61/61 ·
 `check:music` 237/237 + 反证 231/231 · `check:settings` 186/186 · `check:docs` 21/21 ·
 `check:docpaths` 5/5 · prettier 全绿。
+
+## D-241 漫画落点收束到数据根：`MIAO_ROOT` 语义反转、snapshot 键改名、不自动迁移（2026-10-19）
+
+**为什么要改**：同一产品曾有三个落点名（`Box/state`、`~/Pictures/Box 漫画`、
+`MiaoDock/music_profiles.json`），且引擎运行时独占 `<appData>/runtimes` 这一层。
+收束成「一个数据根 + 按域分子目录」，卸载 / 备份 / 将来 anime 落地都有一处可指。
+
+**新落点（唯一事实源 = `platform/paths.rs`）**
+
+| 层 | 默认 | env |
+|---|---|---|
+| 数据根 | `<appData>/MiaoDock` | `MIAO_ROOT` |
+| 漫画 state | `<数据根>/manga/state` | `MIAO_MANGA_STATE_DIR` |
+| 漫画库 | `~/Pictures/MiaoDock Mangas` | `MIAO_MANGA_ROOT_DIR` |
+| 漫画 runtime | `<数据根>/manga/runtimes` | `MIAO_MANGA_RUNTIME_ROOT` |
+
+- 🔴 **`MIAO_ROOT` 语义反转**：旧版它指漫画库根，现在指数据根；库的位置改用
+  `MIAO_MANGA_ROOT_DIR`。所有夹具（e2e 约 40 文件）、装配脚本、卸载器同一轮换名。
+- 🔴 **漫画库刻意不挂进数据根**：它是用户可见、可备份、可当相册管理的**成果目录**，
+  藏进 `%LOCALAPPDATA%` 既找不到也会被清理工具扫到。产品数据与用户成果分属两处。
+  （副产品：库留在 `~/Pictures` 后**不会**撞 `validate_root` 的 macOS `~/Library` 前缀黑名单；
+  但仍补了一条「默认库根必须过黑名单」的回归测试，防将来有人把它挪进 appData 时服务静默起不来。）
+
+**不自动迁移（用户裁定，单人使用场景）**
+- 旧数据留在原处不动；升级后新目录从空开始，需要时手工搬。
+- 因此**没有** `migrate.rs`、没有 ready 行 `migrated` 字段、没有 `StatusView` 新字段、
+  没有设置页警示行 —— 迁移可观测性与它的 UI 一起砍掉，不留半截契约。
+- `data_root()` 的文档注释里写明了这个取舍，避免后人当成漏做。
+
+**断言侧**
+- `--print-paths` 快照 13 → **14 键**，三个键改名：`stateDir`→`mangaStateDir`、
+  `rootDir`→`mangaRootDir`、`runtimeRoot`→`mangaRuntimeRoot`，新增 `dataRoot`。
+- `paths-parity-check`：`PATH.appData` 升级为四条独立预言（dataRoot / state / runtime 在
+  `<appData>/MiaoDock/manga` 下 + **库必须在 `~/Pictures` 且不得落进数据根**）；M2/M4/M6
+  的变异键与值同步。golden 重冻。
+- `store-parity-check` 补了 `--write-golden`（生成与比对共用同一份 `canon`，避免两套规则走散）；
+  golden 重冻。
+- `engine-selftest` golden 里两处 `translationWeightsPresent` **保留 `true`**：那是"装好模型后
+  应为真"的契约值，本机缺权重属**既有环境红**（见 D-199 附近的记账），不因重冻而变绿。
+- `install-guide-check` 的落点模板、镜像表、`IG.mirror` 断言全部跟到新层级；
+  两份安装引导正文同步（含 `mklink` / `ln -s` 示例、体积统计命令、卸载说明）。
+
+**刻意没做什么**
+- 音乐三项落点（Tauri `app_cache_dir` / `app_config_dir` / `data_local_dir`）**一字未动**。
+- `uninstaller` 只同步路径口径，不新增可删种类（`data_dir("state").is_none()` 那条钉子保留）。
+- 未建 `src/modules/manga/` 域模块（属 D-239 之后的 C 档，留待 anime 落地前）。
+
+**验收（2026-10-19）**：`cargo test --lib` 207/207 · 两个 bin 构建通过 ·
+`npm run check`（static）18/18 · `check:units` 46/46 + 反证 61/61 · `check:music` 237/237 +
+反证 231/231 · `check:paths` 5/5 + 反证 6/6 · `check:store` 24/24 · `check:install-guide` 18/18 ·
+`check:docpaths` 5/5 · `check:docs` 21/21 · `check:registry` 15/15。
+⚠️ **如实登记的已知红（均非本轮引入）**：`check:progress-truth` / `check:engine-settings` 的
+bootstrap 组（本机无引擎运行时，PyPI 不可达 ⇒ 装配 exit 103）· `check:e4` 的 E4.6（本机无
+Sakura 权重）· `check:engine-parity` 的 `translationWeightsPresent` 两条（同上）·
+`check:routes` 的 `ROUTES.coverage`（`/engine/models/download/pause` 在 D-237 加入后未进
+独立预言表，属既有脱节）· `selftest:service` 的 A21 组（Windows 上 `chmod 0500` 不阻止在
+目录内建文件，属平台语义）· `selftest:app` 的 B1e/S2d（缺引擎）与 B3f/S1（既有）。
 
 

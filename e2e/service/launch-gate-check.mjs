@@ -182,7 +182,7 @@ if (!fs.existsSync(RUST_BIN)) {
 {
   // G1：real 档 + 运行时整个不在 ⇒ 被拦、秒级、点名到每一项且带绝对路径
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-gate-empty-'));
-  const r = await gate('real', { MIAO_RUNTIME_ROOT: path.join(base, 'nope') });
+  const r = await gate('real', { MIAO_MANGA_RUNTIME_ROOT: path.join(base, 'nope') });
   check('G1 real 档 + 运行时未装配 ⇒ 被拦（退出码 1 + blocked=true）', r.code === 1 && r.json?.blocked === true, {
     code: r.code,
     body: r.json,
@@ -207,7 +207,7 @@ if (!fs.existsSync(RUST_BIN)) {
 {
   // G2：mock 档 + 同样的空运行时 ⇒ **放行**（30+ 个 mock e2e 靠它活着）
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-gate-mock-'));
-  const r = await gate('mock', { MIAO_RUNTIME_ROOT: path.join(base, 'nope') });
+  const r = await gate('mock', { MIAO_MANGA_RUNTIME_ROOT: path.join(base, 'nope') });
   check('G2 mock 档 + 运行时未装配 ⇒ 放行（退出码 0 + blocked=false）', r.code === 0 && r.json?.blocked === false, {
     code: r.code,
     body: r.json,
@@ -289,7 +289,7 @@ if (REFUTE) {
 
   const emptyEnv = () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-gate-refute-'));
-    return { base, env: { MIAO_RUNTIME_ROOT: path.join(base, 'nope') } };
+    return { base, env: { MIAO_MANGA_RUNTIME_ROOT: path.join(base, 'nope') } };
   };
   const probeOriginal = fs.readFileSync(PROBE_RS, 'utf8');
   const serviceOriginal = fs.readFileSync(SERVICE_RS, 'utf8');

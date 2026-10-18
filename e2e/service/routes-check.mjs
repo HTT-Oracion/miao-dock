@@ -199,8 +199,8 @@ function startPureRust(extraEnv = {}) {
     env: {
       ...process.env,
       MIAO_TOKEN: TOKEN,
-      MIAO_ROOT: root,
-      MIAO_STATE_DIR: state,
+      MIAO_MANGA_ROOT_DIR: root,
+      MIAO_MANGA_STATE_DIR: state,
       MIAO_ENGINE_PROTOCOL: 'mock',
       ...extraEnv,
     },
