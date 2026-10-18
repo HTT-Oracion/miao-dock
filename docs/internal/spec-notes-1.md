@@ -894,7 +894,7 @@ src/screens/manga/
 **背景**：审计 §3.3 说 `store.ts` 混了四层职责（纯函数 / 持久化 / 网络 / 播放状态机）。
 D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层。
 
-### 移出的内容 → `src/music/persist.ts`（135 行）
+### 移出的内容 → `src/modules/music/persist.ts`（135 行）
 
 `readLS` · `writeLS` · `LS_SNAPSHOT` · `SNAPSHOT_VERSION` · `SNAPSHOT_MAX_QUEUE` ·
 `SNAPSHOT_PERSIST_INTERVAL_MS` · `ResumeSnapshot` · `truncateQueueForSnapshot` ·
@@ -1066,7 +1066,7 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 - 新增 `F.actionsDir`；**16 条变异锚**的 `file:/ 有**两种**写法，自动扫描漏了 6 条
 
 我写脚本扫「`file: F.store` 且 `find` 已不在 `store.ts`」的锚来自动改指，只改了 10 条；
-剩 6 条是 **`file: "src/music/store.ts"` 字符串字面量**（不是 `F.store`）⇒ 脚本看不见。
+剩 6 条是 **`file: "src/modules/music/store.ts"` 字符串字面量**（不是 `F.store`）⇒ 脚本看不见。
 最后是 `--refute` 报「破坏锚点未找到：6 条」才暴露的。
 
 **纪律**：批量改 `file:/），若有 action 名写错，`Pick<MusicState, ...>` 会当场报错 ——
@@ -1121,7 +1121,7 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 类型区（`PlayerSkin`/`LeftView`/`RightView`/`SearchTab`/`CommentTab`/`IslandView` + `MusicState` 接口 418 行）
 + 初始 state + **12 行切片 spread**。`MusicState` 是 store 的公开形状，刻意留在此处。
 
-`src/music/` 现在按层分文件：`store.ts`（状态机装配）· `actions/*.ts`（12 段）·
+`src/modules/music/` 现在按层分文件：`store.ts`（状态机装配）· `actions/*.ts`（12 段）·
 `convert.ts`（纯转换）· `prefs.ts`（偏好层）· `persist.ts`（持久化）· `slice.ts`（切片公共件）·
 `lyrics.ts`（歌词解析）· `ipc.ts` / `platform.ts` / `types.ts` / `player-options.ts` / `audioGraph.ts`。
 
@@ -1175,7 +1175,7 @@ D-149 已把**纯函数**下沉 `tools/lyrics.ts`；本轮下沉**持久化**层
 | `docs/internal/spec-notes-1.md` | D-147~D-157 全部在册（本次改造的完整台账） |
 | `.trae/rules/project_rules.md` | D-148/D-150/D-154 已把范式指针改指 `screens/manga/meta.ts` |
 | `README.md` | 无 src 结构描述，不存在过期陈述 |
-| `AGENTS.md` | 范式指针 / check 条数（music 216 · settings 180 · units 45 · ia 32 · autostart 12，check:docs 17/0 实证一致）；**补写**了前端 `src/music/` 按层分文件的说明（§1 原先只描述服务端域目录，D-156 的新分层没进去） |
+| `AGENTS.md` | 范式指针 / check 条数（music 216 · settings 180 · units 45 · ia 32 · autostart 12，check:docs 17/0 实证一致）；**补写**了前端 `src/modules/music/` 按层分文件的说明（§1 原先只描述服务端域目录，D-156 的新分层没进去） |
 
 ### 验收
 
@@ -3938,7 +3938,7 @@ check:routes / registry / docs / docpaths / paths / path-single-source / engine-
   变成需要手写绝对路径 —— 那是回退，不是整理。`public/` 只放**不经过构建**的东西，现状即
   `public/style-previews/*.png`（歌词样式图，按绝对 URL 引用）—— 已经对了，不需要动。
 - **`src/stores/` 收的是「非域共享状态」，音乐域的 store 留在域内**：全仓只有一处 `zustand` 的
-  `create()`，就是音乐域的 `src/music/store.ts`（actions 已切片到 `music/actions/*`）。
+  `create()`，就是音乐域的 `src/modules/music/store.ts`（actions 已切片到 `music/actions/*`）。
   它属于音乐域，按同一条判据不该抽到 `stores/`；抽出去只会把音乐域拆成两处。
 
 **同步清单（缺一处就是静默跳过）**：`check:units`（`toastBus` 路径常量 + 一条反证锚点 +
@@ -5366,5 +5366,31 @@ W1/W2 钉着它），那是**旧界面**、不是分发物 —— 要根治得�
 
 **验收（2026-10-19）**：`tsc --noEmit` 无输出 · `check:units` 46/46 + 反证 61/61 ·
 `check:docpaths` 5/5 + 反证 2/2 · `check:registry` 15/15 · `check:ia` 37/37。
+
+## D-240 音乐域模块迁入 `src/modules/music/`：两层同名是分层事实（2026-10-19）
+
+**为什么要改**：`src/music/`（域逻辑）与 `src/screens/music/`（屏内件）同名并列在 `src/` 下，
+读目录时看不出「哪个是域、哪个是屏」。G-15 曾把这条记成「收益低于代价，暂不动」；本轮既然
+已按应用重组屏层（D-239），把域模块收进 `modules/` 让分层在路径上可读：`screens/` 住屏、
+`modules/` 住域。
+
+**改了什么**
+- `git mv src/music src/modules/music`（23 文件）；`@music` 别名不变 ⇒ **业务 import 零改动**。
+- `vite.config.ts` 与 `tsconfig.json` 双处同步（含 `@music` 精确项与 `@music/*` 通配项）。
+- 断言侧：`check:units` 的 ALIASES 表、tsconfig 两条变异锚点、`store.ts` 变异目标；
+  `check:music` / `check:settings` 的十余处源码路径；`check:tls` 只读 Rust 侧，不动。
+- 文档：`AGENTS.md`（域状态示例 / 前端分层段）、`README.md` 目录节、`.trae/rules/project_rules.md`、
+  `docs/dev-setup.md`、`CONTRIBUTING.md`、本台账。
+- `src/modules/music/store.ts` 文件头写明分层判据：域不 import 屏，屏可引域；`@music` 恒指本目录。
+
+**刻意没做什么**
+- `src/screens/music/` 不搬（屏内件；搬它会把「一层一目录」的判据搅乱）。
+- `src-tauri/src/music/` 不动（Rust 域，与前端模块不是同一层）。
+- `docs/internal/cache-*.md` / `ui-parity-plan.md` 里的旧路径不改：它们是**时点报告**，
+  不是现行文档（不在 `check:docpaths` 范围）；改它等于伪造当时的取证。
+
+**验收（2026-10-19）**：`tsc --noEmit` 无输出 · `check:units` 46/46 + 反证 61/61 ·
+`check:music` 237/237 + 反证 231/231 · `check:settings` 186/186 · `check:docs` 21/21 ·
+`check:docpaths` 5/5 · prettier 全绿。
 
 

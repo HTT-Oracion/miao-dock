@@ -14,9 +14,9 @@
  *
  *   CATALOG  src/screens/settings/catalog.ts        数据源（剔除了吗 / 补进了吗 / 项数对得上吗）
  *   WIRING   src/screens/settings/sections.tsx      设置页是否真的渲染控件、是否遍历三小节
- *   STORE    src/music/store.ts                     六个偏好字段（默认值 / setter / 持久化）
+ *   STORE    src/modules/music/store.ts                     六个偏好字段（默认值 / setter / 持久化）
  *   PLAYER   src/screens/music/ExpandedPlayer.tsx   偏好是否真的落到播放器（CSS 变量 / 条件类名）
- *   OPTIONS  src/music/player-options.ts            选项常量的单一事实源（防设置页/播放器两套皮肤名）
+ *   OPTIONS  src/modules/music/player-options.ts            选项常量的单一事实源（防设置页/播放器两套皮肤名）
  *
  * 最危险的两种假绿，本脚本专门防：
  *   ① 「只在数据里标 live、UI 不渲染控件」—— 于是分四层断言：catalog 有 live 项、
@@ -61,10 +61,10 @@ const F = {
   secTranslate: path.join(APP, 'src', 'screens', 'settings', 'sections', 'TranslateSection.tsx'),
   secMedia: path.join(APP, 'src', 'screens', 'settings', 'sections', 'MediaSection.tsx'),
   secAbout: path.join(APP, 'src', 'screens', 'settings', 'sections', 'AboutSection.tsx'),
-  store: path.join(APP, 'src', 'music', 'store.ts'),
+  store: path.join(APP, 'src', 'modules', 'music', 'store.ts'),
   // D-156：music/store.ts 的 action 段已按切片切到 music/actions/*.ts。
-  actionsDir: path.join(APP, 'src', 'music', 'actions'),
-  options: path.join(APP, 'src', 'music', 'player-options.ts'),
+  actionsDir: path.join(APP, 'src', 'modules', 'music', 'actions'),
+  options: path.join(APP, 'src', 'modules', 'music', 'player-options.ts'),
   expanded: path.join(APP, 'src', 'screens', 'music', 'ExpandedPlayer.tsx'),
   musicScreen: path.join(APP, 'src', 'screens', 'MusicScreen.tsx'),
   main: path.join(APP, 'src', 'main.tsx'),

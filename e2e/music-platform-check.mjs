@@ -6,9 +6,9 @@
  *
  *   一条「四平台接通」的改动横跨五层：
  *     RUST     src-tauri/src/music/mod.rs 定义 + commands/mod.rs 的 generate_handler! 注册
- *     IPC      src/music/ipc.ts 的 invoke('<command>') 封装
- *     PLATFORM src/music/platform.ts 的能力矩阵 + 派发分支
- *     STORE    src/music/store.ts 的平台感知状态与 action
+ *     IPC      src/modules/music/ipc.ts 的 invoke('<command>') 封装
+ *     PLATFORM src/modules/music/platform.ts 的能力矩阵 + 派发分支
+ *     STORE    src/modules/music/store.ts 的平台感知状态与 action
  *     UI       src/screens/MusicScreen.tsx + screens/music/* + styles/*.scss
  *
  *   这五层的静默失败各不相同、互不覆盖：
@@ -43,17 +43,17 @@ const F = {
   rustMod: path.join(APP, 'src-tauri', 'src', 'music', 'mod.rs'),
   rustModels: path.join(APP, 'src-tauri', 'src', 'music', 'models.rs'),
   rustRegistry: path.join(APP, 'src-tauri', 'src', 'commands', 'mod.rs'),
-  ipc: path.join(APP, 'src', 'music', 'ipc.ts'),
-  platform: path.join(APP, 'src', 'music', 'platform.ts'),
-  store: path.join(APP, 'src', 'music', 'store.ts'),
+  ipc: path.join(APP, 'src', 'modules', 'music', 'ipc.ts'),
+  platform: path.join(APP, 'src', 'modules', 'music', 'platform.ts'),
+  store: path.join(APP, 'src', 'modules', 'music', 'store.ts'),
   // D-156：`store.ts` 的 action 段已按切片切到 `music/actions/*.ts`。
   // 变异锚按"这段实现现在住哪"落文件；`s.store` 则是「本体 + 全部切片」的拼接（见 loadSources）。
-  actionsDir: path.join(APP, 'src', 'music', 'actions'),
+  actionsDir: path.join(APP, 'src', 'modules', 'music', 'actions'),
   // D-149：歌词解析纯函数已从 store.ts 抽到 tools/lyrics.ts；歌词判据读「store + lyrics」的拼接。
   lyrics: path.join(APP, 'src', 'tools', 'lyrics.ts'),
   // D-153：持久化（readLS/writeLS/快照/sanitize）已从 store.ts 抽到 music/persist.ts。
-  persist: path.join(APP, 'src', 'music', 'persist.ts'),
-  types: path.join(APP, 'src', 'music', 'types.ts'),
+  persist: path.join(APP, 'src', 'modules', 'music', 'persist.ts'),
+  types: path.join(APP, 'src', 'modules', 'music', 'types.ts'),
   // ── 桌面歌词（P3）──
   rustLyrics: path.join(APP, 'src-tauri', 'src', 'commands', 'lyrics_window.rs'),
   // ── M5 截图取证通道（2026-10-16：音乐屏与歌词窗纳入序列）──
@@ -69,7 +69,7 @@ const F = {
   app: path.join(APP, 'src', 'App.tsx'),
   kernel: path.join(APP, 'src', 'components', 'MusicKernel.tsx'),
   island: path.join(APP, 'src', 'components', 'DynamicIsland.tsx'),
-  audioGraph: path.join(APP, 'src', 'music', 'audioGraph.ts'),
+  audioGraph: path.join(APP, 'src', 'modules', 'music', 'audioGraph.ts'),
   playerBar: path.join(APP, 'src', 'screens', 'music', 'PlayerBar.tsx'),
   expanded: path.join(APP, 'src', 'screens', 'music', 'ExpandedPlayer.tsx'),
   // 逐字歌词渲染组件（逐字高亮任务新增）
@@ -249,9 +249,9 @@ function loadSources() {
   // 「store.ts + 全部切片」的**逐文件 strip 后拼接** —— 「方法在不在」「这段逻辑在不在」
   // 这类判据才不会因切片而假红。目录**动态列举** ⇒ 以后每切一段自动覆盖，不必改这里。
   // （逐文件 strip 再拼，不能拼原文：`stripComments` 带状态机，跨文件会失同步，见 D-148。）
-  const ACTIONS = readdirSync(path.join(APP, 'src', 'music', 'actions'))
+  const ACTIONS = readdirSync(path.join(APP, 'src', 'modules', 'music', 'actions'))
     .filter((n) => n.endsWith('.ts'))
-    .map((n) => path.join(APP, 'src', 'music', 'actions', n));
+    .map((n) => path.join(APP, 'src', 'modules', 'music', 'actions', n));
   const SF = [F.store, ...ACTIONS]; // store 本体 + 全部切片
   const s = {
     rustMod: readMaybe(F.rustMod),
@@ -1436,7 +1436,7 @@ add('HEARTBEAT.noRandomDegrade', 'HEARTBEAT', (s) => {
     if (!/canUseHeartbeat/.test(src)) missing.push(`${id} 未走 canUseHeartbeat 判据`);
   }
   // 冷启动兜底：偏好里的 heartbeat 必须被挡（此刻 queueFromLiked 恒假 ⇒ 该档不可用）
-  const init = stripComments(readMaybe(path.join(APP, 'src', 'music', 'actions', 'init.ts')));
+  const init = stripComments(readMaybe(path.join(APP, 'src', 'modules', 'music', 'actions', 'init.ts')));
   if (!/prefs\.playMode\s*!==\s*'heartbeat'/.test(init))
     missing.push('hydratePrefs 未挡下偏好里的 heartbeat（冷启动会出现"显示心动却不可用"）');
   return { ok: missing.length === 0, detail: missing.length ? `心动不可用时的处理：${missing.join('、')}` : '' };
@@ -1583,7 +1583,7 @@ add('PLAYLIST.likedAutoHeartbeat', 'HEARTBEAT', (s) => {
   if (!/name:\s*LIKED_PLAYLIST_NAME/.test(left)) missing.push('没有把该歌单名统一改成「我喜欢的音乐」');
   // 并且要持久化，跨会话保留（prefs.ts 不在 s.store 的拼接范围里，直接按路径读）
   // ⚠️ 用 \b 而不是裸子串：把声明改名成 `likedHeartbeatOnRemoved` 时裸子串仍会命中（反证轮实测假绿）。
-  const prefsSrc = stripComments(readMaybe(path.join(APP, 'src', 'music', 'prefs.ts')));
+  const prefsSrc = stripComments(readMaybe(path.join(APP, 'src', 'modules', 'music', 'prefs.ts')));
   if (!/\blikedHeartbeatOn\b/.test(prefsSrc)) missing.push('likedHeartbeatOn 未进偏好（重启就丢）');
   return { ok: missing.length === 0, detail: missing.length ? `我喜欢的音乐的心动记忆：${missing.join('、')}` : '' };
 });
@@ -4814,7 +4814,7 @@ const MUTATIONS = [
   },
   {
     name: 'likedHeartbeatOn 不落偏好（重启就丢"开启过心动"这件事）',
-    file: path.join(APP, 'src', 'music', 'prefs.ts'),
+    file: path.join(APP, 'src', 'modules', 'music', 'prefs.ts'),
     find: '  likedHeartbeatOn: boolean;',
     replace: '  likedHeartbeatOnRemoved?: boolean;',
     expect: ['PLAYLIST.likedAutoHeartbeat'],
@@ -4986,14 +4986,14 @@ const MUTATIONS = [
   },
   {
     name: '让 isWirable 不再检查 CORS 模式（非 CORS 元素也会被接管）',
-    file: 'src/music/audioGraph.ts',
+    file: 'src/modules/music/audioGraph.ts',
     find: "  return el.crossOrigin === 'anonymous';",
     replace: '  return true;',
     expect: ['AUDIO.refuseNonCors'],
   },
   {
     name: '去掉 gain → destination 的连接（接管即静音）',
-    file: 'src/music/audioGraph.ts',
+    file: 'src/modules/music/audioGraph.ts',
     find: '      gain.connect(ctx.destination); // 唯一出口：不接回 destination = 静音',
     replace: '      void gain; // 反证：不接回出口',
     expect: ['AUDIO.connectDestination'],
@@ -5192,7 +5192,7 @@ const MUTATIONS = [
   },
   {
     name: '从音频图里去掉 GainNode（音量退回依赖元素 volume，部分平台会失效）',
-    file: 'src/music/audioGraph.ts',
+    file: 'src/modules/music/audioGraph.ts',
     find: '    gain = gain ?? ctx.createGain();',
     replace: '    gain = gain ?? null;',
     expect: ['AUDIO.connectDestination'],
@@ -5403,14 +5403,14 @@ const MUTATIONS = [
   // ── ISLANDV 灵动岛第 4 态（歌词卡）──────────────────────────────────────
   {
     name: 'islandView 的默认值改成 lyrics（首次使用就落在歌词卡）',
-    file: 'src/music/store.ts',
+    file: 'src/modules/music/store.ts',
     find: "  islandView: 'play',\n",
     replace: "  islandView: 'lyrics',\n",
     expect: ['ISLANDV.pref.default'],
   },
   {
     name: 'IslandView 放宽成 string（localStorage 里的脏值能一路流到渲染层）',
-    file: 'src/music/store.ts',
+    file: 'src/modules/music/store.ts',
     find: "export type IslandView = 'play' | 'lyrics';",
     replace: 'export type IslandView = string;',
     expect: ['ISLANDV.pref.type'],

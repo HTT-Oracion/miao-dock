@@ -159,7 +159,7 @@ const ALIASES = {
   '@tauri': path.join(APP, 'src-tauri'),
   '@components': path.join(SRC, 'components'),
   '@screens': path.join(SRC, 'screens'),
-  '@music': path.join(SRC, 'music'),
+  '@music': path.join(SRC, 'modules', 'music'),
   '@hooks': path.join(SRC, 'hooks'),
   '@': SRC,
 };
@@ -1447,14 +1447,14 @@ const MUTATIONS = [
   {
     name: '从 tsconfig.json 删掉 @music 别名（两条一起删，反向漂移：tsc 不认识而 vite 认识）',
     file: F.tsconfig,
-    find: '      "@music": ["src/music"],\n      "@music/*": ["src/music/*"],\n',
+    find: '      "@music": ["src/modules/music"],\n      "@music/*": ["src/modules/music/*"],\n',
     replace: '',
     expect: ['ALIAS.keysComplete', 'ALIAS.twoPlaceSync'],
   },
   {
     name: '只删 tsconfig 的 @music/* 通配项（配置退化：别名还在，但 @music/store 解析不到）',
     file: F.tsconfig,
-    find: '      "@music/*": ["src/music/*"],\n',
+    find: '      "@music/*": ["src/modules/music/*"],\n',
     replace: '',
     expect: ['ALIAS.subPathMaps'],
   },
@@ -1481,7 +1481,7 @@ const MUTATIONS = [
   },
   {
     name: '把 store.ts 的 zustand 依赖换掉（模拟状态库不再是 zustand）',
-    file: path.join(SRC, 'music', 'store.ts'),
+    file: path.join(SRC, 'modules', 'music', 'store.ts'),
     find: "from 'zustand';",
     replace: "from 'zustand-gone';",
     expect: ['STATE.zustandInUse'],

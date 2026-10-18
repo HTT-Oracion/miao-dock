@@ -4,6 +4,11 @@
  * 从参考实现（Zustand store，3559 行）移植**逻辑**、剥离 Chakra UI 绑定（PD-1「界面重写」）。
  * 本文件只持状态与副作用，不渲染任何 UI；UI 在 screens/MusicScreen.tsx 与其子组件。
  *
+ * ## 分层判据（`modules/music/` 与 `screens/music/` 同名是事实，不是歧义）
+ * · `src/modules/music/` 住**域逻辑**：状态 / IPC / 平台适配 / 播放器选项 / 持久化，**不 import 任何屏**。
+ * · `src/screens/music/` 住**屏内件**：只服务音乐屏的 UI 组件。
+ * 两层靠依赖方向区分（域不知道屏，屏可以引域），不靠目录名区分；`@music` 永远指本目录。
+ *
  * 与参考实现的对应关系（便于日后对照）：
  *   playbackSource/searchProvider        同参考实现（搜索源可独立于播放源）
  *   leftView   playlists|tracks|local|history   左栏四视图（参考 leftPanelView）

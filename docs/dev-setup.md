@@ -102,7 +102,7 @@ check:packaged          # 静默安装 → 资产自检 → 起服务打 /health
 | `src/components/` | 业务组件（非通用） |
 | `src/hooks/` | **所有 `use*` 文件必须住这里**（`check:units` 硬断言，无豁免） |
 | `src/tools/` | 跨屏复用的**纯函数**（不 import 业务层） |
-| `src/music/` | 音乐：`store.ts`（装配）· `actions/*.ts`（12 段切片）· `convert.ts` · `prefs.ts` · `persist.ts` · `slice.ts` |
+| `src/modules/music/` | 音乐：`store.ts`（装配）· `actions/*.ts`（12 段切片）· `convert.ts` · `prefs.ts` · `persist.ts` · `slice.ts` |
 | `e2e/` | 全部验收断言（`*-check.mjs`）；`e2e/service/` 是起真服务的判定层 |
 
 ## 6. 规范与台账在哪

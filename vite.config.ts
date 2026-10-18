@@ -17,7 +17,7 @@ export default defineConfig({
       '@tauri': aliasPath('./src-tauri'),
       '@components': aliasPath('./src/components'),
       '@screens': aliasPath('./src/screens'),
-      '@music': aliasPath('./src/music'),
+      '@music': aliasPath('./src/modules/music'),
       '@hooks': aliasPath('./src/hooks'),
       '@tools': aliasPath('./src/tools'),
       '@': aliasPath('./src'),
