@@ -42,7 +42,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
 /** 交付物优先；没有就退回构建产物 */
-const KIT_INSTALLER = path.join(ROOT, '.tmp', 'install-kit', 'MiaoDock-Setup.exe');
+const KIT_INSTALLER = path.join(ROOT, 'release', 'MiaoDock-Setup.exe');
 const BUILT_INSTALLER = path.join(ROOT, 'installer', 'src-tauri', 'target', 'release', 'miaodock-installer.exe');
 
 const APP_DATA =

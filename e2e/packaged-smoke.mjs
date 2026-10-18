@@ -51,7 +51,7 @@ const TOKEN = 'a'.repeat(64);
 
 const TARGET = path.join(ROOT, 'src-tauri', 'target');
 /** 单文件安装器：优先用套件里的**交付名**（对外分发物就是它），退回构建产物 */
-const KIT_INSTALLER = path.join(ROOT, '.tmp', 'install-kit', 'MiaoDock-Setup.exe');
+const KIT_INSTALLER = path.join(ROOT, 'release', 'MiaoDock-Setup.exe');
 const BUILT_INSTALLER = path.join(ROOT, 'installer', 'src-tauri', 'target', 'release', 'miaodock-installer.exe');
 const RELEASE_MANGASVC = path.join(TARGET, 'release', process.platform === 'win32' ? 'mangasvc.exe' : 'mangasvc');
 

@@ -26,6 +26,12 @@ dev-env-off.ps1
 # 当前子目录：e2e / selftest / models / engine-test。
 .tmp/
 
+# ── 交付物落点：`npm run app:build` 的最终产物 ────────────────────────────
+# `release/MiaoDock-Setup.exe`（单文件安装器，约 145 MB）。
+# 与 `.tmp/` 分家的理由：`.tmp/` 是"跑完就能删的中间件"，`release/` 是**要交给人的成品** ——
+# 混在一起时，清理临时目录会顺手把交付物一起删掉。两者都不入库。
+/release/
+
 # vite 每次热重启都会把 vite.config.ts 转译到这个时间戳文件里，是纯噪声
 vite.config.ts.timestamp-*.mjs
 

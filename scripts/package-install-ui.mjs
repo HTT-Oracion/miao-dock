@@ -2,8 +2,12 @@
 /**
  * 组装「单文件安装器」—— 本地分发件，不写进版本库。
  *
- * 产物（默认 `.tmp/install-kit/`）**只有一份**：
+ * 产物（`release/`）**只有一份**：
  *   MiaoDock-Setup.exe   安装器（自带界面 + 内嵌载荷：主程序 / 资源 / 卸载器）
+ *
+ * 🔴 落点是仓库根的 `release/`（已 gitignore），**不是** `.tmp/`：
+ *    `.tmp/` 是"跑完就能删的中间件"，而这份是**要交给人的成品** ——
+ *    混在一起时，清理临时目录会顺手把交付物一起删掉。
  *
  * ## 顺序是硬约束：载荷必须先于安装器产出
  *   ① 卸载器宿主（`uninstaller/`：Tauri CLI，前端内嵌）
@@ -33,7 +37,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TAURI_CLI = path.join(ROOT, 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
-const OUT = path.join(ROOT, '.tmp', 'install-kit');
+const OUT = path.join(ROOT, 'release');
 
 /** 交付文件名（唯一分发物） */
 const DELIVERABLE = 'MiaoDock-Setup.exe';

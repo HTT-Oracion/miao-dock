@@ -65,7 +65,9 @@
   - 卸载项：`UninstallString` **不带** `--silent`（控制面板点「卸载」要看得到界面），`QuietUninstallString` 带（自动化 / 包管理器）。卸载器**住在安装目录里** ⇒ `current_exe()` 的父目录就是安装目录（外部记录文件那套落点契约已退役），删完靠 detached `cmd` 自删。
   - **构建顺序是硬约束**：卸载器宿主 → `npm run task -- install:pack`（打载荷）→ 安装器宿主。反了会嵌进上一次的旧载荷；载荷缺失时 `installer/build.rs` 只补单字节占位（编译能过、装不了），报错话术会点名打包命令。
   - 静默档：安装器 `--silent [--dir <目录>] [--per-user] [--no-shortcuts]`；卸载器 `--silent`（**只删程序 / 入口 / 注册表项，绝不碰用户数据**）。`check:packaged` / `check:uninstall-keep` 就靠它取证。
-  - 套件：`npm run task -- install:kit` → `.tmp/install-kit/MiaoDock-Setup.exe`。
+  - 发布**一条命令**：`npm run app:build`（= 主应用 `tauri build` + `install:kit`；先有 `miao-dock.exe` 才有载荷）。
+    产物 `release/MiaoDock-Setup.exe`（已 gitignore）。只用 `install:kit` 时须先有主程序 exe。
+    ⚠️ 它顺手产出的 NSIS 包（`src-tauri/target/release/bundle/nsis/*-setup.exe`）是**旧界面**，不是分发物。
   - 🔴 宿主**只能**用 `npm run tauri -- build` 构建：`cargo build` 出来的 exe 不内嵌前端（只连 dev 服务），双击是一片空白 —— 2026-10-18 实测（7.5 MB vs CLI 的 46 MB；带载荷的交付件 145 MB，大头是两个程序的字体）。
 - **按「依赖什么」定归属，不按「被用几次」定归属。** 抽离规则与反面纪律（什么**不**该抽）见 `docs/internal/spec-notes.md` D-34 与《09》§2.2。
 

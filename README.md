@@ -65,6 +65,7 @@ miao-dock/
 ├── test-music/   本机验收素材：音乐（**不入库**）
 ├── runtimes/     **开发机遗留的引擎资产目录**（**不入库**）：B1 起产品的默认落点已搬到 `<appData>/runtimes/manga-translator/`；这里只在用 `MIAO_RUNTIME_ROOT=<repo>/runtimes` 显式覆盖时才被读到
 ├── .tmp/         **全仓唯一的临时落盘目录**（**不入库**）：`e2e/` · `selftest/` · `models/` · `engine-test/`
+├── release/      **交付物落点**（**不入库**）：`npm run app:build` 产出的 `MiaoDock-Setup.exe`（单文件安装器，约 145 MB）—— 与 `.tmp/` 分家，因为它是要交给人的成品，不是跑完就删的中间件
 ├── snapshots/    对外展示截图（与 `docs/refs/` 的**取证图**分家，两者不互为副本）
 ├── AGENTS.md     AI 协作上下文入口（任何工具进仓库先读它）
 ├── CONTRIBUTING.md  贡献指南（提交规范 / 验收命令 / 目录与改名纪律）
@@ -84,6 +85,7 @@ miao-dock/
 >    🔴 更常见的是它**还是双靶对拍的另一边**（`fetch-models.mjs` / `model-store.mjs` 是 `check:models` 的 Node 靶），
 >    删掉等于让对拍退化成"只有一边的自证"。
 > 2. **临时产物一律写进 `.tmp/<用途>/`**，不要在仓库根另起 `.tmp-xxx/` 或 `tmp-xxx/`
+>    （**例外**：`release/` = 交付物 —— "跑完就删的"进 `.tmp/`，"要交给人的"进 `release/`，两者都不入库）
 >    （历史上散着 `.tmp-e2e` / `.tmp-models` / `.tmp-selftest` / `tmp-engine-test` 四个，已合并 —— 见 `docs/internal/spec-notes.md` D-79）。
 > 3. **新增 / 搬迁目录必须同步更新本节**。同时检查：`AGENTS.md` §1 的分层表 · `.trae/rules/project_rules.md` ·
 >    以及**断言里写死的路径** —— 路径不同步的后果不是变红，而是**静默跳过**。
@@ -99,7 +101,9 @@ miao-dock/
 >    **分发形态：对外只有 1 个 exe**（`MiaoDock-Setup.exe`）。主程序 exe + 资源 + 卸载器 exe 打成 `payload.zip`，
 >    编译期嵌进安装器（`install:pack`），运行时解包落盘、写卸载项、按完成页勾选建桌面/开始菜单入口。
 >    构建顺序是硬约束：卸载器宿主 → `install:pack` → 安装器宿主；一条命令串起来：`npm run task -- install:kit`
->    （产物 `.tmp/install-kit/MiaoDock-Setup.exe`，约 145 MB，大头是两个程序的字体）。
+>    （产物 `release/MiaoDock-Setup.exe`，约 145 MB，大头是两个程序的字体）。
+>    🔴 **发布就一条命令**：`npm run app:build` = 主应用 `tauri build` + `install:kit`（先有 `miao-dock.exe` 才有载荷）。
+>    它顺手产出的 NSIS 包（`src-tauri/target/release/bundle/nsis/*-setup.exe`）是旧界面，**不是**分发物。
 >    安装范围：默认全机（`C:\Program Files\MiaoDock` + HKLM 卸载项，启动弹一次 UAC）；「仅为我安装」⇒
 >    `%LOCALAPPDATA%\Programs\MiaoDock` + HKCU。卸载器住在安装目录里，删完靠 detached `cmd` 自删。
 >    静默档：安装器 `--silent [--dir <目录>] [--per-user] [--no-shortcuts]`，卸载器 `--silent`（不碰用户数据）。
