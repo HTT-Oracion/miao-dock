@@ -1,7 +1,7 @@
 // mangatranslator-mock —— sidecar 模拟引擎（内部件，对客户端不可见）
 //
 // 契约依据：§1 服务拓扑（sidecar 监听 127.0.0.1，端口自动探测，默认 5003；**客户端永久不可见**）
-// 顶替理由：真实模型未就绪（docs/spec-notes.md D-09）。本文件实现**内部 HTTP 边界**，
+// 顶替理由：真实模型未就绪（docs/internal/spec-notes.md D-09）。本文件实现**内部 HTTP 边界**，
 // 真实引擎接入时替换本进程即可——Service 侧只依赖 service/src/engine-client.mjs 一处。
 //
 // 边界：
@@ -70,7 +70,21 @@ const STALL_SEQS = new Set(
 
 const bootedAt = Date.now();
 const log = (msg) => console.log(`[mangatranslator-mock] ${msg}`);
-const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+const sleep = (ms) =>
+  new Promise((r) => {
+    setTimeout(r, ms);
+  });
+
+/**
+ * **最近一次 `/translate` 请求的方向**（取自 `X-Miao-From/To` 头）。
+ *
+ * 为什么替身要记它：ver2.1 的英译中靠「服务端按任务方向下发」——而"服务到底传了什么方向"
+ * 在替身这一侧是**唯一可观测的事实**。不记的话，`store._processItem` 里
+ * 「方向到底有没有传下去」这条链就**没有任何断言能覆盖**（上游适配层的请求体断言只到
+ * `engine-client` 为止，`store` 到 `engine-client` 这一段是空的）。
+ * 默认值 = 上游默认方向（日译中），与上游 `config.py` 的默认一致。
+ */
+let lastLang = { from: 'ja', to: 'zh' };
 
 const ready = () => Date.now() - bootedAt >= START_MS;
 
@@ -115,7 +129,8 @@ const handler = async (req, res) => {
         service: 'mangatranslator',
         engine: 'sakura-mock',
         model: 'sakura-mock-1',
-        lang: { from: 'ja', to: 'zh' },
+        // 报的是**最近一次请求**的方向（默认日译中）—— 见 `lastLang` 的注释。
+        lang: lastLang,
         itemMs: ITEM_MS,
       });
     }
@@ -125,6 +140,13 @@ const handler = async (req, res) => {
 
       const bytes = await readBody(req);
       const seq = Number.parseInt(req.headers['x-miao-seq'] || '0', 10) || 0;
+      // 记下这次请求的方向（`/ready` 会把它报出去）。缺头时保留上一次的值 ——
+      // 不编造"默认方向"，否则"服务忘了传方向"会被替身自己补上一个看起来正常的值。
+      const hFrom = req.headers['x-miao-from'];
+      const hTo = req.headers['x-miao-to'];
+      if (hFrom || hTo) {
+        lastLang = { from: hFrom || lastLang.from, to: hTo || lastLang.to };
+      }
       const ext = sniffImageType(bytes);
       if (!ext) {
         return sendJson(res, 400, { error: { code: 'ENGINE_BAD_INPUT', message: '输入字节不是可识别图片' } });
@@ -149,8 +171,8 @@ const handler = async (req, res) => {
         return sendJson(res, 500, {
           error: {
             code: 'ENGINE_OOM',
-            message: 'CUDA out of memory. Tried to allocate 1.20 GiB '
-              + '(GPU 0; 16.00 GiB total capacity; 220.00 MiB free)',
+            message:
+              'CUDA out of memory. Tried to allocate 1.20 GiB ' + '(GPU 0; 16.00 GiB total capacity; 220.00 MiB free)',
           },
         });
       }
@@ -201,7 +223,9 @@ for (let p = PORT_START; p <= PORT_END; p += 1) {
   }
 }
 if (!server) {
-  throw new Error(`端口 ${PORT_START}–${PORT_END} 全部被占用，模拟引擎启动失败。最后错误：${lastErr && lastErr.message}`);
+  throw new Error(
+    `端口 ${PORT_START}–${PORT_END} 全部被占用，模拟引擎启动失败。最后错误：${lastErr && lastErr.message}`,
+  );
 }
 
 // 父进程（Box 壳）若崩溃 / 被强杀，本进程自行退出，避免孤儿占住端口
@@ -212,7 +236,9 @@ log(`监听地址 : http://${HOST}:${port}`);
 log(`引擎     : sakura-mock（ja→zh）`);
 log(`单张耗时 : ${ITEM_MS}ms（±20% 抖动）`);
 log(`就绪延迟 : ${START_MS}ms`);
-log(`失败注入 : FAIL_SEQ=[${[...FAIL_SEQS].join(',')}] FAIL_RATE=${FAIL_RATE} OOM_TIMES=${OOM_TIMES} STALL_SEQ=[${[...STALL_SEQS].join(',')}]`);
+log(
+  `失败注入 : FAIL_SEQ=[${[...FAIL_SEQS].join(',')}] FAIL_RATE=${FAIL_RATE} OOM_TIMES=${OOM_TIMES} STALL_SEQ=[${[...STALL_SEQS].join(',')}]`,
+);
 // 机器可读就绪行：桌面端 Rust 层据此确认 sidecar 端口
 log(`MIAO_ENGINE_READY ${JSON.stringify({ port, engine: 'sakura-mock' })}`);
 log('========================================================');

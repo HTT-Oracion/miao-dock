@@ -28,9 +28,9 @@
  *   node e2e/service/contract-delta-check.mjs            正向
  *   node e2e/service/contract-delta-check.mjs --refute   反证轮（**逃生开关**→ 指定断言必须变红）
  *
- * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（box-service 的段）。
+ * 约束：纯 Node、零第三方依赖；临时目录自建自清；不占 5180–5190（manga-service 的段）。
  */
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -39,16 +39,20 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { encodePng } from '../../engine/src/png.mjs';
+// F0：服务入口解析的唯一事实源（MIAO_SERVICE_IMPL=node|rust 切换靶子；本文件不再自己拼入口）
+import { IMPL, SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const SELF = path.join(ROOT, 'e2e', 'service', 'contract-delta-check.mjs');
-const SERVICE_ENTRY = path.join(ROOT, 'service', 'src', 'server.mjs');
 const MOCK_ENGINE = path.join(ROOT, 'engine', 'src', 'server.mjs');
 const TOKEN = 'c'.repeat(64);
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-contract-'));
 const REFUTE = process.argv.includes('--refute');
 
-const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+const sleep = (ms) =>
+  new Promise((r) => {
+    setTimeout(r, ms);
+  });
 
 // ------------------------------------------------------------------ 结果收集
 
@@ -86,13 +90,25 @@ function httpReq(port, method, pathname, { headers = {}, body = null, token } = 
     req.end();
   });
 }
-const jsonOf = (res) => { try { return JSON.parse(res.body.toString('utf8')); } catch { return null; } };
+const jsonOf = (res) => {
+  try {
+    return JSON.parse(res.body.toString('utf8'));
+  } catch {
+    return null;
+  }
+};
 
 function portOpen(port, timeoutMs = 250) {
   return new Promise((resolve) => {
     const s = net.connect({ host: '127.0.0.1', port });
     let settled = false;
-    const done = (v) => { if (!settled) { settled = true; s.destroy(); resolve(v); } };
+    const done = (v) => {
+      if (!settled) {
+        settled = true;
+        s.destroy();
+        resolve(v);
+      }
+    };
     s.setTimeout(timeoutMs);
     s.once('connect', () => done(true));
     s.once('timeout', () => done(false));
@@ -104,7 +120,11 @@ async function findFreePort(start, { need = 1, avoid = [] } = {}) {
   for (let p = start; p < start + 400; p += 1) {
     if (avoid.includes(p)) continue;
     let ok = true;
-    for (let i = 0; i < need; i += 1) if (await portOpen(p + i, 80)) { ok = false; break; }
+    for (let i = 0; i < need; i += 1)
+      if (await portOpen(p + i, 80)) {
+        ok = false;
+        break;
+      }
     if (ok) return p;
   }
   throw new Error(`从 ${start} 起找不到 ${need} 个连续空闲端口`);
@@ -120,8 +140,10 @@ function buildMultipart({ payload, images }) {
   push(JSON.stringify(payload));
   push('\r\n');
   for (const img of images) {
-    push(`--${boundary}\r\nContent-Disposition: form-data; name="images[]"; filename="${img.filename}"\r\n`
-      + `Content-Type: ${img.contentType || 'application/octet-stream'}\r\n\r\n`);
+    push(
+      `--${boundary}\r\nContent-Disposition: form-data; name="images[]"; filename="${img.filename}"\r\n` +
+        `Content-Type: ${img.contentType || 'application/octet-stream'}\r\n\r\n`,
+    );
     parts.push(img.data);
     push('\r\n');
   }
@@ -144,19 +166,24 @@ async function submit(port, comicName, images = [{ filename: '001.png', contentT
 
 // ------------------------------------------------------------------ 服务 / 引擎夹具
 
-/** 起一个 box-service 实例并等它就绪行；返回 {child, port} */
+/** 起一个 manga-service 实例并等它就绪行；返回 {child, port} */
 function spawnService(env, tag) {
-  const child = spawn(process.execPath, [SERVICE_ENTRY], {
-    env: { ...process.env, ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const child = spawnTarget(SERVICE_ENTRY, env);
   const st = { child, tag, out: '', err: '', ready: null };
   child.stdout.on('data', (d) => {
     st.out += d.toString();
     const m = /MIAO_READY (\{.*\})/.exec(st.out);
-    if (m && !st.ready) { try { st.ready = JSON.parse(m[1]); } catch { /* 继续等 */ } }
+    if (m && !st.ready) {
+      try {
+        st.ready = JSON.parse(m[1]);
+      } catch {
+        /* 继续等 */
+      }
+    }
   });
-  child.stderr.on('data', (d) => { st.err += d.toString(); });
+  child.stderr.on('data', (d) => {
+    st.err += d.toString();
+  });
   return st;
 }
 
@@ -167,14 +194,35 @@ async function waitReady(st, timeoutMs = 15_000) {
   return st.ready;
 }
 
+/**
+ * 杀**进程树**，不是只杀主进程。
+ *
+ * 🔴 rust 靶子的服务会派生子进程（引擎② sidecar、③ llama-server），Windows 上
+ *    `child.kill()` 只结束主进程 ⇒ 孙进程全成孤儿。实测（D-202 第四节）：攒了 12 个
+ *    llama-server（每个 3.5 GB 权重）把机器卡死、别的应用跟着崩。
+ *    `taskkill /T /F` 连子树一起收；主进程已退出时它返回非 0，那不是失败。
+ */
 function killService(st) {
-  if (st && st.child.exitCode === null) { try { st.child.kill('SIGTERM'); } catch { /* ignore */ } }
+  if (!st || st.child.exitCode !== null) return;
+  try {
+    execFileSync('taskkill', ['/pid', String(st.child.pid), '/T', '/F'], { stdio: 'ignore' });
+  } catch {
+    /* 进程已退出 */
+  }
+  try {
+    st.child.kill('SIGTERM');
+  } catch {
+    /* ignore */
+  }
 }
 
 function listen(server, port) {
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(port, '127.0.0.1', () => { server.removeListener('error', reject); resolve(); });
+    server.listen(port, '127.0.0.1', () => {
+      server.removeListener('error', reject);
+      resolve();
+    });
   });
 }
 
@@ -206,7 +254,9 @@ function fakeEngine({ answerQueue, executorPort }) {
 
 /** 哑 socket 服务器（只为了让某个端口"在听"） */
 function silentListener() {
-  return net.createServer(() => { /* 收下连接、永不回应 */ });
+  return net.createServer(() => {
+    /* 收下连接、永不回应 */
+  });
 }
 
 // ------------------------------------------------------------------ 实例场景
@@ -231,56 +281,119 @@ async function withService(env, tag, fn, { timeoutMs = 15_000 } = {}) {
 /** S5.1 / S5.5：`/health` 的 sidecar 契约面（9 键） */
 function assertSidecarShape(sc, label) {
   const keys = ['state', 'port', 'engine', 'engineVersion', 'tier', 'model', 'accel', 'warmed', 'llm'];
-  check(`S5.1 /health.sidecar 是契约 §5.1 的 **9 键**（${label}）`,
+  check(
+    `S5.1 /health.sidecar 是契约 §5.1 的 **9 键**（${label}）`,
     sc && keys.every((k) => k in sc) && Object.keys(sc).length === keys.length,
-    sc ? Object.keys(sc).join(',') : 'sidecar 缺失');
-  check(`S5.1b sidecar.accel ∈ cuda|mps|cpu 且 state ∈ §5.1 枚举（${label}）`,
-    ['cuda', 'mps', 'cpu'].includes(sc?.accel)
-    && ['stopped', 'starting', 'downloading', 'prewarming', 'running', 'unloading', 'degraded', 'error'].includes(sc?.state),
-    `accel=${sc?.accel} state=${sc?.state}`);
-  check(`S5.1c sidecar.llm 是 {state, port} 形状（③ 可被单独停/启，§5.1）且 state 在 LLM 枚举内（${label}）`,
-    sc?.llm && Object.keys(sc.llm).every((k) => ['state', 'port'].includes(k))
-    && ['stopped', 'starting', 'running', 'unloading', 'error'].includes(sc.llm.state),
-    JSON.stringify(sc?.llm));
+    sc ? Object.keys(sc).join(',') : 'sidecar 缺失',
+  );
+  check(
+    `S5.1b sidecar.accel ∈ cuda|mps|cpu 且 state ∈ §5.1 枚举（${label}）`,
+    ['cuda', 'mps', 'cpu'].includes(sc?.accel) &&
+      ['stopped', 'starting', 'downloading', 'prewarming', 'running', 'unloading', 'degraded', 'error'].includes(
+        sc?.state,
+      ),
+    `accel=${sc?.accel} state=${sc?.state}`,
+  );
+  check(
+    `S5.1c sidecar.llm 是 {state, port} 形状（③ 可被单独停/启，§5.1）且 state 在 LLM 枚举内（${label}）`,
+    sc?.llm &&
+      Object.keys(sc.llm).every((k) => ['state', 'port'].includes(k)) &&
+      ['stopped', 'starting', 'running', 'unloading', 'error'].includes(sc.llm.state),
+    JSON.stringify(sc?.llm),
+  );
 }
 
 /** S5.6 / S5.7：`/engine/status` 的形状与鉴权 */
 async function assertEngineStatus(port, label, expectState) {
   // 无令牌 → 403（§5.2 明写"**不是**免鉴权例外"）
   const noToken = await httpReq(port, 'GET', '/api/v1/engine/status');
-  check(`S5.6 /engine/status 无令牌 → 403 PERMISSION_DENIED（§5.2：不是免鉴权例外）（${label}）`,
+  check(
+    `S5.6 /engine/status 无令牌 → 403 PERMISSION_DENIED（§5.2：不是免鉴权例外）（${label}）`,
     noToken.status === 403 && jsonOf(noToken)?.error?.code === 'PERMISSION_DENIED',
-    `${noToken.status} ${jsonOf(noToken)?.error?.code}`);
+    `${noToken.status} ${jsonOf(noToken)?.error?.code}`,
+  );
 
   const res = await httpReq(port, 'GET', '/api/v1/engine/status', { token: TOKEN });
   const v = jsonOf(res);
-  // S6 起多一个 `modelDownload`（「重新下载模型」的任务实况）⇒ 8 → **9 键**。
+  // S6 起多一个 `modelDownload`（「重新下载模型」的任务实况）⇒ 8 → 9 键。
   // 它同样属"Box 专用、不进插件契约"那一类（§5.2 与 `recentStageLog` 同性质）。
-  // ⚠️ 这条断言的**精确等值**（不是"包含"）是刻意的：`tier` 少键那次事故就是它抓到的
+  // **D1 起 Rust 侧再多一个 `runtime`**（与 `GET /engine/runtime` 同一份 `runtime_view()`，
+  // 见 `state.rs::engine_status_view`）⇒ **rust 靶子是 10 键**。Node 对照端没有这个键
+  // （它没有 runtime_probe 实现），双靶期这是**已知契约差**（F5 摘除 Node 后 `runtime`
+  // 就是契约面的一部分，届时只剩 10 键这一种形态）。
+  // ⚠️ 两条都保持**精确等值**（不是"包含"）是刻意的：`tier` 少键那次事故就是它抓到的
   //    （见 `composeSidecar` 里 `currentTier()` 的注释）。改这条必须同时改这里的期望值。
-  const topKeys = ['engine', 'llm', 'tier', 'accel', 'warmed', 'config', 'models', 'recentStageLog', 'modelDownload'];
-  check(`S5.7 /engine/status 带令牌 → 200 且顶层 9 键齐（§5.2 + S6 的 modelDownload）（${label}）`,
+  const topKeys =
+    IMPL === 'rust'
+      ? ['engine', 'llm', 'tier', 'accel', 'warmed', 'config', 'models', 'runtime', 'recentStageLog', 'modelDownload']
+      : ['engine', 'llm', 'tier', 'accel', 'warmed', 'config', 'models', 'recentStageLog', 'modelDownload'];
+  check(
+    `S5.7 /engine/status 带令牌 → 200 且顶层 ${topKeys.length} 键齐（§5.2 + S6 的 modelDownload${IMPL === 'rust' ? ' + D1 的 runtime' : ''}）（${label}）`,
     res.status === 200 && v && topKeys.every((k) => k in v) && Object.keys(v).length === topKeys.length,
-    res.status === 200 ? Object.keys(v || {}).join(',') : `status=${res.status} body=${res.body.toString('utf8').slice(0, 200)}`);
-  check(`S5.7b engine 是 {state, version, port, pid}；version 非空且 state=${expectState}（${label}）`,
-    v?.engine && ['state', 'version', 'port', 'pid'].every((k) => k in v.engine)
-    && typeof v.engine.version === 'string' && v.engine.version.length > 0
-    && v.engine.state === expectState,
-    JSON.stringify(v?.engine));
-  check(`S5.7c config 是 **camelCase** 的 6 键（targetLang / detectionSize，不是 target_lang / detection_size）（${label}）`,
-    v?.config && ['translator', 'targetLang', 'detector', 'detectionSize', 'ocr', 'inpainter'].every((k) => k in v.config)
-    && !('target_lang' in v.config) && !('detection_size' in v.config),
-    JSON.stringify(v?.config));
-  check(`S5.7d models 是 {visualReady, sakuraReady, lastVerifiedAt} 三键（§5.2）（${label}）`,
-    v?.models && ['visualReady', 'sakuraReady', 'lastVerifiedAt'].every((k) => k in v.models)
-    && typeof v.models.visualReady === 'boolean' && typeof v.models.sakuraReady === 'boolean',
-    JSON.stringify(v?.models));
-  check(`S5.7e recentStageLog 是数组（阶段日志**不进插件契约**，只满足 Box 诊断）（${label}）`,
-    Array.isArray(v?.recentStageLog), JSON.stringify(v?.recentStageLog)?.slice(0, 80));
-  check(`S5.7f llm 是 {state, model, port, pid}（③ 的归属方是本进程 ⇒ pid 我们有真值）（${label}）`,
+    res.status === 200
+      ? Object.keys(v || {}).join(',')
+      : `status=${res.status} body=${res.body.toString('utf8').slice(0, 200)}`,
+  );
+  check(
+    `S5.7b engine 是 {state, version, port, pid}；version 非空且 state=${expectState}（${label}）`,
+    v?.engine &&
+      ['state', 'version', 'port', 'pid'].every((k) => k in v.engine) &&
+      typeof v.engine.version === 'string' &&
+      v.engine.version.length > 0 &&
+      v.engine.state === expectState,
+    JSON.stringify(v?.engine),
+  );
+  // ver2.1 起多一个 `fromLang`（源语言基线，`null` = 逐任务下发）⇒ 6 → **7 键**。
+  check(
+    `S5.7c config 是 **camelCase** 的 7 键（fromLang / targetLang / detectionSize，不是 from_lang / target_lang / detection_size）（${label}）`,
+    v?.config &&
+      ['translator', 'fromLang', 'targetLang', 'detector', 'detectionSize', 'ocr', 'inpainter'].every(
+        (k) => k in v.config,
+      ) &&
+      !('from_lang' in v.config) &&
+      !('target_lang' in v.config) &&
+      !('detection_size' in v.config),
+    JSON.stringify(v?.config),
+  );
+  check(
+    `S5.7d models 是 {visualReady, sakuraReady, lastVerifiedAt} 三键（§5.2）（${label}）`,
+    v?.models &&
+      ['visualReady', 'sakuraReady', 'lastVerifiedAt'].every((k) => k in v.models) &&
+      typeof v.models.visualReady === 'boolean' &&
+      typeof v.models.sakuraReady === 'boolean',
+    JSON.stringify(v?.models),
+  );
+  check(
+    `S5.7e recentStageLog 是数组（阶段日志**不进插件契约**，只满足 Box 诊断）（${label}）`,
+    Array.isArray(v?.recentStageLog),
+    JSON.stringify(v?.recentStageLog)?.slice(0, 80),
+  );
+  check(
+    `S5.7f llm 是 {state, model, port, pid}（③ 的归属方是本进程 ⇒ pid 我们有真值）（${label}）`,
     v?.llm && ['state', 'model', 'port', 'pid'].every((k) => k in v.llm),
-    JSON.stringify(v?.llm));
+    JSON.stringify(v?.llm),
+  );
   return v;
+}
+
+/**
+ * 去掉快照里的 `updatedAt` 之后再比 —— 它是**读时取的 now**，不是队列/任务状态。
+ *
+ * 🔴 为什么非去掉不可：`/queue` 与 `/tasks` 两侧实现都在**构造快照的那一刻**取 `now`
+ *    （Node `store.mjs` 的 `queueSnapshot()` / `taskListSnapshot()`；Rust `store.rs` 的同名视图）。
+ *    于是"两次读取逐字节相同"实际断言的是**"这两次读取落在同一秒内"** —— 一个系统既未承诺、
+ *    也不可能承诺的性质。它的失败形态是**偶发红**：实测 rust 靶子 6 次里红 4 次，node 靶子
+ *    3 次全绿（差别只是两次读取之间有没有跨过秒边界，与实现无关）。
+ *
+ *    偶发红比恒定红更坏：它会让人去改一段本来就对的代码，或者干脆把这条断言注释掉。
+ *    本断言真正要咬的是「被拒之后**没有建单、没有分配序号**」，那件事由 `queued` /
+ *    `running` / `tasks` 三者完全覆盖，与这个时间戳无关。`updatedAt` 本身的**存在性**
+ *    仍然断言（见 `check` 的条件），所以不会因此丢掉字段覆盖。
+ */
+function withoutReadClock(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return snapshot;
+  const { updatedAt, ...rest } = snapshot;
+  return rest;
 }
 
 /** S5.2~S5.4：引擎在准备中 ⇒ `ENGINE_NOT_READY`，且**不建单、不分配序号** */
@@ -291,21 +404,40 @@ async function assertNotReady(port, label, expectRawState) {
   };
   const res = await submit(port, `S5 未就绪（${label}）`);
   const body = jsonOf(res);
-  check(`S5.2 引擎 ${expectRawState} 时提交 → 503 **ENGINE_NOT_READY**（不是 UNAVAILABLE）（${label}）`,
+  check(
+    `S5.2 引擎 ${expectRawState} 时提交 → 503 **ENGINE_NOT_READY**（不是 UNAVAILABLE）（${label}）`,
     res.status === 503 && body?.error?.code === 'ENGINE_NOT_READY',
-    `${res.status} ${body?.error?.code}`);
-  check(`S5.2b details.sidecar.state=${expectRawState}（把"哪一态"带出来，面板才好写「准备中」的细分文案）（${label}）`,
+    `${res.status} ${body?.error?.code}`,
+  );
+  check(
+    `S5.2b details.sidecar.state=${expectRawState}（把"哪一态"带出来，面板才好写「准备中」的细分文案）（${label}）`,
     body?.error?.details?.sidecar?.state === expectRawState,
-    JSON.stringify(body?.error?.details));
+    JSON.stringify(body?.error?.details),
+  );
   const after = {
     queue: jsonOf(await httpReq(port, 'GET', '/api/v1/queue', { token: TOKEN })),
     tasks: jsonOf(await httpReq(port, 'GET', '/api/v1/tasks', { token: TOKEN })),
   };
   // 只断言"返回了 503"是不够的：**先建单再报错**也满足它。必须证明队列与任务清单没动过。
-  check(`S5.3 被拒后**不建单、不分配序号**（§2.3）：/queue 与 /tasks 与拒绝前逐字节相同（${label}）`,
-    JSON.stringify(before.queue) === JSON.stringify(after.queue)
-    && JSON.stringify(before.tasks) === JSON.stringify(after.tasks),
-    `queue ${JSON.stringify(before.queue)} → ${JSON.stringify(after.queue)}`);
+  // ⚠️ 比 `/queue` 与 `/tasks` 时都剔除 `updatedAt`（读时时间戳，见 `withoutReadClock`），
+  //    但**仍要求两边都带这个字段**（有值即可，不比它等不等）。
+  const qBefore = withoutReadClock(before.queue);
+  const qAfter = withoutReadClock(after.queue);
+  const tBefore = withoutReadClock(before.tasks);
+  const tAfter = withoutReadClock(after.tasks);
+  const hasClock =
+    typeof before.queue?.updatedAt === 'string' &&
+    before.queue.updatedAt.length > 0 &&
+    typeof before.tasks?.updatedAt === 'string' &&
+    before.tasks.updatedAt.length > 0;
+  check(
+    `S5.3 被拒后**不建单、不分配序号**（§2.3）：/queue 与 /tasks（均除读时 updatedAt）与拒绝前逐字节相同（${label}）`,
+    JSON.stringify(qBefore) === JSON.stringify(qAfter) &&
+      JSON.stringify(tBefore) === JSON.stringify(tAfter) &&
+      hasClock,
+    `queue(-updatedAt) ${JSON.stringify(qBefore)} → ${JSON.stringify(qAfter)}；` +
+      `tasks(-updatedAt) ${JSON.stringify(tBefore)} → ${JSON.stringify(tAfter)}`,
+  );
   return { res, body };
 }
 
@@ -313,9 +445,11 @@ async function assertNotReady(port, label, expectRawState) {
 async function assertUnavailable(port, label) {
   const res = await submit(port, `S5 不可用（${label}）`);
   const body = jsonOf(res);
-  check(`S5.4 引擎**进程不在**时提交 → 503 UNAVAILABLE（§2.3「进程不在」那一支；与 ENGINE_NOT_READY 严格分开）（${label}）`,
+  check(
+    `S5.4 引擎**进程不在**时提交 → 503 UNAVAILABLE（§2.3「进程不在」那一支；与 ENGINE_NOT_READY 严格分开）（${label}）`,
     res.status === 503 && body?.error?.code === 'UNAVAILABLE',
-    `${res.status} ${body?.error?.code}`);
+    `${res.status} ${body?.error?.code}`,
+  );
   return body;
 }
 
@@ -349,21 +483,32 @@ async function runPositive() {
     await listen(eng.server, engPort);
     try {
       await withService(
-        baseEnv(svcPort, { MIAO_ENGINE_PROTOCOL: 'real', MIAO_ENGINE_PORT: String(engPort), MIAO_ENGINE_PROBE_MS: '300' }),
+        baseEnv(svcPort, {
+          MIAO_ENGINE_PROTOCOL: 'real',
+          MIAO_ENGINE_PORT: String(engPort),
+          MIAO_ENGINE_PROBE_MS: '300',
+        }),
         `service-A-${svcPort}`,
         async (info) => {
           const h = jsonOf(await httpReq(info.port, 'GET', '/api/v1/health'));
-          check('S5.0a 引擎 starting 时 /health.status=starting（§5.1 顶层枚举）（A）',
-            h?.status === 'starting', h?.status);
+          check(
+            'S5.0a 引擎 starting 时 /health.status=starting（§5.1 顶层枚举）（A）',
+            h?.status === 'starting',
+            h?.status,
+          );
           assertSidecarShape(h?.sidecar, 'A');
-          check('S5.0b 引擎 starting 时 sidecar.engineVersion 仍非空（安装事实 ≠ 进程事实）（A）',
+          check(
+            'S5.0b 引擎 starting 时 sidecar.engineVersion 仍非空（安装事实 ≠ 进程事实）（A）',
             typeof h?.sidecar?.engineVersion === 'string' && h.sidecar.engineVersion.length > 0,
-            String(h?.sidecar?.engineVersion));
+            String(h?.sidecar?.engineVersion),
+          );
           await assertNotReady(info.port, 'A', 'starting');
           await assertEngineStatus(info.port, 'A', 'starting');
         },
       );
-    } finally { eng.server.close(); }
+    } finally {
+      eng.server.close();
+    }
   }
 
   // ---------------------------------------------------------------- B · real + HTTP 已接客、执行器未起 → prewarming
@@ -373,16 +518,25 @@ async function runPositive() {
     await listen(eng.server, engPort);
     try {
       await withService(
-        baseEnv(svcPort, { MIAO_ENGINE_PROTOCOL: 'real', MIAO_ENGINE_PORT: String(engPort), MIAO_ENGINE_PROBE_MS: '300' }),
+        baseEnv(svcPort, {
+          MIAO_ENGINE_PROTOCOL: 'real',
+          MIAO_ENGINE_PORT: String(engPort),
+          MIAO_ENGINE_PROBE_MS: '300',
+        }),
         `service-B-${svcPort}`,
         async (info) => {
           const h = jsonOf(await httpReq(info.port, 'GET', '/api/v1/health'));
-          check('S5.0c 执行器端口未监听 → sidecar.state=**prewarming**（= L3 预热，与 starting 分开）（B）',
-            h?.sidecar?.state === 'prewarming', h?.sidecar?.state);
+          check(
+            'S5.0c 执行器端口未监听 → sidecar.state=**prewarming**（= L3 预热，与 starting 分开）（B）',
+            h?.sidecar?.state === 'prewarming',
+            h?.sidecar?.state,
+          );
           await assertNotReady(info.port, 'B', 'prewarming');
         },
       );
-    } finally { eng.server.close(); }
+    } finally {
+      eng.server.close();
+    }
   }
 
   // ---------------------------------------------------------------- C · real + 引擎 running、③ 停着 → warmed=false（§9.4）
@@ -394,42 +548,68 @@ async function runPositive() {
     await listen(ex, execPort);
     try {
       await withService(
-        baseEnv(svcPort, { MIAO_ENGINE_PROTOCOL: 'real', MIAO_ENGINE_PORT: String(engPort), MIAO_ENGINE_PROBE_MS: '300' }),
+        baseEnv(svcPort, {
+          MIAO_ENGINE_PROTOCOL: 'real',
+          MIAO_ENGINE_PORT: String(engPort),
+          MIAO_ENGINE_PROBE_MS: '300',
+        }),
         `service-C-${svcPort}`,
         async (info) => {
           const h = jsonOf(await httpReq(info.port, 'GET', '/api/v1/health'));
           const sc = h?.sidecar;
-          check('S5.0d 引擎三重就绪 → sidecar.state=running、/health.status=ok（C）',
-            sc?.state === 'running' && h?.status === 'ok', `${sc?.state} ${h?.status}`);
+          check(
+            'S5.0d 引擎三重就绪 → sidecar.state=running、/health.status=ok（C）',
+            sc?.state === 'running' && h?.status === 'ok',
+            `${sc?.state} ${h?.status}`,
+          );
           // 🔴 本脚本最要紧的一条：《04》§9.4「卸载 ≠ 未就绪」。
           //    state 仍是 running（进程在），但 warmed 转 false ⇒ 客户端据此提示「首张稍慢」。
-          check('S5.9 ③ 停着时 state=running 而 warmed=**false** —— 「卸载 ≠ 未就绪」（§9.4）在字段层面可见（C）',
+          check(
+            'S5.9 ③ 停着时 state=running 而 warmed=**false** —— 「卸载 ≠ 未就绪」（§9.4）在字段层面可见（C）',
             sc?.state === 'running' && sc?.warmed === false && sc?.llm?.state === 'stopped',
-            `state=${sc?.state} warmed=${sc?.warmed} llm=${JSON.stringify(sc?.llm)}`);
-          check('S5.9b ③ 停着时 llm.port=null（"端口为 null"的口径由 LlmSupervisor 统一给出，不在这里二次加工）（C）',
-            sc?.llm?.port === null, JSON.stringify(sc?.llm));
-          check('S5.9c engine running（≠stopped）时 tier/model 有值：tier=tiny、model=Sakura 权重名（C）',
+            `state=${sc?.state} warmed=${sc?.warmed} llm=${JSON.stringify(sc?.llm)}`,
+          );
+          check(
+            'S5.9b ③ 停着时 llm.port=null（"端口为 null"的口径由 LlmSupervisor 统一给出，不在这里二次加工）（C）',
+            sc?.llm?.port === null,
+            JSON.stringify(sc?.llm),
+          );
+          check(
+            'S5.9c engine running（≠stopped）时 tier/model 有值：tier=tiny、model=Sakura 权重名（C）',
             sc?.tier === 'tiny' && typeof sc?.model === 'string' && /sakura/i.test(sc.model),
-            `tier=${sc?.tier} model=${sc?.model}`);
+            `tier=${sc?.tier} model=${sc?.model}`,
+          );
 
           const v = await assertEngineStatus(info.port, 'C', 'running');
-          check('S5.7g engine.pid 恒为 null —— 引擎② 由 Rust 的 ServiceManager spawn，box-service 是它的**兄弟进程**，拿不到它的 pid（不编、也不去猜端口占用者）（C）',
-            v?.engine?.pid === null, String(v?.engine?.pid));
-          check('S5.7h /engine/status 的 warmed 与 /health 同源（同一处合成，不会两处各说一套）（C）',
-            v?.warmed === sc?.warmed, `${v?.warmed} vs ${sc?.warmed}`);
+          check(
+            'S5.7g engine.pid 恒为 null —— 引擎② 由 Rust 的 ServiceManager spawn，manga-service 是它的**兄弟进程**，拿不到它的 pid（不编、也不去猜端口占用者）（C）',
+            v?.engine?.pid === null,
+            String(v?.engine?.pid),
+          );
+          check(
+            'S5.7h /engine/status 的 warmed 与 /health 同源（同一处合成，不会两处各说一套）（C）',
+            v?.warmed === sc?.warmed,
+            `${v?.warmed} vs ${sc?.warmed}`,
+          );
 
           // running ⇒ 提交必须**被接受**（201）。它证明"可翻译"这条判定确实按状态走，
           // 而不是所有请求都撞在同一个 503 上（否则 S5.2 那几条就毫无信息量）。
           const ok = await submit(info.port, 'S5 可翻译（C）');
-          check('S5.5 引擎 running 时提交 → **201**（不是 503）：说明状态分流真的按 sidecar.state 走（C）',
-            ok.status === 201, `${ok.status} ${jsonOf(ok)?.error?.code ?? ''}`);
+          check(
+            'S5.5 引擎 running 时提交 → **201**（不是 503）：说明状态分流真的按 sidecar.state 走（C）',
+            ok.status === 201,
+            `${ok.status} ${jsonOf(ok)?.error?.code ?? ''}`,
+          );
           const taskId = jsonOf(ok)?.taskId;
           if (taskId) {
             await httpReq(info.port, 'POST', `/api/v1/tasks/${taskId}/cancel`, { token: TOKEN });
           }
         },
       );
-    } finally { eng.server.close(); ex.close(); }
+    } finally {
+      eng.server.close();
+      ex.close();
+    }
   }
 
   // ---------------------------------------------------------------- D · real + 指定了 GPU 却在 CPU 上 → degraded（§7.4-3）
@@ -442,7 +622,9 @@ async function runPositive() {
     try {
       await withService(
         baseEnv(svcPort, {
-          MIAO_ENGINE_PROTOCOL: 'real', MIAO_ENGINE_PORT: String(engPort), MIAO_ENGINE_PROBE_MS: '300',
+          MIAO_ENGINE_PROTOCOL: 'real',
+          MIAO_ENGINE_PORT: String(engPort),
+          MIAO_ENGINE_PROBE_MS: '300',
           // §7.4-3：指定 GPU 后端却失败 ⇒ 回退 CPU 并**以 degraded 上报，不静默**。
           // 这里直接注入"已回退"的结果（Rust 侧检测到 GPU 启动失败后会这样重拉），验的是上报。
           MIAO_ENGINE_USE_GPU: '0',
@@ -451,16 +633,28 @@ async function runPositive() {
         async (info) => {
           const h = jsonOf(await httpReq(info.port, 'GET', '/api/v1/health'));
           const sc = h?.sidecar;
-          check('S5.10 硬件推荐 GPU 而实际未启用 → sidecar.state=**degraded**、accel=**cpu**（§7.4-3「不静默」）（D）',
-            sc?.state === 'degraded' && sc?.accel === 'cpu', `state=${sc?.state} accel=${sc?.accel}`);
-          check('S5.10b degraded **仍可翻译**：提交 → 201（降级是"慢"，不是"不可用"）（D）',
-            (await submit(info.port, 'S5 降级仍可译（D）')).status === 201, sc?.state);
+          check(
+            'S5.10 硬件推荐 GPU 而实际未启用 → sidecar.state=**degraded**、accel=**cpu**（§7.4-3「不静默」）（D）',
+            sc?.state === 'degraded' && sc?.accel === 'cpu',
+            `state=${sc?.state} accel=${sc?.accel}`,
+          );
+          check(
+            'S5.10b degraded **仍可翻译**：提交 → 201（降级是"慢"，不是"不可用"）（D）',
+            (await submit(info.port, 'S5 降级仍可译（D）')).status === 201,
+            sc?.state,
+          );
           const v = await assertEngineStatus(info.port, 'D', 'degraded');
-          check('S5.10c 诊断视图与 /health 报同一个 accel（对账用途，两处不一致就等于没有对账）（D）',
-            v?.accel === sc?.accel, `${v?.accel} vs ${sc?.accel}`);
+          check(
+            'S5.10c 诊断视图与 /health 报同一个 accel（对账用途，两处不一致就等于没有对账）（D）',
+            v?.accel === sc?.accel,
+            `${v?.accel} vs ${sc?.accel}`,
+          );
         },
       );
-    } finally { eng.server.close(); ex.close(); }
+    } finally {
+      eng.server.close();
+      ex.close();
+    }
   }
 
   // ---------------------------------------------------------------- E · real + 引擎不在 + 模型齐 → UNAVAILABLE
@@ -497,13 +691,18 @@ async function runPositive() {
     const [peSvc] = await freePorts(5680, 1);
     await withService(baseEnv(peSvc, common), `service-E-${peSvc}`, async (info) => {
       const h = jsonOf(await httpReq(info.port, 'GET', '/api/v1/health'));
-      check('S5.11 引擎不在时 sidecar.state=stopped 且 tier/model=null（引擎都没跑，不报"跑着的是 tiny"）（E）',
+      check(
+        'S5.11 引擎不在时 sidecar.state=stopped 且 tier/model=null（引擎都没跑，不报"跑着的是 tiny"）（E）',
         h?.sidecar?.state === 'stopped' && h?.sidecar?.tier === null && h?.sidecar?.model === null,
-        JSON.stringify(h?.sidecar));
+        JSON.stringify(h?.sidecar),
+      );
       await assertUnavailable(info.port, 'E');
       const v = await assertEngineStatus(info.port, 'E', 'stopped');
-      check('S5.11b 模型齐时 models.visualReady 与 sakuraReady 均为 true（判据=在位且大小与清单一致）（E）',
-        v?.models?.visualReady === true && v?.models?.sakuraReady === true, JSON.stringify(v?.models));
+      check(
+        'S5.11b 模型齐时 models.visualReady 与 sakuraReady 均为 true（判据=在位且大小与清单一致）（E）',
+        v?.models?.visualReady === true && v?.models?.sakuraReady === true,
+        JSON.stringify(v?.models),
+      );
     });
 
     // F：把权重删掉 ⇒ 报 `MODEL_DOWNLOAD_FAILED`（引导重下），而不是"引导重启"
@@ -512,32 +711,45 @@ async function runPositive() {
     await withService(baseEnv(pfSvc, common), `service-F-${pfSvc}`, async (info) => {
       const res = await submit(info.port, 'S5 模型缺（F）');
       const body = jsonOf(res);
-      check('S5.12 引擎不在 **且** Sakura 权重不在盘上 → 503 MODEL_DOWNLOAD_FAILED（引导"重新下载模型"，而不是"启动 Box"）（F）',
+      check(
+        'S5.12 引擎不在 **且** Sakura 权重不在盘上 → 503 MODEL_DOWNLOAD_FAILED（引导"重新下载模型"，而不是"启动 Box"）（F）',
         res.status === 503 && body?.error?.code === 'MODEL_DOWNLOAD_FAILED',
-        `${res.status} ${body?.error?.code}`);
-      check('S5.12b details.models 把"哪一半缺"带出来（供 Box 显示重下入口）（F）',
-        body?.error?.details?.models?.sakuraReady === false
-        && body?.error?.details?.models?.visualReady === true,
-        JSON.stringify(body?.error?.details?.models));
+        `${res.status} ${body?.error?.code}`,
+      );
+      check(
+        'S5.12b details.models 把"哪一半缺"带出来（供 Box 显示重下入口）（F）',
+        body?.error?.details?.models?.sakuraReady === false && body?.error?.details?.models?.visualReady === true,
+        JSON.stringify(body?.error?.details?.models),
+      );
       const v = await assertEngineStatus(info.port, 'F', 'stopped');
-      check('S5.12c 诊断视图的 models 与提交时的判定同源（同一处算出来，不会两处各说一套）（F）',
-        v?.models?.sakuraReady === false, JSON.stringify(v?.models));
+      check(
+        'S5.12c 诊断视图的 models 与提交时的判定同源（同一处算出来，不会两处各说一套）（F）',
+        v?.models?.sakuraReady === false,
+        JSON.stringify(v?.models),
+      );
     });
 
     // G：mock 档**不做**模型诊断 —— 模型是真引擎的概念，替身没有模型需求。
     //    不加这道门槛，任何没装过 runtimes/ 的机器跑 mock 档都会得到 MODEL_DOWNLOAD_FAILED。
     const [pgSvc, pgEng] = await freePorts(5720, 2);
-    await withService(baseEnv(pgSvc, {
-      MIAO_ENGINE_PROTOCOL: 'mock',
-      MIAO_ENGINE_PORT: String(pgEng),
-      MIAO_SIDECAR_DOWN: '1',
-      MIAO_MODEL_ROOT: modelRoot,
-      MIAO_MODEL_MANIFEST: manifestPath,
-    }), `service-G-${pgSvc}`, async (info) => {
-      const body = await assertUnavailable(info.port, 'G（mock 档）');
-      check('S5.13 mock 档即使"模型缺"也报 UNAVAILABLE —— 模型诊断只在 real 档生效（替身没有模型需求）（G）',
-        body?.error?.code === 'UNAVAILABLE', body?.error?.code);
-    });
+    await withService(
+      baseEnv(pgSvc, {
+        MIAO_ENGINE_PROTOCOL: 'mock',
+        MIAO_ENGINE_PORT: String(pgEng),
+        MIAO_SIDECAR_DOWN: '1',
+        MIAO_MODEL_ROOT: modelRoot,
+        MIAO_MODEL_MANIFEST: manifestPath,
+      }),
+      `service-G-${pgSvc}`,
+      async (info) => {
+        const body = await assertUnavailable(info.port, 'G（mock 档）');
+        check(
+          'S5.13 mock 档即使"模型缺"也报 UNAVAILABLE —— 模型诊断只在 real 档生效（替身没有模型需求）（G）',
+          body?.error?.code === 'UNAVAILABLE',
+          body?.error?.code,
+        );
+      },
+    );
   }
 
   // ---------------------------------------------------------------- H · mock 档 + ③ 在跑 → warmed=true
@@ -548,8 +760,12 @@ async function runPositive() {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let engOut = '';
-    eng.stdout.on('data', (d) => { engOut += d.toString(); });
-    eng.stderr.on('data', (d) => { engOut += d.toString(); });
+    eng.stdout.on('data', (d) => {
+      engOut += d.toString();
+    });
+    eng.stderr.on('data', (d) => {
+      engOut += d.toString();
+    });
     for (let i = 0; i < 120 && !/MIAO_ENGINE_READY/.test(engOut); i += 1) await sleep(50);
     try {
       await withService(
@@ -570,23 +786,40 @@ async function runPositive() {
             if (sc?.llm?.state === 'running') break;
             await sleep(150);
           }
-          check('S5.14 ③ 在跑时 warmed=true（与实例 C 的 warmed=false 成对：这个字段确实在表达"要不要等"）（H）',
+          check(
+            'S5.14 ③ 在跑时 warmed=true（与实例 C 的 warmed=false 成对：这个字段确实在表达"要不要等"）（H）',
             sc?.warmed === true && sc?.llm?.state === 'running',
-            `warmed=${sc?.warmed} llm=${JSON.stringify(sc?.llm)}`);
-          check('S5.14b llm.port = ③ 实际监听端口（与 MIAO_LLM_PORT 一致）（H）',
-            sc?.llm?.port === llmPort, `${sc?.llm?.port} vs ${llmPort}`);
+            `warmed=${sc?.warmed} llm=${JSON.stringify(sc?.llm)}`,
+          );
+          check(
+            'S5.14b llm.port = ③ 实际监听端口（与 MIAO_LLM_PORT 一致）（H）',
+            sc?.llm?.port === llmPort,
+            `${sc?.llm?.port} vs ${llmPort}`,
+          );
           const v = await assertEngineStatus(info.port, 'H', 'running');
-          check('S5.14c mock 档 engine.version=`mock`（起的是替身就老实说）（H）',
-            v?.engine?.version === 'mock', String(v?.engine?.version));
-          check('S5.14d llm.pid 是**真 pid**（③ 归 box-service 所有，它有真值；对照 S5.7g 的 engine.pid=null）（H）',
-            Number.isInteger(v?.llm?.pid) && v.llm.pid > 0, String(v?.llm?.pid));
-          check('S5.14e mock 档 recentStageLog 为空数组 —— 是**如实的空**（ver1.0 自定义协议是单包响应，没有阶段帧），不是"没实现"（H）',
+          check(
+            'S5.14c mock 档 engine.version=`mock`（起的是替身就老实说）（H）',
+            v?.engine?.version === 'mock',
+            String(v?.engine?.version),
+          );
+          check(
+            'S5.14d llm.pid 是**真 pid**（③ 归 manga-service 所有，它有真值；对照 S5.7g 的 engine.pid=null）（H）',
+            Number.isInteger(v?.llm?.pid) && v.llm.pid > 0,
+            String(v?.llm?.pid),
+          );
+          check(
+            'S5.14e mock 档 recentStageLog 为空数组 —— 是**如实的空**（ver1.0 自定义协议是单包响应，没有阶段帧），不是"没实现"（H）',
             Array.isArray(v?.recentStageLog) && v.recentStageLog.length === 0,
-            JSON.stringify(v?.recentStageLog));
+            JSON.stringify(v?.recentStageLog),
+          );
         },
       );
     } finally {
-      try { eng.kill('SIGTERM'); } catch { /* ignore */ }
+      try {
+        eng.kill('SIGTERM');
+      } catch {
+        /* ignore */
+      }
     }
   }
 }
@@ -635,14 +868,23 @@ async function runOnePassForRefute() {
   const engA = fakeEngine({ answerQueue: false });
   await listen(engA.server, engPortA);
   try {
-    await withService(baseEnv(svcPortA, { MIAO_ENGINE_PROTOCOL: 'real', MIAO_ENGINE_PORT: String(engPortA), MIAO_ENGINE_PROBE_MS: '300' }),
-      `refute-A-${svcPortA}`, async (info) => {
+    await withService(
+      baseEnv(svcPortA, {
+        MIAO_ENGINE_PROTOCOL: 'real',
+        MIAO_ENGINE_PORT: String(engPortA),
+        MIAO_ENGINE_PROBE_MS: '300',
+      }),
+      `refute-A-${svcPortA}`,
+      async (info) => {
         const h = jsonOf(await httpReq(info.port, 'GET', '/api/v1/health'));
         assertSidecarShape(h?.sidecar, 'refute-A');
         await assertNotReady(info.port, 'refute-A', 'starting');
         await assertEngineStatus(info.port, 'refute-A', 'starting');
-      });
-  } finally { engA.server.close(); }
+      },
+    );
+  } finally {
+    engA.server.close();
+  }
 
   const [engPortC, execPortC, svcPortC] = await freePorts(5640, 3);
   const engC = fakeEngine({ answerQueue: true, executorPort: execPortC });
@@ -650,16 +892,34 @@ async function runOnePassForRefute() {
   await listen(engC.server, engPortC);
   await listen(exC, execPortC);
   try {
-    await withService(baseEnv(svcPortC, { MIAO_ENGINE_PROTOCOL: 'real', MIAO_ENGINE_PORT: String(engPortC), MIAO_ENGINE_PROBE_MS: '300' }),
-      `refute-C-${svcPortC}`, async (info) => {
+    await withService(
+      baseEnv(svcPortC, {
+        MIAO_ENGINE_PROTOCOL: 'real',
+        MIAO_ENGINE_PORT: String(engPortC),
+        MIAO_ENGINE_PROBE_MS: '300',
+      }),
+      `refute-C-${svcPortC}`,
+      async (info) => {
         const h = jsonOf(await httpReq(info.port, 'GET', '/api/v1/health'));
         const sc = h?.sidecar;
-        check('S5.9 ③ 停着时 state=running 而 warmed=false（§9.4）', sc?.state === 'running' && sc?.warmed === false, `warmed=${sc?.warmed}`);
+        check(
+          'S5.9 ③ 停着时 state=running 而 warmed=false（§9.4）',
+          sc?.state === 'running' && sc?.warmed === false,
+          `warmed=${sc?.warmed}`,
+        );
         check('S5.9b ③ 停着时 llm.port=null', sc?.llm?.port === null, JSON.stringify(sc?.llm));
-        check('S5.9c engine running 时 tier/model 有值', sc?.tier === 'tiny' && typeof sc?.model === 'string', `tier=${sc?.tier}`);
+        check(
+          'S5.9c engine running 时 tier/model 有值',
+          sc?.tier === 'tiny' && typeof sc?.model === 'string',
+          `tier=${sc?.tier}`,
+        );
         await assertEngineStatus(info.port, 'refute-C', 'running');
-      });
-  } finally { engC.server.close(); exC.close(); }
+      },
+    );
+  } finally {
+    engC.server.close();
+    exC.close();
+  }
 }
 
 async function runRefute() {
@@ -672,11 +932,17 @@ async function runRefute() {
     // 每个开关独立跑一次完整判定：进程内 env 无法回滚（`config.mjs` 在模块顶层读 env），
     // 所以**另起子进程**，把开关通过 env 传进去。子进程用 `--refute-child` 区分入口，
     // 不复用父进程的 `--refute`（否则它会自己也去开反证轮，递归下去）。
-    const child = spawn(process.execPath, [SELF, '--refute-child'],
-      { env: { ...process.env, ...sw.env }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [SELF, '--refute-child'], {
+      env: { ...process.env, ...sw.env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     let stdout = '';
-    child.stdout.on('data', (d) => { stdout += d.toString(); });
-    child.stderr.on('data', (d) => { stdout += d.toString(); });
+    child.stdout.on('data', (d) => {
+      stdout += d.toString();
+    });
+    child.stderr.on('data', (d) => {
+      stdout += d.toString();
+    });
     await new Promise((resolve) => child.once('exit', resolve));
 
     const line = stdout.split('\n').find((l) => l.startsWith('[RESULT] '));
@@ -692,7 +958,9 @@ async function runRefute() {
     for (const code of sw.expectRed) {
       const hit = matchById(parsed.results, code);
       const red = hit && hit.ok === false;
-      console.log(`   ${red ? '✓' : '✗'} ${code} ${red ? '按预期变红' : `**没有变红**（${hit ? hit.detail : '缺该条'}）`}`);
+      console.log(
+        `   ${red ? '✓' : '✗'} ${code} ${red ? '按预期变红' : `**没有变红**（${hit ? hit.detail : '缺该条'}）`}`,
+      );
       if (!red) missed.push(code);
     }
     // 「只红这些」：多红说明这个开关顺带打坏了别的东西，结论就不能归给这一条机制。
@@ -728,9 +996,15 @@ try {
     printResults('反证子进程（带逃生开关）');
   } else {
     await runPositive();
-    const { fail } = printResults('汇总（S5 · 契约增量：9 键 sidecar / ENGINE_NOT_READY / MODEL_DOWNLOAD_FAILED / /engine/status）');
+    const { fail } = printResults(
+      '汇总（S5 · 契约增量：9 键 sidecar / ENGINE_NOT_READY / MODEL_DOWNLOAD_FAILED / /engine/status）',
+    );
     process.exitCode = fail === 0 ? 0 : 1;
   }
 } finally {
-  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* ignore */ }
+  try {
+    fs.rmSync(TMP, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
 }

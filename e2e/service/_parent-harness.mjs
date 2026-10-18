@@ -1,10 +1,10 @@
-// 测试专用：充当 box-service 的「假父进程」
+// 测试专用：充当 manga-service 的「假父进程」
 //
 // 用途：验证父进程看守（service/src/parent-watch.mjs）。
 // 自测进程不能亲自当父进程 —— 要验证看守，就必须把一个父进程**强杀**掉，
 // 而 SIGKILL 会连自测一起带走。于是用一个中间进程顶替「Box 壳」的位置：
 //
-//   自测 ──spawn──> 假父进程 ──spawn──> box-service
+//   自测 ──spawn──> 假父进程 ──spawn──> manga-service
 //                     ↑ SIGKILL 这里，观察 service 是否自救
 //
 // **为什么子进程的 stdio 要落到文件而不是管道**：
@@ -19,6 +19,9 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+// F0：靶子由 `_service-harness.mjs` 解析 —— 这样 `MIAO_SERVICE_IMPL=rust` 时，本假父进程
+// 拉起的也是 **Rust 服务**（否则 A18 会静默变成"假父进程拉起的是 node、而别的用例打的是 rust"）。
+import { targetFor } from './_service-harness.mjs';
 
 const entry = process.argv[2];
 if (!entry) {
@@ -30,7 +33,8 @@ const logPath = process.env.MIAO_HARNESS_LOG || path.join(os.tmpdir(), 'miao-har
 fs.mkdirSync(path.dirname(logPath), { recursive: true });
 const log = fs.openSync(logPath, 'a');
 
-const child = spawn(process.execPath, [entry], {
+const { command, args } = targetFor(entry);
+const child = spawn(command, args, {
   stdio: ['ignore', log, log], // ← 文件，不是管道：杜绝 EPIPE 这个干扰项
   env: process.env,
 });

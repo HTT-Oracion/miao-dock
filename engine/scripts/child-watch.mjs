@@ -89,7 +89,7 @@ if (watchEnabled) {
   if (!bootPpid || bootPpid <= 1) {
     // **出生即孤儿**：看守还没起来、父进程就已经没了（ppid 直接是 1）。
     // 这个窗口是真实存在的（spawn 与 exec 之间父进程死掉），而旧写法会在这里**静默地不装看守**
-    // ⇒ 整棵子树变孤儿，且看起来"跑得好好的"。实测踩到过（见 docs/spec-notes.md D-68）。
+    // ⇒ 整棵子树变孤儿，且看起来"跑得好好的"。实测踩到过（见 docs/internal/spec-notes.md D-68）。
     shutdown('启动时父进程已不在（出生即孤儿）', 600);
   } else {
     setInterval(() => {

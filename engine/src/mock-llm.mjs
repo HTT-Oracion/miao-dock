@@ -75,7 +75,7 @@ server.listen(PORT, HOST, () => {
   log('========================================================');
 });
 
-// 父进程（S4 起是 **box-service**；此前是 Rust 壳）被强杀时自我退出，避免变成占住 8080 的孤儿（E11）
+// 父进程（S4 起是 **manga-service**；此前是 Rust 壳）被强杀时自我退出，避免变成占住 8080 的孤儿（E11）
 watchParent();
 
 for (const sig of ['SIGINT', 'SIGTERM']) {

@@ -1,6 +1,6 @@
 # VERSIONS.lock —— 真实翻译引擎的版本锁（miao-dock ver2.0）
 #
-# 依据：docs/engine-integration-plan.md §S0 / §S3（《04》§2 三层进程）
+# 依据：docs/internal/engine-integration-plan.md §S0 / §S3（《04》§2 三层进程）
 # 目的：把「引擎源码 commit / Python / PyTorch / llama.cpp」四件事钉死。
 #       换版本 = 改这个文件 + 走 D-xx 评审，不允许"顺手升级"。
 # ⚠️ 本文件在仓库内（`engine/`），**可版本控制**。
@@ -75,7 +75,7 @@ rusty-manga-image-translator = 0.12.1   # ← 来自 frederik-uni 额外索引
 #      `FileExistsError`，却被抛成**包着 `EEXIST` 文案的 `PermissionError`** ⇒ 按正确 errno
 #      忽略"已存在"的调用方（**pip 解包 sdist 就是**）接不到，报成"安装失败"。
 #      ⇒ 安装走 `.tmp/engine-test/pip-mkdir-fix.py`（**只在该目录确实存在时**纠正类型；
-#        不存在的路径**原样抛出** ⇒ 不放大任何权限）。详见 `docs/spec-notes.md` D-59 §5③。
+#        不存在的路径**原样抛出** ⇒ 不放大任何权限）。详见 `docs/internal/spec-notes.md` D-59 §5③。
 # ✅ 已补齐（2026-10-05）：
 #   · `pip check` → **No broken requirements found**（依赖自洽）
 #   · `pydensecrf 1.0` → **已编译安装成功**（cp311 macosx_11_0_arm64 wheel，222 KB）
@@ -148,6 +148,22 @@ sakura_install= runtimes/manga-translator/models/sakura/
 #    即：**Sakura 走 `llama-server`，不走 `--translator` 的离线模型路径**。
 #    相关环境变量：`SAKURA_API_BASE` / `SAKURA_VERSION`（0.9|0.10）/ `SAKURA_DICT_PATH`。
 
+### 5.3 译文渲染字体（✅ 2026-10-10 · 补丁 D-103 / D-105）
+
+lxgw_gb       = LXGWWenKaiGB-Medium.ttf（24.6 MB / sha256 b885c51e…）★ 首选（无 Bold 档，取 Medium 当加粗）
+lxgw_src      = github.com/lxgw/LxgwWenkaiGB release v1.522（OFL 1.1，可自由分发）· GB18030 简体全覆盖
+lxgw_install  = runtimes/manga-translator/src/fonts/LXGWWenKaiGB-Medium.ttf
+
+zen_maru      = ZenMaruGothic-Regular.ttf（3.66 MB / sha256 a0c0b535…）
+zen_src       = google/fonts 仓库 commit `633bf7f8`（2023-02-23，Version 1.001；OFL 1.1，可自由分发）
+zen_install   = runtimes/manga-translator/src/fonts/ZenMaruGothic-Regular.ttf
+
+# 引擎 `rendering/text_render.py` 的 FALLBACK_FONTS：D-105 把霞鹜文楷 GB 置为首选 [0]，
+# Zen Maru Gothic 降为次级 [1]；权威副本在 `models-store/fonts/`，由 `fetch:models` 硬链接进 `src/fonts/`。
+# 条目见 `models.manifest.json` 的 `font_lxgw_wenkai_gb`（首选）/ `font_zen_maru_gothic`（次级）。
+# ⚠️ Zen 是日文字体（JIS 汉字集），简体字缺约 27% ⇒ 由 msyh.ttc 逐字兜底（圆体+黑体混排）；
+#    LXGW 简体基本同源 ⇒ 不再混排。两者缺失都不致命（静默回退 msyh）。
+
 ## 6. 许可（⚠️ **两层**，且都比音乐模块严）
 
 engine_license = GPL-3.0-only（上游 `pyproject.toml` 的 `license` 字段 + `LICENSE` 文件）
@@ -195,7 +211,7 @@ local_entry  = `python -m manga_translator local -i <img>`       # **CLI 单图/
              #    ⇒ 可用它**先把"引擎能跑完流水线"与"翻译质量"分开验**（本项目"管路通≠功能通"的引擎侧对应物）。
 
 # 进程树深度（🔴 比计划假设的深：计划按"服务 → 引擎"两层写）
-#   box-service → server.main(uvicorn, 8000) → manga_translator shared(执行器, 8001) → [llama-server]
+#   manga-service → server.main(uvicorn, 8000) → manga_translator shared(执行器, 8001) → [llama-server]
 #   ⚠️ `proc.terminate()` 只覆盖**一层**（`main.py:272 handle_exit_signals`），
 #     执行器再往下拉的东西（模型/LMM）不在它的信号范围内 ⇒ **孤儿回收风险比计划里写的高**，S2 重估。
 #   ⚠️ 它**不打印"就绪行"**（只先打 `Nonce: <hex>`，然后 uvicorn 的日志）
@@ -269,7 +285,7 @@ local_entry  = `python -m manga_translator local -i <img>`       # **CLI 单图/
 #    让 setuptools/distutils **跳过 vcvarsall**、直接吃现成环境。
 # ② **`rc.exe` 不在 MSVC 目录，在 Windows SDK 的 `bin/<ver>/x64`**。漏进 PATH 会在**链接**阶段炸：
 #    `LINK : fatal error LNK1158: 无法运行"rc.exe"` —— 报错发生在 link、离"PATH 少了个 SDK bin"很远。
-# ③ `npm run app` 另外还因缺 `app/src-tauri/icons/icon.ico` 编译失败（tauri-build 的 Windows 资源文件）；
+# ③ `npm run app` 另外还因缺 `src-tauri/icons/icon.ico` 编译失败（tauri-build 的 Windows 资源文件）；
 #    已补（从 icon.png 转 PNG-compressed ICO）并把 `icon.ico` 加进 tauri.conf.json 的 `bundle.icon`。
 # 本机 MSVC/SDK 路径 = C:\VS2022BT\VC\Tools\MSVC\14.44.35207
 #                    + C:\Program Files (x86)\Windows Kits\10\{Include,Lib,bin}\10.0.22621.0

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 生成 `app/src-tauri/testdata/probe.png` —— 自检里「关窗后提交一张图」用的样张。
+ * 生成 `src-tauri/testdata/probe.png` —— 自检里「关窗后提交一张图」用的样张。
  *
  * B1 的判据不只是「窗口隐藏了」，还有「**此时用插件/curl 提交任务仍成功执行**」。
  * 要真的走一遍提交，就得有一张**真的** PNG —— 服务端有魔数嗅探（契约 §8.2），
@@ -18,7 +18,7 @@ import path from 'node:path';
 import { encodePng } from '../engine/src/png.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const OUT = path.join(ROOT, 'app', 'src-tauri', 'testdata', 'probe.png');
+const OUT = path.join(ROOT, 'src-tauri', 'testdata', 'probe.png');
 
 const W = 40;
 const H = 60;

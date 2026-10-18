@@ -3,7 +3,7 @@
  *
  * 引擎是被 Rust 壳拉起的子进程，同样面临「主进程崩溃后变孤儿、占住端口」的问题。
  * 之所以不复用 service 那份、而在这里再放一份：引擎是**可被真实 mangatranslator
- * sidecar 整体顶替**的模块（见 docs/spec-notes.md D-09），让它 import 仓库里的共享
+ * sidecar 整体顶替**的模块（见 docs/internal/spec-notes.md D-09），让它 import 仓库里的共享
  * 代码会制造错误的耦合 —— 顶替时整目录废弃即可。二十行重复换一个干净边界，值得。
  *
  * 注意：真实 sidecar 接入后本文件随之废弃，届时引擎残留要靠 sidecar 自身或

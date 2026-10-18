@@ -50,25 +50,55 @@ export class ModelStoreError extends Error {
 export function refuteFlags(env = process.env) {
   return {
     noVerify: env.MIAO_NO_MODEL_VERIFY === '1', // 关掉 SHA256 校验
-    noResume: env.MIAO_NO_RESUME === '1',       // 关掉断点续传（每次从 0 重来）
-    noReady: env.MIAO_NO_READY === '1',         // 关掉 .ready 幂等标记
-    noLink: env.MIAO_NO_LINK === '1',           // 关掉"把 store 链进引擎树"这一步
+    noResume: env.MIAO_NO_RESUME === '1', // 关掉断点续传（每次从 0 重来）
+    noReady: env.MIAO_NO_READY === '1', // 关掉 .ready 幂等标记
+    noLink: env.MIAO_NO_LINK === '1', // 关掉"把 store 链进引擎树"这一步
+    // 关掉「清单原 url 优先」⇒ 只试 sources（2026-10-16 之前的旧行为）。
+    // 旧行为本身就是缺陷（sources 一非空就把 url 丢掉，见 sourceCandidates），
+    // 留这个开关只为让"原 url 真的参与了候选"可反证：关掉它，H2 必须变红。
+    noUrlFirst: env.MIAO_NO_URL_FIRST === '1',
   };
 }
 
 // ------------------------------------------------------------------ 基础工具
 
-const log = (fn, msg) => { if (fn) fn(msg); };
+const log = (fn, msg) => {
+  if (fn) fn(msg);
+};
 
 async function sizeOf(p) {
-  try { return (await fsp.stat(p)).size; } catch { return 0; }
+  try {
+    return (await fsp.stat(p)).size;
+  } catch {
+    return 0;
+  }
 }
 
 export async function statSafe(p) {
   try {
     const s = await fsp.stat(p);
     return { size: s.size, mtimeMs: s.mtimeMs, ino: s.ino, dev: s.dev };
-  } catch { return null; }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 同 `statSafe`，但**不跟随**符号链接（`lstat`）。
+ *
+ * 为什么必须另有一个：HuggingFace 下载器在 `snapshots/` 下留的是**相对符号链接**，
+ * 而 `stat` 会跟随它。若只判 `stat`，"链接目标被搬走（悬空链接）"会表现为"这里什么都没有"
+ * —— 于是建链时会往同一个路径再 `link()` 一次，拿到 `EEXIST`，接着退化成 `copyFile`：
+ * 而 `copyFile` 写的是**符号链接的目标**，不是在替换这个链接。结果既没修好、也没报错。
+ * ⇒ 判断"这个路径上有没有东西"一律用 `lstat`。
+ */
+export async function lstatSafe(p) {
+  try {
+    const s = await fsp.lstat(p);
+    return { size: s.size, mtimeMs: s.mtimeMs, ino: s.ino, dev: s.dev, isSymbolicLink: s.isSymbolicLink() };
+  } catch {
+    return null;
+  }
 }
 
 /** 流式算 sha256（不把文件读进内存 —— Sakura 权重有 3.3 GB）。 */
@@ -80,7 +110,8 @@ export async function sha256File(file, { signal } = {}) {
     signal?.addEventListener('abort', onAbort, { once: true });
     const done = (err, v) => {
       signal?.removeEventListener('abort', onAbort);
-      if (err) reject(err); else resolve(v);
+      if (err) reject(err);
+      else resolve(v);
     };
     rs.on('data', (c) => h.update(c));
     rs.on('error', (e) => done(e));
@@ -127,12 +158,55 @@ export function matchesPlatform(file, key = platformKey()) {
   return !file.platform || file.platform === key;
 }
 
+// ------------------------------------------------------------------ HuggingFace 缓存布局
+
+/**
+ * 带 `hf` 的条目在 **HuggingFace 缓存布局**下的落点（纯函数，便于断言）。
+ *
+ * 为什么需要它（见 docs/internal/spec-notes.md D-99）：英译中的离线档走 `huggingface_hub`，
+ * 而 HF 的缓存不是"一个目录里平铺文件"：`try_to_load_from_cache()`（引擎 `_check_downloaded`
+ * 与 D-97c 的探针都用它判"权重在不在"）解析的是
+ *   `<cache>/models--<org>--<name>/snapshots/<revision>/<filename>`
+ * 而该路径通常只是指向 `<cache>/models--<org>--<name>/blobs/<blob>` 的链接，
+ * `<revision>` 又要从 `refs/main` 里读出来。
+ * ⇒ 「把权重放进 `src/models/`」如果只平铺文件，HF **看不见**它 —— 于是照样联网重下
+ *   （而在本机就是 `ProxyError 502`，见 D-97c）。这一层就是"看得见"与"看不见"的分界。
+ *
+ * 约定（可断言，不猜）：带 `hf` 的条目其 `linkTo` **必须**形如 `<cache>/blobs/<blob>`
+ * ⇒ `<cache>` = `dirname(dirname(linkTo))`。不满足就抛错：猜错的表现是
+ * 「链接建好了、权重还是不被认」，症状与根因离得极远。
+ */
+export function hfLayout(file, { rootDir, linkBase }) {
+  if (!file.hf) return null;
+  if (!file.linkTo) {
+    throw new ModelStoreError('MODEL_HF_NO_LINK', `${file.id}：带 hf 的条目必须有 linkTo`);
+  }
+  const segs = file.linkTo.split('/').filter(Boolean);
+  if (segs.length < 3 || segs[segs.length - 2] !== 'blobs') {
+    throw new ModelStoreError(
+      'MODEL_HF_BAD_LINK',
+      `${file.id}：带 hf 的条目其 linkTo 必须形如 <cache>/blobs/<blob>，收到「${file.linkTo}」`,
+      { id: file.id, linkTo: file.linkTo },
+    );
+  }
+  const cacheDir = path.join(linkBase, ...segs.slice(0, -2));
+  return {
+    cacheDir,
+    blobFrom: path.join(rootDir, file.dest),
+    snapshotTo: path.join(cacheDir, 'snapshots', file.hf.revision, file.hf.filename),
+    refsTo: path.join(cacheDir, 'refs', 'main'),
+    refsContent: file.hf.revision, // HF 写的是**裸** commit（无换行），照抄
+  };
+}
+
 // ------------------------------------------------------------------ .ready 标记
 
 export async function readMarker(rootDir) {
   try {
     return JSON.parse(await fsp.readFile(path.join(rootDir, READY_MARKER), 'utf8'));
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 export async function writeMarker(rootDir, manifest, records) {
@@ -158,8 +232,7 @@ export async function writeMarker(rootDir, manifest, records) {
  *    `integrity:'hash'` 始终可达，且诊断/验收路径走的就是它（见 D-72）。
  */
 export function markerMatches(rec, dest, st, sha256) {
-  return !!rec && rec.dest === dest && rec.sha256 === sha256
-    && rec.sizeBytes === st.size && rec.mtimeMs === st.mtimeMs;
+  return !!rec && rec.dest === dest && rec.sha256 === sha256 && rec.sizeBytes === st.size && rec.mtimeMs === st.mtimeMs;
 }
 
 // ------------------------------------------------------------------ 单文件取回
@@ -179,16 +252,43 @@ function totalFromContentRange(v) {
 export const RETRY_PER_SOURCE = 3;
 
 /**
+ * 下载候选源：**清单原 `url` 优先，然后才是 `sources` 镜像**（去重、跳空）。
+ *
+ * 顺序与 `asset-source.mjs::mirrorUrls()` 注释里那条**逐字一致**（通道前缀 → 原 url → 镜像）。
+ * 两侧一致不是审美问题：`check:models` 拿同一份用例跑**双靶**（Node 对照端 / Rust 移植），
+ * 顺序一散，同一个清单会在两套实现上表现得像两个下载器。
+ *
+ * 🔴 旧写法是 `const urls = sources?.length ? sources : [file.url]` —— `sources` 一非空，
+ *    清单原 `url` 就被**整个丢掉**。于是"备用镜像"变成了"唯一来源"：镜像一挂，
+ *    即使原 `url` 好好的也永远试不到。2026-10-16 真跑装配就是这么整段失败的
+ *    （`[ENGINE_BOOTSTRAP_FAILED] [source] HTTP 403 Forbidden`），
+ *    而日志里每条源都如实报了错，离根因（镜像形态不被支持 + 原 url 被丢）极远。见 D-217。
+ *
+ * `flags.noUrlFirst`（`MIAO_NO_URL_FIRST=1`）= **反证态**：退回"只试 sources"。
+ */
+export function sourceCandidates(file, flags = {}) {
+  const raw = flags.noUrlFirst ? (file.sources ?? []) : [file.url, ...(file.sources ?? [])];
+  const out = [];
+  for (const u of raw) {
+    const s = String(u ?? '').trim();
+    if (!s || out.includes(s)) continue;
+    out.push(s);
+  }
+  return out;
+}
+
+/**
  * 把内容落到 `.part`（支持续传）。**不做哈希校验** —— 那是调用方的事。
  *
  * 🔴 每次尝试都**重新量一次盘上 `.part` 的大小**，而不是沿用入参：
  *    上一轮（或上一次调用、或本函数的上一次重试）可能已经写下了一部分字节。
  *    用入参记的旧值会算出错的 Range 起点 —— 症状是"续传成功但文件哈希永远不对"。
+ * 🔴 候选源由**调用方一处**（`sourceCandidates`）构造后传进来，本函数不再自己拼 ——
+ *    拼在两层里，就会重演"一侧按 sources、一侧按 url"的分叉。
  *
  * @returns {{url:string, resumedFrom:number, restarted:boolean, bytes:number}}
  */
-async function fetchToPart(partAbs, file, { sources, fetchImpl, signal, onProgress, logger, allowResume = true }) {
-  const urls = sources?.length ? sources : [file.url];
+async function fetchToPart(partAbs, file, { urls, fetchImpl, signal, onProgress, logger, allowResume = true }) {
   let lastErr = null;
 
   for (const url of urls) {
@@ -211,7 +311,9 @@ async function fetchToPart(partAbs, file, { sources, fetchImpl, signal, onProgre
 
         const total = acceptsRange
           ? totalFromContentRange(res.headers.get('content-range'))
-          : (res.headers.get('content-length') != null ? Number(res.headers.get('content-length')) : null);
+          : res.headers.get('content-length') != null
+            ? Number(res.headers.get('content-length'))
+            : null;
 
         ws = fs.createWriteStream(partAbs, { flags: from > 0 ? 'a' : 'w' });
         const closed = finished(ws);
@@ -234,7 +336,11 @@ async function fetchToPart(partAbs, file, { sources, fetchImpl, signal, onProgre
 
         return { url, resumedFrom: from, restarted, bytes: received };
       } catch (err) {
-        try { ws?.destroy(); } catch { /* 已关 */ }
+        try {
+          ws?.destroy();
+        } catch {
+          /* 已关 */
+        }
         // 用户主动中止 ⇒ 立刻上抛，不当作"这个源坏了"去试下一个（否则取消变成慢动作）。
         // 并且**只吐一个错误码**：底层可能是裸的 AbortError，也可能是我们自己的 —— 调用方
         // 不该被迫同时接两种形态（这是最容易漏、漏了就表现为"取消失败"的地方）。
@@ -270,16 +376,7 @@ async function fetchToPart(partAbs, file, { sources, fetchImpl, signal, onProgre
  * @param {AbortSignal} [opts.signal]
  */
 export async function ensureModels(manifest, opts = {}) {
-  const {
-    rootDir,
-    ids,
-    set,
-    integrity = 'hash',
-    fetchImpl = globalThis.fetch,
-    onProgress,
-    signal,
-    logger,
-  } = opts;
+  const { rootDir, ids, set, integrity = 'hash', fetchImpl = globalThis.fetch, onProgress, signal, logger } = opts;
 
   const flags = refuteFlags();
   if (!rootDir) throw new ModelStoreError('MODEL_NO_ROOT', '缺少 rootDir');
@@ -293,10 +390,10 @@ export async function ensureModels(manifest, opts = {}) {
 
   const result = {
     total: files.length,
-    reused: [],        // 已就位且校验通过，本次未动
-    downloaded: [],    // 本次（重新）下载成功
-    redownloaded: [],  // 因校验不符触发**自动重下**的
-    resumeFrom: {},    // id → 续传起点（0 表示从头）
+    reused: [], // 已就位且校验通过，本次未动
+    downloaded: [], // 本次（重新）下载成功
+    redownloaded: [], // 因校验不符触发**自动重下**的
+    resumeFrom: {}, // id → 续传起点（0 表示从头）
     bytes: 0,
   };
 
@@ -347,7 +444,7 @@ export async function ensureModels(manifest, opts = {}) {
       const partial = await sizeOf(partAbs);
       if (partial > 0) log(logger, `  [续传] ${file.id} 从 ${(partial / 1048576).toFixed(1)} MB 接着下`);
       const fetched = await fetchToPart(partAbs, file, {
-        sources: file.sources,
+        urls: sourceCandidates(file, flags),
         fetchImpl,
         signal,
         onProgress,
@@ -411,7 +508,10 @@ export async function verifyModels(manifest, { rootDir, ids, set, signal, onProg
   for (const file of files) {
     const destAbs = path.join(rootDir, file.dest);
     const st = await statSafe(destAbs);
-    if (st == null) { out.missing.push(file.id); continue; }
+    if (st == null) {
+      out.missing.push(file.id);
+      continue;
+    }
     onProgress?.({ id: file.id, phase: 'verifying', received: 0, total: st.size });
     const got = await sha256File(destAbs, { signal });
     if (got === file.sha256) out.ok.push(file.id);
@@ -443,7 +543,7 @@ export async function linkModels(manifest, { rootDir, linkBase, ids, set, logger
   const flags = refuteFlags();
   const files = selectFiles(manifest, { ids, set }).filter((f) => f.linkTo);
   const base = linkBase ?? path.join(rootDir, 'src');
-  const out = { total: files.length, base, linked: [], already: [], copied: [], skipped: [] };
+  const out = { total: files.length, base, linked: [], already: [], copied: [], skipped: [], hf: [] };
 
   if (flags.noLink) {
     out.skipped = files.map((f) => f.id);
@@ -451,9 +551,37 @@ export async function linkModels(manifest, { rootDir, linkBase, ids, set, logger
     return out;
   }
 
+  /**
+   * 把 `from` 落到 `to`（硬链接优先，跨设备退化复制）。
+   *
+   * 🔴 判"路径上有没有东西"用 `lstatSafe` 而非 `statSafe`：HF 在 `snapshots/` 下留的是
+   *    相对符号链接，`stat` 会跟随它 —— 链接悬空时 `stat` 返回 null，于是这里会以为
+   *    "路径是空的"而直接 `link()` 拿到 `EEXIST`，再退化成 `copyFile`，
+   *    而 `copyFile` 写的是**链接指向的目标**、并不是替换这个链接本身。既没修好也不报错。
+   * @returns {'linked'|'already'|'copied'}
+   */
+  const linkOne = async (label, from, to) => {
+    const stFrom = await statSafe(from);
+    await fsp.mkdir(path.dirname(to), { recursive: true });
+    const lTo = await lstatSafe(to);
+    if (lTo) {
+      const stTo = await statSafe(to); // 跟随链接：悬空则为 null
+      if (stTo && stTo.ino === stFrom.ino && stTo.dev === stFrom.dev) return 'already';
+      await fsp.rm(to, { force: true }); // 悬空链接 / 上一版本留下的旧文件
+    }
+    try {
+      await fsp.link(from, to);
+      log(logger, `  [链接] ${label} → ${path.relative(base, to) || to}`);
+      return 'linked';
+    } catch (e) {
+      await fsp.copyFile(from, to); // 跨设备等情况：退化为复制，但**如实记账**
+      log(logger, `  [复制] ${label}（硬链接不可用：${e.code || e.message}）`);
+      return 'copied';
+    }
+  };
+
   for (const file of files) {
     const from = path.join(rootDir, file.dest);
-    const to = path.join(base, file.linkTo);
     const stFrom = await statSafe(from);
     if (!stFrom) {
       out.skipped.push(file.id);
@@ -461,23 +589,64 @@ export async function linkModels(manifest, { rootDir, linkBase, ids, set, logger
       continue;
     }
 
-    await fsp.mkdir(path.dirname(to), { recursive: true });
-    const stTo = await statSafe(to);
-    if (stTo && stTo.ino === stFrom.ino && stTo.dev === stFrom.dev) {
-      out.already.push(file.id); // 已经是指向同一 inode 的链接，不动它
-      continue;
-    }
-    if (stTo) await fsp.rm(to, { force: true }); // 上一个引擎版本留下的、或已被换掉的旧文件
+    const to = path.join(base, file.linkTo);
+    const how = await linkOne(file.id, from, to);
+    out[how].push(file.id);
 
-    try {
-      await fsp.link(from, to);
-      out.linked.push(file.id);
-      log(logger, `  [链接] ${file.id} → ${file.linkTo}`);
-    } catch (e) {
-      await fsp.copyFile(from, to); // 跨设备等情况：退化为复制，但**如实记账**
-      out.copied.push(file.id);
-      log(logger, `  [复制] ${file.id}（硬链接不可用：${e.code || e.message}）`);
+    // —— HuggingFace 缓存布局：blob 之外还要有 snapshots/<rev>/<file> 与 refs/main
+    //    否则引擎用 huggingface_hub 判"权重在不在"时会**看不见**这份权重（见 hfLayout）。
+    const hf = hfLayout(file, { rootDir, linkBase: base });
+    if (hf) {
+      const snapHow = await linkOne(`${file.id}#snapshot`, from, hf.snapshotTo);
+      const refsWritten = await writeRefsIfChanged(hf.refsTo, hf.refsContent);
+      out.hf.push({ id: file.id, snapshot: hf.snapshotTo, refs: hf.refsTo, how: snapHow, refsWritten });
     }
+  }
+  return out;
+}
+
+/**
+ * 写 `refs/main`（内容 = 裸 commit）。**内容一致就不动它** —— 避免每次装配都刷新 mtime，
+ * 那会让"这次装配真的改了什么"变得看不出来。
+ * @returns {boolean} 是否真的写了
+ */
+async function writeRefsIfChanged(refsTo, content) {
+  await fsp.mkdir(path.dirname(refsTo), { recursive: true });
+  try {
+    if ((await fsp.readFile(refsTo, 'utf8')) === content) return false;
+  } catch {
+    /* 不存在或读不动 ⇒ 写一份新的 */
+  }
+  await fsp.writeFile(refsTo, content);
+  return true;
+}
+
+/**
+ * 纯校验（不联网）：带 `hf` 的条目在引擎树里**是否真的能被 HF 解析到**。
+ * =============================================================================
+ * 判据三条，缺一不可（任何一条缺了，`try_to_load_from_cache()` 就会返回 None，
+ * 引擎随即联网重下 —— 在本机表现为 `ProxyError 502`）：
+ *   ① `snapshots/<revision>/<filename>` 存在（HF 认的是这个路径，不是 blobs 那个）
+ *   ② `refs/main` 的内容 = `revision`（HF 靠它把 "main" 解析成 commit）
+ *   ③ 权威副本（store 的 `dest`）在
+ * 这是「链接建完了但权重仍然不被认」这一整类问题的**唯一**承担者。
+ */
+export async function verifyHfCache(manifest, { rootDir, linkBase, ids, set } = {}) {
+  const base = linkBase ?? path.join(rootDir, 'src');
+  const files = selectFiles(manifest, { ids, set }).filter((f) => f.hf);
+  const out = { total: files.length, ok: [], missing: [] };
+  for (const file of files) {
+    const l = hfLayout(file, { rootDir, linkBase: base });
+    const snap = await statSafe(l.snapshotTo);
+    const store = await statSafe(l.blobFrom);
+    let refOk = false;
+    try {
+      refOk = (await fsp.readFile(l.refsTo, 'utf8')).trim() === l.refsContent.trim();
+    } catch {
+      /* 缺 refs */
+    }
+    if (snap && store && refOk) out.ok.push(file.id);
+    else out.missing.push({ id: file.id, snapshot: !!snap, store: !!store, refs: refOk });
   }
   return out;
 }

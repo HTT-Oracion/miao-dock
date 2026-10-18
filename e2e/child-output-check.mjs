@@ -3,7 +3,7 @@
  * 子进程输出读取的**根因钉子**：谁把"读子进程日志"写成"**遇到非 UTF-8 就停读**"，
  * 就会连带打死子进程本身 —— 且报错出现在毫不相干的地方。必须可反证。
  * =====================================================================================
- * ## 这条缺陷的真身（2026-10-07 实测，见 docs/spec-notes.md D-88）
+ * ## 这条缺陷的真身（2026-10-07 实测，见 docs/internal/spec-notes.md D-88）
  *
  * 用户报的现象是「翻译日志显示 `[Errno 22] Invalid argument`」，整批 16 张图全 failed。
  * 追下去是一条**五段链**，其中只有第一段是"引擎的问题"：
@@ -26,7 +26,7 @@
  * 反证变异是那里的 **J**）。
  *
  * ## 判据
- *   S1 **源码钉子（回归钉子）**：`app/src-tauri/src/service.rs` 读子进程输出
+ *   S1 **源码钉子（回归钉子）**：`src-tauri/src/service/mod.rs` 读子进程输出
  *      **代码里不得**出现 `map_while(Result::ok)`；**必须**走按字节 + `from_utf8_lossy` 的 `relay_lines`。
  *      谁把代码改回去，S1 立刻变红。
  *      ⚠️ 判定前先把行注释与块注释剥掉 —— 该文件里正好有一段注释在解释「为什么不能用它」，
@@ -56,7 +56,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const SERVICE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'service.rs');
+const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service', 'mod.rs');
 const REFUTE = process.argv.includes('--refute');
 
 const results = [];
@@ -78,19 +78,40 @@ function stripRustComments(src) {
     const c = src[i];
     const n = src[i + 1];
     if (inBlock) {
-      if (c === '*' && n === '/') { inBlock = false; i += 2; } else { i++; }
+      if (c === '*' && n === '/') {
+        inBlock = false;
+        i += 2;
+      } else {
+        i++;
+      }
       continue;
     }
     if (inStr) {
       out += c;
-      if (c === '\\') { out += n ?? ''; i += 2; continue; }
+      if (c === '\\') {
+        out += n ?? '';
+        i += 2;
+        continue;
+      }
       if (c === '"') inStr = false;
       i++;
       continue;
     }
-    if (c === '"') { inStr = true; out += c; i++; continue; }
-    if (c === '/' && n === '/') { while (i < src.length && src[i] !== '\n') i++; continue; }
-    if (c === '/' && n === '*') { inBlock = true; i += 2; continue; }
+    if (c === '"') {
+      inStr = true;
+      out += c;
+      i++;
+      continue;
+    }
+    if (c === '/' && n === '/') {
+      while (i < src.length && src[i] !== '\n') i++;
+      continue;
+    }
+    if (c === '/' && n === '*') {
+      inBlock = true;
+      i += 2;
+      continue;
+    }
     out += c;
     i++;
   }
@@ -136,7 +157,12 @@ function runAll() {
   {
     let cur = [];
     for (const b of bytes) {
-      if (b === 0x0a) { rawLines.push(Buffer.from(cur)); cur = []; } else { cur.push(b); }
+      if (b === 0x0a) {
+        rawLines.push(Buffer.from(cur));
+        cur = [];
+      } else {
+        cur.push(b);
+      }
     }
     if (cur.length) rawLines.push(Buffer.from(cur));
   }
@@ -187,8 +213,7 @@ const MUTATIONS = [
     name: 'M1 读子进程输出退回「严格 UTF-8 + 遇错即停」（= D-88 的原始缺陷形态）',
     // 锚点带上 `relay_lines(` 前缀以确保唯一定位（`map_while(Result::ok)` 已全仓不再出现）。
     find: '            relay_lines(out, |line| {',
-    replace:
-      '            for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {',
+    replace: '            for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {',
     expect: ['S1'],
   },
 ];
@@ -224,7 +249,8 @@ const main = () => {
 
   console.log('\n破坏源文件 → 断言必须变红 → 按字节还原\n');
   for (const mut of MUTATIONS) {
-    if (!originals.has(mut.file || SERVICE_RS)) originals.set(mut.file || SERVICE_RS, readBytes(mut.file || SERVICE_RS));
+    if (!originals.has(mut.file || SERVICE_RS))
+      originals.set(mut.file || SERVICE_RS, readBytes(mut.file || SERVICE_RS));
     const file = mut.file || SERVICE_RS;
     const txt = originals.get(file).toString('utf8');
     if (!txt.includes(mut.find)) {

@@ -30,7 +30,7 @@ import path from 'node:path';
 import { cachedReadText } from './_file-cache.mjs';
 
 /** styles 目录（三个脚本各自的路径不同，故由调用方传入） */
-export const STYLES_DIR = path.join('app', 'src', 'styles');
+export const STYLES_DIR = path.join('src', 'styles');
 
 /** 入口文件名 —— 顺序即层叠 */
 export const ENTRY = 'index.scss';
@@ -43,9 +43,9 @@ export function styleEntryOrder(stylesDir) {
   const entry = path.join(stylesDir, ENTRY);
   if (!existsSync(entry)) {
     throw new Error(
-      `样式入口不存在：${entry}\n`
-      + '样式只经 index.scss 一个入口（见《09》§2.4）。若确实要改入口文件名，'
-      + '请同步改本模块的 ENTRY 与三个检查脚本的引用。',
+      `样式入口不存在：${entry}\n` +
+        '样式只经 index.scss 一个入口（见《09》§2.4）。若确实要改入口文件名，' +
+        '请同步改本模块的 ENTRY 与三个检查脚本的引用。',
     );
   }
   const src = cachedReadText(entry);
@@ -67,7 +67,7 @@ export function styleEntryOrder(stylesDir) {
  * 缺的分片用**哨兵注释**占位而不是抛错（理由见文件头）：哨兵会被判据的
  * stripComments 剥掉，不会让无关断言误判；真正该报红的是 STYLE.shardsRegistered。
  *
- * @param {string} stylesDir 绝对路径，例：`<repo>/app/src/styles`
+ * @param {string} stylesDir 绝对路径，例：`<repo>/src/styles`
  * @returns {string} 拼接结果；各分片之间以换行分隔（避免末行注释粘连到下一段选择器）
  */
 export function readStyleSource(stylesDir) {

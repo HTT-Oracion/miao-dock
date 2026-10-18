@@ -18,12 +18,55 @@
  * 能抓住语义混淆的只有**删除之后去看它到底删了什么**：目录还在不在、库里还列不列它、
  * 任务记录还在不在。所以必须单开一个脚本。
  *
- * ## 判据（见下方 L1..L8 的 label）
- * ## 反证轮（`--refute`）：四条变异，各自必须让指定断言变红
+ * ## 判据（见下方 L1..L8 / N1..N10d 的 label）
+ *
+ * ## Step 8 扩展（plan「漫画库交互流程改造」）：新建 / 归并 / 封面
+ * 5. **新建漫画**（`POST /library/create`）：建目录 + `manifest.json` 同步落盘（N1）；
+ *    同名 → 409 `BOOK_NAME_TAKEN` 且不动已有目录（N2，判据是 existsSync 复检，D-118）。
+ * 6. **归并**（`POST /library/{name}/merge`）：源有未终态任务 → 409 `MERGE_SOURCE_BUSY`（N3）；
+ *    物理移动为 `<大类>/07_第7话`（NN_第N话 零填充，N4）；`episodes[]` 按目录重建（N5）。
+ * 7. **封面**（`POST /library/{book}/cover`）：扩展名由**字节嗅探**决定（不信任 filename），
+ *    `manifest.cover` 与 author 同一次请求同步写入，`GET /cover` 原样发回字节（N6）。
+ * 8. **话号一位小数**（2026-10-11 需求）：归并 `no=14.1` → 目录 `14.1_第14.1话`、
+ *    `episodes[].no` 记 14.1、`/chapters/14.1/…` 寻址到同一话（N7）；两位小数 / `.0`
+ *    → 404 拒绝（N7b）。
+ * 9. **归并撞 Windows 句柄占用**（D-125，线上"归并 22.1 → 服务内部错误"的修复）：
+ *    源目录内文件被打开句柄占用时，改名抛 EPERM。瞬时占用（350ms 后释放）被
+ *    退避重试救回 → 200（N8）；持续占用重试耗尽 → 409 `MERGE_SOURCE_LOCKED` 而非
+ *    500（N8b）；释放后重试成功、无半截目录残留（N8c）。
+ *    —— 原第 9 条还带一条源码级断言 N9（"页图/封面读流走 `pipeline`、中止即释放句柄"），
+ *    随 Node 靶子退役**一并删除**：Rust `image_response` 是 `std::fs::read` 一次读完，
+ *    无句柄跨请求存活，该形态不存在（详见下方反证轮说明）。
+ * 10. **编辑话数**（2026-10-11 用户需求，归并后还要能改话数）：
+ *    `POST /library/{book}/chapters/{no}/renumber`，7 → 7.1 = 话目录改名 +
+ *    episodes 重建 + 页文件原地保留（N10）；改到已占话号 → 409 `CHAPTER_NO_TAKEN`
+ *    且目录不动（N10b）；该话有未终态任务 → 409 `CHAPTER_SOURCE_BUSY`（N10c）；
+ *    任务跑完后改号恢复可用（N10d）。
+ *
+ * ## 反证轮（`--refute`）：十二条变异，各自必须让指定断言变红
  *   M1 去掉 `deleteTasks` 的终态门 ⇒ 翻译中的任务也会被删 ⇒ L1 变红；
  *   M2 `scanLibrary` 不跳过隐藏项 ⇒ 隐藏了还列出来 ⇒ L4 变红；
  *   M3 `handleLibraryDelete` 无视 `deleteFiles`（恒为 false）⇒ L6 变红；
- *   M4 前端把 `/tasks/delete` 写错 ⇒ L8 变红。
+ *   M4 前端把 `/tasks/delete` 写错 ⇒ L8 变红；
+ *   M5 新建的同名复检被去掉 ⇒ N2 变红；
+ *   M6 归并的在跑任务门被去掉 ⇒ N3 变红；
+ *   M7 话目录命名的零填充被去掉 ⇒ N4 变红；
+ *   M8 封面落盘但 manifest.cover 不回写 ⇒ N6 变红；
+ *   M10 占用退避重试被去掉 ⇒ 瞬时占用不再被救回 ⇒ N8 变红；
+ *   M11 占用终态不再归因 LOCKED ⇒ 回归 500 ⇒ N8b 变红；
+ *   M12 改号的占号复检被去掉 ⇒ 覆盖已有话 ⇒ N10b 变红；
+ *   M13 改号的在跑任务门被去掉 ⇒ 翻译中也能改名 ⇒ N10c 变红。
+ *
+ * 🔴 **锚点全在 Rust 源码**（`src-tauri/src/mangasvc/**`）：`service/`（Node 实现）已退役，
+ *    靶子只剩 `mangasvc` 一个 —— 打 Node 文件的变异**不会被执行**，只会变成"该红没红"的
+ *    假阳性。改完 Rust 源码必须 `cargo build --bin mangasvc` 重编，否则验的是上一份产物。
+ *
+ * ⚠️ **编号从 M8 跳到 M10（原 M9/N9 已删除）**：原先的 M9/N9 咬的是「页图/封面读流退回
+ *    `.pipe(res)` ⇒ 客户端中止不销毁源流 ⇒ 句柄泄漏 ⇒ 归并 `rename` 撞 EPERM」。那是
+ *    **Node 流式实现**的缺陷形态；Rust 侧 `mangasvc.rs::image_response` 用 `std::fs::read`
+ *    **一次读完即丢句柄**，结构上不存在这个形态 ⇒ 再留一条源码断言只是装饰（测的是死代码），
+ *    故连断言一并删除。D-125 的根因腿现在由 N8 / N8b / N8c 三条行为断言覆盖。
+ *
  * 服务/前端都按源码破坏来验（服务是**子进程**，磁盘破坏会被新进程读到）。
  *
  * 用法：
@@ -33,21 +76,41 @@
  * 约束：纯 Node、零依赖；起**模拟引擎**；临时目录落 os.tmpdir；反证轮结束必须按字节还原。
  * 见 ~/.workbuddy/skills/falsifiable-verification。
  */
-import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 
 import { encodePng } from '../../engine/src/png.mjs';
+// F0：服务入口解析的唯一事实源（MIAO_SERVICE_IMPL=node|rust 切换靶子）
+import { killTree, SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const ENGINE_ENTRY = path.join(ROOT, 'engine', 'src', 'server.mjs');
-const SERVICE_ENTRY = path.join(ROOT, 'service', 'src', 'server.mjs');
-const STORE_SRC = path.join(ROOT, 'service', 'src', 'store.mjs');
-const SERVER_SRC = path.join(ROOT, 'service', 'src', 'server.mjs');
-const APP_SRC = path.join(ROOT, 'app', 'src', 'App.tsx');
+const APP_SRC = path.join(ROOT, 'src', 'App.tsx'); // 前端源码**不属** service/，保留
+const CARGO_DIR = path.join(ROOT, 'src-tauri');
+/** 反证轮要破坏的 Rust 源码（三处，作用各不相同，别合并）。 */
+const RUST_HANDLERS_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'handlers.rs');
+const RUST_LIBRARY_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'library.rs');
+const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'store', 'exec.rs');
+
+/**
+ * 编译 Rust 靶子（反证轮改完源码必须重编，否则断言验的是"上一份产物"）。
+ * 🔴 编译失败**不算通过**：它记 skipped —— 锚点选错行与"覆盖不足"在报告里长得一样，
+ *    必须分开记，否则"反证没跑成"会被读成"反证通过"。
+ */
+function buildRust() {
+  const r = spawnSync('cargo', ['build', '--bin', 'mangasvc'], {
+    cwd: CARGO_DIR,
+    encoding: 'utf8',
+    maxBuffer: 40 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const log = `${r.stdout || ''}${r.stderr || ''}`.trim();
+  return { ok: r.status === 0, log: log.split('\n').slice(-6).join(' | ').slice(0, 400) };
+}
 
 const REFUTE = process.argv.includes('--refute');
 /// 起的是模拟引擎（ver1.0 自定义协议）；不声明会让服务按 real 协议去打替身。
@@ -72,10 +135,8 @@ const check = (id, label, ok, detail) => {
 // ------------------------------------------------------------------ 子进程
 
 function spawnProc(entry, env, tag) {
-  const child = spawn(process.execPath, [entry], {
-    env: { ...process.env, ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  // entry 是服务 ⇒ 按 MIAO_SERVICE_IMPL 选靶子；是模拟引擎 ⇒ 原样走 node
+  const child = spawnTarget(entry, env);
   const state = { child, tag, out: '' };
   child.stdout.on('data', (b) => (state.out += b.toString('utf8')));
   child.stderr.on('data', (b) => (state.out += b.toString('utf8')));
@@ -95,7 +156,8 @@ async function waitReady(state, re, timeoutMs = 20_000) {
 function killProc(state) {
   if (!state || !state.child || state.child.exitCode !== null) return Promise.resolve();
   const child = state.child;
-  child.kill('SIGTERM');
+  // 🔴 杀进程树（不是只杀主进程）：rust 服务派生的引擎②/③ 否则全成孤儿（D-202）
+  killTree(child);
   // Windows：刚被 kill 的子进程会短暂占着文件句柄，随后写源文件会 EPERM —— 必须等它真的退出。
   return new Promise((resolve) => {
     const until = Date.now() + 3000;
@@ -164,7 +226,7 @@ const postJson = (port, token, urlPath, obj) =>
     body: Buffer.from(JSON.stringify(obj), 'utf8'),
   });
 
-function buildMultipart(payload, images) {
+function buildMultipart(payload, images, fileField = 'images') {
   const boundary = `----miaomanage${Math.random().toString(16).slice(2)}`;
   const parts = [];
   if (payload) {
@@ -178,7 +240,7 @@ function buildMultipart(payload, images) {
   for (const img of images) {
     parts.push(
       Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="images"; filename="${img.filename}"\r\n` +
+        `--${boundary}\r\nContent-Disposition: form-data; name="${fileField}"; filename="${img.filename}"\r\n` +
           `Content-Type: ${img.contentType}\r\n\r\n`,
         'utf8',
       ),
@@ -364,7 +426,9 @@ async function runAll() {
     );
 
     // ---- L4：deleteFiles:false ⇒ 只隐藏（目录还在、库里不列、hidden 记名）----
-    const hid = json(await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC_A)}/delete`, { deleteFiles: false }));
+    const hid = json(
+      await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC_A)}/delete`, { deleteFiles: false }),
+    );
     const libAfterHide = await getLibrary(PORT, TOKEN);
     const hiddenFile = path.join(STATE_DIR, 'hidden-comics.json');
     let hiddenOnDisk = null;
@@ -398,7 +462,9 @@ async function runAll() {
     );
 
     // ---- L6：deleteFiles:true ⇒ 递归删目录，并清掉隐藏记录 ----
-    const rm = json(await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC_A)}/delete`, { deleteFiles: true }));
+    const rm = json(
+      await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC_A)}/delete`, { deleteFiles: true }),
+    );
     const libAfterRm = await getLibrary(PORT, TOKEN);
     check(
       'L6',
@@ -423,13 +489,358 @@ async function runAll() {
     // ---- L8：前端接线（源码断言）——队列删的是 /tasks/delete，库删带 deleteFiles ----
     // ⚠️ 先剥注释再判：注释里写着端点名（本仓惯例会写），不剥就会测到注释而非调用点。
     const appSrc = stripComments(fs.readFileSync(APP_SRC, 'utf8'));
-    const libSrc = stripComments(fs.readFileSync(path.join(ROOT, 'app', 'src', 'screens', 'LibraryScreen.tsx'), 'utf8'));
+    const libSrc = stripComments(fs.readFileSync(path.join(ROOT, 'src', 'screens', 'LibraryScreen.tsx'), 'utf8'));
     check(
       'L8',
       '前端接线：队列删打 `/tasks/delete`；漫画库删打 `/delete` 且带 `deleteFiles` 勾选结果',
       /\/tasks\/delete/.test(appSrc) && /\/delete/.test(libSrc) && /deleteFiles/.test(libSrc),
       `app:/tasks/delete=${/\/tasks\/delete/.test(appSrc)} lib:/delete=${/\/delete/.test(libSrc)} deleteFiles=${/deleteFiles/.test(libSrc)}`,
     );
+
+    // ================================================================
+    // Step 8 扩展：新建 / 归并 / 封面（plan §Step 8 的后四件事）
+    //
+    // 前置：占位任务（B/C/D）全部到终态 —— 归并的「在跑拒绝」「物理移动」
+    // 都要求"此刻没有别的任务搅局"，否则断言的是竞态而不是语义。
+    for (const t of [b.json?.taskId, c.json?.taskId, taskD]) {
+      if (t) await waitTask(PORT, TOKEN, t);
+    }
+
+    const NEW_BOOK = '新建测试书';
+    const newDir = path.join(ROOT_DIR, NEW_BOOK);
+    const readManifestOnDisk = () => {
+      try {
+        return JSON.parse(fs.readFileSync(path.join(newDir, 'manifest.json'), 'utf8'));
+      } catch {
+        return null;
+      }
+    };
+
+    // ---- N1：新建漫画 → 建目录 + manifest.json 落盘（schema/author）+ 库里列为大类 ----
+    const cr = await postJson(PORT, TOKEN, '/api/v1/library/create', { name: NEW_BOOK, author: '测试作者' });
+    const crJ = json(cr);
+    const createdBook = ((await getLibrary(PORT, TOKEN))?.books ?? []).find((x) => x.bookName === NEW_BOOK);
+    const manifestCreated = readManifestOnDisk();
+    check(
+      'N1',
+      '新建漫画：201 建目录，manifest.json 同步落盘（schema=1 + author），库里列为 0 话的大类',
+      cr.status === 201 &&
+        crJ?.bookName === NEW_BOOK &&
+        fs.existsSync(newDir) &&
+        manifestCreated?.schema === 1 &&
+        manifestCreated?.author === '测试作者' &&
+        createdBook?.chapterCount === 0,
+      `HTTP ${cr.status} bookName=${crJ?.bookName} dir=${fs.existsSync(newDir)} schema=${manifestCreated?.schema} author=${manifestCreated?.author} chapterCount=${createdBook?.chapterCount}`,
+    );
+
+    // ---- N2：新建同名 → 409，且**不动**已有目录（部分建目录不留残骸）----
+    const dup = await postJson(PORT, TOKEN, '/api/v1/library/create', { name: NEW_BOOK });
+    const dupJ = json(dup);
+    check(
+      'N2',
+      '新建同名：409 BOOK_NAME_TAKEN，已有目录原样保留（不存在"建了一半"的第二个目录）',
+      dup.status === 409 &&
+        dupJ?.error?.code === 'BOOK_NAME_TAKEN' &&
+        fs.existsSync(newDir) &&
+        readManifestOnDisk()?.author === '测试作者',
+      `HTTP ${dup.status} code=${dupJ?.error?.code} dir=${fs.existsSync(newDir)} manifestAuthor=${readManifestOnDisk()?.author}`,
+    );
+
+    // ---- N3：归并拒绝在跑任务（源还有未终态任务 → 409 MERGE_SOURCE_BUSY）----
+    // 连塞两个任务再立刻归并：队列是串行的，第二个必然还挂着 ⇒ 判定与引擎快慢无关。
+    const bt1 = await submit(PORT, TOKEN, COMIC_B, makeImages(IMAGES_FILL));
+    const bt2 = await submit(PORT, TOKEN, COMIC_B, makeImages(IMAGES_FILL));
+    const mgBusy = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC_B)}/merge`, {
+      targetBook: NEW_BOOK,
+      no: 7,
+    });
+    const mgBusyJ = json(mgBusy);
+    check(
+      'N3',
+      '归并拒绝在跑任务：源目录还有未终态任务 → 409 MERGE_SOURCE_BUSY（翻译中被搬走 = 写向不存在的路径）',
+      mgBusy.status === 409 && mgBusyJ?.error?.code === 'MERGE_SOURCE_BUSY',
+      `HTTP ${mgBusy.status} code=${mgBusyJ?.error?.code}`,
+    );
+    for (const t of [bt1.json?.taskId, bt2.json?.taskId]) {
+      if (t) await waitTask(PORT, TOKEN, t);
+    }
+
+    // ---- N4：归并物理移动 → <大类>/07_第7话（两位零填充命名），原顶层目录消失 ----
+    const dirB = path.join(ROOT_DIR, COMIC_B);
+    const mg = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC_B)}/merge`, {
+      targetBook: NEW_BOOK,
+      no: 7,
+    });
+    const mgJ = json(mg);
+    const libAfterMerge = await getLibrary(PORT, TOKEN);
+    const mergedBook = (libAfterMerge?.books ?? []).find((x) => x.bookName === NEW_BOOK);
+    check(
+      'N4',
+      '归并：源目录物理移动为 <大类>/07_第7话（NN_第N话 两位零填充），原顶层目录消失，库里 chapterCount=1',
+      mg.status === 200 &&
+        fs.existsSync(path.join(newDir, '07_第7话')) &&
+        !fs.existsSync(dirB) &&
+        mgJ?.merged?.to === `${NEW_BOOK}/07_第7话` &&
+        mergedBook?.chapterCount === 1,
+      `HTTP ${mg.status} to=${mgJ?.merged?.to} chDir=${fs.existsSync(path.join(newDir, '07_第7话'))} srcGone=${!fs.existsSync(dirB)} chapterCount=${mergedBook?.chapterCount}`,
+    );
+
+    // ---- N5：manifest 回写 → episodes[] 按目录重建（no 与 dir 两头都对）----
+    const manifestAfterMerge = readManifestOnDisk();
+    check(
+      'N5',
+      '归并后 manifest.json 的 episodes[] 按目录重建：唯一一条 {no:7, dir:"07_第7话"}',
+      Array.isArray(manifestAfterMerge?.episodes) &&
+        manifestAfterMerge.episodes.length === 1 &&
+        manifestAfterMerge.episodes[0]?.no === 7 &&
+        manifestAfterMerge.episodes[0]?.dir === '07_第7话',
+      `episodes=${JSON.stringify(manifestAfterMerge?.episodes ?? null)}`,
+    );
+
+    // ---- N6：封面落盘 + json 同步（扩展名字段由**字节嗅探**决定，不信任 filename）----
+    // 故意给 filename=.bin / contentType=application/octet-stream：落盘名必须是嗅探出来的 cover.png
+    const coverPng = encodePng(8, 8, (x, y, put) => put(200, 30, 90));
+    const mpCover = buildMultipart(
+      { author: '测试作者2' },
+      [{ filename: 'whatever.bin', contentType: 'application/octet-stream', data: coverPng }],
+      'cover',
+    );
+    const cv = await request(PORT, 'POST', `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/cover`, {
+      token: TOKEN,
+      headers: { 'Content-Type': mpCover.contentType },
+      body: mpCover.body,
+    });
+    const cvJ = json(cv);
+    const coverOnDisk = fs.existsSync(newDir) ? fs.readdirSync(newDir).find((f) => /^cover\./.test(f)) : null;
+    const cvGet = await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/cover`, { token: TOKEN });
+    const manifestAfterCover = readManifestOnDisk();
+    check(
+      'N6',
+      '封面：POST 落盘为 cover.png（嗅探命名），manifest.cover 与 author 同一次请求同步写入，GET /cover 原样发回字节',
+      cv.status === 200 &&
+        coverOnDisk === 'cover.png' &&
+        manifestAfterCover?.cover === 'cover.png' &&
+        manifestAfterCover?.author === '测试作者2' &&
+        cvGet.status === 200 &&
+        Buffer.isBuffer(cvGet.body) &&
+        cvGet.body.equals(coverPng),
+      `HTTP ${cv.status} coverOnDisk=${coverOnDisk} manifestCover=${manifestAfterCover?.cover} author=${manifestAfterCover?.author} getBytes=${cvGet.status}/${cvGet.body?.length}`,
+    );
+
+    // ---- N7：话号支持一位小数（2026-10-11 需求）----
+    // 归并 body.no = 14.1 ⇒ 物理目录 `14.1_第14.1话`（整数话号 14.1 的 padStart 不动它）、
+    // episodes[].no 记为 JSON 数 14.1、话级寻址 `/chapters/14.1/…` 可用。
+    // 同时咬三件事：**格式**（14.1 不被当成非法）、**存储**（目录名/manifest 的真实形状）、
+    // **寻址**（URL 里的小数话号能定位到同一话）。两位小数（14.55）在 resolveChapterDir
+    // 的正则就 404，放在反证轮外用直连请求验（见下方 N7b）。
+    const mgDec = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC_C)}/merge`, {
+      targetBook: NEW_BOOK,
+      no: 14.1,
+    });
+    const mgDecJ = json(mgDec);
+    const decDir = path.join(newDir, '14.1_第14.1话');
+    const libDec = await getLibrary(PORT, TOKEN);
+    const decBook = (libDec?.books ?? []).find((x) => x.bookName === NEW_BOOK);
+    const manifestDec = readManifestOnDisk();
+    const rtDec = await request(
+      PORT,
+      'GET',
+      `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/14.1/retranslate`,
+      { token: TOKEN },
+    );
+    const rtDecJ = json(rtDec);
+    check(
+      'N7',
+      '话号一位小数：归并 no=14.1 → 目录 14.1_第14.1话，episodes 记 14.1，/chapters/14.1 寻址到同一话',
+      mgDec.status === 200 &&
+        mgDecJ?.merged?.to === `${NEW_BOOK}/14.1_第14.1话` &&
+        fs.existsSync(decDir) &&
+        manifestDec?.episodes?.some((e) => e.no === 14.1 && e.dir === '14.1_第14.1话') &&
+        decBook?.chapterCount === 2 &&
+        rtDec.status === 200 &&
+        rtDecJ?.dirName === `${NEW_BOOK}/14.1_第14.1话`,
+      `HTTP ${mgDec.status} to=${mgDecJ?.merged?.to} dir=${fs.existsSync(decDir)} episodes=${JSON.stringify(manifestDec?.episodes ?? null)} chCount=${decBook?.chapterCount} rt=${rtDec.status}/${rtDecJ?.dirName}`,
+    );
+
+    // ---- N7b：话号格式边界 —— 两位小数 / .0 必须被拒（404），一位小数放行 ----
+    // 与 N7 同一函数的两条腿：N7 证"对的能过"，这条证"错的进不来"。
+    const badDec = await request(
+      PORT,
+      'GET',
+      `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/14.55/retranslate`,
+      { token: TOKEN },
+    );
+    const zeroDec = await request(
+      PORT,
+      'GET',
+      `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/14.0/retranslate`,
+      { token: TOKEN },
+    );
+    check(
+      'N7b',
+      '话号格式边界：14.55（两位小数）/ 14.0（.0）→ 404 TASK_NOT_FOUND，不许静默解析',
+      badDec.status === 404 && zeroDec.status === 404,
+      `14.55=${badDec.status} 14.0=${zeroDec.status}`,
+    );
+
+    // ---- N8/N8b/N8c：归并撞 Windows「句柄占用族」（D-125）----
+    // 用户点「归并」时该话的缩略图请求可能还在传（目录内有打开的读句柄），renameSync 抛
+    // EPERM。修复前这条直接变 500「服务内部错误」——即线上实测的归并报障。修复后：
+    // 瞬时占用被退避重试救回（N8）；持续占用归因成 409 MERGE_SOURCE_LOCKED，可解释可行动
+    // （N8b）；释放后重试成功且无半截目录残留（N8c）。
+    const busyA = '占用重试甲 22.1';
+    const busyADir = path.join(ROOT_DIR, busyA);
+    fs.mkdirSync(busyADir, { recursive: true });
+    fs.writeFileSync(
+      path.join(busyADir, '001.png'),
+      encodePng(4, 4, (x, y, put) => put(10, 20, 30)),
+    );
+    const heldA = fs.openSync(path.join(busyADir, '001.png'), 'r');
+    setTimeout(() => {
+      try {
+        fs.closeSync(heldA);
+      } catch {
+        /* 已关 */
+      }
+    }, 350); // 350ms < 重试窗口（5 次 × 200ms）⇒ 必须被重试救回
+    const mgHold = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(busyA)}/merge`, {
+      targetBook: NEW_BOOK,
+      no: 22.1,
+    });
+    const mgHoldJ = json(mgHold);
+    check(
+      'N8',
+      '归并撞瞬时句柄占用：退避重试窗口内释放 ⇒ 200 救回（不是 500 内部错误）',
+      mgHold.status === 200 && mgHoldJ?.merged?.to === `${NEW_BOOK}/22.1_第22.1话`,
+      `HTTP ${mgHold.status} to=${mgHoldJ?.merged?.to ?? mgHoldJ?.error?.code}`,
+    );
+
+    const busyB = '占用重试乙 22.2';
+    const busyBDir = path.join(ROOT_DIR, busyB);
+    fs.mkdirSync(busyBDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(busyBDir, '001.png'),
+      encodePng(4, 4, (x, y, put) => put(40, 50, 60)),
+    );
+    const heldB = fs.openSync(path.join(busyBDir, '001.png'), 'r'); // 全程不释放 ⇒ 重试必然耗尽
+    const mgLock = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(busyB)}/merge`, {
+      targetBook: NEW_BOOK,
+      no: 22.2,
+    });
+    const mgLockJ = json(mgLock);
+    check(
+      'N8b',
+      '占用重试耗尽 → 409 MERGE_SOURCE_LOCKED（可解释、可行动），不许再是 500 INTERNAL',
+      mgLock.status === 409 &&
+        mgLockJ?.error?.code === 'MERGE_SOURCE_LOCKED' &&
+        !fs.existsSync(path.join(newDir, '22.2_第22.2话')),
+      `HTTP ${mgLock.status} code=${mgLockJ?.error?.code} dstCreated=${fs.existsSync(path.join(newDir, '22.2_第22.2话'))}`,
+    );
+    fs.closeSync(heldB);
+    const mgUnlock = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(busyB)}/merge`, {
+      targetBook: NEW_BOOK,
+      no: 22.2,
+    });
+    check(
+      'N8c',
+      '句柄释放后重试同一话 → 200：LOCKED 是可恢复错误，源目录无残留、目标落位正确',
+      mgUnlock.status === 200 && fs.existsSync(path.join(newDir, '22.2_第22.2话')),
+      `HTTP ${mgUnlock.status} dst=${fs.existsSync(path.join(newDir, '22.2_第22.2话'))}`,
+    );
+
+    // ---- N10：编辑话数（2026-10-11 用户需求）：目录改名 + episodes 重建，页文件原地保留 ----
+    const rn = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7/renumber`, {
+      no: 7.1,
+    });
+    const rnJ = json(rn);
+    check(
+      'N10',
+      '编辑话数：7 → 7.1 = 话目录改名（旧目录消失、新目录在、页文件原地保留、episodes 重建）',
+      rn.status === 200 &&
+        !fs.existsSync(path.join(newDir, '07_第7话')) &&
+        fs.existsSync(path.join(newDir, '7.1_第7.1话')) &&
+        fs.existsSync(path.join(newDir, '7.1_第7.1话', '001.png')) &&
+        (readManifestOnDisk()?.episodes ?? []).some((e) => e.no === 7.1 && e.dir === '7.1_第7.1话'),
+      `HTTP ${rn.status} renumbered=${JSON.stringify(rnJ?.renumbered ?? null)} oldGone=${!fs.existsSync(path.join(newDir, '07_第7话'))} newDir=${fs.existsSync(path.join(newDir, '7.1_第7.1话'))}`,
+    );
+
+    // ---- N10b：占号 → 409 CHAPTER_NO_TAKEN，且目录纹丝不动 ----
+    const rnTak = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/renumber`, {
+      no: 22.1,
+    });
+    const rnTakJ = json(rnTak);
+    check(
+      'N10b',
+      '改到已被占用的话号（22.1 已在）→ 409 CHAPTER_NO_TAKEN，本话目录不被改动',
+      rnTak.status === 409 &&
+        rnTakJ?.error?.code === 'CHAPTER_NO_TAKEN' &&
+        fs.existsSync(path.join(newDir, '7.1_第7.1话')),
+      `HTTP ${rnTak.status} code=${rnTakJ?.error?.code}`,
+    );
+
+    // ---- N10c：在跑任务门 —— 话级返工任务挂着时改号 → 409 CHAPTER_SOURCE_BUSY ----
+    // 连塞两个任务再立刻改号：队列串行，第二个必然还挂着 ⇒ 判定与引擎快慢无关（N3 同一手筋）。
+    // ⚠️ 返工必须给 seqs 限到 2 张：全量候选 = 整话原图（20 张）会撞 BATCH_LIMIT_EXCEEDED，
+    //    任务根本建不起来 —— 门还没轮到测就漏了。
+    const rtA = await postJson(
+      PORT,
+      TOKEN,
+      `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/retranslate`,
+      { seqs: [1, 2] },
+    );
+    const rtB = await postJson(
+      PORT,
+      TOKEN,
+      `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/retranslate`,
+      { seqs: [3, 4] },
+    );
+    const rnBusy = await postJson(
+      PORT,
+      TOKEN,
+      `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/renumber`,
+      {
+        no: 8,
+      },
+    );
+    const rnBusyJ = json(rnBusy);
+    check(
+      'N10c',
+      '该话有未终态任务 → 409 CHAPTER_SOURCE_BUSY（翻译中改名 = 任务写向不存在的旧路径）',
+      rnBusy.status === 409 &&
+        rnBusyJ?.error?.code === 'CHAPTER_SOURCE_BUSY' &&
+        fs.existsSync(path.join(newDir, '7.1_第7.1话')),
+      `HTTP ${rnBusy.status} code=${rnBusyJ?.error?.code} rtA=${rtA.status}(${json(rtA)?.error?.code ?? json(rtA)?.taskId}) rtB=${rtB.status}(${json(rtB)?.error?.code ?? json(rtB)?.taskId})`,
+    );
+    for (const t of [json(rtA)?.taskId, json(rtB)?.taskId]) {
+      if (t) await waitTask(PORT, TOKEN, t);
+    }
+
+    // ---- N10d：任务跑完后改号恢复可用（BUSY 是可恢复错误，不是永久拒绝）----
+    // 目录名沿用同一套零填充规则：8 → `08_第8话`（N4 的 NN_第N话 约定）。
+    const rnFree = await postJson(
+      PORT,
+      TOKEN,
+      `/api/v1/library/${encodeURIComponent(NEW_BOOK)}/chapters/7.1/renumber`,
+      {
+        no: 8,
+      },
+    );
+    check(
+      'N10d',
+      '任务到终态后改号 → 200：目录 7.1_第7.1话 消失、08_第8话 落位',
+      rnFree.status === 200 &&
+        !fs.existsSync(path.join(newDir, '7.1_第7.1话')) &&
+        fs.existsSync(path.join(newDir, '08_第8话')),
+      `HTTP ${rnFree.status} oldGone=${!fs.existsSync(path.join(newDir, '7.1_第7.1话'))} newDir=${fs.existsSync(path.join(newDir, '08_第8话'))}`,
+    );
+
+    // ---- N9（已删除）----
+    // 原先这里有一条源码级断言：页图/封面两条读流都走 `pipeline(fs.createReadStream(file), res)`
+    // 且全文无 `.pipe(res)` 残留 —— 咬的是 **Node 流式实现**「客户端中止不销毁源流 ⇒ 句柄泄漏 ⇒
+    // 归并 rename 撞 EPERM」（D-125 的根因腿）。
+    // 🔴 Rust 侧没有这个形态：`mangasvc.rs::image_response` 是 `std::fs::read(file)` **一次读完**
+    //    即丢句柄，句柄不跨请求存活 ⇒ 断言无可咬之物，留一条只会是装饰（D-112 那类"测了死代码"
+    //    的假绿）。故随 Node 靶子退役一并删除；D-125 由 N8 / N8b / N8c 三条行为断言承担。
   } finally {
     await killProc(service);
     await killProc(engine);
@@ -461,11 +872,14 @@ function printResults(title) {
 const MUTATIONS = [
   {
     name: 'M1 去掉 deleteTasks 的终态门（翻译中/排队中也会被删）',
+    // ⚠️ 多行锚点按目标文件的实际 EOL 归一化（Rust 源是 CRLF，用 `\n` 拼的 `includes()` 会假）。
+    //    锚点含 `reason: "not_deletable"` 才唯一 —— 同形条件在 exec.rs 里出现 3 次。
     edits: [
       {
-        file: STORE_SRC,
-        find: '      if (!TASK_TERMINAL.has(task.status)) {\n        skipped.push({ taskId, reason: \'not_deletable\', status: task.status });\n        continue;\n      }',
-        replace: '      if (false) { // refute：不再拦翻译中/排队中\n        skipped.push({ taskId, reason: \'not_deletable\', status: task.status });\n        continue;\n      }',
+        file: RUST_EXEC_SRC,
+        find: '            if !TASK_TERMINAL.contains(&self.tasks[idx].status.as_str()) {\n                skipped.push(DeleteSkip {\n                    task_id: task_id.clone(),\n                    reason: "not_deletable".to_string(),',
+        replace:
+          '            if false { // refute：不再拦翻译中/排队中\n                skipped.push(DeleteSkip {\n                    task_id: task_id.clone(),\n                    reason: "not_deletable".to_string(),',
       },
     ],
     expect: ['L1'],
@@ -474,9 +888,11 @@ const MUTATIONS = [
     name: 'M2 scanLibrary 不跳过隐藏项（隐藏了还列出来）',
     edits: [
       {
-        file: SERVER_SRC,
-        find: '    if (store.hiddenComics.has(entry.name)) continue;',
-        replace: '    if (false) continue; // refute：不跳过隐藏项',
+        // D-145 把 `scanLibrary` 搬进 `manga/library.mjs`；Node 退役后锚点再随迁到
+        // Rust 的 `library.rs`（`hidden` 是形参 `&HashSet<String>`）。
+        file: RUST_LIBRARY_SRC,
+        find: '            if hidden.contains(&name) {\n                continue;\n            }',
+        replace: '            if false { // refute：不跳过隐藏项\n                continue;\n            }',
       },
     ],
     expect: ['L4'],
@@ -485,9 +901,9 @@ const MUTATIONS = [
     name: 'M3 handleLibraryDelete 无视 deleteFiles（恒为 false ⇒ 永远不会真删）',
     edits: [
       {
-        file: SERVER_SRC,
-        find: '  const deleteFiles = parsed?.deleteFiles === true;',
-        replace: '  const deleteFiles = false; // refute：无视勾选',
+        file: RUST_HANDLERS_SRC,
+        find: '    let delete_files = parse_json_lenient(body).get("deleteFiles").and_then(|v| v.as_bool()).unwrap_or(false);',
+        replace: '    let delete_files = false; // refute：无视勾选',
       },
     ],
     expect: ['L6'],
@@ -502,6 +918,119 @@ const MUTATIONS = [
       },
     ],
     expect: ['L8'],
+  },
+  {
+    // 🔴 同名判据是「existsSync 复检」而不是 err.code（D-118）。去掉它 ⇒ mkdir 的原始错误
+    //    直接上抛成 500 —— N2 期望的 409/BOOK_NAME_TAKEN 就红。
+    name: 'M5 新建漫画的同名复检被去掉（撞名错误直接 500，不再归因为 409）',
+    edits: [
+      {
+        file: RUST_HANDLERS_SRC,
+        // `create_book_dir` 失败后的 `target.exists()` 复检（D-118）—— handlers.rs 内唯一。
+        find: '            if target.exists() {',
+        replace: '            if false { // refute：同名复检被去掉',
+      },
+    ],
+    expect: ['N2'],
+  },
+  {
+    // 在跑门被去掉 ⇒ 归并真的会把带任务的目录搬走：N3 期望的 409 变 200。
+    // （搬走后引擎往旧路径写会失败 ⇒ 该任务以 failed 终态收场，不阻塞后续轮次。）
+    name: 'M6 归并的在跑任务门被去掉（翻译中的目录也能被搬走）',
+    edits: [
+      {
+        file: RUST_HANDLERS_SRC,
+        // 归并分支用 `src_name` 查在跑任务（改号分支用 `old.rel_dir`，两条锚点别互串）。
+        find: '    let busy = lock(shell).active_tasks_for_dir(&src_name);\n    if !busy.is_empty() {',
+        replace:
+          '    let busy: Vec<(String, String)> = Vec::new(); // refute：在跑任务门被去掉\n    if !busy.is_empty() {',
+      },
+    ],
+    expect: ['N3'],
+  },
+  {
+    // 话目录命名只此一处定义（chapterDirName）。零填充被去掉 ⇒ 位移后的目录名是 `7_第7话`，
+    // N4 断言的 `07_第7话`（位置、merged.to、chapterCount 三个口径）全部落空。
+    name: 'M7 话目录命名的两位零填充被去掉（归并产物变成 7_第7话）',
+    edits: [
+      {
+        // 话目录命名只此一处定义（`chapter_dir_name`）。零填充被去掉 ⇒ 位移后的目录名是
+        // `7_第7话`，N4 断言的 `07_第7话`（位置、merged.to、chapterCount 三个口径）全落空。
+        file: RUST_LIBRARY_SRC,
+        find: '    let padded = if s.len() < 2 { format!("0{s}") } else { s };',
+        replace: '    let padded = s; // refute：零填充被去掉',
+      },
+    ],
+    expect: ['N4'],
+  },
+  {
+    // 「同步写入」的验证点：封面文件照常落盘、GET 照常发回，唯独 manifest.cover 不回写 ⇒
+    // 文件与 json 脱钩（这正是用户点名要防的缺陷），N6 红而其余子条件全绿 —— 说明断言咬的是同步性。
+    name: 'M8 封面落盘但 manifest 的 cover 字段不回写（文件与 json 脱钩）',
+    edits: [
+      {
+        // 「同步写入」的验证点：封面文件照常落盘、GET 照常发回，唯独 manifest.cover 不回写。
+        // `let _ = &cover_name;` 是喂给借用检查的（否则 `cover_name` 变成 unused 警告）。
+        file: RUST_HANDLERS_SRC,
+        find: '    manifest.cover = Some(cover_name);',
+        replace: '    manifest.cover = None; // refute：cover 不回写\n    let _ = &cover_name;',
+      },
+    ],
+    expect: ['N6'],
+  },
+  {
+    // 重试被去掉 ⇒ 瞬时占用（350ms 后释放）也救不回来（直接归因成 409 LOCKED）⇒ N8 红。
+    // N8b/N8c 不 expect：它们不依赖重试次数（耗尽路径行为不变）。
+    // `i >= 1`：`i` 从 1 起，故第一次占用即返回 Err —— 等价于"重试窗口归零"。
+    name: 'M10 归并移动的占用退避重试被去掉（占用第一次就上抛 ⇒ 瞬时占用不再被救回）',
+    edits: [
+      {
+        file: RUST_HANDLERS_SRC,
+        find: '                if !is_busy_fs_error(&e) || i >= RENAME_TRIES {',
+        replace: '                if !is_busy_fs_error(&e) || i >= 1 { // refute：占用重试被去掉',
+      },
+    ],
+    expect: ['N8'],
+  },
+  {
+    // 占用归因被短路 ⇒ 重试耗尽后 err 原样上抛 ⇒ 500 INTERNAL 回归，N8b 红成 500。
+    // ⚠️ 锚点必须带 `"MERGE_SOURCE_LOCKED"` 那一行：`if is_busy_fs_error(&e) {` 在
+    //    handlers.rs 里出现两次（归并 / 改号），裸行不唯一。
+    name: 'M11 占用终态不再归因为 MERGE_SOURCE_LOCKED（回退成 500 内部错误）',
+    edits: [
+      {
+        file: RUST_HANDLERS_SRC,
+        find: '        if is_busy_fs_error(&e) {\n            return super::http::store_err(&StoreError::new(\n                "MERGE_SOURCE_LOCKED",',
+        replace:
+          '        if false { // refute：占用不再归因\n            return super::http::store_err(&StoreError::new(\n                "MERGE_SOURCE_LOCKED",',
+      },
+    ],
+    expect: ['N8b'],
+  },
+  {
+    // 占号复检被去掉 ⇒ 改到已占话号会去顶撞已有目录（改号分支断言自己那份 `.no`，与归并那份不同名）。
+    name: 'M12 改号的占号复检被去掉（改到已占话号会覆盖/顶撞已有话）',
+    edits: [
+      {
+        file: RUST_HANDLERS_SRC,
+        find: '        if dst.exists() || taken_nos.contains(&new_info.no) || declared_nos.contains(&new_info.no) {',
+        replace: '        if false { // refute：改号不再查占号',
+      },
+    ],
+    expect: ['N10b'],
+  },
+  {
+    name: 'M13 改号的在跑任务门被去掉（翻译中也能给话改名 ⇒ 任务写向不存在的旧路径）',
+    edits: [
+      {
+        file: RUST_HANDLERS_SRC,
+        // 改号分支查的是 `old.rel_dir`（归并分支查 `src_name`，两条锚点别互串）。
+        find: '        let busy = lock(shell).active_tasks_for_dir(&old.rel_dir);\n        if !busy.is_empty() {',
+        replace:
+          '        let busy: Vec<(String, String)> = Vec::new(); // refute：在跑任务门被去掉\n        if !busy.is_empty() {',
+      },
+    ],
+    expect: ['N10c'],
   },
 ];
 
@@ -523,6 +1052,15 @@ const main = async () => {
     return;
   }
 
+  // 🔴 进反证轮前先确保「产物 == 磁盘源码」：否则基线跑的是上一份编译结果，
+  //    而「变异全红」里有一部分红是被这份陈旧产物误打误撞造成的。
+  const pre = buildRust();
+  if (!pre.ok) {
+    console.log(`✗ 开跑前 cargo build 失败，无法反证：${pre.log}`);
+    process.exitCode = 1;
+    return;
+  }
+
   await runAll();
   const wasGreen = {};
   for (const r of results) wasGreen[r.id] = r.ok;
@@ -536,21 +1074,40 @@ const main = async () => {
 
   console.log('\n破坏源文件 → 断言必须变红 → 按字节还原\n');
   for (const mut of MUTATIONS) {
-    for (const e of mut.edits) {
+    let anchorMissing = false;
+    for (const [i, e] of mut.edits.entries()) {
       if (!originals.has(e.file)) originals.set(e.file, readBytes(e.file));
-      const snap = originals.get(e.file);
-      const txt = snap.toString('utf8');
+      const txt = originals.get(e.file).toString('utf8');
       // 🔴 本仓 `core.autocrlf=true`：工作区是 CRLF、锚点写的是 LF。不折算行尾，
       //    任何**跨行**锚点都会"锚点未找到" → 该条静默不反证（跳过 ≠ 通过）。
       const eol = txt.includes('\r\n') ? '\r\n' : '\n';
       const find = e.find.split('\n').join(eol);
       const repl = e.replace.split('\n').join(eol);
       if (!txt.includes(find)) {
-        console.log(`⚠ ${mut.name}\n    破坏锚点未找到（${path.relative(ROOT, e.file)}）—— 本条无法反证`);
-        skipped += mut.expect.length;
-        continue;
+        console.log(
+          `⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`,
+        );
+        anchorMissing = true;
+        break;
       }
       await writeRetry(e.file, txt.replace(find, repl));
+    }
+    // 🔴 锚点缺失时**整条跳过**，不能只跳那一个 edit：继续往下跑 `runAll()`，测的还是
+    //    未被破坏的产物 ⇒ 那条 expect 必然"该红没红"，被记成**假阳性** ——
+    //    而真相是"这条根本没反证"。两种故障长得几乎一样，只有这条 flag 能分开它们。
+    if (anchorMissing) {
+      skipped += mut.expect.length;
+      continue;
+    }
+    // 🔴 改完 Rust 源码**必须重编**才作数：不编就等于拿旧产物跑断言，红的绿的都说明不了问题。
+    const built = buildRust();
+    if (!built.ok) {
+      console.log(`⚠ ${mut.name}\n    破坏后编译失败（多半是锚点选错行），本条无法反证：${built.log}`);
+      // 🔴 这里**必须先还原再 continue**：下面的还原写在 `finally` 里，`continue` 会跳过它 ——
+      //    源码会被永久留在被破坏状态。
+      for (const [f, snap] of originals) await writeRetry(f, snap);
+      skipped += mut.expect.length;
+      continue;
     }
     // 还原一律进 finally：破坏若让 runAll() 抛异常，写在 try 之后的还原就不会执行
     let res = {};
@@ -587,10 +1144,16 @@ const main = async () => {
     if (!same) restoreFail++;
     console.log(`  ${same ? '✓' : '✗'} ${path.relative(ROOT, f)} 字节${same ? '一致' : '不一致！'}`);
   }
+  // 源码还原了，**产物也必须还原** —— 否则留下一个「源码是好的、跑起来是坏的」的机器。
+  const rebuilt = buildRust();
+  if (!rebuilt.ok) {
+    restoreFail++;
+    console.log(`  ✗ cargo build 还原失败：${rebuilt.log}`);
+  } else console.log('  ✓ cargo build 已把靶子重编回未破坏状态');
 
   console.log('\n' + '─'.repeat(56));
   console.log(`REFUTE: ${red}/${total} 条按预期变红（应执行 ${expectedTotal} 条）`);
-  if (skipped) console.log(`✗ 有 ${skipped} 条未能反证（破坏锚点未找到）—— 跳过 ≠ 通过`);
+  if (skipped) console.log(`✗ 有 ${skipped} 条未能反证（破坏锚点未找到 / 破坏后编译失败）—— 跳过 ≠ 通过`);
   if (falsePositives.length) console.log(`✗ 假阳性：${falsePositives.join(', ')}`);
   process.exitCode = red === expectedTotal && skipped === 0 && restoreFail === 0 ? 0 : 1;
 };

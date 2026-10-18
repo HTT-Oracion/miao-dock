@@ -1,0 +1,32 @@
+{
+  "default": {
+    "engineDir": "<HOME>\\AppData\\Local\\runtimes\\manga-translator\\src",
+    "engineModelDir": "<HOME>\\AppData\\Local\\runtimes\\manga-translator",
+    "enginePython": "<HOME>\\AppData\\Local\\runtimes\\manga-translator\\venv\\Scripts\\python.exe",
+    "engineServerDir": "<HOME>\\AppData\\Local\\runtimes\\manga-translator\\src\\server",
+    "idempotencyFile": "<HOME>\\AppData\\Local\\Box\\state\\idempotency.json",
+    "modelManifest": "<REPO>\\engine\\models.manifest.json",
+    "pkgDir": "<REPO>\\service",
+    "repoRoot": "<REPO>",
+    "rootDir": "<HOME>\\Pictures\\Box 漫画",
+    "runtimeRoot": "<HOME>\\AppData\\Local\\runtimes",
+    "stateDir": "<HOME>\\AppData\\Local\\Box\\state",
+    "tasksStateDir": "<HOME>\\AppData\\Local\\Box\\state\\tasks",
+    "tokenFile": "<HOME>\\AppData\\Local\\Box\\state\\token"
+  },
+  "override": {
+    "engineDir": "<TMP>\\eng\\src",
+    "engineModelDir": "<TMP>\\eng",
+    "enginePython": "<TMP>\\eng\\venv\\Scripts\\python.exe",
+    "engineServerDir": "<TMP>\\eng\\src\\server",
+    "idempotencyFile": "<TMP>\\state\\idempotency.json",
+    "modelManifest": "<TMP>\\models.json",
+    "pkgDir": "<REPO>\\service",
+    "repoRoot": "<REPO>",
+    "rootDir": "<TMP>\\root\\Box 漫画",
+    "runtimeRoot": "<HOME>\\AppData\\Local\\runtimes",
+    "stateDir": "<TMP>\\state",
+    "tasksStateDir": "<TMP>\\state\\tasks",
+    "tokenFile": "<TMP>\\state\\token"
+  }
+}

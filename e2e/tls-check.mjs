@@ -11,7 +11,7 @@
  *   「URL scheme not supported」/ builder error。
  *
  *   也就是说：这个缺陷在「除了真去发一个 https 请求」之外的每一层都是绿的。
- *   这正是 docs/spec-notes.md D-20 说的「每层都要断言」——
+ *   这正是 docs/internal/spec-notes.md D-20 说的「每层都要断言」——
  *   依赖层的语义缺失，编译器看不见、截图看不见、单测看不见。
  *
  * 反证怎么做的（关键，否则这条断言也是假阳性）：
@@ -20,15 +20,15 @@
  *
  * 用法：
  *   node e2e/tls-check.mjs            正常跑（期望全绿）
- *   npm run check:tls                     同上
+ *   npm run task -- check:tls             同上
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const CARGO_TOML = path.join(ROOT, 'app', 'src-tauri', 'Cargo.toml');
-const CARGO_LOCK = path.join(ROOT, 'app', 'src-tauri', 'Cargo.lock');
+const CARGO_TOML = path.join(ROOT, 'src-tauri', 'Cargo.toml');
+const CARGO_LOCK = path.join(ROOT, 'src-tauri', 'Cargo.lock');
 
 let pass = 0;
 let fail = 0;
@@ -54,13 +54,10 @@ ok(/reqwest\s*=/.test(toml), 'Cargo.toml 声明了 reqwest');
 ok(
   /rustls-tls/.test(reqwestLine),
   'reqwest 启用 rustls-tls feature',
-  '未找到 rustls-tls —— 公网 HTTPS 会在运行时失败（D-25）'
+  '未找到 rustls-tls —— 公网 HTTPS 会在运行时失败（D-25）',
 );
 // 记录本组要断言的「反面」：关掉 TLS 是本项目 ver1.0 的真实历史状态
-ok(
-  !/native-tls/.test(reqwestLine),
-  '未误用 native-tls（避免 OpenSSL 系统依赖）'
-);
+ok(!/native-tls/.test(reqwestLine), '未误用 native-tls（避免 OpenSSL 系统依赖）');
 
 // ── 2. 锁文件层：TLS 栈是否真的进了依赖图 ──────────────────────────
 // 只看 Cargo.toml 不够 —— feature 名写对了但没生效的情况，靠锁文件才看得见。
@@ -90,7 +87,7 @@ if (lock) {
       false,
       '锁文件与配置同步',
       '配置已移除 rustls-tls，但 Cargo.lock 仍是上一次 build 的产物（含 TLS）。' +
-        '\n      这是过期信号，不能据此认为 HTTPS 可用 —— 请 cargo build 后复跑。'
+        '\n      这是过期信号，不能据此认为 HTTPS 可用 —— 请 cargo build 后复跑。',
     );
   } else {
     ok(true, '锁文件与配置同步');
@@ -102,20 +99,24 @@ if (lock) {
   }
 }
 
-// ── 3. 源码层：音乐模块需要的凭据确实在用 ─────────────────────────
+// ── 3. 源码层：**我们自己的**音乐实现确实在访问公网 HTTPS ─────────
 // 防止「TLS 加了但音乐模块根本没接上」—— 那时本组会绿，但功能不存在。
+//
+// 🔴 判据源 2026-10-16 从参考切片改成**我方实现**（`src-tauri/src/music/*.rs`）：
+//    参考切片已退役（不入库、不再落盘），而"到底需不需要 TLS"该看的是**我们自己发不发**这些请求
+//    —— 判据反而更硬（原来证的只是"参考实现需要"）。
+//    ⚠️ 读不到就**红**（不再"跳过源码层"）：路径写错时静默跳过，等于这一层永远绿。
 console.log('\n源码层');
-const VENDOR = path.join(ROOT, 'vendor', 'music-reference', 'rust-music_api');
-let vendorAvailable = true;
-let vendorSrc = '';
+const MUSIC_SRC_DIR = path.join(ROOT, 'src-tauri', 'src', 'music');
+let musicSrc = '';
 try {
-  vendorSrc = ['netease.rs', 'kugou.rs', 'qqmusic.rs', 'migu.rs']
-    .map((f) => readFileSync(path.join(VENDOR, f), 'utf8'))
+  musicSrc = ['netease.rs', 'kugou.rs', 'qqmusic.rs', 'migu.rs']
+    .map((f) => readFileSync(path.join(MUSIC_SRC_DIR, f), 'utf8'))
     .join('\n');
-} catch {
-  vendorAvailable = false;
+} catch (e) {
+  console.log(`  · 读不到我方音乐源码（路径或文件变了？）：${e.message}`);
 }
-if (vendorAvailable) {
+{
   const hosts = [
     ['music.163.com', '网易云'],
     ['gateway.kugou.com', '酷狗'],
@@ -123,16 +124,9 @@ if (vendorAvailable) {
     ['migu.cn', '咪咕'],
   ];
   for (const [host, name] of hosts) {
-    ok(vendorSrc.includes(host), `参考源码含 ${name} 域名（${host}）—— 确需公网 HTTPS`);
+    ok(musicSrc.includes(host), `我方实现含 ${name} 域名（${host}）—— 确需公网 HTTPS`);
   }
-  ok(
-    vendorSrc.includes('https://'),
-    '参考源码使用 https 协议',
-    '若全为 http 则不需要 TLS，D-25 不适用'
-  );
-} else {
-  console.log('  · 参考源码不在位（vendor/ 未落盘），跳过源码层');
-  console.log('    注：这不影响 D-25 本身 —— 配置层与锁文件层才是它的判据');
+  ok(musicSrc.includes('https://'), '我方实现使用 https 协议', '若全为 http 则不需要 TLS，D-25 不适用');
 }
 
 console.log(`\n${pass} 通过 / ${fail} 失败`);

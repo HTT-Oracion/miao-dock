@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": false,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@": ["src"],
+      "@/*": ["src/*"],
+      "@tauri": ["src-tauri"],
+      "@tauri/*": ["src-tauri/*"],
+      "@components": ["src/components"],
+      "@components/*": ["src/components/*"],
+      "@screens": ["src/screens"],
+      "@screens/*": ["src/screens/*"],
+      "@music": ["src/music"],
+      "@music/*": ["src/music/*"],
+      "@hooks": ["src/hooks"],
+      "@hooks/*": ["src/hooks/*"],
+      "@tools": ["src/tools"],
+      "@tools/*": ["src/tools/*"]
+    }
+  },
+  // 安装向导（installer/）与卸载页（uninstaller/）是各自独立的程序，
+  // 有自己的 tsconfig —— 不并进这里，否则主工程一改编译选项就会牵动两个独立产物。
+  "include": ["src", "vite.config.ts"]
+}

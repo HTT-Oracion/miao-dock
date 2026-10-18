@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>喵坞 · MiaoDock</title>
+    <!--
+      随仓字体：三份清单 + 字体文件都在 `public/assets/fonts/<dir>/`。
+
+      为什么是 <link> 而不是 main.tsx 的 import：这些是**不经过构建**的公共资源，
+      Vite 原样复制到 `dist/assets/fonts/`；走构建只会多拿一份带指纹的副本，而加载它们
+      本来就不需要任何编译期处理。入口只此一处，读代码的人一眼能看到"这个窗口装了哪些字体"。
+      ⚠️ 复制过去的 `dist/assets/fonts/**` 与构建产出的 `dist/assets/main-*.js` 等**同目录** ——
+      不冲突（原样复制的文件按源名，构建产物带内容指纹），这不是配置疏漏。
+
+      🔴 两条不能碰的红线（都由 `check:settings` 的 FONT 组钉着）：
+        ① **不许**写进 `styles/index.scss` 的 `@use` —— Sass 对带 `.css` 后缀的 `@use`
+           是**静默丢弃**的：不报错、不产出、也不改 `url()`，于是字体全部不进构建，
+           而 `npm run build` 照样成功、页面照样渲染（只是回落）。
+        ② 清单里的 `url()` 必须是**同目录相对路径**（或 `/assets/fonts/` 前缀）——
+           public 下的 css 不被构建改写，路径写错就是 404，同样不报错。
+
+      ⚠️ `templates/lyrics.html`（桌面歌词窗）**刻意不引**：它是深色玻璃浮条，
+      本来就不吃主窗这套字体栈（该窗口自有内联样式），加 link 属于行为变更，另议。
+    -->
+    <link rel="stylesheet" href="/assets/fonts/swei-gothic/font.css" />
+    <link rel="stylesheet" href="/assets/fonts/yozai-font/font.css" />
+    <link rel="stylesheet" href="/assets/fonts/lxgw-wenkai-gb/font.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

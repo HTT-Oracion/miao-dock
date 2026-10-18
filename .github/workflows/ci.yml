@@ -1,0 +1,74 @@
+name: CI
+
+# 为什么现在才加：本项目有 70+ 个 check/selftest，但**全部靠人自觉执行** ——
+# 28k 行自证体系唯一的缺口就是"没有强制执行点"（审计 §2.1）。
+# 这里把**秒级、零依赖、跨平台**的那批设为必过门；真机门（cargo release 打包 /
+# 真权重 E3·E7 / E11 real）不进常规门，避免 CI 变成"永远红"的摆设。
+
+on:
+  push:
+    branches: ['main', 'v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: 检查（${{ matrix.os }}）
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu 守 Linux 回归；macos 是本项目的主目标平台（D-140：防止再写死 darwin）
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      # ── 源码级检查：只读源码/配置，零依赖、秒级、不起进程 ──────────────
+      # check:docs 内部会跑 music/units/settings/autostart 四个套件对账，故一并覆盖。
+      # 命令收束后逐条命令住 e2eScripts.json：`npm run task -- <id>`（npm run task 看清单）。
+      - name: 源码级检查
+        run: |
+          npm run task -- check:docs
+          npm run task -- check:docpaths
+          npm run task -- check:resilience
+          npm run task -- check:bundle
+          npm run task -- check:quit
+          npm run task -- check:autostart
+          npm run task -- check:ia
+          npm run task -- check:units
+          npm run task -- check:music
+          npm run task -- check:settings
+          npm run task -- check:registry
+
+      # ── 契约自测：引擎 + 服务（用 mock 引擎，纯 Node，不碰真权重）──────
+      - name: 引擎与服务契约自测
+        run: npm run selftest
+
+      # ── 判定层：真服务 + 假引擎，秒级；已是平台忠实断言（D-140）──────
+      - name: 判定层检查
+        run: |
+          npm run task -- check:e8
+          npm run task -- check:e4
+          npm run task -- check:e10
+
+      # ── 代码校验：eslint + prettier（本地由 husky 的 pre-commit 守着，这里是强制点）──
+      - name: 代码校验（eslint + prettier）
+        run: |
+          npm run lint
+          npm run format:check
+
+      - name: 前端类型与构建
+        run: npm run build

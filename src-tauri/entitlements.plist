@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  喵坞 · macOS hardened runtime entitlements（E1）
+  =============================================================================
+  为什么需要这个文件：macOS 上签名 + 公证（notarization）要求 app **开启 hardened runtime**，
+  而 hardened runtime 默认会拒绝下面这些行为 —— 而它们正是本项目**必需**的：
+
+  · `disable-library-validation`：引擎的 Python 依赖（torch / onnxruntime / fastai 系）
+    带一堆第三方 `.dylib`/`.so`，它们**不是用我们这张证书签的**。
+    不开这一条，父进程加载它们时会被 dyld 直接拒绝（`code signature invalid`），
+    而症状是"引擎起不来"，与"缺了个 entitlement"看不出关系。
+  · `allow-unsigned-executable-memory` + `allow-jit`：torch 与 numpy 的加速路径会分配可执行内存；
+    Python 解释器本身也会。缺了它们，症状是**跑到某一步突然崩**。
+  · `allow-dyld-environment-variables`：我们给子进程传环境（`PYTHONPATH` / `HF_HUB_OFFLINE` /
+    `SAKURA_API_BASE` / `NO_PROXY` …），它们经 dyld 环境变量进入子进程。
+
+  🔴 **已知边界（务必别读成"签一下就万事大吉"）**：
+  引擎运行时（Python venv / `llama-server`）与模型权重**都不在 `Contents/` 里** ——
+  它们由用户按 `docs/install-guide-macos.md` 自己装到
+  `~/Library/Application Support/runtimes/manga-translator/`（B1 之后的落点）。
+  所以计划文档 E1 原话「对 `Contents/` 内所有可执行逐个签名」**现在几乎没有对象**
+  （包内只剩 app 自己的二进制）；而**用户装的那几个可执行是未签名的**。
+  「父进程带 hardened runtime 时能不能拉起它们」只能由**真机**回答 ——
+  这条记在 `unverified` 里，见 `docs/spec-notes-1.md` 与 `docs/install-guide-macos.md`。
+
+  🔴 刻意**不**加的东西：`com.apple.security.app-sandbox`。
+  本应用要拉起用户自装的、位于 appData 的外部可执行并读写用户选择的目录，
+  sandbox 会把这条路整条堵死（加了它，症状同样是"引擎起不来"）。
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+</dict>
+</plist>

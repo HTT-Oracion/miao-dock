@@ -1,13 +1,13 @@
 // 「译文」渲染器 —— 模拟引擎的输出画面
 //
-// 为什么需要它：真实模型未就绪（docs/spec-notes.md D-09），但验收要求落盘产物是**真实可打开的图片**，
+// 为什么需要它：真实模型未就绪（docs/internal/spec-notes.md D-09），但验收要求落盘产物是**真实可打开的图片**，
 // 且「原创 ↔ 译文」在对照页中肉眼可分。因此渲染一张**版式化**的假译文：
 //   · 纸面底 + 文本行 + 对话框轮廓 —— 看起来像一页译好的漫画，而不是纯色块
 //   · 顶部 4px 色带颜色由 seq 决定 —— 给自动化验收一个**可像素级校验的每页标识**
 //     （校验：取顶部色带中心像素，其色相应 ≈ (seq*47)%360，见 e2e/engine/selftest.mjs）
 //
 // 输出统一为 PNG。真实引擎若保持原容器格式也无需改 Service：落盘扩展名取自对返回字节的嗅探
-// （见 service/src/store.mjs `_writeItem`）。
+// （见 service/src/manga/store.mjs `_writeItem`）。
 import { encodePng, hslToRgb, hueForSeq } from './png.mjs';
 
 /** 纸面与线条色（粉彩同族，用作模拟版式，不替代设计令牌） */
@@ -86,8 +86,7 @@ export function renderTranslatedPage(width, height, seq) {
       }
       for (const bb of bubbles) {
         if (x >= bb.bx && x < bb.bx + bb.bw && y >= bb.by && y < bb.by + bb.bh) {
-          const onEdge = x < bb.bx + 2 || x >= bb.bx + bb.bw - 2 ||
-            y < bb.by + 2 || y >= bb.by + bb.bh - 2;
+          const onEdge = x < bb.bx + 2 || x >= bb.bx + bb.bw - 2 || y < bb.by + 2 || y >= bb.by + bb.bh - 2;
           [r, g, b] = onEdge ? INK_MID : [255, 255, 255];
           break;
         }

@@ -1,0 +1,494 @@
+{
+  "pure": {
+    "endStatusOf": {
+      "allFail": "failed",
+      "allOk": "done",
+      "empty": "done",
+      "someFail": "partial_failed"
+    },
+    "fileScan": {
+      "001.png": {
+        "original": 1,
+        "translated": null
+      },
+      "001_translated.webp": {
+        "original": null,
+        "translated": 1
+      },
+      "003_translated.png": {
+        "original": null,
+        "translated": 3
+      },
+      "042.jpg": {
+        "original": 42,
+        "translated": null
+      },
+      "1000.png": {
+        "original": null,
+        "translated": null
+      },
+      "cover.jpg": {
+        "original": null,
+        "translated": null
+      }
+    },
+    "formatEtaText": {
+      "edge59": "预计 1–59 秒",
+      "edge60": "预计 1–2 分钟",
+      "min": "预计 1–3 分钟",
+      "sec": "预计 10–30 秒"
+    },
+    "isSafeDirName": {
+      "backslash": false,
+      "cjk": true,
+      "dotInMiddle": true,
+      "dotdot": false,
+      "empty": false,
+      "slash": false
+    },
+    "orderImages": {
+      "byIndex": [1, 0, 2],
+      "byName": [2, 0, 1],
+      "empty": [0, 1, 2],
+      "exprIndex": [1, 0, 2],
+      "trim": [0, 1, 2],
+      "unknownKey": [0, 1, 2]
+    },
+    "sniffImageType": {
+      "empty": null,
+      "gif": null,
+      "jpg": "jpg",
+      "png": "png",
+      "shortPng": null,
+      "webp": "webp"
+    }
+  },
+  "serializedTask": {
+    "batches": [
+      {
+        "batchIndex": 1,
+        "count": 3,
+        "idempotencyKey": null,
+        "items": [
+          {
+            "byteSize": 123,
+            "durationMs": 1000,
+            "ext": "png",
+            "fromDisk": false,
+            "originalFile": "001.png",
+            "outputFile": "001_translated.png",
+            "reason": null,
+            "retryCount": 0,
+            "saved": true,
+            "seq": 1,
+            "sha256": "aa",
+            "status": "success"
+          },
+          {
+            "byteSize": 456,
+            "durationMs": 2000,
+            "ext": "jpg",
+            "fromDisk": false,
+            "originalFile": "002.jpg",
+            "outputFile": null,
+            "reason": "engine_error",
+            "retryCount": 1,
+            "saved": false,
+            "seq": 2,
+            "sha256": null,
+            "status": "failed"
+          },
+          {
+            "byteSize": 789,
+            "durationMs": null,
+            "ext": "webp",
+            "fromDisk": false,
+            "originalFile": "003.webp",
+            "outputFile": "003_translated.png",
+            "reason": "already_exists",
+            "retryCount": 0,
+            "saved": true,
+            "seq": 3,
+            "sha256": null,
+            "status": "skipped"
+          }
+        ],
+        "seqFrom": 1,
+        "seqTo": 3,
+        "status": "partial_failed"
+      }
+    ],
+    "clientTaskRef": null,
+    "comicName": "夏日重现",
+    "createdAt": "2026-10-13T04:35:29.000Z",
+    "dirName": "夏日重现",
+    "finalProgress": {
+      "current": 0,
+      "done": 2,
+      "failed": 1,
+      "total": 3
+    },
+    "finishedAt": "2026-10-13T04:36:10.500Z",
+    "idempotencyKey": null,
+    "lang": {
+      "from": "ja",
+      "to": "zh"
+    },
+    "normalizedComicName": "夏日重现",
+    "outputDir": "<HOME>\\Pictures\\Box 漫画\\夏日重现",
+    "source": "unknown",
+    "status": "partial_failed",
+    "taskId": "tsk_0123456789ABCDEFGHJKMNPQRS",
+    "translator": "sakura"
+  },
+  "views": {
+    "batchStatuses": ["canceled", "queued", "running", "partial_failed", "failed", "done"],
+    "create": {
+      "batches": [
+        {
+          "batchIndex": 1,
+          "count": 3,
+          "seqFrom": 1,
+          "seqTo": 3,
+          "status": "partial_failed"
+        }
+      ],
+      "comicName": "夏日重现",
+      "createdAt": "2026-10-13T04:35:29.000Z",
+      "eta": {
+        "maxSeconds": 180,
+        "minSeconds": 60,
+        "text": "预计 1–3 分钟"
+      },
+      "normalizedComicName": "夏日重现",
+      "outputDir": "<HOME>\\Pictures\\Box 漫画\\夏日重现",
+      "queuePosition": 0,
+      "status": "partial_failed",
+      "taskId": "tsk_0123456789ABCDEFGHJKMNPQRS"
+    },
+    "detail": {
+      "batches": [
+        {
+          "batchIndex": 1,
+          "count": 3,
+          "seqFrom": 1,
+          "seqTo": 3,
+          "status": "partial_failed"
+        }
+      ],
+      "comicName": "夏日重现",
+      "createdAt": "2026-10-13T04:35:29.000Z",
+      "eta": {
+        "maxSeconds": 180,
+        "minSeconds": 60,
+        "text": "预计 1–3 分钟"
+      },
+      "finishedAt": "2026-10-13T04:36:10.500Z",
+      "items": [
+        {
+          "durationMs": 1000,
+          "outputFile": "001_translated.png",
+          "reason": null,
+          "retryCount": 0,
+          "saved": true,
+          "seq": 1,
+          "sha256": "aa",
+          "status": "success"
+        },
+        {
+          "durationMs": 2000,
+          "outputFile": null,
+          "reason": "engine_error",
+          "retryCount": 1,
+          "saved": false,
+          "seq": 2,
+          "sha256": null,
+          "status": "failed"
+        },
+        {
+          "durationMs": null,
+          "outputFile": "003_translated.png",
+          "reason": "already_exists",
+          "retryCount": 0,
+          "saved": true,
+          "seq": 3,
+          "sha256": null,
+          "status": "skipped"
+        }
+      ],
+      "normalizedComicName": "夏日重现",
+      "outputDir": "<HOME>\\Pictures\\Box 漫画\\夏日重现",
+      "progress": {
+        "current": 0,
+        "done": 2,
+        "failed": 1,
+        "total": 3
+      },
+      "queuePosition": 0,
+      "status": "partial_failed",
+      "taskId": "tsk_0123456789ABCDEFGHJKMNPQRS"
+    },
+    "detailFiltered": {
+      "batches": [
+        {
+          "batchIndex": 1,
+          "count": 3,
+          "seqFrom": 1,
+          "seqTo": 3,
+          "status": "partial_failed"
+        }
+      ],
+      "comicName": "夏日重现",
+      "createdAt": "2026-10-13T04:35:29.000Z",
+      "eta": {
+        "maxSeconds": 180,
+        "minSeconds": 60,
+        "text": "预计 1–3 分钟"
+      },
+      "finishedAt": "2026-10-13T04:36:10.500Z",
+      "items": [
+        {
+          "durationMs": 2000,
+          "outputFile": null,
+          "reason": "engine_error",
+          "retryCount": 1,
+          "saved": false,
+          "seq": 2,
+          "sha256": null,
+          "status": "failed"
+        },
+        {
+          "durationMs": null,
+          "outputFile": "003_translated.png",
+          "reason": "already_exists",
+          "retryCount": 0,
+          "saved": true,
+          "seq": 3,
+          "sha256": null,
+          "status": "skipped"
+        }
+      ],
+      "normalizedComicName": "夏日重现",
+      "outputDir": "<HOME>\\Pictures\\Box 漫画\\夏日重现",
+      "progress": {
+        "current": 0,
+        "done": 2,
+        "failed": 1,
+        "total": 3
+      },
+      "queuePosition": 0,
+      "status": "partial_failed",
+      "taskId": "tsk_0123456789ABCDEFGHJKMNPQRS"
+    },
+    "list": {
+      "comicName": "夏日重现",
+      "createdAt": "2026-10-13T04:35:29.000Z",
+      "finishedAt": "2026-10-13T04:36:10.500Z",
+      "normalizedComicName": "夏日重现",
+      "outputDir": "<HOME>\\Pictures\\Box 漫画\\夏日重现",
+      "progress": {
+        "current": 0,
+        "done": 2,
+        "failed": 1,
+        "total": 3
+      },
+      "queuePosition": 0,
+      "source": "unknown",
+      "status": "partial_failed",
+      "taskId": "tsk_0123456789ABCDEFGHJKMNPQRS"
+    },
+    "progress": {
+      "current": 0,
+      "done": 2,
+      "failed": 1,
+      "total": 3
+    },
+    "queue": {
+      "queued": [
+        {
+          "comicName": "排队甲",
+          "etaSeconds": {
+            "max": 180,
+            "min": 60,
+            "text": "预计 1–3 分钟"
+          },
+          "imageCount": 2,
+          "position": 1,
+          "taskId": "tsk_00000000000000000000000002"
+        }
+      ],
+      "running": {
+        "comicName": "运行中",
+        "progress": {
+          "done": 1,
+          "total": 2
+        },
+        "taskId": "tsk_00000000000000000000000001"
+      }
+    },
+    "taskList": {
+      "count": 6,
+      "queued": 2,
+      "running": 1,
+      "tasks": [
+        {
+          "comicName": "运行中",
+          "createdAt": "2026-10-13T04:35:29.000Z",
+          "finishedAt": null,
+          "normalizedComicName": "运行中",
+          "outputDir": "<HOME>\\Pictures\\Box 漫画\\运行中",
+          "progress": {
+            "current": 0,
+            "done": 1,
+            "failed": 0,
+            "total": 2
+          },
+          "queuePosition": 0,
+          "source": "unknown",
+          "status": "running",
+          "taskId": "tsk_00000000000000000000000001"
+        },
+        {
+          "comicName": "排队甲",
+          "createdAt": "2026-10-13T04:36:00.000Z",
+          "finishedAt": null,
+          "normalizedComicName": "排队甲",
+          "outputDir": "<HOME>\\Pictures\\Box 漫画\\排队甲",
+          "progress": {
+            "current": 0,
+            "done": 0,
+            "failed": 0,
+            "total": 2
+          },
+          "queuePosition": 0,
+          "source": "unknown",
+          "status": "queued",
+          "taskId": "tsk_00000000000000000000000002"
+        },
+        {
+          "comicName": "排队乙",
+          "createdAt": "2026-10-13T04:37:00.000Z",
+          "finishedAt": null,
+          "normalizedComicName": "排队乙",
+          "outputDir": "<HOME>\\Pictures\\Box 漫画\\排队乙",
+          "progress": {
+            "current": 0,
+            "done": 0,
+            "failed": 0,
+            "total": 2
+          },
+          "queuePosition": 0,
+          "source": "unknown",
+          "status": "queued",
+          "taskId": "tsk_00000000000000000000000003"
+        },
+        {
+          "comicName": "失败",
+          "createdAt": "2026-10-13T04:39:00.000Z",
+          "finishedAt": "2026-10-13T04:50:00.000Z",
+          "normalizedComicName": "失败",
+          "outputDir": "<HOME>\\Pictures\\Box 漫画\\失败",
+          "progress": {
+            "current": 0,
+            "done": 1,
+            "failed": 0,
+            "total": 2
+          },
+          "queuePosition": 0,
+          "source": "unknown",
+          "status": "failed",
+          "taskId": "tsk_00000000000000000000000005"
+        },
+        {
+          "comicName": "缺完成时间",
+          "createdAt": "2026-10-13T04:45:00.000Z",
+          "finishedAt": null,
+          "normalizedComicName": "缺完成时间",
+          "outputDir": "<HOME>\\Pictures\\Box 漫画\\缺完成时间",
+          "progress": {
+            "current": 0,
+            "done": 2,
+            "failed": 0,
+            "total": 2
+          },
+          "queuePosition": 0,
+          "source": "unknown",
+          "status": "done",
+          "taskId": "tsk_00000000000000000000000006"
+        },
+        {
+          "comicName": "完成",
+          "createdAt": "2026-10-13T04:38:00.000Z",
+          "finishedAt": "2026-10-13T04:40:00.000Z",
+          "normalizedComicName": "完成",
+          "outputDir": "<HOME>\\Pictures\\Box 漫画\\完成",
+          "progress": {
+            "current": 0,
+            "done": 2,
+            "failed": 0,
+            "total": 2
+          },
+          "queuePosition": 0,
+          "source": "unknown",
+          "status": "done",
+          "taskId": "tsk_00000000000000000000000004"
+        }
+      ],
+      "total": 6
+    },
+    "taskListFiltered": {
+      "count": 2,
+      "queued": 2,
+      "running": 1,
+      "tasks": [
+        {
+          "comicName": "失败",
+          "createdAt": "2026-10-13T04:39:00.000Z",
+          "finishedAt": "2026-10-13T04:50:00.000Z",
+          "normalizedComicName": "失败",
+          "outputDir": "<HOME>\\Pictures\\Box 漫画\\失败",
+          "progress": {
+            "current": 0,
+            "done": 1,
+            "failed": 0,
+            "total": 2
+          },
+          "queuePosition": 0,
+          "source": "unknown",
+          "status": "failed",
+          "taskId": "tsk_00000000000000000000000005"
+        },
+        {
+          "comicName": "缺完成时间",
+          "createdAt": "2026-10-13T04:45:00.000Z",
+          "finishedAt": null,
+          "normalizedComicName": "缺完成时间",
+          "outputDir": "<HOME>\\Pictures\\Box 漫画\\缺完成时间",
+          "progress": {
+            "current": 0,
+            "done": 2,
+            "failed": 0,
+            "total": 2
+          },
+          "queuePosition": 0,
+          "source": "unknown",
+          "status": "done",
+          "taskId": "tsk_00000000000000000000000006"
+        }
+      ],
+      "total": 3
+    }
+  },
+  "plans": {
+    "nextSeq": 1,
+    "resume": null,
+    "retranslate": null
+  },
+  "hidden": ["A Comic", "B Comic"],
+  "persistedBytes": "{\n  \"taskId\": \"tsk_0123456789ABCDEFGHJKMNPQRS\",\n  \"comicName\": \"夏日重现\",\n  \"normalizedComicName\": \"夏日重现\",\n  \"dirName\": \"夏日重现\",\n  \"outputDir\": \"<HOME>\\\\Pictures\\\\Box 漫画\\\\夏日重现\",\n  \"status\": \"partial_failed\",\n  \"lang\": {\n    \"from\": \"ja\",\n    \"to\": \"zh\"\n  },\n  \"translator\": \"sakura\",\n  \"clientTaskRef\": null,\n  \"source\": \"unknown\",\n  \"idempotencyKey\": null,\n  \"createdAt\": \"2026-10-13T04:35:29.000Z\",\n  \"finishedAt\": \"2026-10-13T04:36:10.500Z\",\n  \"finalProgress\": {\n    \"total\": 3,\n    \"done\": 2,\n    \"failed\": 1,\n    \"current\": 0\n  },\n  \"batches\": [\n    {\n      \"batchIndex\": 1,\n      \"count\": 3,\n      \"seqFrom\": 1,\n      \"seqTo\": 3,\n      \"status\": \"partial_failed\",\n      \"idempotencyKey\": null,\n      \"items\": [\n        {\n          \"seq\": 1,\n          \"ext\": \"png\",\n          \"byteSize\": 123,\n          \"fromDisk\": false,\n          \"status\": \"success\",\n          \"saved\": true,\n          \"originalFile\": \"001.png\",\n          \"outputFile\": \"001_translated.png\",\n          \"sha256\": \"aa\",\n          \"durationMs\": 1000,\n          \"retryCount\": 0,\n          \"reason\": null\n        },\n        {\n          \"seq\": 2,\n          \"ext\": \"jpg\",\n          \"byteSize\": 456,\n          \"fromDisk\": false,\n          \"status\": \"failed\",\n          \"saved\": false,\n          \"originalFile\": \"002.jpg\",\n          \"outputFile\": null,\n          \"sha256\": null,\n          \"durationMs\": 2000,\n          \"retryCount\": 1,\n          \"reason\": \"engine_error\"\n        },\n        {\n          \"seq\": 3,\n          \"ext\": \"webp\",\n          \"byteSize\": 789,\n          \"fromDisk\": false,\n          \"status\": \"skipped\",\n          \"saved\": true,\n          \"originalFile\": \"003.webp\",\n          \"outputFile\": \"003_translated.png\",\n          \"sha256\": null,\n          \"durationMs\": null,\n          \"retryCount\": 0,\n          \"reason\": \"already_exists\"\n        }\n      ]\n    }\n  ]\n}\n",
+  "atomic": {
+    "noTmpResidue": true,
+    "targetIntactAfterAbort": true
+  },
+  "ulidOk": true
+}

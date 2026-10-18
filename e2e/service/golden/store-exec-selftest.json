@@ -1,0 +1,1034 @@
+{
+  "scenarios": [
+    {
+      "name": "happy",
+      "report": {
+        "outcome": {
+          "replay": false,
+          "taskId": "<TID>"
+        },
+        "result": null,
+        "error": null,
+        "task": {
+          "batches": [
+            {
+              "batchIndex": 1,
+              "count": 3,
+              "idempotencyKey": null,
+              "items": [
+                {
+                  "byteSize": 14,
+                  "durationMs": null,
+                  "ext": "png",
+                  "fromDisk": false,
+                  "originalFile": "001.png",
+                  "outputFile": "001_translated.png",
+                  "reason": null,
+                  "retryCount": 0,
+                  "saved": true,
+                  "seq": 1,
+                  "sha256": "4bb858cc9b5d834e08cb90f2138e7dabede994283b5559dd733707896a6dc7f8",
+                  "status": "success"
+                },
+                {
+                  "byteSize": 14,
+                  "durationMs": null,
+                  "ext": "png",
+                  "fromDisk": false,
+                  "originalFile": "002.png",
+                  "outputFile": "002_translated.png",
+                  "reason": null,
+                  "retryCount": 0,
+                  "saved": true,
+                  "seq": 2,
+                  "sha256": "1c647a12f0a53a3ecc9ce1a150620eb4ae46e5c2a7e20d4cda7e73c93577aa58",
+                  "status": "success"
+                },
+                {
+                  "byteSize": 14,
+                  "durationMs": null,
+                  "ext": "png",
+                  "fromDisk": false,
+                  "originalFile": "003.png",
+                  "outputFile": "003_translated.png",
+                  "reason": null,
+                  "retryCount": 0,
+                  "saved": true,
+                  "seq": 3,
+                  "sha256": "1409ef664533ef3379f9bc7b9c6b1564bd509d9bdc38bd173e452131c1d76615",
+                  "status": "success"
+                }
+              ],
+              "seqFrom": 1,
+              "seqTo": 3,
+              "status": "done"
+            }
+          ],
+          "clientTaskRef": null,
+          "comicName": "01_顺跑",
+          "createdAt": null,
+          "dirName": "01_顺跑",
+          "finalProgress": {
+            "current": 0,
+            "done": 3,
+            "failed": 0,
+            "total": 3
+          },
+          "finishedAt": null,
+          "idempotencyKey": null,
+          "lang": {
+            "from": "ja",
+            "to": "zh"
+          },
+          "normalizedComicName": "01_顺跑",
+          "outputDir": "<ROOT>\\01_顺跑",
+          "source": "unknown",
+          "status": "done",
+          "taskId": "<TID>",
+          "translator": "sakura"
+        },
+        "events": [
+          {
+            "id": 1,
+            "event": "task.status",
+            "data": {
+              "queuePosition": 0,
+              "status": "running",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 2,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": null,
+              "saved": false,
+              "seq": 1,
+              "status": "translating",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 3,
+            "event": "batch.status",
+            "data": {
+              "batchIndex": 1,
+              "seqFrom": 1,
+              "seqTo": 3,
+              "status": "running",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 4,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": "001_translated.png",
+              "saved": true,
+              "seq": 1,
+              "status": "success",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 5,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": null,
+              "saved": false,
+              "seq": 2,
+              "status": "translating",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 6,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": "002_translated.png",
+              "saved": true,
+              "seq": 2,
+              "status": "success",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 7,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": null,
+              "saved": false,
+              "seq": 3,
+              "status": "translating",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 8,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": "003_translated.png",
+              "saved": true,
+              "seq": 3,
+              "status": "success",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 9,
+            "event": "batch.status",
+            "data": {
+              "batchIndex": 1,
+              "seqFrom": 1,
+              "seqTo": 3,
+              "status": "done",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 10,
+            "event": "task.status",
+            "data": {
+              "queuePosition": 0,
+              "status": "done",
+              "taskId": "<TID>"
+            }
+          }
+        ],
+        "itemErrors": {},
+        "disk": ["001.png", "001_translated.png", "002.png", "002_translated.png", "003.png", "003_translated.png"],
+        "remainingTaskIds": ["<TID>"]
+      }
+    },
+    {
+      "name": "partial-failed",
+      "report": {
+        "outcome": {
+          "replay": false,
+          "taskId": "<TID>"
+        },
+        "result": null,
+        "error": null,
+        "task": {
+          "batches": [
+            {
+              "batchIndex": 1,
+              "count": 3,
+              "idempotencyKey": null,
+              "items": [
+                {
+                  "byteSize": 14,
+                  "durationMs": null,
+                  "ext": "png",
+                  "fromDisk": false,
+                  "originalFile": "001.png",
+                  "outputFile": "001_translated.png",
+                  "reason": null,
+                  "retryCount": 0,
+                  "saved": true,
+                  "seq": 1,
+                  "sha256": "4bb858cc9b5d834e08cb90f2138e7dabede994283b5559dd733707896a6dc7f8",
+                  "status": "success"
+                },
+                {
+                  "byteSize": 14,
+                  "durationMs": null,
+                  "ext": "png",
+                  "fromDisk": false,
+                  "originalFile": "002.png",
+                  "outputFile": null,
+                  "reason": "injected_failure",
+                  "retryCount": 1,
+                  "saved": false,
+                  "seq": 2,
+                  "sha256": null,
+                  "status": "failed"
+                },
+                {
+                  "byteSize": 14,
+                  "durationMs": null,
+                  "ext": "png",
+                  "fromDisk": false,
+                  "originalFile": "003.png",
+                  "outputFile": "003_translated.png",
+                  "reason": null,
+                  "retryCount": 0,
+                  "saved": true,
+                  "seq": 3,
+                  "sha256": "1409ef664533ef3379f9bc7b9c6b1564bd509d9bdc38bd173e452131c1d76615",
+                  "status": "success"
+                }
+              ],
+              "seqFrom": 1,
+              "seqTo": 3,
+              "status": "partial_failed"
+            }
+          ],
+          "clientTaskRef": null,
+          "comicName": "02_部分失败",
+          "createdAt": null,
+          "dirName": "02_部分失败",
+          "finalProgress": {
+            "current": 0,
+            "done": 2,
+            "failed": 1,
+            "total": 3
+          },
+          "finishedAt": null,
+          "idempotencyKey": null,
+          "lang": {
+            "from": "ja",
+            "to": "zh"
+          },
+          "normalizedComicName": "02_部分失败",
+          "outputDir": "<ROOT>\\02_部分失败",
+          "source": "unknown",
+          "status": "partial_failed",
+          "taskId": "<TID>",
+          "translator": "sakura"
+        },
+        "events": [
+          {
+            "id": 1,
+            "event": "task.status",
+            "data": {
+              "queuePosition": 0,
+              "status": "running",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 2,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": null,
+              "saved": false,
+              "seq": 1,
+              "status": "translating",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 3,
+            "event": "batch.status",
+            "data": {
+              "batchIndex": 1,
+              "seqFrom": 1,
+              "seqTo": 3,
+              "status": "running",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 4,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": "001_translated.png",
+              "saved": true,
+              "seq": 1,
+              "status": "success",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 5,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": null,
+              "saved": false,
+              "seq": 2,
+              "status": "translating",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 6,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": null,
+              "saved": false,
+              "seq": 2,
+              "status": "failed",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 7,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": null,
+              "saved": false,
+              "seq": 3,
+              "status": "translating",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 8,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": "003_translated.png",
+              "saved": true,
+              "seq": 3,
+              "status": "success",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 9,
+            "event": "batch.status",
+            "data": {
+              "batchIndex": 1,
+              "seqFrom": 1,
+              "seqTo": 3,
+              "status": "partial_failed",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 10,
+            "event": "task.status",
+            "data": {
+              "queuePosition": 0,
+              "status": "partial_failed",
+              "taskId": "<TID>"
+            }
+          }
+        ],
+        "itemErrors": {
+          "2": "单项总预算 150ms 已耗尽（第 2 次尝试开始前）"
+        },
+        "disk": ["001.png", "001_translated.png", "002.png", "003.png", "003_translated.png"],
+        "remainingTaskIds": ["<TID>"]
+      }
+    },
+    {
+      "name": "skip-existing",
+      "report": {
+        "outcome": {
+          "replay": false,
+          "taskId": "<TID>"
+        },
+        "result": null,
+        "error": null,
+        "task": {
+          "batches": [
+            {
+              "batchIndex": 1,
+              "count": 2,
+              "idempotencyKey": null,
+              "items": [
+                {
+                  "byteSize": 14,
+                  "durationMs": null,
+                  "ext": "png",
+                  "fromDisk": false,
+                  "originalFile": null,
+                  "outputFile": "001_translated.png",
+                  "reason": "already_exists",
+                  "retryCount": 0,
+                  "saved": true,
+                  "seq": 1,
+                  "sha256": null,
+                  "status": "skipped"
+                },
+                {
+                  "byteSize": 14,
+                  "durationMs": null,
+                  "ext": "png",
+                  "fromDisk": false,
+                  "originalFile": "002.png",
+                  "outputFile": "002_translated.png",
+                  "reason": null,
+                  "retryCount": 0,
+                  "saved": true,
+                  "seq": 2,
+                  "sha256": "1c647a12f0a53a3ecc9ce1a150620eb4ae46e5c2a7e20d4cda7e73c93577aa58",
+                  "status": "success"
+                }
+              ],
+              "seqFrom": 1,
+              "seqTo": 2,
+              "status": "done"
+            }
+          ],
+          "clientTaskRef": null,
+          "comicName": "03_已有译文",
+          "createdAt": null,
+          "dirName": "03_已有译文",
+          "finalProgress": {
+            "current": 0,
+            "done": 2,
+            "failed": 0,
+            "total": 2
+          },
+          "finishedAt": null,
+          "idempotencyKey": null,
+          "lang": {
+            "from": "ja",
+            "to": "zh"
+          },
+          "normalizedComicName": "03_已有译文",
+          "outputDir": "<ROOT>\\03_已有译文",
+          "source": "unknown",
+          "status": "done",
+          "taskId": "<TID>",
+          "translator": "sakura"
+        },
+        "events": [
+          {
+            "id": 1,
+            "event": "task.status",
+            "data": {
+              "queuePosition": 0,
+              "status": "running",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 2,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": "001_translated.png",
+              "saved": true,
+              "seq": 1,
+              "status": "skipped",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 3,
+            "event": "batch.status",
+            "data": {
+              "batchIndex": 1,
+              "seqFrom": 1,
+              "seqTo": 2,
+              "status": "running",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 4,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": null,
+              "saved": false,
+              "seq": 2,
+              "status": "translating",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 5,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": "002_translated.png",
+              "saved": true,
+              "seq": 2,
+              "status": "success",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 6,
+            "event": "batch.status",
+            "data": {
+              "batchIndex": 1,
+              "seqFrom": 1,
+              "seqTo": 2,
+              "status": "done",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 7,
+            "event": "task.status",
+            "data": {
+              "queuePosition": 0,
+              "status": "done",
+              "taskId": "<TID>"
+            }
+          }
+        ],
+        "itemErrors": {},
+        "disk": ["001_translated.png", "002.png", "002_translated.png"],
+        "remainingTaskIds": ["<TID>"]
+      }
+    },
+    {
+      "name": "cancel-queued",
+      "report": {
+        "outcome": null,
+        "result": {
+          "keptItems": 0,
+          "outputDir": "<ROOT>\\04_取消",
+          "status": "canceled",
+          "taskId": "<TID>"
+        },
+        "error": null,
+        "task": {
+          "batches": [
+            {
+              "batchIndex": 1,
+              "count": 2,
+              "idempotencyKey": null,
+              "items": [
+                {
+                  "byteSize": 11,
+                  "durationMs": null,
+                  "ext": "png",
+                  "fromDisk": false,
+                  "originalFile": null,
+                  "outputFile": null,
+                  "reason": "canceled",
+                  "retryCount": 0,
+                  "saved": false,
+                  "seq": 1,
+                  "sha256": null,
+                  "status": "skipped"
+                },
+                {
+                  "byteSize": 12,
+                  "durationMs": null,
+                  "ext": "png",
+                  "fromDisk": false,
+                  "originalFile": null,
+                  "outputFile": null,
+                  "reason": "canceled",
+                  "retryCount": 0,
+                  "saved": false,
+                  "seq": 2,
+                  "sha256": null,
+                  "status": "skipped"
+                }
+              ],
+              "seqFrom": 1,
+              "seqTo": 2,
+              "status": "canceled"
+            }
+          ],
+          "clientTaskRef": null,
+          "comicName": "04_取消",
+          "createdAt": null,
+          "dirName": "04_取消",
+          "finalProgress": {
+            "current": 0,
+            "done": 2,
+            "failed": 0,
+            "total": 2
+          },
+          "finishedAt": null,
+          "idempotencyKey": null,
+          "lang": {
+            "from": "ja",
+            "to": "zh"
+          },
+          "normalizedComicName": "04_取消",
+          "outputDir": "<ROOT>\\04_取消",
+          "source": "unknown",
+          "status": "canceled",
+          "taskId": "<TID>",
+          "translator": "sakura"
+        },
+        "events": [
+          {
+            "id": 1,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": null,
+              "saved": false,
+              "seq": 1,
+              "status": "skipped",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 2,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": null,
+              "saved": false,
+              "seq": 2,
+              "status": "skipped",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 3,
+            "event": "batch.status",
+            "data": {
+              "batchIndex": 1,
+              "seqFrom": 1,
+              "seqTo": 2,
+              "status": "done",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 4,
+            "event": "batch.status",
+            "data": {
+              "batchIndex": 1,
+              "seqFrom": 1,
+              "seqTo": 2,
+              "status": "canceled",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 5,
+            "event": "task.status",
+            "data": {
+              "queuePosition": 0,
+              "status": "canceled",
+              "taskId": "<TID>"
+            }
+          }
+        ],
+        "itemErrors": {},
+        "disk": [],
+        "remainingTaskIds": ["<TID>"]
+      }
+    },
+    {
+      "name": "retry-then-run",
+      "report": {
+        "outcome": null,
+        "result": {
+          "reused": 1,
+          "taskId": "<TID>"
+        },
+        "error": null,
+        "task": {
+          "batches": [
+            {
+              "batchIndex": 1,
+              "count": 2,
+              "idempotencyKey": null,
+              "items": [
+                {
+                  "byteSize": 11,
+                  "durationMs": null,
+                  "ext": "png",
+                  "fromDisk": false,
+                  "originalFile": "001.png",
+                  "outputFile": "001_translated.png",
+                  "reason": null,
+                  "retryCount": 0,
+                  "saved": true,
+                  "seq": 1,
+                  "sha256": null,
+                  "status": "success"
+                },
+                {
+                  "byteSize": 12,
+                  "durationMs": null,
+                  "ext": "png",
+                  "fromDisk": true,
+                  "originalFile": "002.png",
+                  "outputFile": "002_translated.png",
+                  "reason": null,
+                  "retryCount": 0,
+                  "saved": true,
+                  "seq": 2,
+                  "sha256": "1c647a12f0a53a3ecc9ce1a150620eb4ae46e5c2a7e20d4cda7e73c93577aa58",
+                  "status": "success"
+                }
+              ],
+              "seqFrom": 1,
+              "seqTo": 2,
+              "status": "done"
+            }
+          ],
+          "clientTaskRef": null,
+          "comicName": "05_重试",
+          "createdAt": null,
+          "dirName": "05_重试",
+          "finalProgress": {
+            "current": 0,
+            "done": 2,
+            "failed": 0,
+            "total": 2
+          },
+          "finishedAt": null,
+          "idempotencyKey": null,
+          "lang": {
+            "from": "ja",
+            "to": "zh"
+          },
+          "normalizedComicName": "05_重试",
+          "outputDir": "<ROOT>\\05_重试",
+          "source": "unknown",
+          "status": "done",
+          "taskId": "<TID>",
+          "translator": "sakura"
+        },
+        "events": [
+          {
+            "id": 1,
+            "event": "batch.status",
+            "data": {
+              "batchIndex": 1,
+              "seqFrom": 1,
+              "seqTo": 2,
+              "status": "running",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 2,
+            "event": "task.status",
+            "data": {
+              "queuePosition": 0,
+              "status": "running",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 3,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": null,
+              "saved": false,
+              "seq": 2,
+              "status": "translating",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 4,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": "002_translated.png",
+              "saved": true,
+              "seq": 2,
+              "status": "success",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 5,
+            "event": "batch.status",
+            "data": {
+              "batchIndex": 1,
+              "seqFrom": 1,
+              "seqTo": 2,
+              "status": "done",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 6,
+            "event": "task.status",
+            "data": {
+              "queuePosition": 0,
+              "status": "done",
+              "taskId": "<TID>"
+            }
+          }
+        ],
+        "itemErrors": {},
+        "disk": ["001.png", "001_translated.png", "002.png", "002_translated.png"],
+        "remainingTaskIds": ["<TID>"]
+      }
+    },
+    {
+      "name": "budget-exhausted",
+      "report": {
+        "outcome": {
+          "replay": false,
+          "taskId": "<TID>"
+        },
+        "result": null,
+        "error": null,
+        "task": {
+          "batches": [
+            {
+              "batchIndex": 1,
+              "count": 1,
+              "idempotencyKey": null,
+              "items": [
+                {
+                  "byteSize": 14,
+                  "durationMs": null,
+                  "ext": "png",
+                  "fromDisk": false,
+                  "originalFile": "001.png",
+                  "outputFile": null,
+                  "reason": "engine_engine_timeout",
+                  "retryCount": 1,
+                  "saved": false,
+                  "seq": 1,
+                  "sha256": null,
+                  "status": "failed"
+                }
+              ],
+              "seqFrom": 1,
+              "seqTo": 1,
+              "status": "failed"
+            }
+          ],
+          "clientTaskRef": null,
+          "comicName": "06_预算耗死",
+          "createdAt": null,
+          "dirName": "06_预算耗死",
+          "finalProgress": {
+            "current": 0,
+            "done": 0,
+            "failed": 1,
+            "total": 1
+          },
+          "finishedAt": null,
+          "idempotencyKey": null,
+          "lang": {
+            "from": "ja",
+            "to": "zh"
+          },
+          "normalizedComicName": "06_预算耗死",
+          "outputDir": "<ROOT>\\06_预算耗死",
+          "source": "unknown",
+          "status": "failed",
+          "taskId": "<TID>",
+          "translator": "sakura"
+        },
+        "events": [
+          {
+            "id": 1,
+            "event": "task.status",
+            "data": {
+              "queuePosition": 0,
+              "status": "running",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 2,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": null,
+              "saved": false,
+              "seq": 1,
+              "status": "translating",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 3,
+            "event": "batch.status",
+            "data": {
+              "batchIndex": 1,
+              "seqFrom": 1,
+              "seqTo": 1,
+              "status": "running",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 4,
+            "event": "item.status",
+            "data": {
+              "batchIndex": 1,
+              "durationMs": null,
+              "outputFile": null,
+              "saved": false,
+              "seq": 1,
+              "status": "failed",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 5,
+            "event": "batch.status",
+            "data": {
+              "batchIndex": 1,
+              "seqFrom": 1,
+              "seqTo": 1,
+              "status": "failed",
+              "taskId": "<TID>"
+            }
+          },
+          {
+            "id": 6,
+            "event": "task.status",
+            "data": {
+              "queuePosition": 0,
+              "status": "failed",
+              "taskId": "<TID>"
+            }
+          }
+        ],
+        "itemErrors": {
+          "1": "单项总预算 150ms 已耗尽（第 2 次尝试开始前）"
+        },
+        "disk": ["001.png"],
+        "remainingTaskIds": ["<TID>"]
+      }
+    },
+    {
+      "name": "delete-mixed",
+      "report": {
+        "outcome": null,
+        "result": {
+          "deleted": ["tsk_0123456789ABCDEFGHJKMNPQRV"],
+          "skipped": [
+            {
+              "reason": "not_found",
+              "taskId": "tsk_0123456789ABCDEFGHJKMNPQRS"
+            },
+            {
+              "reason": "not_deletable",
+              "status": "running",
+              "taskId": "tsk_0123456789ABCDEFGHJKMNPQRW"
+            }
+          ]
+        },
+        "error": null,
+        "task": null,
+        "events": [],
+        "itemErrors": {},
+        "disk": null,
+        "remainingTaskIds": ["tsk_0123456789ABCDEFGHJKMNPQRW"]
+      }
+    }
+  ]
+}

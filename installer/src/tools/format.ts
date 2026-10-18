@@ -1,0 +1,32 @@
+/**
+ * 人类可读容量 —— **副本**，与主工程 `src/tools/index.ts` 的 `formatBytes` 同口径。
+ *
+ * 为什么复制：安装向导是独立程序，不 import 主工程；而"体积"这件事
+ * （行尾的「约 312 MB」、可用空间、数据项大小）必须在**同一个换算规则**下显示，
+ * 否则两处对同一个数字给出不同位数，用户会以为是两个不同的量。
+ */
+
+/** 字节数 → `312 MB` / `1.20 GB`；非正数与 NaN 一律 `0 B` */
+export function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  const digits = i === 0 ? 0 : v >= 100 ? 0 : v >= 10 ? 1 : 2;
+  return `${v.toFixed(digits)} ${units[i]}`;
+}
+
+/**
+ * 路径所在的盘符标签（`C:\Program Files\MiaoDock` → `C:`）。
+ *
+ * 界面上「可用空间」必须标**用户选的那个盘**：写死 `C:` 会让 D 盘安装的人
+ * 看到一句与事实无关的容量。认不出盘符时给空串，界面就只显示"可用空间"。
+ */
+export function driveOf(path: string): string {
+  const matched = /^[A-Za-z]:/.exec(path.trim());
+  return matched === null ? '' : matched[0].toUpperCase();
+}

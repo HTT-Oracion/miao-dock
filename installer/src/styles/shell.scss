@@ -1,0 +1,417 @@
+/* ================================================================
+   安装向导外壳：最小重置 / 猫耳窗 / 步骤条 / 底栏 / 按钮 / 提示条 / 勾选行
+   颜色一律 var(--md-*)，由 main.tsx 注入（`src/themes/tokens.ts`）
+   ================================================================ */
+
+/* 最小重置：本入口不引主窗的 base.scss，这里补最基本的三件 —— margin / 盒模型 / 默认字号 */
+body {
+  margin: 0;
+  background: var(--md-board);
+  color: var(--md-ink);
+  font-family: var(--md-font-body);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.isr-page {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 26px 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.isr-page *,
+.isr-page *::before,
+.isr-page *::after {
+  box-sizing: inherit;
+}
+
+.isr-page h2 {
+  font-family: var(--md-font-display);
+  font-size: 16px;
+  margin: 0 0 2px;
+}
+
+.isr-page svg {
+  display: block;
+}
+
+/* ---------------------------------------------------------------- 猫耳窗 */
+
+.isr-win {
+  width: 660px;
+  position: relative;
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-xl);
+  box-shadow: 0 18px 46px -20px rgba(59, 51, 82, 0.28);
+}
+
+/* 两只猫耳：三角形没有边框，那圈描边靠 drop-shadow 补出来 */
+.isr-win::before,
+.isr-win::after {
+  content: '';
+  position: absolute;
+  top: -15px;
+  width: 0;
+  height: 0;
+  border-left: 15px solid transparent;
+  border-right: 15px solid transparent;
+  border-bottom: 22px solid var(--md-surface);
+  filter: drop-shadow(0 -1px 0 var(--md-line));
+}
+
+.isr-win::before {
+  left: 38px;
+  transform: rotate(-8deg);
+}
+
+.isr-win::after {
+  right: 38px;
+  transform: rotate(8deg);
+}
+
+.isr-bar {
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--md-line-soft);
+}
+
+.isr-bar-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.isr-bar-title {
+  font-family: var(--md-font-display);
+  font-size: 12.5px;
+}
+
+.isr-bar-tag {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--md-pink);
+  background: var(--md-pink-soft);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+
+/* 关闭钮：宿主里没有系统标题栏，这一枚就是唯一的关闭入口 */
+.isr-bar-close {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 2px;
+  padding: 0;
+  cursor: pointer;
+  color: var(--md-muted);
+  background: none;
+  border: none;
+  border-radius: 50%;
+}
+
+.isr-bar-close:hover {
+  color: var(--md-ink);
+  background: var(--md-surface-2);
+}
+
+.isr-bar-close:focus-visible {
+  outline: 2px solid var(--md-lavender);
+  outline-offset: 1px;
+}
+
+.isr-win-body {
+  padding: 22px 26px 20px;
+}
+
+.isr-win-foot {
+  padding: 14px 26px 18px;
+  border-top: 1px solid var(--md-line-soft);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.isr-foot-left {
+  font-size: 11px;
+  color: var(--md-muted);
+}
+
+.isr-foot-grow {
+  flex: 1;
+}
+
+/* ---------------------------------------------------------------- 步骤条 */
+
+.isr-steps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.isr-step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: var(--md-muted);
+}
+
+.isr-step-line {
+  flex: 1;
+  height: 1px;
+  background: var(--md-line);
+}
+
+.isr-step-no {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  display: grid;
+  place-items: center;
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  color: var(--md-muted);
+  background: var(--md-surface-2);
+  border: 1px solid var(--md-line);
+  border-radius: 50%;
+}
+
+.isr-step.is-on {
+  color: var(--md-ink);
+  font-weight: 700;
+}
+
+.isr-step.is-on .isr-step-no {
+  color: var(--md-on-accent);
+  background: var(--md-pink);
+  border-color: var(--md-pink);
+}
+
+.isr-step.is-done .isr-step-no {
+  color: var(--md-on-accent);
+  background: var(--md-success);
+  border-color: var(--md-success);
+}
+
+/* ---------------------------------------------------------------- 按钮 */
+
+.isr-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  color: inherit;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+
+.isr-btn-primary {
+  color: var(--md-on-accent);
+  background: var(--md-pink);
+}
+
+.isr-btn-primary:hover {
+  filter: brightness(1.04);
+}
+
+/* 安装进行中：按钮禁用，视觉上要能看出"点不动"，而不是点了没反应 */
+.isr-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  filter: none;
+}
+
+.isr-btn-ghost {
+  font-weight: 400;
+  color: var(--md-ink-2);
+  background: var(--md-surface);
+  border-color: var(--md-line);
+}
+
+.isr-btn:focus-visible {
+  outline: 2px solid var(--md-lavender);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- 盒式提示条 */
+/* 三态的底色是设计稿指定的浅色版令牌色 —— 令牌里没有 success / warning 的 soft 变体，
+   这里按图画取值；文字色与图标色仍走令牌，主题换色时这两处会跟着走。 */
+
+.isr-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 10px 13px;
+  font-size: 11.5px;
+  border-radius: var(--md-radius-md);
+}
+
+.isr-note svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.isr-note.is-info {
+  color: var(--md-ink-2);
+  background: var(--md-blue-soft);
+}
+
+.isr-note.is-info svg {
+  stroke: var(--md-blue);
+}
+
+.isr-note.is-ok {
+  color: #2e7a5e;
+  background: #e4f8ef;
+}
+
+.isr-note.is-ok svg {
+  stroke: var(--md-success);
+}
+
+.isr-note.is-warn {
+  color: var(--md-warning);
+  background: #fff6e3;
+}
+
+.isr-note.is-warn svg {
+  stroke: var(--md-warning);
+}
+
+/* ---------------------------------------------------------------- 勾选行 */
+
+/* 环境探测中：窗口已出、内容未到 —— 一句话说明在等宿主回话 */
+.isr-probing {
+  padding: 26px 0 30px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--md-muted);
+}
+
+.isr-chk {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  color: inherit;
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-md);
+}
+
+.isr-chk:hover {
+  border-color: var(--md-pink);
+}
+
+.isr-chk.is-on {
+  border-color: var(--md-pink);
+  background: var(--md-pink-soft);
+}
+
+.isr-chk:focus-visible {
+  outline: 2px solid var(--md-lavender);
+  outline-offset: 2px;
+}
+
+.isr-chk-box {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+  margin-top: 1px;
+  display: grid;
+  place-items: center;
+  color: var(--md-on-accent);
+  background: #fff;
+  border: 1.5px solid var(--md-line);
+  border-radius: var(--md-radius-xs);
+}
+
+.isr-chk.is-on .isr-chk-box {
+  background: var(--md-pink);
+  border-color: var(--md-pink);
+}
+
+.isr-chk-tx b {
+  display: block;
+  font-size: 12.5px;
+  color: var(--md-ink);
+}
+
+.isr-chk-tx span {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--md-ink-2);
+}
+
+/* ================================================================
+   桌面宿主（`<html data-host="tauri">`）里的形态：**卡面就是窗口本身**
+   浏览器预览保留设计稿那种"画布上浮着一张卡"的展示形态，两者只差这一组规则
+   ================================================================ */
+
+/* 宿主窗口是**透明**的（`transparent: true`）：屏幕上没有矩形窗口，
+   只有卡面本身 —— 圆角与猫耳因此是真正的"形状"，而不是画在方框里的图案 */
+
+html[data-host='tauri'],
+html[data-host='tauri'] body {
+  background: transparent;
+}
+
+html[data-host='tauri'] .isr-page {
+  /* 左/右/下各留 14px 给投影，顶部 26px 给猫耳 */
+  padding: 26px 14px 14px;
+  background: transparent;
+  /* 桌面窗口不是网页：正文不可选（命令块仍可选，见下一条） */
+  user-select: none;
+}
+
+html[data-host='tauri'] .isr-win {
+  width: 100%;
+  min-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  /* 窗口本身没有边框：四个角都是卡面自己的圆角 */
+  border-radius: var(--md-radius-xl);
+  box-shadow: 0 18px 40px -22px rgba(59, 51, 82, 0.35);
+}
+
+/* 🔴 flex 列里 `height: 46px` 挡不住收缩：可用高度不够时标题栏会被压扁（实测踩过）。
+   除了主体，其余各行一律 `flex: 0 0 auto` —— 该固定的一律固定，只让主体伸缩。 */
+html[data-host='tauri'] .isr-bar,
+html[data-host='tauri'] .isr-win-foot {
+  flex: 0 0 auto;
+}
+
+html[data-host='tauri'] .isr-win-body {
+  /* `min-height: 0` 是 overflow 在 flex 列里真正生效的前提（否则它会把容器撑开而不是滚动） */
+  flex: 1 1 auto;
+  min-height: 0;
+  /* 内容超高时只滚主体，底栏按钮始终留在原位 */
+  overflow-y: auto;
+}
+
+html[data-host='tauri'] .isr-code pre {
+  user-select: text;
+}

@@ -1,0 +1,32 @@
+{
+  "manifestVersion": 1,
+  "updatedAt": "2026-10-15",
+  "purpose": "pydensecrf 的**预编译 wheel** 通道（B4/G3）：让没有 MSVC / Xcode CLT 的机器也能装上这个包。它只是**便利**，不是硬依赖 —— 清单里没有本平台条目时，装配脚本回退到原来的源码编译路线（这就是既有行为，不是新加的分支）。",
+  "note": "🔴 每一条的 `sha256` 都必须**真算出来**（`--wheel-entry` 会算并打印可直接粘贴的条目）—— 凭记忆写一个假的比不写更坏：它会拦下真 wheel，或者更糟 —— 拦不住假的。🔴 **分发形态三态恰取其一，且必须如实标注**：`bundled: true` + `path` = **随安装包分发**（G3，用户机零编译器）；`local: true` = **尚未托管**（只在「跑过 `--build-wheel` 的那台机器上」可用）；`url` 非空 = **托管通道**。三态混写（例如既 `bundled` 又给 `url`）会让 `planCrf` 的优先级失去意义 ⇒ 由 `check:pydensecrf-wheel` 的 WB.W1b 拒绝。",
+  "platformKey": "与 engine/models.manifest.json 的 platform 字段同一口径（win32-x64 / darwin-arm64）；pythonTag 用 wheel 的 ABI tag（cp311，见 engine/VERSIONS.lock §2 的 engine_python = 3.11.17）",
+  "gapNote": "🔴 当前只有 `win32-x64` 一条。**darwin 侧没有预编译 wheel** ⇒ 产品装配（`mangasvc --engine-bootstrap`）在 macOS 上会走源码编译，那需要本机已装 Xcode 命令行工具（`xcode-select --install`）。这是 macOS「零配置」目前唯一的缺口，且造这条 wheel 必须有 Mac：在已装 CLT 的 macOS 上跑 `node engine/scripts/install-engine-deps.mjs --build-wheel`，再用 `--wheel-entry <x.whl>` 算哈希并粘贴条目（三态改回 `bundled: true` + `path` 即随包分发，与 win32-x64 那条一致）。判据已由 `check:pydensecrf-wheel` 的 WB.R3（macOS 镜像下如实报「没有本平台条目」）钉住缺口的**表现**，加条目即自动生效。",
+  "fillHowTo": [
+    "① 在目标平台（且该平台有编译器）上：`node engine/scripts/install-engine-deps.mjs --build-wheel`（复用同脚本的 MSVC 环境探测与 sdist 缓存；缺省产出到通道目录 `<RT>/.download-cache/wheels/`）",
+    "② 它**已经**把 sha256 / sizeBytes 算好并打印成可直接粘贴的条目（对已有的 whl 也可以：`--wheel-entry <x.whl>`）",
+    "③ **随包分发（首选，G3）**：把 .whl 放进仓库 `engine/wheels/`，条目写 `bundled: true` 与 `path`（相对 `engine/`，形如 `wheels/<文件名>`），并同步 `src-tauri/tauri.conf.json` 的 `bundle.resources`；跑 `node e2e/bundle-targets-check.mjs`（W13）与 `node e2e/engine/pydensecrf-wheel-check.mjs` 复核。⚠️ **不要**把它塞进 `REQUIRED_ASSETS`：那是「缺了就不许起服务」的口径，而 wheel 缺件有源码编译的合法回退 —— 塞进去会把「装不了」升级成「起不来」",
+    "④ **或走镜像托管**：把 .whl 传到镜像通道，然后补 `url` / `sources` 并去掉 `local`（WB.W1 要求：三态**恰取其一**）",
+    "⑤ 跑 `node e2e/engine/pydensecrf-wheel-check.mjs`（结构合法性 + sha256 形态 + 选择逻辑四态）",
+    "⑥ 跑 `node e2e/engine/pydensecrf-wheel-install-check.mjs`（**真装一次**：`--no-index --no-deps` 成功 + 真二进制 + 构造 DenseCRF）"
+  ],
+  "wheels": [
+    {
+      "id": "pydensecrf-win32-x64",
+      "platform": "win32-x64",
+      "pythonTag": "cp311",
+      "file": "pydensecrf-1.0-cp311-cp311-win_amd64.whl",
+      "sha256": "f4b5b28d8b5e600adb60b891cdbe3b2540fbe75c2bea4003faa007bbed313cbd",
+      "sizeBytes": 212943,
+      "bundled": true,
+      "path": "wheels/pydensecrf-1.0-cp311-cp311-win_amd64.whl",
+      "local": false,
+      "url": null,
+      "sources": [],
+      "note": "2026-10-14 在 Windows/x64（MSVC 14.44.35207 · SDK 10.0.22621.0 · cp311）上用 `--build-wheel` 真构建；`--no-index --no-deps` 装进空 target 成功、真二进制、`DenseCRF(10,10)` 可构造（见 `check:pydensecrf-wheel-install`）。🔴 G3 起**随安装包分发**（`bundled: true` + `path`）：用户机不需要编译器、也不需要 `.download-cache`；`local: false` 表示它不再依赖「造它的那台机器」。"
+    }
+  ]
+}

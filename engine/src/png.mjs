@@ -45,11 +45,7 @@ export function hslToRgb(hue, s = 0.55, l = 0.62) {
     if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
     return p;
   };
-  return [
-    Math.round(conv(h + 1 / 3) * 255),
-    Math.round(conv(h) * 255),
-    Math.round(conv(h - 1 / 3) * 255),
-  ];
+  return [Math.round(conv(h + 1 / 3) * 255), Math.round(conv(h) * 255), Math.round(conv(h - 1 / 3) * 255)];
 }
 
 /**

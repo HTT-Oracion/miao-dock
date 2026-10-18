@@ -23,7 +23,7 @@
  * 而本项目的权重是**预置**的（见 `offline-engine-bringup` 的结论）。
  * 这一半的取证停在夹具层（真 Range 请求），已足够证明**代码路径**正确；
  * 但"上游真实 CDN 的 `Content-Range` 行为"这一条列进
- * `docs/engine-e2e-acceptance-report.md` 的 unverified register。
+ * `docs/internal/engine-e2e-acceptance-report.md` 的 unverified register。
  *
  * 用法：
  *   node e2e/engine/e7-real-verify-check.mjs            正向
@@ -40,8 +40,11 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
+import { runtimesDir } from '../../engine/scripts/runtime-root.mjs';
+
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
-const MODEL_ROOT = process.env.MIAO_MODEL_ROOT || path.join(ROOT, 'runtimes', 'manga-translator');
+// 🔴 B1：真机取权重的落点与产品同源（`<appData>/runtimes/manga-translator`）。
+const MODEL_ROOT = process.env.MIAO_MODEL_ROOT || runtimesDir();
 const MANIFEST_PATH = path.join(ROOT, 'engine', 'models.manifest.json');
 const STORE_SRC = path.join(ROOT, 'engine', 'model-store.mjs');
 const REFUTE = process.argv.includes('--refute');
@@ -150,7 +153,7 @@ async function runAll() {
     if (!f) throw new Error(`manifest 里找不到 ${f?.id ?? '?'} —— 清单被改过？`);
     const p = path.join(MODEL_ROOT, f.dest);
     if (!fs.existsSync(p)) {
-      throw new Error(`真机取证需要盘上有 ${f.id}：${p}\n请先 \`npm run fetch:models\` 或按预置流程放入权重。`);
+      throw new Error(`真机取证需要盘上有 ${f.id}：${p}\n请先 \`npm run task -- fetch:models\` 或按预置流程放入权重。`);
     }
   }
 
@@ -160,9 +163,11 @@ async function runAll() {
     const t0 = Date.now();
     const big = await s.verifyModels(manifest, { rootDir: MODEL_ROOT, ids: [BIG_ID] });
     const bigMs = Date.now() - t0;
-    check('E7-A 3.6 GB 真权重的 sha256 **跑得完**且与清单一致（流式实现不在真实规模上崩）',
+    check(
+      'E7-A 3.6 GB 真权重的 sha256 **跑得完**且与清单一致（流式实现不在真实规模上崩）',
       big.ok.length === 1 && big.bad.length === 0 && big.missing.length === 0,
-      `ok=${JSON.stringify(big.ok)} bad=${big.bad.length} missing=${JSON.stringify(big.missing)} / 文件 ${mb(BIG.sizeBytes)} / 耗时 ${(bigMs / 1000).toFixed(1)} s / 清单 sha=${BIG.sha256.slice(0, 12)}…`);
+      `ok=${JSON.stringify(big.ok)} bad=${big.bad.length} missing=${JSON.stringify(big.missing)} / 文件 ${mb(BIG.sizeBytes)} / 耗时 ${(bigMs / 1000).toFixed(1)} s / 清单 sha=${BIG.sha256.slice(0, 12)}…`,
+    );
 
     // ---- E7-B：篡改**中间**一个字节 → 必须被检出（且报出实际哈希，不是照抄期望值）----
     const midRel = 'mid/alphabet.txt';
@@ -170,19 +175,25 @@ async function runAll() {
     const midManifest = manifestWithDest(SMALL_ID, midRel);
     const mid = await s.verifyModels(midManifest, { rootDir: tmpRoot, ids: [SMALL_ID] });
     const midBad = mid.bad[0];
-    check('E7-B 篡改**中间**一字节 → sha256 校验失败，且报出的是**实际算出**的哈希（≠ 清单值）',
-      mid.bad.length === 1 && mid.ok.length === 0
-        && midBad?.actual !== SMALL.sha256 && /^[0-9a-f]{64}$/.test(midBad?.actual ?? ''),
-      `offset=${midInfo.offset} / 字节 ${midInfo.before}→${midInfo.after} / 实际=${String(midBad?.actual).slice(0, 12)}… / 清单=${SMALL.sha256.slice(0, 12)}…`);
+    check(
+      'E7-B 篡改**中间**一字节 → sha256 校验失败，且报出的是**实际算出**的哈希（≠ 清单值）',
+      mid.bad.length === 1 &&
+        mid.ok.length === 0 &&
+        midBad?.actual !== SMALL.sha256 &&
+        /^[0-9a-f]{64}$/.test(midBad?.actual ?? ''),
+      `offset=${midInfo.offset} / 字节 ${midInfo.before}→${midInfo.after} / 实际=${String(midBad?.actual).slice(0, 12)}… / 清单=${SMALL.sha256.slice(0, 12)}…`,
+    );
 
     // ---- E7-C：篡改**最后一个字节** → 同样必须被检出（堵"只校验头部/只看大小"的伪校验）----
     const lastRel = 'last/alphabet.txt';
     const lastInfo = await tamperCopy(path.join(MODEL_ROOT, SMALL.dest), tmpRoot, lastRel, 'last');
     const lastManifest = manifestWithDest(SMALL_ID, lastRel);
     const lastRes = await s.verifyModels(lastManifest, { rootDir: tmpRoot, ids: [SMALL_ID] });
-    check('E7-C 篡改**最后一个字节** → 仍被检出（排除"只读头部 / 只看文件大小"的伪校验）',
+    check(
+      'E7-C 篡改**最后一个字节** → 仍被检出（排除"只读头部 / 只看文件大小"的伪校验）',
       lastRes.bad.length === 1 && lastRes.bad[0].actual !== SMALL.sha256,
-      `offset=${lastInfo.offset}（size=${lastInfo.size}）→ 位置在文件末尾 / 检出=${lastRes.bad.length === 1}`);
+      `offset=${lastInfo.offset}（size=${lastInfo.size}）→ 位置在文件末尾 / 检出=${lastRes.bad.length === 1}`,
+    );
 
     // ---- E7-D：未篡改的副本必须判 ok —— 证明上面的"bad"不是"一律判坏" ----
     const cleanRel = 'clean/alphabet.txt';
@@ -190,22 +201,28 @@ async function runAll() {
     await fsp.copyFile(path.join(MODEL_ROOT, SMALL.dest), path.join(tmpRoot, cleanRel));
     const cleanManifest = manifestWithDest(SMALL_ID, cleanRel);
     const clean = await s.verifyModels(cleanManifest, { rootDir: tmpRoot, ids: [SMALL_ID] });
-    check('E7-D 同一份字节**未篡改**时判 ok（"bad"来自字节差异，不是校验器一律判坏）',
+    check(
+      'E7-D 同一份字节**未篡改**时判 ok（"bad"来自字节差异，不是校验器一律判坏）',
       clean.ok.length === 1 && clean.bad.length === 0,
-      `ok=${JSON.stringify(clean.ok)} bad=${clean.bad.length}`);
+      `ok=${JSON.stringify(clean.ok)} bad=${clean.bad.length}`,
+    );
 
     // ---- E7-E：坏的**再验一次仍是坏的**（不"第二次就放过"，也不偷偷修好）----
     const again = await s.verifyModels(midManifest, { rootDir: tmpRoot, ids: [SMALL_ID] });
-    check('E7-E 坏文件再验一次仍判 bad（校验是幂等的判定，不"重试一次就放行"）',
+    check(
+      'E7-E 坏文件再验一次仍判 bad（校验是幂等的判定，不"重试一次就放行"）',
       again.bad.length === 1 && again.bad[0].actual === midBad?.actual,
-      `第二次 actual=${String(again.bad[0]?.actual).slice(0, 12)}… == 第一次？${again.bad[0]?.actual === midBad?.actual}`);
+      `第二次 actual=${String(again.bad[0]?.actual).slice(0, 12)}… == 第一次？${again.bad[0]?.actual === midBad?.actual}`,
+    );
 
     // ---- E7-F：真权重目录在整轮取证里**一个字节都没被我们改过** ----
     // 这条是防"夹具自己把真模型搞坏了" —— 上面所有篡改都发生在 tmp 副本上。
     const bigAfter = await s.sha256File(path.join(MODEL_ROOT, BIG.dest));
-    check('E7-F 真权重目录在整轮取证后**未被改动**（篡改只发生在 tmp 副本上）',
+    check(
+      'E7-F 真权重目录在整轮取证后**未被改动**（篡改只发生在 tmp 副本上）',
       bigAfter === BIG.sha256,
-      `重算 ${bigAfter.slice(0, 12)}… == 清单 ${BIG.sha256.slice(0, 12)}…`);
+      `重算 ${bigAfter.slice(0, 12)}… == 清单 ${BIG.sha256.slice(0, 12)}…`,
+    );
   } finally {
     await fsp.rm(tmpRoot, { recursive: true, force: true });
   }
@@ -230,29 +247,39 @@ const MUTATIONS = [
     // ⚠️ 破坏必须**语法合法**：只换掉 `if (...)` 那一行会留下悬空的 `else` ⇒ 模块加载就抛
     //    `Unexpected token 'else'`，断言"变红"是因为根本没跑起来，而不是因为它抓到了机制 ——
     //    那种红不算证据（本轮实测踩到过）。所以把 `if/else` **两行一起**换掉。
-    edits: [{
-      file: STORE_SRC,
-      find: '    if (got === file.sha256) out.ok.push(file.id);\n'
-        + '    else out.bad.push({ id: file.id, expected: file.sha256, actual: got });',
-      replace: '    out.ok.push(file.id); // refute：不分好坏，一律判通过',
-    }],
+    edits: [
+      {
+        file: STORE_SRC,
+        find:
+          '    if (got === file.sha256) out.ok.push(file.id);\n' +
+          '    else out.bad.push({ id: file.id, expected: file.sha256, actual: got });',
+        replace: '    out.ok.push(file.id); // refute：不分好坏，一律判通过',
+      },
+    ],
   },
   {
     // 这条盯的是"实际哈希"这个**字段本身**：把 actual 写成 expected（照抄），
     // E7-B/E7-C 里"actual ≠ 清单值"这一条会红 —— 因为那时它报的是抄来的值。
     name: 'E7-B/C：让 `bad` 里的 `actual` **照抄清单的期望值**（"看起来校验过了"）',
-    expect: [
-      'E7-B 篡改**中间**一字节 → sha256 校验失败，且报出的是**实际算出**的哈希（≠ 清单值）',
+    expect: ['E7-B 篡改**中间**一字节 → sha256 校验失败，且报出的是**实际算出**的哈希（≠ 清单值）'],
+    edits: [
+      {
+        file: STORE_SRC,
+        find: '    else out.bad.push({ id: file.id, expected: file.sha256, actual: got });',
+        replace:
+          '    else out.bad.push({ id: file.id, expected: file.sha256, actual: file.sha256 }); // refute：照抄期望值',
+      },
     ],
-    edits: [{
-      file: STORE_SRC,
-      find: '    else out.bad.push({ id: file.id, expected: file.sha256, actual: got });',
-      replace: '    else out.bad.push({ id: file.id, expected: file.sha256, actual: file.sha256 }); // refute：照抄期望值',
-    }],
   },
 ];
 
-const readBytes = (f) => { try { return fs.readFileSync(f); } catch { return null; } };
+const readBytes = (f) => {
+  try {
+    return fs.readFileSync(f);
+  } catch {
+    return null;
+  }
+};
 
 const main = async () => {
   console.log(`E7 模型续传与校验 · 真机半边（《04》§14.2）${REFUTE ? ' · 反证轮' : ''}`);
@@ -284,7 +311,9 @@ const main = async () => {
       if (!originals.has(e.file)) originals.set(e.file, readBytes(e.file));
       const txt = originals.get(e.file).toString('utf8');
       if (!txt.includes(e.find)) {
-        console.log(`⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`);
+        console.log(
+          `⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`,
+        );
         skipped += mut.expect.length;
         continue;
       }
@@ -306,8 +335,13 @@ const main = async () => {
     for (const id of mut.expect) {
       total++;
       const isRed = (res[id] && res[id].ok === false) || (!res[id] && roundErr !== null);
-      if (isRed) { red++; console.log(`  ✓ ${id.slice(0, 22)}… 按预期变红${res[id] ? '' : '（因本轮未能执行）'}`); }
-      else { falsePositives.push(id); console.log(`  ✗ ${id.slice(0, 22)}… 该红没红 ← 假阳性`); }
+      if (isRed) {
+        red++;
+        console.log(`  ✓ ${id.slice(0, 22)}… 按预期变红${res[id] ? '' : '（因本轮未能执行）'}`);
+      } else {
+        falsePositives.push(id);
+        console.log(`  ✗ ${id.slice(0, 22)}… 该红没红 ← 假阳性`);
+      }
       if (!wasGreen[id]) console.log('     注：该条基线本就是红，无法据此判定断言有效性');
     }
   }

@@ -18,7 +18,6 @@
  * 清理放在**下一次运行的开头**。临时根目录默认 `.tmp/e2e/`，可用 `MIAO_E2E_TMP` 指到别处
  * （例如系统临时目录：`MIAO_E2E_TMP=$(mktemp -d)`），两个脚本共用该变量。
  */
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -26,6 +25,12 @@ import process from 'node:process';
 
 import { encodePng } from '../engine/src/png.mjs';
 import { TMP_ENV, describeE2eTmp, e2eRoot, e2eState, e2eTmp } from './_e2e-paths.mjs';
+// F0：服务靶子解析的唯一事实源。
+// 🔴 本文件原先**自己拼** `service/src/server.mjs` 并用裸 `spawn(process.execPath, [entry])` 起它 ——
+//    那是 harness 之外的第二份入口推导，harness-check 的 H1/H2 只扫 `e2e/service/` 所以没抓到它。
+//    服务靶子退化成哨兵（`SERVICE_ENTRY` 不再是路径）后，这条路必须并进 harness：改成
+//    `spawnTarget(SERVICE_ENTRY, env)`，否则会去 `node __miao_service_target__`（起不来）。
+import { SERVICE_ENTRY, killTree, spawnTarget } from './service/_service-harness.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const TMP = e2eTmp();
@@ -42,7 +47,7 @@ process.env.MIAO_ENGINE_PROTOCOL = 'mock';
 // ------------------------------------------------------------------ D4 时效的「时间口径」（D-0.8）
 // ⚠️ 旧写法把预算**写死成 30s** —— 那是**模拟引擎**的口径（单张 300ms，`MIAO_ENGINE_ITEM_MS` 默认值）。
 // 真实引擎是**秒级/张**：20 张可达 1 分钟以上。接入真引擎那天该断言必红，
-// 而且会被误读成「接入失败」（见 `docs/engine-integration-plan.md` R6）。
+// 而且会被误读成「接入失败」（见 `docs/internal/engine-integration-plan.md` R6）。
 //
 // 现改为**预算由单张耗时推导**，接真引擎时只需给 `MIAO_E2E_ITEM_MS` 实测值，**不必改断言**：
 //     预算 = MIAO_E2E_ITEM_MS × BATCH_LIMIT × 抖动 + 管道余量
@@ -64,10 +69,8 @@ const check = (id, label, ok, detail) => {
 // ------------------------------------------------------------------ 进程
 
 function spawnProc(entry, env, tag) {
-  const child = spawn(process.execPath, [entry], {
-    env: { ...process.env, ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  // 走 harness：服务入口 ⇒ mangasvc；非服务入口（本文件里的模拟引擎）⇒ 原样 node。
+  const child = spawnTarget(entry, env);
   const state = { child, tag, out: '' };
   child.stdout.on('data', (b) => (state.out += b.toString('utf8')));
   child.stderr.on('data', (b) => (state.out += b.toString('utf8')));
@@ -86,7 +89,9 @@ async function waitReady(state, re, timeoutMs = 20_000) {
 }
 
 function killProc(state) {
-  if (state && state.child && state.child.exitCode === null) state.child.kill('SIGTERM');
+  // 🔴 用 killTree 而不是 `child.kill()`：靶子是 mangasvc 时它会派生引擎②/③（llama-server 每个几 GB），
+  //    Windows 上裸 kill 只收主进程 ⇒ 孙进程成孤儿（D-202 实测攒了 12 个把机器卡死）。
+  if (state && state.child) killTree(state.child);
 }
 
 /**
@@ -201,8 +206,7 @@ async function appendBatch(port, token, taskId, images, extra = {}) {
   return { status: res.status, json: json(res) };
 }
 
-const detail = async (port, token, taskId) =>
-  json(await request(port, 'GET', `/api/v1/tasks/${taskId}`, { token }));
+const detail = async (port, token, taskId) => json(await request(port, 'GET', `/api/v1/tasks/${taskId}`, { token }));
 
 const TERMINAL = ['done', 'partial_failed', 'failed', 'canceled'];
 
@@ -210,8 +214,7 @@ const TERMINAL = ['done', 'partial_failed', 'failed', 'canceled'];
 // 写死 60s 是模拟引擎口径；真引擎下 20 张就要 1 分钟以上，
 // 那时会先抛「未在 60000ms 内到终态」——**看起来像流程坏了，其实只是引擎慢**（D-0.8 的第二处口径）。
 const TASK_SLACK_MS = 30_000; // 队列排队 + 落盘 + 拉起引擎的余量
-const taskTimeoutFor = (n = BATCH_LIMIT) =>
-  Math.max(60_000, n * ITEM_JITTER * BUDGET_ITEM_MS + TASK_SLACK_MS);
+const taskTimeoutFor = (n = BATCH_LIMIT) => Math.max(60_000, n * ITEM_JITTER * BUDGET_ITEM_MS + TASK_SLACK_MS);
 
 async function waitTask(port, token, taskId, timeoutMs = taskTimeoutFor()) {
   const until = Date.now() + timeoutMs;
@@ -231,7 +234,14 @@ function collectEvents(port, token, taskId, { timeoutMs = taskTimeoutFor() } = {
     const events = [];
     let buf = '';
     const req = http.request(
-      { host: '127.0.0.1', port, method: 'GET', path: `/api/v1/tasks/${taskId}/events`, headers: { 'X-Box-Token': token }, agent: false },
+      {
+        host: '127.0.0.1',
+        port,
+        method: 'GET',
+        path: `/api/v1/tasks/${taskId}/events`,
+        headers: { 'X-Box-Token': token },
+        agent: false,
+      },
       (res) => {
         res.setEncoding('utf8');
         res.on('data', (chunk) => {
@@ -304,7 +314,7 @@ try {
   console.log(`引擎就绪 @${engineInfo.port}（注入失败：seq=3）`);
 
   service = spawnProc(
-    path.join(ROOT, 'service', 'src', 'server.mjs'),
+    SERVICE_ENTRY,
     {
       MIAO_ENGINE_PORT: String(engineInfo.port),
       MIAO_ROOT: ROOT_DIR,
@@ -338,19 +348,11 @@ try {
 
     const t = await detail(PORT, TOKEN, taskId);
     const batches = t?.batches ?? [];
-    check(
-      'D1c',
-      '31 张 = 一个 Task 两个 Batch',
-      batches.length === 2,
-      `batches=${batches.length}`,
-    );
+    check('D1c', '31 张 = 一个 Task 两个 Batch', batches.length === 2, `batches=${batches.length}`);
     check(
       'D1d',
       'seqFrom/seqTo 连续无重号（1–20 / 21–31）',
-      batches[0]?.seqFrom === 1 &&
-        batches[0]?.seqTo === 20 &&
-        batches[1]?.seqFrom === 21 &&
-        batches[1]?.seqTo === 31,
+      batches[0]?.seqFrom === 1 && batches[0]?.seqTo === 20 && batches[1]?.seqFrom === 21 && batches[1]?.seqTo === 31,
       batches.map((b) => `${b.seqFrom}-${b.seqTo}`).join(' / '),
     );
 
@@ -446,7 +448,9 @@ try {
 
     // 「可续做」不能只是个说法：失败页必须真的出现在该漫画的续做清单里，
     // 否则库里那张卡只是**看着**像「待译」，点「继续翻译」却无事发生。
-    const plan = json(await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, { token: TOKEN }));
+    const plan = json(
+      await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, { token: TOKEN }),
+    );
     check(
       'D3f',
       `续做清单列出失败页 [${failSeqs.join(',')}] —— 这是 G-11 裁 A 的实际用途`,
@@ -464,7 +468,7 @@ try {
     //    而本脚本没有，所以两者分开：这里测 resume 的续做语义，那里测 retry 的任务身份。
     //
     // 带上 X-Box-Client：真实应用是经 Rust 层转发的，那层给每个请求都打这个头
-    // （`app/src-tauri/src/commands.rs`），故「来源」列才会显示「本机投放」。
+    // （`src-tauri/src/commands.rs`），故「来源」列才会显示「本机投放」。
     // 不带的话截图里会是一条「—」，看起来像缺陷，其实只是用例没照抄真实请求形状。
     const rs = await request(PORT, 'POST', `/api/v1/library/${encodeURIComponent(dirName)}/resume`, {
       token: TOKEN,
@@ -484,8 +488,7 @@ try {
       check(
         'D3h',
         `重试的任务只含失败页 [${failSeq}]，且原因是 engine_*（说明原图真读到了，不是 original_missing）`,
-        JSON.stringify(retried) === JSON.stringify([failSeq]) &&
-          /^engine_/.test((retry.items ?? [])[0]?.reason ?? ''),
+        JSON.stringify(retried) === JSON.stringify([failSeq]) && /^engine_/.test((retry.items ?? [])[0]?.reason ?? ''),
         `items=[${retried.join(',')}] reason=${(retry.items ?? [])[0]?.reason}`,
       );
     }
@@ -503,8 +506,18 @@ try {
 
     // 原/译文件流可按同 seq 取（对照页的数据来源）
     const firstOk = okSeqs[0];
-    const orig = await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/files/${firstOk}?variant=original`, { token: TOKEN });
-    const trans = await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(dirName)}/files/${firstOk}?variant=translated`, { token: TOKEN });
+    const orig = await request(
+      PORT,
+      'GET',
+      `/api/v1/library/${encodeURIComponent(dirName)}/files/${firstOk}?variant=original`,
+      { token: TOKEN },
+    );
+    const trans = await request(
+      PORT,
+      'GET',
+      `/api/v1/library/${encodeURIComponent(dirName)}/files/${firstOk}?variant=translated`,
+      { token: TOKEN },
+    );
     check(
       'D3c',
       '对照页数据源：同 seq 的原图与译文都能取到真图',
@@ -515,7 +528,7 @@ try {
       `seq ${firstOk}：原图 ${orig.status}/${orig.body.length}B，译文 ${trans.status}/${trans.body.length}B`,
     );
 
-    // ============================================================== D5 逐页集合（spec-notes.md G-10）
+    // ============================================================== D5 逐页集合（docs/internal/spec-notes.md G-10）
     // 这组必须用**真实失败注入**来测，而且失败页必须落在**中间**（seq=3）：
     // 「哪一页已译」如果只靠 translatedCount，`seq <= translatedCount` 会把第 3 页
     // 说成已译 —— 代理指标只在「尾部缺页」时碰巧对，在「中间缺页」时必错。
@@ -529,9 +542,7 @@ try {
     check(
       'D5b',
       `失败页 seq=${failSeq} 在中间却不在已译集合里 —— 「seq <= 张数」的旧代理在此会说谎`,
-      !!comic &&
-        !comic.translatedSeqs.includes(failSeq) &&
-        failSeq <= comic.translatedCount,
+      !!comic && !comic.translatedSeqs.includes(failSeq) && failSeq <= comic.translatedCount,
       `代理说「已译」（${failSeq} <= ${comic?.translatedCount}），事实是没有译文；两集合差集 = [${failSeq}]`,
     );
     // G-11 裁定 A 之后失败页的原图在磁盘上，故 missingSeqs 应当**为空**；
@@ -568,9 +579,7 @@ try {
     // 「进度与 SSE 一致」验的是：SSE 上逐条推来的完成项，与最后查询到的完成项**对得上**。
     // 这条比读一个进度数字更有意义 —— 少推 / 多推 / 重复推都会被它抓住。
     const sseOk = new Set(
-      events
-        .filter((e) => e.event === 'item.status' && e.data && e.data.status === 'success')
-        .map((e) => e.data.seq),
+      events.filter((e) => e.event === 'item.status' && e.data && e.data.status === 'success').map((e) => e.data.seq),
     );
     const finalOk = new Set((done4.items ?? []).filter((i) => i.status === 'success').map((i) => i.seq));
     check(

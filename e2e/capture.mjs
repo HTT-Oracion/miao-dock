@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 /**
- * M5 的截图取证 —— 让应用自己把四个屏各截一张。
+ * M5 的截图取证 —— 让应用自己把八个画面各截一张（六个主窗屏 + 音乐屏 + 桌面歌词窗）。
+ *
+ * 🔴 **本脚本是 macOS 专用**：`screencapture -R` / `caffeinate` / `ioreg` 都只有 macOS 有，
+ *    而二进制名也按 macOS 拼（`target/debug/miao-dock`，无 `.exe`）。在 Windows 上跑不通，
+ *    那不是"坏了"，是这个通道本来就不覆盖那个平台。
  *
  * M5 的 DoD 里写着「截图取证」。本机**有**屏幕录制权限，但拿不到窗口位置：
  * `osascript` 被 TCC 以 -10004 拒绝（自动化/辅助功能未授权），系统 `python3` 又没有 pyobjc。
@@ -9,7 +13,7 @@
  *
  * 截图用的落盘目录是端到端那一轮的真实产物（默认 `.tmp/e2e/root`，可用 `MIAO_E2E_TMP` 覆盖，
  * 与 `e2e/e2e.mjs` 共用同一变量），所以漫画库里看到的是真数据、对照页里是真题，不是摆拍。
- * **先跑 `npm run e2e` 再跑这个。**
+ * **先跑 `npm run task -- e2e` 再跑这个。**
  *
  * 两道闸，都为了同一件事：**别把假图当证据收进仓**。
  *   ① 开跑前问系统是否锁屏 —— 锁屏时截到的是壁纸，尺寸和体积却都「正常」；
@@ -29,7 +33,7 @@ import { ensureDevServer } from './_devserver.mjs';
 import { describeE2eTmp, e2eRoot, e2eState } from './_e2e-paths.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const BIN = path.join(ROOT, 'app', 'src-tauri', 'target', 'debug', 'miao-dock');
+const BIN = path.join(ROOT, 'src-tauri', 'target', 'debug', 'miao-dock');
 const OUT = path.join(ROOT, 'docs', 'refs', 'e2e');
 
 /** 取证图的文件名与它们各自该拍到什么（缺失或重复都算这一张没截到） */
@@ -42,6 +46,10 @@ const SHOTS = [
   // 单靠它看不出 S6 到底交付了什么 —— 而这一屏正是 S6 的唯一出口。
   ['05-settings-engine.png', '设置 ②翻译服务（服务与配对 / 推理引擎 / 模型与诊断）'],
   ['06-settings-diag.png', '设置 ②翻译服务 · 引擎诊断面板（滚到底）'],
+  // 音乐屏与桌面歌词窗（2026-10-16 起纳入）。标签如实写「未播放 / 未登录」——
+  // 这一轮是 mock 引擎 + D 组落盘数据，里面没有音乐库，截到的就是那个空态。
+  ['07-music.png', '音乐应用（未播放 / 未登录时的空态）'],
+  ['08-lyrics-window.png', '桌面歌词独立置顶窗（未播放时的空态）'],
 ];
 
 /**
@@ -78,20 +86,20 @@ function screenLocked() {
 const rootDir = e2eRoot();
 const stateDir = e2eState();
 if (!existsSync(rootDir)) {
-  console.error(`没有可截的漫画库数据：${describeE2eTmp()}/root 不存在。\n先跑一次 npm run e2e。`);
+  console.error(`没有可截的漫画库数据：${describeE2eTmp()}/root 不存在。\n先跑一次 npm run task -- e2e。`);
   process.exit(2);
 }
 if (!existsSync(BIN)) {
-  console.error(`找不到二进制：${BIN}\n先在 app/src-tauri 下 cargo build`);
+  console.error(`找不到二进制：${BIN}\n先在 src-tauri 下 cargo build`);
   process.exit(2);
 }
 
 const locked = screenLocked();
 if (locked === true) {
   console.error(
-    '屏幕现在是锁屏状态，截不到界面 —— 截出来会是锁屏壁纸，尺寸和体积却都「正常」。\n'
-    + '请先解锁屏幕（保持亮着、停在桌面上），再重跑这个脚本。\n'
-    + '（应用侧对空屏有检测，但对锁屏壁纸无效：壁纸不是空屏。这道闸只能在这里拦。）',
+    '屏幕现在是锁屏状态，截不到界面 —— 截出来会是锁屏壁纸，尺寸和体积却都「正常」。\n' +
+      '请先解锁屏幕（保持亮着、停在桌面上），再重跑这个脚本。\n' +
+      '（应用侧对空屏有检测，但对锁屏壁纸无效：壁纸不是空屏。这道闸只能在这里拦。）',
   );
   process.exit(2);
 }
@@ -110,7 +118,7 @@ caffeinate.on('error', () => {
 });
 
 const child = spawn(BIN, [], {
-  cwd: path.join(ROOT, 'app', 'src-tauri'),
+  cwd: path.join(ROOT, 'src-tauri'),
   env: {
     ...process.env,
     // 截图是**表现层**取证，不该被引擎栈拖住：不显式声明时 Rust 侧默认 `real`，
@@ -159,22 +167,24 @@ for (const l of lines) console.log(`  ${l}`);
 const absent = SHOTS.filter(([f]) => !existsSync(path.join(STAGE, f)));
 if (absent.length) {
   console.error(
-    `\n${absent.length} 张没截到：${absent.map(([f, label]) => `${f}（${label}）`).join('、')}\n`
-    + '整批不入库 —— 仓里仍是上一轮验证过的版本。',
+    `\n${absent.length} 张没截到：${absent.map(([f, label]) => `${f}（${label}）`).join('、')}\n` +
+      '整批不入库 —— 仓里仍是上一轮验证过的版本。',
   );
   process.exit(1);
 }
 
 const digests = SHOTS.map(([f]) => [
   f,
-  createHash('sha1').update(readFileSync(path.join(STAGE, f))).digest('hex'),
+  createHash('sha1')
+    .update(readFileSync(path.join(STAGE, f)))
+    .digest('hex'),
 ]);
 const dupes = digests.filter(([, d], i) => digests.findIndex(([, d2]) => d2 === d) !== i);
 if (dupes.length) {
   console.error(
-    `\n有截图内容完全一样（${dupes.map(([f]) => f).join('、')}）—— 界面没变，说明截到的不是这个应用。\n`
-    + '最常见的原因就是屏幕锁了 / 睡着了，截到的是锁屏壁纸或桌面。\n'
-    + '整批不入库 —— 仓里仍是上一轮验证过的版本。',
+    `\n有截图内容完全一样（${dupes.map(([f]) => f).join('、')}）—— 界面没变，说明截到的不是这个应用。\n` +
+      '最常见的原因就是屏幕锁了 / 睡着了，截到的是锁屏壁纸或桌面。\n' +
+      '整批不入库 —— 仓里仍是上一轮验证过的版本。',
   );
   process.exit(1);
 }

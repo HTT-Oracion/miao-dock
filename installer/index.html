@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>喵坞 · 安装向导</title>
+    <!--
+      随仓字体（与主窗同一套三份）由**构建脚本**注入到本目录的 `public/fonts/` 下，
+      入口在这里用 <link> 引。为什么字体二进制不进库：三份合计约 65 MB，
+      安装器与卸载器各存一份就是 130 MB 的仓库重复 —— 跑 `npm run task -- installer:build`
+      （或 `uninstaller:build`）时会从主工程 `public/assets/fonts/` 复制进来（该目录已 gitignore）。
+
+      ⚠️ 两条红线与主窗一致：
+        ① **不许**改成 scss 里的 @use —— Sass 对带 .css 后缀的 @use 是静默丢弃的；
+        ② 没跑过构建时这些 link 会 404，页面按令牌里的字体栈回落系统字体（不影响功能）。
+    -->
+    <link rel="stylesheet" href="/fonts/swei-gothic/font.css" />
+    <link rel="stylesheet" href="/fonts/yozai-font/font.css" />
+    <link rel="stylesheet" href="/fonts/lxgw-wenkai-gb/font.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

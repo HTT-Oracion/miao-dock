@@ -50,25 +50,48 @@
  * 约束：纯 Node、零依赖；起**模拟引擎**；临时目录落 os.tmpdir；反证轮结束必须按字节还原。
  * 见 ~/.workbuddy/skills/falsifiable-verification。
  */
-import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 
 import { encodePng } from '../../engine/src/png.mjs';
+// F0：服务入口解析的唯一事实源（MIAO_SERVICE_IMPL=node|rust 切换靶子）
+import { killTree, SERVICE_ENTRY, spawnTarget } from './_service-harness.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const ENGINE_ENTRY = path.join(ROOT, 'engine', 'src', 'server.mjs');
-const SERVICE_ENTRY = path.join(ROOT, 'service', 'src', 'server.mjs');
-const STORE_SRC = path.join(ROOT, 'service', 'src', 'store.mjs');
-const LIB_SRC = path.join(ROOT, 'app', 'src', 'screens', 'LibraryScreen.tsx');
+const CARGO_DIR = path.join(ROOT, 'src-tauri');
+/// 🔴 返工的四个反证锚点全在 Rust 侧（`service/src/manga/store.mjs` 已随 Node 实现删除）。
+/// `exec.rs` 管执行态（幂等短路豁免 / overwrite 落标 / 译文写回），`store.rs` 管计划取数口径。
+const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'store', 'exec.rs');
+const RUST_STORE_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'store.rs');
+const LIB_SRC = path.join(ROOT, 'src', 'screens', 'LibraryScreen.tsx');
+// D-148：缩放的实现从 `LibraryScreen.tsx` 搬到 `screens/library/viewer.tsx`（Lightbox）。
+const VIEWER_SRC = path.join(ROOT, 'src', 'screens', 'library', 'viewer.tsx');
 
 const REFUTE = process.argv.includes('--refute');
 /// 起的是模拟引擎；不声明会让服务按 real 协议去打替身。
 const ENGINE_PROTOCOL = 'mock';
 const ENGINE_PORT = 5027;
+
+/**
+ * 编译 Rust 靶子（反证轮改完源码必须重编，否则断言验的是"上一份产物"）。
+ * 🔴 编译失败**不算通过**：它记 skipped —— 锚点选错行与"覆盖不足"在报告里长得一样，
+ *    必须分开记，否则"反证没跑成"会被读成"反证通过"。
+ */
+function buildRust() {
+  const r = spawnSync('cargo', ['build', '--bin', 'mangasvc'], {
+    cwd: CARGO_DIR,
+    encoding: 'utf8',
+    maxBuffer: 40 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const log = `${r.stdout || ''}${r.stderr || ''}`.trim();
+  return { ok: r.status === 0, log: log.split('\n').slice(-6).join(' | ').slice(0, 400) };
+}
 
 const COMIC = '返工甲';
 const IMAGES = 3;
@@ -82,10 +105,8 @@ const check = (id, label, ok, detail) => {
 // ------------------------------------------------------------------ 子进程
 
 function spawnProc(entry, env, tag) {
-  const child = spawn(process.execPath, [entry], {
-    env: { ...process.env, ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  // entry 是服务 ⇒ 按 MIAO_SERVICE_IMPL 选靶子；是模拟引擎 ⇒ 原样走 node
+  const child = spawnTarget(entry, env);
   const state = { child, tag, out: '' };
   child.stdout.on('data', (b) => (state.out += b.toString('utf8')));
   child.stderr.on('data', (b) => (state.out += b.toString('utf8')));
@@ -105,7 +126,8 @@ async function waitReady(state, re, timeoutMs = 20_000) {
 function killProc(state) {
   if (!state || !state.child || state.child.exitCode !== null) return Promise.resolve();
   const child = state.child;
-  child.kill('SIGTERM');
+  // 🔴 杀进程树（不是只杀主进程）：rust 服务派生的引擎②/③ 否则全成孤儿（D-202）
+  killTree(child);
   // Windows：刚被 kill 的子进程会短暂占着文件句柄，随后写源文件会 EPERM —— 必须等它真的退出。
   return new Promise((resolve) => {
     const until = Date.now() + 3000;
@@ -246,9 +268,7 @@ function translatedFile(dir, seq) {
 
 function originalFile(dir, seq) {
   const pad = String(seq).padStart(3, '0');
-  const hit = fs.readdirSync(dir).find(
-    (f) => f.startsWith(`${pad}.`) && !f.includes('_translated'),
-  );
+  const hit = fs.readdirSync(dir).find((f) => f.startsWith(`${pad}.`) && !f.includes('_translated'));
   return hit ? path.join(dir, hit) : null;
 }
 
@@ -267,14 +287,27 @@ function stripComments(src) {
     const c = src[i];
     const c2 = src[i + 1];
     if (state === 'code') {
-      if (c === '/' && c2 === '/') { state = 'line'; i++; continue; }
-      if (c === '/' && c2 === '*') { state = 'block'; i++; continue; }
+      if (c === '/' && c2 === '/') {
+        state = 'line';
+        i++;
+        continue;
+      }
+      if (c === '/' && c2 === '*') {
+        state = 'block';
+        i++;
+        continue;
+      }
       out += c;
     } else if (state === 'line') {
-      if (c === '\n') { out += c; state = 'code'; }
+      if (c === '\n') {
+        out += c;
+        state = 'code';
+      }
     } else {
-      if (c === '*' && c2 === '/') { state = 'code'; i++; }
-      else if (c === '\n') out += c; // 保留换行，行号不错位
+      if (c === '*' && c2 === '/') {
+        state = 'code';
+        i++;
+      } else if (c === '\n') out += c; // 保留换行，行号不错位
     }
   }
   return out;
@@ -329,7 +362,9 @@ async function runAll() {
     const beforeOBytes = beforeO ? fs.readFileSync(beforeO) : null;
 
     // ---- R1：返工计划取的是「有原图的页」，而不是「缺译文的页」 ----
-    const planRes = json(await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(COMIC)}/retranslate`, { token: TOKEN }));
+    const planRes = json(
+      await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(COMIC)}/retranslate`, { token: TOKEN }),
+    );
     check(
       'R1',
       '返工计划覆盖**已译**的页：对已翻完的漫画仍报得出可返工张数，且覆盖数 = 全部页',
@@ -338,7 +373,9 @@ async function runAll() {
     );
 
     // 与 resume 的分工：resume 对同一本应报"没有待续做的页"（缺 0 张）
-    const resumeRes = json(await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(COMIC)}/resume`, { token: TOKEN }));
+    const resumeRes = json(
+      await request(PORT, 'GET', `/api/v1/library/${encodeURIComponent(COMIC)}/resume`, { token: TOKEN }),
+    );
     check(
       'R1b',
       '与 resume 分工明确：同一本已翻完的漫画，resume 报 0 待续做（两条路不是同一件事）',
@@ -353,10 +390,12 @@ async function runAll() {
       'R2',
       'POST /library/{name}/retranslate 建单成功（201），且回执带覆盖张数',
       rtRes.status === 201 && !!rtId && json(rtRes).overwriteCount === IMAGES,
-      `HTTP ${rtRes.status} taskId=${rtId ? '有' : '无'} overwriteCount=${json(rtRes)?.overwriteCount}`,    );
+      `HTTP ${rtRes.status} taskId=${rtId ? '有' : '无'} overwriteCount=${json(rtRes)?.overwriteCount}`,
+    );
     const done2 = rtId ? await waitTask(PORT, TOKEN, rtId) : null;
     const skippedCount = (done2?.batches ?? []).reduce(
-      (acc, b) => acc + (b.status === 'skipped' ? b.count || 0 : 0), 0,
+      (acc, b) => acc + (b.status === 'skipped' ? b.count || 0 : 0),
+      0,
     );
     const detail2 = json(await request(PORT, 'GET', `/api/v1/tasks/${rtId}`, { token: TOKEN }));
     const items = detail2?.items ?? [];
@@ -385,7 +424,9 @@ async function runAll() {
     const fakeT = translatedFile(dir, 1);
     const fakeBytes = encodePng(40, 60, (x, y, put) => put(255, 0, 255)); // 纯品红，绝不会与引擎产物相同
     fs.writeFileSync(fakeT, fakeBytes);
-    const rtRes2 = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC)}/retranslate`, { seqs: [1] });
+    const rtRes2 = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC)}/retranslate`, {
+      seqs: [1],
+    });
     const rtId2 = json(rtRes2)?.taskId;
     const doneR2 = rtId2 ? await waitTask(PORT, TOKEN, rtId2) : null;
     const afterT2 = translatedFile(dir, 1);
@@ -395,7 +436,8 @@ async function runAll() {
       'R3',
       '返工**真的覆盖**已有译文：塞进去的假译文被引擎产物顶掉了（不是 skipped 装样子的"完成"）',
       replaced && doneR2?.status === 'done',
-      replaced ? `假译文已被替换（${fakeBytes.length}B 品红 → ${afterT2Bytes.length}B 引擎产物）`
+      replaced
+        ? `假译文已被替换（${fakeBytes.length}B 品红 → ${afterT2Bytes.length}B 引擎产物）`
         : `译文仍是那份假译文（覆盖没发生）status=${doneR2?.status}`,
     );
 
@@ -429,7 +471,9 @@ async function runAll() {
     );
 
     // ---- 只返工单页：seqs 精确生效 ----
-    const oneRes = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC)}/retranslate`, { seqs: [2] });
+    const oneRes = await postJson(PORT, TOKEN, `/api/v1/library/${encodeURIComponent(COMIC)}/retranslate`, {
+      seqs: [2],
+    });
     const oneId = json(oneRes)?.taskId;
     const done3 = oneId ? await waitTask(PORT, TOKEN, oneId) : null;
     const d3 = oneId ? json(await request(PORT, 'GET', `/api/v1/tasks/${oneId}`, { token: TOKEN })) : null;
@@ -469,7 +513,7 @@ async function runAll() {
     // 后果具体：① 触控板双指滚动被当缩放，"滑一下冲到 200%"；
     //          ② 100% 时的裸滚轮被吞，用户以为滚轮失灵。
     // 反过来"只有修饰键才缩放"正是本条要的正向形态，故判 `hasModGate && !gatesArrowUpDown`。
-    const libSrc = stripComments(fs.readFileSync(LIB_SRC, 'utf8'));
+    const libSrc = stripComments(fs.readFileSync(VIEWER_SRC, 'utf8'));
     const hasModGate = /e\.ctrlKey\s*\|\|\s*e\.metaKey/.test(libSrc);
     const usesWheel = /addEventListener\('wheel'/.test(libSrc);
     // 旧键盘缩放必须**已撤干净**：留着 ↑/↓ 会与 useMusicHotkeys 的音量键抢
@@ -503,11 +547,12 @@ async function runAll() {
 const MUTATIONS = [
   {
     name: 'M1 去掉 overwrite 的幂等短路豁免（返工会被全量 skipped）',
+    // Rust 锚点在 `prepare_item` 的短路条件上（Node 的 `!item.overwrite` ⇒ Rust 的 `!overwrite`）。
     edits: [
       {
-        file: STORE_SRC,
-        find: 'if (config.skipExisting && !item.overwrite && this._translatedExists(dir, item.seq)) {',
-        replace: 'if (config.skipExisting && this._translatedExists(dir, item.seq)) {',
+        file: RUST_EXEC_SRC,
+        find: '        if self.env.skip_existing && !overwrite && find_translated_name(&dir, seq).is_some() {',
+        replace: '        if self.env.skip_existing && find_translated_name(&dir, seq).is_some() {',
       },
     ],
     expect: ['R2b', 'R3'],
@@ -516,9 +561,10 @@ const MUTATIONS = [
     name: 'M2 返工的 overwrite 标记不落到 item 上',
     edits: [
       {
-        file: STORE_SRC,
-        find: '      overwrite: true,',
-        replace: '      overwrite: false,',
+        // 返工建单传 `true`；续做建单（`create_resume_task`）传 `false` —— 两条别互串。
+        file: RUST_EXEC_SRC,
+        find: '            .map(|c| disk_item(c.seq, &c.ext, c.byte_size, Some(c.original_file.clone()), true))',
+        replace: '            .map(|c| disk_item(c.seq, &c.ext, c.byte_size, Some(c.original_file.clone()), false))',
       },
     ],
     expect: ['R2b', 'R3'],
@@ -527,25 +573,36 @@ const MUTATIONS = [
     name: 'M3 译文写回时忽略 overwrite（恒用独占写，覆盖必失败）',
     edits: [
       {
-        file: STORE_SRC,
-        find: "{ flag: item.overwrite ? 'w' : 'wx', mode: 0o600 });",
-        replace: "{ flag: 'wx', mode: 0o600 });",
+        // Rust 的 `write_file_private` 对应 Node 的 `flag:'w'`，`write_new_private` 对应 `'wx'`。
+        // 整段五行一起换（只换前两行会留下悬空的 `} else {`，编译不过）。
+        file: RUST_EXEC_SRC,
+        find:
+          '    let res = if item.overwrite {\n' +
+          '        super::write_file_private(&path, &translated.bytes, 0o600)\n' +
+          '    } else {\n' +
+          '        super::write_new_private(&path, &translated.bytes, 0o600)\n' +
+          '    };',
+        replace:
+          '    let res = super::write_new_private(&path, &translated.bytes, 0o600); // refute：忽略 overwrite，恒用独占写',
       },
     ],
     expect: ['R3'],
   },
   {
-    // ⚠️ 必须破坏 **retranslatePlan**（计划端点的取数口径），不是 createRetranslateTask。
+    // ⚠️ 必须破坏 **retranslate_plan**（计划端点的取数口径），不是 create_retranslate_task。
     // R1 断言的是 `GET /library/{name}/retranslate` 的返回；改建单函数不会影响它 ⇒ 不会变红。
     // 这类"破坏点与断言点不在同一条路径上"的变异是反证脚本最常见的假阳性来源：
     // 变异确实破坏了代码，但被破坏的那段恰好不是这条断言盯着的地方。
     name: 'M4 返工计划取「缺页」而非「有原图的页」（对已译完的漫画报无可返工）',
     edits: [
       {
-        file: STORE_SRC,
-        find: '    for (const f of this._listDir(dir)) {\n      const m = ORIGINAL_SCAN_RE.exec(f);\n      if (!m) continue;',
+        // ⚠️ 锚点必须带 `let mut candidates` 那一行：`for f in self.list_dir(&dir) {` 在 store.rs 里
+        //    出现两次（`next_seq_for` 与 `retranslate_plan`），裸行会命中**前一个**函数 ——
+        //    破坏点落在与断言无关的路径上，正是"该红没红"的假阴性来源（本轮实测踩到）。
+        file: RUST_STORE_SRC,
+        find: '        let mut candidates: Vec<RetranslateCandidate> = Vec::new();\n        for f in self.list_dir(&dir) {',
         replace:
-          '    for (const f of []) {\n      const m = ORIGINAL_SCAN_RE.exec(f);\n      if (!m) continue;',
+          '        let mut candidates: Vec<RetranslateCandidate> = Vec::new();\n        for f in Vec::<String>::new() {',
       },
     ],
     expect: ['R1', 'R2'],
@@ -556,7 +613,7 @@ const MUTATIONS = [
     name: 'M5 前端滚轮缩放去掉 Ctrl/⌘ 限定（裸滚轮也缩放，双指滑动一滑就顶格）',
     edits: [
       {
-        file: LIB_SRC,
+        file: VIEWER_SRC,
         find: '      if (e.ctrlKey || e.metaKey) {',
         replace: '      if (true) {',
       },
@@ -568,7 +625,7 @@ const MUTATIONS = [
     name: 'M6 复活已废弃的 ↑/↓ 键盘缩放（与全局音量键抢键）',
     edits: [
       {
-        file: LIB_SRC,
+        file: VIEWER_SRC,
         find: "    window.addEventListener('wheel', onWheel, { passive: false });",
         replace:
           "    window.addEventListener('wheel', onWheel, { passive: false });\n    void (e: KeyboardEvent) => e.key === 'ArrowUp' || e.key === 'ArrowDown';",
@@ -589,6 +646,15 @@ async function refute() {
   const wasGreen = {};
   for (const r of results) wasGreen[r.id] = r.ok;
 
+  // 🔴 进反证轮前先确保「产物 == 磁盘源码」：否则基线跑的是上一份编译结果，
+  //    而「变异全红」里有一部分红是被这份陈旧产物误打误撞造成的。
+  const pre = buildRust();
+  if (!pre.ok) {
+    console.log(`✗ 开跑前 cargo build 失败，无法反证：${pre.log}`);
+    process.exitCode = 1;
+    return;
+  }
+
   for (const mut of MUTATIONS) {
     let res = {};
     let roundErr = null;
@@ -596,7 +662,7 @@ async function refute() {
     /**
      * 破坏必须**写磁盘**，不能只改内存覆盖层。
      *
-     * 本脚本的 `runAll` 起的是**真子进程**（引擎 + box-service），子进程读的是磁盘 ——
+     * 本脚本的 `runAll` 起的是**真子进程**（引擎 + manga-service），子进程读的是磁盘 ——
      * 用 `overrideFile` 只改本进程的内存视图，子进程压根看不见，破坏等于没做，
      * 于是每条变异都会"该红没红"（本脚本第一版就栽在这，改了 0/7）。
      * 前端的源码断言也一并读磁盘（`fs.readFileSync`），同样要求真落盘。
@@ -617,6 +683,15 @@ async function refute() {
           break;
         }
         await writeRetry(e.file, txt.replace(find, repl));
+      }
+      if (applied) {
+        // 🔴 改完 Rust 源码**必须重编**才作数：不编就等于拿旧产物跑断言，红的绿的都说明不了问题。
+        const built = buildRust();
+        if (!built.ok) {
+          console.log(`⚠ ${mut.name}\n    破坏后编译失败（多半是锚点选错行），本条无法反证：${built.log}`);
+          skipped += mut.expect.length;
+          applied = false;
+        }
       }
       if (applied) {
         await runAll();
@@ -655,10 +730,16 @@ async function refute() {
     if (!same) restoreFail++;
     console.log(`  ${same ? '✓' : '✗'} ${path.relative(ROOT, f)} 字节${same ? '一致' : '不一致！'}`);
   }
+  // 源码还原了，**产物也必须还原** —— 否则留下一个「源码是好的、跑起来是坏的」的机器。
+  const rebuilt = buildRust();
+  if (!rebuilt.ok) {
+    restoreFail++;
+    console.log(`  ✗ cargo build 还原失败：${rebuilt.log}`);
+  } else console.log('  ✓ cargo build 已把靶子重编回未破坏状态');
 
   console.log('\n' + '─'.repeat(56));
   console.log(`REFUTE: ${red}/${total} 条按预期变红（应执行 ${expectedTotal} 条）`);
-  if (skipped) console.log(`✗ 有 ${skipped} 条未能反证（破坏锚点未找到）—— 跳过 ≠ 通过`);
+  if (skipped) console.log(`✗ 有 ${skipped} 条未能反证（破坏锚点未找到 / 破坏后编译失败）—— 跳过 ≠ 通过`);
   if (falsePositives.length) console.log(`✗ 假阳性：${falsePositives.join(', ')}`);
   process.exitCode = red === expectedTotal && skipped === 0 && restoreFail === 0 ? 0 : 1;
 }

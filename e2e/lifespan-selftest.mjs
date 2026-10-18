@@ -14,15 +14,16 @@
  * 配套反证开关 `MIAO_NO_PARENT_WATCH=1`（关掉子进程的父死看守）⇒ 必然出现孤儿 ⇒ 断言必须变红。
  *
  * 用法：
- *   node e2e/lifespan-selftest.mjs                 B 组（期望全绿）
+ *   node e2e/lifespan-selftest.mjs                 B 组 + 引导组（期望全绿）
  *   node e2e/lifespan-selftest.mjs --refute        B 组反证（期望**拿不到结果**）
  *   node e2e/lifespan-selftest.mjs --e11           E11（期望三进程全退、端口释放）
  *   node e2e/lifespan-selftest.mjs --e11 --refute  E11 反证（期望**端口不释放**）
+ *   node e2e/lifespan-selftest.mjs --guide         只跑引导组（D-229）
  *
  * 见 ~/.workbuddy/skills/falsifiable-verification。
  */
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -30,8 +31,16 @@ import process from 'node:process';
 import { ensureDevServer, portOpen } from './_devserver.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const APP = path.join(ROOT, 'app');
-const BIN = path.join(APP, 'src-tauri', 'target', 'debug', 'miao-dock');
+const APP = ROOT;
+// 平台后缀按需补：Windows 上的可执行文件是 `miao-dock.exe`，写死不带后缀会
+// 在 `existsSync` 就判"没构建"（与 dev server 那处写死 `.bin/vite` 同一类错）。
+const BIN = path.join(
+  APP,
+  'src-tauri',
+  'target',
+  'debug',
+  process.platform === 'win32' ? 'miao-dock.exe' : 'miao-dock',
+);
 /// 落盘根目录与状态目录都指到仓库内的临时目录：既别碰用户的 ~/Pictures/Box 漫画，
 /// 也让每次自检从空目录开始（否则续做/编号会受上一轮残留影响）。
 const TMP = mkdtempSync(path.join(os.tmpdir(), 'miao-e11-'));
@@ -78,7 +87,7 @@ const ALL_PORTS = [...SERVICE_PORTS, ENGINE_PORT, LLM_PORT, ...(MODE === 'real' 
 
 function requireBin() {
   if (!existsSync(BIN)) {
-    console.error(`找不到二进制：${BIN}\n先在 app/src-tauri 下 cargo build`);
+    console.error(`找不到二进制：${BIN}\n先在 src-tauri 下 cargo build`);
     process.exit(2);
   }
 }
@@ -231,9 +240,7 @@ async function runE11() {
 
     // E1 的另一半：**日志里真的打出了生效参数快照**（不是"配置里写了"）。
     // 从外面读应用的 stdout —— 这与 `S2b` 在应用内读日志是两条独立取证路径。
-    const snap = out
-      .split('\n')
-      .filter((l) => l.includes('生效参数快照') || /\[miao-dock\] [①②③] /.test(l));
+    const snap = out.split('\n').filter((l) => l.includes('生效参数快照') || /\[miao-dock\] [①②③] /.test(l));
     console.log(`E1 生效参数快照（从应用 stdout 读回，共 ${snap.length} 行）：`);
     for (const l of snap) console.log(`  ${l.trim()}`);
     if (snap.length < 4) {
@@ -304,7 +311,9 @@ async function runB() {
       console.log(out.split('\n').slice(-12).join('\n'));
       failed = 1;
     } else {
-      console.log(`应用生命周期验收\n\n关窗与托盘（B1–B3）+ 三进程生命周期（S2）：${result.passed} / ${result.total} 通过`);
+      console.log(
+        `应用生命周期验收\n\n关窗与托盘（B1–B3）+ 三进程生命周期（S2）：${result.passed} / ${result.total} 通过`,
+      );
       for (const c of result.checks) console.log(`  ${c.ok ? '✓' : '✗'} ${c.id} — ${c.detail}`);
       failed = result.checks.filter((c) => !c.ok).length;
 
@@ -319,5 +328,150 @@ async function runB() {
   return failed;
 }
 
-const failed = e11 ? await runE11() : await runB();
+// ------------------------------------------------------------------ 引导组（D-229）：未装配时 ① 必须可用
+
+/**
+ * D1 引导页唯一的行动按钮是 `POST /engine/models/download` —— 它打的是**本地服务 ①**。
+ * 所以「real 档 + 运行时未装配」时必须同时成立三件事，缺一件引导页就是死结
+ * （真机实测现场：点「开始下载」→「本地翻译服务未运行（请确认喵坞的服务已启动）」）：
+ *   ① ① **起得来**（D6 闸门在 D-229 之后只挡引擎 ②/③，不挡服务本体）；
+ *   ② 那个下载端点**真的应答**（不是 `SERVICE_UNAVAILABLE` 信封）；
+ *   ③ ②/③ **一个都不起**（闸门该做的仍然做到）。
+ *
+ * 夹具：运行时根指空目录 + 运行时清单指一份**没有任何 set** 的最小清单 ⇒ 下载执行体一起来
+ * 就会快速失败（「清单里没有 set「python」」），**不碰网络、不下任何东西** —— 本组验的是
+ * "按钮能不能落地"，不是"下载本身"（后者归 `check:progress-truth` / `check:engine-bootstrap-real`）。
+ *
+ * 反证（手工，要重编译）：把 `service.rs::start_blocking` 的闸门改回
+ * `return self.fail(app, Some("L0"), msg)` ⇒ **G1 必须红**（服务都起不来，POST 更无从谈起）。
+ */
+async function runGuide() {
+  requireBin();
+  /*
+   * 🔴 起服务那一下走 **`MIAO_SELFTEST=1`**（`main.rs` 里由 Rust 侧直接 `ServiceManager::start()`），
+   *    不依赖 webview：否则本组会在"dev server 没起来 / 前端没挂在翻译屏"这类与产品无关的地方红掉
+   *    （实测踩过两次）。代价是这条测试通道**跑完自己的场景就退出**、并把 ① 一起带走 ——
+   *    所以探针必须是**一个请求**（见下面 G1 的循环重试），而不是"先 health 再干别的"。
+   *
+   * 反证（手工，要重编译）：把 `service.rs::start_blocking` 的闸门改回
+   * `return self.fail(app, Some("L0"), msg)` ⇒ **G1 必须红**（服务根本起不来，POST 更无从谈起）。
+   */
+  const stateDir = path.join(TMP, 'guide-state');
+  const rootDir = path.join(TMP, 'guide-root');
+  const runtimeRoot = path.join(TMP, 'guide-empty-runtimes');
+  for (const d of [stateDir, rootDir, runtimeRoot]) mkdirSync(d, { recursive: true });
+  /*
+   * 下载执行体换成**无害命令**：本组要证的是"按钮能落地"（200 + started），不是"真下载"。
+   * 真执行体一起来就会去下 46 MB 的 Python 运行时（`--engine-bootstrap` 的第一阶段）——
+   * 验收绝不允许拿用户网络做副作用。换成一条 `echo` 之后：POST 立刻返回 200，
+   * 子进程随即 exit 0（`state=done`），全程零网络。
+   */
+  const runner = path.join(TMP, 'guide-fake-runner.cmd');
+  writeFileSync(runner, '@echo off\r\necho fixture runner\r\nexit /b 0\r\n');
+
+  const child = spawnApp({
+    MIAO_SELFTEST: '1',
+    MIAO_ENGINE_PROTOCOL: 'real',
+    MIAO_RUNTIME_ROOT: runtimeRoot,
+    MIAO_STATE_DIR: stateDir,
+    MIAO_ROOT: rootDir,
+    MIAO_MODEL_DOWNLOAD_RUNNER: runner,
+  });
+  let out = '';
+  child.stdout.on('data', (b) => (out += b.toString('utf8')));
+  child.stderr.on('data', (b) => (out += b.toString('utf8')));
+  let failed = 0;
+  const ok = (name, cond, detail = '') => {
+    console.log(`  ${cond ? '✓' : '✗'} ${name}${detail ? ` — ${detail}` : ''}`);
+    if (!cond) failed++;
+  };
+  try {
+    const tokenFile = path.join(stateDir, 'token');
+    /*
+     * 🔴 探针就是**引导页那个按钮发的那一个请求**（`POST /engine/models/download`），循环重试到
+     *    成功或超时 —— 一次请求同时回答两件事：① 服务起来了；② 那个端点能落地。
+     *
+     *     为什么不先 `/health` 再 POST：应用这条**自检通道跑完自己的场景就退出**（并把 ① 带走），
+     *      能用的时间窗只有一两次请求 —— 实测「先 health 200、再 POST」必输（第二个请求撞上
+     *      「对端已关闭」）。把要证的事压成**一个**请求，窗口就不再是变量。
+     *
+     *     为什么用**本次应用自己写下的令牌**：残留的旧服务也占着 5180–5190，只看端口会让本组
+     *      假绿；令牌只在本进程的 state 目录里 ⇒ 答 200 的那个服务必然由它拉起。
+     */
+    let port = null;
+    let dlStatus = 0;
+    let dlCode = '-';
+    let dlStarted = false;
+    const until = Date.now() + 45_000;
+    while (!dlStarted && Date.now() < until) {
+      const token = existsSync(tokenFile) ? readFileSync(tokenFile, 'utf8').trim() : '';
+      if (token) {
+        for (const p of SERVICE_PORTS) {
+          if (!(await portOpen(p, 150))) continue;
+          try {
+            const r = await fetch(`http://127.0.0.1:${p}/api/v1/engine/models/download`, {
+              method: 'POST',
+              headers: { 'x-box-token': token, 'content-type': 'application/json' },
+              body: '{}',
+            });
+            const b = await r.json().catch(() => null);
+            port = p;
+            dlStatus = r.status;
+            dlCode = b?.error?.code ?? '-';
+            dlStarted = r.status === 200 && b?.started === true;
+            if (dlStarted) break;
+          } catch {
+            /* 服务还没起来（或已被自检收走），继续等 */
+          }
+        }
+      }
+      if (!dlStarted) await sleep(300);
+    }
+    ok(
+      'G1 引导页的「开始下载」必须能落地：POST /engine/models/download → 200 started=true' +
+        '（不是 SERVICE_UNAVAILABLE；用本次令牌认服务，残留服务不算数）',
+      dlStarted,
+      dlStarted
+        ? `端口 ${port} · HTTP 200 · started=true`
+        : `端口 ${port ?? '-'} · HTTP ${dlStatus} · code=${dlCode}（45s 内没拿到 started）`,
+    );
+    if (!dlStarted) {
+      // 失败必须**可行动**：把应用自己的输出尾部带出来 —— 启动现场的第一手证据在它那儿。
+      console.log('  ↓ 应用输出尾部：');
+      for (const l of out.split('\n').slice(-14)) if (l.trim()) console.log(`      ${l.trim()}`);
+      return failed;
+    }
+
+    /*
+     * 第二条只做**端口探测**（不发 HTTP ⇒ 不参与那个短窗口）：
+     * "不挡服务"不等于"放引擎" —— ②/③ 仍必须一个都没起。
+     */
+    ok(
+      'G2 ②/③ 一个都没起（闸门该做的仍然做到）',
+      !(await portOpen(ENGINE_PORT, 300)) && !(await portOpen(LLM_PORT, 300)),
+      `engine:${ENGINE_PORT} llm:${LLM_PORT} 都应关闭`,
+    );
+  } finally {
+    /*
+     * 🔴 杀完**必须等它真的退出**再让本进程收场：`SIGKILL` 之后立刻 `process.exit()` 会撞上
+     * libuv 的 `!(handle->flags & UV_HANDLE_CLOSING)` 断言（实测：整脚本以 0xC0000409 收场，
+     * 看着像"检查失败"，其实是自己把自己 crash 了）。等一次 `exit`（带兜底超时）即可。
+     */
+    if (child.exitCode === null) {
+      child.kill('SIGKILL');
+      await new Promise((r) => {
+        child.once('exit', r);
+        setTimeout(r, 4000);
+      });
+    }
+  }
+  return failed;
+}
+
+/*
+ * 引导组单独一项（`selftest:app:guide`，service 层）：它要 real 档 + 空运行时根，
+ * 与 B 组的 mock 场景不兼容（B 组断言的是三进程起全的轨迹）。
+ */
+const guide = process.argv.includes('--guide');
+const failed = guide ? await runGuide() : e11 ? await runE11() : await runB();
 process.exit(failed ? 1 : 0);

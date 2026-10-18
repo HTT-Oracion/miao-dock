@@ -5,11 +5,11 @@
  * 为什么需要它（D-20「每层都要断言」+ D-31「假阳性比没测试更危险」）：
  *
  *   一条「四平台接通」的改动横跨五层：
- *     RUST     app/src-tauri/src/music/mod.rs 定义 + main.rs 的 generate_handler! 注册
- *     IPC      app/src/music/ipc.ts 的 invoke('<command>') 封装
- *     PLATFORM app/src/music/platform.ts 的能力矩阵 + 派发分支
- *     STORE    app/src/music/store.ts 的平台感知状态与 action
- *     UI       app/src/screens/MusicScreen.tsx + screens/music/* + styles/*.scss
+ *     RUST     src-tauri/src/music/mod.rs 定义 + commands/mod.rs 的 generate_handler! 注册
+ *     IPC      src/music/ipc.ts 的 invoke('<command>') 封装
+ *     PLATFORM src/music/platform.ts 的能力矩阵 + 派发分支
+ *     STORE    src/music/store.ts 的平台感知状态与 action
+ *     UI       src/screens/MusicScreen.tsx + screens/music/* + styles/*.scss
  *
  *   这五层的静默失败各不相同、互不覆盖：
  *     · Rust 命令**定义了但漏注册** → 编译全绿，运行时才报 "command not found"。
@@ -37,23 +37,33 @@ import { readStyleSource } from './_styles-source.mjs';
 import { cachedReadText, cachedReadBytes, overrideFile, clearOverrides } from './_file-cache.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const APP = path.join(ROOT, 'app');
+const APP = ROOT;
 
 const F = {
   rustMod: path.join(APP, 'src-tauri', 'src', 'music', 'mod.rs'),
   rustModels: path.join(APP, 'src-tauri', 'src', 'music', 'models.rs'),
-  rustMain: path.join(APP, 'src-tauri', 'src', 'main.rs'),
+  rustRegistry: path.join(APP, 'src-tauri', 'src', 'commands', 'mod.rs'),
   ipc: path.join(APP, 'src', 'music', 'ipc.ts'),
   platform: path.join(APP, 'src', 'music', 'platform.ts'),
   store: path.join(APP, 'src', 'music', 'store.ts'),
+  // D-156：`store.ts` 的 action 段已按切片切到 `music/actions/*.ts`。
+  // 变异锚按"这段实现现在住哪"落文件；`s.store` 则是「本体 + 全部切片」的拼接（见 loadSources）。
+  actionsDir: path.join(APP, 'src', 'music', 'actions'),
+  // D-149：歌词解析纯函数已从 store.ts 抽到 tools/lyrics.ts；歌词判据读「store + lyrics」的拼接。
+  lyrics: path.join(APP, 'src', 'tools', 'lyrics.ts'),
+  // D-153：持久化（readLS/writeLS/快照/sanitize）已从 store.ts 抽到 music/persist.ts。
+  persist: path.join(APP, 'src', 'music', 'persist.ts'),
   types: path.join(APP, 'src', 'music', 'types.ts'),
   // ── 桌面歌词（P3）──
-  rustLyrics: path.join(APP, 'src-tauri', 'src', 'lyrics_window.rs'),
+  rustLyrics: path.join(APP, 'src-tauri', 'src', 'commands', 'lyrics_window.rs'),
+  // ── M5 截图取证通道（2026-10-16：音乐屏与歌词窗纳入序列）──
+  captureRs: path.join(APP, 'src-tauri', 'src', 'selftest', 'capture.rs'),
+  captureMjs: path.join(APP, 'e2e', 'capture.mjs'),
   capabilities: path.join(APP, 'src-tauri', 'capabilities', 'default.json'),
   tauriConf: path.join(APP, 'src-tauri', 'tauri.conf.json'),
   cargoToml: path.join(APP, 'src-tauri', 'Cargo.toml'),
   viteConfig: path.join(APP, 'vite.config.ts'),
-  lyricsHtml: path.join(APP, 'lyrics.html'),
+  lyricsHtml: path.join(APP, 'templates', 'lyrics.html'),
   desktopLyrics: path.join(APP, 'src', 'screens', 'lyrics', 'DesktopLyrics.tsx'),
   musicScreen: path.join(APP, 'src', 'screens', 'MusicScreen.tsx'),
   app: path.join(APP, 'src', 'App.tsx'),
@@ -72,9 +82,12 @@ const F = {
   hotkeys: path.join(APP, 'src', 'hooks', 'useMusicHotkeys.ts'),
   musicUiDir: path.join(APP, 'src', 'screens', 'music'),
   // ── 歌曲右键菜单（MENU 组）── 逐文件判定，避免"某个写法在别的文件里也有"造成假绿
-  songMenu: path.join(APP, 'src', 'screens', 'music', 'SongMenu.tsx'),
+  // 菜单机制已收口到通用单元 `ContextMenu`（D-142），故机制类判据判它、语义类判据判宿主。
+  contextMenu: path.join(APP, 'src', 'components', 'units', 'ContextMenu.tsx'),
   songRowShared: path.join(APP, 'src', 'screens', 'music', 'shared.tsx'),
   queueDrawer: path.join(APP, 'src', 'screens', 'music', 'QueueDrawer.tsx'),
+  // 播放模式循环按钮（"心动不可用时不显示该档"的 UI 落点，HEARTBEAT 组判它）
+  playModeButton: path.join(APP, 'src', 'components', 'units', 'PlayModeButton.tsx'),
   leftPanel: path.join(APP, 'src', 'screens', 'music', 'LeftPanel.tsx'),
   rightPanel: path.join(APP, 'src', 'screens', 'music', 'RightPanel.tsx'),
   localView: path.join(APP, 'src', 'screens', 'music', 'LocalView.tsx'),
@@ -87,6 +100,8 @@ const F = {
   // flex-shrink）经逐条核对**唯一**命中 music.scss，其余分片无同文本 —— 唯一性是
   // 反证能生效的前提，若同一文本在两个分片出现，改一个另一个仍在，断言就不会变红。
   musicScss: path.join(APP, 'src', 'styles', 'music.scss'),
+  // 右键菜单样式已收口到 components.scss 的 .ui-menu（D-142），反证要按 file 改它
+  componentsScss: path.join(APP, 'src', 'styles', 'components.scss'),
   stylesDir: path.join(APP, 'src', 'styles'),
   srcDir: path.join(APP, 'src'),
   rustSrcDir: path.join(APP, 'src-tauri', 'src'),
@@ -98,34 +113,80 @@ const BANNED = ['n', 'e', 'x', 'b', 'o', 'x'].join('');
 // ── 冻结的契约：命令清单（负责人冻结，本脚本照抄，不改口径） ──────────────
 const CONTRACT = {
   netease: [
-    'music_search', 'music_song_url', 'music_login_status', 'music_logout',
-    'music_user_playlist', 'music_playlist_tracks', 'music_playlist_tracks_range',
-    'music_playlist_detail', 'music_likelist', 'music_like', 'music_playlist_subscribe',
-    'music_lyric', 'music_song_comments', 'music_personalized', 'music_recommend_songs',
-    'music_recommend_resource', 'music_artist_search', 'music_playlist_search', 'music_artist_songs',
+    'music_search',
+    'music_song_url',
+    'music_login_status',
+    'music_logout',
+    'music_user_playlist',
+    'music_playlist_tracks',
+    'music_playlist_tracks_range',
+    'music_playlist_detail',
+    'music_likelist',
+    'music_like',
+    'music_playlist_subscribe',
+    'music_lyric',
+    'music_song_comments',
+    'music_personalized',
+    'music_recommend_songs',
+    'music_recommend_resource',
+    'music_artist_search',
+    'music_playlist_search',
+    'music_artist_songs',
+    'music_intelligence_list',
   ],
   kugou: [
-    'kugou_search', 'kugou_song_url', 'kugou_lyric', 'kugou_login_status', 'kugou_logout',
-    'kugou_user_playlists', 'kugou_playlist_tracks', 'kugou_playlist_tracks_range',
-    'kugou_rank_list', 'kugou_rank_songs', 'kugou_like_toggle', 'kugou_liked_hashes',
-    'kugou_artist_search', 'kugou_playlist_search', 'kugou_artist_songs', 'kugou_guess_like',
+    'kugou_search',
+    'kugou_song_url',
+    'kugou_lyric',
+    'kugou_login_status',
+    'kugou_logout',
+    'kugou_user_playlists',
+    'kugou_playlist_tracks',
+    'kugou_playlist_tracks_range',
+    'kugou_rank_list',
+    'kugou_rank_songs',
+    'kugou_like_toggle',
+    'kugou_liked_hashes',
+    'kugou_artist_search',
+    'kugou_playlist_search',
+    'kugou_artist_songs',
+    'kugou_guess_like',
   ],
   qqmusic: [
-    'qq_search', 'qq_song_url', 'qq_lyric', 'qq_login_status', 'qq_logout',
-    'qq_user_playlists', 'qq_playlist_tracks', 'qq_playlist_tracks_range',
-    'qq_rank_list', 'qq_rank_songs', 'qq_like_toggle', 'qq_liked_hashes',
-    'qq_artist_search', 'qq_playlist_search', 'qq_artist_songs', 'music_qq_recommend_playlists',
+    'qq_search',
+    'qq_song_url',
+    'qq_lyric',
+    'qq_login_status',
+    'qq_logout',
+    'qq_user_playlists',
+    'qq_playlist_tracks',
+    'qq_playlist_tracks_range',
+    'qq_rank_list',
+    'qq_rank_songs',
+    'qq_like_toggle',
+    'qq_liked_hashes',
+    'qq_artist_search',
+    'qq_playlist_search',
+    'qq_artist_songs',
+    'music_qq_recommend_playlists',
   ],
   migu: [
-    'migu_search', 'migu_song_url', 'migu_lyric', 'migu_login_status', 'migu_logout',
-    'migu_user_playlists', 'migu_playlist_tracks', 'migu_playlist_tracks_range',
-    'migu_rank_list', 'migu_rank_songs', 'migu_recommend_playlists',
-    'migu_playlist_search', 'migu_artist_search', 'migu_artist_songs',
+    'migu_search',
+    'migu_song_url',
+    'migu_lyric',
+    'migu_login_status',
+    'migu_logout',
+    'migu_user_playlists',
+    'migu_playlist_tracks',
+    'migu_playlist_tracks_range',
+    'migu_rank_list',
+    'migu_rank_songs',
+    'migu_recommend_playlists',
+    'migu_playlist_search',
+    'migu_artist_search',
+    'migu_artist_songs',
   ],
-  multi: [
-    'music_get_login_statuses', 'music_switch_provider', 'music_get_playback_source',
-    'music_open_login_window',
-  ],
+  multi: ['music_get_login_statuses', 'music_switch_provider', 'music_get_playback_source', 'music_open_login_window'],
 };
 const PLATFORM_KEYS = ['netease', 'kugou', 'qqmusic', 'migu'];
 
@@ -135,7 +196,7 @@ const PLATFORM_KEYS = ['netease', 'kugou', 'qqmusic', 'migu'];
  * ⚠️ 这份清单**独立于**上面的 `CONTRACT`：那份是负责人冻结的平台能力清单，
  * 它的判据是"命令名必须出现在 ipc.ts"，而缓存命令是后加的 —— 不进 `CONTRACT`
  * 就意味着漏接线不会让任何一条断言变红（这是本组存在的全部理由）。
- * 所以这里单独列出，并在 `CACHE.ipcWrapped` 里**同时**判 Rust 侧的 `main.rs` 注册。
+ * 所以这里单独列出，并在 `CACHE.ipcWrapped` 里**同时**判 Rust 侧命令注册表的注册。
  */
 const CACHE_CMDS = ['music_audio_cached', 'music_cache_download', 'music_cache_stats', 'music_cache_clear'];
 
@@ -161,7 +222,10 @@ const DISPATCH = {
 };
 
 // ── 读文件 ───────────────────────────────────────────────────────────────
-const readMaybe = cachedReadText;
+// 读文本统一折算成 LF：工作区是 CRLF（core.autocrlf=true），而断言里的多行锚点按 LF 写。
+// 不折算 ⇒ `includes` / `occurrences` 恒不命中 ⇒ 判据长期"假红"（D-148 记过这个坑）。
+// 只折"给断言看的文本"；反证轮改盘/还原走 readBytes（原样字节），两者互不影响。
+const readMaybe = (p) => cachedReadText(p).replace(/\r\n/g, '\n');
 const readBytes = cachedReadBytes;
 
 /** 递归拼接某目录下所有指定后缀文件（缺目录 → 空串，不抛） */
@@ -181,14 +245,30 @@ function walkText(dir, exts) {
 }
 
 function loadSources() {
+  // D-156：`store.ts` 的 action 段已按切片切到 `music/actions/*.ts`。判据的源统一为
+  // 「store.ts + 全部切片」的**逐文件 strip 后拼接** —— 「方法在不在」「这段逻辑在不在」
+  // 这类判据才不会因切片而假红。目录**动态列举** ⇒ 以后每切一段自动覆盖，不必改这里。
+  // （逐文件 strip 再拼，不能拼原文：`stripComments` 带状态机，跨文件会失同步，见 D-148。）
+  const ACTIONS = readdirSync(path.join(APP, 'src', 'music', 'actions'))
+    .filter((n) => n.endsWith('.ts'))
+    .map((n) => path.join(APP, 'src', 'music', 'actions', n));
+  const SF = [F.store, ...ACTIONS]; // store 本体 + 全部切片
   const s = {
     rustMod: readMaybe(F.rustMod),
-    rustMain: readMaybe(F.rustMain),
+    rustRegistry: readMaybe(F.rustRegistry),
     ipc: readMaybe(F.ipc),
     platform: readMaybe(F.platform),
-    store: readMaybe(F.store),
+    store: SF.map((p) => stripComments(readMaybe(p))).join('\n'),
+    /** `store.ts` 单文件原文（需要"只看 store 本体"的判据用；如 scope 类断言） */
+    storeRaw: readMaybe(F.store),
+    // 歌词判据的源：store 全量 + `tools/lyrics.ts`。
+    storeLyrics: [...SF, F.lyrics].map((p) => stripComments(readMaybe(p))).join('\n'),
+    // D-153：持久化判据的源（store 全量 + `music/persist.ts`，同样逐文件 strip 后拼）。
+    storePersist: [...SF, F.persist].map((p) => stripComments(readMaybe(p))).join('\n'),
     types: readMaybe(F.types),
     rustLyrics: readMaybe(F.rustLyrics),
+    captureRs: readMaybe(F.captureRs),
+    captureMjs: readMaybe(F.captureMjs),
     capabilities: readMaybe(F.capabilities),
     tauriConf: readMaybe(F.tauriConf),
     cargoToml: readMaybe(F.cargoToml),
@@ -211,9 +291,10 @@ function loadSources() {
     hotkeys: readMaybe(F.hotkeys),
     // 全分片拼接（顺序 = index.scss 的 @use 顺序 = 层叠顺序），不是读单个 app.css
     css: readStyleSource(F.stylesDir),
-    songMenu: readMaybe(F.songMenu),
+    contextMenu: readMaybe(F.contextMenu),
     songRowShared: readMaybe(F.songRowShared),
     queueDrawer: readMaybe(F.queueDrawer),
+    playModeButton: readMaybe(F.playModeButton),
     leftPanel: readMaybe(F.leftPanel),
     rightPanel: readMaybe(F.rightPanel),
     localView: readMaybe(F.localView),
@@ -393,16 +474,32 @@ function callArgs(src, callee, occurrence = 0) {
       cur += c;
       i++;
       while (i < end && src[i] !== q) {
-        if (src[i] === '\\') { cur += src[i] + (src[i + 1] ?? ''); i += 2; continue; }
+        if (src[i] === '\\') {
+          cur += src[i] + (src[i + 1] ?? '');
+          i += 2;
+          continue;
+        }
         cur += src[i];
         i++;
       }
       cur += q;
       continue;
     }
-    if (c === '(' || c === '[' || c === '{') { depth++; cur += c; continue; }
-    if (c === ')' || c === ']' || c === '}') { depth--; cur += c; continue; }
-    if (c === ',' && depth === 0) { args.push(cur.trim()); cur = ''; continue; }
+    if (c === '(' || c === '[' || c === '{') {
+      depth++;
+      cur += c;
+      continue;
+    }
+    if (c === ')' || c === ']' || c === '}') {
+      depth--;
+      cur += c;
+      continue;
+    }
+    if (c === ',' && depth === 0) {
+      args.push(cur.trim());
+      cur = '';
+      continue;
+    }
     cur += c;
   }
   if (cur.trim()) args.push(cur.trim());
@@ -460,9 +557,20 @@ function rustFnBody(src, name) {
  *     → 不剥注释，"已搬走/未直接调用"这些判据会**恒绿**（该红没红）。
  * 本仓库历史上正是栽在"注释让断言误判"上（D-31），故此处一律先剥。
  */
+// 关键字之后的正则字面量（`return /re/`），末尾不是标识符但 `/` 仍是正则起始
+const REGEX_KEYWORDS = /(?:return|typeof|instanceof|in|of|new|delete|void|do|else|yield|await|case)$/;
+
+/** 判断代码态遇到的 `/` 是正则起始还是除号（除号跟随「值」，正则跟随「运算符/左括号」） */
+function regexAllowed(codeSoFar, prevSig) {
+  if (prevSig === '') return true;
+  if (/[)\]\w$]/.test(prevSig)) return REGEX_KEYWORDS.test(codeSoFar.replace(/\s+$/, ''));
+  return true;
+}
+
 function stripComments(src) {
   let out = '';
   let state = 'code';
+  let prevSig = ''; // 代码态最近一个显著字符，供判别 `/` 是正则还是除号
   for (let i = 0; i < src.length; i++) {
     const c = src[i];
     const c2 = src[i + 1];
@@ -479,10 +587,32 @@ function stripComments(src) {
         i++;
         continue;
       }
+      // 正则字面量：内部的引号/斜杠不参与字符串与注释判定，整段原样保留
+      if (c === '/' && regexAllowed(out, prevSig)) {
+        out += c;
+        i++;
+        let inClass = false;
+        for (; i < src.length; i++) {
+          const rc = src[i];
+          if (rc === '\\') {
+            out += rc + (src[i + 1] ?? '');
+            i++;
+            continue;
+          }
+          out += rc;
+          if (rc === '[') inClass = true;
+          else if (rc === ']') inClass = false;
+          else if (rc === '/' && !inClass) break;
+          else if (rc === '\n') break; // 未闭合：按除号处理，不影响后续
+        }
+        prevSig = '/';
+        continue;
+      }
       if (c === "'") state = 'sq';
       else if (c === '"') state = 'dq';
       else if (c === '`') state = 'tpl';
       out += c;
+      if (!/\s/.test(c)) prevSig = c;
       continue;
     }
     if (state === 'block') {
@@ -510,9 +640,16 @@ function stripComments(src) {
       i++;
       continue;
     }
-    if (state === 'sq' && c === "'") state = 'code';
-    else if (state === 'dq' && c === '"') state = 'code';
-    else if (state === 'tpl' && c === '`') state = 'code';
+    if (state === 'sq' && c === "'") {
+      state = 'code';
+      prevSig = 'x';
+    } else if (state === 'dq' && c === '"') {
+      state = 'code';
+      prevSig = 'x';
+    } else if (state === 'tpl' && c === '`') {
+      state = 'code';
+      prevSig = 'x';
+    }
     out += c;
   }
   return out;
@@ -535,12 +672,21 @@ function parseCaps(src) {
   return out;
 }
 
-const CAP_KEYS = ['charts', 'chartGrid', 'chartByName', 'recommendPlaylists', 'dailySongs', 'comments', 'likeWrite', 'artistExtra'];
+const CAP_KEYS = [
+  'charts',
+  'chartGrid',
+  'chartByName',
+  'recommendPlaylists',
+  'dailySongs',
+  'comments',
+  'likeWrite',
+  'artistExtra',
+];
 
 // ── 断言表：每条 { id, group, run(s) -> {ok, detail} } ─────────────────────
 const A = [];
 const add = (id, group, run) => A.push({ id, group, run });
-const UI_GAP = 'UI 尚未落地（app/src/screens/music/ 缺失或缺关键片段）/待负责人复核';
+const UI_GAP = 'UI 尚未落地（src/screens/music/ 缺失或缺关键片段）/待负责人复核';
 
 // ============================ RUST ============================
 for (const [plat, cmds] of Object.entries(CONTRACT)) {
@@ -551,18 +697,18 @@ for (const [plat, cmds] of Object.entries(CONTRACT)) {
 }
 for (const [plat, cmds] of Object.entries(CONTRACT)) {
   add(`RUST.registered.${plat}`, 'RUST', (s) => {
-    const missing = cmds.filter((c) => !new RegExp(`music::${esc(c)}\\s*,`).test(s.rustMain));
+    const missing = cmds.filter((c) => !new RegExp(`music::${esc(c)}\\s*,`).test(s.rustRegistry));
     return {
       ok: missing.length === 0,
-      detail: missing.length ? `main.rs generate_handler! 未注册：${missing.join(', ')}` : '',
+      detail: missing.length ? `commands/mod.rs 的 generate_handler! 未注册：${missing.join(', ')}` : '',
     };
   });
 }
 add('RUST.noqishui', 'RUST', (s) => {
   // 汽水延后后不应有任何汽水命令：generate_handler! 块与 music/mod.rs 里都不得出现该标识
   const block = (() => {
-    const i = s.rustMain.indexOf('generate_handler!');
-    return i < 0 ? '' : s.rustMain.slice(i, s.rustMain.indexOf('])', i));
+    const i = s.rustRegistry.indexOf('generate_handler!');
+    return i < 0 ? '' : s.rustRegistry.slice(i, s.rustRegistry.indexOf('])', i));
   })();
   const inHandler = /qishui/i.test(block);
   const inMod = new RegExp(`fn\\s+\\w*qishui\\w*`, 'i').test(s.rustMod);
@@ -615,7 +761,8 @@ add('PLATFORM.caps.present', 'PLATFORM', (s) => {
   const caps = parseCaps(s.platform);
   const missingPlat = PLATFORM_KEYS.filter((p) => !caps[p]);
   const missingKey = [];
-  for (const p of PLATFORM_KEYS) if (caps[p]) for (const k of CAP_KEYS) if (!(k in caps[p])) missingKey.push(`${p}.${k}`);
+  for (const p of PLATFORM_KEYS)
+    if (caps[p]) for (const k of CAP_KEYS) if (!(k in caps[p])) missingKey.push(`${p}.${k}`);
   return {
     ok: missingPlat.length === 0 && missingKey.length === 0,
     detail: `缺平台：${missingPlat.join(', ') || '无'}；缺字段：${missingKey.join(', ') || '无'}`,
@@ -631,10 +778,20 @@ const capCheck = (id, want) =>
     }
     return { ok: bad.length === 0, detail: bad.join('；') };
   });
-capCheck('comments', { 'netease.comments': true, 'kugou.comments': false, 'qqmusic.comments': false, 'migu.comments': false });
+capCheck('comments', {
+  'netease.comments': true,
+  'kugou.comments': false,
+  'qqmusic.comments': false,
+  'migu.comments': false,
+});
 capCheck('chartGrid', { 'kugou.chartGrid': true, 'qqmusic.chartGrid': true, 'netease.chartGrid': false });
 capCheck('chartByName', { 'migu.chartByName': true });
-capCheck('dailySongs', { 'netease.dailySongs': true, 'kugou.dailySongs': false, 'qqmusic.dailySongs': false, 'migu.dailySongs': false });
+capCheck('dailySongs', {
+  'netease.dailySongs': true,
+  'kugou.dailySongs': false,
+  'qqmusic.dailySongs': false,
+  'migu.dailySongs': false,
+});
 capCheck('likeWrite', { 'qqmusic.likeWrite': false, 'migu.likeWrite': false });
 add('PLATFORM.nobrand', 'PLATFORM', (s) => {
   const re = new RegExp(BANNED, 'i');
@@ -655,9 +812,21 @@ for (const field of ['playbackSource', 'searchProvider', 'loginInfos', 'likedSon
 }
 add('STORE.actions', 'STORE', (s) => {
   const need = [
-    'switchPlaybackSource', 'setSearchProvider', 'loadAllLoginStatuses', 'loadLoginStatus',
-    'loadCharts', 'loadRecommend', 'openRightChart', 'openRightPlaylist', 'openLeftPlaylist',
-    'loadMoreLeft', 'loadMoreRight', 'loadLikedList', 'toggleLike', 'openLogin', 'logoutFor',
+    'switchPlaybackSource',
+    'setSearchProvider',
+    'loadAllLoginStatuses',
+    'loadLoginStatus',
+    'loadCharts',
+    'loadRecommend',
+    'openRightChart',
+    'openRightPlaylist',
+    'openLeftPlaylist',
+    'loadMoreLeft',
+    'loadMoreRight',
+    'loadLikedList',
+    'toggleLike',
+    'openLogin',
+    'logoutFor',
   ];
   const missing = need.filter((n) => !hasMethodImpl(s.store, n));
   return { ok: missing.length === 0, detail: missing.length ? `store.ts 缺 action 实现：${missing.join(', ')}` : '' };
@@ -682,7 +851,7 @@ add('UI.drawerAboveExpanded', 'UI', (s) => {
   // 判据直接比两者的 z-index：改任何一个都要重新确认这个不等式。
   const css = stripComments(s.css ?? '');
   const pickZ = (sel) => {
-    const m = css.match(new RegExp(sel + "\\s*\\{([^}]*)\\}"));
+    const m = css.match(new RegExp(sel + '\\s*\\{([^}]*)\\}'));
     if (!m) return null;
     const z = m[1].match(/z-index:\s*(\d+)/);
     return z ? Number(z[1]) : null;
@@ -693,10 +862,27 @@ add('UI.drawerAboveExpanded', 'UI', (s) => {
     return { ok: false, detail: '未解析到 .music-exp / .music-drawer 的 z-index（选择器或写法变了）' };
   return {
     ok: drawer > exp,
-    detail:
-      drawer > exp
-        ? ''
-        : `播放队列(z)=\${drawer} 被展开播放器(z)=\${exp} 盖住 —— 点「播放队列」会看不到任何东西`,
+    detail: drawer > exp ? '' : `播放队列(z)=${drawer} 被展开播放器(z)=${exp} 盖住 —— 点「播放队列」会看不到任何东西`,
+  };
+});
+add('UI.modalAboveExpanded', 'UI', (s) => {
+  // 「退出喵坞」二次确认是 `.modal-mask`，而展开播放器是 `fixed z-index:70` 的整屏覆盖层。
+  // 模态若 ≤ 70，铺满的播放器会把确认框整个盖住：用户点了退出"没有任何反应"且不报错
+  // （2026-10-16 真机实测，D-230）。判据直接比两者的 z-index，改任何一个都要重新确认。
+  const css = stripComments(s.css ?? '');
+  const pickZ = (sel) => {
+    const m = css.match(new RegExp(sel + '\\s*\\{([^}]*)\\}'));
+    if (!m) return null;
+    const z = m[1].match(/z-index:\s*(\d+)/);
+    return z ? Number(z[1]) : null;
+  };
+  const exp = pickZ('\\.music-exp');
+  const modal = pickZ('\\.modal-mask');
+  if (exp === null || modal === null)
+    return { ok: false, detail: '未解析到 .music-exp / .modal-mask 的 z-index（选择器或写法变了）' };
+  return {
+    ok: modal > exp,
+    detail: modal > exp ? '' : `退出确认(z)=${modal} 被展开播放器(z)=${exp} 盖住 —— 点「退出喵坞」不会有任何反应`,
   };
 });
 add('UI.platformSwitch', 'UI', (s) => ({
@@ -741,7 +927,7 @@ const ROW_LISTS = {
 // 后者被替换掉不影响「是否虚拟滚动」这个事实，锁死它们只会让断言在合法重构时误红。
 add('UI.virtualList', 'UI', (s) => {
   const v = readMaybe(F.virtualList);
-  if (!v) return { ok: false, detail: uiNote(s, '未读到 app/src/components/units/VirtualList.tsx') };
+  if (!v) return { ok: false, detail: uiNote(s, '未读到 src/components/units/VirtualList.tsx') };
   const need = [
     [/items\.slice\(/, '按窗口切片渲染（items.slice）'],
     [/ui-vlist-inner/, '撑高元素（否则滚动条长度不反映真实内容）'],
@@ -771,7 +957,7 @@ add('UI.virtualListUsed', 'UI', (s) => {
 add('DUR.msContract', 'DUR', (s) => {
   const models = readMaybe(F.rustModels);
   const documented = /单位.{0,4}毫秒/.test(models);
-  const sources = { 'store.ts': s.store, 'platform.ts': s.platform, 'ui': `${s.musicUi}\n${s.musicScreen}` };
+  const sources = { 'store.ts': s.store, 'platform.ts': s.platform, ui: `${s.musicUi}\n${s.musicScreen}` };
   const offenders = Object.entries(sources)
     .filter(([, src]) => /\.duration\s*\*\s*1000/.test(src))
     .map(([f]) => f);
@@ -792,9 +978,7 @@ add('DUR.msContract', 'DUR', (s) => {
  */
 const SEARCH_CMDS = ['music_search', 'kugou_search', 'qq_search', 'migu_search'];
 add('SEARCH.rustOffset', 'SEARCH', (s) => {
-  const missing = SEARCH_CMDS.filter(
-    (n) => !new RegExp(`pub async fn ${esc(n)}\\([^)]*offset`).test(s.rustMod),
-  );
+  const missing = SEARCH_CMDS.filter((n) => !new RegExp(`pub async fn ${esc(n)}\\([^)]*offset`).test(s.rustMod));
   return {
     ok: missing.length === 0,
     detail: missing.length ? `这些 Rust 搜索命令没有 offset 参数：${missing.join(', ')}` : '',
@@ -837,7 +1021,8 @@ add('UI.playerBarRule', 'UI', (s) => {
   if (!/if\s*\(hidden\)\s*return\s+null/.test(pb)) missing.push('PlayerBar 未实现 hidden 时早退（队列为空不渲染）');
   if (!/hidden=\{[^}]*queue[^}]*\}/.test(s.musicScreen)) missing.push('MusicScreen 未按队列长度决定播放条显隐');
   const block = (s.css.match(/\.music\s*\{([^}]*)\}/) || [, ''])[1];
-  if (!/(^|\n)\s*height:\s*100%/.test(block)) missing.push('样式的 .music 未改成定高（仍是 min-height:100%，会撑出页面级滚动）');
+  if (!/(^|\n)\s*height:\s*100%/.test(block))
+    missing.push('样式的 .music 未改成定高（仍是 min-height:100%，会撑出页面级滚动）');
   const cols = (s.css.match(/\.music-cols\s*\{([^}]*)\}/) || [, ''])[1];
   if (!/grid-template-rows\s*:\s*minmax\(\s*0\s*,/.test(cols)) {
     missing.push('.music-cols 未固定行高（缺 grid-template-rows: minmax(0, 1fr)，卡片会被内容撑开、失去内部滚动）');
@@ -857,7 +1042,7 @@ add('UI.playerBarRule', 'UI', (s) => {
  */
 add('PLAYER.kernelExists', 'PLAYER', (s) => {
   const k = stripComments(s.kernel);
-  if (!k) return { ok: false, detail: '未读到 app/src/components/MusicKernel.tsx' };
+  if (!k) return { ok: false, detail: '未读到 src/components/MusicKernel.tsx' };
   const missing = [];
   if (!/<audio\b/.test(k)) missing.push('未持有 <audio> 元素');
   if (!/\buseMusicStore\b/.test(k)) missing.push('未接 store（useMusicStore）');
@@ -889,7 +1074,8 @@ add('PLAYER.kernelRegisters', 'PLAYER', (s) => {
   const missing = [];
   // 「登记」= 传入一个非 null 的元素。负向先行断言把 `registerAudioElement(null)`（注销）排除掉，
   // 否则删掉挂载时那次调用、只留卸载时的 null，这条会**该红没红**（本脚本第一版正是如此）。
-  if (!/\bregisterAudioElement\s*\(\s*(?!null\b)/.test(k)) missing.push('挂载时未登记 audio 元素（未调用 registerAudioElement(元素)）');
+  if (!/\bregisterAudioElement\s*\(\s*(?!null\b)/.test(k))
+    missing.push('挂载时未登记 audio 元素（未调用 registerAudioElement(元素)）');
   if (!/\bregisterAudioElement\s*\(\s*null\s*\)/.test(k)) missing.push('卸载时未传 null 注销');
   return { ok: missing.length === 0, detail: missing.length ? `播放内核登记/注销：${missing.join('、')}` : '' };
 });
@@ -929,7 +1115,10 @@ add('PLAYER.animEnter', 'PLAYER', (s) => {
 });
 add('PLAYER.animClosing', 'PLAYER', (s) => {
   const rule = (s.css.match(/\.music-exp\.is-closing\s*\{([^}]*)\}/) || [, ''])[1];
-  return { ok: /animation\s*:\s*music-exp-down/.test(rule), detail: '样式的 .music-exp.is-closing 未播退场动画 music-exp-down' };
+  return {
+    ok: /animation\s*:\s*music-exp-down/.test(rule),
+    detail: '样式的 .music-exp.is-closing 未播退场动画 music-exp-down',
+  };
 });
 add('PLAYER.durationSync', 'PLAYER', (s) => {
   // 双向：CSS 的退场时长 ↔ store 的延时，两个数都取出来比对 —— 改一处忘另一处 = 动画没播完就消失
@@ -952,11 +1141,72 @@ add('PLAYER.closePath', 'PLAYER', (s) => {
   return { ok: missing.length === 0, detail: missing.length ? `ExpandedPlayer 收起入口：${missing.join('、')}` : '' };
 });
 add('PLAYER.escPath', 'PLAYER', (s) => {
+  // Esc 收起的 owner 已从 MusicScreen 搬到 App 根（2026-10-12）：展开播放器挂应用根，
+  // Esc 必须跟着走 —— 否则从设置页点开播放器后就 Esc 不掉了。
+  // ⚠️ 两处都要查：App 根**必须有** closeExpanded，MusicScreen **不得再**有
+  //   （两处都监听会在音乐屏里重复触发退场动画）。
+  const app = stripComments(s.app);
   const ms = stripComments(s.musicScreen);
   const missing = [];
-  if (!/closeExpanded\s*\(\s*\)/.test(ms)) missing.push('Esc 分支未走 closeExpanded()');
-  if (/setExpanded\s*\(\s*false\s*\)/.test(ms)) missing.push('仍直接 setExpanded(false)');
-  return { ok: missing.length === 0, detail: missing.length ? `MusicScreen Esc 收起：${missing.join('、')}` : '' };
+  // App 根必须**从 store 取到** closeExpanded（可能取别名，如 closeMusicExpanded）
+  // 并在 Esc 分支里调用它 —— 只判"出现过 closeExpanded()"会被别处的引用骗过。
+  const aliasM =
+    /\bconst\s+(\w+)\s*=\s*useMusicStore\(\s*\(?s\)?\s*=>\s*s\.closeExpanded\s*\)/.exec(app) ??
+    // 解构取法：const { closeExpanded } = useMusicStore(s)
+    (() => {
+      const d = /\bconst\s*\{([^}]*)\}\s*=\s*useMusicStore\(/.exec(app);
+      if (!d) return null;
+      const name = d[1]
+        .split(',')
+        .map((x) => (x.includes(':') ? x.split(':')[1] : x).trim())
+        .find((x) => /^closeExpanded$/.test(x));
+      return name ? [name] : null;
+    })();
+  const alias = aliasM ? aliasM[1] : null;
+  if (!alias) missing.push('App 根没有从 store 取 closeExpanded');
+  else if (!new RegExp(`\\b${alias}\\s*\\(\\s*\\)`).test(app)) missing.push(`App 根 Esc 分支未调用 ${alias}()`);
+  if (/setExpanded\s*\(\s*false\s*\)/.test(app)) missing.push('App 根仍直接 setExpanded(false)');
+  if (/closeExpanded\s*\(\s*\)/.test(ms)) missing.push('MusicScreen 仍在监听 closeExpanded（应只在 App 根）');
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `展开播放器 Esc 收起：${missing.join('、')}` : '',
+  };
+});
+add('PLAYER.noAnimShorthandClash', 'PLAYER', (s) => {
+  // 🔴 闪烁的根因（2026-10-12 修）：`animation` 是**简写属性**，一改就把它列出的所有动画
+  // 整体重置并**从头重播**。`.is-dynamic` 原先单独写了 `animation: music-exp-flow …`，
+  // 于是点「动态」开关时简写从 flow 变回 music-exp-up ⇒ 已播完的进场动画被重播 ⇒ 整屏闪一下。
+  // 判据：任何**作用在 .music-exp 上的 animation 简写**都不得在基础规则之外出现
+  //（.is-closing 的退场简写是合法的 —— 那是组件即将卸载的终态，不存在"重播进场"）。
+  const missing = [];
+  const clash = [...s.css.matchAll(/(^|[},])\s*(\.music-exp[^{]*?)\{([^}]*)\}/g)].filter((m) =>
+    /(^|\s|;)animation\s*:/.test(m[3]),
+  );
+  for (const m of clash) {
+    const sel = m[2].trim();
+    if (sel === '.music-exp' || sel === '.music-exp.is-closing') continue;
+    missing.push(`${sel} 又写了 animation 简写（会重播进场动画 ⇒ 整屏闪一下）`);
+  }
+  // 反向：动态开关必须只靠 animation-play-state 控制跑/停
+  if (!/\.music-exp\.is-dynamic\s*\{[^}]*animation-play-state\s*:\s*running\s*,\s*running/.test(s.css))
+    missing.push('.is-dynamic 未用 animation-play-state 开启动画（改简写会重播进场动画）');
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `展开播放器动画简写冲突：${missing.join('、')}` : '',
+  };
+});
+add('PLAYER.expandedMountedAtRoot', 'PLAYER', (s) => {
+  // 展开播放器必须挂在**应用根**：灵动岛常驻根上，它的「打开播放器」在任意屏都点得到，
+  // 浮层若只活在 MusicScreen 内，从设置页点就是"按了没反应"（这正是本次修的 bug）。
+  const app = stripComments(s.app);
+  const ms = stripComments(s.musicScreen);
+  const missing = [];
+  if (!/<ExpandedPlayer\b/.test(app)) missing.push('App 根没有渲染 <ExpandedPlayer>');
+  if (/<ExpandedPlayer\b/.test(ms)) missing.push('MusicScreen 仍渲染 <ExpandedPlayer>（会随屏卸载）');
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `展开播放器挂载点：${missing.join('、')}` : '',
+  };
 });
 add('PLAYER.playSongExpandOpt', 'PLAYER', (s) => {
   const body = methodBody(stripComments(s.store), 'playSong');
@@ -977,9 +1227,10 @@ add('PLAYER.nextExpandFalse', 'PLAYER', (s) => {
   const guarded = (body.match(/playSong\s*\([^;]*expand\s*:\s*false/g) || []).length;
   return {
     ok: calls > 0 && calls === guarded,
-    detail: calls === guarded
-      ? ''
-      : `next 有 ${calls} 处 playSong，只有 ${guarded} 处传了 { expand: false }（漏掉的那条会把播放器弹开）`,
+    detail:
+      calls === guarded
+        ? ''
+        : `next 有 ${calls} 处 playSong，只有 ${guarded} 处传了 { expand: false }（漏掉的那条会把播放器弹开）`,
   };
 });
 add('PLAYER.prevExpandFalse', 'PLAYER', (s) => {
@@ -1029,6 +1280,9 @@ add('PLAYER.bar.closePlayback', 'PLAYER', (s) => ({
 add('PLAYER.bar.dragSession', 'PLAYER', (s) => {
   // 进度条拖拽会话：拖动只改本地 dragMs，松手/抬键才提交一次。
   // 「onChange 里不得直接调 onSeek」是这条的本质 —— 否则退回"每动一格提交一次"（卡顿/爆音）。
+  // 2026-10-19 用户要求再钉一层：提交必须**延 0.1s** —— 拖拽中不更新播放进度，
+  // 拖拽结束后也不是立即更新。判据抓 setTimeout(…, SEEK_COMMIT_DELAY_MS)：
+  // 退回"松手即 seek"（onSeek 直接调、没有定时器）必须红。
   const pb = stripComments(s.playerBar);
   const missing = [];
   if (!/\buseState\b/.test(pb)) missing.push('未用 useState 保存拖拽会话');
@@ -1037,7 +1291,29 @@ add('PLAYER.bar.dragSession', 'PLAYER', (s) => {
   if (/onChange=\{[^}]*onSeek\s*\(/.test(pb)) missing.push('onChange 里直接调 onSeek(（退回逐帧提交）');
   if (!/\bonPointerUp\s*=/.test(pb)) missing.push('缺 onPointerUp 提交');
   if (!/\bonKeyUp\s*=/.test(pb)) missing.push('缺 onKeyUp 提交');
+  // 松手后的 0.1s 静默期：定时器与延时常量两个部件都要在（缺任一即是"立即更新"）
+  if (!/\bsetTimeout\s*\(/.test(pb)) missing.push('提交未走 setTimeout（拖拽一结束就 seek）');
+  if (!/,\s*SEEK_COMMIT_DELAY_MS\s*\)/.test(pb)) missing.push('缺 0.1s 延时常量 SEEK_COMMIT_DELAY_MS');
   return { ok: missing.length === 0, detail: missing.length ? `播放条进度条拖拽会话：${missing.join('、')}` : '' };
+});
+add('PLAYER.exp.dragSession', 'PLAYER', (s) => {
+  // 展开播放器的进度条与播放条是**同一套拖拽会话的两份实现**（含 2026-10-19 的 0.1s 延时提交）。
+  // 为什么单独立一条而不是复用播放条那条：两条进度条各写一份，坏任何一条另一条全绿 ——
+  // "同一个范式抄两遍"正是静默分化的起点（播放条加了延时、展开播放器忘了加，此前没有人会红）。
+  const exp = stripComments(s.expanded ?? '');
+  const missing = [];
+  if (!/\buseState\b/.test(exp)) missing.push('未用 useState 保存拖拽会话');
+  if (!/\bdragMs\b/.test(exp) || !/\bsetDragMs\s*\(/.test(exp)) missing.push('缺本地拖拽状态 dragMs');
+  if (!/onChange=\{[^}]*setDragMs\s*\(/.test(exp)) missing.push('onChange 未只做 setDragMs(');
+  if (/onChange=\{[^}]*onSeek\s*\(/.test(exp)) missing.push('onChange 里直接调 onSeek(（退回逐帧提交）');
+  if (!/\bonPointerUp\s*=/.test(exp)) missing.push('缺 onPointerUp 提交');
+  if (!/\bonKeyUp\s*=/.test(exp)) missing.push('缺 onKeyUp 提交');
+  if (!/\bsetTimeout\s*\(/.test(exp)) missing.push('提交未走 setTimeout（拖拽一结束就 seek）');
+  if (!/,\s*SEEK_COMMIT_DELAY_MS\s*\)/.test(exp)) missing.push('缺 0.1s 延时常量 SEEK_COMMIT_DELAY_MS');
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `展开播放器进度条拖拽会话：${missing.join('、')}` : '',
+  };
 });
 add('PLAYER.resolveWrites', 'PLAYER', (s) => {
   // D 组防回归：resolveOnlineUrl 此前从不写 currentQuality/currentBitrate → 播放条音质标签是假 UI
@@ -1061,102 +1337,315 @@ add('PLAYER.resolveWrites', 'PLAYER', (s) => {
   };
 });
 
-// ── 心动模式（heartbeat · 拍板第 4 项）────────────────────────────────────
+// ── 心动模式（heartbeat · 五档改版）────────────────────────────────────
 add('HEARTBEAT.modeInType', 'HEARTBEAT', (s) => {
-  // 类型层：PlayMode 必须含 heartbeat，否则 store 里判它是"不可能状态"
+  // 类型层：PlayMode 必须含 heartbeat 与新增的 order（顺序播放）
   if (!/\bheartbeat\b/.test(s.types)) return { ok: false, detail: 'types.ts 的 PlayMode 未含 heartbeat' };
+  if (!/'order'/.test(s.types)) return { ok: false, detail: "types.ts 的 PlayMode 未含新增的 'order'（顺序播放）" };
   return { ok: true, detail: '' };
 });
-add('HEARTBEAT.cycleFour', 'HEARTBEAT', (s) => {
-  // cycleMode 的 order 数组必须含四档。**只判"含 heartbeat"不够** ——
-  // 一旦有人把数组写成 ['list','shuffle','one','heartbeat','heartbeat'] 也能骗过"含"，
-  // 但那样点两下就卡在同一档。判据改成"数组恰为四项"。
+add('HEARTBEAT.cycleFive', 'HEARTBEAT', (s) => {
+  // cycleMode 的档位循环顺序必须是需求给定的：列表 → 单曲 → 随机 → 顺序 → 心动。
+  // ⚠️ 判"顺序"而不是"集合"：档位顺序是需求明文，写成集合相等就把
+  // "点一下切到哪档"这件用户可感的事放走了（顺序错了会跳档）。
   const body = methodBody(stripComments(s.store), 'cycleMode');
   if (body == null) return { ok: false, detail: 'store.ts 未定义 cycleMode' };
   const m = body.match(/order:\s*PlayMode\[\]\s*=\s*\[([^\]]*)\]/);
   if (!m) return { ok: false, detail: 'cycleMode 里找不到 order 数组' };
-  const items = m[1].split(',').map((x) => x.trim().replace(/^'|'$/g, '')).filter(Boolean);
-  const want = ['list', 'shuffle', 'one', 'heartbeat'];
-  const ok = items.length === want.length && want.every((w) => items.includes(w));
+  const items = m[1]
+    .split(',')
+    .map((x) => x.trim().replace(/^'|'$/g, ''))
+    .filter(Boolean);
+  const want = ['list', 'one', 'shuffle', 'order', 'heartbeat'];
+  const ok = items.length === want.length && want.every((w, i) => items[i] === w);
   return {
     ok,
-    detail: ok ? '' : `cycleMode 档位应恰为 ${want.join('/')}，实为 ${items.join('/') || '(空)'}`,
+    detail: ok ? '' : `cycleMode 档位顺序应为 ${want.join(' → ')}，实为 ${items.join(' → ') || '(空)'}`,
   };
 });
-add('HEARTBEAT.warnsOnDegrade', 'HEARTBEAT', (s) => {
-  // 降级必须**告诉用户**：切到心动档而平台不支持时，若静默降级成随机，
-  // 用户会以为在听相似歌曲 —— 这与"假控件"同级的问题（D-37 的判据）。
+add('HEARTBEAT.defaultIsOrder', 'HEARTBEAT', (s) => {
+  // 默认档位必须是顺序播放（需求明文）。两处都要对：初始 state 与缺省时的水合回落。
+  const missing = [];
+  if (!/^\s*playMode: 'order',$/m.test(s.store)) missing.push("store 初始 state 的 playMode 不是 'order'");
+  const body = methodBody(stripComments(s.store), 'hydratePrefs');
+  if (body == null || !/ALL_MODES/.test(body) || !/:\s*'order';/.test(body))
+    missing.push('hydratePrefs 未把缺省/脏值回落到 order');
+  return { ok: missing.length === 0, detail: missing.length ? `默认播放模式：${missing.join('、')}` : '' };
+});
+add('HEARTBEAT.gatedByLikedAndPlatform', 'HEARTBEAT', (s) => {
+  // 心动模式是**有条件可用**的档位：仅网易云 + 仅「我喜欢的音乐」上下文。
+  // 判据落在那唯一一个出口 canUseHeartbeat 上（两个条件都要在，且用平台能力函数而非硬编码）。
+  //
+  // ⚠️ 不能用 fnBodyAny 取本函数的函数体：它的入参是对象类型字面量 `state: {...}`，
+  // 那是签名里的第一个 `{`，会被当成函数体的起点 —— 取出来的是**类型声明**，
+  // 于是 `supportsSimilar` 永远找不到（断言假红，且红得毫无道理）。
+  // 这里改为直接取 return 表达式：条件必须出现在**返回式**里才算真的判了。
+  const src = stripComments(s.store);
+  const ret = /function\s+canUseHeartbeat\s*\([\s\S]*?return\s+([^;]+);/.exec(src);
+  const missing = [];
+  if (!ret) missing.push('playback.ts 未定义 canUseHeartbeat');
+  else {
+    if (!/supportsSimilar/.test(ret[1])) missing.push('未走平台能力函数（硬编码平台名会在新增平台时漏改）');
+    if (!/queueFromLiked/.test(ret[1])) missing.push('未判「我喜欢的音乐」上下文');
+  }
+  // 能力名单本身也要对：supportsSimilar 只对网易云为真（防"为了让它跑起来把门禁放开"）
+  const cap = fnBodyAny(stripComments(s.platform ?? ''), 'supportsSimilar');
+  if (cap == null) missing.push('platform.ts 未定义 supportsSimilar');
+  else if (!/netease/.test(cap) || /kugou|qqmusic|migu/.test(cap))
+    missing.push('supportsSimilar 应对非网易云一律 false');
+  return { ok: missing.length === 0, detail: missing.length ? `心动可用性判据：${missing.join('、')}` : '' };
+});
+add('HEARTBEAT.noRandomDegrade', 'HEARTBEAT', (s) => {
+  // 🔴 旧行为是"平台不支持就降级成随机"，本版明确禁止：
+  // 随机听起来像心动、实则毫无相关性 —— 与假控件同级。
+  // 判据：cycleMode 必须**跳过**不可用的心动档（不落档）。
+  //
+  // 🔴 v2.3 口径变更：不可用时**不弹 toast**。需求给定"不是我喜欢的音乐的歌单
+  // 播放时，不显示心动模式的按钮就行"—— 提示只说明"你按的没用"，没有可操作价值，
+  // 而每次按都甩一条会让人以为按钮坏了。所以这里**反向钉死**：不得再有 toast。
   const body = methodBody(stripComments(s.store), 'cycleMode');
   if (body == null) return { ok: false, detail: 'store.ts 未定义 cycleMode' };
-  const ok = /supportsSimilar/.test(body) && /\.toast\(/.test(body);
-  return {
-    ok,
-    detail: ok ? '' : '切到心动档时未按平台能力提示降级（静默降级 = 假控件）',
-  };
+  const missing = [];
+  if (!/canUseHeartbeat/.test(body)) missing.push('cycleMode 未按 canUseHeartbeat 跳过不可用档位');
+  if (!/continue;/.test(body)) missing.push('不可用时没有跳过（会落在一个用不了的档上）');
+  if (/\.toast\(/.test(body)) missing.push('仍在弹"不可用"提示（需求：不显示按钮即可，不必提示）');
+  // setPlayMode 里也要有同一道闸兜底
+  const sp = methodBody(stripComments(s.store), 'setPlayMode');
+  if (sp == null || !/canUseHeartbeat/.test(sp)) missing.push('setPlayMode 缺同一道闸（可绕过 cycleMode 直接落档）');
+  if (sp && /\.toast\(/.test(sp)) missing.push('setPlayMode 仍在弹"不可用"提示');
+  // UI 侧必须真的"不显示"：模式按钮要接 heartbeatAvailable，且不可用时回落显示前一档。
+  // ⚠️ 判 props 的**使用**而不只是定义：定义在、没传值 = 恒为默认真 = 照常显示心动档。
+  const pmb = readMaybe(F.playModeButton);
+  if (pmb == null) return { ok: false, detail: 'components/units/PlayModeButton.tsx 不存在', ...{} };
+  const pmbBody = stripComments(pmb);
+  if (!/heartbeatAvailable/.test(pmbBody))
+    missing.push('PlayModeButton 没有 heartbeatAvailable（不可用时仍显示心动档）');
+  // ⚠️ 必须锚定**赋值号**：写成 `/mode === 'heartbeat' && !heartbeatAvailable/` 的话，
+  // 把它改成 `false && mode === 'heartbeat' && !heartbeatAvailable` 后子串照样命中 ⇒ 断言假绿，
+  // 而运行时那一档已经不再被隐藏（反证轮实测）。
+  else if (!/=\s*mode\s*===\s*'heartbeat'\s*&&\s*!heartbeatAvailable/.test(pmbBody))
+    missing.push('PlayModeButton 收了 heartbeatAvailable 却没在渲染时用它');
+  // 两个调用点都要真的把它传下去（漏一处 = 播放条不显示、展开播放器照旧显示）
+  for (const [id, key] of [
+    ['playerBar', 'playerBar'],
+    ['expanded', 'expanded'],
+  ]) {
+    const src = stripComments(s[key] ?? '');
+    if (!/heartbeatAvailable=\{heartbeatAvailable\}/.test(src))
+      missing.push(`${id} 未把 heartbeatAvailable 传给 PlayModeButton`);
+    if (!/canUseHeartbeat/.test(src)) missing.push(`${id} 未走 canUseHeartbeat 判据`);
+  }
+  // 冷启动兜底：偏好里的 heartbeat 必须被挡（此刻 queueFromLiked 恒假 ⇒ 该档不可用）
+  const init = stripComments(readMaybe(path.join(APP, 'src', 'music', 'actions', 'init.ts')));
+  if (!/prefs\.playMode\s*!==\s*'heartbeat'/.test(init))
+    missing.push('hydratePrefs 未挡下偏好里的 heartbeat（冷启动会出现"显示心动却不可用"）');
+  return { ok: missing.length === 0, detail: missing.length ? `心动不可用时的处理：${missing.join('、')}` : '' };
 });
-add('HEARTBEAT.nextUsesSimilar', 'HEARTBEAT', (s) => {
-  // next 在 heartbeat 下必须真的走相似接口，而不是当 shuffle 处理
+add('HEARTBEAT.enterRebuildsQueue', 'HEARTBEAT', (s) => {
+  // 进入心动 = 拿当前歌换一批相似歌重排队列。两种情形必须可区分：
+  //   ① 首次进入：队列 = 心动列表本身，**从它的第一首开始播**（种子歌不进队列 ——
+  //      留在队首会让播放列表第一行永远显示一首没在播的歌）；
+  //   ② 再次进入：保留当前歌继续播，种子歌放队首、其余换成新列表。
+  const body = methodBody(stripComments(s.store), 'enterHeartbeat');
+  if (body == null) return { ok: false, detail: 'store.ts 未定义 enterHeartbeat' };
+  const missing = [];
+  if (!/similarSongs\(/.test(body)) missing.push('未调 similarSongs');
+  // 队列必须按"首次/再次"分两种形态。⚠️ 只判 `[seed, ...pick]` 出现过是不够的：
+  // 改成 `const nextQueue = [seed, ...pick]`（无视 already）后那行照样在源码里，
+  // 断言会假绿，而运行时首次进入会把种子歌摆在队首却不播它（反证轮可打红）。
+  if (!/already\s*\?\s*\[\s*seed\s*,\s*\.\.\.pick\s*\]\s*:\s*pick/.test(body))
+    missing.push('队列未按首次/再次进入分两种形态（首次进入的种子歌不该留在队首）');
+  // 排除种子自身（接口可能把它自己算进相似里 → 队列里出现两遍）
+  if (!/songKey/.test(body)) missing.push('未按 songKey 排除当前曲');
+  // 首次/再次：由 heartbeatSeeded 区分，且**必须真的读它**。
+  // ⚠️ 只判"源码里出现过 heartbeatSeeded"是不够的：把判定改成 `const already = false;`
+  // 后，后面那句 `heartbeatSeeded: true` 仍在源码里 —— 断言照样绿，而"区分首次/再次"已经没了（反证轮实测）。
+  if (!/already\s*=\s*get\(\)\.heartbeatSeeded/.test(body))
+    missing.push('未真的读 heartbeatSeeded 来区分首次/再次进入');
+  if (!/heartbeatSeeded:\s*true/.test(body)) missing.push('未把 heartbeatSeeded 置真');
+  // 两条路径都要在：置真的那条是"再次进入"，有 playSong 的那条是"首次进入从头播"
+  if (!/if\s*\(\s*already\s*\)/.test(body)) missing.push('缺"再次进入"分支');
+  if (!/playSong\(/.test(body)) missing.push('首次进入没有"从头播放第一首"');
+  // ⚠️ 首次进入必须从**新列表第一首**播，不能播种子歌：
+  // 写死 playSong(seed, ...) 时源码里 playSong 照样在，判"有没有 playSong"会假绿。
+  if (!/playSong\(nextQueue\[0\]/.test(body))
+    missing.push('首次进入播的不是心动列表第一首（会先播进来前那首，需求要求直接播新列表第一首）');
+  return { ok: missing.length === 0, detail: missing.length ? `enterHeartbeat：${missing.join('、')}` : '' };
+});
+add('HEARTBEAT.nextAdvances', 'HEARTBEAT', (s) => {
+  // 🔴 心动模式下 `next()` **必须先尝试在队列里前进**，只有走到队尾才换一批。
+  // 早先无条件调 enterHeartbeat()，而它的"再次进入"语义是**保留当前歌**，
+  // 于是自然播完时原地重播、整个心动模式卡死在第一首（这是本轮修掉的真实缺陷）。
   const body = methodBody(stripComments(s.store), 'next');
   if (body == null) return { ok: false, detail: 'store.ts 未定义 next' };
   const missing = [];
-  if (!/heartbeat/.test(body)) missing.push('未判 heartbeat');
-  // ⚠️ 判"这条分支真的可达"，不能只判"代码里出现过 similarSongs(" ——
-  // 把门禁写成 `&& false` 后调用照样在源码里，但运行时永远走不到（反证轮实测假阳性）。
-  // 判据取**门禁条件本身**：必须仍是 supportsSimilar(get().playbackSource)，
-  // 且它在同一条件里取反后有 fallbackNext 出口（不支持时走队列下一首，不是随机）。
-  const gate = body.match(
-    /playMode\s*===\s*'heartbeat'\s*&&\s*platform\.supportsSimilar\(\s*get\(\)\.playbackSource\s*\)/,
-  );
-  if (!gate) missing.push('心动分支被永久关闭（门禁取反）或未按平台能力分流');
-  if (!/if\s*\(\s*playMode\s*===\s*'heartbeat'/.test(body)) missing.push('缺 heartbeat 入口判断');
-  if (!/similarSongs\(/.test(body)) missing.push('未调 similarSongs');
-  // 相似结果要替换队列（否则队列越滚越杂）
-  if (!/playSong\(\s*nextSong\s*,\s*pick/.test(body)) missing.push('相似结果未作为新队列');
-  // 必须排除当前这首（接口可能把它自己算进相似里 → 立刻重播同一首）
-  if (!/songKey/.test(body)) missing.push('未按 songKey 排除当前曲');
-  // 不支持相似 / 接口失败 / 拿到空结果，三条都要有降级出口
-  const degrades = (body.match(/fallbackNext\(\)/g) || []).length;
-  if (degrades < 2) missing.push(`降级出口只有 ${degrades} 处（空结果与异常各需一条）`);
-  return { ok: missing.length === 0, detail: missing.length ? `next 的心动分支：${missing.join('、')}` : '' };
+  if (!/currentIndex\s*\+\s*1\s*<\s*queue\.length/.test(body))
+    missing.push('未判"队列里还有下一首"（会直接换一批而不前进）');
+  if (!/enterHeartbeat\(\s*\{\s*advance:\s*true\s*\}\s*\)/.test(body))
+    missing.push('队尾续播未走 advance 路径（换一批后不会前进）');
+  // advance 路径**必须真的前进**：播新列表的第一首，而不是停在原地
+  const eh = methodBody(stripComments(s.store), 'enterHeartbeat');
+  if (!/opts\?\.advance/.test(eh ?? '')) missing.push('enterHeartbeat 未支持 advance');
+  // advance 路径**必须真的前进**：播新列表的第一首，而不是停在原地。
+  // ⚠️ v2.3：首次进入的队列里**没有种子歌**（= pick），再次进入才有（= [seed, ...pick]），
+  // 所以起点要按下标条件取，不能写死 nextQueue[1]（首次进入会跳过新列表真正的第一首）。
+  if (!/startAt/.test(eh ?? '')) missing.push('advance 路径没有按"队列里有没有种子"取起点');
+  if (!/already\s*\?\s*1\s*:\s*0/.test(eh ?? ''))
+    missing.push('advance 起点未区分首次/再次进入（首次进入会跳过新列表第一首）');
+  return { ok: missing.length === 0, detail: missing.length ? `心动模式的推进：${missing.join('、')}` : '' };
 });
-add('HEARTBEAT.platformGate', 'HEARTBEAT', (s) => {
-  // 能力门禁：supportsSimilar 只对网易云为真。
-  // 这条防的是"为了让它跑起来把门禁放开" —— 那会让三个平台都去调不存在的接口。
-  if (!/supportsSimilar/.test(s.platform)) return { ok: false, detail: 'platform.ts 缺 supportsSimilar' };
-  const body = fnBodyAny(stripComments(s.platform), 'supportsSimilar');
-  if (body == null) return { ok: false, detail: 'platform.ts 未定义 supportsSimilar' };
-  const ok = /netease/.test(body) && !/kugou/.test(body) && !/qqmusic/.test(body) && !/migu/.test(body);
-  return {
-    ok,
-    detail: ok ? '' : 'supportsSimilar 应对非网易云一律 false（酷狗/QQ/咪咕无"按 songid 找相似"接口）',
-  };
-});
-add('HEARTBEAT.fallbackExists', 'HEARTBEAT', (s) => {
-  // 降级路径必须存在且是"队列下一首"（不是随机）：拿不到相似时
-  // 直接静默停下或随机跳，都与"续播"语义不符。
-  const body = methodBody(stripComments(s.store), 'fallbackNext');
-  if (body == null) return { ok: false, detail: 'store.ts 未定义 fallbackNext' };
-  const nextBody = methodBody(stripComments(s.store), 'next');
-  if (nextBody == null) return { ok: false, detail: 'store.ts 未定义 next' };
-  const ok = /fallbackNext\(\)/.test(nextBody) && /\+ 1\) %/.test(body);
-  return {
-    ok,
-    detail: ok ? '' : '取不到相似歌曲时的降级路径不完整（应有 fallbackNext 且按队列顺序取）',
-  };
+add('HEARTBEAT.restoresQueueOnLeave', 'HEARTBEAT', (s) => {
+  // 切离心动模式要把队列**恢复成原来的播放列表**（需求第 5 点）——
+  // 心动把队列换成了相似歌，不先存快照就永远拿不回来。
+  const sp = methodBody(stripComments(s.store), 'setPlayMode');
+  if (sp == null) return { ok: false, detail: 'store.ts 未定义 setPlayMode' };
+  const eh = methodBody(stripComments(s.store), 'enterHeartbeat');
+  const missing = [];
+  if (!/heartbeatRestore/.test(eh ?? '')) missing.push('enterHeartbeat 未存原队列快照');
+  if (!/heartbeatRestore/.test(sp)) missing.push('setPlayMode 未消费原队列快照（切走时恢复不出来）');
+  // 🔴 必须判**门禁条件本身**，不能只判"恢复代码在不在"：
+  // 把条件改成 `if (false)` 后，恢复那几行照样留在源码里，断言会假绿
+  // ——而运行时永远走不到，用户切走时列表仍停在相似歌上（反证轮实测抓到）。
+  if (!/playMode\s*===\s*'heartbeat'\s*&&\s*get\(\)\.heartbeatRestore/.test(sp))
+    missing.push('恢复分支的门禁不成立（被短路后代码还在、但永远走不到）');
+  if (!/queue:\s*snap\.queue/.test(sp) && !/snap\.queue/.test(sp)) missing.push('恢复时没有换回快照里的队列');
+  // ⚠️ v2.3：正在播的歌若不在原列表里，必须**置顶**（插到队首）而不是跳回原下标。
+  // 否则用户正听的那首会被悄悄换成另一首，界面毫无提示。
+  if (!/found\s*<\s*0\s*\?\s*\[\s*cur\s*,\s*\.\.\.snap\.queue\s*\]/.test(sp))
+    missing.push('正在播的歌不在原列表时没有置顶（会被换成另一首，界面无提示）');
+  // 置顶那一支的下标必须指向 0（置顶 = 第一行）
+  if (!/currentIndex:[^;]*?found\s*<\s*0\s*\?\s*0\s*:/.test(sp) && !/cur\s*&&\s*found\s*<\s*0\s*\?\s*0\s*:/.test(sp))
+    missing.push('置顶了但 currentIndex 没指向 0（抽屉会高亮到别的行）');
+  // ⚠️ 恢复时**不能**复位 heartbeatSeeded：复位了的话再切回心动会被当成首次进入、把当前歌从头重播
+  if (/heartbeatSeeded:\s*false/.test(sp)) missing.push('恢复时复位了 heartbeatSeeded（再进心动会把当前歌从头重播）');
+  return { ok: missing.length === 0, detail: missing.length ? `切离心动恢复队列：${missing.join('、')}` : '' };
 });
 
-// ── 桌面歌词（P3 · 拍板第 1 项）───────────────────────────────────────────
+// ── 播放列表入口（歌单 / 本地 / 历史 的统一语义）──────────────────────────
+add('PLAYLIST.startIndexByMode', 'PLAYER', (s) => {
+  // 需求第 2 条：点「播放全部」时，列表循环/单曲循环/顺序播放从**第一首**起，
+  // 随机播放则**随机**挑一首。用户点了具体某一首（opts.index）则以它为准 ——
+  // 精确意图不该被任何模式改写。
+  const body = methodBody(stripComments(s.store), 'playPlaylist');
+  if (body == null) return { ok: false, detail: 'store.ts 未定义 playPlaylist' };
+  const missing = [];
+  if (!/opts\?\.index\s*!=\s*null/.test(body)) missing.push('未区分"点某一首"与"播放全部"');
+  if (!/playMode\s*===\s*'shuffle'/.test(body)) missing.push('未按随机档分流（顺序档与随机档会一个样）');
+  if (!/Math\.random\(\)/.test(body)) missing.push('随机档没有随机（等于顺序播）');
+  return { ok: missing.length === 0, detail: missing.length ? `播放全部的起始位：${missing.join('、')}` : '' };
+});
+add('PLAYLIST.rowsGoThroughPlaylist', 'PLAYER', (s) => {
+  // 需求第 6 条：播放历史与本地曲库是**独立的播放列表** —— 点其中一行要把**整份列表**
+  // 设为队列并从该行开始（这样「下一首」才沿着用户看到的列表走）。
+  // 走 playPlaylist 而不是 playQueue，才能同时获得"切换列表"的联动（离开心动 → 顺序播放）。
+  const missing = [];
+  for (const [id, key] of [
+    ['local', 'localView'],
+    ['history', 'historyView'],
+  ]) {
+    const src = stripComments(s[key] ?? '');
+    if (!/playPlaylist\(/.test(src)) missing.push(`${key} 未走 playPlaylist（不是独立播放列表）`);
+    // 队列必须是"整份列表"，而不是只播点中的那一首
+    if (!/Queue\b/.test(src)) missing.push(`${key} 未构造整份列表作为队列`);
+  }
+  return { ok: missing.length === 0, detail: missing.length ? `本地/历史播放入口：${missing.join('、')}` : '' };
+});
+add('PLAYLIST.leavesHeartbeatToOrder', 'HEARTBEAT', (s) => {
+  // 需求第 4 条：切换歌单/换列表时，若当前是心动模式 → 先切成顺序播放。
+  const body = methodBody(stripComments(s.store), 'playPlaylist');
+  if (body == null) return { ok: false, detail: 'store.ts 未定义 playPlaylist' };
+  const missing = [];
+  if (!/playMode\s*===\s*'heartbeat'/.test(body)) missing.push('未判当前是否心动模式');
+  if (!/playMode:\s*'order'/.test(body)) missing.push("未切到顺序播放（'order'）");
+  // 必须**先改模式再定起始位**：否则"随机档 + 从心动切来"会走随机，与"切成顺序播放"相抵
+  const iMode = body.indexOf("playMode: 'order'");
+  const iIdx = body.indexOf('Math.random()');
+  if (iMode >= 0 && iIdx >= 0 && iMode > iIdx) missing.push('先定起始位再改模式（随机档会绕过"切成顺序播放"）');
+  return { ok: missing.length === 0, detail: missing.length ? `切歌单离开心动：${missing.join('、')}` : '' };
+});
+add('PLAYLIST.likedAutoHeartbeat', 'HEARTBEAT', (s) => {
+  // 需求第 4 条后半：「我喜欢的音乐」**单独**记着有没有开启过心动模式 ——
+  // 开启过就在切进该歌单时自动切到心动并开始播放；没开启过则沿用前一个歌单的模式。
+  const body = methodBody(stripComments(s.store), 'playPlaylist');
+  const missing = [];
+  if (!/likedHeartbeatOn/.test(body ?? '')) missing.push('未读「我喜欢的音乐」的心动开关');
+  if (!/isLiked/.test(body ?? '')) missing.push('未识别「我喜欢的音乐」（isLiked 标识）');
+  if (!/setPlayMode\(\s*'heartbeat'\s*\)/.test(body ?? '')) missing.push('开启过却没自动切到心动');
+  // 标识必须在拉歌单时打上，否则 isLiked 永远是假。
+  // ⚠️ 判"按 subscribed 找"这个**判据本身**，而不是判"源码里有没有 isLiked: true"：
+  // 后者在把 findIndex 结果打成 -1 后照样命中（标记代码还在、但永远走不到），
+  // 反证轮实测过这种假绿。
+  const left = stripComments(s.store);
+  if (!/findIndex\(\s*\(pl\)\s*=>\s*pl\.subscribed\s*===\s*false\s*\)/.test(left))
+    missing.push('未按 subscribed=false 找出「我喜欢的音乐」（判据失效 ⇒ 一条都认不出来）');
+  if (!/isLiked:\s*true/.test(left)) missing.push('找到后没有打 isLiked 标识');
+  // 改名也要钉住：那是需求第 1 条的另一半（各平台原名不一）
+  if (!/name:\s*LIKED_PLAYLIST_NAME/.test(left)) missing.push('没有把该歌单名统一改成「我喜欢的音乐」');
+  // 并且要持久化，跨会话保留（prefs.ts 不在 s.store 的拼接范围里，直接按路径读）
+  // ⚠️ 用 \b 而不是裸子串：把声明改名成 `likedHeartbeatOnRemoved` 时裸子串仍会命中（反证轮实测假绿）。
+  const prefsSrc = stripComments(readMaybe(path.join(APP, 'src', 'music', 'prefs.ts')));
+  if (!/\blikedHeartbeatOn\b/.test(prefsSrc)) missing.push('likedHeartbeatOn 未进偏好（重启就丢）');
+  return { ok: missing.length === 0, detail: missing.length ? `我喜欢的音乐的心动记忆：${missing.join('、')}` : '' };
+});
+
+// ── 播放队列抽屉（定位当前曲 + 从右滑入）────────────────────────────────
+add('QUEUE.scrollsToCurrent', 'QUEUE', (s) => {
+  // 需求第 3 条：点开播放列表要定位到正在播的那首。
+  const drawer = stripComments(s.queueDrawer ?? '');
+  const vl = stripComments(readMaybe(F.virtualList));
+  const missing = [];
+  if (!/scrollToIndex=\{currentIndex\}/.test(drawer)) missing.push('QueueDrawer 未把当前下标交给列表定位');
+  if (!/scrollToIndex/.test(vl)) missing.push('VirtualList 未支持 scrollToIndex');
+  // 定位必须与"复位到顶"在同一处裁决，否则两者打架会让抽屉先闪到顶再跳下来
+  const iIdx = vl.indexOf('scrollToIndex == null');
+  const iReset = vl.indexOf('el.scrollTop = 0');
+  if (iIdx < 0 || iReset < 0) missing.push('定位与复位未在同一分支里裁决');
+  else if (iReset < iIdx) missing.push('把 scrollTop 归零写在了定位之前（顺序反了）');
+  return { ok: missing.length === 0, detail: missing.length ? `播放列表定位：${missing.join('、')}` : '' };
+});
+add('QUEUE.heartbeatTitle', 'QUEUE', (s) => {
+  // 心动模式下队列来自 music_intelligence_list（相似歌），不是用户点开的那个歌单 ——
+  // 标题必须跟着变，否则左栏停在歌单上、抽屉里却是一批陌生的歌，两处对不上且无提示。
+  const drawer = stripComments(s.queueDrawer ?? '');
+  const missing = [];
+  if (!/isHeartbeat\s*\?\s*'心动模式'\s*:\s*'播放队列'/.test(drawer))
+    missing.push("QueueDrawer 标题未按心动模式切换（'心动模式' / '播放队列'）");
+  if (!/playMode\s*===\s*'heartbeat'/.test(drawer)) missing.push('QueueDrawer 未判当前是否心动模式');
+  // 必须由 store 的 playMode 驱动，不能写死
+  if (!/useMusicStore\(\s*\(s\)\s*=>\s*s\.playMode\s*\)/.test(drawer))
+    missing.push('QueueDrawer 未从 store 取 playMode（标题会变成写死值）');
+  return { ok: missing.length === 0, detail: missing.length ? `抽屉标题：${missing.join('、')}` : '' };
+});
+add('QUEUE.drawerSlidesIn', 'QUEUE', (s) => {
+  // 需求第 5 条：播放列表以抽屉形式**从右往左展开**。
+  const css = s.css;
+  const rule = (css.match(/\.music-drawer\s*\{([^}]*)\}/) || [, ''])[1];
+  const missing = [];
+  if (!/animation\s*:\s*music-drawer-in/.test(rule)) missing.push('抽屉没有进场动画');
+  const kf = (css.match(/@keyframes\s+music-drawer-in\s*\{([\s\S]*?)\n\}/) || [, ''])[1];
+  if (!/translateX\(100%\)/.test(kf)) missing.push('起点不是 translateX(100%)（不会从右往左滑出）');
+  if (!/translateX\(0\)/.test(kf)) missing.push('终点不是 translateX(0)');
+  // 蒙层**不能**跟着平移（整屏遮罩横移会露出下面的界面），只能淡入
+  const bd = (css.match(/\.music-drawer-bd\s*\{([^}]*)\}/) || [, ''])[1];
+  if (/translateX/.test(bd)) missing.push('蒙层也跟着平移了（遮罩横移会露出底下的界面）');
+  if (!/animation\s*:\s*music-drawer-bd-in/.test(bd)) missing.push('蒙层没有淡入动画');
+  return { ok: missing.length === 0, detail: missing.length ? `队列抽屉展开：${missing.join('、')}` : '' };
+});
+
 // 这一组断言的全都是「**静默失效**」型陷阱：每一条不满足时都不会报错，
 // 只是某个功能在真机上悄悄不工作。所以必须逐条锁死。
 add('LYRICS.rustCommands', 'LYRICS', (s) => {
   // 只定义不注册 = 不可调用，两层都要独立测到（与 RUST 组的判据同源）
-  if (!s.rustLyrics) return { ok: false, detail: 'src-tauri/src/lyrics_window.rs 不存在' };
+  if (!s.rustLyrics) return { ok: false, detail: 'src-tauri/src/commands/lyrics_window.rs 不存在' };
   const need = ['open_lyrics_window', 'close_lyrics_window', 'lyrics_push'];
   const missing = need.filter((n) => !new RegExp(`fn\\s+${n}\\s*\\(`).test(s.rustLyrics));
-  const notRegd = need.filter((n) => !new RegExp(`lyrics_window::${n}`).test(s.rustMain));
+  const notRegd = need.filter((n) => !new RegExp(`lyrics_window::${n}`).test(s.rustRegistry));
   if (missing.length) return { ok: false, detail: `未定义：${missing.join('、')}` };
   if (notRegd.length)
-    return { ok: false, detail: `已定义但未在 main.rs 注册（调用会抛 command not found）：${notRegd.join('、')}` };
+    return {
+      ok: false,
+      detail: `已定义但未在 commands/mod.rs 注册（调用会抛 command not found）：${notRegd.join('、')}`,
+    };
   return { ok: true, detail: '' };
 });
 add('LYRICS.sameOrigin', 'LYRICS', (s) => {
@@ -1164,14 +1653,14 @@ add('LYRICS.sameOrigin', 'LYRICS', (s) => {
   // localStorage 隔离 → 歌词窗读不到主窗写的字号/高亮色/锁定态。
   // 与官方登录窗口（用 External）是**不同场景**，照抄就错。
   if (!s.rustLyrics) return { ok: false, detail: 'lyrics_window.rs 不存在' };
-  const usesApp = /WebviewUrl::App\(\s*"lyrics\.html"/.test(s.rustLyrics);
+  const usesApp = /WebviewUrl::App\(\s*"templates\/lyrics\.html"/.test(s.rustLyrics);
   if (!usesApp) {
     const usesExternal = /WebviewUrl::External/.test(s.rustLyrics);
     return {
       ok: false,
       detail: usesExternal
         ? '歌词窗用了 WebviewUrl::External → 跨 origin → localStorage 隔离（读不到偏好）'
-        : '未找到 WebviewUrl::App("lyrics.html")（歌词窗必须加载应用自身页面才同 origin）',
+        : '未找到 WebviewUrl::App("templates/lyrics.html")（歌词窗必须加载应用自身页面才同 origin）',
     };
   }
   return { ok: true, detail: '' };
@@ -1210,11 +1699,11 @@ add('LYRICS.dragPermission', 'LYRICS', (s) => {
   return { ok: true, detail: '' };
 });
 add('LYRICS.viteMultiEntry', 'LYRICS', (s) => {
-  // 单入口时 dist 里没有 lyrics.html，Rust 的 WebviewUrl::App("lyrics.html") 会加载失败
-  if (!s.viteConfig) return { ok: false, detail: 'app/vite.config.ts 不存在' };
-  if (!/lyrics:\s*new URL\(\s*"\.\/lyrics\.html"/.test(s.viteConfig))
-    return { ok: false, detail: 'vite 未把 lyrics.html 配成第二个入口（dist 里不会有它）' };
-  if (!s.lyricsHtml) return { ok: false, detail: 'app/lyrics.html 不存在' };
+  // 单入口时 dist 里没有 lyrics.html，Rust 的 WebviewUrl::App("templates/lyrics.html") 会加载失败
+  if (!s.viteConfig) return { ok: false, detail: 'vite.config.ts 不存在' };
+  if (!/lyrics:\s*new URL\(\s*['"]\.\/templates\/lyrics\.html['"]/.test(s.viteConfig))
+    return { ok: false, detail: 'vite 未把 templates/lyrics.html 配成第二个入口（dist 里不会有它）' };
+  if (!s.lyricsHtml) return { ok: false, detail: 'templates/lyrics.html 不存在' };
   return { ok: true, detail: '' };
 });
 add('LYRICS.progressNotPushed', 'LYRICS', (s) => {
@@ -1376,7 +1865,7 @@ add('LYRICS.windowAutoHeight', 'LYRICS', (s) => {
   const dl = stripComments(s.desktopLyrics ?? '');
   const missing = [];
   if (!/fn\s+resize_lyrics_window/.test(rust)) missing.push('Rust 缺 resize_lyrics_window');
-  if (!/lyrics_window::resize_lyrics_window/.test(s.rustMain)) missing.push('main.rs 未注册');
+  if (!/lyrics_window::resize_lyrics_window/.test(s.rustRegistry)) missing.push('commands/mod.rs 未注册');
   if (!/fn\s+window_height_for_lines/.test(rust)) missing.push('缺高度公式函数');
   if (!/MAX_H/.test(rust)) missing.push('高度未限上限');
   if (!/set_position/.test(rust)) missing.push('未同时调整位置（变高会往屏幕下方溢出）');
@@ -1448,8 +1937,7 @@ add('AUDIO.connectDestination', 'AUDIO', (s) => {
   // 这是"让断言跟上实现"，而不是"为了让断言变绿而放宽它"（下面那条是新加的更严判据）。
   const g = stripComments(s.audioGraph ?? '');
   const missing = [];
-  if (!/\.connect\([^)]*destination\s*\)/.test(g))
-    missing.push('音频图未接回 destination（接管即静音）');
+  if (!/\.connect\([^)]*destination\s*\)/.test(g)) missing.push('音频图未接回 destination（接管即静音）');
   // 而且链路必须经过 GainNode —— 没有它，「接管后元素 volume 在部分平台失效」
   // 就会表现为用户报的"拖音量滑块没反应"。
   if (!/createGain\(/.test(g)) missing.push('未建 GainNode（音量将依赖元素 volume，部分平台会失效）');
@@ -1471,6 +1959,18 @@ add('AUDIO.singleEntry', 'AUDIO', (s) => {
   return { ok: true, detail: '' };
 });
 
+add('AUDIO.regexLiteralTolerant', 'AUDIO', () => {
+  // 正则字面量里的引号不能让剥注释器误入字符串态：否则该处之后的注释会被当成代码，
+  // 「全文只允许 N 处」型计数（如 AUDIO.singleEntry）会因注释而虚高。
+  const sample = 'const re = /["x]/g; // createMediaElementSource 只在注释\nconst keep = 1;\n';
+  const stripped = stripComments(sample);
+  const ok = !stripped.includes('createMediaElementSource') && stripped.includes('const keep');
+  return {
+    ok,
+    detail: ok ? '' : '剥注释器未识别正则字面量里的引号 ⇒ 后续注释被当代码（计数型断言会虚高）',
+  };
+});
+
 // ============================ CACHE（音乐缓存接线）============================
 // 这一组防的是**「不报错但功能等于没接」**的一类失效。
 //
@@ -1488,14 +1988,13 @@ add('CACHE.ipcWrapped', 'CACHE', (s) => {
   // 不能只判"文件里出现过这个名字" —— 注释里写一遍就能骗过。
   const ipc = stripComments(s.ipc ?? '');
   const missing = CACHE_CMDS.filter((c) => !new RegExp(`invoke<[^>]*>\\(\\s*'${c}'`).test(ipc));
-  if (missing.length)
-    return { ok: false, detail: `ipc.ts 缺封装：${missing.join('、')}（Rust 已实现但前端调不到）` };
-  // 反向：Rust 侧实现了却没在 main.rs 注册 → 运行时 "command not found"。
+  if (missing.length) return { ok: false, detail: `ipc.ts 缺封装：${missing.join('、')}（Rust 已实现但前端调不到）` };
+  // 反向：Rust 侧实现了却没在 commands/mod.rs 注册 → 运行时 "command not found"。
   // 注册这一环同样零覆盖（冻结清单不含新命令），必须单独判。
-  const main = stripComments(s.rustMain ?? '');
+  const main = stripComments(s.rustRegistry ?? '');
   const notReg = CACHE_CMDS.filter((c) => !main.includes(`music::audio_cache::${c}`));
   if (notReg.length)
-    return { ok: false, detail: `main.rs 未注册：${notReg.join('、')}（定义存在但运行时找不到命令）` };
+    return { ok: false, detail: `commands/mod.rs 未注册：${notReg.join('、')}（定义存在但运行时找不到命令）` };
   return { ok: true, detail: '' };
 });
 
@@ -1540,11 +2039,13 @@ add('CACHE.qualityFromState', 'CACHE', (s) => {
   // 传给 songUrl 的也必须是同一个 quality 变量（而不是 r.quality）
   const songUrlArgs = callArgs(body, 'platform.songUrl');
   if (!songUrlArgs) missing.push('取不到 platform.songUrl 的调用');
-  else if (songUrlArgs[2] !== 'quality')
-    missing.push(`songUrl 的档位实参是「${songUrlArgs[2]}」而不是 quality`);
+  else if (songUrlArgs[2] !== 'quality') missing.push(`songUrl 的档位实参是「${songUrlArgs[2]}」而不是 quality`);
   // 反向判据：整个 resolveOnlineUrl 里不得出现"拿返回值当 key"的写法。
   // 只判"用了 state.playbackQuality"不够 —— 那是读档位，回写仍可能用 r.quality。
-  if (/musicAudioCached\([^)]*r\.(quality|level)/.test(body) || /musicCacheDownload\([^)]*r\.(quality|level)/.test(body))
+  if (
+    /musicAudioCached\([^)]*r\.(quality|level)/.test(body) ||
+    /musicCacheDownload\([^)]*r\.(quality|level)/.test(body)
+  )
     missing.push('缓存调用把 r.quality / r.level 当成了 key（四平台值域不同 ⇒ 永不命中）');
   return { ok: missing.length === 0, detail: missing.length ? `档位来源：${missing.join('、')}` : '' };
 });
@@ -1578,9 +2079,11 @@ add('CACHE.localSongExcluded', 'CACHE', (s) => {
   const missing = [];
   for (const fn of ['lookupAudioCache', 'prefetchAudioCache']) {
     const body = fnBodyAny(store, fn);
-    if (!body) { missing.push(`store.ts 未定义 ${fn}`); continue; }
-    if (!/if\s*\(\s*song\._localPath\s*\)\s*return/.test(body))
-      missing.push(`${fn} 没有排除本地歌曲`);
+    if (!body) {
+      missing.push(`store.ts 未定义 ${fn}`);
+      continue;
+    }
+    if (!/if\s*\(\s*song\._localPath\s*\)\s*return/.test(body)) missing.push(`${fn} 没有排除本地歌曲`);
   }
   return { ok: missing.length === 0, detail: missing.length ? `本地歌曲隔离：${missing.join('、')}` : '' };
 });
@@ -1604,8 +2107,7 @@ add('CACHE.hitSkipsSongUrl', 'CACHE', (s) => {
   // 命中分支必须真的 return 出去
   const iRet = body.indexOf('return cached;');
   if (iRet < 0) return { ok: false, detail: '缓存命中后没有 return（会继续往下走，等于没接）' };
-  if (iRet > iSongUrl)
-    return { ok: false, detail: '缓存命中的 return 排在 platform.songUrl 之后（命中了还会回源）' };
+  if (iRet > iSongUrl) return { ok: false, detail: '缓存命中的 return 排在 platform.songUrl 之后（命中了还会回源）' };
   return { ok: true, detail: '' };
 });
 
@@ -1661,10 +2163,12 @@ add('CACHE.downloadFailureSilent', 'CACHE', (s) => {
   const after = afterCall(body, 'ipc.musicCacheDownload');
   if (after == null) return { ok: false, detail: 'prefetchAudioCache 里取不到 ipc.musicCacheDownload 的调用' };
   if (!/^\s*\.catch\(/.test(after))
-    return { ok: false, detail: `下载调用之后没有 .catch（实参之后是「${after.trim().slice(0, 24)}」）—— 失败会变成未处理的 Promise，抛到播放链路就是"播放失败"` };
+    return {
+      ok: false,
+      detail: `下载调用之后没有 .catch（实参之后是「${after.trim().slice(0, 24)}」）—— 失败会变成未处理的 Promise，抛到播放链路就是"播放失败"`,
+    };
   // 也不能在下载函数里 throw —— 静默放弃缓存，不静默放弃播放
-  if (/\bthrow\b/.test(body))
-    return { ok: false, detail: '预热函数里有 throw（下载失败不该打断播放）' };
+  if (/\bthrow\b/.test(body)) return { ok: false, detail: '预热函数里有 throw（下载失败不该打断播放）' };
   return { ok: true, detail: '' };
 });
 
@@ -1684,7 +2188,10 @@ add('CACHE.statsShapeForSettings', 'CACHE', (s) => {
   const need = ['total', 'lyric_bytes', 'audio_bytes', 'root', 'limit_lyric', 'limit_audio', 'providers'];
   const missing = need.filter((k) => !new RegExp(`\\b${k}\\s*[?]?\\s*:`).test(block));
   if (missing.length)
-    return { ok: false, detail: `CacheStats 缺字段：${missing.join('、')}（与 Rust models.rs 不一致 ⇒ 设置页读到 undefined 显示 0）` };
+    return {
+      ok: false,
+      detail: `CacheStats 缺字段：${missing.join('、')}（与 Rust models.rs 不一致 ⇒ 设置页读到 undefined 显示 0）`,
+    };
   return { ok: true, detail: '' };
 });
 
@@ -1697,10 +2204,10 @@ add('LYRICS.stateBackfill', 'LYRICS', (s) => {
   // 根因：主窗建窗后**立刻**推送，而那一刻歌词窗的 `listen` 尚未注册，
   // 那条事件必然丢失（Tauri 事件不缓存、不回放）。
   // 修法三环节缺任一，症状都会原样复现：
-  //   Rust 缓存 → get_lyrics_state 命令 → **在 main.rs 注册** → 歌词窗挂载后补拉
+  //   Rust 缓存 → get_lyrics_state 命令 → **在 commands/mod.rs 注册** → 歌词窗挂载后补拉
   const rust = stripComments(s.rustLyrics ?? '');
   const dl = stripComments(s.desktopLyrics ?? '');
-  const main = stripComments(s.rustMain ?? '');
+  const main = stripComments(s.rustRegistry ?? '');
   const missing = [];
   // ⚠️ 判据必须精确到"**写入**那一步"，不能只查标识符存在：
   // 把 `*g = Some(payload.clone())` 删掉（缓存永不写入＝机制等于没有）断言仍会绿；
@@ -1709,13 +2216,12 @@ add('LYRICS.stateBackfill', 'LYRICS', (s) => {
     missing.push('Rust 未把载荷写入缓存');
   if (!/fn\s+get_lyrics_state/.test(rust)) missing.push('缺 get_lyrics_state 命令');
   // 定义了但没注册 → 调用时报"命令不存在"（且被 catch 吞掉），是经典的不报错失效
-  if (!/get_lyrics_state/.test(main)) missing.push('get_lyrics_state 未在 main.rs 注册');
+  if (!/get_lyrics_state/.test(main)) missing.push('get_lyrics_state 未在 commands/mod.rs 注册');
   if (!/get_lyrics_state/.test(dl)) missing.push('歌词窗未补拉（挂载后仍是空的）');
   // 顺序：**先 listen 再补拉**。反过来的话，注册与拉取之间的事件会漏掉。
   const iListen = dl.indexOf("listen<LyricsPayload | LyricsPrefsPayload>('lyrics://state'");
   const iPull = dl.indexOf('get_lyrics_state');
-  if (iListen >= 0 && iPull >= 0 && iPull < iListen)
-    missing.push('顺序错：先补拉后注册 listen（中间会漏事件）');
+  if (iListen >= 0 && iPull >= 0 && iPull < iListen) missing.push('顺序错：先补拉后注册 listen（中间会漏事件）');
   return { ok: missing.length === 0, detail: missing.length ? `状态补拉：${missing.join('、')}` : '' };
 });
 
@@ -1725,12 +2231,12 @@ add('LYRICS.controlBridge', 'LYRICS', (s) => {
   //   ① 歌词窗没发指令 ② Rust 没定义命令 ③ 定义了没注册 ④ 主窗没监听
   const dl = stripComments(s.desktopLyrics ?? '');
   const rust = stripComments(s.rustLyrics ?? '');
-  const main = stripComments(s.rustMain ?? '');
+  const main = stripComments(s.rustRegistry ?? '');
   const kernel = stripComments(s.kernel ?? '');
   const missing = [];
   if (!/lyrics_control/.test(dl)) missing.push('歌词窗未发控制指令');
   if (!/fn\s+lyrics_control/.test(rust)) missing.push('Rust 缺 lyrics_control 命令');
-  if (!/lyrics_control/.test(main)) missing.push('lyrics_control 未在 main.rs 注册');
+  if (!/lyrics_control/.test(main)) missing.push('lyrics_control 未在 commands/mod.rs 注册');
   if (!/lyrics:\/\/control/.test(rust)) missing.push('Rust 未 emit lyrics://control');
   if (!/listen<LyricsControlPayload>\(\s*'lyrics:\/\/control'/.test(kernel))
     missing.push('主窗未监听 lyrics://control');
@@ -1765,8 +2271,7 @@ add('LYRICS.playModeContract', 'LYRICS', (s) => {
   const missing = [];
   if (!/playMode\s*:\s*PlayMode\s*;/.test(ipc)) missing.push('ipc 的推送载荷缺 playMode 字段');
   // 限定在 payload 字面量内：以 `sentAtEpoch: Date.now()` 为起点向后找
-  if (!/sentAtEpoch\s*:\s*Date\.now\(\)[\s\S]{0,240}?playMode/.test(store))
-    missing.push('store 推送时未带 playMode');
+  if (!/sentAtEpoch\s*:\s*Date\.now\(\)[\s\S]{0,240}?playMode/.test(store)) missing.push('store 推送时未带 playMode');
   if (!/playMode\?:/.test(dl)) missing.push('歌词窗载荷类型缺 playMode');
   return { ok: missing.length === 0, detail: missing.length ? `模式契约：${missing.join('、')}` : '' };
 });
@@ -1792,7 +2297,7 @@ add('LYRICS.parseYrcUsed', 'LYRICS', (s) => {
   // ⚠️ 判据必须**限定作用域 + 数出现次数**，不能只查标识符出现过：
   // 把 loadLyrics 里那次调用删掉（只留定义）、或复制出第二个同名函数，都曾让
   // 同类断言保持全绿（本项目已栽过多次，D-31）。
-  const store = stripComments(s.store ?? '');
+  const store = s.storeLyrics ?? '';
   const missing = [];
   // ① 定义唯一
   const defs = (store.match(/export function parseYrc\b/g) || []).length;
@@ -1813,7 +2318,7 @@ add('LYRICS.lineInterpolation', 'LYRICS', (s) => {
   // 若 duration 不被推断/夹紧，"无逐字数据"的歌在渲染层就没有可插值的跨度 →
   // 效果与"没做逐字高亮"一模一样，而 parseYrc / 双层结构那几条断言**依然全绿**。
   // 所以必须单独把这条退化路径锁死。
-  const store = stripComments(s.store ?? '');
+  const store = s.storeLyrics ?? '';
   const kara = stripComments(s.karaoke ?? '');
   const missing = [];
   // ① finalizeLineDurations 存在，且被 parseLrc / parseYrc **两条路径**都调用
@@ -1891,7 +2396,8 @@ add('LYRICS.karaTimeSource', 'LYRICS', (s) => {
   if (!/progressMs/.test(kara)) missing.push('缺 progressMs 降级基准');
   if (!/performance\.now\s*\(/.test(kara)) missing.push('降级外推未用 performance.now（单调钟）');
   // 不得自行 querySelector('audio') 绕过唯一入口（audioGraph 的收口约束）
-  if (/querySelector\(\s*['"]audio['"]\s*\)/.test(kara)) missing.push("自行 querySelector('audio')（应经 audioGraph 入口）");
+  if (/querySelector\(\s*['"]audio['"]\s*\)/.test(kara))
+    missing.push("自行 querySelector('audio')（应经 audioGraph 入口）");
   return { ok: missing.length === 0, detail: missing.length ? `逐字时间来源：${missing.join('、')}` : '' };
 });
 
@@ -1913,31 +2419,76 @@ add('LYRICS.modeStoreChain', 'LYRICS', (s) => {
   const setBody = methodBody(store, 'setLyricsMode');
   if (setBody == null) missing.push('store 缺 setLyricsMode 实现');
   else if (!/savePrefs\s*\(\s*\{\s*lyricsMode\s*:/.test(setBody)) missing.push('setLyricsMode 未持久化 lyricsMode');
-  // ③ 水合白名单收口（脏值一律回落 word）
+  // ③ 水合白名单收口（脏值一律回落 LYRICS_MODE_DEF）
+  //    D-137：默认值改为 'line' 后，收口判据随之改为「显式 'word' 才逐字，其余回落默认」。
+  //    ⚠️ 刻意**不**写死 'line' 字面量 —— 那样默认值再改一次这里就会红，而红的原因
+  //    并不是缺陷（是默认改了）。锁「引用 LYRICS_MODE_DEF」才能一直守住单一事实源。
   const hyd = methodBody(store, 'hydratePrefs');
   if (hyd == null) missing.push('store 缺 hydratePrefs 实现');
-  else if (!/prefs\.lyricsMode\s*===\s*['"]line['"]\s*\?\s*['"]line['"]\s*:\s*['"]word['"]/.test(hyd))
+  else if (!/prefs\.lyricsMode\s*===\s*['"]word['"]\s*\?\s*['"]word['"]\s*:\s*LYRICS_MODE_DEF/.test(hyd))
     missing.push('hydratePrefs 未把 lyricsMode 白名单收口（脏值会原样进内存）');
   return { ok: missing.length === 0, detail: missing.length ? `歌词模式全链路：${missing.join('、')}` : '' };
 });
 
 add('LYRICS.modeLineRender', 'LYRICS', (s) => {
-  // 整行模式：当前行满亮（p=1），不走逐字/行级渐进。判据锁在 RAF tick 里那一行三元上。
-  // 防「开关做了、渲染层没接」—— 那会让"整行"选项看起来没作用。
+  /*
+   * 整行模式：**单层渲染 + RAF 不写 width + 样式无过渡**（D-137）。
+   *
+   * 为什么不再锁 `modeRef.current === 'line' ? 1 : ...` 那个三元：D-137 之前整行是
+   * 「双层 + width 写死 100%」，视觉对但结构里仍留着一条可被改写的 width 通路 ——
+   * 模式判断一旦出错（ref 指到上一行、切模式时序错位）就**静默**退回推进动画，
+   * 界面上完全看不出异常（这正是用户报的"整行高亮却还有逐渐移动的动画"）。
+   * 现在整行走单层，"无推进"由结构保证，判据也随之换成三条结构特征。
+   */
   const kara = stripComments(s.karaoke ?? '');
+  const css = stripComments(s.css ?? '');
   if (!kara) return { ok: false, detail: '未读到 KaraokeLyrics.tsx' };
   const missing = [];
   if (!/useMusicStore\s*\(\s*\(?[^)]*\)?\s*=>\s*[A-Za-z_$][\w$]*\.lyricsMode\b/.test(kara))
     missing.push('未从 store 读取 lyricsMode');
-  if (!/modeRef\.current\s*===\s*['"]line['"]\s*\?\s*1\s*:/.test(kara))
-    missing.push("整行模式未满亮（缺 modeRef.current==='line'?1: 分支）");
+  /*
+   * ① 整行分支存在，且当前行走单层（不套 kara-dup、不挂 kara-over）。
+   *
+   * 🔴 分支边界必须用「**第二个** `return (`」切，**不能**用「下一个 kara-dup 出现处」：
+   *   反证"把整行改回双层"恰恰是往整行分支里插 `kara-dup` —— 拿被测对象当切点，
+   *   切点会跟着反证一起跑掉，判据就永远看不到那次插入 ⇒ **假阳性**（实测踩过：
+   *   反证轮报 `✗ 假阳性：LYRICS.modeLineRender`）。
+   *   `return (` 是分支结构的恒定特征（整行分支内无嵌套 return），反证改不动它。
+   *   也不能靠注释文字切：stripComments 已把注释剥掉，靠注释切会永远切在 -1 上，
+   *   静默退化成"全文搜 kara-dup"而恒红。
+   */
+  const lineAt = kara.search(/if\s*\(\s*isLineMode\s*\)\s*\{/);
+  if (lineAt < 0) missing.push('缺整行模式渲染分支（未判 isLineMode）');
+  else {
+    const rest = kara.slice(lineAt);
+    const re = /return\s*\(/g;
+    re.exec(rest);
+    const m2 = re.exec(rest);
+    const seg = rest.slice(0, m2 ? m2.index : 700);
+    if (/(?<![\w-])kara-dup(?![\w-])/.test(seg)) missing.push('整行分支仍套了 kara-dup 双层（应单层）');
+    if (/(?<![\w-])kara-over(?![\w-])/.test(seg)) missing.push('整行分支仍挂了 kara-over 顶层（应单层）');
+    if (!/(?<![\w-])is-on(?![\w-])/.test(seg)) missing.push('整行分支的当前行未挂 is-on');
+  }
+  // ② RAF 在整行模式下不写 width（否则会写到已卸载的遗留 ref 上）
+  if (!/modeRef\.current\s*!==\s*['"]line['"]/.test(kara))
+    missing.push("RAF 未在整行模式跳过 width 写入（缺 modeRef.current !== 'line' 闸门）");
+  // ③ 样式侧：整行模式取消 transition（`transition: all` 会让字号渐变 ⇒ 整行缓缓位移）
+  if (!/\.music-exp-lyr-box\.is-line-mode\s+\.music-lyr-line\s*\{[^}]*transition:\s*none/.test(css))
+    missing.push('样式缺 .is-line-mode 的 transition:none（整行仍会渐变位移）');
+  // ④ 根类名必须真的把 is-line-mode 挂上去（前面几条都靠这个类生效）
+  if (!/is-line-mode/.test(kara)) missing.push('根类名未挂 is-line-mode');
   return { ok: missing.length === 0, detail: missing.length ? `整行模式渲染：${missing.join('、')}` : '' };
 });
 
 add('LYRICS.translationMerge', 'LYRICS', (s) => {
   // 翻译合并：ParsedLyricLine 有 translation 字段 + mergeTranslation 函数 + loadLyrics 真调用。
   // 防「字段/函数定义了但 loadLyrics 没接」—— 那会永远不显示翻译。
-  const store = stripComments(s.store ?? '');
+  //
+  // 另钉三件算法上的事（2026-10-16 用户报"有的歌词有翻译、有的没有"后加的）：
+  //  ① 容差必须**宽于** 0.5s：实测有平台译文时间戳整体偏移过半秒，卡 0.5s 会整段丢翻译；
+  //  ② 译文**不重复用**：否则相邻行抢同一版译文，真正该用它的那行反而空着；
+  //  ③ **同文本复用**：副歌在原文里重复出现而译文只有一版，第二处必须沿用它自己第一处的译文。
+  const store = s.storeLyrics ?? '';
   const missing = [];
   if (!/translation\?:\s*string/.test(store)) missing.push('ParsedLyricLine 缺 translation? 字段');
   if (!/function\s+mergeTranslation\s*\(/.test(store)) missing.push('缺 mergeTranslation 函数');
@@ -1945,6 +2496,15 @@ add('LYRICS.translationMerge', 'LYRICS', (s) => {
   if (body == null) missing.push('store 缺 loadLyrics 实现');
   else if (!/mergeTranslation\s*\(\s*lines\s*,\s*l\.translation\s*\|\|\s*['"]['"]/.test(body))
     missing.push("loadLyrics 未调用 mergeTranslation(lines, l.translation||'')");
+  // ① 容差：从实现里读出那个常量，必须 > 0.5（读不出来按红算，不按绿算）
+  const tol = /const TOL = (\d+(?:\.\d+)?)/.exec(store);
+  if (!tol) missing.push('mergeTranslation 里读不到容差常量 TOL');
+  else if (!(Number(tol[1]) > 0.5)) missing.push(`容差 ${tol[1]}s 仍卡在旧的 0.5s（平台整体偏移时会整段丢翻译）`);
+  // ② 译文不重复用
+  if (!/if \(used\[j\]\) continue;/.test(store)) missing.push('译文没有"已用掉"标记（相邻行会抢同一版译文）');
+  // ③ 同文本复用（重复句/副歌）
+  if (!/if \(reuse\) line\.translation = reuse;/.test(store))
+    missing.push('没有同文本复用（副歌第二处等重复句永远拿不到译文）');
   return { ok: missing.length === 0, detail: missing.length ? `翻译合并：${missing.join('、')}` : '' };
 });
 
@@ -1957,7 +2517,8 @@ add('LYRICS.translationRender', 'LYRICS', (s) => {
   if (!/showTranslation\?:\s*boolean/.test(kara)) missing.push('props 缺 showTranslation?: boolean');
   if (!/showTranslation\s*=\s*false/.test(kara)) missing.push('showTranslation 默认值不是 false');
   if (!/(?<![\w-])kara-trans(?![\w-])/.test(kara)) missing.push('缺翻译行 class kara-trans');
-  if (!/showTranslation\s*&&\s*line\.translation/.test(kara)) missing.push('翻译行未按 showTranslation && line.translation 条件渲染');
+  if (!/showTranslation\s*&&\s*line\.translation/.test(kara))
+    missing.push('翻译行未按 showTranslation && line.translation 条件渲染');
   return { ok: missing.length === 0, detail: missing.length ? `翻译渲染：${missing.join('、')}` : '' };
 });
 
@@ -2039,8 +2600,7 @@ add('LYRICS.noLagOffset', 'LYRICS', (s) => {
   if (!/\(\s*now\s*-\s*line\.time\s*\)\s*\/\s*span/.test(body))
     missing.push('缺按 (now - line.time)/span 的线性插值（去掉缓动后高亮不会推进）');
   // 线性结果必须**原样返回**（return prog），不能被二次加工后才返回
-  if (!/return\s+prog\s*;/.test(body))
-    missing.push('行级插值结果没有原样返回（return 的不是 prog 本身）');
+  if (!/return\s+prog\s*;/.test(body)) missing.push('行级插值结果没有原样返回（return 的不是 prog 本身）');
   return { ok: missing.length === 0, detail: missing.length ? `高亮同步（无滞后）：${missing.join('、')}` : '' };
 });
 
@@ -2125,10 +2685,16 @@ add('LYRICS.sliderFill', 'LYRICS', (s) => {
   }
   // ② 逐个 range input：其开始标签内必须注入 --fill
   const needFill = (src, cls, label) => {
-    if (!src) { missing.push(`未读到 ${label}`); return; }
+    if (!src) {
+      missing.push(`未读到 ${label}`);
+      return;
+    }
     // 取该 class 的那个 <input ... /> 标签（到自闭合的 /> 为止）
     const at = src.indexOf(cls);
-    if (at < 0) { missing.push(`${label} 找不到 ${cls}`); return; }
+    if (at < 0) {
+      missing.push(`${label} 找不到 ${cls}`);
+      return;
+    }
     const tag = src.slice(at, src.indexOf('/>', at));
     if (!/'--fill'/.test(tag)) missing.push(`${label} 的 ${cls} 未注入 --fill（填充永远为 0%）`);
   };
@@ -2167,8 +2733,9 @@ add('SKIN.derivedNotHardcoded', 'SKIN', (s) => {
   // 背景/文字/毛玻璃必须由 JS 派生的 CSS 变量注入（依赖封面，写死 CSS 做不到），且 CSS 消费。
   const e = stripComments(s.expanded ?? '');
   // 变量在 style 对象里以带引号的键出现（'--skin-bg': …），故正则要容忍可选引号
-  const missing = ['--skin-bg', '--skin-text', '--skin-sub', '--skin-hover', '--skin-blur']
-    .filter((v) => !new RegExp(`['"]?${esc(v)}['"]?\\s*:`).test(e));
+  const missing = ['--skin-bg', '--skin-text', '--skin-sub', '--skin-hover', '--skin-blur'].filter(
+    (v) => !new RegExp(`['"]?${esc(v)}['"]?\\s*:`).test(e),
+  );
   const css = s.css ?? '';
   if (!/background:\s*var\(--skin-bg/.test(css)) missing.push('样式未消费 --skin-bg');
   if (!/backdrop-filter:\s*var\(--skin-blur/.test(css)) missing.push('样式未消费 --skin-blur');
@@ -2272,7 +2839,8 @@ add('SKIN.vinylPause', 'SKIN', (s) => {
   const cond = (v.match(/animationPlayState:\s*isPlaying\s*\?\s*'running'\s*:\s*'paused'/g) || []).length;
   if (all === 0) return { ok: false, detail: '唱片未设 animationPlayState（暂停不会停转）' };
   if (cond === 0) return { ok: false, detail: 'animationPlayState 未按 isPlaying 取 running/paused' };
-  if (all !== cond) return { ok: false, detail: `有 ${all - cond} 处 animationPlayState 未跟随 isPlaying（该层暂停仍在转）` };
+  if (all !== cond)
+    return { ok: false, detail: `有 ${all - cond} 处 animationPlayState 未跟随 isPlaying（该层暂停仍在转）` };
   return { ok: true, detail: '' };
 });
 
@@ -2280,7 +2848,8 @@ add('SKIN.spectrumNoLyrics', 'SKIN', (s) => {
   // 音域回响激活时**不渲染歌词**（参考实现如此）：歌词面板被 !isSpectrum 守卫
   const e = stripComments(s.expanded ?? '');
   if (!/<KaraokeLyrics\b/.test(e)) return { ok: false, detail: '未渲染 <KaraokeLyrics>' };
-  if (!/\{!isSpectrum\s*\?/.test(e)) return { ok: false, detail: '歌词面板未被 !isSpectrum 守卫（音域回响下仍会显示歌词）' };
+  if (!/\{!isSpectrum\s*\?/.test(e))
+    return { ok: false, detail: '歌词面板未被 !isSpectrum 守卫（音域回响下仍会显示歌词）' };
   return { ok: true, detail: '' };
 });
 
@@ -2432,10 +3001,26 @@ add('ISLANDV.windowMode', 'ISLANDV', (s) => {
   if (!/windowSize\?: number;/.test(kara)) missing.push('KaraokeLyrics 没有 windowSize 可选参数');
   if (!/scroll\?: boolean;/.test(kara)) missing.push('KaraokeLyrics 没有 scroll 开关');
   // 只断言"参数存在"不够：定义了却没用等于没有 —— 判据要落到使用点
-  if (!/const winStart = windowSize && windowSize > 0 \?/.test(kara))
-    missing.push('windowSize 未参与渲染区间的计算');
+  if (!/const winStart = windowSize && windowSize > 0 \?/.test(kara)) missing.push('windowSize 未参与渲染区间的计算');
   if (!/if \(!scroll\) return;/.test(kara)) missing.push('scroll 未作用于 scrollIntoView');
   return { ok: missing.length === 0, detail: missing.length ? `窗口模式：${missing.join('、')}` : '' };
+});
+
+add('LYRICS.seekDeferLocate', 'LYRICS', (s) => {
+  /*
+   * 诉求（2026-10-16 用户报）：拖进度条时歌词不要跟着跳 —— 拖拽中不定位，松手后等 2s 再定位。
+   *
+   * 三条判据分别钉"参数存在 / 真的作用于定位 / 松手有延时"，再加一条钉调用侧：
+   * 只加 prop 不传等于没接（那种实现下所有静态断言仍全绿，而界面照旧跳）。
+   */
+  const kara = karaSrc(s);
+  const missing = [];
+  if (!/seeking\?: boolean;/.test(kara)) missing.push('KaraokeLyrics 没有 seeking 可选参数');
+  if (!/if \(seeking\) \{/.test(kara)) missing.push('seeking 未作用于定位效果（拖拽中仍会定位）');
+  if (!/setTimeout\([\s\S]{0,160}2000\)/.test(kara)) missing.push('松手后没有 2s 延时定位');
+  const exp = s.expanded ?? '';
+  if (!/seeking=\{/.test(exp)) missing.push('ExpandedPlayer 未把拖拽态传给 KaraokeLyrics（prop 加了没接）');
+  return { ok: missing.length === 0, detail: missing.length ? `拖拽避让：${missing.join('、')}` : '' };
 });
 
 add('ISLANDV.windowIdleStart', 'ISLANDV', (s) => {
@@ -2448,8 +3033,7 @@ add('ISLANDV.windowIdleStart', 'ISLANDV', (s) => {
   // 必须把负的 activeIndex 夹回 0（两种等价写法都接受，避免把判据绑死在某一种实现上）
   const expr = m[1];
   const clamped = /Math\.max\(0,\s*activeIndex\)/.test(expr) || /activeIndex\s*<\s*0\s*\?\s*0/.test(expr);
-  if (!clamped)
-    return { ok: false, detail: `winStart 未把 -1 夹回 0（未开唱时歌词卡会是空的）：${expr.trim()}` };
+  if (!clamped) return { ok: false, detail: `winStart 未把 -1 夹回 0（未开唱时歌词卡会是空的）：${expr.trim()}` };
   // 终点也要夹住，否则最后一句之后会越界（同样是不报错、只是少一行）
   const mEnd = /const winEnd\s*=\s*([^;]+);/.exec(kara);
   if (!mEnd || !/Math\.min\(lines\.length/.test(mEnd[1]))
@@ -2481,8 +3065,7 @@ add('ISLANDV.pureMusic', 'ISLANDV', (s) => {
   if (!/♪ 纯音乐，请欣赏/.test(isl)) missing.push('歌词卡缺纯音乐降级文案');
   if (!/\.di-lyr-empty\s*\{/.test(css)) missing.push('样式缺 .di-lyr-empty 样式');
   // 文案必须挂在「无歌词」分支**里**：无条件渲染会与真歌词叠在一起（两行字糊在一块）
-  if (!/lines\.length\s*>\s*0\s*\?[\s\S]*?♪ 纯音乐，请欣赏/.test(isl))
-    missing.push('降级文案不在「无歌词」分支里');
+  if (!/lines\.length\s*>\s*0\s*\?[\s\S]*?♪ 纯音乐，请欣赏/.test(isl)) missing.push('降级文案不在「无歌词」分支里');
   return { ok: missing.length === 0, detail: missing.length ? `纯音乐降级：${missing.join('、')}` : '' };
 });
 
@@ -2490,12 +3073,53 @@ add('ISLANDV.toggleBothWays', 'ISLANDV', (s) => {
   const isl = islSrc(s);
   const missing = [];
   // 双向：歌词态要能回播放卡，播放态要能进歌词卡 —— 只做一个方向 = 进去出不来
-  if (!/title=\{view === 'lyrics' \? '播放' : '歌词'\}/.test(isl))
-    missing.push('切换键的 title 不是双向的');
-  if (!/view === 'lyrics' \? <Play[\s\S]{0,60}?:\s*<ListMusic/.test(isl))
+  if (!/title=\{view === 'lyrics' \? '播放' : '歌词'\}/.test(isl)) missing.push('切换键的 title 不是双向的');
+  // 图标名允许随设计调整（当前歌词态用 `AudioLines`，见提交 eb3fd1f）；钉的是「两个方向各有一个图标」
+  if (!/view === 'lyrics' \? <[A-Z]\w*[\s\S]{0,60}?:\s*<ListMusic/.test(isl))
     missing.push('切换键的图标不是双向的（歌词态→播放、播放态→歌词）');
   if (!/onToggleView=\{toggleIslandView\}/.test(isl)) missing.push('切换键未接回写偏好的 action');
   return { ok: missing.length === 0, detail: missing.length ? `视图切换：${missing.join('、')}` : '' };
+});
+
+add('ISLANDV.ctlStableAcrossViews', 'ISLANDV', (s) => {
+  // 🔴 切 di-toggle 不许跳动（2026-10-12 修）：按钮栏是 justify-content:center 的整行，
+  // 歌词卡原先把 .ui-cbtn 压到 26px ⇒ 整行总宽变 ⇒ 每个按钮的 x 全部平移，
+  // 行高 30→26 又让整行上下跳；进度条还因 .di-prog 在流内被推着走。
+  // 修法：按钮栏与进度行都**绝对定位 + 固定几何**，歌词卡不再碰 .di-ctl 的任何尺寸。
+  const missing = [];
+  const ctl = (s.css.match(/\.di-ctl\s*\{([^}]*)\}/) || [, ''])[1];
+  if (!/position\s*:\s*absolute/.test(ctl)) missing.push('.di-ctl 未绝对定位（会随流内内容高度变化而移动）');
+  if (!/height\s*:\s*30px/.test(ctl)) missing.push('.di-ctl 未固定高度 30px');
+  if (!/justify-content\s*:\s*center/.test(ctl)) missing.push('.di-ctl 不再是居中整行（判据基准变了）');
+
+  const prog = (s.css.match(/\.di-prog\s*\{([^}]*)\}/) || [, ''])[1];
+  if (!/position\s*:\s*absolute/.test(prog)) missing.push('.di-prog 未绝对定位（切视图时位置会被流内内容带偏）');
+  if (!/bottom\s*:/.test(prog)) missing.push('.di-prog 未固定 bottom（宽度/位置会随两态内容重算）');
+
+  // 🔴 歌词卡**不得**再改 .di-ctl 的按钮尺寸 —— 这正是当初跳动的那一刀
+  if (/\.di-card\.is-lyr[^{]*\.di-ctl\s+\.ui-cbtn\s*\{/.test(s.css))
+    missing.push('.di-card.is-lyr 又改了 .di-ctl 内按钮尺寸（两态总宽不同 ⇒ 居中位移）');
+
+  // 两态的下内边距必须同值（内容区底边对齐，各自的高度差由 padding-top 吸收）
+  const pad = (sel) => {
+    const m = new RegExp(`\\${sel}\\s*\\{([^}]*)\\}`).exec(s.css);
+    const p = m && /padding\s*:\s*([\d.]+)px\s+([\d.]+)px\s+([\d.]+)px/.exec(m[1]);
+    return p ? p[3] : null;
+  };
+  const pbCard = pad('.di-card');
+  const pbLyr = pad('.di-card.is-lyr');
+  if (pbCard == null || pbLyr == null) missing.push('取不到 .di-card / .di-card.is-lyr 的 padding');
+  else if (pbCard !== pbLyr) missing.push(`两态下内边距不同（${pbCard} vs ${pbLyr}）⇒ 内容区底边不对齐`);
+
+  // di-toggle 外层必须与按钮同尺寸（它内层的 26px 按钮靠外层留白占住位置）
+  const tg = (s.css.match(/\.di-toggle\s*\{([^}]*)\}/) || [, ''])[1];
+  if (!/width\s*:\s*30px/.test(tg) || !/height\s*:\s*30px/.test(tg))
+    missing.push('.di-toggle 外层未固定 30×30（外层随内容变小 ⇒ 整行总宽变 ⇒ 居中位移）');
+  if (!/flex\s*:\s*0\s+0\s+auto/.test(tg)) missing.push('.di-toggle 未 flex:0 0 auto（会被 flex 压缩改宽度）');
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? `按钮栏/进度条两态稳定性：${missing.join('、')}` : '',
+  };
 });
 
 add('ISLANDV.cardSize', 'ISLANDV', (s) => {
@@ -2505,8 +3129,7 @@ add('ISLANDV.cardSize', 'ISLANDV', (s) => {
   if (!/const EXPANDED_WIDTH = 320;/.test(isl)) missing.push('展开宽不是 320');
   if (!/const MUSIC_EXPANDED_HEIGHT = 150;/.test(isl)) missing.push('音乐卡展开高不是 150');
   // 高度分支必须仍取这个常量（常量改了而计算式没跟上、或反过来，都会给出第三个尺寸）
-  if (!/\? MUSIC_EXPANDED_HEIGHT/.test(isl))
-    missing.push('音乐卡展开高度不再取 MUSIC_EXPANDED_HEIGHT');
+  if (!/\? MUSIC_EXPANDED_HEIGHT/.test(isl)) missing.push('音乐卡展开高度不再取 MUSIC_EXPANDED_HEIGHT');
   return { ok: missing.length === 0, detail: missing.length ? `歌词卡尺寸：${missing.join('、')}` : '' };
 });
 
@@ -2532,8 +3155,7 @@ add('ISLANDV.fontSizeLocal', 'ISLANDV', (s) => {
   const css = s.css ?? '';
   const missing = [];
   // 注入的值必须来自卡片自己的常量，不能是写死的魔法数字
-  if (!/--di-lyr-size': `\$\{ISLAND_LYR_SIZE_NEXT\}px`/.test(isl))
-    missing.push('注入的字号不是卡片自己的常量');
+  if (!/--di-lyr-size': `\$\{ISLAND_LYR_SIZE_NEXT\}px`/.test(isl)) missing.push('注入的字号不是卡片自己的常量');
   if (!/\.di-card \.di-lyr \.music-lyr-line \{[^}]*var\(--di-lyr-size/.test(css))
     missing.push('下一句字号未用 --di-lyr-size');
   if (!/\.di-card \.di-lyr \.music-lyr-line\.is-on \{[^}]*var\(--di-lyr-on-size/.test(css))
@@ -2550,13 +3172,12 @@ add('ISLANDV.desktopLyricsKept', 'ISLANDV', (s) => {
   if (!existsSync(F.desktopLyrics) || !/export function DesktopLyrics\b/.test(stripComments(s.desktopLyrics ?? '')))
     missing.push('screens/lyrics/DesktopLyrics.tsx 不在或没了 DesktopLyrics');
   if (!existsSync(F.rustLyrics) || !/open_lyrics_window/.test(s.rustLyrics ?? ''))
-    missing.push('src-tauri/src/lyrics_window.rs 不在或没了 open_lyrics_window');
-  if (!existsSync(F.lyricsHtml)) missing.push('app/lyrics.html 不在');
+    missing.push('src-tauri/src/commands/lyrics_window.rs 不在或没了 open_lyrics_window');
+  if (!existsSync(F.lyricsHtml)) missing.push('templates/lyrics.html 不在');
   const store = stripComments(s.store ?? '');
   if (!hasMethodImpl(store, 'pushLyricsState')) missing.push('store 的 pushLyricsState 实现没了');
   if (!/\bdesktopLyricsFontSize\b/.test(store)) missing.push('desktopLyrics* 偏好没了');
-  if (!/export const openLyricsWindow\b/.test(stripComments(s.ipc ?? '')))
-    missing.push('ipc 的 openLyricsWindow 没了');
+  if (!/export const openLyricsWindow\b/.test(stripComments(s.ipc ?? ''))) missing.push('ipc 的 openLyricsWindow 没了');
   // 主窗侧唯一的窗口入口（设置页那一项与它共用同一个 store action）
   if (!/lyricsWindowOpen \? '关闭桌面歌词' : '桌面歌词'/.test(stripComments(s.playerBar ?? '')))
     missing.push('PlayerBar 的桌面歌词开关没了');
@@ -2584,7 +3205,8 @@ add('RESTORE.snapshotPersisted', 'RESTORE', (s) => {
   if (!hasMethodImpl(store, 'persistSnapshot')) missing.push('store 的 persistSnapshot 实现没了');
   const inStore = occurrences(store, 'get().persistSnapshot()');
   if (inStore < 2) missing.push(`store 里 persistSnapshot 只被调 ${inStore} 次（应 ≥2：切歌后 / 暂停时）`);
-  if (!/s\.persistSnapshot\(\)/.test(kernel)) missing.push('MusicKernel 没有兜底定时器存快照（正听着直接退出会丢进度）');
+  if (!/s\.persistSnapshot\(\)/.test(kernel))
+    missing.push('MusicKernel 没有兜底定时器存快照（正听着直接退出会丢进度）');
   if (!/SNAPSHOT_PERSIST_INTERVAL_MS/.test(kernel)) missing.push('MusicKernel 的定时器没���用导出的间隔常量');
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
 });
@@ -2592,7 +3214,7 @@ add('RESTORE.snapshotPersisted', 'RESTORE', (s) => {
 add('RESTORE.snapshotVersioned', 'RESTORE', (s) => {
   // 版本校验：localStorage 跨版本存活，不校验就会拿着旧结构继续跑
   // （症状"恢复了但队列是空的"，且不报错）。
-  const body = fnBodyAny(stripComments(s.store ?? ''), 'readResumeSnapshot') || '';
+  const body = fnBodyAny(s.storePersist ?? '', 'readResumeSnapshot') || '';
   const missing = [];
   if (!/SNAPSHOT_VERSION/.test(body)) missing.push('readResumeSnapshot 不认版本号');
   if (!/s\.v\s*!==\s*SNAPSHOT_VERSION/.test(body)) missing.push('readResumeSnapshot 没有「版本不符即当没有」的判据');
@@ -2607,7 +3229,7 @@ add('RESTORE.truncateKeepsCurrent', 'RESTORE', (s) => {
   // ⚠️ 这里**不用 fnBodyAny 取函数体**：该函数签名带内联对象返回类型
   // `): { queue: Song[]; index: number } {`，取体工具会把**类型注解里的 `{`**
   // 当成函数体起点（已实测取空 → 判据恒红）。改用两条实现细节上**唯一**的锚点。
-  const store = stripComments(s.store ?? '');
+  const store = s.storePersist ?? '';
   const missing = [];
   if (!/index:\s*index\s*-\s*start/.test(store)) missing.push('截断后没有重算 index（当前歌会被截出窗口）');
   if (!/queue\.slice\(start,\s*start\s*\+\s*max\)/.test(store)) missing.push('截断不是按 start 窗口切');
@@ -2621,7 +3243,8 @@ add('RESTORE.playbackSourcePersisted', 'RESTORE', (s) => {
   const store = stripComments(s.store ?? '');
   const missing = [];
   if (!/savePrefs\(\{\s*playbackSource:\s*p\s*\}\)/.test(store)) missing.push('切平台时没存 playbackSource 偏好');
-  if (!/ALL_PROVIDERS\.includes\(prefs\.playbackSource/.test(store)) missing.push('hydratePrefs 没有对 playbackSource 做白名单收口');
+  if (!/ALL_PROVIDERS\.includes\(prefs\.playbackSource/.test(store))
+    missing.push('hydratePrefs 没有对 playbackSource 做白名单收口');
   if (!/playbackSource:\s*'netease'/.test(store)) missing.push('playbackSource 初值不再是默认netease');
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
 });
@@ -2633,9 +3256,11 @@ add('RESTORE.verdictThreeStates', 'RESTORE', (s) => {
   const missing = [];
   if (!body) missing.push('loginVerdict 没了');
   else {
-    if (!/===\s*null\s*\|\|\s*info\s*===\s*undefined/.test(body)) missing.push('没把「null / undefined」判为 probe_failed');
+    if (!/===\s*null\s*\|\|\s*info\s*===\s*undefined/.test(body))
+      missing.push('没把「null / undefined」判为 probe_failed');
     if (!/return\s+'probe_failed'/.test(body)) missing.push('缺 probe_failed 返回值');
-    if (!/\.logged_in\s*\?\s*'valid'\s*:\s*'logged_out'/.test(body)) missing.push('logged_in 没有二分映射到 valid / logged_out');
+    if (!/\.logged_in\s*\?\s*'valid'\s*:\s*'logged_out'/.test(body))
+      missing.push('logged_in 没有二分映射到 valid / logged_out');
   }
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
 });
@@ -2703,11 +3328,13 @@ add('RESTORE.seekAfterMetadata', 'RESTORE', (s) => {
   const kernel = stripComments(s.kernel ?? '');
   const missing = [];
   const onMeta = kernel.split('onLoadedMetadata')[1]?.slice(0, 900) ?? '';
-  if (!/currentTime\s*=\s*resumeAtMs\s*\/\s*1000/.test(onMeta)) missing.push('onLoadedMetadata 里没有设 currentTime（定位会静默失效）');
+  if (!/currentTime\s*=\s*resumeAtMs\s*\/\s*1000/.test(onMeta))
+    missing.push('onLoadedMetadata 里没有设 currentTime（定位会静默失效）');
   if (!/clearResumeAt\(\)/.test(onMeta)) missing.push('onLoadedMetadata 里没有清 resumeAtMs（会重复定位）');
   // 反向：playUrl 变化的 effect 里**不能**再设 currentTime（那是未加载完时就设）
   const playEffect = kernel.split('播放/暂停同步')[1]?.split('}, [')[0] ?? '';
-  if (/currentTime\s*=/.test(playEffect)) missing.push('播放同步 effect 里仍在设 currentTime（未加载完，浏览器会忽略）');
+  if (/currentTime\s*=/.test(playEffect))
+    missing.push('播放同步 effect 里仍在设 currentTime（未加载完，浏览器会忽略）');
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
 });
 
@@ -2718,7 +3345,8 @@ add('RESTORE.localSkipsCorsFallback', 'RESTORE', (s) => {
   const kernel = stripComments(s.kernel ?? '');
   const missing = [];
   if (!/isLocalFile/.test(kernel)) missing.push('onError 没有区分本地文件');
-  if (!/_localPath/.test(kernel)) missing.push('本地判定没有用 currentSong._localPath（用 URL 前缀会误判网络歌走本地代理）');
+  if (!/_localPath/.test(kernel))
+    missing.push('本地判定没有用 currentSong._localPath（用 URL 前缀会误判网络歌走本地代理）');
   if (!/corsMode\s*&&\s*a\s*&&\s*!isLocalFile/.test(kernel)) missing.push('CORS 降级条件没有排除本地文件');
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
 });
@@ -2731,7 +3359,8 @@ add('RESTORE.skipLimitRestoring', 'RESTORE', (s) => {
   if (!/restoring\s*\?\s*Math\.max\(1,\s*get\(\)\.queue\.length\)\s*:\s*10/.test(store)) {
     missing.push('跳歌上限没有「恢复态用队列长度、平时 10 首」的分流');
   }
-  if (!/if\s*\(!restoring\)\s*get\(\)\.toast\(/.test(store)) missing.push('恢复态仍在弹「无版权已跳过」提示（用户还没操作，是噪音）');
+  if (!/if\s*\(!restoring\)\s*get\(\)\.toast\(/.test(store))
+    missing.push('恢复态仍在弹「无版权已跳过」提示（用户还没操作，是噪音）');
   if (!/restoring[\s\S]{0,400}clearQueue\(\)/.test(store)) missing.push('恢复态遍历完没有清空队列（播放条不会隐藏）');
   if (!hasMethodImpl(store, 'handleRestoreFailed')) missing.push('handleRestoreFailed 实现没了');
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
@@ -2744,7 +3373,8 @@ add('RESTORE.onlyOnce', 'RESTORE', (s) => {
   const missing = [];
   if (!/restoreAttempted:\s*boolean/.test(store)) missing.push('store 没有 restoreAttempted 闸字段');
   const body = methodBody(store, 'restoreSession') || '';
-  if (!/if\s*\(get\(\)\.restoreAttempted\)\s*return;/.test(body)) missing.push('restoreSession 入口没有闸（切屏会重复恢复并覆盖用户操作）');
+  if (!/if\s*\(get\(\)\.restoreAttempted\)\s*return;/.test(body))
+    missing.push('restoreSession 入口没有闸（切屏会重复恢复并覆盖用户操作）');
   if (!/restoreSession/.test(screen)) missing.push('MusicScreen 没有调用 restoreSession');
   // 必须挂在音乐屏（恢复要显示播放条），且不能放进 init（init 会重跑）
   if (/init:\s*[\s\S]{0,600}restoreSession\(\)/.test(store)) missing.push('恢复被塞进 init 里（切屏重跑会重复恢复）');
@@ -2825,8 +3455,7 @@ add('WEBVIEW.loginExternal', 'WEBVIEW', (s) => {
         'music/mod.rs 里出现了 WebviewUrl::App —— 登录窗/弹窗必须加载平台官方页面（External），不能加载应用自身页面',
     };
   const ext = (rust.match(/WebviewUrl::External\s*\(/g) || []).length;
-  if (ext < 5)
-    return { ok: false, detail: `只有 ${ext} 处 WebviewUrl::External（四平台登录窗 + OAuth 弹窗共 5 处）` };
+  if (ext < 5) return { ok: false, detail: `只有 ${ext} 处 WebviewUrl::External（四平台登录窗 + OAuth 弹窗共 5 处）` };
   return { ok: true, detail: '' };
 });
 
@@ -2845,7 +3474,29 @@ function runAll(s, ids) {
   return res;
 }
 
-const GROUPS = ['RUST', 'IPC', 'PLATFORM', 'STORE', 'DUR', 'SEARCH', 'UI', 'PLAYER', 'HEARTBEAT', 'LYRICS', 'AUDIO', 'CACHE', 'SKIN', 'QUEUE', 'MENU', 'ISLANDV', 'RESTORE', 'KEYS', 'WEBVIEW'];
+const GROUPS = [
+  'RUST',
+  'IPC',
+  'PLATFORM',
+  'STORE',
+  'DUR',
+  'SEARCH',
+  'UI',
+  'PLAYER',
+  'PLAYLIST',
+  'HEARTBEAT',
+  'LYRICS',
+  'AUDIO',
+  'CACHE',
+  'SKIN',
+  'QUEUE',
+  'MENU',
+  'ISLANDV',
+  'RESTORE',
+  'KEYS',
+  'WEBVIEW',
+  'CAPTURE',
+];
 function printGrouped(res) {
   let pass = 0;
   let fail = 0;
@@ -2887,8 +3538,7 @@ add('QUEUE.adoptOutOfQueue', 'QUEUE', (s) => {
   // 此前此处"什么都不做"，于是从播放历史点一首队列外的歌会造成状态矛盾。
   if (!/findIndex/.test(body)) missing.push('未在现有队列里查找');
   // 只认 `set({ queue:` 这种**显式改队列**的写法：if 分支用的是 `queue,` 缩写，不会误命中
-  if (!/set\(\{[^}]*queue:/.test(body))
-    missing.push('不在队列时未写入 queue（currentSong 会与队列项不一致）');
+  if (!/set\(\{[^}]*queue:/.test(body)) missing.push('不在队列时未写入 queue（currentSong 会与队列项不一致）');
   if (!/MAX_PLAY_QUEUE/.test(body)) missing.push('未处理队列已满的边界');
   return { ok: missing.length === 0, detail: missing.length ? `队列接纳：${missing.join('、')}` : '' };
 });
@@ -2898,8 +3548,7 @@ add('QUEUE.playNextInsert', 'QUEUE', (s) => {
   if (!body) return { ok: false, detail: 'store 没有 playNext（右键「下一首播放」依赖它）' };
   const missing = [];
   // 已在队列里 → 必须先摘掉再插，否则同一首在队列里出现两份
-  if (!/filter\(\(s\)\s*=>\s*songKey\(s\)\s*!==\s*key\)/.test(body))
-    missing.push('未去重（同一首会在队列里出现两次）');
+  if (!/filter\(\(s\)\s*=>\s*songKey\(s\)\s*!==\s*key\)/.test(body)) missing.push('未去重（同一首会在队列里出现两次）');
   // 插入点必须"按当前歌在新数组里的位置 +1"算 —— 不能用 currentIndex + 1 推：
   // 摘掉一项会让后面的项前移，那正是位置漂移的来源
   if (!/at\s*>=\s*0\s*\?\s*at\s*\+\s*1\s*:\s*0/.test(body))
@@ -2942,12 +3591,11 @@ function exportSection(src, name) {
 }
 
 add('MENU.portal', 'MENU', (s) => {
-  const src = stripComments(s.songMenu ?? '');
+  const src = stripComments(s.contextMenu ?? '');
   const missing = [];
   if (!/\bcreatePortal\s*\(/.test(src)) missing.push('菜单没走 createPortal');
   // 目标必须是 body：列表都在 overflow 容器里，挂在行内会被裁掉
-  if (!/createPortal\([\s\S]*?\bdocument\.body\b\s*,/.test(src))
-    missing.push('portal 的目标不是 document.body');
+  if (!/createPortal\([\s\S]*?\bdocument\.body\b\s*,/.test(src)) missing.push('portal 的目标不是 document.body');
   return {
     ok: missing.length === 0,
     detail: missing.length ? `菜单未挂到 body（会被滚动容器裁掉）：${missing.join('、')}` : '',
@@ -2962,87 +3610,81 @@ add('MENU.portal', 'MENU', (s) => {
  * 断言照样绿 —— 反证轮实测抓出的假阳性（改 false 仍判绿），故这里把整条语句钉死。
  */
 const isCaptureListener = (src, evt, handler) =>
-  new RegExp(
-    `addEventListener\\(\\s*['"]${esc(evt)}['"]\\s*,\\s*${esc(handler)}\\s*,\\s*true\\s*\\)`,
-  ).test(src);
+  new RegExp(`addEventListener\\(\\s*['"]${esc(evt)}['"]\\s*,\\s*${esc(handler)}\\s*,\\s*true\\s*\\)`).test(src);
 
 add('MENU.closeCapture', 'MENU', (s) => {
-  const src = stripComments(s.songMenu ?? '');
+  const src = stripComments(s.contextMenu ?? '');
   const missing = [];
   // 必须是 mousedown + 捕获阶段：click 到达 window 时行的 onClick 已经先跑完 →
   // 点菜单项会顺带播放这一行（用户只看到"歌切了"，说不清为什么）
-  if (!isCaptureListener(src, 'mousedown', 'onDown'))
-    missing.push('外部关闭不是「mousedown + 捕获阶段」');
+  if (!isCaptureListener(src, 'mousedown', 'onDown')) missing.push('外部关闭不是「mousedown + 捕获阶段」');
   if (/addEventListener\(\s*['"]click['"]/.test(src))
     missing.push('用 click 做外部关闭（会被行 onClick 抢先，点菜单项 = 顺带播这一行）');
   return { ok: missing.length === 0, detail: missing.length ? `关闭监听：${missing.join('、')}` : '' };
 });
 
 add('MENU.scrollCapture', 'MENU', (s) => {
-  const src = stripComments(s.songMenu ?? '');
+  const src = stripComments(s.contextMenu ?? '');
   const missing = [];
   // scroll **不冒泡**：只有捕获阶段的 window 监听能听到内层容器的滚动，否则菜单飘在原处
-  if (!isCaptureListener(src, 'scroll', 'onViewChange'))
+  if (!isCaptureListener(src, 'scroll', 'onClose'))
     missing.push('scroll 监听不是捕获阶段（听不到内层容器滚动 → 菜单与内容脱节）');
   if (!/addEventListener\(\s*['"]resize['"]\s*,/.test(src)) missing.push('resize 未关闭菜单');
   return { ok: missing.length === 0, detail: missing.length ? `视口变化关闭：${missing.join('、')}` : '' };
 });
 
 add('MENU.esc', 'MENU', (s) => {
-  const src = stripComments(s.songMenu ?? '');
+  const src = stripComments(s.contextMenu ?? '');
+  // ContextMenu 用「!== 'Escape' 早返回」的写法（而非 === 分支），故判据认这两种形态
   const ok =
     /addEventListener\(\s*['"]keydown['"]/.test(src) &&
-    /e\.key\s*===\s*['"]Escape['"]/.test(src) &&
-    /\bclose\(\)/.test(src);
+    /e\.key\s*!==\s*['"]Escape['"]/.test(src) &&
+    /\bonClose\(\)/.test(src);
   return { ok, detail: ok ? '' : 'Esc 不能关闭菜单（缺 keydown 监听或没判 Escape）' };
 });
 
 add('MENU.flip', 'MENU', (s) => {
-  const src = stripComments(s.songMenu ?? '');
+  const src = stripComments(s.contextMenu ?? '');
   const missing = [];
-  if (!/x\s*\+\s*MENU_W\s*>\s*window\.innerWidth/.test(src)) missing.push('未判右边界');
-  if (!/y\s*\+\s*MENU_H\s*>\s*window\.innerHeight/.test(src)) missing.push('未判下边界');
-  // 光判边界不算翻转：必须真的把坐标减去估算尺寸
-  if (!/x\s*-\s*MENU_W/.test(src)) missing.push('右边放不下时没有翻到左侧');
-  if (!/y\s*-\s*MENU_H/.test(src)) missing.push('下边放不下时没有翻到上方');
-  return { ok: missing.length === 0, detail: missing.length ? `视口边缘翻转：${missing.join('、')}` : '' };
+  // 量**真实尺寸**后夹进视口（比常量估算准：菜单没渲染时拿不到真宽高）
+  if (!/getBoundingClientRect\(\)/.test(src)) missing.push('未量菜单真实尺寸');
+  if (!/window\.innerHeight\s*-\s*r\.height/.test(src)) missing.push('未判下边界');
+  if (!/window\.innerWidth\s*-\s*r\.width/.test(src)) missing.push('未判右边界');
+  if (!/Math\.max\(8,\s*Math\.min\(/.test(src)) missing.push('未把坐标夹进视口（贴边会溢出）');
+  return { ok: missing.length === 0, detail: missing.length ? `视口边缘夹取：${missing.join('、')}` : '' };
 });
 
 add('MENU.noBubble', 'MENU', (s) => {
-  const src = stripComments(s.songMenu ?? '');
-  const n = (src.match(/e\.stopPropagation\(\)/g) || []).length;
-  // 3 处 = 菜单根节点 + 两个菜单项。portal 的事件沿 **React 树** 冒泡回行，
-  // 少一处就等于"点某一项 = 顺带点了这一行"。
-  return {
-    ok: n >= 3,
-    detail: n >= 3 ? '' : `stopPropagation 只有 ${n} 处（应为 3：菜单根节点 + 播放 + 下一首播放）`,
-  };
+  const src = stripComments(s.contextMenu ?? '');
+  // portal 的事件沿 **React 树** 冒泡回宿主；宿主是可点击的行时，根节点必须截断 onClick，
+  // 否则「点菜单项 = 顺带点了这一行」（行 onClick 会播这首歌）。
+  const ok = /onClick=\{\(e\)\s*=>\s*e\.stopPropagation\(\)\}/.test(src);
+  return { ok, detail: ok ? '' : '菜单根节点没有截断 onClick（点菜单项会顺带触发宿主行的点击）' };
 });
 
 add('MENU.playSemantics', 'MENU', (s) => {
-  const src = stripComments(s.songMenu ?? '');
+  const src = stripComments(s.songRowShared ?? '');
   const missing = [];
   // 宿主给了 onPlay 就用宿主的（与左键点击同一语义）……
-  if (!/if\s*\(\s*st\.onPlay\s*\)\s*st\.onPlay\(\s*\)/.test(src))
-    missing.push('「播放」没有优先用宿主的 onPlay');
+  if (!/if\s*\(\s*menu\.onPlay\s*\)\s*menu\.onPlay\(\s*\)/.test(src)) missing.push('「播放」没有优先用宿主的 onPlay');
   // ……没给才退回 playSong：绝不在这里猜一个"大概对"的语义
-  if (!/else\s+void\s+playSong\(st\.song\)/.test(src))
-    missing.push('宿主没给 onPlay 时未退回 playSong(song)');
+  if (!/else\s+void\s+playSong\(menu\.song\)/.test(src)) missing.push('宿主没给 onPlay 时未退回 playSong(song)');
   return { ok: missing.length === 0, detail: missing.length ? `播放语义：${missing.join('、')}` : '' };
 });
 
 add('MENU.nextItem', 'MENU', (s) => {
-  const src = stripComments(s.songMenu ?? '');
+  const src = stripComments(s.songRowShared ?? '');
   const missing = [];
   if (!/下一首播放/.test(src)) missing.push('菜单里没有「下一首播放」项');
-  if (!/playNext\(st\.song\)/.test(src)) missing.push('「下一首播放」没有调 playNext');
+  if (!/playNext\(menu\.song\)/.test(src)) missing.push('「下一首播放」没有调 playNext');
   return { ok: missing.length === 0, detail: missing.length ? `下一首播放：${missing.join('、')}` : '' };
 });
 
 add('MENU.noDownload', 'MENU', (s) => {
   // 本轮不做：取流要动 Rust。留一个"点了没反应"的菜单项比没有更糟。
-  // 判据不限作用域但限定文件（SongMenu），且**不剥注释** —— 注释里也不该出现它。
-  const hit = /下载/.test(s.songMenu ?? '');
+  // 判据不限作用域但限定三处菜单来源，且**不剥注释** —— 注释里也不该出现它。
+  const hit =
+    /下载/.test(s.songRowShared ?? '') || /下载/.test(s.queueDrawer ?? '') || /下载/.test(s.contextMenu ?? '');
   return { ok: !hit, detail: hit ? '菜单里出现了「下载」项（本轮不做，避免点了没用）' : '' };
 });
 
@@ -3051,10 +3693,10 @@ add('MENU.rowContextMenu', 'MENU', (s) => {
   if (!body) return { ok: false, detail: 'shared.tsx 里取不到 SongRow' };
   const missing = [];
   if (!/\bonContextMenu=/.test(body)) missing.push('SongRow 没接 onContextMenu（右键没反应）');
-  if (!/menu\.open\(\s*e,\s*song,\s*onPlay\s*\)/.test(body))
-    missing.push('右键没有把宿主的 onPlay 交给菜单');
+  if (!/setMenu\(\{\s*x:\s*e\.clientX,\s*y:\s*e\.clientY,\s*song,\s*onPlay\s*\}\)/.test(body))
+    missing.push('右键没有把宿主的 onPlay 带进菜单');
   if (!/onPlay\?:/.test(body)) missing.push('SongRow 没有可选的 onPlay prop');
-  if (!/\{menu\.node\}/.test(body)) missing.push('SongRow 没渲染菜单节点');
+  if (!/<ContextMenu\b/.test(body)) missing.push('SongRow 没渲染菜单（ContextMenu）');
   return { ok: missing.length === 0, detail: missing.length ? `歌曲行菜单：${missing.join('、')}` : '' };
 });
 
@@ -3080,30 +3722,33 @@ hostOnPlay('history', 'historyView', 1); // 播放历史
 add('MENU.queueRow', 'MENU', (s) => {
   const src = stripComments(s.queueDrawer ?? '');
   const missing = [];
-  const iHook = src.indexOf('useSongMenu()');
+  const iState = src.indexOf('const [menu, setMenu] = useState<');
   const iEarly = src.indexOf('if (!queueOpen) return null;');
-  if (iHook < 0) missing.push('QueueDrawer 没接菜单');
-  else if (iEarly >= 0 && iHook > iEarly)
-    missing.push('useSongMenu 在早退之后调用（放 renderItem 里同理 —— hook 顺序会随行数变）');
+  if (iState < 0) missing.push('QueueDrawer 没有菜单状态');
+  else if (iEarly >= 0 && iState > iEarly)
+    missing.push('菜单状态在早退之后声明（放 renderItem 里同理 —— 顺序会随行数变）');
   // 队列行不是 SongRow，是自己接的：不给 onPlay → 走 playSong(s) 的"在现有队列里定位"语义
-  if (!/onContextMenu=\{\(e\)\s*=>\s*menu\.open\(e,\s*s\)\}/.test(src))
-    missing.push('队列行没接 onContextMenu');
-  if (!/\{menu\.node\}/.test(src)) missing.push('QueueDrawer 没渲染菜单节点');
+  if (!/onContextMenu=\{\(e\)\s*=>\s*\{/.test(src)) missing.push('队列行没接 onContextMenu');
+  if (!/<ContextMenu\b/.test(src)) missing.push('QueueDrawer 没渲染菜单（ContextMenu）');
   return { ok: missing.length === 0, detail: missing.length ? `队列行菜单：${missing.join('、')}` : '' };
 });
 
 add('MENU.css', 'MENU', (s) => {
   const css = s.css ?? '';
-  const i = css.indexOf('.music-menu {');
+  // 菜单样式已收口到通用单元的 .ui-menu（components.scss）；music 屏不再自造 .music-menu
+  const i = css.indexOf('.ui-menu {');
   const block = i < 0 ? '' : css.slice(i, css.indexOf('}', i));
   const missing = [];
-  if (!block) missing.push('样式缺 .music-menu 规则');
+  if (!block) missing.push('样式缺 .ui-menu 规则');
   else {
-    if (!/z-index:\s*\d+/.test(block)) missing.push('.music-menu 没有 z-index（会被抽屉/展开播放器压住）');
     const tokens = (block.match(/var\(--md-/g) || []).length;
-    if (tokens < 3) missing.push(`.music-menu 只用了 ${tokens} 个设计令牌（深色模式不跟随）`);
+    if (tokens < 3) missing.push(`.ui-menu 只用了 ${tokens} 个设计令牌（深色模式不跟随）`);
   }
-  if (!/\.music-menu-item\s*\{/.test(css)) missing.push('样式缺 .music-menu-item 规则');
+  // 右键菜单（.ui-ctx）必须高于队列抽屉(72)/展开播放器(70)、低于模态(80)
+  const ci = css.indexOf('.ui-menu.ui-ctx');
+  const ctxBlock = ci < 0 ? '' : css.slice(ci, css.indexOf('}', ci));
+  if (!/z-index:\s*78\b/.test(ctxBlock)) missing.push('右键菜单未抬到 z-index 78（会被队列抽屉/展开播放器压住看不见）');
+  if (!/\.ui-menu-item\s*\{/.test(css)) missing.push('样式缺 .ui-menu-item 规则');
   return { ok: missing.length === 0, detail: missing.length ? `菜单样式：${missing.join('、')}` : '' };
 });
 
@@ -3189,12 +3834,17 @@ add('KEYS.mountedInKernel', 'KEYS', (s) => {
   const missing = [];
   if (!/from '@hooks\/useMusicHotkeys'/.test(kernel)) missing.push('MusicKernel 没有引入 useMusicHotkeys');
   // 调用点：必须是 `useMusicHotkeys();` 这样的**调用**，而不是只import
-  if (!/^\s*useMusicHotkeys\(\);\s*$/m.test(kernel)) missing.push('MusicKernel 没有实际调用 useMusicHotkeys()（只 import 不调用 = 快捷键永不生效）');
+  if (!/^\s*useMusicHotkeys\(\);\s*$/m.test(kernel))
+    missing.push('MusicKernel 没有实际调用 useMusicHotkeys()（只 import 不调用 = 快捷键永不生效）');
   // 钉死"只此一处"：kernel 里出现两次调用就意味着重复注册监听器
   const calls = occurrences(kernel, 'useMusicHotkeys();');
-  if (calls !== 1) missing.push(`MusicKernel 里 useMusicHotkeys() 出现 ${calls} 次（应恰为 1 次：重复调用 = 监听器重复注册，一次按键触发多次）`);
+  if (calls !== 1)
+    missing.push(
+      `MusicKernel 里 useMusicHotkeys() 出现 ${calls} 次（应恰为 1 次：重复调用 = 监听器重复注册，一次按键触发多次）`,
+    );
   // 反向：MusicScreen 里绝不能有（搬过去就等于前功尽弃）
-  if (/useMusicHotkeys\(\)/.test(screen)) missing.push('MusicScreen 里也调了 useMusicHotkeys()（条件渲染，切屏即卸载 ⇒ 快捷键失效）');
+  if (/useMusicHotkeys\(\)/.test(screen))
+    missing.push('MusicScreen 里也调了 useMusicHotkeys()（条件渲染，切屏即卸载 ⇒ 快捷键失效）');
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
 });
 
@@ -3234,12 +3884,17 @@ add('KEYS.yieldSelectors', 'KEYS', (s) => {
   if (!blk) return { ok: false, detail: '找不到 INTERACTIVE_SELECTOR 选择器名单' };
   const missing = [];
   // 每项都要求**带引号的精确条目**（'input' 这种），而不是子串命中
-  if (!/^\s*'input',?\s*$/m.test(blk)) missing.push(`判据缺 'input'（打字；音量滑块本身就是 input[type=range]，抢过来会让同一控件有两套步长）`);
+  if (!/^\s*'input',?\s*$/m.test(blk))
+    missing.push(`判据缺 'input'（打字；音量滑块本身就是 input[type=range]，抢过来会让同一控件有两套步长）`);
   if (!/^\s*'textarea',?\s*$/m.test(blk)) missing.push(`判据缺 'textarea'`);
   if (!/^\s*'select',?\s*$/m.test(blk)) missing.push(`判据缺 'select'`);
   // contenteditable 必须**排除**显式 "false"：那是"不可编辑"的声明
-  if (!/\[contenteditable\]:not\(\[contenteditable="false"\]\)/.test(blk)) missing.push('判据缺 [contenteditable]:not([contenteditable="false"])（必须排除显式 false —— 那恰恰是不可编辑的声明）');
-  if (!/^\s*'button',?\s*$/m.test(blk)) missing.push(`判据缺 'button'（空格在按钮上的原生行为是点它；播放条上排着一排 IconButton）`);
+  if (!/\[contenteditable\]:not\(\[contenteditable="false"\]\)/.test(blk))
+    missing.push(
+      '判据缺 [contenteditable]:not([contenteditable="false"])（必须排除显式 false —— 那恰恰是不可编辑的声明）',
+    );
+  if (!/^\s*'button',?\s*$/m.test(blk))
+    missing.push(`判据缺 'button'（空格在按钮上的原生行为是点它；播放条上排着一排 IconButton）`);
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
 });
 
@@ -3254,9 +3909,13 @@ add('KEYS.usesClosest', 'KEYS', (s) => {
   const missing = [];
   if (!body) missing.push('找不到 shouldYieldToNative 函数');
   else {
-    if (!/\.closest\(/.test(body)) missing.push('shouldYieldToNative 没有用 closest()（焦点落在 IconButton 内的 <svg>/<path> 上时只比 tagName 会误劫持：按空格变成点那个按钮）');
+    if (!/\.closest\(/.test(body))
+      missing.push(
+        'shouldYieldToNative 没有用 closest()（焦点落在 IconButton 内的 <svg>/<path> 上时只比 tagName 会误劫持：按空格变成点那个按钮）',
+      );
     // 反向：closest 必须真的被用来产��判据，而不是判了等于没判
-    if (!/closest\([^)]*\)\s*!==\s*null/.test(body)) missing.push('closest() 的结果没有与 null 比较（判据写出来但没用于判断 = 等于没判）');
+    if (!/closest\([^)]*\)\s*!==\s*null/.test(body))
+      missing.push('closest() 的结果没有与 null 比较（判据写出来但没用于判断 = 等于没判）');
   }
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
 });
@@ -3269,13 +3928,20 @@ add('KEYS.preventDefaultBeforeDebounce', 'KEYS', (s) => {
   // 所以照样要拦默认行为 —— 否则连按 ⌘+← 时浏览器原生"后退"会跟着触发。
   for (const key of ['ArrowLeft', 'ArrowRight']) {
     const blk = caseBlock(hk, key);
-    if (!blk) { missing.push(`case ${key} 块没找到`); continue; }
+    if (!blk) {
+      missing.push(`case ${key} 块没找到`);
+      continue;
+    }
     const iPd = blk.indexOf('e.preventDefault()');
     const iDb = blk.indexOf('autoRepeatBlocked(');
-    if (iPd < 0) missing.push(`case ${key} 没有 preventDefault（方向键的原生默认行为是滚动页面，不拦就是"切歌的同时页面滚一下"）`);
+    if (iPd < 0)
+      missing.push(`case ${key} 没有 preventDefault（方向键的原生默认行为是滚动页面，不拦就是"切歌的同时页面滚一下"）`);
     else if (iDb < 0) missing.push(`case ${key} 没有合并调用（${key} 应走 autoRepeatBlocked）`);
     // 位置判据：两个下标都在同一块内，比大小即可（不跨语句，故不受邻居改动影响）
-    else if (iPd > iDb) missing.push(`case ${key} 的 preventDefault 写在去抖判断**之后**（被去抖丢弃的按键仍属本快捷键，连按时原生"后退"/滚动会跟着一起触发）`);
+    else if (iPd > iDb)
+      missing.push(
+        `case ${key} 的 preventDefault 写在去抖判断**之后**（被去抖丢弃的按键仍属本快捷键，连按时原生"后退"/滚动会跟着一起触发）`,
+      );
   }
   // 空格与音量两个方向：preventDefault 必须各自在本 case 内（滚动是它们的默认行为）
   for (const key of [' ', 'ArrowUp', 'ArrowDown']) {
@@ -3285,7 +3951,10 @@ add('KEYS.preventDefaultBeforeDebounce', 'KEYS', (s) => {
   // 数次数：全文应恰有 5 处 preventDefault（5 个 case 各一）。
   // 多一处 ⇒ 某个让位路径也拦了默认行为（会把输入框/按钮的原生行为一起废掉）
   const n = occurrences(hk, 'e.preventDefault()');
-  if (n !== 5) missing.push(`e.preventDefault() 在 hook 里出现 ${n} 次（应恰为 5 次：五个键各一；多出来的那处会把让位元素的原生行为也废掉）`);
+  if (n !== 5)
+    missing.push(
+      `e.preventDefault() 在 hook 里出现 ${n} 次（应恰为 5 次：五个键各一；多出来的那处会把让位元素的原生行为也废掉）`,
+    );
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
 });
 
@@ -3295,7 +3964,8 @@ add('KEYS.metaCtrlEquivalent', 'KEYS', (s) => {
   // 两个平台等价 ⇒ 不该出现 navigator.platform / isMac 之类分叉。
   const hk = stripComments(s.hotkeys ?? '');
   const missing = [];
-  if (!/const mod = e\.metaKey \|\| e\.ctrlKey;/.test(hk)) missing.push('没有 `const mod = e.metaKey || e.ctrlKey;`（⌘ 与 Ctrl 必须等价合成一个判据）');
+  if (!/const mod = e\.metaKey \|\| e\.ctrlKey;/.test(hk))
+    missing.push('没有 `const mod = e.metaKey || e.ctrlKey;`（⌘ 与 Ctrl 必须等价合成一个判据）');
   // 反向：不得按平台分叉（win 用 Ctrl、mac 用 ⌘ 的写法会让另一个平台整体失灵）
   for (const bad of ['navigator.platform', 'navigator.userAgent', 'isMac', 'isWindows']) {
     if (hk.includes(bad)) missing.push(`出现了按平台分叉的判据 ${bad}（应统一用 mod，双平台等价）`);
@@ -3316,14 +3986,21 @@ add('KEYS.bareArrowsIgnored', 'KEYS', (s) => {
   const missing = [];
   for (const key of ['ArrowLeft', 'ArrowRight']) {
     const blk = caseBlock(hk, key);
-    if (!blk) { missing.push(`case ${key} 块没找到`); continue; }
+    if (!blk) {
+      missing.push(`case ${key} 块没找到`);
+      continue;
+    }
     // 必须是「无修饰键则 return」这类**提前退出**，且必须出现在调用 prev/next 之前
     const guardAt = blk.search(/if\s*\(\s*!mod/);
     if (guardAt < 0) missing.push(`case ${key} 没有「无修饰键则不处理」的守卫（裸方向键会劫持漫画对照视图翻页）`);
     const callAt = blk.search(/s\.(prev|next)\(\)/);
-    if (guardAt >= 0 && callAt >= 0 && guardAt > callAt) missing.push(`case ${key} 的守卫写在 ${key === 'ArrowLeft' ? 'prev()' : 'next()'} 调用之后（顺序颠倒 = 守卫无效）`);
+    if (guardAt >= 0 && callAt >= 0 && guardAt > callAt)
+      missing.push(
+        `case ${key} 的守卫写在 ${key === 'ArrowLeft' ? 'prev()' : 'next()'} 调用之后（顺序颠倒 = 守卫无效）`,
+      );
     // 守卫必须以 return 收尾（只是标记一个布尔、不退出的话裸键仍会走下去）
-    if (guardAt >= 0 && !/return;/.test(blk.slice(guardAt, guardAt + 80))) missing.push(`case ${key} 的守卫没有 return（只判不退出 = 裸方向键照样被处理）`);
+    if (guardAt >= 0 && !/return;/.test(blk.slice(guardAt, guardAt + 80)))
+      missing.push(`case ${key} 的守卫没有 return（只判不退出 = 裸方向键照样被处理）`);
   }
   // 反向：全文不得出现"裸方向键调进度"的写法（本项目明确不做，Progress 由别处负责）
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
@@ -3373,8 +4050,10 @@ add('KEYS.manualPressNotMerged', 'KEYS', (s) => {
   // ② 单行锚点也不可靠：注释里就写着 `if (!e.repeat) return false;`。
   // 可靠做法：**要求多行连续**。注释不可能恰好连续复制这五行代码，
   // 实测「这五行」与「反序五行」在文件里各唯一命中一次。
-  const ORDERED = 'if (!e.repeat) return false;\n        const now = performance.now();\n        const prevAt = lastAt.current[key] ?? -Infinity;\n        if (now - prevAt < TRACK_SWITCH_REPEAT_GUARD_MS) return true;\n        lastAt.current[key] = now;';
-  const SWAPPED = 'const now = performance.now();\n        const prevAt = lastAt.current[key] ?? -Infinity;\n        if (now - prevAt < TRACK_SWITCH_REPEAT_GUARD_MS) return true;\n        if (!e.repeat) return false;\n        lastAt.current[key] = now;';
+  const ORDERED =
+    'if (!e.repeat) return false;\n        const now = performance.now();\n        const prevAt = lastAt.current[key] ?? -Infinity;\n        if (now - prevAt < TRACK_SWITCH_REPEAT_GUARD_MS) return true;\n        lastAt.current[key] = now;';
+  const SWAPPED =
+    'const now = performance.now();\n        const prevAt = lastAt.current[key] ?? -Infinity;\n        if (now - prevAt < TRACK_SWITCH_REPEAT_GUARD_MS) return true;\n        if (!e.repeat) return false;\n        lastAt.current[key] = now;';
   if (hk.includes(SWAPPED)) {
     missing.push('放行分支写在更新时间戳**之后**（长按后紧接着的一次手动点击会被吃掉）');
   } else if (!hk.includes(ORDERED)) {
@@ -3405,7 +4084,9 @@ add('KEYS.shiftLeftToSystem', 'KEYS', (s) => {
   //    ⚠️ 数次数而不是"存在即过" —— 漏一个键就是漏一条让位路径（本项目已犯 3 次）。
   const n = occurrences(hk, '|| shift) return;');
   if (n !== 5) {
-    missing.push(`"|| shift) return;" 出现 ${n} 次（应恰为 5 次：空格/↑/↓/←/→ 五个 case 各一；漏一个键就是漏一条让位路径）`);
+    missing.push(
+      `"|| shift) return;" 出现 ${n} 次（应恰为 5 次：空格/↑/↓/←/→ 五个 case 各一；漏一个键就是漏一条让位路径）`,
+    );
   }
   // ③ 音量与空格的裸键条件也必须含 shift（这四处是"裸键才生效"的收窄）
   for (const key of [' ', 'ArrowUp', 'ArrowDown']) {
@@ -3432,20 +4113,25 @@ add('KEYS.debounceTrackSwitchOnly', 'KEYS', (s) => {
   // 两个音量 case 的块内**不得**出现合并调用
   for (const key of ['ArrowUp', 'ArrowDown']) {
     const blk = caseBlock(hk, key) || '';
-    if (/autoRepeatBlocked\(/.test(blk)) missing.push(`case ${key}（音量）被合并逻辑包裹了（音量必须每次都生效，否则快速连按爬不上去）`);
+    if (/autoRepeatBlocked\(/.test(blk))
+      missing.push(`case ${key}（音量）被合并逻辑包裹了（音量必须每次都生效，否则快速连按爬不上去）`);
     // 反向：音量 case 必须真的调到了 stepVolume（否则"不合并"就变成了"不处理"）
     if (!/s\.stepVolume\(/.test(blk)) missing.push(`case ${key} 没有调 s.stepVolume(...)（音量键位丢失）`);
   }
   // 反向：切歌两个 case 必须**确实**在合并（否则本组变成"都没合并"也算过）
   for (const key of ['ArrowLeft', 'ArrowRight']) {
     const blk = caseBlock(hk, key) || '';
-    if (!/autoRepeatBlocked\(/.test(blk)) missing.push(`case ${key}（切歌）没有走合并（心动模式下 next() 会发网络请求，按住不放就是刷接口）`);
+    if (!/autoRepeatBlocked\(/.test(blk))
+      missing.push(`case ${key}（切歌）没有走合并（心动模式下 next() 会发网络请求，按住不放就是刷接口）`);
   }
   // 数次数：合并函数应恰有 2 个调用点（prev/next 各一）。多出第三处 = 又有键被合并了。
   // ⚠️ 锚点是 `autoRepeatBlocked(`（带左括号）—— 定义处写的是 `autoRepeatBlocked =`，
   // 不带括号，所以这里数到的**只有调用点**，不需要为定义处额外 +1。
   const n = occurrences(hk, 'autoRepeatBlocked(');
-  if (n !== 2) missing.push(`autoRepeatBlocked( 在 hook 里出现 ${n} 次（应恰为 2 次：prev/next 各一；多出来的那处说明又有键被合并了）`);
+  if (n !== 2)
+    missing.push(
+      `autoRepeatBlocked( 在 hook 里出现 ${n} 次（应恰为 2 次：prev/next 各一；多出来的那处说明又有键被合并了）`,
+    );
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
 });
 
@@ -3457,23 +4143,76 @@ add('KEYS.debouncePerKey', 'KEYS', (s) => {
   const hk = stripComments(s.hotkeys ?? '');
   const missing = [];
   // 必须是按 key 索引的结构
-  if (!/useRef<Record<string, number>>/.test(hk)) missing.push('lastAt 不是 Record<string, number>（各键共用一个时间戳 ⇒ 连按 ⌘+→ 后再按 ⌘+← 会被吃掉，上一首按不动）');
+  if (!/useRef<Record<string, number>>/.test(hk))
+    missing.push(
+      'lastAt 不是 Record<string, number>（各键共用一个时间戳 ⇒ 连按 ⌘+→ 后再按 ⌘+← 会被吃掉，上一首按不动）',
+    );
   // 实际取上一时刻时必须**带下标**
   const body = arrowConstBody(hk, 'autoRepeatBlocked');
   if (!body) {
     missing.push('找不到 autoRepeatBlocked 函数（切歌的自动重复合并没了）');
   } else {
-  // 实际取上一时刻时必须**带下标**。⚠️ 同样**不用取体器**（在本文件上会返回空壳，
-  // 判据会读到注释里去），直接在剥注释后的全文里判 —— 这条判据读的是唯一的赋值形态。
-  if (!/lastAt\.current\[key\]\s*=\s*now/.test(hk)) missing.push('没有按 key 写 lastAt.current[key]（共用时间戳 ⇒ 上一首会被上一首的窗口吃掉）');
-  if (!/lastAt\.current\[key\]\s*\?\?\s*-Infinity/.test(hk)) missing.push('没有按 key 读 lastAt.current[key]');
+    // 实际取上一时刻时必须**带下标**。⚠️ 同样**不用取体器**（在本文件上会返回空壳，
+    // 判据会读到注释里去），直接在剥注释后的全文里判 —— 这条判据读的是唯一的赋值形态。
+    if (!/lastAt\.current\[key\]\s*=\s*now/.test(hk))
+      missing.push('没有按 key 写 lastAt.current[key]（共用时间戳 ⇒ 上一首会被上一首的窗口吃掉）');
+    if (!/lastAt\.current\[key\]\s*\?\?\s*-Infinity/.test(hk)) missing.push('没有按 key 读 lastAt.current[key]');
   }
   // 两个切歌键必须传**不同的** key 名（共用同一个名字就等于共用一个窗口）
   const keys = [...hk.matchAll(/autoRepeatBlocked\('([^']+)'\)/g)].map((m) => m[1]);
   const uniq = new Set(keys);
-  if (uniq.size !== keys.length) missing.push(`切歌两键传了同一个合并 key（${keys.join('/')}）⇒ 等于共用一个窗口，其中一键会按不动`);
+  if (uniq.size !== keys.length)
+    missing.push(`切歌两键传了同一个合并 key（${keys.join('/')}）⇒ 等于共用一个窗口，其中一键会按不动`);
   if (keys.length !== 2) missing.push(`autoRepeatBlocked 的调用点数是 ${keys.length}（应恰为 2：prev/next 各一）`);
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+
+// ============================ 截图取证通道（CAPTURE） ============================
+/*
+ * 为什么音乐域管这个：**音乐屏与桌面歌词窗这两个画面在这一轮被纳入取证序列**。
+ * 它跨两个文件、两份手写的清单：
+ *   Rust `selftest/capture.rs` 的 steps  —— 真正截哪几张
+ *   `e2e/capture.mjs` 的 SHOTS           —— 入库前要收哪几张
+ * 两者漂移时**不会报错**：Rust 多截一张（图没人收，白截）、JS 多要一张
+ * （要到真在 macOS 上跑一次 capture 才报"没截到"）。故钉在源码上。
+ */
+add('CAPTURE.musicStep', 'CAPTURE', (s) => {
+  const src = s.captureRs ?? '';
+  const missing = [];
+  if (!/"07-music\.png"/.test(src)) missing.push('取证序列里没有音乐屏那一步');
+  // 侧栏标签可被用户关掉（D-84）⇒ 必须按 aria-label 定位；
+  // 按 textContent 过滤会在「关掉图标标签」时永远找不到入口（轮询超时 → 截到上一屏）。
+  if (!src.includes('.nav-item.is-app[aria-label=\\"音乐\\"]'))
+    missing.push('音乐屏那一步没按 aria-label 定位侧栏入口（关掉标签偏好后会找不到它）');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+add('CAPTURE.lyricsStep', 'CAPTURE', (s) => {
+  const src = s.captureRs ?? '';
+  const missing = [];
+  if (!/"08-lyrics-window\.png"/.test(src)) missing.push('取证序列里没有桌面歌词窗那一步');
+  // 🔴 必须截**歌词窗自己**：写回 MAIN_WIN 就会产出「文件名说歌词窗、内容是主窗」的假证据
+  if (!/shot_win:\s*LYRICS_WINDOW/.test(src)) missing.push('歌词窗那一步没有把 shot_win 指到 LYRICS_WINDOW');
+  if (!/action:\s*Some\(open_lyrics_act\)/.test(src)) missing.push('歌词窗那一步没有走产品自己的 open_lyrics_window');
+  // 歌词窗是第二个 HTML 入口下的独立文档，**不挂**主窗主题 provider ⇒ 没有 dataset.theme 可回读。
+  // 硬塞一条主题自证只会得到恒红（更坏的是被人改成恒真）。
+  if (!/want_theme:\s*None/.test(src)) missing.push('歌词窗那一步仍在要求主题自证（该窗口没有 dataset.theme）');
+  return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
+});
+add('CAPTURE.assetsMatchJs', 'CAPTURE', (s) => {
+  // 两份清单必须**逐名对齐**：Rust 截的 == JS 收的
+  const rustNames = [...(s.captureRs ?? '').matchAll(/"(0\d-[a-z-]+\.png)"/g)].map((m) => m[1]);
+  const jsNames = [...(s.captureMjs ?? '').matchAll(/\['(0\d-[a-z-]+\.png)'/g)].map((m) => m[1]);
+  const missing = [];
+  const onlyRust = rustNames.filter((n) => !jsNames.includes(n));
+  const onlyJs = jsNames.filter((n) => !rustNames.includes(n));
+  if (onlyRust.length) missing.push(`Rust 截了但 JS 不收：${onlyRust.join('、')}`);
+  if (onlyJs.length) missing.push(`JS 要收但 Rust 不截：${onlyJs.join('、')}`);
+  if (rustNames.length === 0 || jsNames.length === 0)
+    missing.push(`有一侧清单解析为空（rust=${rustNames.length} / js=${jsNames.length}）—— 判据本身失效`);
+  return {
+    ok: missing.length === 0,
+    detail: missing.length ? missing.join('；') : `${rustNames.length} 张两侧逐名对齐`,
+  };
 });
 
 const MUTATIONS = [
@@ -3509,14 +4248,14 @@ const MUTATIONS = [
   },
   {
     name: '删掉 store.ts 里 switchPlaybackSource 的清空逻辑',
-    file: F.store,
+    file: path.join(F.actionsDir, 'platform.ts'),
     find: '      officialCharts: [],\n      recommendPlaylists: [],\n      dailySongs: [],\n',
     replace: '      // [refute] 清空逻辑被移除\n',
     expect: ['STORE.switchClears'],
   },
   {
     name: '把 store.ts 的 toggleLike action 改名（模拟漏实现）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'like.ts'),
     // 锚点只取到参数表左括号为止：参数名会随实现调整（如 songId → song），
     // 若把参数名写进锚点，一次合法重构就会让这条反证静默失效（「无法反证」≠「已证伪」）。
     find: '  toggleLike: async (',
@@ -3524,9 +4263,9 @@ const MUTATIONS = [
     expect: ['STORE.actions'],
   },
   {
-    name: '从 main.rs 的 generate_handler! 里摘掉 migu_rank_songs 注册（定义仍在）',
-    file: F.rustMain,
-    find: '            music::migu_rank_songs,\n',
+    name: '从 commands/mod.rs 的 generate_handler! 里摘掉 migu_rank_songs 注册（定义仍在）',
+    file: F.rustRegistry,
+    find: '        crate::music::migu_rank_songs,\n',
     replace: '',
     expect: ['RUST.registered.migu'],
   },
@@ -3538,7 +4277,7 @@ const MUTATIONS = [
     expect: ['RUST.defined.migu'],
   },
   {
-    name: "把 ipc.ts 的 kugou_rank_list 命令名写错一个字",
+    name: '把 ipc.ts 的 kugou_rank_list 命令名写错一个字',
     file: F.ipc,
     find: "'kugou_rank_list'",
     replace: "'kugou_rank_list_broken'",
@@ -3574,7 +4313,7 @@ const MUTATIONS = [
   },
   {
     name: '把 store 的 loadMoreSearch 改名（模拟漏实现续拉）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'search.ts'),
     find: '  loadMoreSearch: async (',
     replace: '  loadMoreSearchDisabled: async (',
     expect: ['SEARCH.storePaging'],
@@ -3619,7 +4358,7 @@ const MUTATIONS = [
   },
   {
     name: '把 store.ts 的 registerAudioElement 改名（模拟内核拿不到登记通道）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: 'export function registerAudioElement(el: HTMLAudioElement | null): void {',
     replace: 'export function registerAudioElementGone(el: HTMLAudioElement | null): void {',
     expect: ['PLAYER.registerApi'],
@@ -3633,7 +4372,7 @@ const MUTATIONS = [
   },
   {
     name: '把 seek 里的 audioEl.currentTime 那行删掉（退回"只改进度不动音频"）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     // 锚点不含变量名：`currentTime = ms / 1000` 是全局唯一片段，变量改名也不会让这条静默失效
     find: 'currentTime = ms / 1000',
     replace: 'currentTimeMoved = ms / 1000',
@@ -3658,7 +4397,9 @@ const MUTATIONS = [
   {
     name: '把 .music-exp 的进场动画那行删掉',
     file: F.musicScss,
-    find: '  animation: music-exp-up 0.34s cubic-bezier(0.4, 0, 0.2, 1);\n',
+    // 锚点随 2026-10-12 的改版更新：进场动画不再独占一行，而是与动态背景流动
+    // 写在同一个 animation 列表里（分开写会让动态开关重播进场动画 ⇒ 整屏闪一下）。
+    find: 'music-exp-up 0.34s cubic-bezier(0.4, 0, 0.2, 1) 1 both,',
     replace: '',
     expect: ['PLAYER.animEnter'],
   },
@@ -3678,7 +4419,7 @@ const MUTATIONS = [
   },
   {
     name: '把 next() 里 { expand: false } 删掉（自动切歌会弹开播放器）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     // 破坏必须**清掉全部** playSong 的 expand:false —— 断言判的是"每条路径都传了"，
     // 只删一处它仍为真（这个假阳性是反证轮实测抓出来的，不是推理出来的）
     find: '    void get().playSong(queue[idx], undefined, { expand: false });',
@@ -3687,16 +4428,16 @@ const MUTATIONS = [
   },
   {
     name: '把 prev() 里 { expand: false } 删掉',
-    file: F.store,
-    find:
-      '        : (currentIndex - 1 + queue.length) % queue.length;\n    void get().playSong(queue[idx], undefined, { expand: false });',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    // 锚点随 2026-10-12 的五档改版更新：prev 现在按模式分流，线性分支收在 else 里
+    find: '      idx = (currentIndex - 1 + queue.length) % queue.length;\n    }\n    void get().playSong(queue[idx], undefined, { expand: false });',
     replace:
-      '        : (currentIndex - 1 + queue.length) % queue.length;\n    void get().playSong(queue[idx], undefined);',
+      '      idx = (currentIndex - 1 + queue.length) % queue.length;\n    }\n    void get().playSong(queue[idx], undefined);',
     expect: ['PLAYER.prevExpandFalse'],
   },
   {
     name: '把 playSong 的 opts?.expand 判定去掉（永远展开）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '      ...(opts?.expand === false ? {} : { expanded: true }),',
     replace: '      expanded: true,',
     expect: ['PLAYER.playSongExpandOpt'],
@@ -3709,11 +4450,25 @@ const MUTATIONS = [
     expect: ['PLAYER.closePath'],
   },
   {
-    name: '把 MusicScreen 的 Esc 分支改回 setExpanded(false)',
-    file: F.musicScreen,
-    find: '        closeExpanded();',
-    replace: '        setExpanded(false);',
+    name: '把 App 根的 Esc 分支改回 setExpanded(false)',
+    file: F.app,
+    find: "if (e.key === 'Escape') closeMusicExpanded();",
+    replace: "if (e.key === 'Escape') setMusicExpanded(false);",
     expect: ['PLAYER.escPath'],
+  },
+  {
+    name: '让 MusicScreen 也监听 closeExpanded（两处重复触发退场动画）',
+    file: F.musicScreen,
+    find: "      if (e.key === 'Escape') {\n        setQueueOpen(false);",
+    replace: "      if (e.key === 'Escape') {\n        closeExpanded();\n        setQueueOpen(false);",
+    expect: ['PLAYER.escPath'],
+  },
+  {
+    name: '把 <ExpandedPlayer> 挪回 MusicScreen 内（从设置页点「打开播放器」就没反应）',
+    file: F.app,
+    find: '      <ExpandedPlayer onSeek={onMusicSeek} />\n',
+    replace: '',
+    expect: ['PLAYER.expandedMountedAtRoot'],
   },
 
   // ── PLAYER · C 播放条补全 ─────────────────────────────────────────────
@@ -3759,53 +4514,109 @@ const MUTATIONS = [
     replace: 'onChange={(e) => onSeek(Number(e.target.value))}',
     expect: ['PLAYER.bar.dragSession'],
   },
+  {
+    name: '把 PlayerBar 的提交改回松手即 seek（去掉 0.1s 静默期）',
+    file: F.playerBar,
+    find: `  const commit = () => {
+    if (dragMs === null) return;
+    const target = dragMs;
+    if (seekCommitTimer.current !== null) clearTimeout(seekCommitTimer.current);
+    seekCommitTimer.current = setTimeout(() => {
+      seekCommitTimer.current = null;
+      // 这 0.1s 里用户又拖过了 ⇒ 旧目标作废，等下一次松手重新提交
+      if (latestDragMsRef.current !== target) return;
+      onSeek(target);
+      setDragMs(null);
+    }, SEEK_COMMIT_DELAY_MS);
+  };`,
+    replace: `  const commit = () => {
+    if (dragMs === null) return;
+    onSeek(dragMs);
+    setDragMs(null);
+  };`,
+    expect: ['PLAYER.bar.dragSession'],
+  },
+  {
+    name: '把 ExpandedPlayer 的 onChange 改回 onSeek(...)（退回逐帧提交）',
+    file: F.expanded,
+    find: 'onChange={(e) => setDragMs(Number(e.target.value))}',
+    replace: 'onChange={(e) => onSeek(Number(e.target.value))}',
+    expect: ['PLAYER.exp.dragSession'],
+  },
+  {
+    name: '把 ExpandedPlayer 的提交改回松手即 seek（去掉 0.1s 静默期）',
+    file: F.expanded,
+    find: `  const commitSeek = () => {
+    if (dragMs === null) return;
+    const target = dragMs;
+    if (seekCommitTimer.current !== null) clearTimeout(seekCommitTimer.current);
+    seekCommitTimer.current = setTimeout(() => {
+      seekCommitTimer.current = null;
+      // 这 0.1s 里用户又拖过了 ⇒ 旧目标作废，等下一次松手重新提交
+      if (latestDragMsRef.current !== target) return;
+      onSeek(target);
+      setDragMs(null);
+    }, SEEK_COMMIT_DELAY_MS);
+  };`,
+    replace: `  const commitSeek = () => {
+    if (dragMs === null) return;
+    onSeek(dragMs);
+    setDragMs(null);
+  };`,
+    expect: ['PLAYER.exp.dragSession'],
+  },
 
   // ── PLAYER · D 实际音质回写 ───────────────────────────────────────────
   {
     name: '把 resolveOnlineUrl 里 currentBitrate 的写入删掉（音质标签变假 UI）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '    currentBitrate: r.br || 0,\n',
     replace: '',
     expect: ['PLAYER.resolveWrites'],
   },
 
-  // ── HEARTBEAT 心动模式 ────────────────────────────────────────────────
+  // ── HEARTBEAT 心动模式（五档改版）────────────────────────────────────
   {
-    name: '把 cycleMode 的档位数组退回三档（去掉心动）',
-    file: F.store,
-    find: "    const order: PlayMode[] = ['list', 'shuffle', 'one', 'heartbeat'];",
-    replace: "    const order: PlayMode[] = ['list', 'shuffle', 'one'];",
-    expect: ['HEARTBEAT.cycleFour'],
+    name: "把 types.ts 的 PlayMode 去掉 'order'（顺序播放从类型层消失）",
+    file: F.types,
+    find: "export type PlayMode = 'list' | 'one' | 'shuffle' | 'order' | 'heartbeat';",
+    replace: "export type PlayMode = 'list' | 'one' | 'shuffle' | 'heartbeat';",
+    expect: ['HEARTBEAT.modeInType'],
   },
   {
-    name: '档位数组里 heartbeat 写两遍（点两下卡在同一档）',
-    file: F.store,
-    find: "    const order: PlayMode[] = ['list', 'shuffle', 'one', 'heartbeat'];",
-    replace:
-      "    const order: PlayMode[] = ['list', 'shuffle', 'one', 'heartbeat', 'heartbeat'];",
-    expect: ['HEARTBEAT.cycleFour'],
+    name: '把 cycleMode 的档位数组退回四档（去掉顺序播放）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: "    const order: PlayMode[] = ['list', 'one', 'shuffle', 'order', 'heartbeat'];",
+    replace: "    const order: PlayMode[] = ['list', 'one', 'shuffle', 'heartbeat'];",
+    expect: ['HEARTBEAT.cycleFive'],
   },
   {
-    name: '删掉切心动档时的降级提示（静默降级 = 假控件）',
-    file: F.store,
-    find: "    if (nextMode === 'heartbeat' && !platform.supportsSimilar(get().playbackSource)) {",
-    replace: '    if (false) {',
-    expect: ['HEARTBEAT.warnsOnDegrade'],
+    name: '把档位数组的两个档位对调（点一下会跳档）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: "    const order: PlayMode[] = ['list', 'one', 'shuffle', 'order', 'heartbeat'];",
+    replace: "    const order: PlayMode[] = ['list', 'one', 'order', 'shuffle', 'heartbeat'];",
+    expect: ['HEARTBEAT.cycleFive'],
   },
   {
-    name: '让 next 把 heartbeat 当普通队列顺序（不走相似续播）',
+    name: '把默认播放模式从顺序播放改回列表循环',
     file: F.store,
-    // 锚点只取到函数名的左括号，与参数/后续实现解耦（避免合法重构后静默失效）
-    find: "if (playMode === 'heartbeat' && platform.supportsSimilar(get().playbackSource)) {",
-    replace: "if (playMode === 'heartbeat' && false) {",
-    expect: ['HEARTBEAT.nextUsesSimilar'],
+    find: "  playMode: 'order',",
+    replace: "  playMode: 'list',",
+    expect: ['HEARTBEAT.defaultIsOrder'],
   },
   {
-    name: '相似结果不作为新队列（playSong 丢掉 pick，退回追加语义）',
-    file: F.store,
-    find: '          await get().playSong(nextSong, pick, { expand: false });',
-    replace: '          await get().playSong(nextSong, undefined, { expand: false });',
-    expect: ['HEARTBEAT.nextUsesSimilar'],
+    name: 'canUseHeartbeat 硬编码平台名（不再走平台能力函数）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '  return platform.supportsSimilar(state.playbackSource) && state.queueFromLiked;',
+    replace: "  return state.playbackSource === 'netease' && state.queueFromLiked;",
+    expect: ['HEARTBEAT.gatedByLikedAndPlatform'],
+  },
+  {
+    name: 'canUseHeartbeat 丢掉「我喜欢的音乐」上下文（任何队列都能进心动）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '  return platform.supportsSimilar(state.playbackSource) && state.queueFromLiked;',
+    replace: '  return platform.supportsSimilar(state.playbackSource);',
+    expect: ['HEARTBEAT.gatedByLikedAndPlatform'],
   },
   {
     name: '把 supportsSimilar 对酷狗也放开（酷狗无"按 songid 找相似"接口）',
@@ -3813,28 +4624,244 @@ const MUTATIONS = [
     find: "export function supportsSimilar(provider: MusicProvider): boolean {\n  return provider === 'netease';\n}",
     replace:
       "export function supportsSimilar(provider: MusicProvider): boolean {\n  return provider === 'netease' || provider === 'kugou';\n}",
-    expect: ['HEARTBEAT.platformGate'],
+    expect: ['HEARTBEAT.gatedByLikedAndPlatform'],
   },
   {
-    name: '删掉 fallbackNext（取不到相似时无处降级）',
-    file: F.store,
-    find: '  fallbackNext: () => {',
-    replace: '  fallbackRemoved: () => {',
-    expect: ['HEARTBEAT.fallbackExists'],
+    name: 'cycleMode 不再跳过不可用的心动档（会落在一个用不了的档上）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: "      if (cand === 'heartbeat' && !canUseHeartbeat(get())) continue;",
+    replace: '      if (false) continue;',
+    expect: ['HEARTBEAT.noRandomDegrade'],
+  },
+  {
+    name: 'setPlayMode 去掉心动可用性的兜底闸（可绕过 cycleMode 直接落档）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '      if (!canUseHeartbeat(get())) return;',
+    replace: '      if (false) return;',
+    expect: ['HEARTBEAT.noRandomDegrade'],
+  },
+  {
+    name: '不可用时又弹回"心动模式仅在网易云…可用"的提示（需求已改为不显示按钮即可）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '      if (!canUseHeartbeat(get())) return;',
+    replace: "      if (!canUseHeartbeat(get())) { get().toast('心动模式不可用'); return; }",
+    expect: ['HEARTBEAT.noRandomDegrade'],
+  },
+  {
+    name: '模式按钮不再按可用性隐藏心动档（非喜欢歌单时照常显示心跳图标）',
+    file: F.playModeButton,
+    find: "    mode === 'heartbeat' && !heartbeatAvailable",
+    replace: "    false && mode === 'heartbeat' && !heartbeatAvailable",
+    expect: ['HEARTBEAT.noRandomDegrade'],
+  },
+  {
+    name: '播放条漏传 heartbeatAvailable（非喜欢歌单时模式按钮仍显示心动档）',
+    file: F.playerBar,
+    find: 'heartbeatAvailable={heartbeatAvailable}',
+    replace: 'heartbeatAvailable={true}',
+    expect: ['HEARTBEAT.noRandomDegrade'],
+  },
+  {
+    name: '展开播放器漏传 heartbeatAvailable（两处显示不一致）',
+    file: F.expanded,
+    find: '              heartbeatAvailable={heartbeatAvailable}',
+    replace: '              heartbeatAvailable={true}',
+    expect: ['HEARTBEAT.noRandomDegrade'],
+  },
+  {
+    name: '冷启动不再挡下偏好里的 heartbeat（会出现"显示心动却点不动"）',
+    file: path.join(F.actionsDir, 'init.ts'),
+    find: "      ALL_MODES.includes(prefs.playMode as PlayMode) && prefs.playMode !== 'heartbeat'",
+    replace: '      ALL_MODES.includes(prefs.playMode as PlayMode)',
+    expect: ['HEARTBEAT.noRandomDegrade'],
+  },
+  {
+    name: '心动队列不分首次/再次（首次进入也把种子歌摆在队首却播新列表第一首）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '    const nextQueue = already ? [seed, ...pick] : pick;',
+    replace: '    const nextQueue = [seed, ...pick];',
+    expect: ['HEARTBEAT.enterRebuildsQueue'],
+  },
+  {
+    name: '心动队列丢掉当前歌（currentIndex 与 currentSong 会对不上）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '    const nextQueue = already ? [seed, ...pick] : pick;',
+    replace: '    const nextQueue = [...pick];',
+    expect: ['HEARTBEAT.enterRebuildsQueue'],
+  },
+  {
+    name: '首次进入播种子歌而不是心动列表第一首（需求要求直接播新列表第一首）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '    await get().playSong(nextQueue[0], nextQueue, { autoplay: true, expand: false });',
+    replace: '    await get().playSong(seed, nextQueue, { autoplay: true, expand: false });',
+    expect: ['HEARTBEAT.enterRebuildsQueue'],
+  },
+  {
+    name: 'enterHeartbeat 不再区分首次/再次进入（每次切回来都把当前歌从头重播）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '    const already = get().heartbeatSeeded;',
+    replace: '    const already = false;',
+    expect: ['HEARTBEAT.enterRebuildsQueue'],
+  },
+  {
+    name: '心动模式自然播完时无条件换一批（不前进 ⇒ 播完的歌原地重播、卡在首曲）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '        if (currentIndex + 1 < queue.length) {',
+    replace: '        if (false) {',
+    expect: ['HEARTBEAT.nextAdvances'],
+  },
+  {
+    name: 'advance 路径不按首次/再次取起点（首次进入会跳过新列表真正的第一首）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '      const startAt = already ? 1 : 0;',
+    replace: '      const startAt = 1;',
+    expect: ['HEARTBEAT.nextAdvances'],
+  },
+  {
+    name: '进入心动前不存原队列快照（切走时恢复不出原播放列表）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '        heartbeatRestore: {',
+    replace: '        heartbeatSnapshotDisabled: {',
+    expect: ['HEARTBEAT.restoresQueueOnLeave'],
+  },
+  {
+    name: '切离心动时不恢复原队列（列表一直停在相似歌上）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: "    if (get().playMode === 'heartbeat' && get().heartbeatRestore) {",
+    replace: '    if (false) {',
+    expect: ['HEARTBEAT.restoresQueueOnLeave'],
+  },
+  {
+    name: '恢复原队列时复位 heartbeatSeeded（再进心动会把当前歌从头重播）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '        queueFromLiked: snap.queueFromLiked,',
+    replace: '        queueFromLiked: snap.queueFromLiked, heartbeatSeeded: false,',
+    expect: ['HEARTBEAT.restoresQueueOnLeave'],
+  },
+  {
+    name: '切离心动时不把"不在原列表里的当前歌"置顶（会悄悄换成另一首）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: 'cur && found < 0 ? [cur, ...snap.queue] : snap.queue;',
+    replace: 'snap.queue;',
+    expect: ['HEARTBEAT.restoresQueueOnLeave'],
+  },
+  {
+    name: '抽屉标题写死"播放队列"（心动模式下与左栏歌单对不上且无提示）',
+    file: F.queueDrawer,
+    find: "          <span className=\"music-card-title\">{isHeartbeat ? '心动模式' : '播放队列'}</span>",
+    replace: '          <span className="music-card-title">播放队列</span>',
+    expect: ['QUEUE.heartbeatTitle'],
+  },
+
+  // ── PLAYLIST 播放列表入口 ────────────────────────────────────────────
+  {
+    name: '播放全部恒定从第一首起（随机档退化成顺序播）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: 'Math.floor(Math.random() * songs.length)',
+    replace: '0',
+    expect: ['PLAYLIST.startIndexByMode'],
+  },
+  {
+    name: '播放全部时忽略用户点的具体某一首（模式改写精确意图）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '      opts?.index != null',
+    replace: '      false',
+    expect: ['PLAYLIST.startIndexByMode'],
+  },
+  {
+    name: '本地曲库退回 playQueue（不再是独立播放列表）',
+    file: F.localView,
+    find: 'void playPlaylist(localQueue, { index: i });',
+    replace: 'void playQueue(localQueue, i);',
+    expect: ['PLAYLIST.rowsGoThroughPlaylist'],
+  },
+  {
+    name: '播放历史退回"只播点中那一首"（不再是独立播放列表）',
+    file: F.historyView,
+    find: 'void playPlaylist(historyQueue, { index: i, fromHistory: true });',
+    replace: 'void playQueue(historyQueue, i);',
+    expect: ['PLAYLIST.rowsGoThroughPlaylist'],
+  },
+  {
+    name: '切歌单时不把心动模式切成顺序播放',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: "    if (get().playMode === 'heartbeat') {\n      set({ playMode: 'order' });",
+    replace: "    if (false) {\n      set({ playMode: 'order' });",
+    expect: ['PLAYLIST.leavesHeartbeatToOrder'],
+  },
+  {
+    name: '切进「我喜欢的音乐」时不自动恢复心动模式',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '    if (liked && get().likedHeartbeatOn) {',
+    replace: '    if (false) {',
+    expect: ['PLAYLIST.likedAutoHeartbeat'],
+  },
+  {
+    name: '拉歌单时不打「我喜欢的音乐」标识（isLiked 永远为假）',
+    file: path.join(F.actionsDir, 'left.ts'),
+    // 锚点随 2026-10-12 的规则变更更新：识别口径从"下标 0"改为
+    // "第一个 subscribed===false 的歌单"。这里把 findIndex 打成 -1 ⇒ 一条都不打标。
+    find: '      const likedIdx = list.findIndex((pl) => pl.subscribed === false);',
+    replace: '      const likedIdx = -1;',
+    expect: ['PLAYLIST.likedAutoHeartbeat'],
+  },
+  {
+    name: '不把「我喜欢的音乐」改名（界面仍显示接口原名，各平台叫法不一）',
+    file: path.join(F.actionsDir, 'left.ts'),
+    find: 'i === likedIdx ? { ...pl, name: LIKED_PLAYLIST_NAME, isLiked: true } : pl',
+    replace: 'i === likedIdx ? { ...pl, isLiked: true } : pl',
+    expect: ['PLAYLIST.likedAutoHeartbeat'],
+  },
+  {
+    name: 'likedHeartbeatOn 不落偏好（重启就丢"开启过心动"这件事）',
+    file: path.join(APP, 'src', 'music', 'prefs.ts'),
+    find: '  likedHeartbeatOn: boolean;',
+    replace: '  likedHeartbeatOnRemoved?: boolean;',
+    expect: ['PLAYLIST.likedAutoHeartbeat'],
+  },
+
+  // ── QUEUE 播放列表抽屉（定位当前曲 + 从右滑入）──────────────────────
+  {
+    name: '队列抽屉不把当前下标交给列表（打开时不定位到正在播的那首）',
+    file: F.queueDrawer,
+    find: 'scrollToIndex={currentIndex}',
+    replace: 'data-no-scroll',
+    expect: ['QUEUE.scrollsToCurrent'],
+  },
+  {
+    name: '抽屉进场动画删掉（不再从右往左展开）',
+    file: F.musicScss,
+    find: '  animation: music-drawer-in 0.24s cubic-bezier(0.4, 0, 0.2, 1) both;',
+    replace: '',
+    expect: ['QUEUE.drawerSlidesIn'],
+  },
+  {
+    name: '抽屉进场起点改成从下方（不再是"从右往左"）',
+    file: F.musicScss,
+    find: 'transform: translateX(100%);',
+    replace: 'transform: translateY(100%);',
+    expect: ['QUEUE.drawerSlidesIn'],
+  },
+  {
+    name: '让蒙层也跟着抽屉平移（整屏遮罩横移会露出底下界面）',
+    file: F.musicScss,
+    find: '  animation: music-drawer-bd-in 0.24s ease-out both;',
+    replace: '  animation: music-drawer-in 0.24s cubic-bezier(0.4, 0, 0.2, 1) both;',
+    expect: ['QUEUE.drawerSlidesIn'],
   },
 
   // ── LYRICS 桌面歌词 ──────────────────────────────────────────────────
   {
-    name: '从 main.rs 摘掉 lyrics_push 注册（定义仍在但调不到）',
-    file: F.rustMain,
-    find: '            lyrics_window::lyrics_push,',
+    name: '从 commands/mod.rs 摘掉 lyrics_push 注册（定义仍在但调不到）',
+    file: F.rustRegistry,
+    find: '        crate::commands::lyrics_window::lyrics_push,',
     replace: '',
     expect: ['LYRICS.rustCommands'],
   },
   {
     name: '歌词窗改用 WebviewUrl::External（跨 origin → 读不到偏好）',
     file: F.rustLyrics,
-    find: 'WebviewUrl::App("lyrics.html".into())',
+    find: 'WebviewUrl::App("templates/lyrics.html".into())',
     replace: 'WebviewUrl::External("https://example.com/lyrics.html".parse().unwrap())',
     expect: ['LYRICS.sameOrigin'],
   },
@@ -3855,17 +4882,16 @@ const MUTATIONS = [
   {
     name: '把 vite 的第二入口 lyrics 删掉（dist 里将没有 lyrics.html）',
     file: F.viteConfig,
-    find: '        lyrics: new URL("./lyrics.html", import.meta.url).pathname,\n',
+    find: "lyrics: new URL('./templates/lyrics.html', import.meta.url).pathname,",
     replace: '',
     expect: ['LYRICS.viteMultiEntry'],
   },
   {
     // 这条模拟的是最容易发生的真实事故：有人为了让歌词"跟得更准"就顺手加一次推送
     name: '在 setProgress 里加一次桌面歌词推送（每秒数次 → 打满事件通道）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '  setProgress: (ms) => set({ progressMs: ms }),',
-    replace:
-      '  setProgress: (ms) => { set({ progressMs: ms }); void get().pushLyricsState(); },',
+    replace: '  setProgress: (ms) => { set({ progressMs: ms }); void get().pushLyricsState(); },',
     expect: ['LYRICS.progressNotPushed'],
   },
   {
@@ -3945,87 +4971,88 @@ const MUTATIONS = [
     expect: ['LYRICS.windowAutoHeight'],
   },
   {
-    name: "去掉 <audio> 的 crossOrigin（网络歌曲被音频图接管后静音）",
-    file: "app/src/components/MusicKernel.tsx",
+    name: '去掉 <audio> 的 crossOrigin（网络歌曲被音频图接管后静音）',
+    file: 'src/components/MusicKernel.tsx',
     find: "      crossOrigin={corsMode ? 'anonymous' : undefined}",
-    replace: "      crossOrigin={undefined}",
-    expect: ["AUDIO.corsMode"],
+    replace: '      crossOrigin={undefined}',
+    expect: ['AUDIO.corsMode'],
   },
   {
-    name: "去掉 CORS 回退里的 markNotWirable 标记（回退后在非 CORS 下被接管 → 静音）",
-    file: "app/src/components/MusicKernel.tsx",
-    find: "          markNotWirable(a);",
-    replace: "          void a;",
-    expect: ["AUDIO.fallback"],
+    name: '去掉 CORS 回退里的 markNotWirable 标记（回退后在非 CORS 下被接管 → 静音）',
+    file: 'src/components/MusicKernel.tsx',
+    find: '          markNotWirable(a);',
+    replace: '          void a;',
+    expect: ['AUDIO.fallback'],
   },
   {
-    name: "让 isWirable 不再检查 CORS 模式（非 CORS 元素也会被接管）",
-    file: "app/src/music/audioGraph.ts",
+    name: '让 isWirable 不再检查 CORS 模式（非 CORS 元素也会被接管）',
+    file: 'src/music/audioGraph.ts',
     find: "  return el.crossOrigin === 'anonymous';",
-    replace: "  return true;",
-    expect: ["AUDIO.refuseNonCors"],
+    replace: '  return true;',
+    expect: ['AUDIO.refuseNonCors'],
   },
   {
-    name: "去掉 gain → destination 的连接（接管即静音）",
-    file: "app/src/music/audioGraph.ts",
-    find: "      gain.connect(ctx.destination); // 唯一出口：不接回 destination = 静音",
-    replace: "      void gain; // 反证：不接回出口",
-    expect: ["AUDIO.connectDestination"],
+    name: '去掉 gain → destination 的连接（接管即静音）',
+    file: 'src/music/audioGraph.ts',
+    find: '      gain.connect(ctx.destination); // 唯一出口：不接回 destination = 静音',
+    replace: '      void gain; // 反证：不接回出口',
+    expect: ['AUDIO.connectDestination'],
   },
   {
-    name: "在灵动岛里再建一次音频图（第二个调用方会抛 InvalidStateError）",
-    file: "app/src/components/DynamicIsland.tsx",
-    find: "      const got = await attachAnalyser(findAudioElement());",
-    replace: "      const got = await attachAnalyser(findAudioElement());\n      const __probe = (window as unknown as { createMediaElementSource?: unknown })\n        .createMediaElementSource;\n      void __probe;",
-    expect: ["AUDIO.singleEntry"],
+    name: '在灵动岛里再建一次音频图（第二个调用方会抛 InvalidStateError）',
+    file: 'src/components/DynamicIsland.tsx',
+    find: '      const got = await attachAnalyser(findAudioElement());',
+    replace:
+      '      const got = await attachAnalyser(findAudioElement());\n      const __probe = (window as unknown as { createMediaElementSource?: unknown })\n        .createMediaElementSource;\n      void __probe;',
+    expect: ['AUDIO.singleEntry'],
   },
   {
-    name: "Rust 不再把载荷写入缓存（歌词窗补拉永远拿到空 → 打开还是没歌词）",
-    file: "app/src-tauri/src/lyrics_window.rs",
-    find: "        *g = Some(payload.clone());",
-    replace: "        let _ = &mut g;",
-    expect: ["LYRICS.stateBackfill"],
+    name: 'Rust 不再把载荷写入缓存（歌词窗补拉永远拿到空 → 打开还是没歌词）',
+    file: 'src-tauri/src/commands/lyrics_window.rs',
+    find: '        *g = Some(payload.clone());',
+    replace: '        let _ = &mut g;',
+    expect: ['LYRICS.stateBackfill'],
   },
   {
-    name: "歌词窗去掉挂载后的补拉（回到\"暂停再播放才显示\"）",
-    file: "app/src/screens/lyrics/DesktopLyrics.tsx",
+    name: '歌词窗去掉挂载后的补拉（回到"暂停再播放才显示"）',
+    file: 'src/screens/lyrics/DesktopLyrics.tsx',
     find: "        const cached = await invoke<LyricsPayload | LyricsPrefsPayload | null>('get_lyrics_state');",
-    replace: "        const cached = null as LyricsPayload | LyricsPrefsPayload | null;",
-    expect: ["LYRICS.stateBackfill"],
+    replace: '        const cached = null as LyricsPayload | LyricsPrefsPayload | null;',
+    expect: ['LYRICS.stateBackfill'],
   },
   {
-    name: "main.rs 不注册 lyrics_control（调用报\"命令不存在\"，被 catch 吞掉）",
-    file: "app/src-tauri/src/main.rs",
-    find: "            lyrics_window::lyrics_control,",
-    replace: "            // lyrics_window::lyrics_control,",
-    expect: ["LYRICS.controlBridge"],
+    name: 'commands/mod.rs 不注册 lyrics_control（调用报"命令不存在"，被 catch 吞掉）',
+    file: 'src-tauri/src/commands/mod.rs',
+    find: '        crate::commands::lyrics_window::lyrics_control,\n',
+    replace: '',
+    expect: ['LYRICS.controlBridge'],
   },
   {
-    name: "主窗不处理 next 动作（该按钮点了没反应）",
-    file: "app/src/components/MusicKernel.tsx",
+    name: '主窗不处理 next 动作（该按钮点了没反应）',
+    file: 'src/components/MusicKernel.tsx',
     find: "            case 'next':\n              s.next();\n              break;",
     replace: "            case 'unused-next':\n              break;",
-    expect: ["LYRICS.controlBridge"],
+    expect: ['LYRICS.controlBridge'],
   },
   {
-    name: "cycle-mode 后不补推状态（歌词窗模式图标滞后，像点了没反应）",
-    file: "app/src/components/MusicKernel.tsx",
-    find: "              void s.pushLyricsState();",
-    replace: "              void 0;",
-    expect: ["LYRICS.modeIconSync"],
+    name: 'cycle-mode 后不补推状态（歌词窗模式图标滞后，像点了没反应）',
+    file: 'src/components/MusicKernel.tsx',
+    find: '              void s.pushLyricsState();',
+    replace: '              void 0;',
+    expect: ['LYRICS.modeIconSync'],
   },
   {
-    name: "store 推送时不带 playMode（歌词窗永远显示默认模式）",
-    file: "app/src/music/store.ts",
-    find: "      // 播放模式要跟着走：歌词窗的控制栏靠它显示正确的模式图标（两窗 store 互不可见）\n      playMode,",
-    replace: "      // 反证：不带 playMode",
-    expect: ["LYRICS.playModeContract"],
+    name: 'store 推送时不带 playMode（歌词窗永远显示默认模式）',
+    file: path.join(F.actionsDir, 'desktop.ts'),
+    find: '      // 播放模式要跟着走：歌词窗的控制栏靠它显示正确的模式图标（两窗 store 互不可见）\n      playMode,',
+    replace: '      // 反证：不带 playMode',
+    expect: ['LYRICS.playModeContract'],
   },
 
   // ── LYRICS 逐字歌词（卡拉OK）────────────────────────────────────────
   {
     name: '把 parseYrc 改名（模拟"定义了但没接进来"）',
-    file: F.store,
+    file: F.lyrics,
     find: 'export function parseYrc(yrc: string): ParsedLyricLine[] {',
     replace: 'export function parseYrcDisabled(yrc: string): ParsedLyricLine[] {',
     expect: ['LYRICS.parseYrcUsed'],
@@ -4033,7 +5060,7 @@ const MUTATIONS = [
   {
     // 模拟"只留定义、删掉调用"—— 这是「只查标识符存在」型断言最经典的漏网方式
     name: 'loadLyrics 不再调用 parseYrc（只走 LRC，逐字高亮静默失效）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'lyrics.ts'),
     find: "        lines = l.yrc ? parseYrc(l.yrc) : parseLrc(l.lyric || '');\n",
     replace: "        lines = parseLrc(l.lyric || '');\n",
     expect: ['LYRICS.parseYrcUsed'],
@@ -4041,14 +5068,14 @@ const MUTATIONS = [
   {
     // 本任务最关键的反证：破坏「无 yrc 时的行级插值」—— 绝大多数歌走的就是这条路
     name: 'finalizeLineDurations 去掉 [0.45, 12] 夹紧（退化路径失去边界保护）',
-    file: F.store,
+    file: F.lyrics,
     find: '    lines[i].duration = Math.max(0.45, Math.min(12, lines[i].duration as number));\n',
     replace: '    lines[i].duration = lines[i].duration as number;\n',
     expect: ['LYRICS.lineInterpolation'],
   },
   {
     name: 'parseLrc 不再补 duration（LRC 退化路径断头 → 无 yrc 的歌没有推进跨度）',
-    file: F.store,
+    file: F.lyrics,
     find: '  // ⚠️ LRC **只有行级时间**，没有逐字数据 —— 必须在这里补出行持续时长，\n  // 否则「无 yrc 的歌」在渲染层没有可插值的跨度，逐字推进会整体失效。\n  return finalizeLineDurations(lines);',
     replace: '  return lines;',
     expect: ['LYRICS.lineInterpolation'],
@@ -4128,15 +5155,16 @@ const MUTATIONS = [
   {
     name: '唱片的 animationPlayState 写成常量（暂停仍在转）',
     file: F.vinylDisc,
-    find: '            boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.28), inset 0 0 60px ${hexToRgba(accentColor, 0.35)}`,\n            animationPlayState: isPlaying ? \'running\' : \'paused\',',
-    replace: '            boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.28), inset 0 0 60px ${hexToRgba(accentColor, 0.35)}`,\n            animationPlayState: \'running\',',
+    find: "            boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.28), inset 0 0 60px ${hexToRgba(accentColor, 0.35)}`,\n            animationPlayState: isPlaying ? 'running' : 'paused',",
+    replace:
+      "            boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.28), inset 0 0 60px ${hexToRgba(accentColor, 0.35)}`,\n            animationPlayState: 'running',",
     expect: ['SKIN.vinylPause'],
   },
   {
     name: '波纹层类名改坏（沉浸专属视觉丢失）',
     file: F.expanded,
-    find: '          className="skin-ripple-layer"',
-    replace: '          className="skin-ripple-layer-off"',
+    find: 'className="skin-ripple-layer"',
+    replace: 'className="skin-ripple-layer-off"',
     expect: ['SKIN.bgImmersive'],
   },
   {
@@ -4158,129 +5186,166 @@ const MUTATIONS = [
   {
     name: '歌词行 flex-shrink:0 被删（当前句被 flex 收缩压扁 → 整行消失、换句后上一句才出现）',
     file: F.musicScss,
-    find: '.music-exp-lyr-box .music-lyr-line { flex-shrink: 0; }',
-    replace: '.music-exp-lyr-box .music-lyr-line { /* removed */ }',
+    find: '.music-exp-lyr-box .music-lyr-line {',
+    replace: '.music-exp-lyr-box .music-lyr-line-off {',
     expect: ['SKIN.lyrNoFlexShrink'],
   },
   {
-    name: "从音频图里去掉 GainNode（音量退回依赖元素 volume，部分平台会失效）",
-    file: "app/src/music/audioGraph.ts",
-    find: "    gain = gain ?? ctx.createGain();",
-    replace: "    gain = gain ?? null;",
-    expect: ["AUDIO.connectDestination"],
+    name: '从音频图里去掉 GainNode（音量退回依赖元素 volume，部分平台会失效）',
+    file: 'src/music/audioGraph.ts',
+    find: '    gain = gain ?? ctx.createGain();',
+    replace: '    gain = gain ?? null;',
+    expect: ['AUDIO.connectDestination'],
   },
   {
-    name: "把 onEnded 改回直接调 next()（单曲循环失效）",
-    file: "app/src/components/MusicKernel.tsx",
-    find: "      onEnded={() => handleTrackEnded()}",
-    replace: "      onEnded={() => void 0}",
-    expect: ["AUDIO.trackEndedOne"],
+    name: '把 onEnded 改回直接调 next()（单曲循环失效）',
+    file: 'src/components/MusicKernel.tsx',
+    find: '      onEnded={() => handleTrackEnded()}',
+    replace: '      onEnded={() => void 0}',
+    expect: ['AUDIO.trackEndedOne'],
   },
   {
-    name: "把播放队列的 z-index 降回展开播放器之下（点「播放队列」看不到东西）",
+    name: '把播放队列的 z-index 降回展开播放器之下（点「播放队列」看不到东西）',
     file: F.musicScss,
-    find: "  flex-direction: column;\n  z-index: 72;\n}",
-    replace: "  flex-direction: column;\n  z-index: 60;\n}",
-    expect: ["UI.drawerAboveExpanded"],
+    // 锚点收窄到那一行本身：抽屉里后来插入了进场动画的注释与声明，
+    // 原先"跨到右花括号"的三行锚点会静默失效（跳过 ≠ 通过）
+    find: '  z-index: 72;',
+    replace: '  z-index: 60;',
+    expect: ['UI.drawerAboveExpanded'],
   },
   {
-    name: "不在队列的歌不接进队列（历史点歌会与 currentIndex 不一致）",
-    file: "app/src/music/store.ts",
-    find: "        set({ queue: next, currentIndex: next.length - 1 });",
-    replace: "        set({ currentIndex: next.length - 1 });",
-    expect: ["QUEUE.adoptOutOfQueue"],
+    // 复现 2026-10-16 的真机缺陷：模态 ≤ 展开播放器 ⇒ 退出确认被盖住且不报错
+    name: '把模态遮罩降回展开播放器之下（点「退出喵坞」的二次确认被铺满的播放器盖住，且不报错）',
+    file: F.componentsScss,
+    find: '  z-index: 95;',
+    replace: '  z-index: 40;',
+    expect: ['UI.modalAboveExpanded'],
   },
   {
-    name: "playNext 不去重（同一首会在队列里出现两次）",
-    file: "app/src/music/store.ts",
-    find: "    const without = queue.filter((s) => songKey(s) !== key);",
-    replace: "    const without = queue;",
-    expect: ["QUEUE.playNextInsert"],
+    // 复现用户报的"边拖边跳"：定位效果不再避让拖拽 ⇒ 拖拽中歌词跟着播放头连续跳
+    name: 'KaraokeLyrics 的定位不再避让拖拽（拖进度条时歌词跟着跳）',
+    file: F.karaoke,
+    find: '    if (seeking) {',
+    replace: '    if (false) {',
+    expect: ['LYRICS.seekDeferLocate'],
   },
   {
-    name: "playNext 不判「正在播」就摘掉重插（把当前项从队列里删掉）",
-    file: "app/src/music/store.ts",
+    // 复现用户报的"有的歌词有翻译、有的没有"：同文本复用被摘掉 ⇒ 副歌第二处等重复句永远没译文
+    name: 'mergeTranslation 去掉同文本复用（副歌第二处等重复句永远拿不到译文）',
+    file: F.lyrics,
+    find: '    if (reuse) line.translation = reuse;',
+    replace: '    if (false) line.translation = reuse;',
+    expect: ['LYRICS.translationMerge'],
+  },
+  {
+    // 同一缺陷的另一半：容差卡回 0.5s ⇒ 平台整体偏移时整段丢翻译
+    name: 'mergeTranslation 容差卡回 0.5s（平台时间戳整体偏移时整段丢翻译）',
+    file: F.lyrics,
+    find: '  const TOL = 1.5;',
+    replace: '  const TOL = 0.5;',
+    expect: ['LYRICS.translationMerge'],
+  },
+  {
+    name: '不在队列的歌不接进队列（历史点歌会与 currentIndex 不一致）',
+    file: path.join(F.actionsDir, 'playback.ts'),
+    find: '        set({ queue: next, currentIndex: next.length - 1 });',
+    replace: '        set({ currentIndex: next.length - 1 });',
+    expect: ['QUEUE.adoptOutOfQueue'],
+  },
+  {
+    name: 'playNext 不去重（同一首会在队列里出现两次）',
+    file: path.join(F.actionsDir, 'queue.ts'),
+    find: '    const without = queue.filter((s) => songKey(s) !== key);',
+    replace: '    const without = queue;',
+    expect: ['QUEUE.playNextInsert'],
+  },
+  {
+    name: 'playNext 不判「正在播」就摘掉重插（把当前项从队列里删掉）',
+    file: path.join(F.actionsDir, 'queue.ts'),
     find: "      get().toast('这首歌正在播放');\n      return;",
     replace: "      get().toast('这首歌正在播放');",
-    expect: ["QUEUE.playNextNoSelfRemove"],
+    expect: ['QUEUE.playNextNoSelfRemove'],
   },
 
   // ── MENU 歌曲右键菜单 ──────────────────────────────────────────────────
   {
     name: '菜单挂回行内（不 portal 到 body → 被滚动容器裁掉）',
-    file: F.songMenu,
-    find: '        document.body,\n',
-    replace: '        document.documentElement,\n',
+    file: F.contextMenu,
+    find: '    document.body,\n',
+    replace: '    document.documentElement,\n',
     expect: ['MENU.portal'],
   },
   {
     name: '外部关闭的 mousedown 改成冒泡阶段（点菜单项会顺带播放这一行）',
-    file: F.songMenu,
+    file: F.contextMenu,
     find: "window.addEventListener('mousedown', onDown, true);",
     replace: "window.addEventListener('mousedown', onDown, false);",
     expect: ['MENU.closeCapture'],
   },
   {
     name: '外部关闭改用 click（被行的 onClick 抢先 → 点菜单项 = 顺带播这一行）',
-    file: F.songMenu,
+    file: F.contextMenu,
     find: "window.addEventListener('mousedown', onDown, true);",
     replace: "window.addEventListener('click', onDown, true);",
     expect: ['MENU.closeCapture'],
   },
   {
     name: 'scroll 监听改成冒泡阶段（听不到内层容器滚动 → 菜单飘在原处）',
-    file: F.songMenu,
-    find: "window.addEventListener('scroll', onViewChange, true);",
-    replace: "window.addEventListener('scroll', onViewChange, false);",
+    file: F.contextMenu,
+    find: "window.addEventListener('scroll', onClose, true);",
+    replace: "window.addEventListener('scroll', onClose, false);",
     expect: ['MENU.scrollCapture'],
   },
   {
     name: 'Esc 判据写错（按 Esc 关不掉菜单）',
-    file: F.songMenu,
-    find: "if (e.key === 'Escape') close();",
-    replace: "if (e.key === 'Esc') close();",
+    file: F.contextMenu,
+    find: "if (e.key !== 'Escape') return;",
+    replace: "if (e.key !== 'Esc') return;",
     expect: ['MENU.esc'],
   },
   {
-    name: '右边放不下时不再翻转（菜单被视口右缘切掉一半）',
-    file: F.songMenu,
-    find: 'const px = x + MENU_W > window.innerWidth ? Math.max(0, x - MENU_W) : x;',
-    replace: 'const px = x + MENU_W > window.innerWidth ? x : x;',
+    name: '右边放不下时不夹进视口（菜单被视口右缘切掉一半）',
+    file: F.contextMenu,
+    find: 'const left = Math.max(8, Math.min(x, window.innerWidth - r.width - 8));',
+    replace: 'const left = x;',
     expect: ['MENU.flip'],
   },
   {
-    name: '「下一首播放」不阻断冒泡（点它 = 顺带把这一行也播了）',
-    file: F.songMenu,
-    find: '              e.stopPropagation();\n              close();\n              playNext(st.song);',
-    replace: '              close();\n              playNext(st.song);',
+    name: '菜单根节点不截断 onClick（点菜单项 = 顺带触发宿主行的点击）',
+    file: F.contextMenu,
+    find: '      onClick={(e) => e.stopPropagation()}\n',
+    replace: '',
     expect: ['MENU.noBubble'],
   },
   {
     name: '「下一首播放」不调 playNext（点了没反应）',
-    file: F.songMenu,
-    find: '              playNext(st.song);',
-    replace: '              void st.song;',
+    file: F.songRowShared,
+    find: 'playNext(menu.song);',
+    replace: 'void menu.song;',
     expect: ['MENU.nextItem'],
   },
   {
     name: '加回一个点了没用的「下载」菜单项（本轮不做）',
-    file: F.songMenu,
-    find: '            <ListEnd size={13} /> 下一首播放\n          </button>',
-    replace:
-      '            <ListEnd size={13} /> 下一首播放\n          </button>\n          <button type="button" className="music-menu-item">下载</button>',
+    file: F.songRowShared,
+    find: '                label="下一首播放"',
+    replace: '                label="下一首播放"\n                sub="下载"',
     expect: ['MENU.noDownload'],
   },
   {
     name: '播放兜底去掉（宿主没传 onPlay 时菜单点了没反应）',
-    file: F.songMenu,
-    find: '              else void playSong(st.song);',
-    replace: '              else void 0;',
+    file: F.songRowShared,
+    find: 'else void playSong(menu.song);',
+    replace: 'else void 0;',
     expect: ['MENU.playSemantics'],
   },
   {
     name: 'SongRow 不接 onContextMenu（右键没反应）',
     file: F.songRowShared,
-    find: '      onContextMenu={(e) => menu.open(e, song, onPlay)}\n',
+    find:
+      '      onContextMenu={(e) => {\n' +
+      '        e.preventDefault(); // 关掉系统右键菜单，否则两层菜单叠在一起\n' +
+      '        setMenu({ x: e.clientX, y: e.clientY, song, onPlay });\n' +
+      '      }}\n',
     replace: '',
     expect: ['MENU.rowContextMenu'],
   },
@@ -4299,69 +5364,74 @@ const MUTATIONS = [
     expect: ['MENU.onPlay.history'],
   },
   {
-    name: 'QueueDrawer 把 useSongMenu 挪到早退之后（hook 顺序随行数变）',
+    name: 'QueueDrawer 把菜单状态挪到早退之后（顺序随行数变）',
     file: F.queueDrawer,
     find:
-      '  const menu = useSongMenu();\n' +
-      "  const queueOpen = useMusicStore((s) => s.queueOpen);\n" +
-      "  const queue = useMusicStore((s) => s.queue);\n" +
-      "  const currentIndex = useMusicStore((s) => s.currentIndex);\n" +
-      "  const playSong = useMusicStore((s) => s.playSong);\n" +
-      "  const removeFromQueue = useMusicStore((s) => s.removeFromQueue);\n" +
-      "  const clearQueue = useMusicStore((s) => s.clearQueue);\n" +
-      "  const setQueueOpen = useMusicStore((s) => s.setQueueOpen);\n" +
+      '  const [menu, setMenu] = useState<{ x: number; y: number; song: Song } | null>(null);\n' +
+      '  const queueOpen = useMusicStore((s) => s.queueOpen);\n' +
+      '  const queue = useMusicStore((s) => s.queue);\n' +
+      '  const currentIndex = useMusicStore((s) => s.currentIndex);\n' +
+      '  const playMode = useMusicStore((s) => s.playMode);\n' +
+      '  const playSong = useMusicStore((s) => s.playSong);\n' +
+      '  const playNext = useMusicStore((s) => s.playNext);\n' +
+      '  const removeFromQueue = useMusicStore((s) => s.removeFromQueue);\n' +
+      '  const clearQueue = useMusicStore((s) => s.clearQueue);\n' +
+      '  const setQueueOpen = useMusicStore((s) => s.setQueueOpen);\n' +
       '\n  if (!queueOpen) return null;\n',
     replace:
-      "  const queueOpen = useMusicStore((s) => s.queueOpen);\n" +
-      "  const queue = useMusicStore((s) => s.queue);\n" +
-      "  const currentIndex = useMusicStore((s) => s.currentIndex);\n" +
-      "  const playSong = useMusicStore((s) => s.playSong);\n" +
-      "  const removeFromQueue = useMusicStore((s) => s.removeFromQueue);\n" +
-      "  const clearQueue = useMusicStore((s) => s.clearQueue);\n" +
-      "  const setQueueOpen = useMusicStore((s) => s.setQueueOpen);\n" +
-      '\n  if (!queueOpen) return null;\n  const menu = useSongMenu();\n',
+      '  const queueOpen = useMusicStore((s) => s.queueOpen);\n' +
+      '  const queue = useMusicStore((s) => s.queue);\n' +
+      '  const currentIndex = useMusicStore((s) => s.currentIndex);\n' +
+      '  const playMode = useMusicStore((s) => s.playMode);\n' +
+      '  const playSong = useMusicStore((s) => s.playSong);\n' +
+      '  const playNext = useMusicStore((s) => s.playNext);\n' +
+      '  const removeFromQueue = useMusicStore((s) => s.removeFromQueue);\n' +
+      '  const clearQueue = useMusicStore((s) => s.clearQueue);\n' +
+      '  const setQueueOpen = useMusicStore((s) => s.setQueueOpen);\n' +
+      '\n  if (!queueOpen) return null;\n' +
+      '  const [menu, setMenu] = useState<{ x: number; y: number; song: Song } | null>(null);\n',
     expect: ['MENU.queueRow'],
   },
   {
-    name: '菜单去掉 z-index（被队列抽屉 / 展开播放器压住看不见）',
-    file: F.musicScss,
-    find: '  position: fixed;\n  z-index: 78;\n  min-width: 148px;',
-    replace: '  position: fixed;\n  min-width: 148px;',
+    name: '右键菜单去掉 z-index 78（被队列抽屉 / 展开播放器压住看不见）',
+    file: F.componentsScss,
+    find: 'z-index: 78',
+    replace: 'z-index: 7',
     expect: ['MENU.css'],
   },
 
   // ── ISLANDV 灵动岛第 4 态（歌词卡）──────────────────────────────────────
   {
     name: 'islandView 的默认值改成 lyrics（首次使用就落在歌词卡）',
-    file: 'app/src/music/store.ts',
+    file: 'src/music/store.ts',
     find: "  islandView: 'play',\n",
     replace: "  islandView: 'lyrics',\n",
     expect: ['ISLANDV.pref.default'],
   },
   {
     name: 'IslandView 放宽成 string（localStorage 里的脏值能一路流到渲染层）',
-    file: 'app/src/music/store.ts',
+    file: 'src/music/store.ts',
     find: "export type IslandView = 'play' | 'lyrics';",
     replace: 'export type IslandView = string;',
     expect: ['ISLANDV.pref.type'],
   },
   {
-    name: 'islandView 改用 ?? 回落（脏值 \'xxx\' 会被原样读进内存）',
-    file: 'app/src/music/store.ts',
+    name: "islandView 改用 ?? 回落（脏值 'xxx' 会被原样读进内存）",
+    file: path.join(F.actionsDir, 'init.ts'),
     find: "    const islandView: IslandView = prefs.islandView === 'lyrics' ? 'lyrics' : 'play';",
     replace: "    const islandView: IslandView = (prefs.islandView ?? 'play') as IslandView;",
     expect: ['ISLANDV.pref.hydrate'],
   },
   {
     name: 'hydratePrefs 恢复时漏掉 islandView（冷启动回到默认值）',
-    file: 'app/src/music/store.ts',
+    file: path.join(F.actionsDir, 'init.ts'),
     find: '      islandView,\n',
     replace: '',
     expect: ['ISLANDV.pref.hydrate'],
   },
   {
     name: 'setIslandView 不写 savePrefs（切到歌词卡后重开就回到播放卡）',
-    file: 'app/src/music/store.ts',
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '    savePrefs({ islandView: v });\n',
     replace: '    // [refute] 偏好未持久化\n',
     expect: ['ISLANDV.pref.persist'],
@@ -4404,7 +5474,7 @@ const MUTATIONS = [
   {
     name: '切换键只留一个方向（进了歌词卡出不来）',
     file: F.island,
-    find: "              title={view === 'lyrics' ? '播放' : '歌词'}",
+    find: "title={view === 'lyrics' ? '播放' : '歌词'}",
     replace: '              title="歌词"',
     expect: ['ISLANDV.toggleBothWays'],
   },
@@ -4423,6 +5493,36 @@ const MUTATIONS = [
     expect: ['ISLANDV.hlVarInjected'],
   },
   {
+    name: '.is-dynamic 用 animation 简写开关动态背景（重播进场动画 ⇒ 整屏闪一下）',
+    file: F.musicScss,
+    find: '  animation-play-state: running, running;\n}',
+    replace: '  animation: music-exp-flow 8s ease-in-out infinite;\n}',
+    expect: ['PLAYER.noAnimShorthandClash'],
+  },
+  {
+    name: '歌词卡把按钮栏按钮压回 26px（两态总宽不同 ⇒ 居中位移 + 上下跳）',
+    file: F.musicScss,
+    find: '.di-card.is-lyr {\n  /* 上内边距仍要让开共享封面（62）；下内边距与播放卡**同值**（42 = 按钮栏顶边），\n     两态的内容区底边因此对齐；歌词区实得 150-62-42 = 46px，容得下两行 14/12。 */\n  padding: 62px 16px 42px;',
+    replace:
+      '.di-card.is-lyr {\n  padding: 62px 16px 42px;\n}\n.di-card.is-lyr .di-ctl .ui-cbtn {\n  width: 26px;\n  height: 26px;\n}',
+    expect: ['ISLANDV.ctlStableAcrossViews'],
+  },
+  {
+    name: '.di-toggle 外层跟着内容缩成 26px（整行总宽变 ⇒ 居中位移）',
+    file: F.musicScss,
+    find: '.di-toggle {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 30px;\n  height: 30px;\n  flex: 0 0 auto;\n}',
+    replace:
+      '.di-toggle {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 26px;\n  height: 26px;\n}',
+    expect: ['ISLANDV.ctlStableAcrossViews'],
+  },
+  {
+    name: '把 .di-prog 放回文档流（切视图时进度条位置随内容高度变）',
+    file: F.musicScss,
+    find: '.di-prog {\n  position: absolute;\n  left: 16px;\n  right: 16px;\n  bottom: 50px;\n  height: 12px;\n  display: flex;',
+    replace: '.di-prog {\n  display: flex;',
+    expect: ['ISLANDV.ctlStableAcrossViews'],
+  },
+  {
     name: '歌词卡字号接回 --lyr-size（跟随用户 17–48 的量程 → 320px 卡片被撑爆）',
     file: F.musicScss,
     find: '.di-card .di-lyr .music-lyr-line {\n  font-size: var(--di-lyr-size, 12px);',
@@ -4431,7 +5531,7 @@ const MUTATIONS = [
   },
   {
     name: '提前删掉桌面歌词的状态推送（本轮红线：只加不删）',
-    file: 'app/src/music/store.ts',
+    file: path.join(F.actionsDir, 'desktop.ts'),
     find: '  pushLyricsState: async () => {',
     replace: '  pushLyricsStateRemoved: async () => {',
     expect: ['ISLANDV.desktopLyricsKept'],
@@ -4448,8 +5548,7 @@ const MUTATIONS = [
     name: '只给网易云登录窗单独设 additional_browser_args（与主窗默认值冲突 ⇒ 建窗失败）',
     file: F.rustMod,
     find: '        .inner_size(940.0, 760.0)',
-    replace:
-      '        .additional_browser_args("--disable-features=Foo")\n        .inner_size(940.0, 760.0)',
+    replace: '        .additional_browser_args("--disable-features=Foo")\n        .inner_size(940.0, 760.0)',
     expect: ['WEBVIEW.sameArgsEverywhere'],
   },
   {
@@ -4458,7 +5557,7 @@ const MUTATIONS = [
     name: '把网易云登录窗改成加载应用自身页面（照抄歌词窗写法 ⇒ 登录页不出现）',
     file: F.rustMod,
     find: '            WebviewUrl::External("about:blank".parse().map_err(|e: url::ParseError| e.to_string())?),',
-    replace: '            WebviewUrl::App("index.html".into()),',
+    replace: '            WebviewUrl::App("templates/index.html".into()),',
     expect: ['WEBVIEW.loginExternal'],
   },
 
@@ -4467,28 +5566,28 @@ const MUTATIONS = [
   // 定位没生效、队列被清空），没有反证就分不清"功能坏了"和"从没实现过"。
   {
     name: '暂停时不再存快照（"听完暂停、第二天再开"丢进度）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '    if (!get().isPlaying) get().persistSnapshot();',
     replace: '    // 反证：暂停不存快照',
     expect: ['RESTORE.snapshotPersisted'],
   },
   {
     name: '快照不校验版本号（拿旧结构继续跑 → "恢复了但队列是空的"且不报错）',
-    file: F.store,
+    file: F.persist,
     find: 'if (s.v !== SNAPSHOT_VERSION) return null;',
     replace: '// 反证：不校验版本',
     expect: ['RESTORE.snapshotVersioned'],
   },
   {
     name: '截断队列时不重算 index（当前歌被截出窗口 → 恢复后停在一首无关的歌上）',
-    file: F.store,
+    file: F.persist,
     find: 'return { queue: queue.slice(start, start + max), index: index - start };',
     replace: 'return { queue: queue.slice(start, start + max), index };',
     expect: ['RESTORE.truncateKeepsCurrent'],
   },
   {
     name: '切平台时不存 playbackSource（重启后恒为网易云 → 恢复按错平台校验登录态）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'platform.ts'),
     find: '    savePrefs({ playbackSource: p });',
     replace: '    // 反证：不存平台偏好',
     expect: ['RESTORE.playbackSourcePersisted'],
@@ -4496,14 +5595,14 @@ const MUTATIONS = [
   {
     // 这一条是 Q1 的核心：把「探不动」当「登出」→ 用户一断网就丢播放进度
     name: '把「探测失败」也判成明确未登录（断网即清快照，Q1 语义反了）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'init.ts'),
     find: "  if (info === null || info === undefined) return 'probe_failed';",
     replace: "  if (info === null || info === undefined) return 'logged_out';",
     expect: ['RESTORE.verdictThreeStates'],
   },
   {
     name: '恢复时不传 autoplay:false（重开应用直接自动播放，违背需求）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'init.ts'),
     find: '      autoplay: false,\n      expand: false,\n      resumeAtMs: snap.progressMs,',
     replace: '      expand: false,\n      resumeAtMs: snap.progressMs,',
     expect: ['RESTORE.restoredPaused'],
@@ -4511,7 +5610,7 @@ const MUTATIONS = [
   {
     // 只保留快照不退回闸：断网时第一次进屏就把闸关死，网络好了也永不再试
     name: '探针失败时不把「只跑一次」的闸退回 false（断网一次 → 恢复功能永久失效）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'init.ts'),
     find: '      set({ restoreAttempted: false });',
     replace: '      // 反证：不退回闸',
     expect: ['RESTORE.probeFailKeepsSnapshot'],
@@ -4519,7 +5618,7 @@ const MUTATIONS = [
   {
     // 闸只开不关：用户之后正常播放遇到一次网络抖动，就会静默遍历整个队列并清空
     name: 'URL 解析抛错时不关恢复态（playUrl 永不设置 → 没有任何路径会关闸）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '      set({ isPlaying: false, restoring: false });',
     replace: '      set({ isPlaying: false });',
     expect: ['RESTORE.restoringClosed'],
@@ -4542,14 +5641,14 @@ const MUTATIONS = [
   {
     // Q4：写死 10 → 恢复时"整条队列都失败"永远走不到清空那一步
     name: '恢复态的跳歌上限写死 10 首（遍历不完就停 → 该清的队列没清）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: 'const skipLimit = restoring ? Math.max(1, get().queue.length) : 10;',
     replace: 'const skipLimit = 10;',
     expect: ['RESTORE.skipLimitRestoring'],
   },
   {
     name: '去掉「本次会话只恢复一次」的闸（切走再切回会重复恢复并覆盖用户的操作）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'init.ts'),
     find: '    if (get().restoreAttempted) return;',
     replace: '    // 反证：无闸',
     expect: ['RESTORE.onlyOnce'],
@@ -4563,49 +5662,49 @@ const MUTATIONS = [
     // 后果是用户切到「无损」后播的仍是上次的「极高」文件，界面显示新档位 —— 察觉不到。
     // 这条反证同时证明 CACHE.keyHasQuality 不是恒绿。
     name: '查缓存时删掉 quality 实参（⇒ 切档位后命中上次文件，界面显示新档位实际播旧码率）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: 'ipc.musicAudioCached(provider, audioCacheId(provider, song), quality)',
     replace: 'ipc.musicAudioCached(provider, audioCacheId(provider, song))',
     expect: ['CACHE.keyHasQuality'],
   },
   {
     name: '把查缓存的档位换成 r.quality（四平台值域不同 ⇒ 同一首歌每次 key 都不同 ⇒ 永不命中）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '  const quality = state.playbackQuality;',
     replace: "  const quality = String((await platform.songUrl(provider, song, 'standard')).quality || '');",
     expect: ['CACHE.qualityFromState'],
   },
   {
     name: '把档位默认成 standard（参数传漏时静默命中标准音质 ⇒ 用户以为在听高音质）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '  const quality = state.playbackQuality;',
     replace: "  const quality = state.playbackQuality || 'standard';",
     expect: ['CACHE.noQualityFallback'],
   },
   {
     name: '本地歌曲不再排除（用户导入的文件被计入「音乐缓存」统计 ⇒ 设置页占用数字失真）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '  if (song._localPath) return null;\n',
     replace: '  // 反证：本地歌曲也入缓存链\n',
     expect: ['CACHE.localSongExcluded'],
   },
   {
     name: '预热不再排除本地歌曲（本地文件被重复问一次缓存，且计入音乐缓存统计）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '  if (song._localPath) return;\n',
     replace: '  // 反证：预热不排除本地\n',
     expect: ['CACHE.localSongExcluded'],
   },
   {
     name: '把查缓存挪到取流地址之后（先回源再查 ⇒ 命中也省不掉这次网络往返，白接缓存）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '  const cached = await lookupAudioCache(song, provider, quality);\n',
     replace: '  // 反证：不查缓存\n',
     expect: ['CACHE.hitSkipsSongUrl'],
   },
   {
     name: '缓存命中后不 return（命中了还会继续往下调 songUrl ⇒ 缓存等于没接）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '    return cached;\n',
     replace: '    // 反证：命中不返回\n',
     expect: ['CACHE.hitSkipsSongUrl'],
@@ -4631,29 +5730,29 @@ const MUTATIONS = [
     expect: ['CACHE.ipcWrapped'],
   },
   {
-    name: '从 main.rs 的 generate_handler! 里摘掉 music_cache_stats 注册（定义仍在）',
-    file: F.rustMain,
-    find: '            music::audio_cache::music_cache_stats,\n',
+    name: '从 commands/mod.rs 的 generate_handler! 里摘掉 music_cache_stats 注册（定义仍在）',
+    file: F.rustRegistry,
+    find: '        crate::music::audio_cache::music_cache_stats,\n',
     replace: '',
     expect: ['CACHE.ipcWrapped'],
   },
   {
     name: '缓存命中路径不走 convertFileSrc（绝对路径直喂 <audio> 被跨源挡住 ⇒ 命中反而播不出声）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '    return hit ? convertFileSrc(hit) : null;',
     replace: '    return hit || null;',
     expect: ['CACHE.hitUsesConvertFileSrc'],
   },
   {
     name: '把预热 await 住（慢网下点歌要等整首下载完才响；下载失败还会被当成"播放失败"跳歌）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '  void ipc.musicCacheDownload(provider, audioCacheId(provider, song), quality, url).catch(() => {});',
-    replace: "  await ipc.musicCacheDownload(provider, audioCacheId(provider, song), quality, url);",
+    replace: '  await ipc.musicCacheDownload(provider, audioCacheId(provider, song), quality, url);',
     expect: ['CACHE.downloadNonBlocking', 'CACHE.downloadFailureSilent'],
   },
   {
     name: '下载失败不上抛（未处理的 Promise 拒绝会中断播放链路 ⇒ 缓存失败变成歌放不出来）',
-    file: F.store,
+    file: path.join(F.actionsDir, 'playback.ts'),
     find: '  void ipc.musicCacheDownload(provider, audioCacheId(provider, song), quality, url).catch(() => {});',
     replace: '  void ipc.musicCacheDownload(provider, audioCacheId(provider, song), quality, url);',
     expect: ['CACHE.downloadFailureSilent'],
@@ -4748,7 +5847,8 @@ const MUTATIONS = [
     name: '把放行分支挪到更新时间戳之后（长按后紧接着的一次手动点击会被误判成还在自动重复而吃掉）',
     file: F.hotkeys,
     find: '        if (!e.repeat) return false;\n        const now = performance.now();\n        const prevAt = lastAt.current[key] ?? -Infinity;\n        if (now - prevAt < TRACK_SWITCH_REPEAT_GUARD_MS) return true;\n        lastAt.current[key] = now;\n        return false;',
-    replace: '        const now = performance.now();\n        const prevAt = lastAt.current[key] ?? -Infinity;\n        if (now - prevAt < TRACK_SWITCH_REPEAT_GUARD_MS) return true;\n        if (!e.repeat) return false;\n        lastAt.current[key] = now;\n        return false;',
+    replace:
+      '        const now = performance.now();\n        const prevAt = lastAt.current[key] ?? -Infinity;\n        if (now - prevAt < TRACK_SWITCH_REPEAT_GUARD_MS) return true;\n        if (!e.repeat) return false;\n        lastAt.current[key] = now;\n        return false;',
     expect: ['KEYS.manualPressNotMerged'],
   },
   {
@@ -4780,15 +5880,36 @@ const MUTATIONS = [
     expect: ['LYRICS.modeStoreChain'],
   },
   {
-    name: '把整行模式的满亮值 1 改成 0（"整行"选项变成一行都不亮）',
+    /*
+     * D-137：整行从「双层 + width 写死 100%」改成**单层渲染**，原先锚在那个三元上的
+     * 反证已失效（锚点不存在 ⇒ 静默跳过，跳过 ≠ 通过）。换成三条打在新结构上的反证：
+     * 分别破坏「单层」「RAF 闸门」「样式过渡」三处，缺任一条断言就该红。
+     */
+    name: '整行分支里把单层改回双层（重新引入可被 RAF 改写的 width 通路）',
     file: F.karaoke,
-    find: "modeRef.current === 'line' ? 1 : getLineProgress(ls[idx], ls[idx + 1], now)",
-    replace: "modeRef.current === 'line' ? 0 : getLineProgress(ls[idx], ls[idx + 1], now)",
+    find: '            <div key={i} ref={activeRowRef} className="music-lyr-line is-on kara-line">',
+    replace:
+      '            <div key={i} ref={activeRowRef} className="music-lyr-line is-on kara-line kara-line-on">\n' +
+      '              <span className="kara-dup"><span className="kara-under">{line.text}</span></span>',
     expect: ['LYRICS.modeLineRender'],
   },
   {
-    name: "删掉 loadLyrics 里的 mergeTranslation 调用（翻译歌词永远不显示）",
-    file: F.store,
+    name: '去掉 RAF 的整行闸门（整行模式又开始逐帧写 width）',
+    file: F.karaoke,
+    find: "if (el && idx >= 0 && modeRef.current !== 'line') {",
+    replace: 'if (el && idx >= 0) {',
+    expect: ['LYRICS.modeLineRender'],
+  },
+  {
+    name: '样式里去掉 .is-line-mode 的 transition:none（整行高亮又变成缓缓位移）',
+    file: F.musicScss,
+    find: '.music-exp-lyr-box.is-line-mode .music-lyr-line {\n  transition: none;\n}',
+    replace: '.music-exp-lyr-box.is-line-mode .music-lyr-line {\n  transition: all 0.2s;\n}',
+    expect: ['LYRICS.modeLineRender'],
+  },
+  {
+    name: '删掉 loadLyrics 里的 mergeTranslation 调用（翻译歌词永远不显示）',
+    file: path.join(F.actionsDir, 'lyrics.ts'),
     find: "mergeTranslation(lines, l.translation || '');",
     replace: 'void 0;',
     expect: ['LYRICS.translationMerge'],
@@ -4819,7 +5940,8 @@ const MUTATIONS = [
     name: '把行级插值改回 smoothstep 缓动（高亮重新"追不上播放"）',
     file: F.karaoke,
     find: '  const prog = Math.max(0, Math.min(1, (now - line.time) / span));\n  return prog;',
-    replace: '  const prog = Math.max(0, Math.min(1, (now - line.time) / span));\n  return prog * prog * (3 - 2 * prog);',
+    replace:
+      '  const prog = Math.max(0, Math.min(1, (now - line.time) / span));\n  return prog * prog * (3 - 2 * prog);',
     expect: ['LYRICS.noLagOffset'],
   },
   {
@@ -4853,7 +5975,7 @@ const MUTATIONS = [
   {
     name: '把进度条轨道的渐变填充改回纯色（已调节段不再有高亮色）',
     file: F.musicScss,
-    find: '  background: linear-gradient(\n    to right,\n    var(--fill-c) 0 var(--fill, 0%),\n    var(--track-c) var(--fill, 0%) 100%\n  );\n}\n.music-prog-bar::-webkit-slider-thumb',
+    find: '  background: linear-gradient(to right, var(--fill-c) 0 var(--fill, 0%), var(--track-c) var(--fill, 0%) 100%);\n}\n.music-prog-bar::-webkit-slider-thumb',
     replace: '  background: var(--md-line);\n}\n.music-prog-bar::-webkit-slider-thumb',
     expect: ['LYRICS.sliderFill'],
   },
@@ -4861,8 +5983,29 @@ const MUTATIONS = [
     name: '删掉 PlayerBar 注入的 --fill（渐变在但分界恒为 0% ⇒ 看不到填充）',
     file: F.playerBar,
     find: "style={{ '--fill': `${progFill.toFixed(2)}%` } as FillStyle}",
-    replace: "style={{} as FillStyle}",
+    replace: 'style={{} as FillStyle}',
     expect: ['LYRICS.sliderFill'],
+  },
+  {
+    name: '把歌词窗那一步的 shot_win 改回主窗（文件名说歌词窗、内容是主窗）',
+    file: F.captureRs,
+    find: 'shot_win: LYRICS_WINDOW,',
+    replace: 'shot_win: MAIN_WIN,',
+    expect: ['CAPTURE.lyricsStep'],
+  },
+  {
+    name: '把音乐屏那一步的侧栏定位从 aria-label 换成文字（关掉图标标签后找不到入口）',
+    file: F.captureRs,
+    find: 'click_when_ready(".nav-item.is-app[aria-label=\\"音乐\\"]", None)',
+    replace: 'click_when_ready(".nav-item.is-app", Some("音乐"))',
+    expect: ['CAPTURE.musicStep'],
+  },
+  {
+    name: '从 e2e/capture.mjs 的 SHOTS 里删掉音乐屏那张（Rust 截了，入库清单不收）',
+    file: F.captureMjs,
+    find: "['07-music.png', '音乐应用（未播放 / 未登录时的空态）'],",
+    replace: '',
+    expect: ['CAPTURE.assetsMatchJs'],
   },
 ];
 
@@ -4881,8 +6024,12 @@ if (!refute) {
   if (fail > 0) {
     const uiFail = A.filter((a) => a.group === 'UI' && !res[a.id].ok).length;
     console.log(`\n下一步：`);
-    if (uiFail) console.log(`  · UI 组有 ${uiFail} 条未通过 —— 该层由另一位同事并行重写，属已知真实缺口，待其落地后复跑。`);
-    if (fail > uiFail) console.log(`  · 非 UI 组存在未通过项，请按上面 ✗ 的 detail 定位（是脚本写错还是真实缺口，勿为转绿而放宽断言）。`);
+    if (uiFail)
+      console.log(`  · UI 组有 ${uiFail} 条未通过 —— 该层由另一位同事并行重写，属已知真实缺口，待其落地后复跑。`);
+    if (fail > uiFail)
+      console.log(
+        `  · 非 UI 组存在未通过项，请按上面 ✗ 的 detail 定位（是脚本写错还是真实缺口，勿为转绿而放宽断言）。`,
+      );
   }
   process.exitCode = fail === 0 ? 0 : 1;
 } else {
@@ -4963,6 +6110,5 @@ if (!refute) {
   if (skipped) console.log(`✗ 有 ${skipped} 条未能反证（破坏锚点未找到）—— 跳过 ≠ 通过`);
   if (restoreFail) console.log(`✗ 有 ${restoreFail} 个文件未恢复到原始字节`);
   if (falsePositives.length) console.log(`✗ 假阳性：${falsePositives.join(', ')}`);
-  process.exitCode =
-    red === total && total === expectedTotal && skipped === 0 && restoreFail === 0 ? 0 : 1;
+  process.exitCode = red === total && total === expectedTotal && skipped === 0 && restoreFail === 0 ? 0 : 1;
 }

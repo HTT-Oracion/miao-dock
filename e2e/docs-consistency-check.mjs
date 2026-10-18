@@ -12,8 +12,9 @@
 // 本脚本把这一类变成可执行检查 —— 数字对不上就非零退出。
 //
 // ## 它检查什么
-// ① 三个 check 脚本里 `add(` 的条数 vs 文档里声明的条数（AGENTS.md / README.md / spec-notes）
-// ② 文档里引用的 npm 命令是否真实存在于 package.json
+// ① 四个 check 脚本里断言的条数 vs 文档里声明的条数（AGENTS.md / README.md / spec-notes）
+// ② 文档里引用的命令是否真实存在：`npm run <入口>` 对 package.json，
+//    `npm run task -- <id>` 对 e2eScripts.json（两种形态**分别**判，见下方 ② 段落的说明）
 // ③ 文档里出现的「被禁历史品牌标识」必须为 0 命中
 // ④ 各 check 脚本的 GROUPS 声明与实际用到的分组是否一致（漏加分组会静默不打印）
 import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
@@ -21,8 +22,10 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { buildCommands, dispatchable } from './_commands.mjs';
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const APP = path.join(ROOT, 'app');
+const APP = ROOT;
 
 const read = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : '');
 const results = [];
@@ -36,13 +39,17 @@ const SUITES = [
   { cmd: 'check:music', script: 'e2e/music-platform-check.mjs' },
   { cmd: 'check:units', script: 'e2e/units-structure-check.mjs' },
   { cmd: 'check:settings', script: 'e2e/settings-media-check.mjs' },
+  { cmd: 'check:autostart', script: 'e2e/service-autostart-check.mjs' },
 ];
 // 台账（spec-notes）**不参与**条数比对：它记录的是**历史**（"当时 86 条（反证 16）"
 // 恰恰是有价值的痕迹），拿它跟现状比会逼得人去改历史。
 // 参与比对的只有"声明当前状态"的三处入口。
 const DOCS = ['AGENTS.md', 'README.md', '.trae/rules/project_rules.md'];
-// 参与其它检查（命令存在 / 禁词）的文档 —— 台账也要查，它同样不该出现失效命令
-const ALL_DOCS = [...DOCS, 'docs/spec-notes.md'];
+// 参与其它检查（命令存在 / 禁词）的文档 —— 台账也要查，它同样不该出现失效命令。
+// 🔴 台账已分流为两份（D-137 起新条目写 docs/internal/spec-notes-1.md），**两份都要列**：
+//   漏列的后果是「续篇里写了个不存在的 npm 命令，本文档检查却全绿」——
+//   那正是本脚本要消灭的那类"文档与实际脱节且脱节不报错"。
+const ALL_DOCS = [...DOCS, 'docs/internal/spec-notes.md', 'docs/internal/spec-notes-1.md'];
 
 /** 跑一次脚本，从它自己的汇总行里取「通过 N / 失败 M」的 N */
 function selfReportedCount(scriptPath) {
@@ -108,29 +115,46 @@ for (const suite of SUITES) {
       'COUNT',
       `${doc} 声明的 ${suite.cmd} 条数与脚本一致`,
       claimed === actual,
-      claimed === actual
-        ? `${actual} 条`
-        : `文档写 ${claimed}，脚本实际 ${actual}`,
+      claimed === actual ? `${actual} 条` : `文档写 ${claimed}，脚本实际 ${actual}`,
     );
   }
 }
 
-// ── ② 文档引用的 npm 命令必须存在 ────────────────────────────────────────
+// ── ② 文档引用的命令必须存在 ────────────────────────────────────────────
+// 🔴 命令收束（P0-c）之后文档里有**两种形态**，必须分别判定：
+//     · `npm run <入口>`    —— 只认 `package.json`（三类入口：校验 / 启停打包 / 测试入口）
+//     · `npm run task -- <id>` —— 只认 `e2eScripts.json`（check / selftest / 装配 / 反证轮）
+//    合并成一个集合判会让「`npm run check:units` 早就不存在了」判成存在 —— 那正是本脚本
+//    要消灭的那类假绿。两种形态各自对各自的事实源。
 const pkg = JSON.parse(read(path.join(ROOT, 'package.json')));
-const scripts = pkg.scripts || {};
+const pkgScripts = pkg.scripts || {};
+const manifestIds = new Set(buildCommands().map((c) => c.id));
 for (const doc of ALL_DOCS) {
   const text = read(path.join(ROOT, doc));
   if (!text) continue;
   // ⚠️ 命令名字符类**必须含 `-`**：`check:engine-client` 是全仓第一个带连字符的 npm 命令，
   //    而本行原先只写 `[a-z0-9:]` ⇒ 把它截成 `check:engine` ⇒ 误报「命令不存在」。
   //    这类"解析器自己太窄"的假红，最容易的错反应是**把文档改短去迁就脚本**。
-  const cmds = [...new Set([...text.matchAll(/npm run ([a-z0-9:-]+)/g)].map((m) => m[1]))];
-  const missing = cmds.filter((c) => !Object.prototype.hasOwnProperty.call(scripts, c));
+  const direct = new Set();
+  const dispatched = new Set();
+  for (const m of text.matchAll(/npm run (?:(task) -- )?([a-z0-9:-]+)/g)) {
+    // `npm run task -- --list` 这类：`--` 后面是 runner 自己的旗标，不是清单 id
+    if (m[2].startsWith('-')) continue;
+    (m[1] ? dispatched : direct).add(m[2]);
+  }
+  const missingDirect = [...direct].filter((c) => !dispatchable(pkgScripts, c));
+  const missingDispatched = [...dispatched].filter((c) => !manifestIds.has(c));
   add(
     'PKG',
-    `${doc} 引用的 npm 命令都存在`,
-    missing.length === 0,
-    missing.length ? `不存在：${missing.join(', ')}` : `${cmds.length} 个命令全部存在`,
+    `${doc} 引用的 npm 入口命令都存在`,
+    missingDirect.length === 0,
+    missingDirect.length ? `不存在：${missingDirect.join(', ')}` : `${direct.size} 个入口全部存在`,
+  );
+  add(
+    'PKG',
+    `${doc} 引用的 task 清单 id 都存在`,
+    missingDispatched.length === 0,
+    missingDispatched.length ? `清单里没有：${missingDispatched.join(', ')}` : `${dispatched.size} 个 id 全部存在`,
   );
 }
 
@@ -139,10 +163,12 @@ for (const doc of ALL_DOCS) {
 const banned = ['nex', 'box'].join('');
 {
   const targets = [
-    'app/src',
-    'app/src-tauri/src',
+    'src',
+    'src-tauri/src',
     'e2e',
-    'service/src',
+    // ⚠️ 原本还有 `service/src`：那份 Node 服务实现已整目录删除（D-209），
+    //    留着只是个**静默跳过**的死目标（walk 遇到不存在的目录直接 return），
+    //    会让"扫了哪些目录"这句话与事实不符。
     'engine/src',
     'AGENTS.md',
     'README.md',
@@ -161,12 +187,7 @@ const banned = ['nex', 'box'].join('');
     }
   };
   for (const t of targets) walk(path.join(ROOT, t));
-  add(
-    'BANNED',
-    '被禁历史品牌标识 0 命中',
-    hits.length === 0,
-    hits.length ? `命中：${hits.join(', ')}` : '0 命中',
-  );
+  add('BANNED', '被禁历史品牌标识 0 命中', hits.length === 0, hits.length ? `命中：${hits.join(', ')}` : '0 命中');
 }
 
 // ── ④ GROUPS 声明 vs 实际用到的分组 ─────────────────────────────────────
@@ -177,6 +198,9 @@ for (const suite of SUITES) {
   const gm = src.match(/const GROUPS\s*=\s*\[([^\]]*)\]/);
   if (!gm) continue;
   const declared = gm[1]
+    // 先剥掉行注释再按逗号 split：GROUPS 数组里写注释会把同行的下一个分组名污染成
+    // `// …\n  'DESKTOP'`，从而误报"未在 GROUPS 里声明"（2026-10-16 实测踩过）。
+    .replace(/\/\/[^\n]*/g, '')
     .split(',')
     .map((x) => x.trim().replace(/^["']|["']$/g, ''))
     .filter(Boolean);

@@ -1,0 +1,1403 @@
+//! ServiceManager —— manga-service 与 sidecar 引擎栈的**三进程**生命周期管理
+//!
+//! 契约依据：
+//!   · 《02》§2.1「**服务生命周期 = Box 进程的生命周期，与窗口可见性解耦**」
+//!   · 《04》§2 三层进程 / §14.2 E1（可拉起 + 日志打印生效参数快照）、E11（三进程树回收）
+//!
+//! ## 进程形状（比"服务 + 引擎"深一层）
+//! ```text
+//!   miao-dock(Rust)
+//!     ├── ① manga-service        mangasvc(Rust 可执行)                 （动态端口 5180–5190）
+//!     ├── ② 引擎               node engine/src/server.mjs(替身)    或 python main.py(真)
+//!     │     └── （真）执行器   python -m manga_translator          （port+1）
+//!     └── ③ LLM                node engine/src/mock-llm.mjs(替身)  或 llama-server(真)
+//! ```
+//! 🔴 **① 曾经是 `node service/src/server.mjs`，现在不是了**：F5 把 44 条端点全迁进 Rust、
+//!    本轮又把仓库里的 `service/` 删掉 ⇒ ① 是 `mangasvc` 这个 Rust 可执行文件。
+//!    **产品运行时不再启动任何 node 服务进程**（② ③ 里的 node 只是**测试替身**，
+//!    真机走 `python main.py` / `llama-server`；替身不进包）。
+//! ⚠️ **② 与 ③ 是"按进程类型分派 spawn"的落点**：Node 可执行 / Python 可执行 / llama-server 三种形态
+//! 都要能起 —— 这是 S2 相对 ver1.0「两子进程」的实质增量，也是 E11 之所以按"三进程树"写的原因。
+//!
+//! ## 三处刻意的设计
+//! 1. **就绪 = 三重判定**（进程存活 + 端口监听 + HTTP 应答），**不是**"读 stdout 就绪行"。
+//!    stdout 那行仍然要读，但它只是**数据通道**（服务端口是动态的、令牌只在那行里），
+//!    它**不构成就绪判据** —— 否则「日志打出来了、其实还没能干活」会被当成 running。
+//!    探针列表由**本进程内**的启动配方给出（A3b 起不再问 JS：`mangasvc::engine::resolve_engine_launch`
+//!    与 `resolve_llm_launch_for` 是唯一来源，见 `load_plan`）。
+//! 2. **五态机** `stopped → starting(L0/L1/L2/L3) → running → stopping → stopped`。
+//!    `L0` 运行时预检闸门（D6）：real 档下引擎运行时就绪不过 ⇒ 一个子进程都不起，
+//!    秒级进「运行时未装配」（`last_error` 逐项带绝对路径与装法）。
+//!    L1 环境就绪（三进程都起得来）/ L2 模型就绪（各端口在听）/ L3 预热（HTTP 真应答）。
+//!    `L4 首图惰性初始化` **不在这里**：它发生在首次翻译请求时、由引擎侧表达，
+//!    Box 侧不新增客户端状态机节点（《03》§4.5）。见 docs/internal/spec-notes.md D-64。
+//! 3. **跨端进程树回收**：unix 把每个子进程放进**自己的进程组**，退出时对组发
+//!    SIGTERM→（超时）SIGKILL，连带清掉孙进程（真引擎的执行器就是这么漏出来的）；
+//!    Windows 走 `taskkill /T /F`。⚠️ Windows 分支**本机无法验证**，标 `unverified`（G2 ④）。
+use std::collections::{BTreeMap, VecDeque};
+use std::io::Read;
+use std::path::PathBuf;
+use std::process::{Child, Command, Stdio};
+
+// 子进程创建标志（隐藏黑框 / 新进程组）的**单一实现**住在 lib 的 child_watch 里：
+// mangasvc、supervisor、runtime_setup 等所有 spawn 点共用一份，避免两处各写一个值后漂移。
+// ⚠️ 两个标志常量只在 windows 下有定义 ⇒ import 必须按平台分叉，
+//    否则 macOS 侧直接编译不过（而 macOS 打包正是要支持的平台）。
+#[cfg(windows)]
+use miao_dock::platform::child_watch::{hide_console, WinFlags, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
+#[cfg(not(windows))]
+use miao_dock::platform::child_watch::hide_console;
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter};
+
+use crate::mangasvc;
+use miao_dock::platform::paths;
+
+/// 状态变化事件名（前端订阅）
+pub const STATE_EVENT: &str = "miao://service-state";
+const LOG_CAPACITY: usize = 400;
+/// 单个探针的默认预算（可被配方覆盖）。**与单张翻译超时无关**，别混。
+const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
+/// 服务就绪行预算（动态端口 + 令牌都在那行里）
+const SERVICE_READY_TIMEOUT: Duration = Duration::from_secs(30);
+/// 停止时先礼后兵：SIGTERM 之后等这么久，没走就 SIGKILL
+const STOP_GRACE: Duration = Duration::from_secs(3);
+/// 收尸（`try_wait` 确认退出）的上界。见 `reap()` 第 ④ 段：**这里必须有上界**。
+const REAP_GRACE: Duration = Duration::from_secs(2);
+
+// ------------------------------------------------------------------ 对外视图
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ServiceState {
+    Stopped,
+    Starting,
+    Running,
+    /// 正在回收子进程树（S2 新增；前端可据此显示"正在停止"）
+    Stopping,
+    Error,
+}
+
+#[derive(Clone, Serialize)]
+pub struct ChildView {
+    /// `service` / `engine` / `llm`
+    pub name: String,
+    pub pid: Option<u32>,
+    pub alive: bool,
+}
+
+#[derive(Clone, Serialize)]
+pub struct StatusView {
+    pub state: ServiceState,
+    /// manga-service 实际监听端口（5180–5190 内探测得出）
+    pub port: Option<u16>,
+    /// 配对令牌；由 Rust 持有并下发给 UI（WebView 不直连服务）
+    pub token: Option<String>,
+    pub root_dir: Option<String>,
+    /// ② 引擎的实际端口
+    pub sidecar_port: Option<u16>,
+    /// ③ LLM 的实际端口（S2 新增）
+    pub llm_port: Option<u16>,
+    /// `real` | `mock` —— **必须显式暴露**：否则"以为在跑真引擎、其实跑的替身"最难查
+    pub mode: String,
+    /// `L1` / `L2` / `L3`；不在启动期时为 None
+    pub phase: Option<String>,
+    /// ② 或 ③ 挂了但 ① 还在 ⇒ degraded（任务会失败，但服务本身仍可应答，见崩溃分级）
+    pub degraded: bool,
+    pub children: Vec<ChildView>,
+    /// 状态机实际走过的轨迹（自检断言用；正常是 starting→L1→L2→L3→running）
+    pub transitions: Vec<String>,
+    pub log: Vec<String>,
+    pub last_error: Option<String>,
+    /// **运行时就绪检测**（D1）—— 与 `GET /engine/runtime` 同一份 `probe()`。
+    ///
+    /// 🔴 为什么是**进程内**算、而不是让界面去请求 `/engine/runtime`：D1 要覆盖的场景
+    ///    恰恰是「real 档未装配 ⇒ **一个子进程都不起**」（D6 闸门在 spawn 前就 fail）。
+    ///    那一刻 HTTP 通道根本不存在，而界面**必须**答得出「缺 python（<绝对路径>）」。
+    ///    Tauri 命令通道没有这个前提，所以它是这条信息的唯一可靠出口。
+    ///
+    /// ⚠️ 代价：每次 `service_status` 会做十几次 `stat` + 一次 `read_dir`（微秒级；
+    ///    它只读文件系统元数据，不起子进程、不 import torch）。与"用户看得见真话"相比划算。
+    pub runtime: serde_json::Value,
+}
+
+/// 由内部状态构造对外视图（`status()` 与崩溃看护线程共用一份，避免两处写法走散）
+fn view_of(g: &Inner) -> StatusView {
+    // 先把日志快照出来再构造返回值：否则 MutexGuard 的临时值会活得比 `g` 长
+    let log: Vec<String> = g.log.lock().unwrap().iter().cloned().collect();
+    StatusView {
+        state: g.state,
+        port: g.port,
+        token: g.token.clone(),
+        root_dir: g.root_dir.clone(),
+        sidecar_port: g.sidecar_port,
+        llm_port: g.llm_port,
+        mode: g.mode.clone(),
+        phase: g.phase.clone(),
+        degraded: g.degraded,
+        children: g.children.view(),
+        transitions: g.transitions.clone(),
+        log,
+        last_error: g.last_error.clone(),
+        // D1：运行时就绪检测与引擎启动同源（同一个 `runtime_probe::probe()`），
+        // 故"服务说缺 python"与"`--check-runtime-gate` 说缺 python"不可能分叉。
+        runtime: mangasvc::engine::runtime_probe::runtime_view(),
+    }
+}
+
+// ------------------------------------------------------------------ 启动配方（由 JS 给出）
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum Probe {
+    Tcp {
+        port: u16,
+    },
+    Http {
+        port: u16,
+        #[serde(default = "default_method")]
+        method: String,
+        path: String,
+        expect: u16,
+        /// 探针要带的鉴权头（服务侧的 `/health` 需要 `X-Box-Token`）
+        #[serde(default)]
+        token: Option<String>,
+    },
+}
+
+fn default_method() -> String {
+    "GET".into()
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct LaunchSpec {
+    #[serde(default)]
+    label: Option<String>,
+    cmd: Vec<String>,
+    #[serde(default)]
+    cwd: Option<String>,
+    #[serde(default)]
+    env: BTreeMap<String, String>,
+    #[serde(default)]
+    probes: Vec<Probe>,
+    #[serde(default)]
+    probe_timeout_ms: Option<u64>,
+    /// 是否用 `engine/scripts/child-watch.mjs` 包一层起。
+    /// 外部二进制（python / llama-server）**必须**包：它们不会在主进程被 SIGKILL 后自退（E11）。
+    /// 我们自己的 Node 子进程（服务 / mock 替身）内部已装父死看管，无需再包（会多一层进程）。
+    #[serde(default)]
+    watch: bool,
+    /// **归属方**（S4 起新增）。`None` / `"manager"` ⇒ 本 Manager 负责 spawn（沿 S2 行为）；
+    /// `"service"` ⇒ 由 **manga-service** 自己拉起，本 Manager **只打印不 spawn**。
+    ///
+    /// 为什么需要它：《04》§9.1 规定 Tier1 空闲卸载（停 ③ Sakura LLM）的实现方是 manga-service
+    /// （③ 不在引擎 TTL 范围内）。若 Rust 照旧 spawn，就会与 manga-service spawn 的那个
+    /// **抢同一个 8080** —— 而"两个 llama-server 互相踩"的报错离根因极远。
+    /// 保留这条 spec 而不是直接给 `llm: null`，是为了 E1 的「生效参数快照」仍然逐条列出
+    /// **真正会被执行的东西**（包括 ③ 的完整命令行）；删掉它等于让快照悄悄少一块。
+    #[serde(default)]
+    owner: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct LaunchPlan {
+    mode: String,
+    #[serde(default)]
+    llm: Option<LaunchSpec>,
+    engine: LaunchSpec,
+    #[serde(default)]
+    service_env: BTreeMap<String, String>,
+}
+
+// ------------------------------------------------------------------ 内部状态
+
+struct Proc {
+    label: &'static str,
+    handle: Child,
+    /// unix：spawn 时 `process_group(0)` ⇒ 进程组 id == 子进程 pid；windows：即 pid
+    pgid: u32,
+    probes: Vec<Probe>,
+    probe_timeout: Duration,
+    /// 🔴 **父死通道的写端**（A3c）。`watch` 档下它必须被**一直攥着**，否则内核关闭
+    ///   最后一个写端 ⇒ 看守器读到 EOF ⇒ 认定"父进程已死"⇒ 自杀。
+    ///   症状极其误导：引擎每次一起来就没了，而日志里看守器还会打一行
+    ///   「父进程通道在启动后 Nms 内就闭合了」。
+    ///   `None` = 非 watch 档（没这条通道，字段是多余的）。
+    _watch_keepalive: Option<std::process::ChildStdin>,
+}
+
+struct Children {
+    service: Option<Proc>,
+    engine: Option<Proc>,
+    llm: Option<Proc>,
+}
+
+impl Children {
+    fn iter_mut(&mut self) -> impl Iterator<Item = &mut Proc> {
+        [self.service.as_mut(), self.engine.as_mut(), self.llm.as_mut()]
+            .into_iter()
+            .flatten()
+    }
+    fn take_all(&mut self) -> Vec<Proc> {
+        [self.service.take(), self.engine.take(), self.llm.take()]
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+    fn view(&self) -> Vec<ChildView> {
+        [("service", &self.service), ("engine", &self.engine), ("llm", &self.llm)]
+            .into_iter()
+            .map(|(name, p)| ChildView {
+                name: name.into(),
+                pid: p.as_ref().map(|p| p.handle.id()),
+                alive: p.is_some(),
+            })
+            .collect()
+    }
+}
+
+struct Inner {
+    state: ServiceState,
+    phase: Option<String>,
+    transitions: Vec<String>,
+    port: Option<u16>,
+    token: Option<String>,
+    root_dir: Option<String>,
+    sidecar_port: Option<u16>,
+    llm_port: Option<u16>,
+    mode: String,
+    degraded: bool,
+    last_error: Option<String>,
+    log: Arc<Mutex<VecDeque<String>>>,
+    children: Children,
+    monitor_running: bool,
+}
+
+pub struct ServiceManager {
+    inner: Arc<Mutex<Inner>>,
+}
+
+impl ServiceManager {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(Inner {
+                state: ServiceState::Stopped,
+                phase: None,
+                transitions: Vec::new(),
+                port: None,
+                token: None,
+                root_dir: None,
+                sidecar_port: None,
+                llm_port: None,
+                mode: resolve_mode().unwrap_or_else(|_| "real".into()),
+                degraded: false,
+                last_error: None,
+                log: Arc::new(Mutex::new(VecDeque::with_capacity(LOG_CAPACITY))),
+                children: Children { service: None, engine: None, llm: None },
+                monitor_running: false,
+            })),
+        }
+    }
+
+    pub fn status(&self) -> StatusView {
+        view_of(&self.inner.lock().unwrap())
+    }
+
+    /// 服务基址（供各命令构造请求）；未就绪时返回 None
+    pub fn base_url(&self) -> Option<String> {
+        let g = self.inner.lock().unwrap();
+        if g.state != ServiceState::Running {
+            return None;
+        }
+        g.port.map(|p| format!("http://127.0.0.1:{p}/api/v1"))
+    }
+
+    pub fn token(&self) -> Option<String> {
+        self.inner.lock().unwrap().token.clone()
+    }
+
+    /// 取某个子进程的 pid（`service` / `engine` / `llm`）。
+    /// 诊断与自检都要用它：**从外面**给进程发信号、再回读状态，才是"崩溃分级"这类
+    /// 机制断言的正确取证方式（应用自己"报告我准备好了"不算证据）。
+    pub fn child_pid(&self, name: &str) -> Option<u32> {
+        let g = self.inner.lock().unwrap();
+        let p = match name {
+            "service" => g.children.service.as_ref(),
+            "engine" => g.children.engine.as_ref(),
+            "llm" => g.children.llm.as_ref(),
+            _ => None,
+        };
+        p.map(|p| p.handle.id())
+    }
+
+    fn log(&self) -> Arc<Mutex<VecDeque<String>>> {
+        self.inner.lock().unwrap().log.clone()
+    }
+
+    fn mark(&self, app: &AppHandle, key: &str) {
+        {
+            let mut g = self.inner.lock().unwrap();
+            g.transitions.push(key.to_string());
+        }
+        self.emit(app);
+    }
+
+    fn set_phase(&self, app: &AppHandle, phase: Option<&str>) {
+        {
+            let mut g = self.inner.lock().unwrap();
+            g.phase = phase.map(str::to_string);
+            if let Some(k) = phase {
+                g.transitions.push(k.to_string());
+            }
+        }
+        self.emit(app);
+    }
+
+    fn fail(&self, app: &AppHandle, phase: Option<&str>, err: String) {
+        {
+            let mut g = self.inner.lock().unwrap();
+            g.state = ServiceState::Error;
+            g.phase = phase.map(str::to_string);
+            g.last_error = Some(err.clone());
+            g.degraded = false;
+        }
+        push_log(&self.log(), &format!("[miao-dock] ✗ {err}"));
+        // 起不来就别把半拉进程树留在那儿
+        self.reap();
+        self.emit(app);
+    }
+
+    pub fn emit(&self, app: &AppHandle) {
+        let _ = app.emit(STATE_EVENT, self.status());
+    }
+
+    // -------------------------------------------------------------- 启动
+
+    /// 启动引擎栈：**③ LLM → ② 引擎 → ① 服务**（后者依赖前者的端口）。
+    ///
+    /// 放到后台线程里跑：真引擎首启要加载模型（分钟级），阻塞 setup 会把窗口冻住。
+    /// 状态与轨迹都经 `emit` 推给前端，所以异步不影响可观察性。
+    pub fn start(&self, app: &AppHandle) {
+        let app = app.clone();
+        let inner = self.inner.clone();
+        thread::spawn(move || {
+            let mgr = ServiceManager { inner };
+            mgr.start_blocking(&app);
+        });
+    }
+
+    /// **幂等**启动：已在「启动中 / 运行中 / 正在停止」就直接返回，不重复拉起。
+    ///
+    /// ## 为什么不让调用方自己「先 `status()` 再决定」
+    /// 那是**两次加锁、两段临界区**：`读状态 → 判定 → 启动` 之间存在窗口期。
+    /// 有三条路径会在这个窗口里撞上：设置页的开关、进入翻译模块的自动启动、
+    /// 用户连点两下。两条启动线程各自起一套三进程树，会抢同一批端口
+    /// （① 的 5180–5190、② 的 8000/8001、③ 的 8080）—— 而"两个进程抢同一个端口"
+    /// 的报错离根因极远，现场看是乱七八糟的启动失败。
+    /// 所以「判定 + 置位」必须压在**同一把锁**内完成。
+    ///
+    /// 同步把状态落成 `Starting` 还有第二个好处：UI 立刻显示「启动中」，
+    /// 而不是在后台线程跑起来之前先愣一下（那一愣正好是要堵的窗口）。
+    ///
+    /// 返回 `true` 表示**本次真的发起了启动**。
+    pub fn start_once(&self, app: &AppHandle) -> bool {
+        {
+            let mut g = self.inner.lock().unwrap();
+            if matches!(
+                g.state,
+                ServiceState::Starting | ServiceState::Running | ServiceState::Stopping
+            ) {
+                return false;
+            }
+            g.state = ServiceState::Starting;
+            g.phase = None;
+            g.degraded = false;
+        }
+        self.emit(app);
+        self.start(app);
+        true
+    }
+
+    fn start_blocking(&self, app: &AppHandle) {
+        {
+            let mut g = self.inner.lock().unwrap();
+            g.state = ServiceState::Starting;
+            g.phase = None;
+            g.transitions.clear();
+            g.degraded = false;
+            g.last_error = None;
+            g.port = None;
+            g.token = None;
+            g.root_dir = None;
+            g.sidecar_port = None;
+            g.llm_port = None;
+            g.children = Children { service: None, engine: None, llm: None };
+        }
+        self.mark(app, "starting");
+
+        let log = self.log();
+
+        // ---- -1) 随包资产自检（A1/A2）----
+        //     🔴 必须**最先**做：打包后 `repo_root()` 算不出真仓库根（`e2e/` 与 `engine/`
+        //     原先一个字节都没进包 ⇒ 向上找永远找不到 ⇒ 退回 cwd），于是清单/引擎路径会静默
+        //     指向不存在的位置，而用户看到的报错停在几层之外（"连接失败" / "启动超时"）。
+        //     这里在**任何子进程被起之前**就把「资源缺失」说成资源缺失。
+        //     开发态资产就在仓库里 ⇒ 自检通过（`missing_assets()` 判的是"最终拿不拿得到"）。
+        let missing = paths::missing_assets();
+        if !missing.is_empty() {
+            let dir = paths::resource_dir()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "（未找到资源目录）".to_string());
+            return self.fail(
+                app,
+                None,
+                format!(
+                    "资源缺失：{}；资源目录={dir}。安装包不完整或引擎资产未随包，请重新安装喵坞",
+                    missing.join("、")
+                ),
+            );
+        }
+
+        // ---- 0) 取启动配方（引擎侧细节的唯一来源；A3b 起在本进程内算，见 `load_plan`）----
+        let mode = match resolve_mode() {
+            Ok(m) => m,
+            Err(e) => return self.fail(app, None, e),
+        };
+        self.inner.lock().unwrap().mode = mode.clone();
+
+        let plan = match load_plan(&mode) {
+            Ok(p) => p,
+            Err(e) => return self.fail(app, None, e),
+        };
+        push_log(&log, &format!("[miao-dock] 启动配方 mode={} …", plan.mode));
+        // B1 验收② / B2：real 档下若引擎运行时没装配，**现在就说出缺哪几项、缺在哪、怎么装**，
+        //   而不是让用户白等 240 s 再看到一句 "Connection error"（那正是 B1 要消灭的报错形态）。
+        // 🔴 只 warn 不 fail：mock 档本来就不要真引擎（30+ 个 mock e2e 靠它活着）；
+        //    real 档的硬门归 D6（首启引导）—— 那里才有完整的"缺什么 → 怎么装"流程。
+        mangasvc::engine::runtime_probe::warn_unready_if_real(plan.mode == "mock");
+        // ---- 0.5) 运行时预检闸门（D6）----
+        //    real 档下「装没装」是**引擎能不能起**的前提，不是"启动后再看"的事：
+        //    缺 python 时旧行为是 ② 起不来 → 降级继续 → L2 探针空等 240 s
+        //    （`mangasvc::engine::REAL_PROBE_TIMEOUT_MS`）→ 报一句离根因极远的「服务启动失败」。
+        //    用户看到的是卡住，不是没装 —— 这正是本闸门要消灭的形态。
+        //
+        //    🔴 **2026-10-16 改口径：闸门只挡引擎（②/③），不挡服务本体（①）。**
+        //    原先它是 `return self.fail(...)`（一个子进程都不起）—— 于是 D1 引导页成了死结：
+        //    那一页恰恰只在"运行时未装配"时出现，而它唯一的行动按钮必须 POST 到 ① 的
+        //    `/engine/models/download`。真机实测的现场就是「点开始下载 → 本地翻译服务未运行」。
+        //    现在：① 照常起（下载 / 进度 / 续传仍以服务为**唯一事实源**），②/③ 跳过，
+        //    状态如实报 `degraded`，引导页照旧由 `runtime.ready === false` 驱动。
+        //    🔴 mock 档不过闸（30+ 个 mock e2e 靠它活着）；判据与上面那句 warn
+        //       共用同一份 `probe()` ⇒ 日志流与状态机不会各说各话。
+        let engine_blocked = mangasvc::engine::runtime_probe::gate_message(&plan.mode);
+        if let Some(msg) = &engine_blocked {
+            say(
+                &log,
+                &format!("[miao-dock] 运行时未装配 ⇒ 只起 ① 服务、跳过 ②/③（首启引导负责装配）：{msg}"),
+            );
+        }
+        // E1：**日志打印生效参数快照** —— 逐条列出真正会被执行的东西（不是"配置里写的"）。
+        // 走 `say`（环 + stdout 双写），让应用之外也能取证。
+        say(&log, &format!("MIAO_LAUNCH_PLAN mode={}", plan.mode));
+        say(&log, "──────────── 生效参数快照（E1）────────────");
+        if let Some(llm) = &plan.llm {
+            // S4：③ 的归属权可以是 manga-service（`owner == "service"`）。快照照常打出**完整命令**，
+            // 并注明执行者 —— 不然读日志的人会以为 Rust 该为 8080 负责（它不再负责了）。
+            let by = match llm.owner.as_deref() {
+                Some("service") => "（由 manga-service 拉起，见《04》§9.1 Tier1）",
+                _ => "",
+            };
+            say(&log, &format!("[miao-dock] ③ llm    : {}{}", cmd_line(&llm.cmd), by));
+        } else {
+            say(&log, "[miao-dock] ③ llm    : （本模式无独立 LLM 进程）");
+        }
+        say(
+            &log,
+            &format!(
+                "[miao-dock] ② engine : {}{}",
+                cmd_line(&plan.engine.cmd),
+                if plan.engine.watch { "（经 child-watch 看守）" } else { "" }
+            ),
+        );
+        if let Some(cwd) = &plan.engine.cwd {
+            say(&log, &format!("[miao-dock] ② engine.cwd : {cwd}"));
+        }
+        // ① 的命令**在日志之前**解析（原先它排在 ③② 之后，于是快照只能把命令写死）。
+        // 🔴 顺带修好一个更实的问题：解析失败时**一个子进程都还没起** ——
+        //    原先的顺序是"先拉 ③②、再发现 ① 起不来"，等于白起一整套引擎栈。
+        let service_cmd = match resolve_service_cmd() {
+            Ok(c) => c,
+            Err(e) => return self.fail(app, None, e),
+        };
+        // 🔴 闸门放 ① 进来时，**别让 ① 自己去预拉起 ③**：那会对着没装配的运行时开火，
+        //    拉起一个必然失败的 llama-server（闸门"一个引擎子进程都不起"就白设了）。
+        //    `MIAO_NO_LLM_AUTOSTART` 正是那条开关（见 `EngineState::from_env`）。
+        let mut service_env = plan.service_env.clone();
+        if engine_blocked.is_some() {
+            service_env.insert("MIAO_NO_LLM_AUTOSTART".to_string(), "1".to_string());
+        }
+        say(
+            &log,
+            &format!(
+                "[miao-dock] ① service: {}  env={}",
+                // 🔴 这里曾经**写死**成 "node service/src/server.mjs" —— 靶子换成 mangasvc 之后
+                //    日志还在说 node，看日志的人会去找一个根本不存在的进程（而服务其实是好的）。
+                //    改成打印**真实的** service 命令：日志是排障的第一现场，不许编。
+                cmd_line(&service_cmd),
+                fmt_env(&service_env)
+            ),
+        );
+        say(&log, "──────────────────────────────────────────");
+
+        // ---- 1) 拉起 ③ ② ① ----
+        let mut spawn_errs: Vec<String> = Vec::new();
+        // ③ 的归属方可能是 **manga-service**（S4 起，见 `LaunchSpec.owner` 注释）：那种情况下
+        // 本 Manager **只打印不 spawn**，否则两个 llama-server 会抢同一个 8080。
+        let llm_owned_by_service = plan
+            .llm
+            .as_ref()
+            .and_then(|s| s.owner.as_deref())
+            .map(|o| o == "service")
+            .unwrap_or(false);
+        if llm_owned_by_service {
+            say(&log, "[miao-dock] ③ LLM 归属 manga-service —— 本进程不 spawn（8080 由它负责）");
+        } else if engine_blocked.is_some() {
+            say(&log, "[miao-dock] ③ LLM 跳过（运行时未装配，闸门只放 ①）");
+        } else if let Some(spec) = &plan.llm {
+            match spawn_spec(spec, &log) {
+                Ok(p) => {
+                    let port = first_port(&p.probes);
+                    self.inner.lock().unwrap().llm_port = port;
+                    self.inner.lock().unwrap().children.llm = Some(p);
+                }
+                // ③ 起不来**不阻断**：没有 LLM 只是翻译阶段会失败（崩溃分级）
+                Err(e) => spawn_errs.push(format!("LLM 启动失败（降级继续）：{e}")),
+            }
+        }
+
+        if engine_blocked.is_some() {
+            say(&log, "[miao-dock] ② engine 跳过（运行时未装配，闸门只放 ①）");
+        } else {
+            match spawn_spec(&plan.engine, &log) {
+                Ok(p) => {
+                    let port = first_port(&p.probes);
+                    self.inner.lock().unwrap().sidecar_port = port;
+                    self.inner.lock().unwrap().children.engine = Some(p);
+                }
+                // ② 起不来也继续：服务 `/health` 会报 degraded（画面 X-C3）
+                Err(e) => spawn_errs.push(format!("引擎启动失败（降级继续）：{e}")),
+            }
+        }
+
+        // `service_cmd` 已在日志段之前解析（见上）。
+        let service_spec = LaunchSpec {
+            label: Some("service".into()),
+            cmd: service_cmd,
+            cwd: None,
+            env: service_env,
+            probes: Vec::new(),
+            probe_timeout_ms: None,
+            watch: false,
+            // ① 由本 Manager 亲自拉起（它是"最后一道防线"，不能交给别人）
+            owner: None,
+        };
+        match spawn_spec_with_ready(&service_spec, &log) {
+            Ok((p, rx)) => {
+                self.inner.lock().unwrap().children.service = Some(p);
+                // 就绪行只是**数据通道**（端口动态 + 令牌只在这行里），不是就绪判据
+                match wait_ready(&rx, SERVICE_READY_TIMEOUT) {
+                    Ok(v) => {
+                        let port = v.get("port").and_then(|x| x.as_u64()).map(|x| x as u16);
+                        let token = v.get("token").and_then(|x| x.as_str()).map(str::to_string);
+                        let root_dir = v.get("rootDir").and_then(|x| x.as_str()).map(str::to_string);
+                        let mut g = self.inner.lock().unwrap();
+                        g.port = port;
+                        g.token = token.clone();
+                        g.root_dir = root_dir;
+                        // 服务的**三重判定**探针只能在这时补齐：端口是动态的（5180–5190 里挑），
+                        // 令牌也只在就绪行里 ⇒ 拿不到这两样就没法构造探针。
+                        // ⚠️ 就绪行是**数据通道**，不是就绪判据：拿到端口 ≠ 服务能干活。
+                        if let (Some(p), Some(port)) = (g.children.service.as_mut(), port) {
+                            p.probes = vec![
+                                Probe::Tcp { port },
+                                Probe::Http {
+                                    port,
+                                    method: "GET".into(),
+                                    path: "/health".into(),
+                                    expect: 200,
+                                    token,
+                                },
+                            ];
+                        }
+                    }
+                    Err(e) => return self.fail(app, Some("L1"), format!("服务未就绪：{e}")),
+                }
+            }
+            Err(e) => return self.fail(app, Some("L1"), format!("服务启动失败：{e}")),
+        }
+        for line in &spawn_errs {
+            push_log(&log, &format!("[miao-dock] ! {line}"));
+        }
+
+        // ---- 2) L1 环境就绪：三个进程都活着 ----
+        if let Err(e) = self.all_alive("L1 环境就绪") {
+            return self.fail(app, Some("L1"), e);
+        }
+        self.set_phase(app, Some("L1"));
+
+        // ---- 3) L2 模型就绪：所有 TCP 探针在听 ----
+        if let Err(e) = self.wait_probes(|p| matches!(p, Probe::Tcp { .. })) {
+            return self.fail(app, Some("L2"), e);
+        }
+        self.set_phase(app, Some("L2"));
+
+        // ---- 4) L3 预热：所有 HTTP 探针真应答 ----
+        if let Err(e) = self.wait_probes(|p| matches!(p, Probe::Http { .. })) {
+            return self.fail(app, Some("L3"), e);
+        }
+        self.set_phase(app, Some("L3"));
+
+        // ---- 5) running ----
+        {
+            let mut g = self.inner.lock().unwrap();
+            g.state = ServiceState::Running;
+            g.phase = None;
+            // 闸门放行时 ②/③ 是**按设计缺席**（不是"起失败了"），但它确实让翻译不可用 ⇒ 如实报 degraded。
+            g.degraded = !spawn_errs.is_empty() || engine_blocked.is_some();
+        }
+        self.mark(app, "running");
+        if let Some(msg) = &engine_blocked {
+            push_log(
+                &log,
+                &format!(
+                    "[miao-dock] ① 服务就绪；引擎未装配（②/③ 按闸门跳过）—— \
+                     去「设置 → 翻译服务」点「开始下载」装配：{msg}"
+                ),
+            );
+        } else {
+            push_log(&log, "[miao-dock] 服务与引擎栈就绪（三重判定通过：进程存活 + 端口 + HTTP）");
+        }
+        self.spawn_monitor(app);
+    }
+
+    /// 三个进程（在位的那些）是否都还活着
+    fn all_alive(&self, what: &str) -> Result<(), String> {
+        let mut g = self.inner.lock().unwrap();
+        for p in g.children.iter_mut() {
+            match p.handle.try_wait() {
+                Ok(None) => {}
+                Ok(Some(st)) => {
+                    return Err(format!("{what} 失败：{} 进程已退出（{st}）", p.label))
+                }
+                Err(e) => return Err(format!("{what} 失败：探测 {} 失败（{e}）", p.label)),
+            }
+        }
+        Ok(())
+    }
+
+    /// 对所有匹配的探针做**各自独立超时**的等待（三重判定的 L2/L3 两层）
+    fn wait_probes(&self, want: fn(&Probe) -> bool) -> Result<(), String> {
+        // 先把 (label, probe, timeout) 快照出来，避免持锁做网络 IO
+        let list: Vec<(&'static str, Probe, Duration)> = {
+            let g = self.inner.lock().unwrap();
+            let mut v = Vec::new();
+            for p in [&g.children.llm, &g.children.engine, &g.children.service]
+                .into_iter()
+                .flatten()
+            {
+                for probe in p.probes.iter().filter(|x| want(x)) {
+                    v.push((p.label, probe.clone(), p.probe_timeout));
+                }
+            }
+            v
+        };
+        for (label, probe, timeout) in list {
+            // 🔴 存活检查走 `all_alive`：它在**每个子进程**上 `try_wait()`，任一进程已退出
+            //    就立刻返回并点名是哪一个。锁在快照块结束时已释放，这里再取不会自锁。
+            wait_probe(label, &probe, timeout, || self.all_alive("引擎与服务栈")).map_err(|e| {
+                push_log(&self.log(), &format!("[miao-dock] ✗ {e}"));
+                e
+            })?;
+        }
+        Ok(())
+    }
+
+    // -------------------------------------------------------------- 停止
+
+    /// 回收**整棵子进程树**（不只是直接子进程）。
+    ///
+    /// 为什么不能只 `Child::kill()`：真引擎会自己再拉起执行器子进程（`main.py:244`），
+    /// 直接 SIGKILL 引擎主进程 ⇒ 执行器被 reparent 到 launchd、继续占住 port+1（E11 的孤儿）。
+    /// 所以：每个子进程 spawn 时进自己的**进程组**，这里对**组**发信号。
+    fn reap(&self) {
+        let mut procs = {
+            let mut g = self.inner.lock().unwrap();
+            g.children.take_all()
+        };
+        if procs.is_empty() {
+            return;
+        }
+        let log = self.log();
+        let refute = no_tree_kill();
+        if refute {
+            push_log(&log, "[miao-dock] ⚠ MIAO_NO_TREE_KILL=1 —— 只杀直接子进程（反证用）");
+        }
+        // ① 先礼：SIGTERM 整组（真引擎能借信号处理器清掉自己的执行器）
+        for p in procs.iter_mut() {
+            push_log(&log, &format!("[miao-dock] 停止 {}（pid={}）", p.label, p.handle.id()));
+            if refute {
+                let _ = p.handle.kill();
+            } else {
+                signal_tree(p.pgid, false);
+            }
+        }
+        // ② 等优雅退出
+        let deadline = Instant::now() + STOP_GRACE;
+        let mut pending: Vec<usize> = (0..procs.len()).collect();
+        while !pending.is_empty() && Instant::now() < deadline {
+            pending.retain(|&i| !matches!(procs[i].handle.try_wait(), Ok(Some(_))));
+            if !pending.is_empty() {
+                thread::sleep(Duration::from_millis(80));
+            }
+        }
+        // ③ 后兵：整组 SIGKILL + reap 僵尸
+        for &i in &pending {
+            push_log(&log, &format!("[miao-dock] 强制结束 {}（SIGKILL 整组）", procs[i].label));
+            if refute {
+                let _ = procs[i].handle.kill();
+            } else {
+                signal_tree(procs[i].pgid, true);
+            }
+        }
+        // ④ 收尸 —— 🔴 **必须有上界**。
+        //
+        // 这一段原来是**无界**的 `handle.wait()`。它看着无害，实则正是
+        // 「点退出没反应」的**第二个**可能成因：`taskkill /T /F` 万一没能带走某个子进程
+        //（权限不足、PID 已被复用、进程正卡在不可中断的系统调用里），`wait()` 就**永远
+        // 不返回** —— 调用它的那条线程连同整个退出流程一起挂死。旧版 `quit_app` 是同步
+        // 命令（跑在主线程），于是表现就是**窗口活着、进程活着、点什么都没反应**。
+        //
+        // 两害相权：收尸失败最多留一个孤儿进程（`child-watch` / `parent-watch` 还有一层
+        // 兜底，见 D-12），而**退不掉**是用户直接看得见、且自己解决不了的故障。
+        // 所以这里宁可放过孤儿，也绝不允许无限等。
+        let reap_deadline = Instant::now() + REAP_GRACE;
+        for p in procs.iter_mut() {
+            loop {
+                match p.handle.try_wait() {
+                    Ok(Some(_)) => break, // 正常：已退出（try_wait 顺带完成 wait，收掉僵尸）
+                    Ok(None) => {
+                        if Instant::now() >= reap_deadline {
+                            push_log(
+                                &log,
+                                &format!(
+                                    "[miao-dock] ⚠ {}（pid={}）在 {}s 内未确认退出 —— 不再等，继续退出",
+                                    p.label,
+                                    p.handle.id(),
+                                    REAP_GRACE.as_secs()
+                                ),
+                            );
+                            break;
+                        }
+                        thread::sleep(Duration::from_millis(50));
+                    }
+                    Err(_) => break, // 探测本身失败：没有更有意义的动作可做
+                }
+            }
+        }
+    }
+
+    /// 停止全部子进程并等待退出（对外语义与 ver1.0 一致，内部升级为"整棵树"）。
+    /// 状态机上先落 `stopping` 再落 `stopped` —— 五态机里的 `stopping` 是**真的会被走到**的，
+    /// 不是画在文档里的装饰（它同时让"正在回收"这件事在 UI 上可观察）。
+    pub fn stop(&self) {
+        {
+            let mut g = self.inner.lock().unwrap();
+            if g.state != ServiceState::Stopped {
+                g.state = ServiceState::Stopping;
+                g.transitions.push("stopping".into());
+            }
+        }
+        self.reap();
+        let mut g = self.inner.lock().unwrap();
+        g.transitions.push("stopped".into());
+        g.state = ServiceState::Stopped;
+        g.phase = None;
+        g.port = None;
+        g.token = None;
+        g.sidecar_port = None;
+        g.llm_port = None;
+        g.degraded = false;
+        g.last_error = None;
+    }
+
+    // -------------------------------------------------------------- 崩溃分级
+
+    /// 后台看护：②③ 掉了 ⇒ `degraded`（任务会失败，但 ① 还在、仍能应答 = 分级而非整体崩）；
+    /// ① 掉了 ⇒ 整体 `error`。**不静默**：两条路都写日志。
+    fn spawn_monitor(&self, app: &AppHandle) {
+        // 反证开关：关掉看护后，②③ 挂掉时 `degraded` 不会翻转 ⇒ S2 的崩溃分级断言必须变红。
+        if std::env::var("MIAO_NO_CRASH_MONITOR").map(|v| v == "1").unwrap_or(false) {
+            push_log(&self.log(), "[miao-dock] ⚠ MIAO_NO_CRASH_MONITOR=1 —— 崩溃分级看护未启动（反证用）");
+            return;
+        }
+        {
+            let mut g = self.inner.lock().unwrap();
+            if g.monitor_running {
+                return;
+            }
+            g.monitor_running = true;
+        }
+        let inner = self.inner.clone();
+        let app = app.clone();
+        thread::spawn(move || {
+            // 已经报过的进程名：`try_wait()` 会**缓存**已回收的状态，不记一份就会每秒重复报警
+            let mut reported: Vec<&'static str> = Vec::new();
+            loop {
+                thread::sleep(Duration::from_millis(1000));
+                let mut notes: Vec<String> = Vec::new();
+                let mut service_dead = false;
+                {
+                    let mut g = match inner.lock() {
+                        Ok(g) => g,
+                        Err(_) => return,
+                    };
+                    if g.state != ServiceState::Running {
+                        g.monitor_running = false;
+                        return;
+                    }
+                    let log = g.log.clone();
+                    let mut dead: Vec<(&'static str, String)> = Vec::new();
+                    for p in g.children.iter_mut() {
+                        if reported.contains(&p.label) {
+                            continue;
+                        }
+                        if let Ok(Some(st)) = p.handle.try_wait() {
+                            dead.push((p.label, format!("{}", st)));
+                        }
+                    }
+                    for (label, st) in &dead {
+                        reported.push(label);
+                        notes.push(format!("{label} 进程已退出（{st}）"));
+                        if *label == "service" {
+                            service_dead = true;
+                        }
+                    }
+                    for n in &notes {
+                        push_log(&log, &format!("[miao-dock] ! {n}"));
+                    }
+                    if !dead.is_empty() {
+                        if service_dead {
+                            g.state = ServiceState::Error;
+                            g.last_error = Some(notes.join("；"));
+                            g.monitor_running = false;
+                        } else {
+                            // ②③ 挂 = 降级：翻译会失败，但 manga-service 本身仍活着（分级，不是整体崩）
+                            g.degraded = true;
+                        }
+                    }
+                }
+                if notes.is_empty() {
+                    continue;
+                }
+                match inner.lock() {
+                    Ok(g) => {
+                        let _ = app.emit(STATE_EVENT, view_of(&g));
+                    }
+                    Err(_) => return,
+                }
+            }
+        });
+    }
+}
+
+// ------------------------------------------------------------------ 子进程工具
+
+fn cmd_line(cmd: &[String]) -> String {
+    cmd.iter()
+        .map(|a| if a.contains(' ') { format!("{a:?}") } else { a.clone() })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn fmt_env(env: &BTreeMap<String, String>) -> String {
+    if env.is_empty() {
+        return "（无）".into();
+    }
+    env.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(" ")
+}
+
+fn first_port(probes: &[Probe]) -> Option<u16> {
+    probes.first().map(|p| match p {
+        Probe::Tcp { port } => *port,
+        Probe::Http { port, .. } => *port,
+    })
+}
+
+/// 引擎栈模式开关。**取值非法直接报错，不静默回退**（静默回退正是"以为在测 mock、其实走了 real"的温床）。
+fn resolve_mode() -> Result<String, String> {
+    let raw = std::env::var("MIAO_ENGINE_PROTOCOL").unwrap_or_default();
+    let v = if raw.trim().is_empty() { "real".to_string() } else { raw.trim().to_lowercase() };
+    match v.as_str() {
+        "real" | "mock" => Ok(v),
+        other => Err(format!("MIAO_ENGINE_PROTOCOL 取值非法：{other:?}（可选：real | mock）")),
+    }
+}
+
+/// 取一次启动配方（**引擎侧细节的唯一来源**，A3b 起在本进程内算）。
+///
+/// 🔴 为什么 formerly 要起 node：S2 时「怎么拼命令」住在 `service/src/engine-client.mjs`，
+///    Rust 去问它。本函数是那条唯一的跨语言依赖 —— 而它带来的代价是**打包后必然失败**
+///    （A3「node 随包」已作废），报错还停在 `无法执行 node 打印启动配方` 这种
+///    离根因很远的地方。
+///    现在配方逻辑已 Rust 化（`mangasvc::engine::{resolve_engine_launch, resolve_llm_launch}`，
+///    F4 移植时逐字对齐过），于是**不再需要任何子进程**。
+///
+/// ⚠️ 协议由入参决定（`mode`），不读环境 —— 环境的读法在 `resolve_mode()` 已收口。
+fn load_plan(mode: &str) -> Result<LaunchPlan, String> {
+    let value = mangasvc::engine::build_launch_plan(mode)?;
+    // 解析失败要**说清是形状不对**而不是把 serde 的行号倒给用户：这份 JSON 由本进程刚生成，
+    // 解析失败等于"我们自己的输出坏了"，那是要立刻定位的实现缺陷，不是用户能修的。
+    serde_json::from_value::<LaunchPlan>(value).map_err(|e| {
+        format!(
+            "启动配方形状非法（这是实现缺陷，不是配置问题）：{e}；mode={mode}"
+        )
+    })
+}
+
+/// 写进**日志环**（UI 诊断视图读它）**并且**打到 stdout。
+///
+/// 两条路都要：环里的东西只有**进程内**自检读得到；而 E1 的判据是「**日志打印**生效参数快照」，
+/// "打印出来了"这件事必须能被**应用之外**的观察者看到（否则只能自证）。
+fn say(log: &Arc<Mutex<VecDeque<String>>>, line: &str) {
+    println!("{line}");
+    push_log(log, line);
+}
+
+fn push_log(log: &Arc<Mutex<VecDeque<String>>>, line: &str) {
+    let mut l = log.lock().unwrap();
+    if l.len() >= LOG_CAPACITY {
+        l.pop_front();
+    }
+    l.push_back(line.to_string());
+}
+
+/// 逐行转发子进程输出 —— 🔴 **绝不因为"这一行不是合法 UTF-8"而停读**（见 spec-notes D-88）。
+///
+/// ## 为什么不能用 `BufReader::new(out).lines().map_while(Result::ok)`
+/// 那个写法看着无害，实则把「**子进程输出的编码**」与「**父进程能不能继续读**」耦在了一起，
+/// 而 Windows 上它们本来是分离的两件事：
+///
+/// 1. `lines()` 内部是 `read_line`，要求**合法 UTF-8**；不合法时返回 `Err(InvalidData)`。
+/// 2. `map_while(Result::ok)` 遇到第一个 `Err` 就**结束迭代**，`BufReader`（连同 `ChildStdout`
+///    / `ChildStderr`）随即被丢弃 ⇒ **这一端的管道读句柄被关闭**。
+/// 3. 此后子进程**再往这个流里写任何东西都会失败**。Windows 上的报错是
+///    `OSError: [Errno 22] Invalid argument`（**不是** Linux 那种 `Broken pipe`），
+///    而且它会**伪装成一个与该流毫不相干的错误**出现在别处 —— 实测是引擎里 `tqdm`
+///    初始化时那句 `sys.stderr.flush()`（`tqdm/std.py:446`），整张图因此在「掩码细化」处失败。
+///
+/// 触发条件在本机是**必然**的：中文 Windows 上 Python 子进程的 stdio 默认按 ANSI 代码页
+/// （GBK/cp936）编码，而真引擎会把**日文**原文/译文写进日志（`utils/log.py` 的
+/// `logging.basicConfig` 把 root handler 接到了 **stderr**）⇒ 第一行日文日志就把读者打死。
+/// （另见 `engine-client.mjs` 里给引擎注入 `PYTHONIOENCODING=utf-8` 的那一半修复。）
+///
+/// ## 现在的语义
+/// 按**字节**读、以 `b'\n'` 切行、用 `String::from_utf8_lossy` 解码 ⇒ 非法字节退化为 `�`，
+/// **但读者永远不会放弃**，管道也不会被提前关掉。日志面板因此最多是"某几个字是问号"，
+/// 而不会变成"从某一行起什么都没有 + 引擎随后报一个莫名其妙的错"。
+/// 行尾的 `\r` 顺手去掉（Windows 子进程写 `\r\n`）。
+fn relay_lines<R: Read>(mut r: R, mut on_line: impl FnMut(String)) {
+    let mut buf: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; 8192];
+    loop {
+        match r.read(&mut chunk) {
+            Ok(0) => break, // EOF：子进程退出、管道结束
+            Ok(n) => {
+                for &b in &chunk[..n] {
+                    if b == b'\n' {
+                        let mut line = std::mem::take(&mut buf);
+                        if line.last() == Some(&b'\r') {
+                            line.pop();
+                        }
+                        on_line(String::from_utf8_lossy(&line).into_owned());
+                    } else {
+                        buf.push(b);
+                    }
+                }
+            }
+            // 读错误（管道被对端关闭等）：**结束这一条流**，但不影响其它子进程与主流程。
+            Err(_) => break,
+        }
+    }
+    // 结尾可能有一行没有换行符
+    if !buf.is_empty() {
+        on_line(String::from_utf8_lossy(&buf).into_owned());
+    }
+}
+
+/// 服务实现的**靶子**：**只有 `mangasvc`**（D-205 起）。**未设 ⇒ `mangasvc`**。
+///
+/// 🔴 **这里曾经有三档，node 那一档连同它的"退路"一起删掉了**：
+///   · F1 过渡期默认 node（"打包把 mangasvc 放进安装包之前，产品路径一律不动"）；
+///   · F5.8 把默认翻成 rust，但**留了一条退路**：拿不到 mangasvc 时退回 Node 并打警告 ——
+///     那是刻意的（开发态 `cargo run --bin miao-dock` 只构建主 bin、`target/debug/` 里没有
+///     `mangasvc`，硬失败会把"跑起来看看界面"变成"先读一篇构建说明"）。
+///   · 现在 `service/` 从仓库删了，**退路的落点没了**：再退回就是退回一个不存在的 `.mjs`，
+///     把"缺少构建产物"这个清楚的问题，表现成"服务起不来 + 指向幽灵文件"的怪问题。
+///     ⇒ 改为硬失败，构建指引由 `resolve_mangasvc()` 的错误文本承担（它本来就该在那里）。
+///
+/// 🔴 `MIAO_SERVICE_IMPL=node` ⇒ **硬失败**，不是静默落回。静默落回会让"我要 node 靶子"
+///    变成"悄悄跑了 mangasvc"，而这恰恰是最该吵一声的场景（原先 e2e 的 `harness-check`
+///    钉的是同一条；这里与它口径一致）。
+///
+/// ⚠️ 仍保留"取值先 `trim` + 小写"：它让 `NODE` / ` node ` 也落进退役分支，
+///    而不是掉进"未设"分支去起 mangasvc —— 后者正是上面那种"说了没算数"。
+fn resolve_service_cmd() -> Result<Vec<String>, String> {
+    let impl_ = std::env::var("MIAO_SERVICE_IMPL").unwrap_or_default();
+    let impl_ = impl_.trim().to_ascii_lowercase();
+    if impl_ == "node" {
+        return Err(
+            "MIAO_SERVICE_IMPL=node 已退役：Node 服务实现（service/）已从仓库删除，\
+             服务靶子只剩 mangasvc（去掉该环境变量即可）"
+                .to_string(),
+        );
+    }
+    let bin = resolve_mangasvc()?;
+    Ok(vec![bin.to_string_lossy().into_owned()])
+}
+
+/// 定位 `mangasvc` 可执行：`MIAO_MANGASVC_BIN` 优先，其次与 `miao-dock` 可执行**同目录**
+/// （开发态二者同在 `src-tauri/target/{debug,release}/`）。
+fn resolve_mangasvc() -> Result<PathBuf, String> {
+    if let Ok(p) = std::env::var("MIAO_MANGASVC_BIN") {
+        let pb = PathBuf::from(&p);
+        if pb.is_file() {
+            return Ok(pb);
+        }
+        return Err(format!("MIAO_MANGASVC_BIN 指向的文件不存在：{p}"));
+    }
+    let name = if cfg!(windows) { "mangasvc.exe" } else { "mangasvc" };
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let cand = dir.join(name);
+            if cand.is_file() {
+                return Ok(cand);
+            }
+        }
+    }
+    Err(format!(
+        "找不到 {name}（Rust 服务实现需要它）：先在 src-tauri 执行 `cargo build --bin mangasvc`，或设 MIAO_MANGASVC_BIN"
+    ))
+}
+
+/// 父死看守器的**宿主可执行**（A3c）—— 与 `mangasvc` 同一个二进制。
+///
+/// 🔴 为什么不新开一个 bin：看守器是**每引擎栈常驻**的子进程，多一个可执行文件就多一份
+///    随包物与一条寻址路径；而 `mangasvc` 本来就随包（F5 之后它是服务本体），复用它
+///    `bundle.resources` 一条都不用改。代价是"看守器失败"与"服务失败"共用一个 exe，
+///    但两者不会同时发生（子命令在起服务之前就 return 了）。
+///
+/// 寻址与 `resolve_mangasvc` **同一条路**（`MIAO_MANGASVC_BIN` → 同目录 → 报错）——
+/// 🔴 两者必须一致：若这里另写一套，开发态会出现"服务起得来但看守器找不到"
+///    （mangasvc 被 build 了但寻址口径不同），症状是引擎一起来就死。
+fn watch_host() -> Result<PathBuf, String> {
+    resolve_mangasvc()
+}
+
+/// 看守器脚本路径的**退役说明**（A3c）。保留这个函数是为了让"它去哪了"有一处可查的落点，
+/// 而不是散落在注释里—— 日后有人按旧文档去找 `engine/scripts/child-watch.mjs` 时，
+/// 至少能在这里看到它已被 `child_watch::run` 取代、且断言改钉了 `mangasvc --child-watch`。
+#[allow(dead_code)]
+fn watch_entry_retired_note() -> &'static str {
+    "看守器已 Rust 化（A3c）：child_watch::run + `mangasvc --child-watch`，不再需要 node 解释器"
+}
+
+type ReadyRx = mpsc::Receiver<serde_json::Value>;
+
+/// 起一个子进程（**进自己的进程组**），把 stdout/stderr 收进日志。
+fn spawn_spec(spec: &LaunchSpec, log: &Arc<Mutex<VecDeque<String>>>) -> Result<Proc, String> {
+    let (proc, _rx) = spawn_inner(spec, log, false)?;
+    Ok(proc)
+}
+
+/// 同上，但把 stdout 里**含 `{…}` 的行**当就绪数据回传（manga-service 用它带出端口与令牌）
+fn spawn_spec_with_ready(
+    spec: &LaunchSpec,
+    log: &Arc<Mutex<VecDeque<String>>>,
+) -> Result<(Proc, ReadyRx), String> {
+    let (proc, rx) = spawn_inner(spec, log, true)?;
+    Ok((proc, rx.expect("collect_ready=true 必有 receiver")))
+}
+
+fn spawn_inner(
+    spec: &LaunchSpec,
+    log: &Arc<Mutex<VecDeque<String>>>,
+    collect_ready: bool,
+) -> Result<(Proc, Option<ReadyRx>), String> {
+    if spec.cmd.is_empty() {
+        return Err("启动配方里的 cmd 是空的".into());
+    }
+    // 外部二进制（python / llama-server）包一层父死看守 —— 见 `watch` 字段注释。
+    // ⚠️ 包一层之后 Rust 持有的直接子进程是"看守"，真正的引擎/LLM 是它的子进程；
+    // 所以回收才必须走**进程组**（`signal_tree`）而不是 `Child::kill()`。
+    let (head, args): (String, Vec<String>) = if spec.watch {
+        // A3c：看守器 = `mangasvc --child-watch`（与宿主同一个可执行文件，零新增随包物）
+        let mut a = vec!["--child-watch".to_string(), "--".to_string()];
+        a.extend(spec.cmd.iter().cloned());
+        (watch_host()?.to_string_lossy().into_owned(), a)
+    } else {
+        (spec.cmd[0].clone(), spec.cmd[1..].to_vec())
+    };
+
+    let mut cmd = Command::new(&head);
+    cmd.args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    // 🔴 `watch` 时 stdin 必须是**管道**且写端要被**长期攥住**（A3c 的父死通道）：
+    //    看守器把"stdin 读到 EOF"当作"父进程已死"，而管道 EOF 只在**所有写端**关闭时
+    //    才到来 —— 父进程活着就意味着有一个写端开着。
+    //    🔴 若这里图省事写 `Stdio::null()`：看守器一起来就读到 EOF ⇒ 每次启动都自杀，
+    //    症状是"引擎一起来就没了"，离根因极远。看守器侧对此有显式告警兜底。
+    //    非 watch 档（自家 Node/Rust 子进程）维持 null：它们内部自带父死看管。
+    if spec.watch {
+        cmd.stdin(Stdio::piped());
+        // 🔴 **必须同时声明** `MIAO_CHILD_WATCH_PIPE=1`（A3c）：看守器据此认定
+        //    「stdin 的 EOF 是父死的权威证据」。缺了这个声明它只能退回 ppid 轮询，
+        //    而 Windows 上父进程退出后 ppid 冻结 + pid 未回收 ⇒ 永远判不出父死 ⇒
+        //    **E11 静默失效**（这是本轮实测踩到并修掉的真实缺陷，见 child_watch.rs）。
+        cmd.env("MIAO_CHILD_WATCH_PIPE", "1");
+    } else {
+        cmd.stdin(Stdio::null());
+    }
+    if let Some(cwd) = &spec.cwd {
+        cmd.current_dir(cwd);
+    }
+    for (k, v) in &spec.env {
+        cmd.env(k, v);
+    }
+    // 让子进程进**自己的进程组**：回收时对组发信号即可连带孙进程（见 reap）
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    // Windows 上把子进程也挂进新进程组（taskkill /T 才有意义）
+    // 🔴 并且必须**同时**带 `CREATE_NO_WINDOW`：① `mangasvc` 是控制台程序，而父进程
+    //    （喵坞本体）是 `windows_subsystem="windows"` 的无控制台进程 ⇒ 不带这个标志
+    //    就会**新开一个黑框**（"打开喵坞弹两个命令行窗口"的第一个）。
+    //    ⚠️ 两个标志必须**一次合并写入**：std 的 `creation_flags()` 是覆盖语义，
+    //    分两次调用会让后一个把前一个冲掉（这正是 WinFlags 存在的原因）。
+    #[cfg(windows)]
+    WinFlags::new()
+        .or(CREATE_NEW_PROCESS_GROUP)
+        .or(CREATE_NO_WINDOW)
+        .apply(&mut cmd);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("无法执行 {}：{e}", spec.cmd[0]))?;
+    let pid = child.id();
+    // 🔴 把父死通道的写端从 `Child` 里**取出来存进 `Proc`**（A3c）。这一步漏了的话
+    //    它会随 `child` 字段一起被持有…… 但 `Child::stdin` 同样是"持有"，所以真正的风险
+    //    在**回收路径**：`reap()` 里 `procs.take_all()` 之后若谁把它 drop 掉，
+    //    引擎就会在停止过程中被自己的看守器抢先杀掉。显式存字段是为了让这个意图可见。
+    let _watch_keepalive = child.stdin.take();
+    let label: &'static str = match spec.label.as_deref() {
+        Some("service") => "service",
+        Some("engine") => "engine",
+        Some("llm") => "llm",
+        _ => "child",
+    };
+
+    let (tx, rx) = mpsc::channel::<serde_json::Value>();
+    if let Some(out) = child.stdout.take() {
+        let log = log.clone();
+        let tx = tx.clone();
+        thread::spawn(move || {
+            // ⚠️ 走 `relay_lines`（按字节 + lossy），**不是** `.lines().map_while(Result::ok)`：
+            //    后者一遇到非法 UTF-8 就停读并关掉管道，会让子进程后续写 stderr 直接报
+            //    `[Errno 22] Invalid argument`。见 `relay_lines` 的注释与 spec-notes D-88。
+            relay_lines(out, |line| {
+                if collect_ready {
+                    if let Some(idx) = line.find('{') {
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line[idx..]) {
+                            let _ = tx.send(v);
+                        }
+                    }
+                }
+                push_log(&log, &line);
+            });
+        });
+    }
+    if let Some(err) = child.stderr.take() {
+        let log = log.clone();
+        thread::spawn(move || {
+            relay_lines(err, |line| push_log(&log, &format!("[stderr] {line}")));
+        });
+    }
+
+    Ok((
+        Proc {
+            label,
+            handle: child,
+            pgid: pid,
+            probes: spec.probes.clone(),
+            probe_timeout: spec
+                .probe_timeout_ms
+                .map(Duration::from_millis)
+                .unwrap_or(PROBE_TIMEOUT),
+            _watch_keepalive,
+        },
+        if collect_ready { Some(rx) } else { None },
+    ))
+}
+
+fn wait_ready(rx: &ReadyRx, timeout: Duration) -> Result<serde_json::Value, String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(format!("等待就绪行超时（{}s）", timeout.as_secs()));
+        }
+        match rx.recv_timeout(left) {
+            Ok(v) => return Ok(v),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                return Err(format!("等待就绪行超时（{}s）", timeout.as_secs()))
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err("子进程在就绪前退出（请查看日志）".into())
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------ 就绪探针
+
+/// 等单条探针通过；`is_alive` 用来在**子进程已经退出**时立刻返回。
+///
+/// 🔴 为什么不能只等超时（2026-10-17 真机实测，D-231②）：③ 的 `wait_ready` 早就有
+///    "进程死了就别等满超时"的短路（`inner.child.try_wait()`），而 ② 这条没有。
+///    现场是 venv 装成 `torch 2.14.1+cpu`、配方却恒带 `--use-gpu`，引擎一起来就
+///    `CUDA or Metal compatible device could not be found` 退出；而探针循环只看端口与
+///    deadline ⇒ 每次启动白等满 **240s**（real 档探针预算），报的还是一句指向执行器端口的
+///    **假线索**（真因只在 stderr）。③ 的同一处毛病见 D-231⑤（文案写死"启动超时"）。
+fn wait_probe(
+    label: &str,
+    probe: &Probe,
+    timeout: Duration,
+    is_alive: impl Fn() -> Result<(), String>,
+) -> Result<(), String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if run_probe(probe).is_ok() {
+            return Ok(());
+        }
+        // 进程已经退出 ⇒ 这个端口永远不会来，立刻返回并点名是哪个进程死的
+        is_alive()?;
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "{label} 探针超时（{}s）：{}",
+                timeout.as_secs(),
+                describe_probe(probe)
+            ));
+        }
+        thread::sleep(Duration::from_millis(150));
+    }
+}
+
+fn describe_probe(probe: &Probe) -> String {
+    match probe {
+        Probe::Tcp { port } => format!("TCP 127.0.0.1:{port} 未在监听"),
+        Probe::Http { method, path, port, expect, .. } => {
+            format!("{method} http://127.0.0.1:{port}{path} 未返回 {expect}")
+        }
+    }
+}
+
+fn run_probe(probe: &Probe) -> Result<(), String> {
+    match probe {
+        Probe::Tcp { port } => {
+            let addr: std::net::SocketAddr = ([127, 0, 0, 1], *port).into();
+            std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(600))
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        Probe::Http { port, method, path, expect, token } => {
+            let client = reqwest::blocking::Client::builder()
+                .timeout(Duration::from_millis(1200))
+                .build()
+                .map_err(|e| e.to_string())?;
+            let url = format!("http://127.0.0.1:{port}{path}");
+            let mut req = if method.eq_ignore_ascii_case("POST") {
+                client.post(&url)
+            } else {
+                client.get(&url)
+            };
+            if let Some(t) = token {
+                req = req.header("X-Box-Token", t);
+            }
+            let res = req.send().map_err(|e| e.to_string())?;
+            let code = res.status().as_u16();
+            if code == *expect {
+                Ok(())
+            } else {
+                Err(format!("HTTP {code}（期望 {expect}）"))
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------ 进程树信号（跨端）
+
+/// 对**整个进程组**发信号。
+///
+/// - unix：`kill(-pgid, sig)`；子进程 spawn 时 `process_group(0)` ⇒ 组内还有真引擎的执行器。
+/// - Windows：`taskkill /PID <pid> /T [/F]`（`/T` 连子树）。
+///   ⚠️ **本机无法验证 Windows 分支**（G2 ④）：代码写在这里、注释标清楚，但不得计入"已验"。
+#[cfg(unix)]
+fn signal_tree(pgid: u32, force: bool) {
+    let sig = if force { libc::SIGKILL } else { libc::SIGTERM };
+    // 组 id 取负：`kill(-pgid, …)` 是 POSIX 的"发给整组"
+    unsafe {
+        libc::kill(-(pgid as i32), sig);
+    }
+}
+
+#[cfg(windows)]
+fn signal_tree(pgid: u32, force: bool) {
+    let mut c = Command::new("taskkill");
+    c.args(["/PID", &pgid.to_string(), "/T"]);
+    // 🔴 Windows 上「先礼」（不带 `/F`）对**控制台进程无效**（D-89）：
+    //
+    // 实测（2026-10-07）：`taskkill /PID <pid> /T` 不带 `/F` 时，对 node 返回 255、
+    // 对 Python 返回 128，目标进程**一个都不死**。`taskkill` 不带 `/F` 发的是
+    // `WM_CLOSE`/`CTRL_BREAK`，而 node / python 这类控制台进程**默认不响应**——
+    // 于是「先礼后兵」里的「先礼」在 Windows 上名存实亡，白白空等 STOP_GRACE，
+    // 还给了孙进程（执行器）被 reparent 的窗口。
+    //
+    // 平台事实决定了没有「优雅」这一档：`force=false` 与 `force=true` 都必须走 `/F`。
+    // 代价是跳过引擎 `main.py` 里 `handle_exit_signals` 的 `proc.terminate()` 优雅路径
+    // —— 但那条路径在 Windows 上本来就**不会被触发**（收不到 SIGTERM），所以没有损失。
+    c.arg("/F");
+    // 应用本体是 `windows_subsystem = "windows"`（**没有**控制台），此时 spawn 一个
+    // 控制台程序，Windows 会**新开一个黑框**闪一下。纯观感问题，但「点退出时蹦出一个
+    // cmd 黑框」很容易被当成"是不是中毒了"，成本一行，消掉它。
+    // （`hide_console` 的实现在 lib 的 `child_watch`，与启动路径共用一份。）
+    hide_console(&mut c);
+    let _ = c.stdout(Stdio::null()).stderr(Stdio::null()).status();
+    let _ = force; // 语义保留：unix 分支靠它区分 SIGTERM/SIGKILL；Windows 分支两档等价
+}
+
+/// **反证开关**：跳过整棵树的回收，只做直接子进程的 `kill()`。
+///
+/// 用来证明 E11 那组断言真的作用在"整棵树"上 —— 关掉之后，真引擎的执行器/孙进程
+/// 会变成占住 port+1 的孤儿，断言必须变红。见 ~/.workbuddy/skills/falsifiable-verification。
+pub fn no_tree_kill() -> bool {
+    std::env::var("MIAO_NO_TREE_KILL")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}

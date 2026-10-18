@@ -1,0 +1,29 @@
+[package]
+name = "miaodock-uninstaller"
+version = "2.2.1"
+description = "喵坞卸载器 · 自带界面的 WebView 卸载页，探测本地数据、清程序与入口后自删"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 删除落点与自删：卸载项注册表（HKLM / HKCU）、已知文件夹（桌面真实路径）、
+# 自检提权（ShellExecuteW + runas）。
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_Registry",
+    "Win32_System_Com",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+opt-level = "s"
+strip = true

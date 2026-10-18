@@ -7,7 +7,7 @@
  * **要看到它红，必须先破坏代码再重新编译/刷新**。这个门槛让人实际上不会去反证，
  * 于是「全绿」就成了没有信息量的信号 —— 本项目已经栽过两次（D-20）。
  *
- * 这个脚本把反证做成了可一键执行的：`npm run check:ia:refute`。
+ * 这个脚本把反证做成了可一键执行的：`npm run task -- check:ia:refute`。
  * 它在 jsdom 里搭出与真实应用**同构的 DOM**（用同一份 class 名与令牌常量），
  * 然后逐条注入破坏，看对应断言是否真的变红。
  *
@@ -15,15 +15,17 @@
  *
  * ✅ 验的是：**断言的判据是否真的能捕捉到它声称捕捉的那种改错**。
  *    —— 塞回 4 项、改回逆序、抹平小节、渲染两组，各自会不会让对应条目变红。
+ *    —— 以及末尾的「产品镜像」小节：直接读真实 `Sidebar.tsx` 判一次（合成快照与产品
+ *       是两套东西，只验前者会在文件漂移时静默失效）。
  * ❌ 不验：真实浏览器里的布局像素。几何由应用内 C 组自检负责（那里有真实 getComputedStyle）。
  *
  * 两者互补。缺了这个脚本，断言可能恒真而没人知道；缺了应用内自检，
  * 像素就没人量。但**只有这个脚本能回答"我的断言会不会是假阳性"**。
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 // ── 与应用共享的令牌（直接读源，避免脚本与应用漂移成两套数）──────────────────
-const TOKENS = readFileSync(new URL('../app/src/theme/tokens.ts', import.meta.url), 'utf8');
+const TOKENS = readFileSync(new URL('../src/themes/tokens.ts', import.meta.url), 'utf8');
 const num = (k) => {
   const m = TOKENS.match(new RegExp(`\\b${k}:\\s*([\\d.]+)`));
   return m ? Number.parseFloat(m[1]) : NaN;
@@ -54,9 +56,7 @@ const SIDEBAR = {
 // NaN 参与比较时两边都是假，判据会变成"永远红"或"永远绿"，而报错信息里看不出原因。
 for (const [k, v] of Object.entries(SIDEBAR)) {
   if (Number.isNaN(v.w) || Number.isNaN(v.h)) {
-    console.error(
-      `✗ 无法从 tokens.ts 抽出 SIDEBAR.${k} 的几何（正则与源码形态已失配）—— 判据会因此假绿，先修抽取。`,
-    );
+    console.error(`✗ 无法从 tokens.ts 抽出 SIDEBAR.${k} 的几何（正则与源码形态已失配）—— 判据会因此假绿，先修抽取。`);
     process.exit(1);
   }
 }
@@ -114,13 +114,12 @@ function dom({
     })
     .join('');
   const dividerEl = divider ? '<div class="sidebar-divider"></div>' : '';
-  const statusEl = '<div class="sidebar-status"></div>';
 
-  // 正确形态：应用 → 分隔线 → 状态点 → 设置
-  // 混层形态：应用 → 设置 → 分隔线 → 状态点（设置跑到分界之上）
+  // 正确形态：应用 → 分隔线 → 设置
+  // 混层形态：应用 → 设置 → 分隔线（设置跑到分界之上）
   const globalTail = globalAboveDivider
-    ? `${globalBtn(screens.app === 'settings')}${dividerEl}${statusEl}`
-    : `${dividerEl}${statusEl}${globalBtn(screens.app === 'settings')}`;
+    ? `${globalBtn(screens.app === 'settings')}${dividerEl}`
+    : `${dividerEl}${globalBtn(screens.app === 'settings')}`;
 
   return `
 <div class="shell">
@@ -134,7 +133,10 @@ function dom({
     ${
       viewOrder
         ? `<div class="viewtabs">${viewOrder
-            .map((v) => `<button class="viewtab${v === viewOrder[0] ? ' is-active' : ''}"><svg></svg><span>${v}</span></button>`)
+            .map(
+              (v) =>
+                `<button class="viewtab${v === viewOrder[0] ? ' is-active' : ''}"><svg></svg><span>${v}</span></button>`,
+            )
             .join('')}</div>`
         : ''
     }
@@ -164,9 +166,10 @@ function dom({
 /** 从 DOM 文本里抽出侧栏几何（模拟 getBoundingClientRect 的纵向序） */
 function geometry(html) {
   const order = [];
-  const re = /class="(nav-item is-app[^"]*|sidebar-divider|nav-item is-global[^"]*|sidebar-status)"/g;
+  const re = /class="(nav-item is-app[^"]*|sidebar-divider|nav-item is-global[^"]*)"/g;
   let m;
-  while ((m = re.exec(html))) order.push(m[1].startsWith('nav-item is-app') ? 'app' : m[1] === 'sidebar-divider' ? 'divider' : m[1] === 'sidebar-status' ? 'status' : 'global');
+  while ((m = re.exec(html)))
+    order.push(m[1].startsWith('nav-item is-app') ? 'app' : m[1] === 'sidebar-divider' ? 'divider' : 'global');
   return order;
 }
 
@@ -220,7 +223,9 @@ function judgeC9(html) {
   // ⚠️ 不能写成 `viewtab[^>]*><span>`：真实 DOM 里 Tab 是 `<svg/>` 在前、`<span>` 在后，
   // 那种写法只在自己理想化的脚手架 HTML 上成立，对真实输出恒不匹配 → C9 恒绿（假阳性）。
   // 这里用「不跨出当前 button」的惰性匹配，等价于浏览器里取 button 内的 span。
-  const tabs = [...html.matchAll(/viewtab[^>]*>(?:(?!<\/button>)[\s\S])*?<span>([^<]*)<\/span>/g)].map((m) => m[1].trim());
+  const tabs = [...html.matchAll(/viewtab[^>]*>(?:(?!<\/button>)[\s\S])*?<span>([^<]*)<\/span>/g)].map((m) =>
+    m[1].trim(),
+  );
   if (tabs.length === 0) return true;
   const want = ['投放', '队列', '漫画库'];
   return tabs.length === want.length && tabs.every((t, i) => t === want[i]);
@@ -357,7 +362,10 @@ const cases = [
   },
   {
     name: '反证 C10b：5 组全渲染（靠 CSS 隐藏而非单组挂载）',
-    spec: { ...BASE, settings: { groups: ['通用', '翻译服务', '播放·媒体', '资源与投放', '关于'], title: '通用', allGroups: true } },
+    spec: {
+      ...BASE,
+      settings: { groups: ['通用', '翻译服务', '播放·媒体', '资源与投放', '关于'], title: '通用', allGroups: true },
+    },
     refute: ['C10b'],
   },
   {
@@ -385,7 +393,10 @@ const ok = (cond, msg) => {
 };
 
 console.log('C8–C11 IA 结构断言 · 反证轮\n');
-console.log('令牌取自源码：', JSON.stringify({ sidebar: SHELL.sidebarWidth, nav: SETTINGS.navWidth, sticky: SETTINGS.navStickyTop }));
+console.log(
+  '令牌取自源码：',
+  JSON.stringify({ sidebar: SHELL.sidebarWidth, nav: SETTINGS.navWidth, sticky: SETTINGS.navStickyTop }),
+);
 console.log('');
 
 for (const c of cases) {
@@ -406,12 +417,90 @@ for (const c of cases) {
       ok(j[id] === false, `${id} 在此破坏下**变红**（实测 ${j[id] === false ? '红' : '仍绿 ← 假阳性!'}）`);
     }
   } else {
-    for (const [id, v] of Object.entries(c.want)) ok(v === true, `${id} 在正确实现下保持绿（实测 ${j[id] ? '绿' : '红 ← 误报!'}）`);
+    for (const [id, v] of Object.entries(c.want))
+      ok(v === true, `${id} 在正确实现下保持绿（实测 ${j[id] ? '绿' : '红 ← 误报!'}）`);
+  }
+  console.log('');
+}
+
+// ── 产品镜像：真实 Sidebar.tsx 不得再渲染服务状态点（D-230 ⑤）────────────────
+/*
+ * 上面整个脚本都在**合成 DOM**里跑：全绿只证明"判据在合成快照上咬得住"，
+ * 不证明"真实文件里没有状态点"—— 两者是两套东西，漂移了没人知道。
+ * 故这里直接读产品源码判一次，并用"把状态点加回去"的注入破坏反证。
+ *
+ * 判据取三个信号（任一出现即回归）：`.sidebar-status` 容器 · `stateView` 取用 ·
+ * `<Dot` 渲染。服务状态本身没有消失（设置页「服务与配对」+ 托盘图标仍在），
+ * 消失的是侧栏这**第三处**重复。
+ */
+const SIDEBAR_TSX = readFileSync(new URL('../src/components/Sidebar.tsx', import.meta.url), 'utf8');
+const judgeProductSidebar = (src) => ({
+  C8e: !src.includes('sidebar-status') && !/stateView/.test(src) && !/<Dot/.test(src),
+});
+
+{
+  const j = judgeProductSidebar(SIDEBAR_TSX);
+  console.log('🟢 基线 · 产品镜像：真实 Sidebar.tsx');
+  ok(j.C8e === true, `C8e 侧栏不渲染服务状态点（实测 ${j.C8e ? '绿' : '红 ← 误报!'}）`);
+  console.log('');
+}
+
+/**
+ * C8f（D-233）：侧栏下载入口 —— 设置之上、纯图标、有 aria-label、按状态条件渲染。
+ *
+ * 判据直接读产品源码（不另造一份合成 DOM）：这条入口是三态图标 + 条件渲染，
+ * 合成快照只能验证其中一半。
+ */
+const judgeDownloadEntry = (src) => {
+  const dl = src.indexOf('nav-item is-global is-download');
+  const settings = src.indexOf("screen === 'settings' ? 'nav-item is-global is-active'");
+  const hasAria = src.includes('aria-label={DOWNLOAD_META[downloadEntry].label}');
+  const conditional = src.includes("downloadEntry !== 'hidden' ? (");
+  const noText = !/is-download[\s\S]{0,600}?<span>/.test(src);
+  return dl > 0 && settings > dl && hasAria && conditional && noText;
+};
+
+{
+  const okBase = judgeDownloadEntry(SIDEBAR_TSX);
+  console.log('🟢 基线 · 产品镜像：侧栏下载入口');
+  ok(okBase, `C8f 下载入口在设置之上、纯图标、有 aria-label、按状态条件渲染（实测 ${okBase ? '绿' : '红 ← 误报!'}）`);
+  const mutated = SIDEBAR_TSX.replace('aria-label={DOWNLOAD_META[downloadEntry].label}', 'aria-label=""');
+  const okMut = judgeDownloadEntry(mutated);
+  console.log('🔴 反证 · 产品镜像：去掉下载入口的 aria-label');
+  ok(!okMut, `C8f 在此破坏下**变红**（实测 ${!okMut ? '红' : '仍绿 ← 假阳性!'}）`);
+  console.log('');
+}
+
+{
+  // 🔴 按文件实际 EOL 拼锚点：本仓文件是 CRLF，手写 `\n` 会找不到边界
+  //    （同类坑在 settings-media / launch-gate 的变异里都记过）。
+  const eol = SIDEBAR_TSX.includes('\r\n') ? '\r\n' : '\n';
+  const anchor = [
+    '        <button',
+    '          type="button"',
+    "          className={screen === 'settings' ? 'nav-item is-global is-active' : 'nav-item is-global'}",
+  ].join(eol);
+  const injected = ['      <div className="sidebar-status">{stateView(\'running\').text}</div>', anchor].join(eol);
+  const fileUrl = new URL('../src/components/Sidebar.tsx', import.meta.url);
+  if (SIDEBAR_TSX.includes(anchor)) {
+    writeFileSync(fileUrl, SIDEBAR_TSX.replace(anchor, injected));
+    const j = judgeProductSidebar(readFileSync(fileUrl, 'utf8'));
+    console.log('🔴 反证 · 产品镜像：把服务状态点加回侧栏');
+    ok(j.C8e === false, `C8e 在此破坏下**变红**（实测 ${j.C8e === false ? '红' : '仍绿 ← 假阳性!'}）`);
+    // 按字节还原并复核：留着被改坏的产品文件比没测更糟
+    writeFileSync(fileUrl, SIDEBAR_TSX);
+    ok(readFileSync(fileUrl, 'utf8') === SIDEBAR_TSX, 'Sidebar.tsx 已按字节还原');
+  } else {
+    ok(false, '反证锚点未找到（Sidebar.tsx 的设置按钮写法变了？）—— 本条无法反证');
   }
   console.log('');
 }
 
 console.log('─'.repeat(56));
 console.log(`${pass} 通过 / ${fail} 失败`);
-console.log(fail === 0 ? '\n✓ 全部反证成立：四条断言都能捕捉到它们声称捕捉的改错。' : '\n✗ 存在假阳性：某条断言在破坏下仍绿，它测不到东西。');
+console.log(
+  fail === 0
+    ? '\n✓ 全部反证成立：合成快照与产品镜像两侧的断言都能捕捉到它们声称捕捉的改错。'
+    : '\n✗ 存在假阳性：某条断言在破坏下仍绿，它测不到东西。',
+);
 process.exit(fail === 0 ? 0 : 1);

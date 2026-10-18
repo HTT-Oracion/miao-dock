@@ -1,10 +1,23 @@
 # 依赖与构建产物
 node_modules/
 dist/
-app/src-tauri/target/
+dist-verify/
+src-tauri/target/
+
+# 本机环境变量（清单见 `.env.example`；仓库里没有任何 dotenv 自动加载，这份只是给人抄）
+.env
+.env.local
+.env.*.local
+
+# 本机开发：环境切换脚本
+dev-env.ps1
+dev-env-off.ps1
 
 # Tauri 生成的 schema / 清单缓存（构建期自动产出，不入库）
-app/src-tauri/gen/schemas/
+# `**/` 前缀是必须的：安装器与卸载器各有自己的 `src-tauri/`，只写根路径会漏掉它们
+**/src-tauri/gen/schemas/
+# 三个 Tauri 工程（主应用 + 安装器 + 卸载器）各自的编译产物
+**/src-tauri/target/
 
 # ── 临时落盘：**全仓唯一**的临时目录 ────────────────────────────────────
 # 约定：任何"本机临时产物"一律写进 `.tmp/<用途>/`，不再在仓库根另起
@@ -13,8 +26,17 @@ app/src-tauri/gen/schemas/
 # 当前子目录：e2e / selftest / models / engine-test。
 .tmp/
 
+# ── 交付物落点：`npm run app:build` 的最终产物 ────────────────────────────
+# `release/MiaoDock-Setup.exe`（单文件安装器，约 145 MB）。
+# 与 `.tmp/` 分家的理由：`.tmp/` 是"跑完就能删的中间件"，`release/` 是**要交给人的成品** ——
+# 混在一起时，清理临时目录会顺手把交付物一起删掉。两者都不入库。
+/release/
+
 # vite 每次热重启都会把 vite.config.ts 转译到这个时间戳文件里，是纯噪声
 vite.config.ts.timestamp-*.mjs
+
+# tsc -b 的增量缓存（本机产物，不入库）
+*.tsbuildinfo
 
 # 系统与编辑器噪声
 .DS_Store
@@ -22,10 +44,6 @@ vite.config.ts.timestamp-*.mjs
 # 例外：真机验收的 stdout 证据**要入库**（是取证的一部分，不是运行噪声）——
 # 上面那条 `*.log` 的无斜杠写法会连它一起忽略，这里按目录显式放行。
 !docs/refs/engine/*.stdout.log
-
-# 音乐参考源码（GPL-3.0，开发期只读参考，不入库）
-# 移植产物在 app/src-tauri/src/music/，详见 vendor/music-reference/README.md
-vendor/
 
 # 编辑器本地历史（VS Code Local History 插件产物，纯本机噪声）
 .history/
@@ -36,3 +54,12 @@ test-manga/
 # 真实翻译引擎的运行时（Python 解释器 + venv + 模型权重）——本机资产，体积大、按平台不同，不入库
 # 依据：docs/engine-integration-plan.md §S0 / §S3（模型目录必须独立于 app/，换版本不重下）
 runtimes/
+
+# 安装向导 / 卸载页的字体：构建时由 scripts/build-install-ui.mjs 从 public/assets/fonts/
+# 复制进各自目录（三份字体合计约 65 MB，两个程序各存一份就是 130 MB 的仓库重复）
+installer/public/fonts/
+uninstaller/public/fonts/
+
+# 安装器的内嵌载荷：构建期产物（主程序 exe + 资源 + 卸载器 exe），按版本变、体积在 100 MB 量级。
+# 由 scripts/pack-install-payload.mjs 生成；缺失时 installer/build.rs 会补单字节占位让编译能过。
+installer/src-tauri/payload/

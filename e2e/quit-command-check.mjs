@@ -10,7 +10,7 @@
  *
  * 钉的**不是风格**，是**成因**（每一条都对应一个真实机制，不是"看起来更整洁"）：
  *
- *   Q1 `commands.rs` 的 `quit_app` 必须是 **async 命令**。
+ *   Q1 `commands/mod.rs` 的 `quit_app` 必须是 **async 命令**。
  *      Tauri 的**同步**命令跑在**主线程**上，而 `AppHandle::exit` 在主线程上调用时
  *      **不保证真的退出**（官方讨论 tauri#3555 的原话：
  *      「you shouldn't call `AppHandle::exit` on the main thread」）——
@@ -52,9 +52,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const COMMANDS_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'commands.rs');
-const SERVICE_RS = path.join(ROOT, 'app', 'src-tauri', 'src', 'service.rs');
-const APP_TSX = path.join(ROOT, 'app', 'src', 'App.tsx');
+const COMMANDS_MOD = path.join(ROOT, 'src-tauri', 'src', 'commands', 'mod.rs');
+const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service', 'mod.rs');
+// 黑框抑制（`CREATE_NO_WINDOW`）的唯一实现住在 lib 侧，`signal_tree` 调用它的 `hide_console`
+const CHILD_WATCH_RS = path.join(ROOT, 'src-tauri', 'src', 'platform', 'child_watch.rs');
+const APP_TSX = path.join(ROOT, 'src', 'App.tsx');
 
 const REFUTE = process.argv.includes('--refute');
 
@@ -70,8 +72,9 @@ const read = (f) => fs.readFileSync(f, 'utf8');
 function runAll() {
   results.length = 0;
 
-  const cmds = read(COMMANDS_RS);
+  const cmds = read(COMMANDS_MOD);
   const svc = read(SERVICE_RS);
+  const childWatch = read(CHILD_WATCH_RS);
   const app = read(APP_TSX);
 
   // ---- Q1：quit_app 是 async 命令（不在主线程跑）----
@@ -97,12 +100,21 @@ function runAll() {
   );
 
   // ---- Q3：Windows taskkill 不弹黑框 ----
-  check(
-    'Q3',
-    'Windows signal_tree 的 taskkill 带 `CREATE_NO_WINDOW`（否则点退出会蹦出一个 cmd 黑框）',
-    svc.includes('CREATE_NO_WINDOW') && svc.includes('creation_flags(CREATE_NO_WINDOW)'),
-    `CREATE_NO_WINDOW=${svc.includes('CREATE_NO_WINDOW')} creation_flags=${svc.includes('creation_flags(CREATE_NO_WINDOW)')}`,
-  );
+  // 施加方式已收敛为共享助手 `hide_console`（`CREATE_NO_WINDOW` 的唯一实现住在 child_watch.rs），
+  // `signal_tree` 的 Windows 分支调用它。两处都要钉：调用位被删、或助手不再施加这个标志，各自要红。
+  {
+    const tk = svc.indexOf('Command::new("taskkill")');
+    const ntk = svc.indexOf('pub fn no_tree_kill');
+    const winSignalTree = tk >= 0 && ntk > tk ? svc.slice(tk, ntk) : '';
+    const hideAt = childWatch.indexOf('pub fn hide_console');
+    const hideBody = hideAt >= 0 ? childWatch.slice(hideAt, hideAt + 300) : '';
+    check(
+      'Q3',
+      'Windows signal_tree 的 taskkill 带 `CREATE_NO_WINDOW`（否则点退出会蹦出一个 cmd 黑框）',
+      winSignalTree.includes('hide_console(&mut c)') && hideBody.includes('CREATE_NO_WINDOW'),
+      `signal_tree 调 hide_console=${winSignalTree.includes('hide_console(&mut c)')} 助手施 CREATE_NO_WINDOW=${hideBody.includes('CREATE_NO_WINDOW')}`,
+    );
+  }
 
   // ---- Q4：前端退出失败不静默 ----
   check(
@@ -154,7 +166,16 @@ function printResults(title) {
 const MUTATIONS = [
   {
     name: 'M1 quit_app 退回同步命令（回到主线程）',
-    edits: [{ file: COMMANDS_RS, find: '#[tauri::command(async)]', replace: '#[tauri::command]' }],
+    // 🔴 锚点必须**连到函数名**：本文件里 `#[tauri::command(async)]` 已有多处
+    //    （service_stop / api_post …），只给属性行是"第一次出现即替换" ⇒ 变异打在**别的函数**上，
+    //    Q1 不会变红，整条反证变成假绿。
+    edits: [
+      {
+        file: COMMANDS_MOD,
+        find: '#[tauri::command(async)]\npub fn quit_app',
+        replace: '#[tauri::command]\npub fn quit_app',
+      },
+    ],
     expect: ['Q1'],
   },
   {
@@ -169,8 +190,8 @@ const MUTATIONS = [
     expect: ['Q2'],
   },
   {
-    name: 'M3 taskkill 去掉 CREATE_NO_WINDOW',
-    edits: [{ file: SERVICE_RS, find: '    c.creation_flags(CREATE_NO_WINDOW);', replace: '    // refute' }],
+    name: 'M3 taskkill 不再抑制黑框（移除 signal_tree 里的 hide_console 调用）',
+    edits: [{ file: SERVICE_RS, find: '    hide_console(&mut c);', replace: '    // refute：不再抑制黑框' }],
     expect: ['Q3'],
   },
   {
@@ -178,7 +199,7 @@ const MUTATIONS = [
     edits: [
       {
         file: APP_TSX,
-        find: 'void quitApp().catch((e: unknown) => push(errorText(e), \'bad\'));',
+        find: "void quitApp().catch((e: unknown) => push(errorText(e), 'bad'));",
         replace: 'void quitApp();',
       },
     ],
@@ -232,13 +253,21 @@ const main = () => {
     for (const [i, e] of mut.edits.entries()) {
       if (!originals.has(e.file)) originals.set(e.file, readBytes(e.file));
       const txt = originals.get(e.file).toString('utf8');
-      if (!txt.includes(e.find)) {
-        console.log(`⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`);
+      // 🔴 EOL 折算：本仓 `core.autocrlf=true`，工作区是 **CRLF**，而锚点字面量写的是 **LF**。
+      //    不折算时**跨行锚点**永远"锚点未找到" → 该条静默不反证（跳过 ≠ 通过）。
+      //    与 `units-structure-check.mjs` 同一处理（它在 2026-10-07 因同类问题长期漏跑 9 条）。
+      const eol = txt.includes('\r\n') ? '\r\n' : '\n';
+      const find = e.find.split('\n').join(eol);
+      const repl = e.replace.split('\n').join(eol);
+      if (!txt.includes(find)) {
+        console.log(
+          `⚠ ${mut.name}\n    破坏锚点未找到（第 ${i + 1} 处，${path.relative(ROOT, e.file)}）—— 本条无法反证`,
+        );
         skipped += mut.expect.length;
         missing = true;
         continue;
       }
-      fs.writeFileSync(e.file, txt.replace(e.find, e.replace));
+      fs.writeFileSync(e.file, txt.replace(find, repl));
     }
     if (missing) {
       for (const [f, snap] of originals) fs.writeFileSync(f, snap); // 还原已改的那几处
