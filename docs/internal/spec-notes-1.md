@@ -5077,4 +5077,55 @@ installTitleOf / install / running` 等只服务于被移除模块的死代码�
 其源给了 Content-Length）；**真机 111% 那条路径**（源不返回 Content-Length）没有复现环境 ——
 修法（同集合 + clamp）逻辑上封住了，但没在真机上看过一眼。
 
+## D-235 安装向导与卸载页做成两个自成一体的独立程序（2026-10-18）
+
+**决策**：按设计稿实现安装引导（选目录 / 确认长路径 / 完成）与卸载页（告别确认 / 进行中 / 完成），
+落成 `installer/` 与 `uninstaller/` 两个**各自独立的程序** —— 各自带 `package.json` / `vite.config.ts` /
+`tsconfig.json` / `src-tauri` 宿主 / `dist`，**彼此不许互相引用**，也**不 import 主工程源码**，
+外部 `vite.config.ts` 的多入口里**不登记**它们（登记了就等于并进主构建，两边编译选项互相牵动）。
+代价登记：设计令牌与共享纯函数（`formatBytes` 等）在各自目录内各持一份**镜像副本**，可能漂移 ——
+漂移代价与理由写在各文件头。另一条未选项：纯浏览器页 + 旧 NSIS 界面并存（省事，但安装器会被主应用构建绑架）。
+
+**接缝只有一处**：界面与「干活的外壳」之间只有 `installer/src/host.ts` / `uninstaller/src/host.ts` ——
+默认目录、安装包体积、可用空间、长路径开关、日志路径、三类本地数据的目录 / 体积 / 存在性，
+全部由宿主**实时探测**后注入（`probe()` / `probeEnv()`），界面**不写死任何一个数**；
+纯浏览器里跑（`document.documentElement.dataset.host === 'web'`）时用同文件内的预览替身，取样值即设计稿演示值。
+判据：探测值与演示值混写 ⇒ 同一界面在真机与预览下会显示两套数字。
+
+**踩坑（当天实测）**：
+- **宿主只能 `npm run tauri -- build`**：`cargo build` 出来的 exe 不内嵌前端（只连 dev 服务），
+  双击是一片空白 —— 7.5 MB vs CLI 的 46 MB（字体是大头）。已写进 AGENTS / README 的硬约束。
+- **无边框窗口要「真圆角」必须 `transparent: true` + `shadow: false`**：只给 `decorations: false`
+  窗口仍是不透明方框（用户反馈「像浏览器页面 / 边框还是方方的」）；圆角与猫耳要由宿主 CSS 把
+  html/body 置透明、卡片自带圆角 + 投影，窗口形状才等于卡片形状。
+- **`core:window:default` 不含 `allow-start-dragging`**：标题栏 `data-tauri-drag-region` 配了却拖不动，
+  **且不报任何错**；必须显式加 `core:window:allow-start-dragging`
+  （依据 `src-tauri/gen/schemas/acl-manifests.json`，该权限不在 `core:default` 内）。
+- **flex 列里 `height` 不防收缩**：标题行被压扁到看不清文字 ⇒ 非主体行写 `flex: 0 0 auto`，
+  主体写 `flex: 1 1 auto; min-height: 0`（`min-height: 0` 是让 `overflow-y: auto` 生效的前提）。
+- **本机「安全删除垫」会拦截批量删目录**（`trash operation: Some operations were aborted`），
+  套件组装脚本改为**不删输出目录**（`mkdir` + 覆盖 + 单文件清理）；运行中的 exe 覆盖报 `EBUSY`
+  ⇒ `copyInto()` 重试 5 次 × 400 ms，仍占用则收集进 `locked[]`、打印「先关掉正在运行的窗口」并置
+  `process.exitCode = 1`，**不中断其余文件**。被占用的文件可以**重命名**（`*.old.exe`）绕过。
+
+**未串通（如实登记）**：本轮只做「程序本身」。用户双击的仍是旧 NSIS `setup.exe`；控制面板 / 开始菜单的
+卸载项仍指向旧 `uninstall.exe`；`hooks.nsh` 未改 ⇒「安装包引导页 = installer、装完的卸载程序 =
+uninstaller」目前**不成立**。下一步方向（已与用户对齐，未开工）：参照「参考实现」改成**单文件载荷式** ——
+载荷（主程序 exe + 资源 + 卸载器 exe）打包成 `payload`，用 `include_bytes!` 编译进安装器 exe，
+运行时解包落盘 + 建快捷方式 + 写 **HKCU**（当前用户免管理员）卸载注册表项；卸载器放回安装目录，
+靠 detached 清理脚本自删；NSIS `installerHooks` / `hooks.nsh` 随之退役，
+需重写 `check:bundle` 的 W8–W12、`check:packaged`、`check:uninstall-keep` 三处断言。
+分两步：①单文件 + 自解包安装 + HKCU 卸载项（先跑通「装 → 从控制面板卸载」闭环）；
+②卸载器自删 + `hooks.nsh` 与三断言退役。**已写好的界面与样式不需要删除**，前端只改文案与数字口径。
+
+**验收（2026-10-18）**：`npm run check` 18/18 · `npx eslint installer uninstaller scripts/package-install-ui.mjs`
+无输出 · `npx prettier --check` 通过 · 两侧 `tsc --noEmit` + `vite build` 通过 ·
+`npm run task -- install:kit` 产出 `.tmp/install-kit/`（两个宿主 exe + 主应用安装包），
+并核对过 exe 内嵌的是最新 CSS（构建后哈希对得上）。
+
+⚠️ **未验项如实登记**：**真机全链路没走通** —— 用户实际双击的安装包仍是旧 NSIS 界面，本轮的两个 exe
+是并排运行的独立程序（`miao-installer.exe` 与 `*-setup.exe` 同目录），「装完的卸载程序 = uninstaller」
+未验证；`npm run tauri -- build` 只验到能启动与窗口形态，**没在真机上完整装一遍再卸载**。
+macOS 不在本轮范围（无安装 / 卸载宿主，已定暂不考虑）。
+
 

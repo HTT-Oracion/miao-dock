@@ -42,7 +42,8 @@ alwaysApply: true
 - `src/router/` = 屏级路由（**URL 是「屏 + 应用内视图」的唯一事实源**）：`routes.ts` 是「路径 ↔ 屏」的事实源，`use-nav.ts` 是读写口，`index.tsx` 是装配，`panes/` 是屏装配件（经 `<Outlet context>` 取壳层数据，**不自己持状态**；翻译屏兼管让位守卫）。**新增屏要同时进路由表与 `src/stores/nav.ts` 的 IA 模型**。
 - `src/stores/` = **跨组件共享状态的收口（非域）**：`nav` / `toastBus` / `shell-prefs`。**域内状态留域里** —— `src/music/store.ts`（zustand）不往这里搬。
 - `src/ipc/` = 与后端通信（`ipc.ts` 命令 + `engine-download.ts`）；`src/types/` = 跨域类型与环境声明；`src/themes/` = 设计令牌与主题应用（🔴 令牌数值是**断言对象**，改它要同时看断言）。
-- `public/assets/` = **公共资源（不经过构建，用绝对 URL 引）**：`fonts/`（三份清单由入口 HTML 的 `<link>` 加载）· `icons/`；`installer/` = NSIS 安装钩子 `hooks.nsh`（由 `tauri.windows.conf.json` 相对 `src-tauri/` 引用）。判据是「**要不要过构建**」。
+- `public/assets/` = **公共资源（不经过构建，用绝对 URL 引）**：`fonts/`（三份清单由入口 HTML 的 `<link>` 加载）· `icons/`；`installer/` / `uninstaller/` = **安装器 / 卸载器程序**，各自**自成一体的独立工程**（自带 `package.json`（dev 端口 1444 / 1555）/ `vite.config.ts` / `tsconfig.json` / `src-tauri` 宿主 / `dist`，不并进主构建）：`index.html` 入口 · `src/`（安装引导三步 / 卸载页三态）· `public/assets/` 品牌图；`installer/hooks.nsh` 另由 `tauri.windows.conf.json` 相对 `src-tauri/` 引用。判据是「**要不要过构建**」。
+- 🔴 两个程序**彼此不许互相引用**，也**不 import 主工程源码**：令牌与共享纯函数在各自目录内持镜像副本（漂移代价写在文件头）；界面与外壳之间只有 `installer/src/host.ts` / `uninstaller/src/host.ts` 一个接缝，实时数据（目录 / 体积 / 长路径开关）由宿主探测注入，界面不写死数字。构建：`npm run task -- installer:build` / `uninstaller:build`。
 - `src-tauri/src/` 根只留 `main.rs`（装配与启动）/ `lib.rs`，其余六域：`commands/`（IPC 命令层，**`handler()` 是唯一的命令注册点**）· `service/`（子进程生命周期）· `selftest/`（自检 + 截图取证）· `platform/`（跨平台底座）· `music/` · `mangasvc/`。
 - **按「依赖什么」定归属，不按「被用几次」**。新组件先看它 import 什么，再决定放哪。
 - 不要为了"复用"把绑定单屏几何/业务类型的件抽走（反面清单见 `docs/internal/spec-notes.md` D-34）。
