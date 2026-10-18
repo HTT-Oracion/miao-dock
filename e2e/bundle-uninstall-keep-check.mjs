@@ -80,13 +80,11 @@ function findInstaller() {
 /** 目录快照：存在与否 + 一层条目名（**不递归算大小** —— 13 GB 的目录没必要为此全量遍历）。 */
 function snapDir(p) {
   if (!fs.existsSync(p)) return { exists: false, entries: [] };
-  let entries = [];
   try {
-    entries = fs.readdirSync(p).sort();
+    return { exists: true, entries: fs.readdirSync(p).sort() };
   } catch {
-    entries = ['<读不到>'];
+    return { exists: true, entries: ['<读不到>'] };
   }
-  return { exists: true, entries };
 }
 
 function runTool(exe, args) {
