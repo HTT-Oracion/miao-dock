@@ -1752,13 +1752,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "miao-uninstaller"
+name = "miaodock-uninstaller"
 version = "2.2.1"
 dependencies = [
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

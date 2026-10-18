@@ -44,10 +44,10 @@ export interface UninstallerHost {
   /**
    * 执行卸载。`targets` 是要删的几类（界面已按勾选 + 存在性筛过，**没勾的一律不碰**）；
    * 宿主每完成一步回调一次 `done`（从 1 起）。步数口径：
-   * `2 + targets.length + 1`（快捷方式 / 程序文件 / 逐项数据 / 开始菜单），
-   * 与界面 `tools/progress.ts` 的 `stepCount()` 同一条公式。返回退出码（0 = 成功）。
+   * `2 + targets.length + 1`（入口 / 程序文件与注册表 / 逐项数据 / 安排自删），
+   * 与界面 `tools/progress.ts` 的 `stepCount()` 同一条公式。失败即抛错（人话）。
    */
-  runUninstall(targets: DataKind[], onProgress: (done: number) => void): Promise<number>;
+  runUninstall(targets: DataKind[], onProgress: (done: number) => void): Promise<void>;
   /** 关闭窗口 */
   close(): void;
 }
@@ -59,7 +59,7 @@ const tauriHost: UninstallerHost = {
     // 进度走 Tauri 的 Channel（命令参数名 on_progress ⇄ 这里 onProgress）
     const channel = new Channel<number>();
     channel.onmessage = (done) => onProgress(done);
-    return invoke<number>('run_uninstall', { targets, onProgress: channel });
+    await invoke<void>('run_uninstall', { targets, onProgress: channel });
   },
   close: () => {
     void invoke('close_window');
@@ -95,13 +95,12 @@ const previewHost: UninstallerHost = {
     return PREVIEW_PROBE;
   },
   async runUninstall(targets, onProgress) {
-    // 与真实宿主同一条步数公式：2（快捷方式 / 程序文件）+ 逐项 + 1（开始菜单）
+    // 与真实宿主同一条步数公式：2（入口 / 程序文件与注册表）+ 逐项 + 1（安排自删）
     const total = 2 + targets.length + 1;
     for (let done = 1; done <= total; done++) {
       await sleep(450);
       onProgress(done);
     }
-    return 0;
   },
   close() {
     /* 预览：浏览器里不关窗 */

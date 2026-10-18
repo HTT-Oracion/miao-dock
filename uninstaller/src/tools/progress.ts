@@ -25,13 +25,13 @@ export interface ProgressLine {
  * 三条规矩：
  *   · **勾了才叫"删除"，没勾的一律写"已保留"** —— 不能让用户从"没提到"去推断
  *     自己的数据还在不在（完成页的汇总走同一判据）；
- *   · 步骤顺序固定：快捷方式 → 程序文件与注册表 → 逐项数据 → 开始菜单入口；
+ *   · 步骤顺序固定：入口（桌面 + 开始菜单）→ 程序文件与注册表 → 逐项数据 → 安排自删；
  *   · 步数口径 `2 + targets.length + 1` 与 `host.ts` 的 `runUninstall` 注释同一条公式。
  */
 export function buildPlan(probe: UninstallProbe, targets: DataKind[]): ProgressLine[] {
   const deleting = new Set(targets);
   const lines: ProgressLine[] = [
-    { id: 'shortcut', text: '已移除桌面快捷方式', kind: 'step', state: 'pending' },
+    { id: 'shortcut', text: '已移除桌面与开始菜单入口', kind: 'step', state: 'pending' },
     {
       id: 'files',
       text: `已移除程序文件与注册表项（${formatBytes(probe.programSizeBytes)}）`,
@@ -50,8 +50,8 @@ export function buildPlan(probe: UninstallProbe, targets: DataKind[]): ProgressL
   }
 
   lines.push({
-    id: 'menu',
-    text: '清理开始菜单入口（注册表随卸载程序一并移除）',
+    id: 'self',
+    text: '已安排清理卸载器自身（关窗后自动移除）',
     kind: 'step',
     state: 'pending',
   });

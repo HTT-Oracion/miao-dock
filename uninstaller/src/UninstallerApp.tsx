@@ -60,7 +60,7 @@ function Flow({ host, probe }: { host: UninstallerHost; probe: UninstallProbe })
   const [checks, setChecks] = useState<DataChecks>(emptyChecks);
   const [plan, setPlan] = useState<ProgressLine[]>([]);
   const [done, setDone] = useState(0);
-  const [failure, setFailure] = useState<number | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
   const [targets, setTargets] = useState<DataKind[]>([]);
 
   function togglePurge(): void {
@@ -85,14 +85,14 @@ function Flow({ host, probe }: { host: UninstallerHost; probe: UninstallProbe })
     setPhase('running');
 
     // 只把"要删哪几类"交给宿主（文案留在界面）；宿主每完成一步回调"已完成几步"
-    const code = await host.runUninstall(nextTargets, (finished) => setDone(finished));
-    if (code === 0) {
+    try {
+      await host.runUninstall(nextTargets, (finished) => setDone(finished));
       setDone(stepCount(nextPlan));
       setPhase('done');
-      return;
+    } catch (error) {
+      // 失败不假装完成：留在进行中屏，把原因摆出来
+      setFailure(reasonOf(error));
     }
-    // 失败不假装完成：留在进行中屏，把退出码摆出来
-    setFailure(code);
   }
 
   const cancel = (): void => host.close();
@@ -123,4 +123,11 @@ function Flow({ host, probe }: { host: UninstallerHost; probe: UninstallProbe })
       onPurge={() => void startUninstall(true)}
     />
   );
+}
+
+/** 宿主抛来的错误可能是字符串（Tauri 的 `Err(String)`）也可能是 Error */
+function reasonOf(error: unknown): string {
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) return error.message;
+  return String(error);
 }

@@ -19,8 +19,8 @@ export function ProgressState({
 }: {
   lines: ProgressLine[];
   percent: number;
-  /** 卸载退出码；null = 正常进行中 */
-  failure: number | null;
+  /** 卸载失败原因（人话）；null = 正常进行中 */
+  failure: string | null;
   onBackground: () => void;
 }) {
   return (
