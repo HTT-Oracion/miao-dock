@@ -1,0 +1,28 @@
+[package]
+name = "miao-installer"
+version = "2.2.1"
+description = "喵坞安装器 · 独立的 WebView 小窗，驱动 NSIS 安装包静默安装"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# 与主应用同一条技术栈：同一个 Tauri 大版本，窗口只用一个（安装向导本身）
+tauri = { version = "2.12", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 只读两样系统信息：目标盘可用空间、长路径开关（都是只读，不改注册表）
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Registry",
+] }
+
+[profile.release]
+opt-level = "s"
+strip = true

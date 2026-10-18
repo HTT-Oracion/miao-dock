@@ -1,0 +1,412 @@
+/* ================================================================
+   卸载页外壳：最小重置 / 猫耳窗 / 底栏 / 按钮 / 提示条 / 勾选行
+   颜色一律 var(--md-*)，由 main.tsx 注入（`src/themes/tokens.ts`）
+   ================================================================ */
+
+/* 最小重置：本入口不引主窗的 base.scss，这里补最基本的三件 —— margin / 盒模型 / 默认字号 */
+body {
+  margin: 0;
+  background: var(--md-board);
+  color: var(--md-ink);
+  font-family: var(--md-font-body);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.uns-page {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 26px 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.uns-page *,
+.uns-page *::before,
+.uns-page *::after {
+  box-sizing: inherit;
+}
+
+.uns-page h2 {
+  font-family: var(--md-font-display);
+  font-size: 17px;
+  margin: 0 0 3px;
+}
+
+.uns-page svg {
+  display: block;
+}
+
+/* ---------------------------------------------------------------- 猫耳窗 */
+
+.uns-win {
+  width: 660px;
+  position: relative;
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-xl);
+  box-shadow: 0 18px 46px -20px rgba(59, 51, 82, 0.28);
+}
+
+.uns-win::before,
+.uns-win::after {
+  content: '';
+  position: absolute;
+  top: -15px;
+  width: 0;
+  height: 0;
+  border-left: 15px solid transparent;
+  border-right: 15px solid transparent;
+  border-bottom: 22px solid var(--md-surface);
+  filter: drop-shadow(0 -1px 0 var(--md-line));
+}
+
+.uns-win::before {
+  left: 38px;
+  transform: rotate(-8deg);
+}
+
+.uns-win::after {
+  right: 38px;
+  transform: rotate(8deg);
+}
+
+.uns-bar {
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--md-line-soft);
+}
+
+.uns-bar-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.uns-bar-title {
+  font-family: var(--md-font-display);
+  font-size: 12.5px;
+}
+
+/* 卸载页的标签走 lavender 那一档淡紫；令牌里没有它的 soft 变体，底色用 surface-2 兜 */
+.uns-bar-tag {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--md-lavender);
+  background: var(--md-surface-2);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+
+/* 关闭钮：宿主里没有系统标题栏，这一枚就是唯一的关闭入口 */
+.uns-bar-close {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 2px;
+  padding: 0;
+  cursor: pointer;
+  color: var(--md-muted);
+  background: none;
+  border: none;
+  border-radius: 50%;
+}
+
+.uns-bar-close:hover {
+  color: var(--md-ink);
+  background: var(--md-surface-2);
+}
+
+.uns-bar-close:focus-visible {
+  outline: 2px solid var(--md-lavender);
+  outline-offset: 1px;
+}
+
+.uns-win-body {
+  padding: 22px 26px 18px;
+}
+
+.uns-win-foot {
+  padding: 14px 26px 18px;
+  border-top: 1px solid var(--md-line-soft);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.uns-win-note {
+  padding: 0 26px 18px;
+  font-size: 10.5px;
+  text-align: center;
+  color: var(--md-muted);
+}
+
+.uns-foot-left {
+  font-size: 11px;
+  color: var(--md-muted);
+}
+
+.uns-foot-grow {
+  flex: 1;
+}
+
+/* ---------------------------------------------------------------- 按钮 */
+
+.uns-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  color: inherit;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+
+.uns-btn-primary {
+  color: var(--md-on-accent);
+  background: var(--md-pink);
+}
+
+.uns-btn-primary:hover {
+  filter: brightness(1.04);
+}
+
+.uns-btn-ghost {
+  font-weight: 400;
+  color: var(--md-ink-2);
+  background: var(--md-surface);
+  border-color: var(--md-line);
+}
+
+/* 删除向按钮用实心 error 红 —— 与「留下数据」的安全路径拉开距离，且默认不在焦点上 */
+.uns-btn-danger {
+  color: var(--md-on-accent);
+  background: var(--md-error);
+}
+
+.uns-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.uns-btn:focus-visible {
+  outline: 2px solid var(--md-lavender);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- 盒式提示条 */
+
+.uns-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 12px 0 14px;
+  padding: 11px 14px;
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+  background: var(--md-surface-2);
+  border-radius: var(--md-radius-md);
+}
+
+.uns-note svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  stroke: var(--md-lavender);
+}
+
+.uns-note b {
+  color: var(--md-ink);
+}
+
+.uns-outcome-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--md-muted);
+}
+
+/* 失败告警态：黄底 + warning 文字（设计稿里的警示配色） */
+.uns-note.is-warn {
+  color: var(--md-warning);
+  background: #fff6e3;
+}
+
+.uns-note.is-warn svg {
+  stroke: var(--md-warning);
+}
+
+/* 统计中：窗口已出、内容未到 —— 一句话说明在等宿主回话 */
+.uns-probing {
+  padding: 26px 0 30px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--md-muted);
+}
+
+/* ---------------------------------------------------------------- 勾选行 */
+
+.uns-chk {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  color: inherit;
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-md);
+}
+
+.uns-chk.is-master {
+  border-width: 1.5px;
+  border-color: var(--md-pink);
+  background: var(--md-pink-soft);
+}
+
+.uns-chk.is-on {
+  border-color: var(--md-pink);
+  background: var(--md-pink-soft);
+}
+
+/* 锁定态：置灰的同时**真的禁用**（见到 `<button disabled>` 的语义，不只是变淡） */
+.uns-chk.is-locked {
+  opacity: 0.45;
+  filter: saturate(0.5);
+}
+
+.uns-chk:focus-visible {
+  outline: 2px solid var(--md-lavender);
+  outline-offset: 2px;
+}
+
+.uns-chk-box {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+  margin-top: 1px;
+  display: grid;
+  place-items: center;
+  color: var(--md-on-accent);
+  background: #fff;
+  border: 1.5px solid var(--md-line);
+  border-radius: var(--md-radius-xs);
+}
+
+.uns-chk.is-on .uns-chk-box {
+  background: var(--md-pink);
+  border-color: var(--md-pink);
+}
+
+.uns-chk-tx {
+  flex: 1;
+  min-width: 0;
+}
+
+.uns-chk-tx b {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--md-ink);
+}
+
+.uns-chk-tx span {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--md-ink-2);
+}
+
+.uns-chk-side {
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+/* ---------------------------------------------------------------- 行内徽章 */
+/* 三档风险的底色是设计稿给的浅色 —— 令牌没有同名的 soft 变体，文字色仍走令牌 */
+
+.uns-badge {
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.uns-badge.is-keep {
+  color: #2e7a5e;
+  background: #e4f8ef;
+}
+
+.uns-badge.is-danger {
+  color: #d9525f;
+  background: #ffedef;
+}
+
+.uns-badge.is-slow {
+  color: var(--md-warning);
+  background: #fff6e3;
+}
+
+/* ================================================================
+   桌面宿主（`<html data-host="tauri">`）里的形态：**卡面就是窗口本身**
+   浏览器预览保留设计稿那种"画布上浮着一张卡"的展示形态，两者只差这一组规则
+   ================================================================ */
+
+/* 宿主窗口是**透明**的（`transparent: true`）：屏幕上没有矩形窗口，
+   只有卡面本身 —— 圆角与猫耳因此是真正的"形状"，而不是画在方框里的图案 */
+
+html[data-host='tauri'],
+html[data-host='tauri'] body {
+  background: transparent;
+}
+
+html[data-host='tauri'] .uns-page {
+  /* 左/右/下各留 14px 给投影，顶部 26px 给猫耳 */
+  padding: 26px 14px 14px;
+  background: transparent;
+  /* 桌面窗口不是网页：正文不可选 */
+  user-select: none;
+}
+
+html[data-host='tauri'] .uns-win {
+  width: 100%;
+  min-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  /* 窗口本身没有边框：四个角都是卡面自己的圆角 */
+  border-radius: var(--md-radius-xl);
+  box-shadow: 0 18px 40px -22px rgba(59, 51, 82, 0.35);
+}
+
+/* 🔴 flex 列里 `height: 46px` 挡不住收缩：可用高度不够时标题栏会被压扁（实测踩过）。
+   除了主体，其余各行一律 `flex: 0 0 auto` —— 该固定的一律固定，只让主体伸缩。 */
+html[data-host='tauri'] .uns-bar,
+html[data-host='tauri'] .uns-win-foot,
+html[data-host='tauri'] .uns-win-note {
+  flex: 0 0 auto;
+}
+
+html[data-host='tauri'] .uns-win-body {
+  /* `min-height: 0` 是 overflow 在 flex 列里真正生效的前提（否则它会把容器撑开而不是滚动） */
+  flex: 1 1 auto;
+  min-height: 0;
+  /* 内容超高时只滚主体，底栏与脚注始终留在原位 */
+  overflow-y: auto;
+}

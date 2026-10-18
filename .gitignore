@@ -14,7 +14,10 @@ dev-env.ps1
 dev-env-off.ps1
 
 # Tauri 生成的 schema / 清单缓存（构建期自动产出，不入库）
-src-tauri/gen/schemas/
+# `**/` 前缀是必须的：安装器与卸载器各有自己的 `src-tauri/`，只写根路径会漏掉它们
+**/src-tauri/gen/schemas/
+# 三个 Tauri 工程（主应用 + 安装器 + 卸载器）各自的编译产物
+**/src-tauri/target/
 
 # ── 临时落盘：**全仓唯一**的临时目录 ────────────────────────────────────
 # 约定：任何"本机临时产物"一律写进 `.tmp/<用途>/`，不再在仓库根另起
@@ -45,3 +48,8 @@ test-manga/
 # 真实翻译引擎的运行时（Python 解释器 + venv + 模型权重）——本机资产，体积大、按平台不同，不入库
 # 依据：docs/engine-integration-plan.md §S0 / §S3（模型目录必须独立于 app/，换版本不重下）
 runtimes/
+
+# 安装向导 / 卸载页的字体：构建时由 scripts/build-install-ui.mjs 从 public/assets/fonts/
+# 复制进各自目录（三份字体合计约 65 MB，两个程序各存一份就是 130 MB 的仓库重复）
+installer/public/fonts/
+uninstaller/public/fonts/

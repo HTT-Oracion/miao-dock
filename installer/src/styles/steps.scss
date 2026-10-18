@@ -1,0 +1,277 @@
+/* ================================================================
+   安装向导三步各自的面板：页头 / 目录表单 / 原因与手动操作 / 完成页
+   颜色一律 var(--md-*)，由 main.tsx 注入
+   ================================================================ */
+
+/* ---------------------------------------------------------------- 页头（logo + 标题 + 说明） */
+
+.isr-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.isr-head-logo {
+  width: 58px;
+  height: 58px;
+  flex: 0 0 58px;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 2px solid var(--md-surface);
+  box-shadow: 0 4px 14px -4px rgba(255, 143, 191, 0.55);
+}
+
+.isr-head p {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+}
+
+/* ---------------------------------------------------------------- 目录表单 */
+
+.isr-field {
+  margin-bottom: 14px;
+}
+
+.isr-field-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--md-ink);
+}
+
+.isr-req {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--md-pink);
+}
+
+.isr-path-row {
+  display: flex;
+  gap: 8px;
+}
+
+.isr-path-input {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 9px 13px;
+  font-family: var(--md-font-numeric);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--md-ink);
+  background: var(--md-surface-2);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-sm);
+}
+
+.isr-meta-row {
+  display: flex;
+  gap: 14px;
+  margin-top: 7px;
+  font-size: 11px;
+  color: var(--md-muted);
+}
+
+.isr-meta-row b {
+  font-weight: 400;
+  color: var(--md-ink-2);
+}
+
+/* ---------------------------------------------------------------- 原因列表 */
+
+.isr-why {
+  margin-top: 14px;
+  padding: 12px 15px;
+  background: var(--md-surface-2);
+  border-radius: var(--md-radius-md);
+}
+
+.isr-why-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 7px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--md-ink);
+}
+
+.isr-why ol {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+}
+
+.isr-why li {
+  margin: 5px 0;
+}
+
+/* ---------------------------------------------------------------- 手动操作（命令块） */
+
+.isr-manual {
+  margin-top: 12px;
+  padding: 12px 15px;
+  background: #fbf9ff;
+  border: 1px dashed var(--md-lavender);
+  border-radius: var(--md-radius-md);
+}
+
+.isr-manual-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--md-ink);
+}
+
+.isr-manual-sub {
+  margin-bottom: 9px;
+  font-size: 11px;
+  color: var(--md-muted);
+}
+
+.isr-manual-foot {
+  margin-top: 8px;
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+
+.isr-code {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--md-ink);
+  border-radius: var(--md-radius-sm);
+}
+
+.isr-code pre {
+  flex: 1;
+  margin: 0;
+  font-family: Consolas, 'Cascadia Code', monospace;
+  font-size: 10.8px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #ede8ff;
+}
+
+.isr-code-copy {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  font-family: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+  color: #fff;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+}
+
+.isr-code-copy:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* ---------------------------------------------------------------- 完成页 */
+
+.isr-done {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.isr-done-logo {
+  width: 76px;
+  height: 76px;
+  flex: 0 0 76px;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 3px solid var(--md-surface);
+  box-shadow: 0 6px 18px -6px rgba(112, 217, 173, 0.7);
+}
+
+.isr-done p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--md-ink-2);
+}
+
+.isr-confetti {
+  display: flex;
+  gap: 5px;
+  margin: 2px 0 14px;
+}
+
+.isr-confetti i {
+  width: 7px;
+  height: 7px;
+  display: block;
+  border-radius: 2px;
+  animation: isr-pop 1.6s ease-in-out infinite;
+}
+
+.isr-confetti i:nth-child(1) {
+  background: var(--md-pink);
+}
+
+.isr-confetti i:nth-child(2) {
+  background: var(--md-yellow);
+  animation-delay: 0.15s;
+}
+
+.isr-confetti i:nth-child(3) {
+  background: var(--md-blue);
+  animation-delay: 0.3s;
+}
+
+.isr-confetti i:nth-child(4) {
+  background: var(--md-lavender);
+  animation-delay: 0.45s;
+}
+
+.isr-confetti i:nth-child(5) {
+  background: var(--md-success);
+  animation-delay: 0.6s;
+}
+
+.isr-confetti i:nth-child(6) {
+  background: var(--md-pink-soft);
+  animation-delay: 0.75s;
+}
+
+@keyframes isr-pop {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  50% {
+    transform: translateY(-5px) rotate(18deg);
+  }
+}
+
+/* 动效五档敏感度：用户压低动效时彩带静止 —— 静态并不损失任何信息 */
+@media (prefers-reduced-motion: reduce) {
+  .isr-confetti i {
+    animation: none;
+  }
+}
+
+.isr-opt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-bottom: 6px;
+}

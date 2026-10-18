@@ -1,0 +1,118 @@
+/* ================================================================
+   卸载页三态各自的面板：告别页头 / 数据勾选项尺寸 / 进度
+   颜色一律 var(--md-*)，由 main.tsx 注入
+   ================================================================ */
+
+/* ---------------------------------------------------------------- 告别页头 */
+
+.uns-bye {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 6px;
+}
+
+.uns-bye-logo {
+  width: 74px;
+  height: 74px;
+  flex: 0 0 74px;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 3px solid var(--md-surface);
+  box-shadow: 0 6px 18px -6px rgba(201, 181, 255, 0.75);
+}
+
+.uns-bye p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--md-ink-2);
+}
+
+/* ---------------------------------------------------------------- 三类数据 */
+
+.uns-sub-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0 6px 30px;
+}
+
+.uns-sub-list .uns-chk {
+  transition:
+    opacity 0.28s,
+    filter 0.28s;
+}
+
+.uns-item-size {
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--md-ink-2);
+}
+
+.uns-item-path {
+  margin-top: 2px;
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+  white-space: nowrap;
+  color: var(--md-muted);
+}
+
+/* ---------------------------------------------------------------- 进度 */
+
+.uns-prog {
+  padding: 8px 0 4px;
+}
+
+.uns-bar {
+  height: 7px;
+  margin: 10px 0 4px;
+  overflow: hidden;
+  background: var(--md-line);
+  border-radius: 999px;
+}
+
+.uns-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--md-pink), var(--md-lavender));
+  border-radius: 999px;
+}
+
+.uns-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 0;
+  font-size: 11.5px;
+  color: var(--md-ink-2);
+}
+
+.uns-line-mark {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  color: var(--md-muted);
+  background: var(--md-surface-2);
+  border: 1px solid var(--md-line);
+  border-radius: 50%;
+}
+
+.uns-line.is-done .uns-line-mark {
+  color: var(--md-on-accent);
+  background: var(--md-success);
+  border-color: var(--md-success);
+}
+
+.uns-line.is-now {
+  font-weight: 700;
+  color: var(--md-pink);
+}
+
+.uns-line.is-now .uns-line-mark {
+  color: var(--md-pink);
+  border-color: var(--md-pink);
+}

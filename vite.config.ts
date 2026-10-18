@@ -45,6 +45,11 @@ export default defineConfig({
       // 放进去不会被打进 dist 的同一 origin，也不会做资源改写。`templates/` 在 root 之内，
       // 入口里的 `/src/...` 照常解析；代价是产物落在 `dist/templates/{index,lyrics}.html`，
       // 故 `tauri.conf.json` 的主窗 `url` 与 `lyrics_window.rs` 的 `WebviewUrl::App` 都指向该子路径。
+      //
+      // 🔴 安装向导与卸载页**不在这里登记**：它们是各自独立的安装器 / 卸载器程序
+      //    （`installer/` · `uninstaller/`，自带 vite 配置与产物目录），
+      //    与主应用各自构建、各自分发 —— 合并成一个工程只会让两边互相牵连。
+      //    构建它们：`npm run task -- installer:build` / `uninstaller:build`。
       input: {
         main: new URL('./templates/index.html', import.meta.url).pathname,
         lyrics: new URL('./templates/lyrics.html', import.meta.url).pathname,

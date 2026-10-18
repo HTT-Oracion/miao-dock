@@ -1,0 +1,19 @@
+[package]
+name = "miao-uninstaller"
+version = "2.2.1"
+description = "喵坞卸载器 · 独立的 WebView 小窗，探测本地数据并驱动 NSIS 静默卸载"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# 与安装器、主应用同一条技术栈
+tauri = { version = "2.12", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+strip = true

@@ -33,5 +33,7 @@
       "@tools/*": ["src/tools/*"]
     }
   },
+  // 安装向导（installer/）与卸载页（uninstaller/）是各自独立的程序，
+  // 有自己的 tsconfig —— 不并进这里，否则主工程一改编译选项就会牵动两个独立产物。
   "include": ["src", "vite.config.ts"]
 }
