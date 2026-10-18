@@ -1,21 +1,26 @@
 #!/usr/bin/env node
 /**
- * 组装"安装器套件" —— 本地分发件，不写进版本库。
+ * 组装「单文件安装器」—— 本地分发件，不写进版本库。
  *
- * 产物（默认 `.tmp/install-kit/`）：
- *   miao-installer.exe     安装向导（与 `*-setup.exe` **同目录**运行）
- *   miao-uninstaller.exe   卸载器（安装成功后由安装器复制到 `%LOCALAPPDATA%\喵坞卸载器\`）
- *   <name>-setup.exe       主应用安装包（由 `npm run app:build` 产出；缺了只提示、不算失败）
+ * 产物（默认 `.tmp/install-kit/`）**只有一份**：
+ *   MiaoDock-Setup.exe   安装器（自带界面 + 内嵌载荷：主程序 / 资源 / 卸载器）
+ *
+ * ## 顺序是硬约束：载荷必须先于安装器产出
+ *   ① 卸载器宿主（`uninstaller/`：Tauri CLI，前端内嵌）
+ *   ② 载荷（`scripts/pack-install-payload.mjs`：主程序 exe + 资源 + 卸载器 exe → payload.zip）
+ *   ③ 安装器宿主（`installer/`：Tauri CLI，`include_bytes!` 把载荷嵌进 exe）
+ *   ④ 复制成 `MiaoDock-Setup.exe`
+ * ②→③ 反了会嵌进上一次的旧载荷（甚至编译不过：载荷缺失时 `build.rs` 只补占位）。
  *
  * ## 🔴 必须走 Tauri CLI，不能直接 `cargo build`
- * 实测（2026-10-18）：`cargo build --release` 出来的 exe 只有 7.5 MB，**没内嵌前端**，
- * 起来会去连 `http://localhost:1444`（dev 模式）⇒ 没有 dev 服务就是一片空白。
- * 只有 `tauri build`（本脚本调用的那条）才会把 `dist/` 打进 exe（安装器 46 MB，
- * 其中大头是随包字体）。debug 档同理需要 dev 服务，所以这套件**只做 release**。
+ * 实测（2026-10-18）：`cargo build --release` 出来的宿主 exe 只有 7.5 MB，**没内嵌前端**，
+ * 起来会去连 dev 服务 ⇒ 没有 dev 服务就是一片空白。只有 `tauri build`
+ * （本脚本调用的那条）才会把 `dist/` 打进 exe。所以这套件**只做 release**。
  *
- * 为什么这三个文件必须凑在一起：
- *   · 安装器只认"与自己同目录的 `*-setup.exe`"，没有它就没有可装的东西；
- *   · 安装器自己不会把自己或卸载器装进安装目录（卸载时那两处会被跳过、留成孤儿）。
+ * ## 主程序 exe 从哪来
+ * `npm run app:build`（主工程 `tauri build`）产出的 `src-tauri/target/release/miao-dock.exe`。
+ * 本脚本**不代跑**它（几分钟起步），缺了直接报错点名 —— 载荷里少了主程序，
+ * 装出来的就是"有快捷方式但打不开"的空壳。
  *
  * 用法：node scripts/package-install-ui.mjs
  * 🔴 子进程一律异步 spawn：本环境同步 spawn 直接 EBUSY（AGENTS.md §5）。
@@ -30,10 +35,15 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TAURI_CLI = path.join(ROOT, 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
 const OUT = path.join(ROOT, '.tmp', 'install-kit');
 
-const APPS = [
-  { dir: 'installer', exe: 'miao-installer.exe' },
-  { dir: 'uninstaller', exe: 'miao-uninstaller.exe' },
-];
+/** 交付文件名（唯一分发物） */
+const DELIVERABLE = 'MiaoDock-Setup.exe';
+
+const APP_EXE = path.join(ROOT, 'src-tauri', 'target', 'release', 'miao-dock.exe');
+const UNINSTALLER_EXE = path.join(ROOT, 'uninstaller', 'src-tauri', 'target', 'release', 'miaodock-uninstaller.exe');
+const INSTALLER_EXE = path.join(ROOT, 'installer', 'src-tauri', 'target', 'release', 'miaodock-installer.exe');
+
+/** 上一代套件留下的文件名（`miao-installer` 时代 + NSIS 安装包），顺手清掉免得混淆 */
+const LEGACY = ['miao-installer.exe', 'miao-uninstaller.exe'];
 
 function run(node, args, cwd) {
   return new Promise((resolve) => {
@@ -49,7 +59,7 @@ function run(node, args, cwd) {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * 覆盖复制。目标可能正被**运行中的程序**占用（用户开着安装器/卸载器窗口看界面），
+ * 覆盖复制。目标可能正被**运行中的程序**占用（用户开着安装器窗口看界面），
  * 那种占用会持续到用户关窗为止 —— 重试几次再报一句人话，而不是甩一个 EBUSY 栈。
  */
 async function copyInto(from, to) {
@@ -65,86 +75,73 @@ async function copyInto(from, to) {
   return false;
 }
 
+function mustExist(file, hint) {
+  if (!fs.existsSync(file)) {
+    console.error(`✗ 缺构建产物：${path.relative(ROOT, file)}\n  ${hint}`);
+    process.exit(1);
+  }
+  return file;
+}
+
 if (!fs.existsSync(TAURI_CLI)) {
   console.error(`✗ 没装 Tauri CLI：${path.relative(ROOT, TAURI_CLI)}\n先 npm install`);
   process.exit(1);
 }
 
-// ① 用 Tauri CLI 构建两个宿主（各自工程、各自 target；会把 dist 打进 exe）
-for (const app of APPS) {
-  const appDir = path.join(ROOT, app.dir);
-  console.log(`→ 构建 ${app.dir} 宿主（release，前端内嵌）`);
-  const code = await run(process.execPath, [TAURI_CLI, 'build'], appDir);
-  if (code !== 0) {
-    console.error(`✗ ${app.dir} 宿主构建失败`);
-    process.exit(1);
-  }
+mustExist(APP_EXE, '先跑 `npm run app:build`（主工程 Tauri CLI 构建）');
+
+// ① 卸载器宿主（同时把 dist 打进 exe；它的 exe 是载荷的一部分）
+console.log('→ ① 构建卸载器宿主（release，前端内嵌）');
+if ((await run(process.execPath, [TAURI_CLI, 'build'], path.join(ROOT, 'uninstaller'))) !== 0) {
+  console.error('✗ 卸载器宿主构建失败');
+  process.exit(1);
+}
+mustExist(UNINSTALLER_EXE, '卸载器宿主构建产物不在（见上一步日志）');
+
+// ② 载荷（必须在安装器之前）
+console.log('→ ② 打载荷（主程序 + 资源 + 卸载器 → payload.zip）');
+if ((await run(process.execPath, [path.join(ROOT, 'scripts', 'pack-install-payload.mjs')], ROOT)) !== 0) {
+  console.error('✗ 载荷打包失败');
+  process.exit(1);
 }
 
-// ② 组装
+// ③ 安装器宿主（include_bytes! 在这一步把载荷嵌进去）
+console.log('→ ③ 构建安装器宿主（release，载荷编译期内嵌）');
+if ((await run(process.execPath, [TAURI_CLI, 'build'], path.join(ROOT, 'installer'))) !== 0) {
+  console.error('✗ 安装器宿主构建失败');
+  process.exit(1);
+}
+mustExist(INSTALLER_EXE, '安装器宿主构建产物不在（见上一步日志）');
+
+// ④ 交付
 // 🔴 不整目录删除：本机的安全删除垫会拦「批量删除目录」并直接抛错（实测），
-//    而套件里就三个文件 —— 覆盖同名文件即可，旧版本安装包单独按文件清掉。
+//    这里只按文件名清掉旧件，再覆盖同名文件。
 fs.mkdirSync(OUT, { recursive: true });
 
-// 清掉上一次"运行中改名"留下的 `*.old.exe`（当时删不掉，现在多半可以了；删不掉就跳过）
-for (const stale of fs.readdirSync(OUT).filter((f) => /\.old\.exe$/i.test(f))) {
+const stale = [...LEGACY, ...fs.readdirSync(OUT).filter((f) => /\.old\.exe$/i.test(f) || /-setup\.exe$/i.test(f))];
+for (const name of new Set(stale)) {
+  if (name === DELIVERABLE) continue;
   try {
-    fs.rmSync(path.join(OUT, stale), { force: true });
+    fs.rmSync(path.join(OUT, name), { force: true });
   } catch {
-    console.warn(`⚠ ${stale} 仍被占用（关掉那个窗口后可手动删）`);
+    console.warn(`⚠ ${name} 仍被占用（关掉那个窗口后可手动删）`);
   }
 }
 
 const locked = [];
-for (const app of APPS) {
-  const from = path.join(ROOT, app.dir, 'src-tauri', 'target', 'release', app.exe);
-  if (!fs.existsSync(from)) {
-    console.error(`✗ 构建产物不在：${path.relative(ROOT, from)}`);
-    process.exit(1);
-  }
-  if (!(await copyInto(from, path.join(OUT, app.exe)))) {
-    // 不中断其余文件的组装：另一个程序往往是好的，能更新一个是一个
-    console.warn(`⚠ ${app.exe} 正在运行，跳过复制`);
-    locked.push(app.exe);
-    continue;
-  }
-  const mb = (fs.statSync(from).size / 1048576).toFixed(1);
-  console.log(`✓ ${app.exe}（${mb} MB）`);
-}
-
-// ③ 主应用安装包（`npm run app:build` 的产物）
-const nsisDir = path.join(ROOT, 'src-tauri', 'target', 'release', 'bundle', 'nsis');
-const setup = fs.existsSync(nsisDir)
-  ? fs
-      .readdirSync(nsisDir)
-      .filter((f) => /-setup\.exe$/i.test(f))
-      .sort()
-      .at(-1)
-  : undefined;
-// 清掉上一个版本留下的安装包（同一次组装只应留一份，否则安装器按名字排序会挑到旧的）
-for (const stale of fs.readdirSync(OUT).filter((f) => /-setup\.exe$/i.test(f))) {
-  if (stale === setup) continue;
-  try {
-    fs.rmSync(path.join(OUT, stale), { force: true });
-  } catch {
-    console.warn(`⚠ 旧安装包删不掉，请手动清理：${stale}`);
-  }
-}
-if (setup) {
-  fs.copyFileSync(path.join(nsisDir, setup), path.join(OUT, setup));
-  console.log(`✓ ${setup}`);
+if (await copyInto(INSTALLER_EXE, path.join(OUT, DELIVERABLE))) {
+  const mb = (fs.statSync(INSTALLER_EXE).size / 1048576).toFixed(1);
+  console.log(`✓ ${DELIVERABLE}（${mb} MB）`);
 } else {
-  console.warn(
-    '⚠ 没找到主应用安装包（src-tauri/target/release/bundle/nsis/*-setup.exe）——\n' +
-      '  套件里缺它时，安装器会报"没找到安装包"。先跑 `npm run app:build` 再重新组装。',
-  );
+  console.warn(`⚠ ${DELIVERABLE} 正在运行，跳过复制`);
+  locked.push(DELIVERABLE);
 }
 
 console.log(`\n套件在 ${path.relative(ROOT, OUT)}`);
-console.log('用法：把整个目录交给用户，双击 miao-installer.exe（它会在同目录找 *-setup.exe）。');
+console.log(`用法：把 ${DELIVERABLE} 单独交给用户，双击即装（管理员授权一次）。`);
 
 if (locked.length) {
   console.error(`\n✗ 有 ${locked.length} 个文件没更新（${locked.join('、')}）：`);
-  console.error('  它们正被运行中的窗口占用 —— 关掉安装器 / 卸载器窗口后重跑本命令。');
+  console.error('  它们正被运行中的窗口占用 —— 关掉安装器窗口后重跑本命令。');
   process.exitCode = 1;
 }

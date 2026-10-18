@@ -121,14 +121,15 @@ mod tests {
         r#"{
             "schema": 1,
             "version": "2.2.1",
-            "appExe": "app/miao-dock.exe",
-            "appResources": ["app/engine", "app/models/manifest.json"],
-            "uninstallerExe": "app/MiaoDock-Uninstaller.exe",
+            "appExe": "miao-dock.exe",
+            "appResources": ["engine/models.manifest.json", "engine/runtime.manifest.json"],
+            "uninstallerExe": "MiaoDock-Uninstaller.exe",
             "publisher": "喵坞"
         }"#
         .to_string()
     }
 
+    /// 载荷布局 = 安装目录布局：主程序与资源**同层**，不许再套 `app/`
     #[test]
     fn parses_the_shape_we_ship() {
         let m = Manifest::parse(&sample()).expect("示例清单必须能解析");
@@ -136,14 +137,18 @@ mod tests {
         assert_eq!(m.app_resources.len(), 2);
         assert_eq!(
             m.app_exe_path(Path::new("C:\\Program Files\\MiaoDock")),
-            Some(PathBuf::from("C:\\Program Files\\MiaoDock\\app\\miao-dock.exe"))
+            Some(PathBuf::from("C:\\Program Files\\MiaoDock\\miao-dock.exe"))
         );
         assert_eq!(
             m.uninstaller_path(Path::new("C:\\Program Files\\MiaoDock")),
             Some(PathBuf::from(
-                "C:\\Program Files\\MiaoDock\\app\\MiaoDock-Uninstaller.exe"
+                "C:\\Program Files\\MiaoDock\\MiaoDock-Uninstaller.exe"
             ))
         );
+        // 卸载器与主程序必须同层：卸载器把自己所在目录当安装目录
+        let app = m.app_exe_path(Path::new("D:\\MiaoDock")).unwrap();
+        let uninstaller = m.uninstaller_path(Path::new("D:\\MiaoDock")).unwrap();
+        assert_eq!(app.parent(), uninstaller.parent());
     }
 
     /// 缺字段 / 版本不对 / 可执行文件不是 exe —— 三种都得整份拒绝
@@ -155,7 +160,7 @@ mod tests {
         let wrong_schema = sample().replace("\"schema\": 1", "\"schema\": 99");
         assert!(Manifest::parse(&wrong_schema).is_err(), "未知版本必须拒绝");
 
-        let wrong_ext = sample().replace("app/MiaoDock-Uninstaller.exe", "app/uninstaller.dll");
+        let wrong_ext = sample().replace("MiaoDock-Uninstaller.exe", "uninstaller.dll");
         assert!(Manifest::parse(&wrong_ext).is_err(), "非 .exe 必须拒绝");
     }
 

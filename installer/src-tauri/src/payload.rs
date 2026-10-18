@@ -119,6 +119,10 @@ fn extract_into(stage: &Path) -> Result<u64, String> {
         if entry.is_dir() {
             continue;
         }
+        // 清单是给安装器读的，不是要装进用户目录的文件
+        if entry.name() == MANIFEST_NAME {
+            continue;
+        }
         let relative = safe_relative(entry.name())?;
         let dest = stage.join(&relative);
         if let Some(parent) = dest.parent() {
