@@ -75,6 +75,16 @@ export interface AnimeState {
   savePosition: (episodeId: string, positionMs: number) => Promise<void>;
   /** 从 Bangumi 补全元数据（封面 / 评分 / 简介 / 标签 / 连载星期） */
   fillMetadata: (subjectId: string) => Promise<{ ok: boolean; message: string }>;
+  /** 切换番剧库根（会重启动漫服务，随后重新扫描） */
+  applyLibraryRoot: (dir: string) => Promise<void>;
+  /** 切换代理（会重启动漫服务） */
+  applyProxy: (mode: string, url: string) => Promise<void>;
+  /** 新增 / 更新一个媒体源 */
+  saveSource: (source: MediaSourceView) => Promise<void>;
+  /** 删除一个媒体源 */
+  deleteSource: (id: string) => Promise<void>;
+  /** 把本机文件夹导入库根，返回一句人话结果 */
+  importFolder: (path: string, subject?: string | null) => Promise<{ ok: boolean; message: string }>;
   setPref: <K extends keyof AnimePrefs>(key: K, value: AnimePrefs[K]) => void;
   loadDemo: () => Promise<void>;
   clearDemo: () => Promise<void>;

@@ -21,6 +21,9 @@ export function AnimeSettingsSection() {
   const prefs = useAnimeStore((s) => s.prefs);
   const setPref = useAnimeStore((s) => s.setPref);
   const setView = useAnimeStore((s) => s.setView);
+  const libraryRoot = useAnimeStore((s) => s.libraryRoot);
+  const applyLibraryRoot = useAnimeStore((s) => s.applyLibraryRoot);
+  const applyProxy = useAnimeStore((s) => s.applyProxy);
   const { setScreen } = useNav();
 
   /** 跳到番剧屏的某个子页（设置里的「去管理源 / 管理账号」不是死按钮） */
@@ -28,6 +31,23 @@ export function AnimeSettingsSection() {
     setView(view);
     setScreen('anime');
   };
+
+  /** 库根 / 代理地址这类「改了要重启服务才生效」的输入：给一个显式「应用」 */
+  const applyText = (key: keyof AnimePrefs) => {
+    if (key === 'libraryRoot') {
+      const dir = String(prefs.libraryRoot ?? '');
+      // 与当前生效根一致就别重启：重启会打断正在看的进度
+      if (dir.trim() === libraryRoot) return;
+      void applyLibraryRoot(dir);
+      return;
+    }
+    if (key === 'proxyUrl') {
+      void applyProxy(prefs.proxy, String(prefs.proxyUrl ?? ''));
+    }
+  };
+
+  const textPending = (key: keyof AnimePrefs) =>
+    key === 'libraryRoot' && String(prefs.libraryRoot ?? '').trim() !== libraryRoot;
 
   const renderControl = (c: AnimeControl, label: string): ReactNode => {
     switch (c.kind) {
@@ -44,7 +64,11 @@ export function AnimeSettingsSection() {
                 type="button"
                 className={prefs[c.key] === o.value ? 'an-seg-btn is-on' : 'an-seg-btn'}
                 aria-pressed={prefs[c.key] === o.value}
-                onClick={() => setPref(c.key, o.value as never)}
+                onClick={() => {
+                  setPref(c.key, o.value as never);
+                  // 代理切档立刻生效（自定义档才需要再填地址）
+                  if (c.key === 'proxy') void applyProxy(String(o.value), String(prefs.proxyUrl ?? ''));
+                }}
               >
                 {o.label}
               </button>
@@ -53,13 +77,25 @@ export function AnimeSettingsSection() {
         );
       case 'text':
         return (
-          <input
-            className={c.wide ? 'an-set-in is-wide' : 'an-set-in'}
-            value={String(prefs[c.key] ?? '')}
-            placeholder={c.placeholder}
-            aria-label={label}
-            onChange={(e) => setPref(c.key, e.target.value as never)}
-          />
+          <span className="an-set-row">
+            <input
+              className={c.wide ? 'an-set-in is-wide' : 'an-set-in'}
+              value={String(prefs[c.key] ?? '')}
+              placeholder={c.placeholder}
+              aria-label={label}
+              onChange={(e) => setPref(c.key, e.target.value as never)}
+            />
+            {(c.key === 'libraryRoot' || c.key === 'proxyUrl') && (
+              <Btn
+                kind="ghost"
+                size="sm"
+                title={c.key === 'libraryRoot' ? '切换到该库根并重新扫描' : '按此地址应用代理'}
+                onClick={() => applyText(c.key)}
+              >
+                {textPending(c.key) ? '应用' : '重载'}
+              </Btn>
+            )}
+          </span>
         );
       case 'number':
         return (

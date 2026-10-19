@@ -1355,6 +1355,39 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 一个源 = 一行 + 可选的测试预览 */
+.an-src-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.an-src-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px dashed var(--md-line);
+  border-radius: var(--r-sm);
+  background: var(--md-surface-2, transparent);
+  font-size: 10px;
+  color: var(--md-muted);
+}
+.an-src-preview b {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--md-ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 添加源的小表单 */
+.an-src-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
 .an-bt-row {
   display: flex;
   align-items: center;
@@ -1420,6 +1453,12 @@
   background: var(--md-pink);
   color: var(--md-on-accent);
   font-weight: 700;
+}
+/* 设置行里的「输入框 + 应用按钮」：一行放得下，不换行 */
+.an-set-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 .an-set-in {
   height: 28px;

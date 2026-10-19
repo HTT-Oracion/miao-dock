@@ -50,6 +50,8 @@ export interface AnimePrefs {
   cacheLimitGb: number;
   /** 代理 */
   proxy: 'off' | 'system' | 'custom';
+  /** 自定义代理地址（`proxy: 'custom'` 时生效；http:// 或 https:// 开头） */
+  proxyUrl: string;
   /** BT 监听端口（「随机」或数字串） */
   btPort: string;
   /** Peer 过滤规则订阅地址 */
@@ -89,6 +91,7 @@ export const DEFAULT_PREFS: AnimePrefs = {
   cacheDir: '',
   cacheLimitGb: 50,
   proxy: 'off',
+  proxyUrl: '',
   btPort: '随机',
   peerFilterUrl: '',
   pikpak: false,

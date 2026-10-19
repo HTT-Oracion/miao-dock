@@ -12,8 +12,10 @@ import type {
   AnimeMetadataCandidate,
   AnimePlaySource,
   AnimeServiceStatus,
+  AnimeSourceTestItem,
   AnimeSubject,
   CollectionType,
+  MediaSourceView,
 } from '@anime/types';
 
 /** 服务状态（端口与库根可见；令牌不出 Rust） */
@@ -69,3 +71,38 @@ export const animeMetadataSearch = (q: string) =>
 /** 把某个候选补进这一部的 manifest；只增不改用户数据 */
 export const animeMetadataApply = (dir: string, bgmId: number) =>
   invoke<{ ok: boolean; dir: string; subject: AnimeSubject }>('anime_metadata_apply', { dir, bgmId });
+
+/**
+ * 切换番剧库根（设置页「番剧根目录」）；留空 = 回服务端默认落点。
+ * 会重启动漫服务，返回新的服务状态。
+ */
+export const animeSetLibraryRoot = (dir: string) => invoke<AnimeServiceStatus>('anime_set_library_root', { dir });
+
+/** 切换代理（off / system / custom）；同样会重启动漫服务 */
+export const animeSetProxy = (mode: string, url: string) =>
+  invoke<AnimeServiceStatus>('anime_set_proxy', { mode, url });
+
+/** 媒体源列表（内置本地库 + 用户自建源） */
+export const animeSources = () => invoke<{ ok: boolean; root: string; sources: MediaSourceView[] }>('anime_sources');
+
+/** 新增 / 更新一个源（按 id 覆盖；内置源不可改） */
+export const animeSaveSource = (source: MediaSourceView) =>
+  invoke<{ ok: boolean; source: MediaSourceView }>('anime_save_source', { source });
+
+/** 删除一个源（内置源拒绝） */
+export const animeDeleteSource = (id: string) => invoke<{ ok: boolean; id: string }>('anime_delete_source', { id });
+
+/** 把本机一个文件夹复制进番剧库根；之后要重新扫描才会出现在列表 */
+export const animeImportFolder = (path: string, subject: string | null) =>
+  invoke<{ ok: boolean; subject: string; dir: string; copied: number; skipped: string[] }>('anime_import_folder', {
+    path,
+    subject,
+  });
+
+/** 测试一个数据源：拉前几条看看里面是什么（RSS 已接，其余明确回未接入） */
+export const animeTestSource = (url: string, kind: string, limit = 8) =>
+  invoke<{ ok: boolean; kind: string; count: number; items: AnimeSourceTestItem[] }>('anime_test_source', {
+    url,
+    kind,
+    limit,
+  });

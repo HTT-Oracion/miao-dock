@@ -267,7 +267,7 @@ export const ANIME_SETTING_GROUPS: AnimeSettingGroup[] = [
       {
         id: 'cache.proxy',
         label: '代理',
-        why: '仅影响番剧模块的网络请求（元数据、数据源、BT 追踪器）。',
+        why: '仅影响番剧模块的网络请求（元数据、数据源、BT 追踪器）；切换会重启动漫服务。',
         def: '不使用',
         control: {
           kind: 'seg',
@@ -278,6 +278,12 @@ export const ANIME_SETTING_GROUPS: AnimeSettingGroup[] = [
             { value: 'custom', label: '自定义' },
           ],
         },
+      },
+      {
+        id: 'cache.proxyurl',
+        label: '自定义代理地址',
+        why: '代理选「自定义」时生效；只影响番剧模块，形如 http://127.0.0.1:7890。',
+        control: { kind: 'text', key: 'proxyUrl', wide: true, placeholder: 'http://127.0.0.1:7890' },
       },
       {
         id: 'bt.port',

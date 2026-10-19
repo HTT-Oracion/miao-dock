@@ -45,6 +45,7 @@ const F = {
   settingsScreen: path.join(ROOT, 'src', 'screens', 'SettingsScreen.tsx'),
   settingsCatalogMain: path.join(ROOT, 'src', 'screens', 'settings', 'catalog.ts'),
   animeSettings: path.join(ROOT, 'src', 'screens', 'anime', 'AnimeSettingsSection.tsx'),
+  sourceScreen: path.join(ROOT, 'src', 'screens', 'anime', 'SourceScreen.tsx'),
   style: path.join(ROOT, 'src', 'styles', 'anime.scss'),
   styleIndex: path.join(ROOT, 'src', 'styles', 'index.scss'),
   playerModule: path.join(ROOT, 'src', 'modules', 'anime', 'player.ts'),
@@ -54,6 +55,8 @@ const F = {
   rustAnime: path.join(ROOT, 'src-tauri', 'src', 'anime', 'mod.rs'),
   rustAnimesvc: path.join(ROOT, 'src-tauri', 'src', 'animesvc.rs'),
   rustManifest: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'manifest.rs'),
+  rustMetadata: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'metadata.rs'),
+  rustRss: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'datasource', 'rss.rs'),
   rustPlayback: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'playback.rs'),
   rustAnimeBin: path.join(ROOT, 'src-tauri', 'src', 'bin', 'animesvc.rs'),
   rustMain: path.join(ROOT, 'src-tauri', 'src', 'main.rs'),
@@ -348,10 +351,65 @@ const CHECKS = [
       ok:
         /mod metadata;/.test(s.rustAnimesvc) &&
         /anime\/metadata\/apply/.test(s.rustAnimesvc) &&
+        /search_default\(|apply_default\(/.test(s.rustAnimesvc) &&
         /crate::anime::anime_metadata_apply/.test(strip(s.rustCommands)) &&
         /'anime_metadata_apply'/.test(s.ipc) &&
-        /fillMetadata/.test(s.detailScreen),
-      detail: 'Bangumi 元数据没接全：服务侧客户端 / 路由 / 命令注册 / IPC / 详情页入口缺一环',
+        /fillMetadata/.test(s.detailScreen) &&
+        /const UA: \(/.test(s.rustMetadata) &&
+        /"HTT-Oracion"/.test(s.rustMetadata) &&
+        /miao-dock/.test(s.rustMetadata) &&
+        /MIAO_BANGUMI_API/.test(s.rustMetadata) &&
+        /MIAO_BANGUMI_IMG/.test(s.rustMetadata),
+      detail: 'Bangumi 客户端没接全：模块 / 路由 / 镜像列表 / 图片镜像 / UA 四段 / 命令注册 / 详情页入口缺一环',
+    }),
+  },
+  {
+    id: 'META.flat',
+    run: (s) => ({
+      ok:
+        /for \(path, _size, _ext\) in media_files\(dir\)/.test(s.rustManifest) &&
+        /fn flat_directory_synthesizes_episodes/.test(s.rustManifest),
+      detail: '番目录下直接躺着的视频没合成剧集（BT / 下载工具的扁平落盘点不进播放器）',
+    }),
+  },
+  {
+    id: 'SETTINGS.wired',
+    run: (s) => ({
+      ok:
+        /crate::anime::anime_set_library_root/.test(strip(s.rustCommands)) &&
+        /crate::anime::anime_set_proxy/.test(strip(s.rustCommands)) &&
+        /'anime_set_library_root'/.test(s.ipc) &&
+        /'anime_set_proxy'/.test(s.ipc) &&
+        /applyLibraryRoot/.test(s.animeSettings) &&
+        /applyProxy/.test(s.animeSettings),
+      detail: '设置页的库根 / 代理只写了偏好，没接到服务（用户改了不生效）',
+    }),
+  },
+  {
+    id: 'M3.sources',
+    run: (s) => ({
+      ok:
+        /pub mod sources;/.test(s.rustAnimesvc) &&
+        /pub mod import;/.test(s.rustAnimesvc) &&
+        /anime\/sources/.test(s.rustAnimesvc) &&
+        /anime\/import/.test(s.rustAnimesvc) &&
+        /crate::anime::anime_import_folder/.test(strip(s.rustCommands)) &&
+        /'anime_sources'/.test(s.ipc) &&
+        /importFolder/.test(s.sourceScreen),
+      detail: 'M3 起点没接全：源契约 / 导入端点 / 命令注册 / IPC / 数据源屏入口缺一环',
+    }),
+  },
+  {
+    id: 'M3.rss',
+    run: (s) => ({
+      ok:
+        /pub mod datasource;/.test(s.rustAnimesvc) &&
+        /anime\/sources\/test/.test(s.rustAnimesvc) &&
+        /crate::anime::anime_test_source/.test(strip(s.rustCommands)) &&
+        /'anime_test_source'/.test(s.ipc) &&
+        /animeTestSource/.test(s.sourceScreen) &&
+        /pub fn parse\(/.test(s.rustRss),
+      detail: 'RSS 适配器没接全：取数模块 / 测试端点 / 命令注册 / IPC / 数据源屏测试入口缺一环',
     }),
   },
   {
@@ -359,10 +417,10 @@ const CHECKS = [
     run: (s) => {
       const okMain = /'anime'/.test(s.settingsCatalogMain);
       const okScreen = /AnimeSettingsSection/.test(s.settingsScreen);
-      const okItems = (s.settingsCatalog.match(/id: '[a-z]+\.[a-z]+'/g) ?? []).length === 30;
+      const okItems = (s.settingsCatalog.match(/id: '[a-z]+\.[a-z]+'/g) ?? []).length === 31;
       return {
         ok: okMain && okScreen && okItems,
-        detail: `番剧设置未接全：catalog 段 ${okMain ? '有' : '缺'}、设置页挂载 ${okScreen ? '有' : '缺'}、项数 30 ${okItems ? '对' : '不对'}`,
+        detail: `番剧设置未接全：catalog 段 ${okMain ? '有' : '缺'}、设置页挂载 ${okScreen ? '有' : '缺'}、项数 31 ${okItems ? '对' : '不对'}`,
       };
     },
   },
@@ -538,6 +596,41 @@ const MUTATIONS = [
     find: 'pub mod metadata;',
     replace: '',
     expect: ['META.bangumi'],
+  },
+  {
+    name: 'UA 丢掉开发者 id（官方会按 UA 限流甚至挡掉）',
+    file: F.rustMetadata,
+    find: '    "HTT-Oracion",',
+    replace: '    "",',
+    expect: ['META.bangumi'],
+  },
+  {
+    name: '扁平落盘的视频不再合成剧集（点不进播放器）',
+    file: F.rustManifest,
+    find: 'for (path, _size, _ext) in media_files(dir) {',
+    replace: 'for (path, _size, _ext) in Vec::new() {',
+    expect: ['META.flat'],
+  },
+  {
+    name: '库根设置不再接服务（只写 localStorage，改了不生效）',
+    file: F.rustCommands,
+    find: 'crate::anime::anime_set_library_root,',
+    replace: '',
+    expect: ['SETTINGS.wired'],
+  },
+  {
+    name: 'animesvc 摘掉导入模块（界面还在，运行期 404）',
+    file: F.rustAnimesvc,
+    find: 'pub mod import;',
+    replace: '',
+    expect: ['M3.sources'],
+  },
+  {
+    name: 'animesvc 摘掉 RSS 取数模块（测试按钮还在，运行期 404）',
+    file: F.rustAnimesvc,
+    find: 'pub mod datasource;',
+    replace: '',
+    expect: ['M3.rss'],
   },
 ];
 

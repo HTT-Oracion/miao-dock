@@ -110,6 +110,17 @@ export interface AnimeServiceStatus {
   };
 }
 
+/** 数据源「测试」返回的一条（RSS 适配器；kind 决定上层能拿它干什么） */
+export interface AnimeSourceTestItem {
+  title: string;
+  index: number | null;
+  link: string | null;
+  enclosure: string | null;
+  /** `video` 可直链播放 / `torrent` 要走 BT（M5）/ `page` 只是网页 */
+  kind: 'video' | 'torrent' | 'page';
+  published: string | null;
+}
+
 /** Bangumi 检索候选（`anime_metadata_search` 的一项） */
 export interface AnimeMetadataCandidate {
   bgmId: number;
@@ -230,10 +241,10 @@ export interface CacheTask {
 export interface MediaSourceView {
   id: string;
   name: string;
-  kind: 'web' | 'rss' | 'selector' | 'jellyfin' | 'emby' | 'local' | 'builtin';
+  kind: 'web' | 'rss' | 'selector' | 'jellyfin' | 'emby' | 'local' | 'builtin' | 'bt';
   url?: string;
   enabled: boolean;
-  health?: 'ok' | 'timeout' | 'untested';
+  health?: 'ok' | 'timeout' | 'untested' | 'error';
 }
 
 /** 跳过片头片尾的档位（设计稿四档） */
