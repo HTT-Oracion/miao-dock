@@ -293,6 +293,99 @@ pub async fn anime_clear_demo() -> Result<Value, String> {
     post("/api/v1/anime/demo/clear", json!({})).await
 }
 
+/// 一集的播放源：本地探测 + 带签名的流地址。
+///
+/// 返回值是**前端唯一需要知道的播放事实**：走哪条轨、能不能播、地址是什么。
+/// · `track: "webview"` —— 给 `<video>` 的带票 Range 流（WebView 可解容器）；
+/// · `track: "libmpv"`  —— 需要随包内核；`supported: false` 时前端显示"内核未就绪"，
+///   而不是给一个放不出来的地址让人对着黑屏猜。
+#[tauri::command]
+pub async fn anime_play_source(subject_id: String, index: f64) -> Result<Value, String> {
+    let (port, token) = tokio::task::spawn_blocking(ensure)
+        .await
+        .map_err(|e| format!("调度失败：{e}"))??;
+    let media = get(&format!(
+        "/api/v1/anime/episode/{}/{}/media",
+        urlencode(&subject_id),
+        index
+    ))
+    .await?;
+    let exp = miao_dock::animesvc::stream::now_secs() + miao_dock::animesvc::stream::TICKET_TTL_SECS;
+    play_plan(port, &token, &media, exp)
+}
+
+/// 把「探测结果 + 票面」拼成交给前端的播放计划（纯函数，便于单测）。
+///
+/// 探测没找到片源时**原样透传**：前端要能区分「没有这一集」与「有但播不了」。
+fn play_plan(port: u16, token: &str, media: &Value, exp: u64) -> Result<Value, String> {
+    if media.get("found").and_then(|v| v.as_bool()) != Some(true) {
+        return Ok(media.clone());
+    }
+    let track = media["track"].as_str().unwrap_or("libmpv").to_string();
+    let container = media["container"].as_str().unwrap_or("").to_string();
+    if track != "webview" {
+        return Ok(json!({
+            "found": true,
+            "track": "libmpv",
+            "supported": false,
+            "reason": format!("这一集是 {container} 容器，需要随包播放内核；内核尚未就绪"),
+            "container": container,
+            "title": media["title"],
+            "file": media["file"],
+        }));
+    }
+    let file = media["file"].as_str().ok_or("媒体探测缺少 file")?;
+    let subtitles: Vec<Value> = media["subtitles"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|s| {
+            let f = s["file"].as_str()?;
+            Some(json!({
+                "url": stream_url(port, token, f, exp),
+                "name": s["name"],
+                "format": s["format"],
+            }))
+        })
+        .collect();
+    Ok(json!({
+        "found": true,
+        "track": "webview",
+        "supported": true,
+        "kind": if container == "m3u8" { "hls" } else { "progressive" },
+        "url": stream_url(port, token, file, exp),
+        "container": container,
+        "sizeBytes": media["sizeBytes"],
+        "title": media["title"],
+        "subtitles": subtitles,
+        "expiresAt": exp * 1000,
+    }))
+}
+
+/// 按关键词检索 Bangumi 候选。请求由 `animesvc` 发出，前端不直连第三方站点。
+#[tauri::command]
+pub async fn anime_metadata_search(q: String) -> Result<Value, String> {
+    get(&format!("/api/v1/anime/metadata/search?q={}", urlencode(&q))).await
+}
+
+/// 把某个 Bangumi 候选补进这一部的 manifest（封面 / 评分 / 简介 / 标签 / 连载星期）。
+///
+/// 只增不改用户数据：收藏态、进度、剧集列表不受影响（服务侧按补丁白名单合并）。
+#[tauri::command]
+pub async fn anime_metadata_apply(dir: String, bgm_id: u64) -> Result<Value, String> {
+    post("/api/v1/anime/metadata/apply", json!({ "dir": dir, "bgmId": bgm_id })).await
+}
+
+/// 拼一条带票的流地址。令牌不进 URL —— 只出现它的签名。
+fn stream_url(port: u16, token: &str, file: &str, exp: u64) -> String {
+    let sig = miao_dock::animesvc::stream::sign(token, file, exp);
+    format!(
+        "http://127.0.0.1:{port}/api/v1/anime/stream?path={}&exp={exp}&sig={sig}",
+        urlencode(file)
+    )
+}
+
 /// 路径快照（设置页展示落点用；键集与 `--print-paths` 同源）。
 #[tauri::command]
 pub fn anime_paths() -> Value {
@@ -309,4 +402,152 @@ fn urlencode(s: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const PORT: u16 = 47_123;
+
+    fn webview_media(container: &str) -> Value {
+        json!({
+            "found": true,
+            "subjectId": "demo-hyouka",
+            "index": 1.0,
+            "title": "第 1 话",
+            "file": "F:\\Anime\\冰菓\\01 深具传统之香的校园生活.mp4",
+            "container": container,
+            "track": "webview",
+            "sizeBytes": 1_234_567u64,
+            "subtitles": [
+                { "file": "F:\\Anime\\冰菓\\01.cht.ass", "name": "01.cht.ass", "format": "ass" },
+                { "file": "F:\\Anime\\冰菓\\01.chs.ass", "name": "01.chs.ass", "format": "ass" },
+            ],
+        })
+    }
+
+    /// 从 URL 里取一个查询参数并做百分号解码（只给测试用，够覆盖我们自己的编码）。
+    fn query_param(url: &str, key: &str) -> Option<String> {
+        let query = url.split_once('?')?.1;
+        let raw = query
+            .split('&')
+            .filter_map(|kv| kv.split_once('='))
+            .find(|(k, _)| *k == key)?
+            .1;
+        let bytes = raw.as_bytes();
+        let mut out = Vec::with_capacity(bytes.len());
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'%' && i + 2 < bytes.len() {
+                let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok()?;
+                out.push(u8::from_str_radix(hex, 16).ok()?);
+                i += 3;
+            } else {
+                out.push(bytes[i]);
+                i += 1;
+            }
+        }
+        String::from_utf8(out).ok()
+    }
+
+    #[test]
+    fn webview_media_gets_signed_progressive_url() {
+        let media = webview_media("mp4");
+        let exp = miao_dock::animesvc::stream::now_secs() + 60;
+        let plan = play_plan(PORT, TOKEN, &media, exp).unwrap();
+
+        assert_eq!(plan["found"], true);
+        assert_eq!(plan["track"], "webview");
+        assert_eq!(plan["supported"], true);
+        assert_eq!(plan["kind"], "progressive");
+        assert_eq!(plan["expiresAt"], json!(exp * 1000));
+        assert_eq!(plan["sizeBytes"], json!(1_234_567u64));
+
+        let url = plan["url"].as_str().unwrap();
+        assert!(url.starts_with(&format!("http://127.0.0.1:{PORT}/api/v1/anime/stream?")));
+        // 令牌本身不得出现在 URL 里：URL 会进日志 / 历史
+        assert!(!url.contains(TOKEN));
+        assert_eq!(query_param(url, "exp").unwrap(), exp.to_string());
+
+        let path = query_param(url, "path").unwrap();
+        assert_eq!(path, media["file"].as_str().unwrap());
+        let sig = query_param(url, "sig").unwrap();
+        // 签名必须能被服务端验票逻辑接受（同一条 path / exp）
+        assert!(miao_dock::animesvc::stream::verify(TOKEN, &path, exp, &sig));
+        // 但换路径就失效
+        assert!(!miao_dock::animesvc::stream::verify(TOKEN, "F:\\Anime\\冰菓\\02.mp4", exp, &sig));
+    }
+
+    #[test]
+    fn m3u8_is_marked_as_hls() {
+        let plan = play_plan(PORT, TOKEN, &webview_media("m3u8"), 1).unwrap();
+        assert_eq!(plan["kind"], "hls");
+    }
+
+    #[test]
+    fn subtitles_get_their_own_verified_tickets() {
+        let media = webview_media("mp4");
+        let exp = miao_dock::animesvc::stream::now_secs() + 60;
+        let plan = play_plan(PORT, TOKEN, &media, exp).unwrap();
+        let subs = plan["subtitles"].as_array().unwrap();
+        assert_eq!(subs.len(), 2);
+
+        let expected: Vec<&str> = media["subtitles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["file"].as_str().unwrap())
+            .collect();
+        for (sub, file) in subs.iter().zip(expected) {
+            assert!(sub["name"].as_str().unwrap().ends_with(".ass"));
+            assert_eq!(sub["format"], "ass");
+            let url = sub["url"].as_str().unwrap();
+            let path = query_param(url, "path").unwrap();
+            assert_eq!(path, file);
+            let sig = query_param(url, "sig").unwrap();
+            assert!(miao_dock::animesvc::stream::verify(TOKEN, &path, exp, &sig));
+        }
+        // 字幕与主视频共用同一个过期时刻，前端只需记一个 expiresAt
+        assert_eq!(plan["expiresAt"], json!(exp * 1000));
+    }
+
+    #[test]
+    fn kernel_track_reports_unsupported_instead_of_fake_url() {
+        let media = json!({
+            "found": true,
+            "title": "第 3 话",
+            "file": "F:\\Anime\\冰菓\\03.mkv",
+            "container": "mkv",
+            "track": "libmpv",
+            "sizeBytes": 9u64,
+            "subtitles": [],
+        });
+        let plan = play_plan(PORT, TOKEN, &media, 1).unwrap();
+        assert_eq!(plan["track"], "libmpv");
+        assert_eq!(plan["supported"], false);
+        assert!(plan["reason"].as_str().unwrap().contains("mkv"));
+        // 不能给一个播不出来的地址：前端只会对着黑屏猜
+        assert!(plan.get("url").is_none());
+    }
+
+    #[test]
+    fn missing_media_is_passed_through() {
+        let media = json!({
+            "found": false,
+            "subjectId": "demo-hyouka",
+            "index": 1.0,
+            "reason": "这一集还没有落盘的视频文件",
+            "skipped": [],
+        });
+        let plan = play_plan(PORT, TOKEN, &media, 1).unwrap();
+        assert_eq!(plan, media);
+    }
+
+    #[test]
+    fn webview_media_without_file_is_an_error() {
+        let media = json!({ "found": true, "track": "webview", "container": "mp4" });
+        assert!(play_plan(PORT, TOKEN, &media, 1).is_err());
+    }
 }

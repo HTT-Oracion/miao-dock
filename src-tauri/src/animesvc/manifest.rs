@@ -38,6 +38,9 @@ pub struct Airing {
 #[serde(rename_all = "camelCase")]
 pub struct Subject {
     pub id: String,
+    /// Bangumi 条目 id（元数据的来源）。**身份仍是目录名**：它只用于再次拉取 / 去重。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bgm_id: Option<u64>,
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title_original: Option<String>,
@@ -195,6 +198,7 @@ pub fn synth(dir: &Path, name: &str) -> Manifest {
         version: MANIFEST_VERSION,
         subject: Subject {
             id: name.to_string(),
+            bgm_id: None,
             title: name.to_string(),
             title_original: None,
             cover: None,
@@ -312,6 +316,83 @@ pub fn set_collection(root: &Path, id: &str, collection: Option<&str>) -> Result
     Ok(json!({ "ok": true, "subject": m.subject }))
 }
 
+/// 外部元数据（Bangumi）落到清单上的字段集。
+///
+/// 全部是 `Option`：抓不到的字段**保持原值**，不用空串覆盖用户手写的简介。
+/// 身份 / 收藏态 / 进度不在补丁里 —— 那些是用户数据，元数据只能新增不能改。
+#[derive(Debug, Clone, Default)]
+pub struct MetadataPatch {
+    pub bgm_id: Option<u64>,
+    pub title: Option<String>,
+    pub title_original: Option<String>,
+    pub cover: Option<String>,
+    pub year: Option<u32>,
+    pub season: Option<String>,
+    pub summary: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub rating: Option<f64>,
+    pub episodes_total: Option<u32>,
+    pub airing: Option<Airing>,
+}
+
+/// 把元数据补丁写进某个作品的清单（没有清单时先按目录合成，再落盘）。
+pub fn apply_metadata(root: &Path, dir: &str, patch: &MetadataPatch) -> Result<Value, String> {
+    let name = safe_name(dir).ok_or_else(|| format!("非法的作品名：{dir}"))?;
+    let d = subject_dir(root, name);
+    if !d.is_dir() {
+        return Err(format!("没有这个作品：{dir}"));
+    }
+    let mut skipped = Vec::new();
+    let mut m = load(&d, &mut skipped);
+    let s = &mut m.subject;
+    if let Some(v) = &patch.title {
+        if !v.is_empty() {
+            s.title = v.clone();
+        }
+    }
+    if let Some(v) = &patch.title_original {
+        if !v.is_empty() {
+            s.title_original = Some(v.clone());
+        }
+    }
+    if let Some(v) = &patch.cover {
+        if !v.is_empty() {
+            s.cover = Some(v.clone());
+        }
+    }
+    if let Some(v) = patch.year {
+        s.year = Some(v);
+    }
+    if let Some(v) = &patch.season {
+        s.season = Some(v.clone());
+    }
+    if let Some(v) = &patch.summary {
+        if !v.is_empty() {
+            s.summary = Some(v.clone());
+        }
+    }
+    if let Some(v) = &patch.tags {
+        if !v.is_empty() {
+            s.tags = v.clone();
+        }
+    }
+    if let Some(v) = patch.rating {
+        s.rating = Some(v);
+    }
+    if let Some(v) = patch.episodes_total {
+        s.episodes_total = Some(v);
+    }
+    if let Some(v) = &patch.airing {
+        s.airing = Some(v.clone());
+    }
+    if let Some(v) = patch.bgm_id {
+        s.bgm_id = Some(v);
+    }
+    s.updated_at = now_ms();
+    save(&d, &m)?;
+    Ok(json!({ "ok": true, "dir": d.to_string_lossy(), "subject": m.subject }))
+}
+
 /// 保存一集（进度 / 看完标记）。集不存在时补一条（先有进度后有清单的场景）。
 pub fn save_episode(root: &Path, body: &Value) -> Result<Value, String> {
     let ep: Episode = serde_json::from_value(body.clone()).map_err(|e| format!("剧集字段不合法：{e}"))?;
@@ -365,6 +446,142 @@ pub fn clear_demo(root: &Path) -> Result<Value, String> {
     scan(root)
 }
 
+/// WebView 能直接解的容器（`<video>` 原生支持或 HLS）。
+const WEBVIEW_EXTS: &[&str] = &["mp4", "m4v", "webm", "mov", "ogv", "ogg", "m3u8"];
+/// 必须交给随包内核的容器（mkv 的 ass 特效字幕、老封装格式）。
+const KERNEL_EXTS: &[&str] = &["mkv", "avi", "flv", "wmv", "rmvb", "rm", "mpg", "mpeg", "m2ts", "ts"];
+
+/// 容器 → 播放轨。认不出的按内核轨处理（宁可"内核未就绪"也不谎报可播）。
+pub fn track_of(container: &str) -> &'static str {
+    let c = container.to_ascii_lowercase();
+    if WEBVIEW_EXTS.contains(&c.as_str()) {
+        "webview"
+    } else if KERNEL_EXTS.contains(&c.as_str()) {
+        "libmpv"
+    } else {
+        "libmpv"
+    }
+}
+
+/// 一集目录（或番目录）里的候选媒体文件：`(路径, 字节数, 扩展名)`，只取一层。
+fn media_files(dir: &Path) -> Vec<(PathBuf, u64, String)> {
+    let mut out = Vec::new();
+    for e in fs::read_dir(dir).into_iter().flatten().flatten() {
+        let p = e.path();
+        if !p.is_file() {
+            continue;
+        }
+        let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
+        if ext.is_empty() || !(WEBVIEW_EXTS.contains(&ext.as_str()) || KERNEL_EXTS.contains(&ext.as_str())) {
+            continue;
+        }
+        let size = p.metadata().map(|m| m.len()).unwrap_or(0);
+        out.push((p, size, ext));
+    }
+    out
+}
+
+/// 找这一集的目录：优先清单里的集标题；否则按目录名前导数字匹配集号。
+fn find_episode_dir(subject_dir: &Path, title: &str, index: f64) -> Option<PathBuf> {
+    let direct = subject_dir.join(title);
+    if direct.is_dir() {
+        return Some(direct);
+    }
+    let mut dirs: Vec<(String, PathBuf)> = fs::read_dir(subject_dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .map(|e| (e.file_name().to_string_lossy().into_owned(), e.path()))
+        .collect();
+    dirs.sort_by(|a, b| a.0.cmp(&b.0));
+    dirs.into_iter()
+        .find(|(n, _)| (parse_index(n, f64::NAN) - index).abs() < 1e-6)
+        .map(|(_, p)| p)
+}
+
+/// 媒体探测：**只报告盘上事实**。没有片就是 `found: false`，不编造来源。
+///
+/// 返回值里的 `track` 决定前端走哪条轨：
+/// · `webview` —— 可直接用带签名的 Range 流喂给 `<video>`；
+/// · `libmpv`  —— 必须随包内核；内核没就绪时前端显示"内核未就绪"而不是黑屏。
+pub fn episode_media(root: &Path, subject: &str, index: f64) -> Result<Value, String> {
+    let name = safe_name(subject).ok_or_else(|| format!("非法的作品名：{subject}"))?;
+    let dir = subject_dir(root, name);
+    if !dir.is_dir() {
+        return Err(format!("没有这个作品：{subject}"));
+    }
+    let mut skipped = Vec::new();
+    let m = load(&dir, &mut skipped);
+    let title = m
+        .episodes
+        .iter()
+        .find(|e| (e.index - index).abs() < 1e-6)
+        .map(|e| e.title.clone())
+        .unwrap_or_else(|| format!("第 {index} 话"));
+
+    // 候选来源：集目录 → 番目录（扁平投放的种子很常见）
+    let ep_dir = find_episode_dir(&dir, &title, index);
+    let mut candidates = ep_dir.as_deref().map(media_files).unwrap_or_default();
+    if candidates.is_empty() {
+        candidates = media_files(&dir);
+        // 扁平目录里有多集时，用集号前缀缩小范围（`03.mp4` / `EP03.mkv`）
+        let tagged: Vec<_> = candidates
+            .iter()
+            .filter(|(p, _, _)| {
+                p.file_name()
+                    .map(|f| f.to_string_lossy().contains(&format!("{:02}", index as u32)))
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .collect();
+        if !tagged.is_empty() {
+            candidates = tagged;
+        }
+    }
+    if candidates.is_empty() {
+        return Ok(json!({
+            "found": false,
+            "subjectId": name,
+            "index": index,
+            "reason": if skipped.is_empty() { "这一集还没有落盘的视频文件".to_string() } else { "这一集还没有落盘的视频文件（清单解析有告警）".to_string() },
+            "skipped": skipped,
+        }));
+    }
+    // 一集多条（正片 + 花絮）时取体积最大的那条：正片几乎总是最大的
+    let (file, size, container) = candidates
+        .into_iter()
+        .max_by_key(|(_, s, _)| *s)
+        .expect("非空已判");
+    let parent = file.parent().unwrap_or(&dir).to_path_buf();
+    let mut subs: Vec<Value> = Vec::new();
+    for e in fs::read_dir(&parent).into_iter().flatten().flatten() {
+        let p = e.path();
+        let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
+        if !matches!(ext.as_str(), "ass" | "srt" | "vtt") {
+            continue;
+        }
+        subs.push(json!({
+            "file": p.to_string_lossy(),
+            "name": p.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default(),
+            "format": ext,
+        }));
+    }
+    subs.sort_by(|a, b| a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or("")));
+
+    Ok(json!({
+        "found": true,
+        "subjectId": name,
+        "index": index,
+        "title": title,
+        "file": file.to_string_lossy(),
+        "container": container,
+        "track": track_of(&container),
+        "sizeBytes": size,
+        "subtitles": subs,
+    }))
+}
+
 fn demo_manifests() -> Vec<(String, Manifest)> {
     fn ep(subject: &str, index: f64, title: &str, minutes: u64) -> Episode {
         Episode {
@@ -399,6 +616,7 @@ fn demo_manifests() -> Vec<(String, Manifest)> {
             version: MANIFEST_VERSION,
             subject: Subject {
                 id: subject.clone(),
+                bgm_id: None,
                 title: title.to_string(),
                 title_original: None,
                 cover: None,
@@ -423,4 +641,115 @@ fn demo_manifests() -> Vec<(String, Manifest)> {
     out.push(make("demo-uma", "赛马娘 Pretty Derby", 2021, "2021-01", vec!["运动", "热血"], 8.0, "onhold", Airing { state: "finished".into(), latest: Some(13), weekday: Some(1) }, 13));
     out.push(make("demo-hyouka", "冰菓", 2012, "2012-04", vec!["推理", "校园"], 8.6, "done", Airing { state: "finished".into(), latest: Some(22), weekday: Some(6) }, 22));
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp_root(tag: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!("miao-anime-media-{}-{tag}", std::process::id()));
+        let _ = fs::remove_dir_all(&p);
+        fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    fn touch(path: &Path, len: usize) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, vec![b'x'; len]).unwrap();
+    }
+
+    #[test]
+    fn container_routes_to_track() {
+        for c in ["mp4", "m4v", "webm", "mov", "ogv", "ogg", "m3u8", "MP4"] {
+            assert_eq!(track_of(c), "webview", "{c} 应该能直接喂给 <video>");
+        }
+        for c in ["mkv", "avi", "flv", "wmv", "rmvb", "rm", "mpg", "mpeg", "m2ts", "ts", "MKV"] {
+            assert_eq!(track_of(c), "libmpv", "{c} 需要随包内核");
+        }
+        // 认不出的容器宁可报"内核未就绪"，也不谎报可播
+        assert_eq!(track_of("xyz"), "libmpv");
+        assert_eq!(track_of(""), "libmpv");
+    }
+
+    #[test]
+    fn episode_media_picks_biggest_file_and_lists_subtitles() {
+        let root = tmp_root("episode");
+        let ep = root.join("冰菓").join("01");
+        touch(&ep.join("01.mp4"), 2000);
+        touch(&ep.join("01.mkv"), 1000);
+        touch(&ep.join("01.chs.ass"), 10);
+        touch(&ep.join("01.cht.ass"), 10);
+        touch(&ep.join("note.txt"), 10);
+
+        let media = episode_media(&root, "冰菓", 1.0).unwrap();
+        assert_eq!(media["found"], true);
+        assert_eq!(media["subjectId"], "冰菓");
+        assert_eq!(media["index"], 1.0);
+        assert_eq!(media["title"], "01");
+        assert_eq!(media["container"], "mp4");
+        assert_eq!(media["track"], "webview");
+        // 正片几乎总是体积最大的那条（花絮/样片不该抢走播放位）
+        assert_eq!(media["sizeBytes"], 2000);
+        assert!(media["file"].as_str().unwrap().ends_with("01.mp4"));
+
+        let subs = media["subtitles"].as_array().unwrap();
+        let names: Vec<&str> = subs.iter().map(|s| s["name"].as_str().unwrap()).collect();
+        assert_eq!(names, vec!["01.chs.ass", "01.cht.ass"]);
+        assert!(subs.iter().all(|s| s["format"] == "ass"));
+        assert!(subs
+            .iter()
+            .all(|s| s["file"].as_str().unwrap().ends_with(s["name"].as_str().unwrap())));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn flat_library_narrows_by_index_tag() {
+        let root = tmp_root("flat");
+        let subject = root.join("某番");
+        touch(&subject.join("01.mp4"), 100);
+        touch(&subject.join("02.mkv"), 200);
+
+        // 扁平投放（没有集目录）时用集号前缀缩小范围，别把 02 播成 01
+        let ep2 = episode_media(&root, "某番", 2.0).unwrap();
+        assert_eq!(ep2["container"], "mkv");
+        assert_eq!(ep2["track"], "libmpv");
+        assert!(ep2["file"].as_str().unwrap().ends_with("02.mkv"));
+
+        let ep1 = episode_media(&root, "某番", 1.0).unwrap();
+        assert_eq!(ep1["container"], "mp4");
+        assert!(ep1["file"].as_str().unwrap().ends_with("01.mp4"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn missing_file_is_reported_not_faked() {
+        let root = tmp_root("empty");
+        fs::create_dir_all(root.join("空番")).unwrap();
+
+        let media = episode_media(&root, "空番", 3.0).unwrap();
+        assert_eq!(media["found"], false);
+        assert_eq!(media["index"], 3.0);
+        assert!(media["reason"].as_str().unwrap().contains("没有落盘的视频文件"));
+        // 没有清单时不该凭空造出告警
+        assert_eq!(media["skipped"].as_array().unwrap().len(), 0);
+        assert!(media.get("file").is_none());
+        assert!(media.get("url").is_none());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rejects_unsafe_or_unknown_subject() {
+        let root = tmp_root("guard");
+        assert!(episode_media(&root, "..", 1.0).is_err());
+        assert!(episode_media(&root, "../etc", 1.0).is_err());
+        assert!(episode_media(&root, "不存在", 1.0)
+            .err()
+            .unwrap()
+            .contains("没有这个作品"));
+        let _ = fs::remove_dir_all(&root);
+    }
 }

@@ -27,14 +27,17 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
-use axum::extract::{Path as AxPath, State};
+use axum::extract::{Path as AxPath, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use serde::Deserialize;
 
 mod manifest;
+pub mod metadata;
 pub mod playback;
+pub mod stream;
 
 use crate::platform::paths;
 use crate::platform::root_guard::validate_root;
@@ -53,6 +56,18 @@ pub struct Shell {
     token: String,
     root_dir: String,
     started: Instant,
+}
+
+impl Shell {
+    /// 流端点要拿令牌算票（`stream::sign`），只读访问，不给外部改的机会。
+    pub(crate) fn token(&self) -> &str {
+        &self.token
+    }
+
+    /// 流端点要用库根做路径白名单。
+    pub(crate) fn root(&self) -> &str {
+        &self.root_dir
+    }
 }
 
 /// 启动参数（环境变量驱动）
@@ -178,6 +193,12 @@ fn router(shell: Arc<Shell>) -> Router {
         .route(&format!("/api/{API_VERSION}/anime/progress"), post(save_episode))
         .route(&format!("/api/{API_VERSION}/anime/demo"), post(seed_demo))
         .route(&format!("/api/{API_VERSION}/anime/demo/clear"), post(clear_demo))
+        // 播放：媒体探测（这一集盘上有没有片、走哪条轨）+ 带签名的 Range 流
+        .route(&format!("/api/{API_VERSION}/anime/episode/:name/:index/media"), get(episode_media))
+        .route(&format!("/api/{API_VERSION}/anime/stream"), get(stream::handle))
+        // 元数据：Bangumi 检索 + 按 id 补进 manifest（走服务侧，前端不直连第三方）
+        .route(&format!("/api/{API_VERSION}/anime/metadata/search"), get(metadata_search))
+        .route(&format!("/api/{API_VERSION}/anime/metadata/apply"), post(metadata_apply))
         // 兜底：打错端口的人（例如把 /library 打到动漫服务上）要看到"这里是谁"，
         // 而不是一个裸 404 —— 两个服务同时在跑时这是最常见的误接。
         .fallback(fallback)
@@ -265,6 +286,77 @@ async fn clear_demo(State(shell): State<Arc<Shell>>, headers: HeaderMap) -> Resp
     }
 }
 
+/// 媒体探测：这一集的目录里有没有可播的片、该走哪条轨、有没有外挂字幕。
+///
+/// 只报告**盘上事实**：没有片就是 `{ found: false }`，不编造来源 ——
+/// 选源（在线源 / BT）是 M3 的事，这里只回答「本地这一集能不能放」。
+async fn episode_media(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    AxPath((name, index)): AxPath<(String, String)>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    let idx: f64 = match index.parse() {
+        Ok(v) => v,
+        Err(_) => return envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", format!("非法的集号：{index}")),
+    };
+    match manifest::episode_media(Path::new(&shell.root_dir), &name, idx) {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
+    }
+}
+
+#[derive(Deserialize)]
+struct MetadataQuery {
+    q: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MetadataApplyBody {
+    dir: String,
+    bgm_id: u64,
+}
+
+/// 按关键词检索 Bangumi 候选（只搜动画）。
+async fn metadata_search(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Query(q): Query<MetadataQuery>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    let keyword = q.q.trim();
+    if keyword.is_empty() {
+        return envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", "缺少检索关键词");
+    }
+    match metadata::search(&metadata::api_base(), keyword, 8).await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("Bangumi 检索失败：{e}")),
+    }
+}
+
+/// 拉详情并写进该作品的清单。身份仍是目录名（`dir`），Bangumi id 只用于来源记录。
+async fn metadata_apply(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<MetadataApplyBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match metadata::apply(&metadata::api_base(), Path::new(&shell.root_dir), &body.dir, body.bgm_id).await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) if e.starts_with("没有这个作品") || e.starts_with("非法的作品名") => {
+            envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e)
+        }
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("Bangumi 元数据写入失败：{e}")),
+    }
+}
+
 async fn entry(State(shell): State<Arc<Shell>>, headers: HeaderMap, AxPath(name): AxPath<String>) -> Response {
     if !authorized(&shell, &headers) {
         return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
@@ -303,7 +395,7 @@ fn authorized(shell: &Shell, headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
-fn json(status: StatusCode, body: serde_json::Value) -> Response {
+pub(crate) fn json(status: StatusCode, body: serde_json::Value) -> Response {
     (
         status,
         [("content-type", "application/json; charset=utf-8")],
@@ -312,7 +404,7 @@ fn json(status: StatusCode, body: serde_json::Value) -> Response {
         .into_response()
 }
 
-fn envelope(status: StatusCode, code: &str, message: impl Into<String>) -> Response {
+pub(crate) fn envelope(status: StatusCode, code: &str, message: impl Into<String>) -> Response {
     json(
         status,
         serde_json::json!({ "error": { "code": code, "message": message.into() } }),
