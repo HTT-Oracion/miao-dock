@@ -46,6 +46,59 @@ fn exe_name() -> &'static str {
     }
 }
 
+/// 设置里选定的番剧库根；`None` = 用服务端默认落点（`<数据根>/anime/resources`）。
+///
+/// 为什么在 Rust 侧记一份而不是读前端偏好：库根决定 animesvc 扫哪个目录，
+/// 而**扫描发生在子进程里**。前端偏好只是这份设置的界面，真正生效的地方在这里。
+static DESIRED_ROOT: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+fn desired_root() -> &'static Mutex<Option<String>> {
+    DESIRED_ROOT.get_or_init(|| Mutex::new(None))
+}
+
+/// 代理策略。`System` = 继承桌面进程环境（默认，与现状一致）；
+/// `Off` = 显式关掉（子进程不继承桌面进程的代理变量）；`Custom(url)` = 自定义地址。
+#[derive(Clone, Debug, PartialEq)]
+enum ProxyChoice {
+    System,
+    Off,
+    Custom(String),
+}
+
+static DESIRED_PROXY: OnceLock<Mutex<ProxyChoice>> = OnceLock::new();
+
+fn desired_proxy() -> &'static Mutex<ProxyChoice> {
+    DESIRED_PROXY.get_or_init(|| Mutex::new(ProxyChoice::System))
+}
+
+/// 把设置里的库根 / 代理传给子进程。库根为空表示回退默认落点。
+fn apply_anime_env(cmd: &mut Command) {
+    if let Ok(guard) = desired_root().lock() {
+        match guard.as_ref() {
+            Some(root) => {
+                cmd.env("MIAO_ANIME_ROOT_DIR", root);
+            }
+            None => {
+                cmd.env_remove("MIAO_ANIME_ROOT_DIR");
+            }
+        }
+    }
+    if let Ok(guard) = desired_proxy().lock() {
+        match &*guard {
+            ProxyChoice::Custom(url) => {
+                cmd.env("HTTP_PROXY", url).env("HTTPS_PROXY", url).env("ALL_PROXY", url);
+            }
+            // 关掉时连进程环境里的也一起去掉：reqwest 读的是环境变量
+            ProxyChoice::Off => {
+                cmd.env_remove("HTTP_PROXY")
+                    .env_remove("HTTPS_PROXY")
+                    .env_remove("ALL_PROXY");
+            }
+            ProxyChoice::System => {}
+        }
+    }
+}
+
 /// animesvc 的位置：环境变量 → 与主程序同级（安装态）→ target/debug（开发态）。
 fn bin_path() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("MIAO_ANIMESVC_BIN") {
@@ -78,12 +131,14 @@ fn spawn() -> Result<AnimeProc, String> {
             "找不到 animesvc（找过 MIAO_ANIMESVC_BIN、程序同级目录、src-tauri/target/debug）—— 先跑 cargo build --bin animesvc"
         )
     })?;
-    let mut child = Command::new(&bin)
-        .stdin(Stdio::null())
+    let mut cmd = Command::new(&bin);
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| format!("拉起 animesvc 失败（{}）：{e}", bin.display()))?;
+        .stderr(Stdio::null());
+    apply_anime_env(&mut cmd);
+    let mut child = cmd.spawn().map_err(|e| {
+        format!("拉起 animesvc 失败（{}）：{e}", bin.display())
+    })?;
 
     let stdout = child.stdout.take().ok_or("animesvc 没有 stdout 管道")?;
     let (tx, rx) = mpsc::channel::<Result<Value, String>>();
@@ -375,6 +430,91 @@ pub async fn anime_metadata_search(q: String) -> Result<Value, String> {
 #[tauri::command]
 pub async fn anime_metadata_apply(dir: String, bgm_id: u64) -> Result<Value, String> {
     post("/api/v1/anime/metadata/apply", json!({ "dir": dir, "bgmId": bgm_id })).await
+}
+
+/// 重启 animesvc：库根与代理都在子进程**启动时**定，改设置必须重启才生效。
+async fn restart_service() -> Result<(), String> {
+    stop();
+    tokio::task::spawn_blocking(ensure)
+        .await
+        .map_err(|e| format!("调度失败：{e}"))?
+        .map(|_| ())
+}
+
+/// 切换番剧库根（设置页「番剧根目录」）；留空 = 回服务端默认落点。
+///
+/// 目录不存在就建：用户常常先填路径再往里放片。
+#[tauri::command]
+pub async fn anime_set_library_root(dir: String) -> Result<Value, String> {
+    let dir = dir.trim().to_string();
+    let resolved = if dir.is_empty() {
+        None
+    } else {
+        let p = PathBuf::from(&dir);
+        std::fs::create_dir_all(&p).map_err(|e| format!("目录建不出来：{e}"))?;
+        let abs = p.canonicalize().map_err(|e| format!("路径读不通：{e}"))?;
+        Some(abs.to_string_lossy().into_owned())
+    };
+    {
+        let mut guard = desired_root().lock().map_err(|e| format!("设置槽被污染：{e}"))?;
+        *guard = resolved;
+    }
+    restart_service().await?;
+    Ok(anime_status())
+}
+
+/// 切换代理（设置页「代理」）：`off` 关闭 / `system` 继承进程环境 / `custom` 自定义地址。
+///
+/// 只影响番剧模块的网络请求（元数据、将来的数据源与 BT）；漫画与音乐不受影响。
+#[tauri::command]
+pub async fn anime_set_proxy(mode: String, url: String) -> Result<Value, String> {
+    let choice = match mode.trim() {
+        "off" => ProxyChoice::Off,
+        "custom" => {
+            let u = url.trim();
+            if u.is_empty() || !u.starts_with("http") {
+                return Err("自定义代理要填 http:// 或 https:// 开头的地址".into());
+            }
+            ProxyChoice::Custom(u.to_string())
+        }
+        _ => ProxyChoice::System,
+    };
+    {
+        let mut guard = desired_proxy().lock().map_err(|e| format!("设置槽被污染：{e}"))?;
+        *guard = choice;
+    }
+    restart_service().await?;
+    Ok(anime_status())
+}
+
+/// 媒体源列表（内置本地库 + 用户自建源；M3 契约，适配器随后接入）。
+#[tauri::command]
+pub async fn anime_sources() -> Result<Value, String> {
+    get("/api/v1/anime/sources").await
+}
+
+/// 新增 / 更新一个源（按 id 覆盖；内置源不可改）。
+#[tauri::command]
+pub async fn anime_save_source(source: Value) -> Result<Value, String> {
+    post("/api/v1/anime/sources", source).await
+}
+
+/// 删除一个源（内置源拒绝）。
+#[tauri::command]
+pub async fn anime_delete_source(id: String) -> Result<Value, String> {
+    post("/api/v1/anime/sources/delete", json!({ "id": id })).await
+}
+
+/// 把本机一个文件夹复制进番剧库根（导入后需重新扫描才会出现在列表）。
+#[tauri::command]
+pub async fn anime_import_folder(path: String, subject: Option<String>) -> Result<Value, String> {
+    post("/api/v1/anime/import", json!({ "path": path, "subject": subject })).await
+}
+
+/// 测试一个数据源：拉前几条看看里面是什么（RSS 已接；其余明确回未接入）。
+#[tauri::command]
+pub async fn anime_test_source(url: String, kind: Option<String>, limit: Option<usize>) -> Result<Value, String> {
+    post("/api/v1/anime/sources/test", json!({ "url": url, "kind": kind, "limit": limit })).await
 }
 
 /// 拼一条带票的流地址。令牌不进 URL —— 只出现它的签名。

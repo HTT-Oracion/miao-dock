@@ -35,8 +35,11 @@ use axum::{Json, Router};
 use serde::Deserialize;
 
 mod manifest;
+pub mod datasource;
+pub mod import;
 pub mod metadata;
 pub mod playback;
+pub mod sources;
 pub mod stream;
 
 use crate::platform::paths;
@@ -50,11 +53,12 @@ pub const API_VERSION: &str = "v1";
 pub(crate) const PORT_RANGE_START: u16 = 5180;
 pub(crate) const PORT_RANGE_END: u16 = 5190;
 
-/// 共享状态：令牌 + 已规范化的库根 + 启动时刻（`/health` 的 uptime）。
+/// 共享状态：令牌 + 已规范化的库根 + 状态目录（源列表落点）+ 启动时刻。
 #[derive(Clone)]
 pub struct Shell {
     token: String,
     root_dir: String,
+    state_dir: String,
     started: Instant,
 }
 
@@ -67,6 +71,11 @@ impl Shell {
     /// 流端点要用库根做路径白名单。
     pub(crate) fn root(&self) -> &str {
         &self.root_dir
+    }
+
+    /// 源列表等配置落点（**不放库根内**：那是用户成果目录，配置混进去会被扫描误读）。
+    pub(crate) fn state_dir(&self) -> &str {
+        &self.state_dir
     }
 }
 
@@ -154,7 +163,12 @@ pub fn run_blocking(opts: Options) -> Result<(), String> {
         .to_string_lossy()
         .into_owned();
 
-    let shell = Arc::new(Shell { token, root_dir, started: Instant::now() });
+    let shell = Arc::new(Shell {
+        token,
+        root_dir,
+        state_dir: paths::anime_state_dir().to_string_lossy().into_owned(),
+        started: Instant::now(),
+    });
 
     let (port, listener) = bind_with_probe(opts.explicit_port)?;
     println!(
@@ -199,6 +213,16 @@ fn router(shell: Arc<Shell>) -> Router {
         // 元数据：Bangumi 检索 + 按 id 补进 manifest（走服务侧，前端不直连第三方）
         .route(&format!("/api/{API_VERSION}/anime/metadata/search"), get(metadata_search))
         .route(&format!("/api/{API_VERSION}/anime/metadata/apply"), post(metadata_apply))
+        // 数据源（M3 契约）：列表 / 增改 / 删除
+        .route(
+            &format!("/api/{API_VERSION}/anime/sources"),
+            get(sources_list).post(source_save),
+        )
+        .route(&format!("/api/{API_VERSION}/anime/sources/delete"), post(source_delete))
+        // 本机导入：把用户选的文件夹复制进库根
+        .route(&format!("/api/{API_VERSION}/anime/import"), post(import_folder))
+        // 数据源测试（M3 第一个适配器：RSS）
+        .route(&format!("/api/{API_VERSION}/anime/sources/test"), post(source_test))
         // 兜底：打错端口的人（例如把 /library 打到动漫服务上）要看到"这里是谁"，
         // 而不是一个裸 404 —— 两个服务同时在跑时这是最常见的误接。
         .fallback(fallback)
@@ -333,7 +357,7 @@ async fn metadata_search(
     if keyword.is_empty() {
         return envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", "缺少检索关键词");
     }
-    match metadata::search(&metadata::api_base(), keyword, 8).await {
+    match metadata::search_default(keyword, 8).await {
         Ok(v) => json(StatusCode::OK, v),
         Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("Bangumi 检索失败：{e}")),
     }
@@ -348,12 +372,104 @@ async fn metadata_apply(
     if !authorized(&shell, &headers) {
         return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
     }
-    match metadata::apply(&metadata::api_base(), Path::new(&shell.root_dir), &body.dir, body.bgm_id).await {
+    match metadata::apply_default(Path::new(&shell.root_dir), &body.dir, body.bgm_id).await {
         Ok(v) => json(StatusCode::OK, v),
         Err(e) if e.starts_with("没有这个作品") || e.starts_with("非法的作品名") => {
             envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e)
         }
         Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("Bangumi 元数据写入失败：{e}")),
+    }
+}
+
+#[derive(Deserialize)]
+struct SourceDeleteBody {
+    id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportBody {
+    path: String,
+    #[serde(default)]
+    subject: Option<String>,
+}
+
+/// 媒体源列表：内置本地库恒在第一位。
+async fn sources_list(State(shell): State<Arc<Shell>>, headers: HeaderMap) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match sources::list(Path::new(shell.state_dir()), Path::new(&shell.root_dir)) {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", e),
+    }
+}
+
+/// 新增 / 更新一个源（内置源不可改）。
+async fn source_save(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match sources::save(Path::new(shell.state_dir()), &body) {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
+    }
+}
+
+async fn source_delete(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<SourceDeleteBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match sources::remove(Path::new(shell.state_dir()), &body.id) {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
+    }
+}
+
+/// 本机导入：复制进库根后由前端重新扫描（导入本身不触发扫描，保持接口单一职责）。
+async fn import_folder(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<ImportBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match import::import_folder(Path::new(&shell.root_dir), Path::new(&body.path), body.subject.as_deref()) {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
+    }
+}
+
+#[derive(Deserialize)]
+struct SourceTestBody {
+    url: String,
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+/// 测试一个源：拉前几条看看是什么（RSS 已接；其余明确回未接入）。
+async fn source_test(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<SourceTestBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match datasource::test(body.kind.as_deref().unwrap_or("rss"), &body.url, body.limit.unwrap_or(8)).await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("源测试失败：{e}")),
     }
 }
 

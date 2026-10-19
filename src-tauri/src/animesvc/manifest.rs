@@ -165,6 +165,10 @@ pub fn load(dir: &Path, skipped: &mut Vec<Value>) -> Manifest {
 }
 
 /// 合成一份最小清单：标题=目录名，集=直接子目录（按名字排序、集号取前导数字）。
+///
+/// 子目录之外，**番目录下直接躺着的视频文件也合成一集**（`01.mp4` / `EP03.mkv`）——
+/// BT 与下载工具常常这么落盘；不合成的话「文件在盘上、集列表是空的」，
+/// 用户点不进播放器。没有集号前缀的文件（`PV.mp4`）不占集号。
 pub fn synth(dir: &Path, name: &str) -> Manifest {
     let mut eps: Vec<Episode> = Vec::new();
     let mut dirs: Vec<(String, PathBuf)> = fs::read_dir(dir)
@@ -194,6 +198,31 @@ pub fn synth(dir: &Path, name: &str) -> Manifest {
         });
         let _ = bytes;
     }
+    for (path, _size, _ext) in media_files(dir) {
+        let Some(stem) = path.file_stem().map(|s| s.to_string_lossy().into_owned()) else {
+            continue;
+        };
+        let index = parse_index(&stem, f64::NAN);
+        if !index.is_finite() {
+            continue;
+        }
+        if eps.iter().any(|e| (e.index - index).abs() < 1e-6) {
+            continue;
+        }
+        eps.push(Episode {
+            id: format!("{name}#{index}"),
+            subject_id: name.to_string(),
+            index,
+            title: stem,
+            duration_ms: 0,
+            op: None,
+            ed: None,
+            watched: false,
+            position_ms: 0,
+            updated_at: now_ms(),
+        });
+    }
+    eps.sort_by(|a, b| a.index.partial_cmp(&b.index).unwrap_or(std::cmp::Ordering::Equal));
     Manifest {
         version: MANIFEST_VERSION,
         subject: Subject {
@@ -464,7 +493,7 @@ pub fn track_of(container: &str) -> &'static str {
 }
 
 /// 一集目录（或番目录）里的候选媒体文件：`(路径, 字节数, 扩展名)`，只取一层。
-fn media_files(dir: &Path) -> Vec<(PathBuf, u64, String)> {
+pub(crate) fn media_files(dir: &Path) -> Vec<(PathBuf, u64, String)> {
     let mut out = Vec::new();
     for e in fs::read_dir(dir).into_iter().flatten().flatten() {
         let p = e.path();
@@ -720,6 +749,42 @@ mod tests {
         let ep1 = episode_media(&root, "某番", 1.0).unwrap();
         assert_eq!(ep1["container"], "mp4");
         assert!(ep1["file"].as_str().unwrap().ends_with("01.mp4"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn flat_directory_synthesizes_episodes() {
+        let root = tmp_root("flat-episodes");
+        let subject = root.join("某番");
+        touch(&subject.join("01.mp4"), 100);
+        touch(&subject.join("EP02.mkv"), 200);
+        touch(&subject.join("PV.mp4"), 50); // 无集号前缀：不占集号
+        touch(&subject.join("note.txt"), 1); // 非媒体文件：忽略
+
+        let mut skipped = Vec::new();
+        let m = load(&subject, &mut skipped);
+        let idx: Vec<f64> = m.episodes.iter().map(|e| e.index).collect();
+        assert_eq!(idx, vec![1.0, 2.0]);
+        assert_eq!(m.episodes[0].title, "01");
+        assert_eq!(m.episodes[1].title, "EP02");
+        assert_eq!(m.subject.episodes_total, Some(2));
+        assert!(skipped.is_empty());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn subdirectories_and_loose_files_merge() {
+        let root = tmp_root("mixed");
+        let subject = root.join("某番");
+        touch(&subject.join("01").join("01.mp4"), 100);
+        touch(&subject.join("02.mkv"), 200);
+
+        let mut skipped = Vec::new();
+        let m = load(&subject, &mut skipped);
+        let idx: Vec<f64> = m.episodes.iter().map(|e| e.index).collect();
+        assert_eq!(idx, vec![1.0, 2.0]);
 
         let _ = fs::remove_dir_all(&root);
     }

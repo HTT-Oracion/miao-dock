@@ -69,6 +69,7 @@ num-bigint = "0.4"
 hex = "0.4"
 rand = "0.8"
 regex = "1"                        # QQ 音乐歌词 HTML 清洗
+quick-xml = "0.37"                 # 番剧数据源 RSS / Atom 读取（M3；1 个 crate，MIT，只读流式解析，不引序列化）
 sha1 = "0.10"                      # QQ 音乐签名
 sha2 = "0.10"                      # store 落盘的 item.sha256（Node crypto.createHash('sha256')）
 unicode-normalization = "0.1"      # 漫画名规范化（复刻 JS String.normalize('NFKC')）

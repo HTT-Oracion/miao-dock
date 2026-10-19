@@ -8,11 +8,16 @@
 //! 元数据最终写进 manifest，而 manifest 的读写、目录扫描都在 animesvc。放到壳层会变成
 //! 第二条「写清单」的路径（CLI / e2e 用不到、两处格式必然漂移）。壳层只做命令转发。
 //!
-//! ## 网络与失败
-//! 外网可能不可达（本机 `api.bgm.tv` 实测超时）。因此：
-//! · 超时 12s、错误带状态码，**不吞**；
-//! · 日历（周几）失败**不阻断**主流程 —— 它只影响「新番时间表」，不是元数据本体；
-//! · 可用 `MIAO_BANGUMI_API` 指向本地镜像 / 夹具，便于离线验证。
+//! ## 网络策略（D-246）
+//! 海外服务，国内直连常见不通（本机实测 10s 连接超时，社区反代 1.2s 返回 200）。因此：
+//! · **镜像列表**：`MIAO_BANGUMI_API` 可给逗号 / 空格分隔的多个根，依次尝试，全失败才报错，
+//!   错误里带上试过哪几个（自建镜像排障要用）。不填则官方直连。
+//! · **图片镜像**：上游把封面域名写死在 JSON 里，只换 API 根封面照旧取不到，
+//!   所以 `MIAO_BANGUMI_IMG` 会在落盘前改写 `lain.bgm.tv`。
+//! · **超时分层 + 只重试网络异常**：连接超时与整次请求分开；HTTP 4xx/5xx 不重试
+//!   （重试会掩盖「关键词不合法」这类真实错误），只有连接 / 超时 / 请求未发出才重试一次。
+//! · **UA**：官方要求非浏览器客户端自报身份（开发者 id / 应用名 / 版本 / 主页），
+//!   默认库 UA（`reqwest/…`）会被挡。
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -23,25 +28,145 @@ use serde_json::{json, Value};
 
 use super::manifest::{self, Airing, MetadataPatch};
 
-/// 官方 API 根（可被 `MIAO_BANGUMI_API` 覆盖）。
+/// 官方 API 根（`MIAO_BANGUMI_API` 为空时的兜底）。
 pub const API_BASE: &str = "https://api.bgm.tv";
+
+/// User Agent 的四段：**开发者 id / 应用名 / 平台 / 主页**。
+///
+/// 官方格式：`{开发者id}/{应用名}/{版本} (平台) (主页)`；分发形态必须带版本号，
+/// 开源项目必须带主页。缺开发者 id（`Bangumi/1.0`）、泛化词（`database`）、
+/// 各请求库默认 UA 都在被禁之列。
+const UA: (&str, &str, &str, &str) = (
+    "HTT-Oracion",
+    "miao-dock",
+    "Windows",
+    "https://github.com/HTT-Oracion/miao-dock",
+);
+
+/// 建连超时：DNS + TCP。海外源站 10s 连不上，换根也是白等。
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// 整次请求超时（含读 body）。
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// 网络异常重试的间隔；只重一次。
+const RETRY_DELAY: Duration = Duration::from_secs(1);
 
 /// 标签最多留几个：清单是给人看的小文件，不是镜像整份 tag 列表。
 const TAG_LIMIT: usize = 12;
 
-pub fn api_base() -> String {
-    std::env::var("MIAO_BANGUMI_API")
+/// 官方封面的图片域名（被 `MIAO_BANGUMI_IMG` 替换）。
+const IMG_HOST: &str = "lain.bgm.tv";
+
+pub(crate) fn user_agent() -> String {
+    let (dev, app, os, home) = UA;
+    format!("{dev}/{app}/{} ({os}) ({home})", env!("CARGO_PKG_VERSION"))
+}
+
+// ------------------------------------------------------------------ 根与图片域名
+
+/// 解析 API 根列表：逗号 / 空白分隔，去重保序，滤掉非 http 的条目；空则官方直连。
+fn parse_bases(raw: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for part in raw.split([',', ' ', '\n', '\t']) {
+        let s = part.trim().trim_end_matches('/');
+        if s.is_empty() || !s.starts_with("http") {
+            continue;
+        }
+        if !out.iter().any(|x| x == s) {
+            out.push(s.to_string());
+        }
+    }
+    if out.is_empty() {
+        out.push(API_BASE.to_string());
+    }
+    out
+}
+
+/// 生效的 API 根列表（`MIAO_BANGUMI_API`）。
+pub fn api_bases() -> Vec<String> {
+    parse_bases(&std::env::var("MIAO_BANGUMI_API").unwrap_or_default())
+}
+
+/// 生效的图片根（`MIAO_BANGUMI_IMG`）；未设置则不改写。
+fn image_base() -> Option<String> {
+    std::env::var("MIAO_BANGUMI_IMG")
         .ok()
         .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| API_BASE.to_string())
+        .map(|s| s.trim().trim_end_matches('/').to_string())
 }
+
+/// 把上游封面域名改写成镜像根（带路径前缀时保留前缀）。
+fn rewrite_cover(url: &str, img_base: Option<&str>) -> String {
+    let Some(base) = img_base else { return url.to_string() };
+    let Ok(src) = url::Url::parse(url) else { return url.to_string() };
+    if src.host_str() != Some(IMG_HOST) {
+        return url.to_string();
+    }
+    let Ok(mut out) = url::Url::parse(base) else { return url.to_string() };
+    let prefix = out.path().trim_end_matches('/').to_string();
+    out.set_path(&format!("{prefix}{}", src.path()));
+    out.to_string()
+}
+
+// ------------------------------------------------------------------ HTTP 客户端
 
 fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
-        .user_agent(format!("MiaoDock/{} (anime metadata client)", env!("CARGO_PKG_VERSION")))
-        .timeout(Duration::from_secs(12))
+        .user_agent(user_agent())
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT)
         .build()
         .map_err(|e| format!("HTTP 客户端创建失败：{e}"))
+}
+
+/// 只有「请求没成功发到对端」的异常才值得重试一次；
+/// HTTP 状态码错误（4xx/5xx）不重试 —— 重试只会把真实错误拖慢一倍。
+fn is_retryable(e: &reqwest::Error) -> bool {
+    e.is_timeout() || e.is_connect() || e.is_request()
+}
+
+async fn send_with_retry<F, Fut>(make: F) -> Result<reqwest::Response, reqwest::Error>
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = Result<reqwest::Response, reqwest::Error>>,
+{
+    let mut tried = 0usize;
+    loop {
+        let res = make().await;
+        let again = res.as_ref().err().map_or(false, is_retryable);
+        if tried == 0 && again {
+            tried += 1;
+            tokio::time::sleep(RETRY_DELAY).await;
+            continue;
+        }
+        return res;
+    }
+}
+
+/// 依次尝试每个根，第一个成功的返回；全失败时错误里列出试过哪些（排障要用）。
+///
+/// 回调拿**拥有所有权的字符串**（不是 `&str`）：里面的调用是 `async fn`，
+/// 返回的 future 会借用 base，借用的东西不能比 `for<'a>` 更长。
+async fn try_bases<T, F, Fut>(bases: &[String], f: F) -> Result<T, String>
+where
+    F: Fn(String) -> Fut,
+    Fut: std::future::Future<Output = Result<T, String>>,
+{
+    let mut last = String::new();
+    for base in bases {
+        match f(base.clone()).await {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                if last.is_empty() {
+                    last = format!("{base} → {e}");
+                } else {
+                    last = format!("{last}; {base} → {e}");
+                }
+            }
+        }
+    }
+    Err(format!("所有 Bangumi 镜像都不可达：{last}"))
 }
 
 // ------------------------------------------------------------------ 上游 JSON
@@ -133,9 +258,21 @@ fn season_of(date: &str) -> (Option<u32>, Option<String>) {
     (year, season)
 }
 
+/// 集数口径：**正片话数优先**，缺失才退回总话数。
+/// 真实数据：《冰菓》`eps=22`（正片）/ `total_episodes=26`（含特别篇）——
+/// 用 26 会在详情页显示「已看 x / 26」，与「正片集数」口径不符。
+fn episodes_of(raw: &RawSubject) -> Option<u32> {
+    raw.eps.filter(|v| *v > 0).or(raw.total_episodes.filter(|v| *v > 0))
+}
+
 fn cover_of(raw: &RawSubject) -> Option<String> {
     let img = raw.images.as_ref()?;
-    img.large.clone().or_else(|| img.common.clone()).or_else(|| img.medium.clone())
+    let url = img
+        .large
+        .clone()
+        .or_else(|| img.common.clone())
+        .or_else(|| img.medium.clone())?;
+    Some(rewrite_cover(&url, image_base().as_deref()))
 }
 
 fn rating_of(raw: &RawSubject) -> Option<f64> {
@@ -167,7 +304,7 @@ fn candidate(raw: &RawSubject) -> Value {
         "year": year,
         "season": season,
         "rating": rating_of(raw),
-        "episodesTotal": raw.total_episodes.or(raw.eps),
+        "episodesTotal": episodes_of(raw),
         "summary": raw.summary,
         "tags": tags_of(raw),
     })
@@ -175,7 +312,6 @@ fn candidate(raw: &RawSubject) -> Value {
 
 /// 上游详情 → manifest 补丁。`weekday` 是 0=周一…6=周日（本仓库口径）。
 fn patch_of(raw: &RawSubject, weekday: Option<u32>) -> MetadataPatch {
-
     let (year, season) = season_of(&raw.date);
     let title = if raw.name_cn.trim().is_empty() {
         raw.name.clone()
@@ -192,7 +328,7 @@ fn patch_of(raw: &RawSubject, weekday: Option<u32>) -> MetadataPatch {
         summary: Some(raw.summary.clone()),
         tags: Some(tags_of(raw)),
         rating: rating_of(raw),
-        episodes_total: raw.total_episodes.or(raw.eps),
+        episodes_total: episodes_of(raw),
         // 只有「出现在本周时间表」才敢说在连载；找不到就保持原状，不猜「已完结」
         airing: weekday.map(|w| Airing { state: "airing".into(), latest: None, weekday: Some(w) }),
     }
@@ -221,13 +357,16 @@ fn calendar_map(days: &[RawCalendarDay]) -> HashMap<u64, u32> {
 
 // ------------------------------------------------------------------ HTTP
 
-async fn get_json(url: &str) -> Result<Value, String> {
-    let res = client()?
-        .get(url)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .map_err(|e| format!("请求 Bangumi 失败：{e}"))?;
+async fn get_json(url: String) -> Result<Value, String> {
+    // 客户端在闭包**外面**建：闭包的返回类型必须是 reqwest::Error（重试判据要用它），
+    // 而 client() 失败是 String，`?` 转换不过去。
+    let c = client()?;
+    let res = send_with_retry(move || {
+        let (c, url) = (c.clone(), url.clone());
+        async move { c.get(&url).header("Accept", "application/json").send().await }
+    })
+    .await
+    .map_err(|e| format!("请求 Bangumi 失败：{e}"))?;
     let status = res.status();
     if !status.is_success() {
         return Err(format!("Bangumi 返回 {status}"));
@@ -236,19 +375,25 @@ async fn get_json(url: &str) -> Result<Value, String> {
 }
 
 /// 按关键词检索（只搜动画类型）。
-pub async fn search(base: &str, q: &str, limit: usize) -> Result<Value, String> {
-    let url = format!(
-        "{}/v0/search/subjects?limit={}",
-        base.trim_end_matches('/'),
-        limit.clamp(1, 20)
-    );
-    let res = client()?
-        .post(&url)
-        .header("Accept", "application/json")
-        .json(&json!({ "keyword": q, "filter": { "type": [2] } }))
-        .send()
-        .await
-        .map_err(|e| format!("请求 Bangumi 失败：{e}"))?;
+///
+/// `base` 是**拥有所有权的字符串**：返回的 future 由调用方（镜像列表回调）持有，
+/// 借用参数会让它逃不出闭包（E0515）。
+pub async fn search(base: String, q: &str, limit: usize) -> Result<Value, String> {
+    let url = format!("{}/v0/search/subjects?limit={}", base.trim_end_matches('/'), limit.clamp(1, 20));
+    let body = json!({ "keyword": q, "filter": { "type": [2] } });
+    let c = client()?;
+    let res = send_with_retry(move || {
+        let (c, url, body) = (c.clone(), url.clone(), body.clone());
+        async move {
+            c.post(&url)
+                .header("Accept", "application/json")
+                .json(&body)
+                .send()
+                .await
+        }
+    })
+    .await
+    .map_err(|e| format!("请求 Bangumi 失败：{e}"))?;
     let status = res.status();
     if !status.is_success() {
         return Err(format!("Bangumi 返回 {status}"));
@@ -261,27 +406,39 @@ pub async fn search(base: &str, q: &str, limit: usize) -> Result<Value, String> 
     Ok(json!({ "ok": true, "count": candidates.len(), "candidates": candidates }))
 }
 
-async fn fetch_subject(base: &str, bgm_id: u64) -> Result<RawSubject, String> {
+async fn fetch_subject(base: String, bgm_id: u64) -> Result<RawSubject, String> {
     let url = format!("{}/v0/subjects/{bgm_id}", base.trim_end_matches('/'));
-    let v = get_json(&url).await?;
+    let v = get_json(url).await?;
     serde_json::from_value::<RawSubject>(v).map_err(|e| format!("Bangumi 条目结构不认识：{e}"))
 }
 
 /// 本周时间表里该条目的星期；拉不到就给 `None`（由调用方决定不影响主流程）。
-async fn calendar_weekday(base: &str, bgm_id: u64) -> Result<Option<u32>, String> {
+async fn calendar_weekday(base: String, bgm_id: u64) -> Result<Option<u32>, String> {
     let url = format!("{}/calendar", base.trim_end_matches('/'));
-    let v = get_json(&url).await?;
+    let v = get_json(url).await?;
     let days = serde_json::from_value::<Vec<RawCalendarDay>>(v)
         .map_err(|e| format!("Bangumi 时间表结构不认识：{e}"))?;
     Ok(calendar_map(&days).get(&bgm_id).copied())
 }
 
 /// 拉详情并写进 `root/<dir>/manifest.json`。
-pub async fn apply(base: &str, root: &Path, dir: &str, bgm_id: u64) -> Result<Value, String> {
-    let raw = fetch_subject(base, bgm_id).await?;
+pub async fn apply(base: String, root: &Path, dir: &str, bgm_id: u64) -> Result<Value, String> {
+    let raw = fetch_subject(base.clone(), bgm_id).await?;
     // 时间表是锦上添花：失败不能把「补封面/评分」一起拖死
     let weekday = calendar_weekday(base, bgm_id).await.ok().flatten();
     manifest::apply_metadata(root, dir, &patch_of(&raw, weekday))
+}
+
+/// 按生效的镜像列表检索（第一个通的用）。
+pub async fn search_default(q: &str, limit: usize) -> Result<Value, String> {
+    let bases = api_bases();
+    try_bases(&bases, |b| search(b, q, limit)).await
+}
+
+/// 按生效的镜像列表应用元数据。
+pub async fn apply_default(root: &Path, dir: &str, bgm_id: u64) -> Result<Value, String> {
+    let bases = api_bases();
+    try_bases(&bases, |b| apply(b, root, dir, bgm_id)).await
 }
 
 #[cfg(test)]
@@ -291,26 +448,27 @@ mod tests {
     use axum::{Json, Router};
     use std::fs;
 
+    /// 真实条目（《冰菓》27364）—— 用于夹具，覆盖「eps 与 total 不一致」这一真实差异。
     fn subject_json() -> Value {
         json!({
-            "id": 3628,
+            "id": 27364,
             "name": "氷菓",
             "name_cn": "冰菓",
             "summary": "节能少年与好奇少女的校园推理。",
             "date": "2012-04-22",
             "images": {
-                "large": "https://lain.bgm.tv/pic/cover/l/aa/hyouka.jpg",
-                "common": "https://lain.bgm.tv/pic/cover/c/aa/hyouka.jpg",
+                "large": "https://lain.bgm.tv/pic/cover/l/cd/38/27364_1ZFmr.jpg",
+                "common": "https://lain.bgm.tv/pic/cover/c/cd/38/27364_1ZFmr.jpg",
                 "medium": ""
             },
-            "rating": { "score": 8.6 },
+            "rating": { "score": 8.1 },
             "tags": [
-                { "name": "推理", "count": 900 },
+                { "name": "京阿尼", "count": 900 },
                 { "name": "校园", "count": 800 },
-                { "name": "京都动画", "count": 700 }
+                { "name": "氷菓", "count": 700 }
             ],
             "eps": 22,
-            "total_episodes": 22
+            "total_episodes": 26
         })
     }
 
@@ -319,21 +477,49 @@ mod tests {
     }
 
     #[test]
+    fn user_agent_has_all_four_parts() {
+        // 官方格式：{开发者id}/{应用名}/{版本} (平台) (主页)；缺一段就可能被整类挡掉
+        let ua = user_agent();
+        assert_eq!(
+            ua,
+            format!(
+                "HTT-Oracion/miao-dock/{} (Windows) (https://github.com/HTT-Oracion/miao-dock)",
+                env!("CARGO_PKG_VERSION")
+            )
+        );
+        assert!(!ua.starts_with("reqwest"));
+        assert!(!ua.starts_with("Bangumi/"));
+    }
+
+    #[test]
     fn patch_maps_cn_title_and_fields() {
         let raw = raw_of(subject_json());
         let p = patch_of(&raw, Some(5));
-        assert_eq!(p.bgm_id, Some(3628));
+        assert_eq!(p.bgm_id, Some(27364));
         assert_eq!(p.title.as_deref(), Some("冰菓"));
         assert_eq!(p.title_original.as_deref(), Some("氷菓"));
-        assert_eq!(p.cover.as_deref(), Some("https://lain.bgm.tv/pic/cover/l/aa/hyouka.jpg"));
         assert_eq!(p.year, Some(2012));
         assert_eq!(p.season.as_deref(), Some("2012-04"));
-        assert_eq!(p.rating, Some(8.6));
-        assert_eq!(p.episodes_total, Some(22));
+        assert_eq!(p.rating, Some(8.1));
         assert_eq!(p.tags.as_ref().unwrap().len(), 3);
         let airing = p.airing.unwrap();
         assert_eq!(airing.state, "airing");
         assert_eq!(airing.weekday, Some(5));
+    }
+
+    #[test]
+    fn episodes_prefers_main_over_total() {
+        let raw = raw_of(subject_json());
+        // 冰菓：正片 22 / 总 26 —— 界面上的「总集数」应是正片口径
+        assert_eq!(episodes_of(&raw), Some(22));
+        let mut v = subject_json();
+        v["eps"] = json!(0);
+        // eps 缺失 / 为 0 时退回总话数
+        assert_eq!(episodes_of(&raw_of(v)), Some(26));
+        let mut v2 = subject_json();
+        v2["eps"] = json!(null);
+        v2["total_episodes"] = json!(null);
+        assert_eq!(episodes_of(&raw_of(v2)), None);
     }
 
     #[test]
@@ -370,6 +556,37 @@ mod tests {
         assert_eq!(p.tags.unwrap().len(), TAG_LIMIT);
     }
 
+    #[test]
+    fn bases_parse_dedupes_and_falls_back() {
+        assert_eq!(parse_bases(""), vec!["https://api.bgm.tv".to_string()]);
+        assert_eq!(parse_bases("   "), vec!["https://api.bgm.tv".to_string()]);
+        assert_eq!(
+            parse_bases(" https://a.example/ , https://b.example https://a.example "),
+            vec!["https://a.example".to_string(), "https://b.example".to_string()]
+        );
+        // 非 http 的条目直接丢掉，免得把一堆 404 试一遍
+        assert_eq!(parse_bases("not-a-url"), vec!["https://api.bgm.tv".to_string()]);
+    }
+
+    #[test]
+    fn cover_rewrite_only_touches_official_host() {
+        let official = "https://lain.bgm.tv/pic/cover/l/cd/38/27364_1ZFmr.jpg";
+        assert_eq!(rewrite_cover(official, None), official);
+        assert_eq!(
+            rewrite_cover(official, Some("https://bgmimg.anibt.net")),
+            "https://bgmimg.anibt.net/pic/cover/l/cd/38/27364_1ZFmr.jpg"
+        );
+        // 带路径前缀的镜像根要保留前缀
+        assert_eq!(
+            rewrite_cover(official, Some("https://example.com/bgmimg/")),
+            "https://example.com/bgmimg/pic/cover/l/cd/38/27364_1ZFmr.jpg"
+        );
+        // 已是别的域名（二次改写）不动
+        assert_eq!(rewrite_cover("https://bgmimg.anibt.net/x.jpg", Some("https://example.com")), "https://bgmimg.anibt.net/x.jpg");
+        // 坏 URL 原样返回，别把数据改坏
+        assert_eq!(rewrite_cover("not a url", Some("https://example.com")), "not a url");
+    }
+
     async fn mock_server() -> String {
         async fn search() -> Json<Value> {
             Json(json!({ "data": [subject_json()] }))
@@ -378,7 +595,7 @@ mod tests {
             Json(subject_json())
         }
         async fn calendar() -> Json<Value> {
-            Json(json!([{ "weekday": { "id": 6 }, "items": [{ "id": 3628 }] }]))
+            Json(json!([{ "weekday": { "id": 6 }, "items": [{ "id": 27364 }] }]))
         }
         let app = Router::new()
             .route("/v0/search/subjects", post(search))
@@ -395,10 +612,11 @@ mod tests {
     #[tokio::test]
     async fn search_and_apply_against_mock_server() {
         let base = mock_server().await;
-        let found = search(&base, "冰菓", 5).await.unwrap();
+        let found = search(base.clone(), "冰菓", 5).await.unwrap();
         assert_eq!(found["count"], 1);
-        assert_eq!(found["candidates"][0]["bgmId"], 3628);
+        assert_eq!(found["candidates"][0]["bgmId"], 27364);
         assert_eq!(found["candidates"][0]["nameCn"], "冰菓");
+        assert_eq!(found["candidates"][0]["episodesTotal"], 22);
 
         let root = std::env::temp_dir().join(format!("anime-meta-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
@@ -406,11 +624,12 @@ mod tests {
         // 先制造一份用户数据：收藏态不该被元数据覆盖
         manifest::set_collection(&root, "冰菓", Some("doing")).unwrap();
 
-        let out = apply(&base, &root, "冰菓", 3628).await.unwrap();
-        assert_eq!(out["subject"]["bgmId"], 3628);
+        let out = apply(base, &root, "冰菓", 27364).await.unwrap();
+        assert_eq!(out["subject"]["bgmId"], 27364);
         assert_eq!(out["subject"]["title"], "冰菓");
-        assert_eq!(out["subject"]["rating"], 8.6);
+        assert_eq!(out["subject"]["rating"], 8.1);
         assert_eq!(out["subject"]["season"], "2012-04");
+        assert_eq!(out["subject"]["episodesTotal"], 22);
         assert_eq!(out["subject"]["collection"], "doing");
         // 时间表命中 ⇒ 周六（0=周一）
         assert_eq!(out["subject"]["airing"]["weekday"], 5);
@@ -419,9 +638,26 @@ mod tests {
         let mut skipped = Vec::new();
         let m = manifest::load(&root.join("冰菓"), &mut skipped);
         assert_eq!(m.subject.id, "冰菓");
-        assert_eq!(m.subject.bgm_id, Some(3628));
+        assert_eq!(m.subject.bgm_id, Some(27364));
         assert!(skipped.is_empty());
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 第一个根不通时按列表继续试 —— 这就是「本机直连官方超时、换镜像就通」的机制。
+    ///
+/// 用不存在的域名当替身：DNS 立刻失败，不会像连一个被丢弃的端口那样等满连接超时。
+    #[tokio::test]
+    async fn falls_back_to_next_base_when_first_is_dead() {
+        let good = mock_server().await;
+        let dead = "http://bgm-mirror-not-exist.invalid".to_string();
+        let bases = vec![dead.clone(), good.clone()];
+        let found = try_bases(&bases, |b| search(b, "冰菓", 3)).await.unwrap();
+        assert_eq!(found["candidates"][0]["bgmId"], 27364);
+
+        // 两个都不通时，错误里要带上试过谁（自建镜像排障要用）
+        let none = try_bases(&[dead.clone()], |b| search(b, "x", 3)).await;
+        let err = none.err().expect("应当失败");
+        assert!(err.contains("bgm-mirror-not-exist.invalid"), "错误未带上根地址：{err}");
     }
 }

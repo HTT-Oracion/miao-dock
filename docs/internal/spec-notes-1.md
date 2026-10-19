@@ -5652,4 +5652,121 @@ MIT、前端运行期依赖，不增加 Rust 侧包数。
 `check:anime-module` **26/26** + 反证 **16/16**（新增 `META.bangumi`，变异为摘掉
 `pub mod metadata;`）· `tsc --noEmit` 无输出 · `eslint` 无输出 · `vite build` 通过。
 
+## D-246 Bangumi 可达性：UA 定稿、超时/重试、镜像列表与图片镜像（2026-10-19）
+
+**背景**：D-245 写完客户端后实测发现：本机直连 `api.bgm.tv` 10 秒连接超时
+（`curl(28)`，`http=000`；同机 `baidu.com` 200；WinHTTP 显示无代理），而社区反代
+`bgmapi.anibt.net` **1.2 秒返回 200**。同一台机器换 UA（应用标识 / 浏览器 /
+官方点名的禁用示例）三次结果完全一致 ⇒ 问题在网络路径，不在 UA。
+
+**UA 定稿**（四段，官方 `user agent.md` 口径）：
+
+```
+HTT-Oracion/miao-dock/2.2.1 (Windows) (https://github.com/HTT-Oracion/miao-dock)
+```
+
+参考 animeko（`open-ani/animeko`）：它默认客户端走 Ktor `BrowserUserAgent()`（浏览器 UA），
+但那是被 Web 数据源的 Cloudflare 挑战逼的（cf_clearance 绑定 UA）；它自己的抓取脚本用的是
+`open-ani/ani/3.0.0-beta01 (debug) (https://github.com/open-ani/ani)`，与我们的四段式同形。
+我们只打 Bangumi 只读端点，**不自降为浏览器 UA**（那是冒充，且让对方按 UA 限流时认不出我们）。
+
+**网络策略**（`animesvc/metadata.rs`）
+
+| 项 | 值 | 理由 |
+|---|---|---|
+| 连接超时 | 10s | 海外源站连不上时换根也是白等 |
+| 整次请求超时 | 15s | 含读 body |
+| 重试 | 1 次、间隔 1s，**只对网络异常**（`is_timeout` / `is_connect` / `is_request`） | HTTP 4xx/5xx 不重试 —— 重试只会把「关键词不合法」这类真实错误拖慢一倍（同 animeko 口径） |
+| 镜像列表 | `MIAO_BANGUMI_API` 逗号 / 空格分隔，依次尝试，去重保序；空则官方 | 错误里带上试过哪几个根（自建镜像排障要用） |
+| 图片镜像 | `MIAO_BANGUMI_IMG`，落盘前改写 `lain.bgm.tv` | 上游把封面域名写死在 JSON 里，只换 API 根封面照旧取不到（真实响应里已见域名被改写） |
+
+**口径修正（真实数据发现的）**
+
+- **集数取正片**：`episodes_of = eps.or(total_episodes)`。《冰菓》真实 `eps=22` /
+  `total_episodes=26`，用 26 会让详情页显示「已看 x / 26」。
+- **夹具换成真实条目**：`27364 / 氷菓`（此前夹具用 3628 当冰菓，而 3628 真实是
+  《名侦探柯南 天空的遇难船》——组合是编的）。
+
+**顺带完成**：番目录下**直接躺着的视频也合成剧集**（`01.mp4` / `EP02.mkv`；无集号前缀的
+`PV.mp4` 不占集号）。BT / 下载工具常这么落盘，此前「文件在盘上、集列表是空的」点不进播放器。
+
+**验收（2026-10-19）**：`cargo test --lib animesvc` **25/25**（新增 UA 四段 / 镜像列表解析 /
+封面改写 / 集数口径 / 扁平落盘合成 / 首根不通按列表继续试，2.0s）·
+`check:anime-module` **27/27** + 反证 **18/18**（新增 `META.flat`，变异为把
+`media_files(dir)` 换成 `Vec::new()`）· `check:anime` 20/20 ·
+`tsc --noEmit` / `eslint` / `prettier` 无输出 · `vite build` 通过。
+
+**仍未解**：官方域名可达性未验（本机不通）；镜像属第三方，**不写死成默认**，只作为
+`MIAO_BANGUMI_API` 的可选项；设置页「代理」项仍未接进元数据请求（M3 项）。
+
+## D-247 设置接线 + M3 起点：源契约与本机导入（2026-10-19）
+
+**设置接线（补 D-246 留下的「代理没接」缺口）**
+
+| 设置项 | 落法 | 为什么这么做 |
+|---|---|---|
+| 番剧根目录 | Tauri 命令 `anime_set_library_root(dir)` → 记住目标根 → **重启 animesvc**（`MIAO_ANIME_ROOT_DIR`）→ 重新扫描 | 库根决定子进程扫哪个目录，只在启动时定；前端偏好只是界面。目录不存在先建（用户常先填路径再放片） |
+| 代理 | `anime_set_proxy(mode, url)` → 同样重启；`off` 时连进程环境里的 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY` 一起 `env_remove` | reqwest 读的是环境变量；"关"必须显式去掉继承值，否则桌面进程有代理时子进程照样走代理 |
+
+- 偏好层新增 `proxyUrl`（`proxy: 'custom'` 时生效）；设置项 30 → **31**（新增「自定义代理地址」一行），
+  `SETTINGS.section` 的写死常量与三处文档同步。
+- 界面纪律：库根与当前生效值一致时不重启（重启会打断正在看的进度），按钮文案随状态在「应用 / 重载」之间切。
+
+**M3 起点：契约先立，适配器随后**
+
+- `animesvc/sources.rs`：`SourceKind`（builtin / local / web / rss / selector / jellyfin / emby / bt）+
+  `MediaSource`（id / name / kind / url / enabled / health / updatedAt），落 `<state>/sources.json`（原子写）。
+  **不放库根内** —— 库根是用户成果目录，配置混进去会被 `scan` 当成一部番。
+  内置本地库恒在第一位、不落盘、不可改不可删；坏 JSON 退化成「只有内置源」而不是 500。
+- `animesvc/import.rs`：把用户选的文件夹**复制**进 `<root>/<作品名>/`（默认取目录名），
+  承认视频 + 外挂字幕，重名跳过不覆盖。**复制而非移动**：源目录常是下载器 / BT 的完成目录，
+  动它会切断用户另一条链路；代价是占两份盘，界面里说清。
+- 端点：`GET/POST /anime/sources`、`POST /anime/sources/delete`、`POST /anime/import`（全部要令牌）。
+- 前端：`loadSources` 改为真实列表（替换原来的两条硬编码），数据源屏加「导入本机文件夹」
+  （`@tauri-apps/plugin-dialog` 的 `open({directory:true})`，与音乐 / 漫画同款用法）与用户源的启停 / 删除。
+
+**验收（2026-10-19）**：`cargo test --lib animesvc` **31/31**（新增 6 条：内置源不落盘 /
+增改删往返 / 坏形状拒绝 / 坏文件降级 / 导入复制与跳过 / 显式作品名与非法名）·
+`check:anime-module` **29/29** + 反证 **20/20**（新增 `SETTINGS.wired`、`M3.sources`，
+变异分别为摘掉 `anime_set_library_root` 注册与摘掉 `pub mod import;`）·
+`tsc --noEmit` / `eslint` 无输出 · `vite build` 通过。
+
+**未做**：在线 / RSS / 选择器 / 媒体服务器 / BT 五种适配器（M3 主体）；「添加源」按钮仍禁用并写明原因；
+导入是扁平复制，深目录结构由用户自己在库里摆。
+
+## D-248 M3 第一个适配器：RSS 取数 + 源测试（2026-10-19）
+
+**范围**：让「添加源 / 测试源」从死按钮变成真功能。第一个适配器选 **RSS** ——
+零账号、无验证码、`reqwest` 就够，且能用夹具完整离线验证。
+
+**落点**
+
+| 层 | 落点 | 职责 |
+|---|---|---|
+| 契约 | `animesvc/datasource/mod.rs` | `DataSourceItem`（title / index / link / enclosure / kind / published）+ `ItemKind`（video 直链 / torrent 走 BT / page 只是网页） |
+| 适配器 | `animesvc/datasource/rss.rs` | `quick-xml` 流式解析 RSS 2.0 与 Atom 1.0；`parse` 是纯函数，测试直接喂字符串 |
+| 端点 | `POST /anime/sources/test` | 拉前 N 条；**未接入的类型明确回错**，不假装测通 |
+| 前端 | 数据源屏「添加源」表单 + 每行「测试」+ 预览 | 预览里直链 / BT / 网页分色标注 |
+
+**三个实现口径**
+
+1. **附件如实分类**：`enclosure type` 含 `bittorrent` / `magnet:` ⇒ `torrent`（下载归 M5，不在本层消费）；
+   `video/*` 或视频后缀 ⇒ `video`；其余 `page`。不把「网页」冒充成「能播」。
+2. **集号只认第一段数字**（`[Ncop] 标题 - 12 [1080p]` → 12、`第 3 话` → 3、`S02E07` → 2），
+   认不出给 `None`：猜错会让自动择优把 PV 当正片。
+3. **截断的 XML 也吐出已读条目**（`Event::Eof` 时 flush）：源被 CDN 掐断是常态，
+   整体失败等于「明明有数据却报测试不通」。
+
+**踩到的坑**：`<enclosure …/>`、`<link href="…"/>` 是**自闭合标签**，quick-xml 给的是
+`Event::Empty` 而不是 `Event::Start`。只处理 Start 会让所有附件地址与 Atom 链接静默丢失
+（症状：测得很通，但 kind 全是 `page`、link 全空）。
+
+**新依赖代价**：`quick-xml 0.37`（1 个 crate，MIT，纯 Rust，流式只读；不引 `rss` crate 的
+整份 channel 结构 —— 我们只要四样字段）。`gen:licenses` 已重新生成。
+
+**验收（2026-10-19）**：`cargo test --lib animesvc` **36/36**（新增 5 条：RSS 三态分类 /
+Atom 与 limit / 集号解析 / 分类优先级 / 截断 XML）· `check:anime-module` **30/30** + 反证 **21/21**
+（新增 `M3.rss`，变异为摘掉 `pub mod datasource;`）· `tsc --noEmit` / `eslint` / `prettier` 无输出 ·
+`vite build` 通过 · 真进程冒烟（本地 mock RSS）待跑。
+
 
