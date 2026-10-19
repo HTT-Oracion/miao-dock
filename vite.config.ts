@@ -18,6 +18,7 @@ export default defineConfig({
       '@components': aliasPath('./src/components'),
       '@screens': aliasPath('./src/screens'),
       '@music': aliasPath('./src/modules/music'),
+      '@anime': aliasPath('./src/modules/anime'),
       '@hooks': aliasPath('./src/hooks'),
       '@tools': aliasPath('./src/tools'),
       '@': aliasPath('./src'),

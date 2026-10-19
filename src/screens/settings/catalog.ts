@@ -23,10 +23,24 @@
  * 也不要留一条永远"待接入"。
  */
 
-/** 分组 id —— 同时是深链 `?section=` 的取值集合（《09》§4.1） */
-export type SectionId = 'general' | 'translate' | 'media' | 'resource' | 'about';
+/**
+ * 分组 id —— 同时是深链 `?section=` 的取值集合（《09》§4.1）。
+ *
+ * `anime` 是**域内设置**：30 项数据住在 `modules/anime/settings-catalog.ts`，
+ * 不并进本文件的 `SETTINGS_SECTIONS`（那份合计被 C10/COUNT 双门钉着，
+ * 把另一域 30 项塞进来会让"设置页 34 项"这个数字失去意义）。
+ * 本表只负责"有这一组、深链能进来"，渲染由 `AnimeSettingsSection` 自己承担。
+ */
+export type SectionId = 'general' | 'translate' | 'media' | 'resource' | 'about' | 'anime';
 
-export const SECTION_IDS: readonly SectionId[] = ['general', 'translate', 'media', 'resource', 'about'] as const;
+export const SECTION_IDS: readonly SectionId[] = [
+  'general',
+  'translate',
+  'media',
+  'resource',
+  'about',
+  'anime',
+] as const;
 
 /** 能力状态：`live` 有真实能力；`pending` 引擎/音乐 M1 之后才有 */
 export type ItemState = 'live' | 'pending';

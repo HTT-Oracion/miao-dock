@@ -8,12 +8,14 @@ import type { ReactElement } from 'react';
 import type { Screen } from '@/stores/nav';
 import { TranslatePane } from '@/router/panes/TranslatePane';
 import { MusicPane } from '@/router/panes/MusicPane';
+import { AnimePane } from '@/router/panes/AnimePane';
 import { SettingsPane } from '@/router/panes/SettingsPane';
 
 /** 壳层屏 → 屏装配件（键 = `Screen`，即 `stores/nav.ts` 的 IA 事实源） */
 export const SCREEN_PANES: Record<Screen, () => ReactElement> = {
   translate: TranslatePane,
   music: MusicPane,
+  anime: AnimePane,
   settings: SettingsPane,
 };
 

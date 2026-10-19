@@ -6,6 +6,7 @@
 //   · 托盘常驻；「退出喵坞」需二次确认（确认文案由前端给出，见 §2.1）
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod anime;
 mod commands;
 mod music;
 mod selftest;
@@ -176,6 +177,8 @@ fn main() {
                 // 真正退出（托盘「退出喵坞」确认后 / Cmd+Q）：杀子进程，确保端口释放
                 let mgr = app.state::<ServiceManager>();
                 mgr.stop();
+                // 动漫服务是懒启动的独立进程：拉起过才需要收，没拉起是空操作
+                anime::stop();
             }
         });
 }

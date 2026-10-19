@@ -27,6 +27,8 @@
       "@screens/*": ["src/screens/*"],
       "@music": ["src/modules/music"],
       "@music/*": ["src/modules/music/*"],
+      "@anime": ["src/modules/anime"],
+      "@anime/*": ["src/modules/anime/*"],
       "@hooks": ["src/hooks"],
       "@hooks/*": ["src/hooks/*"],
       "@tools": ["src/tools"],

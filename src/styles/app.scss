@@ -164,6 +164,119 @@
   margin: 6px 0;
 }
 
+/*
+ * 番剧应用的次级导航（popover）：hover 向右展开。
+ *
+ * 为什么是 hover 而不是常驻：番剧的十屏是**工作区内部**的分区，不是一级应用 ——
+ * 常驻展开会让侧栏从 78 宽撑成一列菜单，两个应用的层级读起来就乱了。
+ * `pointer-events` 在收起时必须为 none：否则浮层以透明状态盖住右侧内容，点击会被吃掉
+ * （这种"点不动但看不出原因"的故障最难查）。
+ */
+.nav-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+.nav-pop {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: -6px;
+  width: 240px;
+  z-index: 50;
+  background: var(--md-surface);
+  border: 1px solid var(--md-line);
+  border-radius: var(--md-radius-md);
+  padding: 8px;
+  box-shadow: 0 24px 54px -26px rgba(20, 15, 41, 0.5);
+  opacity: 0;
+  transform: translateX(-10px) scale(0.98);
+  transform-origin: left center;
+  pointer-events: none;
+  transition:
+    opacity 0.28s ease,
+    transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.nav-wrap:hover .nav-pop,
+.nav-wrap:focus-within .nav-pop {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.nav-pop-hd {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px 8px;
+  border-bottom: 1px solid var(--md-line-soft);
+  margin-bottom: 6px;
+}
+.nav-pop-hd b {
+  font-family: var(--font-display);
+  font-size: 12.5px;
+}
+.nav-pop-hd span {
+  font-size: 10px;
+  color: var(--md-muted);
+}
+.nav-pop-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--md-radius-sm);
+  text-align: left;
+}
+.nav-pop-item:hover {
+  background: var(--md-surface-2);
+}
+.nav-pop-item.is-on {
+  background: var(--md-pink-soft);
+}
+.nav-pop-item.is-on .npi-tx b {
+  color: var(--md-pink);
+  font-weight: 700;
+}
+.npi-ic {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: var(--md-radius-sm);
+  display: grid;
+  place-items: center;
+  background: var(--md-surface-2);
+  border: 1px solid var(--md-line);
+  color: var(--md-ink-2);
+}
+.nav-pop-item.is-on .npi-ic {
+  border-color: var(--md-pink);
+  color: var(--md-pink);
+  background: var(--md-surface);
+}
+.npi-tx {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.npi-tx b {
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.npi-tx span {
+  font-size: 10px;
+  color: var(--md-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nav-pop-sep {
+  height: 1px;
+  background: var(--md-line-soft);
+  margin: 6px 8px;
+}
+
 /* 服务状态点曾在这里（色点 + 文字），D-230 按需求去掉：侧栏不再重复服务状态 ——
  * 状态在设置页「服务与配对」与托盘图标两处可查，去掉的是"第三处重复"，不是状态本身。
  * 原先由它带的 `margin-top: auto`（全局层贴底）移到 `.nav-item.is-global`。 */

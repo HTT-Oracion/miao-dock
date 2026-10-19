@@ -23,6 +23,8 @@ import { ViewTabs } from '@components/ViewTabs';
 // 它是 `position: fixed; inset: 0` 的全屏浮层，数据全部来自 store，本就不依赖任何一屏的 DOM。
 import { ExpandedPlayer } from '@screens/music/ExpandedPlayer';
 import { useMusicStore } from '@music/store';
+import { useAnimeStore } from '@anime/store';
+import { ANIME_VIEW_META } from '@anime/player-options';
 import { isBlockedWhenNotReady, stateView } from '@/stores/nav';
 import { useNav } from '@/router/use-nav';
 import type { EngineProcessView, ShellCtx } from '@/router/panes/shell-context';
@@ -241,6 +243,10 @@ export function App() {
   const seekMusic = useMusicStore((s) => s.seek);
   const musicExpanded = useMusicStore((s) => s.expanded);
   const closeMusicExpanded = useMusicStore((s) => s.closeExpanded);
+
+  // 番剧模块内视图：popover 与工具条标题都读这一份（与音乐的 store 同一套口径）
+  const animeView = useAnimeStore((s) => s.view);
+  const setAnimeView = useAnimeStore((s) => s.setView);
 
   // Esc 收起展开播放器：与音乐屏内那条同源，但**只判 expanded**。
   // 队列抽屉仍归音乐屏（它只在那一屏存在，Esc 连带关它才是对的）。
@@ -478,6 +484,25 @@ export function App() {
         actions: null,
       };
     }
+    /*
+     * 番剧屏：标题随模块内视图变（十屏共用壳层工具条）。
+     * 与翻译应用的区别：那边切的是 Tab（壳层 `view`），这边切的是模块内 `view`。
+     */
+    if (screen === 'anime') {
+      const meta = ANIME_VIEW_META[animeView];
+      return {
+        title: meta.title,
+        subtitle: meta.sub,
+        actions: (
+          <>
+            <Badge>独立服务 · 零 Node</Badge>
+            <Btn kind="ghost" size="sm" onClick={() => void useAnimeStore.getState().refreshLibrary()}>
+              刷新番剧库
+            </Btn>
+          </>
+        ),
+      };
+    }
     if (screen === 'settings') {
       return { title: '设置', subtitle: '应用外观、翻译服务、媒体与资源', actions: null };
     }
@@ -526,7 +551,7 @@ export function App() {
           ),
         };
     }
-  }, [libRoot, libSummary, platform, push, queueDepth, screen, showNotReady, source, status?.state, view]);
+  }, [animeView, libRoot, libSummary, platform, push, queueDepth, screen, showNotReady, source, status?.state, view]);
 
   // 翻译应用的视图 Tab 行；音乐屏不加（《09》§3.3），设置页是全局页也不加；
   // 下载页是覆盖层，也不该顶着翻译视图 Tab。
@@ -594,6 +619,11 @@ export function App() {
         labels={sidebarLabels}
         downloadEntry={downloadEntry}
         onOpenDownload={openEngineDownload}
+        animeView={animeView}
+        onAnimeView={(v) => {
+          setAnimeView(v);
+          setScreen('anime');
+        }}
       />
 
       <div className="main">

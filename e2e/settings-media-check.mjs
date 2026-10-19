@@ -2461,7 +2461,8 @@ add('SIMPLIFY.optional.selfGuard', 'SIMPLIFY', (ctx) => {
     problems.push('GroupNote 没有"缺组说明就不渲染"的自守（缺 note 会崩或留空行）');
   }
   const ss = stripComments(ctx.s.settingsScreen ?? '');
-  if (!/active\.blurb\s*[?&]/.test(ss)) {
+  // `active` 在新增「番剧设置」（域内第 6 组）后可为 null ⇒ 守卫写成 `active?.blurb ?`
+  if (!/active\??\.blurb\s*[?&]/.test(ss)) {
     problems.push('SettingsScreen 的 blurb 是无条件渲染（缺 blurb 会崩或留空行）');
   }
   return { ok: problems.length === 0, detail: problems.join('；') };
@@ -3946,8 +3947,8 @@ const MUTATIONS = [
   {
     name: '把页标题下的 blurb 改回无条件渲染（缺 blurb 时这一行会崩或留空）',
     file: F.settingsScreen,
-    find: 'active.blurb ? <div className="settings-blurb">',
-    replace: 'true ? <div className="settings-blurb">',
+    find: 'active?.blurb ? (',
+    replace: 'true ? (',
     expect: ['SIMPLIFY.optional.selfGuard'],
   },
   {

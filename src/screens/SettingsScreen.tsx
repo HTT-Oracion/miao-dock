@@ -8,6 +8,9 @@ import type { SectionId } from '@screens/settings/catalog';
 import { SECTION_ICON } from '@screens/settings/icons';
 import { emphasis } from '@screens/settings/parts';
 import { SpecFixtureHost } from '@screens/settings/SpecCheck';
+import { AnimeSettingsSection } from '@screens/anime/AnimeSettingsSection';
+import { ANIME_SETTING_GROUPS, ANIME_SETTING_TOTAL } from '@anime/settings-catalog';
+import { Clapperboard } from 'lucide-react';
 import {
   AboutSection,
   GeneralSection,
@@ -98,7 +101,8 @@ export function SettingsScreen({
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  const active = SETTINGS_SECTIONS.find((s) => s.id === section) ?? SETTINGS_SECTIONS[0];
+  const active = SETTINGS_SECTIONS.find((s) => s.id === section) ?? null;
+  const isAnime = section === 'anime';
 
   return (
     <>
@@ -120,7 +124,7 @@ export function SettingsScreen({
         >
           {SETTINGS_SECTIONS.map((s) => {
             const Icon = SECTION_ICON[s.id];
-            const on = s.id === active.id;
+            const on = s.id === active?.id;
             return (
               <button
                 key={s.id}
@@ -141,18 +145,43 @@ export function SettingsScreen({
               </button>
             );
           })}
+
+          {/* 第 6 组：番剧设置（数据住在 anime 域，渲染也由该域负责） */}
+          <button
+            type="button"
+            className={isAnime ? 'set-nav-item is-active' : 'set-nav-item'}
+            style={{
+              padding: `${SETTINGS.navItemPadding.y}px ${SETTINGS.navItemPadding.x}px`,
+              gap: SETTINGS.navItemGap,
+            }}
+            aria-current={isAnime ? 'page' : undefined}
+            onClick={() => setSection('anime')}
+          >
+            <span className="set-nav-icon" style={{ width: SETTINGS.navItemIcon, height: SETTINGS.navItemIcon }}>
+              <Clapperboard size={14} />
+            </span>
+            <span className="set-nav-label">番剧设置</span>
+            <span className="set-nav-count">{ANIME_SETTING_TOTAL}</span>
+          </button>
         </nav>
 
         <div className="settings-main">
           <header className="settings-head">
             <div className="settings-title" style={{ fontSize: SETTINGS.pageTitleSize }}>
-              {active.name}
+              {isAnime ? '番剧设置' : active?.name}
             </div>
-            {/* blurb 缺省即不渲染这一行（显隐由 catalog 数据决定，不留空行、不崩） */}
-            {active.blurb ? <div className="settings-blurb">{emphasis(active.blurb)}</div> : null}
+            {isAnime ? (
+              <div className="settings-blurb">
+                番剧库、播放、字幕、数据源、媒体选择、缓存与 BT、账号与同步、备份 —— {ANIME_SETTING_GROUPS.length} 组共{' '}
+                {ANIME_SETTING_TOTAL} 项。
+              </div>
+            ) : active?.blurb ? (
+              <div className="settings-blurb">{emphasis(active.blurb)}</div>
+            ) : null}
           </header>
 
-          {active.id === 'general' ? (
+          {isAnime ? <AnimeSettingsSection /> : null}
+          {!isAnime && active?.id === 'general' ? (
             <GeneralSection
               mode={mode}
               onMode={onMode}
@@ -161,12 +190,12 @@ export function SettingsScreen({
               fixtureRef={fixtureRef}
             />
           ) : null}
-          {active.id === 'translate' ? (
+          {!isAnime && active?.id === 'translate' ? (
             <TranslateSection status={status} autoStart={serviceAutoStart} onAutoStart={onServiceAutoStart} />
           ) : null}
-          {active.id === 'media' ? <MediaSection /> : null}
-          {active.id === 'resource' ? <ResourceSection lib={lib} /> : null}
-          {active.id === 'about' ? <AboutSection /> : null}
+          {!isAnime && active?.id === 'media' ? <MediaSection /> : null}
+          {!isAnime && active?.id === 'resource' ? <ResourceSection lib={lib} /> : null}
+          {!isAnime && active?.id === 'about' ? <AboutSection /> : null}
         </div>
       </div>
     </>

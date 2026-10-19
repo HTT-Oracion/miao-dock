@@ -30,8 +30,11 @@ use std::time::Instant;
 use axum::extract::{Path as AxPath, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
-use axum::Router;
+use axum::routing::{get, post};
+use axum::{Json, Router};
+
+mod manifest;
+pub mod playback;
 
 use crate::platform::paths;
 use crate::platform::root_guard::validate_root;
@@ -169,6 +172,12 @@ fn router(shell: Arc<Shell>) -> Router {
         .route(&format!("/api/{API_VERSION}/health"), get(health))
         .route(&format!("/api/{API_VERSION}/anime/library"), get(library))
         .route(&format!("/api/{API_VERSION}/anime/library/:name"), get(entry))
+        // 写入面：条目 / 收藏态 / 剧集进度 / 示例数据（全部要求令牌）
+        .route(&format!("/api/{API_VERSION}/anime/subject"), post(save_subject))
+        .route(&format!("/api/{API_VERSION}/anime/collection"), post(set_collection))
+        .route(&format!("/api/{API_VERSION}/anime/progress"), post(save_episode))
+        .route(&format!("/api/{API_VERSION}/anime/demo"), post(seed_demo))
+        .route(&format!("/api/{API_VERSION}/anime/demo/clear"), post(clear_demo))
         // 兜底：打错端口的人（例如把 /library 打到动漫服务上）要看到"这里是谁"，
         // 而不是一个裸 404 —— 两个服务同时在跑时这是最常见的误接。
         .fallback(fallback)
@@ -193,9 +202,66 @@ async fn library(State(shell): State<Arc<Shell>>, headers: HeaderMap) -> Respons
     if !authorized(&shell, &headers) {
         return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
     }
-    match scan_library(Path::new(&shell.root_dir)) {
+    match manifest::scan(Path::new(&shell.root_dir)) {
         Ok(v) => json(StatusCode::OK, v),
         Err(e) => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", format!("扫描动漫库失败：{e}")),
+    }
+}
+
+/// 保存条目（新建 / 改元数据 / 改收藏态）。
+async fn save_subject(State(shell): State<Arc<Shell>>, headers: HeaderMap, Json(body): Json<serde_json::Value>) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match manifest::save_subject(Path::new(&shell.root_dir), &body) {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
+    }
+}
+
+/// 只改收藏态的窄口：列表里的五状态按钮不必回传整份条目。
+async fn set_collection(State(shell): State<Arc<Shell>>, headers: HeaderMap, Json(body): Json<serde_json::Value>) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    let id = body.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let collection = body.get("collection").and_then(|v| v.as_str());
+    match manifest::set_collection(Path::new(&shell.root_dir), &id, collection) {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
+    }
+}
+
+/// 保存一集进度（续看位置 / 看完标记）。
+async fn save_episode(State(shell): State<Arc<Shell>>, headers: HeaderMap, Json(body): Json<serde_json::Value>) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match manifest::save_episode(Path::new(&shell.root_dir), &body) {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
+    }
+}
+
+/// 载入示例数据（显式动作）。
+async fn seed_demo(State(shell): State<Arc<Shell>>, headers: HeaderMap) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match manifest::seed_demo(Path::new(&shell.root_dir)) {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", format!("写入示例失败：{e}")),
+    }
+}
+
+/// 清空示例（只删 `demo-` 前缀，不碰用户数据）。
+async fn clear_demo(State(shell): State<Arc<Shell>>, headers: HeaderMap) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match manifest::clear_demo(Path::new(&shell.root_dir)) {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", format!("清空示例失败：{e}")),
     }
 }
 
@@ -306,30 +372,7 @@ fn list_episodes(dir: &Path) -> Vec<serde_json::Value> {
     out
 }
 
-fn scan_library(root: &Path) -> Result<serde_json::Value, String> {
-    let mut items = Vec::new();
-    let rd = fs::read_dir(root).map_err(|e| format!("{}：{e}", root.display()))?;
-    for e in rd.flatten() {
-        let p = e.path();
-        if !p.is_dir() {
-            continue;
-        }
-        let (episodes, files, bytes) = stat_entry(&p);
-        items.push(serde_json::json!({
-            "name": e.file_name().to_string_lossy(),
-            "dir": p.to_string_lossy(),
-            "episodes": episodes,
-            "files": files,
-            "bytes": bytes,
-        }));
-    }
-    items.sort_by(|a, b| a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or("")));
-    Ok(serde_json::json!({
-        "root": root.to_string_lossy(),
-        "count": items.len(),
-        "items": items,
-    }))
-}
+// 顶层的库扫描已迁到 `manifest::scan`（同一份读写模型），这里不再保留第二份实现。
 
 /// 显式端口优先；否则在 5180–5190 内「先探测再绑定」。
 /// 🔴 段内全被占 ⇒ **明确失败**，不静默换到段外（与 mangasvc 同语义）：

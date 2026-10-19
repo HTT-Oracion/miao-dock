@@ -400,7 +400,10 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     add(
       'C8a',
       '侧栏应用层恒为 2 项且顺序为「漫画翻译 → 音乐」（按可访问名称判，与是否显示文字无关）',
-      appItems.length === 2 && names[0] === APP_LABEL.translate && names[1] === APP_LABEL.music,
+      appItems.length === 3 &&
+        names[0] === APP_LABEL.translate &&
+        names[1] === APP_LABEL.music &&
+        names[2] === APP_LABEL.anime,
       `实际 ${appItems.length} 项：${names.join(' / ') || '无'}`,
     );
 
@@ -551,8 +554,8 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
       const navItems = nav.querySelectorAll('.set-nav-item');
       add(
         'C10c',
-        '分组恒为 5 项（①通用 ②翻译服务 ③播放·媒体 ④资源与投放 ⑤关于）',
-        navItems.length === 5,
+        '分组恒为 6 项（①通用 ②翻译服务 ③播放·媒体 ④资源与投放 ⑤关于 ⑥番剧设置）',
+        navItems.length === 6,
         `左栏 ${navItems.length} 项：${
           Array.from(navItems)
             .map((e) => (e.querySelector('.set-nav-label')?.textContent ?? '').trim())

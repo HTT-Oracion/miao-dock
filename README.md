@@ -25,9 +25,9 @@
 ```
 miao-dock/
 ├── src/          Vite/React 前端源码（根目录只留 `main.tsx` / `App.tsx`，其余按职责分目录）
-│   ├── screens/  屏层：`manga/`（漫画翻译的投放 / 队列 / 漫画库三屏 + 屏内件，`index.ts` 是唯一出口）· `music/`·`lyrics/`·`settings/`（音乐 / 设置两屏的屏内件）· 未就绪屏 `manga/NotReadyScreen.tsx` 是投放屏的一种形态
+│   ├── screens/  屏层：`manga/`（漫画翻译的投放 / 队列 / 漫画库三屏 + 屏内件，`index.ts` 是唯一出口）· `music/`·`lyrics/`·`settings/`（音乐 / 设置两屏的屏内件）· `anime/`（番剧十屏 + 屏内件，屏入口 `AnimeScreen.tsx` 在屏根）· 未就绪屏 `manga/NotReadyScreen.tsx` 是投放屏的一种形态
 │   ├── router/  屏级路由：`routes.ts` 路径表 · `use-nav.ts` 读写口 · `panes/` 屏装配件（**hash 路由**：URL 是「屏 + 应用内视图」的唯一事实源）
-│   ├── modules/  域模块（与 `screens/` 分层的另一层：住域逻辑，不住屏）：`music/`（音乐领域态：zustand store · ipc · platform · 播放器选项）
+│   ├── modules/  域模块（与 `screens/` 分层的另一层：住域逻辑，不住屏）：`music/`（音乐领域态：zustand store · ipc · platform · 播放器选项）· `anime/`（番剧领域态：zustand store · 切片 · ipc · 偏好 · 设置目录；数据来自独立进程 `animesvc`）
 │   ├── stores/   跨组件共享状态与壳层偏好（导航态机 / 轻提示通道 / 外观偏好）
 │   ├── ipc/      与后端通信（`ipc.ts` 翻译服务命令 + `engine-download.ts` 引擎下载）
 │   ├── types/    跨域类型声明（`types.ts` + `vite-env.d.ts`）
@@ -241,6 +241,7 @@ npm run task -- check:profile         # S4 档位映射 / 加速后端 / 降档 
 npm run task -- check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run task -- check:contract        # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status 77 条（反证：check:contract:refute）
 npm run task -- check:music           # 音乐平台 / 播放模式五档 / 心动模式 / 播放列表入口与抽屉 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 237 条（反证：check:music:refute，231 条）
+npm run task -- check:anime-module    # 番剧模块接线：@anime 别名双同步 / /anime 路由与 IA / 屏装配件 / 十屏分派 / IPC 命令名与 handler 注册 / animesvc manifest 端点 / 播放契约 PlaybackCore 与 selftest / 番剧设置分组 / 样式注册 / 运行期零 Node / 文档同步 21 条（反证：check:anime-module:refute，11 条）
 npm run task -- check:settings        # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3 裁定结果 + ④ 功能梳理（侧栏标签 / 存储占用 / 第三方许可 / def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染 + **C5 许可清单的引擎/模型段** + **D4 运行时实况行** 186 条（反证：check:settings:refute，145 条）
 npm run task -- check:units           # 前端分层 / hooks / 别名 / 状态 / 屏装配件分派 / 灵动岛 / 看图缩放 / 样式分层 46 条（反证：check:units:refute）
 npm run task -- check:stall           # U10② 引擎卡死：「静默有上界 + 每次尝试留痕 + 进行中落盘」7 条 / 反证 3 条（mock 引擎对指定 seq「永不回包」）

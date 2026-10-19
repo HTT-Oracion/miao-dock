@@ -11,6 +11,12 @@ fn main() {
         println!("{}", miao_dock::platform::paths::anime_snapshot());
         return;
     }
+    // `--playback-selftest`：跑播放契约的自检序列后退出（M2 PoC 的可执行底座）。
+    // 真 libmpv 后端要双平台二进制，本机没有时这条仍能证明"接口语义与上层可测"。
+    if std::env::args().any(|a| a == "--playback-selftest") {
+        println!("{}", miao_dock::animesvc::playback::selftest());
+        return;
+    }
     let opts = miao_dock::animesvc::Options::from_env();
     if let Err(e) = miao_dock::animesvc::run_blocking(opts) {
         eprintln!("[anime-service] animesvc 启动失败：{e}");

@@ -4,10 +4,24 @@ import { SHELL, SIDEBAR } from '@/themes/tokens';
 // （import 会让 Vite 多产一份带指纹的副本，而这里要的就是"路径可预测"）。
 const LOGO_SRC = '/assets/icons/miao-logo.png';
 import { APP_LABEL, type AppId, type Screen } from '@/stores/nav';
+import type { AnimeView } from '@anime/types';
 import type { DownloadEntryState } from '@/ipc/engine-download';
-import { CircleCheck, CirclePause, Download, Languages, Loader2, Music4, Settings } from 'lucide-react';
+import {
+  CircleCheck,
+  CirclePause,
+  Clapperboard,
+  Clock,
+  Download,
+  Languages,
+  Loader2,
+  Music4,
+  Search,
+  Settings,
+  Sparkles,
+  Star,
+} from 'lucide-react';
 
-/** 应用层入口（《09》§3.1）—— 恒为 2 项。C8 断言的判据之一，故不在别处重复定义。 */
+/** 应用层入口（《09》§3.1）—— 三项：翻译 / 音乐 / 番剧（番剧自带 popover）。C8 断言的判据之一。 */
 const APPS: { id: AppId; label: string; icon: () => ReactElement }[] = [
   { id: 'translate', label: APP_LABEL.translate, icon: () => <Languages size={20} /> },
   { id: 'music', label: APP_LABEL.music, icon: () => <Music4 size={20} /> },
@@ -70,6 +84,8 @@ export function Sidebar({
   labels,
   downloadEntry,
   onOpenDownload,
+  animeView,
+  onAnimeView,
 }: {
   screen: Screen;
   onScreen: (s: Screen) => void;
@@ -78,6 +94,10 @@ export function Sidebar({
   /** 侧栏下载入口形态（`hidden` 时不渲染） */
   downloadEntry: DownloadEntryState;
   onOpenDownload: () => void;
+  /** 番剧模块内当前子页（popover 高亮用；真值住在 anime store） */
+  animeView: AnimeView;
+  /** 点 popover 子项：切到番剧屏并落到对应子页 */
+  onAnimeView: (v: AnimeView) => void;
 }) {
   // 尺寸与标签同源：一个 `labels` 同时决定"有没有 span"与"用哪套几何"
   const appItem = labels ? SIDEBAR.appItem : SIDEBAR.iconOnlyItem;
@@ -106,6 +126,74 @@ export function Sidebar({
           {labels ? <span>{a.label}</span> : null}
         </button>
       ))}
+
+      {/*
+       * ── 番剧（第三个应用）──
+       * 主入口与其它应用同形（图标 + 可选文字），次级导航收进 hover 向右展开的浮层：
+       * 模块内十屏是**工作区**，不该长期占用一级侧栏。
+       * 浮层用纯 CSS hover（`app.scss` 的 `.nav-wrap:hover .nav-pop`）——不额外持 state，
+       * 避免"鼠标移开后浮层还挂着"的第二份真相。
+       */}
+      <div className="nav-wrap">
+        <button
+          type="button"
+          className={screen === 'anime' ? 'nav-item is-app is-active' : 'nav-item is-app'}
+          style={{ width: appItem.w, height: appItem.h }}
+          aria-current={screen === 'anime' ? 'page' : undefined}
+          aria-label={APP_LABEL.anime}
+          title={APP_LABEL.anime}
+          onClick={() => onScreen('anime')}
+        >
+          <Clapperboard size={20} />
+          {labels ? <span>{APP_LABEL.anime}</span> : null}
+        </button>
+
+        <div className="nav-pop" role="menu" aria-label="番剧导航">
+          <div className="nav-pop-hd">
+            <b>番剧</b>
+            <span>工作区</span>
+          </div>
+          {(
+            [
+              { view: 'explore', label: '搜索', hint: '探索 · 搜索 · 全网聚合', Icon: Search },
+              { view: 'collection', label: '追番', hint: '五状态收藏 · 观看进度', Icon: Star },
+              { view: 'cache', label: '缓存', hint: '下载管理 · 边下边播', Icon: Download },
+              { view: 'history', label: '播放历史', hint: '续播位置 · 同步状态', Icon: Clock },
+            ] as { view: AnimeView; label: string; hint: string; Icon: typeof Search }[]
+          ).map(({ view, label, hint, Icon }) => (
+            <button
+              key={view}
+              type="button"
+              role="menuitem"
+              className={screen === 'anime' && animeView === view ? 'nav-pop-item is-on' : 'nav-pop-item'}
+              onClick={() => onAnimeView(view)}
+            >
+              <span className="npi-ic">
+                <Icon size={15} />
+              </span>
+              <span className="npi-tx">
+                <b>{label}</b>
+                <span>{hint}</span>
+              </span>
+            </button>
+          ))}
+          <div className="nav-pop-sep" />
+          <button
+            type="button"
+            role="menuitem"
+            className={screen === 'anime' && animeView === 'states' ? 'nav-pop-item is-on' : 'nav-pop-item'}
+            onClick={() => onAnimeView('states')}
+          >
+            <span className="npi-ic">
+              <Sparkles size={15} />
+            </span>
+            <span className="npi-tx">
+              <b>三态与示例</b>
+              <span>骨架 / 空态 / 错误态</span>
+            </span>
+          </button>
+        </div>
+      </div>
 
       {/* ── 分隔线：应用层与全局层的分界 ──
           纯装饰（aria-hidden）：它不表达任何可操作语义，念出来只会是噪声。 */}

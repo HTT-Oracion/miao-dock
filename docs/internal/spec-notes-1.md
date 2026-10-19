@@ -5501,4 +5501,70 @@ Sakura 权重）· `check:engine-parity` 的 `translationWeightsPresent` 两条�
 `check:anime` **20/20** + 反证 **21/21** · `check:paths` 5/5 + 反证 6/6（安全闸下沉后回归）·
 `npm run check`（static）18/18 · `check:registry` 15/15（service 45→46 / refute 60→61）。
 
+## D-243 番剧模块落地（M0 骨架 + M1 番剧库）与播放契约冻结（2026-10-19）
+
+**范围**：把设计稿的十屏接进壳层，并把「番 / 集 / 进度」真正落盘。D-242 只承诺了
+「两个 exe 能同时跑」，本轮补上**壳层集成与前端模块**。
+
+**落点（按依赖定归属，不按"被用几次"）**
+
+| 层 | 落点 | 判据 |
+|---|---|---|
+| 前端域 | `src/modules/anime/` | 与 `modules/music/` 同构：store + 切片 + ipc + 偏好 + 设置目录；不 import 屏层 |
+| 屏层 | `src/screens/anime/`（十屏 + 屏内件），入口 `src/screens/AnimeScreen.tsx` | 只做呈现与分派，数据从 `@anime/store` 取 |
+| Rust 桥接 | `src-tauri/src/anime/mod.rs`（bin 侧） | 懒启动 `animesvc`、记住端口与令牌、代理 HTTP；**不含业务规则** |
+| 落盘模型 | `src-tauri/src/animesvc/manifest.rs` | 一部番一目录 + `manifest.json`（元数据 / 集 / 进度 / 弹幕预留） |
+| 播放契约 | `src-tauri/src/animesvc/playback.rs` | `PlaybackCore` 七个动作 + 状态快照；`MockCore` + `--playback-selftest` |
+
+**为什么壳层桥接是"懒启动"而不是塞进 `ServiceManager`**：`ServiceManager` 管的是漫画
+①②③ 的就绪与重启语义，把动漫塞进去会让漫画的 degraded/重启跟着动漫抖。两者各持一个
+子进程槽；动漫第一次进屏（或第一次调状态）才拉起，退出时 `anime::stop()` 收干净。
+
+**为什么「番剧设置」不进 `SETTINGS_SECTIONS`**：那份数据的项数合计被 C10/COUNT 双门钉着
+（设置页 34 项）。把另一域 30 项塞进去，会让"设置页有 34 项"这个数字失去意义。做法是
+`SectionId`/`SECTION_IDS` 加 `anime`（深链与左栏第 6 项），渲染与数据都在 `modules/anime/`
+自有 catalog；C10c 由 5 项改为 6 项（三处同步：应用内自检 + IA 反证脚本 + 用例常量）。
+
+**端点（在 D-242 三条只读之上新增写入面，全部要 `X-Box-Token`）**
+- `POST /api/v1/anime/subject`：保存条目（新建 / 改元数据）
+- `POST /api/v1/anime/collection`：只改收藏态（列表五状态按钮不必回传整份条目）
+- `POST /api/v1/anime/progress`：保存一集（续看位置 / 看完标记），顺带重算条目 progress
+- `POST /api/v1/anime/demo` / `POST /api/v1/anime/demo/clear`：**显式**示例数据开关
+  （只碰 `demo-` 前缀目录；静默造假数据比空态更糟）
+- `GET /api/v1/anime/library` 改为返回 `{ root, count, subjects, episodes, scannedAt, skipped }`
+  （manifest 合成：目录名→标题、集目录前导数字→集号；缺 manifest 不算坏数据，
+  坏 JSON 进 `skipped` 如实报）
+
+**本轮踩到并修掉的四个坑（都属"静默失败"）**
+1. **朴素块注释正则吞代码**：`vite.config.ts` 的 `'**/src-tauri/**'` 里含 `/*`，
+   `/\*[\s\S]*?\*/` 会从那里一路吞到别名段 ⇒ 断言判"缺 @anime 别名"（假红）。
+   修法：该断言**不剥注释**（别名行不在注释里）。
+2. **反证锚点带 `\n` 在 CRLF 仓库静默失配**：Windows 上文件是 CRLF，`find: '...\n'` 找不到，
+   表现是"7 条无法反证"而不是变红。修法：锚点一律不写行尾换行。
+3. **断言直读盘 → 反证恒绿**：`NODE.free` 原本每次 `readFileSync`，反证在内存里注入
+   `node:child_process` 时读不到 ⇒ 假阳性。修法：断言只吃**快照**，快照由反证注入后重建。
+4. **`platform` 在 lib crate**：`crate::platform::...` 在 bin 里不存在（只有 `mangasvc` 被
+   `pub(crate) use` 进来了）。修法：`miao_dock::platform::paths::anime_snapshot()`。
+
+**命令命名**：`check:anime` 已被 service 层占用（D-242），前端接线检查叫
+`check:anime-module`（static 层，21 条 / 反证 11 条）。`check:registry` 的写死常量
+（static 18→19、refute 61→62）与 `check:counts` 的 §3 声明同步更新。
+
+**提交类型偏离（登记）**：CONTRIBUTING §二只列 refactor/chore/style/docs（+跨里程碑 fix），
+不含"新功能"。本轮新增模块按 `feat(app)` / `feat(rust)` 提交 —— 与开源改造轮之前的
+历史格式一致；若后续要收口成四类型，应先把"新增能力"的落法写进 CONTRIBUTING，而不是
+在提交时临时选一个语义不对的类型。
+
+**验收（2026-10-19）**：`npm run check` **19/19**（含 `check:anime-module`）·
+`check:anime-module` 正向 **21/21** + 反证 **11/11**（无跳过）· `check:anime` **20/20**
+（隔离与锁未回归）· `check:ia` 37/37 · `check:units` 46/46 · `check:settings` 186/186 ·
+`tsc --noEmit` 无输出 · `vite build` 通过（1843 modules）· `cargo check` 两个 bin 通过 ·
+animesvc 真进程冒烟 **10/10**（示例→收藏→进度→重启读盘→清空，manifest 落盘）·
+`--playback-selftest` **10/10**。
+
+⚠️ **未验项如实登记**：桌面窗口内**没有真机点过**这十屏（本轮只做源码级断言 + 后端真进程
+冒烟，未起 Tauri GUI）；libmpv 实播 / mkv+ass / 双平台打包签名**没有做**（本机无 mpv
+二进制与 macOS，属 M2 PoC 的机器依赖部分）；BT（M5）、账号中继（M4）、数据源（M3）
+只有界面与状态位，没有真实后端。
+
 

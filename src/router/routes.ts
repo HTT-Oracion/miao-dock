@@ -57,6 +57,8 @@ export const SCREEN_ROUTES: ScreenRoute[] = [
     view: v.id,
   })),
   { path: '/music', screen: 'music' },
+  // 番剧：模块内十屏不进制路由（自成工作区），URL 只回答「哪个应用」
+  { path: '/anime', screen: 'anime' },
   { path: '/settings', screen: 'settings' },
 ];
 

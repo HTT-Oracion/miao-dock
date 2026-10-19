@@ -209,7 +209,7 @@ function judgeC8(html, domSpec) {
   });
 
   return {
-    C8a: appCount === 2 && names[0] === '漫画翻译' && names[1] === '音乐',
+    C8a: appCount === 3 && names[0] === '漫画翻译' && names[1] === '音乐' && names[2] === '番剧',
     C8b: globalItems === 1 && !globalWithText,
     C8c: di >= 0 && appIdx.length > 0 && gIdx.length > 0 && appIdx.every((i) => i < di) && gIdx.every((i) => i > di),
     C8d:
@@ -240,7 +240,7 @@ function judgeC10(html) {
   return {
     C10a: navOk && mainOk,
     C10b: heads === 1,
-    C10c: groups === 5,
+    C10c: groups === 6,
   };
 }
 
@@ -256,14 +256,14 @@ function judgeC11(html) {
 // ── 用例 ───────────────────────────────────────────────────────────────────
 const BASE = {
   screens: { app: 'translate' },
-  apps: ['translate', 'music'],
+  apps: ['translate', 'music', 'anime'],
   divider: true,
-  appLabels: { translate: '漫画翻译', music: '音乐' },
+  appLabels: { translate: '漫画翻译', music: '音乐', anime: '番剧' },
   /** 侧栏应用入口带文字标签（与升级前的界面一致；关掉后用 44×44 纯图标） */
   sidebarLabels: true,
   globalHasText: false,
   viewOrder: ['投放', '队列', '漫画库'],
-  settings: { groups: ['通用', '翻译服务', '播放·媒体', '资源与投放', '关于'], title: '通用' },
+  settings: { groups: ['通用', '翻译服务', '播放·媒体', '资源与投放', '关于', '番剧设置'], title: '通用' },
   subs: [],
 };
 const TRANS = {
@@ -356,8 +356,8 @@ const cases = [
     refute: ['C10c'],
   },
   {
-    name: '反证 C10c：分组变 6 个',
-    spec: { ...BASE, settings: { groups: ['a', 'b', 'c', 'd', 'e', 'f'], title: '通用' } },
+    name: '反证 C10c：分组变 7 个',
+    spec: { ...BASE, settings: { groups: ['a', 'b', 'c', 'd', 'e', 'f', 'g'], title: '通用' } },
     refute: ['C10c'],
   },
   {

@@ -531,6 +531,18 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         crate::commands::open_path,
         crate::commands::expand_paths,
         crate::commands::write_text_file,
+        // ── 动漫模块（anime：独立 animesvc 进程的桥接）──
+        crate::anime::anime_status,
+        crate::anime::anime_start,
+        crate::anime::anime_stop,
+        crate::anime::anime_library,
+        crate::anime::anime_entry,
+        crate::anime::anime_save_subject,
+        crate::anime::anime_set_collection,
+        crate::anime::anime_save_episode,
+        crate::anime::anime_seed_demo,
+        crate::anime::anime_clear_demo,
+        crate::anime::anime_paths,
         // ── 音乐模块（网易云）──
         crate::music::music_search,
         crate::music::music_song_url,

@@ -9,7 +9,7 @@
  * 两个层级里形状完全一致，读者只会读到"大小不同"这个刻意的层级差。
  */
 import type { SectionId } from '@screens/settings/catalog';
-import { FolderKanban, Info, Languages, Activity, SlidersHorizontal } from 'lucide-react';
+import { Clapperboard, FolderKanban, Info, Languages, Activity, SlidersHorizontal } from 'lucide-react';
 
 const stroke = {
   fill: 'none',
@@ -79,4 +79,6 @@ export const SECTION_ICON: Record<SectionId, (props?: any) => React.ReactElement
   media: (props) => <Activity {...(props || {})} />,
   resource: (props) => <FolderKanban {...(props || {})} />,
   about: (props) => <Info {...(props || {})} />,
+  // 番剧设置是域内第 6 组（数据在 modules/anime/settings-catalog.ts）
+  anime: (props) => <Clapperboard {...(props || {})} />,
 };

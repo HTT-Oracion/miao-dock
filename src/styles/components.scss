@@ -448,6 +448,72 @@
   flex: 0 0 auto;
   padding: 12px;
 }
+/* 空态可能不止一句：标题 / 说明 / 动作三行竖排（单句调用方不受影响） */
+.ui-empty {
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ---- ④ 骨架（Skeleton）----
+ * 微光扫过而不是整块脉冲：脉冲会让整屏同时呼吸，读起来像"页面在闪"；
+ * 扫光只在一小块内移动，注意力仍留在结构上。 */
+.ui-skel {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  background: var(--md-surface-2);
+  border-radius: var(--r-xs);
+}
+.ui-skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  animation: ui-skel-weave 1.4s ease-in-out infinite;
+}
+[data-theme='dark'] .ui-skel::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+}
+@keyframes ui-skel-weave {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* ---- ⑤ 错误态（ErrorState）---- */
+.ui-err {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  border: 1px solid color-mix(in srgb, var(--md-error) 42%, var(--md-line));
+  background: color-mix(in srgb, var(--md-error) 6%, var(--md-surface));
+}
+.ui-err-hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--md-error);
+}
+.ui-err-hd b {
+  font-size: 12px;
+}
+.ui-err-msg {
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--md-ink-2);
+  word-break: break-word;
+}
+.ui-err-acts {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+  flex-wrap: wrap;
+}
 
 /* ---- ④ 定高虚拟列表（VirtualList）---- */
 /* 定高虚拟列表（components/units/VirtualList.tsx）：只渲染视口内的行。

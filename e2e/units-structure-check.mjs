@@ -81,6 +81,8 @@ const F = {
  *  ProgressRing 是 2026-10-14 引擎下载进度环（工具条/下载视图共用，D-150） */
 const MANIFEST = [
   'atoms.tsx',
+  'Skeleton.tsx',
+  'ErrorState.tsx',
   'Select.tsx',
   'Switch.tsx',
   'Range.tsx',
@@ -160,6 +162,7 @@ const ALIASES = {
   '@components': path.join(SRC, 'components'),
   '@screens': path.join(SRC, 'screens'),
   '@music': path.join(SRC, 'modules', 'music'),
+  '@anime': path.join(SRC, 'modules', 'anime'),
   '@hooks': path.join(SRC, 'hooks'),
   '@': SRC,
 };
@@ -732,7 +735,7 @@ function tsAliasKeys(text) {
 }
 
 /** 契约：六个别名（《09》§2.3.1） */
-const ALIAS_KEYS = ['@', '@tauri', '@components', '@screens', '@music', '@hooks'];
+const ALIAS_KEYS = ['@', '@tauri', '@components', '@screens', '@music', '@anime', '@hooks'];
 
 add('ALIAS.keysComplete', 'ALIAS', (s) => {
   const vite = viteAliasKeys(s.viteConfig);
@@ -1134,7 +1137,7 @@ add('ZOOM.fitToWindow', 'ZOOM', (s) => {
 // 提到 .set-row），不剥注释会恒红 —— 而恒红比恒绿更隐蔽（它看起来像"覆盖到位"）。
 
 /** 约定的 @use 顺序。**顺序即层叠**：同特异性下靠后定义者胜，改它等于改视觉结果。 */
-const STYLE_USE_ORDER = ['base', 'app', 'manga', 'settings', 'components', 'music'];
+const STYLE_USE_ORDER = ['base', 'app', 'manga', 'settings', 'components', 'music', 'anime'];
 
 /** 从 index.scss 取出 @use 目标（去扩展名），剥注释以免举例被当真声明 */
 function useList(indexSrc) {
