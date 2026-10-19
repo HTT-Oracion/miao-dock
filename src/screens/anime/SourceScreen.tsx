@@ -152,7 +152,10 @@ export function SourceScreen() {
               取消
             </Btn>
           </div>
-          <p className="an-note">RSS 现在就能测；在线 / 选择器 / 媒体服务器 / BT 保存后测试会明说适配器未接入。</p>
+          <p className="an-note">
+            RSS 与 Jellyfin / Emby 现在就能测（媒体服务器要在地址后带 <code>?api_key=…</code>）；在线 / 选择器 / BT
+            保存后测试会明说适配器未接入。
+          </p>
         </div>
       )}
 
