@@ -73,6 +73,8 @@ export interface AnimeState {
   setCollection: (id: string, c: CollectionType | null) => Promise<void>;
   markWatched: (episodeId: string, watched: boolean) => Promise<void>;
   savePosition: (episodeId: string, positionMs: number) => Promise<void>;
+  /** 从 Bangumi 补全元数据（封面 / 评分 / 简介 / 标签 / 连载星期） */
+  fillMetadata: (subjectId: string) => Promise<{ ok: boolean; message: string }>;
   setPref: <K extends keyof AnimePrefs>(key: K, value: AnimePrefs[K]) => void;
   loadDemo: () => Promise<void>;
   clearDemo: () => Promise<void>;

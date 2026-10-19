@@ -47,6 +47,10 @@ const F = {
   animeSettings: path.join(ROOT, 'src', 'screens', 'anime', 'AnimeSettingsSection.tsx'),
   style: path.join(ROOT, 'src', 'styles', 'anime.scss'),
   styleIndex: path.join(ROOT, 'src', 'styles', 'index.scss'),
+  playerModule: path.join(ROOT, 'src', 'modules', 'anime', 'player.ts'),
+  playerHook: path.join(ROOT, 'src', 'hooks', 'use-anime-playback.ts'),
+  playerScreen: path.join(ROOT, 'src', 'screens', 'anime', 'PlayerScreen.tsx'),
+  detailScreen: path.join(ROOT, 'src', 'screens', 'anime', 'DetailScreen.tsx'),
   rustAnime: path.join(ROOT, 'src-tauri', 'src', 'anime', 'mod.rs'),
   rustAnimesvc: path.join(ROOT, 'src-tauri', 'src', 'animesvc.rs'),
   rustManifest: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'manifest.rs'),
@@ -212,6 +216,9 @@ const CHECKS = [
         'anime_seed_demo',
         'anime_clear_demo',
         'anime_paths',
+        'anime_play_source',
+        'anime_metadata_search',
+        'anime_metadata_apply',
       ];
       const missing = cmds.filter((c) => !ipc.includes(`'${c}'`));
       return { ok: missing.length === 0, detail: missing.length ? `ipc.ts 缺命令封装：${missing.join('、')}` : '' };
@@ -232,6 +239,9 @@ const CHECKS = [
         'anime_seed_demo',
         'anime_clear_demo',
         'anime_paths',
+        'anime_play_source',
+        'anime_metadata_search',
+        'anime_metadata_apply',
       ];
       const missing = need.filter((c) => !new RegExp(`crate::anime::${c}\\b`).test(handler));
       return {
@@ -292,6 +302,59 @@ const CHECKS = [
     },
   },
   {
+    id: 'PLAYER.ipc',
+    run: (s) => ({
+      ok:
+        /import \* as ipc from '@anime\/ipc'/.test(s.playerHook) &&
+        /ipc\s*(?:\r?\n\s*)?\.animePlaySource\(/.test(s.playerHook),
+      detail: '播放器没有向 anime_play_source 取播放事实（屏上只能猜「有没有片源」）',
+    }),
+  },
+  {
+    id: 'PLAYER.webview',
+    run: (s) => ({
+      ok:
+        /import Artplayer from 'artplayer'/.test(s.playerModule) &&
+        /import Hls from 'hls\.js'/.test(s.playerModule) &&
+        /customType:\s*\{/.test(s.playerModule) &&
+        /m3u8:/.test(s.playerModule) &&
+        /crossOrigin = 'anonymous'/.test(s.playerModule),
+      detail: 'WebView 轨缺 ArtPlayer / hls.js / 自定义片源类型（签名 URL 没有扩展名，靠 URL 猜类型会播不了）',
+    }),
+  },
+  {
+    id: 'PLAYER.kernel',
+    run: (s) => ({
+      ok:
+        /source\.found && !source\.supported/.test(s.playerScreen) &&
+        /这集需要随包播放内核/.test(s.playerScreen) &&
+        /source\.reason/.test(s.playerScreen),
+      detail: 'libmpv 轨没有说清「需要随包内核」，屏上会变成一块放不出来的黑屏',
+    }),
+  },
+  {
+    id: 'PLAYER.progress',
+    run: (s) => ({
+      ok:
+        /savePosition/.test(s.playerScreen) &&
+        /markWatched\(episodeId, true\)/.test(s.playerScreen) &&
+        /autoNext/.test(s.playerScreen),
+      detail: '播放器没接续看回写 / 播完标记 / 自动连播（进度会丢，看完也不会变状态）',
+    }),
+  },
+  {
+    id: 'META.bangumi',
+    run: (s) => ({
+      ok:
+        /mod metadata;/.test(s.rustAnimesvc) &&
+        /anime\/metadata\/apply/.test(s.rustAnimesvc) &&
+        /crate::anime::anime_metadata_apply/.test(strip(s.rustCommands)) &&
+        /'anime_metadata_apply'/.test(s.ipc) &&
+        /fillMetadata/.test(s.detailScreen),
+      detail: 'Bangumi 元数据没接全：服务侧客户端 / 路由 / 命令注册 / IPC / 详情页入口缺一环',
+    }),
+  },
+  {
     id: 'SETTINGS.section',
     run: (s) => {
       const okMain = /'anime'/.test(s.settingsCatalogMain);
@@ -324,6 +387,8 @@ const CHECKS = [
         ['settings-catalog.ts', s.settingsCatalog],
         ['types.ts', s.typesTs],
         ['slice.ts', s.sliceTs],
+        ['player.ts', s.playerModule],
+        ['use-anime-playback.ts', s.playerHook],
       ];
       const bad = files.filter(([, text]) => /from ['"](node:|child_process|fs)|require\(/.test(text)).map(([n]) => n);
       const rust = /use std::process::\{[^}]*Command|std::process::Command/.test(s.rustAnime);
@@ -438,6 +503,41 @@ const MUTATIONS = [
     find: 'pub trait PlaybackCore {',
     replace: 'pub trait PlaybackCoreRenamed {',
     expect: ['PLAYBACK.contract'],
+  },
+  {
+    name: '播放器改调 anime_library（不再取播放事实）',
+    file: F.playerHook,
+    find: '.animePlaySource(subjectId, index)',
+    replace: '.animeLibrary()',
+    expect: ['PLAYER.ipc'],
+  },
+  {
+    name: 'WebView 轨去掉 m3u8 自定义类型（URL 无扩展名时猜不出类型）',
+    file: F.playerModule,
+    find: 'm3u8: (video, url, player) => {',
+    replace: 'm3u8Renamed: (video, url, player) => {',
+    expect: ['PLAYER.webview'],
+  },
+  {
+    name: 'libmpv 轨也当成可播（内核分支的条件摘掉）',
+    file: F.playerScreen,
+    find: 'source.found && !source.supported',
+    replace: 'source.found && false',
+    expect: ['PLAYER.kernel'],
+  },
+  {
+    name: '播完不标看完（自动连播随后失效）',
+    file: F.playerScreen,
+    find: 'void markWatched(episodeId, true);',
+    replace: '',
+    expect: ['PLAYER.progress'],
+  },
+  {
+    name: 'animesvc 不再挂元数据模块（命令还在，运行期 404）',
+    file: F.rustAnimesvc,
+    find: 'pub mod metadata;',
+    replace: '',
+    expect: ['META.bangumi'],
   },
 ];
 

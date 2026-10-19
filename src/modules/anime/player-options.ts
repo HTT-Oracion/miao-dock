@@ -28,6 +28,9 @@ export const SOURCE_KIND_LABEL: Record<string, string> = {
   local: '本地缓存',
 };
 
+/** 倍速档位：控制条点一下按此顺序轮转（也是设置页的候选值） */
+export const RATE_STEPS: number[] = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
 /** 播放器快捷键行（底部提示） */
 export const PLAYER_KEYS: { key: string; label: string }[] = [
   { key: 'Space', label: '播放 / 暂停' },

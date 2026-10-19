@@ -9,6 +9,8 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   AnimeEpisode,
   AnimeLibrarySnapshot,
+  AnimeMetadataCandidate,
+  AnimePlaySource,
   AnimeServiceStatus,
   AnimeSubject,
   CollectionType,
@@ -51,3 +53,19 @@ export const animeClearDemo = () => invoke<AnimeLibrarySnapshot>('anime_clear_de
 
 /** 路径快照（设置页展示落点） */
 export const animePaths = () => invoke<AnimeServiceStatus['paths']>('anime_paths');
+
+/**
+ * 一集的播放事实：本地有没有片、走哪条轨、带票的流地址。
+ *
+ * 地址里的签名由 Rust 侧算好，前端**不碰令牌、不拼签名** —— 令牌一旦进前端就有泄漏面。
+ */
+export const animePlaySource = (subjectId: string, index: number) =>
+  invoke<AnimePlaySource>('anime_play_source', { subjectId, index });
+
+/** 按关键词检索 Bangumi 候选（请求由服务侧发出，前端不直连第三方） */
+export const animeMetadataSearch = (q: string) =>
+  invoke<{ ok: boolean; count: number; candidates: AnimeMetadataCandidate[] }>('anime_metadata_search', { q });
+
+/** 把某个候选补进这一部的 manifest；只增不改用户数据 */
+export const animeMetadataApply = (dir: string, bgmId: number) =>
+  invoke<{ ok: boolean; dir: string; subject: AnimeSubject }>('anime_metadata_apply', { dir, bgmId });

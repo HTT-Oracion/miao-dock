@@ -235,3 +235,7 @@ export function useToasts() {
 // 先确保 ① 在运行、再发起下载的服务层 hook（单飞守卫不当错误处理）。
 export { useEngineDownload } from './use-engine-download';
 export type { StartDownloadResult } from './use-engine-download';
+
+// 番剧播放器：取播放事实 + 建 WebView 轨播放器 + 回写续看位置
+export { useAnimePlayback } from './use-anime-playback';
+export type { AnimePlayback, AnimePlaybackOptions } from './use-anime-playback';

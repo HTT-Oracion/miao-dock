@@ -53,3 +53,10 @@ export function pathTail(p: string): string {
   const parts = p.split(/[\\/]/).filter(Boolean);
   return parts[parts.length - 1] ?? p;
 }
+
+/** IPC 错误 → 一句能显示的话（Tauri 抛的可能是字符串、Error 或其他） */
+export function errText(e: unknown): string {
+  if (typeof e === 'string') return e;
+  if (e instanceof Error) return e.message;
+  return String(e);
+}

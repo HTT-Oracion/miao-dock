@@ -36,6 +36,8 @@ export type SyncState = 'synced' | 'pending' | 'conflict';
 export interface AnimeSubject {
   /** 条目 id（= 番剧目录名；本地库以目录为身份） */
   id: string;
+  /** Bangumi 条目 id（元数据来源；身份仍是目录名） */
+  bgmId?: number;
   title: string;
   titleOriginal?: string;
   cover?: string;
@@ -107,6 +109,69 @@ export interface AnimeServiceStatus {
     animeTokenFile: string;
   };
 }
+
+/** Bangumi 检索候选（`anime_metadata_search` 的一项） */
+export interface AnimeMetadataCandidate {
+  bgmId: number;
+  /** 原名 */
+  name: string;
+  /** 中文名；空串 = 上游没有 */
+  nameCn: string;
+  cover: string | null;
+  year: number | null;
+  season: string | null;
+  rating: number | null;
+  episodesTotal: number | null;
+  summary: string;
+  tags: string[];
+}
+
+/** 一集的外挂字幕（`url` 已带票，`<track>` 可直接用） */
+export interface AnimePlaySubtitle {
+  url: string;
+  name: string;
+  format: string;
+}
+
+/** 探测到片源、但需要随包内核（mkv 等 WebView 解不了的容器） */
+export interface AnimePlaySourceKernel {
+  found: true;
+  track: 'libmpv';
+  supported: false;
+  /** 人话原因（「这一集是 mkv 容器，需要随包播放内核…」） */
+  reason: string;
+  container: string;
+  title: string;
+  file: string;
+}
+
+/** WebView 轨：带签名的本地 Range 流（或 HLS） */
+export interface AnimePlaySourceWebview {
+  found: true;
+  track: 'webview';
+  supported: true;
+  /** `progressive` = 单文件；`hls` = m3u8（要 hls.js） */
+  kind: 'progressive' | 'hls';
+  url: string;
+  container: string;
+  sizeBytes: number;
+  title: string;
+  subtitles: AnimePlaySubtitle[];
+  /** 票面过期时刻（毫秒时间戳）；过期后地址不再可用，需重新取一次 */
+  expiresAt: number;
+}
+
+/** 盘上没有这一集的视频（不是错误，是事实） */
+export interface AnimePlaySourceMissing {
+  found: false;
+  subjectId: string;
+  index: number;
+  reason: string;
+  skipped: { path: string; reason: string }[];
+}
+
+/** `anime_play_source` 的返回：走哪条轨、能不能播、地址是什么 */
+export type AnimePlaySource = AnimePlaySourceWebview | AnimePlaySourceKernel | AnimePlaySourceMissing;
 
 /** 播放器的单一状态接口（M2 双轨共用；本轮先冻结形状） */
 export interface PlaybackState {

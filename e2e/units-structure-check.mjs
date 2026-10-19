@@ -137,6 +137,7 @@ const HOOKS_MANIFEST = [
   'useDebouncedValue.ts',
   'useLibraryModel.ts',
   'use-engine-download.ts',
+  'use-anime-playback.ts',
 ];
 /** hooks/index.ts 业务桶应出口的业务 hook 名 */
 const HOOKS_BARREL_EXPORTS = [
@@ -146,6 +147,7 @@ const HOOKS_BARREL_EXPORTS = [
   'useQuitRequest',
   'useToasts',
   'useEngineDownload',
+  'useAnimePlayback',
 ];
 /** 允许被 units import 的裸包（其余裸包一律判红：新依赖需负责人确认） */
 const PKG_ALLOW = [/^react(\/.+)?$/, /^react-dom(\/.+)?$/, /^lucide-react$/];

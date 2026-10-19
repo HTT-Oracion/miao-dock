@@ -947,6 +947,28 @@
   place-items: center;
   padding: 20px;
 }
+/* 有片源时画面铺满中段：ArtPlayer 的容器需要一块有尺寸的区域 */
+.an-stage-mid.is-video {
+  padding: 0;
+  display: block;
+}
+.an-stage-video {
+  position: absolute;
+  inset: 0;
+  background: #000;
+}
+.an-stage-video .art-video-player,
+.an-stage-video video {
+  width: 100%;
+  height: 100%;
+}
+.an-stage-video video {
+  object-fit: contain;
+}
+/* ArtPlayer 自带进度条 / 控件一律不显示：控制条只有设计稿那一条（点击层保留，双击全屏仍可用） */
+.an-stage-video .art-bottom {
+  display: none;
+}
 .an-stage-empty {
   display: flex;
   flex-direction: column;
@@ -986,10 +1008,11 @@
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.18);
 }
+/* 缓冲量由真实 `video.buffered` 驱动（宽度写在行内样式上），这里不给假宽度 */
 .an-seek-buf {
   position: absolute;
   inset: 0;
-  width: 62%;
+  width: 0;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.24);
 }

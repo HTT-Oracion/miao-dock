@@ -5567,4 +5567,89 @@ animesvc 真进程冒烟 **10/10**（示例→收藏→进度→重启读盘→�
 二进制与 macOS，属 M2 PoC 的机器依赖部分）；BT（M5）、账号中继（M4）、数据源（M3）
 只有界面与状态位，没有真实后端。
 
+## D-244 番剧 M2：WebView 轨前端接线（`anime_play_source` → ArtPlayer + hls.js）（2026-10-19）
+
+**背景**：D-243 只冻结了 `PlaybackCore` 契约，播放器屏是占位；`anime_play_source`
+（媒体探测 + 带票流地址）已就绪但前端一次都没调用。本轮把这条链路接到界面。
+
+**落点**
+
+| 层 | 落点 | 职责 |
+|---|---|---|
+| 播放器封装 | `src/modules/anime/player.ts` | ArtPlayer + hls.js；`controls: []`，控制条只留设计稿那一条 |
+| 接线 hook | `src/hooks/use-anime-playback.ts`（经 `@hooks`） | 取播放事实 / 建与销毁实例 / 续看节流回写 / 键盘与跳过 OP-ED |
+| 屏 | `src/screens/anime/PlayerScreen.tsx` | 真实进度、缓冲、倍速、字幕、截图；内核轨只说原因 |
+| 样式 | `src/styles/anime.scss` | `.an-stage-video`；缓冲条宽度改真实值（原 `62%` 是假进度） |
+
+**两个关键决定**
+
+1. **本机 mp4/webm 走 WebView 轨，而不是等 libmpv**。计划原文把本地文件归 libmpv；
+   但 libmpv 需要双平台随包二进制（本机没有），而签名 Range 流已经能把 WebView 可解的
+   容器直接喂给 `<video>`。因此 `track_of` 的既有判据照旧：WebView 能解 → 走流；
+   mkv/avi 等 → `supported:false` + 原因，**不假装可播**。这是对计划的偏离，登记在此。
+2. **流端点补 CORS（`Access-Control-Allow-Origin: *`）**。WebView 页面在
+   `tauri://localhost`，流在 `127.0.0.1:<port>`：字幕是 `fetch`、`<video crossorigin>`
+   还要用它截 canvas。没有该头时症状是「视频能放、字幕读不到、截图报画布污染」。
+   回 `*` 在这里不扩大攻击面：URL 本身就是能力（签名 + 过期），令牌不出 Rust。
+
+**已知缺口（未做，别当成已覆盖）**
+
+- 本地 `.m3u8` 若用**相对分片路径**，经 `/anime/stream` 取到播放列表后分片地址会解析错
+  （需要按分片逐条签名或重写播放列表）。`kind: 'hls'` 的代码路径已在，但只对绝对地址有效。
+- libmpv FFI / 随包 mpv / mkv+ass 实播仍是 M2 PoC 的机器依赖部分。
+- 真机未点：本轮只到源码级断言 + `tsc` + `vite build`；桌面窗口内的实际播放、字幕渲染、
+  截图落盘未验。
+
+**验收（2026-10-19）**：`cargo test --lib animesvc` **12/12**（新增 CORS 头断言）·
+`check:anime-module` **25/25** + 反证 **15/15**（新增 `PLAYER.ipc` / `PLAYER.webview` /
+`PLAYER.kernel` / `PLAYER.progress`，各一条变异）· `check:units` **46/46**（hooks 清单登记新
+hook）· `check:settings` **186/186**（`gen:licenses` 重新生成：artplayer/hls.js 使 npm 生产
+依赖 60→64）· `check:docs` **21/21** · `check:counts` **2/2** · `tsc --noEmit` 无输出 ·
+`vite build --no-emptyOutDir` 通过（1849 modules）。
+
+**代价**：ArtPlayer + hls.js 进入主 chunk（`main-*.js` 1.27 MB / gzip 399 KB）；两者均为
+MIT、前端运行期依赖，不增加 Rust 侧包数。
+
+## D-245 番剧 M1 收尾：Bangumi 元数据客户端（2026-10-19）
+
+**范围**：补上 M1 里唯一缺的一块 —— 元数据。此前详情页的封面 / 评分 / 简介 / 标签
+只能手写 `manifest.json`，且没有编辑 UI。
+
+**落点与理由**
+
+| 层 | 落点 | 判据 |
+|---|---|---|
+| 客户端 | `src-tauri/src/animesvc/metadata.rs` | 抓取 + 映射 + 写清单；**住在服务侧**，CLI / e2e 与桌面端同源 |
+| 端点 | `GET /anime/metadata/search?q=` · `POST /anime/metadata/apply` | 全部要 `X-Box-Token`；前端不直连第三方 |
+| 合并 | `manifest::apply_metadata` + `MetadataPatch` | **白名单补丁**：只补空字段，不碰收藏态 / 进度 / 剧集 |
+| 桥接 | `anime_metadata_search` / `anime_metadata_apply` | 壳层只转发，不含业务规则 |
+| 前端 | `fillMetadata` action + 详情页「补全信息」 | 取第一条候选；候选选择器留给 M3 搜索屏 |
+
+**为什么不放在壳层**（计划原文把 metadata 画在 `src-tauri/src/anime/`）：清单的读写、
+目录扫描都在 animesvc，把「写 manifest」再实现一遍必然两处漂移，且 CLI 用不到。
+壳层只做命令转发 —— 与 D-243「桥接不含业务规则」一致。
+
+**契约增量**：`Subject` 新增可选 `bgmId`（身份仍是目录名）。`#[serde(default)]` +
+`skip_serializing_if` ⇒ 旧清单不用迁移，缺字段即 `None`。
+
+**离线可验**：`MIAO_BANGUMI_API` 可把 API 根指到本地镜像 / 夹具。本轮用 axum 起了一个
+只读 mock（检索 / 详情 / 日历三条路由），`reqwest` 真发 HTTP 走完整条链路。
+
+**网络边界（如实登记）**：本机 `curl https://api.bgm.tv/v0/subjects/3628` 超时
+（20s，http=000；同机 `baidu.com` 200）⇒ **真实 Bangumi 未验证**。已验证的是请求构造、
+响应映射、合并落盘与错误路径。
+
+**已知缺口**
+
+- 只取第一条候选，用户无法在多条里选；也没有「Bangumi id 手输 / 链接粘贴」入口。
+- 只落 subject 级字段；角色 / 制作人员 / 关联作品 / 评价（Bangumi 另有端点）未接，
+  详情页对应两段仍是占位。
+- 没有元数据缓存与刷新策略：每点一次「补全信息」都真发 2–3 个请求。
+- 日期 → 季度的解析只接受 `YYYY-MM-DD`；异常格式会给 `year` 或 `season` 单边缺失。
+
+**验收（2026-10-19）**：`cargo test --lib animesvc` **18/18**（新增 6 条：字段映射 /
+中文名回落 / 季度解析 / 星期 0 基 / 标签上限 / mock HTTP 端到端）·
+`check:anime-module` **26/26** + 反证 **16/16**（新增 `META.bangumi`，变异为摘掉
+`pub mod metadata;`）· `tsc --noEmit` 无输出 · `eslint` 无输出 · `vite build` 通过。
+
 

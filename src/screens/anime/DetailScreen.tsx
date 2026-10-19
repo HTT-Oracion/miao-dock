@@ -4,9 +4,10 @@
  * 断点口径：本窗口 1400 → 双栏；≥1600 时右栏末尾内容移入独立 rail。
  * 这里只做双栏 —— 三栏是同一份内容的排布，不额外复制一套 DOM。
  */
-import { useMemo } from 'react';
-import { ArrowLeft, Play } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ArrowLeft, Play, Wand2 } from 'lucide-react';
 import { Btn, Empty } from '@components/units';
+import { useToasts } from '@hooks';
 import { useAnimeStore } from '@anime/store';
 import { episodesOf, selectedSubject } from '@anime/selectors';
 import { fmtClock, progressOf, progressPct } from '@anime/convert';
@@ -21,6 +22,9 @@ export function DetailScreen() {
   const setCollection = useAnimeStore((s) => s.setCollection);
   const openPlayer = useAnimeStore((s) => s.openPlayer);
   const markWatched = useAnimeStore((s) => s.markWatched);
+  const fillMetadata = useAnimeStore((s) => s.fillMetadata);
+  const { push } = useToasts();
+  const [metaBusy, setMetaBusy] = useState(false);
 
   if (!subject) {
     return (
@@ -51,6 +55,20 @@ export function DetailScreen() {
         <button type="button" className="btn btn-primary an-detail-play" onClick={() => openPlayer(subject.id)}>
           <Play size={15} /> {watched > 0 ? `继续观看 第 ${watched + 1} 话` : '开始观看'}
         </button>
+        <Btn
+          kind="ghost"
+          size="sm"
+          disabled={metaBusy}
+          title="从 Bangumi 拉取封面 / 评分 / 简介 / 标签（不改收藏态与进度）"
+          onClick={() => {
+            setMetaBusy(true);
+            void fillMetadata(subject.id)
+              .then((r) => push(r.message, r.ok ? 'good' : 'bad'))
+              .finally(() => setMetaBusy(false));
+          }}
+        >
+          <Wand2 size={13} /> {metaBusy ? '正在补全…' : '补全信息'}
+        </Btn>
 
         <div className="an-detail-coll">
           {COLLECTION_ORDER.map((c) => (

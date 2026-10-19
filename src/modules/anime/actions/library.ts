@@ -9,13 +9,7 @@ import type { AnimeState, StoreGet, StoreSet } from '@anime/slice';
 import type { AnimeEpisode, CollectionType, MediaSourceView } from '@anime/types';
 import type { AnimePrefs } from '@anime/prefs';
 import { savePrefs } from '@anime/prefs';
-
-/** 把 IPC 错误折成一句能显示的话（Tauri 抛的是 unknown） */
-function errText(e: unknown): string {
-  if (typeof e === 'string') return e;
-  if (e instanceof Error) return e.message;
-  return String(e);
-}
+import { errText } from '@anime/convert';
 
 export function libraryActions(
   set: StoreSet,
@@ -28,6 +22,7 @@ export function libraryActions(
   | 'setCollection'
   | 'markWatched'
   | 'savePosition'
+  | 'fillMetadata'
   | 'setPref'
   | 'loadDemo'
   | 'clearDemo'
@@ -172,6 +167,31 @@ export function libraryActions(
         await ipc.animeSaveEpisode(next);
       } catch (e) {
         set({ error: `播放位置没存住：${errText(e)}` });
+      }
+    },
+
+    /**
+     * 补全元数据：先按标题检索，再取第一条候选写进 manifest。
+     * 不做「候选选择器」—— 多选一是 M3 的搜索屏；详情页这里只解决"一条都没有"。
+     */
+    fillMetadata: async (subjectId) => {
+      const target = get().subjects.find((s) => s.id === subjectId);
+      if (!target) return { ok: false, message: '没有这个作品' };
+      try {
+        // Bangumi 的 keyword 对译名不敏感：中文名搜不到时用原名再试一次
+        let hit = (await ipc.animeMetadataSearch(target.title)).candidates[0] ?? null;
+        if (!hit && target.titleOriginal && target.titleOriginal !== target.title) {
+          hit = (await ipc.animeMetadataSearch(target.titleOriginal)).candidates[0] ?? null;
+        }
+        if (!hit) return { ok: false, message: `Bangumi 没搜到「${target.title}」` };
+        const applied = await ipc.animeMetadataApply(subjectId, hit.bgmId);
+        // 重新扫描：列表 / 详情 / 时间表都读同一份结果，避免只改一处
+        await get().refreshLibrary();
+        return { ok: true, message: `已补全「${applied.subject.title}」` };
+      } catch (e) {
+        const message = `补全失败：${errText(e)}`;
+        set({ error: message });
+        return { ok: false, message };
       }
     },
 
