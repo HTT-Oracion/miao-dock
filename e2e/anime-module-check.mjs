@@ -57,6 +57,8 @@ const F = {
   rustManifest: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'manifest.rs'),
   rustMetadata: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'metadata.rs'),
   rustRss: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'datasource', 'rss.rs'),
+  rustDatasource: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'datasource', 'mod.rs'),
+  rustMediaserver: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'datasource', 'mediaserver.rs'),
   rustPlayback: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'playback.rs'),
   rustAnimeBin: path.join(ROOT, 'src-tauri', 'src', 'bin', 'animesvc.rs'),
   rustMain: path.join(ROOT, 'src-tauri', 'src', 'main.rs'),
@@ -413,6 +415,18 @@ const CHECKS = [
     }),
   },
   {
+    id: 'M3.mediaserver',
+    run: (s) => ({
+      ok:
+        /pub mod mediaserver;/.test(s.rustDatasource) &&
+        /"jellyfin" \| "emby"/.test(s.rustDatasource) &&
+        /pub async fn probe\(/.test(s.rustMediaserver) &&
+        /X-Emby-Token/.test(s.rustMediaserver) &&
+        /pub fn split_source_url\(/.test(s.rustMediaserver),
+      detail: '媒体服务器适配器没接全：模块 / jellyfin·emby 分派 / probe / 令牌走请求头（不回传 URL）/ 地址拆分缺一环',
+    }),
+  },
+  {
     id: 'SETTINGS.section',
     run: (s) => {
       const okMain = /'anime'/.test(s.settingsCatalogMain);
@@ -631,6 +645,20 @@ const MUTATIONS = [
     find: 'pub mod datasource;',
     replace: '',
     expect: ['M3.rss'],
+  },
+  {
+    name: '取数层不再挂媒体服务器模块（jellyfin / emby 测试直接 404）',
+    file: F.rustDatasource,
+    find: 'pub mod mediaserver;',
+    replace: '',
+    expect: ['M3.mediaserver'],
+  },
+  {
+    name: '认证头被摘掉（不带 key 的请求只会 401，测试永远不通）',
+    file: F.rustMediaserver,
+    find: 'req.header("X-Emby-Token", key).header("X-MediaBrowser-Token", key)',
+    replace: 'req',
+    expect: ['M3.mediaserver'],
   },
 ];
 

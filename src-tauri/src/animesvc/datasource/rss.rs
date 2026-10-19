@@ -113,7 +113,7 @@ pub fn parse(xml: &str, limit: usize) -> Vec<DataSourceItem> {
     let mut in_item = false;
     let mut text_tag: Option<String> = None;
 
-    /// 把当前 item 收尾入列并清空字段（End 与 Eof 共用：截断的源也要吐出已读部分）
+    // 把当前 item 收尾入列并清空字段（End 与 Eof 共用：截断的源也要吐出已读部分）
     let flush = |out: &mut Vec<DataSourceItem>,
                  title: &mut Option<String>,
                  link: &mut Option<String>,

@@ -5769,4 +5769,54 @@ Atom 与 limit / 集号解析 / 分类优先级 / 截断 XML）· `check:anime-m
 （新增 `M3.rss`，变异为摘掉 `pub mod datasource;`）· `tsc --noEmit` / `eslint` / `prettier` 无输出 ·
 `vite build` 通过 · 真进程冒烟（本地 mock RSS）待跑。
 
+## D-249 M3 第二个适配器：媒体服务器（Jellyfin / Emby）（2026-10-19）
+
+**为什么是它**：RSS 给的多半是 BT 种子（下载归 M5），在线网页源要反爬；
+Jellyfin / Emby 是用户**自己的**服务器 —— 有 API key、JSON 稳定、每集都有可直接喂
+播放器的流地址。所以它是第一个「真能播」的在线源（播放接入见文末缺口）。
+
+**落点**：`animesvc/datasource/mediaserver.rs`；`datasource::test` 新增
+`"jellyfin" | "emby"` 分派。流程：`/System/Info`（探活 + 自报身份）→
+`/Items?IncludeItemTypes=Episode&SortBy=DateCreated&SortOrder=Descending&Limit=N`。
+
+**三条口径**
+
+1. **`api_key` 只走请求头，绝不出现在回给前端的地址里**：回传的是
+   `/Videos/{id}/stream` 这样的**相对路径**。带 key 的 URL 会进日志、报错截图、
+   播放器历史 —— 等于把家里 NAS 的钥匙撒出去。（播放接入时再由服务侧补头，
+   或走我们自己的签名层。）
+2. **地址只取 origin**：用户通常直接粘 Web UI 地址（`…/web/index.html#!/details?id=…`），
+   `split_source_url` 丢掉路径与哈希，只留 `scheme://host:port` 与 `?api_key=`。
+   拆错了在**发请求之前**就报错，不等一个 404。
+3. **401/403 单独映射成「认证失败」**：和「连不上」「服务器 500」区分开，
+   用户知道该去换 key，而不是反复重试。
+
+**兼容性**：Jellyfin 与 Emby 同源不同名，`X-Emby-Token` 与 `X-MediaBrowser-Token`
+两个头都发。剧集按 `剧名 S季E集` 命名（自动择优要按集号比）；没有 Id 的条目直接丢。
+
+**未做（缺口，别当成已覆盖）**
+
+- **播放未接**：本轮只到「测试 / 预览」层。要让 Jellyfin 真能播，需要
+  ① `AnimePlaySource` 支持远程直链（现在只有本地签名流），或
+  ② 服务侧做一层带鉴权的转发。两者都要动播放契约，单独一轮做。
+- 只读剧集，不读电影 / 音乐 / 照片；分页只取前 N 条（`Limit` 上限 50）。
+- 没有用户体系（`/Users`）：key 属主能看什么就看什么，不做按用户过滤。
+
+**验收（2026-10-19）**：`cargo test --lib animesvc` **42/42**（新增 6 条：剧集映射与标题格式 /
+响应不含密钥且令牌确实走了请求头 / 地址拆分（查询串与哈希都认）/ 缺 key 在发请求前就拒 /
+401→认证失败 / limit 透传）· `check:anime-module` **31/31** + 反证 **23/23**
+（新增 `M3.mediaserver`，变异为摘掉 `pub mod mediaserver;`、摘掉认证头）·
+`cargo test --bin miao-dock anime` **6/6** · 真进程冒烟（本地 mock Jellyfin）**11/11**：
+无令牌 403 / 认证通过并回服务器名 / 条目映射 / **响应全程不含密钥** / limit 透传 /
+缺 key 与错 key 分别报「要带 api_key」与「认证失败」/ 未接入类型明确报错 ·
+`npm run check` **19/19** · `tsc --noEmit` / `eslint` / `prettier` 无输出 · `vite build` 通过。
+
+**两处实测踩到的坑**（都是"看起来对、跑起来红"）：
+
+1. `url::Url::parse` 不会把 `#` 后面的内容当查询串 —— `…#!/details?id=1&api_key=abc` 里
+   `api_key` 在 **fragment** 里，`query_pairs()` 取不到。修法：查询串与哈希都解析一遍
+   （Jellyfin Web UI 本来就把参数放在哈希里，用户照粘的地址必然如此）。
+2. `assert_eq!(value["index"], 12)` 在集号是 `12.0`（f64）时**假红** —— serde_json 的
+   `PartialEq` 不跨 int/float 做数值比较。测试里必须显式写 `12.0`。
+
 

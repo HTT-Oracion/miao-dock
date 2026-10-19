@@ -10,6 +10,7 @@
 //! `torrent` 类的附件地址**不在本层消费**：下载与边下边播归 M5（librqbit）。
 //! 这里只负责「把源里有什么如实报出来」，播不播由上层按类型决定。
 
+pub mod mediaserver;
 pub mod rss;
 
 use serde_json::{json, Value};
@@ -63,7 +64,7 @@ pub fn item_json(i: &DataSourceItem) -> Value {
     })
 }
 
-/// 测试一个源：目前只接 RSS；其余类型**明确回未接入**，不假装测通。
+/// 测试一个源：RSS 与媒体服务器已接；其余类型**明确回未接入**，不假装测通。
 pub async fn test(kind: &str, url: &str, limit: usize) -> Result<Value, String> {
     let url = url.trim();
     if !url.starts_with("http") {
@@ -78,6 +79,11 @@ pub async fn test(kind: &str, url: &str, limit: usize) -> Result<Value, String> 
                 "count": items.len(),
                 "items": items.iter().map(item_json).collect::<Vec<_>>(),
             }))
+        }
+        // 媒体服务器：地址里带 `?api_key=…`，只取 origin 当 API 根
+        "jellyfin" | "emby" => {
+            let (base, key) = mediaserver::split_source_url(url)?;
+            mediaserver::probe(&base, key.as_deref(), kind, limit).await
         }
         other => Err(format!("{other} 适配器尚未接入（M3 主体）")),
     }
