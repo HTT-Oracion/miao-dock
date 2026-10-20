@@ -5977,6 +5977,49 @@ MIAO_MPV_BIN=<…>/.tmp/mpv/mpv.exe  animesvc.exe --kernel-selftest
 下次遇到跨层断言，要么并进一个提交，要么把断言放到后一个提交（「每个提交自身可跑」这条纪律
 在跨层节点上不能靠"先写断言后写实现"来满足）。
 
+## D-252 钩子驼峰化 + 探索页接真实数据；R2–R5 范围裁定（2026-10-20）
+
+**一、钩子文件统一驼峰（用户要求）**：`src/hooks/` 下两个 kebab 文件改名
+`use-anime-playback.ts` → `useAnimePlayback.ts`、`use-engine-download.ts` → `useEngineDownload.ts`；
+桶 `index.ts`、`e2e/anime-module-check.mjs` 的路径与「前端零 Node」清单、`e2e/units-structure-check.mjs`
+的 `HOOKS_MANIFEST`、台账里的两处引用一并同步。`tsc --noEmit` 与 `check:units` 46/46 复跑通过。
+
+**顺手修掉一条陈断言**：`STATE.zustandInUse` 原判据是「全 src 有没有人引 zustand」，反证
+（把 `modules/music/store.ts` 换成 `zustand-gone`）打不红 —— 因为 anime store 也引 zustand。
+改成**逐个域 store** 判（`src/modules/<域>/store.ts` 必须出现在 zustand 引用表里），反证随即变红；
+`check:units --refute` 从 60/61（含一条假阳性）回到 **61/61**。
+
+**二、R2–R5 的范围裁定（用户拍板，后续按此执行）**
+
+| 议题 | 裁定 |
+|---|---|
+| R4 中继契约（仓库里没有任何契约） | **由我定一套最小契约并实现本地桩**；桩与前端按同一套实现，真中继将来照此对接 |
+| R5 BT | 做 **librqbit 本地 BT**（磁力/种子/任务/边下边播/限速/peer 过滤）；**PikPak 只留接口与「未接入」说明**（其 API 无公开契约） |
+| R2 在线网页源（原写"1–2 个通用形态"） | 做**通用选择器驱动**的网页源（不内置具体站点，用户自己配列表/详情/直链选择器），与 R2-2 选择器编辑器共用规则 |
+| R1 嵌入式渲染（原登记"留待独立一轮"） | **要做**（不再推迟）；技术路线需另起一轮（libmpv 渲染回调 / 原生子窗口），见后续台账 |
+
+**三、探索页接真实数据（本轮落地）**
+
+| 层 | 落点 | 职责 |
+|---|---|---|
+| 上游 | `metadata.rs` | `calendar(base)` 取 `/calendar`（条目是**整条 subject**，不再逐条回访）；`hot(base)` 先走检索的 `sort: heat`，不被支持时退回 `/v0/subjects?sort=rank` 并把 `source` 写进回执；`import_subject(base, root, bgm_id)` 建条目（目录名取中文名、净化 Windows 非法字符、同名不同番加 ` (bgmId)`、同一部幂等） |
+| 端点 | `animesvc.rs` | `GET /anime/metadata/calendar` · `GET /anime/metadata/hot?limit=` · `POST /anime/metadata/import`（全部要令牌） |
+| 桥接 | `anime/mod.rs` | `anime_metadata_{calendar,hot,import}` |
+| 前端 | `modules/anime/{types,ipc,store,actions/library}` + `screens/anime/DiscoverScreen.tsx` | store 存 `calendar/hot/hotSource/exploreLoading/exploreError`；`loadExplore(force)` 一次会话只拉一次、失败**不清空**旧数据；`importCandidate(bgmId)` 建库后重扫并选中。探索页：继续观看（本地）+ 新番时间表（按周几分组，点「已在库」开条目、否则加入追番）+ 热度推荐（`rank` 兜底时标题改「高分排行」并注明）；搜索页：350ms 防抖调 Bangumi 检索，库里命中给「查看」、否则「加入追番」；断网时退回本地库匹配并如实标注 |
+
+**四、验证**
+
+- `cargo test --lib animesvc` **61/61**（metadata 新增 4 条：时间表映射 / 热度来源 / 排行兜底 / 建库幂等）
+- `check:anime` **54/54**：新增 A9 六条 —— 时间表 200 且条目带名字封面、无令牌 403、热度 `source=heat`、
+  建库落在「冰菓」、重复建库幂等、建完能扫到。**Bangumi 镜像指到本地 mock**（走产品自己的 `MIAO_BANGUMI_API` 开关）
+- `check:anime-module` **38/38** + 反证 **30/30**（新增 `META.explore`，变异为摘掉时间表路由）
+- `tsc --noEmit` / `eslint` / `prettier` / `vite build --no-emptyOutDir` 全绿
+
+**五、边界（未验）**：本机到不了真实 Bangumi（D-246），所以「真实上游」只验到**契约与 mock 对拍**；
+真实数据能否拉到取决于用户的镜像 / 代理设置。探索页候选卡的封面是上游远程图，本机同样可能取不到，
+代码里已做「取不到就退回首字色块」。
+
+
 
 
 
