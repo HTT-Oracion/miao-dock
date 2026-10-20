@@ -105,6 +105,7 @@
       "why": "产品运行期不跑这些脚本（打包用户机跑的是 mangasvc 自己的出口），故不属于任何分层门；跑它们会改盘上真实落点。",
       "cmds": [
         { "id": "fetch:models", "cmd": "node engine/scripts/fetch-models.mjs", "desc": "S3 模型下载器 CLI（Node 对照端）：--check 只校验 / --link 零网络重建引擎树里的链接" },
+        { "id": "fetch:mpv", "cmd": "node scripts/fetch-mpv.mjs", "desc": "番剧内核轨的 mpv 二进制获取（--check 只在位检查 / --print-url 零网络打印地址；落 src-tauri/resources/mpv/<平台>/）" },
         { "id": "extract:models", "cmd": "node engine/scripts/fetch-models.mjs --extract", "desc": "只解包已下好的归档，不下载（fetch-models.mjs --extract）" },
         { "id": "setup:engine", "cmd": "node engine/scripts/setup-engine.mjs", "desc": "装配引擎运行时到 <appData>/runtimes/manga-translator（拉归档 / 原子解包 / 建 venv / 打补丁）" },
         { "id": "deps:engine", "cmd": "node engine/scripts/install-engine-deps.mjs", "desc": "装引擎 Python 依赖（venv 内 pip；随包预编译 wheel 优先，缺则回退源码编译）" },

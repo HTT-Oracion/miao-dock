@@ -165,7 +165,7 @@
 
 ```bash
 # —— 命令清单：check / selftest / 装配 / 开发辅助都住根 e2eScripts.json ——
-npm run task                                        # 列清单（139 条 = 80 基条目 + 59 派生反证轮），退出码 2
+npm run task                                        # 列清单（150 条 = 88 基条目 + 62 派生反证轮），退出码 2
 npm run task -- --list [分组]                        # 同上但退出码 0（static/service/nightly/refute/supply/dev）
 npm run task -- <id>                                # 派发一条，如 npm run task -- check:units（id 后参数原样透传）
 # —— 代码校验（本地由 husky 的 pre-commit 守着，CI 里是强制点）——
@@ -220,6 +220,7 @@ npm run task -- check:offline-real   # **C4 真引擎离线加载**（nightly �
 npm run task -- check:uninstall-keep # **E3 真卸载一次**（nightly 层，要 NSIS 安装包 + 本机真有一份引擎运行时）**7/7**：静默卸载**不挂住**（NSIS 弹窗在 `/S` 下照样阻塞 ⇒ 钩子必须 `IfSilent`；挂住是**超时**不是变红）· 卸载真生效 · `<appData>/MiaoDock/manga/runtimes/manga-translator` **原封不动**（硬要求①）· 作品目录原封不动（硬要求②）。🔴 前置缺一 ⇒ **失败并点名**，不软跳过
 npm run task -- check:offline-fallback[:refute] # **C4 离线兜底** 9 条 / 反证 3 条（夹具夹具清单 + `url` 指向**不可达地址**：权重未预置 ⇒ 配方**不**注入 HF 离线键（否则堵死首次下载）；已预置 ⇒ 注入 `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`；`--link` 零网络重建**引擎真要打开的那条路径**（`<root>/src/<linkTo>` + HF 的 `snapshots/<rev>/<file>` + `refs/main`）；清掉链接 ⇒ 立刻未就绪，而 **store 那一路始终全绿**（两层判据真的分层，R6 的陷阱正是它））。🔴 **取证边界**：真引擎在断网下真加载那一步要真权重，归 nightly；本脚本证明的是它的上游条件。反证：恒不注入 / 忽略逃生开关 / 不写 `refs/main` ⇒ 各自红）
 npm run task -- fetch:models          # S3 模型下载器 CLI **Node 对照端**（开发机用）：--check 只校验 / --link 只重建引擎树里的链接（零网络）。⚠️ **产品运行期跑的是 `mangasvc --fetch-models`**
+npm run task -- fetch:mpv             # 番剧**内核轨**的 mpv 二进制（~115 MB，不入库）：落 `src-tauri/resources/mpv/<平台>/`；`--check` 只在位检查（缺则非零退出并点名）/ `--print-url` 零网络打印地址。镜像按「直连 → ghfast.top → gh-proxy.com」试，仅开发期取二进制
 npm run task -- check:profile[:refute] # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）**42** 条 / 反证 14 条（F5.5 换靶：H/T/A/D/I 纯判定下沉进 `profile.rs` 的 `cargo test`（`--lib` 全绿 + 具名用例条数写死 37），真进程那部分走 `mangasvc --llm-selftest` ⟷ golden；约 10s）
 npm run task -- check:e5e6[:refute]    # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run task -- check:contract[:refute] # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status，77 条（8 个实例场景 A–H）/ 逃生开关反证 4 条（各约 3s / 2s）
