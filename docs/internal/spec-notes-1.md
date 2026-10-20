@@ -6347,3 +6347,42 @@ raw.githubusercontent 在本机不通，与 D-246 同因）。核对结论：
 **六、边界（如实登记）**：中继是**本机桩**，不连任何真实服务；OAuth 的"跳转"形态没做（只做设备码），
 因为真跳转要浏览器与回调地址，桩给不出真实授权页。「合并面板」目前是**展示两侧值 + 按策略自动处理**，
 没有"逐条手动挑一侧"的交互 —— 那属于 R4-4 的下一步。
+
+## D-263 BT 下载（R5-1/R5-2 及其设置接线）（2026-10-20）
+
+**一、依赖代价（第 7 条纪律）**：`librqbit = "9.0.1"`（默认特性 `default-tls` + `http-api-client`）。
+`Cargo.lock` 从 **522 → 623 个第三方 crate（+101）**，其中 42 个没有声明（`gen:licenses` 如实记录）。
+它自带 DHT / 监听器 / 磁盘层 / tracker 通信，是本轮"真 BT"的唯一来源 —— 自己写一个 BT 客户端不现实。
+
+**二、为什么进程内只允许一个会话**：`Session` 自带 DHT、监听器与做种逻辑，起两个会抢端口、重复做种。
+首次添加磁力时才惰性创建（`OnceLock`），之后全局复用；**没起会话时 `list` 返回空表、`stats` 报 `running:false`** ——
+不编造"0 KB/s"这种看起来在跑的数字。
+
+**三、任务映射**（`TorrentStats` 原样转，不自己估）
+
+| librqbit | 界面 |
+|---|---|
+| `Initializing{paused:false}` | 准备中 |
+| `Initializing{paused:true}` / `Paused` | 已暂停 |
+| `Live` + `finished:false` | 下载中 |
+| `Live` + `finished:true` | 已完成（做种中） |
+| `Error` | 失败 + `error` 文案 |
+
+分享率 = `uploaded_bytes / progress_bytes`（下载量为 0 时给 0，不除零）。
+
+**四、设置接线**：`btPort` → `ListenerOptions.listen_addr`；`peerFilterUrl` → `SessionOptions.blocklist_url`
+（librqbit 自带规则拉取与应用，不自己解析）。两者都是**会话创建参数**：前端改完立刻推给 Rust
+（`anime_set_bt_options`），下次拉起 `animesvc` 时以环境变量注入。会话已经跑起来时改端口**要重启动漫服务** ——
+界面里写明了这一点，不给"改了没反应"的开关。`allowBt` 在前端入口处拦截（关掉时添加磁力直接拒绝并说明）。
+
+**五、验证**
+
+- `cargo test --lib animesvc` **91/91**（新增 3 条：没起会话时列表为空 / `stats` 报未运行 / 非法地址被拒）
+- `check:anime` **85/85**：A19 三条 —— 空表 / `running:false` + 端口是数字 / `ftp://` ⇒ 400 且点名只收 magnet
+- `check:anime-module` **50/50** + 反证 **42/42**（新增 `BT.wired`，变异为摘掉 `/anime/bt/add` 路由）
+- `check:counts` 2/2 · `check:docs` 21/21 · `check:settings` 重新生成许可清单后全绿
+
+**六、未做（如实登记）**：**边下边播（R5-3）**没做 —— 需要按需分片优先级 + 播放器分片读取，是独立一条链路；
+**限速 / 分享率上限（R5-4 的限速部分）**没做（`Limits` 只在会话创建时给）；
+**PikPak（R5-6）**只留接口占位；**peer 过滤的"清空可回滚"**没做（订阅地址一旦交给会话就只能靠重启换掉）。
+BT 任务的真实下载需要外网与 DHT，本机 e2e 只覆盖"空表 / 非法输入 / 端点鉴权"这一层，真机验收归 R6。
