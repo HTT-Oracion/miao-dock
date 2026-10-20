@@ -6019,6 +6019,47 @@ MIAO_MPV_BIN=<…>/.tmp/mpv/mpv.exe  animesvc.exe --kernel-selftest
 真实数据能否拉到取决于用户的镜像 / 代理设置。探索页候选卡的封面是上游远程图，本机同样可能取不到，
 代码里已做「取不到就退回首字色块」。
 
+## D-253 通用网页源（选择器驱动）：规则模型、编码与依赖代价（2026-10-20）
+
+**一、形态**：不内置任何站点。用户在「数据源」屏填四条 CSS 选择器
+（`list` 必填 / `link` / `title` / `video`），`web` 与 `selector` 两类源走同一个适配器。
+
+| 层 | 落点 | 职责 |
+|---|---|---|
+| 规则 | `sources.rs::SourceRules` | 随源落盘（`rules` 字段）；保存时 `validate_rules()` 逐条 `Selector::parse`，语法错**当场拒**并点名是哪一条（存进去只会让用户点测试时拿到一句看不懂的上游报错） |
+| 适配器 | `datasource/web.rs` | `fetch()` 抓列表 → `parse_list()` 出条目；`resolve_video()` 抓详情 → 直链 |
+| 端点 | `animesvc.rs` | `POST /anime/sources/test` 增 `rules`；新增 `POST /anime/sources/resolve` |
+| 桥接 | `anime/mod.rs` | `anime_test_source(…, rules)` · `anime_resolve_source(url, rules)` |
+| 界面 | `SourceScreen.tsx` | 编辑器按类型长出四条选择器输入；「编辑」灌进草稿按同 id 覆盖；预览行给「解析」按钮（配了 video 规则才有）；解析结果单独一行显示直链 |
+
+**二、三个必须处理的现实问题（都写进了单测）**
+
+- **相对地址**：列表页给的多半是 `/play/123`，按页面 URL `join` 成绝对地址；解析不了就原样返回，
+  由上层当"打不开"处理（不伪造一个看似合法的地址）。
+- **编码**：中文站点常见 GBK/GB18030。先看 `Content-Type`，再看 `<meta charset>`，都没有按 UTF-8；
+  解码用 `encoding_rs`（已在依赖里）。`charset="gbk"` 与 `content="…; charset=gbk"` 两种写法都认。
+- **空结果 ≠ 成功**：列表选择器没选中任何条目时**报错**而不是回空数组 —— 空数组会让界面显示
+  「0 条」而用户以为源里就是空的。
+
+**三、依赖代价（第 7 条要求）**：新增 `scraper 0.27`（`default-features = false`）。
+它要求的 `html5ever 0.39` / `selectors 0.38` / `cssparser 0.37` / `tendril 0.5` **与锁文件里已有的版本一致**
+（这几只是 tauri 侧已经带进来的），因此实际只多 `scraper` + `ego-tree` + `precomputed-hash` 三个 crate，
+**不产生第二份 HTML 解析栈**。纯编译期，零运行时体积增量（不被调用就不初始化）。
+
+**四、验证**
+
+- `cargo test --lib animesvc::datasource` **22/22**（web 8 条：列表解析 / 相对地址 / limit / 空结果报错 /
+  选择器错点名 / 直链 src+href+data-src / 缺元素报错 / 编码识别）
+- `check:anime` **59/59**：A10 五条 —— 带规则保存并原样回读 · 语法错选择器保存时 400 ·
+  测试取到两条且链接绝对化 · 缺规则 502 并说明 · 详情页解析出绝对直链（假站点是本地 mock）
+- `check:anime-module` **39/39** + 反证 **31/31**（新增 `M3.web`，变异为摘掉直链解析路由）
+- `tsc --noEmit` / `eslint` / `prettier` / `vite build` 全绿
+
+**五、边界（未验）**：真实站点的反爬 / 登录 / JS 渲染页面不在本层能力内 —— 选择器只对**服务端直出 HTML** 有效；
+需要 JS 渲染或过验证码的站点，本层会得到"没选中任何条目"，这属于**如实失败**而不是假装支持。
+播放侧只到"解析出直链"，把直链接进播放器（含 Referer / 防盗链中继）留到 R2 的下一片。
+
+
 
 
 
