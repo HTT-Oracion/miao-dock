@@ -6501,3 +6501,35 @@ R1 的验收口径（待做时按这条判）：应用窗口内能看到 mpv 画
 
 **六、为什么不本轮做**：它要真机反复看画面与窗口行为（截图取证 + 拖动/缩放/DPI），本环境只能跑无头门禁。
 按用户口径：**先留档、标明未做**，等 R6 真机那一轮一起做与验。
+## D-268 选择器点选（R2-3）：用「窗口标题」当回传通道；以及一次被藏了三轮的编译错误（2026-10-20）
+
+**一、点选怎么回传（为什么不是远程 IPC）**：点选窗口加载的是**用户自己的站点**（远程页面）。
+远程页面调 Tauri 命令需要放开 `remote` 能力 —— 那等于给任意站点开一个命令通道，风险不可接受。
+做法是**单向**的：注入脚本在点击时算一条 CSS 路径（`tag#id` 或 `tag.cls:nth-of-type(n)` 逐级拼，最多 6 层），
+写进 `document.title = "PICK:" + path`；Rust 侧 `anime_pick_result` **主动轮询窗口标题**，读到前缀就关窗返回。
+页面拿不到任何能力，只暴露了一个字符串。
+
+**二、生命周期**：每次打开先关掉旧窗口（否则上一次的选择器还挂在标题上，会立刻被当成"这次点的"）；
+拿到结果/超时/窗口被关掉，三条路径都返回结构化结果（`ok` / `selector` / `reason`），界面按 `reason` 说话。
+超时 90 秒（可传 `timeoutSecs`，上限 300）。
+
+**三、界面**：规则编辑器里四个「点选」按钮（列表 / 链接 / 标题 / 视频地址），打开的就是源地址那一页；
+点完直接把选择器填进对应输入框，**不自动保存**（与订阅导入同一口径：填进去，用户确认再存）。
+
+**四、🔴 一次被藏了三轮的编译错误**：本轮改 `anime/mod.rs` 时发现它**根本编译不过** ——
+① 有两个 `fn urlencode`（早前一次插入把它复制了一份）；② `anime_store_bt_limits` 被注册进
+`handler()` 但函数体没插进去；③ `anime_bt_pikpak` 的签名还停在 `account` 而前端已改成 `enabled`。
+为什么没被发现：这几轮只跑 `cargo check --lib` / `cargo test --lib animesvc`，而 `anime/mod.rs` 属于
+**bin `miao-dock`**，lib 根本不编它。教训写进流程：**改 `src-tauri/src/anime/**` 或 `commands/**` 后必须跑
+`cargo check --bin miao-dock`**（本轮已把它加进验证清单）。这类"lib 绿、bin 红"的洞，静态断言与 service e2e
+都看不见 —— 它们不编译 bin。
+
+**五、验证**
+
+- `cargo test --lib animesvc` **98/98**、`cargo test --bin miao-dock anime` **8/8**（新增：`PICK:` 前缀解析）
+- `cargo check --bin miao-dock` **0 错**（本轮修完三处）
+- `check:anime-module` **51/51** + 反证 **45/45**（新增 `M3.picker`；变异：去掉 `initialization_script(PICK_JS)`）
+- `check:counts` 2/2 · `check:docs` 21/21 · `check:settings` 186/186 · `npm run check` 19/19 · `tsc` / `eslint` / `prettier` / `vite build` 全绿
+
+**六、边界**：iframe 里的元素点不到（跨源拿不到 DOM）；`PICK:` 标题长度受窗口标题上限约束（选择器一般远小于）；
+点选窗口不持久化 cookie（要登录态的站点仍走「过验证码」窗口那条路）。
