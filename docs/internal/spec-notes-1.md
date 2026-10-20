@@ -6310,3 +6310,40 @@ raw.githubusercontent 在本机不通，与 D-246 同因）。核对结论：
 
 **七、边界（如实登记）**：只做 **HTTP 直链**分段下载；BT（磁力 / 做种 / 边下边播）归 R5。
 「边下边播」目前只有状态位（`bufferedMs` 预留），真正边下边播要等 BT 与播放器分片读取，不在本轮。
+
+## D-262 账号与同步（R4）：中继契约、本地桩、待同步队列（2026-10-20）
+
+**一、为什么是"契约 + 桩"**：真中继还没有。硬写一个假登录会得到"点得动、什么都没发生"的界面；
+所以先定一套**最小契约**（路径 / 字段 / 状态码写死），桩**真跑在回环端口上**、客户端**真发 HTTP**——
+换真中继只改 base URL，客户端代码一行不动。
+
+| 方法 | 路径 | 语义 |
+|---|---|---|
+| POST | `/v1/auth/login` | `{email,password}` → `{token,user}`；401 `INVALID_CREDENTIALS` |
+| POST | `/v1/auth/refresh` | `{token}` → `{token}`；401 `TOKEN_INVALID` |
+| POST | `/v1/device/start` | `{kind:oauth\|qr}` → `{deviceCode,userCode,verifyUrl,interval,expiresIn}` |
+| POST | `/v1/device/poll` | → `pending` / `ok`+token+user / `expired` |
+| POST | `/v1/device/approve` | **桩专用**：模拟另一端确认（真中继由手机/浏览器完成） |
+| GET | `/v1/sync/pull` | Bearer → `{items}` |
+| POST | `/v1/sync/push` | Bearer `{items}` → `{accepted,conflicts}`，**按 id 幂等** |
+
+**二、桩的两处"替身"必须说清**：① 首次登录即注册（真中继有独立注册路由）；② 密码明文比对
+（这是本地替身，**不假装是安全实现**）。界面里「模拟另一端确认」按钮明确标注为桩的动作。
+
+**三、队列**：`<state>/sync-queue.json`（原子写）。本地改动（`markWatched` / `savePosition`）在
+**已登录 + 开着自动同步**时入队（同 id 覆盖，只留最新）；同步按入队顺序推、按 id 幂等，推完清队列。
+关掉 `autoSync` 就只手动推 —— 这是 R4-5 的接线点。
+
+**四、冲突策略**：`remote` 采纳云端、`local` 强制本地（把 `updatedAt` 拨到云端之后重推）、
+`newest` 比时间（**相同时云端胜**，因为云端"已有"更权威）。纯函数 `keep_local` 单测覆盖全部四行。
+
+**五、验证**
+
+- `cargo test --lib animesvc` **88/88**（新增 3 条：策略表 / 契约登录+刷新+推送幂等+冲突+拉取 / 设备码 pending→ok→未知码 404）
+- `check:anime` **82/82**：A18 六条 —— 登录 200 / 错密码 401 / 状态带中继地址 / 入队后同步 pushed≥1 / 旧值推送报冲突 / 退出后 loggedIn=false
+- `check:anime-module` **49/49** + 反证 **41/41**（新增 `ACCOUNT.wired`，变异为摘掉 `/v1/sync/push` 路由）
+- `check:counts` 2/2 · `check:docs` 21/21 · `tsc` / `eslint` / `prettier` / `vite build` 全绿
+
+**六、边界（如实登记）**：中继是**本机桩**，不连任何真实服务；OAuth 的"跳转"形态没做（只做设备码），
+因为真跳转要浏览器与回调地址，桩给不出真实授权页。「合并面板」目前是**展示两侧值 + 按策略自动处理**，
+没有"逐条手动挑一侧"的交互 —— 那属于 R4-4 的下一步。
