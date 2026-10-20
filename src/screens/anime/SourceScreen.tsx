@@ -13,6 +13,7 @@ import { formatBytes } from '@tools';
 import { useToasts } from '@hooks';
 import * as ipc from '@anime/ipc';
 import { useAnimeStore } from '@anime/store';
+import { tidyRules } from '@anime/convert';
 import { SOURCE_KIND_LABEL } from '@anime/player-options';
 import type { AnimeCookie, AnimeSourceRules, AnimeSourceTestItem, MediaSourceView } from '@anime/types';
 import { ProgressBar, SectionHead } from '@screens/anime/shared';
@@ -24,16 +25,6 @@ const ADDABLE_KINDS: MediaSourceView['kind'][] = ['rss', 'web', 'selector', 'jel
 const needsRules = (kind: MediaSourceView['kind']) => kind === 'web' || kind === 'selector';
 
 const EMPTY_RULES: AnimeSourceRules = { list: '', link: '', title: '', video: '' };
-
-/** 只把填了的选择器交给服务端：空串会被当成"语法错" */
-function tidyRules(rules: AnimeSourceRules): AnimeSourceRules {
-  const out: AnimeSourceRules = { list: rules.list.trim() };
-  for (const key of ['link', 'title', 'video'] as const) {
-    const v = rules[key]?.trim();
-    if (v) out[key] = v;
-  }
-  return out;
-}
 
 export function SourceScreen() {
   const sources = useAnimeStore((s) => s.sources);

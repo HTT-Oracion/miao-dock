@@ -4,7 +4,7 @@
  * 为什么单独一件：这些函数在列表、详情、进度、历史四处被复用，
  * 散在组件里会出现「同一部番在列表显示 11/12、在详情显示 12/12」的两套口径。
  */
-import type { AnimeEpisode, AnimeSubject, CollectionType } from '@anime/types';
+import type { AnimeEpisode, AnimeSourceRules, AnimeSubject, CollectionType } from '@anime/types';
 import { COLLECTION_LABELS } from '@anime/types';
 
 /** 毫秒 → `mm:ss`（超过 1 小时给 `h:mm:ss`） */
@@ -111,4 +111,17 @@ export function looksLikeBgmRef(input: string): boolean {
   if (/^\d+$/.test(q)) return true;
   if (/^bgm:\s*\d+$/i.test(q)) return true;
   return /bgm\.tv\/(v0\/)?subjects?\/\d+/i.test(q) || /bangumi\.tv\/subject\/\d+/i.test(q);
+}
+
+/**
+ * 只把填了的选择器交给服务端：空串会被当成"语法错"。
+ * 数据源编辑器与「选择播放来源」浮层共用同一份（两处各写一份必然漂移）。
+ */
+export function tidyRules(rules: AnimeSourceRules): AnimeSourceRules {
+  const out: AnimeSourceRules = { list: rules.list.trim() };
+  for (const key of ['link', 'title', 'video'] as const) {
+    const v = rules[key]?.trim();
+    if (v) out[key] = v;
+  }
+  return out;
 }

@@ -36,6 +36,7 @@ export function libraryActions(
   | 'importFolder'
   | 'playRemoteSource'
   | 'clearRemote'
+  | 'playWebUrl'
   | 'loadExplore'
   | 'importCandidate'
   | 'loadDetailExtra'
@@ -348,6 +349,14 @@ export function libraryActions(
 
     clearRemote: () => {
       set({ remote: null });
+    },
+
+    /** 在线网页源解析出的直链：直接交给 WebView 轨（不经过中继，防盗链站点会失败并如实报错） */
+    playWebUrl: (url, title, sourceName, sourceId) => {
+      set({
+        remote: { url, title, sourceId, sourceName, expiresAt: Date.now() + 2 * 3600_000 },
+        view: 'player',
+      });
     },
 
     /**

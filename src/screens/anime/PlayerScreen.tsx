@@ -7,11 +7,14 @@
  * 不画假的播放进度，也不给一个放不出来的 URL。
  */
 import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { ArrowLeft, ListMusic, Maximize2, Pause, Play, Settings2, SkipBack, SkipForward } from 'lucide-react';
+import { ArrowLeft, ListMusic, Maximize2, Pause, Play, Settings2, SkipBack, SkipForward, X } from 'lucide-react';
 import { Btn, Empty } from '@components/units';
+import { useToasts } from '@hooks';
+import { useEsc } from '@hooks/useEsc';
+import * as ipc from '@anime/ipc';
 import { useAnimeStore } from '@anime/store';
 import { episodesOf, selectedEpisode, selectedSubject } from '@anime/selectors';
-import { fmtClock } from '@anime/convert';
+import { errText, fmtClock, tidyRules } from '@anime/convert';
 import { PLAYER_KEYS, SOURCE_KIND_LABEL } from '@anime/player-options';
 import type {
   AnimeKernelTrack,
@@ -19,6 +22,8 @@ import type {
   AnimePlaySourceKernel,
   AnimePlaySubtitle,
   AnimeRemotePlayback,
+  AnimeSourceTestItem,
+  MediaSourceView,
   PlaybackState,
 } from '@anime/types';
 import type { AnimePrefs } from '@anime/prefs';
@@ -280,6 +285,124 @@ function ControlBar({
  * 画面在 **mpv 自己的窗口**里 —— 这一屏不假装画面在应用内，而是把「现在在放什么、
  * 有哪些轨、缓冲到哪」摊开给用户看，控制条仍然由应用驱动（同一条 `PlaybackCore`）。
  */
+/** 「选择播放来源」浮层：本地 / 媒体服务器 / 在线网页 / 订阅 / BT 五组（设计稿 ⑤ 的来源入口） */
+function SourcePicker({ onClose }: { onClose: () => void }) {
+  const sources = useAnimeStore((s) => s.sources);
+  const playRemoteSource = useAnimeStore((s) => s.playRemoteSource);
+  const playWebUrl = useAnimeStore((s) => s.playWebUrl);
+  const { push } = useToasts();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [items, setItems] = useState<Record<string, AnimeSourceTestItem[]>>({});
+  useEsc(onClose);
+
+  const load = async (src: MediaSourceView) => {
+    if (!src.url) {
+      push('这个源没有地址', 'bad');
+      return;
+    }
+    setBusy(src.id);
+    try {
+      const r = await ipc.animeTestSource(src.url, src.kind, 6, src.rules);
+      setItems((m) => ({ ...m, [src.id]: r.items }));
+      push(`「${src.name}」取到 ${r.count} 条`, 'good');
+    } catch (e) {
+      push(`取条目失败：${errText(e)}`, 'bad');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const play = async (src: MediaSourceView, it: AnimeSourceTestItem) => {
+    if (it.kind === 'video' && it.id) {
+      const r = await playRemoteSource(src.id, it);
+      if (r.ok) onClose();
+      else push(r.message, 'bad');
+      return;
+    }
+    if (it.link && (src.kind === 'web' || src.kind === 'selector')) {
+      if (!src.rules?.video?.trim()) {
+        push('这个源没配「视频地址选择器」，解析不出直链', 'bad');
+        return;
+      }
+      try {
+        const r = await ipc.animeResolveSource(it.link, tidyRules(src.rules));
+        playWebUrl(r.url, it.title, src.name, src.id);
+        onClose();
+      } catch (e) {
+        push(`解析失败：${errText(e)}`, 'bad');
+      }
+      return;
+    }
+    push('这一条没有可直接播放的地址', 'bad');
+  };
+
+  const group = (title: string, kinds: MediaSourceView['kind'][]) => {
+    const list = sources.filter((s) => kinds.includes(s.kind) && s.enabled);
+    return (
+      <section className="an-picker-group">
+        <div className="an-picker-hd">
+          <b>{title}</b>
+          <span className="an-note">{list.length ? `${list.length} 个源` : '还没有这类源'}</span>
+        </div>
+        {list.map((src) => (
+          <div key={src.id} className="an-picker-src">
+            <div className="an-picker-row">
+              <span className="an-picker-tx">
+                <b>{src.name}</b>
+                <span>{SOURCE_KIND_LABEL[src.kind] ?? src.kind}</span>
+              </span>
+              <Btn kind="ghost" size="sm" disabled={busy === src.id || !src.url} onClick={() => void load(src)}>
+                {busy === src.id ? '取条目中' : '取条目'}
+              </Btn>
+            </div>
+            {(items[src.id] ?? []).slice(0, 5).map((it, i) => (
+              <div key={`${it.title}-${i}`} className="an-picker-row is-item">
+                <span className="an-picker-tx">
+                  <b>{it.title}</b>
+                  <span>{it.index ? `第 ${it.index} 话` : '—'}</span>
+                </span>
+                <Btn kind="ghost" size="sm" onClick={() => void play(src, it)}>
+                  <Play size={12} /> 播放
+                </Btn>
+              </div>
+            ))}
+          </div>
+        ))}
+      </section>
+    );
+  };
+
+  return (
+    <div className="an-picker-mask" role="dialog" aria-modal="true" aria-label="选择播放来源" onClick={onClose}>
+      <div className="an-picker" onClick={(e) => e.stopPropagation()}>
+        <div className="an-picker-top">
+          <b>选择播放来源</b>
+          <button type="button" className="an-picker-x" onClick={onClose} aria-label="关闭">
+            <X size={14} />
+          </button>
+        </div>
+        <div className="an-picker-body">
+          <section className="an-picker-group">
+            <div className="an-picker-hd">
+              <b>本地</b>
+              <span className="an-note">番剧库里的这一集（当前正在播）</span>
+            </div>
+          </section>
+          {group('媒体服务器', ['jellyfin', 'emby'])}
+          {group('在线网页源', ['web', 'selector'])}
+          {group('订阅源', ['rss'])}
+          <section className="an-picker-group">
+            <div className="an-picker-hd">
+              <b>BT</b>
+              <span className="an-note">适配器未接入（R5）—— 现在选了也播不了，不给你一个假的入口</span>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function KernelStage({
   source,
   kernelTracks,
@@ -542,6 +665,8 @@ export function PlayerScreen() {
   const remote = useAnimeStore((s) => s.remote);
   const [tab, setTab] = useState<SideTab>('episodes');
   const [statsOn, setStatsOn] = useState(false);
+  /** 「选择播放来源」浮层（设计稿 ⑤ 的来源入口） */
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const idx = episode ? episodes.findIndex((e) => e.id === episode.id) : -1;
   const prev = idx > 0 ? episodes[idx - 1] : null;
@@ -614,7 +739,7 @@ export function PlayerScreen() {
               第 {episode.index} 话「{episode.title}」· {stageLine(loading, error, source)}
             </span>
           </div>
-          <button type="button" className="an-stage-btn" onClick={() => setView('source')} title="选择播放来源">
+          <button type="button" className="an-stage-btn" onClick={() => setPickerOpen(true)} title="选择播放来源">
             <Settings2 size={16} />
           </button>
           <button
@@ -793,6 +918,7 @@ export function PlayerScreen() {
           )}
         </div>
       </aside>
+      {pickerOpen ? <SourcePicker onClose={() => setPickerOpen(false)} /> : null}
     </div>
   );
 }

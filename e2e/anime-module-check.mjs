@@ -508,6 +508,20 @@ const CHECKS = [
     }),
   },
   {
+    id: 'PLAYER.picker',
+    run: (s) => ({
+      ok:
+        /function SourcePicker/.test(s.playerScreen) &&
+        /setPickerOpen\(true\)/.test(s.playerScreen) &&
+        /playWebUrl/.test(s.actionLib) &&
+        /animeResolveSource/.test(s.playerScreen) &&
+        /animeTestSource/.test(s.playerScreen) &&
+        /export function tidyRules/.test(s.convertTs) &&
+        /an-picker/.test(s.style),
+      detail: '「选择播放来源」浮层没接通：浮层 / 取条目 / 直链解析 / 播放动作 任一环缺失',
+    }),
+  },
+  {
     id: 'PLAYER.progress',
     run: (s) => ({
       ok:
@@ -927,6 +941,13 @@ const MUTATIONS = [
     find: 'let start_month = q.map(|q| 1 + (q - 1) * 3).unwrap_or(1);',
     replace: 'let start_month = 1;',
     expect: ['M3.filters'],
+  },
+  {
+    name: '来源按钮退回「去数据源屏」（浮层形同虚设）',
+    file: F.playerScreen,
+    find: 'onClick={() => setPickerOpen(true)}',
+    replace: "onClick={() => setView('source')}",
+    expect: ['PLAYER.picker'],
   },
 ];
 

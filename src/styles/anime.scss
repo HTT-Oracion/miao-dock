@@ -480,6 +480,95 @@
   flex: 1;
 }
 
+/* ---------- 「选择播放来源」浮层 ---------- */
+.an-picker-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.42);
+}
+.an-picker {
+  width: min(560px, 92%);
+  max-height: 78%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--md-line);
+  border-radius: var(--r-md);
+  background: var(--md-surface);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+.an-picker-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--md-line);
+}
+.an-picker-top b {
+  flex: 1;
+}
+.an-picker-x {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--md-ink-2);
+  display: grid;
+  place-items: center;
+}
+.an-picker-body {
+  overflow: auto;
+  padding: 8px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.an-picker-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.an-picker-hd {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+.an-picker-src {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.an-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--md-line);
+  border-radius: 10px;
+  background: var(--md-surface);
+}
+.an-picker-row.is-item {
+  margin-left: 14px;
+}
+.an-picker-tx {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--md-ink-2);
+}
+.an-picker-tx b {
+  color: var(--md-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---------- 详情页补充数据：角色 / 关联作品 ---------- */
 .an-cast {
   display: grid;
