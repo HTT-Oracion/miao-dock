@@ -1,5 +1,5 @@
 /**
- * 「番剧设置」八组 30 项的**唯一事实源**（设计稿 ⑥）。
+ * 「番剧设置」八组 34 项的**唯一事实源**（设计稿 ⑥）。
  *
  * 为什么不并进 `screens/settings/catalog.ts`：那份是设置页自身的 5 组 34 项，
  * 项数合计被 C10/COUNT 双门钉着；番剧设置是**域内**设置（真实值住 `anime/prefs.ts`），
@@ -291,6 +291,27 @@ export const ANIME_SETTING_GROUPS: AnimeSettingGroup[] = [
         why: '固定端口便于在路由器上做端口映射以提高连通率。',
         def: '随机',
         control: { kind: 'text', key: 'btPort' },
+      },
+      {
+        id: 'bt.down',
+        label: '下载限速',
+        why: '0 = 不限速；单位 KiB/s。改完立刻作用到正在跑的会话。',
+        def: '0',
+        control: { kind: 'number', key: 'btDownKbps', unit: 'KiB/s' },
+      },
+      {
+        id: 'bt.up',
+        label: '上传限速',
+        why: '0 = 不限速；单位 KiB/s。',
+        def: '0',
+        control: { kind: 'number', key: 'btUpKbps', unit: 'KiB/s' },
+      },
+      {
+        id: 'bt.seed',
+        label: '做种分享率上限',
+        why: '达到后自动暂停做种；0 = 不限制。',
+        def: '0',
+        control: { kind: 'number', key: 'btSeedRatio', unit: '×' },
       },
       {
         id: 'bt.peer',

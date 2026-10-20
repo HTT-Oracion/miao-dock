@@ -54,6 +54,11 @@ export interface AnimePrefs {
   proxyUrl: string;
   /** BT 监听端口（「随机」或数字串） */
   btPort: string;
+  /** BT 下载 / 上传限速（KiB/s，0 = 不限） */
+  btDownKbps: number;
+  btUpKbps: number;
+  /** 做种分享率上限（0 = 不限） */
+  btSeedRatio: number;
   /** Peer 过滤规则订阅地址 */
   peerFilterUrl: string;
   /** PikPak 云离线 */
@@ -93,6 +98,9 @@ export const DEFAULT_PREFS: AnimePrefs = {
   proxy: 'off',
   proxyUrl: '',
   btPort: '随机',
+  btDownKbps: 0,
+  btUpKbps: 0,
+  btSeedRatio: 0,
   peerFilterUrl: '',
   pikpak: false,
   autoSync: true,

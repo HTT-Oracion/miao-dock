@@ -179,6 +179,17 @@ export const animeResolveSource = (url: string, rules: AnimeSourceRules, cookies
 export const animeSetBtOptions = (opts: { port: number | null; peerFilterUrl: string | null }) =>
   invoke<{ ok: boolean }>('anime_set_bt_options', opts);
 
+/** 当前 BT 限速与做种上限 */
+export const animeBtLimits = () => invoke<{ downKbps: number; upKbps: number; seedRatio: number }>('anime_bt_limits');
+
+/** 改 BT 限速 / 做种上限（运行期立刻生效） */
+export const animeSetBtLimits = (v: { downKbps?: number; upKbps?: number; seedRatio?: number }) =>
+  invoke<{ ok: boolean }>('anime_set_bt_limits', v);
+
+/** 把限速记到 Rust（下次拉起 animesvc 时注入环境变量） */
+export const animeStoreBtLimits = (v: { downKbps?: number; upKbps?: number; seedRatio?: number }) =>
+  invoke<{ ok: boolean }>('anime_store_bt_limits', v);
+
 /** BT 边下边播：拿带票播放地址（票 2 小时） */
 export const animeBtStreamUrl = (id: number) =>
   invoke<{ ok: boolean; url: string; mode: { mode: string; note: string } }>('anime_bt_stream_url', { id });

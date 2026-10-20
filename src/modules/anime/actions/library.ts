@@ -254,10 +254,22 @@ export function libraryActions(
       const prefs = { ...get().prefs, [key]: value } as AnimePrefs;
       set({ prefs });
       savePrefs(prefs);
+      // 限速是**会话级**参数：运行期立刻改（会话没起就先记下，创建时套用）
+      if (key === 'btDownKbps' || key === 'btUpKbps' || key === 'btSeedRatio') {
+        const limits = {
+          downKbps: prefs.btDownKbps,
+          upKbps: prefs.btUpKbps,
+          seedRatio: prefs.btSeedRatio,
+        };
+        void ipc.animeSetBtLimits(limits);
+        void ipc.animeStoreBtLimits(limits);
+      }
       // BT 端口与 peer 过滤是**子进程**的启动参数：改完立刻推给 Rust，下次拉起 animesvc 生效
       if (key === 'btPort' || key === 'peerFilterUrl') {
+        // `btPort` 是文本框（默认「随机」）：只有纯数字才当端口，其它一律「随机」
+        const port = Number.parseInt(prefs.btPort.trim(), 10);
         void ipc.animeSetBtOptions({
-          port: typeof prefs.btPort === 'number' && prefs.btPort > 0 ? prefs.btPort : null,
+          port: Number.isFinite(port) && port > 0 && port < 65536 ? port : null,
           peerFilterUrl: prefs.peerFilterUrl.trim() || null,
         });
       }

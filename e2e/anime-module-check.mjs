@@ -540,7 +540,10 @@ const CHECKS = [
         /pub fn status\(enabled: bool\)/.test(s.rustPikpak) &&
         /animeBtStreamUrl/.test(s.ipc) &&
         /playBt/.test(s.sourceScreen) &&
-        /loadPikpak/.test(s.sourceScreen),
+        /loadPikpak/.test(s.sourceScreen) &&
+        /anime\/bt\/limits"\), get\(bt_limits_get\)/.test(s.rustAnimesvc) &&
+        /animeSetBtLimits/.test(s.ipc) &&
+        /btDownKbps/.test(s.actionLib),
       detail: 'BT 链路没接通：依赖 / 会话 / 端点 / 桥接 / 前端 / 设置 任一环缺失',
     }),
   },
@@ -742,10 +745,10 @@ const CHECKS = [
     run: (s) => {
       const okMain = /'anime'/.test(s.settingsCatalogMain);
       const okScreen = /AnimeSettingsSection/.test(s.settingsScreen);
-      const okItems = (s.settingsCatalog.match(/id: '[a-z]+\.[a-z]+'/g) ?? []).length === 31;
+      const okItems = (s.settingsCatalog.match(/id: '[a-z]+\.[a-z]+'/g) ?? []).length === 34;
       return {
         ok: okMain && okScreen && okItems,
-        detail: `番剧设置未接全：catalog 段 ${okMain ? '有' : '缺'}、设置页挂载 ${okScreen ? '有' : '缺'}、项数 31 ${okItems ? '对' : '不对'}`,
+        detail: `番剧设置未接全：catalog 段 ${okMain ? '有' : '缺'}、设置页挂载 ${okScreen ? '有' : '缺'}、项数 34 ${okItems ? '对' : '不对'}`,
       };
     },
   },
