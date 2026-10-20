@@ -6386,3 +6386,30 @@ raw.githubusercontent 在本机不通，与 D-246 同因）。核对结论：
 **限速 / 分享率上限（R5-4 的限速部分）**没做（`Limits` 只在会话创建时给）；
 **PikPak（R5-6）**只留接口占位；**peer 过滤的"清空可回滚"**没做（订阅地址一旦交给会话就只能靠重启换掉）。
 BT 任务的真实下载需要外网与 DHT，本机 e2e 只覆盖"空表 / 非法输入 / 端点鉴权"这一层，真机验收归 R6。
+## D-264 BT 边下边播（文件级）与 PikPak 接口（R5-3 / R5-6）（2026-10-20）
+
+**一、边下边播做的是什么（说清，不夸大）**：librqbit v9 **没有按需分片优先级接口**，所以这里做的是
+**文件级**边下边播：播放器按 `Range` 要哪一段，代理就等 `progress_bytes` 覆盖到那一段再发。
+- 等不到就 **504 + 一句"种子可能没有 peer"**，**不会**把没下载的字节当 0 发（那会让播放器花屏/静默失败）
+- 单文件种子与顺序播放是主路径；多文件种子取**最大的视频文件**，进度用全局字节数估算（保守：多等，不少等）
+- 票在 URL 上（`exp` + `sig`，HMAC 与本地库流同一套）—— 播放器不能带自定义头，`X-Box-Token` 进不了 `<video>`
+
+**二、PikPak 只留接口**：`bt/pikpak.rs` 给出**契约形状**（login / submit / poll / resolve 四条路径写在返回体里），
+`implemented` 恒 `false`，`submit`/`poll` 永远 `Err(NotConfigured)` —— 不返回假 taskId、不画能点没反应的按钮。
+`configured` 只反映设置里的开关，**不代表能力可用**。
+
+**三、设置接线补齐**：`btStream` → BT 行「播放」按钮的可用性（关掉时按钮禁用并说明）；
+`pikpak` → 接口状态的 `configured` 位。至此 R5-7 的五个设置（`allowBt` / `btStream` / `btPort` /
+`peerFilterUrl` / `pikpak`）全部有消费方。
+
+**四、验证**
+
+- `cargo test --lib animesvc` **97/97**（新增 6 条：最大视频文件选择 / 没有视频文件要说清 / 票可验证且换 token 就不过 / PikPak 状态如实 / `submit` 不返假任务）
+- `check:anime` **89/89**：A20 四条 —— 播放地址带 `sig`+`exp` / 伪造签名 403 / PikPak 未开启时 `implemented=false` 且写"未接入" / 开关打开也只 `configured=true`
+- `check:anime-module` **50/50** + 反证 **43/43**（`BT.wired` 扩到覆盖边下边播与 PikPak；新增变异：摘掉 `/anime/bt/stream-url` 路由）
+- `check:counts` 2/2 · `check:docs` 21/21 · `tsc` / `eslint` / `prettier` / `vite build` 全绿
+
+**五、仍未做（如实登记）**：**限速 / 分享率 / 做种策略（R5-4 的一半）** —— librqbit 的 `Limits` 支持运行时
+`set_download_bps` / `set_upload_bps`，但设置目录里没有对应键（加键要动 30 项目录与 `check:settings` 的 186 条断言），
+另起一轮；**PikPak 真客户端**没有（按用户口径只留接口）；**peer 过滤的"清空可回滚"**仍缺。
+BT 真下载与真播放要外网 + DHT + 真播放器，本机 e2e 只覆盖签名/接口层，真机验收归 R6。
