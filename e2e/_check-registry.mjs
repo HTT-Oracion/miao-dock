@@ -795,6 +795,16 @@ const CHECKS = [
     refute: true,
     watch: ['engine/**', 'src-tauri/src/**'],
   },
+  // D-251：内核轨的**真机半边** —— 拿真 mpv 跑 `--kernel-selftest`（17 例）。
+  // 硬前置：`resources/mpv/<平台>/` 有二进制（`npm run task -- fetch:mpv`）+ `cargo build --bin animesvc`；
+  // 缺一即失败并点名（跳过 ≠ 通过）。`check:anime` 的 A8 用的是假 mpv 夹具，回答不了"真内核认不认这些命令"。
+  {
+    id: 'anime-kernel-real',
+    script: 'e2e/service/anime-kernel-real-check.mjs',
+    tier: 'nightly',
+    refute: true,
+    watch: ['src-tauri/src/animesvc/kernel/**', 'e2e/service/anime-kernel-real-check.mjs'],
+  },
   {
     id: 'e11',
     script: 'e2e/lifespan-selftest.mjs',

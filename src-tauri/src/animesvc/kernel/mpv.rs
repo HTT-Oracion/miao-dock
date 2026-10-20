@@ -223,10 +223,28 @@ fn spawn_reader(
 ///
 /// `MIAO_MPV_SCRIPT` 是**测试接缝**：把它设成 `fake-mpv.mjs`、`MIAO_MPV_BIN` 设成 `node`，
 /// 就能用夹具跑完整条 IPC 链路（本机没有真 mpv 时这是唯一能证明协议对得上的办法）。
+/// `MIAO_MPV_BIN` 的判定（纯函数，便于单测）。
+///
+/// 像**路径**的值（含 `/` `\` 或盘符）必须真的在盘上 —— 否则 `--kernel-probe` 会报
+/// "available: true"，等到起播才炸出一句 `os error 2`（用户看到的是一句看不懂的失败）。
+/// 裸命令名（`node` / `mpv`）交给 PATH，是测试接缝与"用户自己装了 mpv"的正常用法。
+fn env_override(raw: &str) -> Option<PathBuf> {
+    let v = raw.trim();
+    if v.is_empty() {
+        return None;
+    }
+    let p = PathBuf::from(v);
+    let path_like = v.contains('/') || v.contains('\\') || v.contains(':');
+    if path_like && !p.exists() {
+        return None;
+    }
+    Some(p)
+}
+
 pub fn locate_mpv() -> Option<PathBuf> {
     if let Ok(v) = std::env::var("MIAO_MPV_BIN") {
-        if !v.trim().is_empty() {
-            return Some(PathBuf::from(v));
+        if let Some(p) = env_override(&v) {
+            return Some(p);
         }
     }
     let exe = if cfg!(windows) { "mpv.exe" } else { "mpv" };
@@ -783,4 +801,32 @@ pub fn selftest() -> Value {
         let _ = std::fs::remove_file(p);
     }
     json!({ "ok": ok, "cases": cases, "info": { "available": info.available, "path": info.path } })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn env_override_trusts_bare_command_names() {
+        // 测试接缝：`MIAO_MPV_BIN=node` 是裸命令名，不该因为"不是绝对路径"被拒
+        assert_eq!(env_override("node"), Some(PathBuf::from("node")));
+        assert_eq!(env_override("  "), None);
+    }
+
+    #[test]
+    fn env_override_rejects_missing_paths() {
+        // 像路径就必须真的在盘上：否则 probe 报 available，起播才炸一句 os error 2
+        assert!(env_override("/no/such/mpv/here").is_none());
+        assert!(env_override(r"C:\no\such\mpv.exe").is_none());
+    }
+
+    #[test]
+    fn env_override_accepts_existing_path() {
+        let p = std::env::temp_dir().join("miao-mpv-env-test.bin");
+        std::fs::write(&p, b"x").unwrap();
+        let s = p.to_string_lossy().into_owned();
+        assert_eq!(env_override(&s), Some(p.clone()));
+        let _ = std::fs::remove_file(&p);
+    }
 }

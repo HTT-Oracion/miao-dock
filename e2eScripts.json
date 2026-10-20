@@ -91,6 +91,7 @@
       "cmds": [
         { "id": "check:e3:real", "cmd": "node e2e/engine/e3-real-full-chain-check.mjs", "desc": "E3 全链路实测（真引擎）：31 张一个 Task 两个 Batch + 落盘 + SSE 一致" },
         { "id": "check:e7:real", "cmd": "node e2e/engine/e7-real-verify-check.mjs", "desc": "E7 模型续传与校验的真机半边：真权重 sha256 跑得完 + 篡改必检出", "refute": true },
+        { "id": "check:anime-kernel:real", "cmd": "node e2e/service/anime-kernel-real-check.mjs", "desc": "番剧内核轨真机半边：真 mpv 跑 --kernel-selftest（17 例）；前置缺一即失败并点名 fetch:mpv", "refute": true },
         { "id": "selftest:app:e11", "cmd": "node e2e/lifespan-selftest.mjs --e11", "desc": "E11 三进程树回收（mock）：SIGKILL 主进程 → 端口全释放", "refute": true },
         { "id": "selftest:app:e11:real", "cmd": "node e2e/lifespan-selftest.mjs --e11 --mode real", "desc": "E11 + E1 生效参数快照（真进程：python + 执行器 + llama-server）" },
         { "id": "check:pydensecrf-wheel-install", "cmd": "node e2e/engine/pydensecrf-wheel-install-check.mjs", "desc": "B4 预编译 wheel 真装一次（--no-index --no-deps 成功 + 真二进制 + 真构造 DenseCRF）" },
