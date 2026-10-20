@@ -17,6 +17,25 @@ fn main() {
         println!("{}", miao_dock::animesvc::playback::selftest());
         return;
     }
+    // `--kernel-probe`：只回答「内核能不能用、在哪」（毫秒级；设置页与打包冒烟用）。
+    if std::env::args().any(|a| a == "--kernel-probe") {
+        let info = miao_dock::animesvc::kernel::probe();
+        println!(
+            "{}",
+            serde_json::json!({
+                "available": info.available,
+                "path": info.path,
+                "reason": info.reason,
+            })
+        );
+        return;
+    }
+    // `--kernel-selftest`：真起 mpv、真走 JSON IPC，按脚本跑一遍契约。
+    // 本机没有真 mpv 时用夹具：`MIAO_MPV_BIN=node` + `MIAO_MPV_SCRIPT=e2e/fixtures/fake-mpv.mjs`。
+    if std::env::args().any(|a| a == "--kernel-selftest") {
+        println!("{}", miao_dock::animesvc::kernel::selftest());
+        return;
+    }
     let opts = miao_dock::animesvc::Options::from_env();
     if let Err(e) = miao_dock::animesvc::run_blocking(opts) {
         eprintln!("[anime-service] animesvc 启动失败：{e}");

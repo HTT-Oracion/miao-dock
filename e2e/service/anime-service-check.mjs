@@ -14,6 +14,7 @@
  *   A6 令牌隔离：拿错令牌打动漫端点 ⇒ 403 PERMISSION_DENIED
  *   A7 媒体服务器远程播放中继（D-250）：票绑定「源 + 条目」、Range 原样透传、
  *      `api_key` 只走请求头（假上游记账）、停用 / 错类型 / 穿越 id 各有明确状态码
+ *   A8 内核轨（D-251）：`--kernel-selftest` 走真 IPC（夹具假 mpv）+ 夹具记账证明命令真的发出去了
  *
  * ## 反证轮（--refute）
  *   R1 把动漫库根故意指到**漫画库根** ⇒ A4 的隔离判据必须变红（证明 A4 不是恒真）
@@ -520,6 +521,90 @@ try {
     check('A7 源已停用 ⇒ 403', disabled.status === 403, disabled.status);
     // 复原，别把状态留给后面的断言
     await post({ id: 'jf1', name: 'Mock NAS', kind: 'jellyfin', url: srcUrl, enabled: true });
+  }
+
+  // A8：内核轨（libmpv 替身：随包 mpv + JSON IPC）
+  //
+  // 本机没有真 mpv 时用夹具跑：`MIAO_MPV_BIN=node` + `MIAO_MPV_SCRIPT=<夹具>`。
+  // 判据分两层：① 自检脚本自己说全绿；② **夹具真的收到了那些命令**（否则"全绿"可能
+  // 只是我们的客户端在对空气说话 —— 例如写端根本没连上）。
+  {
+    const logFile = path.join(TMP, 'fake-mpv.log');
+    const selftest = spawnSync(ANIME_BIN, ['--kernel-selftest'], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        ...animeEnv,
+        MIAO_MPV_BIN: process.execPath,
+        MIAO_MPV_SCRIPT: path.join(REPO, 'e2e', 'fixtures', '_fake-mpv.mjs'),
+        MIAO_FAKE_MPV_LOG: logFile,
+      },
+    });
+    let out = null;
+    try {
+      out = JSON.parse((selftest.stdout || '').trim());
+    } catch {
+      out = null;
+    }
+    check('A8 内核自检跑得完且输出 JSON', selftest.status === 0 && out !== null, {
+      status: selftest.status,
+      stderr: (selftest.stderr || '').slice(-300),
+    });
+    check(
+      'A8 自检 ok=true',
+      out?.ok === true,
+      out?.cases?.filter((c) => !c.ok),
+    );
+    check('A8 用例条数写死 15 且全绿', out?.cases?.length === 15 && out.cases.every((c) => c.ok), out?.cases?.length);
+
+    const cmds = fs.existsSync(logFile)
+      ? fs
+          .readFileSync(logFile, 'utf8')
+          .split('\n')
+          .filter(Boolean)
+          .map((l) => JSON.parse(l))
+      : [];
+    const ops = cmds.map((c) => (Array.isArray(c.command) ? c.command[0] : ''));
+    check('A8 夹具真的收到 loadfile（写端连上了）', ops.includes('loadfile'), ops.slice(0, 5));
+    check('A8 夹具收到 observe_property（事件通道订阅了）', ops.includes('observe_property'), ops.slice(0, 5));
+    check('A8 夹具收到 set_property（暂停 / 跳转 / 倍速都走命令）', ops.includes('set_property'), ops.slice(0, 5));
+    check('A8 夹具收到 sub-add（外挂字幕）', ops.includes('sub-add'), ops.slice(0, 8));
+
+    const probed = spawnSync(ANIME_BIN, ['--kernel-probe'], {
+      encoding: 'utf8',
+      timeout: 20_000,
+      env: { ...process.env, ...animeEnv, MIAO_MPV_BIN: process.execPath },
+    });
+    let probeInfo = null;
+    try {
+      probeInfo = JSON.parse((probed.stdout || '').trim());
+    } catch {
+      probeInfo = null;
+    }
+    check(
+      'A8 `--kernel-probe` 认 MIAO_MPV_BIN 并自报路径',
+      probed.status === 0 && probeInfo?.available === true && probeInfo.path.length > 0,
+      probeInfo,
+    );
+
+    const bare = spawnSync(ANIME_BIN, ['--kernel-probe'], {
+      encoding: 'utf8',
+      timeout: 20_000,
+      env: { ...process.env, ...animeEnv, MIAO_MPV_BIN: '', PATH: '' },
+    });
+    let bareInfo = null;
+    try {
+      bareInfo = JSON.parse((bare.stdout || '').trim());
+    } catch {
+      bareInfo = null;
+    }
+    // 形状判据（机器无关）：可用 ⇒ 有路径；不可用 ⇒ 必须给出原因，不能只回一个 false
+    const bareShapeOk =
+      bareInfo !== null &&
+      ((bareInfo.available === true && String(bareInfo.path || '').length > 0) ||
+        (bareInfo.available === false && String(bareInfo.reason || '').includes('找不到 mpv')));
+    check('A8 没有内核时如实说「找不到 mpv」而不是静默 false', bareShapeOk, bareInfo);
   }
 
   // A5：动漫退出后漫画照旧

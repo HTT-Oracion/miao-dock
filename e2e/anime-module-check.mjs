@@ -60,6 +60,8 @@ const F = {
   rustDatasource: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'datasource', 'mod.rs'),
   rustMediaserver: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'datasource', 'mediaserver.rs'),
   rustPlayback: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'playback.rs'),
+  rustKernel: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'kernel', 'mpv.rs'),
+  rustKernelMod: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'kernel', 'mod.rs'),
   rustAnimeBin: path.join(ROOT, 'src-tauri', 'src', 'bin', 'animesvc.rs'),
   rustMain: path.join(ROOT, 'src-tauri', 'src', 'main.rs'),
   rustCommands: path.join(ROOT, 'src-tauri', 'src', 'commands', 'mod.rs'),
@@ -335,6 +337,40 @@ const CHECKS = [
         /这集需要随包播放内核/.test(s.playerScreen) &&
         /source\.reason/.test(s.playerScreen),
       detail: 'libmpv 轨没有说清「需要随包内核」，屏上会变成一块放不出来的黑屏',
+    }),
+  },
+  {
+    id: 'KERNEL.wired',
+    run: (s) => ({
+      ok:
+        /pub mod kernel;/.test(s.rustAnimesvc) &&
+        /anime\/kernel\/open/.test(s.rustAnimesvc) &&
+        /pub mod mpv;/.test(s.rustKernelMod) &&
+        /crate::anime::anime_kernel_open/.test(strip(s.rustCommands)) &&
+        /'anime_kernel_open'/.test(s.ipc) &&
+        /animeKernelOpen/.test(s.playerHook) &&
+        /KernelStage/.test(s.playerScreen),
+      detail: '内核轨没接全：模块 / 端点 / 命令注册 / IPC / hook / 屏缺一环（mkv 会退回「内核未就绪」）',
+    }),
+  },
+  {
+    id: 'KERNEL.pipe',
+    run: (s) => {
+      // Windows 命名管道：读端必须是 PeekNamedPipe 轮询（真的 import 了、真的调用了），
+      // 不能退回阻塞 BufReader —— 同一个 file object 上挂起的 ReadFile 会把写端一起堵死
+      const imported = /System::Pipes::PeekNamedPipe/.test(s.rustKernel);
+      const called = /PeekNamedPipe\(\s*handle/.test(s.rustKernel);
+      return {
+        ok: imported && called && !/BufReader::new\(reader\)/.test(s.rustKernel),
+        detail: 'Windows 管道读端退回阻塞读：写端会被挂起的 ReadFile 堵死（实测是静默挂死，不是报错）',
+      };
+    },
+  },
+  {
+    id: 'KERNEL.missing',
+    run: (s) => ({
+      ok: /supported": kernel_available/.test(s.rustAnime) && /kernel\.available/.test(s.rustAnime),
+      detail: '内核缺失时仍可能给 supported:true（等于回一个播不出来的地址）',
     }),
   },
   {
@@ -680,6 +716,27 @@ const MUTATIONS = [
     find: '.route(&format!("/api/{API_VERSION}/anime/mediaserver/stream"), get(datasource::mediaserver::relay))',
     replace: '',
     expect: ['M3.remote'],
+  },
+  {
+    name: '摘掉内核模块（mkv 永远退回「内核未就绪」）',
+    file: F.rustAnimesvc,
+    find: 'pub mod kernel;',
+    replace: '',
+    expect: ['KERNEL.wired'],
+  },
+  {
+    name: '管道读端退回阻塞读（Windows 上写端被堵死，进程静默挂死）',
+    file: F.rustKernel,
+    find: 'System::Pipes::PeekNamedPipe',
+    replace: 'System::Pipes::PnpPoll',
+    expect: ['KERNEL.pipe'],
+  },
+  {
+    name: '内核缺失也说 supported:true（回一个播不出来的地址）',
+    file: F.rustAnime,
+    find: 'supported": kernel_available',
+    replace: 'supported": true',
+    expect: ['KERNEL.missing'],
   },
 ];
 

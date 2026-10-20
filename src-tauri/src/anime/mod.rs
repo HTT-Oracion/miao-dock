@@ -366,27 +366,59 @@ pub async fn anime_play_source(subject_id: String, index: f64) -> Result<Value, 
     ))
     .await?;
     let exp = miao_dock::animesvc::stream::now_secs() + miao_dock::animesvc::stream::TICKET_TTL_SECS;
-    play_plan(port, &token, &media, exp)
+    // 内核可不可用是**本机事实**（随包二进制在不在），探测是几次 stat，不必过服务
+    let kernel = miao_dock::animesvc::kernel::probe();
+    play_plan(port, &token, &media, exp, kernel.available, &kernel.reason)
 }
 
-/// 把「探测结果 + 票面」拼成交给前端的播放计划（纯函数，便于单测）。
+/// 把「探测结果 + 票面 + 内核可用性」拼成交给前端的播放计划（纯函数，便于单测）。
 ///
 /// 探测没找到片源时**原样透传**：前端要能区分「没有这一集」与「有但播不了」。
-fn play_plan(port: u16, token: &str, media: &Value, exp: u64) -> Result<Value, String> {
+fn play_plan(
+    port: u16,
+    token: &str,
+    media: &Value,
+    exp: u64,
+    kernel_available: bool,
+    kernel_reason: &str,
+) -> Result<Value, String> {
     if media.get("found").and_then(|v| v.as_bool()) != Some(true) {
         return Ok(media.clone());
     }
     let track = media["track"].as_str().unwrap_or("libmpv").to_string();
     let container = media["container"].as_str().unwrap_or("").to_string();
     if track != "webview" {
+        // 内核轨：画面在 mpv 自己的窗口里，应用只经 IPC 驱动（R1 的形态）。
+        // 内核缺失时**不给地址**，只给原因 —— 给一个播不出来的地址等于让人对着黑屏猜。
+        let reason = if kernel_available {
+            format!("这一集是 {container} 容器，由随包内核在独立窗口播放")
+        } else {
+            format!("这一集是 {container} 容器，需要随包播放内核；{kernel_reason}")
+        };
+        let subs: Vec<Value> = media["subtitles"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|s| {
+                Some(json!({
+                    "name": s["name"],
+                    "file": s["file"],
+                    "format": s["format"],
+                }))
+            })
+            .collect();
         return Ok(json!({
             "found": true,
             "track": "libmpv",
-            "supported": false,
-            "reason": format!("这一集是 {container} 容器，需要随包播放内核；内核尚未就绪"),
+            "supported": kernel_available,
+            "external": true,
+            "reason": reason,
             "container": container,
             "title": media["title"],
             "file": media["file"],
+            "sizeBytes": media["sizeBytes"],
+            "subtitles": subs,
         }));
     }
     let file = media["file"].as_str().ok_or("媒体探测缺少 file")?;
@@ -558,6 +590,38 @@ pub async fn anime_play_remote(source_id: String, item_id: String) -> Result<Val
     }))
 }
 
+/// 内核轨状态：可不可用（二进制在不在）+ 当前会话快照（音轨 / 字幕 / 进度 / 缓冲）。
+#[tauri::command]
+pub async fn anime_kernel_status() -> Result<Value, String> {
+    get("/api/v1/anime/kernel").await
+}
+
+/// 用内核打开一集：服务侧解析「这一集在盘上的哪个文件」，再交给 mpv（独立窗口）。
+#[tauri::command]
+pub async fn anime_kernel_open(subject_id: String, index: f64, hwdec: Option<String>) -> Result<Value, String> {
+    post(
+        "/api/v1/anime/kernel/open",
+        json!({ "subject": subject_id, "index": index, "hwdec": hwdec }),
+    )
+    .await
+}
+
+/// 驱动内核：`play` / `pause` / `seek` / `rate` / `track` / `subtitle`。
+#[tauri::command]
+pub async fn anime_kernel_ctl(action: String, value: Option<Value>) -> Result<Value, String> {
+    post(
+        "/api/v1/anime/kernel/ctl",
+        json!({ "action": action, "value": value.unwrap_or(Value::Null) }),
+    )
+    .await
+}
+
+/// 关掉内核会话（离开播放器 / 换集时调）。
+#[tauri::command]
+pub async fn anime_kernel_close() -> Result<Value, String> {
+    post("/api/v1/anime/kernel/close", json!({})).await
+}
+
 /// 拼一条带票的流地址。令牌不进 URL —— 只出现它的签名。
 fn stream_url(port: u16, token: &str, file: &str, exp: u64) -> String {
     let sig = miao_dock::animesvc::stream::sign(token, file, exp);
@@ -637,7 +701,7 @@ mod tests {
     fn webview_media_gets_signed_progressive_url() {
         let media = webview_media("mp4");
         let exp = miao_dock::animesvc::stream::now_secs() + 60;
-        let plan = play_plan(PORT, TOKEN, &media, exp).unwrap();
+        let plan = play_plan(PORT, TOKEN, &media, exp, false, "内核未安装").unwrap();
 
         assert_eq!(plan["found"], true);
         assert_eq!(plan["track"], "webview");
@@ -663,7 +727,7 @@ mod tests {
 
     #[test]
     fn m3u8_is_marked_as_hls() {
-        let plan = play_plan(PORT, TOKEN, &webview_media("m3u8"), 1).unwrap();
+        let plan = play_plan(PORT, TOKEN, &webview_media("m3u8"), 1, false, "内核未安装").unwrap();
         assert_eq!(plan["kind"], "hls");
     }
 
@@ -671,7 +735,7 @@ mod tests {
     fn subtitles_get_their_own_verified_tickets() {
         let media = webview_media("mp4");
         let exp = miao_dock::animesvc::stream::now_secs() + 60;
-        let plan = play_plan(PORT, TOKEN, &media, exp).unwrap();
+        let plan = play_plan(PORT, TOKEN, &media, exp, false, "内核未安装").unwrap();
         let subs = plan["subtitles"].as_array().unwrap();
         assert_eq!(subs.len(), 2);
 
@@ -695,22 +759,46 @@ mod tests {
     }
 
     #[test]
-    fn kernel_track_reports_unsupported_instead_of_fake_url() {
-        let media = json!({
+    fn kernel_track_reports_unsupported_when_kernel_missing() {
+        let media = kernel_media();
+        let plan = play_plan(PORT, TOKEN, &media, 1, false, "找不到 mpv").unwrap();
+        assert_eq!(plan["track"], "libmpv");
+        assert_eq!(plan["supported"], false);
+        assert_eq!(plan["external"], true);
+        // 原因里要有「为什么」：mkv 容器 + 内核缺失各说一次
+        let reason = plan["reason"].as_str().unwrap();
+        assert!(reason.contains("mkv"));
+        assert!(reason.contains("找不到 mpv"));
+        // 不能给一个播不出来的地址：前端只会对着黑屏猜
+        assert!(plan.get("url").is_none());
+    }
+
+    #[test]
+    fn kernel_track_is_playable_when_kernel_ready() {
+        let media = kernel_media();
+        let plan = play_plan(PORT, TOKEN, &media, 1, true, "").unwrap();
+        assert_eq!(plan["track"], "libmpv");
+        assert_eq!(plan["supported"], true);
+        assert_eq!(plan["external"], true);
+        assert_eq!(plan["file"], media["file"]);
+        // 内核自己读盘：字幕给的是文件路径，不是带票 URL
+        let subs = plan["subtitles"].as_array().unwrap();
+        assert_eq!(subs.len(), 1);
+        assert!(subs[0].get("url").is_none());
+        assert_eq!(subs[0]["file"], media["subtitles"][0]["file"]);
+    }
+
+    /// mkv 一集的探测结果（内核轨的输入）
+    fn kernel_media() -> Value {
+        json!({
             "found": true,
             "title": "第 3 话",
             "file": "F:\\Anime\\冰菓\\03.mkv",
             "container": "mkv",
             "track": "libmpv",
             "sizeBytes": 9u64,
-            "subtitles": [],
-        });
-        let plan = play_plan(PORT, TOKEN, &media, 1).unwrap();
-        assert_eq!(plan["track"], "libmpv");
-        assert_eq!(plan["supported"], false);
-        assert!(plan["reason"].as_str().unwrap().contains("mkv"));
-        // 不能给一个播不出来的地址：前端只会对着黑屏猜
-        assert!(plan.get("url").is_none());
+            "subtitles": [{ "file": "F:\\Anime\\冰菓\\03.ass", "name": "03.ass", "format": "ass" }],
+        })
     }
 
     #[test]
@@ -722,13 +810,13 @@ mod tests {
             "reason": "这一集还没有落盘的视频文件",
             "skipped": [],
         });
-        let plan = play_plan(PORT, TOKEN, &media, 1).unwrap();
+        let plan = play_plan(PORT, TOKEN, &media, 1, false, "内核未安装").unwrap();
         assert_eq!(plan, media);
     }
 
     #[test]
     fn webview_media_without_file_is_an_error() {
         let media = json!({ "found": true, "track": "webview", "container": "mp4" });
-        assert!(play_plan(PORT, TOKEN, &media, 1).is_err());
+        assert!(play_plan(PORT, TOKEN, &media, 1, false, "内核未安装").is_err());
     }
 }

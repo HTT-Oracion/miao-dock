@@ -37,6 +37,7 @@ use serde::Deserialize;
 mod manifest;
 pub mod datasource;
 pub mod import;
+pub mod kernel;
 pub mod metadata;
 pub mod playback;
 pub mod sources;
@@ -225,6 +226,12 @@ fn router(shell: Arc<Shell>) -> Router {
         .route(&format!("/api/{API_VERSION}/anime/sources/test"), post(source_test))
         // 媒体服务器远程播放：带票中继上游视频（api_key 只走请求头，不出现在 URL 里）
         .route(&format!("/api/{API_VERSION}/anime/mediaserver/stream"), get(datasource::mediaserver::relay))
+        // 内核轨（libmpv 的替身：随包 mpv + JSON IPC）。状态与控制在服务侧，
+        // 壳层只转发 —— 与库 / 进度同一条链路，CLI 与 e2e 跑的是同一套实现。
+        .route(&format!("/api/{API_VERSION}/anime/kernel"), get(kernel_status))
+        .route(&format!("/api/{API_VERSION}/anime/kernel/open"), post(kernel_open))
+        .route(&format!("/api/{API_VERSION}/anime/kernel/ctl"), post(kernel_ctl))
+        .route(&format!("/api/{API_VERSION}/anime/kernel/close"), post(kernel_close))
         // 兜底：打错端口的人（例如把 /library 打到动漫服务上）要看到"这里是谁"，
         // 而不是一个裸 404 —— 两个服务同时在跑时这是最常见的误接。
         .fallback(fallback)
@@ -475,8 +482,95 @@ async fn source_test(
     }
 }
 
-async fn entry(State(shell): State<Arc<Shell>>, headers: HeaderMap, AxPath(name): AxPath<String>) -> Response {
+// ---------------------------------------------------------------- 内核轨
+
+/// 内核状态：能不能用（二进制在不在）+ 当前会话快照。
+async fn kernel_status(State(shell): State<Arc<Shell>>, headers: HeaderMap) -> Response {
     if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    json(StatusCode::OK, kernel::status())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KernelOpenBody {
+    subject: String,
+    index: f64,
+    #[serde(default)]
+    hwdec: Option<String>,
+}
+
+/// 用内核打开一集：服务侧解析「这一集在盘上的哪个文件」，再交给 mpv。
+///
+/// 为什么不让壳层传文件路径：那会让「哪一集对应哪个文件」出现第二条判定路径
+/// （挑文件的规则只应该有一处，见 `manifest::episode_media`）。
+async fn kernel_open(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<KernelOpenBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    if !is_safe_name(&body.subject) {
+        return envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", format!("非法的作品名：{}", body.subject));
+    }
+    let media = match manifest::episode_media(Path::new(&shell.root_dir), &body.subject, body.index) {
+        Ok(v) => v,
+        Err(e) => return envelope(StatusCode::NOT_FOUND, "NOT_FOUND", e),
+    };
+    if media.get("found").and_then(|v| v.as_bool()) != Some(true) {
+        return envelope(StatusCode::NOT_FOUND, "NOT_FOUND", "这一集还没有落盘的视频文件");
+    }
+    let Some(file) = media.get("file").and_then(|v| v.as_str()) else {
+        return envelope(StatusCode::NOT_FOUND, "NOT_FOUND", "媒体探测没有给出文件路径");
+    };
+    let title = media.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let hwdec = body.hwdec.as_deref().filter(|s| !s.is_empty()).unwrap_or("auto-safe").to_string();
+    let file = file.to_string();
+    // 起进程 + 等属性就绪是阻塞的：扔到阻塞线程，别卡住 HTTP 运行时
+    let out = tokio::task::spawn_blocking(move || kernel::open_file(&file, &title, &hwdec)).await;
+    match out {
+        Ok(Ok(v)) => json(StatusCode::OK, v),
+        Ok(Err(e)) => envelope(StatusCode::SERVICE_UNAVAILABLE, "KERNEL_UNAVAILABLE", e),
+        Err(e) => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", format!("调度失败：{e}")),
+    }
+}
+
+#[derive(Deserialize)]
+struct KernelCtlBody {
+    action: String,
+    #[serde(default)]
+    value: serde_json::Value,
+}
+
+async fn kernel_ctl(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<KernelCtlBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    let state_dir = shell.state_dir().to_string();
+    let out = tokio::task::spawn_blocking(move || kernel::ctl(&body.action, &body.value, &state_dir)).await;
+    match out {
+        Ok(Ok(v)) => json(StatusCode::OK, v),
+        Ok(Err(e)) => envelope(StatusCode::CONFLICT, "KERNEL_STATE", e),
+        Err(e) => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", format!("调度失败：{e}")),
+    }
+}
+
+async fn kernel_close(State(shell): State<Arc<Shell>>, headers: HeaderMap) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    kernel::close();
+    json(StatusCode::OK, kernel::status())
+}
+
+async fn entry(State(shell): State<Arc<Shell>>, headers: HeaderMap, AxPath(name): AxPath<String>) -> Response {    if !authorized(&shell, &headers) {
         return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
     }
     if !is_safe_name(&name) {

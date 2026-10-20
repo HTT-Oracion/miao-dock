@@ -227,7 +227,110 @@ async fn handle_signed(shell: Arc<Shell>, headers: HeaderMap, q: StreamQuery) ->
         }
     };
     let range = headers.get(header::RANGE).and_then(|v| v.to_str().ok());
+    // m3u8 播放列表要**改写分片地址**：分片是相对路径时，直接喂给 hls.js 会被解析到
+    // `/api/v1/anime/` 下面（带票查询串还会被丢掉）⇒ 起播就 404。这里把每条分片
+    // 换成一条**独立签名**的绝对路径，播放器不需要知道令牌。
+    if is_playlist(&file) {
+        return match std::fs::read_to_string(&file) {
+            Ok(text) => {
+                let body = rewrite_playlist(&text, &file, shell.token(), q.exp);
+                let mut resp = Response::new(Body::from(body));
+                resp.headers_mut().insert(
+                    header::CONTENT_TYPE,
+                    "application/vnd.apple.mpegurl".parse().unwrap(),
+                );
+                resp.headers_mut().insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
+                resp
+            }
+            Err(e) => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", format!("读播放列表失败：{e}")),
+        };
+    }
     serve(file, len, range)
+}
+
+/// 是不是 HLS 播放列表（按扩展名；`.m3u` 也算，上游两种都发）。
+fn is_playlist(file: &Path) -> bool {
+    matches!(
+        file.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref(),
+        Some("m3u8") | Some("m3u")
+    )
+}
+
+/// 把播放列表里的**本地相对地址**换成带票的绝对路径。
+///
+/// · 注释行原样保留；`#EXT-X-KEY` / `#EXT-X-MAP` 的 `URI="…"` 一起改写（加密分片不换就解不开）
+/// · `http(s)://` 开头的一律不动（那是上游 CDN 的绝对地址）
+/// · 分片与主播放列表共用同一个 `exp`：票是一次签的，过期时刻一致才好排查
+pub fn rewrite_playlist(text: &str, playlist: &Path, token: &str, exp: u64) -> String {
+    let dir = playlist.parent().unwrap_or_else(|| Path::new("."));
+    let mut out = String::with_capacity(text.len() + 256);
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            out.push('\n');
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("#EXT-X-KEY:") {
+            out.push_str(&rewrite_uri_attr("#EXT-X-KEY:", rest, dir, token, exp));
+            out.push('\n');
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("#EXT-X-MAP:") {
+            out.push_str(&rewrite_uri_attr("#EXT-X-MAP:", rest, dir, token, exp));
+            out.push('\n');
+            continue;
+        }
+        if trimmed.starts_with('#') {
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        }
+        out.push_str(&ticket_url(dir, trimmed, token, exp));
+        out.push('\n');
+    }
+    out
+}
+
+/// 改写 `URI="…"` 这一个属性（其它属性保持原样）。
+fn rewrite_uri_attr(prefix: &str, rest: &str, dir: &Path, token: &str, exp: u64) -> String {
+    let Some(start) = rest.find("URI=\"") else {
+        return format!("{prefix}{rest}");
+    };
+    let after = &rest[start + 5..];
+    let Some(end) = after.find('"') else {
+        return format!("{prefix}{rest}");
+    };
+    let uri = &after[..end];
+    let head = &rest[..start];
+    let tail = &after[end..];
+    format!("{prefix}{head}URI=\"{}\"{tail}", ticket_url(dir, uri, token, exp))
+}
+
+/// 一条分片 / 密钥地址 → 带票绝对路径（已是 http(s) 的原样返回）。
+fn ticket_url(dir: &Path, uri: &str, token: &str, exp: u64) -> String {
+    if uri.starts_with("http://") || uri.starts_with("https://") || uri.starts_with("data:") {
+        return uri.to_string();
+    }
+    let target = if uri.starts_with('/') || uri.chars().nth(1) == Some(':') {
+        PathBuf::from(uri) // 绝对路径（含 Windows 盘符）直接用
+    } else {
+        dir.join(uri)
+    };
+    let path = target.to_string_lossy().into_owned();
+    let sig = sign(token, &path, exp);
+    format!("/api/v1/anime/stream?path={}&exp={exp}&sig={sig}", percent_encode(&path))
+}
+
+/// 极简百分号编码（路径可能带空格 / 中文；与壳层 `urlencode` 同口径）。
+fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(*b as char),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 /// 真正吐字节：有 Range 给 206 分段，无 Range 给 200 全量，越界给 416。
@@ -389,5 +492,47 @@ mod tests {
         // 相对路径穿越也要挡住
         assert!(under_root(&root.join("..").join("secret.txt"), &root).is_none());
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn playlist_rewrites_relative_segments_with_their_own_tickets() {
+        let dir = std::env::temp_dir().join("miao-anime-pl");
+        let pl = dir.join("index.m3u8");
+        let text = "#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:9.0,\nseg0.ts\n#EXTINF:9.0,\nsub/seg1.ts\n";
+        let exp = now_secs() + 600;
+        let out = rewrite_playlist(text, &pl, "tok", exp);
+
+        // 注释与时长行原样保留（hls.js 靠它们）
+        assert!(out.contains("#EXTM3U"));
+        assert!(out.contains("#EXTINF:9.0,"));
+        // 相对分片换成绝对路径 + 各自签名
+        assert!(!out.lines().any(|l| l.trim() == "seg0.ts"));
+        let p0 = dir.join("seg0.ts").to_string_lossy().into_owned();
+        let sig0 = sign("tok", &p0, exp);
+        assert!(out.contains(&format!("sig={sig0}")), "seg0 没带上自己的票：{out}");
+        assert!(verify("tok", &p0, exp, &sig0));
+        // 子目录分片按播放列表所在目录解析（`join` 保留原文里的 `/`，与实现同口径）
+        let p1 = dir.join("sub/seg1.ts").to_string_lossy().into_owned();
+        let sig1 = sign("tok", &p1, exp);
+        assert!(out.contains(&format!("sig={sig1}")));
+        // 每条分片都走同一条带票端点
+        assert_eq!(out.matches("/api/v1/anime/stream?path=").count(), 2);
+    }
+
+    #[test]
+    fn playlist_keeps_absolute_cdn_uris_and_rewrites_key_uri() {
+        let dir = std::env::temp_dir().join("miao-anime-pl2");
+        let pl = dir.join("index.m3u8");
+        let text = "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\",IV=0x1\nhttps://cdn.example.com/a/seg0.ts\n";
+        let out = rewrite_playlist(text, &pl, "tok", 2000);
+        // 上游 CDN 的绝对地址不能动（改成带票地址反而取不到）
+        assert!(out.contains("https://cdn.example.com/a/seg0.ts"));
+        assert!(!out.contains("path=https"));
+        // 密钥 URI 是相对路径：不换就解不开分片
+        let key = dir.join("key.bin").to_string_lossy().into_owned();
+        assert!(out.contains(&format!("sig={}", sign("tok", &key, 2000))));
+        assert!(out.contains("URI=\"/api/v1/anime/stream?path="));
+        // IV 这类其它属性保持原样
+        assert!(out.contains("IV=0x1"));
     }
 }

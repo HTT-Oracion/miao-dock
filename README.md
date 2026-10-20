@@ -41,7 +41,7 @@ miao-dock/
 │   ├── src/platform/  跨平台底座（`paths.rs` 落点 / `root_guard.rs` 落盘根安全闸 / `child_watch.rs` 父死看守）
 │   ├── src/music/     音乐模块 Rust 侧：四平台（`netease`/`kugou`/`qqmusic`/`migu`）+ 音频代理 + 加密 + 歌词 + 缓存（汽水延后）
 │   ├── src/mangasvc/  **服务端实现**（唯一翻译入口，127.0.0.1:5180–5190）：`mangasvc.rs` 外壳 · `routes.rs` 路由表（44 条）· `handlers.rs` 端点 · `store/` 队列落盘 · `library.rs` 库原语 · `translate/` 在线翻译 · `engine/` 引擎耦合点
-│   └── src/animesvc.rs  **动漫服务**（独立 exe `animesvc`，同端口段探测）：自己的 state / 令牌 / 库根（`<数据根>/anime/*`），与漫画服务**可同时运行**且互不读取对方的库
+│   └── src/animesvc.rs  **动漫服务**（独立 exe `animesvc`，同端口段探测）：自己的 state / 令牌 / 库根（`<数据根>/anime/*`），与漫画服务**可同时运行**且互不读取对方的库；`src/animesvc/kernel/` 是内核轨（随包 mpv + JSON IPC：`ipc.rs` 协议 / `mpv.rs` 进程与客户端）
 ├── public/       不经构建处理的静态资源（原样复制到 dist/，**没有指纹、没有 url() 改写**）
 │   ├── assets/fonts/   随仓字体：三份 `<dir>/font.css` 清单 + 字体文件（由入口 HTML 的 `<link>` 加载）
 │   ├── assets/icons/   品牌图（logo-48 / logo-512 / logo，用绝对 URL 引）
@@ -241,7 +241,7 @@ npm run task -- check:profile         # S4 档位映射 / 加速后端 / 降档 
 npm run task -- check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
 npm run task -- check:contract        # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status 77 条（反证：check:contract:refute）
 npm run task -- check:music           # 音乐平台 / 播放模式五档 / 心动模式 / 播放列表入口与抽屉 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 237 条（反证：check:music:refute，231 条）
-npm run task -- check:anime-module    # 番剧模块接线：@anime 别名双同步 / /anime 路由与 IA / 屏装配件 / 十屏分派 / IPC 命令名与 handler 注册 / animesvc manifest 端点 / 播放契约 PlaybackCore 与 selftest / 播放器接线（anime_play_source → ArtPlayer + hls.js / 内核轨说明 / 续看回写）/ Bangumi 元数据（UA 四段 / 镜像列表与图片镜像 / 检索 / 落 manifest / 详情页入口）/ 扁平落盘目录合成剧集 / 设置接线（库根 / 代理真正生效）/ M3 源契约、本机导入与 RSS 适配器 / 媒体服务器适配器（Jellyfin / Emby，api_key 只走请求头）/ 远程播放中继（anime_play_remote → 带票中继 → 播放器远程态）/ 番剧设置分组 / 样式注册 / 运行期零 Node / 文档同步 32 条（反证：check:anime-module:refute，24 条）
+npm run task -- check:anime-module    # 番剧模块接线：@anime 别名双同步 / /anime 路由与 IA / 屏装配件 / 十屏分派 / IPC 命令名与 handler 注册 / animesvc manifest 端点 / 播放契约 PlaybackCore 与 selftest / 播放器接线（anime_play_source → ArtPlayer + hls.js / 内核轨说明 / 续看回写）/ Bangumi 元数据（UA 四段 / 镜像列表与图片镜像 / 检索 / 落 manifest / 详情页入口）/ 扁平落盘目录合成剧集 / 设置接线（库根 / 代理真正生效）/ M3 源契约、本机导入与 RSS 适配器 / 媒体服务器适配器（Jellyfin / Emby，api_key 只走请求头）/ 远程播放中继（anime_play_remote → 带票中继 → 播放器远程态）/ 内核轨（animesvc/kernel：mpv JSON IPC、独立窗口、轨道 / 音量 / 统计）/ 番剧设置分组 / 样式注册 / 运行期零 Node / 文档同步 35 条（反证：check:anime-module:refute，27 条）
 npm run task -- check:settings        # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3 裁定结果 + ④ 功能梳理（侧栏标签 / 存储占用 / 第三方许可 / def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染 + **C5 许可清单的引擎/模型段** + **D4 运行时实况行** 186 条（反证：check:settings:refute，145 条）
 npm run task -- check:units           # 前端分层 / hooks / 别名 / 状态 / 屏装配件分派 / 灵动岛 / 看图缩放 / 样式分层 46 条（反证：check:units:refute）
 npm run task -- check:stall           # U10② 引擎卡死：「静默有上界 + 每次尝试留痕 + 进行中落盘」7 条 / 反证 3 条（mock 引擎对指定 seq「永不回包」）
