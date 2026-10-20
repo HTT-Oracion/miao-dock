@@ -36,6 +36,8 @@ export function libraryActions(
   | 'importFolder'
   | 'playRemoteSource'
   | 'clearRemote'
+  | 'loadExplore'
+  | 'importCandidate'
 > {
   /** 把扫描结果写进 store（三处调用共用，避免字段漏写） */
   const applySnapshot = (snap: Awaited<ReturnType<typeof ipc.animeLibrary>>) => {
@@ -333,6 +335,50 @@ export function libraryActions(
 
     clearRemote: () => {
       set({ remote: null });
+    },
+
+    /**
+     * 拉探索页在线数据：新番时间表 + 热度。
+     *
+     * 缓存策略：一次会话内只拉一次（`force` 给「刷新」按钮）；失败**不清空**旧数据，
+     * 只把原因写进 `exploreError` —— 断网时整页变空比"旧数据 + 一句错误"更糟。
+     */
+    loadExplore: async (force = false) => {
+      const { calendar, hot, exploreLoading } = get();
+      if (exploreLoading) return;
+      if (!force && calendar.length > 0 && hot.length > 0) return;
+      set({ exploreLoading: true, exploreError: null });
+      try {
+        const [cal, h] = await Promise.all([ipc.animeMetadataCalendar(), ipc.animeMetadataHot(12)]);
+        set({
+          calendar: cal.days ?? [],
+          hot: h.candidates ?? [],
+          hotSource: h.source === 'rank' ? 'rank' : 'heat',
+          exploreLoading: false,
+        });
+      } catch (e) {
+        set({ exploreError: `在线数据没拉到：${errText(e)}`, exploreLoading: false });
+      }
+    },
+
+    /**
+     * 把 Bangumi 候选建成一条新番剧（只有元数据、没有片源）。
+     *
+     * 建完立刻重扫并选中：不重扫的话列表里还是旧快照，用户会以为没成功。
+     */
+    importCandidate: async (bgmId) => {
+      try {
+        const r = await ipc.animeMetadataImport(bgmId);
+        await get().refreshLibrary();
+        const id = r.subject?.id ?? r.dir;
+        set({ selectedId: id, view: 'detail' });
+        const title = r.subject?.title ?? r.dir;
+        return { ok: true, message: `已把「${title}」加入番剧库（还没有片源，放片后重新扫描即可）` };
+      } catch (e) {
+        const message = `加入番剧库失败：${errText(e)}`;
+        set({ error: message });
+        return { ok: false, message };
+      }
     },
   };
 }

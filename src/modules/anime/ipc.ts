@@ -7,7 +7,9 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import type {
+  AnimeCalendarDay,
   AnimeEpisode,
+  AnimeHotResult,
   AnimeKernelStatus,
   AnimeLibrarySnapshot,
   AnimeMetadataCandidate,
@@ -72,6 +74,16 @@ export const animeMetadataSearch = (q: string) =>
 /** 把某个候选补进这一部的 manifest；只增不改用户数据 */
 export const animeMetadataApply = (dir: string, bgmId: number) =>
   invoke<{ ok: boolean; dir: string; subject: AnimeSubject }>('anime_metadata_apply', { dir, bgmId });
+
+/** 探索页：本周新番时间表（Bangumi `/calendar`，条目是整条 subject） */
+export const animeMetadataCalendar = () => invoke<{ ok: boolean; days: AnimeCalendarDay[] }>('anime_metadata_calendar');
+
+/** 探索页：热度推荐（服务侧在 `heat` 不可用时退回排行，`source` 说明来源） */
+export const animeMetadataHot = (limit = 12) => invoke<AnimeHotResult>('anime_metadata_hot', { limit });
+
+/** 把 Bangumi 条目建成一条新番剧（只有元数据、没有片源；同一部幂等） */
+export const animeMetadataImport = (bgmId: number) =>
+  invoke<{ ok: boolean; dir: string; path: string; subject: AnimeSubject }>('anime_metadata_import', { bgmId });
 
 /**
  * 切换番剧库根（设置页「番剧根目录」）；留空 = 回服务端默认落点。

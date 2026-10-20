@@ -155,6 +155,25 @@ export interface AnimeMetadataCandidate {
   tags: string[];
 }
 
+/** 探索页「新番周历」的一天；`weekday` 0=周一…6=周日（与 `WEEKDAYS` 同口径） */
+export interface AnimeCalendarDay {
+  weekday: number;
+  items: AnimeMetadataCandidate[];
+}
+
+/**
+ * 探索页「热度推荐」的回执。
+ *
+ * `source: 'rank'` = 上游不支持热度排序，服务侧退回了排行 —— 界面据此换文案，
+ * **不把排行说成热度**。
+ */
+export interface AnimeHotResult {
+  ok: boolean;
+  source: 'heat' | 'rank';
+  note?: string;
+  candidates: AnimeMetadataCandidate[];
+}
+
 /** 一集的外挂字幕（`url` 已带票，`<track>` 可直接用） */
 export interface AnimePlaySubtitle {
   url: string;

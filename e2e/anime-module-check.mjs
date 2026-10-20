@@ -46,6 +46,7 @@ const F = {
   settingsCatalogMain: path.join(ROOT, 'src', 'screens', 'settings', 'catalog.ts'),
   animeSettings: path.join(ROOT, 'src', 'screens', 'anime', 'AnimeSettingsSection.tsx'),
   sourceScreen: path.join(ROOT, 'src', 'screens', 'anime', 'SourceScreen.tsx'),
+  discoverScreen: path.join(ROOT, 'src', 'screens', 'anime', 'DiscoverScreen.tsx'),
   style: path.join(ROOT, 'src', 'styles', 'anime.scss'),
   styleIndex: path.join(ROOT, 'src', 'styles', 'index.scss'),
   playerModule: path.join(ROOT, 'src', 'modules', 'anime', 'player.ts'),
@@ -395,6 +396,26 @@ const CHECKS = [
         /pickSubtitleIndex\(source\.subtitles, p\.subtitlePriority\)/.test(s.playerHook) &&
         /pickSubtitleIndex\(kernelSource\.subtitles, p\.subtitlePriority\)/.test(s.playerHook),
       detail: '「字幕语言优先级」没接线：WebView 轨与内核轨都该按偏好自动选一条（设置项成了摆设）',
+    }),
+  },
+  {
+    id: 'META.explore',
+    run: (s) => ({
+      ok:
+        /pub async fn calendar\(/.test(s.rustMetadata) &&
+        /pub async fn hot\(/.test(s.rustMetadata) &&
+        /pub async fn import_subject\(/.test(s.rustMetadata) &&
+        /anime\/metadata\/calendar/.test(s.rustAnimesvc) &&
+        /anime\/metadata\/hot/.test(s.rustAnimesvc) &&
+        /anime\/metadata\/import/.test(s.rustAnimesvc) &&
+        /crate::anime::anime_metadata_calendar/.test(strip(s.rustCommands)) &&
+        /'anime_metadata_calendar'/.test(s.ipc) &&
+        /animeMetadataHot/.test(s.ipc) &&
+        /loadExplore/.test(s.actionLib) &&
+        /importCandidate/.test(s.actionLib) &&
+        /loadExplore/.test(s.discoverScreen) &&
+        /hotSource/.test(s.discoverScreen),
+      detail: '探索页没接真实数据：Bangumi 时间表 / 热度 / 条目建库 任一环缺失（探索页会退回「只有本地库」）',
     }),
   },
   {
@@ -775,6 +796,13 @@ const MUTATIONS = [
     find: 'pickSubtitleIndex(source.subtitles, p.subtitlePriority)',
     replace: '-1',
     expect: ['SUBTITLE.priority'],
+  },
+  {
+    name: '探索页摘掉时间表路由（在线数据全断）',
+    file: F.rustAnimesvc,
+    find: '.route(&format!("/api/{API_VERSION}/anime/metadata/calendar"), get(metadata_calendar))',
+    replace: '',
+    expect: ['META.explore'],
   },
 ];
 

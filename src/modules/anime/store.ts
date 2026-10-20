@@ -8,7 +8,9 @@
 import { create } from 'zustand';
 import type {
   AnimeAccount,
+  AnimeCalendarDay,
   AnimeEpisode,
+  AnimeMetadataCandidate,
   AnimeServiceStatus,
   AnimeSubject,
   AnimeView,
@@ -66,6 +68,14 @@ export interface AnimeState {
   /** 远程播放（媒体服务器中继）；本地播放时不占用这个字段 */
   remote: AnimeRemotePlayback | null;
 
+  // ── 探索页在线数据（Bangumi 时间表 / 热度） ──
+  calendar: AnimeCalendarDay[];
+  hot: AnimeMetadataCandidate[];
+  /** `rank` = 上游不支持热度排序、服务侧退回了排行（界面据此换文案） */
+  hotSource: 'heat' | 'rank';
+  exploreLoading: boolean;
+  exploreError: string | null;
+
   // ── 动作（实现见 actions/*.ts） ──
   setView: (v: AnimeView) => void;
   setQuery: (q: string) => void;
@@ -98,6 +108,10 @@ export interface AnimeState {
   clearDemo: () => Promise<void>;
   loadSources: () => Promise<void>;
   loadCache: () => Promise<void>;
+  /** 拉探索页在线数据（时间表 + 热度）；`force` 跳过缓存重取 */
+  loadExplore: (force?: boolean) => Promise<void>;
+  /** 把 Bangumi 候选建成一条新番剧（幂等），成功后重扫并选中 */
+  importCandidate: (bgmId: number) => Promise<{ ok: boolean; message: string }>;
   refreshStatus: () => Promise<void>;
 }
 
@@ -148,6 +162,12 @@ export const useAnimeStore = create<AnimeState>()((set, get) => ({
   sources: [],
   cache: [],
   remote: null,
+
+  calendar: [],
+  hot: [],
+  hotSource: 'heat',
+  exploreLoading: false,
+  exploreError: null,
 
   ...navigationActions(set, get),
   ...libraryActions(set, get),
