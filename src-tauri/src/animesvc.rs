@@ -35,6 +35,7 @@ use axum::{Json, Router};
 use serde::Deserialize;
 
 mod manifest;
+pub mod cache;
 pub mod datasource;
 pub mod import;
 pub mod kernel;
@@ -238,6 +239,11 @@ fn router(shell: Arc<Shell>) -> Router {
         .route(&format!("/api/{API_VERSION}/anime/sources/resolve"), post(source_resolve))
         // 订阅：从地址拉一份规则草稿（R2-3）
         .route(&format!("/api/{API_VERSION}/anime/sources/subscribe"), post(source_subscribe))
+        // 缓存与下载管理（R3）
+        .route(&format!("/api/{API_VERSION}/anime/cache"), get(cache_list).post(cache_add))
+        .route(&format!("/api/{API_VERSION}/anime/cache/pause"), post(cache_pause))
+        .route(&format!("/api/{API_VERSION}/anime/cache/resume"), post(cache_resume))
+        .route(&format!("/api/{API_VERSION}/anime/cache/delete"), post(cache_delete))
         // 媒体服务器远程播放：带票中继上游视频（api_key 只走请求头，不出现在 URL 里）
         .route(&format!("/api/{API_VERSION}/anime/mediaserver/stream"), get(datasource::mediaserver::relay))
         // 内核轨（libmpv 的替身：随包 mpv + JSON IPC）。状态与控制在服务侧，
@@ -670,6 +676,82 @@ async fn source_test(
 #[derive(Deserialize)]
 struct SourceSubscribeBody {
     url: String,
+}
+
+#[derive(Deserialize)]
+struct CacheIdBody {
+    id: String,
+}
+
+/// 缓存任务列表（进度以盘上为准）。
+async fn cache_list(State(shell): State<Arc<Shell>>, headers: HeaderMap) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match cache::list() {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", e),
+    }
+}
+
+/// 新建下载任务（HTTP 直链；BT 归 R5）。
+async fn cache_add(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match cache::add(&body) {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) if e.starts_with("缓存任务要带") || e.starts_with("只支持 HTTP") => {
+            envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e)
+        }
+        Err(e) => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", e),
+    }
+}
+
+async fn cache_pause(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<CacheIdBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match cache::pause(&body.id) {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
+    }
+}
+
+async fn cache_resume(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<CacheIdBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match cache::resume(&body.id) {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
+    }
+}
+
+async fn cache_delete(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<CacheIdBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match cache::delete(&body.id) {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
+    }
 }
 
 /// 从订阅地址拉一份规则草稿（只解析不落盘：落盘要用户在编辑器里确认）。

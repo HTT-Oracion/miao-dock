@@ -481,6 +481,12 @@ function startMockSite() {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       return res.end(list);
     }
+    if (u.pathname === '/file.bin') {
+      // 缓存下载的源：32 KB 固定字节，够验证「下完 + 落盘 + 进度」
+      const buf = Buffer.alloc(32 * 1024, 7);
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': String(buf.length) });
+      return res.end(buf);
+    }
     if (u.pathname === '/subscribe.json') {
       res.writeHead(200, { 'content-type': 'application/json' });
       return res.end(
@@ -1075,6 +1081,52 @@ try {
       'A16 订阅内容不是 JSON ⇒ 502 且说明是内容问题（不是网络不通）',
       bad.status === 502 && /不是合法 JSON/.test(bad.buf.toString()),
       bad.buf.toString().slice(0, 240),
+    );
+  }
+
+  // A17：缓存任务（新建 → 真下载 → 列表可见 → 删除）
+  {
+    const base = `http://127.0.0.1:${animeInfo.port}`;
+    const auth = { 'x-box-token': animeInfo.token };
+    const postJson = (p, body) =>
+      request('POST', `${base}${p}`, {
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    const cacheDir = path.join(D.animeState, 'cache');
+    const add = await postJson('/api/v1/anime/cache', {
+      subjectId: '冰菓',
+      episodeIndex: 99,
+      title: '第 99 话',
+      url: `${site.base}/file.bin`,
+      cacheDir,
+    });
+    check(
+      'A17 新建缓存任务 200 且返回任务 id',
+      add.status === 200 && add.json?.id === '冰菓#99',
+      add.buf.toString().slice(0, 240),
+    );
+
+    // 下载在服务侧异步推进：轮询到 done（最多 ~5s）
+    let task = null;
+    for (let i = 0; i < 50 && !task; i++) {
+      const list = await request('GET', `${base}/api/v1/anime/cache`, { headers: auth });
+      const t = (list.json?.tasks ?? []).find((x) => x.id === '冰菓#99');
+      if (t && t.state === 'done') task = t;
+      else await sleep(100);
+    }
+    check(
+      'A17 任务真下完（state=done 且字节数等于源大小）',
+      task !== null && task.receivedBytes === 32 * 1024 && task.sizeBytes === 32 * 1024,
+      task ?? '超时未完成',
+    );
+
+    const del = await postJson('/api/v1/anime/cache/delete', { id: '冰菓#99' });
+    const after = await request('GET', `${base}/api/v1/anime/cache`, { headers: auth });
+    check(
+      'A17 删除后列表里不再有这条任务',
+      del.status === 200 && !(after.json?.tasks ?? []).some((x) => x.id === '冰菓#99'),
+      after.buf.toString().slice(0, 240),
     );
   }
 

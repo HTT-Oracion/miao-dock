@@ -633,6 +633,36 @@ pub async fn anime_resolve_source(url: String, rules: Value, cookies: Option<Val
     .await
 }
 
+/// 缓存任务列表（进度以盘上为准）。
+#[tauri::command]
+pub async fn anime_cache() -> Result<Value, String> {
+    get("/api/v1/anime/cache").await
+}
+
+/// 新建缓存任务（HTTP 直链；cacheDir / limitGb 来自设置）。
+#[tauri::command]
+pub async fn anime_cache_add(payload: Value) -> Result<Value, String> {
+    post("/api/v1/anime/cache", payload).await
+}
+
+/// 暂停缓存任务。
+#[tauri::command]
+pub async fn anime_cache_pause(id: String) -> Result<Value, String> {
+    post("/api/v1/anime/cache/pause", json!({ "id": id })).await
+}
+
+/// 继续缓存任务（带 Range 续传）。
+#[tauri::command]
+pub async fn anime_cache_resume(id: String) -> Result<Value, String> {
+    post("/api/v1/anime/cache/resume", json!({ "id": id })).await
+}
+
+/// 删除缓存任务（连同盘上文件）。
+#[tauri::command]
+pub async fn anime_cache_delete(id: String) -> Result<Value, String> {
+    post("/api/v1/anime/cache/delete", json!({ "id": id })).await
+}
+
 /// 从订阅地址拉一份规则草稿（服务侧解析并校验，前端填进编辑器由用户确认保存）。
 #[tauri::command]
 pub async fn anime_subscribe_source(url: String) -> Result<Value, String> {
