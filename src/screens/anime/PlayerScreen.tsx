@@ -14,7 +14,7 @@ import { useEsc } from '@hooks/useEsc';
 import * as ipc from '@anime/ipc';
 import { useAnimeStore } from '@anime/store';
 import { episodesOf, selectedEpisode, selectedSubject } from '@anime/selectors';
-import { errText, fmtClock, tidyRules } from '@anime/convert';
+import { displayTitle, errText, fmtClock, tidyRules } from '@anime/convert';
 import { PLAYER_KEYS, SOURCE_KIND_LABEL } from '@anime/player-options';
 import type {
   AnimeKernelTrack,
@@ -290,9 +290,12 @@ function SourcePicker({ onClose }: { onClose: () => void }) {
   const sources = useAnimeStore((s) => s.sources);
   const playRemoteSource = useAnimeStore((s) => s.playRemoteSource);
   const playWebUrl = useAnimeStore((s) => s.playWebUrl);
+  const prefs = useAnimeStore((s) => s.prefs);
   const { push } = useToasts();
   const [busy, setBusy] = useState<string | null>(null);
   const [items, setItems] = useState<Record<string, AnimeSourceTestItem[]>>({});
+  /** 「切来源前确认」：先挂起，用户点确认才真播 */
+  const [confirm, setConfirm] = useState<{ src: MediaSourceView; it: AnimeSourceTestItem } | null>(null);
   useEsc(onClose);
 
   const load = async (src: MediaSourceView) => {
@@ -313,6 +316,12 @@ function SourcePicker({ onClose }: { onClose: () => void }) {
   };
 
   const play = async (src: MediaSourceView, it: AnimeSourceTestItem) => {
+    // 设置里的「切来源前确认」：第一次点击只挂起，确认后才走真正的播放分支
+    if (prefs.confirmSource && !confirm) {
+      setConfirm({ src, it });
+      return;
+    }
+    setConfirm(null);
     if (it.kind === 'video' && it.id) {
       const r = await playRemoteSource(src.id, it);
       if (r.ok) onClose();
@@ -325,7 +334,7 @@ function SourcePicker({ onClose }: { onClose: () => void }) {
         return;
       }
       try {
-        const r = await ipc.animeResolveSource(it.link, tidyRules(src.rules));
+        const r = await ipc.animeResolveSource(it.link, tidyRules(src.rules), undefined, prefs.preferRes);
         playWebUrl(r.url, it.title, src.name, src.id);
         onClose();
       } catch (e) {
@@ -391,6 +400,22 @@ function SourcePicker({ onClose }: { onClose: () => void }) {
           {group('媒体服务器', ['jellyfin', 'emby'])}
           {group('在线网页源', ['web', 'selector'])}
           {group('订阅源', ['rss'])}
+          {confirm ? (
+            <section className="an-picker-group">
+              <div className="an-picker-row">
+                <span className="an-picker-tx">
+                  <b>确认播放「{confirm.it.title}」？</b>
+                  <span>来自「{confirm.src.name}」</span>
+                </span>
+                <Btn kind="primary" size="sm" onClick={() => void play(confirm.src, confirm.it)}>
+                  播放
+                </Btn>
+                <Btn kind="ghost" size="sm" onClick={() => setConfirm(null)}>
+                  取消
+                </Btn>
+              </div>
+            </section>
+          ) : null}
           <section className="an-picker-group">
             <div className="an-picker-hd">
               <b>BT</b>
@@ -663,6 +688,7 @@ export function PlayerScreen() {
   const prefs = useAnimeStore((s) => s.prefs);
   const setPref = useAnimeStore((s) => s.setPref);
   const remote = useAnimeStore((s) => s.remote);
+  const titleMode = useAnimeStore((s) => s.prefs.titleMode);
   const [tab, setTab] = useState<SideTab>('episodes');
   const [statsOn, setStatsOn] = useState(false);
   /** 「选择播放来源」浮层（设计稿 ⑤ 的来源入口） */
@@ -734,7 +760,7 @@ export function PlayerScreen() {
             <ArrowLeft size={16} />
           </button>
           <div className="an-stage-tt">
-            <b>{subject.title}</b>
+            <b>{displayTitle(subject, titleMode)}</b>
             <span>
               第 {episode.index} 话「{episode.title}」· {stageLine(loading, error, source)}
             </span>

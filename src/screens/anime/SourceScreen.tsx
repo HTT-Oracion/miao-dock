@@ -37,6 +37,7 @@ export function SourceScreen() {
   const saveSource = useAnimeStore((s) => s.saveSource);
   const deleteSource = useAnimeStore((s) => s.deleteSource);
   const playRemoteSource = useAnimeStore((s) => s.playRemoteSource);
+  const prefs = useAnimeStore((s) => s.prefs);
   const { push } = useToasts();
   const [importing, setImporting] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -110,7 +111,7 @@ export function SourceScreen() {
     }
     setResolving(s.id);
     try {
-      const r = await ipc.animeResolveSource(pageUrl, tidyRules(s.rules), cookies[s.id]);
+      const r = await ipc.animeResolveSource(pageUrl, tidyRules(s.rules), cookies[s.id], prefs.preferRes);
       setPreview({ id: s.id, items: preview?.items ?? [], resolved: r.url });
       push(`解析到直链：${r.url}`, 'good');
     } catch (e) {

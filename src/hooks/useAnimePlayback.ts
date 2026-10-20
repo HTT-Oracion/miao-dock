@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import * as ipc from '@anime/ipc';
-import { errText, pickSubtitleIndex } from '@anime/convert';
+import { errText, pickSubtitleIndex, SUB_PREF_LABEL } from '@anime/convert';
 import { RATE_STEPS } from '@anime/player-options';
 import { createWebviewPlayer, type PlayerEnv, type WebviewPlayer } from '@anime/player';
 import type {
@@ -220,7 +220,7 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
     if (!el || !source || !source.found || source.track !== 'webview' || !source.supported) return;
     const p = prefsRef.current;
     // 设置里的「字幕语言优先级」在这里生效：命中的那条自动开，没命中就保持关闭
-    const autoSub = pickSubtitleIndex(source.subtitles, p.subtitlePriority);
+    const autoSub = pickSubtitleIndex(source.subtitles, p.subtitlePriority || SUB_PREF_LABEL[p.preferSub]);
     const env: PlayerEnv = {
       startMs: p.resume ? startRef.current : 0,
       rate: p.defaultRate,
@@ -276,7 +276,7 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
         // 「字幕语言优先级」在内核轨同样生效：命中的外挂字幕由内核自己挂上
         const kernelSource = sourceRef.current;
         if (kernelSource && kernelSource.found && kernelSource.track === 'libmpv') {
-          const at = pickSubtitleIndex(kernelSource.subtitles, p.subtitlePriority);
+          const at = pickSubtitleIndex(kernelSource.subtitles, p.subtitlePriority || SUB_PREF_LABEL[p.preferSub]);
           if (at >= 0) {
             void ipc.animeKernelCtl('subtitle', kernelSource.subtitles[at].file);
             setSubtitleIndex(at);

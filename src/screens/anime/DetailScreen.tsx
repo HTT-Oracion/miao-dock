@@ -10,7 +10,7 @@ import { Btn, Empty, Skeleton } from '@components/units';
 import { useToasts } from '@hooks';
 import { useAnimeStore } from '@anime/store';
 import { episodesOf, selectedSubject } from '@anime/selectors';
-import { fmtClock, progressOf, progressPct } from '@anime/convert';
+import { displayTitle, fmtClock, progressOf, progressPct } from '@anime/convert';
 import { COLLECTION_LABELS, COLLECTION_ORDER } from '@anime/types';
 import { CollectionChip, Cover, EpisodeRow, ProgressBar, SectionHead, Stat } from '@screens/anime/shared';
 
@@ -23,6 +23,7 @@ export function DetailScreen() {
   const openPlayer = useAnimeStore((s) => s.openPlayer);
   const markWatched = useAnimeStore((s) => s.markWatched);
   const fillMetadata = useAnimeStore((s) => s.fillMetadata);
+  const titleMode = useAnimeStore((s) => s.prefs.titleMode);
   const loadDetailExtra = useAnimeStore((s) => s.loadDetailExtra);
   const extra = useAnimeStore((s) => s.detailExtra);
   const subjects = useAnimeStore((s) => s.subjects);
@@ -138,7 +139,7 @@ export function DetailScreen() {
           <button type="button" className="an-back" onClick={() => setView('collection')} title="返回追番">
             <ArrowLeft size={15} /> 返回
           </button>
-          <h2>{subject.title}</h2>
+          <h2>{displayTitle(subject, titleMode)}</h2>
           {subject.titleOriginal && subject.titleOriginal !== subject.title ? (
             <div className="an-detail-sub">{subject.titleOriginal}</div>
           ) : null}

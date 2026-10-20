@@ -6,7 +6,8 @@
 import type { ReactNode } from 'react';
 import type { AnimeEpisode, AnimeSubject, CollectionType, SyncState } from '@anime/types';
 import { COLLECTION_LABELS } from '@anime/types';
-import { fmtClock, progressOf, progressPct } from '@anime/convert';
+import { displayTitle, fmtClock, progressOf, progressPct } from '@anime/convert';
+import { useAnimeStore } from '@anime/store';
 
 /** 封面：有图用图，没图用标题首字 + 稳定色块（离线也不空白） */
 export function Cover({ subject, size = 'md' }: { subject: AnimeSubject; size?: 'sm' | 'md' | 'lg' }) {
@@ -72,6 +73,8 @@ export function SubjectCard({
   onOpen: () => void;
   onContinue: () => void;
 }) {
+  const titleMode = useAnimeStore((s) => s.prefs.titleMode);
+  const title = displayTitle(subject, titleMode);
   const watched = progressOf(subject, episodes);
   const total = subject.episodesTotal ?? episodes.filter((e) => e.subjectId === subject.id).length;
   const pct = progressPct(watched, total);
@@ -82,8 +85,8 @@ export function SubjectCard({
         {subject.rating ? <span className="an-card-score">{subject.rating.toFixed(1)}</span> : null}
       </button>
       <div className="an-card-body">
-        <button type="button" className="an-card-name" onClick={onOpen} title={subject.title}>
-          {subject.title}
+        <button type="button" className="an-card-name" onClick={onOpen} title={title}>
+          {title}
         </button>
         <div className="an-card-meta">
           <span className={subject.airing?.state === 'airing' ? 'an-dot is-live' : 'an-dot'} />

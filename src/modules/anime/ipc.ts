@@ -161,9 +161,14 @@ export const animeTestSource = (
     cookies: cookies ?? null,
   });
 
-/** 通用网页源：详情页 → 视频直链（拿到直链才能交给播放器） */
-export const animeResolveSource = (url: string, rules: AnimeSourceRules, cookies?: AnimeCookie[]) =>
-  invoke<{ ok: boolean; url: string }>('anime_resolve_source', { url, rules, cookies: cookies ?? null });
+/** 通用网页源：详情页 → 视频直链（拿到直链才能交给播放器）；多清晰度按 preferRes 挑 */
+export const animeResolveSource = (url: string, rules: AnimeSourceRules, cookies?: AnimeCookie[], preferRes?: string) =>
+  invoke<{ ok: boolean; url: string }>('anime_resolve_source', {
+    url,
+    rules,
+    cookies: cookies ?? null,
+    preferRes: preferRes ?? null,
+  });
 
 /** 打开「过验证码」窗口（内嵌网页，用户手动完成验证） */
 export const animeOpenChallenge = (url: string) =>

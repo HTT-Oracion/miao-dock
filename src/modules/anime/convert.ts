@@ -125,3 +125,18 @@ export function tidyRules(rules: AnimeSourceRules): AnimeSourceRules {
   }
   return out;
 }
+
+/** 「标题模式」：中文名 / 原名（设置第 3 组）；缺原名时退回中文名，不显示空标题 */
+export function displayTitle(
+  subject: { title: string; titleOriginal?: string | null },
+  mode: 'cn' | 'original',
+): string {
+  return mode === 'original' && subject.titleOriginal ? subject.titleOriginal : subject.title;
+}
+
+/** 「优先字幕语言」设置值 → 字幕优先级文本（subtitlePriority 为空时兜底用） */
+export const SUB_PREF_LABEL: Record<'zh' | 'zh-hant' | 'ja', string> = {
+  zh: '简中',
+  'zh-hant': '繁中',
+  ja: '日语',
+};

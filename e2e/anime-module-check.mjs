@@ -53,6 +53,7 @@ const F = {
   playerHook: path.join(ROOT, 'src', 'hooks', 'useAnimePlayback.ts'),
   playerScreen: path.join(ROOT, 'src', 'screens', 'anime', 'PlayerScreen.tsx'),
   detailScreen: path.join(ROOT, 'src', 'screens', 'anime', 'DetailScreen.tsx'),
+  shared: path.join(ROOT, 'src', 'screens', 'anime', 'shared.tsx'),
   rustAnime: path.join(ROOT, 'src-tauri', 'src', 'anime', 'mod.rs'),
   rustAnimesvc: path.join(ROOT, 'src-tauri', 'src', 'animesvc.rs'),
   rustSources: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'sources.rs'),
@@ -395,8 +396,12 @@ const CHECKS = [
       ok:
         /export function pickSubtitleIndex/.test(s.convertTs) &&
         /SUB_LANG_ALIASES/.test(s.convertTs) &&
-        /pickSubtitleIndex\(source\.subtitles, p\.subtitlePriority\)/.test(s.playerHook) &&
-        /pickSubtitleIndex\(kernelSource\.subtitles, p\.subtitlePriority\)/.test(s.playerHook),
+        /pickSubtitleIndex\(source\.subtitles, p\.subtitlePriority \|\| SUB_PREF_LABEL\[p\.preferSub\]\)/.test(
+          s.playerHook,
+        ) &&
+        /pickSubtitleIndex\(kernelSource\.subtitles, p\.subtitlePriority \|\| SUB_PREF_LABEL\[p\.preferSub\]\)/.test(
+          s.playerHook,
+        ),
       detail: '「字幕语言优先级」没接线：WebView 轨与内核轨都该按偏好自动选一条（设置项成了摆设）',
     }),
   },
@@ -505,6 +510,21 @@ const CHECKS = [
         /needsRules/.test(s.sourceScreen) &&
         /resolveSource/.test(s.sourceScreen),
       detail: '通用网页源没接通：选择器规则 / 列表解析 / 直链解析 / 端点 / 编辑器 任一环缺失',
+    }),
+  },
+  {
+    id: 'SETTINGS.consumed',
+    run: (s) => ({
+      ok:
+        /displayTitle\(subject, titleMode\)/.test(s.shared) &&
+        /displayTitle\(subject, titleMode\)/.test(s.detailScreen) &&
+        /export function displayTitle/.test(s.convertTs) &&
+        /SUB_PREF_LABEL/.test(s.convertTs) &&
+        /SUB_PREF_LABEL\[p\.preferSub\]/.test(s.playerHook) &&
+        /prefs\.preferRes/.test(s.sourceScreen) &&
+        /prefs\.preferRes/.test(s.playerScreen) &&
+        /prefs\.confirmSource/.test(s.playerScreen),
+      detail: '设置项没接线：titleMode / preferSub / preferRes / confirmSource 至少一项没被消费（改设置没反应）',
     }),
   },
   {
@@ -896,7 +916,7 @@ const MUTATIONS = [
   {
     name: '字幕优先级不接线（设置项成摆设）',
     file: F.playerHook,
-    find: 'pickSubtitleIndex(source.subtitles, p.subtitlePriority)',
+    find: 'pickSubtitleIndex(source.subtitles, p.subtitlePriority || SUB_PREF_LABEL[p.preferSub])',
     replace: '-1',
     expect: ['SUBTITLE.priority'],
   },
@@ -948,6 +968,13 @@ const MUTATIONS = [
     find: 'onClick={() => setPickerOpen(true)}',
     replace: "onClick={() => setView('source')}",
     expect: ['PLAYER.picker'],
+  },
+  {
+    name: '标题模式不生效（设置改了标题还是中文名）',
+    file: F.shared,
+    find: 'const title = displayTitle(subject, titleMode);',
+    replace: 'const title = subject.title;',
+    expect: ['SETTINGS.consumed'],
   },
 ];
 
