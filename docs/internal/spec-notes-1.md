@@ -6059,6 +6059,46 @@ MIAO_MPV_BIN=<…>/.tmp/mpv/mpv.exe  animesvc.exe --kernel-selftest
 需要 JS 渲染或过验证码的站点，本层会得到"没选中任何条目"，这属于**如实失败**而不是假装支持。
 播放侧只到"解析出直链"，把直链接进播放器（含 Referer / 防盗链中继）留到 R2 的下一片。
 
+## D-254 详情页补充数据（角色 / 制作 / 关联）；两处上游契约缺口（2026-10-20）
+
+**一、先查契约再写代码**：R2 计划里「角色 / 制作 / 关联 / 评价 / 评分直方图」都依赖 Bangumi 上游，
+所以先把官方 OpenAPI 拉下来核对（`bangumi/api` 仓的 `open-api/v0.yaml`，经 jsdelivr 镜像取到；
+raw.githubusercontent 在本机不通，与 D-246 同因）。核对结论：
+
+| 计划项 | v0 是否有契约 | 处置 |
+|---|---|---|
+| 角色 + 声优 | 有：`/v0/subjects/{id}/characters`（`RelatedCharacter{id,name,name_cn,relation,images,actors[]}`） | 本轮做 |
+| 制作人员 | 有：`/v0/subjects/{id}/persons`（`RelatedPerson{id,name,relation,career[],images}`） | 本轮做 |
+| 关联作品 | 有：`/v0/subjects/{id}/subjects`（`v0_subject_relation{id,name,name_cn,images,relation}`） | 本轮做 |
+| 评分直方图（分档人数） | **没有**：v0 的 `Subject` 只有 `score` / `rank` / `collection_total`，**没有 1–10 分的人数分布** | 登记缺口，待裁定 |
+| 评价只读预览 | **没有**：v0 无 comments / blog 端点 | 登记缺口，待裁定 |
+
+后两项是**事实缺口**，不是"还没写"：没有数据源时画直方图只能编数，那正是任务书禁止的硬编码。
+
+**二、实现（本轮）**
+
+| 层 | 落点 | 职责 |
+|---|---|---|
+| 映射 | `metadata.rs` | `characters/staff/related` 三个纯映射 + `*_default` 走镜像列表；抽出 `image_of()`（空串不算有图 —— 上游常用 `""` 表示没有，直接当 `Some("")` 会让 `<img src="">` 重新请求当前页） |
+| 端点 | `animesvc.rs` | `GET /anime/metadata/{characters,staff,related}?bgmId=`（都要令牌） |
+| 桥接 | `anime/mod.rs` | `anime_metadata_{characters,staff,related}` |
+| 前端 | `store.detailExtra` + `loadDetailExtra` | 三个接口 **`allSettled`**：角色挂了不该把制作与关联一起清空；错误汇总成一句显示在该版块 |
+| 屏 | `DetailScreen.tsx` | 角色（头像 / 中文名 / 关系 / CV）、制作人员（关系 · 姓名）、关联作品（点「已在库」开条目，否则加入追番）；没有 `bgmId` 时三块都写明"先补全信息" |
+
+**三、验证**
+
+- `cargo test --lib animesvc` **72/72**（新增 3 条：角色带关系与声优、制作带 career、关联用 `bgmId` 导航）
+- `check:anime` **63/63**：A11 四条 —— 角色 / 制作 / 关联各自 200 且字段对得上、角色无令牌 403（mock Bangumi 加了三条路由）
+- `check:anime-module` **40/40** + 反证 **32/32**（新增 `META.detail`，变异为摘掉关联作品路由）
+- `check:counts` 2/2 · `check:docs` 21/21 · `check:settings` 186/186 · `tsc` / `eslint` / `prettier` / `vite build` 全绿
+
+**四、待裁定（已按任务书要求停下询问）**
+
+1. **评分直方图**：v0 无分档人数。可选：改用「评分 + 排名 + 收藏人数」三数展示（不做直方图）／走 legacy HTML 抓（不稳定、易碎）／等上游或自建聚合。
+2. **评价只读**：v0 无评论端点。可选：不做（UI 保留说明）／接 legacy／用户提供镜像端点。
+3. **验证码交互**（R2-3）：没有指定站点与验证码类型（图形码 / 滑块 / 极验…），实现方式差异极大，属未定义行为。
+
+
 
 
 
