@@ -6220,3 +6220,30 @@ raw.githubusercontent 在本机不通，与 D-246 同因）。核对结论：
 
 
 
+
+## D-259 设置项接线：标题模式 / 优先字幕 / 优先分辨率 / 切来源确认（2026-10-20）
+
+**一、先盘点再动手**：番剧设置 30 项里，真正「功能已经存在、但设置没被消费」的只有 4 项；
+其余 9 项（BT 5 项 / 缓存 2 项 / 同步 2 项）**所属功能还没落地**（R3–R5），现在硬接等于给假开关。
+
+| 设置 | 消费点 | 行为 |
+|---|---|---|
+| `titleMode`（中文名 / 原名） | `convert::displayTitle` → 卡片 / 详情页 / 播放器标题 | 原名缺失时退回中文名，不显示空标题 |
+| `preferSub`（简中 / 繁中 / 日语） | `useAnimePlayback` 的字幕自动选择 | 仅在 `subtitlePriority` **为空**时兜底（显式优先级优先，两轨共用） |
+| `preferRes`（auto / 1080p / 2160p） | `web::resolve_video_pref` → 直链选择 | 多 `<source>` 时精确命中优先，缺档**就近降级**，无高度信息退回第一个 |
+| `confirmSource` | `SourcePicker` | 第一次点「播放」只挂起，确认后才真播 |
+
+**二、优先级口径（易错点）**：`preferRes` 与上游 `sort` 都只认**白名单**；认不出的值一律退回
+`auto` / `match`，**不猜**。高度信息从 `height` / `label` / `data-res` / 文本或 URL 里的数字取 ——
+取不到就当"没有这一档"，仍然按就近降级，而不是随手给第一个。
+
+**三、验证**
+
+- `cargo test --lib animesvc` **79/79**（新增 2 条：多清晰度精确命中 / 缺档就近降级 / 无高度信息退回第一个）
+- `check:anime` **71/71**：A15 两条 —— 多清晰度页面 `preferRes=1080p` 选 1080；请求 2160 但页面只有 720/1080 时**降级到 1080**
+- `check:anime-module` **45/45** + 反证 **37/37**（新增 `SETTINGS.consumed`，变异为把卡片标题退回 `subject.title`）
+- `check:counts` 2/2 · `check:docs` 21/21 · `tsc` / `eslint` / `prettier` / `vite build` 全绿
+
+**四、仍未消费的 9 项（如实登记，不是缺陷）**：`allowBt` / `btStream` / `btPort` / `peerFilterUrl` / `pikpak`（R5 BT）、
+`cacheDir` / `cacheLimitGb`（R3 缓存）、`autoSync` / `conflictPolicy`（R4 账号同步）、
+`selectStrategy`（择优顺序需要多来源候选才有意义，等 R5 的 BT 与在线源一起接）。
