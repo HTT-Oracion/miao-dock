@@ -6184,6 +6184,33 @@ raw.githubusercontent 在本机不通，与 D-246 同因）。核对结论：
 **三、边界**：标签 chip 只覆盖**当前一页结果**里出现过的标签（上游没有"热门标签"端点，写死一份清单
 就等于硬编码）；布局切换是纯前端状态，不落盘 —— 它属于"这次浏览怎么排"，不是用户偏好。
 
+## D-258 「选择播放来源」浮层（R2-9）（2026-10-20）
+
+**一、问题**：播放器那个「选择播放来源」按钮原来只是 `setView('source')` —— 跳去数据源屏，
+用户得自己找源、再回播放器，等于没有"选来源"这件事。
+
+**二、实现**：屏内浮层 `SourcePicker`（`PlayerScreen.tsx`，业务 UI 留屏内），五组：
+
+| 组 | 行为 |
+|---|---|
+| 本地 | 只作说明（当前播的就是番剧库这一集） |
+| 媒体服务器（Jellyfin / Emby） | 「取条目」→ `anime_test_source` → 点「播放」走 `playRemoteSource`（带票中继） |
+| 在线网页源（web / selector） | 「取条目」→ 选一条 → 按「视频地址选择器」`anime_resolve_source` 解析直链 → `playWebUrl` 交给 WebView 轨 |
+| 订阅源（RSS） | 同上取条目；条目没有可直接播的地址时**明说**，不塞假按钮 |
+| BT | 只写「适配器未接入（R5）」—— 不给你一个点了没反应的入口 |
+
+**三、两个共用点**：`tidyRules` 从 `SourceScreen` 提到 `@anime/convert`（两处各写一份必然漂移）；
+`playWebUrl` 与媒体服务器的 `playRemoteSource` **共用 `store.remote`**（播放器只认一套远程态）。
+
+**四、验证**
+
+- `check:anime-module` **44/44** + 反证 **36/36**（新增 `PLAYER.picker`，变异为把按钮改回 `setView('source')`）
+- `tsc --noEmit` / `eslint` / `prettier` / `vite build` 全绿（浮层用 `.an-picker*` 屏内样式，Esc 关闭、点遮罩关闭）
+
+**五、边界**：在线网页源的直链**不经过中继**（与媒体服务器不同）—— 防盗链站点会在 WebView 里失败，
+界面会如实报错而不是"转圈到底"；要彻底解决得给通用网页源加一条带 Referer 的中继，属 R3 的相邻工作。
+
+
 
 
 
