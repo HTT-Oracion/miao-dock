@@ -356,6 +356,15 @@ async fn episode_media(
 #[derive(Deserialize)]
 struct MetadataQuery {
     q: String,
+    /// 年份 / 季度 / 标签 / 排序（R2-6 的筛选条）；全空时走普通检索
+    #[serde(default)]
+    year: Option<u32>,
+    #[serde(default)]
+    quarter: Option<u32>,
+    #[serde(default)]
+    tag: Option<String>,
+    #[serde(default)]
+    sort: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -378,7 +387,13 @@ async fn metadata_search(
     if keyword.is_empty() {
         return envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", "缺少检索关键词");
     }
-    match metadata::search_default(keyword, 8).await {
+    let filtered = q.year.is_some() || q.quarter.is_some() || q.tag.as_deref().is_some_and(|t| !t.trim().is_empty()) || q.sort.is_some();
+    let hit = if filtered {
+        metadata::search_filtered_default(keyword, 20, q.year, q.quarter, q.tag.clone(), q.sort.clone()).await
+    } else {
+        metadata::search_default(keyword, 8).await
+    };
+    match hit {
         Ok(v) => json(StatusCode::OK, v),
         Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("Bangumi 检索失败：{e}")),
     }

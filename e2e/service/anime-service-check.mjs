@@ -362,46 +362,75 @@ function startMockBangumi() {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify(body));
     };
-    if (u.pathname === '/calendar') return json([{ weekday: { id: 6 }, items: [subject] }]);
-    if (u.pathname === '/v0/search/subjects') return json({ data: [subject] });
-    if (u.pathname === '/v0/subjects') return json({ data: [subject], total: 1 });
-    if (u.pathname === '/v0/subjects/27364/characters') {
-      return json([
-        {
-          id: 1,
-          name: '千反田える',
-          name_cn: '千反田爱瑠',
-          relation: '主角',
-          images: { large: 'https://lain.bgm.tv/pic/crt/l/1.jpg', common: '', medium: '' },
-          actors: [{ id: 9, name: '佐藤聡美', images: { large: '', common: '', medium: '' } }],
-        },
-      ]);
-    }
-    if (u.pathname === '/v0/subjects/27364/persons') {
-      return json([
-        {
-          id: 2,
-          name: '京都アニメーション',
-          relation: '动画制作',
-          career: ['动画制作'],
-          images: { large: '', common: '', medium: '' },
-        },
-      ]);
-    }
-    if (u.pathname === '/v0/subjects/27364/subjects') {
-      return json([
-        {
-          id: 40000,
-          name: '氷菓 第2期',
-          name_cn: '冰菓 第二季',
-          relation: '续集',
-          images: { large: '', common: '', medium: '' },
-        },
-      ]);
-    }
-    if (u.pathname === '/v0/subjects/27364') return json(subject);
-    res.writeHead(404);
-    res.end();
+    // 先收完请求体再回：检索请求体要回显，筛选条有没有真发出去靠它取证
+    let raw = '';
+    req.on('data', (c) => (raw += c));
+    req.on('end', () => {
+      let echo = null;
+      try {
+        echo = raw ? JSON.parse(raw) : null;
+      } catch {
+        echo = null;
+      }
+      if (u.pathname === '/calendar') return json([{ weekday: { id: 6 }, items: [subject] }]);
+      if (u.pathname === '/v0/search/subjects') {
+        // 校验筛选条真的发上来了：带 tag 就必须同时有 air_date 与 sort=heat；
+        // 不带 tag 就必须是 sort=match 且没有 air_date。对不上直接 400 —— 让断言变红，
+        // 而不是"产品没发筛选、mock 照样回 200"的假绿。
+        const f = echo?.filter ?? {};
+        const tag = f.tag?.[0];
+        // 热度推荐走的是「空关键词 + sort=heat」，是另一条合法路径
+        const isHot = (echo?.keyword ?? '') === '' && echo?.sort === 'heat' && !tag;
+        const bad = isHot
+          ? false
+          : tag
+            ? !(f.air_date?.[0] === '>=2024-04-01' && f.air_date?.[1] === '<2024-07-01' && echo?.sort === 'heat')
+            : !(echo?.sort === 'match' && !f.air_date);
+        if (bad) {
+          res.writeHead(400, { 'content-type': 'application/json' });
+          return res.end(JSON.stringify({ message: 'filters missing', echo }));
+        }
+        return json({ data: [subject] });
+      }
+      if (u.pathname === '/v0/subjects') return json({ data: [subject], total: 1 });
+      if (u.pathname === '/v0/subjects/27364/characters') {
+        return json([
+          {
+            id: 1,
+            name: '千反田える',
+            name_cn: '千反田爱瑠',
+            relation: '主角',
+            images: { large: 'https://lain.bgm.tv/pic/crt/l/1.jpg', common: '', medium: '' },
+            actors: [{ id: 9, name: '佐藤聡美', images: { large: '', common: '', medium: '' } }],
+          },
+        ]);
+      }
+      if (u.pathname === '/v0/subjects/27364/persons') {
+        return json([
+          {
+            id: 2,
+            name: '京都アニメーション',
+            relation: '动画制作',
+            career: ['动画制作'],
+            images: { large: '', common: '', medium: '' },
+          },
+        ]);
+      }
+      if (u.pathname === '/v0/subjects/27364/subjects') {
+        return json([
+          {
+            id: 40000,
+            name: '氷菓 第2期',
+            name_cn: '冰菓 第二季',
+            relation: '续集',
+            images: { large: '', common: '', medium: '' },
+          },
+        ]);
+      }
+      if (u.pathname === '/v0/subjects/27364') return json(subject);
+      res.writeHead(404);
+      res.end();
+    });
   });
   return new Promise((resolve) => {
     server.listen(0, '127.0.0.1', () => resolve({ server, base: `http://127.0.0.1:${server.address().port}` }));
@@ -934,6 +963,33 @@ try {
       'A13 认不出的输入 ⇒ 400 且明说「看不懂」（不猜）',
       garbage.status === 400 && /看不懂/.test(garbage.buf.toString()),
       garbage.buf.toString().slice(0, 240),
+    );
+  }
+
+  // A14：检索筛选条（年份 / 季度 / 标签 / 排序）真的发到了上游请求体
+  {
+    const base = `http://127.0.0.1:${animeInfo.port}`;
+    const auth = { 'x-box-token': animeInfo.token };
+
+    const filtered = await request(
+      'GET',
+      `${base}/api/v1/anime/metadata/search?q=${encodeURIComponent('冰菓')}&year=2024&quarter=2&tag=${encodeURIComponent('校园')}&sort=heat`,
+      { headers: auth },
+    );
+    // 假上游对筛选条做了校验：缺任何一条就 400，所以 200 本身就是「筛选真的发出去了」的证据
+    check(
+      'A14 带筛选的检索：tag / air_date / sort 都进了请求体',
+      filtered.status === 200 && filtered.json?.count === 1,
+      filtered.buf.toString().slice(0, 300),
+    );
+
+    const plain = await request('GET', `${base}/api/v1/anime/metadata/search?q=${encodeURIComponent('冰菓')}`, {
+      headers: auth,
+    });
+    check(
+      'A14 不带筛选：sort 回落 match，且不发空的 tag / air_date',
+      plain.status === 200 && plain.json?.count === 1,
+      plain.buf.toString().slice(0, 240),
     );
   }
 

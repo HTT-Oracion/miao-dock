@@ -451,9 +451,31 @@ fn play_plan(
 }
 
 /// 按关键词检索 Bangumi 候选。请求由 `animesvc` 发出，前端不直连第三方站点。
+///
+/// 筛选参数（年份 / 季度 / 标签 / 排序）只在给了的时候拼进查询串 —— 空值不传，
+/// 服务侧据此决定走普通检索还是带筛选的检索。
 #[tauri::command]
-pub async fn anime_metadata_search(q: String) -> Result<Value, String> {
-    get(&format!("/api/v1/anime/metadata/search?q={}", urlencode(&q))).await
+pub async fn anime_metadata_search(
+    q: String,
+    year: Option<u32>,
+    quarter: Option<u32>,
+    tag: Option<String>,
+    sort: Option<String>,
+) -> Result<Value, String> {
+    let mut url = format!("/api/v1/anime/metadata/search?q={}", urlencode(&q));
+    if let Some(y) = year {
+        url.push_str(&format!("&year={y}"));
+    }
+    if let Some(qt) = quarter {
+        url.push_str(&format!("&quarter={qt}"));
+    }
+    if let Some(t) = tag.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+        url.push_str(&format!("&tag={}", urlencode(t)));
+    }
+    if let Some(s) = sort.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        url.push_str(&format!("&sort={}", urlencode(s)));
+    }
+    get(&url).await
 }
 
 /// 把某个 Bangumi 候选补进这一部的 manifest（封面 / 评分 / 简介 / 标签 / 连载星期）。

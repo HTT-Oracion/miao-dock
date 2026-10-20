@@ -446,8 +446,24 @@ async fn get_json(url: String) -> Result<Value, String> {
 /// `base` 是**拥有所有权的字符串**：返回的 future 由调用方（镜像列表回调）持有，
 /// 借用参数会让它逃不出闭包（E0515）。
 pub async fn search(base: String, q: &str, limit: usize) -> Result<Value, String> {
+    search_filtered(base, q, limit, None, None, None, None).await
+}
+
+/// 带筛选的检索（R2-6）：年份 / 季度 / 标签 / 排序。
+///
+/// 季度与年份一起拼成 `air_date` 的两端（Bangumi 的 `air_date` 支持多个条件，AND 关系）；
+/// `sort` 只认 `match|heat|rank|score`，别的一律当 `match`（上游会 400）。
+pub async fn search_filtered(
+    base: String,
+    q: &str,
+    limit: usize,
+    year: Option<u32>,
+    quarter: Option<u32>,
+    tag: Option<&str>,
+    sort: Option<&str>,
+) -> Result<Value, String> {
     let url = format!("{}/v0/search/subjects?limit={}", base.trim_end_matches('/'), limit.clamp(1, 20));
-    let body = json!({ "keyword": q, "filter": { "type": [2] } });
+    let body = search_body(q, year, quarter, tag, sort);
     let c = client()?;
     let res = send_with_retry(move || {
         let (c, url, body) = (c.clone(), url.clone(), body.clone());
@@ -471,6 +487,46 @@ pub async fn search(base: String, q: &str, limit: usize) -> Result<Value, String
         .map_err(|e| format!("Bangumi 检索结果不是预期 JSON：{e}"))?;
     let candidates: Vec<Value> = raw.data.iter().map(candidate).collect();
     Ok(json!({ "ok": true, "count": candidates.len(), "candidates": candidates }))
+}
+
+/// `(year, quarter)` → `air_date` 的 `[start, end)` 日期串。
+///
+/// 只有年份时给整年；带季度时给该季度的三个月。季度不在 1–4 按整年算（不猜）。
+fn air_date_range(year: Option<u32>, quarter: Option<u32>) -> Option<(String, String)> {
+    let y = year?;
+    let q = quarter.filter(|q| (1..=4).contains(q));
+    let start_month = q.map(|q| 1 + (q - 1) * 3).unwrap_or(1);
+    let start = format!("{y}-{start_month:02}-01");
+    let end = match q {
+        // 第 4 季度与整年都跨到下一年 1 月 1 日
+        Some(4) | None => format!("{}-01-01", y + 1),
+        Some(q) => format!("{y}-{:02}-01", 1 + (q - 1) * 3 + 3),
+    };
+    Some((start, end))
+}
+
+/// 检索请求体（拆出来单测：筛选条有没有拼对，不该靠真发请求去猜）。
+fn search_body(
+    q: &str,
+    year: Option<u32>,
+    quarter: Option<u32>,
+    tag: Option<&str>,
+    sort: Option<&str>,
+) -> Value {
+    let mut filter = json!({ "type": [2] });
+    if let Some(t) = tag.map(str::trim).filter(|t| !t.is_empty()) {
+        filter["tag"] = json!([t]);
+    }
+    if let Some((start, end)) = air_date_range(year, quarter) {
+        filter["air_date"] = json!([format!(">={start}"), format!("<{end}")]);
+    }
+    let sort = match sort.map(str::trim) {
+        Some("heat") => "heat",
+        Some("rank") => "rank",
+        Some("score") => "score",
+        _ => "match",
+    };
+    json!({ "keyword": q, "sort": sort, "filter": filter })
 }
 
 async fn fetch_subject(base: String, bgm_id: u64) -> Result<RawSubject, String> {
@@ -500,6 +556,26 @@ pub async fn apply(base: String, root: &Path, dir: &str, bgm_id: u64) -> Result<
 pub async fn search_default(q: &str, limit: usize) -> Result<Value, String> {
     let bases = api_bases();
     try_bases(&bases, |b| search(b, q, limit)).await
+}
+
+/// 按生效的镜像列表做带筛选的检索（年份 / 季度 / 标签 / 排序）。
+pub async fn search_filtered_default(
+    q: &str,
+    limit: usize,
+    year: Option<u32>,
+    quarter: Option<u32>,
+    tag: Option<String>,
+    sort: Option<String>,
+) -> Result<Value, String> {
+    let bases = api_bases();
+    let q = q.to_string();
+    try_bases(&bases, move |b| {
+        let (q, tag, sort) = (q.clone(), tag.clone(), sort.clone());
+        async move {
+            search_filtered(b, &q, limit, year, quarter, tag.as_deref(), sort.as_deref()).await
+        }
+    })
+    .await
 }
 
 /// 按生效的镜像列表应用元数据。
@@ -950,8 +1026,9 @@ mod tests {
     }
 
     async fn mock_server() -> String {
-        async fn search() -> Json<Value> {
-            Json(json!({ "data": [subject_json()] }))
+        async fn search(Json(body): Json<Value>) -> Json<Value> {
+            // 回显请求体：筛选条（tag / air_date / sort）有没有真的发出去，靠它取证
+            Json(json!({ "data": [subject_json()], "echo": body }))
         }
         async fn subject() -> Json<Value> {
             Json(subject_json())
@@ -1202,6 +1279,39 @@ mod tests {
         let root = std::env::temp_dir();
         let err = import_ref_default(&root, "不是链接").await.unwrap_err();
         assert!(err.starts_with("看不懂"), "{err}");
+    }
+
+    // ── 检索筛选条（R2-6）──────────────────────────────────────────────────
+
+    #[test]
+    fn air_date_range_covers_year_and_quarters() {
+        let y = |a: &str, b: &str| Some((a.to_string(), b.to_string()));
+        assert_eq!(air_date_range(Some(2024), None), y("2024-01-01", "2025-01-01"));
+        assert_eq!(air_date_range(Some(2024), Some(1)), y("2024-01-01", "2024-04-01"));
+        assert_eq!(air_date_range(Some(2024), Some(2)), y("2024-04-01", "2024-07-01"));
+        assert_eq!(air_date_range(Some(2024), Some(3)), y("2024-07-01", "2024-10-01"));
+        // 第 4 季度要跨到下一年，不能拼出 13 月
+        assert_eq!(air_date_range(Some(2024), Some(4)), y("2024-10-01", "2025-01-01"));
+        // 非法季度按整年算（不猜）
+        assert_eq!(air_date_range(Some(2024), Some(9)), y("2024-01-01", "2025-01-01"));
+        assert_eq!(air_date_range(None, Some(2)), None);
+    }
+
+    #[test]
+    fn search_body_carries_filters_and_normalizes_sort() {
+        let body = search_body("冰菓", Some(2024), Some(2), Some(" 校园 "), Some("heat"));
+        assert_eq!(body["keyword"], "冰菓");
+        assert_eq!(body["sort"], "heat");
+        assert_eq!(body["filter"]["type"][0], 2);
+        assert_eq!(body["filter"]["tag"][0], "校园");
+        assert_eq!(body["filter"]["air_date"][0], ">=2024-04-01");
+        assert_eq!(body["filter"]["air_date"][1], "<2024-07-01");
+
+        // 空 tag 不发；未知 sort 退回 match
+        let plain = search_body("x", None, None, Some("   "), Some("bogus"));
+        assert!(plain["filter"].get("tag").is_none());
+        assert!(plain["filter"].get("air_date").is_none());
+        assert_eq!(plain["sort"], "match");
     }
 
     #[tokio::test]
