@@ -267,7 +267,7 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
     // 「强制硬件解码」放开不安全后端；默认 auto-safe 让 mpv 自己挑
     const hwdec = p.forceHwDecode ? 'auto' : 'auto-safe';
     ipc
-      .animeKernelOpen(subjectId, index, hwdec)
+      .animeKernelOpen(subjectId, index, hwdec, true)
       .then((r) => {
         if (!alive) return;
         setError(null);

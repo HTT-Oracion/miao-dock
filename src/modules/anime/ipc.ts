@@ -324,8 +324,15 @@ export const animePlayRemote = (sourceId: string, itemId: string) =>
 /** 内核状态：可不可用 + 当前会话快照（音轨 / 字幕 / 进度 / 缓冲） */
 export const animeKernelStatus = () => invoke<AnimeKernelStatus>('anime_kernel_status');
 
+/** 摆嵌入式画面区（CSS 像素视口坐标）；`rect=null` 或 `visible=false` 只隐藏 */
+export const animeKernelEmbed = (rect: { x: number; y: number; w: number; h: number } | null, visible: boolean) =>
+  invoke<{ ok: boolean; hwnd?: number; dpi?: number }>('anime_kernel_embed', { rect, visible });
+
+/** 隐藏嵌入式画面区 */
+export const animeKernelEmbedOff = () => invoke<{ ok: boolean }>('anime_kernel_embed_off');
+
 /**
- * 用内核打开一集（画面在 mpv 自己的窗口里）。
+ * 用内核打开一集（`embed` 为真时画面嵌进应用窗口的画面区）。
  *
  * `hwdec` 由设置页「强制硬件解码」决定；服务侧解析文件路径，前端不拼磁盘路径。
  */

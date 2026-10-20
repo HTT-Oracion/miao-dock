@@ -6,7 +6,7 @@
  * 需要随包内核的容器（mkv 等）拿不到地址，屏上直接说清「内核未就绪」——
  * 不画假的播放进度，也不给一个放不出来的 URL。
  */
-import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   ArrowLeft,
   Download,
@@ -758,6 +758,41 @@ export function PlayerScreen() {
     },
   });
 
+  const isKernel = kernel && source !== null && source.found && source.track === 'libmpv';
+
+  // 嵌入式渲染（R1-B）：内核轨播放时把 mpv 的子窗口摆到「画面区」矩形里。
+  // 坐标用 `getBoundingClientRect()` 的 CSS 像素，Rust 侧按 DPI 换算成物理像素。
+  useEffect(() => {
+    if (!isKernel) return;
+    let raf = 0;
+    let disposed = false;
+    const apply = () => {
+      if (disposed) return;
+      const mid = document.querySelector('.an-stage-mid');
+      if (!mid) {
+        void ipc.animeKernelEmbed(null, false).catch(() => {});
+        return;
+      }
+      const r = mid.getBoundingClientRect();
+      void ipc.animeKernelEmbed({ x: r.x, y: r.y, w: r.width, h: r.height }, true).catch(() => {});
+    };
+    const schedule = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(apply);
+    };
+    schedule();
+    const mid = document.querySelector('.an-stage-mid');
+    const ro = new ResizeObserver(schedule);
+    if (mid) ro.observe(mid);
+    window.addEventListener('resize', schedule);
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      window.removeEventListener('resize', schedule);
+      void ipc.animeKernelEmbedOff().catch(() => {});
+    };
+  }, [isKernel]);
   if (!subject || !episode) {
     // 远程播放（媒体服务器中继）：没有本地条目也能播
     if (remote) return <RemoteStage remote={remote} prefs={prefs} />;
@@ -779,7 +814,7 @@ export function PlayerScreen() {
   const playable = source !== null && source.found && source.supported;
   // 能缓存的前提：WebView 轨给了带票直链（内核轨在独立窗口里，本层拿不到可续传的 URL）
   const cacheable = webviewUrl(source);
-  const isKernel = kernel && source !== null && source.found && source.track === 'libmpv';
+
   const kernelSource = isKernel && source !== null && source.found && source.track === 'libmpv' ? source : null;
   const durationMs = state.durationMs || episode.durationMs;
   const rate = state.rate || prefs.defaultRate;
