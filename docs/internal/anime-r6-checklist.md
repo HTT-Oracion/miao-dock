@@ -16,6 +16,20 @@
 | 0.3 | `npm run task -- fetch:mpv`（内核轨用） | `src-tauri/resources/mpv/<平台>/` 有 mpv 二进制 |
 | 0.4 | 截图落点：仓库根 `.tmp/r6/<屏>-<序号>.png` | 每个"过了"的屏至少一张；问题条目每张截图对应一条 |
 
+## 0.5 机器自检（先跑这四条，缺什么会直接点名）
+
+R6 里有相当一部分是**机器能判**的，先跑完再动手点，省得把"没装 mpv"误当成"播放坏了"：
+
+| 命令 | 判什么 | 失败时怎么办 |
+|---|---|---|
+| `npm run task -- fetch:mpv --check` | 内核轨的 mpv 二进制在不在 `src-tauri/resources/mpv/<平台>/` | `npm run task -- fetch:mpv` 取一份（约 115 MB） |
+| `cargo build --bin animesvc`（在 `src-tauri/` 下） | 番剧服务能编出来 | 看编译错；`cargo check --bin animesvc` 更快 |
+| `npm run task -- check:anime-kernel:real` | 真 mpv 跑 17 例自检（时长 / 跳转 / 音轨 / 外挂字幕 / 音量 / 全屏 / 截图 / 倍速夹取） | 前置缺会**退出码 2 并点名**；跳过 ≠ 通过 |
+| `npm run task -- check:anime` | 番剧服务端到端 A1–A22（起真进程） | 红了先修服务，别进界面 |
+
+四条全绿再往下点；其中 `check:anime-kernel:real` 已经覆盖了 §2 真播矩阵里"能不能播"的**机器半边**，
+剩下的"画面好不好看"才是人眼要判的。
+
 > 状态落点（排查用）：`<appData>/anime/state/` 下有 `sources.json` / `cache.json` / `account.json` /
 > `sync-queue.json`；库根是用户选的目录，`manifest.json` 在每部番的目录里。
 
