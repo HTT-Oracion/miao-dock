@@ -5924,6 +5924,23 @@ ABI 钉进我们的构建。**嵌入式渲染没做**：画面在 mpv 自己的�
   让 mpv 挂上。顺带修掉一处旧 hack：内核轨的 `subtitles[i].url` 现在存**文件路径**（之前存空串，
   cycleSubtitle 靠"把扩展名替换成 .ass"猜路径）。
 
+**真机门（同日晚些）：`check:anime-kernel:real[:refute]`**
+
+「真 mpv 已验」不能只停在台账里的一段手抄命令 —— 那既不可重复，也没人会在改坏之后跑它。
+新增 nightly 层 `e2e/service/anime-kernel-real-check.mjs`：
+
+- **硬前置缺一即失败并点名**（不是跳过）：`cargo build --bin animesvc`、`npm run task -- fetch:mpv`
+  （或 `MIAO_MPV_REAL`）。缺前置的退出码是 **2**，与"断言红了"的 1 分开。
+- 判据：指向的确实是**真二进制**（体积 > 10 MB —— 夹具是 node 脚本，永远过不了这一条）→
+  自检输出 JSON → **17 例全绿** → 自报路径就是这个文件。
+- 反证两刀：① 拿假 mpv 夹具冒充 ⇒ 本门必须非零退出；② 前置缺失 ⇒ 退出码 2。
+  两条都在 `--refute` 里**真跑子进程**（不是把判据改个常量）。
+
+顺带修掉一个真缺陷：`MIAO_MPV_BIN` 指向**不存在的路径**时，`probe()` 以前照样报 `available: true`，
+等起播才炸一句 `os error 2`。现在 `env_override()` 对"像路径"的值（含 `/` `\` 或盘符）要求真的在盘上，
+裸命令名（`node` / `mpv`）仍交给 PATH —— 那既是测试接缝，也是"用户自己装了 mpv"的正常用法。
+这条有 3 个单测钉着（裸命令名 / 缺路径 / 存在的路径）。
+
 **真内核取证（2026-10-20，本机）**
 
 ```
@@ -5945,11 +5962,11 @@ MIAO_MPV_BIN=<…>/.tmp/mpv/mpv.exe  animesvc.exe --kernel-selftest
 同一套断言在两个后端都成立；顺带记下**事件是异步的**：`play` / `seek` / `pause` 之后要等
 `property-change` 回来再断言，夹具的同步回包会把这个假设藏起来（`wait` 轮询 40×25ms）。
 
-**验收（2026-10-20）**：`cargo test --lib animesvc` **54/54**（新增 9 条：协议 6 + 播放列表改写 2 + 轨道过滤）·
+**验收（2026-10-20）**：`cargo test --lib animesvc` **57/57**（新增 9 条协议 / 播放列表 / 轨道过滤 + 3 条 `env_override`）·
 `cargo test --bin miao-dock anime` **7/7**（内核可用 / 缺失两条分支）· `check:anime-module` **37/37** + 反证 **29/29**
 （新增 `KERNEL.wired` / `KERNEL.pipe` / `KERNEL.missing` / `PREVIEW.frame` / `SUBTITLE.priority` 各一条变异）· `check:anime` **48/48**
 （A8：`--kernel-selftest` **17 例**全绿 + 夹具记账证明 loadfile / observe_property / set_property / sub-add 真的发出去了 +
-`--kernel-probe` 两种形态）· 真 mpv 手工取证 **17/17**（见上）· `check:counts` / `check:registry` 绿 ·
+`--kernel-probe` 两种形态）· **`check:anime-kernel:real` 5/5 + 反证 3/3**（真 mpv 17 例）· `check:counts` / `check:registry` 绿 ·
 `tsc --noEmit` / `eslint` / `prettier` 无输出 · `vite build --no-emptyOutDir` 通过。
 
 **依赖代价**：无新 crate；`windows-sys` 多开一个 feature（`Win32_System_Pipes`，编译期，零运行时体积）。
