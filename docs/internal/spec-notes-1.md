@@ -5819,4 +5819,47 @@ Jellyfin / Emby 是用户**自己的**服务器 —— 有 API key、JSON 稳定
 2. `assert_eq!(value["index"], 12)` 在集号是 `12.0`（f64）时**假红** —— serde_json 的
    `PartialEq` 不跨 int/float 做数值比较。测试里必须显式写 `12.0`。
 
+## D-250 M3 第三块：媒体服务器远程播放（带票中继 + 播放器远程态）（2026-10-20）
+
+**背景**：D-249 只到「测试 / 预览」—— Jellyfin / Emby 能列出剧集，却**播不了**：
+`AnimePlaySource` 只有本机签名流这一条路。本轮把「远程那一集」接进播放器，
+并把 D-249 注释里那句「api_key 不进地址」变成**可反证的判据**（假上游记账）。
+
+**落点**
+
+| 层 | 落点 | 职责 |
+|---|---|---|
+| 取数契约 | `animesvc/datasource/mod.rs` | `DataSourceItem` 新增 `id`（媒体服务器条目 id；RSS 这类没有 id 的源给 `None`） |
+| 中继 | `animesvc/datasource/mediaserver.rs::relay` | `GET /anime/mediaserver/stream?src&item&exp&sig`：验令牌 → 验票 → 验 id → 验源（存在 / 类型 / 启用 / 有 key）→ 拼上游 `static=true` → 透传 Range → 只回四个播放头 + CORS |
+| 票据 | `ticket_key(src,item)` = `ms:<源>:<条目>` | 换源或换集票即失效 —— 一张票不能遍历整个库 |
+| 壳层 | `anime_play_remote(source_id, item_id)` | 服务侧**再校验一次**源，算签名，回 `{kind,url,expiresAt}`（令牌不出 Rust） |
+| 前端 | `ipc.animePlayRemote` · `store.playRemoteSource` · `PlayerScreen.RemoteStage` | 数据源预览行「播放」→ 取带票地址 → 播放器远程态；与本地播放**共用同一条控制条** |
+
+**三条口径**
+
+1. **必须中继，不能把上游地址直接给播放器**：上游要 `api_key`，而密钥一旦进 URL 就会进日志 / 历史 / 报错截图；同时中继只放行「已保存且启用」的媒体服务器源 —— 否则它就是一个开放代理。
+2. **条目 id 白名单**（字母数字 + `-` `_`，≤ 64 字节）：这个 id 会拼进上游 URL，放行 `/` `.` `%` 等于给路径穿越开口子。
+3. **上游一律 `static=true`**：转码返回的是完整流，Range 语义变形，播放器一 seek 就对不上（首帧能出、一拖就卡）。
+
+**远程这一路为什么不写续看进度**：库里没有这个条目，没处可写。侧栏明说「不记录」，
+不做一条"看起来记了、其实没记"的进度条。
+
+**已知缺口（未做，别当成已覆盖）**
+
+- 媒体服务器**字幕轨未接**：只有视频轨；远程播放的外挂字幕一栏写着「暂不支持」。
+- 远程只有上游原片一个清晰度，没有码率 / 清晰度选择。
+- 没有 `/Users` 用户体系：key 属主能看什么就看什么，不做按用户过滤。
+- 远程条目不能收藏、不进追番、不进播放历史（那些是库里的概念，远程条目不在库里）。
+- **未真机验证**：本机没有可用的 Jellyfin / Emby 实例；验的是本机 mock 上游 + 真 `animesvc` 进程。
+
+**验收（2026-10-20）**：`cargo test --lib animesvc` **45/45**（新增 3 条：票绑定源与条目 / 条目 id 拒穿越 / 上游地址带 `static=true`）·
+`check:anime-module` **32/32** + 反证 **24/24**（新增 `M3.remote`，变异为摘掉中继路由）·
+`check:anime` **39/39**（新增 A7 中继真进程冒烟 19 条：票绑定 / Range 206 / 只回请求字节 /
+Content-Range 透传 / CORS / 上游记账收到 `api_key` / 无令牌·错票·过期票·换集·穿越 id·未知源·错类型·停用源 各有状态码）·
+`check:counts` / `check:registry` / `tsc --noEmit` / `eslint` / `prettier` 无输出 · `vite build` 通过。
+
+**顺带修掉的文档漂移**：`check:anime-module` 涨到 32 条后，`AGENTS.md` §3 与 `README.md` 还写着 31 / 23，
+`check:counts` 当场变红（`COUNTS.staticParity`）。两处同步为 32 / 24，并把 `check:anime` 的 20 条改成 39 条。
+
+
 
