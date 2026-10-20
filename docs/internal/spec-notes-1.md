@@ -6413,3 +6413,37 @@ BT 任务的真实下载需要外网与 DHT，本机 e2e 只覆盖"空表 / 非�
 `set_download_bps` / `set_upload_bps`，但设置目录里没有对应键（加键要动 30 项目录与 `check:settings` 的 186 条断言），
 另起一轮；**PikPak 真客户端**没有（按用户口径只留接口）；**peer 过滤的"清空可回滚"**仍缺。
 BT 真下载与真播放要外网 + DHT + 真播放器，本机 e2e 只覆盖签名/接口层，真机验收归 R6。
+## D-265 BT 限速 / 做种分享率上限，以及一处「设置是字符串」的旧 bug（2026-10-20）
+
+**一、三个新设置**（番剧设置目录 31 → 34 项）：`btDownKbps` / `btUpKbps`（KiB/s，0 = 不限）、
+`btSeedRatio`（0 = 不限）。加在「缓存与 BT」组里，`SETTINGS.section` 的项数断言同步改成 34 ——
+**项数是断言对象**，加项不改断言等于让分母漂移。
+
+**二、两段生效路径（都是真的）**
+
+| 参数 | 运行期 | 下次拉起 `animesvc` |
+|---|---|---|
+| 限速 | `POST /anime/bt/limits` → `Session.ratelimits.set_*_bps` **立刻生效** | 环境变量 `MIAO_ANIME_BT_{DOWN,UP}_KBPS` |
+| 做种上限 | 同一个端点写进进程内状态，`list()` 里顺手执行（到上限就 `pause`） | `MIAO_ANIME_BT_SEED_RATIO` |
+
+做种上限没有另起定时器：`list()` 本来就要遍历任务拿 stats，顺手判断「已完成且分享率 ≥ 上限」再异步暂停 ——
+少一个后台循环，也就少一处"定时器还在但会话已经没了"的状态。
+
+**三、NaN 不能静默变成「不限速」**：`filter(|v| *v > 0.0)` 会把 NaN 过滤掉，看起来是"没设"，
+实际是把用户的非法输入当成了合法默认值。所以**先校验 `is_finite` 再 filter**，单测覆盖这一行。
+
+**四、顺手修掉的旧 bug**：`btPort` 是**文本框**（默认「随机」），但上一轮的 `setPref` 写的是
+`typeof prefs.btPort === 'number'` —— 永远为假 ⇒ 端口**从来没被传出去**，设置是摆设。
+改成 `Number.parseInt` + 范围校验（1–65535），非数字一律当「随机」。这类"类型对不上导致分支恒假"的
+坑不靠读代码很难发现，记在这里。
+
+**五、验证**
+
+- `cargo test --lib animesvc` **98/98**（新增 1 条：限速往返 + 0 = 不限 + **NaN 被拒**）
+- `check:anime` **93/93**：A21 四条 —— 读限速三字段都在 / 改完回显 / 再读确实是刚设的（不是只回显）/ 负数 ⇒ 422
+- `check:anime-module` **50/50** + 反证 **43/43**（`BT.wired` 扩到限速端点与设置推送；`SETTINGS.section` 项数 34）
+- `check:counts` 2/2 · `check:docs` 21/21 · `check:settings` 186/186 · `tsc` / `eslint` / `prettier` / `vite build` 全绿
+
+**六、仍未做**：PikPak 真客户端；peer 过滤的「清空可回滚」（订阅地址交给会话后只能重启换掉）；
+R1 嵌入式渲染（libmpv render callback / 原生子窗口）与 R6 真机验收 —— 这两项要真机与真实播放器，本机只能做到
+"代码与门禁"这一层，登记为待真机验收。
