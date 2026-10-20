@@ -31,10 +31,17 @@ fn client() -> Result<reqwest::Client, String> {
 }
 
 /// 抓一个网页并解码成字符串（先看响应头，再看 `<meta charset>`，都没有按 UTF-8）。
-async fn fetch_html(url: &str) -> Result<String, String> {
-    let res = client()?
+///
+/// `cookies` 是**验证码窗口**里拿到的会话 cookie：有些站点只在带 cookie 时才给 HTML，
+/// 不带就返回挑战页。空数组 = 不带 Cookie 头。
+async fn fetch_html(url: &str, cookies: &[(String, String)]) -> Result<String, String> {
+    let mut req = client()?
         .get(url)
-        .header("Accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8")
+        .header("Accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8");
+    if let Some(c) = cookie_header(cookies) {
+        req = req.header(reqwest::header::COOKIE, c);
+    }
+    let res = req
         .send()
         .await
         .map_err(|e| format!("请求上游失败：{e}"))?;
@@ -131,12 +138,31 @@ fn index_of(title: &str) -> Option<f64> {
 }
 
 /// 解析列表页：每条结果给「标题 + 详情页绝对地址」。
-pub async fn fetch(url: &str, rules: &SourceRules, limit: usize) -> Result<Vec<DataSourceItem>, String> {
+pub async fn fetch(
+    url: &str,
+    rules: &SourceRules,
+    limit: usize,
+    cookies: &[(String, String)],
+) -> Result<Vec<DataSourceItem>, String> {
     if rules.list.trim().is_empty() {
         return Err("这个源没有配「列表选择器」".into());
     }
-    let html = fetch_html(url).await?;
+    let html = fetch_html(url, cookies).await?;
     parse_list(&html, url, rules, limit)
+}
+
+/// `[(name, value)]` → `Cookie` 头；空集合返回 `None`（不要发一个空的 Cookie 头）。
+fn cookie_header(cookies: &[(String, String)]) -> Option<String> {
+    let parts: Vec<String> = cookies
+        .iter()
+        .filter(|(n, _)| !n.trim().is_empty())
+        .map(|(n, v)| format!("{}={}", n.trim(), v))
+        .collect();
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("; "))
+    }
 }
 
 /// 纯解析（可单测）：HTML + 规则 → 条目。
@@ -195,13 +221,17 @@ pub fn parse_list(html: &str, base: &str, rules: &SourceRules, limit: usize) -> 
 }
 
 /// 详情页 → 视频地址（`video[src]` / `source[src]` / `a[href]` 都认）。
-pub async fn resolve_video(url: &str, rules: &SourceRules) -> Result<String, String> {
+pub async fn resolve_video(
+    url: &str,
+    rules: &SourceRules,
+    cookies: &[(String, String)],
+) -> Result<String, String> {
     let sel = rules
         .video
         .as_deref()
         .filter(|s| !s.trim().is_empty())
         .ok_or("这个源没有配「视频地址选择器」，播不了")?;
-    let html = fetch_html(url).await?;
+    let html = fetch_html(url, cookies).await?;
     resolve_video_in(&html, url, sel)
 }
 

@@ -192,6 +192,12 @@ struct RawSubject {
     eps: Option<u32>,
     #[serde(default)]
     total_episodes: Option<u32>,
+    /// 全站排名（v0 `rank`；没进榜就是 `None`）
+    #[serde(default)]
+    rank: Option<u32>,
+    /// 收藏人数（v0 `collection_total`）
+    #[serde(default)]
+    collection_total: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -361,6 +367,8 @@ fn candidate(raw: &RawSubject) -> Value {
         "year": year,
         "season": season,
         "rating": rating_of(raw),
+        "rank": raw.rank,
+        "collectionTotal": raw.collection_total,
         "episodesTotal": episodes_of(raw),
         "summary": raw.summary,
         "tags": tags_of(raw),
@@ -385,6 +393,8 @@ fn patch_of(raw: &RawSubject, weekday: Option<u32>) -> MetadataPatch {
         summary: Some(raw.summary.clone()),
         tags: Some(tags_of(raw)),
         rating: rating_of(raw),
+        rank: raw.rank,
+        collection_total: raw.collection_total,
         episodes_total: episodes_of(raw),
         // 只有「出现在本周时间表」才敢说在连载；找不到就保持原状，不猜「已完结」
         airing: weekday.map(|w| Airing { state: "airing".into(), latest: None, weekday: Some(w) }),
@@ -772,6 +782,8 @@ mod tests {
                 "medium": ""
             },
             "rating": { "score": 8.1 },
+            "rank": 123,
+            "collection_total": 4567,
             "tags": [
                 { "name": "京阿尼", "count": 900 },
                 { "name": "校园", "count": 800 },
@@ -1004,6 +1016,8 @@ mod tests {
         assert_eq!(out["subject"]["bgmId"], 27364);
         assert_eq!(out["subject"]["title"], "冰菓");
         assert_eq!(out["subject"]["rating"], 8.1);
+        assert_eq!(out["subject"]["rank"], 123);
+        assert_eq!(out["subject"]["collectionTotal"], 4567);
         assert_eq!(out["subject"]["season"], "2012-04");
         assert_eq!(out["subject"]["episodesTotal"], 22);
         assert_eq!(out["subject"]["collection"], "doing");

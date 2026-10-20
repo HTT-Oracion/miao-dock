@@ -436,6 +436,15 @@ function startMockSite() {
     <video controls src="/v/1.mp4"></video></body></html>`;
   const server = http.createServer((req, res) => {
     const u = new URL(req.url, 'http://127.0.0.1');
+    // `/guarded` 模拟「要过人机验证才给页面」的站：没有 session cookie 一律 403
+    if (u.pathname === '/guarded') {
+      if (!String(req.headers.cookie || '').includes('session=ok')) {
+        res.writeHead(403, { 'content-type': 'text/html; charset=utf-8' });
+        return res.end('<html><body>请先完成验证</body></html>');
+      }
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      return res.end(list);
+    }
     if (u.pathname === '/list') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       return res.end(list);
@@ -866,6 +875,41 @@ try {
 
     const noTok = await request('GET', `${base}/api/v1/anime/metadata/characters?bgmId=27364`);
     check('A11 角色无令牌 ⇒ 403', noTok.status === 403, noTok.status);
+  }
+
+  // A12：验证码会话 cookie —— 带 cookie 才能拿到「要过人机验证」的页面
+  {
+    const base = `http://127.0.0.1:${animeInfo.port}`;
+    const auth = { 'x-box-token': animeInfo.token };
+    const postJson = (p, body) =>
+      request('POST', `${base}${p}`, {
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    const rules = { list: '.list .item', link: 'a', title: '.t' };
+
+    const noCookie = await postJson('/api/v1/anime/sources/test', {
+      url: `${site.base}/guarded`,
+      kind: 'web',
+      rules,
+    });
+    check(
+      'A12 要验证的页面不带 cookie ⇒ 502（如实失败，不假装取到）',
+      noCookie.status === 502,
+      noCookie.buf.toString().slice(0, 240),
+    );
+
+    const withCookie = await postJson('/api/v1/anime/sources/test', {
+      url: `${site.base}/guarded`,
+      kind: 'web',
+      rules,
+      cookies: [{ name: 'session', value: 'ok' }],
+    });
+    check(
+      'A12 带上会话 cookie ⇒ 200 且取到两条（验证码窗口那条链路成立）',
+      withCookie.status === 200 && withCookie.json?.count === 2,
+      withCookie.buf.toString().slice(0, 300),
+    );
   }
 
   // A5：动漫退出后漫画照旧

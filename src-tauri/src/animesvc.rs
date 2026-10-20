@@ -571,6 +571,14 @@ async fn import_folder(
     }
 }
 
+/// 验证码窗口里拿到的会话 cookie（name/value 对）。
+#[derive(Deserialize)]
+struct CookiePair {
+    name: String,
+    #[serde(default)]
+    value: String,
+}
+
 #[derive(Deserialize)]
 struct SourceTestBody {
     url: String,
@@ -581,6 +589,17 @@ struct SourceTestBody {
     /// 通用网页源的选择器规则（RSS / 媒体服务器不需要）
     #[serde(default)]
     rules: Option<sources::SourceRules>,
+    /// 验证码窗口里拿到的会话 cookie（通用网页源用）
+    #[serde(default)]
+    cookies: Option<Vec<CookiePair>>,
+}
+
+fn cookie_pairs(cookies: Option<Vec<CookiePair>>) -> Vec<(String, String)> {
+    cookies
+        .unwrap_or_default()
+        .into_iter()
+        .map(|c| (c.name, c.value))
+        .collect()
 }
 
 /// 测试一个源：拉前几条看看是什么（RSS / 媒体服务器 / 通用网页源已接；其余明确回未接入）。
@@ -592,10 +611,12 @@ async fn source_test(
     if !authorized(&shell, &headers) {
         return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
     }
+    let cookies = cookie_pairs(body.cookies);
     match datasource::test(
         body.kind.as_deref().unwrap_or("rss"),
         &body.url,
         body.rules.as_ref(),
+        &cookies,
         body.limit.unwrap_or(8),
     )
     .await
@@ -609,6 +630,8 @@ async fn source_test(
 struct SourceResolveBody {
     url: String,
     rules: sources::SourceRules,
+    #[serde(default)]
+    cookies: Option<Vec<CookiePair>>,
 }
 
 /// 解析详情页里的视频地址（通用网页源）：拿到直链才能交给播放器 / 中继。
@@ -620,7 +643,8 @@ async fn source_resolve(
     if !authorized(&shell, &headers) {
         return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
     }
-    match datasource::web::resolve_video(&body.url, &body.rules).await {
+    let cookies = cookie_pairs(body.cookies);
+    match datasource::web::resolve_video(&body.url, &body.rules, &cookies).await {
         Ok(url) => json(StatusCode::OK, serde_json::json!({ "ok": true, "url": url })),
         Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("解析视频地址失败：{e}")),
     }

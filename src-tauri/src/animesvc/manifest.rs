@@ -58,6 +58,12 @@ pub struct Subject {
     pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating: Option<f64>,
+    /// Bangumi 全站排名（v0 `rank`；没进榜就是 None）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rank: Option<u32>,
+    /// 收藏人数（v0 `collection_total`）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collection_total: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collection: Option<String>,
     #[serde(default)]
@@ -237,6 +243,8 @@ pub fn synth(dir: &Path, name: &str) -> Manifest {
             summary: None,
             tags: Vec::new(),
             rating: None,
+            rank: None,
+            collection_total: None,
             collection: None,
             progress: 0,
             updated_at: now_ms(),
@@ -360,6 +368,8 @@ pub struct MetadataPatch {
     pub summary: Option<String>,
     pub tags: Option<Vec<String>>,
     pub rating: Option<f64>,
+    pub rank: Option<u32>,
+    pub collection_total: Option<u32>,
     pub episodes_total: Option<u32>,
     pub airing: Option<Airing>,
 }
@@ -407,6 +417,12 @@ pub fn apply_metadata(root: &Path, dir: &str, patch: &MetadataPatch) -> Result<V
     }
     if let Some(v) = patch.rating {
         s.rating = Some(v);
+    }
+    if let Some(v) = patch.rank {
+        s.rank = Some(v);
+    }
+    if let Some(v) = patch.collection_total {
+        s.collection_total = Some(v);
     }
     if let Some(v) = patch.episodes_total {
         s.episodes_total = Some(v);
@@ -655,6 +671,8 @@ fn demo_manifests() -> Vec<(String, Manifest)> {
                 summary: Some(format!("{title} —— 示例条目。清空示例后不会留在你的库里。")),
                 tags: tags.into_iter().map(|s| s.to_string()).collect(),
                 rating: Some(rating),
+                rank: None,
+                collection_total: None,
                 collection: Some(collection.to_string()),
                 progress,
                 updated_at: now_ms(),

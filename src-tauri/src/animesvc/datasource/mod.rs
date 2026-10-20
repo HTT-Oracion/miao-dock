@@ -73,10 +73,13 @@ pub fn item_json(i: &DataSourceItem) -> Value {
 
 /// 测试一个源：RSS / 媒体服务器 / 通用网页源（选择器驱动）已接；
 /// 其余类型**明确回未接入**，不假装测通。
+///
+/// `cookies` 来自验证码窗口（用户在网页里过完验证码后的会话），只有通用网页源会用到。
 pub async fn test(
     kind: &str,
     url: &str,
     rules: Option<&super::sources::SourceRules>,
+    cookies: &[(String, String)],
     limit: usize,
 ) -> Result<Value, String> {
     let url = url.trim();
@@ -101,7 +104,7 @@ pub async fn test(
         // 通用网页源：必须带选择器规则（没有规则就说不清"取哪一块"）
         "web" | "selector" => {
             let rules = rules.ok_or("通用网页源要带选择器规则（列表 / 链接 / 标题）")?;
-            let items = web::fetch(url, rules, limit).await?;
+            let items = web::fetch(url, rules, limit, cookies).await?;
             Ok(json!({
                 "ok": true,
                 "kind": kind.trim(),

@@ -586,18 +586,63 @@ pub async fn anime_test_source(
     kind: Option<String>,
     limit: Option<usize>,
     rules: Option<Value>,
+    cookies: Option<Value>,
 ) -> Result<Value, String> {
     post(
         "/api/v1/anime/sources/test",
-        json!({ "url": url, "kind": kind, "limit": limit, "rules": rules }),
+        json!({ "url": url, "kind": kind, "limit": limit, "rules": rules, "cookies": cookies }),
     )
     .await
 }
 
 /// 通用网页源：详情页 → 视频直链（播放器 / 中继要的是直链，不是详情页地址）。
 #[tauri::command]
-pub async fn anime_resolve_source(url: String, rules: Value) -> Result<Value, String> {
-    post("/api/v1/anime/sources/resolve", json!({ "url": url, "rules": rules })).await
+pub async fn anime_resolve_source(url: String, rules: Value, cookies: Option<Value>) -> Result<Value, String> {
+    post(
+        "/api/v1/anime/sources/resolve",
+        json!({ "url": url, "rules": rules, "cookies": cookies }),
+    )
+    .await
+}
+
+/// 验证码窗口的标签（同一时刻只开一个，重复打开就导航到新地址）。
+const CHALLENGE_LABEL: &str = "anime-challenge";
+
+/// 打开「过验证码」窗口：用户在里面手动完成验证，之后用 `anime_challenge_cookies` 取会话。
+#[tauri::command]
+pub async fn anime_open_challenge(app: tauri::AppHandle, url: String) -> Result<Value, String> {
+    if !url.starts_with("http") {
+        return Err("要 http:// 或 https:// 地址".into());
+    }
+    let parsed: tauri::Url = url.parse().map_err(|e| format!("地址不合法：{e}"))?;
+    if let Some(w) = app.get_webview_window(CHALLENGE_LABEL) {
+        w.navigate(parsed).map_err(|e| format!("验证码窗口导航失败：{e}"))?;
+        let _ = w.set_focus();
+        return Ok(json!({ "ok": true, "reused": true }));
+    }
+    tauri::WebviewWindowBuilder::new(&app, CHALLENGE_LABEL, tauri::WebviewUrl::External(parsed))
+        .title("过验证码 · 喵坞")
+        .inner_size(1040.0, 760.0)
+        .build()
+        .map_err(|e| format!("验证码窗口打不开：{e}"))?;
+    Ok(json!({ "ok": true, "reused": false }))
+}
+
+/// 从验证码窗口读出该地址的会话 cookie（抓取层拿它当 `Cookie` 头）。
+#[tauri::command]
+pub async fn anime_challenge_cookies(app: tauri::AppHandle, url: String) -> Result<Value, String> {
+    let parsed: tauri::Url = url.parse().map_err(|e| format!("地址不合法：{e}"))?;
+    let w = app
+        .get_webview_window(CHALLENGE_LABEL)
+        .ok_or("验证码窗口还没打开")?;
+    let cookies = w
+        .cookies_for_url(parsed)
+        .map_err(|e| format!("读验证码窗口的 cookie 失败：{e}"))?;
+    let list: Vec<Value> = cookies
+        .iter()
+        .map(|c| json!({ "name": c.name(), "value": c.value() }))
+        .collect();
+    Ok(json!({ "ok": true, "cookies": list }))
 }
 
 /// 远程播放事实：媒体服务器（Jellyfin / Emby）的某一集，走服务侧中继的带票直链。
