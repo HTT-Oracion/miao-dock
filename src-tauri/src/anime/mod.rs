@@ -482,6 +482,12 @@ pub async fn anime_metadata_import(bgm_id: u64) -> Result<Value, String> {
     post("/api/v1/anime/metadata/import", json!({ "bgmId": bgm_id })).await
 }
 
+/// 粘贴 Bangumi 链接 / 手输编号 → 建库（解析在服务侧，前端只做"像不像链接"的粗筛）。
+#[tauri::command]
+pub async fn anime_metadata_import_ref(input: String) -> Result<Value, String> {
+    post("/api/v1/anime/metadata/import-ref", json!({ "input": input })).await
+}
+
 /// 详情页补充数据：角色 + 声优（按 Bangumi id 现取，不落盘）。
 #[tauri::command]
 pub async fn anime_metadata_characters(bgm_id: u64) -> Result<Value, String> {

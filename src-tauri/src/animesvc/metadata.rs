@@ -761,6 +761,46 @@ pub async fn related_default(bgm_id: u64) -> Result<Value, String> {
     try_bases(&bases, |b| related(b, bgm_id)).await
 }
 
+// ------------------------------------------------------------------ 粘贴链接 / 手输编号（R2-5）
+
+/// 从用户粘贴的文本里认 Bangumi 条目 id。
+///
+/// 认这些形态：纯数字 `27364` · `bgm:27364` · `https://bgm.tv/subject/27364` ·
+/// `https://bangumi.tv/subject/27364/` · `https://api.bgm.tv/v0/subjects/27364`。
+/// 认不出给 `None`（由调用方决定当关键词还是报错，不猜）。
+pub fn parse_bgm_ref(input: &str) -> Option<u64> {
+    let s = input.trim();
+    if s.is_empty() {
+        return None;
+    }
+    if s.chars().all(|c| c.is_ascii_digit()) {
+        return s.parse().ok();
+    }
+    let lower = s.to_ascii_lowercase();
+    if let Some(rest) = lower.strip_prefix("bgm:") {
+        return rest.trim().parse().ok();
+    }
+    // 只认 `/subject/<数字>` 与 `/subjects/<数字>` 两种路径，别把别的数字当 id
+    for marker in ["/subject/", "/subjects/"] {
+        if let Some(at) = lower.find(marker) {
+            let digits: String = lower[at + marker.len()..]
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
+            if let Ok(v) = digits.parse::<u64>() {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+/// 粘贴链接 / 手输编号 → 建库（与 `import_subject` 同一条落盘路径）。
+pub async fn import_ref_default(root: &Path, input: &str) -> Result<Value, String> {
+    let bgm_id = parse_bgm_ref(input).ok_or("看不懂这个链接或编号：贴 Bangumi 条目链接，或直接填数字 id")?;
+    import_default(root, bgm_id).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1125,6 +1165,43 @@ mod tests {
         assert_eq!(r["relation"], "续集");
         assert_eq!(r["nameCn"], "冰菓 第二季");
         assert!(r["image"].as_str().unwrap().contains("2.jpg"));
+    }
+
+    // ── 粘贴链接 / 手输编号（R2-5）──────────────────────────────────────────
+
+    #[test]
+    fn parse_bgm_ref_accepts_common_shapes() {
+        assert_eq!(parse_bgm_ref("27364"), Some(27364));
+        assert_eq!(parse_bgm_ref("  bgm:27364 "), Some(27364));
+        assert_eq!(parse_bgm_ref("https://bgm.tv/subject/27364"), Some(27364));
+        assert_eq!(parse_bgm_ref("https://bangumi.tv/subject/27364/"), Some(27364));
+        assert_eq!(parse_bgm_ref("https://api.bgm.tv/v0/subjects/27364"), Some(27364));
+        // 认不出就不猜：关键词、人物页、别的站点都不是条目 id
+        assert_eq!(parse_bgm_ref("冰菓"), None);
+        assert_eq!(parse_bgm_ref("https://bgm.tv/person/27364"), None);
+        assert_eq!(parse_bgm_ref(""), None);
+    }
+
+    #[tokio::test]
+    async fn import_ref_parses_link_and_creates_entry() {
+        let base = mock_server().await;
+        let root = std::env::temp_dir().join(format!("anime-meta-ref-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        // 走与 import_subject 同一条落盘路径，只是入口从 id 换成链接
+        let out = import_subject(base, &root, parse_bgm_ref("https://bgm.tv/subject/27364").unwrap())
+            .await
+            .unwrap();
+        assert_eq!(out["dir"], "冰菓");
+        assert_eq!(out["subject"]["bgmId"], 27364);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn import_ref_rejects_unreadable_input() {
+        let root = std::env::temp_dir();
+        let err = import_ref_default(&root, "不是链接").await.unwrap_err();
+        assert!(err.starts_with("看不懂"), "{err}");
     }
 
     #[tokio::test]

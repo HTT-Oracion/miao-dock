@@ -912,6 +912,31 @@ try {
     );
   }
 
+  // A13：粘贴 Bangumi 链接 / 手输编号 → 建库（R2-5）
+  {
+    const base = `http://127.0.0.1:${animeInfo.port}`;
+    const auth = { 'x-box-token': animeInfo.token };
+    const postJson = (p, body) =>
+      request('POST', `${base}${p}`, {
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+    const link = await postJson('/api/v1/anime/metadata/import-ref', { input: 'https://bgm.tv/subject/27364' });
+    check(
+      'A13 粘条目链接 ⇒ 200 且落在「冰菓」目录（占位文案兑现）',
+      link.status === 200 && link.json?.dir === '冰菓' && link.json?.subject?.bgmId === 27364,
+      link.buf.toString().slice(0, 240),
+    );
+
+    const garbage = await postJson('/api/v1/anime/metadata/import-ref', { input: '随便一段字' });
+    check(
+      'A13 认不出的输入 ⇒ 400 且明说「看不懂」（不猜）',
+      garbage.status === 400 && /看不懂/.test(garbage.buf.toString()),
+      garbage.buf.toString().slice(0, 240),
+    );
+  }
+
   // A5：动漫退出后漫画照旧
   killTree(anime.child);
   await sleep(600);

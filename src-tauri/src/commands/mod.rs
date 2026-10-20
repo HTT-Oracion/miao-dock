@@ -546,6 +546,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         crate::anime::anime_metadata_calendar,
         crate::anime::anime_metadata_hot,
         crate::anime::anime_metadata_import,
+        crate::anime::anime_metadata_import_ref,
         crate::anime::anime_metadata_characters,
         crate::anime::anime_metadata_staff,
         crate::anime::anime_metadata_related,

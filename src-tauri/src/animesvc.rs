@@ -218,6 +218,8 @@ fn router(shell: Arc<Shell>) -> Router {
         .route(&format!("/api/{API_VERSION}/anime/metadata/calendar"), get(metadata_calendar))
         .route(&format!("/api/{API_VERSION}/anime/metadata/hot"), get(metadata_hot))
         .route(&format!("/api/{API_VERSION}/anime/metadata/import"), post(metadata_import))
+        // 粘贴 Bangumi 链接 / 手输编号 → 建库（R2-5）
+        .route(&format!("/api/{API_VERSION}/anime/metadata/import-ref"), post(metadata_import_ref))
         // 详情页补充数据（角色 / 制作 / 关联），按 Bangumi id 现取，不落盘
         .route(&format!("/api/{API_VERSION}/anime/metadata/characters"), get(metadata_characters))
         .route(&format!("/api/{API_VERSION}/anime/metadata/staff"), get(metadata_staff))
@@ -449,6 +451,28 @@ async fn metadata_import(
     }
     match metadata::import_default(Path::new(&shell.root_dir), body.bgm_id).await {
         Ok(v) => json(StatusCode::OK, v),
+        Err(e) if e.starts_with("建目录失败") => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", e),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("Bangumi 条目建库失败：{e}")),
+    }
+}
+
+#[derive(Deserialize)]
+struct MetadataImportRefBody {
+    input: String,
+}
+
+/// 粘贴 Bangumi 链接 / 手输编号 → 建库（R2-5：搜索框那句占位要兑现）。
+async fn metadata_import_ref(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<MetadataImportRefBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match metadata::import_ref_default(Path::new(&shell.root_dir), &body.input).await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) if e.starts_with("看不懂") => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
         Err(e) if e.starts_with("建目录失败") => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", e),
         Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("Bangumi 条目建库失败：{e}")),
     }
