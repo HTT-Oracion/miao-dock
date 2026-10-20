@@ -94,6 +94,46 @@ fn desired_bt_peer_filter() -> &'static Mutex<Option<String>> {
     DESIRED_BT_PEER_FILTER.get_or_init(|| Mutex::new(None))
 }
 
+/// 元数据来源优先级（`auto` / `bangumi` / `anilist`）。
+///
+/// 为什么做成**运行期**偏好：`auto` 模式下服务侧逐个试（Bangumi 连不上要等超时），
+/// 被墙机器上每次都多等一次超时是不可接受的 ⇒ 用户切到 `anilist` 要**即时生效**。
+static DESIRED_META_PROVIDER: OnceLock<Mutex<MetaProvider>> = OnceLock::new();
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MetaProvider {
+    Auto,
+    Bangumi,
+    Anilist,
+}
+
+impl MetaProvider {
+    fn parse(raw: &str) -> Self {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "bangumi" | "bgm" => MetaProvider::Bangumi,
+            "anilist" | "al" => MetaProvider::Anilist,
+            _ => MetaProvider::Auto,
+        }
+    }
+
+    fn as_env(self) -> &'static str {
+        match self {
+            MetaProvider::Auto => "auto",
+            MetaProvider::Bangumi => "bangumi",
+            MetaProvider::Anilist => "anilist",
+        }
+    }
+}
+
+fn desired_meta_provider() -> &'static Mutex<MetaProvider> {
+    DESIRED_META_PROVIDER.get_or_init(|| Mutex::new(MetaProvider::Auto))
+}
+
+/// 当前生效的元数据来源优先级（服务侧 `search_any` 读它决定先试谁）。
+pub(crate) fn meta_provider() -> MetaProvider {
+    desired_meta_provider().lock().map(|g| *g).unwrap_or(MetaProvider::Auto)
+}
+
 /// 把设置页的 BT 端口 / peer 过滤订阅记下来（下次拉起子进程时注入环境变量）。
 #[tauri::command]
 pub fn anime_set_bt_options(port: Option<u16>, peer_filter_url: Option<String>) -> Result<Value, String> {
@@ -123,6 +163,26 @@ pub fn anime_store_bt_limits(
         );
     }
     Ok(json!({ "ok": true }))
+}
+
+/// 元数据来源优先级：**即时**推给运行中的服务，同时记下来（下次拉起子进程仍生效）。
+#[tauri::command]
+pub async fn anime_set_meta_provider(provider: Option<String>) -> Result<Value, String> {
+    let choice = meta_provider_from(provider.as_deref());
+    if let Ok(mut g) = desired_meta_provider().lock() {
+        *g = choice;
+    }
+    // 服务侧没起来时这条会失败：没关系，环境变量已经记住了，下次拉起就是它
+    let _ = post(
+        "/api/v1/anime/meta-provider",
+        json!({ "provider": choice.as_env() }),
+    )
+    .await;
+    Ok(json!({ "ok": true, "provider": choice.as_env() }))
+}
+
+fn meta_provider_from(raw: Option<&str>) -> MetaProvider {
+    MetaProvider::parse(raw.unwrap_or("auto"))
 }
 
 /// 把设置里的库根 / 代理传给子进程。库根为空表示回退默认落点。
@@ -174,6 +234,8 @@ fn apply_anime_env(cmd: &mut Command) {
             }
         }
     }
+    // 元数据来源：默认 auto（Bangumi 优先，不可达回落 AniList）
+    cmd.env("MIAO_ANIME_META_PROVIDER", meta_provider().as_env());
     if let Ok(guard) = desired_bt_peer_filter().lock() {
         match guard.as_ref() {
             Some(url) => {

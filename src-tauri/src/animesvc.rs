@@ -263,6 +263,8 @@ fn router(shell: Arc<Shell>) -> Router {
         .route(&format!("/api/{API_VERSION}/anime/bt/stream-url"), get(bt_stream_url))
         .route(&format!("/api/{API_VERSION}/anime/bt/pikpak"), get(bt_pikpak))
         .route(&format!("/api/{API_VERSION}/anime/bt/limits"), get(bt_limits_get).post(bt_limits_set))
+        // 元数据来源优先级（设置页「元数据来源」；运行期即时生效）
+        .route(&format!("/api/{API_VERSION}/anime/meta-provider"), get(meta_provider_get).post(meta_provider_set))
         // 缓存与下载管理（R3）
         .route(&format!("/api/{API_VERSION}/anime/cache"), get(cache_list).post(cache_add))
         .route(&format!("/api/{API_VERSION}/anime/cache/pause"), post(cache_pause))
@@ -1034,6 +1036,34 @@ struct BtLimitsBody {
 }
 
 /// 当前限速与做种上限。
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MetaProviderBody {
+    provider: String,
+}
+
+/// 当前元数据来源优先级。
+async fn meta_provider_get(State(shell): State<Arc<Shell>>, headers: HeaderMap) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    json(StatusCode::OK, serde_json::json!({ "provider": metadata::meta_order_name() }))
+}
+
+/// 改元数据来源优先级（下一次检索就生效，不用重启）。
+async fn meta_provider_set(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<MetaProviderBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    let order = metadata::parse_meta_order(&body.provider);
+    metadata::set_meta_order(order);
+    json(StatusCode::OK, serde_json::json!({ "ok": true, "provider": metadata::meta_order_name() }))
+}
+
 async fn bt_limits_get(State(shell): State<Arc<Shell>>, headers: HeaderMap) -> Response {
     if !authorized(&shell, &headers) {
         return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");

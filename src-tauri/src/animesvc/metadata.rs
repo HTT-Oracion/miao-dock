@@ -903,12 +903,87 @@ pub async fn import_ref_default(root: &Path, input: &str) -> Result<Value, Strin
 
 // ------------------------------------------------------------------ 提供方回退（AniList）
 
-/// 检索：Bangumi 优先，**不可达或无结果时回落 AniList**。
+/// 元数据来源优先级（设置页「元数据来源」；默认 `auto`）。
 ///
-/// 为什么需要：`api.bgm.tv` 在部分网络下完全不可达（实测超时），而候选元数据只有它一条来源 ⇒
-/// 用户看到空列表。AniList 的 GraphQL POST 实测可达，形状也对得上（见 `anilist::candidate_of`）。
-/// 回落时在响应里带 `fallbackFrom`，让界面能如实说明"这批来自 AniList"。
+/// 为什么要做成**运行期可改**而不是只在启动时读环境变量：`auto` 模式下被墙机器每次检索
+/// 都要先等一次 Bangumi 超时（10s）。用户切到 `anilist` 应该**下一次检索就生效**，
+/// 而不是"重启应用后生效"。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MetaOrder {
+    Auto,
+    BangumiFirst,
+    AnilistFirst,
+}
+
+static META_ORDER: std::sync::OnceLock<std::sync::Mutex<MetaOrder>> = std::sync::OnceLock::new();
+
+fn meta_order_slot() -> &'static std::sync::Mutex<MetaOrder> {
+    META_ORDER.get_or_init(|| std::sync::Mutex::new(initial_order()))
+}
+
+/// 启动时的顺序：壳层注入的 `MIAO_ANIME_META_PROVIDER`（auto / bangumi / anilist）。
+fn initial_order() -> MetaOrder {
+    match std::env::var("MIAO_ANIME_META_PROVIDER")
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "bangumi" | "bgm" => MetaOrder::BangumiFirst,
+        "anilist" | "al" => MetaOrder::AnilistFirst,
+        _ => MetaOrder::Auto,
+    }
+}
+
+pub fn meta_order() -> MetaOrder {
+    meta_order_slot().lock().map(|g| *g).unwrap_or(MetaOrder::Auto)
+}
+
+pub fn set_meta_order(order: MetaOrder) {
+    if let Ok(mut g) = meta_order_slot().lock() {
+        *g = order;
+    }
+}
+
+/// 顺序名（给端点回显）。
+pub fn meta_order_name() -> &'static str {
+    match meta_order() {
+        MetaOrder::Auto => "auto",
+        MetaOrder::BangumiFirst => "bangumi",
+        MetaOrder::AnilistFirst => "anilist",
+    }
+}
+
+/// 解析顺序名（端点入参）。
+pub fn parse_meta_order(raw: &str) -> MetaOrder {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "bangumi" | "bgm" => MetaOrder::BangumiFirst,
+        "anilist" | "al" => MetaOrder::AnilistFirst,
+        _ => MetaOrder::Auto,
+    }
+}
+
+/// 检索：按用户选的顺序试，一家不通就换另一家。
+///
+/// - `auto`：两家都试（Bangumi 先，失败回落 AniList；AniList 被墙时反过来）
+/// - `bangumi` / `anilist`：**只试这一家**。错误只说这一家，绝不拿另一家的猜测糊上去
+///
+/// 🔴 这里踩过一次（D-276）：早先用「anilist_first」一个布尔同时决定顺序和"要不要试第二家」，
+/// 于是从 `anilist` 切回 `auto` 时 Bangumi 超时后不再回落 —— 用户以为切回来了，其实变成只试 Bangumi。
+/// 现在顺序与"试几家"是两个独立的量，别再把它们压成一个标志。
 pub async fn search_any(q: &str, limit: usize) -> Result<Value, String> {
+    let order = meta_order();
+    // 固定模式只试一家；auto 两家都试
+    let only_bangumi = matches!(order, MetaOrder::BangumiFirst);
+    let only_anilist = matches!(order, MetaOrder::AnilistFirst);
+
+    if only_bangumi {
+        return search_default(q, limit).await;
+    }
+    if only_anilist {
+        return crate::animesvc::anilist::search(q, limit).await;
+    }
+    // auto：Bangumi 先试，失败回落 AniList（回落理由如实写进响应）
     match search_default(q, limit).await {
         Ok(v) => Ok(v),
         Err(bgm_err) => match crate::animesvc::anilist::search(q, limit).await {
