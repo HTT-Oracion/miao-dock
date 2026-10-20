@@ -6533,3 +6533,32 @@ R1 的验收口径（待做时按这条判）：应用窗口内能看到 mpv 画
 
 **六、边界**：iframe 里的元素点不到（跨源拿不到 DOM）；`PICK:` 标题长度受窗口标题上限约束（选择器一般远小于）；
 点选窗口不持久化 cookie（要登录态的站点仍走「过验证码」窗口那条路）。
+## D-269 R1-B 能力落地：mpv `--wid` 嵌入通道（**默认关**，真机未验）（2026-10-20）
+
+**一、做了什么**：把「嵌入式渲染」的**通道**接上了，默认不开：
+
+| 环节 | 落点 |
+|---|---|
+| mpv 参数 | `kernel/mpv.rs::build_args(endpoint, hwdec, wid, extra)`：给了 `wid` 才追加 `--wid=<hwnd>` + `--no-border` |
+| 服务端点 | `KernelOpenBody.wid` → `kernel::open_file(..., wid)` → `Kernel::spawn_with(hwdec, wid, &[])` |
+| 壳层 | `anime_kernel_open(..., embed)`：`embed` 为真（或 `MIAO_ANIME_EMBED=1`）时用 `main_hwnd()` 取主窗口 HWND |
+| 前端 | `animeKernelOpen(subjectId, index, hwdec, embed)` 透传（默认 null = 不嵌） |
+
+**二、为什么默认关**：`mpv.rs` 文件头早就写了原因 —— Tauri 的 WebView 是**整窗**的，`--wid` 把画面嵌进同一个
+HWND 后会被网页盖住；而我们的控制条、选集侧栏、统计浮层都在网页里。默认打开 = 播放器界面被视频吃掉。
+要真开，得先做下面任一件事（都还没做）：① 给播放区开一个**独立子窗口**并让 WebView 让出那块矩形；
+② 主窗口 WebView 透明 + 视频放在网页下层；③ 把控件移出视频区域重新布局。
+
+**三、macOS**：`main_hwnd()` 在非 Windows 上恒 `None` —— macOS 没有 `SetParent`/`--wid` 这套，
+嵌入式要挂 `NSView` 层级，平台分叉另做（D-267 已登记）。
+
+**四、验证**
+
+- `cargo test --lib animesvc` **99/99**（新增 1 条：`build_args` 只在给宿主时带 `--wid`/`--no-border`，额外参数仍追加在末尾）
+- `cargo check --bin miao-dock` 0 错（`main_hwnd` 的 `#[cfg(windows)]` 分支在非 Windows 上不会编进去）
+- `check:anime-module` **52/52** + 反证 **46/46**（新增 `M3.embed`；变异：把 `--wid` 那行换成 `let _ = w;`）
+- `check:counts` 2/2 · `check:docs` 21/21 · `check:settings` 186/186 · `tsc` / `eslint` / `prettier` / `vite build` 全绿
+
+**五、状态（诚实标注）**：**能力已接，默认关，真机未验**。R1 的"画面嵌在应用窗口里"仍未达成 ——
+缺的是上面 §二 的界面层工作与真机确认。按用户口径（先留档、标明未做），D-267 的"未做"表仍然有效，
+本轮只是把"通道"从零变成"可用但关闭"。
