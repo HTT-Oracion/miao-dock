@@ -6681,3 +6681,49 @@ mpv 有没有把帧画进这个 HWND，仍要真机看（R6）。
 **五、下一步（若要变成常设门）**：把它收成 `check:anime-gui`（tier=nightly，前置=有交互桌面 + 应用能起），
 断言就用本轮读到的关键文字；反证 = 把某个屏的路由断掉 ⇒ 该屏关键文字消失。**需要一条注册表条目 + 一个写死的条数**，
 以及"无桌面环境要显式跳过而非假绿"的口径，故未在本轮硬塞进门禁。
+## D-275 番剧「没有真实数据」的根因与解法：AniList 回退提供方（2026-10-20）
+
+**一、根因（实测，不是猜测）**
+
+| 事实 | 证据 |
+|---|---|
+| `api.bgm.tv` 与 `bgm.tv` **完全不可达** | 本机 HEAD/GET 一律超时（8s） |
+| 库根下**只有 `demo-*`** | `<appData>/anime/resources/` 里四个 demo manifest，无真实条目 |
+| 于是检索/详情/时间表全空 | 用户看到的"没真实数据"＝**上游被墙 + 本地库空**，不是界面写死假数据 |
+
+**二、为什么不加"离线假数据"**：`载入示例数据` 本来就是**显式动作**（`anime_seed_demo`，只建 `demo-` 前缀目录、
+可一键清空）。再往里塞静默假数据会违反"拒绝硬编码"的口径。**真解法是换一条可达的真实上游。**
+
+**三、选了谁**：`POST https://graphql.anilist.co` 本机**可达**（实测返回真实条目）；`api.jikan.moe`、`graphql.anilist.co` 的 HEAD 不通但 POST 通（HEAD 不通 ≠ 不可用，这点差点误判）。tvmaze / kitsu 也 200，但番剧元数据以 AniList 最全（原名 / 话数 / 评分 / 封面 / 季度）。
+
+**四、实现（`src-tauri/src/animesvc/anilist.rs`）**
+
+- 候选与 Bangumi **同形**，额外两个键说明来源：`provider: "anilist"`、`externalId`；**`bgmId` 留 `null`**（不冒充别人的号）
+- 评分口径换算：AniList `averageScore` 0–100 → 0–10（`9.1`）；季度 `FALL` → `秋`
+- 标题口径：`name` 用 `title.native`（与 Bangumi 的"原名"对齐），`nameCn` 留空 ⇒ `patch_of` 回落到 `name`
+- 端点可用 `MIAO_ANILIST_URL` 覆盖（单测/夹具用），默认官方地址
+- 分派：`metadata::search_any` / `apply_any` / `import_any`（Bangumi 优先，失败回落 AniList，响应带 `fallbackFrom` 说明原因）
+- 建库复用同一份目录净化/幂等实现（`metadata::import_with_patch`），不写第二套
+
+**五、前端**：候选类型加 `provider` / `externalId`、`bgmId` 允许 `null`；列表与"已在库"判定改用
+`candidateKey()` = `提供方:上游号`（两家的号会撞车，混用同一个 Map 会把 AniList 的条目误判成"已在库"）。
+
+**六、本机实测（真网络，2026-10-20）**
+
+```
+GET /anime/metadata/search?q=葬送のフリーレン
+→ count=6 provider=anilist fallbackFrom="bangumi: 所有 Bangumi 镜像都不可达…"
+→ 葬送のフリーレン / 28 话 / 9.1 分 / 2023 秋 / 真实封面 URL
+
+POST /anime/metadata/import {provider:"anilist", externalId:"154587"}
+→ dir=葬送のフリーレン  title=葬送のフリーレン  episodes=28  rating=9.1  year=2023
+GET /anime/library → 列表里出现该条目（真实元数据，不是 demo）
+```
+
+**七、验证**：`cargo test --lib anilist` **3/3**（归一化 / 补丁 / 空页）；`cargo check --bin miao-dock` 0 错；
+`check:anime` **98/98**；`check:anime-module` **53/53** + 反证 **48/48**（新增 `M3.provider`；变异：把回退调用换成 `Err`）；
+`tsc` / `eslint` / `prettier` / `vite build` / `npm run check` 19/19 全绿。
+
+**八、仍缺（下一步）**：探索页的**新番周历**与**热度**仍只走 Bangumi（`calendar`/`hot` 没有回退）——
+周历要星期几，AniList 没有这个字段；热度可以用 `Page(sort:TRENDING_DESC)` 直接顶替。这两条登记为下一步，
+不假装已经好了。
