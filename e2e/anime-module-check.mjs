@@ -70,6 +70,7 @@ const F = {
   rustSources: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'sources.rs'),
   rustManifest: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'manifest.rs'),
   rustMetadata: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'metadata.rs'),
+  rustAnilist: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'anilist.rs'),
   rustRss: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'datasource', 'rss.rs'),
   webRs: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'datasource', 'web.rs'),
   rustDatasource: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'datasource', 'mod.rs'),
@@ -614,6 +615,24 @@ const CHECKS = [
     }),
   },
   {
+    id: 'M3.provider',
+    run: (s) => ({
+      ok:
+        /fn candidate_of/.test(s.rustAnilist) &&
+        /"provider": "anilist"/.test(s.rustAnilist) &&
+        /pub async fn search_any/.test(s.rustMetadata) &&
+        /pub async fn apply_any/.test(s.rustMetadata) &&
+        /pub async fn import_any/.test(s.rustMetadata) &&
+        /anilist::search/.test(s.rustMetadata) &&
+        /metadata::search_any/.test(s.rustAnimesvc) &&
+        /metadata::apply_any/.test(s.rustAnimesvc) &&
+        /metadata::import_any/.test(s.rustAnimesvc) &&
+        /candidateKey/.test(s.convertTs) &&
+        /animeMetadataApply = \(dir: string, provider: string, externalId: string\)/.test(s.ipc),
+      detail: '元数据提供方回退没接通：AniList 解析 / 分派函数 / 端点 / 候选键 任一环缺失',
+    }),
+  },
+  {
     id: 'M3.embed',
     run: (s) => ({
       ok:
@@ -694,7 +713,7 @@ const CHECKS = [
       ok:
         /mod metadata;/.test(s.rustAnimesvc) &&
         /anime\/metadata\/apply/.test(s.rustAnimesvc) &&
-        /search_default\(|apply_default\(/.test(s.rustAnimesvc) &&
+        /search_any\(|apply_any\(/.test(s.rustAnimesvc) &&
         /crate::anime::anime_metadata_apply/.test(strip(s.rustCommands)) &&
         /'anime_metadata_apply'/.test(s.ipc) &&
         /fillMetadata/.test(s.detailScreen) &&
@@ -1126,6 +1145,13 @@ const MUTATIONS = [
     find: 'WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS',
     replace: 'WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS',
     expect: ['M3.embed'],
+  },
+  {
+    name: '检索不再回退 AniList（Bangumi 一断就整屏空）',
+    file: F.rustMetadata,
+    find: 'crate::animesvc::anilist::search(q, limit).await',
+    replace: 'Err(String::new())',
+    expect: ['M3.provider'],
   },
   {
     name: 'mpv 不再接受宿主窗口（嵌入永远不生效）',
