@@ -851,7 +851,7 @@ mod tests {
 
     #[test]
     fn env_override_accepts_existing_path() {
-        let p = std::env::temp_dir().join("miao-mpv-env-test.bin");
+        let p = std::env::temp_dir().join(format!("miao-mpv-env-test-{}.bin", std::process::id()));
         std::fs::write(&p, b"x").unwrap();
         let s = p.to_string_lossy().into_owned();
         assert_eq!(env_override(&s), Some(p.clone()));

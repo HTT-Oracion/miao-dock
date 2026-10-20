@@ -496,7 +496,7 @@ mod tests {
 
     #[test]
     fn playlist_rewrites_relative_segments_with_their_own_tickets() {
-        let dir = std::env::temp_dir().join("miao-anime-pl");
+        let dir = std::env::temp_dir().join(format!("miao-anime-pl-{}", std::process::id()));
         let pl = dir.join("index.m3u8");
         let text = "#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:9.0,\nseg0.ts\n#EXTINF:9.0,\nsub/seg1.ts\n";
         let exp = now_secs() + 600;
@@ -521,7 +521,7 @@ mod tests {
 
     #[test]
     fn playlist_keeps_absolute_cdn_uris_and_rewrites_key_uri() {
-        let dir = std::env::temp_dir().join("miao-anime-pl2");
+        let dir = std::env::temp_dir().join(format!("miao-anime-pl2-{}", std::process::id()));
         let pl = dir.join("index.m3u8");
         let text = "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\",IV=0x1\nhttps://cdn.example.com/a/seg0.ts\n";
         let out = rewrite_playlist(text, &pl, "tok", 2000);
