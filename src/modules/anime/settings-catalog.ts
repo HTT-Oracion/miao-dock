@@ -130,6 +130,21 @@ export const ANIME_SETTING_GROUPS: AnimeSettingGroup[] = [
         def: '自动',
         control: { kind: 'switch', key: 'forceHwDecode' },
       },
+      {
+        id: 'play.provider',
+        label: '元数据来源',
+        why: '检索 / 详情 / 建库走哪家。默认「自动」——Bangumi 优先，不可达时回落 AniList；也可固定只用一家。',
+        def: '自动',
+        control: {
+          kind: 'seg',
+          key: 'metaProvider',
+          options: [
+            { value: 'auto', label: '自动' },
+            { value: 'bangumi', label: 'Bangumi' },
+            { value: 'anilist', label: 'AniList' },
+          ],
+        },
+      },
     ],
   },
   {

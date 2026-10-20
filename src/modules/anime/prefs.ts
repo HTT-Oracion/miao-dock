@@ -67,6 +67,11 @@ export interface AnimePrefs {
   autoSync: boolean;
   /** 冲突处理 */
   conflictPolicy: 'ask' | 'local' | 'cloud';
+  /**
+   * 元数据来源优先级：`auto`（默认）= Bangumi 优先、不可达回落 AniList；
+   * 也可固定只用一家（Bangumi 被墙时选 `anilist` 就是「手动切换」）。
+   */
+  metaProvider: 'auto' | 'bangumi' | 'anilist';
 }
 
 /**
@@ -105,6 +110,7 @@ export const DEFAULT_PREFS: AnimePrefs = {
   pikpak: false,
   autoSync: true,
   conflictPolicy: 'ask',
+  metaProvider: 'auto',
 };
 
 const LS_KEY = `${ANIME_LS_PREFIX}prefs`;

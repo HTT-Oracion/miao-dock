@@ -197,6 +197,14 @@ export const animeSetBtLimits = (v: { downKbps?: number; upKbps?: number; seedRa
 export const animeStoreBtLimits = (v: { downKbps?: number; upKbps?: number; seedRatio?: number }) =>
   invoke<{ ok: boolean }>('anime_store_bt_limits', v);
 
+/**
+ * 元数据来源优先级（`auto` / `bangumi` / `anilist`）。
+ *
+ * 即时生效：服务侧下一次检索就按新顺序试，不用重启应用。
+ */
+export const animeSetMetaProvider = (provider: 'auto' | 'bangumi' | 'anilist') =>
+  invoke<{ ok: boolean; provider: string }>('anime_set_meta_provider', { provider });
+
 /** BT 边下边播：拿带票播放地址（票 2 小时） */
 export const animeBtStreamUrl = (id: number) =>
   invoke<{ ok: boolean; url: string; mode: { mode: string; note: string } }>('anime_bt_stream_url', { id });

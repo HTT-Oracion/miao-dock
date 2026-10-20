@@ -93,6 +93,8 @@ export function libraryActions(
       try {
         // 首次进入时服务可能还没起：先确保进程在（懒启动），再扫
         set({ status: await ipc.animeStart() });
+        // 服务起来后把「元数据来源」推过去：子进程是新的，环境变量那份只在启动时读
+        void ipc.animeSetMetaProvider(get().prefs.metaProvider);
         applySnapshot(await ipc.animeLibrary());
       } catch (e) {
         set({ loading: false, error: errText(e) });
@@ -277,6 +279,10 @@ export function libraryActions(
           port: Number.isFinite(port) && port > 0 && port < 65536 ? port : null,
           peerFilterUrl: prefs.peerFilterUrl.trim() || null,
         });
+      }
+      // 元数据来源：**即时**推给运行中的服务（不等重启）；子进程环境同时记住，重启后仍是它
+      if (key === 'metaProvider') {
+        void ipc.animeSetMetaProvider(prefs.metaProvider);
       }
     },
 

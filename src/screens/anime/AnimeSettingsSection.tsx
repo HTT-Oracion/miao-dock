@@ -150,7 +150,7 @@ export function AnimeSettingsSection() {
               <span className="set-row-name">番剧设置</span>
             </div>
             <div className="set-row-why is-one">
-              八组 33 项：番剧库 / 播放 / 字幕 / 数据源 / 媒体选择 / 缓存与 BT / 账号与同步 / 备份。
+              八组 34 项：番剧库 / 播放 / 字幕 / 数据源 / 媒体选择 / 缓存与 BT / 账号与同步 / 备份。
             </div>
           </div>
           <div className="set-row-ctl">
