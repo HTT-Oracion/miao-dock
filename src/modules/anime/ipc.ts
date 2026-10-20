@@ -329,11 +329,12 @@ export const animeKernelStatus = () => invoke<AnimeKernelStatus>('anime_kernel_s
  *
  * `hwdec` 由设置页「强制硬件解码」决定；服务侧解析文件路径，前端不拼磁盘路径。
  */
-export const animeKernelOpen = (subjectId: string, index: number, hwdec?: string) =>
+export const animeKernelOpen = (subjectId: string, index: number, hwdec?: string, embed?: boolean) =>
   invoke<{ ok: boolean; external: boolean; session: AnimeKernelStatus['session'] }>('anime_kernel_open', {
     subjectId,
     index,
     hwdec: hwdec ?? null,
+    embed: embed ?? null,
   });
 
 /** 驱动内核：`play` / `pause` / `seek` / `rate` / `track` / `subtitle` / `volume` / `fullscreen` / `screenshot` */

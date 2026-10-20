@@ -62,6 +62,7 @@ const F = {
   rustAnime: path.join(ROOT, 'src-tauri', 'src', 'anime', 'mod.rs'),
   rustBt: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'bt', 'mod.rs'),
   rustBtStream: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'bt', 'stream.rs'),
+  rustKernelMpv: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'kernel', 'mpv.rs'),
   rustPikpak: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'bt', 'pikpak.rs'),
   cargoToml: path.join(ROOT, 'src-tauri', 'Cargo.toml'),
   rustAnimesvc: path.join(ROOT, 'src-tauri', 'src', 'animesvc.rs'),
@@ -612,6 +613,20 @@ const CHECKS = [
     }),
   },
   {
+    id: 'M3.embed',
+    run: (s) => ({
+      ok:
+        /fn build_args/.test(s.rustKernelMpv) &&
+        /--wid=\{w\}/.test(s.rustKernelMpv) &&
+        /fn main_hwnd/.test(s.rustAnime) &&
+        /MIAO_ANIME_EMBED/.test(s.rustAnime) &&
+        /"wid": wid/.test(s.rustAnime) &&
+        /wid: Option<u64>/.test(s.rustAnimesvc) &&
+        /embed: embed \?\? null/.test(s.ipc),
+      detail: '嵌入式渲染能力没接通：参数构造 / 宿主句柄 / 端点透传 / 桥接 任一环缺失',
+    }),
+  },
+  {
     id: 'M3.picker',
     run: (s) => ({
       ok:
@@ -1097,6 +1112,13 @@ const MUTATIONS = [
     find: '.route(&format!("/api/{API_VERSION}/anime/bt/add"), post(bt_add))',
     replace: '',
     expect: ['BT.wired'],
+  },
+  {
+    name: 'mpv 不再接受宿主窗口（嵌入永远不生效）',
+    file: F.rustKernelMpv,
+    find: 'v.push(format!("--wid={w}"));',
+    replace: 'let _ = w;',
+    expect: ['M3.embed'],
   },
   {
     name: '点选窗口不再注入脚本（点了页面没反应）',
