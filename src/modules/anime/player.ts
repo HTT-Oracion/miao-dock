@@ -48,6 +48,8 @@ export interface WebviewPlayer {
   fullscreen(): void;
   /** 音量增减（0–1 的增量） */
   stepVolume(delta: number): void;
+  /** 绝对音量（0–1） */
+  setVolume(volume: number): void;
   toggleMute(): void;
   destroy(): void;
 }
@@ -187,6 +189,9 @@ export function createWebviewPlayer(
     },
     stepVolume: (delta) => {
       art.volume = Math.max(0, Math.min(1, art.volume + delta));
+    },
+    setVolume: (volume) => {
+      art.volume = Math.max(0, Math.min(1, volume));
     },
     toggleMute: () => {
       art.muted = !art.muted;

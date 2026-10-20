@@ -17,6 +17,7 @@ import { RATE_STEPS } from '@anime/player-options';
 import { createWebviewPlayer, type PlayerEnv, type WebviewPlayer } from '@anime/player';
 import type {
   AnimeEpisode,
+  AnimeKernelTrack,
   AnimePlaySource,
   AnimePlaySubtitle,
   AnimeRemotePlayback,
@@ -64,6 +65,12 @@ export interface AnimePlayback {
   /** -1 = 字幕关闭 */
   subtitleIndex: number;
   subtitles: AnimePlaySubtitle[];
+  /** 走的是内核轨（画面在 mpv 窗口里，不在 container 里） */
+  kernel: boolean;
+  /** 内核轨的轨道表（音轨 / 字幕轨）；WebView 轨为空 */
+  kernelTracks: AnimeKernelTrack[];
+  /** 当前音量 0–1（两轨共用） */
+  volume: number;
   controls: {
     toggle: () => void;
     seekMs: (ms: number) => void;
@@ -72,6 +79,9 @@ export interface AnimePlayback {
     screenshot: () => void;
     fullscreen: () => void;
     retry: () => void;
+    setVolume: (v: number) => void;
+    /** 选一条内核轨（`kind: 'audio' | 'sub'`；`id: 'no'` = 关掉） */
+    selectKernelTrack: (kind: 'audio' | 'sub', id: string) => void;
   };
 }
 
@@ -88,6 +98,16 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
   const [state, setState] = useState<PlaybackState>(IDLE);
   const [subtitleIndex, setSubtitleIndex] = useState(-1);
   const [reloadKey, setReloadKey] = useState(0);
+  const [kernelTracks, setKernelTracks] = useState<AnimeKernelTrack[]>([]);
+  const [volume, setVolumeState] = useState(0.8);
+  const volumeRef = useRef(0.8);
+  /** 当前是否走内核轨（回调里读它，避免每次渲染换身份） */
+  const kernelRef = useRef(false);
+  /** 内核自然播完只认一次：轮询会重复读到 `ended`，重复触发会连播到最后一集 */
+  const kernelEndedRef = useRef(false);
+
+  const kernelActive = source !== null && source.found && source.track === 'libmpv' && source.supported;
+  kernelRef.current = kernelActive;
 
   // 回调 / 偏好 / 当前状态都走 ref：它们的身份每次渲染都在变，进依赖会把播放器重建
   const progressRef = useRef(onProgress);
@@ -119,6 +139,7 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
     skippedOp.current = false;
     skippedEd.current = false;
     lastSaveRef.current = 0;
+    kernelEndedRef.current = false;
   }, [episodeId, episode]);
 
   /** 回写进度；`force` 用于暂停 / 切集 / 播完这些「必须落」的时刻 */
@@ -227,6 +248,54 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source]);
 
+  // ②b 内核轨：让服务侧起 mpv，之后轮询它的状态
+  //
+  // 为什么是轮询而不是事件：内核在**另一个进程**里，状态要过进程边界；
+  // 800ms 对控制条够用（拖拽本身是本地即时反馈），比开一条 SSE 便宜得多。
+  useEffect(() => {
+    if (!kernelActive || !subjectId || index === null) return;
+    let alive = true;
+    const p = prefsRef.current;
+    // 「强制硬件解码」放开不安全后端；默认 auto-safe 让 mpv 自己挑
+    const hwdec = p.forceHwDecode ? 'auto' : 'auto-safe';
+    ipc
+      .animeKernelOpen(subjectId, index, hwdec)
+      .then((r) => {
+        if (!alive) return;
+        setError(null);
+        setKernelTracks(r.session.tracks);
+        setState({ ...r.session.state, episodeId: epIdRef.current });
+      })
+      .catch((e) => {
+        if (alive) setError(errText(e));
+      });
+    const timer = window.setInterval(() => {
+      void ipc
+        .animeKernelStatus()
+        .then((st) => {
+          if (!alive) return;
+          setKernelTracks(st.session.tracks);
+          setState({ ...st.session.state, episodeId: epIdRef.current });
+          if (st.session.ended && !kernelEndedRef.current && epIdRef.current) {
+            kernelEndedRef.current = true;
+            const pos = st.session.state.positionMs;
+            if (pos > 0) save(pos, true);
+            endedRef.current(epIdRef.current);
+          }
+        })
+        .catch(() => {
+          /* 轮询失败不刷屏：下一次再试 */
+        });
+    }, 800);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      const pos = stateRef.current.positionMs;
+      if (pos > 0) save(pos, true);
+      void ipc.animeKernelClose();
+    };
+  }, [kernelActive, subjectId, index, save]);
+
   // ③ 进度节流回写
   useEffect(() => {
     if (!state.playing || state.positionMs <= 0) return;
@@ -234,83 +303,57 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
   }, [state.playing, state.positionMs, save]);
 
   // 片头 / 片尾跳过（按偏好，只在每集触发一次）
+  //
+  // 两轨共用：走 `seekMs` 这个口，而不是直接拿 player —— 内核轨没有 player。
   useEffect(() => {
     if (!episode || !state.playing) return;
-    const player = playerRef.current;
-    if (!player) return;
     const pos = state.positionMs;
     const op = episode.op;
     const ed = episode.ed;
     const skip = prefs.skip;
+    const jump = (ms: number) => {
+      if (kernelRef.current) void ipc.animeKernelCtl('seek', Math.round(ms));
+      else playerRef.current?.seekMs(ms);
+    };
     if (op && (skip === 'op' || skip === 'both') && !skippedOp.current && pos >= op.startMs && pos < op.endMs - 1000) {
       skippedOp.current = true;
-      player.seekMs(op.endMs);
+      jump(op.endMs);
     }
     if (ed && (skip === 'ed' || skip === 'both') && !skippedEd.current && pos >= ed.startMs && pos < ed.endMs - 1000) {
       skippedEd.current = true;
-      player.seekMs(ed.endMs);
+      jump(ed.endMs);
     }
   }, [episode, prefs.skip, state.playing, state.positionMs]);
 
-  // 键盘：只在本屏挂着时生效；输入框里不抢键
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-      const player = playerRef.current;
-      if (!player) return;
-      const pos = stateRef.current.positionMs;
-      switch (e.key) {
-        case ' ':
-          e.preventDefault();
-          player.toggle();
-          break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          player.seekMs(Math.max(0, pos - 5000));
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          player.seekMs(pos + 5000);
-          break;
-        case 'ArrowUp':
-          e.preventDefault();
-          player.stepVolume(0.05);
-          break;
-        case 'ArrowDown':
-          e.preventDefault();
-          player.stepVolume(-0.05);
-          break;
-        case 'f':
-        case 'F':
-          player.fullscreen();
-          break;
-        case 'm':
-        case 'M':
-          player.toggleMute();
-          break;
-        default:
-          break;
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-
   const subtitles = useMemo<AnimePlaySubtitle[]>(() => {
-    if (!source || !source.found || source.track !== 'webview') return [];
-    return source.subtitles;
+    if (!source || !source.found) return [];
+    if (source.track === 'webview') return source.subtitles;
+    // 内核轨：字幕是盘上的文件（内核自己读），url 只是占位
+    return source.subtitles.map((s) => ({ url: '', name: s.name, format: s.format }));
   }, [source]);
 
-  const toggle = useCallback(() => playerRef.current?.toggle(), []);
+  const toggle = useCallback(() => {
+    if (kernelRef.current) {
+      void ipc.animeKernelCtl(stateRef.current.playing ? 'pause' : 'play');
+      return;
+    }
+    playerRef.current?.toggle();
+  }, []);
 
-  const seekMs = useCallback((ms: number) => playerRef.current?.seekMs(ms), []);
+  const seekMs = useCallback((ms: number) => {
+    if (kernelRef.current) {
+      void ipc.animeKernelCtl('seek', Math.round(ms));
+      return;
+    }
+    playerRef.current?.seekMs(ms);
+  }, []);
 
   const cycleRate = useCallback(() => {
     const cur = stateRef.current.rate || 1;
     const at = RATE_STEPS.indexOf(cur);
     const next = RATE_STEPS[(at + 1) % RATE_STEPS.length] ?? 1;
-    playerRef.current?.setRate(next);
+    if (kernelRef.current) void ipc.animeKernelCtl('rate', next);
+    else playerRef.current?.setRate(next);
     setState((s) => ({ ...s, rate: next }));
     return next;
   }, []);
@@ -319,19 +362,87 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
     if (subtitles.length === 0) return -1;
     const next = subtitleIndex >= subtitles.length - 1 ? -1 : subtitleIndex + 1;
     setSubtitleIndex(next);
-    playerRef.current?.setSubtitle(next);
+    if (kernelRef.current) {
+      void ipc.animeKernelCtl('subtitle', next < 0 ? '' : subtitles[next].name.replace(/\.[^.]+$/, '.ass'));
+    } else {
+      playerRef.current?.setSubtitle(next);
+    }
     setState((s) => ({ ...s, subtitle: next < 0 ? '' : subtitles[next].name }));
     return next;
   }, [subtitles, subtitleIndex]);
 
   const screenshot = useCallback(() => {
+    if (kernelRef.current) {
+      void ipc.animeKernelCtl('screenshot');
+      return;
+    }
     const name = `anime-${epIdRef.current ?? 'frame'}-${Math.round(stateRef.current.positionMs / 1000)}`;
     playerRef.current?.screenshot(name);
   }, []);
 
-  const fullscreen = useCallback(() => playerRef.current?.fullscreen(), []);
+  const fullscreen = useCallback(() => {
+    if (kernelRef.current) void ipc.animeKernelCtl('fullscreen', true);
+    else playerRef.current?.fullscreen();
+  }, []);
+
+  const setVolume = useCallback((v: number) => {
+    const n = Math.max(0, Math.min(1, v));
+    volumeRef.current = n;
+    setVolumeState(n);
+    if (kernelRef.current) void ipc.animeKernelCtl('volume', Math.round(n * 100));
+    else playerRef.current?.setVolume(n);
+  }, []);
+
+  const selectKernelTrack = useCallback((kind: 'audio' | 'sub', id: string) => {
+    if (!kernelRef.current) return;
+    void ipc.animeKernelCtl('track', { kind, id });
+  }, []);
 
   const retry = useCallback(() => setReloadKey((k) => k + 1), []);
+
+  // 键盘：只在本屏挂着时生效；输入框里不抢键。两轨共用同一套按键。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (!kernelRef.current && !playerRef.current) return;
+      const pos = stateRef.current.positionMs;
+      switch (e.key) {
+        case ' ':
+          e.preventDefault();
+          toggle();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          seekMs(Math.max(0, pos - 5000));
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          seekMs(pos + 5000);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          setVolume(volumeRef.current + 0.05);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          setVolume(volumeRef.current - 0.05);
+          break;
+        case 'f':
+        case 'F':
+          fullscreen();
+          break;
+        case 'm':
+        case 'M':
+          if (!kernelRef.current) playerRef.current?.toggleMute();
+          break;
+        default:
+          break;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggle, seekMs, setVolume, fullscreen]);
 
   return {
     containerRef,
@@ -341,6 +452,19 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
     state,
     subtitleIndex,
     subtitles,
-    controls: { toggle, seekMs, cycleRate, cycleSubtitle, screenshot, fullscreen, retry },
+    kernel: kernelActive,
+    kernelTracks,
+    volume,
+    controls: {
+      toggle,
+      seekMs,
+      cycleRate,
+      cycleSubtitle,
+      screenshot,
+      fullscreen,
+      retry,
+      setVolume,
+      selectKernelTrack,
+    },
   };
 }

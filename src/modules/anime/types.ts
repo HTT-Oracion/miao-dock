@@ -162,16 +162,22 @@ export interface AnimePlaySubtitle {
   format: string;
 }
 
-/** 探测到片源、但需要随包内核（mkv 等 WebView 解不了的容器） */
+/** 探测到片源、需要随包内核（mkv 等 WebView 解不了的容器） */
 export interface AnimePlaySourceKernel {
   found: true;
   track: 'libmpv';
-  supported: false;
-  /** 人话原因（「这一集是 mkv 容器，需要随包播放内核…」） */
+  /** 内核可用 ⇒ 能播；不可用 ⇒ 只有 reason（不给一个播不出来的地址） */
+  supported: boolean;
+  /** 画面在内核自己的窗口里（不嵌在应用内） */
+  external: boolean;
+  /** 人话原因（可用时说明走哪条轨，不可用时说明缺什么） */
   reason: string;
   container: string;
   title: string;
   file: string;
+  sizeBytes: number;
+  /** 外挂字幕：内核自己读盘，所以只有文件名，没有带票 URL */
+  subtitles: { name: string; file: string; format: string }[];
 }
 
 /** WebView 轨：带签名的本地 Range 流（或 HLS） */
@@ -214,6 +220,33 @@ export interface PlaybackState {
   subtitle: string;
   /** 当前音轨标签 */
   audioTrack: string;
+}
+
+/** 内核轨的一条轨（音轨 / 字幕轨） */
+export interface AnimeKernelTrack {
+  kind: 'audio' | 'sub';
+  id: string;
+  label: string;
+  lang: string;
+  selected: boolean;
+}
+
+/** 内核会话快照（`anime_kernel_status` 的返回） */
+export interface AnimeKernelStatus {
+  /** 随包 mpv 找不找得到（不可用时 `reason` 说清缺什么） */
+  available: boolean;
+  path: string;
+  reason: string;
+  /** 画面在内核自己的窗口里 */
+  external: boolean;
+  session: {
+    open: boolean;
+    file: string;
+    title: string;
+    state: PlaybackState;
+    tracks: AnimeKernelTrack[];
+    ended: boolean;
+  };
 }
 
 /** 账号与同步 */

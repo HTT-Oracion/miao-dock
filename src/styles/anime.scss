@@ -965,6 +965,76 @@
 .an-stage-video video {
   object-fit: contain;
 }
+/* 内核轨：画面在 mpv 自己的窗口里，这一块只放状态、轨道与统计 */
+.an-kernel {
+  width: min(680px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.9);
+}
+.an-kernel-hd {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.an-kernel-hd b {
+  font-size: 15px;
+}
+.an-kernel-hd span {
+  font-size: 12px;
+  opacity: 0.78;
+}
+.an-kernel-tracks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.an-kernel-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.an-kernel-group > span {
+  width: 32px;
+  opacity: 0.7;
+}
+.an-kernel-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.an-kernel-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.an-kernel-stats dt {
+  font-size: 11px;
+  opacity: 0.6;
+}
+.an-kernel-stats dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+/* 音量：控制条上的一条细滑杆（与 .an-kbd 同一行高） */
+.an-vol {
+  display: inline-flex;
+  align-items: center;
+  width: 84px;
+}
+.an-vol input {
+  width: 100%;
+  accent-color: var(--md-pink, #ff5c8a);
+}
 /* ArtPlayer 自带进度条 / 控件一律不显示：控制条只有设计稿那一条（点击层保留，双击全屏仍可用） */
 .an-stage-video .art-bottom {
   display: none;

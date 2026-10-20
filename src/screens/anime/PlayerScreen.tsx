@@ -13,7 +13,14 @@ import { useAnimeStore } from '@anime/store';
 import { episodesOf, selectedEpisode, selectedSubject } from '@anime/selectors';
 import { fmtClock } from '@anime/convert';
 import { PLAYER_KEYS, SOURCE_KIND_LABEL } from '@anime/player-options';
-import type { AnimePlaySource, AnimePlaySubtitle, AnimeRemotePlayback, PlaybackState } from '@anime/types';
+import type {
+  AnimeKernelTrack,
+  AnimePlaySource,
+  AnimePlaySourceKernel,
+  AnimePlaySubtitle,
+  AnimeRemotePlayback,
+  PlaybackState,
+} from '@anime/types';
 import type { AnimePrefs } from '@anime/prefs';
 import { useAnimePlayback, type AnimePlayback } from '@hooks';
 import { Cover, EpisodeRow } from '@screens/anime/shared';
@@ -25,7 +32,11 @@ function stageLine(loading: boolean, error: string | null, source: AnimePlaySour
   if (loading) return '正在探测本地片源…';
   if (error) return '播放器起不来';
   if (!source || !source.found) return '尚无片源';
-  if (!source.supported) return `需要播放内核 · ${source.container.toUpperCase()}`;
+  if (source.track === 'libmpv') {
+    return source.supported
+      ? `内核轨 · ${source.container.toUpperCase()} · 独立窗口`
+      : `需要播放内核 · ${source.container.toUpperCase()}`;
+  }
   return source.kind === 'hls' ? 'HLS 流' : `${source.container.toUpperCase()} · 本地文件`;
 }
 
@@ -50,6 +61,13 @@ interface ControlBarProps {
   subtitles: AnimePlaySubtitle[];
   controls: AnimePlayback['controls'];
   onRate: (rate: number) => void;
+  /** 当前音量 0–1 */
+  volume: number;
+  onVolume: (v: number) => void;
+  /** 片头 / 片尾跳转（这一集没标记就传 null，按钮不渲染） */
+  skip: { op: number | null; ed: number | null; onJump: (ms: number) => void } | null;
+  /** 统计面板开关（只有内核轨有真实数据） */
+  stats: { on: boolean; onToggle: () => void } | null;
   /** 本地播放才有上一集 / 下一集；远程播放传 null */
   epNav: { prev: boolean; next: boolean; onPrev: () => void; onNext: () => void } | null;
 }
@@ -63,6 +81,10 @@ function ControlBar({
   subtitles,
   controls,
   onRate,
+  volume,
+  onVolume,
+  skip,
+  stats,
   epNav,
 }: ControlBarProps) {
   const pct = durationMs ? Math.min(100, Math.round((state.positionMs / durationMs) * 100)) : 0;
@@ -138,7 +160,41 @@ function ControlBar({
         >
           {rateLabel(rate)}
         </button>
+        {skip?.op != null ? (
+          <button
+            type="button"
+            className="an-kbd"
+            disabled={!playable}
+            title="跳到片头结束"
+            onClick={() => skip.onJump(skip.op as number)}
+          >
+            跳片头
+          </button>
+        ) : null}
+        {skip?.ed != null ? (
+          <button
+            type="button"
+            className="an-kbd"
+            disabled={!playable}
+            title="跳到片尾结束"
+            onClick={() => skip.onJump(skip.ed as number)}
+          >
+            跳片尾
+          </button>
+        ) : null}
         <span className="an-sp" />
+        <label className="an-vol" title={`音量 ${Math.round(volume * 100)}%`}>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={Math.round(volume * 100)}
+            aria-label="音量"
+            disabled={!playable}
+            onChange={(e) => onVolume(Number(e.target.value) / 100)}
+          />
+        </label>
         <button
           type="button"
           className="an-kbd"
@@ -148,8 +204,14 @@ function ControlBar({
         >
           截图
         </button>
-        <button type="button" className="an-kbd" disabled title="统计面板待接入内核诊断">
-          统计
+        <button
+          type="button"
+          className="an-kbd"
+          disabled={!stats}
+          title={stats ? '内核统计（缓冲 / 轨道 / 倍速）' : '统计面板只在内核轨有真实数据'}
+          onClick={stats?.onToggle}
+        >
+          {stats?.on ? '统计 ●' : '统计'}
         </button>
         <button
           type="button"
@@ -173,6 +235,129 @@ function ControlBar({
 }
 
 /**
+ * 内核轨画面区（mkv / ass / 多音轨）。
+ *
+ * 画面在 **mpv 自己的窗口**里 —— 这一屏不假装画面在应用内，而是把「现在在放什么、
+ * 有哪些轨、缓冲到哪」摊开给用户看，控制条仍然由应用驱动（同一条 `PlaybackCore`）。
+ */
+function KernelStage({
+  source,
+  kernelTracks,
+  state,
+  volume,
+  statsOn,
+  onSelectTrack,
+}: {
+  source: AnimePlaySourceKernel;
+  kernelTracks: AnimeKernelTrack[];
+  state: PlaybackState;
+  volume: number;
+  statsOn: boolean;
+  onSelectTrack: (kind: 'audio' | 'sub', id: string) => void;
+}) {
+  const audio = kernelTracks.filter((t) => t.kind === 'audio');
+  const subs = kernelTracks.filter((t) => t.kind === 'sub');
+  const file = source.file.split(/[\\/]/).pop() ?? source.file;
+  return (
+    <div className="an-kernel">
+      <div className="an-kernel-hd">
+        <b>画面在内核窗口</b>
+        <span>
+          {source.container.toUpperCase()} · {file}
+        </span>
+        <span className="an-note">播放 / 暂停 / 跳转都在下面这条控制条上；拖进度也是它。</span>
+      </div>
+
+      <div className="an-kernel-tracks">
+        <div className="an-kernel-group">
+          <span>音轨</span>
+          <div className="an-kernel-chips">
+            {audio.length === 0 ? <i className="an-note">这一集只有一条默认音轨</i> : null}
+            {audio.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={t.selected ? 'an-chip is-hot' : 'an-chip is-plain'}
+                onClick={() => onSelectTrack('audio', t.id)}
+              >
+                {t.label}
+                {t.lang ? ` · ${t.lang}` : ''}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="an-kernel-group">
+          <span>字幕</span>
+          <div className="an-kernel-chips">
+            {subs.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={t.selected ? 'an-chip is-hot' : 'an-chip is-plain'}
+                onClick={() => onSelectTrack('sub', t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={subs.some((t) => t.selected) ? 'an-chip is-plain' : 'an-chip is-hot'}
+              onClick={() => onSelectTrack('sub', 'no')}
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {statsOn ? (
+        <dl className="an-kernel-stats">
+          <div>
+            <dt>进度</dt>
+            <dd className="an-num">
+              {fmtClock(state.positionMs)} / {fmtClock(state.durationMs)}
+            </dd>
+          </div>
+          <div>
+            <dt>缓冲</dt>
+            <dd className="an-num">{fmtClock(state.bufferedMs)}</dd>
+          </div>
+          <div>
+            <dt>倍速</dt>
+            <dd className="an-num">{state.rate.toFixed(2)}×</dd>
+          </div>
+          <div>
+            <dt>音量</dt>
+            <dd className="an-num">{Math.round(volume * 100)}%</dd>
+          </div>
+          <div>
+            <dt>轨道</dt>
+            <dd className="an-num">
+              音 {audio.length} · 字 {subs.length}
+            </dd>
+          </div>
+        </dl>
+      ) : (
+        <div className="an-keys">
+          <span>
+            <kbd>空格</kbd> 播放 / 暂停
+          </span>
+          <span>
+            <kbd>← →</kbd> 快退 / 快进 5s
+          </span>
+          <span>
+            <kbd>↑ ↓</kbd> 音量
+          </span>
+          <span>
+            <kbd>f</kbd> 内核窗口全屏
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * 远程播放（媒体服务器中继）—— 与本地播放**共用控制条**，只换顶部与侧栏。
  *
  * 诚实边界：远程这一路**不写续看进度**（库里没有这个条目，没处可写），
@@ -182,7 +367,7 @@ function RemoteStage({ remote, prefs }: { remote: AnimeRemotePlayback; prefs: An
   const setView = useAnimeStore((s) => s.setView);
   const clearRemote = useAnimeStore((s) => s.clearRemote);
   const setPref = useAnimeStore((s) => s.setPref);
-  const { containerRef, source, loading, error, state, subtitles, controls } = useAnimePlayback({
+  const { containerRef, source, loading, error, state, subtitles, volume, controls } = useAnimePlayback({
     subjectId: null,
     episode: null,
     remote,
@@ -249,6 +434,10 @@ function RemoteStage({ remote, prefs }: { remote: AnimeRemotePlayback; prefs: An
           subtitles={subtitles}
           controls={controls}
           onRate={(r) => setPref('defaultRate', r)}
+          volume={volume}
+          onVolume={controls.setVolume}
+          skip={null}
+          stats={null}
           epNav={null}
         />
       </div>
@@ -312,12 +501,25 @@ export function PlayerScreen() {
   const setPref = useAnimeStore((s) => s.setPref);
   const remote = useAnimeStore((s) => s.remote);
   const [tab, setTab] = useState<SideTab>('episodes');
+  const [statsOn, setStatsOn] = useState(false);
 
   const idx = episode ? episodes.findIndex((e) => e.id === episode.id) : -1;
   const prev = idx > 0 ? episodes[idx - 1] : null;
   const next = idx >= 0 && idx < episodes.length - 1 ? episodes[idx + 1] : null;
 
-  const { containerRef, source, loading, error, state, subtitleIndex, subtitles, controls } = useAnimePlayback({
+  const {
+    containerRef,
+    source,
+    loading,
+    error,
+    state,
+    subtitleIndex,
+    subtitles,
+    kernel,
+    kernelTracks,
+    volume,
+    controls,
+  } = useAnimePlayback({
     subjectId: subject?.id ?? null,
     episode,
     prefs,
@@ -347,6 +549,8 @@ export function PlayerScreen() {
   }
 
   const playable = source !== null && source.found && source.supported;
+  const isKernel = kernel && source !== null && source.found && source.track === 'libmpv';
+  const kernelSource = isKernel && source !== null && source.found && source.track === 'libmpv' ? source : null;
   const durationMs = state.durationMs || episode.durationMs;
   const rate = state.rate || prefs.defaultRate;
   const subtitleName = subtitleIndex >= 0 ? (subtitles[subtitleIndex]?.name ?? '') : '';
@@ -384,8 +588,18 @@ export function PlayerScreen() {
           </button>
         </div>
 
-        <div className={`an-stage-mid${playable ? ' is-video' : ''}`}>
-          {playable && <div className="an-stage-video" ref={containerRef} />}
+        <div className={`an-stage-mid${playable && !isKernel ? ' is-video' : ''}`}>
+          {playable && !isKernel && <div className="an-stage-video" ref={containerRef} />}
+          {kernelSource && (
+            <KernelStage
+              source={kernelSource}
+              kernelTracks={kernelTracks}
+              state={state}
+              volume={volume}
+              statsOn={statsOn}
+              onSelectTrack={controls.selectKernelTrack}
+            />
+          )}
           {!loading && !error && source === null && (
             <div className="an-stage-empty">
               <b>正在准备播放器</b>
@@ -434,6 +648,14 @@ export function PlayerScreen() {
           subtitles={subtitles}
           controls={controls}
           onRate={(r) => setPref('defaultRate', r)}
+          volume={volume}
+          onVolume={controls.setVolume}
+          skip={{
+            op: episode.op?.endMs ?? null,
+            ed: episode.ed?.endMs ?? null,
+            onJump: controls.seekMs,
+          }}
+          stats={{ on: statsOn, onToggle: () => setStatsOn((v) => !v) }}
           epNav={{
             prev: !!prev,
             next: !!next,
@@ -478,7 +700,7 @@ export function PlayerScreen() {
           <div className="an-src-box">
             <span className="an-src-ic">{SOURCE_KIND_LABEL.builtin}</span>
             <span className="an-src-tx">
-              <b>{playable && source ? '内置源 · 本地番剧库' : '尚未选择来源'}</b>
+              <b>{playable && source ? (isKernel ? '内核 · 本地番剧库' : '内置源 · 本地番剧库') : '尚未选择来源'}</b>
               <span>
                 {playable && source
                   ? `${source.container.toUpperCase()} · ${subtitles.length} 条字幕`

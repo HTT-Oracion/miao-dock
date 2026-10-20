@@ -8,6 +8,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   AnimeEpisode,
+  AnimeKernelStatus,
   AnimeLibrarySnapshot,
   AnimeMetadataCandidate,
   AnimePlaySource,
@@ -118,3 +119,30 @@ export const animePlayRemote = (sourceId: string, itemId: string) =>
     sourceId,
     itemId,
   });
+
+// ---------------------------------------------------------------- 内核轨（libmpv 替身）
+
+/** 内核状态：可不可用 + 当前会话快照（音轨 / 字幕 / 进度 / 缓冲） */
+export const animeKernelStatus = () => invoke<AnimeKernelStatus>('anime_kernel_status');
+
+/**
+ * 用内核打开一集（画面在 mpv 自己的窗口里）。
+ *
+ * `hwdec` 由设置页「强制硬件解码」决定；服务侧解析文件路径，前端不拼磁盘路径。
+ */
+export const animeKernelOpen = (subjectId: string, index: number, hwdec?: string) =>
+  invoke<{ ok: boolean; external: boolean; session: AnimeKernelStatus['session'] }>('anime_kernel_open', {
+    subjectId,
+    index,
+    hwdec: hwdec ?? null,
+  });
+
+/** 驱动内核：`play` / `pause` / `seek` / `rate` / `track` / `subtitle` / `volume` / `fullscreen` / `screenshot` */
+export const animeKernelCtl = (action: string, value?: unknown) =>
+  invoke<{ ok: boolean; file?: string; session: AnimeKernelStatus['session'] }>('anime_kernel_ctl', {
+    action,
+    value: value ?? null,
+  });
+
+/** 关掉内核会话（离开播放器 / 换集时调） */
+export const animeKernelClose = () => invoke<AnimeKernelStatus>('anime_kernel_close');
