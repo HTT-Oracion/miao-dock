@@ -145,7 +145,12 @@ export interface AnimeRemotePlayback {
 
 /** Bangumi 检索候选（`anime_metadata_search` 的一项） */
 export interface AnimeMetadataCandidate {
-  bgmId: number;
+  /** 提供方：bangumi（默认）/ anilist（Bangumi 不可达时的回落源） */
+  provider?: 'bangumi' | 'anilist';
+  /** 上游条目号（字符串形态；bangumi 时与 bgmId 同值） */
+  externalId?: string;
+  /** Bangumi 的条目号；AniList 条目为 null（不冒充） */
+  bgmId: number | null;
   /** 原名 */
   name: string;
   /** 中文名；空串 = 上游没有 */

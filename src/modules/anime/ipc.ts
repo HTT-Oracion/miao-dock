@@ -94,8 +94,12 @@ export const animeMetadataSearch = (
   });
 
 /** 把某个候选补进这一部的 manifest；只增不改用户数据 */
-export const animeMetadataApply = (dir: string, bgmId: number) =>
-  invoke<{ ok: boolean; dir: string; subject: AnimeSubject }>('anime_metadata_apply', { dir, bgmId });
+export const animeMetadataApply = (dir: string, provider: string, externalId: string) =>
+  invoke<{ ok: boolean; dir: string; subject: AnimeSubject }>('anime_metadata_apply', {
+    dir,
+    provider,
+    externalId,
+  });
 
 /** 探索页：本周新番时间表（Bangumi `/calendar`，条目是整条 subject） */
 export const animeMetadataCalendar = () => invoke<{ ok: boolean; days: AnimeCalendarDay[] }>('anime_metadata_calendar');
@@ -104,8 +108,11 @@ export const animeMetadataCalendar = () => invoke<{ ok: boolean; days: AnimeCale
 export const animeMetadataHot = (limit = 12) => invoke<AnimeHotResult>('anime_metadata_hot', { limit });
 
 /** 把 Bangumi 条目建成一条新番剧（只有元数据、没有片源；同一部幂等） */
-export const animeMetadataImport = (bgmId: number) =>
-  invoke<{ ok: boolean; dir: string; path: string; subject: AnimeSubject }>('anime_metadata_import', { bgmId });
+export const animeMetadataImport = (provider: string, externalId: string) =>
+  invoke<{ ok: boolean; dir: string; path: string; subject: AnimeSubject }>('anime_metadata_import', {
+    provider,
+    externalId,
+  });
 
 /** 粘贴 Bangumi 链接 / 手输编号 → 建库（解析在服务侧） */
 export const animeMetadataImportRef = (input: string) =>

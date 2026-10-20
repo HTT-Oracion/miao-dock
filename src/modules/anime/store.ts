@@ -132,11 +132,15 @@ export interface AnimeState {
   /** 拉详情页补充数据（角色 / 制作 / 关联）；同一部只拉一次 */
   loadDetailExtra: (bgmId: number) => Promise<void>;
   /** 把 Bangumi 候选建成一条新番剧（幂等），成功后重扫并选中 */
-  importCandidate: (bgmId: number) => Promise<{ ok: boolean; message: string }>;
+  importCandidate: (provider: string, externalId: string) => Promise<{ ok: boolean; message: string }>;
   /** 粘贴 Bangumi 链接 / 手输编号 → 建库 */
   importByRef: (input: string) => Promise<{ ok: boolean; message: string }>;
   /** 用户从候选里挑了一个：按它补全这一部 */
-  applyMetadataCandidate: (dir: string, bgmId: number) => Promise<{ ok: boolean; message: string }>;
+  applyMetadataCandidate: (
+    dir: string,
+    provider: string,
+    externalId: string,
+  ) => Promise<{ ok: boolean; message: string }>;
   /** 收起候选面板（用户改主意） */
   clearMetaCandidates: () => void;
   /** 改一个筛选条（年份 / 季度 / 标签 / 排序 / 布局） */

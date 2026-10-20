@@ -240,7 +240,11 @@ export function libraryActions(
           set({ metaCandidates: { dir: subjectId, list: pool } });
           return { ok: true, message: `找到 ${pool.length} 个候选，挑一个用` };
         }
-        const applied = await ipc.animeMetadataApply(subjectId, hit.bgmId);
+        const applied = await ipc.animeMetadataApply(
+          subjectId,
+          hit.provider ?? 'bangumi',
+          hit.externalId ?? String(hit.bgmId ?? ''),
+        );
         // 重新扫描：列表 / 详情 / 时间表都读同一份结果，避免只改一处
         await get().refreshLibrary();
         return { ok: true, message: `已补全「${applied.subject.title}」` };
@@ -655,9 +659,9 @@ export function libraryActions(
      *
      * 建完立刻重扫并选中：不重扫的话列表里还是旧快照，用户会以为没成功。
      */
-    importCandidate: async (bgmId) => {
+    importCandidate: async (provider, externalId) => {
       try {
-        const r = await ipc.animeMetadataImport(bgmId);
+        const r = await ipc.animeMetadataImport(provider, externalId);
         await get().refreshLibrary();
         const id = r.subject?.id ?? r.dir;
         set({ selectedId: id, view: 'detail' });
@@ -737,9 +741,9 @@ export function libraryActions(
     },
 
     /** 从候选里挑一个：按它的 bgmId 补全，然后清空候选面板 */
-    applyMetadataCandidate: async (dir, bgmId) => {
+    applyMetadataCandidate: async (dir, provider, externalId) => {
       try {
-        const applied = await ipc.animeMetadataApply(dir, bgmId);
+        const applied = await ipc.animeMetadataApply(dir, provider, externalId);
         await get().refreshLibrary();
         set({ metaCandidates: null });
         return { ok: true, message: `已补全「${applied.subject.title}」` };

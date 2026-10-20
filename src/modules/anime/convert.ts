@@ -105,6 +105,15 @@ export function errText(e: unknown): string {
  * 只用于决定「走建库还是走检索」；真正的解析在服务侧（`metadata::parse_bgm_ref`），
  * 两处口径不一致时以服务侧为准（它会给出「看不懂」的明确报错）。
  */
+/**
+ * 候选的唯一键：「提供方:上游号」。
+ *
+ * Bangumi 与 AniList 的条目号是两套独立空间（都会出现 154587 这种数），
+ * 混用一个 Map 会把「AniList 的某条」误判成「Bangumi 的某条已在库」。
+ */
+export const candidateKey = (c: { provider?: string; externalId?: string; bgmId: number | null }): string =>
+  `${c.provider ?? 'bangumi'}:${c.externalId ?? c.bgmId ?? ''}`;
+
 export function looksLikeBgmRef(input: string): boolean {
   const q = input.trim();
   if (!q) return false;

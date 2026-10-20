@@ -18,7 +18,7 @@ import { useToasts } from '@hooks';
 import * as ipc from '@anime/ipc';
 import { useAnimeStore } from '@anime/store';
 import { historyFrom } from '@anime/selectors';
-import { errText, fmtClock, looksLikeBgmRef } from '@anime/convert';
+import { candidateKey, errText, fmtClock, looksLikeBgmRef } from '@anime/convert';
 import { WEEKDAYS } from '@anime/player-options';
 import type { AnimeEpisode, AnimeMetadataCandidate, AnimeSearchFilters, AnimeSubject } from '@anime/types';
 import { Cover, ProgressBar, SectionHead, SubjectCard } from '@screens/anime/shared';
@@ -154,21 +154,26 @@ export function DiscoverScreen() {
     };
   }, [mode, query, searchTick, filters.year, filters.quarter, filters.tag, filters.sort]);
 
-  /** 库里已有同一条目就打开它，否则建库（幂等） */
-  const openCandidate = (c: AnimeMetadataCandidate) => {
-    const local = subjects.find((s) => s.bgmId === c.bgmId);
-    if (local) {
-      select(local.id);
-      return;
-    }
-    void importCandidate(c.bgmId).then((r) => push(r.message, r.ok ? 'good' : 'bad'));
-  };
-
+  // 键 = 「提供方:上游号」。Bangumi 与 AniList 的号可能撞车，不能混用同一个 Map。
   const localByBgm = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const s of subjects) if (typeof s.bgmId === 'number') map.set(s.bgmId, s.id);
+    const map = new Map<string, string>();
+    for (const s of subjects) {
+      if (typeof s.bgmId === 'number') map.set(`bangumi:${s.bgmId}`, s.id);
+    }
     return map;
   }, [subjects]);
+
+  /** 库里已有同一条目就打开它，否则建库（幂等） */
+  const openCandidate = (c: AnimeMetadataCandidate) => {
+    const local = localByBgm.get(candidateKey(c));
+    if (local) {
+      select(local);
+      return;
+    }
+    void importCandidate(c.provider ?? 'bangumi', c.externalId ?? String(c.bgmId ?? '')).then((r) =>
+      push(r.message, r.ok ? 'good' : 'bad'),
+    );
+  };
 
   const localResults = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -439,7 +444,7 @@ function SearchBody({
   searchError: string | null;
   cands: AnimeMetadataCandidate[] | null;
   localResults: AnimeSubject[];
-  localByBgm: Map<number, string>;
+  localByBgm: Map<string, string>;
   onOpenCandidate: (c: AnimeMetadataCandidate) => void;
   onOpenLocal: (id: string) => void;
   onContinue: (id: string) => void;
@@ -536,7 +541,7 @@ function SearchBody({
                     .filter(Boolean)
                     .join(' · ') || c.name;
                 return (
-                  <div key={c.bgmId} className="an-cand-row">
+                  <div key={candidateKey(c)} className="an-cand-row">
                     <span className="an-cand-pic">
                       {c.cover ? (
                         <img src={c.cover} alt="" loading="lazy" />
@@ -548,11 +553,11 @@ function SearchBody({
                       <b>{c.nameCn || c.name}</b>
                       <span>{meta}</span>
                     </span>
-                    <span className={localByBgm.has(c.bgmId) ? 'an-chip is-ok' : 'an-chip is-plain'}>
-                      {localByBgm.has(c.bgmId) ? '已在库' : '未入库'}
+                    <span className={localByBgm.has(candidateKey(c)) ? 'an-chip is-ok' : 'an-chip is-plain'}>
+                      {localByBgm.has(candidateKey(c)) ? '已在库' : '未入库'}
                     </span>
                     <Btn kind="ghost" size="sm" onClick={() => onOpenCandidate(c)}>
-                      {localByBgm.has(c.bgmId) ? '查看' : '加入追番'}
+                      {localByBgm.has(candidateKey(c)) ? '查看' : '加入追番'}
                     </Btn>
                   </div>
                 );
@@ -562,9 +567,9 @@ function SearchBody({
             <div className="an-grid">
               {cands.map((c) => (
                 <CandidateCard
-                  key={c.bgmId}
+                  key={candidateKey(c)}
                   item={c}
-                  inLibrary={localByBgm.has(c.bgmId)}
+                  inLibrary={localByBgm.has(candidateKey(c))}
                   onOpen={() => onOpenCandidate(c)}
                 />
               ))}
@@ -602,7 +607,7 @@ function ExploreBody({
   hotSource: 'heat' | 'rank';
   exploreLoading: boolean;
   exploreError: string | null;
-  localByBgm: Map<number, string>;
+  localByBgm: Map<string, string>;
   onRefreshExplore: () => void;
   onOpenCandidate: (c: AnimeMetadataCandidate) => void;
   onOpenLocal: (id: string) => void;
@@ -705,13 +710,15 @@ function ExploreBody({
                 ) : (
                   list.map((c) => (
                     <button
-                      key={c.bgmId}
+                      key={candidateKey(c)}
                       type="button"
-                      className={localByBgm.has(c.bgmId) ? 'an-week-item is-in' : 'an-week-item'}
+                      className={localByBgm.has(candidateKey(c)) ? 'an-week-item is-in' : 'an-week-item'}
                       onClick={() =>
-                        localByBgm.has(c.bgmId) ? onOpenLocal(localByBgm.get(c.bgmId) as string) : onOpenCandidate(c)
+                        localByBgm.has(candidateKey(c))
+                          ? onOpenLocal(localByBgm.get(candidateKey(c)) as string)
+                          : onOpenCandidate(c)
                       }
-                      title={localByBgm.has(c.bgmId) ? '已在库，打开条目' : '加入追番'}
+                      title={localByBgm.has(candidateKey(c)) ? '已在库，打开条目' : '加入追番'}
                     >
                       {c.nameCn || c.name}
                     </button>
@@ -734,9 +741,9 @@ function ExploreBody({
         <div className="an-grid">
           {hot.map((c) => (
             <CandidateCard
-              key={c.bgmId}
+              key={candidateKey(c)}
               item={c}
-              inLibrary={localByBgm.has(c.bgmId)}
+              inLibrary={localByBgm.has(candidateKey(c))}
               onOpen={() => onOpenCandidate(c)}
             />
           ))}

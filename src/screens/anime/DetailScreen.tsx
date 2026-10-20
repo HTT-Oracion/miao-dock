@@ -190,9 +190,11 @@ export function DetailScreen() {
                       kind="primary"
                       size="sm"
                       onClick={() =>
-                        void applyMetadataCandidate(subject.id, c.bgmId).then((r) =>
-                          push(r.message, r.ok ? 'good' : 'bad'),
-                        )
+                        void applyMetadataCandidate(
+                          subject.id,
+                          c.provider ?? 'bangumi',
+                          c.externalId ?? String(c.bgmId ?? ''),
+                        ).then((r) => push(r.message, r.ok ? 'good' : 'bad'))
                       }
                     >
                       用这个
@@ -330,7 +332,9 @@ export function DetailScreen() {
                         selectSubject(local.id);
                         return;
                       }
-                      void importCandidate(r.bgmId).then((res) => push(res.message, res.ok ? 'good' : 'bad'));
+                      void importCandidate('bangumi', String(r.bgmId)).then((res) =>
+                        push(res.message, res.ok ? 'good' : 'bad'),
+                      );
                     }}
                   >
                     <span className="an-cand-pic">
