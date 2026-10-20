@@ -6727,3 +6727,35 @@ GET /anime/library → 列表里出现该条目（真实元数据，不是 demo�
 **八、仍缺（下一步）**：探索页的**新番周历**与**热度**仍只走 Bangumi（`calendar`/`hot` 没有回退）——
 周历要星期几，AniList 没有这个字段；热度可以用 `Page(sort:TRENDING_DESC)` 直接顶替。这两条登记为下一步，
 不假装已经好了。
+## D-276 元数据来源可切：`auto / bangumi / anilist`，以及"切回去不回落"的真 bug（2026-10-21）
+
+**一、为什么加这个开关**：`auto` 模式下 Bangumi 被墙 ⇒ **每次检索都先等一次 10s 超时**才回落。
+用户要的是"我选 AniList 就立刻走 AniList"，不是"每次多等 10 秒"。
+
+**二、实现**
+
+| 层 | 落点 |
+|---|---|
+| 偏好 | `AnimePrefs.metaProvider: 'auto' \| 'bangumi' \| 'anilist'`（默认 auto），设置项 `play.provider`（第 34 项） |
+| 壳层 | `anime_set_meta_provider`：**即时** POST `/anime/meta-provider`，同时写进子进程环境（重启后仍是它） |
+| 服务 | `metadata::MetaOrder` + `meta_order()` / `set_meta_order()`；`GET/POST /anime/meta-provider`；启动读 `MIAO_ANIME_META_PROVIDER` |
+| 顺序 | `search_any`：`bangumi` 只试 Bangumi；`anilist` 只试 AniList；`auto` 两家都试（Bangumi 先，失败回落并在响应里写 `fallbackFrom`） |
+
+**三、🔴 真机抓到的 bug（值得记）**：第一版用 `anilist_first` 一个布尔**同时**决定"顺序"和"要不要试第二家"
+—— 于是从 `anilist` 切回 `auto` 后，Bangumi 超时即失败，**不再回落**（报"已固定只用 Bangumi"）。
+用户视角就是"切回去了还是没数据"。修法：把两个关注点拆成独立判断（`only_bangumi` / `only_anilist` / auto 三条路径）。
+反证：把 `if only_anilist {` 改坏 ⇒ `M3.providerOrder` 必红；抹掉 `fallbackFrom` ⇒ `M3.provider` 必红。
+
+**四、本机实测（真网络）**
+
+| 模式 | 结果 |
+|---|---|
+| 启动 `MIAO_ANIME_META_PROVIDER=anilist` | `provider=anilist`；检索 6 条，**911ms**（无 Bangumi 超时） |
+| 运行期切回 `auto` | 6 条，12.9s，`fallbackFrom` 写明 Bangumi 不可达 ⇒ **回落恢复** |
+
+**五、验证**：`check:anime` **98/98**；`check:anime-module` **54/54** + 反证 **49/49**；`cargo test --lib animesvc` **102/102**；
+`cargo test --bin miao-dock anime` **12/12**；`npm run check` 19/19；`tsc` / `eslint` / `prettier` / `vite build` 全绿；
+设置目录 33 → **34 项**（新增「元数据来源」）。
+
+**六、仍缺**：探索页的**周历 / 热度**还没接 AniList 回退（周历需要"星期几"，AniList 无此字段）；
+详情页角色 / 声优 / 关联作品仍只走 Bangumi。这两条登记为下一步。
