@@ -1,11 +1,11 @@
 /**
- * 「番剧设置」八组 34 项的**唯一事实源**（设计稿 ⑥）。
+ * 「番剧设置」八组 33 项的**唯一事实源**（设计稿 ⑥）。
  *
  * 为什么不并进 `screens/settings/catalog.ts`：那份是设置页自身的 5 组 34 项，
  * 项数合计被 C10/COUNT 双门钉着；番剧设置是**域内**设置（真实值住 `anime/prefs.ts`），
  * 归属不同层。两份目录各自可算合计，谁也不该被另一域的增项带着跳数。
  *
- * 控件形态五种 + 占位：「弹幕」是占位项（预留能力），**不渲染可点控件**。
+ * 控件形态五种（开关 / 分段 / 文本 / 数字 / 按钮）：**不留占位项** —— 做不到的整条删掉。
  */
 import type { AnimePrefs } from '@anime/prefs';
 
@@ -15,8 +15,7 @@ export type AnimeControl =
   | { kind: 'seg'; key: keyof AnimePrefs; options: { value: string | number; label: string }[] }
   | { kind: 'text'; key: keyof AnimePrefs; wide?: boolean; placeholder?: string }
   | { kind: 'number'; key: keyof AnimePrefs; unit: string }
-  | { kind: 'buttons'; buttons: string[] }
-  | { kind: 'placeholder'; note: string };
+  | { kind: 'buttons'; buttons: string[] };
 
 export interface AnimeSettingItem {
   id: string;
@@ -131,12 +130,6 @@ export const ANIME_SETTING_GROUPS: AnimeSettingGroup[] = [
         def: '自动',
         control: { kind: 'switch', key: 'forceHwDecode' },
       },
-      {
-        id: 'play.danmaku',
-        label: '弹幕',
-        why: '数据契约已留好弹幕轨字段；开放前控制条不显示弹幕开关。',
-        control: { kind: 'placeholder', note: '预留能力 · 尚未开放' },
-      },
     ],
   },
   {
@@ -179,14 +172,14 @@ export const ANIME_SETTING_GROUPS: AnimeSettingGroup[] = [
       {
         id: 'src.allowbt',
         label: '允许 BT / 磁力来源',
-        why: '关闭后只匹配在线源与媒体服务器，BT 任务不再参与自动选源。',
+        why: '关闭后不能添加磁力任务；已有任务照常跑完，不偷偷续新种。',
         def: '开',
         control: { kind: 'switch', key: 'allowBt' },
       },
       {
         id: 'src.btstream',
         label: 'BT 边下边播',
-        why: '选中 BT 来源时无需等下载完成，缓冲几秒就能看。',
+        why: '按 Range 等字节就位再发（文件级，不是分片优先级调度）。',
         def: '开',
         control: { kind: 'switch', key: 'btStream' },
       },
@@ -194,7 +187,7 @@ export const ANIME_SETTING_GROUPS: AnimeSettingGroup[] = [
         id: 'src.editor',
         label: '自定义源编辑器',
         why: 'RSS 源填订阅地址；选择器源点选页面元素生成规则，均可当场测试。',
-        control: { kind: 'buttons', buttons: ['RSS 编辑器', '选择器编辑器'] },
+        control: { kind: 'buttons', buttons: ['去编辑源'] },
       },
     ],
   },

@@ -63,6 +63,7 @@ const F = {
   rustBt: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'bt', 'mod.rs'),
   rustBtStream: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'bt', 'stream.rs'),
   rustKernelMpv: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'kernel', 'mpv.rs'),
+  rustEmbed: path.join(ROOT, 'src-tauri', 'src', 'anime', 'embed.rs'),
   rustPikpak: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'bt', 'pikpak.rs'),
   cargoToml: path.join(ROOT, 'src-tauri', 'Cargo.toml'),
   rustAnimesvc: path.join(ROOT, 'src-tauri', 'src', 'animesvc.rs'),
@@ -622,7 +623,13 @@ const CHECKS = [
         /MIAO_ANIME_EMBED/.test(s.rustAnime) &&
         /"wid": wid/.test(s.rustAnime) &&
         /wid: Option<u64>/.test(s.rustAnimesvc) &&
-        /embed: embed \?\? null/.test(s.ipc),
+        /embed: embed \?\? null/.test(s.ipc) &&
+        /CreateWindowExW/.test(s.rustEmbed) &&
+        /WS_CHILD \| WS_VISIBLE \| WS_CLIPCHILDREN \| WS_CLIPSIBLINGS/.test(s.rustEmbed) &&
+        /fn physical_rect/.test(s.rustEmbed) &&
+        /crate::anime::anime_kernel_embed/.test(strip(s.rustCommands)) &&
+        /animeKernelEmbed/.test(s.ipc) &&
+        /animeKernelEmbedOff/.test(s.playerScreen),
       detail: '嵌入式渲染能力没接通：参数构造 / 宿主句柄 / 端点透传 / 桥接 任一环缺失',
     }),
   },
@@ -779,10 +786,10 @@ const CHECKS = [
     run: (s) => {
       const okMain = /'anime'/.test(s.settingsCatalogMain);
       const okScreen = /AnimeSettingsSection/.test(s.settingsScreen);
-      const okItems = (s.settingsCatalog.match(/id: '[a-z]+\.[a-z]+'/g) ?? []).length === 34;
+      const okItems = (s.settingsCatalog.match(/id: '[a-z]+\.[a-z]+'/g) ?? []).length === 33;
       return {
         ok: okMain && okScreen && okItems,
-        detail: `番剧设置未接全：catalog 段 ${okMain ? '有' : '缺'}、设置页挂载 ${okScreen ? '有' : '缺'}、项数 34 ${okItems ? '对' : '不对'}`,
+        detail: `番剧设置未接全：catalog 段 ${okMain ? '有' : '缺'}、设置页挂载 ${okScreen ? '有' : '缺'}、项数 33 ${okItems ? '对' : '不对'}`,
       };
     },
   },
@@ -1112,6 +1119,13 @@ const MUTATIONS = [
     find: '.route(&format!("/api/{API_VERSION}/anime/bt/add"), post(bt_add))',
     replace: '',
     expect: ['BT.wired'],
+  },
+  {
+    name: '子窗口不是 WS_CHILD（变成顶层窗口，嵌入失效）',
+    file: F.rustEmbed,
+    find: 'WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS',
+    replace: 'WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS',
+    expect: ['M3.embed'],
   },
   {
     name: 'mpv 不再接受宿主窗口（嵌入永远不生效）',

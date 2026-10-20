@@ -5,7 +5,7 @@
  * 排版复用设置页的 `SubTitle` / `Row`（行高、说明、默认值小字只由一处保证），
  * 控件皮肤用本模块自己的 `.an-set-*` —— 设置页的窄控件列放不下本模块这些输入框。
  *
- * 纪律：**没有「假控件」**。弹幕是占位项（只显示"预留能力"），
+ * 纪律：**没有「假控件」** —— 做不到的项整条删掉，不留只显示"预留能力"的空行；
  * 其余每一项都真的读写 `prefs` 并立即落 localStorage。
  */
 import type { ReactNode } from 'react';
@@ -135,8 +135,6 @@ export function AnimeSettingsSection() {
             )}
           </div>
         );
-      case 'placeholder':
-        return <span className="an-chip is-plain">{c.note}</span>;
       default:
         return null;
     }
@@ -152,7 +150,7 @@ export function AnimeSettingsSection() {
               <span className="set-row-name">番剧设置</span>
             </div>
             <div className="set-row-why is-one">
-              八组 30 项：番剧库 / 播放 / 字幕 / 数据源 / 媒体选择 / 缓存与 BT / 账号与同步 / 备份。
+              八组 33 项：番剧库 / 播放 / 字幕 / 数据源 / 媒体选择 / 缓存与 BT / 账号与同步 / 备份。
             </div>
           </div>
           <div className="set-row-ctl">
