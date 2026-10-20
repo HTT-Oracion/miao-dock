@@ -1130,6 +1130,68 @@ try {
     );
   }
 
+  // A18：账号与同步（中继桩 + 队列 + 冲突策略）
+  {
+    const base = `http://127.0.0.1:${animeInfo.port}`;
+    const auth = { 'x-box-token': animeInfo.token };
+    const postJson = (p, body) =>
+      request('POST', `${base}${p}`, {
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+    // 桩的约定：首次登录即注册（真中继是独立注册路由），所以先用正确密码建号
+    const good = await postJson('/api/v1/anime/account/login', { email: 'a@b.c', password: 'pw' });
+    check(
+      'A18 邮箱密码登录成功并落会话（state 里 loggedIn=true）',
+      good.status === 200 && good.json?.user?.email === 'a@b.c',
+      good.buf.toString().slice(0, 240),
+    );
+
+    const bad = await postJson('/api/v1/anime/account/login', { email: 'a@b.c', password: 'nope' });
+    check('A18 密码不对 ⇒ 401（不是笼统的 500）', bad.status === 401, bad.buf.toString().slice(0, 200));
+
+    const st = await request('GET', `${base}/api/v1/anime/account`, { headers: auth });
+    check(
+      'A18 账号状态带中继地址与队列长度',
+      st.status === 200 && st.json?.loggedIn === true && String(st.json?.relayBase || '').startsWith('http'),
+      st.buf.toString().slice(0, 240),
+    );
+
+    const item = {
+      id: 'progress:e1',
+      kind: 'progress',
+      key: 'e1',
+      updatedAt: Date.now(),
+      payload: { positionMs: 120000, episodeIndex: 1, subjectTitle: '冰菓' },
+    };
+    const enq = await postJson('/api/v1/anime/account/enqueue', { item });
+    const sync1 = await postJson('/api/v1/anime/account/sync', { policy: 'newest' });
+    check(
+      'A18 入队后同步：推上去 1 条且云端计数 ≥ 1',
+      enq.status === 200 && sync1.status === 200 && sync1.json?.pushed >= 1 && sync1.json?.cloudCount >= 1,
+      sync1.buf.toString().slice(0, 240),
+    );
+
+    // 同 id 但更旧 ⇒ 冲突；policy=remote 时采纳云端
+    const stale = { ...item, updatedAt: 1, payload: { ...item.payload, positionMs: 1000 } };
+    await postJson('/api/v1/anime/account/enqueue', { item: stale });
+    const sync2 = await postJson('/api/v1/anime/account/sync', { policy: 'remote' });
+    check(
+      'A18 推一条更旧的同 id ⇒ 报 1 条冲突（远端胜）',
+      sync2.status === 200 && sync2.json?.conflicts?.length === 1,
+      sync2.buf.toString().slice(0, 300),
+    );
+
+    const out = await postJson('/api/v1/anime/account/logout', {});
+    const after = await request('GET', `${base}/api/v1/anime/account`, { headers: auth });
+    check(
+      'A18 退出登录后 loggedIn=false（本地库不动）',
+      out.status === 200 && after.json?.loggedIn === false,
+      after.buf.toString().slice(0, 200),
+    );
+  }
+
   // A5：动漫退出后漫画照旧
   killTree(anime.child);
   await sleep(600);

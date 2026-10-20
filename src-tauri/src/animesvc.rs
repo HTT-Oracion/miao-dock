@@ -35,6 +35,7 @@ use axum::{Json, Router};
 use serde::Deserialize;
 
 mod manifest;
+pub mod account;
 pub mod cache;
 pub mod datasource;
 pub mod import;
@@ -239,6 +240,15 @@ fn router(shell: Arc<Shell>) -> Router {
         .route(&format!("/api/{API_VERSION}/anime/sources/resolve"), post(source_resolve))
         // 订阅：从地址拉一份规则草稿（R2-3）
         .route(&format!("/api/{API_VERSION}/anime/sources/subscribe"), post(source_subscribe))
+        // 账号与同步（R4）：中继契约 + 本地桩
+        .route(&format!("/api/{API_VERSION}/anime/account"), get(account_state))
+        .route(&format!("/api/{API_VERSION}/anime/account/login"), post(account_login))
+        .route(&format!("/api/{API_VERSION}/anime/account/device/start"), post(account_device_start))
+        .route(&format!("/api/{API_VERSION}/anime/account/device/poll"), post(account_device_poll))
+        .route(&format!("/api/{API_VERSION}/anime/account/device/approve"), post(account_device_approve))
+        .route(&format!("/api/{API_VERSION}/anime/account/logout"), post(account_logout))
+        .route(&format!("/api/{API_VERSION}/anime/account/enqueue"), post(account_enqueue))
+        .route(&format!("/api/{API_VERSION}/anime/account/sync"), post(account_sync))
         // 缓存与下载管理（R3）
         .route(&format!("/api/{API_VERSION}/anime/cache"), get(cache_list).post(cache_add))
         .route(&format!("/api/{API_VERSION}/anime/cache/pause"), post(cache_pause))
@@ -676,6 +686,165 @@ async fn source_test(
 #[derive(Deserialize)]
 struct SourceSubscribeBody {
     url: String,
+}
+
+#[derive(Deserialize)]
+struct LoginBody {
+    email: String,
+    password: String,
+}
+
+#[derive(Deserialize)]
+struct DeviceBody {
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(rename = "deviceCode", default)]
+    device_code: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct SyncBody {
+    #[serde(default)]
+    policy: Option<String>,
+    #[serde(default)]
+    item: Option<serde_json::Value>,
+}
+
+/// 账号状态（登录态 / 队列 / 中继地址）。
+async fn account_state(State(shell): State<Arc<Shell>>, headers: HeaderMap) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match account::state().await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "RELAY", e),
+    }
+}
+
+/// 邮箱密码登录（成功后落会话）。
+async fn account_login(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<LoginBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match account::login_password(&body.email, &body.password).await {
+        Ok(v) => match account::save_login(&v) {
+            Ok(_) => json(StatusCode::OK, serde_json::json!({ "ok": true, "user": v["user"] })),
+            Err(e) => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", e),
+        },
+        Err(e) => envelope(StatusCode::UNAUTHORIZED, "INVALID_CREDENTIALS", e),
+    }
+}
+
+/// 设备码 / 扫码：开始。
+async fn account_device_start(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<DeviceBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    let kind = body.kind.as_deref().unwrap_or("oauth");
+    match account::device_start(kind).await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "RELAY", e),
+    }
+}
+
+/// 设备码 / 扫码：轮询（状态为 ok 时落会话）。
+async fn account_device_poll(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<DeviceBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    let Some(code) = body.device_code.as_deref() else {
+        return envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", "缺少 deviceCode");
+    };
+    match account::device_poll(code).await {
+        Ok(v) => {
+            if v["status"] == "ok" {
+                if let Err(e) = account::save_login(&v) {
+                    return envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", e);
+                }
+            }
+            json(StatusCode::OK, v)
+        }
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "RELAY", e),
+    }
+}
+
+/// 桩专用：模拟「另一端已确认」（真中继由手机 / 浏览器完成）。
+async fn account_device_approve(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<DeviceBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    let Some(code) = body.device_code.as_deref() else {
+        return envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", "缺少 deviceCode");
+    };
+    match account::device_approve(code).await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "RELAY", e),
+    }
+}
+
+/// 退出登录（清会话，不动云端与本地库）。
+async fn account_logout(State(shell): State<Arc<Shell>>, headers: HeaderMap) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match account::logout() {
+        Ok(()) => json(StatusCode::OK, serde_json::json!({ "ok": true })),
+        Err(e) => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", e),
+    }
+}
+
+/// 入队一条待同步条目。
+async fn account_enqueue(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<SyncBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    let Some(item) = body.item else {
+        return envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", "缺少 item");
+    };
+    match serde_json::from_value::<account::SyncItem>(item) {
+        Ok(it) => match account::enqueue(it) {
+            Ok(()) => json(StatusCode::OK, serde_json::json!({ "ok": true })),
+            Err(e) => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", e),
+        },
+        Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", format!("item 结构不对：{e}")),
+    }
+}
+
+/// 同步一次（推队列 → 冲突按策略处理 → 拉云端）。
+async fn account_sync(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<SyncBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    let policy = account::ConflictPolicy::parse(body.policy.as_deref().unwrap_or("remote"));
+    match account::sync(policy).await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) if e.contains("还没登录") => envelope(StatusCode::UNAUTHORIZED, "NOT_LOGGED_IN", e),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "RELAY", e),
+    }
 }
 
 #[derive(Deserialize)]

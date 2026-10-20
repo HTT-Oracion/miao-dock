@@ -633,6 +633,54 @@ pub async fn anime_resolve_source(url: String, rules: Value, cookies: Option<Val
     .await
 }
 
+/// 账号状态（登录态 / 队列 / 中继地址）。
+#[tauri::command]
+pub async fn anime_account() -> Result<Value, String> {
+    get("/api/v1/anime/account").await
+}
+
+/// 邮箱密码登录。
+#[tauri::command]
+pub async fn anime_account_login(email: String, password: String) -> Result<Value, String> {
+    post("/api/v1/anime/account/login", json!({ "email": email, "password": password })).await
+}
+
+/// 设备码 / 扫码：开始（返回 deviceCode / userCode / 轮询间隔）。
+#[tauri::command]
+pub async fn anime_account_device_start(kind: String) -> Result<Value, String> {
+    post("/api/v1/anime/account/device/start", json!({ "kind": kind })).await
+}
+
+/// 设备码 / 扫码：轮询一次。
+#[tauri::command]
+pub async fn anime_account_device_poll(device_code: String) -> Result<Value, String> {
+    post("/api/v1/anime/account/device/poll", json!({ "deviceCode": device_code })).await
+}
+
+/// 桩专用：模拟另一端确认（真中继由手机 / 浏览器完成）。
+#[tauri::command]
+pub async fn anime_account_device_approve(device_code: String) -> Result<Value, String> {
+    post("/api/v1/anime/account/device/approve", json!({ "deviceCode": device_code })).await
+}
+
+/// 退出登录。
+#[tauri::command]
+pub async fn anime_account_logout() -> Result<Value, String> {
+    post("/api/v1/anime/account/logout", json!({})).await
+}
+
+/// 入队一条待同步条目（收藏 / 进度）。
+#[tauri::command]
+pub async fn anime_account_enqueue(item: Value) -> Result<Value, String> {
+    post("/api/v1/anime/account/enqueue", json!({ "item": item })).await
+}
+
+/// 同步一次（推队列 → 冲突按策略处理 → 拉云端）。
+#[tauri::command]
+pub async fn anime_account_sync(policy: String) -> Result<Value, String> {
+    post("/api/v1/anime/account/sync", json!({ "policy": policy })).await
+}
+
 /// 缓存任务列表（进度以盘上为准）。
 #[tauri::command]
 pub async fn anime_cache() -> Result<Value, String> {
