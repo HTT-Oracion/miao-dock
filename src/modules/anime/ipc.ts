@@ -253,6 +253,10 @@ export const animeAccountLogout = () => invoke<{ ok: boolean }>('anime_account_l
 export const animeAccountEnqueue = (item: AccountQueueItem) =>
   invoke<{ ok: boolean }>('anime_account_enqueue', { item });
 
+/** 手动挑边：`local` 覆盖云端 / `remote` 采纳云端 */
+export const animeResolveConflict = (id: string, side: 'local' | 'remote') =>
+  invoke<{ ok: boolean; side: string }>('anime_resolve_conflict', { id, side });
+
 /** 同步一次（推队列 → 冲突按策略处理 → 拉云端） */
 export const animeAccountSync = (policy: string) => invoke<AccountSyncResult>('anime_account_sync', { policy });
 

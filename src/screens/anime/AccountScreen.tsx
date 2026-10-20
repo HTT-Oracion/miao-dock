@@ -38,6 +38,7 @@ export function AccountScreen() {
   const approveDevice = useAnimeStore((s) => s.approveDevice);
   const logoutAccount = useAnimeStore((s) => s.logoutAccount);
   const syncNow = useAnimeStore((s) => s.syncNow);
+  const resolveConflict = useAnimeStore((s) => s.resolveConflict);
   const { push } = useToasts();
 
   const [mode, setMode] = useState<Mode>('email');
@@ -239,20 +240,26 @@ export function AccountScreen() {
               </Empty>
             ) : (
               conflicts.map((c) => (
-                <div key={`${c.subjectTitle}-${c.episodeIndex}`} className="an-conflict">
+                <div key={c.id} className="an-conflict">
                   <div className="an-conflict-tt">
                     {c.subjectTitle} · 第 {c.episodeIndex} 话
                   </div>
                   <div className="an-conflict-grid">
                     <div className="an-conflict-side is-pick">
-                      <span>本地 · 保留此侧</span>
+                      <span>本地</span>
                       <b className="an-num">{fmtClock(c.localMs)}</b>
                       <span className="an-note">更新于 {new Date(c.localAt).toLocaleString()}</span>
+                      <Btn kind="primary" size="sm" onClick={() => void resolveConflict(c.id, 'local')}>
+                        保留本地
+                      </Btn>
                     </div>
                     <div className="an-conflict-side">
-                      <span>云端 · 放弃此侧</span>
+                      <span>云端</span>
                       <b className="an-num">{fmtClock(c.cloudMs)}</b>
                       <span className="an-note">更新于 {new Date(c.cloudAt).toLocaleString()}</span>
+                      <Btn kind="ghost" size="sm" onClick={() => void resolveConflict(c.id, 'remote')}>
+                        采纳云端
+                      </Btn>
                     </div>
                   </div>
                 </div>

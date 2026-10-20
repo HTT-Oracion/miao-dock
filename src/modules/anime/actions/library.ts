@@ -56,6 +56,7 @@ export function libraryActions(
   | 'approveDevice'
   | 'logoutAccount'
   | 'syncNow'
+  | 'resolveConflict'
   | 'loadBt'
   | 'addBt'
   | 'pauseBt'
@@ -501,6 +502,16 @@ export function libraryActions(
       set({ account: { loggedIn: false }, syncQueue: [], conflicts: [] });
     },
 
+    /** 手动挑边：解决一条冲突后重新同步一次（列表与队列都刷新） */
+    resolveConflict: async (id, side) => {
+      try {
+        await ipc.animeResolveConflict(id, side);
+        const r = await get().syncNow();
+        return { ok: true, message: r.message };
+      } catch (e) {
+        return { ok: false, message: `处理冲突失败：${errText(e)}` };
+      }
+    },
     /** 同步一次：策略来自设置；冲突回填给合并面板 */
     syncNow: async () => {
       try {
@@ -759,6 +770,7 @@ function toConflict(c: {
 }): SyncConflict {
   const num = (v: unknown) => (typeof v === 'number' ? v : Number(v ?? 0) || 0);
   return {
+    id: c.id,
     subjectTitle: String(c.cloud.payload.subjectTitle ?? c.key),
     episodeIndex: num(c.cloud.payload.episodeIndex),
     localMs: num(c.local?.payload.positionMs),

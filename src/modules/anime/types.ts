@@ -353,6 +353,8 @@ export interface AccountSyncResult {
 
 /** 双侧冲突（本地 vs 云端 同一集进度不同） */
 export interface SyncConflict {
+  /** 队列条目 id（手动挑边时用它定位） */
+  id: string;
   subjectTitle: string;
   episodeIndex: number;
   localMs: number;

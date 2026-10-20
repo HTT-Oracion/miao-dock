@@ -170,6 +170,9 @@ export interface AnimeState {
   logoutAccount: () => Promise<void>;
   /** 同步一次（按设置里的冲突策略） */
   syncNow: () => Promise<{ ok: boolean; message: string; conflicts: number }>;
+  /** 手动挑边：local 覆盖云端 / 
+emote 采纳云端 */
+  resolveConflict: (id: string, side: 'local' | 'remote') => Promise<{ ok: boolean; message: string }>;
   /** BT：拉任务与会话状态 */
   loadBt: () => Promise<void>;
   /** BT：添加磁力（受 allowBt 开关约束） */
