@@ -9,6 +9,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   AnimeCalendarDay,
   AnimeCharacter,
+  AnimeCookie,
   AnimeEpisode,
   AnimeHotResult,
   AnimeKernelStatus,
@@ -129,17 +130,32 @@ export const animeImportFolder = (path: string, subject: string | null) =>
   });
 
 /** 测试一个数据源：拉前几条看看里面是什么（RSS / 媒体服务器 / 通用网页源已接） */
-export const animeTestSource = (url: string, kind: string, limit = 8, rules?: AnimeSourceRules) =>
+export const animeTestSource = (
+  url: string,
+  kind: string,
+  limit = 8,
+  rules?: AnimeSourceRules,
+  cookies?: AnimeCookie[],
+) =>
   invoke<{ ok: boolean; kind: string; count: number; items: AnimeSourceTestItem[] }>('anime_test_source', {
     url,
     kind,
     limit,
     rules: rules ?? null,
+    cookies: cookies ?? null,
   });
 
 /** 通用网页源：详情页 → 视频直链（拿到直链才能交给播放器） */
-export const animeResolveSource = (url: string, rules: AnimeSourceRules) =>
-  invoke<{ ok: boolean; url: string }>('anime_resolve_source', { url, rules });
+export const animeResolveSource = (url: string, rules: AnimeSourceRules, cookies?: AnimeCookie[]) =>
+  invoke<{ ok: boolean; url: string }>('anime_resolve_source', { url, rules, cookies: cookies ?? null });
+
+/** 打开「过验证码」窗口（内嵌网页，用户手动完成验证） */
+export const animeOpenChallenge = (url: string) =>
+  invoke<{ ok: boolean; reused: boolean }>('anime_open_challenge', { url });
+
+/** 读出验证码窗口里该地址的会话 cookie（随后随抓取请求带上） */
+export const animeChallengeCookies = (url: string) =>
+  invoke<{ ok: boolean; cookies: AnimeCookie[] }>('anime_challenge_cookies', { url });
 
 /**
  * 远程播放事实：媒体服务器（Jellyfin / Emby）的某一集。

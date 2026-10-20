@@ -49,6 +49,10 @@ export interface AnimeSubject {
   tags: string[];
   /** 0–10 分；无评分时省略（不写 0，0 是「打了 0 分」） */
   rating?: number;
+  /** Bangumi 全站排名（v0 `rank`；没进榜就没有） */
+  rank?: number;
+  /** 收藏人数（v0 `collection_total`） */
+  collectionTotal?: number;
   /** 收藏态；null / 缺省 = 未收藏 */
   collection?: CollectionType | null;
   /** 已看集数（由集汇总，落盘时写一份便于列表排序） */
@@ -357,8 +361,7 @@ export interface MediaSourceView {
   rules?: AnimeSourceRules;
 }
 
-/**
- * 通用网页源的选择器规则（与 Rust `sources::SourceRules` 同形）。
+/** 通用网页源的选择器规则（与 Rust `sources::SourceRules` 同形）。
  *
  * `list` 必填；`link` / `title` 缺省时按「容器自身或第一个 `<a>`」「容器文本」处理；
  * `video` 只在详情页解析直链时用。
@@ -368,6 +371,12 @@ export interface AnimeSourceRules {
   link?: string;
   title?: string;
   video?: string;
+}
+
+/** 验证码窗口里取出的会话 cookie（抓取层拿它当 `Cookie` 头） */
+export interface AnimeCookie {
+  name: string;
+  value: string;
 }
 
 /** 跳过片头片尾的档位（设计稿四档） */

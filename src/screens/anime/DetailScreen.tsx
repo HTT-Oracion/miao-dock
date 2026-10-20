@@ -151,6 +151,12 @@ export function DetailScreen() {
         {rating ? (
           <section className="an-detail-sec">
             <SectionHead title="评分" action={<span className="an-num">{rating.toFixed(1)} / 10</span>} />
+            {/* v0 只给 score / rank / collection_total，没有分档人数 —— 不画直方图，避免编数据 */}
+            <div className="an-detail-stats">
+              <Stat label="评分" value={rating.toFixed(1)} />
+              <Stat label="排名" value={subject.rank ? `#${subject.rank}` : '—'} />
+              <Stat label="收藏" value={subject.collectionTotal ? String(subject.collectionTotal) : '—'} />
+            </div>
             <div className="an-hist">
               <div className="an-hist-bar">
                 <span className="an-num">{rating.toFixed(1)}</span>

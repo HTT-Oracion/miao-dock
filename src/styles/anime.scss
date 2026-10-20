@@ -925,6 +925,13 @@
   flex-direction: column;
   gap: 5px;
 }
+/* 评分三数（v0 只给 score / rank / collection_total，没有分档人数） */
+.an-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 8px;
+}
 .an-hist-bar {
   display: flex;
   align-items: center;

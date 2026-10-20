@@ -6,7 +6,7 @@
  * 「导入本机文件夹」把片复制进库根，是本机数据眼下唯一的入口。
  */
 import { useState } from 'react';
-import { FolderPlus, Link2, Pencil, Play, Plus, RefreshCw, Trash2, Zap } from 'lucide-react';
+import { FolderPlus, Link2, Pencil, Play, Plus, RefreshCw, ShieldAlert, Trash2, Zap } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Btn, Empty } from '@components/units';
 import { formatBytes } from '@tools';
@@ -14,7 +14,7 @@ import { useToasts } from '@hooks';
 import * as ipc from '@anime/ipc';
 import { useAnimeStore } from '@anime/store';
 import { SOURCE_KIND_LABEL } from '@anime/player-options';
-import type { AnimeSourceRules, AnimeSourceTestItem, MediaSourceView } from '@anime/types';
+import type { AnimeCookie, AnimeSourceRules, AnimeSourceTestItem, MediaSourceView } from '@anime/types';
 import { ProgressBar, SectionHead } from '@screens/anime/shared';
 
 /** 用户可自建的源类型（内置源不在列）；适配器未就绪的也列出来，保存后测试会明说 */
@@ -67,6 +67,10 @@ export function SourceScreen() {
   const [preview, setPreview] = useState<{ id: string; items: AnimeSourceTestItem[]; resolved?: string } | null>(null);
   /** 正在解析直链的源 id */
   const [resolving, setResolving] = useState<string | null>(null);
+  /** 各源的会话 cookie（验证码窗口里取出来的，随抓取请求带上） */
+  const [cookies, setCookies] = useState<Record<string, AnimeCookie[]>>({});
+  /** 刚失败、需要用户去窗口里过验证码的源 id */
+  const [challengeFor, setChallengeFor] = useState<string | null>(null);
 
   const bt = cache.filter((t) => t.state === 'downloading' || t.state === 'seeding' || t.state === 'paused');
 
@@ -93,11 +97,14 @@ export function SourceScreen() {
     }
     setTesting(s.id);
     try {
-      const r = await ipc.animeTestSource(s.url, s.kind, 8, s.rules);
+      const r = await ipc.animeTestSource(s.url, s.kind, 8, s.rules, cookies[s.id]);
       setPreview({ id: s.id, items: r.items });
+      setChallengeFor(null);
       push(`「${s.name}」取到 ${r.count} 条`, 'good');
     } catch (e) {
       setPreview(null);
+      // 失败时给「过验证码」入口：站点可能只是要一次人机验证，不是规则写错
+      setChallengeFor(s.id);
       push(`测试失败：${e instanceof Error ? e.message : String(e)}`, 'bad');
     } finally {
       setTesting(null);
@@ -112,13 +119,44 @@ export function SourceScreen() {
     }
     setResolving(s.id);
     try {
-      const r = await ipc.animeResolveSource(pageUrl, tidyRules(s.rules));
+      const r = await ipc.animeResolveSource(pageUrl, tidyRules(s.rules), cookies[s.id]);
       setPreview({ id: s.id, items: preview?.items ?? [], resolved: r.url });
       push(`解析到直链：${r.url}`, 'good');
     } catch (e) {
       push(`解析失败：${e instanceof Error ? e.message : String(e)}`, 'bad');
     } finally {
       setResolving(null);
+    }
+  };
+
+  /** 打开「过验证码」窗口：内嵌网页，用户手动完成验证（不尝试识别或绕过） */
+  const openChallenge = async (s: MediaSourceView) => {
+    if (!s.url) {
+      push('这个源没有地址', 'bad');
+      return;
+    }
+    try {
+      await ipc.animeOpenChallenge(s.url);
+      push('在弹窗里完成验证，然后点「我已通过」', 'good');
+    } catch (e) {
+      push(`验证码窗口打不开：${e instanceof Error ? e.message : String(e)}`, 'bad');
+    }
+  };
+
+  /** 用户说「已通过」：把窗口里的会话 cookie 收下来，带着它重试 */
+  const passChallenge = async (s: MediaSourceView) => {
+    if (!s.url) return;
+    try {
+      const r = await ipc.animeChallengeCookies(s.url);
+      if (!r.cookies.length) {
+        push('没读到会话 cookie —— 确认验证已在弹窗里完成', 'bad');
+        return;
+      }
+      setCookies((m) => ({ ...m, [s.id]: r.cookies }));
+      push(`已拿到 ${r.cookies.length} 条会话 cookie，重试一次`, 'good');
+      await testSource(s);
+    } catch (e) {
+      push(`读会话失败：${e instanceof Error ? e.message : String(e)}`, 'bad');
     }
   };
 
@@ -383,6 +421,32 @@ export function SourceScreen() {
                       <b>解析到的直链</b>
                       <span>{preview.resolved}</span>
                     </span>
+                  </span>
+                </div>
+              ) : null}
+              {challengeFor === s.id ? (
+                <div className="an-src-preview">
+                  <span className="an-src-pv-row">
+                    <span className="an-src-pv-tx">
+                      <b>测试没通过</b>
+                      <span>如果页面要求人机验证，先在弹窗里过一遍再重试（不识别、不绕过）。</span>
+                    </span>
+                    <Btn
+                      kind="ghost"
+                      size="sm"
+                      title="打开内嵌网页，手动完成验证"
+                      onClick={() => void openChallenge(s)}
+                    >
+                      <ShieldAlert size={13} /> 过验证码
+                    </Btn>
+                    <Btn
+                      kind="ghost"
+                      size="sm"
+                      title="读出窗口里的会话 cookie 并重试"
+                      onClick={() => void passChallenge(s)}
+                    >
+                      我已通过，重试
+                    </Btn>
                   </span>
                 </div>
               ) : null}

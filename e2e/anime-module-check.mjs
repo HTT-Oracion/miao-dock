@@ -439,6 +439,21 @@ const CHECKS = [
     }),
   },
   {
+    id: 'M3.challenge',
+    run: (s) => ({
+      ok:
+        /pub async fn anime_open_challenge/.test(s.rustAnime) &&
+        /cookies_for_url/.test(s.rustAnime) &&
+        /crate::anime::anime_open_challenge/.test(strip(s.rustCommands)) &&
+        /anime_challenge_cookies/.test(s.ipc) &&
+        /openChallenge/.test(s.sourceScreen) &&
+        /passChallenge/.test(s.sourceScreen) &&
+        /fn cookie_header/.test(s.webRs) &&
+        /cookies: &\[\(String, String\)\]/.test(s.rustDatasource),
+      detail: '验证码链路没接通：内嵌窗口 / cookie 提取 / 抓取层带 Cookie 头 任一环缺失',
+    }),
+  },
+  {
     id: 'M3.web',
     run: (s) => ({
       ok:
@@ -855,6 +870,13 @@ const MUTATIONS = [
     find: '.route(&format!("/api/{API_VERSION}/anime/metadata/related"), get(metadata_related))',
     replace: '',
     expect: ['META.detail'],
+  },
+  {
+    name: '验证码窗口不再按地址取 cookie（只剩全量 cookies，跨站会拿错会话）',
+    file: F.rustAnime,
+    find: '.cookies_for_url(parsed)',
+    replace: '.cookies()',
+    expect: ['M3.challenge'],
   },
 ];
 
