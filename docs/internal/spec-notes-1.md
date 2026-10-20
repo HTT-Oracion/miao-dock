@@ -6157,6 +6157,34 @@ raw.githubusercontent 在本机不通，与 D-246 同因）。核对结论：
 **四、边界**：`looksLikeBgmRef` 只是粗筛 —— 两处口径不一致时以服务侧为准（它会给明确报错）；
 `parse_bgm_ref` 只认 `/subject(s)/` 路径，人物页 / 目录页的链接会被判成"看不懂"而不是猜一个 id。
 
+## D-257 检索筛选条（年份 / 季度 / 标签 / 排序 / 布局）（2026-10-20）
+
+**一、上游契约**：Bangumi 的 `/v0/search/subjects` 支持 `sort`（`match|heat|rank|score`）与
+`filter.air_date`（多个条件 AND，形如 `>=2024-04-01` / `<2024-07-01`）与 `filter.tag`。
+所以年份与季度**拼成日期区间**，不是上游直接认的枚举 —— 季度换算必须自己算对。
+
+| 层 | 落点 | 职责 |
+|---|---|---|
+| 请求体 | `metadata::search_body` | 拼 `keyword / sort / filter{type,tag,air_date}`；`sort` 只认四个白名单值，别的一律 `match` |
+| 区间 | `metadata::air_date_range` | `(year, quarter)` → `[start, end)`；Q4 与整年都跨到下一年 1 月 1 日；非法季度按整年算（不猜） |
+| 检索 | `metadata::search_filtered` / `search_filtered_default` | 带筛选的检索；`search` 保持旧签名（无筛选）不动，避免波及既有调用 |
+| 端点 | `animesvc.rs` | `MetadataQuery` 增 `year/quarter/tag/sort`；**全空时走普通检索**（limit 8），带筛选时 limit 20 |
+| 桥接 | `anime/mod.rs` | 空值不拼进查询串 |
+| 界面 | `DiscoverScreen::FilterBar` | 年份（近 6 年）/ 季度 / 排序 / 布局 chip；标签 chip **来自当前结果的 tags**（真数据，不写死清单） |
+
+**二、验证**
+
+- `cargo test --lib animesvc` **77/77**（新增 2 条：`air_date_range` 覆盖整年与四个季度、Q4 不拼出 13 月；
+  `search_body` 带筛选 / 空 tag 不发 / 未知 sort 退回 match）
+- `check:anime` **69/69**：A14 两条 —— 假上游对筛选条做**校验**（带 tag 就必须同时有 air_date 与 `sort=heat`，
+  否则 400），所以「带筛选的检索 200」本身就是筛选真发出去的证据；不带筛选则要求 `sort=match` 且无 `air_date`
+- `check:anime-module` **43/43** + 反证 **35/35**（新增 `M3.filters`，变异为把季度映射写成常量 1）
+- `check:counts` 2/2 · `check:docs` 21/21 · `tsc` / `eslint` / `prettier` / `vite build` 全绿
+
+**三、边界**：标签 chip 只覆盖**当前一页结果**里出现过的标签（上游没有"热门标签"端点，写死一份清单
+就等于硬编码）；布局切换是纯前端状态，不落盘 —— 它属于"这次浏览怎么排"，不是用户偏好。
+
+
 
 
 
