@@ -671,6 +671,9 @@ struct SourceResolveBody {
     rules: sources::SourceRules,
     #[serde(default)]
     cookies: Option<Vec<CookiePair>>,
+    /// 「优先分辨率」设置（auto / 1080p / 2160p …）：多清晰度时按它挑
+    #[serde(default, rename = "preferRes")]
+    prefer_res: Option<String>,
 }
 
 /// 解析详情页里的视频地址（通用网页源）：拿到直链才能交给播放器 / 中继。
@@ -683,7 +686,8 @@ async fn source_resolve(
         return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
     }
     let cookies = cookie_pairs(body.cookies);
-    match datasource::web::resolve_video(&body.url, &body.rules, &cookies).await {
+    let prefer = body.prefer_res.as_deref().unwrap_or("auto");
+    match datasource::web::resolve_video(&body.url, &body.rules, &cookies, prefer).await {
         Ok(url) => json(StatusCode::OK, serde_json::json!({ "ok": true, "url": url })),
         Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("解析视频地址失败：{e}")),
     }

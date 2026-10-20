@@ -225,6 +225,7 @@ pub async fn resolve_video(
     url: &str,
     rules: &SourceRules,
     cookies: &[(String, String)],
+    prefer_res: &str,
 ) -> Result<String, String> {
     let sel = rules
         .video
@@ -232,23 +233,92 @@ pub async fn resolve_video(
         .filter(|s| !s.trim().is_empty())
         .ok_or("这个源没有配「视频地址选择器」，播不了")?;
     let html = fetch_html(url, cookies).await?;
-    resolve_video_in(&html, url, sel)
+    resolve_video_pref(&html, url, sel, prefer_res)
 }
 
 /// 纯解析（可单测）。
 pub fn resolve_video_in(html: &str, base: &str, selector: &str) -> Result<String, String> {
+    resolve_video_pref(html, base, selector, "auto")
+}
+
+/// 多候选时按「优先分辨率」挑：精确命中 → 就近降级；`auto` 取第一个。
+///
+/// 高度信息来自 `height` / `label` / `data-res` / 文本或 URL 里的 `1080` 这类数字；
+/// 一个都没有时退回第一个 —— 不猜。
+pub fn resolve_video_pref(
+    html: &str,
+    base: &str,
+    selector: &str,
+    prefer: &str,
+) -> Result<String, String> {
     let doc = Html::parse_document(html);
     let sel = Selector::parse(selector).map_err(|e| format!("视频选择器语法不对：{e}"))?;
-    let Some(el) = doc.select(&sel).next() else {
+    let mut cands: Vec<(String, Option<u32>)> = Vec::new();
+    for el in doc.select(&sel) {
+        let Some(raw) = el
+            .value()
+            .attr("src")
+            .or_else(|| el.value().attr("data-src"))
+            .or_else(|| el.value().attr("href"))
+        else {
+            continue;
+        };
+        cands.push((absolute(base, raw), height_of(&el)));
+    }
+    if cands.is_empty() {
         return Err("详情页里没找到视频地址（检查「视频地址选择器」）".into());
-    };
-    let raw = el
-        .value()
+    }
+    Ok(pick_by_height(&cands, prefer))
+}
+
+fn height_of(el: &ElementRef) -> Option<u32> {
+    for attr in ["height", "data-height", "label", "data-res", "title", "res"] {
+        if let Some(v) = el.value().attr(attr) {
+            if let Some(h) = height_in(v) {
+                return Some(h);
+            }
+        }
+    }
+    if let Some(h) = height_in(&text_of(el)) {
+        return Some(h);
+    }
+    el.value()
         .attr("src")
-        .or_else(|| el.value().attr("data-src"))
         .or_else(|| el.value().attr("href"))
-        .ok_or("选中的元素没有 src / data-src / href 属性")?;
-    Ok(absolute(base, raw))
+        .and_then(height_in)
+}
+
+/// 从一段文本里认常见高度（2160 / 1440 / 1080 / 720 / 480 / 360）。
+fn height_in(s: &str) -> Option<u32> {
+    [2160u32, 1440, 1080, 720, 480, 360]
+        .into_iter()
+        .find(|h| s.contains(&h.to_string()))
+}
+
+fn pick_by_height(cands: &[(String, Option<u32>)], prefer: &str) -> String {
+    let want = match prefer.trim().to_ascii_lowercase().as_str() {
+        "2160p" | "2160" => Some(2160),
+        "1080p" | "1080" => Some(1080),
+        "720p" | "720" => Some(720),
+        _ => None,
+    };
+    let Some(want) = want else {
+        return cands[0].0.clone();
+    };
+    if let Some((u, _)) = cands.iter().find(|(_, h)| *h == Some(want)) {
+        return u.clone();
+    }
+    let mut best: Option<(&String, u32)> = None;
+    for (u, h) in cands {
+        if let Some(h) = *h {
+            let d = h.abs_diff(want);
+            if best.map(|(_, bd)| d < bd).unwrap_or(true) {
+                best = Some((u, d));
+            }
+        }
+    }
+    best.map(|(u, _)| u.clone())
+        .unwrap_or_else(|| cands[0].0.clone())
 }
 
 #[cfg(test)]
@@ -326,11 +396,36 @@ mod tests {
     }
 
     #[test]
+    fn resolve_video_prefers_requested_height_then_nearest() {
+        // 页面只有 720 / 1080 两档：请求 2160 时要**就近降级**到 1080，而不是随便给第一个
+        let html = r#"<video>
+            <source src="/v/720.mp4" label="720P">
+            <source src="/v/1080.mp4" label="1080P">
+        </video>"#;
+        let pick = |prefer: &str| resolve_video_pref(html, "https://e.com/detail", "source", prefer).unwrap();
+        assert_eq!(pick("1080p"), "https://e.com/v/1080.mp4");
+        assert_eq!(pick("720p"), "https://e.com/v/720.mp4");
+        assert_eq!(pick("2160p"), "https://e.com/v/1080.mp4");
+        // auto 与「认不出的档位」都取第一个（不猜用户想要哪一档）
+        assert_eq!(pick("auto"), "https://e.com/v/720.mp4");
+        assert_eq!(pick("1440p"), "https://e.com/v/720.mp4");
+    }
+
+    #[test]
+    fn resolve_video_without_height_info_falls_back_to_first() {
+        let html = r#"<video src="/v/a.mp4"></video>"#;
+        assert_eq!(
+            resolve_video_pref(html, "https://e.com/", "video", "1080p").unwrap(),
+            "https://e.com/v/a.mp4"
+        );
+    }
+
+    #[test]
     fn resolve_video_says_what_is_missing() {
         let err = resolve_video_in("<html></html>", "https://e/", "video").unwrap_err();
         assert!(err.contains("没找到视频地址"), "{err}");
         let err = resolve_video_in("<video></video>", "https://e/", "video").unwrap_err();
-        assert!(err.contains("没有 src"), "{err}");
+        assert!(err.contains("没找到视频地址"), "{err}");
     }
 
     #[test]

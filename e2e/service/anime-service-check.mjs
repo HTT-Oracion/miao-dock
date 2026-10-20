@@ -463,6 +463,9 @@ function startMockSite() {
     </ul></body></html>`;
   const detail = `<!doctype html><html><head><meta charset="utf-8"></head><body>
     <video controls src="/v/1.mp4"></video></body></html>`;
+  // 多清晰度页：用于「优先分辨率」取证（只有 720 / 1080 两档，请求 2160 时应就近降级到 1080）
+  const multi = `<!doctype html><html><head><meta charset="utf-8"></head><body>
+    <video><source src="/v/720.mp4" label="720P"><source src="/v/1080.mp4" label="1080P"></video></body></html>`;
   const server = http.createServer((req, res) => {
     const u = new URL(req.url, 'http://127.0.0.1');
     // `/guarded` 模拟「要过人机验证才给页面」的站：没有 session cookie 一律 403
@@ -477,6 +480,10 @@ function startMockSite() {
     if (u.pathname === '/list') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       return res.end(list);
+    }
+    if (u.pathname === '/detail/multi') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      return res.end(multi);
     }
     if (u.pathname.startsWith('/detail/')) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -990,6 +997,40 @@ try {
       'A14 不带筛选：sort 回落 match，且不发空的 tag / air_date',
       plain.status === 200 && plain.json?.count === 1,
       plain.buf.toString().slice(0, 240),
+    );
+  }
+
+  // A15：「优先分辨率」真的影响直链选择（多清晰度页面按它挑，缺档就近降级）
+  {
+    const base = `http://127.0.0.1:${animeInfo.port}`;
+    const auth = { 'x-box-token': animeInfo.token };
+    const postJson = (p, body) =>
+      request('POST', `${base}${p}`, {
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    const rules = { list: '.list .item', link: 'a', title: '.t', video: 'source' };
+
+    const hi = await postJson('/api/v1/anime/sources/resolve', {
+      url: `${site.base}/detail/multi`,
+      rules,
+      preferRes: '1080p',
+    });
+    check(
+      'A15 preferRes=1080p ⇒ 选 1080 那一条',
+      hi.status === 200 && hi.json?.url === `${site.base}/v/1080.mp4`,
+      hi.buf.toString().slice(0, 240),
+    );
+
+    const downgrade = await postJson('/api/v1/anime/sources/resolve', {
+      url: `${site.base}/detail/multi`,
+      rules,
+      preferRes: '2160p',
+    });
+    check(
+      'A15 请求 2160p 但页面只有 720/1080 ⇒ 就近降级到 1080（不是随便给第一个）',
+      downgrade.status === 200 && downgrade.json?.url === `${site.base}/v/1080.mp4`,
+      downgrade.buf.toString().slice(0, 240),
     );
   }
 
