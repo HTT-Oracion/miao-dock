@@ -79,7 +79,7 @@
 |---|---|---|
 | R6 十屏点一遍 | ⏳ | 清单 `anime-r6-checklist.md`；需 GUI，本环境只有无头门禁 |
 | 真播矩阵（mp4 / mkv+ass / 多轨 / HLS / 截图 / 续看） | ⏳ | 需真 mpv 二进制 + 真实媒体；`check:anime-kernel:real` 覆盖内核自检 17 例，但"画面"要人看 |
-| 嵌入子窗口的画面（DPI / 圆角 / 全屏 / z-order） | ⏳ | 代码链路已通（D-270），画面必须真机确认 |
+| 嵌入子窗口的画面（DPI / 圆角 / 全屏 / z-order） | ⏳ | 代码链路已通，且**真窗口已在本机建/摆/隐/毁成功**（embed 集成用例，D-271）；画面观感仍需真机 |
 | A 方案（libmpv FFI + render callback） | ❌ 未做 | WebView 不暴露 surface；用户口径：标未做（D-267） |
 | macOS 嵌入（`NSView` 层级） | ❌ 未做 | 非 Windows 的 `main_hwnd()` 恒 `None`；平台分叉另做 |
 | PikPak 真客户端 | ❌ 按口径不做 | 只留接口，`implemented` 恒 false（D-264） |
