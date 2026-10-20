@@ -6562,3 +6562,40 @@ HWND 后会被网页盖住；而我们的控制条、选集侧栏、统计浮层
 **五、状态（诚实标注）**：**能力已接，默认关，真机未验**。R1 的"画面嵌在应用窗口里"仍未达成 ——
 缺的是上面 §二 的界面层工作与真机确认。按用户口径（先留档、标明未做），D-267 的"未做"表仍然有效，
 本轮只是把"通道"从零变成"可用但关闭"。
+## D-270 B 方案落地：应用窗口里的视频子窗口；A 方案标未做；顺带清掉占位设置（2026-10-20）
+
+**一、口径修正（用户裁定）**：R1 的「嵌入式渲染」按 **B 方案（原生子窗口）推进**；
+**A 方案（libmpv FFI + render callback）才是"未做"** —— 它要 WebView 暴露 surface，Tauri 给不了，
+成本与风险都不在本轮范围。D-267 的"未做"表按这个口径重读：A 方案未做，B 方案见本条。
+
+**二、子窗口（`src-tauri/src/anime/embed.rs`，新）**
+
+| 环节 | 做法 |
+|---|---|
+| 创建 | `RegisterClassW`（黑底、`DefWindowProc`）+ `CreateWindowExW(WS_CHILD \| WS_VISIBLE \| WS_CLIPCHILDREN \| WS_CLIPSIBLINGS)`，父窗口 = 主窗口 |
+| 摆放 | `SetWindowPos(hwnd, HWND_TOP, …)` —— 排在 WebView2 之上（否则画面被网页盖住） |
+| 坐标 | 前端给 **CSS 像素**，`physical_rect(css, dpi)` 按 `GetDpiForWindow/96` 换算成物理像素，并夹到客户区内（纯函数，3 条单测） |
+| 生命周期 | `ensure` 复用 / `show`·`hide` / `destroy`（关内核会话时销毁，下次重建） |
+| 非 Windows | 同一组函数返回「只在 Windows 上实现」，不 panic |
+
+**三、前端接线**：`PlayerScreen` 里一个 effect（**在早返回之前**，否则违反 hooks 规则）：
+内核轨播放时量 `.an-stage-mid` 的 `getBoundingClientRect()`，`ResizeObserver` + `resize` 重摆，
+离开/切轨时 `animeKernelEmbedOff()`。控制条在 `.an-stage-mid` **之外**，所以不被子窗口盖住。
+
+**四、顺带清掉「占位设置」**（对应验收的"无占位符代码"）
+- 删掉「弹幕」占位项（`kind: 'placeholder'`），设置目录 **34 → 33 项**，控件形态从五种收成四种
+- 「自定义源编辑器」那行的按钮原来是 `['RSS 编辑器','选择器编辑器']` —— 匹配不到任何跳转，渲染成
+  **禁用 + "M3 开放"**；改成 `['去编辑源']`（真的跳到数据源屏，那里才是编辑器）
+- `allowBt` / `btStream` 的 `why` 改成**实际行为**（"不能添加磁力任务" / "按 Range 等字节就位"），
+  原本文案描述的是没实现的行为
+- 全量 grep `TODO|FIXME|待接入|暂未|未实现`：动漫域**零命中**（`placeholder` 只剩输入框属性，不是控件）
+
+**五、验证**
+
+- `cargo test --lib animesvc` **99/99**；`cargo test --bin miao-dock anime` **11/11**（含 embed 4 条：DPI 换算 / 零尺寸夹到 1 / dpi=0 兜底）
+- `cargo check --bin miao-dock` 0 错 0 warning（顺手修掉 `lpszClassName` 的悬空指针：临时 `Vec` 必须先绑局部变量）
+- `check:anime-module` **52/52** + 反证 **47/47**（`M3.embed` 扩到子窗口 / DPI / 命令 / 前端 effect；新增变异：去掉 `WS_CHILD`）
+- `check:counts` 2/2 · `check:docs` 21/21 · `check:settings` 186/186 · `npm run check` 19/19 · `tsc` / `eslint` / `prettier` / `vite build` 全绿
+
+**六、状态（诚实）**：B 方案的**代码链路已通**（子窗口 + `--wid` + 摆放 + 显隐），但**画面要真机看**：
+本环境没有 GUI，只能验编译、几何换算与断言。真机验收按 R6 清单走；A 方案未做（D-267）。
