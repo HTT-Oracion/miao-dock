@@ -612,6 +612,22 @@ const CHECKS = [
     }),
   },
   {
+    id: 'M3.picker',
+    run: (s) => ({
+      ok:
+        /const PICK_JS/.test(s.rustAnime) &&
+        /initialization_script\(PICK_JS\)/.test(s.rustAnime) &&
+        /fn pick_from_title/.test(s.rustAnime) &&
+        /anime_open_picker/.test(s.rustAnime) &&
+        /crate::anime::anime_open_picker/.test(strip(s.rustCommands)) &&
+        /animeOpenPicker/.test(s.ipc) &&
+        /animePickResult/.test(s.ipc) &&
+        /pickInto/.test(s.sourceScreen) &&
+        /PICK_LABEL/.test(s.sourceScreen),
+      detail: '点选元素没接通：注入脚本 / 窗口命令 / 标题解析 / 桥接 / 界面 任一环缺失',
+    }),
+  },
+  {
     id: 'SETTINGS.consumed',
     run: (s) => ({
       ok:
@@ -1081,6 +1097,13 @@ const MUTATIONS = [
     find: '.route(&format!("/api/{API_VERSION}/anime/bt/add"), post(bt_add))',
     replace: '',
     expect: ['BT.wired'],
+  },
+  {
+    name: '点选窗口不再注入脚本（点了页面没反应）',
+    file: F.rustAnime,
+    find: '.initialization_script(PICK_JS)',
+    replace: '',
+    expect: ['M3.picker'],
   },
   {
     name: '摘掉冲突挑边路由（合并面板点了没反应）',
