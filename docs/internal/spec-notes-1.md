@@ -5577,7 +5577,7 @@ animesvc 真进程冒烟 **10/10**（示例→收藏→进度→重启读盘→�
 | 层 | 落点 | 职责 |
 |---|---|---|
 | 播放器封装 | `src/modules/anime/player.ts` | ArtPlayer + hls.js；`controls: []`，控制条只留设计稿那一条 |
-| 接线 hook | `src/hooks/use-anime-playback.ts`（经 `@hooks`） | 取播放事实 / 建与销毁实例 / 续看节流回写 / 键盘与跳过 OP-ED |
+| 接线 hook | `src/hooks/useAnimePlayback.ts`（经 `@hooks`） | 取播放事实 / 建与销毁实例 / 续看节流回写 / 键盘与跳过 OP-ED |
 | 屏 | `src/screens/anime/PlayerScreen.tsx` | 真实进度、缓冲、倍速、字幕、截图；内核轨只说原因 |
 | 样式 | `src/styles/anime.scss` | `.an-stage-video`；缓冲条宽度改真实值（原 `62%` 是假进度） |
 
@@ -5882,7 +5882,7 @@ ABI 钉进我们的构建。**嵌入式渲染没做**：画面在 mpv 自己的�
 | 后端 | `animesvc/kernel/mpv.rs` | 定位二进制、起进程、IPC 客户端、`PlaybackCore` 实现、单例会话、`--kernel-selftest` |
 | 端点 | `animesvc.rs` | `GET /anime/kernel` · `POST /anime/kernel/{open,ctl,close}`（全部要令牌） |
 | 桥接 | `anime/mod.rs` | `anime_kernel_{status,open,ctl,close}`；`play_plan` 在内核可用时回 `supported:true` + `external:true` |
-| 前端 | `use-anime-playback.ts` · `PlayerScreen.tsx` | 内核分支：起播 / 800ms 轮询 / 控制条路由；`KernelStage`（轨道、统计）；控制条补**音量**、**跳片头/片尾**按钮 |
+| 前端 | `useAnimePlayback.ts` · `PlayerScreen.tsx` | 内核分支：起播 / 800ms 轮询 / 控制条路由；`KernelStage`（轨道、统计）；控制条补**音量**、**跳片头/片尾**按钮 |
 | 流 | `animesvc/stream.rs` | `.m3u8` 分片与 `#EXT-X-KEY` / `#EXT-X-MAP` 的 `URI` 改写为各自带票的绝对路径 |
 
 **踩到的坑（本轮最贵的一条）**：Windows 命名管道上「阻塞读线程 + 同一个句柄写」会**静默挂死**。

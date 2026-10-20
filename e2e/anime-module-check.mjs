@@ -49,7 +49,7 @@ const F = {
   style: path.join(ROOT, 'src', 'styles', 'anime.scss'),
   styleIndex: path.join(ROOT, 'src', 'styles', 'index.scss'),
   playerModule: path.join(ROOT, 'src', 'modules', 'anime', 'player.ts'),
-  playerHook: path.join(ROOT, 'src', 'hooks', 'use-anime-playback.ts'),
+  playerHook: path.join(ROOT, 'src', 'hooks', 'useAnimePlayback.ts'),
   playerScreen: path.join(ROOT, 'src', 'screens', 'anime', 'PlayerScreen.tsx'),
   detailScreen: path.join(ROOT, 'src', 'screens', 'anime', 'DetailScreen.tsx'),
   rustAnime: path.join(ROOT, 'src-tauri', 'src', 'anime', 'mod.rs'),
@@ -534,7 +534,7 @@ const CHECKS = [
         ['types.ts', s.typesTs],
         ['slice.ts', s.sliceTs],
         ['player.ts', s.playerModule],
-        ['use-anime-playback.ts', s.playerHook],
+        ['useAnimePlayback.ts', s.playerHook],
       ];
       const bad = files.filter(([, text]) => /from ['"](node:|child_process|fs)|require\(/.test(text)).map(([n]) => n);
       const rust = /use std::process::\{[^}]*Command|std::process::Command/.test(s.rustAnime);
