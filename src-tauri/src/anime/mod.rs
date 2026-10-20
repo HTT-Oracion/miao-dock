@@ -633,6 +633,12 @@ pub async fn anime_resolve_source(url: String, rules: Value, cookies: Option<Val
     .await
 }
 
+/// 从订阅地址拉一份规则草稿（服务侧解析并校验，前端填进编辑器由用户确认保存）。
+#[tauri::command]
+pub async fn anime_subscribe_source(url: String) -> Result<Value, String> {
+    post("/api/v1/anime/sources/subscribe", json!({ "url": url })).await
+}
+
 /// 验证码窗口的标签（同一时刻只开一个，重复打开就导航到新地址）。
 const CHALLENGE_LABEL: &str = "anime-challenge";
 

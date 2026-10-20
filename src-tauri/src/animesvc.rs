@@ -236,6 +236,8 @@ fn router(shell: Arc<Shell>) -> Router {
         .route(&format!("/api/{API_VERSION}/anime/sources/test"), post(source_test))
         // 通用网页源：详情页 → 视频直链
         .route(&format!("/api/{API_VERSION}/anime/sources/resolve"), post(source_resolve))
+        // 订阅：从地址拉一份规则草稿（R2-3）
+        .route(&format!("/api/{API_VERSION}/anime/sources/subscribe"), post(source_subscribe))
         // 媒体服务器远程播放：带票中继上游视频（api_key 只走请求头，不出现在 URL 里）
         .route(&format!("/api/{API_VERSION}/anime/mediaserver/stream"), get(datasource::mediaserver::relay))
         // 内核轨（libmpv 的替身：随包 mpv + JSON IPC）。状态与控制在服务侧，
@@ -662,6 +664,29 @@ async fn source_test(
     {
         Ok(v) => json(StatusCode::OK, v),
         Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("源测试失败：{e}")),
+    }
+}
+
+#[derive(Deserialize)]
+struct SourceSubscribeBody {
+    url: String,
+}
+
+/// 从订阅地址拉一份规则草稿（只解析不落盘：落盘要用户在编辑器里确认）。
+async fn source_subscribe(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<SourceSubscribeBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    if !body.url.trim().starts_with("http") {
+        return envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", "订阅地址要 http:// 或 https:// 开头");
+    }
+    match datasource::web::fetch_subscription(body.url.trim()).await {
+        Ok(draft) => json(StatusCode::OK, serde_json::json!({ "ok": true, "draft": draft })),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("订阅失败：{e}")),
     }
 }
 

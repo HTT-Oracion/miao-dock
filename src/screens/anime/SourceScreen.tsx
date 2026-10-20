@@ -13,7 +13,7 @@ import { formatBytes } from '@tools';
 import { useToasts } from '@hooks';
 import * as ipc from '@anime/ipc';
 import { useAnimeStore } from '@anime/store';
-import { tidyRules } from '@anime/convert';
+import { errText, tidyRules } from '@anime/convert';
 import { SOURCE_KIND_LABEL } from '@anime/player-options';
 import type { AnimeCookie, AnimeSourceRules, AnimeSourceTestItem, MediaSourceView } from '@anime/types';
 import { ProgressBar, SectionHead } from '@screens/anime/shared';
@@ -63,6 +63,9 @@ export function SourceScreen() {
   const [cookies, setCookies] = useState<Record<string, AnimeCookie[]>>({});
   /** 刚失败、需要用户去窗口里过验证码的源 id */
   const [challengeFor, setChallengeFor] = useState<string | null>(null);
+  /** 订阅导入：地址与忙碌态 */
+  const [subUrl, setSubUrl] = useState('');
+  const [subBusy, setSubBusy] = useState(false);
 
   const bt = cache.filter((t) => t.state === 'downloading' || t.state === 'seeding' || t.state === 'paused');
 
@@ -118,6 +121,33 @@ export function SourceScreen() {
       push(`解析失败：${e instanceof Error ? e.message : String(e)}`, 'bad');
     } finally {
       setResolving(null);
+    }
+  };
+
+  /** 从订阅地址拉规则草稿：填进编辑器由用户确认，**不自动保存** */
+  const importSubscription = async () => {
+    const url = subUrl.trim();
+    if (!url.startsWith('http')) {
+      push('订阅地址要 http:// 或 https:// 开头', 'bad');
+      return;
+    }
+    setSubBusy(true);
+    try {
+      const r = await ipc.animeSubscribeSource(url);
+      const d = r.draft;
+      setDraft({
+        name: d.name || '订阅源',
+        kind: d.kind === 'selector' ? 'selector' : 'web',
+        url: d.url || '',
+        rules: { ...EMPTY_RULES, ...(d.rules ?? {}) },
+      });
+      setAdding(true);
+      setSubUrl('');
+      push('已导入规则草稿，检查后点「保存」', 'good');
+    } catch (e) {
+      push(`订阅导入失败：${errText(e)}`, 'bad');
+    } finally {
+      setSubBusy(false);
     }
   };
 
@@ -449,18 +479,23 @@ export function SourceScreen() {
 
       <section className="an-panel">
         <SectionHead title="自定义源编辑器" />
-        <p className="an-note">RSS 源填订阅地址；选择器源点选页面元素生成规则，写完可当场测试一条。</p>
-        <div className="an-acts">
-          <Btn kind="ghost" size="sm" disabled title="M3 开放">
-            RSS 编辑器…
-          </Btn>
-          <Btn kind="ghost" size="sm" disabled title="M3 开放">
-            选择器编辑器…
-          </Btn>
-          <Btn kind="ghost" size="sm" disabled title="M3 开放">
-            导入 / 导出
+        <p className="an-note">
+          规则在上方「添加源」里手填（列表 / 链接 / 标题 / 视频地址四条选择器），保存后点「测试」当场验证；
+          也可以从订阅地址导入一份规则草稿。
+        </p>
+        <div className="an-src-form">
+          <input
+            className="an-set-in is-wide"
+            value={subUrl}
+            placeholder="订阅地址（返回 {name, kind, url, rules} 的 JSON）"
+            aria-label="订阅地址"
+            onChange={(e) => setSubUrl(e.target.value)}
+          />
+          <Btn kind="ghost" size="sm" disabled={subBusy || !subUrl.trim()} onClick={() => void importSubscription()}>
+            {subBusy ? '导入中…' : '从订阅导入'}
           </Btn>
         </div>
+        <p className="an-note">「在页面上点选元素生成选择器」还没做 —— 它需要内嵌页注入脚本，另立一轮。</p>
       </section>
 
       <SectionHead title="BT 任务" count={bt.length} />

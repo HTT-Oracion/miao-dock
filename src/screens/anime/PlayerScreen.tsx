@@ -16,6 +16,7 @@ import { useAnimeStore } from '@anime/store';
 import { episodesOf, selectedEpisode, selectedSubject } from '@anime/selectors';
 import { displayTitle, errText, fmtClock, tidyRules } from '@anime/convert';
 import { PLAYER_KEYS, SOURCE_KIND_LABEL } from '@anime/player-options';
+import { loadSourceMemory, rememberSource, type SourceMemory } from '@anime/memory';
 import type {
   AnimeKernelTrack,
   AnimePlaySource,
@@ -296,6 +297,8 @@ function SourcePicker({ onClose }: { onClose: () => void }) {
   const [items, setItems] = useState<Record<string, AnimeSourceTestItem[]>>({});
   /** 「切来源前确认」：先挂起，用户点确认才真播 */
   const [confirm, setConfirm] = useState<{ src: MediaSourceView; it: AnimeSourceTestItem } | null>(null);
+  /** 「记忆回放」：每个源上次播的那一条（跨会话） */
+  const [memory, setMemory] = useState<SourceMemory>(() => loadSourceMemory());
   useEsc(onClose);
 
   const load = async (src: MediaSourceView) => {
@@ -324,8 +327,11 @@ function SourcePicker({ onClose }: { onClose: () => void }) {
     setConfirm(null);
     if (it.kind === 'video' && it.id) {
       const r = await playRemoteSource(src.id, it);
-      if (r.ok) onClose();
-      else push(r.message, 'bad');
+      if (r.ok) {
+        rememberSource(src.id, it);
+        setMemory(loadSourceMemory());
+        onClose();
+      } else push(r.message, 'bad');
       return;
     }
     if (it.link && (src.kind === 'web' || src.kind === 'selector')) {
@@ -336,6 +342,8 @@ function SourcePicker({ onClose }: { onClose: () => void }) {
       try {
         const r = await ipc.animeResolveSource(it.link, tidyRules(src.rules), undefined, prefs.preferRes);
         playWebUrl(r.url, it.title, src.name, src.id);
+        rememberSource(src.id, it);
+        setMemory(loadSourceMemory());
         onClose();
       } catch (e) {
         push(`解析失败：${errText(e)}`, 'bad');
@@ -360,6 +368,16 @@ function SourcePicker({ onClose }: { onClose: () => void }) {
                 <b>{src.name}</b>
                 <span>{SOURCE_KIND_LABEL[src.kind] ?? src.kind}</span>
               </span>
+              {memory[src.id] ? (
+                <Btn
+                  kind="ghost"
+                  size="sm"
+                  title={`上次播的是「${memory[src.id].item.title}」`}
+                  onClick={() => void play(src, memory[src.id].item)}
+                >
+                  上次：{memory[src.id].item.title.slice(0, 8)}
+                </Btn>
+              ) : null}
               <Btn kind="ghost" size="sm" disabled={busy === src.id || !src.url} onClick={() => void load(src)}>
                 {busy === src.id ? '取条目中' : '取条目'}
               </Btn>

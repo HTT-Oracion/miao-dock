@@ -6247,3 +6247,30 @@ raw.githubusercontent 在本机不通，与 D-246 同因）。核对结论：
 **四、仍未消费的 9 项（如实登记，不是缺陷）**：`allowBt` / `btStream` / `btPort` / `peerFilterUrl` / `pikpak`（R5 BT）、
 `cacheDir` / `cacheLimitGb`（R3 缓存）、`autoSync` / `conflictPolicy`（R4 账号同步）、
 `selectStrategy`（择优顺序需要多来源候选才有意义，等 R5 的 BT 与在线源一起接）。
+
+## D-260 订阅导入与「记忆回放」；选择器点选登记为未做（2026-10-20）
+
+**一、订阅导入（远程订阅）**
+
+| 环节 | 做法 |
+|---|---|
+| 拉取 | `web::fetch_subscription(url)`：GET 一个 JSON（`{name, kind, url, rules}`），上限 256 KB |
+| 校验 | kind 只认 `web` / `selector`；`rules` 反序列化后走**同一个** `sources::validate_rules`（选择器语法错在导入时就报） |
+| 落盘 | **不落盘**：端点只回 `draft`，前端把它填进编辑器，用户点「保存」才走 `sources::save` |
+| 错误 | 不是 JSON ⇒「不是合法 JSON」；地址不通 ⇒「请求订阅地址失败」—— 两种失败措辞不同，排障不用猜 |
+
+**二、记忆回放**：`modules/anime/memory.ts`（localStorage，键 `miao.anime.sourceMemory.v1`）
+存「源 id → 上次播的那一条（`AnimeSourceTestItem` + 时间）」。**读坏了当没有**（坏 JSON / 非对象 /
+字段不全都过滤掉）—— 一条记忆不该让数据源屏起不来。写入在播放成功之后；「选择播放来源」浮层里
+每个源多一个「上次：<标题>」按钮，点它直接走同一条播放分支（媒体服务器与在线网页源都适用）。
+
+**三、验证**
+
+- `cargo test --lib animesvc` **80/80**（新增：订阅 JSON 解析 / 语法错在导入时报 / 非 JSON 说清是内容问题）
+- `check:anime` **73/73**：A16 两条 —— 订阅返回草稿（名字 / 类型 / 四条选择器都在）；坏 JSON ⇒ 502 且说明是内容问题
+- `check:anime-module` **47/47** + 反证 **39/39**（新增 `M3.subscribe` / `M3.memory`；变异为摘掉订阅路由、重命名记忆模块的读取口）
+- `check:counts` 2/2 · `check:docs` 21/21 · `tsc` / `eslint` / `prettier` / `vite build` 全绿
+
+**四、未做（如实登记）**：「**在页面上点选元素生成选择器**」没做 —— 它要在内嵌页里注入脚本、
+把点击目标换算成 CSS 路径、再把结果回传编辑器，是一整条独立链路；本轮的编辑器仍是**手填四条选择器**。
+界面里已写明这一点，不假装支持。

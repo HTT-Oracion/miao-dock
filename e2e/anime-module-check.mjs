@@ -54,6 +54,7 @@ const F = {
   playerScreen: path.join(ROOT, 'src', 'screens', 'anime', 'PlayerScreen.tsx'),
   detailScreen: path.join(ROOT, 'src', 'screens', 'anime', 'DetailScreen.tsx'),
   shared: path.join(ROOT, 'src', 'screens', 'anime', 'shared.tsx'),
+  memory: path.join(ROOT, 'src', 'modules', 'anime', 'memory.ts'),
   rustAnime: path.join(ROOT, 'src-tauri', 'src', 'anime', 'mod.rs'),
   rustAnimesvc: path.join(ROOT, 'src-tauri', 'src', 'animesvc.rs'),
   rustSources: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'sources.rs'),
@@ -513,6 +514,31 @@ const CHECKS = [
     }),
   },
   {
+    id: 'M3.subscribe',
+    run: (s) => ({
+      ok:
+        /pub async fn fetch_subscription/.test(s.webRs) &&
+        /anime\/sources\/subscribe/.test(s.rustAnimesvc) &&
+        /crate::anime::anime_subscribe_source/.test(strip(s.rustCommands)) &&
+        /animeSubscribeSource/.test(s.ipc) &&
+        /importSubscription/.test(s.sourceScreen) &&
+        /从订阅导入/.test(s.sourceScreen),
+      detail: '订阅导入没接通：解析 / 端点 / 桥接 / 界面 任一环缺失',
+    }),
+  },
+  {
+    id: 'M3.memory',
+    run: (s) => ({
+      ok:
+        /export function loadSourceMemory\(\)/.test(s.memory) &&
+        /export function rememberSource/.test(s.memory) &&
+        /rememberSource\(src\.id, it\)/.test(s.playerScreen) &&
+        /上次：/.test(s.playerScreen) &&
+        /loadSourceMemory\(\)/.test(s.playerScreen),
+      detail: '「记忆回放」没接通：记忆模块 / 写入 / 读取 / 界面入口 任一环缺失',
+    }),
+  },
+  {
     id: 'SETTINGS.consumed',
     run: (s) => ({
       ok:
@@ -968,6 +994,20 @@ const MUTATIONS = [
     find: 'onClick={() => setPickerOpen(true)}',
     replace: "onClick={() => setView('source')}",
     expect: ['PLAYER.picker'],
+  },
+  {
+    name: '摘掉订阅路由（导入按钮点了没反应）',
+    file: F.rustAnimesvc,
+    find: '.route(&format!("/api/{API_VERSION}/anime/sources/subscribe"), post(source_subscribe))',
+    replace: '',
+    expect: ['M3.subscribe'],
+  },
+  {
+    name: '记忆模块丢了读取口（回放入口永远空）',
+    file: F.memory,
+    find: 'export function loadSourceMemory',
+    replace: 'export function loadSourceMemoryGone',
+    expect: ['M3.memory'],
   },
   {
     name: '标题模式不生效（设置改了标题还是中文名）',

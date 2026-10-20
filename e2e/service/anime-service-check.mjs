@@ -481,6 +481,21 @@ function startMockSite() {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       return res.end(list);
     }
+    if (u.pathname === '/subscribe.json') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end(
+        JSON.stringify({
+          name: '订阅来的站',
+          kind: 'web',
+          url: `${site.base}/list`,
+          rules: { list: '.list .item', link: 'a', title: '.t', video: 'source' },
+        }),
+      );
+    }
+    if (u.pathname === '/subscribe-bad.json') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end('{ not json');
+    }
     if (u.pathname === '/detail/multi') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       return res.end(multi);
@@ -1031,6 +1046,35 @@ try {
       'A15 请求 2160p 但页面只有 720/1080 ⇒ 就近降级到 1080（不是随便给第一个）',
       downgrade.status === 200 && downgrade.json?.url === `${site.base}/v/1080.mp4`,
       downgrade.buf.toString().slice(0, 240),
+    );
+  }
+
+  // A16：订阅导入（拉规则草稿，只解析不落盘）
+  {
+    const base = `http://127.0.0.1:${animeInfo.port}`;
+    const auth = { 'x-box-token': animeInfo.token };
+    const postJson = (p, body) =>
+      request('POST', `${base}${p}`, {
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+    const ok = await postJson('/api/v1/anime/sources/subscribe', { url: `${site.base}/subscribe.json` });
+    check(
+      'A16 订阅导入返回规则草稿（名字 / 类型 / 四条选择器都在）',
+      ok.status === 200 &&
+        ok.json?.draft?.name === '订阅来的站' &&
+        ok.json?.draft?.kind === 'web' &&
+        ok.json?.draft?.rules?.list === '.list .item' &&
+        ok.json?.draft?.rules?.video === 'source',
+      ok.buf.toString().slice(0, 300),
+    );
+
+    const bad = await postJson('/api/v1/anime/sources/subscribe', { url: `${site.base}/subscribe-bad.json` });
+    check(
+      'A16 订阅内容不是 JSON ⇒ 502 且说明是内容问题（不是网络不通）',
+      bad.status === 502 && /不是合法 JSON/.test(bad.buf.toString()),
+      bad.buf.toString().slice(0, 240),
     );
   }
 

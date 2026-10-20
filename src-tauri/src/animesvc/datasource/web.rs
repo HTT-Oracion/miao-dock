@@ -16,6 +16,8 @@ use scraper::{ElementRef, Html, Selector};
 
 use super::super::metadata;
 use super::super::sources::SourceRules;
+use serde_json::{json, Value};
+
 use super::{DataSourceItem, ItemKind};
 
 const TIMEOUT_SECS: u64 = 20;
@@ -321,6 +323,41 @@ fn pick_by_height(cands: &[(String, Option<u32>)], prefer: &str) -> String {
         .unwrap_or_else(|| cands[0].0.clone())
 }
 
+/// 拉一份「订阅规则」：上游返回 JSON（`{name, kind, url, rules}`）。
+///
+/// 只解析与校验，**不落盘** —— 落盘由用户在编辑器里确认后走 `sources::save`。
+/// 订阅地址写错或上游改结构时，直接写库等于替用户做决定。
+pub async fn fetch_subscription(url: &str) -> Result<Value, String> {
+    let res = client()?
+        .get(url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("请求订阅地址失败：{e}"))?;
+    let status = res.status();
+    if !status.is_success() {
+        return Err(format!("订阅地址返回 {status}"));
+    }
+    let bytes = res.bytes().await.map_err(|e| format!("读订阅内容失败：{e}"))?;
+    if bytes.len() > 256 * 1024 {
+        return Err("订阅内容太大（上限 256 KB）".into());
+    }
+    let v: Value = serde_json::from_slice(&bytes).map_err(|e| format!("订阅内容不是合法 JSON：{e}"))?;
+    let kind = v["kind"].as_str().unwrap_or("web");
+    if !matches!(kind, "web" | "selector") {
+        return Err("订阅只支持 web / selector 两类源".into());
+    }
+    let rules: SourceRules = serde_json::from_value(v["rules"].clone())
+        .map_err(|e| format!("订阅里的 rules 结构不认识：{e}"))?;
+    super::super::sources::validate_rules(&rules)?;
+    Ok(json!({
+        "name": v["name"].as_str().unwrap_or(""),
+        "kind": kind,
+        "url": v["url"].as_str().unwrap_or(""),
+        "rules": rules,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -438,6 +475,48 @@ mod tests {
         let bytes = [0xD6, 0xD0, 0xCE, 0xC4];
         assert_eq!(decode(&bytes, "gbk"), "中文");
         assert_ne!(decode(&bytes, "utf-8"), "中文");
+    }
+
+    #[tokio::test]
+    async fn subscription_parses_and_validates_rules() {
+        use axum::{routing::get, Json, Router};
+
+        async fn good() -> Json<Value> {
+            Json(json!({
+                "name": "夹具站",
+                "kind": "web",
+                "url": "https://e.com/list",
+                "rules": { "list": ".item", "video": "video" }
+            }))
+        }
+        async fn bad_rules() -> Json<Value> {
+            Json(json!({ "kind": "web", "rules": { "list": "a[" } }))
+        }
+        async fn raw() -> &'static str {
+            "not json"
+        }
+        let app = Router::new()
+            .route("/good", get(good))
+            .route("/bad", get(bad_rules))
+            .route("/raw", get(raw));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        let base = format!("http://{addr}");
+
+        let out = fetch_subscription(&format!("{base}/good")).await.unwrap();
+        assert_eq!(out["name"], "夹具站");
+        assert_eq!(out["kind"], "web");
+        assert_eq!(out["rules"]["video"], "video");
+
+        // 选择器语法错要在**导入时**就报，而不是等用户点测试
+        let err = fetch_subscription(&format!("{base}/bad")).await.unwrap_err();
+        assert!(err.contains("列表选择器语法不对"), "{err}");
+        // 不是 JSON 也要说清是"内容不对"，不是"网络不通"
+        let err = fetch_subscription(&format!("{base}/raw")).await.unwrap_err();
+        assert!(err.contains("不是合法 JSON"), "{err}");
     }
 
     #[test]

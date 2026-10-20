@@ -170,6 +170,13 @@ export const animeResolveSource = (url: string, rules: AnimeSourceRules, cookies
     preferRes: preferRes ?? null,
   });
 
+/** 从订阅地址拉一份规则草稿（服务侧解析并校验，不落盘） */
+export const animeSubscribeSource = (url: string) =>
+  invoke<{ ok: boolean; draft: { name: string; kind: string; url: string; rules: AnimeSourceRules } }>(
+    'anime_subscribe_source',
+    { url },
+  );
+
 /** 打开「过验证码」窗口（内嵌网页，用户手动完成验证） */
 export const animeOpenChallenge = (url: string) =>
   invoke<{ ok: boolean; reused: boolean }>('anime_open_challenge', { url });
