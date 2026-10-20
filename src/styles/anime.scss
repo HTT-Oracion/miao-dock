@@ -1101,6 +1101,36 @@
   background: #fff;
   transform: translate(-50%, -50%);
 }
+/* 悬停帧预览：气泡贴在进度条上方，帧没抓到就先占位（不假装有画面） */
+.an-seek-pv {
+  position: absolute;
+  bottom: 14px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  transform: translateX(-50%);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.an-seek-pv img,
+.an-seek-pv-none {
+  display: block;
+  width: 128px;
+  height: 72px;
+  border-radius: 5px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.08);
+}
+.an-seek-pv b {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.86);
+}
 .an-ctl {
   display: flex;
   align-items: center;

@@ -6,7 +6,7 @@
  * 需要随包内核的容器（mkv 等）拿不到地址，屏上直接说清「内核未就绪」——
  * 不画假的播放进度，也不给一个放不出来的 URL。
  */
-import { useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ArrowLeft, ListMusic, Maximize2, Pause, Play, Settings2, SkipBack, SkipForward } from 'lucide-react';
 import { Btn, Empty } from '@components/units';
 import { useAnimeStore } from '@anime/store';
@@ -90,11 +90,39 @@ function ControlBar({
   const pct = durationMs ? Math.min(100, Math.round((state.positionMs / durationMs) * 100)) : 0;
   const bufferedPct = durationMs ? Math.min(100, Math.round((state.bufferedMs / durationMs) * 100)) : 0;
 
+  /** 悬停帧预览：位置 + 时间 + 抓到的帧（内核轨 / HLS 轨拿不到帧，只显示时间） */
+  const [preview, setPreview] = useState<{ pct: number; ms: number; img: string | null } | null>(null);
+  const previewTimer = useRef<number | null>(null);
+  const previewSeq = useRef(0);
+
   const seekByPointer = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!playable || !durationMs) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     controls.seekMs(ratio * durationMs);
+  };
+
+  const hoverPreview = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!playable || !durationMs) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const ms = ratio * durationMs;
+    setPreview((h) => ({ pct: ratio * 100, ms, img: h?.img ?? null }));
+    // 90ms 防抖：鼠标扫过进度条时不该每像素都去 seek 一次隐藏视频
+    if (previewTimer.current) window.clearTimeout(previewTimer.current);
+    const seq = ++previewSeq.current;
+    previewTimer.current = window.setTimeout(() => {
+      void controls.preview(ms).then((img) => {
+        if (seq !== previewSeq.current || !img) return;
+        setPreview((h) => (h ? { ...h, img } : h));
+      });
+    }, 90);
+  };
+
+  const clearPreview = () => {
+    if (previewTimer.current) window.clearTimeout(previewTimer.current);
+    previewSeq.current += 1;
+    setPreview(null);
   };
 
   return (
@@ -114,12 +142,24 @@ function ControlBar({
             seekByPointer(e);
           }}
           onPointerMove={(e) => {
+            hoverPreview(e);
             if (e.buttons === 1) seekByPointer(e);
           }}
+          onPointerLeave={clearPreview}
         >
           <span className="an-seek-buf" style={{ width: `${bufferedPct}%` }} />
           <span className="an-seek-fill" style={{ width: `${pct}%` }} />
           <span className="an-seek-knob" style={{ left: `${pct}%` }} />
+          {preview ? (
+            <span className="an-seek-pv" style={{ left: `${preview.pct}%` }} aria-hidden>
+              {preview.img ? (
+                <img src={preview.img} alt="" />
+              ) : (
+                <i className="an-seek-pv-none" title="这一条轨取不到帧预览" />
+              )}
+              <b className="an-num">{fmtClock(preview.ms)}</b>
+            </span>
+          ) : null}
         </div>
         <span className="an-num">{fmtClock(durationMs)}</span>
       </div>

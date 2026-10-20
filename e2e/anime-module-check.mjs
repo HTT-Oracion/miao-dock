@@ -374,6 +374,30 @@ const CHECKS = [
     }),
   },
   {
+    id: 'PREVIEW.frame',
+    run: (s) => ({
+      ok:
+        /previewAt\(ms: number\): Promise<string \| null>/.test(s.playerModule) &&
+        /ctx\.drawImage\(v, 0, 0, PREVIEW_W, PREVIEW_H\)/.test(s.playerModule) &&
+        /previewCache\.set\(sec, url\)/.test(s.playerModule) &&
+        /previewAt/.test(s.playerHook) &&
+        /controls\.preview\(ms\)/.test(s.playerScreen) &&
+        /an-seek-pv/.test(s.playerScreen),
+      detail: '帧预览没接全：隐藏视频抓帧 / 缓存 / hook 暴露 / 进度条气泡缺一环（悬停只能看到时间）',
+    }),
+  },
+  {
+    id: 'SUBTITLE.priority',
+    run: (s) => ({
+      ok:
+        /export function pickSubtitleIndex/.test(s.convertTs) &&
+        /SUB_LANG_ALIASES/.test(s.convertTs) &&
+        /pickSubtitleIndex\(source\.subtitles, p\.subtitlePriority\)/.test(s.playerHook) &&
+        /pickSubtitleIndex\(kernelSource\.subtitles, p\.subtitlePriority\)/.test(s.playerHook),
+      detail: '「字幕语言优先级」没接线：WebView 轨与内核轨都该按偏好自动选一条（设置项成了摆设）',
+    }),
+  },
+  {
     id: 'PLAYER.progress',
     run: (s) => ({
       ok:
@@ -737,6 +761,20 @@ const MUTATIONS = [
     find: 'supported": kernel_available',
     replace: 'supported": true',
     expect: ['KERNEL.missing'],
+  },
+  {
+    name: '帧预览不画帧（气泡只剩时间）',
+    file: F.playerModule,
+    find: 'ctx.drawImage(v, 0, 0, PREVIEW_W, PREVIEW_H);',
+    replace: '',
+    expect: ['PREVIEW.frame'],
+  },
+  {
+    name: '字幕优先级不接线（设置项成摆设）',
+    file: F.playerHook,
+    find: 'pickSubtitleIndex(source.subtitles, p.subtitlePriority)',
+    replace: '-1',
+    expect: ['SUBTITLE.priority'],
   },
 ];
 

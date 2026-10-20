@@ -24,6 +24,44 @@ export function epLabel(index: number): string {
   return Number.isInteger(index) ? String(index) : index.toFixed(1);
 }
 
+/**
+ * 语言词 → 文件名里可能出现的写法。
+ *
+ * 字幕文件名是字幕组起的（`01.chs.ass` / `01.zh-Hans.ass` / `01.繁体.ass` 都见过），
+ * 所以每种语言给一组别名，命中任意一个就算。
+ */
+const SUB_LANG_ALIASES: Record<string, string[]> = {
+  简中: ['chs', 'sc', 'zh-hans', 'zh_cn', 'zh-cn', '简体', '简'],
+  繁中: ['cht', 'tc', 'zh-hant', 'zh_tw', 'zh-tw', '繁体', '繁'],
+  日语: ['jpn', 'ja', 'jp', '日'],
+  英语: ['eng', 'en', '英'],
+  双语: ['dual', '双语', '简繁'],
+};
+
+/**
+ * 按设置里的「字幕语言优先级」挑一条字幕，返回下标（-1 = 没命中，保持关闭）。
+ *
+ * 优先级是自由文本（`简中 → 繁中 → 日语`），按 `→` / 逗号 / 空格切成词，
+ * **顺序即偏好**：先试第一个词的全部别名，都不中再试下一个词。
+ * 只有文件名可用 —— 番剧库里的外挂字幕没有语言元数据，硬猜会挑错。
+ */
+export function pickSubtitleIndex(subs: { name: string }[], priority: string): number {
+  if (!priority || subs.length === 0) return -1;
+  const tokens = priority
+    .split(/[→>,、\s]+/)
+    .map((t) => t.trim().toLowerCase())
+    .filter(Boolean);
+  for (const token of tokens) {
+    const aliases = SUB_LANG_ALIASES[token] ?? [token];
+    const at = subs.findIndex((s) => {
+      const name = s.name.toLowerCase();
+      return aliases.some((a) => name.includes(a));
+    });
+    if (at >= 0) return at;
+  }
+  return -1;
+}
+
 /** 条目进度百分比（总集数缺失时按 0 处理） */
 export function progressPct(progress: number, total?: number): number {
   if (!total || total <= 0) return 0;

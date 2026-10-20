@@ -51,7 +51,43 @@ export interface WebviewPlayer {
   /** 绝对音量（0–1） */
   setVolume(volume: number): void;
   toggleMute(): void;
+  /**
+   * 取某一时刻的帧（悬停预览用），返回 dataURL；取不到给 `null`。
+   *
+   * HLS 轨不抓帧：分片是按需下载的，逐秒抓一次会把整段流拉下来。
+   */
+  previewAt(ms: number): Promise<string | null>;
   destroy(): void;
+}
+
+/** 预览帧尺寸与缓存上限（120 帧 ≈ 2 MB 量级，够覆盖一条 2 小时的进度条） */
+const PREVIEW_W = 160;
+const PREVIEW_H = 90;
+const PREVIEW_MAX = 120;
+
+/** 等一个媒体事件；超时就 reject（避免悬停把视频卡在 seek 上） */
+function waitMedia(el: HTMLVideoElement, event: string, timeoutMs = 2000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      cleanup();
+      reject(new Error(`等 ${event} 超时`));
+    }, timeoutMs);
+    function cleanup() {
+      window.clearTimeout(timer);
+      el.removeEventListener(event, done);
+      el.removeEventListener('error', fail);
+    }
+    function done() {
+      cleanup();
+      resolve();
+    }
+    function fail() {
+      cleanup();
+      reject(new Error('媒体加载失败'));
+    }
+    el.addEventListener(event, done, { once: true });
+    el.addEventListener('error', fail, { once: true });
+  });
 }
 
 const SUBTITLE_PX: Record<PlayerEnv['subtitleSize'], number> = { 100: 16, 120: 19, 140: 22 };
@@ -170,6 +206,66 @@ export function createWebviewPlayer(
       .catch(() => handlers.onError(`字幕载入失败：${sub.name}`));
   }
 
+  // ── 帧预览：用一条**隐藏的** `<video>` 专门抓帧
+  //
+  // 不能拿正在播的那个：抓帧要把播放头拽到目标时刻，会打断用户正在看的画面。
+  let previewer: HTMLVideoElement | null = null;
+  const previewCache = new Map<number, string>();
+  let previewBusy = false;
+
+  function previewElement(): HTMLVideoElement {
+    if (previewer) return previewer;
+    const v = document.createElement('video');
+    v.crossOrigin = 'anonymous';
+    v.preload = 'auto';
+    v.muted = true;
+    v.playsInline = true;
+    v.src = source.url;
+    v.style.position = 'fixed';
+    v.style.left = '-9999px';
+    v.style.width = '1px';
+    v.style.height = '1px';
+    document.body.appendChild(v);
+    previewer = v;
+    return v;
+  }
+
+  async function previewAt(ms: number): Promise<string | null> {
+    // HLS：分片按需下载，逐秒抓帧等于把整段流拉下来 —— 直接说不支持
+    if (source.kind === 'hls') return null;
+    const sec = Math.max(0, Math.floor(ms / 1000));
+    const cached = previewCache.get(sec);
+    if (cached) return cached;
+    if (previewBusy) return null;
+    previewBusy = true;
+    try {
+      const v = previewElement();
+      if (v.readyState < 1) await waitMedia(v, 'loadedmetadata');
+      if (Math.abs(v.currentTime - sec) > 0.25) {
+        const seeked = waitMedia(v, 'seeked');
+        v.currentTime = sec;
+        await seeked;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = PREVIEW_W;
+      canvas.height = PREVIEW_H;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.drawImage(v, 0, 0, PREVIEW_W, PREVIEW_H);
+      const url = canvas.toDataURL('image/jpeg', 0.6);
+      if (previewCache.size >= PREVIEW_MAX) {
+        const oldest = previewCache.keys().next().value;
+        if (oldest !== undefined) previewCache.delete(oldest);
+      }
+      previewCache.set(sec, url);
+      return url;
+    } catch {
+      return null;
+    } finally {
+      previewBusy = false;
+    }
+  }
+
   return {
     play: () => void art.play(),
     pause: () => art.pause(),
@@ -196,6 +292,12 @@ export function createWebviewPlayer(
     toggleMute: () => {
       art.muted = !art.muted;
     },
-    destroy: () => art.destroy(),
+    previewAt,
+    destroy: () => {
+      previewer?.remove();
+      previewer = null;
+      previewCache.clear();
+      art.destroy();
+    },
   };
 }

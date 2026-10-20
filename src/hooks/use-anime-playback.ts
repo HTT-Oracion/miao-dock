@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import * as ipc from '@anime/ipc';
-import { errText } from '@anime/convert';
+import { errText, pickSubtitleIndex } from '@anime/convert';
 import { RATE_STEPS } from '@anime/player-options';
 import { createWebviewPlayer, type PlayerEnv, type WebviewPlayer } from '@anime/player';
 import type {
@@ -82,6 +82,8 @@ export interface AnimePlayback {
     setVolume: (v: number) => void;
     /** 选一条内核轨（`kind: 'audio' | 'sub'`；`id: 'no'` = 关掉） */
     selectKernelTrack: (kind: 'audio' | 'sub', id: string) => void;
+    /** 悬停取帧（进度条预览）；内核轨 / HLS 轨给 `null` */
+    preview: (ms: number) => Promise<string | null>;
   };
 }
 
@@ -115,6 +117,9 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
   const prefsRef = useRef(prefs);
   const stateRef = useRef(state);
   const epIdRef = useRef(episodeId);
+  /** 播放事实的只读镜像（内核副作用里要读它，又不该把它写进依赖） */
+  const sourceRef = useRef<AnimePlaySource | null>(null);
+  sourceRef.current = source;
 
   // 续看起点与跳跃标记只在「换集」时重置
   const startRef = useRef(0);
@@ -214,13 +219,16 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
     const el = containerRef.current;
     if (!el || !source || !source.found || source.track !== 'webview' || !source.supported) return;
     const p = prefsRef.current;
+    // 设置里的「字幕语言优先级」在这里生效：命中的那条自动开，没命中就保持关闭
+    const autoSub = pickSubtitleIndex(source.subtitles, p.subtitlePriority);
     const env: PlayerEnv = {
       startMs: p.resume ? startRef.current : 0,
       rate: p.defaultRate,
-      subtitleIndex: -1,
+      subtitleIndex: autoSub,
       subtitleSize: p.subtitleSize,
       subtitleStroke: p.subtitleStroke,
     };
+    setSubtitleIndex(autoSub);
     const player = createWebviewPlayer(el, source, env, {
       onState: (patch) => {
         setState((s) => ({ ...s, ...patch }));
@@ -265,6 +273,15 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
         setError(null);
         setKernelTracks(r.session.tracks);
         setState({ ...r.session.state, episodeId: epIdRef.current });
+        // 「字幕语言优先级」在内核轨同样生效：命中的外挂字幕由内核自己挂上
+        const kernelSource = sourceRef.current;
+        if (kernelSource && kernelSource.found && kernelSource.track === 'libmpv') {
+          const at = pickSubtitleIndex(kernelSource.subtitles, p.subtitlePriority);
+          if (at >= 0) {
+            void ipc.animeKernelCtl('subtitle', kernelSource.subtitles[at].file);
+            setSubtitleIndex(at);
+          }
+        }
       })
       .catch((e) => {
         if (alive) setError(errText(e));
@@ -328,8 +345,8 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
   const subtitles = useMemo<AnimePlaySubtitle[]>(() => {
     if (!source || !source.found) return [];
     if (source.track === 'webview') return source.subtitles;
-    // 内核轨：字幕是盘上的文件（内核自己读），url 只是占位
-    return source.subtitles.map((s) => ({ url: '', name: s.name, format: s.format }));
+    // 内核轨：字幕是盘上的文件（内核自己读盘），`url` 存**文件路径**而不是带票地址
+    return source.subtitles.map((s) => ({ url: s.file, name: s.name, format: s.format }));
   }, [source]);
 
   const toggle = useCallback(() => {
@@ -363,7 +380,7 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
     const next = subtitleIndex >= subtitles.length - 1 ? -1 : subtitleIndex + 1;
     setSubtitleIndex(next);
     if (kernelRef.current) {
-      void ipc.animeKernelCtl('subtitle', next < 0 ? '' : subtitles[next].name.replace(/\.[^.]+$/, '.ass'));
+      void ipc.animeKernelCtl('subtitle', next < 0 ? '' : subtitles[next].url);
     } else {
       playerRef.current?.setSubtitle(next);
     }
@@ -396,6 +413,14 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
   const selectKernelTrack = useCallback((kind: 'audio' | 'sub', id: string) => {
     if (!kernelRef.current) return;
     void ipc.animeKernelCtl('track', { kind, id });
+  }, []);
+
+  /** 悬停取帧：内核轨（画面在 mpv 窗口里）与 HLS 轨都取不到，如实给 null */
+  const preview = useCallback((ms: number): Promise<string | null> => {
+    if (kernelRef.current) return Promise.resolve(null);
+    const player = playerRef.current;
+    if (!player) return Promise.resolve(null);
+    return player.previewAt(ms);
   }, []);
 
   const retry = useCallback(() => setReloadKey((k) => k + 1), []);
@@ -465,6 +490,7 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
       retry,
       setVolume,
       selectKernelTrack,
+      preview,
     },
   };
 }
