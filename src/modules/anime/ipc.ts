@@ -283,6 +283,15 @@ export const animeCacheResume = (id: string) => invoke<{ ok: boolean; id: string
 /** 删除缓存任务（连同盘上文件） */
 export const animeCacheDelete = (id: string) => invoke<{ ok: boolean; id: string }>('anime_cache_delete', { id });
 
+/** 打开「点选元素」窗口（用户在页面上点一下，回来填选择器） */
+export const animeOpenPicker = (url: string) => invoke<{ ok: boolean }>('anime_open_picker', { url });
+
+/** 等用户点完（轮询窗口标题；超时/关窗返回 ok=false + reason） */
+export const animePickResult = (timeoutSecs?: number) =>
+  invoke<{ ok: boolean; selector?: string; reason?: string }>('anime_pick_result', {
+    timeoutSecs: timeoutSecs ?? null,
+  });
+
 /** 从订阅地址拉一份规则草稿（服务侧解析并校验，不落盘） */
 export const animeSubscribeSource = (url: string) =>
   invoke<{ ok: boolean; draft: { name: string; kind: string; url: string; rules: AnimeSourceRules } }>(

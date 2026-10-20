@@ -26,6 +26,9 @@ const needsRules = (kind: MediaSourceView['kind']) => kind === 'web' || kind ===
 
 const EMPTY_RULES: AnimeSourceRules = { list: '', link: '', title: '', video: '' };
 
+/** 「点选元素」按钮文案（与规则字段一一对应） */
+const PICK_LABEL = { list: '列表', link: '链接', title: '标题', video: '视频地址' } as const;
+
 export function SourceScreen() {
   const sources = useAnimeStore((s) => s.sources);
   const status = useAnimeStore((s) => s.status);
@@ -83,6 +86,8 @@ export function SourceScreen() {
     void loadPikpak();
   }, [loadBt, loadPikpak]);
   const [btBusy, setBtBusy] = useState(false);
+  /** 点选元素：正在点的是哪一条规则 */
+  const [picking, setPicking] = useState<'list' | 'link' | 'title' | 'video' | null>(null);
 
   /** 选一个文件夹 → 复制进库根 → 重新扫描（源目录不动，用户可自行清理） */
   const pickFolder = async () => {
@@ -139,6 +144,29 @@ export function SourceScreen() {
     }
   };
 
+  /** 点选元素：打开源的页面，用户点一下，把 CSS 路径填进对应规则 */
+  const pickInto = async (field: 'list' | 'link' | 'title' | 'video') => {
+    const pageUrl = draft.url.trim();
+    if (!pageUrl.startsWith('http')) {
+      push('先在「地址」里填源地址 —— 点选打开的页面就是它', 'bad');
+      return;
+    }
+    setPicking(field);
+    try {
+      await ipc.animeOpenPicker(pageUrl);
+      const r = await ipc.animePickResult();
+      if (r.ok && r.selector) {
+        setDraft((d) => ({ ...d, rules: { ...d.rules, [field]: r.selector } }));
+        push(`已填入：${r.selector}`, 'good');
+      } else {
+        push(r.reason ?? '没取到选择器', 'bad');
+      }
+    } catch (e) {
+      push(`点选失败：${errText(e)}`, 'bad');
+    } finally {
+      setPicking(null);
+    }
+  };
   /** 从订阅地址拉规则草稿：填进编辑器由用户确认，**不自动保存** */
   const importSubscription = async () => {
     const url = subUrl.trim();
@@ -288,6 +316,14 @@ export function SourceScreen() {
             />
             {needsRules(draft.kind) && (
               <div className="an-src-rules">
+                <div className="an-acts">
+                  <span className="an-note">在页面上点选：</span>
+                  {(['list', 'link', 'title', 'video'] as const).map((f) => (
+                    <Btn key={f} kind="ghost" size="sm" disabled={picking !== null} onClick={() => void pickInto(f)}>
+                      {picking === f ? '点选中…' : PICK_LABEL[f]}
+                    </Btn>
+                  ))}
+                </div>
                 <input
                   className="an-set-in is-wide"
                   value={draft.rules.list}
