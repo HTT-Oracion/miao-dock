@@ -1261,6 +1261,45 @@ try {
     );
   }
 
+  // A21：BT 限速与做种上限（运行期可改，非法值要拒）
+  {
+    const base = `http://127.0.0.1:${animeInfo.port}`;
+    const auth = { 'x-box-token': animeInfo.token };
+    const postJson = (p, body) =>
+      request('POST', `${base}${p}`, {
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+    const before = await request('GET', `${base}/api/v1/anime/bt/limits`, { headers: auth });
+    check(
+      'A21 读限速：三个数字字段都在（0 = 不限）',
+      before.status === 200 &&
+        typeof before.json?.downKbps === 'number' &&
+        typeof before.json?.upKbps === 'number' &&
+        typeof before.json?.seedRatio === 'number',
+      before.buf.toString().slice(0, 200),
+    );
+
+    const set = await postJson('/api/v1/anime/bt/limits', { downKbps: 1024, upKbps: 256, seedRatio: 1.5 });
+    check(
+      'A21 改限速：回显生效值',
+      set.status === 200 && set.json?.limits?.downKbps === 1024 && set.json?.limits?.seedRatio === 1.5,
+      set.buf.toString().slice(0, 240),
+    );
+
+    const after = await request('GET', `${base}/api/v1/anime/bt/limits`, { headers: auth });
+    check(
+      'A21 再读：值确实是刚设的（不是只回显不落状态）',
+      after.json?.downKbps === 1024 && after.json?.upKbps === 256,
+      after.buf.toString().slice(0, 200),
+    );
+
+    const bad = await postJson('/api/v1/anime/bt/limits', { downKbps: -1 });
+    // axum 的 Json 提取器对类型不符给 422（比笼统 400 更准：是「字段类型不对」）
+    check('A21 负数限速 ⇒ 422（不静默当成 0）', bad.status === 422, bad.buf.toString().slice(0, 200));
+  }
+
   // A5：动漫退出后漫画照旧
   killTree(anime.child);
   await sleep(600);

@@ -13,7 +13,7 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 pub mod pikpak;
 pub mod stream;
@@ -43,6 +43,118 @@ fn peer_filter_url() -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
+/// 限速（KiB/s，0/None = 不限）与做种分享率上限。都是**会话级**参数：
+/// 限速可在运行期直接改（librqbit 的 `Limits` 支持 set），分享率上限由 `list()` 顺手执行。
+static LIMITS: OnceLock<Mutex<(Option<u32>, Option<u32>)>> = OnceLock::new();
+static SEED_RATIO: OnceLock<Mutex<Option<f64>>> = OnceLock::new();
+
+fn limits_cell() -> &'static Mutex<(Option<u32>, Option<u32>)> {
+    LIMITS.get_or_init(|| Mutex::new((None, None)))
+}
+
+fn seed_cell() -> &'static Mutex<Option<f64>> {
+    SEED_RATIO.get_or_init(|| Mutex::new(None))
+}
+
+fn env_u32(name: &str) -> Option<u32> {
+    std::env::var(name).ok().and_then(|v| v.trim().parse::<u32>().ok()).filter(|v| *v > 0)
+}
+
+/// 首次建会话时把环境里的值读进来（子进程启动参数 → 进程内状态）。
+fn init_from_env() {
+    let down = env_u32("MIAO_ANIME_BT_DOWN_KBPS");
+    let up = env_u32("MIAO_ANIME_BT_UP_KBPS");
+    if down.is_some() || up.is_some() {
+        if let Ok(mut g) = limits_cell().lock() {
+            if g.0.is_none() && g.1.is_none() {
+                *g = (down, up);
+            }
+        }
+    }
+    if let Ok(ratio) = std::env::var("MIAO_ANIME_BT_SEED_RATIO") {
+        if let Ok(v) = ratio.trim().parse::<f64>() {
+            if let Ok(mut g) = seed_cell().lock() {
+                if g.is_none() {
+                    *g = Some(v);
+                }
+            }
+        }
+    }
+}
+
+fn apply_limits(s: &Session) {
+    let (down, up) = limits_cell().lock().map(|g| *g).unwrap_or((None, None));
+    s.ratelimits
+        .set_download_bps(down.and_then(std::num::NonZeroU32::new));
+    s.ratelimits
+        .set_upload_bps(up.and_then(std::num::NonZeroU32::new));
+}
+
+/// 当前限速与做种上限（界面显示用）。
+pub fn limits() -> Value {
+    let (down, up) = limits_cell().lock().map(|g| *g).unwrap_or((None, None));
+    let ratio = seed_cell().lock().ok().and_then(|g| *g);
+    json!({
+        "downKbps": down.unwrap_or(0),
+        "upKbps": up.unwrap_or(0),
+        "seedRatio": ratio.unwrap_or(0.0),
+    })
+}
+
+/// 改限速 / 做种上限：**运行期立刻生效**（会话已起就直接改 `Limits`）。
+pub fn set_limits(down_kbps: Option<u32>, up_kbps: Option<u32>, seed_ratio: Option<f64>) -> Result<Value, String> {
+    // NaN / 无穷先拒：filter 会把它们静默当成「不限制」，那是假接受
+    if let Some(r) = seed_ratio {
+        if !r.is_finite() {
+            return Err("分享率上限要是个有限的数".into());
+        }
+    }
+    let down = down_kbps.filter(|v| *v > 0);
+    let up = up_kbps.filter(|v| *v > 0);
+    let ratio = seed_ratio.filter(|v| *v > 0.0);
+    if let Ok(mut g) = limits_cell().lock() {
+        *g = (down, up);
+    }
+    if let Ok(mut g) = seed_cell().lock() {
+        *g = ratio;
+    }
+    if let Some(s) = SESSION.get() {
+        apply_limits(s);
+    }
+    Ok(json!({ "ok": true, "limits": limits() }))
+}
+
+/// 做种分享率上限的执行：已完成的做种任务达到上限就暂停（在 `list()` 里顺手跑，不另起定时器）。
+fn enforce_seed_ratio(s: &Arc<Session>) {
+    let Some(limit) = seed_cell().lock().ok().and_then(|g| *g) else {
+        return;
+    };
+    if limit <= 0.0 {
+        return;
+    }
+    let ids: Vec<usize> = s.with_torrents(|it| {
+        it.filter(|(_, t)| {
+            let st = t.stats();
+            st.finished && st.progress_bytes > 0 && (st.uploaded_bytes as f64 / st.progress_bytes as f64) >= limit
+        })
+        .map(|(id, _)| id)
+        .collect()
+    });
+    if ids.is_empty() {
+        return;
+    }
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        let s2 = s.clone();
+        handle.spawn(async move {
+            for id in ids {
+                if let Some(t) = s2.get(TorrentIdOrHash::Id(id)) {
+                    let _ = s2.pause(&t).await;
+                }
+            }
+        });
+    }
+}
+
 /// 取（或首次创建）BT 会话。
 pub async fn session() -> Result<Arc<Session>, String> {
     if let Some(s) = SESSION.get() {
@@ -59,10 +171,13 @@ pub async fn session() -> Result<Arc<Session>, String> {
         });
     }
     opts.blocklist_url = peer_filter_url();
+    init_from_env();
     let s = Session::new_with_opts(dir, opts)
         .await
         .map_err(|e| format!("BT 会话起不来：{e}"))?;
-    Ok(SESSION.get_or_init(|| s).clone())
+    let session = SESSION.get_or_init(|| s).clone();
+    apply_limits(&session);
+    Ok(session)
 }
 
 /// 会话状态（端口 / 速率 / 做种比）。没起会话时返回"未启动"，不假装有数字。
@@ -152,6 +267,7 @@ pub fn list() -> Result<Value, String> {
         })
         .collect::<Vec<Value>>()
     });
+    enforce_seed_ratio(s);
     Ok(json!({ "ok": true, "tasks": tasks }))
 }
 
@@ -197,6 +313,20 @@ mod tests {
     fn stats_reports_not_running_before_start() {
         let v = stats();
         assert_eq!(v["running"], false);
+    }
+
+    #[test]
+    fn limits_roundtrip_and_validation() {
+        let v = set_limits(Some(1024), Some(256), Some(1.5)).unwrap();
+        assert_eq!(v["limits"]["downKbps"], 1024);
+        assert_eq!(v["limits"]["upKbps"], 256);
+        assert_eq!(v["limits"]["seedRatio"], 1.5);
+        // 0 = 不限
+        let v = set_limits(Some(0), Some(0), Some(0.0)).unwrap();
+        assert_eq!(v["limits"]["downKbps"], 0);
+        assert_eq!(v["limits"]["seedRatio"], 0.0);
+        // NaN 必须被拒（不能静默当成「不限制」）
+        assert!(set_limits(None, None, Some(f64::NAN)).is_err());
     }
 
     #[tokio::test]

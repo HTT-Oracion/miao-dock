@@ -76,6 +76,12 @@ fn desired_proxy() -> &'static Mutex<ProxyChoice> {
 static DESIRED_BT_PORT: OnceLock<Mutex<Option<u16>>> = OnceLock::new();
 static DESIRED_BT_PEER_FILTER: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 
+static DESIRED_BT_LIMITS: OnceLock<Mutex<(Option<u32>, Option<u32>, Option<f64>)>> = OnceLock::new();
+
+fn desired_bt_limits() -> &'static Mutex<(Option<u32>, Option<u32>, Option<f64>)> {
+    DESIRED_BT_LIMITS.get_or_init(|| Mutex::new((None, None, None)))
+}
+
 fn desired_bt_port() -> &'static Mutex<Option<u16>> {
     DESIRED_BT_PORT.get_or_init(|| Mutex::new(None))
 }
@@ -107,6 +113,33 @@ fn apply_anime_env(cmd: &mut Command) {
             }
             None => {
                 cmd.env_remove("MIAO_ANIME_ROOT_DIR");
+            }
+        }
+    }
+    if let Ok(guard) = desired_bt_limits().lock() {
+        let (down, up, ratio) = *guard;
+        match down {
+            Some(v) => {
+                cmd.env("MIAO_ANIME_BT_DOWN_KBPS", v.to_string());
+            }
+            None => {
+                cmd.env_remove("MIAO_ANIME_BT_DOWN_KBPS");
+            }
+        }
+        match up {
+            Some(v) => {
+                cmd.env("MIAO_ANIME_BT_UP_KBPS", v.to_string());
+            }
+            None => {
+                cmd.env_remove("MIAO_ANIME_BT_UP_KBPS");
+            }
+        }
+        match ratio {
+            Some(v) => {
+                cmd.env("MIAO_ANIME_BT_SEED_RATIO", v.to_string());
+            }
+            None => {
+                cmd.env_remove("MIAO_ANIME_BT_SEED_RATIO");
             }
         }
     }
@@ -676,6 +709,26 @@ pub async fn anime_resolve_source(url: String, rules: Value, cookies: Option<Val
     post(
         "/api/v1/anime/sources/resolve",
         json!({ "url": url, "rules": rules, "cookies": cookies }),
+    )
+    .await
+}
+
+/// 当前 BT 限速与做种上限。
+#[tauri::command]
+pub async fn anime_bt_limits() -> Result<Value, String> {
+    get("/api/v1/anime/bt/limits").await
+}
+
+/// 改 BT 限速 / 做种上限（运行期立刻生效）。
+#[tauri::command]
+pub async fn anime_set_bt_limits(
+    down_kbps: Option<u32>,
+    up_kbps: Option<u32>,
+    seed_ratio: Option<f64>,
+) -> Result<Value, String> {
+    post(
+        "/api/v1/anime/bt/limits",
+        json!({ "downKbps": down_kbps, "upKbps": up_kbps, "seedRatio": seed_ratio }),
     )
     .await
 }

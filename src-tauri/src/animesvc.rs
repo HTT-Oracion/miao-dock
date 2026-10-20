@@ -260,6 +260,7 @@ fn router(shell: Arc<Shell>) -> Router {
         .route(&format!("/api/{API_VERSION}/anime/bt/stream"), get(bt_stream))
         .route(&format!("/api/{API_VERSION}/anime/bt/stream-url"), get(bt_stream_url))
         .route(&format!("/api/{API_VERSION}/anime/bt/pikpak"), get(bt_pikpak))
+        .route(&format!("/api/{API_VERSION}/anime/bt/limits"), get(bt_limits_get).post(bt_limits_set))
         // 缓存与下载管理（R3）
         .route(&format!("/api/{API_VERSION}/anime/cache"), get(cache_list).post(cache_add))
         .route(&format!("/api/{API_VERSION}/anime/cache/pause"), post(cache_pause))
@@ -965,6 +966,39 @@ struct BtStreamUrlQuery {
 struct BtPikPakQuery {
     #[serde(default)]
     enabled: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct BtLimitsBody {
+    #[serde(default, rename = "downKbps")]
+    down_kbps: Option<u32>,
+    #[serde(default, rename = "upKbps")]
+    up_kbps: Option<u32>,
+    #[serde(default, rename = "seedRatio")]
+    seed_ratio: Option<f64>,
+}
+
+/// 当前限速与做种上限。
+async fn bt_limits_get(State(shell): State<Arc<Shell>>, headers: HeaderMap) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    json(StatusCode::OK, bt::limits())
+}
+
+/// 改限速 / 做种上限（运行期立刻生效）。
+async fn bt_limits_set(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<BtLimitsBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match bt::set_limits(body.down_kbps, body.up_kbps, body.seed_ratio) {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
+    }
 }
 
 /// BT 边下边播：签名换来的 Range 代理（播放器不能带自定义头，所以票在 URL 上）。
