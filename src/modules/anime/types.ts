@@ -315,6 +315,21 @@ export interface MediaSourceView {
   url?: string;
   enabled: boolean;
   health?: 'ok' | 'timeout' | 'untested' | 'error';
+  /** 通用网页源的选择器规则（`web` / `selector` 两类用；其余类型没有） */
+  rules?: AnimeSourceRules;
+}
+
+/**
+ * 通用网页源的选择器规则（与 Rust `sources::SourceRules` 同形）。
+ *
+ * `list` 必填；`link` / `title` 缺省时按「容器自身或第一个 `<a>`」「容器文本」处理；
+ * `video` 只在详情页解析直链时用。
+ */
+export interface AnimeSourceRules {
+  list: string;
+  link?: string;
+  title?: string;
+  video?: string;
 }
 
 /** 跳过片头片尾的档位（设计稿四档） */

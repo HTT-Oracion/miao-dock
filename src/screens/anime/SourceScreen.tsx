@@ -6,7 +6,7 @@
  * 「导入本机文件夹」把片复制进库根，是本机数据眼下唯一的入口。
  */
 import { useState } from 'react';
-import { FolderPlus, Play, Plus, RefreshCw, Trash2, Zap } from 'lucide-react';
+import { FolderPlus, Link2, Pencil, Play, Plus, RefreshCw, Trash2, Zap } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Btn, Empty } from '@components/units';
 import { formatBytes } from '@tools';
@@ -14,11 +14,26 @@ import { useToasts } from '@hooks';
 import * as ipc from '@anime/ipc';
 import { useAnimeStore } from '@anime/store';
 import { SOURCE_KIND_LABEL } from '@anime/player-options';
-import type { AnimeSourceTestItem, MediaSourceView } from '@anime/types';
+import type { AnimeSourceRules, AnimeSourceTestItem, MediaSourceView } from '@anime/types';
 import { ProgressBar, SectionHead } from '@screens/anime/shared';
 
 /** 用户可自建的源类型（内置源不在列）；适配器未就绪的也列出来，保存后测试会明说 */
 const ADDABLE_KINDS: MediaSourceView['kind'][] = ['rss', 'web', 'selector', 'jellyfin', 'emby', 'local', 'bt'];
+
+/** 需要选择器规则的源类型（与 Rust `needs_rules` 同一口径） */
+const needsRules = (kind: MediaSourceView['kind']) => kind === 'web' || kind === 'selector';
+
+const EMPTY_RULES: AnimeSourceRules = { list: '', link: '', title: '', video: '' };
+
+/** 只把填了的选择器交给服务端：空串会被当成"语法错" */
+function tidyRules(rules: AnimeSourceRules): AnimeSourceRules {
+  const out: AnimeSourceRules = { list: rules.list.trim() };
+  for (const key of ['link', 'title', 'video'] as const) {
+    const v = rules[key]?.trim();
+    if (v) out[key] = v;
+  }
+  return out;
+}
 
 export function SourceScreen() {
   const sources = useAnimeStore((s) => s.sources);
@@ -34,14 +49,24 @@ export function SourceScreen() {
   const { push } = useToasts();
   const [importing, setImporting] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState<{ name: string; kind: MediaSourceView['kind']; url: string }>({
+  const [draft, setDraft] = useState<{
+    /** 有 id = 编辑已有源（保存时覆盖它），没有 = 新建 */
+    id?: string;
+    name: string;
+    kind: MediaSourceView['kind'];
+    url: string;
+    rules: AnimeSourceRules;
+  }>({
     name: '',
     kind: 'rss',
     url: '',
+    rules: EMPTY_RULES,
   });
   /** 正在测试的源 id 与它的预览结果（同一次只测一个：避免连点把源打爆） */
   const [testing, setTesting] = useState<string | null>(null);
-  const [preview, setPreview] = useState<{ id: string; items: AnimeSourceTestItem[] } | null>(null);
+  const [preview, setPreview] = useState<{ id: string; items: AnimeSourceTestItem[]; resolved?: string } | null>(null);
+  /** 正在解析直链的源 id */
+  const [resolving, setResolving] = useState<string | null>(null);
 
   const bt = cache.filter((t) => t.state === 'downloading' || t.state === 'seeding' || t.state === 'paused');
 
@@ -56,15 +81,19 @@ export function SourceScreen() {
     void loadSources();
   };
 
-  /** 测试一个源：RSS 拉前几条；其余类型由服务侧明说「未接入」 */
+  /** 测试一个源：RSS / 媒体服务器 / 通用网页源（带选择器）都真拉前几条 */
   const testSource = async (s: MediaSourceView) => {
     if (!s.url) {
       push('这个源没有地址，先补上再测', 'bad');
       return;
     }
+    if (needsRules(s.kind) && !s.rules?.list?.trim()) {
+      push('这个源还没配「列表选择器」，先点「编辑」补上规则', 'bad');
+      return;
+    }
     setTesting(s.id);
     try {
-      const r = await ipc.animeTestSource(s.url, s.kind);
+      const r = await ipc.animeTestSource(s.url, s.kind, 8, s.rules);
       setPreview({ id: s.id, items: r.items });
       push(`「${s.name}」取到 ${r.count} 条`, 'good');
     } catch (e) {
@@ -75,23 +104,59 @@ export function SourceScreen() {
     }
   };
 
-  /** 保存草稿源：id 用名字的拼音/哈希不可靠，直接用「时间戳 + 名称」保证唯一 */
+  /** 通用网页源：把列表里那一条的详情页地址解析成视频直链 */
+  const resolveSource = async (s: MediaSourceView, pageUrl: string) => {
+    if (!s.rules?.video?.trim()) {
+      push('这个源还没配「视频地址选择器」，解析不出直链', 'bad');
+      return;
+    }
+    setResolving(s.id);
+    try {
+      const r = await ipc.animeResolveSource(pageUrl, tidyRules(s.rules));
+      setPreview({ id: s.id, items: preview?.items ?? [], resolved: r.url });
+      push(`解析到直链：${r.url}`, 'good');
+    } catch (e) {
+      push(`解析失败：${e instanceof Error ? e.message : String(e)}`, 'bad');
+    } finally {
+      setResolving(null);
+    }
+  };
+
+  /** 编辑已有源：把它的字段灌进草稿，保存时覆盖同一个 id */
+  const editSource = (s: MediaSourceView) => {
+    setDraft({
+      id: s.id,
+      name: s.name,
+      kind: s.kind,
+      url: s.url ?? '',
+      rules: { ...EMPTY_RULES, ...(s.rules ?? {}) },
+    });
+    setAdding(true);
+  };
+
+  /** 保存草稿源：新建用「时间戳 + 名称」保证唯一；编辑沿用原 id */
   const submitDraft = async () => {
     const name = draft.name.trim();
     if (!name) {
       push('先填个源名称', 'bad');
       return;
     }
+    if (needsRules(draft.kind) && !draft.rules.list.trim()) {
+      push('这一类源要填「列表选择器」（例如 `.list-item a`）', 'bad');
+      return;
+    }
+    const rules = needsRules(draft.kind) ? tidyRules(draft.rules) : undefined;
     await saveSource({
-      id: `src-${Date.now().toString(36)}`,
+      id: draft.id ?? `src-${Date.now().toString(36)}`,
       name,
       kind: draft.kind,
       url: draft.url.trim() || undefined,
       enabled: true,
+      rules,
     });
-    setDraft({ name: '', kind: 'rss', url: '' });
+    setDraft({ name: '', kind: 'rss', url: '', rules: EMPTY_RULES });
     setAdding(false);
-    push(`已添加「${name}」，点「测试」看看里面有什么`, 'good');
+    push(draft.id ? `已更新「${name}」` : `已添加「${name}」，点「测试」看看里面有什么`, 'good');
   };
 
   return (
@@ -146,16 +211,56 @@ export function SourceScreen() {
               aria-label="源地址"
               onChange={(e) => setDraft((d) => ({ ...d, url: e.target.value }))}
             />
+            {needsRules(draft.kind) && (
+              <div className="an-src-rules">
+                <input
+                  className="an-set-in is-wide"
+                  value={draft.rules.list}
+                  placeholder="列表选择器（必填），如 .list-item"
+                  aria-label="列表选择器"
+                  onChange={(e) => setDraft((d) => ({ ...d, rules: { ...d.rules, list: e.target.value } }))}
+                />
+                <input
+                  className="an-set-in"
+                  value={draft.rules.link ?? ''}
+                  placeholder="链接选择器（可选），如 a"
+                  aria-label="链接选择器"
+                  onChange={(e) => setDraft((d) => ({ ...d, rules: { ...d.rules, link: e.target.value } }))}
+                />
+                <input
+                  className="an-set-in"
+                  value={draft.rules.title ?? ''}
+                  placeholder="标题选择器（可选），如 .title"
+                  aria-label="标题选择器"
+                  onChange={(e) => setDraft((d) => ({ ...d, rules: { ...d.rules, title: e.target.value } }))}
+                />
+                <input
+                  className="an-set-in"
+                  value={draft.rules.video ?? ''}
+                  placeholder="视频地址选择器（可选），如 video[src]"
+                  aria-label="视频地址选择器"
+                  onChange={(e) => setDraft((d) => ({ ...d, rules: { ...d.rules, video: e.target.value } }))}
+                />
+              </div>
+            )}
             <Btn kind="primary" size="sm" onClick={() => void submitDraft()}>
-              保存
+              {draft.id ? '保存修改' : '保存'}
             </Btn>
-            <Btn kind="ghost" size="sm" onClick={() => setAdding(false)}>
+            <Btn
+              kind="ghost"
+              size="sm"
+              onClick={() => {
+                setAdding(false);
+                setDraft({ name: '', kind: 'rss', url: '', rules: EMPTY_RULES });
+              }}
+            >
               取消
             </Btn>
           </div>
           <p className="an-note">
-            RSS 与 Jellyfin / Emby 现在就能测（媒体服务器要在地址后带 <code>?api_key=…</code>）；在线 / 选择器 / BT
-            保存后测试会明说适配器未接入。
+            RSS 与 Jellyfin / Emby 现在就能测（媒体服务器要在地址后带 <code>?api_key=…</code>）； 通用网页源（web /
+            selector）按「列表 → 链接 → 标题」三条选择器抓条目，配了「视频地址选择器」还能在预览里解析直链。 BT
+            适配器仍未接入，测试会明说。
           </p>
         </div>
       )}
@@ -217,6 +322,9 @@ export function SourceScreen() {
                     <Btn kind="ghost" size="sm" onClick={() => void saveSource({ ...s, enabled: !s.enabled })}>
                       {s.enabled ? '停用' : '启用'}
                     </Btn>
+                    <Btn kind="ghost" size="sm" title="编辑名称 / 地址 / 选择器规则" onClick={() => editSource(s)}>
+                      <Pencil size={13} /> 编辑
+                    </Btn>
                     <Btn
                       kind="ghost"
                       size="sm"
@@ -253,10 +361,31 @@ export function SourceScreen() {
                           <Play size={13} /> 播放
                         </Btn>
                       ) : null}
+                      {needsRules(s.kind) && it.link ? (
+                        <Btn
+                          kind="ghost"
+                          size="sm"
+                          disabled={resolving === s.id}
+                          title="按「视频地址选择器」解析这一条的直链"
+                          onClick={() => void resolveSource(s, it.link as string)}
+                        >
+                          <Link2 size={13} /> {resolving === s.id ? '解析中' : '解析'}
+                        </Btn>
+                      ) : null}
                     </span>
                   ))}
                 </div>
               )}
+              {preview?.id === s.id && preview.resolved ? (
+                <div className="an-src-preview">
+                  <span className="an-src-pv-row">
+                    <span className="an-src-pv-tx">
+                      <b>解析到的直链</b>
+                      <span>{preview.resolved}</span>
+                    </span>
+                  </span>
+                </div>
+              ) : null}
             </div>
           ))}
         </div>

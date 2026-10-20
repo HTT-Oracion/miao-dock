@@ -15,6 +15,7 @@ import type {
   AnimeMetadataCandidate,
   AnimePlaySource,
   AnimeServiceStatus,
+  AnimeSourceRules,
   AnimeSourceTestItem,
   AnimeSubject,
   CollectionType,
@@ -112,13 +113,18 @@ export const animeImportFolder = (path: string, subject: string | null) =>
     subject,
   });
 
-/** 测试一个数据源：拉前几条看看里面是什么（RSS 已接，其余明确回未接入） */
-export const animeTestSource = (url: string, kind: string, limit = 8) =>
+/** 测试一个数据源：拉前几条看看里面是什么（RSS / 媒体服务器 / 通用网页源已接） */
+export const animeTestSource = (url: string, kind: string, limit = 8, rules?: AnimeSourceRules) =>
   invoke<{ ok: boolean; kind: string; count: number; items: AnimeSourceTestItem[] }>('anime_test_source', {
     url,
     kind,
     limit,
+    rules: rules ?? null,
   });
+
+/** 通用网页源：详情页 → 视频直链（拿到直链才能交给播放器） */
+export const animeResolveSource = (url: string, rules: AnimeSourceRules) =>
+  invoke<{ ok: boolean; url: string }>('anime_resolve_source', { url, rules });
 
 /**
  * 远程播放事实：媒体服务器（Jellyfin / Emby）的某一集。

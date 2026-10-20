@@ -1533,6 +1533,16 @@
   align-items: center;
   gap: 8px;
 }
+/* 选择器规则四行：占满一行，两列排（列表/视频各占一整行更易读） */
+.an-src-rules {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 100%;
+}
+.an-src-rules .is-wide {
+  grid-column: 1 / -1;
+}
 .an-bt-row {
   display: flex;
   align-items: center;

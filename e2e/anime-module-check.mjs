@@ -55,9 +55,11 @@ const F = {
   detailScreen: path.join(ROOT, 'src', 'screens', 'anime', 'DetailScreen.tsx'),
   rustAnime: path.join(ROOT, 'src-tauri', 'src', 'anime', 'mod.rs'),
   rustAnimesvc: path.join(ROOT, 'src-tauri', 'src', 'animesvc.rs'),
+  rustSources: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'sources.rs'),
   rustManifest: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'manifest.rs'),
   rustMetadata: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'metadata.rs'),
   rustRss: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'datasource', 'rss.rs'),
+  webRs: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'datasource', 'web.rs'),
   rustDatasource: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'datasource', 'mod.rs'),
   rustMediaserver: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'datasource', 'mediaserver.rs'),
   rustPlayback: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'playback.rs'),
@@ -416,6 +418,24 @@ const CHECKS = [
         /loadExplore/.test(s.discoverScreen) &&
         /hotSource/.test(s.discoverScreen),
       detail: '探索页没接真实数据：Bangumi 时间表 / 热度 / 条目建库 任一环缺失（探索页会退回「只有本地库」）',
+    }),
+  },
+  {
+    id: 'M3.web',
+    run: (s) => ({
+      ok:
+        /pub async fn fetch\(/.test(s.webRs) &&
+        /pub fn parse_list\(/.test(s.webRs) &&
+        /pub fn resolve_video_in\(/.test(s.webRs) &&
+        /charset_of_meta/.test(s.webRs) &&
+        /pub struct SourceRules/.test(s.rustSources) &&
+        /pub fn validate_rules/.test(s.rustSources) &&
+        /"web" \| "selector" =>/.test(s.rustDatasource) &&
+        /anime\/sources\/resolve/.test(s.rustAnimesvc) &&
+        /animeResolveSource/.test(s.ipc) &&
+        /needsRules/.test(s.sourceScreen) &&
+        /resolveSource/.test(s.sourceScreen),
+      detail: '通用网页源没接通：选择器规则 / 列表解析 / 直链解析 / 端点 / 编辑器 任一环缺失',
     }),
   },
   {
@@ -803,6 +823,13 @@ const MUTATIONS = [
     find: '.route(&format!("/api/{API_VERSION}/anime/metadata/calendar"), get(metadata_calendar))',
     replace: '',
     expect: ['META.explore'],
+  },
+  {
+    name: '通用网页源摘掉直链解析路由（编辑器只能抓列表、播不了）',
+    file: F.rustAnimesvc,
+    find: '.route(&format!("/api/{API_VERSION}/anime/sources/resolve"), post(source_resolve))',
+    replace: '',
+    expect: ['M3.web'],
   },
 ];
 
