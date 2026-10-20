@@ -10,6 +10,7 @@ import type {
   AnimeAccount,
   BtStats,
   BtTask,
+  PikPakStatus,
   AnimeCalendarDay,
   AnimeDetailExtra,
   AnimeEpisode,
@@ -68,6 +69,8 @@ export interface AnimeState {
   /** BT 任务与会话状态（librqbit 真实数据） */
   btTasks: BtTask[];
   btStats: BtStats;
+  /** PikPak 接口状态（只留接口：能力位恒 false） */
+  pikpakStatus: PikPakStatus | null;
   syncQueue: SyncTask[];
   conflicts: SyncConflict[];
   sources: MediaSourceView[];
@@ -175,6 +178,10 @@ export interface AnimeState {
   pauseBt: (id: number) => Promise<void>;
   resumeBt: (id: number) => Promise<void>;
   deleteBt: (id: number) => Promise<void>;
+  /** BT 边下边播：拿带票地址并交给播放器（受 btStream 开关约束） */
+  playBt: (id: number, name: string) => Promise<{ ok: boolean; message: string }>;
+  /** 拉 PikPak 接口状态（不编造能力） */
+  loadPikpak: () => Promise<void>;
 }
 
 /** 播放器初始态：没有片源时也要有完整形状（组件读字段不判空） */
@@ -221,6 +228,7 @@ export const useAnimeStore = create<AnimeState>()((set, get) => ({
   account: EMPTY_ACCOUNT,
   btTasks: [],
   btStats: { running: false, port: 0 },
+  pikpakStatus: null,
   syncQueue: [],
   conflicts: [],
   sources: [],

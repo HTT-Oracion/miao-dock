@@ -179,6 +179,14 @@ export const animeResolveSource = (url: string, rules: AnimeSourceRules, cookies
 export const animeSetBtOptions = (opts: { port: number | null; peerFilterUrl: string | null }) =>
   invoke<{ ok: boolean }>('anime_set_bt_options', opts);
 
+/** BT 边下边播：拿带票播放地址（票 2 小时） */
+export const animeBtStreamUrl = (id: number) =>
+  invoke<{ ok: boolean; url: string; mode: { mode: string; note: string } }>('anime_bt_stream_url', { id });
+
+/** PikPak 接口状态（只留接口：implemented 恒 false） */
+export const animeBtPikpak = (enabled: boolean) =>
+  invoke<{ implemented: boolean; configured: boolean; reason: string }>('anime_bt_pikpak', { enabled });
+
 /** BT 任务列表（librqbit 的 stats 原样映射） */
 export const animeBtList = () => invoke<{ ok: boolean; tasks: BtTask[] }>('anime_bt_list');
 

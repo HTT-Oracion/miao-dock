@@ -61,6 +61,8 @@ const F = {
   cacheScreen: path.join(ROOT, 'src', 'screens', 'anime', 'CacheScreen.tsx'),
   rustAnime: path.join(ROOT, 'src-tauri', 'src', 'anime', 'mod.rs'),
   rustBt: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'bt', 'mod.rs'),
+  rustBtStream: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'bt', 'stream.rs'),
+  rustPikpak: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'bt', 'pikpak.rs'),
   cargoToml: path.join(ROOT, 'src-tauri', 'Cargo.toml'),
   rustAnimesvc: path.join(ROOT, 'src-tauri', 'src', 'animesvc.rs'),
   rustSources: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'sources.rs'),
@@ -532,7 +534,13 @@ const CHECKS = [
         /addBt/.test(s.sourceScreen) &&
         /allowBt/.test(s.actionLib) &&
         /MIAO_ANIME_BT_PORT/.test(s.rustAnime) &&
-        /peerFilterUrl/.test(s.actionLib),
+        /peerFilterUrl/.test(s.actionLib) &&
+        /pub async fn serve\(/.test(s.rustBtStream) &&
+        /anime\/bt\/stream-url"\), get\(bt_stream_url\)/.test(s.rustAnimesvc) &&
+        /pub fn status\(enabled: bool\)/.test(s.rustPikpak) &&
+        /animeBtStreamUrl/.test(s.ipc) &&
+        /playBt/.test(s.sourceScreen) &&
+        /loadPikpak/.test(s.sourceScreen),
       detail: 'BT 链路没接通：依赖 / 会话 / 端点 / 桥接 / 前端 / 设置 任一环缺失',
     }),
   },
@@ -1053,6 +1061,13 @@ const MUTATIONS = [
     find: 'onClick={() => setPickerOpen(true)}',
     replace: "onClick={() => setView('source')}",
     expect: ['PLAYER.picker'],
+  },
+  {
+    name: '摘掉 BT 播放地址路由（边下边播拿不到地址）',
+    file: F.rustAnimesvc,
+    find: '.route(&format!("/api/{API_VERSION}/anime/bt/stream-url"), get(bt_stream_url))',
+    replace: '',
+    expect: ['BT.wired'],
   },
   {
     name: '摘掉 BT 添加路由（磁力贴了没反应）',

@@ -73,11 +73,15 @@ export function SourceScreen() {
   const pauseBt = useAnimeStore((s) => s.pauseBt);
   const resumeBt = useAnimeStore((s) => s.resumeBt);
   const deleteBt = useAnimeStore((s) => s.deleteBt);
+  const playBt = useAnimeStore((s) => s.playBt);
+  const pikpakStatus = useAnimeStore((s) => s.pikpakStatus);
+  const loadPikpak = useAnimeStore((s) => s.loadPikpak);
   const [magnet, setMagnet] = useState('');
   // 进屏拉一次 BT 任务与会话状态（会话没起时是空表，不编造）
   useEffect(() => {
     void loadBt();
-  }, [loadBt]);
+    void loadPikpak();
+  }, [loadBt, loadPikpak]);
   const [btBusy, setBtBusy] = useState(false);
 
   /** 选一个文件夹 → 复制进库根 → 重新扫描（源目录不动，用户可自行清理） */
@@ -566,6 +570,17 @@ export function SourceScreen() {
             <span className="an-num">
               {formatBytes(t.progressBytes)} / {formatBytes(t.totalBytes)}
             </span>
+            <Btn
+              kind="ghost"
+              size="sm"
+              disabled={!prefs.btStream}
+              title={prefs.btStream ? '边下边播（等字节就位再发）' : '设置里关掉了「边下边播」'}
+              onClick={() => {
+                void playBt(t.id, t.name).then((r) => push(r.message, r.ok ? 'good' : 'bad'));
+              }}
+            >
+              播放
+            </Btn>
             {t.state === 'downloading' ? (
               <Btn kind="ghost" size="sm" title="暂停" onClick={() => void pauseBt(t.id)}>
                 暂停
@@ -584,8 +599,14 @@ export function SourceScreen() {
 
       <section className="an-panel">
         <SectionHead title="Peer 过滤与 PikPak" />
-        <p className="an-note">按规则订阅屏蔽异常 peer；PikPak 云离线可给磁力任务加速。两项随 M5 一起接入。</p>
+        <p className="an-note">
+          peer 过滤：设置里的订阅地址在启动时交给 librqbit（blocklist_url），改地址要重启动漫服务。
+        </p>
+        <p className="an-note">{pikpakStatus ? pikpakStatus.reason : 'PikPak 接口状态没拉到。'}</p>
         <div className="an-acts">
+          <Btn kind="ghost" size="sm" onClick={() => void loadPikpak()}>
+            <RefreshCw size={12} /> 刷新接口状态
+          </Btn>
           <Btn kind="ghost" size="sm" onClick={() => setView('states')}>
             去三态页看空态样例
           </Btn>

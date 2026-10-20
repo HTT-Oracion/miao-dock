@@ -61,6 +61,8 @@ export function libraryActions(
   | 'pauseBt'
   | 'resumeBt'
   | 'deleteBt'
+  | 'playBt'
+  | 'loadPikpak'
 > {
   /** 把扫描结果写进 store（三处调用共用，避免字段漏写） */
   const applySnapshot = (snap: Awaited<ReturnType<typeof ipc.animeLibrary>>) => {
@@ -397,6 +399,28 @@ export function libraryActions(
         set({ error: `BT 删除失败：${errText(e)}` });
       }
       await get().loadBt();
+    },
+    /** BT 边下边播：受「边下边播」开关约束；拿不到地址就如实报错 */
+    playBt: async (id, name) => {
+      if (!get().prefs.btStream) {
+        return { ok: false, message: '设置里关掉了「边下边播」，先打开再播' };
+      }
+      try {
+        const r = await ipc.animeBtStreamUrl(id);
+        get().playWebUrl(r.url, name, 'BT', String(id));
+        return { ok: true, message: '开始播放（等字节就位）' };
+      } catch (e) {
+        return { ok: false, message: `BT 播放失败：${errText(e)}` };
+      }
+    },
+
+    /** PikPak：只拉接口状态，界面据此显示"未接入"而不是"暂无任务" */
+    loadPikpak: async () => {
+      try {
+        set({ pikpakStatus: await ipc.animeBtPikpak(get().prefs.pikpak) });
+      } catch (e) {
+        set({ error: `PikPak 状态没拉到：${errText(e)}` });
+      }
     },
     /** 账号状态：登录态 + 待同步队列（队列条目来自服务侧，标签由条目自身推出来） */
     loadAccount: async () => {

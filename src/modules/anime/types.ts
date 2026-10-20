@@ -374,6 +374,13 @@ export interface BtTask {
   error?: string | null;
 }
 
+/** PikPak 接口状态（只留接口：能力位恒 false） */
+export interface PikPakStatus {
+  implemented: boolean;
+  configured: boolean;
+  reason: string;
+}
+
 /** BT 会话状态（端口 / 聚合量 / 任务数） */
 export interface BtStats {
   running: boolean;
