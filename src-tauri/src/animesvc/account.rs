@@ -492,6 +492,45 @@ pub async fn sync(policy: ConflictPolicy) -> Result<Value, String> {
     }))
 }
 
+/// 手动挑边（R4-4）：`local` 把本地值推上去（`updatedAt` 拨到云端之后），`remote` 采纳云端并丢弃本地队列条目。
+///
+/// 为什么 `local` 要先拉一次云端：本地时间可能**早于**云端（两端时钟不一致或云端后来改过），
+/// 直接推会被服务端判成"更旧"再报一次冲突 —— 那不是解决，是循环。拨到 `云端+1` 才是一次性收口。
+pub async fn resolve_conflict(id: &str, side: &str) -> Result<Value, String> {
+    let session = load_session();
+    if session.token.is_empty() {
+        return Err("还没登录，先登录再处理冲突".into());
+    }
+    let mut queue = load_queue();
+    let Some(pos) = queue.iter().position(|x| x.id == id) else {
+        return Err(format!("队列里没有这条：{id}"));
+    };
+    match side {
+        "remote" => {
+            queue.remove(pos);
+            save_queue(&queue)?;
+            Ok(json!({ "ok": true, "side": "remote", "dropped": 1 }))
+        }
+        "local" => {
+            let cloud = pull(&session.token).await?;
+            let cloud_at = cloud.iter().find(|x| x.id == id).map(|x| x.updated_at).unwrap_or(0);
+            let mut item = queue.remove(pos);
+            item.updated_at = now_ms().max(cloud_at + 1);
+            let res = push(&session.token, std::slice::from_ref(&item)).await?;
+            let accepted = res["accepted"].as_array().map(|a| !a.is_empty()).unwrap_or(false);
+            if !accepted {
+                // 没被接受就把它放回队列，别把用户的值弄丢
+                queue.push(item);
+                save_queue(&queue)?;
+                return Err("云端没有接受这次覆盖（可能刚又被改过），再点一次".into());
+            }
+            save_queue(&queue)?;
+            Ok(json!({ "ok": true, "side": "local", "pushed": 1 }))
+        }
+        _ => Err("side 只认 local / remote".into()),
+    }
+}
+
 /// 登录成功后落会话。
 pub fn save_login(v: &Value) -> Result<Session, String> {
     let session = Session {

@@ -250,6 +250,7 @@ fn router(shell: Arc<Shell>) -> Router {
         .route(&format!("/api/{API_VERSION}/anime/account/logout"), post(account_logout))
         .route(&format!("/api/{API_VERSION}/anime/account/enqueue"), post(account_enqueue))
         .route(&format!("/api/{API_VERSION}/anime/account/sync"), post(account_sync))
+        .route(&format!("/api/{API_VERSION}/anime/account/conflict/resolve"), post(account_resolve_conflict))
         // BT 下载（R5）：librqbit 会话
         .route(&format!("/api/{API_VERSION}/anime/bt"), get(bt_list))
         .route(&format!("/api/{API_VERSION}/anime/bt/stats"), get(bt_stats))
@@ -839,6 +840,28 @@ async fn account_enqueue(
             Err(e) => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", e),
         },
         Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", format!("item 结构不对：{e}")),
+    }
+}
+
+#[derive(Deserialize)]
+struct ConflictBody {
+    id: String,
+    side: String,
+}
+
+/// 手动挑边：`local` 覆盖云端 / `remote` 采纳云端。
+async fn account_resolve_conflict(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<ConflictBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match account::resolve_conflict(&body.id, &body.side).await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) if e.contains("还没登录") => envelope(StatusCode::UNAUTHORIZED, "NOT_LOGGED_IN", e),
+        Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
     }
 }
 

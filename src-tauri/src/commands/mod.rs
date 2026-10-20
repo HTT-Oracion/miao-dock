@@ -579,6 +579,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         crate::anime::anime_account_logout,
         crate::anime::anime_account_enqueue,
         crate::anime::anime_account_sync,
+        crate::anime::anime_resolve_conflict,
         crate::anime::anime_cache,
         crate::anime::anime_cache_add,
         crate::anime::anime_cache_pause,

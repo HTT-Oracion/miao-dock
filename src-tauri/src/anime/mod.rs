@@ -840,6 +840,16 @@ pub async fn anime_account_enqueue(item: Value) -> Result<Value, String> {
     post("/api/v1/anime/account/enqueue", json!({ "item": item })).await
 }
 
+/// 手动挑边：`local` 覆盖云端 / `remote` 采纳云端。
+#[tauri::command]
+pub async fn anime_resolve_conflict(id: String, side: String) -> Result<Value, String> {
+    post(
+        "/api/v1/anime/account/conflict/resolve",
+        json!({ "id": id, "side": side }),
+    )
+    .await
+}
+
 /// 同步一次（推队列 → 冲突按策略处理 → 拉云端）。
 #[tauri::command]
 pub async fn anime_account_sync(policy: String) -> Result<Value, String> {
