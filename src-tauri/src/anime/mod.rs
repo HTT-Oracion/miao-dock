@@ -71,6 +71,33 @@ fn desired_proxy() -> &'static Mutex<ProxyChoice> {
     DESIRED_PROXY.get_or_init(|| Mutex::new(ProxyChoice::System))
 }
 
+/// BT 监听端口与 peer 过滤订阅（R5）：由设置页写入，**在下次拉起 animesvc 时生效**。
+/// 会话只在首次添加磁力时创建，所以"先设端口再加任务"就是即时生效的那条路。
+static DESIRED_BT_PORT: OnceLock<Mutex<Option<u16>>> = OnceLock::new();
+static DESIRED_BT_PEER_FILTER: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+fn desired_bt_port() -> &'static Mutex<Option<u16>> {
+    DESIRED_BT_PORT.get_or_init(|| Mutex::new(None))
+}
+
+fn desired_bt_peer_filter() -> &'static Mutex<Option<String>> {
+    DESIRED_BT_PEER_FILTER.get_or_init(|| Mutex::new(None))
+}
+
+/// 把设置页的 BT 端口 / peer 过滤订阅记下来（下次拉起子进程时注入环境变量）。
+#[tauri::command]
+pub fn anime_set_bt_options(port: Option<u16>, peer_filter_url: Option<String>) -> Result<Value, String> {
+    if let Ok(mut g) = desired_bt_port().lock() {
+        *g = port.filter(|p| *p > 0);
+    }
+    if let Ok(mut g) = desired_bt_peer_filter().lock() {
+        *g = peer_filter_url
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty());
+    }
+    Ok(json!({ "ok": true }))
+}
+
 /// 把设置里的库根 / 代理传给子进程。库根为空表示回退默认落点。
 fn apply_anime_env(cmd: &mut Command) {
     if let Ok(guard) = desired_root().lock() {
@@ -80,6 +107,26 @@ fn apply_anime_env(cmd: &mut Command) {
             }
             None => {
                 cmd.env_remove("MIAO_ANIME_ROOT_DIR");
+            }
+        }
+    }
+    if let Ok(guard) = desired_bt_port().lock() {
+        match *guard {
+            Some(port) => {
+                cmd.env("MIAO_ANIME_BT_PORT", port.to_string());
+            }
+            None => {
+                cmd.env_remove("MIAO_ANIME_BT_PORT");
+            }
+        }
+    }
+    if let Ok(guard) = desired_bt_peer_filter().lock() {
+        match guard.as_ref() {
+            Some(url) => {
+                cmd.env("MIAO_ANIME_BT_PEER_FILTER", url);
+            }
+            None => {
+                cmd.env_remove("MIAO_ANIME_BT_PEER_FILTER");
             }
         }
     }
@@ -629,6 +676,46 @@ pub async fn anime_resolve_source(url: String, rules: Value, cookies: Option<Val
     post(
         "/api/v1/anime/sources/resolve",
         json!({ "url": url, "rules": rules, "cookies": cookies }),
+    )
+    .await
+}
+
+/// BT 任务列表（进度 / 做种比来自 librqbit）。
+#[tauri::command]
+pub async fn anime_bt_list() -> Result<Value, String> {
+    get("/api/v1/anime/bt").await
+}
+
+/// BT 会话状态（端口 / 聚合速率 / 任务数）。
+#[tauri::command]
+pub async fn anime_bt_stats() -> Result<Value, String> {
+    get("/api/v1/anime/bt/stats").await
+}
+
+/// 添加磁力 / 种子。
+#[tauri::command]
+pub async fn anime_bt_add(url: String) -> Result<Value, String> {
+    post("/api/v1/anime/bt/add", json!({ "url": url })).await
+}
+
+/// 暂停 BT 任务。
+#[tauri::command]
+pub async fn anime_bt_pause(id: u64) -> Result<Value, String> {
+    post("/api/v1/anime/bt/pause", json!({ "id": id })).await
+}
+
+/// 继续 BT 任务。
+#[tauri::command]
+pub async fn anime_bt_resume(id: u64) -> Result<Value, String> {
+    post("/api/v1/anime/bt/resume", json!({ "id": id })).await
+}
+
+/// 删除 BT 任务（可选连文件一起删）。
+#[tauri::command]
+pub async fn anime_bt_delete(id: u64, delete_files: Option<bool>) -> Result<Value, String> {
+    post(
+        "/api/v1/anime/bt/delete",
+        json!({ "id": id, "deleteFiles": delete_files.unwrap_or(false) }),
     )
     .await
 }

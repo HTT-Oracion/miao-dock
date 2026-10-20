@@ -36,6 +36,7 @@ use serde::Deserialize;
 
 mod manifest;
 pub mod account;
+pub mod bt;
 pub mod cache;
 pub mod datasource;
 pub mod import;
@@ -249,6 +250,13 @@ fn router(shell: Arc<Shell>) -> Router {
         .route(&format!("/api/{API_VERSION}/anime/account/logout"), post(account_logout))
         .route(&format!("/api/{API_VERSION}/anime/account/enqueue"), post(account_enqueue))
         .route(&format!("/api/{API_VERSION}/anime/account/sync"), post(account_sync))
+        // BT 下载（R5）：librqbit 会话
+        .route(&format!("/api/{API_VERSION}/anime/bt"), get(bt_list))
+        .route(&format!("/api/{API_VERSION}/anime/bt/stats"), get(bt_stats))
+        .route(&format!("/api/{API_VERSION}/anime/bt/add"), post(bt_add))
+        .route(&format!("/api/{API_VERSION}/anime/bt/pause"), post(bt_pause))
+        .route(&format!("/api/{API_VERSION}/anime/bt/resume"), post(bt_resume))
+        .route(&format!("/api/{API_VERSION}/anime/bt/delete"), post(bt_delete))
         // 缓存与下载管理（R3）
         .route(&format!("/api/{API_VERSION}/anime/cache"), get(cache_list).post(cache_add))
         .route(&format!("/api/{API_VERSION}/anime/cache/pause"), post(cache_pause))
@@ -844,6 +852,97 @@ async fn account_sync(
         Ok(v) => json(StatusCode::OK, v),
         Err(e) if e.contains("还没登录") => envelope(StatusCode::UNAUTHORIZED, "NOT_LOGGED_IN", e),
         Err(e) => envelope(StatusCode::BAD_GATEWAY, "RELAY", e),
+    }
+}
+
+#[derive(Deserialize)]
+struct BtIdBody {
+    id: usize,
+    #[serde(default, rename = "deleteFiles")]
+    delete_files: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct BtAddBody {
+    url: String,
+}
+
+/// BT 任务列表（进度 / 做种比来自 librqbit，不自己估）。
+async fn bt_list(State(shell): State<Arc<Shell>>, headers: HeaderMap) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match bt::list() {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", e),
+    }
+}
+
+/// BT 会话状态（端口 / 聚合速率 / 任务数）。
+async fn bt_stats(State(shell): State<Arc<Shell>>, headers: HeaderMap) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    json(StatusCode::OK, bt::stats())
+}
+
+/// 添加磁力 / 种子。
+async fn bt_add(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<BtAddBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match bt::add(&serde_json::json!({ "url": body.url })).await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) if e.contains("磁力") || e.contains("magnet") => {
+            envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e)
+        }
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "BT", e),
+    }
+}
+
+async fn bt_pause(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<BtIdBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match bt::pause(body.id).await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
+    }
+}
+
+async fn bt_resume(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<BtIdBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match bt::resume(body.id).await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
+    }
+}
+
+async fn bt_delete(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<BtIdBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match bt::delete(body.id, body.delete_files.unwrap_or(false)).await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
     }
 }
 

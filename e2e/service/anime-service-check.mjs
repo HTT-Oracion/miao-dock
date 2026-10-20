@@ -1192,6 +1192,38 @@ try {
     );
   }
 
+  // A19：BT（librqbit 会话：没起会话时是空表，非法地址要明确拒绝）
+  {
+    const base = `http://127.0.0.1:${animeInfo.port}`;
+    const auth = { 'x-box-token': animeInfo.token };
+    const postJson = (p, body) =>
+      request('POST', `${base}${p}`, {
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+    const list = await request('GET', `${base}/api/v1/anime/bt`, { headers: auth });
+    check(
+      'A19 BT 任务列表：没起会话时是空表（不编造任务）',
+      list.status === 200 && Array.isArray(list.json?.tasks) && list.json.tasks.length === 0,
+      list.buf.toString().slice(0, 200),
+    );
+
+    const stats = await request('GET', `${base}/api/v1/anime/bt/stats`, { headers: auth });
+    check(
+      'A19 BT 会话状态：没起时 running=false 且端口是数字',
+      stats.status === 200 && stats.json?.running === false && typeof stats.json?.port === 'number',
+      stats.buf.toString().slice(0, 200),
+    );
+
+    const bad = await postJson('/api/v1/anime/bt/add', { url: 'ftp://example.com/a.torrent' });
+    check(
+      'A19 非法地址 ⇒ 400 且说清只收 magnet/http',
+      bad.status === 400 && /magnet/.test(bad.buf.toString()),
+      bad.buf.toString().slice(0, 240),
+    );
+  }
+
   // A5：动漫退出后漫画照旧
   killTree(anime.child);
   await sleep(600);
