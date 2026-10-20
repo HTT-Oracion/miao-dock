@@ -5861,5 +5861,60 @@ Content-Range 透传 / CORS / 上游记账收到 `api_key` / 无令牌·错票·
 **顺带修掉的文档漂移**：`check:anime-module` 涨到 32 条后，`AGENTS.md` §3 与 `README.md` 还写着 31 / 23，
 `check:counts` 当场变红（`COUNTS.staticParity`）。两处同步为 32 / 24，并把 `check:anime` 的 20 条改成 39 条。
 
+## D-251 R1：内核轨（mpv JSON IPC + 独立窗口）与 m3u8 相对分片（2026-10-20）
+
+**背景**：D-244 起 mkv / avi 这类 WebView 解不了的容器只能回 `supported:false` —— 计划里
+「libmpv 管本地 / BT / 媒体库」的那条轨一直是空的。本轮把它做出来，并把 m3u8 相对分片
+（D-244 登记的缺口）一起补掉。
+
+**对计划的偏离（登记）**：计划写的是 **libmpv FFI**。本机没有 libmpv 的头文件 / 导入库，
+两个平台各要一份开发包；而**同一个 mpv 二进制**自带 `--input-ipc-server`：命令与状态走一条
+本机 socket，`PlaybackCore` 的七个动作与快照一字不改。所以本轮用 **JSON IPC** 而不是 FFI。
+代价是状态过进程边界（轮询 800ms）；收益是不必为两个平台各编一份 FFI 绑定，也不把 mpv 的
+ABI 钉进我们的构建。**嵌入式渲染没做**：画面在 mpv 自己的窗口里，屏上明说这件事，
+不假装画面在应用内（嵌入式要真正的 libmpv 渲染回调，另起一轮）。
+
+**落点**
+
+| 层 | 落点 | 职责 |
+|---|---|---|
+| 协议 | `animesvc/kernel/ipc.rs` | 行编解码 / 请求 id / 事件解包 / `track-list` 映射 / 端点命名（纯函数 + 6 条单测） |
+| 后端 | `animesvc/kernel/mpv.rs` | 定位二进制、起进程、IPC 客户端、`PlaybackCore` 实现、单例会话、`--kernel-selftest` |
+| 端点 | `animesvc.rs` | `GET /anime/kernel` · `POST /anime/kernel/{open,ctl,close}`（全部要令牌） |
+| 桥接 | `anime/mod.rs` | `anime_kernel_{status,open,ctl,close}`；`play_plan` 在内核可用时回 `supported:true` + `external:true` |
+| 前端 | `use-anime-playback.ts` · `PlayerScreen.tsx` | 内核分支：起播 / 800ms 轮询 / 控制条路由；`KernelStage`（轨道、统计）；控制条补**音量**、**跳片头/片尾**按钮 |
+| 流 | `animesvc/stream.rs` | `.m3u8` 分片与 `#EXT-X-KEY` / `#EXT-X-MAP` 的 `URI` 改写为各自带票的绝对路径 |
+
+**踩到的坑（本轮最贵的一条）**：Windows 命名管道上「阻塞读线程 + 同一个句柄写」会**静默挂死**。
+`File::try_clone` 是 DuplicateHandle —— 两个句柄指向**同一个 file object**，一个挂起的阻塞
+`ReadFile` 会把同一对象上的 `WriteFile` 一起堵住。症状是命令永远发不出去、进程不报错也不退出
+（第一次跑 `--kernel-selftest` 卡了 120s 才被发现）。修法：Windows 侧读端改
+`PeekNamedPipe` 轮询（无数据就 5ms 后重试），从不挂起；`KERNEL.pipe` 断言把这个形态钉住，
+反证把 import 换掉即红。
+
+**另外三处口径**
+
+1. **内核缺失不给地址**：`supported:false` + 原因（「这一集是 mkv 容器，需要随包播放内核；找不到 mpv（找过 …）」），前端据此显示「装内核」而不是对着黑屏猜。
+2. **`--hwdec` 跟设置走**：设置页「强制硬件解码」= `auto`（放开不安全后端），默认 `auto-safe`（mpv 自己挑）。
+3. **m3u8 分片各自签票**：分片若保持相对路径，hls.js 会把它解析到 `/api/v1/anime/` 下面（带票查询串还会被丢掉）⇒ 起播 404。改写后每条分片是一条独立签名的绝对路径，播放器不需要知道令牌。
+
+**已知缺口（未做，别当成已覆盖）**
+
+- **mpv 二进制没随包**：本机下载被网络挡住（`curl: (52) Empty reply`），`resources/mpv/<平台>/` 与安装器载荷都没接。`locate_mpv` 的查找顺序（env → 程序同级 → resources → PATH）已就位，`--kernel-probe` 会如实报「找不到 mpv」。
+- **没验过真 mpv**：自检与 `check:anime` 的 A8 用的是**假 mpv 夹具**（`e2e/fixtures/_fake-mpv.mjs`），证明的是协议与状态机；「mkv 能解码、ass 能渲染、多音轨能切」只能由真 mpv + 真片源回答。
+- **嵌入式渲染没做**：画面在独立窗口（见上）。
+- `subtitlePriority` 仍未被消费（字幕选择走「挂第一条 / 手动切」）。
+- 截图落在 `<state>/screenshots/`，但没做「截图历史 / 打开所在目录」的界面。
+
+**验收（2026-10-20）**：`cargo test --lib animesvc` **54/54**（新增 9 条：协议 6 + 播放列表改写 2 + 轨道过滤）·
+`cargo test --bin miao-dock anime` **7/7**（内核可用 / 缺失两条分支）· `check:anime-module` **35/35** + 反证 **27/27**
+（新增 `KERNEL.wired` / `KERNEL.pipe` / `KERNEL.missing` 各一条变异）· `check:anime` **48/48**
+（A8：`--kernel-selftest` 15 例全绿 + 夹具记账证明 loadfile / observe_property / set_property / sub-add 真的发出去了 +
+`--kernel-probe` 两种形态）· `check:counts` / `check:registry` 绿 · `tsc --noEmit` / `eslint` / `prettier` 无输出 ·
+`vite build --no-emptyOutDir` 通过。
+
+**依赖代价**：无新 crate；`windows-sys` 多开一个 feature（`Win32_System_Pipes`，编译期，零运行时体积）。
+
+
 
 
