@@ -262,4 +262,62 @@ mod tests {
         let r = physical_rect(CssRect { x: 1.0, y: 2.0, w: 3.0, h: 4.0 }, 0);
         assert_eq!(r, PhysRect { x: 1, y: 2, w: 3, h: 4 });
     }
+
+    /// 真开一个父窗口，把子窗口建出来、摆一次、显隐一次、销毁 —— 无头也能跑（不需要消息循环）。
+    #[cfg(windows)]
+    #[test]
+    fn creates_places_hides_and_destroys_child_window() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            CreateWindowExW, DestroyWindow, IsWindow, IsWindowVisible, ShowWindow, SW_SHOW,
+            WS_OVERLAPPEDWINDOW,
+        };
+
+        fn wide(s: &str) -> Vec<u16> {
+            s.encode_utf16().chain(std::iter::once(0)).collect()
+        }
+
+        // 父窗口用系统已注册的 STATIC 类：不必自己注册类，也不依赖 Tauri
+        let cls = wide("STATIC");
+        let title = wide("embed-test-parent");
+        let parent = unsafe {
+            CreateWindowExW(
+                0,
+                cls.as_ptr(),
+                title.as_ptr(),
+                WS_OVERLAPPEDWINDOW,
+                0,
+                0,
+                800,
+                600,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        assert!(!parent.is_null(), "父窗口建不出来");
+        let parent = parent as usize as u64;
+        // IsWindowVisible 要求**所有祖先都可见**：父窗口不显示的话，子窗口永远报 0
+        unsafe {
+            ShowWindow(parent as _, SW_SHOW);
+        }
+
+        let first = ensure(parent).expect("子窗口建不出来");
+        assert!(first != 0);
+        assert_eq!(ensure(parent).expect("第二次 ensure 应复用"), first, "ensure 必须复用");
+
+        let css = CssRect { x: 16.0, y: 24.0, w: 320.0, h: 180.0 };
+        apply(parent, Some(css), true).expect("摆放失败");
+        assert_ne!(unsafe { IsWindowVisible(first as _) }, 0, "摆放后应可见");
+
+        apply(parent, None, false).expect("隐藏失败");
+        assert_eq!(unsafe { IsWindowVisible(first as _) }, 0, "隐藏后不该可见");
+
+        destroy(first);
+        assert_eq!(unsafe { IsWindow(first as _) }, 0, "销毁后窗口不该存在");
+        assert!(child().is_none(), "销毁后槽位应清空");
+        unsafe {
+            DestroyWindow(parent as _);
+        }
+    }
 }
