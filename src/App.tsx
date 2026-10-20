@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { apiPost, errorText, openPath, quitApp, serviceRestart, serviceStart } from '@/ipc';
 import type { ServiceState } from '@/ipc';
-import { useLibrary, useQuitRequest, useService, useTasks, useToasts, useTranslateSource } from '@hooks';
+import { useLibrary, useNav, useQuitRequest, useService, useTasks, useToasts, useTranslateSource } from '@hooks';
 import { initialMode, persistMode, useThemeTokens } from '@/themes/apply';
 import {
   initialServiceAutoStart,
@@ -26,7 +26,6 @@ import { useMusicStore } from '@music/store';
 import { useAnimeStore } from '@anime/store';
 import { ANIME_VIEW_META } from '@anime/player-options';
 import { isBlockedWhenNotReady, stateView } from '@/stores/nav';
-import { useNav } from '@/router/use-nav';
 import type { EngineProcessView, ShellCtx } from '@/router/panes/shell-context';
 import type { TranslateSource } from '@screens/settings/translate-api';
 import { engineStatus, type ModelDownloadView } from '@screens/settings/engine-api';

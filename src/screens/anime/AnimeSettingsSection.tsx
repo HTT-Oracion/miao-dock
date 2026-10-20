@@ -9,7 +9,7 @@
  * 其余每一项都真的读写 `prefs` 并立即落 localStorage。
  */
 import type { ReactNode } from 'react';
-import { useNav } from '@/router/use-nav';
+import { useNav } from '@hooks';
 import { Btn, Switch } from '@components/units';
 import { useAnimeStore } from '@anime/store';
 import type { AnimePrefs } from '@anime/prefs';

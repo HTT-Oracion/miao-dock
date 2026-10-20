@@ -239,3 +239,5 @@ export type { StartDownloadResult } from './useEngineDownload';
 // 番剧播放器：取播放事实 + 建 WebView 轨播放器 + 回写续看位置
 export { useAnimePlayback } from './useAnimePlayback';
 export type { AnimePlayback, AnimePlaybackOptions } from './useAnimePlayback';
+export { useNav } from './useNav';
+export type { Nav } from './useNav';

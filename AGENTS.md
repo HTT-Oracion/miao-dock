@@ -46,7 +46,7 @@
 - `src/screens/<应用>/` —— 屏层（屏入口 + 屏内件）：`manga/`（投放 / 队列 / 漫画库三屏同目录，`index.ts` 是唯一出口；`manga/NotReadyScreen.tsx` 是投放屏的一种形态，D-230）、`settings/parts.tsx`、`music/shared.tsx`、`anime/`（番剧十屏 + 屏内件，`AnimeScreen.tsx` 在屏根）。**判据**：`screens/` 是「一个应用一组屏」的住地，域逻辑（store / ipc / 播放器等）住 `src/modules/<应用>/` —— 两层同名是分层事实，不是待消除的歧义。
 - `src/hooks/` —— **hooks 唯一收口**：`use*` 命名的 hook 一律住这里（业务 hook 进桶文件 `index.ts`，经 `@hooks` 引入；纯行为 hook 如 `useEsc`、`useCoverColor` 单放同目录）。旧的单文件 `hooks.ts`（落在 `src/` 根）**不得**与目录并存 —— 模块解析会**静默二选一**（`HOOKS.layout` 盯死）。
 - `src/tools/` —— **共享纯函数收口**（与 `components/` 同级，经 `@tools` 引入）：跨屏复用、与业务类型解耦的小工具（格式化 / 分页 / 模糊匹配 / UUID / MIME 嗅探 / 重名规范化 …）。只服务单个屏的逻辑仍留屏内。
-- `src/router/` —— **屏级路由**（`routes.ts` 是「路径 ↔ 屏」的唯一事实源 · `use-nav.ts` 是导航读写口 · `index.tsx` 是装配 · `panes/` 是**屏装配件**）。URL 是「屏 + 应用内视图」的唯一事实源，侧栏 / 视图 Tab 只发导航意图；**新增屏必须同时进路由表与 `stores/nav.ts` 的 IA 模型**（后者回答"有哪些屏、哪个屏让位"，前者回答"路径怎么走"）。
+- `src/router/` —— **屏级路由**（`routes.ts` 是「路径 ↔ 屏」的唯一事实源 · 导航读写口 `useNav` 住在 `src/hooks/`（D-41：use* 一律进 hooks） · `index.tsx` 是装配 · `panes/` 是**屏装配件**）。URL 是「屏 + 应用内视图」的唯一事实源，侧栏 / 视图 Tab 只发导航意图；**新增屏必须同时进路由表与 `stores/nav.ts` 的 IA 模型**（后者回答"有哪些屏、哪个屏让位"，前者回答"路径怎么走"）。
   - `panes/` 是"壳层状态 → 屏组件"的适配层：`App.tsx` 是 layout（侧栏 / 工具条 / 常驻层），屏经 `<Outlet context>` 拿壳层数据，屏装配件**不自己持状态**。翻译屏还兼管**让位守卫**（服务未就绪时长什么样，属于该屏自己的形态）。
   - 🔴 这里**不是** React Context 状态管理：`STATE.noReactContext` 禁的是把跨组件共享状态塞进 Provider；`Outlet context` 传的是壳层那一份的只读视图 + setter，状态本身仍住在壳里。
 - `src/stores/` —— **跨组件共享状态的收口（非域）**：导航态机 `nav.ts` · 轻提示通道 `toastBus.ts` · 壳层偏好 `shell-prefs.ts`。**域内状态留在域里**（`src/modules/music/store.ts` 是 zustand 的先例，不往 `stores/` 搬）。

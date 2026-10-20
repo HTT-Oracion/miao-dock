@@ -138,6 +138,7 @@ const HOOKS_MANIFEST = [
   'useLibraryModel.ts',
   'useEngineDownload.ts',
   'useAnimePlayback.ts',
+  'useNav.ts',
 ];
 /** hooks/index.ts 业务桶应出口的业务 hook 名 */
 const HOOKS_BARREL_EXPORTS = [
@@ -148,6 +149,7 @@ const HOOKS_BARREL_EXPORTS = [
   'useToasts',
   'useEngineDownload',
   'useAnimePlayback',
+  'useNav',
 ];
 /** 允许被 units import 的裸包（其余裸包一律判红：新依赖需负责人确认） */
 const PKG_ALLOW = [/^react(\/.+)?$/, /^react-dom(\/.+)?$/, /^lucide-react$/];
