@@ -5940,6 +5940,12 @@ MIAO_MPV_BIN=<…>/.tmp/mpv/mpv.exe  animesvc.exe --kernel-selftest
 
 **依赖代价**：无新 crate；`windows-sys` 多开一个 feature（`Win32_System_Pipes`，编译期，零运行时体积）。
 
+**提交顺序的一处欠账（如实登记）**：本轮按「`feat(rust)` → `feat(app)`」拆了两个提交，但
+`KERNEL.wired` 这条断言**跨两层**（要 Rust 的端点 + 前端的 `animeKernelOpen` / `KernelStage` 同时在位），
+所以**单独 checkout `feat(rust)` 那个提交跑 `check:anime-module` 会红**。最终状态全绿；
+下次遇到跨层断言，要么并进一个提交，要么把断言放到后一个提交（「每个提交自身可跑」这条纪律
+在跨层节点上不能靠"先写断言后写实现"来满足）。
+
 
 
 
