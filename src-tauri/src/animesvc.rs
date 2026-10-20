@@ -214,6 +214,10 @@ fn router(shell: Arc<Shell>) -> Router {
         // 元数据：Bangumi 检索 + 按 id 补进 manifest（走服务侧，前端不直连第三方）
         .route(&format!("/api/{API_VERSION}/anime/metadata/search"), get(metadata_search))
         .route(&format!("/api/{API_VERSION}/anime/metadata/apply"), post(metadata_apply))
+        // 探索页取数：新番时间表 / 热度（热度不支持时退回排行，来源写进回执）/ 条目建库
+        .route(&format!("/api/{API_VERSION}/anime/metadata/calendar"), get(metadata_calendar))
+        .route(&format!("/api/{API_VERSION}/anime/metadata/hot"), get(metadata_hot))
+        .route(&format!("/api/{API_VERSION}/anime/metadata/import"), post(metadata_import))
         // 数据源（M3 契约）：列表 / 增改 / 删除
         .route(
             &format!("/api/{API_VERSION}/anime/sources"),
@@ -390,12 +394,64 @@ async fn metadata_apply(
     }
 }
 
-#[derive(Deserialize)]
-struct SourceDeleteBody {
-    id: String,
+/// 本周新番时间表（探索页「新番周历」）：条目是整条 subject，前端不再逐条回访。
+async fn metadata_calendar(State(shell): State<Arc<Shell>>, headers: HeaderMap) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match metadata::calendar_default().await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("Bangumi 时间表失败：{e}")),
+    }
 }
 
 #[derive(Deserialize)]
+struct HotQuery {
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+/// 热度推荐：`heat` 不被支持时服务侧退回排行，并把来源写进回执（界面据此换文案）。
+async fn metadata_hot(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Query(q): Query<HotQuery>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match metadata::hot_default(q.limit.unwrap_or(12)).await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("Bangumi 热度失败：{e}")),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MetadataImportBody {
+    bgm_id: u64,
+}
+
+/// 把 Bangumi 条目建成一条新番剧（只有元数据、没有片源）。
+async fn metadata_import(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<MetadataImportBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match metadata::import_default(Path::new(&shell.root_dir), body.bgm_id).await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) if e.starts_with("建目录失败") => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", e),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("Bangumi 条目建库失败：{e}")),
+    }
+}
+
+#[derive(Deserialize)]
+struct SourceDeleteBody {
+    id: String,
+}#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ImportBody {
     path: String,

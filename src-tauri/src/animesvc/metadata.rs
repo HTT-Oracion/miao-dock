@@ -20,7 +20,7 @@
 //!   默认库 UA（`reqwest/…`）会被挡。
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -225,18 +225,15 @@ struct RawSearch {
 #[derive(Debug, Deserialize)]
 struct RawCalendarDay {
     weekday: RawWeekday,
+    /// 时间表条目是**整条 subject**（带名字 / 封面 / 评分），不是只有 id ——
+    /// 探索页的「新番周历」要直接展示，不再逐条回访 `/v0/subjects/{id}`。
     #[serde(default)]
-    items: Vec<RawCalendarItem>,
+    items: Vec<RawSubject>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RawWeekday {
     id: u32,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawCalendarItem {
-    id: u64,
 }
 
 // ------------------------------------------------------------------ 映射
@@ -441,6 +438,171 @@ pub async fn apply_default(root: &Path, dir: &str, bgm_id: u64) -> Result<Value,
     try_bases(&bases, |b| apply(b, root, dir, bgm_id)).await
 }
 
+// ------------------------------------------------------------------ 探索页取数（R2）
+
+/// 本周新番时间表（Bangumi `/calendar`）。
+///
+/// 返回 `{ days: [{ weekday: 0..6, items: [候选] }] }`，`weekday` 与 `WEEKDAYS`
+/// 同口径（0=周一）。条目是**整条 subject**，前端不再逐条回访详情。
+pub async fn calendar(base: String) -> Result<Value, String> {
+    let url = format!("{}/calendar", base.trim_end_matches('/'));
+    let v = get_json(url).await?;
+    let days = serde_json::from_value::<Vec<RawCalendarDay>>(v)
+        .map_err(|e| format!("Bangumi 时间表结构不认识：{e}"))?;
+    let mut out: Vec<Value> = days
+        .iter()
+        .filter_map(|d| zero_based_weekday(d.weekday.id).map(|w| (w, d)))
+        .map(|(w, d)| {
+            json!({
+                "weekday": w,
+                "items": d.items.iter().map(candidate).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    out.sort_by_key(|d| d["weekday"].as_u64().unwrap_or(9));
+    Ok(json!({ "ok": true, "days": out }))
+}
+
+/// 热度检索：Bangumi 唯一带 `sort: heat` 的端点（无关键词 + 只要动画）。
+async fn hot_by_heat(base: String, limit: usize) -> Result<Vec<Value>, String> {
+    let url = format!("{}/v0/search/subjects?limit={}", base.trim_end_matches('/'), limit);
+    let body = json!({ "keyword": "", "sort": "heat", "filter": { "type": [2] } });
+    let c = client()?;
+    let res = send_with_retry(move || {
+        let (c, url, body) = (c.clone(), url.clone(), body.clone());
+        async move {
+            c.post(&url)
+                .header("Accept", "application/json")
+                .json(&body)
+                .send()
+                .await
+        }
+    })
+    .await
+    .map_err(|e| format!("请求 Bangumi 失败：{e}"))?;
+    let status = res.status();
+    if !status.is_success() {
+        return Err(format!("Bangumi 返回 {status}"));
+    }
+    let raw = res
+        .json::<RawSearch>()
+        .await
+        .map_err(|e| format!("热度结果不是预期 JSON：{e}"))?;
+    Ok(raw.data.iter().map(candidate).collect())
+}
+
+/// 排行兜底：`/v0/subjects?sort=rank`（`heat` 不被支持时用，仍是真数据）。
+async fn hot_by_rank(base: String, limit: usize) -> Result<Vec<Value>, String> {
+    let url = format!(
+        "{}/v0/subjects?type=2&sort=rank&limit={limit}",
+        base.trim_end_matches('/')
+    );
+    let v = get_json(url).await?;
+    let raw = serde_json::from_value::<RawSearch>(v).map_err(|e| format!("排行结果不认识：{e}"))?;
+    Ok(raw.data.iter().map(candidate).collect())
+}
+
+/// 探索页「热度推荐」：先走 `heat`，不支持时退回排行 —— **来源写进回执**，
+/// 界面据此换文案（不把"排行"说成"热度"）。
+pub async fn hot(base: String, limit: usize) -> Result<Value, String> {
+    let limit = limit.clamp(1, 20);
+    match hot_by_heat(base.clone(), limit).await {
+        Ok(list) => Ok(json!({ "ok": true, "source": "heat", "candidates": list })),
+        Err(e) => {
+            let list = hot_by_rank(base, limit).await?;
+            Ok(json!({
+                "ok": true,
+                "source": "rank",
+                "note": format!("热度检索不可用（{e}），已退回排行"),
+                "candidates": list,
+            }))
+        }
+    }
+}
+
+/// 按生效的镜像列表取时间表。
+pub async fn calendar_default() -> Result<Value, String> {
+    let bases = api_bases();
+    try_bases(&bases, calendar).await
+}
+
+/// 按生效的镜像列表取热度 / 排行。
+pub async fn hot_default(limit: usize) -> Result<Value, String> {
+    let bases = api_bases();
+    try_bases(&bases, |b| hot(b, limit)).await
+}
+
+/// 把 Bangumi 条目**建成一条新番剧**（只有元数据、没有片源）。
+///
+/// 这是搜索/探索页的落点：搜到一部库里没有的番，可以「加入追番」先建条目，
+/// 之后往目录里放片或接在线源。目录名取中文名（没有则原名），去掉 Windows 非法字符；
+/// 同名目录属于别的条目时追加 ` (bgmId)`；同一部重复导入是**幂等**的。
+pub async fn import_subject(base: String, root: &Path, bgm_id: u64) -> Result<Value, String> {
+    let raw = fetch_subject(base.clone(), bgm_id).await?;
+    let weekday = calendar_weekday(base, bgm_id).await.ok().flatten();
+    let patch = patch_of(&raw, weekday);
+    let dir = pick_dir(root, &raw, bgm_id);
+    let path = root.join(&dir);
+    std::fs::create_dir_all(&path).map_err(|e| format!("建目录失败：{e}"))?;
+    let mut out = manifest::apply_metadata(root, &dir, &patch)?;
+    // `apply_metadata` 的 `dir` 是盘上绝对路径；这里补一个**目录名**（身份）与两者并存，
+    // 前端要「刷新库后选中哪一条」用的是目录名。
+    out["path"] = json!(path.to_string_lossy());
+    out["dir"] = json!(dir);
+    Ok(out)
+}
+
+/// 选一个不冲突的目录名（幂等：同一部就复用已有目录）。
+fn pick_dir(root: &Path, raw: &RawSubject, bgm_id: u64) -> String {
+    let base = if raw.name_cn.trim().is_empty() {
+        raw.name.clone()
+    } else {
+        raw.name_cn.clone()
+    };
+    let base = sanitize_dir(&base);
+    let first = if base.is_empty() { format!("bgm-{bgm_id}") } else { base.clone() };
+    if !root.join(&first).exists() {
+        return first;
+    }
+    let mut skipped = Vec::new();
+    let m = manifest::load(&root.join(&first), &mut skipped);
+    if m.subject.bgm_id == Some(bgm_id) {
+        return first;
+    }
+    let second = format!("{base} ({bgm_id})");
+    if root.join(&second).exists() {
+        return second; // 已导入过同一部：复用，不再叠后缀
+    }
+    second
+}
+
+/// 目录名净化：Windows 非法字符换 `_`，去掉首尾空白与结尾点，限长 80。
+fn sanitize_dir(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let trimmed = cleaned.trim().trim_end_matches('.').trim();
+    trimmed.chars().take(80).collect()
+}
+
+/// 按生效的镜像列表把条目建进番剧库。
+pub async fn import_default(root: &Path, bgm_id: u64) -> Result<Value, String> {
+    let bases = api_bases();
+    let root: PathBuf = root.to_path_buf();
+    try_bases(&bases, move |b| {
+        let root = root.clone();
+        async move { import_subject(b, &root, bgm_id).await }
+    })
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -594,11 +756,43 @@ mod tests {
         async fn subject() -> Json<Value> {
             Json(subject_json())
         }
+        /// 排行兜底用的列表端点（`/v0/subjects?sort=rank`）
+        async fn list() -> Json<Value> {
+            Json(json!({ "data": [subject_json()], "total": 1 }))
+        }
         async fn calendar() -> Json<Value> {
-            Json(json!([{ "weekday": { "id": 6 }, "items": [{ "id": 27364 }] }]))
+            Json(json!([{ "weekday": { "id": 6 }, "items": [subject_json()] }]))
         }
         let app = Router::new()
             .route("/v0/search/subjects", post(search))
+            .route("/v0/subjects", get(list))
+            .route("/v0/subjects/:id", get(subject))
+            .route("/calendar", get(calendar));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        format!("http://{addr}")
+    }
+
+    /// 只坏「检索」这一条路由：用来证明热度检索失败时会退回排行。
+    async fn mock_server_broken_search() -> String {
+        async fn search() -> (axum::http::StatusCode, &'static str) {
+            (axum::http::StatusCode::BAD_REQUEST, "no keyword")
+        }
+        async fn subject() -> Json<Value> {
+            Json(subject_json())
+        }
+        async fn list() -> Json<Value> {
+            Json(json!({ "data": [subject_json()], "total": 1 }))
+        }
+        async fn calendar() -> Json<Value> {
+            Json(json!([]))
+        }
+        let app = Router::new()
+            .route("/v0/search/subjects", post(search))
+            .route("/v0/subjects", get(list))
             .route("/v0/subjects/:id", get(subject))
             .route("/calendar", get(calendar));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -659,5 +853,83 @@ mod tests {
         let none = try_bases(&[dead.clone()], |b| search(b, "x", 3)).await;
         let err = none.err().expect("应当失败");
         assert!(err.contains("bgm-mirror-not-exist.invalid"), "错误未带上根地址：{err}");
+    }
+
+    // ── 探索页取数（R2）──────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn calendar_maps_days_to_zero_based_weekday_and_full_candidates() {
+        let base = mock_server().await;
+        let out = calendar(base).await.unwrap();
+        assert_eq!(out["ok"], true);
+        let days = out["days"].as_array().unwrap();
+        assert_eq!(days.len(), 1);
+        // Bangumi 的 6 = 周六；本仓库口径 5 = 周六
+        assert_eq!(days[0]["weekday"], 5);
+        let item = &days[0]["items"][0];
+        // 时间表条目是整条 subject：名字 / 封面 / 评分都要在，前端不再逐条回访
+        assert_eq!(item["bgmId"], 27364);
+        assert_eq!(item["nameCn"], "冰菓");
+        assert!(item["cover"].as_str().unwrap().contains("27364"));
+        assert_eq!(item["rating"], 8.1);
+    }
+
+    #[tokio::test]
+    async fn hot_prefers_heat_and_reports_its_source() {
+        let base = mock_server().await;
+        let out = hot(base, 8).await.unwrap();
+        assert_eq!(out["ok"], true);
+        assert_eq!(out["source"], "heat");
+        assert_eq!(out["candidates"][0]["bgmId"], 27364);
+    }
+
+    /// `heat` 不被支持（这里用 400 模拟）时退回排行 —— **来源必须如实写出来**，
+    /// 否则界面会把"排行"当"热度"展示。
+    #[tokio::test]
+    async fn hot_falls_back_to_rank_when_heat_is_rejected() {
+        let base = mock_server_broken_search().await;
+        let out = hot(base, 8).await.unwrap();
+        assert_eq!(out["source"], "rank");
+        assert_eq!(out["candidates"][0]["bgmId"], 27364);
+        assert!(out["note"].as_str().unwrap().contains("热度"));
+    }
+
+    #[tokio::test]
+    async fn import_subject_creates_entry_and_is_idempotent() {
+        let base = mock_server().await;
+        let root = std::env::temp_dir().join(format!("anime-meta-import-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+
+        let first = import_subject(base.clone(), &root, 27364).await.unwrap();
+        assert_eq!(first["dir"], "冰菓");
+        assert_eq!(first["subject"]["bgmId"], 27364);
+        assert_eq!(first["subject"]["title"], "冰菓");
+        assert_eq!(first["subject"]["airing"]["weekday"], 5);
+        // 落盘可回读
+        let mut skipped = Vec::new();
+        let m = manifest::load(&root.join("冰菓"), &mut skipped);
+        assert_eq!(m.subject.bgm_id, Some(27364));
+
+        // 再导一次：同一部必须复用目录（幂等），不叠后缀
+        let second = import_subject(base.clone(), &root, 27364).await.unwrap();
+        assert_eq!(second["dir"], "冰菓");
+        let dirs: Vec<String> = fs::read_dir(&root)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.path().is_dir())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(dirs, vec!["冰菓".to_string()]);
+
+        // 同名目录属于别的条目 ⇒ 带 bgmId 后缀，不覆盖别人的数据
+        fs::create_dir_all(root.join("别当欧尼酱了")).unwrap();
+        let mut other = subject_json();
+        other["id"] = json!(999);
+        other["name_cn"] = json!("别当欧尼酱了");
+        let out = pick_dir(&root, &serde_json::from_value::<RawSubject>(other).unwrap(), 27364);
+        assert_eq!(out, "别当欧尼酱了 (27364)");
+
+        let _ = fs::remove_dir_all(&root);
     }
 }

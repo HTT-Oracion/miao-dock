@@ -464,6 +464,24 @@ pub async fn anime_metadata_apply(dir: String, bgm_id: u64) -> Result<Value, Str
     post("/api/v1/anime/metadata/apply", json!({ "dir": dir, "bgmId": bgm_id })).await
 }
 
+/// 探索页：本周新番时间表（Bangumi `/calendar`，条目是整条 subject）。
+#[tauri::command]
+pub async fn anime_metadata_calendar() -> Result<Value, String> {
+    get("/api/v1/anime/metadata/calendar").await
+}
+
+/// 探索页：热度推荐（服务侧在 `heat` 不可用时退回排行，`source` 字段说明来源）。
+#[tauri::command]
+pub async fn anime_metadata_hot(limit: Option<usize>) -> Result<Value, String> {
+    get(&format!("/api/v1/anime/metadata/hot?limit={}", limit.unwrap_or(12))).await
+}
+
+/// 把 Bangumi 条目建成一条新番剧（只有元数据、没有片源；同一部幂等）。
+#[tauri::command]
+pub async fn anime_metadata_import(bgm_id: u64) -> Result<Value, String> {
+    post("/api/v1/anime/metadata/import", json!({ "bgmId": bgm_id })).await
+}
+
 /// 重启 animesvc：库根与代理都在子进程**启动时**定，改设置必须重启才生效。
 async fn restart_service() -> Result<(), String> {
     stop();

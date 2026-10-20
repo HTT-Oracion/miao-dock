@@ -336,6 +336,44 @@ console.log(`临时目录：${TMP}`);
   );
 }
 
+/**
+ * 假 Bangumi：只实现探索页用到的四条路由。
+ *
+ * 为什么要它：`MIAO_BANGUMI_API` 是产品自己的镜像开关，指到这里就能证明
+ * 「时间表 / 热度 / 条目建库」三条链路真的打到上游、真的落了盘 ——
+ * 而不是前端对着空数组画空态。
+ */
+function startMockBangumi() {
+  const subject = {
+    id: 27364,
+    name: '氷菓',
+    name_cn: '冰菓',
+    summary: '节能少年与好奇少女的校园推理。',
+    date: '2012-04-22',
+    images: { large: 'https://lain.bgm.tv/pic/cover/l/cd/38/27364.jpg', common: '', medium: '' },
+    rating: { score: 8.1 },
+    tags: [{ name: '京阿尼' }, { name: '校园' }],
+    eps: 22,
+    total_episodes: 26,
+  };
+  const server = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const json = (body) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(body));
+    };
+    if (u.pathname === '/calendar') return json([{ weekday: { id: 6 }, items: [subject] }]);
+    if (u.pathname === '/v0/search/subjects') return json({ data: [subject] });
+    if (u.pathname === '/v0/subjects') return json({ data: [subject], total: 1 });
+    if (u.pathname === '/v0/subjects/27364') return json(subject);
+    res.writeHead(404);
+    res.end();
+  });
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => resolve({ server, base: `http://127.0.0.1:${server.address().port}` }));
+  });
+}
+
 const commonEnv = { MIAO_ROOT: D.data };
 const mangaEnv = {
   ...commonEnv,
@@ -345,11 +383,15 @@ const mangaEnv = {
   MIAO_ENGINE_PROTOCOL: 'mock',
   MIAO_NO_LLM_AUTOSTART: '1',
 };
+const bangumi = await startMockBangumi();
+mocks.push(bangumi.server);
 const animeEnv = {
   ...commonEnv,
   MIAO_ANIME_ROOT_DIR: D.animeLib,
   MIAO_ANIME_STATE_DIR: D.animeState,
   MIAO_ANIME_RUNTIME_ROOT: D.animeRuntime,
+  // 探索页取数走这个「镜像」——产品自己的开关，不是测试专用分支
+  MIAO_BANGUMI_API: bangumi.base,
 };
 
 let manga = null;
@@ -605,6 +647,60 @@ try {
       ((bareInfo.available === true && String(bareInfo.path || '').length > 0) ||
         (bareInfo.available === false && String(bareInfo.reason || '').includes('找不到 mpv')));
     check('A8 没有内核时如实说「找不到 mpv」而不是静默 false', bareShapeOk, bareInfo);
+  }
+
+  // A9：探索页取数（Bangumi 镜像指到本地 mock）
+  //
+  // 判据落在**服务端真打的请求 + 真落盘**上：只断言前端数组非空，等于让"对着空数组画空态"过关。
+  {
+    const base = `http://127.0.0.1:${animeInfo.port}`;
+    const auth = { 'x-box-token': animeInfo.token };
+    const postJson = (p, body) =>
+      request('POST', `${base}${p}`, {
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+    const cal = await request('GET', `${base}/api/v1/anime/metadata/calendar`, { headers: auth });
+    const day = cal.json?.days?.[0];
+    check(
+      'A9 时间表 200 且条目是整条 subject（周几 / 名字 / 封面都在）',
+      cal.status === 200 &&
+        day?.weekday === 5 &&
+        day?.items?.[0]?.bgmId === 27364 &&
+        day?.items?.[0]?.nameCn === '冰菓' &&
+        String(day?.items?.[0]?.cover || '').includes('27364'),
+      cal.buf.toString().slice(0, 240),
+    );
+    const noTok = await request('GET', `${base}/api/v1/anime/metadata/calendar`);
+    check('A9 时间表无令牌 ⇒ 403', noTok.status === 403, noTok.status);
+
+    const hotRes = await request('GET', `${base}/api/v1/anime/metadata/hot?limit=8`, { headers: auth });
+    check(
+      'A9 热度 200 且来源如实（source=heat）',
+      hotRes.status === 200 && hotRes.json?.source === 'heat' && hotRes.json?.candidates?.[0]?.bgmId === 27364,
+      hotRes.buf.toString().slice(0, 240),
+    );
+
+    const imp = await postJson('/api/v1/anime/metadata/import', { bgmId: 27364 });
+    check(
+      'A9 条目建库 200 且落在「冰菓」目录',
+      imp.status === 200 && imp.json?.dir === '冰菓',
+      imp.buf.toString().slice(0, 300),
+    );
+    const imp2 = await postJson('/api/v1/anime/metadata/import', { bgmId: 27364 });
+    check(
+      'A9 重复建库是幂等的（同一目录，不叠后缀）',
+      imp2.status === 200 && imp2.json?.dir === imp.json?.dir,
+      imp2.buf.toString().slice(0, 200),
+    );
+
+    const lib = await request('GET', `${base}/api/v1/anime/library`, { headers: auth });
+    check(
+      'A9 建完能扫到（库里有冰菓）',
+      lib.status === 200 && lib.buf.toString().includes('冰菓'),
+      lib.buf.toString().slice(0, 240),
+    );
   }
 
   // A5：动漫退出后漫画照旧
