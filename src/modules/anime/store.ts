@@ -16,6 +16,8 @@ import type {
   CollectionType,
   MediaSourceView,
   PlaybackState,
+  AnimeRemotePlayback,
+  AnimeSourceTestItem,
   SyncConflict,
   SyncTask,
 } from '@anime/types';
@@ -61,6 +63,8 @@ export interface AnimeState {
   conflicts: SyncConflict[];
   sources: MediaSourceView[];
   cache: CacheTask[];
+  /** 远程播放（媒体服务器中继）；本地播放时不占用这个字段 */
+  remote: AnimeRemotePlayback | null;
 
   // ── 动作（实现见 actions/*.ts） ──
   setView: (v: AnimeView) => void;
@@ -85,6 +89,10 @@ export interface AnimeState {
   deleteSource: (id: string) => Promise<void>;
   /** 把本机文件夹导入库根，返回一句人话结果 */
   importFolder: (path: string, subject?: string | null) => Promise<{ ok: boolean; message: string }>;
+  /** 播媒体服务器里的一集（Jellyfin / Emby）：取带票中继地址并跳播放器 */
+  playRemoteSource: (sourceId: string, item: AnimeSourceTestItem) => Promise<{ ok: boolean; message: string }>;
+  /** 退出远程播放（离开播放器时调用） */
+  clearRemote: () => void;
   setPref: <K extends keyof AnimePrefs>(key: K, value: AnimePrefs[K]) => void;
   loadDemo: () => Promise<void>;
   clearDemo: () => Promise<void>;
@@ -139,6 +147,7 @@ export const useAnimeStore = create<AnimeState>()((set, get) => ({
   conflicts: [],
   sources: [],
   cache: [],
+  remote: null,
 
   ...navigationActions(set, get),
   ...libraryActions(set, get),

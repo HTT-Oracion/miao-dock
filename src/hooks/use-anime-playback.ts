@@ -15,7 +15,13 @@ import * as ipc from '@anime/ipc';
 import { errText } from '@anime/convert';
 import { RATE_STEPS } from '@anime/player-options';
 import { createWebviewPlayer, type PlayerEnv, type WebviewPlayer } from '@anime/player';
-import type { AnimeEpisode, AnimePlaySource, AnimePlaySubtitle, PlaybackState } from '@anime/types';
+import type {
+  AnimeEpisode,
+  AnimePlaySource,
+  AnimePlaySubtitle,
+  AnimeRemotePlayback,
+  PlaybackState,
+} from '@anime/types';
 import type { AnimePrefs } from '@anime/prefs';
 
 const IDLE: PlaybackState = {
@@ -35,6 +41,13 @@ const SAVE_GAP_MS = 5000;
 export interface AnimePlaybackOptions {
   subjectId: string | null;
   episode: AnimeEpisode | null;
+  /**
+   * 远程播放（媒体服务器中继）。给了就**不再探测本地**，直接用这条带票地址建播放器。
+   *
+   * 为什么是「给了就不探测」而不是「探测失败再兜底」：远程播放时用户根本不在看本地库，
+   * 去探测只会白白等一次本地扫描，还会把「本地没有」的错误显示出来误导人。
+   */
+  remote?: AnimeRemotePlayback | null;
   prefs: AnimePrefs;
   /** 回写续看位置（调用方接 `savePosition`） */
   onProgress: (episodeId: string, positionMs: number) => void;
@@ -63,7 +76,7 @@ export interface AnimePlayback {
 }
 
 export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
-  const { subjectId, episode, prefs, onProgress, onEnded } = opts;
+  const { subjectId, episode, prefs, remote, onProgress, onEnded } = opts;
   const episodeId = episode?.id ?? null;
   const index = episode?.index ?? null;
 
@@ -119,7 +132,34 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
   }, []);
 
   // ① 取播放事实
+  //
+  // 远程优先：给了 `remote` 就把它包装成同一条 WebView 轨的播放事实，
+  // 播放器 / 控制条 / 键盘因此一套代码都不用改（`container: 'remote'` 只为展示区分）。
+  const remoteSource = useMemo<AnimePlaySource | null>(() => {
+    if (!remote) return null;
+    return {
+      found: true,
+      track: 'webview',
+      supported: true,
+      kind: 'progressive',
+      url: remote.url,
+      container: 'remote',
+      sizeBytes: 0,
+      title: remote.title,
+      subtitles: [],
+      expiresAt: remote.expiresAt,
+    };
+  }, [remote]);
+
   useEffect(() => {
+    if (remoteSource) {
+      setSource(remoteSource);
+      setLoading(false);
+      setError(null);
+      setState({ ...IDLE, rate: prefsRef.current.defaultRate });
+      setSubtitleIndex(-1);
+      return;
+    }
     if (!subjectId || index === null) {
       setSource(null);
       setLoading(false);
@@ -146,7 +186,7 @@ export function useAnimePlayback(opts: AnimePlaybackOptions): AnimePlayback {
     return () => {
       alive = false;
     };
-  }, [subjectId, index, reloadKey]);
+  }, [subjectId, index, reloadKey, remoteSource]);
 
   // ② 建播放器（只有 WebView 轨才建）
   useEffect(() => {

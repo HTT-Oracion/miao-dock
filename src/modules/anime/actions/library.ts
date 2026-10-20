@@ -34,6 +34,8 @@ export function libraryActions(
   | 'saveSource'
   | 'deleteSource'
   | 'importFolder'
+  | 'playRemoteSource'
+  | 'clearRemote'
 > {
   /** 把扫描结果写进 store（三处调用共用，避免字段漏写） */
   const applySnapshot = (snap: Awaited<ReturnType<typeof ipc.animeLibrary>>) => {
@@ -298,6 +300,39 @@ export function libraryActions(
         set({ error: message });
         return { ok: false, message };
       }
+    },
+
+    /**
+     * 播媒体服务器里的一集：取带票中继地址 → 记 remote → 跳播放器。
+     *
+     * remote 与本地播放是**两条互不干扰的路**：本地那条由 `subjectId + episode` 驱动，
+     * 这条由 `remote` 驱动；用户从库里点一部番时本地那条自动接管。
+     */
+    playRemoteSource: async (sourceId, item) => {
+      if (!item.id) return { ok: false, message: '这一条没有条目 id，播不了' };
+      try {
+        const r = await ipc.animePlayRemote(sourceId, item.id);
+        const src = get().sources.find((s) => s.id === sourceId);
+        set({
+          remote: {
+            url: r.url,
+            title: item.title,
+            sourceId,
+            sourceName: src?.name ?? sourceId,
+            expiresAt: r.expiresAt,
+          },
+        });
+        set({ view: 'player' });
+        return { ok: true, message: `正在播放「${item.title}」` };
+      } catch (e) {
+        const message = `远程播放没起来：${errText(e)}`;
+        set({ error: message });
+        return { ok: false, message };
+      }
+    },
+
+    clearRemote: () => {
+      set({ remote: null });
     },
   };
 }

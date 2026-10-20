@@ -13,8 +13,9 @@ import { useAnimeStore } from '@anime/store';
 import { episodesOf, selectedEpisode, selectedSubject } from '@anime/selectors';
 import { fmtClock } from '@anime/convert';
 import { PLAYER_KEYS, SOURCE_KIND_LABEL } from '@anime/player-options';
-import type { AnimePlaySource } from '@anime/types';
-import { useAnimePlayback } from '@hooks';
+import type { AnimePlaySource, AnimePlaySubtitle, AnimeRemotePlayback, PlaybackState } from '@anime/types';
+import type { AnimePrefs } from '@anime/prefs';
+import { useAnimePlayback, type AnimePlayback } from '@hooks';
 import { Cover, EpisodeRow } from '@screens/anime/shared';
 
 type SideTab = 'episodes' | 'info' | 'comments';
@@ -33,6 +34,271 @@ function rateLabel(rate: number): string {
   return `${Number(rate.toFixed(2))}×`;
 }
 
+/**
+ * 控制条（本地与远程播放共用）。
+ *
+ * 抽成一件是因为两条播放路只有「顶部标题 / 中间画面 / 侧栏」不同，
+ * 底部这一整套（进度、播放、倍速、截图、字幕、快捷键提示）必须一致 ——
+ * 各写一套迟早会出现「远程播放没有快捷键」这种静默缺口。
+ */
+interface ControlBarProps {
+  playable: boolean;
+  state: PlaybackState;
+  durationMs: number;
+  rate: number;
+  subtitleName: string;
+  subtitles: AnimePlaySubtitle[];
+  controls: AnimePlayback['controls'];
+  onRate: (rate: number) => void;
+  /** 本地播放才有上一集 / 下一集；远程播放传 null */
+  epNav: { prev: boolean; next: boolean; onPrev: () => void; onNext: () => void } | null;
+}
+
+function ControlBar({
+  playable,
+  state,
+  durationMs,
+  rate,
+  subtitleName,
+  subtitles,
+  controls,
+  onRate,
+  epNav,
+}: ControlBarProps) {
+  const pct = durationMs ? Math.min(100, Math.round((state.positionMs / durationMs) * 100)) : 0;
+  const bufferedPct = durationMs ? Math.min(100, Math.round((state.bufferedMs / durationMs) * 100)) : 0;
+
+  const seekByPointer = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!playable || !durationMs) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    controls.seekMs(ratio * durationMs);
+  };
+
+  return (
+    <div className="an-stage-bar">
+      <div className="an-seek">
+        <span className="an-num">{fmtClock(state.positionMs)}</span>
+        <div
+          className={`an-seek-track${playable ? ' is-live' : ''}`}
+          role="slider"
+          aria-label="播放进度"
+          aria-valuemin={0}
+          aria-valuemax={Math.round(durationMs / 1000)}
+          aria-valuenow={Math.round(state.positionMs / 1000)}
+          tabIndex={playable ? 0 : -1}
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            seekByPointer(e);
+          }}
+          onPointerMove={(e) => {
+            if (e.buttons === 1) seekByPointer(e);
+          }}
+        >
+          <span className="an-seek-buf" style={{ width: `${bufferedPct}%` }} />
+          <span className="an-seek-fill" style={{ width: `${pct}%` }} />
+          <span className="an-seek-knob" style={{ left: `${pct}%` }} />
+        </div>
+        <span className="an-num">{fmtClock(durationMs)}</span>
+      </div>
+      <div className="an-ctl">
+        <button
+          type="button"
+          className="an-stage-btn"
+          disabled={!epNav?.prev}
+          title="上一集"
+          onClick={() => epNav?.onPrev()}
+        >
+          <SkipBack size={17} />
+        </button>
+        <button
+          type="button"
+          className="an-bigplay"
+          disabled={!playable}
+          title={playable ? (state.playing ? '暂停' : '播放') : '有片源后可播放'}
+          onClick={controls.toggle}
+        >
+          {state.playing ? <Pause size={16} /> : <Play size={16} />}
+        </button>
+        <button
+          type="button"
+          className="an-stage-btn"
+          disabled={!epNav?.next}
+          title="下一集"
+          onClick={() => epNav?.onNext()}
+        >
+          <SkipForward size={17} />
+        </button>
+        <button
+          type="button"
+          className="an-rate"
+          disabled={!playable}
+          title="切换倍速（同时记为默认倍速）"
+          onClick={() => onRate(controls.cycleRate())}
+        >
+          {rateLabel(rate)}
+        </button>
+        <span className="an-sp" />
+        <button
+          type="button"
+          className="an-kbd"
+          disabled={!playable}
+          title="截一张当前帧"
+          onClick={controls.screenshot}
+        >
+          截图
+        </button>
+        <button type="button" className="an-kbd" disabled title="统计面板待接入内核诊断">
+          统计
+        </button>
+        <button
+          type="button"
+          className="an-kbd"
+          disabled={!playable || subtitles.length === 0}
+          title={subtitleName ? `当前字幕：${subtitleName}` : subtitles.length ? '切换字幕' : '这一集没有外挂字幕'}
+          onClick={controls.cycleSubtitle}
+        >
+          字幕
+        </button>
+      </div>
+      <div className="an-keys">
+        {PLAYER_KEYS.slice(0, 6).map((k) => (
+          <span key={k.key}>
+            <kbd>{k.key}</kbd> {k.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 远程播放（媒体服务器中继）—— 与本地播放**共用控制条**，只换顶部与侧栏。
+ *
+ * 诚实边界：远程这一路**不写续看进度**（库里没有这个条目，没处可写），
+ * 侧栏里明说这件事，不做一个「看起来记了其实没记」的进度条。
+ */
+function RemoteStage({ remote, prefs }: { remote: AnimeRemotePlayback; prefs: AnimePrefs }) {
+  const setView = useAnimeStore((s) => s.setView);
+  const clearRemote = useAnimeStore((s) => s.clearRemote);
+  const setPref = useAnimeStore((s) => s.setPref);
+  const { containerRef, source, loading, error, state, subtitles, controls } = useAnimePlayback({
+    subjectId: null,
+    episode: null,
+    remote,
+    prefs,
+    onProgress: () => {},
+    onEnded: () => {},
+  });
+  const playable = source !== null && source.found && source.supported;
+
+  return (
+    <div className="an-player">
+      <div className="an-stage">
+        <div className="an-stage-top">
+          <button
+            type="button"
+            className="an-stage-btn"
+            onClick={() => {
+              clearRemote();
+              setView('source');
+            }}
+            title="返回数据源"
+          >
+            <ArrowLeft size={16} />
+          </button>
+          <div className="an-stage-tt">
+            <b>{remote.title}</b>
+            <span>
+              {remote.sourceName} · 远程中继
+              {loading ? ' · 正在起播' : error ? ' · 起不来' : ''}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="an-stage-btn"
+            disabled={!playable}
+            title={playable ? '全屏' : '有片源后可全屏'}
+            onClick={controls.fullscreen}
+          >
+            <Maximize2 size={16} />
+          </button>
+        </div>
+
+        <div className={`an-stage-mid${playable ? ' is-video' : ''}`}>
+          {playable && <div className="an-stage-video" ref={containerRef} />}
+          {!playable && (
+            <div className="an-stage-empty">
+              <b>{loading ? '正在起播' : error ? '播放器起不来' : '正在准备播放器'}</b>
+              <span>{error ?? '地址由本机服务侧中继，api_key 不会出现在地址里。'}</span>
+              {error ? (
+                <Btn kind="primary" onClick={controls.retry}>
+                  重试
+                </Btn>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+        <ControlBar
+          playable={playable}
+          state={state}
+          durationMs={state.durationMs}
+          rate={state.rate || prefs.defaultRate}
+          subtitleName=""
+          subtitles={subtitles}
+          controls={controls}
+          onRate={(r) => setPref('defaultRate', r)}
+          epNav={null}
+        />
+      </div>
+
+      <aside className="an-player-side">
+        <div className="an-side-tabs" role="tablist" aria-label="远程播放信息">
+          <button type="button" role="tab" aria-selected className="is-on">
+            远程来源
+          </button>
+        </div>
+        <div className="an-side-body an-scroll">
+          <div className="an-src-box">
+            <span className="an-src-ic">{SOURCE_KIND_LABEL.jellyfin}</span>
+            <span className="an-src-tx">
+              <b>{remote.sourceName}</b>
+              <span>{remote.title}</span>
+            </span>
+          </div>
+          <div className="an-side-info">
+            <div>
+              <span>地址</span>
+              <b className="an-note">本机中继（带票，6 小时有效）</b>
+            </div>
+            <div>
+              <span>续看进度</span>
+              <b>不记录（远程条目不在本地库）</b>
+            </div>
+            <div>
+              <span>外挂字幕</span>
+              <b>暂不支持（媒体服务器字幕轨后续接入）</b>
+            </div>
+          </div>
+          <div className="an-acts">
+            <Btn
+              kind="ghost"
+              size="sm"
+              onClick={() => {
+                clearRemote();
+                setView('source');
+              }}
+            >
+              返回数据源
+            </Btn>
+          </div>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 export function PlayerScreen() {
   const subject = useAnimeStore(selectedSubject);
   const episode = useAnimeStore(selectedEpisode);
@@ -44,6 +310,7 @@ export function PlayerScreen() {
   const savePosition = useAnimeStore((s) => s.savePosition);
   const prefs = useAnimeStore((s) => s.prefs);
   const setPref = useAnimeStore((s) => s.setPref);
+  const remote = useAnimeStore((s) => s.remote);
   const [tab, setTab] = useState<SideTab>('episodes');
 
   const idx = episode ? episodes.findIndex((e) => e.id === episode.id) : -1;
@@ -62,6 +329,8 @@ export function PlayerScreen() {
   });
 
   if (!subject || !episode) {
+    // 远程播放（媒体服务器中继）：没有本地条目也能播
+    if (remote) return <RemoteStage remote={remote} prefs={prefs} />;
     return (
       <div className="an-screen an-pad">
         <Empty>
@@ -79,17 +348,8 @@ export function PlayerScreen() {
 
   const playable = source !== null && source.found && source.supported;
   const durationMs = state.durationMs || episode.durationMs;
-  const pct = durationMs ? Math.min(100, Math.round((state.positionMs / durationMs) * 100)) : 0;
-  const bufferedPct = durationMs ? Math.min(100, Math.round((state.bufferedMs / durationMs) * 100)) : 0;
   const rate = state.rate || prefs.defaultRate;
   const subtitleName = subtitleIndex >= 0 ? (subtitles[subtitleIndex]?.name ?? '') : '';
-
-  const seekByPointer = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!playable || !durationMs) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    controls.seekMs(ratio * durationMs);
-  };
 
   return (
     <div className="an-player">
@@ -165,99 +425,22 @@ export function PlayerScreen() {
           )}
         </div>
 
-        <div className="an-stage-bar">
-          <div className="an-seek">
-            <span className="an-num">{fmtClock(state.positionMs)}</span>
-            <div
-              className={`an-seek-track${playable ? ' is-live' : ''}`}
-              role="slider"
-              aria-label="播放进度"
-              aria-valuemin={0}
-              aria-valuemax={Math.round(durationMs / 1000)}
-              aria-valuenow={Math.round(state.positionMs / 1000)}
-              tabIndex={playable ? 0 : -1}
-              onPointerDown={(e) => {
-                e.currentTarget.setPointerCapture(e.pointerId);
-                seekByPointer(e);
-              }}
-              onPointerMove={(e) => {
-                if (e.buttons === 1) seekByPointer(e);
-              }}
-            >
-              <span className="an-seek-buf" style={{ width: `${bufferedPct}%` }} />
-              <span className="an-seek-fill" style={{ width: `${pct}%` }} />
-              <span className="an-seek-knob" style={{ left: `${pct}%` }} />
-            </div>
-            <span className="an-num">{fmtClock(durationMs)}</span>
-          </div>
-          <div className="an-ctl">
-            <button
-              type="button"
-              className="an-stage-btn"
-              disabled={!prev}
-              title="上一集"
-              onClick={() => prev && openPlayer(subject.id, prev.id)}
-            >
-              <SkipBack size={17} />
-            </button>
-            <button
-              type="button"
-              className="an-bigplay"
-              disabled={!playable}
-              title={playable ? (state.playing ? '暂停' : '播放') : '有片源后可播放'}
-              onClick={controls.toggle}
-            >
-              {state.playing ? <Pause size={16} /> : <Play size={16} />}
-            </button>
-            <button
-              type="button"
-              className="an-stage-btn"
-              disabled={!next}
-              title="下一集"
-              onClick={() => next && openPlayer(subject.id, next.id)}
-            >
-              <SkipForward size={17} />
-            </button>
-            <button
-              type="button"
-              className="an-rate"
-              disabled={!playable}
-              title="切换倍速（同时记为默认倍速）"
-              onClick={() => setPref('defaultRate', controls.cycleRate())}
-            >
-              {rateLabel(rate)}
-            </button>
-            <span className="an-sp" />
-            <button
-              type="button"
-              className="an-kbd"
-              disabled={!playable}
-              title="截一张当前帧"
-              onClick={controls.screenshot}
-            >
-              截图
-            </button>
-            <button type="button" className="an-kbd" disabled title="统计面板待接入内核诊断">
-              统计
-            </button>
-            <button
-              type="button"
-              className="an-kbd"
-              disabled={!playable || subtitles.length === 0}
-              title={subtitleName ? `当前字幕：${subtitleName}` : subtitles.length ? '切换字幕' : '这一集没有外挂字幕'}
-              onClick={controls.cycleSubtitle}
-            >
-              字幕
-            </button>
-          </div>
-          <div className="an-keys">
-            {PLAYER_KEYS.slice(0, 6).map((k) => (
-              <span key={k.key}>
-                <kbd>{k.key}</kbd> {k.label}
-              </span>
-            ))}
-          </div>
-        </div>
+        <ControlBar
+          playable={playable}
+          state={state}
+          durationMs={durationMs}
+          rate={rate}
+          subtitleName={subtitleName}
+          subtitles={subtitles}
+          controls={controls}
+          onRate={(r) => setPref('defaultRate', r)}
+          epNav={{
+            prev: !!prev,
+            next: !!next,
+            onPrev: () => prev && openPlayer(subject.id, prev.id),
+            onNext: () => next && openPlayer(subject.id, next.id),
+          }}
+        />
       </div>
 
       <aside className="an-player-side">

@@ -106,3 +106,15 @@ export const animeTestSource = (url: string, kind: string, limit = 8) =>
     kind,
     limit,
   });
+
+/**
+ * 远程播放事实：媒体服务器（Jellyfin / Emby）的某一集。
+ *
+ * 返回的 `url` 指向本机服务侧中继（带票），**不是上游地址** ——
+ * 上游的 `api_key` 只走服务侧请求头，不进 URL。
+ */
+export const animePlayRemote = (sourceId: string, itemId: string) =>
+  invoke<{ ok: boolean; kind: string; url: string; expiresAt: number }>('anime_play_remote', {
+    sourceId,
+    itemId,
+  });

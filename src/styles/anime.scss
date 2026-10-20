@@ -1381,6 +1381,16 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 预览里的一行：标题 + 类型 + 播放按钮 */
+.an-src-pv-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.an-src-pv-tx {
+  flex: 1;
+  min-width: 0;
+}
 /* 添加源的小表单 */
 .an-src-form {
   display: flex;

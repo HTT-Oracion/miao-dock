@@ -112,6 +112,8 @@ export interface AnimeServiceStatus {
 
 /** 数据源「测试」返回的一条（RSS 适配器；kind 决定上层能拿它干什么） */
 export interface AnimeSourceTestItem {
+  /** 源内部的稳定 id（媒体服务器的条目 id；RSS 这类没有 id 的源为 null） */
+  id: string | null;
   title: string;
   index: number | null;
   link: string | null;
@@ -119,6 +121,22 @@ export interface AnimeSourceTestItem {
   /** `video` 可直链播放 / `torrent` 要走 BT（M5）/ `page` 只是网页 */
   kind: 'video' | 'torrent' | 'page';
   published: string | null;
+}
+
+/**
+ * 远程播放事实（媒体服务器中继）。
+ *
+ * `url` 是**我们自己的**带票地址（`/anime/mediaserver/stream`），
+ * 不是上游地址：`api_key` 只活在服务侧请求头里，不进 URL。
+ */
+export interface AnimeRemotePlayback {
+  url: string;
+  /** 展示用标题（源里的那一集叫什么） */
+  title: string;
+  sourceId: string;
+  sourceName: string;
+  /** 票面过期时刻（毫秒时间戳） */
+  expiresAt: number;
 }
 
 /** Bangumi 检索候选（`anime_metadata_search` 的一项） */

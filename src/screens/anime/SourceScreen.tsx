@@ -6,7 +6,7 @@
  * 「导入本机文件夹」把片复制进库根，是本机数据眼下唯一的入口。
  */
 import { useState } from 'react';
-import { FolderPlus, Plus, RefreshCw, Trash2, Zap } from 'lucide-react';
+import { FolderPlus, Play, Plus, RefreshCw, Trash2, Zap } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Btn, Empty } from '@components/units';
 import { formatBytes } from '@tools';
@@ -30,6 +30,7 @@ export function SourceScreen() {
   const importFolder = useAnimeStore((s) => s.importFolder);
   const saveSource = useAnimeStore((s) => s.saveSource);
   const deleteSource = useAnimeStore((s) => s.deleteSource);
+  const playRemoteSource = useAnimeStore((s) => s.playRemoteSource);
   const { push } = useToasts();
   const [importing, setImporting] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -234,12 +235,24 @@ export function SourceScreen() {
               {preview?.id === s.id && preview.items.length > 0 && (
                 <div className="an-src-preview">
                   {preview.items.slice(0, 5).map((it, i) => (
-                    <span key={`${it.title}-${i}`}>
-                      <b>{it.title}</b>
-                      <span>
-                        {it.kind === 'torrent' ? 'BT' : it.kind === 'video' ? '直链' : '网页'}
-                        {it.index ? ` · 第 ${it.index} 话` : ''}
+                    <span key={`${it.title}-${i}`} className="an-src-pv-row">
+                      <span className="an-src-pv-tx">
+                        <b>{it.title}</b>
+                        <span>
+                          {it.kind === 'torrent' ? 'BT' : it.kind === 'video' ? '直链' : '网页'}
+                          {it.index ? ` · 第 ${it.index} 话` : ''}
+                        </span>
                       </span>
+                      {it.id && it.kind === 'video' ? (
+                        <Btn
+                          kind="ghost"
+                          size="sm"
+                          title="经本机服务侧中继播放这一集（api_key 不进地址）"
+                          onClick={() => void playRemoteSource(s.id, it)}
+                        >
+                          <Play size={13} /> 播放
+                        </Btn>
+                      ) : null}
                     </span>
                   ))}
                 </div>
