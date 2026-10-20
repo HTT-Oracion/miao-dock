@@ -1300,6 +1300,67 @@ try {
     check('A21 负数限速 ⇒ 422（不静默当成 0）', bad.status === 422, bad.buf.toString().slice(0, 200));
   }
 
+  // A22：冲突手动挑边（保留本地 / 采纳云端）
+  {
+    const base = `http://127.0.0.1:${animeInfo.port}`;
+    const auth = { 'x-box-token': animeInfo.token };
+    const postJson = (p, body) =>
+      request('POST', `${base}${p}`, {
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    const account = () => request('GET', `${base}/api/v1/anime/account`, { headers: auth });
+
+    // A18 结束时退出过登录，这里先登回来
+    const relogin = await postJson('/api/v1/anime/account/login', { email: 'a@b.c', password: 'pw' });
+    check('A22 前置：重新登录成功', relogin.status === 200, relogin.buf.toString().slice(0, 200));
+
+    // 先建一条云端条目，再推一条更旧的制造冲突
+    const fresh = {
+      id: 'progress:c1',
+      kind: 'progress',
+      key: 'c1',
+      updatedAt: Date.now(),
+      payload: { positionMs: 5000 },
+    };
+    await postJson('/api/v1/anime/account/enqueue', { item: fresh });
+    await postJson('/api/v1/anime/account/sync', { policy: 'remote' });
+    const stale = { ...fresh, updatedAt: 1, payload: { positionMs: 1000 } };
+    await postJson('/api/v1/anime/account/enqueue', { item: stale });
+    const c1 = await postJson('/api/v1/anime/account/sync', { policy: 'remote' });
+    check(
+      'A22 制造一条冲突（旧值推上去）',
+      (c1.json?.conflicts ?? []).some((x) => x.id === 'progress:c1'),
+      c1.buf.toString().slice(0, 240),
+    );
+
+    const keep = await postJson('/api/v1/anime/account/conflict/resolve', { id: 'progress:c1', side: 'local' });
+    const afterLocal = await account();
+    check(
+      'A22 保留本地：200 且队列里不再有这条',
+      keep.status === 200 &&
+        keep.json?.side === 'local' &&
+        !(afterLocal.json?.queue ?? []).some((x) => x.id === 'progress:c1'),
+      afterLocal.buf.toString().slice(0, 240),
+    );
+
+    // 再来一次，这次采纳云端
+    await postJson('/api/v1/anime/account/enqueue', { item: stale });
+    await postJson('/api/v1/anime/account/sync', { policy: 'remote' });
+    const drop = await postJson('/api/v1/anime/account/conflict/resolve', { id: 'progress:c1', side: 'remote' });
+    const afterRemote = await account();
+    check(
+      'A22 采纳云端：200 且队列里不再有这条（本地值被丢弃）',
+      drop.status === 200 &&
+        drop.json?.side === 'remote' &&
+        !(afterRemote.json?.queue ?? []).some((x) => x.id === 'progress:c1'),
+      afterRemote.buf.toString().slice(0, 240),
+    );
+
+    const bad = await postJson('/api/v1/anime/account/conflict/resolve', { id: 'progress:c1', side: 'nope' });
+    check('A22 非法 side ⇒ 400', bad.status === 400, bad.buf.toString().slice(0, 200));
+  }
+
   // A5：动漫退出后漫画照旧
   killTree(anime.child);
   await sleep(600);

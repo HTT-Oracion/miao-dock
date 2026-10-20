@@ -562,7 +562,10 @@ const CHECKS = [
         /startDevice/.test(s.accountScreen) &&
         /syncNow/.test(s.accountScreen) &&
         /autoSync/.test(s.actionLib) &&
-        /conflictPolicy/.test(s.actionLib),
+        /conflictPolicy/.test(s.actionLib) &&
+        /anime\/account\/conflict\/resolve"\), post\(account_resolve_conflict\)/.test(s.rustAnimesvc) &&
+        /animeResolveConflict/.test(s.ipc) &&
+        /resolveConflict/.test(s.accountScreen),
       detail: '账号链路没接通：中继桩 / 客户端 / 队列 / 三种登录 / 设置 任一环缺失',
     }),
   },
@@ -1078,6 +1081,13 @@ const MUTATIONS = [
     find: '.route(&format!("/api/{API_VERSION}/anime/bt/add"), post(bt_add))',
     replace: '',
     expect: ['BT.wired'],
+  },
+  {
+    name: '摘掉冲突挑边路由（合并面板点了没反应）',
+    file: F.rustAnimesvc,
+    find: '.route(&format!("/api/{API_VERSION}/anime/account/conflict/resolve"), post(account_resolve_conflict))',
+    replace: '',
+    expect: ['ACCOUNT.wired'],
   },
   {
     name: '摘掉中继推送路由（同步永远推不上去）',
