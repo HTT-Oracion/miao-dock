@@ -124,6 +124,7 @@ pub fn parse(xml: &str, limit: usize) -> Vec<DataSourceItem> {
             let kind = classify(enclosure_type.as_deref(), enclosure.as_deref());
             let index = episode_index(&t);
             out.push(DataSourceItem {
+                id: None,
                 title: t,
                 index,
                 link: link.clone(),

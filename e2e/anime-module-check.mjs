@@ -415,6 +415,20 @@ const CHECKS = [
     }),
   },
   {
+    id: 'M3.remote',
+    run: (s) => ({
+      ok:
+        /pub async fn relay\(/.test(s.rustMediaserver) &&
+        /anime\/mediaserver\/stream/.test(s.rustAnimesvc) &&
+        /crate::anime::anime_play_remote/.test(strip(s.rustCommands)) &&
+        /'anime_play_remote'/.test(s.ipc) &&
+        /playRemoteSource/.test(s.sourceScreen) &&
+        /remoteSource/.test(s.playerHook) &&
+        /RemoteStage/.test(s.playerScreen),
+      detail: '远程播放没接全：中继端点 / 命令注册 / IPC / 数据源入口 / 播放器远程态缺一环',
+    }),
+  },
+  {
     id: 'M3.mediaserver',
     run: (s) => ({
       ok:
@@ -659,6 +673,13 @@ const MUTATIONS = [
     find: 'req.header("X-Emby-Token", key).header("X-MediaBrowser-Token", key)',
     replace: 'req',
     expect: ['M3.mediaserver'],
+  },
+  {
+    name: 'animesvc 摘掉中继路由（前端拿到地址也播不了）',
+    file: F.rustAnimesvc,
+    find: '.route(&format!("/api/{API_VERSION}/anime/mediaserver/stream"), get(datasource::mediaserver::relay))',
+    replace: '',
+    expect: ['M3.remote'],
   },
 ];
 

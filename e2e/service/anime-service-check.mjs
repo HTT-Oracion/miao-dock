@@ -12,6 +12,8 @@
  *   A4 库隔离：番剧只在 `/anime/library`，漫画只在 `/library`（双向）
  *   A5 动漫退出后漫画照旧可用（两个进程互不为"父"）
  *   A6 令牌隔离：拿错令牌打动漫端点 ⇒ 403 PERMISSION_DENIED
+ *   A7 媒体服务器远程播放中继（D-250）：票绑定「源 + 条目」、Range 原样透传、
+ *      `api_key` 只走请求头（假上游记账）、停用 / 错类型 / 穿越 id 各有明确状态码
  *
  * ## 反证轮（--refute）
  *   R1 把动漫库根故意指到**漫画库根** ⇒ A4 的隔离判据必须变红（证明 A4 不是恒真）
@@ -21,6 +23,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -142,6 +145,108 @@ function getJson(url, headers = {}, timeoutMs = 5000) {
   });
 }
 
+/**
+ * 通用请求：Range 的响应体不是文本，必须按字节读（`getJson` 会把它按 UTF-8 解坏）。
+ * 同时带出响应头 —— CORS / Content-Range 这几条判据都在头上。
+ */
+function request(method, url, { headers = {}, body = null } = {}) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = http.request(
+      {
+        method,
+        hostname: u.hostname,
+        port: u.port,
+        path: `${u.pathname}${u.search}`,
+        headers,
+        timeout: 8000,
+      },
+      (res) => {
+        const chunks = [];
+        res.on('data', (d) => chunks.push(d));
+        res.on('end', () => {
+          const buf = Buffer.concat(chunks);
+          let json = null;
+          try {
+            json = JSON.parse(buf.toString('utf8'));
+          } catch {
+            /* 非 JSON 原样带回 */
+          }
+          resolve({ status: res.statusCode, headers: res.headers, buf, json });
+        });
+      },
+    );
+    req.on('timeout', () => req.destroy(new Error(`请求超时：${url}`)));
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+/** 票面签名：`sha256(token|key|exp)` 取前 32 个 hex（与 `stream::sign` 同一条算式）。 */
+function ticketSig(token, key, exp) {
+  return crypto.createHash('sha256').update(`${token}|${key}|${exp}`).digest('hex').slice(0, 32);
+}
+
+/**
+ * 假 Jellyfin：只实现中继会用到的三条路由，并**记录**上游收到的认证头与 Range。
+ *
+ * 判据必须落在「上游看到了什么」上：只看中继的响应无法区分
+ * 「密钥真的走了请求头」与「中继根本没发出去、恰好回了 200」。
+ */
+function startMockJellyfin(payload) {
+  const seen = { auth: [], range: [] };
+  const server = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    if (u.pathname === '/System/Info') {
+      seen.auth.push(req.headers['x-emby-token'] || '');
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ServerName: 'Mock NAS', Version: '10.9.0' }));
+      return;
+    }
+    if (u.pathname === '/Items') {
+      seen.auth.push(req.headers['x-emby-token'] || '');
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          Items: [
+            { Id: 'ep1', Name: 'S01E01', IndexNumber: 1, Type: 'Episode', SeriesName: 'Frieren' },
+            { Id: 'ep2', Name: 'S01E02', IndexNumber: 2, Type: 'Episode', SeriesName: 'Frieren' },
+          ],
+        }),
+      );
+      return;
+    }
+    if (u.pathname.startsWith('/Videos/')) {
+      seen.auth.push(req.headers['x-emby-token'] || '');
+      seen.range.push(req.headers.range || '');
+      const range = req.headers.range;
+      if (range) {
+        const m = /bytes=(\d+)-(\d*)/.exec(range);
+        const start = Number(m[1]);
+        const end = m[2] ? Number(m[2]) : payload.length - 1;
+        const slice = payload.subarray(start, end + 1);
+        res.writeHead(206, {
+          'content-type': 'video/mp4',
+          'content-range': `bytes ${start}-${end}/${payload.length}`,
+          'content-length': String(slice.length),
+          'accept-ranges': 'bytes',
+        });
+        res.end(slice);
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'video/mp4', 'content-length': String(payload.length) });
+      res.end(payload);
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port, seen }));
+  });
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** 起服务后再等 /health（就绪行只保证"已绑定"，探活多给一点余量）。 */
@@ -161,8 +266,10 @@ async function waitHealthy(url, headers = {}) {
 }
 
 const svcs = [];
+const mocks = [];
 function cleanup() {
   for (const s of svcs) killTree(s);
+  for (const m of mocks) m.close();
   fs.rmSync(TMP, { recursive: true, force: true });
 }
 process.on('exit', () => {
@@ -312,6 +419,108 @@ try {
       body: cross.body.slice(0, 200),
     },
   );
+
+  // A7：媒体服务器远程播放中继（D-250）
+  //
+  // 这一组判的是「密钥不出现在 URL、但确实到了上游」：只看中继的响应分不清
+  // 「密钥走了请求头」与「中继根本没发出去、恰好回了 200」—— 所以假上游要记账。
+  {
+    const payload = Buffer.alloc(4096, 7);
+    const mock = await startMockJellyfin(payload);
+    mocks.push(mock.server);
+    const base = `http://127.0.0.1:${animeInfo.port}`;
+    const srcUrl = `http://127.0.0.1:${mock.port}?api_key=SECRET-KEY`;
+    const auth = { 'x-box-token': animeInfo.token };
+    const post = (body) =>
+      request('POST', `${base}/api/v1/anime/sources`, {
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    const relay = (src, item, exp, sig) =>
+      `${base}/api/v1/anime/mediaserver/stream?src=${encodeURIComponent(src)}&item=${encodeURIComponent(item)}&exp=${exp}&sig=${sig}`;
+
+    const saved = await post({ id: 'jf1', name: 'Mock NAS', kind: 'jellyfin', url: srcUrl, enabled: true });
+    check('A7 保存媒体服务器源 200', saved.status === 200, saved.buf.toString().slice(0, 200));
+
+    const probe = await request('POST', `${base}/api/v1/anime/sources/test`, {
+      headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({ url: srcUrl, kind: 'jellyfin', limit: 8 }),
+    });
+    check(
+      'A7 源测试列出剧集（2 条）',
+      probe.status === 200 && probe.json?.count === 2,
+      probe.buf.toString().slice(0, 200),
+    );
+    check(
+      'A7 源测试回传里没有 api_key',
+      !probe.buf.toString().includes('SECRET-KEY'),
+      probe.buf.toString().slice(0, 200),
+    );
+    check(
+      'A7 上游探活真的收到了 api_key（走请求头）',
+      mock.seen.auth.includes('SECRET-KEY'),
+      mock.seen.auth.slice(0, 3),
+    );
+
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+    const sig = ticketSig(animeInfo.token, 'ms:jf1:ep1', exp);
+    const url = relay('jf1', 'ep1', exp, sig);
+    check('A7 中继地址里没有 api_key（密钥不进 URL）', !url.includes('SECRET-KEY'));
+
+    const ranged = await request('GET', url, { headers: { ...auth, range: 'bytes=0-99' } });
+    check('A7 带票 + Range ⇒ 206', ranged.status === 206, {
+      status: ranged.status,
+      body: ranged.buf.toString().slice(0, 120),
+    });
+    check('A7 只回请求的那 100 字节', ranged.buf.length === 100, ranged.buf.length);
+    check(
+      'A7 Content-Range 原样透传',
+      String(ranged.headers['content-range'] || '').startsWith('bytes 0-99/'),
+      ranged.headers['content-range'],
+    );
+    check('A7 上游收到的 Range 原样转发', mock.seen.range.includes('bytes=0-99'), mock.seen.range.slice(0, 3));
+    check('A7 中继响应带 CORS（字幕 / 截图要用）', ranged.headers['access-control-allow-origin'] === '*');
+    check('A7 中继响应体确实是上游那 100 字节', ranged.buf.equals(payload.subarray(0, 100)));
+
+    const noToken = await request('GET', url);
+    check('A7 无令牌 ⇒ 403', noToken.status === 403, noToken.status);
+    const badSig = await request('GET', relay('jf1', 'ep1', exp, 'deadbeef'), { headers: auth });
+    check('A7 票面不对 ⇒ 403', badSig.status === 403, badSig.status);
+    const oldExp = exp - 7200;
+    const expired = await request(
+      'GET',
+      relay('jf1', 'ep1', oldExp, ticketSig(animeInfo.token, 'ms:jf1:ep1', oldExp)),
+      {
+        headers: auth,
+      },
+    );
+    check('A7 过期票 ⇒ 403', expired.status === 403, expired.status);
+    const reuse = await request('GET', relay('jf1', 'ep2', exp, sig), { headers: auth });
+    check('A7 换一集沿用同一张票 ⇒ 403（票绑定条目）', reuse.status === 403, reuse.status);
+    const badItem = '../../etc/passwd';
+    const traversal = await request(
+      'GET',
+      relay('jf1', badItem, exp, ticketSig(animeInfo.token, `ms:jf1:${badItem}`, exp)),
+      { headers: auth },
+    );
+    check('A7 条目 id 带路径分隔符 ⇒ 400', traversal.status === 400, traversal.status);
+    const unknown = await request('GET', relay('nope', 'ep1', exp, ticketSig(animeInfo.token, 'ms:nope:ep1', exp)), {
+      headers: auth,
+    });
+    check('A7 不存在的源 ⇒ 404', unknown.status === 404, unknown.status);
+
+    await post({ id: 'rss1', name: 'Mock RSS', kind: 'rss', url: 'http://127.0.0.1:1/feed.xml', enabled: true });
+    const wrongKind = await request('GET', relay('rss1', 'ep1', exp, ticketSig(animeInfo.token, 'ms:rss1:ep1', exp)), {
+      headers: auth,
+    });
+    check('A7 源类型不是媒体服务器 ⇒ 404（中继不是开放代理）', wrongKind.status === 404, wrongKind.status);
+
+    await post({ id: 'jf1', name: 'Mock NAS', kind: 'jellyfin', url: srcUrl, enabled: false });
+    const disabled = await request('GET', url, { headers: auth });
+    check('A7 源已停用 ⇒ 403', disabled.status === 403, disabled.status);
+    // 复原，别把状态留给后面的断言
+    await post({ id: 'jf1', name: 'Mock NAS', kind: 'jellyfin', url: srcUrl, enabled: true });
+  }
 
   // A5：动漫退出后漫画照旧
   killTree(anime.child);

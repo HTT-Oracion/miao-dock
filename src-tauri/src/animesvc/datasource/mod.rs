@@ -18,6 +18,11 @@ use serde_json::{json, Value};
 /// 一条取数结果。
 #[derive(Debug, Clone, PartialEq)]
 pub struct DataSourceItem {
+    /// 源内部的稳定 id（媒体服务器的条目 id）。RSS 这类没有 id 的源给 `None`。
+    ///
+    /// 为什么单独留一个字段：播放 / 二次取详情都要按 id 回访上游，
+    /// 从标题里反解 id 是不可靠的（同名、改名都会错）。
+    pub id: Option<String>,
     /// 原始标题（含字幕组 / 分辨率，原样保留，不做美化）
     pub title: String,
     /// 从标题解析出的集号；认不出给 `None`（不猜）
@@ -55,6 +60,7 @@ impl ItemKind {
 
 pub fn item_json(i: &DataSourceItem) -> Value {
     json!({
+        "id": i.id,
         "title": i.title,
         "index": i.index,
         "link": i.link,

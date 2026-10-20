@@ -182,7 +182,10 @@ pub fn under_root(file: &Path, root: &Path) -> Option<PathBuf> {
 /// 都是跨源请求（页面在 `tauri://localhost`，流在 `127.0.0.1:<port>`）。没有这两个头，
 /// 表现为「视频能放但字幕读不到、截图报画布污染」。
 /// 这里回 `*` 是安全的：URL 本身就是能力（签名 + 过期），令牌不出 Rust，读不到别的文件。
-fn allow_cross_origin(mut resp: Response) -> Response {
+///
+/// `pub(crate)`：媒体服务器中继（`datasource::mediaserver::relay`）复用同一套判据 ——
+/// CORS 头漏了不会报错，只会让字幕 / 截图静默失败，两处各写一份必然漏一处。
+pub(crate) fn allow_cross_origin(mut resp: Response) -> Response {
     let h = resp.headers_mut();
     h.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
     h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());

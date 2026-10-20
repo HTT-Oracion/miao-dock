@@ -15,11 +15,20 @@
 //! 用户通常直接粘 Web UI 地址（`http://nas:8096/web/index.html#!/details?id=…`）。
 //! 这里只取 **origin** 当 API 根，`?api_key=` 当密钥；路径 / 哈希全部忽略。
 
+use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
+use axum::body::Body;
+use axum::extract::{Query, State};
+use axum::http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode};
+use axum::response::Response;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use super::super::sources::{self, SourceKind};
+use super::super::stream::{self, allow_cross_origin};
+use super::super::Shell;
 use super::{item_json, DataSourceItem, ItemKind};
 
 /// 建连超时：NAS 多在内网，10s 连不上基本是地址 / 防火墙问题。
@@ -112,6 +121,7 @@ fn to_item(raw: &RawItem) -> Option<DataSourceItem> {
         _ => raw.name.clone(),
     };
     Some(DataSourceItem {
+        id: Some(raw.id.clone()),
         title,
         index: raw.index_number.map(|v| v as f64),
         link: None,
@@ -181,15 +191,124 @@ pub async fn probe(base: &str, api_key: Option<&str>, kind: &str, limit: usize) 
     }))
 }
 
+// ------------------------------------------------------------------ 远程中继
+
+#[derive(Debug, Deserialize)]
+pub struct RemoteQuery {
+    src: String,
+    item: String,
+    exp: u64,
+    sig: String,
+}
+
+/// 远程票据的键：`哪个源的哪一集`。换任一个都验不过（防止拿一张票换着看）。
+pub fn ticket_key(source_id: &str, item_id: &str) -> String {
+    format!("ms:{source_id}:{item_id}")
+}
+
+/// 条目 id 只允许字母数字与 `-` `_`（Jellyfin 的 id 就是这形态）。
+///
+/// 放行 `/` `.` `%` 就等于给了上游一个路径穿越的口子 —— 这个 id 会拼进上游 URL。
+pub fn safe_item_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// 上游直路地址。`static=true` = 原片直出；**不要转码**（转码返回的是完整流，
+/// Range 语义会变形，播放器一 seek 就对不上）。
+pub fn upstream_url(base: &str, item_id: &str) -> String {
+    format!("{}/Videos/{item_id}/stream?static=true", base.trim_end_matches('/'))
+}
+
+/// `GET /api/v1/anime/mediaserver/stream?src&item&exp&sig`
+///
+/// 为什么要经过我们中继、而不是把上游地址直接给播放器：
+/// ① 上游要带 `api_key`，而**密钥不能进 URL**（会进日志 / 历史 / 报错截图）；
+/// ② 只允许访问**已保存且启用**的媒体服务器源 —— 否则这就是一个开放代理。
+pub async fn relay(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Query(q): Query<RemoteQuery>,
+) -> Response {
+    if !super::super::authorized(&shell, &headers) {
+        return super::super::envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    if !stream::verify(shell.token(), &ticket_key(&q.src, &q.item), q.exp, &q.sig) {
+        return super::super::envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "流票据无效或已过期");
+    }
+    if !safe_item_id(&q.item) {
+        return super::super::envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", "条目 id 不合法");
+    }
+    let Some(src) = sources::find(Path::new(shell.state_dir()), &q.src) else {
+        return super::super::envelope(StatusCode::NOT_FOUND, "NOT_FOUND", "没有这个数据源（或已删除）");
+    };
+    if !matches!(src.kind, SourceKind::Jellyfin | SourceKind::Emby) {
+        return super::super::envelope(StatusCode::NOT_FOUND, "NOT_FOUND", "这个源不是媒体服务器");
+    }
+    if !src.enabled {
+        return super::super::envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "这个源已停用");
+    }
+    let Some(url) = src.url.as_deref() else {
+        return super::super::envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", "这个源没有地址");
+    };
+    let (base, key) = match split_source_url(url) {
+        Ok(v) => v,
+        Err(e) => return super::super::envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
+    };
+    let Some(key) = key else {
+        return super::super::envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", "这个源没有 api_key");
+    };
+
+    let c = match client() {
+        Ok(c) => c,
+        Err(e) => return super::super::envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", e),
+    };
+    let mut req = with_auth(c.get(upstream_url(&base, &q.item)), &key);
+    // Range 原样转发：播放器靠它 seek / 拖进度
+    if let Some(r) = headers.get(header::RANGE) {
+        req = req.header(header::RANGE, r);
+    }
+    let up = match req.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            return super::super::envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("上游没响应：{e}"))
+        }
+    };
+    let status = up.status();
+    if !status.is_success() && status != StatusCode::PARTIAL_CONTENT {
+        return super::super::envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("上游返回 {status}"));
+    }
+
+    // 只透传与播放相关的头：上游的 Set-Cookie 之类的一律不带回来。
+    // 必须**先取头再建 body**：`bytes_stream()` 会消费掉 Response。
+    let mut passthrough: Vec<(HeaderName, HeaderValue)> = Vec::new();
+    for name in [
+        header::CONTENT_TYPE,
+        header::CONTENT_LENGTH,
+        header::CONTENT_RANGE,
+        header::ACCEPT_RANGES,
+    ] {
+        if let Some(v) = up.headers().get(&name) {
+            passthrough.push((name, v.clone()));
+        }
+    }
+
+    let mut resp = Response::new(Body::from_stream(up.bytes_stream()));
+    *resp.status_mut() = status;
+    for (name, v) in passthrough {
+        resp.headers_mut().insert(name, v);
+    }
+    allow_cross_origin(resp)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::extract::{Query, State as AxState};
-    use axum::http::{HeaderMap, StatusCode};
     use axum::routing::get;
     use axum::{Json, Router};
     use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Mutex;
 
     /// mock 服务器看到的请求头 / 查询参数（用来证明令牌真的走了请求头）
     #[derive(Clone, Default)]
@@ -198,7 +317,7 @@ mod tests {
         query: Arc<Mutex<Vec<String>>>,
     }
 
-    async fn mock_info(AxState(seen): AxState<Seen>, headers: HeaderMap) -> Json<Value> {
+    async fn mock_info(State(seen): State<Seen>, headers: HeaderMap) -> Json<Value> {
         let token = headers
             .get("x-emby-token")
             .and_then(|v| v.to_str().ok())
@@ -208,7 +327,7 @@ mod tests {
         Json(json!({ "ServerName": "Nas Jellyfin", "Version": "10.9.0" }))
     }
 
-    async fn mock_items(AxState(seen): AxState<Seen>, Query(q): Query<HashMap<String, String>>) -> Json<Value> {
+    async fn mock_items(State(seen): State<Seen>, Query(q): Query<HashMap<String, String>>) -> Json<Value> {
         seen.query.lock().unwrap().push(format!("{q:?}"));
         Json(json!({
             "Items": [
@@ -309,6 +428,36 @@ mod tests {
         assert_eq!(out["count"], 1);
         // limit 真的传给了上游：不让服务端把整个媒体库都吐回来
         assert!(seen.query.lock().unwrap()[0].contains("Limit"));
+    }
+
+    #[test]
+    fn ticket_key_binds_source_and_item() {
+        // 换源或换集都得换票：不能拿一张票遍历整个库
+        assert_eq!(ticket_key("jf1", "ep1"), "ms:jf1:ep1");
+        assert_ne!(ticket_key("jf1", "ep1"), ticket_key("jf1", "ep2"));
+        assert_ne!(ticket_key("jf1", "ep1"), ticket_key("jf2", "ep1"));
+    }
+
+    #[test]
+    fn item_id_rejects_path_traversal() {
+        // 这个 id 会拼进上游 URL：放行分隔符就等于给了路径穿越的口子
+        assert!(safe_item_id("ep1"));
+        assert!(safe_item_id("9f2c1b7e-4a11-4c3d-8f5a-2b6c9d0e1f22"));
+        assert!(!safe_item_id(""));
+        assert!(!safe_item_id("../../etc/passwd"));
+        assert!(!safe_item_id("ep 1"));
+        assert!(!safe_item_id("ep%2f1"));
+        assert!(!safe_item_id(&"x".repeat(65)));
+    }
+
+    #[test]
+    fn upstream_url_asks_for_the_original_file() {
+        assert_eq!(
+            upstream_url("http://nas.lan:8096/", "ep1"),
+            "http://nas.lan:8096/Videos/ep1/stream?static=true"
+        );
+        // static=true 必须带上：转码返回完整流，Range 语义会变形
+        assert!(upstream_url("http://nas.lan:8096", "ep1").contains("static=true"));
     }
 
     #[test]

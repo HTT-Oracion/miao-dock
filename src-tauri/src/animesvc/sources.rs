@@ -142,6 +142,11 @@ pub fn save(state_dir: &Path, body: &Value) -> Result<Value, String> {
     Ok(json!({ "ok": true, "source": src }))
 }
 
+/// 按 id 找一个已保存的源（内置源不落盘，这里永远找不到它）。
+pub fn find(state_dir: &Path, id: &str) -> Option<MediaSource> {
+    load_all(state_dir).into_iter().find(|s| s.id == id)
+}
+
 /// 删除（内置源拒绝）。
 pub fn remove(state_dir: &Path, id: &str) -> Result<Value, String> {
     let id = id.trim();

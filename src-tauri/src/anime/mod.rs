@@ -517,6 +517,47 @@ pub async fn anime_test_source(url: String, kind: Option<String>, limit: Option<
     post("/api/v1/anime/sources/test", json!({ "url": url, "kind": kind, "limit": limit })).await
 }
 
+/// 远程播放事实：媒体服务器（Jellyfin / Emby）的某一集，走服务侧中继的带票直链。
+///
+/// 与 `anime_play_source` 的分工：那个回答「本机这一集在哪、走哪条轨」；
+/// 这个回答「远程库里那一集怎么播」。两者的返回形状对齐（`kind` / `url` / `expiresAt`），
+/// 前端播放器因此只需要一套接线。
+#[tauri::command]
+pub async fn anime_play_remote(source_id: String, item_id: String) -> Result<Value, String> {
+    let (port, token) = tokio::task::spawn_blocking(ensure)
+        .await
+        .map_err(|e| format!("调度失败：{e}"))??;
+    // 服务侧再校验一次：源必须存在、是媒体服务器类型、且处于启用状态
+    // （前端只负责展示，真正的边界在这里）
+    let sources = get("/api/v1/anime/sources").await?;
+    let ok = sources["sources"]
+        .as_array()
+        .map(|list| {
+            list.iter().any(|s| {
+                s["id"] == source_id
+                    && (s["kind"] == "jellyfin" || s["kind"] == "emby")
+                    && s["enabled"] == true
+            })
+        })
+        .unwrap_or(false);
+    if !ok {
+        return Err("这个媒体服务器源不在列表里（或已停用）".into());
+    }
+    let exp = miao_dock::animesvc::stream::now_secs() + miao_dock::animesvc::stream::TICKET_TTL_SECS;
+    let key = miao_dock::animesvc::datasource::mediaserver::ticket_key(&source_id, &item_id);
+    let sig = miao_dock::animesvc::stream::sign(&token, &key, exp);
+    Ok(json!({
+        "ok": true,
+        "kind": "progressive",
+        "url": format!(
+            "http://127.0.0.1:{port}/api/v1/anime/mediaserver/stream?src={}&item={}&exp={exp}&sig={sig}",
+            urlencode(&source_id),
+            urlencode(&item_id),
+        ),
+        "expiresAt": exp * 1000,
+    }))
+}
+
 /// 拼一条带票的流地址。令牌不进 URL —— 只出现它的签名。
 fn stream_url(port: u16, token: &str, file: &str, exp: u64) -> String {
     let sig = miao_dock::animesvc::stream::sign(token, file, exp);

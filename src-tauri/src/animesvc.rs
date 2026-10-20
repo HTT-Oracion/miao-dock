@@ -223,6 +223,8 @@ fn router(shell: Arc<Shell>) -> Router {
         .route(&format!("/api/{API_VERSION}/anime/import"), post(import_folder))
         // 数据源测试（M3 第一个适配器：RSS）
         .route(&format!("/api/{API_VERSION}/anime/sources/test"), post(source_test))
+        // 媒体服务器远程播放：带票中继上游视频（api_key 只走请求头，不出现在 URL 里）
+        .route(&format!("/api/{API_VERSION}/anime/mediaserver/stream"), get(datasource::mediaserver::relay))
         // 兜底：打错端口的人（例如把 /library 打到动漫服务上）要看到"这里是谁"，
         // 而不是一个裸 404 —— 两个服务同时在跑时这是最常见的误接。
         .fallback(fallback)
