@@ -257,6 +257,9 @@ fn router(shell: Arc<Shell>) -> Router {
         .route(&format!("/api/{API_VERSION}/anime/bt/pause"), post(bt_pause))
         .route(&format!("/api/{API_VERSION}/anime/bt/resume"), post(bt_resume))
         .route(&format!("/api/{API_VERSION}/anime/bt/delete"), post(bt_delete))
+        .route(&format!("/api/{API_VERSION}/anime/bt/stream"), get(bt_stream))
+        .route(&format!("/api/{API_VERSION}/anime/bt/stream-url"), get(bt_stream_url))
+        .route(&format!("/api/{API_VERSION}/anime/bt/pikpak"), get(bt_pikpak))
         // 缓存与下载管理（R3）
         .route(&format!("/api/{API_VERSION}/anime/cache"), get(cache_list).post(cache_add))
         .route(&format!("/api/{API_VERSION}/anime/cache/pause"), post(cache_pause))
@@ -944,6 +947,63 @@ async fn bt_delete(
         Ok(v) => json(StatusCode::OK, v),
         Err(e) => envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e),
     }
+}
+
+#[derive(Deserialize)]
+struct BtStreamQuery {
+    id: usize,
+    exp: u64,
+    sig: String,
+}
+
+#[derive(Deserialize)]
+struct BtStreamUrlQuery {
+    id: usize,
+}
+
+#[derive(Deserialize)]
+struct BtPikPakQuery {
+    #[serde(default)]
+    enabled: Option<bool>,
+}
+
+/// BT 边下边播：签名换来的 Range 代理（播放器不能带自定义头，所以票在 URL 上）。
+async fn bt_stream(
+    State(shell): State<Arc<Shell>>,
+    axum::extract::Query(q): axum::extract::Query<BtStreamQuery>,
+    headers: HeaderMap,
+) -> Response {
+    bt::stream::serve(shell, q.id, q.exp, &q.sig, headers).await
+}
+
+/// 给前端一个可播放地址（票有效期 2 小时；过期重新点播放即可）。
+async fn bt_stream_url(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<BtStreamUrlQuery>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    let host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("127.0.0.1");
+    let base = format!("http://{host}");
+    let url = bt::stream::stream_url(&base, shell.token(), q.id, 7200);
+    json(StatusCode::OK, serde_json::json!({ "ok": true, "url": url, "mode": bt::stream::describe() }))
+}
+
+/// PikPak 接口状态（只留接口：`implemented` 恒 false，界面据此显示"未接入"）。
+async fn bt_pikpak(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<BtPikPakQuery>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    json(StatusCode::OK, bt::pikpak::status(q.enabled.unwrap_or(false)))
 }
 
 #[derive(Deserialize)]

@@ -560,6 +560,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         crate::anime::anime_resolve_source,
         crate::anime::anime_subscribe_source,
         crate::anime::anime_set_bt_options,
+        crate::anime::anime_bt_stream_url,
+        crate::anime::anime_bt_pikpak,
         crate::anime::anime_bt_list,
         crate::anime::anime_bt_stats,
         crate::anime::anime_bt_add,

@@ -15,6 +15,9 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
+pub mod pikpak;
+pub mod stream;
+
 use librqbit::api::TorrentIdOrHash;
 use librqbit::{AddTorrent, Session, SessionOptions, TorrentStatsState};
 use serde_json::{json, Value};
@@ -152,7 +155,7 @@ pub fn list() -> Result<Value, String> {
     Ok(json!({ "ok": true, "tasks": tasks }))
 }
 
-fn handle_of(s: &Arc<Session>, id: usize) -> Result<Arc<librqbit::ManagedTorrent>, String> {
+pub(crate) fn handle_of(s: &Arc<Session>, id: usize) -> Result<Arc<librqbit::ManagedTorrent>, String> {
     s.get(TorrentIdOrHash::Id(id)).ok_or_else(|| format!("没有这个 BT 任务：{id}"))
 }
 

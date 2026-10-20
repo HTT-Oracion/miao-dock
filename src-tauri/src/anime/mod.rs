@@ -680,6 +680,31 @@ pub async fn anime_resolve_source(url: String, rules: Value, cookies: Option<Val
     .await
 }
 
+/// BT 边下边播：拿一个带票的可播放地址（票 2 小时；过期重点一次播放）。
+#[tauri::command]
+pub async fn anime_bt_stream_url(id: u64) -> Result<Value, String> {
+    get(&format!("/api/v1/anime/bt/stream-url?id={id}")).await
+}
+
+/// PikPak 接口状态（只留接口：`implemented` 恒 false）。
+#[tauri::command]
+pub async fn anime_bt_pikpak(account: Option<String>) -> Result<Value, String> {
+    let q = account.map(|a| format!("?account={}", urlencode(&a))).unwrap_or_default();
+    get(&format!("/api/v1/anime/bt/pikpak{q}")).await
+}
+
+/// 最小 URL 编码（只处理 query 里会出事的字符，不引依赖）。
+fn urlencode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
 /// BT 任务列表（进度 / 做种比来自 librqbit）。
 #[tauri::command]
 pub async fn anime_bt_list() -> Result<Value, String> {

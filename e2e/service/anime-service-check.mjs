@@ -1224,6 +1224,43 @@ try {
     );
   }
 
+  // A20：BT 边下边播（签名地址）与 PikPak 接口（只留接口，不假装可用）
+  {
+    const base = `http://127.0.0.1:${animeInfo.port}`;
+    const auth = { 'x-box-token': animeInfo.token };
+
+    const urlRes = await request('GET', `${base}/api/v1/anime/bt/stream-url?id=1`, { headers: auth });
+    const url = urlRes.json?.url ?? '';
+    check(
+      'A20 拿到的播放地址带票（sig + exp）且指向 BT 流端点',
+      urlRes.status === 200 && url.includes('/anime/bt/stream') && url.includes('sig=') && url.includes('exp='),
+      urlRes.buf.toString().slice(0, 240),
+    );
+
+    const forged = await request(
+      'GET',
+      `${base}/api/v1/anime/bt/stream?id=1&exp=${Math.floor(Date.now() / 1000) + 60}&sig=deadbeef`,
+      {
+        headers: {},
+      },
+    );
+    check('A20 伪造签名 ⇒ 403（票不对就不发字节）', forged.status === 403, forged.buf.toString().slice(0, 200));
+
+    const off = await request('GET', `${base}/api/v1/anime/bt/pikpak?enabled=false`, { headers: auth });
+    check(
+      'A20 PikPak 接口：未开启时 implemented=false 且说明未接入',
+      off.status === 200 && off.json?.implemented === false && /未接入/.test(off.json?.reason ?? ''),
+      off.buf.toString().slice(0, 240),
+    );
+
+    const on = await request('GET', `${base}/api/v1/anime/bt/pikpak?enabled=true`, { headers: auth });
+    check(
+      'A20 PikPak 接口：开关打开也只是 configured=true，能力位仍 false（不假装可用）',
+      on.status === 200 && on.json?.configured === true && on.json?.implemented === false,
+      on.buf.toString().slice(0, 240),
+    );
+  }
+
   // A5：动漫退出后漫画照旧
   killTree(anime.child);
   await sleep(600);
