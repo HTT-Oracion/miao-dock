@@ -5907,8 +5907,22 @@ ABI 钉进我们的构建。**嵌入式渲染没做**：画面在 mpv 自己的�
   镜像**只用于开发期取二进制**，不进产品路径。
 - **mkv + ass 已用真片源验过**（见下），但**没验过带内嵌字幕轨的 mkv**（只验了外挂 ass）与 4K/HDR 这类极端片源。
 - **嵌入式渲染没做**：画面在独立窗口（见上）。
-- `subtitlePriority` 仍未被消费（字幕选择走「挂第一条 / 手动切」）。
+- **帧预览只覆盖 WebView 轨的 progressive 片源**：内核轨（画面在 mpv 窗口，取不到帧）与 HLS 轨
+  （分片按需下载，逐秒抓帧等于把整段流拉下来）都只显示时间戳，气泡里是一个占位块。
 - 截图落在 `<state>/screenshots/`，但没做「截图历史 / 打开所在目录」的界面。
+
+**R1 补完（同日第二轮）：帧预览 + 字幕语言优先级**
+
+- **帧预览**（设计稿 ⑤「帧预览 hover 气泡」）：`player.ts` 加 `previewAt(ms)` —— 一条隐藏 `<video>`
+  按秒 seek + `drawImage` 到 160×90 canvas + `toDataURL`，**按秒缓存 120 帧**；进度条上 90ms 防抖，
+  气泡贴在轨道上方（`.an-seek-pv`），帧没取到就显示占位块（不假装有画面）。抓帧必须用**另一条** video：
+  拿正在播的那个会把播放头拽走。
+- **字幕语言优先级**（设置第 3 组）：`convert.ts` 加纯函数 `pickSubtitleIndex(subs, priority)` ——
+  优先级是自由文本（`简中 → 繁中 → 日语`），按 `→` / 逗号 / 空格切词，每词带一组文件名别名
+  （`chs`/`sc`/`zh-Hans`/`简体` …），顺序即偏好；只按文件名匹配（外挂字幕没有语言元数据，硬猜会挑错）。
+  **两轨共用**：WebView 轨在 `PlayerEnv.subtitleIndex` 里生效；内核轨在 open 成功后 `animeKernelCtl('subtitle', file)`
+  让 mpv 挂上。顺带修掉一处旧 hack：内核轨的 `subtitles[i].url` 现在存**文件路径**（之前存空串，
+  cycleSubtitle 靠"把扩展名替换成 .ass"猜路径）。
 
 **真内核取证（2026-10-20，本机）**
 
@@ -5932,8 +5946,8 @@ MIAO_MPV_BIN=<…>/.tmp/mpv/mpv.exe  animesvc.exe --kernel-selftest
 `property-change` 回来再断言，夹具的同步回包会把这个假设藏起来（`wait` 轮询 40×25ms）。
 
 **验收（2026-10-20）**：`cargo test --lib animesvc` **54/54**（新增 9 条：协议 6 + 播放列表改写 2 + 轨道过滤）·
-`cargo test --bin miao-dock anime` **7/7**（内核可用 / 缺失两条分支）· `check:anime-module` **35/35** + 反证 **27/27**
-（新增 `KERNEL.wired` / `KERNEL.pipe` / `KERNEL.missing` 各一条变异）· `check:anime` **48/48**
+`cargo test --bin miao-dock anime` **7/7**（内核可用 / 缺失两条分支）· `check:anime-module` **37/37** + 反证 **29/29**
+（新增 `KERNEL.wired` / `KERNEL.pipe` / `KERNEL.missing` / `PREVIEW.frame` / `SUBTITLE.priority` 各一条变异）· `check:anime` **48/48**
 （A8：`--kernel-selftest` **17 例**全绿 + 夹具记账证明 loadfile / observe_property / set_property / sub-add 真的发出去了 +
 `--kernel-probe` 两种形态）· 真 mpv 手工取证 **17/17**（见上）· `check:counts` / `check:registry` 绿 ·
 `tsc --noEmit` / `eslint` / `prettier` 无输出 · `vite build --no-emptyOutDir` 通过。
