@@ -6620,11 +6620,11 @@ mpv 有没有把帧画进这个 HWND，仍要真机看（R6）。
 
 **一、发现**：全局审 hooks 命名时，`src/hooks/` 里七个文件（`useAnimePlayback` / `useCoverColor` /
 `useDebouncedValue` / `useEngineDownload` / `useEsc` / `useLibraryModel` / `useMusicHotkeys` + 桶 `index.ts`）
-都已是驼峰，**唯一例外**是 `src/router/use-nav.ts`（kebab-case，导出 `useNav`）。
+都已是驼峰，**唯一例外**是 `src/router/` 下那个导航 hook 文件（文件名是 kebab-case，导出名却已是 `useNav`）。
 
 **二、它为什么一直没被抓住**：`check:units` 的 `HOOKS.noMisplacedUse` 判的是「文件名以 `use` 开头的必须在
-`src/hooks/` 内」—— `use-nav.ts` 不以 `use` 开头（`use-`），于是**既不在清单里、也不触发 misplaced**，
-两边都漏。改名成 `useNav.ts` 后立刻被 `noMisplacedUse` 咬住（这正是判据该有的行为）。
+`src/hooks/` 内」—— 那个文件名不以 `use` 开头（是 `use-` 打头），于是**既不在清单里、也不触发 misplaced**，
+两边都漏。改名成驼峰后立刻被 `noMisplacedUse` 咬住（这正是判据该有的行为）。
 
 **三、处置**：按 D-41（`use*` 一律住 hooks）搬进 `src/hooks/useNav.ts`，经桶文件 `@hooks` 出口；
 调用点 `App.tsx` 与 `AnimeSettingsSection.tsx` 改从 `@hooks` 引入；`HOOKS_MANIFEST` / `HOOKS_BARREL_EXPORTS`
