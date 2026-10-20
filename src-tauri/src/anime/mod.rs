@@ -21,6 +21,9 @@ use std::sync::mpsc;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
+pub mod embed;
+
+use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::Manager;
 
@@ -1103,7 +1106,12 @@ pub async fn anime_kernel_open(
 ) -> Result<Value, String> {
     let want_embed =
         embed.unwrap_or_else(|| std::env::var("MIAO_ANIME_EMBED").ok().as_deref() == Some("1"));
-    let wid = if want_embed { main_hwnd(&app) } else { None };
+    // 嵌入时把**子窗口**句柄交给 mpv（不是主窗口：主窗口是整窗 WebView，画面会被盖住）
+    let wid = if want_embed {
+        main_hwnd(&app).and_then(|p| embed::ensure(p).ok())
+    } else {
+        None
+    };
     post(
         "/api/v1/anime/kernel/open",
         json!({ "subject": subject_id, "index": index, "hwdec": hwdec, "wid": wid }),
@@ -1126,6 +1134,37 @@ fn main_hwnd(app: &tauri::AppHandle) -> Option<u64> {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbedRect {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+}
+
+/// 摆嵌入式画面区（CSS 像素，视口坐标）；`rect = null` 或 `visible=false` 只隐藏不销毁。
+#[tauri::command]
+pub async fn anime_kernel_embed(
+    app: tauri::AppHandle,
+    rect: Option<EmbedRect>,
+    visible: bool,
+) -> Result<Value, String> {
+    let parent = main_hwnd(&app).ok_or("拿不到主窗口句柄（嵌入式渲染只在 Windows 上实现）")?;
+    let css = rect.map(|r| embed::CssRect { x: r.x, y: r.y, w: r.w, h: r.h });
+    let hwnd = embed::apply(parent, css, visible)?;
+    Ok(json!({ "ok": true, "hwnd": hwnd, "dpi": embed::dpi_of(parent) }))
+}
+
+/// 隐藏嵌入式画面区（离开播放器 / 切回网页轨时调）。
+#[tauri::command]
+pub async fn anime_kernel_embed_off() -> Result<Value, String> {
+    if let Some(h) = embed::child() {
+        embed::set_visible(h, false);
+    }
+    Ok(json!({ "ok": true }))
+}
+
 /// 驱动内核：`play` / `pause` / `seek` / `rate` / `track` / `subtitle`。
 #[tauri::command]
 pub async fn anime_kernel_ctl(action: String, value: Option<Value>) -> Result<Value, String> {
@@ -1139,6 +1178,10 @@ pub async fn anime_kernel_ctl(action: String, value: Option<Value>) -> Result<Va
 /// 关掉内核会话（离开播放器 / 换集时调）。
 #[tauri::command]
 pub async fn anime_kernel_close() -> Result<Value, String> {
+    // 关会话就把子窗口销毁：下次打开重建，避免残留一个黑框
+    if let Some(h) = embed::child() {
+        embed::destroy(h);
+    }
     post("/api/v1/anime/kernel/close", json!({})).await
 }
 

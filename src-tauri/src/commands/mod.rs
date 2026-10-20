@@ -591,6 +591,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         crate::anime::anime_challenge_cookies,
         crate::anime::anime_play_remote,
         crate::anime::anime_kernel_status,
+        crate::anime::anime_kernel_embed,
+        crate::anime::anime_kernel_embed_off,
         crate::anime::anime_kernel_open,
         crate::anime::anime_kernel_ctl,
         crate::anime::anime_kernel_close,

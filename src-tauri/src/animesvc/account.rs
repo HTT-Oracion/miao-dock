@@ -33,7 +33,6 @@ use serde_json::{json, Value};
 
 const SESSION_FILE: &str = "account.json";
 const QUEUE_FILE: &str = "sync-queue.json";
-const TOKEN_TTL_SECS: u64 = 7 * 24 * 3600;
 
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
