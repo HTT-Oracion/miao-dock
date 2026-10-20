@@ -326,17 +326,43 @@ pub struct Kernel {
     pub info: KernelInfo,
 }
 
+/// mpv 的参数（拆出来单测：`--wid` 只在给了宿主窗口时出现）。
+///
+/// `--wid` 是 mpv 官方的嵌入方式：它把画面画进给定 HWND，不再开自己的顶层窗口。
+/// **默认不给** —— 嵌进整窗 WebView 会被网页盖住（见文件头说明），要显式开启（`MIAO_ANIME_EMBED=1`）。
+fn build_args(endpoint: &str, hwdec: &str, wid: Option<u64>, extra: &[String]) -> Vec<String> {
+    let mut v = vec![
+        format!("--input-ipc-server={endpoint}"),
+        "--idle=yes".into(),
+        "--no-terminal".into(),
+        "--force-window=yes".into(),
+        "--osc=no".into(),
+        "--osd-level=0".into(),
+        "--keep-open=no".into(),
+        "--no-input-default-bindings".into(),
+        "--volume=80".into(),
+        format!("--hwdec={hwdec}"),
+    ];
+    if let Some(w) = wid {
+        v.push(format!("--wid={w}"));
+        // 嵌进宿主窗口时不要自己的边框（否则宿主里会多一圈系统边框）
+        v.push("--no-border".into());
+    }
+    v.extend(extra.iter().cloned());
+    v
+}
+
 impl Kernel {
     /// 起 mpv 并接上 IPC。
     ///
     /// `hwdec`：设置页「强制硬件解码」的落点。`auto-safe` 是 mpv 的推荐档
     /// （只开它认为安全的硬解后端），`no` 用于排查花屏 / 绿屏。
     pub fn spawn(hwdec: &str) -> Result<Self, String> {
-        Self::spawn_with(hwdec, &[])
+        Self::spawn_with(hwdec, None, &[])
     }
 
     /// 带额外 mpv 参数的版本（自检用：图像片源要 `--image-display-duration` 才有长度）。
-    pub fn spawn_with(hwdec: &str, extra: &[String]) -> Result<Self, String> {
+    pub fn spawn_with(hwdec: &str, wid: Option<u64>, extra: &[String]) -> Result<Self, String> {
         let info = probe();
         let bin = locate_mpv().ok_or_else(|| info.reason.clone())?;
         let endpoint = ipc::endpoint("main");
@@ -346,17 +372,7 @@ impl Kernel {
                 cmd.arg(script);
             }
         }
-        cmd.arg(format!("--input-ipc-server={endpoint}"))
-            .arg("--idle=yes")
-            .arg("--no-terminal")
-            .arg("--force-window=yes")
-            .arg("--osc=no")
-            .arg("--osd-level=0")
-            .arg("--keep-open=no")
-            .arg("--no-input-default-bindings")
-            .arg("--volume=80")
-            .arg(format!("--hwdec={hwdec}"));
-        for a in extra {
+        for a in build_args(&endpoint, hwdec, wid, extra) {
             cmd.arg(a);
         }
         cmd.stdin(Stdio::null())
@@ -605,10 +621,10 @@ pub fn status() -> Value {
 }
 
 /// 打开一个文件并保持暂停（一打开就有声音会吓人）。
-pub fn open_file(path: &str, title: &str, hwdec: &str) -> Result<Value, String> {
+pub fn open_file(path: &str, title: &str, hwdec: &str, wid: Option<u64>) -> Result<Value, String> {
     let mut g = slot().lock().map_err(|e| format!("内核槽被污染：{e}"))?;
     *g = None;
-    let mut k = Kernel::spawn(hwdec)?;
+    let mut k = Kernel::spawn_with(hwdec, wid, &[])?;
     k.open(Source::File { path: path.to_string() })?;
     if let Ok(mut s) = k.state.lock() {
         s.title = title.to_string();
@@ -777,7 +793,7 @@ pub fn selftest() -> Value {
     let png_path = png.to_string_lossy().into_owned();
     let shot_path = shot.to_string_lossy().into_owned();
     let _ = std::fs::remove_file(&shot);
-    match Kernel::spawn_with("auto-safe", &["--image-display-duration=5".to_string()]) {
+    match Kernel::spawn_with("auto-safe", None, &["--image-display-duration=5".to_string()]) {
         Ok(mut k) => {
             let opened = k.open(Source::File { path: png_path });
             push("图像片源 open 成功", opened.is_ok(), &opened.err().unwrap_or_default());
@@ -806,6 +822,18 @@ pub fn selftest() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn args_only_carry_wid_when_host_given() {
+        let plain = build_args("pipe-x", "auto-safe", None, &[]);
+        assert!(!plain.iter().any(|a| a.starts_with("--wid=")));
+        let embedded = build_args("pipe-x", "auto-safe", Some(0x1234), &[]);
+        assert!(embedded.iter().any(|a| a == "--wid=4660"));
+        assert!(embedded.iter().any(|a| a == "--no-border"));
+        // 额外参数仍然追加在最后（自检用的 --image-display-duration 走这条）
+        let extra = build_args("pipe-x", "no", None, &["--image-display-duration=5".to_string()]);
+        assert_eq!(extra.last().unwrap(), "--image-display-duration=5");
+    }
 
     #[test]
     fn env_override_trusts_bare_command_names() {

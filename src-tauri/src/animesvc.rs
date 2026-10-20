@@ -1202,6 +1202,9 @@ struct KernelOpenBody {
     index: f64,
     #[serde(default)]
     hwdec: Option<String>,
+    /// 宿主窗口句柄（Windows）：给了就让 mpv 把画面画进它（--wid）
+    #[serde(default)]
+    wid: Option<u64>,
 }
 
 /// 用内核打开一集：服务侧解析「这一集在盘上的哪个文件」，再交给 mpv。
@@ -1233,7 +1236,9 @@ async fn kernel_open(
     let hwdec = body.hwdec.as_deref().filter(|s| !s.is_empty()).unwrap_or("auto-safe").to_string();
     let file = file.to_string();
     // 起进程 + 等属性就绪是阻塞的：扔到阻塞线程，别卡住 HTTP 运行时
-    let out = tokio::task::spawn_blocking(move || kernel::open_file(&file, &title, &hwdec)).await;
+    let wid = body.wid;
+    let out =
+        tokio::task::spawn_blocking(move || kernel::open_file(&file, &title, &hwdec, wid)).await;
     match out {
         Ok(Ok(v)) => json(StatusCode::OK, v),
         Ok(Err(e)) => envelope(StatusCode::SERVICE_UNAVAILABLE, "KERNEL_UNAVAILABLE", e),

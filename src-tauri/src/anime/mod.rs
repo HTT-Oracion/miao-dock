@@ -1089,14 +1089,41 @@ pub async fn anime_kernel_status() -> Result<Value, String> {
     get("/api/v1/anime/kernel").await
 }
 
-/// 用内核打开一集：服务侧解析「这一集在盘上的哪个文件」，再交给 mpv（独立窗口）。
+/// 用内核打开一集：服务侧解析「这一集在盘上的哪个文件」，再交给 mpv。
+///
+/// `embed`：是否把画面嵌进主窗口（`--wid`）。**默认关** —— 整窗 WebView 会盖住 mpv 的子窗口，
+/// 开了就得接受"画面在控件之下"；真机实验用 `MIAO_ANIME_EMBED=1` 打开（见 D-269）。
 #[tauri::command]
-pub async fn anime_kernel_open(subject_id: String, index: f64, hwdec: Option<String>) -> Result<Value, String> {
+pub async fn anime_kernel_open(
+    app: tauri::AppHandle,
+    subject_id: String,
+    index: f64,
+    hwdec: Option<String>,
+    embed: Option<bool>,
+) -> Result<Value, String> {
+    let want_embed =
+        embed.unwrap_or_else(|| std::env::var("MIAO_ANIME_EMBED").ok().as_deref() == Some("1"));
+    let wid = if want_embed { main_hwnd(&app) } else { None };
     post(
         "/api/v1/anime/kernel/open",
-        json!({ "subject": subject_id, "index": index, "hwdec": hwdec }),
+        json!({ "subject": subject_id, "index": index, "hwdec": hwdec, "wid": wid }),
     )
     .await
+}
+
+/// 主窗口句柄（Windows 才有；其它平台返回 None —— macOS 的嵌入式渲染要另走 NSView 层级）。
+fn main_hwnd(app: &tauri::AppHandle) -> Option<u64> {
+    #[cfg(windows)]
+    {
+        let w = app.get_webview_window("main")?;
+        let h = w.hwnd().ok()?;
+        Some(h.0 as usize as u64)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        None
+    }
 }
 
 /// 驱动内核：`play` / `pause` / `seek` / `rate` / `track` / `subtitle`。
