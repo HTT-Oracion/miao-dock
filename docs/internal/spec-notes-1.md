@@ -5900,11 +5900,12 @@ ABI 钉进我们的构建。**嵌入式渲染没做**：画面在 mpv 自己的�
 
 **已知缺口（未做，别当成已覆盖）**
 
-- **mpv 二进制没随包**：官方 release 直连被网络挡住（`curl: (52) Empty reply`），改走 `ghfast.top` 镜像才拿到
-  `mpv-x86_64-20261020`（32.4 MB，解出来 `mpv.exe` 115 MB），**只放在 `.tmp/mpv/`（已 gitignore）**。
-  `resources/mpv/<平台>/` 与安装器载荷都没接 —— 打包时要么随包、要么首启下载，属 R1 收尾的机器依赖项。
-- **真 mpv 已验，但不是自动化门**：见下「真内核取证」。**mkv + ass 实播仍未验**：手上没有真 mkv 片源，
-  验的是 WAV（音频轨 / 时长 / 跳转）与 PNG（视频轨 / 截图）两种真片源。
+- **mpv 二进制仍不进安装器载荷**：`npm run task -- fetch:mpv` 能把二进制放到
+  `src-tauri/resources/mpv/<平台>/`（该目录已 gitignore），`locate_mpv()` 第 3 顺位直接命中；
+  但安装器 / `bundle.resources` 还没接 —— 打包时要么随包（+115 MB）、要么首启下载，属 R1 收尾的机器依赖项。
+  官方 release 直连在本机被挡（`curl: (52) Empty reply`），脚本按「直连 → ghfast.top → gh-proxy.com」试镜像，
+  镜像**只用于开发期取二进制**，不进产品路径。
+- **mkv + ass 已用真片源验过**（见下），但**没验过带内嵌字幕轨的 mkv**（只验了外挂 ass）与 4K/HDR 这类极端片源。
 - **嵌入式渲染没做**：画面在独立窗口（见上）。
 - `subtitlePriority` 仍未被消费（字幕选择走「挂第一条 / 手动切」）。
 - 截图落在 `<state>/screenshots/`，但没做「截图历史 / 打开所在目录」的界面。
@@ -5920,6 +5921,10 @@ MIAO_MPV_BIN=<…>/.tmp/mpv/mpv.exe  animesvc.exe --kernel-selftest
 音轨 / 外挂 SRT 挂上并选中）与 **1×1 PNG + `--image-display-duration=5`**（图像被 mpv 当视频轨，
 `--vo` 默认档截图落盘成功）。这一步证明了 IPC 协议与状态机在**真 mpv** 上成立，
 不是「夹具自己跟自己玩」。
+
+另用**真 mkv**（matroska-test-files 的 `test1.mkv`，87.3s）走了一遍同一条 IPC：
+`loadfile` → 时长 87.336 / 视频轨 + 音轨 / `seek 30` 落到 30.25 / `sub-add` 外挂 **ass** 后
+`track-list` 出现选中的 sub 轨。**ass 的渲染是 libass 的事**（mpv 自带），本层只保证「挂上去、选中它」。
 
 **自检为什么换了片源**：最初用「几个字节的假 mkv」，夹具全绿而**真 mpv 全红**（时长 0 / seek 无效 /
 无音轨 / sub-add 报 `error running command`）—— 这是典型的夹具掩盖缺陷。改成合法 WAV + PNG 后，
