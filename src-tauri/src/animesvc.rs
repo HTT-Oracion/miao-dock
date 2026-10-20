@@ -226,8 +226,10 @@ fn router(shell: Arc<Shell>) -> Router {
         .route(&format!("/api/{API_VERSION}/anime/sources/delete"), post(source_delete))
         // 本机导入：把用户选的文件夹复制进库根
         .route(&format!("/api/{API_VERSION}/anime/import"), post(import_folder))
-        // 数据源测试（M3 第一个适配器：RSS）
+        // 数据源测试（M3 适配器：RSS / 媒体服务器 / 通用网页源）
         .route(&format!("/api/{API_VERSION}/anime/sources/test"), post(source_test))
+        // 通用网页源：详情页 → 视频直链
+        .route(&format!("/api/{API_VERSION}/anime/sources/resolve"), post(source_resolve))
         // 媒体服务器远程播放：带票中继上游视频（api_key 只走请求头，不出现在 URL 里）
         .route(&format!("/api/{API_VERSION}/anime/mediaserver/stream"), get(datasource::mediaserver::relay))
         // 内核轨（libmpv 的替身：随包 mpv + JSON IPC）。状态与控制在服务侧，
@@ -521,9 +523,12 @@ struct SourceTestBody {
     kind: Option<String>,
     #[serde(default)]
     limit: Option<usize>,
+    /// 通用网页源的选择器规则（RSS / 媒体服务器不需要）
+    #[serde(default)]
+    rules: Option<sources::SourceRules>,
 }
 
-/// 测试一个源：拉前几条看看是什么（RSS 已接；其余明确回未接入）。
+/// 测试一个源：拉前几条看看是什么（RSS / 媒体服务器 / 通用网页源已接；其余明确回未接入）。
 async fn source_test(
     State(shell): State<Arc<Shell>>,
     headers: HeaderMap,
@@ -532,9 +537,37 @@ async fn source_test(
     if !authorized(&shell, &headers) {
         return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
     }
-    match datasource::test(body.kind.as_deref().unwrap_or("rss"), &body.url, body.limit.unwrap_or(8)).await {
+    match datasource::test(
+        body.kind.as_deref().unwrap_or("rss"),
+        &body.url,
+        body.rules.as_ref(),
+        body.limit.unwrap_or(8),
+    )
+    .await
+    {
         Ok(v) => json(StatusCode::OK, v),
         Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("源测试失败：{e}")),
+    }
+}
+
+#[derive(Deserialize)]
+struct SourceResolveBody {
+    url: String,
+    rules: sources::SourceRules,
+}
+
+/// 解析详情页里的视频地址（通用网页源）：拿到直链才能交给播放器 / 中继。
+async fn source_resolve(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Json(body): Json<SourceResolveBody>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match datasource::web::resolve_video(&body.url, &body.rules).await {
+        Ok(url) => json(StatusCode::OK, serde_json::json!({ "ok": true, "url": url })),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("解析视频地址失败：{e}")),
     }
 }
 

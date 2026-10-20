@@ -563,8 +563,23 @@ pub async fn anime_import_folder(path: String, subject: Option<String>) -> Resul
 
 /// 测试一个数据源：拉前几条看看里面是什么（RSS 已接；其余明确回未接入）。
 #[tauri::command]
-pub async fn anime_test_source(url: String, kind: Option<String>, limit: Option<usize>) -> Result<Value, String> {
-    post("/api/v1/anime/sources/test", json!({ "url": url, "kind": kind, "limit": limit })).await
+pub async fn anime_test_source(
+    url: String,
+    kind: Option<String>,
+    limit: Option<usize>,
+    rules: Option<Value>,
+) -> Result<Value, String> {
+    post(
+        "/api/v1/anime/sources/test",
+        json!({ "url": url, "kind": kind, "limit": limit, "rules": rules }),
+    )
+    .await
+}
+
+/// 通用网页源：详情页 → 视频直链（播放器 / 中继要的是直链，不是详情页地址）。
+#[tauri::command]
+pub async fn anime_resolve_source(url: String, rules: Value) -> Result<Value, String> {
+    post("/api/v1/anime/sources/resolve", json!({ "url": url, "rules": rules })).await
 }
 
 /// 远程播放事实：媒体服务器（Jellyfin / Emby）的某一集，走服务侧中继的带票直链。

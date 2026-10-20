@@ -12,6 +12,7 @@
 
 pub mod mediaserver;
 pub mod rss;
+pub mod web;
 
 use serde_json::{json, Value};
 
@@ -70,8 +71,14 @@ pub fn item_json(i: &DataSourceItem) -> Value {
     })
 }
 
-/// 测试一个源：RSS 与媒体服务器已接；其余类型**明确回未接入**，不假装测通。
-pub async fn test(kind: &str, url: &str, limit: usize) -> Result<Value, String> {
+/// 测试一个源：RSS / 媒体服务器 / 通用网页源（选择器驱动）已接；
+/// 其余类型**明确回未接入**，不假装测通。
+pub async fn test(
+    kind: &str,
+    url: &str,
+    rules: Option<&super::sources::SourceRules>,
+    limit: usize,
+) -> Result<Value, String> {
     let url = url.trim();
     if !url.starts_with("http") {
         return Err("源地址要 http:// 或 https:// 开头".into());
@@ -90,6 +97,17 @@ pub async fn test(kind: &str, url: &str, limit: usize) -> Result<Value, String> 
         "jellyfin" | "emby" => {
             let (base, key) = mediaserver::split_source_url(url)?;
             mediaserver::probe(&base, key.as_deref(), kind, limit).await
+        }
+        // 通用网页源：必须带选择器规则（没有规则就说不清"取哪一块"）
+        "web" | "selector" => {
+            let rules = rules.ok_or("通用网页源要带选择器规则（列表 / 链接 / 标题）")?;
+            let items = web::fetch(url, rules, limit).await?;
+            Ok(json!({
+                "ok": true,
+                "kind": kind.trim(),
+                "count": items.len(),
+                "items": items.iter().map(item_json).collect::<Vec<_>>(),
+            }))
         }
         other => Err(format!("{other} 适配器尚未接入（M3 主体）")),
     }

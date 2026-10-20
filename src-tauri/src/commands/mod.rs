@@ -553,6 +553,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         crate::anime::anime_delete_source,
         crate::anime::anime_import_folder,
         crate::anime::anime_test_source,
+        crate::anime::anime_resolve_source,
         crate::anime::anime_play_remote,
         crate::anime::anime_kernel_status,
         crate::anime::anime_kernel_open,

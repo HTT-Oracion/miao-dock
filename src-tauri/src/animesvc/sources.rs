@@ -51,6 +51,58 @@ pub struct MediaSource {
     pub health: String,
     #[serde(default)]
     pub updated_at: u64,
+    /// 选择器规则（`web` / `selector` 两类源用；其余类型为空）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rules: Option<SourceRules>,
+}
+
+/// 通用网页源的 CSS 选择器规则（R2：选择器编辑器写出来的就是它）。
+///
+/// 判据放在**选择器能否解析**上：存一条语法错的选择器，用户点「测试」只会得到
+/// 一句看不懂的上游报错；保存时就拒掉，错在哪一目了然。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceRules {
+    /// 列表页：每条结果的选择器（必填）
+    pub list: String,
+    /// 容器内取链接的选择器（缺省：容器自身是 `<a>` 或第一个 `<a>` 子节点）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+    /// 容器内取标题的选择器（缺省：容器文本）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// 详情页：视频地址所在元素（`video` / `source` / `a[href$=".mp4"]` 之类）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video: Option<String>,
+}
+
+/// 需要选择器规则的源类型。
+fn needs_rules(kind: SourceKind) -> bool {
+    matches!(kind, SourceKind::Web | SourceKind::Selector)
+}
+
+/// 选择器规则校验：必填项 + 每条选择器真的能被解析。
+///
+/// 放在保存时：存一条语法错的选择器，用户点「测试」只会拿到一句看不懂的上游报错；
+/// 这里直接拒掉并点名是哪一条。
+pub fn validate_rules(rules: &SourceRules) -> Result<(), String> {
+    if rules.list.trim().is_empty() {
+        return Err("这一类源要填「列表选择器」（例如 `.list-item a`）".into());
+    }
+    let pairs = [
+        ("列表", Some(rules.list.as_str())),
+        ("链接", rules.link.as_deref()),
+        ("标题", rules.title.as_deref()),
+        ("视频", rules.video.as_deref()),
+    ];
+    for (name, sel) in pairs {
+        let Some(s) = sel else { continue };
+        if s.trim().is_empty() {
+            continue;
+        }
+        scraper::Selector::parse(s).map_err(|e| format!("{name}选择器语法不对：{e}"))?;
+    }
+    Ok(())
 }
 
 fn default_health() -> String {
@@ -77,6 +129,7 @@ pub fn builtin(root: &Path) -> MediaSource {
         enabled: true,
         health: health.into(),
         updated_at: 0,
+        rules: None,
     }
 }
 
@@ -126,6 +179,10 @@ pub fn save(state_dir: &Path, body: &Value) -> Result<Value, String> {
         if needs_url(src.kind) && !u.starts_with("http") {
             return Err("源地址要 http:// 或 https:// 开头".into());
         }
+    }
+    if needs_rules(src.kind) {
+        let rules = src.rules.as_ref().ok_or("这一类源要填选择器规则（列表 / 链接 / 标题）")?;
+        validate_rules(rules)?;
     }
     src.id = id;
     src.name = src.name.trim().to_string();

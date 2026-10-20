@@ -385,6 +385,42 @@ const mangaEnv = {
 };
 const bangumi = await startMockBangumi();
 mocks.push(bangumi.server);
+
+/**
+ * 假站点：给通用网页源（选择器驱动）用。
+ *
+ * 判据落在**真抓真解析**上：列表页两条、详情页一个 `<video src>`，
+ * 相对地址必须被解析成绝对地址 —— 只断言"接口 200"等于让空解析过关。
+ */
+function startMockSite() {
+  const list = `<!doctype html><html><head><meta charset="utf-8"><title>列表</title></head><body>
+    <ul class="list">
+      <li class="item"><a href="/detail/1"><span class="t">第 1 话 冰菓</span></a></li>
+      <li class="item"><a href="/detail/2"><span class="t">第 2 话 冰菓</span></a></li>
+    </ul></body></html>`;
+  const detail = `<!doctype html><html><head><meta charset="utf-8"></head><body>
+    <video controls src="/v/1.mp4"></video></body></html>`;
+  const server = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    if (u.pathname === '/list') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      return res.end(list);
+    }
+    if (u.pathname.startsWith('/detail/')) {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      return res.end(detail);
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => resolve({ server, base: `http://127.0.0.1:${server.address().port}` }));
+  });
+}
+
+const site = await startMockSite();
+mocks.push(site.server);
+
 const animeEnv = {
   ...commonEnv,
   MIAO_ANIME_ROOT_DIR: D.animeLib,
@@ -700,6 +736,69 @@ try {
       'A9 建完能扫到（库里有冰菓）',
       lib.status === 200 && lib.buf.toString().includes('冰菓'),
       lib.buf.toString().slice(0, 240),
+    );
+  }
+
+  // A10：通用网页源（选择器驱动）：保存校验 / 测试抓取 / 详情页直链解析
+  {
+    const base = `http://127.0.0.1:${animeInfo.port}`;
+    const auth = { 'x-box-token': animeInfo.token };
+    const postJson = (p, body) =>
+      request('POST', `${base}${p}`, {
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    const rules = { list: '.list .item', link: 'a', title: '.t', video: 'video' };
+
+    const save = await postJson('/api/v1/anime/sources', {
+      id: 'mock-web',
+      name: '夹具站',
+      kind: 'web',
+      url: `${site.base}/list`,
+      enabled: true,
+      rules,
+    });
+    check(
+      'A10 网页源带规则保存成功并原样回读',
+      save.status === 200 &&
+        save.json?.source?.rules?.list === '.list .item' &&
+        save.json?.source?.rules?.video === 'video',
+      save.buf.toString().slice(0, 240),
+    );
+
+    const bad = await postJson('/api/v1/anime/sources', {
+      id: 'bad-web',
+      name: '坏规则',
+      kind: 'web',
+      url: `${site.base}/list`,
+      enabled: true,
+      rules: { list: 'a[' },
+    });
+    check(
+      'A10 语法错的选择器在保存时就被拒（并点名是哪一条）',
+      bad.status === 400 && /选择器语法不对/.test(bad.buf.toString()),
+      bad.buf.toString().slice(0, 240),
+    );
+
+    const test = await postJson('/api/v1/anime/sources/test', { url: `${site.base}/list`, kind: 'web', rules });
+    check(
+      'A10 测试取到两条且相对链接已绝对化',
+      test.status === 200 && test.json?.count === 2 && String(test.json?.items?.[0]?.link).startsWith(site.base),
+      test.buf.toString().slice(0, 300),
+    );
+
+    const noRules = await postJson('/api/v1/anime/sources/test', { url: `${site.base}/list`, kind: 'web' });
+    check(
+      'A10 网页源缺规则 ⇒ 502 并说明缺选择器',
+      noRules.status === 502 && /选择器/.test(noRules.buf.toString()),
+      noRules.buf.toString().slice(0, 240),
+    );
+
+    const res = await postJson('/api/v1/anime/sources/resolve', { url: `${site.base}/detail/1`, rules });
+    check(
+      'A10 详情页解析出绝对直链',
+      res.status === 200 && res.json?.url === `${site.base}/v/1.mp4`,
+      res.buf.toString().slice(0, 240),
     );
   }
 
