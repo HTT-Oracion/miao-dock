@@ -4,9 +4,9 @@
  * 断点口径：本窗口 1400 → 双栏；≥1600 时右栏末尾内容移入独立 rail。
  * 这里只做双栏 —— 三栏是同一份内容的排布，不额外复制一套 DOM。
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Play, Wand2 } from 'lucide-react';
-import { Btn, Empty } from '@components/units';
+import { Btn, Empty, Skeleton } from '@components/units';
 import { useToasts } from '@hooks';
 import { useAnimeStore } from '@anime/store';
 import { episodesOf, selectedSubject } from '@anime/selectors';
@@ -23,8 +23,19 @@ export function DetailScreen() {
   const openPlayer = useAnimeStore((s) => s.openPlayer);
   const markWatched = useAnimeStore((s) => s.markWatched);
   const fillMetadata = useAnimeStore((s) => s.fillMetadata);
+  const loadDetailExtra = useAnimeStore((s) => s.loadDetailExtra);
+  const extra = useAnimeStore((s) => s.detailExtra);
+  const subjects = useAnimeStore((s) => s.subjects);
+  const selectSubject = useAnimeStore((s) => s.selectSubject);
+  const importCandidate = useAnimeStore((s) => s.importCandidate);
   const { push } = useToasts();
   const [metaBusy, setMetaBusy] = useState(false);
+
+  const bgmId = subject?.bgmId ?? null;
+  // 有 Bangumi id 就拉一次补充数据（角色 / 制作 / 关联）；换条目才重拉
+  useEffect(() => {
+    if (bgmId) void loadDetailExtra(bgmId);
+  }, [bgmId, loadDetailExtra]);
 
   if (!subject) {
     return (
@@ -175,13 +186,116 @@ export function DetailScreen() {
         </section>
 
         <section className="an-detail-sec">
-          <SectionHead title="制作人员 / 关联作品" />
-          <Empty inline>元数据接入后会显示制作人员、角色与关联作品；点进去是独立页，不在详情里堆长列表。</Empty>
+          <SectionHead
+            title="角色"
+            count={extra?.characters.length}
+            action={
+              subject.bgmId ? (
+                <button type="button" className="an-link" onClick={() => void loadDetailExtra(subject.bgmId as number)}>
+                  刷新
+                </button>
+              ) : null
+            }
+          />
+          {!subject.bgmId ? (
+            <Empty inline>先在左侧点「补全信息」拿到 Bangumi 条目 id，角色与声优才拉得到。</Empty>
+          ) : extra?.loading ? (
+            <Skeleton height={88} radius={12} />
+          ) : extra?.error ? (
+            <div className="an-note">角色没拉到：{extra.error}</div>
+          ) : extra && extra.characters.length > 0 ? (
+            <div className="an-cast">
+              {extra.characters.map((c) => (
+                <div key={c.id} className="an-cast-item">
+                  <span className="an-cast-pic">
+                    {c.image ? (
+                      <img src={c.image} alt="" loading="lazy" />
+                    ) : (
+                      <span>{c.nameCn.slice(0, 1) || c.name.slice(0, 1)}</span>
+                    )}
+                  </span>
+                  <span className="an-cast-tx">
+                    <b>{c.nameCn || c.name}</b>
+                    <span>{c.relation || '角色'}</span>
+                    {c.actors.length ? (
+                      <span className="an-note">CV {c.actors.map((a) => a.name).join(' / ')}</span>
+                    ) : null}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <Empty inline>这部番还没有角色数据。</Empty>
+          )}
+        </section>
+
+        <section className="an-detail-sec">
+          <SectionHead title="制作人员" count={extra?.staff.length} />
+          {!subject.bgmId ? (
+            <Empty inline>补全信息后显示制作人员。</Empty>
+          ) : extra?.staff.length ? (
+            <div className="an-tags">
+              {extra.staff.map((p) => (
+                <span key={p.id} className="an-tag" title={p.career.join(' / ')}>
+                  {p.relation ? `${p.relation} · ` : ''}
+                  {p.name}
+                </span>
+              ))}
+            </div>
+          ) : extra?.loading ? (
+            <Skeleton height={40} radius={10} />
+          ) : (
+            <Empty inline>没有制作人员数据。</Empty>
+          )}
+        </section>
+
+        <section className="an-detail-sec">
+          <SectionHead title="关联作品" count={extra?.related.length} />
+          {!subject.bgmId ? (
+            <Empty inline>补全信息后显示关联作品（续作 / 同系列 / 剧场版）。</Empty>
+          ) : extra?.related.length ? (
+            <div className="an-grid">
+              {extra.related.map((r) => {
+                const local = subjects.find((x) => x.bgmId === r.bgmId);
+                return (
+                  <button
+                    key={r.bgmId}
+                    type="button"
+                    className="an-cand an-cand-mini"
+                    title={local ? '已在库，打开条目' : '加入番剧库'}
+                    onClick={() => {
+                      if (local) {
+                        selectSubject(local.id);
+                        return;
+                      }
+                      void importCandidate(r.bgmId).then((res) => push(res.message, res.ok ? 'good' : 'bad'));
+                    }}
+                  >
+                    <span className="an-cand-pic">
+                      {r.image ? (
+                        <img src={r.image} alt="" loading="lazy" />
+                      ) : (
+                        <span>{(r.nameCn || r.name).slice(0, 1)}</span>
+                      )}
+                    </span>
+                    <span className="an-cand-tx">
+                      <b>{r.nameCn || r.name}</b>
+                      <span>{r.relation || '关联'}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : extra?.loading ? (
+            <Skeleton height={72} radius={12} />
+          ) : (
+            <Empty inline>没有关联作品数据。</Empty>
+          )}
         </section>
 
         <section className="an-detail-sec">
           <SectionHead title="热门评价" action={<span className="an-note">只读预览 · 写入口预留</span>} />
-          <Empty inline>评价数据随元数据一起接入；本期只读，发评入口预留。</Empty>
+          <Empty inline>Bangumi v0 没有公开的评价（短评）端点，这一块等上游契约明确后再接。</Empty>
         </section>
 
         <div className="an-note">

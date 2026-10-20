@@ -421,6 +421,24 @@ const CHECKS = [
     }),
   },
   {
+    id: 'META.detail',
+    run: (s) => ({
+      ok:
+        /pub async fn characters\(/.test(s.rustMetadata) &&
+        /pub async fn staff\(/.test(s.rustMetadata) &&
+        /pub async fn related\(/.test(s.rustMetadata) &&
+        /anime\/metadata\/characters/.test(s.rustAnimesvc) &&
+        /anime\/metadata\/staff/.test(s.rustAnimesvc) &&
+        /anime\/metadata\/related/.test(s.rustAnimesvc) &&
+        /crate::anime::anime_metadata_characters/.test(strip(s.rustCommands)) &&
+        /animeMetadataCharacters/.test(s.ipc) &&
+        /loadDetailExtra/.test(s.actionLib) &&
+        /loadDetailExtra/.test(s.detailScreen) &&
+        /an-cast/.test(s.style),
+      detail: '详情页补充数据没接通：角色 / 制作 / 关联 任一环缺失（详情页会退回空占位）',
+    }),
+  },
+  {
     id: 'M3.web',
     run: (s) => ({
       ok:
@@ -830,6 +848,13 @@ const MUTATIONS = [
     find: '.route(&format!("/api/{API_VERSION}/anime/sources/resolve"), post(source_resolve))',
     replace: '',
     expect: ['M3.web'],
+  },
+  {
+    name: '详情页摘掉关联作品路由（角色与制作还在，只有关联空着）',
+    file: F.rustAnimesvc,
+    find: '.route(&format!("/api/{API_VERSION}/anime/metadata/related"), get(metadata_related))',
+    replace: '',
+    expect: ['META.detail'],
   },
 ];
 

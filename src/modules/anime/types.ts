@@ -161,6 +161,44 @@ export interface AnimeCalendarDay {
   items: AnimeMetadataCandidate[];
 }
 
+/** 详情页：角色 + 声优（Bangumi `/subjects/{id}/characters`） */
+export interface AnimeCharacter {
+  id: number;
+  name: string;
+  nameCn: string;
+  relation: string;
+  image: string | null;
+  actors: { id: number; name: string; image: string | null }[];
+}
+
+/** 详情页：制作人员（`/subjects/{id}/persons`） */
+export interface AnimeStaff {
+  id: number;
+  name: string;
+  relation: string;
+  career: string[];
+  image: string | null;
+}
+
+/** 详情页：关联作品（`/subjects/{id}/subjects`） */
+export interface AnimeRelated {
+  bgmId: number;
+  name: string;
+  nameCn: string;
+  relation: string;
+  image: string | null;
+}
+
+/** 详情页补充数据：三个接口各拉各的，任一失败只影响它自己 */
+export interface AnimeDetailExtra {
+  bgmId: number;
+  characters: AnimeCharacter[];
+  staff: AnimeStaff[];
+  related: AnimeRelated[];
+  loading: boolean;
+  error: string | null;
+}
+
 /**
  * 探索页「热度推荐」的回执。
  *

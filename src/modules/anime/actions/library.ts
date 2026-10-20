@@ -38,6 +38,7 @@ export function libraryActions(
   | 'clearRemote'
   | 'loadExplore'
   | 'importCandidate'
+  | 'loadDetailExtra'
 > {
   /** 把扫描结果写进 store（三处调用共用，避免字段漏写） */
   const applySnapshot = (snap: Awaited<ReturnType<typeof ipc.animeLibrary>>) => {
@@ -379,6 +380,41 @@ export function libraryActions(
         set({ error: message });
         return { ok: false, message };
       }
+    },
+    /**
+     * 详情页补充数据：角色 / 制作 / 关联，三个接口**各拉各的**。
+     *
+     * 用 `allSettled` 而不是 `all`：角色接口挂了不该把制作与关联一起清空 ——
+     * 三个版块互相独立，失败只影响它自己，错误信息汇总成一句。
+     */
+    loadDetailExtra: async (bgmId) => {
+      const cur = get().detailExtra;
+      if (
+        cur?.bgmId === bgmId &&
+        (cur.loading || cur.error || cur.characters.length || cur.staff.length || cur.related.length)
+      ) {
+        return;
+      }
+      set({ detailExtra: { bgmId, characters: [], staff: [], related: [], loading: true, error: null } });
+      const [c, s, r] = await Promise.allSettled([
+        ipc.animeMetadataCharacters(bgmId),
+        ipc.animeMetadataStaff(bgmId),
+        ipc.animeMetadataRelated(bgmId),
+      ]);
+      const errors: string[] = [];
+      if (c.status === 'rejected') errors.push(`角色：${errText(c.reason)}`);
+      if (s.status === 'rejected') errors.push(`制作：${errText(s.reason)}`);
+      if (r.status === 'rejected') errors.push(`关联：${errText(r.reason)}`);
+      set({
+        detailExtra: {
+          bgmId,
+          characters: c.status === 'fulfilled' ? (c.value.characters ?? []) : [],
+          staff: s.status === 'fulfilled' ? (s.value.staff ?? []) : [],
+          related: r.status === 'fulfilled' ? (r.value.related ?? []) : [],
+          loading: false,
+          error: errors.length ? errors.join('；') : null,
+        },
+      });
     },
   };
 }

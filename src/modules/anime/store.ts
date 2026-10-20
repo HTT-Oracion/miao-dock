@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import type {
   AnimeAccount,
   AnimeCalendarDay,
+  AnimeDetailExtra,
   AnimeEpisode,
   AnimeMetadataCandidate,
   AnimeServiceStatus,
@@ -76,6 +77,9 @@ export interface AnimeState {
   exploreLoading: boolean;
   exploreError: string | null;
 
+  /** 详情页补充数据（角色 / 制作 / 关联），按 Bangumi id 现取 */
+  detailExtra: AnimeDetailExtra | null;
+
   // ── 动作（实现见 actions/*.ts） ──
   setView: (v: AnimeView) => void;
   setQuery: (q: string) => void;
@@ -110,6 +114,8 @@ export interface AnimeState {
   loadCache: () => Promise<void>;
   /** 拉探索页在线数据（时间表 + 热度）；`force` 跳过缓存重取 */
   loadExplore: (force?: boolean) => Promise<void>;
+  /** 拉详情页补充数据（角色 / 制作 / 关联）；同一部只拉一次 */
+  loadDetailExtra: (bgmId: number) => Promise<void>;
   /** 把 Bangumi 候选建成一条新番剧（幂等），成功后重扫并选中 */
   importCandidate: (bgmId: number) => Promise<{ ok: boolean; message: string }>;
   refreshStatus: () => Promise<void>;
@@ -168,6 +174,7 @@ export const useAnimeStore = create<AnimeState>()((set, get) => ({
   hotSource: 'heat',
   exploreLoading: false,
   exploreError: null,
+  detailExtra: null,
 
   ...navigationActions(set, get),
   ...libraryActions(set, get),

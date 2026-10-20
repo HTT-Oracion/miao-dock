@@ -8,15 +8,18 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   AnimeCalendarDay,
+  AnimeCharacter,
   AnimeEpisode,
   AnimeHotResult,
   AnimeKernelStatus,
   AnimeLibrarySnapshot,
   AnimeMetadataCandidate,
   AnimePlaySource,
+  AnimeRelated,
   AnimeServiceStatus,
   AnimeSourceRules,
   AnimeSourceTestItem,
+  AnimeStaff,
   AnimeSubject,
   CollectionType,
   MediaSourceView,
@@ -85,6 +88,18 @@ export const animeMetadataHot = (limit = 12) => invoke<AnimeHotResult>('anime_me
 /** 把 Bangumi 条目建成一条新番剧（只有元数据、没有片源；同一部幂等） */
 export const animeMetadataImport = (bgmId: number) =>
   invoke<{ ok: boolean; dir: string; path: string; subject: AnimeSubject }>('anime_metadata_import', { bgmId });
+
+/** 详情页：角色 + 声优（按 Bangumi id 现取，不落盘） */
+export const animeMetadataCharacters = (bgmId: number) =>
+  invoke<{ ok: boolean; characters: AnimeCharacter[] }>('anime_metadata_characters', { bgmId });
+
+/** 详情页：制作人员 */
+export const animeMetadataStaff = (bgmId: number) =>
+  invoke<{ ok: boolean; staff: AnimeStaff[] }>('anime_metadata_staff', { bgmId });
+
+/** 详情页：关联作品 */
+export const animeMetadataRelated = (bgmId: number) =>
+  invoke<{ ok: boolean; related: AnimeRelated[] }>('anime_metadata_related', { bgmId });
 
 /**
  * 切换番剧库根（设置页「番剧根目录」）；留空 = 回服务端默认落点。
