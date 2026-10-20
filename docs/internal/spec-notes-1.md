@@ -5900,18 +5900,38 @@ ABI 钉进我们的构建。**嵌入式渲染没做**：画面在 mpv 自己的�
 
 **已知缺口（未做，别当成已覆盖）**
 
-- **mpv 二进制没随包**：本机下载被网络挡住（`curl: (52) Empty reply`），`resources/mpv/<平台>/` 与安装器载荷都没接。`locate_mpv` 的查找顺序（env → 程序同级 → resources → PATH）已就位，`--kernel-probe` 会如实报「找不到 mpv」。
-- **没验过真 mpv**：自检与 `check:anime` 的 A8 用的是**假 mpv 夹具**（`e2e/fixtures/_fake-mpv.mjs`），证明的是协议与状态机；「mkv 能解码、ass 能渲染、多音轨能切」只能由真 mpv + 真片源回答。
+- **mpv 二进制没随包**：官方 release 直连被网络挡住（`curl: (52) Empty reply`），改走 `ghfast.top` 镜像才拿到
+  `mpv-x86_64-20261020`（32.4 MB，解出来 `mpv.exe` 115 MB），**只放在 `.tmp/mpv/`（已 gitignore）**。
+  `resources/mpv/<平台>/` 与安装器载荷都没接 —— 打包时要么随包、要么首启下载，属 R1 收尾的机器依赖项。
+- **真 mpv 已验，但不是自动化门**：见下「真内核取证」。**mkv + ass 实播仍未验**：手上没有真 mkv 片源，
+  验的是 WAV（音频轨 / 时长 / 跳转）与 PNG（视频轨 / 截图）两种真片源。
 - **嵌入式渲染没做**：画面在独立窗口（见上）。
 - `subtitlePriority` 仍未被消费（字幕选择走「挂第一条 / 手动切」）。
 - 截图落在 `<state>/screenshots/`，但没做「截图历史 / 打开所在目录」的界面。
 
+**真内核取证（2026-10-20，本机）**
+
+```
+MIAO_MPV_BIN=<…>/.tmp/mpv/mpv.exe  animesvc.exe --kernel-selftest
+⇒ ok=true，17/17
+```
+
+`mpv v0.41.0-1224-g6a262d11f`。真片源两段：**1.5s 静音 WAV**（时长 1.5 / 播放推进 / seek 0.5s /
+音轨 / 外挂 SRT 挂上并选中）与 **1×1 PNG + `--image-display-duration=5`**（图像被 mpv 当视频轨，
+`--vo` 默认档截图落盘成功）。这一步证明了 IPC 协议与状态机在**真 mpv** 上成立，
+不是「夹具自己跟自己玩」。
+
+**自检为什么换了片源**：最初用「几个字节的假 mkv」，夹具全绿而**真 mpv 全红**（时长 0 / seek 无效 /
+无音轨 / sub-add 报 `error running command`）—— 这是典型的夹具掩盖缺陷。改成合法 WAV + PNG 后，
+同一套断言在两个后端都成立；顺带记下**事件是异步的**：`play` / `seek` / `pause` 之后要等
+`property-change` 回来再断言，夹具的同步回包会把这个假设藏起来（`wait` 轮询 40×25ms）。
+
 **验收（2026-10-20）**：`cargo test --lib animesvc` **54/54**（新增 9 条：协议 6 + 播放列表改写 2 + 轨道过滤）·
 `cargo test --bin miao-dock anime` **7/7**（内核可用 / 缺失两条分支）· `check:anime-module` **35/35** + 反证 **27/27**
 （新增 `KERNEL.wired` / `KERNEL.pipe` / `KERNEL.missing` 各一条变异）· `check:anime` **48/48**
-（A8：`--kernel-selftest` 15 例全绿 + 夹具记账证明 loadfile / observe_property / set_property / sub-add 真的发出去了 +
-`--kernel-probe` 两种形态）· `check:counts` / `check:registry` 绿 · `tsc --noEmit` / `eslint` / `prettier` 无输出 ·
-`vite build --no-emptyOutDir` 通过。
+（A8：`--kernel-selftest` **17 例**全绿 + 夹具记账证明 loadfile / observe_property / set_property / sub-add 真的发出去了 +
+`--kernel-probe` 两种形态）· 真 mpv 手工取证 **17/17**（见上）· `check:counts` / `check:registry` 绿 ·
+`tsc --noEmit` / `eslint` / `prettier` 无输出 · `vite build --no-emptyOutDir` 通过。
 
 **依赖代价**：无新 crate；`windows-sys` 多开一个 feature（`Win32_System_Pipes`，编译期，零运行时体积）。
 
