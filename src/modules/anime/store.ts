@@ -8,6 +8,8 @@
 import { create } from 'zustand';
 import type {
   AnimeAccount,
+  BtStats,
+  BtTask,
   AnimeCalendarDay,
   AnimeDetailExtra,
   AnimeEpisode,
@@ -63,6 +65,9 @@ export interface AnimeState {
   // ── 偏好 / 账号 / 数据源 / 缓存 ──
   prefs: AnimePrefs;
   account: AnimeAccount;
+  /** BT 任务与会话状态（librqbit 真实数据） */
+  btTasks: BtTask[];
+  btStats: BtStats;
   syncQueue: SyncTask[];
   conflicts: SyncConflict[];
   sources: MediaSourceView[];
@@ -162,6 +167,14 @@ export interface AnimeState {
   logoutAccount: () => Promise<void>;
   /** 同步一次（按设置里的冲突策略） */
   syncNow: () => Promise<{ ok: boolean; message: string; conflicts: number }>;
+  /** BT：拉任务与会话状态 */
+  loadBt: () => Promise<void>;
+  /** BT：添加磁力（受 allowBt 开关约束） */
+  addBt: (url: string) => Promise<{ ok: boolean; message: string }>;
+  /** BT：暂停 / 继续 / 删除 */
+  pauseBt: (id: number) => Promise<void>;
+  resumeBt: (id: number) => Promise<void>;
+  deleteBt: (id: number) => Promise<void>;
 }
 
 /** 播放器初始态：没有片源时也要有完整形状（组件读字段不判空） */
@@ -206,6 +219,8 @@ export const useAnimeStore = create<AnimeState>()((set, get) => ({
 
   prefs: loadPrefs(),
   account: EMPTY_ACCOUNT,
+  btTasks: [],
+  btStats: { running: false, port: 0 },
   syncQueue: [],
   conflicts: [],
   sources: [],

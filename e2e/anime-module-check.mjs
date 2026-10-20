@@ -60,6 +60,8 @@ const F = {
   accountScreen: path.join(ROOT, 'src', 'screens', 'anime', 'AccountScreen.tsx'),
   cacheScreen: path.join(ROOT, 'src', 'screens', 'anime', 'CacheScreen.tsx'),
   rustAnime: path.join(ROOT, 'src-tauri', 'src', 'anime', 'mod.rs'),
+  rustBt: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'bt', 'mod.rs'),
+  cargoToml: path.join(ROOT, 'src-tauri', 'Cargo.toml'),
   rustAnimesvc: path.join(ROOT, 'src-tauri', 'src', 'animesvc.rs'),
   rustSources: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'sources.rs'),
   rustManifest: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'manifest.rs'),
@@ -515,6 +517,23 @@ const CHECKS = [
         /needsRules/.test(s.sourceScreen) &&
         /resolveSource/.test(s.sourceScreen),
       detail: '通用网页源没接通：选择器规则 / 列表解析 / 直链解析 / 端点 / 编辑器 任一环缺失',
+    }),
+  },
+  {
+    id: 'BT.wired',
+    run: (s) => ({
+      ok:
+        /librqbit/.test(s.cargoToml) &&
+        /pub async fn session\(\)/.test(s.rustBt) &&
+        /add_torrent\(AddTorrent::from_url/.test(s.rustBt) &&
+        /anime\/bt\/add/.test(s.rustAnimesvc) &&
+        /crate::anime::anime_bt_add/.test(strip(s.rustCommands)) &&
+        /animeBtAdd/.test(s.ipc) &&
+        /addBt/.test(s.sourceScreen) &&
+        /allowBt/.test(s.actionLib) &&
+        /MIAO_ANIME_BT_PORT/.test(s.rustAnime) &&
+        /peerFilterUrl/.test(s.actionLib),
+      detail: 'BT 链路没接通：依赖 / 会话 / 端点 / 桥接 / 前端 / 设置 任一环缺失',
     }),
   },
   {
@@ -1034,6 +1053,13 @@ const MUTATIONS = [
     find: 'onClick={() => setPickerOpen(true)}',
     replace: "onClick={() => setView('source')}",
     expect: ['PLAYER.picker'],
+  },
+  {
+    name: '摘掉 BT 添加路由（磁力贴了没反应）',
+    file: F.rustAnimesvc,
+    find: '.route(&format!("/api/{API_VERSION}/anime/bt/add"), post(bt_add))',
+    replace: '',
+    expect: ['BT.wired'],
   },
   {
     name: '摘掉中继推送路由（同步永远推不上去）',

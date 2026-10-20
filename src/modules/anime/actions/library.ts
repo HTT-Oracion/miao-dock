@@ -56,6 +56,11 @@ export function libraryActions(
   | 'approveDevice'
   | 'logoutAccount'
   | 'syncNow'
+  | 'loadBt'
+  | 'addBt'
+  | 'pauseBt'
+  | 'resumeBt'
+  | 'deleteBt'
 > {
   /** 把扫描结果写进 store（三处调用共用，避免字段漏写） */
   const applySnapshot = (snap: Awaited<ReturnType<typeof ipc.animeLibrary>>) => {
@@ -247,6 +252,13 @@ export function libraryActions(
       const prefs = { ...get().prefs, [key]: value } as AnimePrefs;
       set({ prefs });
       savePrefs(prefs);
+      // BT 端口与 peer 过滤是**子进程**的启动参数：改完立刻推给 Rust，下次拉起 animesvc 生效
+      if (key === 'btPort' || key === 'peerFilterUrl') {
+        void ipc.animeSetBtOptions({
+          port: typeof prefs.btPort === 'number' && prefs.btPort > 0 ? prefs.btPort : null,
+          peerFilterUrl: prefs.peerFilterUrl.trim() || null,
+        });
+      }
     },
 
     loadDemo: async () => {
@@ -336,6 +348,56 @@ export function libraryActions(
       await get().loadCache();
     },
 
+    /** BT：任务与会话状态（librqbit 真数据；没起会话时就是空表） */
+    loadBt: async () => {
+      try {
+        const [list, stats] = await Promise.all([ipc.animeBtList(), ipc.animeBtStats()]);
+        set({ btTasks: list.tasks, btStats: stats });
+      } catch (e) {
+        set({ error: `BT 任务没拉到：${errText(e)}` });
+      }
+    },
+
+    /** BT：添加磁力（设置里关掉「允许 BT 下载」时直接拒绝，不偷偷跑） */
+    addBt: async (url) => {
+      if (!get().prefs.allowBt) {
+        return { ok: false, message: '设置里关掉了「允许 BT 下载」，先打开再添加' };
+      }
+      try {
+        await ipc.animeBtAdd(url.trim());
+        await get().loadBt();
+        return { ok: true, message: '已添加 BT 任务' };
+      } catch (e) {
+        return { ok: false, message: `添加 BT 失败：${errText(e)}` };
+      }
+    },
+
+    pauseBt: async (id) => {
+      try {
+        await ipc.animeBtPause(id);
+      } catch (e) {
+        set({ error: `BT 暂停失败：${errText(e)}` });
+      }
+      await get().loadBt();
+    },
+
+    resumeBt: async (id) => {
+      try {
+        await ipc.animeBtResume(id);
+      } catch (e) {
+        set({ error: `BT 继续失败：${errText(e)}` });
+      }
+      await get().loadBt();
+    },
+
+    deleteBt: async (id) => {
+      try {
+        await ipc.animeBtDelete(id, false);
+      } catch (e) {
+        set({ error: `BT 删除失败：${errText(e)}` });
+      }
+      await get().loadBt();
+    },
     /** 账号状态：登录态 + 待同步队列（队列条目来自服务侧，标签由条目自身推出来） */
     loadAccount: async () => {
       try {

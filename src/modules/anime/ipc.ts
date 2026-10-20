@@ -24,6 +24,8 @@ import type {
   AnimeSourceTestItem,
   AnimeStaff,
   AnimeSubject,
+  BtStats,
+  BtTask,
   CacheTask,
   CollectionType,
   MediaSourceView,
@@ -172,6 +174,25 @@ export const animeResolveSource = (url: string, rules: AnimeSourceRules, cookies
     cookies: cookies ?? null,
     preferRes: preferRes ?? null,
   });
+
+/** BT 端口 / peer 过滤订阅：推给 Rust，下次拉起 animesvc 生效 */
+export const animeSetBtOptions = (opts: { port: number | null; peerFilterUrl: string | null }) =>
+  invoke<{ ok: boolean }>('anime_set_bt_options', opts);
+
+/** BT 任务列表（librqbit 的 stats 原样映射） */
+export const animeBtList = () => invoke<{ ok: boolean; tasks: BtTask[] }>('anime_bt_list');
+
+/** BT 会话状态（端口 / 聚合量 / 任务数） */
+export const animeBtStats = () => invoke<BtStats>('anime_bt_stats');
+
+/** 添加磁力 / 种子 */
+export const animeBtAdd = (url: string) => invoke<{ ok: boolean; id: number; name?: string }>('anime_bt_add', { url });
+
+/** 暂停 / 继续 / 删除 BT 任务 */
+export const animeBtPause = (id: number) => invoke<{ ok: boolean }>('anime_bt_pause', { id });
+export const animeBtResume = (id: number) => invoke<{ ok: boolean }>('anime_bt_resume', { id });
+export const animeBtDelete = (id: number, deleteFiles: boolean) =>
+  invoke<{ ok: boolean }>('anime_bt_delete', { id, deleteFiles });
 
 /** 账号状态（登录态 / 队列 / 中继地址） */
 export const animeAccount = () =>

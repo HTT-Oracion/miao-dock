@@ -5,7 +5,7 @@
  * 在线 / RSS / 选择器 / 媒体服务器 / BT 的适配器按同一契约随后接入（编辑器仍禁用并写明原因）。
  * 「导入本机文件夹」把片复制进库根，是本机数据眼下唯一的入口。
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FolderPlus, Link2, Pencil, Play, Plus, RefreshCw, ShieldAlert, Trash2, Zap } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Btn, Empty } from '@components/units';
@@ -28,7 +28,6 @@ const EMPTY_RULES: AnimeSourceRules = { list: '', link: '', title: '', video: ''
 
 export function SourceScreen() {
   const sources = useAnimeStore((s) => s.sources);
-  const cache = useAnimeStore((s) => s.cache);
   const status = useAnimeStore((s) => s.status);
   const loadSources = useAnimeStore((s) => s.loadSources);
   const refresh = useAnimeStore((s) => s.refreshLibrary);
@@ -67,7 +66,19 @@ export function SourceScreen() {
   const [subUrl, setSubUrl] = useState('');
   const [subBusy, setSubBusy] = useState(false);
 
-  const bt = cache.filter((t) => t.state === 'downloading' || t.state === 'seeding' || t.state === 'paused');
+  const bt = useAnimeStore((s) => s.btTasks);
+  const btStats = useAnimeStore((s) => s.btStats);
+  const loadBt = useAnimeStore((s) => s.loadBt);
+  const addBt = useAnimeStore((s) => s.addBt);
+  const pauseBt = useAnimeStore((s) => s.pauseBt);
+  const resumeBt = useAnimeStore((s) => s.resumeBt);
+  const deleteBt = useAnimeStore((s) => s.deleteBt);
+  const [magnet, setMagnet] = useState('');
+  // 进屏拉一次 BT 任务与会话状态（会话没起时是空表，不编造）
+  useEffect(() => {
+    void loadBt();
+  }, [loadBt]);
+  const [btBusy, setBtBusy] = useState(false);
 
   /** 选一个文件夹 → 复制进库根 → 重新扫描（源目录不动，用户可自行清理） */
   const pickFolder = async () => {
@@ -499,24 +510,74 @@ export function SourceScreen() {
       </section>
 
       <SectionHead title="BT 任务" count={bt.length} />
+      <div className="an-src-form">
+        <input
+          className="an-set-in is-wide"
+          value={magnet}
+          placeholder="magnet:?xt=… 或种子地址"
+          aria-label="磁力链接"
+          onChange={(e) => setMagnet(e.target.value)}
+        />
+        <Btn
+          kind="ghost"
+          size="sm"
+          disabled={btBusy || !magnet.trim()}
+          onClick={() => {
+            setBtBusy(true);
+            void addBt(magnet).then((r) => {
+              setBtBusy(false);
+              push(r.message, r.ok ? 'good' : 'bad');
+              if (r.ok) setMagnet('');
+            });
+          }}
+        >
+          {btBusy ? '添加中…' : '添加磁力'}
+        </Btn>
+        <Btn kind="ghost" size="sm" onClick={() => void loadBt()}>
+          <RefreshCw size={12} /> 刷新
+        </Btn>
+      </div>
+      <p className="an-note">
+        {btStats.running
+          ? `BT 会话在跑 · 监听端口 ${btStats.port || '自动'} · 任务 ${btStats.tasks ?? bt.length} 个`
+          : 'BT 会话还没起（第一次添加磁力时才创建）；端口来自设置里的「监听端口」，改端口要重启动漫服务。'}
+      </p>
       {bt.length === 0 ? (
-        <Empty inline>没有 BT 任务。选一个磁力源开始下载后，任务会在这里，进度条同时喂给边下边播。</Empty>
+        <Empty inline>没有 BT 任务。贴一条磁力链接开始下载；进度与做种比来自 librqbit 的真实统计。</Empty>
       ) : (
         bt.map((t) => (
           <div key={t.id} className="an-bt-row">
             <span className="an-bt-tx">
-              <b>
-                {t.title} · 第 {t.episodeIndex} 话
-              </b>
+              <b>{t.name || `任务 ${t.id}`}</b>
               <span>
-                {t.state === 'downloading' ? '下载中' : t.state === 'seeding' ? '做种中' : '已暂停'}
-                {t.bufferedMs ? ` · 已缓冲 ${Math.round(t.bufferedMs / 1000)}s` : ''}
+                {t.state === 'downloading'
+                  ? '下载中'
+                  : t.state === 'done'
+                    ? '已完成（做种中）'
+                    : t.state === 'paused'
+                      ? '已暂停'
+                      : t.state === 'failed'
+                        ? `失败：${t.error ?? '未知原因'}`
+                        : '准备中'}
+                {` · 分享率 ${t.ratio.toFixed(2)}`}
               </span>
-              <ProgressBar value={t.sizeBytes ? Math.round((t.receivedBytes / t.sizeBytes) * 100) : 0} />
+              <ProgressBar value={t.totalBytes ? Math.round((t.progressBytes / t.totalBytes) * 100) : 0} />
             </span>
             <span className="an-num">
-              {formatBytes(t.receivedBytes)} / {formatBytes(t.sizeBytes)}
+              {formatBytes(t.progressBytes)} / {formatBytes(t.totalBytes)}
             </span>
+            {t.state === 'downloading' ? (
+              <Btn kind="ghost" size="sm" title="暂停" onClick={() => void pauseBt(t.id)}>
+                暂停
+              </Btn>
+            ) : (
+              <Btn kind="ghost" size="sm" title="继续" onClick={() => void resumeBt(t.id)}>
+                继续
+              </Btn>
+            )}
+            <Btn kind="ghost" size="sm" title="删除任务（保留文件）" onClick={() => void deleteBt(t.id)}>
+              <Trash2 size={12} />
+            </Btn>
           </div>
         ))
       )}

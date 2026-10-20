@@ -361,6 +361,29 @@ export interface SyncConflict {
   cloudAt: number;
 }
 
+/** BT 任务（librqbit 的 stats 原样映射） */
+export interface BtTask {
+  id: number;
+  name: string;
+  state: 'initializing' | 'downloading' | 'paused' | 'done' | 'failed';
+  progressBytes: number;
+  totalBytes: number;
+  uploadedBytes: number;
+  finished: boolean;
+  ratio: number;
+  error?: string | null;
+}
+
+/** BT 会话状态（端口 / 聚合量 / 任务数） */
+export interface BtStats {
+  running: boolean;
+  port: number;
+  downloadedBytes?: number;
+  uploadedBytes?: number;
+  ratio?: number;
+  tasks?: number;
+}
+
 /** 缓存 / BT 任务 */
 export interface CacheTask {
   id: string;
