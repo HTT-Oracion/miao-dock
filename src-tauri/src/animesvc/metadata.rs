@@ -360,6 +360,8 @@ fn tags_of(raw: &RawSubject) -> Vec<String> {
 fn candidate(raw: &RawSubject) -> Value {
     let (year, season) = season_of(&raw.date);
     json!({
+        "provider": "bangumi",
+        "externalId": raw.id.to_string(),
         "bgmId": raw.id,
         "name": raw.name,
         "nameCn": raw.name_cn,
@@ -683,6 +685,22 @@ pub async fn hot_default(limit: usize) -> Result<Value, String> {
 /// 这是搜索/探索页的落点：搜到一部库里没有的番，可以「加入追番」先建条目，
 /// 之后往目录里放片或接在线源。目录名取中文名（没有则原名），去掉 Windows 非法字符；
 /// 同名目录属于别的条目时追加 ` (bgmId)`；同一部重复导入是**幂等**的。
+/// 按补丁建一条新番剧（Bangumi 与 AniList 共用：目录净化 / 幂等 / 落 manifest 只有一份实现）。
+pub(crate) fn import_with_patch(
+    root: &Path,
+    name_hint: &str,
+    id_tag: u64,
+    patch: &MetadataPatch,
+) -> Result<Value, String> {
+    let dir = pick_dir_by_name(root, name_hint, id_tag);
+    let path = root.join(&dir);
+    std::fs::create_dir_all(&path).map_err(|e| format!("建目录失败：{e}"))?;
+    let mut out = manifest::apply_metadata(root, &dir, patch)?;
+    out["path"] = json!(path.to_string_lossy());
+    out["dir"] = json!(dir);
+    Ok(out)
+}
+
 pub async fn import_subject(base: String, root: &Path, bgm_id: u64) -> Result<Value, String> {
     let raw = fetch_subject(base.clone(), bgm_id).await?;
     let weekday = calendar_weekday(base, bgm_id).await.ok().flatten();
@@ -700,11 +718,16 @@ pub async fn import_subject(base: String, root: &Path, bgm_id: u64) -> Result<Va
 
 /// 选一个不冲突的目录名（幂等：同一部就复用已有目录）。
 fn pick_dir(root: &Path, raw: &RawSubject, bgm_id: u64) -> String {
-    let base = if raw.name_cn.trim().is_empty() {
+    let name = if raw.name_cn.trim().is_empty() {
         raw.name.clone()
     } else {
         raw.name_cn.clone()
     };
+    pick_dir_by_name(root, &name, bgm_id)
+}
+
+fn pick_dir_by_name(root: &Path, name: &str, bgm_id: u64) -> String {
+    let base = name.to_string();
     let base = sanitize_dir(&base);
     let first = if base.is_empty() { format!("bgm-{bgm_id}") } else { base.clone() };
     if !root.join(&first).exists() {
@@ -877,6 +900,63 @@ pub async fn import_ref_default(root: &Path, input: &str) -> Result<Value, Strin
     import_default(root, bgm_id).await
 }
 
+
+// ------------------------------------------------------------------ 提供方回退（AniList）
+
+/// 检索：Bangumi 优先，**不可达或无结果时回落 AniList**。
+///
+/// 为什么需要：`api.bgm.tv` 在部分网络下完全不可达（实测超时），而候选元数据只有它一条来源 ⇒
+/// 用户看到空列表。AniList 的 GraphQL POST 实测可达，形状也对得上（见 `anilist::candidate_of`）。
+/// 回落时在响应里带 `fallbackFrom`，让界面能如实说明"这批来自 AniList"。
+pub async fn search_any(q: &str, limit: usize) -> Result<Value, String> {
+    match search_default(q, limit).await {
+        Ok(v) => Ok(v),
+        Err(bgm_err) => match crate::animesvc::anilist::search(q, limit).await {
+            Ok(mut v) => {
+                v["fallbackFrom"] = json!(format!("bangumi: {bgm_err}"));
+                Ok(v)
+            }
+            Err(al_err) => Err(format!("Bangumi：{bgm_err}；AniList：{al_err}")),
+        },
+    }
+}
+
+/// 应用元数据：按 `provider` 分派（默认 bangumi）。
+pub async fn apply_any(
+    root: &Path,
+    dir: &str,
+    provider: &str,
+    external_id: &str,
+) -> Result<Value, String> {
+    if provider.eq_ignore_ascii_case("anilist") {
+        let id: u64 = external_id
+            .trim()
+            .parse()
+            .map_err(|_| "AniList 的条目号不是数字".to_string())?;
+        return crate::animesvc::anilist::apply(root, dir, id).await;
+    }
+    let id: u64 = external_id
+        .trim()
+        .parse()
+        .map_err(|_| "Bangumi 的条目号不是数字".to_string())?;
+    apply_default(root, dir, id).await
+}
+
+/// 建库：按 `provider` 分派（默认 bangumi）。
+pub async fn import_any(root: &Path, provider: &str, external_id: &str) -> Result<Value, String> {
+    if provider.eq_ignore_ascii_case("anilist") {
+        let id: u64 = external_id
+            .trim()
+            .parse()
+            .map_err(|_| "AniList 的条目号不是数字".to_string())?;
+        return crate::animesvc::anilist::import_subject(root, id).await;
+    }
+    let id: u64 = external_id
+        .trim()
+        .parse()
+        .map_err(|_| "Bangumi 的条目号不是数字".to_string())?;
+    import_default(root, id).await
+}
 #[cfg(test)]
 mod tests {
     use super::*;

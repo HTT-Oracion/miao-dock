@@ -583,8 +583,17 @@ pub async fn anime_metadata_search(
 ///
 /// 只增不改用户数据：收藏态、进度、剧集列表不受影响（服务侧按补丁白名单合并）。
 #[tauri::command]
-pub async fn anime_metadata_apply(dir: String, bgm_id: u64) -> Result<Value, String> {
-    post("/api/v1/anime/metadata/apply", json!({ "dir": dir, "bgmId": bgm_id })).await
+pub async fn anime_metadata_apply(
+    dir: String,
+    provider: Option<String>,
+    external_id: Option<String>,
+    bgm_id: Option<u64>,
+) -> Result<Value, String> {
+    post(
+        "/api/v1/anime/metadata/apply",
+        json!({ "dir": dir, "provider": provider, "externalId": external_id, "bgmId": bgm_id }),
+    )
+    .await
 }
 
 /// 探索页：本周新番时间表（Bangumi `/calendar`，条目是整条 subject）。
@@ -601,8 +610,16 @@ pub async fn anime_metadata_hot(limit: Option<usize>) -> Result<Value, String> {
 
 /// 把 Bangumi 条目建成一条新番剧（只有元数据、没有片源；同一部幂等）。
 #[tauri::command]
-pub async fn anime_metadata_import(bgm_id: u64) -> Result<Value, String> {
-    post("/api/v1/anime/metadata/import", json!({ "bgmId": bgm_id })).await
+pub async fn anime_metadata_import(
+    provider: Option<String>,
+    external_id: Option<String>,
+    bgm_id: Option<u64>,
+) -> Result<Value, String> {
+    post(
+        "/api/v1/anime/metadata/import",
+        json!({ "provider": provider, "externalId": external_id, "bgmId": bgm_id }),
+    )
+    .await
 }
 
 /// 粘贴 Bangumi 链接 / 手输编号 → 建库（解析在服务侧，前端只做"像不像链接"的粗筛）。

@@ -36,6 +36,7 @@ use serde::Deserialize;
 
 mod manifest;
 pub mod account;
+pub mod anilist;
 pub mod bt;
 pub mod cache;
 pub mod datasource;
@@ -402,7 +403,15 @@ struct MetadataQuery {
 #[serde(rename_all = "camelCase")]
 struct MetadataApplyBody {
     dir: String,
-    bgm_id: u64,
+    /// 提供方：`bangumi`（默认）/ `anilist`
+    #[serde(default)]
+    provider: Option<String>,
+    /// 上游条目号（字符串：AniList 是数字但统一走字符串）
+    #[serde(default)]
+    external_id: Option<String>,
+    /// 兼容旧调用：Bangumi 的条目号
+    #[serde(default)]
+    bgm_id: Option<u64>,
 }
 
 /// 按关键词检索 Bangumi 候选（只搜动画）。
@@ -422,11 +431,11 @@ async fn metadata_search(
     let hit = if filtered {
         metadata::search_filtered_default(keyword, 20, q.year, q.quarter, q.tag.clone(), q.sort.clone()).await
     } else {
-        metadata::search_default(keyword, 8).await
+        metadata::search_any(keyword, 8).await
     };
     match hit {
         Ok(v) => json(StatusCode::OK, v),
-        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("Bangumi 检索失败：{e}")),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("元数据检索失败：{e}")),
     }
 }
 
@@ -439,12 +448,21 @@ async fn metadata_apply(
     if !authorized(&shell, &headers) {
         return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
     }
-    match metadata::apply_default(Path::new(&shell.root_dir), &body.dir, body.bgm_id).await {
+    let provider = body.provider.as_deref().unwrap_or("bangumi").to_string();
+    let external = body
+        .external_id
+        .clone()
+        .or_else(|| body.bgm_id.map(|v| v.to_string()))
+        .unwrap_or_default();
+    if external.trim().is_empty() {
+        return envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", "缺少上游条目号（externalId 或 bgmId）");
+    }
+    match metadata::apply_any(Path::new(&shell.root_dir), &body.dir, &provider, &external).await {
         Ok(v) => json(StatusCode::OK, v),
         Err(e) if e.starts_with("没有这个作品") || e.starts_with("非法的作品名") => {
             envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", e)
         }
-        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("Bangumi 元数据写入失败：{e}")),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("元数据写入失败：{e}")),
     }
 }
 
@@ -483,7 +501,12 @@ async fn metadata_hot(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MetadataImportBody {
-    bgm_id: u64,
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    external_id: Option<String>,
+    #[serde(default)]
+    bgm_id: Option<u64>,
 }
 
 /// 把 Bangumi 条目建成一条新番剧（只有元数据、没有片源）。
@@ -495,10 +518,19 @@ async fn metadata_import(
     if !authorized(&shell, &headers) {
         return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
     }
-    match metadata::import_default(Path::new(&shell.root_dir), body.bgm_id).await {
+    let provider = body.provider.as_deref().unwrap_or("bangumi").to_string();
+    let external = body
+        .external_id
+        .clone()
+        .or_else(|| body.bgm_id.map(|v| v.to_string()))
+        .unwrap_or_default();
+    if external.trim().is_empty() {
+        return envelope(StatusCode::BAD_REQUEST, "BAD_REQUEST", "缺少上游条目号（externalId 或 bgmId）");
+    }
+    match metadata::import_any(Path::new(&shell.root_dir), &provider, &external).await {
         Ok(v) => json(StatusCode::OK, v),
         Err(e) if e.starts_with("建目录失败") => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", e),
-        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("Bangumi 条目建库失败：{e}")),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("条目建库失败：{e}")),
     }
 }
 
