@@ -12,6 +12,7 @@ import type {
   AnimeDetailExtra,
   AnimeEpisode,
   AnimeMetadataCandidate,
+  AnimeSearchFilters,
   AnimeServiceStatus,
   AnimeSubject,
   AnimeView,
@@ -79,6 +80,8 @@ export interface AnimeState {
 
   /** 详情页补充数据（角色 / 制作 / 关联），按 Bangumi id 现取 */
   detailExtra: AnimeDetailExtra | null;
+  /** 搜索筛选条（年份 / 季度 / 标签 / 排序 / 布局） */
+  searchFilters: AnimeSearchFilters;
   /** 「补全信息」找到多个候选时挂在这里，等用户挑一个（dir = 作品目录名） */
   metaCandidates: { dir: string; list: AnimeMetadataCandidate[] } | null;
 
@@ -126,6 +129,10 @@ export interface AnimeState {
   applyMetadataCandidate: (dir: string, bgmId: number) => Promise<{ ok: boolean; message: string }>;
   /** 收起候选面板（用户改主意） */
   clearMetaCandidates: () => void;
+  /** 改一个筛选条（年份 / 季度 / 标签 / 排序 / 布局） */
+  setSearchFilter: <K extends keyof AnimeSearchFilters>(key: K, value: AnimeSearchFilters[K]) => void;
+  /** 清空筛选条 */
+  resetSearchFilters: () => void;
   refreshStatus: () => Promise<void>;
 }
 
@@ -184,6 +191,7 @@ export const useAnimeStore = create<AnimeState>()((set, get) => ({
   exploreError: null,
   detailExtra: null,
   metaCandidates: null,
+  searchFilters: { year: null, quarter: null, tag: null, sort: 'match', layout: 'grid' },
 
   ...navigationActions(set, get),
   ...libraryActions(set, get),

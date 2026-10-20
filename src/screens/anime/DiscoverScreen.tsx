@@ -20,7 +20,7 @@ import { useAnimeStore } from '@anime/store';
 import { historyFrom } from '@anime/selectors';
 import { errText, fmtClock, looksLikeBgmRef } from '@anime/convert';
 import { WEEKDAYS } from '@anime/player-options';
-import type { AnimeEpisode, AnimeMetadataCandidate, AnimeSubject } from '@anime/types';
+import type { AnimeEpisode, AnimeMetadataCandidate, AnimeSearchFilters, AnimeSubject } from '@anime/types';
 import { Cover, ProgressBar, SectionHead, SubjectCard } from '@screens/anime/shared';
 
 /** 搜索防抖：每敲一个字都打一次上游既慢又容易被限流 */
@@ -104,6 +104,9 @@ export function DiscoverScreen() {
   const loadExplore = useAnimeStore((s) => s.loadExplore);
   const importCandidate = useAnimeStore((s) => s.importCandidate);
   const importByRef = useAnimeStore((s) => s.importByRef);
+  const filters = useAnimeStore((s) => s.searchFilters);
+  const setFilter = useAnimeStore((s) => s.setSearchFilter);
+  const resetFilters = useAnimeStore((s) => s.resetSearchFilters);
   const { push } = useToasts();
 
   const [cands, setCands] = useState<AnimeMetadataCandidate[] | null>(null);
@@ -131,7 +134,7 @@ export function DiscoverScreen() {
     setSearching(true);
     const timer = window.setTimeout(() => {
       void ipc
-        .animeMetadataSearch(q)
+        .animeMetadataSearch(q, filters.year, filters.quarter, filters.tag, filters.sort)
         .then((r) => {
           if (!alive) return;
           setCands(r.candidates ?? []);
@@ -149,7 +152,7 @@ export function DiscoverScreen() {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [mode, query, searchTick]);
+  }, [mode, query, searchTick, filters.year, filters.quarter, filters.tag, filters.sort]);
 
   /** 库里已有同一条目就打开它，否则建库（幂等） */
   const openCandidate = (c: AnimeMetadataCandidate) => {
@@ -268,6 +271,9 @@ export function DiscoverScreen() {
           episodes={episodes}
           onRetry={() => setSearchTick((t) => t + 1)}
           onImportRef={(input) => void importByRef(input).then((r) => push(r.message, r.ok ? 'good' : 'bad'))}
+          filters={filters}
+          setFilter={setFilter}
+          resetFilters={resetFilters}
         />
       ) : (
         <ExploreBody
@@ -292,6 +298,124 @@ export function DiscoverScreen() {
   );
 }
 
+/** 排序档（与 Rust 侧白名单同值；未知值服务侧退回 match） */
+const SORTS: { key: AnimeSearchFilters['sort']; label: string }[] = [
+  { key: 'match', label: '匹配' },
+  { key: 'heat', label: '热度' },
+  { key: 'score', label: '评分' },
+  { key: 'rank', label: '排名' },
+];
+
+const QUARTERS = [1, 2, 3, 4];
+
+/** 检索筛选条：年份 / 季度 / 排序 / 布局 + 结果里的热门标签 */
+function FilterBar({
+  filters,
+  setFilter,
+  resetFilters,
+  cands,
+}: {
+  filters: AnimeSearchFilters;
+  setFilter: <K extends keyof AnimeSearchFilters>(key: K, value: AnimeSearchFilters[K]) => void;
+  resetFilters: () => void;
+  cands: AnimeMetadataCandidate[] | null;
+}) {
+  const years = useMemo(() => {
+    const now = new Date().getFullYear();
+    return Array.from({ length: 6 }, (_, i) => now - i);
+  }, []);
+  // 标签来自**当前结果**（真数据），不是写死的一份清单
+  const topTags = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const c of cands ?? []) for (const t of c.tags) count.set(t, (count.get(t) ?? 0) + 1);
+    return [...count.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([t]) => t);
+  }, [cands]);
+
+  return (
+    <>
+      <div className="an-chips">
+        <span className="an-note">年份</span>
+        <button
+          type="button"
+          className={filters.year == null ? 'an-chip is-ok' : 'an-chip is-plain'}
+          onClick={() => setFilter('year', null)}
+        >
+          全部
+        </button>
+        {years.map((y) => (
+          <button
+            key={y}
+            type="button"
+            className={filters.year === y ? 'an-chip is-ok' : 'an-chip is-plain'}
+            onClick={() => setFilter('year', filters.year === y ? null : y)}
+          >
+            {y}
+          </button>
+        ))}
+        <span className="an-note">季度</span>
+        <button
+          type="button"
+          className={filters.quarter == null ? 'an-chip is-ok' : 'an-chip is-plain'}
+          onClick={() => setFilter('quarter', null)}
+        >
+          全年
+        </button>
+        {QUARTERS.map((q) => (
+          <button
+            key={q}
+            type="button"
+            className={filters.quarter === q ? 'an-chip is-ok' : 'an-chip is-plain'}
+            onClick={() => setFilter('quarter', filters.quarter === q ? null : q)}
+          >
+            Q{q}
+          </button>
+        ))}
+        <span className="an-note">排序</span>
+        {SORTS.map((o) => (
+          <button
+            key={o.key}
+            type="button"
+            className={filters.sort === o.key ? 'an-chip is-ok' : 'an-chip is-plain'}
+            onClick={() => setFilter('sort', o.key)}
+          >
+            {o.label}
+          </button>
+        ))}
+        <span className="an-sp" />
+        <button type="button" className="an-chip is-plain" onClick={resetFilters}>
+          清筛选
+        </button>
+        <button
+          type="button"
+          className="an-chip is-plain"
+          title="切换结果布局"
+          onClick={() => setFilter('layout', filters.layout === 'grid' ? 'list' : 'grid')}
+        >
+          {filters.layout === 'grid' ? '列表' : '网格'}
+        </button>
+      </div>
+      {topTags.length ? (
+        <div className="an-chips">
+          <span className="an-note">标签</span>
+          {topTags.map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={filters.tag === t ? 'an-chip is-ok' : 'an-chip is-plain'}
+              onClick={() => setFilter('tag', filters.tag === t ? null : t)}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 /** 搜索模式：在线候选优先；断网时退回本地库匹配并如实标注 */
 function SearchBody({
   query,
@@ -306,6 +430,9 @@ function SearchBody({
   episodes,
   onRetry,
   onImportRef,
+  filters,
+  setFilter,
+  resetFilters,
 }: {
   query: string;
   searching: boolean;
@@ -319,6 +446,9 @@ function SearchBody({
   episodes: AnimeEpisode[];
   onRetry: () => void;
   onImportRef: (input: string) => void;
+  filters: AnimeSearchFilters;
+  setFilter: <K extends keyof AnimeSearchFilters>(key: K, value: AnimeSearchFilters[K]) => void;
+  resetFilters: () => void;
 }) {
   const q = query.trim();
   if (looksLikeBgmRef(q)) {
@@ -390,9 +520,44 @@ function SearchBody({
         </>
       ) : (
         <>
+          <FilterBar filters={filters} setFilter={setFilter} resetFilters={resetFilters} cands={cands} />
           <SectionHead title="搜索结果" count={cands?.length ?? 0} />
           {!cands || cands.length === 0 ? (
-            <Empty inline>没搜到「{q}」。换个关键词，或者确认一下译名。</Empty>
+            <Empty inline>没搜到「{q}」。换个关键词、放宽筛选，或者确认一下译名。</Empty>
+          ) : filters.layout === 'list' ? (
+            <div className="an-cand-list">
+              {cands.map((c) => {
+                const meta =
+                  [
+                    c.year ?? '',
+                    c.rating ? `${c.rating.toFixed(1)} 分` : '',
+                    c.episodesTotal ? `${c.episodesTotal} 集` : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') || c.name;
+                return (
+                  <div key={c.bgmId} className="an-cand-row">
+                    <span className="an-cand-pic">
+                      {c.cover ? (
+                        <img src={c.cover} alt="" loading="lazy" />
+                      ) : (
+                        <span>{(c.nameCn || c.name).slice(0, 1)}</span>
+                      )}
+                    </span>
+                    <span className="an-cand-tx">
+                      <b>{c.nameCn || c.name}</b>
+                      <span>{meta}</span>
+                    </span>
+                    <span className={localByBgm.has(c.bgmId) ? 'an-chip is-ok' : 'an-chip is-plain'}>
+                      {localByBgm.has(c.bgmId) ? '已在库' : '未入库'}
+                    </span>
+                    <Btn kind="ghost" size="sm" onClick={() => onOpenCandidate(c)}>
+                      {localByBgm.has(c.bgmId) ? '查看' : '加入追番'}
+                    </Btn>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <div className="an-grid">
               {cands.map((c) => (

@@ -578,6 +578,20 @@
   white-space: nowrap;
 }
 
+/* 检索筛选条：一排 chip，点中即生效（年份 / 季度 / 排序 / 标签 / 布局） */
+.an-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0;
+}
+.an-chips .an-chip {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
 /* ---------- 探索页候选卡（Bangumi 条目，可能不在库里） ---------- */
 .an-cand .an-card-cover img {
   display: block;

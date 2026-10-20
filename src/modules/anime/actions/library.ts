@@ -42,6 +42,8 @@ export function libraryActions(
   | 'importByRef'
   | 'applyMetadataCandidate'
   | 'clearMetaCandidates'
+  | 'setSearchFilter'
+  | 'resetSearchFilters'
 > {
   /** 把扫描结果写进 store（三处调用共用，避免字段漏写） */
   const applySnapshot = (snap: Awaited<ReturnType<typeof ipc.animeLibrary>>) => {
@@ -441,6 +443,16 @@ export function libraryActions(
         set({ error: message });
         return { ok: false, message };
       }
+    },
+
+    /** 改一个筛选条（年份 / 季度 / 标签 / 排序 / 布局） */
+    setSearchFilter: (key, value) => {
+      set((s) => ({ searchFilters: { ...s.searchFilters, [key]: value } }));
+    },
+
+    /** 清空筛选条（布局不重置：那是个人偏好，不该被「清筛选」顺手改掉） */
+    resetSearchFilters: () => {
+      set((s) => ({ searchFilters: { ...s.searchFilters, year: null, quarter: null, tag: null, sort: 'match' } }));
     },
 
     /** 收起候选面板 */

@@ -72,9 +72,21 @@ export const animePaths = () => invoke<AnimeServiceStatus['paths']>('anime_paths
 export const animePlaySource = (subjectId: string, index: number) =>
   invoke<AnimePlaySource>('anime_play_source', { subjectId, index });
 
-/** 按关键词检索 Bangumi 候选（请求由服务侧发出，前端不直连第三方） */
-export const animeMetadataSearch = (q: string) =>
-  invoke<{ ok: boolean; count: number; candidates: AnimeMetadataCandidate[] }>('anime_metadata_search', { q });
+/** 按关键词检索 Bangumi 候选（请求由服务侧发出，前端不直连第三方）；可带年份/季度/标签/排序 */
+export const animeMetadataSearch = (
+  q: string,
+  year?: number | null,
+  quarter?: number | null,
+  tag?: string | null,
+  sort?: string | null,
+) =>
+  invoke<{ ok: boolean; count: number; candidates: AnimeMetadataCandidate[] }>('anime_metadata_search', {
+    q,
+    year: year ?? null,
+    quarter: quarter ?? null,
+    tag: tag ?? null,
+    sort: sort ?? null,
+  });
 
 /** 把某个候选补进这一部的 manifest；只增不改用户数据 */
 export const animeMetadataApply = (dir: string, bgmId: number) =>

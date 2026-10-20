@@ -387,3 +387,12 @@ export const SKIP_LABEL: Record<SkipMode, string> = {
   both: '全部',
   off: '关闭',
 };
+
+/** 搜索筛选条（R2-6）：年份 / 季度 / 标签 / 排序 + 结果布局 */
+export interface AnimeSearchFilters {
+  year: number | null;
+  quarter: number | null;
+  tag: string | null;
+  sort: 'match' | 'heat' | 'rank' | 'score';
+  layout: 'grid' | 'list';
+}

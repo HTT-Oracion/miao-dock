@@ -421,6 +421,25 @@ const CHECKS = [
     }),
   },
   {
+    id: 'M3.filters',
+    run: (s) => ({
+      ok:
+        /fn air_date_range/.test(s.rustMetadata) &&
+        /q\.map\(\|q\| 1 \+ \(q - 1\) \* 3\)/.test(s.rustMetadata) &&
+        /1 \+ \(q - 1\) \* 3/.test(s.rustMetadata) &&
+        /fn search_body/.test(s.rustMetadata) &&
+        /search_filtered_default/.test(s.rustMetadata) &&
+        /year: Option<u32>/.test(s.rustAnimesvc) &&
+        /year: Option<u32>/.test(s.rustAnime) &&
+        /AnimeSearchFilters/.test(s.typesTs) &&
+        /searchFilters/.test(s.store) &&
+        /setSearchFilter/.test(s.actionLib) &&
+        /FilterBar/.test(s.discoverScreen) &&
+        /filters\.layout/.test(s.discoverScreen),
+      detail: '检索筛选条没接通：年份 / 季度 / 标签 / 排序 / 布局 任一环缺失',
+    }),
+  },
+  {
     id: 'META.ref',
     run: (s) => ({
       ok:
@@ -901,6 +920,13 @@ const MUTATIONS = [
     find: '.route(&format!("/api/{API_VERSION}/anime/metadata/import-ref"), post(metadata_import_ref))',
     replace: '',
     expect: ['META.ref'],
+  },
+  {
+    name: '筛选条只拼年份不拼季度（Q2 会退化成整年）',
+    file: F.rustMetadata,
+    find: 'let start_month = q.map(|q| 1 + (q - 1) * 3).unwrap_or(1);',
+    replace: 'let start_month = 1;',
+    expect: ['M3.filters'],
   },
 ];
 
