@@ -7,6 +7,8 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import type {
+  AccountQueueItem,
+  AccountSyncResult,
   AnimeCalendarDay,
   AnimeCharacter,
   AnimeCookie,
@@ -170,6 +172,49 @@ export const animeResolveSource = (url: string, rules: AnimeSourceRules, cookies
     cookies: cookies ?? null,
     preferRes: preferRes ?? null,
   });
+
+/** 账号状态（登录态 / 队列 / 中继地址） */
+export const animeAccount = () =>
+  invoke<{
+    loggedIn: boolean;
+    user: { id?: string; email?: string; name?: string };
+    lastSyncAt?: number;
+    cloudCount?: number;
+    relayBase: string;
+    queue: AccountQueueItem[];
+  }>('anime_account');
+
+/** 邮箱密码登录 */
+export const animeAccountLogin = (email: string, password: string) =>
+  invoke<{ ok: boolean; user: { email?: string; name?: string } }>('anime_account_login', { email, password });
+
+/** 设备码 / 扫码：开始（拿 deviceCode 与轮询间隔） */
+export const animeAccountDeviceStart = (kind: 'oauth' | 'qr') =>
+  invoke<{ deviceCode: string; userCode: string; verifyUrl: string; interval: number; expiresIn: number }>(
+    'anime_account_device_start',
+    { kind },
+  );
+
+/** 设备码 / 扫码：轮询一次 */
+export const animeAccountDevicePoll = (deviceCode: string) =>
+  invoke<{ status: 'pending' | 'ok' | 'expired'; token?: string; user?: { email?: string; name?: string } }>(
+    'anime_account_device_poll',
+    { deviceCode },
+  );
+
+/** 桩专用：模拟另一端确认 */
+export const animeAccountDeviceApprove = (deviceCode: string) =>
+  invoke<{ ok: boolean }>('anime_account_device_approve', { deviceCode });
+
+/** 退出登录 */
+export const animeAccountLogout = () => invoke<{ ok: boolean }>('anime_account_logout');
+
+/** 入队一条待同步条目 */
+export const animeAccountEnqueue = (item: AccountQueueItem) =>
+  invoke<{ ok: boolean }>('anime_account_enqueue', { item });
+
+/** 同步一次（推队列 → 冲突按策略处理 → 拉云端） */
+export const animeAccountSync = (policy: string) => invoke<AccountSyncResult>('anime_account_sync', { policy });
 
 /** 缓存任务列表（进度以盘上为准） */
 export const animeCache = () => invoke<{ ok: boolean; tasks: CacheTask[] }>('anime_cache');

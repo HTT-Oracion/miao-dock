@@ -327,6 +327,30 @@ export interface SyncTask {
   state: 'pushed' | 'retrying' | 'queued';
 }
 
+/** 待同步队列里的一条（服务端结构） */
+export interface AccountQueueItem {
+  id: string;
+  kind: string;
+  key: string;
+  updatedAt: number;
+  payload: Record<string, unknown>;
+}
+
+/** 同步结果摘要 */
+export interface AccountSyncResult {
+  ok: boolean;
+  pushed: number;
+  cloudCount: number;
+  lastSyncAt?: number;
+  conflicts: {
+    id: string;
+    kind: string;
+    key: string;
+    local: AccountQueueItem | null;
+    cloud: AccountQueueItem;
+  }[];
+}
+
 /** 双侧冲突（本地 vs 云端 同一集进度不同） */
 export interface SyncConflict {
   subjectTitle: string;

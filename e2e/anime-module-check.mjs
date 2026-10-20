@@ -56,6 +56,8 @@ const F = {
   shared: path.join(ROOT, 'src', 'screens', 'anime', 'shared.tsx'),
   memory: path.join(ROOT, 'src', 'modules', 'anime', 'memory.ts'),
   rustCache: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'cache.rs'),
+  rustAccount: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'account.rs'),
+  accountScreen: path.join(ROOT, 'src', 'screens', 'anime', 'AccountScreen.tsx'),
   cacheScreen: path.join(ROOT, 'src', 'screens', 'anime', 'CacheScreen.tsx'),
   rustAnime: path.join(ROOT, 'src-tauri', 'src', 'anime', 'mod.rs'),
   rustAnimesvc: path.join(ROOT, 'src-tauri', 'src', 'animesvc.rs'),
@@ -513,6 +515,25 @@ const CHECKS = [
         /needsRules/.test(s.sourceScreen) &&
         /resolveSource/.test(s.sourceScreen),
       detail: '通用网页源没接通：选择器规则 / 列表解析 / 直链解析 / 端点 / 编辑器 任一环缺失',
+    }),
+  },
+  {
+    id: 'ACCOUNT.wired',
+    run: (s) => ({
+      ok:
+        /pub async fn relay_base/.test(s.rustAccount) &&
+        /\.route\("\/v1\/sync\/push", post\(relay_push\)\)/.test(s.rustAccount) &&
+        /pub async fn sync\(policy/.test(s.rustAccount) &&
+        /pub fn keep_local/.test(s.rustAccount) &&
+        /anime\/account\/sync/.test(s.rustAnimesvc) &&
+        /crate::anime::anime_account_sync/.test(strip(s.rustCommands)) &&
+        /animeAccountSync/.test(s.ipc) &&
+        /loginPassword/.test(s.accountScreen) &&
+        /startDevice/.test(s.accountScreen) &&
+        /syncNow/.test(s.accountScreen) &&
+        /autoSync/.test(s.actionLib) &&
+        /conflictPolicy/.test(s.actionLib),
+      detail: '账号链路没接通：中继桩 / 客户端 / 队列 / 三种登录 / 设置 任一环缺失',
     }),
   },
   {
@@ -1013,6 +1034,13 @@ const MUTATIONS = [
     find: 'onClick={() => setPickerOpen(true)}',
     replace: "onClick={() => setView('source')}",
     expect: ['PLAYER.picker'],
+  },
+  {
+    name: '摘掉中继推送路由（同步永远推不上去）',
+    file: F.rustAccount,
+    find: '.route("/v1/sync/push", post(relay_push))',
+    replace: '',
+    expect: ['ACCOUNT.wired'],
   },
   {
     name: '摘掉缓存路由（缓存屏永远空）',

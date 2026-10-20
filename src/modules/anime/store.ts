@@ -148,6 +148,20 @@ export interface AnimeState {
   resumeCache: (id: string) => Promise<void>;
   deleteCache: (id: string) => Promise<void>;
   refreshStatus: () => Promise<void>;
+  /** 账号：拉状态（登录态 + 待同步队列） */
+  loadAccount: () => Promise<void>;
+  /** 邮箱密码登录 */
+  loginPassword: (email: string, password: string) => Promise<{ ok: boolean; message: string }>;
+  /** 设备码 / 扫码：开始（返回设备码与轮询间隔） */
+  startDevice: (kind: 'oauth' | 'qr') => Promise<{ deviceCode: string; userCode: string; interval: number } | null>;
+  /** 设备码 / 扫码：轮询一次 */
+  pollDevice: (code: string) => Promise<'pending' | 'ok' | 'expired'>;
+  /** 桩专用：模拟另一端确认 */
+  approveDevice: (code: string) => Promise<void>;
+  /** 退出登录 */
+  logoutAccount: () => Promise<void>;
+  /** 同步一次（按设置里的冲突策略） */
+  syncNow: () => Promise<{ ok: boolean; message: string; conflicts: number }>;
 }
 
 /** 播放器初始态：没有片源时也要有完整形状（组件读字段不判空） */

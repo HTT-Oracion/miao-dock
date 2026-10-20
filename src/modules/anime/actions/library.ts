@@ -6,7 +6,7 @@
  */
 import * as ipc from '@anime/ipc';
 import type { AnimeState, StoreGet, StoreSet } from '@anime/slice';
-import type { AnimeEpisode, CollectionType } from '@anime/types';
+import type { AccountQueueItem, AnimeEpisode, CollectionType, SyncConflict } from '@anime/types';
 import type { AnimePrefs } from '@anime/prefs';
 import { savePrefs } from '@anime/prefs';
 import { errText } from '@anime/convert';
@@ -49,6 +49,13 @@ export function libraryActions(
   | 'pauseCache'
   | 'resumeCache'
   | 'deleteCache'
+  | 'loadAccount'
+  | 'loginPassword'
+  | 'startDevice'
+  | 'pollDevice'
+  | 'approveDevice'
+  | 'logoutAccount'
+  | 'syncNow'
 > {
   /** 把扫描结果写进 store（三处调用共用，避免字段漏写） */
   const applySnapshot = (snap: Awaited<ReturnType<typeof ipc.animeLibrary>>) => {
@@ -164,6 +171,13 @@ export function libraryActions(
       } catch (e) {
         set({ error: `进度没存住：${errText(e)}` });
       }
+      await queueLocalChange(
+        next,
+        watched ? 'watched' : 'progress',
+        { positionMs: next.positionMs, episodeIndex: next.index, subjectTitle: next.title },
+        get().prefs.autoSync,
+        get().account.loggedIn,
+      );
     },
 
     savePosition: async (episodeId, positionMs) => {
@@ -188,6 +202,13 @@ export function libraryActions(
       } catch (e) {
         set({ error: `播放位置没存住：${errText(e)}` });
       }
+      await queueLocalChange(
+        next,
+        'progress',
+        { positionMs, episodeIndex: next.index, subjectTitle: next.title },
+        get().prefs.autoSync,
+        get().account.loggedIn,
+      );
     },
 
     /**
@@ -313,6 +334,89 @@ export function libraryActions(
         set({ error: `删除失败：${errText(e)}` });
       }
       await get().loadCache();
+    },
+
+    /** 账号状态：登录态 + 待同步队列（队列条目来自服务侧，标签由条目自身推出来） */
+    loadAccount: async () => {
+      try {
+        const r = await ipc.animeAccount();
+        set({
+          account: {
+            loggedIn: r.loggedIn,
+            username: r.user?.name,
+            email: r.user?.email,
+            cloudCount: r.cloudCount,
+            lastSyncAt: r.lastSyncAt,
+          },
+          syncQueue: r.queue.map((q) => ({ id: q.id, label: queueLabel(q), state: 'queued' as const })),
+        });
+      } catch (e) {
+        set({ error: `账号状态没拉到：${errText(e)}` });
+      }
+    },
+
+    loginPassword: async (email, password) => {
+      try {
+        await ipc.animeAccountLogin(email, password);
+        await get().loadAccount();
+        return { ok: true, message: '已登录' };
+      } catch (e) {
+        return { ok: false, message: `登录失败：${errText(e)}` };
+      }
+    },
+
+    startDevice: async (kind) => {
+      try {
+        const r = await ipc.animeAccountDeviceStart(kind);
+        return { deviceCode: r.deviceCode, userCode: r.userCode, interval: r.interval };
+      } catch (e) {
+        set({ error: `设备码获取失败：${errText(e)}` });
+        return null;
+      }
+    },
+
+    pollDevice: async (code) => {
+      try {
+        const r = await ipc.animeAccountDevicePoll(code);
+        if (r.status === 'ok') await get().loadAccount();
+        return r.status;
+      } catch (e) {
+        set({ error: `轮询失败：${errText(e)}` });
+        return 'pending';
+      }
+    },
+
+    approveDevice: async (code) => {
+      try {
+        await ipc.animeAccountDeviceApprove(code);
+      } catch (e) {
+        set({ error: `确认失败：${errText(e)}` });
+      }
+    },
+
+    logoutAccount: async () => {
+      try {
+        await ipc.animeAccountLogout();
+      } catch (e) {
+        set({ error: `退出失败：${errText(e)}` });
+      }
+      set({ account: { loggedIn: false }, syncQueue: [], conflicts: [] });
+    },
+
+    /** 同步一次：策略来自设置；冲突回填给合并面板 */
+    syncNow: async () => {
+      try {
+        const r = await ipc.animeAccountSync(get().prefs.conflictPolicy);
+        set({ conflicts: r.conflicts.map(toConflict) });
+        await get().loadAccount();
+        return {
+          ok: true,
+          message: `推送 ${r.pushed} 条 · 云端 ${r.cloudCount} 条 · 冲突 ${r.conflicts.length} 条`,
+          conflicts: r.conflicts.length,
+        };
+      } catch (e) {
+        return { ok: false, message: `同步失败：${errText(e)}`, conflicts: 0 };
+      }
     },
 
     /** 切换番剧库根：写设置 → 重启动漫服务 → 重新扫描（三步缺一都不生效） */
@@ -537,4 +641,53 @@ export function libraryActions(
       }
     },
   };
+}
+
+/** 队列条目的人话标签（由条目自身推出，不额外存一份） */
+function queueLabel(q: AccountQueueItem): string {
+  const where = q.payload.subjectTitle ? String(q.payload.subjectTitle) : q.key;
+  const ep = q.payload.episodeIndex != null ? ` 第 ${String(q.payload.episodeIndex)} 话` : '';
+  if (q.kind === 'watched') return `${where}${ep} 标记为看完`;
+  if (q.kind === 'collection') return `${where} 收藏变更`;
+  return `${where}${ep} 进度`;
+}
+
+/** 服务侧冲突 → 界面用的双侧对比 */
+function toConflict(c: {
+  id: string;
+  key: string;
+  local: AccountQueueItem | null;
+  cloud: AccountQueueItem;
+}): SyncConflict {
+  const num = (v: unknown) => (typeof v === 'number' ? v : Number(v ?? 0) || 0);
+  return {
+    subjectTitle: String(c.cloud.payload.subjectTitle ?? c.key),
+    episodeIndex: num(c.cloud.payload.episodeIndex),
+    localMs: num(c.local?.payload.positionMs),
+    cloudMs: num(c.cloud.payload.positionMs),
+    localAt: c.local?.updatedAt ?? 0,
+    cloudAt: c.cloud.updatedAt,
+  };
+}
+
+/** 本地改动入队：只在「已登录 + 开着自动同步」时入队（关掉就只手动推） */
+async function queueLocalChange(
+  ep: AnimeEpisode,
+  kind: 'progress' | 'watched',
+  payload: Record<string, unknown>,
+  autoSync: boolean,
+  loggedIn: boolean,
+): Promise<void> {
+  if (!autoSync || !loggedIn) return;
+  try {
+    await ipc.animeAccountEnqueue({
+      id: `${kind}:${ep.id}`,
+      kind,
+      key: ep.id,
+      updatedAt: Date.now(),
+      payload,
+    });
+  } catch {
+    // 入队失败不影响本地：下次同步会重新入队
+  }
 }
