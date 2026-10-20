@@ -90,6 +90,10 @@ export const animeMetadataHot = (limit = 12) => invoke<AnimeHotResult>('anime_me
 export const animeMetadataImport = (bgmId: number) =>
   invoke<{ ok: boolean; dir: string; path: string; subject: AnimeSubject }>('anime_metadata_import', { bgmId });
 
+/** 粘贴 Bangumi 链接 / 手输编号 → 建库（解析在服务侧） */
+export const animeMetadataImportRef = (input: string) =>
+  invoke<{ ok: boolean; dir: string; path: string; subject: AnimeSubject }>('anime_metadata_import_ref', { input });
+
 /** 详情页：角色 + 声优（按 Bangumi id 现取，不落盘） */
 export const animeMetadataCharacters = (bgmId: number) =>
   invoke<{ ok: boolean; characters: AnimeCharacter[] }>('anime_metadata_characters', { bgmId });

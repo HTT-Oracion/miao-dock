@@ -421,6 +421,23 @@ const CHECKS = [
     }),
   },
   {
+    id: 'META.ref',
+    run: (s) => ({
+      ok:
+        /pub fn parse_bgm_ref/.test(s.rustMetadata) &&
+        /pub async fn import_ref_default/.test(s.rustMetadata) &&
+        /anime\/metadata\/import-ref/.test(s.rustAnimesvc) &&
+        /crate::anime::anime_metadata_import_ref/.test(strip(s.rustCommands)) &&
+        /animeMetadataImportRef/.test(s.ipc) &&
+        /looksLikeBgmRef/.test(s.convertTs) &&
+        /importByRef/.test(s.actionLib) &&
+        /looksLikeBgmRef/.test(s.discoverScreen) &&
+        /metaCandidates/.test(s.detailScreen) &&
+        /applyMetadataCandidate/.test(s.detailScreen),
+      detail: '粘链接 / 多候选没接通：解析 / 端点 / 桥接 / 搜索框 / 候选选择 任一环缺失',
+    }),
+  },
+  {
     id: 'META.detail',
     run: (s) => ({
       ok:
@@ -877,6 +894,13 @@ const MUTATIONS = [
     find: '.cookies_for_url(parsed)',
     replace: '.cookies()',
     expect: ['M3.challenge'],
+  },
+  {
+    name: '摘掉「粘链接建库」路由（搜索框那句占位又变成空话）',
+    file: F.rustAnimesvc,
+    find: '.route(&format!("/api/{API_VERSION}/anime/metadata/import-ref"), post(metadata_import_ref))',
+    replace: '',
+    expect: ['META.ref'],
   },
 ];
 

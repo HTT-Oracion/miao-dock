@@ -460,6 +460,26 @@
   font-weight: 600;
 }
 
+/* 候选选择（「补全信息」找到多个时）：一行一个，点右边用这个 */
+.an-cand-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.an-cand-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--md-line);
+  border-radius: 12px;
+  background: var(--md-surface);
+  min-width: 0;
+}
+.an-cand-row .an-cand-tx {
+  flex: 1;
+}
+
 /* ---------- 详情页补充数据：角色 / 关联作品 ---------- */
 .an-cast {
   display: grid;

@@ -18,7 +18,7 @@ import { useToasts } from '@hooks';
 import * as ipc from '@anime/ipc';
 import { useAnimeStore } from '@anime/store';
 import { historyFrom } from '@anime/selectors';
-import { errText, fmtClock } from '@anime/convert';
+import { errText, fmtClock, looksLikeBgmRef } from '@anime/convert';
 import { WEEKDAYS } from '@anime/player-options';
 import type { AnimeEpisode, AnimeMetadataCandidate, AnimeSubject } from '@anime/types';
 import { Cover, ProgressBar, SectionHead, SubjectCard } from '@screens/anime/shared';
@@ -103,6 +103,7 @@ export function DiscoverScreen() {
   const exploreError = useAnimeStore((s) => s.exploreError);
   const loadExplore = useAnimeStore((s) => s.loadExplore);
   const importCandidate = useAnimeStore((s) => s.importCandidate);
+  const importByRef = useAnimeStore((s) => s.importByRef);
   const { push } = useToasts();
 
   const [cands, setCands] = useState<AnimeMetadataCandidate[] | null>(null);
@@ -116,11 +117,11 @@ export function DiscoverScreen() {
     void loadExplore();
   }, [loadExplore]);
 
-  // 搜索：在线候选（防抖）；空关键词回到本地库过滤
+  // 搜索：在线候选（防抖）；空关键词回到本地库过滤；粘的是条目链接则走建库
   useEffect(() => {
     if (mode !== 'search') return;
     const q = query.trim();
-    if (!q) {
+    if (!q || looksLikeBgmRef(q)) {
       setCands(null);
       setSearchError(null);
       setSearching(false);
@@ -266,6 +267,7 @@ export function DiscoverScreen() {
           onContinue={(id) => openPlayer(id)}
           episodes={episodes}
           onRetry={() => setSearchTick((t) => t + 1)}
+          onImportRef={(input) => void importByRef(input).then((r) => push(r.message, r.ok ? 'good' : 'bad'))}
         />
       ) : (
         <ExploreBody
@@ -303,6 +305,7 @@ function SearchBody({
   onContinue,
   episodes,
   onRetry,
+  onImportRef,
 }: {
   query: string;
   searching: boolean;
@@ -315,8 +318,20 @@ function SearchBody({
   onContinue: (id: string) => void;
   episodes: AnimeEpisode[];
   onRetry: () => void;
+  onImportRef: (input: string) => void;
 }) {
   const q = query.trim();
+  if (looksLikeBgmRef(q)) {
+    // 占位文案承诺的「粘链接」：不拿去当关键词检索，直接走建库
+    return (
+      <div className="an-explore-err">
+        <span>这是 Bangumi 条目链接 / 编号：{q}</span>
+        <Btn kind="primary" size="sm" onClick={() => onImportRef(q)}>
+          加入番剧库
+        </Btn>
+      </div>
+    );
+  }
   if (!q) {
     return (
       <>

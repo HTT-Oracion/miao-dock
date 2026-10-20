@@ -28,6 +28,9 @@ export function DetailScreen() {
   const subjects = useAnimeStore((s) => s.subjects);
   const selectSubject = useAnimeStore((s) => s.selectSubject);
   const importCandidate = useAnimeStore((s) => s.importCandidate);
+  const metaCandidates = useAnimeStore((s) => s.metaCandidates);
+  const applyMetadataCandidate = useAnimeStore((s) => s.applyMetadataCandidate);
+  const clearMetaCandidates = useAnimeStore((s) => s.clearMetaCandidates);
   const { push } = useToasts();
   const [metaBusy, setMetaBusy] = useState(false);
 
@@ -147,6 +150,58 @@ export function DetailScreen() {
           </div>
           <ProgressBar value={pct} tone={pct >= 100 ? 'ok' : undefined} />
         </div>
+
+        {metaCandidates?.dir === subject.id ? (
+          <section className="an-detail-sec">
+            <SectionHead
+              title="选择要补全的条目"
+              count={metaCandidates.list.length}
+              action={
+                <button type="button" className="an-link" onClick={clearMetaCandidates}>
+                  取消
+                </button>
+              }
+            />
+            <div className="an-cand-list">
+              {metaCandidates.list.map((c) => {
+                const meta =
+                  [
+                    c.year ?? '',
+                    c.rating ? `${c.rating.toFixed(1)} 分` : '',
+                    c.episodesTotal ? `${c.episodesTotal} 集` : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') || c.name;
+                return (
+                  <div key={c.bgmId} className="an-cand-row">
+                    <span className="an-cand-pic">
+                      {c.cover ? (
+                        <img src={c.cover} alt="" loading="lazy" />
+                      ) : (
+                        <span>{(c.nameCn || c.name).slice(0, 1)}</span>
+                      )}
+                    </span>
+                    <span className="an-cand-tx">
+                      <b>{c.nameCn || c.name}</b>
+                      <span>{meta}</span>
+                    </span>
+                    <Btn
+                      kind="primary"
+                      size="sm"
+                      onClick={() =>
+                        void applyMetadataCandidate(subject.id, c.bgmId).then((r) =>
+                          push(r.message, r.ok ? 'good' : 'bad'),
+                        )
+                      }
+                    >
+                      用这个
+                    </Btn>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
 
         {rating ? (
           <section className="an-detail-sec">

@@ -39,6 +39,9 @@ export function libraryActions(
   | 'loadExplore'
   | 'importCandidate'
   | 'loadDetailExtra'
+  | 'importByRef'
+  | 'applyMetadataCandidate'
+  | 'clearMetaCandidates'
 > {
   /** 把扫描结果写进 store（三处调用共用，避免字段漏写） */
   const applySnapshot = (snap: Awaited<ReturnType<typeof ipc.animeLibrary>>) => {
@@ -194,6 +197,13 @@ export function libraryActions(
           hit = (await ipc.animeMetadataSearch(target.titleOriginal)).candidates[0] ?? null;
         }
         if (!hit) return { ok: false, message: `Bangumi 没搜到「${target.title}」` };
+        const list = (await ipc.animeMetadataSearch(target.title)).candidates ?? [];
+        const pool = list.length ? list : [hit];
+        if (pool.length > 1) {
+          // 多候选不擅自选第一条：同名 / 同系列很容易挑错，交给用户在详情页里点
+          set({ metaCandidates: { dir: subjectId, list: pool } });
+          return { ok: true, message: `找到 ${pool.length} 个候选，挑一个用` };
+        }
         const applied = await ipc.animeMetadataApply(subjectId, hit.bgmId);
         // 重新扫描：列表 / 详情 / 时间表都读同一份结果，避免只改一处
         await get().refreshLibrary();
@@ -415,6 +425,41 @@ export function libraryActions(
           error: errors.length ? errors.join('；') : null,
         },
       });
+    },
+
+    /** 粘贴 Bangumi 链接 / 手输编号 → 建库（服务侧解析，认不出会明说） */
+    importByRef: async (input) => {
+      try {
+        const r = await ipc.animeMetadataImportRef(input);
+        await get().refreshLibrary();
+        const id = r.subject?.id ?? r.dir;
+        set({ selectedId: id, view: 'detail', query: '', metaCandidates: null });
+        const title = r.subject?.title ?? r.dir;
+        return { ok: true, message: `已把「${title}」加入番剧库` };
+      } catch (e) {
+        const message = `加入番剧库失败：${errText(e)}`;
+        set({ error: message });
+        return { ok: false, message };
+      }
+    },
+
+    /** 收起候选面板 */
+    clearMetaCandidates: () => {
+      set({ metaCandidates: null });
+    },
+
+    /** 从候选里挑一个：按它的 bgmId 补全，然后清空候选面板 */
+    applyMetadataCandidate: async (dir, bgmId) => {
+      try {
+        const applied = await ipc.animeMetadataApply(dir, bgmId);
+        await get().refreshLibrary();
+        set({ metaCandidates: null });
+        return { ok: true, message: `已补全「${applied.subject.title}」` };
+      } catch (e) {
+        const message = `补全失败：${errText(e)}`;
+        set({ error: message });
+        return { ok: false, message };
+      }
     },
   };
 }

@@ -98,3 +98,17 @@ export function errText(e: unknown): string {
   if (e instanceof Error) return e.message;
   return String(e);
 }
+
+/**
+ * 粗筛「这看起来是 Bangumi 条目引用」：纯数字 / `bgm:123` / 条目链接。
+ *
+ * 只用于决定「走建库还是走检索」；真正的解析在服务侧（`metadata::parse_bgm_ref`），
+ * 两处口径不一致时以服务侧为准（它会给出「看不懂」的明确报错）。
+ */
+export function looksLikeBgmRef(input: string): boolean {
+  const q = input.trim();
+  if (!q) return false;
+  if (/^\d+$/.test(q)) return true;
+  if (/^bgm:\s*\d+$/i.test(q)) return true;
+  return /bgm\.tv\/(v0\/)?subjects?\/\d+/i.test(q) || /bangumi\.tv\/subject\/\d+/i.test(q);
+}
