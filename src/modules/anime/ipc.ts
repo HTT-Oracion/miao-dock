@@ -22,6 +22,7 @@ import type {
   AnimeSourceTestItem,
   AnimeStaff,
   AnimeSubject,
+  CacheTask,
   CollectionType,
   MediaSourceView,
 } from '@anime/types';
@@ -169,6 +170,29 @@ export const animeResolveSource = (url: string, rules: AnimeSourceRules, cookies
     cookies: cookies ?? null,
     preferRes: preferRes ?? null,
   });
+
+/** 缓存任务列表（进度以盘上为准） */
+export const animeCache = () => invoke<{ ok: boolean; tasks: CacheTask[] }>('anime_cache');
+
+/** 新建缓存任务：cacheDir / limitGb 来自设置（改目录 → 新任务落新目录） */
+export const animeCacheAdd = (payload: {
+  subjectId: string;
+  episodeIndex: number;
+  title: string;
+  url: string;
+  sizeBytes?: number;
+  cacheDir?: string;
+  limitGb?: number;
+}) => invoke<{ ok: boolean; id: string }>('anime_cache_add', { payload });
+
+/** 暂停缓存任务 */
+export const animeCachePause = (id: string) => invoke<{ ok: boolean; id: string }>('anime_cache_pause', { id });
+
+/** 继续缓存任务（Range 续传） */
+export const animeCacheResume = (id: string) => invoke<{ ok: boolean; id: string }>('anime_cache_resume', { id });
+
+/** 删除缓存任务（连同盘上文件） */
+export const animeCacheDelete = (id: string) => invoke<{ ok: boolean; id: string }>('anime_cache_delete', { id });
 
 /** 从订阅地址拉一份规则草稿（服务侧解析并校验，不落盘） */
 export const animeSubscribeSource = (url: string) =>

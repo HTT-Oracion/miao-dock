@@ -7,7 +7,18 @@
  * 不画假的播放进度，也不给一个放不出来的 URL。
  */
 import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { ArrowLeft, ListMusic, Maximize2, Pause, Play, Settings2, SkipBack, SkipForward, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  Download,
+  ListMusic,
+  Maximize2,
+  Pause,
+  Play,
+  Settings2,
+  SkipBack,
+  SkipForward,
+  X,
+} from 'lucide-react';
 import { Btn, Empty } from '@components/units';
 import { useToasts } from '@hooks';
 import { useEsc } from '@hooks/useEsc';
@@ -32,6 +43,12 @@ import { useAnimePlayback, type AnimePlayback } from '@hooks';
 import { Cover, EpisodeRow } from '@screens/anime/shared';
 
 type SideTab = 'episodes' | 'info' | 'comments';
+
+/** WebView 轨的带票直链（其它形态没有可续传的 URL） */
+function webviewUrl(s: AnimePlaySource | null): string | null {
+  if (s === null || !s.found) return null;
+  return s.track === 'webview' ? s.url : null;
+}
 
 /** 画面区顶部那行状态（不做多级内联三元，规则见 AGENTS §2 第 10 条） */
 function stageLine(loading: boolean, error: string | null, source: AnimePlaySource | null): string {
@@ -703,10 +720,12 @@ export function PlayerScreen() {
   const openPlayer = useAnimeStore((s) => s.openPlayer);
   const markWatched = useAnimeStore((s) => s.markWatched);
   const savePosition = useAnimeStore((s) => s.savePosition);
+  const addCache = useAnimeStore((s) => s.addCache);
   const prefs = useAnimeStore((s) => s.prefs);
   const setPref = useAnimeStore((s) => s.setPref);
   const remote = useAnimeStore((s) => s.remote);
   const titleMode = useAnimeStore((s) => s.prefs.titleMode);
+  const { push } = useToasts();
   const [tab, setTab] = useState<SideTab>('episodes');
   const [statsOn, setStatsOn] = useState(false);
   /** 「选择播放来源」浮层（设计稿 ⑤ 的来源入口） */
@@ -758,6 +777,8 @@ export function PlayerScreen() {
   }
 
   const playable = source !== null && source.found && source.supported;
+  // 能缓存的前提：WebView 轨给了带票直链（内核轨在独立窗口里，本层拿不到可续传的 URL）
+  const cacheable = webviewUrl(source);
   const isKernel = kernel && source !== null && source.found && source.track === 'libmpv';
   const kernelSource = isKernel && source !== null && source.found && source.track === 'libmpv' ? source : null;
   const durationMs = state.durationMs || episode.durationMs;
@@ -785,6 +806,23 @@ export function PlayerScreen() {
           </div>
           <button type="button" className="an-stage-btn" onClick={() => setPickerOpen(true)} title="选择播放来源">
             <Settings2 size={16} />
+          </button>
+          <button
+            type="button"
+            className="an-stage-btn"
+            disabled={!cacheable}
+            title={cacheable ? '缓存这一集（HTTP 直链，支持断点续传）' : '当前片源没有可缓存的直链'}
+            onClick={() => {
+              if (!cacheable || !subject || !episode) return;
+              void addCache({
+                subjectId: subject.id,
+                episodeIndex: episode.index,
+                title: `第 ${episode.index} 话`,
+                url: cacheable,
+              }).then((r) => push(r.message, r.ok ? 'good' : 'bad'));
+            }}
+          >
+            <Download size={16} />
           </button>
           <button
             type="button"

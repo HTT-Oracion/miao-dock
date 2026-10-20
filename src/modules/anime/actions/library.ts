@@ -45,6 +45,10 @@ export function libraryActions(
   | 'clearMetaCandidates'
   | 'setSearchFilter'
   | 'resetSearchFilters'
+  | 'addCache'
+  | 'pauseCache'
+  | 'resumeCache'
+  | 'deleteCache'
 > {
   /** 把扫描结果写进 store（三处调用共用，避免字段漏写） */
   const applySnapshot = (snap: Awaited<ReturnType<typeof ipc.animeLibrary>>) => {
@@ -256,9 +260,59 @@ export function libraryActions(
       }
     },
 
-    /** 缓存任务：M5（librqbit）之前没有任务，返回空数组 —— 不编造进度 */
+    /** 缓存任务：拉服务侧真实任务表（进度以盘上为准） */
     loadCache: async () => {
-      set({ cache: [] });
+      try {
+        const r = await ipc.animeCache();
+        set({ cache: r.tasks });
+      } catch (e) {
+        set({ error: `缓存列表没拉到：${errText(e)}` });
+      }
+    },
+
+    /** 新建缓存任务：目录与容量上限来自设置（改目录只影响新任务） */
+    addCache: async (input) => {
+      try {
+        const p = get().prefs;
+        await ipc.animeCacheAdd({
+          ...input,
+          cacheDir: p.cacheDir.trim() || undefined,
+          limitGb: p.cacheLimitGb,
+        });
+        await get().loadCache();
+        return { ok: true, message: `已加入缓存：「${input.title}」` };
+      } catch (e) {
+        const message = `加入缓存失败：${errText(e)}`;
+        set({ error: message });
+        return { ok: false, message };
+      }
+    },
+
+    pauseCache: async (id) => {
+      try {
+        await ipc.animeCachePause(id);
+      } catch (e) {
+        set({ error: `暂停失败：${errText(e)}` });
+      }
+      await get().loadCache();
+    },
+
+    resumeCache: async (id) => {
+      try {
+        await ipc.animeCacheResume(id);
+      } catch (e) {
+        set({ error: `继续失败：${errText(e)}` });
+      }
+      await get().loadCache();
+    },
+
+    deleteCache: async (id) => {
+      try {
+        await ipc.animeCacheDelete(id);
+      } catch (e) {
+        set({ error: `删除失败：${errText(e)}` });
+      }
+      await get().loadCache();
     },
 
     /** 切换番剧库根：写设置 → 重启动漫服务 → 重新扫描（三步缺一都不生效） */

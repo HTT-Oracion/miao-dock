@@ -4,8 +4,8 @@
  * 数据来自 `animesvc`（M5 前为空数组 —— 不编造进度条）。
  * 空态必须给出「怎么才会不空」：去数据源挑源、或设置缓存目录。
  */
-import { useMemo, useState } from 'react';
-import { Download } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Download, Pause, Play, Trash2 } from 'lucide-react';
 import { Btn, Empty } from '@components/units';
 import { formatBytes } from '@tools';
 import { useAnimeStore } from '@anime/store';
@@ -26,7 +26,15 @@ export function CacheScreen() {
   const cache = useAnimeStore((s) => s.cache);
   const subjects = useAnimeStore((s) => s.subjects);
   const setView = useAnimeStore((s) => s.setView);
+  const loadCache = useAnimeStore((s) => s.loadCache);
+  const pauseCache = useAnimeStore((s) => s.pauseCache);
+  const resumeCache = useAnimeStore((s) => s.resumeCache);
+  const deleteCache = useAnimeStore((s) => s.deleteCache);
   const [filter, setFilter] = useState<FilterId>('all');
+  // 进屏就拉一次（下载在服务侧推进，界面靠重新拉取看到进度）
+  useEffect(() => {
+    void loadCache();
+  }, [loadCache]);
 
   const totals = useMemo(() => {
     const total = cache.reduce((n, t) => n + t.sizeBytes, 0);
@@ -135,6 +143,18 @@ export function CacheScreen() {
                           ? '失败'
                           : '做种中'}
                 </span>
+                {t.state === 'downloading' ? (
+                  <Btn kind="ghost" size="sm" title="暂停下载" onClick={() => void pauseCache(t.id)}>
+                    <Pause size={12} />
+                  </Btn>
+                ) : t.state === 'done' ? null : (
+                  <Btn kind="ghost" size="sm" title="继续下载（断点续传）" onClick={() => void resumeCache(t.id)}>
+                    <Play size={12} />
+                  </Btn>
+                )}
+                <Btn kind="ghost" size="sm" title="删除缓存（连同盘上文件）" onClick={() => void deleteCache(t.id)}>
+                  <Trash2 size={12} />
+                </Btn>
               </div>
             ))}
           </section>

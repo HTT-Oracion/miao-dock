@@ -135,6 +135,18 @@ export interface AnimeState {
   setSearchFilter: <K extends keyof AnimeSearchFilters>(key: K, value: AnimeSearchFilters[K]) => void;
   /** 清空筛选条 */
   resetSearchFilters: () => void;
+  /** 新建缓存任务（用当前这一集的直链；目录与上限来自设置） */
+  addCache: (input: {
+    subjectId: string;
+    episodeIndex: number;
+    title: string;
+    url: string;
+    sizeBytes?: number;
+  }) => Promise<{ ok: boolean; message: string }>;
+  /** 暂停 / 继续 / 删除缓存任务（三个都重新拉一次列表） */
+  pauseCache: (id: string) => Promise<void>;
+  resumeCache: (id: string) => Promise<void>;
+  deleteCache: (id: string) => Promise<void>;
   refreshStatus: () => Promise<void>;
 }
 

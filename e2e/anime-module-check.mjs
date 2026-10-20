@@ -55,6 +55,8 @@ const F = {
   detailScreen: path.join(ROOT, 'src', 'screens', 'anime', 'DetailScreen.tsx'),
   shared: path.join(ROOT, 'src', 'screens', 'anime', 'shared.tsx'),
   memory: path.join(ROOT, 'src', 'modules', 'anime', 'memory.ts'),
+  rustCache: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'cache.rs'),
+  cacheScreen: path.join(ROOT, 'src', 'screens', 'anime', 'CacheScreen.tsx'),
   rustAnime: path.join(ROOT, 'src-tauri', 'src', 'anime', 'mod.rs'),
   rustAnimesvc: path.join(ROOT, 'src-tauri', 'src', 'animesvc.rs'),
   rustSources: path.join(ROOT, 'src-tauri', 'src', 'animesvc', 'sources.rs'),
@@ -511,6 +513,23 @@ const CHECKS = [
         /needsRules/.test(s.sourceScreen) &&
         /resolveSource/.test(s.sourceScreen),
       detail: '通用网页源没接通：选择器规则 / 列表解析 / 直链解析 / 端点 / 编辑器 任一环缺失',
+    }),
+  },
+  {
+    id: 'CACHE.wired',
+    run: (s) => ({
+      ok:
+        /pub struct CacheTask/.test(s.rustCache) &&
+        /pub fn add\(/.test(s.rustCache) &&
+        /RANGE/.test(s.rustCache) &&
+        /rename\(&part, &dest\)/.test(s.rustCache) &&
+        /anime\/cache"\), get\(cache_list\)\.post\(cache_add\)/.test(s.rustAnimesvc) &&
+        /crate::anime::anime_cache_add/.test(strip(s.rustCommands)) &&
+        /animeCacheAdd/.test(s.ipc) &&
+        /addCache/.test(s.actionLib) &&
+        /pauseCache/.test(s.cacheScreen) &&
+        /deleteCache/.test(s.cacheScreen),
+      detail: '缓存链路没接通：任务表 / 下载器 / 端点 / 前端 任一环缺失',
     }),
   },
   {
@@ -994,6 +1013,13 @@ const MUTATIONS = [
     find: 'onClick={() => setPickerOpen(true)}',
     replace: "onClick={() => setView('source')}",
     expect: ['PLAYER.picker'],
+  },
+  {
+    name: '摘掉缓存路由（缓存屏永远空）',
+    file: F.rustAnimesvc,
+    find: '.route(&format!("/api/{API_VERSION}/anime/cache"), get(cache_list).post(cache_add))',
+    replace: '',
+    expect: ['CACHE.wired'],
   },
   {
     name: '摘掉订阅路由（导入按钮点了没反应）',
