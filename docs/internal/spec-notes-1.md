@@ -6616,3 +6616,22 @@ HWND 后会被网页盖住；而我们的控制条、选集侧栏、统计浮层
 
 **四、边界**：用例验的是"窗口真的建出来、摆得动、显隐有效、销毁干净"，**验不了画面内容** ——
 mpv 有没有把帧画进这个 HWND，仍要真机看（R6）。
+## D-272 hooks 收口补齐：`use-nav.ts` → `useNav.ts` 并搬进 `src/hooks/`（2026-10-20）
+
+**一、发现**：全局审 hooks 命名时，`src/hooks/` 里七个文件（`useAnimePlayback` / `useCoverColor` /
+`useDebouncedValue` / `useEngineDownload` / `useEsc` / `useLibraryModel` / `useMusicHotkeys` + 桶 `index.ts`）
+都已是驼峰，**唯一例外**是 `src/router/use-nav.ts`（kebab-case，导出 `useNav`）。
+
+**二、它为什么一直没被抓住**：`check:units` 的 `HOOKS.noMisplacedUse` 判的是「文件名以 `use` 开头的必须在
+`src/hooks/` 内」—— `use-nav.ts` 不以 `use` 开头（`use-`），于是**既不在清单里、也不触发 misplaced**，
+两边都漏。改名成 `useNav.ts` 后立刻被 `noMisplacedUse` 咬住（这正是判据该有的行为）。
+
+**三、处置**：按 D-41（`use*` 一律住 hooks）搬进 `src/hooks/useNav.ts`，经桶文件 `@hooks` 出口；
+调用点 `App.tsx` 与 `AnimeSettingsSection.tsx` 改从 `@hooks` 引入；`HOOKS_MANIFEST` / `HOOKS_BARREL_EXPORTS`
+各加一条（`useNav.ts` / `useNav`）；`AGENTS.md` / `README.md` / `.trae/rules/project_rules.md` 的目录说明同步。
+
+**四、验证**：`npx tsc --noEmit` 0 错（无死链）；`check:units` **46/46** + 反证 **61/61**；
+`npm run check` **19/19**；`eslint` / `prettier` / `vite build` 全绿。
+
+**五、边界**：`docs/internal/spec-notes-1.md` 里 D-137 附近的历史条目仍写着旧文件名 ——
+**历史不改**（那是当时的记录），本条是它之后的事实。
