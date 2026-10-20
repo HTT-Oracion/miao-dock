@@ -6635,3 +6635,25 @@ mpv 有没有把帧画进这个 HWND，仍要真机看（R6）。
 
 **五、边界**：`docs/internal/spec-notes-1.md` 里 D-137 附近的历史条目仍写着旧文件名 ——
 **历史不改**（那是当时的记录），本条是它之后的事实。
+## D-273 第一次在本机真跑起来：应用能起、三进程都在、以及 GUI 自动化为什么还不能做（2026-10-20）
+
+**一、做了什么**：`npm run tauri -- dev` 真拉起应用（本机有交互桌面：Console 会话 + explorer + 1920×1080）。
+结果：窗口标题 `喵坞 MiaoDock`、进程 `miao-dock` 响应中；`mangasvc` 与 **`animesvc` 也都被拉起来了**
+（`animesvc` 是懒启动 —— 它起来说明应用恢复到了番剧路由并真的碰了番剧服务）。日志里没有 panic / ERROR，
+`mangasvc` 按 D-229 的口径只起 ① 服务、②③ 被闸门挡住（本机引擎运行时未装配，属预期）。
+桌面截图落在 `.tmp/r6/shot-01.png`（1920×1080，1.19 MB）。
+
+**二、为什么这仍然不是 R6**：R6 要判的是**画面**（十屏的样子、真播矩阵的画质/字幕/轨道）。
+当前会话的模型**不能读图**，所以截图只能交给用户看；能机器判的部分（服务契约、内核自检、窗口/子窗口存在）
+已经由 `check:anime` / `check:anime-kernel:real` / `embed` 集成用例覆盖。
+
+**三、GUI 自动化的路被一条既有纪律挡住（这是本轮最有价值的发现）**：
+想用 CDP 驱动界面（`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`）——**端口没开**。
+原因不是配错，而是本仓对 WebView2 参数有一条硬纪律（`src-tauri/src/music/mod.rs` 的「窗口 WebView2 参数」长注）：
+**要么所有窗口都不设 `additional_browser_args`，要么所有窗口逐字相同**，否则第二个 webview 的环境创建会
+`ERROR_INVALID_STATE`（0x8007139F）直接失败 —— 那正是当年"登录窗口打不开"的真因。
+所以"给主窗单独加调试端口"这种局部改动**不能做**。要走 CDP 自动化，得先决定"全仓所有窗口统一加参数"
+（并且 `WEBVIEW.sameArgsEverywhere` 那条钉子会盯着），那是一个**独立的、跨应用的决策**，登记在此。
+
+**四、给下一次 R6 的结论**：机器能做的都做了；剩下的必须人眼。
+截图/录屏落 `.tmp/r6/`，问题按 `docs/internal/anime-r6-checklist.md` §3 的模板贴回。
