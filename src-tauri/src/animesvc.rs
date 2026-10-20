@@ -218,6 +218,10 @@ fn router(shell: Arc<Shell>) -> Router {
         .route(&format!("/api/{API_VERSION}/anime/metadata/calendar"), get(metadata_calendar))
         .route(&format!("/api/{API_VERSION}/anime/metadata/hot"), get(metadata_hot))
         .route(&format!("/api/{API_VERSION}/anime/metadata/import"), post(metadata_import))
+        // 详情页补充数据（角色 / 制作 / 关联），按 Bangumi id 现取，不落盘
+        .route(&format!("/api/{API_VERSION}/anime/metadata/characters"), get(metadata_characters))
+        .route(&format!("/api/{API_VERSION}/anime/metadata/staff"), get(metadata_staff))
+        .route(&format!("/api/{API_VERSION}/anime/metadata/related"), get(metadata_related))
         // 数据源（M3 契约）：列表 / 增改 / 删除
         .route(
             &format!("/api/{API_VERSION}/anime/sources"),
@@ -447,6 +451,57 @@ async fn metadata_import(
         Ok(v) => json(StatusCode::OK, v),
         Err(e) if e.starts_with("建目录失败") => envelope(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", e),
         Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("Bangumi 条目建库失败：{e}")),
+    }
+}
+
+#[derive(Deserialize)]
+struct BgmQuery {
+    #[serde(rename = "bgmId")]
+    bgm_id: u64,
+}
+
+/// 详情页补充数据：角色 + 声优。
+async fn metadata_characters(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Query(q): Query<BgmQuery>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match metadata::characters_default(q.bgm_id).await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("Bangumi 角色失败：{e}")),
+    }
+}
+
+/// 详情页补充数据：制作人员。
+async fn metadata_staff(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Query(q): Query<BgmQuery>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match metadata::staff_default(q.bgm_id).await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("Bangumi 制作人员失败：{e}")),
+    }
+}
+
+/// 详情页补充数据：关联作品。
+async fn metadata_related(
+    State(shell): State<Arc<Shell>>,
+    headers: HeaderMap,
+    Query(q): Query<BgmQuery>,
+) -> Response {
+    if !authorized(&shell, &headers) {
+        return envelope(StatusCode::FORBIDDEN, "PERMISSION_DENIED", "缺少或错误的 X-Box-Token");
+    }
+    match metadata::related_default(q.bgm_id).await {
+        Ok(v) => json(StatusCode::OK, v),
+        Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("Bangumi 关联作品失败：{e}")),
     }
 }
 

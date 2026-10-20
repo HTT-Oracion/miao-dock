@@ -482,6 +482,24 @@ pub async fn anime_metadata_import(bgm_id: u64) -> Result<Value, String> {
     post("/api/v1/anime/metadata/import", json!({ "bgmId": bgm_id })).await
 }
 
+/// 详情页补充数据：角色 + 声优（按 Bangumi id 现取，不落盘）。
+#[tauri::command]
+pub async fn anime_metadata_characters(bgm_id: u64) -> Result<Value, String> {
+    get(&format!("/api/v1/anime/metadata/characters?bgmId={bgm_id}")).await
+}
+
+/// 详情页补充数据：制作人员。
+#[tauri::command]
+pub async fn anime_metadata_staff(bgm_id: u64) -> Result<Value, String> {
+    get(&format!("/api/v1/anime/metadata/staff?bgmId={bgm_id}")).await
+}
+
+/// 详情页补充数据：关联作品。
+#[tauri::command]
+pub async fn anime_metadata_related(bgm_id: u64) -> Result<Value, String> {
+    get(&format!("/api/v1/anime/metadata/related?bgmId={bgm_id}")).await
+}
+
 /// 重启 animesvc：库根与代理都在子进程**启动时**定，改设置必须重启才生效。
 async fn restart_service() -> Result<(), String> {
     stop();

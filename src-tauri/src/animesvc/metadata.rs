@@ -216,6 +216,61 @@ struct RawTag {
     name: String,
 }
 
+// ------------------------------------------------------------------ 角色 / 制作 / 关联（R2）
+
+/// `/v0/subjects/{id}/characters` 的一条（`actors` 是完整的 Person 对象）。
+#[derive(Debug, Deserialize)]
+struct RawCharacter {
+    id: u64,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    name_cn: String,
+    #[serde(default)]
+    relation: String,
+    #[serde(default)]
+    images: Option<RawImages>,
+    #[serde(default)]
+    actors: Vec<RawActor>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawActor {
+    id: u64,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    images: Option<RawImages>,
+}
+
+/// `/v0/subjects/{id}/persons` 的一条。
+#[derive(Debug, Deserialize)]
+struct RawPerson {
+    id: u64,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    relation: String,
+    #[serde(default)]
+    career: Vec<String>,
+    #[serde(default)]
+    images: Option<RawImages>,
+}
+
+/// `/v0/subjects/{id}/subjects` 的一条（关联作品）。
+#[derive(Debug, Deserialize)]
+struct RawRelation {
+    id: u64,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    name_cn: String,
+    #[serde(default)]
+    relation: String,
+    #[serde(default)]
+    images: Option<RawImages>,
+}
+
 #[derive(Debug, Deserialize)]
 struct RawSearch {
     #[serde(default)]
@@ -263,12 +318,17 @@ fn episodes_of(raw: &RawSubject) -> Option<u32> {
 }
 
 fn cover_of(raw: &RawSubject) -> Option<String> {
-    let img = raw.images.as_ref()?;
-    let url = img
-        .large
-        .clone()
-        .or_else(|| img.common.clone())
-        .or_else(|| img.medium.clone())?;
+    image_of(&raw.images)
+}
+
+/// 上游图片对象 → 可用 URL（大图优先，按 `MIAO_BANGUMI_IMG` 改写域名）。
+///
+/// 上游常用**空串**表示"没有这张图"，所以要按非空挑：直接把 `Some("")` 当有图，
+/// 界面会拿到一个 `src=""`（浏览器会重新请求当前页面）。
+fn image_of(images: &Option<RawImages>) -> Option<String> {
+    let img = images.as_ref()?;
+    let pick = |v: &Option<String>| v.clone().filter(|s| !s.trim().is_empty());
+    let url = pick(&img.large).or_else(|| pick(&img.common)).or_else(|| pick(&img.medium))?;
     Some(rewrite_cover(&url, image_base().as_deref()))
 }
 
@@ -603,6 +663,94 @@ pub async fn import_default(root: &Path, bgm_id: u64) -> Result<Value, String> {
     .await
 }
 
+// ------------------------------------------------------------------ 详情页的补充数据（R2）
+
+/// 角色 + 声优（`/v0/subjects/{id}/characters`）。
+pub async fn characters(base: String, bgm_id: u64) -> Result<Value, String> {
+    let url = format!("{}/v0/subjects/{bgm_id}/characters", base.trim_end_matches('/'));
+    let v = get_json(url).await?;
+    let list = serde_json::from_value::<Vec<RawCharacter>>(v)
+        .map_err(|e| format!("角色列表结构不认识：{e}"))?;
+    let out: Vec<Value> = list
+        .iter()
+        .map(|c| {
+            json!({
+                "id": c.id,
+                "name": c.name,
+                "nameCn": c.name_cn,
+                "relation": c.relation,
+                "image": image_of(&c.images),
+                "actors": c.actors.iter().map(|a| json!({
+                    "id": a.id,
+                    "name": a.name,
+                    "image": image_of(&a.images),
+                })).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    Ok(json!({ "ok": true, "characters": out }))
+}
+
+/// 制作人员（`/v0/subjects/{id}/persons`）。
+pub async fn staff(base: String, bgm_id: u64) -> Result<Value, String> {
+    let url = format!("{}/v0/subjects/{bgm_id}/persons", base.trim_end_matches('/'));
+    let v = get_json(url).await?;
+    let list =
+        serde_json::from_value::<Vec<RawPerson>>(v).map_err(|e| format!("制作人员结构不认识：{e}"))?;
+    let out: Vec<Value> = list
+        .iter()
+        .map(|p| {
+            json!({
+                "id": p.id,
+                "name": p.name,
+                "relation": p.relation,
+                "career": p.career,
+                "image": image_of(&p.images),
+            })
+        })
+        .collect();
+    Ok(json!({ "ok": true, "staff": out }))
+}
+
+/// 关联作品（`/v0/subjects/{id}/subjects`）：同系列 / 续作 / 剧场版等。
+pub async fn related(base: String, bgm_id: u64) -> Result<Value, String> {
+    let url = format!("{}/v0/subjects/{bgm_id}/subjects", base.trim_end_matches('/'));
+    let v = get_json(url).await?;
+    let list =
+        serde_json::from_value::<Vec<RawRelation>>(v).map_err(|e| format!("关联作品结构不认识：{e}"))?;
+    let out: Vec<Value> = list
+        .iter()
+        .map(|r| {
+            json!({
+                "bgmId": r.id,
+                "name": r.name,
+                "nameCn": r.name_cn,
+                "relation": r.relation,
+                "image": image_of(&r.images),
+            })
+        })
+        .collect();
+    Ok(json!({ "ok": true, "related": out }))
+}
+
+/// 按生效的镜像列表取角色。
+pub async fn characters_default(bgm_id: u64) -> Result<Value, String> {
+    let bases = api_bases();
+    try_bases(&bases, |b| characters(b, bgm_id)).await
+}
+
+/// 按生效的镜像列表取制作人员。
+pub async fn staff_default(bgm_id: u64) -> Result<Value, String> {
+    let bases = api_bases();
+    try_bases(&bases, |b| staff(b, bgm_id)).await
+}
+
+/// 按生效的镜像列表取关联作品。
+pub async fn related_default(bgm_id: u64) -> Result<Value, String> {
+    let bases = api_bases();
+    try_bases(&bases, |b| related(b, bgm_id)).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -763,10 +911,44 @@ mod tests {
         async fn calendar() -> Json<Value> {
             Json(json!([{ "weekday": { "id": 6 }, "items": [subject_json()] }]))
         }
+        /// 角色：带一个声优（Person 对象）
+        async fn characters() -> Json<Value> {
+            Json(json!([{
+                "id": 1,
+                "name": "千反田える",
+                "name_cn": "千反田爱瑠",
+                "relation": "主角",
+                "images": { "large": "https://lain.bgm.tv/pic/crt/l/1.jpg", "common": "", "medium": "" },
+                "actors": [{ "id": 9, "name": "佐藤聡美", "images": { "large": "", "common": "", "medium": "" } }]
+            }]))
+        }
+        /// 制作人员
+        async fn persons() -> Json<Value> {
+            Json(json!([{
+                "id": 2,
+                "name": "京都アニメーション",
+                "relation": "动画制作",
+                "career": ["动画制作"],
+                "images": { "large": "", "common": "", "medium": "" }
+            }]))
+        }
+        /// 关联作品
+        async fn relations() -> Json<Value> {
+            Json(json!([{
+                "id": 40000,
+                "name": "氷菓 第2期",
+                "name_cn": "冰菓 第二季",
+                "relation": "续集",
+                "images": { "large": "https://lain.bgm.tv/pic/cover/l/2.jpg", "common": "", "medium": "" }
+            }]))
+        }
         let app = Router::new()
             .route("/v0/search/subjects", post(search))
             .route("/v0/subjects", get(list))
             .route("/v0/subjects/:id", get(subject))
+            .route("/v0/subjects/:id/characters", get(characters))
+            .route("/v0/subjects/:id/persons", get(persons))
+            .route("/v0/subjects/:id/subjects", get(relations))
             .route("/calendar", get(calendar));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -892,6 +1074,43 @@ mod tests {
         assert_eq!(out["source"], "rank");
         assert_eq!(out["candidates"][0]["bgmId"], 27364);
         assert!(out["note"].as_str().unwrap().contains("热度"));
+    }
+
+    // ── 详情页补充数据（R2）──────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn characters_keep_relation_and_actor_names() {
+        let base = mock_server().await;
+        let out = characters(base, 27364).await.unwrap();
+        let c = &out["characters"][0];
+        assert_eq!(c["nameCn"], "千反田爱瑠");
+        assert_eq!(c["relation"], "主角");
+        // 图片走与封面同一套域名改写
+        assert!(c["image"].as_str().unwrap().contains("1.jpg"));
+        assert_eq!(c["actors"][0]["name"], "佐藤聡美");
+        // 声优没有图 ⇒ null，而不是空串（界面据此显示首字色块）
+        assert!(c["actors"][0]["image"].is_null());
+    }
+
+    #[tokio::test]
+    async fn staff_keep_career_and_relation() {
+        let base = mock_server().await;
+        let out = staff(base, 27364).await.unwrap();
+        let p = &out["staff"][0];
+        assert_eq!(p["name"], "京都アニメーション");
+        assert_eq!(p["relation"], "动画制作");
+        assert_eq!(p["career"][0], "动画制作");
+    }
+
+    #[tokio::test]
+    async fn related_use_bgm_id_field_for_navigation() {
+        let base = mock_server().await;
+        let out = related(base, 27364).await.unwrap();
+        let r = &out["related"][0];
+        assert_eq!(r["bgmId"], 40000);
+        assert_eq!(r["relation"], "续集");
+        assert_eq!(r["nameCn"], "冰菓 第二季");
+        assert!(r["image"].as_str().unwrap().contains("2.jpg"));
     }
 
     #[tokio::test]

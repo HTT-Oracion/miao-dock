@@ -365,6 +365,40 @@ function startMockBangumi() {
     if (u.pathname === '/calendar') return json([{ weekday: { id: 6 }, items: [subject] }]);
     if (u.pathname === '/v0/search/subjects') return json({ data: [subject] });
     if (u.pathname === '/v0/subjects') return json({ data: [subject], total: 1 });
+    if (u.pathname === '/v0/subjects/27364/characters') {
+      return json([
+        {
+          id: 1,
+          name: '千反田える',
+          name_cn: '千反田爱瑠',
+          relation: '主角',
+          images: { large: 'https://lain.bgm.tv/pic/crt/l/1.jpg', common: '', medium: '' },
+          actors: [{ id: 9, name: '佐藤聡美', images: { large: '', common: '', medium: '' } }],
+        },
+      ]);
+    }
+    if (u.pathname === '/v0/subjects/27364/persons') {
+      return json([
+        {
+          id: 2,
+          name: '京都アニメーション',
+          relation: '动画制作',
+          career: ['动画制作'],
+          images: { large: '', common: '', medium: '' },
+        },
+      ]);
+    }
+    if (u.pathname === '/v0/subjects/27364/subjects') {
+      return json([
+        {
+          id: 40000,
+          name: '氷菓 第2期',
+          name_cn: '冰菓 第二季',
+          relation: '续集',
+          images: { large: '', common: '', medium: '' },
+        },
+      ]);
+    }
     if (u.pathname === '/v0/subjects/27364') return json(subject);
     res.writeHead(404);
     res.end();
@@ -800,6 +834,38 @@ try {
       res.status === 200 && res.json?.url === `${site.base}/v/1.mp4`,
       res.buf.toString().slice(0, 240),
     );
+  }
+
+  // A11：详情页补充数据（角色 / 制作 / 关联）——三条各自真打上游、真映射
+  {
+    const base = `http://127.0.0.1:${animeInfo.port}`;
+    const auth = { 'x-box-token': animeInfo.token };
+
+    const ch = await request('GET', `${base}/api/v1/anime/metadata/characters?bgmId=27364`, { headers: auth });
+    check(
+      'A11 角色 200 且带关系与声优',
+      ch.status === 200 &&
+        ch.json?.characters?.[0]?.nameCn === '千反田爱瑠' &&
+        ch.json?.characters?.[0]?.actors?.[0]?.name === '佐藤聡美',
+      ch.buf.toString().slice(0, 240),
+    );
+
+    const st = await request('GET', `${base}/api/v1/anime/metadata/staff?bgmId=27364`, { headers: auth });
+    check(
+      'A11 制作人员 200 且带 career',
+      st.status === 200 && st.json?.staff?.[0]?.career?.[0] === '动画制作',
+      st.buf.toString().slice(0, 240),
+    );
+
+    const rel = await request('GET', `${base}/api/v1/anime/metadata/related?bgmId=27364`, { headers: auth });
+    check(
+      'A11 关联作品 200 且带 bgmId 与关系',
+      rel.status === 200 && rel.json?.related?.[0]?.bgmId === 40000 && rel.json?.related?.[0]?.relation === '续集',
+      rel.buf.toString().slice(0, 240),
+    );
+
+    const noTok = await request('GET', `${base}/api/v1/anime/metadata/characters?bgmId=27364`);
+    check('A11 角色无令牌 ⇒ 403', noTok.status === 403, noTok.status);
   }
 
   // A5：动漫退出后漫画照旧
