@@ -136,8 +136,8 @@ const HOOKS_MANIFEST = [
   'useMusicHotkeys.ts',
   'useDebouncedValue.ts',
   'useLibraryModel.ts',
-  'use-engine-download.ts',
-  'use-anime-playback.ts',
+  'useEngineDownload.ts',
+  'useAnimePlayback.ts',
 ];
 /** hooks/index.ts 业务桶应出口的业务 hook 名 */
 const HOOKS_BARREL_EXPORTS = [
@@ -421,6 +421,9 @@ function loadSources() {
   s.srcTauriAliasSpecs = [];
   // STATE：zustand 引用（证明状态库确实是 zustand，而不是"没 Context 也没 store"）
   s.srcZustandImports = [];
+  // STATE：各域 store（`src/modules/<域>/store.ts`）—— 逐个都得引 zustand，
+  // 只数"全仓有没有人引"会让"某个域换掉状态库"静默溜过去（反证 M 曾经就是假阳性）
+  s.srcModuleStores = [];
   // HOOKS：全 src 里 use* 命名的文件若不在 hooks/ 内即违规（D-41）
   s.srcMisplacedHooks = [];
   // 需要全量扫描的三件事：旧位置深引 useEsc / 相对上跳引用 / React Context
@@ -441,6 +444,9 @@ function loadSources() {
           if (/^@tauri\//.test(spec)) s.srcTauriAliasSpecs.push(`${rel} → ${spec}`);
           if (spec === 'zustand') s.srcZustandImports.push(rel);
         }
+        // 每个域 store 都要单独点名：只统计"全仓有人引 zustand"会让单个域换库时全绿
+        // （`rel` 是平台相关分隔符，Windows 上是反斜杠）
+        if (/^src[\\/]modules[\\/][^\\/]+[\\/]store\.ts$/.test(rel)) s.srcModuleStores.push(rel);
         if (/\b(?:createContext|useContext)\s*\(/.test(st)) s.srcReactContext.push(rel);
         // use* 命名的文件必须住在 src/hooks/ 内（否则 D-41 只是句口号）
         if (/^use[A-Z]/.test(e.name) && path.basename(dir) !== 'hooks') s.srcMisplacedHooks.push(rel);
@@ -835,12 +841,17 @@ add('STATE.noReactContext', 'STATE', (s) => {
 });
 
 add('STATE.zustandInUse', 'STATE', (s) => {
-  // 反向兜底：只断言"没有 Context"是不够的 —— 把 store 换成别的东西（或删掉）
-  // 也会让上一条变绿，而"统一 zustand"这条规则其实已经不成立。
-  const n = s.srcZustandImports.length;
+  // 反向兜底：只断言"没有 Context"是不够的 —— 把某个域的 store 换成别的东西（或删掉）
+  // 也会让上一条变绿，而"统一 zustand"这条规则在那个域其实已经不成立。
+  // 判据落在**每个域 store** 上：只数全仓"有没有人引 zustand"，删掉一个域照样全绿。
+  const missing = s.srcModuleStores.filter((rel) => !s.srcZustandImports.includes(rel));
   return {
-    ok: n > 0,
-    detail: n ? '' : '全 src 未发现 zustand 引用 —— 状态管理约定（D-42）已不成立',
+    ok: s.srcZustandImports.length > 0 && s.srcModuleStores.length > 0 && missing.length === 0,
+    detail: missing.length
+      ? `这些域 store 没引 zustand：${missing.join('、')}`
+      : s.srcModuleStores.length
+        ? ''
+        : '一个 modules/*/store.ts 都没扫到 —— 判据本身失效',
   };
 });
 
