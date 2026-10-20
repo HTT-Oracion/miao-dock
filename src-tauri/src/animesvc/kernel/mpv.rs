@@ -314,6 +314,11 @@ impl Kernel {
     /// `hwdec`：设置页「强制硬件解码」的落点。`auto-safe` 是 mpv 的推荐档
     /// （只开它认为安全的硬解后端），`no` 用于排查花屏 / 绿屏。
     pub fn spawn(hwdec: &str) -> Result<Self, String> {
+        Self::spawn_with(hwdec, &[])
+    }
+
+    /// 带额外 mpv 参数的版本（自检用：图像片源要 `--image-display-duration` 才有长度）。
+    pub fn spawn_with(hwdec: &str, extra: &[String]) -> Result<Self, String> {
         let info = probe();
         let bin = locate_mpv().ok_or_else(|| info.reason.clone())?;
         let endpoint = ipc::endpoint("main");
@@ -332,8 +337,11 @@ impl Kernel {
             .arg("--keep-open=no")
             .arg("--no-input-default-bindings")
             .arg("--volume=80")
-            .arg(format!("--hwdec={hwdec}"))
-            .stdin(Stdio::null())
+            .arg(format!("--hwdec={hwdec}"));
+        for a in extra {
+            cmd.arg(a);
+        }
+        cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         let mut child = cmd.spawn().map_err(|e| format!("拉起 mpv 失败（{}）：{e}", bin.display()))?;
@@ -640,7 +648,46 @@ pub fn ctl(action: &str, value: &Value, state_dir: &str) -> Result<Value, String
     Ok(json!({ "ok": true, "session": k.state().to_json() }))
 }
 
+/// 写一段 1.5 秒静音 WAV 当片源。
+///
+/// 为什么不用「随便几个字节」：夹具 mpv 不在乎内容，但**真 mpv** 解析不了就会
+/// 时长 0、seek 无效、也拿不到音轨 —— 那样自检对真内核等于什么都没验。
+fn write_silent_wav(path: &std::path::Path) -> std::io::Result<()> {
+    let sr: u32 = 8000;
+    let samples: u32 = 12_000; // 1.5s
+    let data_len = samples * 2;
+    let mut b = Vec::with_capacity(44 + data_len as usize);
+    b.extend_from_slice(b"RIFF");
+    b.extend_from_slice(&(36 + data_len).to_le_bytes());
+    b.extend_from_slice(b"WAVEfmt ");
+    b.extend_from_slice(&16u32.to_le_bytes());
+    b.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    b.extend_from_slice(&1u16.to_le_bytes()); // mono
+    b.extend_from_slice(&sr.to_le_bytes());
+    b.extend_from_slice(&(sr * 2).to_le_bytes());
+    b.extend_from_slice(&2u16.to_le_bytes());
+    b.extend_from_slice(&16u16.to_le_bytes());
+    b.extend_from_slice(b"data");
+    b.extend_from_slice(&data_len.to_le_bytes());
+    b.resize(44 + data_len as usize, 0);
+    std::fs::write(path, b)
+}
+
+/// 写一张 1×1 PNG 当「图像片源」（真 mpv 会把静态图当视频轨播，可截图）。
+fn write_tiny_png(path: &std::path::Path) -> std::io::Result<()> {
+    const PNG: &[u8] = &[
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00,
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00,
+        0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x18,
+        0xdd, 0x8d, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ];
+    std::fs::write(path, PNG)
+}
+
 /// 自检：按脚本跑一遍真 IPC 链路（夹具版用 `MIAO_MPV_BIN` + `MIAO_MPV_SCRIPT`）。
+///
+/// 两段片源：**音频**验时长 / 跳转 / 音轨 / 外挂字幕，**图像**验截图
+/// （图像在真 mpv 里是一条视频轨，音频片源没有画面可截）。
 pub fn selftest() -> Value {
     let mut cases: Vec<Value> = Vec::new();
     let mut ok = true;
@@ -657,38 +704,83 @@ pub fn selftest() -> Value {
         return json!({ "ok": false, "cases": cases, "info": { "available": false } });
     }
 
-    let sample = std::env::temp_dir().join("miao-anime-kernel-selftest.mkv");
-    let _ = std::fs::write(&sample, b"fake");
-    let path = sample.to_string_lossy().into_owned();
+    let tmp = std::env::temp_dir();
+    let wav = tmp.join("miao-anime-kernel-selftest.wav");
+    let srt = tmp.join("miao-anime-kernel-selftest.srt");
+    let png = tmp.join("miao-anime-kernel-selftest.png");
+    let shot = tmp.join("miao-anime-kernel-selftest-shot.png");
+    let wav_path = wav.to_string_lossy().into_owned();
+    let srt_path = srt.to_string_lossy().into_owned();
+    let _ = write_silent_wav(&wav);
+    let _ = std::fs::write(&srt, "1\n00:00:00,000 --> 00:00:01,000\nhello\n");
+    let _ = write_tiny_png(&png);
 
     match Kernel::spawn("auto-safe") {
         Ok(mut k) => {
+            // 真 mpv 的状态是**事件推回来**的（毫秒级但不保证同拍）：断言前要等一等，
+            // 不能假设「发完命令状态立刻变」—— 夹具是同步的，会把这个假设藏起来。
+            let wait = |cond: &dyn Fn() -> bool| -> bool {
+                for _ in 0..40 {
+                    if cond() {
+                        return true;
+                    }
+                    std::thread::sleep(Duration::from_millis(25));
+                }
+                false
+            };
             push("拉起 mpv 并接上 IPC", true, "");
-            let opened = k.open(Source::File { path: path.clone() });
+            let opened = k.open(Source::File { path: wav_path.clone() });
             push("open 成功", opened.is_ok(), &opened.err().unwrap_or_default());
             push("open 后能读到时长（事件通道通）", k.snapshot().duration_ms > 0, "");
-            push("open 后处于暂停态", !k.snapshot().playing, "一打开就有声音会吓人");
-            push("play 后 playing=true", k.play().is_ok() && k.snapshot().playing, "");
-            let seek = k.seek(60_000);
-            push("seek 到 60s", seek.is_ok() && k.snapshot().position_ms >= 55_000, "");
+            push("open 后处于暂停态", wait(&|| !k.snapshot().playing), "一打开就有声音会吓人");
+            let played = k.play().is_ok() && wait(&|| k.snapshot().playing);
+            push("play 后 playing=true", played, "");
+            let seek = k.seek(500);
+            push("seek 到 0.5s", seek.is_ok() && wait(&|| k.snapshot().position_ms >= 400), "");
             push("倍速夹到上限 4.0", k.set_rate(9.0).is_ok() && k.snapshot().rate <= 4.0, "");
             push("倍速夹到下限 0.25", k.set_rate(-1.0).is_ok() && k.snapshot().rate >= 0.25, "");
-            let tracks = k.state().tracks;
-            push("拿到音轨与字幕轨", tracks.iter().any(|t| t.kind == "audio") && tracks.iter().any(|t| t.kind == "sub"), "");
-            let sub_ok = k.load_subtitle(&path);
+            push("拿到音轨", k.state().tracks.iter().any(|t| t.kind == "audio"), "");
+            let sub_ok = k.load_subtitle(&srt_path);
             push("挂外挂字幕", sub_ok.is_ok(), &sub_ok.err().unwrap_or_default());
+            push(
+                "外挂字幕后出现选中的字幕轨",
+                wait(&|| k.state().tracks.iter().any(|t| t.kind == "sub" && t.selected)),
+                "",
+            );
             push("音量命令被接受", k.set("volume", json!(55)).is_ok(), "");
             push("全屏命令被接受", k.set("fullscreen", json!(true)).is_ok(), "");
-            let shot = std::env::temp_dir().join("miao-anime-kernel-selftest.png");
-            let shot_path = shot.to_string_lossy().into_owned();
-            let shot_ok = k.request(vec![json!("screenshot-to-file"), json!(shot_path), json!("video")]).is_ok();
-            push("截图命令被接受", shot_ok, "");
-            let _ = std::fs::remove_file(&shot);
-            push("pause 后 playing=false", k.pause().is_ok() && !k.snapshot().playing, "");
+            let paused = k.pause().is_ok() && wait(&|| !k.snapshot().playing);
+            push("pause 后 playing=false", paused, "");
         }
         Err(e) => push("拉起 mpv 并接上 IPC", false, &e),
     }
 
-    let _ = std::fs::remove_file(&sample);
+    // 第二段：图像片源 → 截图（真 mpv 把静态图当视频轨）
+    let png_path = png.to_string_lossy().into_owned();
+    let shot_path = shot.to_string_lossy().into_owned();
+    let _ = std::fs::remove_file(&shot);
+    match Kernel::spawn_with("auto-safe", &["--image-display-duration=5".to_string()]) {
+        Ok(mut k) => {
+            let opened = k.open(Source::File { path: png_path });
+            push("图像片源 open 成功", opened.is_ok(), &opened.err().unwrap_or_default());
+            let shot_ok = k.request(vec![json!("screenshot-to-file"), json!(shot_path), json!("video")]).is_ok();
+            // 真 mpv 落盘有极短的延迟：等一小会儿再判「文件真的写了」
+            for _ in 0..20 {
+                if shot.exists() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            push("截图命令被接受", shot_ok && shot.exists(), "");
+        }
+        Err(e) => {
+            push("图像片源 open 成功", false, &e);
+            push("截图命令被接受", false, &e);
+        }
+    }
+
+    for p in [&wav, &srt, &png, &shot] {
+        let _ = std::fs::remove_file(p);
+    }
     json!({ "ok": ok, "cases": cases, "info": { "available": info.available, "path": info.path } })
 }

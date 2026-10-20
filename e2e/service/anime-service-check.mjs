@@ -556,7 +556,7 @@ try {
       out?.ok === true,
       out?.cases?.filter((c) => !c.ok),
     );
-    check('A8 用例条数写死 15 且全绿', out?.cases?.length === 15 && out.cases.every((c) => c.ok), out?.cases?.length);
+    check('A8 用例条数写死 17 且全绿', out?.cases?.length === 17 && out.cases.every((c) => c.ok), out?.cases?.length);
 
     const cmds = fs.existsSync(logFile)
       ? fs
