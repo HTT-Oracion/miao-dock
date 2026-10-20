@@ -6098,6 +6098,36 @@ raw.githubusercontent 在本机不通，与 D-246 同因）。核对结论：
 2. **评价只读**：v0 无评论端点。可选：不做（UI 保留说明）／接 legacy／用户提供镜像端点。
 3. **验证码交互**（R2-3）：没有指定站点与验证码类型（图形码 / 滑块 / 极验…），实现方式差异极大，属未定义行为。
 
+## D-255 评分三数 + 验证码会话（内嵌窗口 → cookie → 抓取层）（2026-10-20）
+
+**一、评分直方图改为「三数」（用户裁定）**：v0 没有 1–10 分的人数分布，画直方图只能编数。
+改为 `评分 / 排名 / 收藏人数` 三个真字段（`score` / `rank` / `collection_total`），
+落盘进 manifest（`Subject.rank` / `Subject.collectionTotal`），`apply_metadata` 写、`patch_of` 填。
+详情页在评分条上方并排三个 `Stat`；**不画分档柱状图**，注释写明原因，避免后人又去"补一个漂亮的图"。
+
+**二、评价只读（用户裁定）**：v0 无端点 ⇒ 不做，UI 保留一行说明（不写"即将上线"这种空承诺）。
+
+**三、验证码（用户裁定：内嵌窗口让用户手动过）**
+
+| 环节 | 做法 |
+|---|---|
+| 打开窗口 | `anime_open_challenge(url)`：`WebviewWindowBuilder` 开 `anime-challenge`（复用同一个窗口，重复调用就导航过去），**不注入脚本、不识别、不绕过** |
+| 取会话 | `anime_challenge_cookies(url)`：`WebviewWindow::cookies_for_url(url)` —— **按地址取**，不是 `cookies()` 全量（全量会把别的站的会话一起塞进请求头） |
+| 用会话 | 前端把 cookie 交给 `anime_test_source` / `anime_resolve_source`；服务侧 `web::fetch_html` 拼 `Cookie` 头（空集合不发头） |
+| 交互 | 测试失败后给「过验证码」「我已通过，重试」两个按钮；重试前先收 cookie，再跑同一条测试 |
+
+**四、验证**
+
+- `cargo test --lib animesvc` **72/72**（评分补丁含 `rank` / `collectionTotal` 断言）
+- `check:anime` **65/65**：A12 两条 —— 要验证的页面**不带 cookie ⇒ 502**（如实失败）、**带上 `session=ok` ⇒ 200 且取到两条**（假站点真的校验 `Cookie` 头）
+- `check:anime-module` **41/41** + 反证 **33/33**（新增 `M3.challenge`，变异为把 `cookies_for_url` 换回全量 `cookies()`）
+- `check:counts` 2/2 · `check:docs` 21/21 · `tsc` / `eslint` / `prettier` / `vite build` 全绿
+
+**五、边界（如实登记）**：内嵌窗口与抓取层共享的是 **cookie**，不是完整浏览器上下文 ——
+靠 `localStorage` / 指纹 / JS 挑战生成 token 的站点，抓取层仍可能拿不到页面；那种情况会**如实失败**，
+不假装通过。窗口本身也不做持久化：关掉应用后会话即失效，重新测一次就要再过一遍。
+
+
 
 
 
