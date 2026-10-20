@@ -615,6 +615,29 @@ const CHECKS = [
     }),
   },
   {
+    id: 'M3.providerOrder',
+    run: (s) => ({
+      ok:
+        /enum MetaOrder/.test(s.rustMetadata) &&
+        /let only_bangumi = matches!\(order, MetaOrder::BangumiFirst\);/.test(s.rustMetadata) &&
+        /let only_anilist = matches!\(order, MetaOrder::AnilistFirst\);/.test(s.rustMetadata) &&
+        /if only_bangumi \{/.test(s.rustMetadata) &&
+        /if only_anilist \{/.test(s.rustMetadata) &&
+        /fn meta_order_name/.test(s.rustMetadata) &&
+        /fn parse_meta_order/.test(s.rustMetadata) &&
+        /MIAO_ANIME_META_PROVIDER/.test(s.rustAnime) &&
+        /MIAO_ANIME_META_PROVIDER/.test(s.rustMetadata) &&
+        /meta-provider/.test(s.rustAnimesvc) &&
+        /meta_provider_set/.test(s.rustAnimesvc) &&
+        /anime_set_meta_provider/.test(s.rustAnime) &&
+        /animeSetMetaProvider/.test(s.ipc) &&
+        /metaProvider/.test(s.prefs) &&
+        /metaProvider: 'auto'/.test(s.prefs) &&
+        /key: 'metaProvider'/.test(s.settingsCatalog),
+      detail: '元数据来源切换没接通：顺序枚举 / 端点 / 壳层命令 / 偏好 / 设置项 任一环缺失',
+    }),
+  },
+  {
     id: 'M3.provider',
     run: (s) => ({
       ok:
@@ -624,6 +647,7 @@ const CHECKS = [
         /pub async fn apply_any/.test(s.rustMetadata) &&
         /pub async fn import_any/.test(s.rustMetadata) &&
         /anilist::search/.test(s.rustMetadata) &&
+        /fallbackFrom/.test(s.rustMetadata) &&
         /metadata::search_any/.test(s.rustAnimesvc) &&
         /metadata::apply_any/.test(s.rustAnimesvc) &&
         /metadata::import_any/.test(s.rustAnimesvc) &&
@@ -805,10 +829,10 @@ const CHECKS = [
     run: (s) => {
       const okMain = /'anime'/.test(s.settingsCatalogMain);
       const okScreen = /AnimeSettingsSection/.test(s.settingsScreen);
-      const okItems = (s.settingsCatalog.match(/id: '[a-z]+\.[a-z]+'/g) ?? []).length === 33;
+      const okItems = (s.settingsCatalog.match(/id: '[a-z]+\.[a-z]+'/g) ?? []).length === 34;
       return {
         ok: okMain && okScreen && okItems,
-        detail: `番剧设置未接全：catalog 段 ${okMain ? '有' : '缺'}、设置页挂载 ${okScreen ? '有' : '缺'}、项数 33 ${okItems ? '对' : '不对'}`,
+        detail: `番剧设置未接全：catalog 段 ${okMain ? '有' : '缺'}、设置页挂载 ${okScreen ? '有' : '缺'}、项数 34 ${okItems ? '对' : '不对'}`,
       };
     },
   },
@@ -1147,10 +1171,17 @@ const MUTATIONS = [
     expect: ['M3.embed'],
   },
   {
+    name: '固定 AniList 仍然先试 Bangumi（切了也白切）',
+    file: F.rustMetadata,
+    find: '    if only_anilist {',
+    replace: '    if only_anilist || only_bangumi {',
+    expect: ['M3.providerOrder'],
+  },
+  {
     name: '检索不再回退 AniList（Bangumi 一断就整屏空）',
     file: F.rustMetadata,
-    find: 'crate::animesvc::anilist::search(q, limit).await',
-    replace: 'Err(String::new())',
+    find: '                v["fallbackFrom"] = json!(format!("bangumi: {bgm_err}"));',
+    replace: '                let _ = &bgm_err;',
     expect: ['M3.provider'],
   },
   {
