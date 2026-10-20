@@ -22,6 +22,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use serde_json::{json, Value};
+use tauri::Manager;
 
 /// 子进程 + 它自报的端口与令牌。
 struct AnimeProc {
@@ -100,6 +101,23 @@ pub fn anime_set_bt_options(port: Option<u16>, peer_filter_url: Option<String>) 
         *g = peer_filter_url
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty());
+    }
+    Ok(json!({ "ok": true }))
+}
+
+/// 记录限速 / 做种上限（下次拉起子进程时注入环境变量；运行期的会话另有 `anime_set_bt_limits`）。
+#[tauri::command]
+pub fn anime_store_bt_limits(
+    down_kbps: Option<u32>,
+    up_kbps: Option<u32>,
+    seed_ratio: Option<f64>,
+) -> Result<Value, String> {
+    if let Ok(mut g) = desired_bt_limits().lock() {
+        *g = (
+            down_kbps.filter(|v| *v > 0),
+            up_kbps.filter(|v| *v > 0),
+            seed_ratio.filter(|v| *v > 0.0),
+        );
     }
     Ok(json!({ "ok": true }))
 }
@@ -741,22 +759,11 @@ pub async fn anime_bt_stream_url(id: u64) -> Result<Value, String> {
 
 /// PikPak 接口状态（只留接口：`implemented` 恒 false）。
 #[tauri::command]
-pub async fn anime_bt_pikpak(account: Option<String>) -> Result<Value, String> {
-    let q = account.map(|a| format!("?account={}", urlencode(&a))).unwrap_or_default();
-    get(&format!("/api/v1/anime/bt/pikpak{q}")).await
+pub async fn anime_bt_pikpak(enabled: bool) -> Result<Value, String> {
+    get(&format!("/api/v1/anime/bt/pikpak?enabled={enabled}")).await
 }
 
 /// 最小 URL 编码（只处理 query 里会出事的字符，不引依赖）。
-fn urlencode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
-}
 
 /// BT 任务列表（进度 / 做种比来自 librqbit）。
 #[tauri::command]
@@ -915,6 +922,109 @@ pub async fn anime_open_challenge(app: tauri::AppHandle, url: String) -> Result<
     Ok(json!({ "ok": true, "reused": false }))
 }
 
+/// 「点选元素」窗口的标签（每次重开，避免上一次的标题残留）。
+const PICK_LABEL: &str = "anime-pick";
+
+/// 注入到点选窗口里的脚本：**只做两件事** —— 点击时算一条 CSS 路径，把它写进 `document.title`。
+///
+/// 为什么走标题而不是远程 IPC：远程页面调 Tauri 命令需要放开 `remote` 能力（等于给任意站点开一个口子）。
+/// 标题是**单向**的、Rust 侧主动读，页面拿不到任何能力。`PICK:` 前缀用来区分正常标题。
+const PICK_JS: &str = r#"
+(function () {
+  if (window.__miaoPick) return;
+  window.__miaoPick = true;
+  var cssPath = function (el) {
+    if (!el || el.nodeType !== 1) return '';
+    var parts = [];
+    while (el && el.nodeType === 1 && parts.length < 6) {
+      var sel = el.nodeName.toLowerCase();
+      if (el.id) {
+        parts.unshift(sel + '#' + CSS.escape(el.id));
+        break;
+      }
+      var cls = Array.prototype.slice.call(el.classList, 0, 2);
+      if (cls.length) sel += '.' + cls.map(function (c) { return CSS.escape(c); }).join('.');
+      var parent = el.parentElement;
+      if (parent) {
+        var same = Array.prototype.filter.call(parent.children, function (c) { return c.nodeName === el.nodeName; });
+        if (same.length > 1) sel += ':nth-of-type(' + (same.indexOf(el) + 1) + ')';
+      }
+      parts.unshift(sel);
+      el = el.parentElement;
+    }
+    return parts.join(' > ');
+  };
+  document.addEventListener('mousedown', function (e) {
+    if (!e.target) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var sel = cssPath(e.target);
+    if (sel) document.title = 'PICK:' + sel;
+  }, true);
+  document.addEventListener('mouseover', function (e) {
+    if (!e.target || !e.target.style) return;
+    e.target.style.outline = '2px solid #f59e0b';
+  }, true);
+  document.addEventListener('mouseout', function (e) {
+    if (e.target && e.target.style) e.target.style.outline = '';
+  }, true);
+})();
+"#;
+
+/// 打开「点选元素」窗口（用户点页面元素，回来填进选择器输入框）。
+#[tauri::command]
+pub async fn anime_open_picker(app: tauri::AppHandle, url: String) -> Result<Value, String> {
+    if !url.starts_with("http") {
+        return Err("要 http:// 或 https:// 地址".into());
+    }
+    let parsed: tauri::Url = url.parse().map_err(|e| format!("地址不合法：{e}"))?;
+    // 每次重开：上一次可能停在别的页、标题里还留着旧选择器
+    if let Some(w) = app.get_webview_window(PICK_LABEL) {
+        let _ = w.close();
+    }
+    tauri::WebviewWindowBuilder::new(&app, PICK_LABEL, tauri::WebviewUrl::External(parsed))
+        .title("点选元素 · 喵坞")
+        .inner_size(1100.0, 800.0)
+        .initialization_script(PICK_JS)
+        .build()
+        .map_err(|e| format!("点选窗口打不开：{e}"))?;
+    Ok(json!({ "ok": true }))
+}
+
+/// 等用户点完：轮询窗口标题，拿到 `PICK:` 前缀就返回选择器并关窗。
+#[tauri::command]
+pub async fn anime_pick_result(
+    app: tauri::AppHandle,
+    timeout_secs: Option<u64>,
+) -> Result<Value, String> {
+    let budget = std::time::Duration::from_secs(timeout_secs.unwrap_or(90).min(300));
+    let deadline = std::time::Instant::now() + budget;
+    loop {
+        let Some(w) = app.get_webview_window(PICK_LABEL) else {
+            return Ok(json!({ "ok": false, "reason": "点选窗口已关闭" }));
+        };
+        let title = w.title().unwrap_or_default();
+        if let Some(sel) = pick_from_title(&title) {
+            let _ = w.close();
+            return Ok(json!({ "ok": true, "selector": sel }));
+        }
+        if std::time::Instant::now() > deadline {
+            return Ok(json!({ "ok": false, "reason": "等超时了（没点，或者页面拦住了点击）" }));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+}
+
+/// 从窗口标题里取选择器（`PICK:` 前缀；空串算没点）。
+fn pick_from_title(title: &str) -> Option<String> {
+    let rest = title.strip_prefix("PICK:")?.trim();
+    if rest.is_empty() {
+        None
+    } else {
+        Some(rest.to_string())
+    }
+}
+
 /// 从验证码窗口读出该地址的会话 cookie（抓取层拿它当 `Cookie` 头）。
 #[tauri::command]
 pub async fn anime_challenge_cookies(app: tauri::AppHandle, url: String) -> Result<Value, String> {
@@ -1034,6 +1144,15 @@ fn urlencode(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::pick_from_title;
+
+    #[test]
+    fn pick_title_needs_prefix_and_non_empty() {
+        assert_eq!(pick_from_title("PICK:#list > li:nth-of-type(2) > a").as_deref(), Some("#list > li:nth-of-type(2) > a"));
+        assert_eq!(pick_from_title("PICK:   "), None);
+        assert_eq!(pick_from_title("点选元素 · 喵坞"), None);
+        assert_eq!(pick_from_title(""), None);
+    }
     use super::*;
 
     const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
