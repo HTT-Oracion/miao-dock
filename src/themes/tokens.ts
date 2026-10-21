@@ -1,51 +1,53 @@
 /**
  * 设计令牌 —— 与插件端**逐字一致**（《02》§5「与插件共用同一套设计令牌」）。
  *
- * 来源：设计稿文件 732136506189423 的 Color 变量集（id `3:2`），Light `3:1` / Dark `3:3`。
- * 共 18 色（ver1.0 新增 warning）。`$3:n` 是设计稿变量 id，保留以便对账。
+ * ver3.0「空色日和」调色板：雾蓝为骨、杏奶为温、鼠尾草为静。
+ * 键名保持不变（`pink` = 强调色、`blue` = 主色、`lavender` = 第三强调色），
+ * 这样旧分片不需要逐处改名；新样式一律再经 `--miao-*` 语义别名消费。
+ *
  * 取值与 `extension/src/themes/tokens.ts` 保持同步 —— 两侧不一致即为缺陷。
  */
 
 export const COLOR_TOKENS_LIGHT = {
-  ink: '#3B3352', // $3:4
-  'ink-2': '#5C5478', // $3:5
-  muted: '#8C85A3', // $3:6
-  surface: '#FFFFFF', // $3:7
-  'surface-2': '#F5F5FF', // $3:8
-  board: '#FAFAFF', // $3:9
-  line: '#E5DEF5', // $3:10
-  'line-soft': '#F0EBFA', // $3:11
-  pink: '#FF8FBF', // $3:12
-  'pink-soft': '#FFE0ED', // $3:13
-  blue: '#8FC7FF', // $3:14
-  'blue-soft': '#DEEDFF', // $3:15
-  lavender: '#C9B5FF', // $3:16
-  yellow: '#FFE066', // $3:17
-  success: '#70D9AD', // $3:18
-  error: '#FF7D85', // $3:19
-  'on-accent': '#FFFFFF', // $3:20
-  warning: '#C97B12', // $3:21（ver1.0 新增，用于「部分失败」）
+  ink: '#2D3B46',
+  'ink-2': '#55646F',
+  muted: '#7E8D98',
+  surface: '#FFFFFF',
+  'surface-2': '#F1F5F7',
+  board: '#F6F8F9',
+  line: '#E5EBEF',
+  'line-soft': '#EEF3F6',
+  pink: '#DFA47D',
+  'pink-soft': '#FBF0E7',
+  blue: '#6E97B9',
+  'blue-soft': '#EAF2F8',
+  lavender: '#8CA88C',
+  yellow: '#D9A441',
+  success: '#6F9A83',
+  error: '#C97D73',
+  'on-accent': '#FFFFFF',
+  warning: '#BE8A57',
 } as const;
 
 export const COLOR_TOKENS_DARK = {
-  ink: '#F5F2FF',
-  'ink-2': '#C9C2E0',
-  muted: '#9994B8',
-  surface: '#262140',
-  'surface-2': '#2E294F',
-  board: '#140F29',
-  line: '#3B3361',
-  'line-soft': '#292447',
-  pink: '#FF9EC4',
-  'pink-soft': '#4A2440',
-  blue: '#8FC7FF',
-  'blue-soft': '#1F304F',
-  lavender: '#C9B5FF',
-  yellow: '#FFE066',
-  success: '#80E3BD',
-  error: '#FF99A1',
-  'on-accent': '#291A2E',
-  warning: '#FFC46B',
+  ink: '#EDF3F7',
+  'ink-2': '#B9C7D1',
+  muted: '#8798A5',
+  surface: '#18222C',
+  'surface-2': '#1E2A34',
+  board: '#111820',
+  line: '#25333E',
+  'line-soft': '#1B2731',
+  pink: '#E3B08A',
+  'pink-soft': '#33291F',
+  blue: '#85ADCE',
+  'blue-soft': '#223340',
+  lavender: '#9BB89A',
+  yellow: '#D2A36E',
+  success: '#8FB69F',
+  error: '#D9968C',
+  'on-accent': '#111820',
+  warning: '#D2A36E',
 } as const;
 
 export type TokenName = keyof typeof COLOR_TOKENS_LIGHT;
@@ -104,8 +106,16 @@ export const BRAND = {
  */
 export const SHELL = {
   sidebarWidth: 78,
+  /** 1040 断点以下的纯图标轨宽度（与 app.scss 的媒体查询同值） */
+  compactSidebarWidth: 66,
+  /** 760 断点以下的窄轨宽度（与 app.scss 的媒体查询同值） */
+  narrowSidebarWidth: 60,
   toolbarHeight: 62,
   contentPadding: { top: 26, right: 26, bottom: 22, left: 24 },
+  /** 1180 断点以下的内容区内边距（与 app.scss 的媒体查询同值） */
+  compactContentPadding: { top: 20, right: 18, bottom: 18, left: 18 },
+  /** 760 断点以下的内容区内边距（与 app.scss 的媒体查询同值） */
+  narrowContentPadding: { top: 14, right: 14, bottom: 18, left: 14 },
   logoSize: 40,
 } as const;
 
@@ -161,6 +171,8 @@ export const VIEW_TABS = {
  */
 export const SETTINGS = {
   navWidth: 180,
+  /** 1180 断点以下的左栏宽度（与 settings.scss / components.scss 的媒体查询同值） */
+  navWidthCompact: 156,
   navStickyTop: 26,
   navItemPadding: { y: 9, x: 12 },
   navItemIcon: 18,
@@ -212,6 +224,39 @@ export const QUEUE_EMPTY = {
   rotateSeconds: 8,
 } as const;
 
+/**
+ * ver3.0 圆角阶梯（「空色日和」视觉系统）。
+ *
+ * 与 `RADIUS` 并存而不是替换：`RADIUS` 的数值被规格自检与漫画库几何钉着，
+ * 新视觉层需要更大的一档（26 / 32），故单列一套供 `--miao-*` 消费。
+ */
+export const MIAO_RADIUS = {
+  xs: 9,
+  sm: 12,
+  md: 16,
+  lg: 20,
+  xl: 26,
+  '2xl': 32,
+  full: 999,
+} as const;
+
+/** ver3.0 动效令牌：所有位移走弹簧，不用线性缓动。 */
+export const MIAO_MOTION = {
+  fast: '140ms',
+  base: '240ms',
+  slow: '380ms',
+  spring: 'cubic-bezier(.22, 1.3, .36, 1)',
+  springSoft: 'cubic-bezier(.34, 1.4, .64, 1)',
+  out: 'cubic-bezier(.16, 1, .3, 1)',
+} as const;
+
+/** 各模块的强调色 —— 侧栏高亮、模块标题、空态插画各取一支。 */
+export const MODULE_ACCENT = {
+  translate: '#6E97B9',
+  music: '#DFA47D',
+  settings: '#8CA88C',
+} as const;
+
 /** 生成 CSS 变量（深色模式只换变量，不换结构 —— 《01》§9） */
 export function cssVars(mode: ThemeMode): Record<string, string> {
   const src = mode === 'dark' ? COLOR_TOKENS_DARK : COLOR_TOKENS_LIGHT;
@@ -226,5 +271,56 @@ export function cssVars(mode: ThemeMode): Record<string, string> {
   out['--md-font-display'] = FONT.display;
   out['--md-font-body'] = FONT.body;
   out['--md-font-numeric'] = FONT.numeric;
+
+  // ver3 语义别名：新样式只消费这一层，调色板换代时不用改组件。
+  out['--miao-bg'] = src.board;
+  out['--miao-surface'] = src.surface;
+  out['--miao-surface-2'] = src['surface-2'];
+  out['--miao-surface-3'] = mode === 'dark' ? '#26343F' : '#E9F0F4';
+  out['--miao-ink'] = src.ink;
+  out['--miao-text'] = src['ink-2'];
+  out['--miao-muted'] = src.muted;
+  out['--miao-faint'] = mode === 'dark' ? '#6B7D8A' : '#A5B1BA';
+  out['--miao-line'] = src.line;
+  out['--miao-line-strong'] = mode === 'dark' ? '#344550' : '#D3DEE5';
+  out['--miao-primary'] = src.blue;
+  out['--miao-primary-soft'] = src['blue-soft'];
+  out['--miao-primary-line'] = mode === 'dark' ? '#344C5E' : '#CFE1ED';
+  out['--miao-primary-ink'] = mode === 'dark' ? '#B7D1E5' : '#3F6078';
+  out['--miao-accent'] = src.pink;
+  out['--miao-accent-soft'] = src['pink-soft'];
+  out['--miao-accent-line'] = mode === 'dark' ? '#4E3C2D' : '#F0D9C8';
+  out['--miao-sage'] = src.lavender;
+  out['--miao-sage-soft'] = mode === 'dark' ? '#233027' : '#EEF4EE';
+  out['--miao-sage-line'] = mode === 'dark' ? '#3A4C3D' : '#D8E6D8';
+  out['--miao-sage-ink'] = mode === 'dark' ? '#B6CDB4' : '#5E7A5F';
+  out['--miao-danger'] = src.error;
+  out['--miao-danger-soft'] = mode === 'dark' ? '#352522' : '#F9EDEB';
+  out['--miao-success'] = src.success;
+  out['--miao-success-soft'] = mode === 'dark' ? '#20322A' : '#EAF3EE';
+  out['--miao-warning'] = src.warning;
+  out['--miao-warning-soft'] = mode === 'dark' ? '#33291E' : '#F9F0E6';
+  out['--miao-glass'] = mode === 'dark' ? 'rgba(23, 32, 41, .68)' : 'rgba(255, 255, 255, .64)';
+  out['--miao-glass-line'] = mode === 'dark' ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.72)';
+  out['--miao-shadow-1'] =
+    mode === 'dark'
+      ? '0 1px 2px rgba(0,0,0,.24), 0 16px 36px -30px rgba(0,0,0,.7)'
+      : '0 1px 2px rgba(45,59,70,.04), 0 14px 34px -26px rgba(45,59,70,.22)';
+  out['--miao-shadow-2'] =
+    mode === 'dark'
+      ? '0 2px 6px rgba(0,0,0,.3), 0 28px 64px -34px rgba(0,0,0,.8)'
+      : '0 2px 6px rgba(45,59,70,.06), 0 28px 64px -34px rgba(45,59,70,.28)';
+  out['--miao-shadow-primary'] =
+    mode === 'dark' ? '0 12px 24px -16px rgba(0,0,0,.55)' : '0 10px 22px -14px rgba(110,151,185,.5)';
+  for (const [k, v] of Object.entries(MIAO_RADIUS)) out[`--miao-r-${k}`] = `${v}px`;
+  out['--miao-dur-fast'] = MIAO_MOTION.fast;
+  out['--miao-dur-base'] = MIAO_MOTION.base;
+  out['--miao-dur-slow'] = MIAO_MOTION.slow;
+  out['--miao-ease-spring'] = MIAO_MOTION.spring;
+  out['--miao-ease-spring-soft'] = MIAO_MOTION.springSoft;
+  out['--miao-ease-out'] = MIAO_MOTION.out;
+  out['--miao-mod-translate'] = MODULE_ACCENT.translate;
+  out['--miao-mod-music'] = MODULE_ACCENT.music;
+  out['--miao-mod-settings'] = MODULE_ACCENT.settings;
   return out;
 }

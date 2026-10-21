@@ -611,7 +611,7 @@ export function App() {
   };
 
   return (
-    <div className="shell">
+    <div className="app" data-screen={screen}>
       <Sidebar
         screen={screen}
         onScreen={setScreen}
@@ -625,10 +625,10 @@ export function App() {
         }}
       />
 
-      <div className="main">
+      <div className="shell">
         <Toolbar title={toolbar.title} subtitle={toolbar.subtitle} actions={toolbar.actions} />
 
-        {showViewTabs ? <ViewTabs view={view} onView={setView} /> : null}
+        {showViewTabs ? <ViewTabs view={view} onView={setView} queueCount={queueDepth} rootDir={libRoot} /> : null}
 
         <div className="content">
           {ipcError ? (

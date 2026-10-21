@@ -9,7 +9,7 @@
  * 成为**结构性事实**：要换主题只能改变量，没有第二处可以偷偷写死颜色。
  *
  * 同理，本文件（以及任何分片）里**不得**出现 SCSS 变量承载颜色 —— 令牌只走
- * `var(--md-*)`，否则「只换变量」就不成立了。
+ * `var(--md-*)`（底层调色板）或 `var(--miao-*)`（ver3 语义层），否则「只换变量」就不成立了。
  */
 
 *,
@@ -97,4 +97,136 @@ textarea {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+/* ================================================================
+ * 空色日和 · 基础层
+ * 排版基座、底色、焦点环与减少动态的统一定义。
+ * ================================================================ */
+
+/* ---------------- 基础 ---------------- */
+
+html,
+body {
+  background: transparent;
+}
+
+body {
+  font-family: var(--md-font-body);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--miao-text);
+  background:
+    radial-gradient(900px 520px at 10% -8%, rgba(110, 151, 185, 0.13), transparent 62%),
+    radial-gradient(760px 460px at 104% 18%, rgba(223, 164, 125, 0.12), transparent 64%),
+    radial-gradient(680px 420px at 64% 112%, rgba(140, 168, 140, 0.1), transparent 66%), var(--miao-bg);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+html[data-theme='dark'] body {
+  background:
+    radial-gradient(900px 520px at 10% -8%, rgba(133, 173, 206, 0.1), transparent 62%),
+    radial-gradient(760px 460px at 104% 18%, rgba(227, 176, 138, 0.07), transparent 64%),
+    radial-gradient(680px 420px at 64% 112%, rgba(155, 184, 154, 0.06), transparent 66%), var(--miao-bg);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+strong,
+b,
+th {
+  font-family: var(--md-font-display);
+  color: var(--miao-ink);
+}
+
+::selection {
+  background: var(--miao-primary-soft);
+  color: var(--miao-primary-ink);
+}
+
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--miao-primary) 52%, transparent);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--miao-line-strong) 78%, transparent);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--miao-muted);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/* ---------------- 减少动态 ---------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------- 番剧隔离作用域 ----------------
+ * 番剧模块不在本次改造范围内：恢复旧调色板，避免全局换色把它一起改掉。
+ * 只声明颜色变量，不动任何结构或业务样式。
+ */
+
+.an-root {
+  --md-ink: #3b3352;
+  --md-ink-2: #5c5478;
+  --md-muted: #8c85a3;
+  --md-surface: #ffffff;
+  --md-surface-2: #f5f5ff;
+  --md-board: #fafaff;
+  --md-line: #e5def5;
+  --md-line-soft: #f0ebfa;
+  --md-pink: #ff8fbf;
+  --md-pink-soft: #ffe0ed;
+  --md-blue: #8fc7ff;
+  --md-blue-soft: #deedff;
+  --md-lavender: #c9b5ff;
+  --md-yellow: #ffe066;
+  --md-success: #70d9ad;
+  --md-error: #ff7d85;
+  --md-warning: #c97b12;
+  --md-on-accent: #ffffff;
+}
+
+html[data-theme='dark'] .an-root {
+  --md-ink: #f5f2ff;
+  --md-ink-2: #c9c2e0;
+  --md-muted: #9994b8;
+  --md-surface: #262140;
+  --md-surface-2: #2e294f;
+  --md-board: #140f29;
+  --md-line: #3b3361;
+  --md-line-soft: #292447;
+  --md-pink: #ff9ec4;
+  --md-pink-soft: #4a2440;
+  --md-blue: #8fc7ff;
+  --md-blue-soft: #1f304f;
+  --md-lavender: #c9b5ff;
+  --md-yellow: #ffe066;
+  --md-success: #80e3bd;
+  --md-error: #ff99a1;
+  --md-warning: #ffc46b;
+  --md-on-accent: #291a2e;
 }

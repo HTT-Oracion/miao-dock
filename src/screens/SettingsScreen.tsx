@@ -103,6 +103,8 @@ export function SettingsScreen({
 
   const active = SETTINGS_SECTIONS.find((s) => s.id === section) ?? null;
   const isAnime = section === 'anime';
+  /** 分组序号（仅用于页眉 kicker；番剧是域内设置，单独成一支） */
+  const sectionIndex = SETTINGS_SECTIONS.findIndex((s) => s.id === section);
 
   return (
     <>
@@ -122,6 +124,7 @@ export function SettingsScreen({
           aria-label="设置分组"
           style={{ flex: `0 0 ${SETTINGS.navWidth}px`, top: SETTINGS.navStickyTop }}
         >
+          <div className="settings-nav-title">偏好设置</div>
           {SETTINGS_SECTIONS.map((s) => {
             const Icon = SECTION_ICON[s.id];
             const on = s.id === active?.id;
@@ -163,10 +166,18 @@ export function SettingsScreen({
             <span className="set-nav-label">番剧设置</span>
             <span className="set-nav-count">{ANIME_SETTING_TOTAL}</span>
           </button>
+          <div className="settings-nav-note">
+            所有偏好保存在本机。
+            <br />
+            改动即时生效。
+          </div>
         </nav>
 
         <div className="settings-main">
           <header className="settings-head">
+            <span className="kicker">
+              {isAnime ? 'MODULE / ANIME' : `PREFERENCES / ${String(sectionIndex + 1).padStart(2, '0')}`}
+            </span>
             <div className="settings-title" style={{ fontSize: SETTINGS.pageTitleSize }}>
               {isAnime ? '番剧设置' : active?.name}
             </div>

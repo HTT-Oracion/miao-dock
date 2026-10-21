@@ -1235,13 +1235,13 @@ add('STYLE.noScssSyntax', 'STYLE', (s) => {
   // 理由不是审美，是断言：本仓检查脚本大量用 `[^}]*` 取块，嵌套会改变块结构 →
   // 判据静默失效或恒红。（开 nesting 的前置条件是给脚本装 SCSS AST 解析器，
   //  留待后续单独评估 —— 见 docs/internal/style-scss-plan.md。）
-  // 同时禁 SCSS 变量承载颜色：令牌只走 var(--md-*)，否则「深色模式只换变量」不成立。
+  // 同时禁 SCSS 变量承载颜色：令牌只走 var(--md-*) / var(--miao-*)，否则「深色模式只换变量」不成立。
   const hits = [];
   for (const [file, code] of Object.entries(s.styleShardCode || {})) {
     const mixin = code.match(/@(mixin|include)\b/g);
     if (mixin) hits.push(`${file} 用了 @${mixin[0].slice(1)}`);
     const svar = code.match(/\$[a-zA-Z_][\w-]*\s*:/g);
-    if (svar) hits.push(`${file} 用了 SCSS 变量 ${svar[0].trim()}（令牌只走 var(--md-*)）`);
+    if (svar) hits.push(`${file} 用了 SCSS 变量 ${svar[0].trim()}（令牌只走 var(--md-*) / var(--miao-*)）`);
     const amp = code.match(/(^|[{,\n])\s*&(?![\w-])/m);
     if (amp) hits.push(`${file} 用了嵌套选择器 &`);
   }
@@ -1750,7 +1750,7 @@ const MUTATIONS = [
     expect: ['STYLE.shardOwnership'],
   },
   {
-    name: '在分片里用 SCSS 变量承载颜色（令牌只走 var(--md-*)，否则深色模式就不成立了）',
+    name: '在分片里用 SCSS 变量承载颜色（令牌只走 var(--md-*) / var(--miao-*)，否则深色模式就不成立了）',
     file: path.join(F.stylesDir, 'music.scss'),
     find: '/* ================================================================ 音乐屏',
     replace: '$brand: #ffe066;\n/* ================================================================ 音乐屏',

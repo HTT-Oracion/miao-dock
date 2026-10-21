@@ -71,6 +71,26 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
 
   const tokens = mode === 'dark' ? COLOR_TOKENS_DARK : COLOR_TOKENS_LIGHT;
 
+  /*
+   * 响应式期望值 —— 与 app.scss / components.scss 的断点同源。
+   * 断点：1180 收内容边距与设置左栏，1040 收侧栏为纯图标轨，760 收成窄轨。
+   * 自检在用户的真实窗口里跑，所以期望值必须随视口变化，不能写死桌面档。
+   */
+  const vw = window.innerWidth;
+  const isNarrow = vw <= 760;
+  const isCompact = vw <= 1040;
+  const isMedium = vw <= 1180;
+  const wantSidebarWidth = isNarrow
+    ? SHELL.narrowSidebarWidth
+    : isCompact
+      ? SHELL.compactSidebarWidth
+      : SHELL.sidebarWidth;
+  const wantContentPad = isNarrow
+    ? SHELL.narrowContentPadding
+    : isMedium
+      ? SHELL.compactContentPadding
+      : SHELL.contentPadding;
+
   // ---------------------------------------------------------------- C1 外壳几何
   {
     const sidebar = document.querySelector('.sidebar') as HTMLElement | null;
@@ -83,12 +103,12 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     const pad = cs
       ? [px(cs.paddingTop), px(cs.paddingRight), px(cs.paddingBottom), px(cs.paddingLeft)]
       : [-1, -1, -1, -1];
-    const want = SHELL.contentPadding;
+    const want = wantContentPad;
 
     add(
       'C1',
-      '外壳几何：侧栏 78 / 工具条 62 / 应用区内边距 26·26·22·24',
-      near(sw, SHELL.sidebarWidth) &&
+      `外壳几何（${vw}px 档）：侧栏 ${wantSidebarWidth} / 工具条 ${SHELL.toolbarHeight} / 应用区内边距 ${want.top}·${want.right}·${want.bottom}·${want.left}`,
+      near(sw, wantSidebarWidth) &&
         near(th, SHELL.toolbarHeight) &&
         near(pad[0], want.top) &&
         near(pad[1], want.right) &&
@@ -180,9 +200,9 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     const pc = primary ? getComputedStyle(primary) : null;
     add(
       'C3d',
-      '「重试」等主推进动作用 pink',
-      !!pc && sameColor(toHex(pc.backgroundColor), tokens.pink),
-      pc ? `实际 ${toHex(pc.backgroundColor)} / 期望 ${tokens.pink}` : '未渲染',
+      '「重试」等主推进动作用模块主色（雾蓝）',
+      !!pc && sameColor(toHex(pc.backgroundColor), tokens.blue),
+      pc ? `实际 ${toHex(pc.backgroundColor)} / 期望 ${tokens.blue}` : '未渲染',
     );
   }
 
@@ -266,8 +286,8 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     add(
       'C6b',
       '换主题只改变量、不改变结构（几何与主题无关）',
-      !!sidebar && near(sidebar.getBoundingClientRect().width, SHELL.sidebarWidth),
-      `侧栏 ${sidebar ? sidebar.getBoundingClientRect().width.toFixed(0) : '-'}`,
+      !!sidebar && near(sidebar.getBoundingClientRect().width, wantSidebarWidth),
+      `侧栏 ${sidebar ? sidebar.getBoundingClientRect().width.toFixed(0) : '-'}（该档期望 ${wantSidebarWidth}）`,
     );
   }
 
@@ -282,21 +302,24 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     const fam = (e: Element | null) => (e ? getComputedStyle(e).fontFamily : '');
     add(
       'C7a',
-      '数字走 Inter Medium / 标题走 Zen Maru Gothic / 正文走 Noto Sans SC',
-      fam(numEl).includes('Inter') &&
+      '数字与标题走狮尾圆体 / 正文走悠哉字体',
+      fam(numEl).includes('Swei Gothic CJK SC') &&
         !!titleEl &&
-        fam(titleEl).includes('Zen Maru Gothic') &&
-        fam(bodyEl).includes('Noto Sans SC'),
+        fam(titleEl).includes('Swei Gothic CJK SC') &&
+        fam(bodyEl).includes('Yozai'),
       `数字 ${fam(numEl).split(',')[0]} / 标题 ${fam(titleEl).split(',')[0]} / 正文 ${fam(bodyEl).split(',')[0]}`,
     );
 
-    const loaded = ['"Inter"', '"Zen Maru Gothic"', '"Noto Sans SC"'].map((f) => ({
-      f,
-      ok: typeof document.fonts?.check === 'function' ? document.fonts.check(`12px ${f}`) : false,
+    const loaded = [
+      { f: '"Swei Gothic CJK SC"', weight: '700', ok: false },
+      { f: '"Yozai"', weight: '400', ok: false },
+    ].map((x) => ({
+      ...x,
+      ok: typeof document.fonts?.check === 'function' ? document.fonts.check(`${x.weight} 12px ${x.f}`) : false,
     }));
     add(
       'C7b',
-      '三款字体已随应用分发且加载成功（不是回落到系统字体）',
+      '狮尾圆体与悠哉字体已随应用分发且加载成功（不是回落到系统字体）',
       loaded.every((x) => x.ok),
       loaded.map((x) => `${x.f.replace(/"/g, '')} ${x.ok ? '✓' : '✗'}`).join(' · '),
     );
@@ -454,7 +477,11 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
      */
     const geoms = appItems.map((e) => {
       const r = e.getBoundingClientRect();
-      const hasText = (e.querySelector('span')?.textContent ?? '').trim().length > 0;
+      // 可见性取 computed style：响应式断点会把标签 `display:none`，但文字节点还在 DOM 里。
+      // 只读 textContent 会把「窄屏纯图标轨」误判成「图标+文字却用了 44×44」。
+      const label = e.querySelector('span');
+      const hasText =
+        !!label && getComputedStyle(label).display !== 'none' && (label.textContent ?? '').trim().length > 0;
       const want = hasText ? SIDEBAR.appItem : SIDEBAR.iconOnlyItem;
       return {
         hasText,
@@ -524,19 +551,33 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
       add('C10a', '设置页为两栏壳（左 180px sticky + 右 flex:1）', true, '当前不在设置页（跳过，非通过依据）');
     } else {
       const navW = nav.getBoundingClientRect().width;
+      const shellW = shell.getBoundingClientRect().width;
+      const mainW = main.getBoundingClientRect().width;
       const ncs = getComputedStyle(nav);
       const mcs = getComputedStyle(main);
       const shellKids = Array.from(shell.children);
+      /*
+       * 1040 以下壳改为上下布局：分组导航横排、占满壳宽，右栏同宽。
+       * 这一档不再要求 sticky/固定 180 —— 响应式本身就是「结构随宽度变」，
+       * 但「左右两栏在同宽约束下都不溢出」仍然要成立。
+       */
+      const stacked = isCompact;
+      const wantNavW = isMedium ? SETTINGS.navWidthCompact : SETTINGS.navWidth;
+      const layoutOk = stacked
+        ? near(navW, shellW) && near(mainW, shellW) && ncs.position === 'static'
+        : near(navW, wantNavW) &&
+          near(parseFloat(ncs.flexBasis) || -1, wantNavW) &&
+          ncs.position === 'sticky' &&
+          near(px(ncs.top), SETTINGS.navStickyTop);
       add(
         'C10a',
-        `两栏壳：左栏 ${SETTINGS.navWidth}px（flex:0 0 ${SETTINGS.navWidth}、sticky top ${SETTINGS.navStickyTop}）+ 右栏 flex:1/min-width:0`,
-        near(navW, SETTINGS.navWidth) &&
-          ncs.flexBasis.startsWith('0 0') &&
-          ncs.position === 'sticky' &&
-          near(px(ncs.top), SETTINGS.navStickyTop) &&
+        stacked
+          ? '设置页窄屏形态：分组导航横排、左右同宽不溢出（单列壳）'
+          : `两栏壳：左栏 ${wantNavW}px（sticky top ${SETTINGS.navStickyTop}）+ 右栏 flex:1/min-width:0`,
+        layoutOk &&
           (mcs.flexGrow === '1' || mcs.flexBasis === '0%' || mcs.flexBasis === 'auto') &&
           mcs.minWidth === '0px',
-        `左栏 ${navW.toFixed(0)} / flexBasis ${ncs.flexBasis} / ${ncs.position} top ${ncs.top} · 右栏 flex ${mcs.flex} minWidth ${mcs.minWidth}`,
+        `左栏 ${navW.toFixed(0)} / 右栏 ${mainW.toFixed(0)} / 壳 ${shellW.toFixed(0)} / flexBasis ${ncs.flexBasis} / ${ncs.position} top ${ncs.top} · 右栏 flex ${mcs.flex} minWidth ${mcs.minWidth}`,
       );
 
       // 一次只渲染一个分组。用「壳内除 nav/main 外无第三个结构子元素」+ 「右栏只挂载一组」判断。

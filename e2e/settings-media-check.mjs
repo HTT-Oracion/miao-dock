@@ -2884,7 +2884,7 @@ add('FEATURES.shell.sidebarBranch', 'FEATURES', (ctx) => {
   const problems = [];
   if (!/labels\s*\?\s*SIDEBAR\.appItem\s*:\s*SIDEBAR\.iconOnlyItem/.test(src))
     problems.push('几何没有随 labels 切换（appItem ↔ iconOnlyItem）');
-  if (!/\{labels\s*\?\s*<span>\{a\.label\}<\/span>\s*:\s*null\}/.test(src))
+  if (!/\{labels\s*\?\s*<span(?:\s+className="nav-label")?>\{a\.label\}<\/span>\s*:\s*null\}/.test(src))
     problems.push('「有没有文字」与「用哪套几何」不是同一个判断的两个输出');
   if (!/aria-label=\{a\.label\}/.test(src)) problems.push('应用入口缺少 aria-label（关掉文字后它是唯一可读名称）');
   // 几何必须来自 tokens：组件里出现裸数字就意味着有了第二个来源
