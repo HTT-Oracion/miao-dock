@@ -628,10 +628,16 @@ export function libraryActions(
       set({ remote: null });
     },
 
-    /** 在线网页源解析出的直链：直接交给 WebView 轨（不经过中继，防盗链站点会失败并如实报错） */
-    playWebUrl: (url, title, sourceName, sourceId) => {
+    /**
+     * 在线源解析出的直链：交给 WebView 轨（不经过中继，防盗链站点会失败并如实报错）。
+     *
+     * `cookie`：个别站点（如 anime1）**要求带 Cookie 才放行**片址。
+     * 播放器是 `<video src>`，浏览器不会替我们发这个头 ⇒ 只能由本机服务侧中继时补。
+     * 所以这里带上它，交给 `anime_play_remote` 那条带票中继（见 `playWebUrlCookie`）。
+     */
+    playWebUrl: (url, title, sourceName, sourceId, cookie?: string | null) => {
       set({
-        remote: { url, title, sourceId, sourceName, expiresAt: Date.now() + 2 * 3600_000 },
+        remote: { url, title, sourceId, sourceName, expiresAt: Date.now() + 2 * 3600_000, cookie: cookie ?? null },
         view: 'player',
       });
     },

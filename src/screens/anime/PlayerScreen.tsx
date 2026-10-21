@@ -351,6 +351,19 @@ function SourcePicker({ onClose }: { onClose: () => void }) {
       } else push(r.message, 'bad');
       return;
     }
+    if (it.link && src.kind === 'anime1') {
+      // 内置在线源：直链每次现取（上游要带 Cookie 才放行），不需要选择器规则
+      try {
+        const r = await ipc.animeResolveSource(it.link, null, null, prefs.preferRes, 'anime1');
+        playWebUrl(r.url, it.title, src.name, src.id, r.cookie);
+        rememberSource(src.id, it);
+        setMemory(loadSourceMemory());
+        onClose();
+      } catch (e) {
+        push(`解析失败：${errText(e)}`, 'bad');
+      }
+      return;
+    }
     if (it.link && (src.kind === 'web' || src.kind === 'selector')) {
       if (!src.rules?.video?.trim()) {
         push('这个源没配「视频地址选择器」，解析不出直链', 'bad');

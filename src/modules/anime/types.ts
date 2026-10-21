@@ -141,6 +141,12 @@ export interface AnimeRemotePlayback {
   sourceName: string;
   /** 票面过期时刻（毫秒时间戳） */
   expiresAt: number;
+  /**
+   * 取这个地址要带的 Cookie（个别站点要求，如 anime1）。
+   * 缺省 / null = 不需要。播放器是 `<video src>`，浏览器不会替我们发这个头，
+   * 所以有它时**必须走服务侧中继**（中继补头后再吐给播放器）。
+   */
+  cookie?: string | null;
 }
 
 /** Bangumi 检索候选（`anime_metadata_search` 的一项） */
@@ -414,7 +420,7 @@ export interface CacheTask {
 export interface MediaSourceView {
   id: string;
   name: string;
-  kind: 'web' | 'rss' | 'selector' | 'jellyfin' | 'emby' | 'local' | 'builtin' | 'bt';
+  kind: 'web' | 'rss' | 'selector' | 'jellyfin' | 'emby' | 'local' | 'builtin' | 'bt' | 'anime1';
   url?: string;
   enabled: boolean;
   health?: 'ok' | 'timeout' | 'untested' | 'error';

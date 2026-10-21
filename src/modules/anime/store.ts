@@ -121,7 +121,7 @@ export interface AnimeState {
   /** 退出远程播放（离开播放器时调用） */
   clearRemote: () => void;
   /** 用一条已解析的直链播放（在线网页源；不经过中继，可能受防盗链影响） */
-  playWebUrl: (url: string, title: string, sourceName: string, sourceId: string) => void;
+  playWebUrl: (url: string, title: string, sourceName: string, sourceId: string, cookie?: string | null) => void;
   setPref: <K extends keyof AnimePrefs>(key: K, value: AnimePrefs[K]) => void;
   loadDemo: () => Promise<void>;
   clearDemo: () => Promise<void>;

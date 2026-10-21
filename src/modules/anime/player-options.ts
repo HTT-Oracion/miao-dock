@@ -27,6 +27,7 @@ export const SOURCE_KIND_LABEL: Record<string, string> = {
   emby: 'Emby',
   local: '本地缓存',
   bt: 'BT / 磁力',
+  anime1: 'Anime1 在线源',
 };
 
 /** 倍速档位：控制条点一下按此顺序轮转（也是设置页的候选值） */

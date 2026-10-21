@@ -173,10 +173,22 @@ export const animeTestSource = (
     cookies: cookies ?? null,
   });
 
-/** 通用网页源：详情页 → 视频直链（拿到直链才能交给播放器）；多清晰度按 preferRes 挑 */
-export const animeResolveSource = (url: string, rules: AnimeSourceRules, cookies?: AnimeCookie[], preferRes?: string) =>
-  invoke<{ ok: boolean; url: string }>('anime_resolve_source', {
+/**
+ * 详情页 → 视频直链（拿到直链才能交给播放器）；多清晰度按 preferRes 挑。
+ *
+ * `kind: 'anime1'` 走内置适配器：直链**每次现取**，响应多带一个 `cookie`
+ * （上游要求带这三个 Cookie 才放行，播放器必须原样带上）。
+ */
+export const animeResolveSource = (
+  url: string,
+  rules: AnimeSourceRules | null,
+  cookies?: AnimeCookie[] | null,
+  preferRes?: string,
+  kind?: string,
+) =>
+  invoke<{ ok: boolean; url: string; mime?: string; sizeBytes?: number; cookie?: string }>('anime_resolve_source', {
     url,
+    kind: kind ?? null,
     rules,
     cookies: cookies ?? null,
     preferRes: preferRes ?? null,
