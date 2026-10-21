@@ -520,10 +520,13 @@
   }
 }
 
+/* 通用卡面：内容卡的最低配（表面 + 描边 + 大圆角 + 一层弥散阴影）。
+   玻璃只留给浮层，内容面保持不透明。 */
 .card {
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-lg);
+  box-shadow: var(--miao-shadow-1);
 }
 
 .muted {

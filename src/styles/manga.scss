@@ -913,16 +913,17 @@
   height: 100%;
   min-height: 0;
 }
-/* 左栏 260（《02》§5.5） */
+/* 左栏 260（《02》§5.5）—— ver3 起是一张独立面板，卡片感来自描边 + 弥散阴影 */
 .lib-left {
   flex: 0 0 260px;
   width: 260px;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  box-shadow: var(--miao-shadow-1);
   overflow: hidden;
 }
 .lib-left-list {
@@ -932,35 +933,55 @@
   padding: 6px;
 }
 .lib-item {
+  position: relative;
   width: 100%;
   text-align: left;
   padding: 8px 9px;
-  border-radius: var(--md-radius-xs);
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  transition:
+    background var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-spring);
 }
 .lib-item:hover {
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
+  transform: translateX(1px);
 }
 .lib-item.is-active {
-  background: var(--md-pink-soft);
+  background: var(--miao-primary-soft);
+  box-shadow: inset 0 0 0 1px var(--miao-primary-line);
+}
+/* 选中条：贴在面板左缘的一枚细条，让"当前看的是哪一本"在长列表里也一眼可辨 */
+.lib-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--miao-primary);
 }
 .lib-item-name {
+  font-family: var(--md-font-display);
   font-size: 12px;
+  font-weight: 600;
+  color: var(--miao-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .lib-item-meta {
   font-size: 10.5px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 .lib-left-foot {
-  border-top: 1px solid var(--md-line-soft);
+  border-top: 1px solid var(--miao-line);
   padding: 9px 12px;
   font-size: 11px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -971,14 +992,14 @@
   position: relative;
   display: flex;
   align-items: center;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--md-line-soft);
+  padding: 10px;
+  border-bottom: 1px solid var(--miao-line);
   flex: 0 0 auto;
 }
 .lib-search-ico {
   position: absolute;
   left: 20px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   pointer-events: none;
 }
 /*
@@ -1007,15 +1028,17 @@
   right: 16px;
   display: flex;
   align-items: center;
-  color: var(--md-muted);
+  color: var(--miao-muted);
+  transition: color var(--miao-dur-fast) ease;
 }
 .lib-search-clear:hover {
-  color: var(--md-ink);
+  color: var(--miao-ink);
 }
 .lib-empty {
-  padding: 16px 10px;
+  padding: 18px 10px;
   font-size: 11.5px;
-  color: var(--md-muted);
+  line-height: 1.7;
+  color: var(--miao-muted);
   text-align: center;
 }
 /* 左栏分页器（窄栏，故用紧凑两行式） */
@@ -1025,9 +1048,10 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 7px 8px;
-  border-top: 1px solid var(--md-line-soft);
+  padding: 8px;
+  border-top: 1px solid var(--miao-line);
   font-size: 11px;
+  color: var(--miao-muted);
 }
 /* 「已隐藏 N」入口：左栏底部的一条文字按钮 */
 .lib-hidden-link {
@@ -1035,10 +1059,11 @@
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
+  transition: color var(--miao-dur-fast) ease;
 }
 .lib-hidden-link:hover {
-  color: var(--md-ink);
+  color: var(--miao-primary-ink);
 }
 
 .lib-right {
@@ -1053,7 +1078,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
+  padding: 14px 16px;
 }
 .lib-head-titles {
   min-width: 0;
@@ -1062,14 +1087,16 @@
 .lib-head-name {
   font-family: var(--md-font-display);
   font-weight: 700;
-  font-size: 14px;
+  font-size: 17px;
+  letter-spacing: 0.005em;
+  color: var(--miao-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .lib-head-path {
   font-size: 10.5px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1081,34 +1108,46 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 14px;
+  padding: 16px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
 }
 .lib-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
 }
-/* 网格卡 110×165 r12（《02》§5.5） */
+/* 网格卡 110×165 r12（《02》§5.5）—— 尺寸与圆角是 C5 的实测对象，勿改 */
 .grid-card {
   width: 110px;
   height: 165px;
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid var(--md-line);
-  background: var(--md-surface-2);
+  border: 1px solid var(--miao-line);
+  background: var(--miao-surface-2);
   position: relative;
   display: flex;
   flex-direction: column;
+  transition:
+    transform var(--miao-dur-base) var(--miao-ease-spring),
+    border-color var(--miao-dur-fast) ease,
+    box-shadow var(--miao-dur-base) ease;
 }
 .grid-card:hover {
-  border-color: var(--md-pink);
+  border-color: var(--miao-primary-line);
+  transform: translateY(-2px);
+  box-shadow: var(--miao-shadow-2);
 }
 /* 缺页卡：不可点，也不该给「可点」的悬停反馈 */
 .grid-card:disabled {
   cursor: default;
 }
 .grid-card:disabled:hover {
-  border-color: var(--md-line);
+  border-color: var(--miao-line);
+  transform: none;
+  box-shadow: none;
 }
 .grid-thumb {
   flex: 1;
