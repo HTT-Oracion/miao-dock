@@ -6759,3 +6759,44 @@ GET /anime/library → 列表里出现该条目（真实元数据，不是 demo�
 
 **六、仍缺**：探索页的**周历 / 热度**还没接 AniList 回退（周历需要"星期几"，AniList 无此字段）；
 详情页角色 / 声优 / 关联作品仍只走 Bangumi。这两条登记为下一步。
+## D-277 番剧数据源采纳「不修代理、改走 Animeko 聚合服务端」的方案（2026-10-21，只登记计划）
+
+**一、决定**：用户明确**不接受引入代理**。番剧首页 / 探索页 / 检索 / 详情的数据改走 Animeko 项目自己的
+聚合服务端 `https://api.animeko.org`（其 `client/` 生成的接口清单见 §三）。本机 `api.bgm.tv` 不可达这件事
+**不再用代理绕过**。
+
+**二、为什么这条路成立（实测，非推断）**
+
+| 端点 | 实测 |
+|---|---|
+| `GET /v1/trends` | 200 / 3,308 B |
+| `GET /v1/schedule/seasons/latest` | 200 / 54,529 B |
+| `GET /v1/schedule/season/2026q4` | 200 / 24,967 B |
+| `GET /v2/subjects/search?q=Frieren&limit=3` | 200 / 3,949 B |
+| `GET /v2/subjects/400602` | 200 / 20,798 B（`infobox` 含**放送星期**） |
+| `GET /v2/subjects/400602/characters` | 200 / 68,793 B |
+| `GET /v2/subjects/400602/staff` | 200 / 227,364 B |
+| `GET /v1/me` | 401（要登录，不用） |
+
+**三、🔴 关键发现：它拒绝带 `Origin` 的请求**
+
+同一 URL 四组对照：裸 GET 200 / 仅 UA 200 / 带 Referer 200 / **带 Origin 403（空体）**。
+浏览器 `fetch`、`XHR` **强制**带 `Origin`（forbidden header，JS 改不掉）⇒
+**任何网页端直连都必然 403**；这不是鉴权失败，是它**故意只服务原生客户端**。
+
+本项目前端本就不发 HTTP（React → `invoke()` → Rust `reqwest`，不发 Origin），
+所以**零架构改动**，只换 base URL 与端点。这条同时解释了「用户自己在浏览器控制台验证一律 403」，
+以后不要再把 403 当成"接口挂了"。
+
+**四、副产品**：`/v2/subjects/{id}` 的 `infobox` 带「放送星期」⇒
+此前登记为「AniList 无此字段、周历做不了」的探索页周历缺口，**在这条路上可以直接做**。
+
+**五、边界（不承诺的部分）**
+
+- 这是**别人的公益后端**（响应头 `Server: railway-hikari`，Railway 单实例），不承诺 SLA，
+  可能随时收紧鉴权（生成代码里 `requiresAuthentication = true` 已标，只是当前服务端未强制）
+- 三级兜底必须保留：`api.animeko.org` → AniList → 本机 manifest，且 `fallbackFrom` 如实回传（照 D-276）
+- **覆盖不到**：视频播放源（在另一个项目 `creamycake-anime/ani-subs`）、账号同步与收藏写入（要 Ani JWT）、弹幕发送
+
+**六、本轮范围**：只把计划登记进 `plan-anime-remaining.md` §八（R8）与本审计文档，**未改任何代码**（用户要求先不改）。
+实施清单、验收判据、反证锚点见 `plan-anime-remaining.md` §8.4 / §8.6。
