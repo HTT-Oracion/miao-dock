@@ -34,6 +34,8 @@ pub enum SourceKind {
     Jellyfin,
     Emby,
     Bt,
+    /// Anime1.me：内置在线适配器（取数链路没法用选择器描述，见 `datasource/anime1.rs`）
+    Anime1,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,7 +115,12 @@ fn default_health() -> String {
 fn needs_url(kind: SourceKind) -> bool {
     matches!(
         kind,
-        SourceKind::Web | SourceKind::Rss | SourceKind::Selector | SourceKind::Jellyfin | SourceKind::Emby
+        SourceKind::Web
+            | SourceKind::Rss
+            | SourceKind::Selector
+            | SourceKind::Jellyfin
+            | SourceKind::Emby
+            | SourceKind::Anime1
     )
 }
 

@@ -101,7 +101,7 @@ fn desired_bt_peer_filter() -> &'static Mutex<Option<String>> {
 static DESIRED_META_PROVIDER: OnceLock<Mutex<MetaProvider>> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum MetaProvider {
+enum MetaProvider {
     Auto,
     Bangumi,
     Anilist,
@@ -130,7 +130,10 @@ fn desired_meta_provider() -> &'static Mutex<MetaProvider> {
 }
 
 /// 当前生效的元数据来源优先级（服务侧 `search_any` 读它决定先试谁）。
-pub(crate) fn meta_provider() -> MetaProvider {
+///
+/// 只在派生 `MIAO_ANIME_META_PROVIDER` 时用（见下方 spawn 处），所以保持私有 ——
+/// 一旦 `pub(crate)` 就会触发 private-in-public 告警（枚举比函数更私有）。
+fn meta_provider() -> MetaProvider {
     desired_meta_provider().lock().map(|g| *g).unwrap_or(MetaProvider::Auto)
 }
 

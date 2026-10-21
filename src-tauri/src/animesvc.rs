@@ -1222,7 +1222,11 @@ async fn source_subscribe(
 #[derive(Deserialize)]
 struct SourceResolveBody {
     url: String,
-    rules: sources::SourceRules,
+    /// 源类型（`anime1` 走内置适配器，不需要规则）
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    rules: Option<sources::SourceRules>,
     #[serde(default)]
     cookies: Option<Vec<CookiePair>>,
     /// 「优先分辨率」设置（auto / 1080p / 2160p …）：多清晰度时按它挑
@@ -1241,7 +1245,25 @@ async fn source_resolve(
     }
     let cookies = cookie_pairs(body.cookies);
     let prefer = body.prefer_res.as_deref().unwrap_or("auto");
-    match datasource::web::resolve_video(&body.url, &body.rules, &cookies, prefer).await {
+    let rules = body.rules.unwrap_or_default();
+    // Anime1.me 是内置适配器：直链要现取（`apireq → api → src`，还要带 3 个 Cookie）
+    if body.kind.as_deref() == Some("anime1") {
+        return match datasource::anime1::resolve_episode(&body.url).await {
+            Ok(r) => json(
+                StatusCode::OK,
+                serde_json::json!({
+                    "ok": true,
+                    "url": r.url,
+                    "mime": r.mime,
+                    "sizeBytes": r.size_bytes,
+                    // 播放器要原样带上，否则上游 403
+                    "cookie": r.cookie,
+                }),
+            ),
+            Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("解析视频地址失败：{e}")),
+        };
+    }
+    match datasource::web::resolve_video(&body.url, &rules, &cookies, prefer).await {
         Ok(url) => json(StatusCode::OK, serde_json::json!({ "ok": true, "url": url })),
         Err(e) => envelope(StatusCode::BAD_GATEWAY, "UPSTREAM", format!("解析视频地址失败：{e}")),
     }

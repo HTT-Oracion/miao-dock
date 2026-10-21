@@ -10,6 +10,7 @@
 //! `torrent` 类的附件地址**不在本层消费**：下载与边下边播归 M5（librqbit）。
 //! 这里只负责「把源里有什么如实报出来」，播不播由上层按类型决定。
 
+pub mod anime1;
 pub mod mediaserver;
 pub mod rss;
 pub mod web;
@@ -108,6 +109,17 @@ pub async fn test(
             Ok(json!({
                 "ok": true,
                 "kind": kind.trim(),
+                "count": items.len(),
+                "items": items.iter().map(item_json).collect::<Vec<_>>(),
+            }))
+        }
+        // Anime1.me：内置适配器。地址只用来决定「站点根」（换成自建镜像也能用），
+        // 检索关键词走查询参数；片址每次现取（带 Cookie），所以条目报 Page。
+        "anime1" => {
+            let items = anime1::search(url, limit).await?;
+            Ok(json!({
+                "ok": true,
+                "kind": "anime1",
                 "count": items.len(),
                 "items": items.iter().map(item_json).collect::<Vec<_>>(),
             }))
