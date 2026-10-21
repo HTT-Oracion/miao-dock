@@ -105,7 +105,11 @@ export function SpecFixture() {
     >
       <div className="queue">
         <div className="qt-head">
-          <div className="qt-name">任务 / 漫画名</div>
+          <div className="qt-no">#</div>
+          <div className="qt-name">
+            <span className="qt-cover qt-cover-ghost" aria-hidden="true" />
+            <div className="qt-name-col">任务 / 漫画名</div>
+          </div>
           <div className="qt-c-source" style={{ width: QUEUE_TABLE.colSource }}>
             来源
           </div>
@@ -120,15 +124,24 @@ export function SpecFixture() {
           </div>
         </div>
         <div className="qt-body">
-          {SAMPLE_ROWS.map((t) => (
+          {SAMPLE_ROWS.map((t, i) => (
             <div
               key={t.taskId}
               className={t.status === 'running' ? 'qt-row is-running' : 'qt-row'}
               style={{ height: QUEUE_TABLE.rowHeight }}
+              data-status={t.status}
             >
+              <div className="qt-no">
+                <span className="num">{i + 1}</span>
+              </div>
               <div className="qt-name">
-                <div className="qt-name-main">{t.comicName}</div>
-                <div className="qt-name-sub">{SOURCE_LABEL[t.source]}</div>
+                <span className="qt-cover" aria-hidden="true">
+                  {Array.from(t.comicName)[0] ?? '?'}
+                </span>
+                <div className="qt-name-col">
+                  <div className="qt-name-main">{t.comicName}</div>
+                  <div className="qt-name-sub">{SOURCE_LABEL[t.source]}</div>
+                </div>
               </div>
               <div className="qt-c-source" style={{ width: QUEUE_TABLE.colSource }}>
                 {SOURCE_LABEL[t.source]}

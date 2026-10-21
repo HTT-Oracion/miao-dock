@@ -281,6 +281,7 @@ export function cssVars(mode: ThemeMode): Record<string, string> {
   out['--miao-text'] = src['ink-2'];
   out['--miao-muted'] = src.muted;
   out['--miao-faint'] = mode === 'dark' ? '#6B7D8A' : '#A5B1BA';
+  out['--miao-font-mono'] = "'Cascadia Code', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace";
   out['--miao-line'] = src.line;
   out['--miao-line-strong'] = mode === 'dark' ? '#344550' : '#D3DEE5';
   out['--miao-primary'] = src.blue;

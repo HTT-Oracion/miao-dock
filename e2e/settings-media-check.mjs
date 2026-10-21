@@ -4221,7 +4221,7 @@ const MUTATIONS = [
   {
     name: '注掉 .notice.set-row-note 补偿规则（盒式提示叠附注类时四周留白重回被清零态）',
     file: F.componentsStyle,
-    find: '.notice.set-row-note {\n  padding: 9px 11px;\n}',
+    find: '.notice.set-row-note {\n  padding: 10px 13px;\n}',
     replace: '/* 反证：补偿规则被注掉 */',
     expect: ['ENGINE.css.noticePadding'],
   },

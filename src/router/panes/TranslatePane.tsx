@@ -71,6 +71,7 @@ export function TranslatePane() {
         onViewComic={viewComic}
         onOpenDir={openTaskDir}
         onDelete={deleteTasks}
+        onRefresh={refreshAll}
       />
     ) : (
       <QueueEmpty onGoSettings={() => setScreen('settings')} onGoDrop={() => setView('drop')} />

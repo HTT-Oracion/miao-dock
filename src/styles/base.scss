@@ -26,16 +26,20 @@ body,
 }
 
 body {
-  background: var(--md-board);
-  color: var(--md-ink);
+  background:
+    radial-gradient(900px 520px at 10% -8%, rgba(110, 151, 185, 0.13), transparent 62%),
+    radial-gradient(760px 460px at 104% 18%, rgba(223, 164, 125, 0.12), transparent 64%),
+    radial-gradient(680px 420px at 64% 112%, rgba(140, 168, 140, 0.1), transparent 66%), var(--miao-bg);
+  color: var(--miao-text);
   font-family: var(--md-font-body);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 13.5px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   /* 桌面应用：禁掉整页拖选与橡皮筋滚动，文字仍可局部选中 */
   -webkit-user-select: none;
   user-select: none;
   overflow: hidden;
+  text-rendering: optimizeLegibility;
 }
 
 button {
@@ -58,14 +62,15 @@ textarea {
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--md-line);
+  background: color-mix(in srgb, var(--miao-line-strong) 78%, transparent);
   border: 3px solid transparent;
   border-radius: 999px;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--md-muted);
+  background: var(--miao-muted);
   background-clip: content-box;
+  border: 3px solid transparent;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -85,7 +90,7 @@ textarea {
 
 /* 键盘可达性：焦点环用品牌 pink，不用浏览器默认蓝 */
 :focus-visible {
-  outline: 2px solid var(--md-pink);
+  outline: 2px solid color-mix(in srgb, var(--miao-primary) 52%, transparent);
   outline-offset: 2px;
 }
 
@@ -101,7 +106,7 @@ textarea {
 
 /* ================================================================
  * 空色日和 · 基础层
- * 排版基座、底色、焦点环与减少动态的统一定义。
+ * 排版基座、底色与焦点环（深色只换变量，结构不变）。
  * ================================================================ */
 
 /* ---------------- 基础 ---------------- */
@@ -109,20 +114,6 @@ textarea {
 html,
 body {
   background: transparent;
-}
-
-body {
-  font-family: var(--md-font-body);
-  font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--miao-text);
-  background:
-    radial-gradient(900px 520px at 10% -8%, rgba(110, 151, 185, 0.13), transparent 62%),
-    radial-gradient(760px 460px at 104% 18%, rgba(223, 164, 125, 0.12), transparent 64%),
-    radial-gradient(680px 420px at 64% 112%, rgba(140, 168, 140, 0.1), transparent 66%), var(--miao-bg);
-  overflow: hidden;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
 }
 
 html[data-theme='dark'] body {
@@ -148,40 +139,6 @@ th {
 ::selection {
   background: var(--miao-primary-soft);
   color: var(--miao-primary-ink);
-}
-
-:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--miao-primary) 52%, transparent);
-  outline-offset: 2px;
-}
-
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--miao-line-strong) 78%, transparent);
-  border: 3px solid transparent;
-  border-radius: 999px;
-  background-clip: content-box;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--miao-muted);
-  border: 3px solid transparent;
-  background-clip: content-box;
-}
-
-/* ---------------- 减少动态 ---------------- */
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
 }
 
 /* ---------------- 番剧隔离作用域 ----------------

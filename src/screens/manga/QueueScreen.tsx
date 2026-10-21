@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FolderOpen, Trash2 } from 'lucide-react';
+import { FolderOpen, RefreshCw, Trash2 } from 'lucide-react';
 import { QUEUE_TABLE } from '@/themes/tokens';
 import { STATUS_DOT_VAR, STATUS_LABEL, SOURCE_LABEL, isTerminal, type TaskRow, type TaskStatus } from '@/types';
-import { pageCount, pageSlice, relativeTime } from '@tools';
-import { Btn, Dot, MagicCircle, MenuButton, MenuItem } from '@components/units';
+import { pageCount, pageSlice, pageWindow, relativeTime } from '@tools';
+import { Btn, Dot, IconButton, MagicCircle, MenuButton, MenuItem } from '@components/units';
 
 /**
  * 队列每页条数。
@@ -13,24 +13,6 @@ import { Btn, Dot, MagicCircle, MenuButton, MenuItem } from '@components/units';
  */
 const PAGE_SIZE = 10;
 
-/** 进度列的中文后缀（《02》§5.2 行内容示例：「12 / 20 · 进行中」） */
-function progressLabel(t: TaskRow): string {
-  switch (t.status) {
-    case 'running':
-      return '进行中';
-    case 'queued':
-      return '等待中';
-    case 'done':
-      return '已完成';
-    case 'partial_failed':
-      return `${t.progress.failed} 张失败`;
-    case 'failed':
-      return '全部失败';
-    default:
-      return '已取消';
-  }
-}
-
 function barClass(s: TaskStatus): string {
   if (s === 'done') return 'bar is-done';
   if (s === 'partial_failed' || s === 'failed') return 'bar is-bad';
@@ -38,20 +20,46 @@ function barClass(s: TaskStatus): string {
 }
 
 /**
+ * 进度右上角那一格。
+ *
+ * 有失败时**先说失败**（`3 张失败`）—— 用户要处理的正是它；没有失败才说百分比。
+ * 分母为 0 时给 `—` 而不是 0%：空任务列画一根空轨会读成"进度丢了"。
+ */
+function progressNote(t: TaskRow): string {
+  const { done, total, failed } = t.progress;
+  if (!total) return '—';
+  if (failed > 0) return `${failed} 张失败`;
+  return `${Math.round((done / total) * 100)}%`;
+}
+
+/**
+ * 封面占位字。
+ *
+ * 队列行**没有封面数据**（`GET /tasks` 只回任务元信息），所以这里不猜图、也不外链任何地址：
+ * 取漫画名的首字作占位，颜色走主题的中性面，与漫画库 `cover-ph` 同一口径。
+ */
+function coverInitial(name: string): string {
+  const chars = Array.from(name.trim());
+  return chars.length ? chars[0] : '?';
+}
+
+/**
  * 进度单元格。
  *
- * 《02》§5.8「中英混排」要求「N / M」型计数**拆两个文本节点**：数字走 Inter Medium、
- * 其余走 Noto Sans SC。所以这里刻意不拼成一整串文字 —— 拼了就没法给数字单独指定字体。
+ * 《02》§5.8「中英混排」要求「N / M」型计数**拆两个文本节点**：数字走显示体、
+ * 其余走正文字体。所以这里刻意不拼成一整串文字 —— 拼了就没法给数字单独指定字体。
+ * （规格自检 C7c 量的正是这两个节点仍是 `.qt-c-progress` 的直接子元素。）
  */
 function ProgressCell({ t }: { t: TaskRow }) {
   const { done, total } = t.progress;
   const pct = total ? Math.round((done / total) * 100) : 0;
+  const noteCls = ['qt-pct', 'num', t.progress.failed > 0 ? 'is-warn' : ''].filter(Boolean).join(' ');
   return (
     <div className="qt-c-progress" style={{ width: QUEUE_TABLE.colProgress }}>
       <span className="num">{done}</span>
       <span> / </span>
       <span className="num">{total}</span>
-      <span> · {progressLabel(t)}</span>
+      <span className={noteCls}>{progressNote(t)}</span>
       <div className={barClass(t.status)}>
         <i style={{ width: `${pct}%` }} />
       </div>
@@ -107,6 +115,7 @@ function PrimaryAction({
 
 function Row({
   t,
+  index,
   canceling,
   onCancel,
   onRetry,
@@ -118,6 +127,8 @@ function Row({
   onTogglePick,
 }: {
   t: TaskRow;
+  /** 当前页内序号（1 起）：给"这一行排第几"一个可对齐的锚，不替代服务端的队列位 */
+  index: number;
   canceling: boolean;
   onCancel: (t: TaskRow) => void;
   onRetry: (t: TaskRow) => void;
@@ -132,8 +143,12 @@ function Row({
   // 翻译中 / 排队中的任务不可删（契约：删除只删「记录」，跑到一半的记录删了没法自洽）
   const deletable = isTerminal(t.status);
   return (
-    <div className={running ? 'qt-row is-running' : 'qt-row'} style={{ height: QUEUE_TABLE.rowHeight }}>
-      <div className="qt-name">
+    <div
+      className={running ? 'qt-row is-running' : 'qt-row'}
+      style={{ height: QUEUE_TABLE.rowHeight }}
+      data-status={t.status}
+    >
+      <div className="qt-no">
         {pickMode ? (
           <input
             type="checkbox"
@@ -144,7 +159,15 @@ function Row({
             title={deletable ? '选中该任务' : `${STATUS_LABEL[t.status]}的任务不能删除`}
             aria-label={`选择 ${t.comicName}`}
           />
-        ) : null}
+        ) : (
+          <span className="num">{index}</span>
+        )}
+      </div>
+
+      <div className="qt-name">
+        <span className="qt-cover" aria-hidden="true">
+          {coverInitial(t.comicName)}
+        </span>
         <div className="qt-name-col">
           <div className="qt-name-main" title={t.comicName}>
             {t.comicName}
@@ -205,9 +228,59 @@ function Row({
 }
 
 /**
+ * 翻页器。
+ *
+ * 顶栏与页脚共用同一份实现（两处只是摆放位置不同）：**页码恒显、可点**，当前页高亮 ——
+ * 翻页器藏起来或只留「上一页 / 下一页」会让用户不知道自己看的是第几页。
+ * 只有一页时仍露出（上一页 / 下一页置灰），因为"只有 1 页"本身也是信息。
+ */
+function QueuePager({
+  page,
+  total,
+  onPage,
+  compact,
+}: {
+  page: number;
+  total: number;
+  onPage: (p: number) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className={compact ? 'pager pager-top' : 'pager'}>
+      <span className="pager-info">
+        第 <span className="num">{page}</span> / <span className="num">{total}</span> 页
+      </span>
+      <button type="button" disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="上一页">
+        ‹
+      </button>
+      {pageWindow(page, total).map((p, i) =>
+        p === '…' ? (
+          <span className="pager-gap" key={`gap-${i}`}>
+            …
+          </span>
+        ) : (
+          <button
+            type="button"
+            key={p}
+            className={p === page ? 'is-active' : ''}
+            aria-current={p === page ? 'page' : undefined}
+            onClick={() => onPage(p)}
+          >
+            {p}
+          </button>
+        ),
+      )}
+      <button type="button" disabled={page >= total} onClick={() => onPage(page + 1)} aria-label="下一页">
+        ›
+      </button>
+    </div>
+  );
+}
+
+/**
  * 画面 X-C1 · 任务队列（《02》§5.2）。
  *
- * 表头列宽 弹性 / 120 / 160 / 150 / 90，行高 58；运行行抬到 surface 底 + line 描边。
+ * 表头列宽 弹性 / 120 / 160 / 150 / 128，行高 58；运行行抬到 surface 底 + line 描边。
  * 数据来自 `GET /tasks`（契约外增量，spec-notes G-04）—— 它同时给出进行中与历史行，
  * 所以任务跑完后这一屏**不会清空**。
  *
@@ -216,6 +289,8 @@ function Row({
  * · **多选删除**：删除**只删记录**（`POST /tasks/delete`），不动漫画目录里的任何文件；
  *   翻译中 / 排队中不可选 —— 复选框直接置灰并给出悬停原因，而不是等提交后再报错。
  *   勾选状态**只针对当前页操作**（"全选"= 全选本页），否则跨页的全选/取消很难讲清。
+ * · **汇总条**：进行中 / 排队 / 失败 / 完成四个数全部**算自当前 rows**，不是服务端另给的计数，
+ *   所以它和下面的行永远一致。
  */
 export function QueueTable({
   rows,
@@ -225,6 +300,7 @@ export function QueueTable({
   onViewComic,
   onOpenDir,
   onDelete,
+  onRefresh,
 }: {
   rows: TaskRow[];
   /** 正在取消中的任务 id（乐观标记，用于把行首「取消」置灰为「取消中…」） */
@@ -236,6 +312,8 @@ export function QueueTable({
   /** 「更多 → 打开目录」= 用系统文件管理器打开该任务的落盘目录 */
   onOpenDir: (t: TaskRow) => void;
   onDelete: (taskIds: string[]) => Promise<boolean>;
+  /** 手动刷新：与自动轮询共用壳层的 `refreshAll`，不在本屏另起一条取数路径 */
+  onRefresh?: () => void;
 }) {
   const [pickMode, setPickMode] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
@@ -249,6 +327,18 @@ export function QueueTable({
   }, [totalPages]);
 
   const pageRows = useMemo(() => pageSlice(rows, page, PAGE_SIZE), [rows, page]);
+
+  /** 汇总：四个状态各多少条，全部算自当前 rows */
+  const stats = useMemo(() => {
+    const acc = { running: 0, queued: 0, failed: 0, done: 0 };
+    for (const r of rows) {
+      if (r.status === 'running') acc.running += 1;
+      else if (r.status === 'queued') acc.queued += 1;
+      else if (r.status === 'done') acc.done += 1;
+      else if (r.status === 'failed' || r.status === 'partial_failed') acc.failed += 1;
+    }
+    return acc;
+  }, [rows]);
 
   // 选中项里若有任务已经不在列表（被别处删掉 / 列表刷新掉了），剔除掉 —— 免得删到不存在的 id
   useEffect(() => {
@@ -299,95 +389,129 @@ export function QueueTable({
 
   return (
     <div className="queue">
-      <div className="queue-bar">
-        {pickMode ? (
-          <>
-            <span className="queue-sel">
-              已选 <span className="num">{picked.size}</span> 项
-            </span>
-            <Btn kind="ghost" size="sm" onClick={togglePage} disabled={deletableOnPage.length === 0}>
-              {allPickedOnPage ? '取消本页' : '全选本页'}
-            </Btn>
-            <Btn kind="danger" size="sm" disabled={picked.size === 0 || busy} onClick={() => void doDelete()}>
-              删除选中{picked.size ? `（${picked.size}）` : ''}
-            </Btn>
-            <Btn kind="ghost" size="sm" onClick={exitPick} disabled={busy}>
-              取消多选
-            </Btn>
-            <span className="queue-hint">删除只清记录，不动漫画库里的文件</span>
-          </>
-        ) : (
-          <>
-            <span className="queue-hint">
-              共 <span className="num">{rows.length}</span> 条 · 翻译中的任务不能删除
-            </span>
-            <div style={{ flex: 1 }} />
-            <Btn kind="ghost" size="sm" onClick={() => setPickMode(true)} disabled={rows.length === 0}>
-              多选
-            </Btn>
-          </>
-        )}
-      </div>
+      <div className="queue-inner">
+        <div className="queue-summary">
+          <div className="qs-head">
+            <span className="qs-kicker">任务队列</span>
+            <div className="qs-title">
+              共 <span className="num">{rows.length}</span> 条
+            </div>
+            <div className="qs-chips">
+              <span className="chip">
+                <Dot colorVar="--md-blue" pulse={stats.running > 0} />
+                翻译中 <b className="num">{stats.running}</b>
+              </span>
+              <span className="chip">
+                <Dot colorVar="--md-muted" />
+                排队 <b className="num">{stats.queued}</b>
+              </span>
+              <span className="chip chip-warning">
+                <Dot colorVar="--md-error" />
+                失败 <b className="num">{stats.failed}</b>
+              </span>
+              <span className="chip chip-success">
+                <Dot colorVar="--md-success" />
+                完成 <b className="num">{stats.done}</b>
+              </span>
+            </div>
+          </div>
+          <div className="qs-actions">
+            <QueuePager page={page} total={totalPages} onPage={setPage} compact />
+            {onRefresh ? (
+              <IconButton title="刷新任务列表" onClick={() => onRefresh()}>
+                <RefreshCw size={14} />
+              </IconButton>
+            ) : null}
+          </div>
+        </div>
 
-      <div className="qt-head">
-        <div className="qt-name">
+        <div className="queue-toolbar">
           {pickMode ? (
-            <input
-              type="checkbox"
-              className="ck"
-              checked={allPickedOnPage}
-              disabled={deletableOnPage.length === 0}
-              onChange={togglePage}
-              title="全选本页可删除的任务"
-              aria-label="全选本页"
-            />
-          ) : null}
-          <div className="qt-name-col">任务 / 漫画名</div>
+            <>
+              <span className="queue-sel">
+                已选 <span className="num">{picked.size}</span> 项
+              </span>
+              <Btn kind="ghost" size="sm" onClick={togglePage} disabled={deletableOnPage.length === 0}>
+                {allPickedOnPage ? '取消本页' : '全选本页'}
+              </Btn>
+              <Btn kind="danger" size="sm" disabled={picked.size === 0 || busy} onClick={() => void doDelete()}>
+                删除选中{picked.size ? `（${picked.size}）` : ''}
+              </Btn>
+              <Btn kind="ghost" size="sm" onClick={exitPick} disabled={busy}>
+                取消多选
+              </Btn>
+              <span className="queue-hint">删除只清记录，不动漫画库里的文件</span>
+            </>
+          ) : (
+            <>
+              <span className="queue-hint">串行执行 · 同一时刻只跑 1 个任务 · 翻译中的任务不能删除</span>
+              <div className="queue-spacer" />
+              <Btn kind="ghost" size="sm" onClick={() => setPickMode(true)} disabled={rows.length === 0}>
+                多选
+              </Btn>
+            </>
+          )}
         </div>
-        <div className="qt-c-source" style={{ width: QUEUE_TABLE.colSource }}>
-          来源
-        </div>
-        <div className="qt-c-progress" style={{ width: QUEUE_TABLE.colProgress }}>
-          进度
-        </div>
-        <div className="qt-c-status" style={{ width: QUEUE_TABLE.colStatus }}>
-          状态
-        </div>
-        <div className="qt-c-action" style={{ width: QUEUE_TABLE.colAction }}>
-          操作
-        </div>
-      </div>
-      <div className="qt-body">
-        {pageRows.map((t) => (
-          <Row
-            key={t.taskId}
-            t={t}
-            canceling={cancelingIds?.has(t.taskId) ?? false}
-            onCancel={onCancel}
-            onRetry={onRetry}
-            onViewComic={onViewComic}
-            onOpenDir={onOpenDir}
-            onDeleteRow={(row) => void onDelete([row.taskId])}
-            pickMode={pickMode}
-            picked={picked.has(t.taskId)}
-            onTogglePick={togglePick}
-          />
-        ))}
-      </div>
 
-      {totalPages > 1 ? (
-        <div className="queue-pager">
-          <Btn kind="ghost" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-            上一页
-          </Btn>
-          <span className="muted">
-            第 <span className="num">{page}</span> / <span className="num">{totalPages}</span> 页
-          </span>
-          <Btn kind="ghost" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
-            下一页
-          </Btn>
+        <div className="queue-table">
+          <div className="qt-head">
+            <div className="qt-no">
+              {pickMode ? (
+                <input
+                  type="checkbox"
+                  className="ck"
+                  checked={allPickedOnPage}
+                  disabled={deletableOnPage.length === 0}
+                  onChange={togglePage}
+                  title="全选本页可删除的任务"
+                  aria-label="全选本页"
+                />
+              ) : (
+                '#'
+              )}
+            </div>
+            <div className="qt-name">
+              <span className="qt-cover qt-cover-ghost" aria-hidden="true" />
+              <div className="qt-name-col">任务 / 漫画名</div>
+            </div>
+            <div className="qt-c-source" style={{ width: QUEUE_TABLE.colSource }}>
+              来源
+            </div>
+            <div className="qt-c-progress" style={{ width: QUEUE_TABLE.colProgress }}>
+              进度
+            </div>
+            <div className="qt-c-status" style={{ width: QUEUE_TABLE.colStatus }}>
+              状态
+            </div>
+            <div className="qt-c-action" style={{ width: QUEUE_TABLE.colAction }}>
+              操作
+            </div>
+          </div>
+          <div className="qt-body">
+            {pageRows.map((t, i) => (
+              <Row
+                key={t.taskId}
+                t={t}
+                index={(page - 1) * PAGE_SIZE + i + 1}
+                canceling={cancelingIds?.has(t.taskId) ?? false}
+                onCancel={onCancel}
+                onRetry={onRetry}
+                onViewComic={onViewComic}
+                onOpenDir={onOpenDir}
+                onDeleteRow={(row) => void onDelete([row.taskId])}
+                pickMode={pickMode}
+                picked={picked.has(t.taskId)}
+                onTogglePick={togglePick}
+              />
+            ))}
+          </div>
         </div>
-      ) : null}
+
+        <div className="queue-foot">
+          <span className="queue-caption">任务按创建顺序串行执行 · 换页不会影响进度</span>
+          <QueuePager page={page} total={totalPages} onPage={setPage} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -403,17 +527,19 @@ export function QueueTable({
  */
 export function QueueEmpty({ onGoSettings, onGoDrop }: { onGoSettings: () => void; onGoDrop: () => void }) {
   return (
-    <div className="empty">
-      <MagicCircle />
-      <div className="empty-title">还没有翻译任务</div>
-      <div className="empty-sub">在漫画页用插件提交，或把图片拖进这个窗口</div>
-      <div className="empty-actions">
-        <Btn kind="ghost" onClick={onGoSettings}>
-          去设置里配对插件
-        </Btn>
-        <Btn kind="primary" onClick={onGoDrop}>
-          本机投放
-        </Btn>
+    <div className="queue queue-empty-card">
+      <div className="empty">
+        <MagicCircle />
+        <div className="empty-title">还没有翻译任务</div>
+        <div className="empty-sub">在漫画页用插件提交，或把图片拖进这个窗口</div>
+        <div className="empty-actions">
+          <Btn kind="ghost" onClick={onGoSettings}>
+            去设置里配对插件
+          </Btn>
+          <Btn kind="primary" onClick={onGoDrop}>
+            本机投放
+          </Btn>
+        </div>
       </div>
     </div>
   );
