@@ -939,8 +939,10 @@
   padding: 8px 9px;
   border-radius: 12px;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  /* 列表项恒为「封面缩略 + 名称 + 作者 · N 话 · M 页」的横排（左栏窄，竖排放不下封面） */
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
   transition:
     background var(--miao-dur-fast) ease,
     transform var(--miao-dur-fast) var(--miao-ease-spring);
@@ -1201,10 +1203,13 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 14px;
+  padding: 12px 16px;
 }
 .compare-seq {
-  font-size: 12.5px;
+  font-family: var(--md-font-display);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--miao-ink);
   display: flex;
   align-items: baseline;
   gap: 4px;
@@ -1220,21 +1225,25 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-lg);
+  box-shadow: var(--miao-shadow-1);
   overflow: hidden;
 }
 .pane-title {
-  height: 34px;
-  flex: 0 0 34px;
+  height: 36px;
+  flex: 0 0 36px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 12px;
+  padding: 0 14px;
+  font-family: var(--md-font-display);
   font-size: 11.5px;
-  color: var(--md-ink-2);
-  border-bottom: 1px solid var(--md-line-soft);
+  font-weight: 700;
+  color: var(--miao-text);
+  background: var(--miao-surface-2);
+  border-bottom: 1px solid var(--miao-line);
 }
 /*
  * 与 `.lightbox-stage` 同理：**必须 flex 居中，不能用 grid + place-items:center**
@@ -1249,20 +1258,28 @@
   align-items: center;
   justify-content: center;
   padding: 12px;
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
 }
 .pane-body img {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
   border-radius: var(--md-radius-xs);
-  box-shadow: 0 6px 18px rgba(59, 51, 82, 0.12);
+  box-shadow: 0 6px 18px rgba(45, 59, 70, 0.12);
   -webkit-user-select: none;
   user-select: none;
 }
-/* 可点全屏的图给"放大镜"光标；标题栏右侧给一句提示，免得功能不被发现 */
+/* 可点全屏的图给"放大镜"光标；标题栏右侧给一句提示，免得功能不被发现。
+   悬停时给一次 1px 抬升 + 一层更实的投影，读作"这张图可以点进去"。 */
 .pane-body img.zoomable {
   cursor: zoom-in;
+  transition:
+    transform var(--miao-dur-base) var(--miao-ease-spring),
+    box-shadow var(--miao-dur-base) ease;
+}
+.pane-body img.zoomable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px -14px rgba(45, 59, 70, 0.45);
 }
 .pane-zoom {
   margin-left: auto;
@@ -1270,7 +1287,7 @@
   align-items: center;
   gap: 4px;
   font-size: 10.5px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 
 /* 网格分页器（在 lib-foot-note 右侧） */
@@ -1293,8 +1310,21 @@
   /* 收紧外框：省下的纵向空间全给图（工具栏越矮、图越大） */
   gap: 8px;
   padding: 12px;
-  background: rgba(12, 9, 24, 0.88);
+  /* 遮罩是"浮起的层"，允许玻璃：底色取主题墨色 + 一层模糊，
+     不再写死某一套深紫（旧值在深色主题下与界面脱节） */
+  background: color-mix(in srgb, var(--miao-ink) 86%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   cursor: zoom-out;
+  animation: miao-fade-in var(--miao-dur-base) var(--miao-ease-out);
+}
+@keyframes miao-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 /*
  * 舞台必须 **flex 居中**，不能用 `grid + place-items:center`。
@@ -1346,8 +1376,9 @@
   padding: 3px 10px;
   border-radius: 999px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.55);
-  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   user-select: none;
 }
 /* 当前缩放比 + −/+ 按钮：与工具栏同底色，避免读起来像另一个层级 */
@@ -1357,9 +1388,10 @@
   gap: 2px;
   padding: 2px 4px;
   border-radius: 999px;
+  font-family: var(--md-font-numeric);
   font-size: 11px;
-  color: var(--md-muted);
-  background: var(--md-line-soft);
+  color: var(--miao-muted);
+  background: var(--miao-surface-2);
   /* 控件本身是个复合控件，按钮可点 ⇒ 给默认光标，别让整条都像纯文本 */
   cursor: default;
 }
@@ -1377,21 +1409,27 @@
   border-radius: 50%;
   font-size: 13px;
   line-height: 1;
-  color: var(--md-ink);
+  color: var(--miao-ink);
   background: transparent;
   cursor: pointer;
+  transition:
+    background var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-spring);
 }
 .lightbox-zoom-btn:hover:not(:disabled) {
-  background: var(--md-line);
+  background: var(--miao-surface-3);
+}
+.lightbox-zoom-btn:active:not(:disabled) {
+  transform: scale(0.9);
 }
 /* 到顶/到底就禁用：光标随之变默认态，同时 screen reader 读得出"不可用" */
 .lightbox-zoom-btn:disabled {
-  color: var(--md-muted);
+  color: var(--miao-faint);
   opacity: 0.4;
   cursor: default;
 }
 .lightbox-msg {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.72);
   font-size: 12px;
 }
 /* 底部控制条：作"看得清"的底，而不是半透明浮字；压矮压紧，把纵向空间让给图 */
@@ -1399,12 +1437,23 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 10px;
+  padding: 6px 12px;
   border-radius: 999px;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  box-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.6);
   cursor: default;
+  animation: miao-rise-in var(--miao-dur-base) var(--miao-ease-spring);
+}
+@keyframes miao-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 /* 漫画名过长会把工具栏整条撑宽（看着更"挡"）⇒ 超过 30vw 就省略 */
 .lightbox-bar .compare-seq > span:last-child {
@@ -1423,12 +1472,16 @@
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  color: var(--md-ink);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  color: var(--miao-ink);
+  transition:
+    border-color var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-spring);
 }
 .lightbox-x:hover {
-  border-color: var(--md-pink);
+  border-color: var(--miao-primary);
+  transform: rotate(90deg) scale(1.04);
 }
 
 /* ================================================================ 删除 / 隐藏弹窗的补充行 */
@@ -1455,15 +1508,16 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 9px;
-  border-radius: var(--md-radius-xs);
-  background: var(--md-surface-2);
+  padding: 7px 10px;
+  border: 1px solid var(--miao-line);
+  border-radius: 12px;
+  background: var(--miao-surface-2);
 }
 .hidden-name {
   flex: 1;
   min-width: 0;
   font-size: 12px;
-  color: var(--md-ink);
+  color: var(--miao-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1833,12 +1887,8 @@
  * 这里**只**新增两处尺寸常量 —— 封面缩略 32×44 与详情头封面 56×76（设计稿 §7.1 / §7.3）。
  */
 
-/* ── 左栏列表项改造：封面缩略 + 名称 + 「作者 · N 话 · M 页」 ───────────── */
-.lib-item {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-}
+/* ── 左栏列表项的文本列（封面缩略 + 名称 + 「作者 · N 话 · M 页」）─────── */
+/* 行式骨架已并回上方 `.lib-item`（本文件内该选择器只允许一处定义） */
 .lib-item-text {
   flex: 1;
   min-width: 0;
@@ -1850,8 +1900,9 @@
   flex: 0 0 auto;
   width: 32px;
   height: 44px;
+  border: 1px solid var(--miao-line);
   border-radius: var(--md-radius-xs);
-  background: var(--md-line-soft);
+  background: var(--miao-surface-2);
   object-fit: cover;
   overflow: hidden;
 }
@@ -1861,7 +1912,7 @@
   justify-content: center;
   font-family: var(--md-font-display);
   font-size: 13px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 
 /* ── 屏 A′：搜索结果分组态 ──────────────────────────────────────────── */
@@ -1874,17 +1925,20 @@
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
-  border-radius: var(--md-radius-xs);
+  border-radius: 10px;
+  font-family: var(--md-font-display);
   font-size: 11.5px;
-  color: var(--md-ink-2);
+  font-weight: 700;
+  color: var(--miao-text);
+  transition: background var(--miao-dur-fast) ease;
 }
 .grp-head:hover {
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
 }
 .grp-caret {
   flex: 0 0 auto;
-  color: var(--md-muted);
-  transition: transform 0.12s ease;
+  color: var(--miao-muted);
+  transition: transform var(--miao-dur-base) var(--miao-ease-spring);
 }
 .grp-caret.is-folded {
   transform: rotate(-90deg);
@@ -1899,8 +1953,12 @@
 }
 .grp-count {
   flex: 0 0 auto;
-  font-size: 10.5px;
-  color: var(--md-muted);
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--miao-surface-2);
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+  color: var(--miao-muted);
 }
 .grp-body {
   padding: 0 0 4px 6px;
@@ -1915,19 +1973,26 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  /* 靠左排：「第 1 话 · 已译完」是一句话，不是左右对齐的两栏（设计稿 §7.2 的行样式） */
+  /* 靠左排：「第 1 话 · 已译完」是一句话，不是左右对齐的两栏（§7.2 的行样式） */
   justify-content: flex-start;
   gap: 4px;
   text-align: left;
-  padding: 5px 7px;
-  border-radius: var(--md-radius-xs);
+  padding: 5px 8px;
+  border-radius: 10px;
   font-size: 11.5px;
+  color: var(--miao-text);
+  transition:
+    background var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-spring);
 }
 .grp-row-main:hover {
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
+  transform: translateX(1px);
 }
 .grp-row-main.is-active {
-  background: var(--md-pink-soft);
+  background: var(--miao-primary-soft);
+  color: var(--miao-primary-ink);
+  box-shadow: inset 0 0 0 1px var(--miao-primary-line);
 }
 .grp-row-label {
   min-width: 0;
@@ -1942,23 +2007,27 @@
 .grp-row-act {
   flex: 0 0 auto;
 }
-/* 命中片段（设计稿 §7.2「匹配片段加 is-hit」）—— 只换文字色，不动行结构 */
+/* 命中片段（§7.2「匹配片段加 is-hit」）—— 只换文字色，不动行结构 */
 .grp-hit {
-  color: var(--md-pink);
+  color: var(--miao-accent);
+  font-weight: 700;
 }
 .other-hint {
   padding: 4px 8px 6px;
   font-size: 11px;
-  line-height: 1.5;
-  color: var(--md-muted);
+  line-height: 1.6;
+  color: var(--miao-muted);
 }
 
-/* ── 弹窗里的封面区（设计稿 §7.6.2）──────────────────────────────── */
+/* ── 弹窗里的封面区（§7.6.2）────────────────────────────────────────── */
 .modal-label {
   margin-top: 10px;
   margin-bottom: 6px;
-  font-size: 11px;
-  color: var(--md-ink-2);
+  font-family: var(--md-font-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--miao-muted);
 }
 .modal-label:first-child {
   margin-top: 0;
@@ -1972,9 +2041,10 @@
   flex: 0 0 auto;
   width: 96px;
   height: 128px;
-  border-radius: var(--md-radius-sm);
-  border: 1px solid var(--md-line);
-  background: var(--md-line-soft);
+  border-radius: 12px;
+  border: 1px solid var(--miao-line);
+  background: var(--miao-surface-2);
+  box-shadow: 0 10px 22px -16px rgba(45, 59, 70, 0.45);
   overflow: hidden;
 }
 .cover-preview img {
@@ -1991,7 +2061,8 @@
   padding: 4px;
   text-align: center;
   font-size: 10.5px;
-  color: var(--md-muted);
+  line-height: 1.6;
+  color: var(--miao-muted);
   word-break: break-all;
 }
 .cover-acts {
@@ -2011,13 +2082,13 @@
 /* 大类：作者 · N 话 · M 页（§7.1 同一口径）；话内：《书名》归因 */
 .lib-head-sub {
   font-size: 11px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* ── 屏 B：话列表（设计稿 §7.3）──────────────────────────────────────── */
+/* ── 屏 B：话列表（§7.3）────────────────────────────────────────────── */
 /* 话卡容器：本体是 .grid-card（同几何，不另写一份），容器只为角标与悬浮菜单提供定位 */
 .chapter-card {
   position: relative;
@@ -2030,17 +2101,24 @@
   right: 6px;
   pointer-events: none;
 }
-/* 左上角悬浮菜单：悬停 / 键盘聚焦时浮现（触屏无 hover，桌面端以鼠标为主） */
+/* 左上角悬浮菜单：悬停 / 键盘聚焦时**带一点位移**浮现（只改透明度会像贴图，
+   给 2px 的横向位移才读作"这一段的动作出现了"）。触屏无 hover，桌面端以鼠标为主。 */
 .chapter-menu {
   position: absolute;
   top: 4px;
   left: 4px;
   opacity: 0;
-  transition: opacity 120ms ease;
+  transform: translateX(-4px);
+  pointer-events: none;
+  transition:
+    opacity var(--miao-dur-fast) ease,
+    transform var(--miao-dur-base) var(--miao-ease-spring);
 }
 .chapter-card:hover .chapter-menu,
 .chapter-menu:focus-within {
   opacity: 1;
+  transform: none;
+  pointer-events: auto;
 }
 /* 脚注右侧的状态点 + 文字：颜色只是辅助，文字与点同现（《02》§5.2 色不作唯一载体） */
 .chapter-state {
