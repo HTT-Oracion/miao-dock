@@ -474,14 +474,23 @@
   }
 }
 
-/* ================================================================ X-C3 服务未就绪 */
+/* ================================================================ X-C3 服务未就绪
+ *
+ * ver3 版：整块是一块引导卡（surface + 大圆角 + 弥散阴影），时间线与状态词沿用同一套
+ * 语义色；动效只在"段推进"这一处用弹簧，不做无意义的入场动画。
+ */
 
 /* 时间线是"一条线"，铺满 900+ 宽会散掉 —— 430 刚好让最长的一步标题与状态词同行不折 */
 .notready {
-  max-width: 430px;
+  max-width: 460px;
   margin: 26px auto 0;
+  padding: 22px 22px 20px;
   display: flex;
   flex-direction: column;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
 }
 
 /* ① 一行摘要：原「提示条」与「当前阶段句」说的是同一件事，合并成一行 */
@@ -500,7 +509,7 @@
   width: 8px;
   height: 8px;
   flex: 0 0 8px;
-  margin-top: 5px;
+  margin-top: 6px;
   border-radius: 50%;
   background: var(--md-blue);
 }
@@ -509,8 +518,9 @@
 }
 .nr-sum-t {
   font-family: var(--md-font-display);
-  font-size: 14.5px;
+  font-size: 15.5px;
   font-weight: 700;
+  color: var(--miao-ink);
 }
 .nr-sum.is-bad .nr-sum-t {
   color: var(--md-error);
@@ -518,8 +528,8 @@
 .nr-sum-d {
   margin-top: 3px;
   font-size: 11.5px;
-  line-height: 1.6;
-  color: var(--md-muted);
+  line-height: 1.7;
+  color: var(--miao-muted);
 }
 
 /* ── D1「运行时未装配」独立态：缺项清单 ──
@@ -569,23 +579,30 @@
    🔴 卡片底色**必须走令牌**：这一页原先写的是 `var(--md-card, #fff)` /
    `var(--md-row, rgba(128,128,128,0.06))` —— 这两个自定义属性**在项目里根本不存在**，
    所以一直是兜底值生效，整页在深色主题下也还是一块白底（切主题跟这块无关）。
-   抽成 `--md-surface` / `--md-surface-2` 后才真的跟得上主题。 */
+   先抽成 `--md-surface` / `--md-surface-2` 才真的跟得上主题；ver3 起改由语义层
+   `--miao-surface` / `--miao-surface-2` 供给，两者同源于 `themes/tokens.ts`。 */
 .nr-guide {
-  max-width: 880px;
+  max-width: 900px;
   margin: 0 auto;
-  padding: 28px 24px 48px;
+  padding: 28px 26px 44px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
 }
 .nr-guide-title {
   font-family: var(--md-font-display);
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
-  color: var(--md-ink);
+  letter-spacing: 0.005em;
+  color: var(--miao-ink);
 }
 .nr-guide-sub {
+  max-width: 62ch;
   margin-top: 8px;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--md-muted);
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--miao-muted);
 }
 /* 时间线下方的下载入口：装配只有一条路，按钮文本自己承载全部下载态 */
 .nr-guide-dl {
@@ -612,65 +629,13 @@
   font-size: 12px;
   color: var(--md-muted);
 }
-/* 两条路并列：等宽两栏，哪条都不该看起来比另一条次要 */
-.nr-guide-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-top: 22px;
-  align-items: start;
-}
-.nr-guide-card {
-  padding: 18px;
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-md);
-  background: var(--md-surface);
-}
-.nr-guide-card-t {
-  font-family: var(--md-font-display);
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--md-ink);
-}
-.nr-guide-card-d {
-  margin-top: 6px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--md-muted);
-}
-/* 时间线下方的单张卡（下载 / 在线表单）：不占两栏，避免半边空白 */
-.nr-guide-card-wide {
-  margin-top: 18px;
-}
-/* 第一个未完成模型段下的决策区：贴在段内容里，像"这一段的下一步" */
-.nr-guide-decide {
-  margin-top: 12px;
-  padding: 12px 14px;
-  border-left: 2px solid var(--md-blue);
-  border-radius: 8px;
-  background: var(--md-row, rgba(128, 128, 128, 0.06));
-}
-.nr-guide-decide-t {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--md-ink);
-}
-.nr-guide-decide-d {
-  margin-top: 4px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--md-muted);
-}
-.nr-guide-acts {
-  margin-top: 14px;
-}
 /* ── 在线 API 内嵌表单（`OnlineApiForm`）：「使用在线翻译」卡片里那三行 + 一枚保存 ──
    🔴 为什么不复用设置页那套 `.set-src-*`：`.set-src` 自带一条**面板内分区线**
    （`border-top` + 上下 padding），那是设置页「翻译来源」分组内的分区语义；这里是
    引导卡片的内嵌表单，套上去会凭空多出一条横线，读成"卡片里又分了一屏"。
-   只把**控件几何**落成这一族（`nr-form-*`），颜色与圆角仍与设置页同源。
-   🔴 几何刻意与 `.set-src-in` 不同：那里是 11px 数字字体的窄行（塞在设置的窄右列里），
-   这里是引导卡片里的主填写区，14px 才读得清。 */
+   只把**控件几何**落成这一族（`nr-form-*`），颜色与圆角仍与主题语义层同源。
+   🔴 几何刻意与 `.set-src-in` 不同：那里是 10px 数字字体的窄行（塞在设置的窄右列里），
+   这里是引导卡片里的主填写区，13px 才读得清。 */
 .nr-form {
   display: flex;
   flex-direction: column;
@@ -686,12 +651,23 @@
   color: var(--md-muted);
 }
 .nr-form-in {
-  padding: 8px 10px;
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-sm);
-  background: var(--md-surface-2);
-  color: var(--md-ink);
-  font-size: 14px;
+  padding: 8px 11px;
+  border: 1px solid var(--miao-line);
+  border-radius: 12px;
+  background: var(--miao-surface);
+  color: var(--miao-ink);
+  font-size: 13px;
+  transition:
+    border-color var(--miao-dur-fast) ease,
+    box-shadow var(--miao-dur-fast) ease;
+}
+.nr-form-in:hover {
+  border-color: var(--miao-line-strong);
+}
+.nr-form-in:focus {
+  outline: none;
+  border-color: var(--miao-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--miao-primary) 14%, transparent);
 }
 /*
  * 🔴 动作行**必须**是这一层 flex，而不是让按钮直接进 `.nr-form` 的 column：
@@ -714,39 +690,23 @@
   font-size: 12px;
   color: var(--md-muted);
 }
-.nr-guide-compare {
-  margin-top: 22px;
-}
 /* 纯文字折叠开关：无边框无底色。蓝色=主问题（两者有什么区别），灰色=次要（排障信息）。
    `is-quiet` 不是修饰主题而是**降一级**：两个开关同形，差别只在颜色与字号。 */
 .nr-guide-toggle {
   padding: 0;
   border: none;
   background: none;
-  font-size: 13px;
-  color: var(--md-blue);
+  font-size: 12.5px;
+  color: var(--miao-primary);
   cursor: pointer;
+  transition: color var(--miao-dur-fast) ease;
+}
+.nr-guide-toggle:hover {
+  color: var(--miao-primary-ink);
 }
 .nr-guide-toggle.is-quiet {
-  font-size: 12px;
-  color: var(--md-muted);
-}
-.nr-guide-cmp {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-top: 10px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--md-muted);
-}
-.nr-guide-cmp-cell {
-  padding: 12px;
-  border-radius: var(--md-radius-sm);
-  background: var(--md-surface-2);
-}
-.nr-guide-cmp-t {
-  color: var(--md-ink);
+  font-size: 11.5px;
+  color: var(--miao-muted);
 }
 .nr-guide-trouble {
   display: flex;
@@ -762,37 +722,44 @@
 .tl-step {
   display: flex;
   align-items: stretch;
-  gap: 11px;
+  gap: 12px;
 }
 .tl-rail {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 22px;
-  flex: 0 0 22px;
+  width: 24px;
+  flex: 0 0 24px;
 }
 .tl-node {
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
   display: grid;
   place-items: center;
-  border: 1.5px solid var(--md-line);
+  border: 1.5px solid var(--miao-line-strong);
   border-radius: 50%;
-  background: var(--md-surface);
-  color: var(--md-muted);
+  background: var(--miao-surface);
+  color: var(--miao-muted);
+  font-family: var(--md-font-numeric);
   font-size: 11px;
+  transition:
+    background var(--miao-dur-base) var(--miao-ease-spring),
+    border-color var(--miao-dur-base) ease,
+    color var(--miao-dur-base) ease,
+    transform var(--miao-dur-base) var(--miao-ease-spring);
 }
 .tl-node.is-done {
   border-color: var(--md-success);
   background: var(--md-success);
   color: #fff;
+  transform: scale(1.04);
 }
 .tl-node.is-loading {
   position: relative;
   border-color: var(--md-blue);
   background: var(--md-blue-soft);
-  color: var(--md-blue);
+  color: var(--miao-primary-ink);
 }
 /* loading 外圈：只留一段弧 + 匀速旋转 —— 加减速的圈在低帧率下看着像卡住 */
 .tl-node.is-loading::after {
@@ -816,10 +783,11 @@
 }
 .tl-line {
   flex: 1;
-  width: 1.5px;
+  width: 2px;
   min-height: 10px;
   margin: 4px 0;
-  background: var(--md-line);
+  border-radius: 2px;
+  background: var(--miao-line);
 }
 /* 最后一步不画下行连线，否则时间线会拖出一条到屏幕底 */
 .tl-step:last-child .tl-line {
@@ -833,7 +801,7 @@
 .tl-body {
   flex: 1;
   min-width: 0;
-  padding-bottom: 15px;
+  padding-bottom: 16px;
 }
 .tl-step:last-child .tl-body {
   padding-bottom: 0;
@@ -844,23 +812,25 @@
   gap: 8px;
 }
 .tl-title {
-  font-size: 12.5px;
-  color: var(--md-muted);
+  font-family: var(--md-font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--miao-muted);
 }
 .tl-step.is-done-step .tl-title {
-  color: var(--md-ink);
+  color: var(--miao-ink);
 }
 .tl-step.is-current .tl-title {
-  color: var(--md-ink);
+  color: var(--miao-primary-ink);
 }
 .tl-step.is-failed .tl-title {
-  color: var(--md-ink);
+  color: var(--miao-ink);
 }
 .tl-state {
   margin-left: auto;
   font-size: 10.5px;
   white-space: nowrap;
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 .tl-step.is-done-step .tl-state {
   color: var(--md-success);
@@ -875,14 +845,14 @@
 }
 /* 阶段明细：真实日志末行原文（等宽、过长截断）—— 不是设计好的数字 */
 .tl-detail {
-  margin-top: 5px;
-  padding: 4px 7px;
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-xs);
-  background: var(--md-surface-2);
-  font-family: var(--md-font-numeric);
+  margin-top: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--miao-line);
+  border-radius: 10px;
+  background: var(--miao-surface-2);
+  font-family: var(--miao-font-mono);
   font-size: 10.5px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -897,17 +867,17 @@
 }
 .mchip {
   padding: 3px 9px;
-  border: 1px solid var(--md-line);
+  border: 1px solid var(--miao-line);
   border-radius: 999px;
-  background: var(--md-surface);
+  background: var(--miao-surface-2);
   font-family: var(--md-font-numeric);
   font-size: 10.5px;
-  color: var(--md-ink-2);
+  color: var(--miao-text);
   white-space: nowrap;
 }
 .mchip.is-bad {
-  border-color: var(--md-error);
-  background: var(--md-surface-2);
+  border-color: color-mix(in srgb, var(--md-error) 32%, transparent);
+  background: var(--miao-danger-soft);
   color: var(--md-error);
 }
 
@@ -922,13 +892,13 @@
   max-height: 168px;
   overflow: auto;
   padding: 10px 12px;
-  border-radius: var(--md-radius-sm);
-  background: var(--md-surface-2);
-  border: 1px solid var(--md-line-soft);
-  font-family: var(--md-font-numeric);
+  border-radius: 14px;
+  background: var(--miao-surface-2);
+  border: 1px solid var(--miao-line);
+  font-family: var(--miao-font-mono);
   font-size: 10.5px;
-  line-height: 1.6;
-  color: var(--md-ink-2);
+  line-height: 1.65;
+  color: var(--miao-text);
   white-space: pre-wrap;
   word-break: break-all;
   -webkit-user-select: text;
