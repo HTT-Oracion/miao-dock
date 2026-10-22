@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 设置页 34 项的**唯一事实源**（《09》§4.2 / §4.3 / §4.4）。
  *
  * ## 为什么用数据而不是 JSX 硬写
@@ -181,7 +181,7 @@ export const GENERAL: SettingSection = {
           why: '由系统窗口按钮触发；翻译服务会在后台留驻',
           def: '收起到托盘',
         },
-        { id: 'spec-check', label: '规格自检', state: 'live', why: '核对设置项、模块目录与运行契约的完整性' },
+        { id: 'spec-check', label: '规格自检', state: 'live', why: '核对设置页、模块目录与运行契约的完整性' },
       ],
     },
   ],
