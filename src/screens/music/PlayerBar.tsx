@@ -1,4 +1,4 @@
-import {
+﻿import {
   ChevronUp,
   Heart,
   ListMusic,
@@ -18,7 +18,7 @@ import { QUALITY_OPTIONS, SEEK_COMMIT_DELAY_MS } from '@music/player-options';
 import { useMusicStore } from '@music/store';
 import { canUseHeartbeat } from '@music/actions/playback';
 import { fmtTime, qualityLabel } from '@music/convert';
-import { IconButton, PlayModeButton, Select } from '@components/units';
+import { Btn, IconButton, PlayModeButton, Select } from '@components/units';
 import { DesktopLyricsSettingsModal } from '@screens/music/DesktopLyricsSettingsModal';
 
 /**
@@ -176,9 +176,19 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
       <div className="music-player-row">
         {/* 左侧（设计稿 `.pb-left`）：封面 + 歌名 /「歌手 · 平台 · 音质」+ 收藏 */}
         <div className="music-pb-l">
-          <div className="music-pb-cover" onClick={() => setExpanded(true)} title="展开播放器">
+          {/* 封面是**真按钮**（设计稿 `.pb-cover` 就是 `<button aria-label="展开播放器">`）：
+              原来是个带 onClick 的 div —— 键盘用户按 Tab 到不了它，也按不出 Enter/Space。
+              展开播放器是这一条上最高频的动作之一，不能只有鼠标能用。 */}
+          <Btn
+            kind="bare"
+            className="music-pb-cover"
+            ariaLabel="展开播放器"
+            title="展开播放器"
+            onClick={() => setExpanded(true)}
+          >
             {currentSong?.cover ? <img src={currentSong.cover} alt="" /> : null}
-          </div>
+          </Btn>
+          {/* 标题区也点得动（比设计稿多一个指针目标）：它是**冗余**入口，不承载键盘语义 */}
           <div className="music-pb-tx" onClick={() => setExpanded(true)} title="展开播放器">
             <b>{currentSong?.name ?? '未在播放'}</b>
             {/* 副行按设计稿三段：歌手 · 平台 · 音质。音质优先显示**实际拿到**的那一档
