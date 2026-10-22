@@ -1261,6 +1261,106 @@
   grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
   gap: 9px;
 }
+/* 页网格（设计稿 .page-grid）：每列至少 112px —— 比话卡更窄，一屏能看更多页 */
+.page-grid {
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 10px;
+}
+
+/*
+ * 页卡（设计稿 .page-card）：宽度交给网格，缩略图按 3/4.16 自适应 ——
+ * 不再写死 110x165。写死时窗口一变宽右栏就留一大片空白，且每格宽度与列宽脱节。
+ */
+.page-card {
+  padding: 0;
+  border: 1px solid var(--miao-line);
+  border-radius: 8px;
+  background: var(--miao-surface-2);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  position: relative;
+  transition:
+    transform var(--miao-dur-fast) var(--miao-ease-out),
+    box-shadow var(--miao-dur-fast) ease,
+    border-color var(--miao-dur-fast) ease;
+}
+.page-card:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: var(--miao-primary-line);
+  box-shadow: var(--miao-shadow-2);
+}
+.page-card:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.page-thumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 3 / 4.16;
+  background: var(--miao-surface-3);
+  overflow: hidden;
+}
+.page-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+/* 状态角标（设计稿 .page-stamp）：右上角一枚小标签，颜色按状态区分 */
+.page-stamp {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  font-size: 8.5px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--miao-surface) 92%, transparent);
+  border: 1px solid var(--miao-line);
+  backdrop-filter: blur(6px);
+}
+.page-stamp.is-done {
+  color: color-mix(in srgb, var(--miao-success) 82%, #000);
+  border-color: color-mix(in srgb, var(--miao-success) 30%, transparent);
+}
+.page-stamp.is-pending {
+  color: var(--miao-muted);
+}
+.page-stamp.is-missing {
+  color: color-mix(in srgb, var(--miao-danger) 82%, #000);
+  border-color: color-mix(in srgb, var(--miao-danger) 30%, transparent);
+}
+/* 底部标签行（设计稿 .page-label）：左「第 N 页」、右文件名 */
+.page-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 7px;
+  border-top: 1px solid var(--miao-line);
+  background: var(--miao-surface);
+  font-size: 9px;
+  color: var(--miao-muted);
+}
+.page-label b {
+  font-weight: 700;
+  color: var(--miao-text);
+  white-space: nowrap;
+}
+.page-label em {
+  font-style: normal;
+  font-family: var(--miao-font-mono);
+  font-size: 8.5px;
+  color: var(--miao-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* 网格卡 110×165 r12（《02》§5.5）—— 尺寸与圆角是 C5 的实测对象，勿改 */
 .grid-card {
   width: 110px;

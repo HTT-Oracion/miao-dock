@@ -4,10 +4,9 @@
 // 屏本体的 return 由「左栏 + 右栏 + 一排弹窗」三块组成，前两块各自成件后
 // 屏本体只剩状态与编排。只传 props（守本仓「零 Context」）。
 import { ArrowLeft, RefreshCw } from 'lucide-react';
-import { LIBRARY } from '@/themes/tokens';
 import { Btn, IconButton, Notice } from '@components/units';
 import { ChapterCard } from '@screens/manga/chapters';
-import { GRID_LABEL, Thumb } from '@screens/manga/cards';
+import { GRID_HINT, GRID_LABEL, Thumb } from '@screens/manga/cards';
 import type { GridState } from '@screens/manga/cards';
 import { AUTHOR_FALLBACK } from '@screens/manga/libModel';
 import type { PageView } from '@screens/manga/blob';
@@ -194,7 +193,7 @@ export function LibraryRight({
                 两处只差投影（gridView），格子本身零差别 */
             <>
               <div className="card lib-grid-wrap">
-                <div className="lib-grid">
+                <div className="lib-grid page-grid">
                   {gridSeqs.map((seq) => {
                     const state: GridState = missingSeqs.has(seq)
                       ? 'missing'
@@ -205,12 +204,12 @@ export function LibraryRight({
                       <button
                         key={seq}
                         type="button"
-                        className="grid-card"
-                        style={{
-                          width: LIBRARY.card.w,
-                          height: LIBRARY.card.h,
-                          borderRadius: LIBRARY.card.radius,
-                        }}
+                        /*
+                         * 页卡（设计稿 `.page-card`）：宽度交给网格（`minmax(112px,1fr)`），
+                         * 缩略图用 `aspect-ratio: 3/4.16` 自适应 —— 不再写死 110×165。
+                         * 写死尺寸时，窗口一变宽右栏就留一大片空白，且每格宽度与网格列宽脱节。
+                         */
+                        className={state === 'missing' ? 'page-card is-missing' : 'page-card'}
                         disabled={state === 'missing'}
                         onClick={() => onCompare(seq)}
                         title={
@@ -219,25 +218,22 @@ export function LibraryRight({
                             : `第 ${seq} 页 · 点开看原文 / 译文对照`
                         }
                       >
-                        <Thumb
-                          path={state === 'done' && gridView ? gridView.imagePath(seq, 'translated') : ''}
-                          seq={seq}
-                          state={state}
-                        />
-                        <span className="grid-foot">
-                          <span className="num">{String(seq).padStart(3, '0')}</span>
-                          <span
-                            className={state === 'missing' ? 'is-bad' : undefined}
-                            title={
-                              state === 'done'
-                                ? `第 ${seq} 页：本地已有译文`
-                                : state === 'pending'
-                                  ? `第 ${seq} 页：有原图、缺译文 —— 点「继续翻译」可以补`
-                                  : `第 ${seq} 页：本机没有这一页`
-                            }
-                          >
+                        <span className="page-thumb">
+                          <Thumb
+                            path={state === 'done' && gridView ? gridView.imagePath(seq, 'translated') : ''}
+                            seq={seq}
+                            state={state}
+                          />
+                          {/* 状态角标（设计稿 `.page-stamp`）：右上角一枚小标签 */}
+                          <span className={`page-stamp is-${state}`} title={GRID_HINT[state](seq)}>
                             {GRID_LABEL[state]}
                           </span>
+                        </span>
+                        <span className="page-label">
+                          <b>
+                            第 <span className="num">{seq}</span> 页
+                          </b>
+                          <em>{String(seq).padStart(3, '0')}.png</em>
                         </span>
                       </button>
                     );

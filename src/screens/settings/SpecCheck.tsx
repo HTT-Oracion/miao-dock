@@ -179,11 +179,19 @@ export function SpecFixture() {
           <div className="lib-left-list" />
         </aside>
         <section className="lib-right">
-          <div className="lib-grid">
-            <div
-              className="grid-card"
-              style={{ width: LIBRARY.card.w, height: LIBRARY.card.h, borderRadius: LIBRARY.card.radius }}
-            />
+          {/*
+            样张必须与**真实页卡**同构：页卡已按设计稿改成 `.page-card`（宽度交给网格、
+            缩略图按 3/4.16 自适应），样张若还留着 `.grid-card`，C5 就会一直量一个
+            真实界面里不存在的元素 —— 那是空断言，比没有更坏。
+          */}
+          <div className="lib-grid page-grid">
+            <div className="page-card">
+              <span className="page-thumb" />
+              <span className="page-label">
+                <b>第 1 页</b>
+                <em>001.png</em>
+              </span>
+            </div>
           </div>
         </section>
       </div>

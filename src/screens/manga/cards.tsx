@@ -15,6 +15,18 @@ export type GridState = 'done' | 'pending' | 'missing';
 export const GRID_LABEL: Record<GridState, string> = { done: '已译', pending: '待译', missing: '缺页' };
 
 /**
+ * 页卡状态角的悬停说明（与 `GRID_LABEL` 同源）。
+ *
+ * 抽成具名映射而不是在 JSX 里写三元链：三种状态的文案各自不同，
+ * 内联三元会让「已译 / 待译 / 缺页」的解释混在一行里，改一处要重新读整行。
+ */
+export const GRID_HINT: Record<GridState, (seq: number) => string> = {
+  done: (seq) => `第 ${seq} 页：本地已有译文`,
+  pending: (seq) => `第 ${seq} 页：有原图、缺译文 —— 点「继续翻译」可以补`,
+  missing: (seq) => `第 ${seq} 页：本机没有这一页`,
+};
+
+/**
  * 封面缩略。
  *
  * `loading` 与 `missing` 都落到占位（`line-soft` 底 + 书名首字，设计稿 §7.1）：

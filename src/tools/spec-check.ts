@@ -252,19 +252,22 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
   // ---------------------------------------------------------------- C5 漫画库几何
   {
     const left = q<HTMLElement>(root, '.lib-left');
-    const card = q<HTMLElement>(root, '.grid-card');
+    /*
+     * 页卡已按设计稿改成 `.page-card`：宽度交给网格、缩略图按 3/4.16 自适应，
+     * 不再有固定的 110x165。判据随之改为量**页卡自身**的圆角与宽高比 ——
+     * 继续钉 `.grid-card` 会一直量一个已不存在的元素（等于空断言）。
+     */
+    const card = q<HTMLElement>(root, '.page-card');
     const lw = left ? left.getBoundingClientRect().width : -1;
-    const cw = card ? card.getBoundingClientRect().width : -1;
-    const ch = card ? card.getBoundingClientRect().height : -1;
+    const thumb = card ? (card.querySelector('.page-thumb') as HTMLElement | null) : null;
+    const cw = thumb ? thumb.getBoundingClientRect().width : -1;
+    const ch = thumb ? thumb.getBoundingClientRect().height : -1;
     const cr = card ? px(getComputedStyle(card).borderTopLeftRadius) : -1;
     add(
       'C5',
-      `漫画库：左栏 ${LIBRARY.leftColumnWidth}；网格卡 ${LIBRARY.card.w}×${LIBRARY.card.h} r${LIBRARY.card.radius}`,
-      near(lw, LIBRARY.leftColumnWidth) &&
-        near(cw, LIBRARY.card.w) &&
-        near(ch, LIBRARY.card.h) &&
-        near(cr, LIBRARY.card.radius),
-      `左栏 ${lw.toFixed(0)} / 卡 ${cw.toFixed(0)}×${ch.toFixed(0)} r${cr}`,
+      `漫画库：左栏 ${LIBRARY.leftColumnWidth}；页卡 r8 / 缩略区 3:4.16`,
+      near(lw, LIBRARY.leftColumnWidth) && near(cr, 8) && cw > 0 && Math.abs(ch / cw - 4.16 / 3) < 0.08,
+      `左栏 ${lw.toFixed(0)} / 缩略区 ${cw.toFixed(0)}×${ch.toFixed(0)} r${cr}`,
     );
   }
 
