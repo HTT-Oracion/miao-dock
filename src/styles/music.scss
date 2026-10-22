@@ -798,6 +798,29 @@
   overflow: hidden;
   box-shadow: var(--miao-shadow-1);
 }
+/*
+ * 中间列的视图体（设计稿 `.music-view`）：**不是卡片** —— 中间列本身就是滚动区，
+ * 里面的每一节（Hero / 入口卡 / 榜单 / 歌单）各自带表面。
+ * 旧写法把整列包进一张 `.music-card`：白底 + 描边 + 阴影各一层，于是里面的卡片全都
+ * "卡中卡"，层级只剩一档；整列滚动时那张大卡不跟着走，边缘还会切内容。
+ * `view-in` 是设计稿的视图切换过渡（4px 上浮 + 淡入），比整块硬切自然。
+ */
+.music-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  animation: miao-view-in var(--miao-dur-base) var(--miao-ease-out);
+}
+@keyframes miao-view-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 .music-card-hd {
   display: flex;
   align-items: center;

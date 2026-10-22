@@ -99,7 +99,7 @@ export function RightPanel() {
         </div>
       </div>
 
-      <section className="music-card">
+      <section className="music-view">
         <SearchCaps />
 
         {searchError ? <div className="music-inline-err">搜索失败：{searchError}</div> : null}
