@@ -122,7 +122,8 @@
 .nav-item.is-active {
   background: var(--miao-surface);
   color: var(--miao-primary-ink);
-  font-weight: 500;
+  /* 选中态**不改字重**（设计稿只换底色与字色）：侧栏文字本来就 700，
+     选中时掉到 500 会让"当前项"看起来反而更弱 */
   box-shadow:
     0 10px 22px -14px rgba(45, 59, 70, 0.35),
     inset 0 0 0 1px var(--miao-primary-line);
@@ -875,17 +876,6 @@ html[data-theme='dark'] .nav-item:hover {
 
 .toolbar-title::before {
   display: none;
-}
-
-.toolbar-badge {
-  height: 22px;
-  padding: 0 9px;
-  border: 1px solid var(--miao-primary-line);
-  border-radius: 999px;
-  background: var(--miao-primary-soft);
-  color: var(--miao-primary-ink);
-  font-size: 9.5px;
-  letter-spacing: 0.02em;
 }
 
 /* ---------------- 视图 Tab ---------------- */
