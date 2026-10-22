@@ -320,6 +320,22 @@ Esc             关闭
 | 中间列容器 | `.music-view`（滚动区里的视图体，节各自带表面） | 一整张 `.music-card`（白底 + 描边 + 阴影） | ✅ 改成 `.music-view` + `view-in` 过渡（4px 上浮）；左栏那张卡保留 |
 | Hero「收藏歌单」 | 收藏每日推荐歌单（演示稿里是「已收藏」） | 本产品只有**歌曲**级红心，没有歌单收藏写回；摆一个点了没反应的按钮更糟，故用「查看歌单」替代并在 D-283 记因 |
 | 左栏平台全名 | 搜索源胶囊用全名 | 产品一致（设计稿 `searchSourcePills` 也用全名） |
+| 曲目表专辑列 | `.song-table` 是四列：序号 / 歌曲 / 专辑 / 时长 | 产品的行是「封面 + 歌名 / 第二行 + 时长」的两行式，**没有独立专辑列** |
+
+### 4.4 其余平台的「今日精选」：查清后**不做**（能力边界，不是遗漏）
+
+`newSongs` 目前只有网易云有实现（`/personalized/newsong`，匿名可取）。逐条查过另外三个适配器：
+
+| 平台 | 现有接口 | 有没有"新歌池" |
+|---|---|---|
+| 酷狗 | `search` / `artist_songs` / `playlist_tracks` / `guess_like` / `get_rank_list` + `rank_songs` | ❌ 无独立新歌接口；新歌只能从**榜单**里取 |
+| QQ 音乐 | `search` / `playlist_tracks` / `get_rank_list` + `get_rank_songs` / `recommend_playlists` | ❌ 同上 |
+| 咪咕 | `search` / `playlist_tracks` / `rank_list` + `rank_songs` / `recommend_playlists` | ❌ 同上 |
+
+三家的"新歌"都只能靠榜单里的**新歌榜**——而"新歌榜"这一节**已经在官方榜单区里**了。
+再把它搬一份到「今日精选」，用户会看到同一批歌出现在两处，而且第二处的标题还叫"为你挑选"
+（其实不是为他挑的）。所以保持 `newSongs: false`，该节在这三个平台**整块不渲染**。
+真要做，得先确认各家的新歌接口与返回形状（本机离线无法验证），那是单独一轮的数据面工作。
 
 ## 5. 已知缺口与刻意偏离
 
@@ -354,4 +370,5 @@ Esc             关闭
 | 第十八轮 | **音乐中间列顶行**：平台胶囊 + 搜索框按设计稿挪到 `.music-topbar`（吸顶 / `sticky` / z=8 / 渐变底 + 模糊），左栏只剩标题与账号；**中间列容器**从一整张 `.music-card` 改成 `.music-view`（节各自带表面）+ 设计稿的 `view-in` 过渡（4px 上浮 + 淡入） | `npm run check` 19/19；`check:music` 237/237 + 反证 **232/232**；`check:units` 46/46；CDP 实测：顶行在中间列、四枚胶囊在顶行、搜索框与「搜索」按钮在顶行、左栏 0 枚胶囊、`position=sticky`、`z-index=8`；`class="music-view"`=1 / 左栏 `music-card`=1；`tsc` / `eslint` / `vite build` 通过 |
 | 第二十四轮 | **今日精选区**（此前被数据面卡住的最后一块）：Rust 新增 `netease::new_songs`（`/personalized/newsong`，匿名可取，外层 `picUrl` 补进 `al.picUrl`）+ `music_new_songs` 命令与注册；前端 `musicNewSongs` / `platform.newSongs` / 能力位 `newSongs` / store `newSongs+loadingNewSongs`（并入 `loadRecommend`）/ 首页「今日精选」节（含设计稿空态） | `cargo check --bin miao-dock` 通过；`npm run check` 19/19；`check:music` 237/237 + 反证 **232/232**；CDP 实测该节渲染且文案逐字一致（今日精选 / 为你挑选 / 换一批 / 这个平台还没有歌曲 / 换一个平台，或登录账号同步更多内容。）；`tsc` / `eslint` / `vite build` 通过 |
 | 第二十五轮 | **歌词高亮预设色**按设计稿换成五色（天青 `#8FB6D6` / 杏奶 `#DFA47D` / 鼠尾草 `#8CA88C` / 陶红 `#C97D73` / 夜蓝 `#557B9B`），默认改天青；`Swatches` 补可选 `names`，色点的 `aria-label`/`title` 从十六进制串改成色名；桌面歌词高亮预设与 CSS 回落值同步 | `npm run check` 19/19；`check:music` 237/237 + 反证 **232/232**；`check:units` 46/46 + 反证 61/61；CDP 实测五色色值与色名逐项一致（天青默认选中）；`tsc` / `eslint` / `vite build` 通过 |
-| 下一轮 | 其余平台是否也补 `newSongs`（酷狗/QQ/咪咕各自的新歌接口）；漫画库左栏次级文案复核 | — |
+| 第二十六轮 | **曲目列表补专辑**：搜索结果 / 榜单·歌单曲目 / 每日推荐三处，行内第二行由「歌手」改为「歌手 · 专辑」（设计稿 `.song-table` 有专辑列；本产品的行是两行式而非表格，故并入第二行并登记为偏离）；同时查清**其余平台的 `newSongs` 不做**的理由（见 §4.4） | `npm run check` 19/19；`check:music` 237/237 + 反证 **232/232**；`tsc` / `eslint` / `vite build` 通过 |
+| 下一轮 | 漫画库左栏次级文案复核；音乐右栏「正在播放」区与设计稿 `now-*` 的逐项对照 | — |
