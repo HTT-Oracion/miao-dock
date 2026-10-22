@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { Btn } from '@components/units';
 import type { ServiceStatus } from '@/ipc';
@@ -269,7 +269,7 @@ export function SettingsScreen({
               <section className="settings-section is-active" key="search">
                 <div className="settings-section-head">
                   <span className="kicker">SEARCH</span>
-                  <h2 style={{ fontSize: SETTINGS.pageTitleSize }}>搜索「{query.trim()}」</h2>
+                  <h2>搜索「{query.trim()}」</h2>
                   <p>{hits.length} 个设置项匹配</p>
                 </div>
                 {hits.length ? (
@@ -288,7 +288,7 @@ export function SettingsScreen({
                 ) : (
                   <div className="settings-empty">
                     <h3>没有找到匹配项</h3>
-                    <p>试试「缓存」「歌词」「引擎」或「许可」。</p>
+                    <p>试试「缓存」、「歌词」、「引擎」或「许可」。</p>
                   </div>
                 )}
               </section>
@@ -300,7 +300,7 @@ export function SettingsScreen({
                       ? '06 / ANIME'
                       : `${String(sectionIndex + 1).padStart(2, '0')} / ${SECTION_KICKER[section] ?? ''}`}
                   </span>
-                  <h2 style={{ fontSize: SETTINGS.pageTitleSize }}>{isAnime ? '番剧设置' : active?.name}</h2>
+                  <h2>{isAnime ? '番剧设置' : active?.name}</h2>
                   {isAnime ? (
                     <p>
                       番剧库、播放、字幕、数据源、媒体选择、缓存与 BT、账号与同步、备份 —— {ANIME_SETTING_GROUPS.length}{' '}
