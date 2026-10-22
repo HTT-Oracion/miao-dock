@@ -89,16 +89,28 @@ export function SettingsScreen({
     // 切换后写回地址栏，让"当前在哪个分组"可被分享/刷新保持。
     // `replaceState` 而非 `pushState`：切分组是"看同一页的不同部分"，
     // 不是"去了一个新地方"，不该在窗口历史里堆 5 条记录让返回键失效。
+    //
+    // 🔴 参数要写进 **hash** 而不是 search：HashRouter 下 `#/settings?section=x`
+    // 才是合法形态；写到 search 会变成 `?section=x#/settings`，刷新后路由器读不到。
     const url = new URL(window.location.href);
-    url.searchParams.set('section', section);
+    const [hashPath, hashQuery = ''] = url.hash.replace(/^#/, '').split('?');
+    const q = new URLSearchParams(hashQuery);
+    q.set('section', section);
+    url.hash = `#${hashPath}?${q.toString()}`;
     window.history.replaceState(null, '', url.toString());
   }, [section]);
 
-  // 浏览器前进/后退后同步分组（深链的另一半；不做的话地址栏与画面会各说各话）
+  // 浏览器前进/后退后同步分组（深链的另一半；不做的话地址栏与画面会各说各话）。
+  // HashRouter 下前进/后退改的是 hash，浏览器主要发 `hashchange`，`popstate` 不保证 ——
+  // 两个都听，且同一个分组重复 set 是幂等的，不会抖。
   useEffect(() => {
-    const onPop = () => setSection(parseSection(readSectionParam()));
-    window.addEventListener('popstate', onPop);
-    return () => window.removeEventListener('popstate', onPop);
+    const sync = () => setSection(parseSection(readSectionParam()));
+    window.addEventListener('popstate', sync);
+    window.addEventListener('hashchange', sync);
+    return () => {
+      window.removeEventListener('popstate', sync);
+      window.removeEventListener('hashchange', sync);
+    };
   }, []);
 
   const active = SETTINGS_SECTIONS.find((s) => s.id === section) ?? null;
@@ -213,7 +225,18 @@ export function SettingsScreen({
   );
 }
 
+/**
+ * 读当前分组。
+ *
+ * 🔴 必须**同时看 hash 与 search**：本应用用的是 HashRouter，地址形如
+ * `#/settings?section=media` —— 查询串在 **hash 里面**，`location.search` 是空的。
+ * 只读 `location.search` 的旧写法会让所有分组深链静默回落到「通用」（点了没反应，
+ * 而地址栏明明写着 `section=media`）。先 hash、后 search，兼容两种形态。
+ */
 function readSectionParam(): string | null {
   if (typeof window === 'undefined') return null;
-  return new URLSearchParams(window.location.search).get('section');
+  const fromHash = window.location.hash.includes('?')
+    ? new URLSearchParams(window.location.hash.slice(window.location.hash.indexOf('?') + 1)).get('section')
+    : null;
+  return fromHash ?? new URLSearchParams(window.location.search).get('section');
 }

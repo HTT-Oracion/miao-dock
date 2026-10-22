@@ -1046,9 +1046,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* 「每日推荐」入口卡：设计稿指定渐变，仅网易云出现 */
+/* 「每日推荐」入口卡：杏奶 → 雾蓝的暖冷过渡（取主题语义色，不写死一组橙红） */
 .music-chart-cv.is-daily {
-  background: linear-gradient(135deg, #f6b26b, #e06666);
+  background: linear-gradient(135deg, var(--miao-accent), var(--miao-primary));
 }
 /* 3 列网格形态（酷狗/QQ）：铺满整行，封面自适应为正方形 */
 .music-charts.is-grid {
@@ -1359,8 +1359,8 @@
   font-weight: 700;
 }
 .pf-badge.is-on {
-  background: var(--miao-surface-2);
-  color: #22c55e;
+  background: var(--miao-success-soft);
+  color: color-mix(in srgb, var(--miao-success) 80%, #000);
 }
 .pf-badge.is-off {
   background: var(--miao-surface-2);

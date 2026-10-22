@@ -1201,9 +1201,10 @@ add('ENGINE.wiring.tierConfiguredVsEffective', 'ENGINE', (ctx) => {
   const body = tsBody(ctx) ?? '';
   const problems = [];
   // 控件显示的是**已配置**（用户在这里改"下次启动用哪档"）
-  if (!/tier\.configured/.test(body)) problems.push('没读 tier.configured（控件会显示不出已配置的那一档）');
+  // 允许可选链形态 `tier?.configured`：取数边界已补齐子块，但渲染点写成可选链同样满足契约
+  if (!/tier\??\.configured/.test(body)) problems.push('没读 tier.configured（控件会显示不出已配置的那一档）');
   // 旁边小字报的是**已生效**（引擎此刻在跑哪档）
-  if (!/tier\.effective/.test(body)) problems.push('没读 tier.effective（用户看不到改动是否已生效）');
+  if (!/tier\??\.effective/.test(body)) problems.push('没读 tier.effective（用户看不到改动是否已生效）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 add('ENGINE.wiring.tierKeepsConfigured', 'ENGINE', (ctx) => {

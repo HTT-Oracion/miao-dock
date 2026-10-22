@@ -328,7 +328,58 @@ export interface EngineSettingsResult {
 
 // ------------------------------------------------------------------ 调用
 
-export const engineOptions = () => apiGet<EngineOptions>('/engine/options');
+/**
+ * 选项清单。
+ *
+ * 🔴 在**取数边界**补齐子块，而不是让每个渲染点各写一条可选链：`EngineOptions` 把这些
+ * 子块声明为必需，TS 因此认为它们一定在；一旦服务端返回残缺对象（旧版服务 / 半截响应），
+ * `o.tier.effective` 就会抛异常，把**整个设置分组**打成空白 —— 一个字段缺失不该有这么大
+ * 的爆炸半径。补齐之后，渲染路径拿到的永远是完整形状。
+ */
+export const engineOptions = async (): Promise<EngineOptions> => {
+  const raw = await apiGet<Partial<EngineOptions>>('/engine/options');
+  const idle = (v: Partial<EngineIdle> | undefined): EngineIdle => ({
+    ms: 0,
+    min: 0,
+    minIsExact: true,
+    appliesAfterRestart: false,
+    source: 'default',
+    ...(v ?? {}),
+  });
+  return {
+    ...(raw as EngineOptions),
+    tier: {
+      effective: null,
+      configured: null,
+      source: 'default',
+      hardwareRecommended: 'tiny',
+      weightsAvailable: [],
+      options: [],
+      ...(raw.tier ?? {}),
+    },
+    accel: {
+      effective: 'auto',
+      choice: 'auto',
+      source: 'default',
+      hardwareRecommended: 'auto',
+      options: [],
+      ...(raw.accel ?? {}),
+    },
+    idle: {
+      llm: idle(raw.idle?.llm),
+      vision: idle(raw.idle?.vision),
+      neverUnload: raw.idle?.neverUnload ?? false,
+    },
+    modelDir: {
+      current: '',
+      configured: null,
+      defaultDir: '',
+      source: 'default',
+      exists: false,
+      ...(raw.modelDir ?? {}),
+    },
+  } as EngineOptions;
+};
 
 export const engineStatus = () => apiGet<EngineStatus>('/engine/status');
 

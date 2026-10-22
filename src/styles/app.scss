@@ -885,7 +885,8 @@ html[data-theme='dark'] .nav-item:hover {
 }
 
 html[data-theme='dark'] .btn-primary {
-  color: #10202c;
+  /* 深色主题下主色是浅雾蓝，实心按钮上的文字要用「主色压暗」而不是另起一个写死的深色 */
+  color: color-mix(in srgb, var(--miao-primary) 22%, #000);
   border-color: color-mix(in srgb, var(--miao-primary) 72%, #fff);
 }
 
@@ -959,18 +960,20 @@ html[data-theme='dark'] .btn-primary {
   color: color-mix(in srgb, var(--miao-danger) 82%, #000);
 }
 
+/* 深色主题下的语义色文字：在语义 token 上混入白色提亮，而不是写死一组浅色十六进制 ——
+   写死会让「调色板只有一处事实源」失效（改 token 时这三条静默不跟）。 */
 html[data-theme='dark'] .chip-success,
 html[data-theme='dark'] .chip-ok {
-  color: #b6d8c3;
+  color: color-mix(in srgb, var(--miao-success) 62%, #fff);
 }
 
 html[data-theme='dark'] .chip-warning {
-  color: #e8c69b;
+  color: color-mix(in srgb, var(--miao-warning) 60%, #fff);
 }
 
 html[data-theme='dark'] .chip-danger,
 html[data-theme='dark'] .chip-bad {
-  color: #f0b9b0;
+  color: color-mix(in srgb, var(--miao-danger) 58%, #fff);
 }
 
 .st-badge {
@@ -989,21 +992,21 @@ html[data-theme='dark'] .chip-bad {
 }
 
 .st-badge.is-ok {
-  border-color: #c9e4d5;
+  border-color: color-mix(in srgb, var(--miao-success) 30%, transparent);
   background: var(--miao-success-soft);
-  color: #3f7660;
+  color: color-mix(in srgb, var(--miao-success) 82%, #000);
 }
 
 .st-badge.is-warn {
-  border-color: #f0ddc2;
+  border-color: color-mix(in srgb, var(--miao-warning) 30%, transparent);
   background: var(--miao-warning-soft);
-  color: #94642f;
+  color: color-mix(in srgb, var(--miao-warning) 82%, #000);
 }
 
 .st-badge.is-bad {
-  border-color: #f1cfca;
+  border-color: color-mix(in srgb, var(--miao-danger) 30%, transparent);
   background: var(--miao-danger-soft);
-  color: #a9514a;
+  color: color-mix(in srgb, var(--miao-danger) 82%, #000);
 }
 
 .st-badge.is-idle {

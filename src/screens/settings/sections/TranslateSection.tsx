@@ -281,9 +281,14 @@ export function TranslateSection({
   const o = eng.options;
   const busy = eng.action !== null;
 
-  /** 档位下拉的取值 = **已配置**（盘上那份）；没配过就回落到硬件推荐档 */
-  const tierValue: EngineTier = o?.tier.configured ?? o?.tier.hardwareRecommended ?? 'tiny';
-  const tierFeasible = o?.tier.options ?? [];
+  /**
+   * 档位下拉的取值 = **已配置**（盘上那份）；没配过就回落到硬件推荐档。
+   *
+   * 🔴 整条链都要可选（`o?.tier?.…`）：`o` 非空但 `tier` 缺失时，`o?.tier.configured`
+   * 会在 `.configured` 上抛异常 —— 一个字段不全的响应足以把整个「翻译服务」分组打成空白。
+   */
+  const tierValue: EngineTier = o?.tier?.configured ?? o?.tier?.hardwareRecommended ?? 'tiny';
+  const tierFeasible = o?.tier?.options ?? [];
   const tierSelectable = tierFeasible.filter((t) => t.weightsReady);
   /*
    * 权重未纳入清单的档位**不出现**（与"物理不可行的档位不出现"同一把尺子：
@@ -301,10 +306,11 @@ export function TranslateSection({
   /** 当前配的那档的可行性信息 —— 「不推荐」的强警告与预估内存都从这里来 */
   const tierInfo = tierFeasible.find((t) => t.tier === tierValue) ?? null;
 
-  const accelValue: EngineAccel = o?.accel.choice ?? 'auto';
+  // 与 `tierValue` 同一条纪律：字段缺失时降级到默认值，不让整组设置因一个字段变空白
+  const accelValue: EngineAccel = o?.accel?.choice ?? 'auto';
 
   /** 值 → 中文名（后端候选缺失时也要能显示已配置的那一个，不能露出 `mps` 这种裸 id） */
-  const accelLabel = (v: EngineAccel) => o?.accel.options.find((x) => x.value === v)?.label ?? ACCEL_LABEL[v];
+  const accelLabel = (v: EngineAccel) => o?.accel?.options?.find((x) => x.value === v)?.label ?? ACCEL_LABEL[v];
 
   const pending = pendingRestart(o);
 
@@ -792,10 +798,12 @@ function RestartHint({ title, keys, pending }: { title: string; keys: string[]; 
 function pendingRestart(o: EngineOptions | null): string[] {
   if (!o) return [];
   const out: string[] = [];
-  if (o.tier.configured && o.tier.effective && o.tier.configured !== o.tier.effective) out.push('翻译档位');
+  // 每个子块都按「可能缺失」处理：契约字段缺一个只会让这一项判不出来，
+  // 不该把整个分组打成空白（见 tierValue / accelValue 处的同一纪律）。
+  if (o.tier?.configured && o.tier?.effective && o.tier.configured !== o.tier.effective) out.push('翻译档位');
   // `choice` 是"用户选的"，`effective` 是"实际跑的"；硬件探测（auto）之外的不一致就是没生效
-  if (o.accel.choice !== 'auto' && o.accel.choice !== o.accel.effective) out.push('加速后端');
-  if (o.modelDir.configured && o.modelDir.configured !== o.modelDir.current) out.push('模型目录');
+  if (o.accel?.choice !== 'auto' && o.accel?.choice !== o.accel?.effective) out.push('加速后端');
+  if (o.modelDir?.configured && o.modelDir?.configured !== o.modelDir?.current) out.push('模型目录');
   return out;
 }
 
