@@ -455,7 +455,7 @@ export const RESOURCE: SettingSection = {
           id: 'temp-files',
           label: '临时文件',
           state: 'pending',
-          why: '上传暂存文件，暂不可清理',
+          why: '上传暂存在服务侧管理，目前没有可用的列举与清理接口',
         },
       ],
     },
