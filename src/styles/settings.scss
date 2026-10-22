@@ -280,6 +280,45 @@
   }
 }
 
+/*
+ * 运行日志抽屉里的内容件（设计稿 `.log-tools` / `.log-console`）。
+ *
+ * 控制台底色**刻意固定为深色**，不随主题：设计稿给的就是 `#23252A` / `#D9D6CC`。
+ * 这与桌面歌词窗同一条理由 —— 这个表面的语义就是"终端"，浅色主题下也应该是黑的，
+ * 否则日志里的 ANSI 风格输出（失败行、告警行）在浅底上读不出来。
+ */
+.set-log-tools {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.set-log-count {
+  margin-left: auto;
+}
+.set-log-console {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #23252a;
+  color: #d9d6cc;
+  font-family: var(--miao-font-mono);
+  font-size: 10px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-all;
+  min-height: 120px;
+}
+.set-log-empty {
+  padding: 40px 16px;
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--miao-muted);
+  border: 1px dashed var(--miao-line-strong);
+  border-radius: 12px;
+}
+
 /* 页头：设计稿 `.settings-section-head`（kicker / h2 / p 三段，margin:4px 0 14px） */
 .settings-section-head {
   margin: 4px 0 14px;

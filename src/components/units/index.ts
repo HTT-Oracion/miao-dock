@@ -32,6 +32,7 @@ export { PlayModeButton } from '@components/units/PlayModeButton';
 export { ProgressRing } from '@components/units/ProgressRing';
 export { Range } from '@components/units/Range';
 export { Select } from '@components/units/Select';
+export { SideDrawer } from '@components/units/SideDrawer';
 export { LoadingState, Skeleton } from '@components/units/Skeleton';
 export { Swatches } from '@components/units/Swatches';
 export { Switch } from '@components/units/Switch';

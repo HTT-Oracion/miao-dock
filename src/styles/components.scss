@@ -407,6 +407,96 @@
   border: none;
   border-radius: 3px;
 }
+/*
+ * ---- 侧抽屉（SideDrawer）----
+ *
+ * 设计稿 `.drawer-layer` / `.drawer-mask` / `.side-drawer`：右侧滑入、宽 `min(480px, 100vw)`、
+ * 高度吃满窗口，标题区（眉标 + 标题 + 说明）固定，正文自己滚动。
+ *
+ * z-index 92：**低于**弹窗层（95）—— 抽屉里点「清除全部」这类动作会开居中弹窗，
+ * 弹窗必须压在抽屉之上；高于展开播放器（70）与队列抽屉（72）。
+ */
+.ui-drawer-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 92;
+}
+.ui-drawer-mask {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--miao-ink) 28%, transparent);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  animation: miao-fade-in var(--miao-dur-fast) var(--miao-ease-out);
+}
+.ui-drawer {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(480px, 100vw);
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--miao-surface) 97%, transparent);
+  border-left: 1px solid var(--miao-line);
+  box-shadow: -24px 0 60px -32px color-mix(in srgb, var(--miao-ink) 40%, transparent);
+  animation: ui-drawer-in var(--miao-dur-base) var(--miao-ease-out);
+}
+@keyframes ui-drawer-in {
+  from {
+    transform: translateX(18px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.ui-drawer-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px 18px 10px;
+  border-bottom: 1px solid var(--miao-line);
+}
+.ui-drawer-titles {
+  min-width: 0;
+  flex: 1;
+}
+.ui-drawer-kicker {
+  display: block;
+  font-family: var(--miao-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--miao-faint);
+  margin-bottom: 3px;
+}
+.ui-drawer-head h2 {
+  font-family: var(--md-font-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--miao-ink);
+}
+.ui-drawer-head p {
+  font-size: 9.5px;
+  color: var(--miao-muted);
+  margin-top: 2px;
+}
+.ui-drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 18px 18px;
+}
+.ui-drawer-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--miao-line);
+}
+
 /* ---- ② 图标按钮（IconButton）---- */
 .ui-cbtn {
   width: 30px;

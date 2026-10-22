@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
+import { Terminal } from 'lucide-react';
 import { apiPost, errorText, openPath, quitApp, serviceRestart, serviceStart } from '@/ipc';
 import type { ServiceState } from '@/ipc';
 import {
@@ -32,6 +33,7 @@ import { ViewTabs } from '@components/ViewTabs';
 // 展开播放器挂在**应用根**（不在 MusicScreen 内）—— 判据见渲染处注释：
 // 它是 `position: fixed; inset: 0` 的全屏浮层，数据全部来自 store，本就不依赖任何一屏的 DOM。
 import { ExpandedPlayer } from '@screens/music/ExpandedPlayer';
+import { LogConsole } from '@screens/settings/LogConsole';
 import { useMusicStore } from '@music/store';
 import { useAnimeStore } from '@anime/store';
 import { ANIME_VIEW_META } from '@anime/player-options';
@@ -78,6 +80,8 @@ export function App() {
    */
   const [autoStart, setAutoStart] = useState(() => initialServiceAutoStart());
   const [quitOpen, setQuitOpen] = useState(false);
+  /** 运行日志抽屉（设计稿：设置页工具条上的「运行日志」按钮） */
+  const [logsOpen, setLogsOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   /**
    * 正在取消中的任务 id（乐观标记）。
@@ -520,7 +524,15 @@ export function App() {
         title: '设置',
         // 设计稿工具条：分组数 / 项数都算自 catalog，界面里没有写死的 5 与 34
         subtitle: `${SETTINGS_SECTIONS.length} 组 · ${SECTION_ITEM_TOTAL} 项 · 改动即时保存在本机`,
-        actions: appVersion ? <Badge>v{appVersion}</Badge> : null,
+        actions: (
+          <>
+            {appVersion ? <Badge>v{appVersion}</Badge> : null}
+            <Btn kind="ghost" size="sm" onClick={() => setLogsOpen(true)}>
+              <Terminal size={13} />
+              运行日志
+            </Btn>
+          </>
+        ),
       };
     }
     // 翻译应用内：工具条随视图切换（与 ver1.0 同一套文案，只是判定源从 screen 变成 view）
@@ -705,6 +717,14 @@ export function App() {
           }}
         />
       ) : null}
+
+      {/*
+        运行日志抽屉：由设置页工具条的「运行日志」打开（设计稿 `.side-drawer`）。
+        数据取**本地服务**自己的输出（`status.log`），不是引擎阶段日志 —— 两者在排障时
+        回答的是不同的问题（服务起没起 / 翻译跑到哪一步）。
+      */}
+      {/* 按需挂载：抽屉关闭时整块不渲染，读屏不会念到日志内容 */}
+      {logsOpen ? <LogConsole log={status?.log ?? []} onClose={() => setLogsOpen(false)} /> : null}
 
       {/*
         灵动岛：只承载**音乐播放态**（2026-10-11 起，轻提示的承载已剥离给 NotificationStack ——
