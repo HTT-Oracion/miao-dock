@@ -1,4 +1,4 @@
-import { ListMusic, Maximize2, Music, Pause, Play, SkipBack, SkipForward, AudioLines } from 'lucide-react';
+﻿import { ListMusic, Maximize2, Music, Pause, Play, SkipBack, SkipForward, AudioLines } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { IconButton } from '@components/units/IconButton';
@@ -45,8 +45,8 @@ import { KaraokeLyrics } from '@screens/music/KaraokeLyrics';
 const CIRCLE_SIZE = 30;
 const MUSIC_COLLAPSED_WIDTH = 200;
 const MUSIC_COLLAPSED_HEIGHT = 30;
-const EXPANDED_WIDTH = 320;
-const MUSIC_EXPANDED_HEIGHT = 150;
+const EXPANDED_WIDTH = 350;
+const MUSIC_EXPANDED_HEIGHT = 160;
 
 /** 形变（宽/高）时长 —— 必须与 music.scss `.di-capsule` 的 width/height transition 一致（设计稿 380ms 弹簧） */
 const MORPH_MS = 380;

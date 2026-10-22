@@ -3142,9 +3142,10 @@ add('ISLANDV.ctlStableAcrossViews', 'ISLANDV', (s) => {
 add('ISLANDV.cardSize', 'ISLANDV', (s) => {
   const isl = islSrc(s);
   const missing = [];
-  // 歌词卡与大卡共用同一组常量（320×150）：另立一套尺寸会让 hover 收展的形变对不上
-  if (!/const EXPANDED_WIDTH = 320;/.test(isl)) missing.push('展开宽不是 320');
-  if (!/const MUSIC_EXPANDED_HEIGHT = 150;/.test(isl)) missing.push('音乐卡展开高不是 150');
+  // 歌词卡与大卡共用同一组常量（350×160，按设计稿 `.island[data-state="card"]`）：
+  // 另立一套尺寸会让 hover 收展的形变对不上
+  if (!/const EXPANDED_WIDTH = 350;/.test(isl)) missing.push('展开宽不是 350');
+  if (!/const MUSIC_EXPANDED_HEIGHT = 160;/.test(isl)) missing.push('音乐卡展开高不是 160');
   // 高度分支必须仍取这个常量（常量改了而计算式没跟上、或反过来，都会给出第三个尺寸）
   if (!/\? MUSIC_EXPANDED_HEIGHT/.test(isl)) missing.push('音乐卡展开高度不再取 MUSIC_EXPANDED_HEIGHT');
   return { ok: missing.length === 0, detail: missing.length ? `歌词卡尺寸：${missing.join('、')}` : '' };
@@ -5506,10 +5507,10 @@ const MUTATIONS = [
     expect: ['ISLANDV.toggleBothWays'],
   },
   {
-    name: '歌词卡另立高度（大卡常量被改成 170，形变对不上）',
+    name: '歌词卡另立高度（大卡常量被改成 180，形变对不上）',
     file: F.island,
-    find: 'const MUSIC_EXPANDED_HEIGHT = 150;',
-    replace: 'const MUSIC_EXPANDED_HEIGHT = 170;',
+    find: 'const MUSIC_EXPANDED_HEIGHT = 160;',
+    replace: 'const MUSIC_EXPANDED_HEIGHT = 180;',
     expect: ['ISLANDV.cardSize'],
   },
   {

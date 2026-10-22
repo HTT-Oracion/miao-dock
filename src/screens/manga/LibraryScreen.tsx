@@ -1,5 +1,5 @@
-﻿import type { ReactElement } from 'react';
-import { FolderUp, GitMerge, Pencil, Play, RotateCcw, Trash2 } from 'lucide-react';
+import type { ReactElement } from 'react';
+import { EyeOff, FolderUp, GitMerge, Pencil, Play, RotateCcw, Trash2 } from 'lucide-react';
 import { apiDelete, apiPost, apiPostMultipart, errorText, openPath } from '@/ipc';
 import type {
   ChapterEntry,
@@ -234,6 +234,22 @@ export function LibraryScreen({
       onToast(errorText(e), 'bad');
     } finally {
       setBusy(false);
+    }
+  };
+
+  /**
+   * 隐藏作品：`delete{deleteFiles:false}` —— 从书架移除、**本地文件与译文都不动**。
+   * 之后可在「已隐藏」里一键恢复（服务端 `/library/{name}/unhide`）。
+   */
+  const hideBook = async (name: string) => {
+    try {
+      await apiPost(`/library/${encodeURIComponent(name)}/delete`, { deleteFiles: false });
+      if (name === active) setActive(null);
+      setCompareSeq(null);
+      onToast(`已隐藏「${name}」—— 可在「已隐藏」里恢复`, 'good');
+      onRefresh();
+    } catch (e) {
+      onToast(errorText(e), 'bad');
     }
   };
 
@@ -548,6 +564,25 @@ export function LibraryScreen({
             onClick={() => {
               close();
               setMergeTarget(it.key);
+            }}
+          />
+        ) : null}
+        {/*
+          隐藏作品（设计稿右键菜单的一项）：与「删除整本」走同一个端点，只是**不删文件** ——
+          服务端的 `delete{deleteFiles:false}` 就是"从书架移除、文件留着"，之后可在「已隐藏」恢复。
+          单独给一项是因为"我只是不想在书架上看到它"与"我要删掉它"是两种意图，
+          让前者也必须走一遍带删除字样的确认框，是在逼用户点一个他不想点的按钮。
+        */}
+        {it.merged ? (
+          <MenuItem
+            icon={<EyeOff size={13} />}
+            label="隐藏作品"
+            sub="可在「已隐藏」里恢复"
+            disabled={!comic}
+            title="从书架移除这本漫画（本地文件与译文都保留）"
+            onClick={() => {
+              close();
+              void hideBook(it.name);
             }}
           />
         ) : null}
