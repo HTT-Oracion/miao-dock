@@ -134,7 +134,7 @@ function SearchCaps() {
             className={on ? 'cap is-on' : 'cap'}
             ariaPressed={on}
             disabled={!logged}
-            title={logged ? `用 ${p.label} 搜索` : '未登录不可搜'}
+            title={logged ? `用 ${p.label} 搜索` : '登录后才能作为搜索源'}
             onClick={() => setSearchProvider(p.id)}
           >
             <i className="cap-dot" style={{ background: logged ? '#22C55E' : 'var(--md-muted)' }} />
@@ -142,7 +142,8 @@ function SearchCaps() {
           </Btn>
         );
       })}
-      <span className="cap-note">搜索源独立于播放源</span>
+      {/* 设计稿渲染层这一句是两半：后半截正是上面那些禁用胶囊的所以然，漏掉它只说"独立"不说"为什么点不动" */}
+      <span className="cap-note">搜索源独立于播放源；未登录平台不可用</span>
     </div>
   );
 }

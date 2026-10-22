@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
-import { Btn, IconButton, ProgressRing } from '@components/units';
+import { Btn, IconButton, Modal, ProgressRing } from '@components/units';
 import { formatBytes } from '@tools';
 import { ASSEMBLY_PHASES, type StageNote } from '@screens/manga/assembly';
 import type { ModelDownloadView } from '@screens/settings/engine-api';
@@ -249,15 +249,9 @@ export function DownloadPanel({
                 </Btn>
               )}
               {interrupted ? (
-                confirmRedo ? (
-                  <Btn kind="ghost" onClick={onRedownload}>
-                    确认从头重下？
-                  </Btn>
-                ) : (
-                  <Btn kind="ghost" onClick={() => setConfirmRedo(true)}>
-                    重新下载
-                  </Btn>
-                )
+                <Btn kind="ghost" onClick={() => setConfirmRedo(true)}>
+                  重新下载
+                </Btn>
               ) : null}
               {/* 设计稿的「后台运行」= 离开本页、下载继续在后台跑（返回箭头同一动作，这里给一句读得懂的字） */}
               <Btn kind="ghost" onClick={onBack}>
@@ -314,6 +308,40 @@ export function DownloadPanel({
           )}
         </section>
       </div>
+
+      {/*
+        「重新下载」的二次确认（设计稿这里就是**居中弹窗**，不是原地变按钮）。
+        标题用设计稿原句 `从头重新下载？`；正文按**产品的真实语义**写：
+        `fresh=true` 会清掉 `.part` 续传断点、本次从头下（「继续下载」才复用断点续传），
+        所以设计稿那句"已就绪的文件会被复用"不能照搬 —— 那是另一条路径的行为。
+      */}
+      {confirmRedo ? (
+        <Modal
+          title="从头重新下载？"
+          kicker="LOCAL ENGINE"
+          onClose={() => setConfirmRedo(false)}
+          actions={
+            <>
+              <Btn kind="ghost" onClick={() => setConfirmRedo(false)}>
+                取消
+              </Btn>
+              <Btn
+                kind="danger"
+                onClick={() => {
+                  setConfirmRedo(false);
+                  onRedownload();
+                }}
+              >
+                重新下载
+              </Btn>
+            </>
+          }
+        >
+          会清掉已下载的续传断点，本次从头下载全部文件。
+          <br />
+          想接着上次继续，请选「继续下载」。
+        </Modal>
+      ) : null}
     </div>
   );
 }
