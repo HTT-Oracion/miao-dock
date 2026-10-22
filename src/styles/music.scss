@@ -662,6 +662,75 @@
   overflow: hidden;
 }
 
+/* 左栏底部账号行（设计稿 `.ms-foot` / `.ms-account`）：贴底、单行、点开账号菜单或登录 */
+.ms-foot {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--miao-line);
+  padding: 10px 6px 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ms-account {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex: 1;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  text-align: left;
+  transition: background var(--miao-dur-fast) ease;
+}
+.ms-account:hover {
+  background: var(--miao-surface-2);
+}
+.ms-avatar {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--miao-surface-3);
+  color: var(--miao-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+/* 已登录：头像取平台主色，首字母反白 */
+.ms-avatar.is-on {
+  background: var(--miao-primary);
+  color: var(--miao-surface);
+}
+.ms-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ms-account-tx {
+  min-width: 0;
+  flex: 1;
+}
+.ms-account-tx strong {
+  display: block;
+  font-size: 10px;
+  color: var(--miao-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ms-account-tx small {
+  font-size: 8.5px;
+  color: var(--miao-muted);
+}
+.ms-account-chev {
+  flex: 0 0 auto;
+  color: var(--miao-faint);
+}
+
 /* 中内容：唯一随窗口伸缩的一栏，底部留 100 给播放条让位 */
 .music-center {
   min-width: 0;
@@ -1129,26 +1198,35 @@
 }
 
 /* ---------------------------------------------------------------- 左栏视图 Tab */
+/*
+ * 三段式 Tab（设计稿 `.ms-tabs` / `.ms-tab`）：**圆角矩形**而不是胶囊 ——
+ * 3 等分网格 + 3px 内衬 + r10 外壳 / r7 内块。胶囊壳在 234px 的左栏里会让三个短词
+ * 显得"挤在一个药丸里"，而圆角矩形读作"一块分段控件"。
+ */
 .ltabs {
-  display: flex;
-  gap: 3px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
   flex: 0 0 auto;
   margin-bottom: 10px;
   padding: 3px;
   border: 1px solid var(--miao-line);
-  border-radius: 999px;
+  border-radius: 10px;
   background: var(--miao-surface-2);
 }
 .ltab {
-  flex: 1;
-  padding: 5px 12px;
-  border-radius: 999px;
+  height: 28px;
+  border-radius: 7px;
   border: none;
   background: transparent;
   color: var(--miao-muted);
   font-family: var(--md-font-display);
   font-size: 10.5px;
   font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   cursor: pointer;
   white-space: nowrap;
   transition:

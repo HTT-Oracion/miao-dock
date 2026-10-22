@@ -7,17 +7,17 @@ import { PlayerBar } from '@screens/music/PlayerBar';
 import { QueueDrawer } from '@screens/music/QueueDrawer';
 import { RightPanel } from '@screens/music/RightPanel';
 import { Toast } from '@screens/music/Toast';
-import { TopBar } from '@screens/music/TopBar';
+import { SideAccount } from '@screens/music/SideAccount';
 
 /**
  * 音乐屏 —— 只做**组合**，各区域实现在 `./music/` 下：
- *   TopBar（顶栏 + 平台弹窗）/ LeftPanel（我的音乐四视图）/ RightPanel（发现 + 搜索）/
+ *   SideAccount（左栏底部账号行）/ LeftPanel（我的音乐四视图）/ RightPanel（发现 + 搜索）/
  *   NowPlaying（右栏正在播放）/ PlayerBar（底部播放条）/ QueueDrawer / LoginModal / Toast
  *
  * ## 结构（设计稿 `screen-music`）
  * ```
  * .music-layout   grid: 234px | minmax(0,1fr) | 252px
- *   .music-side   左资料库（TopBar + LeftPanel）
+ *   .music-side   左资料库（LeftPanel + SideAccount）
  *   .music-center 中内容（RightPanel：发现 / 搜索 / 曲目）
  *   .music-now    右「正在播放」（NowPlaying）
  * .player-bar     底部播放条
@@ -73,8 +73,8 @@ export function MusicScreen() {
     <div className="music">
       <div className="music-layout">
         <aside className="music-side">
-          <TopBar />
           <LeftPanel />
+          <SideAccount />
         </aside>
 
         <div className="music-center">
