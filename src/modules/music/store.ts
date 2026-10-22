@@ -305,6 +305,8 @@ export interface MusicState {
   parsedLyrics: ParsedLyricLine[];
   comments: CommentPage | null;
   loadingComments: boolean;
+  /** 评论读取失败的原因（空串 = 没失败） */
+  commentsError: string;
   commentTab: CommentTab;
 
   // ---- 桌面歌词（独立窗口）----
@@ -759,6 +761,7 @@ export const useMusicStore = create<MusicState>()((set, get) => ({
   parsedLyrics: [],
   comments: null,
   loadingComments: false,
+  commentsError: '',
   commentTab: 'lyric',
 
   // ---- 桌面歌词 ----

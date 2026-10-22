@@ -114,15 +114,16 @@ export const createDesktopSlice = (
 
   loadComments: async (song) => {
     if (song.provider !== 'netease') {
-      set({ comments: null });
+      set({ comments: null, commentsError: '' });
       return;
     }
-    set({ loadingComments: true });
+    set({ loadingComments: true, commentsError: '' });
     try {
       const c = await ipc.musicSongComments(song.id, 1, 20);
-      set({ comments: c, loadingComments: false });
-    } catch {
-      set({ comments: null, loadingComments: false });
+      set({ comments: c, loadingComments: false, commentsError: '' });
+    } catch (e) {
+      // 失败要**说出来**：`comments: null` 会让 UI 显示「暂无评论」，把"没读到"包装成"没有"
+      set({ comments: null, loadingComments: false, commentsError: String(e) });
     }
   },
 });

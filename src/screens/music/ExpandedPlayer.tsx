@@ -1,4 +1,4 @@
-import {
+﻿import {
   Aperture,
   AudioWaveform,
   ChevronDown,
@@ -116,6 +116,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const parsedLyrics = useMusicStore((s) => s.parsedLyrics);
   const comments = useMusicStore((s) => s.comments);
   const loadingComments = useMusicStore((s) => s.loadingComments);
+  const commentsError = useMusicStore((s) => s.commentsError);
   const commentTab = useMusicStore((s) => s.commentTab);
   const playbackSource = useMusicStore((s) => s.playbackSource);
   const proxyPort = useMusicStore((s) => s.proxyPort);
@@ -553,6 +554,11 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
                 <Empty>该平台暂不支持评论</Empty>
               ) : loadingComments ? (
                 <Empty>加载评论中…</Empty>
+              ) : commentsError ? (
+                /* 读失败与「暂无评论」分开说：前者切走再切回来能重试，后者重试也没用 */
+                <Empty bad sub={commentsError}>
+                  评论读取失败
+                </Empty>
               ) : !comments || (comments.comments.length === 0 && comments.hot_comments.length === 0) ? (
                 <Empty>暂无评论</Empty>
               ) : (
