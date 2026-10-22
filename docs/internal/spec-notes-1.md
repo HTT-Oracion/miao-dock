@@ -7405,3 +7405,34 @@ Material 的 `cubic-bezier(.4,0,.2,1)`。逐个换成令牌之后，同一类动
 CDP 实测（音乐屏在浏览器里可达）：顶行在中间列、四枚胶囊在顶行、搜索框与「搜索」按钮在顶行、
 左栏 **0** 枚胶囊、`position: sticky`、`z-index: 8`；`class="music-view"` 恰 1 处、
 左栏 `class="music-card"` 恰 1 处。
+## D-298 · 今日精选：补的不是样式，是一条**数据面**（2026-10-22）
+
+**一、这块一直缺，缺在数据面。** 设计稿首页最后一节是「今日精选 /
+`${平台} · 为你挑选 N 首`」，而平台层只有 `rankSongs` / `recommendPlaylists` /
+`dailySongs` / `similarSongs` —— **没有"当前平台的新歌池"**。所以前几轮一直登记为
+"等端点"，没有硬编一份示例数据（那会变成最坏的假内容）。
+
+**二、补的是网易云的 `/personalized/newsong`（匿名可取）。** 它与「每日推荐」的分工：
+- 每日推荐（`/discovery/recommend/songs`）：**按账号口味**、要 cookie、一天一份；
+- 推荐新歌（`/personalized/newsong`）：**平台级新歌池**、匿名可取。
+
+首页要的是后者 —— 没登录的用户也该看到"今天有什么可听的"。落点：
+`netease::new_songs` → `music_new_songs` 命令（注册进 `commands/mod.rs` 的 handler 清单）
+→ 前端 `musicNewSongs` → `platform.newSongs` + 能力位 `newSongs` → store `newSongs` /
+`loadingNewSongs`（并进 `loadRecommend` 的同一次 Promise.all，少一轮往返）→ 首页那一节。
+
+**三、🔴 响应形状与普通歌曲记录不同，必须单独映射。**
+`/personalized/newsong` 的每一项是 `{ id, name, picUrl, song }` —— 真正的歌曲对象在 `song` 里，
+而 `picUrl` 在**外层**（推荐位封面），内层 `al` 常常没有封面。照搬 `map_song_record`
+会得到"一排没有封面的歌"（而且不报错、不红）。处置：先取 `song`，再把外层 `picUrl`
+补进 `al.picUrl`（`entry().or_insert` —— 内层本来有封面就不覆盖）。
+
+**四、能力位而非"处处判平台名"。** 其余三个平台没有这条接口，`PLATFORM_CAPS` 里
+`newSongs: false`，首页那一节**整块不渲染**（而不是渲染一个永远空的区块）。
+将来接酷狗/QQ/咪咕的新歌接口，只改能力位 + `platform.newSongs` 的分派。
+
+**五、验证**：`cargo check --bin miao-dock` 通过 · `npm run check` 19/19 ·
+`check:music` 237/237 + 反证 **232/232** · `tsc` / `eslint` / `vite build` 全绿 ·
+CDP 实测该节渲染且文案逐字一致：`今日精选` / `为你挑选` / `换一批` /
+`这个平台还没有歌曲` / `换一个平台，或登录账号同步更多内容。`
+（浏览器预览没有 Tauri IPC ⇒ 走的是空态分支，正好把空态文案也验了）。
