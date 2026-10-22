@@ -1392,58 +1392,29 @@
   padding: 6px 0;
 }
 /*
- * 歌单分组头（创建的歌单 / 收藏的歌单）—— 可点击收起/展开，**默认展开**。
- *
- * 最终形态（2026-10-12 定稿）：**纯文字行**，不要背景、不要圆角、不要左侧图标、
- * 不要底部分隔线 —— 分组头只承担"这一行的标题是什么"，
- * 任何底色/形状/图标都属于额外装饰，加了反而显得吵（用户明确要求）。
- *
- * 保留的两处设计约定：
- *   · 文字用 `.set-subtitle` 的口径（display 字体 / 700 / muted），
- *     与设置页的小节标题同一层，只是字号略大（12.5px）以匹配左栏的信息密度；
- *   · 折叠箭头 `ChevronDown` 在右侧，收起时旋转 -90° 朝右。
- *
- * ⚠️ 高度写死 26px 是**自包含**的（不依赖 VirtualList 的行高）：
- * 外层用 height:100% + align-items:center 把它垂直居中，所以调用方换 itemHeight
- * 时照样居中，不会脱节。—— 别把 26px 改成百分比，那会随行高变形。
+ * 分组头（设计稿 `.ms-caption`）：「创建的歌单 / 收藏的歌单」这类小节标签。
+ * 9px / 700 / .11em / faint，右侧可挂一枚 20 高的小动作按钮（刷新）。
+ * 设计稿这里是**纯标签**、没有折叠态 —— 分组永远是展开的。
  */
-.music-plgroup {
+.ms-caption {
   display: flex;
   align-items: center;
-  height: 100%;
-  /* 左右各收 6px：内容不贴面板边缘 */
-  padding: 0 6px;
-  cursor: pointer;
-  user-select: none;
-}
-.music-plgroup-pill {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  height: 26px;
-  padding: 0 12px 0 0;
-}
-.music-plgroup-lb {
-  font-family: var(--md-font-display);
-  font-size: 12px;
+  gap: 6px;
+  padding: 7px 6px 5px;
+  font-size: 9px;
   font-weight: 700;
-  color: var(--miao-muted);
-  letter-spacing: 0.02em;
-}
-.music-plgroup-ct {
-  font-size: 10px;
+  letter-spacing: 0.11em;
   color: var(--miao-faint);
+  text-transform: uppercase;
 }
-.music-plgroup-chev {
-  flex: 0 0 auto;
-  color: var(--miao-faint);
-  transition: transform var(--miao-dur-base) var(--miao-ease-spring);
+.ms-caption .text-btn {
+  margin-left: auto;
+  height: 20px;
+  font-size: 9px;
+  letter-spacing: 0;
+  text-transform: none;
 }
-/* 收起时箭头朝右（-90°），展开时朝下 —— 与常见折叠控件一致 */
-.music-plgroup.is-shut .music-plgroup-chev {
-  transform: rotate(-90deg);
-}
+
 .music-row {
   display: flex;
   align-items: center;

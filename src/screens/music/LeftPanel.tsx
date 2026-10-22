@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronLeft, Play } from 'lucide-react';
+﻿import { ChevronLeft, Play, RefreshCw } from 'lucide-react';
 import { providerLabel } from '@music/platform';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl, songKey } from '@music/convert';
@@ -71,8 +71,6 @@ function PlaylistsView() {
   const proxyPort = useMusicStore((s) => s.proxyPort);
   const openLeftPlaylist = useMusicStore((s) => s.openLeftPlaylist);
   const loadUserPlaylists = useMusicStore((s) => s.loadUserPlaylists);
-  const groupOpen = useMusicStore((s) => s.playlistGroupOpen);
-  const setGroupOpen = useMusicStore((s) => s.setPlaylistGroupOpen);
 
   const logged = !!loginInfos[playbackSource]?.logged_in;
 
@@ -90,73 +88,41 @@ function PlaylistsView() {
   const created = userPlaylists.filter((pl) => pl.subscribed !== true);
   const subscribed = userPlaylists.filter((pl) => pl.subscribed === true);
 
-  type Row =
-    | {
-        kind: 'group';
-        key: string;
-        group: 'created' | 'subscribed';
-        label: string;
-        count: number;
-        open: boolean;
-      }
-    | { kind: 'pl'; key: string; pl: Playlist };
+  type Row = { kind: 'caption'; key: string; label: string } | { kind: 'pl'; key: string; pl: Playlist };
 
   const rows: Row[] = [];
   if (created.length > 0) {
-    rows.push({
-      kind: 'group',
-      key: 'g-created',
-      group: 'created',
-      label: '创建的歌单',
-      count: created.length,
-      open: groupOpen.created,
-    });
-    if (groupOpen.created) for (const pl of created) rows.push({ kind: 'pl', key: pl.id, pl });
+    rows.push({ kind: 'caption', key: 'g-created', label: '创建的歌单' });
+    for (const pl of created) rows.push({ kind: 'pl', key: pl.id, pl });
   }
   if (subscribed.length > 0) {
-    rows.push({
-      kind: 'group',
-      key: 'g-subscribed',
-      group: 'subscribed',
-      label: '收藏的歌单',
-      count: subscribed.length,
-      open: groupOpen.subscribed,
-    });
-    if (groupOpen.subscribed) for (const pl of subscribed) rows.push({ kind: 'pl', key: pl.id, pl });
+    rows.push({ kind: 'caption', key: 'g-subscribed', label: '收藏的歌单' });
+    for (const pl of subscribed) rows.push({ kind: 'pl', key: pl.id, pl });
   }
 
   return (
     <div className="music-body">
-      <div className="music-card-hd">
-        <span className="music-card-sub">{userPlaylists.length} 个歌单</span>
-        <div className="grow" />
-        <button type="button" className="music-btn out" disabled={loading} onClick={() => void loadUserPlaylists()}>
-          刷新
-        </button>
-      </div>
-      {/*
-        分组头与歌单行**合成同一个虚拟列表**（而不是两个各自滚动的列表）：
-        一个面板里出现两个滚动条会让用户以为上面那块是钉住的。合成一列之后，
-        分组头只是另一种行，收起/展开只改变 rows 的内容，滚动条始终只有一条。
-        resetKey 带上两个开合状态 ⇒ 收起/展开时回到顶部，
-        否则收起上面的组会让下面整批内容"往上跳"而滚动位置没变，看起来像列表自己窜位。
-      */}
       <VirtualList
         items={rows}
-        resetKey={`left-playlists:${playbackSource}:${groupOpen.created}:${groupOpen.subscribed}`}
+        resetKey={`left-playlists:${playbackSource}`}
         itemKey={(r) => r.key}
         renderItem={(row) =>
-          row.kind === 'group' ? (
-            <div
-              className={`music-plgroup${row.open ? '' : ' is-shut'}`}
-              onClick={() => setGroupOpen(row.group, !row.open)}
-            >
-              {/* 纯文字行：无背景、无圆角、无图标、无分隔线 —— 识别靠标题文字本身 */}
-              <div className="music-plgroup-pill">
-                <b className="music-plgroup-lb">{row.label}</b>
-                <span className="music-plgroup-ct">{row.count}</span>
-                <ChevronDown size={13} className="music-plgroup-chev" />
-              </div>
+          row.kind === 'caption' ? (
+            /* 组头（设计稿 `.ms-caption`）：**纯标签**，不可折叠 —— 设计稿这里没有折叠态；
+               刷新只挂在「创建的歌单」那一行（那是唯一会变的一组） */
+            <div className="ms-caption">
+              {row.label}
+              {row.key === 'g-created' ? (
+                <button
+                  type="button"
+                  className="text-btn"
+                  disabled={loading}
+                  title="刷新歌单"
+                  onClick={() => void loadUserPlaylists()}
+                >
+                  <RefreshCw size={11} />
+                </button>
+              ) : null}
             </div>
           ) : (
             <div className="music-row" onClick={() => void openLeftPlaylist(row.pl)}>

@@ -258,7 +258,6 @@ export interface MusicState {
    * 不持久化：它是一次性的浏览偏好，重启后回到"都展开"这个最稳妥的默认值即可，
    * 没有必要占一个偏好键（与歌词字号那类"用户显式调过"的偏好不同）。
    */
-  playlistGroupOpen: { created: boolean; subscribed: boolean };
   userPlaylists: Playlist[];
   loadingUserPlaylists: boolean;
   userPlaylistsError: string;
@@ -561,7 +560,6 @@ export interface MusicState {
   // 左栏
   setLeftView: (v: LeftView) => void;
   /** 收起/展开歌单分组（创建的歌单 / 收藏的歌单） */
-  setPlaylistGroupOpen: (group: 'created' | 'subscribed', open: boolean) => void;
   loadUserPlaylists: (p?: MusicProvider) => Promise<void>;
   openLeftPlaylist: (pl: Playlist) => Promise<void>;
   loadMoreLeft: () => Promise<void>;
@@ -718,7 +716,6 @@ export const useMusicStore = create<MusicState>()((set, get) => ({
 
   // ---- 左栏 ----
   leftView: 'playlists',
-  playlistGroupOpen: { created: true, subscribed: true },
   userPlaylists: [],
   loadingUserPlaylists: false,
   userPlaylistsError: '',

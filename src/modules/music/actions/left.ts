@@ -1,4 +1,4 @@
-// 左栏（我的音乐）切片 —— 「左栏」段（D-156 从 store.ts 按 action 段切出）。
+﻿// 左栏（我的音乐）切片 —— 「左栏」段（D-156 从 store.ts 按 action 段切出）。
 import * as platform from '@music/platform';
 import { songKey } from '@music/convert';
 import { PAGE_SIZE } from '@music/slice';
@@ -13,17 +13,9 @@ export const createLeftSlice = (
   get: StoreGet,
 ): Pick<
   MusicState,
-  | 'setLeftView'
-  | 'setPlaylistGroupOpen'
-  | 'loadUserPlaylists'
-  | 'openLeftPlaylist'
-  | 'loadMoreLeft'
-  | 'loadAllLeft'
-  | 'backToPlaylists'
+  'setLeftView' | 'loadUserPlaylists' | 'openLeftPlaylist' | 'loadMoreLeft' | 'loadAllLeft' | 'backToPlaylists'
 > => ({
   setLeftView: (v) => set({ leftView: v }),
-
-  setPlaylistGroupOpen: (group, open) => set((s) => ({ playlistGroupOpen: { ...s.playlistGroupOpen, [group]: open } })),
 
   loadUserPlaylists: async (p) => {
     const provider = p ?? get().playbackSource;
