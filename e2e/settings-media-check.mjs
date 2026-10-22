@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * 设置页的**验收断言**（设置页是唯一一屏"服务没起来也照常显示"的界面，见《09》§3.2）——
  * 且必须**可反证**。
@@ -949,7 +949,7 @@ add('CACHE.blockRendersFourCells', 'CACHE', (ctx) => {
    */
   const src = ctx.s.cacheBlock;
   if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx（四格实现不在预期位置）' };
-  const need = ['set-cache-name', 'set-cache-path', 'set-cache-total', 'set-cache-acts'];
+  const need = ['set-cache-head', 'set-cache-total', 'set-cache-rows', 'set-cache-acts', 'set-cache-path'];
   const missing = need.filter((n) => !new RegExp(`${q(n)}`).test(src));
   return {
     ok: missing.length === 0,
@@ -1073,7 +1073,8 @@ add('CACHE.zeroDisabled', 'CACHE', (ctx) => {
    * 即"这个平台的字节数为 0 时才禁"。
    */
   const src = ctx.s.cacheBlock ?? '';
-  const ok = /disabled=\{\s*bytes\s*<=\s*0\s*\}/.test(src);
+  // 判据：disabled 的表达式必须以「这个平台的字节数 <= 0」打头（后面可以再 || busy || failed）
+  const ok = /disabled=\{\s*bytes\s*<=\s*0/.test(src);
   return {
     ok,
     detail: ok ? '' : '某平台 0 缓存时没有置灰（无可删之物却给可点的入口，点了像坏了）',

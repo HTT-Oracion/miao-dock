@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useState } from 'react';
 import { Btn, Modal } from '@components/units';
 import { useEsc } from '@hooks/useEsc';
 import { openPath } from '@/ipc';
@@ -38,8 +38,7 @@ export function CacheBlock({ settingId }: { settingId: string }) {
   const [stats, setStats] = useState<CacheStats | null>(null);
   /** 读失败与"读到了但缓存是 0"是两件事：前者要如实说读不到，后者是正常的空缓存 */
   const [failed, setFailed] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  /** 待确认的清除范围；`null` = 没在确认。非 null 时下拉已收起 */
+  /** 待确认的清除范围；`null` = 没在确认 */
   const [pending, setPending] = useState<MusicProvider | 'all' | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -67,15 +66,6 @@ export function CacheBlock({ settingId }: { settingId: string }) {
   const root = stats?.root ?? '';
   const total = stats?.total ?? 0;
 
-  /*
-   * 收起下拉的稳定引用。
-   *
-   * 刻意用 `useCallback`：`useEsc` 与外部点击监听都把它放进依赖数组，
-   * 每次渲染新建的箭头函数会让监听反复解绑重绑（功能上没错，但是白做的功，
-   * 且在菜单开合的瞬间可能漏掉一次事件）。
-   */
-  const closeMenu = useCallback(() => setMenuOpen(false), []);
-
   const clear = useCallback(
     async (scope: MusicProvider | 'all') => {
       setBusy(true);
@@ -96,57 +86,79 @@ export function CacheBlock({ settingId }: { settingId: string }) {
 
   return (
     <div className="set-cache" data-setting-id={settingId}>
-      {/* 四格：左列文案 / 右列总量 */}
-      <div className="set-cache-grid">
-        <div className="set-cache-name">音乐缓存</div>
-        <div className="set-cache-total">
-          {/* 无缓存显示「无」而不是「0 K」—— 后者像"精确测得是 0"，
-              而这里真正的含义是"这个平台/这一栏根本没有缓存" */}
-          {failed ? '读取失败' : total > 0 ? formatBytes(total) : '无'}
-        </div>
+      {/* 卡头（设计稿 `.s-card-head`）：标题 + 一句"这个数统计的是什么" */}
+      <div className="set-cache-head">
+        <h3>音乐缓存</h3>
+        <p>只统计在线歌曲；本地导入的文件不计入</p>
+      </div>
 
-        {/* 左列第二行：目录绝对路径。颜色刻意比上方文案浅一档以示层级 */}
-        <div className="set-cache-path" title={root || '未拿到缓存目录'}>
-          {root || '未拿到缓存目录'}
-        </div>
+      {/* 合计（设计稿 `.cache-total`）：大字总量 + 一句口径 */}
+      <div className="set-cache-total">
+        {/* 无缓存显示「无」而不是「0 K」—— 后者像"精确测得是 0"，
+            而这里真正的含义是"根本没有缓存" */}
+        <strong>{failed ? '读取失败' : total > 0 ? formatBytes(total) : '无'}</strong>
+        <span>共 {PROVIDER_ORDER.length} 个平台 · 可随时清理</span>
+      </div>
 
-        {/* 右列第二行：两个按钮 */}
-        <div className="set-cache-acts">
-          <Btn
-            size="sm"
-            // 拿不到路径就禁用，而不是点了报错。`title` 说清原因 ——
-            // 一个灰按钮加一句"为什么灰"才是可用的状态。
-            disabled={!root || failed}
-            title={root ? '在系统文件管理器里打开缓存目录' : '未拿到缓存目录，无法打开'}
-            onClick={() => {
-              if (!root) return;
-              // `openPath` 在路径不存在时 reject（`open_path` 先判 exists）。
-              // 目录可能已被手工删掉，所以这里必须兜住并说清楚 —— 静默失败最伤。
-              openPath(root).catch(() => {
-                setFailed(true);
-                void reload();
-              });
-            }}
-          >
-            打开目录
-          </Btn>
+      {/*
+        按平台的占用明细（设计稿 `.cache-platforms` / `.cache-row`）：**常驻可见**。
+        旧形态把这些数字藏在「清除缓存」的下拉里 —— 而"哪个平台占了多少"
+        正是决定"要不要清、清哪个"的依据，藏在菜单里等于让用户先点一下才知道。
+      */}
+      <div className="set-cache-rows">
+        {PROVIDER_ORDER.map((p) => {
+          const bytes = providerBytes(stats, p);
+          return (
+            <div className="set-cache-row" key={p}>
+              <span className="set-cache-row-name">{PROVIDER_LABEL[p]}</span>
+              <span className="set-cache-row-size">{bytes > 0 ? formatBytes(bytes) : '无'}</span>
+              <Btn
+                size="sm"
+                // 0 缓存置灰：没有可删的东西就不给可点的入口（点了没反应最伤）
+                disabled={bytes <= 0 || busy || failed}
+                title={bytes <= 0 ? `${PROVIDER_LABEL[p]}暂无缓存` : `清除${PROVIDER_LABEL[p]}的缓存`}
+                onClick={() => setPending(p)}
+              >
+                清除
+              </Btn>
+            </div>
+          );
+        })}
+      </div>
 
-          <div className="set-cache-menu-wrap">
-            <Btn size="sm" disabled={busy} onClick={() => setMenuOpen((v) => !v)}>
-              清除缓存
-            </Btn>
-            {menuOpen ? (
-              <ClearMenu
-                stats={stats}
-                onClose={closeMenu}
-                onPick={(s) => {
-                  closeMenu();
-                  setPending(s);
-                }}
-              />
-            ) : null}
-          </div>
-        </div>
+      {/* 动作区（设计稿 `.s-block-actions`）：打开缓存目录 + 清理全部缓存 */}
+      <div className="set-cache-acts">
+        <Btn
+          size="sm"
+          // 拿不到路径就禁用，而不是点了报错。`title` 说清原因 ——
+          // 一个灰按钮加一句"为什么灰"才是可用的状态。
+          disabled={!root || failed}
+          title={root ? '在系统文件管理器里打开缓存目录' : '未拿到缓存目录，无法打开'}
+          onClick={() => {
+            if (!root) return;
+            // `openPath` 在路径不存在时 reject（`open_path` 先判 exists）。
+            // 目录可能已被手工删掉，所以这里必须兜住并说清楚 —— 静默失败最伤。
+            openPath(root).catch(() => {
+              setFailed(true);
+              void reload();
+            });
+          }}
+        >
+          打开缓存目录
+        </Btn>
+        <Btn
+          size="sm"
+          disabled={busy || failed || total <= 0}
+          title={total <= 0 ? '当前没有可清理的缓存' : '清空全部平台的音乐缓存'}
+          onClick={() => setPending('all')}
+        >
+          清理全部缓存
+        </Btn>
+      </div>
+
+      {/* 目录路径：设计稿这一卡不显示，但"缓存到底在哪"是用户清理前的必要信息，保留为脚注 */}
+      <div className="set-cache-path" title={root || '未拿到缓存目录'}>
+        {root || '未拿到缓存目录'}
       </div>
 
       {pending ? (
@@ -164,13 +176,16 @@ export function CacheBlock({ settingId }: { settingId: string }) {
   );
 }
 
-/** 四个平台的 id → 中文名（`MusicProvider` 的顺序即下拉的显示顺序） */
+/** 四个平台的 id → 中文名（`MusicProvider` 的顺序即列表的显示顺序） */
 const PROVIDER_LABEL: Record<MusicProvider, string> = {
   netease: '网易云',
   kugou: '酷狗',
   qqmusic: 'QQ音乐',
   migu: '咪咕',
 };
+
+/** 四个平台的固定顺序（明细行与「共 N 个平台」都用它，不在 JSX 里另写一份） */
+const PROVIDER_ORDER = Object.keys(PROVIDER_LABEL) as MusicProvider[];
 
 /** 某平台占用字节数（歌词 + 音频）。缺键按 0 处理 —— Rust 侧四个键恒存在 */
 function providerBytes(stats: CacheStats | null, p: MusicProvider): number {
@@ -197,70 +212,6 @@ function formatBytes(bytes: number): string {
   }
   return `${v.toFixed(2)} ${units[u]}`;
 }
-
-/**
- * 清除范围的下拉菜单。
- *
- * 形态刻意是**动作列表**而非值选择器：没有"当前选中项"，每项点下去即触发一次确认。
- * 某平台 0 缓存时该项**置灰不可点** —— 没有可删的东西时给一个能点的项，
- * 用户会以为点了没生效（然后发现是真的什么都没发生）。
- */
-function ClearMenu({
-  stats,
-  onPick,
-  onClose,
-}: {
-  stats: CacheStats | null;
-  onPick: (scope: MusicProvider | 'all') => void;
-  onClose: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  /*
-   * 点击外部收起。
-   *
-   * 用 `mousedown` 而不是 `click`：按 `click` 时，菜单会在 mousedown→mouseup 之间
-   * 收起，于是这一次 click 的目标变成了刚被移除的按钮 —— 事件目标错位，
-   * 第一次外点会收不起来（要点第二次）。这是菜单"点外面关不掉"的经典成因。
-   */
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [onClose]);
-
-  // Esc 收起下拉：与二次确认弹层用同一个 hook（两者不会同时存在）
-  useEsc(onClose);
-
-  return (
-    <div className="set-cache-menu" ref={ref} role="menu">
-      <button type="button" className="set-cache-item is-all" role="menuitem" onClick={() => onPick('all')}>
-        全部清除
-      </button>
-      {(Object.keys(PROVIDER_LABEL) as MusicProvider[]).map((p) => {
-        const bytes = providerBytes(stats, p);
-        return (
-          <button
-            key={p}
-            type="button"
-            className="set-cache-item"
-            role="menuitem"
-            // 0 缓存置灰：没有可删的东西就不给可点的入口
-            disabled={bytes <= 0}
-            title={bytes <= 0 ? `${PROVIDER_LABEL[p]}暂无缓存` : undefined}
-            onClick={() => onPick(p)}
-          >
-            <span className="set-cache-item-name">清除{PROVIDER_LABEL[p]}</span>
-            <span className="set-cache-item-size">{formatBytes(bytes)}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 /**
  * 清除前的二次确认。
  *

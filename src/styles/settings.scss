@@ -1,4 +1,4 @@
-/* ================================================================ 设置页 */
+﻿/* ================================================================ 设置页 */
 
 /*
  * 设置页两栏壳（《09》§4.1）。宽度与 sticky 偏移由组件从 `SETTINGS` 常量以
@@ -606,128 +606,90 @@
   border-top: 0;
 }
 
-.set-cache-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  align-items: center;
-  gap: 8px;
+/* 卡头（设计稿 `.s-card-head`）：标题 + 一句"这个数统计的是什么" */
+.set-cache-head h3 {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--md-ink);
+}
+.set-cache-head p {
+  margin: 2px 0 0;
+  font-size: 10.5px;
+  color: var(--md-muted);
 }
 
-/* 左上：标题。字号与 `.set-row-title` 对齐，这一项看起来仍是"设置页的一行" */
-.set-cache-name {
-  font-size: 12.5px;
+/* 合计（设计稿 `.cache-total`）：大字总量 + 一句口径 */
+.set-cache-total {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 10px 0 8px;
+}
+.set-cache-total strong {
+  font-family: var(--md-font-numeric);
+  font-size: 18px;
   color: var(--md-ink);
+}
+.set-cache-total span {
+  font-size: 10.5px;
+  color: var(--md-muted);
+}
+
+/*
+ * 按平台的占用明细（设计稿 `.cache-platforms` / `.cache-row`）：**常驻可见**。
+ * 数字用 `tabular-nums` —— 一列大小右对齐时不加它，位数一变就会左右抖。
+ */
+.set-cache-rows {
+  border-top: 1px solid var(--md-line-soft);
+}
+.set-cache-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--md-line-soft);
+}
+.set-cache-row-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--md-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.set-cache-row-size {
+  font-family: var(--md-font-numeric);
+  font-size: 10.5px;
+  color: var(--md-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 动作区（设计稿 `.s-block-actions`）：左对齐两个按钮 */
+.set-cache-acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 10px;
 }
 
 /*
  * 左下：缓存目录绝对路径。
  *
- * 颜色刻意比左上标题**浅一档**（`--md-muted`）以示层级：两者是"这项叫什么"与
- * "它的值"，同色会被读成两行并列的标题。`min-width:0` 必写 —— 它在 grid 的
+ * 颜色刻意比标题**浅一档**（`--md-muted`）以示层级：两者是"这项叫什么"与
+ * "它的值"，同色会被读成两行并列的标题。`min-width:0` 必写 —— 它在 flex/grid 的
  * `1fr` 列里，不加会被长路径顶破容器（路径里带 bundle id，很长）。
  */
 .set-cache-path {
   min-width: 0;
+  margin-top: 6px;
   font-family: var(--md-font-numeric);
   font-size: 10.5px;
   color: var(--md-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* 右上：总大小。`--md-font-numeric` 是本仓唯一的数字字体（不是 `--font-num`） */
-.set-cache-total {
-  font-family: var(--md-font-numeric);
-  font-size: 12.5px;
-  color: var(--md-ink);
-  text-align: right;
-}
-
-/* 右下：两个按钮 */
-.set-cache-acts {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-/* 下拉的定位上下文：absolute 相对它定位，而不是相对整页 */
-.set-cache-menu-wrap {
-  position: relative;
-}
-
-/*
- * 清除范围下拉。
- *
- * 绝对定位而非 `details`：要能被 Esc 与「点外部收起」统一管起来，
- * 而原生 `details` 只能靠再次点击按钮收起，那会让「点按钮开 → 点同一个按钮关」
- * 与外部点击两套逻辑互相抢。
- * `z-index` 高于普通内容但低于 `.modal-mask`(95)：二次确认是整屏遮罩，
- * 菜单不该浮在它上面。
- */
-.set-cache-menu {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 6px);
-  z-index: 30;
-  min-width: 190px;
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-sm);
-  box-shadow: 0 10px 28px rgba(20, 15, 41, 0.18);
-}
-
-.set-cache-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  padding: 10px;
-  border-radius: 12px;
-  background: var(--miao-surface);
-  font-size: 12px;
-  color: var(--md-ink);
-  text-align: left;
-  transition: background var(--miao-dur-fast) ease;
-  border: 1px solid var(--miao-line);
-}
-.set-cache-item:hover:not(:disabled) {
-  background: var(--md-surface-2);
-}
-/* 「全部清除」与下面四项是两种语义：前者是总闸，后者是单项 */
-.set-cache-item.is-all {
-  color: var(--md-error);
-  font-weight: 500;
-  margin-bottom: 2px;
-  border-bottom: 1px solid var(--md-line-soft);
-  padding-bottom: 7px;
-  border-radius: 0;
-}
-
-/*
- * 某平台 0 缓存 ⇒ 该项置灰不可点。
- *
- * 刻意用 `disabled`（连同上面的 `:hover:not(:disabled)` 一并不给 hover 反馈）：
- * 没有可删的东西时给一个能点的项，用户点下去"什么都没发生"，
- * 只会以为功能坏了。灰着 + 不可点才是如实的状态。
- */
-.set-cache-item:disabled {
-  color: var(--md-muted);
-  cursor: default;
-}
-
-.set-cache-item-size {
-  font-family: var(--md-font-display);
-  font-size: 15px;
-  color: var(--miao-ink);
-  margin-top: 3px;
-  font-weight: 700;
 }
 
 /* ================================================================ ② 翻译服务：翻译来源 / 推理引擎 / 模型与诊断 */
@@ -1626,7 +1588,7 @@
   justify-content: space-between;
   gap: 12px;
 }
-/* 与 `.set-cache-name` / `.set-storage-name` 同一字号 —— 通栏块的标题都长得一样 */
+/* 与 `.set-cache-head h3` / `.set-storage-name` 同一字号 —— 通栏块的标题都长得一样 */
 .set-lic-name {
   font-size: 12.5px;
   color: var(--md-ink);
@@ -1902,7 +1864,6 @@
 
 .set-run-head,
 .set-storage-head,
-.set-cache-name,
 .set-diag-kv {
   display: flex;
   align-items: center;
@@ -2005,8 +1966,7 @@
 .set-storage-k,
 .set-idle-k,
 .set-src-k,
-.set-diag-k,
-.set-cache-name {
+.set-diag-k {
   color: var(--miao-muted);
 }
 
@@ -2014,11 +1974,6 @@
 .set-src-v,
 .set-diag-v {
   color: var(--miao-text);
-}
-
-.set-cache-item-name {
-  font-size: 10px;
-  color: var(--miao-muted);
 }
 
 .set-lic-row:last-child {
@@ -2042,9 +1997,6 @@
 @media (max-width: 1180px) {
   .settings-layout {
     grid-template-columns: 172px minmax(0, 1fr) !important;
-  }
-  .set-cache-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -2086,9 +2038,6 @@
   }
   .set-row-ctl {
     justify-content: flex-start;
-  }
-  .set-cache-grid {
-    grid-template-columns: minmax(0, 1fr);
   }
   .set-note-row {
     flex-direction: column;
