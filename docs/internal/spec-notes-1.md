@@ -8301,3 +8301,26 @@ CDP 复测：徽标 **19px**、导航项字重 **700**。
 `tsc` / `eslint` / `vite build` 全绿；**CDP 实测** DOM：
 `<div class="ltabs" role="tablist"><button role="tab" aria-selected="true">歌单</button>
 <button role="tab" aria-selected="false">本地</button><button role="tab" aria-selected="false">历史</button></div>`。
+## D-335 · 播放条的封面不是按钮：键盘用户打不开播放器（2026-10-23）
+
+**一、三区结构与设计稿一一对应。** 左（封面 + 「歌手 · 平台 · 音质」+ 收藏）·
+中（播放模式 + 上一首 + 播放暂停 + 下一首 + 进度条）· 右（音质 + 桌面歌词 + 歌词设置 +
+静音 + 音量 + 队列 + 展开 + 关闭）。图标钮的无障碍名由 `IconButton` 从 `title` 派生，
+逐个齐全。
+
+**二、🔴 封面是个带 `onClick` 的 `<div>`。** 键盘用户按 Tab 到不了它，也按不出 Enter/Space ——
+而"点封面展开播放器"是这一条上最高频的动作之一。设计稿本来就是
+`<button class="pb-cover" aria-label="展开播放器">`，产品在实现时退化成了 div。
+已改成 `Btn kind="bare"` + `ariaLabel="展开播放器"`（项目规则：按钮一律走单元，不写裸 `<button>`）。
+
+**三、为什么 `kind="bare"` 在这里安全**：它**只带调用方的类名**（不给 `btn` / `btn-bare`），
+所以 `.music-pb-cover` 的 44×44 / r10 / 渐变 / 描边 / hover 抬升全部原样生效；
+焦点环由 `base.scss` 的全局 `:focus-visible` 提供，不用为它单写。
+
+**四、标题区保持 `<div>` 可点**（比设计稿多一个指针目标）：那是**冗余**入口，
+不承载键盘语义 —— 主入口是封面那枚按钮，键盘用户不会因此少一条路径。
+
+**五、验证**：`npm run check` 19/19 · `check:music` 237/237 + 反证 **232/232** ·
+`tsc` / `eslint` / `vite build` 全绿。
+⚠️ 播放条只在**有曲目时**渲染，浏览器预览没有曲目 ⇒ 本轮静态核对
+（源码 + `.music-pb-cover` 样式双向确认）。
