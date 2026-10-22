@@ -22,6 +22,12 @@ node .tmp/ver3-audit/dump-text.mjs <url> <out.json> [点击选择器…]   # 界
 node .tmp/ver3-audit/probe-settings-search.mjs           # 设置搜索交互探针
 ```
 
+> ⚠️ **已知的瞬时假红（2026-10-22 实测一次）**：`npm run check` 与 `git commit` **同一条命令**里连着跑时，
+> `engine-download-entry` 的 E2（读 `src/components/Sidebar.tsx`）可能红一次，紧接着单跑与再跑全绿。
+> 原因是 lint-staged 提交后要把暂存前的备份**还原回工作区**，那一瞬间该文件处于中间态。
+> 判据：**红在"读某个源文件"的那一条**、且单跑即绿 ⇒ 先怀疑提交流水线，别急着改代码；
+> 但也不能当成"偶发忽略" —— 复跑两次仍红就必须查。
+
 > ⚠️ 本机 **没有可用的截图能力**（无 Playwright，`e2e/capture.mjs` 是 macOS 专用，
 > 且当前模型不能读图）。因此"像素级"只能靠**设计稿 CSS 数值 ↔ 产品 SCSS 数值**逐条对，
 > 不能靠看截图。这一点必须写在这里，否则下一个人会以为已经"看过了"。
