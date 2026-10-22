@@ -10,7 +10,7 @@ import type {
   TaskRow,
 } from '@/types';
 import { chapterNoOf } from '@tools';
-import { ContextMenu, MenuItem, MenuSeparator, Notice } from '@components/units';
+import { Btn, ContextMenu, ErrorState, MenuItem, MenuSeparator, Notice } from '@components/units';
 import type { BookMetaIntent } from '@screens/manga/modals';
 import {
   DeleteComicModal,
@@ -64,6 +64,7 @@ export function LibraryScreen({
   onNewBookHandled,
   onRefresh,
   refreshKey,
+  error,
 }: {
   lib: LibraryResponse | null;
   /** 队列快照，只用来判「该漫画是否已有任务在跑」（→ 显示返工中） */
@@ -82,6 +83,8 @@ export function LibraryScreen({
   onNewBookHandled?: () => void;
   onRefresh: () => void;
   refreshKey: number;
+  /** 库读取失败的原因；非空且无数据时整屏走错误态，不把「读不到」冒充成「空库」 */
+  error?: string | null;
 }): ReactElement {
   // 吐司单例总线：直接取用，不必由宿主透传（见 useToasts 注释）
   const {
@@ -341,6 +344,23 @@ export function LibraryScreen({
       setRenumbering(false);
     }
   };
+
+  // 库读失败时**整屏走错误态**：`lib === null` 时 `useLibraryModel` 会给出空列表，
+  // 若照常往下走就会把「读不到」画成「漫画库还是空的」—— 空态与错误态语义完全不同。
+  // 有错误但数据仍在时（上次成功、本次失败）保留旧数据继续展示，错误由下次刷新自然消除。
+  if (error && !lib) {
+    return (
+      <ErrorState
+        title="漫画库读取失败"
+        message={error}
+        actions={
+          <Btn kind="primary" size="sm" onClick={onRefresh}>
+            重试
+          </Btn>
+        }
+      />
+    );
+  }
 
   if (comics.length === 0 && hidden.length === 0) {
     return (

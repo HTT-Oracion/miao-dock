@@ -579,6 +579,7 @@ export function App() {
     restart,
     rows,
     hasRows,
+    tasksError,
     queueDepth,
     cancelingIds,
     cancel,
@@ -587,6 +588,7 @@ export function App() {
     openTaskDir,
     deleteTasks,
     lib,
+    libError,
     libRoot,
     libSummary,
     libraryFocus,
@@ -640,9 +642,6 @@ export function App() {
           {/* 下载页走独立路由（`/engine-download`），由 `DownloadPane` 渲染；
               切页 / 返回不卸载壳层，下载继续在后台跑。 */}
           <Outlet context={shell} />
-
-          {tasksError ? <Notice kind="bad">任务列表读取失败：{tasksError}</Notice> : null}
-          {libError ? <Notice kind="bad">漫画库读取失败：{libError}</Notice> : null}
         </div>
       </div>
 

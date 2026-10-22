@@ -51,6 +51,8 @@ export interface ShellCtx {
   // 队列
   rows: TaskRow[];
   hasRows: boolean;
+  /** 任务列表读取失败的原因；非空时队列屏**不得**用「空态」冒充（错误卡已说明） */
+  tasksError: string | null;
   queueDepth: number;
   cancelingIds: Set<string>;
   cancel: (t: TaskRow) => Promise<void>;
@@ -60,6 +62,8 @@ export interface ShellCtx {
   deleteTasks: (taskIds: string[]) => Promise<boolean>;
   // 漫画库
   lib: LibraryResponse | null;
+  /** 漫画库读取失败的原因；非空且无数据时库屏走错误态，不冒充空库 */
+  libError: string | null;
   libRoot: string;
   libSummary: string;
   libraryFocus: string | null;

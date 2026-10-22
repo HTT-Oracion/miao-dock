@@ -9,6 +9,7 @@
  */
 import { useOutletContext } from 'react-router-dom';
 import type { ShellCtx } from '@/router/panes/shell-context';
+import { Btn, ErrorState } from '@components/units';
 import { DropScreen, LibraryScreen, NotReadyScreen, QueueEmpty, QueueTable } from '@screens/manga';
 
 export function TranslatePane() {
@@ -25,6 +26,7 @@ export function TranslatePane() {
     view,
     setView,
     hasRows,
+    tasksError,
     rows,
     cancelingIds,
     cancel,
@@ -33,6 +35,7 @@ export function TranslatePane() {
     openTaskDir,
     deleteTasks,
     lib,
+    libError,
     libraryFocus,
     setLibraryFocus,
     newBookRequest,
@@ -62,6 +65,19 @@ export function TranslatePane() {
   }
 
   if (view === 'queue') {
+    if (tasksError) {
+      return (
+        <ErrorState
+          title="任务列表读取失败"
+          message={tasksError}
+          actions={
+            <Btn kind="primary" size="sm" onClick={refreshAll}>
+              重试
+            </Btn>
+          }
+        />
+      );
+    }
     return hasRows ? (
       <QueueTable
         rows={rows}
@@ -89,6 +105,7 @@ export function TranslatePane() {
         onNewBookHandled={() => setNewBookRequest(false)}
         onRefresh={refreshAll}
         refreshKey={refreshKey}
+        error={libError}
       />
     );
   }

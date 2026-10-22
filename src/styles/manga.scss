@@ -2047,7 +2047,8 @@
   box-shadow: 0 10px 22px -16px rgba(45, 59, 70, 0.45);
   overflow: hidden;
 }
-.cover-preview img {
+.cover-preview img,
+.cover-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
