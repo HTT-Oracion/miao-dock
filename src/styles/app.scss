@@ -808,46 +808,51 @@ html[data-theme='dark'] .nav-item:hover {
 
 /* ---------------- 视图 Tab ---------------- */
 
+/* 视图 Tab 行的容器（设计稿 `.view-tabbar`）：底部一条分隔线，页签贴满这一行的高度，
+   于是 `.tab-ink` 能正好落在分隔线上。 */
 .viewtabs {
   display: flex;
   flex: 0 0 44px;
-  align-items: center;
+  align-items: stretch;
   gap: 12px;
   height: 44px;
-  padding: 0 26px;
-  border-bottom: 0;
-  background: transparent;
+  padding: 0 22px;
+  border-bottom: 1px solid var(--miao-line);
+  background: color-mix(in srgb, var(--miao-surface) 55%, transparent);
+  position: relative;
+  z-index: 14;
 }
 
+/*
+ * 视图 Tab 行（设计稿 `.view-tabs`）：**下划线指示条**形态，不是胶囊分组。
+ *
+ * 为什么改：设计稿用一条 2px 的 `.tab-ink` 滑到当前页签下方，页签本身只有文字与图标；
+ * 旧写法是"胶囊 + 选中项染色"，两种读法完全不同 —— 前者是"页面顶部的页签"，
+ * 后者是"一排可点的按钮"。整页的层级感就靠这一条横线撑起来。
+ */
 .view-tabs {
+  position: relative;
   display: inline-flex;
-  align-items: center;
+  align-items: stretch;
   gap: 2px;
-  height: 40px;
-  padding: 4px;
-  border: 1px solid var(--miao-line);
-  border-radius: 999px;
-  background: var(--miao-surface);
-  box-shadow: 0 8px 22px -18px rgba(45, 59, 70, 0.35);
+  height: 100%;
 }
 
 .viewtab {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 32px;
-  padding: 0 16px;
-  border-radius: 999px;
+  height: 100%;
+  padding: 0 15px;
+  border-radius: 0;
   font-family: var(--md-font-display);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--miao-muted);
   white-space: nowrap;
-  transition:
-    background var(--miao-dur-base) var(--miao-ease-spring),
-    color var(--miao-dur-base) ease,
-    transform var(--miao-dur-base) var(--miao-ease-spring);
+  transition: color var(--miao-dur-fast) ease;
 }
 
 .viewtab svg {
@@ -857,18 +862,26 @@ html[data-theme='dark'] .nav-item:hover {
 }
 
 .viewtab:hover {
-  background: var(--miao-surface-2);
   color: var(--miao-ink);
 }
 
-.viewtab:active {
-  transform: scale(0.96);
+.viewtab.is-active {
+  color: var(--miao-ink);
 }
 
-.viewtab.is-active {
-  background: var(--miao-primary-soft);
-  color: var(--miao-primary-ink);
-  box-shadow: inset 0 0 0 1px var(--miao-primary-line);
+/* 滑动指示条：2px 短横，靠 transform/width 的弹簧过渡跟到当前页签 */
+.tab-ink {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 46px;
+  border-radius: 2px 2px 0 0;
+  background: var(--miao-primary);
+  transform-origin: left center;
+  transition:
+    transform var(--miao-dur-slow) var(--miao-ease-spring),
+    width var(--miao-dur-slow) var(--miao-ease-spring);
 }
 
 .view-tab-aside {

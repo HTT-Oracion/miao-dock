@@ -397,54 +397,6 @@
   color: var(--miao-muted);
 }
 
-/* ================================================================ ver2.0 · 视图 Tab 行 */
-
-/* 翻译应用内的二级导航（44px，《09》§3.2）。
-   与工具条之间**不另加边框** —— 二者同属「顶部导航带」，再加一条线会把 62+44
-   切成两个不相干的区域，层级反而更乱。 */
-.viewtabs {
-  flex: 0 0 44px;
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-  padding: 0 26px;
-  background: var(--miao-surface);
-  border-bottom: 1px solid var(--miao-line);
-}
-
-.viewtab {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--miao-muted);
-  position: relative;
-  transition: color 0.15s;
-}
-.viewtab:hover {
-  color: var(--miao-text);
-}
-.viewtab.is-active {
-  color: var(--miao-ink);
-  font-weight: 500;
-}
-/* active 用下划线而非底色块：侧栏应用层已经用了 pink-soft 底色，
-   Tab 再用同一套底色会把两级导航压平成一级。下划线是更轻的二级信号。 */
-.viewtab.is-active::after {
-  content: '';
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 0;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--miao-accent);
-}
-.viewtab svg {
-  display: block;
-}
-
 /* ================================================================ ver2.0 · 音乐占位屏 */
 
 .music-placeholder {
