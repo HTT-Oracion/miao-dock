@@ -8422,3 +8422,25 @@ ExpandedPlayer 4（歌词/评论页签，容器补 `role="tablist"` · `译` 开
 **五、验证**：`npm run check` 19/19 · `check:units` 46/46 + 反证 **61/61** ·
 `check:settings` 184/184 + 反证 **142/142** · `tsc` / `eslint` / `vite build` 全绿。
 （`chapters.tsx` / `parts.tsx` 里 grep 到的各 1 处 `<button>` 是**注释里**引用的文字，不是代码。）
+## D-340 · 第 5 批：改实现的同时必须同步"钉着裸属性名"的断言（2026-10-23）
+
+**一、本批 11 处**：`QueueScreen` 翻页器 3 枚（页码带 `ariaCurrent`）· `viewer.tsx` 灯箱
+缩放 −/+ 与关闭 3 枚 · `EngineDiag` 折叠 / 全部日志 / 展开到 8 行 / 展开 / 抽屉关闭 5 枚。
+
+**二、🔴 换单元后三条断言变红 —— 红得对。** 它们钉的是**裸属性名**：
+`/aria-label="放大"/`、`/aria-label="关闭"/`、`/aria-expanded=\{open\}/`；
+换单元后源码里写的是 `ariaLabel=` / `ariaExpanded=`。处置不是放宽，而是让判据**同时接受两种写法**：
+`/aria-label="放大"|ariaLabel="放大"/` —— 判据仍然要求"存在这个语义属性"，
+只是不再绑定"必须手写在裸 `<button>` 上"。
+
+⚠️ 同一批里还坏了一个**反证锚点**：`find: 'aria-label="缩小"\n'` 失配 ⇒ 那条变异变成
+**静默跳过**（跳过 ≠ 通过），反证轮因此报红。锚点已跟着改成 `ariaLabel="缩小"\n`。
+**这是"改实现要三处同步"的又一例**（源码 / 正向断言 / 反证锚点）。
+
+**三、番剧十屏一律不动。** 现在 `grep '<button'` 剩下的绝大多数命中都在
+`src/screens/anime/*`（PlayerScreen 24 · DiscoverScreen 18 …）—— 那些是**隔离红线**内的代码，
+不碰。收口范围到此为止，剩下的只有 `DesktopLyrics` 6 与 `DownloadPanel` 1。
+
+**四、验证**：`npm run check` 19/19 · `check:units` 46/46 + 反证 **61/61** ·
+`check:settings` 184/184 + 反证 **142/142** · `check:music` 237/237 + 反证 **232/232** ·
+`tsc` / `eslint` / `vite build` 全绿。
