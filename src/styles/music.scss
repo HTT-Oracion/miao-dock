@@ -439,7 +439,7 @@
   bottom: 0;
   height: 2px;
   border-radius: 2px 2px 0 0;
-  background: var(--md-pink);
+  background: var(--miao-accent);
 }
 .viewtab svg {
   display: block;
@@ -1076,7 +1076,7 @@
   width: 78px;
   height: 78px;
   border-radius: 12px;
-  background: linear-gradient(140deg, var(--md-pink), var(--md-lavender));
+  background: linear-gradient(140deg, var(--miao-accent), var(--miao-primary));
   color: #fff;
   display: flex;
   align-items: center;
@@ -1640,7 +1640,7 @@
   color: #fff;
 }
 .music-exp .ui-cbtn.main:hover {
-  background: var(--md-pink);
+  background: var(--miao-accent);
 }
 .music-exp.is-light .ui-cbtn {
   color: var(--md-ink-2);
@@ -1838,7 +1838,7 @@
   cursor: pointer;
 }
 .music-exp-ltab.is-on {
-  background: var(--md-pink);
+  background: var(--miao-accent);
   color: #fff;
   font-weight: 700;
 }
@@ -1847,7 +1847,7 @@
   color: var(--md-ink-2);
 }
 .music-exp.is-light .music-exp-ltab.is-on {
-  background: var(--md-pink);
+  background: var(--miao-accent);
   color: #fff;
 }
 
@@ -2133,15 +2133,16 @@
   top: -6px;
   right: -11px;
   z-index: 3;
-  background: #e53e3e;
+  background: var(--miao-danger);
   color: #fff;
+  font-family: var(--md-font-display);
   font-size: 9px;
   font-weight: 700;
   line-height: 1.4;
-  padding: 0 4px;
+  padding: 0 5px;
   border-radius: 999px;
   pointer-events: none;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 2px 6px -2px rgba(45, 59, 70, 0.45);
 }
 
 /* 动态开关：文字「动态」+ Switch（仅「现代」样式出现） */
@@ -2258,7 +2259,7 @@
   appearance: none;
   border-radius: 3px;
   /* 与播放条音量条同一套填充口径：高亮色已调节段 + 原轨道色未调节段 */
-  --fill-c: var(--md-pink);
+  --fill-c: var(--miao-accent);
   --track-c: rgba(255, 255, 255, 0.28);
   background: linear-gradient(to right, var(--fill-c) 0 var(--fill, 0%), var(--track-c) var(--fill, 0%) 100%);
   cursor: pointer;
@@ -2268,7 +2269,7 @@
     margin-left 0.25s ease;
 }
 .music-exp.is-light .music-exp-vol-slider {
-  --track-c: var(--md-line);
+  --track-c: var(--miao-line);
 }
 .music-exp-volwrap:hover .music-exp-vol-slider {
   width: 80px;
@@ -2280,7 +2281,7 @@
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: var(--md-pink);
+  background: var(--miao-accent);
 }
 
 /* 右区：歌词色 / 字号 / 音质 / 桌面歌词 / 队列 */
@@ -2320,7 +2321,7 @@
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: var(--md-pink);
+  background: var(--miao-accent);
 }
 /* 展开播放器里的音质下拉：沿用播放条的胶囊外观，深色底上略放高一点 */
 .music-exp .music-q-sel {
