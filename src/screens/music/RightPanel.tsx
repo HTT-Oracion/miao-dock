@@ -1,10 +1,21 @@
-import { ChevronLeft, Heart, Play, Plus, RefreshCw, Search, X } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Heart,
+  ListOrdered,
+  Play,
+  Plus,
+  RefreshCw,
+  Search,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import { PLATFORMS, capsOf, providerLabel } from '@music/platform';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl, songKey } from '@music/convert';
 import type { Song } from '@music/types';
 import { Charts } from '@screens/music/Charts';
-import { Empty, IconButton, VirtualList } from '@components/units';
+import { Btn, Empty, IconButton, VirtualList } from '@components/units';
 import { Cover, SongRow } from '@screens/music/shared';
 
 /**
@@ -30,7 +41,8 @@ export function RightPanel() {
       <div className="music-search-row">
         <input
           className="music-search"
-          placeholder="搜索歌曲…（回车搜索）"
+          placeholder="搜索歌曲 / 歌手 / 专辑"
+          aria-label="搜索音乐"
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
           onKeyDown={(e) => {
@@ -193,7 +205,7 @@ function Discover() {
   return <Recommendations />;
 }
 
-/** 推荐页：官方榜单 + 推荐歌单（后者按能力矩阵显示，且自身可滚动） */
+/** 推荐页：Hero + 三枚入口卡 + 官方榜单 + 推荐歌单（后者按能力矩阵显示） */
 function Recommendations() {
   const playbackSource = useMusicStore((s) => s.playbackSource);
   const recommendPlaylists = useMusicStore((s) => s.recommendPlaylists);
@@ -206,7 +218,11 @@ function Recommendations() {
 
   return (
     <>
-      <Charts />
+      <HomeHero />
+      <EntryGrid />
+      <div id="music-charts">
+        <Charts />
+      </div>
       {caps.recommendPlaylists ? (
         <>
           <div className="music-card-hd">
@@ -239,6 +255,122 @@ function Recommendations() {
         </>
       ) : null}
     </>
+  );
+}
+
+/**
+ * 首页 Hero（设计稿 `.music-hero`）：左侧文案 + 右侧黑胶，主行动是「播放全部」。
+ *
+ * 设计稿的标题与描述取自"每日推荐"这张歌单本身；本产品的每日推荐是**曲目列表**
+ * （`dailySongs`），没有歌单标题/简介可引用，所以标题写「每日推荐」、描述写真实的曲目数。
+ * 日期取当天 —— 每日推荐本来就按天换。
+ */
+function HomeHero() {
+  const dailySongs = useMusicStore((s) => s.dailySongs);
+  const loading = useMusicStore((s) => s.loadingDaily);
+  const playPlaylist = useMusicStore((s) => s.playPlaylist);
+  const setRightView = useMusicStore((s) => s.setRightView);
+
+  const now = new Date();
+  const kicker = `每日推荐 · ${now.getMonth() + 1} 月 ${now.getDate()} 日`;
+  const desc = loading
+    ? '正在取今天的推荐…'
+    : dailySongs.length
+      ? `今天也有 ${dailySongs.length} 首新歌`
+      : '登录网易云后每天更新';
+
+  return (
+    <section className="music-hero">
+      <div className="hero-copy">
+        <span className="hero-kicker kicker">
+          <Sparkles size={12} />
+          {kicker}
+        </span>
+        <h2>每日推荐</h2>
+        <p>{desc}</p>
+        <div className="hero-actions">
+          <Btn kind="primary" disabled={dailySongs.length === 0} onClick={() => void playPlaylist(dailySongs)}>
+            <Play size={14} /> 播放全部
+          </Btn>
+          <Btn kind="ghost" onClick={() => setRightView('daily')}>
+            查看歌单
+          </Btn>
+        </div>
+      </div>
+      <div className="hero-art" aria-hidden="true">
+        <span className="hero-vinyl" />
+      </div>
+    </section>
+  );
+}
+
+/**
+ * 三枚入口卡（设计稿 `.entry-grid`）：每日推荐 / 官方榜单 / 我喜欢的音乐。
+ *
+ * 三者都跳到真实去处：每日推荐切右栏的 daily 视图；官方榜单滚到下面那张榜单区；
+ * 我喜欢的音乐打开左栏那张被统一命名的收藏歌单（未登录时没有它，卡片置灰并说明原因）。
+ */
+function EntryGrid() {
+  const dailySongs = useMusicStore((s) => s.dailySongs);
+  const setRightView = useMusicStore((s) => s.setRightView);
+  const userPlaylists = useMusicStore((s) => s.userPlaylists);
+  const openLeftPlaylist = useMusicStore((s) => s.openLeftPlaylist);
+
+  const liked = userPlaylists.find((pl) => pl.isLiked) ?? null;
+
+  const toCharts = () => {
+    document.getElementById('music-charts')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  return (
+    <div className="entry-grid">
+      <Btn kind="bare" className="entry-card" onClick={() => setRightView('daily')}>
+        <span className="entry-ico">
+          <Sparkles size={17} />
+        </span>
+        <span>
+          <strong>每日推荐</strong>
+          <small>{dailySongs.length ? `今天也有 ${dailySongs.length} 首新歌` : '登录后每天更新'}</small>
+        </span>
+        <span className="entry-arrow">
+          <ChevronRight size={13} />
+        </span>
+      </Btn>
+
+      <Btn kind="bare" className="entry-card" onClick={toCharts}>
+        <span className="entry-ico">
+          <ListOrdered size={17} />
+        </span>
+        <span>
+          <strong>官方榜单</strong>
+          <small>四个平台 · 每日更新</small>
+        </span>
+        <span className="entry-arrow">
+          <ChevronRight size={13} />
+        </span>
+      </Btn>
+
+      <Btn
+        kind="bare"
+        className="entry-card"
+        disabled={!liked}
+        title={liked ? '打开「我喜欢的音乐」' : '登录后同步收藏歌单'}
+        onClick={() => {
+          if (liked) void openLeftPlaylist(liked);
+        }}
+      >
+        <span className="entry-ico">
+          <Heart size={17} />
+        </span>
+        <span>
+          <strong>我喜欢的音乐</strong>
+          <small>{liked ? `${liked.track_count} 首 · 心动模式` : '登录后可查看'}</small>
+        </span>
+        <span className="entry-arrow">
+          <ChevronRight size={13} />
+        </span>
+      </Btn>
+    </div>
   );
 }
 

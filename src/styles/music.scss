@@ -443,6 +443,57 @@
   flex: 0 0 auto;
   padding: 2px 2px 0;
 }
+/* 顶行 + 平台胶囊行合成一列：胶囊另起一行，234px 的左栏才排得下四个 */
+.music-top-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding-bottom: 2px;
+}
+/* 平台胶囊（设计稿 `.platform-bar` / `.platform-pill`）：短名 + 登录态色点 */
+.platform-bar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+  min-width: 0;
+  padding: 0 2px;
+}
+.platform-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 27px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  transition:
+    background var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease,
+    border-color var(--miao-dur-fast) ease;
+}
+.platform-pill:hover {
+  color: var(--miao-ink);
+  background: var(--miao-surface-2);
+}
+.platform-pill.is-active {
+  color: var(--miao-ink);
+  background: var(--miao-surface);
+  border-color: var(--miao-line);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--miao-ink) 6%, transparent);
+}
+.prov-dot {
+  display: inline-block;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--miao-primary);
+}
 .music-top-l {
   display: flex;
   align-items: center;
@@ -732,6 +783,191 @@
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
+}
+
+/*
+ * ── 首页 Hero（设计稿 `.music-hero`）─────────────────────────────────
+ *
+ * 两列：左侧文案（眉标 + 标题 + 一句描述 + 行动），右侧黑胶。底色是
+ * 「表面 → 次级表面 → 杏奶淡」的 120° 渐变，右上角一枚极淡的杏奶圆环 —— 这两笔是
+ * 设计稿里唯一的"装饰"，去掉后这块就退化成一张普通白卡，与下面的榜单区没有主次。
+ */
+.music-hero {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(140px, 0.75fr);
+  gap: 18px;
+  align-items: center;
+  padding: 22px 24px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  background: linear-gradient(120deg, var(--miao-surface) 0%, var(--miao-surface-2) 60%, var(--miao-accent-soft) 140%);
+  box-shadow: var(--miao-shadow-1);
+  min-height: 194px;
+}
+.music-hero::after {
+  content: '';
+  position: absolute;
+  right: 12%;
+  top: -30%;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  border: 1px solid var(--miao-accent-line);
+  opacity: 0.5;
+  pointer-events: none;
+}
+.hero-copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+.hero-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 9px;
+  color: var(--miao-accent-ink, var(--miao-muted));
+}
+.hero-copy h2 {
+  font-family: var(--md-font-display);
+  font-size: clamp(22px, 2.6vw, 32px);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--miao-ink);
+}
+.hero-copy p {
+  margin-top: 7px;
+  font-size: 11px;
+  color: var(--miao-muted);
+}
+.hero-actions {
+  display: flex;
+  gap: 7px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+.hero-art {
+  position: relative;
+  width: 100%;
+  max-width: 200px;
+  aspect-ratio: 1;
+  justify-self: end;
+}
+/* 黑胶：径向渐变的唱片 + 中心杏奶标 + 一圈内环，24s 匀速转（与播放条碟片同一观感） */
+.hero-vinyl {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, #2f3236 0 18%, #3d4045 19% 20%, #2b2d31 21% 100%);
+  box-shadow: 0 16px 30px -18px color-mix(in srgb, var(--miao-ink) 55%, transparent);
+  animation: spin 24s linear infinite;
+}
+.hero-vinyl::after {
+  content: '';
+  position: absolute;
+  inset: 36%;
+  border-radius: 50%;
+  background: var(--miao-accent);
+  opacity: 0.8;
+}
+.hero-vinyl::before {
+  content: '';
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, #fff 6%, transparent);
+}
+/* 唱片自转（设计稿 `@keyframes spin`）：全仓只此一处定义，`prefers-reduced-motion` 下由 base 层统一降级 */
+@keyframes spin {
+  from {
+    transform: translateY(-50%) rotate(0deg);
+  }
+  to {
+    transform: translateY(-50%) rotate(360deg);
+  }
+}
+
+/*
+ * ── 三枚入口卡（设计稿 `.entry-grid` / `.entry-card`）────────────────
+ *
+ * 图标底是主色淡片，右侧箭头常显：这三张卡是"去别处"的入口，
+ * 没有箭头就会被读成三块静态信息。
+ */
+.entry-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 12px;
+}
+.entry-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 13px;
+  border: 1px solid var(--miao-line);
+  border-radius: 13px;
+  background: var(--miao-surface);
+  text-align: left;
+  overflow: hidden;
+  transition:
+    transform var(--miao-dur-fast) var(--miao-ease-out),
+    box-shadow var(--miao-dur-fast) ease;
+}
+.entry-card:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--miao-shadow-1);
+}
+.entry-card:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.entry-card strong {
+  display: block;
+  font-size: 11px;
+  color: var(--miao-ink);
+}
+.entry-card small {
+  display: block;
+  margin-top: 2px;
+  font-size: 9px;
+  color: var(--miao-muted);
+}
+.entry-ico {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--miao-primary-soft);
+  color: var(--miao-primary-ink);
+}
+.entry-arrow {
+  margin-left: auto;
+  display: inline-flex;
+  color: var(--miao-faint);
+}
+
+/* 窄窗：Hero 收成单列、入口卡两列（设计稿 ≤1040px 档） */
+@media (max-width: 1040px) {
+  .music-hero {
+    grid-template-columns: 1fr;
+  }
+  .hero-art {
+    display: none;
+  }
+  .entry-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* 按钮（音乐屏内自足，不依赖全局 .btn 系列） */
