@@ -19,15 +19,32 @@
  * 高于页面内容与 `.music-toast`(50)，低于 Radix 弹层(60)与模态(80+) ——
  * 提示不该盖住确认框，但也不该被下拉菜单压住。
  */
+/*
+ * 灵动岛的定位容器：**在侧栏右侧的内容区里居中**，不是整个窗口居中
+ * （设计稿 `.island` 的 `left: calc(sidebar-w + (100vw - sidebar-w)/2)`）。
+ * 整窗居中的话，岛会偏左约半个侧栏宽（78/2 ≈ 39px）—— 与工具条标题、
+ * 内容区的中线都对不上，看起来像"没摆正"。
+ */
 .di-wrap {
   position: fixed;
-  top: 0;
-  left: 0;
+  top: 12px;
+  left: var(--di-left, 78px);
   right: 0;
   display: flex;
   justify-content: center;
   z-index: 55;
   pointer-events: none; /* 容器不拦点击，只有胶囊自己能点 */
+}
+/* 侧栏在窄窗会收窄（app.scss 的 1040 / 760 两档），岛的中线要跟着走 */
+@media (max-width: 1040px) {
+  .di-wrap {
+    --di-left: 66px;
+  }
+}
+@media (max-width: 760px) {
+  .di-wrap {
+    --di-left: 60px;
+  }
 }
 
 /* 胶囊本体：三态共用同一个元素，形变全靠内联 width/height 补间。
