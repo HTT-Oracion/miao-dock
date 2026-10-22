@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 自测注册表（数据）—— `run-checks.mjs`（分层聚合 runner）与 `registry-check.mjs`
  * （注册表完整性钉子）共用的唯一事实源。
  *
@@ -128,6 +128,16 @@ const CHECKS = [
     tier: 'static',
     refute: true,
     watch: ['src-tauri/**', 'src/App.tsx', 'e2e/quit-command-check.mjs'],
+  },
+  {
+    id: 'ui-scale',
+    script: 'e2e/ui-scale-check.mjs',
+    tier: 'static',
+    refute: true,
+    // 断言面 = 构建配置（换算的两个钩子）+ 令牌档位（base.scss 的 `:root` 与 `.an-root` 隔离）
+    // + 各分片仍写纯 px。**为什么必须有门**：源码不再等于产物，改坏 `vite.config.ts`
+    // 后界面会静默退回不缩放，而读源码的判据一条都不会红（见台账 D-347）。
+    watch: ['src/styles/**', 'vite.config.ts', 'e2e/ui-scale-check.mjs'],
   },
   {
     id: 'docpaths',

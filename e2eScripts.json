@@ -13,6 +13,12 @@
       "why": "8 路并行（e2e/run-checks.mjs）；这是改一行就能跑的那一层，也是 `npm run check` 的全集。",
       "cmds": [
         { "id": "check:quit", "cmd": "node e2e/quit-command-check.mjs", "desc": "「退出喵坞」没反应的根因钉子（菜单项 / 菜单栏 / 快捷键三处都真的接了退出）", "refute": true },
+        {
+          "id": "check:ui-scale",
+          "cmd": "node e2e/ui-scale-check.mjs",
+          "desc": "字号分档的构建期钉子：插件注册 / dev+build 两钩子 / 换算行为 / 五档数值 / 番剧隔离 / 源码仍写纯 px（D-347）",
+          "refute": true
+        },
         { "id": "check:tls", "cmd": "node e2e/tls-check.mjs", "desc": "reqwest 的 TLS 能力真的可用（D-25）" },
         { "id": "check:ia", "cmd": "node e2e/ia-structure-check.mjs", "desc": "信息架构结构断言（屏级导航 / 侧栏 / 标签 / 返回栈的接线）" },
         { "id": "check:engine-download-entry", "cmd": "node e2e/engine-download-entry-check.mjs", "desc": "引擎下载入口 / 独立下载页 / 完成关闭 / 重启对账（D-233）", "refute": true },

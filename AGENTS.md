@@ -1,4 +1,4 @@
-﻿# AGENTS.md —— 本仓库的 AI 协作上下文（唯一入口）
+# AGENTS.md —— 本仓库的 AI 协作上下文（唯一入口）
 
 > 本文件是**任何 AI 编程工具**（WorkBuddy / Trae / Cursor / CodeBuddy…）进入本仓库时的**第一份必读**。
 > 它是入口与硬约束，不是完整事实源：**完整事实源 = `README.md` + `docs/internal/dev-plan.md` + `docs/internal/spec-notes*.md`**。
@@ -165,7 +165,7 @@
 
 ```bash
 # —— 命令清单：check / selftest / 装配 / 开发辅助都住根 e2eScripts.json ——
-npm run task                                        # 列清单（152 条 = 89 基条目 + 63 派生反证轮），退出码 2
+npm run task                                        # 列清单（154 条 = 90 基条目 + 64 派生反证轮），退出码 2
 npm run task -- --list [分组]                        # 同上但退出码 0（static/service/nightly/refute/supply/dev）
 npm run task -- <id>                                # 派发一条，如 npm run task -- check:units（id 后参数原样透传）
 # —— 代码校验（本地由 husky 的 pre-commit 守着，CI 里是强制点）——
@@ -176,7 +176,7 @@ npm run lint:fix             # eslint --fix
 npm run format               # prettier --write
 npm run format:check         # prettier --check（CI 跑这条）
 # —— 自测聚合入口（分层 + 并行 + git 变更过滤；注册表在 e2e/_check-registry.mjs）——
-npm run check                # static 快闸门 17 项（8 路并行，约 10s）——每次提交
+npm run check                # static 快闸门 20 项（8 路并行，约 18s）——每次提交
 npm run check:changed        # 只跑与 git 变更相关的（static+service；跳过项显式列出）——日常开发主力
 npm run check:full           # static + service 全量（service 串行，约 4 分钟）——push / PR 前
 npm run check:nightly        # 全量：含 nightly（真引擎/模型）与全部反证轮——定期 / 合并前
@@ -202,6 +202,7 @@ npm run task -- check:ia              # IA 结构 37 条（含 C8d：侧栏两�
 npm run task -- check:engine-download-entry[:refute] # **D-233 下载入口** 7 条 / 反证 6 条（源码级：四态映射 + done 按 startedAt 与 dismissal 比对 · 侧栏纯图标三态与 aria-label · `/engine-download` 覆盖层路由 · 完成态「关闭下载」接线 · `normalize_loaded` 只校正 running 并原子落盘 · 返回走浏览器历史；反证在内存里改回缺陷形态，不写盘）
 npm run task -- check:tls             # TLS 依赖链 14 条（三层）
 npm run task -- check:quit[:refute]   # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW（`signal_tree` 经 `hide_console` 施加）/ 前端不静默 / Windows signal_tree 无条件 /F；不起进程）
+npm run task -- check:ui-scale[:refute] # **字号分档（`--ui-scale`）的构建期钉子 6 条 / 反证 6 条**（源码里**看不到最终结果**：源码始终写 `font-size: 9.5px`，换算发生在编译产物，所以改坏 `vite.config.ts` 会让界面静默退回不缩放，而读源码的判据一条都不红 —— D-347）。判据：S1 插件真的注册进 `plugins`（钩子写了没挂＝不运行且不报错）· S2 dev 的 `transform` 与 build 的 `generateBundle` **两个钩子都在**且共用同一份 `scaleFonts`（实测过只挂 transform 时 dev 正常、产物 530 条仍是纯 px）· S3 拿配置里那份 `FONT_PX` **本尊**跑行为断言（纯 px 命中并产出 `calc(Npx * var(--ui-scale))`；`clamp(...)` 与 `var(--…)` 不动）· S4 五档**值与断点**逐条 == 设计稿（≥1500→1.06 / ≥1720→1.12 / ≥1920→1.18 / ≤1180→.95 / 默认 1）· S5 番剧就地不跟随（`.an-root { --ui-scale: 1 }`，合并产物里已无法按文件排除）· S6 源码仍是纯 px（无手写 `calc(...* var(--ui-scale))` 的第二事实源，且每片都要有足量可读字号 —— 读到空文件也算绿是这类判据最常见的死法）。🔴 CSS 判据**先剥注释**：注释里写的 `--ui-scale: 1` 与示例 `calc(...)` 都不算实现；反证 M5 还带**锚点未命中即判"没有红"**的防护（`replace` 找不到锚点会原样返回 ⇒ 静默跳过 ≠ 通过）
 npm run task -- check:autostart[:refute] # 翻译服务「自动启动 / 手动启停」根因钉子 21 条 / 反证 23 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / 自动启动 effect 依赖不含 status / 未就绪屏 stopped 给「启动」/ 设置页启停行 / 服务实现默认档 = Rust（E1–E5）/ Cargo.toml `default-run` 指向真实 bin（F1）；不起进程；D-94 · D-168 · D-169）
 npm run task -- check:engine-parity[:refute]   # 引擎耦合点纯函数（Rust `--engine-selftest` ⟷ 冻结 golden，real/mock 两档）
 npm run task -- check:engine-http[:refute]     # 引擎 HTTP 运行期（真发 HTTP 打伪引擎：请求体 / 错误归一 / 三重就绪 / 超时带走证据）
