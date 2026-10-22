@@ -1,4 +1,4 @@
-﻿import { ChevronLeft, Play, RefreshCw } from 'lucide-react';
+import { ChevronLeft, Play, RefreshCw } from 'lucide-react';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl, songKey } from '@music/convert';
 import type { LeftView } from '@music/store';
@@ -30,11 +30,16 @@ export function LeftPanel() {
 
   return (
     <section className="music-card">
-      <div className="ltabs">
+      {/* 三枚 Tab 是**一组**（设计稿 `.ms-tabs` 带 `role="tablist"`）：
+          缺 role/aria-selected 时，读屏听到的是三个互不相干的按钮，
+          听不出"当前在哪个视图"。 */}
+      <div className="ltabs" role="tablist">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
+            role="tab"
+            aria-selected={active === t.id}
             className={active === t.id ? 'ltab is-on' : 'ltab'}
             onClick={() => {
               // 点「我的歌单」时若正处在曲目下钻态，要一路退回去，不能只切高亮
