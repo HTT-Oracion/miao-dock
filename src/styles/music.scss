@@ -41,13 +41,13 @@
   align-items: center;
   overflow: hidden;
   margin-top: 10px;
-  /* 底色比 --md-surface 更"浮"一点，读成"悬在上层"而不是"贴在页面上的一块 UI" */
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
+  /* 底色比页面底更"浮"一点，读成"悬在上层"而不是"贴在页面上的一块 UI" */
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
   border-radius: 999px; /* 胶囊 = 全圆角，与项目既有 .pill / .magic 同一套语汇 */
-  box-shadow: 0 10px 28px rgba(20, 15, 41, 0.2);
+  box-shadow: var(--miao-shadow-2);
   font-size: 12px;
-  color: var(--md-ink);
+  color: var(--miao-ink);
   cursor: pointer;
   transition:
     transform 0.26s cubic-bezier(0.4, 0, 0.2, 1),
@@ -87,7 +87,7 @@
   justify-content: center;
   border-radius: 9px;
   overflow: hidden;
-  background: var(--md-pink); /* 无封面 / 加载失败时的占位底 */
+  background: var(--miao-accent); /* 无封面 / 加载失败时的占位底 */
   color: #fff;
   transform-origin: left top;
   pointer-events: none;
@@ -116,7 +116,7 @@
   font-size: 15px;
   line-height: 1.2;
   font-weight: 700;
-  color: var(--md-ink);
+  color: var(--miao-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -150,7 +150,7 @@
   max-width: 224px;
   font-size: 12px;
   line-height: 1;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -189,7 +189,7 @@
   width: 2.5px;
   height: 3px;
   border-radius: 999px;
-  background: var(--md-ink);
+  background: var(--miao-ink);
   opacity: 0.85;
   transition: height 90ms linear;
 }
@@ -240,7 +240,7 @@
   margin-left: 60px;
   font-size: 12px;
   font-weight: 500;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -261,7 +261,7 @@
   min-width: 26px;
   font-size: 10px;
   font-weight: 600;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   font-variant-numeric: tabular-nums;
 }
 .di-prog .di-time:last-child {
@@ -271,14 +271,14 @@
   flex: 1;
   height: 4px;
   border-radius: 999px;
-  background: var(--md-line);
+  background: var(--miao-line);
   overflow: hidden;
 }
 .di-bar i {
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: var(--md-pink);
+  background: var(--miao-accent);
   transition: width 0.2s;
 }
 /* 传输控件整宽居中；「打开播放器」钉在右下角（对齐参考实现的排版）。
@@ -346,8 +346,8 @@
 .di-toggle .ui-cbtn {
   width: 26px;
   height: 26px;
-  color: var(--md-pink);
-  background: var(--md-pink-soft);
+  color: var(--miao-accent);
+  background: var(--miao-accent-soft);
   border-radius: 9px;
 }
 
@@ -394,7 +394,7 @@
   text-align: center;
   font-size: 12px;
   font-weight: 600;
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 
 /* ================================================================ ver2.0 · 视图 Tab 行 */
@@ -408,8 +408,8 @@
   align-items: stretch;
   gap: 2px;
   padding: 0 26px;
-  background: var(--md-surface);
-  border-bottom: 1px solid var(--md-line);
+  background: var(--miao-surface);
+  border-bottom: 1px solid var(--miao-line);
 }
 
 .viewtab {
@@ -418,7 +418,7 @@
   justify-content: center;
   gap: 6px;
   font-size: 12px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   position: relative;
   transition: color 0.15s;
 }
@@ -426,7 +426,7 @@
   color: var(--md-ink-2);
 }
 .viewtab.is-active {
-  color: var(--md-ink);
+  color: var(--miao-ink);
   font-weight: 500;
 }
 /* active 用下划线而非底色块：侧栏应用层已经用了 pink-soft 底色，
@@ -695,7 +695,7 @@
 .music-hint {
   flex: 0 0 auto;
   font-size: 10.5px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   padding: 0 8px 6px;
 }
 .music-inline-err {
@@ -708,7 +708,7 @@
   flex: 0 0 auto;
   text-align: center;
   font-size: 10.5px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   padding: 8px;
 }
 
@@ -993,7 +993,7 @@
   align-items: center;
   gap: 3px;
   font-size: 9px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 .his-dot {
   width: 8px;
@@ -1021,7 +1021,7 @@
 .music-chart-cv {
   width: 64px;
   height: 64px;
-  border-radius: var(--md-radius-sm);
+  border-radius: 12px;
   overflow: hidden;
   background: linear-gradient(135deg, var(--md-lavender), var(--md-blue));
   display: flex;
@@ -1075,7 +1075,7 @@
 .music-chart-name {
   width: 78px;
   height: 78px;
-  border-radius: var(--md-radius-sm);
+  border-radius: 12px;
   background: linear-gradient(140deg, var(--md-pink), var(--md-lavender));
   color: #fff;
   display: flex;
@@ -1092,13 +1092,14 @@
 /* ---------------------------------------------------------------- 底部播放条 */
 .music-player {
   flex: 0 0 auto;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
-  padding: 9px 13px;
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  padding: 10px 14px;
   display: flex;
   flex-direction: column;
   gap: 7px;
+  box-shadow: var(--miao-shadow-2);
 }
 .music-player-row {
   display: flex;
@@ -1109,11 +1110,16 @@
 .music-pb-cover {
   width: 44px;
   height: 44px;
-  border-radius: var(--md-radius-xs);
-  background: linear-gradient(140deg, var(--md-pink), var(--md-lavender));
+  border-radius: 10px;
+  background: linear-gradient(140deg, var(--miao-accent), var(--miao-primary));
+  border: 1px solid var(--miao-line);
   flex-shrink: 0;
   overflow: hidden;
   cursor: pointer;
+  transition: transform var(--miao-dur-base) var(--miao-ease-spring);
+}
+.music-pb-cover:hover {
+  transform: translateY(-1px) scale(1.02);
 }
 .music-pb-cover img {
   width: 100%;
@@ -1128,16 +1134,17 @@
 }
 .music-pb-tx b {
   display: block;
+  font-family: var(--md-font-display);
   font-size: 12.5px;
-  font-weight: 500;
-  color: var(--md-ink);
+  font-weight: 700;
+  color: var(--miao-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .music-pb-tx span {
   font-size: 10.5px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   display: block;
   white-space: nowrap;
   overflow: hidden;
@@ -1176,11 +1183,11 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 .music-vol input[type='range'] {
-  --fill-c: var(--md-pink);
-  --track-c: var(--md-line);
+  --fill-c: var(--miao-accent);
+  --track-c: var(--miao-surface-3);
   width: 60px;
   height: 5px;
   -webkit-appearance: none;
@@ -1194,7 +1201,8 @@
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: var(--md-pink);
+  background: var(--miao-accent);
+  box-shadow: 0 1px 3px rgba(45, 59, 70, 0.28);
 }
 
 /* 音质档位下拉：复用 units 的 Select（Radix），只把它的方形外观压成播放条里的胶囊。
@@ -1208,17 +1216,17 @@
   line-height: 18px;
   border-radius: 999px;
   border-color: transparent;
-  background: var(--md-pink-soft);
-  color: var(--md-pink);
+  background: var(--miao-accent-soft);
+  color: color-mix(in srgb, var(--miao-accent) 82%, #000);
 }
 .music-q-sel:hover {
-  border-color: var(--md-line);
+  border-color: var(--miao-accent-line);
 }
 /* 实际码率（kbps）。与"档位"分开显示：档位是**要的**，码率是**实际拿到的** ——
    平台降级时这两个值会不一致，只显示档位等于把降级藏了起来。 */
 .music-br {
   font-size: 10px;
-  color: var(--md-muted);
+  color: var(--miao-faint);
   font-family: var(--md-font-numeric);
   flex-shrink: 0;
   white-space: nowrap;
@@ -1232,15 +1240,15 @@
 }
 .music-prog-t {
   font-size: 10px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   width: 34px;
   text-align: center;
   font-family: var(--md-font-numeric);
   flex-shrink: 0;
 }
 .music-prog-bar {
-  --fill-c: var(--md-pink);
-  --track-c: var(--md-line);
+  --fill-c: var(--miao-accent);
+  --track-c: var(--miao-surface-3);
   flex: 1;
   height: 5px;
   -webkit-appearance: none;
@@ -1255,12 +1263,13 @@
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: var(--md-pink);
+  background: var(--miao-accent);
+  box-shadow: 0 1px 3px rgba(45, 59, 70, 0.28);
 }
 .music-q {
   font-size: 10px;
-  color: var(--md-pink);
-  background: var(--md-pink-soft);
+  color: color-mix(in srgb, var(--miao-accent) 82%, #000);
+  background: var(--miao-accent-soft);
   border-radius: 999px;
   padding: 2px 8px;
   flex-shrink: 0;
@@ -1280,9 +1289,9 @@
 .pf-panel {
   width: 100%;
   max-width: 380px;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-lg);
   padding: 16px 18px;
   box-shadow: 0 20px 50px rgba(70, 60, 120, 0.22);
 }
@@ -1302,11 +1311,11 @@
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: var(--md-radius-sm);
+  border-radius: 12px;
   cursor: pointer;
 }
 .pf-item:hover {
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
 }
 .pf-chip {
   width: 26px;
@@ -1328,12 +1337,12 @@
   display: block;
   font-size: 12.5px;
   font-weight: 500;
-  color: var(--md-ink);
+  color: var(--miao-ink);
 }
 .pf-desc {
   display: block;
   font-size: 10.5px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1345,22 +1354,22 @@
   flex-shrink: 0;
 }
 .pf-badge.is-cur {
-  background: var(--md-pink-soft);
-  color: var(--md-pink);
+  background: var(--miao-accent-soft);
+  color: var(--miao-accent);
   font-weight: 700;
 }
 .pf-badge.is-on {
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
   color: #22c55e;
 }
 .pf-badge.is-off {
-  background: var(--md-surface-2);
-  color: var(--md-muted);
+  background: var(--miao-surface-2);
+  color: var(--miao-muted);
 }
 .pf-note {
   margin-top: 10px;
   font-size: 10.5px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   line-height: 1.5;
 }
 
@@ -1375,9 +1384,9 @@
   top: 54px;
   right: 26px;
   width: 256px;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-md);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-md);
   padding: 10px;
   box-shadow: 0 20px 50px rgba(70, 60, 120, 0.22);
   z-index: 81;
@@ -1395,14 +1404,14 @@
 .ac-txt b {
   display: block;
   font-size: 12.5px;
-  color: var(--md-ink);
+  color: var(--miao-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .ac-txt span {
   font-size: 10.5px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 .ac-list {
   display: flex;
@@ -1418,12 +1427,12 @@
   padding: 7px 6px;
   border: none;
   background: transparent;
-  border-radius: var(--md-radius-sm);
+  border-radius: 12px;
   cursor: pointer;
   text-align: left;
 }
 .ac-item:hover {
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
 }
 .ac-dot {
   width: 8px;
@@ -1435,7 +1444,7 @@
   flex: 1;
   min-width: 0;
   font-size: 12px;
-  color: var(--md-ink);
+  color: var(--miao-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1454,7 +1463,7 @@
   font-size: 11.5px;
 }
 .ac-out:hover {
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
 }
 
 /* ---------------------------------------------------------------- 队列抽屉 */
@@ -1483,12 +1492,13 @@
   top: 0;
   right: 0;
   bottom: 0;
-  width: 340px;
-  background: var(--md-surface);
-  border-left: 1px solid var(--md-line);
+  width: 348px;
+  background: var(--miao-surface);
+  border-left: 1px solid var(--miao-line);
   display: flex;
   flex-direction: column;
   z-index: 72;
+  box-shadow: -24px 0 60px -40px rgba(45, 59, 70, 0.45);
   /* 从右往左滑入：抽屉贴在窗口右缘，所以位移动画取 translateX(100%) → 0，
      读起来就是"从右边抽出来"。只做进场（组件在关闭时直接卸载，没有退场状态可挂），
      与展开播放器"有进无退"的处理保持一致。
@@ -1509,12 +1519,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--md-line);
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--miao-line);
   flex: 0 0 auto;
 }
 .music-drawer-ic {
-  color: var(--md-pink);
+  color: var(--miao-accent);
 }
 .music-drawer-list {
   flex: 1;
@@ -1528,22 +1538,23 @@
   padding: 0 8px;
   height: 52px;
   cursor: pointer;
+  transition: background var(--miao-dur-fast) ease;
 }
 .music-qrow:hover {
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
 }
 .music-qrow.is-hot {
-  background: var(--md-pink-soft);
+  background: var(--miao-accent-soft);
 }
 .music-qrow.is-hot .music-row-tx b {
-  color: var(--md-pink);
+  color: var(--miao-accent);
   font-weight: 700;
 }
 .music-qrow-ix {
   width: 26px;
   text-align: center;
   font-size: 10px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   flex-shrink: 0;
   font-family: var(--md-font-numeric);
 }
@@ -1898,7 +1909,7 @@
   transition: none;
 }
 /*
-  ⚠️ 这里原本有一条 `.music-exp.is-light .music-lyr-line { color: var(--md-ink); }`，**已删除**。
+  ⚠️ 这里原本有一条 `.music-exp.is-light .music-lyr-line { color: var(--miao-ink); }`，**已删除**。
   它有两个问题，任一都足以让「歌词高亮色」失效：
   ① **优先级反了**：3 个类（0,3,0）压过上面 `.music-lyr-line.is-on`（0,2,0），
      于是用户选的 `--lyr-hl` 在「通透 / 透明彩胶 / 封面渐染」三种浅色皮肤下**被覆盖成深色** ——
@@ -1996,7 +2007,7 @@
   color: var(--skin-sub, rgba(255, 255, 255, 0.5));
 }
 .music-exp.is-light .ui-empty {
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 
 /* 评论列表 */
@@ -2012,13 +2023,13 @@
 .music-exp-cm-sec {
   font-size: 11px;
   font-weight: 700;
-  color: var(--md-pink);
+  color: var(--miao-accent);
 }
 .music-exp-cm {
   display: flex;
   gap: 8px;
   padding: 7px;
-  border-radius: var(--md-radius-sm);
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.06);
 }
 .music-exp.is-light .music-exp-cm {
@@ -2039,14 +2050,14 @@
   color: var(--skin-text, #fff);
 }
 .music-exp.is-light .music-exp-cm-hd b {
-  color: var(--md-ink);
+  color: var(--miao-ink);
 }
 .music-exp-cm-hd span {
   font-size: 10px;
   color: var(--skin-sub, rgba(255, 255, 255, 0.5));
 }
 .music-exp.is-light .music-exp-cm-hd span {
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 .music-exp-cm-txt {
   font-size: 12px;
@@ -2099,7 +2110,7 @@
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
-  border-radius: var(--md-radius-lg);
+  border-radius: var(--miao-r-lg);
   border: none;
   background: transparent;
   color: var(--skin-text, rgba(255, 255, 255, 0.92));
@@ -2146,7 +2157,7 @@
   color: rgba(255, 255, 255, 0.6);
 }
 .music-exp.is-light .music-exp-dyn > span {
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 
 /* 样式预览弹层：透明遮罩（点外部关闭）+ 深色毛玻璃卡片列。
@@ -2167,7 +2178,7 @@
   padding: 6px;
   background: rgba(18, 18, 26, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--md-radius-lg);
+  border-radius: var(--miao-r-lg);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -2184,7 +2195,7 @@
   width: 100%;
   padding: 3px;
   border: none;
-  border-radius: var(--md-radius-md);
+  border-radius: var(--miao-r-md);
   background: transparent;
   cursor: pointer;
   outline: 2px solid transparent;
@@ -2196,7 +2207,7 @@
 }
 /* 当前项：描边走主题色（参考用 2px 主题色 outline） */
 .music-style-card.is-on {
-  outline-color: var(--md-pink);
+  outline-color: var(--miao-accent);
   background: rgba(255, 255, 255, 0.1);
 }
 .music-style-thumb {
@@ -2204,7 +2215,7 @@
   width: 100%;
   aspect-ratio: 16 / 10;
   object-fit: cover;
-  border-radius: var(--md-radius-sm);
+  border-radius: 12px;
   pointer-events: none;
 }
 .music-style-lb {
@@ -2215,7 +2226,7 @@
   color: rgba(255, 255, 255, 0.7);
 }
 .music-style-card.is-on .music-style-lb {
-  color: var(--md-pink);
+  color: var(--miao-accent);
   font-weight: 700;
 }
 
@@ -2290,7 +2301,7 @@
   flex-shrink: 0;
 }
 .music-exp.is-light .music-exp-alf {
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 .music-exp-size {
   width: 60px;
@@ -2322,7 +2333,7 @@
   color: var(--skin-sub, rgba(255, 255, 255, 0.6));
 }
 .music-exp.is-light .music-prog-t {
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 .music-exp .music-prog-bar {
   --track-c: rgba(255, 255, 255, 0.28);
@@ -2572,13 +2583,13 @@
   left: 50%;
   transform: translate(-50%, -50%);
   width: 248px;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-lg);
   padding: 16px 18px;
   box-shadow: 0 20px 50px rgba(70, 60, 120, 0.22);
   z-index: 4;
-  color: var(--md-ink);
+  color: var(--miao-ink);
 }
 .music-skin-hd {
   font-family: var(--md-font-display);
@@ -2592,15 +2603,15 @@
   gap: 10px;
 }
 .music-skin {
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-md);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-md);
   overflow: hidden;
-  background: var(--md-surface);
+  background: var(--miao-surface);
   padding: 0;
   cursor: pointer;
 }
 .music-skin.is-on {
-  border-color: var(--md-pink);
+  border-color: var(--miao-accent);
   box-shadow: 0 0 0 2px var(--md-pink-soft);
 }
 .music-skin-thumb {
@@ -2616,7 +2627,7 @@
   display: block;
 }
 .music-skin.is-on .music-skin-lb {
-  color: var(--md-pink);
+  color: var(--miao-accent);
   font-weight: 700;
 }
 
@@ -2633,9 +2644,9 @@
 .music-login {
   width: 100%;
   max-width: 340px;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-lg);
   padding: 16px 18px;
   box-shadow: 0 20px 50px rgba(70, 60, 120, 0.22);
   display: flex;
@@ -2662,7 +2673,7 @@
   line-height: 1.6;
 }
 .music-login-spin {
-  color: var(--md-pink);
+  color: var(--miao-accent);
   animation: music-spin 0.9s linear infinite;
 }
 @keyframes music-spin {
@@ -2698,9 +2709,9 @@
   /* 内容比窗口高时只让 body 滚，头部标题与底部动作始终留在视野里 */
   max-height: 82vh;
   overflow: hidden;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-lg);
   padding: 16px 18px;
   box-shadow: 0 20px 50px rgba(70, 60, 120, 0.22);
   display: flex;
@@ -2720,7 +2731,7 @@
   font-family: var(--md-font-display);
   font-size: 14px;
   font-weight: 700;
-  color: var(--md-ink);
+  color: var(--miao-ink);
 }
 /* 弹窗主体：可滚动（设置项比窗口高时）。min-height:0 是 flex 子项能滚的必要条件 ——
    少了它，子项的最小高度默认是内容高度，滚动条永远不会出现。 */
@@ -2743,7 +2754,7 @@
   color: var(--md-ink-2);
 }
 .music-dlset-lead b {
-  color: var(--md-ink);
+  color: var(--miao-ink);
   font-weight: 700;
 }
 
@@ -2756,7 +2767,7 @@
   align-items: center;
   gap: 2px;
   padding: 10px 12px;
-  border-radius: var(--md-radius-sm);
+  border-radius: 12px;
   background: linear-gradient(180deg, rgba(38, 33, 64, 0.92), rgba(20, 15, 41, 0.9));
   overflow: hidden;
 }
@@ -2778,7 +2789,7 @@
 .music-dlset-label {
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--md-ink);
+  color: var(--miao-ink);
 }
 .music-dlset-ctl {
   display: flex;
@@ -2810,9 +2821,9 @@
 .music-dlset-segbtn {
   min-width: 30px;
   height: 24px;
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-xs);
-  background: var(--md-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: 10px;
+  background: var(--miao-surface);
   color: var(--md-ink-2);
   font-size: 12px;
   font-weight: 500;
@@ -2822,13 +2833,13 @@
     color 0.15s;
 }
 .music-dlset-segbtn:hover {
-  border-color: var(--md-pink);
-  color: var(--md-ink);
+  border-color: var(--miao-accent);
+  color: var(--miao-ink);
 }
 .music-dlset-segbtn.is-on {
-  border-color: var(--md-pink);
-  background: var(--md-pink-soft);
-  color: var(--md-ink);
+  border-color: var(--miao-accent);
+  background: var(--miao-accent-soft);
+  color: var(--miao-ink);
   font-weight: 700;
 }
 
