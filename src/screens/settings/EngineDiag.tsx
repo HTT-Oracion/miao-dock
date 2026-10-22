@@ -226,12 +226,12 @@ export function EngineDiag({
             <span className="set-state-text">③ {llmChip.text}</span>
           </span>
           <span className="set-run-grow" />
-          <button type="button" className="set-run-fold" aria-expanded={open} onClick={() => setOpen(!open)}>
+          <Btn kind="bare" className="set-run-fold" ariaExpanded={open} onClick={() => setOpen(!open)}>
             {open ? '收起 ꜛ' : '诊断详情 ▾'}
-          </button>
-          <button type="button" className="set-run-all" onClick={() => setDrawer(true)}>
+          </Btn>
+          <Btn kind="bare" className="set-run-all" onClick={() => setDrawer(true)}>
             全部日志
-          </button>
+          </Btn>
         </div>
 
         {/* 卡头说明（设计稿 `.s-block-head p`）：一句话说清这一块摆的是什么 */}
@@ -269,9 +269,9 @@ export function EngineDiag({
             最后更新：{relativeText(logs.length > 0 ? stampRef.current.at : 0, now)}
           </span>
           {allLogs.length > LOG_DEFAULT ? (
-            <button type="button" className="set-run-more" aria-expanded={logMore} onClick={() => setLogMore(!logMore)}>
+            <Btn kind="bare" className="set-run-more" ariaExpanded={logMore} onClick={() => setLogMore(!logMore)}>
               {logMore ? `收起到 ${LOG_DEFAULT} 行 ꜛ` : `展开到 ${LOG_EXPANDED} 行 ▾`}
-            </button>
+            </Btn>
           ) : null}
         </div>
       </div>
@@ -282,9 +282,9 @@ export function EngineDiag({
       */}
       <div className="set-run-detail">
         <span className="set-run-detail-t">诊断详情 —— 进程表 / 生效配置 / 模型路径 / 重启 · 重下 · 释放</span>
-        <button type="button" className="set-run-fold" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Btn kind="bare" className="set-run-fold" ariaExpanded={open} onClick={() => setOpen(!open)}>
           {open ? '收起 ꜛ' : '展开 ▾'}
-        </button>
+        </Btn>
       </div>
 
       {eng.loadError ? (
@@ -417,9 +417,9 @@ export function EngineDiag({
               <Btn size="sm" onClick={() => void exportTxt()}>
                 导出 .txt
               </Btn>
-              <button type="button" className="set-run-drawer-x" aria-label="关闭" onClick={() => setDrawer(false)}>
+              <Btn kind="bare" className="set-run-drawer-x" ariaLabel="关闭" onClick={() => setDrawer(false)}>
                 ✕
-              </button>
+              </Btn>
             </div>
             <div className="set-run-drawer-body">
               {drawerLogs.length > 0 ? (

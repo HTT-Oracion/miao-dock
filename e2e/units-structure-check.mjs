@@ -1039,8 +1039,10 @@ add('ZOOM.buttonFallback', 'ZOOM', (s) => {
   const missing = [];
   if (!/className="lightbox-zoom-btn"/.test(lib))
     missing.push('工具栏没有 .lightbox-zoom-btn（缺不依赖手势的缩放入口）');
-  if (!/aria-label="放大"/.test(lib)) missing.push('缺「放大」按钮');
-  if (!/aria-label="缩小"/.test(lib)) missing.push('缺「缩小」按钮');
+  // 无障碍名两种写法都成立：裸 `aria-label` 与走 `Btn` 单元的 `ariaLabel`
+  // （单元内部落成同一个 aria 属性，判据看的是"有没有这个名字"）
+  if (!/aria-label="放大"|ariaLabel="放大"/.test(lib)) missing.push('缺「放大」按钮');
+  if (!/aria-label="缩小"|ariaLabel="缩小"/.test(lib)) missing.push('缺「缩小」按钮');
   // 按钮必须真的调了缩放，而不是摆在那儿
   if (!/stepZoom/.test(lib)) missing.push('按钮没有接缩放逻辑 stepZoom');
   // 样式也得**齐**：只查「有 .lightbox-zoom-btn」会让「只有基础块、悬停/禁用态全缺」
@@ -1624,8 +1626,9 @@ const MUTATIONS = [
     name: '删掉工具栏的缩小按钮（macOS 上失去唯一的非手势缩放路径）',
     file: F.libraryViewer,
     // 锚点只取属性行本身，不带缩进 —— 工具栏从"条件渲染"改成"常驻淡出"后整体缩进变过一层，
-    // 带缩进的锚点会直接失配（跳过 ≠ 通过）
-    find: 'aria-label="缩小"\n',
+    // 带缩进的锚点会直接失配（跳过 ≠ 通过）。
+    // 属性名跟着实现走：按钮改走 `Btn` 单元后是无障碍名走 `ariaLabel` 而不是裸 `aria-label`。
+    find: 'ariaLabel="缩小"\n',
     replace: '',
     expect: ['ZOOM.buttonFallback'],
   },

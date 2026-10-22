@@ -249,29 +249,29 @@ function QueuePager({
       <span className="pager-info">
         第 <span className="num">{page}</span> / <span className="num">{total}</span> 页
       </span>
-      <button type="button" disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="上一页">
+      <Btn kind="bare" disabled={page <= 1} onClick={() => onPage(page - 1)} ariaLabel="上一页">
         ‹
-      </button>
+      </Btn>
       {pageWindow(page, total).map((p, i) =>
         p === '…' ? (
           <span className="pager-gap" key={`gap-${i}`}>
             …
           </span>
         ) : (
-          <button
-            type="button"
+          <Btn
+            kind="bare"
             key={p}
             className={p === page ? 'is-active' : ''}
-            aria-current={p === page ? 'page' : undefined}
+            ariaCurrent={p === page ? 'page' : undefined}
             onClick={() => onPage(p)}
           >
             {p}
-          </button>
+          </Btn>
         ),
       )}
-      <button type="button" disabled={page >= total} onClick={() => onPage(page + 1)} aria-label="下一页">
+      <Btn kind="bare" disabled={page >= total} onClick={() => onPage(page + 1)} ariaLabel="下一页">
         ›
-      </button>
+      </Btn>
     </div>
   );
 }

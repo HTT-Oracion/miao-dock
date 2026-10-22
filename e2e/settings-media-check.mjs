@@ -1644,7 +1644,8 @@ add('ENGINE.run.drawerOps', 'ENGINE', (ctx) => {
   if (!code.includes('复制全部')) problems.push('缺「复制全部」');
   if (!code.includes('导出 .txt')) problems.push('缺「导出 .txt」');
   if (!/role="dialog"/.test(code)) problems.push('抽屉没有 dialog 语义');
-  if (!/aria-label="关闭"/.test(code)) problems.push('缺关闭按钮（或它没有无障碍名）');
+  // 关闭键的无障碍名：裸 `aria-label="关闭"` 与走 `Btn` 单元的 `ariaLabel="关闭"` 都成立
+  if (!/aria-label="关闭"|ariaLabel="关闭"/.test(code)) problems.push('缺关闭按钮（或它没有无障碍名）');
   if (!code.includes('set-run-scrim')) problems.push('缺遮罩（点遮罩关闭无处可点）');
   if (!/e\.key === 'Escape'/.test(code)) problems.push('缺 Esc 关闭');
   return { ok: problems.length === 0, detail: problems.join('；') };
@@ -2718,7 +2719,10 @@ add('SIMPLIFY.diag.foldedByDefault', 'SIMPLIFY', (ctx) => {
     problems.push('「诊断详情」不是默认收起（open 的初值应为 false）');
   }
   if (!/className="set-run-fold"/.test(code)) problems.push('没有「诊断详情」的折叠开关');
-  if (!/aria-expanded=\{open\}/.test(code)) problems.push('折叠开关没有 aria-expanded（读屏用户不知道展开了没）');
+  // 判据看的是"折叠开关有没有把展开态交出去"：裸 `aria-expanded={open}` 与
+  // 走 `Btn` 单元的 `ariaExpanded={open}` 都成立（单元内部落成同一个 aria 属性）。
+  if (!/aria-expanded=\{open\}|ariaExpanded=\{open\}/.test(code))
+    problems.push('折叠开关没有 aria-expanded（读屏用户不知道展开了没）');
   // 折叠体必须真的被 open 门住（否则"折叠"只是个装饰）
   if (!/\{open\s*\?\s*\(/.test(code)) problems.push('折叠体没有被 open 门住（会一直全量渲染）');
   if ((code.match(/className="set-state is-chip"/g) ?? []).length !== 3) {

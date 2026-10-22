@@ -398,25 +398,25 @@ function Lightbox({
             `zoom_hotkeys_enabled`），所以绝不能把缩放只做成手势。
           */}
         <span className="lightbox-zoom" title="Ctrl/⌘ + 滚轮：向上放大、向下缩小（也可点 −/+，50%–200%）">
-          <button
-            type="button"
+          <Btn
+            kind="bare"
             className="lightbox-zoom-btn"
             onClick={() => stepZoom(-1)}
             disabled={zoom <= ZOOM_MIN}
-            aria-label="缩小"
+            ariaLabel="缩小"
           >
             <span aria-hidden="true">−</span>
-          </button>
+          </Btn>
           <span className="num">{zoom}%</span>
-          <button
-            type="button"
+          <Btn
+            kind="bare"
             className="lightbox-zoom-btn"
             onClick={() => stepZoom(1)}
             disabled={zoom >= ZOOM_MAX}
-            aria-label="放大"
+            ariaLabel="放大"
           >
             <span aria-hidden="true">+</span>
-          </button>
+          </Btn>
         </span>
         <Btn kind="ghost" size="sm" disabled={!canPrev} onClick={onPrev}>
           ← 上一张
@@ -429,9 +429,9 @@ function Lightbox({
         </Btn>
       </div>
 
-      <button type="button" className="lightbox-x" onClick={onClose} aria-label="关闭全屏">
+      <Btn kind="bare" className="lightbox-x" onClick={onClose} ariaLabel="关闭全屏">
         <X size={18} />
-      </button>
+      </Btn>
     </div>
   );
 }
