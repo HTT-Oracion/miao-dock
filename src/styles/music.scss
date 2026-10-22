@@ -2325,6 +2325,19 @@
   min-width: 0;
   max-width: 100%;
 }
+/*
+ * 眉标（设计稿 `.xp-kicker`）：`TRACK 03 · 网易云音乐`，9.5px / 700 / .16em / uppercase。
+ * 选择器要比 `.music-exp-info span`（歌手行 12.5px）更具体，否则会被那一行吃掉字号。
+ */
+.music-exp-info .music-exp-kicker {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--skin-sub, rgba(255, 255, 255, 0.6));
+}
 .music-exp-info b {
   font-family: var(--md-font-display);
   font-size: 19px;

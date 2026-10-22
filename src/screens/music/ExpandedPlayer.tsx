@@ -33,6 +33,7 @@ import { ColorPicker, Empty, IconButton, PlayModeButton, Select, Switch } from '
 import { makeVividColor, useCoverColor, useCoverEdgeColor } from '@hooks/useCoverColor';
 import { SpectrumScene } from '@screens/music/SpectrumScene';
 import { VinylDisc } from '@screens/music/VinylDisc';
+import { providerName } from '@screens/music/shared';
 // 逐字歌词渲染组件（双层叠加 + RAF 推进）。歌词的"定位当前行 / 滚动跟随 / 逐字进度"
 // 全部由它内部承担 —— 所以本文件不再自己算 activeLine、不再持有 activeRef。
 import { KaraokeLyrics } from '@screens/music/KaraokeLyrics';
@@ -99,6 +100,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const expanded = useMusicStore((s) => s.expanded);
   const expandedClosing = useMusicStore((s) => s.expandedClosing);
   const currentSong = useMusicStore((s) => s.currentSong);
+  const currentIndex = useMusicStore((s) => s.currentIndex);
   const isPlaying = useMusicStore((s) => s.isPlaying);
   const progressMs = useMusicStore((s) => s.progressMs);
   const durationMs = useMusicStore((s) => s.durationMs);
@@ -487,6 +489,11 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
           <div className="music-exp-left">
             <div className="music-exp-cover">{coverUrl ? <img src={coverUrl} alt="" /> : null}</div>
             <div className="music-exp-info">
+              {/* 眉标（设计稿 `.xp-kicker`）：`TRACK 03 · 网易云音乐` —— 队列里的第几首 + 来源 */}
+              <span className="music-exp-kicker">
+                TRACK {String(currentIndex + 1).padStart(2, '0')}
+                {currentSong ? ` · ${providerName(currentSong.provider)}` : ''}
+              </span>
               <b>{currentSong?.name ?? '未在播放'}</b>
               <span>{currentSong?.artist ?? ''}</span>
               <em>{currentSong?.album || ''}</em>
