@@ -192,6 +192,43 @@ export function LibraryRight({
             /* ── 屏 A（整本 / 未归并单话）与屏 C（话内页）：同一套页网格渲染 ──
                 两处只差投影（gridView），格子本身零差别 */
             <>
+              {/*
+                话内头部（设计稿 `.cv-head`）：返回话列表 + 标题 + 动作，底部虚线分隔。
+                只在话内出现 —— 屏 A（整本）没有"上一级"可返回，不该出现返回键。
+              */}
+              {inChapter ? (
+                <>
+                  <div className="cv-head">
+                    <button type="button" className="cv-back" onClick={onExitChapter}>
+                      <ArrowLeft size={14} />
+                      返回话列表
+                    </button>
+                    <div className="cv-title">
+                      <strong>{headName}</strong>
+                      <span>{headPath ? `· ${currentBook?.bookName ?? ''}` : ''}</span>
+                    </div>
+                    <div className="cv-actions">
+                      <Btn kind="ghost" size="sm" onClick={onRefresh}>
+                        <RefreshCw size={13} />
+                        刷新
+                      </Btn>
+                    </div>
+                  </div>
+                  {/* 话信息（设计稿 `.cv-info`）：三枚状态徽标 */}
+                  <div className="cv-info">
+                    <span className="st-badge is-idle">
+                      <span className="num">{translatedSeqs.size}</span> /{' '}
+                      <span className="num">{gridSeqs.length}</span> 页已译
+                    </span>
+                    {missingSeqs.size > 0 ? (
+                      <span className="st-badge is-warn">
+                        缺 <span className="num">{missingSeqs.size}</span> 页
+                      </span>
+                    ) : null}
+                  </div>
+                </>
+              ) : null}
+
               <div className="card lib-grid-wrap">
                 <div className="lib-grid page-grid">
                   {gridSeqs.map((seq) => {

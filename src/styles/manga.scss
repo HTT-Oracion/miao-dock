@@ -1268,6 +1268,81 @@
 }
 
 /*
+ * 话内三段（设计稿 .cv-head / .cv-info / .cv-foot）：
+ * 头部一条虚线分隔、中间一排状态徽标、底部一条统计与提示。
+ */
+.cv-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed color-mix(in srgb, var(--miao-line) 70%, var(--miao-muted));
+}
+.cv-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px 0 5px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-family: var(--md-font-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  cursor: pointer;
+  transition:
+    background var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease;
+}
+.cv-back:hover {
+  background: var(--miao-surface-2);
+  color: var(--miao-ink);
+}
+.cv-title {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.cv-title strong {
+  font-family: var(--md-font-display);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--miao-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv-title span {
+  font-size: 10px;
+  color: var(--miao-muted);
+}
+.cv-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cv-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin: 12px 0;
+}
+.cv-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--miao-line);
+  font-size: 10px;
+  color: var(--miao-muted);
+}
+/*
  * 页卡（设计稿 .page-card）：宽度交给网格，缩略图按 3/4.16 自适应 ——
  * 不再写死 110x165。写死时窗口一变宽右栏就留一大片空白，且每格宽度与列宽脱节。
  */
