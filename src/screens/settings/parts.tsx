@@ -149,12 +149,15 @@ export function GroupNote({ children, summary }: { children?: string; summary?: 
 /**
  * 一行设置的骨架 —— 标题 + 说明在左，控件在右。
  *
+ * 几何（`min-height:56` / `padding:12px 16px`）由 CSS 承载，组件不再内联注入：
+ * 行内注入会盖掉卡片内的左右留白，让每一行都贴着卡片边缘。
+ *
  * `children` 为空时右侧什么都不渲染（只读项就是这种）。**不给「不可点」的假控件
  * 留位置**：没有能力时右侧要么是只读文本，要么整个换成 `PendingRow`。
  */
 export function Row({ item, children }: { item: SettingItem; children?: ReactNode }) {
   return (
-    <div className="set-row" style={{ minHeight: SETTINGS.rowMinHeight, padding: `${SETTINGS.rowPaddingY}px 0` }}>
+    <div className="set-row">
       <div className="set-row-label">
         <div className="set-row-title">
           <span className="set-row-name">{item.label}</span>
@@ -208,10 +211,7 @@ function DefaultChip({ value }: { value: string }) {
  */
 export function PendingRow({ item }: { item: SettingItem }) {
   return (
-    <div
-      className="set-row is-pending"
-      style={{ minHeight: SETTINGS.rowMinHeight, padding: `${SETTINGS.rowPaddingY}px 0` }}
-    >
+    <div className="set-row is-pending">
       <div className="set-row-label">
         <div className="set-row-title">{item.label}</div>
         {item.why ? (

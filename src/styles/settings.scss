@@ -7,53 +7,60 @@
  * 横向 flex + `align-items: flex-start`：右栏内容通常比视口高，左栏若stretch 会
  * 跟着长高，sticky 就失去意义（要相对自身盒子滚动才生效）。
  */
-.settings {
-  display: flex;
-  align-items: flex-start;
-  gap: 18px;
-  min-height: 100%;
+/*
+ * 设置页容器：设计稿 `.settings-layout` 是 **grid 两列**（左栏定宽 + 正文自适应），
+ * 整页定高、正文自己滚动。列宽由组件按 `SETTINGS.navWidth` 内联注入。
+ */
+.settings-layout {
+  display: grid;
+  grid-template-columns: 192px minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
 }
 
-/* 左栏：分组导航。`flex:0 0 180px` 与 `position:sticky; top:26px` 由组件内联注入 */
+/*
+ * 左栏：**分区栏**，不是卡片。
+ * 设计稿 `.settings-nav` 只有一条右分隔线与半透明底（`padding:16px 10px`、自身纵向滚动），
+ * 没有四边框、圆角与阴影 —— 那些属于"浮起的卡"，会把左栏读成与正文并列的第二张卡。
+ */
 .settings-nav {
-  position: sticky;
   display: flex;
   flex-direction: column;
   gap: 3px;
-  width: 180px;
-  padding: 12px 10px;
-  border: 1px solid var(--miao-line);
-  border-radius: var(--miao-r-xl);
-  background: color-mix(in srgb, var(--miao-surface) 88%, transparent);
-  box-shadow: var(--miao-shadow-1);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  padding: 16px 10px;
+  border-right: 1px solid var(--miao-line);
+  background: color-mix(in srgb, var(--miao-surface) 55%, transparent);
+  overflow-y: auto;
+  min-height: 0;
 }
 
-/* 分组项：18px 图标 + 名称 + 项数。padding 9/12 与 gap 2 由组件内联注入 */
+/* 分组项：设计稿 `.snav` —— padding 9、圆角 9、11.5px/700、gap 8（均由组件内联注入） */
 .set-nav-item {
+  position: relative;
   display: flex;
   align-items: center;
-  border-radius: 12px;
+  width: 100%;
+  border-radius: 9px;
   background: transparent;
   font-size: 11.5px;
-  color: var(--miao-text);
+  font-weight: 700;
+  color: var(--miao-muted);
   text-align: left;
   transition:
     background var(--miao-dur-fast) ease,
-    color var(--miao-dur-fast) ease,
-    transform var(--miao-dur-fast) var(--miao-ease-spring);
-  gap: 2px;
+    color var(--miao-dur-fast) ease;
 }
 .set-nav-item:hover {
   background: var(--miao-surface-2);
   color: var(--miao-ink);
 }
+/* 选中态：抬起成一片白 + 内描边（设计稿用双层阴影，不是染色） */
 .set-nav-item.is-active {
-  background: var(--miao-sage-soft);
-  color: var(--miao-sage-ink);
-  font-weight: 700;
-  box-shadow: inset 0 0 0 1px var(--miao-sage-line);
+  background: var(--miao-surface);
+  color: var(--miao-ink);
+  box-shadow:
+    0 1px 3px rgba(45, 59, 70, 0.06),
+    inset 0 0 0 1px var(--miao-line);
 }
 .set-nav-icon {
   display: grid;
@@ -70,63 +77,73 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/*
- * 项数：写出来是刻意的（见 SettingsScreen 头部注释）。
- * 用 tabular 数字免得 5 个数宽度不一，读起来像没对齐。
- */
+/* 项数：设计稿是**纯文字**（8.5px / faint / 右对齐），不是胶囊 —— 胶囊会抢走名称的视线 */
 .set-nav-count {
+  margin-left: auto;
   flex: 0 0 auto;
   font-family: var(--md-font-numeric);
-  font-size: 9.5px;
-  color: var(--miao-muted);
-  min-width: 20px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: var(--miao-surface-2);
-  text-align: center;
+  font-size: 8.5px;
+  font-weight: 400;
+  color: var(--miao-faint);
 }
 .set-nav-item.is-active .set-nav-count {
-  color: var(--miao-sage-ink);
-  background: var(--miao-surface);
+  color: var(--miao-muted);
 }
 
-/* 右栏：`min-width:0` 必写 —— 落盘根目录 / 令牌都是长路径，
-   缺了它这一列会把 flex 容器撑破，整页出现横向滚动 */
+/*
+ * 右栏：设计稿 `.settings-main` —— **不是卡片**，是整页滚动区
+ * （`padding:16px 26px 56px`、`overflow-y:auto`），底部 56 留白让最后一行不贴边。
+ */
 .settings-main {
-  flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: clamp(18px, 1.8vw, 28px);
-  border: 1px solid var(--miao-line);
-  border-radius: var(--miao-r-xl);
-  background: var(--miao-surface);
-  box-shadow: var(--miao-shadow-1);
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 26px 56px;
 }
 
-.settings-head {
-  margin-bottom: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--miao-line);
+/* 正文行长上限：设计稿 `.settings-body { max-width: 880px }` */
+.settings-body {
+  max-width: 880px;
 }
-.settings-title {
+
+/* 页头：设计稿 `.settings-section-head`（kicker / h2 / p 三段，margin:4px 0 14px） */
+.settings-section-head {
+  margin: 4px 0 14px;
+}
+.settings-section-head .kicker {
+  display: block;
+  margin-bottom: 4px;
+}
+.settings-section-head h2 {
   font-family: var(--md-font-display);
   font-weight: 700;
-  line-height: 1.3;
-  font-size: clamp(20px, 1.7vw, 26px) !important;
+  font-size: 22px;
+  line-height: 1.25;
   letter-spacing: 0.01em;
   color: var(--miao-ink);
 }
-.settings-blurb {
+.settings-section-head p {
   margin-top: 4px;
-  font-size: 11.5px;
+  font-size: 11px;
   line-height: 1.7;
   color: var(--miao-muted);
   max-width: 72ch;
+}
+
+/* 分组切换进场：设计稿 `.settings-section.is-active` 带 view-in */
+.settings-section.is-active {
+  display: block;
+  animation: miao-view-in var(--miao-dur-base) var(--miao-ease-out);
+}
+@keyframes miao-view-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /*
@@ -199,108 +216,113 @@
   color: var(--miao-ink);
 }
 
+/*
+ * 分组 = 一张卡（设计稿 `.s-card`）：白面 + 描边 + 大圆角 + 一层弥散阴影，
+ * `overflow:hidden` 让首尾行不会顶出圆角。组与组之间 13px 间距。
+ */
 .set-group {
   display: flex;
   flex-direction: column;
-  padding: 4px 0;
+  margin-bottom: 13px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-lg);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
+  overflow: hidden;
+}
+.set-group:last-child {
+  margin-bottom: 0;
 }
 
-/* 小节标题 10.5/700/uppercase/.05em（大小与字距由组件按 SETTINGS 注入）。
-   组内分层的唯一手段（C11 判据），不可省 */
+/* 小节标题：设计稿 `.s-card-head h3`（12.5px / 700），带下分隔线与 13/16/10 内边距。
+   它是组内分层的唯一手段（C11 判据），不可省 */
 .set-subtitle {
-  font-family: var(--md-font-display);
-  font-weight: 700;
-  text-transform: uppercase;
-  color: var(--miao-sage-ink);
-  margin-bottom: 2px;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 18px 0 5px;
-  font-size: 9.5px !important;
-  letter-spacing: 0.12em !important;
+  margin: 0;
+  padding: 13px 16px 10px;
+  border-bottom: 1px solid var(--miao-line);
+  font-family: var(--md-font-display);
+  font-weight: 700;
+  font-size: 12.5px !important;
+  letter-spacing: 0.01em !important;
+  color: var(--miao-ink);
+  text-transform: none;
 }
 
 /*
- * 行：`min-height:50 / padding:10 0` 由组件按 SETTINGS 注入。
+ * 行：设计稿 `.s-row` —— `grid` 两列、`min-height:56`、`padding:12px 16px`。
  *
- * 分隔线只画**顶**线，且排除"小节标题后的第一行"与"组内第一行" ——
- * 靠相邻选择器而不是给每行画上下边框，于是小节之间天然断开，
- * 不必再回头抹掉最后一行的底线（那种写法在加小节时必漏）。
+ * 分隔线只画**顶**线（卡头已有 `border-bottom`，于是第一行不需要再画）：
+ * 旧写法同时给了 top 与 bottom，行与行之间会画出双线。
  */
 .set-row {
   display: grid;
   align-items: center;
-  gap: 18px;
-  border-top: 1px solid var(--md-line-soft);
+  gap: 20px;
   grid-template-columns: minmax(0, 1fr) auto;
-  min-height: 50px;
-  padding: 12px 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--miao-line) 78%, transparent);
+  min-height: 56px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--miao-line);
 }
 .set-group > .set-row:first-child,
 .set-group > .set-subtitle + .set-row {
   border-top: 0;
 }
 
+/* 文本块：标题 + 描述两行（设计稿 `.s-row-text`） */
 .set-row-label {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
+/*
+ * 标题行：`<strong>` 单行标题 + 默认值 chip。
+ * 设计稿把默认值挂在**文本块下方**（`display:block` 的 chip），但本项目这一行同时承载
+ * 「默认：X」，同排更省纵向空间；两者都保留，靠 `flex-wrap` 在窄窗自然换行。
+ */
 .set-row-title {
-  font-size: 12.5px;
-  color: var(--md-ink);
-  /*
-   * 标题行做成一列 flex：为了把「默认：X」这枚小字**挂在同一行**的右端。
-   * `baseline` 而非 `center` —— 两者字号不同（12.5 / 11），居中对齐会让小字
-   * 看起来比标题高一点点；`wrap` 兜住窄窗：实在放不下时小字落到第二行，
-   * 总比被压成省略号强。
-   */
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  display: flex;
   min-width: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
 }
 .set-row-name {
-  /* 标题本身可被压缩、小字不压 —— 长标题先让位，别把「默认：」挤成「默…」 */
   min-width: 0;
   font-family: var(--md-font-display);
-  font-size: 12.5px;
+  font-size: 11.5px;
   font-weight: 700;
   color: var(--miao-ink);
 }
 /*
- * 出厂默认值（catalog 的 `def`）。刻意比 `why` 还浅一档、且不加背景 ——
- * 它是一条**参考信息**，不是状态、更不是控件；加个底色就会读成一枚可点的标签。
+ * 出厂默认值（catalog 的 `def`）：设计稿 `.default-chip` 是 9px 纯文字，
+ * 不加背景、不加边框 —— 它是参考信息，不是状态，更不是可点的标签。
  */
 .set-row-def {
   flex: 0 0 auto;
   font-size: 9px;
   font-weight: 400;
-  color: var(--miao-muted);
+  color: var(--miao-faint);
   white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 7px;
-  border: 1px solid var(--miao-line);
-  border-radius: 999px;
-  background: var(--miao-surface-2);
 }
 /* 未实现项：标题降权但不加删除线 —— 它是计划中的项，不是被废弃的项 */
 .set-row.is-pending .set-row-title {
   color: var(--md-muted);
 }
+/* 行内描述：设计稿 `.s-row-text p`（10px / line-height 1.6 / max-width 540） */
 .set-row-why {
-  margin-top: 3px;
-  font-size: 10.5px;
-  line-height: 1.65;
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 1.6;
   color: var(--miao-muted);
+  max-width: 540px;
 }
 
 /*
@@ -1716,14 +1738,13 @@
 
 /* ================================================================ 响应式 · 设置页
  *
- * 1180 档左栏 180 → 156（`SETTINGS.navWidthCompact`），1040 档整壳转上下布局、
- * 分组导航横排。断点是唯一允许覆盖组件注入行内值的地方；规格自检 C10a 按视口取期望。
+ * 1180 档左栏 192 → 172（`SETTINGS.navWidthCompact`），1040 档整壳转上下布局、
+ * 分组导航横排。断点是唯一允许覆盖组件注入列宽的地方；规格自检 C10a 按视口取期望。
  */
 
 @media (max-width: 1180px) {
-  .settings-nav {
-    flex-basis: 156px !important;
-    width: 156px !important;
+  .settings-layout {
+    grid-template-columns: 172px minmax(0, 1fr) !important;
   }
   .set-cache-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1731,18 +1752,17 @@
 }
 
 @media (max-width: 1040px) {
-  .settings {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto minmax(0, 1fr);
   }
   .settings-nav {
-    position: static;
-    flex-direction: row !important;
-    flex-basis: auto !important;
-    width: 100% !important;
+    flex-direction: row;
+    gap: 4px;
     overflow-x: auto;
-    padding: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--miao-line);
+    padding: 8px 12px;
   }
   .settings-nav-title,
   .settings-nav-note {
@@ -1750,24 +1770,22 @@
   }
   .set-nav-item {
     flex: 0 0 auto;
+    width: auto;
   }
   .settings-main {
-    padding: 18px;
+    padding: 14px 20px 50px;
   }
 }
 
 @media (max-width: 760px) {
   .settings-main {
-    padding: 14px;
-  }
-  .settings-head {
-    padding-bottom: 10px;
+    padding: 12px 13px 50px;
   }
   .set-row {
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
     gap: 8px;
-    padding: 11px 0;
+    padding: 11px 16px;
   }
   .set-row-ctl {
     justify-content: flex-start;

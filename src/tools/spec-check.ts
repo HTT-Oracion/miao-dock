@@ -542,49 +542,47 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
   // ---------------------------------------------------------------- C10 设置两栏壳
   {
     // 量的是**真实渲染的两栏**，不是常量。离屏样张已被移出壳外（否则它 0 宽的
-    // flex item 会被 26px gap 推开左栏，让 180 假性不成立），故壳内只有 nav + main。
-    const shell = document.querySelector('.settings') as HTMLElement | null;
+    // flex item 会被推开左栏，让定宽判据假性不成立），故壳内只有 nav + main。
+    //
+    // 设计稿容器是 `.settings-layout`（grid 两列），左栏是**分区栏**（右分隔线，非卡片）。
+    const shell = document.querySelector('.settings-layout') as HTMLElement | null;
     const nav = shell?.querySelector('.settings-nav') as HTMLElement | null;
     const main = shell?.querySelector('.settings-main') as HTMLElement | null;
 
     if (!shell || !nav || !main) {
-      add('C10a', '设置页为两栏壳（左 180px sticky + 右 flex:1）', true, '当前不在设置页（跳过，非通过依据）');
+      add('C10a', '设置页为两栏壳（左 192px + 右自适应）', true, '当前不在设置页（跳过，非通过依据）');
     } else {
       const navW = nav.getBoundingClientRect().width;
       const shellW = shell.getBoundingClientRect().width;
       const mainW = main.getBoundingClientRect().width;
       const ncs = getComputedStyle(nav);
       const mcs = getComputedStyle(main);
+      const scs = getComputedStyle(shell);
       const shellKids = Array.from(shell.children);
       /*
        * 1040 以下壳改为上下布局：分组导航横排、占满壳宽，右栏同宽。
-       * 这一档不再要求 sticky/固定 180 —— 响应式本身就是「结构随宽度变」，
+       * 这一档不再要求定宽 —— 响应式本身就是「结构随宽度变」，
        * 但「左右两栏在同宽约束下都不溢出」仍然要成立。
        */
       const stacked = isCompact;
       const wantNavW = isMedium ? SETTINGS.navWidthCompact : SETTINGS.navWidth;
       const layoutOk = stacked
-        ? near(navW, shellW) && near(mainW, shellW) && ncs.position === 'static'
-        : near(navW, wantNavW) &&
-          near(parseFloat(ncs.flexBasis) || -1, wantNavW) &&
-          ncs.position === 'sticky' &&
-          near(px(ncs.top), SETTINGS.navStickyTop);
+        ? near(navW, shellW) && near(mainW, shellW)
+        : near(navW, wantNavW) && scs.display === 'grid';
       add(
         'C10a',
         stacked
           ? '设置页窄屏形态：分组导航横排、左右同宽不溢出（单列壳）'
-          : `两栏壳：左栏 ${wantNavW}px（sticky top ${SETTINGS.navStickyTop}）+ 右栏 flex:1/min-width:0`,
-        layoutOk &&
-          (mcs.flexGrow === '1' || mcs.flexBasis === '0%' || mcs.flexBasis === 'auto') &&
-          mcs.minWidth === '0px',
-        `左栏 ${navW.toFixed(0)} / 右栏 ${mainW.toFixed(0)} / 壳 ${shellW.toFixed(0)} / flexBasis ${ncs.flexBasis} / ${ncs.position} top ${ncs.top} · 右栏 flex ${mcs.flex} minWidth ${mcs.minWidth}`,
+          : `两栏壳：左栏 ${wantNavW}px（grid 定列）+ 右栏自适应/min-width:0`,
+        layoutOk && mcs.minWidth === '0px',
+        `左栏 ${navW.toFixed(0)} / 右栏 ${mainW.toFixed(0)} / 壳 ${shellW.toFixed(0)} / 壳 ${scs.display} / ${ncs.position} · 右栏 minWidth ${mcs.minWidth}`,
       );
 
       // 一次只渲染一个分组。用「壳内除 nav/main 外无第三个结构子元素」+ 「右栏只挂载一组」判断。
       const renderedSections = shellKids.filter(
         (k) => !k.classList.contains('settings-nav') && !k.classList.contains('settings-main'),
       );
-      const headings = main.querySelectorAll('.settings-head').length;
+      const headings = main.querySelectorAll('.settings-section-head').length;
       add(
         'C10b',
         '一次只渲染**一个**分组（右栏单组，不把 5 组全渲染再靠 CSS 隐藏）',

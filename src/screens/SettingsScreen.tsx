@@ -130,12 +130,8 @@ export function SettingsScreen({
       */}
       <SpecFixtureHost fixtureRef={fixtureRef} />
 
-      <div className="settings">
-        <nav
-          className="settings-nav"
-          aria-label="设置分组"
-          style={{ flex: `0 0 ${SETTINGS.navWidth}px`, top: SETTINGS.navStickyTop }}
-        >
+      <div className="settings-layout" style={{ gridTemplateColumns: `${SETTINGS.navWidth}px minmax(0, 1fr)` }}>
+        <nav className="settings-nav" aria-label="设置分组">
           <div className="settings-nav-title">偏好设置</div>
           {SETTINGS_SECTIONS.map((s) => {
             const Icon = SECTION_ICON[s.id];
@@ -186,39 +182,43 @@ export function SettingsScreen({
         </nav>
 
         <div className="settings-main">
-          <header className="settings-head">
-            <span className="kicker">
-              {isAnime ? 'MODULE / ANIME' : `PREFERENCES / ${String(sectionIndex + 1).padStart(2, '0')}`}
-            </span>
-            <div className="settings-title" style={{ fontSize: SETTINGS.pageTitleSize }}>
-              {isAnime ? '番剧设置' : active?.name}
-            </div>
-            {isAnime ? (
-              <div className="settings-blurb">
-                番剧库、播放、字幕、数据源、媒体选择、缓存与 BT、账号与同步、备份 —— {ANIME_SETTING_GROUPS.length} 组共{' '}
-                {ANIME_SETTING_TOTAL} 项。
-              </div>
-            ) : active?.blurb ? (
-              <div className="settings-blurb">{emphasis(active.blurb)}</div>
-            ) : null}
-          </header>
+          {/* 设计稿 `.settings-body`：限制正文行长（max-width 880），宽窗下不摊成一整行 */}
+          <div className="settings-body">
+            <header className="settings-section-head">
+              <span className="kicker">
+                {isAnime ? 'MODULE / ANIME' : `PREFERENCES / ${String(sectionIndex + 1).padStart(2, '0')}`}
+              </span>
+              <h2 style={{ fontSize: SETTINGS.pageTitleSize }}>{isAnime ? '番剧设置' : active?.name}</h2>
+              {isAnime ? (
+                <p>
+                  番剧库、播放、字幕、数据源、媒体选择、缓存与 BT、账号与同步、备份 —— {ANIME_SETTING_GROUPS.length}{' '}
+                  组共 {ANIME_SETTING_TOTAL} 项。
+                </p>
+              ) : active?.blurb ? (
+                <p>{emphasis(active.blurb)}</p>
+              ) : null}
+            </header>
 
-          {isAnime ? <AnimeSettingsSection /> : null}
-          {!isAnime && active?.id === 'general' ? (
-            <GeneralSection
-              mode={mode}
-              onMode={onMode}
-              sidebarLabels={sidebarLabels}
-              onSidebarLabels={onSidebarLabels}
-              fixtureRef={fixtureRef}
-            />
-          ) : null}
-          {!isAnime && active?.id === 'translate' ? (
-            <TranslateSection status={status} autoStart={serviceAutoStart} onAutoStart={onServiceAutoStart} />
-          ) : null}
-          {!isAnime && active?.id === 'media' ? <MediaSection /> : null}
-          {!isAnime && active?.id === 'resource' ? <ResourceSection lib={lib} /> : null}
-          {!isAnime && active?.id === 'about' ? <AboutSection /> : null}
+            {isAnime ? <AnimeSettingsSection /> : null}
+            {/* 设计稿 `.settings-section.is-active` 带进场动画：key 变化时重挂，切组即播一次 */}
+            <section className="settings-section is-active" key={section}>
+              {!isAnime && active?.id === 'general' ? (
+                <GeneralSection
+                  mode={mode}
+                  onMode={onMode}
+                  sidebarLabels={sidebarLabels}
+                  onSidebarLabels={onSidebarLabels}
+                  fixtureRef={fixtureRef}
+                />
+              ) : null}
+              {!isAnime && active?.id === 'translate' ? (
+                <TranslateSection status={status} autoStart={serviceAutoStart} onAutoStart={onServiceAutoStart} />
+              ) : null}
+              {!isAnime && active?.id === 'media' ? <MediaSection /> : null}
+              {!isAnime && active?.id === 'resource' ? <ResourceSection lib={lib} /> : null}
+              {!isAnime && active?.id === 'about' ? <AboutSection /> : null}
+            </section>
+          </div>
         </div>
       </div>
     </>

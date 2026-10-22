@@ -170,18 +170,32 @@ export const VIEW_TABS = {
  * | 行         | min-height 50, padding 10 0 | 相邻行 1px line-soft |
  */
 export const SETTINGS = {
-  navWidth: 180,
-  /** 1180 断点以下的左栏宽度（与 settings.scss / components.scss 的媒体查询同值） */
-  navWidthCompact: 156,
+  /** 左栏列宽：设计稿 `.settings-layout` 的 `grid-template-columns: 192px` */
+  navWidth: 192,
+  /** 1180 断点以下的左栏宽度（设计稿同断点取 172） */
+  navWidthCompact: 172,
   navStickyTop: 26,
-  navItemPadding: { y: 9, x: 12 },
+  /** 左栏内边距：设计稿 `.settings-nav { padding: 16px 10px }` */
+  navPadding: { y: 16, x: 10 },
+  /** 导航项内边距：设计稿 `.snav { padding: 9px }` */
+  navItemPadding: { y: 9, x: 9 },
   navItemIcon: 18,
-  navItemGap: 2,
-  pageTitleSize: 15,
-  sectionTitleSize: 10.5,
+  /** 设计稿 `.snav { gap: 8px }` */
+  navItemGap: 8,
+  /** 设计稿 `.settings-section-head h2 { font-size: 22px; line-height: 1.25 }` */
+  pageTitleSize: 22,
+  /** 设计稿 `.s-card-head h3 { font-size: 12.5px }` */
+  sectionTitleSize: 12.5,
   sectionTitleTracking: '0.05em',
-  rowMinHeight: 50,
-  rowPaddingY: 10,
+  /** 设计稿 `.s-row { min-height: 56px }` */
+  rowMinHeight: 56,
+  /** 设计稿 `.s-row { padding: 12px 16px }` —— 左右 16 是卡片内边距，行本身不能再贴边 */
+  rowPaddingY: 12,
+  rowPaddingX: 16,
+  /** 设计稿 `.settings-body { max-width: 880px }` */
+  bodyMaxWidth: 880,
+  /** 设计稿 `.settings-main { padding: 16px 26px 56px }` */
+  mainPadding: { top: 16, x: 26, bottom: 56 },
 } as const;
 
 /** 画面 X-C1 · 任务队列几何（《02》§5.2） */
