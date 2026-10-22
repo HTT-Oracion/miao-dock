@@ -932,6 +932,29 @@
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 210px minmax(0, 1fr);
   }
+  /* 更窄时对照页改成**上下叠放**（设计稿 ≤900）：左右并排在 900px 以下两边都读不清 */
+  .compare-panes {
+    flex-direction: column;
+  }
+}
+/*
+ * 队列页的窄窗列宽（设计稿 ≤1040 那一档）：四列从**定宽**换成**比例**。
+ * 不换的话 26+120+160+150+128 就 584px，加上侧栏与内边距，1000px 的窗口直接溢出。
+ * ⚠️ 只覆盖 `--qt-cols` 的**窄窗变体**：基础档四列像素仍是 `QUEUE_TABLE` 的事实源
+ *    （规格自检 C2a 逐列量它们），改基础值会让那条断言失去意义。
+ */
+@media (max-width: 1040px) {
+  .queue-table {
+    --qt-cols: 24px minmax(180px, 1.3fr) 0.5fr minmax(120px, 1fr) 0.55fr auto;
+  }
+  .qt-row {
+    gap: 8px;
+  }
+  /* 对照页两栏在窄窗收紧内边距（设计稿同档） */
+  .compare-panes {
+    gap: 10px;
+    padding: 12px;
+  }
 }
 /* 左栏 260（《02》§5.5）—— ver3 起是一张独立面板，卡片感来自描边 + 弥散阴影 */
 /* 书架头（设计稿 .shelf-head）：标题 + 部数，14/14/8 内边距 */
