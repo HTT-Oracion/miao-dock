@@ -1932,6 +1932,27 @@
   background: var(--miao-surface-2);
   border-bottom: 1px solid var(--miao-line);
 }
+/* 来源色点（设计稿 `.cmp-dot`）：6px 圆点，译文侧取主色 */
+.pane-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--miao-faint);
+}
+.pane-dot.is-alt {
+  background: var(--miao-accent);
+}
+/* 页文件名（设计稿 `.cmp-pane-head small`）：小一档、数字字体、不与"原图/译文"抢 */
+.pane-file {
+  font-family: var(--md-font-numeric);
+  font-size: 10.5px;
+  font-weight: 400;
+}
+/* 取图中 / 缺失的占位文案：比标题小一档 */
+.pane-msg {
+  font-size: 11px;
+}
 /*
  * 与 `.lightbox-stage` 同理：**必须 flex 居中，不能用 grid + place-items:center**
  * —— grid 的 auto 轨道会被内容撑开 ⇒ 百分比 `max-height` 失效 ⇒ 图溢出、要滚动。

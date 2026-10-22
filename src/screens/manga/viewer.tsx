@@ -34,10 +34,10 @@ function Pane({
   return (
     <div className="pane">
       <div className="pane-title">
+        {/* 来源色点（设计稿 `.cmp-dot`）：原图 faint、译文取主色 —— 两栏并排时先看颜色定位 */}
+        <span className={variant === 'translated' ? 'pane-dot is-alt' : 'pane-dot'} aria-hidden="true" />
         <span>{label}</span>
-        <span className="muted num" style={{ fontSize: 10.5 }}>
-          {file}
-        </span>
+        <span className="muted num pane-file">{file}</span>
         {blob.kind === 'ready' ? (
           <span className="pane-zoom" title="点击图片可全屏查看">
             <Search size={11} /> 点击全屏
@@ -57,9 +57,7 @@ function Pane({
           />
         ) : (
           // 取图中 / 确实没有，是两件事：前者会换成图，后者不会
-          <span className="muted" style={{ fontSize: 11 }}>
-            {blob.kind === 'loading' ? '加载中…' : '该侧文件缺失'}
-          </span>
+          <span className="muted pane-msg">{blob.kind === 'loading' ? '加载中…' : '该侧文件缺失'}</span>
         )}
       </div>
     </div>
