@@ -1,4 +1,4 @@
-﻿/* ====================================================== 灵动岛（拍板第 4 项方案 B）
+/* ====================================================== 灵动岛（拍板第 4 项方案 B）
  *
  * 形态：**Mac 式灵动岛**，浮在顶栏之上，三态形变：
  *   圆形 30×30（只有语义点）→ 胶囊（音乐 200×30 / 普通提示自适应宽×30）→ 大卡 320×150（音乐）。
@@ -46,7 +46,9 @@
   /* 底色比页面底更"浮"一点，读成"悬在上层"而不是"贴在页面上的一块 UI" */
   background: var(--miao-surface);
   border: 1px solid var(--miao-line);
-  border-radius: 999px; /* 胶囊 = 全圆角，与项目既有 .pill / .magic 同一套语汇 */
+  /* 圆角随状态走（设计稿：idle 999 / pill 16 / card 20）—— 三态都是同一个元素，
+     border-radius 已在 transition 里，形变时会一起补间 */
+  border-radius: 999px;
   box-shadow: var(--miao-shadow-2);
   font-size: 12px;
   color: var(--miao-ink);
@@ -60,13 +62,16 @@
     padding var(--miao-dur-base),
     background var(--miao-dur-base);
 }
-/* 大卡不再用全圆角：320×150 若还是 999 半径会变成"跑道形"，读不出卡片感。
-   展开态收成 20（大卡）/18（单行长条）。 */
+/* 大卡不再用全圆角：350×160 若还是 999 半径会变成"跑道形"，读不出卡片感。
+   展开态收成 20（设计稿 `.island[data-state="card"]`）；折叠胶囊 16（设计稿 pill 态）。 */
 .di-capsule.is-expanded.is-music {
   border-radius: 20px;
 }
+.di-capsule.is-music:not(.is-expanded) {
+  border-radius: 16px;
+}
 
-/* 音乐卡容器：铺满胶囊（折叠 200×30 / 展开 350×160），内部元素全部绝对定位，
+/* 音乐卡容器：铺满胶囊（折叠 306×46 / 展开 350×160），内部元素全部绝对定位，
    于是它们不参与"胶囊宽高变了就重排"——折叠↔展开只是各自 transform 的补间。 */
 .di-music {
   position: relative;
@@ -95,11 +100,34 @@
   color: #fff;
   transform-origin: left top;
   pointer-events: none;
-  transform: translate(10px, 3px) scale(0.5);
+  transform: translate(9px, 7px) scale(0.667);
   transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 .di-capsule.is-expanded .di-cover {
   transform: translate(16px, 12px) scale(1);
+}
+/*
+ * 眉标「NOW PLAYING」（设计稿 `.island-eyebrow`）：折叠 (49,7) / 展开 (74,12)，7px / .14em / faint。
+ * 与歌名、歌手同属"共享元素"（绝对定位 + transform 补间），三行文字在两态间一起走。
+ */
+.di-eyebrow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  color: var(--miao-faint);
+  white-space: nowrap;
+  transform-origin: left top;
+  pointer-events: none;
+  transform: translate(49px, 7px);
+  transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.di-capsule.is-expanded .di-eyebrow {
+  transform: translate(74px, 12px);
 }
 .di-cover img {
   width: 100%;
@@ -126,12 +154,12 @@
   text-overflow: ellipsis;
   transform-origin: left top;
   pointer-events: none;
-  transform: translate(44px, 8px) scale(0.73);
+  transform: translate(49px, 17px) scale(0.733);
   transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 .di-capsule.is-expanded .di-name {
   max-width: 224px;
-  transform: translate(74px, 12px) scale(1);
+  transform: translate(74px, 24px) scale(1);
 }
 
 /* 单一共享歌手行：歌名正下方，展开 = 12px 在 (74,32)。
@@ -160,16 +188,16 @@
   text-overflow: ellipsis;
   transform-origin: left top;
   pointer-events: none;
-  transform: translate(44px, 21.6px) scale(0.6);
-  opacity: 0;
+  transform: translate(49px, 31px) scale(0.79);
+  opacity: 1;
   transition:
     transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1),
     opacity 0.18s ease-out;
 }
 .di-capsule.is-expanded .di-subname {
-  /* top 32 与展开卡片的 padding-top 对齐，歌手行正好落在"歌名下方、进度条上方"的空档里
+  /* top 42 与展开卡片的 padding-top 对齐，歌手行正好落在"眉标 + 歌名"下方的空档里
      （进度行是绝对定位 bottom:50 ⇒ y∈[88,100]，与此不冲突） */
-  transform: translate(74px, 32px) scale(1);
+  transform: translate(74px, 42px) scale(1);
   opacity: 1;
 }
 
@@ -178,8 +206,8 @@
    拿不到音频上下文时用 CSS 动画画"正在出声"，暂停（data-on=0）时完全静止。 */
 .di-wave {
   position: absolute;
-  right: 10px;
-  top: 7px;
+  right: 12px;
+  top: 15px;
   z-index: 1;
   display: flex;
   align-items: center;
@@ -239,15 +267,6 @@
   padding: 32px 16px 42px;
   opacity: 0;
   transition: opacity var(--miao-dur-fast) ease;
-}
-.di-artist {
-  margin-left: 60px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--miao-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 /* 进度行：与按钮栏一样**绝对定位**（见下方 .di-ctl 的固定几何说明）。
    位置/宽度只由卡片尺寸决定，与当前是播放卡还是歌词卡无关 ⇒ 切 di-toggle 时不需重算、不偏移。 */

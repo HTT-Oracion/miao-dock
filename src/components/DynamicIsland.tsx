@@ -1,4 +1,4 @@
-﻿import { ListMusic, Maximize2, Music, Pause, Play, SkipBack, SkipForward, AudioLines } from 'lucide-react';
+import { ListMusic, Maximize2, Music, Pause, Play, SkipBack, SkipForward, AudioLines } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { IconButton } from '@components/units/IconButton';
@@ -42,9 +42,9 @@ import { KaraokeLyrics } from '@screens/music/KaraokeLyrics';
  */
 
 /* ---- 尺寸常量：与参考实现逐值一致（30 / 200×30 / 320×150）---- */
-const CIRCLE_SIZE = 30;
-const MUSIC_COLLAPSED_WIDTH = 200;
-const MUSIC_COLLAPSED_HEIGHT = 30;
+const CIRCLE_SIZE = 38;
+const MUSIC_COLLAPSED_WIDTH = 306;
+const MUSIC_COLLAPSED_HEIGHT = 46;
 const EXPANDED_WIDTH = 350;
 const MUSIC_EXPANDED_HEIGHT = 160;
 
@@ -460,6 +460,10 @@ function MusicCard({
         )}
       </div>
 
+      {/* 眉标（设计稿 `.island-eyebrow`「NOW PLAYING」）：7px / .14em / faint。
+          它回答的是"这块东西在放什么"——没有它，胶囊里那两行字只能靠猜。 */}
+      <div className="di-eyebrow">NOW PLAYING</div>
+
       <div className="di-name">{song.name}</div>
 
       {/* 歌手行：歌名**正下方**，与歌名同属"共享元素"一族（绝对定位 + transform 补间）。
@@ -513,10 +517,13 @@ function MusicCard({
             )}
           </div>
         ) : (
-          <>
-            <div className="di-artist">{song.artist || '未知歌手'}</div>
-            <MusicProgress />
-          </>
+          /*
+           * 播放卡不再自己画一行歌手：歌手行由共享元素 `.di-subname` 承担
+           * （绝对定位、折叠↔展开靠 transform 补间）。此前这里还有一个 `.di-artist`，
+           * 位置与 `.di-subname` 几乎重合（x 差 2px、同一 y）⇒ **同一句歌手被画了两遍**。
+           * 一个信息只能有一个 owner：留在补间体系里的那一个。
+           */
+          <MusicProgress />
         )}
         <div className="di-ctl">
           <IconButton title="上一曲" onClick={stop(onPrev)}>
