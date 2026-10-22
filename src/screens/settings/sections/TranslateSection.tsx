@@ -499,7 +499,13 @@ export function TranslateSection({
         </Row>
 
         <Row item={itemOf(pairing, 'token-pairing')}>
-          <Btn kind="primary" disabled={!status?.token} onClick={() => void copyToken()}>
+          {/*
+            设计稿这里是「只读值 + 一颗小图标钮」，不是主行动按钮；本行同排的其他动作
+            （校验完整性 / 重新下载模型 / 打开目录）也都是 `ghost · sm · 28` 高。
+            此前用 `primary` 33 高，令牌那一颗比"重启引擎"还抢眼，读起来主次颠倒。
+            可见文字保留（设计稿把它放在 aria-label 里，产品摊到明面上更清楚）。
+          */}
+          <Btn kind="ghost" size="sm" disabled={!status?.token} onClick={() => void copyToken()}>
             复制令牌
           </Btn>
         </Row>
@@ -533,6 +539,22 @@ export function TranslateSection({
 
         <Row item={itemOf(pairing, 'root-dir')}>
           <ReadOnly title={status?.root_dir ?? undefined}>{status?.root_dir ?? '—'}</ReadOnly>
+          {/*
+            设计稿这一行是「只读路径 + 一个打开按钮」，产品此前只有路径 ——
+            用户看到路径却拿不到目录，只能自己复制到资源管理器里拼。
+            与 ④「模型目录」那行同一个动作、同一个形状（`打开` + 说明性 title）。
+          */}
+          <Btn
+            size="sm"
+            disabled={!status?.root_dir}
+            title={status?.root_dir ? '在系统文件管理器里打开落盘根目录' : '根目录还没读到'}
+            onClick={() => {
+              if (!status?.root_dir) return;
+              openPath(status.root_dir).catch((e: unknown) => onToast(errorText(e), 'bad'));
+            }}
+          >
+            打开
+          </Btn>
         </Row>
       </div>
 

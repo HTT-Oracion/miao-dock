@@ -753,10 +753,12 @@
   left: 0;
   right: 0;
 }
-/* 控件旁的小字注解（例如「仅在固定颜色时生效」） */
+/* 控件旁的小字注解（例如「仅在固定颜色时生效」「分钟 · 0–1440」）——
+   设计稿的提示档是 `.row-hint`：**9px + faint**，比行的说明文字（`.s-row-text p` = 10px muted）
+   更小更淡。原来写 10.5px muted 会**倒挂**：注解比"这一项是干什么的"那句还抢眼。 */
 .set-ctl-note {
-  font-size: 10.5px;
-  color: var(--md-muted);
+  font-size: 9px;
+  color: var(--miao-faint);
 }
 
 /* 只读值：端口 / 目录 / 版本号（设计稿 `.readonly`：28 高胶囊、r8、surface-2 + line 描边、10.5px）。
