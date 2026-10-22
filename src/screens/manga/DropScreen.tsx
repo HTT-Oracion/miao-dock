@@ -6,7 +6,7 @@ import { useToasts } from '@hooks';
 import type { CreateTaskResponse, LibraryResponse } from '@/types';
 import { dupKey, splitBatches, uuid } from '@tools';
 import { Btn, Notice } from '@components/units';
-import { BookOpenCheck, Check, FolderPlus, Image, ImagePlus, Info, SlidersHorizontal, Upload, X } from 'lucide-react';
+import { Check, FolderPlus, Image, ImagePlus, Info, SlidersHorizontal, Upload, X } from 'lucide-react';
 
 const BATCH_LIMIT = 20; // 契约 §5.2 单次上限
 
@@ -309,6 +309,35 @@ export function DropScreen({
               </div>
             </section>
           ) : null}
+
+          {/*
+            「投放之后会发生什么」（设计稿 `.drop-flow`）：左列底部的一张说明卡。
+            放在左列而不是右栏，是因为它解释的是**投放这个动作**的后果，
+            与左边"拖进来 / 待投放"是同一段叙事；右栏是"这次要填什么"。
+          */}
+          <section className="drop-flow">
+            <div className="drop-flow-head">
+              <span className="kicker">WHAT HAPPENS NEXT</span>
+              <h2>投放之后会发生什么</h2>
+            </div>
+            <div className="drop-flow-grid">
+              <div className="drop-flow-step">
+                <span>01</span>
+                <strong>自动分组</strong>
+                <p>按文件名自然排序，每 20 张一批；文字方向与命名规则都来自设置。</p>
+              </div>
+              <div className="drop-flow-step">
+                <span>02</span>
+                <strong>串行翻译</strong>
+                <p>本地引擎逐页检测气泡、修复背景并翻译。同一时刻只跑一个批次。</p>
+              </div>
+              <div className="drop-flow-step">
+                <span>03</span>
+                <strong>落盘到库</strong>
+                <p>译文写回原目录，作品按「本 → 话 → 页」出现在漫画库，随时可以对照。</p>
+              </div>
+            </div>
+          </section>
         </div>
 
         {/* ── 右列：本次投放的表单与落盘预览 ─────────────────────── */}
@@ -385,30 +414,6 @@ export function DropScreen({
               <Info size={12} />
               同一时刻只翻译 1 个批次，其余会自动排队。翻译过程中可以关闭喵坞，任务状态会保存在本机。
             </p>
-          </section>
-
-          <section className="form-card">
-            <h3>
-              <BookOpenCheck size={14} /> 落盘规则
-            </h3>
-            <p className="form-sub">这三条由服务端保证，投放页只是把它们说清楚。</p>
-            <div className="drop-flow-grid">
-              <div className="drop-flow-step">
-                <span>01</span>
-                <strong>页序</strong>
-                <p>磁盘上的文件没有页面坐标，按文件名自然序排序（由服务端展开）。</p>
-              </div>
-              <div className="drop-flow-step">
-                <span>02</span>
-                <strong>规范化</strong>
-                <p>漫画名只在服务端规范化，提交前这里不猜名字。</p>
-              </div>
-              <div className="drop-flow-step">
-                <span>03</span>
-                <strong>重名</strong>
-                <p>同名不覆盖：已存在会被拦下，补页走漫画库的「继续翻译」。</p>
-              </div>
-            </div>
           </section>
         </aside>
       </div>
