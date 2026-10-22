@@ -29,7 +29,7 @@ import type { SettingItem } from '@screens/settings/catalog';
  */
 const STATE_VIEW: Record<string, { text: string; colorVar: string } | undefined> = {
   stopped: { text: '未启动', colorVar: '--md-muted' },
-  starting: { text: '启动中', colorVar: '--md-blue' },
+  starting: { text: '正在启动', colorVar: '--md-blue' },
   running: { text: '运行中', colorVar: '--md-success' },
   stopping: { text: '正在停止', colorVar: '--md-muted' },
   error: { text: '异常', colorVar: '--md-error' },

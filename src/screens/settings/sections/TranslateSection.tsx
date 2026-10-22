@@ -1,4 +1,4 @@
-﻿// 设置页 —— 由 sections.tsx 按 Section 拆分（D-150）。
+// 设置页 —— 由 sections.tsx 按 Section 拆分（D-150）。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToasts } from '@hooks';
 import type { ServiceStatus } from '@/ipc';
@@ -17,12 +17,17 @@ import { saveTranslateCredentials, saveTranslateSettings, translateOptions } fro
 import type { TranslateOptions, TranslateSettingsPatch, TranslateSource } from '@screens/settings/translate-api';
 import { itemOf } from './shared';
 
+/**
+ * 「服务状态与端口」那行的只读值。设计稿这一行用的就是全站那一份 `Miao.serviceLabel`，
+ * 所以字与 `stores/nav.ts` 的 `STATE_VIEW` 一致（此前这里是另一套短词，同一个状态三种叫法）。
+ * 诊断面板里的三枚进程 chip 仍然用短词（那里带 ①②③ 前缀，长词会撑爆），是刻意的两处不同。
+ */
 const STATUS_TEXT: Record<ServiceStatus['state'], string> = {
-  stopped: '未启动',
-  starting: '启动中',
-  running: '运行中',
+  stopped: '服务未启动',
+  starting: '正在启动',
+  running: '服务运行中',
   stopping: '正在停止',
-  error: '异常',
+  error: '服务异常',
 };
 
 /**

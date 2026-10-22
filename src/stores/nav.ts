@@ -66,7 +66,7 @@ export const APP_VIEWS: Record<AppId, TranslateView[] | null> = {
  */
 const STATE_VIEW: Record<ServiceState, { text: string; colorVar: string }> = {
   stopped: { text: '服务未启动', colorVar: '--md-muted' },
-  starting: { text: '启动中', colorVar: '--md-blue' },
+  starting: { text: '正在启动', colorVar: '--md-blue' },
   running: { text: '服务运行中', colorVar: '--md-success' },
   stopping: { text: '正在停止', colorVar: '--md-muted' },
   error: { text: '服务异常', colorVar: '--md-error' },
