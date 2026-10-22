@@ -472,7 +472,7 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  gap: 12px;
+  gap: 14px;
 }
 .music .grow {
   flex: 1;
@@ -489,6 +489,7 @@
   align-items: center;
   justify-content: space-between;
   flex: 0 0 auto;
+  padding: 2px 2px 0;
 }
 .music-top-l {
   display: flex;
@@ -497,24 +498,32 @@
 }
 .music-title {
   font-family: var(--md-font-display);
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
-  color: var(--md-ink);
+  letter-spacing: 0.005em;
+  color: var(--miao-ink);
 }
 /* 「当前平台：xx」Badge —— 可点，点开平台切换弹窗 */
 .music-plat {
-  border: 1px solid var(--md-line);
-  background: var(--md-surface-2);
+  border: 1px solid var(--miao-line);
+  background: var(--miao-surface);
   border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 11px;
-  font-family: var(--md-font-body);
-  color: var(--md-ink-2);
+  padding: 4px 11px;
+  font-size: 10.5px;
+  font-family: var(--md-font-display);
+  font-weight: 700;
+  color: var(--miao-text);
   cursor: pointer;
+  transition:
+    border-color var(--miao-dur-fast) ease,
+    background var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-spring);
 }
 .music-plat:hover {
-  border-color: var(--md-pink);
-  color: var(--md-ink);
+  border-color: var(--miao-accent-line);
+  background: var(--miao-accent-soft);
+  color: color-mix(in srgb, var(--miao-accent) 82%, #000);
+  transform: translateY(-1px);
 }
 
 .music-top-r {
@@ -527,20 +536,24 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 2px 8px 2px 2px;
+  padding: 2px 10px 2px 2px;
   border-radius: 999px;
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   cursor: pointer;
+  transition:
+    background var(--miao-dur-fast) ease,
+    border-color var(--miao-dur-fast) ease;
 }
 .music-user:hover {
-  background: var(--md-surface-2);
+  background: var(--miao-surface);
+  border-color: var(--miao-line);
 }
 .music-ava {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--md-lavender), var(--md-blue));
+  background: linear-gradient(135deg, var(--miao-accent), var(--miao-primary));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -557,8 +570,8 @@
 }
 .music-nick {
   font-size: 12px;
-  font-weight: 500;
-  color: var(--md-ink);
+  font-weight: 600;
+  color: var(--miao-ink);
   max-width: 120px;
   white-space: nowrap;
   overflow: hidden;
@@ -580,31 +593,33 @@
 }
 
 .music-card {
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
-  padding: 13px;
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  padding: 15px;
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  box-shadow: var(--miao-shadow-1);
 }
 .music-card-hd {
   display: flex;
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
-  margin-bottom: 9px;
+  margin-bottom: 10px;
 }
 .music-card-title {
   font-family: var(--md-font-display);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 700;
-  color: var(--md-ink);
+  letter-spacing: 0.005em;
+  color: var(--miao-ink);
 }
 .music-card-sub {
-  font-size: 11px;
-  color: var(--md-muted);
+  font-size: 10.5px;
+  color: var(--miao-muted);
   flex-shrink: 0;
 }
 /* 卡片内的主体：占满余高，内部列表各自滚动 */
@@ -629,29 +644,52 @@
 
 /* 按钮（音乐屏内自足，不依赖全局 .btn 系列） */
 .music-btn {
-  border: none;
+  border: 1px solid transparent;
   border-radius: 999px;
-  padding: 5px 11px;
-  font-size: 11.5px;
-  font-family: var(--md-font-body);
+  padding: 5px 12px;
+  font-family: var(--md-font-display);
+  font-size: 11px;
+  font-weight: 700;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   cursor: pointer;
   white-space: nowrap;
+  transition:
+    transform var(--miao-dur-fast) var(--miao-ease-spring),
+    background var(--miao-dur-fast) ease,
+    border-color var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease;
+}
+.music-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.music-btn:active:not(:disabled) {
+  transform: scale(0.96);
 }
 .music-btn.pri {
-  background: var(--md-pink);
+  background: var(--miao-accent);
+  border-color: color-mix(in srgb, var(--miao-accent) 82%, #000);
   color: #fff;
+  box-shadow: 0 8px 18px -12px color-mix(in srgb, var(--miao-accent) 70%, transparent);
+}
+.music-btn.pri:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--miao-accent) 86%, #2d3b46);
 }
 .music-btn.out {
   background: transparent;
-  border: 1px solid var(--md-pink);
-  color: var(--md-pink);
+  border-color: var(--miao-line);
+  color: var(--miao-text);
+}
+.music-btn.out:hover:not(:disabled) {
+  border-color: var(--miao-accent-line);
+  background: var(--miao-accent-soft);
+  color: color-mix(in srgb, var(--miao-accent) 82%, #000);
 }
 .music-btn:disabled {
   opacity: 0.5;
   cursor: default;
+  transform: none;
 }
 
 .music-hint {
@@ -677,27 +715,41 @@
 /* ---------------------------------------------------------------- 左栏视图 Tab */
 .ltabs {
   display: flex;
-  gap: 4px;
+  gap: 3px;
   flex: 0 0 auto;
   margin-bottom: 10px;
+  padding: 3px;
+  border: 1px solid var(--miao-line);
+  border-radius: 999px;
+  background: var(--miao-surface-2);
 }
 .ltab {
+  flex: 1;
   padding: 5px 12px;
   border-radius: 999px;
   border: none;
   background: transparent;
-  color: var(--md-muted);
-  font-size: 11.5px;
-  font-family: var(--md-font-body);
+  color: var(--miao-muted);
+  font-family: var(--md-font-display);
+  font-size: 10.5px;
+  font-weight: 700;
   cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-spring);
 }
 .ltab:hover {
-  color: var(--md-ink-2);
+  color: var(--miao-ink);
+}
+.ltab:active {
+  transform: scale(0.97);
 }
 .ltab.is-on {
-  background: var(--md-pink-soft);
-  color: var(--md-pink);
-  font-weight: 700;
+  background: var(--miao-surface);
+  color: color-mix(in srgb, var(--miao-accent) 80%, #000);
+  box-shadow: 0 2px 6px -4px rgba(45, 59, 70, 0.35);
 }
 
 /* ---------------------------------------------------------------- 搜索框 + 搜索源胶囊 */
@@ -710,20 +762,27 @@
 .music-search {
   flex: 1;
   min-width: 0;
-  border: 1px solid var(--md-line);
+  border: 1px solid var(--miao-line);
   border-radius: 999px;
   padding: 7px 13px;
-  font-size: 12px;
-  color: var(--md-ink);
-  background: var(--md-surface);
+  font-size: 11.5px;
+  color: var(--miao-ink);
+  background: var(--miao-surface);
   font-family: var(--md-font-body);
+  transition:
+    border-color var(--miao-dur-fast) ease,
+    box-shadow var(--miao-dur-fast) ease;
 }
 .music-search::placeholder {
-  color: var(--md-muted);
+  color: var(--miao-faint);
+}
+.music-search:hover {
+  border-color: var(--miao-line-strong);
 }
 .music-search:focus {
   outline: none;
-  border-color: var(--md-pink);
+  border-color: var(--miao-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--miao-accent) 14%, transparent);
 }
 
 .cap-row {
@@ -741,22 +800,28 @@
   gap: 5px;
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid var(--md-line);
-  background: var(--md-surface);
-  color: var(--md-ink-2);
-  font-size: 11px;
-  font-family: var(--md-font-body);
+  border: 1px solid var(--miao-line);
+  background: var(--miao-surface);
+  color: var(--miao-text);
+  font-family: var(--md-font-display);
+  font-size: 10px;
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
+  transition:
+    border-color var(--miao-dur-fast) ease,
+    background var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease;
 }
 .cap:hover:not(:disabled) {
-  border-color: var(--md-pink);
+  border-color: var(--miao-accent-line);
+  background: var(--miao-accent-soft);
 }
 .cap.is-on {
-  border-color: var(--md-pink);
-  background: var(--md-pink-soft);
-  color: var(--md-pink);
+  border-color: var(--miao-accent-line);
+  background: var(--miao-accent-soft);
+  color: color-mix(in srgb, var(--miao-accent) 82%, #000);
   font-weight: 700;
 }
 .cap:disabled {
@@ -773,7 +838,7 @@
   margin-left: auto;
   padding-left: 8px;
   font-size: 10px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -826,19 +891,19 @@
 }
 .music-plgroup-lb {
   font-family: var(--md-font-display);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 700;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   letter-spacing: 0.02em;
 }
 .music-plgroup-ct {
-  font-size: 10.5px;
-  color: var(--md-muted);
+  font-size: 10px;
+  color: var(--miao-faint);
 }
 .music-plgroup-chev {
   flex: 0 0 auto;
-  color: var(--md-muted);
-  transition: transform 0.18s ease-out;
+  color: var(--miao-faint);
+  transition: transform var(--miao-dur-base) var(--miao-ease-spring);
 }
 /* 收起时箭头朝右（-90°），展开时朝下 —— 与常见折叠控件一致 */
 .music-plgroup.is-shut .music-plgroup-chev {
@@ -848,26 +913,32 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 8px;
-  border-radius: var(--md-radius-sm);
+  padding: 6px 9px;
+  border-radius: 12px;
   cursor: pointer;
+  transition:
+    background var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-spring);
 }
 .music-row:hover {
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
+  transform: translateX(1px);
 }
 .music-row.is-hot {
-  background: var(--md-pink-soft);
+  background: var(--miao-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--miao-accent-line);
 }
 .music-row.is-hot .music-row-tx b {
-  color: var(--md-pink);
+  color: color-mix(in srgb, var(--miao-accent) 78%, #000);
   font-weight: 700;
 }
 .music-cover {
   width: 40px;
   height: 40px;
-  border-radius: var(--md-radius-xs);
+  border-radius: 10px;
   flex-shrink: 0;
-  background: linear-gradient(140deg, var(--md-lavender), var(--md-blue));
+  background: linear-gradient(140deg, var(--miao-accent-soft), var(--miao-primary-soft));
+  border: 1px solid var(--miao-line);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -885,24 +956,24 @@
 }
 .music-row-tx b {
   display: block;
-  font-size: 12.5px;
-  font-weight: 400;
-  color: var(--md-ink);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--miao-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .music-row-tx span {
   font-size: 10.5px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   display: block;
 }
 .music-dur {
-  font-size: 10.5px;
-  color: var(--md-muted);
+  font-size: 10px;
+  color: var(--miao-muted);
   flex-shrink: 0;
   font-family: var(--md-font-numeric);
 }

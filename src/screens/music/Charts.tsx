@@ -16,6 +16,18 @@ import { Empty } from '@components/units';
  * 否则在这一条横向卡片上滚轮什么也不会发生，用户只能去拖滚动条。
  */
 
+/**
+ * 榜单卡的展示名。
+ *
+ * 为什么要有兜底：榜单条目来自平台接口，`name` 在个别平台的个别条目上可能缺失
+ * （接口字段改名 / 空榜单占位）。原写法 `pl.name.slice(0, 1)` 会在 `name` 缺失时
+ * 抛异常、把**整个音乐屏**打空 —— 一条脏数据不该有这么大的爆炸半径。
+ */
+function chartName(pl: Playlist): string {
+  const raw = typeof pl?.name === 'string' ? pl.name.trim() : '';
+  return raw || '未命名榜单';
+}
+
 function ChartCard({
   pl,
   byName,
@@ -27,19 +39,20 @@ function ChartCard({
   proxyPort: number;
   onOpen: () => void;
 }) {
+  const name = chartName(pl);
   // chartByName（咪咕）：无可用封面 → 不摆空图，直接把榜单名写在主题色渐变卡上（多行居中）
   if (byName) {
     return (
-      <div className="music-chart is-name" title={pl.name} onClick={onOpen}>
-        <div className="music-chart-name">{pl.name}</div>
+      <div className="music-chart is-name" title={name} onClick={onOpen}>
+        <div className="music-chart-name">{name}</div>
       </div>
     );
   }
   const cover = coverProxyUrl(pl.cover, proxyPort);
   return (
-    <div className="music-chart" title={pl.name} onClick={onOpen}>
-      <div className="music-chart-cv">{cover ? <img src={cover} alt="" loading="lazy" /> : pl.name.slice(0, 1)}</div>
-      <span>{pl.name}</span>
+    <div className="music-chart" title={name} onClick={onOpen}>
+      <div className="music-chart-cv">{cover ? <img src={cover} alt="" loading="lazy" /> : Array.from(name)[0]}</div>
+      <span>{name}</span>
     </div>
   );
 }
