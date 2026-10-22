@@ -244,11 +244,11 @@ export interface HealthResponse {
 // ------------------------------------------------------------------ 展示映射
 
 export const STATUS_LABEL: Record<TaskStatus, string> = {
-  queued: '排队中',
-  running: '翻译中',
+  queued: '等待中',
+  running: '进行中',
   done: '已完成',
   partial_failed: '部分失败',
-  failed: '失败',
+  failed: '全部失败',
   canceled: '已取消',
 };
 

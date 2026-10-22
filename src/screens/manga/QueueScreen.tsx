@@ -59,6 +59,7 @@ function ProgressCell({ t }: { t: TaskRow }) {
       <span className="num">{done}</span>
       <span> / </span>
       <span className="num">{total}</span>
+      <span className="qt-unit"> 页</span>
       <span className={noteCls}>{progressNote(t)}</span>
       <div className={barClass(t.status)}>
         <i style={{ width: `${pct}%` }} />
@@ -388,32 +389,28 @@ export function QueueTable({
   return (
     <div className="queue">
       <div className="queue-inner">
+        {/* 汇总条（设计稿 `.queue-summary`）：主数字 + 三枚图例 + 右侧「N 条已完成」与翻页器 */}
         <div className="queue-summary">
-          <div className="qs-head">
-            <span className="qs-kicker">任务队列</span>
-            <div className="qs-title">
-              共 <span className="num">{rows.length}</span> 条
-            </div>
-            <div className="qs-chips">
-              <span className="chip">
-                <Dot colorVar="--md-blue" pulse={stats.running > 0} />
-                翻译中 <b className="num">{stats.running}</b>
-              </span>
-              <span className="chip">
-                <Dot colorVar="--md-muted" />
-                排队 <b className="num">{stats.queued}</b>
-              </span>
-              <span className="chip chip-warning">
-                <Dot colorVar="--md-error" />
-                失败 <b className="num">{stats.failed}</b>
-              </span>
-              <span className="chip chip-success">
-                <Dot colorVar="--md-success" />
-                完成 <b className="num">{stats.done}</b>
-              </span>
-            </div>
+          <div className="qs-main">
+            <strong>{rows.length}</strong>
+            <span>条任务</span>
+          </div>
+          <div className="qs-legend">
+            <span>
+              <i className="is-running" />
+              进行中 {stats.running}
+            </span>
+            <span>
+              <i className="is-queued" />
+              等待中 {stats.queued}
+            </span>
+            <span>
+              <i className="is-failed" />
+              需要处理 {stats.failed}
+            </span>
           </div>
           <div className="qs-actions">
+            <span className="chip chip-soft">{stats.done} 条已完成</span>
             <QueuePager page={page} total={totalPages} onPage={setPage} compact />
             {onRefresh ? (
               <IconButton title="刷新任务列表" onClick={() => onRefresh()}>
@@ -442,11 +439,14 @@ export function QueueTable({
             </>
           ) : (
             <>
-              <span className="queue-hint">串行执行 · 同一时刻只跑 1 个任务 · 翻译中的任务不能删除</span>
-              <div className="queue-spacer" />
-              <Btn kind="ghost" size="sm" onClick={() => setPickMode(true)} disabled={rows.length === 0}>
-                多选
-              </Btn>
+              {/* 设计稿 `.qt-info`：条数 + 串行策略 + 不可删规则，一句话说完 */}
+              <span className="qt-info">共 {rows.length} 条任务 · 同一时刻只跑 1 个 · 翻译中不能删除</span>
+              <div className="qt-right">
+                <span className="qt-caption">按创建时间排序</span>
+                <Btn kind="ghost" size="sm" onClick={() => setPickMode(true)} disabled={rows.length === 0}>
+                  多选
+                </Btn>
+              </div>
             </>
           )}
         </div>

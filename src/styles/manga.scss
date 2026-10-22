@@ -23,52 +23,59 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 13px 18px;
+  padding: 11px 16px;
   border: 1px solid var(--miao-line);
-  border-radius: var(--miao-r-xl);
+  border-radius: 13px;
   background: var(--miao-surface);
   box-shadow: var(--miao-shadow-1);
 }
-.qs-head {
-  min-width: 0;
+/* 主数字（设计稿 `.qs-main`）：17px 等宽数字 + 11.5px「条任务」 */
+.qs-main {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--miao-text);
 }
-.qs-kicker {
+.qs-main strong {
   font-family: var(--md-font-display);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  color: var(--miao-faint);
-  text-transform: uppercase;
-}
-.qs-title {
-  font-family: var(--md-font-display);
-  font-size: 14px;
+  font-size: 17px;
   font-weight: 700;
   color: var(--miao-ink);
-  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
-.qs-chips {
+/* 三枚图例（设计稿 `.qs-legend`）：色点 + 文字，不用胶囊 —— 胶囊会把四个数读成四个按钮 */
+.qs-legend {
   display: flex;
+  gap: 12px;
+  margin-left: 8px;
+}
+.qs-legend span {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--miao-muted);
 }
-.qs-chips .chip {
-  font-weight: 600;
+.qs-legend i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
 }
-.qs-chips .chip b {
-  font-family: var(--md-font-numeric);
-  font-weight: 700;
+.qs-legend .is-running {
+  background: var(--miao-primary);
+}
+.qs-legend .is-queued {
+  background: var(--miao-muted);
+}
+.qs-legend .is-failed {
+  background: var(--miao-danger);
 }
 .qs-actions {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   flex: 0 0 auto;
 }
 
@@ -79,6 +86,22 @@
   gap: 8px;
   min-height: 30px;
   padding: 0 4px;
+}
+/* 设计稿 `.qt-info`：条数 + 串行策略 + 不可删规则 */
+.qt-info {
+  font-size: 10.5px;
+  color: var(--miao-muted);
+}
+.qt-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* 排序口径：只说明"按什么排"，不做成可点的排序器（服务端就按创建时间给） */
+.qt-caption {
+  font-size: 9px;
+  color: var(--miao-faint);
 }
 .queue-sel {
   font-family: var(--md-font-display);
@@ -297,6 +320,11 @@
 .qt-c-progress > .bar {
   grid-column: 1 / -1;
   width: 100%;
+}
+/* 页数单位：设计稿「12 / 19 页」—— 数字与「页」之间留一个窄空格，读数才不像两串数 */
+.qt-unit {
+  font-size: 9.5px;
+  color: var(--miao-faint);
 }
 .qt-pct {
   margin-left: auto;
