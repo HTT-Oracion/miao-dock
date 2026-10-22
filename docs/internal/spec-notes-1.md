@@ -7065,3 +7065,31 @@ CDP 文本转储实测：`每日推荐 · 10 月 22 日` / `每日推荐` / `播
 `tsc` / `eslint` / `vite build` 全绿。文档里的反证条数同步：`AGENTS.md` / `README.md` 的
 「反证 231 条」→「232 条」—— 反证条数虽未进机器对账，但写错的后果是下一个人按旧数核对时
 以为"少跑了一条"。
+## D-285 · 展开播放器：补「译」开关时抓到一条**假绿断言**（2026-10-22）
+
+**一、两处结构缺口。** 设计稿的展开播放器头部是 `收起 / 正在播放 + 专辑名 / 更多`，
+产品只有一个收起按钮 —— 铺满整屏之后，用户会短暂失去"我在哪一首上"的定位，故补中央那行。
+另一处是 `.xp-tab-tools` 的「译」chip：**译文显隐**在产品里根本没有开关（`KaraokeLyrics`
+的 `showTranslation` 一直传的是恒真）。
+
+**二、「译」开关做成 state，而不是改默认值。** 译文在 `loadLyrics` 时已按时间轴合并进
+每一行，所以开关只切**渲染**：`showTranslation={showTranslation}`，不重新拉歌词、不等网络。
+
+**三、🔴 顺手抓到一条假绿断言（本轮最有价值的发现）。**
+`LYRICS.showTranslationWired` 原本判的是 `ExpandedPlayer` 里**出现过** `showTranslation`
+这个词。加上开关之后，反证轮里那条"删掉 showTranslation"的变异把**state 声明**那一处删了，
+而后面 `showTranslation={showTranslation}` 仍带着这个词 ⇒ 断言照样绿 ⇒ 反证轮报
+「假阳性：LYRICS.showTranslationWired」。也就是说：**这条断言从来只能证明"写了这个词"，
+证明不了"接线是对的"** —— 把它写死成 `{false}`（永远不显示翻译）它也会绿。
+修法两步都做：
+1. 判据收紧成 `/showTranslation=\{showTranslation\}/` + `/setShowTranslation\(/`（必须真有开关）；
+2. 变异改成 `showTranslation={showTranslation}` → `showTranslation={false}`，让"写死"这种真错
+   能被抓住（改完反证轮 232/232 全红，含这一条）。
+
+**四、按钮文案统一。** 设计稿用**固定**标签（收起播放器 / 喜欢 / 碟片模式 / 播放器皮肤 /
+播放/暂停 / 桌面歌词），产品此前大量用**随状态翻转**的标签（红心↔取消红心、开启↔关闭碟片模式…）。
+按设计稿改成固定标签：翻转式标签在"读屏 + 悬停提示"里会产生两套说法，
+而设计稿选择用按钮的**激活态**（`is-on` / 填充色）表达状态，不靠文字。
+
+**五、验证**：`npm run check` 19/19 · `check:music` 237/237 · `check:music:refute` **232/232** ·
+`tsc` / `eslint` / `vite build` 全绿。
