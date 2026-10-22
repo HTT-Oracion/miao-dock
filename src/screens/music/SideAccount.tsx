@@ -1,8 +1,8 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { ChevronRight, User } from 'lucide-react';
 import { useMusicStore } from '@music/store';
 import { Btn } from '@components/units';
-import { providerLabel } from '@music/platform';
+import { PLATFORM_MAP, providerLabel } from '@music/platform';
 import { AccountMenu } from '@screens/music/PlatformMenu';
 
 /**
@@ -26,6 +26,9 @@ export function SideAccount() {
   const info = loginInfos[playbackSource];
   const logged = !!info?.logged_in;
   const provider = providerLabel(playbackSource);
+  // 平台色注入给头像（设计稿的 `style="background:${p.color}"`）；用 CSS 变量而不是行内 background，
+  // 好让「未登录 = surface-3」的底色规则仍然在样式表里
+  const meta = PLATFORM_MAP[playbackSource];
 
   return (
     <div className="ms-foot">
@@ -36,7 +39,10 @@ export function SideAccount() {
         title={logged ? '账号与平台' : '登录'}
         onClick={() => (logged ? setMenuOpen(true) : void openLogin())}
       >
-        <span className={logged ? 'ms-avatar is-on' : 'ms-avatar'}>
+        <span
+          className={logged ? 'ms-avatar is-on' : 'ms-avatar'}
+          style={{ '--pc': meta.color } as React.CSSProperties}
+        >
           {logged ? (
             info?.avatar ? (
               <img src={info.avatar} alt="" />

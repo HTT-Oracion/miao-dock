@@ -1,6 +1,6 @@
 import { ExternalLink, LoaderCircle, X } from 'lucide-react';
 import { Btn, IconButton } from '@components/units';
-import { providerLabel } from '@music/platform';
+import { PLATFORM_MAP, providerLabel } from '@music/platform';
 import type { MusicProvider } from '@music/types';
 import { useMusicStore } from '@music/store';
 
@@ -35,6 +35,8 @@ export function LoginModal() {
   const info = loginInfos[loginProvider];
   const logged = !!info?.logged_in;
   const name = providerLabel(loginProvider);
+  // 平台色与短名（设计稿 `.provider-orb` / `.avatar-lg` 都用它）
+  const meta = PLATFORM_MAP[loginProvider];
 
   return (
     <div className="music-login-overlay" onClick={closeLogin}>
@@ -43,6 +45,8 @@ export function LoginModal() {
           <div>
             <span className="music-login-kicker">MUSIC ACCOUNT</span>
             <span className="music-login-title">{logged ? '音乐账号' : '登录音乐账号'}</span>
+            {/* 标题下那句说明是设计稿 `.modal-head p` 的原话；缺了它，标题只说"要做什么"、不说"为什么值得做" */}
+            <p className="music-login-sub">登录后同步歌单、收藏与播放记录</p>
           </div>
           <IconButton title="关闭" onClick={closeLogin}>
             <X size={15} />
@@ -55,6 +59,7 @@ export function LoginModal() {
             {PROVIDERS.map((p) => {
               const it = loginInfos[p];
               const on = !!it?.logged_in;
+              const pm = PLATFORM_MAP[p];
               return (
                 <Btn
                   key={p}
@@ -62,6 +67,10 @@ export function LoginModal() {
                   className={p === loginProvider ? 'login-platform is-active' : 'login-platform'}
                   onClick={() => void openLogin(p)}
                 >
+                  {/* 平台色圆标（设计稿 `.provider-orb`）：列表里四行只差一个字，靠颜色区分比靠字形快 */}
+                  <span className="provider-orb" style={{ '--pc': pm.color } as React.CSSProperties}>
+                    {pm.short}
+                  </span>
                   <span className="login-platform-tx">
                     <strong>{providerLabel(p)}</strong>
                     <small>{on ? it?.nickname || '已登录' : '未登录'}</small>
@@ -77,16 +86,24 @@ export function LoginModal() {
             {logged ? (
               <>
                 <div className="login-panel-head">
+                  <span className="provider-orb" style={{ '--pc': meta.color } as React.CSSProperties}>
+                    {meta.short}
+                  </span>
                   <div>
                     <h3>{name}</h3>
                     <p>账号已连接</p>
                   </div>
                 </div>
                 <div className="login-account">
-                  <span className="avatar-lg">{(info?.nickname ?? '?').slice(0, 1)}</span>
+                  <span className="avatar-lg" style={{ '--pc': meta.color } as React.CSSProperties}>
+                    {(info?.nickname ?? '?').slice(0, 1)}
+                  </span>
                   <div>
                     <h4>{info?.nickname || '已登录'}</h4>
-                    <p>收藏与歌单已同步</p>
+                    {/* 会员态来自平台回读（`is_vip` / `is_svip`）。各平台对"等级"的口径不同
+                        （网易云 vipType≥10 与 QQ/酷狗的 svip 判定不是一回事），
+                        所以这里只说**能确定的那半句**：是不是会员，不替平台给它起会员名。 */}
+                    <p>{info?.is_vip || info?.is_svip ? '会员' : '非会员'} · 收藏与歌单已同步</p>
                   </div>
                   <Btn kind="ghost" size="sm" onClick={() => void logoutFor(loginProvider)}>
                     退出登录
@@ -97,9 +114,14 @@ export function LoginModal() {
             ) : (
               <>
                 <div className="login-panel-head">
+                  <span className="provider-orb" style={{ '--pc': meta.color } as React.CSSProperties}>
+                    {meta.short}
+                  </span>
                   <div>
                     <h3>登录{name}</h3>
-                    <p>登录后同步歌单、收藏与播放记录</p>
+                    {/* 这里不再重复一遍"登录后同步…"：弹窗头已经写了同一句，
+                        而设计稿这行的原文是「扫码后同步…」—— 本产品的登录不是扫码
+                        （见文件头），照搬会变成一句做不到的承诺。 */}
                   </div>
                 </div>
 

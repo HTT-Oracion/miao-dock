@@ -717,10 +717,11 @@
   font-size: 11px;
   font-weight: 700;
 }
-/* 已登录：头像取平台主色，首字母反白 */
+/* 已登录：头像取**平台色**（`--pc` 由 SideAccount 注入），首字母反白。
+   ⚠️ 原来这里写死 `--miao-primary`：注释说"平台主色"，实际四个平台一个色 —— 现在才名副其实。 */
 .ms-avatar.is-on {
-  background: var(--miao-primary);
-  color: var(--miao-surface);
+  background: var(--pc, var(--miao-primary));
+  color: #fff;
 }
 .ms-avatar img {
   width: 100%;
@@ -3322,6 +3323,14 @@
   font-weight: 700;
   color: var(--miao-ink);
 }
+/* 标题下的说明（设计稿 `.modal-head p`） */
+.music-login-sub {
+  display: block;
+  margin-top: 4px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--miao-muted);
+}
 /* 两栏：左平台列表（固定 200） + 右面板（自适应） */
 .music-login-cols {
   display: grid;
@@ -3439,16 +3448,18 @@
   border-radius: 12px;
   background: var(--miao-surface-2);
 }
+/* 账号卡头像（设计稿 `.login-account .avatar-lg`）：44 圆、平台色底（`--pc` 注入）、
+   没有平台色时回落到品牌的斜向渐变 */
 .avatar-lg {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--miao-accent), var(--miao-primary));
+  background: var(--pc, linear-gradient(135deg, var(--miao-accent), var(--miao-primary)));
   color: #fff;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
 }
 .login-account > div {
@@ -3464,6 +3475,36 @@
 .login-account p {
   font-size: 10px;
   color: var(--miao-muted);
+}
+/* 平台色圆标（设计稿 `.provider-orb`）：`--pc` 由调用方注入；缺省回落主色。
+   四个平台的列表行只差一个字，颜色比字形更快被认出来 */
+.provider-orb {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--pc, var(--miao-primary));
+  color: #fff;
+  font-family: var(--md-font-display);
+  font-size: 10px;
+  font-weight: 700;
+}
+/* 面板头里那一枚大一档（设计稿同规则） */
+.login-panel-head .provider-orb {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+/* 设计稿 `.login-note`：组件一直在用这个类，样式此前是缺的（于是这句提示按正文渲染） */
+.login-note {
+  margin-top: 12px;
+  font-size: 9.5px;
+  line-height: 1.7;
+  color: var(--miao-faint);
 }
 .music-login-note {
   font-size: 11px;
