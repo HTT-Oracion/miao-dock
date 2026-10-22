@@ -7712,3 +7712,33 @@ CDP 实测（设置页 播放·媒体）：卡头 `音乐缓存` / `只统计在
 **四、验证**：`npm run check` 19/19 · `check:units` 46/46 · `check:music` 237/237 ·
 `tsc` / `eslint` / `vite build` 全绿。
 ⚠️ 搜索态要库里有作品，浏览器预览到不了漫画库 ⇒ 本轮静态核对。
+## D-310 · 死代码 + 活断言：在线 API 表单的两条守卫永远不可能为真问题变红（2026-10-22）
+
+**一、发现的形态很典型：组件没了，守它的断言还在。**
+`OnlineApiForm`（设置页目录下的在线 API 内嵌表单）在"未就绪屏改成纯文本、不可点"那一轮
+（D-24x）就失去唯一调用方，但三样东西一起留了下来：
+- 组件本身（`src/screens/settings/OnlineApiForm.tsx`）；
+- `.nr-form*` 样式 —— 而且**两处**（`settings.scss` 与 `manga.scss` 各一份）；
+- `check:settings` 里**两条**专门守卫它的断言（`NOTREADY.onlineForm.noInlineStyle` /
+  `actsNotFullWidth`）与**三条**反证变异。
+
+全仓 `grep OnlineApiForm` 只命中"它自己的定义"与"守它的断言" —— 也就是那两条断言
+**永远不会因为产品问题变红**，只会在有人改那个没人用的文件时变红。这正是本仓纪律里
+"假阳性比没测试更危险"说的那种：它占着"这条已覆盖"的位置。
+
+**二、处置**：删组件 + 删两处样式 + 删两条断言与三条反证 + 删两处 e2e 里的文件引用
+（`_check-registry` 的 `files` 清单、`engine-bootstrap-check` 的 `UI_FILES` —— 后者是 W9b
+"UI 文件里不许教用户跑命令行"的判据源，少一个不存在的文件不影响判据）。
+条数从 186/145 降到 **184/142**，README 与 AGENTS 的声明同步（`check:counts` 会盯着）。
+
+**三、顺带暴露的两条纪律：**
+1. **删文件要 `grep` 三处**：源码引用、e2e 引用（注册表 `files` 清单 / 断言里的路径常量）、
+   **文档里的完整路径**（`check:docpaths` 会红）。本轮三处都撞到了。
+2. **文档里被删对象的完整路径要改写**：D-232 原文写着那个路径，删文件后 `docpaths` 直接红。
+   处置是在条目顶部加一条"该组件已删除，保留当时记录"的注记、并把路径改成不带路径的描述 ——
+   历史记录不该被删，但也不能留下指向不存在文件的路径。
+
+**四、验证**：`npm run check` 19/19 · `check:settings` 184/184 + 反证 **142/142** ·
+`check:registry` 15/15 + 反证 13/13 · `check:docpaths` 5/5 · `check:engine-bootstrap` 23/23 ·
+`check:counts` 2/2 · `check:music:refute` **232/232** · `check:units:refute` **61/61** ·
+`tsc` / `eslint` / `vite build` 全绿。
