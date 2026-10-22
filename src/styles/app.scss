@@ -625,6 +625,15 @@
   color: var(--md-muted);
 }
 
+/* 单行省略（工具类）。页签里的落盘根目录可能很长，没有这条就会把页签条撑开
+   —— 之前这个类名在组件里用了，样式表里却没有对应规则。 */
+.truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ================================================================ 通知堆叠（topRight）
  * 轻提示的唯一渲染层（components/NotificationStack.tsx）。形态参考 antd notification
  * （topRight 多条并存、逐条关闭、自动消失），视觉取本项目语汇：
@@ -1250,6 +1259,13 @@ html[data-theme='dark'] .chip-bad {
     font-size: 21px;
   }
   .toolbar-sub {
+    display: none;
+  }
+  /* 状态胶囊在窄窗只留圆点（设计稿 ≤900 的 `.sp-text { display: none }`）。
+     挂到 1040 档是因为**本产品的外壳压缩就发生在这一档**（侧栏收窄、页签标签隐藏、
+     工具条副标题隐藏都在这），错开一档会出现"标题已经没地方放、胶囊还带着文字"的中间态。
+     文字收掉不等于状态丢失：`App.tsx` 把状态写进了胶囊的 `title`，圆点只是补充。 */
+  .svc-pill .svc-text {
     display: none;
   }
 }

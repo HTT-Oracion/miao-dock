@@ -2762,6 +2762,11 @@
   margin-top: 6px;
   background: var(--miao-surface);
 }
+/* 投放成功后的回执块（`Notice kind="ok"` + 本类）：它跟在投放区后面，需要与上方拉开一档
+   —— 之前只有类名没有规则，这条成功回执与投放区贴在一起，看不出是"刚发生的下一步"。 */
+.drop-notice {
+  margin-top: 14px;
+}
 .notice-acts {
   display: flex;
   gap: 8px;

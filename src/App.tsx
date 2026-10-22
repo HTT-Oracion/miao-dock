@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { ChevronDown, Download, Power, Settings, Terminal } from 'lucide-react';
 import { apiPost, errorText, openPath, quitApp, serviceRestart, serviceStart, serviceStop } from '@/ipc';
@@ -804,6 +804,8 @@ function ServicePill({ status }: { status: ServiceState }) {
 
   const running = status === 'running';
 
+  // 状态写进胶囊的 `title`：窄窗会收起 `.svc-text`（只剩圆点），
+  // 没有这句就成了"颜色是唯一载体"（《02》§5.2 禁止的那种）。
   return (
     <div className="svc-wrap" ref={wrapRef}>
       <button
@@ -811,7 +813,7 @@ function ServicePill({ status }: { status: ServiceState }) {
         className="svc-pill"
         aria-haspopup="menu"
         aria-expanded={open}
-        title="服务状态与操作"
+        title={`服务状态：${v.text} · 点按查看操作`}
         onClick={() => setOpen((o) => !o)}
       >
         <Dot colorVar={v.colorVar} pulse={running} />
