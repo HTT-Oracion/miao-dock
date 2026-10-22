@@ -1,4 +1,4 @@
-/* ======================================================== 公共组件（components/units）
+﻿/* ======================================================== 公共组件（components/units）
 
    本分区是 `app/src/components/units/` 各单元的**唯一样式来源**：类名一律 `ui-` 前缀，
    只依赖设计令牌 —— 于是深色模式自动跟随，不需要第二套样式。
@@ -277,7 +277,7 @@
   /* (11 - 5) / 2：让拇指在轨道上居中 */
   border-radius: 50%;
   background: var(--miao-primary);
-  transition: transform 0.12s;
+  transition: transform var(--miao-dur-fast) var(--miao-ease-out);
   box-shadow: 0 0 0 3px var(--miao-surface);
 }
 .ui-range:hover::-webkit-slider-thumb {
@@ -338,8 +338,8 @@
 }
 /* 焦点与 `.ui-select[data-state='open']` 用同一套「pink 边框 + pink-soft ring」语汇 */
 .ui-num:focus-visible {
-  border-color: var(--md-pink);
-  box-shadow: 0 0 0 2px var(--md-pink-soft);
+  border-color: var(--miao-primary);
+  box-shadow: 0 0 0 2px var(--miao-primary-soft);
 }
 .ui-num:disabled {
   cursor: default;
@@ -389,12 +389,12 @@
     box-shadow 0.15s;
 }
 .ui-color:hover:not(:disabled) {
-  border-color: var(--md-pink);
+  border-color: var(--miao-primary);
 }
 .ui-color:focus-visible {
   outline: none;
-  border-color: var(--md-pink);
-  box-shadow: 0 0 0 2px var(--md-pink-soft);
+  border-color: var(--miao-primary);
+  box-shadow: 0 0 0 2px var(--miao-primary-soft);
 }
 .ui-color:disabled {
   cursor: default;
@@ -498,10 +498,11 @@
 }
 
 /* ---- ② 图标按钮（IconButton）---- */
+/* 几何与动效取设计稿 `.icon-btn`：34×34 / 圆角 10 / 140ms 过渡，位移走 `--ease-out` */
 .ui-cbtn {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   border: none;
   background: transparent;
   display: flex;
@@ -512,23 +513,35 @@
   flex-shrink: 0;
   transition:
     background var(--miao-dur-fast) ease,
-    color var(--miao-dur-fast) ease;
+    color var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-out);
 }
 .ui-cbtn:hover {
   background: var(--miao-surface-2);
   color: var(--miao-ink);
 }
+/* 按下缩到 .94（设计稿 `.icon-btn:active`）—— 没有这一下，点图标按钮"手感是死的" */
+.ui-cbtn:active:not(:disabled) {
+  transform: scale(0.94);
+}
 .ui-cbtn.main {
-  background: var(--md-pink);
-  color: #fff;
-  width: 32px;
-  height: 32px;
+  /* 主按钮（播放/暂停）：设计稿 `.pb-play` 是**墨色实心**，不是主题粉色 ——
+     粉在本项目里是禁用主色（《01》§1），且播放键该是"最实"的那一枚 */
+  background: var(--miao-ink);
+  color: var(--miao-surface);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
 }
 .ui-cbtn.main:hover {
   filter: brightness(1.05);
 }
+.ui-cbtn.main:active:not(:disabled) {
+  transform: scale(0.95);
+}
 .ui-cbtn.is-on {
-  color: var(--md-pink);
+  color: var(--miao-primary-ink);
+  background: var(--miao-primary-soft);
 }
 .ui-cbtn:disabled {
   opacity: 0.45;
@@ -918,7 +931,9 @@
   border-radius: 999px;
   background: var(--md-line);
   position: relative;
-  transition: background 0.15s;
+  transition:
+    background var(--miao-dur-base),
+    border-color var(--miao-dur-base);
   display: flex;
   align-items: center;
 }
@@ -935,7 +950,7 @@
   display: block;
 }
 .switch.is-on .switch-track {
-  background: var(--md-pink);
+  background: var(--miao-primary);
 }
 .switch.is-on .switch-track > i {
   transform: translateX(17px);

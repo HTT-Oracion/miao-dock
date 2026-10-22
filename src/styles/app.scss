@@ -276,7 +276,7 @@
   background: var(--miao-primary-soft);
 }
 .nav-pop-item.is-on .npi-tx b {
-  color: var(--md-pink);
+  color: var(--miao-primary);
   font-weight: 700;
 }
 .npi-ic {
@@ -291,7 +291,7 @@
   color: var(--md-ink-2);
 }
 .nav-pop-item.is-on .npi-ic {
-  border-color: var(--md-pink);
+  border-color: var(--miao-primary);
   color: var(--miao-primary-ink);
   background: var(--miao-surface);
 }
@@ -416,7 +416,7 @@
   font-family: var(--md-font-display);
   font-weight: 700;
 }
-/* 主推进：pink（《02》§5.2 操作列语义） */
+/* 主推进：模块主色 primary（《02》§5.2 操作列语义） */
 .btn-primary {
   background: var(--miao-primary);
   color: #fff;
@@ -438,7 +438,7 @@
 }
 /*
  * 破坏性动作（确认层里的「退出喵坞」/「删除」）：**实心破坏色**。
- * 《02》§5.2 **明确禁止用 pink** —— 破坏性动作不能穿主推进的衣服；
+ * 《02》§5.2 **明确禁止用主推进色** —— 破坏性动作不能穿主推进的衣服；
  * 同时它必须是**实心**而不是浅底描边：确认层里它是主动作，浅底会被读成次按钮，
  * 与旁边「留在后台」这个安全出口混为一谈（B3c 直接比对底色与 error 令牌）。
  */
@@ -463,7 +463,7 @@
  * 而确认层这里是**主动作** —— 「留在后台」是安全出口、「退出喵坞」是破坏性动作，
  * 两个灰描边按钮并排时用户得读两遍字才分得清哪个是哪个。破坏性动作要有自己的重量。
  *
- * 仍守《02》§5.2 的禁则：破坏性动作不穿主推进的 pink，走 error。
+ * 仍守《02》§5.2 的禁则：破坏性动作不穿主推进色，走 error。
  */
 .modal-actions .btn-danger {
   border-color: transparent;
@@ -488,7 +488,7 @@
   box-shadow: none;
 }
 
-/* 上限徽章：pink-soft 底 + pink 文字（《02》§5.2） */
+/* 上限徽章：主色淡底 + 主色文字（《02》§5.2） */
 .badge {
   height: 22px;
   padding: 0 9px;

@@ -88,7 +88,7 @@ textarea {
   font-weight: 700;
 }
 
-/* 键盘可达性：焦点环用品牌 pink，不用浏览器默认蓝 */
+/* 键盘可达性：焦点环用模块主色，不用浏览器默认蓝 */
 :focus-visible {
   outline: 2px solid color-mix(in srgb, var(--miao-primary) 52%, transparent);
   outline-offset: 2px;

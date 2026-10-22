@@ -28,6 +28,32 @@ node .tmp/ver3-audit/probe-settings-search.mjs           # 设置搜索交互探
 
 ## 1. 全局框架（壳层）
 
+### 1.1 动效与配色（第五轮系统核对）
+
+**动效令牌本身是对齐的**：`--miao-dur-fast/base/slow` = 140/240/380ms，
+`--miao-ease-spring` = `cubic-bezier(.22,1.3,.36,1)`、`-spring-soft` = `(.34,1.4,.64,1)`、
+`-out` = `(.16,1,.3,1)`，与设计稿逐字一致。问题出在**没用令牌**的地方：
+
+| 位置 | 改前 | 设计稿 | 处置 |
+|---|---|---|---|
+| `.music-lyr-line` | `transition: all 0.2s` | 行本身无过渡，只有逐字 `color .12s linear` | ✅ 收敛为 `color/opacity var(--dur-fast) linear`（`all` 会把 font-size +3px 也做成动画 ⇒ 居中歌词"整行慢慢长大"，D-137 的根因） |
+| `.di-capsule`（灵动岛） | 形变 320ms + `cubic-bezier(.22,.61,.36,1)`；淡入淡出 260ms + Material 曲线 | 形变 **380ms + `--ease-spring`**（会轻微过冲）；padding/background 240ms | ✅ 改 380ms 弹簧 + 240ms `--ease-out`；`DynamicIsland` 的 `MORPH_MS`/`FADE_MS` 同步 380/240（`ISLAND.morphDurationSync` 双向钉） |
+| `.di-bar i` 进度填充 | `width 0.2s` | `.rail-fill` = `width .16s linear` | ✅ 160ms linear |
+| 灵动岛波形 / 样式卡 | `opacity 0.18s` / `background 0.2s ease` | `--dur-fast` | ✅ 改令牌 |
+| `.ui-range` 滑块拇指 | `transform 0.12s` | `.rail-thumb` = `transform var(--dur-fast) var(--ease-out)` | ✅ 改令牌 |
+| `.switch-track` | `background 0.15s` | `background/border-color var(--dur-base)` | ✅ 改令牌 |
+| `.set-cache-item` 悬停 | `background 0.15s` | 行悬停 `--dur-fast` | ✅ 改令牌 |
+| **`.ui-cbtn`（图标按钮）** | 30×30 / 圆角 8 / **无按下反馈** | `.icon-btn`：34×34 / 圆角 10 / `:active scale(.94)` | ✅ 几何 + 按下反馈 + 位移走 `--ease-out` |
+| **`.ui-cbtn.main`（播放/暂停）** | **主题粉色实心** 32×32 | `.pb-play`：**墨色实心** 36×36 / `:active scale(.95)` | ✅ 改墨色 + 36 圆形 + 按下 .95 |
+| **`.ui-cbtn.is-on`** | 粉色 | `.icon-btn.is-on`：主色 ink + 主色淡底 | ✅ 改语义色 |
+| 其余 9 处 `--md-pink`（焦点环 / 开关开启态 / 导航高亮） | 粉色 | 设计稿明令粉不得作 UI 主色 | ✅ 全改 `--miao-primary` 系 |
+
+> 口径：**"配色对齐"不等于"换成新色板"**。上面最后三行是上一轮"换皮式"改造的残留 ——
+> 色板换成了 ver3，但**语义**还是旧的（播放键用粉色、开关开启态用粉色）。
+> 设计稿的播放键是墨色实心（"最实的那一枚"），开关开启态是主色。
+
+### 1.2 结构
+
 | 项 | 设计稿 | 本轮前状态 | 处置 |
 |---|---|---|---|
 | 侧栏 / 品牌区 / 三应用入口 | `.sidebar` 78px 轨道 + 竖排标签 | 已重写（`6611488`） | 一致 |
@@ -260,5 +286,5 @@ Esc             关闭
 | 第二轮 | **漫画·投放页**按设计稿重写：左列补「最近投放」（读 `/tasks`）、待投放头行补「提交 N 张」、右栏拆成「漫画信息 + 本次规则」（档位读 `/engine/options`、来源读偏好）、拖放区与三条承诺文案 1:1、回执补「查看队列」。**漫画·队列页**：汇总条改 `.qs-main` + 三枚色点图例 + `N 条已完成`，工具条改 `.qt-info` 一句话 + 排序口径，状态词与「页」单位对齐设计稿 | `npm run check` 19/19；`check:units` 46/46；`tsc` / `eslint` / `vite build` 通过；差异见 §3.1 / §3.2 |
 | 第三轮 | **音乐·首页**：补 Hero（每日推荐 · 当天日期 + 真实曲目数 + 播放全部/查看歌单 + 24s 自转黑胶）与三枚入口卡（每日推荐 / 官方榜单 / 我喜欢的音乐，均跳真实去处）；平台切换从「当前平台：X → 弹窗」换成设计稿的一排胶囊（短名 + 登录态色点）；搜索占位改「搜索歌曲 / 歌手 / 专辑」 | `npm run check` 19/19；`check:music` 237/237；`tsc` / `eslint` / `vite build` 通过；CDP 转储实测 Hero 与胶囊行在位 |
 | 第四轮 | **音乐·播放条**：左区补「歌手 · 平台 · 音质」副行与红心，控制组按设计稿重排（模式在最左），右区补「展开」入口，标签统一为 `播放/暂停` / `桌面歌词窗口`；**音乐·队列抽屉**：从平铺列表改成设计稿两段式（`正在播放` 固定 + `接下来 · N 首` 滚动 + `队列后面没有歌曲了`） | `npm run check` 19/19；`check:music` 237/237 + 反证 **232/232**；`tsc` / `eslint` / `vite build` 通过 |
-| 第五轮 | **音乐·展开播放器**：头部补「正在播放 + 专辑名」，补设计稿的「译」翻译显隐开关（state 驱动 `showTranslation`），六处按钮文案统一为设计稿（收起播放器 / 喜欢 / 碟片模式 / 播放器皮肤 / 播放暂停 / 桌面歌词） | `npm run check` 19/19；`check:music` 237/237 + 反证 **232/232**；`tsc` / `eslint` / `vite build` 通过 |
-| 下一轮 | 音乐·今日精选区（需先接平台推荐歌单数据面）；全模块动效参数（hover / 弹簧曲线）逐条对 | — |
+| 第五轮 | **动效与配色系统核对**：动效令牌数值本就一致，本轮清理 9 处**没用令牌**的过渡（含歌词行的 `transition: all 0.2s`）、灵动岛形变改设计稿的 380ms 弹簧（TS 侧同步）、图标按钮补按下反馈与设计稿几何、播放键从粉色改墨色实心、9 处 `--md-pink` 改语义主色；**音乐·展开播放器**：头部补「正在播放 + 专辑名」、补「译」翻译显隐开关、六处按钮文案统一为设计稿 | `npm run check` 19/19；`check:music` 237/237 + 反证 **232/232**；`check:units` 46/46 + 反证 61/61；`tsc` / `eslint` / `vite build` 通过 |
+| 下一轮 | 今日精选区（需先接平台推荐歌单数据面）；漫画三屏的 hover/弹窗动效参数逐条对 | — |

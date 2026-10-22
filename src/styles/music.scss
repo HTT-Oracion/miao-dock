@@ -1,4 +1,4 @@
-/* ====================================================== 灵动岛（拍板第 4 项方案 B）
+﻿/* ====================================================== 灵动岛（拍板第 4 项方案 B）
  *
  * 形态：**Mac 式灵动岛**，浮在顶栏之上，三态形变：
  *   圆形 30×30（只有语义点）→ 胶囊（音乐 200×30 / 普通提示自适应宽×30）→ 大卡 320×150（音乐）。
@@ -31,9 +31,11 @@
 }
 
 /* 胶囊本体：三态共用同一个元素，形变全靠内联 width/height 补间。
-   ⚠️ transition 里的 width 0.32s 与 DynamicIsland.tsx 的 MORPH_MS(320) 必须一致
+   ⚠️ transition 里的 width 0.38s 与 DynamicIsland.tsx 的 MORPH_MS(380) 必须一致
    （check:units 的 ISLAND.morphDurationSync 会双向比对这两个数，改一处必须改另一处）；
-   transform/opacity 0.26s 与 TS 侧 FADE_MS(260) 同源。 */
+   transform/opacity 0.24s 与 TS 侧 FADE_MS(240) 同源。
+   时长与曲线取设计稿 `.island`：形变 380ms + 弹簧（`--ease-spring`，会轻微过冲，
+   读起来是"弹了一下"而不是"挪了一下"）；padding / background 240ms。 */
 .di-capsule {
   pointer-events: auto;
   position: relative;
@@ -50,11 +52,13 @@
   color: var(--miao-ink);
   cursor: pointer;
   transition:
-    transform 0.26s cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 0.26s cubic-bezier(0.4, 0, 0.2, 1),
-    width 0.32s cubic-bezier(0.22, 0.61, 0.36, 1),
-    height 0.32s cubic-bezier(0.22, 0.61, 0.36, 1),
-    border-radius 0.32s cubic-bezier(0.22, 0.61, 0.36, 1);
+    transform 0.24s var(--miao-ease-out),
+    opacity 0.24s var(--miao-ease-out),
+    width 0.38s var(--miao-ease-spring),
+    height 0.38s var(--miao-ease-spring),
+    border-radius 0.38s var(--miao-ease-spring),
+    padding var(--miao-dur-base),
+    background var(--miao-dur-base);
 }
 /* 大卡不再用全圆角：320×150 若还是 999 半径会变成"跑道形"，读不出卡片感。
    展开态收成 20（大卡）/18（单行长条）。 */
@@ -182,7 +186,7 @@
   gap: 2.5px;
   height: 16px;
   pointer-events: none;
-  transition: opacity 0.18s;
+  transition: opacity var(--miao-dur-fast) ease;
 }
 .di-wave i {
   display: block;
@@ -234,7 +238,7 @@
   gap: 10px;
   padding: 32px 16px 42px;
   opacity: 0;
-  transition: opacity 0.18s;
+  transition: opacity var(--miao-dur-fast) ease;
 }
 .di-artist {
   margin-left: 60px;
@@ -279,7 +283,9 @@
   height: 100%;
   border-radius: 999px;
   background: var(--miao-accent);
-  transition: width 0.2s;
+  /* 进度填充：设计稿 `.rail-fill` 是 `width .16s linear` —— 填充是跟随播放头的读数，
+     用缓动会读成进度自己在加速，故线性。 */
+  transition: width 160ms linear;
 }
 /* 传输控件整宽居中；「打开播放器」钉在右下角（对齐参考实现的排版）。
    ⚠️ 固定几何（切 di-toggle 不许跳动）：整行**绝对定位**在卡片底部，
@@ -2295,7 +2301,18 @@
   text-align: center;
   /* 正文色由 --lyr-text 注入：现代/封面渐染跟随封面明暗、彩胶固定深灰，避免"亮底黑字看不清" */
   color: var(--lyr-text, #fff);
-  transition: all 0.2s;
+  /*
+   * 行级过渡**只允许 color / opacity**。
+   *
+   * 设计稿的歌词行本身没有行级过渡（只有逐字 `.ly-word { transition: color .12s linear }`）；
+   * 这里保留一条淡入淡出是有意的（换行时不要硬切），但旧写法 `transition: all 0.2s`
+   * 把 font-size（高亮时 +3px）与 font-weight 也纳入了过渡 —— 歌词是 `text-align: center`，
+   * 字号渐变时整行以中心为锚点向两端外扩，看起来就是"一行字在慢慢长大"（D-137 的根因之一）。
+   * 属性收敛之后，这个位移形态从源头消失，`.is-line-mode` 的 `transition: none` 只剩兜底作用。
+   */
+  transition:
+    color var(--miao-dur-fast) linear,
+    opacity var(--miao-dur-fast) linear;
 }
 .music-lyr-line.is-on {
   font-size: calc(var(--lyr-size, 16px) + 3px);
@@ -2607,7 +2624,7 @@
   cursor: pointer;
   outline: 2px solid transparent;
   outline-offset: 1px;
-  transition: background 0.2s ease;
+  transition: background var(--miao-dur-fast) ease;
 }
 .music-style-card:hover {
   background: rgba(255, 255, 255, 0.14);
@@ -3019,7 +3036,7 @@
 }
 .music-skin.is-on {
   border-color: var(--miao-accent);
-  box-shadow: 0 0 0 2px var(--md-pink-soft);
+  box-shadow: 0 0 0 2px var(--miao-primary-soft);
 }
 .music-skin-thumb {
   height: 48px;

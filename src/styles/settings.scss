@@ -694,7 +694,7 @@
   font-size: 12px;
   color: var(--md-ink);
   text-align: left;
-  transition: background 0.15s;
+  transition: background var(--miao-dur-fast) ease;
   border: 1px solid var(--miao-line);
 }
 .set-cache-item:hover:not(:disabled) {

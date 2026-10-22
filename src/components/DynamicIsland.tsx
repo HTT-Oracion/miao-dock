@@ -48,10 +48,10 @@ const MUSIC_COLLAPSED_HEIGHT = 30;
 const EXPANDED_WIDTH = 320;
 const MUSIC_EXPANDED_HEIGHT = 150;
 
-/** 形变（宽/高）时长 —— 必须与 music.scss `.di-capsule` 的 width/height transition 一致 */
-const MORPH_MS = 320;
-/** 淡入/淡出时长 —— 必须与 music.scss `.di-capsule` 的 transform/opacity 0.26s 一致 */
-const FADE_MS = 260;
+/** 形变（宽/高）时长 —— 必须与 music.scss `.di-capsule` 的 width/height transition 一致（设计稿 380ms 弹簧） */
+const MORPH_MS = 380;
+/** 淡入/淡出时长 —— 必须与 music.scss `.di-capsule` 的 transform/opacity 0.24s 一致 */
+const FADE_MS = 240;
 /** 波形柱数量（对齐参考实现折叠态的 5 根） */
 const WAVE_BARS = 5;
 

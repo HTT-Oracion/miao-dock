@@ -1549,11 +1549,11 @@ const MUTATIONS = [
     expect: ['ISLAND.musicToastForwards'],
   },
   {
-    name: '把胶囊形变时长改成 CSS 0.4s ↔ TS 320ms 不一致（动画半途被内联宽高瞬移）',
+    name: '把胶囊形变时长改成 CSS 0.4s ↔ TS 380ms 不一致（动画半途被内联宽高瞬移）',
     file: F.musicScss,
     // 锚点取 transition 里的 width 段。判据取的是同一处，故改它必然触发红
-    find: '    width 0.32s cubic-bezier(0.22, 0.61, 0.36, 1),',
-    replace: '    width 0.4s cubic-bezier(0.22, 0.61, 0.36, 1),',
+    find: '    width 0.38s var(--miao-ease-spring),',
+    replace: '    width 0.4s var(--miao-ease-spring),',
     expect: ['ISLAND.morphDurationSync'],
   },
   {
