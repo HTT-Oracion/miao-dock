@@ -1,4 +1,4 @@
-﻿/* ================================================================ 设置页 */
+/* ================================================================ 设置页 */
 
 /*
  * 设置页两栏壳（《09》§4.1）。宽度与 sticky 偏移由组件从 `SETTINGS` 常量以
@@ -61,6 +61,21 @@
   box-shadow:
     0 1px 3px rgba(45, 59, 70, 0.06),
     inset 0 0 0 1px var(--miao-line);
+}
+/*
+ * 选中项左缘的主色竖条（设计稿 `.snav.is-active::before`）：
+ * 贴着导航栏内边距的外沿（`left: -10px` 抵消 `.settings-nav` 的左右 padding），
+ * 上下各内收 12 —— 竖条比项本身矮，读起来才是"标记"而不是"边框"。
+ */
+.set-nav-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--miao-primary);
 }
 .set-nav-icon {
   display: grid;
