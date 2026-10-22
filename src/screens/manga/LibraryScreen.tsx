@@ -11,7 +11,7 @@ import type {
 } from '@/types';
 import { chapterNoOf } from '@tools';
 import { LIBRARY } from '@/themes/tokens';
-import { Btn, ContextMenu, ErrorState, MenuItem, MenuSeparator, Notice } from '@components/units';
+import { Btn, ContextMenu, Empty, ErrorState, MenuItem, MenuSeparator } from '@components/units';
 import type { BookMetaIntent } from '@screens/manga/modals';
 import {
   DeleteComicModal,
@@ -25,7 +25,9 @@ import { Compare } from '@screens/manga/viewer';
 import { retranslateMeta, resumeMeta } from '@screens/manga/meta';
 import { LeftRail } from '@screens/manga/LeftRail';
 import { LibraryRight } from '@screens/manga/LibraryRight';
+import { EmptyArt } from '@screens/manga/cards';
 import { useLibraryModel } from '@hooks/useLibraryModel';
+import { useEsc } from '@hooks/useEsc';
 import type { LibItem } from '@screens/manga/libModel';
 
 // ------------------------------------------------------------------ 左栏视图件
@@ -66,6 +68,7 @@ export function LibraryScreen({
   onRefresh,
   refreshKey,
   error,
+  onGoDrop,
 }: {
   lib: LibraryResponse | null;
   /** 队列快照，只用来判「该漫画是否已有任务在跑」（→ 显示返工中） */
@@ -86,6 +89,14 @@ export function LibraryScreen({
   refreshKey: number;
   /** 库读取失败的原因；非空且无数据时整屏走错误态，不把「读不到」冒充成「空库」 */
   error?: string | null;
+  /**
+   * 空态里的「去投放」。
+   *
+   * 设计稿把这条出口放在**空书架**与**搜索无结果**两种空态上（"没东西可看"时下一步
+   * 该是送东西进来），而左栏是 `LeftRail` 的子件、拿不到壳层的 `setView` ——
+   * 故由装配件把动作透传下来，左栏只管画。
+   */
+  onGoDrop: () => void;
 }): ReactElement {
   // 吐司单例总线：直接取用，不必由宿主透传（见 useToasts 注释）
   const {
@@ -169,6 +180,27 @@ export function LibraryScreen({
     newBookSignal,
     onNewBookHandled,
     refreshKey,
+  });
+
+  /*
+   * Esc 退出搜索（设计稿 §7.2 的搜索态脚注写着「Esc 退出搜索」，且全局键位处理器
+   * 确实在库屏里把 Esc 交给"清空搜索词"）。
+   *
+   * 三道闸门缺一不可：① 不在搜索态就没有可退出的东西；② 任一浮层开着时 Esc 属于浮层
+   * （关弹窗优先，否则用户按 Esc 会连搜索一起清掉）；③ 对照视图开着时 Esc 是"返回网格"。
+   * 判定只读状态、不发请求，故放在屏本体而不是模型里。
+   */
+  const overlayOpen =
+    toDelete !== null ||
+    showHidden ||
+    newBookOpen ||
+    editBook !== null ||
+    mergeTarget !== null ||
+    editNoChapter !== null ||
+    ctxMenu !== null;
+  useEsc(() => {
+    if (!searching || overlayOpen || compareSeq !== null) return;
+    setQueryInput('');
   });
 
   /**
@@ -364,9 +396,38 @@ export function LibraryScreen({
   }
 
   if (comics.length === 0 && hidden.length === 0) {
+    /*
+     * 空库（设计稿 `renderLibrary` 的空分支）：**单栏 + 居中空态卡**，而不是一条提示条。
+     *
+     * 旧写法是一条 `Notice`，且左栏照样渲染一张空面板 —— 页面上于是同时存在
+     * "左侧空书架"与"一条提示"，两个都在说"没有东西"，却都没给下一步。
+     * 设计稿的做法是：左栏让位（`grid-template-columns: 1fr`），整页只留一块空态，
+     * 出口按"最可能的下一步"排：去投放（primary）→ 新建漫画 → 已隐藏 N。
+     */
     return (
       <>
-        <Notice>漫画库还是空的。点工具条的「新建漫画」创建一个，或从「本机投放」送翻译成品进来。</Notice>
+        <div className="lib lib-solo">
+          <section className="lib-right lib-empty-page">
+            <Empty>
+              <EmptyArt />
+              <h3 className="empty-title">漫画库还是空的</h3>
+              <p className="empty-sub">投放几张漫画图片，翻译完成后作品会自动按「本 → 话 → 页」整理在这里。</p>
+              <div className="empty-actions">
+                <Btn kind="primary" size="sm" onClick={onGoDrop}>
+                  去投放
+                </Btn>
+                <Btn kind="ghost" size="sm" onClick={() => setNewBookOpen(true)}>
+                  新建漫画
+                </Btn>
+                {hidden.length > 0 ? (
+                  <Btn kind="ghost" size="sm" onClick={() => setShowHidden(true)}>
+                    已隐藏 {hidden.length}
+                  </Btn>
+                ) : null}
+              </div>
+            </Empty>
+          </section>
+        </div>
         {/* ⚠️ 空库也要渲染「新建漫画」弹窗：工具条上的按钮在 App 里、永远可点，
             若这里直接 return 掉弹窗，用户点「新建漫画」会看到**什么都没发生** */}
         {newBookOpen ? (
@@ -532,21 +593,26 @@ export function LibraryScreen({
         items={items}
         activeKey={current?.comicName ?? null}
         onActive={setActive}
-        foldedGroups={foldedGroups}
-        onToggleFolded={toggleFolded}
         onCtxMenu={(e, item) => setCtxMenu({ x: e.clientX, y: e.clientY, item })}
-        onMerge={setMergeTarget}
         libPage={libPage}
         libPages={libPages}
         onLibPage={setLibPage}
         totalBytes={lib?.totalBytes ?? 0}
         hiddenCount={hidden.length}
         onShowHidden={() => setShowHidden(true)}
+        onGoDrop={onGoDrop}
       />
 
       <LibraryRight
         searching={searching}
         query={query}
+        searchGroups={searchGroups}
+        foldedGroups={foldedGroups}
+        onToggleFolded={toggleFolded}
+        onActive={setActive}
+        onOpenChapterNo={setChapterNo}
+        onMerge={setMergeTarget}
+        onGoDrop={onGoDrop}
         current={current}
         inChapter={inChapter}
         headName={headName}

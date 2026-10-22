@@ -27,6 +27,67 @@ export const GRID_HINT: Record<GridState, (seq: number) => string> = {
 };
 
 /**
+ * 空态插画（设计稿 `.empty-art` 里的猫头）。
+ *
+ * 为什么画成 SVG 而不是放一张图：它要跟着主题换色（描边取 ink、纸页取 surface-2、
+ * 星芒取 accent），位图做不到；且它是**空态**的装饰，不该多一次网络/IPC 往返。
+ * 纯装饰，故 `aria-hidden` —— 空态的信息由旁边的标题与说明承载。
+ */
+export function EmptyArt() {
+  return (
+    <svg className="empty-art" viewBox="0 0 132 112" fill="none" aria-hidden="true">
+      <ellipse cx="66" cy="102" rx="40" ry="5" fill="var(--miao-line)" opacity="0.7" />
+      <path
+        d="M36 56c0-18 13-30 30-30s30 12 30 30v22c0 12-13 20-30 20s-30-8-30-20V56Z"
+        fill="var(--miao-surface)"
+        stroke="var(--miao-ink)"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M42 32 38 13l17 10M90 32l4-19-17 10"
+        fill="var(--miao-surface-2)"
+        stroke="var(--miao-ink)"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path d="M46 57c3-4 8-4 11 0M75 57c3-4 8-4 11 0" stroke="var(--miao-ink)" strokeWidth="2" strokeLinecap="round" />
+      <path d="M62 68c3 3 7 3 10 0" stroke="var(--miao-ink)" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M56 38c4-6 16-6 20 0" stroke="var(--miao-accent)" strokeWidth="1.2" opacity="0.55" />
+      <path
+        d="M51 79c-8 0-14 5-14 12v9h60v-9c0-7-6-12-14-12"
+        fill="var(--miao-surface-2)"
+        stroke="var(--miao-ink)"
+        strokeWidth="1.8"
+      />
+      <rect
+        x="72"
+        y="72"
+        width="38"
+        height="28"
+        rx="3"
+        fill="var(--miao-accent-soft)"
+        stroke="var(--miao-ink)"
+        strokeWidth="1.5"
+        transform="rotate(-6 91 86)"
+      />
+      <path
+        d="M79 82h24M79 88h17"
+        stroke="var(--miao-ink)"
+        strokeWidth="1.1"
+        opacity="0.5"
+        transform="rotate(-6 91 86)"
+      />
+      <path
+        d="M104 49l1.8 4.2 4.2 1.8-4.2 1.8L104 61l-1.8-4.2L98 55l4.2-1.8z"
+        fill="var(--miao-accent)"
+        opacity="0.8"
+      />
+      <path d="M24 42l1.2 2.8 2.8 1.2-2.8 1.2L24 50l-1.2-2.8L20 46l2.8-1.2z" fill="var(--miao-accent)" opacity="0.6" />
+    </svg>
+  );
+}
+
+/**
  * 封面缩略。
  *
  * `loading` 与 `missing` 都落到占位（`line-soft` 底 + 书名首字，设计稿 §7.1）：

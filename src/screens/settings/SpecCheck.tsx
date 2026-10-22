@@ -184,7 +184,7 @@ export function SpecFixture() {
             缩略图按 3/4.16 自适应），样张若还留着 `.grid-card`，C5 就会一直量一个
             真实界面里不存在的元素 —— 那是空断言，比没有更坏。
           */}
-          <div className="lib-grid page-grid">
+          <div className="page-grid">
             <div className="page-card">
               <span className="page-thumb" />
               <span className="page-label">

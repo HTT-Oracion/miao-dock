@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, MouseEvent, ReactNode } from 'react';
 import { QUEUE_EMPTY } from '@/themes/tokens';
 
 /*
@@ -41,8 +41,22 @@ export function Badge({ children }: { children: ReactNode }) {
 
 // ------------------------------------------------------------------ 按钮
 
-type BtnKind = 'primary' | 'ghost' | 'danger';
+type BtnKind = 'primary' | 'ghost' | 'danger' | 'text' | 'bare';
 
+/**
+ * 按钮。
+ *
+ * 四种**权重**：`primary`（推进）/ `ghost`（中性次按钮）/ `danger`（破坏）/
+ * `text`（文字按钮，无底无边、悬停才浮一层底色）。
+ *
+ * 第五种 `bare` 是**结构件**：整行可点、分组标题、翻页器页码这类"位置自己就有样式"
+ * 的点击目标 —— 它只借这个组件保证「是 `<button type="button">`、有 disabled/title 语义」，
+ * 视觉全部由调用处的类名决定。不给它单开组件：调用方要的是"同一件事的不同权重"，
+ * 拆成两个组件反而逼调用方先判"这个算不算按钮"。
+ *
+ * `active` 给"当前项"语义（翻页器高亮页码、已选中的筛选钮）：只加 `is-active`，
+ * 具体长什么样由该处样式决定 —— 单元不预设"选中 = 蓝底"。
+ */
 export function Btn({
   children,
   kind = 'ghost',
@@ -50,19 +64,44 @@ export function Btn({
   onClick,
   disabled,
   title,
+  ariaLabel,
+  active,
+  className,
   style,
 }: {
   children: ReactNode;
   kind?: BtnKind;
   size?: 'sm';
-  onClick?: () => void;
+  onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
   disabled?: boolean;
   title?: string;
+  /** 纯图标按钮的无障碍名（可见文案为空时必填；有文案时不必重复） */
+  ariaLabel?: string;
+  /** 当前项（翻页器页码 / 已选中的筛选钮）：只加 `is-active`，样式由调用处决定 */
+  active?: boolean;
+  /** 屏内业务类名；`kind="bare"` 时它是**唯一**的类名 */
+  className?: string;
   style?: CSSProperties;
 }) {
-  const cls = ['btn', `btn-${kind}`, size === 'sm' ? 'btn-sm' : ''].filter(Boolean).join(' ');
+  const cls = [
+    kind === 'text' ? 'text-btn' : kind === 'bare' ? '' : 'btn',
+    kind === 'text' || kind === 'bare' ? '' : `btn-${kind}`,
+    kind !== 'text' && kind !== 'bare' && size === 'sm' ? 'btn-sm' : '',
+    active ? 'is-active' : '',
+    className ?? '',
+  ]
+    .filter(Boolean)
+    .join(' ');
   return (
-    <button type="button" className={cls} onClick={onClick} disabled={disabled} title={title} style={style}>
+    <button
+      type="button"
+      className={cls}
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={ariaLabel}
+      style={style}
+    >
       {children}
     </button>
   );

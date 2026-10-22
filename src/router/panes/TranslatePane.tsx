@@ -106,6 +106,7 @@ export function TranslatePane() {
         onRefresh={refreshAll}
         refreshKey={refreshKey}
         error={libError}
+        onGoDrop={() => setView('drop')}
       />
     );
   }

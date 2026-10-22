@@ -1,20 +1,42 @@
-// 漫画库右栏：头行 + 屏 B 话列表 / 屏 A·C 页网格 + 空库提示。
+// 漫画库右栏：搜索分组态 / 详情头 + 屏 B 话列表 / 屏 A·C 页网格 + 空库提示。
 //
 // 为什么从 `LibraryScreen.tsx` 抽出来（D-152）：与左栏（`LeftRail.tsx`）对称 ——
 // 屏本体的 return 由「左栏 + 右栏 + 一排弹窗」三块组成，前两块各自成件后
 // 屏本体只剩状态与编排。只传 props（守本仓「零 Context」）。
-import { ArrowLeft, RefreshCw } from 'lucide-react';
-import { Btn, IconButton, Notice } from '@components/units';
-import { ChapterCard } from '@screens/manga/chapters';
-import { GRID_HINT, GRID_LABEL, Thumb } from '@screens/manga/cards';
+import { ArrowLeft, ChevronDown, FileText, GitMerge, RefreshCw } from 'lucide-react';
+import { Btn, Empty, IconButton } from '@components/units';
+import { groupSearchResults } from '@tools';
+import { ChapterCard, chapterStatusOf } from '@screens/manga/chapters';
+import type { ChapterState } from '@screens/manga/chapters';
+import { EmptyArt, GRID_HINT, GRID_LABEL, Highlight, Thumb } from '@screens/manga/cards';
 import type { GridState } from '@screens/manga/cards';
 import { AUTHOR_FALLBACK } from '@screens/manga/libModel';
 import type { PageView } from '@screens/manga/blob';
 import type { BookEntry, ChapterEntry, ComicEntry } from '@/types';
 
+/**
+ * 搜索行状态徽标的修饰类（与话卡同一套判定：`chapterStatusOf` 给状态词，这里只选色档）。
+ *
+ * 单独一张表而不是在 JSX 里写嵌套三元：四种状态 → 四个修饰类，
+ * 内联写成三元链既难读，加第五种状态时还会悄悄落进 `else` 分支。
+ */
+const SEARCH_BADGE: Record<ChapterState, string> = {
+  done: 'st-badge is-ok',
+  pending: 'st-badge is-warn',
+  missing: 'st-badge is-bad',
+  empty: 'st-badge is-idle',
+};
+
 export function LibraryRight({
   searching,
   query,
+  searchGroups,
+  foldedGroups,
+  onToggleFolded,
+  onActive,
+  onOpenChapterNo,
+  onMerge,
+  onGoDrop,
   current,
   inChapter,
   headName,
@@ -44,6 +66,17 @@ export function LibraryRight({
 }: {
   searching: boolean;
   query: string;
+  /** 搜索分组（设计稿屏 A′ 的右栏内容）；`hasLayers` 为假时为空数组 */
+  searchGroups: ReturnType<typeof groupSearchResults>;
+  foldedGroups: Set<string>;
+  onToggleFolded: (key: string) => void;
+  /** 点分组标题右侧「打开书架」：选中这一本 */
+  onActive: (key: string) => void;
+  /** 点搜索命中的一话：选中它所属的书并进入那一话 */
+  onOpenChapterNo: (no: number) => void;
+  /** 未归并单话行尾的「归并」 */
+  onMerge: (dirName: string) => void;
+  onGoDrop: () => void;
   /** 当前选中「部」；`null` = 空库 */
   current: ComicEntry | null;
   /** 是否停在「话内页」（屏 C）—— 决定头行显示话号还是书名 */
@@ -77,9 +110,136 @@ export function LibraryRight({
   onGridPage: (page: number) => void;
   onCompare: (seq: number) => void;
 }) {
+  /*
+   * 搜索分组态（设计稿 §7.2 屏 A′）的「有没有找到」判定。
+   *
+   * 用 `searchGroups.length` 而不是 `hasLayers`：没有分层数据的旧服务端不产分组，
+   * 那时搜索态该退回左栏平铺过滤，右栏显示"没找到"会把旧服务端判成空库。
+   */
+  const hasGroups = searchGroups.length > 0;
+
   return (
     <section className="lib-right">
-      {current ? (
+      {searching ? (
+        /* ── 屏 A′：搜索结果分组态（右栏）───────────────────────────── */
+        hasGroups ? (
+          <>
+            <div className="search-result-head">
+              <div>
+                <h2 title={query}>搜索「{query}」</h2>
+                <p>
+                  <span className="num">{searchGroups.length}</span> 本作品 ·{' '}
+                  <span className="num">{searchGroups.reduce((s, g) => s + g.rows.length, 0)}</span> 个话命中
+                </p>
+              </div>
+              {/* 「清除搜索」在左栏脚与搜索框的 ✕ 上已有一份，这里不再重复第三个入口 */}
+            </div>
+
+            <div>
+              {searchGroups.map((g) => {
+                const folded = foldedGroups.has(g.key);
+                return (
+                  <div className="search-group" key={g.key}>
+                    <div className="search-group-head">
+                      <Btn
+                        kind="bare"
+                        className="search-group-main"
+                        onClick={() => onToggleFolded(g.key)}
+                        title={g.title}
+                      >
+                        <ChevronDown size={12} className={folded ? 'ico is-collapsed' : 'ico'} />
+                        <span className="book-thumb" aria-hidden="true">
+                          {Array.from(g.merged ? g.key : '单')[0] ?? '?'}
+                        </span>
+                        <strong>
+                          {/* 「其它」不加大类框，故不高亮书名号里的书名（它本来就不是书名） */}
+                          {g.merged ? <Highlight text={g.title} query={query} /> : g.title}
+                        </strong>
+                        <span>
+                          <span className="num">{g.rows.length}</span> 个话命中
+                        </span>
+                      </Btn>
+                      {g.merged ? (
+                        <Btn
+                          kind="text"
+                          className="book-jump"
+                          title="打开这本漫画的书架"
+                          onClick={() => onActive(g.key)}
+                        >
+                          打开书架
+                        </Btn>
+                      ) : null}
+                    </div>
+                    {folded ? null : (
+                      <>
+                        {g.merged ? null : (
+                          <div className="other-hint">
+                            未归并的单话会出现在这里，点「归并」把它挂到某本漫画的某一话。
+                          </div>
+                        )}
+                        {g.rows.map((r) => {
+                          const status = chapterStatusOf(r.target);
+                          return (
+                            <div className="search-result-row" key={r.key}>
+                              <FileText size={13} className="ico" aria-hidden="true" />
+                              <Btn
+                                kind="bare"
+                                className="sr-main"
+                                title={r.label}
+                                disabled={r.no === null}
+                                onClick={() => {
+                                  if (r.no === null) return; // 未归并单话没有话号，进不了屏 C
+                                  onOpenChapterNo(r.no);
+                                }}
+                              >
+                                <span className="sr-title">
+                                  <Highlight text={r.label} query={query} />
+                                </span>
+                              </Btn>
+                              <span className={SEARCH_BADGE[status.state]}>{status.text}</span>
+                              <span className="sr-sub">
+                                <span className="num">{r.target.translatedCount}</span> /{' '}
+                                <span className="num">{r.target.imageCount}</span> 页
+                              </span>
+                              {r.mergeable ? (
+                                <Btn
+                                  kind="text"
+                                  title="把这一话挂到某本漫画的某一话（物理移动，不可逆）"
+                                  onClick={() => onMerge(r.target.dirName)}
+                                >
+                                  <GitMerge size={11} />
+                                  归并
+                                </Btn>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="cv-foot">
+              <span>搜索命中会高亮 · 单话结果可以直接归并到另一本</span>
+              <span className="spacer" />
+              <span>Esc 退出搜索</span>
+            </div>
+          </>
+        ) : (
+          <Empty>
+            <EmptyArt />
+            <h3 className="empty-title">没有找到「{query}」</h3>
+            <p className="empty-sub">试试漫画名、作者名，或直接输入话号。搜索结果会按「本 → 话」分组。</p>
+            <div className="empty-actions">
+              <Btn kind="primary" size="sm" onClick={onGoDrop}>
+                去投放
+              </Btn>
+            </div>
+          </Empty>
+        )
+      ) : current ? (
         <>
           {/*
             详情头（设计稿 `.book-hero`）：左侧大封面 96×130 + 右侧信息列
@@ -89,7 +249,7 @@ export function LibraryRight({
           */}
           <div className="book-hero">
             <div className="book-big-cover" aria-hidden="true">
-              {Array.from(headName).slice(0, 4).join('')}
+              <span className="obi">{Array.from(headName).slice(0, 4).join('')}</span>
             </div>
             <div className="book-info">
               {inChapter ? (
@@ -102,14 +262,32 @@ export function LibraryRight({
               {currentBook ? (
                 <p className="book-author">
                   {inChapter
-                    ? `《${currentBook.bookName}》`
-                    : `${currentBook.author || AUTHOR_FALLBACK} · ${currentBook.chapterCount} 话 · ${currentBook.totalPages} 页`}
+                    ? `《${currentBook.bookName}》 · 更新于 ${currentBook.modifiedAt ?? '—'}`
+                    : `${currentBook.author || AUTHOR_FALLBACK} · 更新于 ${currentBook.modifiedAt ?? '—'}`}
                 </p>
               ) : null}
               {currentBook && !inChapter ? (
                 <div className="book-meta-chips">
                   <span className="st-badge is-idle">{currentBook.chapterCount} 话</span>
                   <span className="st-badge is-idle">{currentBook.totalPages} 页</span>
+                  <span
+                    className={
+                      currentBook.totalPages > 0 &&
+                      currentBook.chapters.reduce((s, c) => s + c.translatedCount, 0) >= currentBook.totalPages
+                        ? 'st-badge is-ok'
+                        : 'st-badge is-idle'
+                    }
+                  >
+                    已译{' '}
+                    {currentBook.totalPages > 0
+                      ? Math.round(
+                          (currentBook.chapters.reduce((s, c) => s + c.translatedCount, 0) / currentBook.totalPages) *
+                            100,
+                        )
+                      : 0}
+                    %
+                  </span>
+                  <span className="st-badge is-ok">在书架</span>
                 </div>
               ) : null}
               <p className="book-path" title={headPath}>
@@ -125,48 +303,53 @@ export function LibraryRight({
           </div>
 
           {currentBook && !inChapter ? (
-            /* ── 屏 B：话列表（设计稿 §7.3）── 话卡沿用 110×165 网格几何；
-                大类自身没有"页"，所以它选中时右栏不渲染页网格 */
+            /* ── 屏 B：话列表（设计稿 §7.3）── 话卡是文字卡（第 N 话 / 页数 / 进度条） */
             <>
-              <div className="card lib-grid-wrap">
-                <div className="lib-grid">
-                  {chapterRows.map((ch) => (
-                    <ChapterCard
-                      key={ch.dirName}
-                      bookName={currentBook.bookName}
-                      chapter={ch}
-                      busy={
-                        // 整本有任务在跑 ⇒ 它的话也在被写，本话再返工会互相覆盖
-                        reworkingComics.has(currentBook.dirName) ||
-                        reworkingComics.has(`${currentBook.dirName}/${ch.dirName}`)
-                      }
-                      onOpen={() => {
-                        if (ch.no !== null) onOpenChapter(ch.no);
-                      }}
-                      onOpenDir={() => onOpenDir(ch.absDir)}
-                      onResume={() => {
-                        if (ch.no === null) return; // 无话号的目录拼不出话级端点，卡片入口也已禁用
-                        onResume(
-                          `/library/${encodeURIComponent(currentBook.bookName)}/chapters/${ch.no}`,
-                          `《${currentBook.bookName}》第 ${ch.no} 话`,
-                        );
-                      }}
-                      onRetranslate={() => {
-                        if (ch.no === null) return; // 无话号的目录拼不出话级端点，卡片入口也已禁用
-                        onRetranslate(
-                          `/library/${encodeURIComponent(currentBook.bookName)}/chapters/${ch.no}`,
-                          `《${currentBook.bookName}》第 ${ch.no} 话`,
-                        );
-                      }}
-                      onEditNo={() => onEditNoChapter({ bookName: currentBook.bookName, chapter: ch })}
-                    />
-                  ))}
-                </div>
+              <div className="book-section-head">
+                <h3>章节</h3>
+                <span className="count">
+                  共 <span className="num">{currentBook.chapters.length}</span> 话 · 点卡片进入页列表
+                </span>
               </div>
 
-              <div className="lib-foot-note">
+              <div className="chapter-grid">
+                {chapterRows.map((ch) => (
+                  <ChapterCard
+                    key={ch.dirName}
+                    bookName={currentBook.bookName}
+                    chapter={ch}
+                    busy={
+                      // 整本有任务在跑 ⇒ 它的话也在被写，本话再返工会互相覆盖
+                      reworkingComics.has(currentBook.dirName) ||
+                      reworkingComics.has(`${currentBook.dirName}/${ch.dirName}`)
+                    }
+                    onOpen={() => {
+                      if (ch.no !== null) onOpenChapter(ch.no);
+                    }}
+                    onOpenDir={() => onOpenDir(ch.absDir)}
+                    onResume={() => {
+                      if (ch.no === null) return; // 无话号的目录拼不出话级端点，卡片入口也已禁用
+                      onResume(
+                        `/library/${encodeURIComponent(currentBook.bookName)}/chapters/${ch.no}`,
+                        `《${currentBook.bookName}》第 ${ch.no} 话`,
+                      );
+                    }}
+                    onRetranslate={() => {
+                      if (ch.no === null) return; // 无话号的目录拼不出话级端点，卡片入口也已禁用
+                      onRetranslate(
+                        `/library/${encodeURIComponent(currentBook.bookName)}/chapters/${ch.no}`,
+                        `《${currentBook.bookName}》第 ${ch.no} 话`,
+                      );
+                    }}
+                    onEditNo={() => onEditNoChapter({ bookName: currentBook.bookName, chapter: ch })}
+                  />
+                ))}
+              </div>
+
+              <div className="cv-foot">
                 <span>
-                  共 <span className="num">{currentBook.chapters.length}</span> 话
+                  共 <span className="num">{currentBook.chapters.length}</span> 话 ·{' '}
+                  <span className="num">{currentBook.totalPages}</span> 页
                   {chPages > 1 ? (
                     <>
                       {' · 第 '}
@@ -174,8 +357,9 @@ export function LibraryRight({
                     </>
                   ) : null}
                 </span>
+                <span className="spacer" />
                 {chPages > 1 ? (
-                  <span className="lib-grid-pager">
+                  <span className="cv-top-pager">
                     <Btn kind="ghost" size="sm" disabled={chPage <= 1} onClick={() => onChPage(chPage - 1)}>
                       上一页
                     </Btn>
@@ -184,7 +368,7 @@ export function LibraryRight({
                     </Btn>
                   </span>
                 ) : (
-                  <span>点任意一话看它的页 · 卡片「⋯」里可重译整话</span>
+                  <span>右键书架或话卡片可以管理</span>
                 )}
               </div>
             </>
@@ -199,13 +383,15 @@ export function LibraryRight({
               {inChapter ? (
                 <>
                   <div className="cv-head">
-                    <button type="button" className="cv-back" onClick={onExitChapter}>
+                    <Btn kind="bare" className="cv-back" onClick={onExitChapter} title="返回这一部的话列表">
                       <ArrowLeft size={14} />
                       返回话列表
-                    </button>
+                    </Btn>
                     <div className="cv-title">
                       <strong>{headName}</strong>
-                      <span>{headPath ? `· ${currentBook?.bookName ?? ''}` : ''}</span>
+                      <span>
+                        《{currentBook?.bookName ?? ''}》 · <span className="num">{seqMax}</span> 页
+                      </span>
                     </div>
                     <div className="cv-actions">
                       <Btn kind="ghost" size="sm" onClick={onRefresh}>
@@ -214,7 +400,7 @@ export function LibraryRight({
                       </Btn>
                     </div>
                   </div>
-                  {/* 话信息（设计稿 `.cv-info`）：三枚状态徽标 */}
+                  {/* 话信息（设计稿 `.cv-info`）：状态徽标 + 已译进度 + 更新时间 */}
                   <div className="cv-info">
                     <span className="st-badge is-idle">
                       <span className="num">{translatedSeqs.size}</span> /{' '}
@@ -229,58 +415,56 @@ export function LibraryRight({
                 </>
               ) : null}
 
-              <div className="card lib-grid-wrap">
-                <div className="lib-grid page-grid">
-                  {gridSeqs.map((seq) => {
-                    const state: GridState = missingSeqs.has(seq)
-                      ? 'missing'
-                      : translatedSeqs.has(seq)
-                        ? 'done'
-                        : 'pending';
-                    return (
-                      <button
-                        key={seq}
-                        type="button"
-                        /*
-                         * 页卡（设计稿 `.page-card`）：宽度交给网格（`minmax(112px,1fr)`），
-                         * 缩略图用 `aspect-ratio: 3/4.16` 自适应 —— 不再写死 110×165。
-                         * 写死尺寸时，窗口一变宽右栏就留一大片空白，且每格宽度与网格列宽脱节。
-                         */
-                        className={state === 'missing' ? 'page-card is-missing' : 'page-card'}
-                        disabled={state === 'missing'}
-                        onClick={() => onCompare(seq)}
-                        title={
-                          state === 'missing'
-                            ? `第 ${seq} 页在本机没有原图，无法对照`
-                            : `第 ${seq} 页 · 点开看原文 / 译文对照`
-                        }
-                      >
-                        <span className="page-thumb">
-                          <Thumb
-                            path={state === 'done' && gridView ? gridView.imagePath(seq, 'translated') : ''}
-                            seq={seq}
-                            state={state}
-                          />
-                          {/* 状态角标（设计稿 `.page-stamp`）：右上角一枚小标签 */}
-                          <span className={`page-stamp is-${state}`} title={GRID_HINT[state](seq)}>
-                            {GRID_LABEL[state]}
-                          </span>
+              <div className="page-grid">
+                {gridSeqs.map((seq) => {
+                  const state: GridState = missingSeqs.has(seq)
+                    ? 'missing'
+                    : translatedSeqs.has(seq)
+                      ? 'done'
+                      : 'pending';
+                  return (
+                    <Btn
+                      key={seq}
+                      kind="bare"
+                      /*
+                       * 页卡（设计稿 `.page-card`）：宽度交给网格（`minmax(112px,1fr)`），
+                       * 缩略图用 `aspect-ratio: 3/4.16` 自适应 —— 不再写死 110×165。
+                       * 写死尺寸时，窗口一变宽右栏就留一大片空白，且每格宽度与网格列宽脱节。
+                       */
+                      className={state === 'missing' ? 'page-card is-missing' : 'page-card'}
+                      disabled={state === 'missing'}
+                      onClick={() => onCompare(seq)}
+                      title={
+                        state === 'missing'
+                          ? `第 ${seq} 页在本机没有原图，无法对照`
+                          : `第 ${seq} 页 · 点开看原文 / 译文对照`
+                      }
+                    >
+                      <span className="page-thumb">
+                        <Thumb
+                          path={state === 'done' && gridView ? gridView.imagePath(seq, 'translated') : ''}
+                          seq={seq}
+                          state={state}
+                        />
+                        {/* 状态角标（设计稿 `.page-stamp`）：右上角一枚小标签 */}
+                        <span className={`page-stamp is-${state}`} title={GRID_HINT[state](seq)}>
+                          {GRID_LABEL[state]}
                         </span>
-                        <span className="page-label">
-                          <b>
-                            第 <span className="num">{seq}</span> 页
-                          </b>
-                          <em>{String(seq).padStart(3, '0')}.png</em>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                      </span>
+                      <span className="page-label">
+                        <b>
+                          第 <span className="num">{seq}</span> 页
+                        </b>
+                        <em>{String(seq).padStart(3, '0')}.png</em>
+                      </span>
+                    </Btn>
+                  );
+                })}
               </div>
 
-              <div className="lib-foot-note">
+              <div className="cv-foot">
                 <span>
-                  共 <span className="num">{seqMax}</span> 组
+                  共 <span className="num">{seqMax}</span> 页
                   {gridPages > 1 ? (
                     <>
                       {' · 第 '}
@@ -288,8 +472,9 @@ export function LibraryRight({
                     </>
                   ) : null}
                 </span>
+                <span className="spacer" />
                 {gridPages > 1 ? (
-                  <span className="lib-grid-pager">
+                  <span className="cv-top-pager">
                     <Btn kind="ghost" size="sm" disabled={gridPage <= 1} onClick={() => onGridPage(gridPage - 1)}>
                       上一页
                     </Btn>
@@ -303,18 +488,23 @@ export function LibraryRight({
                     </Btn>
                   </span>
                 ) : (
-                  <span>点任意一格看原文 / 译文对照</span>
+                  <span>点任意一页查看原文 / 译文对照 · 缺页不可打开</span>
                 )}
               </div>
             </>
           )}
         </>
       ) : (
-        <Notice>
-          {searching
-            ? `没有匹配「${query}」的漫画或话。换个关键词，或清空搜索。`
-            : '漫画库还是空的。点工具条的「新建漫画」创建一个，或从「本机投放」送翻译成品进来。'}
-        </Notice>
+        <Empty>
+          <EmptyArt />
+          <h3 className="empty-title">漫画库还是空的</h3>
+          <p className="empty-sub">投放几张漫画图片，翻译完成后作品会自动按「本 → 话 → 页」整理在这里。</p>
+          <div className="empty-actions">
+            <Btn kind="primary" size="sm" onClick={onGoDrop}>
+              去投放
+            </Btn>
+          </div>
+        </Empty>
       )}
     </section>
   );
