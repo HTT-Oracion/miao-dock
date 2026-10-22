@@ -1,4 +1,4 @@
-﻿/* ================================================================ X-C1 任务队列
+/* ================================================================ X-C1 任务队列
  *
  * ver3「空色日和」版：整块是一张卡片（汇总条 → 工具条 → 表 → 页脚），
  * 行不再各自带边框，靠分隔线与左侧状态条区分。
@@ -1844,7 +1844,14 @@
   color: var(--miao-ink);
   display: flex;
   align-items: baseline;
-  gap: 4px;
+  gap: 6px;
+}
+/* 次行（设计稿 `.lb-sub`）：书名 + 页文件名，小一档、淡一档，不与主行抢视线 */
+.compare-seq .muted {
+  font-family: var(--md-font-numeric);
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--miao-muted);
 }
 .compare-panes {
   flex: 1;

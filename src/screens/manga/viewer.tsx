@@ -364,10 +364,13 @@ function Lightbox({
         onClick={(e) => e.stopPropagation()}
       >
         <span className="compare-seq">
-          <span className="num">{seq}</span>
-          <span> / </span>
-          <span className="muted">· {label} · </span>
-          <span className="muted">{title}</span>
+          {/* 主行按设计稿 `.lb-title`：`第 N 页 · 原图|译文`；次行 `.lb-sub` 给书名与页文件名 */}
+          <span>
+            第 <span className="num">{seq}</span> 页 · {label}
+          </span>
+          <span className="muted">
+            {title} · {pageFileName(seq)}
+          </span>
         </span>
         {/*
             缩放控件：− / 百分比 / + 三段。
