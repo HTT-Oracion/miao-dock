@@ -27,6 +27,7 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { HeartPulse, Lock, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, X } from 'lucide-react';
 import { DL_BASE_COLOR_DEF, DL_HIGHLIGHT_COLOR_DEF, DL_LINE_COUNT, DL_LYRICS_SIZE } from '@music/player-options';
+import { Btn } from '@components/units';
 
 // ------------------------------------------------------------------ 契约类型
 
@@ -697,63 +698,54 @@ export function DesktopLyrics() {
           </span>
         ) : (
           <div className="dl-ctrl">
-            <button
-              type="button"
-              className="dl-cbtn"
-              onClick={() => sendControl('prev')}
-              title="上一首"
-              aria-label="上一首"
-            >
+            {/* 六枚控制钮全部走 `Btn kind="bare"`：外观仍由本文件内联的 `.dl-cbtn` 决定
+                （bare 只带调用方的类名），换来的是「type=button / title / 无障碍名 / disabled」
+                只有一处实现。 */}
+            <Btn kind="bare" className="dl-cbtn" onClick={() => sendControl('prev')} title="上一首" ariaLabel="上一首">
               <SkipBack size={13} strokeWidth={2.2} />
-            </button>
-            <button
-              type="button"
+            </Btn>
+            <Btn
+              kind="bare"
               className="dl-cbtn"
               onClick={() => sendControl('toggle-play')}
               title={isPlaying ? '暂停' : '播放'}
-              aria-label={isPlaying ? '暂停' : '播放'}
+              ariaLabel={isPlaying ? '暂停' : '播放'}
             >
               {isPlaying ? <Pause size={13} strokeWidth={2.2} /> : <Play size={13} strokeWidth={2.2} />}
-            </button>
-            <button
-              type="button"
-              className="dl-cbtn"
-              onClick={() => sendControl('next')}
-              title="下一首"
-              aria-label="下一首"
-            >
+            </Btn>
+            <Btn kind="bare" className="dl-cbtn" onClick={() => sendControl('next')} title="下一首" ariaLabel="下一首">
               <SkipForward size={13} strokeWidth={2.2} />
-            </button>
-            <button
-              type="button"
+            </Btn>
+            <Btn
+              kind="bare"
               className="dl-cbtn"
               onClick={() => sendControl('cycle-mode')}
               title={`播放模式：${modeMeta.label}`}
-              aria-label={`播放模式：${modeMeta.label}`}
+              ariaLabel={`播放模式：${modeMeta.label}`}
             >
               <ModeIcon size={13} strokeWidth={2.2} />
-            </button>
+            </Btn>
             {/* 分隔线把「播放控制」与「窗口控制（锁定/关闭）」分开 —— 两者都是圆形小图标，
                 相邻且同为中性色时极易误点关闭 */}
             <span className="dl-cdiv" />
-            <button
-              type="button"
+            <Btn
+              kind="bare"
               className="dl-cbtn"
               onClick={toggleLock}
               title="锁定（锁定后不可拖动）"
-              aria-label="锁定桌面歌词"
+              ariaLabel="锁定桌面歌词"
             >
               <Lock size={13} strokeWidth={2.2} />
-            </button>
-            <button
-              type="button"
+            </Btn>
+            <Btn
+              kind="bare"
               className="dl-cbtn is-close"
               onClick={onClose}
               title="关闭桌面歌词"
-              aria-label="关闭桌面歌词"
+              ariaLabel="关闭桌面歌词"
             >
               <X size={13} strokeWidth={2.4} />
-            </button>
+            </Btn>
           </div>
         )}
       </div>
