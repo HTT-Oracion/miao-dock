@@ -1,4 +1,4 @@
-// 漫画库的三个弹窗（设计稿 §7.6.1 / §7.6.2 / §7.6.3）。
+﻿// 漫画库的三个弹窗（设计稿 §7.6.1 / §7.6.2 / §7.6.3）。
 //
 // ## 为什么抽到屏外
 // `LibraryScreen.tsx` 已经被断言脚本按路径写死并读源码（`e2e/units-structure-check.mjs:71`、
@@ -15,7 +15,7 @@ import { useMemo, useRef, useState } from 'react';
 import { ImagePlus, Trash2 } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 
-import { Btn, Modal, Select } from '@components/units';
+import { Btn, Modal, Notice, Select } from '@components/units';
 import { chapterNoOf, coverFileName, dupKey, padChapterNo, shortPath } from '@tools';
 import type { BookEntry, ChapterEntry, ComicEntry } from '@/types';
 import { bookFirstImagePath, coverPath, useBlobUrl } from '@screens/manga/blob';
@@ -85,8 +85,9 @@ export function NewBookModal({
 
   return (
     <Modal
-      kicker="LIBRARY / NEW BOOK"
+      kicker="NEW BOOK"
       title="新建漫画"
+      subtitle="先建一个空书架位置，也可以稍后直接投放图片。"
       busy={busy}
       onClose={onCancel}
       actions={
@@ -95,7 +96,7 @@ export function NewBookModal({
             取消
           </Btn>
           <Btn kind="primary" onClick={submit} disabled={!canSubmit}>
-            {busy ? '创建中…' : '创建'}
+            {busy ? '创建中…' : '创建漫画'}
           </Btn>
         </>
       }
@@ -111,7 +112,7 @@ export function NewBookModal({
         onKeyDown={(e) => {
           if (e.key === 'Enter') submit();
         }}
-        placeholder="例如：夏日重现"
+        placeholder="例如：雾中邮局"
         spellCheck={false}
         autoFocus
       />
@@ -120,13 +121,13 @@ export function NewBookModal({
         {shortPath(`${root}/${trimmed || '…'}`, 60)}
       </div>
 
-      <div className="modal-label">作者（选填）</div>
+      <div className="modal-label">作者</div>
       <input
         className="input"
         value={author}
         maxLength={MAX_AUTHOR_CHARS}
         onChange={(e) => setAuthor(e.target.value)}
-        placeholder="未署名"
+        placeholder="留空则显示「未知作者」"
         spellCheck={false}
       />
 
@@ -221,8 +222,9 @@ export function EditBookModal({
 
   return (
     <Modal
-      kicker="LIBRARY / EDIT BOOK"
-      title={`编辑《${book.bookName}》`}
+      kicker="EDIT BOOK"
+      title="编辑漫画信息"
+      subtitle="封面用于书架与详情；作者最多 40 个字符。"
       busy={busy}
       onClose={onCancel}
       actions={
@@ -292,7 +294,7 @@ export function EditBookModal({
         value={author}
         maxLength={MAX_AUTHOR_CHARS}
         onChange={(e) => setAuthor(e.target.value)}
-        placeholder="未署名"
+        placeholder="留空则显示「未知作者」"
         spellCheck={false}
       />
       <div className="modal-hint">
@@ -372,7 +374,9 @@ export function MergeModal({
 
   return (
     <Modal
-      title={`归并「${source}」`}
+      kicker="MERGE CHAPTER"
+      title="归并到另一本"
+      subtitle={`把「${source}」挂到目标漫画的某一话。`}
       busy={busy}
       onClose={onCancel}
       actions={
@@ -413,6 +417,9 @@ export function MergeModal({
             预览：将《{source}》归并为《{target}》第 <span className="num">{noOk ? no : '?'}</span> 话（目录名{' '}
             {noOk ? `${padChapterNo(no)}_第${no}话` : '—'}）
           </div>
+
+          {/* 设计稿的提示条：说清"归并到底动了什么"，免得用户以为会复制一份图片 */}
+          <Notice kind="info">归并只移动作品结构，不会复制图片文件；原目录会按新话号重命名。</Notice>
 
           {conflict ? (
             <div className="modal-warn">
