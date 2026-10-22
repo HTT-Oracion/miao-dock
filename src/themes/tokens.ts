@@ -325,6 +325,10 @@ export function cssVars(mode: ThemeMode): Record<string, string> {
   out['--miao-accent'] = src.pink;
   out['--miao-accent-soft'] = src['pink-soft'];
   out['--miao-accent-line'] = mode === 'dark' ? '#4E3C2D' : '#F0D9C8';
+  // 🔴 这一档曾被 CSS 用了 5 处却**没人定义**（`--miao-accent-ink`）—— 未定义的自定义属性
+  // 会让整条声明失效（IACVT），`color` 静默回落到继承值，于是 kicker/徽标/注解毒那几处
+  // 一直"看着是灰的"却没人报错。值取设计稿的 `--accent-deep`（浅 #BE7F57 / 深 #EFC4A4）。
+  out['--miao-accent-ink'] = mode === 'dark' ? '#EFC4A4' : '#BE7F57';
   out['--miao-sage'] = src.lavender;
   out['--miao-sage-soft'] = mode === 'dark' ? '#233027' : '#EEF4EE';
   out['--miao-sage-line'] = mode === 'dark' ? '#3A4C3D' : '#D8E6D8';

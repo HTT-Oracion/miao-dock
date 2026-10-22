@@ -1995,7 +1995,8 @@
 .set-note-inline > svg {
   flex: none;
   margin-top: 1px;
-  color: var(--miao-accent);
+  /* 设计稿 `.s-note .ico` 用的是 `--accent-deep`（比主 accent 更沉的那一档），不是 accent 本身 */
+  color: var(--miao-accent-ink);
 }
 
 .set-storage-k,

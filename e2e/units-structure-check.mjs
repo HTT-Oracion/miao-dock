@@ -1238,6 +1238,82 @@ add('STYLE.shardOwnership', 'STYLE', (s) => {
   return { ok: hits.length === 0, detail: hits.length ? hits.join('；') : '' };
 });
 
+add('STYLE.tokensDefined', 'STYLE', (s) => {
+  /*
+   * 用掉的语义令牌必须真的被定义 —— 自定义属性没定义时不是"没颜色"，
+   * 而是**整条声明按规范失效（IACVT）**，属性回落到继承值：CSS 里那行还在、看着没错，
+   * 效果为零，且浏览器不报任何东西。
+   * 实测抓到过：`--miao-accent-ink` 被 5 条规则使用，而 `themes/tokens.ts` 里从没写过它
+   * （见 D-357）—— 其中一处还挂了 `var(--miao-accent-ink, var(--miao-muted))` 兜底，
+   * 把"令牌缺失"这件事盖成了"看起来是灰的"。
+   */
+  const defined = new Set();
+  const tokPath = path.join(SRC, 'themes', 'tokens.ts');
+  if (!existsSync(tokPath)) return { ok: false, detail: '读不到 themes/tokens.ts（判据失去对象）' };
+  const tok = cachedReadText(tokPath);
+  for (const m of tok.matchAll(/'(--miao-[\w-]+)'/g)) defined.add(m[1]);
+  /*
+   * 令牌不只有字面量写法：半径一族是 `out[`--miao-r-${k}`] = ...` **循环生成**的。
+   * 判据若只认引号字面量，就会把这族全部误报成"未定义"（第一版正是这样红了 9 处）。
+   * 处理方式：记下模板前缀 ⇒ 命中前缀的算已定义；同时**再拿对象键兜一层**，
+   * 这样 `--miao-r-xlarge` 这种拼错的仍然红 —— 放宽一处，必须有另一处收紧。
+   */
+  const prefixes = [];
+  for (const m of tok.matchAll(/out\[\s*`(----miao-[\w-]*?|--miao-[\w-]*?)\$\{/g))
+    prefixes.push(m[1].replace('----', '--'));
+  const keyBlocks = [...tok.matchAll(/export const [A-Z_]+ = \{([\s\S]*?)\} as const/g)].map((m) =>
+    [...m[1].matchAll(/^\s*'?([\w-]+)'?\s*:/gm)].map((k) => k[1]),
+  );
+  const allKeys = new Set(keyBlocks.flat());
+  // CSS 里自己定义的也算（`--ui-scale` 就住在 base.scss，不在 tokens.ts）
+  let usedCount = 0;
+  const miss = [];
+  for (const [file, code] of Object.entries(s.styleShardCode || {})) {
+    const body = code.replace(/\/\*[\s\S]*?\*\//g, ' '); // 注释里举例写的 var() 不算使用
+    for (const m of body.matchAll(/^\s*(--miao-[\w-]+)\s*:/gm)) defined.add(m[1]);
+  }
+  const isDefined = (name) => {
+    if (defined.has(name)) return true;
+    for (const p of prefixes) {
+      if (name.startsWith(p)) {
+        const suffix = name.slice(p.length);
+        return allKeys.size === 0 || allKeys.has(suffix);
+      }
+    }
+    return false;
+  };
+  for (const [file, code] of Object.entries(s.styleShardCode || {})) {
+    const body = code.replace(/\/\*[\s\S]*?\*\//g, ' ');
+    for (const m of body.matchAll(/var\((--miao-[\w-]+)[,)]/g)) {
+      usedCount += 1;
+      if (!isDefined(m[1]) && !miss.includes(`${file} → ${m[1]}`)) miss.push(`${file} → ${m[1]}`);
+    }
+  }
+  return {
+    // 分母兜底：一条没用都没扫到 = 读空了，那不能算绿
+    ok: usedCount > 50 && miss.length === 0,
+    detail: miss.length
+      ? `未定义的令牌：${miss.join('、')}`
+      : usedCount > 50
+        ? ''
+        : `只扫到 ${usedCount} 处 var() 使用（疑似读空）`,
+  };
+});
+
+add('STYLE.noSilentTokenFallback', 'STYLE', (s) => {
+  /*
+   * 语义令牌**不许挂兜底值**：`var(--miao-x, var(--miao-muted))` 这种写法会把
+   * "令牌没定义"盖成"颜色看着偏灰"，正是上面那条判据要抓的事最好的掩体。
+   * （非语义的第三方变量兜底不在禁列内 —— 只禁 `--miao-*` 吃兜底。）
+   */
+  const hits = [];
+  for (const [file, code] of Object.entries(s.styleShardCode || {})) {
+    const body = code.replace(/\/\*[\s\S]*?\*\//g, ' ');
+    for (const m of body.matchAll(/var\(--miao-[\w-]+\s*,/g)) hits.push(`${file}: ${m[0].trim()}`);
+  }
+  return { ok: hits.length === 0, detail: hits.length ? `语义令牌带了兜底值：${hits.join('、')}` : '' };
+});
+
 add('STYLE.noScssSyntax', 'STYLE', (s) => {
   // 分片内保持**扁平写法**：本阶段不用 SCSS 语法糖。
   // 理由不是审美，是断言：本仓检查脚本大量用 `[^}]*` 取块，嵌套会改变块结构 →
@@ -1759,6 +1835,21 @@ const MUTATIONS = [
     replace:
       '.music-queue-fake { color: red; }\n/* ================================================================ X-C1 任务队列\n',
     expect: ['STYLE.shardOwnership'],
+  },
+  {
+    // 这正是本轮真修掉的缺陷：CSS 用了 `--miao-accent-ink`，tokens 里却没有它
+    name: '把 --miao-accent-ink 的定义删掉（CSS 五处还在用 ⇒ 声明整条失效、颜色静默回落）',
+    file: path.join(SRC, 'themes', 'tokens.ts'),
+    find: "  out['--miao-accent-ink'] = mode === 'dark' ? '#EFC4A4' : '#BE7F57';\n",
+    replace: '',
+    expect: ['STYLE.tokensDefined'],
+  },
+  {
+    name: '给语义令牌挂一个兜底值（把"令牌没定义"盖成"颜色偏灰"，正是上一条判据的掩体）',
+    file: path.join(F.stylesDir, 'settings.scss'),
+    find: '  color: var(--miao-accent-ink);\n',
+    replace: '  color: var(--miao-accent-ink, var(--miao-muted));\n',
+    expect: ['STYLE.noSilentTokenFallback'],
   },
   {
     name: '在分片里用 SCSS 变量承载颜色（令牌只走 var(--md-*) / var(--miao-*)，否则深色模式就不成立了）',

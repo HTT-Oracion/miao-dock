@@ -1003,7 +1003,9 @@
   align-items: center;
   gap: 5px;
   margin-bottom: 9px;
-  color: var(--miao-accent-ink, var(--miao-muted));
+  /* 这里曾写成 `var(--miao-accent-ink, var(--miao-muted))` —— 那个兜底把"令牌根本没定义"
+     这件事盖掉了半个月。令牌补齐后**去掉兜底**：宁可这里红，也不要静默变灰。 */
+  color: var(--miao-accent-ink);
 }
 .hero-copy h2 {
   font-family: var(--md-font-display);
