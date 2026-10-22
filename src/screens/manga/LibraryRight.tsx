@@ -64,6 +64,7 @@ export function LibraryRight({
   onResume,
   onRetranslate,
   onEditBook,
+  onClearSearch,
   onEditNoChapter,
   chPage,
   chPages,
@@ -111,6 +112,8 @@ export function LibraryRight({
   onRetranslate: (base: string, name: string, seqs?: number[]) => void;
   /** 打开「编辑信息」弹窗（改封面 / 作者）。详情头与左栏右键菜单同一个出口 */
   onEditBook: (book: BookEntry) => void;
+  /** 清空搜索（搜索空态的第一个出口；左栏脚与搜索框 ✕ 是另外两个入口） */
+  onClearSearch: () => void;
   onEditNoChapter: (payload: { bookName: string; chapter: ChapterEntry }) => void;
   chPage: number;
   chPages: number;
@@ -270,6 +273,10 @@ export function LibraryRight({
             <h3 className="empty-title">没有找到「{query}」</h3>
             <p className="empty-sub">试试漫画名、作者名，或直接输入话号。搜索结果会按「本 → 话」分组。</p>
             <div className="empty-actions">
+              {/* 设计稿空态的两个出口：先"清除搜索"（就地回到书架），再"去投放"（真的没有这本书） */}
+              <Btn kind="ghost" size="sm" onClick={onClearSearch}>
+                清除搜索
+              </Btn>
               <Btn kind="primary" size="sm" onClick={onGoDrop}>
                 去投放
               </Btn>

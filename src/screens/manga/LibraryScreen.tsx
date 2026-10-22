@@ -662,6 +662,7 @@ export function LibraryScreen({
         onResume={resume}
         onRetranslate={retranslate}
         onEditBook={setEditBook}
+        onClearSearch={() => setQueryInput('')}
         onEditNoChapter={setEditNoChapter}
         chPage={chPage}
         chPages={chPages}
