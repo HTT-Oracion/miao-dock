@@ -1027,9 +1027,14 @@ add('UI.playerBarRule', 'UI', (s) => {
   const block = (s.css.match(/\.music\s*\{([^}]*)\}/) || [, ''])[1];
   if (!/(^|\n)\s*height:\s*100%/.test(block))
     missing.push('样式的 .music 未改成定高（仍是 min-height:100%，会撑出页面级滚动）');
-  const cols = (s.css.match(/\.music-cols\s*\{([^}]*)\}/) || [, ''])[1];
-  if (!/grid-template-rows\s*:\s*minmax\(\s*0\s*,/.test(cols)) {
-    missing.push('.music-cols 未固定行高（缺 grid-template-rows: minmax(0, 1fr)，卡片会被内容撑开、失去内部滚动）');
+  // 三栏布局（设计稿 `music-layout`）：中间栏必须能收缩（`minmax(0, …)`），
+  // 否则内容一长就把整行撑开、把播放条顶出视口 —— 与旧 `.music-cols` 那条是同一件事。
+  const layout = (s.css.match(/\.music-layout\s*\{([^}]*)\}/) || [, ''])[1];
+  if (!/grid-template-columns\s*:\s*[^;]*minmax\(\s*0\s*,/.test(layout)) {
+    missing.push('.music-layout 中间栏未用 minmax(0, …)（内容会把整行撑开、播放条被顶出视口）');
+  }
+  if (!/overflow\s*:\s*hidden/.test(layout)) {
+    missing.push('.music-layout 未禁外层滚动（三栏各自滚动，容器再滚会出双滚动条）');
   }
   return { ok: missing.length === 0, detail: missing.length ? `播放条/定高布局缺：${missing.join('、')}` : '' };
 });

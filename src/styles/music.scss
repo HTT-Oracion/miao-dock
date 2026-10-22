@@ -578,18 +578,158 @@
   text-overflow: ellipsis;
 }
 
-/* ---------------------------------------------------------------- 左右 50/50 */
-/* 左右双卡：两个关键约束保证「卡片高度固定、内部滚动」——
-   `grid-template-rows: minmax(0, 1fr)` 让这一行撑满剩余高度（而不是被内容撑开），
-   `minmax(0, …)` 的 0 是关键：默认 min-content 会让卡片拒绝收缩、把列表顶出去。
-   `.music-cols` 本身不再产生滚动，滚动都发生在卡片内部的列表里。 */
-.music-cols {
+/* ---------------------------------------------------------------- 三栏布局 */
+/*
+ * 设计稿 `music-layout`：`grid 234px | minmax(0,1fr) | 252px`，整屏定高、各栏自己滚动。
+ *
+ * 为什么是 grid 定列而不是 flex：三栏里左资料库与右"正在播放"都是**固定宽度**的
+ * 功能栏（不是内容驱动的卡片），只有中间随窗口伸缩。grid 的定列直接表达这件事，
+ * flex 得靠 `flex: 0 0 234px` 三处 + `min-width:0` 才能达到同样效果。
+ *
+ * `overflow: hidden` 放在容器上：三栏各自 `overflow-y:auto`，容器再滚就会出双滚动条。
+ */
+.music-layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: minmax(0, 1fr);
-  gap: 12px;
-  flex: 1;
+  grid-template-columns: 234px minmax(0, 1fr) 252px;
   min-height: 0;
+  overflow: hidden;
+  flex: 1;
+}
+
+/* 左资料库：右分隔线 + 半透明底（设计稿 `.music-side`），自身纵向滚动 */
+.music-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px 10px 8px;
+  border-right: 1px solid var(--miao-line);
+  background: color-mix(in srgb, var(--miao-surface) 60%, transparent);
+  overflow: hidden;
+}
+
+/* 中内容：唯一随窗口伸缩的一栏，底部留 100 给播放条让位 */
+.music-center {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 22px 100px;
+  scroll-behavior: smooth;
+}
+
+/* 右"正在播放"：左分隔线，自身滚动 */
+.music-now {
+  min-height: 0;
+  padding: 16px 14px;
+  border-left: 1px solid var(--miao-line);
+  overflow-y: auto;
+}
+
+/* ---------------------------------------------------------------- 右栏 · 正在播放 */
+.now-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.now-cover {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--miao-r-lg);
+  overflow: hidden;
+  background: var(--miao-surface-2);
+  border: 1px solid var(--miao-line);
+  box-shadow: var(--miao-shadow-1);
+}
+.now-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.now-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.now-title {
+  font-family: var(--md-font-display);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.now-artist {
+  font-size: 10.5px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.now-prog {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--md-font-numeric);
+  font-size: 9.5px;
+  color: var(--miao-faint);
+}
+.now-prog-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 3px;
+  background: var(--miao-surface-3);
+  overflow: hidden;
+}
+.now-prog-track i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--miao-accent);
+}
+.now-ctl {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.now-play {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 50%;
+  background: var(--miao-ink);
+  color: var(--miao-surface);
+  cursor: pointer;
+  transition:
+    transform var(--miao-dur-fast) var(--miao-ease-spring),
+    background var(--miao-dur-fast) ease;
+}
+.now-play:hover {
+  transform: scale(1.04);
+}
+.now-play:active {
+  transform: scale(0.95);
+}
+.now-acts {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding-top: 2px;
+}
+.now-acts .text-btn.is-on {
+  color: var(--miao-accent);
+}
+
+/* 空态（右栏没有在播曲目时）：无边框、只留两行字 */
+.empty.is-plain {
+  padding: 36px 10px;
+  border: 0;
+  background: transparent;
 }
 
 .music-card {
