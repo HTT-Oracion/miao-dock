@@ -8352,3 +8352,29 @@ LeftPanel 4 · LocalView 3 · PlatformMenu 2 · 其余各 1）。本轮只收了
 `tsc` / `eslint` / `vite build` 全绿；**CDP 实测** DOM：
 `<input placeholder="搜索歌曲 / 歌手 / 专辑" aria-label="搜索音乐">` +
 `<button type="button" class="music-btn pri">搜索</button>`（类名与改造前逐字一致）。
+## D-337 · 裸按钮收口：13 处改完，外加一条"别整文件替换闭合标签"的教训（2026-10-23）
+
+**一、第 1–2 批共 13 处改走 `Btn kind="bare"`**：LocalView 3 · HistoryView 1 ·
+Charts 1 · SideAccount 1 · PlatformMenu 2 · LoginModal 1 ·
+DesktopLyricsSettingsModal 1 · RightPanel 3。`kind="bare"` 只带调用方类名，
+`.music-btn` / `.text-btn` / `.ac-item` / `.login-platform` 等样式**逐字未变**。
+图标钮一并补 `ariaLabel`（原来只有 `title`）。
+
+**二、给通用 `Btn` 加了可选 `ariaPressed`。** 桌面歌词"显示行数"是分段控件，
+每枚需要 `aria-pressed`（读屏才会说"已按下"）。这不是为一个调用点特设：
+分段控件在设置页与播放器里都有，`Btn` 缺这个能力就只能退回裸 `<button>`。
+
+**三、🔴 踩了一个自己造的坑：整文件替换 `</button>` → `</Btn>`。**
+RightPanel 里 5 处**多行** `<button>` 的闭合标签被一起换掉，于是那 5 处变成
+"开标签是 button、闭标签是 Btn" ⇒ `tsc` 立刻报 5 条 `Expected corresponding JSX closing tag`。
+**这不是可忽略的噪音，而是把文件改坏了**：`git checkout --` 整文件回退后重做。
+教训：**批量改 JSX 只能逐处用结构化的方式改（edit 工具按块替换），
+绝不能对闭合标签做全文替换** —— 同一文件里还有别的同类元素，全文替换必然连坐。
+
+**四、剩余 14 处登记为第 3 批**：ExpandedPlayer 5 · LeftPanel 4 · RightPanel 5。
+其中**平台页签与搜索源胶囊**是 `<button role="tab">` / 带 `aria-selected` 的形态，
+`Btn` 目前不支持 `role` —— 要么先给单元补 `role`，要么这两处保留原样并写明理由。
+先想清楚再动，别再为了"全绿"硬套单元。
+
+**五、验证**：`npm run check` 19/19 · `check:units` 46/46 + 反证 **61/61** ·
+`check:music` 237/237 + 反证 **232/232** · `tsc` / `eslint` / `vite build` 全绿。
