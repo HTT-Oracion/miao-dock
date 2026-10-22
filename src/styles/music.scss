@@ -3663,7 +3663,8 @@
   left: 50%;
   bottom: 96px;
   transform: translateX(-50%);
-  z-index: 90;
+  /* 与全局通知同层（设计稿 `--z-toast: 120`）：两条 toast 通道要么都在最上面，要么都会漏看 */
+  z-index: 120;
   max-width: 440px;
   padding: 10px 16px;
   border: 1px solid var(--miao-line);
