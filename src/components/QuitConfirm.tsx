@@ -1,5 +1,5 @@
-import { AlertCircle } from 'lucide-react';
-import { Btn, Modal } from '@components/units';
+﻿import { AlertCircle } from 'lucide-react';
+import { Btn, Modal, Notice } from '@components/units';
 
 /**
  * 退出二次确认层（契约《02》§2.1）。
@@ -45,6 +45,9 @@ export function QuitConfirm({ onStay, onQuit }: { onStay: () => void; onQuit: ()
           <span>只是想收起窗口的话，点「留在后台」—— 服务会继续跑，托盘图标常驻。</span>
         </div>
       </div>
+
+      {/* 设计稿退出层的提示条：把"退出会影响什么"一次说清（含已完成的作品不受影响） */}
+      <Notice kind="info">本地服务与播放器会一起停止，已完成的作品不会受影响。</Notice>
     </Modal>
   );
 }

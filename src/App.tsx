@@ -2,6 +2,7 @@
 import { Outlet, useNavigate } from 'react-router-dom';
 import { ChevronDown, Download, Power, Settings, Terminal } from 'lucide-react';
 import { apiPost, errorText, openPath, quitApp, serviceRestart, serviceStart, serviceStop } from '@/ipc';
+import { toastBus } from '@/stores/toastBus';
 import type { ServiceState } from '@/ipc';
 import {
   useAppVersion,
@@ -714,7 +715,11 @@ export function App() {
 
       {quitOpen ? (
         <QuitConfirm
-          onStay={() => setQuitOpen(false)}
+          onStay={() => {
+            setQuitOpen(false);
+            // 设计稿：留在后台后给一条两级轻提示 —— 否则按完不确定"到底留下了没有"
+            toastBus.push('已留到后台', 'info', '翻译服务保持运行');
+          }}
           onQuit={() => {
             // 失败**不再静默**：旧版写的是 `void quitApp()`，一旦这条 IPC 被拒
             //（命令报错、主线程上 `exit` 没生效…）就什么都不发生 —— 用户看到的是
