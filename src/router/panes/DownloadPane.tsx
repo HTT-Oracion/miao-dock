@@ -3,6 +3,7 @@ import { Btn } from '@components/units';
 import { errorText } from '@/ipc';
 import { useEngineDownload, useToasts } from '@hooks';
 import { DEFAULT_PATH } from '@/router/routes';
+import { assemblyNotes } from '@screens/manga/assembly';
 import type { ShellCtx } from '@/router/panes/shell-context';
 import { DownloadPanel } from '@screens/engine/DownloadPanel';
 import { pauseEngineDownload } from '@screens/settings/engine-api';
@@ -77,6 +78,8 @@ export function DownloadPane() {
     <DownloadPanel
       view={download}
       requiredBytes={status?.runtime?.requiredBytes}
+      // 五段形态与引导页同一处算（不是下载页自己拼一套）
+      notes={assemblyNotes(status, download)}
       onContinue={() => void run(false)}
       onRedownload={() => void run(true)}
       onPause={() => void pause()}

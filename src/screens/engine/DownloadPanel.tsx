@@ -1,25 +1,39 @@
 import { useState } from 'react';
-import { Btn, ProgressRing } from '@components/units';
+import { ArrowLeft } from 'lucide-react';
+import { Btn, IconButton, ProgressRing } from '@components/units';
 import { formatBytes } from '@tools';
+import { ASSEMBLY_PHASES, type StageNote } from '@screens/manga/assembly';
 import type { ModelDownloadView } from '@screens/settings/engine-api';
 
 /**
- * 屏 2 / 屏 3 · 引擎下载主视图（进度 / 中断）。
+ * 引擎下载页（`/engine-download`）—— 结构与文案对齐设计稿的 `.engine-download` 一屏：
+ * `.ed-head`（返回 + `LOCAL ENGINE` + 页标题 + 状态胶囊）→ `.ed-hero`（环 + eyebrow +
+ * 阶段标题/说明 + 四格 metrics + 动作）→ `.ed-timeline`（五段）→ `.ed-detail`（当前文件 + 细条 + 日志）。
  *
- * ## 职责
- * - 把「等待」这件事说清楚：阶段、大进度、已下/总量、速度、预计剩余、当前文件、真实日志。
- * - **不阻塞**：本视图只是信息主场，下载在后台继续，用户随时可「关闭此页面」回其它屏。
- * - **不编造**：`percent === null` 显示「准备中」而非假的 0%；速度/剩余同样是 null 就如实留空。
+ * ## 为什么是路由页而不是覆盖层
+ * 设计稿把它做成覆盖层（`position: fixed; z-index: --z-engine`）；本页走路由 ——
+ * 「返回上一个操作页面」要真的走浏览器返回栈，覆盖层只能自己记来源、刷新即丢，
+ * 而且路由让这一页可深链（排障时直接把地址发给用户）。**视觉按设计稿，容器按产品的 IA**。
  *
- * 中断态（`interrupted` / `failed`）严格区分两种动作：
- *   · 「继续下载」= 调同一端点续传（补齐 `.part` 缺口）；
- *   · 「重新下载」= 清 `.part` 从头再来（二次确认，避免误触丢进度）。
+ * ## 三条不能糊弄的口径（承旧版，一条都没丢）
+ * - **不编造**：`percent === null` 显示「准备中」而非假的 0%；速度 / 剩余没有真实来源就 `—`。
+ * - **环用整体装配进度**（段加权），不是字节百分比：venv / pip 装依赖 / 打补丁这几段
+ *   一个字节都不进账本，用字节会把环冻在上一段的数值上（实测「一直 0%，像卡死」）。
+ * - **继续下载 ≠ 重新下载**：前者调同一端点续传（补 `.part` 缺口），后者清 `.part`
+ *   从头再来，所以必须二次确认。
+ *
+ * ## 设计稿的「下载前检查」（`ed-preflight`）为什么这里没有
+ * 那四格里 总下载 / 保存位置 有真实来源，但 **磁盘剩余** 与 **模型源延迟** 服务端没有出口
+ * （`/engine/status` 与 `/engine/runtime` 都不报这两项）。宁可整块不做，也不摆两个
+ * 永远显示 `—` 的假检查项 —— 已登记为待办。
  */
 
 interface DownloadPanelProps {
   view: ModelDownloadView;
   /** 运行时缺件体积（bytes），用于说明首次装配要下多大 */
   requiredBytes?: number;
+  /** 五段形态（`assemblyNotes()` 的返回值）—— 与引导页同一个事实源 */
+  notes: StageNote[];
   onContinue: () => void;
   onRedownload: () => void;
   /** 暂停下载（`.part` 留盘 ⇒ 「继续下载」接着下）；只在进行中可用 */
@@ -74,9 +88,18 @@ const ROUND_TEXT: Record<string, string> = {
   stage2: '第 2 轮 / 共 2 轮',
 };
 
+/** 五段状态条的小字（设计稿 `.ed-step small`）；`已暂停` 只在"中断且可续传"时说 */
+function stepStateText(note: StageNote, paused: boolean): string {
+  if (note === 'done') return '完成';
+  if (note === 'failed') return paused ? '已暂停' : '失败';
+  if (note === 'active') return '进行中';
+  return '等待';
+}
+
 export function DownloadPanel({
   view,
   requiredBytes,
+  notes,
   onContinue,
   onRedownload,
   onPause,
@@ -88,6 +111,9 @@ export function DownloadPanel({
 
   const interrupted = view.state === 'interrupted' || view.state === 'failed';
   const done = view.state === 'done';
+  const running = view.state === 'running';
+  // 产品把「暂停」建模成 interrupted + 原因（`.part` 留盘可续传），所以中断态要说"已暂停"而不是"失败"
+  const paused = view.state === 'interrupted';
   const step = view.step ? STEP_TEXT[view.step] : null;
   const round = view.stage ? ROUND_TEXT[view.stage] : null;
   /*
@@ -103,237 +129,190 @@ export function DownloadPanel({
   // 完成态的环是终态示意（不是过程数字）；中心文案仍写「完成」而非伪造的百分比。
   const ringPercent = done ? (overall ?? 100) : overall;
 
-  // 当前文件行：把 id 拆成「文件名 + 序号」—— 没有真实来源时不美化（如实显示 id 或留空）。
-  const currentLabel = view.currentId ?? null;
-
   const ringColor = interrupted ? '--md-error' : '--md-blue';
 
+  // 页标题 / 状态胶囊 / 环心小字（设计稿 `edTitle` / `edStateChip` / `edRingLabel`）
+  const pageTitle = done ? '本地引擎已就绪' : interrupted ? '本地引擎装配中断' : '正在装配本地引擎';
+  const chip = done
+    ? { text: '已完成', cls: 'chip-success' }
+    : interrupted
+      ? { text: '下载中断', cls: 'chip-danger' }
+      : running
+        ? { text: '下载中', cls: 'chip-soft' }
+        : { text: '等待开始', cls: 'chip-soft' };
+  const activeIdx = notes.findIndex((n) => n === 'active' || n === 'failed');
+  const ringLabel = done
+    ? '完成'
+    : interrupted
+      ? '已中断'
+      : activeIdx >= 0
+        ? ASSEMBLY_PHASES[activeIdx].text
+        : '等待开始';
+
+  // 当前文件行：把 id 拆成「文件名 + 序号」—— 没有真实来源时不美化（如实显示 id 或留空）。
+  const currentLabel = view.currentId ?? null;
+  const logText = view.tail.length ? view.tail.slice(-40).join('\n') : '（暂无输出）';
+
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', padding: '28px 24px 40px' }}>
-      {/* 顶部：两轮小字 + 五段标题 */}
-      {!interrupted && (round || step || done) ? (
-        <div style={{ marginBottom: 22 }}>
-          {round ? (
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-blue)', letterSpacing: '.04em' }}>
-              {round}
-            </div>
-          ) : null}
-          <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--md-ink)', marginTop: 4 }}>
-            {done ? '下载完成' : (step?.title ?? '正在下载')}
-          </div>
-          <div style={{ fontSize: 13, color: 'var(--md-muted)', marginTop: 6, lineHeight: 1.5 }}>
-            {done ? '本地引擎已装配完成。关闭本页会移除侧栏下载入口。' : (step?.sub ?? '进度只来自真实下载事件。')}
-          </div>
+    <div className="engine-download-page">
+      {/* ── 页头（设计稿 `.ed-head`）：返回 + LOCAL ENGINE + 页标题 + 状态胶囊 ── */}
+      <header className="ed-head">
+        <IconButton title="返回" onClick={onBack}>
+          <ArrowLeft size={20} />
+        </IconButton>
+        <div>
+          <span className="modal-kicker">LOCAL ENGINE</span>
+          <h2>{pageTitle}</h2>
         </div>
-      ) : null}
-
-      {/* 中断原因行（屏 3） */}
-      {interrupted ? (
-        <div
-          style={{
-            marginBottom: 22,
-            padding: '12px 14px',
-            borderRadius: 10,
-            background: 'var(--md-error-soft, rgba(255,59,48,0.08))',
-            border: '1px solid var(--md-error)',
-            color: 'var(--md-ink)',
-            fontSize: 14,
-            lineHeight: 1.5,
-          }}
-        >
-          <b style={{ color: 'var(--md-error)' }}>下载中断</b>
-          <div style={{ color: 'var(--md-muted)', marginTop: 4 }}>
-            {view.interruptedReason ??
-              (view.tail.length ? view.tail[view.tail.length - 1] : '原因未知；已完成的部分不会丢失。')}
-          </div>
+        <div className="ed-head-actions">
+          <span className={`chip ${chip.cls}`}>{chip.text}</span>
         </div>
-      ) : null}
+      </header>
 
-      {/* 中部：大环形进度 */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 24,
-          padding: '20px 0',
-        }}
-      >
-        <div style={{ position: 'relative', width: 132, height: 132, flex: '0 0 auto' }}>
-          <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
+      <div className="ed-scroll">
+        {/* ── 主卡（设计稿 `.ed-hero`）：左环 + 右文案 ── */}
+        <section className="ed-hero">
+          <div className="ed-ring-wrap">
             <ProgressRing
               percent={ringPercent}
-              size={132}
-              stroke={9}
+              size={170}
+              stroke={7}
               colorVar={done ? '--md-success' : ringColor}
               // 段内不可测（venv / pip / 补丁）⇒ 转起来：让人看出"在跑，只是这一段没有分母"
-              spinning={view.state === 'running' && (overall == null || indeterminate)}
+              spinning={running && (overall == null || indeterminate)}
             />
+            <div className="ed-ring-center">
+              <strong>{done ? '完成' : overall == null ? '准备中' : `${Math.round(overall)}%`}</strong>
+              <span>{ringLabel}</span>
+            </div>
           </div>
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'grid',
-              placeItems: 'center',
-              fontSize: 30,
-              fontWeight: 700,
-              color: 'var(--md-ink)',
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            {done ? '完成' : overall == null ? '准备中' : `${Math.round(overall)}%`}
-          </div>
-        </div>
 
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, color: 'var(--md-ink)', fontVariantNumeric: 'tabular-nums' }}>
-            {view.receivedBytes != null
-              ? `已下 ${formatBytes(view.receivedBytes)}${
-                  view.totalBytes != null ? ` / ${formatBytes(view.totalBytes)}` : ''
-                }`
-              : '正在准备下载…'}
+          <div className="ed-hero-copy">
+            {requiredBytes ? (
+              <p className="ed-eyebrow">首次使用需要下载约 {formatBytes(requiredBytes)} 的视觉与翻译模型</p>
+            ) : null}
+            {round ? <p className="ed-round">{round}</p> : null}
+            <h3>
+              {done
+                ? '全部文件校验通过'
+                : interrupted
+                  ? '下载中断 · 已完成的部分会保留'
+                  : (step?.title ?? '准备好后开始装配')}
+            </h3>
+            <p>
+              {interrupted
+                ? (view.interruptedReason ??
+                  (view.tail.length ? view.tail[view.tail.length - 1] : '原因未知；已完成的部分不会丢失。'))
+                : done
+                  ? '本地引擎已装配完成。关闭本页会移除侧栏下载入口。'
+                  : (step?.sub ?? '进度只来自真实下载事件。')}
+            </p>
+
+            {/* 四格指标（设计稿 `.ed-metrics`）：没有真实来源的一律 `—`，不补"看起来合理"的数 */}
+            <div className="ed-metrics">
+              <div>
+                <span>已下载</span>
+                <strong>{view.receivedBytes != null ? formatBytes(view.receivedBytes) : '—'}</strong>
+              </div>
+              <div>
+                <span>总大小</span>
+                <strong>
+                  {view.totalBytes != null
+                    ? formatBytes(view.totalBytes)
+                    : requiredBytes
+                      ? formatBytes(requiredBytes)
+                      : '—'}
+                </strong>
+              </div>
+              <div>
+                <span>速度</span>
+                <strong>{running && view.speedBps != null ? `${formatBytes(view.speedBps)}/s` : '—'}</strong>
+              </div>
+              <div>
+                <span>剩余</span>
+                <strong>{running ? fmtEta(view.etaMs) : '—'}</strong>
+              </div>
+            </div>
+
+            <div className="ed-actions">
+              {done ? (
+                <Btn kind="primary" onClick={onClose}>
+                  关闭下载
+                </Btn>
+              ) : interrupted ? (
+                <Btn kind="primary" onClick={onContinue}>
+                  继续下载
+                </Btn>
+              ) : (
+                <Btn kind="primary" onClick={onPause} disabled={!view.running}>
+                  暂停下载
+                </Btn>
+              )}
+              {interrupted ? (
+                confirmRedo ? (
+                  <Btn kind="ghost" onClick={onRedownload}>
+                    确认从头重下？
+                  </Btn>
+                ) : (
+                  <Btn kind="ghost" onClick={() => setConfirmRedo(true)}>
+                    重新下载
+                  </Btn>
+                )
+              ) : null}
+              {/* 设计稿的「后台运行」= 离开本页、下载继续在后台跑（返回箭头同一动作，这里给一句读得懂的字） */}
+              <Btn kind="ghost" onClick={onBack}>
+                后台运行
+              </Btn>
+              <Btn kind="ghost" ariaExpanded={logOpen} onClick={() => setLogOpen(!logOpen)}>
+                {logOpen ? '收起日志' : '查看日志'}
+              </Btn>
+            </div>
+
+            <p className="ed-foot-note">
+              {done ? '关闭后移除侧栏入口，下载记录仍保留' : '下载支持断点续传；已完成的部分不会丢失'}
+            </p>
           </div>
-          <div style={{ fontSize: 13, color: 'var(--md-muted)', marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>
-            {view.speedBps != null ? `↓ ${formatBytes(view.speedBps)}/s` : '速度计算中…'}
-            {view.speedBps != null ? ' · ' : ''}
-            {`剩余 ${fmtEta(view.etaMs)}`}
+        </section>
+
+        {/* ── 五段进度（设计稿 `.ed-timeline`）：状态取自 `assemblyNotes()`，与引导页同一处算 ── */}
+        <section className="ed-timeline">
+          <div className="ed-timeline-head">
+            <h3>装配进度</h3>
+            <span>五段完成后即可开始翻译</span>
           </div>
-          {requiredBytes && view.receivedBytes == null ? (
-            <div style={{ fontSize: 13, color: 'var(--md-muted)', marginTop: 6 }}>
-              首次装配约需下载 {formatBytes(requiredBytes)}
+          <ol className="ed-steps">
+            {ASSEMBLY_PHASES.map((phase, i) => {
+              const note = notes[i] ?? 'waiting';
+              const state = note === 'failed' && paused ? 'paused' : note;
+              return (
+                <li key={phase.id} className="ed-step" data-state={state}>
+                  <span className="ed-step-node" />
+                  <strong>{phase.text}</strong>
+                  <small>{stepStateText(note, paused)}</small>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+
+        {/* ── 当前文件 + 细条 + 日志（设计稿 `.ed-detail`）── */}
+        <section className="ed-detail">
+          <div className="ed-detail-head">
+            <h3>当前文件</h3>
+            <span>{currentLabel ?? '—'}</span>
+          </div>
+          {/* 细条与环同一口径（整体装配）；没有真实阶段事件时不画，不给一条假动画 */}
+          {overall != null ? (
+            <div className="ed-bar">
+              <span style={{ width: `${Math.min(100, overall)}%` }} />
             </div>
           ) : null}
-        </div>
-      </div>
-
-      {/* 当前文件行 */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '10px 12px',
-          borderRadius: 8,
-          background: 'var(--md-row, rgba(128,128,128,0.06))',
-          fontSize: 13,
-          color: 'var(--md-ink)',
-        }}
-      >
-        <span style={{ color: 'var(--md-muted)' }}>当前进度</span>
-        <span
-          style={{
-            flex: 1,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            fontVariantNumeric: 'tabular-nums',
-          }}
-        >
-          {currentLabel ?? '—'}
-        </span>
-        {/* 极细行内进度：与环同一口径（整体装配），没有真实阶段事件时不画 */}
-        {overall != null ? (
-          <span
-            style={{
-              width: 90,
-              height: 4,
-              borderRadius: 2,
-              background: 'var(--md-track, rgba(128,128,128,0.22))',
-              overflow: 'hidden',
-              flex: '0 0 auto',
-            }}
-          >
-            <span
-              style={{
-                display: 'block',
-                height: '100%',
-                width: `${Math.min(100, overall)}%`,
-                background: `var(${ringColor})`,
-              }}
-            />
-          </span>
-        ) : null}
-      </div>
-
-      {/* 底部动作 */}
-      <div style={{ display: 'flex', gap: 12, marginTop: 24, alignItems: 'center' }}>
-        {done ? (
-          <>
-            <Btn kind="primary" onClick={onClose}>
-              关闭下载
-            </Btn>
-            <span style={{ fontSize: 12, color: 'var(--md-muted)' }}>关闭后移除侧栏入口，下载记录仍保留</span>
-          </>
-        ) : interrupted ? (
-          <>
-            <Btn kind="primary" onClick={onContinue}>
-              ▶ 继续下载
-            </Btn>
-            {confirmRedo ? (
-              <Btn kind="ghost" onClick={onRedownload}>
-                确认从头重下？
-              </Btn>
-            ) : (
-              <Btn kind="ghost" onClick={() => setConfirmRedo(true)}>
-                重新下载
-              </Btn>
-            )}
-            <Btn kind="ghost" onClick={onBack}>
-              返回
-            </Btn>
-            <span style={{ fontSize: 12, color: 'var(--md-muted)', marginLeft: 'auto' }}>已完成的部分不会丢失</span>
-          </>
-        ) : (
-          <>
-            {/* 暂停：只在下载进行中出现（完成 / 中断态的兜底动作在上面两支里） */}
-            <Btn kind="ghost" onClick={onPause}>
-              ⏸ 暂停下载
-            </Btn>
-            <Btn kind="ghost" onClick={onBack}>
-              返回（下载在后台继续）
-            </Btn>
-            <span style={{ fontSize: 12, color: 'var(--md-muted)', marginLeft: 'auto' }}>
-              暂停后已下的部分保留，可继续下载
-            </span>
-          </>
-        )}
-      </div>
-
-      {/* 详情：真实日志（默认收起） */}
-      <div style={{ marginTop: 18 }}>
-        <button
-          type="button"
-          onClick={() => setLogOpen(!logOpen)}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--md-blue)',
-            fontSize: 13,
-            cursor: 'pointer',
-            padding: 0,
-          }}
-        >
-          {logOpen ? '收起详情' : '查看详情'}
-        </button>
-        {logOpen ? (
-          <pre
-            style={{
-              marginTop: 10,
-              maxHeight: 200,
-              overflow: 'auto',
-              padding: 12,
-              borderRadius: 8,
-              background: 'var(--md-row, rgba(128,128,128,0.06))',
-              fontSize: 12,
-              lineHeight: 1.5,
-              color: 'var(--md-muted)',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-all',
-            }}
-          >
-            {(view.tail.length ? view.tail.slice(-40).join('\n') : '（暂无输出）') || '（暂无输出）'}
-          </pre>
-        ) : null}
+          {logOpen ? (
+            <pre className="ed-log">{logText || '（暂无输出）'}</pre>
+          ) : (
+            <p className="ed-foot-note">日志原样转发下载进程的输出，不做改名映射。</p>
+          )}
+        </section>
       </div>
     </div>
   );
