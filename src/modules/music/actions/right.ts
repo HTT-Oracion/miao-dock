@@ -1,6 +1,7 @@
-// 右栏（发现）切片 —— 「右栏」段（D-156 从 store.ts 按 action 段切出）。
+﻿// 右栏（发现）切片 —— 「右栏」段（D-156 从 store.ts 按 action 段切出）。
 import * as ipc from '@music/ipc';
 import * as platform from '@music/platform';
+import { capsOf } from '@music/platform';
 import { songKey } from '@music/convert';
 import { PAGE_SIZE } from '@music/slice';
 import type { MusicState, StoreGet, StoreSet } from '@music/slice';
@@ -80,15 +81,32 @@ export const createRightSlice = (
   /** 推荐歌单 + 每日推荐歌曲（按平台能力，无能力的平台置空） */
   loadRecommend: async (p) => {
     const provider = p ?? get().playbackSource;
-    set({ loadingRecommend: true, loadingDaily: true, loadingNewSongs: true });
+    set({ loadingRecommend: true, loadingDaily: true, loadingNewSongs: true, recommendError: '' });
     try {
+      // 三段各自兜底（某一节失败不该拖垮另外两节），但要记下**失败了几段**：
+      // 本平台支持的段全挂时，那是"没读到"，不是"今天没有推荐" —— 必须说出来
+      const caps = capsOf(provider);
+      const expected = [caps.recommendPlaylists, caps.dailySongs, caps.newSongs].filter(Boolean).length;
+      let failed = 0;
+      let lastError = '';
+      const guard = <T>(p: Promise<T>, fallback: T) =>
+        p.catch((e: unknown) => {
+          failed += 1;
+          lastError = String(e);
+          return fallback;
+        });
       const [pls, songs, fresh] = await Promise.all([
-        platform.recommendPlaylists(provider).catch(() => [] as Playlist[]),
-        platform.dailySongs(provider).catch(() => [] as Song[]),
-        platform.newSongs(provider).catch(() => [] as Song[]),
+        guard(platform.recommendPlaylists(provider), [] as Playlist[]),
+        guard(platform.dailySongs(provider), [] as Song[]),
+        guard(platform.newSongs(provider), [] as Song[]),
       ]);
       if (get().playbackSource !== provider) return;
-      set({ recommendPlaylists: pls, dailySongs: songs, newSongs: fresh });
+      set({
+        recommendPlaylists: pls,
+        dailySongs: songs,
+        newSongs: fresh,
+        recommendError: expected > 0 && failed >= expected ? lastError : '',
+      });
     } finally {
       set({ loadingRecommend: false, loadingDaily: false, loadingNewSongs: false });
     }

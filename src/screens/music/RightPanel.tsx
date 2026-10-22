@@ -254,6 +254,7 @@ function Recommendations() {
   const playbackSource = useMusicStore((s) => s.playbackSource);
   const recommendPlaylists = useMusicStore((s) => s.recommendPlaylists);
   const loading = useMusicStore((s) => s.loadingRecommend);
+  const recommendError = useMusicStore((s) => s.recommendError);
   const proxyPort = useMusicStore((s) => s.proxyPort);
   const loadRecommend = useMusicStore((s) => s.loadRecommend);
   const openRightPlaylist = useMusicStore((s) => s.openRightPlaylist);
@@ -282,7 +283,14 @@ function Recommendations() {
             </button>
           </div>
           {recommendPlaylists.length === 0 ? (
-            <Empty inline>{loading ? '加载推荐歌单中…' : '暂无推荐歌单（可能需要登录或网络）'}</Empty>
+            recommendError ? (
+              /* 三段全读失败：说明原因并给重试（右上「刷新」就是重试入口） */
+              <Empty bad inline sub={`${recommendError}（点右上「刷新」重试）`}>
+                推荐读取失败
+              </Empty>
+            ) : (
+              <Empty inline>{loading ? '加载推荐歌单中…' : '暂无推荐歌单（可能需要登录或网络）'}</Empty>
+            )
           ) : (
             <VirtualList
               items={recommendPlaylists}

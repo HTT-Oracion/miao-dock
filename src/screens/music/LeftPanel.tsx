@@ -150,6 +150,7 @@ function PlaylistsView() {
 function LeftTracksView() {
   const meta = useMusicStore((s) => s.leftPlaylistMeta);
   const tracks = useMusicStore((s) => s.leftPlaylistTracks);
+  const tracksError = useMusicStore((s) => s.leftTracksError);
   const loading = useMusicStore((s) => s.loadingLeftTracks);
   const loadingMore = useMusicStore((s) => s.loadingMoreLeft);
   const loadMore = useMusicStore((s) => s.loadMoreLeft);
@@ -184,6 +185,11 @@ function LeftTracksView() {
 
       {loading ? (
         <Empty>加载曲目中…</Empty>
+      ) : tracksError ? (
+        /* 读失败与"歌单是空的"分开说：前者能重试（再点一次这个歌单），后者重试也没用 */
+        <Empty bad sub={tracksError}>
+          曲目读取失败
+        </Empty>
       ) : tracks.length === 0 ? (
         <Empty>这个歌单还没有歌曲</Empty>
       ) : (

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 音乐模块状态层（zustand）—— 播放 + 四平台 + 本地 + 发现，全模块唯一状态源。
  *
  * 从参考实现（Zustand store，3559 行）移植**逻辑**、剥离 Chakra UI 绑定（PD-1「界面重写」）。
@@ -263,6 +263,8 @@ export interface MusicState {
   userPlaylistsError: string;
   leftPlaylistMeta: Playlist | null;
   leftPlaylistTracks: Song[];
+  /** 左栏曲目读取失败的原因（空串 = 没失败） */
+  leftTracksError: string;
   loadingLeftTracks: boolean;
   loadingMoreLeft: boolean;
 
@@ -273,6 +275,8 @@ export interface MusicState {
   /** 榜单读取失败的原因（空串 = 没失败）：空列表 + 一句原因，比「暂无榜单」诚实 */
   chartsError: string;
   recommendPlaylists: Playlist[];
+  /** 推荐三段（歌单 / 每日推荐 / 今日精选）全部读失败时的原因（空串 = 没失败） */
+  recommendError: string;
   loadingRecommend: boolean;
   dailySongs: Song[];
   loadingDaily: boolean;
@@ -725,6 +729,7 @@ export const useMusicStore = create<MusicState>()((set, get) => ({
   userPlaylistsError: '',
   leftPlaylistMeta: null,
   leftPlaylistTracks: [],
+  leftTracksError: '',
   loadingLeftTracks: false,
   loadingMoreLeft: false,
 
@@ -734,6 +739,7 @@ export const useMusicStore = create<MusicState>()((set, get) => ({
   loadingCharts: false,
   chartsError: '',
   recommendPlaylists: [],
+  recommendError: '',
   loadingRecommend: false,
   dailySongs: [],
   loadingDaily: false,

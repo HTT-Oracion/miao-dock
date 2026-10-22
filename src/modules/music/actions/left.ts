@@ -53,7 +53,13 @@ export const createLeftSlice = (
   },
 
   openLeftPlaylist: async (pl) => {
-    set({ loadingLeftTracks: true, leftPlaylistTracks: [], leftPlaylistMeta: pl, leftView: 'tracks' });
+    set({
+      loadingLeftTracks: true,
+      leftPlaylistTracks: [],
+      leftPlaylistMeta: pl,
+      leftView: 'tracks',
+      leftTracksError: '',
+    });
     const provider = get().playbackSource;
     try {
       const [meta, songs] = await platform.playlistTracks(provider, pl.id);
@@ -64,9 +70,10 @@ export const createLeftSlice = (
       set({
         leftPlaylistMeta: pl.isLiked ? { ...meta, name: pl.name, isLiked: true } : meta,
         leftPlaylistTracks: songs,
+        leftTracksError: '',
       });
-    } catch {
-      set({ leftPlaylistTracks: [] });
+    } catch (e) {
+      set({ leftPlaylistTracks: [], leftTracksError: String(e) });
     } finally {
       set({ loadingLeftTracks: false });
     }
