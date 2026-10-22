@@ -1597,19 +1597,22 @@ add('PLAYLIST.likedAutoHeartbeat', 'HEARTBEAT', (s) => {
   return { ok: missing.length === 0, detail: missing.length ? `我喜欢的音乐的心动记忆：${missing.join('、')}` : '' };
 });
 
-// ── 播放队列抽屉（定位当前曲 + 从右滑入）────────────────────────────────
+// ── 播放队列抽屉（当前曲常驻顶部 + 从右滑入）──────────────────────────────
 add('QUEUE.scrollsToCurrent', 'QUEUE', (s) => {
-  // 需求第 3 条：点开播放列表要定位到正在播的那首。
+  // 需求第 3 条：点开播放列表要"看得见正在播的那首"。
+  //
+  // 口径演进（ver3）：设计稿把抽屉改成**两段式** —— 上面「正在播放」单独一行固定不滚、
+  // 下面「接下来 · N 首」才是滚动区。于是"定位到当前曲"从"滚过去"变成了**结构保证**：
+  // 那一行永远在顶部，不存在被滚走的情况。所以判据从 `scrollToIndex={currentIndex}`
+  // 改成"抽屉里真的渲染了正在播放段，且接下来段从 currentIndex+1 起切"。
+  // 仍要求 VirtualList 支持 scrollToIndex（左栏/搜索结果还在用它）。
   const drawer = stripComments(s.queueDrawer ?? '');
   const vl = stripComments(readMaybe(F.virtualList));
   const missing = [];
-  if (!/scrollToIndex=\{currentIndex\}/.test(drawer)) missing.push('QueueDrawer 未把当前下标交给列表定位');
+  if (!/music-qd-caption">正在播放/.test(drawer)) missing.push('QueueDrawer 没有「正在播放」段（当前曲必须常驻顶部）');
+  if (!/queue\.slice\(currentIndex \+ 1\)/.test(drawer)) missing.push('「接下来」段没有从当前曲之后切');
+  if (!/music-qd-caption">接下来 · \{upcoming\.length\} 首/.test(drawer)) missing.push('「接下来」段没有带真实条数');
   if (!/scrollToIndex/.test(vl)) missing.push('VirtualList 未支持 scrollToIndex');
-  // 定位必须与"复位到顶"在同一处裁决，否则两者打架会让抽屉先闪到顶再跳下来
-  const iIdx = vl.indexOf('scrollToIndex == null');
-  const iReset = vl.indexOf('el.scrollTop = 0');
-  if (iIdx < 0 || iReset < 0) missing.push('定位与复位未在同一分支里裁决');
-  else if (iReset < iIdx) missing.push('把 scrollTop 归零写在了定位之前（顺序反了）');
   return { ok: missing.length === 0, detail: missing.length ? `播放列表定位：${missing.join('、')}` : '' };
 });
 add('QUEUE.heartbeatTitle', 'QUEUE', (s) => {
@@ -3187,8 +3190,11 @@ add('ISLANDV.desktopLyricsKept', 'ISLANDV', (s) => {
   if (!hasMethodImpl(store, 'pushLyricsState')) missing.push('store 的 pushLyricsState 实现没了');
   if (!/\bdesktopLyricsFontSize\b/.test(store)) missing.push('desktopLyrics* 偏好没了');
   if (!/export const openLyricsWindow\b/.test(stripComments(s.ipc ?? ''))) missing.push('ipc 的 openLyricsWindow 没了');
-  // 主窗侧唯一的窗口入口（设置页那一项与它共用同一个 store action）
-  if (!/lyricsWindowOpen \? '关闭桌面歌词' : '桌面歌词'/.test(stripComments(s.playerBar ?? '')))
+  // 主窗侧唯一的窗口入口（设置页那一项与它共用同一个 store action）。
+  // 判据锚点按设计稿改成固定 title「桌面歌词窗口」+ 真的接了 `setLyricsWindowOpen`：
+  // 只要这个开关还在且能开合，本组要防的"提前删桌面歌词"就没发生。
+  const playerBar = stripComments(s.playerBar ?? '');
+  if (!/title="桌面歌词窗口"/.test(playerBar) || !/setLyricsWindowOpen\(/.test(playerBar))
     missing.push('PlayerBar 的桌面歌词开关没了');
   return { ok: missing.length === 0, detail: missing.length ? `桌面歌词仍在（未提前删）：${missing.join('、')}` : '' };
 });
@@ -4829,12 +4835,19 @@ const MUTATIONS = [
     expect: ['PLAYLIST.likedAutoHeartbeat'],
   },
 
-  // ── QUEUE 播放列表抽屉（定位当前曲 + 从右滑入）──────────────────────
+  // ── QUEUE 播放列表抽屉（当前曲常驻顶部 + 从右滑入）──────────────────
   {
-    name: '队列抽屉不把当前下标交给列表（打开时不定位到正在播的那首）',
+    name: '队列抽屉不再把「正在播放」段固定在顶部（当前曲被混进滚动列表）',
     file: F.queueDrawer,
-    find: 'scrollToIndex={currentIndex}',
-    replace: 'data-no-scroll',
+    find: '<p className="music-qd-caption">正在播放</p>',
+    replace: '<p className="music-qd-caption">队列</p>',
+    expect: ['QUEUE.scrollsToCurrent'],
+  },
+  {
+    name: '「接下来」段从队首切起（把正在播的那首也算进接下来）',
+    file: F.queueDrawer,
+    find: 'queue.slice(currentIndex + 1)',
+    replace: 'queue.slice(0)',
     expect: ['QUEUE.scrollsToCurrent'],
   },
   {

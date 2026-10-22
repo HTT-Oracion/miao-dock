@@ -41,6 +41,38 @@ export function QueueDrawer() {
    */
   const isHeartbeat = playMode === 'heartbeat';
 
+  /** 正在播的那一首与它后面的队列（设计稿两段式的数据切分） */
+  const current = currentIndex >= 0 ? (queue[currentIndex] ?? null) : null;
+  const upcoming = queue.slice(currentIndex + 1);
+
+  /** 一行队列（正在播放与接下来共用同一套结构，只差高亮） */
+  const renderRow = (s: Song, i: number, hot: boolean) => (
+    <div
+      className={hot ? 'music-qrow is-hot' : 'music-qrow'}
+      onClick={() => void playSong(s)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenu({ x: e.clientX, y: e.clientY, song: s });
+      }}
+    >
+      <span className="music-qrow-ix">{hot ? '♪' : i + 1}</span>
+      <div className="music-row-tx">
+        <b>{s.name}</b>
+        <span>{s.artist}</span>
+      </div>
+      {s.duration ? <span className="music-dur">{fmtTime(s.duration)}</span> : null}
+      <IconButton
+        title="从队列移除"
+        onClick={(e) => {
+          e.stopPropagation();
+          removeFromQueue(i);
+        }}
+      >
+        <X size={13} />
+      </IconButton>
+    </div>
+  );
+
   return (
     <>
       <div className="music-drawer-bd" onClick={() => setQueueOpen(false)} />
@@ -58,44 +90,36 @@ export function QueueDrawer() {
           </IconButton>
         </div>
 
+        {/*
+          两段式（设计稿 `.qd-section`）：上面「正在播放」单独一行、固定不滚；下面「接下来 · N 首」
+          才是滚动区。旧实现是一条平铺列表 —— 用户得自己在几十行里找"现在播的是哪首"，
+          而这一屏存在的意义恰恰是回答那个问题。
+        */}
         {queue.length === 0 ? (
           <Empty>队列是空的</Empty>
         ) : (
-          <VirtualList
-            className="is-drawer"
-            items={queue}
-            resetKey="queue"
-            // 打开抽屉即定位到"正在播的那首"（需求第 3 条）。定位交给 VirtualList 自己裁决：
-            // 在外面写 scrollTop 会与它内部的复位逻辑打架（表现为先闪到顶再跳下来）。
-            scrollToIndex={currentIndex}
-            itemKey={(s, i) => `${songKey(s)}:${i}`}
-            renderItem={(s, i) => (
-              <div
-                className={i === currentIndex ? 'music-qrow is-hot' : 'music-qrow'}
-                onClick={() => void playSong(s)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setMenu({ x: e.clientX, y: e.clientY, song: s });
-                }}
-              >
-                <span className="music-qrow-ix">{i === currentIndex ? '♪' : i + 1}</span>
-                <div className="music-row-tx">
-                  <b>{s.name}</b>
-                  <span>{s.artist}</span>
-                </div>
-                {s.duration ? <span className="music-dur">{fmtTime(s.duration)}</span> : null}
-                <IconButton
-                  title="从队列移除"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeFromQueue(i);
-                  }}
-                >
-                  <X size={13} />
-                </IconButton>
+          <>
+            {current && currentIndex >= 0 ? (
+              <div className="music-qd-section">
+                <p className="music-qd-caption">正在播放</p>
+                {renderRow(current, currentIndex, true)}
               </div>
-            )}
-          />
+            ) : null}
+            <div className="music-qd-section is-next">
+              <p className="music-qd-caption">接下来 · {upcoming.length} 首</p>
+              {upcoming.length ? (
+                <VirtualList
+                  className="is-drawer"
+                  items={upcoming}
+                  resetKey="queue-next"
+                  itemKey={(s, i) => `${songKey(s)}:${i}`}
+                  renderItem={(s, i) => renderRow(s, currentIndex + 1 + i, false)}
+                />
+              ) : (
+                <div className="music-qd-empty">队列后面没有歌曲了</div>
+              )}
+            </div>
+          </>
         )}
       </div>
       {/* 菜单 portal 到 body —— 队列列表自身是滚动容器，挂在行内会被裁掉 */}

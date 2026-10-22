@@ -1868,6 +1868,35 @@
   cursor: pointer;
   transition: background var(--miao-dur-fast) ease;
 }
+/*
+ * 队列抽屉的两段（设计稿 `.qd-section` / `.qd-caption`）：
+ * 「正在播放」固定在上、「接下来」自己滚。小标题是 8.5px 大写间距宽的眉标，
+ * 用极淡色 —— 它是分隔符，不该和歌名抢视线。
+ */
+.music-qd-section {
+  margin-top: 8px;
+}
+.music-qd-section.is-next {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.music-qd-caption {
+  padding: 7px 7px 4px;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--miao-faint);
+}
+.music-qd-empty {
+  padding: 24px 10px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--miao-muted);
+}
 .music-qrow:hover {
   background: var(--miao-surface-2);
 }
