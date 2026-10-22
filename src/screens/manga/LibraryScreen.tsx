@@ -661,6 +661,7 @@ export function LibraryScreen({
         onOpenDir={(absDir) => void openPath(absDir).catch((e: unknown) => onToast(errorText(e), 'bad'))}
         onResume={resume}
         onRetranslate={retranslate}
+        onEditBook={setEditBook}
         onEditNoChapter={setEditNoChapter}
         chPage={chPage}
         chPages={chPages}

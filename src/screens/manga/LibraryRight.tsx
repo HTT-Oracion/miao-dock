@@ -63,6 +63,7 @@ export function LibraryRight({
   onOpenDir,
   onResume,
   onRetranslate,
+  onEditBook,
   onEditNoChapter,
   chPage,
   chPages,
@@ -108,6 +109,8 @@ export function LibraryRight({
   onOpenDir: (absDir: string) => void;
   onResume: (base: string, name: string) => void;
   onRetranslate: (base: string, name: string, seqs?: number[]) => void;
+  /** 打开「编辑信息」弹窗（改封面 / 作者）。详情头与左栏右键菜单同一个出口 */
+  onEditBook: (book: BookEntry) => void;
   onEditNoChapter: (payload: { bookName: string; chapter: ChapterEntry }) => void;
   chPage: number;
   chPages: number;
@@ -328,6 +331,38 @@ export function LibraryRight({
                 {headPath}
               </p>
               <div className="book-actions">
+                {/*
+                  详情头的三个动作（设计稿 `.book-actions`）：继续翻译（primary）/ 编辑信息 / 刷新。
+                  「继续翻译」与「编辑信息」此前**只**在左栏右键菜单里 —— 详情头是用户看这本书
+                  时最自然的落点，把主行动藏进右键菜单等于让他先猜。
+                */}
+                <Btn
+                  kind="primary"
+                  size="sm"
+                  disabled={!currentBook || reworkingComics.has(currentBook.dirName)}
+                  title={
+                    currentBook && reworkingComics.has(currentBook.dirName)
+                      ? '这本书已有任务在跑'
+                      : '把还没译的页加进队列（已完成的页不动）'
+                  }
+                  onClick={() => {
+                    if (!currentBook) return;
+                    onResume(`/library/${encodeURIComponent(currentBook.bookName)}`, `《${currentBook.bookName}》`);
+                  }}
+                >
+                  继续翻译
+                </Btn>
+                <Btn
+                  kind="ghost"
+                  size="sm"
+                  disabled={!currentBook}
+                  title="改封面（本地图片 / 取第 1 话首图 / 移除）与作者"
+                  onClick={() => {
+                    if (currentBook) onEditBook(currentBook);
+                  }}
+                >
+                  编辑信息
+                </Btn>
                 <Btn kind="ghost" size="sm" onClick={onRefresh} title="重新扫描漫画库">
                   <RefreshCw size={14} />
                   刷新
