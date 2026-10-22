@@ -499,7 +499,7 @@ export function Compare({
 
   return (
     <div className="compare">
-      <div className="compare-head card">
+      <div className="compare-head">
         <IconButton title="返回" onClick={onBack}>
           <ArrowLeft size={20} />
         </IconButton>
@@ -508,9 +508,7 @@ export function Compare({
           <span> / </span>
           <span className="num">{view.seqMax}</span>
         </span>
-        <span className="muted" style={{ fontSize: 11 }}>
-          {view.comicName}
-        </span>
+        <span className="compare-book">{view.comicName}</span>
         <div style={{ flex: 1 }} />
         <Btn kind="ghost" disabled={!canPrev} onClick={() => canPrev && onSeq(seq - 1)}>
           ← 上一张
@@ -576,6 +574,17 @@ export function Compare({
           variant="translated"
           onZoom={() => setZoom('translated')}
         />
+      </div>
+
+      {/* 页脚（设计稿 `.cmp-foot`）：左边是键盘，右边是"怎么放大看"。
+          设计稿右边写的是对照页内滚轮缩放 —— 本产品的缩放发生在**全屏灯箱**里
+          （点图进入，那里滚轮缩放与拖拽都有），所以这里如实写那条路径。 */}
+      <div className="compare-foot">
+        <span>
+          <kbd>←</kbd>
+          <kbd>→</kbd> 翻页 · <kbd>Esc</kbd> 返回
+        </span>
+        <span>点图全屏 · 全屏后可滚轮缩放与拖拽</span>
       </div>
 
       {zoom ? (

@@ -1831,11 +1831,59 @@
   height: 100%;
   min-height: 0;
 }
+/*
+ * 对照页头部（设计稿 `.cmp-head`）：**平条**不是卡片 —— 58 高 + 一条下分隔线。
+ * 对照页铺满整屏，头部若做成带圆角的卡片，会和左右两个面板的直边打架。
+ */
 .compare-head {
+  flex: 0 0 58px;
+  height: 58px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: 10px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--miao-line);
+  background: var(--miao-surface);
+}
+/* 书名（设计稿 `.cmp-title span`）：小一档、淡一档，与序号同一基线 */
+.compare-book {
+  font-size: 11px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/*
+ * 对照页页脚（设计稿 `.cmp-foot`）：36 高 + 上分隔线，左边键盘、右边提示。
+ * `kbd` 按设计稿的键帽样式（19 宽 / 18 高 / r5 / 底边 2px）—— 它让"这是要按的键"
+ * 一眼可辨，而不是和正文混在一起。
+ */
+.compare-foot {
+  flex: 0 0 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  border-top: 1px solid var(--miao-line);
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+.compare-foot kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 19px;
+  height: 18px;
+  margin: 0 2px;
+  padding: 0 5px;
+  border: 1px solid var(--miao-line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--miao-surface-2);
+  color: var(--miao-muted);
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
 }
 .compare-seq {
   font-family: var(--md-font-display);
