@@ -325,6 +325,27 @@ function Lightbox({
     applyView(next, next <= ZOOM_FIT ? { x: 0, y: 0 } : cur.offset);
   };
 
+  /*
+   * 键盘缩放（设计稿 `+` / `=` 放大、`-` 缩小）：
+   * 与按钮同一条 `stepZoom`（以图心为锚点），不是第二套缩放实现。
+   * 监听只挂一次、通过 ref 取当前闭包 —— 每帧重绑会把快速连按的按键漏掉。
+   */
+  const zoomKeys = useRef({ inc: () => {}, dec: () => {} });
+  zoomKeys.current = { inc: () => stepZoom(1), dec: () => stepZoom(-1) };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        zoomKeys.current.inc();
+      } else if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        zoomKeys.current.dec();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const zoomed = zoom > ZOOM_FIT;
 
   return (
