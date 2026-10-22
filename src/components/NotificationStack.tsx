@@ -89,8 +89,13 @@ function NotificationCard({
 
   return (
     <div className={leaving ? 'ntf is-leaving' : 'ntf'} role="status" aria-live="polite">
+      {/* 设计稿 `.toast-dot`：7px 语义色圆点，是这一条的"类型指示"，不承载文字 */}
       <span className="ntf-dot" style={{ background: KIND_TO_COLOR[toast.kind] }} aria-hidden="true" />
-      <span className="ntf-text">{toast.text}</span>
+      {/* 设计稿 `.toast-body`：strong 标题 + span 说明两级（说明为空则不渲染） */}
+      <span className="ntf-body">
+        <strong>{toast.text}</strong>
+        {toast.detail ? <span>{toast.detail}</span> : null}
+      </span>
       <span className="ntf-close">
         <button type="button" className="ui-cbtn" title="关闭通知" aria-label="关闭通知" onClick={close}>
           <X size={13} />

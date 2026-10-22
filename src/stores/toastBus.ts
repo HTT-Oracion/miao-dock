@@ -8,37 +8,40 @@
  * 而音乐屏那套又会自己渲染一次 → 同一条提示要么丢、要么显示两次。
  *
  * 常见的替代方案（zustand store / context）都各有代价：
- * ① 放进 zustand：吐司是**纯 UI 瞬态**，放进音乐业务 store 里会让一个非音乐模块
+ * ① 放进 zustand：吐司是**纯 UI 瞬时态**，放进音乐业务 store 会让一个非音乐模块
  *    依赖 `@music/store`，方向反了。
- * ② 用 React Context：本项目已裁定**全仓零 React Context**（《09》§2.3.3）。
+ * ② 用 React Context：本项目已裁定**全仓禁 React Context**。
  * ③ 提升到 App 再用 props 层层传：灵动岛是**并列**的浮层，不是某屏的子组件，
  *    透传会把它硬绑到树的一个位置，反而更糟。
  *
- * 所以用**模块级订阅表**：不引依赖、不违反零 Context、不让吐司依赖业务 store，
- * 且任意模块都能 `toastBus.push(...)`（音乐屏、未来的桌面歌词窗等）。
+ * 所以用**模块级订阅表**：不引依赖、不违反禁 Context、不让吐司依赖业务 store，
+ * 且任意模块都能 `toastBus.push(...)`（音乐屏、桌面歌词窗等）。
  *
- * ## 它为什么该放在这里
- * 本文件是**唯一**入口，`useToasts` 与 `DynamicIsland` 都从这里收发 ——
- * 只有一个事实源，不存在"两边各自的队列"。
+ * ## 两级文案（设计稿 `toast-body`）
+ * 设计稿的 toast 是 `strong` 标题 + `span` 说明两行：标题说"发生了什么"，
+ * 说明补"这意味着什么"。`push(text)` 只给标题时说明行不渲染 —— 向后兼容既有调用。
  */
 import { useEffect, useState } from 'react';
 
 /**
- * 吐司语义色（**六态**，对齐参考实现的 `IslandStatus`）。
+ * 吐司语义色（**六态**）。
  *
  * ## 为什么保留 `good` / `bad` 两个旧名，而不是直接改名
- * 全仓有 6 处业务在用 `push(text, 'good' | 'bad' | 'info')`
+ * 全仓有 16 处业务在用 `push(text, 'good' | 'bad' | 'info')`
  * （服务重启 / 漫画库 / 打开目录 / 设置页 / music/Toast 转发器）。
- * 直接改名会让这 6 处一起变红，且改动会溢出灵动岛以外 —— 越界。
+ * 直接改名会让这 16 处一起变红，且改动会溢出灵动岛以外 —— 越界。
  * 所以：**旧名保留、只做映射**（good→success、bad→error、info→info），
- * 再**新增**参考实现里另有语义的 `warning` / `loading` / `blue`。
- * 映射表落在渲染侧（`DynamicIsland.tsx` 的 `KIND_TO_STATUS`），总线只负责搬运。
+ * 另**新增**设计稿里另有语义的 `warning` / `loading` / `blue`。
+ * 映射表落在渲染侧（`NotificationStack.tsx` 的 `KIND_TO_COLOR`），总线只负责搬运。
  */
 export type ToastKind = 'info' | 'good' | 'bad' | 'warning' | 'loading' | 'blue';
 
 export interface BusToast {
   id: number;
+  /** 标题行（设计稿 `toast-body strong`） */
   text: string;
+  /** 说明行（设计稿 `toast-body span`）；空串则不渲染 */
+  detail: string;
   kind: ToastKind;
 }
 
@@ -55,11 +58,19 @@ function emit() {
 }
 
 export const toastBus = {
-  push(text: string, kind: ToastKind = 'info', ttlMs?: number) {
+  /**
+   * 推一条提示。
+   *
+   * @param text 标题（必填，设计稿 `toast-body strong`）
+   * @param kind 语义色
+   * @param detail 说明行（可选，设计稿 `toast-body span`）
+   * @param ttlMs 存活时长（可选；默认报错 6.5s、其余 3.8s）
+   */
+  push(text: string, kind: ToastKind = 'info', detail = '', ttlMs?: number) {
     const id = ++seq;
-    queue = [...queue, { id, text, kind }];
+    queue = [...queue, { id, text, detail, kind }];
     emit();
-    // 与 useToasts 原有的时长保持一致：报错给更长时间（用户要读完错误）
+    // 与 useToasts 原有时间长保持一致：报错给更长时间（用户要读完错误）
     const ttl = ttlMs ?? (kind === 'bad' ? 6500 : 3800);
     window.setTimeout(() => toastBus.dismiss(id), ttl);
     return id;
@@ -91,9 +102,8 @@ export const toastBus = {
 /**
  * 订阅吐司总线（**全量列表**）—— 通知堆叠（NotificationStack）的读取口。
  *
- * 2026-10-11 改版：轻提示的承载从灵动岛剥离成 topRight 的通知堆叠（antd notification
- * 的形态），堆叠要**同时**展示多条，所以给全量列表而不是"最后一条"。
- * 总线本身不变：仍是那个唯一队列 + 单例订阅表（ISLAND.singleSource 的口径）。
+ * 轻提示的承载从灵动岛剥离成 topRight 的通知堆叠，堆叠要**同时**展示多条，
+ * 所以给全量列表而不是"最后一条"。总线本身不变：仍是唯一队列 + 单例订阅表。
  */
 export function useToastList(): BusToast[] {
   const [list, setList] = useState<BusToast[]>(() => [...queue]);

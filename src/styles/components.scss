@@ -1177,57 +1177,6 @@
   color: var(--miao-primary-ink);
 }
 
-.ntf-stack {
-  position: fixed;
-  top: 72px;
-  right: 20px;
-  z-index: 120;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: min(360px, calc(100vw - 40px));
-  pointer-events: none;
-}
-
-.ntf {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  padding: 11px 12px;
-  border: 1px solid var(--miao-line);
-  border-left: 3px solid var(--miao-primary);
-  border-radius: 15px;
-  background: color-mix(in srgb, var(--miao-surface) 92%, transparent);
-  box-shadow: 0 20px 44px -24px rgba(33, 47, 58, 0.45);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  pointer-events: auto;
-  animation: miao-toast-in var(--miao-dur-base) var(--miao-ease-spring);
-}
-
-.ntf.is-leaving {
-  animation: miao-toast-out 180ms var(--miao-ease-out) forwards;
-}
-
-.ntf-dot {
-  width: 8px;
-  height: 8px;
-  margin-top: 5px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-}
-
-.ntf-text {
-  flex: 1;
-  color: var(--miao-text);
-  font-size: 11.5px;
-  line-height: 1.6;
-}
-
-.ntf-close {
-  flex: 0 0 auto;
-}
-
 .ui-empty .ico,
 .ui-empty svg {
   color: var(--miao-faint);
