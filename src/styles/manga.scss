@@ -966,6 +966,87 @@
   color: var(--miao-muted);
 }
 
+/*
+ * 详情头（设计稿 .book-hero）：大封面 + 信息列，底部一条虚线分隔。
+ * 虚线（而不是实线）是刻意的：它是"资料区 / 内容区"的软分界，不是两个卡片的边。
+ */
+.book-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px dashed color-mix(in srgb, var(--miao-line) 70%, var(--miao-muted));
+}
+/* 大封面 96x130 / r9 / 渐变底 + 白字 + 双层投影（设计稿 .book-big-cover） */
+.book-big-cover {
+  flex: none;
+  width: 96px;
+  height: 130px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border-radius: 9px;
+  background: linear-gradient(145deg, var(--miao-primary), var(--miao-accent));
+  color: rgba(255, 255, 255, 0.94);
+  font-family: var(--md-font-display);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+  word-break: break-all;
+  box-shadow:
+    0 10px 20px -14px rgba(45, 59, 70, 0.6),
+    0 0 0 1px rgba(45, 59, 70, 0.08);
+  overflow: hidden;
+}
+.book-info {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.book-info h2 {
+  font-family: var(--md-font-display);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--miao-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.book-author {
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: var(--miao-muted);
+}
+.book-meta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+.book-path {
+  margin-top: 8px;
+  max-width: 100%;
+  font-family: var(--miao-font-mono);
+  font-size: 9.5px;
+  color: var(--miao-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.book-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 13px;
+}
+
 /* 左栏「我的书架」（设计稿 `.shelf`）：独立面板，r-lg + shadow-1 */
 .lib-left {
   display: flex;
@@ -1174,10 +1255,11 @@
   background: var(--miao-surface);
   box-shadow: var(--miao-shadow-1);
 }
+/* 话卡 / 页卡网格（设计稿 .chapter-grid）：auto-fill 每列至少 148px */
 .lib-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 9px;
 }
 /* 网格卡 110×165 r12（《02》§5.5）—— 尺寸与圆角是 C5 的实测对象，勿改 */
 .grid-card {
@@ -2182,35 +2264,87 @@
 }
 
 /* ── 屏 B：话列表（§7.3）────────────────────────────────────────────── */
-/* 话卡容器：本体是 .grid-card（同几何，不另写一份），容器只为角标与悬浮菜单提供定位 */
+/*
+ * 话卡（设计稿 .chapter-card）：文字卡 —— 上排「第 N 话 + 状态」、中排页数、
+ * 下排进度条，右上角操作菜单。
+ */
 .chapter-card {
   position: relative;
-  flex: 0 0 auto;
+  padding: 10px 11px;
+  border: 1px solid var(--miao-line);
+  border-radius: 11px;
+  background: var(--miao-surface-2);
+  text-align: left;
+  transition:
+    background var(--miao-dur-fast) ease,
+    border-color var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-out);
 }
-/* 右上角「第 N 话」角标：不挡卡片点击（Badge 是展示件，不可交互） */
-.chapter-badge {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  pointer-events: none;
+.chapter-card:hover {
+  background: var(--miao-surface);
+  border-color: var(--miao-primary-line);
+  transform: translateY(-1px);
 }
-/* 左上角悬浮菜单：悬停 / 键盘聚焦时**带一点位移**浮现（只改透明度会像贴图，
-   给 2px 的横向位移才读作"这一段的动作出现了"）。触屏无 hover，桌面端以鼠标为主。 */
-.chapter-menu {
+.cc-main {
+  display: block;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+.cc-main:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.cc-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cc-no {
+  font-family: var(--md-font-display);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.cc-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9.5px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+}
+.cc-pages {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--miao-muted);
+}
+.cc-bar {
+  height: 3px;
+  margin-top: 7px;
+  border-radius: 2px;
+  background: var(--miao-surface-3);
+  overflow: hidden;
+}
+.cc-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--miao-primary);
+}
+/* 右上角操作菜单：悬停才浮现，不占卡片正文宽度 */
+.cc-menu {
   position: absolute;
   top: 4px;
-  left: 4px;
+  right: 4px;
   opacity: 0;
-  transform: translateX(-4px);
   pointer-events: none;
-  transition:
-    opacity var(--miao-dur-fast) ease,
-    transform var(--miao-dur-base) var(--miao-ease-spring);
+  transition: opacity var(--miao-dur-fast) ease;
 }
-.chapter-card:hover .chapter-menu,
-.chapter-menu:focus-within {
+.chapter-card:hover .cc-menu,
+.cc-menu:focus-within {
   opacity: 1;
-  transform: none;
   pointer-events: auto;
 }
 /* 脚注右侧的状态点 + 文字：颜色只是辅助，文字与点同现（《02》§5.2 色不作唯一载体） */

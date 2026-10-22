@@ -82,37 +82,47 @@ export function LibraryRight({
     <section className="lib-right">
       {current ? (
         <>
-          <div className="lib-head card">
-            {/* 屏 C 的返回（设计稿 §5.3：任何层级可「返回」且不丢选中态）——
-                返回的是屏 B 话列表，左栏选中保持不动 */}
-            {inChapter ? (
-              <IconButton title="返回这一部的话列表" onClick={onExitChapter}>
-                <ArrowLeft size={20} />
-              </IconButton>
-            ) : null}
-            <div className="lib-head-titles">
-              <div className="lib-head-name" title={headName}>
-                {headName}
-              </div>
-              <div className="lib-head-path" title={headPath}>
+          {/*
+            详情头（设计稿 `.book-hero`）：左侧大封面 96×130 + 右侧信息列
+            （kicker / 标题 / 作者与更新时间 / 状态徽标 / 路径 / 动作）。
+            旧写法是一行「标题 + 路径 + 刷新」，没有封面也没有状态徽标 ——
+            用户看不出"这是哪部作品、译到什么程度"。
+          */}
+          <div className="book-hero">
+            <div className="book-big-cover" aria-hidden="true">
+              {Array.from(headName).slice(0, 4).join('')}
+            </div>
+            <div className="book-info">
+              {inChapter ? (
+                <IconButton title="返回这一部的话列表" onClick={onExitChapter}>
+                  <ArrowLeft size={20} />
+                </IconButton>
+              ) : null}
+              <span className="kicker">BOOK / {inChapter ? 'CHAPTER' : 'LIBRARY'}</span>
+              <h2 title={headName}>{headName}</h2>
+              {currentBook ? (
+                <p className="book-author">
+                  {inChapter
+                    ? `《${currentBook.bookName}》`
+                    : `${currentBook.author || AUTHOR_FALLBACK} · ${currentBook.chapterCount} 话 · ${currentBook.totalPages} 页`}
+                </p>
+              ) : null}
+              {currentBook && !inChapter ? (
+                <div className="book-meta-chips">
+                  <span className="st-badge is-idle">{currentBook.chapterCount} 话</span>
+                  <span className="st-badge is-idle">{currentBook.totalPages} 页</span>
+                </div>
+              ) : null}
+              <p className="book-path" title={headPath}>
                 {headPath}
+              </p>
+              <div className="book-actions">
+                <Btn kind="ghost" size="sm" onClick={onRefresh} title="重新扫描漫画库">
+                  <RefreshCw size={14} />
+                  刷新
+                </Btn>
               </div>
             </div>
-            {/* 大类的补充信息：话内归因到所属大类，话列表给出作者与规模（设计稿 §7.1 同一口径） */}
-            {currentBook ? (
-              <span className="lib-head-sub muted">
-                {inChapter
-                  ? `《${currentBook.bookName}》`
-                  : `${currentBook.author || AUTHOR_FALLBACK} · ${currentBook.chapterCount} 话 · ${currentBook.totalPages} 页`}
-              </span>
-            ) : null}
-            <Btn kind="ghost" onClick={onRefresh} title="重新扫描漫画库">
-              <RefreshCw size={14} />
-              刷新
-            </Btn>
-            {/* 头部按钮只留「刷新」：打开目录 / 续做 / 返工 / 编辑信息 / 删除 / 归并
-                全部迁往**左栏漫画项的右键菜单**（renderComicMenu）—— 操作的主语是
-                "被右键的那部漫画"，比"头部当前显示的这部"更不容易错位 */}
           </div>
 
           {currentBook && !inChapter ? (

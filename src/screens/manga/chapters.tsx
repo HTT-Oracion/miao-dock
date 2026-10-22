@@ -13,9 +13,8 @@
 // 左栏与头部没刷"的半刷新。
 import { FolderUp, Pencil, Play, RotateCcw, Trash2 } from 'lucide-react';
 
-import { Badge, Dot, MenuButton, MenuItem } from '@components/units';
+import { Dot, MenuButton, MenuItem } from '@components/units';
 import type { ChapterEntry } from '@/types';
-import { chapterImagePath, useBlobUrl } from '@screens/manga/blob';
 
 // ------------------------------------------------------------------ 状态
 
@@ -126,7 +125,6 @@ export function ChapterCard({
   const status = chapterStatusOf(chapter);
   // 空话（一张原图都没有）不取图：对"确定没有"的东西发一次必然 404 的请求，
   // 表现是缩略图先停在「加载中…」再变成失败 —— 把"不存在"伪装成"还没到"。
-  const thumb = useBlobUrl(no === null || chapter.imageCount === 0 ? null : chapterImagePath(bookName, chapter));
   // 本话待续做张数（有原图、缺译文的页数；集合判定，不用张数倒推 —— G-10）
   const pendingCount = Math.max(0, chapter.imageCount - chapter.translatedCount - chapter.missingSeqs.length);
 
@@ -141,41 +139,45 @@ export function ChapterCard({
   const rtSub = busy ? '返工中' : noOriginal ? '没有原图' : `覆盖 ${chapter.translatedCount} 张`;
 
   return (
-    <div className="chapter-card">
+    /*
+     * 话卡（设计稿 `.chapter-card`）：**文字卡**，不是封面缩略图卡。
+     * 旧写法复用 110×165 的 `.grid-card` 并加载缩略图 —— 一部 30 话就要拉 30 张图，
+     * 而这一层要回答的是"第几话、译了多少、缺不缺页"，一张缩略图提供不了这些信息。
+     * 现在：上排「第 N 话 + 状态」、中排页数、下排一条进度条，右上角是操作菜单。
+     */
+    <div className={`chapter-card is-${status.state}`} data-chapter-no={no ?? undefined}>
       <button
         type="button"
-        // 话卡与页卡是同一个 110×165 格子（设计稿 §7.3「沿用 LIBRARY.card 令牌」），
-        // 故直接复用 `.grid-card` 的几何与悬停，`chapter-card-main` 只留作语义锚点
-        className="grid-card chapter-card-main"
+        className="cc-main"
         onClick={onOpen}
         disabled={no === null}
         title={no === null ? '该目录没有话号，无法作为话打开' : `第 ${no} 话 · 点开看这一话的页`}
       >
-        {thumb.kind === 'ready' ? (
-          <img className="grid-thumb" src={thumb.url} alt={`第 ${no} 话缩略图`} draggable={false} />
-        ) : (
-          <div className="grid-placeholder">{status.state === 'empty' ? '空话' : '加载中…'}</div>
-        )}
-        <span className="grid-foot">
-          <span>
-            <span className="num">{chapter.imageCount}</span> 页
-          </span>
-          <span className="chapter-state" title={status.text}>
+        <div className="cc-top">
+          <span className="cc-no">{no === null ? '未编号' : `第 ${no} 话`}</span>
+          <span className="cc-state" title={status.text}>
             <Dot colorVar={CHAPTER_STATE_DOT[status.state]} />
             {status.text}
           </span>
-        </span>
+        </div>
+        <div className="cc-pages">
+          <span className="num">{chapter.translatedCount}</span> / <span className="num">{chapter.imageCount}</span>{' '}
+          页已译
+          {chapter.missingSeqs.length > 0 ? ` · 缺 ${chapter.missingSeqs.length} 页` : ''}
+        </div>
+        <div className="cc-bar">
+          <i
+            style={{
+              width: `${
+                chapter.imageCount > 0 ? Math.round((chapter.translatedCount / chapter.imageCount) * 100) : 0
+              }%`,
+            }}
+          />
+        </div>
       </button>
 
-      {/* 角标走 units 的 `Badge`（D-109 纪律：不新造同类 DOM），外层只负责定位 */}
-      {no === null ? null : (
-        <span className="chapter-badge">
-          <Badge>第 {no} 话</Badge>
-        </span>
-      )}
-
       {/* 悬浮菜单：点它不能顺带把卡片点开（否则"想重译却进了屏 C"） */}
-      <span className="chapter-menu" onClick={(e) => e.stopPropagation()}>
+      <span className="cc-menu" onClick={(e) => e.stopPropagation()}>
         <MenuButton label="⋯" size="sm" title={`第 ${no} 话的操作`}>
           {(close) => (
             <>
