@@ -863,44 +863,147 @@
  * 展开播放器 70 · 队列抽屉 71/72 · Select 弹层 75 · 右键菜单 78 · 歌词设置/登录 80 ·
  * 肤色菜单 81 · 轻提示 90。95 是当前最大值之上留一档，不是"随手取的大数"。
  */
-.modal-mask {
+.modal-layer {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, var(--miao-ink) 26%, transparent);
+  z-index: 95;
   display: grid;
   place-items: center;
-  z-index: 95;
-  backdrop-filter: blur(7px);
-  -webkit-backdrop-filter: blur(7px);
 }
-.modal {
-  width: 400px;
-  max-width: calc(100vw - 48px);
-  background: var(--miao-surface);
-  border: 1px solid var(--miao-line);
-  border-radius: var(--miao-r-xl);
-  padding: 18px;
+.modal-mask {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--miao-ink) 34%, transparent);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  animation: miao-fade-in var(--miao-dur-fast) var(--miao-ease-out);
+}
+/* 卡片：默认 520 宽，`is-wide` 680 / `is-narrow` 420；玻璃底 + 大圆角 + 弥散阴影 */
+.modal-card {
+  position: relative;
+  width: min(520px, 100%);
+  max-height: min(86vh, 780px);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  background: color-mix(in srgb, var(--miao-surface) 94%, transparent);
+  border: 1px solid color-mix(in srgb, var(--miao-line) 70%, transparent);
+  border-radius: var(--miao-r-xl);
   box-shadow: var(--miao-shadow-2);
-  animation: miao-modal-in var(--miao-dur-base) var(--miao-ease-spring);
+  backdrop-filter: blur(22px) saturate(1.1);
+  -webkit-backdrop-filter: blur(22px) saturate(1.1);
+  animation: miao-modal-in var(--miao-dur-slow) var(--miao-ease-spring);
+  overflow: hidden;
 }
-.modal-title {
+.modal-card.is-wide {
+  width: min(680px, 100%);
+}
+.modal-card.is-narrow {
+  width: min(420px, 100%);
+}
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px 20px 0;
+}
+.modal-head > div {
+  flex: 1;
+  min-width: 0;
+}
+.modal-kicker {
+  display: block;
+  margin-bottom: 4px;
   font-family: var(--md-font-display);
+  font-size: 9px;
   font-weight: 700;
-  font-size: 18px;
+  letter-spacing: 0.16em;
+  color: var(--miao-accent-ink);
+}
+.modal-head h2 {
+  font-family: var(--md-font-display);
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--miao-ink);
+}
+.modal-head p {
+  margin-top: 4px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--miao-muted);
 }
 .modal-body {
+  padding: 16px 20px 18px;
+  overflow: auto;
+  min-height: 0;
   font-size: 12px;
   color: var(--miao-text);
   line-height: 1.65;
 }
-.modal-actions {
+.modal-foot {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 6px;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--miao-line);
+  background: var(--miao-surface-2);
+}
+.modal-foot .grow {
+  flex: 1;
+}
+/* 弹窗右上角的关闭键（设计稿 `.icon-btn`）：无底、悬停才浮出一层浅底 */
+.icon-btn {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--miao-muted);
+  cursor: pointer;
+  transition:
+    background var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease;
+}
+.icon-btn:hover:not(:disabled) {
+  background: var(--miao-surface-2);
+  color: var(--miao-ink);
+}
+.icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* 轻确认行（设计稿 `.confirm-line`）：图标 + 一句主文案 + 可选补充，整块是一枚浅色提示 */
+.confirm-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: var(--miao-danger-soft);
+  color: color-mix(in srgb, var(--miao-danger) 82%, #000);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.confirm-line > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.confirm-line > div {
+  min-width: 0;
+}
+.confirm-line span {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  opacity: 0.82;
+}
+.confirm-line.is-warning {
+  background: var(--miao-warning-soft);
+  color: color-mix(in srgb, var(--miao-warning) 80%, #000);
 }
 
 /* ================================================================

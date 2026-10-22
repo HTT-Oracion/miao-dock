@@ -877,9 +877,13 @@ add('UI.modalAboveExpanded', 'UI', (s) => {
     return z ? Number(z[1]) : null;
   };
   const exp = pickZ('\\.music-exp');
-  const modal = pickZ('\\.modal-mask');
+  /*
+   * 层级现在挂在 `.modal-layer`（弹层骨架）上，`.modal-mask` 只是层内的遮罩 ——
+   * 设计稿把弹窗拆成 layer / mask / card 三段。先找 layer，再回落到 mask（兼容旧写法）。
+   */
+  const modal = pickZ('\\.modal-layer') ?? pickZ('\\.modal-mask');
   if (exp === null || modal === null)
-    return { ok: false, detail: '未解析到 .music-exp / .modal-mask 的 z-index（选择器或写法变了）' };
+    return { ok: false, detail: '未解析到 .music-exp / .modal-layer 的 z-index（选择器或写法变了）' };
   return {
     ok: modal > exp,
     detail: modal > exp ? '' : `退出确认(z)=${modal} 被展开播放器(z)=${exp} 盖住 —— 点「退出喵坞」不会有任何反应`,

@@ -424,14 +424,20 @@
   background: var(--md-surface-2);
 }
 /*
- * 破坏性动作（取消）：次按钮描边 + 文字 ink-2，hover 转 error。
- * 《02》§5.2 **明确禁止用 pink** —— 破坏性动作不能穿主推进的衣服。
+ * 破坏性动作（确认层里的「退出喵坞」/「删除」）：**实心破坏色**。
+ * 《02》§5.2 **明确禁止用 pink** —— 破坏性动作不能穿主推进的衣服；
+ * 同时它必须是**实心**而不是浅底描边：确认层里它是主动作，浅底会被读成次按钮，
+ * 与旁边「留在后台」这个安全出口混为一谈（B3c 直接比对底色与 error 令牌）。
  */
 .btn-danger {
-  border: 1px solid var(--md-line);
-  background: var(--miao-danger-soft);
-  color: color-mix(in srgb, var(--miao-danger) 82%, #000);
-  border-color: color-mix(in srgb, var(--miao-danger) 24%, transparent);
+  border: 1px solid var(--md-error);
+  background: var(--md-error);
+  color: #fff;
+}
+.btn-danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--md-error) 82%, #000);
+  background: color-mix(in srgb, var(--md-error) 86%, #000);
+  color: #fff;
 }
 .btn-danger:hover {
   border-color: var(--md-error);

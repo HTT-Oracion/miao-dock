@@ -85,6 +85,7 @@ export function NewBookModal({
 
   return (
     <Modal
+      kicker="LIBRARY / NEW BOOK"
       title="新建漫画"
       busy={busy}
       onClose={onCancel}
@@ -220,6 +221,7 @@ export function EditBookModal({
 
   return (
     <Modal
+      kicker="LIBRARY / EDIT BOOK"
       title={`编辑《${book.bookName}》`}
       busy={busy}
       onClose={onCancel}
@@ -615,6 +617,7 @@ export function HiddenComicsModal({
 }) {
   return (
     <Modal
+      kicker="LIBRARY / HIDDEN"
       title="已隐藏的漫画"
       onClose={onClose}
       actions={

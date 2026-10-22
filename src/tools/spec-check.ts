@@ -355,7 +355,8 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
       body ? (shown.includes(want) ? '逐字命中' : `实际：${shown.slice(0, 60)}…`) : '未渲染',
     );
 
-    const actions = Array.from(root.querySelectorAll('.modal-actions .btn'));
+    // 动作区在 `modal-foot`（设计稿四段结构）；`.modal-actions` 是旧写法，留作回落
+    const actions = Array.from(root.querySelectorAll('.modal-foot .btn, .modal-actions .btn')) as HTMLElement[];
     const labels = actions.map((b) => (b.textContent ?? '').trim());
     add(
       'B3b',
@@ -364,7 +365,9 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
       labels.join(' / ') || '未渲染',
     );
 
-    const danger = q<HTMLElement>(root, '.modal-actions .btn-danger');
+    // 动作区在 `modal-foot`（设计稿四段结构）；`.modal-actions` 是旧写法，留作回落
+    const danger =
+      q<HTMLElement>(root, '.modal-foot .btn-danger') ?? q<HTMLElement>(root, '.modal-actions .btn-danger');
     const dc = danger ? getComputedStyle(danger) : null;
     add(
       'B3c',
