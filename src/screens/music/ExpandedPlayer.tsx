@@ -27,7 +27,7 @@ import { canUseHeartbeat } from '@music/actions/playback';
 import { coverProxyUrl, fmtTime, songKey } from '@music/convert';
 import type { PlayerSkin } from '@music/store';
 import type { MusicComment } from '@music/types';
-import { ColorPicker, Empty, IconButton, PlayModeButton, Select, Switch } from '@components/units';
+import { Btn, ColorPicker, Empty, IconButton, PlayModeButton, Select, Switch } from '@components/units';
 // 六皮肤的封面取色基础设施（useCoverColor / useCoverEdgeColor / makeVividColor）。
 // 注意：按本项目 D-41 收口，use* 命名的文件必须住 src/hooks/，故该模块文件名为 coverColor.ts。
 import { makeVividColor, useCoverColor, useCoverEdgeColor } from '@hooks/useCoverColor';
@@ -515,37 +515,41 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
 
             {/* Tab 只在「现代 / 通透」出现 */}
             {showTabs ? (
-              <div className="music-exp-ltabs">
-                <button
-                  type="button"
+              <div className="music-exp-ltabs" role="tablist">
+                <Btn
+                  kind="bare"
+                  role="tab"
+                  ariaSelected={!showComments}
                   className={showComments ? 'music-exp-ltab' : 'music-exp-ltab is-on'}
                   onClick={() => setCommentTab('lyric')}
                 >
                   歌词
-                </button>
+                </Btn>
                 {caps.comments ? (
-                  <button
-                    type="button"
+                  <Btn
+                    kind="bare"
+                    role="tab"
+                    ariaSelected={showComments}
                     className={showComments ? 'music-exp-ltab is-on' : 'music-exp-ltab'}
                     onClick={() => setCommentTab('comments')}
                   >
                     评论
-                  </button>
+                  </Btn>
                 ) : null}
                 {/*
                   「译」开关（设计稿 `.xp-tab-tools` 的 chip）：只控制**译文行**的显隐，
                   不重新拉歌词 —— 译文在 `loadLyrics` 时已按时间轴合并进每一行，
                   关掉只是不渲染那一行，切换是即时的。
                 */}
-                <button
-                  type="button"
+                <Btn
+                  kind="bare"
                   className={showTranslation ? 'music-exp-trans chip chip-soft is-on' : 'music-exp-trans chip'}
                   title="显示 / 隐藏歌词翻译"
-                  aria-pressed={showTranslation}
+                  ariaPressed={showTranslation}
                   onClick={() => setShowTranslation(!showTranslation)}
                 >
                   译
-                </button>
+                </Btn>
               </div>
             ) : null}
 
@@ -625,8 +629,8 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
 
             {/* 切换样式：触发器是**带文字标签的按钮**（不是图标按钮），点击打开图片预览弹层 */}
             <div className="music-exp-stylewrap">
-              <button
-                type="button"
+              <Btn
+                kind="bare"
                 className="music-exp-stylebtn"
                 title="播放器皮肤"
                 onClick={() => setStyleMenuOpen((v) => !v)}
@@ -634,7 +638,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
                 <StyleIcon size={16} />
                 <span>{skinMeta.label}</span>
                 <span className="music-exp-new">NEW</span>
-              </button>
+              </Btn>
 
               {styleMenuOpen ? (
                 <>
@@ -642,10 +646,11 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
                   <div className="music-style-backdrop" onClick={() => setStyleMenuOpen(false)} />
                   <div className="music-style-pop">
                     {styleCards.map((s) => (
-                      <button
+                      <Btn
                         key={s.id}
-                        type="button"
+                        kind="bare"
                         className={s.id === skin ? 'music-style-card is-on' : 'music-style-card'}
+                        ariaPressed={s.id === skin}
                         onClick={() => {
                           // 点击即切换并关闭弹层（不是单击循环切换）
                           setSkin(s.id);
@@ -654,7 +659,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
                       >
                         <img className="music-style-thumb" src={s.preview} alt={s.label} />
                         <span className="music-style-lb">{s.label}</span>
-                      </button>
+                      </Btn>
                     ))}
                   </div>
                 </>

@@ -1,11 +1,11 @@
-import { ChevronLeft, Play, RefreshCw } from 'lucide-react';
+﻿import { ChevronLeft, Play, RefreshCw } from 'lucide-react';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl, songKey } from '@music/convert';
 import type { LeftView } from '@music/store';
 import type { Playlist } from '@music/types';
 import { HistoryView } from '@screens/music/HistoryView';
 import { LocalView } from '@screens/music/LocalView';
-import { Empty, VirtualList } from '@components/units';
+import { Btn, Empty, VirtualList } from '@components/units';
 import { Cover, SongRow } from '@screens/music/shared';
 
 // Tab 文案与设计稿左栏一致：`歌单 / 本地 / 历史`（不写"我的歌单 / 播放历史"的长名，
@@ -35,11 +35,11 @@ export function LeftPanel() {
           听不出"当前在哪个视图"。 */}
       <div className="ltabs" role="tablist">
         {TABS.map((t) => (
-          <button
+          <Btn
             key={t.id}
-            type="button"
+            kind="bare"
             role="tab"
-            aria-selected={active === t.id}
+            ariaSelected={active === t.id}
             className={active === t.id ? 'ltab is-on' : 'ltab'}
             onClick={() => {
               // 点「我的歌单」时若正处在曲目下钻态，要一路退回去，不能只切高亮
@@ -48,7 +48,7 @@ export function LeftPanel() {
             }}
           >
             {t.label}
-          </button>
+          </Btn>
         ))}
       </div>
 
@@ -117,15 +117,16 @@ function PlaylistsView() {
             <div className="ms-caption">
               {row.label}
               {row.key === 'g-created' ? (
-                <button
-                  type="button"
+                <Btn
+                  kind="bare"
                   className="text-btn"
+                  ariaLabel="刷新歌单"
                   disabled={loading}
                   title="刷新歌单"
                   onClick={() => void loadUserPlaylists()}
                 >
                   <RefreshCw size={11} />
-                </button>
+                </Btn>
               ) : null}
             </div>
           ) : (
@@ -169,23 +170,23 @@ function LeftTracksView() {
   return (
     <div className="music-body">
       <div className="music-card-hd">
-        <button type="button" className="music-btn out" onClick={back}>
+        <Btn kind="bare" className="music-btn out" ariaLabel="返回" onClick={back}>
           <ChevronLeft size={12} /> 返回
-        </button>
+        </Btn>
         <span className="music-card-title">{meta?.name ?? '歌单'}</span>
         <span className="music-card-sub">
           {tracks.length}
           {total ? ` / ${total}` : ''} 首
         </span>
         <div className="grow" />
-        <button
-          type="button"
+        <Btn
+          kind="bare"
           className="music-btn pri"
           disabled={tracks.length === 0}
           onClick={() => void playPlaylist(tracks, { playlist: meta ?? undefined })}
         >
           <Play size={12} /> 播放全部
-        </button>
+        </Btn>
       </div>
 
       {loading ? (

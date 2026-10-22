@@ -1,4 +1,4 @@
-﻿import type { CSSProperties, MouseEvent, ReactNode } from 'react';
+import type { CSSProperties, MouseEvent, ReactNode } from 'react';
 import { QUEUE_EMPTY } from '@/themes/tokens';
 
 /*
@@ -67,6 +67,8 @@ export function Btn({
   title,
   ariaLabel,
   ariaPressed,
+  role,
+  ariaSelected,
   active,
   className,
   style,
@@ -86,6 +88,14 @@ export function Btn({
   ariaLabel?: string;
   /** 开关型按钮的按下态（分段控件 / 切换钮）：有它读屏才会说「已按下」 */
   ariaPressed?: boolean;
+  /**
+   * 只开放**两个**角色：`tab`（页签组里的一枚）与 `option`（列表里的可选项）。
+   * 不开放任意字符串 —— 给 `<button>` 挂 `role="button"` / `role="menuitem"` 这类
+   * 语义错配比不挂更糟；而这两个是"外观是按钮、语义是别的东西"的正当场景。
+   */
+  role?: 'tab' | 'option';
+  /** 配合 `role="tab"` / `role="option"` 的选中态 */
+  ariaSelected?: boolean;
   /** 当前项（翻页器页码 / 已选中的筛选钮）：只加 `is-active`，样式由调用处决定 */
   active?: boolean;
   /** 屏内业务类名；`kind="bare"` 时它是**唯一**的类名 */
@@ -111,6 +121,8 @@ export function Btn({
       title={title}
       aria-label={ariaLabel}
       aria-pressed={ariaPressed}
+      role={role}
+      aria-selected={ariaSelected}
       style={style}
     >
       {children}

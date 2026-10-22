@@ -1,4 +1,4 @@
-﻿import {
+import {
   ChevronLeft,
   ChevronRight,
   Heart,
@@ -54,11 +54,11 @@ export function RightPanel() {
             const on = p.id === playbackSource;
             const li = loginInfos[p.id];
             return (
-              <button
+              <Btn
                 key={p.id}
-                type="button"
+                kind="bare"
                 role="tab"
-                aria-selected={on}
+                ariaSelected={on}
                 className={on ? 'platform-pill is-active' : 'platform-pill'}
                 title={`${p.label}${li?.logged_in ? ' · 已登录' : ' · 未登录'}`}
                 onClick={() => {
@@ -71,7 +71,7 @@ export function RightPanel() {
                   aria-hidden="true"
                 />
                 {p.label.replace('音乐', '').trim()}
-              </button>
+              </Btn>
             );
           })}
         </div>
@@ -128,17 +128,18 @@ function SearchCaps() {
         const logged = !!loginInfos[p.id]?.logged_in;
         const on = p.id === searchProvider;
         return (
-          <button
+          <Btn
             key={p.id}
-            type="button"
+            kind="bare"
             className={on ? 'cap is-on' : 'cap'}
+            ariaPressed={on}
             disabled={!logged}
             title={logged ? `用 ${p.label} 搜索` : '未登录不可搜'}
             onClick={() => setSearchProvider(p.id)}
           >
             <i className="cap-dot" style={{ background: logged ? '#22C55E' : 'var(--md-muted)' }} />
             {p.label}
-          </button>
+          </Btn>
         );
       })}
       <span className="cap-note">搜索源独立于播放源</span>
@@ -332,14 +333,9 @@ function Recommendations() {
               {providerLabel(playbackSource)} · 为你挑选 {newSongs.length} 首
             </span>
             <div className="grow" />
-            <button
-              type="button"
-              className="music-btn out"
-              disabled={loadingNewSongs}
-              onClick={() => void loadRecommend()}
-            >
+            <Btn kind="bare" className="music-btn out" disabled={loadingNewSongs} onClick={() => void loadRecommend()}>
               <RefreshCw size={12} /> {loadingNewSongs ? '刷新中…' : '换一批'}
-            </button>
+            </Btn>
           </div>
           {newSongs.length === 0 ? (
             <Empty sub="换一个平台，或登录账号同步更多内容。">
@@ -510,14 +506,14 @@ function RightTracksView() {
         <span className="music-card-title">{meta?.name ?? '曲目'}</span>
         <span className="music-card-sub">{tracks.length} 首</span>
         <div className="grow" />
-        <button
-          type="button"
+        <Btn
+          kind="bare"
           className="music-btn pri"
           disabled={tracks.length === 0}
           onClick={() => void playPlaylist(tracks, { playlist: meta ?? undefined })}
         >
           <Play size={12} /> 播放全部
-        </button>
+        </Btn>
       </div>
 
       {loading ? (
@@ -579,14 +575,14 @@ function DailyView() {
         <span className="music-card-title">每日推荐</span>
         <span className="music-card-sub">{songs.length} 首</span>
         <div className="grow" />
-        <button
-          type="button"
+        <Btn
+          kind="bare"
           className="music-btn pri"
           disabled={songs.length === 0}
           onClick={() => void playPlaylist(songs)}
         >
           <Play size={12} /> 播放全部
-        </button>
+        </Btn>
       </div>
 
       {loading ? (
