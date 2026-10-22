@@ -1115,6 +1115,30 @@
 }
 
 /* 窄窗：Hero 收成单列、入口卡两列（设计稿 ≤1040px 档） */
+/*
+ * 窄窗三档（设计稿 §Responsive）：1320 收窄两侧、1180 去掉右栏。
+ * 不做的话，1100px 的窗口仍被左 234 + 右 252 吃掉 486px —— 中间栏只剩 600 出头，
+ * 歌曲行与 Hero 都开始挤；而"正在播放"在窄窗里本来就是**可以先让位**的那一栏
+ * （它是信息卡，不是控制台，控制都在底部播放条上）。
+ */
+@media (max-width: 1320px) {
+  .music-layout {
+    grid-template-columns: 220px minmax(0, 1fr) 232px;
+  }
+  .music-center {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+}
+@media (max-width: 1180px) {
+  .music-layout {
+    grid-template-columns: 214px minmax(0, 1fr);
+  }
+  .music-now {
+    display: none;
+  }
+}
+
 @media (max-width: 1040px) {
   .music-hero {
     grid-template-columns: 1fr;
