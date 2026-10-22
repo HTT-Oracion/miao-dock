@@ -1,9 +1,10 @@
-﻿// 设置页 —— 由 sections.tsx 按 Section 拆分（D-150）。
+// 设置页 —— 由 sections.tsx 按 Section 拆分（D-150）。
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useMusicStore } from '@music/store';
 import { Btn, ColorPicker, Range, Select, Swatches, Switch } from '@components/units';
 import { CtlNote, GroupNote, ReadOnly } from '@screens/settings/parts';
+import { AccountCardsBlock } from '@screens/settings/AccountCardsBlock';
 import {
   SKINS,
   QUALITY_OPTIONS,
@@ -234,6 +235,8 @@ export function MediaSection() {
     <>
       {/* 组说明缺省即不渲染（GroupNote 自守）：catalog 未给 MEDIA.note 时这一行自动消失 */}
       <GroupNote summary={MEDIA.noteSummary}>{MEDIA.note as string}</GroupNote>
+      {/* 设计稿把「音乐账号」排在 ③ 的第一张卡：设置页里只有它能把四个平台一次看全 */}
+      <AccountCardsBlock />
       {/* 按 catalog 的 groups 顺序渲染三小节：写死第一组会静默漏掉「歌词 / 透明彩胶」 */}
       {MEDIA.groups.map((g) => (
         <Group key={g.id} group={g} render={render} />

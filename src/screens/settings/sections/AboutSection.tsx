@@ -1,4 +1,4 @@
-﻿// 设置页 —— 由 sections.tsx 按 Section 拆分（D-150）。
+// 设置页 —— 由 sections.tsx 按 Section 拆分（D-150）。
 import { useEffect, useState } from 'react';
 import { Info } from 'lucide-react';
 import { getVersion } from '@tauri-apps/api/app';
@@ -76,7 +76,12 @@ export function AboutSection() {
 
       {/* ── 卡二：第三方许可 + 开源反馈（设计稿同卡）── */}
       <div className="set-group">
-        <SubTitle head="npm / Rust / 引擎与模型许可清单">第三方许可</SubTitle>
+        {/* 设计稿渲染层那句是「清单枚举自 npm 与 Rust 两侧依赖；列的是各包自己声明的许可」。
+            产品的清单**多出引擎上游与模型两段**（C5：许可逐条来自模型清单与版本锁），
+            照搬会把这两段说丢 ⇒ 保留设计稿的句式，把产品实际多出来的那两段补进同一句 */}
+        <SubTitle head="清单枚举自 npm 与 Rust 两侧依赖，另加引擎上游与模型资产两段；列的是各包自己声明的许可">
+          第三方许可
+        </SubTitle>
         <LicensesBlock item={itemOf(g, 'licenses')} />
         <PendingRow item={itemOf(g, 'oss-feedback')} />
       </div>

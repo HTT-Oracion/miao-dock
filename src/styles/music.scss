@@ -3499,6 +3499,58 @@
   border-radius: 10px;
   font-size: 12px;
 }
+/*
+ * 设置页 ③ 的平台账号卡（设计稿 `.account-grid` / `.account-card`）：两列四格，
+ * 每格「圆标 + 平台名与状态 + 一个动作」。动作压到 24 高、9px ——
+ * 这张卡是来**读状态**的，按钮不能比状态本身更抢眼。
+ */
+.account-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 12px 16px;
+}
+.account-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px;
+  border-radius: 10px;
+  background: var(--miao-surface-2);
+  border: 1px solid var(--miao-line);
+}
+/* 卡里的圆标比弹窗列表里那枚略大、字略小（设计稿同一条覆盖规则） */
+.account-card .provider-orb {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 9px;
+}
+.account-card-tx {
+  min-width: 0;
+  flex: 1;
+}
+.account-card-tx strong {
+  display: block;
+  font-size: 10px;
+  color: var(--miao-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.account-card-tx small {
+  display: block;
+  font-size: 8.5px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.account-card .btn {
+  height: 24px;
+  padding: 0 7px;
+  font-size: 9px;
+}
 /* 设计稿 `.login-note`：组件一直在用这个类，样式此前是缺的（于是这句提示按正文渲染） */
 .login-note {
   margin-top: 12px;

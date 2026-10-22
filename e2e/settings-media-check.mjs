@@ -60,6 +60,8 @@ const F = {
   secGeneral: path.join(APP, 'src', 'screens', 'settings', 'sections', 'GeneralSection.tsx'),
   secTranslate: path.join(APP, 'src', 'screens', 'settings', 'sections', 'TranslateSection.tsx'),
   secMedia: path.join(APP, 'src', 'screens', 'settings', 'sections', 'MediaSection.tsx'),
+  // ③ 的第一张卡（设计稿 `.account-grid`）：不在 `sections/` 里，所以单独一个源键
+  accountCards: path.join(APP, 'src', 'screens', 'settings', 'AccountCardsBlock.tsx'),
   secAbout: path.join(APP, 'src', 'screens', 'settings', 'sections', 'AboutSection.tsx'),
   store: path.join(APP, 'src', 'modules', 'music', 'store.ts'),
   // D-156：music/store.ts 的 action 段已按切片切到 music/actions/*.ts。
@@ -259,6 +261,7 @@ function loadSources() {
     desktopGuards: readMaybe(F.desktopGuards),
     entryHtml: readMaybe(F.entryHtml),
     cacheBlock: readMaybe(F.cacheBlock),
+    accountCards: readMaybe(F.accountCards),
     engineApi: readMaybe(F.engineApi),
     engineState: readMaybe(F.engineState),
     engineDiag: readMaybe(F.engineDiag),
@@ -577,6 +580,26 @@ add('ADDED.groups', 'ADDED', (ctx) => {
     ok: exact,
     detail: exact ? '' : `MEDIA 小程序应为 [${MEDIA_GROUPS.join(', ')}]（按此顺序），实为 [${ids.join(', ')}]`,
   };
+});
+add('ADDED.accountCards', 'ADDED', (ctx) => {
+  // ③ 的第一张卡（设计稿 `.account-grid`：四个平台的账号状态）。
+  // 判据取**成因**：数据必须来自 store、动作必须走现有 action、格子必须映射平台表 ——
+  // 只钉"页面上有几个 div"的话，摆四张假卡也算绿。
+  const comp = stripComments(ctx.s.accountCards ?? '');
+  const secs = ctx.s.sections;
+  const problems = [];
+  if (!comp) problems.push('AccountCardsBlock.tsx 读不到');
+  else {
+    if (!/PLATFORMS\.map/.test(comp)) problems.push('四格没有从平台表映射（写死四条会随平台数漂移）');
+    if (!/loginInfos/.test(comp)) problems.push('状态没接 store 的 loginInfos（等于摆四张演示卡）');
+    if (!/openLogin\(/.test(comp) || !/logoutFor\(/.test(comp)) problems.push('登录 / 退出没接现有的两个 action');
+    if (/<button[\s>]/.test(comp)) problems.push('出现裸 <button>（按钮一律走单元）');
+    if (!comp.includes('登录后同步歌单、收藏与播放记录；凭证仅保存在本机'))
+      problems.push('卡头那句不是设计稿渲染层的原句');
+    if (!comp.includes('状态未知')) problems.push('探测没回来时应说「状态未知」，不是「未登录」');
+  }
+  if (!/<AccountCardsBlock \/>/.test(secs)) problems.push('MediaSection 没渲染这张卡（会静默少掉设计稿的第一张）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
 });
 add('ADDED.total', 'ADDED', (ctx) => {
   const { cat } = ctx;
@@ -3271,6 +3294,13 @@ const MUTATIONS = [
     find: "  stopping: { text: '正在停止', colorVar: '--md-muted' },\n",
     replace: '',
     expect: ['NOTREADY.state.fiveStates'],
+  },
+  {
+    name: '把 ③ 的「音乐账号」卡从 MediaSection 摘掉（设计稿第一张卡静默消失）',
+    file: F.secMedia,
+    find: '      <AccountCardsBlock />\n',
+    replace: '',
+    expect: ['ADDED.accountCards'],
   },
   {
     name: '把 MediaSection 的遍历改回 MEDIA.groups[0]（只渲染第一小节）',

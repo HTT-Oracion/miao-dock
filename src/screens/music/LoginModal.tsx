@@ -1,5 +1,6 @@
 import { ExternalLink, LoaderCircle, X } from 'lucide-react';
 import { Btn, IconButton } from '@components/units';
+import { memberLabel } from '@music/convert';
 import { PLATFORM_MAP, providerLabel } from '@music/platform';
 import type { MusicProvider } from '@music/types';
 import { useMusicStore } from '@music/store';
@@ -100,10 +101,8 @@ export function LoginModal() {
                   </span>
                   <div>
                     <h4>{info?.nickname || '已登录'}</h4>
-                    {/* 会员态来自平台回读（`is_vip` / `is_svip`）。各平台对"等级"的口径不同
-                        （网易云 vipType≥10 与 QQ/酷狗的 svip 判定不是一回事），
-                        所以这里只说**能确定的那半句**：是不是会员，不替平台给它起会员名。 */}
-                    <p>{info?.is_vip || info?.is_svip ? '会员' : '非会员'} · 收藏与歌单已同步</p>
+                    {/* 会员态来自平台回读，措辞与设置页③的平台卡同出处（`memberLabel`） */}
+                    <p>{memberLabel(info ?? {})} · 收藏与歌单已同步</p>
                   </div>
                   <Btn kind="ghost" size="sm" onClick={() => void logoutFor(loginProvider)}>
                     退出登录

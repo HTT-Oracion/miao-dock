@@ -73,3 +73,13 @@ export function fmtTime(ms: number): string {
   const s = total % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
 }
+
+/**
+ * 会员状态的两个字（登录弹窗的账号卡与设置页③的平台卡共用一句）。
+ *
+ * ⚠️ 只说**能确定的那半句**：各平台对"等级"的判定口径不同（网易云按 `vipType` 阈值、
+ * QQ / 酷狗另有 SVIP 探测分支），所以不替平台起会员名，只回答"是不是会员"。
+ */
+export function memberLabel(vip: { is_vip?: boolean; is_svip?: boolean }): string {
+  return vip.is_vip || vip.is_svip ? '会员' : '非会员';
+}
