@@ -9054,5 +9054,39 @@ C12 明细逐项打印 `下拉 186×32 / 小按钮 28·r9 / 只读值 28·r8 / �
 **9px / rgb(165,177,186)**=faint、开关 22h；`npm run check` 20/20（exit 0）·
 `check:settings` 186/186 + 反证 **144/144** · `check:units` 46/46 + 反证 61/61 ·
 `check:music` 反证 232/232 · `tsc` / `eslint` / `vite build` 通过。
+## D-357 · 令牌缺一档 = 整条声明静默失效；兜底是这类缺陷最好的掩体（2026-10-23）
+
+**一、起点是图标尺寸，落点是令牌层。** 本轮按设计稿的图标梯子（`.ico` 18 / `.ico-sm` 15 /
+`.ico-lg` 22 / `.btn .ico` 16 / `.btn-sm .ico` **13** / `.icon-btn-sm .ico` 15 /
+`.search-clear .ico` 11 / `.link-btn .ico` 12 / `.notice .ico` 15 / `.s-note .ico` **13**）
+在浏览器里量渲染值，尺寸基本都对；但在比颜色时发现：
+**`--miao-accent-ink` 被 5 条 CSS 使用，却从未在 `themes/tokens.ts` 定义**
+（accent 一族只有 `soft` / `line`，**缺 `ink` 这一档** —— 一个族少了一个兄弟）。
+
+**二、后果比"没颜色"严重。** 按 CSS 规范，未定义的自定义属性让**整条声明失效（IACVT）**，
+`color` 回落到继承值：那几行 CSS 还在、长得也没错、**浏览器一声不吭**。
+表现就是"kicker / 徽标 / 注解毒一直是灰的"，任何人看图都会以为设计就是灰的。
+
+**三、🔴 兜底值把缺陷盖成了观感。** 其中一处写着
+`color: var(--miao-accent-ink, var(--miao-muted))` —— 它让"缺令牌"这件事看起来完全正常。
+本轮的处理顺序是：① 补令牌（值取设计稿 `--accent-deep` 两档：浅 `#BE7F57` / 深 `#EFC4A4`）；
+② 注解毒改用 `--miao-accent-ink`（设计稿 `.s-note .ico` 用的就是 deep，不是 accent 本身）；
+③ **把那个兜底删掉** —— 语义令牌宁可可红，不要静默变灰。
+于是加了两条门：`STYLE.tokensDefined`（用到的 `--miao-*` 必须有定义）与
+`STYLE.noSilentTokenFallback`（语义令牌不许挂兜底）。**后者专治前者被绕过的方式**。
+
+**四、新判据自己先错了一次，修法不是放宽。** 第一版只认引号字面量，于是把
+`--miao-r-lg / xl / md` 全家 9 处误报"未定义" —— 它们是 `out[`--miao-r-${k}`] = ...`
+**循环生成**的。若在此刻把判据改成"跳过 r- 一族"就是假绿。改法：
+认模板前缀 ⇒ 命中前缀算已定义，**同时**用该对象的键把后缀再校一遍
+（伪造 `--miao-r-xlarge` 实测仍然红）。**放宽一处的同时必须收紧另一处**，否则门就变成了装饰。
+
+**五、还抓到一条关于"文档计数"的口径**：`check:docs` 比对条数时取的是行内**最大**的那个「N 条」，
+我把 units 的反证数 63 也写进 README/AGENTS，它就把 63 当主条数 ⇒ 报红（settings 那行侥幸没错，
+是因为 144 < 186）。已在 units 行改成只写主数，并把这条口径写进 AGENTS，免得下一个人再撞。
+
+**六、验证**：CDP 实测 `--miao-accent-ink` ⇒ `#BE7F57`，注解毒计算值 `rgb(190,127,87)` / 13px；
+`check:units` **48/48**（46→48）+ 反证 **63/63**（61→63）· `npm run check` 20/20（exit 0）·
+`check:docs` / `check:counts` 绿 · `tsc` / `eslint` / `vite build` 通过。
 `npm run check` **20/20（exit 0）** · `check:settings` 186/186 + 反证 **144/144** ·
 `check:music` 237/237 · `tsc` / `vite build` 通过。
