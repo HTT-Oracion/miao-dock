@@ -144,18 +144,20 @@ export const GENERAL: SettingSection = {
       id: 'main',
       title: null,
       items: [
-        { id: 'dark-mode', label: '深色模式', state: 'live', def: '浅色' },
+        { id: 'dark-mode', label: '深色模式', state: 'live', why: '柔和的夜色，长时间使用不刺眼', def: '浅色' },
         {
           id: 'close-window',
           label: '关闭窗口行为',
           state: 'live',
+          why: '点击关闭按钮时收起到托盘',
           def: '收起到托盘',
         },
-        { id: 'spec-check', label: '规格自检', state: 'live' },
+        { id: 'spec-check', label: '规格自检', state: 'live', why: '核对设置项、模块目录与契约完整性' },
         {
           id: 'sidebar-labels',
           label: '侧栏图标标签',
           state: 'live',
+          why: '在应用图标下显示名称',
           def: '显示',
         },
       ],
@@ -185,9 +187,7 @@ export const TRANSLATE: SettingSection = {
           label: '翻译来源',
           state: 'live',
           def: '本地引擎',
-          why:
-            '本地引擎在本机完成翻译；在线 API 把原文发给第三方平台。' +
-            '切换来源对，下一次翻译生效，进行中的任务按发起时的来源跑完。',
+          why: '本地引擎或在线 API，下一次翻译生效',
         },
       ],
     },
@@ -195,16 +195,16 @@ export const TRANSLATE: SettingSection = {
       id: 'pairing',
       title: '服务与配对',
       items: [
-        { id: 'service-endpoint', label: '服务状态与端口', state: 'live' },
+        { id: 'service-endpoint', label: '服务状态与端口', state: 'live', why: '本地翻译服务与引擎端口' },
         {
           id: 'service-auto-start',
           label: '自动启动翻译服务',
           state: 'live',
           def: '开',
-          why: '开：启动喵坞时自动拉起本地服务（默认）。' + '关：通过「启动本地服务」手动拉起 —— ',
+          why: '进入喵坞时自动拉起本地服务',
         },
-        { id: 'token-pairing', label: '令牌配对', state: 'live' },
-        { id: 'root-dir', label: '落盘根目录', state: 'live' },
+        { id: 'token-pairing', label: '令牌配对', state: 'live', why: '服务与引擎之间的本地鉴权令牌' },
+        { id: 'root-dir', label: '落盘根目录', state: 'live', why: '漫画原图与译文的保存位置' },
       ],
     },
     {
@@ -216,36 +216,35 @@ export const TRANSLATE: SettingSection = {
           label: '翻译方向',
           state: 'live',
           def: '日译中',
-          why: '英译中走**离线 nllb**，日译中走 Sakura；未指定方向的任务落默认「日译中」。',
+          why: '日译中或英译中',
         },
         {
           id: 'tier',
           label: '翻译档位',
           state: 'live',
           def: '按硬件探测',
-          why: '物理不可行的档位**不出现**；标「不推荐」并在选中时强警告。' + '改它要**重启引擎**才生效',
+          why: 'Tiny / Small / Medium，改后需重启引擎',
         },
         {
           id: 'backend',
           label: '加速后端',
           state: 'live',
           def: '自动',
-          why: '「自动」按硬件探测；下拉只列本机**真的能用**的后端。' + '改它要重启引擎。',
+          why: 'auto / CUDA / MPS / CPU',
         },
         {
           id: 'idle-llm',
           label: '空闲卸载 LLM',
           state: 'live',
           def: '5 分钟',
-          why: 'Sakura LLM 空闲多久后释放（分钟，**0 = 从不卸载**）。' + '保存后**立刻生效**，不需要重启引擎。',
+          why: 'Sakura 空闲多久后释放，保存即生效',
         },
         {
           id: 'idle-vision',
           label: '空闲卸载视觉',
           state: 'live',
           def: '30 分钟',
-          why:
-            '视觉模型空闲多久后释放（分钟，0 = 从不卸载）。' + '参数在拉开引擎进程时就固化，**必须重启引擎**才生效。',
+          why: '视觉模型空闲释放，需重启引擎',
         },
       ],
     },
@@ -257,7 +256,7 @@ export const TRANSLATE: SettingSection = {
           id: 'model-dir',
           label: '模型目录',
           state: 'live',
-          why: '权重放在哪。服务只在启动时读这个路径，' + '改它需要重启引擎。',
+          why: '权重文件所在的 models-store',
         },
         {
           id: 'model-manage',
@@ -265,9 +264,7 @@ export const TRANSLATE: SettingSection = {
           state: 'live',
           // 通栏块：校验结果是一份"哪几个不符/缺失"的清单，塞不进 Row 的窄右列
           layout: 'block',
-          why:
-            '模型缺失或校验不符时的补救入口：「校验完整性」逐个重算 SHA256（不是"看一眼文件在不在"），' +
-            '「重新下载模型」补齐缺失与不符的权重 —— 已就绪的文件会复用，不会重新下载',
+          why: '校验完整性、补齐缺失与重新下载',
         },
         {
           id: 'engine-diag',
@@ -282,7 +279,7 @@ export const TRANSLATE: SettingSection = {
            * ⚠️ why 是**重写**不是删除（《03》§7.1）：ver2.0 那句「默认收起、点开即见」描述的
            * 是"日志也被折叠"的旧形态，本版日志已摘出折叠范围，那句话留着就是错的。
            */
-          why: '进程、参数、模型与阶段日志的现场。',
+          why: '进程、参数、模型与阶段日志现场',
         },
       ],
     },
@@ -304,28 +301,34 @@ export const TRANSLATE: SettingSection = {
  */
 export const MEDIA: SettingSection = {
   id: 'media',
-  name: '播放·媒体',
-  blurb: '播放、歌词等设置',
+  name: '播放 · 媒体',
+  blurb: '播放、歌词与彩胶等设置',
   groups: [
     {
       id: 'playback',
       title: '播放',
       items: [
-        { id: 'quality', label: '音质档位', state: 'live', def: '高清臻音' },
-        { id: 'skin', label: '展开播放器皮肤', state: 'live', def: '现代' },
+        {
+          id: 'quality',
+          label: '音质档位',
+          state: 'live',
+          def: '高清臻音',
+          why: '标准 / 极高 / 无损 / 高清臻音 / 超清母带',
+        },
+        { id: 'skin', label: '展开播放器皮肤', state: 'live', def: '现代', why: '六套播放器皮肤' },
         {
           id: 'dynamic-bg',
           label: '动态背景',
           state: 'live',
           def: '关',
-          why: '让「现代 / 沉浸」两种皮肤的渐变缓慢流动；另外四种皮肤没有可流动的渐变。',
+          why: '现代 / 沉浸皮肤的渐变缓慢流动',
         },
         {
           id: 'disc-mode',
           label: '碟片模式',
           state: 'live',
           def: '关',
-          why: '把展开播放器的封面显示成旋转唱片（播放时转、暂停时停）。',
+          why: '封面显示成旋转唱片',
         },
         {
           id: 'music-cache',
@@ -333,9 +336,7 @@ export const MEDIA: SettingSection = {
           state: 'live',
           // 四格块：塞不进 Row 的窄右列（见 SettingItem.layout 的注释）
           layout: 'block',
-          why:
-            '在线播放的歌词与整首歌会落盘缓存，这里能看占用、按平台清除、打开缓存目录。' +
-            '只统计**在线歌曲**的缓存 —— 你自己导入的本地文件不在其中。',
+          why: '歌词与整首歌的本地缓存，按平台清理',
         },
       ],
     },
@@ -347,6 +348,7 @@ export const MEDIA: SettingSection = {
           id: 'lyrics-mode',
           label: '歌词高亮方式',
           state: 'live',
+          why: '整行点亮或逐字推进',
           def: '逐字',
         },
         {
@@ -354,28 +356,28 @@ export const MEDIA: SettingSection = {
           label: '歌词字号',
           state: 'live',
           def: '19px',
-          why: '作用于「展开播放器」的歌词区',
+          why: '17–48 px，实时预览',
         },
         {
           id: 'lyrics-color',
           label: '歌词高亮色',
           state: 'live',
           def: '#FFE066',
-          why: '作用于「展开播放器」里正在唱的那一行',
+          why: '作用于展开播放器里正在唱的那一行',
         },
         {
           id: 'lyrics-window',
           label: '桌面歌词窗口',
           state: 'live',
           def: '关',
-          why: '独立的置顶小窗，浮在所有应用之上跟随播放；与播放条上的那个开关是同一份状态。',
+          why: '独立的置顶歌词窗',
         },
         {
           id: 'lyrics-locked',
           label: '锁定歌词窗口',
           state: 'live',
           def: '未锁定',
-          why: '锁定后歌词窗不可拖动。macOS 上没有「点击穿透」能力，锁定只表示「不会被误拖走」。',
+          why: '锁定后无法拖动歌词窗',
         },
       ],
     },
@@ -388,14 +390,14 @@ export const MEDIA: SettingSection = {
           label: '彩胶配色',
           state: 'live',
           def: '跟随封面',
-          why: '「透明彩胶」皮肤整张唱片底色：跟随封面主色（本地取色）或固定一个颜色。',
+          why: '跟随封面或固定颜色',
         },
         {
           id: 'vinyl-color',
           label: '彩胶自定义色',
           state: 'live',
           def: '#E8B04B',
-          why: '仅在「彩胶配色 = 固定颜色」时生效；跟随封面主色时本项不可用。',
+          why: '仅固定颜色模式可用',
         },
       ],
     },
@@ -406,7 +408,7 @@ export const MEDIA: SettingSection = {
 export const RESOURCE: SettingSection = {
   id: 'resource',
   name: '资源与投放',
-  blurb: '磁盘占用与清理。投放规则（每批 20 张、其余自动排队）不在设置里 —— 那是规则，不是参数。',
+  blurb: '磁盘占用与清理',
   groups: [
     {
       id: 'main',
@@ -416,6 +418,7 @@ export const RESOURCE: SettingSection = {
           id: 'storage-usage',
           label: '存储占用',
           state: 'live',
+          why: '译文库、音乐缓存与模型占用',
           // 通栏块：三行「名称 / 值 / 来源」塞不进 Row 的窄右列（会同 CacheBlock 的理由）
           layout: 'block',
         },
@@ -423,7 +426,7 @@ export const RESOURCE: SettingSection = {
           id: 'temp-files',
           label: '临时文件',
           state: 'pending',
-          why: '上传暂存在服务侧管理，目前没有可用的列举与清理接口，暂不可用。',
+          why: '上传暂存文件，暂不可清理',
         },
       ],
     },
@@ -434,13 +437,13 @@ export const RESOURCE: SettingSection = {
 export const ABOUT: SettingSection = {
   id: 'about',
   name: '关于',
-  blurb: '版本、许可与反馈渠道。',
+  blurb: '版本、许可与反馈渠道',
   groups: [
     {
       id: 'main',
       title: null,
       items: [
-        { id: 'version', label: '版本号', state: 'live' },
+        { id: 'version', label: '版本号', state: 'live', why: '喵坞 MiaoDock 当前版本' },
         {
           id: 'licenses',
           label: '第三方许可',
@@ -448,16 +451,13 @@ export const ABOUT: SettingSection = {
           // 通栏块：聚合 + 可展开的完整清单，塞不进 Row 的窄右列
           // （⑤ 组由 `AboutSection` 手工渲染，不经过 `Group`；这个字段仍如实描述形态）
           layout: 'block',
-          why:
-            '清单枚举自 npm 与 Rust 两侧依赖，**列的是各包自己声明的许可**，' +
-            '不是我们核准过的结论 —— 所以下方带有免责声明。' +
-            'Rust 侧部分 crate 本机取不到声明，覆盖数会如实标出，不删掉充数。',
+          why: 'npm / Rust / 引擎与模型许可清单',
         },
         {
           id: 'oss-feedback',
           label: '开源反馈',
           state: 'pending',
-          why: '项目尚未公开发布，没有可指向的仓库地址。',
+          why: '项目尚未公开发布',
         },
       ],
     },

@@ -82,3 +82,16 @@ export const SECTION_ICON: Record<SectionId, (props?: any) => React.ReactElement
   // 番剧设置是域内第 6 组（数据在 modules/anime/settings-catalog.ts）
   anime: (props) => <Clapperboard {...(props || {})} />,
 };
+
+/**
+ * 分组页头的英文名 —— 设计稿 kicker 形如 `01 / GENERAL`（序号在前、英文名在后）。
+ * 与 `SECTION_ICON` 同源，加分组时两处一起改。
+ */
+export const SECTION_KICKER: Record<SectionId, string> = {
+  general: 'GENERAL',
+  translate: 'TRANSLATE',
+  media: 'PLAYBACK',
+  resource: 'STORAGE',
+  about: 'ABOUT',
+  anime: 'ANIME',
+};

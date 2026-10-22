@@ -5,7 +5,7 @@ import type { ThemeMode } from '@/themes/tokens';
 import { SETTINGS } from '@/themes/tokens';
 import { SETTINGS_SECTIONS, parseSection, sectionItemCount } from '@screens/settings/catalog';
 import type { SectionId } from '@screens/settings/catalog';
-import { SECTION_ICON } from '@screens/settings/icons';
+import { SECTION_ICON, SECTION_KICKER } from '@screens/settings/icons';
 import { emphasis } from '@screens/settings/parts';
 import { SpecFixtureHost } from '@screens/settings/SpecCheck';
 import { AnimeSettingsSection } from '@screens/anime/AnimeSettingsSection';
@@ -186,7 +186,9 @@ export function SettingsScreen({
           <div className="settings-body">
             <header className="settings-section-head">
               <span className="kicker">
-                {isAnime ? 'MODULE / ANIME' : `PREFERENCES / ${String(sectionIndex + 1).padStart(2, '0')}`}
+                {isAnime
+                  ? '06 / ANIME'
+                  : `${String(sectionIndex + 1).padStart(2, '0')} / ${SECTION_KICKER[section] ?? ''}`}
               </span>
               <h2 style={{ fontSize: SETTINGS.pageTitleSize }}>{isAnime ? '番剧设置' : active?.name}</h2>
               {isAnime ? (

@@ -3242,17 +3242,28 @@ const MUTATIONS = [
   {
     name: '把 quality 项从 MEDIA 里删掉（模拟「该补的没补」）',
     file: F.catalog,
-    find: "        { id: 'quality', label: '音质档位', state: 'live', def: '高清臻音' },\n",
+    find:
+      '        {\n' +
+      "          id: 'quality',\n" +
+      "          label: '音质档位',\n" +
+      "          state: 'live',\n" +
+      "          def: '高清臻音',\n" +
+      "          why: '标准 / 极高 / 无损 / 高清臻音 / 超清母带',\n" +
+      '        },\n',
     replace: '',
     expect: ['ADDED.quality'],
   },
   {
     name: '把 audio-output 项加回 catalog（模拟「剔除了的又回来了」）',
     file: F.catalog,
-    find: "        { id: 'quality', label: '音质档位', state: 'live', def: '高清臻音' },",
+    find: "          id: 'quality',\r\n",
     replace:
-      "        { id: 'quality', label: '音质档位', state: 'live', def: '高清臻音' },\n" +
-      "        { id: 'audio-output', label: '音频输出', state: 'pending', why: '反证' },",
+      "          id: 'quality',\r\n" +
+      "          label: '音频输出',\r\n" +
+      "          state: 'pending',\r\n" +
+      "          why: '反证',\r\n" +
+      '        },\r\n' +
+      '        {\r\n',
     expect: ['EXCLUDED.audio-output'],
   },
   {
@@ -3417,20 +3428,15 @@ const MUTATIONS = [
   {
     name: '把「音乐缓存」项整条从 catalog 里删掉（模拟「加了项但忘了算进项数」）',
     file: F.catalog,
-    // 整条（含 id/label/state/layout）一起删 —— 只改 id 的话项还在，
-    // COUNT.total 仍然对得上（那是**正确**的行为，不是假阳性）。
-    // 判据是「真的导入 catalog 求和」，所以只有项真的少了它才会红。
     find:
-      '        {\n' +
-      "          id: 'music-cache',\n" +
-      "          label: '音乐缓存',\n" +
-      "          state: 'live',\n" +
-      '          // 四格块：塞不进 Row 的窄右列（见 SettingItem.layout 的注释）\n' +
-      "          layout: 'block',\n" +
-      '          why:\n' +
-      "            '在线播放的歌词与整首歌会落盘缓存，这里能看占用、按平台清除、打开缓存目录。' +\n" +
-      "            '只统计**在线歌曲**的缓存 —— 你自己导入的本地文件不在其中。',\n" +
-      '        },\n',
+      '        {\r\n' +
+      "          id: 'music-cache',\r\n" +
+      "          label: '音乐缓存',\r\n" +
+      "          state: 'live',\r\n" +
+      '          // 四格块：塞不进 Row 的窄右列（见 SettingItem.layout 的注释）\r\n' +
+      "          layout: 'block',\r\n" +
+      "          why: '歌词与整首歌的本地缓存，按平台清理',\r\n" +
+      '        },\r\n',
     replace: '',
     expect: ['ADDED.music-cache', 'COUNT.total'],
   },
@@ -3452,12 +3458,13 @@ const MUTATIONS = [
     name: '把「歌词高亮方式」项整条从 catalog 里删掉（模拟「加了项但忘了算进项数」）',
     file: F.catalog,
     find:
-      '        {\n' +
-      "          id: 'lyrics-mode',\n" +
-      "          label: '歌词高亮方式',\n" +
-      "          state: 'live',\n" +
-      "          def: '逐字',\n" +
-      '        },\n',
+      '        {\r\n' +
+      "          id: 'lyrics-mode',\r\n" +
+      "          label: '歌词高亮方式',\r\n" +
+      "          state: 'live',\r\n" +
+      "          why: '整行点亮或逐字推进',\r\n" +
+      "          def: '逐字',\r\n" +
+      '        },\r\n',
     replace: '',
     expect: ['ADDED.lyrics-mode', 'COUNT.total'],
   },
