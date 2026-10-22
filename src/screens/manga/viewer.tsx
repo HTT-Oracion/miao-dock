@@ -347,52 +347,59 @@ function Lightbox({
       {/* 隐藏后留一条极窄的提示带：否则用户不知道还能点回来 */}
       {barHidden ? <div className="lightbox-hint">点图显示工具栏</div> : null}
 
-      {!barHidden ? (
-        <div className="lightbox-bar" onClick={(e) => e.stopPropagation()}>
-          <span className="compare-seq">
-            <span className="num">{seq}</span>
-            <span> / </span>
-            <span className="muted">· {label} · </span>
-            <span className="muted">{title}</span>
-          </span>
-          {/*
+      {/*
+        工具栏**常驻挂载、只淡出**（设计稿 `.lightbox .lb-head/.lb-foot { transition: opacity … }`）。
+        旧写法是 `{!barHidden ? <bar/> : null}` —— 每次显隐都整块卸载重建：
+        点一下图，工具栏"啪"地消失而不是淡出，回来时也没有过渡。
+      */}
+      <div
+        className={barHidden ? 'lightbox-bar is-hidden' : 'lightbox-bar'}
+        aria-hidden={barHidden}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="compare-seq">
+          <span className="num">{seq}</span>
+          <span> / </span>
+          <span className="muted">· {label} · </span>
+          <span className="muted">{title}</span>
+        </span>
+        {/*
             缩放控件：− / 百分比 / + 三段。
             ⚠️ 这条是**不依赖任何手势**的保底路径 —— 触控板捏合在 macOS 上被 WebKit
             自己吃掉成页面缩放，Tauri 没有任何开关能关掉它（wry 的 macOS 后端根本没接
             `zoom_hotkeys_enabled`），所以绝不能把缩放只做成手势。
           */}
-          <span className="lightbox-zoom" title="Ctrl/⌘ + 滚轮：向上放大、向下缩小（也可点 −/+，50%–200%）">
-            <button
-              type="button"
-              className="lightbox-zoom-btn"
-              onClick={() => stepZoom(-1)}
-              disabled={zoom <= ZOOM_MIN}
-              aria-label="缩小"
-            >
-              <span aria-hidden="true">−</span>
-            </button>
-            <span className="num">{zoom}%</span>
-            <button
-              type="button"
-              className="lightbox-zoom-btn"
-              onClick={() => stepZoom(1)}
-              disabled={zoom >= ZOOM_MAX}
-              aria-label="放大"
-            >
-              <span aria-hidden="true">+</span>
-            </button>
-          </span>
-          <Btn kind="ghost" size="sm" disabled={!canPrev} onClick={onPrev}>
-            ← 上一张
-          </Btn>
-          <Btn kind="ghost" size="sm" disabled={!canNext} onClick={onNext}>
-            下一张 →
-          </Btn>
-          <Btn kind="primary" size="sm" onClick={onClose}>
-            关闭
-          </Btn>
-        </div>
-      ) : null}
+        <span className="lightbox-zoom" title="Ctrl/⌘ + 滚轮：向上放大、向下缩小（也可点 −/+，50%–200%）">
+          <button
+            type="button"
+            className="lightbox-zoom-btn"
+            onClick={() => stepZoom(-1)}
+            disabled={zoom <= ZOOM_MIN}
+            aria-label="缩小"
+          >
+            <span aria-hidden="true">−</span>
+          </button>
+          <span className="num">{zoom}%</span>
+          <button
+            type="button"
+            className="lightbox-zoom-btn"
+            onClick={() => stepZoom(1)}
+            disabled={zoom >= ZOOM_MAX}
+            aria-label="放大"
+          >
+            <span aria-hidden="true">+</span>
+          </button>
+        </span>
+        <Btn kind="ghost" size="sm" disabled={!canPrev} onClick={onPrev}>
+          ← 上一张
+        </Btn>
+        <Btn kind="ghost" size="sm" disabled={!canNext} onClick={onNext}>
+          下一张 →
+        </Btn>
+        <Btn kind="primary" size="sm" onClick={onClose}>
+          关闭
+        </Btn>
+      </div>
 
       <button type="button" className="lightbox-x" onClick={onClose} aria-label="关闭全屏">
         <X size={18} />

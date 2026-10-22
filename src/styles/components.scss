@@ -1,4 +1,4 @@
-﻿/* ======================================================== 公共组件（components/units）
+/* ======================================================== 公共组件（components/units）
 
    本分区是 `app/src/components/units/` 各单元的**唯一样式来源**：类名一律 `ui-` 前缀，
    只依赖设计令牌 —— 于是深色模式自动跟随，不需要第二套样式。
@@ -206,6 +206,22 @@
 /* 右键菜单与 MenuButton 弹层同壳（.ui-menu），只补锚点差异：左上对齐光标 */
 .ui-ctx {
   min-width: 176px;
+  /*
+   * 进场动画单独一条（设计稿 `.ctx-menu { animation: ctx-in var(--dur-fast) var(--ease-out) }`）。
+   * 下拉菜单用的是"从左滑入"（`miao-pop-in`），但右键菜单锚在**光标**处：
+   * 它该从光标位置往下掉一点再落定，横向滑进来会让"菜单是从哪儿冒出来的"读错。
+   */
+  animation: miao-ctx-in var(--miao-dur-fast) var(--miao-ease-out);
+}
+@keyframes miao-ctx-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* 菜单分组线（ContextMenu 的 MenuSeparator）：比"空一项"更明确是分组 */
@@ -1360,7 +1376,7 @@
 @keyframes miao-modal-in {
   from {
     opacity: 0;
-    transform: translateY(12px) scale(0.97);
+    transform: translateY(14px) scale(0.965);
   }
   to {
     opacity: 1;

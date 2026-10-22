@@ -135,6 +135,19 @@ Esc             关闭
 
 ## 3. 漫画翻译模块（待逐屏推进）
 
+### 3.0 动效（第六轮逐条对）
+
+| 元素 | 设计稿 | 改前 | 处置 |
+|---|---|---|---|
+| `.drop-orb` 拖入态 | `translateY(-4px) scale(1.06) rotate(-3deg)` | **没有**拖入态（只有静止的 -3°） | ✅ 补（倾斜角保持 -3°，否则拖入瞬间会"扭一下"） |
+| `.drop-queue` 出现 | `animation: rise-in var(--dur-base) var(--ease-out)` | 无动画（直接闪现） | ✅ 补 `miao-rise-in` + `--ease-out` |
+| `.chapter-card:hover` | `background surface + border line-strong + translateY(-1px) + shadow-1` | border 用 `primary-line`、**无阴影** | ✅ 按设计稿改 |
+| `.cmp-page` 悬停 | `translateY(-2px)`，过渡 `transform var(--dur-base) var(--ease-out)` | `translateY(-1px)` + **弹簧**曲线，且把 box-shadow 也纳入过渡 | ✅ 改 -2px + `--ease-out`（设计稿只过渡 transform） |
+| 灯箱工具栏显隐 | `transition: opacity var(--dur-base) var(--ease-out)`（淡出） | **条件渲染**（`{!barHidden ? <bar/> : null}`）—— 点一下"啪"地消失 | ✅ 改成常驻挂载 + `.is-hidden` 淡出（`opacity` + `translateY(6px)`） |
+| 右键菜单进场 | `ctx-in var(--dur-fast) var(--ease-out)`：`translateY(-3px) scale(.98)` | 复用下拉的 `miao-pop-in`（**从左滑入** + 弹簧） | ✅ 独立 `miao-ctx-in`（锚在光标处，该往下掉一点而不是横滑） |
+| 模态卡进场 | `translateY(14px) scale(.965)` + `--dur-slow` 弹簧 | `translateY(12px) scale(.97)` | ✅ 数值对齐 |
+
+
 已在本轮做**文案级**抽检（设计稿 `js/manga.js` / `js/manga-library.js` ↔ 产品 `screens/manga/*`），
 结论：三屏骨架与主要文案已对齐（`35cba9e` / `e7c9044` / `8647f08` / `6ee7b94` / `6d84785` / `0cdea25` / `d159dec`）。
 
@@ -287,4 +300,5 @@ Esc             关闭
 | 第三轮 | **音乐·首页**：补 Hero（每日推荐 · 当天日期 + 真实曲目数 + 播放全部/查看歌单 + 24s 自转黑胶）与三枚入口卡（每日推荐 / 官方榜单 / 我喜欢的音乐，均跳真实去处）；平台切换从「当前平台：X → 弹窗」换成设计稿的一排胶囊（短名 + 登录态色点）；搜索占位改「搜索歌曲 / 歌手 / 专辑」 | `npm run check` 19/19；`check:music` 237/237；`tsc` / `eslint` / `vite build` 通过；CDP 转储实测 Hero 与胶囊行在位 |
 | 第四轮 | **音乐·播放条**：左区补「歌手 · 平台 · 音质」副行与红心，控制组按设计稿重排（模式在最左），右区补「展开」入口，标签统一为 `播放/暂停` / `桌面歌词窗口`；**音乐·队列抽屉**：从平铺列表改成设计稿两段式（`正在播放` 固定 + `接下来 · N 首` 滚动 + `队列后面没有歌曲了`） | `npm run check` 19/19；`check:music` 237/237 + 反证 **232/232**；`tsc` / `eslint` / `vite build` 通过 |
 | 第五轮 | **动效与配色系统核对**：动效令牌数值本就一致，本轮清理 9 处**没用令牌**的过渡（含歌词行的 `transition: all 0.2s`）、灵动岛形变改设计稿的 380ms 弹簧（TS 侧同步）、图标按钮补按下反馈与设计稿几何、播放键从粉色改墨色实心、9 处 `--md-pink` 改语义主色；**音乐·展开播放器**：头部补「正在播放 + 专辑名」、补「译」翻译显隐开关、六处按钮文案统一为设计稿 | `npm run check` 19/19；`check:music` 237/237 + 反证 **232/232**；`check:units` 46/46 + 反证 61/61；`tsc` / `eslint` / `vite build` 通过 |
-| 下一轮 | 今日精选区（需先接平台推荐歌单数据面）；漫画三屏的 hover/弹窗动效参数逐条对 | — |
+| 第六轮 | **漫画三屏动效逐条对**：投放区拖入态（抬 4px / 放大 6% / 保角 -3°）、待投放清单 rise-in、话卡悬停改 line-strong + 阴影、对照页悬停 -2px + `--ease-out`、**灯箱工具栏从条件渲染改成常驻淡出**、右键菜单独立 `ctx-in`（往下掉而不是横滑）、模态卡进场数值对齐 | `npm run check` 19/19；`check:units` 46/46 + 反证 **61/61**；`tsc` / `eslint` / `vite build` 通过 |
+| 下一轮 | 今日精选区（需先接平台推荐歌单数据面）；漫画库左栏/货架的悬停与选中动效 | — |

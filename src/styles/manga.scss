@@ -1970,12 +1970,10 @@
    悬停时给一次 1px 抬升 + 一层更实的投影，读作"这张图可以点进去"。 */
 .pane-body img.zoomable {
   cursor: zoom-in;
-  transition:
-    transform var(--miao-dur-base) var(--miao-ease-spring),
-    box-shadow var(--miao-dur-base) ease;
+  transition: transform var(--miao-dur-base) var(--miao-ease-out);
 }
 .pane-body img.zoomable:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   box-shadow: 0 12px 26px -14px rgba(45, 59, 70, 0.45);
 }
 .pane-zoom {
@@ -2135,6 +2133,16 @@
   box-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.6);
   cursor: default;
   animation: miao-rise-in var(--miao-dur-base) var(--miao-ease-spring);
+  /* 显隐走淡出（设计稿 `.lightbox .lb-foot { transition: opacity var(--dur-base) var(--ease-out) }`）：
+     工具栏常驻挂载，只切透明度与位移 —— 点击图片时是"淡走"，不是"啪一下没了" */
+  transition:
+    opacity var(--miao-dur-base) var(--miao-ease-out),
+    transform var(--miao-dur-base) var(--miao-ease-out);
+}
+.lightbox-bar.is-hidden {
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
 }
 @keyframes miao-rise-in {
   from {
@@ -2289,6 +2297,12 @@
   box-shadow: 6px 6px 0 var(--miao-accent-soft);
   transition: transform var(--miao-dur-base) var(--miao-ease-spring);
 }
+/* 拖入态：图标抬 4px、放大 6%（设计稿 `.drop-zone.is-drag .drop-orb`）。
+   三个动作合起来读作"它被吸起来了"——只做其中任意两个都只是"变了一下"；
+   倾斜角保持 -3°（与静止态同一角度），否则拖入瞬间图标会"扭一下"再弹回。 */
+.drop-zone.is-drag .drop-orb {
+  transform: translateY(-4px) scale(1.06) rotate(-3deg);
+}
 .drop-halftone {
   position: absolute;
   right: 24px;
@@ -2342,6 +2356,9 @@
   border-radius: var(--miao-r-lg);
   background: var(--miao-surface);
   box-shadow: var(--miao-shadow-1);
+  /* 清单出现时自下而上升起（设计稿 `.drop-queue { animation: rise-in … }`）：
+     投放完一批后这块是"刚长出来的"，直接闪现会让人以为页面跳了一下 */
+  animation: miao-rise-in var(--miao-dur-base) var(--miao-ease-out);
 }
 /* 设计稿 .drop-queue-head：左右两端对齐，不画下边框 ——
    卡片自己已有描边，再加一条会把"标题行"与"文件网格"切成两块。 */
@@ -2839,8 +2856,9 @@
 }
 .chapter-card:hover {
   background: var(--miao-surface);
-  border-color: var(--miao-primary-line);
+  border-color: var(--miao-line-strong);
   transform: translateY(-1px);
+  box-shadow: var(--miao-shadow-1);
 }
 .cc-main {
   display: block;

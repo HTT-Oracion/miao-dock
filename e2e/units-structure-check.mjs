@@ -1623,7 +1623,9 @@ const MUTATIONS = [
     // 去掉按钮 = macOS 上完全没法缩放（捏合被 WebKit 吃掉，事件到不了 JS）
     name: '删掉工具栏的缩小按钮（macOS 上失去唯一的非手势缩放路径）',
     file: F.libraryViewer,
-    find: '              aria-label="缩小"\n',
+    // 锚点只取属性行本身，不带缩进 —— 工具栏从"条件渲染"改成"常驻淡出"后整体缩进变过一层，
+    // 带缩进的锚点会直接失配（跳过 ≠ 通过）
+    find: 'aria-label="缩小"\n',
     replace: '',
     expect: ['ZOOM.buttonFallback'],
   },
