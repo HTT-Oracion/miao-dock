@@ -1,8 +1,8 @@
-import { LogOut, X } from 'lucide-react';
+﻿import { LogOut, X } from 'lucide-react';
 import { PLATFORMS, providerLabel } from '@music/platform';
 import { useMusicStore } from '@music/store';
 import type { MusicProvider } from '@music/platform';
-import { IconButton } from '@components/units';
+import { Btn, IconButton } from '@components/units';
 import { useEsc } from '@hooks/useEsc';
 
 /**
@@ -97,9 +97,9 @@ export function AccountMenu({ onClose }: { onClose: () => void }) {
             const logged = !!loginInfos[p.id]?.logged_in;
             const isCur = p.id === playbackSource;
             return (
-              <button
+              <Btn
                 key={p.id}
-                type="button"
+                kind="bare"
                 className="ac-item"
                 onClick={() => {
                   if (!logged) void openLogin(p.id);
@@ -110,12 +110,12 @@ export function AccountMenu({ onClose }: { onClose: () => void }) {
                 <span className="ac-dot" style={{ background: p.color }} />
                 <span className="ac-name">{p.label}</span>
                 <StatusBadge current={isCur} logged={logged} />
-              </button>
+              </Btn>
             );
           })}
         </div>
-        <button
-          type="button"
+        <Btn
+          kind="bare"
           className="ac-out"
           onClick={() => {
             void logoutFor(playbackSource);
@@ -123,7 +123,7 @@ export function AccountMenu({ onClose }: { onClose: () => void }) {
           }}
         >
           <LogOut size={13} /> 退出登录（{providerLabel(playbackSource)}）
-        </button>
+        </Btn>
       </div>
     </>
   );

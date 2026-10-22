@@ -56,9 +56,9 @@ export function LoginModal() {
               const it = loginInfos[p];
               const on = !!it?.logged_in;
               return (
-                <button
+                <Btn
                   key={p}
-                  type="button"
+                  kind="bare"
                   className={p === loginProvider ? 'login-platform is-active' : 'login-platform'}
                   onClick={() => void openLogin(p)}
                 >
@@ -67,7 +67,7 @@ export function LoginModal() {
                     <small>{on ? it?.nickname || '已登录' : '未登录'}</small>
                   </span>
                   {on ? <span className="chip chip-success">已登录</span> : null}
-                </button>
+                </Btn>
               );
             })}
           </div>

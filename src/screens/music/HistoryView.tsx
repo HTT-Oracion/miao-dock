@@ -2,7 +2,7 @@ import { Plus, Trash2, X } from 'lucide-react';
 import { providerColor } from '@music/platform';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl, songKey } from '@music/convert';
-import { Empty, IconButton, VirtualList } from '@components/units';
+import { Btn, Empty, IconButton, VirtualList } from '@components/units';
 import { SongRow, providerName, relTime } from '@screens/music/shared';
 
 /**
@@ -32,9 +32,9 @@ export function HistoryView() {
       <div className="ms-caption">
         最近播放
         {history.length > 0 ? (
-          <button type="button" className="text-btn" title="清空播放历史" onClick={clear}>
+          <Btn kind="bare" className="text-btn" ariaLabel="清空播放历史" title="清空播放历史" onClick={clear}>
             <Trash2 size={11} />
-          </button>
+          </Btn>
         ) : null}
       </div>
 

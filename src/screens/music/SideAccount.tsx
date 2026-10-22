@@ -1,6 +1,7 @@
 ﻿import { useState } from 'react';
 import { ChevronRight, User } from 'lucide-react';
 import { useMusicStore } from '@music/store';
+import { Btn } from '@components/units';
 import { providerLabel } from '@music/platform';
 import { AccountMenu } from '@screens/music/PlatformMenu';
 
@@ -28,9 +29,10 @@ export function SideAccount() {
 
   return (
     <div className="ms-foot">
-      <button
-        type="button"
+      <Btn
+        kind="bare"
         className="ms-account"
+        ariaLabel={logged ? '账号与平台' : '登录'}
         title={logged ? '账号与平台' : '登录'}
         onClick={() => (logged ? setMenuOpen(true) : void openLogin())}
       >
@@ -50,7 +52,7 @@ export function SideAccount() {
           <small>{logged ? `${provider} · 已登录` : `${provider} · 点击登录`}</small>
         </span>
         <ChevronRight size={13} className="ms-account-chev" />
-      </button>
+      </Btn>
 
       {menuOpen ? <AccountMenu onClose={() => setMenuOpen(false)} /> : null}
     </div>

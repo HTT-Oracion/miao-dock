@@ -1,8 +1,8 @@
-import { open } from '@tauri-apps/plugin-dialog';
+﻿import { open } from '@tauri-apps/plugin-dialog';
 import { FolderOpen, FolderPlus, Trash2 } from 'lucide-react';
 import { useMusicStore } from '@music/store';
 import { songKey } from '@music/convert';
-import { Empty, IconButton, VirtualList } from '@components/units';
+import { Btn, Empty, IconButton, VirtualList } from '@components/units';
 import { SongRow } from '@screens/music/shared';
 
 /** 与 Rust 侧解析器支持的扩展名保持一致（多列无害，选不中会被后端忽略） */
@@ -43,28 +43,30 @@ export function LocalView() {
       {/* 组头（设计稿 `.ms-caption`）：小节名 + 一枚导入按钮；导入与清空分两处，不再挤一行 */}
       <div className="ms-caption">
         本地音乐
-        <button
-          type="button"
+        <Btn
+          kind="bare"
           className="text-btn"
+          ariaLabel="导入文件"
           disabled={importing}
           title="导入文件"
           onClick={() => void pickFiles()}
         >
           <FolderOpen size={11} />
-        </button>
-        <button
-          type="button"
+        </Btn>
+        <Btn
+          kind="bare"
           className="text-btn"
+          ariaLabel="导入文件夹"
           disabled={importing}
           title="导入文件夹"
           onClick={() => void pickFolder()}
         >
           <FolderPlus size={11} />
-        </button>
+        </Btn>
         {localSongs.length > 0 ? (
-          <button type="button" className="text-btn" title="清空本地音乐" onClick={clearLocalSongs}>
+          <Btn kind="bare" className="text-btn" ariaLabel="清空本地音乐" title="清空本地音乐" onClick={clearLocalSongs}>
             <Trash2 size={11} />
-          </button>
+          </Btn>
         ) : null}
       </div>
 

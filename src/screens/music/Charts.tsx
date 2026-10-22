@@ -1,10 +1,10 @@
-import { RefreshCw, Sparkles } from 'lucide-react';
+﻿import { RefreshCw, Sparkles } from 'lucide-react';
 import type { WheelEvent } from 'react';
 import { capsOf } from '@music/platform';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl } from '@music/convert';
 import type { Playlist } from '@music/types';
-import { Empty } from '@components/units';
+import { Btn, Empty } from '@components/units';
 
 /**
  * 官方榜单区。两种形态由能力矩阵决定（不在 UI 里写 if(provider===...)）：
@@ -83,9 +83,9 @@ export function Charts() {
         {/* 副标题按设计稿：说清"这些榜单是从哪来的" */}
         <span className="music-card-sub">来自四个平台的每日榜单</span>
         <div className="grow" />
-        <button type="button" className="music-btn out" disabled={loading} onClick={() => void loadCharts()}>
+        <Btn kind="bare" className="music-btn out" disabled={loading} onClick={() => void loadCharts()}>
           <RefreshCw size={12} /> {loading ? '刷新中…' : '刷新'}
-        </button>
+        </Btn>
       </div>
 
       {/*

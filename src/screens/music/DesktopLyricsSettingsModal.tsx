@@ -1,4 +1,4 @@
-﻿import { RotateCcw, Settings, X } from 'lucide-react';
+import { RotateCcw, Settings, X } from 'lucide-react';
 import { Btn, ColorPicker, IconButton, Range, Swatches } from '@components/units';
 import { useEsc } from '@hooks/useEsc';
 import { DL_BASE_COLORS, DL_HIGHLIGHT_COLORS, DL_LINE_COUNT, DL_LYRICS_SIZE } from '@music/player-options';
@@ -148,15 +148,16 @@ export function DesktopLyricsSettingsModal({ open, onClose }: { open: boolean; o
             <div className="music-dlset-ctl">
               <div className="music-dlset-seg" role="group" aria-label="桌面歌词显示行数">
                 {lineCounts.map((n) => (
-                  <button
+                  <Btn
                     key={n}
-                    type="button"
+                    kind="bare"
                     className={n === lineCount ? 'music-dlset-segbtn is-on' : 'music-dlset-segbtn'}
-                    aria-pressed={n === lineCount}
+                    ariaPressed={n === lineCount}
+                    ariaLabel={`${n} 行`}
                     onClick={() => setLineCount(n)}
                   >
                     {n}
-                  </button>
+                  </Btn>
                 ))}
               </div>
             </div>

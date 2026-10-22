@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent, ReactNode } from 'react';
+﻿import type { CSSProperties, MouseEvent, ReactNode } from 'react';
 import { QUEUE_EMPTY } from '@/themes/tokens';
 
 /*
@@ -66,6 +66,7 @@ export function Btn({
   disabled,
   title,
   ariaLabel,
+  ariaPressed,
   active,
   className,
   style,
@@ -83,6 +84,8 @@ export function Btn({
   title?: string;
   /** 纯图标按钮的无障碍名（可见文案为空时必填；有文案时不必重复） */
   ariaLabel?: string;
+  /** 开关型按钮的按下态（分段控件 / 切换钮）：有它读屏才会说「已按下」 */
+  ariaPressed?: boolean;
   /** 当前项（翻页器页码 / 已选中的筛选钮）：只加 `is-active`，样式由调用处决定 */
   active?: boolean;
   /** 屏内业务类名；`kind="bare"` 时它是**唯一**的类名 */
@@ -107,6 +110,7 @@ export function Btn({
       disabled={disabled}
       title={title}
       aria-label={ariaLabel}
+      aria-pressed={ariaPressed}
       style={style}
     >
       {children}
