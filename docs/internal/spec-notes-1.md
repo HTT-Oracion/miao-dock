@@ -7768,3 +7768,22 @@ CDP 实测（设置页 播放·媒体）：卡头 `音乐缓存` / `只统计在
 CDP 实测选中项 `::before`：`content:"" / width:2px / left:-10px / top:12px / bottom:12px /
 border-radius:2px / background: rgb(110,151,185)`（= `--miao-primary`）/ `position:absolute`；
 项本身 `position:relative / border-radius:9px / 11.5px / 700` —— 与设计稿 `.snav` 逐项一致。
+## D-312 · 话卡：结构早就对，差的是字号阶梯与状态色（2026-10-22）
+
+**一、结构对齐、几何不对齐是常态。** 话卡的 DOM（`cc-top` 第 N 话 + 状态 / `cc-pages`
+已译·缺页 / `cc-bar` 进度 / `cc-menu` 操作菜单）早就和设计稿同构，但四个数值不一样：
+`cc-no` 11.5px（设计稿 13px，且**不换 display 字体**）、`cc-pages` 10px（10.5）、
+`cc-bar` 上边距 7px（8）、网格列宽 `clamp(150px,12vw,200px)` + gap 12（`minmax(148px,1fr)` + gap 9）。
+这类差异最容易漏：**看着都对，量起来不对**。
+
+**二、进度条此前恒为主色，不随状态变。** 设计稿 `.is-done` → success、`.is-partial` → accent。
+本仓的状态比设计稿细一档（`pending` 与 `missing` 分开），两者都是"没译完" ⇒ 同取 accent。
+颜色只做辅助 —— 状态词在 `.cc-state` 里始终有文字，符合"颜色不是唯一信息载体"。
+
+**三、网格改成设计稿的固定最小列宽。** 原来的 `clamp(150px, 12vw, 200px)` 会让宽窗下
+卡片变宽、列数变少；设计稿的 `minmax(148px, 1fr)` 是"尽量多列、每列不小于 148"，
+一屏能扫到更多话 —— 这正是话卡这种"文字卡"要的密度。
+
+**四、验证**：`npm run check` 19/19 · `check:units` 46/46 + 反证 **61/61** ·
+`check:music` 237/237 · `tsc` / `eslint` / `vite build` 全绿。
+⚠️ 话卡要库里有作品才渲染，浏览器预览到不了漫画库 ⇒ 本轮静态核对（数值与设计稿逐条对照）。
