@@ -3336,3 +3336,60 @@
   overflow: auto;
   white-space: pre-wrap;
 }
+/*
+ * 下载页的窄窗两档（设计稿 @media (max-width: 900px) / (max-width: 680px)）：
+ * ≤900 主卡转单列居中（环在上、文案在下），五段条只留段名；
+ * ≤680 段条改成**竖排列表**（节点靠左、状态小字回来）—— 横排五格在 680 以下每格只有
+ * 一百来 px，段名会被挤成两行，而竖排读得完。
+ * ⚠️ 设计稿 ≤680 那条 .ed-scroll 的 padding **没有搬**：那一屏自己是滚动容器，
+ *    产品的这一页装在 .content 里（内缩与滚动都归外壳），搬过来会变成双层内边距。
+ */
+@media (max-width: 900px) {
+  .ed-hero {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+  .ed-hero-copy > p {
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .ed-metrics {
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .ed-actions {
+    justify-content: center;
+  }
+  .ed-step strong {
+    font-size: 9px;
+  }
+  .ed-step small {
+    display: none;
+  }
+}
+@media (max-width: 680px) {
+  .ed-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+  .ed-steps {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .ed-step {
+    padding: 6px 0 6px 28px;
+    text-align: left;
+  }
+  .ed-step::before {
+    display: none;
+  }
+  .ed-step-node {
+    top: 8px;
+    left: 4px;
+    transform: none;
+  }
+  /* 竖排之后状态小字重新有意义（每段自己一行，不再和邻段抢宽度） */
+  .ed-step small {
+    display: block;
+  }
+}
