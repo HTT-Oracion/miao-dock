@@ -1,4 +1,4 @@
-﻿/* ====================================================== 灵动岛（拍板第 4 项方案 B）
+/* ====================================================== 灵动岛（拍板第 4 项方案 B）
  *
  * 形态：**Mac 式灵动岛**，浮在顶栏之上，三态形变：
  *   圆形 30×30（只有语义点）→ 胶囊（音乐 200×30 / 普通提示自适应宽×30）→ 大卡 320×150（音乐）。
@@ -722,62 +722,73 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.now-prog {
+/* 眉标行（设计稿 `.now-head`）：NOW PLAYING + 展开播放器 */
+.now-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-family: var(--md-font-numeric);
-  font-size: 9.5px;
-  color: var(--miao-faint);
+  gap: 6px;
 }
-.now-prog-track {
+.now-head .kicker {
   flex: 1;
-  height: 4px;
-  border-radius: 3px;
-  background: var(--miao-surface-3);
-  overflow: hidden;
 }
-.now-prog-track i {
-  display: block;
-  height: 100%;
-  border-radius: 3px;
-  background: var(--miao-accent);
-}
-.now-ctl {
+/*
+ * 歌词预览（设计稿 `.now-lyrics`）：上下各一条**虚线**分隔，最小高 88 ——
+ * 最小高是为了"有歌词 / 纯音乐"两态不跳动：否则切歌时下面四格统计会上下窜。
+ */
+.now-lyrics {
+  margin-top: 4px;
+  padding: 12px 0 6px;
+  border-top: 1px dashed var(--miao-line);
+  border-bottom: 1px dashed var(--miao-line);
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 88px;
 }
-.now-play {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  border: none;
-  border-radius: 50%;
-  background: var(--miao-ink);
-  color: var(--miao-surface);
-  cursor: pointer;
-  transition:
-    transform var(--miao-dur-fast) var(--miao-ease-spring),
-    background var(--miao-dur-fast) ease;
+.now-lyric-line {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--miao-faint);
+  transition: color var(--miao-dur-base) ease;
 }
-.now-play:hover {
-  transform: scale(1.04);
+.now-lyric-line.is-active {
+  color: var(--miao-ink);
+  font-weight: 700;
 }
-.now-play:active {
-  transform: scale(0.95);
+.now-lyric-line.is-active::before {
+  content: '♪ ';
+  color: var(--miao-primary-ink);
 }
+/* 动作行（设计稿 `.now-actions`）：主按钮吃满剩余宽度 + 收藏 */
 .now-acts {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 14px;
-  padding-top: 2px;
+  gap: 6px;
 }
-.now-acts .text-btn.is-on {
-  color: var(--miao-accent);
+.now-acts .btn {
+  flex: 1;
+  min-width: 0;
+}
+/* 四格统计（设计稿 `.now-stats`）：2×2，每格浅底 + 描边 */
+.now-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.now-stat {
+  padding: 8px 9px;
+  border-radius: 9px;
+  background: var(--miao-surface-2);
+  border: 1px solid var(--miao-line);
+}
+.now-stat span {
+  display: block;
+  font-size: 8.5px;
+  color: var(--miao-muted);
+}
+.now-stat strong {
+  font-size: 10.5px;
+  color: var(--miao-ink);
 }
 
 /* 空态（右栏没有在播曲目时）：无边框、只留两行字 */

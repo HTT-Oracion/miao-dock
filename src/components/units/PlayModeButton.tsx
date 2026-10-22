@@ -1,4 +1,4 @@
-import { Heart, ListEnd, Repeat, Repeat1, Shuffle } from 'lucide-react';
+﻿import { Heart, ListEnd, Repeat, Repeat1, Shuffle } from 'lucide-react';
 import { IconButton } from '@components/units/IconButton';
 
 /**
@@ -27,6 +27,11 @@ const META = {
   order: { title: '顺序播放', Icon: ListEnd },
   heartbeat: { title: '心动模式', Icon: Heart },
 } as const;
+
+/** 播放模式的中文名（单一 owner：播放条、展开播放器、右栏统计都用它，不各写一份） */
+export function playModeLabel(mode: keyof typeof META): string {
+  return META[mode].title;
+}
 
 /** 可选的循环顺序（与 store.cycleMode 的 order 数组同序） */
 const CYCLE_ORDER = ['list', 'one', 'shuffle', 'order', 'heartbeat'] as const;

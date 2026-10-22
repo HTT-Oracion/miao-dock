@@ -1,27 +1,35 @@
-import { Heart, ListMusic, Pause, Play, SkipBack, SkipForward } from 'lucide-react';
-import { coverProxyUrl, fmtTime } from '@music/convert';
+﻿import { ChevronUp, Heart } from 'lucide-react';
+import { coverProxyUrl, qualityLabel } from '@music/convert';
+import { providerLabel } from '@music/platform';
 import { useMusicStore } from '@music/store';
+import { Btn, IconButton, playModeLabel } from '@components/units';
 import { Cover } from '@screens/music/shared';
 
 /**
- * 右栏「正在播放」（设计稿 `music-now`）。
+ * 右栏「正在播放」（设计稿 `.now-card`）。
  *
- * 与底部播放条的分工：播放条只放**控制**，右栏放**上下文** ——
- * 封面、当前曲目、进度、歌词入口、队列入口。设计稿把这两件事分开，
- * 于是切歌时右栏整块换内容、播放条位置不动。
+ * ## 这一块是"信息"，不是"控制台"
+ *
+ * 设计稿的右栏没有传输控件 —— 上/下一首、播放暂停、进度都在**底部播放条**上。
+ * 右栏给的是：眉标 + 封面 + 曲目 + **歌词预览** + 打开播放器 + 四格统计。
+ * 旧实现把传输控件与进度条搬到了这里，于是同一件事在屏幕上出现两份，
+ * 而"这首歌在唱到哪一句"反而没有地方看。
+ *
+ * 歌词预览取**当前句起三行**（设计稿 `lines.slice(active, active + 3)`），当前句加粗并带 `♪`。
+ * 没有歌词时给固定文案「♪ 纯音乐，请欣赏」，不留空白。
  */
 export function NowPlaying() {
   const current = useMusicStore((s) => s.currentSong);
   const queue = useMusicStore((s) => s.queue);
-  const isPlaying = useMusicStore((s) => s.isPlaying);
-  const togglePlay = useMusicStore((s) => s.togglePlay);
-  const next = useMusicStore((s) => s.next);
-  const prev = useMusicStore((s) => s.prev);
   const likedSongIds = useMusicStore((s) => s.likedSongIds);
   const toggleLike = useMusicStore((s) => s.toggleLike);
-  const setQueueOpen = useMusicStore((s) => s.setQueueOpen);
+  const setExpanded = useMusicStore((s) => s.setExpanded);
   const progressMs = useMusicStore((s) => s.progressMs);
-  const durationMs = useMusicStore((s) => s.durationMs);
+  const lines = useMusicStore((s) => s.parsedLyrics);
+  // currentQuality 是**实际播放**的档位（可能与偏好不同：平台不支持会降档），统计要报实的
+  const quality = useMusicStore((s) => s.currentQuality);
+  const playMode = useMusicStore((s) => s.playMode);
+  const playbackSource = useMusicStore((s) => s.playbackSource);
   const proxyPort = useMusicStore((s) => s.proxyPort);
 
   if (!current) {
@@ -36,10 +44,25 @@ export function NowPlaying() {
   }
 
   const liked = likedSongIds.has(current.id);
-  const pct = durationMs > 0 ? Math.min(100, (progressMs / durationMs) * 100) : 0;
+
+  // 当前句下标：最后一条 `time <= 当前进度`。进度早于第一句时为 -1，预览从第 0 句开始
+  let active = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (lines[i].time * 1000 <= progressMs) active = i;
+    else break;
+  }
+  const start = Math.max(0, active);
+  const preview = lines.slice(start, start + 3);
 
   return (
     <div className="now-card">
+      <div className="now-head">
+        <span className="kicker">NOW PLAYING</span>
+        <IconButton title="展开播放器" onClick={() => setExpanded(true)}>
+          <ChevronUp size={14} />
+        </IconButton>
+      </div>
+
       <div className="now-cover">
         <Cover url={coverProxyUrl(current.cover, proxyPort)} />
       </div>
@@ -52,45 +75,48 @@ export function NowPlaying() {
         </span>
       </div>
 
-      <div className="now-prog">
-        <span className="num">{fmtTime(progressMs)}</span>
-        <span className="now-prog-track">
-          <i style={{ width: `${pct}%` }} />
-        </span>
-        <span className="num">{fmtTime(durationMs)}</span>
-      </div>
-
-      <div className="now-ctl">
-        <button type="button" className="icon-btn" aria-label="上一首" onClick={() => void prev()}>
-          <SkipBack size={16} />
-        </button>
-        <button
-          type="button"
-          className="now-play"
-          aria-label={isPlaying ? '暂停' : '播放'}
-          onClick={() => void togglePlay()}
-        >
-          {isPlaying ? <Pause size={18} /> : <Play size={18} />}
-        </button>
-        <button type="button" className="icon-btn" aria-label="下一首" onClick={() => void next()}>
-          <SkipForward size={16} />
-        </button>
+      <div className="now-lyrics">
+        {preview.length > 0 ? (
+          preview.map((l, i) => (
+            <div
+              key={`${l.time}:${i}`}
+              className={i === 0 && active >= 0 ? 'now-lyric-line is-active' : 'now-lyric-line'}
+            >
+              {l.text}
+            </div>
+          ))
+        ) : (
+          <div className="now-lyric-line">♪ 纯音乐，请欣赏</div>
+        )}
       </div>
 
       <div className="now-acts">
-        <button
-          type="button"
-          className={liked ? 'text-btn is-on' : 'text-btn'}
-          aria-pressed={liked}
-          onClick={() => void toggleLike(current)}
-        >
-          <Heart size={13} fill={liked ? 'currentColor' : 'none'} />
-          {liked ? '已喜欢' : '喜欢'}
-        </button>
-        <button type="button" className="text-btn" onClick={() => setQueueOpen(true)}>
-          <ListMusic size={13} />
-          队列{queue.length > 0 ? ` · ${queue.length}` : ''}
-        </button>
+        <Btn kind="primary" size="sm" onClick={() => setExpanded(true)}>
+          <ChevronUp size={13} />
+          打开播放器
+        </Btn>
+        <IconButton title={liked ? '取消收藏' : '收藏'} active={liked} onClick={() => void toggleLike(current)}>
+          <Heart size={14} fill={liked ? 'currentColor' : 'none'} />
+        </IconButton>
+      </div>
+
+      <div className="now-stats">
+        <div className="now-stat">
+          <span>音质</span>
+          <strong>{qualityLabel(quality)}</strong>
+        </div>
+        <div className="now-stat">
+          <span>播放模式</span>
+          <strong>{playModeLabel(playMode)}</strong>
+        </div>
+        <div className="now-stat">
+          <span>来源</span>
+          <strong>{providerLabel(playbackSource)}</strong>
+        </div>
+        <div className="now-stat">
+          <span>队列</span>
+          <strong>{queue.length} 首</strong>
+        </div>
       </div>
     </div>
   );
