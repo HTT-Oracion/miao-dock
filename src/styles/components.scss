@@ -5,7 +5,7 @@
    规则与判据见《09-技术方案-ver2.0-最终版》§2.2；`npm run task -- check:units` 会核查命名与依赖。
 
    外观一律自绘，不用系统原生外观：原生 select / range 的高度、圆角、箭头形状、拇指尺寸
-   都由系统（且随系统版本）决定，塞进行内 24px 的控件位会与同行的 .set-ro / .switch
+   都由系统（且随系统版本）决定，塞进行内 28px 的控件位会与同行的 .set-ro / .switch
    凑出三种高度、两套圆角、两套配色。下拉的行为（键盘、typeahead、读屏、焦点）不在 CSS 里
    —— 那是 Radix 的事，见 `units/Select.tsx`；这里只描述它长什么样。
 
@@ -48,13 +48,15 @@
 }
 
 /* ---- ① 下拉（Select）----
- * 触发按钮与 .set-ro 同高 24、同圆角。min-width 132px 是**设置页右列**的取值：
- * 别处需要不同宽度时由调用方传 className 覆盖，不要改这里（会连带动设置页）。
+ * 单元自身高 32（设计稿设置页行内的 `.select` 就是 186×32；`.readonly` 是 28 ——
+ * 两者在**设计稿里本来就差 4px**，不是要凑同高）。186 那个宽度由设置页在
+ * `settings.scss` 里按行覆盖（`--ui-select` 在播放条、弹窗里还要用别的宽度），
+ * 单元默认只给 min-width 120：别处需要不同宽度时由调用方覆盖，不要改这里（会连带动设置页）。
  * 文本与箭头用 flex 两端对齐，于是选项文字长短不同时箭头仍钉在同一列
  * —— 原生 select 做不到（它的箭头位置由系统画，宽度变化时会跟着文字跑）。 */
 
 /*
- * 触发按钮 —— 类名仍是 .ui-select：与 .set-ro 同高 24、同圆角，
+ * 触发按钮 —— 类名仍是 .ui-select：高 32、r11，
  * min-width 让三个下拉的左边缘对齐成一条。
  *
  * 文本与箭头用 flex 两端对齐（`justify-content: space-between`），
@@ -353,7 +355,9 @@
 }
 
 /*
- * 数字输入框（`.ui-num`）—— 与 `.ui-select` / `.set-ro` 同高 24、同圆角、同描边，
+ * 数字输入框（`.ui-num`）—— 64×24 的紧凑档：它住在 ②「空闲卸载」那张**合卡**里
+ * （两栏并排，设计稿 `.s-row-control .input` 的 210 宽会撑破卡片），
+ * 同描边同语汇但尺寸自成一体；设置页单行形态才吃设计稿的 210×34。
  * 于是「下拉 / 只读值 / 数字框」在设置页右列里是同一排对齐的三个东西。
  *
  * 宽度 64：够放 `1440`（分钟上限）与光标，又不至于让标题列被挤窄。
@@ -755,14 +759,22 @@
   color: var(--md-muted);
 }
 
-/* 只读值：端口 / 目录 / 版本号 */
+/* 只读值：端口 / 目录 / 版本号（设计稿 `.readonly`：28 高胶囊、r8、surface-2 + line 描边、10.5px）。
+   之前是 23 高的"行内代码"观感（r=radius-xs、`--md-line-soft` 描边），
+   在同一条右列里比旁边的 `.btn-sm`（28）矮一截 —— 设计稿这两者是同高的一档。
+   `max-width` + 省略号是产品的加强（路径可能很长），保留；`user-select: text` 让用户能选中抄走。 */
 .set-ro {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
   font-family: var(--md-font-numeric);
-  font-size: 11px;
-  background: var(--md-surface-2);
-  border: 1px solid var(--md-line-soft);
-  border-radius: var(--md-radius-xs);
-  padding: 2px 7px;
+  font-size: 10.5px;
+  color: var(--miao-text);
+  background: var(--miao-surface-2);
+  border: 1px solid var(--miao-line);
+  border-radius: 8px;
+  padding: 0 9px;
   max-width: 340px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -990,37 +1002,42 @@
   font-size: 11.5px;
   color: var(--md-ink-2);
   justify-content: flex-start;
-  width: 40px;
-  height: 23px;
-  padding: 2px;
-  border: 1px solid var(--miao-line);
+  width: 38px;
+  height: 22px;
+  padding: 0;
+  border: none;
   border-radius: 999px;
-  background: var(--miao-surface-2);
+  background: none;
   transition:
     background var(--miao-dur-base) var(--miao-ease-spring),
     border-color var(--miao-dur-base) ease;
 }
+/* 视觉只画在轨道上（设计稿那颗带边框的胶囊就是 `.switch-track`），外层 `.switch` 只剩点击区域。
+   之前边框与底色画在外层、轨道又叠一层 `--md-line`，一圈套两色，外框也比设计稿大 2×1。 */
 .switch-track {
   width: 100%;
   height: 100%;
   border-radius: 999px;
-  background: var(--md-line);
+  border: 1px solid var(--miao-line);
+  background: var(--miao-surface-3);
+  padding: 2px;
   position: relative;
+  display: flex;
+  align-items: center;
   transition:
     background var(--miao-dur-base),
     border-color var(--miao-dur-base);
-  display: flex;
-  align-items: center;
 }
+/* 圆点 16²（设计稿 `.switch-dot`）；轨道内容区正好 32×16，所以 is-on 的位移是 16px */
 .switch-track > i {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 17px;
-  height: 17px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: var(--miao-surface);
-  box-shadow: 0 2px 5px rgba(45, 59, 70, 0.2);
+  box-shadow: 0 1px 3px rgba(43, 47, 55, 0.18);
   transition: transform var(--miao-dur-base) var(--miao-ease-spring);
   display: block;
 }
@@ -1028,7 +1045,7 @@
   background: var(--miao-primary);
 }
 .switch.is-on .switch-track > i {
-  transform: translateX(17px);
+  transform: translateX(16px);
   background: #fff;
 }
 

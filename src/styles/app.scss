@@ -513,8 +513,10 @@
 .btn-sm {
   height: 28px;
   padding: 0 10px;
-  border-radius: 10px;
-  font-size: 10.5px;
+  /* 与全局 `.btn` 用同一把尺子：设计稿 `.btn-sm` 是 28 / r9 / 11.5px·700。
+     之前是 r10 / 10.5px —— 小按钮自己又降一档字号，读起来像"次要到不必看清"。 */
+  border-radius: 9px;
+  font-size: 11.5px;
 }
 .btn:disabled {
   opacity: 0.48;

@@ -595,6 +595,20 @@
   justify-content: flex-end;
   min-width: 0;
 }
+/*
+ * 行内控件的**行内尺寸**（设计稿就是这一档一档定的：`.s-row-control .select` 186×32、
+ * `.s-row-control .input` 210×34，字号跟 `.input/.select` 基准的 12.5）。
+ * 单元本体（`components.scss` 的 `.ui-select`）保持它自己的默认值 —— 播放条与弹窗里的
+ * 下拉不吃这套宽度；只有设置页的行按设计稿给固定宽，长选项（音质档位五档）才不会
+ * 被 120px 截断成看不懂的半截。窄屏改铺满见下面的媒体查询。
+ */
+.set-row-ctl .ui-select {
+  width: 186px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+/* 数字框**不套**设计稿的 210×34：那两处阈值在 ② 里被合成一张卡（R3），
+   卡里两栏并排，210 会把卡片撑破 —— 设计稿那条 `.s-row-control .input` 管的是"一行一控件"的形态。 */
 
 /* ================================================================ 音乐缓存（四格块） */
 
@@ -2068,6 +2082,10 @@
   }
   .set-row-ctl {
     justify-content: flex-start;
+  }
+  /* 窄屏单列后固定 186 没意义（设计稿 ≤900 同规则：控件铺满） */
+  .set-row-ctl .ui-select {
+    width: 100%;
   }
   .set-note-row {
     flex-direction: column;
