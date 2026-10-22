@@ -8401,3 +8401,24 @@ ExpandedPlayer 4（歌词/评论页签，容器补 `role="tablist"` · `译` 开
 `<div class="ltabs" role="tablist"><button class="ltab is-on" role="tab" aria-selected="true">歌单</button>…`、
 `<button class="platform-pill is-active" role="tab" aria-selected="true">`、
 账号行 `aria-label` 到位 —— 类名逐字未变，语义补齐。
+## D-339 · 第 4 批：`ariaExpanded` / `ariaCurrent`；番剧那一项刻意不动（2026-10-23）
+
+**一、本批 10 处**：`chapters.tsx` 话卡主体（`ariaLabel` 第 N 话）、`NotReadyScreen` 排障折叠、
+`LicensesBlock` 许可折叠、`parts.tsx` 的「为什么 ?」折叠、`SettingsScreen` 五个分组导航项。
+
+**二、又给 `Btn` 补了两个 ARIA 能力**，理由同上一批 —— **先补单元、再改调用点**：
+- `ariaExpanded`：折叠钮（"查看完整许可清单" / "查看排障信息" / "为什么 ?"）。
+  缺了它读屏只会念按钮文字，不会说"已展开 / 已折叠"。
+- `ariaCurrent`：导航项的"当前页"（设置页左侧分组）。**只开放 `page` / `true`** ——
+  这两个是 `aria-current` 在这个产品里唯一有意义的取值。
+
+**三、🔴 番剧设置那一项**（`SettingsScreen` 里的 `Clapperboard` 导航项）**保留裸 `<button>`**。
+不是漏改：番剧模块隔离是本次任务的红线，那一项虽然渲染在设置屏里，改它就是碰番剧相关代码。
+**登记为"刻意不动"**，而不是让它悄悄留在统计里当"未完成"。
+
+**四、剩余真代码裸按钮**：`QueueScreen` 3 · `viewer.tsx` 3 · `EngineDiag` 5 ·
+`SettingsScreen` 1（番剧，刻意不动）。下一轮收前三个。
+
+**五、验证**：`npm run check` 19/19 · `check:units` 46/46 + 反证 **61/61** ·
+`check:settings` 184/184 + 反证 **142/142** · `tsc` / `eslint` / `vite build` 全绿。
+（`chapters.tsx` / `parts.tsx` 里 grep 到的各 1 处 `<button>` 是**注释里**引用的文字，不是代码。）
