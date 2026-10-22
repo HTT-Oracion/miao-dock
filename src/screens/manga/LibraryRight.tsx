@@ -3,8 +3,19 @@
 // 为什么从 `LibraryScreen.tsx` 抽出来（D-152）：与左栏（`LeftRail.tsx`）对称 ——
 // 屏本体的 return 由「左栏 + 右栏 + 一排弹窗」三块组成，前两块各自成件后
 // 屏本体只剩状态与编排。只传 props（守本仓「零 Context」）。
-import { ArrowLeft, ChevronDown, FileText, GitMerge, RefreshCw } from 'lucide-react';
-import { Btn, Empty, IconButton } from '@components/units';
+import { useState } from 'react';
+import {
+  ArrowLeft,
+  BookOpen,
+  ChevronDown,
+  Copy,
+  FileText,
+  FolderOpen,
+  GitMerge,
+  RefreshCw,
+  RotateCcw,
+} from 'lucide-react';
+import { Btn, ContextMenu, Empty, IconButton, MenuItem } from '@components/units';
 import { groupSearchResults } from '@tools';
 import { ChapterCard, chapterStatusOf } from '@screens/manga/chapters';
 import type { ChapterState } from '@screens/manga/chapters';
@@ -13,6 +24,8 @@ import type { GridState } from '@screens/manga/cards';
 import { AUTHOR_FALLBACK } from '@screens/manga/libModel';
 import type { PageView } from '@screens/manga/blob';
 import type { BookEntry, ChapterEntry, ComicEntry } from '@/types';
+import { errorText } from '@/ipc';
+import { toastBus } from '@/stores/toastBus';
 
 /**
  * 搜索行状态徽标的修饰类（与话卡同一套判定：`chapterStatusOf` 给状态词，这里只选色档）。
@@ -94,7 +107,7 @@ export function LibraryRight({
   /** 打开该话的本地目录（父层负责 `openPath` + 失败提示） */
   onOpenDir: (absDir: string) => void;
   onResume: (base: string, name: string) => void;
-  onRetranslate: (base: string, name: string) => void;
+  onRetranslate: (base: string, name: string, seqs?: number[]) => void;
   onEditNoChapter: (payload: { bookName: string; chapter: ChapterEntry }) => void;
   chPage: number;
   chPages: number;
@@ -117,6 +130,27 @@ export function LibraryRight({
    * 那时搜索态该退回左栏平铺过滤，右栏显示"没找到"会把旧服务端判成空库。
    */
   const hasGroups = searchGroups.length > 0;
+
+  /**
+   * 页卡右键菜单（设计稿 `.page-card` 的菜单：查看对照 / 重新翻译本页 / 复制文件名 / 打开所在目录）。
+   *
+   * 左键点页卡 = 看对照（更直接，保留）；右键给"同一页上的其它动作"。
+   * 位置取光标坐标，与书架 / 话卡的右键菜单同一套 `ContextMenu`。
+   */
+  const [pageMenu, setPageMenu] = useState<{ x: number; y: number; seq: number } | null>(null);
+
+  /** 页文件名的命名口径：序号补零 3 位 + `.png`（与服务端落盘一致） */
+  const pageFileName = (seq: number) => `${String(seq).padStart(3, '0')}.png`;
+
+  /** 页所在目录：话内取该话的 absDir，整本取书目录（拿不到就禁用那一项，不猜） */
+  const pageDir = (() => {
+    if (!gridView) return '';
+    if (inChapter) {
+      const no = Number(gridView.base.split('/').pop());
+      return chapterRows.find((c) => c.no === no)?.absDir ?? '';
+    }
+    return currentBook?.outputDir ?? '';
+  })();
 
   return (
     <section className="lib-right">
@@ -469,6 +503,11 @@ export function LibraryRight({
                       className={state === 'missing' ? 'page-card is-missing' : 'page-card'}
                       disabled={state === 'missing'}
                       onClick={() => onCompare(seq)}
+                      onContextMenu={(e) => {
+                        // 缺页也允许右键：至少能「复制文件名」去核对目录
+                        e.preventDefault();
+                        setPageMenu({ x: e.clientX, y: e.clientY, seq });
+                      }}
                       title={
                         state === 'missing'
                           ? `第 ${seq} 页在本机没有原图，无法对照`
@@ -541,6 +580,64 @@ export function LibraryRight({
           </div>
         </Empty>
       )}
+
+      {/* 页卡右键菜单：位置取光标，菜单内容与书架 / 话卡同属一套 `.ui-ctx` */}
+      {pageMenu ? (
+        <ContextMenu x={pageMenu.x} y={pageMenu.y} onClose={() => setPageMenu(null)}>
+          {(close) => {
+            const seq = pageMenu.seq;
+            const name = pageFileName(seq);
+            const missing = missingSeqs.has(seq);
+            return (
+              <>
+                <MenuItem
+                  icon={<BookOpen size={13} />}
+                  label="查看对照"
+                  disabled={missing}
+                  title={missing ? '这一页在本机没有原图，无法对照' : `看第 ${seq} 页的原文 / 译文对照`}
+                  onClick={() => {
+                    close();
+                    onCompare(seq);
+                  }}
+                />
+                <MenuItem
+                  icon={<RotateCcw size={13} />}
+                  label="重新翻译本页"
+                  sub={`第 ${seq} 页`}
+                  disabled={missing || !gridView}
+                  title={missing ? '缺页无法重译，请重新投放这张图片' : `只重译第 ${seq} 页`}
+                  onClick={() => {
+                    close();
+                    if (gridView) onRetranslate(gridView.base, gridView.comicName, [seq]);
+                  }}
+                />
+                <MenuItem
+                  icon={<Copy size={13} />}
+                  label="复制文件名"
+                  sub={name}
+                  onClick={() => {
+                    close();
+                    void navigator.clipboard
+                      .writeText(name)
+                      .then(() => toastBus.push('已复制文件名', 'good', name))
+                      .catch((e: unknown) => toastBus.push('复制失败', 'bad', errorText(e)));
+                  }}
+                />
+                <MenuItem
+                  icon={<FolderOpen size={13} />}
+                  label="打开所在目录"
+                  disabled={!pageDir}
+                  title={pageDir ? pageDir : '拿不到这一页的目录'}
+                  onClick={() => {
+                    close();
+                    if (pageDir) onOpenDir(pageDir);
+                  }}
+                />
+              </>
+            );
+          }}
+        </ContextMenu>
+      ) : null}
     </section>
   );
 }

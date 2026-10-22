@@ -62,6 +62,7 @@ export function Btn({
   kind = 'ghost',
   size,
   onClick,
+  onContextMenu,
   disabled,
   title,
   ariaLabel,
@@ -73,6 +74,11 @@ export function Btn({
   kind?: BtnKind;
   size?: 'sm';
   onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
+  /**
+   * 右键菜单（受控）：给需要"右键出菜单"的按钮用（如漫画库的页卡）。
+   * 单元只把事件交出去，**不自己造菜单** —— 菜单内容与归属都是调用方的事。
+   */
+  onContextMenu?: (e: MouseEvent<HTMLButtonElement>) => void;
   disabled?: boolean;
   title?: string;
   /** 纯图标按钮的无障碍名（可见文案为空时必填；有文案时不必重复） */
@@ -97,6 +103,7 @@ export function Btn({
       type="button"
       className={cls}
       onClick={onClick}
+      onContextMenu={onContextMenu}
       disabled={disabled}
       title={title}
       aria-label={ariaLabel}
