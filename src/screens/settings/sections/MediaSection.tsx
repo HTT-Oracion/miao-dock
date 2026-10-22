@@ -114,7 +114,7 @@ export function MediaSection() {
       case 'music-cache':
         // 四格块，自身带标题/说明/统计/按钮，所以不需要 Row 的标题列
         // （`Group` 见到 layout:'block' 也不会包 Row，见 Group 里的注释）
-        return <CacheBlock />;
+        return <CacheBlock settingId={item.id} />;
       case 'lyrics-mode':
         return <Select label={item.label} value={lyricsMode} options={LYRICS_MODE_OPTIONS} onChange={setLyricsMode} />;
       case 'lyrics-size':

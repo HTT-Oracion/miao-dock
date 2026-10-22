@@ -241,3 +241,6 @@ export { useAnimePlayback } from './useAnimePlayback';
 export type { AnimePlayback, AnimePlaybackOptions } from './useAnimePlayback';
 export { useNav } from './useNav';
 export type { Nav } from './useNav';
+
+// 构建版本号：工具条版本徽标与设置页「关于」共用同一个事实源（宿主注入）
+export { useAppVersion } from './useAppVersion';

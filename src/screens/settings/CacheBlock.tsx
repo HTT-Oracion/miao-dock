@@ -34,7 +34,7 @@ import type { MusicProvider } from '@music/types';
  *   ② 前端**不依赖** ① —— `root` 为空串时**禁用按钮并给出原因**（`title`），
  *      而不是让用户点一下换一条报错。若目录被手工删掉，`stats` 拿不到路径时同理。
  */
-export function CacheBlock() {
+export function CacheBlock({ settingId }: { settingId: string }) {
   const [stats, setStats] = useState<CacheStats | null>(null);
   /** 读失败与"读到了但缓存是 0"是两件事：前者要如实说读不到，后者是正常的空缓存 */
   const [failed, setFailed] = useState(false);
@@ -95,7 +95,7 @@ export function CacheBlock() {
   );
 
   return (
-    <div className="set-cache">
+    <div className="set-cache" data-setting-id={settingId}>
       {/* 四格：左列文案 / 右列总量 */}
       <div className="set-cache-grid">
         <div className="set-cache-name">音乐缓存</div>

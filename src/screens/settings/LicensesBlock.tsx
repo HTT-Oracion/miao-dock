@@ -117,7 +117,7 @@ export function LicensesBlock({ item }: { item: SettingItem }) {
   const ncScopes = Object.keys(DATA.engine.bySpdx).filter((k) => /(^|[-\s])NC([-\s]|$)/.test(k));
 
   return (
-    <div className="set-lic">
+    <div className="set-lic" data-setting-id={item.id}>
       <div className="set-lic-head">
         <div className="set-lic-name">{item.label}</div>
         <button type="button" className="set-lic-fold" aria-expanded={open} onClick={() => setOpen(!open)}>

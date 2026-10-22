@@ -97,6 +97,13 @@ export interface SettingGroup {
    * 抹平它 C11 会红。
    */
   title: string | null;
+  /**
+   * 卡头副标题（设计稿 `.s-card-head p`）：标题下那行 10px 说明。
+   *
+   * 缺省 = 不渲染。它回答的是"这张卡在管什么"，与逐项的 `why`（管"这一项是什么"）
+   * 不同层级 —— 四项各自写 why 之后，用户仍然不知道"为什么这四项被放在一起"。
+   */
+  head?: string;
   items: SettingItem[];
 }
 
@@ -139,27 +146,42 @@ export const GENERAL: SettingSection = {
   id: 'general',
   name: '通用',
   blurb: '外观、生命周期与本机自检等',
+  /*
+   * 两张卡（设计稿 `.s-card`）：外观 / 行为与自检。
+   *
+   * 分成两张而不是一张四行，是设计稿的层级：前三项都在回答"界面长什么样"，
+   * 第四项是"去核对界面是否与规格一致"。混在一张卡里，自检那行的按钮看起来
+   * 与前两项的开关同级，用户会以为它也是一个偏好。
+   */
   groups: [
     {
-      id: 'main',
-      title: null,
+      id: 'appearance',
+      title: '外观',
+      head: '让界面更像你的房间',
       items: [
         { id: 'dark-mode', label: '深色模式', state: 'live', why: '柔和的夜色，长时间使用不刺眼', def: '浅色' },
-        {
-          id: 'close-window',
-          label: '关闭窗口行为',
-          state: 'live',
-          why: '点击关闭按钮时收起到托盘',
-          def: '收起到托盘',
-        },
-        { id: 'spec-check', label: '规格自检', state: 'live', why: '核对设置项、模块目录与契约完整性' },
         {
           id: 'sidebar-labels',
           label: '侧栏图标标签',
           state: 'live',
-          why: '在应用图标下显示名称',
+          why: '在应用图标下显示名称；关闭后只留图标',
           def: '显示',
         },
+      ],
+    },
+    {
+      id: 'behavior',
+      title: '行为与自检',
+      head: '窗口生命周期与规格核对',
+      items: [
+        {
+          id: 'close-window',
+          label: '关闭窗口行为',
+          state: 'live',
+          why: '由系统窗口按钮触发；翻译服务会在后台留驻',
+          def: '收起到托盘',
+        },
+        { id: 'spec-check', label: '规格自检', state: 'live', why: '核对设置项、模块目录与运行契约的完整性' },
       ],
     },
   ],

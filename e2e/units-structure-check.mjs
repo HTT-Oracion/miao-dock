@@ -139,6 +139,7 @@ const HOOKS_MANIFEST = [
   'useEngineDownload.ts',
   'useAnimePlayback.ts',
   'useNav.ts',
+  'useAppVersion.ts',
 ];
 /** hooks/index.ts 业务桶应出口的业务 hook 名 */
 const HOOKS_BARREL_EXPORTS = [

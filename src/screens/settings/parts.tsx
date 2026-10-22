@@ -24,7 +24,7 @@ import type { SettingItem } from '@screens/settings/catalog';
  */
 
 /** 小节标题：10.5px / 700 / uppercase / .05em（《09》§4.1「组内分层的关键」） */
-export function SubTitle({ children }: { children: string }) {
+export function SubTitle({ children, head }: { children: string; head?: string }) {
   return (
     <div
       className="set-subtitle"
@@ -33,7 +33,11 @@ export function SubTitle({ children }: { children: string }) {
         letterSpacing: SETTINGS.sectionTitleTracking,
       }}
     >
-      {children}
+      <div className="set-subtitle-text">
+        <span className="set-subtitle-name">{children}</span>
+        {/* 卡头副标题（设计稿 `.s-card-head p`）：缺省不渲染，不占位 */}
+        {head ? <span className="set-subtitle-head">{head}</span> : null}
+      </div>
     </div>
   );
 }
@@ -157,7 +161,7 @@ export function GroupNote({ children, summary }: { children?: string; summary?: 
  */
 export function Row({ item, children }: { item: SettingItem; children?: ReactNode }) {
   return (
-    <div className="set-row">
+    <div className="set-row" data-setting-id={item.id}>
       <div className="set-row-label">
         <div className="set-row-title">
           <span className="set-row-name">{item.label}</span>
@@ -196,8 +200,8 @@ export function Row({ item, children }: { item: SettingItem; children?: ReactNod
  */
 function DefaultChip({ value }: { value: string }) {
   return (
-    <span className="set-row-def" title={`出厂默认：${value} —— 这不是你当前的设置`}>
-      默认：{value}
+    <span className="set-row-def" title={`出厂默认：${value}——这不是你当前的设置`}>
+      默认 {value}
     </span>
   );
 }
@@ -211,7 +215,7 @@ function DefaultChip({ value }: { value: string }) {
  */
 export function PendingRow({ item }: { item: SettingItem }) {
   return (
-    <div className="set-row is-pending">
+    <div className="set-row is-pending" data-setting-id={item.id}>
       <div className="set-row-label">
         <div className="set-row-title">{item.label}</div>
         {item.why ? (

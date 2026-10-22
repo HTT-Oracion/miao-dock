@@ -2,7 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { apiPost, errorText, openPath, quitApp, serviceRestart, serviceStart } from '@/ipc';
 import type { ServiceState } from '@/ipc';
-import { useLibrary, useNav, useQuitRequest, useService, useTasks, useToasts, useTranslateSource } from '@hooks';
+import {
+  useAppVersion,
+  useLibrary,
+  useNav,
+  useQuitRequest,
+  useService,
+  useTasks,
+  useToasts,
+  useTranslateSource,
+} from '@hooks';
+import { SETTINGS_SECTIONS, SECTION_ITEM_TOTAL } from '@screens/settings/catalog';
 import { initialMode, persistMode, useThemeTokens } from '@/themes/apply';
 import {
   initialServiceAutoStart,
@@ -247,6 +257,9 @@ export function App() {
   const animeView = useAnimeStore((s) => s.view);
   const setAnimeView = useAnimeStore((s) => s.setView);
 
+  /** 构建版本号（真值来自宿主；取不到就不出徽标，见 hook 注释） */
+  const appVersion = useAppVersion();
+
   // Esc 收起展开播放器：与音乐屏内那条同源，但**只判 expanded**。
   // 队列抽屉仍归音乐屏（它只在那一屏存在，Esc 连带关它才是对的）。
   useEffect(() => {
@@ -466,7 +479,7 @@ export function App() {
     if (showNotReady) {
       return {
         title: '服务未就绪',
-        subtitle: '本地翻译服务还没起来；起来之后这里会显示任务队列',
+        subtitle: '本地翻译服务没有运行 · 已完成的作品与任务不会丢失',
         actions: (
           <>
             <Badge>{sourceChipLabel(source, platform)}</Badge>
@@ -479,7 +492,7 @@ export function App() {
     if (screen === 'music') {
       return {
         title: '音乐',
-        subtitle: '本地音乐与在线音源 · 网易云 / 酷狗 / QQ / 咪咕四平台（汽水延后）',
+        subtitle: '本地音乐与在线音源 · 网易云 / 酷狗 / QQ / 咪咕 · 汽水延后',
         actions: null,
       };
     }
@@ -503,7 +516,12 @@ export function App() {
       };
     }
     if (screen === 'settings') {
-      return { title: '设置', subtitle: '应用外观、翻译服务、媒体与资源', actions: null };
+      return {
+        title: '设置',
+        // 设计稿工具条：分组数 / 项数都算自 catalog，界面里没有写死的 5 与 34
+        subtitle: `${SETTINGS_SECTIONS.length} 组 · ${SECTION_ITEM_TOTAL} 项 · 改动即时保存在本机`,
+        actions: appVersion ? <Badge>v{appVersion}</Badge> : null,
+      };
     }
     // 翻译应用内：工具条随视图切换（与 ver1.0 同一套文案，只是判定源从 screen 变成 view）
     switch (view) {
@@ -529,7 +547,7 @@ export function App() {
       case 'drop':
         return {
           title: '本机投放',
-          subtitle: '拖入图片或文件夹 · 与插件共用同一条队列',
+          subtitle: '拖入图片或文件夹 · 每批 20 张 · 超出的部分自动排队',
           actions: (
             <>
               <Badge>{sourceChipLabel(source, platform)}</Badge>
@@ -540,7 +558,7 @@ export function App() {
       default:
         return {
           title: '任务队列',
-          subtitle: `串行执行 · 同一时刻只跑 1 个任务 · 队内 ${queueDepth} 个`,
+          subtitle: `串行执行 · 同一时刻只跑 1 个 · 队内 ${queueDepth} 个等待`,
           actions: (
             <>
               <Badge>{sourceChipLabel(source, platform)}</Badge>
@@ -550,7 +568,20 @@ export function App() {
           ),
         };
     }
-  }, [animeView, libRoot, libSummary, platform, push, queueDepth, screen, showNotReady, source, status?.state, view]);
+  }, [
+    animeView,
+    appVersion,
+    libRoot,
+    libSummary,
+    platform,
+    push,
+    queueDepth,
+    screen,
+    showNotReady,
+    source,
+    status?.state,
+    view,
+  ]);
 
   // 翻译应用的视图 Tab 行；音乐屏不加（《09》§3.3），设置页是全局页也不加；
   // 下载页是覆盖层，也不该顶着翻译视图 Tab。

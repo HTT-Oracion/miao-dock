@@ -293,7 +293,10 @@ export function SpecCheckBlock({
               </>
             ) : null}
           </span>
-        ) : null}
+        ) : (
+          /* 未跑过 = 「尚未运行」（设计稿 `.inline-result` 的空态文案），不是"通过 0 / 0" */
+          <span className="muted set-spec-count">尚未运行</span>
+        )}
         {revealed ? null : <span className="muted set-spec-hint">（首次运行会先让样张完成布局）</span>}
       </div>
 

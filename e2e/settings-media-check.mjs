@@ -2823,7 +2823,9 @@ add('FEATURES.def.rendered', 'FEATURES', (ctx) => {
   const parts = stripComments(ctx.s.parts);
   const problems = [];
   if (!/item\.def\s*\?\s*<DefaultChip/.test(parts)) problems.push('Row 没有按 item.def 渲染 DefaultChip');
-  if (!/默认：\{value\}/.test(parts)) problems.push('DefaultChip 没有写「默认：」前缀（只写值会被读成"你现在是这个"）');
+  // 文案取设计稿原文「默认 X」（`<span class="default-chip">默认 ${def}</span>`）：
+  // 只写值会被读成"你现在是这个"，所以前缀必须在；分隔符跟随设计稿，不加冒号
+  if (!/默认 \{value\}/.test(parts)) problems.push('DefaultChip 没有写「默认」前缀（只写值会被读成"你现在是这个"）');
   if (!/title=\{[^}]*出厂默认/.test(parts)) problems.push('DefaultChip 没有说明"这不是你当前的设置"');
   if (!/\.set-row-def\s*\{/.test(ctx.s.css)) problems.push('缺少 .set-row-def 样式');
   if (!/\.set-row-def\s*\{[^}]*flex:\s*0 0 auto/.test(ctx.s.css))

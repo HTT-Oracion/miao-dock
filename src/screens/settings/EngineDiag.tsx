@@ -210,7 +210,7 @@ export function EngineDiag({
   return (
     <>
       {/* ── 运行状态卡（常驻，不在任何折叠里）── */}
-      <div className="set-run">
+      <div className="set-run" data-setting-id={item.id}>
         <div className="set-run-head">
           <span className="set-run-title">{item.label}</span>
           <span className="set-state is-chip">

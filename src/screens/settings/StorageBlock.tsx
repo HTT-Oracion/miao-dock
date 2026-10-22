@@ -64,7 +64,7 @@ export function StorageBlock({ item, lib }: { item: SettingItem; lib: LibraryRes
         : '无';
 
   return (
-    <div className="set-storage">
+    <div className="set-storage" data-setting-id={item.id}>
       <div className="set-storage-head">
         <div className="set-storage-name">{item.label}</div>
         {/* 立场写在脸上：用户看到三行会本能地想做加法，这里先把话说明 */}

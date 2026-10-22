@@ -106,6 +106,180 @@
   max-width: 880px;
 }
 
+/*
+ * 搜索行：设计稿 `.settings-search-row` —— 吸顶在右栏滚动区顶部。
+ *
+ * 负 `margin-top` 与 `top` 同时取 `-16px`，是为了抵掉 `.settings-main` 的上内边距：
+ * 正数会让搜索框下方那 16px 里透出滚上去的正文，形成一条"半截行"。
+ * 背景用「底色 → 透明」的竖向渐变而不是纯底色，滚动内容才会在它下面淡出。
+ */
+.settings-search-row {
+  position: sticky;
+  top: -16px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 0 10px;
+  margin-top: -16px;
+  background: linear-gradient(180deg, var(--miao-bg) 72%, transparent);
+}
+.settings-search-row .search-field {
+  width: 260px;
+}
+
+/* 搜索框本体：设计稿 `.search-field`（34 高 / 圆角 10 / surface-2 底 / 聚焦换主色环） */
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--miao-line);
+  border-radius: 10px;
+  background: var(--miao-surface-2);
+  color: var(--miao-muted);
+  transition:
+    border-color var(--miao-dur-fast) ease,
+    background var(--miao-dur-fast) ease,
+    box-shadow var(--miao-dur-fast) ease,
+    width var(--miao-dur-base) var(--miao-ease-out);
+}
+.search-field:focus-within {
+  border-color: var(--miao-primary);
+  background: var(--miao-surface);
+  box-shadow: 0 0 0 3px var(--miao-primary-soft);
+}
+.search-field > svg {
+  flex: 0 0 auto;
+}
+.search-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: 12px;
+  color: var(--miao-ink);
+}
+.search-field input::placeholder {
+  color: var(--miao-faint);
+}
+/* 清空按钮：设计稿 `.search-clear`（18 圆形 / surface-3 底） */
+.search-clear {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--miao-surface-3);
+  color: var(--miao-muted);
+  flex: 0 0 auto;
+  transition: color var(--miao-dur-fast) ease;
+}
+.search-clear:hover {
+  color: var(--miao-ink);
+}
+
+/* 右侧项数：设计稿 `.settings-count`（9.5px / faint） */
+.settings-count {
+  font-family: var(--md-font-numeric);
+  font-size: 9.5px;
+  color: var(--miao-faint);
+}
+
+/* 命中列表：设计稿 `.settings-search-results` + `.search-hit-row` */
+.settings-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.search-hit-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 13px;
+  border-radius: 10px;
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color var(--miao-dur-fast) ease,
+    background var(--miao-dur-fast) ease;
+}
+.search-hit-row:hover {
+  border-color: var(--miao-line-strong);
+  background: var(--miao-surface-2);
+}
+.search-hit-row > svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: var(--miao-muted);
+}
+.search-hit-row strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.search-hit-row small {
+  display: block;
+  font-size: 9px;
+  color: var(--miao-muted);
+}
+.search-hit-row .hit-section {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 8.5px;
+  color: var(--miao-faint);
+}
+
+/* 搜索无命中：设计稿 `.settings-empty`（虚线框 + 上升进场） */
+.settings-empty {
+  padding: 48px 20px;
+  text-align: center;
+  border: 1px dashed var(--miao-line-strong);
+  border-radius: 14px;
+  background: var(--miao-surface);
+  animation: miao-rise-in var(--miao-dur-base) var(--miao-ease-out);
+}
+.settings-empty h3 {
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.settings-empty p {
+  font-size: 10px;
+  color: var(--miao-muted);
+}
+
+/*
+ * 跳转落点高亮：设计稿 `.is-flash`（杏奶色左缘 + 底色，1.6s 淡出）。
+ * 只给 `background-color` 与 `box-shadow` 做动画 —— 动 `opacity` 会让整行连同文字一起闪。
+ */
+.is-flash {
+  animation: setting-flash 1.6s var(--miao-ease-out);
+}
+@keyframes setting-flash {
+  0% {
+    background-color: var(--miao-accent-soft);
+    box-shadow: inset 3px 0 0 var(--miao-accent);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: inset 3px 0 0 transparent;
+  }
+}
+
+/* 窄窗：搜索框铺满（设计稿 `≤1040px` 档） */
+@media (max-width: 1040px) {
+  .settings-search-row .search-field {
+    width: 100%;
+  }
+}
+
 /* 页头：设计稿 `.settings-section-head`（kicker / h2 / p 三段，margin:4px 0 14px） */
 .settings-section-head {
   margin: 4px 0 14px;
@@ -238,7 +412,7 @@
    它是组内分层的唯一手段（C11 判据），不可省 */
 .set-subtitle {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   margin: 0;
   padding: 13px 16px 10px;
@@ -249,6 +423,24 @@
   letter-spacing: 0.01em !important;
   color: var(--miao-ink);
   text-transform: none;
+}
+.set-subtitle-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.set-subtitle-name {
+  display: block;
+}
+/* 卡头副标题：设计稿 `.s-card-head p`（10px / muted / margin-top 2 / 行高 1.55） */
+.set-subtitle-head {
+  margin-top: 2px;
+  font-family: var(--md-font-body, inherit);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: 0;
+  color: var(--miao-muted);
 }
 
 /*
