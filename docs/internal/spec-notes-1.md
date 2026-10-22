@@ -7985,3 +7985,26 @@ CDP `Emulation.setDeviceMetricsOverride` 设三个宽度，读回 `.music-layout
 
 **五、验证**：`npm run check` 19/19 · `check:settings` 184/184 + 反证 **142/142** ·
 `check:units` 46/46 + 反证 **61/61** · `tsc` / `eslint` / `vite build` 全绿。
+## D-321 · 队列六列在窄窗会溢出；对照页两栏在窄窗该叠起来（2026-10-22）
+
+**一、队列的四列是定宽，加起来 584px。** `--qt-cols: 26px minmax(180px,1fr) 120px 160px 150px 128px`
+—— 名称列能吃剩余空间，其余四列是死的。加上侧栏与内边距，1000px 的窗口里整行溢出，
+表头与行的六列对不齐（`grid` 会把溢出的列挤扁）。
+设计稿在 ≤1040 给了**比例**版本：`24px minmax(180px,1.3fr) .5fr minmax(120px,1fr) .55fr auto`。
+本轮按它补了窄窗变体。
+
+**二、⚠️ 只覆盖"窄窗变体"，不动基础值。** 基础四列的像素是 `QUEUE_TABLE` 的事实源，
+**规格自检 C2a 逐列量它们**（注释里写明"改成比例会让断言失去意义"）。
+所以媒体查询里改的是 `--qt-cols` 这个**变量**（在 `.queue-table` 上），基础规则原样保留 ——
+宽窗下仍是设计稿的像素值，窄窗才切换成比例。
+
+**三、对照页两栏在窄窗要叠起来。** 设计稿 ≤1040 收紧内边距（gap 10 / padding 12）、
+≤900 改成上下两行。产品原来只有一条 `flex` 横排，900px 以下两栏各分到 350px 左右，
+原图与译文都读不清。已补：≤1040 收紧、≤900 `flex-direction: column`。
+
+**四、验证**：`npm run check` 19/19 · `check:units` 46/46 + 反证 **61/61** ·
+`check:music` 237/237 · `tsc` / `eslint` / `vite build` 全绿。
+产物 CSS 实测两条媒体查询都在：
+`@media (max-width: 1040px){.queue-table{--qt-cols: 24px …}.qt-row{gap:8px}.compare-panes{gap:10px;padding:12px}}`、
+`@media (max-width: 900px){… .compare-panes{flex-direction:column}}`。
+⚠️ 队列页与对照页都要库里有作品才渲染，浏览器预览到不了 ⇒ 判据取**产物 CSS**（不是源码）。
