@@ -1,4 +1,4 @@
-// 设置页 —— 由 sections.tsx 按 Section 拆分（D-150）。
+﻿// 设置页 —— 由 sections.tsx 按 Section 拆分（D-150）。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToasts } from '@hooks';
 import type { ServiceStatus } from '@/ipc';
@@ -320,7 +320,7 @@ export function TranslateSection({
 
       {/* 小节一：翻译来源（1）—— ver2.2 在线翻译并入 ② 的第一个小节（P-D2） */}
       <div className="set-group">
-        <SubTitle>翻译来源</SubTitle>
+        <SubTitle head="二选一 · 下一次翻译生效">翻译链路</SubTitle>
         {/* 定位说明常驻（视觉没就位时转告警色）：免得用户以为「切了在线就不用装引擎」 */}
         <Notice kind={onlineBlocked ? 'bad' : undefined} className="set-row-note">
           {srcNote}
@@ -438,7 +438,7 @@ export function TranslateSection({
 
       {/* 小节二：服务与配对（4） */}
       <div className="set-group">
-        <SubTitle>服务与配对</SubTitle>
+        <SubTitle head="本地服务由喵坞托管，可随时启停">服务与配对</SubTitle>
 
         <Row item={itemOf(pairing, 'service-endpoint')}>
           {state ? (
@@ -533,7 +533,7 @@ export function TranslateSection({
 
       {/* 小节三：推理引擎（5）—— 方向 / 档位 / 后端 / 两个空闲卸载阈值 */}
       <div className="set-group">
-        <SubTitle>推理引擎</SubTitle>
+        <SubTitle head="改档位 / 后端 / 模型目录需要重启引擎才生效">推理引擎</SubTitle>
         {eng.loadError ? (
           <Notice kind="bad" className="set-row-note">
             读不到引擎选项：{eng.loadError}
@@ -710,7 +710,7 @@ export function TranslateSection({
 
       {/* 小节四：模型与诊断（3） */}
       <div className="set-group">
-        <SubTitle>模型与诊断</SubTitle>
+        <SubTitle head="权重与引擎的现场">模型与诊断</SubTitle>
 
         <Row item={itemOf(model, 'model-dir')}>
           {o ? (

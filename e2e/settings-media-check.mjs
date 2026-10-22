@@ -1102,7 +1102,9 @@ add('CACHE.zeroDisabled', 'CACHE', (ctx) => {
 /** ② 的四小节 id（顺序即渲染顺序，也是 C11 判据「恰 4 个 `.set-subtitle`」的来源） */
 const ENGINE_GROUPS = ['source', 'pairing', 'inference', 'model'];
 /** 四小节标题字面量 —— C11 同时校验文字，这里必须逐字同源 */
-const ENGINE_SUBTITLES = ['翻译来源', '服务与配对', '推理引擎', '模型与诊断'];
+// 首节标题按设计稿是「翻译链路」（卡片副标题「二选一 · 下一次翻译生效」）——
+// 它取代了旧名「翻译来源」：这一节里除了来源二选一，还有在线 API 的密钥与连通性。
+const ENGINE_SUBTITLES = ['翻译链路', '服务与配对', '推理引擎', '模型与诊断'];
 /** 折叠区里剩下的三个区块标题（第 4 个「最近阶段日志」在 ver2.1 被**摘出**折叠范围，
  *  成为常驻日志区 —— 见《03》§3。它一旦回到折叠区，`ENGINE.run.noDupeLogSection` 变红） */
 const DIAG_SECTIONS = ['进程状态', '生效配置', '模型状态'];
@@ -1189,9 +1191,11 @@ add('ENGINE.wiring.fourSubTitles', 'ENGINE', (ctx) => {
    * ver2.2（P-D2）起是 4 个：在线翻译并入 ② 作为第一个小节「翻译来源」。
    */
   const body = stripComments(raw);
-  const n = (body.match(/<SubTitle>/g) ?? []).length;
+  // 判据按 `<SubTitle` 前缀数（不要求紧跟 `>`）：小节标题现在带 `head` 卡片副标题，
+  // 写成 `<SubTitle>` 全等会漏数 —— 那正是锚点跟实现一起漂的假绿来源。
+  const n = (body.match(/<SubTitle[\s>]/g) ?? []).length;
   if (n !== 4) return { ok: false, detail: `TranslateSection 里有 ${n} 个 <SubTitle>，应恰为 4（C11 判据）` };
-  const missing = ENGINE_SUBTITLES.filter((t) => !body.includes(`<SubTitle>${t}</SubTitle>`));
+  const missing = ENGINE_SUBTITLES.filter((t) => !new RegExp(`<SubTitle[^>]*>${t}</SubTitle>`).test(body));
   return {
     ok: missing.length === 0,
     detail: missing.length ? `小节标题缺字面量：${missing.join('、')}（C11 按文字校验）` : '',
@@ -2658,8 +2662,8 @@ add('SIMPLIFY.translate.noSpecRefs', 'SIMPLIFY', (ctx) => {
       probe(`项 ${it.id}.def`, it.def);
     }
   const body = stripComments(ctx.s.sections);
-  const a = body.indexOf('<SubTitle>翻译来源');
-  const b = a < 0 ? -1 : body.indexOf('<SubTitle>服务与配对', a);
+  const a = body.indexOf('翻译链路');
+  const b = a < 0 ? -1 : body.indexOf('服务与配对', a);
   if (a < 0 || b < 0) problems.push('sections.tsx 里「翻译来源」小节边界找不到（判据圈不住）');
   else probe('sections 翻译来源 JSX', body.slice(a, b));
   problems.push(...hits.map((h) => `仍有需求/设计稿引用：${h}`));
@@ -3530,7 +3534,9 @@ const MUTATIONS = [
   {
     name: '删掉「模型与诊断」小节标题（C11 的小节数不再对得上）',
     file: F.secTranslate,
-    find: '        <SubTitle>模型与诊断</SubTitle>\n',
+    // 锚点只取标题字面量、不带缩进与属性：小节标题现在带 head 副标题，
+    // 写死 `<SubTitle>模型与诊断</SubTitle>` 会随卡片副标题的增删静默失配
+    find: '模型与诊断</SubTitle>\n',
     replace: '',
     expect: ['ENGINE.wiring.fourSubTitles'],
   },

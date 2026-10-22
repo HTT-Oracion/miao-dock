@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 设置页 34 项的**唯一事实源**（《09》§4.2 / §4.3 / §4.4）。
  *
  * ## 为什么用数据而不是 JSX 硬写
@@ -202,7 +202,8 @@ export const TRANSLATE: SettingSection = {
   groups: [
     {
       id: 'source',
-      title: '翻译来源',
+      title: '翻译链路',
+      head: '二选一 · 下一次翻译生效',
       items: [
         {
           id: 'translate-source',
@@ -216,6 +217,7 @@ export const TRANSLATE: SettingSection = {
     {
       id: 'pairing',
       title: '服务与配对',
+      head: '本地服务由喵坞托管，可随时启停',
       items: [
         { id: 'service-endpoint', label: '服务状态与端口', state: 'live', why: '本地翻译服务与引擎端口' },
         {
@@ -232,6 +234,7 @@ export const TRANSLATE: SettingSection = {
     {
       id: 'inference',
       title: '推理引擎',
+      head: '改档位 / 后端 / 模型目录需要重启引擎才生效',
       items: [
         {
           id: 'translate-direction',
@@ -273,6 +276,7 @@ export const TRANSLATE: SettingSection = {
     {
       id: 'model',
       title: '模型与诊断',
+      head: '权重与引擎的现场',
       items: [
         {
           id: 'model-dir',
@@ -329,6 +333,7 @@ export const MEDIA: SettingSection = {
     {
       id: 'playback',
       title: '播放',
+      head: '这些默认值会同步到播放条和展开播放器',
       items: [
         {
           id: 'quality',
@@ -365,6 +370,7 @@ export const MEDIA: SettingSection = {
     {
       id: 'lyrics',
       title: '歌词',
+      head: '作用于展开播放器与桌面歌词窗口',
       items: [
         {
           id: 'lyrics-mode',
@@ -406,6 +412,7 @@ export const MEDIA: SettingSection = {
     {
       id: 'vinyl',
       title: '透明彩胶',
+      head: '「透明彩胶」皮肤专用的唱片底色',
       items: [
         {
           id: 'vinyl-color-mode',
