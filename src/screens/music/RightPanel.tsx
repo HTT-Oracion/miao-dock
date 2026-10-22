@@ -1,4 +1,4 @@
-﻿import {
+import {
   ChevronLeft,
   ChevronRight,
   Heart,
@@ -195,6 +195,8 @@ function SearchResults() {
             <SongRow
               song={s}
               cover={coverProxyUrl(s.cover, proxyPort)}
+              // 搜索结果按设计稿的表格口径给「歌手 · 专辑」：同名歌曲只能靠专辑区分
+              meta={s.album ? `${s.artist} · ${s.album}` : s.artist}
               active={currentSong ? songKey(currentSong) === songKey(s) : false}
               onClick={play}
               onPlay={play}
@@ -519,6 +521,8 @@ function RightTracksView() {
                 <SongRow
                   song={s}
                   cover={coverProxyUrl(s.cover, proxyPort)}
+                  // 曲目列表按设计稿的表格口径给「歌手 · 专辑」
+                  meta={s.album ? `${s.artist} · ${s.album}` : s.artist}
                   active={currentSong ? songKey(currentSong) === songKey(s) : false}
                   onClick={play}
                   onPlay={play}
@@ -579,6 +583,7 @@ function DailyView() {
               <SongRow
                 song={s}
                 cover={coverProxyUrl(s.cover, proxyPort)}
+                meta={s.album ? `${s.artist} · ${s.album}` : s.artist}
                 active={currentSong ? songKey(currentSong) === songKey(s) : false}
                 onClick={play}
                 onPlay={play}
