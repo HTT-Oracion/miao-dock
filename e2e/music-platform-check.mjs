@@ -2572,7 +2572,12 @@ add('LYRICS.showTranslationWired', 'LYRICS', (s) => {
   const island = stripComments(s.island ?? '');
   const missing = [];
   if (!exp) missing.push('未读到 ExpandedPlayer.tsx');
-  else if (!/showTranslation/.test(exp)) missing.push('ExpandedPlayer 未给 KaraokeLyrics 传 showTranslation');
+  // ver3：翻译显隐由「译」开关控制（设计稿 `.xp-tab-tools` 的 chip），
+  // 所以接线判据是「传给 KaraokeLyrics 的是那个 state」+「真的有一个能翻转它的开关」。
+  // 只写 `showTranslation` 一词不够：把它写死成 `{false}` 也照样命中，那是假绿。
+  else if (!/showTranslation=\{showTranslation\}/.test(exp))
+    missing.push('ExpandedPlayer 未把「译」开关的 state 传给 KaraokeLyrics');
+  else if (!/setShowTranslation\(/.test(exp)) missing.push('ExpandedPlayer 没有能翻转译文显隐的开关');
   if (!island) missing.push('未读到 DynamicIsland.tsx');
   else {
     // 灵动岛的 KaraokeLyrics 调用片段不得出现 showTranslation
@@ -5951,10 +5956,10 @@ const MUTATIONS = [
     expect: ['LYRICS.artistLine'],
   },
   {
-    name: '删掉展开播放器给 KaraokeLyrics 传的 showTranslation（详情页不显示翻译）',
+    name: '把「译」开关写死成 false（详情页永远不显示翻译）',
     file: F.expanded,
-    find: 'showTranslation',
-    replace: '',
+    find: 'showTranslation={showTranslation}',
+    replace: 'showTranslation={false}',
     expect: ['LYRICS.showTranslationWired'],
   },
   // ---- D-56 新增 4 条断言的反证：每条破坏对应机制，必须变红 ----

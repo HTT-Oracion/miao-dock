@@ -1984,7 +1984,56 @@
   position: absolute;
   top: 12px;
   left: 14px;
+  right: 14px;
   z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/*
+ * 头部中央（设计稿 `.xp-head-center`）：一行「正在播放」+ 专辑名。
+ * 绝对居中而不是跟着 flex 排 —— 左侧是收起按钮，让它参与排布会把这段文字推偏。
+ */
+.music-exp-topcenter {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  pointer-events: none;
+}
+.music-exp-topcenter span {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.72);
+}
+.music-exp-topcenter small {
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.5);
+}
+/* 浅色皮肤下翻回深色（与 .music-exp .ui-cbtn 的同一套开关） */
+.music-exp.is-light .music-exp-topcenter span {
+  color: color-mix(in srgb, var(--miao-ink) 72%, transparent);
+}
+.music-exp.is-light .music-exp-topcenter small {
+  color: color-mix(in srgb, var(--miao-ink) 50%, transparent);
+}
+/* 「译」开关：与 Tab 同一行右端，选中态用主色淡片 */
+.music-exp-ltabs .music-exp-trans {
+  margin-left: 6px;
+  align-self: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.music-exp-ltabs .music-exp-trans.is-on {
+  background: var(--miao-primary-soft);
+  border-color: var(--miao-primary-line);
+  color: var(--miao-primary-ink);
 }
 /* 深色皮肤下控制按钮取白色；浅色皮肤（.is-light）再翻回深色 */
 .music-exp .ui-cbtn {

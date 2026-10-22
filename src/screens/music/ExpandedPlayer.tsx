@@ -204,6 +204,8 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const setQueueOpen = useMusicStore((s) => s.setQueueOpen);
 
   const [styleMenuOpen, setStyleMenuOpen] = useState(false);
+  /** 歌词译文显隐（设计稿「译」开关）：只影响渲染，不重新取歌词 */
+  const [showTranslation, setShowTranslation] = useState(true);
   const loadedKeyRef = useRef('');
 
   const caps = capsOf(playbackSource);
@@ -463,7 +465,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
       <SpectrumScene active={isSpectrum} isPlaying={isPlaying} deep={vivid.deep} light={vivid.light} />
 
       <div className="music-exp-topbar">
-        <IconButton title="收起" onClick={() => closeExpanded()}>
+        <IconButton title="收起播放器" onClick={() => closeExpanded()}>
           {/*
             收起用 ChevronDown（向下）而不是 ChevronLeft —— 展开播放器是从**底部上滑**铺满的，
             "收起"对应的是**向下**退回去；向左的箭头会让人以为"返回上一页"。
@@ -471,6 +473,12 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
           */}
           <ChevronDown size={22} />
         </IconButton>
+        {/* 头部中央（设计稿 `.xp-head-center`）：一行「正在播放」+ 专辑名。
+            展开播放器铺满整屏，没有它用户会短暂失去"我在哪一首上"的定位 */}
+        <div className="music-exp-topcenter">
+          <span>正在播放</span>
+          {currentSong?.album ? <small>{currentSong.album}</small> : null}
+        </div>
       </div>
 
       <div className={bodyClass}>
@@ -516,6 +524,20 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
                     评论
                   </button>
                 ) : null}
+                {/*
+                  「译」开关（设计稿 `.xp-tab-tools` 的 chip）：只控制**译文行**的显隐，
+                  不重新拉歌词 —— 译文在 `loadLyrics` 时已按时间轴合并进每一行，
+                  关掉只是不渲染那一行，切换是即时的。
+                */}
+                <button
+                  type="button"
+                  className={showTranslation ? 'music-exp-trans chip chip-soft is-on' : 'music-exp-trans chip'}
+                  title="显示 / 隐藏歌词翻译"
+                  aria-pressed={showTranslation}
+                  onClick={() => setShowTranslation(!showTranslation)}
+                >
+                  译
+                </button>
               </div>
             ) : null}
 
@@ -552,7 +574,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
                   lines={parsedLyrics}
                   fontPx={lyricsFontSize}
                   align={isVinyl || isCover ? 'left' : 'center'}
-                  showTranslation
+                  showTranslation={showTranslation}
                   seeking={seeking}
                   headerLine={currentSong?.artist ? `演唱：${currentSong.artist}` : undefined}
                 />
@@ -569,7 +591,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
             {/* 红心：仅登录后显示（未登录点了也写不进去），已红心时填充红色 */}
             {logged ? (
               <IconButton
-                title={isLiked ? '取消红心' : '红心'}
+                title="喜欢"
                 onClick={() => {
                   if (currentSong) void toggleLike(currentSong);
                 }}
@@ -583,11 +605,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
                 再叠一层碟片模式要么无意义、要么与样式自身的封面处理冲突（彩胶自己就是唱片）。
                 只有「现代 / 通透」这种标准方形封面才需要它。 */}
             {isPlainLayout ? (
-              <IconButton
-                title={discMode ? '关闭碟片模式' : '开启碟片模式'}
-                active={discMode}
-                onClick={() => setDiscMode(!discMode)}
-              >
+              <IconButton title="碟片模式" active={discMode} onClick={() => setDiscMode(!discMode)}>
                 <Film size={18} />
               </IconButton>
             ) : null}
@@ -597,7 +615,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
               <button
                 type="button"
                 className="music-exp-stylebtn"
-                title="切换样式"
+                title="播放器皮肤"
                 onClick={() => setStyleMenuOpen((v) => !v)}
               >
                 <StyleIcon size={16} />
@@ -651,7 +669,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
             <IconButton title="上一首" onClick={() => prev()}>
               <SkipBack size={22} />
             </IconButton>
-            <IconButton title={isPlaying ? '暂停' : '播放'} primary onClick={() => togglePlay()}>
+            <IconButton title="播放/暂停" primary onClick={() => togglePlay()}>
               {isPlaying ? <Pause size={20} /> : <Play size={20} />}
             </IconButton>
             <IconButton title="下一首" onClick={() => next()}>
@@ -721,7 +739,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
             {/* 桌面歌词窗口开关：本平台不提供该窗口时整块不渲染 */}
             {desktopLyricsSupported && (
               <IconButton
-                title={lyricsWindowOpen ? '关闭桌面歌词' : '开启桌面歌词'}
+                title="桌面歌词"
                 active={lyricsWindowOpen}
                 onClick={() => void setLyricsWindowOpen(!lyricsWindowOpen)}
               >
