@@ -167,7 +167,8 @@ export const VIEW_TABS = {
  * | 分组项     | padding 9/12, icon 18, gap 2 | — |
  * | 页标题     | 15px/700 | — |
  * | 小节标题   | 10.5px/700/uppercase/.05em | **组内分层的关键**，不可省 |
- * | 行         | min-height 50, padding 10 0 | 相邻行 1px line-soft |
+ * | 行         | min-height 56, padding 12 16 | 相邻行 1px line（设计稿 `.s-row` 原值）|
+ * | 行控件     | 下拉 186×32 · 小按钮 28/r9 · 只读 28/r8 · 开关 38×22（圆点 16）| 见下方 `ctl*` 键 |
  */
 export const SETTINGS = {
   /** 左栏列宽：设计稿 `.settings-layout` 的 `grid-template-columns: 192px` */
@@ -196,6 +197,25 @@ export const SETTINGS = {
   bodyMaxWidth: 880,
   /** 设计稿 `.settings-main { padding: 16px 26px 56px }` */
   mainPadding: { top: 16, x: 26, bottom: 56 },
+  /**
+   * 行右侧控件位的几何（自检 C12 量的是渲染值，CSS 改错这里立刻红）。
+   * 每一条都注明设计稿的原选择器 —— 这四档**不是一套尺寸**：下拉 32 高、
+   * 小按钮与只读值 28 高、开关 22 高，各按设计稿；统一成一个高度反而是错的。
+   * 只收几何、不收字号：字号被 `--ui-scale` 换算，首帧可能取不到变量（见 C12 的注释）。
+   */
+  /** 设计稿 `.s-row-control .select { width: 186px; height: 32px }` */
+  ctlSelectWidth: 186,
+  ctlSelectHeight: 32,
+  /** 设计稿 `.btn-sm { height: 28px; border-radius: 9px }` */
+  ctlBtnSmHeight: 28,
+  ctlBtnSmRadius: 9,
+  /** 设计稿 `.readonly { height: 28px; border-radius: 8px }` */
+  ctlRoHeight: 28,
+  ctlRoRadius: 8,
+  /** 设计稿 `.switch-track { width: 38px; height: 22px; padding: 2px }` + `.switch-dot { 16×16 }` */
+  ctlSwitchWidth: 38,
+  ctlSwitchHeight: 22,
+  ctlSwitchKnob: 16,
 } as const;
 
 /** 画面 X-C1 · 任务队列几何（《02》§5.2） */

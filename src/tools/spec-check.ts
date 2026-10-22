@@ -642,5 +642,82 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     }
   }
 
+  // ---------------------------------------------------------------- C12 行控件几何
+  //
+  // 设计稿右列那一排控件**各有各的尺寸**（下拉 186×32、小按钮 28、只读值 28、开关 38×22），
+  // 把它们"顺手统一成同一高度"是最常见的一种换皮。这条量的就是渲染值，
+  // 期望表在 `themes/tokens.ts` 的 `SETTINGS.ctl*`（每条都注明了设计稿原选择器）。
+  {
+    const box = q<HTMLElement>(root, '.set-row-ctl');
+    if (!box) {
+      add(
+        'C12',
+        '行控件几何与设计稿逐值一致（下拉 / 小按钮 / 只读值 / 开关）',
+        false,
+        '样张里找不到 .set-row-ctl —— 样张与判据脱节，这条会变成永远不跑的僵尸',
+      );
+    } else {
+      const sel = q<HTMLElement>(box, '.ui-select');
+      const btn = q<HTMLElement>(box, '.btn-sm');
+      const ro = q<HTMLElement>(box, '.set-ro');
+      const sw = q<HTMLElement>(box, '.switch');
+      const knob = q<HTMLElement>(box, '.switch-track > i');
+      const num = (el: HTMLElement | null) => (el ? el.getBoundingClientRect() : null);
+      const sty = (el: HTMLElement | null) => (el ? getComputedStyle(el) : null);
+      const selR = num(sel);
+      const btnR = num(btn);
+      const btnS = sty(btn);
+      const roR = num(ro);
+      const roS = sty(ro);
+      const swR = num(sw);
+      // 🔴 圆点量**计算值**而不是 `getBoundingClientRect()`：is-on 的圆点带 `transform:
+      // translateX(16px)` 且挂着弹簧过渡，首帧量到的盒可能还在过渡中途 —— 那条判据会变成
+      // "第一次跑红、第二次绿"，而自检里出现假红比没有这条判据更糟（用户从此不信它）。
+      const knobS = sty(knob);
+      const knobW = knobS ? px(knobS.width) : -1;
+      const knobH = knobS ? px(knobS.height) : -1;
+      // **只有"量到了 0"才跳过**（样张比判据慢一步，还没布局完）—— 那不是规格偏离。
+      // 元素**缺失**照红：样张是我们自己维护的，掉了就说明判据在量一个不存在的东西。
+      const notReady = !!selR && selR.width === 0 && !!swR && swR.width === 0;
+      if (notReady) {
+        add(
+          'C12',
+          `行控件几何逐值一致（下拉 ${SETTINGS.ctlSelectWidth}×${SETTINGS.ctlSelectHeight} / 小按钮 / 只读值 / 开关）`,
+          true,
+          '样张尚未完成布局（跳过，非通过依据）—— 再点一次运行自检即可',
+        );
+      } else {
+        /*
+         * 这条**只量几何**（盒宽高是 used value，稳）。
+         * 刻意不比字号：字号走 `calc(Npx * var(--ui-scale))`（构建期注入，见 D-347），
+         * 实测新页面第一次自检时它会有一瞬取不到变量（回落到继承的 13.5px），
+         * 判据就变成「第一次跑红、第二次绿」—— 会假红的断言比没有更坏，它教会用户不信自检。
+         * 字号阶梯本来就由 C2/C7 那批排版判据覆盖，它们量的是同一批样张的稳定面。
+         */
+        const okSel = near(selR!.width, SETTINGS.ctlSelectWidth) && near(selR!.height, SETTINGS.ctlSelectHeight);
+        const okBtn =
+          near(btnR!.height, SETTINGS.ctlBtnSmHeight) && !!btnS && near(px(btnS.borderRadius), SETTINGS.ctlBtnSmRadius);
+        const okRo =
+          near(roR!.height, SETTINGS.ctlRoHeight) && !!roS && near(px(roS.borderRadius), SETTINGS.ctlRoRadius);
+        const okSw =
+          near(swR!.width, SETTINGS.ctlSwitchWidth) &&
+          near(swR!.height, SETTINGS.ctlSwitchHeight) &&
+          near(knobW, SETTINGS.ctlSwitchKnob) &&
+          near(knobH, SETTINGS.ctlSwitchKnob);
+        add(
+          'C12',
+          `行控件几何逐值一致（下拉 ${SETTINGS.ctlSelectWidth}×${SETTINGS.ctlSelectHeight} / 小按钮 ${SETTINGS.ctlBtnSmHeight}·r${SETTINGS.ctlBtnSmRadius} / 只读 ${SETTINGS.ctlRoHeight}·r${SETTINGS.ctlRoRadius} / 开关 ${SETTINGS.ctlSwitchWidth}×${SETTINGS.ctlSwitchHeight}·圆点 ${SETTINGS.ctlSwitchKnob}）`,
+          okSel && okBtn && okRo && okSw,
+          [
+            `下拉 ${selR ? `${selR.width.toFixed(0)}×${selR.height.toFixed(0)}` : '缺'}${okSel ? '' : ' ← 与 .s-row-control .select 不符'}`,
+            `小按钮 ${btnR ? `${btnR.height.toFixed(0)}/r${btnS ? px(btnS.borderRadius) : '?'}` : '缺'}${okBtn ? '' : ' ← 与 .btn-sm 不符'}`,
+            `只读值 ${roR ? `${roR.height.toFixed(0)}/r${roS ? px(roS.borderRadius) : '?'}` : '缺'}${okRo ? '' : ' ← 与 .readonly 不符'}`,
+            `开关 ${swR ? `${swR.width.toFixed(0)}×${swR.height.toFixed(0)}` : '缺'} · 圆点 ${knobW > 0 ? `${knobW.toFixed(0)}×${knobH.toFixed(0)}` : '缺'}${okSw ? '' : ' ← 与 .switch-track/.switch-dot 不符'}`,
+          ].join(' / '),
+        );
+      }
+    }
+  }
+
   return out;
 }

@@ -6,7 +6,7 @@ import type { ThemeMode } from '@/themes/tokens';
 import { LIBRARY, QUEUE_TABLE } from '@/themes/tokens';
 import type { TaskRow } from '@/types';
 import { STATUS_DOT_VAR, STATUS_LABEL, SOURCE_LABEL } from '@/types';
-import { Btn, Dot, MagicCircle } from '@components/units';
+import { Btn, Dot, MagicCircle, Select, Switch } from '@components/units';
 import { QuitConfirm } from '@components/QuitConfirm';
 import { emphasis } from '@screens/settings/parts';
 
@@ -195,6 +195,19 @@ export function SpecFixture() {
             </div>
           </div>
         </section>
+      </div>
+
+      {/*
+        设置页行控件样张（C12）。设计稿右列那一排控件**各有各的尺寸**，不是统一高度：
+        下拉 186×32、小按钮 28/r9/11.5、只读值 28/r8/10.5、开关轨道 38×22（圆点 16）。
+        样张挂在 `.set-row-ctl` 里，与真行的上下文完全一致 —— 那条 186 的宽度就是
+        靠这个作用域生效的，样张换了容器等于没测到真东西。
+      */}
+      <div className="set-row-ctl" data-spec="ctl">
+        <span className="set-ro">127.0.0.1:5180</span>
+        <Btn size="sm">重新下载</Btn>
+        <Switch on label="样张开关" onToggle={noop} />
+        <Select label="样张下拉" value="a" options={[{ value: 'a', label: '高清臻音' }]} onChange={noop} />
       </div>
 
       {/*
