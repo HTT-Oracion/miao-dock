@@ -683,16 +683,16 @@
 .now-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
+/* 封面（设计稿 `.now-art`）：1:1、r14、只留一层投影（不描边 —— 右栏底色本身就够分界） */
 .now-cover {
   width: 100%;
   aspect-ratio: 1;
-  border-radius: var(--miao-r-lg);
+  border-radius: 14px;
   overflow: hidden;
   background: var(--miao-surface-2);
-  border: 1px solid var(--miao-line);
-  box-shadow: var(--miao-shadow-1);
+  box-shadow: 0 16px 30px -22px rgba(43, 47, 55, 0.5);
 }
 .now-cover img {
   width: 100%;
@@ -708,7 +708,9 @@
 }
 .now-title {
   font-family: var(--md-font-display);
-  font-size: 13.5px;
+  font-size: 15px;
+  line-height: 1.35;
+  margin-top: 2px;
   font-weight: 700;
   color: var(--miao-ink);
   white-space: nowrap;
