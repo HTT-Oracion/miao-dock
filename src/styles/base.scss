@@ -18,6 +18,42 @@
   box-sizing: border-box;
 }
 
+/*
+ * 字号分档系数 —— **档位值只写在这里**，换算发生在构建期
+ * （`vite.config.ts` 的 `uiScaleFonts`：产物里每条 `font-size: Npx` 变成
+ * `calc(Npx * var(--ui-scale))`，源码保持纯像素）。
+ *
+ * 四档与设计稿 `--ui-scale` 同值同断点：≥1500 → 1.06、≥1720 → 1.12、≥1920 → 1.18、
+ * ≤1180 → 0.95，其余为 1。为什么这个令牌写在 CSS 而不是 `themes/tokens.ts`：
+ *  ① 它不是颜色，不参与「深色模式只换变量」那条约束；
+ *  ② 它的值由**视口宽度**决定，媒体查询是原生能力；交给 JS 就得自己挂 resize 重算，
+ *     反而多一处状态源（歌词窗、番剧窗各有独立文档，更要留在 CSS 里）。
+ */
+:root {
+  --ui-scale: 1;
+}
+
+@media (min-width: 1500px) {
+  :root {
+    --ui-scale: 1.06;
+  }
+}
+@media (min-width: 1720px) {
+  :root {
+    --ui-scale: 1.12;
+  }
+}
+@media (min-width: 1920px) {
+  :root {
+    --ui-scale: 1.18;
+  }
+}
+@media (max-width: 1180px) {
+  :root {
+    --ui-scale: 0.95;
+  }
+}
+
 html,
 body,
 #root {
@@ -147,6 +183,10 @@ th {
  */
 
 .an-root {
+  /* 字号分档对番剧**不适用**（隔离红线）。换算由构建期统一注入（见 `vite.config.ts`），
+     产物里所有分片的 CSS 已在同一个文件里、按文件排除不掉，所以用隔离作用域把它关掉：
+     `--ui-scale` 会被 `calc()` 就地取到，番剧整棵子树恒按 1 计算。 */
+  --ui-scale: 1;
   --md-ink: #3b3352;
   --md-ink-2: #5c5478;
   --md-muted: #8c85a3;
