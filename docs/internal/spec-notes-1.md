@@ -8008,3 +8008,24 @@ CDP `Emulation.setDeviceMetricsOverride` 设三个宽度，读回 `.music-layout
 `@media (max-width: 1040px){.queue-table{--qt-cols: 24px …}.qt-row{gap:8px}.compare-panes{gap:10px;padding:12px}}`、
 `@media (max-width: 900px){… .compare-panes{flex-direction:column}}`。
 ⚠️ 队列页与对照页都要库里有作品才渲染，浏览器预览到不了 ⇒ 判据取**产物 CSS**（不是源码）。
+## D-322 · 灵动岛居中的是"内容区"，不是"窗口"（2026-10-22）
+
+**一、🔴 岛偏左了半个侧栏宽。** 产品的 `.di-wrap` 是 `left:0; right:0; justify-content:center`
+—— 在**整个窗口**里居中；而设计稿 `.island` 的 `left` 是
+`calc(var(--sidebar-w) + (100vw - var(--sidebar-w)) / 2)` —— 在**侧栏右侧的内容区**里居中。
+两者差 78/2 ≈ 39px：岛的中线、工具条标题、内容区中线三条对不上，看起来像"没摆正"。
+
+**二、处置**：`.di-wrap` 改 `left: var(--di-left, 78px); right: 0` + 仍是
+`justify-content: center`（与设计稿的算式等价，但不必在 CSS 里算 `calc` 两次）。
+`top` 从 0 改成 **12px**（设计稿的落点）—— 贴顶会让人以为它是标题栏的一部分。
+
+**三、侧栏在窄窗会收窄，岛的中线要跟着走。** `app.scss` 的 1040 / 760 两档把侧栏
+从 78 收到 66 / 60，所以 `.di-wrap` 也补了同样两档的 `--di-left`。
+不补的话，1040 以下的岛会偏右 12px、760 以下偏右 18px —— 单看都"差不多"，
+但工具条标题就在它下方，两条中线一错位立刻看得出来。
+
+**四、验证**：`npm run check` 19/19 · `check:music` 237/237 + 反证 **232/232** ·
+`check:units` 46/46 · `tsc` / `eslint` / `vite build` 全绿。
+产物 CSS 实测：`.di-wrap{position:fixed;top:12px;left:var(--di-left, 78px);right:0;display:flex;justify-content:center;…}`
++ `@media (max-width: 1040px){.di-wrap{--di-left: 66px}}` + 760 档的 60px。
+⚠️ 岛只在**队列非空**时渲染（`hasQueue` 为假直接 `return null`），浏览器预览里没有队列 ⇒ 静态核对。
