@@ -7742,3 +7742,29 @@ CDP 实测（设置页 播放·媒体）：卡头 `音乐缓存` / `只统计在
 `check:registry` 15/15 + 反证 13/13 · `check:docpaths` 5/5 · `check:engine-bootstrap` 23/23 ·
 `check:counts` 2/2 · `check:music:refute` **232/232** · `check:units:refute` **61/61** ·
 `tsc` / `eslint` / `vite build` 全绿。
+## D-311 · 设置页块级结构"已齐"，只差一条竖条（2026-10-22）
+
+**一、这轮先取证再动手。** 用 CDP 逐组导航（`#/settings?section=…`）读回 DOM，
+数每组的 `.set-subtitle`（小节名 + 说明）与块级卡头：
+
+| 组 | 小节 | 块级卡头 |
+|---|---|---|
+| 通用 | 外观 / 行为与自检 | — |
+| 翻译服务 | 翻译链路 / 服务与配对 / 推理引擎 / 模型与诊断 | — |
+| 播放·媒体 | 播放 / 歌词 / 透明彩胶 | 音乐缓存 |
+| 资源与投放 | 清理 | 存储占用 |
+| 关于 | 第三方许可 | 品牌头（`.set-about-head`） |
+
+五组**都有卡头与说明**，此前几轮已经补全 —— 这轮不需要再"补卡头"。
+
+**二、唯一缺的是一条几何：导航选中项左缘的主色竖条。**
+设计稿 `.snav.is-active::before` 是 `left:-10px / top·bottom:12px / width:2px / r2`，
+产品只有"抬白底 + 内描边"，没有竖条。已补：`left:-10px` 正好抵消 `.settings-nav` 的
+左右 10px 内边距，竖条落在栏的边缘；上下各内收 12 让它比项本身矮 —— 读起来是"标记"
+而不是"边框"。
+
+**三、验证**：`npm run check` 19/19 · `check:settings` 184/184 + 反证 **142/142** ·
+`tsc` / `eslint` / `vite build` 全绿。
+CDP 实测选中项 `::before`：`content:"" / width:2px / left:-10px / top:12px / bottom:12px /
+border-radius:2px / background: rgb(110,151,185)`（= `--miao-primary`）/ `position:absolute`；
+项本身 `position:relative / border-radius:9px / 11.5px / 700` —— 与设计稿 `.snav` 逐项一致。
