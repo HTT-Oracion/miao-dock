@@ -85,7 +85,7 @@ export function NewBookModal({
 
   return (
     <Modal
-      kicker="NEW BOOK"
+      kicker="NEW COMIC"
       title="新建漫画"
       subtitle="先建一个空书架位置，也可以稍后直接投放图片。"
       busy={busy}
@@ -459,14 +459,12 @@ export function MergeModal({
  *   `CHAPTER_NO_TAKEN`，与归并同码 —— 两者对"占用"的定义必须一致）。
  */
 export function EditChapterNoModal({
-  bookName,
   chapter,
   takenNos,
   busy,
   onCancel,
   onConfirm,
 }: {
-  bookName: string;
   /** 要改号的那一话 */
   chapter: ChapterEntry;
   /** 该书里**其它**话已占的话号（不含本话原号） */
@@ -489,7 +487,9 @@ export function EditChapterNoModal({
 
   return (
     <Modal
-      title={`编辑《${bookName}》第 ${chapter.no} 话的话号`}
+      kicker="EDIT CHAPTER"
+      title="编辑话数"
+      subtitle="支持一位小数，例如 14.1；同一本漫画内话号不能重复。"
       busy={busy}
       onClose={onCancel}
       actions={
@@ -624,8 +624,9 @@ export function HiddenComicsModal({
 }) {
   return (
     <Modal
-      kicker="LIBRARY / HIDDEN"
-      title="已隐藏的漫画"
+      kicker="HIDDEN BOOKS"
+      title="已隐藏的作品"
+      subtitle="隐藏只影响书架显示，文件与翻译记录都还在。"
       onClose={onClose}
       actions={
         <Btn kind="primary" onClick={onClose}>

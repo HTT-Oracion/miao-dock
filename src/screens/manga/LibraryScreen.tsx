@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react';
+﻿import type { ReactElement } from 'react';
 import { EyeOff, FolderUp, GitMerge, Pencil, Play, RotateCcw, Trash2 } from 'lucide-react';
 import { apiDelete, apiPost, apiPostMultipart, errorText, openPath } from '@/ipc';
 import type {
@@ -734,7 +734,6 @@ export function LibraryScreen({
 
       {editNoChapter ? (
         <EditChapterNoModal
-          bookName={editNoChapter.bookName}
           chapter={editNoChapter.chapter}
           takenNos={(books.find((b) => b.bookName === editNoChapter.bookName)?.chapters ?? [])
             .map((c) => chapterNoOf(c.dirName))
