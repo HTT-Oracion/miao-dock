@@ -8,13 +8,29 @@
 
 /* ================================================================ 应用外壳 */
 
+/*
+ * 应用外壳（设计稿 `.app` / `.shell` / `.sidebar`）：**平铺式**，不是浮动卡片。
+ *
+ * 设计稿里 `.app` 没有外边距、`.sidebar` 是**满高导轨**（只有一条右分隔线，
+ * 没有圆角与阴影），`.shell` 也直接贴边。旧写法把外壳做成"一张浮起来的卡"：
+ * `.app` 四周 10px 内边距 + 侧栏 26px 圆角 + 双向阴影 + 玻璃底 ——
+ * 那会让整个应用读成"窗口里嵌了一页纸"，与设计稿的"窗口即应用"不是同一件事。
+ */
+.app {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background: transparent;
+}
+
 .shell {
   display: flex;
   height: 100%;
   flex: 1;
   flex-direction: column;
   min-width: 0;
-  padding: 0 0 0 12px;
   background: transparent;
 }
 
@@ -33,16 +49,11 @@
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 12px 0;
+  padding: 12px 0 10px;
   background: var(--miao-glass);
   border-right: 1px solid var(--miao-glass-line);
   position: relative;
   height: 100%;
-  border: 1px solid var(--miao-glass-line);
-  border-radius: var(--miao-r-xl);
-  box-shadow:
-    0 18px 48px -30px rgba(45, 59, 70, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55);
   backdrop-filter: blur(22px) saturate(1.4);
   -webkit-backdrop-filter: blur(22px) saturate(1.4);
   z-index: 20;
@@ -76,19 +87,20 @@
  */
 .nav-item {
   flex: 0 0 auto;
-  border-radius: 18px;
+  border-radius: 14px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  font-size: 11px;
+  gap: 3px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   color: var(--miao-muted);
   transition:
-    background var(--miao-dur-base) var(--miao-ease-spring),
-    color var(--miao-dur-base) ease,
-    box-shadow var(--miao-dur-base) ease,
-    transform var(--miao-dur-base) var(--miao-ease-spring);
+    background var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-out);
   position: relative;
 }
 /*
@@ -131,7 +143,8 @@
 .nav-item.is-global {
   width: 44px;
   height: 44px;
-  border-radius: 15px;
+  border-radius: 12px;
+  gap: 0;
 }
 
 /* 全局层容器：把「下载入口 + 设置」一起压到侧栏底部。
@@ -651,17 +664,6 @@
  * ================================================================ */
 
 /* ---------------- 应用外框 ---------------- */
-
-.app {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  height: 100vh;
-  padding: 10px;
-  gap: 0;
-  overflow: hidden;
-  background: transparent;
-}
 
 html[data-theme='dark'] .sidebar {
   box-shadow:
