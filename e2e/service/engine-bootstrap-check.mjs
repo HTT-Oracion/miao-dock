@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * G5 · 「本地引擎开箱即用」引导链门 —— 一键下载编排 / 阶段顺序 / 中断可续 / 百分比来源真实 / 不出现命令行字样
  * =============================================================================
@@ -69,7 +69,6 @@ const VERSIONS_LOCK = path.join(ROOT, 'engine', 'VERSIONS.lock');
 const UI_FILES = [
   path.join(ROOT, 'src', 'screens', 'manga', 'NotReadyScreen.tsx'),
   path.join(ROOT, 'src', 'screens', 'engine', 'DownloadPanel.tsx'),
-  path.join(ROOT, 'src', 'screens', 'settings', 'OnlineApiForm.tsx'),
   path.join(ROOT, 'src', 'components', 'units', 'ProgressRing.tsx'),
 ];
 

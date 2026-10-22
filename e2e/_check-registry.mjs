@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 自测注册表（数据）—— `run-checks.mjs`（分层聚合 runner）与 `registry-check.mjs`
  * （注册表完整性钉子）共用的唯一事实源。
  *
@@ -775,7 +775,6 @@ const CHECKS = [
       'src/ipc/engine-download.ts',
       'src/screens/manga/NotReadyScreen.tsx',
       'src/screens/engine/DownloadPanel.tsx',
-      'src/screens/settings/OnlineApiForm.tsx',
       'src/components/units/ProgressRing.tsx',
       'e2e/service/engine-bootstrap-check.mjs',
     ],

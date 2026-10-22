@@ -1,4 +1,4 @@
-/* ================================================================ X-C1 任务队列
+﻿/* ================================================================ X-C1 任务队列
  *
  * ver3「空色日和」版：整块是一张卡片（汇总条 → 工具条 → 表 → 页脚），
  * 行不再各自带边框，靠分隔线与左侧状态条区分。
@@ -678,62 +678,6 @@
   margin-left: auto;
   cursor: help;
   font-size: 12px;
-  color: var(--md-muted);
-}
-/* ── 在线 API 内嵌表单（`OnlineApiForm`）：「使用在线翻译」卡片里那三行 + 一枚保存 ──
-   🔴 为什么不复用设置页那套 `.set-src-*`：`.set-src` 自带一条**面板内分区线**
-   （`border-top` + 上下 padding），那是设置页「翻译来源」分组内的分区语义；这里是
-   引导卡片的内嵌表单，套上去会凭空多出一条横线，读成"卡片里又分了一屏"。
-   只把**控件几何**落成这一族（`nr-form-*`），颜色与圆角仍与主题语义层同源。
-   🔴 几何刻意与 `.set-src-in` 不同：那里是 10px 数字字体的窄行（塞在设置的窄右列里），
-   这里是引导卡片里的主填写区，13px 才读得清。 */
-.nr-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.nr-form-line {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.nr-form-k {
-  font-size: 13px;
-  color: var(--md-muted);
-}
-.nr-form-in {
-  padding: 8px 11px;
-  border: 1px solid var(--miao-line);
-  border-radius: 12px;
-  background: var(--miao-surface);
-  color: var(--miao-ink);
-  font-size: 13px;
-  transition:
-    border-color var(--miao-dur-fast) ease,
-    box-shadow var(--miao-dur-fast) ease;
-}
-.nr-form-in:hover {
-  border-color: var(--miao-line-strong);
-}
-.nr-form-in:focus {
-  outline: none;
-  border-color: var(--miao-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--miao-primary) 14%, transparent);
-}
-/*
- * 🔴 动作行**必须**是这一层 flex，而不是让按钮直接进 `.nr-form` 的 column：
- * flex 容器默认 `align-items: stretch`，按钮作为直接子项会被拉成**整行宽** ——
- * 一枚「保存」占满一行看起来像个大面板，不像一个动作。这一层只放按钮，
- * 于是 `.btn` 自己的 `inline-flex` 生效，宽度回到内容。
- */
-.nr-form-acts {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-}
-.nr-form-empty {
-  font-size: 13px;
   color: var(--md-muted);
 }
 .nr-guide-note {
