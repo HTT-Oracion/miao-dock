@@ -1,4 +1,4 @@
-﻿// 右栏（发现）切片 —— 「右栏」段（D-156 从 store.ts 按 action 段切出）。
+// 右栏（发现）切片 —— 「右栏」段（D-156 从 store.ts 按 action 段切出）。
 import * as ipc from '@music/ipc';
 import * as platform from '@music/platform';
 import { songKey } from '@music/convert';
@@ -25,7 +25,7 @@ export const createRightSlice = (
   /** 官方榜单：网易云用硬编码榜单 ID + 歌单详情拼；酷狗/QQ/咪咕各有榜单列表接口 */
   loadCharts: async (p) => {
     const provider = p ?? get().playbackSource;
-    set({ loadingCharts: true });
+    set({ loadingCharts: true, chartsError: '' });
     try {
       if (provider === 'netease') {
         const CHART_IDS: [string, string][] = [
@@ -41,31 +41,37 @@ export const createRightSlice = (
           ['2809513713', '说唱榜'],
           ['71384707', '古典榜'],
         ];
+        // 逐条兜底（一张榜单失败不该拖垮整组），但要记下**失败了几条**：
+        // 全部失败时那是"网络/服务坏了"，不是"这些榜单恰好没内容" —— 必须说出来
+        let failed = 0;
+        let lastError = '';
         const results = await Promise.all(
           CHART_IDS.map(([id, name]) =>
-            ipc.musicPlaylistDetail(id).catch(
-              () =>
-                ({
-                  provider: 'netease',
-                  id,
-                  name,
-                  cover: '',
-                  track_count: 0,
-                  creator: '网易云音乐',
-                  subscribed: false,
-                }) as Playlist,
-            ),
+            ipc.musicPlaylistDetail(id).catch((e: unknown) => {
+              failed += 1;
+              lastError = String(e);
+              return {
+                provider: 'netease',
+                id,
+                name,
+                cover: '',
+                track_count: 0,
+                creator: '网易云音乐',
+                subscribed: false,
+              } as Playlist;
+            }),
           ),
         );
         if (get().playbackSource !== provider) return;
-        set({ officialCharts: results });
+        set({ officialCharts: results, chartsError: failed === CHART_IDS.length ? lastError : '' });
       } else {
         const charts = await platform.rankList(provider);
         if (get().playbackSource !== provider) return;
-        set({ officialCharts: charts });
+        set({ officialCharts: charts, chartsError: '' });
       }
-    } catch {
-      if (get().playbackSource === provider) set({ officialCharts: [] });
+    } catch (e) {
+      // 失败要**说出来**：空列表 + 一句原因，用户才知道是"没榜单"还是"没读到"
+      if (get().playbackSource === provider) set({ officialCharts: [], chartsError: String(e) });
     } finally {
       set({ loadingCharts: false });
     }
@@ -95,14 +101,14 @@ export const createRightSlice = (
       if (platform.chartUsesRankSongs(provider) && pl.creator === '榜单') {
         const songs = await platform.rankSongs(provider, pl.id, 100);
         if (get().playbackSource !== provider) return;
-        set({ rightPlaylistTracks: songs });
+        set({ rightPlaylistTracks: songs, rightTracksError: '' });
         return;
       }
       const [meta, songs] = await platform.playlistTracks(provider, pl.id);
       if (get().playbackSource !== provider) return;
-      set({ rightPlaylistMeta: meta, rightPlaylistTracks: songs });
-    } catch {
-      set({ rightPlaylistTracks: [] });
+      set({ rightPlaylistMeta: meta, rightPlaylistTracks: songs, rightTracksError: '' });
+    } catch (e) {
+      set({ rightPlaylistTracks: [], rightTracksError: String(e) });
     } finally {
       set({ loadingRightTracks: false });
     }
@@ -110,21 +116,27 @@ export const createRightSlice = (
 
   /** 榜单卡片点击：QQ/咪咕走榜单歌曲接口，网易云/酷狗走歌单曲目接口 */
   openRightChart: async (pl) => {
-    set({ rightView: 'tracks', rightPlaylistMeta: pl, loadingRightTracks: true, rightPlaylistTracks: [] });
+    set({
+      rightView: 'tracks',
+      rightPlaylistMeta: pl,
+      loadingRightTracks: true,
+      rightPlaylistTracks: [],
+      rightTracksError: '',
+    });
     const provider = get().playbackSource;
     try {
       if (platform.chartUsesRankSongs(provider)) {
         const limited = provider === 'migu' ? 100 : 99999;
         const songs = await platform.rankSongs(provider, pl.id, limited);
         if (get().playbackSource !== provider) return;
-        set({ rightPlaylistTracks: songs });
+        set({ rightPlaylistTracks: songs, rightTracksError: '' });
       } else {
         const [meta, songs] = await platform.playlistTracks(provider, pl.id);
         if (get().playbackSource !== provider) return;
-        set({ rightPlaylistMeta: meta, rightPlaylistTracks: songs });
+        set({ rightPlaylistMeta: meta, rightPlaylistTracks: songs, rightTracksError: '' });
       }
-    } catch {
-      set({ rightPlaylistTracks: [] });
+    } catch (e) {
+      set({ rightPlaylistTracks: [], rightTracksError: String(e) });
     } finally {
       set({ loadingRightTracks: false });
     }

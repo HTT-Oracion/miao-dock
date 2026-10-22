@@ -61,6 +61,7 @@ export function Charts() {
   const playbackSource = useMusicStore((s) => s.playbackSource);
   const charts = useMusicStore((s) => s.officialCharts);
   const loading = useMusicStore((s) => s.loadingCharts);
+  const error = useMusicStore((s) => s.chartsError);
   const proxyPort = useMusicStore((s) => s.proxyPort);
   const loadCharts = useMusicStore((s) => s.loadCharts);
   const openRightChart = useMusicStore((s) => s.openRightChart);
@@ -85,7 +86,16 @@ export function Charts() {
         </button>
       </div>
 
-      {charts.length === 0 && !caps.dailySongs ? (
+      {/*
+        读取失败**先于**「有没有内容」判断：旧条件里带了 `!caps.dailySongs`，
+        而网易云有每日推荐 ⇒ 那支错误分支在默认平台上根本到不了（死代码）。
+        失败就是失败，与"这个平台有没有每日推荐"无关。
+      */}
+      {error ? (
+        <Empty bad inline sub={`${error}（点右上「刷新」重试）`}>
+          榜单读取失败
+        </Empty>
+      ) : charts.length === 0 && !caps.dailySongs ? (
         <Empty inline>{loading ? '加载榜单中…' : '暂无榜单'}</Empty>
       ) : (
         <div className={grid ? 'music-charts is-grid' : 'music-charts'} onWheel={grid ? undefined : onWheel}>

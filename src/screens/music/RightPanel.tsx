@@ -1,4 +1,4 @@
-import {
+﻿import {
   ChevronLeft,
   ChevronRight,
   Heart,
@@ -475,6 +475,7 @@ function RightTracksView() {
   const meta = useMusicStore((s) => s.rightPlaylistMeta);
   const tracks = useMusicStore((s) => s.rightPlaylistTracks);
   const loading = useMusicStore((s) => s.loadingRightTracks);
+  const tracksError = useMusicStore((s) => s.rightTracksError);
   const loadingMore = useMusicStore((s) => s.loadingMoreRight);
   const loadMore = useMusicStore((s) => s.loadMoreRight);
   const back = useMusicStore((s) => s.backToRecommendations);
@@ -505,6 +506,11 @@ function RightTracksView() {
 
       {loading ? (
         <Empty>加载曲目中…</Empty>
+      ) : tracksError ? (
+        /* 读取失败与"歌单是空的"必须分开说：前者能重试，后者重试也没用 */
+        <Empty bad sub={tracksError}>
+          曲目读取失败
+        </Empty>
       ) : tracks.length === 0 ? (
         <Empty sub="去搜索一些歌曲，加入喜欢的歌单。">歌单是空的</Empty>
       ) : (
