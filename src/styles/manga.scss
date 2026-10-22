@@ -1,4 +1,4 @@
-/* ================================================================ X-C1 任务队列
+﻿/* ================================================================ X-C1 任务队列
  *
  * ver3「空色日和」版：整块是一张卡片（汇总条 → 工具条 → 表 → 页脚），
  * 行不再各自带边框，靠分隔线与左侧状态条区分。
@@ -1561,8 +1561,8 @@
  */
 .chapter-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(clamp(150px, 12vw, 200px), 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 9px;
 }
 /*
  * 页网格（设计稿 `.page-grid`）：每列至少 112px —— 比话卡更窄，一屏能看更多页。
