@@ -914,6 +914,25 @@
   min-height: 0;
   padding: 14px 22px 18px;
 }
+/*
+ * 窄窗两档（设计稿 §Responsive）：
+ * · ≤1040 左栏收到 250、外边距收到 16；
+ * · ≤900 改成**上下叠放**（上 210 书架、下页区）—— 再窄下去左右并排两边都读不清。
+ * ⚠️ 判据写在 `grid-template-columns` 上、不写 `--lib-left-w`：那个变量是**行内**注入的，
+ *    行内样式优先于样式表，改变量在这条媒体查询里不会生效。
+ */
+@media (max-width: 1040px) {
+  .lib {
+    grid-template-columns: 250px minmax(0, 1fr);
+    padding: 12px 16px 16px;
+  }
+}
+@media (max-width: 900px) {
+  .lib {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 210px minmax(0, 1fr);
+  }
+}
 /* 左栏 260（《02》§5.5）—— ver3 起是一张独立面板，卡片感来自描边 + 弥散阴影 */
 /* 书架头（设计稿 .shelf-head）：标题 + 部数，14/14/8 内边距 */
 .shelf-head {

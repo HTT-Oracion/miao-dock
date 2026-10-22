@@ -2013,7 +2013,19 @@
   }
 }
 
+/*
+ * ≤1040 只收窄（设计稿这一档仍是**两栏**：172 导航 + 内容，正文内边距 14/20/50）。
+ * 此前这里直接跳到了"单栏 + 导航横排"，比设计稿早 140px —— 1000px 的窗口明明放得下两栏，
+ * 却把导航压成一条横向滚动条，反而更难找组。
+ */
 @media (max-width: 1040px) {
+  .settings-main {
+    padding: 14px 20px 50px;
+  }
+}
+
+/* ≤900 才改成单栏 + 导航横排（设计稿 §Responsive 的最后一档） */
+@media (max-width: 900px) {
   .settings-layout {
     grid-template-columns: minmax(0, 1fr) !important;
     grid-template-rows: auto minmax(0, 1fr);
@@ -2033,9 +2045,6 @@
   .set-nav-item {
     flex: 0 0 auto;
     width: auto;
-  }
-  .settings-main {
-    padding: 14px 20px 50px;
   }
 }
 
