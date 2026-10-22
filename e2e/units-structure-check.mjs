@@ -1251,16 +1251,18 @@ add('STYLE.tokensDefined', 'STYLE', (s) => {
   const tokPath = path.join(SRC, 'themes', 'tokens.ts');
   if (!existsSync(tokPath)) return { ok: false, detail: '读不到 themes/tokens.ts（判据失去对象）' };
   const tok = cachedReadText(tokPath);
-  for (const m of tok.matchAll(/'(--miao-[\w-]+)'/g)) defined.add(m[1]);
+  // 两层令牌都要查：`--miao-*` 是 ver3 语义层、`--md-*` 是被 400+ 处使用的调色板层
+  // （`--md-*` 里也有整族循环生成的，见下面的前缀处理）
+  for (const m of tok.matchAll(/'(--(?:miao|md)-[\w-]+)'/g)) defined.add(m[1]);
   /*
-   * 令牌不只有字面量写法：半径一族是 `out[`--miao-r-${k}`] = ...` **循环生成**的。
-   * 判据若只认引号字面量，就会把这族全部误报成"未定义"（第一版正是这样红了 9 处）。
+   * 令牌不只有字面量写法：半径一族是 `out[`--miao-r-${k}`] = ...` **循环生成**的，
+   * 调色板一族是 `out[`--md-${k}`] = v` 同样如此。
+   * 判据若只认引号字面量，就会把这些族全部误报成"未定义"（第一版正是这样红了 9 处）。
    * 处理方式：记下模板前缀 ⇒ 命中前缀的算已定义；同时**再拿对象键兜一层**，
    * 这样 `--miao-r-xlarge` 这种拼错的仍然红 —— 放宽一处，必须有另一处收紧。
    */
   const prefixes = [];
-  for (const m of tok.matchAll(/out\[\s*`(----miao-[\w-]*?|--miao-[\w-]*?)\$\{/g))
-    prefixes.push(m[1].replace('----', '--'));
+  for (const m of tok.matchAll(/out\[\s*`(--(?:miao|md)-(?:[\w-]*?))\$\{/g)) prefixes.push(m[1]);
   const keyBlocks = [...tok.matchAll(/export const [A-Z_]+ = \{([\s\S]*?)\} as const/g)].map((m) =>
     [...m[1].matchAll(/^\s*'?([\w-]+)'?\s*:/gm)].map((k) => k[1]),
   );
@@ -1270,7 +1272,7 @@ add('STYLE.tokensDefined', 'STYLE', (s) => {
   const miss = [];
   for (const [file, code] of Object.entries(s.styleShardCode || {})) {
     const body = code.replace(/\/\*[\s\S]*?\*\//g, ' '); // 注释里举例写的 var() 不算使用
-    for (const m of body.matchAll(/^\s*(--miao-[\w-]+)\s*:/gm)) defined.add(m[1]);
+    for (const m of body.matchAll(/^\s*(--(?:miao|md)-[\w-]+)\s*:/gm)) defined.add(m[1]);
   }
   const isDefined = (name) => {
     if (defined.has(name)) return true;
@@ -1284,9 +1286,35 @@ add('STYLE.tokensDefined', 'STYLE', (s) => {
   };
   for (const [file, code] of Object.entries(s.styleShardCode || {})) {
     const body = code.replace(/\/\*[\s\S]*?\*\//g, ' ');
-    for (const m of body.matchAll(/var\((--miao-[\w-]+)[,)]/g)) {
+    for (const m of body.matchAll(/var\((--(?:miao|md)-[\w-]+)[,)]/g)) {
       usedCount += 1;
       if (!isDefined(m[1]) && !miss.includes(`${file} → ${m[1]}`)) miss.push(`${file} → ${m[1]}`);
+    }
+  }
+  /*
+   * 第二道口径：**TSX 里的字符串令牌名**同样要查。`<Dot colorVar="--md-blu" />` 这种拼错
+   * 不会被 tsc 抓到（它就是个字面量），运行期表现是"那个点没颜色"，同样不报错 ——
+   * 与本轮修掉的 `--miao-accent-ink` 是同一类静默失效，只是换了一层。
+   */
+  const walkTs = (dir, acc = []) => {
+    if (!existsSync(dir)) return acc;
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walkTs(p, acc);
+      else if (/\.(ts|tsx)$/.test(e.name)) acc.push(p);
+    }
+    return acc;
+  };
+  for (const f of walkTs(SRC)) {
+    if (/[\\/]themes[\\/]tokens\.ts$/.test(f)) continue;
+    const src = stripComments(readMaybe(f));
+    for (const m of src.matchAll(/['"](--(?:miao|md)-[\w-]+)['"]/g)) {
+      usedCount += 1;
+      if (!isDefined(m[1])) {
+        const rel = path.relative(ROOT, f);
+        if (!miss.includes(`${rel} → ${m[1]}`)) miss.push(`${rel} → ${m[1]}`);
+      }
     }
   }
   return {
@@ -1842,6 +1870,14 @@ const MUTATIONS = [
     file: path.join(SRC, 'themes', 'tokens.ts'),
     find: "  out['--miao-accent-ink'] = mode === 'dark' ? '#EFC4A4' : '#BE7F57';\n",
     replace: '',
+    expect: ['STYLE.tokensDefined'],
+  },
+  {
+    // 同一类缺陷的另一层：TSX 里的令牌名是**字符串字面量**，tsc 抓不到（本轮判据特意扩到这一层）
+    name: '把 manga 状态色写成 --md-sucess（少一个 s；tsc 不报、Dot 只是没颜色）',
+    file: path.join(SRC, 'screens', 'manga', 'chapters.tsx'),
+    find: "  done: '--md-success',",
+    replace: "  done: '--md-sucess',",
     expect: ['STYLE.tokensDefined'],
   },
   {
