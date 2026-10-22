@@ -1,4 +1,4 @@
-﻿/* ================================================================ X-C1 任务队列
+/* ================================================================ X-C1 任务队列
  *
  * ver3「空色日和」版：整块是一张卡片（汇总条 → 工具条 → 表 → 页脚），
  * 行不再各自带边框，靠分隔线与左侧状态条区分。
@@ -2826,10 +2826,10 @@
   gap: 8px;
 }
 .cc-no {
-  font-family: var(--md-font-display);
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--miao-ink);
+  font-variant-numeric: tabular-nums;
 }
 .cc-state {
   display: inline-flex;
@@ -2840,13 +2840,12 @@
   white-space: nowrap;
 }
 .cc-pages {
-  margin-top: 6px;
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--miao-muted);
 }
 .cc-bar {
   height: 3px;
-  margin-top: 7px;
+  margin-top: 8px;
   border-radius: 2px;
   background: var(--miao-surface-3);
   overflow: hidden;
@@ -2856,6 +2855,18 @@
   height: 100%;
   border-radius: 2px;
   background: var(--miao-primary);
+}
+/*
+ * 进度条按状态换色（设计稿 `.is-done` → success / `.is-partial` → accent）。
+ * 本仓的状态比设计稿细一档（pending 与 missing 分开），两者都是"没译完" ⇒ 同取 accent；
+ * 颜色只做辅助，状态词在 `.cc-state` 里始终有文字（颜色不是唯一信息载体）。
+ */
+.chapter-card.is-done .cc-bar i {
+  background: var(--miao-success);
+}
+.chapter-card.is-pending .cc-bar i,
+.chapter-card.is-missing .cc-bar i {
+  background: var(--miao-accent);
 }
 /* 右上角操作菜单：悬停才浮现，不占卡片正文宽度 */
 .cc-menu {
