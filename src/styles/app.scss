@@ -629,14 +629,21 @@
  * （topRight 多条并存、逐条关闭、自动消失），视觉取本项目语汇：
  * 底色/描边同 .card，阴影与 .di-capsule 同值，圆角 12 同档，语义色沿用 di-dot-* 的映射。 */
 
+/*
+ * 通知堆叠（设计稿 `.toast-stack`）：贴右上、**在工具条之下**（top 72），固定 336 宽、7px 间距。
+ *
+ * 早先放在 top 14 —— 那正好压在工具条的标题行上，第一条通知会盖住"这一屏叫什么"。
+ * 设计稿把它让到工具条下方，并且给整列一个**统一宽度**（卡片不再各自按内容撑宽）：
+ * 参差的宽度会让一列通知看起来像"几条不相干的浮层"。
+ */
 .ntf-stack {
   position: fixed;
-  top: 14px;
-  right: 14px;
+  top: 72px;
+  right: 16px;
+  width: min(336px, calc(100vw - 32px));
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
+  gap: 7px;
   /* 岛(55)之上、漫画模态(70)/下拉(75)之下：通知不该压住对话框与菜单 */
   z-index: 56;
   pointer-events: none; /* 容器不拦点击，只有卡片自己能点 */
@@ -648,7 +655,8 @@
   display: flex;
   align-items: flex-start;
   gap: 9px;
-  max-width: 360px;
+  /* 宽度由 `.ntf-stack` 统一给（336）：卡片不再按内容撑宽，一列通知才有"同一批"的观感 */
+  width: 100%;
   padding: 10px 12px;
   background: color-mix(in srgb, var(--miao-surface) 96%, transparent);
   border: 1px solid var(--miao-line);
