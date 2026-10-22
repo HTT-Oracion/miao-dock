@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { RefObject } from 'react';
 import { runSpecCheck, type SpecResult } from '@/tools/spec-check';
+import { toastBus } from '@/stores/toastBus';
 import type { ThemeMode } from '@/themes/tokens';
 import { LIBRARY, QUEUE_TABLE } from '@/themes/tokens';
 import type { TaskRow } from '@/types';
@@ -246,7 +247,14 @@ export function useSpecCheck(fixtureRef: RefObject<HTMLDivElement>, mode: ThemeM
         fired = true;
         if (!fixtureRef.current) return;
         setRevealed(true);
-        setResults(runSpecCheck(fixtureRef.current, mode));
+        const next = runSpecCheck(fixtureRef.current, mode);
+        setResults(next);
+        // 设计稿这一动作有一条成功吐司（`规格自检通过 / 5 / 5 项全部通过`）；
+        // 条数取本次实测结果，不写死。失败时不出吐司 —— 行内清单会逐条点名，
+        // 那时需要的是一次次修到绿，而不是一句"失败了"
+        if (next.every((r) => r.ok)) {
+          toastBus.push('规格自检通过', 'good', `${next.length} / ${next.length} 项全部通过`);
+        }
       };
       requestAnimationFrame(fire);
       setTimeout(fire, 120);

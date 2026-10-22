@@ -181,7 +181,13 @@ export const GENERAL: SettingSection = {
           why: '由系统窗口按钮触发；翻译服务会在后台留驻',
           def: '收起到托盘',
         },
-        { id: 'spec-check', label: '规格自检', state: 'live', why: '核对设置页、模块目录与运行契约的完整性' },
+        {
+          id: 'spec-check',
+          label: '规格自检',
+          state: 'live',
+          // 设计稿这行的渲染原句（`specRow` 那块）—— 检查的对象是「设置项」而不是「设置页」
+          why: '核对设置项、模块目录与运行契约的完整性',
+        },
       ],
     },
   ],
@@ -210,7 +216,8 @@ export const TRANSLATE: SettingSection = {
           label: '翻译来源',
           state: 'live',
           def: '本地引擎',
-          why: '本地引擎或在线 API，下一次翻译生效',
+          // 设计稿渲染层原句（含"外发"这层如实告知，比原来的「二选一」更有信息量）
+          why: '本地引擎在本机完成翻译；在线 API 会把原文发给第三方平台',
         },
       ],
     },
@@ -225,7 +232,8 @@ export const TRANSLATE: SettingSection = {
           label: '自动启动翻译服务',
           state: 'live',
           def: '开',
-          why: '进入喵坞时自动拉起本地服务',
+          // 原句说的是"进入喵坞"，实际范围是进入漫画翻译屏；设计稿渲染层那句更准确（D-94）
+          why: '进入「漫画翻译」时自动拉起本地服务；关闭后可在未就绪屏手动启动',
         },
         { id: 'token-pairing', label: '令牌配对', state: 'live', why: '服务与引擎之间的本地鉴权令牌' },
         { id: 'root-dir', label: '落盘根目录', state: 'live', why: '漫画原图与译文的保存位置' },
@@ -241,35 +249,38 @@ export const TRANSLATE: SettingSection = {
           label: '翻译方向',
           state: 'live',
           def: '日译中',
-          why: '日译中或英译中',
+          why: '英译中走 nllb，日译中走 Sakura；方向逐任务下发，界面不设控件',
         },
         {
           id: 'tier',
           label: '翻译档位',
           state: 'live',
           def: '按硬件探测',
-          why: 'Tiny / Small / Medium，改后需重启引擎',
+          // `feasible_tiers()` 按本机内存筛（不可行的不进列表），`settings-options` 里
+          // 可行但非推荐档带 warning ⇒ 这句在设计稿渲染层、在产品行为里，两头都对得上
+          why: '物理不可行的档位不会出现；标「不推荐」的会在切换时强警告',
         },
         {
           id: 'backend',
           label: '加速后端',
           state: 'live',
           def: '自动',
-          why: 'auto / CUDA / MPS / CPU',
+          why: '「自动」按硬件探测；本机可用的后端才会出现在列表中',
         },
         {
           id: 'idle-llm',
           label: '空闲卸载 LLM',
           state: 'live',
           def: '5 分钟',
-          why: 'Sakura 空闲多久后释放，保存即生效',
+          // 阈值 0 = 从不卸载是 `idle_policy.rs` 的硬语义（`REASON_NEVER`），必须写进界面
+          why: 'Sakura 空闲多久后释放（0 = 从不）· 保存后立刻生效',
         },
         {
           id: 'idle-vision',
           label: '空闲卸载视觉',
           state: 'live',
           def: '30 分钟',
-          why: '视觉模型空闲释放，需重启引擎',
+          why: '视觉模型空闲释放（0 = 从不）· 参数在拉起引擎时固化，必须重启引擎',
         },
       ],
     },
@@ -282,7 +293,9 @@ export const TRANSLATE: SettingSection = {
           id: 'model-dir',
           label: '模型目录',
           state: 'live',
-          why: '权重文件所在的 models-store',
+          // 界面下方已经会把"已配置 X、服务仍在用旧目录 —— 需重启才切换"说出来，
+          // 这句渲染原句正是同一事实的短版
+          why: '服务只在启动时读取这个路径',
         },
         {
           id: 'model-manage',
@@ -478,7 +491,14 @@ export const ABOUT: SettingSection = {
       id: 'main',
       title: null,
       items: [
-        { id: 'version', label: '版本号', state: 'live', why: '喵坞 MiaoDock 当前版本' },
+        {
+          id: 'version',
+          label: '版本号',
+          state: 'live',
+          // 设计稿渲染层那句是「当前安装的版本 · 2026-10-21 构建」—— 后半截是演示日期，
+          // 产品没有可信的构建时刻来源（版本号由宿主注入），所以只取前半截，不编一个日期
+          why: '当前安装的版本',
+        },
         {
           id: 'licenses',
           label: '第三方许可',
@@ -492,7 +512,7 @@ export const ABOUT: SettingSection = {
           id: 'oss-feedback',
           label: '开源反馈',
           state: 'pending',
-          why: '项目尚未公开发布',
+          why: '项目尚未公开发布，没有可指向的仓库地址',
         },
       ],
     },
