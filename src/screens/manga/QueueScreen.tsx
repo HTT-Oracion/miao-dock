@@ -55,7 +55,7 @@ function ProgressCell({ t }: { t: TaskRow }) {
   const pct = total ? Math.round((done / total) * 100) : 0;
   const noteCls = ['qt-pct', 'num', t.progress.failed > 0 ? 'is-warn' : ''].filter(Boolean).join(' ');
   return (
-    <div className="qt-c-progress" style={{ width: QUEUE_TABLE.colProgress }}>
+    <div className="qt-c-progress">
       <span className="num">{done}</span>
       <span> / </span>
       <span className="num">{total}</span>
@@ -182,18 +182,16 @@ function Row({
         </div>
       </div>
 
-      <div className="qt-c-source" style={{ width: QUEUE_TABLE.colSource }}>
-        {SOURCE_LABEL[t.source]}
-      </div>
+      <div className="qt-c-source">{SOURCE_LABEL[t.source]}</div>
 
       <ProgressCell t={t} />
 
-      <div className="qt-c-status" style={{ width: QUEUE_TABLE.colStatus }}>
+      <div className="qt-c-status">
         <Dot colorVar={STATUS_DOT_VAR[t.status]} pulse={running} />
         <span>{STATUS_LABEL[t.status]}</span>
       </div>
 
-      <div className="qt-c-action" style={{ width: QUEUE_TABLE.colAction }}>
+      <div className="qt-c-action">
         <PrimaryAction t={t} canceling={canceling} onCancel={onCancel} onRetry={onRetry} onViewComic={onViewComic} />
         <MenuButton label="更多" size="sm">
           {(close) => (
@@ -474,18 +472,10 @@ export function QueueTable({
               <span className="qt-cover qt-cover-ghost" aria-hidden="true" />
               <div className="qt-name-col">任务 / 漫画名</div>
             </div>
-            <div className="qt-c-source" style={{ width: QUEUE_TABLE.colSource }}>
-              来源
-            </div>
-            <div className="qt-c-progress" style={{ width: QUEUE_TABLE.colProgress }}>
-              进度
-            </div>
-            <div className="qt-c-status" style={{ width: QUEUE_TABLE.colStatus }}>
-              状态
-            </div>
-            <div className="qt-c-action" style={{ width: QUEUE_TABLE.colAction }}>
-              操作
-            </div>
+            <div className="qt-c-source">来源</div>
+            <div className="qt-c-progress">进度</div>
+            <div className="qt-c-status">状态</div>
+            <div className="qt-c-action">操作</div>
           </div>
           <div className="qt-body">
             {pageRows.map((t, i) => (
