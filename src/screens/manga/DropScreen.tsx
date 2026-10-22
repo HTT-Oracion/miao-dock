@@ -1,14 +1,38 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { open } from '@tauri-apps/plugin-dialog';
 import { apiGet, apiPostMultipart, errorText, expandPaths } from '@/ipc';
+import type { TranslateSource } from '@screens/settings/translate-api';
+import { engineOptions } from '@screens/settings/engine-api';
+import type { EngineTier } from '@screens/settings/engine-api';
 import { useToasts } from '@hooks';
-import type { CreateTaskResponse, LibraryResponse } from '@/types';
+import type { CreateTaskResponse, LibraryResponse, TaskRow } from '@/types';
 import { dupKey, splitBatches, uuid } from '@tools';
 import { Btn, Notice } from '@components/units';
-import { Check, FolderPlus, Image, ImagePlus, Info, SlidersHorizontal, Upload, X } from 'lucide-react';
+import {
+  ArrowRight,
+  Book,
+  Check,
+  FolderPlus,
+  Image,
+  ImagePlus,
+  Info,
+  SlidersHorizontal,
+  Upload,
+  X,
+} from 'lucide-react';
 
 const BATCH_LIMIT = 20; // 契约 §5.2 单次上限
+
+/** 档位文案与设计稿同一套（`Tiny · 轻快` / `Small · 均衡` / `Medium · 精细`） */
+const TIER_LABEL: Record<EngineTier, string> = {
+  tiny: 'Tiny · 轻快',
+  small: 'Small · 均衡',
+  medium: 'Medium · 精细',
+};
+
+/** 投放来源的中文名（本次规则那一行用；`null` = 还没读到偏好） */
+const SOURCE_LABEL: Record<TranslateSource, string> = { local: '本地引擎', online: '在线 API' };
 
 interface Picked {
   path: string;
@@ -24,6 +48,45 @@ function decorate(files: string[]): Picked[] {
   }));
 }
 
+/** 缩略瓦片上的字形：取漫画名首字（与书架封面同一套观感，不引外部图片） */
+function glyphOf(name: string): string {
+  return [...name][0] ?? '书';
+}
+
+/** 瓦片的底色档位：按名字稳定散列到三个模块色之一（同一个名字永远同一色） */
+function toneOf(name: string): string {
+  const tones = ['var(--miao-primary)', 'var(--miao-accent)', 'var(--miao-sage)'];
+  let h = 0;
+  for (const ch of name) h = (h + ch.codePointAt(0)!) % 997;
+  return tones[h % tones.length];
+}
+
+/** 最近一次投放 = 创建时间最新的那条任务（数据来自 `/tasks`，不是本地留痕） */
+function latestTask(tasks: TaskRow[]): TaskRow | null {
+  if (tasks.length === 0) return null;
+  return tasks.reduce((a, b) => (a.createdAt >= b.createdAt ? a : b));
+}
+
+/** 任务状态的中文说法（只覆盖投放回执会用到的那几种） */
+function statusLabel(t: TaskRow): string {
+  switch (t.status) {
+    case 'done':
+      return '已完成';
+    case 'running':
+      return '正在翻译';
+    case 'queued':
+      return '排队中';
+    case 'partial_failed':
+      return '部分失败';
+    case 'failed':
+      return '失败';
+    case 'canceled':
+      return '已取消';
+    default:
+      return t.status;
+  }
+}
+
 /**
  * 画面 X-B1 · 本机投放（《02》§5.7）。
  *
@@ -36,15 +99,30 @@ function decorate(files: string[]): Picked[] {
  *  ② **落盘路径预览**：契约 §5.2 要求用**服务端回传的** `normalizedComicName` 渲染预览
  *     （§6 规定规范化只在服务端执行）。所以提交前这里只显示根目录，提交后才给出权威路径 ——
  *     绝不前端自己猜一个规范化结果。
+ *
+ * ## 版式按设计稿：左列叙事 / 右栏填单
+ *
+ * 左列从上到下是「怎么放 → 放完看到什么 → 之前放过什么 → 放完会发生什么」，
+ * 右栏是「这次要填什么（漫画信息）+ 规则来自哪里（本次规则）」。
+ * 「最近投放」与「本次规则」是设计稿有、旧实现没有的两块，本轮补齐：
+ * 前者读真实的 `/tasks`，后者读真实的引擎选项与翻译来源 —— 都不是写死的示例。
  */
 export function DropScreen({
   rootDir,
+  tasks,
+  source,
   onSubmitted,
   onGoLibrary,
+  onGoQueue,
 }: {
   rootDir: string | null;
+  /** 队列行（`/tasks`）：用来渲染「最近投放」，也用来做重名预检的兜底 */
+  tasks: TaskRow[];
+  /** 翻译来源（本地引擎 / 在线 API）—— 「本次规则」里那一行的事实源 */
+  source: TranslateSource | null;
   onSubmitted: () => void;
   onGoLibrary: () => void;
+  onGoQueue: () => void;
 }) {
   // 吐司单例总线：直接取用，不必由宿主透传（见 useToasts 注释）
   const { push: onToast } = useToasts();
@@ -53,6 +131,23 @@ export function DropScreen({
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<CreateTaskResponse | null>(null);
+  /** 本次生效的翻译档位（读引擎选项；读不到就不显示这一行的值） */
+  const [tier, setTier] = useState<EngineTier | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const o = await engineOptions();
+        if (alive) setTier(o.tier.effective);
+      } catch {
+        // 读不到档位不影响投放：这一行退化成「—」，不编一个值出来
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const ingest = useCallback(
     async (paths: string[]) => {
@@ -128,6 +223,19 @@ export function DropScreen({
   );
   const nameOk = comicName.trim().length > 0;
   const canSubmit = !busy && nameOk && files.length > 0;
+
+  /** 重名预检（本地库 + 队列里已有的名字），只用于**提示**，最终以服务端为准 */
+  const dupHint = useMemo(() => {
+    const key = dupKey(comicName.trim());
+    if (!key) return false;
+    return tasks.some(
+      (t) => dupKey(t.comicName) === key || (t.normalizedComicName ? dupKey(t.normalizedComicName) === key : false),
+    );
+  }, [comicName, tasks]);
+
+  const recent = latestTask(tasks);
+  /** 最近三批投放的瓦片（设计稿叠三枚）：没有那么多就少放几枚，不补占位瓦片 */
+  const recentThumbs = [...tasks].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 3);
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -209,10 +317,17 @@ export function DropScreen({
     }
   };
 
+  /** 漫画名下方那行提示：错误 > 重名 > 空态说明（设计稿三态） */
+  const nameHint = !nameOk
+    ? '会自动去掉文件名中的非法字符'
+    : dupHint
+      ? '已存在同名漫画，请换一个名字，或在漫画库中直接续做。'
+      : '提交后由服务端规范化并给出落盘路径。';
+
   return (
     <div className="drop-scroll">
       <div className="drop-grid">
-        {/* ── 左列：投放区 + 待投放清单 ───────────────────────────── */}
+        {/* ── 左列：投放区 → 回执 → 待投放清单 → 最近投放 → 投放之后 ───── */}
         <div className="drop-col">
           <section
             className={dragging ? 'drop-zone is-drag' : 'drop-zone'}
@@ -229,10 +344,7 @@ export function DropScreen({
               <ImagePlus size={26} />
             </span>
             <h2>把漫画图片拖到这里</h2>
-            <p className="drop-sub">
-              支持 png / jpg / jpeg / webp；服务端每批 {BATCH_LIMIT} 张，超出的部分会自动排队
-              （序号连续，不需要你分批）。
-            </p>
+            <p className="drop-sub">支持 JPG / PNG / WEBP。每 20 张自动分为一批，排队顺序按文件名自然排序。</p>
             <div className="drop-actions" onClick={(e) => e.stopPropagation()}>
               <Btn kind="primary" onClick={() => void pickFiles()}>
                 <Upload size={14} /> 选择图片
@@ -243,44 +355,49 @@ export function DropScreen({
             </div>
             <div className="drop-tips">
               <span>
-                <Check size={12} /> 按文件名自然序排页
+                <Check size={12} /> 自动识别页码顺序
               </span>
               <span>
                 <Check size={12} /> 原图不会被修改
               </span>
               <span>
-                <Check size={12} /> 每 {BATCH_LIMIT} 张自动分批
+                <Check size={12} /> 每 20 张自动分批
               </span>
             </div>
           </section>
 
           {result ? (
-            <Notice kind="ok">
+            <Notice kind="ok" className="drop-notice">
               <b>已进入同一条队列。</b> 落盘到：
               <div className="pathpreview">{result.outputDir}</div>
               <div className="notice-acts">
                 <Btn kind="ghost" size="sm" onClick={onGoLibrary}>
                   去漫画库看
                 </Btn>
+                <Btn kind="ghost" size="sm" onClick={onGoQueue}>
+                  查看队列
+                </Btn>
               </div>
             </Notice>
           ) : null}
 
+          {/* 待投放清单：头行就是这张卡的动作区（清空 + 提交 N 张），与设计稿一致 */}
           {files.length > 0 ? (
             <section className="drop-queue">
               <div className="drop-queue-head">
                 <h3>
-                  待投放 <span className="num">{files.length}</span> 张
-                  {batches.length > 1 ? (
-                    <>
-                      {' · '}分 <span className="num">{batches.length}</span> 批
-                    </>
-                  ) : null}
+                  待投放{' '}
+                  <span>
+                    {files.length} 张 · {batches.length} 批
+                  </span>
                 </h3>
                 <div className="drop-queue-actions">
-                  <button type="button" className="text-btn" onClick={() => setFiles([])} disabled={busy}>
+                  <Btn kind="text" size="sm" disabled={busy} onClick={() => setFiles([])}>
                     清空
-                  </button>
+                  </Btn>
+                  <Btn kind="primary" size="sm" disabled={!canSubmit} onClick={() => void submit()}>
+                    {busy ? '提交中…' : `提交 ${files.length} 张`}
+                  </Btn>
                 </div>
               </div>
               <div className="drop-files">
@@ -291,30 +408,62 @@ export function DropScreen({
                     </span>
                     <span className="drop-file-meta">
                       <strong title={f.path}>{f.name}</strong>
-                      <small>
-                        <span className="num">{f.batch}</span> / <span className="num">{batches.length}</span> 批
-                      </small>
+                      <small>第 {f.batch} 批</small>
                     </span>
-                    <button
-                      type="button"
+                    <Btn
+                      kind="bare"
                       className="drop-file-remove"
-                      aria-label={`移除 ${f.name}`}
+                      ariaLabel={`移除 ${f.name}`}
                       title="从本次投放中移除"
                       onClick={() => setFiles((prev) => decorate(prev.filter((_, j) => j !== i).map((p) => p.path)))}
                     >
                       <X size={12} />
-                    </button>
+                    </Btn>
                   </div>
                 ))}
               </div>
             </section>
           ) : null}
 
-          {/*
-            「投放之后会发生什么」（设计稿 `.drop-flow`）：左列底部的一张说明卡。
-            放在左列而不是右栏，是因为它解释的是**投放这个动作**的后果，
-            与左边"拖进来 / 待投放"是同一段叙事；右栏是"这次要填什么"。
-          */}
+          {/* 最近投放：设计稿有、旧实现没有。数据来自 `/tasks`，没有记录就是空态，不摆演示图 */}
+          <div className="recent-drop">
+            <div className="section-head">
+              <h2>最近投放</h2>
+              <Btn kind="bare" className="link-btn" onClick={onGoQueue}>
+                查看队列 <ArrowRight size={12} />
+              </Btn>
+            </div>
+            {recent ? (
+              <div className="recent-bar">
+                <div className="recent-thumbs">
+                  {recentThumbs.map((t) => (
+                    <span key={t.taskId} className="recent-thumb" style={{ background: toneOf(t.comicName) }}>
+                      {glyphOf(t.comicName)}
+                    </span>
+                  ))}
+                </div>
+                <span className="recent-text">
+                  <strong>
+                    {recent.comicName} · {recent.progress.total} 张
+                  </strong>
+                  <small>
+                    {recent.createdAt} · {statusLabel(recent)}
+                  </small>
+                </span>
+                <Btn kind="ghost" size="sm" onClick={() => void pickFiles()}>
+                  再次投放
+                </Btn>
+              </div>
+            ) : (
+              <div className="recent-bar is-empty">
+                <span className="recent-text">
+                  <strong>还没有投放记录</strong>
+                  <small>把图片拖进上面的投放区，或点「选择图片」。</small>
+                </span>
+              </div>
+            )}
+          </div>
+
           <section className="drop-flow">
             <div className="drop-flow-head">
               <span className="kicker">WHAT HAPPENS NEXT</span>
@@ -340,29 +489,31 @@ export function DropScreen({
           </section>
         </div>
 
-        {/* ── 右列：本次投放的表单与落盘预览 ─────────────────────── */}
-        <aside className="drop-col">
+        {/* ── 右栏：漫画信息 + 本次规则 ───────────────────────────── */}
+        <aside className="drop-form">
           <section className="form-card">
             <h3>
-              <SlidersHorizontal size={14} /> 本次投放
+              <Book size={14} /> 漫画信息
             </h3>
-            <p className="form-sub">漫画名是落盘目录的唯一键；其余规则由服务端统一执行，不在这里临时改。</p>
+            <p className="form-sub">译文会落在根目录下以漫画名命名的文件夹里；重名会被拦截。</p>
 
             <div className="field">
               <label className="field-label" htmlFor="comicName">
-                漫画名
+                漫画名 <span className="field-req">*</span>
               </label>
               <input
                 id="comicName"
                 className="input"
-                placeholder="例如：第12话 · 学园祭"
+                maxLength={60}
+                placeholder="例如：星轨邮差"
                 value={comicName}
+                autoComplete="off"
                 onChange={(e) => setComicName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void submit();
+                }}
               />
-              <span className={nameOk || files.length === 0 ? 'field-hint' : 'field-hint is-error'}>
-                名称由服务端统一规范化（全角转半角、非法字符剥离）；同名漫画会被拦下、不重复投放 ——
-                要补页请用漫画库的「继续翻译」。
-              </span>
+              <span className={dupHint && nameOk ? 'field-hint is-error' : 'field-hint'}>{nameHint}</span>
             </div>
 
             <div className="drop-meta">
@@ -372,16 +523,7 @@ export function DropScreen({
               </div>
               <div className="drop-meta-row">
                 <span>批次</span>
-                <b>
-                  {files.length ? (
-                    <>
-                      <span className="num">{batches.length}</span> 批 · 每批最多{' '}
-                      <span className="num">{BATCH_LIMIT}</span> 张
-                    </>
-                  ) : (
-                    '尚未选择图片'
-                  )}
-                </b>
+                <b>{files.length ? `${batches.length} 批 · 每批最多 ${BATCH_LIMIT} 张` : '尚未选择图片'}</b>
               </div>
               <div className="drop-meta-row">
                 <span>落盘根目录</span>
@@ -391,29 +533,51 @@ export function DropScreen({
               </div>
               <div className="drop-meta-row">
                 <span>预计输出</span>
-                <b className="pathinline">{'提交后由服务端给出'}</b>
+                {/* 规范化只在服务端执行（契约 §6）：没有回执之前不编一个路径出来 */}
+                <b className="pathinline">{result?.outputDir ?? '—'}</b>
               </div>
             </div>
 
             <div className="drop-submit">
               <Btn kind="primary" disabled={!canSubmit} onClick={() => void submit()}>
-                <Upload size={14} /> {busy ? '提交中…' : `提交 ${files.length || ''}`.trim()}
+                <Upload size={14} /> {busy ? '提交中…' : `提交 ${files.length} 张`}
               </Btn>
-              {files.length > 0 ? (
-                <Btn kind="ghost" onClick={() => setFiles([])} disabled={busy}>
-                  清空
-                </Btn>
-              ) : null}
+              <Btn kind="ghost" disabled={files.length === 0 || busy} onClick={() => setFiles([])}>
+                清空
+              </Btn>
             </div>
-
-            {!nameOk && files.length > 0 ? (
-              <p className="field-hint is-error">请先填漫画名 —— 它是落盘目录的唯一键（契约 §6.3：重名不覆盖）。</p>
-            ) : null}
 
             <p className="batch-note">
               <Info size={12} />
               同一时刻只翻译 1 个批次，其余会自动排队。翻译过程中可以关闭喵坞，任务状态会保存在本机。
             </p>
+          </section>
+
+          {/* 本次规则：读真实设置，不在投放页临时改（设计稿右侧第二张卡） */}
+          <section className="form-card">
+            <h3>
+              <SlidersHorizontal size={14} /> 本次规则
+            </h3>
+            <p className="form-sub">规则来自当前设置，不在投放页临时改动。</p>
+            <div className="drop-meta">
+              <div className="drop-meta-row">
+                <span>翻译方向</span>
+                {/* 方向逐任务下发（设置页「翻译方向」一行同样是这个口径），投放页不猜 */}
+                <b>按任务方向</b>
+              </div>
+              <div className="drop-meta-row">
+                <span>翻译档位</span>
+                <b>{tier ? TIER_LABEL[tier] : '—'}</b>
+              </div>
+              <div className="drop-meta-row">
+                <span>翻译来源</span>
+                <b>{source ? SOURCE_LABEL[source] : '—'}</b>
+              </div>
+              <div className="drop-meta-row">
+                <span>批大小</span>
+                <b>{BATCH_LIMIT} 张</b>
+              </div>
+            </div>
           </section>
         </aside>
       </div>

@@ -2484,6 +2484,104 @@
 .drop-submit .btn-primary {
   flex: 1;
 }
+
+/* ── 右栏两张卡（设计稿 `.drop-form`）───────────────────────────────── */
+.drop-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+/* 必填星号：设计稿把它染成 danger，与 hint 的错误态同色系 */
+.field-req {
+  color: var(--miao-danger);
+}
+
+/*
+ * ── 最近投放（设计稿 `.recent-drop` / `.recent-bar`）─────────────────
+ *
+ * 与 `.drop-flow` 同为左列的一张卡，但标题在卡外（`.section-head`）：
+ * 设计稿把「最近投放」当作一个**区块标题 + 一条横向摘要条**，而不是一张有头的卡。
+ */
+.recent-drop {
+  margin-top: 18px;
+}
+.section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 10px;
+}
+.section-head h2 {
+  font-family: var(--md-font-display);
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+/* 区块标题右侧的文字动作（查看队列）：纯文字 + 箭头，悬停才变色 */
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  transition: color var(--miao-dur-fast) ease;
+}
+.link-btn:hover {
+  color: var(--miao-primary-ink);
+}
+.recent-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--miao-line);
+  border-radius: 12px;
+  background: var(--miao-surface);
+}
+.recent-bar .btn {
+  margin-left: auto;
+}
+/* 空态：同一条形，但不摆瓦片、不给「再次投放」（没有可重复的对象） */
+.recent-bar.is-empty {
+  border-style: dashed;
+}
+.recent-thumbs {
+  display: flex;
+}
+/* 瓦片：26×34、相邻 -7px 叠压、2px 表面色描边 —— 叠压是"多组图片"的视觉暗示 */
+.recent-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 34px;
+  margin-left: -7px;
+  border: 2px solid var(--miao-surface);
+  border-radius: 4px;
+  font-size: 10px;
+  color: color-mix(in srgb, #fff 90%, transparent);
+}
+.recent-thumb:first-child {
+  margin-left: 0;
+}
+.recent-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.recent-text strong {
+  font-size: 11.5px;
+  color: var(--miao-ink);
+}
+.recent-text small {
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
 .batch-note {
   display: flex;
   align-items: flex-start;

@@ -111,5 +111,14 @@ export function TranslatePane() {
     );
   }
 
-  return <DropScreen rootDir={rootDir} onSubmitted={refreshAll} onGoLibrary={() => setView('library')} />;
+  return (
+    <DropScreen
+      rootDir={rootDir}
+      tasks={rows}
+      source={source}
+      onSubmitted={refreshAll}
+      onGoLibrary={() => setView('library')}
+      onGoQueue={() => setView('queue')}
+    />
+  );
 }
