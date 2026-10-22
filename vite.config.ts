@@ -49,7 +49,9 @@ function uiScaleFonts(): Plugin {
     generateBundle(_options, bundle) {
       for (const [file, item] of Object.entries(bundle)) {
         if (!file.endsWith('.css') || item.type !== 'asset') continue;
-        const src = typeof item.source === 'string' ? item.source : Buffer.from(item.source).toString('utf8');
+        // 不用 `Buffer`：本工程没有 `@types/node`（别名那段注释就是为它写的），
+        // `TextDecoder` 是标准 Web API，tsc 直接可查
+        const src = typeof item.source === 'string' ? item.source : new TextDecoder().decode(item.source as Uint8Array);
         if (!src.includes('font-size:')) continue;
         item.source = scaleFonts(src);
       }
