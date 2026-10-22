@@ -8029,3 +8029,28 @@ CDP `Emulation.setDeviceMetricsOverride` 设三个宽度，读回 `.music-layout
 产物 CSS 实测：`.di-wrap{position:fixed;top:12px;left:var(--di-left, 78px);right:0;display:flex;justify-content:center;…}`
 + `@media (max-width: 1040px){.di-wrap{--di-left: 66px}}` + 760 档的 60px。
 ⚠️ 岛只在**队列非空**时渲染（`hasQueue` 为假直接 `return null`），浏览器预览里没有队列 ⇒ 静态核对。
+## D-323 · 同名规则写了两遍，第九轮的修复被悄悄盖掉（2026-10-22）
+
+**一、🔴 `toolbar-badge` 在 app.scss 里存在两条规则。**
+第 369 行是我第九轮按设计稿加的（`height: 19px`、无描边）；
+第 880 行还留着一条更早的（`height: 22px`、带 1px 描边）。
+**同特异性、后者胜** —— 于是"徽标按设计稿改成 19px"这件事，改完当天就是无效的，
+而我当时只在源码里 `grep toolbar-badge` 看到第一条就以为改对了。
+本轮靠 CDP 量 computed `height` 才照出来（实测 22px，而设计稿与源码第一处都写 19px）。
+
+**教训**：**改 CSS 之后要量一遍 computed 值**，不能只 grep 源码 ——
+同名规则重复时，源码里"看起来对"和"实际生效"是两件事。
+（这也是 `check:units` 的 `STYLE.*` 只查"有没有这条规则"、查不出"哪条赢"的盲区。）
+
+**二、侧栏选中项的字重在掉。** `.nav-item.is-active { font-weight: 500 }` ——
+设计稿的选中态**只换底色与字色**，字重恒 700。掉到 500 会让"当前项"看起来比邻居更弱，
+与"强调当前项"的意图相反。已去掉。
+
+**三、其余壳层几何实测与设计稿逐项一致**（本轮顺带全量核了一遍）：
+导航项 `44×44 / r14 / 9.5px / 700 / .02em`、工具条 `62px + 1px 下边线 + 72% 表面`、
+工具条 `::after` `52px / left 26 / 1px / 主色`、状态胶囊 `30px / r999 / 10.5px / 700`、
+页签 `12px / 700 / padding 0 15px`、`.tab-count` 选中 `主色底 + 白字`。
+
+**四、验证**：`npm run check` 19/19 · `check:units` 46/46 + 反证 **61/61** ·
+`check:music` 237/237 · `tsc` / `eslint` / `vite build` 全绿；
+CDP 复测：徽标 **19px**、导航项字重 **700**。
