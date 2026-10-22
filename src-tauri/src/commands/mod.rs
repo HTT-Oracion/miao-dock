@@ -622,6 +622,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         crate::music::music_send_comment,
         crate::music::music_personalized,
         crate::music::music_recommend_songs,
+        crate::music::music_new_songs,
         crate::music::music_recommend_resource,
         crate::music::music_simi_song,
         crate::music::music_intelligence_list,

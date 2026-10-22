@@ -255,6 +255,11 @@ function Recommendations() {
   const proxyPort = useMusicStore((s) => s.proxyPort);
   const loadRecommend = useMusicStore((s) => s.loadRecommend);
   const openRightPlaylist = useMusicStore((s) => s.openRightPlaylist);
+  // 今日精选：平台级推荐新歌（匿名可取）
+  const newSongs = useMusicStore((s) => s.newSongs);
+  const loadingNewSongs = useMusicStore((s) => s.loadingNewSongs);
+  const playPlaylist = useMusicStore((s) => s.playPlaylist);
+  const currentSong = useMusicStore((s) => s.currentSong);
 
   const caps = capsOf(playbackSource);
 
@@ -292,6 +297,53 @@ function Recommendations() {
                   </div>
                 </div>
               )}
+            />
+          )}
+        </>
+      ) : null}
+
+      {/*
+        今日精选（设计稿最后一节）：**平台级推荐新歌**，匿名可取 ——
+        未登录用户也该在首页看到"今天有什么可听的"。能力矩阵里没有这一节的平台整块不渲染。
+      */}
+      {caps.newSongs ? (
+        <>
+          <div className="music-card-hd">
+            <span className="music-card-title">今日精选</span>
+            <span className="music-card-sub">
+              {providerLabel(playbackSource)} · 为你挑选 {newSongs.length} 首
+            </span>
+            <div className="grow" />
+            <button
+              type="button"
+              className="music-btn out"
+              disabled={loadingNewSongs}
+              onClick={() => void loadRecommend()}
+            >
+              <RefreshCw size={12} /> {loadingNewSongs ? '刷新中…' : '换一批'}
+            </button>
+          </div>
+          {newSongs.length === 0 ? (
+            <Empty sub="换一个平台，或登录账号同步更多内容。">
+              {loadingNewSongs ? '加载中…' : '这个平台还没有歌曲'}
+            </Empty>
+          ) : (
+            <VirtualList
+              items={newSongs}
+              resetKey={`new-songs:${playbackSource}`}
+              itemKey={(s, i) => `${songKey(s)}:${i}`}
+              renderItem={(s, i) => {
+                const play = () => void playPlaylist(newSongs, { index: i });
+                return (
+                  <SongRow
+                    song={s}
+                    cover={coverProxyUrl(s.cover, proxyPort)}
+                    active={currentSong ? songKey(currentSong) === songKey(s) : false}
+                    onClick={play}
+                    onPlay={play}
+                  />
+                );
+              }}
             />
           )}
         </>

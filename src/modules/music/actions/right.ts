@@ -1,4 +1,4 @@
-// 右栏（发现）切片 —— 「右栏」段（D-156 从 store.ts 按 action 段切出）。
+﻿// 右栏（发现）切片 —— 「右栏」段（D-156 从 store.ts 按 action 段切出）。
 import * as ipc from '@music/ipc';
 import * as platform from '@music/platform';
 import { songKey } from '@music/convert';
@@ -74,16 +74,17 @@ export const createRightSlice = (
   /** 推荐歌单 + 每日推荐歌曲（按平台能力，无能力的平台置空） */
   loadRecommend: async (p) => {
     const provider = p ?? get().playbackSource;
-    set({ loadingRecommend: true, loadingDaily: true });
+    set({ loadingRecommend: true, loadingDaily: true, loadingNewSongs: true });
     try {
-      const [pls, songs] = await Promise.all([
+      const [pls, songs, fresh] = await Promise.all([
         platform.recommendPlaylists(provider).catch(() => [] as Playlist[]),
         platform.dailySongs(provider).catch(() => [] as Song[]),
+        platform.newSongs(provider).catch(() => [] as Song[]),
       ]);
       if (get().playbackSource !== provider) return;
-      set({ recommendPlaylists: pls, dailySongs: songs });
+      set({ recommendPlaylists: pls, dailySongs: songs, newSongs: fresh });
     } finally {
-      set({ loadingRecommend: false, loadingDaily: false });
+      set({ loadingRecommend: false, loadingDaily: false, loadingNewSongs: false });
     }
   },
 

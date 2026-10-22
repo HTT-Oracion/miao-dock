@@ -74,6 +74,9 @@ export const musicPersonalized = () => invoke<Playlist[]>('music_personalized');
 
 export const musicRecommendSongs = () => invoke<Song[]>('music_recommend_songs');
 
+/** 推荐新歌（首页「今日精选」）：平台级新歌池，匿名可取 */
+export const musicNewSongs = (limit = 20) => invoke<Song[]>('music_new_songs', { limit });
+
 export const musicRecommendResource = () => invoke<Playlist[]>('music_recommend_resource');
 
 export const musicSimiSong = (id: string, limit?: number) =>

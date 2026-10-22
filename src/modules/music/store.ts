@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 音乐模块状态层（zustand）—— 播放 + 四平台 + 本地 + 发现，全模块唯一状态源。
  *
  * 从参考实现（Zustand store，3559 行）移植**逻辑**、剥离 Chakra UI 绑定（PD-1「界面重写」）。
@@ -275,6 +275,9 @@ export interface MusicState {
   loadingRecommend: boolean;
   dailySongs: Song[];
   loadingDaily: boolean;
+  /** 首页「今日精选」：平台级推荐新歌（匿名可取，目前仅网易云） */
+  newSongs: Song[];
+  loadingNewSongs: boolean;
   rightPlaylistMeta: Playlist | null;
   rightPlaylistTracks: Song[];
   loadingRightTracks: boolean;
@@ -732,6 +735,8 @@ export const useMusicStore = create<MusicState>()((set, get) => ({
   loadingRecommend: false,
   dailySongs: [],
   loadingDaily: false,
+  newSongs: [],
+  loadingNewSongs: false,
   rightPlaylistMeta: null,
   rightPlaylistTracks: [],
   loadingRightTracks: false,

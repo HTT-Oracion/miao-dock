@@ -192,6 +192,13 @@ pub async fn music_recommend_songs() -> Result<Vec<Song>, String> {
     netease::recommend_songs(&app_cookie).await
 }
 
+/// 推荐新歌（首页「今日精选」的数据面）：平台级新歌池，**匿名可取**。
+#[tauri::command]
+pub async fn music_new_songs(limit: Option<u32>) -> Result<Vec<Song>, String> {
+    let app_cookie = get_app_cookie().await;
+    netease::new_songs(&app_cookie, limit.unwrap_or(20)).await
+}
+
 #[tauri::command]
 pub async fn music_recommend_resource() -> Result<Vec<Playlist>, String> {
     let app_cookie = get_app_cookie().await;

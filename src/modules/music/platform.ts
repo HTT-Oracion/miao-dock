@@ -91,6 +91,8 @@ export interface PlatformCaps {
   chartByName: boolean;
   recommendPlaylists: boolean;
   dailySongs: boolean;
+  /** 平台级推荐新歌（首页「今日精选」的数据面） */
+  newSongs: boolean;
   comments: boolean;
   likeWrite: boolean;
   artistExtra: boolean;
@@ -103,6 +105,7 @@ export const PLATFORM_CAPS: Record<MusicProvider, PlatformCaps> = {
     chartByName: false,
     recommendPlaylists: true,
     dailySongs: true,
+    newSongs: true,
     comments: true,
     likeWrite: true,
     artistExtra: true,
@@ -113,6 +116,7 @@ export const PLATFORM_CAPS: Record<MusicProvider, PlatformCaps> = {
     chartByName: false,
     recommendPlaylists: false,
     dailySongs: false,
+    newSongs: false,
     comments: false,
     likeWrite: true,
     artistExtra: false,
@@ -123,6 +127,7 @@ export const PLATFORM_CAPS: Record<MusicProvider, PlatformCaps> = {
     chartByName: false,
     recommendPlaylists: false,
     dailySongs: false,
+    newSongs: false,
     comments: false,
     likeWrite: false,
     artistExtra: false,
@@ -133,6 +138,7 @@ export const PLATFORM_CAPS: Record<MusicProvider, PlatformCaps> = {
     chartByName: true,
     recommendPlaylists: true,
     dailySongs: false,
+    newSongs: false,
     comments: false,
     likeWrite: false,
     artistExtra: false,
@@ -291,6 +297,18 @@ export function recommendPlaylists(provider: MusicProvider): Promise<Playlist[]>
 /** 每日推荐歌曲（仅网易云） */
 export function dailySongs(provider: MusicProvider): Promise<Song[]> {
   if (provider === 'netease') return ipc.musicRecommendSongs();
+  return Promise.resolve([]);
+}
+
+/**
+ * 推荐新歌（首页「今日精选」）：平台级新歌池，**不需要登录**。
+ *
+ * 与 `dailySongs` 的分工：那个是"按你口味的每日推荐"（要 cookie、一天一份）；
+ * 这个是"平台今天有什么新的"（匿名可取）—— 首页要的是后者，未登录用户也该看到内容。
+ * 目前只有网易云提供（其余平台能力矩阵里 `newSongs: false`，界面上不出现这一节）。
+ */
+export function newSongs(provider: MusicProvider, limit = 20): Promise<Song[]> {
+  if (provider === 'netease') return ipc.musicNewSongs(limit);
   return Promise.resolve([]);
 }
 
