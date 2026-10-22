@@ -489,6 +489,22 @@ function MusicCard({
         ))}
       </div>
 
+      {/*
+        折叠态的两枚控制（设计稿 `.island-controls` 在 pill 态只留中间两枚：播放 + 下一首）。
+        此前传输控件整组住在 `.di-card` 里，而卡片折叠时 `opacity:0` —— 于是"想暂停"
+        必须先把胶囊点开，多一步且没有任何提示。
+
+        ⚠️ 两枚都走 `stop()`：胶囊本身点击是"展开"，不拦事件就会变成"一按播放就展开"。
+      */}
+      <div className="di-pill-ctl" aria-hidden={cardOn}>
+        <IconButton title={playing ? '暂停' : '播放'} onClick={stop(onToggle)}>
+          {playing ? <Pause size={14} /> : <Play size={14} />}
+        </IconButton>
+        <IconButton title="下一曲" onClick={stop(onNext)}>
+          <SkipForward size={14} />
+        </IconButton>
+      </div>
+
       <div
         className={view === 'lyrics' ? 'di-card is-lyr' : 'di-card'}
         style={{ opacity: cardOn ? 1 : 0, pointerEvents: cardOn ? 'auto' : 'none' }}

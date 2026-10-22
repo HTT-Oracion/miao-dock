@@ -204,9 +204,36 @@
 /* 波形：只在折叠态出现（展开态由大卡里的进度条取代）。
    柱高由 TS 侧真实频谱写内联高度；`is-css` 是**降级档**——
    拿不到音频上下文时用 CSS 动画画"正在出声"，暂停（data-on=0）时完全静止。 */
+/*
+ * 折叠态控制组（设计稿 `.island-controls` 的 pill 态：只留播放 + 下一首，首尾两枚隐藏）。
+ * 右内边距 9 与胶囊的 padding 对齐；展开态整组淡出 —— 那时控制权交给卡片里的完整控件组，
+ * 两组同时可点会出现"同一个播放键在两个位置"。
+ */
+.di-pill-ctl {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  transition: opacity var(--miao-dur-fast) ease;
+}
+.di-capsule.is-expanded .di-pill-ctl {
+  opacity: 0;
+  pointer-events: none;
+}
+/* 胶囊里的按钮取设计稿 `.island-btn` 的 24×24 / r7（比通用 .ui-cbtn 小一号） */
+.di-pill-ctl .ui-cbtn {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+
 .di-wave {
   position: absolute;
-  right: 12px;
+  right: 66px;
   top: 15px;
   z-index: 1;
   display: flex;
