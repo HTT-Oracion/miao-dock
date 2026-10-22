@@ -31,40 +31,82 @@ export function RightPanel() {
   const clearSearch = useMusicStore((s) => s.clearSearch);
   const searching = useMusicStore((s) => s.searching);
   const searchError = useMusicStore((s) => s.searchError);
+  // 平台胶囊（设计稿把它放在顶行，与搜索框同一行）
+  const playbackSource = useMusicStore((s) => s.playbackSource);
+  const loginInfos = useMusicStore((s) => s.loginInfos);
+  const switchPlaybackSource = useMusicStore((s) => s.switchPlaybackSource);
 
   // 只要有关键词就进「搜索」态（而不是要求已有结果）：
   // 否则「搜索中」和「搜到 0 首」都会掉回发现页，用户会以为刚才那次搜索没发生
   const searchActive = searchText.trim().length > 0;
 
   return (
-    <section className="music-card">
-      <div className="music-search-row">
-        <input
-          className="music-search"
-          placeholder="搜索歌曲 / 歌手 / 专辑"
-          aria-label="搜索音乐"
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') void search();
-          }}
-        />
-        {searchText ? (
-          <button type="button" className="music-btn out" title="清空搜索" onClick={() => clearSearch()}>
-            <X size={12} />
+    <>
+      {/*
+        顶行（设计稿 `.music-topbar`）：平台胶囊 + 搜索框，**吸顶**在中间列顶部。
+        搜索框此前住在内容卡里 —— 用户要先滚到卡片顶上才找得到它，而它是这一屏
+        最高频的动作。平台胶囊也从左栏顶部挪到这里：设计稿把"换平台"与"搜什么"
+        放在同一行，因为它们是同一个问题的两半（在哪个平台搜）。
+      */}
+      <div className="music-topbar">
+        <div className="platform-bar" role="tablist" aria-label="播放平台">
+          {PLATFORMS.map((p) => {
+            const on = p.id === playbackSource;
+            const li = loginInfos[p.id];
+            return (
+              <button
+                key={p.id}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                className={on ? 'platform-pill is-active' : 'platform-pill'}
+                title={`${p.label}${li?.logged_in ? ' · 已登录' : ' · 未登录'}`}
+                onClick={() => {
+                  if (!on) void switchPlaybackSource(p.id);
+                }}
+              >
+                <span
+                  className="prov-dot"
+                  style={{ background: p.color, opacity: li?.logged_in ? 1 : 0.35 }}
+                  aria-hidden="true"
+                />
+                {p.label.replace('音乐', '').trim()}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="music-search-box">
+          <Search size={13} className="music-search-ico" />
+          <input
+            className="music-search"
+            placeholder="搜索歌曲 / 歌手 / 专辑"
+            aria-label="搜索音乐"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void search();
+            }}
+          />
+          {searchText ? (
+            <button type="button" className="music-btn out" title="清空搜索" onClick={() => clearSearch()}>
+              <X size={12} />
+            </button>
+          ) : null}
+          <button type="button" className="music-btn pri" disabled={searching} onClick={() => void search()}>
+            {searching ? '搜索中…' : '搜索'}
           </button>
-        ) : null}
-        <button type="button" className="music-btn pri" disabled={searching} onClick={() => void search()}>
-          <Search size={12} /> {searching ? '搜索中…' : '搜索'}
-        </button>
+        </div>
       </div>
 
-      <SearchCaps />
+      <section className="music-card">
+        <SearchCaps />
 
-      {searchError ? <div className="music-inline-err">搜索失败：{searchError}</div> : null}
+        {searchError ? <div className="music-inline-err">搜索失败：{searchError}</div> : null}
 
-      <div className="music-rightbody">{searchActive ? <SearchResults /> : <Discover />}</div>
-    </section>
+        <div className="music-rightbody">{searchActive ? <SearchResults /> : <Discover />}</div>
+      </section>
+    </>
   );
 }
 

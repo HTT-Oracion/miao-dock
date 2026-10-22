@@ -1,24 +1,21 @@
 import { useState } from 'react';
-import { PLATFORMS } from '@music/platform';
 import { useMusicStore } from '@music/store';
 import { AccountMenu } from '@screens/music/PlatformMenu';
 
 /**
- * 顶行：标题 + 平台胶囊行（设计稿 `.platform-bar`）+ 右侧登录区。
- * 登录区两态：已登录显示头像+昵称（点开多平台切换菜单）；未登录显示「未登录」（点开登录弹窗）。
+ * 左栏顶行：标题 + 右侧登录区。
+ * 登录区两态：已登录显示头像+昵称（点开账号菜单）；未登录显示「未登录」（直接开登录弹窗）。
  *
- * ## 平台切换是**一排胶囊**，不是"先开弹窗再选"
+ * ## 平台胶囊不在这一行了（ver3 挪走）
  *
- * 设计稿把四个平台摊在顶行：切平台是一步动作（点哪个是哪个），
- * 而旧实现是一个「当前平台：X」按钮 → 弹窗 → 再选一次，同一件事要两次点击，
- * 还看不出"另外三个平台长什么样"。弹窗仍保留在**账号菜单**里（那里要选的是登录账号，
- * 是另一件事）。
+ * 设计稿把平台切换放在**中间列的顶行**，与搜索框同一行 —— 那是同一个问题的两半：
+ * 「在哪个平台搜」和「搜什么」。留在这里会变成"平台在左、搜索在右"两处各管一半。
+ * 见 `RightPanel` 的 `.music-topbar`。
  */
 export function TopBar() {
   const playbackSource = useMusicStore((s) => s.playbackSource);
   const loginInfos = useMusicStore((s) => s.loginInfos);
   const openLogin = useMusicStore((s) => s.openLogin);
-  const switchPlaybackSource = useMusicStore((s) => s.switchPlaybackSource);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const info = loginInfos[playbackSource];
@@ -50,34 +47,6 @@ export function TopBar() {
             </button>
           )}
         </div>
-      </div>
-
-      {/* 平台胶囊行（设计稿 `.platform-bar`）：短名 + 登录态色点，点哪个切哪个 */}
-      <div className="platform-bar" role="tablist" aria-label="播放平台">
-        {PLATFORMS.map((p) => {
-          const on = p.id === playbackSource;
-          const li = loginInfos[p.id];
-          return (
-            <button
-              key={p.id}
-              type="button"
-              role="tab"
-              aria-selected={on}
-              className={on ? 'platform-pill is-active' : 'platform-pill'}
-              title={`${p.label}${li?.logged_in ? ' · 已登录' : ' · 未登录'}`}
-              onClick={() => {
-                if (!on) void switchPlaybackSource(p.id);
-              }}
-            >
-              <span
-                className="prov-dot"
-                style={{ background: p.color, opacity: li?.logged_in ? 1 : 0.35 }}
-                aria-hidden="true"
-              />
-              {p.label.replace('音乐', '').trim()}
-            </button>
-          );
-        })}
       </div>
 
       {menuOpen ? <AccountMenu onClose={() => setMenuOpen(false)} /> : null}
