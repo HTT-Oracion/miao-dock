@@ -227,7 +227,7 @@ export const LIBRARY = {
    * 而设计稿把详情头封面定在 8 —— 就近取 10 会让 56×76 的小封面圆角明显发胖。
    */
   cover: {
-    thumb: { w: 32, h: 44, radius: 6 },
+    thumb: { w: 36, h: 48, radius: 5 },
     head: { w: 56, h: 76, radius: 8 },
   },
 } as const;

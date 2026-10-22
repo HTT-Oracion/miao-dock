@@ -4,7 +4,7 @@
 // 且与「右侧头行 + 网格 / 话列表」是两件独立的事。抽出来只传 props（无 Context —— 守本仓
 // 「零 Context」的裁定），屏本体只留状态与编排。
 import type { MouseEvent } from 'react';
-import { ChevronDown, EyeOff, GitMerge, Search, X } from 'lucide-react';
+import { BookOpen, ChevronDown, EyeOff, GitMerge, Search, X } from 'lucide-react';
 import { LIBRARY } from '@/themes/tokens';
 import { Btn, Tooltip } from '@components/units';
 import { formatBytes, groupSearchResults, pageSlice } from '@tools';
@@ -58,7 +58,16 @@ export function LeftRail({
   onShowHidden: () => void;
 }) {
   return (
-    <aside className="lib-left" style={{ width: LIBRARY.leftColumnWidth, flexBasis: LIBRARY.leftColumnWidth }}>
+    <aside className="lib-left">
+      {/* 书架头（设计稿 `.shelf-head`）：标题 + 部数，说明"这一栏装的是什么" */}
+      <div className="shelf-head">
+        <h2>
+          <BookOpen size={13} />
+          我的书架
+        </h2>
+        <span className="shelf-count">{items.length} 部</span>
+      </div>
+
       <div className="lib-search">
         <Search size={13} className="lib-search-ico" />
         <input

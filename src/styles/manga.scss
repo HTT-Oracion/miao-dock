@@ -930,22 +930,50 @@
 
 /* ================================================================ X-D1 本地漫画库 */
 
+/*
+ * 书架页容器（设计稿 `.library-wrap`）：**grid 两栏** + 整页内边距。
+ * 旧写法是 flex + gap，页面本身不留白 —— 两侧栏会贴到窗口边缘。
+ */
 .lib {
-  display: flex;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: var(--lib-left-w, 260px) minmax(0, 1fr);
+  gap: 12px;
   height: 100%;
   min-height: 0;
+  padding: 14px 22px 18px;
 }
 /* 左栏 260（《02》§5.5）—— ver3 起是一张独立面板，卡片感来自描边 + 弥散阴影 */
+/* 书架头（设计稿 .shelf-head）：标题 + 部数，14/14/8 内边距 */
+.shelf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 14px 8px;
+}
+.shelf-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--md-font-display);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.shelf-count {
+  font-family: var(--md-font-numeric);
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+
+/* 左栏「我的书架」（设计稿 `.shelf`）：独立面板，r-lg + shadow-1 */
 .lib-left {
-  flex: 0 0 260px;
-  width: 260px;
   display: flex;
   flex-direction: column;
   min-height: 0;
   background: var(--miao-surface);
   border: 1px solid var(--miao-line);
-  border-radius: var(--miao-r-xl);
+  border-radius: var(--miao-r-lg);
   box-shadow: var(--miao-shadow-1);
   overflow: hidden;
 }
@@ -953,22 +981,22 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 6px;
+  padding: 0 7px 8px;
 }
+/* 书架行（设计稿 .book-row）：7px 8px 内边距 / r10 / gap 9 */
 .lib-item {
   position: relative;
   width: 100%;
-  text-align: left;
-  padding: 8px 9px;
-  border-radius: 12px;
   display: flex;
-  /* 列表项恒为「封面缩略 + 名称 + 作者 · N 话 · M 页」的横排（左栏窄，竖排放不下封面） */
-  flex-direction: row;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  text-align: left;
+  color: var(--miao-text);
   transition:
     background var(--miao-dur-fast) ease,
-    transform var(--miao-dur-fast) var(--miao-ease-spring);
+    box-shadow var(--miao-dur-fast) ease;
 }
 .lib-item:hover {
   background: var(--miao-surface-2);
@@ -1091,13 +1119,20 @@
   color: var(--miao-primary-ink);
 }
 
+/*
+ * 右栏（设计稿 `.book-panel`）：**一张独立卡片**，自身滚动、18/20/26 内边距。
+ * 旧写法是裸容器（无底无框），内容直接铺在页面底色上，与左栏不是同一层级。
+ */
 .lib-right {
-  flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
   min-height: 0;
+  overflow: auto;
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-lg);
+  box-shadow: var(--miao-shadow-1);
+  padding: 18px 20px 26px;
+  position: relative;
 }
 .lib-head {
   display: flex;
@@ -1951,14 +1986,16 @@
   flex-direction: column;
   gap: 2px;
 }
+/* 书架缩略图（设计稿 .book-thumb）：36x48 / r5 */
 .cover-thumb {
-  flex: 0 0 auto;
-  width: 32px;
-  height: 44px;
-  border: 1px solid var(--miao-line);
-  border-radius: var(--md-radius-xs);
+  flex: none;
+  width: 36px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
   background: var(--miao-surface-2);
-  object-fit: cover;
   overflow: hidden;
 }
 .cover-thumb.is-ph {

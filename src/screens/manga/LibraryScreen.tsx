@@ -10,6 +10,7 @@ import type {
   TaskRow,
 } from '@/types';
 import { chapterNoOf } from '@tools';
+import { LIBRARY } from '@/themes/tokens';
 import { Btn, ContextMenu, ErrorState, MenuItem, MenuSeparator, Notice } from '@components/units';
 import type { BookMetaIntent } from '@screens/manga/modals';
 import {
@@ -519,7 +520,7 @@ export function LibraryScreen({
   };
 
   return (
-    <div className="lib">
+    <div className="lib" style={{ '--lib-left-w': `${LIBRARY.leftColumnWidth}px` } as React.CSSProperties}>
       <LeftRail
         queryInput={queryInput}
         onQueryInput={setQueryInput}
