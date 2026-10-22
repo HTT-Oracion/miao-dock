@@ -80,6 +80,8 @@ export function Charts() {
     <div className="music-sec">
       <div className="music-card-hd">
         <span className="music-card-title">官方榜单</span>
+        {/* 副标题按设计稿：说清"这些榜单是从哪来的" */}
+        <span className="music-card-sub">来自四个平台的每日榜单</span>
         <div className="grow" />
         <button type="button" className="music-btn out" disabled={loading} onClick={() => void loadCharts()}>
           <RefreshCw size={12} /> {loading ? '刷新中…' : '刷新'}

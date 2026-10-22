@@ -1,4 +1,4 @@
-﻿import {
+import {
   ChevronLeft,
   ChevronRight,
   Heart,
@@ -277,15 +277,17 @@ function Recommendations() {
         <>
           <div className="music-card-hd">
             <span className="music-card-title">推荐歌单</span>
+            {/* 副标题按设计稿：一句话说清"这批是怎么来的" */}
+            <span className="music-card-sub">按你最近的循环生成</span>
             <div className="grow" />
             <button type="button" className="music-btn out" disabled={loading} onClick={() => void loadRecommend()}>
-              <RefreshCw size={12} /> {loading ? '刷新中…' : '刷新'}
+              <RefreshCw size={12} /> {loading ? '换一批中…' : '换一批'}
             </button>
           </div>
           {recommendPlaylists.length === 0 ? (
             recommendError ? (
-              /* 三段全读失败：说明原因并给重试（右上「刷新」就是重试入口） */
-              <Empty bad inline sub={`${recommendError}（点右上「刷新」重试）`}>
+              /* 三段全读失败：说明原因并给重试（右上那枚按钮就是重试入口，名字要与按钮一致） */
+              <Empty bad inline sub={`${recommendError}（点右上「换一批」重新加载）`}>
                 推荐读取失败
               </Empty>
             ) : (
