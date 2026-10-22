@@ -89,13 +89,19 @@ export function RightPanel() {
             }}
           />
           {searchText ? (
-            <button type="button" className="music-btn out" title="清空搜索" onClick={() => clearSearch()}>
+            <Btn
+              kind="bare"
+              className="music-btn out"
+              ariaLabel="清空搜索"
+              title="清空搜索"
+              onClick={() => clearSearch()}
+            >
               <X size={12} />
-            </button>
+            </Btn>
           ) : null}
-          <button type="button" className="music-btn pri" disabled={searching} onClick={() => void search()}>
+          <Btn kind="bare" className="music-btn pri" disabled={searching} onClick={() => void search()}>
             {searching ? '搜索中…' : '搜索'}
-          </button>
+          </Btn>
         </div>
       </div>
 
