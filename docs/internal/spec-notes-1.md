@@ -8378,3 +8378,26 @@ RightPanel 里 5 处**多行** `<button>` 的闭合标签被一起换掉，于�
 
 **五、验证**：`npm run check` 19/19 · `check:units` 46/46 + 反证 **61/61** ·
 `check:music` 237/237 + 反证 **232/232** · `tsc` / `eslint` / `vite build` 全绿。
+## D-338 · 第 3 批：给 `Btn` 补 `role` / `ariaSelected`，音乐屏裸按钮清零（2026-10-23）
+
+**一、先解决"单元能力不够"的问题，再改调用点。** 上一轮登记的 14 处里，
+平台页签（`role="tab"` + `aria-selected`）与搜索源胶囊这两类**不能**直接换 ——
+`Btn` 不支持 `role`。所以这一轮先给单元补两个可选 prop：
+
+- `role?: 'tab' | 'option'` —— **只开放两个**，不开放任意字符串。给 `<button>` 挂
+  `role="button"` / `role="menuitem"` 这类语义错配比不挂更糟；而这两个是
+  "外观是按钮、语义是别的东西"的正当场景（页签组里的一枚 / 列表里的可选项）。
+- `ariaSelected?: boolean` —— 配合上面两个角色的选中态。
+
+**二、本批改了 13 处**：RightPanel 5（平台页签 · 搜索源胶囊（用 `ariaPressed`）·
+今日精选刷新 · 两处「播放全部」）、LeftPanel 4（三枚页签 + 组头刷新 + 返回 + 播放全部）、
+ExpandedPlayer 4（歌词/评论页签，容器补 `role="tablist"` · `译` 开关 · 皮肤触发 + 皮肤卡）。
+
+**三、音乐屏裸 `<button>` 现为 0**（`PlayerBar` 里那 1 处是注释中引用的文字，不是代码）。
+
+**四、验证**：`npm run check` 19/19 · `check:units` 46/46 + 反证 **61/61** ·
+`check:music` 237/237 + 反证 **232/232** · `tsc` / `eslint` / `vite build` 全绿；
+**CDP 实测**（音乐屏可达）：
+`<div class="ltabs" role="tablist"><button class="ltab is-on" role="tab" aria-selected="true">歌单</button>…`、
+`<button class="platform-pill is-active" role="tab" aria-selected="true">`、
+账号行 `aria-label` 到位 —— 类名逐字未变，语义补齐。
