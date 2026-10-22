@@ -363,6 +363,24 @@ export function LibraryRight({
                 ))}
               </div>
 
+              {/*
+                这本书还没有任何话时的空态（设计稿 `.chapter-empty`）：
+                此前这里什么都不渲染 —— 用户看到的是一片空白区域，
+                分不清"这本书确实没话"还是"列表加载失败"。
+              */}
+              {chapterRows.length === 0 ? (
+                <Empty
+                  sub="去「投放」拖入图片，完成后会自动出现在这里。"
+                  actions={
+                    <Btn kind="primary" size="sm" onClick={onGoDrop}>
+                      去投放
+                    </Btn>
+                  }
+                >
+                  这本漫画还没有章节
+                </Empty>
+              ) : null}
+
               <div className="cv-foot">
                 <span>
                   共 <span className="num">{currentBook.chapters.length}</span> 话 ·{' '}

@@ -7,8 +7,10 @@
 // ⚠️ `check:units` 的 ZOOM 组读的是「`LibraryScreen.tsx` + 本文件」的**拼接源码**，
 // 故 `zoomAt` / `onWheel` / `.lightbox-zoom-btn` 这些锚点仍可命中 —— 别把缩放再拆到第三个文件去。
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, RotateCcw, Search, X } from 'lucide-react';
+import { ArrowLeft, Copy, RotateCcw, Search, X } from 'lucide-react';
 import { Btn, IconButton, MenuButton, MenuItem } from '@components/units';
+import { errorText } from '@/ipc';
+import { toastBus } from '@/stores/toastBus';
 import type { RetranslatePlan } from '@/types';
 import { useBlobUrl } from '@screens/manga/blob';
 import type { PageView, Variant } from '@screens/manga/blob';
@@ -68,6 +70,10 @@ function Pane({
 const ZOOM_MIN = 50;
 const ZOOM_MAX = 200;
 
+/** 页文件名口径：序号补零到 3 位 + `.png`（与服务端落盘的命名一致） */
+function pageFileName(seq: number): string {
+  return `${String(seq).padStart(3, '0')}.png`;
+}
 /**
  * 「恰好铺满可视区」档 = 100%，也是**打开全屏时的基准档**。
  *
@@ -516,6 +522,22 @@ export function Compare({
                 onClick={() => {
                   close();
                   onRetranslate([seq]);
+                }}
+              />
+              {/*
+                复制文件名（设计稿页级菜单的一项）：页文件按序号补零命名（`001.png`），
+                用户拿它去对目录、报问题时不用自己数零的个数。
+              */}
+              <MenuItem
+                icon={<Copy size={13} />}
+                label="复制文件名"
+                sub={pageFileName(seq)}
+                onClick={() => {
+                  close();
+                  void navigator.clipboard
+                    .writeText(pageFileName(seq))
+                    .then(() => toastBus.push('已复制文件名', 'good', pageFileName(seq)))
+                    .catch((e: unknown) => toastBus.push('复制失败', 'bad', errorText(e)));
                 }}
               />
             </>
