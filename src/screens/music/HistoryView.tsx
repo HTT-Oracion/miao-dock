@@ -1,4 +1,4 @@
-import { Plus, Trash2, X } from 'lucide-react';
+﻿import { Plus, Trash2, X } from 'lucide-react';
 import { providerColor } from '@music/platform';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl, songKey } from '@music/convert';
@@ -39,7 +39,7 @@ export function HistoryView() {
       </div>
 
       {history.length === 0 ? (
-        <Empty>还没有播放记录</Empty>
+        <Empty sub="播放一首歌之后，这里会留下脚印。">还没有播放记录</Empty>
       ) : (
         <VirtualList
           items={history}

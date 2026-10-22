@@ -586,6 +586,19 @@
   flex: none;
   padding: 8px 0;
 }
+/* 空态的第二、三层（设计稿 `.empty p` / `.empty-actions`）：说明行比标题小一档、颜色更淡 */
+.ui-empty-sub {
+  font-size: 10.5px;
+  color: var(--miao-muted);
+  max-width: 44ch;
+}
+.ui-empty-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 4px;
+}
 /* 空态可能不止一句：标题 / 说明 / 动作三行竖排（单句调用方不受影响） */
 .ui-empty {
   flex-direction: column;

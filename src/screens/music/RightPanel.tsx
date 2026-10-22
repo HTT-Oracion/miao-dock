@@ -1,4 +1,4 @@
-import {
+﻿import {
   ChevronLeft,
   ChevronRight,
   Heart,
@@ -133,7 +133,7 @@ function SearchResults() {
   };
 
   if (searching && results.length === 0) return <Empty>搜索中…</Empty>;
-  if (results.length === 0) return <Empty>没找到「{searchText}」相关的歌曲</Empty>;
+  if (results.length === 0) return <Empty sub="试试更短的关键词，或切换搜索源。">没有找到「{searchText}」</Empty>;
 
   return (
     <>
@@ -410,7 +410,7 @@ function RightTracksView() {
       {loading ? (
         <Empty>加载曲目中…</Empty>
       ) : tracks.length === 0 ? (
-        <Empty>没有拿到曲目</Empty>
+        <Empty sub="去搜索一些歌曲，加入喜欢的歌单。">歌单是空的</Empty>
       ) : (
         <>
           <VirtualList

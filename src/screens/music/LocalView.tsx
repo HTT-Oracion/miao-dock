@@ -1,4 +1,4 @@
-import { open } from '@tauri-apps/plugin-dialog';
+﻿import { open } from '@tauri-apps/plugin-dialog';
 import { FolderOpen, FolderPlus, Trash2 } from 'lucide-react';
 import { useMusicStore } from '@music/store';
 import { songKey } from '@music/convert';
@@ -59,7 +59,7 @@ export function LocalView() {
       {importing ? (
         <Empty>正在导入本地音乐…</Empty>
       ) : localSongs.length === 0 ? (
-        <Empty>还没有导入本地音乐</Empty>
+        <Empty sub="把 MP3 / FLAC / WAV 拖进来，或者选择文件夹批量导入。">还没有本地音乐</Empty>
       ) : (
         <VirtualList
           items={localSongs}
