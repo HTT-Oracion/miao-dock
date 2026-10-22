@@ -1,4 +1,4 @@
-﻿import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2, X } from 'lucide-react';
 import { providerColor } from '@music/platform';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl, songKey } from '@music/convert';
@@ -28,12 +28,12 @@ export function HistoryView() {
 
   return (
     <div className="music-body">
-      <div className="music-card-hd">
-        <span className="music-card-sub">{history.length} 条 · 跨平台</span>
-        <div className="grow" />
+      {/* 组头（设计稿 `.ms-caption`）：「最近播放」+ 清空（有记录时才出现） */}
+      <div className="ms-caption">
+        最近播放
         {history.length > 0 ? (
-          <button type="button" className="music-btn out" onClick={clear}>
-            <Trash2 size={12} /> 清空
+          <button type="button" className="text-btn" title="清空播放历史" onClick={clear}>
+            <Trash2 size={11} />
           </button>
         ) : null}
       </div>

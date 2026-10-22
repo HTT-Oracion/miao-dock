@@ -1,4 +1,4 @@
-﻿import { open } from '@tauri-apps/plugin-dialog';
+import { open } from '@tauri-apps/plugin-dialog';
 import { FolderOpen, FolderPlus, Trash2 } from 'lucide-react';
 import { useMusicStore } from '@music/store';
 import { songKey } from '@music/convert';
@@ -40,18 +40,30 @@ export function LocalView() {
 
   return (
     <div className="music-body">
-      <div className="music-card-hd">
-        <span className="music-card-sub">{localSongs.length} 首</span>
-        <div className="grow" />
-        <button type="button" className="music-btn pri" disabled={importing} onClick={() => void pickFiles()}>
-          <FolderOpen size={12} /> 选择文件
+      {/* 组头（设计稿 `.ms-caption`）：小节名 + 一枚导入按钮；导入与清空分两处，不再挤一行 */}
+      <div className="ms-caption">
+        本地音乐
+        <button
+          type="button"
+          className="text-btn"
+          disabled={importing}
+          title="导入文件"
+          onClick={() => void pickFiles()}
+        >
+          <FolderOpen size={11} />
         </button>
-        <button type="button" className="music-btn out" disabled={importing} onClick={() => void pickFolder()}>
-          <FolderPlus size={12} /> 选择文件夹
+        <button
+          type="button"
+          className="text-btn"
+          disabled={importing}
+          title="导入文件夹"
+          onClick={() => void pickFolder()}
+        >
+          <FolderPlus size={11} />
         </button>
         {localSongs.length > 0 ? (
-          <button type="button" className="music-btn out" onClick={clearLocalSongs}>
-            <Trash2 size={12} /> 清空
+          <button type="button" className="text-btn" title="清空本地音乐" onClick={clearLocalSongs}>
+            <Trash2 size={11} />
           </button>
         ) : null}
       </div>
