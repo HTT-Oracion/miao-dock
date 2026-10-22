@@ -8283,3 +8283,21 @@ CDP 复测：徽标 **19px**、导航项字重 **700**。
 `按你最近的循环生成` 1 · `换一批` 3（按钮 + 载入态 + 错误提示指代）。
 （`今天也有` / `心动模式` 在浏览器里是 0 —— 无 IPC 时 `dailySongs` 为空、未登录时
 `liked` 为空，UI 走的是设计分支 `登录后每天更新` / `登录后可查看`，不是缺文案。）
+## D-334 · 左栏三枚页签缺 tab 语义：读屏听到的是"三个按钮"（2026-10-23）
+
+**一、文案与分组本来就对。** 页签 `歌单 / 本地 / 历史`、组头 `创建的歌单`（带刷新）/
+`收藏的歌单`、空分组**整组不渲染**（留一个"收藏的歌单 0"的组头等于告诉用户"你有 0 个收藏"，
+那是噪音）、`我喜欢的音乐` 统一命名 —— 逐条一致。
+
+**二、🔴 缺的是语义。** 设计稿 `.ms-tabs` 写着 `role="tablist"`，每枚按钮 `role="tab"` +
+`aria-selected`；产品只有 `<div className="ltabs">` 与三个裸 `<button>`。
+读屏用户听到的是**三个互不相干的按钮**，听不出"这是一组视图切换、当前在哪一个"。
+
+**三、已补**：容器 `role="tablist"`、按钮 `role="tab"` + `aria-selected={active === t.id}`。
+（`tracks` 下钻态仍高亮「歌单」那一枚 —— 这是产品对"曲目是歌单的下钻"的建模，
+`aria-selected` 跟着同一个 `active` 走，不会与视觉高亮打架。）
+
+**四、验证**：`npm run check` 19/19 · `check:music` 237/237 + 反证 **232/232** ·
+`tsc` / `eslint` / `vite build` 全绿；**CDP 实测** DOM：
+`<div class="ltabs" role="tablist"><button role="tab" aria-selected="true">歌单</button>
+<button role="tab" aria-selected="false">本地</button><button role="tab" aria-selected="false">历史</button></div>`。
