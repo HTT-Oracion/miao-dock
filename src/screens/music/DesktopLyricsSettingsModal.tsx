@@ -64,9 +64,14 @@ export function DesktopLyricsSettingsModal({ open, onClose }: { open: boolean; o
       {/* 阻止冒泡：点弹窗内部不应触发遮罩的「点击关闭」 */}
       <div className="music-dlset" onClick={(e) => e.stopPropagation()}>
         <div className="music-dlset-hd">
-          <span className="music-dlset-title">
-            <Settings size={15} /> 桌面歌词设置
-          </span>
+          <div>
+            {/* 设计稿 kicker：`DESKTOP LYRICS` */}
+            <span className="music-dlset-kicker">DESKTOP LYRICS</span>
+            <span className="music-dlset-title">
+              <Settings size={15} /> 桌面歌词设置
+            </span>
+            <p className="music-dlset-sub">只作用于桌面歌词窗，展开播放器的歌词不受影响。</p>
+          </div>
           <IconButton title="关闭" onClick={onClose}>
             <X size={15} />
           </IconButton>
@@ -74,26 +79,20 @@ export function DesktopLyricsSettingsModal({ open, onClose }: { open: boolean; o
 
         <div className="music-dlset-body">
           {/*
-            显式说清"改的是哪一个"：设置页里也有「歌词字号 / 歌词高亮色」，
-            两处名字几乎一样但作用对象不同 —— 不点明的话用户一定会以为改的是同一个。
-          */}
-          <p className="music-dlset-lead">
-            以下设置<b>只作用于桌面歌词窗</b>（浮在桌面上的那一条）；展开播放器的歌词不受影响。
-          </p>
-
-          {/*
             即时小样：用下面各控件正在编辑的同一份 store 值渲染，窗口没开时也能看到效果。
             aria-hidden —— 它是纯视觉示意，读屏用户从控件本身就能拿到全部信息。
+            两句的标注文案取自设计稿（`上一句歌词 · 未高亮` / `正在唱的这一句 · 高亮`）：
+            它们同时说明"这两行分别是什么"和"哪个是当前句"。
           */}
           <div className="music-dlset-preview" aria-hidden="true">
             <div
               className="music-dlset-pv-line"
               style={{ fontSize: `${Math.round(fontSize * 0.86)}px`, color: baseColor }}
             >
-              上一句歌词
+              上一句歌词 · 未高亮
             </div>
             <div className="music-dlset-pv-line" style={{ fontSize: `${fontSize}px`, color: highlightColor }}>
-              正在唱的这一句
+              正在唱的这一句 · 高亮
             </div>
           </div>
 

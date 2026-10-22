@@ -11,6 +11,7 @@ import { AccountMenu, PlatformPicker } from '@screens/music/PlatformMenu';
 export function TopBar() {
   const playbackSource = useMusicStore((s) => s.playbackSource);
   const loginInfos = useMusicStore((s) => s.loginInfos);
+  const openLogin = useMusicStore((s) => s.openLogin);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -35,7 +36,12 @@ export function TopBar() {
             <span className="music-nick">{info?.nickname || '已登录'}</span>
           </button>
         ) : (
-          <button type="button" className="music-btn out" onClick={() => setPickerOpen(true)}>
+          /*
+           * 设计稿：点「未登录」**直接开登录弹窗**（不是先弹平台选择再点一次）。
+           * 未登录时用户的意图就是"我要登录"，中间夹一层平台选择等于让同一件事点两次；
+           * 平台切换在登录弹窗的左栏里已经能选，不丢功能。
+           */
+          <button type="button" className="music-btn out" onClick={() => void openLogin()}>
             未登录
           </button>
         )}

@@ -2784,31 +2784,184 @@
 }
 .music-login {
   width: 100%;
-  max-width: 340px;
+  max-width: 620px;
   background: var(--miao-surface);
   border: 1px solid var(--miao-line);
-  border-radius: var(--miao-r-lg);
-  padding: 16px 18px;
+  border-radius: var(--miao-r-xl);
+  padding: 18px 20px;
   box-shadow: var(--miao-shadow-2);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
+  animation: miao-modal-in var(--miao-dur-slow) var(--miao-ease-spring);
 }
 .music-login-hd {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
-.music-login-body {
+.music-login-kicker {
+  display: block;
+  margin-bottom: 3px;
+  font-family: var(--md-font-display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--miao-accent-ink);
+}
+.music-login-title {
+  display: block;
+  font-family: var(--md-font-display);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+/* 两栏：左平台列表（固定 200） + 右面板（自适应） */
+.music-login-cols {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+}
+.music-login-platforms {
   display: flex;
   flex-direction: column;
+  gap: 3px;
+  padding-right: 14px;
+  border-right: 1px solid var(--miao-line);
+}
+.login-platform {
+  display: flex;
   align-items: center;
   gap: 8px;
-  padding: 14px 0 4px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--miao-dur-fast) ease,
+    border-color var(--miao-dur-fast) ease;
+}
+.login-platform:hover {
+  background: var(--miao-surface-2);
+}
+.login-platform.is-active {
+  background: var(--miao-surface-2);
+  border-color: var(--miao-line);
+}
+.login-platform-tx {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.login-platform-tx strong {
+  font-family: var(--md-font-display);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--miao-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.login-platform-tx small {
+  font-size: 9.5px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.music-login-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.login-panel-head h3 {
+  font-family: var(--md-font-display);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.login-panel-head p {
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: var(--miao-muted);
+}
+/* 未登录：官方窗口提示块 */
+.login-wait {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--miao-line);
+  border-radius: 12px;
+  background: var(--miao-surface-2);
+}
+.login-wait > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--miao-accent);
+}
+.login-wait-tx h4 {
+  font-family: var(--md-font-display);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.login-wait-tx p {
+  margin-top: 3px;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--miao-muted);
+}
+.login-status {
+  font-size: 10px;
+  color: var(--miao-accent-ink);
+}
+/* 已登录：账号卡 */
+.login-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--miao-line);
+  border-radius: 12px;
+  background: var(--miao-surface-2);
+}
+.avatar-lg {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--miao-accent), var(--miao-primary));
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.login-account > div {
+  flex: 1;
+  min-width: 0;
+}
+.login-account h4 {
+  font-family: var(--md-font-display);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.login-account p {
+  font-size: 10px;
+  color: var(--miao-muted);
 }
 .music-login-note {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--miao-text);
   text-align: center;
   line-height: 1.6;
@@ -2821,15 +2974,6 @@
   to {
     transform: rotate(360deg);
   }
-}
-.music-login-status {
-  font-size: 12px;
-  color: var(--miao-text);
-  min-height: 18px;
-  text-align: center;
-}
-.music-login .music-btn {
-  align-self: center;
 }
 
 /* ---------------------------------------------------------------- 桌面歌词设置弹窗 */
@@ -2861,9 +3005,19 @@
 }
 .music-dlset-hd {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+}
+/* 设计稿 kicker：9px / 700 / .16em / accent，标题上方一行 */
+.music-dlset-kicker {
+  display: block;
+  margin-bottom: 3px;
+  font-family: var(--md-font-display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--miao-accent-ink);
 }
 .music-dlset-title {
   display: inline-flex;
@@ -2873,6 +3027,13 @@
   font-size: 14px;
   font-weight: 700;
   color: var(--miao-ink);
+}
+/* 设计稿 subtitle：标题下的一句作用域说明（替代原先独立成段的 lead） */
+.music-dlset-sub {
+  margin-top: 4px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--miao-muted);
 }
 /* 弹窗主体：可滚动（设置项比窗口高时）。min-height:0 是 flex 子项能滚的必要条件 ——
    少了它，子项的最小高度默认是内容高度，滚动条永远不会出现。 */
@@ -2884,19 +3045,6 @@
   overflow-y: auto;
   min-height: 0;
   flex: 1 1 auto;
-}
-
-/* 开篇一句：这批设置作用于"哪一个窗口"必须先说清。
-   设置页里也有同名项（歌词字号 / 歌词高亮色），不点明作用对象的话用户一定以为改的是同一个。 */
-.music-dlset-lead {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--miao-text);
-}
-.music-dlset-lead b {
-  color: var(--miao-ink);
-  font-weight: 700;
 }
 
 /* 即时小样：用控件正在编辑的同一份值渲染。
