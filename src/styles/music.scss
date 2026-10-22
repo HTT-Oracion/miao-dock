@@ -1,4 +1,4 @@
-/* ====================================================== 灵动岛（拍板第 4 项方案 B）
+﻿/* ====================================================== 灵动岛（拍板第 4 项方案 B）
  *
  * 形态：**Mac 式灵动岛**，浮在顶栏之上，三态形变：
  *   圆形 30×30（只有语义点）→ 胶囊（音乐 200×30 / 普通提示自适应宽×30）→ 大卡 320×150（音乐）。
@@ -2402,7 +2402,7 @@
 }
 /* 歌词字号与高亮色走 CSS 变量（设置页「歌词」两项）：
    --lyr-size / --lyr-hl 由 ExpandedPlayer 以内联 style 注入。
-   回落到 `#ffe066`（= player-options 的 `LYRICS_COLOR_DEF`）而**不是** `var(--md-yellow)`——
+   回落到 `#8fb6d6`（= player-options 的 `LYRICS_COLOR_DEF`，天青）而**不是** `var(--md-yellow)`——
    后者在本项目里**只被引用、从未定义**（同 `--md-pink-soft` 等一批），拿它当回落值等于**没有回落**：
    变量缺失时整条 color 声明会失效，当前行就继承正文色，看起来正是"高亮没生效"。 */
 .music-lyr-line {
@@ -2428,7 +2428,7 @@
   font-size: calc(var(--lyr-size, 16px) + 3px);
   font-weight: 700;
   opacity: 1;
-  color: var(--lyr-hl, #ffe066);
+  color: var(--lyr-hl, #8fb6d6);
 }
 /*
   整行模式（`.is-line-mode`，D-137）：**取消一切过渡**，唱到哪句哪句瞬间到位。
@@ -2481,7 +2481,7 @@
 }
 /* 底层：未唱部分。用高亮色压低透明度 —— 与顶层同色系，过渡时不会有色相跳变 */
 .kara-under {
-  color: var(--lyr-hl, #ffe066);
+  color: var(--lyr-hl, #8fb6d6);
   opacity: 0.32;
 }
 /* 顶层：已唱部分。width 由 RAF 逐帧写入；overflow:hidden 让 width 成为"裁切"。
@@ -2493,7 +2493,7 @@
   width: 0%;
   overflow: hidden;
   white-space: nowrap;
-  color: var(--lyr-hl, #ffe066);
+  color: var(--lyr-hl, #8fb6d6);
   will-change: width;
 }
 /* 当前行整行：nowrap 后超长部分会溢出，这里裁掉，避免撑出横向滚动条 */

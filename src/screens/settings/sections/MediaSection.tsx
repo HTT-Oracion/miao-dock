@@ -1,10 +1,17 @@
-// 设置页 —— 由 sections.tsx 按 Section 拆分（D-150）。
+﻿// 设置页 —— 由 sections.tsx 按 Section 拆分（D-150）。
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useMusicStore } from '@music/store';
 import { Btn, ColorPicker, Range, Select, Swatches, Switch } from '@components/units';
 import { CtlNote, GroupNote, ReadOnly } from '@screens/settings/parts';
-import { SKINS, QUALITY_OPTIONS, LYRICS_SIZE, LYRICS_COLORS, LYRICS_MODE_OPTIONS } from '@music/player-options';
+import {
+  SKINS,
+  QUALITY_OPTIONS,
+  LYRICS_SIZE,
+  LYRICS_COLORS,
+  LYRICS_COLOR_NAMES,
+  LYRICS_MODE_OPTIONS,
+} from '@music/player-options';
 import { MEDIA } from '@screens/settings/catalog';
 import type { SettingItem } from '@screens/settings/catalog';
 import { CacheBlock } from '@screens/settings/CacheBlock';
@@ -136,6 +143,7 @@ export function MediaSection() {
             <Swatches
               label={item.label}
               colors={LYRICS_COLORS}
+              names={LYRICS_COLOR_NAMES}
               value={lyricsHighlightColor}
               onPick={setLyricsHighlightColor}
             />

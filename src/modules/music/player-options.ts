@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 播放/媒体的**选项常量表** —— 设置页与播放器共用同一份，
  * 避免「设置页写一套档位名、展开播放器写另一套」这种两处各写一遍的漂移。
  *
@@ -71,8 +71,22 @@ export const QUALITY_OPTIONS: { value: PlaybackQuality; label: string; desc: str
 export const LYRICS_SIZE = { min: 17, max: 48, step: 1, def: 19 } as const;
 
 /** 歌词高亮色（参考实现 `lyricsHighlightColor`）—— 给几个常规色 + 允许自定义 */
-export const LYRICS_COLORS = ['#FFE066', '#FF8FBF', '#8FC7FF', '#70D9AD', '#C9B5FF'] as const;
-export const LYRICS_COLOR_DEF = '#FFE066';
+export const LYRICS_COLORS = ['#8FB6D6', '#DFA47D', '#8CA88C', '#C97D73', '#557B9B'] as const;
+export const LYRICS_COLOR_DEF = '#8FB6D6';
+
+/**
+ * 五个预设色的名字（设计稿的 ria-label：天青 / 杏奶 / 鼠尾草 / 陶红 / 夜蓝）。
+ *
+ * 色点只画颜色、不写文字，所以**名字只能进无障碍名与悬停提示** —— 没有它，
+ * 色觉障碍用户与读屏用户拿到的只是一个十六进制串。
+ */
+export const LYRICS_COLOR_NAMES: Record<string, string> = {
+  '#8FB6D6': '天青',
+  '#DFA47D': '杏奶',
+  '#8CA88C': '鼠尾草',
+  '#C97D73': '陶红',
+  '#557B9B': '夜蓝',
+};
 
 /**
  * 歌词高亮方式（本项目新增，参考实现没有此开关）。
@@ -132,8 +146,8 @@ export const DL_LYRICS_SIZE = { min: 16, max: 40, step: 1, def: 22 } as const;
 export const DL_LINE_COUNT = { min: 2, max: 5, def: 2 } as const;
 
 /** 桌面歌词高亮色（正在唱的那一行）候选 + 默认 */
-export const DL_HIGHLIGHT_COLORS = ['#FFE066', '#FF8FBF', '#8FC7FF', '#70D9AD', '#C9B5FF'] as const;
-export const DL_HIGHLIGHT_COLOR_DEF = '#FFE066';
+export const DL_HIGHLIGHT_COLORS = ['#8FB6D6', '#DFA47D', '#8CA88C', '#C97D73', '#557B9B'] as const;
+export const DL_HIGHLIGHT_COLOR_DEF = '#8FB6D6';
 
 /**
  * 桌面歌词底色（未高亮的其余行）候选 + 默认。

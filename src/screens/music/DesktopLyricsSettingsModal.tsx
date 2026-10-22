@@ -1,7 +1,8 @@
-import { RotateCcw, Settings, X } from 'lucide-react';
+﻿import { RotateCcw, Settings, X } from 'lucide-react';
 import { Btn, ColorPicker, IconButton, Range, Swatches } from '@components/units';
 import { useEsc } from '@hooks/useEsc';
 import { DL_BASE_COLORS, DL_HIGHLIGHT_COLORS, DL_LINE_COUNT, DL_LYRICS_SIZE } from '@music/player-options';
+import { LYRICS_COLOR_NAMES } from '@music/player-options';
 import { useMusicStore } from '@music/store';
 
 /**
@@ -122,6 +123,7 @@ export function DesktopLyricsSettingsModal({ open, onClose }: { open: boolean; o
               <Swatches
                 label="桌面歌词高亮色"
                 colors={DL_HIGHLIGHT_COLORS}
+                names={LYRICS_COLOR_NAMES}
                 value={highlightColor}
                 onPick={setHighlightColor}
               />
