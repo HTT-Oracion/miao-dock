@@ -340,22 +340,23 @@ export const MEDIA: SettingSection = {
           label: '音质档位',
           state: 'live',
           def: '高清臻音',
-          why: '标准 / 极高 / 无损 / 高清臻音 / 超清母带',
+          // 设计稿渲染进界面的那句（不是它内部索引表里的「标准 / 极高 / …」）
+          why: '更高档位需要平台会员；不可用的音质会自动降级',
         },
-        { id: 'skin', label: '展开播放器皮肤', state: 'live', def: '现代', why: '六套播放器皮肤' },
+        { id: 'skin', label: '展开播放器皮肤', state: 'live', def: '现代', why: '六套皮肤，随时切换' },
         {
           id: 'dynamic-bg',
           label: '动态背景',
           state: 'live',
           def: '关',
-          why: '现代 / 沉浸皮肤的渐变缓慢流动',
+          why: '让「现代 / 沉浸」两种皮肤的渐变缓慢流动',
         },
         {
           id: 'disc-mode',
           label: '碟片模式',
           state: 'live',
           def: '关',
-          why: '封面显示成旋转唱片',
+          why: '展开播放器的封面显示成旋转唱片，播放时转、暂停时停',
         },
         {
           id: 'music-cache',
@@ -376,7 +377,7 @@ export const MEDIA: SettingSection = {
           id: 'lyrics-mode',
           label: '歌词高亮方式',
           state: 'live',
-          why: '整行点亮或逐字推进',
+          why: '整行一次性点亮，或卡拉 OK 式逐字推进',
           def: '逐字',
         },
         {
@@ -384,6 +385,8 @@ export const MEDIA: SettingSection = {
           label: '歌词字号',
           state: 'live',
           def: '19px',
+          // 设计稿自己两层写法不同（索引表 `17–48 px` / 渲染 `17 – 48 px`）：
+          // 数字与单位一致，只有区间连字符的空格差异 ⇒ 随全仓排版用无空格形态
           why: '17–48 px，实时预览',
         },
         {
@@ -391,21 +394,21 @@ export const MEDIA: SettingSection = {
           label: '歌词高亮色',
           state: 'live',
           def: '#FFE066',
-          why: '作用于展开播放器里正在唱的那一行',
+          why: '正在唱的那一行',
         },
         {
           id: 'lyrics-window',
           label: '桌面歌词窗口',
           state: 'live',
           def: '关',
-          why: '独立的置顶歌词窗',
+          why: '独立悬浮窗，浮在所有应用之上跟随播放',
         },
         {
           id: 'lyrics-locked',
           label: '锁定歌词窗口',
           state: 'live',
           def: '未锁定',
-          why: '锁定后无法拖动歌词窗',
+          why: '锁定后不会被误拖走 · 下次打开窗口时生效',
         },
       ],
     },
@@ -419,14 +422,14 @@ export const MEDIA: SettingSection = {
           label: '彩胶配色',
           state: 'live',
           def: '跟随封面',
-          why: '跟随封面或固定颜色',
+          why: '跟随封面主色，或固定一个颜色',
         },
         {
           id: 'vinyl-color',
           label: '彩胶自定义色',
           state: 'live',
           def: '#E8B04B',
-          why: '仅固定颜色模式可用',
+          why: '仅在「彩胶配色 = 固定颜色」时生效',
         },
       ],
     },
@@ -455,6 +458,9 @@ export const RESOURCE: SettingSection = {
           id: 'temp-files',
           label: '临时文件',
           state: 'pending',
+          // 这句是设计稿**渲染出来的**原句（`settings.js` 的 `row('temp-files', …)`）。
+          // ⚠️ 别拿那份 `SETTINGS_ROWS` 表来对：表里的 desc 是设计稿自己的索引用语，
+          //    与界面渲染的那一句并不相同（本轮差点按表把这句改短，见 D-349）
           why: '上传暂存在服务侧管理，目前没有可用的列举与清理接口',
         },
       ],

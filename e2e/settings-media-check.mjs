@@ -3214,7 +3214,8 @@ const MUTATIONS = [
       "          label: '音质档位',\n" +
       "          state: 'live',\n" +
       "          def: '高清臻音',\n" +
-      "          why: '标准 / 极高 / 无损 / 高清臻音 / 超清母带',\n" +
+      '          // 设计稿渲染进界面的那句（不是它内部索引表里的「标准 / 极高 / …」）\n' +
+      "          why: '更高档位需要平台会员；不可用的音质会自动降级',\n" +
       '        },\n',
     replace: '',
     expect: ['ADDED.quality'],
@@ -3428,7 +3429,7 @@ const MUTATIONS = [
       "          id: 'lyrics-mode',\r\n" +
       "          label: '歌词高亮方式',\r\n" +
       "          state: 'live',\r\n" +
-      "          why: '整行点亮或逐字推进',\r\n" +
+      "          why: '整行一次性点亮，或卡拉 OK 式逐字推进',\r\n" +
       "          def: '逐字',\r\n" +
       '        },\r\n',
     replace: '',
