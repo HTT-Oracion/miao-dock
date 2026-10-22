@@ -171,6 +171,7 @@
 | `6e8efd4` | 音乐播放条 dock（26px 圆角 + 弥散阴影、封面 10px、音质胶囊、进度/音量滑块换杏奶色）、灵动岛胶囊、队列抽屉（348px）、平台切换与账号菜单配色 | static 19/19；`check:music:refute` 231/231（渐变形态、320ms 形变、z-index 71/72 全部原样）；harness 实测播放条 89px、岛 200×30、抽屉 z=72 |
 | `a0fee68` | 展开播放器：歌词 Tab 选中态、皮肤选择器、音量滑块填充色、NEW 角标；六皮肤配色仍由运行时注入的 `--skin-*` 驱动 | `check:music:refute` 231/231（`music-exp-up` / `music-exp-flow` 双动画、`is-closing` 退场、沉浸歌词规则原样）；harness 实测 z=70、封面 200×200 r22、歌词 5 行、皮肤卡 6 张 |
 | `794386f` | 音乐登录弹窗、桌面歌词设置弹窗、轻提示：遮罩/阴影从旧紫色硬编码换成 `--miao-ink` 混色与 `--miao-shadow-2`；轻提示改为表面色卡 + 语义色左缘 | static 19/19；`check:music:refute` 231/231；build 通过 |
+| `4b7a4b5` | 收尾审计：设置分组深链改读 hash（原先五个深链全部静默回落到「通用」）· `normalize()` 剥查询串 · `engineOptions()` 在取数边界补齐 `tier`/`accel`/`idle`/`modelDir`（残缺响应不再打空整组）· 深色对比色与登录态绿等硬编码改 `color-mix(语义色)` | static 19/19；三套反证 61/61 + 145/145 + 231/231；深链实测 **5/5**；build 通过；番剧零 diff |
 | 待做 | 桌面歌词独立窗（`templates/lyrics.html` 自带内联样式，不在主窗样式体系内）；漫画库弹窗族收尾核对 | — |
 
 队列汇总条与翻页器上的每个数字都算自 `GET /tasks` 的当前 rows；投放页的批次、根目录、

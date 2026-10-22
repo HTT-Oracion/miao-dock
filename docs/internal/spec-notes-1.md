@@ -6800,3 +6800,58 @@ GET /anime/library → 列表里出现该条目（真实元数据，不是 demo�
 
 **六、本轮范围**：只把计划登记进 `plan-anime-remaining.md` §八（R8）与本审计文档，**未改任何代码**（用户要求先不改）。
 实施清单、验收判据、反证锚点见 `plan-anime-remaining.md` §8.4 / §8.6。
+## D-278 · ver3.0 视觉改造：令牌分层、分片归属与「断言按第一块取值」的坑（2026-10-22）
+
+**一、样式文件不带版本号。** 迁移期曾用 `v3.scss` 承载新样式，最终要求是**替换而非叠加**：
+新规则直接写进各自分片（`base` / `app` / `components` / `settings` / `manga` / `music`），
+仓库里不存在以版本号命名的样式文件。分片顺序由 `STYLE.useOrder` 机器钉死：
+`base → app → manga → settings → components → music → anime`。
+
+**二、令牌分两层，各管一件事。**
+- `--md-*`：**调色板**（18 个色值），`check:ia` 的 C6a 直接读 `themes/tokens.ts` 比对数值；
+- `--miao-*`：**语义层**（surface / line / ink / text / muted / primary / accent / success /
+  warning / danger 及其 `-soft` / `-line` / `-ink` 派生），由 `themes/apply.ts` 的 `cssVars()` 注入。
+
+语义层存在的理由是**深色主题**：同一个 `--miao-surface` 在两套调色板下指向不同的 `--md-*`，
+组件只写语义名就自动跟随主题。组件里仍允许直接用 `--md-*`（它就是当前调色板），
+但**不允许写死十六进制**——写死会让"调色板只有一处事实源"失效（改 token 时那条静默不跟）。
+本轮据此把 `app.scss` 的深色对比色（`#b6d8c3` 等）、`music.scss` 的登录态绿（`#22c55e`）、
+"每日推荐"渐变（`#f6b26b → #e06666`）全部改成 `color-mix(语义色, #000/#fff)`。
+**例外**：`base.scss` 的 `.an-root` 作用域内保留旧调色板十六进制 —— 那是番剧模块的隔离垫，
+番剧不在本轮范围内，恢复旧值才能保证它视觉不变（见该块注释）。
+
+**三、🔴 断言普遍用「第一块」正则取值，追加覆盖块会造成假阳性。**
+仓内大量判据形如 `s.css.match(/\.selector\s*\{([^}]*)\}/)` —— 只取**第一次**出现的规则体。
+于是「把新样式追加到分片末尾」这种最省事的迁移方式会造出一种最坏的假绿：
+**断言读旧块、浏览器画新块**，两边各自"正常"，账面全绿。
+本轮实测踩到两处：`.set-row-note`（内边距被断言与 `.notice` 交叉比对）与
+`.set-row-why.is-one`（契约要求 `white-space: nowrap`，追加块改成了 `line-clamp`，
+被 `check:settings:refute` 抓出）。
+**纪律**：改样式一律**就地替换**原规则块，不在文件尾部另起覆盖块；
+同一选择器在一个分片内只允许一处定义。迁移工具（`merge-styles.mjs` 等）只放在 `.tmp/`（已 gitignore），不入库。
+
+**四、错误态归属屏，不归壳层。** `/tasks` 与 `/library` 的读取失败原先在 `App.tsx`
+渲染成两张 `Notice` —— 后果是两个错误会出现在**所有屏**（音乐、设置也弹）。
+改为：壳层只保留主进程通信失败横幅（那是壳自己的事），`tasksError` / `libError`
+经 `ShellCtx` 下发给各自屏，由 `TranslatePane` 与 `LibraryScreen` 渲染带「重试」的
+`ErrorState`。**错误态必须压过空态**：读失败时不得显示「队列为空」「漫画库还是空的」——
+"读不到"与"确实没有"是两件事，混同会让用户以为数据丢了。
+
+**五、设置分组深链的两个真 bug（本轮修复）。**
+1. `readSectionParam()` 只读 `window.location.search`，而应用用 **HashRouter** ——
+   查询串在 **hash 里**（`#/settings?section=media`），`location.search` 是空的
+   ⇒ 五个分组深链**全部静默回落到「通用」**。改为先 hash、后 search。
+2. `router/routes.ts` 的 `normalize()` 不剥查询串 ⇒ `/settings?section=media` ≠ `/settings`，
+   路由判不中、侧栏高亮也错。改为先按 `?` / `#` 切分再归一。
+   写回地址栏同理：`url.searchParams.set(...)` 会写成 `?section=x#/settings`（hash 外），
+   刷新后路由器读不到 ⇒ 改成写进 hash。
+
+**六、选项残缺不该打空整组。** `EngineOptions` 把 `tier` / `accel` / `idle` / `modelDir`
+声明为必需，TS 因此认为它们一定在；服务端返回残缺对象时 `o.tier.effective` 直接抛异常，
+**整个「翻译服务」分组变空白**。修法是在**取数边界**（`engineOptions()`）补齐子块，
+而不是让每个渲染点各写一条可选链 —— 一个字段缺失不该有这么大的爆炸半径。
+渲染点仍保留可选链作为第二道保险；对应断言的正则放宽为 `tier\??\.configured`（语义不变）。
+
+**七、验证口径。** 本轮每步都跑：`npm run check`（static 19/19）·
+`check:units:refute` 61/61 · `check:settings:refute` 145/145 · `check:music:refute` 231/231 ·
+应用内规格自检 31/31（1440/1180/1024/980）· `tsc` · `build` · 番剧目录零 diff。
