@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
-import { Terminal } from 'lucide-react';
-import { apiPost, errorText, openPath, quitApp, serviceRestart, serviceStart } from '@/ipc';
+import { ChevronDown, Download, Power, Settings, Terminal } from 'lucide-react';
+import { apiPost, errorText, openPath, quitApp, serviceRestart, serviceStart, serviceStop } from '@/ipc';
 import type { ServiceState } from '@/ipc';
 import {
   useAppVersion,
@@ -22,7 +22,7 @@ import {
   persistSidebarLabels,
 } from '@/stores/shell-prefs';
 import type { ThemeMode } from '@/themes/tokens';
-import { Badge, Btn, Notice, Pill } from '@components/units';
+import { Badge, Btn, Dot, Notice } from '@components/units';
 import { DynamicIsland } from '@components/DynamicIsland';
 import { NotificationStack } from '@components/NotificationStack';
 import { MusicKernel } from '@components/MusicKernel';
@@ -383,6 +383,8 @@ export function App() {
   const rows = tasks?.tasks ?? [];
   const hasRows = rows.length > 0;
   const queueDepth = (tasks?.running ?? 0) + (tasks?.queued ?? 0);
+  /** 队列总条数（含历史）：标题徽标「共 N 条」用，与汇总条同一个数 */
+  const queueTotal = tasks?.total ?? rows.length;
   const libRoot = (lib as LibraryResponse | null)?.root ?? status?.root_dir ?? '';
 
   /**
@@ -484,6 +486,8 @@ export function App() {
       return {
         title: '服务未就绪',
         subtitle: '本地翻译服务没有运行 · 已完成的作品与任务不会丢失',
+        // 设计稿在标题旁挂「离线」徽标：一眼说明"现在为什么什么都点不了"
+        badge: '离线',
         actions: (
           <>
             <Badge>{sourceChipLabel(source, platform)}</Badge>
@@ -571,6 +575,8 @@ export function App() {
         return {
           title: '任务队列',
           subtitle: `串行执行 · 同一时刻只跑 1 个 · 队内 ${queueDepth} 个等待`,
+          // 设计稿的标题徽标「共 N 条」：与汇总条同一个数，都来自 /tasks
+          badge: `共 ${queueTotal} 条`,
           actions: (
             <>
               <Badge>{sourceChipLabel(source, platform)}</Badge>
@@ -588,6 +594,7 @@ export function App() {
     platform,
     push,
     queueDepth,
+    queueTotal,
     screen,
     showNotReady,
     source,
@@ -671,7 +678,7 @@ export function App() {
       />
 
       <div className="shell">
-        <Toolbar title={toolbar.title} subtitle={toolbar.subtitle} actions={toolbar.actions} />
+        <Toolbar title={toolbar.title} subtitle={toolbar.subtitle} badge={toolbar.badge} actions={toolbar.actions} />
 
         {showViewTabs ? <ViewTabs view={view} onView={setView} queueCount={queueDepth} rootDir={libRoot} /> : null}
 
@@ -759,10 +766,104 @@ function sourceChipLabel(source: TranslateSource | null, platform: string | null
 }
 
 /**
- * 状态胶囊。参数类型直接用 `ServiceState`（而不是再抄一份字面量联合）——
- * 抄一份的代价是 Rust 加第五态 `stopping` 时这里静默漏掉，`tsc` 反而报不出来。
+ * 状态胶囊（设计稿 `.service-pill`）：**可点**，点开「服务状态与操作」菜单。
+ *
+ * 旧实现是一枚静态胶囊 —— 它告诉你"服务在跑"，但想问"那我能停它吗 / 日志在哪"
+ * 就只能自己去设置页翻。设计稿把它做成入口：三个动作都是服务状态的直接后续。
+ *
+ * 菜单用 `MenuButton` 同款的浮层样式（`.ui-menu`），触发器则保持胶囊外观 ——
+ * 胶囊是这一处的识别符号，换成普通按钮会丢掉"这是一个状态"的语义。
  */
 function ServicePill({ status }: { status: ServiceState }) {
   const v = stateView(status);
-  return <Pill colorVar={v.colorVar}>{v.text}</Pill>;
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // 点外部 / Esc 收起：与其它浮层同一套收场方式
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const running = status === 'running';
+
+  return (
+    <div className="svc-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className="svc-pill"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="服务状态与操作"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Dot colorVar={v.colorVar} pulse={running} />
+        <span className="svc-text">{v.text}</span>
+        <ChevronDown size={12} className="svc-chev" />
+      </button>
+
+      {open ? (
+        <div className="ui-menu svc-menu" role="menu">
+          <button
+            type="button"
+            role="menuitem"
+            className="ui-menu-item"
+            disabled={!running}
+            onClick={() => {
+              setOpen(false);
+              void serviceStop().catch(() => undefined);
+            }}
+          >
+            <Power size={13} />
+            <span className="ui-menu-label">
+              <b>停止服务</b>
+              <small>队列中的任务会被保留</small>
+            </span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="ui-menu-item"
+            onClick={() => {
+              setOpen(false);
+              navigate('/settings?section=translate');
+            }}
+          >
+            <Settings size={13} />
+            <span className="ui-menu-label">
+              <b>打开翻译服务设置</b>
+              <small>端口 / 令牌 / 引擎与模型</small>
+            </span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="ui-menu-item"
+            onClick={() => {
+              setOpen(false);
+              navigate('/engine-download');
+            }}
+          >
+            <Download size={13} />
+            <span className="ui-menu-label">
+              <b>查看引擎下载</b>
+              <small>装配进度与模型体积</small>
+            </span>
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
 }

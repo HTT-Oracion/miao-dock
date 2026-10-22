@@ -115,9 +115,9 @@
  * 只有一种形态，也就不存在"两处数字对不上"的可能。
  */
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--miao-surface-2);
   color: var(--miao-ink);
-  transform: translateY(-2px);
+  transform: translateY(-1px);
 }
 .nav-item.is-active {
   background: var(--miao-surface);
@@ -336,6 +336,13 @@
 }
 
 /* 工具条：高 62（《02》§5.1） */
+/*
+ * 工具条按设计稿：**表面色 72% 半透 + 一条下分隔线 + 左下角 52px 的杏奶短线**。
+ *
+ * 早先把它做成完全透明、去掉分隔线，理由是"视觉重量交给内容卡"。但设计稿这里
+ * 恰恰要一条**很轻的分隔**：标题区与内容区之间若完全没有线，滚动内容会直接贴上标题，
+ * 用户分不清"这一屏从哪儿开始"。那条 52px 的短线是工具条自己的强调笔触（随模块主色）。
+ */
 .toolbar {
   flex: 0 0 62px;
   height: 62px;
@@ -343,8 +350,35 @@
   align-items: center;
   gap: 18px;
   padding: 0 26px;
-  background: transparent;
-  border-bottom: 0;
+  background: color-mix(in srgb, var(--miao-surface) 72%, transparent);
+  border-bottom: 1px solid var(--miao-line);
+  position: relative;
+  z-index: 15;
+}
+.toolbar::after {
+  content: '';
+  position: absolute;
+  left: 26px;
+  bottom: -1px;
+  width: 52px;
+  height: 1px;
+  background: var(--miao-primary);
+  opacity: 0.7;
+}
+
+/* 标题旁的轻量徽标（设计稿 `.toolbar-badge`）：19 高胶囊 / 主色淡底 / 9.5px 粗体 */
+.toolbar-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 19px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--miao-primary-soft);
+  color: var(--miao-primary-ink);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .toolbar-titles {
@@ -503,6 +537,44 @@
 }
 
 /* 服务药丸：状态点 + 文案 */
+/* 状态胶囊（设计稿 `.service-pill`）：30 高 / 10 内边距 / 全圆角，悬停换描边与底色 */
+.svc-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.svc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--miao-line);
+  background: var(--miao-surface);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--miao-text);
+  transition:
+    border-color var(--miao-dur-fast) ease,
+    background var(--miao-dur-fast) ease;
+}
+.svc-pill:hover {
+  border-color: var(--miao-line-strong);
+  background: var(--miao-surface-2);
+}
+.svc-chev {
+  color: var(--miao-faint);
+  flex: 0 0 auto;
+}
+/* 下拉菜单锚在胶囊下方右对齐（工具条靠右，左对齐会飘到标题区） */
+.svc-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 80;
+  min-width: 210px;
+}
+
 .pill {
   height: 27px;
   padding: 0 11px;
@@ -681,10 +753,10 @@ html[data-theme='dark'] .sidebar {
 
 .brand-btn {
   position: relative;
-  width: 41px;
-  height: 41px;
+  width: 40px;
+  height: 40px;
   padding: 0;
-  border-radius: 14px;
+  border-radius: 13px;
   overflow: visible;
   transition: transform var(--miao-dur-base) var(--miao-ease-spring);
 }
@@ -702,7 +774,7 @@ html[data-theme='dark'] .sidebar {
   width: 100%;
   height: 100%;
   border: 0;
-  border-radius: 14px;
+  border-radius: 13px;
   object-fit: cover;
   box-shadow: 0 8px 18px -10px rgba(45, 59, 70, 0.55);
 }
@@ -729,7 +801,7 @@ html[data-theme='dark'] .nav-item:hover {
 }
 
 .nav-item:active {
-  transform: scale(0.94);
+  transform: scale(0.96);
 }
 
 .nav-item.is-app.is-active .nav-ico {
