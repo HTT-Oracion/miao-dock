@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
@@ -11,6 +11,7 @@ import { ChevronDown } from 'lucide-react';
  */
 export function MenuButton({
   label,
+  ariaLabel,
   badge,
   disabled,
   title = '更多操作',
@@ -18,6 +19,8 @@ export function MenuButton({
   children,
 }: {
   label: string;
+  /** 纯图标触发器的无障碍名（可见文案是 ⋯ 这类符号时必填） */
+  ariaLabel?: string;
   badge?: string;
   disabled?: boolean;
   title?: string;
@@ -74,6 +77,7 @@ export function MenuButton({
         ref={btnRef}
         className={cls}
         disabled={disabled}
+        aria-label={ariaLabel}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={toggle}

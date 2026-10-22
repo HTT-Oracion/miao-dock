@@ -151,6 +151,7 @@ export function ChapterCard({
         className="cc-main"
         onClick={onOpen}
         disabled={no === null}
+        aria-label={no === null ? '未编号的目录' : `第 ${no} 话`}
         title={no === null ? '该目录没有话号，无法作为话打开' : `第 ${no} 话 · 点开看这一话的页`}
       >
         <div className="cc-top">
@@ -178,7 +179,7 @@ export function ChapterCard({
 
       {/* 悬浮菜单：点它不能顺带把卡片点开（否则"想重译却进了屏 C"） */}
       <span className="cc-menu" onClick={(e) => e.stopPropagation()}>
-        <MenuButton label="⋯" size="sm" title={`第 ${no} 话的操作`}>
+        <MenuButton label="⋯" size="sm" ariaLabel="话操作" title={`第 ${no} 话的操作`}>
           {(close) => (
             <>
               <MenuItem

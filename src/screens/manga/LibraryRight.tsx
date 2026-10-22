@@ -544,6 +544,9 @@ export function LibraryRight({
                        */
                       className={state === 'missing' ? 'page-card is-missing' : 'page-card'}
                       disabled={state === 'missing'}
+                      // 无障碍名按设计稿 `.page-card` 的 `aria-label`：只说"第几页"，
+                      // 状态与文件名仍由卡内文字读出来（aria-label 会覆盖子内容，故保持最短）
+                      ariaLabel={`第 ${seq} 页`}
                       onClick={() => onCompare(seq)}
                       onContextMenu={(e) => {
                         // 缺页也允许右键：至少能「复制文件名」去核对目录
