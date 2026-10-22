@@ -310,6 +310,23 @@ export function LibraryRight({
                 <span className="count">
                   共 <span className="num">{currentBook.chapters.length}</span> 话 · 点卡片进入页列表
                 </span>
+                {/*
+                  整本重译（设计稿「重译整本」）：与话卡的「重译本话」是同一个端点，
+                  只是 base 换成整本。放在章节区标题右侧 —— 它作用于这本书的全部话，
+                  放进某一话的菜单里会被读成"只影响这一话"。
+                */}
+                <Btn
+                  kind="ghost"
+                  size="sm"
+                  className="book-retranslate"
+                  disabled={reworkingComics.has(currentBook.dirName)}
+                  title="重跑这本书的全部页（覆盖已有译文，原图不动）"
+                  onClick={() =>
+                    onRetranslate(`/library/${encodeURIComponent(currentBook.bookName)}`, `《${currentBook.bookName}》`)
+                  }
+                >
+                  重译整本
+                </Btn>
               </div>
 
               <div className="chapter-grid">

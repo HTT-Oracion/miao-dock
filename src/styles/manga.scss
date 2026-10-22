@@ -1125,6 +1125,10 @@
   gap: 8px;
   margin: 22px 0 12px;
 }
+/* 「重译整本」推到最后：它作用于整本书，与标题下的「共 N 话」不是同一层信息 */
+.book-section-head .book-retranslate {
+  margin-left: auto;
+}
 .book-section-head h3 {
   font-family: var(--md-font-display);
   font-size: 13.5px;
