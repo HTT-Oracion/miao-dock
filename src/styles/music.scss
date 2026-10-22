@@ -423,7 +423,7 @@
   transition: color 0.15s;
 }
 .viewtab:hover {
-  color: var(--md-ink-2);
+  color: var(--miao-text);
 }
 .viewtab.is-active {
   color: var(--miao-ink);
@@ -1041,7 +1041,7 @@
   display: block;
   font-size: 10.5px;
   margin-top: 3px;
-  color: var(--md-ink-2);
+  color: var(--miao-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1280,7 +1280,7 @@
 .pf-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(30, 24, 52, 0.45);
+  background: color-mix(in srgb, var(--miao-ink) 28%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1293,7 +1293,7 @@
   border: 1px solid var(--miao-line);
   border-radius: var(--miao-r-lg);
   padding: 16px 18px;
-  box-shadow: 0 20px 50px rgba(70, 60, 120, 0.22);
+  box-shadow: var(--miao-shadow-2);
 }
 .pf-hd {
   display: flex;
@@ -1388,7 +1388,7 @@
   border: 1px solid var(--miao-line);
   border-radius: var(--miao-r-md);
   padding: 10px;
-  box-shadow: 0 20px 50px rgba(70, 60, 120, 0.22);
+  box-shadow: var(--miao-shadow-2);
   z-index: 81;
 }
 .ac-hd {
@@ -1470,7 +1470,7 @@
 .music-drawer-bd {
   position: fixed;
   inset: 0;
-  background: rgba(30, 24, 52, 0.28);
+  background: color-mix(in srgb, var(--miao-ink) 18%, transparent);
   /* 71 / 72 这一对值是被下面这件事定死的：**展开播放器是 fixed z-index:70 的整屏覆盖层**，
      而播放队列的入口同时存在于展开播放器里（右下角「播放队列」）。
      抽屉若低于 70 就被它整个盖住 —— 用户点了"播放队列"却什么都没出现（曾如此）。
@@ -1643,7 +1643,7 @@
   background: var(--miao-accent);
 }
 .music-exp.is-light .ui-cbtn {
-  color: var(--md-ink-2);
+  color: var(--miao-text);
 }
 .music-exp.is-light .ui-cbtn:hover {
   background: rgba(59, 51, 82, 0.1);
@@ -1844,7 +1844,7 @@
 }
 .music-exp.is-light .music-exp-ltab {
   background: rgba(59, 51, 82, 0.08);
-  color: var(--md-ink-2);
+  color: var(--miao-text);
 }
 .music-exp.is-light .music-exp-ltab.is-on {
   background: var(--miao-accent);
@@ -2065,7 +2065,7 @@
   color: var(--skin-text, rgba(255, 255, 255, 0.85));
 }
 .music-exp.is-light .music-exp-cm-txt {
-  color: var(--md-ink-2);
+  color: var(--miao-text);
 }
 
 .music-exp-bottom {
@@ -2122,7 +2122,7 @@
   background: var(--skin-hover, rgba(255, 255, 255, 0.16));
 }
 .music-exp.is-light .music-exp-stylebtn {
-  color: var(--md-ink-2);
+  color: var(--miao-text);
 }
 .music-exp.is-light .music-exp-stylebtn:hover {
   background: rgba(59, 51, 82, 0.1);
@@ -2588,7 +2588,7 @@
   border: 1px solid var(--miao-line);
   border-radius: var(--miao-r-lg);
   padding: 16px 18px;
-  box-shadow: 0 20px 50px rgba(70, 60, 120, 0.22);
+  box-shadow: var(--miao-shadow-2);
   z-index: 4;
   color: var(--miao-ink);
 }
@@ -2623,7 +2623,7 @@
   font-size: 10.5px;
   text-align: center;
   padding: 5px 3px;
-  color: var(--md-ink-2);
+  color: var(--miao-text);
   border-top: 1px solid var(--md-line-soft);
   display: block;
 }
@@ -2636,7 +2636,7 @@
 .music-login-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(30, 24, 52, 0.45);
+  background: color-mix(in srgb, var(--miao-ink) 28%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2649,7 +2649,7 @@
   border: 1px solid var(--miao-line);
   border-radius: var(--miao-r-lg);
   padding: 16px 18px;
-  box-shadow: 0 20px 50px rgba(70, 60, 120, 0.22);
+  box-shadow: var(--miao-shadow-2);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -2669,7 +2669,7 @@
 }
 .music-login-note {
   font-size: 12px;
-  color: var(--md-ink-2);
+  color: var(--miao-text);
   text-align: center;
   line-height: 1.6;
 }
@@ -2684,7 +2684,7 @@
 }
 .music-login-status {
   font-size: 12px;
-  color: var(--md-ink-2);
+  color: var(--miao-text);
   min-height: 18px;
   text-align: center;
 }
@@ -2698,7 +2698,7 @@
 .music-dlset-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(30, 24, 52, 0.45);
+  background: color-mix(in srgb, var(--miao-ink) 28%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2714,7 +2714,7 @@
   border: 1px solid var(--miao-line);
   border-radius: var(--miao-r-lg);
   padding: 16px 18px;
-  box-shadow: 0 20px 50px rgba(70, 60, 120, 0.22);
+  box-shadow: var(--miao-shadow-2);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -2752,7 +2752,7 @@
   margin: 0;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--md-ink-2);
+  color: var(--miao-text);
 }
 .music-dlset-lead b {
   color: var(--miao-ink);
@@ -2805,10 +2805,10 @@
 .music-dlset-hint {
   font-size: 11.5px;
   line-height: 1.55;
-  color: var(--md-ink-2);
+  color: var(--miao-text);
 }
 .music-dlset-hint b {
-  color: var(--md-ink-2);
+  color: var(--miao-text);
   font-weight: 700;
 }
 
@@ -2825,7 +2825,7 @@
   border: 1px solid var(--miao-line);
   border-radius: 10px;
   background: var(--miao-surface);
-  color: var(--md-ink-2);
+  color: var(--miao-text);
   font-size: 12px;
   font-weight: 500;
   transition:
@@ -2855,12 +2855,16 @@
 /* 收尾说明：改动何时可见 */
 .music-dlset-note {
   font-size: 11.5px;
-  color: var(--md-ink-2);
+  color: var(--miao-text);
   text-align: center;
   line-height: 1.6;
 }
 
-/* ---------------------------------------------------------------- 轻提示 */
+/* ---------------------------------------------------------------- 轻提示
+ * 走**浮层卡片**：表面色底 + 语义色左缘，与右上角通知堆叠同一套语汇（半透明 + 模糊 +
+ * 弥散阴影）。原先整条填充饱和语义色 —— 浅色主题下与页面形成硬边，白字压在浅黄上
+ * 对比度也不足。
+ */
 .music-toast {
   position: fixed;
   left: 50%;
@@ -2868,16 +2872,22 @@
   transform: translateX(-50%);
   z-index: 90;
   max-width: 440px;
-  padding: 9px 16px;
-  border-radius: 999px;
-  font-size: 12px;
-  color: #fff;
-  box-shadow: 0 12px 30px rgba(70, 60, 120, 0.25);
+  padding: 10px 16px;
+  border: 1px solid var(--miao-line);
+  border-left: 3px solid var(--miao-primary);
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--miao-surface) 94%, transparent);
+  color: var(--miao-text);
+  font-size: 11.5px;
+  line-height: 1.6;
+  box-shadow: var(--miao-shadow-2);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  animation: miao-toast-in var(--miao-dur-base) var(--miao-ease-spring);
 }
 .music-toast.is-warning {
-  background: var(--md-warning);
+  border-left-color: var(--miao-warning);
 }
 .music-toast.is-success {
-  background: var(--md-success);
-  color: var(--md-on-accent);
+  border-left-color: var(--miao-success);
 }
