@@ -1,4 +1,4 @@
-// 屏 B 的「话卡」（设计稿 §7.3）。
+﻿// 屏 B 的「话卡」（设计稿 §7.3）。
 //
 // ## 为什么单独一个文件
 // `LibraryScreen.tsx` 被断言脚本按路径写死并读源码（`e2e/units-structure-check.mjs:71`、
@@ -13,7 +13,7 @@
 // 左栏与头部没刷"的半刷新。
 import { FolderUp, Pencil, Play, RotateCcw, Trash2 } from 'lucide-react';
 
-import { Dot, MenuButton, MenuItem } from '@components/units';
+import { Btn, Dot, MenuButton, MenuItem } from '@components/units';
 import type { ChapterEntry } from '@/types';
 
 // ------------------------------------------------------------------ 状态
@@ -146,12 +146,12 @@ export function ChapterCard({
      * 现在：上排「第 N 话 + 状态」、中排页数、下排一条进度条，右上角是操作菜单。
      */
     <div className={`chapter-card is-${status.state}`} data-chapter-no={no ?? undefined}>
-      <button
-        type="button"
+      <Btn
+        kind="bare"
         className="cc-main"
         onClick={onOpen}
         disabled={no === null}
-        aria-label={no === null ? '未编号的目录' : `第 ${no} 话`}
+        ariaLabel={no === null ? '未编号的目录' : `第 ${no} 话`}
         title={no === null ? '该目录没有话号，无法作为话打开' : `第 ${no} 话 · 点开看这一话的页`}
       >
         <div className="cc-top">
@@ -175,7 +175,7 @@ export function ChapterCard({
             }}
           />
         </div>
-      </button>
+      </Btn>
 
       {/* 悬浮菜单：点它不能顺带把卡片点开（否则"想重译却进了屏 C"） */}
       <span className="cc-menu" onClick={(e) => e.stopPropagation()}>

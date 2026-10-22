@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Play } from 'lucide-react';
 import { Btn, Pill } from '@components/units';
 import { formatBytes } from '@tools';
@@ -259,9 +259,14 @@ export function NotReadyScreen({
 
         {/* 右下：排障信息（默认收起） */}
         <div className="nr-guide-trouble">
-          <button type="button" className="nr-guide-toggle is-quiet" onClick={() => setTrouble(!trouble)}>
+          <Btn
+            kind="bare"
+            className="nr-guide-toggle is-quiet"
+            ariaExpanded={trouble}
+            onClick={() => setTrouble(!trouble)}
+          >
             {trouble ? '收起排障信息' : '查看排障信息'}
-          </button>
+          </Btn>
         </div>
         {trouble ? (
           <div className="nr-guide-gap">

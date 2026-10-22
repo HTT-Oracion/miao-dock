@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { Btn } from '@components/units';
 import type { ServiceStatus } from '@/ipc';
@@ -184,15 +184,15 @@ export function SettingsScreen({
             const Icon = SECTION_ICON[s.id];
             const on = s.id === active?.id;
             return (
-              <button
+              <Btn
                 key={s.id}
-                type="button"
+                kind="bare"
                 className={on ? 'set-nav-item is-active' : 'set-nav-item'}
                 style={{
                   padding: `${SETTINGS.navItemPadding.y}px ${SETTINGS.navItemPadding.x}px`,
                   gap: SETTINGS.navItemGap,
                 }}
-                aria-current={on ? 'page' : undefined}
+                ariaCurrent={on ? 'page' : undefined}
                 onClick={() => setSection(s.id)}
               >
                 <span className="set-nav-icon" style={{ width: SETTINGS.navItemIcon, height: SETTINGS.navItemIcon }}>
@@ -200,7 +200,7 @@ export function SettingsScreen({
                 </span>
                 <span className="set-nav-label">{s.name}</span>
                 <span className="set-nav-count">{sectionItemCount(s)}</span>
-              </button>
+              </Btn>
             );
           })}
 

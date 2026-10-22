@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent, ReactNode } from 'react';
+﻿import type { CSSProperties, MouseEvent, ReactNode } from 'react';
 import { QUEUE_EMPTY } from '@/themes/tokens';
 
 /*
@@ -67,6 +67,8 @@ export function Btn({
   title,
   ariaLabel,
   ariaPressed,
+  ariaExpanded,
+  ariaCurrent,
   role,
   ariaSelected,
   active,
@@ -88,6 +90,10 @@ export function Btn({
   ariaLabel?: string;
   /** 开关型按钮的按下态（分段控件 / 切换钮）：有它读屏才会说「已按下」 */
   ariaPressed?: boolean;
+  /** 折叠型按钮的展开态（"查看完整许可清单"这类）：读屏才会说「已展开 / 已折叠」 */
+  ariaExpanded?: boolean;
+  /** 导航项的"当前页"标记（设置页左侧分组导航）：读屏才会说「当前页」 */
+  ariaCurrent?: 'page' | 'true';
   /**
    * 只开放**两个**角色：`tab`（页签组里的一枚）与 `option`（列表里的可选项）。
    * 不开放任意字符串 —— 给 `<button>` 挂 `role="button"` / `role="menuitem"` 这类
@@ -121,6 +127,8 @@ export function Btn({
       title={title}
       aria-label={ariaLabel}
       aria-pressed={ariaPressed}
+      aria-expanded={ariaExpanded}
+      aria-current={ariaCurrent}
       role={role}
       aria-selected={ariaSelected}
       style={style}

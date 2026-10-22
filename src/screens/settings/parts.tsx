@@ -1,7 +1,7 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { SETTINGS } from '@/themes/tokens';
-import { Badge } from '@components/units';
+import { Badge, Btn } from '@components/units';
 import type { SettingItem } from '@screens/settings/catalog';
 
 /**
@@ -142,9 +142,9 @@ export function GroupNote({ children, summary }: { children?: string; summary?: 
         >
           {open ? emphasis(children) : summary}
         </div>
-        <button type="button" className="set-note-more" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Btn kind="bare" className="set-note-more" ariaExpanded={open} onClick={() => setOpen(!open)}>
           {open ? '收起' : '为什么 ?'}
-        </button>
+        </Btn>
       </div>
     </div>
   );
