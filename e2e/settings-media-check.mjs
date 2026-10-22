@@ -2930,7 +2930,8 @@ add('FEATURES.storage.rows', 'FEATURES', (ctx) => {
   const problems = [];
   const rows = (src.match(/className="set-storage-row"/g) ?? []).length;
   if (rows !== 3) problems.push(`三行分列应有 3 个 .set-storage-row，实际 ${rows} 个`);
-  for (const k of ['译文库', '音频缓存', '模型']) {
+  // 行名按设计稿：译文库 / 音乐缓存 / 翻译模型（旧名「音频缓存」「模型」与稿子不一致）
+  for (const k of ['译文库', '音乐缓存', '翻译模型']) {
     if (!src.includes(k)) problems.push(`缺少「${k}」那一行`);
   }
   if (!src.includes('不合计')) problems.push('没有把"不合计"这条立场说出来');
@@ -4124,8 +4125,9 @@ const MUTATIONS = [
   {
     name: '把「不合计」这条立场从存储占用块里去掉（用户会本能地去做加法）',
     file: F.storageBlock,
-    find: '        <div className="set-storage-rule">三处分开列 · 不合计</div>',
-    replace: '        <div className="set-storage-rule">三处分开列</div>',
+    // 锚点只取那句立场文案本身：卡片副标题整句会随设计稿改词，写死整行标签会静默失配
+    find: '三项独立统计，不合计；有目录的项都可以直接打开',
+    replace: '三项独立统计；有目录的项都可以直接打开',
     expect: ['FEATURES.storage.rows'],
   },
   {

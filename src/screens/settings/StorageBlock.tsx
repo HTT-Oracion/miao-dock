@@ -1,8 +1,23 @@
 import { useCallback, useEffect, useState } from 'react';
+import { FolderOpen } from 'lucide-react';
 import { musicCacheStats } from '@music/ipc';
 import type { LibraryResponse } from '@/types';
+import { errorText, openPath } from '@/ipc';
+import { useToasts } from '@hooks';
 import { formatBytes } from '@tools';
+import { Btn } from '@components/units';
 import type { SettingItem } from '@screens/settings/catalog';
+
+/**
+ * 跳到另一分组（④ → ③ / ②）的深链。
+ *
+ * 走 hash 而不是把 `setSection` 一路透传下来：设置页已经把「当前分组」写成
+ * `#/settings?section=…` 这条唯一事实源（并监听 `hashchange` 回灌状态），
+ * 屏内件再持一份 setter 就是第二个真值来源。
+ */
+function gotoSection(section: 'media' | 'translate'): void {
+  window.location.hash = `#/settings?section=${section}`;
+}
 
 /**
  * 设置页 ④ 资源与投放 ·「存储占用」项的**三行分列块**（台账 D-84）。
@@ -36,6 +51,7 @@ import type { SettingItem } from '@screens/settings/catalog';
  * · 模型：没有命令可用 ⇒ 如实写 `未统计`，并说明缺的是哪一条接口。
  */
 export function StorageBlock({ item, lib }: { item: SettingItem; lib: LibraryResponse | null }) {
+  const { push: toast } = useToasts();
   const [cache, setCache] = useState<{ total: number } | null>(null);
   /** 与「音乐缓存」同一把尺子：读失败与"读到了但是空"必须分开 */
   const [cacheFailed, setCacheFailed] = useState(false);
@@ -67,8 +83,8 @@ export function StorageBlock({ item, lib }: { item: SettingItem; lib: LibraryRes
     <div className="set-storage" data-setting-id={item.id}>
       <div className="set-storage-head">
         <div className="set-storage-name">{item.label}</div>
-        {/* 立场写在脸上：用户看到三行会本能地想做加法，这里先把话说明 */}
-        <div className="set-storage-rule">三处分开列 · 不合计</div>
+        {/* 卡头副标题按设计稿：一句话说清"为什么不合计、哪些能直接打开" */}
+        <div className="set-storage-rule">三项独立统计，不合计；有目录的项都可以直接打开</div>
       </div>
 
       <div className="set-storage-rows">
@@ -80,12 +96,29 @@ export function StorageBlock({ item, lib }: { item: SettingItem; lib: LibraryRes
           <span className="set-storage-src">
             {lib === null ? '漫画库盘点 · 未读到' : `漫画库盘点 · ${lib.count} 部 / ${lib.totalImages} 张`}
           </span>
+          {/* 译文库有真实根目录 ⇒ 这一行给得出「打开目录」（设计稿同款动作） */}
+          {lib?.root ? (
+            <Btn
+              kind="ghost"
+              size="sm"
+              onClick={() => openPath(lib.root).catch((e: unknown) => toast(errorText(e), 'bad'))}
+            >
+              <FolderOpen size={13} /> 打开目录
+            </Btn>
+          ) : null}
         </div>
 
         <div className="set-storage-row">
-          <span className="set-storage-k">音频缓存</span>
+          <span className="set-storage-k">音乐缓存</span>
           <span className="set-storage-v">{cacheText}</span>
           <span className="set-storage-src">音乐缓存目录 · 仅在线歌曲</span>
+          {/*
+            「管理」跳到 ③ 播放·媒体 里的「音乐缓存」卡：清缓存与打开目录**只有那一个 owner**。
+            在这里再放一套按钮，就会出现两个入口各清一次、各报一个数。
+          */}
+          <Btn kind="ghost" size="sm" onClick={() => gotoSection('media')}>
+            管理
+          </Btn>
         </div>
 
         {/*
@@ -94,9 +127,13 @@ export function StorageBlock({ item, lib }: { item: SettingItem; lib: LibraryRes
           后者什么都不说明。写「未统计」+ 缺哪条接口，才让下一个人知道该做什么。
         */}
         <div className="set-storage-row">
-          <span className="set-storage-k">模型</span>
+          <span className="set-storage-k">翻译模型</span>
           <span className="set-storage-v is-unknown">未统计</span>
           <span className="set-storage-src">缺少接口 · 模型目录占用需 Rust 侧盘点</span>
+          {/* 与缓存同理：模型目录的「打开 / 管理」归 ② 的「模型管理」卡 */}
+          <Btn kind="ghost" size="sm" onClick={() => gotoSection('translate')}>
+            管理
+          </Btn>
         </div>
       </div>
     </div>

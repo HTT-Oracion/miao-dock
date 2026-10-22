@@ -1936,6 +1936,72 @@
   border-bottom: 0;
 }
 
+/* 行尾动作（打开目录 / 管理）：不参与均分，固定贴右；来源文字可压缩 */
+.set-storage-row > .btn {
+  flex: 0 0 auto;
+}
+.set-storage-row > .set-storage-src {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── ⑤ 关于：品牌头 + 一句话定位 + 收尾说明（设计稿 `.about-*` / `.s-note`）── */
+.about-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 16px;
+}
+.about-avatar {
+  width: 58px;
+  height: 58px;
+  border-radius: 17px;
+  object-fit: cover;
+  box-shadow: var(--miao-shadow-1);
+  flex: 0 0 auto;
+}
+.about-id {
+  min-width: 0;
+  flex: 1;
+}
+.about-id h3 {
+  font-family: var(--md-font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.about-id p {
+  margin-top: 2px;
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+.about-desc {
+  padding: 0 16px 14px;
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--miao-muted);
+}
+/* 收尾说明条：虚线框 + 极淡底，读成"附注"而不是"又一条设置" */
+.set-note-inline {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border: 1px dashed var(--miao-line-strong);
+  border-radius: 9px;
+  background: var(--miao-surface-2);
+  font-size: 9.5px;
+  line-height: 1.7;
+  color: var(--miao-muted);
+}
+.set-note-inline > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--miao-accent);
+}
+
 .set-storage-k,
 .set-idle-k,
 .set-src-k,

@@ -121,7 +121,8 @@ export function LicensesBlock({ item }: { item: SettingItem }) {
       <div className="set-lic-head">
         <div className="set-lic-name">{item.label}</div>
         <button type="button" className="set-lic-fold" aria-expanded={open} onClick={() => setOpen(!open)}>
-          {open ? '收起清单' : '查看清单'}
+          {/* 设计稿的 `<summary>` 是固定文案「查看完整许可清单」，展开/收起由状态本身表达 */}
+          查看完整许可清单
         </button>
       </div>
 
