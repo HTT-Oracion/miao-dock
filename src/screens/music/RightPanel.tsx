@@ -1,4 +1,4 @@
-import {
+﻿import {
   ChevronLeft,
   ChevronRight,
   Heart,
@@ -286,9 +286,9 @@ function Recommendations() {
             {/* 副标题按设计稿：一句话说清"这批是怎么来的" */}
             <span className="music-card-sub">按你最近的循环生成</span>
             <div className="grow" />
-            <button type="button" className="music-btn out" disabled={loading} onClick={() => void loadRecommend()}>
+            <Btn kind="bare" className="music-btn out" disabled={loading} onClick={() => void loadRecommend()}>
               <RefreshCw size={12} /> {loading ? '换一批中…' : '换一批'}
-            </button>
+            </Btn>
           </div>
           {recommendPlaylists.length === 0 ? (
             recommendError ? (
@@ -504,9 +504,9 @@ function RightTracksView() {
   return (
     <div className="music-body">
       <div className="music-card-hd">
-        <button type="button" className="music-btn out" onClick={back}>
+        <Btn kind="bare" className="music-btn out" ariaLabel="返回" onClick={back}>
           <ChevronLeft size={12} /> 返回
-        </button>
+        </Btn>
         <span className="music-card-title">{meta?.name ?? '曲目'}</span>
         <span className="music-card-sub">{tracks.length} 首</span>
         <div className="grow" />
@@ -573,9 +573,9 @@ function DailyView() {
   return (
     <div className="music-body">
       <div className="music-card-hd">
-        <button type="button" className="music-btn out" onClick={back}>
+        <Btn kind="bare" className="music-btn out" ariaLabel="返回" onClick={back}>
           <ChevronLeft size={12} /> 返回
-        </button>
+        </Btn>
         <span className="music-card-title">每日推荐</span>
         <span className="music-card-sub">{songs.length} 首</span>
         <div className="grow" />
