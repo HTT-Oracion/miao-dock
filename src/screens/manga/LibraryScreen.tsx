@@ -682,6 +682,7 @@ export function LibraryScreen({
         <DeleteComicModal
           comic={toDelete.comic}
           kind={toDelete.kind}
+          chapterCount={books.find((b) => b.bookName === toDelete.comic.comicName)?.chapters.length ?? 1}
           busy={deleting}
           onCancel={() => setToDelete(null)}
           onConfirm={(deleteFiles) => void confirmDelete(deleteFiles)}

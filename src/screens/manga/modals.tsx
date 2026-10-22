@@ -550,6 +550,7 @@ export function EditChapterNoModal({
 export function DeleteComicModal({
   comic,
   kind,
+  chapterCount,
   busy,
   onCancel,
   onConfirm,
@@ -557,6 +558,8 @@ export function DeleteComicModal({
   comic: ComicEntry;
   /** 删除口径：大类 = 整本；未归并单话 = 本话（只影响说法，端点是同一个） */
   kind: '整本' | '本话';
+  /** 这一本有几话（设计稿的提示句要报话数）；单话删除恒为 1 */
+  chapterCount?: number;
   busy: boolean;
   onCancel: () => void;
   onConfirm: (deleteFiles: boolean) => void;
@@ -564,11 +567,9 @@ export function DeleteComicModal({
   const [deleteFiles, setDeleteFiles] = useState(false);
   return (
     <Modal
-      title={
-        <>
-          删除{kind}「{comic.comicName}」
-        </>
-      }
+      kicker="DELETE"
+      title={`删除《${comic.comicName}》？`}
+      subtitle={`会从书架移除 ${chapterCount ?? 1} 话、${comic.imageCount} 页的记录。这个动作无法撤销。`}
       busy={busy}
       onClose={onCancel}
       actions={
@@ -577,12 +578,12 @@ export function DeleteComicModal({
             取消
           </Btn>
           <Btn kind="danger" onClick={() => onConfirm(deleteFiles)} disabled={busy}>
-            确认删除
+            删除{kind}
           </Btn>
         </>
       }
     >
-      这会把该漫画从漫画库里移除。目录位置：
+      目录位置：
       <div className="pathpreview" style={{ margin: '6px 0 10px' }}>
         {comic.outputDir}
       </div>
@@ -593,7 +594,7 @@ export function DeleteComicModal({
           checked={deleteFiles}
           onChange={(e) => setDeleteFiles(e.target.checked)}
         />
-        <span>同时删除本地文件（连漫画目录一起删除）</span>
+        <span>同时删除本地图片与译文文件</span>
       </label>
       {deleteFiles ? (
         <div className="modal-warn">⚠️ 本地文件会被永久删除，无法恢复。</div>
