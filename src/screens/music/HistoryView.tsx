@@ -56,14 +56,17 @@ export function HistoryView() {
                 song={s}
                 cover={coverProxyUrl(s.cover, proxyPort)}
                 active={currentSong ? songKey(currentSong) === songKey(s) : false}
-                // 来源标签：圆点取平台品牌色 + 平台名，避免只靠颜色传达信息
-                leading={
-                  <span className="his-src">
+                /*
+                 * 元信息（设计稿 `.ms-row-meta small`）：**平台色点 + 平台名 + 相对时间**，
+                 * 都收在第二行里。此前平台名是一枚独立的 leading 徽标（排在封面之前），
+                 * 那一列会把每一行的封面整体右推、与其它列表对不齐 —— 来源是"第二行的事"。
+                 */
+                meta={
+                  <span className="his-meta">
                     <i className="his-dot" style={{ background: providerColor(s.provider) }} />
-                    {providerName(s.provider)}
+                    {providerName(s.provider)} · {relTime(entry.playedAt)}
                   </span>
                 }
-                meta={`${s.artist} · ${relTime(entry.playedAt)}`}
                 onClick={play}
                 onPlay={play}
                 actions={

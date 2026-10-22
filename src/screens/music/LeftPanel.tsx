@@ -1,5 +1,4 @@
 ﻿import { ChevronLeft, Play, RefreshCw } from 'lucide-react';
-import { providerLabel } from '@music/platform';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl, songKey } from '@music/convert';
 import type { LeftView } from '@music/store';
@@ -129,8 +128,10 @@ function PlaylistsView() {
               <Cover url={coverProxyUrl(row.pl.cover, proxyPort)} />
               <div className="music-row-tx">
                 <b>{row.pl.name}</b>
+                {/* 第二行按设计稿 `.ms-row-meta small`：作者 · N 首（平台由当前账号决定，不必每行重复） */}
                 <span>
-                  {row.pl.track_count} 首 · {providerLabel(row.pl.provider)}
+                  {row.pl.creator ? `${row.pl.creator} · ` : ''}
+                  {row.pl.track_count} 首
                 </span>
               </div>
             </div>
