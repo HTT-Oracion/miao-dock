@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react';
+﻿import type { ReactElement } from 'react';
 import { FolderUp, GitMerge, Pencil, Play, RotateCcw, Trash2 } from 'lucide-react';
 import { apiDelete, apiPost, apiPostMultipart, errorText, openPath } from '@/ipc';
 import type {
@@ -513,7 +513,7 @@ export function LibraryScreen({
         />
         <MenuItem
           icon={<RotateCcw size={13} />}
-          label="重新翻译"
+          label="重新翻译整本"
           sub={rtSub}
           disabled={busyRt || (isCur && rtInfo.blocked)}
           title={
@@ -542,7 +542,7 @@ export function LibraryScreen({
         ) : books.length > 0 ? (
           <MenuItem
             icon={<GitMerge size={13} />}
-            label="归并到"
+            label="归并到…"
             sub="挂到某本漫画的某一话"
             title="把这一话物理移动进某个大类目录（不可逆）"
             onClick={() => {
