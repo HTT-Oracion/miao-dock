@@ -7717,7 +7717,7 @@ CDP 实测（设置页 播放·媒体）：卡头 `音乐缓存` / `只统计在
 **一、发现的形态很典型：组件没了，守它的断言还在。**
 `OnlineApiForm`（设置页目录下的在线 API 内嵌表单）在"未就绪屏改成纯文本、不可点"那一轮
 （D-24x）就失去唯一调用方，但三样东西一起留了下来：
-- 组件本身（`src/screens/settings/OnlineApiForm.tsx`）；
+- 组件本身（设置页目录下的 `OnlineApiForm.tsx`）；
 - `.nr-form*` 样式 —— 而且**两处**（`settings.scss` 与 `manga.scss` 各一份）；
 - `check:settings` 里**两条**专门守卫它的断言（`NOTREADY.onlineForm.noInlineStyle` /
   `actsNotFullWidth`）与**三条**反证变异。
