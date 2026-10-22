@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 公共单元（units）的统一出口。
  *
  * ## 这里放什么
@@ -32,6 +32,7 @@ export { PlayModeButton, playModeLabel } from '@components/units/PlayModeButton'
 export { ProgressRing } from '@components/units/ProgressRing';
 export { Range } from '@components/units/Range';
 export { Select } from '@components/units/Select';
+export { Segmented, type SegOption } from '@components/units/Segmented';
 export { SideDrawer } from '@components/units/SideDrawer';
 export { LoadingState, Skeleton } from '@components/units/Skeleton';
 export { Swatches } from '@components/units/Swatches';

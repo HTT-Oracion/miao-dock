@@ -3698,37 +3698,10 @@
   font-weight: 700;
 }
 
-/* 行数选择：一排小方块（2 / 3 / 4 / 5）。
-   没做成下拉是因为候选只有 4 个且都要一眼看到 —— 下拉会把它藏起来。 */
-.music-dlset-seg {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.music-dlset-segbtn {
-  min-width: 30px;
-  height: 24px;
-  border: 1px solid var(--miao-line);
-  border-radius: 10px;
-  background: var(--miao-surface);
-  color: var(--miao-text);
-  font-size: 12px;
-  font-weight: 500;
-  transition:
-    background 0.15s,
-    border-color 0.15s,
-    color 0.15s;
-}
-.music-dlset-segbtn:hover {
-  border-color: var(--miao-accent);
-  color: var(--miao-ink);
-}
-.music-dlset-segbtn.is-on {
-  border-color: var(--miao-accent);
-  background: var(--miao-accent-soft);
-  color: var(--miao-ink);
-  font-weight: 700;
-}
+/* 行数选择那一排曾经在这里自造过一套小方块样式（`.music-dlset-seg*`）。
+   它与设计稿的 `.seg` 不是一种控件（描边小方片 vs 内凹轨道 + 浮起选中项），
+   且同一个形态在设置页又要再写一遍 —— 已收进通用单元 `Segmented`（样式见
+   `components.scss` 的 `.ui-seg`），此处只留一条去向说明，不放第二套外观。 */
 
 /* 底部动作条：左「恢复默认」右「完成」，与头部关闭按钮一起构成三条关闭路径
    （Esc / 点遮罩 / 右上角 X），这里再加一条最符合直觉的「完成」。 */

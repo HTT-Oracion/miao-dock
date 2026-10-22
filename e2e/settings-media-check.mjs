@@ -601,6 +601,29 @@ add('ADDED.accountCards', 'ADDED', (ctx) => {
   if (!/<AccountCardsBlock \/>/.test(secs)) problems.push('MediaSection 没渲染这张卡（会静默少掉设计稿的第一张）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
+add('ADDED.segControls', 'ADDED', (ctx) => {
+  // 两档互斥选择在设计稿里是 `.seg` 分段控件（一眼看全、点一下就换），不是下拉。
+  // 三条一起判：① 两处都换成通用单元 `Segmented`；② 单元样式真的存在（`.ui-seg-btn.is-on`）——
+  //   只有类名没有规则是这一轮之前刚抓过的缺陷家族，控件换了但没样式=换了个更坏的形态；
+  //   ③ 不许留下第二套自造分段样式（`.music-dlset-seg` 已收进单元）。
+  const secs = stripComments(ctx.s.sections);
+  const problems = [];
+  for (const id of ['lyrics-mode', 'vinyl-color-mode']) {
+    const at = secs.indexOf(`case '${id}':`);
+    if (at < 0) {
+      problems.push(`找不到 case '${id}'`);
+      continue;
+    }
+    const next = secs.indexOf('case ', at + 10);
+    const block = secs.slice(at, next > 0 ? next : at + 700);
+    if (!/<Segmented\b/.test(block)) problems.push(id + ' 不是分段控件（设计稿这里是一排 seg 按钮）');
+    if (/<Select\b/.test(block)) problems.push(`${id} 仍留着下拉`);
+  }
+  const css = stripComments(ctx.s.css);
+  if (!css.includes('.ui-seg-btn.is-on')) problems.push('`.ui-seg-btn.is-on` 规则缺失（单元渲染出来会没样式）');
+  if (/\.music-dlset-seg\b/.test(css)) problems.push('还有第二套自造分段样式 `.music-dlset-seg`');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
 add('ADDED.total', 'ADDED', (ctx) => {
   const { cat } = ctx;
   const dataErr = CAT_ERR(cat);
@@ -3294,6 +3317,13 @@ const MUTATIONS = [
     find: "  stopping: { text: '正在停止', colorVar: '--md-muted' },\n",
     replace: '',
     expect: ['NOTREADY.state.fiveStates'],
+  },
+  {
+    name: '把歌词高亮方式换回下拉（设计稿的分段控件被"换皮"成要点开才看得见的形态）',
+    file: F.secMedia,
+    find: '          <Segmented label={item.label} value={lyricsMode}',
+    replace: '          <Select label={item.label} value={lyricsMode}',
+    expect: ['ADDED.segControls'],
   },
   {
     name: '把 ③ 的「音乐账号」卡从 MediaSection 摘掉（设计稿第一张卡静默消失）',

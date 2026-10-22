@@ -1,5 +1,5 @@
 import { RotateCcw, Settings, X } from 'lucide-react';
-import { Btn, ColorPicker, IconButton, Range, Swatches } from '@components/units';
+import { Btn, ColorPicker, IconButton, Range, Segmented, Swatches } from '@components/units';
 import { useEsc } from '@hooks/useEsc';
 import { DL_BASE_COLORS, DL_HIGHLIGHT_COLORS, DL_LINE_COUNT, DL_LYRICS_SIZE } from '@music/player-options';
 import { LYRICS_COLOR_NAMES } from '@music/player-options';
@@ -146,20 +146,13 @@ export function DesktopLyricsSettingsModal({ open, onClose }: { open: boolean; o
           <div className="music-dlset-row">
             <div className="music-dlset-label">显示行数</div>
             <div className="music-dlset-ctl">
-              <div className="music-dlset-seg" role="group" aria-label="桌面歌词显示行数">
-                {lineCounts.map((n) => (
-                  <Btn
-                    key={n}
-                    kind="bare"
-                    className={n === lineCount ? 'music-dlset-segbtn is-on' : 'music-dlset-segbtn'}
-                    ariaPressed={n === lineCount}
-                    ariaLabel={`${n} 行`}
-                    onClick={() => setLineCount(n)}
-                  >
-                    {n}
-                  </Btn>
-                ))}
-              </div>
+              {/* 设计稿这里就是 `.seg` 分段控件（按钮上写「N 行」，不是只有数字） */}
+              <Segmented
+                label="桌面歌词显示行数"
+                value={lineCount}
+                options={lineCounts.map((n) => ({ value: n, label: `${n} 行` }))}
+                onChange={setLineCount}
+              />
             </div>
             <div className="music-dlset-hint">
               一次显示几行（含当前句，当前句在最下方，往上回溯前几句）。窗口高度固定为

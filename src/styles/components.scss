@@ -13,6 +13,40 @@
    · `.music-exp .ui-cbtn` / `.music-exp .ui-empty` —— 展开播放器的深色皮肤覆盖；
    · `.ui-vlist.is-drawer` —— 队列抽屉的行容器留白。 */
 
+/* ---- 分段选择（Segmented，设计稿 `.seg`）----
+ * 一条内凹轨道 + 若干颗平铺按钮，选中项**浮起来**（surface 底 + 一道浅投影），
+ * 未选中的只靠颜色分层 —— 于是"当前是哪一颗"不用点开就看得见。
+ * 尺寸逐值取设计稿：轨道 padding 3 / gap 2 / r10，按钮 27 高 / padding 0 10 / r7 / 11.5px·700。
+ * 按钮本体靠 `base.scss` 的全局 button 复位（无边框、无背景、padding 归零）。 */
+.ui-seg {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--miao-line);
+  border-radius: 10px;
+  background: var(--miao-surface-2);
+}
+.ui-seg-btn {
+  height: 27px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  transition:
+    background var(--miao-dur-fast),
+    color var(--miao-dur-fast),
+    box-shadow var(--miao-dur-fast);
+}
+.ui-seg-btn:hover {
+  color: var(--miao-ink);
+}
+.ui-seg-btn.is-on {
+  background: var(--miao-surface);
+  color: var(--miao-ink);
+  box-shadow: 0 1px 3px rgba(43, 47, 55, 0.09);
+}
+
 /* ---- ① 下拉（Select）----
  * 触发按钮与 .set-ro 同高 24、同圆角。min-width 132px 是**设置页右列**的取值：
  * 别处需要不同宽度时由调用方传 className 覆盖，不要改这里（会连带动设置页）。

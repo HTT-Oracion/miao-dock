@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useMusicStore } from '@music/store';
-import { Btn, ColorPicker, Range, Select, Swatches, Switch } from '@components/units';
+import { Btn, ColorPicker, Range, Segmented, Select, Swatches, Switch } from '@components/units';
 import { CtlNote, GroupNote, ReadOnly } from '@screens/settings/parts';
 import { AccountCardsBlock } from '@screens/settings/AccountCardsBlock';
 import {
@@ -124,7 +124,10 @@ export function MediaSection() {
         // （`Group` 见到 layout:'block' 也不会包 Row，见 Group 里的注释）
         return <CacheBlock settingId={item.id} />;
       case 'lyrics-mode':
-        return <Select label={item.label} value={lyricsMode} options={LYRICS_MODE_OPTIONS} onChange={setLyricsMode} />;
+        // 设计稿这里是 `.seg` 分段控件而不是下拉：两档要一眼看全、点一下就换
+        return (
+          <Segmented label={item.label} value={lyricsMode} options={LYRICS_MODE_OPTIONS} onChange={setLyricsMode} />
+        );
       case 'lyrics-size':
         return (
           <Range
@@ -202,8 +205,9 @@ export function MediaSection() {
           </>
         );
       case 'vinyl-color-mode':
+        // 同 `lyrics-mode`：设计稿用分段控件（两档），不是下拉
         return (
-          <Select
+          <Segmented
             label={item.label}
             value={vinylColorMode}
             options={[
