@@ -1233,6 +1233,14 @@
   line-height: 1.6;
   color: var(--md-muted);
 }
+/* 卡头说明（设计稿 `.s-block-head p`）：比 why 更短、更靠上，紧跟标题行 */
+.set-run-sub {
+  margin: 2px 0 6px;
+  padding: 0 12px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--md-muted);
+}
 /* 「诊断详情 ▾」/「全部日志」/「展开到 8 行 ▾」—— 与 `.set-note-more` 同一枚药丸语汇 */
 .set-run-fold,
 .set-run-all,

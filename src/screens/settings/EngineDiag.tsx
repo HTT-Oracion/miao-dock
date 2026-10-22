@@ -234,6 +234,9 @@ export function EngineDiag({
           </button>
         </div>
 
+        {/* 卡头说明（设计稿 `.s-block-head p`）：一句话说清这一块摆的是什么 */}
+        <p className="set-run-sub">进程、参数、模型与阶段日志的现场。</p>
+
         {item.why ? <div className="set-run-why">{emphasis(item.why)}</div> : null}
 
         {/*
