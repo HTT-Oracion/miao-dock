@@ -59,7 +59,7 @@ export function LocalView() {
       {importing ? (
         <Empty>正在导入本地音乐…</Empty>
       ) : localSongs.length === 0 ? (
-        <Empty>还没有本地歌曲 —— 点「选择文件」选几首 mp3/flac，或「选择文件夹」整夹导入。</Empty>
+        <Empty>还没有导入本地音乐</Empty>
       ) : (
         <VirtualList
           items={localSongs}

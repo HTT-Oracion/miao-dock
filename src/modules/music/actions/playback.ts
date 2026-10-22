@@ -357,7 +357,7 @@ export const createPlaybackSlice = (
         unplayableSkipCount += 1;
         isAutoSkipping = true;
         // 恢复态**不弹提示**：用户还没做任何操作，一串"该歌曲无版权"是纯噪音
-        if (!restoring) get().toast('该歌曲无版权或需会员，已自动跳过');
+        if (!restoring) get().toast('没有可用的音频文件', 'warning');
         setTimeout(() => {
           if (get().queue.length > 1) {
             get().next();

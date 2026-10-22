@@ -521,25 +521,25 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
 
             {showComments ? (
               !caps.comments ? (
-                <Empty>当前平台暂不支持评论</Empty>
+                <Empty>该平台暂不支持评论</Empty>
               ) : loadingComments ? (
                 <Empty>加载评论中…</Empty>
               ) : !comments || (comments.comments.length === 0 && comments.hot_comments.length === 0) ? (
                 <Empty>暂无评论</Empty>
               ) : (
                 <div className="music-exp-comments">
-                  {comments.hot_comments.length > 0 ? <div className="music-exp-cm-sec">热门评论</div> : null}
+                  {comments.hot_comments.length > 0 ? <div className="music-exp-cm-sec">热门</div> : null}
                   {comments.hot_comments.map((c) => (
                     <CommentRow key={`h${c.comment_id}`} c={c} />
                   ))}
-                  {comments.comments.length > 0 ? <div className="music-exp-cm-sec">最新评论</div> : null}
+                  {comments.comments.length > 0 ? <div className="music-exp-cm-sec">最新</div> : null}
                   {comments.comments.map((c) => (
                     <CommentRow key={`n${c.comment_id}`} c={c} />
                   ))}
                 </div>
               )
             ) : parsedLyrics.length === 0 ? (
-              <Empty>暂无歌词</Empty>
+              <Empty>这首歌没有可用的歌词文件</Empty>
             ) : (
               <>
                 {/* 逐字歌词：组件自己承担"定位当前行 / 滚动跟随 / RAF 逐字推进"，

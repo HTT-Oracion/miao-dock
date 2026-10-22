@@ -39,7 +39,7 @@ export function HistoryView() {
       </div>
 
       {history.length === 0 ? (
-        <Empty>还没有播放记录 —— 播一首歌就会记在这里（跨平台同一条时间线）。</Empty>
+        <Empty>还没有播放记录</Empty>
       ) : (
         <VirtualList
           items={history}

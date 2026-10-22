@@ -9,10 +9,12 @@ import { LocalView } from '@screens/music/LocalView';
 import { Empty, VirtualList } from '@components/units';
 import { Cover, SongRow } from '@screens/music/shared';
 
+// Tab 文案与设计稿左栏一致：`歌单 / 本地 / 历史`（不写"我的歌单 / 播放历史"的长名，
+// 三个 Tab 并排时短名才排得下且不换行）
 const TABS: { id: LeftView; label: string }[] = [
-  { id: 'playlists', label: '我的歌单' },
+  { id: 'playlists', label: '歌单' },
   { id: 'local', label: '本地' },
-  { id: 'history', label: '播放历史' },
+  { id: 'history', label: '历史' },
 ];
 
 /**
@@ -77,7 +79,7 @@ function PlaylistsView() {
   if (!logged) return <Empty>登录后查看我的歌单</Empty>;
   if (error) return <Empty bad>歌单读取失败：{error}</Empty>;
   if (loading && userPlaylists.length === 0) return <Empty>加载歌单中…</Empty>;
-  if (userPlaylists.length === 0) return <Empty>这个平台账号下还没有歌单</Empty>;
+  if (userPlaylists.length === 0) return <Empty>还没有创建歌单</Empty>;
 
   /*
    * 分组：按 `subscribed` 分——false = 用户自己创建的（含统一改名后的「我喜欢的音乐」），
@@ -216,7 +218,7 @@ function LeftTracksView() {
       {loading ? (
         <Empty>加载曲目中…</Empty>
       ) : tracks.length === 0 ? (
-        <Empty>这个歌单是空的</Empty>
+        <Empty>这个歌单还没有歌曲</Empty>
       ) : (
         <>
           <VirtualList
