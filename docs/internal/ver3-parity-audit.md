@@ -309,7 +309,7 @@ Esc             关闭
 
 | 项 | 设计稿 | 缺什么 |
 |---|---|---|
-| 今日精选区 | `.mc-section`「今日精选 / `${平台} · 为你挑选 N 首`」+ 换一批 | 产品 store 里**没有"当前平台精选曲目池"**这个数据面（只有 daily / charts / recommendPlaylists）。要做得先接一条平台推荐歌单接口，属数据面新增，不在样式轮里硬编 |
+| 今日精选区 | `.mc-section`「今日精选 / `${平台} · 为你挑选 N 首`」+ 换一批 | **缺**（平台层没有"当前平台精选曲目池"） | ✅ 本轮补齐：新增 `music_new_songs`（网易云 `/personalized/newsong`，**匿名可取**）+ 能力位 `newSongs` + 首页「今日精选」节（空态按设计稿「这个平台还没有歌曲 / 换一个平台，或登录账号同步更多内容。」） |
 | 搜索框位置 | 在顶栏（`.music-topbar` 的 `.music-search-box`，与平台胶囊同一行） | 在中间卡顶部 | ✅ 挪到中间列顶行（吸顶）；平台胶囊一并从左栏挪来 |
 | 中间列容器 | `.music-view`（滚动区里的视图体，节各自带表面） | 一整张 `.music-card`（白底 + 描边 + 阴影） | ✅ 改成 `.music-view` + `view-in` 过渡（4px 上浮）；左栏那张卡保留 |
 | Hero「收藏歌单」 | 收藏每日推荐歌单（演示稿里是「已收藏」） | 本产品只有**歌曲**级红心，没有歌单收藏写回；摆一个点了没反应的按钮更糟，故用「查看歌单」替代并在 D-283 记因 |
@@ -346,4 +346,5 @@ Esc             关闭
 | 第十六轮 | **页卡右键菜单**按设计稿补齐四项（查看对照 / 重新翻译本页 / 复制文件名 / 打开所在目录）：先给通用 `Btn` 加受控 `onContextMenu`（单元只交事件、不造菜单），页目录按"话内取该话 absDir / 整本取书目录"解析，缺页仍可复制文件名 | `npm run check` 19/19；`check:units` 46/46 + 反证 **61/61**；`check:music` 237/237；`tsc` / `eslint` / `vite build` 通过 |
 | 第十七轮 | **退出确认**按设计稿补提示条（`本地服务与播放器会一起停止，已完成的作品不会受影响。`）与「留在后台」的两级回执（`已留到后台 / 翻译服务保持运行`）；**章节级「归并到…」查清为后端不支持**（不是键口径问题，见 §3.4） | `npm run check` 19/19；`check:quit` 5/5 + 反证 5/5；`check:units` 46/46；`tsc` / `eslint` / `vite build` 通过 |
 | 第十八轮 | **音乐中间列顶行**：平台胶囊 + 搜索框按设计稿挪到 `.music-topbar`（吸顶 / `sticky` / z=8 / 渐变底 + 模糊），左栏只剩标题与账号；**中间列容器**从一整张 `.music-card` 改成 `.music-view`（节各自带表面）+ 设计稿的 `view-in` 过渡（4px 上浮 + 淡入） | `npm run check` 19/19；`check:music` 237/237 + 反证 **232/232**；`check:units` 46/46；CDP 实测：顶行在中间列、四枚胶囊在顶行、搜索框与「搜索」按钮在顶行、左栏 0 枚胶囊、`position=sticky`、`z-index=8`；`class="music-view"`=1 / 左栏 `music-card`=1；`tsc` / `eslint` / `vite build` 通过 |
-| 下一轮 | 今日精选区仍等平台推荐端点；漫画库左栏的「已用容量」等次级文案复核 | — |
+| 第二十四轮 | **今日精选区**（此前被数据面卡住的最后一块）：Rust 新增 `netease::new_songs`（`/personalized/newsong`，匿名可取，外层 `picUrl` 补进 `al.picUrl`）+ `music_new_songs` 命令与注册；前端 `musicNewSongs` / `platform.newSongs` / 能力位 `newSongs` / store `newSongs+loadingNewSongs`（并入 `loadRecommend`）/ 首页「今日精选」节（含设计稿空态） | `cargo check --bin miao-dock` 通过；`npm run check` 19/19；`check:music` 237/237 + 反证 **232/232**；CDP 实测该节渲染且文案逐字一致（今日精选 / 为你挑选 / 换一批 / 这个平台还没有歌曲 / 换一个平台，或登录账号同步更多内容。）；`tsc` / `eslint` / `vite build` 通过 |
+| 下一轮 | 其余平台是否也补 `newSongs`（酷狗/QQ/咪咕各自的新歌接口）；漫画库左栏次级文案复核 | — |
