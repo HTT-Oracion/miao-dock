@@ -1,7 +1,8 @@
-﻿import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Btn, Modal } from '@components/units';
 import { useEsc } from '@hooks/useEsc';
 import { openPath } from '@/ipc';
+import { toastBus } from '@/stores/toastBus';
 import { musicCacheClear, musicCacheStats } from '@music/ipc';
 import type { CacheStats } from '@music/types';
 import type { MusicProvider } from '@music/types';
@@ -69,19 +70,28 @@ export function CacheBlock({ settingId }: { settingId: string }) {
   const clear = useCallback(
     async (scope: MusicProvider | 'all') => {
       setBusy(true);
+      // 记下清之前的字节数：清完再读统计只能拿到 0，"释放了多少"就说不出来了
+      const freed = scope === 'all' ? total : providerBytes(stats, scope);
       try {
         // 刻意不 `void`：必须等它落盘完再重拉统计，否则会读到清之前的数字，
         // 界面上表现为"点了没反应"。
         await musicCacheClear(scope === 'all' ? undefined : scope);
         await reload();
+        // 回执（设计稿同款）：单平台「已清除 X 缓存」，全部「音乐缓存已清理 + 已释放 N」
+        if (scope === 'all') {
+          toastBus.push('音乐缓存已清理', 'good', freed > 0 ? `已释放 ${formatBytes(freed)}` : undefined);
+        } else {
+          toastBus.push(`已清除 ${PROVIDER_LABEL[scope]} 缓存`, 'good', '歌词与音频缓存已释放');
+        }
       } catch {
         // Rust 侧刻意不抛（清缓存失败没有可执行的下一步），真抛了也要有交代，
         // 不能变成一次静默无响应。
+        toastBus.push('清理失败', 'bad', '缓存没有变化，可稍后再试');
       } finally {
         setBusy(false);
       }
     },
-    [reload],
+    [reload, total, stats],
   );
 
   return (
@@ -117,7 +127,9 @@ export function CacheBlock({ settingId }: { settingId: string }) {
                 // 0 缓存置灰：没有可删的东西就不给可点的入口（点了没反应最伤）
                 disabled={bytes <= 0 || busy || failed}
                 title={bytes <= 0 ? `${PROVIDER_LABEL[p]}暂无缓存` : `清除${PROVIDER_LABEL[p]}的缓存`}
-                onClick={() => setPending(p)}
+                // 单平台**不再二次确认**（设计稿如此）：按钮本身已经是明确作用域的动作，
+                // 而缓存清掉只会重新下载，没有不可逆的数据损失；「清理全部」才需要问一句。
+                onClick={() => void clear(p)}
               >
                 清除
               </Btn>
@@ -163,12 +175,10 @@ export function CacheBlock({ settingId }: { settingId: string }) {
 
       {pending ? (
         <ClearConfirm
-          scope={pending}
           onCancel={() => setPending(null)}
           onConfirm={() => {
-            const scope = pending;
             setPending(null);
-            void clear(scope);
+            void clear('all');
           }}
         />
       ) : null}
@@ -213,27 +223,18 @@ function formatBytes(bytes: number): string {
   return `${v.toFixed(2)} ${units[u]}`;
 }
 /**
- * 清除前的二次确认。
+ * 「清理全部」前的二次确认（单平台不确认，见上面那个按钮的注释）。
  *
- * 清缓存**不可撤销**（删掉的文件没有回收站可捞），所以必须先问一句。
+ * 清缓存**不可撤销**（删掉的文件没有回收站可捞），所以"一次清光四个平台"必须先问一句。
  * 弹层结构与 `components.scss` 的 `.modal-*` 一致 —— 那是通用样式层，
  * 与 `QuitConfirm` 那个**文案冻结**的组件无关，所以复用样式而非组件。
  */
-function ClearConfirm({
-  scope,
-  onCancel,
-  onConfirm,
-}: {
-  scope: MusicProvider | 'all';
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
+function ClearConfirm({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
   useEsc(onCancel);
-  const what = scope === 'all' ? '全部平台的音乐缓存' : `${PROVIDER_LABEL[scope]}的缓存`;
 
   return (
     <Modal
-      title={`确认清除${what}？`}
+      title="清理全部音乐缓存？"
       onClose={onCancel}
       actions={
         <>
@@ -241,12 +242,14 @@ function ClearConfirm({
             取消
           </Btn>
           <Btn kind="danger" onClick={onConfirm}>
-            清除{scope === 'all' ? '全部' : PROVIDER_LABEL[scope]}
+            清理全部
           </Btn>
         </>
       }
     >
-      清除后本地缓存的文件会被删除，<b>无法恢复</b>。
+      {/* 设计稿先说"删什么、不碰什么"（不碰歌单与本地文件），产品再补一句播放侧的影响 */}
+      会删除四个平台的歌词与音频缓存，不会影响歌单与本地文件。
+      <br />
       正在播放的歌会自动重新联网加载，不会中断，只是首次播放要多等一会儿。
     </Modal>
   );
