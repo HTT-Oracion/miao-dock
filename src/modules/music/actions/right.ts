@@ -92,15 +92,21 @@ export const createRightSlice = (
             }),
           ),
         );
+        /*
+         * 打上 `isChart`：榜单与歌单共用同一个详情组件，但它的数据来源不同
+         * （QQ / 咪咕走榜单歌曲接口）—— 由这里**显式打标**，详情侧就不用再猜 id 形态。
+         */
         if (get().playbackSource !== provider) return;
+        const marked = results.map((c) => ({ ...c, isChart: true }));
         set({
-          officialCharts: await withPreview(results, provider),
+          officialCharts: await withPreview(marked, provider),
           chartsError: failed === CHART_IDS.length ? lastError : '',
         });
       } else {
         const charts = await platform.rankList(provider);
         if (get().playbackSource !== provider) return;
-        set({ officialCharts: await withPreview(charts, provider), chartsError: '' });
+        const marked = charts.map((c) => ({ ...c, isChart: true }));
+        set({ officialCharts: await withPreview(marked, provider), chartsError: '' });
       }
     } catch (e) {
       // 失败要**说出来**：空列表 + 一句原因，用户才知道是"没榜单"还是"没读到"

@@ -73,7 +73,12 @@ export function PlaylistDetail() {
         <Btn kind="bare" className="pd-back" onClick={back}>
           <ArrowLeft size={12} /> 返回
         </Btn>
-        <span className="chip">{meta?.isLiked ? '系统歌单' : '歌单'}</span>
+        {/*
+         * 类型胶囊（设计稿 `.pd-top` 中间那枚）：榜单 =「官方榜单」，
+         * 「我喜欢的音乐」=「系统歌单」，其余 =「歌单」。
+         * 判据是 `meta.isChart`（由 `loadCharts` 显式打标），不靠 id 形态猜。
+         */}
+        <span className="chip">{meta?.isChart ? '官方榜单' : meta?.isLiked ? '系统歌单' : '歌单'}</span>
         {/*
          * 「更多」按钮**暂不显示**：设计稿 `.pd-top` 右侧那枚 `playlist-more`
          * 打开的是歌单操作菜单（重命名 / 删除 / 分享），而产品侧这些动作
@@ -87,7 +92,8 @@ export function PlaylistDetail() {
           <Cover url={coverProxyUrl(meta?.cover ?? '', proxyPort)} />
         </div>
         <div className="pd-info">
-          <span className="kicker">{meta?.isLiked ? 'LIKED' : 'PLAYLIST'}</span>
+          {/* 眉标（设计稿 `.pd-info .kicker`）：榜单 = CHART / 我喜欢 = LIKED / 其余 = PLAYLIST */}
+          <span className="kicker">{meta?.isChart ? 'CHART' : meta?.isLiked ? 'LIKED' : 'PLAYLIST'}</span>
           <h2>{name}</h2>
           {meta?.creator ? <p>{meta.creator}</p> : null}
           <div className="pd-meta">

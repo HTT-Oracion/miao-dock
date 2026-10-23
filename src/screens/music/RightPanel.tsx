@@ -354,10 +354,16 @@ function SearchResults() {
   );
 }
 
-/** 发现正文：按 rightView 分流 */
+/**
+ * 发现正文：按 rightView 分流。
+ *
+ * ⚠️ `tracks` 分支已移除：推荐歌单 / 榜单 / 左栏歌单现在**统一走 `openLeftPlaylist`**，
+ * 由右侧的 `PlaylistDetail` 渲染（`leftView === 'tracks'`）。
+ * 原先 `rightView === 'tracks'` 走独立的 `RightTracksView`，与歌单详情是两套代码两套样式，
+ * 改一处漏一处 —— 那个组件已随之删除。
+ */
 function Discover() {
   const rightView = useMusicStore((s) => s.rightView);
-  if (rightView === 'tracks') return <RightTracksView />;
   if (rightView === 'daily') return <DailyView />;
   return <Recommendations />;
 }
@@ -370,7 +376,9 @@ function Recommendations() {
   const recommendError = useMusicStore((s) => s.recommendError);
   const proxyPort = useMusicStore((s) => s.proxyPort);
   const loadRecommend = useMusicStore((s) => s.loadRecommend);
-  const openRightPlaylist = useMusicStore((s) => s.openRightPlaylist);
+  // 推荐歌单 / 榜单 / 左栏歌单**共用同一个详情组件**（`PlaylistDetail`），
+  // 统一走 openLeftPlaylist：设计稿里它们是同一个视图，此前各走一套导致改一处漏一处。
+  const openLeftPlaylist = useMusicStore((s) => s.openLeftPlaylist);
   // 今日精选：平台级推荐新歌（匿名可取）
   const newSongs = useMusicStore((s) => s.newSongs);
   const loadingNewSongs = useMusicStore((s) => s.loadingNewSongs);
@@ -418,11 +426,11 @@ function Recommendations() {
                   key={pl.id}
                   role="button"
                   tabIndex={0}
-                  onClick={() => void openRightPlaylist(pl)}
+                  onClick={() => void openLeftPlaylist(pl)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      void openRightPlaylist(pl);
+                      void openLeftPlaylist(pl);
                     }
                   }}
                 >
@@ -618,83 +626,6 @@ function EntryGrid() {
           <ChevronRight size={13} />
         </span>
       </Btn>
-    </div>
-  );
-}
-
-/** 歌单/榜单曲目（右栏下钻态）：滚动到底加载下一页 */
-function RightTracksView() {
-  const meta = useMusicStore((s) => s.rightPlaylistMeta);
-  const tracks = useMusicStore((s) => s.rightPlaylistTracks);
-  const loading = useMusicStore((s) => s.loadingRightTracks);
-  const tracksError = useMusicStore((s) => s.rightTracksError);
-  const loadingMore = useMusicStore((s) => s.loadingMoreRight);
-  const loadMore = useMusicStore((s) => s.loadMoreRight);
-  const back = useMusicStore((s) => s.backToRecommendations);
-  const playPlaylist = useMusicStore((s) => s.playPlaylist);
-  const currentSong = useMusicStore((s) => s.currentSong);
-  const proxyPort = useMusicStore((s) => s.proxyPort);
-
-  const total = meta?.track_count ?? 0;
-
-  return (
-    <div className="music-body">
-      <div className="mc-section-head">
-        <Btn kind="bare" className="music-btn out" ariaLabel="返回" onClick={back}>
-          <ChevronLeft size={12} /> 返回
-        </Btn>
-        <span className="music-card-title">{meta?.name ?? '曲目'}</span>
-        <span className="music-card-sub">{tracks.length} 首</span>
-        <div className="grow" />
-        <Btn
-          kind="bare"
-          className="music-btn pri"
-          disabled={tracks.length === 0}
-          onClick={() => void playPlaylist(tracks, { playlist: meta ?? undefined })}
-        >
-          <Play size={12} /> 播放全部
-        </Btn>
-      </div>
-
-      {loading ? (
-        <Empty>加载曲目中…</Empty>
-      ) : tracksError ? (
-        /* 读取失败与"歌单是空的"必须分开说：前者能重试，后者重试也没用 */
-        <Empty bad sub={tracksError}>
-          曲目读取失败
-        </Empty>
-      ) : tracks.length === 0 ? (
-        <Empty art sub="去搜索一些歌曲，加入喜欢的歌单。">
-          歌单是空的
-        </Empty>
-      ) : (
-        <>
-          <VirtualList
-            items={tracks}
-            resetKey={meta?.id ?? 'right-tracks'}
-            itemKey={(s, i) => `${s.provider}:${s.id}:${i}`}
-            onNearEnd={loadingMore ? undefined : () => void loadMore()}
-            renderItem={(s, i) => {
-              // 榜单/歌单曲目：把整张单子设为队列
-              const play = () => void playPlaylist(tracks, { playlist: meta ?? undefined, index: i });
-              return (
-                <SongRow
-                  song={s}
-                  cover={coverProxyUrl(s.cover, proxyPort)}
-                  // 曲目列表按设计稿的表格口径给「歌手 · 专辑」
-                  meta={s.album ? `${s.artist} · ${s.album}` : s.artist}
-                  active={currentSong ? songKey(currentSong) === songKey(s) : false}
-                  onClick={play}
-                  onPlay={play}
-                />
-              );
-            }}
-          />
-          {total > 0 && tracks.length < total ? (
-            <div className="music-more">{loadingMore ? '加载中…' : '上滑加载更多'}</div>
-          ) : null}
-        </>
-      )}
     </div>
   );
 }

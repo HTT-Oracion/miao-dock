@@ -94,7 +94,7 @@ export function Charts() {
   const error = useMusicStore((s) => s.chartsError);
   const proxyPort = useMusicStore((s) => s.proxyPort);
   const loadCharts = useMusicStore((s) => s.loadCharts);
-  const openRightChart = useMusicStore((s) => s.openRightChart);
+  const openLeftPlaylist = useMusicStore((s) => s.openLeftPlaylist);
 
   const caps = capsOf(playbackSource);
   if (!caps.charts) return null;
@@ -125,12 +125,16 @@ export function Charts() {
       ) : (
         <div className="chart-grid">
           {charts.map((pl) => (
+            // 榜单点开与歌单点开**同一个详情组件**（`PlaylistDetail`）——
+            // 设计稿里两者是同一个视图，只是数据来源不同（见 `openLeftPlaylist`）。
+            // 此前榜单走 `openRightChart` 渲染另一个 `RightTracksView`，
+            // 于是同一个"详情"有两套代码、两套样式，改一处漏一处。
             <ChartCard
               key={pl.id}
               pl={pl}
               byName={caps.chartByName}
               proxyPort={proxyPort}
-              onOpen={() => void openRightChart(pl)}
+              onOpen={() => void openLeftPlaylist(pl)}
             />
           ))}
         </div>

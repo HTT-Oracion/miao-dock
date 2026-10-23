@@ -1,4 +1,4 @@
-﻿// 左栏（我的音乐）切片 —— 「左栏」段（D-156 从 store.ts 按 action 段切出）。
+// 左栏（我的音乐）切片 —— 「左栏」段（D-156 从 store.ts 按 action 段切出）。
 import * as platform from '@music/platform';
 import { songKey } from '@music/convert';
 import { PAGE_SIZE } from '@music/slice';
@@ -62,13 +62,35 @@ export const createLeftSlice = (
     });
     const provider = get().playbackSource;
     try {
-      const [meta, songs] = await platform.playlistTracks(provider, pl.id);
+      /*
+       * **榜单与歌单共用同一个详情**，但数据来源不同：
+       * QQ / 咪咕的榜单没有"歌单曲目"接口，只有「榜单歌曲」；网易云 / 酷狗的榜单
+       * 本身就是一个歌单，走「歌单曲目」即可。判据是 `pl.isChart`
+       * （由 `loadCharts` 显式打标），不靠 id 形态猜。
+       *
+       * migu 的榜单接口一次最多 100 首，故 `limited` 分档；其余取足够大的数一次拉全。
+       */
+      let meta = pl;
+      let songs: Song[] = [];
+      if (pl.isChart && platform.chartUsesRankSongs(provider)) {
+        const limited = provider === 'migu' ? 100 : 99999;
+        songs = await platform.rankSongs(provider, pl.id, limited);
+      } else {
+        const [m, s] = await platform.playlistTracks(provider, pl.id);
+        meta = m;
+        songs = s;
+      }
       if (get().playbackSource !== provider) return;
-      // 曲目接口返回的 meta **不带** isLiked，名字也是接口原始名 —— 必须把点进来时那份
-      // 统一后的信息带过去。否则下钻一次，「我喜欢的音乐」就变回接口原名，
-      // 心动模式的可用性判定（看 isLiked）也会跟着失效。
+      // 曲目接口返回的 meta **不带** isLiked / isChart，名字也是接口原始名 —— 必须把点进来时那份
+      // 统一后的信息带过去。否则下钻一次，「我喜欢的音乐」就变回接口原名、
+      // 榜单也丢掉"我是榜单"这个标记，心动模式的可用性判定（看 isLiked）同样会失效。
       set({
-        leftPlaylistMeta: pl.isLiked ? { ...meta, name: pl.name, isLiked: true } : meta,
+        leftPlaylistMeta: {
+          ...meta,
+          name: pl.name,
+          isLiked: pl.isLiked ?? meta.isLiked,
+          isChart: pl.isChart ?? meta.isChart,
+        },
         leftPlaylistTracks: songs,
         leftTracksError: '',
       });
@@ -88,7 +110,13 @@ export const createLeftSlice = (
     if (start >= total) return;
     set({ loadingMoreLeft: true });
     try {
-      const songs = await platform.playlistTracksRange(playbackSource, id, start, PAGE_SIZE);
+      /*
+       * 榜单（QQ / 咪咕）一次已经拉全（`rankSongs` 不支持分页），
+       * 所以这里只在**非榜单**（或榜单走歌单曲目接口的网易云 / 酷狗）时按页续拉。
+       * 判据与 `openLeftPlaylist` 保持一致，否则翻页会打到不存在的榜单分页接口。
+       */
+      const isRankChart = !!leftPlaylistMeta?.isChart && platform.chartUsesRankSongs(playbackSource);
+      const songs = isRankChart ? [] : await platform.playlistTracksRange(playbackSource, id, start, PAGE_SIZE);
       if (songs.length === 0) return;
       set((s) => {
         // 当前队列正来自本歌单 → 新页去重后同步追加进队列
