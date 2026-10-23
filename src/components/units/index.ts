@@ -23,6 +23,7 @@ export { ContextMenu, MenuSeparator } from '@components/units/ContextMenu';
 export { ColorPicker } from '@components/units/ColorPicker';
 export { Empty } from '@components/units/Empty';
 export { ErrorState } from '@components/units/ErrorState';
+export { Mascot } from '@components/units/Mascot';
 export { IconButton } from '@components/units/IconButton';
 export { MenuButton, MenuItem } from '@components/units/MenuButton';
 export { Modal } from '@components/units/Modal';

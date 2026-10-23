@@ -2,7 +2,7 @@
 import { coverProxyUrl, qualityLabel } from '@music/convert';
 import { providerLabel } from '@music/platform';
 import { useMusicStore } from '@music/store';
-import { Btn, IconButton, playModeLabel } from '@components/units';
+import { Mascot, Btn, IconButton, playModeLabel } from '@components/units';
 import { Cover } from '@screens/music/shared';
 
 /**
@@ -35,7 +35,11 @@ export function NowPlaying() {
   if (!current) {
     return (
       <div className="now-card">
-        <div className="empty is-plain">
+        {/* 右栏空态（设计稿 `.now-empty`）：插画 + 标题 + 一句引导，底子是那块杏奶→天蓝的柔渐变 */}
+        <div className="now-empty">
+          <div className="now-empty-art">
+            <Mascot mood="sleep" />
+          </div>
           <h3>还没有播放</h3>
           <p>从今日精选挑一首歌吧。</p>
         </div>

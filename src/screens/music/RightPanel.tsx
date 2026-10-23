@@ -201,7 +201,9 @@ function SearchResults() {
     return (
       <>
         <SearchCaps />
-        <Empty sub="试试更短的关键词，或切换搜索源。">没有找到「{searchText}」</Empty>
+        <Empty art sub="试试更短的关键词，或切换搜索源。">
+          没有找到「{searchText}」
+        </Empty>
       </>
     );
   }
@@ -378,7 +380,7 @@ function Recommendations() {
             </Btn>
           </div>
           {newSongs.length === 0 ? (
-            <Empty sub="换一个平台，或登录账号同步更多内容。">
+            <Empty art sub="换一个平台，或登录账号同步更多内容。">
               {loadingNewSongs ? '加载中…' : '这个平台还没有歌曲'}
             </Empty>
           ) : (
@@ -581,7 +583,9 @@ function RightTracksView() {
           曲目读取失败
         </Empty>
       ) : tracks.length === 0 ? (
-        <Empty sub="去搜索一些歌曲，加入喜欢的歌单。">歌单是空的</Empty>
+        <Empty art sub="去搜索一些歌曲，加入喜欢的歌单。">
+          歌单是空的
+        </Empty>
       ) : (
         <>
           <VirtualList
@@ -645,7 +649,7 @@ function DailyView() {
       {loading ? (
         <Empty>加载每日推荐中…</Empty>
       ) : songs.length === 0 ? (
-        <Empty>暂无每日推荐（可能需要登录网易云）</Empty>
+        <Empty art>暂无每日推荐（可能需要登录网易云）</Empty>
       ) : (
         <VirtualList
           items={songs}

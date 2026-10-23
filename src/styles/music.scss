@@ -797,6 +797,52 @@
  * 一层极淡底 + 描边，与右栏的白卡（`.music-now`）形成"卡中一格"的层级 ——
  * 所以它的圆角(20)比外卡(26)小一档、内距也更紧。
  */
+
+/*
+ * 右栏空态（`.now-empty`）：设计稿没有给这一块单独的类，但**右栏空着时会露出纯白**，
+ * 与旁边那块有内容的信息卡放在一起像是"加载失败"。这里按设计稿的渐变语言自行延展：
+ * 取 hero 那两笔（天蓝 → 杏奶）压到很淡，让它读作"这块在等你放歌"，而不是"这块坏了"。
+ * 插画沿用统一的 `.mascot-svg`（与其它空态同一只猫）。
+ */
+.now-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 260px;
+  padding: 28px 16px;
+  border: 1px dashed var(--miao-line-strong);
+  border-radius: var(--miao-r-lg);
+  text-align: center;
+  background:
+    radial-gradient(220px 160px at 82% 8%, rgba(255, 255, 255, 0.7), transparent 62%),
+    linear-gradient(150deg, var(--miao-primary-soft) 0%, var(--miao-surface) 52%, var(--miao-accent-soft) 130%);
+}
+.now-empty-art {
+  width: 88px;
+  height: 74px;
+  margin-bottom: 4px;
+  opacity: 0.9;
+}
+.now-empty-art .mascot-svg {
+  width: 100%;
+  height: 100%;
+}
+.now-empty h3 {
+  margin: 0;
+  font-family: var(--md-font-display);
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.now-empty p {
+  margin: 0;
+  max-width: 200px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--miao-muted);
+}
 .now-card {
   display: flex;
   flex-direction: column;
