@@ -56,7 +56,8 @@ export function Modal({
               {subtitle ? <p>{subtitle}</p> : null}
             </div>
             <button type="button" className="icon-btn" aria-label="关闭" onClick={onClose} disabled={busy}>
-              <X size={16} />
+              {/* 18 = 设计稿 `.ico` 默认档（`.icon-btn` 34×34 里的那颗）*/}
+              <X size={18} />
             </button>
           </header>
         ) : null}

@@ -411,19 +411,26 @@
   gap: 5px;
 }
 .ui-swatch {
-  width: 16px;
-  height: 16px;
+  /* 设计稿 `.color-dot`：17×17、正圆、2px surface 内描边 + 1px line 外环
+     （那圈 2px 白边是把色点从底色里"抠"出来的关键 —— 用 1px line 描边会得到另一种读感）。
+     此前是 16×16 / r9 / 1px line：小 1px、不是正圆、也没有那层抠边。 */
+  width: 17px;
+  height: 17px;
   padding: 0;
-  border: 1px solid var(--md-line);
-  border-radius: 9px;
+  border: 2px solid var(--miao-surface);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--miao-line);
   cursor: pointer;
   transition:
-    transform 0.12s,
-    box-shadow 0.12s;
+    transform var(--miao-dur-fast) var(--miao-ease-out),
+    box-shadow var(--miao-dur-fast) ease;
 }
 .ui-swatch:hover {
   transform: scale(1.12);
 }
+/* 选中态**刻意不照搬**设计稿的 `0 0 0 2px var(--ink)`：本行里 `.ui-select` / `.ui-num` /
+   色点共用一套"被选中 / 被聚焦 = primary 环"的形状语汇（见上面的焦点规则），
+   换成墨色环会让同一行出现两种"选中"。偏离登记于台账。 */
 .ui-swatch.is-on {
   box-shadow:
     0 0 0 2px var(--miao-surface),
@@ -1155,20 +1162,29 @@
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  /* 设计稿 `.icon-btn` 是 34×34 / r10（`.icon-btn-sm` 才是 28×28 / r8）。
+     本仓此前把"小的那一档"当成了默认值 —— 模态框右上角的关闭钮因此比设计稿小一圈，
+     和同一行里 34 高的标题字块对不齐。目前全站只有模态框在用这个类，所以直接改成设计稿的默认档；
+     真出现需要 28 的紧凑容器时，再按设计稿补 `.icon-btn-sm`，不要把它设回默认。 */
+  width: 34px;
+  height: 34px;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   color: var(--miao-muted);
   cursor: pointer;
   transition:
     background var(--miao-dur-fast) ease,
-    color var(--miao-dur-fast) ease;
+    color var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-out);
 }
 .icon-btn:hover:not(:disabled) {
   background: var(--miao-surface-2);
   color: var(--miao-ink);
+}
+/* 设计稿 `.icon-btn:active { transform: scale(.94) }` —— 按下要有反馈，此前没有 */
+.icon-btn:active:not(:disabled) {
+  transform: scale(0.94);
 }
 .icon-btn:disabled {
   opacity: 0.45;

@@ -1342,6 +1342,63 @@ add('STYLE.noSilentTokenFallback', 'STYLE', (s) => {
   return { ok: hits.length === 0, detail: hits.length ? `语义令牌带了兜底值：${hits.join('、')}` : '' };
 });
 
+add('STYLE.sharedControlGeometry', 'STYLE', (s) => {
+  /*
+   * 两个**全站共用**的控件形状钉：图标按钮（模态框关闭钮）与色点（歌词配色）。
+   * 之所以要钉：`.icon-btn` 全仓只有一个使用者，改小了没人会发现 ——
+   * 之前它正是把设计稿的"小档"（28 / r8）当成了默认档（设计稿默认 34 / r10），
+   * 而 `.ui-swatch` 则是 16 / r9 / 1px 描边，与设计稿的 17 / 正圆 / 2px 抠边差三处。
+   * 这两处都不会红在任何现有断言上，靠人眼比对才会发现 —— 值不给钉就一定会再漂。
+   */
+  const want = {
+    'components.scss': [
+      {
+        sel: '.icon-btn',
+        decls: [
+          ['width', /(^|\n)\s*width:\s*34px\s*;/],
+          ['height', /(^|\n)\s*height:\s*34px\s*;/],
+          ['border-radius', /(^|\n)\s*border-radius:\s*10px\s*;/],
+        ],
+      },
+      {
+        sel: '.ui-swatch',
+        decls: [
+          ['width', /(^|\n)\s*width:\s*17px\s*;/],
+          ['height', /(^|\n)\s*height:\s*17px\s*;/],
+          ['border-radius', /(^|\n)\s*border-radius:\s*50%\s*;/],
+          ['border', /(^|\n)\s*border:\s*2px solid var\(--miao-surface\)\s*;/],
+        ],
+      },
+    ],
+  };
+  const bad = [];
+  let checked = 0;
+  for (const [file, rules] of Object.entries(want)) {
+    const code = s.styleShardCode?.[file];
+    if (!code) {
+      bad.push(`${file} 读不到（判据失去对象）`);
+      continue;
+    }
+    const body = code.replace(/\/\*[\s\S]*?\*\//g, ' ');
+    for (const { sel, decls } of rules) {
+      const at = body.search(new RegExp(`(^|\\n)${sel.replace('.', '\\.')}\\s*\\{`));
+      if (at < 0) {
+        bad.push(`${sel} 没有规则了`);
+        continue;
+      }
+      // 块体：从 { 到第一个 }（分片内保持扁平写法，见 STYLE.noScssSyntax）
+      const block = body.slice(at, body.indexOf('}', at));
+      for (const [prop, re] of decls) {
+        checked += 1;
+        if (!re.test(block)) bad.push(`${sel} 的 ${prop} 与设计稿不符`);
+      }
+    }
+  }
+  // 分母自守：一条都没量到也算绿是最常见的死法
+  if (checked < 7) bad.push(`只量到 ${checked} 条声明（应 ≥ 7）`);
+  return { ok: bad.length === 0, detail: bad.length ? bad.join('、') : '' };
+});
+
 add('STYLE.noScssSyntax', 'STYLE', (s) => {
   // 分片内保持**扁平写法**：本阶段不用 SCSS 语法糖。
   // 理由不是审美，是断言：本仓检查脚本大量用 `[^}]*` 取块，嵌套会改变块结构 →
@@ -1886,6 +1943,23 @@ const MUTATIONS = [
     find: '  color: var(--miao-accent-ink);\n',
     replace: '  color: var(--miao-accent-ink, var(--miao-muted));\n',
     expect: ['STYLE.noSilentTokenFallback'],
+  },
+  {
+    // 这正是本轮真修掉的：`.icon-btn` 曾把设计稿的"小档"（28 / r8）当成默认档
+    name: '把图标按钮退回 28×28（设计稿默认是 34×34 / r10，`.icon-btn-sm` 才是 28）',
+    file: path.join(F.stylesDir, 'components.scss'),
+    find: '  width: 34px;\n  height: 34px;\n  border: none;\n  border-radius: 10px;',
+    replace: '  width: 28px;\n  height: 28px;\n  border: none;\n  border-radius: 8px;',
+    expect: ['STYLE.sharedControlGeometry'],
+  },
+  {
+    // 同上：色点曾是小 1px、还不是正圆、也没有那层 2px 抠边
+    name: '把色点退回 16 / r9 / 1px 描边（设计稿是 17 / 正圆 / 2px 抠边）',
+    file: path.join(F.stylesDir, 'components.scss'),
+    find: '  width: 17px;\n  height: 17px;\n  padding: 0;\n  border: 2px solid var(--miao-surface);\n  border-radius: 50%;',
+    replace:
+      '  width: 16px;\n  height: 16px;\n  padding: 0;\n  border: 1px solid var(--miao-line);\n  border-radius: 9px;',
+    expect: ['STYLE.sharedControlGeometry'],
   },
   {
     name: '在分片里用 SCSS 变量承载颜色（令牌只走 var(--md-*) / var(--miao-*)，否则深色模式就不成立了）',
