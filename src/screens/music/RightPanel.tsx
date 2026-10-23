@@ -1,6 +1,7 @@
 import {
   ChevronLeft,
   ChevronRight,
+  HardDrive,
   Heart,
   ListOrdered,
   Play,
@@ -15,6 +16,7 @@ import { useMusicStore } from '@music/store';
 import { coverProxyUrl, songKey } from '@music/convert';
 import type { Song } from '@music/types';
 import { Charts } from '@screens/music/Charts';
+import { LocalPanel } from '@screens/music/LocalPanel';
 import { Btn, Empty, IconButton, VirtualList } from '@components/units';
 import { Cover, SongRow } from '@screens/music/shared';
 
@@ -35,6 +37,9 @@ export function RightPanel() {
   const playbackSource = useMusicStore((s) => s.playbackSource);
   const loginInfos = useMusicStore((s) => s.loginInfos);
   const switchPlaybackSource = useMusicStore((s) => s.switchPlaybackSource);
+  const openLogin = useMusicStore((s) => s.openLogin);
+  const leftView = useMusicStore((s) => s.leftView);
+  const setLeftView = useMusicStore((s) => s.setLeftView);
 
   // 只要有关键词就进「搜索」态（而不是要求已有结果）：
   // 否则「搜索中」和「搜到 0 首」都会掉回发现页，用户会以为刚才那次搜索没发生
@@ -53,6 +58,7 @@ export function RightPanel() {
           {PLATFORMS.map((p) => {
             const on = p.id === playbackSource;
             const li = loginInfos[p.id];
+            const logged = !!li?.logged_in;
             return (
               <Btn
                 key={p.id}
@@ -60,46 +66,74 @@ export function RightPanel() {
                 role="tab"
                 ariaSelected={on}
                 className={on ? 'platform-pill is-active' : 'platform-pill'}
-                title={`${p.label}${li?.logged_in ? ' · 已登录' : ' · 未登录'}`}
+                title={`${p.label}${logged ? ' · 已登录' : ' · 未登录'}`}
                 onClick={() => {
+                  /*
+                   * 未登录的平台**先登录再切**：直接切过去只会得到一个空列表，
+                   * 用户会以为"这个平台没歌"。登录成功后 `openLogin` 会自己切播放源。
+                   */
+                  if (!logged) {
+                    void openLogin(p.id);
+                    return;
+                  }
                   if (!on) void switchPlaybackSource(p.id);
                 }}
               >
                 <span
                   className="prov-dot"
-                  style={{ background: p.color, opacity: li?.logged_in ? 1 : 0.35 }}
+                  style={{ background: p.color, opacity: logged ? 1 : 0.35 }}
                   aria-hidden="true"
                 />
                 {p.label.replace('音乐', '').trim()}
               </Btn>
             );
           })}
+          {/*
+           * 「本地」（设计稿 topbar 的第五枚 pill）：它不是平台、没有登录态，
+           * 所以不放进 PLATFORMS；点它把左栏切到「本地」页签（那里是导入的本地曲库）。
+           */}
+          <Btn
+            kind="bare"
+            className={leftView === 'local' ? 'platform-pill is-active' : 'platform-pill'}
+            ariaSelected={leftView === 'local'}
+            title="本地曲库"
+            onClick={() => setLeftView('local')}
+          >
+            <HardDrive size={11} aria-hidden="true" />
+            本地
+          </Btn>
         </div>
 
+        {/*
+         * 搜索框（设计稿 `.search-field`）：**一整块**内凹底 + 描边 + r10，
+         * 图标 / 输入 / 清空都在框**内部**；焦点时整块边框转主色 + 3px wash 光晕。
+         * 搜索按钮在框外右侧（设计稿 `.music-search-box` = 框 + 按钮两件）。
+         */}
         <div className="music-search-box">
-          <Search size={13} className="music-search-ico" />
-          <input
-            className="music-search"
-            placeholder="搜索歌曲 / 歌手 / 专辑"
-            aria-label="搜索音乐"
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void search();
-            }}
-          />
-          {searchText ? (
-            <Btn
-              kind="bare"
-              className="music-btn out"
-              ariaLabel="清空搜索"
-              title="清空搜索"
-              onClick={() => clearSearch()}
-            >
-              <X size={12} />
-            </Btn>
-          ) : null}
-          <Btn kind="bare" className="music-btn pri" disabled={searching} onClick={() => void search()}>
+          <label className="search-field">
+            <Search size={13} className="search-field-ico" aria-hidden="true" />
+            <input
+              placeholder="搜索歌曲 / 歌手 / 专辑"
+              aria-label="搜索音乐"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void search();
+              }}
+            />
+            {searchText ? (
+              <Btn
+                kind="bare"
+                className="search-clear"
+                ariaLabel="清空搜索"
+                title="清空搜索"
+                onClick={() => clearSearch()}
+              >
+                <X size={11} />
+              </Btn>
+            ) : null}
+          </label>
+          <Btn kind="bare" className="btn btn-primary btn-sm" disabled={searching} onClick={() => void search()}>
             {searching ? '搜索中…' : '搜索'}
           </Btn>
         </div>
@@ -115,7 +149,8 @@ export function RightPanel() {
       <section className="music-view">
         {searchError ? <div className="music-inline-err">搜索失败：{searchError}</div> : null}
 
-        {searchActive ? <SearchResults /> : <Discover />}
+        {/* 分流：搜索态 > 本地视图 > 发现页（设计稿里「本地」是右侧的一个完整视图） */}
+        {searchActive ? <SearchResults /> : leftView === 'local' ? <LocalPanel /> : <Discover />}
       </section>
     </>
   );

@@ -1436,39 +1436,59 @@
  * 滚动内容才会在它下面淡出而不是被硬切。
  */
 /*
- * 中栏顶行（设计稿 `.music-topbar`）：平台胶囊 + 搜索框，**吸顶**，内距 `0 0 8`。
+ * 中栏顶行（设计稿 `.music-topbar` 的**生效值**，取自后加载的 theme 分片）：
+ * `position: static` + `margin: 0 0 14px` + `padding: 0 0 8px` + **透明背景、无模糊**。
  *
- * 吸顶条的负外边距抵消卡片的左右内距（让它铺满卡内宽），**但底部不再用负值、也不贴 0**：
- * 它下面紧跟着的是视图内容（搜索页第一块是 `.search-sources`）。原来 `margin-bottom: 12`
- * 却只给 `padding-bottom: 8`，滚动时下面那块会顶到渐变层里 —— 视觉上就是"被盖住"。
- * 现在底距给足 10（= 8 内距 + 2 余量），并让视图第一块自带 `scroll-margin-top`。
+ * ⚠️ 基础表写的是 `sticky / top 0 / z-index 8 / 负外边距 / 渐变底 + blur` —— 产品一直照那份写，
+ * 于是顶行会**浮在内容上层**：滚动时下面的搜索源条钻到它底下（视觉上"被盖住"），
+ * 而设计稿的意思是"它就是视图里普通的一行，跟着一起滚走"。
+ * 这条改完，之前为"被盖住"打的那个 `.music-view { padding-top }` 补丁也一并撤掉。
  */
+
+/* ---------------------------------------------------------------- 结果页头（本地 / 历史）
+/*
+ * 设计稿 `.search-result-head`：左侧标题 + 说明，右侧动作组；`.local-actions` 是那组按钮。
+ * 用在「本地音乐」与「播放历史」这两个**右侧主体视图**上 —— 它们不是"一张卡"，
+ * 而是一屏：顶部说明这一屏是什么、能给几个动作，底下才是内容。
+ */
+.search-result-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.search-result-head h2 {
+  margin: 0;
+  font-family: var(--md-font-display);
+  font-size: clamp(19px, 1.7vw, 26px);
+  font-weight: 700;
+  color: var(--miao-ink);
+  line-height: 1.2;
+}
+.search-result-head p {
+  margin: 2px 0 0;
+  font-size: 10px;
+  color: var(--miao-muted);
+}
+.local-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+/* 本地视图底部的说明条（设计稿 `.notice`）：上距 12，不抢眼但必须读得到 */
+.local-note {
+  margin-top: 12px;
+}
 .music-topbar {
-  position: sticky;
-  top: 0;
-  z-index: 8;
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin: -24px -27px 10px;
+  margin: 0 0 14px;
   padding: 0 0 8px;
-  background: linear-gradient(
-    180deg,
-    var(--miao-surface) 70%,
-    color-mix(in srgb, var(--miao-surface) 88%, transparent)
-  );
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-/*
- * 视图与吸顶条之间的间距：吸顶条用 `margin: -24 -27 …` 抵消了 `.music-center` 的 24 内距，
- * 于是视图会紧贴卡片上沿、内容顶到吸顶条的渐变层里。这里把 24 的顶部内距**补回视图自身**，
- * 再加上吸顶条自己的 8 内距 —— 内容从吸顶条下方开始，滚动时也不会钻到它底下。
- */
-.music-view {
-  padding-top: 24px;
+  background: transparent;
 }
 /* 搜索框（设计稿 `.music-search-box`）：右对齐、上限 376，输入框吃满剩余宽度 */
 .music-search-box {
@@ -1482,45 +1502,59 @@
   flex: none;
   color: var(--miao-muted);
 }
-.music-search-box .music-search {
-  flex: 1;
-  min-width: 150px;
-  height: 32px;
-}
-.music-search-box .music-btn {
-  height: 32px;
-}
-
-.music-search-row {
+.music-search-box /*
+ * 搜索框（设计稿 `.search-field` 的**生效值**）：一整块内凹底 + 1px 描边 + r10，
+ * 高 34、左右 10，图标 / 输入 / 清空都在框**内部**（`gap 7`）。
+ * 焦点时整块转主色边框 + 3px `primary-wash` 光晕 —— 这比"只给 input 描边"更像一个控件。
+ */
+.search-field {
   display: flex;
-  gap: 8px;
-  flex: 0 0 auto;
-  margin-bottom: 8px;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--miao-line);
+  border-radius: 10px;
+  background: var(--miao-surface-2);
+  color: var(--miao-muted);
+  transition:
+    border-color var(--miao-dur-fast),
+    background var(--miao-dur-fast),
+    box-shadow var(--miao-dur-fast);
 }
-.music-search {
+.search-field:focus-within {
+  border-color: var(--miao-primary);
+  background: var(--miao-surface);
+  box-shadow: 0 0 0 3px var(--miao-primary-wash);
+}
+.search-field input {
   flex: 1;
   min-width: 0;
-  border: 1px solid var(--miao-line);
-  border-radius: 999px;
-  padding: 7px 13px;
-  font-size: 11.5px;
+  border: 0;
+  background: transparent;
+  outline: none;
+  /* 设计稿 `.search-field input` 是 `12px * --ui-scale`；不写死别的值，交给构建期换算 */
+  font-size: 12px;
+  font-family: inherit;
   color: var(--miao-ink);
-  background: var(--miao-surface);
-  font-family: var(--md-font-body);
-  transition:
-    border-color var(--miao-dur-fast) ease,
-    box-shadow var(--miao-dur-fast) ease;
 }
-.music-search::placeholder {
+.search-field input::placeholder {
   color: var(--miao-faint);
 }
-.music-search:hover {
-  border-color: var(--miao-line-strong);
+.search-field-ico {
+  flex: none;
+  color: var(--miao-muted);
 }
-.music-search:focus {
-  outline: none;
-  border-color: var(--miao-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--miao-accent) 14%, transparent);
+.search-clear {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--miao-surface-3);
+  color: var(--miao-muted);
+  flex: none;
 }
 
 /*

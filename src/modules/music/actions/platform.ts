@@ -86,6 +86,17 @@ export const createPlatformSlice = (
         migu: statuses.migu ?? null,
       };
       set({ loginInfos: infos, loginInfo: infos[get().playbackSource] ?? null });
+
+      /*
+       * **一个平台都没登录** ⇒ 默认落到「本地」。
+       *
+       * 四个平台的歌单、榜单、每日推荐全都要登录态；没登录时停在某个平台上，
+       * 整屏都是空态 + 一串"可能需要登录"，用户第一眼看到的是"这个应用没内容"。
+       * 而本地曲库不依赖任何账号 —— 它才是这时唯一**有东西可看**的页签。
+       * 只在"当前页签还是初始的 playlists"时切，免得把用户手动选的页签抢走。
+       */
+      const anyLogged = Object.values(infos).some((i) => i?.logged_in);
+      if (!anyLogged && get().leftView === 'playlists') set({ leftView: 'local' });
     } catch {
       // 服务未就绪：逐个兜底探测
       await Promise.all(
