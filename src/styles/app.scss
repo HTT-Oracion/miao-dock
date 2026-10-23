@@ -228,9 +228,11 @@
   transform: translateX(-10px) scale(0.98);
   transform-origin: left center;
   pointer-events: none;
+  /* 悬浮站的进出走设计稿的**基础时长 + 出向曲线**（缩放用弹簧）：写死 0.28s + 一条
+     非设计稿曲线（0.22, 0.61, 0.36, 1 是通用 material 曲线，不是本项目的三档之一） */
   transition:
-    opacity 0.28s ease,
-    transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
+    opacity var(--miao-dur-base) var(--miao-ease-out),
+    transform var(--miao-dur-base) var(--miao-ease-spring);
   backdrop-filter: blur(22px);
   -webkit-backdrop-filter: blur(22px);
   animation: miao-pop-in var(--miao-dur-base) var(--miao-ease-spring);
@@ -698,13 +700,13 @@
   }
 }
 
-/* 手动关闭的退场：180ms，与 NotificationStack 的 LEAVE_MS 同源（改一处必须改另一处） */
+/* 手动关闭的退场：设计稿 `.toast.is-leaving` 是 `--dur-fast` + `--ease-out`（140ms） */
 .ntf.is-leaving {
   opacity: 0;
   transform: translateX(12px);
   transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
+    opacity var(--miao-dur-fast) var(--miao-ease-out),
+    transform var(--miao-dur-fast) var(--miao-ease-out);
 }
 
 /* 设计稿 `.toast-dot`：7px，`margin-top:5px` 让它在多行时贴住标题行 */

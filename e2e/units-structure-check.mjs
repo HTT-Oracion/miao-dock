@@ -1462,6 +1462,53 @@ add('STYLE.tierLabelSingleSource', 'STYLE', () => {
   return { ok: bad.length === 0, detail: bad.length ? bad.join('；') : '' };
 });
 
+add('STYLE.motionTokensOnly', 'STYLE', (s) => {
+  /*
+   * 动效参数只走令牌。设计稿的三档时长与三条曲线（140 / 240 / 380ms + spring / spring-soft / out）
+   * 已经逐值对进 `MIAO_MOTION`，所以**写死数字就是绕开令牌**：改令牌时它不会跟着动，
+   * 而界面上表现成"个别地方快一拍/慢一拍"，肉眼很难指认是哪一条。
+   * 本轮清掉 13 条（0.15s / 0.18s / 0.25s / 0.28s / 0.3s + 一条非设计稿曲线 0.22,0.61,0.36,1）。
+   * 例外只留**连续量指示器**（进度条 / 电平条）：它们追的是音频/进度，不是交互反馈，
+   * `linear` 是正确选择，硬套 240ms 反而会让指示器迟滞。例外逐条列明，不用通配。
+   */
+  const METER_SELECTORS = new Set(['.ed-bar span', '.di-wave i', '.di-bar i']);
+  const bad = [];
+  let checked = 0;
+  for (const [file, code] of Object.entries(s.styleShardCode || {})) {
+    if (file === 'anime.scss') continue; // 番剧分片不在本任务范围
+    const body = stripComments(code || '');
+    for (const rule of body.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const sel = rule[1].trim().split('\n').pop().trim();
+      for (const m of rule[2].matchAll(/transition\s*:\s*([^;]+);/g)) {
+        const value = m[1].replace(/\s+/g, ' ').trim();
+        if (value === 'none' || METER_SELECTORS.has(sel)) continue;
+        checked += 1;
+        const usesToken = /var\(--miao-(dur|ease)/.test(value);
+        const hardDuration = /\b\d+(?:\.\d+)?m?s\b/.test(value);
+        if (hardDuration && !usesToken) bad.push(`${file} ${sel} → ${value}`);
+      }
+    }
+  }
+  // 令牌本身也要对得上设计稿（写错值同样"很安静"）
+  const tokPath = path.join(SRC, 'themes', 'tokens.ts');
+  if (!existsSync(tokPath)) return { ok: false, detail: '读不到 themes/tokens.ts（判据失去对象）' };
+  const tok = cachedReadText(tokPath);
+  const motion = [
+    ["fast: '140ms'", '基础档 140ms'],
+    ["base: '240ms'", '中间档 240ms'],
+    ["slow: '380ms'", '慢档 380ms'],
+    ["spring: 'cubic-bezier(.22, 1.3, .36, 1)'", '弹簧曲线'],
+    ["springSoft: 'cubic-bezier(.34, 1.4, .64, 1)'", '软弹簧曲线'],
+    ["out: 'cubic-bezier(.16, 1, .3, 1)'", '出向曲线'],
+  ];
+  for (const [needle, label] of motion) {
+    checked += 1;
+    if (!tok.includes(needle)) bad.push(`${label}与设计稿不一致`);
+  }
+  if (checked < 40) bad.push(`只量到 ${checked} 条 transition（应 >= 40）`);
+  return { ok: bad.length === 0, detail: bad.length ? bad.join('；') : '' };
+});
+
 add('STYLE.noScssSyntax', 'STYLE', (s) => {
   // 分片内保持**扁平写法**：本阶段不用 SCSS 语法糖。
   // 理由不是审美，是断言：本仓检查脚本大量用 `[^}]*` 取块，嵌套会改变块结构 →
@@ -2039,6 +2086,20 @@ const MUTATIONS = [
     find: '.set-ctl-note {\n  font-size: 9.5px;',
     replace: '.set-ctl-note {\n  font-size: 9px;',
     expect: ['STYLE.setCtlNoteSingleSource'],
+  },
+  {
+    name: '把某条 hover 过渡的时长写回 0.15s（绕开 --miao-dur-fast，改令牌时它不会跟着动）',
+    file: path.join(F.stylesDir, 'settings.scss'),
+    find: '  transition:\n    background var(--miao-dur-fast),\n    color var(--miao-dur-fast);',
+    replace: '  transition:\n    background 0.15s,\n    color 0.15s;',
+    expect: ['STYLE.motionTokensOnly'],
+  },
+  {
+    name: '把中间档时长从 240ms 改成 200ms（界面上只是"快一拍"，没有任何东西会报错）',
+    file: path.join(SRC, 'themes', 'tokens.ts'),
+    find: "  base: '240ms',",
+    replace: "  base: '200ms',",
+    expect: ['STYLE.motionTokensOnly'],
   },
   {
     name: '把档位文案退回光秃秃的 Small（设计稿是 Small · 均衡，后半截是这档的性格）',

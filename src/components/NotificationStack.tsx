@@ -1,5 +1,6 @@
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { MIAO_MOTION } from '@/themes/tokens';
 import { toastBus, useToastList } from '@/stores/toastBus';
 import type { BusToast, ToastKind } from '@/stores/toastBus';
 
@@ -39,8 +40,11 @@ const KIND_TO_COLOR: Record<ToastKind, string> = {
   blue: 'var(--md-blue)',
 };
 
-/** 手动关闭的退场时长 —— 必须与 app.scss `.ntf.is-leaving` 的 animation 时长一致 */
-const LEAVE_MS = 180;
+/**
+ * 手动关闭的退场时长 —— 取自动效令牌，必须与 app.scss `.ntf.is-leaving` 的 transition 一致。
+ * 写死数字的旧写法（180）比设计稿的 140ms 慢一拍，且改令牌时不会跟着动。
+ */
+const LEAVE_MS = Number.parseInt(MIAO_MOTION.fast, 10);
 
 export function NotificationStack() {
   const list = useToastList();

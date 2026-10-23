@@ -986,8 +986,8 @@
   background: var(--md-surface-2);
   cursor: pointer;
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--miao-dur-fast),
+    color var(--miao-dur-fast);
 }
 .set-diag-fold:hover {
   background: var(--md-surface);
@@ -1268,8 +1268,8 @@
   background: var(--md-surface-2);
   cursor: pointer;
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--miao-dur-fast),
+    color var(--miao-dur-fast);
 }
 .set-run-fold:hover,
 .set-run-all:hover,
@@ -1642,8 +1642,8 @@
   padding: 3px 10px;
   cursor: pointer;
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--miao-dur-fast),
+    color var(--miao-dur-fast);
 }
 .set-lic-fold:hover {
   background: var(--md-surface);

@@ -379,9 +379,9 @@
   border: 1px solid var(--miao-line);
   border-radius: 11px;
   transition:
-    background 0.15s,
-    border-color 0.15s,
-    box-shadow 0.15s;
+    background var(--miao-dur-fast),
+    border-color var(--miao-dur-fast),
+    box-shadow var(--miao-dur-fast);
 }
 .ui-num:hover {
   background: var(--md-surface-2);
@@ -446,8 +446,8 @@
   background: var(--md-surface-2); /* 色块外留一圈衬底，边缘不再与背景直接相接 */
   cursor: pointer;
   transition:
-    border-color 0.15s,
-    box-shadow 0.15s;
+    border-color var(--miao-dur-fast),
+    box-shadow var(--miao-dur-fast);
 }
 .ui-color:hover:not(:disabled) {
   border-color: var(--miao-primary);
