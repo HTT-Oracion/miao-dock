@@ -2357,6 +2357,15 @@ button.ms-caption.is-collapsed {
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
+  /*
+   * 不许被压缩：`.music-view` 是 flex 列，下面的曲目表（加载态时是骨架屏）会把空间吃掉，
+   * 若这里默认可收缩，`.pd-top` / `.pd-hero` / `.pd-toolbar` 就会被挤扁 ——
+   * 而 `.pd-hero` 有 `overflow: hidden`，挤扁等于**把封面和标题裁掉**（看着像"显示不全"）。
+   *
+   * 实测（加载态、窗口 1100 宽）：hero 高度随窗口变矮而塌 ——
+   * 900 高时 164（封面 126 刚好）、700 高时 121（裁 5px）、620 高时 104（裁 22px）。
+   */
+  flex: 0 0 auto;
 }
 .pd-back {
   display: inline-flex;
@@ -2391,6 +2400,8 @@ button.ms-caption.is-collapsed {
   background: var(--miao-surface);
   box-shadow: var(--miao-shadow-1);
   overflow: hidden;
+  /* 不许被压缩（同 `.pd-top` 的理由）：压扁 = 封面与标题被这个 overflow:hidden 裁掉 */
+  flex: 0 0 auto;
 }
 .pd-cover {
   width: clamp(126px, 10vw, 166px);
@@ -2460,6 +2471,8 @@ button.ms-caption.is-collapsed {
   align-items: center;
   gap: 7px;
   margin: 14px 0 8px;
+  /* 同 `.pd-top` / `.pd-hero`：固定内容，不被加载态的骨架屏挤扁 */
+  flex: 0 0 auto;
 }
 .pd-toolbar .caption {
   font-size: 9.5px;
