@@ -306,7 +306,7 @@ function Recommendations() {
       </div>
       {caps.recommendPlaylists ? (
         <>
-          <div className="music-card-hd">
+          <div className="mc-section-head">
             <span className="music-card-title">推荐歌单</span>
             {/* 副标题按设计稿：一句话说清"这批是怎么来的" */}
             <span className="music-card-sub">按你最近的循环生成</span>
@@ -351,7 +351,7 @@ function Recommendations() {
       */}
       {caps.newSongs ? (
         <>
-          <div className="music-card-hd">
+          <div className="mc-section-head">
             <span className="music-card-title">今日精选</span>
             <span className="music-card-sub">
               {providerLabel(playbackSource)} · 为你挑选 {newSongs.length} 首
@@ -523,7 +523,7 @@ function RightTracksView() {
 
   return (
     <div className="music-body">
-      <div className="music-card-hd">
+      <div className="mc-section-head">
         <Btn kind="bare" className="music-btn out" ariaLabel="返回" onClick={back}>
           <ChevronLeft size={12} /> 返回
         </Btn>
@@ -592,7 +592,7 @@ function DailyView() {
 
   return (
     <div className="music-body">
-      <div className="music-card-hd">
+      <div className="mc-section-head">
         <Btn kind="bare" className="music-btn out" ariaLabel="返回" onClick={back}>
           <ChevronLeft size={12} /> 返回
         </Btn>

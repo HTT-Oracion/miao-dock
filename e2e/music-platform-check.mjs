@@ -985,6 +985,32 @@ add('QUEUE.emptyToastCopy', 'QUEUE', (s) => {
   if (!src.includes('从首页或搜索里挑一首歌吧')) problems.push('缺 toast 副文「从首页或搜索里挑一首歌吧」');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
+add('UI.sectionHeadClass', 'UI', (s) => {
+  /*
+   * 首页的"节"必须是设计稿那一套类名：容器 `.mc-section` + 节头 `.mc-section-head`。
+   *
+   * 产品的历史类名是 `.music-sec` / `.music-card-hd`（"卡片头"），语义上把"首页的一节"
+   * 说成了"一张卡的头"——同一批样式两套叫法，改设计稿值时必然漏掉一边（本轮就是：
+   * CSS 改成了 `.mc-section`，组件还写着 `.music-sec`，整块 20px 的节间距静默失效）。
+   * 判据：music 屏里不许再出现旧类名（剥注释后判，注释里正讨论着它们）。
+   */
+  const dir = F.musicUiDir;
+  const problems = [];
+  const stale = { 'music-sec': 0, 'music-card-hd': 0 };
+  for (const f of ['Charts.tsx', 'RightPanel.tsx', 'LeftPanel.tsx']) {
+    const src = stripComments(readMaybe(path.join(dir, f)) ?? '');
+    for (const k of Object.keys(stale)) {
+      const hits = (src.match(new RegExp('"' + k + '"', 'g')) ?? []).length;
+      stale[k] += hits;
+    }
+  }
+  for (const [k, n] of Object.entries(stale)) {
+    if (n > 0) problems.push(`${n} 处仍在用旧类名 ${k}`);
+  }
+  const charts = stripComments(readMaybe(path.join(dir, 'Charts.tsx')) ?? '');
+  if (!charts.includes('className="mc-section"')) problems.push('Charts 的节容器不是 .mc-section');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
 add('UI.searchSourcesInResults', 'UI', (s) => {
   /*
    * 搜索源胶囊（设计稿 `.search-sources`）的**位置**：它只在**搜索结果页**里渲染。
@@ -4436,6 +4462,20 @@ const MUTATIONS = [
     find: 'items.slice(start, end)',
     replace: 'items',
     expect: ['UI.virtualList'],
+  },
+  {
+    name: '把首页的一节改回旧类名 music-sec（节间距 20 静默失效）',
+    file: path.join(F.musicUiDir, 'Charts.tsx'),
+    find: 'className="mc-section"',
+    replace: 'className="music-sec"',
+    expect: ['UI.sectionHeadClass'],
+  },
+  {
+    name: '把节头改回 music-card-hd（与 .mc-section-head 两套叫法并存）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    find: 'className="mc-section-head"',
+    replace: 'className="music-card-hd"',
+    expect: ['UI.sectionHeadClass'],
   },
   {
     name: '把搜索中改回光秃秃的「搜索中…」（不说搜的是哪个平台）',

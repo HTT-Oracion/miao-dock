@@ -170,7 +170,7 @@ function LeftTracksView() {
 
   return (
     <div className="music-body">
-      <div className="music-card-hd">
+      <div className="mc-section-head">
         <Btn kind="bare" className="music-btn out" ariaLabel="返回" onClick={back}>
           <ChevronLeft size={12} /> 返回
         </Btn>

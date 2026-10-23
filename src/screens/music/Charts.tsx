@@ -77,8 +77,8 @@ export function Charts() {
   };
 
   return (
-    <div className="music-sec">
-      <div className="music-card-hd">
+    <div className="mc-section">
+      <div className="mc-section-head">
         <span className="music-card-title">官方榜单</span>
         {/* 副标题按设计稿：说清"这些榜单是从哪来的" */}
         <span className="music-card-sub">来自四个平台的每日榜单</span>
