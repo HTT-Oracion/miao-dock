@@ -41,8 +41,6 @@ export function GeneralSection({
 
   return (
     <>
-      <GroupNote summary={GENERAL.noteSummary}>{GENERAL.note as string}</GroupNote>
-
       {/* ── 外观 ── */}
       <div className="set-group">
         <SubTitle head={appearance.head}>{appearance.title as string}</SubTitle>
@@ -83,6 +81,7 @@ export function GeneralSection({
         </div>
         <SpecCheckBlock results={spec.results} revealed={spec.revealed} failed={spec.failed} onRun={spec.run} />
       </div>
+      <GroupNote>{GENERAL.note as string}</GroupNote>
     </>
   );
 }

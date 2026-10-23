@@ -519,6 +519,17 @@ const add = (id, group, run) => A.push({ id, group, run });
 
 const CAT_ERR = (cat) => (cat?.err ? `catalog.ts 导入失败（无法验证数据结构）：${cat.err}` : null);
 
+/** 取「翻译服务」组里指定项的 `why`（行内说明）—— 空闲卸载两行的文案就住在这里 */
+const idleWhys = (ctx) => {
+  const sec = (ctx.cat?.mod?.SETTINGS_SECTIONS ?? []).find((x) => x.id === 'translate');
+  const items = (sec?.groups ?? []).flatMap((g) => g.items ?? []);
+  const out = {};
+  for (const id of ['idle-llm', 'idle-vision']) {
+    out[id] = items.find((i) => i.id === id)?.why ?? '';
+  }
+  return out;
+};
+
 // ============================ ① EXCLUDED ============================
 for (const ex of EXCLUDED) {
   add(`EXCLUDED.${ex.id}`, 'EXCLUDED', (ctx) => {
@@ -1313,8 +1324,16 @@ add('ENGINE.wiring.idleNeverUnload', 'ENGINE', (ctx) => {
    */
   const code = stripComments(tsBody(ctx) ?? '');
   const problems = [];
-  if (!/className="set-idle-sub">0 = 从不卸载</.test(code)) {
-    problems.push('「0 = 从不卸载」不是卡片级共用说明（缺 .set-idle-sub 上那一句）');
+  /*
+   * 判据跟着**设计稿的形态**走：两个阈值是推理引擎卡里的两条普通行，
+   * 「0 = 从不」写在各自 catalog 的 `why` 里（与设计稿 `row()` 的 desc 逐字一致）。
+   * 两处都要断：① 两条行真的渲染了；② 两条 `why` 都带这一句。
+   */
+  const rows = (code.match(/<Row item=\{itemOf\(inference, 'idle-(llm|vision)'\)\}>/g) ?? []).length;
+  if (rows !== 2) problems.push(`空闲卸载应为两条普通行（设计稿 idle-llm / idle-vision），实际 ${rows} 条`);
+  const why = idleWhys(ctx);
+  for (const id of ['idle-llm', 'idle-vision']) {
+    if (!/0 = 从不/.test(why[id] ?? '')) problems.push(`${id} 的行内说明没写「0 = 从不」`);
   }
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
@@ -1325,8 +1344,14 @@ add('ENGINE.wiring.visionNeedsRestart', 'ENGINE', (ctx) => {
    * 不剥的话删掉真实文案、留下注释，断言照样绿 —— 判据就被注释撑着了。
    */
   const body = stripComments(tsBody(ctx) ?? '');
-  const ok = body.includes('必须重启引擎');
-  return { ok, detail: ok ? '' : '视觉档没写明「必须重启引擎才生效」（与 LLM 档待遇不同，必须说出来）' };
+  const problems = [];
+  // 界面侧：视觉档那一行带 warning chip（设计稿 `<span class="chip chip-warning">需重启</span>`）
+  if (!/chip chip-warning">需重启</.test(body)) problems.push('视觉档那一行没有「需重启」warning chip');
+  // 文案侧：catalog 的行内说明点明"必须重启引擎"
+  if (!/必须重启引擎/.test(idleWhys(ctx)['idle-vision'] ?? '')) {
+    problems.push('视觉档的行内说明没写明「必须重启引擎」（与 LLM 档待遇不同，必须说出来）');
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
 });
 add('ENGINE.wiring.restartHint', 'ENGINE', (ctx) => {
   const body = tsBody(ctx) ?? '';
@@ -2355,97 +2380,69 @@ add('NOTREADY.phase.readyTerminal', 'NOTREADY', (ctx) => {
 // 「十三项接真实能力」，这九条守的是「同一批能力换了一种更短的说法」。
 // 混在一起，回归时就分不清是"能力掉了"还是"话又变长了"。
 
-/** 比对摘要与原文前，两侧都去掉空白与 `**` —— 星号是强调标记，不是内容 */
-const normNote = (t) =>
-  String(t ?? '')
-    .replace(/\s+/g, '')
-    .replace(/\*\*/g, '');
-
-add('SIMPLIFY.notesummary.verbatim', 'SIMPLIFY', (ctx) => {
+add('SIMPLIFY.note.verbatim', 'SIMPLIFY', (ctx) => {
   /*
-   * 「摘要不得成为新的承诺」的可执行形式。
+   * 组说明**全文直出**（设计稿 `.s-note`：一枚虚线小盒，没有折叠也没有摘要）。
    *
-   * `noteSummary` 是折叠态**唯一**可见的那一行（要再点一次「为什么 ?」才看到全文）。
-   * 抽句抽错一个词，用户看到的就是一句原文里根本没有的话 —— 而它是这组的门面。
-   * 判据：按 ` · ` 切段，去掉空白与 `**` 后，**每段都必须能在 `note` 原文里逐字找到**。
-   * 于是三类改错同时变红：① 摘要里出现 note 没写过的说法；② note 改了、摘要没跟；
-   * ③ 摘要写成空串 / 一段都切不出来（空转）。
+   * 产品曾有一层「一行摘要 + 『为什么 ?』抽屉」，摘要与原文并存 ⇒ 同一件事有两份说法，
+   * 迟早对不上。这一轮按设计稿删掉那层结构，于是判据变成：
+   *   ① catalog 里**不再有** `noteSummary` 字段（数据侧不留死字段，也不许换个名字回潮）；
+   *   ② 每条 `note` 非空的组，渲染层必须把**原文本身**作为 children 传进去
+   *      （`{X.note as string}`），而不是某个被加工过的短句。
+   * 分母写死 5 组 + 下限防空转（全页不能一个组说明都没有 —— 那是产品决策，不该被顺手带走）。
    */
   const dataErr = CAT_ERR(ctx.cat);
   if (dataErr) return { ok: false, detail: dataErr };
   const secs = ctx.cat.mod.SETTINGS_SECTIONS ?? [];
   const problems = [];
-  let pairs = 0;
-  for (const sec of secs) {
-    const note = typeof sec?.note === 'string' ? sec.note : '';
-    const sum = typeof sec?.noteSummary === 'string' ? sec.noteSummary : '';
-    if (!note) {
-      // 组说明可以省略（省略即该组不渲染 GroupNote）；但留了摘要却没留说明，是数据残缺
-      if (sum.trim()) problems.push(`${sec.id} 有摘要却没有组说明（摘要无源）`);
-      continue;
-    }
-    if (!sum.trim()) {
-      problems.push(`${sec.id} 没有一行摘要（noteSummary）—— 组说明会照旧铺满 6 行`);
-      continue;
-    }
-    pairs++;
-    const segs = sum
-      .split('·')
-      .map((x) => x.trim())
-      .filter(Boolean);
-    if (!segs.length) {
-      problems.push(`${sec.id} 的 noteSummary 切不出一段（空转）`);
-      continue;
-    }
-    for (const seg of segs) {
-      if (!normNote(note).includes(normNote(seg))) {
-        problems.push(`${sec.id} 摘要里的「${seg}」在 note 原文里找不到（摘要成了新的承诺）`);
-      }
-    }
-  }
-  /*
-   * 政策（D-134）：组说明**可与不可** —— 不写就不渲染 GroupNote（小节的说明可省略）。
-   * 但凡**有**组说明的分组，必须同时配一行摘要（`withNote === pairs`），
-   * 且摘要每一段都逐字取自说明（上面的循环负责）。
-   * 分母仍写死：5 个分组不许变；另留一条下限防空转 —— 全页不能一个组说明都没有
-   * （那是把「组级说明」这一形态整体删掉，属产品决策，不该被一次文案精简顺手带走）。
-   */
-  const withNote = secs.filter((s) => typeof s?.note === 'string' && !!s.note.trim()).length;
   if (secs.length !== 5) problems.push(`分组数 ${secs.length}，应为 5`);
-  if (withNote === 0) problems.push('所有分组都没有组说明 —— 组级说明这一形态被整体移除了');
-  if (withNote !== pairs) problems.push(`有 ${withNote} 组带组说明，但只有 ${pairs} 组配了一行摘要`);
+  const withNote = secs.filter((x) => typeof x?.note === 'string' && !!x.note.trim());
+  if (withNote.length === 0) problems.push('所有分组都没有组说明 —— 组级说明这一形态被整体移除了');
+  // ① 数据侧不许再有摘要字段
+  for (const sec of secs) {
+    if ('noteSummary' in sec) problems.push(`${sec.id} 仍带 noteSummary 字段（摘要层没删干净）`);
+  }
+  // ② 渲染层传的是原文
+  const calls = ctx.s.sections.match(/<GroupNote[^>]*>\{[^}]*\}<\/GroupNote>/g) ?? [];
+  if (calls.length !== secs.length) {
+    problems.push(`sections.tsx 里带原文的 <GroupNote> 有 ${calls.length} 个，应为 ${secs.length}`);
+  }
+  const wrong = calls.filter((c) => !/\{[A-Z_]+\.note as string\}/.test(c));
+  if (wrong.length) problems.push(`${wrong.length} 个 <GroupNote> 传的不是组说明原文（摘要层回潮）`);
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
-
-add('SIMPLIFY.notesummary.wired', 'SIMPLIFY', (ctx) => {
+add('SIMPLIFY.note.box', 'SIMPLIFY', (ctx) => {
   /*
-   * 数据侧有 `noteSummary` ≠ 界面上会折叠。要防的假绿有两层：
-   *   ① 只有数据、`GroupNote` 收不到 `summary` ⇒ 照旧铺全文（= 这一轮白做）；
-   *   ② 传是传了，但组件把 `summary` 无视、永远渲染全文 ⇒ 同上，且**更难发现**。
-   * 所以两头都断：每组都必须把摘要传进去；组件必须有"没给摘要就不折叠"的退路。
+   * 数据对了 ≠ 界面对了。这一条守**盒子本身**是设计稿那一个：
+   *   · 结构：`.set-note-inline`（flex + 13px 图标 + 一段文字），没有折叠按钮、没有摘要元素；
+   *   · 位置：在**组尾**（设计稿把 `.s-note` 放在所有卡片之后，而不是组首）。
+   * 三处各挡一类假绿：删了盒子（①）、盒子在但结构回退成"摘要+按钮"（②）、
+   * 盒子对但被挪回组首（③）。
    */
-  const dataErr = CAT_ERR(ctx.cat);
-  if (dataErr) return { ok: false, detail: dataErr };
-  // 分母 = **分组总数**（D-136 起五组都各写一行 <GroupNote>，显隐改由组件自守 ——
-  // 与"某组有没有 note"解耦；缺 note 的组由 GroupNote 自己 return null）
-  const n = (ctx.cat.mod.SETTINGS_SECTIONS ?? []).length;
   const problems = [];
-  // 逐个 `<GroupNote …>` 标签看它有没有带 summary（不锁常量名，重构改名不会误红）
-  const calls = ctx.s.sections.match(/<GroupNote[^>]*>/g) ?? [];
-  if (calls.length !== n) problems.push(`sections.tsx 里有 ${calls.length} 个 <GroupNote>，应为 ${n}（每组一行）`);
-  const noSum = calls.filter((c) => !/summary=\{[\w$]+\.noteSummary\}/.test(c));
-  if (noSum.length) {
-    problems.push(`${noSum.length} 个 <GroupNote> 没接摘要（数据是死的，界面照旧铺全文）`);
-  }
   const gb = fnBody(ctx.s.parts, 'GroupNote');
   if (!gb) problems.push('parts.tsx 里找不到 GroupNote 的实现体');
   else {
-    if (!/if\s*\(!summary\)/.test(gb)) problems.push('GroupNote 没有"没给摘要就不折叠"的退路');
-    if (!gb.includes('set-note-more')) problems.push('GroupNote 没有渲染「为什么 ?」按钮');
+    if (!/className="set-note-inline set-note-topic"/.test(gb)) {
+      problems.push('GroupNote 渲染的不是设计稿那个 .s-note 盒（缺 .set-note-inline / .set-note-topic）');
+    }
+    if (!/<Info\b/.test(gb)) problems.push('组说明盒缺 13px 的信息图标（设计稿 .s-note .ico）');
+    for (const dead of ['set-note-sum', 'set-note-more', 'summary=']) {
+      if (gb.includes(dead)) problems.push(`GroupNote 里仍有已删除的折叠残件：${dead}`);
+    }
   }
+  // 位置：五组的 <GroupNote> 都必须排在**最后一个 .set-group 之后**
+  const secs = ctx.s.sections.split(/^export function /m).filter((x) => x.includes('<GroupNote'));
+  let misordered = 0;
+  for (const body of secs) {
+    const iNote = body.indexOf('<GroupNote');
+    const iLastGroup = body.lastIndexOf('<SubTitle');
+    if (iLastGroup < 0) continue;
+    if (iNote < iLastGroup) misordered += 1;
+  }
+  if (misordered) problems.push(`${misordered} 个分组的组说明排在卡片之前（设计稿在组尾）`);
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
-
 add('SIMPLIFY.optional.selfGuard', 'SIMPLIFY', (ctx) => {
   /*
    * 政策：**缺字段 ⇒ 不渲染对应那一行**。`note`（组说明）与 `blurb`（页标题下的描述）
@@ -2509,32 +2506,27 @@ add('SIMPLIFY.why.oneLine', 'SIMPLIFY', (ctx) => {
 
 add('SIMPLIFY.idle.card', 'SIMPLIFY', (ctx) => {
   /*
-   * 两个空闲卸载阈值**合成一张卡**（R3）—— 但这是**渲染分组**，不是**合并数据项**。
+   * 两个空闲卸载阈值 = **推理引擎卡里的两条普通行**（设计稿 `idle-llm` / `idle-vision`）。
    *
-   * 这两件事看起来一样、后果完全不同：把两项并成一项，全表项数会少 1，
-   * 左栏计数与 `SPEC_ITEM_TOTAL` 一起漂 —— 而卡片照样渲染得很好看。
-   * 所以两头都断：catalog 里两项**必须都还在**，界面上必须是**一行一个**的两行卡。
-   *
-   * 另一件不能丢的事：两档待遇不同（LLM 即时 / 视觉需重启）—— 原来是两段散文各讲一遍，
-   * 现在是右端两枚 chip + 一句共用注解。讲法变了，"必须说出来"这条不变，
-   * 因为它是用户理解"为什么只有一档提示要重启"的唯一依据。
+   * 产品曾把它们合成一张自造的「空闲卸载」卡（R3）。合卡的代价不是少写两行散文，
+   * 而是**结构**变了：设计稿里这两项是同一张卡的第 5、6 条 `.s-row`，行序、行数、
+   * 右列与相邻行的关系都是"一组并列的行"；合成卡片后它们独立成一格，整组读起来
+   * 就不是设计稿那一份东西了。所以这里断三件：
+   *   ① catalog 两项都在（合卡曾经也不许合并数据项）；
+   *   ② 界面是两条 `<Row>`（不是自造容器、也不是一条）；
+   *   ③ 视觉档的「需重启」说得出来（warning chip）—— 它是两档唯一的差别。
    */
   const { err, items } = translateItems(ctx);
   if (err) return { ok: false, detail: err };
   const problems = [];
   for (const id of ['idle-llm', 'idle-vision']) {
-    if (!items.some((i) => i.id === id)) {
-      problems.push(`catalog 里缺项 ${id}（合卡不该把两个数据项并成一个）`);
-    }
+    if (!items.some((i) => i.id === id)) problems.push(`catalog 里缺项 ${id}`);
   }
   const body = stripComments(tsBody(ctx) ?? '');
-  const lines = (body.match(/className="set-idle-line"/g) ?? []).length;
-  if (lines !== 2) problems.push(`合卡里的行数 ${lines}，应为 2（两个阈值各一行）`);
-  if (!body.includes('set-idle-tag is-now')) problems.push('缺 LLM 档「保存后立刻生效」的标记');
-  if (!body.includes('set-idle-tag is-restart')) problems.push('缺视觉档「需重启引擎」的标记');
-  if (!body.includes('必须重启引擎')) {
-    problems.push('没有说明两档待遇不同（用户无法理解为何只有一档要重启）');
-  }
+  const rows = (body.match(/<Row item=\{itemOf\(inference, 'idle-(llm|vision)'\)\}>/g) ?? []).length;
+  if (rows !== 2) problems.push(`空闲卸载的行数 ${rows}，应为 2（两条普通 Row）`);
+  if (/className="set-idle-line"/.test(body)) problems.push('仍在用自造的 .set-idle-line（设计稿是普通行）');
+  if (!/chip chip-warning">需重启</.test(body)) problems.push('视觉档缺「需重启」warning chip');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -2744,7 +2736,12 @@ add('SIMPLIFY.select.pulledRight', 'SIMPLIFY', (ctx) => {
     }
   }
   if (nth !== 3) problems.push(`② 两栏行里的下拉有 ${nth} 枚，应为 3（翻译来源 / 翻译档位 / 加速后端）`);
-  if (ctl !== 3) problems.push(`② 两栏行里的控件旁注解有 ${ctl} 枚，应为 3`);
+  /*
+   * 设计稿这两枚附注在 `idle-llm` / `idle-vision` 两行上（`分钟 · 0–1440`，上界必须写出来），
+   * 加上档位 / 后端旁的 3 枚，全组共 5 枚。分母写死：少一枚说明某行的上界没写，
+   * 多一枚说明有人又往行里塞了第二句注解。
+   */
+  if (ctl !== 5) problems.push(`② 两栏行里的控件旁注解有 ${ctl} 枚，应为 5（档位/后端 3 + 两条空闲卸载各 1）`);
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -3604,18 +3601,16 @@ const MUTATIONS = [
   {
     name: '把视觉档的空闲卸载也写成即时生效（两档待遇被混同）',
     file: F.secTranslate,
-    find: '必须重启引擎',
-    replace: '保存后即生效',
-    // `all: true` 是必须的：这五个字在源码里出现两次（合卡注解的代码 + 它上面那句注释），
-    // 只改第一处（注释）会留下代码里的那一处 ⇒ 断言照旧绿 ⇒ 假反证。
-    all: true,
-    expect: ['ENGINE.wiring.visionNeedsRestart'],
+    // 锚点 = 那枚 warning chip 的**可见文字**：改成"保存后即生效"就把两档待遇混同了
+    find: '<span className="chip chip-warning">需重启</span>',
+    replace: '<span className="chip chip-warning">保存后即生效</span>',
+    expect: ['ENGINE.wiring.visionNeedsRestart', 'SIMPLIFY.idle.card'],
   },
   {
     name: '删掉卡片级「0 = 从不卸载」的说明（0 会被当成 bug 而不是设计）',
-    file: F.secTranslate,
-    find: '从不卸载',
-    replace: '空闲即释放',
+    file: F.catalog,
+    find: '（0 = 从不）',
+    replace: '（空闲即释放）',
     all: true,
     expect: ['ENGINE.wiring.idleNeverUnload'],
   },
@@ -3927,30 +3922,30 @@ const MUTATIONS = [
 
   // ——— ② 分组简洁化（2026-10-07）—— 每条新增断言都必须有一条能把它打红的破坏 ———
   {
-    name: '让 ② 的摘要说出 note 里没有的话（摘要成了新的承诺）',
+    name: '把已经删掉的「一行摘要」字段加回来（摘要层回潮：同一件事又有了两份说法）',
     file: F.catalog,
     /*
-     * ⚠️ 锚点带着目标组的**摘要原文** ⇒ 摘要每改一次就要同步一次（本项目已两次踩坑：
-     * D-84 与 D-134）。锚点不同步会退化成「锚点未找到 ⇒ 跳过」—— 跳过 ≠ 通过
-     * （分母写死，跳过会被 `✗ 有 N 条未能反证` 抓住，不会静默变绿，但仍要随手同步）。
+     * 这一条守的是**减法**：组说明改成全文直出后，`noteSummary` 这个字段必须彻底消失。
+     * 只删渲染、把字段留在数据里，下一个人会以为"数据还在，界面漏了"，然后把它接回去。
+     * 锚点取 `note` 字段本身（每组的说明原文），不依赖任何一句文案。
      */
-    find: "'本组 13 项 · 改档位/后端/模型目录要重启引擎才生效",
-    replace: "'本组 13 项 · 改档位/后端/模型目录要重启引擎才生效 · 摘要新增的一条",
-    expect: ['SIMPLIFY.notesummary.verbatim'],
+    find: "  id: 'translate',",
+    replace: "  noteSummary: '回潮的摘要',\n  id: 'translate',",
+    expect: ['SIMPLIFY.note.verbatim'],
   },
   {
-    name: '把「翻译服务」的一行摘要删掉（该组有组说明却没摘要）',
-    file: F.catalog,
-    find: "noteSummary: '本组 13 项 · 改档位/后端/模型目录要重启引擎才生效 · 两个空闲卸载阈值生效时机不同',",
+    name: '去掉组说明盒里的信息图标（设计稿 .s-note 的 13px .ico）',
+    file: F.parts,
+    find: '<Info size={13} />',
     replace: '',
-    expect: ['SIMPLIFY.notesummary.verbatim'],
+    expect: ['SIMPLIFY.note.box'],
   },
   {
-    name: '把「通用」的 <GroupNote> 摘掉 summary（数据有了、界面不折叠）',
-    file: F.secGeneral,
-    find: '<GroupNote summary={GENERAL.noteSummary}>{GENERAL.note as string}</GroupNote>',
-    replace: '<GroupNote>{GENERAL.note as string}</GroupNote>',
-    expect: ['SIMPLIFY.notesummary.wired'],
+    name: '把 GroupNote 的盒子换回旧的折叠结构（设计稿那个 .s-note 盒被换掉）',
+    file: F.parts,
+    find: '<div className="set-note-inline set-note-topic">',
+    replace: '<div className="set-note">',
+    expect: ['SIMPLIFY.note.box'],
   },
   {
     name: '去掉 GroupNote 的"缺组说明就不渲染"自守（缺 note 时又会在 emphasis 处崩）',
@@ -4131,8 +4126,8 @@ const MUTATIONS = [
   {
     name: '把模型那一行的「未统计」改成 0 B（把"没有接口"谎报成"精确测得是 0"）',
     file: F.storageBlock,
-    find: '          <span className="set-storage-v is-unknown">未统计</span>',
-    replace: '          <span className="set-storage-v">0 B</span>',
+    find: '<small className="is-unknown">未统计',
+    replace: '<small>0 B',
     expect: ['FEATURES.storage.rows'],
   },
   {

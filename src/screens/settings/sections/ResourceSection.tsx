@@ -36,9 +36,6 @@ export function ResourceSection({ lib }: { lib: LibraryResponse | null }) {
 
   return (
     <>
-      {/* 组说明缺省即不渲染（GroupNote 自守）：catalog 未给 RESOURCE.note 时这一行自动消失 */}
-      <GroupNote summary={RESOURCE.noteSummary}>{RESOURCE.note as string}</GroupNote>
-
       {/* 卡一：存储占用（三行分列） */}
       <div className="set-group">{render(storage)}</div>
 
@@ -53,6 +50,8 @@ export function ResourceSection({ lib }: { lib: LibraryResponse | null }) {
         <Info size={13} />
         <span>投放规则（每批 20 张、其余自动排队）不在设置里 —— 那是规则，不是参数。</span>
       </div>
+      {/* 组说明缺省即不渲染（GroupNote 自守）：catalog 未给 RESOURCE.note 时这一行自动消失 */}
+      <GroupNote>{RESOURCE.note as string}</GroupNote>
     </>
   );
 }

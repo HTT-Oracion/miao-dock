@@ -321,8 +321,6 @@ export function TranslateSection({
 
   return (
     <>
-      <GroupNote summary={TRANSLATE.noteSummary}>{TRANSLATE.note as string}</GroupNote>
-
       {/* 小节一：翻译来源（1）—— ver2.2 在线翻译并入 ② 的第一个小节（P-D2） */}
       <div className="set-group">
         <SubTitle head="二选一 · 下一次翻译生效">翻译链路</SubTitle>
@@ -662,77 +660,55 @@ export function TranslateSection({
         ) : null}
 
         {/*
-         * R3：两个空闲卸载阈值**合成一张卡**。
+         * 两个空闲卸载阈值 = **两条普通行**（设计稿 `idle-llm` / `idle-vision`）。
          *
-         * 原来是两行 + 两段 `RowNote`，把"待遇不同"这件事讲了两遍；而两项唯一的区别
-         * 就是**何时生效**。合成一卡后，那个区别变成右端两枚对齐的 chip —— 一眼能横着比，
-         * 不必读完两段散文再自己比出来。
-         *
-         * ⚠️ 两项在 catalog 里**各自还在**（`idle-llm` / `idle-vision`）：这是**渲染分组**，
-         * 不是合并数据项，项数合计因此不变（动它 C10 会红）。
-         * ⚠️ 卡内标题**不用** `<SubTitle>`：② 的「恰 4 个小节」是 C11 逐字盯着的判据，
-         * 这里再加一个 `.set-subtitle` 会让那条断言从 4 变 5、彻底失效。
+         * 此前把两项合成一张「空闲卸载」卡（R3），理由是"两段散文在讲同一件事"。
+         * 但那一步改的是**结构**：设计稿这里是推理引擎卡里的第五、第六条行，
+         * 合成卡片后行序、行数、右列控件的关系全变了 —— 于是这一组读起来与设计稿
+         * 不是同一份东西。现在拆回两行，共用的那句话交回 catalog 的行内说明（`why`）。
          */}
-        <div className="set-idle">
-          <div className="set-idle-head">
-            <span className="set-idle-name">空闲卸载</span>
-            {/*
-              两档**共用**这一句「0 = 从不卸载」—— 它是卡片级的说明（排在两个阈值之前），
-              而不是某一行的附注。分开在两行各写一遍，正是 R3 要收掉的那份重复。
-            */}
-            <span className="set-idle-sub">0 = 从不卸载</span>
-          </div>
+        <Row item={itemOf(inference, 'idle-llm')}>
+          {o ? (
+            <NumberInput
+              label={itemOf(inference, 'idle-llm').label}
+              value={o.idle.llm.min}
+              min={0}
+              max={IDLE_MIN_MAX}
+              disabled={busy}
+              onChange={(v) => void eng.save({ idleLlmMin: v })}
+            />
+          ) : (
+            <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
+          )}
+          {/* 设计稿这一行带 `分钟 · 0–1440` 的附注 —— 上界必须写出来，
+              输入框本身只在越界时静默退回上一合法值，用户看不见 1440 这个天花板 */}
+          <CtlNote>分钟 · 0–1440</CtlNote>
+        </Row>
 
-          <div className="set-idle-line">
-            <span className="set-idle-k">LLM</span>
-            {o ? (
-              <NumberInput
-                label={itemOf(inference, 'idle-llm').label}
-                value={o.idle.llm.min}
-                min={0}
-                max={IDLE_MIN_MAX}
-                disabled={busy}
-                onChange={(v) => void eng.save({ idleLlmMin: v })}
-              />
-            ) : (
-              <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
-            )}
-            {/* 设计稿这两行都带 `分钟 · 0–1440` 的附注 —— 上界必须写出来，
-                输入框本身只在越界时静默退回上一合法值，用户看不见 1440 这个天花板 */}
-            <span className="set-ctl-note">分钟 · 0–1440</span>
-            <span className="set-idle-tag is-now">保存后立刻生效</span>
-          </div>
+        <Row item={itemOf(inference, 'idle-vision')}>
+          {o ? (
+            <NumberInput
+              label={itemOf(inference, 'idle-vision').label}
+              value={o.idle.vision.min}
+              min={0}
+              max={IDLE_MIN_MAX}
+              disabled={busy}
+              onChange={(v) => void eng.save({ idleVisionMin: v })}
+            />
+          ) : (
+            <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
+          )}
+          <CtlNote>分钟 · 0–1440</CtlNote>
+          {/* 「需重启」是这一行与上一行唯一的差别，设计稿用 warning chip 说出来 */}
+          <span className="chip chip-warning">需重启</span>
+        </Row>
 
-          <div className="set-idle-line">
-            <span className="set-idle-k">视觉</span>
-            {o ? (
-              <NumberInput
-                label={itemOf(inference, 'idle-vision').label}
-                value={o.idle.vision.min}
-                min={0}
-                max={IDLE_MIN_MAX}
-                disabled={busy}
-                onChange={(v) => void eng.save({ idleVisionMin: v })}
-              />
-            ) : (
-              <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
-            )}
-            <span className="set-ctl-note">分钟 · 0–1440</span>
-            <span className="set-idle-tag is-restart">需重启引擎</span>
-          </div>
-
-          {/*
-            两档待遇差异的**共用注解**（原来两段散文各讲一遍）。「必须重启引擎」五个字
-            必须留着 —— 它是这两档唯一的区别在界面上的落点。
-          */}
-          <div className="set-idle-foot">
-            LLM 档保存后<b>即时</b>生效；视觉档的参数在拉开引擎进程时就固化，
-            <b>必须重启引擎</b>才生效。这是刻意的差别，不是遗漏。
-            {o && !o.idle.llm.minIsExact
-              ? `（当前 LLM 阈值 ${o.idle.llm.ms} 毫秒 —— 不是整分钟，界面显示的是四舍五入后的分钟数，由环境变量覆盖所致）`
-              : ''}
-          </div>
-        </div>
+        {/* 阈值不是整分钟时的诚实说明（环境变量覆盖所致）—— 只在需要时出现 */}
+        {o && !o.idle.llm.minIsExact ? (
+          <RowNote>
+            {`当前 LLM 阈值 ${o.idle.llm.ms} 毫秒 —— 不是整分钟，界面显示的是四舍五入后的分钟数，由环境变量覆盖所致。`}
+          </RowNote>
+        ) : null}
 
         <RestartHint title="推理引擎" keys={['翻译档位', '加速后端', '空闲卸载视觉']} pending={pending} />
       </div>
@@ -809,6 +785,8 @@ function RestartHint({ title, keys, pending }: { title: string; keys: string[]; 
         <>
           <br />
           已保存、尚未生效：<b>{hit.join('、')}</b>。现在重启即生效。
+          {/* 组说明（设计稿 .s-note）：在所有卡片之后收尾，不在组首 */}
+          <GroupNote>{TRANSLATE.note as string}</GroupNote>
         </>
       ) : null}
     </div>

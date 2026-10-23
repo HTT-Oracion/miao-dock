@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { FolderOpen } from 'lucide-react';
+import { Cpu, Disc3, FolderOpen, Image as ImageIcon } from 'lucide-react';
 import { musicCacheStats } from '@music/ipc';
 import type { LibraryResponse } from '@/types';
 import { errorText, openPath } from '@/ipc';
@@ -87,38 +87,55 @@ export function StorageBlock({ item, lib }: { item: SettingItem; lib: LibraryRes
         <div className="set-storage-rule">三项独立统计，不合计；有目录的项都可以直接打开</div>
       </div>
 
+      {/*
+        行结构照设计稿 `.storage-row`：**图标 + 两行文字 + 右侧动作**。
+        数值与来源并进第二行（`<small>`），而不是拆成"名称 / 数值 / 来源"三列 ——
+        三列排版把 32px 图标那一格挤掉，读起来像一张表格，而设计稿要的是三条并列的清单项。
+      */}
       <div className="set-storage-rows">
         <div className="set-storage-row">
-          <span className="set-storage-k">译文库</span>
-          <span className="set-storage-v">
-            {lib === null ? '读取中…' : lib.totalBytes > 0 ? formatBytes(lib.totalBytes) : '无'}
+          <span className="set-storage-ico">
+            <ImageIcon size={16} />
           </span>
-          <span className="set-storage-src">
-            {lib === null ? '漫画库盘点 · 未读到' : `漫画库盘点 · ${lib.count} 部 / ${lib.totalImages} 张`}
-          </span>
+          <div className="set-storage-tx">
+            <strong>译文库</strong>
+            <small>
+              {lib === null
+                ? '读取中…'
+                : `${lib.totalBytes > 0 ? formatBytes(lib.totalBytes) : '无'} · ${lib.count} 部 / ${lib.totalImages} 张`}
+            </small>
+          </div>
           {/* 译文库有真实根目录 ⇒ 这一行给得出「打开目录」（设计稿同款动作） */}
-          {lib?.root ? (
-            <Btn
-              kind="ghost"
-              size="sm"
-              onClick={() => openPath(lib.root).catch((e: unknown) => toast(errorText(e), 'bad'))}
-            >
-              <FolderOpen size={13} /> 打开目录
-            </Btn>
-          ) : null}
+          <span className="set-storage-acts">
+            {lib?.root ? (
+              <Btn
+                kind="ghost"
+                size="sm"
+                onClick={() => openPath(lib.root).catch((e: unknown) => toast(errorText(e), 'bad'))}
+              >
+                <FolderOpen size={13} /> 打开目录
+              </Btn>
+            ) : null}
+          </span>
         </div>
 
         <div className="set-storage-row">
-          <span className="set-storage-k">音乐缓存</span>
-          <span className="set-storage-v">{cacheText}</span>
-          <span className="set-storage-src">音乐缓存目录 · 仅在线歌曲</span>
+          <span className="set-storage-ico">
+            <Disc3 size={16} />
+          </span>
+          <div className="set-storage-tx">
+            <strong>音乐缓存</strong>
+            <small>{cacheText} · 音乐缓存目录 · 仅在线歌曲</small>
+          </div>
           {/*
             「管理」跳到 ③ 播放·媒体 里的「音乐缓存」卡：清缓存与打开目录**只有那一个 owner**。
             在这里再放一套按钮，就会出现两个入口各清一次、各报一个数。
           */}
-          <Btn kind="ghost" size="sm" onClick={() => gotoSection('media')}>
-            管理
-          </Btn>
+          <span className="set-storage-acts">
+            <Btn kind="ghost" size="sm" onClick={() => gotoSection('media')}>
+              管理
+            </Btn>
+          </span>
         </div>
 
         {/*
@@ -127,13 +144,19 @@ export function StorageBlock({ item, lib }: { item: SettingItem; lib: LibraryRes
           后者什么都不说明。写「未统计」+ 缺哪条接口，才让下一个人知道该做什么。
         */}
         <div className="set-storage-row">
-          <span className="set-storage-k">翻译模型</span>
-          <span className="set-storage-v is-unknown">未统计</span>
-          <span className="set-storage-src">缺少接口 · 模型目录占用需 Rust 侧盘点</span>
+          <span className="set-storage-ico">
+            <Cpu size={16} />
+          </span>
+          <div className="set-storage-tx">
+            <strong>翻译模型</strong>
+            <small className="is-unknown">未统计 · 缺少接口，模型目录占用需 Rust 侧盘点</small>
+          </div>
           {/* 与缓存同理：模型目录的「打开 / 管理」归 ② 的「模型管理」卡 */}
-          <Btn kind="ghost" size="sm" onClick={() => gotoSection('translate')}>
-            管理
-          </Btn>
+          <span className="set-storage-acts">
+            <Btn kind="ghost" size="sm" onClick={() => gotoSection('translate')}>
+              管理
+            </Btn>
+          </span>
         </div>
       </div>
     </div>

@@ -34,13 +34,14 @@
   min-height: 0;
 }
 
-/* 分组项：设计稿 `.snav` —— padding 9、圆角 9、11.5px/700、gap 8（均由组件内联注入） */
+/* 分组项：设计稿 `.snav` 的生效值 —— 圆角 12（`theme.css` 把基础的 9 改成 12）、
+ * 11.5px/700、gap 8；内距由组件按 `SETTINGS.navItemPadding` 内联注入（9/10）。 */
 .set-nav-item {
   position: relative;
   display: flex;
   align-items: center;
   width: 100%;
-  border-radius: 9px;
+  border-radius: 12px;
   background: transparent;
   font-size: 11.5px;
   font-weight: 700;
@@ -54,28 +55,18 @@
   background: var(--miao-surface-2);
   color: var(--miao-ink);
 }
-/* 选中态：抬起成一片白 + 内描边（设计稿用双层阴影，不是染色） */
-.set-nav-item.is-active {
-  background: var(--miao-surface);
-  color: var(--miao-ink);
-  box-shadow:
-    0 1px 3px rgba(45, 59, 70, 0.06),
-    inset 0 0 0 1px var(--miao-line);
-}
 /*
- * 选中项左缘的主色竖条（设计稿 `.snav.is-active::before`）：
- * 贴着导航栏内边距的外沿（`left: -10px` 抵消 `.settings-nav` 的左右 padding），
- * 上下各内收 12 —— 竖条比项本身矮，读起来才是"标记"而不是"边框"。
+ * 选中态**不是**白底抬卡，而是 sage 染色的一片：`theme.css` 的
+ * `.snav.is-active { background: var(--sage-soft); color: var(--sage-deep);
+ * box-shadow: inset 0 0 0 1px var(--sage-line) }` 覆盖了基础分片里的白底 + 投影。
+ * 于是选中项读起来是"这一格被点亮"，而不是"这一格浮起来"。
+ * 🔴 同一分片里还有一条 `.snav.is-active::before { display: none }` —— 设计稿把左缘竖条
+ *    整个关掉了，所以这里也不画竖条（早前那条 accent 竖条是照基础分片抄的，已随之为空）。
  */
-.set-nav-item.is-active::before {
-  content: '';
-  position: absolute;
-  left: -10px;
-  top: 12px;
-  bottom: 12px;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--miao-primary);
+.set-nav-item.is-active {
+  background: var(--miao-sage-soft);
+  color: var(--miao-sage-ink);
+  box-shadow: inset 0 0 0 1px var(--miao-sage-line);
 }
 .set-nav-icon {
   display: grid;
@@ -92,17 +83,41 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* 项数：设计稿是**纯文字**（8.5px / faint / 右对齐），不是胶囊 —— 胶囊会抢走名称的视线 */
+/*
+ * 项数胶囊：设计稿 `.snav-count` 的**生效值**（`theme-music.css` 把它从小字改成胶囊：
+ * 最小 24×20、`0 7px` 内距、999 圆角、surface-2 底 + line 描边、display 字族 9.5/700、居中）。
+ * 基础分片里那版是 8.5px/faint 的纯文字，已被后加载分片整条覆盖 —— 所以这里写胶囊。
+ */
 .set-nav-count {
   margin-left: auto;
   flex: 0 0 auto;
-  font-family: var(--md-font-numeric);
-  font-size: 8.5px;
-  font-weight: 400;
-  color: var(--miao-faint);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--miao-line);
+  border-radius: 999px;
+  background: var(--miao-surface-2);
+  color: var(--miao-text);
+  font-family: var(--md-font-display);
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background var(--miao-dur-fast) ease,
+    border-color var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease;
 }
+/* 选中项：胶囊转成 sage 实心（白字 + 一层 sage-deep 的低扩散投影），
+ * 与选中项那一片 sage-soft 同族 —— 同一个"点亮"语汇，只是更饱和 */
 .set-nav-item.is-active .set-nav-count {
-  color: var(--miao-muted);
+  background: var(--miao-sage);
+  border-color: var(--miao-sage);
+  color: #fff;
+  box-shadow: 0 5px 12px -7px var(--miao-sage-ink);
 }
 
 /*
@@ -143,15 +158,15 @@
   width: 260px;
 }
 
-/* 搜索框本体：设计稿 `.search-field`（34 高 / 圆角 10 / surface-2 底 / 聚焦换主色环） */
+/* 搜索框本体：设计稿 `.search-field` 的生效值（36 高 / 圆角 12 / surface-2 底 / 聚焦换主色环） */
 .search-field {
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 34px;
-  padding: 0 10px;
+  height: 36px;
+  padding: 0 11px;
   border: 1px solid var(--miao-line);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--miao-surface-2);
   color: var(--miao-muted);
   transition:
@@ -375,73 +390,16 @@
 }
 
 /*
- * 组级说明（catalog 的 `note` / `noteSummary`）。
+ * 组级说明：设计稿 `.s-note` —— 一枚虚线小盒，**全文直出**，没有折叠也没有按钮。
  *
- * 默认是**折叠态**：一行摘要 + 「为什么 ?」。摘要是 `note` 的抽句，全文一字不删地
- * 留在展开态里 —— 收起的不是信息，是"6 行背景论证常年占着首屏"这件事。
+ * 产品此前的形态是「一行摘要 + 『为什么 ?』抽屉」，那是"组说明常年占首屏"的自造解法；
+ * 设计稿给的是同一种信息密度更低的盒子（9.5px 正文 + 13px 图标 + 虚线描边），
+ * 于是这层折叠结构整套删掉 —— 少一个可点开的东西，也少一份与原文并存的摘要。
  *
- * 折叠与否由 catalog 给不给 `noteSummary` 决定（组件里不按字符数猜阈值）：
- * 没给就是不折叠，此时 `.set-note-row` 不存在、规则也退化成"铺一段文字"。
+ * 盒子本体是 `.set-note-inline`（见本文件后段），本类只负责"它出现在组首"的位置。
  */
-.set-note {
-  font-size: 10.5px;
-  line-height: 1.7;
-  color: var(--miao-text);
-  padding: 10px 12px;
-  border-radius: 14px;
-  border: 1px solid var(--miao-line);
-  background: var(--miao-surface-2);
-}
-
-/* 折叠/展开两种形态共用的那一行：摘要（或全文）在左，「为什么 ?」在最右 */
-.set-note-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-/* 展开态要读长文 ⇒ 顶部对齐，别让按钮跟着基线漂到中间 */
-.set-note.is-open .set-note-row {
-  align-items: flex-start;
-}
-
-/*
- * 摘要：**单行**（超出省略）。多行摘要会把折叠的意义抹掉 —— 那说明该往 catalog 里
- * 再抽掉一句，而不是让 CSS 多放几行。悬停有 `title` 兜底可读全文。
- */
-.set-note-sum {
-  flex: 1;
-  min-width: 0;
-  font-size: 10.5px;
-  line-height: 1.65;
-  color: var(--miao-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* 展开态：换回正常换行，行高抬到 1.75（长文按 1.6 排会挤） */
-.set-note-sum.is-full {
-  white-space: normal;
-  line-height: 1.75;
-}
-
-/* 「为什么 ?」/「收起」—— 一枚小药丸按钮，不抢摘要的宽度 */
-.set-note-more {
-  flex: 0 0 auto;
-  font-family: var(--md-font-body);
-  font-size: 10px;
-  color: var(--miao-muted);
-  border: 1px solid var(--miao-line);
-  border-radius: 999px;
-  padding: 3px 9px;
-  background: var(--miao-surface);
-  cursor: pointer;
-  transition:
-    background var(--miao-dur-fast) ease,
-    color var(--miao-dur-fast) ease;
-}
-.set-note-more:hover {
-  background: var(--miao-surface-2);
-  color: var(--miao-ink);
+.set-note-topic {
+  margin: 0 0 12px;
 }
 
 /*
@@ -460,6 +418,28 @@
 }
 .set-group:last-child {
   margin-bottom: 0;
+}
+
+/*
+ * 卡片里的"通栏块"：左右各 16px，与 `.set-row` 的文字左缘对齐。
+ *
+ * `.set-group` 自身**没有 padding** —— 左右 16px 是每一行自己给的（`.set-row` 的
+ * `padding: 12px 16px`）。于是任何直接住在卡片里的块若只写 `padding: 10px 0`，
+ * 它的文字就会比相邻行向左凸出 16px，看上去"贴到卡片边上"。
+ *
+ * 用一条组选择器统一给，而不是逐个改：这些块的竖向内距各不相同（10 / 12 / 8），
+ * 唯一相同的就是左右 —— 分头写会让"下一块又漏了"变成必然。
+ */
+.set-group > .set-row-note,
+.set-group > .set-spec,
+.set-group > .set-token,
+.set-group > .set-pair-acts,
+.set-group > .set-cache,
+.set-group > .set-manage,
+.set-group > .set-idle,
+.set-group > .set-lic {
+  padding-left: 16px;
+  padding-right: 16px;
 }
 
 /* 小节标题：设计稿 `.s-card-head h3`（12.5px / 700），带下分隔线与 13/16/10 内边距。
@@ -1540,75 +1520,99 @@
   background: var(--md-error);
 }
 
-/* ================================================================ ④ 资源与投放：存储占用（三行分列） */
+/* ================================================================ ④ 资源与投放：存储占用（图标 + 两行文字 + 动作） */
 /*
- * 骨架与 `.set-cache` 同源（通栏块从一条 border-top 起行），但里面**没有合计行** ——
- * 那是本项的立场而不是遗漏：三处口径不同，凑总数会把"没有接口的那一处"当 0 算进去。
- * 详见 `StorageBlock.tsx` 的文件头。
+ * 结构照设计稿 `.storage-row`：`[32×32 图标块] [标题 + 一行小字] [右侧动作]`，
+ * 三处数值**并进第二行小字**（数值 · 目录 · 口径），不另起"名称/值/来源"三列 ——
+ * 三列排版会把图标那一格挤掉，读起来像一张表格；设计稿要的是三条并列的清单项。
+ *
+ * 里面**没有合计行** —— 那是本项的立场而不是遗漏：三处口径不同，凑总数会把
+ * "没有接口的那一处"当 0 算进去。详见 `StorageBlock.tsx` 的文件头。
+ *
+ * 横向前后距与 `.set-row` 同档（12/16），行间 1px 分隔；卡头沿用 `.set-subtitle` 的 13/16/10。
  */
 .set-storage {
-  border-top: 1px solid var(--md-line-soft);
-  padding: 10px 0;
+  border-top: 1px solid var(--miao-line);
 }
 .set-group > .set-storage:first-child {
   border-top: 0;
 }
 
+/* 卡头：标题在上、立场说明在下（设计稿 `.s-card-head` 的 h3 + p 是两行，不是同行两端对齐） */
 .set-storage-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  padding: 13px 16px 10px;
 }
 .set-storage-name {
+  font-family: var(--md-font-display);
   font-size: 12.5px;
-  color: var(--md-ink);
+  font-weight: 700;
+  color: var(--miao-ink);
 }
-/* 「三处分开列 · 不合计」：一句立场说明，与标题同行、比标题浅一档 */
 .set-storage-rule {
-  font-size: 10.5px;
-  color: var(--md-muted);
+  margin-top: 2px;
+  font-size: 9.5px;
+  line-height: 1.6;
+  color: var(--miao-muted);
 }
 
-/*
- * 三行网格：名称 / 值 / 来源。
- *
- * 列宽用 `auto auto 1fr` 而不是三等分 —— 值的长短差得很远（`1.2 GB` 与 `未统计`），
- * 等分会让"来源"那一列被挤到和值一样窄，三列看起来像互不相干的三个字段，
- * 而这恰恰是"值属于哪一处"这件事要一眼看清的地方。
- */
 .set-storage-rows {
-  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+}
+.set-storage-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--miao-line);
+}
+.set-storage-row:first-child {
+  border-top: 0;
+}
+/* 图标块：设计稿 `.storage-ico`（32×32 / 圆角 9 / surface-2 底 / 16 图标） */
+.set-storage-ico {
+  flex: none;
   display: grid;
-  grid-template-columns: auto auto 1fr;
-  align-items: baseline;
-  gap: 3px 12px;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--miao-surface-2);
+  color: var(--miao-muted);
 }
-.set-storage-k {
-  font-size: 11.5px;
-  color: var(--md-ink-2);
-}
-.set-storage-v {
-  font-family: var(--md-font-numeric);
-  font-size: 11.5px;
-  color: var(--md-ink);
-  text-align: right;
-}
-/*
- * 「未统计」**不是一个测出来的数**，所以不复用等宽数字字体 ——
- * 等宽 + 右对齐会让它读起来像"某个统计结果就是 0 字节"，而真相是没有接口。
- */
-.set-storage-v.is-unknown {
-  font-family: var(--md-font-body);
-  color: var(--md-muted);
-}
-.set-storage-src {
+.set-storage-tx {
+  flex: 1;
   min-width: 0;
-  font-size: 10.5px;
-  color: var(--md-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.set-storage-tx strong {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+/* 第二行：数值 + 口径挤在一行，超长省略（设计稿 `.storage-row small` 同款） */
+.set-storage-tx small {
+  font-size: 9.5px;
+  color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.set-storage-tx small.is-unknown {
+  color: var(--miao-faint);
+}
+/* 动作区：不参与均分、固定贴右（设计稿 `.storage-actions { margin-left: auto }`） */
+.set-storage-acts {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.set-storage-acts .btn {
+  white-space: nowrap;
 }
 
 /* ================================================================ ⑤ 关于：第三方许可（聚合 + 可展开清单） */
@@ -1801,11 +1805,6 @@
   color: var(--miao-faint);
 }
 
-.set-note.is-open {
-  background: var(--miao-surface);
-  box-shadow: var(--miao-shadow-1);
-}
-
 .set-ro,
 .set-token-ro {
   display: inline-flex;
@@ -1828,16 +1827,38 @@
   min-width: 0;
 }
 
+/* 令牌名（`X-Box-Token`）：等宽 + muted，跟它右边那只输入框的等宽正文同一族 */
+.set-token-k {
+  flex: 0 0 auto;
+  font-family: var(--md-font-numeric);
+  font-size: 10.5px;
+  color: var(--miao-muted);
+}
+
+/* 令牌输入框：与设置页其它输入控件同一档几何（32 高 / 12 圆角 / 左右 11）。
+ * 圆角 12 取自设计稿输入控件的**生效值**（`.input` 基础表写 10，后加载层改 12）。 */
 .set-token-in {
   flex: 1;
   min-width: 0;
-  padding: 6px 9px;
+  height: 32px;
+  padding: 0 11px;
   border: 1px solid var(--miao-line);
-  border-radius: 10px;
-  background: var(--miao-surface);
+  border-radius: 12px;
+  background: var(--miao-surface-2);
   color: var(--miao-text);
   font-family: var(--miao-font-mono);
   font-size: 10px;
+  transition:
+    border-color var(--miao-dur-fast) ease,
+    box-shadow var(--miao-dur-fast) ease;
+}
+.set-token-in:hover {
+  border-color: var(--miao-line-strong);
+}
+.set-token-in:focus-visible {
+  outline: none;
+  border-color: var(--miao-primary);
+  box-shadow: 0 0 0 3px var(--miao-primary-soft);
 }
 
 /*
@@ -1893,7 +1914,6 @@
 
 /* 设置页里的诊断 / 存储 / 缓存 / 许可块 */
 .set-run,
-.set-storage,
 .set-cache,
 .set-manage,
 .set-diag {
@@ -1909,7 +1929,6 @@
 }
 
 .set-run-head,
-.set-storage-head,
 .set-diag-kv {
   display: flex;
   align-items: center;
@@ -1917,15 +1936,13 @@
   gap: 10px;
 }
 
-.set-run-title,
-.set-storage-name {
+.set-run-title {
   font-family: var(--md-font-display);
   font-size: 12px;
   font-weight: 700;
   color: var(--miao-ink);
 }
 
-.set-storage-row,
 .set-idle-line,
 .set-manage-list-line {
   display: flex;
@@ -1941,17 +1958,6 @@
 .set-idle-line:last-child,
 .set-manage-list-line:last-child {
   border-bottom: 0;
-}
-
-/* 行尾动作（打开目录 / 管理）：不参与均分，固定贴右；来源文字可压缩 */
-.set-storage-row > .btn {
-  flex: 0 0 auto;
-}
-.set-storage-row > .set-storage-src {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ── ⑤ 关于：品牌头 + 一句话定位 + 收尾说明（设计稿 `.about-*` / `.s-note`）── */
@@ -2010,14 +2016,6 @@
   color: var(--miao-accent-ink);
 }
 
-.set-storage-k,
-.set-idle-k,
-.set-src-k,
-.set-diag-k {
-  color: var(--miao-muted);
-}
-
-.set-storage-v,
 .set-src-v,
 .set-diag-v {
   color: var(--miao-text);
@@ -2098,13 +2096,5 @@
   /* 窄屏单列后固定 186 没意义（设计稿 ≤900 同规则：控件铺满） */
   .set-row-ctl .ui-select {
     width: 100%;
-  }
-  .set-note-row {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
-  }
-  .set-note-sum {
-    white-space: normal;
   }
 }

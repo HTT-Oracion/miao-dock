@@ -9378,3 +9378,51 @@ CSS 文件里的文本只是候选。当样式分片有多层时（本稿：`sty
 
 **七、遗留**：设计稿的 `.cover-art` 是**生成式封面**（渐变 + 首字字形 + 网点纹理），产品的 `Cover`
 只铺渐变、有图时显示图片 —— 队列行里那片空白就是它。要补的话得先把生成式封面抽成单元（下一轮）；`QueueDrawer` 已无手写外壳。
+
+## D-365 · 设置页：卡片内距模型、组说明的盒子与位置、两个自造结构被推翻（2026-10-23）
+
+**一、卡片的内距是行给的，不是组给的**：`.set-group` 自身**没有 padding**，每行 `.set-row` 各带
+`padding: 12px 16px` 并铺满卡片宽度（分隔线因此是通栏的）。由此得出一条硬规则 —— **任何卡片级块
+（`.set-row-note` / `.set-lic` / `.set-cache` / `.set-manage` / `.set-spec` / `.set-token`
+ / `.set-pair-acts`）必须自己带 `padding-left/right: 16px`**，否则文字贴到卡片边缘（用户报的第 1 条）。
+本轮把它写成 `.set-group > …` 一组选择器，一次覆盖九个块；探针「卡片直接子元素左右内距 < 8px」
+首轮报 **9 项**、修后 **0 项**。
+
+**二、组说明：摘掉摘要层，回到设计稿那一个盒子**。产品曾有一层折叠（`noteSummary` 一行摘要 +
+`set-note-more` 按钮），设计稿 `.s-note` 是一枚虚线小盒（`padding 10px 14px / r9 / surface-2 /
+1px dashed line-strong / 9.5px muted / 13px .ico`）。摘要与原文并存 ⇒ 同一件事两份说法，迟早对不上；
+照设计稿删掉那层后，`noteSummary` 字段与 `set-note-sum` / `set-note-more` / `set-note-row` 全部删除
+（**不留 `display:none` 的空壳**）。同理，`.s-note` 在**组尾**（所有卡片之后）—— 产品此前放在组首，
+读起来像这一组的总纲，而设计稿的意思是「读完这些参数之后的注解」。五组统一移到组尾。
+
+**三、被推翻的两个自造结构**：
+
+| 自造 | 设计稿 | 为什么必须改回去 |
+|---|---|---|
+| `.set-idle` 合卡（两个阈值合成一张卡 + 两枚 tag + 共用注解） | 推理引擎卡里**两条普通 `.s-row`**（`idle-llm` / `idle-vision`，各自带 `分钟 · 0–1440`） | 合卡改的是**结构**：行序、行数、与相邻行的并列关系全变。设计稿里它们是第 5、6 条行 |
+| 令牌行在 `components.scss` 里被重定义成 `--md-radius-xs`(6px) | 设计稿输入控件 r12 | 后加载分片静默覆盖；删掉重复定义后由 `settings.scss` 单点负责（用户报的第 5 条） |
+
+**四、导航选中态：设计稿是 sage 底，不是白底 + 蓝条**。`.snav.is-active` 的生效值是
+`background: var(--sage-soft)` / `color: var(--sage-deep)` / `box-shadow: inset 0 0 0 1px var(--sage-line)`，
+而 `::before` 那根强调条在后加载层被 `display: none` 关掉了 —— 产品照着基础表实现成白卡片 + 左侧蓝条，
+三个轴全错。同步把 `--miao-sage-ink` 调到设计稿的 `--sage-deep` `#6F8C70`；计数胶囊改成设计稿的 pill
+（`min-width 24 / height 20 / padding 0 7 / r999 / 9.5px·700`，选中时 `--miao-sage` 底 + 白字 + 投影）。
+
+**五、存储与存放：设计稿是图标 + 两行文字 + 右端动作的三行**，不是键值对。`.storage-row` = `[32×32 r9
+图标] [flex 列：11px 标题 + 9.5px 说明] [margin-left auto 的动作区]`，行间通栏分隔线，卡头是
+`存储占用` + `三项独立统计，不合计；有目录的项都可以直接打开`。产品原来是 `.set-storage-k` / `.set-storage-v`
+键值对（长得像诊断面板），已按设计稿重写 DOM 而不是套类名。
+
+**六、音乐平台色的取值边界**：`.provider-orb` 的四个颜色必须与设计稿 `--pc` 逐值相同
+（`#C97D73` / `#6E97B9` / `#DFA47D` / `#8CA88C`），产品此前用的是各平台**品牌色**（`#C20C0C` 等）——
+品牌色是事实，但这里是设计稿的**视觉系统**，两者不同时以设计稿为准，并在 `platform.ts` 注释里写明这条口径。
+
+**七、判据**：`SIMPLIFY.notesummary.*` 两条改判成 `SIMPLIFY.note.verbatim`（数据侧不许再有 `noteSummary`、
+渲染侧必须传原文）与 `SIMPLIFY.note.box`（盒子结构 + 图标 + 五组都在组尾）；`SIMPLIFY.idle.card` 改判
+为两条 `<Row>` + 视觉档 warning chip；`SIMPLIFY.select.pulledRight` 的 `CtlNote` 分母 3→**5**（设计稿
+这两行各带一枚上界附注）；`check:units` 那条 `.set-idle-line .ui-num` 钉子随结构消失一并退役。
+六条变异锚点同步重写（旧锚点指向已删元素 ⇒ 会退化成「锚点未找到」而静默跳过）。
+
+**八、遗留**：① `.set-row` 内距 `12/16` vs 设计稿 `.s-row` `14/18`（全站 16 vs 18）；② 卡头 `13/16/10` +
+12.5px 标题 vs 设计稿 `.s-card-head` `15/18/12` + 14px；③ ③ 播放卡里 `music-cache` 仍是播放卡内的一块，
+设计稿是独立的音乐缓存卡（含 `.cache-total` 与逐平台行）。

@@ -43,11 +43,16 @@ export interface PlatformMeta {
   desc: string;
 }
 
+/**
+ * 平台品牌色 —— 取设计稿 `getProviderList()` 的那一组值，是**调过的中性色**，
+ * 不是各家官网的饱和品牌色：四个色块并排时明度接近，才不会有一个平台把视线全抢走。
+ * （官网原色 #C20C0C / #00A0E9 / #FEC135 / #FF69B4 摆在一起像四盏不同的灯。）
+ */
 export const PLATFORMS: PlatformMeta[] = [
-  { id: 'netease', label: '网易云音乐', short: '网', color: '#C20C0C', desc: '海量曲库 · 歌单 · 云村社区' },
-  { id: 'kugou', label: '酷狗音乐', short: '酷', color: '#00A0E9', desc: '千万曲库 · 高品质音效' },
-  { id: 'qqmusic', label: 'QQ 音乐', short: 'Q', color: '#FEC135', desc: '海量曲库 · Hi-Res · 精准推荐' },
-  { id: 'migu', label: '咪咕音乐', short: '咪', color: '#FF69B4', desc: '华语曲库 · 臻品音质' },
+  { id: 'netease', label: '网易云音乐', short: '网', color: '#C97D73', desc: '海量曲库 · 歌单 · 云村社区' },
+  { id: 'kugou', label: '酷狗音乐', short: '酷', color: '#6E97B9', desc: '千万曲库 · 高品质音效' },
+  { id: 'qqmusic', label: 'QQ 音乐', short: 'Q', color: '#DFA47D', desc: '海量曲库 · Hi-Res · 精准推荐' },
+  { id: 'migu', label: '咪咕音乐', short: '咪', color: '#8CA88C', desc: '华语曲库 · 臻品音质' },
 ];
 
 export const PLATFORM_MAP: Record<MusicProvider, PlatformMeta> = PLATFORMS.reduce(

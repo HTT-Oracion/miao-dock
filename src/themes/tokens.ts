@@ -178,8 +178,11 @@ export const SETTINGS = {
   navStickyTop: 26,
   /** 左栏内边距：设计稿 `.settings-nav { padding: 16px 10px }` */
   navPadding: { y: 16, x: 10 },
-  /** 导航项内边距：设计稿 `.snav { padding: 9px }` */
-  navItemPadding: { y: 9, x: 9 },
+  /**
+   * 导航项内边距：设计稿 `.snav` 的**生效值** `padding: 9px 10px`。
+   * `styles.css` 写的是 `9px 9px`、`theme.css` 才改成 `9px 10px` —— 判据对着生效值取。
+   */
+  navItemPadding: { y: 9, x: 10 },
   navItemIcon: 18,
   /** 设计稿 `.snav { gap: 8px }` */
   navItemGap: 8,
@@ -332,7 +335,9 @@ export function cssVars(mode: ThemeMode): Record<string, string> {
   out['--miao-sage'] = src.lavender;
   out['--miao-sage-soft'] = mode === 'dark' ? '#233027' : '#EEF4EE';
   out['--miao-sage-line'] = mode === 'dark' ? '#3A4C3D' : '#D8E6D8';
-  out['--miao-sage-ink'] = mode === 'dark' ? '#B6CDB4' : '#5E7A5F';
+  // 取设计稿 `--sage-deep` 的两档值（浅 #6F8C70 / 深 #B6CDB4）：
+  // 它是"sage-soft 底上的文字"，也是计数胶囊投影的色源 —— 两处都不该比设计稿更沉。
+  out['--miao-sage-ink'] = mode === 'dark' ? '#B6CDB4' : '#6F8C70';
   out['--miao-danger'] = src.error;
   out['--miao-danger-soft'] = mode === 'dark' ? '#352522' : '#F9EDEB';
   out['--miao-success'] = src.success;

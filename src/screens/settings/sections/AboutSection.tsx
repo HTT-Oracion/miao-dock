@@ -44,9 +44,6 @@ export function AboutSection() {
 
   return (
     <>
-      {/* 组说明缺省即不渲染（GroupNote 自守）：catalog 未给 ABOUT.note 时这一行自动消失 */}
-      <GroupNote summary={ABOUT.noteSummary}>{ABOUT.note as string}</GroupNote>
-
       {/* ── 卡一：品牌头 + 一句话定位 + 版本号（设计稿 `.about-head` / `.about-desc`）── */}
       <div className="set-group">
         <div className="about-head">
@@ -91,6 +88,8 @@ export function AboutSection() {
         <Info size={13} />
         <span>喵坞不会上传漫画原图与本地音乐。在线 API 只发送当前批次的原文与语种信息。</span>
       </div>
+      {/* 组说明缺省即不渲染（GroupNote 自守）：catalog 未给 ABOUT.note 时这一行自动消失 */}
+      <GroupNote>{ABOUT.note as string}</GroupNote>
     </>
   );
 }

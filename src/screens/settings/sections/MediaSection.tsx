@@ -237,14 +237,14 @@ export function MediaSection() {
 
   return (
     <>
-      {/* 组说明缺省即不渲染（GroupNote 自守）：catalog 未给 MEDIA.note 时这一行自动消失 */}
-      <GroupNote summary={MEDIA.noteSummary}>{MEDIA.note as string}</GroupNote>
       {/* 设计稿把「音乐账号」排在 ③ 的第一张卡：设置页里只有它能把四个平台一次看全 */}
       <AccountCardsBlock />
       {/* 按 catalog 的 groups 顺序渲染三小节：写死第一组会静默漏掉「歌词 / 透明彩胶」 */}
       {MEDIA.groups.map((g) => (
         <Group key={g.id} group={g} render={render} />
       ))}
+      {/* 组说明缺省即不渲染（GroupNote 自守）：catalog 未给 MEDIA.note 时这一行自动消失 */}
+      <GroupNote>{MEDIA.note as string}</GroupNote>
     </>
   );
 }
