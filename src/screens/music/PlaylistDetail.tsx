@@ -121,7 +121,7 @@ export function PlaylistDetail() {
           <div className="song-head" aria-hidden="true">
             <span>#</span>
             <span>歌曲</span>
-            <span>歌手</span>
+            <span>专辑</span>
             <span>时长</span>
             <span />
           </div>
@@ -137,7 +137,14 @@ export function PlaylistDetail() {
                   cover={coverProxyUrl(s.cover, proxyPort)}
                   active={currentSong ? songKey(currentSong) === songKey(s) : false}
                   leading={<span className="song-index">{i + 1}</span>}
-                  meta={<span className="song-artist">{s.artist || '—'}</span>}
+                  /*
+                   * 两处文字的分工照设计稿 `.song-table`：
+                   *   标题下面那行 = **歌手**（SongRow 默认取 `song.artist`，不用 meta 覆盖）；
+                   *   `aside` 那一列 = **专辑**（设计稿 `.song-album`，单独一列）。
+                   * 曾经把歌手填进 meta、专辑整个丢掉 —— 于是"专辑没有回显"（#15），
+                   * 而歌手又跑到专辑列上、标题底下空着（#17）。
+                   */
+                  aside={<span className="song-album">{s.album || '—'}</span>}
                   onClick={play}
                   onPlay={play}
                 />

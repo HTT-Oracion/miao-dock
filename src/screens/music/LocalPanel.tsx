@@ -88,7 +88,7 @@ export function LocalPanel() {
                   cover={song.cover}
                   active={currentSong ? songKey(currentSong) === songKey(song) : false}
                   leading={<span className="song-index">{i + 1}</span>}
-                  meta={<span className="song-album">{song.album || '—'}</span>}
+                  aside={<span className="song-album">{song.album || '—'}</span>}
                   onClick={play}
                   onPlay={play}
                 />

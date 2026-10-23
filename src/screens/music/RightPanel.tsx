@@ -490,7 +490,7 @@ function Recommendations() {
                       cover={coverProxyUrl(s.cover, proxyPort)}
                       active={currentSong ? songKey(currentSong) === songKey(s) : false}
                       leading={<span className="song-index">{i + 1}</span>}
-                      meta={<span className="song-album">{s.album || '—'}</span>}
+                      aside={<span className="song-album">{s.album || '—'}</span>}
                       onClick={play}
                       onPlay={play}
                     />

@@ -2910,7 +2910,14 @@ add('FEATURES.shell.sidebarBranch', 'FEATURES', (ctx) => {
     problems.push('几何没有随 labels 切换（appItem ↔ iconOnlyItem）');
   if (!/\{labels\s*\?\s*<span(?:\s+className="nav-label")?>\{a\.label\}<\/span>\s*:\s*null\}/.test(src))
     problems.push('「有没有文字」与「用哪套几何」不是同一个判断的两个输出');
-  if (!/aria-label=\{a\.label\}/.test(src)) problems.push('应用入口缺少 aria-label（关掉文字后它是唯一可读名称）');
+  /*
+   * 应用入口的无障碍名。
+   * ⚠️ 两种写法都接受：裸 `<button aria-label={a.label}>` 与 `Btn` 单元的
+   * `ariaLabel={a.label}`（后者由单元统一渲染成前者）。判据守的是"读屏能听到名字"，
+   * 不是"用哪种写法"—— 2026-10-24 侧栏统一改用 Btn 时这里红过一次。
+   */
+  if (!/aria-label=\{a\.label\}/.test(src) && !/ariaLabel=\{a\.label\}/.test(src))
+    problems.push('应用入口缺少 aria-label（关掉文字后它是唯一可读名称）');
   // 几何必须来自 tokens：组件里出现裸数字就意味着有了第二个来源
   const hard = src.match(/(?:width|height):\s*\d+px?/g) ?? [];
   if (hard.length > 0) problems.push(`出现 ${hard.length} 处硬编码宽高（${hard[0]}…）`);
@@ -4105,7 +4112,11 @@ const MUTATIONS = [
   {
     name: '把应用入口的 aria-label 删掉（纯图标态下再没有任何可读名称）',
     file: F.sidebar,
-    find: '          aria-label={a.label}\n',
+    /*
+     * 锚点随侧栏改用 `Btn` 单元换了写法：`aria-label={a.label}` → `ariaLabel={a.label}`。
+     * 删掉的就是那一行 —— 断言同时接受两种拼写（见 `sidebarBranch` 的注释）。
+     */
+    find: '          ariaLabel={a.label}\n',
     replace: '',
     expect: ['FEATURES.shell.sidebarBranch'],
   },

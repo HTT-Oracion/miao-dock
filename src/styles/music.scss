@@ -2134,7 +2134,12 @@ button.ms-caption.is-collapsed {
   color: var(--miao-faint);
   text-align: right;
 }
-.song-artist {
+/*
+ * 曲目表的"专辑"列（设计稿 `.song-album`）。
+ * ⚠️ 它曾被我改名成 `.song-artist` —— 那是把**歌手**错填进了这一列（#17），
+ * 而歌手本该在标题下面那行（SongRow 默认取 `song.artist`）。
+ */
+.song-album {
   grid-column: 3;
   grid-row: 1;
   font-size: 9.5px;
