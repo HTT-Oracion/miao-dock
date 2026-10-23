@@ -29,6 +29,7 @@ export { MenuButton, MenuItem } from '@components/units/MenuButton';
 export { Modal } from '@components/units/Modal';
 export { Notice } from '@components/units/Notice';
 export { NumberInput } from '@components/units/NumberInput';
+export { OverlayScrollbar } from '@components/units/OverlayScrollbar';
 export { PlayModeButton, playModeLabel } from '@components/units/PlayModeButton';
 export { ProgressRing } from '@components/units/ProgressRing';
 export { Range } from '@components/units/Range';

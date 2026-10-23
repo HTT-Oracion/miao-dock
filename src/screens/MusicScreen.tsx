@@ -3,6 +3,8 @@ import { useMusicStore } from '@music/store';
 import { LeftPanel } from '@screens/music/LeftPanel';
 import { LoginModal } from '@screens/music/LoginModal';
 import { NowPlaying } from '@screens/music/NowPlaying';
+import { OverlayScrollbar } from '@components/units';
+import { useOverlayScrollbar } from '@hooks/useOverlayScrollbar';
 import { PlayerBar } from '@screens/music/PlayerBar';
 import { QueueDrawer } from '@screens/music/QueueDrawer';
 import { RightPanel } from '@screens/music/RightPanel';
@@ -68,6 +70,12 @@ export function MusicScreen() {
   /** 进度条定位：`seek` 的转发（store 内已收拢进度与 `<audio>.currentTime`）。 */
   const onSeek = useCallback((ms: number) => seek(ms), [seek]);
 
+  /*
+   * 中栏滚动条走**覆盖式**：滑块浮在内容上，不占布局宽度。
+   * 原生 `::-webkit-scrollbar` 无论多细都会挤占内容宽（D-375），故这里自绘。
+   */
+  const { ref: centerScrollRef, thumb: centerThumb } = useOverlayScrollbar();
+
   return (
     <div className="music">
       <div className="music-layout">
@@ -76,8 +84,9 @@ export function MusicScreen() {
           <LeftPanel />
         </aside>
 
-        <div className="music-center">
+        <div className="music-center" ref={centerScrollRef}>
           <RightPanel />
+          <OverlayScrollbar thumb={centerThumb} />
         </div>
 
         <aside className="music-now">

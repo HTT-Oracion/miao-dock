@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -45,6 +46,19 @@ export function RightPanel() {
   // 只要有关键词就进「搜索」态（而不是要求已有结果）：
   // 否则「搜索中」和「搜到 0 首」都会掉回发现页，用户会以为刚才那次搜索没发生
   const searchActive = searchText.trim().length > 0;
+
+  /*
+   * 换视图（发现 ↔ 搜索 ↔ 歌单详情 ↔ 本地）时**把中栏滚回顶部**。
+   *
+   * 中栏是这一屏唯一的滚动容器，滚动位置会跨视图保留：从榜单底部点进歌单、
+   * 再退回发现页时，页面仍停在 -2000px 那种位置 —— 看上去就是"整块内容不见了 / 被盖住了"。
+   * 视图是一个新的上下文，滚动位置必须跟着复位。
+   */
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const viewKey = searchActive ? 'search' : leftView;
+  useEffect(() => {
+    scrollRef.current?.closest('.music-center')?.scrollTo({ top: 0 });
+  }, [viewKey]);
 
   return (
     <>
@@ -147,7 +161,7 @@ export function RightPanel() {
        * 前者位置错了：设计稿的搜索源胶囊只住在**搜索结果页**里（`.search-sources`），
        * 首页 / 榜单 / 歌单页不该有它；后者是纯包裹层，删掉不影响布局。
        */}
-      <section className="music-view">
+      <section className="music-view" ref={scrollRef}>
         {searchError ? <div className="music-inline-err">搜索失败：{searchError}</div> : null}
 
         {/*

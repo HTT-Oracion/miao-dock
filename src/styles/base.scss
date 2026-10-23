@@ -92,10 +92,24 @@ textarea {
   font: inherit;
 }
 
-/* 应用内所有可滚动区域统一细滚动条 */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+/*
+ * 滚动条：**藏起原生的，改用覆盖式自绘**。
+ *
+ * 原生 `::-webkit-scrollbar` 是**占位式**的 —— 设 6px 就吃掉 6px 内容宽度，
+ * 设 0 就完全看不见。想要"细 / 半透明 / 不占宽度"三者同时成立，Chromium 里只有
+ * 覆盖式一条路：原生条藏掉（滚动能力不动），由 `useOverlayScrollbar` 画一层
+ * `position: absolute` 的滑块浮在内容上（见 `.ui-osb`）。
+ *
+ * `scrollbar-width: none` 是标准属性（Firefox / 新版 Chromium 都认），
+ * `::-webkit-scrollbar { display: none }` 覆盖老 Chromium。
+ */
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 ::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--miao-line-strong) 78%, transparent);

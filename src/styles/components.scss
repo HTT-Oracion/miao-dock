@@ -624,6 +624,27 @@
 
 /* ---- ③ 空态 / 短提示（Empty）---- */
 /* 空态 / 错误 / 行内提示 */
+
+/* ---- 覆盖式滚动条滑块（配合 useOverlayScrollbar）----
+ * 绝对定位、6px 宽、半透明 —— **不参与内容布局**，所以不会挤占盒子宽度。
+ * 淡入 160ms / 淡出 240ms（淡出慢一点，滚到底时不会"啪"地消失）。
+ */
+.ui-osb {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  width: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--miao-ink) 26%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--miao-dur-base) ease;
+  z-index: 5;
+}
+.ui-osb.is-on {
+  opacity: 1;
+  transition-duration: var(--miao-dur-fast);
+}
 .ui-empty {
   flex: 1;
   display: flex;
