@@ -1997,6 +1997,118 @@
   font-size: 10px;
   color: var(--miao-muted);
 }
+
+/* ---------------------------------------------------------------- 歌单详情（右侧）
+/*
+ * 设计稿 `renderPlaylistDetail()` 的四段：`.pd-top`（返回 + chip + 更多）→
+ * `.pd-hero`（封面 + 信息 + 动作）→ `.pd-toolbar`（一句顺序说明）→ 曲目表。
+ * 点左栏歌单时**只换右侧**，左栏保持列表 —— 这是设计稿的交互。
+ */
+.pd-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.pd-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-family: var(--md-font-display);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  transition:
+    background var(--miao-dur-fast),
+    color var(--miao-dur-fast);
+}
+.pd-back:hover {
+  background: var(--miao-surface-2);
+  color: var(--miao-ink);
+}
+.pd-top .icon-btn {
+  margin-left: auto;
+}
+.pd-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-2xl);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
+  overflow: hidden;
+}
+.pd-cover {
+  width: clamp(126px, 10vw, 166px);
+  height: clamp(126px, 10vw, 166px);
+  flex: none;
+  border-radius: 16px;
+  overflow: hidden;
+}
+.pd-cover .music-cover {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  border: 0;
+}
+.pd-info {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  flex: 1;
+}
+.pd-info .kicker {
+  display: block;
+  margin-bottom: 4px;
+  font-family: var(--md-font-display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--miao-accent-ink);
+}
+.pd-info h2 {
+  margin: 0 0 4px;
+  font-family: var(--md-font-display);
+  font-size: clamp(25px, 2.3vw, 34px);
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--miao-ink);
+}
+.pd-info p {
+  margin: 0;
+  font-size: 10.5px;
+  color: var(--miao-muted);
+}
+.pd-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 7px;
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+.pd-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 13px;
+  flex-wrap: wrap;
+}
+.pd-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 14px 0 8px;
+}
+.pd-toolbar .caption {
+  font-size: 9.5px;
+  color: var(--miao-faint);
+}
 .chart-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
