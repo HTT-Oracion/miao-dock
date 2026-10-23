@@ -4,6 +4,7 @@ import { SHELL, SIDEBAR } from '@/themes/tokens';
 // （import 会让 Vite 多产一份带指纹的副本，而这里要的就是"路径可预测"）。
 const LOGO_SRC = '/assets/icons/miao-logo.png';
 import { APP_LABEL, type AppId, type Screen } from '@/stores/nav';
+import { Btn } from '@components/units';
 import type { AnimeView } from '@anime/types';
 import type { DownloadEntryState } from '@/ipc/engine-download';
 import {
@@ -97,16 +98,16 @@ export function Sidebar({
   return (
     <nav className="sidebar" style={{ width: SHELL.sidebarWidth, flexBasis: SHELL.sidebarWidth }} aria-label="应用导航">
       <div className="sidebar-brand">
-        <button
-          type="button"
+        <Btn
+          kind="bare"
           className="brand-btn"
-          aria-label="喵坞 · 返回漫画翻译"
+          ariaLabel="喵坞 · 返回漫画翻译"
           title="喵坞"
           onClick={() => onScreen('translate')}
         >
           <img src={LOGO_SRC} alt="喵坞" width={41} height={41} />
           <span className="brand-halo" aria-hidden="true" />
-        </button>
+        </Btn>
       </div>
 
       {/* ── 应用层 ──
@@ -115,13 +116,13 @@ export function Sidebar({
           而「当前屏」正是两级结构里唯一需要被感知的信息。 */}
       <div className="nav-apps">
         {APPS.map((a) => (
-          <button
+          <Btn
             key={a.id}
-            type="button"
+            kind="bare"
             className={screen === a.id ? 'nav-item is-app is-active' : 'nav-item is-app'}
             style={{ width: appItem.w, height: appItem.h }}
-            aria-current={screen === a.id ? 'page' : undefined}
-            aria-label={a.label}
+            ariaCurrent={screen === a.id ? 'page' : undefined}
+            ariaLabel={a.label}
             title={a.label}
             onClick={() => onScreen(a.id)}
           >
@@ -129,7 +130,7 @@ export function Sidebar({
               <a.icon />
             </i>
             {labels ? <span className="nav-label">{a.label}</span> : null}
-          </button>
+          </Btn>
         ))}
 
         {/*

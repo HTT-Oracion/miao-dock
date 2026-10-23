@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { VIEW_TABS } from '@/themes/tokens';
 import { ListMinus, BookText, FolderUp, Folder } from 'lucide-react';
 import { TRANSLATE_VIEWS, type TranslateView } from '@/stores/nav';
+import { Btn } from '@components/units';
 
 /** 每个视图一个图标（顺序与 `TRANSLATE_VIEWS` 一致，不在这里另定一套） */
 const ICONS: Record<TranslateView, () => React.ReactElement> = {
@@ -74,11 +75,11 @@ export function ViewTabs({
         {TRANSLATE_VIEWS.map((v) => {
           const Icon = ICONS[v.id];
           return (
-            <button
+            <Btn
               key={v.id}
-              type="button"
+              kind="bare"
               role="tab"
-              aria-selected={view === v.id}
+              ariaSelected={view === v.id}
               title={v.hint}
               className={view === v.id ? 'viewtab view-tab is-active' : 'viewtab view-tab'}
               style={{ minWidth: VIEW_TABS.itemMinWidth, padding: `0 ${VIEW_TABS.itemPaddingX}px` }}
@@ -86,7 +87,7 @@ export function ViewTabs({
             >
               <Icon />
               <span>{v.label}</span>
-            </button>
+            </Btn>
           );
         })}
         {/*

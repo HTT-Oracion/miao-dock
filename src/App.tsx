@@ -819,6 +819,11 @@ function ServicePill({ status }: { status: ServiceState }) {
   // 没有这句就成了"颜色是唯一载体"（《02》§5.2 禁止的那种）。
   return (
     <div className="svc-wrap" ref={wrapRef}>
+      {/*
+       * 这一枚**刻意**用裸 `<button>`：它需要 `aria-haspopup="menu"`，
+       * 而 `Btn` 刻意不开放这个属性（只放 tab / option 两个角色）。
+       * 语义正确优先于"统一用 Btn"—— 少这一句，读屏用户不会知道点它会弹出菜单。
+       */}
       <button
         type="button"
         className="svc-pill"

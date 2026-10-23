@@ -117,10 +117,15 @@ function PlaylistsView() {
    */
   const renderGroup = (label: string, items: Playlist[], refresh: boolean) => (
     <div className="ms-group" key={label}>
-      <button
-        type="button"
+      {/*
+       * 组头走 `Btn`（kind="bare"）而不是裸 `<button>`：`type="button"`、disabled 语义、
+       * 无障碍属性都由这个单元统一给，屏内各处不再手写一遍原生按钮。
+       * `kind="bare"` 时 className 是唯一类名，所以 `ms-caption` 原样生效。
+       */}
+      <Btn
+        kind="bare"
         className={collapsed[label] ? 'ms-caption is-collapsed' : 'ms-caption'}
-        aria-expanded={!collapsed[label]}
+        ariaExpanded={!collapsed[label]}
         onClick={() => toggle(label)}
       >
         {label}
@@ -136,7 +141,7 @@ function PlaylistsView() {
             <RefreshCw size={11} />
           </Btn>
         ) : null}
-      </button>
+      </Btn>
       {collapsed[label] ? null : items.length > 0 ? (
         items.map((pl) => (
           <div className="music-row" key={pl.id} onClick={() => void openLeftPlaylist(pl)}>
