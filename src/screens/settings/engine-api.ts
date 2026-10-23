@@ -22,6 +22,20 @@ import { apiGet, apiPost, type RuntimeProbe } from '@/ipc';
 
 export type EngineTier = 'tiny' | 'small' | 'medium';
 export type EngineAccel = 'auto' | 'cuda' | 'mps' | 'cpu';
+
+/*
+ * 档位的**完整写法**：`Small · 均衡`。
+ * 设计稿的档位选项是 `Tiny · 轻快` / `Small · 均衡（推荐）` / `Medium · 精细（不推荐 · 8GB+）`——
+ * 后半截那个词是这个档的**性格**（快 / 均衡 / 细），不是装饰：只写 `Small` 时，
+ * 用户在"当前配置 / 实际生效"那两处看到的也是光秃秃的英文，等于把设计稿的解释信息丢了。
+ * 收在这里而不是各屏各写一份：投放屏与设置屏都要用，两处分别写过，一次只改了一处就会漂移。
+ */
+export const TIER_LABEL: Record<EngineTier, string> = {
+  tiny: 'Tiny · 轻快',
+  small: 'Small · 均衡',
+  medium: 'Medium · 精细',
+};
+
 export const ACCEL_LABEL: Record<EngineAccel, string> = {
   auto: '自动',
   cuda: 'CUDA',

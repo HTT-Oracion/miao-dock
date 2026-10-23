@@ -3,7 +3,7 @@ import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { open } from '@tauri-apps/plugin-dialog';
 import { apiGet, apiPostMultipart, errorText, expandPaths } from '@/ipc';
 import type { TranslateSource } from '@screens/settings/translate-api';
-import { engineOptions } from '@screens/settings/engine-api';
+import { engineOptions, TIER_LABEL } from '@screens/settings/engine-api';
 import type { EngineTier } from '@screens/settings/engine-api';
 import { useToasts } from '@hooks';
 import type { CreateTaskResponse, LibraryResponse, TaskRow } from '@/types';
@@ -23,13 +23,6 @@ import {
 } from 'lucide-react';
 
 const BATCH_LIMIT = 20; // 契约 §5.2 单次上限
-
-/** 档位文案与设计稿同一套（`Tiny · 轻快` / `Small · 均衡` / `Medium · 精细`） */
-const TIER_LABEL: Record<EngineTier, string> = {
-  tiny: 'Tiny · 轻快',
-  small: 'Small · 均衡',
-  medium: 'Medium · 精细',
-};
 
 /** 投放来源的中文名（本次规则那一行用；`null` = 还没读到偏好） */
 const SOURCE_LABEL: Record<TranslateSource, string> = { local: '本地引擎', online: '在线 API' };

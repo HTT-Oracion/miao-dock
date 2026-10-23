@@ -4,7 +4,7 @@ import { useToasts } from '@hooks';
 import type { ServiceStatus } from '@/ipc';
 import { stateView } from '@/stores/nav';
 import { useEngineState } from '@screens/settings/engine-state';
-import { ACCEL_LABEL } from '@screens/settings/engine-api';
+import { ACCEL_LABEL, TIER_LABEL } from '@screens/settings/engine-api';
 import { errorText, openPath, serviceStart, serviceStop } from '@/ipc';
 import { Btn, Dot, Notice, NumberInput, Select, Switch } from '@components/units';
 import { CtlNote, GroupNote, ReadOnly, Row, RowNote, SubTitle } from '@screens/settings/parts';
@@ -835,9 +835,6 @@ function pendingRestart(o: EngineOptions | null): string[] {
   if (o.modelDir?.configured && o.modelDir?.configured !== o.modelDir?.current) out.push('模型目录');
   return out;
 }
-
-/** 档位的中文名（catalog 用 Tiny/Small/Medium 的写法，这里只做一处映射，不散落字面量） */
-const TIER_LABEL: Record<EngineTier, string> = { tiny: 'Tiny', small: 'Small', medium: 'Medium' };
 
 /** 空闲卸载阈值的上限（与服务端 `IDLE_MIN_MAX` 同值：24h；再大就不像"空闲卸载"而像输错了） */
 const IDLE_MIN_MAX = 1440;

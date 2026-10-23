@@ -1428,6 +1428,40 @@ add('STYLE.setCtlNoteSingleSource', 'STYLE', (s) => {
   return { ok: bad.length === 0, detail: bad.length ? bad.join('；') : '' };
 });
 
+add('STYLE.tierLabelSingleSource', 'STYLE', () => {
+  /*
+   * 档位文案（`Tiny · 轻快` / `Small · 均衡` / `Medium · 精细`）只许在 engine-api.ts 定义一次。
+   * 起因：投放屏与设置屏**各写过一份** —— 投放屏那份是设计稿的写法，设置屏那份是光秃秃的
+   * `Small`，于是同一台机器上「投放屏显示 Small · 均衡、设置页显示 Small」。
+   * 后半截那个词是档位的性格，不是装饰；两份定义迟早只改一处。
+   */
+  const bad = [];
+  const apiPath = path.join(SRC, 'screens', 'settings', 'engine-api.ts');
+  if (!existsSync(apiPath)) return { ok: false, detail: '读不到 engine-api.ts（判据失去对象）' };
+  const api = cachedReadText(apiPath);
+  const want = [
+    ['tiny', 'Tiny · 轻快'],
+    ['small', 'Small · 均衡'],
+    ['medium', 'Medium · 精细'],
+  ];
+  let checked = 0;
+  for (const [key, label] of want) {
+    checked += 1;
+    if (!api.includes(`${key}: '${label}'`)) bad.push(`档位 ${key} 的文案不是「${label}」`);
+  }
+  for (const rel of ['screens/settings/sections/TranslateSection.tsx', 'screens/manga/DropScreen.tsx']) {
+    checked += 1;
+    const abs = path.join(SRC, rel);
+    if (!existsSync(abs)) {
+      bad.push(`${rel} 不存在`);
+      continue;
+    }
+    if (/const TIER_LABEL/.test(stripComments(cachedReadText(abs)))) bad.push(`${rel} 又自带了一份 TIER_LABEL`);
+  }
+  if (checked < 5) bad.push(`只量到 ${checked} 条（应 >= 5）`);
+  return { ok: bad.length === 0, detail: bad.length ? bad.join('；') : '' };
+});
+
 add('STYLE.noScssSyntax', 'STYLE', (s) => {
   // 分片内保持**扁平写法**：本阶段不用 SCSS 语法糖。
   // 理由不是审美，是断言：本仓检查脚本大量用 `[^}]*` 取块，嵌套会改变块结构 →
@@ -2005,6 +2039,21 @@ const MUTATIONS = [
     find: '.set-ctl-note {\n  font-size: 9.5px;',
     replace: '.set-ctl-note {\n  font-size: 9px;',
     expect: ['STYLE.setCtlNoteSingleSource'],
+  },
+  {
+    name: '把档位文案退回光秃秃的 Small（设计稿是 Small · 均衡，后半截是这档的性格）',
+    file: path.join(SRC, 'screens', 'settings', 'engine-api.ts'),
+    find: "  small: 'Small · 均衡',",
+    replace: "  small: 'Small',",
+    expect: ['STYLE.tierLabelSingleSource'],
+  },
+  {
+    name: '让设置屏重新自带一份 TIER_LABEL（投放屏与设置屏各一份，迟早只改一处）',
+    file: path.join(SRC, 'screens', 'settings', 'sections', 'TranslateSection.tsx'),
+    find: '\nexport function TranslateSection',
+    replace:
+      "\nconst TIER_LABEL = { tiny: 'Tiny', small: 'Small', medium: 'Medium' };\n\nexport function TranslateSection",
+    expect: ['STYLE.tierLabelSingleSource'],
   },
   {
     name: '在分片里用 SCSS 变量承载颜色（令牌只走 var(--md-*) / var(--miao-*)，否则深色模式就不成立了）',
