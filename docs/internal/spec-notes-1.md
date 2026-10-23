@@ -9239,3 +9239,41 @@ PowerShell `(Get-Content -Raw) -replace ... | Set-Content`，把文件里的中�
 **五、验证**：CDP 取 Vite 服务的模块，`Tiny · 轻快` / `Small · 均衡` / `Medium · 精细` 三条都在，
 且设置屏模块里**没有** `const TIER_LABEL`；`check:units` **51/51** + 反证 **70/70**（50→51、68→70）·
 `check:settings` 186/186 · `npm run check` **20/20（exit 0，counts/docs 按 51 对账）** · tsc / eslint 干净。
+
+## D-362 · 动效参数的对账法与"令牌在、但没人用"（2026-10-23）
+
+**一、令牌是对的，问题是没人用它。**
+设计稿只有六个动效令牌：`--dur-fast/base/slow` = 140 / 240 / 380ms，
+`--ease-spring` = `cubic-bezier(.22, 1.3, .36, 1)`、`--ease-spring-soft` = `(.34, 1.4, .64, 1)`、
+`--ease-out` = `(.16, 1, .3, 1)`。`MIAO_MOTION` 与它们**逐值相等**，也都被注入成 `--miao-dur-*` / `--miao-ease-*`。
+所以"动效没对齐"根本不可能是令牌写错 —— 只能是**代码绕开令牌自己写了数字**。
+本轮扫出 13 处：`.nav-pop` 的 `0.28s`（还带一条 `cubic-bezier(.22,.61,.36,1)`，
+那是通用 material 曲线，**不在本项目那三条里**）、`.ntf.is-leaving` 的 `0.18s`、
+`.set-diag-fold` / `.set-run-more` / `.set-lic-fold` 的 `0.15s`、`.ui-num` / `.ui-color` 的 `0.15s`、
+灵动岛四行 `.di-*` 的 `0.3s`、`.music-exp-vol-slider` 的 `0.25s`。
+全部换成设计稿对应值：hover 走 `--dur-fast`；浮层与灵动岛走 `--dur-base` + `--miao-ease-spring`；
+退场走 `--dur-fast` + `--miao-ease-out`（设计稿 `.toast.is-leaving` 正是这一对）。
+
+**二、`LEAVE_MS` 与 CSS 是同一件事的两个数字 —— 合成一处。**
+`NotificationStack` 里写死 `LEAVE_MS = 180`，注释说"必须与 app.scss 的 transition 一致"。
+**注释当不了约束**：本轮把 CSS 改成 140ms 时它不会跟着动，表现是"淡出还没完就被卸载"。
+改成 `Number.parseInt(MIAO_MOTION.fast, 10)` —— JS 与 CSS 现在读同一个常量。
+
+**三、不是所有 `linear` 都该被令牌化。**
+留了 3 条：`.ed-bar span`（导出进度）、`.di-wave i`（电平）、`.di-bar i`（播放进度）。
+它们追的是连续量，`linear` 是正确选择，套 240ms 会让指示器迟滞。
+这 3 条以**具名白名单**写进判据（不用通配、不按前缀放行），其余一律必须引用令牌。
+
+**四、判据 `STYLE.motionTokensOnly` 同时钉两端**：一端是"用法"（凡带时长字面量的 `transition` 必须引用令牌），
+一端是"值"（六个令牌逐字 == 设计稿）。只钉用法的话，把 `base` 改成 `200ms` 全仓依然全绿 ——
+而界面上只是"整体快一拍"，没有人会报 bug。反证两条正对这两端。
+
+**五、这一轮的两处自伤（都记下来，因为它们会重复发生）。**
+1. 改 README 计数时又伸手用了 `(Get-Content -Raw).Replace` + `Set-Content` —— 没乱码，但**多写了一个 BOM**；
+   靠 `git diff` 第一行 `+# 喵坞` 才看见。凡是"改几个字"，用编辑器工具；PowerShell 只在**读**的时候可靠。
+2. 在 `AGENTS.md` 的计数行里写了「13 条硬编码时长已清」，而 `check:counts` 取的是该行**最后一个**「N 条」
+   ⇒ 对账读到 13、判定文档与脚本（52）不一致。写「13 处」才安全。
+   **规则：计数行内不许出现第二个「N 条」** —— 这条和"反证条数不许写进 README 那一行"是同一条纪律的两个面。
+
+**六、验证**：`check:units` **52/52** + 反证 **72/72**（70→72）· `check:settings` 186/186 ·
+`check:music` 237/237 · `npm run check` **20/20（exit 0）** · tsc 0。
