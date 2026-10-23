@@ -1361,6 +1361,14 @@
  * 让吸顶条铺满卡片内宽；底色是卡面（`--miao-surface`）的渐变 + 模糊，
  * 滚动内容才会在它下面淡出而不是被硬切。
  */
+/*
+ * 中栏顶行（设计稿 `.music-topbar`）：平台胶囊 + 搜索框，**吸顶**，内距 `0 0 8`。
+ *
+ * 吸顶条的负外边距抵消卡片的左右内距（让它铺满卡内宽），**但底部不再用负值、也不贴 0**：
+ * 它下面紧跟着的是视图内容（搜索页第一块是 `.search-sources`）。原来 `margin-bottom: 12`
+ * 却只给 `padding-bottom: 8`，滚动时下面那块会顶到渐变层里 —— 视觉上就是"被盖住"。
+ * 现在底距给足 10（= 8 内距 + 2 余量），并让视图第一块自带 `scroll-margin-top`。
+ */
 .music-topbar {
   position: sticky;
   top: 0;
@@ -1369,15 +1377,24 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin: -24px -27px 12px;
+  margin: -24px -27px 10px;
   padding: 0 0 8px;
   background: linear-gradient(
     180deg,
-    var(--miao-surface) 58%,
-    color-mix(in srgb, var(--miao-surface) 72%, transparent)
+    var(--miao-surface) 70%,
+    color-mix(in srgb, var(--miao-surface) 88%, transparent)
   );
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+}
+
+/*
+ * 视图与吸顶条之间的间距：吸顶条用 `margin: -24 -27 …` 抵消了 `.music-center` 的 24 内距，
+ * 于是视图会紧贴卡片上沿、内容顶到吸顶条的渐变层里。这里把 24 的顶部内距**补回视图自身**，
+ * 再加上吸顶条自己的 8 内距 —— 内容从吸顶条下方开始，滚动时也不会钻到它底下。
+ */
+.music-view {
+  padding-top: 24px;
 }
 /* 搜索框（设计稿 `.music-search-box`）：右对齐、上限 376，输入框吃满剩余宽度 */
 .music-search-box {
