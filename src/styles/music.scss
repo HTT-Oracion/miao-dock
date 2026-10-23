@@ -724,6 +724,15 @@
   font-weight: 700;
   color: var(--miao-ink);
 }
+/* 平台名：昵称之后的一小段说明（设计稿 `.ms-account-tx small` 的第一段）。
+   凭昵称看不出是哪个平台的账号 —— 用户可能同时登了两三个，而工具条只显示当前播放源。 */
+.toolbar-account-platform {
+  padding-left: 7px;
+  border-left: 1px solid var(--miao-line);
+  font-size: 9.5px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+}
 .ms-foot {
   flex: 0 0 auto;
   border-top: 1px solid var(--miao-line);

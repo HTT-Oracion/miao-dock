@@ -52,6 +52,12 @@ export function ToolbarAccount() {
           )}
         </span>
         <span className="toolbar-account-name">{logged ? info?.nickname || '已登录' : '未登录'}</span>
+        {/*
+         * 平台名（设计稿 `.ms-account-tx small` 那句 \`平台 · 已登录 / 点击登录\` 的第一段）。
+         * 昵称单独出现时看不出"这是哪个平台的账号"——用户可能同时登了两三个平台，
+         * 而工具条只显示当前播放源的那个。所以平台名必须在。
+         */}
+        <span className="toolbar-account-platform">{logged ? provider : `${provider} · 点击登录`}</span>
         <ChevronRight size={12} aria-hidden="true" />
       </Btn>
 
