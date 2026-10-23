@@ -1,11 +1,40 @@
-﻿// 右栏（发现）切片 —— 「右栏」段（D-156 从 store.ts 按 action 段切出）。
+// 右栏（发现）切片 —— 「右栏」段（D-156 从 store.ts 按 action 段切出）。
 import * as ipc from '@music/ipc';
 import * as platform from '@music/platform';
 import { capsOf } from '@music/platform';
 import { songKey } from '@music/convert';
 import { PAGE_SIZE } from '@music/slice';
 import type { MusicState, StoreGet, StoreSet } from '@music/slice';
-import type { Playlist, Song } from '@music/types';
+import type { MusicProvider, Playlist, Song } from '@music/types';
+
+/** 首页榜单卡只铺前 5 名（设计稿 `ch.rows` 就是 5 行） */
+const CHART_PREVIEW_N = 5;
+
+/**
+ * 给每个榜单补上前 5 名预览（设计稿的首页「官方榜单」卡直接铺排行，不是入口列表）。
+ *
+ * 两条纪律：
+ *   · **逐条兜底**：某张榜单取不到前 5 名时保留 `preview: undefined`（卡片退化成只有标题），
+ *     而不是 `preview: []` —— 空数组会渲染成"这个榜一首歌都没有"，那是谎报。
+ *   · **先看平台换没换**：这一轮 await 的是 5 个网络请求，期间用户可能切了平台；
+ *     切了就整批丢弃，否则会把上一个平台的排行画到新平台的卡上。
+ */
+async function withPreview(charts: Playlist[], provider: MusicProvider): Promise<Playlist[]> {
+  return Promise.all(
+    charts.map(async (pl) => {
+      try {
+        const songs = platform.chartUsesRankSongs(provider)
+          ? await platform.rankSongs(provider, pl.id, CHART_PREVIEW_N)
+          : (await platform.playlistTracks(provider, pl.id))[1];
+        const preview = songs.slice(0, CHART_PREVIEW_N).map((s) => ({ title: s.name, artist: s.artist }));
+        return preview.length ? { ...pl, preview } : pl;
+      } catch {
+        // 单张榜失败不影响其它卡：保留 undefined，不写空数组
+        return pl;
+      }
+    }),
+  );
+}
 
 export const createRightSlice = (
   set: StoreSet,
@@ -64,11 +93,14 @@ export const createRightSlice = (
           ),
         );
         if (get().playbackSource !== provider) return;
-        set({ officialCharts: results, chartsError: failed === CHART_IDS.length ? lastError : '' });
+        set({
+          officialCharts: await withPreview(results, provider),
+          chartsError: failed === CHART_IDS.length ? lastError : '',
+        });
       } else {
         const charts = await platform.rankList(provider);
         if (get().playbackSource !== provider) return;
-        set({ officialCharts: charts, chartsError: '' });
+        set({ officialCharts: await withPreview(charts, provider), chartsError: '' });
       }
     } catch (e) {
       // 失败要**说出来**：空列表 + 一句原因，用户才知道是"没榜单"还是"没读到"

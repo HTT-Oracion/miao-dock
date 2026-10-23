@@ -72,6 +72,15 @@ export interface Playlist {
    * 没有它就无法区分"在听我喜欢的音乐"与"在听某个普通歌单"。
    */
   isLiked?: boolean;
+  /**
+   * 榜单预览（仅首页「官方榜单」卡用）：前 5 名的歌名与歌手。
+   *
+   * 设计稿的首页不是"榜单入口列表"，而是**直接把每个榜单的前 5 名铺成一张卡**。
+   * `loadCharts` 拿到榜单列表后再并发为每个榜单取前 5 首 —— 只取 5 首（不是整个榜单），
+   * 是因为首页只需要"看得出这个榜在流行什么"，完整榜单在点开后才拉。
+   * 取不到时保持 `undefined`：卡片退化成"只有标题"，而不是显示一个空排行。
+   */
+  preview?: { title: string; artist: string }[];
 }
 
 export interface SongUrlResult {

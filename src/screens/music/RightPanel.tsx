@@ -311,7 +311,7 @@ function Recommendations() {
             {/* 副标题按设计稿：一句话说清"这批是怎么来的" */}
             <span className="music-card-sub">按你最近的循环生成</span>
             <div className="grow" />
-            <Btn kind="bare" className="music-btn out" disabled={loading} onClick={() => void loadRecommend()}>
+            <Btn kind="bare" className="link-btn" disabled={loading} onClick={() => void loadRecommend()}>
               <RefreshCw size={12} /> {loading ? '换一批中…' : '换一批'}
             </Btn>
           </div>
@@ -357,7 +357,7 @@ function Recommendations() {
               {providerLabel(playbackSource)} · 为你挑选 {newSongs.length} 首
             </span>
             <div className="grow" />
-            <Btn kind="bare" className="music-btn out" disabled={loadingNewSongs} onClick={() => void loadRecommend()}>
+            <Btn kind="bare" className="link-btn" disabled={loadingNewSongs} onClick={() => void loadRecommend()}>
               <RefreshCw size={12} /> {loadingNewSongs ? '刷新中…' : '换一批'}
             </Btn>
           </div>

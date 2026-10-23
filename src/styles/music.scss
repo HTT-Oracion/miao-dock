@@ -1653,6 +1653,144 @@
 }
 
 /* ---------------------------------------------------------------- 官方榜单 */
+
+/* ---------------------------------------------------------------- 官方榜单卡
+/*
+ * 首页「官方榜单」（设计稿 `.chart-grid` + `.chart-card` + `.chart-row`）。
+ *
+ * **两列**网格（设计稿在 theme 分片里刻意从四列收到两列：353px 的卡里塞 5 行排行才读得清，
+ * 四列会窄到歌名只剩几个字）。每张卡 = 卡头（封面 + 榜名）+ 前 5 名排行。
+ * 生效值（运行时实测）：353×181 / pad 15 16 / r16 / gap 12 / 排行行 pad 3.5 0。
+ *
+ * 排行三列用 `grid` 而不是 flex：序号列定宽、歌手列右对齐定宽，歌名吃掉剩余 —— 三列在
+ * 几十张卡之间才会**纵向对齐**（flex 下每行按内容自然宽度排，扫读时会跳）。
+ */
+
+/*
+ * 节头的文字操作键（设计稿 `.link-btn`）：等宽 11px / 700 / muted，带一枚 12px 图标，
+ * 4px 内距 + r6，hover 转 primary-ink。
+ *
+ * 与 `.music-btn` 的区别是**语义层级**：`.music-btn` 是"这一块的操作按钮"（带描边/底色），
+ * `.link-btn` 是"节头右端的一个轻动作"（刷新 / 换一批）—— 设计稿里节头只该出现后者，
+ * 用带底色的按钮会把节头压得比标题还重。
+ */
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-family: var(--md-font-display);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  cursor: pointer;
+  transition: color var(--miao-dur-fast);
+}
+.link-btn:hover:not(:disabled) {
+  color: var(--miao-primary-ink);
+}
+.link-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.chart-card {
+  min-width: 0;
+  padding: 15px 16px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-md);
+  background: var(--miao-surface);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform var(--miao-dur-fast) var(--miao-ease-out),
+    box-shadow var(--miao-dur-fast);
+}
+.chart-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--miao-shadow-2);
+}
+@media (max-width: 900px) {
+  /* 极窄窗：两列会把歌名挤到只剩两三个字，退成一列 */
+  .chart-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.chart-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+}
+.chart-head-cv {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 7px;
+  overflow: hidden;
+  background: linear-gradient(140deg, var(--miao-primary-soft), var(--miao-accent-soft));
+  display: grid;
+  place-items: center;
+  font-family: var(--md-font-display);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.chart-head-cv img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.chart-head strong {
+  min-width: 0;
+  font-family: var(--md-font-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chart-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 3.5px 0;
+  font-size: 9.5px;
+  color: var(--miao-text);
+}
+.chart-row i {
+  font-style: normal;
+  font-size: 8.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--miao-faint);
+  text-align: right;
+}
+.chart-row b {
+  min-width: 0;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chart-row em {
+  font-style: normal;
+  font-size: 8.5px;
+  color: var(--miao-muted);
+  max-width: 62px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .music-charts {
   display: flex;
   gap: 9px;

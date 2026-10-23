@@ -900,18 +900,80 @@ add('UI.searchCapsule', 'UI', (s) => ({
   ok: /\bsearchProvider\b/.test(s.uiSource) && /\bsetSearchProvider\b/.test(s.uiSource),
   detail: uiNote(s, '未读到搜索源胶囊（searchProvider/setSearchProvider）'),
 }));
-add('UI.chartGrid', 'UI', (s) => ({
-  ok: /\bchartGrid\b/.test(s.uiSource) || /charts\s+grid/i.test(s.uiSource),
-  detail: uiNote(s, '未读到榜单网格形态（chartGrid / charts grid）'),
-}));
-add('UI.chartScroll', 'UI', (s) => ({
-  ok: /scrollLeft\s*\+=/.test(s.uiSource) && /\bdeltaY\b/.test(s.uiSource),
-  detail: uiNote(s, '未读到「滚轮纵向 → scrollLeft」横向滚动映射（scrollLeft += / deltaY）'),
-}));
-add('UI.dailyEntry', 'UI', (s) => ({
-  ok: /\bdailySongs\b/.test(s.uiSource) || /setRightView\(\s*['"]daily['"]/.test(s.uiSource),
-  detail: uiNote(s, "未读到每日推荐入口（dailySongs / setRightView('daily')）"),
-}));
+add('UI.chartGrid', 'UI', (s) => {
+  /*
+   * 榜单卡（设计稿 `.chart-grid` 四列 + `.chart-card` 卡头 + `.chart-row` 排行）。
+   *
+   * 产品旧形态是 `.music-charts` 的**横向滚动小圆卡**（64px，只有封面与榜名），点开才进详情；
+   * 设计稿是**首页直接铺前 5 名排行**。这不是"换个样式"：首页要回答"各榜在流行什么"，
+   * 小圆卡答不了，得再点一次。
+   */
+  const charts = readMaybe(path.join(F.musicUiDir, 'Charts.tsx')) ?? '';
+  if (!charts) return { ok: false, detail: uiNote(s, '未读到 Charts.tsx') };
+  const problems = [];
+  if (!charts.includes('className="chart-grid"')) problems.push('榜单容器不是 .chart-grid');
+  if (!charts.includes('className="chart-card"')) problems.push('榜单卡不是 .chart-card');
+  if (!charts.includes('className="chart-row"')) problems.push('榜单卡里没有 .chart-row 排行');
+  if (!/pl\.preview/.test(charts)) problems.push('排行没有接 preview（可能写死了假数据）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.chartScroll', 'UI', (s) => {
+  /*
+   * 旧判据钉的是"滚轮纵向 → scrollLeft 横向滚动"，那是**横滚小卡**形态的补丁。
+   * 设计稿改成四列网格后**没有横轴**，那条映射也就不该存在 —— 判据随之反转：
+   * 网格形态下若还留着 `onWheel → scrollLeft`，说明旧横滚容器没删干净（两形态并存会互相干扰）。
+   */
+  const charts = stripComments(readMaybe(path.join(F.musicUiDir, 'Charts.tsx')) ?? '');
+  const leftover = /scrollLeft\s*\+=/.test(charts) || /\bdeltaY\b/.test(charts);
+  return {
+    ok: !leftover,
+    detail: leftover ? '四列网格形态下仍留着 onWheel → scrollLeft 的横滚残留' : '',
+  };
+});
+add('UI.dailyEntry', 'UI', (s) => {
+  /*
+   * 每日推荐的入口（设计稿在 `.entry-grid` 的三枚入口卡里，文案「每日推荐」）。
+   * 旧判据接受"榜单区最前面那张 .music-chart.is-daily 小卡"，但那个形态已按设计稿删除 ——
+   * 现在只认入口卡这一条路径，且必须真的能打开（onClick 接到 setRightView('daily')）。
+   */
+  const src = stripComments(s.uiSource ?? '');
+  const problems = [];
+  if (!/setRightView\(\s*['"]daily['"]/.test(src)) problems.push("入口卡没有接 setRightView('daily')");
+  if (!/每日推荐/.test(src)) problems.push('入口卡没有「每日推荐」文案');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.sectionLinkBtn', 'UI', (s) => {
+  /*
+   * 节头右端的动作键必须是设计稿的 `.link-btn`（轻动作），不是 `.music-btn`（带底色的操作按钮）。
+   * 语义层级不同：节头只该出现"刷新 / 换一批"这类轻动作，带底色的按钮会把节头压得比标题还重。
+   * 三处：榜单「刷新」/ 推荐歌单「换一批」/ 今日精选「换一批」。
+   */
+  const charts = stripComments(readMaybe(path.join(F.musicUiDir, 'Charts.tsx')) ?? '');
+  const right = stripComments(readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx')) ?? '');
+  const problems = [];
+  const linkCount =
+    (charts.match(/className="link-btn"/g) ?? []).length + (right.match(/className="link-btn"/g) ?? []).length;
+  if (linkCount !== 3) problems.push(`节头动作键有 ${linkCount} 处 .link-btn，应为 3（榜单/推荐/精选各一）`);
+  const css = stripComments(readMaybe(F.musicScss) ?? '');
+  if (!/\.link-btn\s*\{/.test(css)) problems.push('缺少 .link-btn 样式');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.chartCardPreview', 'UI', (s) => {
+  /*
+   * 首页榜单卡的排行必须来自**真实数据**（`loadCharts` 并发取的 `preview`），
+   * 不是写死的假排行 —— 这是"设计稿是演示数据、产品必须接真数据"那条纪律的落点。
+   * 判据：类型里有 preview 字段、loadCharts 里调用了 withPreview、withPreview 里真的取歌。
+   */
+  const types = stripComments(readMaybe(path.join(APP, 'src', 'modules', 'music', 'types.ts')) ?? '');
+  const right = stripComments(readMaybe(path.join(APP, 'src', 'modules', 'music', 'actions', 'right.ts')) ?? '');
+  const problems = [];
+  if (!/preview\?:\s*\{\s*title/.test(types)) problems.push('Playlist 类型里没有 preview 字段');
+  const calls = (right.match(/withPreview\(/g) ?? []).length;
+  if (calls < 3) problems.push(`withPreview 调用点只有 ${calls} 个（声明 1 + 两个分支各 1，应为 3）`);
+  if (!/platform\.rankSongs|platform\.playlistTracks/.test(right)) problems.push('withPreview 没有真的去取歌');
+  if (!/CHART_PREVIEW_N\s*=\s*5/.test(right)) problems.push('预览条数不是 5（设计稿卡里就是 5 行）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
 add('UI.playHistory', 'UI', (s) => ({
   ok: /\bplayHistoryList\b/.test(s.uiSource),
   detail: uiNote(s, '未读到播放历史视图（playHistoryList）'),
@@ -4462,6 +4524,27 @@ const MUTATIONS = [
     find: 'items.slice(start, end)',
     replace: 'items',
     expect: ['UI.virtualList'],
+  },
+  {
+    name: '把榜单卡的排行改成写死的假数据（设计稿是演示数据，产品必须接真数据）',
+    file: path.join(F.musicUiDir, 'Charts.tsx'),
+    find: 'const rows = pl.preview ?? [];',
+    replace: "const rows = [{ title: '示例歌名', artist: '示例歌手' }];",
+    expect: ['UI.chartGrid'],
+  },
+  {
+    name: '把节头的轻动作键换回带底色的 music-btn（节头比标题还重）',
+    file: path.join(F.musicUiDir, 'Charts.tsx'),
+    find: 'className="link-btn"',
+    replace: 'className="music-btn out"',
+    expect: ['UI.sectionLinkBtn'],
+  },
+  {
+    name: '把 preview 条数从 5 改成 3（设计稿卡里是 5 行）',
+    file: path.join(APP, 'src', 'modules', 'music', 'actions', 'right.ts'),
+    find: 'const CHART_PREVIEW_N = 5;',
+    replace: 'const CHART_PREVIEW_N = 3;',
+    expect: ['UI.chartCardPreview'],
   },
   {
     name: '把首页的一节改回旧类名 music-sec（节间距 20 静默失效）',
