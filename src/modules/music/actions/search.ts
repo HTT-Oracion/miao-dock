@@ -19,6 +19,48 @@ export const createSearchSlice = (
       set({ searchResults: [], searchError: '', searchHasMore: false });
       return;
     }
+
+    /*
+     * **歌单内搜索**：当前在歌单详情（`leftView === 'tracks'`）时，搜的是这个歌单自己的曲目。
+     *
+     * 为什么不打平台的 `/search` 接口：那个接口是**全站搜索**，不接受歌单 id
+     * （NeteaseCloudMusicApiEnhanced 的 `search.js` 只有 `s / type / limit / offset`）。
+     * 拿全站结果冒充"歌单内搜索"，用户点一首不在该歌单里的歌，播放列表就对不上了。
+     *
+     * 做法：先把**整个歌单**拉全（分页循环，上限 1000/页），再在本地按
+     * 标题 / 歌手 / 专辑过滤。歌单量级是几百首，本地过滤是一次性的数组扫描，
+     * 比为此新开一个后端端点更合适；也确实没有更贴近的后端接口。
+     */
+    const st = get();
+    const pl = st.leftPlaylistMeta;
+    if (st.leftView === 'tracks' && pl) {
+      set({ searching: true, searchError: '', searchText: keywords, searchResults: [], searchHasMore: false });
+      try {
+        const total = pl.track_count ?? st.leftPlaylistTracks.length;
+        // 已在内存里的那部分直接用，缺的按页补齐
+        let all = [...st.leftPlaylistTracks];
+        while (all.length < total) {
+          const page = await platform.playlistTracksRange(st.playbackSource, pl.id, all.length, 1000);
+          if (page.length === 0) break;
+          all = [...all, ...page];
+        }
+        const kw = keywords.toLowerCase();
+        const hit = all.filter(
+          (s) =>
+            s.name.toLowerCase().includes(kw) ||
+            (s.artist ?? '').toLowerCase().includes(kw) ||
+            (s.album ?? '').toLowerCase().includes(kw),
+        );
+        if (get().leftView !== 'tracks' || get().leftPlaylistMeta?.id !== pl.id) return;
+        set({ searchResults: hit, searchTab: 'song', searchHasMore: false });
+      } catch (e) {
+        set({ searchResults: [], searchError: String(e) });
+      } finally {
+        set({ searching: false });
+      }
+      return;
+    }
+
     const provider = get().searchProvider;
     const pageSize = platform.searchPageSize(provider);
     // 清掉上一轮结果：否则「搜索中」会与旧关键词的结果混在一起

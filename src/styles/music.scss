@@ -1918,6 +1918,27 @@ button.ms-caption.is-collapsed {
   gap: 2px;
   flex-shrink: 0;
 }
+/*
+ * 行内红心：**已收藏 = 标红**（实心 + 红），未收藏 = 空心 + muted。
+ *
+ * 颜色不用 `--miao-danger`（那是"出错"的红）：红心是"我喜欢"，语义上更接近
+ * 设计稿 `--accent` 那一档暖色，与皮肤主色同源，不会和错误提示抢注意力。
+ */
+.song-like {
+  color: var(--miao-muted);
+  transition:
+    color var(--miao-dur-fast),
+    transform var(--miao-dur-fast);
+}
+.song-like:hover {
+  color: var(--miao-accent-ink);
+}
+.song-like.is-liked {
+  color: var(--miao-like);
+}
+.song-like.is-liked:hover {
+  color: color-mix(in srgb, var(--miao-like) 82%, #000);
+}
 
 /* 历史行的第二行：平台色点 + 平台名 + 相对时间（同一行内联，不再单占一列） */
 .his-meta {
@@ -2124,7 +2145,10 @@ button.ms-caption.is-collapsed {
   flex: 1;
   min-height: 0;
 }
-/* 分页脚：一行小字 + 一枚"再拉一页"的按钮；触屏与键盘用户不靠滚动也能翻页 */
+/* 分页脚：一行小字 + 一枚"再拉一页"的按钮；触屏与键盘用户不靠滚动也能翻页。
+   ⚠️ **已到底时不渲染这个元素**（组件里 `hasMore` 为假直接返回 null）——
+   那句"已到底 · 共 N 首"在曲目表里是冗余信息（标题上方已有 N 首），
+   且会白占一行高度，把最后几首歌顶出可视区。 */
 .song-table-more {
   flex: 0 0 auto;
   display: flex;

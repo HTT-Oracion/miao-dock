@@ -143,7 +143,7 @@ export function RightPanel({
           <label className="search-field">
             <Search size={13} className="search-field-ico" aria-hidden="true" />
             <input
-              placeholder="搜索歌曲 / 歌手 / 专辑"
+              placeholder={leftView === 'tracks' ? '在歌单内搜索' : '搜索歌曲 / 歌手 / 专辑'}
               aria-label="搜索音乐"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}

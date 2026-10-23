@@ -340,6 +340,12 @@ export function cssVars(mode: ThemeMode): Record<string, string> {
   out['--miao-sage-ink'] = mode === 'dark' ? '#B6CDB4' : '#6F8C70';
   out['--miao-danger'] = src.error;
   out['--miao-danger-soft'] = mode === 'dark' ? '#352522' : '#F9EDEB';
+  /*
+   * 红心色（"我喜欢"）：**刻意不用 `--miao-danger`** —— 那是"出错"的红，
+   * 两者语义不同，共用一色会让"收藏成功"和"操作失败"看起来一样。
+   * 取设计稿 `--accent-deep` 同源的暖红（浅 #D2604F / 深 #E08A7A）。
+   */
+  out['--miao-like'] = mode === 'dark' ? '#E08A7A' : '#D2604F';
   out['--miao-success'] = src.success;
   out['--miao-success-soft'] = mode === 'dark' ? '#20322A' : '#EAF3EE';
   out['--miao-warning'] = src.warning;

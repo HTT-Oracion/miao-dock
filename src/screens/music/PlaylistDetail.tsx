@@ -36,6 +36,8 @@ export function PlaylistDetail() {
   const currentSong = useMusicStore((s) => s.currentSong);
   const proxyPort = useMusicStore((s) => s.proxyPort);
   const loadMoreLeft = useMusicStore((s) => s.loadMoreLeft);
+  const likedSongIds = useMusicStore((s) => s.likedSongIds);
+  const toggleLike = useMusicStore((s) => s.toggleLike);
 
   const name = meta?.name ?? '歌单';
   const total = meta?.track_count ?? tracks.length;
@@ -134,6 +136,7 @@ export function PlaylistDetail() {
             itemKey={(s, i) => `${songKey(s)}:${i}`}
             renderItem={(s, i) => {
               const play = () => void playPlaylist(tracks, { index: i, playlist: meta ?? undefined });
+              const liked = likedSongIds.has(s.id);
               return (
                 <SongRow
                   song={s}
@@ -148,13 +151,36 @@ export function PlaylistDetail() {
                    * 而歌手又跑到专辑列上、标题底下空着（#17）。
                    */
                   aside={<span className="song-album">{s.album || '—'}</span>}
+                  /*
+                   * 红心（已收藏 → 标红，可再点取消）。`stopPropagation` 不能少：
+                   * 否则点红心会顺带触发行的 onClick（播放），点一下等于"取消收藏 + 开始播放"。
+                   * 平台不支持写回时 `toggleLike` 自己会 toast 说明，这里不重复判断。
+                   */
+                  actions={
+                    <Btn
+                      kind="bare"
+                      className={liked ? 'song-like is-liked' : 'song-like'}
+                      ariaLabel={liked ? '取消收藏' : '收藏'}
+                      title={liked ? '取消收藏' : '收藏'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void toggleLike(s);
+                      }}
+                    >
+                      <Heart size={13} fill={liked ? 'currentColor' : 'none'} />
+                    </Btn>
+                  }
                   onClick={play}
                   onPlay={play}
                 />
               );
             }}
           />
-          {/* 分页脚：还有更多时给一个"再拉一页"的入口（不依赖滚动 —— 触屏/键盘也能用） */}
+          {/*
+           * 分页脚：**只有还有更多时才出现**。
+           * 已到底时不再显示"已到底 · 共 N 首"—— 那句话在曲目表里是冗余信息
+           * （标题上方已有"N 首"），且会白占一行高度，把最后几首歌顶出可视区。
+           */}
           {hasMore ? (
             <div className="song-table-more">
               <Btn
@@ -166,9 +192,7 @@ export function PlaylistDetail() {
                 {loadingMore ? '加载中…' : `加载更多（还有 ${total - tracks.length} 首）`}
               </Btn>
             </div>
-          ) : (
-            <div className="song-table-more is-end">已到底 · 共 {total} 首</div>
-          )}
+          ) : null}
           <OverlayScrollbar thumb={thumb} />
         </div>
       )}
