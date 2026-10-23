@@ -89,6 +89,8 @@ const F = {
   // 播放模式循环按钮（"心动不可用时不显示该档"的 UI 落点，HEARTBEAT 组判它）
   playModeButton: path.join(APP, 'src', 'components', 'units', 'PlayModeButton.tsx'),
   leftPanel: path.join(APP, 'src', 'screens', 'music', 'LeftPanel.tsx'),
+  // 歌单详情（右栏）：歌单曲目的宿主 —— 设计稿交互是"点歌单换右侧"
+  playlistDetail: path.join(APP, 'src', 'screens', 'music', 'PlaylistDetail.tsx'),
   rightPanel: path.join(APP, 'src', 'screens', 'music', 'RightPanel.tsx'),
   localView: path.join(APP, 'src', 'screens', 'music', 'LocalView.tsx'),
   historyView: path.join(APP, 'src', 'screens', 'music', 'HistoryView.tsx'),
@@ -298,6 +300,7 @@ function loadSources() {
     queueDrawer: readMaybe(F.queueDrawer),
     playModeButton: readMaybe(F.playModeButton),
     leftPanel: readMaybe(F.leftPanel),
+    playlistDetail: readMaybe(F.playlistDetail),
     rightPanel: readMaybe(F.rightPanel),
     localView: readMaybe(F.localView),
     historyView: readMaybe(F.historyView),
@@ -1211,14 +1214,27 @@ add('UI.sideGroups', 'UI', (s) => {
   if (!src) return { ok: false, detail: uiNote(s, '未读到 LeftPanel.tsx') };
   const problems = [];
   if (!/className="ms-group"/.test(src)) problems.push('歌单列表没有 .ms-group 分组容器');
-  if (!/className="ms-caption"/.test(src)) problems.push('组头不是 .ms-caption（设计稿的组头形态）');
+  /*
+   * 组头是 `.ms-caption`（设计稿的组头形态）。
+   * ⚠️ 它现在是 `<button>` 而不是 `<div>`（#16：组头可折叠），className 也随之变成条件式
+   * `className={collapsed[label] ? 'ms-caption is-collapsed' : 'ms-caption'}` ——
+   * 所以这里同时接受两种写法，否则一次可折叠化就会让断言恒红。
+   */
+  const hasCaption = /className="ms-caption"/.test(src) || /'ms-caption is-collapsed'/.test(src);
+  if (!hasCaption) problems.push('组头不是 .ms-caption（设计稿的组头形态）');
   if (!/className="ms-empty"/.test(src)) problems.push('组内空态不是 .ms-empty（用通用 Empty 会占满高度）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 add('UI.leftTracksVirtual', 'UI', (s) => {
-  /* 歌单曲目仍然必须虚拟滚动（上千首）：LeftPanel 里那一段不许跟着歌单列表一起退化 */
-  const src = readMaybe(path.join(F.musicUiDir, 'LeftPanel.tsx'));
-  if (!src) return { ok: false, detail: uiNote(s, '未读到 LeftPanel.tsx') };
+  /*
+   * 歌单曲目仍然必须虚拟滚动（上千首）。
+   *
+   * ⚠️ 曲目列表**已从左栏搬到右栏**（设计稿交互：点歌单换右侧，左栏保持列表），
+   * 所以判据对象从 `LeftPanel.tsx` 换成 `PlaylistDetail.tsx` —— 断言守的是
+   * "上千首不卡"这个事实，不是"它住在哪个文件里"。
+   */
+  const src = readMaybe(path.join(F.musicUiDir, 'PlaylistDetail.tsx'));
+  if (!src) return { ok: false, detail: uiNote(s, '未读到 PlaylistDetail.tsx（歌单详情不在预期位置）') };
   return {
     ok: /<VirtualList/.test(src),
     detail: /<VirtualList/.test(src) ? '' : '歌单曲目列表未接虚拟滚动（上千首会卡）',
@@ -4024,7 +4040,14 @@ const hostOnPlay = (id, key, min) =>
         : `${key}：onClick={play} ${nClick} 处 / onPlay={play} ${nPlay} 处（应 ≥${min} 且两者相等 —— 少一处就是右键「播放」与左键点击不是一个语义）`,
     };
   });
-hostOnPlay('left', 'leftPanel', 1); // 歌单曲目
+/*
+ * 歌单曲目的宿主（左键点击与右键「播放」必须是同一个回调）。
+ *
+ * ⚠️ 判据对象随交互改了：设计稿里"点歌单 → 右侧出曲目"，所以这个宿主
+ * 从 `LeftPanel.tsx` 换成了 `PlaylistDetail.tsx` —— 断言守的是
+ * "两个入口同一个语义"这个事实，不是"它住在哪个文件里"。
+ */
+hostOnPlay('left', 'playlistDetail', 1); // 歌单曲目
 hostOnPlay('right', 'rightPanel', 3); // 搜索结果 / 榜单曲目 / 每日推荐 —— 三处逐一接
 hostOnPlay('local', 'localView', 1); // 本地曲库
 hostOnPlay('history', 'historyView', 1); // 播放历史
@@ -4689,8 +4712,13 @@ const MUTATIONS = [
   {
     name: '把搜索源胶囊挪回视图壳（首页/榜单页也一直挂着它）',
     file: path.join(F.musicUiDir, 'RightPanel.tsx'),
-    find: '        {searchActive ? <SearchResults /> : <Discover />}',
-    replace: '        <SearchCaps />\n        {searchActive ? <SearchResults /> : <Discover />}',
+    /*
+     * 锚点取视图分流的**第一行**。分流已从一行三元改成多行三元（多了歌单详情与本地两级），
+     * 所以 `{searchActive ? <SearchResults /> : <Discover />}` 这行已经不存在了 ——
+     * 换成 `{searchActive ? (`。它只会出现一次，且替换后胶囊真的挂到了视图壳上。
+     */
+    find: '        {searchActive ? (',
+    replace: '        <SearchCaps />\n        {searchActive ? (',
     expect: ['UI.searchSourcesInResults'],
   },
   {
@@ -4699,27 +4727,38 @@ const MUTATIONS = [
     /*
      * 破坏点：把**无结果**这条分支里的 `<SearchCaps />` 换成别的元素。
      *
-     * ⚠️ 两类"看起来能用"的锚点都不成立，记下来免得下次再试：
+     * ⚠️ 三类"看起来能用"的锚点都不成立，记下来免得下次再试：
      *   · `all: true` —— 本执行器不支持（只有单次 `txt.replace`）；
      *   · 改函数名（`SearchCaps` → `SearchCapsGone`、`SearchResults` → `SearchResultsGone`）——
      *     断言用的是 `indexOf('function SearchResults')` / `/<SearchCaps\s*\/>/`，
-     *     改名后**前缀仍然命中**，等于没改。
-     * 所以用一条只会命中一次、且会真的减少一处胶囊的锚点：无结果分支的第一行。
+     *     改名后**前缀仍然命中**，等于没改；
+     *   · 单写 `<SearchCaps />` —— 全文出现 3 次，`replace` 只换第一处，
+     *     而第一处是"搜索中"分支，断言数的是总数（3 → 3 之外还要 3 处分布），不一定红。
+     * 所以用一条只会命中一次、且会真的减少一处胶囊的锚点：无结果分支里
+     * 「胶囊 + 那句空态」这一对（`art` 是后来加的，注释也在它们之间）。
      */
-    find: '        <SearchCaps />\n        <Empty sub="试试更短的关键词，或切换搜索源。">没有找到「{searchText}」</Empty>',
-    replace: '        <Empty sub="试试更短的关键词，或切换搜索源。">没有找到「{searchText}」</Empty>',
+    find: '        <SearchCaps />\n        <Empty art sub="试试更短的关键词，或切换搜索源。">',
+    replace: '        <Empty art sub="试试更短的关键词，或切换搜索源。">',
     expect: ['UI.searchSourcesInResults'],
   },
   {
     name: '在视图里加回 .music-rightbody 包裹层（多一层，滚动与高度链要重算）',
     file: path.join(F.musicUiDir, 'RightPanel.tsx'),
-    find: '        {searchActive ? <SearchResults /> : <Discover />}',
-    replace: '        <div className="music-rightbody">{searchActive ? <SearchResults /> : <Discover />}</div>',
+    /*
+     * 锚点是视图分流的**第一行**。分流已从一行三元改成多行三元（多了歌单详情与本地两级），
+     * 所以取 `{searchActive ? (` 这一行 —— 它只会出现一次，且包住整个分流。
+     */
+    find: '        {searchActive ? (',
+    replace: '        <div className="music-rightbody">{searchActive ? (',
     expect: ['UI.noCenterWrapper'],
   },
   {
     name: '把左栏歌单列表的分组拆掉（退回"一条扁平行表"）',
     file: path.join(F.musicUiDir, 'LeftPanel.tsx'),
+    /*
+     * 组头从 `<div className="ms-caption">` 改成了可折叠的 `<button>`（#16），
+     * 但分组容器 `.ms-group` 仍是普通 div —— 所以这条锚点仍然有效，只更新注释。
+     */
     find: 'className="ms-group"',
     replace: 'className="ms-flat"',
     expect: ['UI.sideGroups'],
@@ -4733,7 +4772,7 @@ const MUTATIONS = [
   },
   {
     name: '把歌单曲目列表的虚拟滚动摘掉（上千首会卡）',
-    file: path.join(F.musicUiDir, 'LeftPanel.tsx'),
+    file: path.join(F.musicUiDir, 'PlaylistDetail.tsx'),
     find: '<VirtualList',
     replace: '<TrackList',
     expect: ['UI.leftTracksVirtual'],

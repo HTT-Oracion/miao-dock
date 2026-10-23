@@ -102,6 +102,8 @@ const MANIFEST = [
   'ProgressRing.tsx',
   'NumberInput.tsx',
   'Empty.tsx',
+  'Mascot.tsx',
+  'OverlayScrollbar.tsx',
   'VirtualList.tsx',
   'index.ts',
 ];
@@ -145,6 +147,7 @@ const HOOKS_MANIFEST = [
   'useAnimePlayback.ts',
   'useNav.ts',
   'useAppVersion.ts',
+  'useOverlayScrollbar.ts',
 ];
 /** hooks/index.ts 业务桶应出口的业务 hook 名 */
 const HOOKS_BARREL_EXPORTS = [

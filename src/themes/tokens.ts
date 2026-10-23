@@ -344,6 +344,12 @@ export function cssVars(mode: ThemeMode): Record<string, string> {
   out['--miao-success-soft'] = mode === 'dark' ? '#20322A' : '#EAF3EE';
   out['--miao-warning'] = src.warning;
   out['--miao-warning-soft'] = mode === 'dark' ? '#33291E' : '#F9F0E6';
+  out['--miao-warning-line'] = mode === 'dark' ? '#4A3A26' : '#EADCC6';
+  // 主色 wash：焦点环用的"3px 淡色光圈"（设计稿 `.search-field:focus-within` 的
+  // `box-shadow: 0 0 0 3px var(--primary-wash)`）。取主色 14% 透明度 —— 再浓会抢边框。
+  out['--miao-primary-wash'] = mode === 'dark' ? 'rgba(133,173,206,.16)' : 'rgba(110,151,185,.14)';
+  // 主色描边：比 wash 实，用于"选中态的一圈细线"（platform-pill / 侧栏选中项）
+  out['--miao-primary-line'] = mode === 'dark' ? '#3C4F63' : '#D6E3EC';
   out['--miao-glass'] = mode === 'dark' ? 'rgba(23, 32, 41, .68)' : 'rgba(255, 255, 255, .64)';
   out['--miao-glass-line'] = mode === 'dark' ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.72)';
   out['--miao-shadow-1'] =
