@@ -203,10 +203,6 @@ export type LyricsMode = 'word' | 'line';
 
 export type PlaybackQuality = 'jymaster' | 'hires' | 'lossless' | 'exhigh' | 'standard';
 
-/**
- * 音乐平台类型 —— 汽水（qishui）已延后（技术方案 PD-1：Windows-only 平台耦合 +
- * 依赖仓库外二进制签名器），故从类型里移除。
- */
 export type MusicProvider = 'netease' | 'kugou' | 'qqmusic' | 'migu';
 
 /** 平台显示信息 */
