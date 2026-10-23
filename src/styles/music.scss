@@ -673,13 +673,16 @@
  * ⚠️ **左右内距不在这里给**：右侧（侧栏以东）是"工具条 + 内容"的**一个整体**，
  * 左右留白由 `.shell` 统一负责。这里再给 24px 就会出现**第二层左内距** ——
  * 左栏卡片比工具条标题再缩进一截，「侧栏与工具条不在一条线上」。
- * 上下内距保留（24 上 / 12 下）：那是三栏与工具条、播放条之间的呼吸位。
+ *
+ * ⚠️ **上内距也不给**：`.content` 自己已有 26px 上内距，这里再来 24px
+ * 就等于三栏与工具条之间隔了 50px —— 工具条像飘在上面，不像这一屏的头部。
+ * 只保留下内距 12（三栏与底部播放条之间的呼吸位）。
  */
 .music-layout {
   display: grid;
   grid-template-columns: 255px minmax(0, 1fr) 270px;
   gap: 14px;
-  padding: 24px 0 12px;
+  padding: 0 0 12px;
   min-height: 0;
   overflow: hidden;
   flex: 1;
@@ -1591,22 +1594,33 @@
   padding: 0 0 8px;
   background: transparent;
 }
-/* 搜索框（设计稿 `.music-search-box`）：右对齐、上限 376，输入框吃满剩余宽度 */
+/*
+ * 搜索框（设计稿 `.music-search-box`）：**贴中栏最右**，输入框吃满剩余宽度。
+ *
+ * 早先是 `width: min(376px, 100%)` + `margin-left: auto` —— 推到右边了，
+ * 但宽度只有 376，右边还空着一大片，视觉上"没靠到底"。
+ * 现在改成 `flex: 1`（吃满平台胶囊剩下的全部宽度）+ `margin-left: auto`，
+ * 于是输入框与搜索按钮的右缘 = 中栏内容区的右缘（只差中栏自己的 27px 内距）。
+ */
 .music-search-box {
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 5px;
-  width: min(376px, 100%);
+  flex: 1;
+  min-width: 0;
 }
 .music-search-ico {
   flex: none;
   color: var(--miao-muted);
 }
-.music-search-box /*
+/*
  * 搜索框（设计稿 `.search-field` 的**生效值**）：一整块内凹底 + 1px 描边 + r10，
  * 高 34、左右 10，图标 / 输入 / 清空都在框**内部**（`gap 7`）。
  * 焦点时整块转主色边框 + 3px `primary-wash` 光晕 —— 这比"只给 input 描边"更像一个控件。
+ *
+ * `flex: 1` 让它吃满 `.music-search-box` 里除按钮外的全部宽度，
+ * 于是输入框右缘顶到按钮左边、按钮右缘顶到中栏内容区右缘。
  */
 .search-field {
   display: flex;
@@ -1614,6 +1628,8 @@
   gap: 7px;
   height: 34px;
   padding: 0 10px;
+  flex: 1;
+  min-width: 0;
   border: 1px solid var(--miao-line);
   border-radius: 10px;
   background: var(--miao-surface-2);

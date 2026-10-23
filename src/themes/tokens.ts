@@ -110,7 +110,7 @@ export const SHELL = {
   compactSidebarWidth: 66,
   /** 760 断点以下的窄轨宽度（与 app.scss 的媒体查询同值） */
   narrowSidebarWidth: 60,
-  toolbarHeight: 62,
+  toolbarHeight: 64,
   contentPadding: { top: 26, right: 26, bottom: 22, left: 24 },
   /** 1180 断点以下的内容区内边距（与 app.scss 的媒体查询同值） */
   compactContentPadding: { top: 20, right: 18, bottom: 18, left: 18 },
