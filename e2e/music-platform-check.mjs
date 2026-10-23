@@ -857,9 +857,10 @@ add('UI.drawerAboveExpanded', 'UI', (s) => {
     return z ? Number(z[1]) : null;
   };
   const exp = pickZ('\\.music-exp');
-  const drawer = pickZ('\\.music-drawer');
+  // 抽屉换成通用 `SideDrawer` 单元后，层级落在 `.ui-drawer-layer` 上（`.queue-drawer` 只管宽度与圆角）
+  const drawer = pickZ('\\.ui-drawer-layer');
   if (exp === null || drawer === null)
-    return { ok: false, detail: '未解析到 .music-exp / .music-drawer 的 z-index（选择器或写法变了）' };
+    return { ok: false, detail: '未解析到 .music-exp / .ui-drawer-layer 的 z-index（选择器或写法变了）' };
   return {
     ok: drawer > exp,
     detail: drawer > exp ? '' : `播放队列(z)=${drawer} 被展开播放器(z)=${exp} 盖住 —— 点「播放队列」会看不到任何东西`,
@@ -1609,9 +1610,9 @@ add('QUEUE.scrollsToCurrent', 'QUEUE', (s) => {
   const drawer = stripComments(s.queueDrawer ?? '');
   const vl = stripComments(readMaybe(F.virtualList));
   const missing = [];
-  if (!/music-qd-caption">正在播放/.test(drawer)) missing.push('QueueDrawer 没有「正在播放」段（当前曲必须常驻顶部）');
+  if (!/qd-caption">正在播放/.test(drawer)) missing.push('QueueDrawer 没有「正在播放」段（当前曲必须常驻顶部）');
   if (!/queue\.slice\(currentIndex \+ 1\)/.test(drawer)) missing.push('「接下来」段没有从当前曲之后切');
-  if (!/music-qd-caption">接下来 · \{upcoming\.length\} 首/.test(drawer)) missing.push('「接下来」段没有带真实条数');
+  if (!/qd-caption">接下来 · \{upcoming\.length\} 首/.test(drawer)) missing.push('「接下来」段没有带真实条数');
   if (!/scrollToIndex/.test(vl)) missing.push('VirtualList 未支持 scrollToIndex');
   return { ok: missing.length === 0, detail: missing.length ? `播放列表定位：${missing.join('、')}` : '' };
 });
@@ -1620,9 +1621,9 @@ add('QUEUE.heartbeatTitle', 'QUEUE', (s) => {
   // 标题必须跟着变，否则左栏停在歌单上、抽屉里却是一批陌生的歌，两处对不上且无提示。
   const drawer = stripComments(s.queueDrawer ?? '');
   const missing = [];
-  if (!/isHeartbeat\s*\?\s*'心动模式'\s*:\s*'播放队列'/.test(drawer))
-    missing.push("QueueDrawer 标题未按心动模式切换（'心动模式' / '播放队列'）");
-  if (!/playMode\s*===\s*'heartbeat'/.test(drawer)) missing.push('QueueDrawer 未判当前是否心动模式');
+  // 设计稿不换标题，把模式放进副标题：`<N 首> · <模式>`，模式名取自单一事实源 `playModeLabel`
+  if (!/playModeLabel\(playMode\)/.test(drawer)) missing.push('副标题没有带上播放模式（心动模式下拉不出 心动模式）');
+  if (!/queue\.length\} 首/.test(drawer)) missing.push('副标题没有带队列条数');
   // 必须由 store 的 playMode 驱动，不能写死
   if (!/useMusicStore\(\s*\(s\)\s*=>\s*s\.playMode\s*\)/.test(drawer))
     missing.push('QueueDrawer 未从 store 取 playMode（标题会变成写死值）');
@@ -1631,16 +1632,19 @@ add('QUEUE.heartbeatTitle', 'QUEUE', (s) => {
 add('QUEUE.drawerSlidesIn', 'QUEUE', (s) => {
   // 需求第 5 条：播放列表以抽屉形式**从右往左展开**。
   const css = s.css;
-  const rule = (css.match(/\.music-drawer\s*\{([^}]*)\}/) || [, ''])[1];
+  // 设计稿的进场是 `ui-drawer-in`：位移 24px + 从 .6 淡入（不是横穿一屏的 100% → 0）
+  const rule = (css.match(/\.ui-drawer\s*\{([^}]*)\}/) || [, ''])[1];
   const missing = [];
-  if (!/animation\s*:\s*music-drawer-in/.test(rule)) missing.push('抽屉没有进场动画');
-  const kf = (css.match(/@keyframes\s+music-drawer-in\s*\{([\s\S]*?)\n\}/) || [, ''])[1];
-  if (!/translateX\(100%\)/.test(kf)) missing.push('起点不是 translateX(100%)（不会从右往左滑出）');
-  if (!/translateX\(0\)/.test(kf)) missing.push('终点不是 translateX(0)');
+  if (!/animation\s*:\s*ui-drawer-in/.test(rule)) missing.push('抽屉没有进场动画');
+  const kf = (css.match(/@keyframes\s+ui-drawer-in\s*\{([\s\S]*?)\n\}/) || [, ''])[1];
+  if (!/translateX\(24px\)/.test(kf)) missing.push('起点不是 translateX(24px)（设计稿只滑一小段）');
+  if (!/opacity:\s*0\.6/.test(kf)) missing.push('起点没有从 .6 淡入');
+  if (!/transform:\s*none|translateX\(0\)/.test(kf))
+    missing.push('终点没有回到原位（translateX(0) / transform: none）');
   // 蒙层**不能**跟着平移（整屏遮罩横移会露出下面的界面），只能淡入
-  const bd = (css.match(/\.music-drawer-bd\s*\{([^}]*)\}/) || [, ''])[1];
+  const bd = (css.match(/\.ui-drawer-mask\s*\{([^}]*)\}/) || [, ''])[1];
   if (/translateX/.test(bd)) missing.push('蒙层也跟着平移了（遮罩横移会露出底下的界面）');
-  if (!/animation\s*:\s*music-drawer-bd-in/.test(bd)) missing.push('蒙层没有淡入动画');
+  if (!/animation\s*:\s*miao-fade-in/.test(bd)) missing.push('蒙层没有淡入动画');
   return { ok: missing.length === 0, detail: missing.length ? `队列抽屉展开：${missing.join('、')}` : '' };
 });
 
@@ -3333,10 +3337,10 @@ add('RESTORE.restoringClosed', 'RESTORE', (s) => {
   if (!/set\(\{\s*isPlaying:\s*false,\s*restoring:\s*false\s*\}\)/.test(store)) {
     missing.push('playSong 的 URL 解析抛错路径没有关闸（该路径 playUrl 永不设置，没有 loadedmetadata 来关）');
   }
-  if (occurrences(store, 'get().clearQueue();\n            set({ restoring: false });') < 1) {
+  if (occurrences(store, 'get().clearQueue(true);\n            set({ restoring: false });') < 1) {
     missing.push('恢复中队列只剩一首歌且它也失败时没有关闸（没有"下一首"可跳）');
   }
-  if (occurrences(store, 'get().clearQueue();\n    set({ restoring: false });') < 1) {
+  if (occurrences(store, 'get().clearQueue(true);\n    set({ restoring: false });') < 1) {
     missing.push('整条队列都试完时没有关闸');
   }
   if (!/finishRestore/.test(kernel)) missing.push('kernel 没有在加载成功时调 finishRestore');
@@ -3382,7 +3386,8 @@ add('RESTORE.skipLimitRestoring', 'RESTORE', (s) => {
   }
   if (!/if\s*\(!restoring\)\s*get\(\)\.toast\(/.test(store))
     missing.push('恢复态仍在弹「无版权已跳过」提示（用户还没操作，是噪音）');
-  if (!/restoring[\s\S]{0,400}clearQueue\(\)/.test(store)) missing.push('恢复态遍历完没有清空队列（播放条不会隐藏）');
+  if (!/restoring[\s\S]{0,400}clearQueue\(true\)/.test(store))
+    missing.push('恢复态遍历完没有清空队列（播放条不会隐藏）');
   if (!hasMethodImpl(store, 'handleRestoreFailed')) missing.push('handleRestoreFailed 实现没了');
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
 });
@@ -4767,10 +4772,10 @@ const MUTATIONS = [
     expect: ['HEARTBEAT.restoresQueueOnLeave'],
   },
   {
-    name: '抽屉标题写死"播放队列"（心动模式下与左栏歌单对不上且无提示）',
+    name: '抽屉副标题不写模式（心动模式下与左栏歌单对不上且无提示）',
     file: F.queueDrawer,
-    find: "          <span className=\"music-card-title\">{isHeartbeat ? '心动模式' : '播放队列'}</span>",
-    replace: '          <span className="music-card-title">播放队列</span>',
+    find: 'subtitle={`${queue.length} 首 · ${playModeLabel(playMode)}`}',
+    replace: 'subtitle={`${queue.length} 首`}',
     expect: ['QUEUE.heartbeatTitle'],
   },
 
@@ -4845,8 +4850,8 @@ const MUTATIONS = [
   {
     name: '队列抽屉不再把「正在播放」段固定在顶部（当前曲被混进滚动列表）',
     file: F.queueDrawer,
-    find: '<p className="music-qd-caption">正在播放</p>',
-    replace: '<p className="music-qd-caption">队列</p>',
+    find: '<p className="qd-caption">正在播放</p>',
+    replace: '<p className="qd-caption">队列</p>',
     expect: ['QUEUE.scrollsToCurrent'],
   },
   {
@@ -4858,23 +4863,23 @@ const MUTATIONS = [
   },
   {
     name: '抽屉进场动画删掉（不再从右往左展开）',
-    file: F.musicScss,
-    find: '  animation: music-drawer-in 0.24s cubic-bezier(0.4, 0, 0.2, 1) both;',
+    file: F.componentsScss,
+    find: '  animation: ui-drawer-in var(--miao-dur-base) var(--miao-ease-out);',
     replace: '',
     expect: ['QUEUE.drawerSlidesIn'],
   },
   {
     name: '抽屉进场起点改成从下方（不再是"从右往左"）',
-    file: F.musicScss,
-    find: 'transform: translateX(100%);',
-    replace: 'transform: translateY(100%);',
+    file: F.componentsScss,
+    find: '    transform: translateX(24px);',
+    replace: '    transform: translateY(24px);',
     expect: ['QUEUE.drawerSlidesIn'],
   },
   {
     name: '让蒙层也跟着抽屉平移（整屏遮罩横移会露出底下界面）',
-    file: F.musicScss,
-    find: '  animation: music-drawer-bd-in 0.24s ease-out both;',
-    replace: '  animation: music-drawer-in 0.24s cubic-bezier(0.4, 0, 0.2, 1) both;',
+    file: F.componentsScss,
+    find: '  animation: miao-fade-in var(--miao-dur-fast) var(--miao-ease-out);',
+    replace: '  transform: translateX(24px);\n  animation: miao-fade-in var(--miao-dur-fast) var(--miao-ease-out);',
     expect: ['QUEUE.drawerSlidesIn'],
   },
 
@@ -5234,10 +5239,8 @@ const MUTATIONS = [
   },
   {
     name: '把播放队列的 z-index 降回展开播放器之下（点「播放队列」看不到东西）',
-    file: F.musicScss,
-    // 锚点收窄到那一行本身：抽屉里后来插入了进场动画的注释与声明，
-    // 原先"跨到右花括号"的三行锚点会静默失效（跳过 ≠ 通过）
-    find: '  z-index: 72;',
+    file: F.componentsScss,
+    find: '  z-index: 92;',
     replace: '  z-index: 60;',
     expect: ['UI.drawerAboveExpanded'],
   },
@@ -5394,30 +5397,10 @@ const MUTATIONS = [
   {
     name: 'QueueDrawer 把菜单状态挪到早退之后（顺序随行数变）',
     file: F.queueDrawer,
-    find:
-      '  const [menu, setMenu] = useState<{ x: number; y: number; song: Song } | null>(null);\n' +
-      '  const queueOpen = useMusicStore((s) => s.queueOpen);\n' +
-      '  const queue = useMusicStore((s) => s.queue);\n' +
-      '  const currentIndex = useMusicStore((s) => s.currentIndex);\n' +
-      '  const playMode = useMusicStore((s) => s.playMode);\n' +
-      '  const playSong = useMusicStore((s) => s.playSong);\n' +
-      '  const playNext = useMusicStore((s) => s.playNext);\n' +
-      '  const removeFromQueue = useMusicStore((s) => s.removeFromQueue);\n' +
-      '  const clearQueue = useMusicStore((s) => s.clearQueue);\n' +
-      '  const setQueueOpen = useMusicStore((s) => s.setQueueOpen);\n' +
-      '\n  if (!queueOpen) return null;\n',
+    find: '  const [menu, setMenu] = useState<{ x: number; y: number; song: Song } | null>(null);',
     replace:
-      '  const queueOpen = useMusicStore((s) => s.queueOpen);\n' +
-      '  const queue = useMusicStore((s) => s.queue);\n' +
-      '  const currentIndex = useMusicStore((s) => s.currentIndex);\n' +
-      '  const playMode = useMusicStore((s) => s.playMode);\n' +
-      '  const playSong = useMusicStore((s) => s.playSong);\n' +
-      '  const playNext = useMusicStore((s) => s.playNext);\n' +
-      '  const removeFromQueue = useMusicStore((s) => s.removeFromQueue);\n' +
-      '  const clearQueue = useMusicStore((s) => s.clearQueue);\n' +
-      '  const setQueueOpen = useMusicStore((s) => s.setQueueOpen);\n' +
-      '\n  if (!queueOpen) return null;\n' +
-      '  const [menu, setMenu] = useState<{ x: number; y: number; song: Song } | null>(null);\n',
+      '  if (!queueOpen) return null;\n' +
+      '  const [menu, setMenu] = useState<{ x: number; y: number; song: Song } | null>(null);',
     expect: ['MENU.queueRow'],
   },
   {

@@ -1523,7 +1523,7 @@ add('STYLE.modalCardParity', 'STYLE', (s) => {
     ['background: var(--miao-surface);', '实底（不再是玻璃底）'],
     ['border: 1px solid var(--miao-line);', '实线边框'],
     ['background: rgba(33, 47, 58, 0.28);', '蒙层底色 .28'],
-    ['backdrop-filter: blur(9px) saturate(1.1);', '蒙层 blur 9 + saturate'],
+    ['  backdrop-filter: blur(9px) saturate(1.1);', '蒙层 blur 9 + saturate（前缀两空格：`-webkit-` 那行不算）'],
     ['width: min(760px, calc(100vw - 40px));', 'is-wide 档'],
     ['width: min(440px, 100%);', 'is-narrow 档'],
   ];
@@ -1574,6 +1574,122 @@ add('DIALOG.useSharedModal', 'DIALOG', (s) => {
     bad.push('登录弹窗缺少设计稿页脚说明');
   }
   if (checked < 6) bad.push(`只量到 ${checked} 项（应 >= 6）`);
+  return { ok: bad.length === 0, detail: bad.join('；') };
+});
+
+add('DIALOG.queueDrawerParity', 'DIALOG', (s) => {
+  /*
+   * 播放队列抽屉：容器必须复用通用 `SideDrawer`（原先手写了一套 348 宽、无圆角、
+   * 蒙层不模糊、横穿一屏进场的 `.music-drawer`），内容按设计稿的 `.qd-*` 三层。
+   * 数值钉设计稿的**生效值**：362 宽 / 左侧 24 圆角 / 头 18 20 12 / 正文 0 12 16 / 行 r9 / 封面 32·r7。
+   */
+  const tsx = cachedReadText(path.join(SRC, 'screens', 'music', 'QueueDrawer.tsx'));
+  const css = stripComments(s.styleShardCode?.['music.scss'] || '');
+  const base = stripComments(tsx);
+  const bad = [];
+  let checked = 0;
+  const need = [
+    ['<SideDrawer', '必须复用通用抽屉单元'],
+    ['drawerClass="queue-drawer"', '必须挂队列抽屉的修饰类'],
+    ['playModeLabel(playMode)', '副标题要带播放模式（设计稿 `N 首 · 模式`）'],
+    ['kind="text"', '「清空」是文字按钮（设计稿 `.text-btn`）'],
+  ];
+  for (const [needle, label] of need) {
+    checked += 1;
+    if (!base.includes(needle)) bad.push(label);
+  }
+  const cssNeed = [
+    ['.queue-drawer {', '缺少 `.queue-drawer` 修饰类'],
+    ['width: min(362px, 100vw);', '宽度应为 362'],
+    ['border-radius: 24px 0 0 24px;', '左侧 24 圆角'],
+    ['padding: 18px 20px 12px;', '头部内边距'],
+    ['padding: 0 12px 16px;', '正文内边距'],
+    ['@block:.qd-row.is-current@:background: var(--miao-primary-soft);', '选中行取 `--primary-soft`'],
+    ['border-radius: 9px;', '行的 9 圆角'],
+    ['width: 32px;', '行封面 32'],
+    ['border-radius: 7px;', '行封面 7 圆角'],
+  ];
+  for (const [needle, label] of cssNeed) {
+    checked += 1;
+    if (needle.startsWith('@block:')) {
+      // `@block:<sel>@:<decl>` —— 只在那个规则块内找。同一令牌在别处也出现时，全片 includes 等于没测
+      const [sel, decl] = needle.slice('@block:'.length).split('@:');
+      const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, (m) => '\\' + m);
+      const block = (css.match(new RegExp(esc + '\\s*\\{[^}]*\\}')) || [''])[0];
+      if (!block || !block.includes(decl)) bad.push(label);
+    } else if (!css.includes(needle)) {
+      bad.push(label);
+    }
+  }
+  // 手写外壳的残骸不许回来
+  for (const dead of ['.music-drawer {', '.music-drawer-bd', '.music-qrow']) {
+    checked += 1;
+    if (css.includes(dead)) bad.push(`手写外壳残留 ${dead}`);
+  }
+  if (checked < 15) bad.push(`只量到 ${checked} 项（应 >= 15）`);
+  return { ok: bad.length === 0, detail: bad.join('；') };
+});
+
+add('DIALOG.queueToasts', 'DIALOG', (s) => {
+  /*
+   * 设计稿清空队列是**两行**提示（`播放已关闭` / `队列已清空`），移除最后一项是**一行**；
+   * 而内部兜底清空（播放失败 / 启动恢复失败）不该冒充用户操作 ⇒ 必须有 `silent` 开关。
+   * 这两件事一起钉：只钉文案会把"兜底也弹提示"这种骚扰放过去。
+   */
+  const queue = stripComments(cachedReadText(path.join(SRC, 'modules', 'music', 'actions', 'queue.ts')));
+  const toast = stripComments(cachedReadText(path.join(SRC, 'screens', 'music', 'Toast.tsx')));
+  const bad = [];
+  let checked = 0;
+  const need = [
+    ["get().toast('播放已关闭', 'info', '队列已清空')", '清空队列的两行提示'],
+    ["get().toast('队列已清空', 'info')", '移除最后一项的一行提示'],
+    ['clearQueue: (silent = false)', '清空必须带 silent 开关'],
+    ['if (!silent) get().toast(', '只有非静默才提示'],
+  ];
+  for (const [needle, label] of need) {
+    checked += 1;
+    if (!queue.includes(needle)) bad.push(label);
+  }
+  // 转发器必须把说明行透传出去（否则第二行永远不出现）
+  checked += 1;
+  if (!toast.includes('toastBus.push(musicToast.message, kind, musicToast.sub)')) {
+    bad.push('转发器没把说明行传给总线');
+  }
+  checked += 1;
+  if (!toast.includes("musicToast.type === 'info' ? 'info'")) bad.push('info 语义没映射');
+  if (checked < 6) bad.push(`只量到 ${checked} 项（应 >= 6）`);
+  return { ok: bad.length === 0, detail: bad.join('；') };
+});
+
+add('STYLE.drawerAndTextBtn', 'STYLE', (s) => {
+  /*
+   * 抽屉单元与文字按钮的**生效值**：蒙层同弹窗（`theme.css` 的 .28 + blur 9 + saturate 1.1），
+   * 进场是 `drawer-in` 的"只滑 24px 并从 .6 淡入"，`.text-btn` 是 28 高 / 0 8 / 11.5px。
+   * 三条都是实测出来的偏差（蒙层 2px、滑 18px 且从 0 淡入、文字按钮 23 高）。
+   */
+  const css = stripComments(s.styleShardCode?.['components.scss'] || '');
+  const mask = (css.match(/\.ui-drawer-mask\s*\{[^}]*\}/) || [''])[0];
+  const btn = (css.match(/\.text-btn\s*\{[^}]*\}/) || [''])[0];
+  const anim = (css.match(/@keyframes ui-drawer-in\s*\{[\s\S]*?\n\}/) || [''])[0];
+  const bad = [];
+  let checked = 0;
+  if (!mask) return { ok: false, detail: '读不到 `.ui-drawer-mask`' };
+  if (!btn) return { ok: false, detail: '读不到 `.text-btn`' };
+  if (!anim) return { ok: false, detail: '读不到 `ui-drawer-in`' };
+  const need = [
+    [mask, 'background: rgba(33, 47, 58, 0.28);', '抽屉蒙层底色'],
+    [mask, '  backdrop-filter: blur(9px) saturate(1.1);', '抽屉蒙层模糊（前缀两空格：`-webkit-` 那行不算）'],
+    [btn, 'height: 28px;', '文字按钮 28 高'],
+    [btn, 'padding: 0 8px;', '文字按钮左右 8'],
+    [btn, 'font-size: 11.5px;', '文字按钮 11.5px'],
+    [anim, 'translateX(24px)', '进场位移 24px'],
+    [anim, 'opacity: 0.6;', '进场起始透明度 .6'],
+  ];
+  for (const [block, needle, label] of need) {
+    checked += 1;
+    if (!block.includes(needle)) bad.push(label);
+  }
+  if (checked < 7) bad.push(`只量到 ${checked} 项（应 >= 7）`);
   return { ok: bad.length === 0, detail: bad.join('；') };
 });
 
@@ -2181,6 +2297,7 @@ const MUTATIONS = [
     file: path.join(F.stylesDir, 'components.scss'),
     find: '  backdrop-filter: blur(9px) saturate(1.1);',
     replace: '  backdrop-filter: blur(5px);',
+    within: '.modal-mask {',
     expect: ['STYLE.modalCardParity'],
   },
   {
@@ -2189,6 +2306,43 @@ const MUTATIONS = [
     find: '.login-card {',
     replace: '.music-login-overlay {\n  position: fixed;\n  inset: 0;\n}\n.login-card {',
     expect: ['DIALOG.useSharedModal'],
+  },
+  {
+    name: '把队列抽屉的宽度改回手写版 348（比例看不出，数值能）',
+    file: path.join(F.stylesDir, 'music.scss'),
+    find: '  width: min(362px, 100vw);',
+    replace: '  width: 348px;',
+    expect: ['DIALOG.queueDrawerParity'],
+  },
+  {
+    name: '把队列抽屉的选中底色换回暖橙（令牌用错，肉眼"更符合品牌"）',
+    file: path.join(F.stylesDir, 'music.scss'),
+    find: '  background: var(--miao-primary-soft);',
+    replace: '  background: var(--miao-accent-soft);',
+    within: '.qd-row.is-current {',
+    expect: ['DIALOG.queueDrawerParity'],
+  },
+  {
+    name: '把文字按钮改回 23 高（旁边 34×34 的关闭键会显得它塌下去）',
+    file: path.join(F.stylesDir, 'components.scss'),
+    find: '  height: 28px;\n  padding: 0 8px;',
+    replace: '  padding: 3px 7px;',
+    expect: ['STYLE.drawerAndTextBtn'],
+  },
+  {
+    name: '把抽屉蒙层改回 blur(2px)（基础表的旧值）',
+    file: path.join(F.stylesDir, 'components.scss'),
+    find: '  backdrop-filter: blur(9px) saturate(1.1);',
+    replace: '  backdrop-filter: blur(2px);',
+    within: '.ui-drawer-mask {',
+    expect: ['STYLE.drawerAndTextBtn'],
+  },
+  {
+    name: '把清空队列退回"没有反馈"（用户点了不知道发生了什么）',
+    file: path.join(SRC, 'modules', 'music', 'actions', 'queue.ts'),
+    find: "    if (!silent) get().toast('播放已关闭', 'info', '队列已清空');",
+    replace: '    void silent;',
+    expect: ['DIALOG.queueToasts'],
   },
   {
     name: '把档位文案退回光秃秃的 Small（设计稿是 Small · 均衡，后半截是这档的性格）',
@@ -2228,6 +2382,21 @@ const refute = process.argv.includes('--refute');
 console.log('公共组件抽离（components/units）结构断言' + (refute ? ' · 反证轮' : ''));
 console.log(`根目录：${ROOT}`);
 console.log(`断言总数：${A.length}（LAYOUT/PURITY/NAMING/CALLERS/KEEP/HOOKS/ALIAS/STATE/ISLAND/TOOLTIP/ZOOM）`);
+
+/**
+ * 在 `within` 标记之后替换第一处出现（不给 within 则从文件头找）。
+ *
+ * 为什么需要它：设计稿生效值会在多个块里重复（蒙层底色 / 模糊在抽屉与弹窗各一份），
+ * 只按"第一处"换会改错块 —— 于是断言看着不灵，其实是变异打错了地方。
+ * 找不到标记或找不到锚点时原样返回，由调用方的 `includes` 预检兜住（跳过 ≠ 通过）。
+ */
+function replaceWithin(text, find, repl, within) {
+  const start = within ? text.indexOf(within) : 0;
+  if (start < 0) return text;
+  const at = text.indexOf(find, start);
+  if (at < 0) return text;
+  return text.slice(0, at) + repl + text.slice(at + find.length);
+}
 
 if (!refute) {
   const res = runAll(loadSources());
@@ -2296,13 +2465,15 @@ if (!refute) {
           const eol = txt.includes('\r\n') ? '\r\n' : '\n';
           const find = mut.find.split('\n').join(eol);
           const repl = mut.replace.split('\n').join(eol);
-          if (!txt.includes(find)) {
+          if (!txt.includes(find) || (mut.within && !txt.includes(mut.within))) {
             console.log(`⚠ ${mut.name}\n    破坏锚点未找到（源文件已变？）—— 本条无法反证`);
             okApply = false;
             skipped += mut.expect.length;
           } else {
             record = { kind: 'edit', file: mut.file, original };
-            overrideFile(mut.file, txt.replace(find, repl)); // 内存破坏，不写磁盘
+            // `nth`：同一串值在多个块里重复出现（蒙层在抽屉与弹窗各一份），
+            // 用第 n 处定位，避免"改错了块"被记成"断言不灵"
+            overrideFile(mut.file, replaceWithin(txt, find, repl, mut.within)); // 内存破坏，不写磁盘
           }
         }
       }
