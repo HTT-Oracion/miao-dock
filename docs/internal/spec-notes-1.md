@@ -9721,3 +9721,36 @@ CSS 侧保留 `.music-card-hd` 作为**兼容别名**（`.mc-section-head, .musi
 `QUEUE.emptyToastCopy` 被注释撑绿）—— 已写进纪律：**一个声明有两处写法时，反证要同时改两处**。
 
 **六、条数**：`check:music` 246 → **249**、反证 245 → **248**；AGENTS.md 与 README 两处同步。
+
+## D-374 · 「dev 里验不出来」：真机一跑就抓出三处结构缺陷（2026-10-23）
+
+**一、方法本身是这一轮最大的收获**：此前所有音乐屏验证都在 `vite` dev server 里做，
+而 dev 环境没有 Rust 后端 ⇒ 所有 `invoke` 失败 ⇒ 榜单/推荐/精选/右栏全部退化成 `ui-empty`。
+于是"结构对不对"这件事**根本看不到**：249 条断言全绿，界面却有三处层级错误。
+改在 `npm run app`（`tauri dev`）+ WebView2 CDP（`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333`）
+里量之后，**接上真数据的第一眼**就看到了它们。
+
+**二、抓到的三处真缺陷**（都是我自己前几轮改出来的）：
+
+| 缺陷 | 症状 | 根因 |
+|---|---|---|
+| 榜单节外多一层裸 `<div id="music-charts">` | 视图直接子元素里出现一个无类名的 `742×1103` 块 | 我改 `.music-sec → .mc-section` 时只改了 Charts 内部，外层包裹没删 |
+| 推荐歌单 / 今日精选只有节头、没有 `.mc-section` | 节头直接挂在 `.music-view` 下，节间距 20 失效 | 这两节用的是 fragment `<>`，从来没被 `.mc-section` 包过 |
+| `.entry-card` 仍是基础表值 | 入口卡 `padding 12 13` / `r13`，图标 `34/r10` | 上一轮只改了 `.entry-grid` 的 gap，漏了卡片本身（生效值 `padding 14` / `r16` / 图标 `38 r12`） |
+
+**三、修后实测（真机、有数据）**：`.music-view` 直接子元素恰为
+`music-hero / entry-grid / mc-section ×3`；`entry-grid` 高 **68**（设计稿 68）；
+榜单卡 **11 张**、首卡 `365×165 pad 15 16 r16`、**5 行排行**且内容是真的
+（`[1, 我不难过, 孙燕姿]`、`[2, 海屿你, 马也_Crabbit]`）；推荐歌单 **7 张卡**；曲目表 **20 行**；
+左栏 `ms-tabs / ms-scroll / ms-foot` 三段式，`ms-group` 2 组。
+
+**四、判据**：新增 `UI.viewSections` —— 榜单不许被裸 div 包、推荐/精选必须有 `.mc-section`、
+节头不许以 fragment 形式挂视图下；两条变异（重新套裸 div / 摘掉 `.mc-section`）各自即红。
+**这条判据特意写成"查层级"而不是"查有没有类名"**：三处缺陷全都"有类名、能渲染"，
+只是层级不对 —— 只有把父子关系写进判据才咬得住。
+
+**五、留一条操作纪律**：`npm run app` 的 WebView2 偶发 `HRESULT(0x800700AA) 请求的资源在使用中`，
+与代码无关（同一个 exe 换个时段就能起）。排查顺序：杀残留 `miao-dock`/`msedgewebview2` → 释放 1420 →
+重试；仍失败则等一段时间（本机实测 2 小时后自愈）。启动后用
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` 接 CDP，
+**这是唯一能看到"有数据的真实渲染"的通道**，后续音乐/漫画屏验收都走它。

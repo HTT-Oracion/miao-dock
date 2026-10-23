@@ -1133,14 +1133,15 @@
   gap: 12px;
   margin-top: 12px;
 }
+/* 入口卡（设计稿 `.entry-card` 生效值）：padding 14 四边、圆角 16 —— 基础表写的是 12/13 与 13 */
 .entry-card {
   position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 13px;
+  padding: 14px;
   border: 1px solid var(--miao-line);
-  border-radius: 13px;
+  border-radius: var(--miao-r-md);
   background: var(--miao-surface);
   text-align: left;
   overflow: hidden;
@@ -1172,9 +1173,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--miao-r-sm);
   background: var(--miao-primary-soft);
   color: var(--miao-primary-ink);
 }

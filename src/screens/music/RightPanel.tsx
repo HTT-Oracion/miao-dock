@@ -301,11 +301,10 @@ function Recommendations() {
     <>
       <HomeHero />
       <EntryGrid />
-      <div id="music-charts">
-        <Charts />
-      </div>
+      {/* 榜单节自带 .mc-section 容器（Charts 内部），外面不再套一层裸 div */}
+      <Charts />
       {caps.recommendPlaylists ? (
-        <>
+        <div className="mc-section">
           <div className="mc-section-head">
             <span className="music-card-title">推荐歌单</span>
             {/* 副标题按设计稿：一句话说清"这批是怎么来的" */}
@@ -359,7 +358,7 @@ function Recommendations() {
               ))}
             </div>
           )}
-        </>
+        </div>
       ) : null}
 
       {/*
@@ -367,7 +366,7 @@ function Recommendations() {
         未登录用户也该在首页看到"今天有什么可听的"。能力矩阵里没有这一节的平台整块不渲染。
       */}
       {caps.newSongs ? (
-        <>
+        <div className="mc-section">
           <div className="mc-section-head">
             <span className="music-card-title">今日精选</span>
             <span className="music-card-sub">
@@ -418,7 +417,7 @@ function Recommendations() {
               />
             </div>
           )}
-        </>
+        </div>
       ) : null}
     </>
   );

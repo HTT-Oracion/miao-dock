@@ -76,6 +76,7 @@ fn main() {
         .manage(ServiceManager::new())
         .invoke_handler(commands::handler())
         .setup(|app| {
+            eprintln!("[DIAG] 已进入自定义 setup");
             // ---- 托盘：常驻 + 状态点由前端窗口承载（托盘菜单反映服务状态文案） ----
             let show = MenuItem::with_id(app, "show", "显示喵坞", true, None::<&str>)?;
             let restart = MenuItem::with_id(app, "restart", "重启本地服务", true, None::<&str>)?;

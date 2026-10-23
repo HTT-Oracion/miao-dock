@@ -1028,6 +1028,27 @@ add('UI.playerBarGlass', 'UI', (s) => {
   if (!/padding:\s*0 18px/.test(t)) problems.push('左右内距不是 18');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
+add('UI.viewSections', 'UI', (s) => {
+  /*
+   * 中栏视图的直接子元素必须是设计稿那五个：`music-hero` / `entry-grid` / 三个 `.mc-section`。
+   *
+   * 这条是**在真实应用里量出来的**：dev server 没有后端，三节一直是 `ui-empty`，
+   * 结构问题被数据缺失盖住了；接上真服务后一眼看到 ①榜单节外多了一层裸 `<div id="music-charts">`
+   * ②推荐歌单与今日精选只有 `.mc-section-head` 没有 `.mc-section` 容器（节头直接挂在视图下）。
+   * 两种都是"看起来能跑、节间距与层级却不对"，只有把**层级**写进判据才抓得到。
+   */
+  const src = stripComments(readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx')) ?? '');
+  const problems = [];
+  // ① 榜单不许再被裸 div 包（Charts 自带 .mc-section）
+  if (/<div id="music-charts">/.test(src)) problems.push('榜单节外仍套着一层裸 div（Charts 自带 .mc-section）');
+  // ② 推荐歌单与今日精选必须有 .mc-section 容器
+  const sections = (src.match(/<div className="mc-section">/g) ?? []).length;
+  if (sections < 2) problems.push('推荐歌单 / 今日精选没有 .mc-section 容器（节头直接挂在视图下）');
+  // ③ 节头不许以 fragment 形式挂在视图下
+  const orphanHeads = (src.match(/\?>\s*\n\s*<div className="mc-section-head">/g) ?? []).length;
+  if (orphanHeads > 0) problems.push('有节头以 fragment 形式直接挂在视图下（缺 .mc-section 容器）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
 add('UI.playHistory', 'UI', (s) => ({
   ok: /\bplayHistoryList\b/.test(s.uiSource),
   detail: uiNote(s, '未读到播放历史视图（playHistoryList）'),
@@ -4578,6 +4599,20 @@ const MUTATIONS = [
     find: 'items.slice(start, end)',
     replace: 'items',
     expect: ['UI.virtualList'],
+  },
+  {
+    name: '把榜单节外面重新套一层裸 div（多一层、节间距与层级不对）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    find: '      <Charts />',
+    replace: '      <div id="music-charts"><Charts /></div>',
+    expect: ['UI.viewSections'],
+  },
+  {
+    name: '把推荐歌单的 .mc-section 容器摘掉（节头直接挂在视图下）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    find: '<div className="mc-section">\n          <div className="mc-section-head">\n            <span className="music-card-title">推荐歌单</span>',
+    replace: '<div className="mc-section-head">\n            <span className="music-card-title">推荐歌单</span>',
+    expect: ['UI.viewSections'],
   },
   {
     name: '把推荐歌单从封面卡网格退回列表行（推荐位的图没了）',
