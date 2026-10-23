@@ -63,7 +63,7 @@ export function NowPlaying() {
         </IconButton>
       </div>
 
-      <div className="now-cover">
+      <div className="now-art">
         <Cover url={coverProxyUrl(current.cover, proxyPort)} />
       </div>
       <div className="now-meta">
@@ -90,7 +90,7 @@ export function NowPlaying() {
         )}
       </div>
 
-      <div className="now-acts">
+      <div className="now-actions">
         <Btn kind="primary" size="sm" onClick={() => setExpanded(true)}>
           <ChevronUp size={13} />
           打开播放器

@@ -100,6 +100,8 @@ const F = {
   // flex-shrink）经逐条核对**唯一**命中 music.scss，其余分片无同文本 —— 唯一性是
   // 反证能生效的前提，若同一文本在两个分片出现，改一个另一个仍在，断言就不会变红。
   musicScss: path.join(APP, 'src', 'styles', 'music.scss'),
+  /** 播放动作切片：`togglePlay` 等入口，队列空态 toast 的判据落在这里 */
+  musicActionsPlayback: path.join(APP, 'src', 'modules', 'music', 'actions', 'playback.ts'),
   // 右键菜单样式已收口到 components.scss 的 .ui-menu（D-142），反证要按 file 改它
   componentsScss: path.join(APP, 'src', 'styles', 'components.scss'),
   stylesDir: path.join(APP, 'src', 'styles'),
@@ -946,6 +948,42 @@ add('UI.virtualList', 'UI', (s) => {
   ];
   const missing = need.filter(([re]) => !re.test(v)).map(([, n]) => n);
   return { ok: missing.length === 0, detail: missing.length ? `虚拟列表缺：${missing.join('、')}` : '' };
+});
+add('SEARCH.inProgressCopy', 'SEARCH', (s) => {
+  /*
+   * 搜索中的那句必须是**"正在搜索 <平台>"**（设计稿 `正在搜索 ${已选搜索源}…`），
+   * 而不是光秃秃的「搜索中…」—— 后者不说搜的是哪个平台，用户无法判断是不是选错了源。
+   * 副文也按设计稿给「搜索结果会同时出现歌曲与专辑」。
+   */
+  const src = readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx')) ?? '';
+  const problems = [];
+  if (!/正在搜索\s*\{providerLabel\(searchProvider\)\}…/.test(src)) {
+    problems.push('搜索中没说清在搜哪个平台（缺「正在搜索 {平台}…」）');
+  }
+  if (!src.includes('搜索结果会同时出现歌曲与专辑')) {
+    problems.push('搜索中缺设计稿的副文「搜索结果会同时出现歌曲与专辑」');
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('QUEUE.emptyToastCopy', 'QUEUE', (s) => {
+  /*
+   * 队列为空时按播放键要有 **warning toast**（设计稿：`播放队列是空的` / `从首页或搜索里挑一首歌吧`）。
+   * 静默不响应会被当成"按钮坏了"；而这条路径下确实没有"当前这首"可暂停。
+   * 判据落在 store 的 `togglePlay` 上（不是某个按钮的 onClick）—— 播放条、展开播放器、
+   * 快捷键都会汇到这里，只有这一处才算全覆盖。
+   */
+  /*
+   * ⚠️ 先剥注释：本段注释里**正讨论着**这两句（"设计稿：播放队列是空的 / 从首页或搜索里挑一首歌吧"），
+   * 不剥的话把 toast 整行删掉断言照样绿 —— 判据被注释撑着。
+   */
+  const src = stripComments(readMaybe(F.musicActionsPlayback) ?? '');
+  if (!src) return { ok: false, detail: uiNote(s, '未读到 actions/playback.ts') };
+  const problems = [];
+  const body = src.slice(src.indexOf('togglePlay:'));
+  if (!/queue\.length === 0/.test(body)) problems.push('togglePlay 没有判空队列');
+  if (!src.includes('播放队列是空的')) problems.push('缺 toast 主文「播放队列是空的」');
+  if (!src.includes('从首页或搜索里挑一首歌吧')) problems.push('缺 toast 副文「从首页或搜索里挑一首歌吧」');
+  return { ok: problems.length === 0, detail: problems.join('；') };
 });
 add('UI.searchSourcesInResults', 'UI', (s) => {
   /*
@@ -4398,6 +4436,20 @@ const MUTATIONS = [
     find: 'items.slice(start, end)',
     replace: 'items',
     expect: ['UI.virtualList'],
+  },
+  {
+    name: '把搜索中改回光秃秃的「搜索中…」（不说搜的是哪个平台）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    find: '<Empty sub="搜索结果会同时出现歌曲与专辑">正在搜索 {providerLabel(searchProvider)}…</Empty>',
+    replace: '<Empty>搜索中…</Empty>',
+    expect: ['SEARCH.inProgressCopy'],
+  },
+  {
+    name: '把队列空态的 toast 摘掉（按播放键静默无反应，像按钮坏了）',
+    file: F.musicActionsPlayback,
+    find: "      get().toast('播放队列是空的', 'warning', '从首页或搜索里挑一首歌吧');",
+    replace: '',
+    expect: ['QUEUE.emptyToastCopy'],
   },
   {
     name: '把搜索源胶囊挪回视图壳（首页/榜单页也一直挂着它）',

@@ -561,6 +561,14 @@ export const createPlaybackSlice = (
   // 播放/暂停切换必须推：歌词窗收到 playing=false 才会真的停住走表，
   // 否则暂停期间歌词会继续往前爬（这是最容易被当成"歌词乱跳"的故障）。
   togglePlay: () => {
+    /*
+     * 队列为空时按播放键：设计稿给一条 warning toast（`播放队列是空的` / `从首页或搜索里挑一首歌吧`）。
+     * 静默不响应最伤 —— 用户会以为按钮坏了；而这里也确实没有"当前这首"可暂停。
+     */
+    if (get().queue.length === 0) {
+      get().toast('播放队列是空的', 'warning', '从首页或搜索里挑一首歌吧');
+      return;
+    }
     set((s) => ({ isPlaying: !s.isPlaying }));
     void get().pushLyricsState();
     // **暂停时**存快照 —— 这是"听完暂停、第二天再打开"这个主场景的落盘点。

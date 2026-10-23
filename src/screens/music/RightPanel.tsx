@@ -192,7 +192,8 @@ function SearchResults() {
       <>
         {/* 搜索中也要能看见/切换搜索源：否则用户只能等这一次搜完才知道选错了平台 */}
         <SearchCaps />
-        <Empty>搜索中…</Empty>
+        {/* 设计稿：搜索中要说清"在搜哪个平台" —— 只写「搜索中…」时用户不知道搜的是谁 */}
+        <Empty sub="搜索结果会同时出现歌曲与专辑">正在搜索 {providerLabel(searchProvider)}…</Empty>
       </>
     );
   }

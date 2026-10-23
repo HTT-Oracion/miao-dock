@@ -792,13 +792,21 @@
 }
 
 /* ---------------------------------------------------------------- 右栏 · 正在播放 */
+/*
+ * 右栏信息卡（设计稿 `.now-card`）：内距 8/6/14、圆角 20、纵向 gap 10。
+ * 一层极淡底 + 描边，与右栏的白卡（`.music-now`）形成"卡中一格"的层级 ——
+ * 所以它的圆角(20)比外卡(26)小一档、内距也更紧。
+ */
 .now-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding: 8px 6px 14px;
+  border-radius: var(--miao-r-lg);
+  background: var(--miao-surface-2);
 }
 /* 封面（设计稿 `.now-art`）：1:1、r14、只留一层投影（不描边 —— 右栏底色本身就够分界） */
-.now-cover {
+.now-art {
   width: 100%;
   aspect-ratio: 1;
   border-radius: 14px;
@@ -806,7 +814,7 @@
   background: var(--miao-surface-2);
   box-shadow: 0 16px 30px -22px rgba(43, 47, 55, 0.5);
 }
-.now-cover img {
+.now-art img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -874,12 +882,12 @@
   color: var(--miao-primary-ink);
 }
 /* 动作行（设计稿 `.now-actions`）：主按钮吃满剩余宽度 + 收藏 */
-.now-acts {
+.now-actions {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.now-acts .btn {
+.now-actions .btn {
   flex: 1;
   min-width: 0;
 }
