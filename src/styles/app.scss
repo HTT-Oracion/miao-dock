@@ -25,12 +25,23 @@
   background: transparent;
 }
 
+/*
+ * 右侧整体（侧栏以东的一切）：工具条 + 内容区。
+ *
+ * 左右留白**在这一层给**，而不是在 `.toolbar` 与 `.content` 各给一份 ——
+ * 否则就是两层左内距：工具条标题比内容卡再缩进一截，而侧栏里的卡片贴在真正的左缘上，
+ * 「侧栏与工具条不在一条线上」。这里统一给一次，工具条自己 `padding: 0`。
+ *
+ * 值与设计稿同源：`clamp(20px, 2vw, 34px)`（theme 分片 `.toolbar` 的生效值）。
+ * 上下方向由两个子元素自己决定（工具条高 62 固定、内容区 `flex: 1`），故这里只给左右。
+ */
 .shell {
   display: flex;
   height: 100%;
   flex: 1;
   flex-direction: column;
   min-width: 0;
+  padding: 0 clamp(20px, 2vw, 34px);
   background: transparent;
 }
 
@@ -362,11 +373,17 @@ html[data-theme='dark'] .nav-item:hover {
  */
 /*
  * 工具条（设计稿 `.toolbar` 的**生效值**，取自 theme 分片）：
- * `border-bottom: 0` + `background: transparent` + `padding: 0 clamp(20px, 2vw, 34px)`。
+ * `border-bottom: 0` + `background: transparent`。
  *
  * 基础表写的是"半透明白底 + 1px 底边 + 一条 52px 的强调线"，产品一直照那份实现 ——
  * 于是顶部多出一条横线，和内容卡的上边缘形成**两条平行的分界线**。
  * 设计稿把视觉重量全交给内容卡，工具条只是一条安静的导航带。
+ *
+ * ⚠️ **水平内距不在这里给**：右侧（`.shell`）是"工具条 + 内容"的**一个整体**，
+ * 左右留白由 `.shell` 的 padding 统一负责（见 `.shell` 的注释）。
+ * 早先这里也写了一份 `padding: 0 clamp(20px, 2vw, 34px)`，于是右侧出现了
+ * **两层左内距**：工具条标题比内容卡再缩进一截，而侧栏里的卡片却贴在真正的左缘上 ——
+ * 「侧栏与工具条不在一条线上」就是这么来的。
  */
 .toolbar {
   flex: 0 0 62px;
@@ -374,7 +391,7 @@ html[data-theme='dark'] .nav-item:hover {
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 0 clamp(20px, 2vw, 34px);
+  padding: 0;
   background: transparent;
   position: relative;
   z-index: 15;
@@ -488,9 +505,12 @@ html[data-theme='dark'] .nav-item:hover {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  /* 左右内距与工具条同一把尺子（`clamp(20px, 2vw, 34px)`）—— 两者左缘必须对齐，
-     否则标题与内容卡会差出 8~10px，肉眼一看就是"没对齐" */
-  padding: 26px clamp(20px, 2vw, 34px) 22px;
+  /*
+   * **只有上下内距**：左右留白已由 `.shell` 统一给（右侧是一个整体，
+   * 工具条与内容共用同一份左右内距）。这里再给一份就会出现两层左内距 ——
+   * 工具条标题比内容卡再缩进一截，而侧栏里的卡片贴在真正的左缘上。
+   */
+  padding: 26px 0 22px;
 }
 
 /* ================================================================ 原子件 */
