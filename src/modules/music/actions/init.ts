@@ -246,8 +246,9 @@ export const createInitSlice = (
       void get().playSong(nextSong, queue, { autoplay: true, expand: false });
       return;
     }
-    // 整条队列都试过了 → 这次恢复失败：清空（clearQueue 内会清快照）
-    get().clearQueue();
+    // 整条队列都试过了 → 这次恢复失败：清空（clearQueue 内会清快照）。
+    // `silent`：启动恢复失败不是"用户点了清空"，不该冒出一条操作回执。
+    get().clearQueue(true);
     set({ restoring: false });
   },
 });

@@ -1431,9 +1431,9 @@
   flex: 1;
   min-height: 0;
 }
-/* 队列抽屉的行容器自带上下留白（等价原 .music-drawer-list 的 padding: 6px 0） */
+/* 队列抽屉的滚动列表：留白交给 `.qd-row` 自己（7px），这里不再叠一层 */
 .ui-vlist.is-drawer {
-  padding: 6px 0;
+  padding: 0;
 }
 /*
  * 分组头（设计稿 `.ms-caption`）：「创建的歌单 / 收藏的歌单」这类小节标签。
@@ -2013,94 +2013,27 @@
 }
 
 /* ---------------------------------------------------------------- 队列抽屉 */
-.music-drawer-bd {
-  position: fixed;
-  inset: 0;
-  background: color-mix(in srgb, var(--miao-ink) 18%, transparent);
-  /* 71 / 72 这一对值是被下面这件事定死的：**展开播放器是 fixed z-index:70 的整屏覆盖层**，
-     而播放队列的入口同时存在于展开播放器里（右下角「播放队列」）。
-     抽屉若低于 70 就被它整个盖住 —— 用户点了"播放队列"却什么都没出现（曾如此）。
-     取 71/72：高于展开播放器，仍低于 Radix 弹层（80），弹层不会反过来被抽屉盖住。 */
-  z-index: 71;
-  /* 蒙层只做淡入（不跟着抽屉平移，理由见 .music-drawer 的注释） */
-  animation: music-drawer-bd-in 0.24s ease-out both;
-}
-@keyframes music-drawer-bd-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-.music-drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 348px;
-  background: var(--miao-surface);
-  border-left: 1px solid var(--miao-line);
-  display: flex;
-  flex-direction: column;
-  z-index: 72;
-  box-shadow: -24px 0 60px -40px rgba(45, 59, 70, 0.45);
-  /* 从右往左滑入：抽屉贴在窗口右缘，所以位移动画取 translateX(100%) → 0，
-     读起来就是"从右边抽出来"。只做进场（组件在关闭时直接卸载，没有退场状态可挂），
-     与展开播放器"有进无退"的处理保持一致。
-     ⚠️ 位移只能作用在**抽屉本体**上，不能给 .music-drawer-bd 也加同一套：
-       蒙层是整屏定位的，平移它会把整块遮罩一起横向拖动，露出下面的界面。
-       蒙层只做透明度淡入。 */
-  animation: music-drawer-in 0.24s cubic-bezier(0.4, 0, 0.2, 1) both;
-}
-@keyframes music-drawer-in {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: translateX(0);
-  }
-}
-.music-drawer-hd {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--miao-line);
-  flex: 0 0 auto;
-}
-.music-drawer-ic {
-  color: var(--miao-accent);
-}
-.music-drawer-list {
-  flex: 1;
-  overflow: auto;
-  padding: 6px 0;
-}
-.music-qrow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px;
-  height: 52px;
-  cursor: pointer;
-  transition: background var(--miao-dur-fast) ease;
-}
-/*
- * 队列抽屉的两段（设计稿 `.qd-section` / `.qd-caption`）：
- * 「正在播放」固定在上、「接下来」自己滚。小标题是 8.5px 大写间距宽的眉标，
- * 用极淡色 —— 它是分隔符，不该和歌名抢视线。
+/* ---------------------------------------------------------------- 播放队列抽屉
+ * 容器：通用 `SideDrawer` 单元（`.ui-drawer`）+ 这里一条 `.queue-drawer` 修饰类。
+ * 设计稿的生效值（`theme-music.css` 覆盖了基础表）：362 宽、左侧 24 圆角；
+ * 头部 18/20/12、正文 0/12/16。内容三层 `.qd-section` / `.qd-caption` / `.qd-row`
+ * 与设计稿同名同层级 —— 抽屉里只放队列内容，不再自己画一张卡片。
  */
-.music-qd-section {
+.queue-drawer {
+  width: min(362px, 100vw);
+  border-radius: 24px 0 0 24px;
+}
+.queue-drawer .ui-drawer-head {
+  padding: 18px 20px 12px;
+}
+.queue-drawer .ui-drawer-body {
+  padding: 0 12px 16px;
+}
+.qd-section {
   margin-top: 8px;
 }
-.music-qd-section.is-next {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.music-qd-caption {
+/* 段眉标：8.5px / 大写间距 / faint —— 它是分隔符，不该和歌名抢视线 */
+.qd-caption {
   padding: 7px 7px 4px;
   font-size: 8.5px;
   font-weight: 700;
@@ -2108,30 +2041,93 @@
   text-transform: uppercase;
   color: var(--miao-faint);
 }
-.music-qd-empty {
+.qd-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.qd-row:hover {
+  background: var(--miao-surface-2);
+}
+.qd-row.is-current {
+  /* 设计稿 .qd-row.is-current 用 --primary-soft（雾蓝浅底），不是暖橙的 accent-soft */
+  background: var(--miao-primary-soft);
+}
+.qd-index {
+  width: 16px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 9px;
+  color: var(--miao-faint);
+  font-variant-numeric: tabular-nums;
+}
+.qd-row.is-current .qd-index {
+  color: var(--miao-primary-ink);
+}
+/* 行内封面：32×32 / r7（设计稿 `.qd-row .cover-art` 那一档） */
+.qd-cover {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  /* 设计稿 .cover-art 无描边：那 1px 会吃掉图片 2px，还与卡片边框抢视觉 */
+  border: 0;
+}
+.qd-row-meta {
+  min-width: 0;
+  flex: 1;
+}
+.qd-row-meta strong {
+  display: block;
+  font-size: 10.5px;
+  color: var(--miao-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qd-row-meta small {
+  display: block;
+  font-size: 9px;
+  color: var(--miao-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qd-time {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--miao-muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+/* 移除键：平时透明，悬停整行才浮出（设计稿 `.qd-remove`）—— 队列行不该常驻一排删除键 */
+.qd-remove {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--miao-faint);
+  opacity: 0;
+  transition: opacity var(--miao-dur-fast) var(--miao-ease-out);
+}
+.qd-row:hover .qd-remove {
+  opacity: 1;
+}
+.qd-remove:hover {
+  background: var(--miao-danger-soft);
+  color: var(--miao-danger);
+}
+.qd-empty {
   padding: 24px 10px;
   text-align: center;
   font-size: 10px;
   line-height: 1.7;
   color: var(--miao-muted);
-}
-.music-qrow:hover {
-  background: var(--miao-surface-2);
-}
-.music-qrow.is-hot {
-  background: var(--miao-accent-soft);
-}
-.music-qrow.is-hot .music-row-tx b {
-  color: var(--miao-accent);
-  font-weight: 700;
-}
-.music-qrow-ix {
-  width: 26px;
-  text-align: center;
-  font-size: 10px;
-  color: var(--miao-muted);
-  flex-shrink: 0;
-  font-family: var(--md-font-numeric);
 }
 
 /* ---------------------------------------------------------------- 展开播放器 */
@@ -2194,7 +2190,8 @@
     animation-duration: 0.001s;
   }
   /* 队列抽屉同理：开了"减少动态效果"就不做横向位移，只做瞬时切换 */
-  .music-drawer {
+  .ui-drawer,
+  .ui-drawer-mask {
     animation-duration: 0.001s;
   }
 }

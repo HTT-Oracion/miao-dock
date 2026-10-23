@@ -24,6 +24,8 @@ export function SideDrawer({
   kicker,
   title,
   subtitle,
+  drawerClass,
+  headActions,
   foot,
   onClose,
   children,
@@ -35,6 +37,13 @@ export function SideDrawer({
   title: string;
   /** 标题下的一行说明（设计稿 `.side-drawer-head p`） */
   subtitle?: string;
+  /**
+   * 抽屉的**特性修饰类**（设计稿 `.queue-drawer` 这种"某个抽屉自己的宽度与内边距"）。
+   * 与 `Modal.cardClass` 同一套分法：单元管结构与通用形态，特性尺寸留在各自样式分片里。
+   */
+  drawerClass?: string;
+  /** 标题右侧、关闭键之前的动作区（设计稿 `.qd-head-actions` 的「清空」） */
+  headActions?: ReactNode;
   /** 底部动作区（设计稿 `.modal-foot`），缺省不渲染 */
   foot?: ReactNode;
   onClose: () => void;
@@ -51,16 +60,19 @@ export function SideDrawer({
 
   if (!open) return null;
 
+  const layerCls = drawerClass ? `ui-drawer ${drawerClass}` : 'ui-drawer';
+
   return (
     <div className="ui-drawer-layer">
       <div className="ui-drawer-mask" onClick={onClose} />
-      <aside className="ui-drawer" role="dialog" aria-modal="true" aria-label={title}>
+      <aside className={layerCls} role="dialog" aria-modal="true" aria-label={title}>
         <header className="ui-drawer-head">
           <div className="ui-drawer-titles">
             {kicker ? <span className="ui-drawer-kicker">{kicker}</span> : null}
             <h2>{title}</h2>
             {subtitle ? <p>{subtitle}</p> : null}
           </div>
+          {headActions ? <div className="ui-drawer-actions">{headActions}</div> : null}
           <IconButton title="关闭" onClick={onClose}>
             <X size={15} />
           </IconButton>

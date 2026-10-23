@@ -59,9 +59,9 @@ export const createQueueSlice = (
     const removedCurrent = index === currentIndex;
     const nextQ = queue.filter((_, i) => i !== index);
     if (nextQ.length === 0) {
-      set({ queue: [], currentSong: null, playUrl: '', isPlaying: false, currentIndex: 0 });
-      // 队列空了 = 没有当前歌曲了，桌面歌词要跟着清空（否则停在最后一首）
-      void get().pushLyricsState();
+      get().clearQueue(true);
+      // 设计稿这一句只有标题行（清空动作本身有说明行，这里是"移除最后一项"的收尾告知）
+      get().toast('队列已清空', 'info');
       return;
     }
     set({ queue: nextQ, currentIndex: Math.min(index, nextQ.length - 1) });
@@ -70,12 +70,17 @@ export const createQueueSlice = (
     void currentSong; // 保留引用，避免未使用告警
   },
 
-  clearQueue: () => {
+  /**
+   * 清空队列。`silent` 给**内部调用**（播放失败兜底 / 启动恢复失败 / 移除最后一项）：
+   * 那些场景不该冒出一句"用户点了清空"的提示 —— 设计稿的同一个动作也留着这个开关。
+   */
+  clearQueue: (silent = false) => {
     set({ queue: [], currentSong: null, playUrl: '', isPlaying: false, currentIndex: 0 });
     // 同上：清空队列后没有当前歌曲了，推一次空状态让桌面歌词归位
     void get().pushLyricsState();
     // 队列空了就不该留快照 —— 否则下次启动会恢复出一个"用户刚清掉的队列"
     clearResumeSnapshot();
+    if (!silent) get().toast('播放已关闭', 'info', '队列已清空');
   },
 
   persistSnapshot: () => {

@@ -34,6 +34,6 @@ export const createUiSlice = (
     savePrefs({ skin: s });
   },
 
-  toast: (message, type = 'warning') => set({ musicToast: { type, message } }),
+  toast: (message, type = 'warning', sub) => set({ musicToast: { type, message, sub } }),
   clearToast: () => set({ musicToast: null }),
 });

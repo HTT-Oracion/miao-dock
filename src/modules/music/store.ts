@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 音乐模块状态层（zustand）—— 播放 + 四平台 + 本地 + 发现，全模块唯一状态源。
  *
  * 从参考实现（Zustand store，3559 行）移植**逻辑**、剥离 Chakra UI 绑定（PD-1「界面重写」）。
@@ -339,7 +339,11 @@ export interface MusicState {
   qrUrl: string;
   qrStatus: string;
   qrLoading: boolean;
-  musicToast: { type: 'warning' | 'success'; message: string } | null;
+  /**
+   * 轻提示（音乐模块统一出口）。设计稿的 toast 是**两行**：标题说"发生了什么"，
+   * 说明补"这意味着什么"（清空队列 → `播放已关闭` / `队列已清空`）。`sub` 缺省只渲染标题行。
+   */
+  musicToast: { type: ToastType; message: string; sub?: string } | null;
 
   // ---- Actions ----
   init: () => Promise<void>;
@@ -525,7 +529,8 @@ export interface MusicState {
   // 队列
   appendToQueue: (songs: Song[]) => void;
   removeFromQueue: (index: number) => void;
-  clearQueue: () => void;
+  /** `silent`：内部兜底清空（播放失败 / 恢复失败 / 移除最后一项）不提示用户 */
+  clearQueue: (silent?: boolean) => void;
   /**
    * 把当前播放态写进「启动恢复快照」（localStorage）。
    *
@@ -655,9 +660,12 @@ export interface MusicState {
    */
   closeExpanded: () => void;
   setSkin: (s: PlayerSkin) => void;
-  toast: (message: string, type?: 'warning' | 'success') => void;
+  toast: (message: string, type?: ToastType, sub?: string) => void;
   clearToast: () => void;
 }
+
+/** 轻提示语义色：warning 警示 / success 完成 / info 中性告知（设计稿这三种都在用） */
+export type ToastType = 'warning' | 'success' | 'info';
 
 // ------------------------------------------------------------------ 内部辅助
 

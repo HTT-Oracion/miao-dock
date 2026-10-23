@@ -369,7 +369,7 @@ export const createPlaybackSlice = (
              * 在回调里**重新读** restoring 而不是用闭包里那份：800ms 里用户可能
              * 已经点了别的歌（那时不该由这一条定时器去清他的队列）。
              */
-            get().clearQueue();
+            get().clearQueue(true);
             set({ restoring: false });
           }
         }, 800);
@@ -378,7 +378,7 @@ export const createPlaybackSlice = (
         unplayableSkipCount = 0;
         // 恢复态走到这里 = 整个队列都试过了（Q4）→ 清空，播放条随之隐藏
         if (restoring) {
-          get().clearQueue();
+          get().clearQueue(true);
           return;
         }
         get().toast('当前队列中多首歌曲无法播放，已停止自动切换');

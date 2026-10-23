@@ -485,9 +485,11 @@
 .ui-drawer-mask {
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--miao-ink) 28%, transparent);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  /* 生效值同 `.modal-mask`（设计稿 `theme.css` 把蒙层统一改成 .28 + blur 9 + saturate 1.1，
+     基础表里那套 `blur(2px)` 在界面上不存在 —— D-363） */
+  background: rgba(33, 47, 58, 0.28);
+  backdrop-filter: blur(9px) saturate(1.1);
+  -webkit-backdrop-filter: blur(9px) saturate(1.1);
   animation: miao-fade-in var(--miao-dur-fast) var(--miao-ease-out);
 }
 .ui-drawer {
@@ -500,13 +502,14 @@
   flex-direction: column;
   background: color-mix(in srgb, var(--miao-surface) 97%, transparent);
   border-left: 1px solid var(--miao-line);
-  box-shadow: -24px 0 60px -32px color-mix(in srgb, var(--miao-ink) 40%, transparent);
+  box-shadow: -24px 0 60px -32px rgba(30, 32, 36, 0.4);
   animation: ui-drawer-in var(--miao-dur-base) var(--miao-ease-out);
 }
+/* 设计稿 `drawer-in`：只滑 24px 并同时从 .6 淡到 1 —— 是"抽出来"而不是"横穿一屏" */
 @keyframes ui-drawer-in {
   from {
-    transform: translateX(18px);
-    opacity: 0;
+    transform: translateX(24px);
+    opacity: 0.6;
   }
   to {
     transform: none;
@@ -538,17 +541,26 @@
   font-weight: 700;
   font-size: 15px;
   color: var(--miao-ink);
+  /* 浏览器默认的 `h2` 上下 `.83em` 边距会把头部撑高——设计稿这里是 0（实测 108 vs 73） */
+  margin: 0;
 }
 .ui-drawer-head p {
   font-size: 9.5px;
   color: var(--miao-muted);
-  margin-top: 2px;
+  margin: 2px 0 0;
 }
 .ui-drawer-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 14px 18px 18px;
+  padding: 14px 18px 22px;
+}
+/* 标题右侧的动作区（设计稿 `.qd-head-actions`）：贴住关闭键，间距 2 */
+.ui-drawer-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
 }
 .ui-drawer-foot {
   display: flex;
@@ -1303,14 +1315,17 @@
 }
 
 /* 文字按钮：行内/卡内的弱动作（清空、全选本页、展开日志）。
-   它不是「次级框按钮」，所以不带边框与底色，靠下划线与色彩变化表态。 */
+   它不是「次级框按钮」，所以不带边框与底色，靠悬停底色与色彩变化表态。
+   几何取自设计稿 `.text-btn`：28 高 / 左右 8 / 11.5px·700 —— 与伴它出现的
+   34×34 关闭键同处一行时，23 高会显得"塌下去"（实测过 23 vs 28）。 */
 .text-btn {
-  padding: 3px 7px;
+  height: 28px;
+  padding: 0 8px;
   border: 0;
   border-radius: 8px;
   background: transparent;
   font-family: var(--md-font-display);
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 700;
   color: var(--miao-muted);
   white-space: nowrap;
