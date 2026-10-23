@@ -96,59 +96,56 @@ function PlaylistsView() {
   const created = userPlaylists.filter((pl) => pl.subscribed !== true);
   const subscribed = userPlaylists.filter((pl) => pl.subscribed === true);
 
-  type Row = { kind: 'caption'; key: string; label: string } | { kind: 'pl'; key: string; pl: Playlist };
-
-  const rows: Row[] = [];
-  if (created.length > 0) {
-    rows.push({ kind: 'caption', key: 'g-created', label: '创建的歌单' });
-    for (const pl of created) rows.push({ kind: 'pl', key: pl.id, pl });
-  }
-  if (subscribed.length > 0) {
-    rows.push({ kind: 'caption', key: 'g-subscribed', label: '收藏的歌单' });
-    for (const pl of subscribed) rows.push({ kind: 'pl', key: pl.id, pl });
-  }
+  /*
+   * 渲染方式：**不用 `VirtualList`**（与曲目列表不同）。
+   *
+   * 设计稿这里的两类行**不等高** —— 组头 32、歌单行 46 —— 而定高虚拟列表要求
+   * 所有行同高（`itemHeight`），套上去要么把组头撑到 46、要么把行压到 32，
+   * 两种都与设计稿不符。歌单数量是"几十条"量级（曲目才是上千），
+   * 全量渲染的节点数完全可控，因此这里按分组直接铺。
+   */
+  const renderGroup = (label: string, items: Playlist[], refresh: boolean) => (
+    <div className="ms-group" key={label}>
+      <div className="ms-caption">
+        {label}
+        {refresh ? (
+          <Btn
+            kind="bare"
+            className="text-btn"
+            ariaLabel="刷新歌单"
+            disabled={loading}
+            title="刷新歌单"
+            onClick={() => void loadUserPlaylists()}
+          >
+            <RefreshCw size={11} />
+          </Btn>
+        ) : null}
+      </div>
+      {items.length > 0 ? (
+        items.map((pl) => (
+          <div className="music-row" key={pl.id} onClick={() => void openLeftPlaylist(pl)}>
+            <Cover url={coverProxyUrl(pl.cover, proxyPort)} className="ms-row-cover" />
+            <div className="music-row-tx">
+              <b>{pl.name}</b>
+              {/* 第二行按设计稿 `.ms-row-meta small`：作者 · N 首（平台由当前账号决定，不必每行重复） */}
+              <span>
+                {pl.creator ? `${pl.creator} · ` : ''}
+                {pl.track_count} 首
+              </span>
+            </div>
+          </div>
+        ))
+      ) : (
+        <div className="ms-empty">还没有创建歌单</div>
+      )}
+    </div>
+  );
 
   return (
-    <div className="music-body">
-      <VirtualList
-        items={rows}
-        resetKey={`left-playlists:${playbackSource}`}
-        itemKey={(r) => r.key}
-        renderItem={(row) =>
-          row.kind === 'caption' ? (
-            /* 组头（设计稿 `.ms-caption`）：**纯标签**，不可折叠 —— 设计稿这里没有折叠态；
-               刷新只挂在「创建的歌单」那一行（那是唯一会变的一组） */
-            <div className="ms-caption">
-              {row.label}
-              {row.key === 'g-created' ? (
-                <Btn
-                  kind="bare"
-                  className="text-btn"
-                  ariaLabel="刷新歌单"
-                  disabled={loading}
-                  title="刷新歌单"
-                  onClick={() => void loadUserPlaylists()}
-                >
-                  <RefreshCw size={11} />
-                </Btn>
-              ) : null}
-            </div>
-          ) : (
-            <div className="music-row" onClick={() => void openLeftPlaylist(row.pl)}>
-              <Cover url={coverProxyUrl(row.pl.cover, proxyPort)} />
-              <div className="music-row-tx">
-                <b>{row.pl.name}</b>
-                {/* 第二行按设计稿 `.ms-row-meta small`：作者 · N 首（平台由当前账号决定，不必每行重复） */}
-                <span>
-                  {row.pl.creator ? `${row.pl.creator} · ` : ''}
-                  {row.pl.track_count} 首
-                </span>
-              </div>
-            </div>
-          )
-        }
-      />
-    </div>
+    <>
+      {created.length > 0 ? renderGroup('创建的歌单', created, true) : null}
+      {subscribed.length > 0 ? renderGroup('收藏的歌单', subscribed, false) : null}
+    </>
   );
 }
 

@@ -1482,6 +1482,13 @@
  * 9px / 700 / .11em / faint，右侧可挂一枚 20 高的小动作按钮（刷新）。
  * 设计稿这里是**纯标签**、没有折叠态 —— 分组永远是展开的。
  */
+/*
+ * 组头（设计稿 `.ms-caption`）：227×32、pad 7/6/5、gap 6，
+ * 9px / 700 / `letter-spacing .11em` / `text-transform: uppercase` / faint。
+ *
+ * 字距与全大写是设计稿的**原样设定**（中文在字距下读作"疏排的标签"，是这一层的视觉语言）；
+ * 刷新键挂在组头右端，且它自己要把字距与大写**清回 0/none**（按钮文字不是标签）。
+ */
 .ms-caption {
   display: flex;
   align-items: center;
@@ -1501,20 +1508,36 @@
   text-transform: none;
 }
 
+/* 组内空态（设计稿 `.ms-empty`）：24/10 内距 + 居中 + 10px muted。
+   与通用 `Empty` 不同 —— 这一句是**组内**的一行说明（如"还没有创建歌单"），
+   不是整块视图的空态，所以不占满高度、也没有图标位。 */
+.ms-empty {
+  padding: 24px 10px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--miao-muted);
+}
+
+/*
+ * 列表行（设计稿 `.ms-row` 的**生效值**）：227×46 = pad 7 + 封面 32 + pad 7，r12，gap 8。
+ *
+ * ⚠️ 基础表写的是 `padding: 6px; border-radius: 9px`，但后加载层把它调成 7 / 12 ——
+ * 按基础表改会得到 44 高的行（比设计稿矮 2px），肉眼几乎看不出、但整列会差出几十像素。
+ * 高亮态是 `.is-active`（primary-soft 底），**不加位移** —— 悬停时整行横向抖 1px
+ * 在长列表里会读成"整页在动"。
+ */
 .music-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 9px;
+  gap: 8px;
+  padding: 7px;
   border-radius: 12px;
   cursor: pointer;
-  transition:
-    background var(--miao-dur-fast) ease,
-    transform var(--miao-dur-fast) var(--miao-ease-spring);
+  transition: background var(--miao-dur-fast) ease;
 }
 .music-row:hover {
   background: var(--miao-surface-2);
-  transform: translateX(1px);
 }
 .music-row.is-hot {
   background: var(--miao-accent-soft);
@@ -1542,21 +1565,29 @@
   object-fit: cover;
   display: block;
 }
+/* 左栏行的封面比中间列小一档（设计稿 `.ms-row .cover-art` 生效值 32 / r9） */
+.ms-row-cover,
+.music-side .music-cover {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  flex: none;
+}
 .music-row-tx {
   flex: 1;
   min-width: 0;
 }
 .music-row-tx b {
   display: block;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 10.5px;
+  font-weight: 700;
   color: var(--miao-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .music-row-tx span {
-  font-size: 10.5px;
+  font-size: 9px;
   color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;

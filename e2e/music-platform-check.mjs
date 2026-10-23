@@ -919,9 +919,16 @@ add('UI.loadMore', 'UI', (s) => ({
   detail: uiNote(s, '未读到歌单滚动加载（loadMoreLeft/loadMoreRight）'),
 }));
 
-/** 需要走虚拟滚动的长列表（行数无上界：歌单曲目可上千首、队列上限 2000） */
+/**
+ * 需要走虚拟滚动的长列表（行数无上界：歌单曲目可上千首、队列上限 2000）。
+ *
+ * ⚠️ `LeftPanel.tsx` **不在**这份清单里：它现在是两个不同角色的文件 ——
+ * 歌单列表（几十条，且设计稿的组头 32 与歌单行 46 **不等高**，定高虚拟列表套不上）
+ * 与歌单曲目（上千条，必须虚拟滚动）。后者由 `UI.leftTracksVirtual` 单独钉住，
+ * 前者由 `UI.sideGroups` 钉住结构。把整份文件列在这里会让"必须用 VirtualList"
+ * 与"组头行高不同"两条要求互相矛盾，只能靠改断言解红 —— 那正是要避免的。
+ */
 const ROW_LISTS = {
-  'LeftPanel.tsx': '左栏「我的歌单 / 歌单曲目」',
   'RightPanel.tsx': '右栏「搜索结果 / 推荐歌单 / 曲目 / 每日推荐」',
   'HistoryView.tsx': '播放历史',
   'LocalView.tsx': '本地曲库',
@@ -939,6 +946,32 @@ add('UI.virtualList', 'UI', (s) => {
   ];
   const missing = need.filter(([re]) => !re.test(v)).map(([, n]) => n);
   return { ok: missing.length === 0, detail: missing.length ? `虚拟列表缺：${missing.join('、')}` : '' };
+});
+add('UI.sideGroups', 'UI', (s) => {
+  /*
+   * 左栏歌单列表的**分组结构**（设计稿 `.ms-group` → `.ms-caption` + 若干 `.ms-row`）。
+   *
+   * 产品此前是"一个 `.music-body` 里塞一条扁平行表"，组头与歌单行混在同一个列表里；
+   * 设计稿的分组是**嵌套结构**（每组一个容器，组头是该组的第一个孩子）。
+   * 三处都断：① 有 `.ms-group`；② 组头是 `.ms-caption`；③ 组内空态用 `.ms-empty`
+   * （不是通用 `Empty` —— 那是整块视图的空态，会占满高度）。
+   */
+  const src = readMaybe(path.join(F.musicUiDir, 'LeftPanel.tsx'));
+  if (!src) return { ok: false, detail: uiNote(s, '未读到 LeftPanel.tsx') };
+  const problems = [];
+  if (!/className="ms-group"/.test(src)) problems.push('歌单列表没有 .ms-group 分组容器');
+  if (!/className="ms-caption"/.test(src)) problems.push('组头不是 .ms-caption（设计稿的组头形态）');
+  if (!/className="ms-empty"/.test(src)) problems.push('组内空态不是 .ms-empty（用通用 Empty 会占满高度）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.leftTracksVirtual', 'UI', (s) => {
+  /* 歌单曲目仍然必须虚拟滚动（上千首）：LeftPanel 里那一段不许跟着歌单列表一起退化 */
+  const src = readMaybe(path.join(F.musicUiDir, 'LeftPanel.tsx'));
+  if (!src) return { ok: false, detail: uiNote(s, '未读到 LeftPanel.tsx') };
+  return {
+    ok: /<VirtualList/.test(src),
+    detail: /<VirtualList/.test(src) ? '' : '歌单曲目列表未接虚拟滚动（上千首会卡）',
+  };
 });
 add('UI.virtualListUsed', 'UI', (s) => {
   const missing = [];
@@ -4317,10 +4350,35 @@ const MUTATIONS = [
     expect: ['UI.virtualList'],
   },
   {
-    name: '把 QueueDrawer 的虚拟列表换回普通列表（模拟漏接某个长列表）',
-    file: path.join(F.musicUiDir, 'QueueDrawer.tsx'),
+    name: '把左栏歌单列表的分组拆掉（退回"一条扁平行表"）',
+    file: path.join(F.musicUiDir, 'LeftPanel.tsx'),
+    find: 'className="ms-group"',
+    replace: 'className="ms-flat"',
+    expect: ['UI.sideGroups'],
+  },
+  {
+    name: '把左栏组内空态换成通用 Empty（会占满高度，把组头挤走）',
+    file: path.join(F.musicUiDir, 'LeftPanel.tsx'),
+    find: 'className="ms-empty"',
+    replace: 'className="ui-empty"',
+    expect: ['UI.sideGroups'],
+  },
+  {
+    name: '把歌单曲目列表的虚拟滚动摘掉（上千首会卡）',
+    file: path.join(F.musicUiDir, 'LeftPanel.tsx'),
     find: '<VirtualList',
+    replace: '<TrackList',
+    expect: ['UI.leftTracksVirtual'],
+  },
+  {
+    name: '把 QueueDrawer 的虚拟列表换回普通列表（模拟漏接某个长列表）',
+
+    file: path.join(F.musicUiDir, 'QueueDrawer.tsx'),
+
+    find: '<VirtualList',
+
     replace: '<QueueList',
+
     expect: ['UI.virtualListUsed'],
   },
   {
