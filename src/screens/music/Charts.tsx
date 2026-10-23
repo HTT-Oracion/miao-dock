@@ -31,11 +31,21 @@ function chartName(pl: Playlist): string {
 }
 
 /**
- * 一张榜单卡（设计稿 `.chart-card`）：卡头（封面 + 榜单名）+ 前 5 名排行。
+ * 一张榜单卡：卡头（榜名 + 可选的更新说明）→ 正文两栏（大封面 + 前 3 名排行）。
  *
- * 排行三列：序号（`i`）/ 歌名（`b`，占满）/ 歌手（`em`，右端）。
- * 设计稿的 `chart-head` 右侧还有一枚刷新图标 —— 那是"这张榜单可以单独刷新"的暗示，
- * 但产品没有单榜刷新接口，所以**不放**一个点了没反应的图标（假控件比缺控件更伤）。
+ * ## 正文为什么是"大封面 + 3 行"两栏
+ * 封面是榜单的**面孔**（一眼认出这是哪个榜），给它 100px 的整块而不是 22px 的小图，
+ * 卡片才有"这是一张专辑/榜单"的重量；右侧 3 行是"它现在在流行什么"的摘要。
+ * 行进详情后有完整曲目，所以这里 3 行足够（再多会把卡片撑高、挤掉同排的另一张卡）。
+ *
+ * ## 行是"序号 歌名 - 歌手"单行横排
+ * 两行式（歌名在上、歌手在下）在 380px 宽的卡里会让 3 行占掉近一半高度，
+ * 且歌手被压成第二行的小字后几乎读不到。单行横排 + 省略号更适合"摘要"这一层。
+ *
+ * ## 升降标 / 更新频率：**拿不到就不显示**
+ * 平台接口没有返回升降数据（`lastRank` 之类）与更新频率文案，
+ * 与其编一个假的变化，不如**不显示** —— 假控件比缺控件更伤。
+ * 等接口有了这两个字段，直接在这里渲染即可（数据驱动的两种可选形态）。
  */
 function ChartCard({
   pl,
@@ -50,7 +60,8 @@ function ChartCard({
 }) {
   const name = chartName(pl);
   const cover = byName ? '' : coverProxyUrl(pl.cover, proxyPort);
-  const rows = pl.preview ?? [];
+  const rows = (pl.preview ?? []).slice(0, 3);
+  const update = pl.updateFrequency;
   return (
     <div
       className="chart-card"
@@ -67,22 +78,26 @@ function ChartCard({
       }}
     >
       <div className="chart-head">
-        {cover ? (
-          <span className="chart-head-cv">
-            <img src={cover} alt="" loading="lazy" />
-          </span>
-        ) : (
-          <span className="chart-head-cv is-name">{Array.from(name)[0]}</span>
-        )}
         <strong>{name}</strong>
+        {update ? <span className="chart-update">{update}</span> : null}
       </div>
-      {rows.map((r, i) => (
-        <div className="chart-row" key={`${r.title}-${i}`}>
-          <i>{i + 1}</i>
-          <b>{r.title}</b>
-          <em>{r.artist}</em>
+
+      <div className="chart-body">
+        {/* 封面：有图用图，没图退回榜名首字（与歌曲封面同一套降级） */}
+        <span className="chart-art" aria-hidden="true">
+          {cover ? <img src={cover} alt="" loading="lazy" /> : Array.from(name)[0]}
+        </span>
+        <div className="chart-rows">
+          {rows.map((r, i) => (
+            <div className="chart-row" key={`${r.title}-${i}`}>
+              <i>{i + 1}</i>
+              <b>{r.title}</b>
+              <span className="chart-sep">-</span>
+              <em>{r.artist}</em>
+            </div>
+          ))}
         </div>
-      ))}
+      </div>
     </div>
   );
 }

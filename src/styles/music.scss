@@ -2395,73 +2395,108 @@ button.ms-caption.is-collapsed {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/*
+ * 卡头：**榜名 + 可选的更新说明**。
+ * 榜名是这一卡的主标题，比里面的歌名明显大一档（15px / 700），
+ * 眼睛先落在"这是哪个榜"上，再看下面流行的歌。
+ */
 .chart-head {
   display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 6px;
-}
-.chart-head-cv {
-  width: 22px;
-  height: 22px;
-  flex: none;
-  border-radius: 7px;
-  overflow: hidden;
-  background: linear-gradient(140deg, var(--miao-primary-soft), var(--miao-accent-soft));
-  display: grid;
-  place-items: center;
-  font-family: var(--md-font-display);
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--miao-ink);
-}
-.chart-head-cv img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 .chart-head strong {
   min-width: 0;
   font-family: var(--md-font-display);
-  font-size: 10.5px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--miao-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.chart-row {
-  display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 6px;
-  padding: 3.5px 0;
+/* 更新说明：只在接口给了频率时出现（没有就不渲染，不占位置） */
+.chart-update {
+  flex: none;
+  margin-left: auto;
   font-size: 9.5px;
+  color: var(--miao-faint);
+  white-space: nowrap;
+}
+
+/* 正文两栏：左大封面（100px）+ 右侧 3 行排行 */
+.chart-body {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+.chart-art {
+  width: 100px;
+  height: 100px;
+  flex: none;
+  border-radius: var(--miao-r-md);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(140deg, var(--miao-primary-soft), var(--miao-accent-soft));
+  font-family: var(--md-font-display);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--miao-ink);
+  box-shadow: 0 10px 22px -16px rgba(45, 59, 70, 0.5);
+}
+.chart-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.chart-rows {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/*
+ * 排行行：**单行横排**「序号 歌名 - 歌手」。
+ * 两行式（歌名上 / 歌手下）在 380px 宽的卡里会把 3 行撑到近半张卡高，
+ * 且歌手被压成第二行小字后基本读不到 —— 摘要层用单行更合适。
+ */
+.chart-row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  font-size: 10.5px;
   color: var(--miao-text);
+  white-space: nowrap;
 }
 .chart-row i {
+  flex: none;
   font-style: normal;
-  font-size: 8.5px;
+  font-size: 9px;
   font-variant-numeric: tabular-nums;
   color: var(--miao-faint);
-  text-align: right;
 }
 .chart-row b {
   min-width: 0;
   font-weight: 400;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+.chart-sep {
+  flex: none;
+  color: var(--miao-faint);
 }
 .chart-row em {
+  min-width: 0;
   font-style: normal;
-  font-size: 8.5px;
+  font-size: 9px;
   color: var(--miao-muted);
-  max-width: 62px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .music-charts {
   display: flex;
