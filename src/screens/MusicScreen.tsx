@@ -7,7 +7,6 @@ import { PlayerBar } from '@screens/music/PlayerBar';
 import { QueueDrawer } from '@screens/music/QueueDrawer';
 import { RightPanel } from '@screens/music/RightPanel';
 import { Toast } from '@screens/music/Toast';
-import { SideAccount } from '@screens/music/SideAccount';
 
 /**
  * 音乐屏 —— 只做**组合**，各区域实现在 `./music/` 下：
@@ -72,9 +71,9 @@ export function MusicScreen() {
   return (
     <div className="music">
       <div className="music-layout">
+        {/* 左栏三段式：Tab / 列表 / ——；账号行已上移到工具条 */}
         <aside className="music-side">
           <LeftPanel />
-          <SideAccount />
         </aside>
 
         <div className="music-center">

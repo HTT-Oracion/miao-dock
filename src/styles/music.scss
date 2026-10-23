@@ -694,6 +694,36 @@
 }
 
 /* 左栏底部账号行（设计稿 `.ms-foot` / `.ms-account`）：贴底、单行、点开账号菜单或登录 */
+
+/* ---------------------------------------------------------------- 工具条账号入口
+/*
+ * 账号按钮住在工具条右侧动作组（`.toolbar-actions`），形态是"一枚小胶囊"：
+ * 头像 + 昵称 + 一枚箭头。它在**任何屏任何 Tab 下位置都恒定** —— 这是它从
+ * 左栏底部（`.ms-foot`）上移的理由：身份状态不属于某个列表。
+ */
+.toolbar-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 9px 0 5px;
+  border-radius: var(--miao-r-xs);
+}
+.toolbar-account .ms-avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 9px;
+}
+.toolbar-account-name {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--md-font-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
 .ms-foot {
   flex: 0 0 auto;
   border-top: 1px solid var(--miao-line);

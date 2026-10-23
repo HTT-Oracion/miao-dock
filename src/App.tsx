@@ -36,6 +36,7 @@ import { ViewTabs } from '@components/ViewTabs';
 import { ExpandedPlayer } from '@screens/music/ExpandedPlayer';
 import { LogConsole } from '@screens/settings/LogConsole';
 import { useMusicStore } from '@music/store';
+import { ToolbarAccount } from '@screens/music/ToolbarAccount';
 import { useAnimeStore } from '@anime/store';
 import { ANIME_VIEW_META } from '@anime/player-options';
 import { isBlockedWhenNotReady, stateView } from '@/stores/nav';
@@ -502,7 +503,8 @@ export function App() {
       return {
         title: '音乐',
         subtitle: '本地音乐与在线音源 · 网易云 / 酷狗 / QQ / 咪咕',
-        actions: null,
+        // 账号是**全应用级**身份状态：放工具条右侧动作组，切 Tab / 切屏位置都不动
+        actions: <ToolbarAccount />,
       };
     }
     /*
