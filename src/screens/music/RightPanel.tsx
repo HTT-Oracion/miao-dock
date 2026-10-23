@@ -17,6 +17,7 @@ import { coverProxyUrl, songKey } from '@music/convert';
 import type { Song } from '@music/types';
 import { Charts } from '@screens/music/Charts';
 import { LocalPanel } from '@screens/music/LocalPanel';
+import { PlaylistDetail } from '@screens/music/PlaylistDetail';
 import { Btn, Empty, IconButton, VirtualList } from '@components/units';
 import { Cover, SongRow } from '@screens/music/shared';
 
@@ -149,8 +150,22 @@ export function RightPanel() {
       <section className="music-view">
         {searchError ? <div className="music-inline-err">搜索失败：{searchError}</div> : null}
 
-        {/* 分流：搜索态 > 本地视图 > 发现页（设计稿里「本地」是右侧的一个完整视图） */}
-        {searchActive ? <SearchResults /> : leftView === 'local' ? <LocalPanel /> : <Discover />}
+        {/*
+         * 分流：搜索态 > 歌单详情 > 本地视图 > 发现页。
+         *
+         * 「歌单详情」排在这里是设计稿的交互：**点左栏的歌单，右侧整块换成这个歌单**
+         * （左栏保持不动）。产品此前是在左栏下钻 —— 点一下屏幕上两个区域同时变，
+         * 且左栏再也回不到列表。
+         */}
+        {searchActive ? (
+          <SearchResults />
+        ) : leftView === 'tracks' ? (
+          <PlaylistDetail />
+        ) : leftView === 'local' ? (
+          <LocalPanel />
+        ) : (
+          <Discover />
+        )}
       </section>
     </>
   );

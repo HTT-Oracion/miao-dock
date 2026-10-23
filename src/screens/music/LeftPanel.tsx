@@ -1,12 +1,12 @@
-import { ChevronLeft, Play, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useMusicStore } from '@music/store';
-import { coverProxyUrl, songKey } from '@music/convert';
+import { coverProxyUrl } from '@music/convert';
 import type { LeftView } from '@music/store';
 import type { Playlist } from '@music/types';
 import { HistoryView } from '@screens/music/HistoryView';
 import { LocalView } from '@screens/music/LocalView';
-import { Btn, Empty, VirtualList } from '@components/units';
-import { Cover, SongRow } from '@screens/music/shared';
+import { Btn, Empty } from '@components/units';
+import { Cover } from '@screens/music/shared';
 
 // Tab 文案与设计稿左栏一致：`歌单 / 本地 / 历史`（不写"我的歌单 / 播放历史"的长名，
 // 三个 Tab 并排时短名才排得下且不换行）
@@ -55,15 +55,12 @@ export function LeftPanel() {
       {/* 视图区自带滚动（设计稿 `.ms-scroll`）：滚动条只出现在这一层，
           而不是整张左卡一起滚（那样 Tab 会跟着滚走） */}
       <div className="ms-scroll">
-        {leftView === 'playlists' ? (
-          <PlaylistsView />
-        ) : leftView === 'tracks' ? (
-          <LeftTracksView />
-        ) : leftView === 'local' ? (
-          <LocalView />
-        ) : (
-          <HistoryView />
-        )}
+        {/*
+         * 左栏只渲染「列表」这一类视图：歌单 / 本地 / 历史。
+         * `tracks`（歌单曲目）**不在这里渲染** —— 设计稿把歌单详情放在右侧主体，
+         * 点歌单时左栏保持列表不动（否则屏幕上两个区域同时变，且左栏回不去）。
+         */}
+        {leftView === 'local' ? <LocalView /> : leftView === 'history' ? <HistoryView /> : <PlaylistsView />}
       </div>
     </>
   );
@@ -146,86 +143,5 @@ function PlaylistsView() {
       {created.length > 0 ? renderGroup('创建的歌单', created, true) : null}
       {subscribed.length > 0 ? renderGroup('收藏的歌单', subscribed, false) : null}
     </>
-  );
-}
-
-/**
- * 歌单曲目：定高虚拟列表 + 滚动接近底部自动续拉下一页（loadMoreLeft）。
- * 触发交给 VirtualList 的 onNearEnd（距底两行）—— 到底才触发会白等一个 RTT，
- * 用阈值把网络耗时藏在滚动里；分页仍由 store 负责（本组件只负责「什么时候要」）。
- */
-function LeftTracksView() {
-  const meta = useMusicStore((s) => s.leftPlaylistMeta);
-  const tracks = useMusicStore((s) => s.leftPlaylistTracks);
-  const tracksError = useMusicStore((s) => s.leftTracksError);
-  const loading = useMusicStore((s) => s.loadingLeftTracks);
-  const loadingMore = useMusicStore((s) => s.loadingMoreLeft);
-  const loadMore = useMusicStore((s) => s.loadMoreLeft);
-  const back = useMusicStore((s) => s.backToPlaylists);
-  const playPlaylist = useMusicStore((s) => s.playPlaylist);
-  const currentSong = useMusicStore((s) => s.currentSong);
-  const proxyPort = useMusicStore((s) => s.proxyPort);
-
-  const total = meta?.track_count ?? 0;
-
-  return (
-    <div className="music-body">
-      <div className="mc-section-head">
-        <Btn kind="bare" className="music-btn out" ariaLabel="返回" onClick={back}>
-          <ChevronLeft size={12} /> 返回
-        </Btn>
-        <span className="music-card-title">{meta?.name ?? '歌单'}</span>
-        <span className="music-card-sub">
-          {tracks.length}
-          {total ? ` / ${total}` : ''} 首
-        </span>
-        <div className="grow" />
-        <Btn
-          kind="bare"
-          className="music-btn pri"
-          disabled={tracks.length === 0}
-          onClick={() => void playPlaylist(tracks, { playlist: meta ?? undefined })}
-        >
-          <Play size={12} /> 播放全部
-        </Btn>
-      </div>
-
-      {loading ? (
-        <Empty>加载曲目中…</Empty>
-      ) : tracksError ? (
-        /* 读失败与"歌单是空的"分开说：前者能重试（再点一次这个歌单），后者重试也没用 */
-        <Empty bad sub={tracksError}>
-          曲目读取失败
-        </Empty>
-      ) : tracks.length === 0 ? (
-        <Empty>这个歌单还没有歌曲</Empty>
-      ) : (
-        <>
-          <VirtualList
-            items={tracks}
-            resetKey={meta?.id ?? 'left-tracks'}
-            itemKey={(s, i) => `${s.provider}:${s.id}:${i}`}
-            onNearEnd={loadingMore ? undefined : () => void loadMore()}
-            renderItem={(s, i) => {
-              // 「播放」在歌单曲目里的语义是"把整个歌单设为队列并从这一首开始" ——
-              // 左键点行与右键菜单的「播放」必须是同一个回调，否则两处行为会各走各的
-              const play = () => void playPlaylist(tracks, { playlist: meta ?? undefined, index: i });
-              return (
-                <SongRow
-                  song={s}
-                  cover={coverProxyUrl(s.cover, proxyPort)}
-                  active={currentSong ? songKey(currentSong) === songKey(s) : false}
-                  onClick={play}
-                  onPlay={play}
-                />
-              );
-            }}
-          />
-          {total > 0 && tracks.length < total ? (
-            <div className="music-more">{loadingMore ? '加载中…' : '上滑加载更多'}</div>
-          ) : null}
-        </>
-      )}
-    </div>
   );
 }
