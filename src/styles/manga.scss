@@ -34,7 +34,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--miao-text);
 }
 .qs-main strong {
@@ -89,7 +89,7 @@
 }
 /* 设计稿 `.qt-info`：条数 + 串行策略 + 不可删规则 */
 .qt-info {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
 }
 .qt-right {
@@ -100,17 +100,17 @@
 }
 /* 排序口径：只说明"按什么排"，不做成可点的排序器（服务端就按创建时间给） */
 .qt-caption {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--miao-faint);
 }
 .queue-sel {
   font-family: var(--md-font-display);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--miao-ink);
 }
 .queue-hint {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
 }
 .queue-spacer {
@@ -153,7 +153,7 @@
   border-bottom: 1px solid var(--miao-line);
   background: var(--miao-surface-2);
   font-family: var(--md-font-display);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.1em;
   color: var(--miao-faint);
@@ -224,7 +224,7 @@
   align-items: center;
   justify-content: center;
   font-family: var(--md-font-numeric);
-  font-size: 9px;
+  font-size: 10px;
   color: var(--miao-faint);
   font-variant-numeric: tabular-nums;
 }
@@ -284,7 +284,7 @@
   text-overflow: ellipsis;
 }
 .qt-name-sub {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -313,7 +313,7 @@
   align-items: center;
   column-gap: 0;
   row-gap: 4px;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-text);
 }
 /* rail 独占第二行通栏（实际类名是 `.bar`，见 QueueScreen 的 barClass） */
@@ -341,7 +341,7 @@
   gap: 6px;
   /* 状态文字一律 ink，色相由状态点承载（《02》§5.2） */
   color: var(--md-ink);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 /*
  * 操作列：主动作 + [更多]，右对齐。
@@ -405,7 +405,7 @@
   border-radius: 9px;
   background: transparent;
   font-family: var(--md-font-display);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--miao-muted);
   transition:
@@ -501,7 +501,7 @@
 }
 .empty-sub {
   max-width: 380px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.7;
   color: var(--miao-muted);
   margin-bottom: 14px;
@@ -578,7 +578,7 @@
 }
 .nr-sum-d {
   margin-top: 3px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.7;
   color: var(--miao-muted);
 }
@@ -602,12 +602,12 @@
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .nr-rt-id {
   flex: 0 0 auto;
   font-family: var(--md-font-numeric);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--md-error);
 }
 .nr-rt-detail {
@@ -619,7 +619,7 @@
   overflow-wrap: anywhere;
 }
 .nr-rt-fix {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.6;
   color: var(--md-muted);
   font-family: var(--md-font-numeric);
@@ -700,7 +700,7 @@
   color: var(--miao-primary-ink);
 }
 .nr-guide-toggle.is-quiet {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--miao-muted);
 }
 .nr-guide-trouble {
@@ -737,7 +737,7 @@
   background: var(--miao-surface);
   color: var(--miao-muted);
   font-family: var(--md-font-numeric);
-  font-size: 11px;
+  font-size: 12px;
   transition:
     background var(--miao-dur-base) var(--miao-ease-spring),
     border-color var(--miao-dur-base) ease,
@@ -823,7 +823,7 @@
 }
 .tl-state {
   margin-left: auto;
-  font-size: 10.5px;
+  font-size: 11px;
   white-space: nowrap;
   color: var(--miao-muted);
 }
@@ -846,7 +846,7 @@
   border-radius: 10px;
   background: var(--miao-surface-2);
   font-family: var(--miao-font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -866,7 +866,7 @@
   border-radius: 999px;
   background: var(--miao-surface-2);
   font-family: var(--md-font-numeric);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-text);
   white-space: nowrap;
 }
@@ -891,7 +891,7 @@
   background: var(--miao-surface-2);
   border: 1px solid var(--miao-line);
   font-family: var(--miao-font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.65;
   color: var(--miao-text);
   white-space: pre-wrap;
@@ -1074,7 +1074,7 @@
 }
 .book-author {
   margin-top: 3px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--miao-muted);
 }
 .book-meta-chips {
@@ -1313,7 +1313,7 @@
 }
 .lib-empty {
   padding: 18px 10px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.7;
   color: var(--miao-muted);
   text-align: center;
@@ -1337,7 +1337,7 @@
 }
 .lib-empty-state p {
   max-width: 100%;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.6;
   color: var(--miao-muted);
 }
@@ -1449,7 +1449,7 @@
 }
 .lib-empty-page .empty-sub {
   max-width: 360px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.7;
 }
 /*
@@ -1522,14 +1522,14 @@
   border-radius: 4px;
   background: var(--miao-surface-2);
   font-family: var(--md-font-display);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--miao-muted);
   overflow: hidden;
 }
 .search-group-head strong {
   font-family: var(--md-font-display);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--miao-ink);
   white-space: nowrap;
@@ -1583,7 +1583,7 @@
 }
 .sr-title {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--miao-text);
   white-space: nowrap;
   overflow: hidden;
@@ -1592,7 +1592,7 @@
 /* 「N / M 页」（设计稿 `.sr-sub`）：行尾的页数，靠右但不抢状态徽标的位置 */
 .sr-sub {
   flex: 0 0 auto;
-  font-size: 9px;
+  font-size: 10px;
   color: var(--miao-muted);
 }
 
@@ -1637,7 +1637,7 @@
   border-radius: 8px;
   background: transparent;
   font-family: var(--md-font-display);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--miao-muted);
   cursor: pointer;
@@ -1784,7 +1784,7 @@
   padding: 5px 7px;
   border-top: 1px solid var(--miao-line);
   background: var(--miao-surface);
-  font-size: 9px;
+  font-size: 10px;
   color: var(--miao-muted);
 }
 .page-label b {
@@ -1889,7 +1889,7 @@
 }
 /* 书名（设计稿 `.cmp-title span`）：小一档、淡一档，与序号同一基线 */
 .compare-book {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -1939,7 +1939,7 @@
 /* 次行（设计稿 `.lb-sub`）：书名 + 页文件名，小一档、淡一档，不与主行抢视线 */
 .compare-seq .muted {
   font-family: var(--md-font-numeric);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 400;
   color: var(--miao-muted);
 }
@@ -1968,7 +1968,7 @@
   gap: 8px;
   padding: 0 14px;
   font-family: var(--md-font-display);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--miao-text);
   background: var(--miao-surface-2);
@@ -1988,12 +1988,12 @@
 /* 页文件名（设计稿 `.cmp-pane-head small`）：小一档、数字字体、不与"原图/译文"抢 */
 .pane-file {
   font-family: var(--md-font-numeric);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 400;
 }
 /* 取图中 / 缺失的占位文案：比标题小一档 */
 .pane-msg {
-  font-size: 11px;
+  font-size: 12px;
 }
 /*
  * 与 `.lightbox-stage` 同理：**必须 flex 居中，不能用 grid + place-items:center**
@@ -2034,7 +2034,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
 }
 
@@ -2117,7 +2117,7 @@
   flex: 0 0 auto;
   padding: 3px 10px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.6);
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -2131,7 +2131,7 @@
   padding: 2px 4px;
   border-radius: 999px;
   font-family: var(--md-font-numeric);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--miao-muted);
   background: var(--miao-surface-2);
   /* 控件本身是个复合控件，按钮可点 ⇒ 给默认光标，别让整条都像纯文本 */
@@ -2240,12 +2240,12 @@
 
 .modal-warn {
   margin-top: 8px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--md-error);
 }
 .modal-hint {
   margin-top: 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--md-muted);
 }
 .hidden-list {
@@ -2378,7 +2378,7 @@
 .drop-sub {
   max-width: 380px;
   margin-top: 5px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.7;
   color: var(--miao-muted);
 }
@@ -2480,7 +2480,7 @@
 .drop-file-meta strong {
   display: block;
   overflow: hidden;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--miao-ink);
   text-overflow: ellipsis;
@@ -2490,7 +2490,7 @@
   display: flex;
   gap: 5px;
   margin-top: 2px;
-  font-size: 9px;
+  font-size: 10px;
   color: var(--miao-faint);
 }
 .drop-file-remove {
@@ -2534,7 +2534,7 @@
 }
 .form-card .form-sub {
   margin: 3px 0 12px;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.6;
   color: var(--miao-muted);
 }
@@ -2562,7 +2562,7 @@
   justify-content: space-between;
   align-items: baseline;
   gap: 10px;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
 }
 .drop-meta-row b {
@@ -2576,7 +2576,7 @@
 }
 .pathinline {
   font-family: var(--md-font-numeric);
-  font-size: 9px;
+  font-size: 10px;
 }
 .drop-submit {
   display: flex;
@@ -2628,7 +2628,7 @@
   gap: 3px;
   padding: 4px;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--miao-muted);
   transition: color var(--miao-dur-fast) ease;
@@ -2677,7 +2677,7 @@
   min-width: 0;
 }
 .recent-text strong {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--miao-ink);
 }
 .recent-text small {
@@ -2728,14 +2728,14 @@
 }
 .drop-flow-step > span {
   font-family: var(--miao-font-mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.12em;
   color: var(--miao-accent);
 }
 .drop-flow-step strong {
   display: block;
   margin: 4px 0 3px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--miao-ink);
 }
 .drop-flow-step p {
@@ -2752,7 +2752,7 @@
   border-radius: 12px;
   background: var(--miao-surface-2);
   font-family: var(--miao-font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-text);
   word-break: break-all;
   -webkit-user-select: text;
@@ -2834,7 +2834,7 @@
 }
 .other-hint {
   padding: 4px 8px 6px 22px;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.6;
   color: var(--miao-muted);
 }
@@ -2844,7 +2844,7 @@
   margin-top: 10px;
   margin-bottom: 6px;
   font-family: var(--md-font-display);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--miao-muted);
@@ -2881,7 +2881,7 @@
   justify-content: center;
   padding: 4px;
   text-align: center;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.6;
   color: var(--miao-muted);
   word-break: break-all;
@@ -2902,7 +2902,7 @@
 /* ── 头部卡的补充信息（屏 B/C）────────────────────────────────────────── */
 /* 大类：作者 · N 话 · M 页（§7.1 同一口径）；话内：《书名》归因 */
 .lib-head-sub {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -2963,7 +2963,7 @@
   white-space: nowrap;
 }
 .cc-pages {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
 }
 .cc-bar {
@@ -3106,7 +3106,7 @@
   font-variant-numeric: tabular-nums;
 }
 .ed-ring-center span {
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.04em;
   color: var(--miao-muted);
 }
@@ -3124,7 +3124,7 @@
 /* 产品自加的一行：两轮指示（设计稿没有，但 stage1/stage2 是真状态） */
 .ed-round {
   margin: 0 0 2px;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--miao-primary-ink);
@@ -3136,7 +3136,7 @@
 }
 .ed-hero-copy > p {
   margin: 4px 0 0;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.7;
   color: var(--miao-muted);
 }
@@ -3161,7 +3161,7 @@
 .ed-metrics strong {
   display: block;
   margin-top: 2px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--miao-ink);
   font-variant-numeric: tabular-nums;
 }
@@ -3240,7 +3240,7 @@
 }
 .ed-step strong {
   display: block;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--miao-text);
 }
@@ -3262,7 +3262,7 @@
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 9px;
+  font-size: 10px;
 }
 .ed-step[data-state='active'] .ed-step-node {
   background: var(--miao-primary);
@@ -3299,16 +3299,16 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 10.5px;
+  font-size: 11px;
 }
 .ed-detail-head h3 {
   margin: 0;
-  font-size: 11px;
+  font-size: 12px;
 }
 .ed-detail-head span {
   margin-left: auto;
   font-family: var(--miao-font-mono);
-  font-size: 9px;
+  font-size: 10px;
   color: var(--miao-muted);
   overflow-wrap: anywhere;
   text-align: right;
@@ -3367,7 +3367,7 @@
     justify-content: center;
   }
   .ed-step strong {
-    font-size: 9px;
+    font-size: 10px;
   }
   .ed-step small {
     display: none;

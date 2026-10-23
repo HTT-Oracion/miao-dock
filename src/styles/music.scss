@@ -592,7 +592,7 @@
   background: var(--miao-surface);
   border-radius: 999px;
   padding: 4px 11px;
-  font-size: 10.5px;
+  font-size: 11px;
   font-family: var(--md-font-display);
   font-weight: 700;
   color: var(--miao-text);
@@ -641,7 +641,7 @@
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 11px;
+  font-size: 12px;
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -736,7 +736,7 @@
 .toolbar-account .ms-avatar {
   width: 20px;
   height: 20px;
-  font-size: 9px;
+  font-size: 10px;
 }
 /*
  * 账号文字块（设计稿 \`.ms-account-tx\` 的两行结构）：
@@ -758,7 +758,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--md-font-display);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--miao-ink);
 }
@@ -804,7 +804,7 @@
   overflow: hidden;
   background: var(--miao-surface-3);
   color: var(--miao-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 /* 已登录：头像取**平台色**（`--pc` 由 SideAccount 注入），首字母反白。
@@ -926,7 +926,7 @@
 .now-empty p {
   margin: 0;
   max-width: 200px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.6;
   color: var(--miao-muted);
 }
@@ -984,7 +984,7 @@
   text-overflow: ellipsis;
 }
 .now-artist {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -1024,7 +1024,7 @@
   min-height: 88px;
 }
 .now-lyric-line {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
   color: var(--miao-faint);
   transition: color var(--miao-dur-base) ease;
@@ -1065,7 +1065,7 @@
   color: var(--miao-muted);
 }
 .now-stat strong {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-ink);
 }
 
@@ -1240,7 +1240,7 @@
 }
 .hero-copy p {
   margin-top: 7px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--miao-muted);
 }
 .hero-actions {
@@ -1333,13 +1333,13 @@
 }
 .entry-card strong {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--miao-ink);
 }
 .entry-card small {
   display: block;
   margin-top: 2px;
-  font-size: 9px;
+  font-size: 10px;
   color: var(--miao-muted);
 }
 .entry-ico {
@@ -1405,7 +1405,7 @@
   border-radius: 999px;
   padding: 5px 12px;
   font-family: var(--md-font-display);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -1451,20 +1451,20 @@
 
 .music-hint {
   flex: 0 0 auto;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
   padding: 0 8px 6px;
 }
 .music-inline-err {
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--md-error);
   padding: 2px 2px 6px;
 }
 .music-more {
   flex: 0 0 auto;
   text-align: center;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
   padding: 8px;
 }
@@ -1494,7 +1494,7 @@
   background: transparent;
   color: var(--miao-muted);
   font-family: var(--md-font-display);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -1728,7 +1728,7 @@
   align-items: center;
   gap: 4px;
   font-family: var(--md-font-display);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--miao-muted);
   border: 1px solid transparent;
@@ -1796,7 +1796,7 @@
   align-items: center;
   gap: 6px;
   padding: 7px 6px 5px;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.11em;
   color: var(--miao-faint);
@@ -1827,7 +1827,11 @@ button.ms-caption.is-collapsed {
 .ms-caption .text-btn {
   margin-left: auto;
   height: 20px;
-  font-size: 9px;
+  /*
+   * 11px：组头这枚「刷新」要比组头文字（10px）稍大一点 ——
+   * 它是这一组里唯一的动作，不该和组名混在同一个视觉重量上；但也不要大到抢组名。
+   */
+  font-size: 11px;
   letter-spacing: 0;
   text-transform: none;
 }
@@ -1903,7 +1907,7 @@ button.ms-caption.is-collapsed {
 }
 .music-row-tx b {
   display: block;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--miao-ink);
   white-space: nowrap;
@@ -1911,7 +1915,7 @@ button.ms-caption.is-collapsed {
   text-overflow: ellipsis;
 }
 .music-row-tx span {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -1997,7 +2001,7 @@ button.ms-caption.is-collapsed {
   border-radius: 6px;
   background: transparent;
   font-family: var(--md-font-display);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--miao-muted);
   cursor: pointer;
@@ -2075,7 +2079,7 @@ button.ms-caption.is-collapsed {
 .playlist-card strong {
   display: block;
   font-family: var(--md-font-display);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--miao-ink);
   white-space: nowrap;
@@ -2085,7 +2089,7 @@ button.ms-caption.is-collapsed {
 .playlist-card small {
   display: block;
   margin-top: 1px;
-  font-size: 9px;
+  font-size: 10px;
   color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -2341,7 +2345,7 @@ button.ms-caption.is-collapsed {
 }
 .pd-info p {
   margin: 0;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
 }
 .pd-meta {
@@ -2469,14 +2473,14 @@ button.ms-caption.is-collapsed {
   align-items: baseline;
   gap: 5px;
   min-width: 0;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-text);
   white-space: nowrap;
 }
 .chart-row i {
   flex: none;
   font-style: normal;
-  font-size: 9px;
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
   color: var(--miao-faint);
 }
@@ -2493,7 +2497,7 @@ button.ms-caption.is-collapsed {
 .chart-row em {
   min-width: 0;
   font-style: normal;
-  font-size: 9px;
+  font-size: 10px;
   color: var(--miao-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2534,7 +2538,7 @@ button.ms-caption.is-collapsed {
 }
 .music-chart span {
   display: block;
-  font-size: 10.5px;
+  font-size: 11px;
   margin-top: 3px;
   color: var(--miao-text);
   white-space: nowrap;
@@ -2577,7 +2581,7 @@ button.ms-caption.is-collapsed {
   align-items: center;
   justify-content: center;
   text-align: center;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1.35;
   padding: 6px;
@@ -2650,7 +2654,7 @@ button.ms-caption.is-collapsed {
   text-overflow: ellipsis;
 }
 .music-pb-tx span {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
   display: block;
   white-space: nowrap;
@@ -2848,14 +2852,14 @@ button.ms-caption.is-collapsed {
 }
 .pf-desc {
   display: block;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .pf-badge {
-  font-size: 10.5px;
+  font-size: 11px;
   padding: 2px 8px;
   border-radius: 999px;
   flex-shrink: 0;
@@ -2875,7 +2879,7 @@ button.ms-caption.is-collapsed {
 }
 .pf-note {
   margin-top: 10px;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
   line-height: 1.5;
 }
@@ -2917,7 +2921,7 @@ button.ms-caption.is-collapsed {
   text-overflow: ellipsis;
 }
 .ac-txt span {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
 }
 .ac-list {
@@ -2967,7 +2971,7 @@ button.ms-caption.is-collapsed {
   background: transparent;
   cursor: pointer;
   color: var(--md-error);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .ac-out:hover {
   background: var(--miao-surface-2);
@@ -3021,7 +3025,7 @@ button.ms-caption.is-collapsed {
   width: 16px;
   flex-shrink: 0;
   text-align: center;
-  font-size: 9px;
+  font-size: 10px;
   color: var(--miao-faint);
   font-variant-numeric: tabular-nums;
 }
@@ -3042,7 +3046,7 @@ button.ms-caption.is-collapsed {
 }
 .qd-row-meta strong {
   display: block;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-ink);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3050,7 +3054,7 @@ button.ms-caption.is-collapsed {
 }
 .qd-row-meta small {
   display: block;
-  font-size: 9px;
+  font-size: 10px;
   color: var(--miao-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3058,7 +3062,7 @@ button.ms-caption.is-collapsed {
 }
 .qd-time {
   flex-shrink: 0;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
@@ -3181,7 +3185,7 @@ button.ms-caption.is-collapsed {
   pointer-events: none;
 }
 .music-exp-topcenter span {
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   color: rgba(255, 255, 255, 0.72);
 }
@@ -3203,7 +3207,7 @@ button.ms-caption.is-collapsed {
   height: 22px;
   padding: 0 8px;
   border-radius: 999px;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
 }
 .music-exp-ltabs .music-exp-trans.is-on {
@@ -3356,7 +3360,7 @@ button.ms-caption.is-collapsed {
   margin-top: 3px;
 }
 .music-exp-info em {
-  font-size: 11.5px;
+  font-size: 12px;
   font-style: normal;
   color: var(--skin-sub, rgba(255, 255, 255, 0.55));
 }
@@ -3425,7 +3429,7 @@ button.ms-caption.is-collapsed {
 .music-exp-ltab {
   padding: 4px 13px;
   border-radius: 999px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-family: var(--md-font-body);
   border: none;
   background: var(--skin-hover, rgba(255, 255, 255, 0.12));
@@ -3627,7 +3631,7 @@ button.ms-caption.is-collapsed {
   padding: 4px;
 }
 .music-exp-cm-sec {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--miao-accent);
 }
@@ -3649,7 +3653,7 @@ button.ms-caption.is-collapsed {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .music-exp-cm-hd b {
   font-size: 12px;
@@ -3742,7 +3746,7 @@ button.ms-caption.is-collapsed {
   background: var(--miao-danger);
   color: #fff;
   font-family: var(--md-font-display);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   line-height: 1.4;
   padding: 0 5px;
@@ -3759,7 +3763,7 @@ button.ms-caption.is-collapsed {
   margin-left: 4px;
 }
 .music-exp-dyn > span {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.6);
 }
@@ -3828,7 +3832,7 @@ button.ms-caption.is-collapsed {
 .music-style-lb {
   display: block;
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 12px;
   text-align: center;
   color: rgba(255, 255, 255, 0.7);
 }
@@ -4226,7 +4230,7 @@ button.ms-caption.is-collapsed {
   display: block;
 }
 .music-skin-lb {
-  font-size: 10.5px;
+  font-size: 11px;
   text-align: center;
   padding: 5px 3px;
   color: var(--miao-text);
@@ -4298,7 +4302,7 @@ button.ms-caption.is-collapsed {
 }
 .login-platform-tx strong {
   font-family: var(--md-font-display);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--miao-ink);
   white-space: nowrap;
@@ -4326,7 +4330,7 @@ button.ms-caption.is-collapsed {
 }
 .login-panel-head p {
   margin-top: 2px;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
 }
 /* 未登录：官方窗口提示块 */
@@ -4346,7 +4350,7 @@ button.ms-caption.is-collapsed {
 }
 .login-wait-tx h4 {
   font-family: var(--md-font-display);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--miao-ink);
 }
@@ -4390,7 +4394,7 @@ button.ms-caption.is-collapsed {
 }
 .login-account h4 {
   font-family: var(--md-font-display);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--miao-ink);
 }
@@ -4446,7 +4450,7 @@ button.ms-caption.is-collapsed {
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  font-size: 9px;
+  font-size: 10px;
 }
 .account-card-tx {
   min-width: 0;
@@ -4471,7 +4475,7 @@ button.ms-caption.is-collapsed {
 .account-card .btn {
   height: 24px;
   padding: 0 7px;
-  font-size: 9px;
+  font-size: 10px;
 }
 /* 设计稿 `.login-note`：组件一直在用这个类，样式此前是缺的（于是这句提示按正文渲染） */
 .login-note {
@@ -4550,7 +4554,7 @@ button.ms-caption.is-collapsed {
   flex: 1 1 140px;
 }
 .music-dlset-hint {
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.55;
   color: var(--miao-text);
 }
@@ -4566,7 +4570,7 @@ button.ms-caption.is-collapsed {
 
 /* 收尾说明：改动何时可见 */
 .music-dlset-note {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--miao-text);
   text-align: center;
   line-height: 1.6;
@@ -4591,7 +4595,7 @@ button.ms-caption.is-collapsed {
   border-radius: 15px;
   background: color-mix(in srgb, var(--miao-surface) 94%, transparent);
   color: var(--miao-text);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.6;
   box-shadow: var(--miao-shadow-2);
   backdrop-filter: blur(18px);

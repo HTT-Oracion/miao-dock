@@ -451,7 +451,7 @@ html[data-theme='dark'] .nav-item:hover {
   text-overflow: ellipsis;
 }
 .toolbar-sub {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--miao-muted);
   line-height: 1.4;
   white-space: nowrap;
@@ -504,7 +504,7 @@ html[data-theme='dark'] .nav-item:hover {
 }
 .shell-ipc-warn b {
   font-family: var(--md-font-display);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--miao-ink);
 }
@@ -539,7 +539,7 @@ html[data-theme='dark'] .nav-item:hover {
   height: 33px;
   padding: 0 13px;
   border-radius: 12px;
-  font-size: 11.5px;
+  font-size: 12px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -553,7 +553,14 @@ html[data-theme='dark'] .nav-item:hover {
   justify-content: center;
   border: 1px solid transparent;
   font-family: var(--md-font-display);
-  font-weight: 700;
+  /*
+   * 按钮文字**不加粗**。
+   *
+   * 原先是 700 —— 但按钮的"可点"已经由底色、描边、圆角表达了，
+   * 再加粗就成了双重强调：一排按钮里字重最响，反而抢了标题的层级。
+   * 与父级继承解耦：显式写 400，无论放在哪种字重的容器里都是常规字重。
+   */
+  font-weight: 400;
 }
 /* 主推进：模块主色 primary（《02》§5.2 操作列语义） */
 .btn-primary {
@@ -620,7 +627,7 @@ html[data-theme='dark'] .nav-item:hover {
   /* 与全局 `.btn` 用同一把尺子：设计稿 `.btn-sm` 是 28 / r9 / 11.5px·700。
      之前是 r10 / 10.5px —— 小按钮自己又降一档字号，读起来像"次要到不必看清"。 */
   border-radius: 9px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .btn:disabled {
   opacity: 0.48;
@@ -658,7 +665,7 @@ html[data-theme='dark'] .nav-item:hover {
   border-radius: 999px;
   border: 1px solid var(--miao-line);
   background: var(--miao-surface);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--miao-text);
   transition:
@@ -691,7 +698,7 @@ html[data-theme='dark'] .nav-item:hover {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-text);
   box-shadow: 0 6px 16px -14px rgba(45, 59, 70, 0.35);
 }
@@ -785,7 +792,7 @@ html[data-theme='dark'] .nav-item:hover {
   box-shadow: var(--miao-shadow-2);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.55;
   color: var(--miao-text);
   animation: ntf-in var(--miao-dur-base) var(--miao-ease-spring) both;
@@ -833,7 +840,7 @@ html[data-theme='dark'] .nav-item:hover {
 .ntf-body strong {
   display: block;
   font-family: var(--md-font-display);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--miao-ink);
 }

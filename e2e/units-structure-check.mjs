@@ -1667,8 +1667,9 @@ add('DIALOG.queueToasts', 'DIALOG', (s) => {
 add('STYLE.drawerAndTextBtn', 'STYLE', (s) => {
   /*
    * 抽屉单元与文字按钮的**生效值**：蒙层同弹窗（`theme.css` 的 .28 + blur 9 + saturate 1.1），
-   * 进场是 `drawer-in` 的"只滑 24px 并从 .6 淡入"，`.text-btn` 是 28 高 / 0 8 / 11.5px。
+   * 进场是 `drawer-in` 的"只滑 24px 并从 .6 淡入"，`.text-btn` 是 28 高 / 0 8 / 12px。
    * 三条都是实测出来的偏差（蒙层 2px、滑 18px 且从 0 淡入、文字按钮 23 高）。
+   * ⚠️ 字号随全局阶梯调整（11.5 → 12，2026-10-24），判据同步；同时按钮统一不加粗。
    */
   const css = stripComments(s.styleShardCode?.['components.scss'] || '');
   const mask = (css.match(/\.ui-drawer-mask\s*\{[^}]*\}/) || [''])[0];
@@ -1684,7 +1685,8 @@ add('STYLE.drawerAndTextBtn', 'STYLE', (s) => {
     [mask, '  backdrop-filter: blur(9px) saturate(1.1);', '抽屉蒙层模糊（前缀两空格：`-webkit-` 那行不算）'],
     [btn, 'height: 28px;', '文字按钮 28 高'],
     [btn, 'padding: 0 8px;', '文字按钮左右 8'],
-    [btn, 'font-size: 11.5px;', '文字按钮 11.5px'],
+    [btn, 'font-size: 12px;', '文字按钮 12px'],
+    [btn, 'font-weight: 400;', '文字按钮不加粗'],
     [anim, 'translateX(24px)', '进场位移 24px'],
     [anim, 'opacity: 0.6;', '进场起始透明度 .6'],
   ];

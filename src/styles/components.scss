@@ -30,7 +30,7 @@
   height: 27px;
   padding: 0 10px;
   border-radius: 7px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--miao-muted);
   transition:
@@ -72,7 +72,7 @@
   min-width: 120px;
   padding: 0 10px;
   font-family: var(--md-font-body);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1;
   color: var(--miao-ink);
   background: var(--miao-surface);
@@ -128,7 +128,7 @@
   border-radius: 14px;
   box-shadow: var(--miao-shadow-2);
   font-family: var(--md-font-body);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--md-ink);
   overflow: hidden;
   padding: 5px;
@@ -151,7 +151,7 @@
   outline: none;
   user-select: none;
   gap: 7px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--miao-text);
 }
 /* data-highlighted 由 Radix 给（鼠标悬停与键盘 ↑↓ 是同一个状态）——
@@ -207,7 +207,7 @@
   padding: 7px 9px;
   border-radius: 9px;
   color: var(--miao-text);
-  font-size: 11.5px;
+  font-size: 12px;
   text-align: left;
 }
 .ui-menu-item:hover:not(:disabled) {
@@ -236,7 +236,7 @@
   min-width: 0;
 }
 .ui-menu-sub {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--md-muted);
 }
 
@@ -286,7 +286,7 @@
   border: 1px solid var(--miao-line);
   box-shadow: var(--miao-shadow-2);
   color: var(--miao-surface);
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.5;
   white-space: nowrap;
   overflow: hidden;
@@ -349,7 +349,7 @@
 .ui-range-val {
   min-width: 38px;
   font-family: var(--md-font-numeric);
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums; /* 数字等宽，拖动时读数不会左右跳 */
   color: var(--md-ink-2);
   text-align: right;
@@ -371,7 +371,7 @@
   height: 24px;
   padding: 0 7px 0 9px;
   font-family: var(--md-font-numeric);
-  font-size: 11.5px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   line-height: 1;
   color: var(--miao-ink);
@@ -402,7 +402,7 @@
 }
 /* 单位（如「分钟」）跟在本框右侧，比读数浅一档以示它不是可编辑内容 */
 .ui-num-suffix {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--md-muted);
 }
 /* 预设色点：选中态用 ring 而不是换颜色 —— 色点本身的颜色就是信息，不能再被选中态覆盖 */
@@ -531,7 +531,7 @@
 .ui-drawer-kicker {
   display: block;
   font-family: var(--miao-font-mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--miao-faint);
@@ -692,7 +692,7 @@
   overflow: visible;
 }
 .ui-empty-sub {
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.6;
   color: var(--miao-muted);
   max-width: 320px;
@@ -776,7 +776,7 @@
   font-size: 12px;
 }
 .ui-err-msg {
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.65;
   color: var(--md-ink-2);
   word-break: break-word;
@@ -823,7 +823,7 @@
   gap: 6px;
   height: 28px;
   font-family: var(--md-font-numeric);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-text);
   background: var(--miao-surface-2);
   border: 1px solid var(--miao-line);
@@ -858,13 +858,13 @@
 }
 .set-state-text {
   font-family: var(--md-font-numeric);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--md-ink);
 }
 /* 端口 chip：与状态 chip 同高同形状，数字走等宽 —— 纵向对齐可扫 */
 .set-pnum {
   font-family: var(--md-font-numeric);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--md-ink-2);
   background: var(--md-surface-2);
   border: 1px solid var(--md-line);
@@ -876,7 +876,7 @@
 /* 行下通栏附注：接在某一行的 1px 分隔线之下，读作"这一行的补充"。
    刻意**不带盒式**（padding 只留下方 10px），这样它与所属行左对齐、不额外起一个盒子。 */
 .set-row-note {
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.7;
   color: var(--miao-muted);
   padding: 0 0 10px;
@@ -924,10 +924,10 @@
   padding-bottom: 8px;
 }
 .set-spec-count {
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .set-spec-hint {
-  font-size: 11px;
+  font-size: 12px;
 }
 .set-spec-failed {
   color: var(--md-error);
@@ -948,7 +948,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .kv > b {
   font-weight: 500;
@@ -957,7 +957,7 @@
 }
 .kv > code {
   font-family: var(--md-font-numeric);
-  font-size: 11px;
+  font-size: 12px;
   background: var(--md-surface-2);
   border: 1px solid var(--md-line-soft);
   border-radius: var(--md-radius-xs);
@@ -976,7 +976,7 @@
   display: flex;
   gap: 8px;
   align-items: baseline;
-  font-size: 11px;
+  font-size: 12px;
   padding: 3px 0;
   border-bottom: 1px dashed var(--md-line-soft);
 }
@@ -998,14 +998,14 @@
   margin-left: auto;
   color: var(--md-muted);
   font-family: var(--md-font-numeric);
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 .switch {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--md-ink-2);
   justify-content: flex-start;
   width: 38px;
@@ -1120,7 +1120,7 @@
   display: block;
   margin-bottom: 4px;
   font-family: var(--md-font-display);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.16em;
   color: var(--miao-accent-ink);
@@ -1134,7 +1134,7 @@
 }
 .modal-head p {
   margin-top: 4px;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.6;
   color: var(--miao-muted);
 }
@@ -1200,7 +1200,7 @@
   border-radius: 11px;
   background: var(--miao-danger-soft);
   color: color-mix(in srgb, var(--miao-danger) 82%, #000);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.6;
 }
 .confirm-line > svg {
@@ -1286,7 +1286,7 @@
 }
 
 .field-label {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--miao-muted);
@@ -1313,8 +1313,9 @@
   border-radius: 8px;
   background: transparent;
   font-family: var(--md-font-display);
-  font-size: 11.5px;
-  font-weight: 700;
+  font-size: 12px;
+  /* 与 `.btn` 同一条纪律：按钮文字不加粗（色与底已经表达了"可点"） */
+  font-weight: 400;
   color: var(--miao-muted);
   white-space: nowrap;
   transition:
@@ -1377,7 +1378,7 @@
   border-radius: 14px;
   background: var(--miao-surface);
   color: var(--miao-text);
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.65;
 }
 
@@ -1419,7 +1420,7 @@
 
 .empty-sub {
   max-width: 380px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.7;
   color: var(--miao-muted);
 }
@@ -1439,7 +1440,7 @@
   gap: 10px;
   padding: 28px 16px;
   color: var(--miao-muted);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .ui-loading.is-inline {

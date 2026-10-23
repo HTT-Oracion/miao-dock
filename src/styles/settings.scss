@@ -43,7 +43,7 @@
   width: 100%;
   border-radius: 12px;
   background: transparent;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--miao-muted);
   text-align: left;
@@ -251,13 +251,13 @@
 }
 .search-hit-row strong {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--miao-ink);
 }
 .search-hit-row small {
   display: block;
-  font-size: 9px;
+  font-size: 10px;
   color: var(--miao-muted);
 }
 .search-hit-row .hit-section {
@@ -343,7 +343,7 @@
 .set-log-empty {
   padding: 40px 16px;
   text-align: center;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
   border: 1px dashed var(--miao-line-strong);
   border-radius: 12px;
@@ -367,7 +367,7 @@
 }
 .settings-section-head p {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.7;
   color: var(--miao-muted);
   max-width: 72ch;
@@ -527,7 +527,7 @@
 .set-row-name {
   min-width: 0;
   font-family: var(--md-font-display);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--miao-ink);
 }
@@ -537,7 +537,7 @@
  */
 .set-row-def {
   flex: 0 0 auto;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 400;
   color: var(--miao-faint);
   white-space: nowrap;
@@ -550,7 +550,7 @@
 .set-row-why {
   margin-top: 2px;
   /* 设计稿 `.s-row-text p` 生效值 11.13（= 10.5 × 1.06） */
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.6;
   color: var(--miao-muted);
   max-width: 540px;
@@ -633,7 +633,7 @@
   color: var(--md-ink);
 }
 .set-cache-total span {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--md-muted);
 }
 
@@ -654,7 +654,7 @@
 .set-cache-row-name {
   flex: 1;
   min-width: 0;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--md-ink);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -662,7 +662,7 @@
 }
 .set-cache-row-size {
   font-family: var(--md-font-numeric);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--md-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -686,7 +686,7 @@
   min-width: 0;
   margin-top: 6px;
   font-family: var(--md-font-numeric);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--md-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -719,7 +719,7 @@
 /* 52px 定宽：平台 / appKey / appSecret 三行的控件左边缘对齐，读起来是一张表而不是三句话 */
 .set-src-k {
   flex: 0 0 52px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--md-ink-2);
 }
 /*
@@ -736,7 +736,7 @@
   border-radius: var(--md-radius-xs);
   padding: 5px 9px;
   font-family: var(--md-font-numeric);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--md-ink-2);
   letter-spacing: 0.02em;
 }
@@ -753,7 +753,7 @@
 /* 「密钥只写不读」的注解：跟在两个按钮后面，回答"保存密钥按了之后发生了什么" */
 .set-src-note {
   margin-top: 8px;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.7;
   color: var(--md-muted);
 }
@@ -789,7 +789,7 @@
  * 一句带数字的警告塞进去会把同一个下拉挤歪（同 `.set-cache` 脱离 `Row` 的理由）。
  */
 .set-warn {
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.7;
   margin-bottom: 10px;
   padding: 9px 11px;
@@ -814,7 +814,7 @@
   border: 1px solid var(--md-line-soft);
   background: var(--md-surface-2);
   color: var(--md-muted);
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.7;
 }
 .set-hint b {
@@ -857,7 +857,7 @@
 }
 .set-manage-why {
   margin-top: 3px;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.6;
   color: var(--md-muted);
 }
@@ -870,7 +870,7 @@
 /* 校验结论 / 「尚未校验」提示。`is-bad` 表示"发现不符"，不是"操作失败" */
 .set-manage-state {
   margin-top: 9px;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.7;
   color: var(--md-muted);
 }
@@ -920,7 +920,7 @@
 }
 .set-diag-why {
   margin-top: 3px;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.6;
   color: var(--md-muted);
 }
@@ -950,7 +950,7 @@
 /* 「展开 ▾ / 收起 ꜛ」—— 与 `.set-note-more`（组说明抽屉）同一枚药丸语汇 */
 .set-diag-fold {
   font-family: var(--md-font-body);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--md-muted);
   border: 1px solid var(--md-line);
   border-radius: 999px;
@@ -967,7 +967,7 @@
 }
 .set-diag-note {
   margin-top: 7px;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.7;
   color: var(--md-muted);
 }
@@ -992,7 +992,7 @@
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--md-muted);
 }
 .set-diag-file-id {
@@ -1034,7 +1034,7 @@
   align-items: baseline;
   flex-wrap: wrap;
   gap: 8px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--md-ink-2);
 }
 .set-diag-guide-total b {
@@ -1057,7 +1057,7 @@
   display: inline-flex;
   align-items: baseline;
   gap: 5px;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--md-muted);
 }
 .set-diag-guide-set-id {
@@ -1077,7 +1077,7 @@
 /* 面板内小标题：11/600/ink-2 —— 比 `.set-subtitle` 弱一档（那是设置项层级），
    又比正文强一档，读得出"这是一个区块的名字" */
 .set-diag-h {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--md-ink-2);
 }
@@ -1094,12 +1094,12 @@
   gap: 7px;
 }
 .set-diag-k {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--md-muted);
 }
 .set-diag-v {
   font-family: var(--md-font-numeric);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--md-ink);
 }
 /* 进程状态三行：名称 / 状态 / 端口 / pid 四列对齐，扫一眼就能看出是哪一环不在 */
@@ -1108,7 +1108,7 @@
   align-items: center;
   gap: 10px;
   margin-top: 7px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .set-diag-proc-name {
   flex: 0 0 96px;
@@ -1123,14 +1123,14 @@
 }
 .set-diag-proc-num {
   font-family: var(--md-font-numeric);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--md-muted);
 }
 /* 版本 / 模型名推到最右：它是补充信息，不该跟端口挤在一起比宽度 */
 .set-diag-proc-extra {
   margin-left: auto;
   font-family: var(--md-font-numeric);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--md-muted);
 }
 /* 阶段日志 / 下载输出：等宽 + 自身滚动。原样转发引擎输出，不做结构化解析 */
@@ -1161,7 +1161,7 @@
   border-color: var(--md-error);
 }
 .set-diag-dl-head {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--md-ink-2);
 }
 .set-diag-ops {
@@ -1215,7 +1215,7 @@
  */
 .set-run-why {
   padding: 0 12px 8px;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.6;
   color: var(--md-muted);
 }
@@ -1223,7 +1223,7 @@
 .set-run-sub {
   margin: 2px 0 6px;
   padding: 0 12px;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.5;
   color: var(--md-muted);
 }
@@ -1232,7 +1232,7 @@
 .set-run-all,
 .set-run-more {
   font-family: var(--md-font-body);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--md-muted);
   border: 1px solid var(--md-line);
   border-radius: 999px;
@@ -1268,7 +1268,7 @@
 }
 .set-run-line {
   font-family: var(--md-font-numeric);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.75;
   color: var(--md-ink-2);
   white-space: nowrap;
@@ -1282,7 +1282,7 @@
 /* 空态：照实说、不留白。用**正文字体**而非等宽 —— 它是一句交代，不是一行日志 */
 .set-run-empty {
   font-family: var(--md-font-body);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.6;
   color: var(--md-muted);
   white-space: normal;
@@ -1297,7 +1297,7 @@
 /* 「最后更新：12 秒前」—— **客户端**记录的时刻（引擎的阶段日志不含时刻，不补编造的） */
 .set-run-updated {
   flex: 1;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--md-muted);
 }
 /*
@@ -1355,7 +1355,7 @@
   color: var(--md-ink);
 }
 .set-run-drawer-sub {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--md-muted);
 }
 .set-run-drawer-x {
@@ -1419,7 +1419,7 @@
 }
 /* 「0 = 从不卸载」是**卡片级**说明（写在两个阈值之前，对两行都成立） */
 .set-idle-sub {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--md-muted);
 }
 .set-idle-line {
@@ -1431,7 +1431,7 @@
 /* 40px 定宽：两行的输入框因此左边缘对齐，读起来是一张表而不是两句话 */
 .set-idle-k {
   flex: 0 0 40px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--md-ink-2);
 }
 /*
@@ -1441,7 +1441,7 @@
  */
 .set-idle-tag {
   margin-left: auto;
-  font-size: 10.5px;
+  font-size: 11px;
   border-radius: 999px;
   padding: 2px 9px;
   border: 1px solid var(--md-line);
@@ -1460,7 +1460,7 @@
 /* 两档待遇差异的共用注解（原来两段散文各讲一遍，现在只剩这一处） */
 .set-idle-foot {
   margin-top: 8px;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.7;
   color: var(--md-muted);
 }
@@ -1502,7 +1502,7 @@
   background: var(--md-warning);
   color: #fff;
   font-family: var(--md-font-numeric);
-  font-size: 9px;
+  font-size: 10px;
   line-height: 14px;
   text-align: center;
 }
@@ -1580,7 +1580,7 @@
   gap: 1px;
 }
 .set-storage-tx strong {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--miao-ink);
 }
@@ -1630,7 +1630,7 @@
 .set-lic-fold {
   flex: 0 0 auto;
   font-family: var(--md-font-body);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--md-muted);
   border: 1px solid var(--md-line);
   background: transparent;
@@ -1664,25 +1664,25 @@
   gap: 10px;
 }
 .set-lic-scope-name {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--md-ink-2);
 }
 /* 覆盖数 `342 / 516` 走等宽：它是本块最该被看清的一组数（"有没有凑齐"） */
 .set-lic-scope-num {
   font-family: var(--md-font-numeric);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--md-ink);
 }
 .set-lic-sum {
   margin-top: 2px;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.6;
   color: var(--md-muted);
 }
 /* 免责声明复用 `.notice` 的形状，只补一处外边距（它不是行内脚注，是效力边界） */
 .set-lic-note {
   margin-top: 8px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.65;
 }
 
@@ -1699,7 +1699,7 @@
   padding: 6px 10px;
 }
 .set-lic-list-head {
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.6;
   color: var(--md-muted);
   padding-bottom: 6px;
@@ -1707,7 +1707,7 @@
 }
 .set-lic-list-title {
   margin-top: 8px;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -1719,7 +1719,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 8px 0;
-  font-size: 11px;
+  font-size: 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--miao-line) 72%, transparent);
 }
 /* 包名单行省略：`@scope/name@1.2.3` 可以很长，而许可名短且必须完整——先让包名让位 */
@@ -1730,7 +1730,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 .set-lic-val {
@@ -1751,7 +1751,7 @@
 .settings-nav-title {
   margin: 2px 8px 7px;
   font-family: var(--md-font-display);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.14em;
   color: var(--miao-faint);
@@ -1823,7 +1823,7 @@
 .set-token-k {
   flex: 0 0 auto;
   font-family: var(--md-font-numeric);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
 }
 
@@ -1879,7 +1879,7 @@
   border-radius: 999px;
   background: var(--miao-surface-2);
   color: var(--miao-text);
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 .set-state.is-ok {
@@ -1895,7 +1895,7 @@
 }
 
 .set-state-text {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--miao-muted);
 }
 
@@ -1943,7 +1943,7 @@
   gap: 10px;
   padding: 7px 0;
   border-bottom: 1px dashed color-mix(in srgb, var(--miao-line) 80%, transparent);
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 .set-storage-row:last-child,
