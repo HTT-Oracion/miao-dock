@@ -549,7 +549,8 @@
   border: 1px solid transparent;
   border-radius: 999px;
   font-size: 10px;
-  font-weight: 700;
+  /* 与 `.btn` / `.text-btn` 同一条纪律：按钮文字不加粗，可点性由底色与描边表达 */
+  font-weight: 400;
   color: var(--miao-muted);
   transition:
     background var(--miao-dur-fast) ease,
