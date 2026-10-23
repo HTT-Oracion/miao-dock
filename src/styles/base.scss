@@ -147,10 +147,12 @@ textarea {
 
 /* ---------------- 基础 ---------------- */
 
-html,
-body {
-  background: transparent;
-}
+/*
+ * ⚠️ 这里曾有一条 `html, body { background: transparent }` —— 它把上面那条
+ * 三层渐变（天蓝 / 杏奶 / 鼠尾草）整条盖掉了，于是整个应用只剩一块纯色底
+ * （`--miao-bg`），看起来"少了一个渐变背景"。
+ * 窗口透明由 `.app` 自己负责（它是 `transparent`），不需要动 body。
+ */
 
 html[data-theme='dark'] body {
   background:

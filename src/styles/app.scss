@@ -461,18 +461,16 @@
   color: var(--miao-muted);
   word-break: break-all;
 }
-.content {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-` ——
+/*
+ * 内容容器：**不做滚动容器**。
+ *
+ * 设计稿 `.content { position: relative; flex: 1; min-height: 0; overflow: hidden }` ——
  * 滚动是**每一屏自己**的事（设置页右栏 / 音乐中栏 / 漫画列表各自 `overflow-y: auto`）。
  * 产品此前在这里写 `overflow: auto`，于是整页成了一个滚动条：屏内的滚动区被撑高、
  * 页头跟着滚走、两个滚动条同时出现。这里改成 hidden，把滚动权交回各屏。
  */
 .content {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: hidden;
