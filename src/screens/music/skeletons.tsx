@@ -37,8 +37,13 @@ export function ChartCardSkeleton() {
         <div className="chart-rows is-centered">
           {/* 最长 → 最短 → 第二长 */}
           {(['82%', '46%', '66%'] as const).map((w, i) => (
-            <div className="chart-row" key={i}>
-              <Skeleton height={9} width={9} radius={3} className="chart-skel-no" />
+            /*
+             * 条不能直接放在 .chart-row（flex 容器）里用百分比宽度 ——
+             * flex 子项的百分比宽度会按剩余空间再收缩，实测塌成 0 宽
+             *（只剩 10px 高的一条竖线，视觉上就是三个「点」）。
+             * 所以外面套一层普通块，百分比宽度按它算。
+             */
+            <div className="chart-skel-bar" key={i}>
               <Skeleton height={10} width={w} radius={5} />
             </div>
           ))}

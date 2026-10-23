@@ -2476,15 +2476,37 @@ button.ms-caption.is-collapsed {
  * 所以这里只让两栏各自**水平居中**：封面在左列居中、排行在右列居中。
  */
 .chart-body.is-centered {
-  justify-items: center;
-  align-items: center;
+  /*
+   * ⚠️ 这里**不能**用 `align-items: center` —— 那会让 grid 子项**不再 stretch**，
+   * 宽度改为"按内容算"，而内容的百分比宽度又依赖父宽 ⇒ 互相依赖、实测塌成 0。
+   * 居中改由子项自己负责（`.chart-rows` 满宽 + 内部条目居中）。
+   */
+  justify-items: stretch;
 }
+/*
+ * 排行列：**满宽**。
+ * 宽度塌成 0 的根因链：列宽按内容算 → 内容的百分比宽度按列宽算 → 循环依赖。
+ * 明确给 100% 就断了这个环。
+ */
 .chart-rows.is-centered {
+  width: 100%;
   align-items: center;
 }
-/* 排行行居中：序号与歌名占位作为一组居中 */
-.chart-rows.is-centered .chart-row {
-  justify-content: center;
+/*
+ * 骨架的排行条：**普通块**，不是 flex 子项。
+ *
+ * ⚠️ 之前条直接放在 `.chart-row`（display:flex）里、宽度用百分比 ——
+ * flex 子项的百分比宽度按"剩余空间"再收缩，**实测塌成 0 宽**，
+ * 只剩 10px 高的一条竖线，视觉上就是三个"点"。
+ * 放进普通块后，百分比按块宽算，条才有真实长度。
+ *
+ * ⚠️ 这里**不能**用 `display: flex`（哪怕只为了居中）—— 那又变回 flex 子项、
+ * 百分比同样会塌。要居中就靠 `margin: 0 auto` + 固定宽度，
+ * 或者干脆让条**左对齐**（真实排行行也是左对齐的）。
+ */
+.chart-skel-bar {
+  width: 100%;
+  display: block;
 }
 .chart-card.is-skel:hover,
 .playlist-card.is-skel:hover {
@@ -2494,13 +2516,6 @@ button.ms-caption.is-collapsed {
 /* 榜单卡的封面骨架：与真实封面同尺寸同圆角 */
 .chart-skel-art {
   border-radius: var(--miao-r-md);
-}
-/* 排行行里的序号与歌手占位 */
-.chart-skel-no {
-  flex: none;
-}
-.chart-skel-artist {
-  flex: none;
 }
 /* 推荐歌单卡：封面 1:1 铺满卡宽（与真实 `.playlist-card-cv` 同规则） */
 .playlist-skel-cv {
