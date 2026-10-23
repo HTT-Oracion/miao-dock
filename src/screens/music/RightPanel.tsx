@@ -378,7 +378,9 @@ function Recommendations() {
   const loading = useMusicStore((s) => s.loadingRecommend);
   const recommendError = useMusicStore((s) => s.recommendError);
   const proxyPort = useMusicStore((s) => s.proxyPort);
-  const loadRecommend = useMusicStore((s) => s.loadRecommend);
+  // 各节的「换一批」各刷各的（loadRecommend 一次刷三段，会连带把另外两节也刷了）
+  const loadRecommendPlaylists = useMusicStore((s) => s.loadRecommendPlaylists);
+  const loadNewSongs = useMusicStore((s) => s.loadNewSongs);
   // 推荐歌单 / 榜单 / 左栏歌单**共用同一个详情组件**（`PlaylistDetail`），
   // 统一走 openLeftPlaylist：设计稿里它们是同一个视图，此前各走一套导致改一处漏一处。
   const openLeftPlaylist = useMusicStore((s) => s.openLeftPlaylist);
@@ -403,7 +405,12 @@ function Recommendations() {
             {/* 副标题按设计稿：一句话说清"这批是怎么来的" */}
             <span className="music-card-sub">按你最近的循环生成</span>
             <div className="grow" />
-            <Btn kind="bare" className="link-btn" disabled={loading} onClick={() => void loadRecommend()}>
+            {/*
+             * 「换一批」只刷**这一节**（`loadRecommendPlaylists`）。
+             * 此前它调 `loadRecommend` —— 那会连带刷「每日推荐」「今日精选」，
+             * 白跑两次请求，且另外两节会闪一下骨架屏，像被误触。
+             */}
+            <Btn kind="bare" className="link-btn" disabled={loading} onClick={() => void loadRecommendPlaylists()}>
               <RefreshCw size={12} /> {loading ? '换一批中…' : '换一批'}
             </Btn>
           </div>
@@ -469,7 +476,8 @@ function Recommendations() {
               {providerLabel(playbackSource)} · 为你挑选 {newSongs.length} 首
             </span>
             <div className="grow" />
-            <Btn kind="bare" className="link-btn" disabled={loadingNewSongs} onClick={() => void loadRecommend()}>
+            {/* 「换一批」只刷**今日精选**这一节（此前它调 `loadRecommend`，刷错了对象） */}
+            <Btn kind="bare" className="link-btn" disabled={loadingNewSongs} onClick={() => void loadNewSongs()}>
               <RefreshCw size={12} /> {loadingNewSongs ? '刷新中…' : '换一批'}
             </Btn>
           </div>
@@ -537,6 +545,7 @@ function HomeHero() {
   const loading = useMusicStore((s) => s.loadingDaily);
   const playPlaylist = useMusicStore((s) => s.playPlaylist);
   const openTracksDetail = useMusicStore((s) => s.openTracksDetail);
+  const loadDailySongs = useMusicStore((s) => s.loadDailySongs);
   const playbackSource = useMusicStore((s) => s.playbackSource);
   const proxyPort = useMusicStore((s) => s.proxyPort);
 
@@ -556,6 +565,21 @@ function HomeHero() {
         <span className="hero-kicker kicker">
           <Sparkles size={12} />
           {kicker}
+          {/*
+           * 「每日推荐」的刷新入口：只刷这一节（`loadDailySongs`）。
+           * 推荐歌单 / 今日精选各有自己的「换一批」，这里补上第三处的 —— 否则
+           * 每日推荐只能等首屏那一次，用户没法主动换一批。
+           */}
+          <Btn
+            kind="bare"
+            className="link-btn hero-refresh"
+            ariaLabel="刷新每日推荐"
+            title="刷新每日推荐"
+            disabled={loading}
+            onClick={() => void loadDailySongs()}
+          >
+            <RefreshCw size={11} />
+          </Btn>
         </span>
         <h2>每日推荐</h2>
         <p>{desc}</p>

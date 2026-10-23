@@ -1247,6 +1247,20 @@
   color: var(--miao-faint);
   text-transform: uppercase;
 }
+/*
+ * hero 眉标右侧的刷新键（每日推荐）。
+ * 它挂在眉标里而不是动作区 —— 动作区是「播放全部 / 查看歌单」这类主操作，
+ * 刷新是轻动作，混进去会让主次颠倒。
+ */
+.hero-refresh {
+  margin-left: 2px;
+  padding: 0 3px;
+  height: 16px;
+  color: var(--miao-faint);
+}
+.hero-refresh:hover:not(:disabled) {
+  color: var(--miao-muted);
+}
 .hero-copy h2 {
   font-family: var(--md-font-display);
   font-size: clamp(22px, 2.6vw, 32px);

@@ -590,7 +590,20 @@ export interface MusicState {
   // 右栏
   setRightView: (v: RightView) => void;
   loadCharts: (p?: MusicProvider) => Promise<void>;
+  /** 首屏用：三段推荐一起拉（省三次往返） */
   loadRecommend: (p?: MusicProvider) => Promise<void>;
+  /**
+   * 只刷**推荐歌单**一节（「换一批」按钮）。
+   *
+   * ⚠️ 为什么不能继续用 `loadRecommend`：它一次刷三段（推荐歌单 / 每日推荐 / 今日精选）。
+   * 用户在「推荐歌单」那节点「换一批」，却连带把另外两节也刷了 ——
+   * 一是白跑两次请求，二是另外两节会闪一下骨架屏，像被误触了。
+   */
+  loadRecommendPlaylists: (p?: MusicProvider) => Promise<void>;
+  /** 只刷**每日推荐**一节 */
+  loadDailySongs: (p?: MusicProvider) => Promise<void>;
+  /** 只刷**今日精选**一节 */
+  loadNewSongs: (p?: MusicProvider) => Promise<void>;
   openRightPlaylist: (pl: Playlist) => Promise<void>;
   openRightChart: (pl: Playlist) => Promise<void>;
   loadMoreRight: () => Promise<void>;

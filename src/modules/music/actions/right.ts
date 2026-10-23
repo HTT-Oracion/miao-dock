@@ -44,6 +44,9 @@ export const createRightSlice = (
   | 'setRightView'
   | 'loadCharts'
   | 'loadRecommend'
+  | 'loadRecommendPlaylists'
+  | 'loadDailySongs'
+  | 'loadNewSongs'
   | 'openRightPlaylist'
   | 'openRightChart'
   | 'loadMoreRight'
@@ -147,6 +150,59 @@ export const createRightSlice = (
       });
     } finally {
       set({ loadingRecommend: false, loadingDaily: false, loadingNewSongs: false });
+    }
+  },
+
+  /*
+   * 只刷「推荐歌单」一节。
+   *
+   * ⚠️ 为什么不复用 `loadRecommend`：它一次刷三段。用户在这节点「换一批」，
+   * 却连带把「每日推荐」「今日精选」也刷了 —— 白跑两次请求，
+   * 而且另外两节会闪一下骨架屏，像是被误触。
+   */
+  loadRecommendPlaylists: async (p) => {
+    const provider = p ?? get().playbackSource;
+    set({ loadingRecommend: true, recommendError: '' });
+    try {
+      const pls = await platform.recommendPlaylists(provider);
+      if (get().playbackSource !== provider) return;
+      set({ recommendPlaylists: pls, recommendError: '' });
+    } catch (e) {
+      // 失败要**说出来**：空列表 + 一句原因，用户才知道是"没推荐"还是"没读到"
+      set({ recommendPlaylists: [], recommendError: String(e) });
+    } finally {
+      set({ loadingRecommend: false });
+    }
+  },
+
+  /** 只刷「每日推荐」一节（hero 里那首歌的来源） */
+  loadDailySongs: async (p) => {
+    const provider = p ?? get().playbackSource;
+    set({ loadingDaily: true });
+    try {
+      const songs = await platform.dailySongs(provider);
+      if (get().playbackSource !== provider) return;
+      set({ dailySongs: songs });
+    } catch {
+      // 每日推荐取不到就保持空（hero 会显示"登录后每天更新"），不打扰用户
+      set({ dailySongs: [] });
+    } finally {
+      set({ loadingDaily: false });
+    }
+  },
+
+  /** 只刷「今日精选」一节 */
+  loadNewSongs: async (p) => {
+    const provider = p ?? get().playbackSource;
+    set({ loadingNewSongs: true });
+    try {
+      const songs = await platform.newSongs(provider);
+      if (get().playbackSource !== provider) return;
+      set({ newSongs: songs });
+    } catch {
+      set({ newSongs: [] });
+    } finally {
+      set({ loadingNewSongs: false });
     }
   },
 
