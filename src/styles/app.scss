@@ -346,28 +346,26 @@
  * 恰恰要一条**很轻的分隔**：标题区与内容区之间若完全没有线，滚动内容会直接贴上标题，
  * 用户分不清"这一屏从哪儿开始"。那条 52px 的短线是工具条自己的强调笔触（随模块主色）。
  */
+/*
+ * 工具条（设计稿 `.toolbar` 的**生效值**，取自 theme 分片）：
+ * `border-bottom: 0` + `background: transparent` + `padding: 0 clamp(20px, 2vw, 34px)`。
+ *
+ * 基础表写的是"半透明白底 + 1px 底边 + 一条 52px 的强调线"，产品一直照那份实现 ——
+ * 于是顶部多出一条横线，和内容卡的上边缘形成**两条平行的分界线**。
+ * 设计稿把视觉重量全交给内容卡，工具条只是一条安静的导航带。
+ */
 .toolbar {
   flex: 0 0 62px;
   height: 62px;
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 0 26px;
-  background: color-mix(in srgb, var(--miao-surface) 72%, transparent);
-  border-bottom: 1px solid var(--miao-line);
+  padding: 0 clamp(20px, 2vw, 34px);
+  background: transparent;
   position: relative;
   z-index: 15;
 }
-.toolbar::after {
-  content: '';
-  position: absolute;
-  left: 26px;
-  bottom: -1px;
-  width: 52px;
-  height: 1px;
-  background: var(--miao-primary);
-  opacity: 0.7;
-}
+/* 设计稿里那条 52px 强调线已随底边一起去掉（theme 分片 `.toolbar::after { display:none }`） */
 
 /* 标题旁的轻量徽标（设计稿 `.toolbar-badge`）：19 高胶囊 / 主色淡底 / 9.5px 粗体 */
 .toolbar-badge {
@@ -424,11 +422,21 @@
 }
 
 /* 应用区：内边距 26 / 26 / 22 / 24（《02》§5.1） */
+/*
+ * 内容容器：**不做滚动容器**。
+ *
+ * 设计稿 `.content { position: relative; flex: 1; min-height: 0; overflow: hidden }` ——
+ * 滚动是**每一屏自己**的事（设置页右栏 / 音乐中栏 / 漫画列表各自 `overflow-y: auto`）。
+ * 产品此前在这里写 `overflow: auto`，于是整页成了一个滚动条：屏内的滚动区被撑高、
+ * 页头跟着滚走、两个滚动条同时出现。这里改成 hidden，把滚动权交回各屏。
+ */
 .content {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  padding: 26px 26px 22px 24px;
+  overflow: hidden;
+  /* 左右内距与工具条同一把尺子（`clamp(20px, 2vw, 34px)`）—— 两者左缘必须对齐，
+     否则标题与内容卡会差出 8~10px，肉眼一看就是"没对齐" */
+  padding: 26px clamp(20px, 2vw, 34px) 22px;
 }
 
 /* ================================================================ 原子件 */
