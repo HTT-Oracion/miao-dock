@@ -4,6 +4,7 @@ import { useMusicStore } from '@music/store';
 import { coverProxyUrl } from '@music/convert';
 import type { Playlist } from '@music/types';
 import { Btn, Empty } from '@components/units';
+import { ChartGridSkeleton } from '@screens/music/skeletons';
 
 /**
  * 官方榜单区（设计稿 `.mc-section` + `.chart-grid` + `.chart-card`）。
@@ -135,8 +136,11 @@ export function Charts() {
         <Empty bad inline sub={`${error}（点右上「刷新」重试）`}>
           榜单读取失败
         </Empty>
+      ) : loading ? (
+        /* 加载中：4 组榜单卡骨架（形状与真实榜单卡一致） */
+        <ChartGridSkeleton count={4} />
       ) : charts.length === 0 ? (
-        <Empty inline>{loading ? '加载榜单中…' : '暂无榜单'}</Empty>
+        <Empty inline>暂无榜单</Empty>
       ) : (
         <div className="chart-grid">
           {charts.map((pl) => (

@@ -7,6 +7,7 @@ import type { Playlist } from '@music/types';
 import { HistoryView } from '@screens/music/HistoryView';
 import { LocalView } from '@screens/music/LocalView';
 import { Btn, Empty } from '@components/units';
+import { PlaylistListSkeleton } from '@screens/music/skeletons';
 import { Cover } from '@screens/music/shared';
 
 // Tab 文案与设计稿左栏一致：`歌单 / 本地 / 历史`（不写"我的歌单 / 播放历史"的长名，
@@ -89,7 +90,7 @@ function PlaylistsView() {
 
   if (!logged) return <Empty>登录后查看我的歌单</Empty>;
   if (error) return <Empty bad>歌单读取失败：{error}</Empty>;
-  if (loading && userPlaylists.length === 0) return <Empty>加载歌单中…</Empty>;
+  if (loading && userPlaylists.length === 0) return <PlaylistListSkeleton rows={6} />;
   if (userPlaylists.length === 0) return <Empty>还没有创建歌单</Empty>;
 
   /*

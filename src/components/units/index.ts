@@ -36,7 +36,7 @@ export { Range } from '@components/units/Range';
 export { Select } from '@components/units/Select';
 export { Segmented, type SegOption } from '@components/units/Segmented';
 export { SideDrawer } from '@components/units/SideDrawer';
-export { LoadingState, Skeleton } from '@components/units/Skeleton';
+export { Skeleton } from '@components/units/Skeleton';
 export { Swatches } from '@components/units/Swatches';
 export { Switch } from '@components/units/Switch';
 export { Tooltip } from '@components/units/Tooltip';

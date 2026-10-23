@@ -1921,7 +1921,13 @@ const MUTATIONS = [
     name: '把 hooks/useCoverColor.ts 移回 screens/music（模拟 use* 未收口）',
     from: F.hooksDir + '/useCoverColor.ts',
     to: path.join(SRC, 'screens', 'music', 'useCoverColor.ts'),
-    expect: ['HOOKS.noMisplacedUse'],
+    /*
+     * 移动后真正会红的是两条：散落的 use*（`HOOKS.noMisplacedUse`）与
+     * hooks 目录缺项（`HOOKS.layout`）。
+     * ⚠️ 不要再把 `CALLERS.importsUnits` 列进来 —— 那条查的是"UI 调用点是否从 units 引"，
+     * 与 use* 放哪儿无关；列进来会变成"该红没红"的假失败。
+     */
+    expect: ['HOOKS.noMisplacedUse', 'HOOKS.layout'],
   },
   {
     name: '从 vite.config.ts 删掉 @hooks 别名（模拟两处漏改一处）',

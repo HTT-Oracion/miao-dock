@@ -1516,12 +1516,16 @@
   color: var(--md-error);
   padding: 2px 2px 6px;
 }
+/*
+ * 续加载条：只有一枚音波（居中）。
+ * 不带文字 —— 加载中这件事由音波自己表达，加一句「加载中…」是重复。
+ */
 .music-more {
   flex: 0 0 auto;
-  text-align: center;
-  font-size: 11px;
-  color: var(--miao-muted);
-  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
 }
 
 /* ---------------------------------------------------------------- 左栏视图 Tab */
@@ -1591,6 +1595,26 @@
 }
 
 /* 组容器：撑满、且允许内部收缩（否则里面的长歌单名会把组撑宽） */
+/* 左栏歌单列表的骨架：行与真实 `.music-row` 同形（32 封面 + 两行文字） */
+.ms-skel-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 2px;
+}
+.ms-skel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px;
+}
+.ms-skel-tx {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
 .ms-group {
   display: flex;
   flex-direction: column;
@@ -2427,6 +2451,114 @@ button.ms-caption.is-collapsed {
   font-size: 9.5px;
   color: var(--miao-faint);
 }
+
+/* ---------------------------------------------------------------- 骨架屏
+/*
+ * 形状与真实组件**一一对应**（真机实测尺寸）：
+ * · 榜单卡 `.chart-card` 419×167（pad 15/16 · r16）、卡头 385×25、封面 100×100、3 行 273×19；
+ * · 推荐歌单卡 `.playlist-card` 203×247（pad 9 · r16）、封面 1:1；
+ * · 曲目行：序号 + 38 封面 + 标题/歌手两行 + 专辑 + 时长。
+ *
+ * 骨架屏的**全部价值**是"加载完成时布局不跳" —— 形状对不上就会整块位移，
+ * 那比转圈更糟。所以这里不写通用灰条，而是照着真实结构逐块摆。
+ */
+.chart-card.is-skel,
+.playlist-card.is-skel {
+  cursor: default;
+}
+/*
+ * 榜单卡骨架：**每一栏的内容居中**。
+ *
+ * 卡头留空后，内容只剩封面 + 3 行排行。但**必须保持真实卡的两栏结构**
+ * （左封面 / 右排行）—— 若改成纵向排列，卡高会从 207 缩回 164，
+ * 加载完成那一帧整张卡会"塌"一下。骨架屏的第一要务就是不跳版。
+ *
+ * 所以这里只让两栏各自**水平居中**：封面在左列居中、排行在右列居中。
+ */
+.chart-body.is-centered {
+  justify-items: center;
+  align-items: center;
+}
+.chart-rows.is-centered {
+  align-items: center;
+}
+/* 排行行居中：序号与歌名占位作为一组居中 */
+.chart-rows.is-centered .chart-row {
+  justify-content: center;
+}
+.chart-card.is-skel:hover,
+.playlist-card.is-skel:hover {
+  transform: none;
+  box-shadow: var(--miao-shadow-1);
+}
+/* 榜单卡的封面骨架：与真实封面同尺寸同圆角 */
+.chart-skel-art {
+  border-radius: var(--miao-r-md);
+}
+/* 排行行里的序号与歌手占位 */
+.chart-skel-no {
+  flex: none;
+}
+.chart-skel-artist {
+  flex: none;
+}
+/* 推荐歌单卡：封面 1:1 铺满卡宽（与真实 `.playlist-card-cv` 同规则） */
+.playlist-skel-cv {
+  width: 100%;
+  height: auto !important;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  display: block;
+}
+.playlist-skel-name,
+.playlist-skel-sub {
+  display: block;
+}
+/*
+ * 封面与歌名之间的 8px 间距：真实卡里这一段是封面元素自带的下边距，
+ * 骨架把封面换成了灰条，间距得显式补上，否则骨架卡比真实卡矮 8px。
+ */
+.playlist-skel-name {
+  margin-top: 8px;
+}
+/* 次行与歌名行的间距：真实是 1px（`small { margin-top: 1px }`），骨架照抄 */
+.playlist-skel-sub {
+  margin-top: 1px;
+}
+/* 曲目表骨架：行与真实 `.song-table .music-row` 同列宽与同内距 */
+.song-table.is-skel .song-head.is-skel {
+  color: var(--miao-faint);
+}
+.song-skel-rows {
+  display: flex;
+  flex-direction: column;
+}
+.song-skel-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1.6fr) minmax(0, 1fr) 64px 86px;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+}
+.song-skel-no {
+  justify-self: center;
+}
+.song-skel-cv {
+  justify-self: start;
+}
+.song-skel-tx {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.song-skel-album,
+.song-skel-dur {
+  justify-self: start;
+}
+.song-skel-dur {
+  justify-self: end;
+}
 .chart-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2517,6 +2649,14 @@ button.ms-caption.is-collapsed {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+/*
+ * 骨架行：真实排行行 19px 高（10.5px 字号的行高），骨架的灰条只有 10px ——
+ * 3 行差 27px，加载完成那一帧整张卡会长高一截。
+ * 同样用 `em`：真实行高随 `--ui-scale` 变化，骨架要跟着变。
+ */
+.chart-card.is-skel .chart-row {
+  min-height: 1.55em;
 }
 /*
  * 排行行：**单行横排**「序号 歌名 - 歌手」。

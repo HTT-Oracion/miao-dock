@@ -8,8 +8,8 @@ import type { Song } from '@music/types';
 import { Charts } from '@screens/music/Charts';
 import { LocalPanel } from '@screens/music/LocalPanel';
 import { PlaylistDetail } from '@screens/music/PlaylistDetail';
-import { Btn, Empty, IconButton, OverlayScrollbar, VirtualList } from '@components/units';
-import type { OverlayThumb } from '@components/units';
+import { Btn, Empty, IconButton, OverlayScrollbar, VirtualList, type OverlayThumb } from '@components/units';
+import { PlaylistGridSkeleton, SongTableSkeleton } from '@screens/music/skeletons';
 import { Cover, SongRow } from '@screens/music/shared';
 
 /**
@@ -337,7 +337,23 @@ function SearchResults() {
           );
         }}
       />
-      {hasMore ? <div className="music-more">{loadingMore ? '加载中…' : '上滑加载更多'}</div> : null}
+      {/*
+       * 续加载提示：**只在加载中**出现，且只有一枚音波（无文字）。
+       * 「上滑加载更多」那句是多余的 —— 上面 `.music-hint` 已经写了「· 向下滚动加载更多」，
+       * 而且滚动到位会自动续拉，用户不需要被告知。
+       * 波形与歌单详情底部那条同款（同一个 `.di-wave` 动画）：两者都是"后台在跑"。
+       */}
+      {loadingMore ? (
+        <div className="music-more" role="status" aria-live="polite">
+          <span className="di-wave is-css" data-on="1" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+          </span>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -397,8 +413,11 @@ function Recommendations() {
               <Empty bad inline sub={`${recommendError}（点右上「换一批」重新加载）`}>
                 推荐读取失败
               </Empty>
+            ) : loading ? (
+              /* 加载中：6 组推荐歌单卡骨架（形状与真实卡片一致） */
+              <PlaylistGridSkeleton count={6} />
             ) : (
-              <Empty inline>{loading ? '加载推荐歌单中…' : '暂无推荐歌单（可能需要登录或网络）'}</Empty>
+              <Empty inline>暂无推荐歌单（可能需要登录或网络）</Empty>
             )
           ) : (
             /*
@@ -455,9 +474,14 @@ function Recommendations() {
             </Btn>
           </div>
           {newSongs.length === 0 ? (
-            <Empty art sub="换一个平台，或登录账号同步更多内容。">
-              {loadingNewSongs ? '加载中…' : '这个平台还没有歌曲'}
-            </Empty>
+            loadingNewSongs ? (
+              /* 加载中：曲目表骨架（形状与真实行一致） */
+              <SongTableSkeleton rows={6} />
+            ) : (
+              <Empty art sub="换一个平台，或登录账号同步更多内容。">
+                这个平台还没有歌曲
+              </Empty>
+            )
           ) : (
             /*
              * 今日精选（设计稿 `.song-table`）：**带表头的曲目表**，不是裸列表。

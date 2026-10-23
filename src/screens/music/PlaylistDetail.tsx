@@ -3,6 +3,7 @@ import { ArrowLeft, Heart, Play, Plus } from 'lucide-react';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl, songKey } from '@music/convert';
 import { Btn, Empty, OverlayScrollbar, VirtualList } from '@components/units';
+import { SongTableSkeleton } from '@screens/music/skeletons';
 import { useOverlayScrollbar } from '@hooks/useOverlayScrollbar';
 import { Cover, SongRow } from '@screens/music/shared';
 
@@ -125,7 +126,8 @@ export function PlaylistDetail() {
       </div>
 
       {loading ? (
-        <Empty>加载曲目中…</Empty>
+        /* 加载中：曲目表骨架（形状与真实行一致，无底色无边框） */
+        <SongTableSkeleton rows={8} />
       ) : error ? (
         <Empty bad sub={error}>
           曲目读取失败
