@@ -948,8 +948,18 @@
   align-items: center;
   gap: 6px;
 }
+/*
+ * 「NOW PLAYING」眉标（设计稿 \`.kicker\` 生效值）：8.5px / 700 / .15em / faint / uppercase。
+ * \`flex: 1\` 让它吃掉中间的空隙，把右侧那枚展开按钮推到最右。
+ */
 .now-head .kicker {
   flex: 1;
+  font-family: var(--md-font-display);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: var(--miao-faint);
+  text-transform: uppercase;
 }
 /*
  * 歌词预览（设计稿 `.now-lyrics`）：上下各一条**虚线**分隔，最小高 88 ——
@@ -1145,14 +1155,21 @@
   z-index: 1;
   min-width: 0;
 }
+/*
+ * 首页眉标（设计稿 \`.kicker\` 生效值）：8.5px / 700 / .15em / faint / uppercase。
+ * 图标与文字之间 5px —— 眉标小到只剩一条纹理，图标大过文字就反客为主了。
+ */
 .hero-kicker {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   margin-bottom: 9px;
-  /* 这里曾写成 `var(--miao-accent-ink, var(--miao-muted))` —— 那个兜底把"令牌根本没定义"
-     这件事盖掉了半个月。令牌补齐后**去掉兜底**：宁可这里红，也不要静默变灰。 */
-  color: var(--miao-accent-ink);
+  font-family: var(--md-font-display);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: var(--miao-faint);
+  text-transform: uppercase;
 }
 .hero-copy h2 {
   font-family: var(--md-font-display);
@@ -2115,14 +2132,22 @@
   min-width: 0;
   flex: 1;
 }
+/*
+ * 歌单详情的眉标（设计稿 \`.kicker\` 的**生效值**，取自 theme 分片）：
+ * 8.5px / 700 / \`letter-spacing .15em\` / \`--faint\` / uppercase。
+ *
+ * 基础表写的是 9.5px + \`--muted\` + .16em。这里按生效值改 —— 眉标是"小到几乎只是
+ * 一条纹理"的一行，字号差 1px 就会从"纹理"变成"正文"，层级就塌了。
+ */
 .pd-info .kicker {
   display: block;
   margin-bottom: 4px;
   font-family: var(--md-font-display);
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 700;
-  letter-spacing: 0.1em;
-  color: var(--miao-accent-ink);
+  letter-spacing: 0.15em;
+  color: var(--miao-faint);
+  text-transform: uppercase;
 }
 .pd-info h2 {
   margin: 0 0 4px;
