@@ -1198,6 +1198,11 @@
   box-shadow: var(--miao-shadow-1);
   min-height: clamp(230px, 25vh, 300px);
 }
+/*
+ * hero 右上角那圈：原本只是一道淡描边圆，现在放**黑胶**（与播放条碟片同一观感）。
+ * 它比左边的封面小一档且压在渐变里（opacity .5），读作"背景里的一张唱片"，
+ * 不抢主封面 —— 主封面是每日推荐的第一首歌（见 `.hero-cover-spin`）。
+ */
 .music-hero::after {
   content: '';
   position: absolute;
@@ -1207,8 +1212,19 @@
   height: 240px;
   border-radius: 50%;
   border: 1px solid var(--miao-accent-line);
+  background: radial-gradient(circle at 50% 50%, #2f3236 0 18%, #3d4045 19% 20%, #2b2d31 21% 100%);
   opacity: 0.5;
   pointer-events: none;
+  animation: hero-vinyl-spin 24s linear infinite;
+}
+/* 伪元素不能复用 `.hero-vinyl` 的 spin（那条带 translateY），故单独一条 */
+@keyframes hero-vinyl-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 .hero-copy {
   position: relative;
@@ -1252,10 +1268,48 @@
 }
 .hero-art {
   position: relative;
+  /*
+   * 层级要在 `.music-hero::after`（右上角那张背景黑胶）**之上**：
+   * 伪元素在 DOM 顺序上最后，默认会盖住同级的子元素；
+   * 这里的主封面是"正在放的那一面"，不能被背景唱片压住。
+   * 与 `.hero-copy` 同为 z-index 1，两者互不遮挡。
+   */
+  z-index: 1;
   width: 100%;
   max-width: 200px;
   aspect-ratio: 1;
   justify-self: end;
+}
+/*
+ * 主封面：**每日推荐第一首歌的封面**，缓慢自转（30s 一圈，比黑胶的 24s 更慢 ——
+ * 它是"正在放"的那一面，转太快会晃眼）。
+ * 圆形裁切 + 中心孔，与黑胶同一套唱片语言；拿不到封面时这个元素不渲染（回退黑胶）。
+ */
+.hero-cover-spin {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  aspect-ratio: 1;
+  margin-top: -50%;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 16px 30px -18px color-mix(in srgb, var(--miao-ink) 55%, transparent);
+  animation: hero-cover-spin 30s linear infinite;
+}
+.hero-cover-spin img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+@keyframes hero-cover-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 /* 黑胶：径向渐变的唱片 + 中心杏奶标 + 一圈内环，24s 匀速转（与播放条碟片同一观感） */
 .hero-vinyl {

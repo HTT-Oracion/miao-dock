@@ -936,13 +936,19 @@ add('UI.chartScroll', 'UI', (s) => {
 add('UI.dailyEntry', 'UI', (s) => {
   /*
    * 每日推荐的入口（设计稿在 `.entry-grid` 的三枚入口卡里，文案「每日推荐」）。
-   * 旧判据接受"榜单区最前面那张 .music-chart.is-daily 小卡"，但那个形态已按设计稿删除 ——
-   * 现在只认入口卡这一条路径，且必须真的能打开（onClick 接到 setRightView('daily')）。
+   * 旧判据接受"榜单区最前面那张 .music-chart.is-daily 小卡"，但那个形态已按设计稿删除。
+   *
+   * ⚠️ 打开方式已改：原先切右栏独立的 daily 视图（`setRightView('daily')` → `DailyView`），
+   * 现在与歌单 / 榜单**统一进 `PlaylistDetail`** —— 每日推荐没有 Playlist 对象、
+   * 也没有按 id 取曲目的接口，故走 `openTracksDetail` 灌入内存里的 songs。
+   * `DailyView` 已删除，判据同步到新的接线。
    */
   const src = stripComments(s.uiSource ?? '');
   const problems = [];
-  if (!/setRightView\(\s*['"]daily['"]/.test(src)) problems.push("入口卡没有接 setRightView('daily')");
+  if (!/openTracksDetail\(/.test(src)) problems.push('入口卡没有接 openTracksDetail（统一详情）');
   if (!/每日推荐/.test(src)) problems.push('入口卡没有「每日推荐」文案');
+  // 旧的独立 daily 视图必须已随统一改造删除，否则同一个"详情"又有两套
+  if (/function DailyView/.test(src)) problems.push('DailyView 仍在（每日推荐未统一到歌单详情）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 add('UI.sectionLinkBtn', 'UI', (s) => {
@@ -4047,8 +4053,14 @@ const hostOnPlay = (id, key, min) =>
  * 从 `LeftPanel.tsx` 换成了 `PlaylistDetail.tsx` —— 断言守的是
  * "两个入口同一个语义"这个事实，不是"它住在哪个文件里"。
  */
-hostOnPlay('left', 'playlistDetail', 1); // 歌单曲目
-hostOnPlay('right', 'rightPanel', 3); // 搜索结果 / 榜单曲目 / 每日推荐 —— 三处逐一接
+hostOnPlay('left', 'playlistDetail', 1); // 歌单曲目（同时承载榜单 / 每日推荐）
+/*
+ * ⚠️ 从 3 处降为 1 处：原先是"搜索结果 / 榜单曲目 / 每日推荐"三处，
+ * 后两者已统一到 `PlaylistDetail`（榜单走 openLeftPlaylist、每日推荐走 openTracksDetail），
+ * 各自的独立曲目视图（RightTracksView / DailyView）已删除。
+ * 所以 RightPanel 里现在只剩**搜索结果**这一处宿主。
+ */
+hostOnPlay('right', 'rightPanel', 1); // 搜索结果
 hostOnPlay('local', 'localView', 1); // 本地曲库
 hostOnPlay('history', 'historyView', 1); // 播放历史
 
@@ -4663,7 +4675,8 @@ const MUTATIONS = [
   {
     name: '把榜单卡的排行改成写死的假数据（设计稿是演示数据，产品必须接真数据）',
     file: path.join(F.musicUiDir, 'Charts.tsx'),
-    find: 'const rows = pl.preview ?? [];',
+    // 榜单卡改版后这里多了 `.slice(0, 3)`（只显示前 3 名），锚点随之更新
+    find: 'const rows = (pl.preview ?? []).slice(0, 3);',
     replace: "const rows = [{ title: '示例歌名', artist: '示例歌手' }];",
     expect: ['UI.chartGrid'],
   },

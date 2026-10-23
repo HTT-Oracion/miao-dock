@@ -580,6 +580,12 @@ export interface MusicState {
   loadMoreLeft: () => Promise<void>;
   loadAllLeft: () => Promise<void>;
   backToPlaylists: () => void;
+  /**
+   * 打开一份**已经在内存里的歌单**（每日推荐这类没有 Playlist 对象的列表）。
+   * 与 `openLeftPlaylist` 的区别：不去请求曲目，直接把 songs 设进详情。
+   * 展示的是同一个 `PlaylistDetail`。
+   */
+  openTracksDetail: (meta: Playlist, songs: Song[]) => void;
 
   // 右栏
   setRightView: (v: RightView) => void;

@@ -13,7 +13,13 @@ export const createLeftSlice = (
   get: StoreGet,
 ): Pick<
   MusicState,
-  'setLeftView' | 'loadUserPlaylists' | 'openLeftPlaylist' | 'loadMoreLeft' | 'loadAllLeft' | 'backToPlaylists'
+  | 'setLeftView'
+  | 'loadUserPlaylists'
+  | 'openLeftPlaylist'
+  | 'loadMoreLeft'
+  | 'loadAllLeft'
+  | 'backToPlaylists'
+  | 'openTracksDetail'
 > => ({
   setLeftView: (v) => set({ leftView: v }),
 
@@ -164,4 +170,21 @@ export const createLeftSlice = (
   },
 
   backToPlaylists: () => set({ leftView: 'playlists', leftPlaylistTracks: [], leftPlaylistMeta: null }),
+
+  /*
+   * 打开一份**已在内存里**的列表（每日推荐）：不去请求曲目，直接设进详情。
+   *
+   * 为什么需要它：每日推荐只有 `dailySongs: Song[]`，没有对应的 Playlist 对象，
+   * 也没有"按 id 取曲目"的接口（它是每日一算的推荐流）—— 走 `openLeftPlaylist`
+   * 会拿一个不存在的 id 去打接口，必然失败。
+   * 但它与歌单 / 榜单展示的是**同一个详情组件**，所以这里只负责灌数据。
+   */
+  openTracksDetail: (meta, songs) =>
+    set({
+      leftView: 'tracks',
+      leftPlaylistMeta: meta,
+      leftPlaylistTracks: songs,
+      loadingLeftTracks: false,
+      leftTracksError: '',
+    }),
 });

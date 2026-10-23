@@ -1,18 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
-import {
-  ChevronLeft,
-  ChevronRight,
-  HardDrive,
-  Heart,
-  ListOrdered,
-  Play,
-  Plus,
-  RefreshCw,
-  Search,
-  Sparkles,
-  X,
-} from 'lucide-react';
+import { ChevronRight, HardDrive, Heart, ListOrdered, Play, Plus, RefreshCw, Search, Sparkles, X } from 'lucide-react';
 import { PLATFORMS, capsOf, providerLabel } from '@music/platform';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl, songKey } from '@music/convert';
@@ -355,16 +343,15 @@ function SearchResults() {
 }
 
 /**
- * 发现正文：按 rightView 分流。
+ * 发现正文。
  *
- * ⚠️ `tracks` 分支已移除：推荐歌单 / 榜单 / 左栏歌单现在**统一走 `openLeftPlaylist`**，
- * 由右侧的 `PlaylistDetail` 渲染（`leftView === 'tracks'`）。
- * 原先 `rightView === 'tracks'` 走独立的 `RightTracksView`，与歌单详情是两套代码两套样式，
- * 改一处漏一处 —— 那个组件已随之删除。
+ * ⚠️ `tracks` / `daily` 两个分支都已移除：推荐歌单 / 榜单 / 左栏歌单 / 每日推荐
+ * 现在**统一走 `PlaylistDetail`**（前三者走 `openLeftPlaylist`，每日推荐走
+ * `openTracksDetail` 灌入内存里的 songs）。
+ * 原先这两个分支各有一套独立的曲目视图（`RightTracksView` / `DailyView`），
+ * 与歌单详情是三套代码三套样式，改一处漏一处 —— 现在都已删除。
  */
 function Discover() {
-  const rightView = useMusicStore((s) => s.rightView);
-  if (rightView === 'daily') return <DailyView />;
   return <Recommendations />;
 }
 
@@ -525,10 +512,14 @@ function HomeHero() {
   const dailySongs = useMusicStore((s) => s.dailySongs);
   const loading = useMusicStore((s) => s.loadingDaily);
   const playPlaylist = useMusicStore((s) => s.playPlaylist);
-  const setRightView = useMusicStore((s) => s.setRightView);
+  const openTracksDetail = useMusicStore((s) => s.openTracksDetail);
+  const playbackSource = useMusicStore((s) => s.playbackSource);
+  const proxyPort = useMusicStore((s) => s.proxyPort);
 
   const now = new Date();
   const kicker = `每日推荐 · ${now.getMonth() + 1} 月 ${now.getDate()} 日`;
+  // 首歌封面：走与列表同一套代理（直连时会被限流，故必须过代理）
+  const firstCover = dailySongs[0]?.cover ? coverProxyUrl(dailySongs[0].cover, proxyPort) : '';
   const desc = loading
     ? '正在取今天的推荐…'
     : dailySongs.length
@@ -548,13 +539,46 @@ function HomeHero() {
           <Btn kind="primary" disabled={dailySongs.length === 0} onClick={() => void playPlaylist(dailySongs)}>
             <Play size={14} /> 播放全部
           </Btn>
-          <Btn kind="ghost" onClick={() => setRightView('daily')}>
+          {/*
+           * 「查看歌单」与歌单 / 榜单进的是**同一个详情组件**（`PlaylistDetail`）。
+           * 每日推荐没有 Playlist 对象、也没有按 id 取曲目的接口，
+           * 所以构造一份虚拟 meta + 内存里的 songs，走 `openTracksDetail` 灌进去。
+           */}
+          <Btn
+            kind="ghost"
+            disabled={dailySongs.length === 0}
+            onClick={() =>
+              openTracksDetail(
+                {
+                  provider: playbackSource,
+                  id: `daily-${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`,
+                  name: '每日推荐',
+                  cover: dailySongs[0]?.cover ?? '',
+                  track_count: dailySongs.length,
+                  creator: providerLabel(playbackSource),
+                  subscribed: false,
+                },
+                dailySongs,
+              )
+            }
+          >
             查看歌单
           </Btn>
         </div>
       </div>
       <div className="hero-art" aria-hidden="true">
-        <span className="hero-vinyl" />
+        {/*
+         * 封面优先：每日推荐第一首歌的封面，缓慢自转（像一张在转的唱片）。
+         * 拿不到封面（未登录 / 接口没给 / 代理未就绪）就**保持原样**的黑胶 ——
+         * 宁可沿用既有视觉，也不摆一个空白方块或占位图。
+         */}
+        {firstCover ? (
+          <span className="hero-cover-spin">
+            <img src={firstCover} alt="" loading="lazy" />
+          </span>
+        ) : (
+          <span className="hero-vinyl" />
+        )}
       </div>
     </section>
   );
@@ -568,11 +592,23 @@ function HomeHero() {
  */
 function EntryGrid() {
   const dailySongs = useMusicStore((s) => s.dailySongs);
-  const setRightView = useMusicStore((s) => s.setRightView);
+  // 每日推荐与 hero 的「查看歌单」进同一个详情，故这里也走 openTracksDetail
+  const openTracksDetail = useMusicStore((s) => s.openTracksDetail);
+  const playbackSource = useMusicStore((s) => s.playbackSource);
   const userPlaylists = useMusicStore((s) => s.userPlaylists);
   const openLeftPlaylist = useMusicStore((s) => s.openLeftPlaylist);
 
   const liked = userPlaylists.find((pl) => pl.isLiked) ?? null;
+  const d = new Date();
+  const dailyMeta = {
+    provider: playbackSource,
+    id: `daily-${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`,
+    name: '每日推荐',
+    cover: dailySongs[0]?.cover ?? '',
+    track_count: dailySongs.length,
+    creator: providerLabel(playbackSource),
+    subscribed: false,
+  };
 
   const toCharts = () => {
     document.getElementById('music-charts')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -580,7 +616,12 @@ function EntryGrid() {
 
   return (
     <div className="entry-grid">
-      <Btn kind="bare" className="entry-card" onClick={() => setRightView('daily')}>
+      <Btn
+        kind="bare"
+        className="entry-card"
+        disabled={dailySongs.length === 0}
+        onClick={() => openTracksDetail(dailyMeta, dailySongs)}
+      >
         <span className="entry-ico">
           <Sparkles size={17} />
         </span>
@@ -626,63 +667,6 @@ function EntryGrid() {
           <ChevronRight size={13} />
         </span>
       </Btn>
-    </div>
-  );
-}
-
-/** 每日推荐（仅网易云有数据；其余平台入口不出现） */
-function DailyView() {
-  const songs = useMusicStore((s) => s.dailySongs);
-  const loading = useMusicStore((s) => s.loadingDaily);
-  const back = useMusicStore((s) => s.backToRecommendations);
-  const playPlaylist = useMusicStore((s) => s.playPlaylist);
-  const currentSong = useMusicStore((s) => s.currentSong);
-  const proxyPort = useMusicStore((s) => s.proxyPort);
-
-  return (
-    <div className="music-body">
-      <div className="mc-section-head">
-        <Btn kind="bare" className="music-btn out" ariaLabel="返回" onClick={back}>
-          <ChevronLeft size={12} /> 返回
-        </Btn>
-        <span className="music-card-title">每日推荐</span>
-        <span className="music-card-sub">{songs.length} 首</span>
-        <div className="grow" />
-        <Btn
-          kind="bare"
-          className="music-btn pri"
-          disabled={songs.length === 0}
-          onClick={() => void playPlaylist(songs)}
-        >
-          <Play size={12} /> 播放全部
-        </Btn>
-      </div>
-
-      {loading ? (
-        <Empty>加载每日推荐中…</Empty>
-      ) : songs.length === 0 ? (
-        <Empty art>暂无每日推荐（可能需要登录网易云）</Empty>
-      ) : (
-        <VirtualList
-          items={songs}
-          resetKey="daily"
-          itemKey={(s, i) => `${s.provider}:${s.id}:${i}`}
-          renderItem={(s, i) => {
-            // 每日推荐：把推荐列表设为队列
-            const play = () => void playPlaylist(songs, { index: i });
-            return (
-              <SongRow
-                song={s}
-                cover={coverProxyUrl(s.cover, proxyPort)}
-                meta={s.album ? `${s.artist} · ${s.album}` : s.artist}
-                active={currentSong ? songKey(currentSong) === songKey(s) : false}
-                onClick={play}
-                onPlay={play}
-              />
-            );
-          }}
-        />
-      )}
     </div>
   );
 }
