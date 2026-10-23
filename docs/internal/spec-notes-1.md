@@ -9754,3 +9754,71 @@ CSS 侧保留 `.music-card-hd` 作为**兼容别名**（`.mc-section-head, .musi
 重试；仍失败则等一段时间（本机实测 2 小时后自愈）。启动后用
 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` 接 CDP，
 **这是唯一能看到"有数据的真实渲染"的通道**，后续音乐/漫画屏验收都走它。
+
+## D-375 · 覆盖式滚动条：Chromium 里"细"与"不占宽度"不能同时成立（2026-10-24）
+
+**需求**：滚动条不要占盒子宽度、稍微透明、滚动功能照常。
+
+**结论**：原生 `::-webkit-scrollbar` 是**占位式**的 —— `width: 6px` 就吃掉 6px 内容宽，
+`width: 0` 则完全看不见。Chromium 没有对应的 overlay CSS（macOS 那种浮在内容上的），
+所以三条要求里"细"和"不占宽度"在原生滚动条上**互斥**。唯一的路是自绘：
+
+1. 容器保留原生滚动（`overflow: auto`），用 `scrollbar-width: none` +
+   `::-webkit-scrollbar { display: none }` 把原生条藏掉 —— **滚动能力一点没变**
+   （滚轮 / 键盘 / 触控板 / 拖选都还是浏览器原生的）；
+2. `useOverlayScrollbar` 读 `scrollTop / scrollHeight / clientHeight` 算滑块位置；
+3. 滑块渲染成容器里一层 `position: absolute` 的 `.ui-osb`（6px 宽、半透明、
+   淡入 160ms / 淡出 240ms），**不参与内容布局**。
+
+**实测**：`.music-center` 的 `scrollWidth == clientWidth`（788 == 788），
+`scrollTop = 200` → 滑块 `translateY(35px)`、高 113（按内容比例）。
+
+**分层的代价**：`units/` 不许 import `@hooks`（PURITY 组机器核查），所以
+`OverlayScrollbar.tsx` 把 `OverlayThumb` 这个纯数字接口**在本文件里又写了一遍**。
+一个三字段的接口重复一遍，远小于为了复用把分层规则破一个洞。
+
+## D-376 · 歌单曲目表：分页 + 占满剩余高度 + flex 链的三次返工（2026-10-24）
+
+**需求**：`.song-table` 不要默认显示滚动条、占剩余空间的全部、超出才滚、做分页。
+
+**三次失败的中间态**（都记下来，免得再走一遍）：
+
+| 做法 | 为什么不行 |
+|---|---|
+| 表格 `flex: 1`，`.music-center` 仍是 `overflow-y: auto` 的滚动容器 | 滚动容器的高度由**内容**决定（`scrollHeight` 随内容涨），子级的 `flex: 1` 永远算不出"剩余空间"—— 表格一路长到 2782px |
+| 表格 `height: calc(100vh - 380px)` | `100vh` 是**视口**高，而音乐区上面还有工具条、下面还有播放条 —— 表格底部溢出中栏 102px |
+| `.music-view { height: 100% }` | 顶行（`.music-topbar`）是 `.music-view` 的**前一个兄弟**，已占掉约 56px；视图再要 100% 就等于要两份 |
+
+**正解**：把 `.music-center` 改成 **flex 列 + `overflow: hidden`**（自身不滚），
+`.music-view` 成为 `flex: 1` + `overflow-y: auto` 的**唯一滚动层**。
+这样 flex 链有了确定高度，表格的 `flex: 1` 才算得出来。
+
+**实测**：`center.scrollHeight == center.clientHeight`（642 == 642，中栏不滚），
+`table.bottom 907 < center.bottom 936`（表格完整落在剩余空间内），
+`ui-vlist.scrollHeight 2698 > clientHeight 185`（列表内部滚，超出才滚）。
+
+**分页**：store 里早有 `playlistTracksRange(provider, id, start, count)`（四平台都有），
+`loadMoreLeft` 已按歌单 id 分页。这一轮只补了 UI：滚到底 120px 内自动拉下一页，
+外加一枚「加载更多（还有 N 首）」按钮（触屏与键盘用户不靠滚动也能翻页）。
+实测点一次：`468 首 → 418 首`、`vlist.scrollHeight 2698 → 5398`。
+
+## D-377 · 曲目表的歌手与专辑是两处内容，不是一个 prop（2026-10-24）
+
+**两个 bug 是同一条根因**：`SongRow` 的 `meta` prop 被渲染在**标题下面的副标题行**
+（`<span>{meta ?? song.artist}</span>`），而我把它当成了"额外的列"。
+
+- 把歌手填进 `meta` → 歌手跑到副标题行、**专辑整列消失**（用户报"专辑没有回显"）；
+- 把专辑填进 `meta` → 专辑占了副标题行、**歌手不见**（用户报"歌手显示不对"）。
+
+**设计稿的真相**（`js/music.js` 的 `songTable`）：
+```
+<div class="song-main">封面<div class="song-tx"><strong>标题</strong><small>歌手</small></div></div>
+<div class="song-album">专辑</div>
+```
+**歌手在标题块里（small），专辑是独立一列** —— 两处内容，两个槽位。
+
+**修法**：`SongRow` 新增 `aside` prop（附加列），副标题行回归默认的 `song.artist`。
+三个调用点（歌单详情 / 今日精选 / 本地曲库）一起改。
+
+**教训**：一个 prop 能渲染在两个位置时，读代码的人会按自己的理解填它。
+`meta` 这个名字没有说清"它在哪"，改叫 `aside` 并注释"附加列"之后才清楚。
