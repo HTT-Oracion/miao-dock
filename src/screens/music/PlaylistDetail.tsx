@@ -124,7 +124,8 @@ export function PlaylistDetail() {
       ) : (
         <div className="song-table is-fill" ref={scrollRef}>
           <div className="song-head" aria-hidden="true">
-            <span>#</span>
+            {/* 序号列表头**留空**：写「#」是给"这一列是什么"起名，但序号列不需要解释 */}
+            <span />
             <span>歌曲</span>
             <span>专辑</span>
             <span>时长</span>

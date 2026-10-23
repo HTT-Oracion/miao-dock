@@ -472,7 +472,8 @@ function Recommendations() {
              */
             <div className="song-table">
               <div className="song-head" aria-hidden="true">
-                <span>#</span>
+                {/* 序号列表头留空（同歌单详情） */}
+                <span />
                 <span>歌曲</span>
                 <span>专辑</span>
                 <span>时长</span>

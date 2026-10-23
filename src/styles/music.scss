@@ -2192,13 +2192,20 @@ button.ms-caption.is-collapsed {
   font-size: 12px;
   font-weight: 700;
 }
+/*
+ * 序号列：**居中**。
+ *
+ * 右对齐时序号看起来是"贴在封面左边的一行小字"，而这一列上下都没有可对齐的边界；
+ * 居中之后它读作"这一行的编号"，与封面的中心线也更容易对上。
+ * `tabular-nums` 保留：序号逐行递增，等宽数字才不会在滚动时左右跳。
+ */
 .song-index {
   grid-column: 1;
   grid-row: 1;
   font-size: 9.5px;
   font-variant-numeric: tabular-nums;
   color: var(--miao-faint);
-  text-align: right;
+  text-align: center;
 }
 /*
  * 曲目表的"专辑"列（设计稿 `.song-album`）。
