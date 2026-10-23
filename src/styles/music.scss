@@ -59,7 +59,6 @@
   display: flex;
   align-items: center;
   overflow: hidden;
-  margin-top: 10px;
   /* 底色比页面底更"浮"一点，读成"悬在上层"而不是"贴在页面上的一块 UI" */
   background: var(--miao-surface);
   border: 1px solid var(--miao-line);
@@ -720,7 +719,7 @@
   gap: 6px;
   height: 34px;
   padding: 0 9px 0 5px;
-  border-radius: var(--miao-r-xs);
+  border-radius: var(--miao-r-xl);
 }
 .toolbar-account .ms-avatar {
   width: 20px;
@@ -927,7 +926,7 @@
   border-radius: var(--miao-r-lg);
   background: var(--miao-surface-2);
 }
-/* 封面（设计稿 `.now-art`）：1:1、r14、只留一层投影（不描边 —— 右栏底色本身就够分界） */
+/* 封面（设计稿 `.now-art`）：1:1、r14、只留一层投影（不描边 —— 右栏底色本身就够分） */
 .now-art {
   width: 100%;
   aspect-ratio: 1;
@@ -936,7 +935,20 @@
   background: var(--miao-surface-2);
   box-shadow: 0 16px 30px -22px rgba(43, 47, 55, 0.5);
 }
-.now-art img {
+/*
+ * ⚠️ 里头复用的是共享 `Cover`（`.music-cover`）—— 它默认带**列表行的小封面尺寸**
+ * （38×38 / r9）。不在这里覆盖的话，容器有 212 高、图片却只有 38，
+ * 封面会缩在左上角一小块，剩下的全是空白底。
+ * 所以右栏这一处要把 `.music-cover` 连同里面的 img 一起撑满（图片用 cover 裁切，
+ * 保持比例不变形）。
+ */
+.now-art .music-cover {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  border: 0;
+}
+.now-art .music-cover img {
   width: 100%;
   height: 100%;
   object-fit: cover;
