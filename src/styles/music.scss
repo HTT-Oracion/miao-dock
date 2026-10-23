@@ -973,12 +973,7 @@
   flex-direction: column;
 }
 /* 右栏正文（搜索结果 / 发现）同构于 body */
-.music-rightbody {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
+
 .music-sec {
   flex: 0 0 auto;
   display: flex;
@@ -1406,62 +1401,68 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--miao-accent) 14%, transparent);
 }
 
-.cap-row {
+/*
+ * 搜索源胶囊条（设计稿 `.search-sources`）：**只住在搜索结果页**，
+ * 不是视图顶部的常驻条 —— 它是"这次搜索该打哪些平台"的选择器，
+ * 首页 / 榜单 / 歌单页没有它要回答的问题。
+ *
+ * 形态：一条内凹底 + 描边 + r10 的横条（内距 8/10），里面是若干 r7 / 24 高的小胶囊。
+ */
+.search-sources {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-  margin-bottom: 8px;
-  overflow-x: auto;
-  padding-bottom: 2px;
+  gap: 5px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border: 1px solid var(--miao-line);
+  border-radius: 10px;
+  background: var(--miao-surface-2);
 }
-.cap {
+.search-source {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 7px;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--miao-line);
-  background: var(--miao-surface);
-  color: var(--miao-text);
+  gap: 4px;
   font-family: var(--md-font-display);
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  border: 1px solid transparent;
+  background: transparent;
   cursor: pointer;
   white-space: nowrap;
-  flex-shrink: 0;
   transition:
-    border-color var(--miao-dur-fast) ease,
     background var(--miao-dur-fast) ease,
-    color var(--miao-dur-fast) ease;
+    color var(--miao-dur-fast) ease,
+    border-color var(--miao-dur-fast) ease;
 }
-.cap:hover:not(:disabled) {
-  border-color: var(--miao-accent-line);
-  background: var(--miao-accent-soft);
+.search-source.is-active {
+  color: var(--miao-primary-ink);
+  background: var(--miao-primary-soft);
+  border-color: var(--miao-primary-line);
 }
-.cap.is-on {
-  border-color: var(--miao-accent-line);
-  background: var(--miao-accent-soft);
-  color: color-mix(in srgb, var(--miao-accent) 82%, #000);
-  font-weight: 700;
-}
-.cap:disabled {
-  opacity: 0.55;
+.search-source:disabled {
+  opacity: 0.38;
   cursor: not-allowed;
 }
-.cap-dot {
-  width: 7px;
-  height: 7px;
+/* 登录状态点：不写内联色值 —— 设计稿用"已登录=主色 / 未登录=离色"，主题切换时跟着走 */
+.search-source-dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  flex-shrink: 0;
+  flex: none;
+  background: var(--miao-primary);
 }
-.cap-note {
+.search-source-dot[data-on='no'] {
+  background: var(--miao-muted);
+}
+.search-source-hint {
   margin-left: auto;
-  padding-left: 8px;
-  font-size: 10px;
-  color: var(--miao-muted);
-  white-space: nowrap;
-  flex-shrink: 0;
+  font-size: 8.5px;
+  color: var(--miao-faint);
 }
 
 /* ---------------------------------------------------------------- 歌曲列表 */

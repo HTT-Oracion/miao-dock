@@ -947,6 +947,56 @@ add('UI.virtualList', 'UI', (s) => {
   const missing = need.filter(([re]) => !re.test(v)).map(([, n]) => n);
   return { ok: missing.length === 0, detail: missing.length ? `虚拟列表缺：${missing.join('、')}` : '' };
 });
+add('UI.searchSourcesInResults', 'UI', (s) => {
+  /*
+   * 搜索源胶囊（设计稿 `.search-sources`）的**位置**：它只在**搜索结果页**里渲染。
+   *
+   * 产品曾把它做成 `.cap-row` 常驻在 `.music-view` 顶部 —— 于是首页 / 榜单 / 歌单页
+   * 都挂着一条"这次搜索该打哪些平台"的选择器，而那几个页面没有要回答这个问题。
+   * 判据要的是"渲染点在 SearchResults 里、且不在视图壳里"，两条都断：
+   *   ① 视图壳（RightPanel 的主 return）里**没有** `<SearchCaps`；
+   *   ② `SearchResults` 里**有** `<SearchCaps`（含三条早返回分支 —— 搜索中/无结果时
+   *      也要能换平台，否则用户只能等这次搜完才知道选错）。
+   */
+  const src = readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx'));
+  if (!src) return { ok: false, detail: uiNote(s, '未读到 RightPanel.tsx') };
+  const problems = [];
+  const viewAt = src.indexOf('className="music-view"');
+  const resultsAt = src.indexOf('function SearchResults');
+  if (viewAt < 0) problems.push('找不到 .music-view 视图壳');
+  if (resultsAt < 0) problems.push('找不到 SearchResults');
+  if (viewAt >= 0 && resultsAt > viewAt) {
+    // 视图壳那段（到 SearchResults 定义之前）不许出现 <SearchCaps
+    const shell = src.slice(viewAt, resultsAt);
+    if (/<SearchCaps\s*\/>/.test(shell)) problems.push('视图壳里仍在渲染搜索源胶囊（首页/榜单页会一直挂着它）');
+  }
+  const resultsBody = resultsAt >= 0 ? src.slice(resultsAt) : '';
+  /*
+   * **精确 3 处**，不是 ≥2：三条分支（搜索中 / 无结果 / 有结果）各一处。
+   * 阈值写成 ≥2 时"删掉其中一处"照样绿（实测踩过），那样的分母等于没有。
+   */
+  const capsUse = (resultsBody.match(/<SearchCaps\s*\/>/g) ?? []).length;
+  if (capsUse !== 3) {
+    problems.push(`搜索结果里的搜索源胶囊有 ${capsUse} 处，应为 3（搜索中/无结果/有结果三条分支各一）`);
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.noCenterWrapper', 'UI', (s) => {
+  /*
+   * 设计稿 `.music-view` 直接承载各视图的节：中间不许再有 `.music-rightbody` 之类的包裹层。
+   *
+   * ⚠️ 必须先剥注释再判：本轮的改动说明里**正讨论着**这个类名（"多出两层 —— .cap-row 与
+   * .music-rightbody"），不剥的话注释会把判据喂成"仍在用"（假红），反过来若有人只把
+   * 实现删掉、把类名留在注释里，不剥又会遮住下一次"加回去"。
+   */
+  const src = stripComments(readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx')) ?? '');
+  const css = stripComments(readMaybe(F.musicScss) ?? '');
+  if (!src) return { ok: false, detail: uiNote(s, '未读到 RightPanel.tsx') };
+  const problems = [];
+  if (/music-rightbody/.test(src)) problems.push('视图里仍有 .music-rightbody 包裹层');
+  if (/\.music-rightbody\s*\{/.test(css)) problems.push('样式里仍留着 .music-rightbody 规则');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
 add('UI.sideGroups', 'UI', (s) => {
   /*
    * 左栏歌单列表的**分组结构**（设计稿 `.ms-group` → `.ms-caption` + 若干 `.ms-row`）。
@@ -4348,6 +4398,37 @@ const MUTATIONS = [
     find: 'items.slice(start, end)',
     replace: 'items',
     expect: ['UI.virtualList'],
+  },
+  {
+    name: '把搜索源胶囊挪回视图壳（首页/榜单页也一直挂着它）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    find: '        {searchActive ? <SearchResults /> : <Discover />}',
+    replace: '        <SearchCaps />\n        {searchActive ? <SearchResults /> : <Discover />}',
+    expect: ['UI.searchSourcesInResults'],
+  },
+  {
+    name: '搜索结果里摘掉搜索源胶囊（用户搜完才发现选错平台，无法当场换）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    /*
+     * 破坏点：把**无结果**这条分支里的 `<SearchCaps />` 换成别的元素。
+     *
+     * ⚠️ 两类"看起来能用"的锚点都不成立，记下来免得下次再试：
+     *   · `all: true` —— 本执行器不支持（只有单次 `txt.replace`）；
+     *   · 改函数名（`SearchCaps` → `SearchCapsGone`、`SearchResults` → `SearchResultsGone`）——
+     *     断言用的是 `indexOf('function SearchResults')` / `/<SearchCaps\s*\/>/`，
+     *     改名后**前缀仍然命中**，等于没改。
+     * 所以用一条只会命中一次、且会真的减少一处胶囊的锚点：无结果分支的第一行。
+     */
+    find: '        <SearchCaps />\n        <Empty sub="试试更短的关键词，或切换搜索源。">没有找到「{searchText}」</Empty>',
+    replace: '        <Empty sub="试试更短的关键词，或切换搜索源。">没有找到「{searchText}」</Empty>',
+    expect: ['UI.searchSourcesInResults'],
+  },
+  {
+    name: '在视图里加回 .music-rightbody 包裹层（多一层，滚动与高度链要重算）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    find: '        {searchActive ? <SearchResults /> : <Discover />}',
+    replace: '        <div className="music-rightbody">{searchActive ? <SearchResults /> : <Discover />}</div>',
+    expect: ['UI.noCenterWrapper'],
   },
   {
     name: '把左栏歌单列表的分组拆掉（退回"一条扁平行表"）',

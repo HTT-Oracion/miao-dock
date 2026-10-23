@@ -105,12 +105,17 @@ export function RightPanel() {
         </div>
       </div>
 
+      {/*
+       * 中栏视图（设计稿 `.music-view`）：**直接**承载各个视图的节，没有中间包裹层。
+       *
+       * 产品此前在 `.music-view` 里多出两层 —— `.cap-row`（搜索源胶囊）与 `.music-rightbody`。
+       * 前者位置错了：设计稿的搜索源胶囊只住在**搜索结果页**里（`.search-sources`），
+       * 首页 / 榜单 / 歌单页不该有它；后者是纯包裹层，删掉不影响布局。
+       */}
       <section className="music-view">
-        <SearchCaps />
-
         {searchError ? <div className="music-inline-err">搜索失败：{searchError}</div> : null}
 
-        <div className="music-rightbody">{searchActive ? <SearchResults /> : <Discover />}</div>
+        {searchActive ? <SearchResults /> : <Discover />}
       </section>
     </>
   );
@@ -123,7 +128,7 @@ function SearchCaps() {
   const setSearchProvider = useMusicStore((s) => s.setSearchProvider);
 
   return (
-    <div className="cap-row">
+    <div className="search-sources">
       {PLATFORMS.map((p) => {
         const logged = !!loginInfos[p.id]?.logged_in;
         const on = p.id === searchProvider;
@@ -131,19 +136,19 @@ function SearchCaps() {
           <Btn
             key={p.id}
             kind="bare"
-            className={on ? 'cap is-on' : 'cap'}
+            className={on ? 'search-source is-active' : 'search-source'}
             ariaPressed={on}
             disabled={!logged}
             title={logged ? `用 ${p.label} 搜索` : '登录后才能作为搜索源'}
             onClick={() => setSearchProvider(p.id)}
           >
-            <i className="cap-dot" style={{ background: logged ? '#22C55E' : 'var(--md-muted)' }} />
+            <i className="search-source-dot" data-on={logged ? 'yes' : 'no'} />
             {p.label}
           </Btn>
         );
       })}
       {/* 设计稿渲染层这一句是两半：后半截正是上面那些禁用胶囊的所以然，漏掉它只说"独立"不说"为什么点不动" */}
-      <span className="cap-note">搜索源独立于播放源；未登录平台不可用</span>
+      <span className="search-source-hint">搜索源独立于播放源；未登录平台不可用</span>
     </div>
   );
 }
@@ -182,11 +187,28 @@ function SearchResults() {
     void toggleLike(song);
   };
 
-  if (searching && results.length === 0) return <Empty>搜索中…</Empty>;
-  if (results.length === 0) return <Empty sub="试试更短的关键词，或切换搜索源。">没有找到「{searchText}」</Empty>;
+  if (searching && results.length === 0) {
+    return (
+      <>
+        {/* 搜索中也要能看见/切换搜索源：否则用户只能等这一次搜完才知道选错了平台 */}
+        <SearchCaps />
+        <Empty>搜索中…</Empty>
+      </>
+    );
+  }
+  if (results.length === 0) {
+    return (
+      <>
+        <SearchCaps />
+        <Empty sub="试试更短的关键词，或切换搜索源。">没有找到「{searchText}」</Empty>
+      </>
+    );
+  }
 
   return (
     <>
+      {/* 搜索源胶囊（设计稿 `.search-sources`）：只住在搜索结果页，不在首页/榜单页 */}
+      <SearchCaps />
       <div className="music-hint">
         在 {providerLabel(searchProvider)} 找到 {results.length} 首{hasMore ? ' · 向下滚动加载更多' : ''}
       </div>
