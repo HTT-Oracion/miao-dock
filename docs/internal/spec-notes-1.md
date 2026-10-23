@@ -9277,3 +9277,54 @@ PowerShell `(Get-Content -Raw) -replace ... | Set-Content`，把文件里的中�
 
 **六、验证**：`check:units` **52/52** + 反证 **72/72**（70→72）· `check:settings` 186/186 ·
 `check:music` 237/237 · `npm run check` **20/20（exit 0）** · tsc 0。
+
+---
+
+## D-363 · 弹窗形态：设计稿的"生效值"住在后加载层，而复制品不会跟着改（2026-10-23）
+
+**一、起因**：第三批常量（圆角 / 阴影 / 边框档）对完，发现令牌与设计稿**本来就一致** ⇒ 这条轴没有活。
+于是换到同族但没查过的轴：**弹窗形态**（层级、容器嵌套、蒙层、进场）。
+
+**二、查到的第一个事实：三个弹窗里只有一个是"通用弹窗"。**
+`QuitConfirm` 用 `components/units/Modal`，而**登录弹窗**与**桌面歌词设置**各自手写了
+`.music-login-overlay` / `.music-dlset-overlay` + 卡片 + 头部（kicker / 标题 / 副标题 / 关闭键）+ 动作条。
+这类复制品的坏处不是"丑"，是**改一处不会同步**：
+
+| 项 | 通用单元（改对了） | 手写复制品（当时的实际值） |
+|---|---|---|
+| 蒙层模糊 | blur(9px) saturate(1.1) | blur(5px)（登录）/ 无（歌词设置不动蒙层） |
+| 卡片圆角 | 32 | 26 / 20 |
+| 卡片阴影 | 单层弥散 | 令牌 `--shadow-2`（两层） |
+| 宽度档 | 520 / 760 / 440 | 620 / 360 |
+
+**三、第二个事实（本轮真正的坑）：设计稿的卡片样式被 `theme.css` 整段覆盖，基础表里的数字界面上根本不存在。**
+先读 `styles.css` 的量：蒙层 `.34` + `blur(5px)`、卡片 `--r-xl`(26) + `--shadow-2` + 玻璃底、`is-wide` 680 / `is-narrow` 420。
+照着它改完，运行时量出来**设计稿是**：蒙层 `rgba(33,47,58,.28)` + `blur(9px) saturate(1.1)`、卡片 `--r-2xl`(32) +
+`0 36px 80px -36px rgba(33,47,58,.5)` + **实底** `var(--surface)`、`is-wide` `min(760px, calc(100vw - 40px))`、
+`is-narrow` 440、外加一条**退场** `v3-modal-out 160ms`。
+`theme.css` 里那段：`.modal-card { border-radius: var(--r-2xl); background: var(--surface); box-shadow: 0 36px 80px -36px rgba(33,47,58,.5); }`
+—— 基础表的玻璃底、`--shadow-2`、26 圆角全部作废。
+**教训**（D-360 的老坑换了层皮）：**"设计稿的值"= 运行时 `getComputedStyle` 出来的那个值**，
+CSS 文件里的文本只是候选。当样式分片有多层时（本稿：`styles.css` → `theme.css` → `theme-music.css`），
+只有把**最终命中**的那条当准绳；否则会照抄一套"界面上不存在"的数字，还自以为对得很细。
+
+**四、改法**：给 `Modal` 单元加两个**特性修饰类**入口（`cardClass` / `bodyClass`），与设计稿自己的分法一致
+（设计稿也是 `.modal-card.login-card` + `.login-body` 替掉 `.modal-body` 的内边距）；
+登录弹窗改成 `<Modal cardClass="login-card" bodyClass="login-body" …>`，桌面歌词设置改用默认宽度的 `<Modal>`；
+两个手写外壳（`.music-login-*` / `.music-dlset-overlay/-hd/-kicker/-title/-sub/-ft`）连同死规则一起删掉。
+顺手补齐设计稿那句页脚文案：`登录凭证仅保存在本机；喵坞不会获取你的密码`（12px 锁形图标，整行居中）。
+
+**五、验证（都是运行时量的，不是读源码猜的）**：`.modal-card` 六项 —— 宽 650 / 圆角 32 / 阴影
+`rgba(33,47,58,.5) 0 36px 80px -36px` / 底 `rgb(255,255,255)` / 边 `rgb(229,235,239)` / `blur(22px) saturate(1.1)`；
+`.modal-mask` 三项 —— `rgba(33,47,58,.28)` / `blur(9px) saturate(1.1)` / `fade-in 140ms --ease-out`；
+**产品与设计稿逐字段相等**（只有动画名前缀不同：`miao-modal-in` vs `v3-modal-in`，时长与曲线一致）。
+两个新判据：`STYLE.modalCardParity`（钉生效值 + **禁止**旧值回潮）与 `DIALOG.useSharedModal`
+（两个弹窗必须 `<Modal>`，且样式分片里不许再出现手写外壳类名；顺带钉住那句页脚文案）。
+**六、验证**：`check:units` **54/54** + 反证 **75/75**（72→75）· `check:music` 237/237 ·
+`check:settings` 186/186 · `npm run check` **20/20（exit 0）** · tsc 0。
+
+**七、遗留**：设计稿那份弹窗正文里还有一条 `.notice`：「双击歌词窗可以快速锁定 / 解锁；锁定后不会响应拖动。
+桌面歌词窗高度固定，行数多时建议调小字号。」—— 本产品歌词窗的解锁入口**降级为双击歌词条**（`lyrics_window.rs` 文件头
+写着"待真机确认后再决定是否上穿透"），"双击可**锁定**"这一步没有对应的实现 ⇒ 照搬会变成一句做不到的承诺，
+**待确认双击是否双向切换**后再决定补哪半句。`QueueDrawer`（设计稿 `.queue-drawer` 362px）还没做同类形态对账。
+
