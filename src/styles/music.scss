@@ -1726,6 +1726,28 @@
   color: var(--miao-faint);
   text-transform: uppercase;
 }
+/*
+ * 组头**可折叠**（#16）：歌单一多，收藏组能把创建组顶到看不见。
+ * 折叠态只靠"行不见了"表达 —— **不加箭头图标**：设计稿的 `.ms-caption` 里没有箭头，
+ * 多一枚箭头会让这行小标签从"纹理"变成"按钮"，层级就重了。
+ * 收起时把上下内距压到 3px：它现在只是一行标题，不该还占着一整行的呼吸位。
+ */
+button.ms-caption {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: color var(--miao-dur-fast);
+}
+button.ms-caption:hover {
+  color: var(--miao-muted);
+}
+button.ms-caption.is-collapsed {
+  padding-top: 3px;
+  padding-bottom: 3px;
+  opacity: 0.72;
+}
 .ms-caption .text-btn {
   margin-left: auto;
   height: 20px;

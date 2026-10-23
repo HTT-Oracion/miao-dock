@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl } from '@music/convert';
@@ -77,6 +78,13 @@ function PlaylistsView() {
   const openLeftPlaylist = useMusicStore((s) => s.openLeftPlaylist);
   const loadUserPlaylists = useMusicStore((s) => s.loadUserPlaylists);
 
+  /*
+   * 组头折叠态（#16）—— 必须在任何早返回**之前**声明：
+   * React Hook 的调用顺序在一次渲染里必须恒定，放在 early return 之后会直接报错。
+   */
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const toggle = (label: string) => setCollapsed((c) => ({ ...c, [label]: !c[label] }));
+
   const logged = !!loginInfos[playbackSource]?.logged_in;
 
   if (!logged) return <Empty>登录后查看我的歌单</Empty>;
@@ -100,10 +108,21 @@ function PlaylistsView() {
    * 所有行同高（`itemHeight`），套上去要么把组头撑到 46、要么把行压到 32，
    * 两种都与设计稿不符。歌单数量是"几十条"量级（曲目才是上千），
    * 全量渲染的节点数完全可控，因此这里按分组直接铺。
+   *
+   * ## 组头可折叠（#16）
+   * 歌单一多起来，「收藏的歌单」常常有上百条，把「创建的歌单」顶到看不见。
+   * 于是组头本身可点：点一下收起 / 展开。
+   * ⚠️ **不画额外图标**：设计稿的 `.ms-caption` 里没有箭头，折叠态只靠
+   * "行不见了"表达 —— 加一枚箭头会让组头从"一行小标签"变成"一个按钮"。
    */
   const renderGroup = (label: string, items: Playlist[], refresh: boolean) => (
     <div className="ms-group" key={label}>
-      <div className="ms-caption">
+      <button
+        type="button"
+        className={collapsed[label] ? 'ms-caption is-collapsed' : 'ms-caption'}
+        aria-expanded={!collapsed[label]}
+        onClick={() => toggle(label)}
+      >
         {label}
         {refresh ? (
           <Btn
@@ -117,8 +136,8 @@ function PlaylistsView() {
             <RefreshCw size={11} />
           </Btn>
         ) : null}
-      </div>
-      {items.length > 0 ? (
+      </button>
+      {collapsed[label] ? null : items.length > 0 ? (
         items.map((pl) => (
           <div className="music-row" key={pl.id} onClick={() => void openLeftPlaylist(pl)}>
             <Cover url={coverProxyUrl(pl.cover, proxyPort)} className="ms-row-cover" />
