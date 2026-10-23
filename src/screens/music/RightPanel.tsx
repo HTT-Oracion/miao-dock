@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import type { RefObject } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -19,7 +20,8 @@ import type { Song } from '@music/types';
 import { Charts } from '@screens/music/Charts';
 import { LocalPanel } from '@screens/music/LocalPanel';
 import { PlaylistDetail } from '@screens/music/PlaylistDetail';
-import { Btn, Empty, IconButton, VirtualList } from '@components/units';
+import { Btn, Empty, IconButton, OverlayScrollbar, VirtualList } from '@components/units';
+import type { OverlayThumb } from '@components/units';
 import { Cover, SongRow } from '@screens/music/shared';
 
 /**
@@ -28,7 +30,15 @@ import { Cover, SongRow } from '@screens/music/shared';
  * 因此这里单独维护 searchProvider，并在胶囊上标出各平台登录态 —— 未登录的平台搜不了，直接禁用。
  * 正文按优先级分流：搜索结果 > 曲目视图 > 每日推荐 > 推荐歌单。
  */
-export function RightPanel() {
+export function RightPanel({
+  centerScrollRef,
+  centerThumb,
+}: {
+  /** 中栏滚动容器的 ref（由 MusicScreen 传进来，供覆盖式滚动条与"回到顶部"用） */
+  centerScrollRef?: RefObject<HTMLDivElement>;
+  /** 中栏滚动条的滑块几何 */
+  centerThumb?: OverlayThumb;
+}) {
   const searchText = useMusicStore((s) => s.searchText);
   const setSearchText = useMusicStore((s) => s.setSearchText);
   const search = useMusicStore((s) => s.search);
@@ -48,17 +58,22 @@ export function RightPanel() {
   const searchActive = searchText.trim().length > 0;
 
   /*
-   * 换视图（发现 ↔ 搜索 ↔ 歌单详情 ↔ 本地）时**把中栏滚回顶部**。
+   * 中栏滚动层（`.music-view`）—— 由 MusicScreen 提供 ref 与滑块几何，
+   * 这样覆盖式滚动条与"换视图回顶部"用的是**同一个** DOM 节点。
+   */
+  const localScrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = centerScrollRef ?? localScrollRef;
+
+  /* 换视图（发现 ↔ 搜索 ↔ 歌单详情 ↔ 本地）时**把中栏滚回顶部**。
    *
    * 中栏是这一屏唯一的滚动容器，滚动位置会跨视图保留：从榜单底部点进歌单、
-   * 再退回发现页时，页面仍停在 -2000px 那种位置 —— 看上去就是"整块内容不见了 / 被盖住了"。
+   * 再退回发现页时，页面仍停在很下面的位置 —— 看上去就是"整块内容不见了 / 被盖住了"。
    * 视图是一个新的上下文，滚动位置必须跟着复位。
    */
-  const scrollRef = useRef<HTMLDivElement>(null);
   const viewKey = searchActive ? 'search' : leftView;
   useEffect(() => {
-    scrollRef.current?.closest('.music-center')?.scrollTo({ top: 0 });
-  }, [viewKey]);
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [viewKey, scrollRef]);
 
   return (
     <>
@@ -163,7 +178,6 @@ export function RightPanel() {
        */}
       <section className="music-view" ref={scrollRef}>
         {searchError ? <div className="music-inline-err">搜索失败：{searchError}</div> : null}
-
         {/*
          * 分流：搜索态 > 歌单详情 > 本地视图 > 发现页。
          *
@@ -180,6 +194,8 @@ export function RightPanel() {
         ) : (
           <Discover />
         )}
+        {/* 覆盖式滚动条：挂在滚动层自己身上，浮在内容右缘、不占布局宽度 */}
+        {centerThumb ? <OverlayScrollbar thumb={centerThumb} /> : null}
       </section>
     </>
   );

@@ -3,7 +3,6 @@ import { useMusicStore } from '@music/store';
 import { LeftPanel } from '@screens/music/LeftPanel';
 import { LoginModal } from '@screens/music/LoginModal';
 import { NowPlaying } from '@screens/music/NowPlaying';
-import { OverlayScrollbar } from '@components/units';
 import { useOverlayScrollbar } from '@hooks/useOverlayScrollbar';
 import { PlayerBar } from '@screens/music/PlayerBar';
 import { QueueDrawer } from '@screens/music/QueueDrawer';
@@ -73,6 +72,9 @@ export function MusicScreen() {
   /*
    * 中栏滚动条走**覆盖式**：滑块浮在内容上，不占布局宽度。
    * 原生 `::-webkit-scrollbar` 无论多细都会挤占内容宽（D-375），故这里自绘。
+   *
+   * ⚠️ 真正的滚动层是 `.music-view`（见 music.scss 的 flex 列说明），
+   * `.music-center` 自己已不滚 —— 所以滑块要挂在 `.music-view` 上。
    */
   const { ref: centerScrollRef, thumb: centerThumb } = useOverlayScrollbar();
 
@@ -84,9 +86,8 @@ export function MusicScreen() {
           <LeftPanel />
         </aside>
 
-        <div className="music-center" ref={centerScrollRef}>
-          <RightPanel />
-          <OverlayScrollbar thumb={centerThumb} />
+        <div className="music-center">
+          <RightPanel centerScrollRef={centerScrollRef} centerThumb={centerThumb} />
         </div>
 
         <aside className="music-now">

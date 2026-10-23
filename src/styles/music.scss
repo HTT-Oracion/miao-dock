@@ -820,16 +820,27 @@
  * （白面 + 描边 + r26 + 弥散阴影，内距 24/27/28）。底部不再留 100 给播放条 ——
  * 播放条现在住在 `.music-layout` 之外（设计稿如此），让位由外层负责。
  */
+/*
+ * 中栏（设计稿 `.music-center`）：**flex 列 + 自身不滚**。
+ *
+ * 结构：顶行（固定）→ `.music-view`（flex:1，**唯一滚动层**）。
+ * 这样歌单详情的曲目表才能"占满剩余高度、超出才滚"（#14）——
+ * 顶行与英雄区钉在原地，只有曲目表内部滚，用户翻页时不会找不到表头。
+ *
+ * ⚠️ 此前这里是 `overflow-y: auto` 的滚动容器，表格只能按内容高度长，
+ * 长歌单会把整张卡顶出滚动条、短歌单下面空一大片 —— 两个方向都不对。
+ */
 .music-center {
   min-width: 0;
   min-height: 0;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 24px 27px 28px;
   border: 1px solid var(--miao-line);
   border-radius: var(--miao-r-xl);
   background: var(--miao-surface);
   box-shadow: var(--miao-shadow-1);
-  scroll-behavior: smooth;
 }
 
 /* 右「正在播放」（设计稿 `.music-now`）：一张白卡，内距 22，自身滚动 */
@@ -1046,10 +1057,21 @@
  * "卡中卡"，层级只剩一档；整列滚动时那张大卡不跟着走，边缘还会切内容。
  * `view-in` 是设计稿的视图切换过渡（4px 上浮 + 淡入），比整块硬切自然。
  */
+/*
+ * 中栏视图（设计稿 `.music-view`）：直接承载各个视图的节，没有中间包裹层。
+ *
+ * **中栏唯一的滚动层**：`flex: 1` + `overflow-y: auto`。它有一个确定的高度
+ * （来自 `.music-center` 的 flex 列），所以子级的 `flex: 1` 能算出"剩余空间"——
+ * 歌单详情的曲目表因此能占满下部并自己滚（#14）。
+ * `scroll-behavior: smooth` 让"回到顶部"之类的跳转是滑上去的，不是闪上去的。
+ */
 .music-view {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  scroll-behavior: smooth;
   animation: miao-view-in var(--miao-dur-base) var(--miao-ease-out);
 }
 @keyframes miao-view-in {
@@ -2036,6 +2058,45 @@ button.ms-caption.is-collapsed {
   font-size: 9.5px;
   font-weight: 700;
   color: var(--miao-muted);
+}
+/*
+ * 歌单详情的曲目表**占满剩余高度**（#14）。
+ *
+ * 设计稿里它是"英雄区 + 说明行之下撑满的一块"：表头固定，列表吃剩余高度，
+ * 只有内容真的超出时才滚。此前表高由内容决定 —— 短歌单时下面空一大片，
+ * 长歌单时又把整个中栏顶出去，两个方向都不对。
+ *
+ * `flex: 1` 现在能算出来，是因为 `.music-view` 是**有确定高度的滚动容器**
+ * （见上面 `.music-center` 的 flex 列说明）—— 在此之前 `.music-center`
+ * 自己滚、高度随内容涨，子级的 `flex: 1` 永远算不出剩余空间。
+ */
+.song-table.is-fill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+.song-table.is-fill .ui-vlist {
+  flex: 1;
+  min-height: 0;
+}
+/* 分页脚：一行小字 + 一枚"再拉一页"的按钮；触屏与键盘用户不靠滚动也能翻页 */
+.song-table-more {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--miao-line);
+  background: color-mix(in srgb, var(--miao-surface-2) 40%, transparent);
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+.song-table-more.is-end {
+  color: var(--miao-faint);
 }
 /* 行内的封面与文字块原来是 flex 子项，网格下要占住"歌曲"那一列 */
 .song-table .music-row {
