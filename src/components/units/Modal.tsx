@@ -18,6 +18,8 @@ export function Modal({
   subtitle,
   kicker,
   width = 'default',
+  cardClass,
+  bodyClass,
   onClose,
   busy,
   children,
@@ -31,6 +33,12 @@ export function Modal({
   kicker?: ReactNode;
   /** 卡片宽度档（设计稿 `.modal-card` / `.is-wide` / `.is-narrow`） */
   width?: 'default' | 'wide' | 'narrow';
+  /**
+   * 卡片 / 内容区的**特性修饰类**（设计稿的 `.login-card`、`.login-body` 这种"某个弹窗自己的尺寸与内边距"）。
+   * 单元只管结构，特性样式留在各自的样式分片里 —— 与设计稿的分法一致。
+   */
+  cardClass?: string;
+  bodyClass?: string;
   /** 点蒙层 / 关闭键时调用。`busy` 为真时蒙层点击**不生效**（避免提交中误关） */
   onClose: () => void;
   /** 提交中：蒙层点击失效（卡片内的按钮各自按需 disabled） */
@@ -39,15 +47,16 @@ export function Modal({
   /** 操作区（`modal-foot`，通常是几个 `Btn`）；不传则不渲染操作行 */
   actions?: ReactNode;
 }) {
-  const cardClass =
-    width === 'wide' ? 'modal-card is-wide' : width === 'narrow' ? 'modal-card is-narrow' : 'modal-card';
+  const baseCard = width === 'wide' ? 'modal-card is-wide' : width === 'narrow' ? 'modal-card is-narrow' : 'modal-card';
+  const cardCls = cardClass ? `${baseCard} ${cardClass}` : baseCard;
+  const bodyCls = bodyClass ?? 'modal-body';
   const hasHead = Boolean(kicker || title || subtitle);
 
   return (
     <div className="modal-layer">
       <div className="modal-mask" onClick={busy ? undefined : onClose} />
       {/* `stopPropagation`：点卡片内部不该冒泡到蒙层把它关掉 */}
-      <div className={cardClass} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+      <div className={cardCls} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         {hasHead ? (
           <header className="modal-head">
             <div>
@@ -61,7 +70,7 @@ export function Modal({
             </button>
           </header>
         ) : null}
-        <div className="modal-body">{children}</div>
+        <div className={bodyCls}>{children}</div>
         {actions ? <footer className="modal-foot">{actions}</footer> : null}
       </div>
     </div>

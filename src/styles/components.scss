@@ -1076,32 +1076,35 @@
 .modal-mask {
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--miao-ink) 34%, transparent);
-  backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px);
+  /* 生效值取自设计稿的**后加载层**（`theme.css` 覆盖了基础表）：`.28` + blur 9 + saturate 1.1。
+     基础表里那套 `.34` / blur 5 是被覆盖掉的旧值 —— 只读基础表会照抄一个界面上不存在的数字。 */
+  background: rgba(33, 47, 58, 0.28);
+  backdrop-filter: blur(9px) saturate(1.1);
+  -webkit-backdrop-filter: blur(9px) saturate(1.1);
   animation: miao-fade-in var(--miao-dur-fast) var(--miao-ease-out);
 }
-/* 卡片：默认 520 宽，`is-wide` 680 / `is-narrow` 420；玻璃底 + 大圆角 + 弥散阴影 */
+/* 卡片：默认 520 宽，`is-wide` 760 / `is-narrow` 440（设计稿 `theme.css` 的覆盖值）；
+   32 圆角 + 单层弥散阴影 + 实底（设计稿这一层把玻璃底换成了 `var(--surface)`） */
 .modal-card {
   position: relative;
   width: min(520px, 100%);
   max-height: min(86vh, 780px);
   display: flex;
   flex-direction: column;
-  background: color-mix(in srgb, var(--miao-surface) 94%, transparent);
-  border: 1px solid color-mix(in srgb, var(--miao-line) 70%, transparent);
-  border-radius: var(--miao-r-xl);
-  box-shadow: var(--miao-shadow-2);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-2xl);
+  box-shadow: 0 36px 80px -36px rgba(33, 47, 58, 0.5);
   backdrop-filter: blur(22px) saturate(1.1);
   -webkit-backdrop-filter: blur(22px) saturate(1.1);
   animation: miao-modal-in var(--miao-dur-slow) var(--miao-ease-spring);
   overflow: hidden;
 }
 .modal-card.is-wide {
-  width: min(680px, 100%);
+  width: min(760px, calc(100vw - 40px));
 }
 .modal-card.is-narrow {
-  width: min(420px, 100%);
+  width: min(440px, 100%);
 }
 .modal-head {
   display: flex;

@@ -1509,6 +1509,74 @@ add('STYLE.motionTokensOnly', 'STYLE', (s) => {
   return { ok: bad.length === 0, detail: bad.length ? bad.join('；') : '' };
 });
 
+add('STYLE.modalCardParity', 'STYLE', (s) => {
+  /*
+   * 弹窗卡片的**生效值**来自设计稿的后加载层（`theme.css` 覆盖基础表）：
+   * 32 圆角 / 单层弥散阴影 / 实底 / 蒙层 .28 + blur 9 + saturate 1.1 / 760·440 两档。
+   * 只读基础表会照抄一套界面上不存在的数字（.34 / blur 5 / 680 / 420 / 玻璃底 + --shadow-2），
+   * 本轮就是靠运行时量出来的偏差才发现的 —— 源码级判据必须钉**生效值**。
+   */
+  const css = stripComments(s.styleShardCode?.['components.scss'] || '');
+  const need = [
+    ['border-radius: var(--miao-r-2xl);', '卡片 32 圆角'],
+    ['box-shadow: 0 36px 80px -36px rgba(33, 47, 58, 0.5);', '单层弥散阴影'],
+    ['background: var(--miao-surface);', '实底（不再是玻璃底）'],
+    ['border: 1px solid var(--miao-line);', '实线边框'],
+    ['background: rgba(33, 47, 58, 0.28);', '蒙层底色 .28'],
+    ['backdrop-filter: blur(9px) saturate(1.1);', '蒙层 blur 9 + saturate'],
+    ['width: min(760px, calc(100vw - 40px));', 'is-wide 档'],
+    ['width: min(440px, 100%);', 'is-narrow 档'],
+  ];
+  const bad = [];
+  const cardBlock = (css.match(/\.modal-card\s*\{[^}]*\}/) || [''])[0];
+  const maskBlock = (css.match(/\.modal-mask\s*\{[^}]*\}/) || [''])[0];
+  const wideBlock = (css.match(/\.modal-card\.is-wide\s*\{[^}]*\}/) || [''])[0];
+  const narrowBlock = (css.match(/\.modal-card\.is-narrow\s*\{[^}]*\}/) || [''])[0];
+  const scopes = [cardBlock, maskBlock, wideBlock, narrowBlock];
+  if (scopes.some((b) => !b)) return { ok: false, detail: '四段规则里有读不到的（判据失去对象）' };
+  for (const [needle, label] of need) {
+    if (!scopes.some((b) => b.includes(needle))) bad.push(`${label} 不在设计稿生效值上`);
+  }
+  // 被覆盖掉的旧值不许还留着（留着就说明有人拿基础表当准绳又抄回来）
+  for (const stale of ['rgba(30, 32, 36, 0.34)', 'blur(5px)', 'min(680px', 'min(420px']) {
+    if (cardBlock.includes(stale) || maskBlock.includes(stale)) bad.push(`残留旧值 ${stale}`);
+  }
+  return { ok: bad.length === 0, detail: bad.join('；') };
+});
+
+add('DIALOG.useSharedModal', 'DIALOG', (s) => {
+  /*
+   * 两个手写浮层（登录 / 桌面歌词设置）曾各自实现一遍"蒙层 + 卡片 + 头部 + 动作条"，
+   * 结果是宽度、圆角、阴影各差一档、蒙层没有模糊、退场动画缺失。
+   * 判据：两个弹窗都必须消费通用 `Modal` 单元，且样式分片里不许再出现那套手写外壳类名。
+   */
+  const files = {
+    login: path.join(SRC, 'screens', 'music', 'LoginModal.tsx'),
+    dlset: path.join(SRC, 'screens', 'music', 'DesktopLyricsSettingsModal.tsx'),
+  };
+  const bad = [];
+  let checked = 0;
+  for (const [label, p] of Object.entries(files)) {
+    if (!existsSync(p)) return { ok: false, detail: `读不到 ${label}` };
+    const code = cachedReadText(p);
+    checked += 1;
+    if (!/<Modal\b/.test(code)) bad.push(`${label} 没有用通用 Modal 单元`);
+    if (!/from '@components\/units'/.test(code)) bad.push(`${label} 没从 units 桶导入`);
+  }
+  const musicCss = stripComments(s.styleShardCode?.['music.scss'] || '');
+  for (const dead of ['.music-login-overlay', '.music-dlset-overlay', '.music-dlset-hd', '.music-login-hd']) {
+    checked += 1;
+    if (musicCss.includes(dead)) bad.push(`样式分片里还留着 ${dead}（手写外壳的残骸）`);
+  }
+  // 登录弹窗页脚那句"凭证在哪"是设计稿 `.login-foot` 的原话，本轮之前整句缺失
+  if (!cachedReadText(files.login).includes('登录凭证仅保存在本机；喵坞不会获取你的密码')) {
+    checked += 1;
+    bad.push('登录弹窗缺少设计稿页脚说明');
+  }
+  if (checked < 6) bad.push(`只量到 ${checked} 项（应 >= 6）`);
+  return { ok: bad.length === 0, detail: bad.join('；') };
+});
+
 add('STYLE.noScssSyntax', 'STYLE', (s) => {
   // 分片内保持**扁平写法**：本阶段不用 SCSS 语法糖。
   // 理由不是审美，是断言：本仓检查脚本大量用 `[^}]*` 取块，嵌套会改变块结构 →
@@ -1556,6 +1624,7 @@ const GROUPS = [
   'TOOLTIP',
   'ZOOM',
   'STYLE',
+  'DIALOG',
 ];
 function printGrouped(res) {
   let pass = 0;
@@ -1661,9 +1730,8 @@ const MUTATIONS = [
   {
     name: '把 LoginModal.tsx 改回 <button className="music-cbtn">',
     file: F.loginModal,
-    find: '          <IconButton title="关闭" onClick={closeLogin}>\n            <X size={15} />\n          </IconButton>',
-    replace:
-      '          <button type="button" className="music-cbtn" onClick={closeLogin}>\n            <X size={15} />\n          </button>',
+    find: '退出登录',
+    replace: '<button type="button" className="music-cbtn">退出登录</button>',
     expect: ['CALLERS.loginNoRawCbtn'],
   },
   {
@@ -2100,6 +2168,27 @@ const MUTATIONS = [
     find: "  base: '240ms',",
     replace: "  base: '200ms',",
     expect: ['STYLE.motionTokensOnly'],
+  },
+  {
+    name: '把弹窗卡片圆角改回 26（基础表的值，设计稿生效值是 32）',
+    file: path.join(F.stylesDir, 'components.scss'),
+    find: '  border-radius: var(--miao-r-2xl);',
+    replace: '  border-radius: var(--miao-r-xl);',
+    expect: ['STYLE.modalCardParity'],
+  },
+  {
+    name: '把蒙层模糊改回 blur(5px)（基础表的旧值，界面只是"糊得不够"）',
+    file: path.join(F.stylesDir, 'components.scss'),
+    find: '  backdrop-filter: blur(9px) saturate(1.1);',
+    replace: '  backdrop-filter: blur(5px);',
+    expect: ['STYLE.modalCardParity'],
+  },
+  {
+    name: '把登录弹窗退回手写外壳（复制一张卡片，改一处不会同步）',
+    file: path.join(F.stylesDir, 'music.scss'),
+    find: '.login-card {',
+    replace: '.music-login-overlay {\n  position: fixed;\n  inset: 0;\n}\n.login-card {',
+    expect: ['DIALOG.useSharedModal'],
   },
   {
     name: '把档位文案退回光秃秃的 Small（设计稿是 Small · 均衡，后半截是这档的性格）',

@@ -3281,71 +3281,33 @@
 }
 
 /* ---------------------------------------------------------------- 登录弹窗 */
-.music-login-overlay {
-  position: fixed;
-  inset: 0;
-  background: color-mix(in srgb, var(--miao-ink) 28%, transparent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 80;
+/* 登录弹窗 = 通用 `Modal` 单元 + 设计稿那两个特性修饰类（`.login-card` / `.login-body`）：
+   蒙层模糊、阴影、弹簧进场、四段结构全部由单元提供，这里只写这个弹窗自己的尺寸与两栏 */
+.login-card {
+  width: min(650px, 100%);
 }
-.music-login {
-  width: 100%;
-  max-width: 620px;
-  background: var(--miao-surface);
-  border: 1px solid var(--miao-line);
-  border-radius: var(--miao-r-xl);
-  padding: 18px 20px;
-  box-shadow: var(--miao-shadow-2);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  animation: miao-modal-in var(--miao-dur-slow) var(--miao-ease-spring);
-}
-.music-login-hd {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-}
-.music-login-kicker {
-  display: block;
-  margin-bottom: 3px;
-  font-family: var(--md-font-display);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  color: var(--miao-accent-ink);
-}
-.music-login-title {
-  display: block;
-  font-family: var(--md-font-display);
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--miao-ink);
-}
-/* 标题下的说明（设计稿 `.modal-head p`） */
-.music-login-sub {
-  display: block;
-  margin-top: 4px;
-  font-size: 10.5px;
-  line-height: 1.6;
-  color: var(--miao-muted);
-}
-/* 两栏：左平台列表（固定 200） + 右面板（自适应） */
-.music-login-cols {
+.login-body {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
+  grid-template-columns: 168px minmax(0, 1fr);
+  min-height: 300px;
+  padding: 14px 20px 18px;
   gap: 14px;
+  overflow: auto;
   min-height: 0;
 }
-.music-login-platforms {
+.login-platforms {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding-right: 14px;
+  gap: 4px;
+  padding-right: 10px;
   border-right: 1px solid var(--miao-line);
+}
+/* 设计稿 `.login-foot`：整行居中、9.5px muted、锁形图标 12px */
+.login-card .modal-foot {
+  justify-content: center;
+  gap: 6px;
+  font-size: 9.5px;
+  color: var(--miao-muted);
 }
 .login-platform {
   display: flex;
@@ -3392,7 +3354,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.music-login-panel {
+.login-panel {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -3560,12 +3522,6 @@
   line-height: 1.7;
   color: var(--miao-faint);
 }
-.music-login-note {
-  font-size: 11px;
-  color: var(--miao-text);
-  text-align: center;
-  line-height: 1.6;
-}
 .music-login-spin {
   color: var(--miao-accent);
   animation: music-spin 0.9s linear infinite;
@@ -3579,64 +3535,9 @@
 /* ---------------------------------------------------------------- 桌面歌词设置弹窗 */
 /* 与登录弹窗同一套遮罩/卡片观感，但独立成类：两者的内容与后续演化无关，混用会在改一处时波及另一处。
    z-index 取 80（与登录遮罩同级、高于展开播放器 70 与 Select 弹层 75）——它是从播放条唤起的浮层。 */
-.music-dlset-overlay {
-  position: fixed;
-  inset: 0;
-  background: color-mix(in srgb, var(--miao-ink) 28%, transparent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 80;
-}
-.music-dlset {
-  width: 100%;
-  max-width: 360px;
-  /* 内容比窗口高时只让 body 滚，头部标题与底部动作始终留在视野里 */
-  max-height: 82vh;
-  overflow: hidden;
-  background: var(--miao-surface);
-  border: 1px solid var(--miao-line);
-  border-radius: var(--miao-r-lg);
-  padding: 16px 18px;
-  box-shadow: var(--miao-shadow-2);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.music-dlset-hd {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-}
-/* 设计稿 kicker：9px / 700 / .16em / accent，标题上方一行 */
-.music-dlset-kicker {
-  display: block;
-  margin-bottom: 3px;
-  font-family: var(--md-font-display);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  color: var(--miao-accent-ink);
-}
-.music-dlset-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--md-font-display);
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--miao-ink);
-}
-/* 设计稿 subtitle：标题下的一句作用域说明（替代原先独立成段的 lead） */
-.music-dlset-sub {
-  margin-top: 4px;
-  font-size: 10.5px;
-  line-height: 1.6;
-  color: var(--miao-muted);
-}
-/* 弹窗主体：可滚动（设置项比窗口高时）。min-height:0 是 flex 子项能滚的必要条件 ——
-   少了它，子项的最小高度默认是内容高度，滚动条永远不会出现。 */
+/* 桌面歌词设置 = 通用 `Modal` 单元（蒙层 / 阴影 / 弹簧进场 / 四段结构都由它提供），
+   这里只剩这个弹窗自己的设置行。原先那套 `music-dlset-overlay/-hd/-kicker/-title/-sub/-ft`
+   是同一张卡片的手写复制品 —— 宽度、圆角、阴影各差一档，且蒙层没有模糊。 */
 .music-dlset-body {
   padding: 2px 0;
   display: flex;
@@ -3705,14 +3606,6 @@
    且同一个形态在设置页又要再写一遍 —— 已收进通用单元 `Segmented`（样式见
    `components.scss` 的 `.ui-seg`），此处只留一条去向说明，不放第二套外观。 */
 
-/* 底部动作条：左「恢复默认」右「完成」，与头部关闭按钮一起构成三条关闭路径
-   （Esc / 点遮罩 / 右上角 X），这里再加一条最符合直觉的「完成」。 */
-.music-dlset-ft {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
 /* 收尾说明：改动何时可见 */
 .music-dlset-note {
   font-size: 11.5px;
