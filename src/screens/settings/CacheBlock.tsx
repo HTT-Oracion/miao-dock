@@ -96,11 +96,8 @@ export function CacheBlock({ settingId }: { settingId: string }) {
 
   return (
     <div className="set-cache" data-setting-id={settingId}>
-      {/* 卡头（设计稿 `.s-card-head`）：标题 + 一句"这个数统计的是什么" */}
-      <div className="set-cache-head">
-        <h3>音乐缓存</h3>
-        <p>只统计在线歌曲；本地导入的文件不计入</p>
-      </div>
+      {/* 卡头由外层 `.set-subtitle` 给（设计稿把「音乐缓存」+ 统计口径写成卡头，
+          这一块只负责合计、逐平台行与动作） */}
 
       {/* 合计（设计稿 `.cache-total`）：大字总量 + 一句口径 */}
       <div className="set-cache-total">

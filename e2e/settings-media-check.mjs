@@ -178,8 +178,8 @@ const ADDED = [
   { id: 'music-cache', label: '音乐缓存' },
 ];
 
-/** ③ MEDIA 的三小节 id（顺序即渲染顺序） */
-const MEDIA_GROUPS = ['playback', 'lyrics', 'vinyl'];
+/** ③ MEDIA 的四个小节 id（顺序即渲染顺序；cache 是设计稿第三张卡，独立于「播放」） */
+const MEDIA_GROUPS = ['playback', 'cache', 'lyrics', 'vinyl'];
 
 /** ③ 全表项数自校常量应等于的合计
  *  26（初版）→ 29（③ 组 5 项 pending → 8 项 live）→ 31（P3 桌面歌词恢复 2 项）
@@ -997,19 +997,34 @@ add('CACHE.groupSkipsRow', 'CACHE', (ctx) => {
 });
 add('CACHE.blockRendersFourCells', 'CACHE', (ctx) => {
   /*
-   * 四格的四个格子必须都在：文案 / 目录路径 / 总大小 / 两个按钮。
+   * 卡的五个格子必须都在：**卡头**（标题 + 统计口径）/ 合计 / 逐平台行 / 动作 / 目录路径。
    *
-   * 判据取 `CacheBlock` 的**组件源码**并数关键类名 —— 而不是查 `sections.tsx`
-   * 里有没有那几段文字：组件搬文件时引用关系会变，源码里的类名不会。
+   * ⚠️ 卡头的位置按设计稿落：设计稿 ③ 的第三张卡是独立的「音乐缓存」卡，
+   * 卡头由外层 `.s-card-head`（产品 `.set-subtitle`）给，**不在块内部**
+   * （块内再写一遍就是同一句话出现两次）。所以这里分三处判：
+   *   ① 目录里有一个独立的 cache 组，标题与统计口径逐字 == 设计稿；
+   *   ② 块内**不许**再有 `set-cache-head`（重复卡头）；
+   *   ③ 块内的四个格子（合计 / 逐平台行 / 动作 / 路径）都在。
    */
   const src = ctx.s.cacheBlock;
-  if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx（四格实现不在预期位置）' };
-  const need = ['set-cache-head', 'set-cache-total', 'set-cache-rows', 'set-cache-acts', 'set-cache-path'];
-  const missing = need.filter((n) => !new RegExp(`${q(n)}`).test(src));
-  return {
-    ok: missing.length === 0,
-    detail: missing.length ? `四格里缺：${missing.join('、')}（少一格就不是规格里的四格）` : '',
-  };
+  if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx（分格实现不在预期位置）' };
+  const problems = [];
+  const sec = (ctx.cat?.mod?.SETTINGS_SECTIONS ?? []).find((x) => x.id === 'media');
+  const grp = (sec?.groups ?? []).find((g) => g.id === 'cache');
+  if (!grp) problems.push('catalog 里没有独立的「音乐缓存」组（设计稿是 ③ 的第三张卡）');
+  else {
+    if (grp.title !== '音乐缓存') problems.push(`音乐缓存组的标题是「${grp.title}」，应为「音乐缓存」`);
+    if (grp.head !== '只统计在线歌曲；本地导入的文件不计入') {
+      problems.push('音乐缓存组的卡头口径与设计稿不一致');
+    }
+  }
+  if (new RegExp(q('set-cache-head')).test(src)) {
+    problems.push('块内仍有 set-cache-head（卡头重复：卡头归外层 .set-subtitle）');
+  }
+  const need = ['set-cache-total', 'set-cache-rows', 'set-cache-acts', 'set-cache-path'];
+  const missing = need.filter((n) => !new RegExp(q(n)).test(src));
+  if (missing.length) problems.push(`块内缺格：${missing.join('、')}`);
+  return { ok: problems.length === 0, detail: problems.join('；') };
 });
 add('CACHE.openDirGuarded', 'CACHE', (ctx) => {
   /*
@@ -3457,7 +3472,7 @@ const MUTATIONS = [
       "          id: 'music-cache',\r\n" +
       "          label: '音乐缓存',\r\n" +
       "          state: 'live',\r\n" +
-      '          // 四格块：塞不进 Row 的窄右列（见 SettingItem.layout 的注释）\r\n' +
+      '          // 通栏块：合计 + 逐平台行 + 动作，塞不进 Row 的窄右列\r\n' +
       "          layout: 'block',\r\n" +
       "          why: '歌词与整首歌的本地缓存，按平台清理',\r\n" +
       '        },\r\n',
@@ -3467,7 +3482,7 @@ const MUTATIONS = [
   {
     name: '把「音乐缓存」的 layout 形态字段去掉（会被 Row 压成两栏窄列，四格失效）',
     file: F.catalog,
-    find: "          // 四格块：塞不进 Row 的窄右列（见 SettingItem.layout 的注释）\n          layout: 'block',\n",
+    find: "          // 通栏块：合计 + 逐平台行 + 动作，塞不进 Row 的窄右列\n          layout: 'block',\n",
     replace: '',
     expect: ['CACHE.layoutFlag'],
   },

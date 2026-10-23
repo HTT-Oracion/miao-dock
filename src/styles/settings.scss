@@ -615,19 +615,6 @@
   border-top: 0;
 }
 
-/* 卡头（设计稿 `.s-card-head`）：标题 + 一句"这个数统计的是什么" */
-.set-cache-head h3 {
-  margin: 0;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--md-ink);
-}
-.set-cache-head p {
-  margin: 2px 0 0;
-  font-size: 10.5px;
-  color: var(--md-muted);
-}
-
 /* 合计（设计稿 `.cache-total`）：大字总量 + 一句口径 */
 .set-cache-total {
   display: flex;
@@ -1629,7 +1616,7 @@
   justify-content: space-between;
   gap: 12px;
 }
-/* 与 `.set-cache-head h3` / `.set-storage-name` 同一字号 —— 通栏块的标题都长得一样 */
+/* 与 `.set-storage-name` 同一字号 —— 通栏块的标题都长得一样 */
 .set-lic-name {
   font-size: 12.5px;
   color: var(--md-ink);
