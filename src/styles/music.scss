@@ -1696,6 +1696,181 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ---------------------------------------------------------------- 推荐歌单卡
+/*
+ * 推荐歌单（设计稿 `.card-grid` + `.playlist-card`）：四列封面卡，gap 12。
+ * 卡 = 封面（1:1，r12）+ 歌单名 + 「N 首 · 作者」，右下角一枚圆形播放钮**浮在封面上**
+ * （设计稿 `.pl-play`：平时半透明可见、hover 变实心 —— 它既是装饰也是"点这里能播"的暗示）。
+ */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.playlist-card {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-md);
+  background: var(--miao-surface);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform var(--miao-dur-fast) var(--miao-ease-out),
+    box-shadow var(--miao-dur-fast),
+    border-color var(--miao-dur-fast);
+}
+.playlist-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--miao-line-strong);
+  box-shadow: var(--miao-shadow-2);
+}
+.playlist-card-cv {
+  position: relative;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  overflow: hidden;
+  aspect-ratio: 1;
+}
+/* 封面吃满卡宽（`.music-cover` 默认 40 定宽，那是列表行的小图） */
+.playlist-card-cv .music-cover {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  border: 0;
+}
+.pl-play {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--miao-surface) 78%, transparent);
+  color: var(--miao-ink);
+  backdrop-filter: blur(6px);
+  transition: background var(--miao-dur-fast);
+}
+.playlist-card:hover .pl-play {
+  background: var(--miao-primary);
+  color: #fff;
+}
+.playlist-card strong {
+  display: block;
+  font-family: var(--md-font-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.playlist-card small {
+  display: block;
+  margin-top: 1px;
+  font-size: 9px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 1180px) {
+  /* 窄窗：四列会把卡宽压到 120 以下，歌单名只剩两三个字 */
+  .card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---------------------------------------------------------------- 曲目表
+/*
+ * 今日精选的曲目表（设计稿 `.song-table`）：带表头的五列网格 ——
+ * 序号 / 歌曲（含封面）/ 专辑 / 时长 / 操作。
+ *
+ * 行仍复用共享的 `SongRow`（`.music-row`），这里只在 `.song-table` 作用域内把它的内部布局
+ * 改成"与表头同列"的网格 —— 否则搜索、历史、本地、队列那 6 个调用点会被一起改掉。
+ */
+.song-table {
+  border: 1px solid var(--miao-line);
+  border-radius: 13px;
+  background: var(--miao-surface);
+  overflow: hidden;
+  box-shadow: var(--miao-shadow-1);
+}
+.song-head,
+.song-table .music-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1.6fr) minmax(0, 1fr) 64px 86px;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+}
+.song-head {
+  padding: 9px 14px;
+  background: color-mix(in srgb, var(--miao-surface-2) 70%, transparent);
+  border-bottom: 1px solid var(--miao-line);
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--miao-muted);
+}
+/* 行内的封面与文字块原来是 flex 子项，网格下要占住"歌曲"那一列 */
+.song-table .music-row {
+  border-radius: 0;
+}
+.song-table .music-row:hover {
+  background: var(--miao-surface-2);
+}
+.song-table .music-row.is-hot {
+  background: var(--miao-primary-soft);
+  box-shadow: none;
+}
+.song-table .music-row > .music-cover {
+  grid-column: 2;
+  grid-row: 1;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  justify-self: start;
+}
+.song-table .music-row > .music-row-tx {
+  grid-column: 2;
+  grid-row: 1;
+  padding-left: 46px;
+}
+.song-table .music-row > .music-row-tx b {
+  font-size: 12px;
+  font-weight: 700;
+}
+.song-index {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--miao-faint);
+  text-align: right;
+}
+.song-album {
+  grid-column: 3;
+  grid-row: 1;
+  font-size: 9.5px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.song-table .music-dur {
+  grid-column: 4;
+  grid-row: 1;
+  font-size: 10px;
+  color: var(--miao-muted);
+}
 .chart-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1878,12 +2053,24 @@
 }
 
 /* ---------------------------------------------------------------- 底部播放条 */
+/*
+ * 播放条（设计稿 `.pb-card`）：**浮起**的一块玻璃卡 —— 22 圆角、`blur(20px) saturate(1.3)`、
+ * 92% 半透明白、`0 24px 60px -30px` 的大投影、左右 18 内距。
+ *
+ * 与页面内容的层级关系靠这三样一起成立：半透明（能看见底下的内容流过）、模糊（底下的文字
+ * 不会干扰读数）、大而软的投影（"浮起来"而不是"贴在底下"）。去掉任何一样都会退回
+ * "又一张白卡"，与上面的内容区没有主次。
+ * 深色主题把透明白降到 88% —— 深底上太透会让播放条发灰。
+ */
 .music-player {
   flex: 0 0 auto;
-  background: var(--miao-surface);
+  background: color-mix(in srgb, var(--miao-surface) 92%, transparent);
   border: 1px solid var(--miao-line);
-  border-radius: var(--miao-r-xl);
-  padding: 10px 14px;
+  border-radius: 22px;
+  padding: 0 18px;
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  box-shadow: 0 24px 60px -30px rgba(45, 59, 70, 0.5);
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -1896,9 +2083,9 @@
   position: relative;
 }
 .music-pb-cover {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
   background: linear-gradient(140deg, var(--miao-accent), var(--miao-primary));
   border: 1px solid var(--miao-line);
   flex-shrink: 0;

@@ -325,22 +325,39 @@ function Recommendations() {
               <Empty inline>{loading ? '加载推荐歌单中…' : '暂无推荐歌单（可能需要登录或网络）'}</Empty>
             )
           ) : (
-            <VirtualList
-              items={recommendPlaylists}
-              resetKey={`recommend:${playbackSource}`}
-              itemKey={(pl) => pl.id}
-              renderItem={(pl) => (
-                <div className="music-row" onClick={() => void openRightPlaylist(pl)}>
-                  <Cover url={coverProxyUrl(pl.cover, proxyPort)} />
-                  <div className="music-row-tx">
-                    <b>{pl.name}</b>
-                    <span>
-                      {pl.track_count} 首 · {providerLabel(pl.provider)}
+            /*
+             * 推荐歌单（设计稿 `.card-grid` + `.playlist-card`）：**四列封面卡**，不是列表行。
+             * 每张卡 = 封面（1:1，r12）+ 歌单名 + 「N 首 · 作者」，右下角一枚圆形播放钮浮在封面上。
+             * 这里不能用 VirtualList：设计稿是网格，行高由列宽决定，不是定高列表。
+             */
+            <div className="card-grid">
+              {recommendPlaylists.map((pl) => (
+                <div
+                  className="playlist-card"
+                  key={pl.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => void openRightPlaylist(pl)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      void openRightPlaylist(pl);
+                    }
+                  }}
+                >
+                  <div className="playlist-card-cv">
+                    <Cover url={coverProxyUrl(pl.cover, proxyPort)} />
+                    <span className="pl-play" aria-hidden="true">
+                      <Play size={13} />
                     </span>
                   </div>
+                  <strong>{pl.name}</strong>
+                  <small>
+                    {pl.track_count} 首 · {pl.creator || providerLabel(pl.provider)}
+                  </small>
                 </div>
-              )}
-            />
+              ))}
+            </div>
           )}
         </>
       ) : null}
@@ -366,23 +383,40 @@ function Recommendations() {
               {loadingNewSongs ? '加载中…' : '这个平台还没有歌曲'}
             </Empty>
           ) : (
-            <VirtualList
-              items={newSongs}
-              resetKey={`new-songs:${playbackSource}`}
-              itemKey={(s, i) => `${songKey(s)}:${i}`}
-              renderItem={(s, i) => {
-                const play = () => void playPlaylist(newSongs, { index: i });
-                return (
-                  <SongRow
-                    song={s}
-                    cover={coverProxyUrl(s.cover, proxyPort)}
-                    active={currentSong ? songKey(currentSong) === songKey(s) : false}
-                    onClick={play}
-                    onPlay={play}
-                  />
-                );
-              }}
-            />
+            /*
+             * 今日精选（设计稿 `.song-table`）：**带表头的曲目表**，不是裸列表。
+             * 表头五列与设计稿同序：序号 / 歌曲 / 专辑 / 时长 / 操作。
+             * 行仍复用 `SongRow`（搜索、历史、本地、队列都用它）—— 这里只在 `.song-table` 作用域内
+             * 把行的列宽对齐表头，不改共享组件本身，避免牵连另外 6 个调用点。
+             */
+            <div className="song-table">
+              <div className="song-head" aria-hidden="true">
+                <span>#</span>
+                <span>歌曲</span>
+                <span>专辑</span>
+                <span>时长</span>
+                <span />
+              </div>
+              <VirtualList
+                items={newSongs}
+                resetKey={`new-songs:${playbackSource}`}
+                itemKey={(s, i) => `${songKey(s)}:${i}`}
+                renderItem={(s, i) => {
+                  const play = () => void playPlaylist(newSongs, { index: i });
+                  return (
+                    <SongRow
+                      song={s}
+                      cover={coverProxyUrl(s.cover, proxyPort)}
+                      active={currentSong ? songKey(currentSong) === songKey(s) : false}
+                      leading={<span className="song-index">{i + 1}</span>}
+                      meta={<span className="song-album">{s.album || '—'}</span>}
+                      onClick={play}
+                      onPlay={play}
+                    />
+                  );
+                }}
+              />
+            </div>
           )}
         </>
       ) : null}

@@ -974,6 +974,60 @@ add('UI.chartCardPreview', 'UI', (s) => {
   if (!/CHART_PREVIEW_N\s*=\s*5/.test(right)) problems.push('预览条数不是 5（设计稿卡里就是 5 行）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
+add('UI.playlistCards', 'UI', (s) => {
+  /*
+   * 推荐歌单必须是**封面卡网格**（设计稿 `.card-grid` + `.playlist-card`），不是列表行。
+   * 列表行只能表达"名字 + 数字"，封面卡才能让"按最近的循环生成"这批歌单被**看**出来 ——
+   * 推荐位的价值一半在图上。
+   * 判据：容器 `.card-grid` / 卡 `.playlist-card` / 有封面位与播放钮 / 不再用 VirtualList 渲染它。
+   */
+  const src = stripComments(readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx')) ?? '');
+  const css = stripComments(readMaybe(F.musicScss) ?? '');
+  const problems = [];
+  if (!src.includes('className="card-grid"')) problems.push('推荐歌单容器不是 .card-grid');
+  if (!src.includes('className="playlist-card"')) problems.push('推荐歌单卡不是 .playlist-card');
+  if (!src.includes('pl-play')) problems.push('卡片缺 .pl-play 播放钮');
+  if (!/\.card-grid\s*\{/.test(css)) problems.push('缺少 .card-grid 样式');
+  if (!/\.playlist-card\s*\{/.test(css)) problems.push('缺少 .playlist-card 样式');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.songTable', 'UI', (s) => {
+  /*
+   * 今日精选必须是**带表头的曲目表**（设计稿 `.song-table` + `.song-head`），不是裸列表。
+   * 表头说明这五列各是什么（序号 / 歌曲 / 专辑 / 时长 / 操作）—— 没有表头时用户要自己猜
+   * 第二列是专辑还是歌手。
+   */
+  const src = stripComments(readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx')) ?? '');
+  const css = stripComments(readMaybe(F.musicScss) ?? '');
+  const problems = [];
+  if (!src.includes('className="song-table"')) problems.push('今日精选没有 .song-table 外壳');
+  if (!src.includes('className="song-head"')) problems.push('缺少 .song-head 表头');
+  if (!/\.song-table\s*\{/.test(css)) problems.push('缺少 .song-table 样式');
+  if (!/\.song-head,\s*\n?\.song-table \.music-row\s*\{/.test(css.replace(/\r/g, ''))) {
+    problems.push('表头与行没有共用同一套列宽（会错列）');
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.playerBarGlass', 'UI', (s) => {
+  /*
+   * 播放条是设计稿的**浮起玻璃卡**（`.pb-card`）：22 圆角 + blur(20px) saturate(1.3) +
+   * 92% 半透明 + 大而软的投影 + 左右 18 内距。
+   * 三样一起才成立：半透明（能看见内容流过）、模糊（文字不干扰）、大投影（真的浮起来）。
+   * 去掉任何一样都退回"又一张白卡"，与上面内容区没有主次。
+   */
+  const css = stripComments(readMaybe(F.musicScss) ?? '');
+  const block = /\.music-player\s*\{[^}]*\}/.exec(css);
+  if (!block) return { ok: false, detail: '找不到 .music-player 规则' };
+  const t = block[0];
+  const problems = [];
+  if (!/border-radius:\s*22px/.test(t)) problems.push('圆角不是 22');
+  if (!/blur\(20px\)/.test(t)) problems.push('缺 blur(20px)');
+  if (!/saturate\(1\.3\)/.test(t)) problems.push('缺 saturate(1.3)');
+  if (!/color-mix\(in srgb, var\(--miao-surface\) 92%/.test(t)) problems.push('底色不是 92% 半透明白');
+  if (!/0 24px 60px -30px/.test(t)) problems.push('投影不是设计稿的 0 24px 60px -30px');
+  if (!/padding:\s*0 18px/.test(t)) problems.push('左右内距不是 18');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
 add('UI.playHistory', 'UI', (s) => ({
   ok: /\bplayHistoryList\b/.test(s.uiSource),
   detail: uiNote(s, '未读到播放历史视图（playHistoryList）'),
@@ -4524,6 +4578,29 @@ const MUTATIONS = [
     find: 'items.slice(start, end)',
     replace: 'items',
     expect: ['UI.virtualList'],
+  },
+  {
+    name: '把推荐歌单从封面卡网格退回列表行（推荐位的图没了）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    find: 'className="card-grid"',
+    replace: 'className="music-list"',
+    expect: ['UI.playlistCards'],
+  },
+  {
+    name: '把今日精选的表头摘掉（用户要自己猜第二列是专辑还是歌手）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    find: 'className="song-head"',
+    replace: 'className="song-head-gone"',
+    expect: ['UI.songTable'],
+  },
+  {
+    name: '把播放条的毛玻璃摘掉（退回一张普通白卡）',
+    file: F.musicScss,
+    /* ⚠️ 锚点要连 `-webkit-backdrop-filter` 那行一起改：只改标准属性时，
+       前缀那行仍带 blur(20px)，断言的 blur 检查照样满足 ⇒ 假反证（实测踩过）。 */
+    find: '  backdrop-filter: blur(20px) saturate(1.3);\n  -webkit-backdrop-filter: blur(20px) saturate(1.3);',
+    replace: '  backdrop-filter: none;\n  -webkit-backdrop-filter: none;',
+    expect: ['UI.playerBarGlass'],
   },
   {
     name: '把榜单卡的排行改成写死的假数据（设计稿是演示数据，产品必须接真数据）',
