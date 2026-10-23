@@ -49,9 +49,16 @@ export function PlaylistDetail() {
    */
   const { ref: scrollRef, thumb } = useOverlayScrollbar();
 
-  /* 滚到底拉下一页（距底 120px 就开始，免得用户"看到底了才动"） */
+  /*
+   * 滚到底拉下一页（距底 120px 就开始，免得用户"看到底了才动"）。
+   *
+   * ⚠️ 监听必须挂在**真正的滚动容器**上：外层 `.song-table` 只是定位外壳，
+   * 里面 `VirtualList` 的 `.ui-vlist` 才是滚的那一个。scroll 事件**不冒泡**，
+   * 挂在外层永远收不到 —— 曾因此点了没反应、也看不到"加载中"。
+   */
   useEffect(() => {
-    const el = scrollRef.current;
+    const outer = scrollRef.current;
+    const el = outer?.querySelector('.ui-vlist') ?? outer;
     if (!el || !hasMore) return;
     const onScroll = () => {
       if (el.scrollHeight - el.scrollTop - el.clientHeight < 120) void loadMoreLeft();
@@ -178,20 +185,25 @@ export function PlaylistDetail() {
             }}
           />
           {/*
-           * 分页脚：**只有还有更多时才出现**。
-           * 已到底时不再显示"已到底 · 共 N 首"—— 那句话在曲目表里是冗余信息
-           * （标题上方已有"N 首"），且会白占一行高度，把最后几首歌顶出可视区。
+           * 底部状态条：**加载时**才出现（音波 + 「加载中…」），加载完/没有更多时都不占高度。
+           *
+           * ⚠️ 这里**不再放「加载更多」按钮**：翻页完全靠滚动（滚到距底 120px 内自动拉下一页，
+           * 见上面的 scroll 监听）。按钮会让"列表无限"这个事实变成一个需要用户操作的动作，
+           * 而在上千首的歌单里点按钮翻页是不可行的。
+           *
+           * 图标复用灵动岛的 `.di-wave`（同一个 keyframes `di-wave`，0.9s 高低错峰）：
+           * "正在加载"与"正在播放"是同一种语义（后台在跑），用同一个动效语言更自然。
            */}
-          {hasMore ? (
-            <div className="song-table-more">
-              <Btn
-                kind="ghost"
-                size="sm"
-                disabled={loadingMore}
-                onClick={() => (loadingMore ? undefined : void loadMoreLeft())}
-              >
-                {loadingMore ? '加载中…' : `加载更多（还有 ${total - tracks.length} 首）`}
-              </Btn>
+          {loadingMore ? (
+            <div className="song-table-more" role="status" aria-live="polite">
+              <span className="di-wave is-css" data-on="1" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+                <i />
+                <i />
+              </span>
+              加载中…
             </div>
           ) : null}
           <OverlayScrollbar thumb={thumb} />

@@ -247,17 +247,20 @@
   border-radius: 7px;
 }
 
+/*
+ * 音波（5 根柱子高低错峰）—— **波形本身与定位分离**。
+ *
+ * 灵动岛用它表示"正在播"，曲目表的"加载中"也用它（同一个动画，见 `.song-table-more`）。
+ * 所以柱子与 keyframes 放在 `.di-wave`（不定位、可复用），
+ * 灵动岛那份定位（`right: 66px / top: 15px`）单独写在 `.di-wave.is-css` 上 ——
+ * 否则复用到别处时会连带把元素摆到灵动岛的位置去。
+ */
 .di-wave {
-  position: absolute;
-  right: 66px;
-  top: 15px;
-  z-index: 1;
   display: flex;
   align-items: center;
   gap: 2.5px;
   height: 16px;
   pointer-events: none;
-  transition: opacity var(--miao-dur-fast) ease;
 }
 .di-wave i {
   display: block;
@@ -291,6 +294,15 @@
   50% {
     height: 13px;
   }
+}
+
+/* 灵动岛内那一枚的定位（只有岛里需要；复用波形到别处时不带这段） */
+.di-music > .di-wave.is-css {
+  position: absolute;
+  right: 66px;
+  top: 15px;
+  z-index: 1;
+  transition: opacity var(--miao-dur-fast) ease;
 }
 
 /* 展开大卡：绝对铺满，与折叠内容重叠，靠透明度交叉切换（无位移）。
@@ -2145,24 +2157,33 @@ button.ms-caption.is-collapsed {
   flex: 1;
   min-height: 0;
 }
-/* 分页脚：一行小字 + 一枚"再拉一页"的按钮；触屏与键盘用户不靠滚动也能翻页。
-   ⚠️ **已到底时不渲染这个元素**（组件里 `hasMore` 为假直接返回 null）——
-   那句"已到底 · 共 N 首"在曲目表里是冗余信息（标题上方已有 N 首），
-   且会白占一行高度，把最后几首歌顶出可视区。 */
+/*
+ * 底部状态条：**只在加载时渲染**（组件里 `loadingMore` 为真才出现）。
+ *
+ * 翻页全靠滚动（滚到距底 120px 内自动拉下一页），所以这里不再放"加载更多"按钮 ——
+ * 内容就是一枚音波 + 「加载中…」。
+ * 音波复用灵动岛的 `.di-wave`（同一个 keyframes：0.9s、5 根柱子高低错峰），
+ * 只是把它压小一档（岛里 16px 高 / 这里 14px）以配合 9.5px 的说明文字。
+ */
 .song-table-more {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px;
+  padding: 8px;
   border-top: 1px solid var(--miao-line);
   background: color-mix(in srgb, var(--miao-surface-2) 40%, transparent);
   font-size: 9.5px;
   color: var(--miao-muted);
 }
-.song-table-more.is-end {
-  color: var(--miao-faint);
+.song-table-more .di-wave {
+  height: 14px;
+  gap: 2px;
+}
+.song-table-more .di-wave i {
+  width: 2px;
+  background: var(--miao-muted);
 }
 /* 行内的封面与文字块原来是 flex 子项，网格下要占住"歌曲"那一列 */
 .song-table .music-row {
