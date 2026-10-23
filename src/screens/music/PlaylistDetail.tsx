@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import { ArrowLeft, Heart, MoreHorizontal, Play, Plus } from 'lucide-react';
+import { ArrowLeft, Heart, Play, Plus } from 'lucide-react';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl, songKey } from '@music/convert';
-import { Btn, Empty, IconButton, OverlayScrollbar, VirtualList } from '@components/units';
+import { Btn, Empty, OverlayScrollbar, VirtualList } from '@components/units';
 import { useOverlayScrollbar } from '@hooks/useOverlayScrollbar';
 import { Cover, SongRow } from '@screens/music/shared';
 
@@ -65,9 +65,12 @@ export function PlaylistDetail() {
           <ArrowLeft size={12} /> 返回
         </Btn>
         <span className="chip">{meta?.isLiked ? '系统歌单' : '歌单'}</span>
-        <IconButton title="更多">
-          <MoreHorizontal size={14} />
-        </IconButton>
+        {/*
+         * 「更多」按钮**暂不显示**：设计稿 `.pd-top` 右侧那枚 `playlist-more`
+         * 打开的是歌单操作菜单（重命名 / 删除 / 分享），而产品侧这些动作
+         * 还没有实现 —— 摆一个点了没反应的按钮，比不放更糟。
+         * 动作齐了再把这段连同 IconButton 的导入一起放回来。
+         */}
       </div>
 
       <section className="pd-hero">
