@@ -705,7 +705,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
+  height: 34px;
   padding: 0 9px 0 5px;
   border-radius: var(--miao-r-xs);
 }
@@ -714,8 +714,22 @@
   height: 20px;
   font-size: 9px;
 }
-.toolbar-account-name {
-  max-width: 96px;
+/*
+ * 账号文字块（设计稿 \`.ms-account-tx\` 的两行结构）：
+ * **strong 昵称在上（10.5px / 700 / ink）、small 平台·状态在下（9.5px / muted）**。
+ * 昵称单独一行时看不出"这是哪个平台的账号"，所以平台名在第二行、且必须出现。
+ */
+.toolbar-account-tx {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  max-width: 108px;
+  text-align: left;
+  line-height: 1.25;
+}
+.toolbar-account-tx strong {
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -724,14 +738,13 @@
   font-weight: 700;
   color: var(--miao-ink);
 }
-/* 平台名：昵称之后的一小段说明（设计稿 `.ms-account-tx small` 的第一段）。
-   凭昵称看不出是哪个平台的账号 —— 用户可能同时登了两三个，而工具条只显示当前播放源。 */
-.toolbar-account-platform {
-  padding-left: 7px;
-  border-left: 1px solid var(--miao-line);
+.toolbar-account-tx small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 9.5px;
   color: var(--miao-muted);
-  white-space: nowrap;
 }
 .ms-foot {
   flex: 0 0 auto;
