@@ -1,4 +1,4 @@
-﻿import { ChevronLeft, Play, RefreshCw } from 'lucide-react';
+import { ChevronLeft, Play, RefreshCw } from 'lucide-react';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl, songKey } from '@music/convert';
 import type { LeftView } from '@music/store';
@@ -29,18 +29,18 @@ export function LeftPanel() {
   const active: LeftView = leftView === 'tracks' ? 'playlists' : leftView;
 
   return (
-    <section className="music-card">
+    <>
       {/* 三枚 Tab 是**一组**（设计稿 `.ms-tabs` 带 `role="tablist"`）：
           缺 role/aria-selected 时，读屏听到的是三个互不相干的按钮，
           听不出"当前在哪个视图"。 */}
-      <div className="ltabs" role="tablist">
+      <div className="ms-tabs" role="tablist">
         {TABS.map((t) => (
           <Btn
             key={t.id}
             kind="bare"
             role="tab"
             ariaSelected={active === t.id}
-            className={active === t.id ? 'ltab is-on' : 'ltab'}
+            className={active === t.id ? 'ms-tab is-active' : 'ms-tab'}
             onClick={() => {
               // 点「我的歌单」时若正处在曲目下钻态，要一路退回去，不能只切高亮
               if (t.id === 'playlists') backToPlaylists();
@@ -52,16 +52,20 @@ export function LeftPanel() {
         ))}
       </div>
 
-      {leftView === 'playlists' ? (
-        <PlaylistsView />
-      ) : leftView === 'tracks' ? (
-        <LeftTracksView />
-      ) : leftView === 'local' ? (
-        <LocalView />
-      ) : (
-        <HistoryView />
-      )}
-    </section>
+      {/* 视图区自带滚动（设计稿 `.ms-scroll`）：滚动条只出现在这一层，
+          而不是整张左卡一起滚（那样 Tab 会跟着滚走） */}
+      <div className="ms-scroll">
+        {leftView === 'playlists' ? (
+          <PlaylistsView />
+        ) : leftView === 'tracks' ? (
+          <LeftTracksView />
+        ) : leftView === 'local' ? (
+          <LocalView />
+        ) : (
+          <HistoryView />
+        )}
+      </div>
+    </>
   );
 }
 

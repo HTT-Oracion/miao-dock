@@ -4254,7 +4254,7 @@ const MUTATIONS = [
   {
     name: '把 kugou 项从 PLATFORMS 里去掉',
     file: F.platform,
-    find: "  { id: 'kugou', label: '酷狗音乐', short: '酷', color: '#00A0E9', desc: '千万曲库 · 高品质音效' },\n",
+    find: "  { id: 'kugou', label: '酷狗音乐', short: '酷', color: '#6E97B9', desc: '千万曲库 · 高品质音效' },\n",
     replace: '',
     expect: ['PLATFORM.list'],
   },

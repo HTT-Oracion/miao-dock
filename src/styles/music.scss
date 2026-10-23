@@ -660,22 +660,36 @@
  *
  * `overflow: hidden` 放在容器上：三栏各自 `overflow-y:auto`，容器再滚就会出双滚动条。
  */
+/*
+ * 三栏（设计稿 `.music-layout`）：255 / 自适应 / 270，栏间 14，外内距 24 24 12。
+ * 三栏都是**一张白卡**（左资料库 / 中内容 / 正在播放），卡与卡之间靠 14 的沟壑分开，
+ * 而不是靠描边把整片切成三块。
+ */
 .music-layout {
   display: grid;
-  grid-template-columns: 234px minmax(0, 1fr) 252px;
+  grid-template-columns: 255px minmax(0, 1fr) 270px;
+  gap: 14px;
+  padding: 24px 24px 12px;
   min-height: 0;
   overflow: hidden;
   flex: 1;
 }
 
-/* 左资料库：右分隔线 + 半透明底（设计稿 `.music-side`），自身纵向滚动 */
+/*
+ * 左资料库（设计稿 `.music-side`）：**一整张白卡** —— 白面 + 描边 + r26 + 一层弥散阴影，
+ * 内距 12/11/10。卡内三段：`.ms-tabs`（固定）→ `.ms-scroll`（唯一滚动层）→ `.ms-foot`（固定）。
+ * 旧写法是"半透明底 + 右侧一条分隔线"，再在里头套一张 `.music-card` —— 卡中卡，
+ * 层级只剩一档，且滚动时那张内卡不跟着走，边缘会切内容。
+ */
 .music-side {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 12px 10px 8px;
-  border-right: 1px solid var(--miao-line);
-  background: color-mix(in srgb, var(--miao-surface) 60%, transparent);
+  padding: 12px 11px 10px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
   overflow: hidden;
 }
 
@@ -694,9 +708,9 @@
   gap: 7px;
   min-width: 0;
   flex: 1;
-  padding: 4px 6px;
+  padding: 4px;
   border: none;
-  border-radius: 9px;
+  border-radius: 12px;
   background: transparent;
   text-align: left;
   transition: background var(--miao-dur-fast) ease;
@@ -749,20 +763,31 @@
   color: var(--miao-faint);
 }
 
-/* 中内容：唯一随窗口伸缩的一栏，底部留 100 给播放条让位 */
+/*
+ * 中内容（设计稿 `.music-center`）：唯一随窗口伸缩的一栏，**本身是一张白卡**
+ * （白面 + 描边 + r26 + 弥散阴影，内距 24/27/28）。底部不再留 100 给播放条 ——
+ * 播放条现在住在 `.music-layout` 之外（设计稿如此），让位由外层负责。
+ */
 .music-center {
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 22px 100px;
+  padding: 24px 27px 28px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
   scroll-behavior: smooth;
 }
 
-/* 右"正在播放"：左分隔线，自身滚动 */
+/* 右「正在播放」（设计稿 `.music-now`）：一张白卡，内距 22，自身滚动 */
 .music-now {
   min-height: 0;
-  padding: 16px 14px;
-  border-left: 1px solid var(--miao-line);
+  padding: 22px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
   overflow-y: auto;
 }
 
@@ -1149,6 +1174,9 @@
     padding-left: 18px;
     padding-right: 18px;
   }
+  .music-now {
+    padding: 16px;
+  }
 }
 @media (max-width: 1180px) {
   .music-layout {
@@ -1243,24 +1271,25 @@
 
 /* ---------------------------------------------------------------- 左栏视图 Tab */
 /*
- * 三段式 Tab（设计稿 `.ms-tabs` / `.ms-tab`）：**圆角矩形**而不是胶囊 ——
- * 3 等分网格 + 3px 内衬 + r10 外壳 / r7 内块。胶囊壳在 234px 的左栏里会让三个短词
- * 显得"挤在一个药丸里"，而圆角矩形读作"一块分段控件"。
+ * 三段式 Tab（设计稿 `.ms-tabs` / `.ms-tab`）：圆角矩形分段控件。
+ * 3 等分网格 + 3px 内衬 + **r12 外壳 / r9 内块**（设计稿生效值），
+ * 外壳**无描边**（只靠 surface-2 底与白面区分），选中块是一枚白面 + 极轻投影。
  */
-.ltabs {
+.ms-tabs {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 2px;
   flex: 0 0 auto;
-  margin-bottom: 10px;
+  margin-bottom: 0;
   padding: 3px;
   border: 1px solid var(--miao-line);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--miao-surface-2);
 }
-.ltab {
+.ms-tab {
   height: 28px;
-  border-radius: 7px;
+  line-height: 1;
+  border-radius: 9px;
   border: none;
   background: transparent;
   color: var(--miao-muted);
@@ -1275,27 +1304,36 @@
   white-space: nowrap;
   transition:
     background var(--miao-dur-fast) ease,
-    color var(--miao-dur-fast) ease,
-    transform var(--miao-dur-fast) var(--miao-ease-spring);
+    color var(--miao-dur-fast) ease;
 }
-.ltab:hover {
+.ms-tab:hover {
   color: var(--miao-ink);
 }
-.ltab:active {
+.ms-tab:active {
   transform: scale(0.97);
 }
-.ltab.is-on {
+.ms-tab.is-active {
   background: var(--miao-surface);
-  color: color-mix(in srgb, var(--miao-accent) 80%, #000);
-  box-shadow: 0 2px 6px -4px rgba(45, 59, 70, 0.35);
+  color: var(--miao-ink);
+  box-shadow: 0 1px 3px rgba(43, 47, 55, 0.09);
+}
+
+/* 视图区（设计稿 `.ms-scroll`）：左卡里唯一滚动的一层，Tab 与底部账号行固定 */
+.ms-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 2px 8px;
 }
 
 /* ---------------------------------------------------------------- 搜索框 + 搜索源胶囊 */
 /*
- * 中间列顶行（设计稿 `.music-topbar`）：平台胶囊 + 搜索框，**吸顶**。
+ * 中间列顶行（设计稿 `.music-topbar`）：平台胶囊 + 搜索框，**吸顶**，内距 `0 0 8`。
  *
- * 负外边距抵消 `.music-center` 的上/左右内边距，让顶行贴住滚动区边缘；
- * 底色用「底 → 半透明」渐变 + 模糊，滚动内容才会在它下面淡出而不是被硬切。
+ * 内距归**卡片**（`.music-center` 的 24/27/28），顶行自身只留 8 的底距 ——
+ * 设计稿实测顶行 718×40、pad `0 0 8`。负外边距抵消卡片的左右内距，
+ * 让吸顶条铺满卡片内宽；底色是卡面（`--miao-surface`）的渐变 + 模糊，
+ * 滚动内容才会在它下面淡出而不是被硬切。
  */
 .music-topbar {
   position: sticky;
@@ -1305,9 +1343,13 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin: -16px -22px 12px;
-  padding: 14px 22px 9px;
-  background: linear-gradient(180deg, var(--miao-bg) 58%, color-mix(in srgb, var(--miao-bg) 72%, transparent));
+  margin: -24px -27px 12px;
+  padding: 0 0 8px;
+  background: linear-gradient(
+    180deg,
+    var(--miao-surface) 58%,
+    color-mix(in srgb, var(--miao-surface) 72%, transparent)
+  );
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
