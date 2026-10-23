@@ -1,8 +1,8 @@
-import { Plus, Trash2, X } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { providerColor } from '@music/platform';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl, songKey } from '@music/convert';
-import { Btn, Empty, IconButton, VirtualList } from '@components/units';
+import { Btn, Empty, VirtualList } from '@components/units';
 import { SongRow, providerName, relTime } from '@screens/music/shared';
 
 /**
@@ -14,8 +14,6 @@ export function HistoryView() {
   const proxyPort = useMusicStore((s) => s.proxyPort);
   const currentSong = useMusicStore((s) => s.currentSong);
   const playPlaylist = useMusicStore((s) => s.playPlaylist);
-  const appendToQueue = useMusicStore((s) => s.appendToQueue);
-  const removeEntry = useMusicStore((s) => s.removePlayHistoryEntry);
   const clear = useMusicStore((s) => s.clearPlayHistoryList);
 
   /*
@@ -69,28 +67,6 @@ export function HistoryView() {
                 }
                 onClick={play}
                 onPlay={play}
-                actions={
-                  <>
-                    <IconButton
-                      title="加入队列"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        appendToQueue([s]);
-                      }}
-                    >
-                      <Plus size={13} />
-                    </IconButton>
-                    <IconButton
-                      title="从历史移除"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeEntry(s.provider, s.id);
-                      }}
-                    >
-                      <X size={13} />
-                    </IconButton>
-                  </>
-                }
               />
             );
           }}
