@@ -9157,3 +9157,48 @@ AGENTS / README 两处 units 描述同步（主条数未变 ⇒ `check:counts` �
 `.ui-swatch` **17×17 / r50% / 2px rgb(255,255,255) / gap 5 / 5 个**；
 `check:units` **49/49** + 反证 **66/66** · `check:settings` 186/186 + 反证 144/144 ·
 `check:music` 237/237 + 反证 232/232 · `npm run check` **20/20（exit 0）** · `tsc` / `prettier` 通过。
+
+## D-360 · 设计稿是多文件的；"生效值"才是取值对象（2026-10-23）
+
+**一、只 grep html，会得出"设计稿没有这句话"的错误结论。**
+本轮要核两件事：`.btn-xs` 这个类设计稿到底用没用、空闲阈值那行的 `分钟 · 0–1440` 到底有没有。
+我先 `Select-String design.html` + `index.html` ⇒ 两者都是**0 命中**，于是写下"设计稿没用它 / 没有这句"。
+真相是：设计稿是**多文件**的，行的模板住在 `js/settings.js`（`row()` 的第三个参数就是控件 HTML），
+而**两件事都在那儿**：`root-dir` 行的打开钮确实是 `<button class="icon-btn btn-xs">`，
+空闲阈值两行确实是 `<span class="row-hint">分钟 · 0–1440</span>`。
+⇒ **检索设计稿必须递归全类型**（`.html` / `.js` / `.css`），
+"某文件里没有"永远不等于"设计稿没有"。这一条把 D-353 那类"设计稿自己也有缺陷"的判断也收紧一档：
+说它缺，先证明**全部**文件都缺。
+
+**二、同一条提示有两个定义，生效的是后加载的那个文件。**
+`.row-hint` 在 `styles.css` 里是 `.s-row-text .row-hint { 9px; faint }`，
+在 `theme-music.css` 里是 `.settings-main .row-hint { 9.5px; muted }` ——
+同特异度、后者在 `index.html` 里后加载 ⇒ **设置屏的生效值是 9.5px + muted**。
+第一版我按前者写 9px/faint，实测出来就是"比设计稿更小更淡"。
+**取值对象是生效值**，不是"第一条匹配到的规则"；同理，判据比对也应对生效值。
+
+**三、改对了文件却不见效：同一选择器在两个分片各有一份。**
+`.set-ctl-note` 在 `components.scss` 与 `settings.scss` 里各定义了一次，
+而分片顺序是 `… settings → components …` ⇒ **后到的 components 胜**。
+我把 settings 那份改成 9.5/muted，界面纹丝不动；删掉 components 那份才生效。
+这类缺陷只读单个文件永远看不出来，因此新增判据 `STYLE.setCtlNoteSingleSource`：
+**同一选择器只许一个分片定义**，并顺带钉住两条生效值（注解 9.5px·muted、数字框 110 宽）。
+两条反证：把第二份加回 components.scss / 把 9.5 改回 9，各自红在**指定那一条**上。
+
+**四、两处照值改齐**：数字框按设计稿 `.settings-main .s-num` 取 **110 宽 + 右对齐**
+（成列时左边缘对得齐）；`.ui-select` 的箭头 13 → **12**（设计稿那颗 background SVG 的
+width/height 都是 12）。`.btn-xs`（24/r8/11px）**不新增一档**：产品在同一位置用
+`ghost sm`（28，带可见文字「打开」），偏离已在 D-356 登记；为一次性场景引入第二种行内密度
+会让"行内动作都是 28"这条规律失效。
+
+**五、🔴 我自己犯的错，记下来免得再犯。** 改 `e2e/units-structure-check.mjs` 时我图快用了
+PowerShell `(Get-Content -Raw) -replace ... | Set-Content`，把文件里的中文写成了乱码
+（`锛?`），脚本直接语法错误。**这条纪律本来就在台账里**（改文件用编辑工具，不要用 PowerShell
+做字符串替换），我却在"只改一个标识符名"这种小事上破了例。
+恢复方式：`git checkout --` 还原，再用编辑工具重做。**"改动很小"不是省掉工具的理由** ——
+替换类操作与文件大小无关，风险都来自编码往返。
+
+**六、验证**：CDP 实测两行注解文案都是 `分钟 · 0–1440`、**9.5px**、`rgb(126,141,152)`=muted；
+数字框 **110 / right**；箭头 **12×12**；`check:units` **50/50** + 反证 **68/68**（49→50、66→68）·
+`check:settings` 186/186 + 反证 144/144 · `check:music` 237/237 + 反证 232/232 ·
+`npm run check` **20/20（exit 0，counts/docs 按 50 对账）**。
