@@ -94,7 +94,7 @@ export function PlaylistDetail() {
           <div className="song-head" aria-hidden="true">
             <span>#</span>
             <span>歌曲</span>
-            <span>专辑</span>
+            <span>歌手</span>
             <span>时长</span>
             <span />
           </div>
@@ -110,7 +110,7 @@ export function PlaylistDetail() {
                   cover={coverProxyUrl(s.cover, proxyPort)}
                   active={currentSong ? songKey(currentSong) === songKey(s) : false}
                   leading={<span className="song-index">{i + 1}</span>}
-                  meta={<span className="song-album">{s.album || '—'}</span>}
+                  meta={<span className="song-artist">{s.artist || '—'}</span>}
                   onClick={play}
                   onPlay={play}
                 />
