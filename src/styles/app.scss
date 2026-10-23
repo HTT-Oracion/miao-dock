@@ -425,7 +425,49 @@
 /*
  * 内容容器：**不做滚动容器**。
  *
- * 设计稿 `.content { position: relative; flex: 1; min-height: 0; overflow: hidden }` ——
+ * 设计稿 `
+/*
+ * 壳层「主进程未就绪」提示：**不占布局**的右下角小条。
+ *
+ * 之前它是一块占满内容区宽度的 `.notice.is-bad` —— 无论在哪一屏都顶在那里，
+ * 把真正的界面往下挤。而这条信息讲的是"壳层连不上 Rust 侧"，与当前屏无关，
+ * 所以用 `position: fixed` 挂在右下：看得见、不挡内容、不参与任何一屏的布局。
+ */
+.shell-ipc-warn {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 60;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 13px;
+  border: 1px solid var(--miao-warning-line);
+  border-radius: var(--miao-r-sm);
+  background: var(--miao-warning-soft);
+  box-shadow: var(--miao-shadow-2);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--miao-text);
+}
+.shell-ipc-warn b {
+  font-family: var(--md-font-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.shell-ipc-warn span {
+  color: var(--miao-muted);
+  word-break: break-all;
+}
+.content {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+` ——
  * 滚动是**每一屏自己**的事（设置页右栏 / 音乐中栏 / 漫画列表各自 `overflow-y: auto`）。
  * 产品此前在这里写 `overflow: auto`，于是整页成了一个滚动条：屏内的滚动区被撑高、
  * 页头跟着滚走、两个滚动条同时出现。这里改成 hidden，把滚动权交回各屏。

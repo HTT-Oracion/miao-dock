@@ -23,7 +23,7 @@ import {
   persistSidebarLabels,
 } from '@/stores/shell-prefs';
 import type { ThemeMode } from '@/themes/tokens';
-import { Badge, Btn, Dot, Notice } from '@components/units';
+import { Badge, Btn, Dot } from '@components/units';
 import { DynamicIsland } from '@components/DynamicIsland';
 import { NotificationStack } from '@components/NotificationStack';
 import { MusicKernel } from '@components/MusicKernel';
@@ -686,10 +686,19 @@ export function App() {
         {showViewTabs ? <ViewTabs view={view} onView={setView} queueCount={queueDepth} rootDir={libRoot} /> : null}
 
         <div className="content">
+          {/*
+           * IPC 不可用（浏览器里跑 vite dev / 主进程还没起来）**不占内容区**。
+           *
+           * 原先是 `.content` 顶部一块 `Notice kind="bad"`，于是无论什么屏、什么状态，
+           * 内容区永久挂着一条红条 —— 它把真正的屏内容往下挤，而这条信息本身
+           * 是"壳层与主进程之间"的事，不属于任何一屏。改成右下角的轻提示（.shell-ipc-warn）：
+           * 不占布局、不遮挡内容，且只在真的连不上时出现一次。
+           */}
           {ipcError ? (
-            <Notice kind="bad">
-              <b>无法与桌面端主进程通信。</b> {ipcError}
-            </Notice>
+            <div className="shell-ipc-warn" role="status">
+              <b>桌面端主进程未就绪</b>
+              <span>{ipcError}</span>
+            </div>
           ) : null}
 
           {/* 下载页走独立路由（`/engine-download`），由 `DownloadPane` 渲染；
