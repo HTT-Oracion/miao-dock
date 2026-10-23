@@ -1391,11 +1391,39 @@
 }
 
 /* 视图区（设计稿 `.ms-scroll`）：左卡里唯一滚动的一层，Tab 与底部账号行固定 */
+/*
+ * 视图区（设计稿 `.ms-scroll`）：左卡里**唯一**滚动的一层，Tab 与底部账号行固定。
+ *
+ * `overflow-x: hidden` 不是"藏起横向滚动条"，而是**结构上不该有横轴**：
+ * 这一栏里的行都是宽度撑满的块（`.ms-group` → `.ms-caption` + `.ms-row`），
+ * 曾经因为行没有 `width: 100%`、内部又带 7px 内距，内容比容器宽 80px ⇒ 出现横向滚动条。
+ * 现在两侧都收住：容器不滚横轴，组与行都是撑满且 `min-width: 0` 的。
+ */
 .ms-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 12px 2px 8px;
+}
+
+/* 组容器：撑满、且允许内部收缩（否则里面的长歌单名会把组撑宽） */
+.ms-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  width: 100%;
+}
+
+/* 组内的歌单行：撑满组宽 —— 它复用共享的 `.music-row`，这里只补宽度约束 */
+.ms-group .music-row {
+  width: 100%;
+  min-width: 0;
+}
+
+/* 行内文字块允许收缩（省略号生效的前提） */
+.ms-group .music-row-tx {
+  min-width: 0;
 }
 
 /* ---------------------------------------------------------------- 搜索框 + 搜索源胶囊 */
