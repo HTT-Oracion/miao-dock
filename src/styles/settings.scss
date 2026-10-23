@@ -396,11 +396,9 @@
  * 设计稿给的是同一种信息密度更低的盒子（9.5px 正文 + 13px 图标 + 虚线描边），
  * 于是这层折叠结构整套删掉 —— 少一个可点开的东西，也少一份与原文并存的摘要。
  *
- * 盒子本体是 `.set-note-inline`（见本文件后段），本类只负责"它出现在组首"的位置。
+ * 盒子本体与几何都在 `.set-note-inline`（见本文件后段）；它排在**组尾**（最后一张卡之后），
+ * 与设计稿一致，因此不再需要"组首"专用的位置类。
  */
-.set-note-topic {
-  margin: 0 0 12px;
-}
 
 /*
  * 分组 = 一张卡（设计稿 `.s-card`）：白面 + 描边 + 大圆角 + 一层弥散阴影，
@@ -411,7 +409,8 @@
   flex-direction: column;
   margin-bottom: 13px;
   border: 1px solid var(--miao-line);
-  border-radius: var(--miao-r-lg);
+  /* 设计稿 `.s-card` 的生效圆角是 26（= --miao-r-xl），不是 r-lg 的 20 */
+  border-radius: var(--miao-r-xl);
   background: var(--miao-surface);
   box-shadow: var(--miao-shadow-1);
   overflow: hidden;
@@ -423,9 +422,9 @@
 /*
  * 卡片里的"通栏块"：左右各 16px，与 `.set-row` 的文字左缘对齐。
  *
- * `.set-group` 自身**没有 padding** —— 左右 16px 是每一行自己给的（`.set-row` 的
- * `padding: 12px 16px`）。于是任何直接住在卡片里的块若只写 `padding: 10px 0`，
- * 它的文字就会比相邻行向左凸出 16px，看上去"贴到卡片边上"。
+ * `.set-group` 自身**没有 padding** —— 左右 18px 是每一行自己给的（`.set-row` 的
+ * `padding: 14px 18px`）。于是任何直接住在卡片里的块若只写 `padding: 10px 0`，
+ * 它的文字就会比相邻行向左凸出 18px，看上去"贴到卡片边上"。
  *
  * 用一条组选择器统一给，而不是逐个改：这些块的竖向内距各不相同（10 / 12 / 8），
  * 唯一相同的就是左右 —— 分头写会让"下一块又漏了"变成必然。
@@ -438,22 +437,22 @@
 .set-group > .set-manage,
 .set-group > .set-idle,
 .set-group > .set-lic {
-  padding-left: 16px;
-  padding-right: 16px;
+  padding-left: 18px;
+  padding-right: 18px;
 }
 
-/* 小节标题：设计稿 `.s-card-head h3`（12.5px / 700），带下分隔线与 13/16/10 内边距。
+/* 小节标题：设计稿 `.s-card-head`（h3 14px / 700，内距 15/18/12）。
    它是组内分层的唯一手段（C11 判据），不可省 */
 .set-subtitle {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
   margin: 0;
-  padding: 13px 16px 10px;
+  padding: 15px 18px 12px;
   border-bottom: 1px solid var(--miao-line);
   font-family: var(--md-font-display);
   font-weight: 700;
-  font-size: 12.5px !important;
+  font-size: 14px !important;
   letter-spacing: 0.01em !important;
   color: var(--miao-ink);
   text-transform: none;
@@ -466,7 +465,7 @@
 .set-subtitle-name {
   display: block;
 }
-/* 卡头副标题：设计稿 `.s-card-head p`（10px / muted / margin-top 2 / 行高 1.55） */
+/* 卡头副标题：设计稿 `.s-card-head p`（10px / muted / margin-top 2 / 行高 1.55，实测两侧同为 10.6） */
 .set-subtitle-head {
   margin-top: 2px;
   font-family: var(--md-font-body, inherit);
@@ -478,10 +477,14 @@
 }
 
 /*
- * 行：设计稿 `.s-row` —— `grid` 两列、`min-height:56`、`padding:12px 16px`。
+ * 行：设计稿 `.s-row` —— `grid` 两列、`min-height:56`、`padding:14px 18px`。
  *
  * 分隔线只画**顶**线（卡头已有 `border-bottom`，于是第一行不需要再画）：
  * 旧写法同时给了 top 与 bottom，行与行之间会画出双线。
+ *
+ * ⚠️ 左右 18 与卡头的 18 是同一把尺子：设计稿 `.s-card-head` 与 `.s-row` 的左右
+ * 内距**逐值相同**，所以"卡头文字左缘"与"行文字左缘"自然对齐。曾经这里是 16、
+ * 卡头也是 16（两者对齐但都比设计稿窄 2px）；现在一起搬到 18。
  */
 .set-row {
   display: grid;
@@ -489,7 +492,7 @@
   gap: 20px;
   grid-template-columns: minmax(0, 1fr) auto;
   min-height: 56px;
-  padding: 12px 16px;
+  padding: 14px 18px;
   border-top: 1px solid var(--miao-line);
 }
 .set-group > .set-row:first-child,
@@ -516,7 +519,8 @@
   gap: 6px;
   flex-wrap: wrap;
   min-width: 0;
-  font-size: 11.5px;
+  /* 设计稿 `.s-row-text strong` 生效值 13.25（= 12.5 × 1.06） */
+  font-size: 12.5px;
   font-weight: 700;
   color: var(--miao-ink);
 }
@@ -545,7 +549,8 @@
 /* 行内描述：设计稿 `.s-row-text p`（10px / line-height 1.6 / max-width 540） */
 .set-row-why {
   margin-top: 2px;
-  font-size: 10px;
+  /* 设计稿 `.s-row-text p` 生效值 11.13（= 10.5 × 1.06） */
+  font-size: 10.5px;
   line-height: 1.6;
   color: var(--miao-muted);
   max-width: 540px;
@@ -1983,11 +1988,16 @@
   line-height: 1.7;
   color: var(--miao-muted);
 }
-/* 收尾说明条：虚线框 + 极淡底，读成"附注"而不是"又一条设置" */
+/* 收尾说明条：虚线框 + 极淡底，读成"附注"而不是"又一条设置"。
+ *
+ * ⚠️ 几何按设计稿 `.s-note` 的**生效值**：`margin: 0 18px 12px` / `padding: 10px 14px`。
+ * 左右 18 与 `.set-row` / `.set-card-head` 同一把尺子 —— 它是"卡内的一格"，
+ * 不是通栏横幅（铺满 880 = 贴到卡片描边，且与相邻行的文字左缘差 18px）。
+ * 与上一张卡之间的距离由 12 给，不靠"顶到 12"（它排在组尾，上面就是最后一张卡）。 */
 .set-note-inline {
   display: flex;
   gap: 8px;
-  margin: 12px 0 0;
+  margin: 0 18px 12px;
   padding: 10px 14px;
   border: 1px dashed var(--miao-line-strong);
   border-radius: 9px;

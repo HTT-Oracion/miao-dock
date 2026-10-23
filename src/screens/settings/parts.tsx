@@ -121,7 +121,7 @@ export function GroupNote({ children }: { children?: string }) {
   // 没有组说明：整块不渲染（读屏也不念）
   if (!children) return null;
   return (
-    <div className="set-note-inline set-note-topic">
+    <div className="set-note-inline">
       <Info size={13} />
       <span>{emphasis(children)}</span>
     </div>

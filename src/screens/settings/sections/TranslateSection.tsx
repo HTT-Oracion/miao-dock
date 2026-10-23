@@ -763,6 +763,9 @@ export function TranslateSection({
         */}
         <EngineDiag item={itemOf(model, 'engine-diag')} eng={eng} service={status} />
       </div>
+
+      {/* 组说明（设计稿 `.s-note`）：在所有卡片之后收尾 */}
+      <GroupNote>{TRANSLATE.note as string}</GroupNote>
     </>
   );
 }
@@ -785,8 +788,6 @@ function RestartHint({ title, keys, pending }: { title: string; keys: string[]; 
         <>
           <br />
           已保存、尚未生效：<b>{hit.join('、')}</b>。现在重启即生效。
-          {/* 组说明（设计稿 .s-note）：在所有卡片之后收尾，不在组首 */}
-          <GroupNote>{TRANSLATE.note as string}</GroupNote>
         </>
       ) : null}
     </div>

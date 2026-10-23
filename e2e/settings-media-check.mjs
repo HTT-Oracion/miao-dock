@@ -2438,8 +2438,8 @@ add('SIMPLIFY.note.box', 'SIMPLIFY', (ctx) => {
   const gb = fnBody(ctx.s.parts, 'GroupNote');
   if (!gb) problems.push('parts.tsx 里找不到 GroupNote 的实现体');
   else {
-    if (!/className="set-note-inline set-note-topic"/.test(gb)) {
-      problems.push('GroupNote 渲染的不是设计稿那个 .s-note 盒（缺 .set-note-inline / .set-note-topic）');
+    if (!/className="set-note-inline"/.test(gb)) {
+      problems.push('GroupNote 渲染的不是设计稿那个 .s-note 盒（缺 .set-note-inline）');
     }
     if (!/<Info\b/.test(gb)) problems.push('组说明盒缺 13px 的信息图标（设计稿 .s-note .ico）');
     for (const dead of ['set-note-sum', 'set-note-more', 'summary=']) {
@@ -3958,7 +3958,7 @@ const MUTATIONS = [
   {
     name: '把 GroupNote 的盒子换回旧的折叠结构（设计稿那个 .s-note 盒被换掉）',
     file: F.parts,
-    find: '<div className="set-note-inline set-note-topic">',
+    find: '<div className="set-note-inline">',
     replace: '<div className="set-note">',
     expect: ['SIMPLIFY.note.box'],
   },
