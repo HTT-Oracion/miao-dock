@@ -946,23 +946,31 @@
     transform: none;
   }
 }
+/*
+ * 节头（设计稿 `.mc-section-head`）：**底对齐**（标题两行、右侧一枚 link-btn 贴底），
+ * gap 10、下距 9。`.music-card-title` 就是设计稿的 `h2`（15px / 700），
+ * `.music-card-sub` 是它的 `.sub`（10px / muted / 上距 1）。
+ */
+.mc-section-head,
 .music-card-hd {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-end;
+  gap: 10px;
   flex: 0 0 auto;
-  margin-bottom: 10px;
+  margin-bottom: 9px;
 }
 .music-card-title {
   font-family: var(--md-font-display);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.005em;
   color: var(--miao-ink);
+  line-height: 1;
 }
 .music-card-sub {
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--miao-muted);
+  margin-top: 1px;
   flex-shrink: 0;
 }
 /* 卡片内的主体：占满余高，内部列表各自滚动 */
@@ -974,10 +982,12 @@
 }
 /* 右栏正文（搜索结果 / 发现）同构于 body */
 
-.music-sec {
+/* 首页的节（设计稿 `.mc-section`）：节与节之间 20 的固定间距，节内是"节头 + 内容" */
+.mc-section {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
+  margin-top: 20px;
 }
 
 /*
@@ -987,19 +997,30 @@
  * 「表面 → 次级表面 → 杏奶淡」的 120° 渐变，右上角一枚极淡的杏奶圆环 —— 这两笔是
  * 设计稿里唯一的"装饰"，去掉后这块就退化成一张普通白卡，与下面的榜单区没有主次。
  */
+/*
+ * 首页 Hero（设计稿 `.music-hero` 的**生效值**，取自后加载的 theme 分片）：
+ * `1.28fr / .72fr` 两列、gap 20、内距 `clamp(24px, 2.6vw, 38px)`、
+ * 圆角 `--r-2xl`(32)、最小高 `clamp(230px, 25vh, 300px)`。
+ *
+ * ⚠️ 基础表写的是 `1.25fr/.75fr + gap 18 + padding 22/24 + --r-xl` —— 按基础表改会得到
+ * 一圈明显更窄的卡片（实测差 16px 内距与 6px 圆角）。
+ */
 .music-hero {
   position: relative;
   overflow: hidden;
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(140px, 0.75fr);
-  gap: 18px;
+  grid-template-columns: minmax(0, 1.28fr) minmax(200px, 0.72fr);
+  gap: 20px;
   align-items: center;
-  padding: 22px 24px;
-  border: 1px solid var(--miao-line);
-  border-radius: var(--miao-r-xl);
-  background: linear-gradient(120deg, var(--miao-surface) 0%, var(--miao-surface-2) 60%, var(--miao-accent-soft) 140%);
+  padding: clamp(24px, 2.6vw, 38px);
+  border: 1px solid color-mix(in srgb, var(--miao-primary-line) 70%, var(--miao-line));
+  border-radius: var(--miao-r-2xl);
+  background:
+    radial-gradient(520px 260px at 88% 12%, rgba(255, 255, 255, 0.7), transparent 62%),
+    radial-gradient(460px 300px at 8% 96%, rgba(223, 164, 125, 0.22), transparent 64%),
+    linear-gradient(128deg, var(--miao-primary-soft) 0%, var(--miao-surface-2) 48%, var(--miao-accent-soft) 120%);
   box-shadow: var(--miao-shadow-1);
-  min-height: 194px;
+  min-height: clamp(230px, 25vh, 300px);
 }
 .music-hero::after {
   content: '';
@@ -1097,10 +1118,11 @@
  * 图标底是主色淡片，右侧箭头常显：这三张卡是"去别处"的入口，
  * 没有箭头就会被读成三块静态信息。
  */
+/* 三枚入口卡（设计稿 `.entry-grid` 的**生效值**：gap 12，卡 r16 / padding 14） */
 .entry-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 9px;
+  gap: 12px;
   margin-top: 12px;
 }
 .entry-card {
