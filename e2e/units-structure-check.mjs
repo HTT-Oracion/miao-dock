@@ -1399,6 +1399,35 @@ add('STYLE.sharedControlGeometry', 'STYLE', (s) => {
   return { ok: bad.length === 0, detail: bad.length ? bad.join('、') : '' };
 });
 
+add('STYLE.setCtlNoteSingleSource', 'STYLE', (s) => {
+  /*
+   * `.set-ctl-note`（控件旁 9.5px 注解）必须**只有一个分片在定义**，而且必须是 settings.scss。
+   * 起因：它曾在 components.scss 与 settings.scss 里各有一份，而 components 分片在 settings 之后
+   * ⇒ **后到者胜**：改 settings 里那份，界面纹丝不动（本轮就是这么撞上的）。
+   * 这类"改对了文件却不见效"的缺陷，只读单个文件永远看不出来。
+   * 顺带钉住两条**生效值**（设计稿 theme-music.css 那一层的 `9.5px + muted`，与 110 宽的数字框）。
+   */
+  const bad = [];
+  const shards = s.styleShardCode || {};
+  const has = (code) => /(^|\n)\.set-ctl-note\s*\{/.test(stripComments(code || ''));
+  const owners = Object.keys(shards).filter((f) => has(shards[f]));
+  if (owners.length !== 1) bad.push(`.set-ctl-note 被 ${owners.length} 个分片定义（${owners.join(' / ') || '无'}）`);
+  else if (owners[0] !== 'settings.scss') bad.push(`.set-ctl-note 定义在 ${owners[0]}（应在 settings.scss）`);
+  const settings = stripComments(shards['settings.scss'] || '');
+  let checked = 0;
+  const want = [
+    ['注解字号 9.5px', /\.set-ctl-note\s*\{[^}]*\n\s*font-size:\s*9\.5px\s*;/],
+    ['注解色 muted', /\.set-ctl-note\s*\{[^}]*\n\s*color:\s*var\(--miao-muted\)\s*;/],
+    ['数字框 110 宽', /\.set-idle-line\s+\.ui-num\s*\{[^}]*\n\s*width:\s*110px\s*;/],
+  ];
+  for (const [label, re] of want) {
+    checked += 1;
+    if (!re.test(settings)) bad.push(`${label} 不符（没量到，或值与设计稿不同）`);
+  }
+  if (checked < 3) bad.push(`只量到 ${checked} 条（应 >= 3）`);
+  return { ok: bad.length === 0, detail: bad.length ? bad.join('；') : '' };
+});
+
 add('STYLE.noScssSyntax', 'STYLE', (s) => {
   // 分片内保持**扁平写法**：本阶段不用 SCSS 语法糖。
   // 理由不是审美，是断言：本仓检查脚本大量用 `[^}]*` 取块，嵌套会改变块结构 →
@@ -1960,6 +1989,22 @@ const MUTATIONS = [
     replace:
       '  width: 16px;\n  height: 16px;\n  padding: 0;\n  border: 1px solid var(--miao-line);\n  border-radius: 9px;',
     expect: ['STYLE.sharedControlGeometry'],
+  },
+  {
+    // 本轮真撞上的缺陷：同一选择器在两个分片各有一份，后到的 components 静默盖住 settings
+    name: '把 .set-ctl-note 的第二份定义加回 components.scss（改 settings 里那份就再也不生效）',
+    file: path.join(F.stylesDir, 'components.scss'),
+    find: '.ui-vlist-item {\n  position: absolute;',
+    replace:
+      '.set-ctl-note {\n  font-size: 9px;\n  color: var(--miao-faint);\n}\n.ui-vlist-item {\n  position: absolute;',
+    expect: ['STYLE.setCtlNoteSingleSource'],
+  },
+  {
+    name: '把控件旁注解从 9.5px 改成 9px（设计稿设置在 theme-music 那层的生效值就是 9.5）',
+    file: path.join(F.stylesDir, 'settings.scss'),
+    find: '.set-ctl-note {\n  font-size: 9.5px;',
+    replace: '.set-ctl-note {\n  font-size: 9px;',
+    expect: ['STYLE.setCtlNoteSingleSource'],
   },
   {
     name: '在分片里用 SCSS 变量承载颜色（令牌只走 var(--md-*) / var(--miao-*)，否则深色模式就不成立了）',

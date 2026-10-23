@@ -691,13 +691,15 @@ export function TranslateSection({
                 value={o.idle.llm.min}
                 min={0}
                 max={IDLE_MIN_MAX}
-                suffix="分钟"
                 disabled={busy}
                 onChange={(v) => void eng.save({ idleLlmMin: v })}
               />
             ) : (
               <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
             )}
+            {/* 设计稿这两行都带 `分钟 · 0–1440` 的附注 —— 上界必须写出来，
+                输入框本身只在越界时静默退回上一合法值，用户看不见 1440 这个天花板 */}
+            <span className="set-ctl-note">分钟 · 0–1440</span>
             <span className="set-idle-tag is-now">保存后立刻生效</span>
           </div>
 
@@ -709,13 +711,13 @@ export function TranslateSection({
                 value={o.idle.vision.min}
                 min={0}
                 max={IDLE_MIN_MAX}
-                suffix="分钟"
                 disabled={busy}
                 onChange={(v) => void eng.save({ idleVisionMin: v })}
               />
             ) : (
               <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
             )}
+            <span className="set-ctl-note">分钟 · 0–1440</span>
             <span className="set-idle-tag is-restart">需重启引擎</span>
           </div>
 

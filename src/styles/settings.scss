@@ -1840,9 +1840,20 @@
   font-size: 10px;
 }
 
+/*
+ * 控件旁注解（设计稿 `分钟 · 0–1440` 那一档）：9.5px + muted。
+ * 设计稿里这条提示被**两个文件**写过：`styles.css` 的 `.s-row-text .row-hint` 是 9px + faint，
+ * 但设置屏真正生效的是后加载的 `theme-music.css` 里 `.settings-main .row-hint` = **9.5px + muted**
+ * （同特异度、后到者胜）。照前者写会得到"比设计稿更小更淡"的一档 —— 判据要对着**生效值**，
+ * 不是对着第一条匹配到的规则。
+ */
 .set-ctl-note {
-  font-size: 10px;
-  color: var(--miao-faint);
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+/* 设计稿 `.settings-main .s-num`：设置页的数字框 110 宽、右对齐、等宽数字（成列时左边缘对得齐） */
+.set-idle-line .ui-num {
+  width: 110px;
 }
 
 .set-state {
