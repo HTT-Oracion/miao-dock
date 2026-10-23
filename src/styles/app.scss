@@ -87,7 +87,7 @@
  */
 .nav-item {
   flex: 0 0 auto;
-  border-radius: 14px;
+  border-radius: 18px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -114,10 +114,24 @@
  * `.nav-item.is-global` 的 44×44 则留在 CSS 里：那个按钮**恒为**纯图标，
  * 只有一种形态，也就不存在"两处数字对不上"的可能。
  */
+/*
+ * 悬停（设计稿 `.nav-item:hover` 的**生效值**，取自 theme 分片）：
+ * 半透明白底 `rgba(255,255,255,.55)` + 抬 2px，过渡走 `--ease-spring`。
+ *
+ * 基础表写的是 `--surface-2` 底 + 抬 1px —— 那是"另一种观感"：纯色底在玻璃侧栏上
+ * 显得像一块贴上去的方块，而半透明白会让它读成"浮起来的一格"。
+ * 深色主题另有 `rgba(255,255,255,.06)`。
+ */
 .nav-item:hover {
-  background: var(--miao-surface-2);
+  background: rgba(255, 255, 255, 0.55);
   color: var(--miao-ink);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+}
+html[data-theme='dark'] .nav-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.nav-item:active {
+  transform: scale(0.94);
 }
 .nav-item.is-active {
   background: var(--miao-surface);
