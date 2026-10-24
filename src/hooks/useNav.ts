@@ -19,6 +19,15 @@ export interface Nav {
   /** 覆盖层命中（如 `/engine-download`）；`null` = 正常屏内容 */
   overlay: OverlayId | null;
   setScreen: (s: Screen) => void;
+  /**
+   * 去设置页并**指定分组**（深链 `#/settings?section=x`）。
+   *
+   * 🔴 为什么需要它：`setScreen('settings')` 只改路径、不带 query ⇒ 设置页按
+   *    `parseSection(null)` 回落到「① 通用」。而引导页的「查看完整诊断 / 服务设置」
+   *    指向的是**「② 翻译链路」里的引擎诊断** —— 落在通用组等于把用户丢在错误的页面上，
+   *    他得自己再去左栏找一次。这条入口就是"直接送到该去的那一组"。
+   */
+  setScreenSection: (s: Screen, section: string) => void;
   setView: (v: TranslateView) => void;
 }
 
@@ -37,6 +46,17 @@ export function useNav(): Nav {
 
   const setScreen = useCallback((s: Screen) => navigate(pathOfScreen(s, view)), [navigate, view]);
   const setView = useCallback((v: TranslateView) => navigate(pathOfView(v)), [navigate]);
+  /**
+   * 带分组去设置页。
+   *
+   * 参数写进 **hash**（`#/settings?section=x`）而不是 search —— HashRouter 下只有前者是
+   * 合法形态；写到 search 会变成 `?section=x#/settings`，刷新后设置页读不到（见
+   * `SettingsScreen` 的 `readSectionParam` 与它的注释）。
+   */
+  const setScreenSection = useCallback(
+    (s: Screen, section: string) => navigate(`${pathOfScreen(s)}?section=${encodeURIComponent(section)}`),
+    [navigate],
+  );
 
-  return { screen, view, overlay, setScreen, setView };
+  return { screen, view, overlay, setScreen, setScreenSection, setView };
 }

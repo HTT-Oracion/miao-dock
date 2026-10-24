@@ -66,7 +66,7 @@ const EMPTY_ENGINE_PROCESS: EngineProcessView = { engine: null, llm: null, warme
  * 判定集中在 `isBlockedWhenNotReady` 一处，避免拦截纪律散落到多处失效。
  */
 export function App() {
-  const { screen, view, overlay, setScreen, setView } = useNav();
+  const { screen, view, overlay, setScreen, setScreenSection, setView } = useNav();
   const navigate = useNavigate();
   const [mode, setMode] = useState<ThemeMode>(() => initialMode());
   /**
@@ -632,6 +632,7 @@ export function App() {
     screen,
     view,
     setScreen,
+    setScreenSection,
     setView,
     status,
     source,

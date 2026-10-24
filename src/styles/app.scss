@@ -198,6 +198,23 @@ html[data-theme='dark'] .nav-item:hover {
 .nav-dl-spin {
   animation: miao-spin 1.1s linear infinite;
 }
+/*
+ * 三态着色与"只在下载中转圈"（设计稿 `.nav-download[data-state]`）。
+ * 🔴 旋转环**只在进行中**出现：断了 / 好了还转圈，读起来像"它还在动"。
+ *    颜色只做辅助，状态词在 `aria-label` / `title` 里同步给出。
+ */
+.is-download .nav-dl-spin {
+  display: none;
+}
+.is-download[data-state='running'] .nav-dl-spin {
+  display: inline-flex;
+}
+.is-download[data-state='done'] {
+  color: var(--miao-success);
+}
+.is-download[data-state='paused'] {
+  color: var(--miao-warning);
+}
 @keyframes nav-dl-spin {
   to {
     transform: rotate(360deg);

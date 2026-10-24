@@ -223,6 +223,12 @@ export function Sidebar({
           <button
             type="button"
             className="nav-item is-global is-download"
+            /*
+             * 🔴 `data-state` 是设计稿的状态载体（`setDownloadEntry` 里 `btn.dataset.state = state`）：
+             *    旋转小圈与"完成/中断"的着色全由 CSS 按这个属性给，不在 JS 里判。
+             *    少了它，三态在侧栏里是同一个灰，用户分不出"在下"与"断了"。
+             */
+            data-state={downloadEntry}
             style={{ width: SIDEBAR.globalItem.w, height: SIDEBAR.globalItem.h }}
             aria-label={DOWNLOAD_META[downloadEntry].label}
             title={DOWNLOAD_META[downloadEntry].label}

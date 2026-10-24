@@ -616,6 +616,72 @@ JSX 里补一层 `<div className="ed-wrap">` 包住页头与 `.ed-scroll`。
 
 ---
 
+## D-391 · 引导页的「查看完整诊断」落错了分组（2026-10-25）
+
+引导页三处入口（「查看完整诊断 / 服务设置」）都调 `setScreen('settings')` —— 那只改路径、
+**不带 query**，设置页于是按 `parseSection(null)` 回落到「① 通用」。
+
+而引擎诊断住在「② 翻译链路」组里。真机实测（CDP）：
+
+```
+点击前：引导页（引擎未装配态）
+点击后：hash "#/settings?section=general"，左栏高亮「通用」，hasDiag: false
+```
+
+用户被丢在错误的页面上，还得自己再去左栏找一次 —— 而这正是"指引入口"要避免的事。
+
+**修法**：`useNav` 加 `setScreenSection(screen, section)`，把分组写进 **hash**
+（`#/settings?section=x`；HashRouter 下写到 search 会变成 `?section=x#/settings`，刷新后读不到）。
+引导页入口改走它，落到 `translate`。
+
+修后实测：`hash "#/settings?section=translate"`，左栏高亮「翻译服务」，
+该组内确实有「运行状态 / 诊断详情」。
+
+> 为什么不直接改 `setScreen` 的签名：它是侧栏 / 视图 Tab 共用的既有入口，
+> 加参数会波及全仓；新增一个具名入口的代价小得多，且语义更清楚（"带分组去设置页"）。
+
+---
+
+## D-392 · 侧栏下载入口缺 `data-state`，三态在视觉上是同一个灰（2026-10-25）
+
+设计稿的下载入口（`#downloadEntry`，在设置之上）是三态一体的：
+
+```js
+btn.dataset.state = state;                       // running / paused / done / hidden
+btn.querySelector('.nav-dl-spin').style.display = state === 'running' ? 'block' : 'none';
+```
+
+```css
+.nav-download[data-state="done"]   { color: var(--success); }
+.nav-download[data-state="paused"] { color: var(--warning); }
+```
+
+产品把三态全塞进了 `DOWNLOAD_META`（**图标换了、颜色没换**），于是"下载中"与"下载断了"
+在侧栏里是同一个灰 —— 而设计稿正是靠颜色区分的。
+
+**修法**：
+
+- 按钮补 `data-state={downloadEntry}`；
+- CSS 补三态着色，并把转圈收成**只在 running** 出现
+  （断了 / 好了还转圈，读起来像"它还在动"）。
+
+真机实测（等过渡 140ms 走完再读）：
+
+| `data-state` | color | 转圈 |
+|---|---|---|
+| `running` | `rgb(126,141,152)`（muted，默认） | `flex` |
+| `paused` | `rgb(190,138,87)` = `--miao-warning` | `none` |
+| `done` | `rgb(111,154,131)` = `--miao-success` | `none` |
+
+位置与可见性沿用既有口径（在设置之上、`hidden` 时不渲染），`check:ia` 的 C8f 与
+`check:engine-download-entry` 的 E2 都仍是绿的。
+
+> ⚠️ 取证教训：`getComputedStyle` 读到的是**过渡中间值**。第一次在同一个 tick 里
+> 改属性 + 读颜色，读到的是旧值（三态全是灰）—— 差点误判成"规则没生效"。
+> 正确做法是等过渡时长（`.nav-item` 的 `color` 过渡是 140ms）之后再读。
+
+---
+
 ## G-01 · 待裁定：下载前检查的「磁盘剩余」与「模型源延迟」
 
 设计稿 `.ed-preflight` 的第三、四格是这两项，服务端**没有出口**

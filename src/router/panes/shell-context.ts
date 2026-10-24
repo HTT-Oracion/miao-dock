@@ -34,6 +34,8 @@ export interface ShellCtx {
   screen: Screen;
   view: TranslateView;
   setScreen: (s: Screen) => void;
+  /** 去设置页并指定分组（引导页的「查看完整诊断 / 服务设置」直接落到引擎诊断那一组） */
+  setScreenSection: (s: Screen, section: string) => void;
   setView: (v: TranslateView) => void;
   // 服务与翻译来源
   status: ServiceStatus | null;

@@ -21,6 +21,7 @@ export function TranslatePane() {
     startService,
     restart,
     setScreen,
+    setScreenSection,
     openEngineDownload,
     applyDownload,
     view,
@@ -55,8 +56,10 @@ export function TranslatePane() {
         download={download}
         onStart={() => void startService()}
         onRestart={() => void restart()}
-        // D1：「运行时未装配」态上的指引入口 —— 送到设置页（翻译服务组里有引擎诊断与装法）
-        onOpenGuide={() => setScreen('settings')}
+        // D1：「运行时未装配」态上的指引入口 —— 送到设置页的**翻译链路**组
+        // （引擎诊断与装法住那一组；只 `setScreen('settings')` 会落到「① 通用」，
+        //   等于把用户丢在错误的页面上，还得自己再去左栏找一次）
+        onOpenGuide={() => setScreenSection('settings', 'translate')}
         // G5：点「开始下载」⇒ 发起下载并切到独立下载页。
         onOpenDownload={openEngineDownload}
         onDownloadStarted={applyDownload}

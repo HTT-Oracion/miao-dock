@@ -3,6 +3,9 @@ import { useNavigate, useOutletContext } from 'react-router-dom';
 import { Btn } from '@components/units';
 import { errorText } from '@/ipc';
 import { useEngineDownload, useToasts } from '@hooks';
+import { toastBus } from '@/stores/toastBus';
+import { useDemoOverride } from '@/stores/demo-override';
+import { demoDownload } from '@screens/manga/demo';
 import { DEFAULT_PATH } from '@/router/routes';
 import { assemblyNotes } from '@screens/manga/assembly';
 import type { ShellCtx } from '@/router/panes/shell-context';
@@ -64,6 +67,8 @@ function idleDownloadView(): ModelDownloadView {
  */
 export function DownloadPane() {
   const { status, download, dismissDownload, applyDownload } = useOutletContext<ShellCtx>();
+  /** 当前是否处在演示态（演示夹具的下载任务在服务端并不存在，动作不能真打后端） */
+  const demoActive = useDemoOverride((s) => s.active);
   const navigate = useNavigate();
   const { push } = useToasts();
   const { start } = useEngineDownload();
@@ -94,8 +99,18 @@ export function DownloadPane() {
   /**
    * 暂停：服务端杀下载子进程、`.part` 留盘 ⇒ 之后「继续下载」接着下。
    * 失败（例如刚好自己下完了，服务端回 409 `DOWNLOAD_NOT_RUNNING`）如实弹错，不假装成功。
+   *
+   * 🔴 **演示态下不打后端**：演示面板把"五段装配中"做成夹具（`screens/manga/demo.ts`），
+   *    服务端并没有这条下载任务。真打过去会收到 409「当前没有正在进行的下载」，
+   *    而界面上明明显示"下载中" —— 用户看到的是自相矛盾的两句话。
+   *    演示态该做的是**在夹具上模拟暂停**，不是去杀一个不存在的进程。
    */
   const pause = async () => {
+    if (demoActive) {
+      applyDownload(demoDownload(download, 'unassembled'));
+      toastBus.push('已暂停下载（演示）', 'info', '演示态不会真的中断后台任务');
+      return;
+    }
     try {
       const r = await pauseEngineDownload();
       applyDownload(r.download);
