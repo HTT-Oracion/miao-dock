@@ -735,6 +735,76 @@ if (hashPath !== '/settings') return;   // ← 这一行
 
 ---
 
+## D-395 · 进度环的三个真缺陷：动画没接线、起点会被抢、overflow 被削（2026-10-25）
+
+用户要求「根据进度把环的一部分高亮」。逐项量真机，发现**三处**与设计稿不符，
+其中第一处让"高亮"这个概念本身有一半是假的。
+
+### ① `.ui-ring-spin` 从未被应用 —— 旋转动画压根没跑过
+
+组件注入的样式是：
+
+```css
+@keyframes ui-ring-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ui-ring-spin { animation: none !important; } }
+```
+
+只有 `@keyframes` 与"如何关掉它"，**从来没有 `animation` 属性**。
+真机实测 `animationName: "none"` / `animationDuration: "0s"` ⇒ 关键帧是死代码。
+于是"不确定态"只剩一圈静止的 25% 弧 —— 与设计稿"看得见在动"正好相反。
+
+补 `.ui-ring-spin { animation: ui-ring-spin 1.2s linear infinite; }`（周期与侧栏
+下载入口的 `.nav-dl-spin` 同值）。修后实测：`animationName: ui-ring-spin`、
+`1.2s / linear / infinite`，150ms 转过 **44.2°**（理论 45°，1.2s 周期）。
+
+> ⚠️ 写这条时踩了一个坑：说明文字用反引号包了 `@keyframes`，而它位于 **模板字符串内部**
+> ⇒ 提前闭合，直接炸 TS1005 / TS1146。说明必须留在模板字符串外面。
+
+### ② 起点 -90° 会被 CSS 动画覆盖（这正是①的连带风险）
+
+原来 `-90°` 写在 circle 的 SVG `transform` **属性**上。而不确定态的旋转是 **CSS transform**
+（`.ui-ring-spin` 的 `to { rotate(360deg) }`）—— CSS transform 会**覆盖** SVG 的 transform 属性，
+起点从 12 点跳回 3 点。两处争同一个属性，属于"改对一处、坏另一处"的典型。
+
+改法照设计稿：`-90°` 挪到 **svg 整体**（`.ed-ring { transform: rotate(-90deg) }`），
+circle 上不再写 transform 属性。实测 `svgTransform: matrix(0,-1,1,0,0,0)`（= -90°）、
+`circleHasTransformAttr: false`，旋转时 `svgStartKept: true`。
+
+### ③ `overflow: hidden` 会把 `linecap: round` 的端点削平
+
+设计稿 `.ed-ring` 是 `overflow: visible`；产品没写（SVG 的 UA 默认是 hidden）。
+补上，与设计稿一致。
+
+### 高亮弧本身是对的（这条是"已验证"，不是修复）
+
+`stroke-dasharray = 2πr`、`stroke-dashoffset = 2πr × (1 - pct/100)`，
+实测 0/25/50/75/100 → 弧长占比 **0/25/50/75/100%**，线性精确。
+环几何也复核过：`r=72.25` / `stroke=7.44` / 外径 **151.94**（设计稿 170 画布装 160 viewBox 换算值），
+svg 与环心 `dx=0 / dy=0` 同心。
+
+静止态（`spinning: false`）动画不开、角度恒定 —— 这是对的，不是缺陷。
+
+### 取证
+
+| 项 | 结果 |
+|---|---|
+| 动画绑定 | `ui-ring-spin / 1.2s / linear / infinite` |
+| 旋转实测 | 150ms → 44.2°（理论 45°） |
+| 起点 | `svgTransform = matrix(0,-1,1,0,0,0)`，circle 无 transform 属性 |
+| overflow | `visible`（同设计稿） |
+| 弧长映射 | 0/25/50/75/100 → 0/25/50/75/100% |
+| 几何 | r 72.25 · stroke 7.44 · 外径 151.94 · 同心 dx/dy = 0 |
+| 六态回归 | 6/6，overflow/wrap 全 0，console 无 error |
+| 门 | `npm run check` 20/20 · `check:notready-state` 21/21 + 反证 32/32 · `check:units` 58/58 · `check:settings` 184/184 |
+
+### 连带修掉的陈断言
+
+G10 钉的是 `onOpenGuide={() => setScreen('settings')}`，而 D-391 已把入口改成
+`setScreenSection('settings', 'translate')` ⇒ 恒红。判据跟到新写法，并把
+「落到 translate 分组」一并钉住（比改回旧写法更严）。
+
+---
+
 ## G-01 · 待裁定：下载前检查的「磁盘剩余」与「模型源延迟」
 
 设计稿 `.ed-preflight` 的第三、四格是这两项，服务端**没有出口**

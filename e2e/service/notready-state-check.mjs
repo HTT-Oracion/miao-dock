@@ -360,7 +360,8 @@ const asm = fs.readFileSync(ASSEMBLY_TS, 'utf8');
   const pane = fs.readFileSync(TRANSLATE_PANE, 'utf8');
   check(
     'G10 翻译屏装配件把指引入口传给未就绪屏（onOpenGuide → 设置页）',
-    /onOpenGuide=\{\(\) => setScreen\('settings'\)\}/.test(pane),
+    // D-391 起入口落到「翻译链路」组（引擎诊断住那一组），不再是裸 setScreen
+    /onOpenGuide=\{\(\) => setScreenSection\('settings',\s*'translate'\)\}/.test(pane),
     null,
   );
   check(
