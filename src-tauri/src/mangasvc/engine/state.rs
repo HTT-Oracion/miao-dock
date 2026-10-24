@@ -1283,17 +1283,28 @@ impl DownloadProgressState {
     }
 }
 
-/// 递归扫描 `root`：发现 `.part` 续传断点 ⇒ 返回 true（不清除）。
+/// 扫描 `root` 及其**一级子目录**：发现 `.part` 续传断点 ⇒ 返回 true（不清除）。
+///
+/// 🔴 **不做全树递归**：这个函数在每次 `/engine/status` 都被调用（`canResume` 字段），
+///    而模型根 + 运行时根是 15 GB 级、上万文件的树 —— 全树走一遍在冷缓存下实测 **94 秒**，
+///    用户打开下载页要等一分半。`.part` 只会落在归档落点与模型落点（清单 `dest` 最多一层），
+///    所以扫两层就够；判据仍是"文件名以 `.part` 结尾"，没有放宽。
 fn has_part_files(root: &Path) -> bool {
-    walk_parts(root, false)
+    walk_parts(root, 0, MAX_PART_DEPTH, false)
 }
 
-/// 递归扫描 `root`：发现 `.part` 即删除（「重新下载」清断点）。
+/// `.part` 可能出现的最大目录深度（0 = 只扫 `root` 本身）。
+///
+/// 依据：模型清单的 `dest` 形如 `visual/detector.safetensors`（一层），
+/// 归档缓存在 `.download-cache/`（一层）。留一层余量 ⇒ 2。
+const MAX_PART_DEPTH: u32 = 2;
+
+/// 扫描 `root` 及其一级子目录：发现 `.part` 即删除（「重新下载」清断点）。
 fn clear_part_files(root: &Path) {
-    walk_parts(root, true);
+    walk_parts(root, 0, MAX_PART_DEPTH, true);
 }
 
-fn walk_parts(root: &Path, clear: bool) -> bool {
+fn walk_parts(root: &Path, depth: u32, max_depth: u32, clear: bool) -> bool {
     let mut found = false;
     let entries = match std::fs::read_dir(root) {
         Ok(e) => e,
@@ -1306,7 +1317,8 @@ fn walk_parts(root: &Path, clear: bool) -> bool {
             Err(_) => false,
         };
         if is_dir {
-            if walk_parts(&p, clear) {
+            // 超过深度就不再往下钻（`.part` 不会在更深的层级出现，见 MAX_PART_DEPTH）
+            if depth < max_depth && walk_parts(&p, depth + 1, max_depth, clear) {
                 found = true;
                 if !clear {
                     return true;

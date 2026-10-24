@@ -93,9 +93,18 @@ export function heroTitleOf(
   interrupted: boolean,
   idle: boolean,
   step: { title: string } | null,
+  /** 中断态是否**可续传**（产品的"暂停" = interrupted + 可续传） */
+  paused: boolean,
 ): string {
   if (done) return '全部文件校验通过';
-  if (interrupted) return '下载中断 · 已完成的部分会保留';
+  /*
+   * 设计稿把"中断"分成两种：
+   *   · **可续传** ⇒ `已暂停在「第 N 段」`（用户知道停在哪、也知道能接着下）；
+   *   · **校验失败** ⇒ `下载中断 · 已完成的部分会保留`。
+   * 产品把"暂停"建模成 interrupted + 可续传，所以这里按 `paused` 分叉 ——
+   * 合成一句会让"暂停"看起来像"出错"。
+   */
+  if (interrupted) return paused ? `已暂停在「${step?.title ?? ''}」` : '下载中断 · 已完成的部分会保留';
   if (idle) return '准备好后开始装配';
   return step?.title ?? '准备好后开始装配';
 }
@@ -111,16 +120,15 @@ export function heroDescOf(
 ): string {
   if (done) return '引擎已可以启动，重启本地服务后生效。';
   if (interrupted) {
-    return (
-      view.interruptedReason ??
-      (view.tail.length ? view.tail[view.tail.length - 1] : '原因未知；已完成的部分不会丢失。')
-    );
+    // 可续传（暂停）⇒ 设计稿那句「已下载的部分会保留，随时可以从断点继续。」
+    if (paused) return '已下载的部分会保留，随时可以从断点继续。';
+    // 校验失败 ⇒ 优先说**真实原因**；没有原因才退回设计稿那句
+    return view.interruptedReason ?? '当前文件校验失败；已完成的部分不会丢失。可以继续下载，或从头重新下载。';
   }
   if (idle) {
     // 🔴 不写死体积：设计稿那句「约 3.6 GB」是演示数据，真实体积在预检格里按清单算
     return '支持断点续传。确认保存位置与模型源后再开始。';
   }
-  if (paused) return '已下载的部分会保留，随时可以从断点继续。';
   return step?.sub ?? '进度只来自真实下载事件。';
 }
 

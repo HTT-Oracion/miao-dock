@@ -64,6 +64,9 @@ const ENGINE_DOWNLOAD_TS = path.join(ROOT, 'src', 'ipc', 'engine-download.ts');
 const MODELS_MANIFEST = path.join(ROOT, 'engine', 'models.manifest.json');
 /// W12：下载视图（第 1/第 2 阶段文案）。
 const DOWNLOAD_PANEL_TSX = path.join(ROOT, 'src', 'screens', 'engine', 'DownloadPanel.tsx');
+/// W12：五段阶段文案住在文案层（`download/copy.ts`）—— 判据必须读**文案层**，
+/// 读组件文件只会拿到空串，而那会让这条断言永远绿（空串里当然不含"即可开始翻译"）。
+const DOWNLOAD_COPY_TS = path.join(ROOT, 'src', 'screens', 'engine', 'download', 'copy.ts');
 /// W16：版本锁（人读的事实源）—— `engine_source` 的 owner/repo/commit 以它为准。
 const VERSIONS_LOCK = path.join(ROOT, 'engine', 'VERSIONS.lock');
 const UI_FILES = [
@@ -345,7 +348,8 @@ function engineSourceShape() {
 
   // ---- W12：阶段文案必须与两轮实现一致（不许承诺"1 分钟就能翻译"）----
   //     stage1 不含任何 LLM ⇒ 翻译必须等 stage2。文案不实 = 欺骗性进度。
-  const panel = fs.readFileSync(DOWNLOAD_PANEL_TSX, 'utf8');
+  // 文案在 copy.ts（拆层后），组件文件里只剩引用 —— 读文案层才拿得到 stage1 那段
+  const panel = fs.readFileSync(DOWNLOAD_COPY_TS, 'utf8');
   // D-233：两轮指示器仍在，但文案按五段 `step` 取；stage1 对应 `visual` 段。
   const stage1Text = /visual:\s*\{[\s\S]*?\}/.exec(panel);
   const stage1Body = stage1Text ? stage1Text[0] : '';
@@ -625,8 +629,9 @@ if (REFUTE) {
 
   // ---- M8：visual 文案承诺"即可开始翻译"（stage1 无 LLM，是假承诺）⇒ W12 红 ----
   {
+    // 文案住在 `download/copy.ts`（拆层后）—— 锚点跟着搬，否则这条反证会静默跳过
     const restore = mutateFile(
-      DOWNLOAD_PANEL_TSX,
+      DOWNLOAD_COPY_TS,
       "sub: '检测 / OCR / 抹字 / 字体，以及 llama.cpp 与 CUDA 运行库。',",
       "sub: '下载并解包 Python 运行时、引擎源码与视觉模型 —— 这一步完成即可开始翻译。',",
     );
@@ -834,7 +839,7 @@ if (REFUTE) {
         .includes('"stage": 2,\n      "platform": "win32-x64",\n      "dest": "bin/llama')
     )
       bad.push('models.manifest.json 残留 M7');
-    if (!fs.readFileSync(DOWNLOAD_PANEL_TSX, 'utf8').includes('检测 / OCR / 抹字 / 字体'))
+    if (!fs.readFileSync(DOWNLOAD_COPY_TS, 'utf8').includes('检测 / OCR / 抹字 / 字体'))
       bad.push('DownloadPanel.tsx 残留 M8');
     if (!fs.readFileSync(RUNTIME_SETUP_RS, 'utf8').includes('"longPath": longpath.map'))
       bad.push('runtime_setup.rs 残留 M9');

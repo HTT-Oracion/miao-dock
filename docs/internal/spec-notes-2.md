@@ -527,6 +527,95 @@ span display none`。
 
 ---
 
+## D-389 · 「重新检测」是假交互，且它背后藏着一个 94 秒的后端阻塞（2026-10-25）
+
+### ① 按钮是假的
+
+`DownloadPanel` 的「重新检测」原来是：
+
+```ts
+setTimeout(() => { /* 读的还是进页面时那份 view.runnerExists */ }, 600);
+```
+
+**一次网络都不发**。用户点完只得到一句吐司"刚检测过了"，页面上四个格子的值一动不动。
+
+改成真打 `GET /engine/status`，把返回的 `runtime` 重算四格并**写回页面**（`setProbe`），
+失败如实报错。
+
+> 为什么要单独存一份 `probe` 而不是改 props：props 是壳层轮询给的快照，本页不能改它；
+> 但"我刚探测到的结果"必须能显示出来，否则这个按钮等于没做。
+
+### ② 一改就暴露出后端 94 秒的阻塞
+
+接上真调用之后，按钮卡在「检测中」再也不回来。逐层量下来：
+
+| 调用 | 耗时 |
+|---|---|
+| `invoke('api_get', { path: '/engine/runtime' })` ×3 | **94068 ms / 67 ms / 7 ms** |
+| `invoke('api_get', { path: '/engine/status' })` | 首次 **180 s 超时**，修复后 **837 ms** |
+
+首次 94 秒、之后 67 ms —— 典型的**冷缓存下走完一棵大树**。
+
+根因在 `state.rs::can_resume_now()`：
+
+```rust
+fn can_resume_now(&self) -> bool {
+    has_part_files(&self.model_root) || has_part_files(&paths::runtimes_dir())
+}
+```
+
+`has_part_files` 是**全树递归**，而它被 `model_download_view()` 在**每一个**
+`/engine/status` 响应里调用（`canResume` 字段）。那两个根是 **15 GB 级、上万文件**的
+模型树与 venv —— 冷缓存下走一遍就是一分半。用户看到的是"页面卡死"。
+
+### 修法：只扫 `.part` 可能在的那几层
+
+`.part` 是下载器的中间产物，只会落在**归档落点**（`.download-cache/`）与**模型落点**
+（清单 `dest` 形如 `visual/x.bin`，一层），不会散落在 venv 的上万个 `.py` 里。
+所以把递归改成"限定深度"：
+
+```rust
+const MAX_PART_DEPTH: u32 = 2;   // 0 = 只扫 root 本身；留一层余量
+fn has_part_files(root: &Path) -> bool { walk_parts(root, 0, MAX_PART_DEPTH, false) }
+```
+
+🔴 **这不是把判据改松**：仍然只看文件名后缀 `.part`，只是不再往模型文件内部、
+`site-packages` 里钻。`clear_part_files`（「重新下载」清断点）走同一个深度限制，
+两边口径一致。
+
+实测：`94068 ms → 720 ms`（130 倍），`/engine/status` 180 s 超时 → **837 ms**，
+「重新检测」**1.2 秒内回到「重新检测」**（此前永久卡在「检测中」）。
+
+---
+
+## D-390 · 下载页根本滚不动：滚动容器与居中盒被合成一个（2026-10-25）
+
+`.content` 刻意 `overflow: hidden`，把滚动权交回每一屏（见 `app.scss` 的注释）。
+其他屏都给了自己一个满高滚动区（`.notready` / `.drop-scroll` / `.settings-main` …），
+唯独下载页写的是：
+
+```css
+.engine-download-page { max-width: 980px; margin: 0 auto; }
+```
+
+它既没有高度约束（撑不出滚动区），又会被 `.content` 裁掉溢出 ⇒ **内容超一屏就滚不动**。
+而且 `max-width` + `margin: auto` 让"滚动条"与"内容盒"是同一个元素 ——
+一旦补上 `overflow`，滚动条会出现在 980 的盒子里，而不是窗口右缘。
+
+改法与 `.notready` 完全同构（项目既有逻辑）：
+
+```css
+.engine-download-page { height: 100%; overflow-y: auto; padding: 4px 0 28px; }  /* 滚动容器 */
+.ed-wrap { max-width: 980px; margin: 0 auto; }                                  /* 居中盒 */
+```
+
+JSX 里补一层 `<div className="ed-wrap">` 包住页头与 `.ed-scroll`。
+
+真机实测：`overflow-y: auto`、`scrollH 789 > clientH 678`、`maxScroll 111`，
+滚到底后 `.ed-detail`（最后一块）**可见**（`detailTop 657 < pageBottom 762`）。
+
+---
+
 ## G-01 · 待裁定：下载前检查的「磁盘剩余」与「模型源延迟」
 
 设计稿 `.ed-preflight` 的第三、四格是这两项，服务端**没有出口**
