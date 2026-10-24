@@ -961,8 +961,38 @@ fn attach_login_popup_handler<'a, R: tauri::Runtime, M: tauri::Manager<R>>(
             }
         });
 
+        /*
+         * 🔴 **父窗关了就跟着关**（本条是"任务管理器里残留 webview 进程"的根因）。
+         *
+         * 用户点登录窗右上角的叉时，`CloseRequested` 只关登录窗本身 ——
+         * 已经弹出的 OAuth 子窗（`music-login-popup-*`）**不会**被一起关掉：
+         * 它是个独立的 WebView2 窗口，父窗消失不影响它。结果是登录窗没了、
+         * 子窗还开着（有时连窗口都看不见），而任务管理器里那组
+         * `msedgewebview2.exe` 进程一直挂着。
+         *
+         * 此前只有「登录成功」那条路径会调 `close_login_window_with_popups`
+         * 统一清理（见各平台 `open_*_login_window` 末尾），
+         * **用户中途取消授权**走的正是这条没有清理的路径。
+         *
+         * 钩子挂在 `build()` 之后（builder 上没有 `on_window_event` 方法），
+         * 用 `Destroyed` 而不是 `CloseRequested`：后者还能被别的处理拦下，
+         * 前者是"确实没了"，此时清理才是对的。
+         */
         match builder.build() {
-            Ok(window) => tauri::webview::NewWindowResponse::Create { window },
+            Ok(window) => {
+                let app_for_cleanup = app_handle.clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::Destroyed = event {
+                        for (label, popup) in app_for_cleanup.webview_windows() {
+                            if label.starts_with("music-login-popup-") {
+                                log::info!("[MusicLogin] login window gone, closing popup: {label}");
+                                let _ = popup.close();
+                            }
+                        }
+                    }
+                });
+                tauri::webview::NewWindowResponse::Create { window }
+            }
             Err(e) => {
                 log::warn!("[MusicLogin] failed to create popup for {url}: {e}");
                 tauri::webview::NewWindowResponse::Deny
