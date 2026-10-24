@@ -1151,8 +1151,6 @@
   align-items: center;
   gap: 7px;
   padding: 12px 20px;
-  border-top: 1px solid var(--miao-line);
-  background: var(--miao-surface-2);
 }
 .modal-foot .grow {
   flex: 1;
@@ -1219,6 +1217,17 @@
 .confirm-line.is-warning {
   background: var(--miao-warning-soft);
   color: color-mix(in srgb, var(--miao-warning) 80%, #000);
+}
+/*
+ * 退出层的补充说明（`span`）：上边距 12px 与上面那条 `.confirm-line` 拉开一档呼吸。
+ * 比主文案浅一档、小一档 —— 它是"另外补充一句"，不该和告警框抢注意力。
+ */
+.quit-hint {
+  display: block;
+  margin-top: 12px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--miao-muted);
 }
 
 /* ================================================================

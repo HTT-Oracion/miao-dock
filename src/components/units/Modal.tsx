@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 /**
@@ -9,16 +8,20 @@ import { X } from 'lucide-react';
  * `modal-head`（kicker + h2 + p + 关闭键）/ `modal-body` / `modal-foot`。
  * 三档宽度：默认 520 / `wide` 680 / `narrow` 420（`.modal-card` 系列）。
  *
- * ## 🔴 必须走 `createPortal` 挂到 `body`
+ * ## 🔴 这里**不用** Portal（试过，退回来了）
  *
- * `.modal-layer` 是 `position: fixed`，而 fixed 的定位基准是**最近的"包含块"**，
- * 不是视口 —— 只要某个祖先带 `backdrop-filter` / `transform` / `filter` /
- * `will-change`，它就会成为包含块，fixed 元素改成相对**那个祖先**定位。
+ * `.modal-layer` 是 `position: fixed`，会被带 `backdrop-filter` / `transform` / `filter`
+ * 的祖先当作**包含块**（播放条 `.music-player` 就有 `backdrop-filter: blur(20px)`）。
+ * 曾用 `createPortal` 把弹层挪到 `body` 规避这一点 —— 结果**弹窗里的按钮全部点不动**：
+ * React 18 把事件委托挂在根容器（`#root`）上，靠事件冒泡到根来分发；
+ * 挂到 `body` 之后事件不再经过 `#root`，`onClick` 一个都不触发
+ * （实测：退出确认开着，点「留在后台」「退出喵坞」都没反应，蒙层也关不掉）。
+ * 挂回 `#root` 内部也不行 —— 手动 `appendChild` 的容器不在 React 的 fiber 树里，
+ * React 无法从 DOM 反查到组件，事件依旧分发不到。
  *
- * 这不是理论风险：播放条 `.music-player` 就有 `backdrop-filter: blur(20px)`，
- * 「桌面歌词设置」弹窗正挂在它内部 ⇒ 蒙层只盖住播放条那一小条、卡片被挤到
- * 播放条的位置上（用户报的"弹窗位置混乱"）。挂到 `body` 就与祖先样式彻底解耦，
- * 任何调用方都不用再关心自己上面有没有滤镜。
+ * **正解是调用方负责**：把弹窗渲染在任何"带滤镜/变换的祖先"**之外**
+ * （`PlayerBar` 已把「桌面歌词设置」挪到 `.music-player` 外面）。
+ * 这样弹层仍在原位、仍在 React 事件树里，定位也回到视口坐标。
  *
  * ## 为什么 Esc / 焦点陷阱**不放这里**
  * 现状是"谁需要谁自己挂"（`CacheBlock` 在自身组件里调 `useEsc(onCancel)`），
@@ -64,7 +67,7 @@ export function Modal({
   const bodyCls = bodyClass ?? 'modal-body';
   const hasHead = Boolean(kicker || title || subtitle);
 
-  return createPortal(
+  return (
     <div className="modal-layer">
       <div className="modal-mask" onClick={busy ? undefined : onClose} />
       {/* `stopPropagation`：点卡片内部不该冒泡到蒙层把它关掉 */}
@@ -85,7 +88,6 @@ export function Modal({
         <div className={bodyCls}>{children}</div>
         {actions ? <footer className="modal-foot">{actions}</footer> : null}
       </div>
-    </div>,
-    document.body,
+    </div>
   );
 }

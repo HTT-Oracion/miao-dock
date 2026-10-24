@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { ChevronDown, Download, Power, Settings, Terminal } from 'lucide-react';
-import { apiPost, errorText, openPath, quitApp, serviceRestart, serviceStart, serviceStop } from '@/ipc';
+import { apiPost, errorText, hideWindow, openPath, quitApp, serviceRestart, serviceStart, serviceStop } from '@/ipc';
 import { toastBus } from '@/stores/toastBus';
 import type { ServiceState } from '@/ipc';
 import {
@@ -728,6 +728,17 @@ export function App() {
         <QuitConfirm
           onStay={() => {
             setQuitOpen(false);
+            /*
+             * 「留在后台」= **真的收进托盘**，不是只关掉弹窗。
+             *
+             * 按钮文案承诺的是"留在后台"，而托盘图标常驻、服务照跑 —— 若只关弹窗、
+             * 窗口原样停在屏幕上，用户会觉得这个按钮什么都没做（此前正是如此）。
+             * `hide_window` 在 Rust 侧就是 `w.hide()`（契约 §2.1：关闭窗口仅隐藏，服务照跑）。
+             */
+            void hideWindow().catch(() => {
+              // 隐藏失败（窗口已不在 / IPC 被拒）要说出来：静默失败会让用户以为已经收进托盘
+              toastBus.push('收起窗口失败', 'bad', '可从托盘菜单重新打开');
+            });
             // 设计稿：留在后台后给一条两级轻提示 —— 否则按完不确定"到底留下了没有"
             toastBus.push('已留到后台', 'info', '翻译服务保持运行');
           }}

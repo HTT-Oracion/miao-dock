@@ -1,5 +1,5 @@
-﻿import { AlertCircle } from 'lucide-react';
-import { Btn, Modal, Notice } from '@components/units';
+import { AlertCircle } from 'lucide-react';
+import { Btn, Modal } from '@components/units';
 
 /**
  * 退出二次确认层（契约《02》§2.1）。
@@ -46,8 +46,13 @@ export function QuitConfirm({ onStay, onQuit }: { onStay: () => void; onQuit: ()
         </div>
       </div>
 
-      {/* 设计稿退出层的提示条：把"退出会影响什么"一次说清（含已完成的作品不受影响） */}
-      <Notice kind="info">本地服务与播放器会一起停止，已完成的作品不会受影响。</Notice>
+      {/*
+       * 提示条：**用 `span` 而不是 `Notice`**。
+       * 退出层这里是"一句补充说明"，不是需要图标与框的告示 ——
+       * 上面那条 `.confirm-line` 已经是告警框了，再套一个盒子会让两段话抢同一个位置。
+       * 上边距 12px 与 `.confirm-line` 拉开一档呼吸。
+       */}
+      <span className="quit-hint">本地服务与播放器会一起停止，已完成的作品不会受影响。</span>
     </Modal>
   );
 }
