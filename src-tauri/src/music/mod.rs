@@ -961,38 +961,8 @@ fn attach_login_popup_handler<'a, R: tauri::Runtime, M: tauri::Manager<R>>(
             }
         });
 
-        /*
-         * 🔴 **父窗关了就跟着关**（本条是"任务管理器里残留 webview 进程"的根因）。
-         *
-         * 用户点登录窗右上角的叉时，`CloseRequested` 只关登录窗本身 ——
-         * 已经弹出的 OAuth 子窗（`music-login-popup-*`）**不会**被一起关掉：
-         * 它是个独立的 WebView2 窗口，父窗消失不影响它。结果是登录窗没了、
-         * 子窗还开着（有时连窗口都看不见），而任务管理器里那组
-         * `msedgewebview2.exe` 进程一直挂着。
-         *
-         * 此前只有「登录成功」那条路径会调 `close_login_window_with_popups`
-         * 统一清理（见各平台 `open_*_login_window` 末尾），
-         * **用户中途取消授权**走的正是这条没有清理的路径。
-         *
-         * 钩子挂在 `build()` 之后（builder 上没有 `on_window_event` 方法），
-         * 用 `Destroyed` 而不是 `CloseRequested`：后者还能被别的处理拦下，
-         * 前者是"确实没了"，此时清理才是对的。
-         */
         match builder.build() {
-            Ok(window) => {
-                let app_for_cleanup = app_handle.clone();
-                window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::Destroyed = event {
-                        for (label, popup) in app_for_cleanup.webview_windows() {
-                            if label.starts_with("music-login-popup-") {
-                                log::info!("[MusicLogin] login window gone, closing popup: {label}");
-                                let _ = popup.close();
-                            }
-                        }
-                    }
-                });
-                tauri::webview::NewWindowResponse::Create { window }
-            }
+            Ok(window) => tauri::webview::NewWindowResponse::Create { window },
             Err(e) => {
                 log::warn!("[MusicLogin] failed to create popup for {url}: {e}");
                 tauri::webview::NewWindowResponse::Deny
@@ -1001,6 +971,53 @@ fn attach_login_popup_handler<'a, R: tauri::Runtime, M: tauri::Manager<R>>(
     })
 }
 
+/**
+ * 给**登录主窗**挂上「关闭时连带清理授权子窗」的钩子。
+ *
+ * ## 为什么必须有它（本条是"任务管理器里残留 webview 进程"的根因）
+ * 用户点登录窗右上角的叉时，Tauri 只处理**这一个**窗口 —— 已经弹出的 OAuth 子窗
+ * （`music-login-popup-*`）不会被一起关掉：它是个独立的 WebView2 窗口，
+ * 父窗消失不影响它。结果是登录窗没了、子窗还开着（有时连窗口都看不见），
+ * 而任务管理器里那组 `msedgewebview2.exe` 一直挂着。
+ *
+ * 此前只有「登录成功」那条路径会调 `close_login_window_with_popups` 统一清理
+ * （见各平台 `open_*_login_window` 末尾），**用户中途取消授权**走的正是没有清理的那条。
+ *
+ * ## 🔴 必须钩 `CloseRequested`，**不能**等 `Destroyed`
+ *
+ * 这一条是实测换来的：Windows / WebView2 上 `window.close()` 之后，
+ * 窗口**并没有被销毁** —— `get_all_windows()` 里它仍然在、`is_visible()` 是 `false`。
+ * 也就是说"点叉"停在 `CloseRequested` 这一步，`Destroyed` 可能迟迟不来
+ * （甚至永远不来）。此前钩的是 `Destroyed`，于是清理一次都没跑过，进程照样残留。
+ *
+ * 所以在 `CloseRequested` 里就清 —— 这一刻用户已经决定关掉它了，
+ * 子窗没有任何继续存在的理由。
+ *
+ * ## ⚠️ 钩子必须挂在**主窗**上
+ * 别挂在 popup 上：popup 被销毁时去关"其他 popup"解决不了"主窗关了、子窗还在"。
+ * 这个错位真踩过 —— 修完进程照样残留。
+ */
+fn watch_login_window_destroyed<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+    let app = window.app_handle().clone();
+    let self_win = window.clone();
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { .. } = event {
+            for (label, popup) in app.webview_windows() {
+                if label.starts_with("music-login-popup-") {
+                    log::info!("[MusicLogin] login window closing, closing popup: {label}");
+                    let _ = popup.destroy();
+                }
+            }
+            /*
+             * 连**自己**也 `destroy()`：默认的 `close()` 只关窗口句柄，
+             * 窗口对象留在 `webview_windows()` 里、它占的 `renderer` 进程也不退出
+             * （实测关掉后进程数 8 → 7 就停住，30 秒不回落）。
+             * `destroy()` 才是真拆掉 webview。
+             */
+            let _ = self_win.destroy();
+        }
+    });
+}
 /// 关闭登录窗口，并顺带关掉它弹出的所有第三方登录子窗口
 ///
 /// 子窗口的 label 前缀是 `music-login-popup-`。正常情况下子窗口会在
@@ -1014,11 +1031,20 @@ fn close_login_window_with_popups<R: tauri::Runtime>(
     for (_label, win) in app.webview_windows() {
         if _label.starts_with("music-login-popup-") {
             log::info!("[MusicLogin] closing leftover popup: {_label}");
-            let _ = win.close();
+            let _ = win.destroy();
         }
     }
     if let Some(win) = app.get_webview_window(login_label) {
-        let _ = win.close();
+        /*
+         * 🔴 用 `destroy()` 而不是 `close()`。
+         *
+         * `close()` 在 Windows / WebView2 上只是**关掉窗口句柄**：窗口对象仍留在
+         * `webview_windows()` 里（`is_visible()` 变 false），而它占用的那个
+         * `renderer` 进程**不会退出** —— 实测关掉登录窗后进程数 8 → 7 就停住，
+         * 等 30 秒也不回落，任务管理器里一直挂着一个多余的 `msedgewebview2.exe`。
+         * `destroy()` 才会真正拆掉 webview 并释放那一组进程。
+         */
+        let _ = win.destroy();
     }
 }
 
@@ -1141,6 +1167,8 @@ async fn open_netease_login_window(app: &AppHandle) -> Result<String, String> {
     .build()
     .map_err(|e| format!("Failed to create login window: {e}"))?;
 
+    watch_login_window_destroyed(&login_window);
+
     let _ = login_window.clear_all_browsing_data();
     let login_url = url.parse::<Url>().map_err(|e| e.to_string())?;
     let _ = login_window.navigate(login_url);
@@ -1226,6 +1254,8 @@ async fn open_kugou_login_window(app: &AppHandle) -> Result<String, String> {
     )
     .build()
     .map_err(|e| format!("Failed to create login window: {e}"))?;
+
+    watch_login_window_destroyed(&login_window);
 
     let _ = login_window.clear_all_browsing_data();
     let login_url = url.parse::<Url>().map_err(|e| e.to_string())?;
@@ -1340,6 +1370,8 @@ async fn open_qq_login_window(app: &AppHandle) -> Result<String, String> {
     .build()
     .map_err(|e| format!("Failed to create login window: {e}"))?;
 
+    watch_login_window_destroyed(&login_window);
+
     let _ = login_window.clear_all_browsing_data();
     let login_url = url.parse::<Url>().map_err(|e| e.to_string())?;
     let _ = login_window.navigate(login_url);
@@ -1448,6 +1480,8 @@ async fn open_migu_login_window(app: &AppHandle) -> Result<String, String> {
     )
     .build()
     .map_err(|e| format!("Failed to create login window: {e}"))?;
+
+    watch_login_window_destroyed(&login_window);
 
     let _ = login_window.clear_all_browsing_data();
     let login_url = url.parse::<Url>().map_err(|e| e.to_string())?;
