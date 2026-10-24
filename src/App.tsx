@@ -24,6 +24,7 @@ import {
 } from '@/stores/shell-prefs';
 import type { ThemeMode } from '@/themes/tokens';
 import { Badge, Btn, Dot } from '@components/units';
+import { DemoPanel } from '@components/DemoPanel';
 import { DynamicIsland } from '@components/DynamicIsland';
 import { NotificationStack } from '@components/NotificationStack';
 import { MusicKernel } from '@components/MusicKernel';
@@ -44,6 +45,8 @@ import type { EngineProcessView, ShellCtx } from '@/router/panes/shell-context';
 import type { TranslateSource } from '@screens/settings/translate-api';
 import { engineStatus, type ModelDownloadView } from '@screens/settings/engine-api';
 import { downloadEntryState } from '@/ipc/engine-download';
+import { useDemoOverride } from '@/stores/demo-override';
+import { demoDownload, demoStatus } from '@screens/manga/demo';
 import { initialDismissedDownload, persistDismissedDownload } from '@/stores/download-dismiss';
 import type { CancelResponse, DeleteTasksResponse, LibraryResponse, TaskRow } from '@/types';
 import { formatBytes } from '@tools';
@@ -111,7 +114,7 @@ export function App() {
    */
   const [dismissedDownload, setDismissedDownload] = useState<string | null>(() => initialDismissedDownload());
   /** `/engine/status` 的 `modelDownload` —— 工具条芯片、侧栏入口与下载页的唯一真实来源。 */
-  const [download, setDownload] = useState<ModelDownloadView | null>(null);
+  const [realDownload, setDownload] = useState<ModelDownloadView | null>(null);
   /** ②/③ 进程运行态快照（`/engine/status` 的 `engine.state` / `llm.state` / `warmed`）。 */
   const [engineProcess, setEngineProcess] = useState<EngineProcessView>(EMPTY_ENGINE_PROCESS);
 
@@ -120,10 +123,10 @@ export function App() {
     navigate('/engine-download');
   }, [navigate, overlay]);
   const dismissDownload = useCallback(() => {
-    const key = download?.startedAt ?? 'done';
+    const key = realDownload?.startedAt ?? 'done';
     setDismissedDownload(key);
     persistDismissedDownload(key);
-  }, [download?.startedAt]);
+  }, [realDownload?.startedAt]);
   /** 发起下载后立刻把返回的视图写回壳层：下载页不必等下一次 1.5s 轮询才有内容。 */
   const applyDownload = useCallback((view: ModelDownloadView | null) => {
     if (view) setDownload(view);
@@ -131,7 +134,16 @@ export function App() {
 
   useThemeTokens(mode);
 
-  const { status, ipcError } = useService();
+  const { status: realStatus, ipcError } = useService();
+  /*
+   * 演示态覆盖（仅开发态、且只在用户点了演示面板时存在）。
+   *
+   * 🔴 覆盖只发生在**派生层**：屏层读到的仍是同一个 `ServiceStatus`，走同一条渲染路径；
+   *    演示夹具只换状态机的输入（`screens/manga/demo.ts`），不造界面、不改判定。
+   */
+  const demoActive = useDemoOverride((s) => s.active);
+  const status = demoStatus(realStatus, demoActive);
+  const download = demoDownload(realDownload, demoActive);
   const running = status?.state === 'running';
 
   /*
@@ -771,6 +783,8 @@ export function App() {
       */}
       <DynamicIsland />
       <NotificationStack />
+      {/* 演示面板：开发态专用（生产构建整块不渲染），见 `components/DemoPanel` */}
+      <DemoPanel />
     </div>
   );
 }

@@ -1489,3 +1489,79 @@
     width: 100%;
   }
 }
+
+/* ================================================================ 日志块（通用单元）
+ *
+ * 两处日志（引导页 `.nr-log` / 下载页 `.ed-log`）此前各写一套：底色、圆角、行高、
+ * 最大高度都不相同 —— 同一件东西两套皮。现在统一到这里，调用方只给 `is-compact` /
+ * `is-tall` 两档高度。
+ *
+ * ## 复制按钮的显隐
+ * 默认 `opacity: 0` + `pointer-events: none`，`:hover` 与 `:focus-within` 才浮现。
+ * 🔴 `:focus-within` 那一支不能省：只写 `:hover` 等于"键盘用户拿不到复制"，
+ *    而这枚按钮只有图标，读屏用户本来就只能靠 `aria-label` 找到它。
+ */
+
+.log-block {
+  position: relative;
+  margin-top: 10px;
+  border-radius: var(--miao-r-xs);
+  background: var(--miao-ink);
+  color: #d9d7cf;
+  overflow: hidden;
+}
+/* 两档高度：引导页那处矮（设计稿 `.nr-log` max-height 94），下载页那处高（220） */
+.log-block.is-compact .log-body {
+  max-height: 94px;
+}
+.log-block.is-tall .log-body {
+  max-height: 220px;
+}
+.log-body {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: var(--miao-font-mono);
+  font-size: 10.5px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow: auto;
+  -webkit-user-select: text;
+  user-select: text;
+}
+/* 复制按钮：右上角、只有图标、悬停/聚焦才浮现（理由见文件头） */
+.log-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--miao-r-xs);
+  background: rgba(255, 255, 255, 0.1);
+  color: #d9d7cf;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--miao-dur-fast) ease,
+    background var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-spring);
+}
+.log-block:hover .log-copy,
+.log-block:focus-within .log-copy {
+  opacity: 1;
+  pointer-events: auto;
+}
+.log-copy:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+.log-copy:active {
+  transform: scale(0.92);
+}
+.log-copy:focus-visible {
+  outline: 2px solid var(--miao-primary);
+  outline-offset: 2px;
+}

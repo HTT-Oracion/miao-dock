@@ -316,6 +316,7 @@ const CHECKS = [
       'src-tauri/src/service/mod.rs',
       'src-tauri/src/mangasvc/engine/state.rs',
       'src/screens/manga/NotReadyScreen.tsx',
+      'src/screens/manga/notready/**',
       'src/ipc/index.ts',
       'src/router/**',
       'e2e/service/notready-state-check.mjs',
@@ -423,6 +424,7 @@ const CHECKS = [
     //   改了只会白跑一个起真进程的 service 检查；`--changed` 的命中精度就是这么被稀释的。）
     watch: [
       'src/screens/manga/NotReadyScreen.tsx',
+      'src/screens/manga/notready/**',
       'src/screens/settings/EngineDiag.tsx',
       'src-tauri/src/mangasvc/engine/state.rs',
       'engine/models.manifest.json',
@@ -784,6 +786,7 @@ const CHECKS = [
       'src-tauri/src/mangasvc/engine/runtime_setup.rs',
       'src/ipc/engine-download.ts',
       'src/screens/manga/NotReadyScreen.tsx',
+      'src/screens/manga/notready/**',
       'src/screens/engine/DownloadPanel.tsx',
       'src/components/units/ProgressRing.tsx',
       'e2e/service/engine-bootstrap-check.mjs',

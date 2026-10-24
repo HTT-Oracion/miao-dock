@@ -5,6 +5,8 @@
  * 纯函数便于在「规格自检」里单独验证。
  */
 
+/** 剪贴板写入的唯一接缝（桌面走宿主插件，浏览器回退 navigator）—— 见 `tools/clipboard.ts` */
+export { copyText } from '@tools/clipboard';
 /** 人类可读容量。X-D1 副标题的「占 X GB」与左栏容量都走这里，保证两处口径一致 */
 export function formatBytes(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return '0 B';

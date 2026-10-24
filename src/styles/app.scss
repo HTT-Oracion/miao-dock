@@ -1411,3 +1411,172 @@ html[data-theme='dark'] .chip-bad {
     padding: 0 12px !important;
   }
 }
+
+/* ================================================================ 演示面板（开发态）
+ *
+ * 设计稿 `.demo-fab` / `.demo-drawer` / `.demo-panel` 的生效值：
+ * 胶囊 32 高 / r999 / 右下 16 / 92% 表面 + blur10 / 文字 9.5px·700 / 默认 opacity .72；
+ * 抽屉从右侧滑入（`.demo-panel` 宽 min(348, 100vw) + 左侧描边 + 大扩散阴影），
+ * 蒙层 .24 + blur2。
+ *
+ * 🔴 它只在 `import.meta.env.DEV` 下渲染（组件里判），生产构建里连节点都不存在 ——
+ *    样式留着是为了开发态与设计稿一致，不是为了上线。
+ */
+
+.demo-fab {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 55;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-full);
+  background: color-mix(in srgb, var(--miao-surface) 92%, transparent);
+  box-shadow: var(--miao-shadow-1);
+  color: var(--miao-muted);
+  font-size: 9.5px;
+  font-weight: 700;
+  opacity: 0.72;
+  backdrop-filter: blur(10px);
+  transition:
+    opacity var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-spring),
+    border-color var(--miao-dur-fast) ease;
+}
+.demo-fab:hover {
+  opacity: 1;
+  transform: translateY(-1px);
+  border-color: var(--miao-line-strong);
+  color: var(--miao-ink);
+}
+.demo-fab svg {
+  width: 13px;
+  height: 13px;
+  color: var(--miao-accent-ink);
+}
+/*
+ * 🔴 演示层必须**高于模态层**：设计稿的 `--z-demo` 是 95，而模态是 70 ——
+ *    演示面板的用途正是"在任何界面状态下切状态"，被弹窗压住就等于失效。
+ *    产品当前的模态层是 95（见 components.scss 的 z 阶梯），所以这里取 **96**。
+ */
+.demo-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 96;
+  display: flex;
+  justify-content: flex-end;
+}
+.demo-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(28, 30, 34, 0.24);
+  backdrop-filter: blur(2px);
+  animation: miao-fade-in var(--miao-dur-fast) ease;
+}
+.demo-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(348px, 100vw);
+  height: 100%;
+  border-left: 1px solid var(--miao-line);
+  background: var(--miao-surface);
+  box-shadow: -20px 0 50px -30px rgba(30, 32, 36, 0.4);
+  animation: ui-drawer-in var(--miao-dur-base) var(--miao-ease-out);
+}
+.demo-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 18px 16px 10px;
+  border-bottom: 1px solid var(--miao-line);
+}
+.demo-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.demo-head .ui-cbtn {
+  margin-left: auto;
+}
+.demo-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px 20px;
+}
+.demo-group {
+  margin-bottom: 14px;
+}
+.demo-group h3 {
+  margin: 0 0 6px;
+  font-family: var(--md-font-display);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--miao-faint);
+}
+.demo-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+.demo-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 9px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xs);
+  background: var(--miao-surface-2);
+  text-align: left;
+  font-size: 9.5px;
+  color: var(--miao-text);
+  transition:
+    border-color var(--miao-dur-fast) ease,
+    background var(--miao-dur-fast) ease;
+}
+.demo-btn:hover {
+  border-color: var(--miao-primary-line);
+  background: var(--miao-primary-soft);
+  color: var(--miao-primary-ink);
+}
+/* 当前演示态：主色描边 + 主色底 —— 面板关掉之后用户还得看得出"现在看的是演示数据" */
+.demo-btn.is-on {
+  border-color: var(--miao-primary);
+  background: var(--miao-primary-soft);
+  color: var(--miao-primary-ink);
+  font-weight: 700;
+}
+.demo-btn.is-wide {
+  grid-column: span 2;
+  justify-content: center;
+}
+.demo-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.demo-foot {
+  padding: 10px 14px;
+  border-top: 1px solid var(--miao-line);
+  font-size: 8.5px;
+  line-height: 1.6;
+  color: var(--miao-faint);
+}
+/* 窄窗：胶囊收成 32×32 纯图标（设计稿 `.demo-fab span { display: none }`） */
+@media (max-width: 680px) {
+  .demo-fab {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+  }
+  .demo-fab span {
+    display: none;
+  }
+}

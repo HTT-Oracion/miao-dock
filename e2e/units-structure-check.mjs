@@ -75,7 +75,7 @@ const F = {
 };
 
 // ── 冻结的契约（负责人冻结，本脚本照抄，不改口径） ────────────────────────
-/** units 目录应恰有的 21 个文件（多一个/少一个都判红；useEsc 已迁 src/hooks，D-41）
+/** units 目录应恰有的 24 个文件（多一个/少一个都判红；useEsc 已迁 src/hooks，D-41）
  *  Tooltip / ContextMenu 是 2026-10-11 漫画右键菜单一并入册的可复用件（D-124）
  *  Modal 是 2026-10-11 收敛 5 处手写模态壳（D-143）
  *  ProgressRing 是 2026-10-14 引擎下载进度环（工具条/下载视图共用，D-150）
@@ -103,6 +103,7 @@ const MANIFEST = [
   'NumberInput.tsx',
   'Empty.tsx',
   'Mascot.tsx',
+  'LogBlock.tsx',
   'OverlayScrollbar.tsx',
   'VirtualList.tsx',
   'index.ts',
@@ -119,6 +120,7 @@ const BARREL_EXPORTS = [
   'ColorPicker',
   'Empty',
   'IconButton',
+  'LogBlock',
   'MenuButton',
   'MenuItem',
   'Modal',
@@ -1580,6 +1582,67 @@ add('DIALOG.useSharedModal', 'DIALOG', (s) => {
   return { ok: bad.length === 0, detail: bad.join('；') };
 });
 
+add('DIALOG.logBlockCopy', 'DIALOG', (s) => {
+  /*
+   * 日志块：**一处实现、两处复用**，且复制按钮三要素齐备（图标-only + 无障碍名 + 悬停与聚焦都能拿到）。
+   *
+   * 🔴 分母写死（`checked >= 13`）：只判"文件存在"是最容易变成空断言的一种判据 ——
+   *    把组件删了它照样绿。所以逐条量到具体要素，少一项就红。
+   */
+  const logBlock = s.units.get('LogBlock.tsx');
+  if (!logBlock) return { ok: false, detail: 'units/LogBlock.tsx 不存在' };
+  const code = logBlock.stripped;
+  const css = stripComments(s.styleShardCode?.['components.scss'] || '');
+  const bad = [];
+  let checked = 0;
+
+  // ① 必须走通用 `Btn`（工程纪律第 12 条：不在各屏自造同类 DOM）
+  checked += 1;
+  if (!/<Btn\b/.test(code)) bad.push('复制按钮没有走通用 Btn 单元');
+  checked += 1;
+  if (/<button\b/.test(code)) bad.push('LogBlock 里仍有裸 <button>');
+
+  // ② 图标-only + 无障碍名 + title（可见文字为空时两者都必填）
+  checked += 1;
+  if (!/ariaLabel="复制全部日志"/.test(code)) bad.push('复制按钮缺 aria-label');
+  checked += 1;
+  if (!/title="复制全部日志"/.test(code)) bad.push('复制按钮缺 title');
+
+  // ③ 复制的是**全文**，且走**注入的接缝**（桌面由宿主插件执行）
+  checked += 1;
+  if (!/if \(copy\) await copy\(text\);|await copy\(text\)/.test(code)) bad.push('复制没有走注入的接缝');
+  checked += 1;
+  if (!/await copy\(text\);/.test(code) || !/else await navigator\.clipboard/.test(code)) {
+    bad.push('复制缺少"接缝优先、浏览器回退"的两条路');
+  }
+
+  // ④ 样式：默认隐藏 + 悬停**与聚焦**都能浮现（只写 :hover 等于键盘拿不到）
+  checked += 1;
+  if (!/\.log-copy\s*\{[^}]*opacity:\s*0/.test(css)) bad.push('.log-copy 默认不是隐藏的');
+  checked += 1;
+  if (!/\.log-block:hover \.log-copy/.test(css)) bad.push('悬停不浮现复制按钮');
+  checked += 1;
+  if (!/\.log-block:focus-within \.log-copy/.test(css)) bad.push('聚焦不浮现复制按钮（键盘用户拿不到）');
+
+  // ⑤ 两处调用点都必须真的用它（不是"单元在、页面还手写着老样子"）
+  const callers = [
+    path.join(SRC, 'screens', 'manga', 'notready', 'AssemblyForm.tsx'),
+    path.join(SRC, 'screens', 'manga', 'notready', 'ServiceForm.tsx'),
+    path.join(SRC, 'screens', 'engine', 'DownloadPanel.tsx'),
+  ];
+  for (const f of callers) {
+    checked += 2;
+    const src = cachedReadText(f);
+    if (!/<LogBlock\b/.test(src)) bad.push(`${path.basename(f)} 没有用 LogBlock`);
+    if (/className="(?:nr-log|ed-log)"/.test(src)) bad.push(`${path.basename(f)} 仍手写旧日志块`);
+    // 🔴 只判"用了 LogBlock"不够：漏掉注入时按钮在、点了走回浏览器 API，打包后静默失败
+    if (!/copy=\{copyText\}/.test(src)) bad.push(`${path.basename(f)} 没有注入 copyText`);
+  }
+
+  if (checked < 13) bad.push(`只量到 ${checked} 项（应 >= 13）`);
+  return { ok: bad.length === 0, detail: bad.join('；') };
+});
+
 add('DIALOG.queueDrawerParity', 'DIALOG', (s) => {
   /*
    * 播放队列抽屉：容器必须复用通用 `SideDrawer`（原先手写了一套 348 宽、无圆角、
@@ -1772,6 +1835,20 @@ function printGrouped(res) {
 // ── 反证用例 ──────────────────────────────────────────────────────────────
 // 三种破坏动作：edit（改文本）/ rename（改名，模拟清单缺件）/ create（复活旧路径）
 const MUTATIONS = [
+  {
+    name: 'LogBlock 的复制按钮退回裸 <button>（绕过通用 Btn 单元）',
+    file: F.units + '/LogBlock.tsx',
+    find: '<Btn',
+    replace: '<button',
+    expect: ['DIALOG.logBlockCopy'],
+  },
+  {
+    name: '摘掉 .log-block:hover 的复制按钮浮现（按钮在，但永远看不见）',
+    file: path.join(SRC, 'styles', 'components.scss'),
+    find: '.log-block:hover .log-copy,',
+    replace: '.log-block-hover-disabled .log-copy,',
+    expect: ['DIALOG.logBlockCopy'],
+  },
   {
     name: '把 units/VirtualList.tsx 改名（模拟清单缺件）',
     from: F.units + '/VirtualList.tsx',

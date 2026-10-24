@@ -92,6 +92,9 @@ const F = {
   // X-C3「准备中」屏（S6 的「L1–L4 文案 + 首张稍慢」）。它不在设置页里，
   // 但它与设置页共享同一条事实源（Rust 的 StatusView），所以放同一轮断言。
   notReady: path.join(APP, 'src', 'screens', 'manga', 'NotReadyScreen.tsx'),
+  // 引导页拆形态后的子树（2026-10-24）：判据语料必须覆盖它，
+  // 否则一拆就把"文案/结构在不在"整套判据读成空断言（读不到不是报红，是恒假或恒真）。
+  notReadyDir: path.join(APP, 'src', 'screens', 'manga', 'notready'),
   // D-233：五段常量与纯函数（assembly.ts）+ 时间线渲染（AssemblyTimeline.tsx）
   assembly: path.join(APP, 'src', 'screens', 'manga', 'assembly.ts'),
   timeline: path.join(APP, 'src', 'screens', 'manga', 'AssemblyTimeline.tsx'),
@@ -241,6 +244,21 @@ const OPTION_EXPORTS = [
 
 // ── 读文件 ───────────────────────────────────────────────────────────────
 const readMaybe = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : '');
+
+/**
+ * 引导页拆形态后的子树（三种形态 / 卡片壳 / 徽标 / 文案 / 派生量）。
+ *
+ * 🔴 判据语料必须是**整棵子树**：拆之前所有文案与结构都在一个文件里，
+ *    只读分派文件会让那批判据读不到东西 —— 而读不到不是报红，是**静默变成空断言**。
+ */
+const readNotReadyParts = () => {
+  if (!existsSync(F.notReadyDir)) return '';
+  return readdirSync(F.notReadyDir)
+    .filter((f) => f.endsWith('.ts') || f.endsWith('.tsx'))
+    .sort()
+    .map((f) => readMaybe(path.join(F.notReadyDir, f)))
+    .join('\n');
+};
 const readBytes = (p) => (existsSync(p) ? readFileSync(p) : null);
 
 function loadSources() {
@@ -286,7 +304,7 @@ function loadSources() {
     parts: readMaybe(F.parts),
     specCheck: readMaybe(F.specCheck),
     settingsScreen: readMaybe(F.settingsScreen),
-    notReady: readMaybe(F.notReady),
+    notReady: readMaybe(F.notReady) + '\n' + readNotReadyParts(),
     assembly: readMaybe(F.assembly),
     timeline: readMaybe(F.timeline),
     ipc: readMaybe(F.ipc),
@@ -2163,14 +2181,19 @@ add('ENGINE.md.noRawAsterisks', 'ENGINE', (ctx) => {
 // 免得"Rust 加了字段、TS 类型没跟"这类缺口两边都漏。
 
 /**
- * 装配四段的四句用户感知文案（D-231⑥，取代 L1–L4「服务启动分层」）。
- * 🔴 与 `src/screens/manga/NotReadyScreen.tsx` 的 `ASSEMBLY_PHASES` 逐字一致。
+ * 装配五段的五句用户感知文案（D-231⑥ 定四段，D-233 拆成五段）。
+ * 🔴 与 `src/screens/manga/assembly.ts` 的 `ASSEMBLY_PHASES` 逐字一致。
+ *
+ * ⚠️ 2026-10-24：段名按设计稿 `.timeline-step strong` 取短名
+ * （`运行环境` / `视觉模型` / `翻译模型`），旧写法是产品自造的长名
+ * （`运行环境装配` / `视觉模型装配` / `LLM 翻译模型装配`）。判据跟着改的是**字面值**，
+ * 不是结论 —— 五段仍然逐字冻结、仍然按序。
  */
 const NOTREADY_TEXTS = [
   ['prepare', '环境准备'],
-  ['runtime', '运行环境装配'],
-  ['visual', '视觉模型装配'],
-  ['llm', 'LLM 翻译模型装配'],
+  ['runtime', '运行环境'],
+  ['visual', '视觉模型'],
+  ['llm', '翻译模型'],
   ['ready', '就绪'],
 ];
 
@@ -2210,7 +2233,15 @@ add('NOTREADY.stages.phaseDriven', 'NOTREADY', (ctx) => {
   if (!/notes\[4\] = 'done'/.test(asm)) {
     problems.push('第五段「就绪」没有由真实判据收尾（就绪后最后一段永远停在「进行中」）');
   }
-  if (/status\?\.phase\s*\?/.test(code)) {
+  /*
+   * ⚠️ 2026-10-24：`phase` 仍**允许**出现在动作判据里（失败时给不给「重新下载模型」），
+   *    所以判据只能钉"把它当**进度**用"的那种写法 —— 也就是 `?` 直接取它当段号。
+   *    本轮按设计稿重排后，动作判据写成 `const l2Failed = failed && status?.phase === 'L2'`
+   *    （具名变量，工程纪律第 8 条禁内联长链三元），旧判据 `status?.phase ?` 会把它误判成
+   *    "又拿 phase 当进度" —— 那是**假红**。判据因此收窄成两个真正危险的形态：
+   *    ① `phase ?` 直接当条件分支出段号；② 把 phase 塞进 `notes` / `STEP_INDEX`。
+   */
+  if (/status\?\.phase\s*\?(?!\?)|notes\[[^\]]*\]\s*=\s*[^;]*phase|STEP_INDEX\s*\[[^\]]*phase/.test(code + asm)) {
     problems.push('又把 `status.phase` 当进度事实源了（它是服务启动阶段，不是装配阶段）');
   }
   if (/sidecar_port\s*\?\s*2\s*:\s*1/.test(code)) {
@@ -2293,12 +2324,27 @@ add('NOTREADY.wiring.modeDegraded', 'NOTREADY', (ctx) => {
 });
 
 add('NOTREADY.retry.byPhase', 'NOTREADY', (ctx) => {
-  /* 《02》§4「按失败阶段提供『重试当前阶段』（L2 失败给『重新下载模型』）」 */
+  /*
+   * 《02》§4「按失败阶段提供『重试当前阶段』（L2 失败给『重新下载模型』）」。
+   *
+   * ⚠️ 判据钉的是**语义**（L2 这个条件真的判了、并且真的分派了两个不同动作），
+   *    不是某一种写法。2026-10-24 按设计稿重排后这处写成具名变量
+   *    `const l2Failed = failed && status?.phase === 'L2'`（工程纪律第 8 条禁内联长链三元），
+   *    旧正则 `failed && status?.phase === 'L2'` 会因此假红。
+   *    所以改成：`L2` 判定存在 + 两个动作各自挂在它上面（一个给下载、一个给重启）。
+   */
   const code = stripComments(ctx.s.notReady);
   const problems = [];
-  if (!/failed\s*&&\s*status\?\.phase === 'L2'/.test(code)) {
+  if (!/phase === 'L2'/.test(code)) {
     problems.push('没有按失败阶段分派重试（L2 失败应给「重新下载模型」）');
   }
+  // 两个动作必须真的分叉：L2 时主按钮是「重新下载模型」，其余失败是「重启本地服务」
+  const l2DrivesDownload = /l2Failed[\s\S]{0,400}?downloadEngineModels|redownload\(/.test(code);
+  const l2DrivesRestart = /l2Failed[\s\S]{0,200}?'ghost'[\s\S]{0,200}?onRestart|onRestart[\s\S]{0,200}?l2Failed/.test(
+    code,
+  );
+  if (!l2DrivesDownload) problems.push('L2 失败没有落到「重新下载模型」这条路上');
+  if (!l2DrivesRestart) problems.push('非 L2 失败没有落到「重启本地服务」这条路上');
   if (!code.includes('downloadEngineModels')) problems.push('没有真正调用下载端点（按钮会是个摆设）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
@@ -2358,9 +2404,13 @@ add('NOTREADY.css.classes', 'NOTREADY', (ctx) => {
 
 add('NOTREADY.timeline.derivedFromStages', 'NOTREADY', (ctx) => {
   /*
-   * 时间线**恰 4 步**，且步数与序号都由 `ASSEMBLY_PHASES` 单源派生 —— 不是写死的 1/2/3/4。
-   * 为什么要单列一条：`NOTREADY.stages.texts` 只查"那四句在不在、顺序对不对"，
+   * 时间线**恰 5 步**，且步数与序号都由 `ASSEMBLY_PHASES` 单源派生 —— 不是写死的 1/2/3/4/5。
+   * 为什么要单列一条：`NOTREADY.stages.texts` 只查"那五句在不在、顺序对不对"，
    * 它管不住"多渲染一行"或"序号写成 `i + 2`"这类**与数据脱钩**的改法。
+   *
+   * ⚠️ 2026-10-24：设计稿的时间线节点只有圆点，**不画序号**（序号在旧版竖排时间线里
+   *    才需要）。但"段号由下标派生"这条结论不能因此丢掉 —— 改成判**段号属性**：
+   *    每段都带 `data-step={i + 1}`（读屏与"第 N 段"文案都读它）。
    */
   const asm = stripComments(ctx.s.assembly);
   const tl = stripComments(ctx.s.timeline);
@@ -2368,7 +2418,8 @@ add('NOTREADY.timeline.derivedFromStages', 'NOTREADY', (ctx) => {
   const ids = [...asm.matchAll(/id: '(prepare|runtime|visual|llm|ready)'/g)].map((m) => m[1]);
   if (ids.length !== 5) problems.push(`ASSEMBLY_PHASES 不是 5 段（实为 ${ids.length}：${ids.join('/') || '无'}）`);
   if (!/ASSEMBLY_PHASES\.map\(/.test(tl)) problems.push('时间线不是由 ASSEMBLY_PHASES 渲染的（步数会与数据脱钩）');
-  if (!/i \+ 1/.test(tl)) problems.push('节点序号不是下标派生（i + 1）');
+  if (!/i \+ 1/.test(tl)) problems.push('段号不是下标派生（i + 1）');
+  if (!/data-step=\{step\}/.test(tl)) problems.push('段号没有真的落到节点上（算了却没用）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -2376,20 +2427,26 @@ add('NOTREADY.timeline.explicitLoading', 'NOTREADY', (ctx) => {
   /*
    * 本屏新增的**显式 loading 态**（用户诉求：现有四态之外补 loading）。
    * 判据分两半，缺一不可：
-   *   ① 组件侧：「进行中」必须映射到 `is-loading` —— 状态词与形态收在一处；
-   *   ② 样式侧：`.tl-node.is-loading::after` 必须真挂着**旋转动画**。
+   *   ① 组件侧：「进行中」必须落到一个**具名的节点形态**上（旧版 `is-loading`，
+   *      2026-10-24 按设计稿重排后是 `data-state="active"` —— 两者都算，因为结论是
+   *      "进行中有一个专属形态"，不是"必须叫某个类名"）；
+   *   ② 样式侧：那个形态必须真挂着**脉冲/旋转动画**。
    * 只查 ① 会漏"类名对、圈不转"；只查 ② 会漏"样式在、根本没有一段代码进入这个态"。
-   * 旋转是用户区分"在动"与"卡住了"的**唯一**信号 —— 不动的「进行中」看起来与卡住一样。
+   * 动起来是用户区分"在动"与"卡住了"的**唯一**信号 —— 不动的「进行中」看起来与卡住一样。
    */
   const tl = stripComments(ctx.s.timeline);
   const css = ctx.s.css;
   const problems = [];
-  if (!/active:\s*'is-loading'/.test(tl)) problems.push('「进行中」没有映射到 is-loading');
-  if (!/\.tl-node\.is-loading\s*\{/.test(css)) problems.push('样式表没有 .tl-node.is-loading 规则');
-  if (!/\.tl-node\.is-loading::after\s*\{[^}]*animation:\s*tlspin/.test(css)) {
-    problems.push('节点外圈没有挂旋转动画（「进行中」会与"卡住了"看起来一模一样）');
-  }
-  if (!/@keyframes\s+tlspin\s*\{/.test(css)) problems.push('没有 @keyframes tlspin');
+  const hasNodeKind = /active:\s*'is-loading'/.test(tl) || /data-state=\{note\}/.test(tl);
+  if (!hasNodeKind) problems.push('「进行中」没有落到专属节点形态上（is-loading / data-state）');
+  const hasActiveRule =
+    /\.tl-node\.is-loading\s*\{/.test(css) || /\.timeline-step\[data-state='active'\]\s+\.timeline-node\s*\{/.test(css);
+  if (!hasActiveRule) problems.push('样式表没有「进行中」的节点规则');
+  const hasSpin =
+    /\.tl-node\.is-loading::after\s*\{[^}]*animation:\s*tlspin/.test(css) ||
+    /\.timeline-step\[data-state='active'\][^{]*\{[^}]*animation:\s*miao-pulse-node/.test(css);
+  if (!hasSpin) problems.push('节点没有挂动画（「进行中」会与"卡住了"看起来一模一样）');
+  if (!/@keyframes\s+(tlspin|miao-pulse-node)\s*\{/.test(css)) problems.push('没有对应的 @keyframes');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -3918,8 +3975,8 @@ const MUTATIONS = [
   {
     name: '给第 2 段编一个字节进度（未就绪屏此刻读不到任何 HTTP，编出来的数字就是撒谎）',
     file: F.assembly,
-    find: "{ id: 'runtime', text: '运行环境装配' },",
-    replace: "{ id: 'runtime', text: '运行环境装配 · 2.1/4.6 GB' },",
+    find: "{ id: 'runtime', text: '运行环境' },",
+    replace: "{ id: 'runtime', text: '运行环境 · 2.1/4.6 GB' },",
     expect: ['NOTREADY.detail.noFabricatedProgress'],
   },
   {
@@ -3944,23 +4001,22 @@ const MUTATIONS = [
   },
   {
     name: '重试不再按失败阶段分派（L2 失败时用户只会把同一件坏掉的事重做一遍）',
-    file: F.notReady,
-    // `all`：主按钮的渲染条件与它的 kind 两处都写了这个判据，只改一处仍是绿的
-    find: "failed && status?.phase === 'L2'",
-    replace: 'false',
-    all: true,
+    file: path.join(F.notReadyDir, 'derive.ts'),
+    // 判定收进具名函数后，破坏它的形态是"恒假"—— 那正是"永远走不到重新下载"。
+    find: "return status?.state === 'error' && status.phase === 'L2';",
+    replace: 'return false;',
     expect: ['NOTREADY.retry.byPhase'],
   },
   {
     name: '不显示 status.mode（"以为在跑真引擎、其实跑的替身"重新变成查不出来的事）',
-    file: F.notReady,
+    file: path.join(F.notReadyDir, 'ServiceForm.tsx'),
     find: "status?.mode ?? '—'",
     replace: "'—'",
     expect: ['NOTREADY.wiring.modeDegraded'],
   },
   {
     name: '让状态屏用一个不存在的样式类（元素照常渲染，只是没有样式）',
-    file: F.notReady,
+    file: path.join(F.notReadyDir, 'ServiceForm.tsx'),
     // `all`：四个 meta chip 共用同一个类名，只改一处仍然命中样式表
     find: '<span className="mchip">',
     replace: '<span className="mchip-v2">',
@@ -3971,16 +4027,16 @@ const MUTATIONS = [
     // 时间线是"一条线"：序号写死就没有"还剩几步"这回事了，且步数可能与数据脱钩
     name: '把时间线节点序号写成死值（序号不再由下标派生）',
     file: F.timeline,
-    find: 'String(i + 1)',
-    replace: 'String(1)',
+    find: 'const step = i + 1;',
+    replace: 'const step = 1;',
     expect: ['NOTREADY.timeline.derivedFromStages'],
   },
   {
     // 组件侧那一半：状态词还在，但不再映射到 loading —— 圈就永远不会转
     name: '「进行中」不再映射到 loading 态（退回一个不动的节点）',
     file: F.timeline,
-    find: "  active: 'is-loading',",
-    replace: "  active: '',",
+    find: 'data-state={note}',
+    replace: "data-state={note === 'active' ? 'waiting' : note}",
     expect: ['NOTREADY.timeline.explicitLoading'],
   },
   {
@@ -3988,7 +4044,7 @@ const MUTATIONS = [
     // 否则这条断言只测了"有没有这个类"，测不到"圈转不转"
     name: '摘掉 loading 外圈的旋转动画（节点在，但圈不转 ⇒ 与"卡住了"看起来一样）',
     file: F.mangaStyle,
-    find: '  animation: tlspin 900ms linear infinite;',
+    find: '  animation: miao-pulse-node 1.8s ease-in-out infinite;',
     replace: '',
     expect: ['NOTREADY.timeline.explicitLoading'],
   },
@@ -4338,7 +4394,7 @@ const MUTATIONS = [
   {
     name: '把狮尾 font.css 的 link 从入口 HTML 摘掉（该字体根本不加载，首位静默回落）',
     file: F.entryHtml,
-    find: '    <link rel="stylesheet" href="/assets/fonts/swei-gothic/font.css" />\n',
+    find: '    <link rel="stylesheet" href="/assets/fonts/swei-gothic/font.css" media="print" onload="this.media = \'all\'" />\n',
     replace: '',
     expect: ['FONT.viaJsModule'],
   },

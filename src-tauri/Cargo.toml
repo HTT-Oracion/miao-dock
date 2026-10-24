@@ -79,6 +79,7 @@ urlencoding = "2"                  # QQ/酷狗 搜索参数编码
 encoding_rs = "0.8"                # QQ 音乐 GB18030 解码
 uuid = { version = "1", features = ["v4"] }  # 咪咕 cookie id
 librqbit = "9.0.1"
+tauri-plugin-clipboard-manager = "2"
 
 # ── S2 三进程生命周期：进程**组**信号（`kill(-pgid, …)`）──
 # 为什么需要：回收时必须连孙进程一起带走（真引擎会自拉一个执行器子进程，

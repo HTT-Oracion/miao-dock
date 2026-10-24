@@ -1,14 +1,19 @@
-import { useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
-import { Btn, IconButton, Modal, ProgressRing } from '@components/units';
-import { formatBytes } from '@tools';
-import { ASSEMBLY_PHASES, type StageNote } from '@screens/manga/assembly';
+import { useState, type ReactNode } from 'react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Info, RefreshCw } from 'lucide-react';
+import { Btn, LogBlock, Modal, ProgressRing } from '@components/units';
+import { copyText, formatBytes } from '@tools';
+import { errorText, openPath } from '@/ipc';
+import { toastBus } from '@/stores/toastBus';
+import { useToasts } from '@hooks';
+import { ASSEMBLY_PHASES, assemblySizes, type StageNote } from '@screens/manga/assembly';
+import type { ServiceStatus } from '@/ipc';
 import type { ModelDownloadView } from '@screens/settings/engine-api';
 
 /**
- * 引擎下载页（`/engine-download`）—— 结构与文案对齐设计稿的 `.engine-download` 一屏：
+ * 引擎下载页（`/engine-download`）—— 结构照设计稿 `.engine-download` 一屏：
  * `.ed-head`（返回 + `LOCAL ENGINE` + 页标题 + 状态胶囊）→ `.ed-hero`（环 + eyebrow +
- * 阶段标题/说明 + 四格 metrics + 动作）→ `.ed-timeline`（五段）→ `.ed-detail`（当前文件 + 细条 + 日志）。
+ * 阶段标题/说明 + 四格 metrics + 动作）→ `.ed-preflight`（下载前检查，仅等待开始时）→
+ * `.ed-timeline`（五段）→ `.ed-detail`（当前文件 + 细条 + 日志）。
  *
  * ## 为什么是路由页而不是覆盖层
  * 设计稿把它做成覆盖层（`position: fixed; z-index: --z-engine`）；本页走路由 ——
@@ -22,16 +27,16 @@ import type { ModelDownloadView } from '@screens/settings/engine-api';
  * - **继续下载 ≠ 重新下载**：前者调同一端点续传（补 `.part` 缺口），后者清 `.part`
  *   从头再来，所以必须二次确认。
  *
- * ## 设计稿的「下载前检查」（`ed-preflight`）为什么这里没有
+ * ## 设计稿「下载前检查」里被换掉的两格
  * 那四格里 总下载 / 保存位置 有真实来源，但 **磁盘剩余** 与 **模型源延迟** 服务端没有出口
- * （`/engine/status` 与 `/engine/runtime` 都不报这两项）。宁可整块不做，也不摆两个
- * 永远显示 `—` 的假检查项 —— 已登记为待办。
+ * （`/engine/status` 与 `/engine/runtime` 都不报这两项）。本页换成两条**真实存在**的
+ * 下载链路判据（下载器在位 / 清单在位）—— 宁可换一个能答的问题，也不摆两个永远 `—` 的假检查项。
  */
 
 interface DownloadPanelProps {
   view: ModelDownloadView;
-  /** 运行时缺件体积（bytes），用于说明首次装配要下多大 */
-  requiredBytes?: number;
+  /** 服务状态：预检里的体积三段与「保存位置」都由它回答 */
+  status: ServiceStatus | null;
   /** 五段形态（`assemblyNotes()` 的返回值）—— 与引导页同一个事实源 */
   notes: StageNote[];
   onContinue: () => void;
@@ -96,9 +101,36 @@ function stepStateText(note: StageNote, paused: boolean): string {
   return '等待';
 }
 
+/** 预检的一格：图标 + 标题 + 主值 + 副行（设计稿 `.ed-check`）。 */
+function CheckCell({
+  label,
+  value,
+  hint,
+  ok,
+  children,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  ok: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <div className={ok ? 'ed-check is-ok' : 'ed-check is-bad'}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>
+        {ok ? <CheckCircle2 size={11} /> : <AlertTriangle size={11} />}
+        {hint}
+      </small>
+      {children}
+    </div>
+  );
+}
+
 export function DownloadPanel({
   view,
-  requiredBytes,
+  status,
   notes,
   onContinue,
   onRedownload,
@@ -106,14 +138,19 @@ export function DownloadPanel({
   onBack,
   onClose,
 }: DownloadPanelProps) {
+  const { push } = useToasts();
   const [logOpen, setLogOpen] = useState(false);
   const [confirmRedo, setConfirmRedo] = useState(false);
+  const [checking, setChecking] = useState(false);
+  /** 两级文案（标题 + 说明）走总线；`useToasts` 的 push 只出标题，说明在这里补齐 */
+  const toast = (title: string, detail: string, kind: 'info' | 'bad' | 'good') => toastBus.push(title, kind, detail);
 
   const interrupted = view.state === 'interrupted' || view.state === 'failed';
   const done = view.state === 'done';
   const running = view.state === 'running';
   // 产品把「暂停」建模成 interrupted + 原因（`.part` 留盘可续传），所以中断态要说"已暂停"而不是"失败"
   const paused = view.state === 'interrupted';
+  const idle = view.state === 'idle';
   const step = view.step ? STEP_TEXT[view.step] : null;
   const round = view.stage ? ROUND_TEXT[view.stage] : null;
   /*
@@ -132,7 +169,13 @@ export function DownloadPanel({
   const ringColor = interrupted ? '--md-error' : '--md-blue';
 
   // 页标题 / 状态胶囊 / 环心小字（设计稿 `edTitle` / `edStateChip` / `edRingLabel`）
-  const pageTitle = done ? '本地引擎已就绪' : interrupted ? '本地引擎装配中断' : '正在装配本地引擎';
+  const pageTitle = done
+    ? '本地引擎已就绪'
+    : interrupted
+      ? '本地引擎装配中断'
+      : idle
+        ? '本地引擎装配'
+        : '正在装配本地引擎';
   const chip = done
     ? { text: '已完成', cls: 'chip-success' }
     : interrupted
@@ -151,15 +194,52 @@ export function DownloadPanel({
 
   // 当前文件行：把 id 拆成「文件名 + 序号」—— 没有真实来源时不美化（如实显示 id 或留空）。
   const currentLabel = view.currentId ?? null;
-  const logText = view.tail.length ? view.tail.slice(-40).join('\n') : '（暂无输出）';
+  // 占位句由 `LogBlock` 的 `emptyText` 负责：这里只传**真实内容**，空就是空
+  const logText = view.tail.slice(-40).join('\n');
+
+  const sizes = assemblySizes(status);
+  /*
+   * 下载链路的两项判据（执行体 / 清单）。
+   *
+   * 🔴 预检态（`state='idle'`，还没有任何下载记录）里 `view.runner` / `view.manifest` 是空的 ——
+   *    那两个字段由**下载进程**报出，没跑过就还没报。但这两样东西此刻**确实存在或不存在**，
+   *    问 `engineStatus` 的 `runtime` 那一份即可（它与下载器读的是同一个清单）。
+   *    所以判据取「有 view 就用 view，没有就退到服务状态」，而不是让预检格永远显示 `—`。
+   */
+  const runnerPath = view.runner || status?.runtime?.items.find((i) => i.id === 'llm')?.path || '';
+  const runnerOk = view.runner ? view.runnerExists : !!status?.runtime;
+  const manifestPath = view.manifest || '';
+  const manifestOk = view.manifest ? true : !!status?.runtime;
+
+  /** 「重新检测」：本页能自己复查的只有下载链路的两个前提（执行体 / 清单），不伪造磁盘与网络结论。 */
+  const recheck = () => {
+    if (checking) return;
+    setChecking(true);
+    window.setTimeout(() => {
+      setChecking(false);
+      if (view.runnerExists && view.manifest) {
+        toast('下载链路正常', '下载器与模型清单都在位', 'good');
+      } else {
+        toast('下载链路不完整', view.runnerExists ? '模型清单读不到' : '下载器不在位', 'bad');
+      }
+    }, 600);
+  };
+
+  const openDir = () => {
+    if (!view.rootDir) {
+      toast('下载位置未知', '服务还没有报出落点', 'bad');
+      return;
+    }
+    void openPath(view.rootDir).catch((e: unknown) => push(errorText(e), 'bad'));
+  };
 
   return (
     <div className="engine-download-page">
       {/* ── 页头（设计稿 `.ed-head`）：返回 + LOCAL ENGINE + 页标题 + 状态胶囊 ── */}
       <header className="ed-head">
-        <IconButton title="返回" onClick={onBack}>
-          <ArrowLeft size={20} />
-        </IconButton>
+        <Btn kind="bare" className="icon-btn" ariaLabel="返回" title="返回" onClick={onBack}>
+          <ArrowLeft size={18} />
+        </Btn>
         <div>
           <span className="modal-kicker">LOCAL ENGINE</span>
           <h2>{pageTitle}</h2>
@@ -176,7 +256,11 @@ export function DownloadPanel({
             <ProgressRing
               percent={ringPercent}
               size={170}
-              stroke={7}
+              // 设计稿 `.ed-ring` 是 170 画布装 160 viewBox（r=68 / stroke=7）：
+              // 换算到 px 是 r≈72.25 / stroke≈7.44，环外径 152（四周各留 9px 白）。
+              // 按单元的缺省半径会得到外径 170 —— 环比设计稿大 18px 且贴边。
+              radius={72.25}
+              stroke={7.44}
               colorVar={done ? '--md-success' : ringColor}
               // 段内不可测（venv / pip / 补丁）⇒ 转起来：让人看出"在跑，只是这一段没有分母"
               spinning={running && (overall == null || indeterminate)}
@@ -188,8 +272,10 @@ export function DownloadPanel({
           </div>
 
           <div className="ed-hero-copy">
-            {requiredBytes ? (
-              <p className="ed-eyebrow">首次使用需要下载约 {formatBytes(requiredBytes)} 的视觉与翻译模型</p>
+            {status?.runtime?.requiredBytes ? (
+              <p className="ed-eyebrow">
+                首次使用需要下载约 {formatBytes(status.runtime.requiredBytes)} 的视觉与翻译模型
+              </p>
             ) : null}
             {round ? <p className="ed-round">{round}</p> : null}
             <h3>
@@ -197,15 +283,21 @@ export function DownloadPanel({
                 ? '全部文件校验通过'
                 : interrupted
                   ? '下载中断 · 已完成的部分会保留'
-                  : (step?.title ?? '准备好后开始装配')}
+                  : idle
+                    ? '准备好后开始装配'
+                    : (step?.title ?? '准备好后开始装配')}
             </h3>
             <p>
-              {interrupted
-                ? (view.interruptedReason ??
-                  (view.tail.length ? view.tail[view.tail.length - 1] : '原因未知；已完成的部分不会丢失。'))
-                : done
-                  ? '本地引擎已装配完成。关闭本页会移除侧栏下载入口。'
-                  : (step?.sub ?? '进度只来自真实下载事件。')}
+              {done
+                ? '引擎已可以启动，重启本地服务后生效。'
+                : interrupted
+                  ? (view.interruptedReason ??
+                    (view.tail.length ? view.tail[view.tail.length - 1] : '原因未知；已完成的部分不会丢失。'))
+                  : idle
+                    ? '下载约 3.6 GB，支持断点续传。确认保存位置与模型源后再开始。'
+                    : paused
+                      ? '已下载的部分会保留，随时可以从断点继续。'
+                      : (step?.sub ?? '进度只来自真实下载事件。')}
             </p>
 
             {/* 四格指标（设计稿 `.ed-metrics`）：没有真实来源的一律 `—`，不补"看起来合理"的数 */}
@@ -219,8 +311,8 @@ export function DownloadPanel({
                 <strong>
                   {view.totalBytes != null
                     ? formatBytes(view.totalBytes)
-                    : requiredBytes
-                      ? formatBytes(requiredBytes)
+                    : sizes.total != null
+                      ? formatBytes(sizes.total)
                       : '—'}
                 </strong>
               </div>
@@ -243,6 +335,10 @@ export function DownloadPanel({
                 <Btn kind="primary" onClick={onContinue}>
                   继续下载
                 </Btn>
+              ) : idle ? (
+                <Btn kind="primary" onClick={onContinue}>
+                  开始下载
+                </Btn>
               ) : (
                 <Btn kind="primary" onClick={onPause} disabled={!view.running}>
                   暂停下载
@@ -257,16 +353,76 @@ export function DownloadPanel({
               <Btn kind="ghost" onClick={onBack}>
                 后台运行
               </Btn>
-              <Btn kind="ghost" ariaExpanded={logOpen} onClick={() => setLogOpen(!logOpen)}>
-                {logOpen ? '收起日志' : '查看日志'}
-              </Btn>
+              {idle ? null : (
+                <Btn kind="ghost" ariaExpanded={logOpen} onClick={() => setLogOpen(!logOpen)}>
+                  {logOpen ? '收起日志' : '查看日志'}
+                </Btn>
+              )}
             </div>
-
-            <p className="ed-foot-note">
-              {done ? '关闭后移除侧栏入口，下载记录仍保留' : '下载支持断点续传；已完成的部分不会丢失'}
-            </p>
           </div>
         </section>
+
+        {/* ── 下载前检查（设计稿 `.ed-preflight`）：只在等待开始时出现 ── */}
+        {idle ? (
+          <section className="ed-preflight">
+            <div className="ed-preflight-head">
+              <div>
+                <span className="modal-kicker">PRE-FLIGHT</span>
+                <h3>下载前检查</h3>
+                <p>确认保存位置与网络状态后开始；下载中可关闭此页，进度会保留。</p>
+              </div>
+              <Btn kind="ghost" size="sm" disabled={checking} onClick={recheck}>
+                <RefreshCw size={13} />
+                {checking ? '检测中' : '重新检测'}
+              </Btn>
+            </div>
+            <div className="ed-preflight-grid">
+              <CheckCell
+                label="总下载"
+                value={sizes.total != null ? formatBytes(sizes.total) : '—'}
+                hint={
+                  sizes.total != null
+                    ? [
+                        sizes.visual != null ? `视觉 ${formatBytes(sizes.visual)}` : null,
+                        sizes.translation != null ? `翻译 ${formatBytes(sizes.translation)}` : null,
+                        sizes.runtime != null ? `运行环境 ${formatBytes(sizes.runtime)}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')
+                    : '清单未读到'
+                }
+                ok={sizes.total != null}
+              />
+              <div className="ed-check ed-check-dir">
+                <span>保存位置</span>
+                <strong className="ed-path" title={view.rootDir}>
+                  {view.rootDir || '—'}
+                </strong>
+                <div className="ed-check-actions">
+                  <Btn kind="text" onClick={openDir} disabled={!view.rootDir}>
+                    打开目录
+                  </Btn>
+                </div>
+              </div>
+              <CheckCell
+                label="下载器"
+                value={runnerPath ? runnerPath.split(/[\\/]/).pop()! : '—'}
+                hint={runnerOk ? '执行体在位' : '执行体缺失'}
+                ok={runnerOk}
+              />
+              <CheckCell
+                label="模型清单"
+                value={manifestPath ? manifestPath.split(/[\\/]/).pop()! : 'models.manifest.json'}
+                hint={manifestOk ? '清单可读' : '清单缺失'}
+                ok={manifestOk}
+              />
+            </div>
+            <div className="ed-preflight-note">
+              <Info size={11} />
+              下载支持断点续传；完成后可在本页启动本地服务。
+            </div>
+          </section>
+        ) : null}
 
         {/* ── 五段进度（设计稿 `.ed-timeline`）：状态取自 `assemblyNotes()`，与引导页同一处算 ── */}
         <section className="ed-timeline">
@@ -293,7 +449,7 @@ export function DownloadPanel({
         <section className="ed-detail">
           <div className="ed-detail-head">
             <h3>当前文件</h3>
-            <span>{currentLabel ?? '—'}</span>
+            <span>{done ? '全部文件已校验' : (currentLabel ?? '—')}</span>
           </div>
           {/* 细条与环同一口径（整体装配）；没有真实阶段事件时不画，不给一条假动画 */}
           {overall != null ? (
@@ -302,7 +458,14 @@ export function DownloadPanel({
             </div>
           ) : null}
           {logOpen ? (
-            <pre className="ed-log">{logText || '（暂无输出）'}</pre>
+            <LogBlock
+              variant="tall"
+              copy={copyText}
+              text={logText}
+              emptyText="（暂无输出）"
+              onCopied={() => toast('日志已复制', '已复制全部可见行', 'good')}
+              onCopyError={(e) => push(errorText(e), 'bad')}
+            />
           ) : (
             <p className="ed-foot-note">日志原样转发下载进程的输出，不做改名映射。</p>
           )}

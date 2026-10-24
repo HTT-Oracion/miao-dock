@@ -16,16 +16,34 @@ export type PhaseId = 'prepare' | 'runtime' | 'visual' | 'llm' | 'ready';
 
 export interface AssemblyPhase {
   id: PhaseId;
+  /** 段名（时间线主行）—— 与设计稿 `.timeline-step strong` 逐字一致 */
   text: string;
 }
 
+/**
+ * 五段段名。
+ *
+ * 🔴 段名是**界面文案**，取设计稿 `.timeline-step strong` 的五句
+ * （`环境准备 / 运行环境 / 视觉模型 / 翻译模型 / 就绪`）；
+ * 引导页与下载页共用这一份 —— 两处各写一套就会出现"同一段两个叫法"。
+ */
 export const ASSEMBLY_PHASES: AssemblyPhase[] = [
   { id: 'prepare', text: '环境准备' },
-  { id: 'runtime', text: '运行环境装配' },
-  { id: 'visual', text: '视觉模型装配' },
-  { id: 'llm', text: 'LLM 翻译模型装配' },
+  { id: 'runtime', text: '运行环境' },
+  { id: 'visual', text: '视觉模型' },
+  { id: 'llm', text: '翻译模型' },
   { id: 'ready', text: '就绪' },
 ];
+
+/** 段形态词（时间线副行的状态位）—— 四态，与节点形态一一对应。 */
+export type StageNote = 'done' | 'active' | 'failed' | 'waiting';
+
+export const NOTE_TEXT: Record<StageNote, string> = {
+  done: '完成',
+  active: '进行中',
+  failed: '失败',
+  waiting: '等待',
+};
 
 /** 事件段 → 五段下标。`models` 是全量 CLI 的兼容值，归到 llm 段。 */
 export const STEP_INDEX: Record<AssemblyStep, number> = {
@@ -35,8 +53,6 @@ export const STEP_INDEX: Record<AssemblyStep, number> = {
   llm: 3,
   models: 3,
 };
-
-export type StageNote = 'done' | 'active' | 'failed' | 'waiting';
 
 /** 第一个未完成的模型段；`null` = 模型资产已齐（或根本没有模型档）。 */
 export interface EngineInstallView {
@@ -176,4 +192,28 @@ export function engineInstallView(
   }
 
   return null;
+}
+
+/**
+ * 装配体积的三段拆分（视觉 / 翻译 / 运行环境），供引导页「需要下载」与下载页预检共用。
+ *
+ * 全部来自 `runtime.sets` 的 `totalBytes`（服务端按清单求和）；读不到的档位不编数，
+ * 由调用方按 `null` 分支隐藏那一行。
+ */
+export interface AssemblySizes {
+  visual: number | null;
+  translation: number | null;
+  runtime: number | null;
+  /** 三者之和；任一档缺失时为 `null`（宁可说"未知"，不给一个少算的合计） */
+  total: number | null;
+}
+
+export function assemblySizes(status: ServiceStatus | null): AssemblySizes {
+  const visual = setOf(status, 'visual')?.totalBytes ?? null;
+  const llm = setOf(status, 'llm')?.totalBytes ?? null;
+  const tr = setOf(status, 'translation')?.totalBytes ?? null;
+  const runtime = setOf(status, 'runtime')?.totalBytes ?? null;
+  const translation = llm == null && tr == null ? null : (llm ?? 0) + (tr ?? 0);
+  const total = visual == null || translation == null || runtime == null ? null : visual + translation + runtime;
+  return { visual, translation, runtime, total };
 }

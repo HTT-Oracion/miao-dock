@@ -73,6 +73,9 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        // 剪贴板：日志块的「复制全部」走它，而不是 WebView 的 navigator.clipboard
+        // （后者在 Tauri 的 WebView 里需要安全上下文与用户手势，静默失败时没有任何信号）
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(ServiceManager::new())
         .invoke_handler(commands::handler())
         .setup(|app| {

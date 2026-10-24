@@ -38,6 +38,7 @@
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -51,10 +52,31 @@ const SELF = fileURLToPath(import.meta.url);
 const SERVICE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'service', 'mod.rs');
 const STATE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'state.rs');
 const IPC_TS = path.join(REPO_ROOT, 'src', 'ipc', 'index.ts');
-const NOTREADY_TSX = path.join(REPO_ROOT, 'src', 'screens', 'manga', 'NotReadyScreen.tsx');
+const NOTREADY_DIR = path.join(REPO_ROOT, 'src', 'screens', 'manga');
+const NOTREADY_TSX = path.join(NOTREADY_DIR, 'NotReadyScreen.tsx');
+const NOTREADY_PART_DIR = path.join(NOTREADY_DIR, 'notready');
+
+/**
+ * 引导页的**全部源码**（分派文件 + `notready/` 子树），逐文件剥注释后拼接。
+ *
+ * 🔴 必须逐文件剥注释再拼：`stripComments` 是带状态机的，直接拼原文再剥时
+ *    前一个文件的失同步会污染后一个（D-110）。
+ */
+function readNotReadySource() {
+  const parts = [readFileSync(NOTREADY_TSX, 'utf8')];
+  for (const f of readdirSync(NOTREADY_PART_DIR).sort()) {
+    if (f.endsWith('.ts') || f.endsWith('.tsx')) {
+      parts.push(readFileSync(path.join(NOTREADY_PART_DIR, f), 'utf8'));
+    }
+  }
+  return parts.join('\n');
+}
 const ASSEMBLY_TS = path.join(REPO_ROOT, 'src', 'screens', 'manga', 'assembly.ts');
 // B1 起未就绪屏（含它的入口）住在**翻译屏装配件**里，App 只持有 setScreen 本身
 const TRANSLATE_PANE = path.join(REPO_ROOT, 'src', 'router', 'panes', 'TranslatePane.tsx');
+/// 引导页拆形态后的落点：文案层与装配形态各自一份（反证要按"缺陷属于哪一层"选文件）
+const COPY_TS = path.join(NOTREADY_PART_DIR, 'copy.ts');
+const ASSEMBLY_FORM_TSX = path.join(NOTREADY_PART_DIR, 'AssemblyForm.tsx');
 
 let passed = 0;
 let failed = 0;
@@ -191,15 +213,17 @@ function sliceFn(src, sig) {
 }
 
 // ------------------------------------------------------------------ G4~G9：界面
-const tsx = fs.readFileSync(NOTREADY_TSX, 'utf8');
+const tsx = readNotReadySource();
 const asm = fs.readFileSync(ASSEMBLY_TS, 'utf8');
 {
   // G4：装配五段**逐字**（冻结字面量；D-233 由四段拆成五段，旧结论见 D-231⑥）
+  // ⚠️ 2026-10-24：段名按设计稿 `.timeline-step strong` 取短名（`运行环境` / `视觉模型` / `翻译模型`），
+  //    旧写法是产品自造的长名。改的是**字面值**，不是结论 —— 五段仍逐字冻结、仍按序。
   const PHASE_TEXT = [
     ['prepare', '环境准备'],
-    ['runtime', '运行环境装配'],
-    ['visual', '视觉模型装配'],
-    ['llm', 'LLM 翻译模型装配'],
+    ['runtime', '运行环境'],
+    ['visual', '视觉模型'],
+    ['llm', '翻译模型'],
     ['ready', '就绪'],
   ];
   const wrong = PHASE_TEXT.filter(([id, text]) => !asm.includes(`{ id: '${id}', text: '${text}' }`));
@@ -218,10 +242,20 @@ const asm = fs.readFileSync(ASSEMBLY_TS, 'utf8');
   // G5：新分支的**判据**与**标题**都在，且是真的会走（不是 `if (false)`）
   // ⚠️ 判据在 D-229 收窄成「real 档 + 运行时未就绪」：**不再看服务状态**
   //    （闸门允许 ① 在未装配时照常起，state 会是 running，而这一页恰恰那时最需要）。
+  /*
+   * 🔴 判据钉**语义**，不钉某一种写法（2026-10-24 拆形态后改的）：
+   *    · "real 档 + 运行时未就绪"这条判定现在住在 `notready/derive.ts` 的
+   *      `isRuntimeUnready()`（与引导页分派处同一个函数），所以判它**真的被实现**；
+   *    · 分派点必须真的调它、并且带 `status?.runtime` 守卫（没有 runtime 块时不能进装配页）；
+   *    · 标题在装配形态里（`notready/AssemblyForm.tsx`）。
+   *    把这三条写死成"某一行 const 长什么样"，一次合法重构就会假红 —— D-379 踩过一次。
+   */
   check(
     'G5 「运行时未装配」分支存在且判据可走（real 档 + 运行时未就绪；服务状态不是判据，见 D-229）',
-    /const runtimeUnready = status\?\.mode === 'real' && !!rt && !rt\.ready;/.test(tsx) &&
-      /if \(runtimeUnready && rt\) \{/.test(tsx) &&
+    /export function isRuntimeUnready\(status: ServiceStatus \| null\): boolean \{[\s\S]{0,200}?status\?\.mode === 'real' && !!status\?\.runtime && !status\.runtime\.ready/.test(
+      tsx,
+    ) &&
+      /if \(isRuntimeUnready\(status\) && status\?\.runtime\) \{/.test(tsx) &&
       tsx.includes('需要先装配本地引擎'),
     null,
   );
@@ -242,12 +276,20 @@ const asm = fs.readFileSync(ASSEMBLY_TS, 'utf8');
   );
 
   // G7：它必须在**时间线之前** return —— 否则用户仍会先看到一条走到 L1 就停的进度条
-  const atBranch = tsx.indexOf('if (runtimeUnready && rt) {');
-  const atTimeline = tsx.indexOf('<AssemblyTimeline notes={notes}');
+  /*
+   * G7：分派必须**早于**任何时间线渲染。
+   * 拆形态后时间线只在两个形态里画（`AssemblyForm` / `ServiceForm`），
+   * 而分派点在 `NotReadyScreen` —— 所以判据落在**分派文件**里：
+   * 装配分支的 `return` 必须出现在同一个文件里"引用某个形态"之前，
+   * 且分派文件自身**不许**直接渲染时间线（那样等于绕过形态、又画一遍）。
+   */
+  const atBranch = tsx.indexOf('if (isRuntimeUnready(status) && status?.runtime) {');
+  const atFormUse = tsx.indexOf('<AssemblyForm');
+  const dispatchRendersTimeline = /<AssemblyTimeline/.test(tsx.slice(0, tsx.indexOf('export function NotReadyScreen')));
   check(
     'G7 新分支在时间线渲染之前 return（用户不会先看到卡住的进度条）',
-    atBranch > 0 && atTimeline > 0 && atBranch < atTimeline,
-    { atBranch, atTimeline },
+    atBranch > 0 && atFormUse > 0 && atBranch < atFormUse && !dispatchRendersTimeline,
+    { atBranch, atFormUse, dispatchRendersTimeline },
   );
 
   // G8：数字**不是写死的** —— 读数来自服务端 `requiredBytes`，且**代码里**不许出现字面量 GB。
@@ -371,13 +413,13 @@ if (REFUTE) {
     {
       id: 'M2',
       what: '新分支条件改成 if (false)（分支在，但永远不走）',
-      mutate: () => mutateFile(NOTREADY_TSX, 'if (runtimeUnready && rt) {', 'if (false) {'),
+      mutate: () => mutateFile(NOTREADY_TSX, 'if (isRuntimeUnready(status) && status?.runtime) {', 'if (false) {'),
       expect: 'G5',
     },
     {
       id: 'M3',
       what: '把新分支的标题塞进 summaryOf（这就是"混进 L1 失败"）',
-      mutate: () => mutateFile(NOTREADY_TSX, "title: '本地服务没能起来',", "title: '需要先装配本地引擎',"),
+      mutate: () => mutateFile(COPY_TS, "title: '本地服务没能起来',", "title: '需要先装配本地引擎',"),
       expect: 'G6',
     },
     {
@@ -389,7 +431,7 @@ if (REFUTE) {
        */
       mutate: () =>
         mutateFile(
-          NOTREADY_TSX,
+          ASSEMBLY_FORM_TSX,
           'const totalText = rt.requiredBytes > 0 ? formatBytes(rt.requiredBytes) : null;',
           "const totalText = '6.9 GB';",
         ),
@@ -412,9 +454,9 @@ if (REFUTE) {
       what: '引导页不再画时间线（只剩另一处画 ⇒ 同一件事两个样子）',
       mutate: () =>
         mutateFile(
-          NOTREADY_TSX,
-          '<AssemblyTimeline notes={notes} detail={detail} extra={extra} />',
-          '<div className="nr-guide-note">装配分五段。</div>',
+          ASSEMBLY_FORM_TSX,
+          '<AssemblyTimeline notes={notes} detail={detail} />',
+          '<div className="nr-note">装配分五段。</div>',
         ),
       expect: 'G12',
     },
@@ -457,12 +499,9 @@ if (REFUTE) {
   {
     const bad = [];
     if (!fs.readFileSync(ASSEMBLY_TS, 'utf8').includes("text: '环境准备'")) bad.push('assembly.ts 残留 M1');
-    if (!fs.readFileSync(NOTREADY_TSX, 'utf8').includes('需要先装配本地引擎')) bad.push('NotReadyScreen.tsx 残留 M3');
-    if (!fs.readFileSync(NOTREADY_TSX, 'utf8').includes('assemblyNotes(status, download)'))
-      bad.push('NotReadyScreen.tsx 残留 M6');
-    if (
-      !fs.readFileSync(NOTREADY_TSX, 'utf8').includes('<AssemblyTimeline notes={notes} detail={detail} extra={extra}')
-    )
+    if (!readNotReadySource().includes('需要先装配本地引擎')) bad.push('NotReadyScreen.tsx 残留 M3');
+    if (!readNotReadySource().includes('assemblyNotes(status, download)')) bad.push('NotReadyScreen.tsx 残留 M6');
+    if (!readNotReadySource().includes('<AssemblyTimeline notes={notes} detail={detail} />'))
       bad.push('NotReadyScreen.tsx 残留 M7');
     if (!fs.readFileSync(ASSEMBLY_TS, 'utf8').includes('export const ASSEMBLY_PHASES: AssemblyPhase[] = ['))
       bad.push('assembly.ts 残留 M9');

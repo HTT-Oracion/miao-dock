@@ -25,6 +25,7 @@ export { Empty } from '@components/units/Empty';
 export { ErrorState } from '@components/units/ErrorState';
 export { Mascot } from '@components/units/Mascot';
 export { IconButton } from '@components/units/IconButton';
+export { LogBlock } from '@components/units/LogBlock';
 export { MenuButton, MenuItem } from '@components/units/MenuButton';
 export { Modal } from '@components/units/Modal';
 export { Notice } from '@components/units/Notice';
