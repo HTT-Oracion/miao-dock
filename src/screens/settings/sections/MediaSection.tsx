@@ -4,7 +4,6 @@ import type { ReactNode } from 'react';
 import { useMusicStore } from '@music/store';
 import { Btn, ColorPicker, Range, Segmented, Select, Swatches, Switch } from '@components/units';
 import { CtlNote, GroupNote, ReadOnly } from '@screens/settings/parts';
-import { AccountCardsBlock } from '@screens/settings/AccountCardsBlock';
 import {
   SKINS,
   QUALITY_OPTIONS,
@@ -15,7 +14,6 @@ import {
 } from '@music/player-options';
 import { MEDIA } from '@screens/settings/catalog';
 import type { SettingItem } from '@screens/settings/catalog';
-import { CacheBlock } from '@screens/settings/CacheBlock';
 import { Group } from './shared';
 
 /**
@@ -119,10 +117,6 @@ export function MediaSection() {
         return <Switch on={dynamicEnabled} onToggle={() => setDynamicEnabled(!dynamicEnabled)} label={item.label} />;
       case 'disc-mode':
         return <Switch on={discMode} onToggle={() => setDiscMode(!discMode)} label={item.label} />;
-      case 'music-cache':
-        // 四格块，自身带标题/说明/统计/按钮，所以不需要 Row 的标题列
-        // （`Group` 见到 layout:'block' 也不会包 Row，见 Group 里的注释）
-        return <CacheBlock settingId={item.id} />;
       case 'lyrics-mode':
         // 设计稿这里是 `.seg` 分段控件而不是下拉：两档要一眼看全、点一下就换
         return (
@@ -237,8 +231,12 @@ export function MediaSection() {
 
   return (
     <>
-      {/* 设计稿把「音乐账号」排在 ③ 的第一张卡：设置页里只有它能把四个平台一次看全 */}
-      <AccountCardsBlock />
+      {/*
+       * 「音乐账号」卡**已移除**（本轮需求）：账号是音乐屏自己的事 ——
+       * 工具条右侧那枚按钮就是登录入口，点开还会弹登录框。
+       * 设置页再摆一张四格卡，等于把同一个身份状态做了两套界面，
+       * 而且这一页的主语是"播放与媒体"，不是"账号"。
+       */}
       {/* 按 catalog 的 groups 顺序渲染三小节：写死第一组会静默漏掉「歌词 / 透明彩胶」 */}
       {MEDIA.groups.map((g) => (
         <Group key={g.id} group={g} render={render} />

@@ -956,15 +956,42 @@ add('UI.sectionLinkBtn', 'UI', (s) => {
    * 节头右端的动作键必须是设计稿的 `.link-btn`（轻动作），不是 `.music-btn`（带底色的操作按钮）。
    * 语义层级不同：节头只该出现"刷新 / 换一批"这类轻动作，带底色的按钮会把节头压得比标题还重。
    * 三处：榜单「刷新」/ 推荐歌单「换一批」/ 今日精选「换一批」。
+   *
+   * ⚠️ 匹配用 `className="link-btn`（**不带收尾引号**）：推荐歌单那枚在未登录时是
+   * `link-btn is-locked`（压淡而不是置灰，点下去弹登录框）。写死 `className="link-btn"`
+   * 会把这一处漏掉，变成"只找到 2 处"的假红。
    */
   const charts = stripComments(readMaybe(path.join(F.musicUiDir, 'Charts.tsx')) ?? '');
   const right = stripComments(readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx')) ?? '');
   const problems = [];
   const linkCount =
-    (charts.match(/className="link-btn"/g) ?? []).length + (right.match(/className="link-btn"/g) ?? []).length;
+    (charts.match(/className="link-btn/g) ?? []).length + (right.match(/className="link-btn/g) ?? []).length;
   if (linkCount !== 3) problems.push(`节头动作键有 ${linkCount} 处 .link-btn，应为 3（榜单/推荐/精选各一）`);
   const css = stripComments(readMaybe(F.musicScss) ?? '');
   if (!/\.link-btn\s*\{/.test(css)) problems.push('缺少 .link-btn 样式');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.lockedLinkBtn', 'UI', (s) => {
+  /*
+   * 未登录时「推荐歌单」的「换一批」**必须点开登录框**，不能是"点了没反应"或"置灰说不出原因"。
+   *
+   * 判据钉三件事（缺一条都会退化成最坏那种：按钮在那儿、点下去什么都不发生）：
+   *   ① 按钮的 onClick 走 `openLogin`（而不是直接调 `loadRecommendPlaylists`）；
+   *   ② 未登录时**不 disabled**（置灰的按钮说不出"为什么要登录"）；
+   *   ③ 有 `is-locked` 这个压淡态，且 CSS 里真有它的规则 ——
+   *      只有类名没有规则 = 换了个更坏的形态（点得动，但看起来和能用的按钮一模一样）。
+   */
+  const right = stripComments(readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx')) ?? '');
+  const problems = [];
+  if (!/loggedIn\s*\?\s*void\s+loadRecommendPlaylists\(\)\s*:\s*void\s+openLogin\(\)/.test(right)) {
+    problems.push('未登录时的「换一批」没有走 openLogin（点了会静默无反应）');
+  }
+  if (!/disabled=\{loggedIn\s*&&\s*loading\}/.test(right)) {
+    problems.push('按钮的 disabled 不是「已登录且加载中」——未登录时会被置灰，说不出为什么要登录');
+  }
+  if (!/is-locked/.test(right)) problems.push('没有 is-locked 压淡态');
+  const css = stripComments(readMaybe(F.musicScss) ?? '');
+  if (!/\.link-btn\.is-locked\s*\{/.test(css)) problems.push('`.link-btn.is-locked` 规则缺失（压淡态没有样式）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 add('UI.chartCardPreview', 'UI', (s) => {

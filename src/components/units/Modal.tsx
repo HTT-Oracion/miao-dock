@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 /**
@@ -7,6 +8,17 @@ import { X } from 'lucide-react';
  * 结构按设计稿的 `modal-card` 四段还原：
  * `modal-head`（kicker + h2 + p + 关闭键）/ `modal-body` / `modal-foot`。
  * 三档宽度：默认 520 / `wide` 680 / `narrow` 420（`.modal-card` 系列）。
+ *
+ * ## 🔴 必须走 `createPortal` 挂到 `body`
+ *
+ * `.modal-layer` 是 `position: fixed`，而 fixed 的定位基准是**最近的"包含块"**，
+ * 不是视口 —— 只要某个祖先带 `backdrop-filter` / `transform` / `filter` /
+ * `will-change`，它就会成为包含块，fixed 元素改成相对**那个祖先**定位。
+ *
+ * 这不是理论风险：播放条 `.music-player` 就有 `backdrop-filter: blur(20px)`，
+ * 「桌面歌词设置」弹窗正挂在它内部 ⇒ 蒙层只盖住播放条那一小条、卡片被挤到
+ * 播放条的位置上（用户报的"弹窗位置混乱"）。挂到 `body` 就与祖先样式彻底解耦，
+ * 任何调用方都不用再关心自己上面有没有滤镜。
  *
  * ## 为什么 Esc / 焦点陷阱**不放这里**
  * 现状是"谁需要谁自己挂"（`CacheBlock` 在自身组件里调 `useEsc(onCancel)`），
@@ -52,7 +64,7 @@ export function Modal({
   const bodyCls = bodyClass ?? 'modal-body';
   const hasHead = Boolean(kicker || title || subtitle);
 
-  return (
+  return createPortal(
     <div className="modal-layer">
       <div className="modal-mask" onClick={busy ? undefined : onClose} />
       {/* `stopPropagation`：点卡片内部不该冒泡到蒙层把它关掉 */}
@@ -73,6 +85,7 @@ export function Modal({
         <div className={bodyCls}>{children}</div>
         {actions ? <footer className="modal-foot">{actions}</footer> : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

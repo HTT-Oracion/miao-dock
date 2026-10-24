@@ -60,7 +60,9 @@ const F = {
   secGeneral: path.join(APP, 'src', 'screens', 'settings', 'sections', 'GeneralSection.tsx'),
   secTranslate: path.join(APP, 'src', 'screens', 'settings', 'sections', 'TranslateSection.tsx'),
   secMedia: path.join(APP, 'src', 'screens', 'settings', 'sections', 'MediaSection.tsx'),
-  // ③ 的第一张卡（设计稿 `.account-grid`）：不在 `sections/` 里，所以单独一个源键
+  // ④ 资源与投放：音乐缓存搬来这里之后，它的渲染点与变异锚都落在这个文件
+  secResource: path.join(APP, 'src', 'screens', 'settings', 'sections', 'ResourceSection.tsx'),
+  // ③ 的第一张卡（设计稿 `.account-grid`）：本轮已删，源键保留用于断言"文件不得存在"
   accountCards: path.join(APP, 'src', 'screens', 'settings', 'AccountCardsBlock.tsx'),
   secAbout: path.join(APP, 'src', 'screens', 'settings', 'sections', 'AboutSection.tsx'),
   store: path.join(APP, 'src', 'modules', 'music', 'store.ts'),
@@ -175,11 +177,19 @@ const ADDED = [
   { id: 'lyrics-locked', label: '锁定歌词窗口' },
   { id: 'vinyl-color-mode', label: '彩胶配色' },
   { id: 'vinyl-color', label: '彩胶自定义色' },
-  { id: 'music-cache', label: '音乐缓存' },
+  /*
+   * 「音乐缓存」**不在 ③ 了**：它搬到 ④ 资源与投放（本轮需求）。
+   * 那是一个清理动作、与「存储占用」同类，不是一条播放设置。
+   */
 ];
 
-/** ③ MEDIA 的四个小节 id（顺序即渲染顺序；cache 是设计稿第三张卡，独立于「播放」） */
-const MEDIA_GROUPS = ['playback', 'cache', 'lyrics', 'vinyl'];
+/**
+ * ③ MEDIA 的**三个**小节 id（顺序即渲染顺序）。
+ *
+ * ⚠️ 原先是四个（playback / cache / lyrics / vinyl）：`cache`（音乐缓存）已搬到
+ * ④ 资源与投放 —— 它回答的是"磁盘占了多少、怎么清"，与「存储占用」同类。
+ */
+const MEDIA_GROUPS = ['playback', 'lyrics', 'vinyl'];
 
 /** ③ 全表项数自校常量应等于的合计
  *  26（初版）→ 29（③ 组 5 项 pending → 8 项 live）→ 31（P3 桌面歌词恢复 2 项）
@@ -243,6 +253,12 @@ function loadSources() {
       .filter((n) => n.endsWith('.tsx'))
       .map((n) => stripComments(readMaybe(path.join(F.sectionsDir, n))))
       .join('\n'),
+    /*
+     * ④ 资源与投放单独一份（不并进上面的拼接源）：
+     * 「音乐缓存」的渲染点在这里，而判据必须能区分「ResourceSection 渲染了它」
+     * 与「别的 Section 里恰好有同名 case」—— 用拼接源判会把两者混为一谈。
+     */
+    secResource: stripComments(readMaybe(F.secResource)),
     // D-156：`store.ts` 的 action 段已切到 `music/actions/*.ts`（setter / hydratePrefs 等）。
     // 读「store.ts + 全部切片」的逐文件 strip 拼接 —— 否则 STORE.setter.* / STORE.hydrate.*
     // 会因切片而假红（本次实测 8 条）。目录动态列举 ⇒ 以后每切一段自动覆盖。
@@ -593,23 +609,22 @@ add('ADDED.groups', 'ADDED', (ctx) => {
   };
 });
 add('ADDED.accountCards', 'ADDED', (ctx) => {
-  // ③ 的第一张卡（设计稿 `.account-grid`：四个平台的账号状态）。
-  // 判据取**成因**：数据必须来自 store、动作必须走现有 action、格子必须映射平台表 ——
-  // 只钉"页面上有几个 div"的话，摆四张假卡也算绿。
-  const comp = stripComments(ctx.s.accountCards ?? '');
-  const secs = ctx.s.sections;
+  /*
+   * 「音乐账号」卡**必须不在 ③ 里**（本轮需求）。
+   *
+   * 为什么删：账号是音乐屏自己的事 —— 工具条右侧那枚按钮就是登录入口，
+   * 点开还弹登录框。设置页再摆一张四格卡，等于把同一个身份状态做了两套界面，
+   * 而这一页的主语是"播放与媒体"。
+   *
+   * 判据钉的是**"删干净"**：组件文件已删 + 页面不再渲染 + catalog 里没有账号项。
+   * 只判其中一条的话，"文件删了但组件还挂着"或"组件删了但 catalog 还有一条"都会静默通过。
+   */
+  const secs = stripComments(ctx.s.sections);
   const problems = [];
-  if (!comp) problems.push('AccountCardsBlock.tsx 读不到');
-  else {
-    if (!/PLATFORMS\.map/.test(comp)) problems.push('四格没有从平台表映射（写死四条会随平台数漂移）');
-    if (!/loginInfos/.test(comp)) problems.push('状态没接 store 的 loginInfos（等于摆四张演示卡）');
-    if (!/openLogin\(/.test(comp) || !/logoutFor\(/.test(comp)) problems.push('登录 / 退出没接现有的两个 action');
-    if (/<button[\s>]/.test(comp)) problems.push('出现裸 <button>（按钮一律走单元）');
-    if (!comp.includes('登录后同步歌单、收藏与播放记录；凭证仅保存在本机'))
-      problems.push('卡头那句不是设计稿渲染层的原句');
-    if (!comp.includes('状态未知')) problems.push('探测没回来时应说「状态未知」，不是「未登录」');
-  }
-  if (!/<AccountCardsBlock \/>/.test(secs)) problems.push('MediaSection 没渲染这张卡（会静默少掉设计稿的第一张）');
+  if (ctx.s.accountCards) problems.push('AccountCardsBlock.tsx 仍在（删掉卡就该删掉组件）');
+  if (/<AccountCardsBlock\b/.test(secs)) problems.push('设置页仍在渲染「音乐账号」卡');
+  const catText = JSON.stringify(ctx.cat?.mod?.MEDIA ?? {});
+  if (/音乐账号/.test(catText)) problems.push('catalog 的 ③ 里仍有「音乐账号」相关项');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 add('ADDED.segControls', 'ADDED', (ctx) => {
@@ -965,8 +980,13 @@ add('CACHE.layoutFlag', 'CACHE', (ctx) => {
   const { cat } = ctx;
   const dataErr = CAT_ERR(cat);
   if (dataErr) return { ok: false, detail: dataErr };
-  const hit = flatItems(cat.mod.MEDIA).find((i) => i.id === 'music-cache');
-  if (!hit) return { ok: false, detail: 'MEDIA 里缺项 id=music-cache' };
+  /*
+   * ⚠️ 本轮起「音乐缓存」住在 **④ 资源与投放**（不再是 ③ 播放·媒体）：
+   * 它是清理动作、与「存储占用」同类。判据跟着搬，`layout: block` 的要求不变 ——
+   * 它仍是通栏块，塞进 Row 的窄右列会被压成一条读不了的细缝。
+   */
+  const hit = flatItems(cat.mod.RESOURCE).find((i) => i.id === 'music-cache');
+  if (!hit) return { ok: false, detail: '④ 资源与投放里缺项 id=music-cache' };
   return {
     ok: hit.layout === 'block',
     detail:
@@ -1009,17 +1029,35 @@ add('CACHE.blockRendersFourCells', 'CACHE', (ctx) => {
   const src = ctx.s.cacheBlock;
   if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx（分格实现不在预期位置）' };
   const problems = [];
-  const sec = (ctx.cat?.mod?.SETTINGS_SECTIONS ?? []).find((x) => x.id === 'media');
-  const grp = (sec?.groups ?? []).find((g) => g.id === 'cache');
-  if (!grp) problems.push('catalog 里没有独立的「音乐缓存」组（设计稿是 ③ 的第三张卡）');
+  /*
+   * 卡头归外层 `.set-subtitle`。⚠️ 本轮起这一项住在 **④ 资源与投放** 的 main 组里，
+   * 所以「独立成卡」的判据变成：RESOURCE 里有这一项，且 ResourceSection 把它单独包一层
+   * `.set-group`（而不是混进「清理」那张卡）。
+   */
+  const resSec = (ctx.cat?.mod?.SETTINGS_SECTIONS ?? []).find((x) => x.id === 'resource');
+  const grp = (resSec?.groups ?? []).flatMap((g) => g.items ?? []).find((i) => i.id === 'music-cache');
+  if (!grp) problems.push('catalog 里没有「音乐缓存」项（应住在 ④ 资源与投放）');
   else {
-    if (grp.title !== '音乐缓存') problems.push(`音乐缓存组的标题是「${grp.title}」，应为「音乐缓存」`);
-    if (grp.head !== '只统计在线歌曲；本地导入的文件不计入') {
-      problems.push('音乐缓存组的卡头口径与设计稿不一致');
+    if (grp.label !== '音乐缓存') problems.push(`项名是「${grp.label}」，应为「音乐缓存」`);
+    if (grp.why !== '歌词与整首歌的本地缓存，按平台清理') {
+      problems.push('说明句与设计稿口径不一致');
     }
   }
   if (new RegExp(q('set-cache-head')).test(src)) {
     problems.push('块内仍有 set-cache-head（卡头重复：卡头归外层 .set-subtitle）');
+  }
+  /*
+   * **接线**：catalog 里有这一项 ≠ 页面上会显示它。
+   *
+   * `ResourceSection` 是手写三张卡（不遍历 groups），所以这一项必须被显式
+   * `render(cache)` 包进自己的 `.set-group`。漏了这一步的表现是「项在表里、页面上没有」——
+   * 只判 catalog 的话，删掉那行渲染语句断言照样全绿（本轮反证就抓到过这个假绿）。
+   */
+  const resSrc = stripComments(ctx.s.secResource ?? '');
+  if (!resSrc) problems.push('ResourceSection.tsx 读不到');
+  else {
+    if (!/render\(cache\)/.test(resSrc)) problems.push('ResourceSection 没有把音乐缓存渲染出来');
+    if (!/case 'music-cache':/.test(resSrc)) problems.push("ResourceSection 的 switch 里没有 case 'music-cache'");
   }
   const need = ['set-cache-total', 'set-cache-rows', 'set-cache-acts', 'set-cache-path'];
   const missing = need.filter((n) => !new RegExp(q(n)).test(src));
@@ -3345,10 +3383,17 @@ const MUTATIONS = [
     expect: ['ADDED.segControls'],
   },
   {
-    name: '把 ③ 的「音乐账号」卡从 MediaSection 摘掉（设计稿第一张卡静默消失）',
+    name: '把「音乐账号」卡挂回 MediaSection（本轮要求删掉，挂回去就该红）',
     file: F.secMedia,
-    find: '      <AccountCardsBlock />\n',
-    replace: '',
+    find: '      {MEDIA.groups.map((g) => (',
+    replace: '      <AccountCardsBlock />\n      {MEDIA.groups.map((g) => (',
+    expect: ['ADDED.accountCards'],
+  },
+  {
+    name: '把 AccountCardsBlock.tsx 恢复（删掉的组件又冒出来＝死代码）',
+    file: F.secMedia,
+    find: '      {MEDIA.groups.map((g) => (',
+    replace: '      <AccountCardsBlock />\n      {MEDIA.groups.map((g) => (',
     expect: ['ADDED.accountCards'],
   },
   {
@@ -3476,6 +3521,11 @@ const MUTATIONS = [
     file: F.catalog,
     find:
       '        {\r\n' +
+      '          /*\r\n' +
+      '           * 「音乐缓存」从 ③ 播放·媒体 **搬到 ④ 资源与投放**（本轮需求）：\r\n' +
+      '           * 它回答的是"磁盘上占了多少、怎么清"，与「存储占用」是同一类问题；\r\n' +
+      '           * 放在"播放·媒体"里读起来像一条播放设置，而它其实是一个清理动作。\r\n' +
+      '           */\r\n' +
       "          id: 'music-cache',\r\n" +
       "          label: '音乐缓存',\r\n" +
       "          state: 'live',\r\n" +
@@ -3484,21 +3534,29 @@ const MUTATIONS = [
       "          why: '歌词与整首歌的本地缓存，按平台清理',\r\n" +
       '        },\r\n',
     replace: '',
-    expect: ['ADDED.music-cache', 'COUNT.total'],
+    expect: ['CACHE.layoutFlag'],
   },
+
   {
     name: '把「音乐缓存」的 layout 形态字段去掉（会被 Row 压成两栏窄列，四格失效）',
     file: F.catalog,
-    find: "          // 通栏块：合计 + 逐平台行 + 动作，塞不进 Row 的窄右列\n          layout: 'block',\n",
-    replace: '',
+    find: "          layout: 'block',\n          why: '歌词与整首歌的本地缓存，按平台清理',\n",
+    replace: "          why: '歌词与整首歌的本地缓存，按平台清理',\n",
     expect: ['CACHE.layoutFlag'],
   },
   {
-    name: '把 sections.tsx 里 music-cache 的 case 改错（四格块不会被渲染）',
-    file: F.secMedia,
+    name: '把 ④ 资源与投放里 music-cache 的 case 改错（四格块不会被渲染）',
+    file: F.secResource,
     find: "      case 'music-cache':",
     replace: "      case 'music-cache-off':",
-    expect: ['WIRING.item.music-cache'],
+    expect: ['CACHE.blockRendersFourCells'],
+  },
+  {
+    name: '把 ④ 里音乐缓存那张卡从渲染里摘掉（项在 catalog 里但页面不显示）',
+    file: F.secResource,
+    find: '      <div className="set-group">{render(cache)}</div>\n',
+    replace: '',
+    expect: ['CACHE.blockRendersFourCells'],
   },
   {
     name: '把「歌词高亮方式」项整条从 catalog 里删掉（模拟「加了项但忘了算进项数」）',

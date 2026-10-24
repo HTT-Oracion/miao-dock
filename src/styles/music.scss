@@ -2103,6 +2103,18 @@ button.ms-caption.is-collapsed {
 .link-btn:hover:not(:disabled) {
   color: var(--miao-primary-ink);
 }
+/*
+ * 「未登录」态的轻动作键：**不置灰、只压淡**。
+ *
+ * 置灰的按钮说不出"为什么不能点"；这里点下去会弹登录框，所以它必须看起来**还能点** ——
+ * 只是比常态弱一档（`--miao-faint`），读作"要登录才能用"。
+ */
+.link-btn.is-locked {
+  color: var(--miao-faint);
+}
+.link-btn.is-locked:hover {
+  color: var(--miao-primary-ink);
+}
 .link-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;

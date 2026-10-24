@@ -112,8 +112,21 @@ fn save_state(app: &AppHandle, st: &LyricsWindowState) {
 }
 
 /// 打开（或聚焦）桌面歌词窗口。幂等：已存在就 focus，不重复建。
+///
+/// ## 🔴 必须是 `async` 命令
+///
+/// 同步 `#[tauri::command]` 跑在 **IPC 处理线程**上，而 `WebviewWindowBuilder::build()`
+/// 需要**主线程的事件循环**来真正创建窗口 —— 两者互等，结果是**死锁**：
+/// 窗口建不出来，IPC 也不返回（前端 `await` 永远挂着，表现为"点了没反应"，且日志干净）。
+///
+/// 实测症状：点「桌面歌词」后 CDP 的窗口列表里始终只有主窗，
+/// 直接 `invoke('open_lyrics_window')` 的探针脚本挂到超时都不返回。
+///
+/// 改成 `async` 后命令跑在异步运行时里，`build()` 能正常等到主线程。
+/// 同族的先例：`quit_app` 也是因为"同步命令里做需要事件循环的事"被钉成 `async`
+/// （见 `check:quit` 的钉子）。
 #[tauri::command]
-pub fn open_lyrics_window(app: AppHandle) -> Result<(), String> {
+pub async fn open_lyrics_window(app: AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window(LYRICS_WINDOW) {
         let _ = w.show();
         let _ = w.set_focus();

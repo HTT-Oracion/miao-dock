@@ -389,6 +389,14 @@ function Recommendations() {
   const loadingNewSongs = useMusicStore((s) => s.loadingNewSongs);
   const playPlaylist = useMusicStore((s) => s.playPlaylist);
   const currentSong = useMusicStore((s) => s.currentSong);
+  /*
+   * 未登录时「推荐歌单」的「换一批」不可用：那个接口要靠账号的听歌数据才出推荐，
+   * 匿名调用只会拿到一份固定列表（换了也等于没换）。所以按钮置灰并提示登录，
+   * 而不是让用户点一下、看着列表纹丝不动。
+   */
+  const loginInfos = useMusicStore((s) => s.loginInfos);
+  const openLogin = useMusicStore((s) => s.openLogin);
+  const loggedIn = !!loginInfos[playbackSource]?.logged_in;
 
   const caps = capsOf(playbackSource);
 
@@ -409,9 +417,18 @@ function Recommendations() {
              * 「换一批」只刷**这一节**（`loadRecommendPlaylists`）。
              * 此前它调 `loadRecommend` —— 那会连带刷「每日推荐」「今日精选」，
              * 白跑两次请求，且另外两节会闪一下骨架屏，像被误触。
+             *
+             * 未登录时按钮**不置灰、而是点开登录框**：置灰的按钮说不出"为什么不能点"，
+             * 而这里的原因很具体（要账号的听歌数据才出推荐），弹登录框正好回答它。
              */}
-            <Btn kind="bare" className="link-btn" disabled={loading} onClick={() => void loadRecommendPlaylists()}>
-              <RefreshCw size={12} /> {loading ? '换一批中…' : '换一批'}
+            <Btn
+              kind="bare"
+              className={loggedIn ? 'link-btn' : 'link-btn is-locked'}
+              title={loggedIn ? '换一批' : '登录后才能按你的口味换一批'}
+              disabled={loggedIn && loading}
+              onClick={() => (loggedIn ? void loadRecommendPlaylists() : void openLogin())}
+            >
+              <RefreshCw size={12} /> {loggedIn && loading ? '换一批中…' : '换一批'}
             </Btn>
           </div>
           {recommendPlaylists.length === 0 ? (

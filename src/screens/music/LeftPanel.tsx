@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { RefreshCw } from 'lucide-react';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl } from '@music/convert';
 import type { LeftView } from '@music/store';
@@ -77,7 +76,6 @@ function PlaylistsView() {
   const error = useMusicStore((s) => s.userPlaylistsError);
   const proxyPort = useMusicStore((s) => s.proxyPort);
   const openLeftPlaylist = useMusicStore((s) => s.openLeftPlaylist);
-  const loadUserPlaylists = useMusicStore((s) => s.loadUserPlaylists);
 
   /*
    * 组头折叠态（#16）—— 必须在任何早返回**之前**声明：
@@ -116,12 +114,15 @@ function PlaylistsView() {
    * ⚠️ **不画额外图标**：设计稿的 `.ms-caption` 里没有箭头，折叠态只靠
    * "行不见了"表达 —— 加一枚箭头会让组头从"一行小标签"变成"一个按钮"。
    */
-  const renderGroup = (label: string, items: Playlist[], refresh: boolean) => (
+  const renderGroup = (label: string, items: Playlist[]) => (
     <div className="ms-group" key={label}>
       {/*
        * 组头走 `Btn`（kind="bare"）而不是裸 `<button>`：`type="button"`、disabled 语义、
        * 无障碍属性都由这个单元统一给，屏内各处不再手写一遍原生按钮。
        * `kind="bare"` 时 className 是唯一类名，所以 `ms-caption` 原样生效。
+       *
+       * ⚠️ 组头右侧**不放刷新按钮**：设计稿的 `.ms-caption` 里没有它，
+       * 而且左栏顶部的页签切换时整组会重拉一次，单组刷新是重复入口。
        */}
       <Btn
         kind="bare"
@@ -130,18 +131,6 @@ function PlaylistsView() {
         onClick={() => toggle(label)}
       >
         {label}
-        {refresh ? (
-          <Btn
-            kind="bare"
-            className="text-btn"
-            ariaLabel="刷新歌单"
-            disabled={loading}
-            title="刷新歌单"
-            onClick={() => void loadUserPlaylists()}
-          >
-            <RefreshCw size={11} />
-          </Btn>
-        ) : null}
       </Btn>
       {collapsed[label] ? null : items.length > 0 ? (
         items.map((pl) => (
@@ -165,8 +154,8 @@ function PlaylistsView() {
 
   return (
     <>
-      {created.length > 0 ? renderGroup('创建的歌单', created, true) : null}
-      {subscribed.length > 0 ? renderGroup('收藏的歌单', subscribed, false) : null}
+      {created.length > 0 ? renderGroup('创建的歌单', created) : null}
+      {subscribed.length > 0 ? renderGroup('收藏的歌单', subscribed) : null}
     </>
   );
 }

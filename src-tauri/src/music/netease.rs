@@ -986,7 +986,7 @@ pub async fn new_songs(cookie: &str, limit: u32) -> Result<Vec<Song>, String> {
         .cloned()
         .unwrap_or_default();
 
-    Ok(items
+    let mut songs: Vec<Song> = items
         .iter()
         .filter_map(|item| {
             let mut song = item.get("song").cloned().unwrap_or_else(|| item.clone());
@@ -1006,7 +1006,68 @@ pub async fn new_songs(cookie: &str, limit: u32) -> Result<Vec<Song>, String> {
             }
             Some(map_song_record(&song))
         })
-        .collect())
+        .collect();
+
+    /*
+     * **补专辑名**：`/api/personalized/newsong` 的 `song` 对象里 `al` 往往只有
+     * `id` / `picUrl`，没有 `name` —— 于是「今日精选」那一列专辑会全是「—」。
+     * 这里对缺专辑名的那些 id 补一次 `song/detail`（批量，一次请求），
+     * 用返回的 `al.name` 填回去。拿不到就保持空（前端显示「—」，不编造）。
+     */
+    let missing: Vec<String> = songs
+        .iter()
+        .filter(|s| s.album.is_empty() && !s.id.is_empty())
+        .map(|s| s.id.clone())
+        .collect();
+    if !missing.is_empty() {
+        let ids_json = format!(
+            "[{}]",
+            missing
+                .iter()
+                .map(|id| format!("{{\"id\":\"{id}\"}}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        if let Ok(detail) = post_api(
+            &client,
+            "/api/v3/song/detail",
+            &[("c", ids_json.as_str()), ("csrf_token", "")],
+            cookie,
+        )
+        .await
+        {
+            let by_id: std::collections::HashMap<String, String> = detail
+                .get("songs")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|s| {
+                            let id = s.get("id").and_then(|v| v.as_i64()).map(|n| n.to_string())?;
+                            let name = s
+                                .get("al")
+                                .and_then(|al| al.get("name"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            if name.is_empty() {
+                                None
+                            } else {
+                                Some((id, name.to_string()))
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            for s in songs.iter_mut() {
+                if s.album.is_empty() {
+                    if let Some(name) = by_id.get(&s.id) {
+                        s.album = name.clone();
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(songs)
 }
 
 /// 每日推荐歌曲

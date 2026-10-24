@@ -5,6 +5,7 @@ import { GroupNote, PendingRow, SubTitle } from '@screens/settings/parts';
 import { RESOURCE } from '@screens/settings/catalog';
 import type { SettingItem } from '@screens/settings/catalog';
 import { StorageBlock } from '@screens/settings/StorageBlock';
+import { CacheBlock } from '@screens/settings/CacheBlock';
 import { itemOf } from './shared';
 
 /**
@@ -24,11 +25,14 @@ import { itemOf } from './shared';
 export function ResourceSection({ lib }: { lib: LibraryResponse | null }) {
   const g = RESOURCE.groups[0];
   const storage = itemOf(g, 'storage-usage');
+  const cache = itemOf(g, 'music-cache');
 
   const render = (item: SettingItem) => {
     switch (item.id) {
       case 'storage-usage':
         return <StorageBlock item={item} lib={lib} />;
+      case 'music-cache':
+        return <CacheBlock settingId={item.id} />;
       default:
         throw new Error(`[settings] ④ 资源与投放 有未接线的项：${item.id} —— catalog 与本组件不同步`);
     }
@@ -39,7 +43,10 @@ export function ResourceSection({ lib }: { lib: LibraryResponse | null }) {
       {/* 卡一：存储占用（三行分列） */}
       <div className="set-group">{render(storage)}</div>
 
-      {/* 卡二：清理（只放"能安全重建"的动作，缺接口的如实标待接入） */}
+      {/* 卡二：音乐缓存（从 ③ 播放·媒体 搬来：它是清理动作，与「存储占用」同类） */}
+      <div className="set-group">{render(cache)}</div>
+
+      {/* 卡三：清理（只放"能安全重建"的动作，缺接口的如实标待接入） */}
       <div className="set-group">
         <SubTitle head="只处理可以安全重建的数据">清理</SubTitle>
         <PendingRow item={itemOf(g, 'temp-files')} />
