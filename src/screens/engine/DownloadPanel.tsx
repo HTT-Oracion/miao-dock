@@ -128,8 +128,16 @@ export function DownloadPanel({
   const activePhase = activeIdx >= 0 ? ASSEMBLY_PHASES[activeIdx].text : null;
   const ringLabel = ringLabelOf(done, bad, activePhase);
 
-  // 当前文件行：把 id 拆成「文件名 + 序号」—— 没有真实来源时不美化（如实显示 id 或留空）。
-  const currentLabel = view.currentId ?? null;
+  /*
+   * 当前文件行：把 id 拆成「文件名 + 序号」—— 没有真实来源时不美化（如实显示 id 或留空）。
+   *
+   * 🔴 **非运行态一律不显示**：暂停 / 失败 / 完成时 `currentId` 要么已被 Rust 清掉
+   *    （`pause_download` 现在会清 `current_id`），要么是上一轮的残留。
+   *    壳层每 1.5 s 轮询一次，残留值会让这一行"看起来还在动"——
+   *    真机实测用户会以为下载没停（2026-10-25）。
+   */
+  const currentLabel = running ? (view.currentId ?? null) : null;
+  const currentText = done ? '全部文件已校验' : (currentLabel ?? '—');
   // 占位句由 `LogBlock` 的 `emptyText` 负责：这里只传**真实内容**，空就是空
   const logText = view.tail.slice(-40).join('\n');
 
@@ -320,7 +328,12 @@ export function DownloadPanel({
           <section className="ed-detail">
             <div className="ed-detail-head">
               <h3>当前文件</h3>
-              <span>{done ? '全部文件已校验' : (currentLabel ?? '—')}</span>
+              {/*
+                固定两行、超出省略号：文件 id / 路径可能很长（HF 的 blobs 是 64 位十六进制），
+                不限制会把这一行撑到十几行，把下面的细条与日志顶出视口。
+                不补 `title` / Tooltip —— 全名去日志块里看（那里本来就能全文复制）。
+              */}
+              <span className="ed-detail-current">{currentText}</span>
             </div>
             {/* 细条与环同一口径（整体装配）；没有真实阶段事件时不画，不给一条假动画 */}
             {overall != null ? (

@@ -257,6 +257,12 @@ pub struct EngineState {
     /// G5：进度聚合内部态（与 `download` 同生命周期，不进契约）。
     download_progress: Arc<Mutex<DownloadProgressState>>,
     download_child: Arc<Mutex<Option<std::process::Child>>>,
+    /// 输出读取线程的停止闸（暂停时合闸，见 `spawn_tail_reader` 的说明）。
+    ///
+    /// 🔴 为什么必须有：`child.kill()` 只让**后续**输出消失，管道里**已缓冲**的数据仍可读。
+    ///    不设闸时读取线程会把缓冲读完并继续 push 进内存 tail，而那些 push 不落盘
+    ///    ⇒ 界面日志"暂停了还在刷"，而盘上文件静止（2026-10-25 真机实测）。
+    download_stop: Arc<std::sync::atomic::AtomicBool>,
     /// 档位降档控制器（《04》§8）—— 进程级单例 ⇒ 天然是"服务级"作用域。
     pub tier_ctl: Arc<TierDowngrade>,
 }
@@ -356,6 +362,7 @@ impl EngineState {
             download: Arc::new(Mutex::new(ModelDownload::load_persisted())),
             download_progress: Arc::new(Mutex::new(DownloadProgressState::new())),
             download_child: Arc::new(Mutex::new(None)),
+            download_stop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             tier_ctl: Arc::new(TierDowngrade::new(&effective_tier, esettings::env_bool("MIAO_NO_TIER_DOWNGRADE", false))),
         })
     }
@@ -747,13 +754,25 @@ impl EngineState {
             d.state = "interrupted".to_string();
             d.interrupted_reason =
                 Some("已暂停（你点了「暂停下载」）；已下的部分不会丢失，可继续".to_string());
-            // 瞬时速度 / 剩余时间是上一段的读数，暂停后继续显示等于编造
+            /*
+             * 瞬时量一律清零 —— 暂停后继续显示等于编造。
+             *
+             * 🔴 `current_id` 必须清：它是 progress 事件持续覆写的"当前文件"，
+             *    暂停后壳层每 1.5 s 轮询仍拿到同一个旧值 ⇒ 界面上那一行
+             *    "看起来还在动"（真机实测：用户会以为下载没停）。
+             *    与 `speed_bps` / `eta_ms` 同等对待，不是可选项。
+             */
             d.speed_bps = None;
             d.eta_ms = None;
+            d.current_id = None;
             d.persist();
         }
         let _ = child.kill();
         let _ = child.wait();
+        // 合闸：让输出读取线程把管道里已缓冲的数据**丢掉**而不是读完。
+        // 必须在 `kill()` 之后 —— 早合只会让最后几行真实日志消失，晚合则缓冲已被读走。
+        self.download_stop
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         println!("[manga-service] 模型下载已暂停（用户操作）");
         Ok(self.model_download_view())
     }
@@ -832,6 +851,7 @@ impl EngineState {
             &self.download,
             &self.download_progress,
             &self.download_child,
+            &self.download_stop,
         )?;
 
         Ok(self.model_download_view())
@@ -930,6 +950,7 @@ fn spawn_download_round(
     dl: &Arc<Mutex<ModelDownload>>,
     dp: &Arc<Mutex<DownloadProgressState>>,
     child_slot: &Arc<Mutex<Option<std::process::Child>>>,
+    stop: &Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<(), StoreError> {
     // 终态线程要在第 1 轮成功后**递归起第 2 轮**，而 `spawn` 要求 `'static` ⇒
     // 那两个路径参数必须先拿到 owned 副本（借用会逃逸，E0521）。
@@ -998,11 +1019,13 @@ fn spawn_download_round(
         model_root.display()
     );
 
+    // 新一轮先把闸打开：上一轮暂停时合上的闸不能留着，否则新下载一行日志都不出。
+    stop.store(false, std::sync::atomic::Ordering::Relaxed);
     if let Some(out) = child.stdout.take() {
-        spawn_tail_reader(out, dl.clone());
+        spawn_tail_reader(out, dl.clone(), stop.clone());
     }
     if let Some(err) = child.stderr.take() {
-        spawn_tail_reader(err, dl.clone());
+        spawn_tail_reader(err, dl.clone(), stop.clone());
     }
     // G5：进度解析线程（独立线程，与 `spawn_tail_reader` 同一范式）：增量聚合 `.part` 进度
     //    JSONL → `ModelDownload` 的 `percent` / `received_bytes` / `total_bytes` / `speed_bps` / `eta_ms`。
@@ -1058,6 +1081,8 @@ fn spawn_download_round(
 
     // 终态轮询线程：`try_wait()` 不阻塞，故超时看护随时能拿到锁去 `kill()`。
     let child_slot_wait = child_slot.clone();
+    // 第 2 轮要重开闸（新一轮会把 stop 置回 false），故这里把同一个 Arc 传进去。
+    let stop_wait = stop.clone();
     let dl_wait = dl.clone();
     let dp_wait = dp.clone();
     let model_root_wait = model_root.to_path_buf();
@@ -1106,6 +1131,7 @@ fn spawn_download_round(
                                 &dl_wait,
                                 &dp_wait,
                                 &child_slot_wait,
+                                &stop_wait,
                             ) {
                                 Ok(()) => return,
                                 Err(e) => {
@@ -1509,11 +1535,25 @@ fn spawn_progress_reader(
 }
 
 /// 下载子进程输出 → 环形 tail（按行拆；`\r` 覆盖式进度也算分隔符）。
-fn spawn_tail_reader<R: std::io::Read + Send + 'static>(mut r: R, dl: Arc<Mutex<ModelDownload>>) {
+///
+/// 🔴 **暂停后必须停止读**：`pause_download()` 调 `child.kill()` 只会让**后续**输出消失，
+///    管道里**已缓冲**的数据仍然可读 —— 不设闸这个线程会把缓冲全读完并 push 进内存 tail，
+///    而暂停后那些 push **不落盘**（`persist()` 只在状态跃迁时调）。
+///    真机症状：界面日志"暂停了还在刷"（读的是内存 tail），
+///    而盘上 `engine-download.json` 的 mtime 与长度都不变（2026-10-25 实测）。
+///    所以这里每轮读之前先看闸：闸一合就退，把剩下的缓冲留给下一次下载重头写。
+fn spawn_tail_reader<R: std::io::Read + Send + 'static>(
+    mut r: R,
+    dl: Arc<Mutex<ModelDownload>>,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         let mut carry = String::new();
         loop {
+            if stop.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
             let n = match r.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => n,

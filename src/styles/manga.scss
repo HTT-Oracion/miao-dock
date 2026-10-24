@@ -3459,6 +3459,21 @@
   overflow-wrap: anywhere;
   text-align: right;
 }
+/*
+ * 当前文件行：**固定两行**，超出省略号，全名走 `title`。
+ *
+ * 🔴 为什么必须限行：文件 id / 路径可能很长（HF 的 blobs 是 64 位十六进制），
+ *    不限制会把这一行撑到十几行，把下面的细条与日志顶出视口。
+ *    `overflow-wrap: anywhere` 保留（长哈希没有断点，不拆会横向溢出）。
+ */
+.ed-detail-current {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  min-width: 0;
+}
 .ed-bar {
   height: 5px;
   margin-top: 9px;

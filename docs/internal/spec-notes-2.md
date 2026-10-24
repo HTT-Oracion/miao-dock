@@ -862,6 +862,104 @@ heroDesc : ✗ [ENGINE_BOOTSTRAP_FAILED] [extract] 解包失败（exit code: 1�
 
 ---
 
+## D-397 · 暂停后日志还在刷：`child.kill()` 刹不住已缓冲的管道（2026-10-25）
+
+用户报：暂停下载后日志块还在滚 `Using cached …`，"刷着刷着就停止了"。
+
+### 取证（先证明不是前端）
+
+| 检查 | 结果 |
+|---|---|
+| `engine-download.json` mtime | 3s / 6s 复读**完全不变**（停在暂停那一刻） |
+| `tail` 长度 | 恒定 **40** |
+| `tail` 末行 | 恒为同一条 `Using cached …deepl…` |
+
+盘上是静止的 ⇒ **后端没在写**。但界面内容在变 ⇒ 变的是**内存里的 tail**。
+
+### 根因
+
+`spawn_tail_reader` 是个只认 EOF 的循环：
+
+```rust
+loop {
+    let n = match r.read(&mut buf) { Ok(0) => break, Ok(n) => n, Err(_) => break };
+    … d.tail.push(t);            // ← 只 push，不检查 state、不落盘
+}
+```
+
+`pause_download()` 调 `child.kill()` 只让**后续**输出消失，管道里**已缓冲**的数据
+仍然可读。于是读取线程把缓冲全读完并继续 push 进内存 tail ——
+而那些 push **不落盘**（`persist()` 只在状态跃迁时调）。
+
+⇒ 界面（读内存）看到日志在长，盘上文件一动不动。"刷着刷着就停止"就是缓冲被读完的那一刻。
+
+### 修法
+
+给 `EngineState` 加 `download_stop: Arc<AtomicBool>`：
+
+- `spawn_tail_reader` 每轮 `read()` **之前**先看闸，合闸即 `return`（剩余缓冲留给下一次下载重头写）；
+- `pause_download()` 在 `kill()` + `wait()` **之后**合闸 ——
+  早合会弄丢最后几行真实日志，晚合则缓冲已被读走；
+- `spawn_download_round` 开新一轮时先把闸打开（否则上一轮合上的闸会让新下载一行日志都不出）；
+- 第 2 轮由终态线程递归启动，故把同一个 `Arc` clone 进去（`stop_wait`）。
+
+### 连带修掉的两条
+
+- `pause_download()` 补 `d.current_id = None` —— 与 `speed_bps` / `eta_ms` 同等对待。
+  不清它时壳层 1.5s 轮询反复拿到同一个旧值，界面上"当前文件"那行看起来还在动。
+- `.ed-detail-current` 固定**两行截断**（`-webkit-line-clamp: 2`）。
+  不补 `title` / Tooltip —— 全名去日志块看，那里本来就能全文复制
+  （用户 2026-10-25：tooltip 内容一多很丑）。
+
+### 门
+
+`npm run check` **20/20** · `check:engine-bootstrap` **23/23** + 反证 **45/45** ·
+`check:settings` **184/184** · `tsc` / `eslint` 干净 · `cargo build --bin mangasvc` 通过。
+
+⚠️ **未做真机复验**：本机下载卡在 venv 失效（见 G-03），跑不到"暂停"那一步。
+改的是 Rust 侧，下次真机跑通下载时需回归这一条。
+
+---
+
+## G-03 · 本机装配卡住：venv 是旧路径建的，已失效（2026-10-25）
+
+用户日志：`No Python at 'C:\Users\Doro\AppData\Local\runtimes\manga-translator\python-3.11\python.exe'`
+⇒ `✗ [ENGINE_BOOTSTRAP_FAILED] [deps] 批 A 安装失败（exit code: 103）`
+
+### 根因
+
+`venv/pyvenv.cfg` 里三行全指向**旧布局**：
+
+```ini
+home = C:\Users\Doro\AppData\Local\runtimes\manga-translator\python-3.11
+executable = …\runtimes\manga-translator\python-3.11\python.exe
+command = …\python-3.11\python.exe -m venv …\venv
+```
+
+而该目录**不存在**。产品当前默认落点（`mangasvc --print-paths` 实测）是
+`<LOCALAPPDATA>\MiaoDock\manga\runtimes\manga-translator` —— D-241 改过布局，
+且代码注释明确写了「**旧落点不做自动迁移**」。
+
+于是：今天新解包的 `python-3.11/`（在新布局）+ 10/19 建的 `venv/`（记着旧路径）⇒ 对不上。
+
+### 代码缺口
+
+`runtime_setup.rs` 第 290 行只判 `if !venv_py.exists()` ——
+**文件在**就跳过重建，判不出"venv 在但它的母解释器已失效"。
+
+### 解决办法（不用改代码）
+
+关掉应用后把失效的 venv 改名，让产品用新布局的 python 重建：
+
+```powershell
+$rt = "$env:LOCALAPPDATA\MiaoDock\manga\runtimes\manga-translator"
+Rename-Item "$rt\venv" "venv.bak"
+```
+
+**只动 `venv`**，别删 `python-3.11/` 和 `src/`（删了要重下约 100 MB）。
+
+---
+
 ## G-02 · 待查：「重新下载」清理解包目标**未在真机验证通过**（2026-10-25）
 
 用户提出：点「重新下载」后仍然报同样的错，应该直接把原来目录清空再下载。
