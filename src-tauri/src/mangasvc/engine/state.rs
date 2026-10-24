@@ -16,6 +16,7 @@
 //      —— 要么显示旧档（用户以为没保存上），要么显示新档（用户以为已经在跑 7B 了）。
 //   ③ **反证开关集中登记**（[`Refutes`] / [`ContractRefutes`]），不散在各自代码旁。
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -262,7 +263,7 @@ pub struct EngineState {
     /// 🔴 为什么必须有：`child.kill()` 只让**后续**输出消失，管道里**已缓冲**的数据仍可读。
     ///    不设闸时读取线程会把缓冲读完并继续 push 进内存 tail，而那些 push 不落盘
     ///    ⇒ 界面日志"暂停了还在刷"，而盘上文件静止（2026-10-25 真机实测）。
-    download_stop: Arc<std::sync::atomic::AtomicBool>,
+    download_stop: Arc<AtomicBool>,
     /// 档位降档控制器（《04》§8）—— 进程级单例 ⇒ 天然是"服务级"作用域。
     pub tier_ctl: Arc<TierDowngrade>,
 }
@@ -362,7 +363,7 @@ impl EngineState {
             download: Arc::new(Mutex::new(ModelDownload::load_persisted())),
             download_progress: Arc::new(Mutex::new(DownloadProgressState::new())),
             download_child: Arc::new(Mutex::new(None)),
-            download_stop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            download_stop: Arc::new(AtomicBool::new(false)),
             tier_ctl: Arc::new(TierDowngrade::new(&effective_tier, esettings::env_bool("MIAO_NO_TIER_DOWNGRADE", false))),
         })
     }
@@ -772,7 +773,7 @@ impl EngineState {
         // 合闸：让输出读取线程把管道里已缓冲的数据**丢掉**而不是读完。
         // 必须在 `kill()` 之后 —— 早合只会让最后几行真实日志消失，晚合则缓冲已被读走。
         self.download_stop
-            .store(true, std::sync::atomic::Ordering::Relaxed);
+            .store(true, Ordering::Relaxed);
         println!("[manga-service] 模型下载已暂停（用户操作）");
         Ok(self.model_download_view())
     }
@@ -950,7 +951,7 @@ fn spawn_download_round(
     dl: &Arc<Mutex<ModelDownload>>,
     dp: &Arc<Mutex<DownloadProgressState>>,
     child_slot: &Arc<Mutex<Option<std::process::Child>>>,
-    stop: &Arc<std::sync::atomic::AtomicBool>,
+    stop: &Arc<AtomicBool>,
 ) -> Result<(), StoreError> {
     // 终态线程要在第 1 轮成功后**递归起第 2 轮**，而 `spawn` 要求 `'static` ⇒
     // 那两个路径参数必须先拿到 owned 副本（借用会逃逸，E0521）。
@@ -1020,7 +1021,7 @@ fn spawn_download_round(
     );
 
     // 新一轮先把闸打开：上一轮暂停时合上的闸不能留着，否则新下载一行日志都不出。
-    stop.store(false, std::sync::atomic::Ordering::Relaxed);
+    stop.store(false, Ordering::Relaxed);
     if let Some(out) = child.stdout.take() {
         spawn_tail_reader(out, dl.clone(), stop.clone());
     }
@@ -1030,7 +1031,7 @@ fn spawn_download_round(
     // G5：进度解析线程（独立线程，与 `spawn_tail_reader` 同一范式）：增量聚合 `.part` 进度
     //    JSONL → `ModelDownload` 的 `percent` / `received_bytes` / `total_bytes` / `speed_bps` / `eta_ms`。
     //    HTTP 侧只读聚合后的结构体，不阻塞；每条事件 O(1) 更新。
-    spawn_progress_reader(progress_log, dl.clone(), dp.clone());
+    spawn_progress_reader(progress_log, dl.clone(), dp.clone(), stop.clone());
 
     // 超时看护：到点**真杀**（只改状态不杀的话进程会一直在后台写盘，下次点重下就会和它撞）。
     // 🔴 杀与等待**分工**：本线程只 `kill()`（`&mut self`，不需要等它退出）；终态由下面的
@@ -1435,15 +1436,24 @@ fn walk_parts(root: &Path, depth: u32, max_depth: u32, clear: bool) -> bool {
 ///
 /// 与 `spawn_tail_reader` 同一范式：独立线程，只写聚合后的结构体，不阻塞下载侧。
 /// 文件被 truncate 重写（新一轮下载 / fresh 重下）时 `offset` 自动归零，从新内容起读。
+///
+/// 🔴 **同样受 `stop` 闸约束**：子进程被杀后 JSONL 停止增长，本线程会因
+///    \`len == offset\` 自然空转 —— 但"暂停后读到残留事件"仍会把
+///    \`pause_download()\` 刚清掉的 \`current_id\` / \`speed_bps\` 写回去（第 1514/1516 行
+///    是无条件覆写）。所以这里跟 tail reader 一样，合闸即退。
 fn spawn_progress_reader(
     path: PathBuf,
     dl: Arc<Mutex<ModelDownload>>,
     dp: Arc<Mutex<DownloadProgressState>>,
+    stop: Arc<AtomicBool>,
 ) {
     std::thread::spawn(move || {
         use std::io::{Read, Seek, SeekFrom};
         let mut offset: u64 = 0;
         loop {
+            if stop.load(Ordering::Relaxed) {
+                return;
+            }
             std::thread::sleep(std::time::Duration::from_millis(200));
             let len = match std::fs::metadata(&path) {
                 Ok(m) => m.len(),
@@ -1545,13 +1555,13 @@ fn spawn_progress_reader(
 fn spawn_tail_reader<R: std::io::Read + Send + 'static>(
     mut r: R,
     dl: Arc<Mutex<ModelDownload>>,
-    stop: Arc<std::sync::atomic::AtomicBool>,
+    stop: Arc<AtomicBool>,
 ) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         let mut carry = String::new();
         loop {
-            if stop.load(std::sync::atomic::Ordering::Relaxed) {
+            if stop.load(Ordering::Relaxed) {
                 return;
             }
             let n = match r.read(&mut buf) {

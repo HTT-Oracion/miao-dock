@@ -911,6 +911,25 @@ loop {
   不补 `title` / Tooltip —— 全名去日志块看，那里本来就能全文复制
   （用户 2026-10-25：tooltip 内容一多很丑）。
 
+### 🔴 同一个 bug 有第二处：进度读取线程
+
+`spawn_progress_reader` 读的是 JSONL **文件**（每 200ms 轮询），子进程被杀后文件停止增长，
+它会因 `len == offset` 自然空转 —— 看起来无害。但第 1514/1516 行对
+`d.current_id` / `d.speed_bps` 是**无条件覆写**：
+
+```rust
+} else {
+    d.current_id = Some(e.id.clone());     // ← 无条件
+    d.speed_bps = speed;                    // ← 无条件
+    d.eta_ms = eta;
+}
+```
+
+所以"暂停后读到一条残留事件"就会把 `pause_download()` 刚清掉的字段**写回去**。
+只给 tail reader 加闸、漏掉它，暂停态仍会被污染 —— 这类"修了一半"最难发现。
+
+⇒ 两个 reader 共用同一个 `stop` 闸，`pause_download()` 一次合闸同时刹住。
+
 ### 门
 
 `npm run check` **20/20** · `check:engine-bootstrap` **23/23** + 反证 **45/45** ·
