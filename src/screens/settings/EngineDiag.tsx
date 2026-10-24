@@ -699,10 +699,13 @@ function DownloadState({ view }: { view: ModelDownloadView | undefined }) {
     done: '已完成',
     interrupted: '中断（可续传）',
     failed: '失败',
+    // 🔴 Rust 侧 `state.rs` 的 `error`：非零退出且盘上无 `.part` ⇒ 不可续传，只能从头重下。
+    //    漏掉它时 TS 会逼你补（Record 穷尽），但**渲染层漏掉不会报错** —— 那才是危险处。
+    error: '失败（不可续传）',
   };
   const tail = view.tail.slice(-6);
-  // 🔴 兼容新态：`interrupted` / `failed` 都按警示态上色；未知态原样显示，不崩。
-  const bad = view.state === 'interrupted' || view.state === 'failed';
+  // 🔴 三种异常态都按警示态上色；`error` 与 `failed` 的区别只在文案（能否续传）。
+  const bad = view.state === 'interrupted' || view.state === 'failed' || view.state === 'error';
   return (
     <div className={bad ? 'set-diag-dl is-bad' : 'set-diag-dl'}>
       <div className="set-diag-dl-head">

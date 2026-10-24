@@ -122,8 +122,18 @@ export function heroDescOf(
   if (interrupted) {
     // 可续传（暂停）⇒ 设计稿那句「已下载的部分会保留，随时可以从断点继续。」
     if (paused) return '已下载的部分会保留，随时可以从断点继续。';
-    // 校验失败 ⇒ 优先说**真实原因**；没有原因才退回设计稿那句
-    return view.interruptedReason ?? '当前文件校验失败；已完成的部分不会丢失。可以继续下载，或从头重新下载。';
+    /*
+     * 不可续传（`failed` / `error`）：优先说**真实原因**。
+     * 🔴 三级回退，别停在第二级：`interruptedReason` → **tail 末行** → 通用文案。
+     *    真机实测 Rust 侧 `state.rs` 写 `error` 时**不填 reason**，而末行日志里
+     *    写着 `✗ [ENGINE_BOOTSTRAP_FAILED] [extract] 解包失败（exit code: 1）：…` ——
+     *    少了中间那一级，用户只会看到"可以继续下载"，完全不知道卡在哪。
+     */
+    return (
+      view.interruptedReason ??
+      view.tail?.[view.tail.length - 1] ??
+      '当前文件校验失败；已完成的部分不会丢失。可以继续下载，或从头重新下载。'
+    );
   }
   if (idle) {
     // 🔴 不写死体积：设计稿那句「约 3.6 GB」是演示数据，真实体积在预检格里按清单算

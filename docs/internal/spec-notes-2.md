@@ -805,6 +805,63 @@ G10 钉的是 `onOpenGuide={() => setScreen('settings')}`，而 D-391 已把入�
 
 ---
 
+## D-396 · 下载页完全不认 `error` 态：失败被显示成「等待开始 + 暂停下载」（2026-10-25）
+
+真机实测（CDP，真实触发一次失败）：
+
+```
+后端 { state: "error", exitCode: 1, canResume: false, tail: [✗ …解包失败（exit code: 1）…] }
+界面 { chip: "等待开始", title: "正在装配本地引擎", buttons: ["暂停下载", "后台运行", "查看日志"] }
+```
+
+**后端说失败了，界面说在等着开始，还给人一个「暂停下载」。**
+
+### 根因：类型联合漏了 `error`
+
+`engine-api.ts` 的 `ModelDownloadView.state` 写的是
+`'idle' | 'running' | 'interrupted' | 'done' | 'failed'` ——
+而 Rust 侧 `state.rs:1116` **确实会写** `d.state = "error"`
+（非零退出且盘上无 `.part` ⇒ 不可续传的失败，如解包失败 / 归档损坏）。
+
+前端没有这个分支 ⇒ 落进"既不是 idle 也不是 done 也不是 interrupted"的兜底，
+于是 `chip` / `title` / 按钮全都按 idle 渲染。
+
+🔴 **为什么 TS 没报**：`interrupted` 那行是布尔拼接
+（`view.state === 'interrupted' || view.state === 'failed'`），类型上完全合法。
+只有 `EngineDiag` 的 `Record<ModelDownloadView['state'], string>` 是穷尽映射，
+`tsc` 逼到那一处 —— 而**真正渲染错的那一处不报**。这正是"类型能挡的错很有限"的实例。
+
+### 修法
+
+1. 类型补 `'error'`；
+2. `DownloadPanel` 把异常态拆成三个，因为**用户该做的事不同**：
+   - `interrupted`（有 `.part`）⇒ 可续传 ⇒「继续下载」；
+   - `failed` / `error`（无 `.part`）⇒ 只能从头下 ⇒「重新下载」（`fresh=true`）；
+3. `EngineDiag` 的文案表补 `error: '失败（不可续传）'`，警示色一并覆盖；
+4. `heroDescOf` 的回退加一级：`interruptedReason` → **tail 末行** → 通用文案。
+   🔴 真机实测 Rust 写 `error` 时**不填 reason**，而末行日志写着
+   `✗ [ENGINE_BOOTSTRAP_FAILED] [extract] 解包失败（exit code: 1）：…`。
+   少了中间那一级，用户只看到"可以继续下载"，完全不知道卡在哪。
+
+### 修后实测
+
+```
+chip: 下载中断 · title: 本地引擎装配中断 · 环色 rgb(201,125,115)（error 红）
+heroTitle: 下载中断 · 已完成的部分会保留
+heroDesc : ✗ [ENGINE_BOOTSTRAP_FAILED] [extract] 解包失败（exit code: 1）：C:\…\python-3.11.17-….tar.gz
+按钮     : 重新下载 · 后台运行 · 查看日志
+```
+
+### 本机那个失败本身不是代码缺陷
+
+顺着查了一层：归档能 `tar -tzf` 列出 3969 条、单文件也能解出（124544 bytes），
+`tar -xf <arc> -C python-3.11 --strip-components=1` 手工跑成功，
+且 `venv/` 与 `python-3.11/` **早已完整在位** ⇒ 那是历史一次解包撞上文件被占用
+（本机安全垫 / 上一次 venv 创建的残留句柄），重跑即可续做。
+产品侧的真实问题是**把这个失败显示成了"等待开始"**，已修。
+
+---
+
 ## G-01 · 待裁定：下载前检查的「磁盘剩余」与「模型源延迟」
 
 设计稿 `.ed-preflight` 的第三、四格是这两项，服务端**没有出口**

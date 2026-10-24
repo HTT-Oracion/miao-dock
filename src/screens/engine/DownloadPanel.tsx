@@ -89,7 +89,16 @@ export function DownloadPanel({
   /** 两级文案（标题 + 说明）走总线；`useToasts` 的 push 只出标题，说明在这里补齐 */
   const toast = (title: string, detail: string, kind: 'info' | 'bad' | 'good') => toastBus.push(title, kind, detail);
 
-  const interrupted = view.state === 'interrupted' || view.state === 'failed';
+  /*
+   * 三种异常态要分开，因为**用户该做的事不同**：
+   *   · `interrupted`  有 `.part` 留盘 ⇒ 可续传（「继续下载」补缺口）；
+   *   · `failed` / `error`  没有 ⇒ 只能从头重下（「重新下载」走 `fresh=true`）。
+   * 🔴 `error` 是 Rust 侧 `state.rs` 的真实取值（非零退出且无 `.part`），
+   *    漏了它界面会把失败显示成「等待开始 + 暂停下载」。
+   */
+  const interrupted = view.state === 'interrupted';
+  const failed = view.state === 'failed' || view.state === 'error';
+  const bad = interrupted || failed;
   const done = view.state === 'done';
   const running = view.state === 'running';
   // 产品把「暂停」建模成 interrupted + 原因（`.part` 留盘可续传），所以中断态要说"已暂停"而不是"失败"
@@ -110,14 +119,14 @@ export function DownloadPanel({
   // 完成态的环是终态示意（不是过程数字）；中心文案仍写「完成」而非伪造的百分比。
   const ringPercent = done ? (overall ?? 100) : overall;
 
-  const ringColor = interrupted ? '--md-error' : '--md-blue';
+  const ringColor = bad ? '--md-error' : '--md-blue';
 
   // 页标题 / 状态胶囊 / 环心小字 —— 文案与色位都在 `copy.ts`（与页面结构分开）
-  const pageTitle = pageTitleOf(done, interrupted, idle);
-  const chip = chipOf(done, interrupted, running);
+  const pageTitle = pageTitleOf(done, bad, idle);
+  const chip = chipOf(done, bad, running);
   const activeIdx = notes.findIndex((n) => n === 'active' || n === 'failed');
   const activePhase = activeIdx >= 0 ? ASSEMBLY_PHASES[activeIdx].text : null;
-  const ringLabel = ringLabelOf(done, interrupted, activePhase);
+  const ringLabel = ringLabelOf(done, bad, activePhase);
 
   // 当前文件行：把 id 拆成「文件名 + 序号」—— 没有真实来源时不美化（如实显示 id 或留空）。
   const currentLabel = view.currentId ?? null;
@@ -222,8 +231,8 @@ export function DownloadPanel({
                 </p>
               ) : null}
               {round ? <p className="ed-round">{round}</p> : null}
-              <h3>{heroTitleOf(done, interrupted, idle, step, paused)}</h3>
-              <p>{heroDescOf(done, interrupted, idle, paused, step, view)}</p>
+              <h3>{heroTitleOf(done, bad, idle, step, paused)}</h3>
+              <p>{heroDescOf(done, bad, idle, paused, step, view)}</p>
 
               {/* 四格指标（设计稿 `.ed-metrics`）：没有真实来源的一律 `—`，不补"看起来合理"的数 */}
               <div className="ed-metrics">
@@ -240,9 +249,13 @@ export function DownloadPanel({
                   <Btn kind="primary" onClick={onClose}>
                     关闭下载
                   </Btn>
-                ) : interrupted ? (
+                ) : paused ? (
                   <Btn kind="primary" onClick={onContinue}>
                     继续下载
+                  </Btn>
+                ) : failed ? (
+                  <Btn kind="primary" onClick={() => setConfirmRedo(true)}>
+                    重新下载
                   </Btn>
                 ) : idle ? (
                   <Btn kind="primary" onClick={onContinue}>
@@ -253,7 +266,7 @@ export function DownloadPanel({
                     暂停下载
                   </Btn>
                 )}
-                {interrupted ? (
+                {paused ? (
                   <Btn kind="ghost" onClick={() => setConfirmRedo(true)}>
                     重新下载
                   </Btn>

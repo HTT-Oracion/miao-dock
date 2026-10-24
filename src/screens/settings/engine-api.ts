@@ -239,7 +239,12 @@ export interface ModelStatus {
 export type AssemblyStep = 'prepare' | 'runtime' | 'visual' | 'llm' | 'models';
 
 export interface ModelDownloadView {
-  state: 'idle' | 'running' | 'interrupted' | 'done' | 'failed';
+  /**
+   * 下载态。🔴 `error` **必须有**：Rust 侧 `state.rs` 在"非零退出且盘上无 `.part`"
+   *    （不可续传的失败，如解包失败 / 归档损坏）时写的就是它。前端漏掉这个分支时
+   *    会把它当未知态 ⇒ 界面显示「等待开始 + 暂停下载」，与后端 `exitCode:1` 完全矛盾。
+   */
+  state: 'idle' | 'running' | 'interrupted' | 'done' | 'failed' | 'error';
   running: boolean;
   startedAt: string | null;
   finishedAt: string | null;
