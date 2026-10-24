@@ -164,12 +164,24 @@ export const createInitSlice = (
     // 各平台登录态
     await get().loadAllLoginStatuses();
 
-    // 首屏发现数据
-    await Promise.all([get().loadCharts(), get().loadRecommend()]);
-    if (get().loginInfos[get().playbackSource]?.logged_in) {
-      await get().loadUserPlaylists();
-      await get().loadLikedList();
-    }
+    /*
+     * 首屏数据**并行拉**：左栏歌单不再排在榜单/推荐之后。
+     *
+     * 为什么并进 `Promise.all`：原先 `loadUserPlaylists()` 排在最后，
+     * 左栏要等完「11 个榜单 + 3 段推荐」才轮到自己 —— 这段时间左栏既没有数据
+     * 也没在 loading（`loading` 要请求发出才置 true），于是先显示空态再跳骨架屏。
+     * 并行之后左栏与首屏数据同时出发，那段落差被压到最小。
+     *
+     * `loadLikedList` 仍排在歌单之后：它读的是「我喜欢的音乐」那个 id，
+     * 而那个 id 是 `loadUserPlaylists` 里按 `subscribed=false` 标出来的。
+     */
+    const logged = get().loginInfos[get().playbackSource]?.logged_in;
+    await Promise.all([
+      get().loadCharts(),
+      get().loadRecommend(),
+      logged ? get().loadUserPlaylists() : Promise.resolve(),
+    ]);
+    if (logged) await get().loadLikedList();
   },
 
   setProxyPort: (p) => set({ proxyPort: p }),

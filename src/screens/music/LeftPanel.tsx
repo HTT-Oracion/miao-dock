@@ -85,10 +85,21 @@ function PlaylistsView() {
   const toggle = (label: string) => setCollapsed((c) => ({ ...c, [label]: !c[label] }));
 
   const logged = !!loginInfos[playbackSource]?.logged_in;
+  const loaded = useMusicStore((s) => s.userPlaylistsLoaded);
 
   if (!logged) return <Empty>登录后查看我的歌单</Empty>;
   if (error) return <Empty bad>歌单读取失败：{error}</Empty>;
-  if (loading && userPlaylists.length === 0) return <PlaylistListSkeleton rows={6} />;
+  /*
+   * 🔴 **三态**判断，缺一就会闪空态。
+   *
+   * 此前只有 `loading && 空` 这一条 —— 而 `loading` 要等请求真正发出才置 true。
+   * 进音乐屏时 `init()` 先等代理端口 + 4 个平台登录态探测，才轮到拉歌单；
+   * 在那之前 `loading=false`、列表为空，于是**先显示「还没有创建歌单」**再跳骨架屏。
+   * 中间隔着两三次网络往返，肉眼可见，不是"闪一帧"。
+   *
+   * 现在：没拉过 → 骨架屏；正在拉 → 骨架屏；拉完了确实空 → 才显示空态。
+   */
+  if (!loaded || loading) return <PlaylistListSkeleton rows={6} />;
   if (userPlaylists.length === 0) return <Empty>还没有创建歌单</Empty>;
 
   /*

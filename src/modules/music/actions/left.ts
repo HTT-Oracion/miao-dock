@@ -26,7 +26,11 @@ export const createLeftSlice = (
   loadUserPlaylists: async (p) => {
     const provider = p ?? get().playbackSource;
     if (!get().loginInfos[provider]?.logged_in) {
-      set({ userPlaylists: [], userPlaylistsError: '' });
+      /*
+       * 未登录也要把 `loaded` 置 true：这是"**确定没有**可拉的"，不是"还没拉过"。
+       * 置 false 的话左栏会一直停在骨架屏 —— 而未登录本该显示「登录后查看我的歌单」。
+       */
+      set({ userPlaylists: [], userPlaylistsError: '', userPlaylistsLoaded: true });
       return;
     }
     set({ loadingUserPlaylists: true, userPlaylistsError: '' });
@@ -52,9 +56,9 @@ export const createLeftSlice = (
         likedIdx < 0
           ? list
           : list.map((pl, i) => (i === likedIdx ? { ...pl, name: LIKED_PLAYLIST_NAME, isLiked: true } : pl));
-      set({ userPlaylists: marked, loadingUserPlaylists: false });
+      set({ userPlaylists: marked, loadingUserPlaylists: false, userPlaylistsLoaded: true });
     } catch (e) {
-      set({ loadingUserPlaylists: false, userPlaylistsError: String(e) });
+      set({ loadingUserPlaylists: false, userPlaylistsError: String(e), userPlaylistsLoaded: true });
     }
   },
 

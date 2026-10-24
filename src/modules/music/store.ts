@@ -260,6 +260,22 @@ export interface MusicState {
    */
   userPlaylists: Playlist[];
   loadingUserPlaylists: boolean;
+  /**
+   * 这一轮**是否已经拉过一次**歌单（不论成功、失败、还是未登录直接跳过）。
+   *
+   * ## 为什么需要它（`loadingUserPlaylists` 不够）
+   * `loading` 只在**请求真正发出之后**才置 true。而进音乐屏时，`init()` 要先等
+   * 代理端口 + 4 个平台的登录态探测，才轮到拉歌单 —— 在那之前 `loading=false`、
+   * `userPlaylists=[]`，左栏就会**先显示「还没有创建歌单」**再跳骨架屏。
+   *
+   * 这不是"闪一帧"：中间隔着两三次网络往返，肉眼可见。三态合起来才够判断：
+   *   · `loaded=false` → 还没开始，显示骨架屏
+   *   · `loading=true`  → 正在拉，显示骨架屏
+   *   · `loaded=true && 空` → 真的没有，才显示空态
+   *
+   * 切平台时也必须复位成 false（新平台等于"还没拉过"）。
+   */
+  userPlaylistsLoaded: boolean;
   userPlaylistsError: string;
   leftPlaylistMeta: Playlist | null;
   leftPlaylistTracks: Song[];
@@ -755,6 +771,7 @@ export const useMusicStore = create<MusicState>()((set, get) => ({
   leftView: 'playlists',
   userPlaylists: [],
   loadingUserPlaylists: false,
+  userPlaylistsLoaded: false,
   userPlaylistsError: '',
   leftPlaylistMeta: null,
   leftPlaylistTracks: [],

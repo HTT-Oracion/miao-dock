@@ -34,6 +34,12 @@ export const createPlatformSlice = (
       loginInfo: get().loginInfos[p] ?? null,
       // 切换平台立即清空旧平台数据，避免残留闪烁
       userPlaylists: [],
+      /*
+       * `loaded` 也要复位：新平台等于"还没拉过"。
+       * 不复位的话，切到一个空歌单的平台时会**直接显示空态**（因为 loaded 还是 true），
+       * 而实际上数据正在拉 —— 又是先空态再跳骨架屏那种闪烁。
+       */
+      userPlaylistsLoaded: false,
       userPlaylistsError: '',
       officialCharts: [],
       recommendPlaylists: [],

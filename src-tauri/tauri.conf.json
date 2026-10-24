@@ -22,7 +22,7 @@
         "resizable": true,
         "center": true,
         "titleBarStyle": "Transparent",
-        "backgroundColor": "#FAFAFF"
+        "backgroundColor": "#F6F8F9"
       }
     ],
     "security": {
