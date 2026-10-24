@@ -139,8 +139,15 @@ export function SettingsScreen({
     //
     // 🔴 参数要写进 **hash** 而不是 search：HashRouter 下 `#/settings?section=x`
     // 才是合法形态；写到 search 会变成 `?section=x#/settings`，刷新后路由器读不到。
+    //
+    // 🔴 **只在当前确实是设置页时才写**：这个 effect 只依赖 `section`，它不知道
+    //    自己还在不在设置页。卸载前若 `section` 又变一次（深链同步 / 左栏点击的收尾），
+    //    `replaceState` 会把 `section` 拼到**当时**的 hash 上 —— 而那可能已经是
+    //    翻译屏或音乐屏。真机复现过：`#/translate/drop` → 进设置 → 回翻译，
+    //    地址栏变成 `#/translate/drop?section=general`。
     const url = new URL(window.location.href);
     const [hashPath, hashQuery = ''] = url.hash.replace(/^#/, '').split('?');
+    if (hashPath !== '/settings') return;
     const q = new URLSearchParams(hashQuery);
     q.set('section', section);
     url.hash = `#${hashPath}?${q.toString()}`;

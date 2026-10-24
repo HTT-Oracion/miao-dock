@@ -682,6 +682,59 @@ btn.querySelector('.nav-dl-spin').style.display = state === 'running' ? 'block' 
 
 ---
 
+## D-393 · `?section=` 会泄漏到别的屏的地址栏（2026-10-25）
+
+真机复现（CDP）：
+
+```
+1 起始      #/translate/drop
+2 进设置    #/settings?section=translate
+3 回翻译    #/translate/drop?section=general   ← 缺陷
+4 去音乐    #/music                            ← 又好了
+```
+
+`SettingsScreen` 里那个"切分组写回地址栏"的 effect 只依赖 `[section]` ——
+它**不知道自己在不在设置页**。组件卸载前若 `section` 又变了一次
+（深链同步 / 左栏点击的收尾），`replaceState` 就把 `section` 拼到**当时**的 hash 上，
+而那可能已经是翻译屏。
+
+**修法**：写回前先判路径。
+
+```ts
+const [hashPath, hashQuery = ''] = url.hash.replace(/^#/, '').split('?');
+if (hashPath !== '/settings') return;   // ← 这一行
+```
+
+不引 react-router（本文件本来就没用它，`readSectionParam` 也是直接读 `location`）。
+
+修后实测：回翻译屏是干净的 `#/translate/drop`；设置页内部切分组仍正常写回
+（`#/settings?section=media`），**刷新后保持**，左栏高亮一致。
+
+---
+
+## D-394 · 引导页 8 个按钮逐个点过：全部有效（2026-10-25）
+
+判据不是"按钮存在"，而是**点了以后系统状态或界面真的变了**。每个动作单独复位后逐一点击：
+
+| 状态 | 按钮 | 可观测结果 |
+|---|---|---|
+| 服务未启动 | 启动本地服务 | 吐司「正在启动本地服务…」 |
+| 服务未启动 | 服务设置 | 跳到 `#/settings?section=translate` |
+| 服务未启动 | 查看日志 | 日志块出现 |
+| 服务异常 | 重启本地服务 | 吐司「正在重启本地服务…」 |
+| 服务异常 | 重新下载模型 | 吐司「已开始重新下载模型…」（**真打 `/engine/models/download`**） |
+| 服务异常 | 服务设置 | 跳到 `#/settings?section=translate` |
+| 引擎未装配 | 查看完整诊断 | 跳到 `#/settings?section=translate` |
+| 引擎未装配 | 查看日志 | 日志块出现 |
+
+侧栏下载入口也单独验过：点它 ⇒ `#/engine-download` + 下载页渲染 +
+**侧栏仍高亮「漫画翻译」**（覆盖层不换屏，符合 IA 设计）。
+
+> 这一轮之所以要逐个点，是因为前几轮只验了"结构对、六态能切"，**没验过按钮点下去有没有用**。
+> 「重新检测」就是那样被查出是假交互的（D-389）。
+
+---
+
 ## G-01 · 待裁定：下载前检查的「磁盘剩余」与「模型源延迟」
 
 设计稿 `.ed-preflight` 的第三、四格是这两项，服务端**没有出口**
