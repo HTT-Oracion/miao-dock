@@ -1506,9 +1506,10 @@
   position: relative;
   margin-top: 10px;
   border-radius: var(--miao-r-xs);
-  background: var(--miao-ink);
+  background: #23252a;
   color: #d9d7cf;
   overflow: hidden;
+  border: 1px solid var(--miao-line);
 }
 /* 两档高度：引导页那处矮（设计稿 `.nr-log` max-height 94），下载页那处高（220） */
 .log-block.is-compact .log-body {

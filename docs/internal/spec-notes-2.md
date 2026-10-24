@@ -862,6 +862,42 @@ heroDesc : ✗ [ENGINE_BOOTSTRAP_FAILED] [extract] 解包失败（exit code: 1�
 
 ---
 
+## G-02 · 待查：「重新下载」清理解包目标**未在真机验证通过**（2026-10-25）
+
+用户提出：点「重新下载」后仍然报同样的错，应该直接把原来目录清空再下载。
+
+### 已改（未验证生效）
+
+- `state.rs::start_model_download` 的 `fresh` 分支：除了既有的 `clear_part_files`，
+  新增清空**清单里所有适用于当前平台且带 `extractTo` 的条目的解包目标**
+  （`python-3.11/` / `src/` …）。只清解包目标，不清整个 runtime_root——
+  那下面还有 `.download-cache`（48 MB 归档）与用户模型权重。
+- `DownloadPanel` 二次确认弹窗文案同步：「会清掉已下载的续传断点与已解包的目录」+
+  「已下好的归档缓存与模型权重会保留，不需要重新下载」。
+
+### 为什么标记为待查而不是已修
+
+真机取证**没能证明清理生效**，且过程里踩到两个会误导自己的坑：
+
+1. **`cargo build` 假编译**：连续多次报 `Finished 0.35s` 而二进制时间戳不变。
+   清掉 `target/debug/.fingerprint/miao-dock-*` 后才真编译（8s）。
+   ⇒ 一段时间内验的都不是新代码。**下次改 Rust 侧，先用二进制时间戳确认真的编进去了。**
+2. **`mangasvc` 的 `eprintln!` 不进 app 日志**：它的 stderr 被父进程 `Stdio::piped()` 收走，
+   而 app 日志里只有转发过来的 `[manga-service]` 前缀行。
+   后来改成**写文件探针**才拿到证据（`fresh=true` 确实到达 handler、也确实进了 `fresh` 分支）。
+
+文件探针结论：`fresh=true` 到达 `models_download`，`if fresh` 分支也进了。
+但文件系统上 `src/`（534 文件）与手工造的 `test.part` 仍在 ⇒ 清理未生效。
+`python-3.11/` 不见是**人工 `Remove-Item` 删的**，不是产品干的（曾据此误判为"已修好"）。
+
+### 下一步（最小步骤，别再猜）
+
+打印 `self.model_root` 与 `paths::runtimes_dir()` 在**运行中的 mangasvc 进程**里解析出的
+实际值，与 PowerShell 检查的路径对比。怀疑点是 `MIAO_MODEL_ROOT` 环境变量
+让两者不是同一个目录 —— 但**没有证据**，先量再改。
+
+---
+
 ## G-01 · 待裁定：下载前检查的「磁盘剩余」与「模型源延迟」
 
 设计稿 `.ed-preflight` 的第三、四格是这两项，服务端**没有出口**

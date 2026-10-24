@@ -789,10 +789,35 @@ impl EngineState {
             ));
         }
 
-        // 「重新下载」：清掉续传断点与已聚合进度，让本次从零开始。
+        /*
+         * 「重新下载」：清掉续传断点、**已解包的目标目录**与已聚合进度，让本次从零开始。
+         *
+         * 🔴 为什么必须连解包目标一起清：解包是 `tar -xf … -C out` 原地覆盖，
+         *    目标目录里已有文件时逐个撞占用 ⇒ `Can't stat existing object: Permission denied`
+         *    （真机实测，`python-3.11/` 上一轮已解出一部分时就必现）。
+         *    只清 `.part` 会让「重新下载」在同一处**再失败一次** —— 界面说的是
+         *    「从头下载全部文件」，用户据此理解成"重来一遍"，不能只兑现有下载那一半。
+         *
+         * 🔴 只清**有 extractTo 的条目的目标**，不清整个 runtime_root / model_root：
+         *    那两棵树下还有 `.download-cache`（48 MB 归档，清了要重走一遍网络）
+         *    与用户自己的模型权重，一刀切下去代价完全不对等。
+         */
         if fresh {
             clear_part_files(&self.model_root);
             clear_part_files(&paths::runtimes_dir());
+            // 🔴 `model_manifest` 存的是**路径**不是 Manifest —— 用前先读盘。
+            //    读不到就跳过一次清理：归档/解包阶段自己会报"清单读不到"，
+            //    在这里再报一次同样的错只会把两条信息叠在一起。
+            for (manifest_path, root) in [
+                (self.model_manifest.clone(), self.model_root.clone()),
+                (paths::runtime_manifest(), paths::runtimes_dir()),
+            ] {
+                if let Some(m) = load_manifest_quietly(&manifest_path) {
+                    for dir in extract_targets(&m, &root) {
+                        remove_dir_quietly(&dir);
+                    }
+                }
+            }
             {
                 let mut p = self.download_progress.lock().unwrap_or_else(|p| p.into_inner());
                 *p = DownloadProgressState::new();
@@ -1280,6 +1305,47 @@ impl DownloadProgressState {
         let remain = total.saturating_sub(received) as f64;
         let eta = (remain / speed) * 1000.0;
         (Some(speed), Some(eta as i64))
+    }
+}
+
+/// 读清单，失败返回 `None`（**不炸**）。
+///
+/// 🔴 为什么不当错误返回：调用方是「重新下载前的清理」，清单读不到时
+///    归档 / 解包那两个阶段自己会报「清单读不到」并带绝对路径。
+///    在这里也报一次，只会把两条一样的信息叠在一起，用户反而看不出该看哪条。
+fn load_manifest_quietly(p: &Path) -> Option<super::model_store::Manifest> {
+    let text = std::fs::read_to_string(p).ok()?;
+    serde_json::from_str::<super::model_store::Manifest>(&text).ok()
+}
+
+/// 清单里所有**适用于当前平台**且带 `extractTo` 的条目的解包目标目录（绝对路径）。
+///
+/// 只收"当前平台"：把别的平台的 `extractTo` 也算进来会去删一个本机从来不创建的目录
+/// （无害但莫名），且在多平台共库根时可能误删别人那份。
+fn extract_targets(manifest: &super::model_store::Manifest, root: &Path) -> Vec<PathBuf> {
+    let key = super::model_store::platform_key();
+    manifest
+        .files
+        .iter()
+        .filter(|f| f.extract_to.is_some() && super::model_store::matches_platform(f, &key))
+        .map(|f| root.join(f.extract_to.as_deref().unwrap_or_default()))
+        .collect()
+}
+
+/// 删目录，失败**不炸**（留着让 tar 去报，或者下一次 fresh 再试）。
+///
+/// 🔴 为什么不当致命错误：删不掉往往是"文件正被占用"——而占用它的常常就是
+///    我们自己的引擎 / ③（它们刚被停掉，句柄还没松）。此刻失败并终止，
+///    用户拿到的是"重新下载失败"，比"接着解包、让 tar 报具体哪个文件"更难动手。
+fn remove_dir_quietly(dir: &Path) {
+    if !dir.exists() {
+        return;
+    }
+    if let Err(e) = std::fs::remove_dir_all(dir) {
+        println!(
+            "[manga-service] 重新下载：清理解包目标失败（将接着解包）：{}：{e}",
+            dir.display()
+        );
     }
 }
 
