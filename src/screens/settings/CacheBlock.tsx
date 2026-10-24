@@ -3,6 +3,7 @@ import { Btn, Modal } from '@components/units';
 import { useEsc } from '@hooks/useEsc';
 import { openPath } from '@/ipc';
 import { toastBus } from '@/stores/toastBus';
+import { PLATFORMS } from '@music/platform';
 import { musicCacheClear, musicCacheStats } from '@music/ipc';
 import type { CacheStats } from '@music/types';
 import type { MusicProvider } from '@music/types';
@@ -115,8 +116,17 @@ export function CacheBlock({ settingId }: { settingId: string }) {
       <div className="set-cache-rows">
         {PROVIDER_ORDER.map((p) => {
           const bytes = providerBytes(stats, p);
+          const meta = PLATFORMS.find((x) => x.id === p);
           return (
             <div className="set-cache-row" key={p}>
+              {/*
+               * 平台色标（设计稿 `.cache-row .provider-orb`）：一行一个短名方块 + 平台色。
+               * 四个平台的名字长短不一（「网易云音乐」5 字、「QQ 音乐」4 字），
+               * 光靠文字扫下来眼睛要逐行对；色标让"哪一行是哪个平台"一眼可辨。
+               */}
+              <span className="set-cache-orb" style={{ background: meta?.color ?? 'var(--md-line-soft)' }}>
+                {meta?.short ?? '?'}
+              </span>
               <span className="set-cache-row-name">{PROVIDER_LABEL[p]}</span>
               <span className="set-cache-row-size">{bytes > 0 ? formatBytes(bytes) : '无'}</span>
               <Btn

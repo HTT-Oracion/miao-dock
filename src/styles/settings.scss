@@ -651,6 +651,22 @@
   padding: 7px 0;
   border-bottom: 1px solid var(--md-line-soft);
 }
+/*
+ * 平台色标（设计稿 `.cache-row .provider-orb`：22×22 / r6 / 8px 短名）。
+ * 底色由行内联给（`PLATFORMS` 的 `color`），这里只管形状与字。
+ */
+.set-cache-orb {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  font-size: 8px;
+  font-weight: 700;
+  color: #fff;
+}
 .set-cache-row-name {
   flex: 1;
   min-width: 0;
