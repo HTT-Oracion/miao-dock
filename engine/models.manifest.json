@@ -5,7 +5,7 @@
   "purpose": "S3 模型管理：把引擎运行所需的全部外部资产（视觉模型 / LLM 权重 / 外部二进制）连同来源与校验值一起固化进版本控制，取代此前散落在 .tmp/engine-test/（被 .gitignore 忽略、不入库）的取物脚本。",
   "rootNote": "所有 dest 均相对于模型根目录 runtimes/manga-translator/（可用 MIAO_MODEL_ROOT 覆盖）。该目录在 .gitignore 内 —— 资产本身不入库，只有本清单入库。",
   "linkNote": "🔴 引擎把模型路径**硬编码**在自己源码树里，所以「换引擎版本不重下模型」不是靠摆放位置就能保证的：manga_translator/utils/inference.py:94 是 _MODEL_DIR = os.path.join(BASE_PATH, 'models')，而 utils/generic.py:24-25 推出 BASE_PATH = <引擎>/src —— 即视觉模型**必须**出现在 <引擎>/src/models/<子目录>/。src/ 一换版本（删除后重解包）就会连模型一起没掉。server/args.py 也**没有** --model-dir（只有 --models-ttl），唯一能改的钩子是 manga_translator.py:298-299 的 params['model_dir']（运行期）。⇒ 本清单的做法：**权威副本一律放 store（dest），引擎树里那几份只是硬链接（linkTo）**；换版本后跑 `fetch-models.mjs --link` 即可在**零网络**下重建，不必重下 4 GB。",
-  "urlNote": "url = 上游规范地址（用于标识与溯源，也是引擎自身 hash 校验所认的地址）；sources = 本机实测可用的下载通道，按顺序尝试。本机 huggingface.co 不可达、GitHub release 资产直连 502，故 sources 以镜像打头。见 engine/VERSIONS.lock §7。",
+  "urlNote": "url = 下载首选地址；sources = 备用通道，按顺序兜底（url 优先，见 D-217）。🔴 2026-10-25 起 HF 系条目的 url **已改指 hf-mirror.com**：本机 huggingface.co 不可达，每次下载都要先撞一遍超时才落镜像，故直接把首选地址换成镜像。路径结构与 HF 一致（/<repo>/resolve/<rev>/<file>），只换 host；sha256 / sizeBytes 校验的是**字节**，与 URL 无关，故不受影响。溯源与版本对账看 manifestVersion / engineCommit 与 VERSIONS.lock §7，不依赖 host。",
   "shaNote": "sha256 / sizeBytes 均于 2026-10-05 对盘上真实字节重算得出（shasum -a 256）。其中 4 个视觉模型与旧取物脚本记录逐字节吻合（独立重算互证）；Sakura 权重与 llama 归档的 sha256 为首次记录（旧脚本对它们传的是 '-'，即不校验）。随后 `fetch-models.mjs --check` 再次全量复核：6/6 通过。",
   "linkBaseNote": "linkTo 相对于「链接基准目录」，默认 <模型根目录>/src（即引擎源码树根）。",
   "hfNote": "带 `hf` 字段的条目是 **HuggingFace 缓存布局**：权威副本在 store 的 `blobs/<blob>`，引擎树里要同时存在 `<cache>/blobs/<blob>`（HF 的物理副本）与 `<cache>/snapshots/<revision>/<filename>`（HF 的解析入口，靠 `refs/main` 指向 revision）。三者由 `linkModels` 一并重建（零网络）。约定：带 `hf` 的条目其 `linkTo` **必须**落在 `blobs/` 下 —— `linkModels` 据此推出 `<cache>` 根。判据是 `huggingface_hub.try_to_load_from_cache()` 返回路径而非 None（见 docs/internal/spec-notes.md D-99）。",
@@ -58,7 +58,7 @@
       "linkTo": "models/inpainting/lama_large_512px.ckpt",
       "sha256": "11d30fbb3000fb2eceae318b75d9ced9229d99ae990a7f8b3ac35c8d31f2c935",
       "sizeBytes": 204544673,
-      "url": "https://huggingface.co/dreMaz/AnimeMangaInpainting/resolve/main/lama_large_512px.ckpt",
+      "url": "https://hf-mirror.com/dreMaz/AnimeMangaInpainting/resolve/main/lama_large_512px.ckpt",
       "sources": [
         "https://hf-mirror.com/dreMaz/AnimeMangaInpainting/resolve/main/lama_large_512px.ckpt"
       ],
@@ -128,7 +128,7 @@
       "dest": "models/sakura/sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
       "sha256": "eb0f76c7d52710329c4071d8fbbef5c51f9a4f047c066472e6c7063a53e45764",
       "sizeBytes": 3560416256,
-      "url": "https://huggingface.co/SakuraLLM/Sakura-1.5B-Qwen2.5-v1.0-GGUF/resolve/main/sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
+      "url": "https://hf-mirror.com/SakuraLLM/Sakura-1.5B-Qwen2.5-v1.0-GGUF/resolve/main/sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
       "sources": [
         "https://hf-mirror.com/SakuraLLM/Sakura-1.5B-Qwen2.5-v1.0-GGUF/resolve/main/sakura-1.5b-qwen2.5-v1.0-fp16.gguf"
       ],
@@ -195,7 +195,7 @@
       "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "config.json" },
       "sha256": "f9b4081d3d108e9d06532ea8d92b932c04ed3a15ff2f87e6982f8e14db51fbc5",
       "sizeBytes": 846,
-      "url": "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/config.json",
+      "url": "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/config.json",
       "sources": [
         "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/config.json"
       ],
@@ -211,7 +211,7 @@
       "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "generation_config.json" },
       "sha256": "0bb604cdb8392649176935a447ce994128f170a6908c135a17d0e3dfb8113cb2",
       "sizeBytes": 189,
-      "url": "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/generation_config.json",
+      "url": "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/generation_config.json",
       "sources": [
         "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/generation_config.json"
       ],
@@ -227,7 +227,7 @@
       "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "pytorch_model.bin" },
       "sha256": "c266c2cfd19758b6d09c1fc31ecdf1e485509035f6b51dfe84f1ada83eefcc42",
       "sizeBytes": 2460457927,
-      "url": "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/pytorch_model.bin",
+      "url": "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/pytorch_model.bin",
       "sources": [
         "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/pytorch_model.bin"
       ],
@@ -243,7 +243,7 @@
       "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "README.md" },
       "sha256": "0964c46d35be00825c73b3a9ca212043b4b4e4f38e18e88c22e4490d31f9f1a3",
       "sizeBytes": 7667,
-      "url": "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/README.md",
+      "url": "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/README.md",
       "sources": [
         "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/README.md"
       ],
@@ -259,7 +259,7 @@
       "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "sentencepiece.bpe.model" },
       "sha256": "14bb8dfb35c0ffdea7bc01e56cea38b9e3d5efcdcb9c251d6b40538e1aab555a",
       "sizeBytes": 4852054,
-      "url": "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/sentencepiece.bpe.model",
+      "url": "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/sentencepiece.bpe.model",
       "sources": [
         "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/sentencepiece.bpe.model"
       ],
@@ -275,7 +275,7 @@
       "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "special_tokens_map.json" },
       "sha256": "992bd4ed610d644d6823081937bcc91bb8878dd556cea4ae5327f2480361330e",
       "sizeBytes": 3548,
-      "url": "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/special_tokens_map.json",
+      "url": "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/special_tokens_map.json",
       "sources": [
         "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/special_tokens_map.json"
       ],
@@ -291,7 +291,7 @@
       "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "tokenizer.json" },
       "sha256": "e316b82de11d0f951f370943b3c438311629547285129b0b81dadabd01bca665",
       "sizeBytes": 17331176,
-      "url": "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/tokenizer.json",
+      "url": "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/tokenizer.json",
       "sources": [
         "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/tokenizer.json"
       ],
@@ -307,7 +307,7 @@
       "hf": { "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d", "filename": "tokenizer_config.json" },
       "sha256": "d1aa8c3697d3e35674f97b5b7e9c99d22b010f528e80140257d97316be90d044",
       "sizeBytes": 564,
-      "url": "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/tokenizer_config.json",
+      "url": "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/tokenizer_config.json",
       "sources": [
         "https://hf-mirror.com/facebook/nllb-200-distilled-600M/resolve/f8d333a098d19b4fd9a8b18f94170487ad3f821d/tokenizer_config.json"
       ],
