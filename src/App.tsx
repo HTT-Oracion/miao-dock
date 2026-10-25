@@ -560,17 +560,23 @@ export function App() {
         return {
           title: '本地漫画库',
           subtitle: libSummary,
+          /*
+           * 设计稿 §7.1.1 的**顺序**：服务胶囊 → 打开根目录 → 新建漫画。
+           *
+           * 🔴 来源 `Badge` 已去掉（2026-10-25）：用户在库里要的是"往库里做什么"，
+           *    「本地/在线」是服务的设置项、已经住在设置页与胶囊菜单里 ——
+           *    再在工具条占一格只会把两个真动作挤到边缘。
+           *    「新建漫画」是**库级动作**（作用于整个库，不是某一项），故与「打开根目录」同层
+           *    （不放左栏底部，免得与分页器抢位置）。
+           */
           actions: (
             <>
-              {/* 来源 chip：翻译三视图 + 未就绪工具条一致（P-D1：来源是服务的设置，常亮） */}
-              <Badge>{sourceChipLabel(source, platform)}</Badge>
-              {/* 「新建漫画」是**库级动作**（作用于整个库，不是某一项），故与「打开根目录」同层
-                  （设计稿 §7.1.1 的位置裁决：不放左栏底部，免得与分页器抢位置） */}
-              <Btn kind="primary" onClick={() => setNewBookRequest(true)}>
-                新建漫画
-              </Btn>
+              <ServicePill status={status?.state ?? 'starting'} />
               <Btn kind="ghost" onClick={() => openPath(libRoot).catch((e: unknown) => push(errorText(e), 'bad'))}>
                 打开根目录
+              </Btn>
+              <Btn kind="primary" onClick={() => setNewBookRequest(true)}>
+                新建漫画
               </Btn>
             </>
           ),
