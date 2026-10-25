@@ -947,24 +947,31 @@
   padding: 14px 22px 18px;
 }
 /*
- * 窄窗两档（设计稿 §Responsive）：
- * · ≤1040 左栏收到 250、外边距收到 16；
- * · ≤900 改成**上下叠放**（上 210 书架、下页区）—— 再窄下去左右并排两边都读不清。
- * ⚠️ 判据写在 `grid-template-columns` 上、不写 `--lib-left-w`：那个变量是**行内**注入的，
- *    行内样式优先于样式表，改变量在这条媒体查询里不会生效。
+ * 窄窗三档（设计稿 theme.css:590-625 的生效值）：
+ * · ≤1360 左栏 252；
+ * · ≤1180 左栏 236；
+ * · ≤1040 改成**上下叠放**（上 210 书架、下页区）—— 再窄下去左右并排两边都读不清。
+ * 🔴 2026-10-26 修：此前只有 ≤1040 一档（250），且 `--lib-left-w` 由行内注入、
+ *    把 `clamp()` 与本档全部压掉 ⇒ 1180 宽下实测恒定 260。
+ *    现在行内注入已移除，这三档才真正生效。
  */
-@media (max-width: 1040px) {
+@media (max-width: 1360px) {
   .lib {
-    grid-template-columns: 250px minmax(0, 1fr);
-    padding: 12px 16px 16px;
+    grid-template-columns: 252px minmax(0, 1fr);
   }
 }
-@media (max-width: 900px) {
+@media (max-width: 1180px) {
+  .lib {
+    grid-template-columns: 236px minmax(0, 1fr);
+  }
+}
+@media (max-width: 1040px) {
   .lib {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 210px minmax(0, 1fr);
+    padding: 12px 16px 16px;
   }
-  /* 更窄时对照页改成**上下叠放**（设计稿 ≤900）：左右并排在 900px 以下两边都读不清 */
+  /* 更窄时对照页改成**上下叠放**（设计稿 ≤1040） */
   .compare-panes {
     flex-direction: column;
   }

@@ -1,4 +1,4 @@
-﻿import type { ReactElement } from 'react';
+import type { ReactElement } from 'react';
 import { EyeOff, FolderUp, GitMerge, Pencil, Play, RotateCcw, Trash2 } from 'lucide-react';
 import { apiDelete, apiPost, apiPostMultipart, errorText, openPath } from '@/ipc';
 import type {
@@ -10,7 +10,6 @@ import type {
   TaskRow,
 } from '@/types';
 import { chapterNoOf } from '@tools';
-import { LIBRARY } from '@/themes/tokens';
 import { Btn, ContextMenu, Empty, ErrorState, MenuItem, MenuSeparator } from '@components/units';
 import type { BookMetaIntent } from '@screens/manga/modals';
 import {
@@ -616,7 +615,16 @@ export function LibraryScreen({
   };
 
   return (
-    <div className="lib" style={{ '--lib-left-w': `${LIBRARY.leftColumnWidth}px` } as React.CSSProperties}>
+    /*
+     * 🔴 不再行内注入 `--lib-left-w`（2026-10-26）。
+     *
+     * 行内样式**优先于样式表** ⇒ 那个变量一旦注入，SCSS 里的
+     * `clamp(260px, 19vw, 320px)` 与所有窄窗媒体查询全部失效（实测 1180 宽下
+     * 恒定 260，而设计稿这一档应是 236）。左栏宽度是**响应式**属性，
+     * 不该由一个 JS 常量钉死 —— 常量只保留给 `SpecCheck` 的样张基准。
+     */
+    <div className="lib">
+      {' '}
       <LeftRail
         queryInput={queryInput}
         onQueryInput={setQueryInput}
@@ -637,7 +645,6 @@ export function LibraryScreen({
         onShowHidden={() => setShowHidden(true)}
         onGoDrop={onGoDrop}
       />
-
       <LibraryRight
         searching={searching}
         query={query}
@@ -677,7 +684,6 @@ export function LibraryScreen({
         onGridPage={setGridPage}
         onCompare={setCompareSeq}
       />
-
       {toDelete ? (
         <DeleteComicModal
           comic={toDelete.comic}
@@ -688,7 +694,6 @@ export function LibraryScreen({
           onConfirm={(deleteFiles) => void confirmDelete(deleteFiles)}
         />
       ) : null}
-
       {showHidden ? (
         <HiddenComicsModal
           hidden={hidden}
@@ -697,7 +702,6 @@ export function LibraryScreen({
           onUnhide={(name) => void doUnhide(name)}
         />
       ) : null}
-
       {newBookOpen ? (
         <NewBookModal
           root={lib?.root ?? ''}
@@ -713,7 +717,6 @@ export function LibraryScreen({
           }}
         />
       ) : null}
-
       {editBook ? (
         <EditBookModal
           book={editBook}
@@ -722,7 +725,6 @@ export function LibraryScreen({
           onSubmit={(intent, author) => void saveMeta(intent, author)}
         />
       ) : null}
-
       {mergeTarget ? (
         <MergeModal
           source={mergeTarget}
@@ -732,7 +734,6 @@ export function LibraryScreen({
           onConfirm={(target, no) => void mergeInto(target, no)}
         />
       ) : null}
-
       {editNoChapter ? (
         <EditChapterNoModal
           chapter={editNoChapter.chapter}
@@ -744,7 +745,6 @@ export function LibraryScreen({
           onConfirm={(no) => void renumberChapter(editNoChapter.bookName, editNoChapter.chapter, no)}
         />
       ) : null}
-
       {ctxMenu ? (
         <ContextMenu x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)}>
           {(close) => renderComicMenu(ctxMenu.item, close)}
