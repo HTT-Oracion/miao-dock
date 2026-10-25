@@ -41,4 +41,5 @@ export { Skeleton } from '@components/units/Skeleton';
 export { Swatches } from '@components/units/Swatches';
 export { Switch } from '@components/units/Switch';
 export { Tooltip } from '@components/units/Tooltip';
+export { ViewTabs, type ViewTabItem } from '@components/units/ViewTabs';
 export { ROW_GAP, ROW_H, VirtualList } from '@components/units/VirtualList';

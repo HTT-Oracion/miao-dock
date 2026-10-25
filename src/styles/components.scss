@@ -13,6 +13,92 @@
    · `.music-exp .ui-cbtn` / `.music-exp .ui-empty` —— 展开播放器的深色皮肤覆盖；
    · `.ui-vlist.is-drawer` —— 队列抽屉的行容器留白。 */
 
+/* ---- 视图页签（ViewTabs，设计稿 `.view-tabs` / `.ms-tabs`）----
+ *
+ * 一排互斥页签，整条读作**一枚胶囊**（外壳与每一格都是 `--miao-r-full`）。
+ * 设计稿 `theme.css:152-176` 用同一套选择器管漫画与音乐两处 ——
+ * 所以它必须是**一个**单元，而不是各屏各写一份。
+ *
+ * 与 `.ui-seg`（分段选择）的区别不是尺寸而是**语义**：
+ * 那边是 `role="group"` + `aria-pressed`（选项），这边是 `role="tablist"` + `aria-selected`（换视图）。
+ * 视觉上刻意也不同：`.ui-seg` 是内凹灰轨道 + 白面浮起，这边是**白面外壳 + 淡主色选中格**。 */
+.ui-vtabbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+.ui-vtabs {
+  display: grid;
+  /* 页签等分：文案长短不同时不至于让某格窄到贴字 */
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  height: 40px;
+  padding: 4px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-full);
+  background: var(--miao-surface);
+  box-shadow: 0 8px 22px -18px rgba(45, 59, 70, 0.35);
+}
+.ui-vtab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 16px;
+  border-radius: var(--miao-r-full);
+  font-family: var(--md-font-display);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  transition:
+    background var(--miao-dur-base) var(--miao-ease-spring),
+    color var(--miao-dur-base),
+    transform var(--miao-dur-base) var(--miao-ease-spring);
+}
+.ui-vtab:hover {
+  background: var(--miao-surface-2);
+}
+.ui-vtab:active {
+  transform: scale(0.96);
+}
+/*
+ * 选中格用**淡主色**而不是白面：外壳已经是白面，白面选中会在上面"消失"。
+ * 设计稿 `theme.css:171` 也是这样。
+ */
+.ui-vtab.is-active {
+  background: var(--miao-primary-soft);
+  color: var(--miao-primary-ink);
+}
+.ui-vtab-count {
+  min-width: 17px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 99px;
+  background: var(--miao-surface-2);
+  color: var(--miao-muted);
+  font-family: var(--md-font-numeric);
+  font-size: 9.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ui-vtab.is-active .ui-vtab-count {
+  background: var(--miao-primary);
+  color: #fff;
+}
+.ui-vtab-aside {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 /* ---- 分段选择（Segmented，设计稿 `.seg`）----
  * 一条内凹轨道 + 若干颗平铺按钮，选中项**浮起来**（surface 底 + 一道浅投影），
  * 未选中的只靠颜色分层 —— 于是"当前是哪一颗"不用点开就看得见。

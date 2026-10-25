@@ -698,12 +698,38 @@ html[data-theme='dark'] .nav-item:hover {
   flex: 0 0 auto;
 }
 /* 下拉菜单锚在胶囊下方右对齐（工具条靠右，左对齐会飘到标题区） */
+/*
+ * 服务胶囊的菜单：**定位交给 `MenuButton`**（Portal + `position:fixed` + 内联 top/right），
+ * 这里只补宽度与层级。
+ * 🔴 不能再写 `position:absolute; top:calc(100%+6px)`（2026-10-26）：
+ *    菜单现在挂在 `body` 下（Portal），`100%` 会相对 body 算 ⇒ 飞到页面底部。
+ */
 .svc-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 80;
   min-width: 210px;
+  z-index: 80;
+}
+/*
+ * 胶囊上的端口号（设计稿 `shell.js:453` 的 `.mono` + `styles.css:775`）：
+ * 9.5px / muted / 常规字重 —— 它是**附加信息**，不该与状态文案抢视觉。
+ * 窄窗（`styles.css:2173` 的 `@media`）会收起 `.sp-text`，端口号一并收起。
+ */
+.svc-port {
+  font-size: 9.5px;
+  font-weight: 400;
+  color: var(--miao-muted);
+  font-variant-numeric: tabular-nums;
+}
+/*
+ * 菜单分组标题（设计稿 `shell.js:371` 的 `{ heading: '本地翻译服务' }`）：
+ * 把三个服务动作与下面两个"跳转类"入口分开，否则六个同形条目读起来是一串平铺命令。
+ */
+.svc-menu-head {
+  padding: 6px 10px 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--miao-faint);
 }
 
 .pill {
@@ -1024,103 +1050,25 @@ html[data-theme='dark'] .nav-item:hover {
 
 /* ---------------- 视图 Tab ---------------- */
 
-/* 视图 Tab 行的容器（设计稿 `.view-tabbar`）：底部一条分隔线，页签贴满这一行的高度，
-   于是 `.tab-ink` 能正好落在分隔线上。 */
+/*
+ * 视图 Tab 行的**布局容器**：只管"贴在工具条下方、占多高、左右留多少"。
+ * 页签本体（胶囊外壳 / 每格 / 选中态 / 计数徽标）全部住在通用单元
+ * `components/units/ViewTabs.tsx` 与 `components.scss` 的 `.ui-vtab*` ——
+ * 音乐左栏用同一个单元，两处不能再各写一套（2026-10-26）。
+ *
+ * 48px 高、**无底边线**、透明底：分隔感全靠胶囊自身的描边与投影，
+ * 再加一条底线会把"浮起的胶囊"摁回页面背景（设计稿 `theme.css:144-151`）。
+ */
 .viewtabs {
   display: flex;
-  flex: 0 0 44px;
-  align-items: stretch;
+  flex: 0 0 48px;
+  align-items: center;
   gap: 12px;
-  height: 44px;
-  padding: 0 22px;
-  border-bottom: 1px solid var(--miao-line);
-  background: color-mix(in srgb, var(--miao-surface) 55%, transparent);
+  height: 48px;
+  padding: 0 clamp(20px, 2vw, 34px);
+  background: transparent;
   position: relative;
   z-index: 14;
-}
-
-/*
- * 视图 Tab 行（设计稿 `.view-tabs`）：**下划线指示条**形态，不是胶囊分组。
- *
- * 为什么改：设计稿用一条 2px 的 `.tab-ink` 滑到当前页签下方，页签本身只有文字与图标；
- * 旧写法是"胶囊 + 选中项染色"，两种读法完全不同 —— 前者是"页面顶部的页签"，
- * 后者是"一排可点的按钮"。整页的层级感就靠这一条横线撑起来。
- */
-.view-tabs {
-  position: relative;
-  display: inline-flex;
-  align-items: stretch;
-  gap: 2px;
-  height: 100%;
-}
-
-.viewtab {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 100%;
-  padding: 0 15px;
-  border-radius: 0;
-  font-family: var(--md-font-display);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--miao-muted);
-  white-space: nowrap;
-  transition: color var(--miao-dur-fast) ease;
-}
-
-.viewtab svg {
-  display: block;
-  width: 15px;
-  height: 15px;
-}
-
-.viewtab:hover {
-  color: var(--miao-ink);
-}
-
-.viewtab.is-active {
-  color: var(--miao-ink);
-}
-
-/* 滑动指示条：2px 短横，靠 transform/width 的弹簧过渡跟到当前页签 */
-.tab-ink {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  height: 2px;
-  width: 46px;
-  border-radius: 2px 2px 0 0;
-  background: var(--miao-primary);
-  transform-origin: left center;
-  transition:
-    transform var(--miao-dur-slow) var(--miao-ease-spring),
-    width var(--miao-dur-slow) var(--miao-ease-spring);
-}
-
-.view-tab-aside {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.tab-count {
-  min-width: 17px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: var(--miao-surface-2);
-  color: var(--miao-muted);
-  font-family: var(--md-font-numeric);
-  font-size: 9.5px;
-  text-align: center;
-}
-
-.viewtab.is-active .tab-count {
-  background: var(--miao-primary);
-  color: #fff;
 }
 
 .screen,
@@ -1444,16 +1392,15 @@ html[data-theme='dark'] .chip-bad {
   .content {
     padding: 14px 14px 18px;
   }
-  .view-tabs {
+  .ui-vtabs {
     max-width: 100%;
     overflow-x: auto;
   }
-  .view-tab-aside {
+  .ui-vtab-aside {
     display: none;
   }
-  .viewtab {
-    min-width: auto !important;
-    padding: 0 12px !important;
+  .ui-vtab {
+    padding: 0 12px;
   }
 }
 

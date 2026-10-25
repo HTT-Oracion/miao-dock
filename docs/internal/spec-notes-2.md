@@ -1318,6 +1318,138 @@ SCSS 写的是 `grid-template-columns: var(--lib-left-w, clamp(...))`。
 
 ---
 
+## D-402 · ViewTabs 下沉成通用单元，ServicePill 抽成应用级组件（2026-10-26）
+
+### ① `ViewTabs` 为什么不合格、怎么改
+
+原实现是 `components/ViewTabs.tsx` 里一手包办的屏内件：自己写 `role="tablist"`、
+自己测量滑动指示条、自己套 `.viewtab` 样式。问题是**音乐左栏的 `.ms-tabs` 是同一个控件**，
+两处各写一套 ⇒ 圆角、内衬、选中态必然漂移（设计稿 `theme.css:152-176`
+本来就用**同一套选择器**管这两处）。
+
+改法：新增通用单元 `components/units/ViewTabs.tsx`（类名 `ui-vtab*`），
+漫画与音乐都改用它；`components/ViewTabs.tsx` 只剩**漫画屏特有接线**
+（页签清单来自 `TRANSLATE_VIEWS`、右侧说明条、队列计数徽标）。
+
+### ② 与 `Segmented` 的分工（刻意不合并）
+
+| | `Segmented` | `ViewTabs` |
+|---|---|---|
+| 语义 | `role="group"` + `aria-pressed` | `role="tablist"` + `role="tab"` + `aria-selected` |
+| 场合 | **选项**（歌词高亮方式、配色…） | **视图切换**（换掉下面一整块内容） |
+| 形态 | 内凹灰轨道 + 白面浮起 | 白面外壳 + 淡主色选中格 |
+
+判据：**点它之后下面那一整块会不会换**。会换就是页签，不换就是选项。
+
+### ③ 形态按设计稿 `theme.css:152-176` 的生效值
+
+| 项 | 值 |
+|---|---|
+| 外壳圆角 | `--miao-r-full`（**999px 胶囊**，不是 r12 圆角矩形） |
+| 外壳 | `surface` 白面 + 1px 描边 + `0 8px 22px -18px` 投影 |
+| 内衬 / gap | `4px` / `2px` |
+| 每格 | `32px` 高 / `r-full` / `padding 0 16px` / `11.5px·700` |
+| 选中 | `primary-soft` 底 + `primary-ink` 字 |
+| 悬停 | `surface-2` 底 |
+| 按下 | `scale(.96)` |
+
+> 🔴 选中格**不能**用白面 + 阴影：外壳已经是白面，白面选中会在上面"消失"。
+> 这条是本轮踩过的 —— 第一次按 `ms-tabs` 的旧值（r12/r9 + 白面选中）写，方向错了。
+
+### ④ `ServicePill` 抽成 `components/ServicePill.tsx`
+
+它出现在**每个屏的工具条**上，菜单里四个动作全是**服务级**的，不属于任何一屏 ——
+与 `Sidebar` / `Toolbar` / `QuitConfirm` 同级，理应住 `components/`。
+此前是 `App.tsx` 里的内部函数（785 行的文件里再塞一个 145 行的组件）。
+
+菜单补回设计稿的三项（此轮之前只有"停止 / 设置"两项）：
+
+| 项 | 禁用条件（设计稿 `shell.js:372-374`） |
+|---|---|
+| 启动服务 | running / starting / stopping |
+| 停止服务 | 非 running |
+| 重启本地服务 | starting / stopping |
+| 打开翻译服务设置 | — |
+
+胶囊上补**端口号** `:5180`（设计稿 `shell.js:453` 的 `.mono`）。
+
+### ⑤ 顺手修掉一条**假绿**断言
+
+`ia-structure-check` 的 C9（三个页签按 投放→队列→漫画库 排）里写着：
+
+```js
+if (tabs.length === 0) return true;   // ← 夹具里没页签 ⇒ 判它合格
+```
+
+类名一改（`viewtab` → `ui-vtab`），正则匹配不到 ⇒ `tabs` 为空 ⇒ **静默变绿**，
+而它声称钉的正是页签顺序。改成 `return false`：**空集合必须判失败**。
+
+### 门
+
+`npm run check` **20/20** · `check:units` **58/58** · `check:ia` **37/37** ·
+`tsc` 干净 · `eslint` 0 error。
+
+真机取证：漫画屏 `.ui-vtabs` 外壳 `999px/40px/padding4/gap2`、每格 `999px/32px/0 16`、
+旧类名（`.view-tab/.viewtab/.ms-tab`）**零命中**；音乐屏同一单元、同为 `999px`；
+ServicePill `服务运行中:5180` + 标题 + 4 项、无「查看引擎下载」。
+
+---
+
+## D-403 · ServicePill 改用 MenuButton 单元，不再手写浮层（2026-10-26）
+
+### 症状
+
+`ServicePill` 自己写了 145 行：`useState` 开合、`useEffect` 监听外部点击与 Esc、
+`<div className="ui-menu svc-menu">` 手搓浮层、4 个裸 `<button role="menuitem">`。
+
+而 `MenuButton` 单元**已经做了同一件事**（Portal、`position:fixed` 定位、
+点外部 / Esc / 滚动 / 缩放四条收起路径、`role="menu"` 容器、`MenuItem` 子项）。
+两份实现只差"触发器长什么样"。
+
+### 改法
+
+1. **`MenuButton` 增加 `trigger` 槽**（自定义触发器）：调用方给什么就渲染什么，
+   单元只负责挂 `aria-haspopup` / `aria-expanded` / 开合动作 / 浮层。
+   同时增加 `menuClass`（弹层加宽/改层级用）。
+2. **`MenuButton` 的定位不再依赖 `ref`**：改用 `event.currentTarget` 量位置。
+   > 这条是必须的 —— React 18 下 `Btn` 不是 `forwardRef`，拿不到 ref；
+   > 而"触发器要用 `Btn`"正是本轮的要求。用 `currentTarget` 后，
+   > 自定义触发器可以直接是 `<Btn>`，不需要任何 ref 透传。
+3. `ServicePill` 只剩：`<MenuButton trigger={<Btn className="svc-pill">…}>` +
+   4 个 `<MenuItem>`。**零裸 `<button>`**（`ServicePill.tsx` 里搜 `<button` 只剩注释）。
+
+### 连带修复：`.svc-menu` 的定位
+
+原来 `.svc-menu` 写的是 `position:absolute; top:calc(100% + 6px); right:0` ——
+那是"浮层是触发器的子元素"时的写法。改用 Portal 后浮层挂在 `body` 下，
+`100%` 会相对 `body` 算 ⇒ **菜单会飞到页面底部**。
+
+修法：`.svc-menu` 只留 `min-width` 与 `z-index`，定位交给 `MenuButton`
+（它已经用内联 `style={{top, right}}` 算好了）。
+
+> 真机取证：`position: fixed`、`parentElement === body`、
+> 胶囊底部 42 / 菜单顶部 48（gap = 6 ✓）、右缘对齐 ✓。
+
+### `Btn` 的角色扩充
+
+`Btn` 原先只开放 `role: 'tab' | 'option'`，并显式注释"不开放 `menuitem`"。
+本轮补上 `menuitem` 与 `ariaHasPopup`：
+
+- `menuitem`：菜单项是"外观是按钮、语义是菜单项"的正当场景；
+- `ariaHasPopup`：只给 `aria-expanded` 而不给 `aria-haspopup`，读屏会念"已展开"、
+  但不会说"这是个菜单"。
+
+> 这条与 `MenuButton` 的 `trigger` 槽是同一个问题的两面：
+> **单元的能力边界不该逼调用方去写裸元素**。写了裸元素，样式与可及性就两套。
+
+### 门
+
+`npm run check` **20/20** · `tsc` 干净 · `eslint` 0 error。
+真机：胶囊 `服务运行中:5180`、`aria-haspopup="menu"`、菜单 4 项 + 标题、
+无「查看引擎下载」、Esc 收起 ✓。
+
+---
+
 ## G-01 · 待裁定：下载前检查的「磁盘剩余」与「模型源延迟」
 
 设计稿 `.ed-preflight` 的第三、四格是这两项，服务端**没有出口**

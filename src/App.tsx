@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
-import { ChevronDown, Power, Settings, Terminal } from 'lucide-react';
-import { apiPost, errorText, hideWindow, openPath, quitApp, serviceRestart, serviceStart, serviceStop } from '@/ipc';
+import { Terminal } from 'lucide-react';
+import { apiPost, errorText, hideWindow, openPath, quitApp, serviceRestart, serviceStart } from '@/ipc';
 import { toastBus } from '@/stores/toastBus';
-import type { ServiceState } from '@/ipc';
 import {
   useAppVersion,
   useLibrary,
@@ -23,12 +22,13 @@ import {
   persistSidebarLabels,
 } from '@/stores/shell-prefs';
 import type { ThemeMode } from '@/themes/tokens';
-import { Badge, Btn, Dot } from '@components/units';
+import { Badge, Btn } from '@components/units';
 import { DemoPanel } from '@components/DemoPanel';
 import { DynamicIsland } from '@components/DynamicIsland';
 import { NotificationStack } from '@components/NotificationStack';
 import { MusicKernel } from '@components/MusicKernel';
 import { QuitConfirm } from '@components/QuitConfirm';
+import { ServicePill } from '@components/ServicePill';
 import { Sidebar } from '@components/Sidebar';
 import { Toolbar } from '@components/Toolbar';
 import { ViewTabs } from '@components/ViewTabs';
@@ -40,7 +40,7 @@ import { useMusicStore } from '@music/store';
 import { ToolbarAccount } from '@screens/music/ToolbarAccount';
 import { useAnimeStore } from '@anime/store';
 import { ANIME_VIEW_META } from '@anime/player-options';
-import { isBlockedWhenNotReady, stateView } from '@/stores/nav';
+import { isBlockedWhenNotReady } from '@/stores/nav';
 import type { EngineProcessView, ShellCtx } from '@/router/panes/shell-context';
 import type { TranslateSource } from '@screens/settings/translate-api';
 import { engineStatus, type ModelDownloadView } from '@screens/settings/engine-api';
@@ -812,104 +812,4 @@ function sourceChipLabel(source: TranslateSource | null, platform: string | null
   if (source !== 'online') return '本地引擎';
   if (!platform) return '在线';
   return `在线 · ${PLATFORM_LABELS[platform] ?? platform}`;
-}
-
-/**
- * 状态胶囊（设计稿 `.service-pill`）：**可点**，点开「服务状态与操作」菜单。
- *
- * 旧实现是一枚静态胶囊 —— 它告诉你"服务在跑"，但想问"那我能停它吗 / 日志在哪"
- * 就只能自己去设置页翻。设计稿把它做成入口：三个动作都是服务状态的直接后续。
- *
- * 菜单用 `MenuButton` 同款的浮层样式（`.ui-menu`），触发器则保持胶囊外观 ——
- * 胶囊是这一处的识别符号，换成普通按钮会丢掉"这是一个状态"的语义。
- */
-function ServicePill({ status }: { status: ServiceState }) {
-  const v = stateView(status);
-  const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  // 点外部 / Esc 收起：与其它浮层同一套收场方式
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  const running = status === 'running';
-
-  // 状态写进胶囊的 `title`：窄窗会收起 `.svc-text`（只剩圆点），
-  // 没有这句就成了"颜色是唯一载体"（《02》§5.2 禁止的那种）。
-  return (
-    <div className="svc-wrap" ref={wrapRef}>
-      {/*
-       * 这一枚**刻意**用裸 `<button>`：它需要 `aria-haspopup="menu"`，
-       * 而 `Btn` 刻意不开放这个属性（只放 tab / option 两个角色）。
-       * 语义正确优先于"统一用 Btn"—— 少这一句，读屏用户不会知道点它会弹出菜单。
-       */}
-      <button
-        type="button"
-        className="svc-pill"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title={`服务状态：${v.text} · 点按查看操作`}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <Dot colorVar={v.colorVar} pulse={running} />
-        <span className="svc-text">{v.text}</span>
-        <ChevronDown size={12} className="svc-chev" />
-      </button>
-
-      {open ? (
-        <div className="ui-menu svc-menu" role="menu">
-          <button
-            type="button"
-            role="menuitem"
-            className="ui-menu-item"
-            disabled={!running}
-            onClick={() => {
-              setOpen(false);
-              void serviceStop().catch(() => undefined);
-            }}
-          >
-            <Power size={13} />
-            <span className="ui-menu-label">
-              <b>停止服务</b>
-              <small>队列中的任务会被保留</small>
-            </span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="ui-menu-item"
-            onClick={() => {
-              setOpen(false);
-              navigate('/settings?section=translate');
-            }}
-          >
-            <Settings size={13} />
-            <span className="ui-menu-label">
-              <b>打开翻译服务设置</b>
-              <small>端口 / 令牌 / 引擎与模型</small>
-            </span>
-          </button>
-          {/*
-            🔴 「查看引擎下载」这一项已去掉（2026-10-25 用户要求）。
-            引擎下载有自己的入口（侧栏 + 未就绪屏），胶囊菜单里再放一条
-            等于同一个功能两个入口，且它在服务正常时几乎用不上。
-          */}
-        </div>
-      ) : null}
-    </div>
-  );
 }

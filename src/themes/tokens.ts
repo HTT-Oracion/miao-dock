@@ -153,7 +153,8 @@ export const SIDEBAR = {
 export const VIEW_TABS = {
   height: 44,
   itemMinWidth: 88,
-  itemPaddingX: 16,
+  /** 设计稿 `.view-tab { padding: 0 15px }`（styles.css:791-802） */
+  itemPaddingX: 15,
 } as const;
 
 /**

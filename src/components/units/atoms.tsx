@@ -1,4 +1,4 @@
-﻿import type { CSSProperties, MouseEvent, ReactNode } from 'react';
+import type { CSSProperties, MouseEvent, ReactNode } from 'react';
 import { QUEUE_EMPTY } from '@/themes/tokens';
 
 /*
@@ -71,6 +71,7 @@ export function Btn({
   ariaCurrent,
   role,
   ariaSelected,
+  ariaHasPopup,
   active,
   className,
   style,
@@ -95,11 +96,21 @@ export function Btn({
   /** 导航项的"当前页"标记（设置页左侧分组导航）：读屏才会说「当前页」 */
   ariaCurrent?: 'page' | 'true';
   /**
-   * 只开放**两个**角色：`tab`（页签组里的一枚）与 `option`（列表里的可选项）。
-   * 不开放任意字符串 —— 给 `<button>` 挂 `role="button"` / `role="menuitem"` 这类
-   * 语义错配比不挂更糟；而这两个是"外观是按钮、语义是别的东西"的正当场景。
+   * 角色：`tab`（页签组里的一枚）/ `option`（列表里的可选项）/ `menuitem`（弹出菜单里的一条）。
+   * 不开放任意字符串 —— 给 `<button>` 挂 `role="button"` 这类语义错配比不挂更糟；
+   * 这三个都是"外观是按钮、语义是别的东西"的正当场景。
+   *
+   * 🔴 `menuitem` 是 2026-10-26 补的：`ServicePill` 的下拉菜单此前用裸 `<button>`
+   *    正是因为没有这个角色（菜单项缺 `role="menuitem"` 时读屏不会念成菜单）。
+   *    补上之后，桌面上最后一个"因缺角色而不得不写裸 button"的场景也消失了。
    */
-  role?: 'tab' | 'option';
+  role?: 'tab' | 'option' | 'menuitem';
+  /**
+   * 弹出菜单的触发器标记（`menuitem` 的另一半）：`menu` 表示"点它会弹菜单"。
+   * 与 `ariaExpanded` 配对使用 —— 只给 `aria-expanded` 而不给 `aria-haspopup`，
+   * 读屏会念"已展开"但不会说"这是个菜单"。
+   */
+  ariaHasPopup?: 'menu';
   /** 配合 `role="tab"` / `role="option"` 的选中态 */
   ariaSelected?: boolean;
   /** 当前项（翻页器页码 / 已选中的筛选钮）：只加 `is-active`，样式由调用处决定 */
@@ -131,6 +142,7 @@ export function Btn({
       aria-current={ariaCurrent}
       role={role}
       aria-selected={ariaSelected}
+      aria-haspopup={ariaHasPopup}
       style={style}
     >
       {children}

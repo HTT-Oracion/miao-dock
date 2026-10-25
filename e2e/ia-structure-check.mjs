@@ -133,10 +133,7 @@ function dom({
     ${
       viewOrder
         ? `<div class="viewtabs">${viewOrder
-            .map(
-              (v) =>
-                `<button class="viewtab${v === viewOrder[0] ? ' is-active' : ''}"><svg></svg><span>${v}</span></button>`,
-            )
+            .map((v) => `<button class="ui-vtab${v === viewOrder[0] ? ' is-active' : ''}"><span>${v}</span></button>`)
             .join('')}</div>`
         : ''
     }
@@ -220,13 +217,19 @@ function judgeC8(html, domSpec) {
 }
 
 function judgeC9(html) {
-  // ⚠️ 不能写成 `viewtab[^>]*><span>`：真实 DOM 里 Tab 是 `<svg/>` 在前、`<span>` 在后，
-  // 那种写法只在自己理想化的脚手架 HTML 上成立，对真实输出恒不匹配 → C9 恒绿（假阳性）。
-  // 这里用「不跨出当前 button」的惰性匹配，等价于浏览器里取 button 内的 span。
-  const tabs = [...html.matchAll(/viewtab[^>]*>(?:(?!<\/button>)[\s\S])*?<span>([^<]*)<\/span>/g)].map((m) =>
+  // 🔴 2026-10-26：页签改为通用单元 `.ui-vtab`（漫画/音乐共用，见 units/ViewTabs.tsx）。
+  // 判据锚在 `ui-vtab` 上；`<span>` 仍是文案载体（图标已按设计稿去掉）。
+  // ⚠️ 不能写成 `ui-vtab[^>]*><span>`：那种写法只在自己理想化的脚手架 HTML 上成立，
+  // 对真实输出恒不匹配 → C9 恒绿（假阳性）。这里用「不跨出当前 button」的惰性匹配。
+  const tabs = [...html.matchAll(/ui-vtab[^>]*>(?:(?!<\/button>)[\s\S])*?<span>([^<]*)<\/span>/g)].map((m) =>
     m[1].trim(),
   );
-  if (tabs.length === 0) return true;
+  /*
+   * 🔴 `tabs.length === 0` **不能** return true（2026-10-26 一并修掉）：
+   *    那是「夹具里没有页签 ⇒ 判它合格」—— 类名一改，这条断言会**静默变绿**，
+   *    而它声称钉的正是"三个页签按 投放→队列→漫画库 排"。空集合必须判失败。
+   */
+  if (tabs.length === 0) return false;
   const want = ['投放', '队列', '漫画库'];
   return tabs.length === want.length && tabs.every((t, i) => t === want[i]);
 }

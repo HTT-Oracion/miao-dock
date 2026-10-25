@@ -87,6 +87,7 @@ const MANIFEST = [
   'ErrorState.tsx',
   'Select.tsx',
   'Segmented.tsx',
+  'ViewTabs.tsx',
   'SideDrawer.tsx',
   'Switch.tsx',
   'Range.tsx',
@@ -133,6 +134,7 @@ const BARREL_EXPORTS = [
   'Swatches',
   'Switch',
   'Tooltip',
+  'ViewTabs',
   'ROW_GAP',
   'ROW_H',
   'VirtualList',
@@ -1219,9 +1221,22 @@ add('STYLE.shardOwnership', 'STYLE', (s) => {
   // `.set-row / .set-state`（设置页专用但由 units 组件实现）。双向禁会误报它们。
   // 反向自查已验证：把另一分片喂进来均会报红，判据确实能抓住放错。
   const FORBID = {
-    'manga.scss': [/\.music-/, /\.di-/, /\.pf-/, /\.ac-/, /\.sk-/, /\.skin-/, /\.kara-/, /\.viewtab/],
-    'music.scss': [/\.qt-/, /\.lib-/, /\.notready/, /\.logbox/, /\.magic-/, /\.compare-/, /\.dropzone/, /\.filelist/],
-    'settings.scss': [/\.music-/, /\.di-/, /\.qt-/, /\.lib-/, /\.viewtab/],
+    // `.ui-vtab*` 是**通用单元**的样式（住 components.scss）⇒ 其余分片一律禁，
+    // 包括漫画与音乐两屏 —— 2026-10-26 起它们共用同一个 PageTabs 单元，
+    // 谁再在自己分片里写一份，就是"两处各一份、必然漂移"的老路。
+    'manga.scss': [/\.music-/, /\.di-/, /\.pf-/, /\.ac-/, /\.sk-/, /\.skin-/, /\.kara-/, /\.ui-vtab/],
+    'music.scss': [
+      /\.qt-/,
+      /\.lib-/,
+      /\.notready/,
+      /\.logbox/,
+      /\.magic-/,
+      /\.compare-/,
+      /\.dropzone/,
+      /\.filelist/,
+      /\.ui-vtab/,
+    ],
+    'settings.scss': [/\.music-/, /\.di-/, /\.qt-/, /\.lib-/, /\.ui-vtab/],
     'app.scss': [/\.music-/, /\.di-/, /\.qt-/, /\.lib-/, /\.set-/, /\.settings/],
     'components.scss': [/\.music-/, /\.di-/, /\.qt-/, /\.lib-/],
   };

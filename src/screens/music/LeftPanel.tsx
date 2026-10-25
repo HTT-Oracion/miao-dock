@@ -5,13 +5,13 @@ import type { LeftView } from '@music/store';
 import type { Playlist } from '@music/types';
 import { HistoryView } from '@screens/music/HistoryView';
 import { LocalView } from '@screens/music/LocalView';
-import { Btn, Empty } from '@components/units';
+import { Btn, Empty, ViewTabs, type ViewTabItem } from '@components/units';
 import { PlaylistListSkeleton } from '@screens/music/skeletons';
 import { Cover } from '@screens/music/shared';
 
 // Tab 文案与设计稿左栏一致：`歌单 / 本地 / 历史`（不写"我的歌单 / 播放历史"的长名，
 // 三个 Tab 并排时短名才排得下且不换行）
-const TABS: { id: LeftView; label: string }[] = [
+const TABS: readonly ViewTabItem<LeftView>[] = [
   { id: 'playlists', label: '歌单' },
   { id: 'local', label: '本地' },
   { id: 'history', label: '历史' },
@@ -31,27 +31,21 @@ export function LeftPanel() {
 
   return (
     <>
-      {/* 三枚 Tab 是**一组**（设计稿 `.ms-tabs` 带 `role="tablist"`）：
-          缺 role/aria-selected 时，读屏听到的是三个互不相干的按钮，
-          听不出"当前在哪个视图"。 */}
-      <div className="ms-tabs" role="tablist">
-        {TABS.map((t) => (
-          <Btn
-            key={t.id}
-            kind="bare"
-            role="tab"
-            ariaSelected={active === t.id}
-            className={active === t.id ? 'ms-tab is-active' : 'ms-tab'}
-            onClick={() => {
-              // 点「我的歌单」时若正处在曲目下钻态，要一路退回去，不能只切高亮
-              if (t.id === 'playlists') backToPlaylists();
-              else setLeftView(t.id);
-            }}
-          >
-            {t.label}
-          </Btn>
-        ))}
-      </div>
+      {/*
+        三枚 Tab 走**通用单元** `ViewTabs`（与漫画屏的投放/队列/漫画库同一个控件）：
+        设计稿 `theme.css:152-176` 本来就用同一套选择器管这两处。
+        此前这里是手写的一套 `.ms-tabs` / `.ms-tab`，与漫画屏各写一份 ⇒ 圆角与选中态各自漂移。
+      */}
+      <ViewTabs
+        value={active}
+        items={TABS}
+        label="音乐左栏视图"
+        onChange={(id) => {
+          // 点「我的歌单」时若正处在曲目下钻态，要一路退回去，不能只切高亮
+          if (id === 'playlists') backToPlaylists();
+          else setLeftView(id);
+        }}
+      />
 
       {/* 视图区自带滚动（设计稿 `.ms-scroll`）：滚动条只出现在这一层，
           而不是整张左卡一起滚（那样 Tab 会跟着滚走） */}

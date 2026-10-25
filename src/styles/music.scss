@@ -1544,52 +1544,10 @@
 
 /* ---------------------------------------------------------------- 左栏视图 Tab */
 /*
- * 三段式 Tab（设计稿 `.ms-tabs` / `.ms-tab`）：圆角矩形分段控件。
- * 3 等分网格 + 3px 内衬 + **r12 外壳 / r9 内块**（设计稿生效值），
- * 外壳**无描边**（只靠 surface-2 底与白面区分），选中块是一枚白面 + 极轻投影。
+ * 左栏的三段 Tab 已改用**通用单元** `ViewTabs`（`.ui-vtabs` / `.ui-vtab`，
+ * 样式住 `components.scss`）—— 与漫画屏的投放/队列/漫画库是同一个控件。
+ * 原来的 `.ms-tabs` / `.ms-tab` 两条规则退役（2026-10-26）。
  */
-.ms-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 2px;
-  flex: 0 0 auto;
-  margin-bottom: 0;
-  padding: 3px;
-  border: 1px solid var(--miao-line);
-  border-radius: 12px;
-  background: var(--miao-surface-2);
-}
-.ms-tab {
-  height: 28px;
-  line-height: 1;
-  border-radius: 9px;
-  border: none;
-  background: transparent;
-  color: var(--miao-muted);
-  font-family: var(--md-font-display);
-  font-size: 11px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background var(--miao-dur-fast) ease,
-    color var(--miao-dur-fast) ease;
-}
-.ms-tab:hover {
-  color: var(--miao-ink);
-}
-.ms-tab:active {
-  transform: scale(0.97);
-}
-.ms-tab.is-active {
-  background: var(--miao-surface);
-  color: var(--miao-ink);
-  box-shadow: 0 1px 3px rgba(43, 47, 55, 0.09);
-}
 
 /* 视图区（设计稿 `.ms-scroll`）：左卡里唯一滚动的一层，Tab 与底部账号行固定 */
 /*

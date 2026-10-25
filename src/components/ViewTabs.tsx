@@ -1,30 +1,30 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { VIEW_TABS } from '@/themes/tokens';
 import { Folder } from 'lucide-react';
 import { TRANSLATE_VIEWS, type TranslateView } from '@/stores/nav';
-import { Btn } from '@components/units';
-
-/*
- * 🔴 设计稿（refactor_ver3.0/index.html:176-178）的三个 Tab 是**纯文字**：
- *     `投放 / 队列<span class="tab-count">0</span> / 漫画库`，`.view-tab` 只有
- *     `padding: 0 15px` + `font-size: 12px` + `font-weight: 700`（styles.css:791-802）。
- *     此前给每个 Tab 加了 lucide 图标（FolderUp / ListMinus / BookText）——
- *     那是偏离设计稿的，已于 2026-10-25 去掉。
- *     仅右侧说明条（`.view-tab-aside`）保留一个 Folder 图标（库根目录那一行）。
- */
+import { ViewTabs as ViewTabsUnit, type ViewTabItem } from '@components/units';
 
 /**
- * 漫画翻译应用内的**视图 Tab 行**（《09》§3.2）—— ver2.0 新增。
+ * 页签清单：直接从 `TRANSLATE_VIEWS` 派生（顺序是断言对象 C9），
+ * 这里不再维护第二份"哪个视图叫什么"。
+ */
+const ITEMS: readonly ViewTabItem<TranslateView>[] = TRANSLATE_VIEWS.map((v) => ({
+  id: v.id,
+  label: v.label,
+  hint: v.hint,
+}));
+
+/**
+ * 漫画翻译应用内的**视图 Tab 行**（《09》§3.2）。
  *
- * 44px 高，贴在工具条下方。三个 Tab 恒为 `TRANSLATE_VIEWS` 的顺序 ——
- * 投放（输入）→ 队列（处理）→ 漫画库（产出），即真实工作流时序。
+ * 2026-10-26：本体下沉成通用单元 `components/units/ViewTabs.tsx`
+ * —— 音乐左栏的 `.ms-tabs` 是同一个控件，两处各写一套必然漂移
+ * （设计稿 `theme.css:152-176` 本来就用同一套选择器管两处）。
  *
- * 顺序是断言对象（C9）：改这里必须同时改 `TRANSLATE_VIEWS`，且 C9 会变红。
- * 类名同时保留 `.viewtabs .viewtab` 锚点与 ver3 的 `.view-tabs .view-tab` 结构，
- * 断言与视觉因此不需要二选一。
+ * 本文件只保留**漫画屏特有的接线**：
+ *   · 页签清单来自 `TRANSLATE_VIEWS`（顺序即工作流时序）；
+ *   · 右侧说明条显示该视图的真实参数（每批上限 / 串行策略 / 库根目录）；
+ *   · 队列页签带待办计数徽标。
  *
- * 右侧说明条只展示**已存在的真实参数**：每批上限、串行策略、库根目录。
- * 不写演示数据 —— 队列数量来自壳层的真实任务统计。
+ * 说明条只展示**已存在的真实参数**，不写演示数据。
  */
 export function ViewTabs({
   view,
@@ -39,26 +39,6 @@ export function ViewTabs({
   /** 漫画库根目录（来自库接口或服务状态） */
   rootDir?: string;
 }) {
-  /** 滑动指示条的位置与宽度：布局后按当前页签实测，不用写死的偏移 */
-  const tabsRef = useRef<HTMLDivElement>(null);
-  const [ink, setInk] = useState({ x: 0, w: 0 });
-
-  const measure = () => {
-    const wrap = tabsRef.current;
-    const active = wrap?.querySelector('.view-tab.is-active') as HTMLElement | null;
-    if (!wrap || !active) return;
-    setInk({ x: active.offsetLeft, w: active.offsetWidth });
-  };
-
-  // 布局后量一次（首帧页签宽度未定），切页签后再量一次（跟到新位置）
-  useLayoutEffect(measure, [view]);
-  // 窗口变宽/变窄会改变页签宽度；只在尺寸真的变了时才重设，避免无谓重渲染
-  useEffect(() => {
-    const onResize = () => measure();
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-
   const aside =
     view === 'drop' ? (
       <span className="chip">每批 20 张 · 自动排队</span>
@@ -72,37 +52,15 @@ export function ViewTabs({
     ) : null;
 
   return (
-    <div className="viewtabs" style={{ height: VIEW_TABS.height }} role="tablist" aria-label="漫画翻译视图">
-      <div className="view-tabs" ref={tabsRef}>
-        {TRANSLATE_VIEWS.map((v) => (
-          <Btn
-            key={v.id}
-            kind="bare"
-            role="tab"
-            ariaSelected={view === v.id}
-            title={v.hint}
-            className={view === v.id ? 'viewtab view-tab is-active' : 'viewtab view-tab'}
-            style={{ minWidth: VIEW_TABS.itemMinWidth, padding: `0 ${VIEW_TABS.itemPaddingX}px` }}
-            onClick={() => onView(v.id)}
-          >
-            {/* 纯文字（设计稿形态）：三个 Tab 不带图标 */}
-            <span>{v.label}</span>
-          </Btn>
-        ))}
-        {/*
-          滑动指示条（设计稿 `.tab-ink`）：一条 2px 的短横，靠 transform/width 的弹簧过渡
-          跟到当前页签下方。位置在布局后量取 —— 页签宽度随文案与字号变化，写死 offsetLeft 会错位。
-        */}
-        <span className="tab-ink" aria-hidden="true" style={{ width: ink.w, transform: `translateX(${ink.x}px)` }} />
-      </div>
-      <div className="view-tab-aside">
-        {view === 'queue' && queueCount > 0 ? (
-          <span className="tab-count" title={`队内 ${queueCount} 个任务`}>
-            {queueCount}
-          </span>
-        ) : null}
-        {aside}
-      </div>
+    <div className="viewtabs">
+      <ViewTabsUnit
+        value={view}
+        items={ITEMS}
+        onChange={onView}
+        label="漫画翻译视图"
+        aside={aside}
+        countOf={(id) => (id === 'queue' ? queueCount : undefined)}
+      />
     </div>
   );
 }
