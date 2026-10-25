@@ -744,7 +744,14 @@ impl EngineState {
             "runner": self.download_runner.to_string_lossy(),
             "runnerExists": self.download_runner.exists(),
             // ---- G5：结构化进度（全部来自 `--progress-log`，null = 无真实来源）----
-            "percent": d.percent,
+            // 🔴 完成态一律 100%：`done` = 子进程退出码 0 + 全部校验通过，
+            //    此时字节账必然已满。让百分比自己走到 100 是不成立的 ——
+            //    复用/校验命中的条目在过去不发事件，账本压根不知道它们已经齐了。
+            "percent": if d.state == "done" {
+                Some(100.0)
+            } else {
+                d.percent
+            },
             "receivedBytes": d.received_bytes,
             "totalBytes": d.total_bytes,
             "speedBps": d.speed_bps,
@@ -756,10 +763,19 @@ impl EngineState {
             "currentId": d.current_id,
             // 整体装配进度（段加权）：段内只有"有字节账"的两段才细分，其余停在段首。
             // 🔴 为什么不在前端算：权重是产品判断（哪一段更费时），两处各写一份必然漂移。
-            "assemblyPercent": assembly_percent(d.step.as_deref(), d.percent),
-            // 当前段**没有可测字节进度**（prepare / runtime 的 venv、pip、补丁）⇒ 界面配旋转弧，
-            // 而不是把上一段留下的数字当成本段在走。
-            "assemblyIndeterminate": matches!(d.step.as_deref(), Some("prepare") | Some("runtime")),
+            // 🔴 **完成态一律 100%**：`done` 是"子进程退出码 0、全部校验通过"的终态，
+            //    此时百分比必然已经走完。可它读的是字节账，而**复用/校验命中的条目
+            //    过去根本不发事件**（本轮已修，但历史存档里可能仍是旧账）⇒
+            //    真机上出现过"下载显示完成、环卡在 45%"（2026-10-25 用户报）。
+            //    完成与否是**状态**事实，不该由百分比反推。
+            "assemblyPercent": if d.state == "done" {
+                Some(100.0)
+            } else {
+                assembly_percent(d.step.as_deref(), d.percent)
+            },
+            // 完成态的环不再"转圈"——它已经不在进行中了
+            "assemblyIndeterminate": d.state != "done"
+                && matches!(d.step.as_deref(), Some("prepare") | Some("runtime")),
             // ---- G5：中断 / 续传 ----
             // 🔴 `canResume` 在视图时**现算**（不存）：盘上有 `.part` 或 `.ready` 未覆盖全部选中条目
             //    ⇒ true。这样即使进程重启、内存态清空，也能如实告诉界面「有东西可续」。
@@ -1543,14 +1559,42 @@ fn spawn_progress_reader(
                     //   · `step` 是未就绪屏**五段**时间线的数据源，值域是闭集
                     //     （prepare / runtime / visual / llm，外加全量 CLI 的兼容值 models）；
                     //     **未知阶段名不猜**，保持上一段，否则界面会拿到一个它不认识的段号。
-                    d.step = match e.id.as_str() {
-                        "prepare" => Some("prepare".to_string()),
-                        "runtime" => Some("runtime".to_string()),
-                        "visual" => Some("visual".to_string()),
-                        "llm" => Some("llm".to_string()),
-                        "models" => Some("models".to_string()),
-                        _ => d.step.take(),
+                    /*
+                     * 🔴 **`step` 只进不退**（2026-10-25）。
+                     *
+                     * 为什么必须加这条：装配是**两个进程**（`--stage 1` / `--stage 2`），
+                     * 而每一轮都从阶段 0 重新走一遍 `prepare → runtime → visual/llm`。
+                     * 无条件覆写的话，第 2 轮一开始就把 `step` 从 `llm` 拉回 `prepare` ——
+                     * 前端五段时间线是按 step 推进的，于是"装配进度从翻译模型跳回视觉模型"。
+                     * 另外 `runtime_setup` 收尾写就绪标记时也会报一次 `runtime`（已单独修掉）。
+                     *
+                     * 语义：段号是**单调水位线**，只允许升高。真需要回到早段（例如换了引擎
+                     * 版本重装）时由 `start_model_download` 把 step 清成 None 重来 ——
+                     * 那是"新一轮"，不是"同一轮里回退"。
+                     */
+                    let next = match e.id.as_str() {
+                        "prepare" => Some("prepare"),
+                        "runtime" => Some("runtime"),
+                        "visual" => Some("visual"),
+                        "llm" => Some("llm"),
+                        "models" => Some("models"),
+                        // 未知阶段名不猜，保持上一段
+                        _ => None,
                     };
+                    if let Some(next) = next {
+                        let rank = |s: &str| match s {
+                            "prepare" => 0,
+                            "runtime" => 1,
+                            "visual" => 2,
+                            "llm" | "models" => 3,
+                            _ => -1,
+                        };
+                        let cur = d.step.as_deref().map_or(-1, rank);
+                        // 只在**严格更高**时才改：同段重复事件不必动，回退一律忽略
+                        if rank(next) > cur {
+                            d.step = Some(next.to_string());
+                        }
+                    }
                     // `visual` 属第 1 轮（视觉模型与 llama.cpp 同轮），不能错标成 stage2；
                     // `llm` 才是第 2 轮（Sakura + nllb）。
                     d.stage = match e.id.as_str() {
@@ -1828,5 +1872,50 @@ mod tests {
         p.samples.push((0, 0));
         let (speed, _) = p.recompute(1, 10_000_000_000, 0); // 10 GB / 1 ms
         assert!(speed.is_none(), "超过 100 GB/s 不报：{speed:?}");
+    }
+
+    /// 🔴 全部条目都"复用"时，进度必须正好 100%（2026-10-25）。
+    ///
+    /// 真实场景：第二次点「继续下载」，所有文件都在盘上且校验通过 ⇒
+    /// 下载器只打 `[复用]` 日志、一个字节都不下。旧实现里 `[复用]` 分支
+    /// **不发事件** ⇒ 账本空 ⇒ `percent` 是 `None` ⇒ 界面「准备中」，
+    /// 而 `state` 是 `done` ⇒ "下载完成但进度 45%"。
+    /// 新实现给每条复用补 `received == total` ⇒ 聚合正好满。
+    #[test]
+    fn all_reused_yields_full_percent() {
+        let mut p = DownloadProgressState::new();
+        let reused = |id: &str, total: u64| ProgressEvent {
+            id: id.to_string(),
+            phase: "reused".to_string(),
+            received: total,
+            total: Some(total),
+            url: None,
+            resumed: false,
+            msg: None,
+        };
+        p.ingest(&reused("a", 100), 1000);
+        let (r, t, _) = p.ingest(&reused("b", 300), 1100);
+        assert_eq!((r, t), (400, 400), "两条都复用 ⇒ 分子分母相等");
+        let pct = (r as f64 / t as f64) * 100.0;
+        assert_eq!(pct, 100.0, "全复用必须是 100%，不是 0 或 None");
+    }
+
+    /// 校验命中（`verifying`）也按"已满"计入，不是从 0 开始
+    #[test]
+    fn verifying_counts_as_full_not_zero() {
+        let mut p = DownloadProgressState::new();
+        let (r, t, _) = p.ingest(
+            &ProgressEvent {
+                id: "x".to_string(),
+                phase: "verifying".to_string(),
+                received: 500,
+                total: Some(500),
+                url: None,
+                resumed: false,
+                msg: None,
+            },
+            1000,
+        );
+        assert_eq!((r, t), (500, 500), "校验中的文件是完整文件，不是零字节");
     }
 }

@@ -236,12 +236,22 @@ function engineSourceShape() {
   const stageMap =
     state.includes('"prepare" | "runtime" | "visual" => Some("stage1"') &&
     state.includes('"llm" | "models" => Some("stage2"');
+  /*
+   * 五段 step 映射（2026-10-25 改形）：从"逐阶段赋值"改成**单调水位线**
+   * —— 五个阶段名仍各有映射，但只有 rank 更高时才落值。
+   * 🔴 这条必须连"单调"一起钉：装配是**两个进程**（--stage 1 / --stage 2），
+   *    每轮都从阶段 0 重走。无条件覆写会让第 2 轮把 step 从 llm 拉回 prepare，
+   *    前端五段时间线于是"从翻译模型跳回视觉模型"（真机用户报）。
+   */
   const stepMap =
-    state.includes('"prepare" => Some("prepare".to_string())') &&
-    state.includes('"runtime" => Some("runtime".to_string())') &&
-    state.includes('"visual" => Some("visual".to_string())') &&
-    state.includes('"llm" => Some("llm".to_string())') &&
-    state.includes('"models" => Some("models".to_string())');
+    state.includes('"prepare" => Some("prepare")') &&
+    state.includes('"runtime" => Some("runtime")') &&
+    state.includes('"visual" => Some("visual")') &&
+    state.includes('"llm" => Some("llm")') &&
+    state.includes('"models" => Some("models")') &&
+    // 只进不退：rank 比较 + "严格更高才改"
+    /if rank\(next\) > cur/.test(state) &&
+    /d\.step = Some\(next\.to_string\(\)\)/.test(state);
   // 装配侧必须真的发出 `prepare` 段（发不出来 ⇒ 五段时间线的第 1 段永远不亮）；
   // `visual` 由 bootstrap 发，`llm` 由第 2 轮的 fetch-models 发 —— 两侧各缺一条都会让流程停住。
   const emitsPrepare = /on_phase\("prepare",\s*"[^"]+"\)/.test(setupForPhases);
@@ -732,7 +742,7 @@ if (REFUTE) {
 
   // ---- M15（D-233）：`step` 映射不接 visual（五段时间线永远停在 runtime）⇒ W4 红 ----
   {
-    const restore = mutateFile(STATE_RS, '"visual" => Some("visual".to_string()),', '"visual" => d.step.take(),');
+    const restore = mutateFile(STATE_RS, '"visual" => Some("visual"),', '"visual" => None,');
     const r = await runForward();
     const red = r.code !== 0 && hasRed(r.out, 'W4');
     check('M15 `step` 不映射 visual 段（五段时间线永远停在第 2 段）⇒ W4 红', red, { code: r.code, redOn: red });
@@ -851,8 +861,8 @@ if (REFUTE) {
       bad.push('runtime_setup.rs 残留 M11');
     if (!fs.readFileSync(STATE_RS, 'utf8').includes('"prepare" | "runtime" | "visual" => Some("stage1"'))
       bad.push('state.rs 残留 M14');
-    if (!fs.readFileSync(STATE_RS, 'utf8').includes('"models" => Some("models".to_string())'))
-      bad.push('state.rs 残留 M15');
+    // 2026-10-25：step 改单调水位线，映射字面量不带 .to_string 了
+    if (!fs.readFileSync(STATE_RS, 'utf8').includes('"models" => Some("models")')) bad.push('state.rs 残留 M15');
     if (!fs.readFileSync(STATE_RS, 'utf8').includes('if std::fs::write(&tmp, &s).is_err() {'))
       bad.push('state.rs 残留 M16');
     if (!fs.readFileSync(ENGINE_DOWNLOAD_TS, 'utf8').includes("view.state === 'idle' && view.startedAt != null"))

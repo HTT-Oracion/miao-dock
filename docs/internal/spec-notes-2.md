@@ -1077,6 +1077,98 @@ Rename-Item "$rt\venv" "venv.bak"
 
 ---
 
+## D-399 · 下载进度是假的三重根因：复用不发事件 / step 会倒退 / 完成不绑定 100%（2026-10-25）
+
+用户报：「下载显示完成，但进度仍不是 100%，一直卡在 45%」「装配进度从翻译模型变回了视觉模型」
+「包括下载时出现 `[复用]`、`using cached` 时前端进度的显示逻辑」。查下来是**三条独立缺陷**。
+
+### ① `[复用]` 分支不发进度事件 ⇒ 已就绪的文件对账本完全不可见
+
+`model_store::ensure_one` 有五个分支，只有两个会发事件：
+
+| 分支 | 发事件？ |
+|---|---|
+| `no_verify` 复用 | ❌ `continue` |
+| `cached` 标记命中 | ❌ `continue` |
+| sha256 校验通过 | ❌ `continue` |
+| 哈希不符要重下 | ✅ `emit_verifying` |
+| 真下载 | ✅ 逐块 |
+
+`ingest` **只认事件**。三条 `continue` 意味着那些文件既不在分母、也不在分子 ⇒
+`percent = received/total` 永远到不了 100%。真机表现就是「下载完成、环卡在 45%」
+（45% 正是 `visual` 段的段首：`prepare 10 + runtime 35`）。
+
+**修法**：三条分支各补一条 `emit_reused`（`received == total`，语义是"这条已满"）。
+
+### ② `emit_verifying` 发的是 `received: 0` —— 把已完成的文件记成零字节
+
+校验的对象是**盘上那份完整文件**，不是"从 0 开始下"。发 0 让它占着分母却不贡献分子。
+改成 `received: total`。
+
+### ③ `step` 会倒退 ⇒ 五段时间线跳回视觉模型
+
+两处来源：
+
+- `runtime_setup.rs` 收尾「写运行时就绪标记」时发 `on_phase("runtime", …)` —— 把 `step` 从
+  `visual`/`llm` 拉回 `runtime`。写标记只是收尾落盘，不是新装配段 ⇒ 改成只打日志。
+- 装配是**两个进程**（`--stage 1` / `--stage 2`），每一轮都从阶段 0 重走
+  `prepare → runtime → visual/llm`。无条件覆写 ⇒ 第 2 轮一开始就把 `step` 从 `llm`
+  拉回 `prepare`。
+
+**修法**：`step` 改成**单调水位线** —— 五个阶段名各有 rank，只允许升高，回退一律忽略。
+真需要回到早段（换引擎版本重装）时由 `start_model_download` 清成 `None` 重来。
+
+### ④ 完成态不再依赖百分比
+
+`state == "done"` 时 `percent` 与 `assemblyPercent` 一律报 `100.0`，
+`assemblyIndeterminate` 一律 `false`。
+
+> 完成与否是**状态事实**（退出码 0 + 全部校验通过），不该由字节账反推 ——
+> 而字节账恰恰可能因为 ① 而缺口。
+
+### ⑤ 连带修掉：`reused` 事件会污染 stdout 的逐行对拍
+
+修完 ① 之后 `check:progress-truth` 的 W1 立刻变红。根因：
+
+```rust
+print!("\r{line:60}")   // \r 作分隔符，{:60} 补白
+```
+
+`reused` 行的 `received == total` ⇒ 文本较短 ⇒ 补白把 `\r` 边界吃掉，
+与后续 stderr 粘成一行。修法：`reused` **只写 JSONL、不打 stdout**
+（日志里已有 `[复用] <id>（…）` 那行）。
+
+> 这条是"修一处、暴露另一处"的典型：**假绿是基线给的**（HEAD 上 W1 本来就是绿的），
+> 只有真去补事件才会撞出这个边界。用 `git stash` 跑基线对照确认了这一点。
+
+### 新增单测
+
+| 用例 | 钉住什么 |
+|---|---|
+| `aggregate_never_goes_backwards_when_switching_files` | 换文件时聚合不回退 |
+| `aggregate_keeps_peak_when_one_entry_retries` | 重试清零不倒退 |
+| `all_reused_yields_full_percent` | **全复用 = 100%**（不是 0 / None） |
+| `verifying_counts_as_full_not_zero` | 校验中的文件按完整计 |
+
+`cargo test --lib -- mangasvc::engine::state` → **10 passed**。
+
+### 判据跟改
+
+- `check:engine-bootstrap` 的 W4 `stepMap`：从"逐阶段赋值"字面量改成判**单调水位线**
+  （并一并钉住 `if rank(next) > cur`）—— 结论不变，形态变了。
+- 反证 M15 的破坏锚点、R1 的"已还原"判据同步。
+
+### 门
+
+`npm run check` **20/20** · `check:engine-bootstrap` **23/23** + 反证 **全红** ·
+`check:progress-truth` **10/11** · `tsc` 干净 · `eslint` 0 error。
+
+⚠️ **`check:progress-truth` 的 W2 仍红，且基线也红** —— 本机 `python-3.11` 解包撞
+`Can't unlink already-existing object: Permission denied`（旧 venv 残留，见 G-03）。
+不是本轮改动引起。
+
+---
+
 ## G-01 · 待裁定：下载前检查的「磁盘剩余」与「模型源延迟」
 
 设计稿 `.ed-preflight` 的第三、四格是这两项，服务端**没有出口**

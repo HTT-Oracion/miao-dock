@@ -184,7 +184,16 @@ impl ProgressSink {
             human(Some(e.received)),
             human(e.total)
         );
-        if line != self.last {
+        /*
+         * 🔴 `reused` 只写 JSONL，**不打 stdout**（2026-10-25）。
+         *
+         * 它是一条"账本补记"事件（告诉聚合器"这条已满"），不是下载过程的一行进度。
+         * 而 `print!("\r{line:60}")` 靠 `\r` 作分隔符 —— `reused` 行的 received==total，
+         * 文本较短时 `{:60}` 的补白会把 `\r` 边界吃掉，与后续 stderr 粘成一行
+         * （`check:progress-truth` 的 W1 逐行对拍当场变红）。
+         * 日志里已经有 `[复用] <id>（…）` 那一行，界面上不缺这条信息。
+         */
+        if e.phase != "reused" && line != self.last {
             self.last = line.clone();
             print!("\r{line:60}");
             std::io::stdout().flush().ok();
