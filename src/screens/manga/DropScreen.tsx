@@ -384,14 +384,6 @@ export function DropScreen({
                     {files.length} 张 · {batches.length} 批
                   </span>
                 </h3>
-                <div className="drop-queue-actions">
-                  <Btn kind="text" size="sm" disabled={busy} onClick={() => setFiles([])}>
-                    清空
-                  </Btn>
-                  <Btn kind="primary" size="sm" disabled={!canSubmit} onClick={() => void submit()}>
-                    {busy ? '提交中…' : `提交 ${files.length} 张`}
-                  </Btn>
-                </div>
               </div>
               <div className="drop-files">
                 {files.map((f, i) => (
@@ -459,7 +451,6 @@ export function DropScreen({
 
           <section className="drop-flow">
             <div className="drop-flow-head">
-              <span className="kicker">WHAT HAPPENS NEXT</span>
               <h2>投放之后会发生什么</h2>
             </div>
             <div className="drop-flow-grid">
