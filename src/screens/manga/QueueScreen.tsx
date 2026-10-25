@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FolderOpen, RefreshCw, Trash2 } from 'lucide-react';
 import { QUEUE_TABLE } from '@/themes/tokens';
-import { STATUS_DOT_VAR, STATUS_LABEL, SOURCE_LABEL, isTerminal, type TaskRow, type TaskStatus } from '@/types';
+import { STATUS_LABEL, SOURCE_LABEL, isTerminal, type TaskRow, type TaskStatus } from '@/types';
 import { pageCount, pageSlice, pageWindow, relativeTime } from '@tools';
-import { Btn, Dot, IconButton, MagicCircle, MenuButton, MenuItem } from '@components/units';
+import { Btn, IconButton, MagicCircle, MenuButton, MenuItem } from '@components/units';
 
 /**
  * 队列每页条数。
@@ -22,14 +22,65 @@ function barClass(s: TaskStatus): string {
 /**
  * 进度右上角那一格。
  *
- * 有失败时**先说失败**（`3 张失败`）—— 用户要处理的正是它；没有失败才说百分比。
+ * 有失败时**先说失败**（设计稿 `.queue-progress-top` 的 `<b>` 位）——
+ * 用户要处理的正是它；没有失败才说百分比。
  * 分母为 0 时给 `—` 而不是 0%：空任务列画一根空轨会读成"进度丢了"。
+ * 单位按设计稿写「页」（`${t.failed} 页失败`），不是「张」。
  */
 function progressNote(t: TaskRow): string {
   const { done, total, failed } = t.progress;
   if (!total) return '—';
-  if (failed > 0) return `${failed} 张失败`;
+  if (failed > 0) return `${failed} 页失败`;
   return `${Math.round((done / total) * 100)}%`;
+}
+
+/**
+ * 状态列文案 + 徽标形态（设计稿 `js/manga.js:82-87` 的 `meta` 表）。
+ *
+ * 🔴 与 `STATUS_LABEL` **不是**同一套：那是给读屏与提示用的通用词（「失败」），
+ *    这里是**行内徽标**的措辞 —— 设计稿在 `failed` 且全失败时要说「全部失败」、
+ *    部分失败要说「部分失败 · N 页」、排队要说「等待中 · 第 N 位」。
+ *    两者混用会让徽标失去"这一行到底怎么了"的信息量（真机就出现过
+ *    一行写着「失败」但看不出是 1 页全挂还是部分挂）。
+ */
+function statusBadge(t: TaskRow): { text: string; cls: string } {
+  const { total, failed } = t.progress;
+  switch (t.status) {
+    case 'running':
+      return { text: '进行中', cls: 'st-badge is-live' };
+    case 'queued':
+      return { text: `等待中 · 第 ${t.queuePosition} 位`, cls: 'st-badge is-idle' };
+    case 'done':
+      return { text: '已完成', cls: 'st-badge is-ok' };
+    case 'partial_failed':
+      return { text: `部分失败 · ${failed} 页`, cls: 'st-badge is-warn' };
+    case 'failed':
+      // 设计稿：全挂说「全部失败」，部分挂说「N 张失败」
+      return { text: total > 0 && failed >= total ? '全部失败' : `${failed} 张失败`, cls: 'st-badge is-bad' };
+    case 'canceled':
+      return { text: '已取消', cls: 'st-badge is-idle' };
+    default:
+      return { text: STATUS_LABEL[t.status], cls: 'st-badge is-idle' };
+  }
+}
+
+/**
+ * 行副标题：状态 + 时间。
+ *
+ * 🔴 措辞按**状态**分，不能只看 `finishedAt`（2026-10-25）：
+ *    失败的任务同样有 `finishedAt`，旧写法一律说「完成于」⇒
+ *    真机看到「失败 · 完成于 6 小时前」这种自相矛盾的一行。
+ *    「完成」是**成功**的措辞，失败要说「失败于」，否则用户会以为它跑通了。
+ *
+ * 抽成具名函数而不是内联多级三元（AGENTS.md §2 第 10 条）。
+ */
+function rowSubText(t: TaskRow): string {
+  if (t.status === 'queued') return `队内第 ${t.queuePosition} 位`;
+  if (t.status === 'running') return `开始于 ${relativeTime(t.createdAt)}`;
+  if (!t.finishedAt) return `提交于 ${relativeTime(t.createdAt)}`;
+  if (t.status === 'failed' || t.status === 'partial_failed') return `失败于 ${relativeTime(t.finishedAt)}`;
+  if (t.status === 'canceled') return `取消于 ${relativeTime(t.finishedAt)}`;
+  return `完成于 ${relativeTime(t.finishedAt)}`;
 }
 
 /**
@@ -143,6 +194,7 @@ function Row({
   const running = t.status === 'running';
   // 翻译中 / 排队中的任务不可删（契约：删除只删「记录」，跑到一半的记录删了没法自洽）
   const deletable = isTerminal(t.status);
+  const badge = statusBadge(t);
   return (
     <div
       className={running ? 'qt-row is-running' : 'qt-row'}
@@ -173,13 +225,7 @@ function Row({
           <div className="qt-name-main" title={t.comicName}>
             {t.comicName}
           </div>
-          <div className="qt-name-sub">
-            {t.status === 'queued'
-              ? `队内第 ${t.queuePosition} 位`
-              : t.finishedAt
-                ? `完成于 ${relativeTime(t.finishedAt)}`
-                : `提交于 ${relativeTime(t.createdAt)}`}
-          </div>
+          <div className="qt-name-sub">{rowSubText(t)}</div>
         </div>
       </div>
 
@@ -188,8 +234,10 @@ function Row({
       <ProgressCell t={t} />
 
       <div className="qt-c-status">
-        <Dot colorVar={STATUS_DOT_VAR[t.status]} pulse={running} />
-        <span>{STATUS_LABEL[t.status]}</span>
+        {/* 设计稿用行内徽标（`.st-badge`）而不是「圆点 + 通用状态词」 */}
+        <span className={badge.cls} title={STATUS_LABEL[t.status]}>
+          {badge.text}
+        </span>
       </div>
 
       <div className="qt-c-action">

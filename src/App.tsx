@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
-import { ChevronDown, Download, Power, Settings, Terminal } from 'lucide-react';
+import { ChevronDown, Power, Settings, Terminal } from 'lucide-react';
 import { apiPost, errorText, hideWindow, openPath, quitApp, serviceRestart, serviceStart, serviceStop } from '@/ipc';
 import { toastBus } from '@/stores/toastBus';
 import type { ServiceState } from '@/ipc';
@@ -585,12 +585,13 @@ export function App() {
         return {
           title: '本机投放',
           subtitle: '拖入图片或文件夹 · 每批 20 张 · 超出的部分自动排队',
-          actions: (
-            <>
-              <Badge>{sourceChipLabel(source, platform)}</Badge>
-              <Badge>每批 20 张 · 自动排队</Badge>
-            </>
-          ),
+          /*
+           * 设计稿：投放页工具条**只留服务胶囊**。
+           * 「来源」与「每批 20 张」两条 Badge 已去掉 —— 前者是服务的设置项
+           * （住在设置页与胶囊菜单里），后者是**规则**不是参数，副标题里已经写明了。
+           * 两条真动作（选图 / 提交）在投放区里，不该再占工具条。
+           */
+          actions: <ServicePill status={status?.state ?? 'starting'} />,
         };
       default:
         return {
@@ -598,13 +599,8 @@ export function App() {
           subtitle: `串行执行 · 同一时刻只跑 1 个 · 队内 ${queueDepth} 个等待`,
           // 设计稿的标题徽标「共 N 条」：与汇总条同一个数，都来自 /tasks
           badge: `共 ${queueTotal} 条`,
-          actions: (
-            <>
-              <Badge>{sourceChipLabel(source, platform)}</Badge>
-              <Badge>每批 20 张 · 自动排队</Badge>
-              <ServicePill status={status?.state ?? 'starting'} />
-            </>
-          ),
+          // 设计稿：队列页工具条只留服务胶囊（同上，两条 Badge 是不在场的信息）
+          actions: <ServicePill status={status?.state ?? 'starting'} />,
         };
     }
   }, [
@@ -907,21 +903,11 @@ function ServicePill({ status }: { status: ServiceState }) {
               <small>端口 / 令牌 / 引擎与模型</small>
             </span>
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="ui-menu-item"
-            onClick={() => {
-              setOpen(false);
-              navigate('/engine-download');
-            }}
-          >
-            <Download size={13} />
-            <span className="ui-menu-label">
-              <b>查看引擎下载</b>
-              <small>装配进度与模型体积</small>
-            </span>
-          </button>
+          {/*
+            🔴 「查看引擎下载」这一项已去掉（2026-10-25 用户要求）。
+            引擎下载有自己的入口（侧栏 + 未就绪屏），胶囊菜单里再放一条
+            等于同一个功能两个入口，且它在服务正常时几乎用不上。
+          */}
         </div>
       ) : null}
     </div>

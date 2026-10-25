@@ -1,15 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { VIEW_TABS } from '@/themes/tokens';
-import { ListMinus, BookText, FolderUp, Folder } from 'lucide-react';
+import { Folder } from 'lucide-react';
 import { TRANSLATE_VIEWS, type TranslateView } from '@/stores/nav';
 import { Btn } from '@components/units';
 
-/** 每个视图一个图标（顺序与 `TRANSLATE_VIEWS` 一致，不在这里另定一套） */
-const ICONS: Record<TranslateView, () => React.ReactElement> = {
-  drop: () => <FolderUp size={16} />,
-  queue: () => <ListMinus size={16} />,
-  library: () => <BookText size={16} />,
-};
+/*
+ * 🔴 设计稿（refactor_ver3.0/index.html:176-178）的三个 Tab 是**纯文字**：
+ *     `投放 / 队列<span class="tab-count">0</span> / 漫画库`，`.view-tab` 只有
+ *     `padding: 0 15px` + `font-size: 12px` + `font-weight: 700`（styles.css:791-802）。
+ *     此前给每个 Tab 加了 lucide 图标（FolderUp / ListMinus / BookText）——
+ *     那是偏离设计稿的，已于 2026-10-25 去掉。
+ *     仅右侧说明条（`.view-tab-aside`）保留一个 Folder 图标（库根目录那一行）。
+ */
 
 /**
  * 漫画翻译应用内的**视图 Tab 行**（《09》§3.2）—— ver2.0 新增。
@@ -72,24 +74,21 @@ export function ViewTabs({
   return (
     <div className="viewtabs" style={{ height: VIEW_TABS.height }} role="tablist" aria-label="漫画翻译视图">
       <div className="view-tabs" ref={tabsRef}>
-        {TRANSLATE_VIEWS.map((v) => {
-          const Icon = ICONS[v.id];
-          return (
-            <Btn
-              key={v.id}
-              kind="bare"
-              role="tab"
-              ariaSelected={view === v.id}
-              title={v.hint}
-              className={view === v.id ? 'viewtab view-tab is-active' : 'viewtab view-tab'}
-              style={{ minWidth: VIEW_TABS.itemMinWidth, padding: `0 ${VIEW_TABS.itemPaddingX}px` }}
-              onClick={() => onView(v.id)}
-            >
-              <Icon />
-              <span>{v.label}</span>
-            </Btn>
-          );
-        })}
+        {TRANSLATE_VIEWS.map((v) => (
+          <Btn
+            key={v.id}
+            kind="bare"
+            role="tab"
+            ariaSelected={view === v.id}
+            title={v.hint}
+            className={view === v.id ? 'viewtab view-tab is-active' : 'viewtab view-tab'}
+            style={{ minWidth: VIEW_TABS.itemMinWidth, padding: `0 ${VIEW_TABS.itemPaddingX}px` }}
+            onClick={() => onView(v.id)}
+          >
+            {/* 纯文字（设计稿形态）：三个 Tab 不带图标 */}
+            <span>{v.label}</span>
+          </Btn>
+        ))}
         {/*
           滑动指示条（设计稿 `.tab-ink`）：一条 2px 的短横，靠 transform/width 的弹簧过渡
           跟到当前页签下方。位置在布局后量取 —— 页签宽度随文案与字号变化，写死 offsetLeft 会错位。

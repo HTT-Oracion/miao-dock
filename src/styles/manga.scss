@@ -934,8 +934,14 @@
  */
 .lib {
   display: grid;
-  grid-template-columns: var(--lib-left-w, 260px) minmax(0, 1fr);
-  gap: 12px;
+  /*
+   * 左栏宽度取设计稿 `theme.css:398-402`（它覆盖 styles.css:1039 的 `296px`）：
+   * `clamp(260px, 19vw, 320px)` —— 窗口越宽左栏按比例放宽，但夹在 260~320 之间。
+   * 固定 260 时宽屏上左栏显得过窄（书名列要省略号），固定 296 时窄窗又太挤。
+   * `gap` 同理按 theme.css 取 14（styles.css 是 12，被覆盖）。
+   */
+  grid-template-columns: var(--lib-left-w, clamp(260px, 19vw, 320px)) minmax(0, 1fr);
+  gap: 14px;
   height: 100%;
   min-height: 0;
   padding: 14px 22px 18px;
@@ -1170,7 +1176,7 @@
   padding: 0 7px 8px;
 }
 /*
- * 书架行（设计稿 `.book-row`）：7px 8px 内边距 / r10 / gap 9。
+ * 书架行（设计稿 `theme.css:404` 的生效值：`padding: 8px` / `r12` / `gap 9`）。
  *
  * 结构是「容器 + 主按钮 + 行尾 ⋯」三段而不是整行一个 button：设计稿的行尾有一枚
  * 只在悬停时出现的更多操作按钮，把它塞进行 button 里就是嵌套交互元素
@@ -1182,8 +1188,8 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 7px 8px;
-  border-radius: 10px;
+  padding: 8px;
+  border-radius: 12px;
   text-align: left;
   color: var(--miao-text);
   transition:
@@ -2375,12 +2381,36 @@
   transform: rotate(-3deg);
   box-shadow: 6px 6px 0 var(--miao-accent-soft);
   transition: transform var(--miao-dur-base) var(--miao-ease-spring);
+  /*
+   * 常驻呼吸浮动（2026-10-25 用户要求）：静止时的 `.drop-orb` 完全不动，
+   * 而它正是"把文件拖进来"这件事的唯一视觉落点 —— 不动的话那一屏看着像张静态图。
+   *
+   * 🔴 关键帧里**必须带上 rotate(-3deg)**：`animation` 播放期间会覆盖 `transform`，
+   *    只写 `translateY` 会让球在每一拍把倾斜角归零 ⇒ 看着"抽一下"。
+   */
+  animation: drop-orb-float 3.2s ease-in-out infinite;
 }
-/* 拖入态：图标抬 4px、放大 6%（设计稿 `.drop-zone.is-drag .drop-orb`）。
-   三个动作合起来读作"它被吸起来了"——只做其中任意两个都只是"变了一下"；
-   倾斜角保持 -3°（与静止态同一角度），否则拖入瞬间图标会"扭一下"再弹回。 */
+@keyframes drop-orb-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-3deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(-3deg);
+  }
+}
+/*
+ * 拖入态：**停掉**浮动动画，让下面的 transform + transition 接管。
+ * 不这样的话动画会持续覆盖 transform，拖入瞬间那三合一动作（抬升/放大/倾斜）根本不生效。
+ */
 .drop-zone.is-drag .drop-orb {
+  animation: none;
   transform: translateY(-4px) scale(1.06) rotate(-3deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .drop-orb {
+    animation: none;
+  }
 }
 .drop-halftone {
   position: absolute;
