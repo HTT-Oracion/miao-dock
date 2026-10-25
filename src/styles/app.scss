@@ -712,8 +712,15 @@ html[data-theme='dark'] .nav-item:hover {
  * 胶囊上的端口号（设计稿 `shell.js:453` 的 `.mono` + `styles.css:775`）：
  * 9.5px / muted / 常规字重 —— 它是**附加信息**，不该与状态文案抢视觉。
  * 窄窗（`styles.css:2173` 的 `@media`）会收起 `.sp-text`，端口号一并收起。
+ *
+ * 🔴 `line-height: 1` + `flex: 0 0 auto`：端口号字号小一号，若沿用胶囊的
+ *   行高（默认 1.4+），基线会随行高偏移 ⇒ 与状态文案 / 箭头不在同一水平线上。
+ *   小字对齐大字的正确做法是**各自 line-height 1**，由 flex 的 `align-items:center`
+ *   统一钉中线 —— 而不是靠行高凑齐（行高受字体 metrics 影响，换个字体又歪）。
  */
 .svc-port {
+  line-height: 1;
+  flex: 0 0 auto;
   font-size: 9.5px;
   font-weight: 400;
   color: var(--miao-muted);
