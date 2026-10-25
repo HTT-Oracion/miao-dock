@@ -739,6 +739,8 @@ export function App() {
 
       {quitOpen ? (
         <QuitConfirm
+          // × / 蒙层：只收起弹窗，**不动窗口**（"我再想想"不该把窗口收进托盘）
+          onDismiss={() => setQuitOpen(false)}
           onStay={() => {
             setQuitOpen(false);
             /*

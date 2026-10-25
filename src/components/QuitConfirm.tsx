@@ -17,13 +17,27 @@ import { Btn, Modal } from '@components/units';
  */
 export const QUIT_CONFIRM_COPY = '退出后浏览器插件将无法提交翻译任务';
 
-export function QuitConfirm({ onStay, onQuit }: { onStay: () => void; onQuit: () => void }) {
+export function QuitConfirm({
+  onStay,
+  onQuit,
+  onDismiss,
+}: {
+  onStay: () => void;
+  onQuit: () => void;
+  /**
+   * 只关闭弹窗（右上角 × / 点蒙层）。
+   *
+   * 🔴 必须与 `onStay` 分开：`onStay` 是「留在后台」这个**动作**（关弹窗 + 收进托盘），
+   *    而 × / 蒙层表达的是"我先不做决定、把弹窗收起"。此前两者共用同一个回调，
+   *    于是点右上角 × 会把窗口收进托盘 —— 用户想的是"算了"，得到的是"窗口没了"。
+   */
+  onDismiss: () => void;
+}) {
   return (
     <Modal
       width="narrow"
-      kicker="CONFIRM / QUIT"
       title="退出喵坞？"
-      onClose={onStay}
+      onClose={onDismiss}
       actions={
         <>
           <div className="grow" />

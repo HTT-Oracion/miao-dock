@@ -218,7 +218,7 @@ export function SpecFixture() {
         顺序一变它就会误取到这里的「退出喵坞」。
       */}
       <div style={{ transform: 'translateZ(0)' }}>
-        <QuitConfirm onStay={noop} onQuit={noop} />
+        <QuitConfirm onStay={noop} onQuit={noop} onDismiss={noop} />
       </div>
     </div>
   );
