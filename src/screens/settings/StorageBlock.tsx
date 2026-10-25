@@ -1,22 +1,32 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Cpu, Disc3, FolderOpen, Image as ImageIcon } from 'lucide-react';
-import { musicCacheStats } from '@music/ipc';
+import { BookOpenText, Music2 } from 'lucide-react';
+import { musicCacheClear, musicCacheStats } from '@music/ipc';
+import { MenuButton, MenuItem, Btn, Modal } from '@components/units';
+import { useEsc } from '@hooks/useEsc';
 import type { LibraryResponse } from '@/types';
 import { errorText, openPath } from '@/ipc';
 import { useToasts } from '@hooks';
+import { toastBus } from '@/stores/toastBus';
 import { formatBytes } from '@tools';
-import { Btn } from '@components/units';
+import { PLATFORMS } from '@music/platform';
+import type { CacheStats, MusicProvider } from '@music/types';
 import type { SettingItem } from '@screens/settings/catalog';
 
-/**
- * 跳到另一分组（④ → ③ / ②）的深链。
- *
- * 走 hash 而不是把 `setSection` 一路透传下来：设置页已经把「当前分组」写成
- * `#/settings?section=…` 这条唯一事实源（并监听 `hashchange` 回灌状态），
- * 屏内件再持一份 setter 就是第二个真值来源。
- */
-function gotoSection(section: 'media' | 'translate'): void {
-  window.location.hash = `#/settings?section=${section}`;
+/** 四个平台的 id → 中文名（`MusicProvider` 的顺序即列表的显示顺序） */
+const PROVIDER_LABEL: Record<MusicProvider, string> = {
+  netease: '网易云',
+  kugou: '酷狗',
+  qqmusic: 'QQ音乐',
+  migu: '咪咕',
+};
+
+/** 四个平台的固定顺序（明细行与「共 N 个平台」都用它，不在 JSX 里另写一份） */
+const PROVIDER_ORDER = Object.keys(PROVIDER_LABEL) as MusicProvider[];
+
+/** 某平台占用字节数（歌词 + 音频）。缺键按 0 处理 —— Rust 侧四个键恒存在 */
+function providerBytes(stats: CacheStats | null, p: MusicProvider): number {
+  const s = stats?.providers?.[p];
+  return (s?.lyric_bytes ?? 0) + (s?.audio_bytes ?? 0);
 }
 
 /**
@@ -48,18 +58,25 @@ function gotoSection(section: 'media' | 'translate'): void {
  *   设置页不再自己拉一次，否则两处会因为取数时刻不同而各报一个数，
  *   而两边都没错、却谁也说服不了谁。
  * · 音频缓存：`musicCacheStats()`（与 ③「音乐缓存」同一个命令，不是第二套口径）。
- * · 模型：没有命令可用 ⇒ 如实写 `未统计`，并说明缺的是哪一条接口。
+ *
+ * ## 「翻译模型」那一行已去掉（2026-10-25，用户要求）
+ *
+ * 它长期只有 `未统计`（服务侧没有"模型占了多少"的接口），留一行"读不出来"的数字
+ * 只是占位。去掉后本块是**两行**：译文库 / 音乐缓存 —— 两行都给出真实读数与目录地址。
+ * ⚠️ 这不是"删掉一个不好看的项"：只要那条接口出现，这一行就该加回来（连同它的读数）。
  */
 export function StorageBlock({ item, lib }: { item: SettingItem; lib: LibraryResponse | null }) {
   const { push: toast } = useToasts();
-  const [cache, setCache] = useState<{ total: number } | null>(null);
+  const [cache, setCache] = useState<CacheStats | null>(null);
   /** 与「音乐缓存」同一把尺子：读失败与"读到了但是空"必须分开 */
   const [cacheFailed, setCacheFailed] = useState(false);
+  /** 待确认的清除范围；`null` = 没在确认 */
+  const [pending, setPending] = useState<MusicProvider | 'all' | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const reload = useCallback(async () => {
     try {
-      const s = await musicCacheStats();
-      setCache({ total: s.total });
+      setCache(await musicCacheStats());
       setCacheFailed(false);
     } catch {
       setCacheFailed(true);
@@ -70,6 +87,9 @@ export function StorageBlock({ item, lib }: { item: SettingItem; lib: LibraryRes
     void reload();
   }, [reload]);
 
+  const root = cache?.root ?? '';
+  const total = cache?.total ?? 0;
+
   /** 音频缓存那一行的取值 —— 三种"没有值"分开说，别混成一个「—」 */
   const cacheText = cacheFailed
     ? '读取失败'
@@ -79,86 +99,194 @@ export function StorageBlock({ item, lib }: { item: SettingItem; lib: LibraryRes
         ? formatBytes(cache.total)
         : '无';
 
+  /**
+   * 译文库占用（右列读数）。同样三种"没有值"分开说：
+   * `lib === null` 是"还没读到"，与"读到了但是空"不是一回事。
+   */
+  const libText = lib === null ? '读取中…' : lib.totalBytes > 0 ? formatBytes(lib.totalBytes) : '无';
+
+  const clear = useCallback(
+    async (scope: MusicProvider | 'all') => {
+      setBusy(true);
+      // 记下清之前的字节数：清完再读统计只能拿到 0，"释放了多少"就说不出来了
+      const freed = scope === 'all' ? total : providerBytes(cache, scope);
+      try {
+        // 刻意不 `void`：必须等它落盘完再重拉统计，否则会读到清之前的数字，
+        // 界面上表现为"点了没反应"。
+        await musicCacheClear(scope === 'all' ? undefined : scope);
+        await reload();
+        // 回执（设计稿同款）：单平台「已清除 X 缓存」，全部「音乐缓存已清理 + 已释放 N」
+        if (scope === 'all') {
+          toastBus.push('音乐缓存已清理', 'good', freed > 0 ? `已释放 ${formatBytes(freed)}` : undefined);
+        } else {
+          toastBus.push(`已清除 ${PROVIDER_LABEL[scope]} 缓存`, 'good', '歌词与音频缓存已释放');
+        }
+      } catch {
+        // Rust 侧刻意不抛（清缓存失败没有可执行的下一步），真抛了也要有交代，
+        // 不能变成一次静默无响应。
+        toastBus.push('清理失败', 'bad', '缓存没有变化，可稍后再试');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [reload, total, cache],
+  );
+
   return (
     <div className="set-storage" data-setting-id={item.id}>
       <div className="set-storage-head">
         <div className="set-storage-name">{item.label}</div>
-        {/* 卡头副标题按设计稿：一句话说清"为什么不合计、哪些能直接打开" */}
-        <div className="set-storage-rule">三项独立统计，不合计；有目录的项都可以直接打开</div>
       </div>
 
-      {/*
-        行结构照设计稿 `.storage-row`：**图标 + 两行文字 + 右侧动作**。
-        数值与来源并进第二行（`<small>`），而不是拆成"名称 / 数值 / 来源"三列 ——
-        三列排版把 32px 图标那一格挤掉，读起来像一张表格，而设计稿要的是三条并列的清单项。
-      */}
       <div className="set-storage-rows">
         <div className="set-storage-row">
           <span className="set-storage-ico">
-            <ImageIcon size={16} />
+            <BookOpenText size={16} />
           </span>
           <div className="set-storage-tx">
             <strong>译文库</strong>
-            <small>
-              {lib === null
-                ? '读取中…'
-                : `${lib.totalBytes > 0 ? formatBytes(lib.totalBytes) : '无'} · ${lib.count} 部 / ${lib.totalImages} 张`}
-            </small>
-          </div>
-          {/* 译文库有真实根目录 ⇒ 这一行给得出「打开目录」（设计稿同款动作） */}
-          <span className="set-storage-acts">
             {lib?.root ? (
               <Btn
-                kind="ghost"
-                size="sm"
-                onClick={() => openPath(lib.root).catch((e: unknown) => toast(errorText(e), 'bad'))}
+                kind="text"
+                className="set-storage-dir"
+                title={lib.root}
+                onClick={() => openPath(lib.root!).catch((e: unknown) => toast(errorText(e), 'bad'))}
               >
-                <FolderOpen size={13} /> 打开目录
+                {lib.root}
               </Btn>
-            ) : null}
-          </span>
-        </div>
-
-        <div className="set-storage-row">
-          <span className="set-storage-ico">
-            <Disc3 size={16} />
-          </span>
-          <div className="set-storage-tx">
-            <strong>音乐缓存</strong>
-            <small>{cacheText} · 音乐缓存目录 · 仅在线歌曲</small>
+            ) : (
+              <small className="is-unknown">{lib === null ? '目录读取中…' : '未拿到目录'}</small>
+            )}
           </div>
-          {/*
-            「管理」跳到 ③ 播放·媒体 里的「音乐缓存」卡：清缓存与打开目录**只有那一个 owner**。
-            在这里再放一套按钮，就会出现两个入口各清一次、各报一个数。
-          */}
+          {/* 右列：占用大小（与音乐缓存那行的读数同形，三行右缘对齐） */}
           <span className="set-storage-acts">
-            <Btn kind="ghost" size="sm" onClick={() => gotoSection('media')}>
-              管理
-            </Btn>
+            <span className="set-storage-size">{libText}</span>
           </span>
         </div>
 
         {/*
-          模型那一行是本项的**诚实位**：没有接口就是没有接口。
-          刻意不写「0」也不写「—」—— 前者会被读成"模型没占空间"（显然不对），
-          后者什么都不说明。写「未统计」+ 缺哪条接口，才让下一个人知道该做什么。
+          「音乐缓存」行
         */}
         <div className="set-storage-row">
           <span className="set-storage-ico">
-            <Cpu size={16} />
+            <Music2 size={16} />
           </span>
           <div className="set-storage-tx">
-            <strong>翻译模型</strong>
-            <small className="is-unknown">未统计 · 缺少接口，模型目录占用需 Rust 侧盘点</small>
+            <strong>音乐缓存</strong>
+            {root ? (
+              <Btn
+                kind="text"
+                className="set-storage-dir"
+                title={root}
+                onClick={() => openPath(root).catch((e: unknown) => toast(errorText(e), 'bad'))}
+              >
+                {root}
+              </Btn>
+            ) : (
+              <small className="is-unknown">{cacheText} · 未拿到缓存目录</small>
+            )}
           </div>
-          {/* 与缓存同理：模型目录的「打开 / 管理」归 ② 的「模型管理」卡 */}
-          <span className="set-storage-acts">
-            <Btn kind="ghost" size="sm" onClick={() => gotoSection('translate')}>
-              管理
-            </Btn>
+          <span className="set-storage-acts is-stacked">
+            <span className="set-storage-size">{cacheText}</span>
+            <MenuButton
+              label="删除"
+              ariaLabel="删除音乐缓存"
+              size="sm"
+              disabled={busy || cacheFailed || total <= 0}
+              title={total <= 0 ? '当前没有可清理的缓存' : '按平台删除音乐缓存'}
+            >
+              {(close) => (
+                <>
+                  {PROVIDER_ORDER.map((p) => {
+                    const bytes = providerBytes(cache, p);
+                    const meta = PLATFORMS.find((x) => x.id === p);
+                    return (
+                      <MenuItem
+                        key={p}
+                        icon={
+                          <span className="set-cache-orb" style={{ background: meta?.color ?? 'var(--md-line-soft)' }}>
+                            {meta?.short ?? '?'}
+                          </span>
+                        }
+                        label={PROVIDER_LABEL[p]}
+                        sub={bytes > 0 ? formatBytes(bytes) : '无'}
+                        disabled={bytes <= 0}
+                        title={bytes <= 0 ? `${PROVIDER_LABEL[p]}暂无缓存` : `清除${PROVIDER_LABEL[p]}的缓存`}
+                        onClick={() => {
+                          close();
+                          setPending(p);
+                        }}
+                      />
+                    );
+                  })}
+                  <MenuItem
+                    danger
+                    label="删除全部"
+                    sub={total > 0 ? formatBytes(total) : undefined}
+                    disabled={total <= 0}
+                    title="清空全部平台的音乐缓存"
+                    onClick={() => {
+                      close();
+                      setPending('all');
+                    }}
+                  />
+                </>
+              )}
+            </MenuButton>
           </span>
         </div>
       </div>
+
+      {pending ? (
+        <ClearConfirm
+          scope={pending}
+          onCancel={() => setPending(null)}
+          onConfirm={() => {
+            const scope = pending;
+            setPending(null);
+            void clear(scope);
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * 「删除全部」前的二次确认
+ */
+function ClearConfirm({
+  scope,
+  onCancel,
+  onConfirm,
+}: {
+  scope: MusicProvider | 'all';
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEsc(onCancel);
+
+  const title = scope === 'all' ? '清理全部音乐缓存？' : `清除${PROVIDER_LABEL[scope]}的缓存？`;
+  const confirmLabel = scope === 'all' ? '清理全部' : '清除';
+
+  return (
+    <Modal
+      title={title}
+      onClose={onCancel}
+      actions={
+        <>
+          <Btn kind="ghost" onClick={onCancel}>
+            取消
+          </Btn>
+          <Btn kind="danger" onClick={onConfirm}>
+            {confirmLabel}
+          </Btn>
+        </>
+      }
+    >
+      会删除{scope === 'all' ? '四个平台' : PROVIDER_LABEL[scope]}的歌词与音频缓存，不会影响歌单与本地文件。
+      <br />
+      正在播放的歌会自动重新联网加载，不会中断，只是首次播放要多等一会儿。
+    </Modal>
   );
 }

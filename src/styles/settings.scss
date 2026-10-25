@@ -353,17 +353,13 @@
 .settings-section-head {
   margin: 4px 0 14px;
 }
-.settings-section-head .kicker {
-  display: block;
-  margin-bottom: 4px;
-}
 .settings-section-head h2 {
   font-family: var(--md-font-display);
   font-weight: 700;
   font-size: 22px;
   line-height: 1.25;
   letter-spacing: 0.01em;
-  color: var(--miao-ink);
+  color: var(--miao-sage-ink);
 }
 .settings-section-head p {
   margin-top: 4px;
@@ -595,64 +591,63 @@
 /* 数字框**不套**设计稿的 210×34：那两处阈值在 ② 里被合成一张卡（R3），
    卡里两栏并排，210 会把卡片撑破 —— 设计稿那条 `.s-row-control .input` 管的是"一行一控件"的形态。 */
 
-/* ================================================================ 音乐缓存（四格块） */
+/* ================================================================ 音乐缓存（行内 + 下拉） */
 
 /*
- * 「音乐缓存」项是**通栏四格**，不是标准两栏行（catalog 里 `layout: 'block'`）。
+ * 「音乐缓存」不再独立成卡（2026-10-25 重构）：它是「存储占用」三行里的一行，
+ * 形态与另两行同构（图标独占一列 + 两行文字 + 右侧读数与动作）。
  *
- * 两列各自上下两行：
- *   左列 = 文案「音乐缓存」/ 缓存目录绝对路径
- *   右列 = 当前总大小 / 打开目录 + 清除缓存
+ * 与原四格块的差别全在"信息分层"上：
+ *   · 行内只留**两个读数**（总量 / 目录）+ **一个动作入口**（「删除」下拉）；
+ *   · 逐平台明细进下拉 —— 那正是"决定清哪个"时才需要的信息，
+ *     常驻展开会让这一行比"占了多少"的译文库行还高，读起来主客颠倒。
  *
- * 用 grid 而不是嵌套两行 flex：四格的**行高天然对齐**（grid 的两行共用行轨道），
- * 嵌套 flex 各算各的，左列路径长一行就会把右列的按钮顶歪。
- * 列宽 `1fr auto`：左列吃掉剩余宽度（长路径靠 ellipsis 截断），右列按内容宽度，
- * 于是"总量 / 按钮"永远贴右，不会因为路径长短而漂移。
+ * ⚠️ 目录地址**本身就是打开入口**（`Btn kind="text"` 点击 `openPath`），不再单列
+ *    「打开目录」按钮：路径已经答了"这是哪儿"，旁边再放一个同义按钮是把
+ *    同一件事说两遍，还多占一行。
  *
- * 类名用 `set-cache-*` 前缀：本分片禁 `.music-`/`.di-`/`.qt-`/`.lib-`/`.viewtab`
- * （别的模块的强专属前缀），而这一项属于设置页，`set-` 才是它的归属前缀。
+ * 🔴 选择器必须写成 `.set-storage-dir.text-btn`（复合），不能用单类：
+ *    `Btn kind="text"` 会同时挂 `text-btn`，而 **`components.scss` 在 `settings.scss`
+ *    之后加载**（见 `index.scss` 的分片顺序）⇒ 同特异性下 `.text-btn` 的
+ *    `height: 28px` / `padding: 0 8px` 会盖掉这里的 `padding: 0`。
+ *    症状是"目录地址那行看着比它该有的高度高一截、左边还缩进 8px"，
+ *    而单看 `settings.scss` 完全正常 —— 这类跨分片层叠问题只有复合选择器能稳定压住。
  */
-.set-cache {
-  border-top: 1px solid var(--md-line-soft);
-  padding: 10px 0;
-}
-.set-group > .set-cache:first-child {
-  border-top: 0;
-}
-
-/* 合计（设计稿 `.cache-total`）：大字总量 + 一句口径 */
-.set-cache-total {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin: 10px 0 8px;
-}
-.set-cache-total strong {
+.set-storage-dir.text-btn {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
   font-family: var(--md-font-numeric);
-  font-size: 18px;
-  color: var(--md-ink);
-}
-.set-cache-total span {
   font-size: 11px;
   color: var(--md-muted);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+/* hover 同样用复合选择器：`.text-btn:hover:not(:disabled)` 的底色会盖掉纯文字态 */
+.set-storage-dir.text-btn:hover:not(:disabled) {
+  background: none;
+  color: var(--md-ink);
+  text-decoration: underline;
+}
+
+/* 右列第一行：总大小（与中列第二行的目录地址同一字号，读数不做视觉竞争） */
+.set-storage-size {
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  color: var(--md-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /*
- * 按平台的占用明细（设计稿 `.cache-platforms` / `.cache-row`）：**常驻可见**。
- * 数字用 `tabular-nums` —— 一列大小右对齐时不加它，位数一变就会左右抖。
- */
-.set-cache-rows {
-  border-top: 1px solid var(--md-line-soft);
-}
-.set-cache-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 0;
-  border-bottom: 1px solid var(--md-line-soft);
-}
-/*
- * 平台色标（设计稿 `.cache-row .provider-orb`：22×22 / r6 / 8px 短名）。
+ * 下拉里的平台色标（22×22 / r6 / 8px 短名）。
  * 底色由行内联给（`PLATFORMS` 的 `color`），这里只管形状与字。
  */
 .set-cache-orb {
@@ -666,47 +661,6 @@
   font-size: 8px;
   font-weight: 700;
   color: #fff;
-}
-.set-cache-row-name {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--md-ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.set-cache-row-size {
-  font-family: var(--md-font-numeric);
-  font-size: 11px;
-  color: var(--md-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/* 动作区（设计稿 `.s-block-actions`）：左对齐两个按钮 */
-.set-cache-acts {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-top: 10px;
-}
-
-/*
- * 左下：缓存目录绝对路径。
- *
- * 颜色刻意比标题**浅一档**（`--md-muted`）以示层级：两者是"这项叫什么"与
- * "它的值"，同色会被读成两行并列的标题。`min-width:0` 必写 —— 它在 flex/grid 的
- * `1fr` 列里，不加会被长路径顶破容器（路径里带 bundle id，很长）。
- */
-.set-cache-path {
-  min-width: 0;
-  margin-top: 6px;
-  font-family: var(--md-font-numeric);
-  font-size: 11px;
-  color: var(--md-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* ================================================================ ② 翻译服务：翻译来源 / 推理引擎 / 模型与诊断 */
@@ -793,7 +747,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 10px;
+  margin: 10px 0;
 }
 
 /*
@@ -1546,7 +1500,7 @@
   border-top: 0;
 }
 
-/* 卡头：标题在上、立场说明在下（设计稿 `.s-card-head` 的 h3 + p 是两行，不是同行两端对齐） */
+/* 卡头：只有标题一行（副标题那句立场说明已按用户要求移除） */
 .set-storage-head {
   padding: 13px 16px 10px;
 }
@@ -1555,12 +1509,6 @@
   font-size: 12.5px;
   font-weight: 700;
   color: var(--miao-ink);
-}
-.set-storage-rule {
-  margin-top: 2px;
-  font-size: 9.5px;
-  line-height: 1.6;
-  color: var(--miao-muted);
 }
 
 .set-storage-rows {
@@ -1621,6 +1569,15 @@
 }
 .set-storage-acts .btn {
   white-space: nowrap;
+}
+/*
+ * 音乐缓存那一行的右列是**两行**（读数在上、动作在下），另两行只有一个按钮。
+ * `is-stacked` 只改方向与对齐，不改变"贴右"这条基线 —— 三行的右缘仍然对齐。
+ */
+.set-storage-acts.is-stacked {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
 }
 
 /* ================================================================ ⑤ 关于：第三方许可（聚合 + 可展开清单） */
@@ -1774,19 +1731,8 @@
   text-transform: uppercase;
 }
 
-.settings-nav-note {
-  margin: 10px 8px 2px;
-  font-size: 9.5px;
-  line-height: 1.65;
-  color: var(--miao-faint);
-}
-
 .set-nav-item:active {
   transform: scale(0.985);
-}
-
-.settings-main .kicker {
-  color: var(--miao-sage-ink);
 }
 
 .set-group + .set-group {
@@ -2013,7 +1959,6 @@
 .set-note-inline {
   display: flex;
   gap: 8px;
-  margin: 0 18px 12px;
   padding: 10px 14px;
   border: 1px dashed var(--miao-line-strong);
   border-radius: 9px;
@@ -2084,9 +2029,6 @@
     padding: 8px 12px;
   }
   .settings-nav-title,
-  .settings-nav-note {
-    display: none;
-  }
   .set-nav-item {
     flex: 0 0 auto;
     width: auto;

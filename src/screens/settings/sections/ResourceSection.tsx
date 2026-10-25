@@ -1,23 +1,29 @@
 // 设置页 —— 由 sections.tsx 按 Section 拆分（D-150）。
-import { Info } from 'lucide-react';
 import type { LibraryResponse } from '@/types';
-import { GroupNote, PendingRow, SubTitle } from '@screens/settings/parts';
+import { GroupNote } from '@screens/settings/parts';
 import { RESOURCE } from '@screens/settings/catalog';
 import type { SettingItem } from '@screens/settings/catalog';
 import { StorageBlock } from '@screens/settings/StorageBlock';
-import { CacheBlock } from '@screens/settings/CacheBlock';
 import { itemOf } from './shared';
 
 /**
- * ④ 资源与投放 —— 2 项，两张卡。
+ * ④ 资源与投放 —— 1 项，1 张卡。
  *
- * live：存储占用（三行分列，**不合计**）· pending：临时文件（等服务侧两条接口）。
+ * live：存储占用（三行分列，**不合计**）。
  *
- * ## 为什么拆成两张卡而不是一张两行
+ * ## 2026-10-25 两次收缩（都源于"这一组在回答什么问题"）
  *
- * 设计稿把「存储占用」与「清理」分成两张卡：前者是**读数**（占了多少、在哪儿），
- * 后者是**动作**（能清什么）。合在一张卡里，那个「待接入」的临时文件行会读成
- * "存储占用的第四行"，而它其实属于另一件事。
+ * **「音乐缓存」不再单独成卡**：它原先是独立的一张通栏卡（合计 + 逐平台明细 +
+ * 两个动作按钮）。问题是用户来这一组**先看到的是"占了多少"**，清理是顺带做的事 ——
+ * 而独立卡把"怎么清"铺得比"占了多少"还大，读起来像两张同级的内容。
+ * 现在收进「存储占用」的音乐缓存行内：行内只留总量与目录地址两个读数、
+ * 加一个「删除」下拉（逐平台明细 + 删除全部），那正是"决定清哪个"时才需要的信息。
+ *
+ * **「清理」卡与投放规则脚注一并去掉**：临时文件那一行至今 `pending`
+ * （服务侧没有列举与清理接口），放在这里只是占一个位置；投放规则那句是
+ * "规则不在设置里"的自我说明，对用户没有信息量。两组都不再产生内容。
+ * `temp-files` 项仍留在 catalog 里（`state: 'pending'` 是它的记账），
+ * 但**不再渲染** —— 需要时把那张卡加回来即可。
  *
  * `render` 用 `switch` 而不是"给谁都渲染同一个块"：将来这一组再加一个 live 项时，
  * 忘记接线会**抛错**，而不是静默渲染成一块长得像那么回事的东西。
@@ -25,14 +31,11 @@ import { itemOf } from './shared';
 export function ResourceSection({ lib }: { lib: LibraryResponse | null }) {
   const g = RESOURCE.groups[0];
   const storage = itemOf(g, 'storage-usage');
-  const cache = itemOf(g, 'music-cache');
 
   const render = (item: SettingItem) => {
     switch (item.id) {
       case 'storage-usage':
         return <StorageBlock item={item} lib={lib} />;
-      case 'music-cache':
-        return <CacheBlock settingId={item.id} />;
       default:
         throw new Error(`[settings] ④ 资源与投放 有未接线的项：${item.id} —— catalog 与本组件不同步`);
     }
@@ -40,23 +43,8 @@ export function ResourceSection({ lib }: { lib: LibraryResponse | null }) {
 
   return (
     <>
-      {/* 卡一：存储占用（三行分列） */}
+      {/* 存储占用（三行分列，音乐缓存的清理入口收在行内） */}
       <div className="set-group">{render(storage)}</div>
-
-      {/* 卡二：音乐缓存（从 ③ 播放·媒体 搬来：它是清理动作，与「存储占用」同类） */}
-      <div className="set-group">{render(cache)}</div>
-
-      {/* 卡三：清理（只放"能安全重建"的动作，缺接口的如实标待接入） */}
-      <div className="set-group">
-        <SubTitle head="只处理可以安全重建的数据">清理</SubTitle>
-        <PendingRow item={itemOf(g, 'temp-files')} />
-      </div>
-
-      {/* 收尾说明：投放规则不在设置里，免得用户翻遍设置找"每批多少张" */}
-      <div className="set-note-inline">
-        <Info size={13} />
-        <span>投放规则（每批 20 张、其余自动排队）不在设置里 —— 那是规则，不是参数。</span>
-      </div>
       {/* 组说明缺省即不渲染（GroupNote 自守）：catalog 未给 RESOURCE.note 时这一行自动消失 */}
       <GroupNote>{RESOURCE.note as string}</GroupNote>
     </>

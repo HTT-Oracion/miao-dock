@@ -77,9 +77,9 @@ const F = {
   //    就变成"只钉住调用、没钉住实现"：把 contextmenu 那段从 desktopGards.ts 删掉它照样绿。
   //    两处必须**都**读：调用在 main.tsx，实现在这里。
   desktopGuards: path.join(APP, 'src', 'tools', 'desktopGards.ts'),
-  // 「音乐缓存」通栏四格的实现（放 screens/settings/ 而非 components/units/ ——
-  // 后者的文件清单被 units-structure-check 的 MANIFEST 锁死为 12 个，多一个即红）
-  cacheBlock: path.join(APP, 'src', 'screens', 'settings', 'CacheBlock.tsx'),
+  // 「音乐缓存」的清理入口（2026-10-25 起它不再是独立通栏块 `CacheBlock.tsx` ——
+  // 收进「存储占用」的音乐缓存行：行内两个读数 + 「删除」下拉。
+  // 判据源跟着搬到 StorageBlock.tsx —— 它在 F 里**本来就有**（见 licensesBlock 附近），此处不再重复定义）
   // ② 翻译服务（S6）的四个新文件 + 两个被它复用的排版件
   engineApi: path.join(APP, 'src', 'screens', 'settings', 'engine-api.ts'),
   engineState: path.join(APP, 'src', 'screens', 'settings', 'engine-state.ts'),
@@ -203,8 +203,10 @@ const MEDIA_GROUPS = ['playback', 'lyrics', 'vinyl'];
  *  → **33**（② 推理引擎加「翻译方向」1 项，ver2.1：把"方向逐任务下发、英译中走离线 nllb"
  *     写进界面 —— 否则引擎诊断里的「源语言：按任务方向」没有一处能自答）
  *  → **34**（② 加「翻译来源」小节 1 项，ver2.2：在线翻译并入 ② 作为第一个小节（P-D2）
- *     —— 来源二选一（本地引擎 / 在线 API），是服务的设置不是任务属性（P-D1）） */
-const SPEC_TOTAL = 34;
+ *     —— 来源二选一（本地引擎 / 在线 API），是服务的设置不是任务属性（P-D1））
+ *  → **33**（④ 删「音乐缓存」独立项，2026-10-25：收进「存储占用」的音乐缓存行）
+ *  → **32**（④ 再删「临时文件」项，同日：「清理」卡与投放规则脚注一并去掉） */
+const SPEC_TOTAL = 32;
 
 /** ④ 设置页必须真正取用的 store setter（逐项对应的控件回写） */
 const MEDIA_SETTERS = [
@@ -294,7 +296,7 @@ function loadSources() {
     main: readMaybe(F.main),
     desktopGuards: readMaybe(F.desktopGuards),
     entryHtml: readMaybe(F.entryHtml),
-    cacheBlock: readMaybe(F.cacheBlock),
+    storageBlock: readMaybe(F.storageBlock),
     accountCards: readMaybe(F.accountCards),
     engineApi: readMaybe(F.engineApi),
     engineState: readMaybe(F.engineState),
@@ -314,7 +316,6 @@ function loadSources() {
     tokens: readMaybe(F.tokens),
     appMain: readMaybe(F.appMain),
     settingsPane: readMaybe(F.settingsPane),
-    storageBlock: readMaybe(F.storageBlock),
     licensesBlock: readMaybe(F.licensesBlock),
     licensesJson: readMaybe(F.licensesJson),
     genScript: readMaybe(F.genScript),
@@ -999,19 +1000,23 @@ add('CACHE.layoutFlag', 'CACHE', (ctx) => {
   const dataErr = CAT_ERR(cat);
   if (dataErr) return { ok: false, detail: dataErr };
   /*
-   * ⚠️ 本轮起「音乐缓存」住在 **④ 资源与投放**（不再是 ③ 播放·媒体）：
-   * 它是清理动作、与「存储占用」同类。判据跟着搬，`layout: block` 的要求不变 ——
-   * 它仍是通栏块，塞进 Row 的窄右列会被压成一条读不了的细缝。
+   * 🔴 2026-10-25 重构：音乐缓存**不再是 catalog 里的独立项**（`CacheBlock` 已删），
+   *    它收进了「存储占用」的音乐缓存行。所以这里判据换成"存储占用必须是 block"——
+   *    三行「图标 / 名称+目录 / 读数+动作」塞进 Row 的窄右列会被压成一条读不了的细缝，
+   *    这条约束对新形态同样成立，而且**只有它能挡住"把三行块塞回 Row"这个退化**。
+   *
+   *    ⚠️ 别再判 `music-cache` 项：它已不在 catalog 里，判它只会红，
+   *    而那条红不指向任何真实缺口（本轮就踩到过）。
    */
-  const hit = flatItems(cat.mod.RESOURCE).find((i) => i.id === 'music-cache');
-  if (!hit) return { ok: false, detail: '④ 资源与投放里缺项 id=music-cache' };
+  const hit = flatItems(cat.mod.RESOURCE).find((i) => i.id === 'storage-usage');
+  if (!hit) return { ok: false, detail: '④ 资源与投放里缺项 id=storage-usage' };
   return {
     ok: hit.layout === 'block',
     detail:
       hit.layout === 'block'
         ? ''
-        : `music-cache 的 layout=${JSON.stringify(hit.layout)}，应为 'block'` +
-          '（否则会被包进 Row 的窄右列，四格被压扁）',
+        : `storage-usage 的 layout=${JSON.stringify(hit.layout)}，应为 'block'` +
+          '（否则会被包进 Row 的窄右列，三行被压扁）',
   };
 });
 add('CACHE.groupSkipsRow', 'CACHE', (ctx) => {
@@ -1044,42 +1049,66 @@ add('CACHE.blockRendersFourCells', 'CACHE', (ctx) => {
    *   ② 块内**不许**再有 `set-cache-head`（重复卡头）；
    *   ③ 块内的四个格子（合计 / 逐平台行 / 动作 / 路径）都在。
    */
-  const src = ctx.s.cacheBlock;
-  if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx（分格实现不在预期位置）' };
+  const src = ctx.s.storageBlock;
+  if (!src) return { ok: false, detail: '找不到 StorageBlock.tsx（音乐缓存清理入口不在预期位置）' };
   const problems = [];
   /*
-   * 卡头归外层 `.set-subtitle`。⚠️ 本轮起这一项住在 **④ 资源与投放** 的 main 组里，
-   * 所以「独立成卡」的判据变成：RESOURCE 里有这一项，且 ResourceSection 把它单独包一层
-   * `.set-group`（而不是混进「清理」那张卡）。
+   * 🔴 2026-10-25 重构：音乐缓存**不再是 catalog 里的独立项**（`CacheBlock` 已删）。
+   *    它现在是「存储占用」三行里的一行，形态与另两行同构：
+   *    图标 | 名称 + 目录地址 | 右列读数与动作。
+   *
+   *    所以判据从"catalog 有 music-cache 项"改成"StorageBlock 里有这一行且能清"——
+   *    前者已不成立，继续判它只会红，而那条红不指向任何真实缺口。
+   *
+   *    新判据分四处：
+   *      ① 行内两个读数（名称 `音乐缓存` + 目录地址 `set-storage-dir`）；
+   *      ② 行内动作入口（`MenuButton` 的「删除」）；
+   *      ③ 下拉五项的构成（4 平台 + 删除全部）；
+   *      ④ 不许再出现旧四格块的类名（`set-cache-total` / `set-cache-rows`）——
+   *         那是已删形态的残留，留着说明"删了一半"。
    */
-  const resSec = (ctx.cat?.mod?.SETTINGS_SECTIONS ?? []).find((x) => x.id === 'resource');
-  const grp = (resSec?.groups ?? []).flatMap((g) => g.items ?? []).find((i) => i.id === 'music-cache');
-  if (!grp) problems.push('catalog 里没有「音乐缓存」项（应住在 ④ 资源与投放）');
-  else {
-    if (grp.label !== '音乐缓存') problems.push(`项名是「${grp.label}」，应为「音乐缓存」`);
-    if (grp.why !== '歌词与整首歌的本地缓存，按平台清理') {
-      problems.push('说明句与设计稿口径不一致');
-    }
-  }
-  if (new RegExp(q('set-cache-head')).test(src)) {
-    problems.push('块内仍有 set-cache-head（卡头重复：卡头归外层 .set-subtitle）');
+  if (!/音乐缓存/.test(src)) problems.push('StorageBlock 里没有「音乐缓存」这一行');
+  /*
+   * 音乐缓存行必须**同时**有：目录地址入口 + 「删除」下拉。
+   *
+   * 🔴 判据必须锚在**这一行的 JSX 区间**里，不能只查"文件里出现过 set-storage-dir" ——
+   *    三行都有那个类名，只查存在性的话「把音乐缓存那行的入口摘掉」照样绿
+   *    （本轮回证抓到过这个假阳性）。
+   *
+   * 区间取法：从 `<strong>音乐缓存</strong>` 起，到**下一个** `.set-storage-row` 之前。
+   * ⚠️ 不能用裸的 `音乐缓存` 定位起点：它在文件头的文档注释里先出现，
+   *    截出来的窗口会落在注释里 ⇒ 必红。
+   * ⚠️ 也不能只把窗口开到固定长度：「摘掉入口」的反证会在行内插入元素，
+   *    固定长度窗口会把下一行的入口也框进来 ⇒ 假阳性（本轮回证踩过两次）。
+   */
+  const rowStart = src.indexOf('<strong>音乐缓存</strong>');
+  const nextRow = rowStart >= 0 ? src.indexOf('className="set-storage-row"', rowStart) : -1;
+  const rowText = rowStart >= 0 ? src.slice(rowStart, nextRow > rowStart ? nextRow : undefined) : '';
+  if (!rowText) problems.push('找不到音乐缓存那一行的 JSX（<strong>音乐缓存</strong>）');
+  if (rowText && !new RegExp(q('set-storage-dir')).test(rowText)) {
+    problems.push('音乐缓存行内没有目录地址入口（set-storage-dir）');
   }
   /*
-   * **接线**：catalog 里有这一项 ≠ 页面上会显示它。
-   *
-   * `ResourceSection` 是手写三张卡（不遍历 groups），所以这一项必须被显式
-   * `render(cache)` 包进自己的 `.set-group`。漏了这一步的表现是「项在表里、页面上没有」——
-   * 只判 catalog 的话，删掉那行渲染语句断言照样全绿（本轮反证就抓到过这个假绿）。
+   * 🔴 入口必须挂在**条件表达式**上（`{root ? … : …}`）：路径拿不到时不能渲染出
+   *    一个点了没反应的入口。只查 `set-storage-dir` 存在是测不到这一点的 ——
+   *    把 `{root ?` 改成 `{false ?` 之后类名**仍在源码里**（只是运行时不会渲染），
+   *    源码级判据照样绿（本轮回证抓到过这个假阳性）。
+   *    所以额外要求这行里出现 `{root ?` —— 它才是"守卫在不在"的可判据形态。
    */
-  const resSrc = stripComments(ctx.s.secResource ?? '');
-  if (!resSrc) problems.push('ResourceSection.tsx 读不到');
-  else {
-    if (!/render\(cache\)/.test(resSrc)) problems.push('ResourceSection 没有把音乐缓存渲染出来');
-    if (!/case 'music-cache':/.test(resSrc)) problems.push("ResourceSection 的 switch 里没有 case 'music-cache'");
+  if (rowText && !/\{root \?/.test(rowText)) {
+    problems.push('音乐缓存行的目录入口没有挂条件表达式（{root ? …}）—— 路径不可用时会渲染出死入口');
   }
-  const need = ['set-cache-total', 'set-cache-rows', 'set-cache-acts', 'set-cache-path'];
-  const missing = need.filter((n) => !new RegExp(q(n)).test(src));
-  if (missing.length) problems.push(`块内缺格：${missing.join('、')}`);
+  if (rowText && !/<MenuButton\b/.test(rowText)) {
+    problems.push('音乐缓存行内没有「删除」下拉入口（MenuButton）');
+  }
+  // 下拉必须四项平台 + 「删除全部」，缺一即用户清不干净或清不到单个
+  const providerCount = (src.match(/PROVIDER_ORDER\.map/g) || []).length;
+  if (providerCount < 1) problems.push('下拉没有遍历 PROVIDER_ORDER（逐平台项缺失）');
+  if (!/label="删除全部"/.test(src)) problems.push('下拉没有「删除全部」那一行');
+  // 旧四格块的类名必须清干净
+  for (const dead of ['set-cache-total', 'set-cache-rows', 'set-cache-acts', 'set-cache-path']) {
+    if (new RegExp(q(dead)).test(src)) problems.push(`残留旧形态类名：${dead}（四格块已删，应一并清掉）`);
+  }
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 add('CACHE.openDirGuarded', 'CACHE', (ctx) => {
@@ -1091,14 +1120,20 @@ add('CACHE.openDirGuarded', 'CACHE', (ctx) => {
    * 但目录被手工删掉 / 换机迁移后就会。**症状是点一下报错**，
    * 所以必须判「按钮被禁用」或「调用有兜底」，二者至少居其一。
    */
-  const src = ctx.s.cacheBlock;
-  if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx' };
-  const disabled = /disabled=\{[^}]*root/.test(src);
+  const src = ctx.s.storageBlock;
+  if (!src) return { ok: false, detail: '找不到 StorageBlock.tsx' };
+  /*
+   * 🔴 2026-10-25 形态变了：目录地址**本身**就是打开入口（`Btn kind="text"`），
+   *    不再是「打开目录」按钮。所以「禁用」的判据换成「路径为空时不渲染这个入口」——
+   *    即条件渲染 `root ? <Btn …/> : <small>…`，效果等价于禁用（点了没反应比不给入口更糟）。
+   *    `.catch` 那一条不变：目录可能被手工删掉，必须兜住并说清楚。
+   */
+  const guardedByPresence = /\{root \?/.test(src) || /\{lib\?\.root \?/.test(src) || /\{modelRoot \?/.test(src);
   const caught = /openPath\([^)]*\)[\s\S]{0,120}?\.catch\(/.test(src);
   return {
-    ok: disabled && caught,
-    detail: !disabled
-      ? '「打开目录」没有按 root 禁用（路径不可用时点了只会报错）'
+    ok: guardedByPresence && caught,
+    detail: !guardedByPresence
+      ? '目录入口没有按路径存在与否条件渲染（路径不可用时点了只会报错）'
       : !caught
         ? 'openPath 没有 .catch（目录被手工删掉时用户只看到一次报错，且不知道发生了什么）'
         : '',
@@ -1111,8 +1146,8 @@ add('CACHE.confirmBeforeClear', 'CACHE', (ctx) => {
    * 判据取「确认弹层的组件」与「调用清除的位置」两处：
    * 只有弹层没有确认、或有确认但清除绕过了它，都判红。
    */
-  const src = ctx.s.cacheBlock;
-  if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx' };
+  const src = ctx.s.storageBlock;
+  if (!src) return { ok: false, detail: '找不到 StorageBlock.tsx' };
   // D-143：模态壳已收口到通用单元 `units/Modal`（`.modal-mask` + `role="dialog"` 在单元里），
   // 故这里改判「用 Modal 渲染确认层」，而不是再要求本文件内联那段 DOM。
   const hasModal = /<Modal\b/.test(src);
@@ -1138,7 +1173,7 @@ add('CACHE.reloadAfterClear', 'CACHE', (ctx) => {
    * 所以前端**不能靠 catch 判断成败**，只能靠"清完再读一次数字看它变没变"。
    * 漏了这一步的症状是：清除确实发生了，但界面上的大小纹丝不动 —— 用户会以为没生效。
    */
-  const body = fnBody(ctx.s.cacheBlock, 'CacheBlock') ?? '';
+  const body = fnBody(ctx.s.storageBlock, 'StorageBlock') ?? '';
   const clearAt = body.indexOf('musicCacheClear');
   const reloadAfter = clearAt >= 0 && body.indexOf('reload()', clearAt) > clearAt;
   return {
@@ -1159,29 +1194,30 @@ add('CACHE.unitsBase1024', 'CACHE', (ctx) => {
    * 次数与正确性无关（第一版判据说"至少两处"就误报了一个正确的循环实现）。
    * 真正要钉的是"基数是 1024"与"格式是两位小数"这两件**规格事实**。
    */
-  const src = ctx.s.cacheBlock;
-  if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx' };
-  const body = fnBody(src, 'formatBytes') ?? '';
-  const base1024 = /\b1024\b/.test(body);
-  const notBase1000 = !/\b1000\b/.test(body);
-  const fixed2 = /\.toFixed\(\s*2\s*\)/.test(body);
-  const hasG = /['"]G['"]/.test(body);
+  /*
+   * 🔴 2026-10-25：本地那份 `formatBytes` 已删（原先 `CacheBlock` 与 `StorageBlock`
+   *    各持一份，收起进 StorageBlock 后改走共享的 `@tools`）。
+   *    所以判据从"本文件内有 1024 进制实现"改成"**引用共享实现**，且禁止本文件再写第二份"——
+   *    后者才是这条断言真正该拦的：两份换算迟早漂移（一处 1024、一处 1000），
+   *    而界面不会报错，只是两个地方显示的量对不上。
+   */
+  const src = ctx.s.storageBlock;
+  if (!src) return { ok: false, detail: '找不到 StorageBlock.tsx' };
+  const usesShared =
+    /formatBytes[^;]*from\s+['"]@tools['"]/.test(src) || /from\s+['"]@tools['"][^;]*formatBytes/.test(src);
+  const localDup = /function\s+formatBytes\s*\(/.test(src);
   return {
-    ok: base1024 && notBase1000 && fixed2 && hasG,
-    detail: !base1024
-      ? 'formatBytes 没有 1024 进制（规格要求 1024，与系统容量口径一致）'
-      : !notBase1000
-        ? 'formatBytes 出现了 1000（规格是 1024 进制，用 1000 会与系统显示的量对不上）'
-        : !fixed2
-          ? 'formatBytes 没有 toFixed(2)（规格要求保留 2 位小数，如 1.50 M）'
-          : !hasG
-            ? "formatBytes 的单位阶梯里没有 'G'（超过 1G 的缓存会被显示成 1024.00 M）"
-            : '',
+    ok: usesShared && !localDup,
+    detail: !usesShared
+      ? '没有引用 @tools 的共享 formatBytes（会变成第二套换算口径）'
+      : localDup
+        ? '本文件又写了一份 formatBytes（两份换算迟早漂移：一处 1024、一处 1000）'
+        : '',
   };
 });
 add('CACHE.providerLabelMap', 'CACHE', (ctx) => {
   // 四个平台的中文名映射。写错一个，用户就会看到「清除XX音乐」这种占位名。
-  const src = ctx.s.cacheBlock ?? '';
+  const src = ctx.s.storageBlock ?? '';
   const missing = ['netease', 'kugou', 'qqmusic', 'migu'].filter(
     (k) => !new RegExp(`${k}\\s*:\\s*['"][^'"]+['"]`).test(src),
   );
@@ -1198,7 +1234,7 @@ add('CACHE.zeroDisabled', 'CACHE', (ctx) => {
    * 所以要求 disabled 的判据表达式里**出现该项的字节数变量**，
    * 即"这个平台的字节数为 0 时才禁"。
    */
-  const src = ctx.s.cacheBlock ?? '';
+  const src = ctx.s.storageBlock ?? '';
   // 判据：disabled 的表达式必须以「这个平台的字节数 <= 0」打头（后面可以再 || busy || failed）
   const ok = /disabled=\{\s*bytes\s*<=\s*0/.test(src);
   return {
@@ -2156,7 +2192,7 @@ add('ENGINE.md.noRawAsterisks', 'ENGINE', (ctx) => {
     ['sections.tsx', ctx.s.sections],
     ['EngineDiag.tsx', ctx.s.engineDiag],
     ['ModelManageBlock.tsx', ctx.s.modelManage],
-    ['CacheBlock.tsx', ctx.s.cacheBlock],
+    ['StorageBlock.tsx', ctx.s.storageBlock],
   ];
   const hits = [];
   for (const [name, src] of files) {
@@ -3043,26 +3079,44 @@ add('FEATURES.shell.wired', 'FEATURES', (ctx) => {
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
-// ② 存储占用：三行分列、**不合计**。
+// ② 存储占用：两行分列、**不合计**。
 add('FEATURES.storage.rows', 'FEATURES', (ctx) => {
   const src = stripComments(ctx.s.storageBlock);
   const problems = [];
   const rows = (src.match(/className="set-storage-row"/g) ?? []).length;
-  if (rows !== 3) problems.push(`三行分列应有 3 个 .set-storage-row，实际 ${rows} 个`);
-  // 行名按设计稿：译文库 / 音乐缓存 / 翻译模型（旧名「音频缓存」「模型」与稿子不一致）
-  for (const k of ['译文库', '音乐缓存', '翻译模型']) {
+  /*
+   * 🔴 2026-10-25：从三行收成**两行**（译文库 / 音乐缓存）。
+   *    「翻译模型」那一行去掉了 —— 它长期只有 `未统计`（服务侧没有"模型占了多少"
+   *    的接口），留一行"读不出来"的数字只是占位。只要那条接口出现，这一行就该加回来。
+   *    所以这里判 2，且**不再要求** `未统计` / `缺少接口`（那两个词已随行消失）。
+   */
+  if (rows !== 2) problems.push(`两行分列应有 2 个 .set-storage-row，实际 ${rows} 个`);
+  for (const k of ['译文库', '音乐缓存']) {
     if (!src.includes(k)) problems.push(`缺少「${k}」那一行`);
   }
-  if (!src.includes('不合计')) problems.push('没有把"不合计"这条立场说出来');
+  if (src.includes('翻译模型')) problems.push('「翻译模型」那一行已按要求去掉，不该再出现');
   /*
    * 不得求和 —— 有人会顺手 `.reduce((a, b) => a + b.total, 0)` 造一个"总占用"，
    * 那等于把**没有接口的那一处**当成 0 算进去。这条断言就是拦它的。
    */
   if (/reduce\(/.test(src)) problems.push('源码里出现了求和（合计会把没有接口的那一处当成 0）');
-  if (!src.includes('未统计')) problems.push('模型那一行没有如实标「未统计」');
-  if (!src.includes('缺少接口')) problems.push('模型那一行没有说明缺的是哪条接口');
   if (!/musicCacheStats/.test(src)) problems.push('音频缓存没有走 musicCacheStats（会变成第二套口径）');
-  if (!/lib\.totalBytes/.test(src)) problems.push('译文库没有用传进来的 lib.totalBytes');
+  /*
+   * 🔴 两行中列统一成「名称 + 目录地址」，右列统一是读数：
+   *    用户问的三件事是"占多少 / 在哪儿 / 怎么清" —— 两个读数放右列、
+   *    路径放中列第二行且可点击打开。
+   */
+  const dirs = (src.match(/className="set-storage-dir"/g) ?? []).length;
+  if (dirs < 2) problems.push(`两行应各有一个目录地址入口（set-storage-dir），实际 ${dirs} 个`);
+  if (!/lib\?\.root/.test(src)) problems.push('译文库没有用传进来的 lib.root 做目录入口');
+  // 两行右列都要有读数（译文库 libText / 音乐缓存 cacheText）
+  if (!/set-storage-size/.test(src)) problems.push('右列没有读数（set-storage-size）');
+  /*
+   * 🔴 判据锚在**渲染点**上（`{libText}` 真的被插进 `set-storage-size` 那一格），
+   *    不是"文件里有 libText 这个词"：只查词的话，把变量改名、或把它从 JSX 里摘掉
+   *    都测不出来（本轮回证抓到过这个假阳性）。
+   */
+  if (!/\{libText\}/.test(src)) problems.push('译文库右侧没有显示大小（渲染点缺 {libText}）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -3079,19 +3133,25 @@ add('FEATURES.storage.wired', 'FEATURES', (ctx) => {
   if (!/StorageBlock item=\{item\} lib=\{lib\}/.test(sec)) problems.push('④ 组没有把 lib 交给 StorageBlock');
   /*
    * storage-usage 自己必须是 live —— 否则「三行分列做了、却仍标待接入」能蒙过去。
-   * 这一句与下面那个循环方向相反：那两个**必须仍是 pending**，这一个**必须是 live**。
-   * 早先只查了下面两个、漏了它自己，反证轮里「把 storage-usage 退回 pending」那一条
+   * 这一句与下面那个循环方向相反：那个**必须仍是 pending**，这一个**必须是 live**。
+   * 早先只查了下面那个、漏了它自己，反证轮里「把 storage-usage 退回 pending」那一条
    * 便退化成假阳性（破坏做了、断言不红）。别再把它并进下面那个循环。
    */
   const usage = itemById(ctx.cat.mod, 'storage-usage');
   if (!usage) problems.push('catalog 里找不到 storage-usage');
   else if (usage.state !== 'live')
     problems.push(`storage-usage 仍是 ${usage.state}（三行分列已接真实能力，不该再标待接入）`);
-  for (const id of ['temp-files', 'oss-feedback']) {
+  /*
+   * 🔴 2026-10-25：④ 的「清理」卡与 `temp-files` 项一并移除（用户要求）。
+   *    `temp-files` 至今 `pending`（服务侧没有列举与清理接口），留着只是占位；
+   *    投放规则那句脚注也一起删了（"规则不在设置里"对用户没有信息量）。
+   *    所以这里**不再**断言 temp-files 存在 —— 它已不是本组的项。
+   *    `oss-feedback`（⑤ 关于）不受影响，仍必须 pending。
+   */
+  for (const id of ['oss-feedback']) {
     const it = itemById(ctx.cat.mod, id);
     if (!it) problems.push(`catalog 里找不到 ${id}`);
-    else if (it.state !== 'pending')
-      problems.push(`${id} 不该变成 ${it.state}（服务端接口 / 公开发布这两件事都还不存在）`);
+    else if (it.state !== 'pending') problems.push(`${id} 不该变成 ${it.state}（公开发布这件事还不存在）`);
   }
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
@@ -3399,14 +3459,16 @@ const MUTATIONS = [
     // ⚠️ 锚点必须与 catalog 的真实字节一致 —— 常量每变一次（29→31→32→33→31→32→**33**→**34**）
     // 都要同步这里，否则本行会退化成「锚点未找到 / 跳过」，看起来仍是全绿（跳过 ≠ 通过）。
     // 实测：漏同步时这条确实静默跳过过（详见台账 D-94 的反证轮复修记录）。
-    find: 'export const SPEC_ITEM_TOTAL = 34;',
+    find: 'export const SPEC_ITEM_TOTAL = 32;',
     replace: 'export const SPEC_ITEM_TOTAL = 26;',
     expect: ['COUNT.specMatches'],
   },
   {
     name: '把「缓存清理」项加回 RESOURCE（模拟拍板删掉的项又回来了）',
     file: F.catalog,
-    find: "        {\n          id: 'temp-files',",
+    // 🔴 2026-10-25：`temp-files` 已从 catalog 删掉（「清理」卡一并移除），
+    //    原锚点 `id: 'temp-files',` 不复存在 ⇒ 改锚在 `storage-usage` 之后插入。
+    find: "        {\n          id: 'storage-usage',",
     replace:
       '        {\n' +
       "          id: 'cache-clean',\n" +
@@ -3415,7 +3477,7 @@ const MUTATIONS = [
       "          why: '反证',\n" +
       '        },\n' +
       '        {\n' +
-      "          id: 'temp-files',",
+      "          id: 'storage-usage',",
     expect: ['RETIRED.cache-clean'],
   },
   {
@@ -3574,45 +3636,41 @@ const MUTATIONS = [
    * 但渲染时被 Row 压扁 / 压根没渲染」—— 而这正是它当初要脱离 `Row` 的理由。
    */
   {
-    name: '把「音乐缓存」项整条从 catalog 里删掉（模拟「加了项但忘了算进项数」）',
+    name: '把「存储占用」项整条从 catalog 里删掉（模拟「加了项但忘了算进项数」）',
     file: F.catalog,
-    find:
-      '        {\r\n' +
-      '          /*\r\n' +
-      '           * 「音乐缓存」从 ③ 播放·媒体 **搬到 ④ 资源与投放**（本轮需求）：\r\n' +
-      '           * 它回答的是"磁盘上占了多少、怎么清"，与「存储占用」是同一类问题；\r\n' +
-      '           * 放在"播放·媒体"里读起来像一条播放设置，而它其实是一个清理动作。\r\n' +
-      '           */\r\n' +
-      "          id: 'music-cache',\r\n" +
-      "          label: '音乐缓存',\r\n" +
-      "          state: 'live',\r\n" +
-      '          // 通栏块：合计 + 逐平台行 + 动作，塞不进 Row 的窄右列\r\n' +
-      "          layout: 'block',\r\n" +
-      "          why: '歌词与整首歌的本地缓存，按平台清理',\r\n" +
-      '        },\r\n',
+    // 🔴 2026-10-25：`music-cache` 已不是独立项（收进 storage-usage 行内），
+    //    故这条反证的靶子换成 `storage-usage` 本身 —— 它现在是 ④ 唯一的项，
+    //    「删掉唯一那项」正是这条要模拟的"项没了但没人发现"。
+    find: "          id: 'storage-usage',\r\n          label: '存储占用',\r\n",
     replace: '',
     expect: ['CACHE.layoutFlag'],
   },
 
   {
-    name: '把「音乐缓存」的 layout 形态字段去掉（会被 Row 压成两栏窄列，四格失效）',
+    name: '把「存储占用」的 layout 形态字段去掉（会被 Row 压成两栏窄列，三行失效）',
     file: F.catalog,
-    find: "          layout: 'block',\n          why: '歌词与整首歌的本地缓存，按平台清理',\n",
-    replace: "          why: '歌词与整首歌的本地缓存，按平台清理',\n",
+    find: "          layout: 'block',\n        },\n      ],\n    },\n  ],\n};",
+    replace: '        },\n      ],\n    },\n  ],\n};',
     expect: ['CACHE.layoutFlag'],
   },
   {
-    name: '把 ④ 资源与投放里 music-cache 的 case 改错（四格块不会被渲染）',
-    file: F.secResource,
-    find: "      case 'music-cache':",
-    replace: "      case 'music-cache-off':",
+    name: '把音乐缓存那一行的清理入口摘掉（行在但用户清不了）',
+    file: F.storageBlock,
+    find: '            <MenuButton',
+    replace: '            <span data-dead="1"',
     expect: ['CACHE.blockRendersFourCells'],
   },
   {
-    name: '把 ④ 里音乐缓存那张卡从渲染里摘掉（项在 catalog 里但页面不显示）',
-    file: F.secResource,
-    find: '      <div className="set-group">{render(cache)}</div>\n',
-    replace: '',
+    name: '把音乐缓存那一行的目录地址入口摘掉（用户看不到"在哪儿"）',
+    file: F.storageBlock,
+    /*
+     * `{root ? (` → `{false ? (`：恒走 else 分支，音乐缓存行内不再渲染目录入口。
+     * ⚠️ 三个条件各自唯一（`{root ?` / `{lib?.root ?` / `{modelRoot ?`），
+     *    所以这一处替换只影响音乐缓存那行 —— 裸换 `set-storage-dir` 会把三行都换掉，
+     *    于是"音乐缓存行内仍有入口"⇒ 该红没红（本轮回证抓到过两次）。
+     */
+    find: '{root ? (',
+    replace: '{false ? (',
     expect: ['CACHE.blockRendersFourCells'],
   },
   {
@@ -4256,18 +4314,28 @@ const MUTATIONS = [
     expect: ['FEATURES.shell.wired'],
   },
   {
-    name: '把「不合计」这条立场从存储占用块里去掉（用户会本能地去做加法）',
+    name: '把译文库那一行从存储占用里摘掉（只剩音乐缓存，占多少看不见了）',
     file: F.storageBlock,
-    // 锚点只取那句立场文案本身：卡片副标题整句会随设计稿改词，写死整行标签会静默失配
-    find: '三项独立统计，不合计；有目录的项都可以直接打开',
-    replace: '三项独立统计；有目录的项都可以直接打开',
+    /*
+     * 🔴 2026-10-25：卡头那句「不合计」立场已按用户要求移除，原来那条
+     *    "把立场文案去掉"的反证失去锚点。换成验证行数本身 ——
+     *    删掉译文库那一行后 `rows !== 2` 与「缺少译文库」两条同时变红。
+     */
+    find: '<strong>译文库</strong>',
+    replace: '<strong>译纹库</strong>',
     expect: ['FEATURES.storage.rows'],
   },
   {
-    name: '把模型那一行的「未统计」改成 0 B（把"没有接口"谎报成"精确测得是 0"）',
+    name: '把译文库右侧的大小读数摘掉（占多少看不见了）',
     file: F.storageBlock,
-    find: '<small className="is-unknown">未统计',
-    replace: '<small>0 B',
+    /*
+     * 🔴 2026-10-25：「翻译模型」行已删，原来那条"把「未统计」改成 0 B"的反证失去锚点。
+     *    换成验证本轮新增的"译文库右侧显示大小"。
+     *    破坏**渲染点本身**（`{libText}` → 空），而不是把变量改名 ——
+     *    改名后 JSX 里仍写着 `{libText}`，断言照样绿（本轮回证抓到过这个假阳性）。
+     */
+    find: '<span className="set-storage-size">{libText}</span>',
+    replace: '<span className="set-storage-size" />',
     expect: ['FEATURES.storage.rows'],
   },
   {

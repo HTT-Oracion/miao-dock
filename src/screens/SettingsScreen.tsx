@@ -9,7 +9,7 @@ import { SETTINGS_SECTIONS, SECTION_ITEM_TOTAL, parseSection, sectionItemCount }
 import type { SectionId } from '@screens/settings/catalog';
 import { searchSettings } from '@screens/settings/search';
 import type { SettingHit } from '@screens/settings/search';
-import { SECTION_ICON, SECTION_KICKER } from '@screens/settings/icons';
+import { SECTION_ICON } from '@screens/settings/icons';
 import { emphasis } from '@screens/settings/parts';
 import { SpecFixtureHost } from '@screens/settings/SpecCheck';
 import { AnimeSettingsSection } from '@screens/anime/AnimeSettingsSection';
@@ -169,8 +169,6 @@ export function SettingsScreen({
 
   const active = SETTINGS_SECTIONS.find((s) => s.id === section) ?? null;
   const isAnime = section === 'anime';
-  /** 分组序号（仅用于页眉 kicker；番剧是域内设置，单独成一支） */
-  const sectionIndex = SETTINGS_SECTIONS.findIndex((s) => s.id === section);
 
   return (
     <>
@@ -228,10 +226,6 @@ export function SettingsScreen({
             <span className="set-nav-label">番剧设置</span>
             <span className="set-nav-count">{ANIME_SETTING_TOTAL}</span>
           </button>
-          <div className="settings-nav-note">
-            所有偏好保存在本机。
-            <br />共 {SECTION_ITEM_TOTAL} 项，改动即时生效。
-          </div>
         </nav>
 
         <div className="settings-main">
@@ -264,9 +258,7 @@ export function SettingsScreen({
               ) : null}
             </label>
             <span className="settings-count">
-              {query.trim()
-                ? `${hits.length} 项匹配 · 共 ${SECTION_ITEM_TOTAL} 项`
-                : `${SETTINGS_SECTIONS.length} 组 · ${SECTION_ITEM_TOTAL} 项`}
+              {query.trim() ? `${hits.length} 项匹配 · 共 ${SECTION_ITEM_TOTAL} 项` : `${SECTION_ITEM_TOTAL} 项`}
             </span>
           </div>
 
@@ -275,7 +267,6 @@ export function SettingsScreen({
             {query.trim() ? (
               <section className="settings-section is-active" key="search">
                 <div className="settings-section-head">
-                  <span className="kicker">SEARCH</span>
                   <h2>搜索「{query.trim()}」</h2>
                   <p>{hits.length} 个设置项匹配</p>
                 </div>
@@ -302,11 +293,6 @@ export function SettingsScreen({
             ) : (
               <>
                 <header className="settings-section-head">
-                  <span className="kicker">
-                    {isAnime
-                      ? '06 / ANIME'
-                      : `${String(sectionIndex + 1).padStart(2, '0')} / ${SECTION_KICKER[section] ?? ''}`}
-                  </span>
                   <h2>{isAnime ? '番剧设置' : active?.name}</h2>
                   {isAnime ? (
                     <p>
