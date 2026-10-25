@@ -3180,10 +3180,11 @@
 }
 .ed-metrics {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* 三格（已下载已去掉）：总大小 / 速度 / 剩余 */
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   margin-top: 14px;
-  max-width: 560px;
+  max-width: 460px;
 }
 .ed-metrics div {
   padding: 8px 10px;
@@ -3192,9 +3193,33 @@
   background: var(--miao-surface-2);
 }
 .ed-metrics span {
-  display: block;
   font-size: 8.5px;
   color: var(--miao-muted);
+}
+/*
+ * 标签行：文字 + 可选的 `?` 气泡图标（同一行，图标跟在文字后面）。
+ * 用 flex 而不是 inline：`span` 在 `.ed-metrics` 里是 `display:block`（见上），
+ * 图标要贴在同一行就得让这一格自己成为 flex 容器。
+ */
+.ed-metric-label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.ed-metric-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1px solid var(--miao-line-strong);
+  font-size: 7.5px;
+  line-height: 1;
+  color: var(--miao-faint);
+  cursor: help;
+  /* 反色：浅底上要看得见，但不能比读数还显眼 */
+  background: var(--miao-surface);
 }
 .ed-metrics strong {
   display: block;
@@ -3414,6 +3439,28 @@
   background: var(--miao-primary);
   border-color: var(--miao-primary);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--miao-primary) 18%, transparent);
+  /*
+   * 进行中的节点**呼吸闪烁**：静止的实心点与"已完成"只差一个颜色，扫一眼分不出
+   * "这段在跑"和"这段跑完了"。动画只在 `active` 上，`done` 保持完全静止。
+   * 🔴 `prefers-reduced-motion` 下关掉（下方媒体查询）—— 前庭敏感用户不该被迫看它闪。
+   */
+  animation: ed-step-pulse 1.6s ease-in-out infinite;
+}
+@keyframes ed-step-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--miao-primary) 18%, transparent);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--miao-primary) 4%, transparent);
+    opacity: 0.72;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ed-step[data-state='active'] .ed-step-node {
+    animation: none;
+  }
 }
 .ed-step[data-state='active'] strong {
   color: var(--miao-ink);
@@ -3474,21 +3521,9 @@
   overflow: hidden;
   min-width: 0;
 }
-.ed-bar {
-  height: 5px;
-  margin-top: 9px;
-  border-radius: 99px;
-  background: var(--miao-surface-3);
-  overflow: hidden;
-}
-.ed-bar span {
-  display: block;
-  height: 100%;
-  width: 0;
-  border-radius: 99px;
-  background: var(--miao-primary);
-  transition: width 0.4s linear;
-}
+/* `.ed-bar`（当前文件下方的细条）已按用户要求移除（2026-10-25）：
+   它和环是**同一个数**（整体装配进度）的两次表达，屏幕上同时有环、有细条、
+   还有五段节点 —— 三处说同一件事，反而让人不知道哪个才是"真进度"。 */
 /* 日志块已抽成通用单元 `.log-block`（两处日志共用，带悬停浮现的复制按钮）——
    下载页那一处用 `is-tall` 档（最大高度 220）。此处的旧规则随之退役。 */
 /*

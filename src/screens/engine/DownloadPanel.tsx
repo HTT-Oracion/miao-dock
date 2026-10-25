@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
-import { Btn, LogBlock, Modal, ProgressRing } from '@components/units';
+import { Btn, LogBlock, Modal, ProgressRing, Tooltip } from '@components/units';
 import { copyText, formatBytes } from '@tools';
 import { errorText, openPath } from '@/ipc';
 import { toastBus } from '@/stores/toastBus';
@@ -75,7 +75,13 @@ export function DownloadPanel({
   onClose,
 }: DownloadPanelProps) {
   const { push } = useToasts();
-  const [logOpen, setLogOpen] = useState(false);
+  /*
+   * 日志**默认展开**（2026-10-25 用户要求）。
+   * 原先默认收起：那一屏已经有环、五段、当前文件三块，再摊开一段等宽日志会很长。
+   * 但实际排障时"现在到底在干什么"只有日志答得出来，收着等于每次都要多点一下 ——
+   * 用户明确要求默认展开，就按默认展开。（仍可点「收起日志」折起。）
+   */
+  const [logOpen, setLogOpen] = useState(true);
   const [confirmRedo, setConfirmRedo] = useState(false);
   const [checking, setChecking] = useState(false);
   /**
@@ -242,11 +248,25 @@ export function DownloadPanel({
               <h3>{heroTitleOf(done, bad, idle, step, paused)}</h3>
               <p>{heroDescOf(done, bad, idle, paused, step, view)}</p>
 
-              {/* 四格指标（设计稿 `.ed-metrics`）：没有真实来源的一律 `—`，不补"看起来合理"的数 */}
+              {/* 三格指标（设计稿 `.ed-metrics`）：没有真实来源的一律 `—`，不补"看起来合理"的数 */}
               <div className="ed-metrics">
                 {metricsOf(view, running, status?.runtime?.requiredBytes ?? null, formatBytes).map((m) => (
                   <div key={m.label}>
-                    <span>{m.label}</span>
+                    <span className="ed-metric-label">
+                      {m.label}
+                      {/*
+                        `?` 说明气泡（用户指定：解释「速度显示成 -」的两种成因）。
+                        🔴 用通用 `Tooltip` 单元而不是原生 `title`：后者的延迟与样式
+                           都由系统决定，且文字不可选中 —— 这里是一句要读懂的解释。
+                      */}
+                      {m.hint ? (
+                        <Tooltip label={m.hint}>
+                          <span className="ed-metric-hint" aria-label={m.hint} role="img">
+                            ?
+                          </span>
+                        </Tooltip>
+                      ) : null}
+                    </span>
                     <strong>{m.value}</strong>
                   </div>
                 ))}
@@ -324,23 +344,18 @@ export function DownloadPanel({
             </ol>
           </section>
 
-          {/* ── 当前文件 + 细条 + 日志（设计稿 `.ed-detail`）── */}
+          {/* ── 当前文件 + 日志（设计稿 `.ed-detail`）── */}
           <section className="ed-detail">
             <div className="ed-detail-head">
               <h3>当前文件</h3>
               {/*
                 固定两行、超出省略号：文件 id / 路径可能很长（HF 的 blobs 是 64 位十六进制），
-                不限制会把这一行撑到十几行，把下面的细条与日志顶出视口。
+                不限制会把这一行撑到十几行，把下面的日志顶出视口。
                 不补 `title` / Tooltip —— 全名去日志块里看（那里本来就能全文复制）。
               */}
               <span className="ed-detail-current">{currentText}</span>
             </div>
-            {/* 细条与环同一口径（整体装配）；没有真实阶段事件时不画，不给一条假动画 */}
-            {overall != null ? (
-              <div className="ed-bar">
-                <span style={{ width: `${Math.min(100, overall)}%` }} />
-              </div>
-            ) : null}
+            {/* `.ed-bar` 已移除：它和环是同一个数（整体装配）的两次表达 */}
             {logOpen ? (
               <LogBlock
                 variant="tall"

@@ -200,20 +200,60 @@ impl DownloadProgressState {
         // 阶段标记事件（total=None，phase="stage"）：只更新当前阶段，不动字节账。
         if e.phase == "stage" {
             self.last_event_ms = now_ms;
-            let total: u64 = self.entries.values().filter_map(|(_, t)| *t).sum();
-            let received: u64 = self.entries.values().filter_map(|(r, t)| t.map(|_| *r)).sum();
-            return (received, total, None);
+            return self.aggregate();
         }
         let total = e.total.unwrap_or_else(|| {
             // 复用该条目已知总量；未知则记 None（聚合时总量缺失 ⇒ percent 为 null）
             self.entries.get(&e.id).and_then(|(_, t)| *t).unwrap_or(0)
         });
         let entry_total = if e.total.is_some() { Some(total) } else { self.entries.get(&e.id).and_then(|(_, t)| *t) };
-        self.entries.insert(e.id.clone(), (e.received, entry_total));
+        /*
+         * 🔴 **同一批文件里"下完一个"不该让进度往下掉**（B 方案，2026-10-25）：
+         *
+         * 根因：`received` 是"所有在列条目的已收之和"，而下载器换文件时新条目从 0 起算
+         * ⇒ 聚合百分比周期性回退。`assemblyPercent` 把它线性映射到 `[45, 100]`，
+         * 于是一换文件环就落回 45%（用户实测"老是跳回 45%"）。
+         *
+         * 修法（口径改对，不动 UI）：
+         *   ① **已收记历史最高**（`max`）：同一条目重试 / 换源把 received 清零时，
+         *      不承认这次回退 —— 它已经下过的字节仍然在盘上（`.part` 续传）。
+         *   ② **条目完成即按总量计满**：`received >= total` 时后续事件无论报什么，
+         *      该条目都按 `total` 参与分子 —— 它已经下完了，不该因为"移到下一个文件"
+         *      而把已完成的份额退回去。
+         *
+         * 两条合起来保证 `received` **单调不减**，`percent` 与 `assemblyPercent` 随之单调。
+         * ⚠️ 代价：真正"换源从头重下"时进度不会倒退。那是可接受的 ——
+         *    用户看到的是"还在 80%"，而不是"从 80% 掉回 45%、像丢了数据"。
+         */
+        let prev = self.entries.get(&e.id).copied();
+        let best = match prev {
+            Some((r, t)) => {
+                // 条目已下满 ⇒ 按 total 计满；否则取历史最高
+                let capped = t.filter(|tt| *tt > 0 && r >= *tt).map(|tt| tt).unwrap_or(r);
+                capped.max(e.received)
+            }
+            None => e.received,
+        };
+        self.entries.insert(e.id.clone(), (best, entry_total));
         self.last_event_ms = now_ms;
-        let total: u64 = self.entries.values().filter_map(|(_, t)| *t).sum();
-        let received: u64 = self.entries.values().filter_map(|(r, t)| t.map(|_| *r)).sum();
-        (received, total, e.total)
+        let (received, total, opt) = self.aggregate();
+        (received, total, opt.or(e.total))
+    }
+
+    /// 聚合成 `(received, total, 事件自带 total)`。
+    ///
+    /// 🔴 分子只统计**总量已知**的条目（否则分数会破 100%，实测出现过 111%）；
+    ///    且**已下满的条目按 `total` 计入**（不按它最后一次报的 received）——
+    ///    换文件后它可能不再发事件，最后那次的值就是终值，不必再猜。
+    fn aggregate(&self) -> (u64, u64, Option<u64>) {
+        let mut received = 0u64;
+        let mut total = 0u64;
+        for (r, t) in self.entries.values() {
+            let Some(tt) = *t else { continue };
+            total += tt;
+            received += if *r >= tt { tt } else { *r };
+        }
+        (received, total, None)
     }
 }
 
@@ -1722,6 +1762,63 @@ mod tests {
         let (speed, eta) = p.recompute(1_000, 5_000, 0);
         assert!(speed.is_none(), "回退时不许报速度：{speed:?}");
         assert!(eta.is_none());
+    }
+
+    /// 🔴 **换文件时聚合进度不许回退**（B 方案，2026-10-25）。
+    ///
+    /// 真实场景：a 下完（100/100）→ 下载器转去 b（0/100）。旧实现里 `received` 是
+    /// "在列条目已收之和"，b 的 0 会把 a 已贡献的 100 顶掉 ⇒ 200 → 100，
+    /// 界面上的环从 72.5% 掉回 45%（`assemblyPercent` 的段首）。
+    /// 新口径：a 已下满 ⇒ 按 total 计满，b 从 0 起算 ⇒ 200 单调不减。
+    #[test]
+    fn aggregate_never_goes_backwards_when_switching_files() {
+        let mut p = DownloadProgressState::new();
+        let ev = |id: &str, received: u64, total: u64| ProgressEvent {
+            id: id.to_string(),
+            phase: "file".to_string(),
+            received,
+            total: Some(total),
+            url: None,
+            resumed: false,
+            msg: None,
+        };
+
+        let (r1, t1, _) = p.ingest(&ev("a", 100, 100), 1000);
+        assert_eq!((r1, t1), (100, 100), "a 下满");
+
+        // 换文件：b 从 0 起 —— 旧实现这里会掉回 (0, 200)
+        let (r2, t2, _) = p.ingest(&ev("b", 0, 100), 1100);
+        assert_eq!(t2, 200, "分母是全体之和");
+        assert_eq!(r2, 100, "a 的份额不许被 b 的 0 顶掉（{r2} 应 >= {r1}）");
+        assert!(r2 >= r1, "聚合进度回退了：{r1} → {r2}");
+
+        // b 下到一半：a 满 + b 半
+        let (r3, _, _) = p.ingest(&ev("b", 50, 100), 1200);
+        assert_eq!(r3, 150, "a 满 100 + b 半 50");
+        assert!(r3 >= r2);
+    }
+
+    /// 同一条目重试把 received 清零时，也不许把已下过的字节退掉
+    #[test]
+    fn aggregate_keeps_peak_when_one_entry_retries() {
+        let mut p = DownloadProgressState::new();
+        let ev = |received: u64| ProgressEvent {
+            id: "x".to_string(),
+            phase: "file".to_string(),
+            received,
+            total: Some(1000),
+            url: None,
+            resumed: false,
+            msg: None,
+        };
+        let (r1, _, _) = p.ingest(&ev(600), 1000);
+        assert_eq!(r1, 600);
+        // 重试 / 换源：同一条目报 0 —— 盘上 .part 还在，不承认这次回退
+        let (r2, _, _) = p.ingest(&ev(0), 1100);
+        assert_eq!(r2, 600, "重试清零不该把已下字节退掉");
+        // 续传继续涨
+        let (r3, _, _) = p.ingest(&ev(800), 1200);
+        assert_eq!(r3, 800);
     }
 
     /// 荒谬速度一律不报（上限兜底），免得 ETA 也算成天文数字

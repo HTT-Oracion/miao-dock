@@ -174,8 +174,19 @@ export function fmtEta(ms: number | null): string {
 export interface Metric {
   label: string;
   value: string;
+  /** 该格标签右侧的说明气泡（`?` 图标）；不传则不渲染图标 */
+  hint?: string;
 }
 
+/**
+ * 四格指标。
+ *
+ * 🔴 **「已下载」已去掉**（2026-10-25 用户要求）：`receivedBytes` 是**所有在列条目**的
+ *    已收之和，而下载器换文件时会把新条目的 received 从 0 起算 ——
+ *    于是这个数会**周期性回退**（与 `assemblyPercent` 跳回 45% 同一个根因）。
+ *    一个会倒退的"已下载"比不显示更糟：用户会以为下载在丢数据。
+ *    留着的是三个**只增不减或本来就瞬时**的量：总大小 / 速度 / 剩余。
+ */
 export function metricsOf(
   view: ModelDownloadView,
   running: boolean,
@@ -184,9 +195,13 @@ export function metricsOf(
 ): Metric[] {
   const total = view.totalBytes ?? totalFallback;
   return [
-    { label: '已下载', value: view.receivedBytes != null ? fmt(view.receivedBytes) : '—' },
     { label: '总大小', value: total != null ? fmt(total) : '—' },
-    { label: '速度', value: running && view.speedBps != null ? `${fmt(view.speedBps)}/s` : '—' },
+    {
+      label: '速度',
+      value: running && view.speedBps != null ? `${fmt(view.speedBps)}/s` : '—',
+      // 用户 2026-10-25 指定的措辞（逐字）：解释 `—` 的两种成因，免得被读成"卡死了"
+      hint: "下载时网络连接不畅和引擎有本地缓存时都会显示成 '-'",
+    },
     { label: '剩余', value: running ? fmtEta(view.etaMs) : '—' },
   ];
 }
