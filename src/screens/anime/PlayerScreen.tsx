@@ -187,7 +187,8 @@ function ControlBar({
         <span className="an-num">{fmtClock(durationMs)}</span>
       </div>
       <div className="an-ctl">
-        <button
+        <Btn
+          kind="bare"
           type="button"
           className="an-stage-btn"
           disabled={!epNav?.prev}
@@ -195,8 +196,9 @@ function ControlBar({
           onClick={() => epNav?.onPrev()}
         >
           <SkipBack size={17} />
-        </button>
-        <button
+        </Btn>
+        <Btn
+          kind="bare"
           type="button"
           className="an-bigplay"
           disabled={!playable}
@@ -204,8 +206,9 @@ function ControlBar({
           onClick={controls.toggle}
         >
           {state.playing ? <Pause size={16} /> : <Play size={16} />}
-        </button>
-        <button
+        </Btn>
+        <Btn
+          kind="bare"
           type="button"
           className="an-stage-btn"
           disabled={!epNav?.next}
@@ -213,8 +216,9 @@ function ControlBar({
           onClick={() => epNav?.onNext()}
         >
           <SkipForward size={17} />
-        </button>
-        <button
+        </Btn>
+        <Btn
+          kind="bare"
           type="button"
           className="an-rate"
           disabled={!playable}
@@ -222,9 +226,10 @@ function ControlBar({
           onClick={() => onRate(controls.cycleRate())}
         >
           {rateLabel(rate)}
-        </button>
+        </Btn>
         {skip?.op != null ? (
-          <button
+          <Btn
+            kind="bare"
             type="button"
             className="an-kbd"
             disabled={!playable}
@@ -232,10 +237,11 @@ function ControlBar({
             onClick={() => skip.onJump(skip.op as number)}
           >
             跳片头
-          </button>
+          </Btn>
         ) : null}
         {skip?.ed != null ? (
-          <button
+          <Btn
+            kind="bare"
             type="button"
             className="an-kbd"
             disabled={!playable}
@@ -243,7 +249,7 @@ function ControlBar({
             onClick={() => skip.onJump(skip.ed as number)}
           >
             跳片尾
-          </button>
+          </Btn>
         ) : null}
         <span className="an-sp" />
         <label className="an-vol" title={`音量 ${Math.round(volume * 100)}%`}>
@@ -258,7 +264,8 @@ function ControlBar({
             onChange={(e) => onVolume(Number(e.target.value) / 100)}
           />
         </label>
-        <button
+        <Btn
+          kind="bare"
           type="button"
           className="an-kbd"
           disabled={!playable}
@@ -266,8 +273,9 @@ function ControlBar({
           onClick={controls.screenshot}
         >
           截图
-        </button>
-        <button
+        </Btn>
+        <Btn
+          kind="bare"
           type="button"
           className="an-kbd"
           disabled={!stats}
@@ -275,8 +283,9 @@ function ControlBar({
           onClick={stats?.onToggle}
         >
           {stats?.on ? '统计 ●' : '统计'}
-        </button>
-        <button
+        </Btn>
+        <Btn
+          kind="bare"
           type="button"
           className="an-kbd"
           disabled={!playable || subtitles.length === 0}
@@ -284,7 +293,7 @@ function ControlBar({
           onClick={controls.cycleSubtitle}
         >
           字幕
-        </button>
+        </Btn>
       </div>
       <div className="an-keys">
         {PLAYER_KEYS.slice(0, 6).map((k) => (
@@ -434,9 +443,9 @@ function SourcePicker({ onClose }: { onClose: () => void }) {
       <div className="an-picker" onClick={(e) => e.stopPropagation()}>
         <div className="an-picker-top">
           <b>选择播放来源</b>
-          <button type="button" className="an-picker-x" onClick={onClose} aria-label="关闭">
+          <Btn kind="bare" type="button" className="an-picker-x" onClick={onClose} aria-label="关闭">
             <X size={14} />
-          </button>
+          </Btn>
         </div>
         <div className="an-picker-body">
           <section className="an-picker-group">
@@ -510,7 +519,8 @@ function KernelStage({
           <div className="an-kernel-chips">
             {audio.length === 0 ? <i className="an-note">这一集只有一条默认音轨</i> : null}
             {audio.map((t) => (
-              <button
+              <Btn
+                kind="bare"
                 key={t.id}
                 type="button"
                 className={t.selected ? 'an-chip is-hot' : 'an-chip is-plain'}
@@ -518,7 +528,7 @@ function KernelStage({
               >
                 {t.label}
                 {t.lang ? ` · ${t.lang}` : ''}
-              </button>
+              </Btn>
             ))}
           </div>
         </div>
@@ -526,22 +536,24 @@ function KernelStage({
           <span>字幕</span>
           <div className="an-kernel-chips">
             {subs.map((t) => (
-              <button
+              <Btn
+                kind="bare"
                 key={t.id}
                 type="button"
                 className={t.selected ? 'an-chip is-hot' : 'an-chip is-plain'}
                 onClick={() => onSelectTrack('sub', t.id)}
               >
                 {t.label}
-              </button>
+              </Btn>
             ))}
-            <button
+            <Btn
+              kind="bare"
               type="button"
               className={subs.some((t) => t.selected) ? 'an-chip is-plain' : 'an-chip is-hot'}
               onClick={() => onSelectTrack('sub', 'no')}
             >
               关闭
-            </button>
+            </Btn>
           </div>
         </div>
       </div>
@@ -617,7 +629,8 @@ function RemoteStage({ remote, prefs }: { remote: AnimeRemotePlayback; prefs: An
     <div className="an-player">
       <div className="an-stage">
         <div className="an-stage-top">
-          <button
+          <Btn
+            kind="bare"
             type="button"
             className="an-stage-btn"
             onClick={() => {
@@ -627,7 +640,7 @@ function RemoteStage({ remote, prefs }: { remote: AnimeRemotePlayback; prefs: An
             title="返回数据源"
           >
             <ArrowLeft size={16} />
-          </button>
+          </Btn>
           <div className="an-stage-tt">
             <b>{remote.title}</b>
             <span>
@@ -635,7 +648,8 @@ function RemoteStage({ remote, prefs }: { remote: AnimeRemotePlayback; prefs: An
               {loading ? ' · 正在起播' : error ? ' · 起不来' : ''}
             </span>
           </div>
-          <button
+          <Btn
+            kind="bare"
             type="button"
             className="an-stage-btn"
             disabled={!playable}
@@ -643,7 +657,7 @@ function RemoteStage({ remote, prefs }: { remote: AnimeRemotePlayback; prefs: An
             onClick={controls.fullscreen}
           >
             <Maximize2 size={16} />
-          </button>
+          </Btn>
         </div>
 
         <div className={`an-stage-mid${playable ? ' is-video' : ''}`}>
@@ -680,9 +694,9 @@ function RemoteStage({ remote, prefs }: { remote: AnimeRemotePlayback; prefs: An
 
       <aside className="an-player-side">
         <div className="an-side-tabs" role="tablist" aria-label="远程播放信息">
-          <button type="button" role="tab" aria-selected className="is-on">
+          <Btn kind="bare" type="button" role="tab" aria-selected className="is-on">
             远程来源
-          </button>
+          </Btn>
         </div>
         <div className="an-side-body an-scroll">
           <div className="an-src-box">
@@ -843,19 +857,32 @@ export function PlayerScreen() {
         )}
 
         <div className="an-stage-top">
-          <button type="button" className="an-stage-btn" onClick={() => setView('detail')} title="返回条目详情">
+          <Btn
+            kind="bare"
+            type="button"
+            className="an-stage-btn"
+            onClick={() => setView('detail')}
+            title="返回条目详情"
+          >
             <ArrowLeft size={16} />
-          </button>
+          </Btn>
           <div className="an-stage-tt">
             <b>{displayTitle(subject, titleMode)}</b>
             <span>
               第 {episode.index} 话「{episode.title}」· {stageLine(loading, error, source)}
             </span>
           </div>
-          <button type="button" className="an-stage-btn" onClick={() => setPickerOpen(true)} title="选择播放来源">
+          <Btn
+            kind="bare"
+            type="button"
+            className="an-stage-btn"
+            onClick={() => setPickerOpen(true)}
+            title="选择播放来源"
+          >
             <Settings2 size={16} />
-          </button>
-          <button
+          </Btn>
+          <Btn
+            kind="bare"
             type="button"
             className="an-stage-btn"
             disabled={!cacheable}
@@ -871,8 +898,9 @@ export function PlayerScreen() {
             }}
           >
             <Download size={16} />
-          </button>
-          <button
+          </Btn>
+          <Btn
+            kind="bare"
             type="button"
             className="an-stage-btn"
             disabled={!playable}
@@ -880,7 +908,7 @@ export function PlayerScreen() {
             onClick={controls.fullscreen}
           >
             <Maximize2 size={16} />
-          </button>
+          </Btn>
         </div>
 
         <div className={`an-stage-mid${playable && !isKernel ? ' is-video' : ''}`}>
@@ -962,7 +990,8 @@ export function PlayerScreen() {
 
       <aside className="an-player-side">
         <div className="an-side-tabs" role="tablist" aria-label="播放器侧栏">
-          <button
+          <Btn
+            kind="bare"
             type="button"
             role="tab"
             aria-selected={tab === 'episodes'}
@@ -970,8 +999,9 @@ export function PlayerScreen() {
             onClick={() => setTab('episodes')}
           >
             选集
-          </button>
-          <button
+          </Btn>
+          <Btn
+            kind="bare"
             type="button"
             role="tab"
             aria-selected={tab === 'info'}
@@ -979,8 +1009,9 @@ export function PlayerScreen() {
             onClick={() => setTab('info')}
           >
             剧集信息
-          </button>
-          <button
+          </Btn>
+          <Btn
+            kind="bare"
             type="button"
             role="tab"
             aria-selected={tab === 'comments'}
@@ -988,7 +1019,7 @@ export function PlayerScreen() {
             onClick={() => setTab('comments')}
           >
             评论
-          </button>
+          </Btn>
         </div>
 
         <div className="an-side-body an-scroll">
@@ -1002,9 +1033,9 @@ export function PlayerScreen() {
                   : '在线源 / BT / 媒体服务器随 M3、M5 接入'}
               </span>
             </span>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setView('source')}>
+            <Btn kind="bare" type="button" className="btn btn-ghost btn-sm" onClick={() => setView('source')}>
               切换
-            </button>
+            </Btn>
           </div>
 
           {tab === 'episodes' ? (

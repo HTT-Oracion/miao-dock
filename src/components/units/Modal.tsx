@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
+import { Btn } from '@components/units/Btn';
 
 /**
  * 模态弹层（通用单元）。
@@ -79,10 +80,10 @@ export function Modal({
               {title ? <h2>{title}</h2> : null}
               {subtitle ? <p>{subtitle}</p> : null}
             </div>
-            <button type="button" className="icon-btn" aria-label="关闭" onClick={onClose} disabled={busy}>
+            <Btn kind="bare" type="button" className="icon-btn" aria-label="关闭" onClick={onClose} disabled={busy}>
               {/* 18 = 设计稿 `.ico` 默认档（`.icon-btn` 34×34 里的那颗）*/}
               <X size={18} />
-            </button>
+            </Btn>
           </header>
         ) : null}
         <div className={bodyCls}>{children}</div>

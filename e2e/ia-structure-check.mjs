@@ -479,7 +479,7 @@ const judgeDownloadEntry = (src) => {
   //    （同类坑在 settings-media / launch-gate 的变异里都记过）。
   const eol = SIDEBAR_TSX.includes('\r\n') ? '\r\n' : '\n';
   const anchor = [
-    '        <button',
+    '        <Btn kind="bare"',
     '          type="button"',
     "          className={screen === 'settings' ? 'nav-item is-global is-active' : 'nav-item is-global'}",
   ].join(eol);

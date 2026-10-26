@@ -210,7 +210,8 @@ export function SettingsScreen({
           })}
 
           {/* 第 6 组：番剧设置（数据住在 anime 域，渲染也由该域负责） */}
-          <button
+          <Btn
+            kind="bare"
             type="button"
             className={isAnime ? 'set-nav-item is-active' : 'set-nav-item'}
             style={{
@@ -225,7 +226,7 @@ export function SettingsScreen({
             </span>
             <span className="set-nav-label">番剧设置</span>
             <span className="set-nav-count">{ANIME_SETTING_TOTAL}</span>
-          </button>
+          </Btn>
         </nav>
 
         <div className="settings-main">

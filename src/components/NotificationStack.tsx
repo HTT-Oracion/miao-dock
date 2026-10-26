@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { MIAO_MOTION } from '@/themes/tokens';
 import { toastBus, useToastList } from '@/stores/toastBus';
 import type { BusToast, ToastKind } from '@/stores/toastBus';
+import { Btn } from '@components/units';
 
 /**
  * 通知堆叠（topRight）—— 轻提示的**唯一**渲染层（2026-10-11 改版）。
@@ -101,9 +102,9 @@ function NotificationCard({
         {toast.detail ? <span>{toast.detail}</span> : null}
       </span>
       <span className="ntf-close">
-        <button type="button" className="ui-cbtn" title="关闭通知" aria-label="关闭通知" onClick={close}>
+        <Btn kind="bare" type="button" className="ui-cbtn" title="关闭通知" aria-label="关闭通知" onClick={close}>
           <X size={13} />
-        </button>
+        </Btn>
       </span>
     </div>
   );

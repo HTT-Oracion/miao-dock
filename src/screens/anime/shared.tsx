@@ -8,6 +8,7 @@ import type { AnimeEpisode, AnimeSubject, CollectionType, SyncState } from '@ani
 import { COLLECTION_LABELS } from '@anime/types';
 import { displayTitle, fmtClock, progressOf, progressPct } from '@anime/convert';
 import { useAnimeStore } from '@anime/store';
+import { Btn } from '@components/units';
 
 /** 封面：有图用图，没图用标题首字 + 稳定色块（离线也不空白） */
 export function Cover({ subject, size = 'md' }: { subject: AnimeSubject; size?: 'sm' | 'md' | 'lg' }) {
@@ -80,14 +81,14 @@ export function SubjectCard({
   const pct = progressPct(watched, total);
   return (
     <article className="an-card">
-      <button type="button" className="an-card-cover" onClick={onOpen} title="查看条目">
+      <Btn kind="bare" type="button" className="an-card-cover" onClick={onOpen} title="查看条目">
         <Cover subject={subject} size="md" />
         {subject.rating ? <span className="an-card-score">{subject.rating.toFixed(1)}</span> : null}
-      </button>
+      </Btn>
       <div className="an-card-body">
-        <button type="button" className="an-card-name" onClick={onOpen} title={title}>
+        <Btn kind="bare" type="button" className="an-card-name" onClick={onOpen} title={title}>
           {title}
-        </button>
+        </Btn>
         <div className="an-card-meta">
           <span className={subject.airing?.state === 'airing' ? 'an-dot is-live' : 'an-dot'} />
           {subject.airing?.state === 'airing' ? `连载至第 ${subject.airing.latest ?? watched} 话` : '已完结'}
@@ -110,9 +111,9 @@ export function SubjectCard({
           </div>
           <ProgressBar value={pct} tone={pct >= 100 ? 'ok' : undefined} />
         </div>
-        <button type="button" className="an-card-play" onClick={onContinue}>
+        <Btn kind="bare" type="button" className="an-card-play" onClick={onContinue}>
           {watched > 0 && watched < (total || Number.MAX_SAFE_INTEGER) ? `继续观看 第 ${watched + 1} 话` : '开始观看'}
-        </button>
+        </Btn>
       </div>
     </article>
   );
@@ -131,7 +132,7 @@ export function EpisodeRow({
   const pct = episode.durationMs > 0 ? Math.round((episode.positionMs / episode.durationMs) * 100) : 0;
   return (
     <div className={episode.watched ? 'an-ep is-done' : 'an-ep'}>
-      <button type="button" className="an-ep-main" onClick={onPlay} title={`播放第 ${episode.index} 话`}>
+      <Btn kind="bare" type="button" className="an-ep-main" onClick={onPlay} title={`播放第 ${episode.index} 话`}>
         <span className="an-ep-no">{Number.isInteger(episode.index) ? episode.index : episode.index.toFixed(1)}</span>
         <span className="an-ep-tx">
           <b>{episode.title}</b>
@@ -141,16 +142,17 @@ export function EpisodeRow({
           </span>
           {pct > 0 && !episode.watched ? <ProgressBar value={pct} /> : null}
         </span>
-      </button>
+      </Btn>
       {onToggleWatched ? (
-        <button
+        <Btn
+          kind="bare"
           type="button"
           className="an-ep-ck"
           onClick={onToggleWatched}
           title={episode.watched ? '取消看完' : '标记看完'}
         >
           {episode.watched ? '✓' : '○'}
-        </button>
+        </Btn>
       ) : null}
     </div>
   );

@@ -1,3 +1,4 @@
+import { Btn } from '@components/units/Btn';
 /**
  * 预设色点组（通用单元）：从一组候选色里挑一个。
  *
@@ -31,7 +32,8 @@ export function Swatches({
         const on = c.toLowerCase() === cur;
         const name = names?.[c] ?? c;
         return (
-          <button
+          <Btn
+            kind="bare"
             key={c}
             type="button"
             className={on ? 'ui-swatch is-on' : 'ui-swatch'}

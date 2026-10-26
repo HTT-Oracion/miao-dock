@@ -59,7 +59,8 @@ export function AnimeSettingsSection() {
         return (
           <div className="an-seg" role="group" aria-label={label}>
             {c.options.map((o) => (
-              <button
+              <Btn
+                kind="bare"
                 key={String(o.value)}
                 type="button"
                 className={prefs[c.key] === o.value ? 'an-seg-btn is-on' : 'an-seg-btn'}
@@ -71,7 +72,7 @@ export function AnimeSettingsSection() {
                 }}
               >
                 {o.label}
-              </button>
+              </Btn>
             ))}
           </div>
         );

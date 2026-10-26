@@ -5,7 +5,7 @@
  * 不在组件里另写一份 —— 否则会出现"tab 写「溜了」、卡片徽标写「抛弃」"。
  */
 import { useMemo } from 'react';
-import { Empty, Skeleton } from '@components/units';
+import { Empty, Skeleton, Btn } from '@components/units';
 import { useAnimeStore } from '@anime/store';
 import { byCollection, collectionCounts } from '@anime/selectors';
 import { COLLECTION_LABELS, COLLECTION_ORDER } from '@anime/types';
@@ -43,7 +43,8 @@ export function CollectionScreen() {
     <div className="an-screen an-pad">
       <div className="an-tabs" role="tablist" aria-label="追番状态">
         {COLLECTION_ORDER.map((c) => (
-          <button
+          <Btn
+            kind="bare"
             key={c}
             type="button"
             role="tab"
@@ -53,7 +54,7 @@ export function CollectionScreen() {
           >
             {COLLECTION_LABELS[c]}
             <span className="an-tab-n">{counts[c]}</span>
-          </button>
+          </Btn>
         ))}
       </div>
 
@@ -64,9 +65,9 @@ export function CollectionScreen() {
           </b>
           <div className="an-empty-sub">去探索页翻两下，遇到对味的就点颗心，攒起来慢慢补。</div>
           <div className="an-empty-acts">
-            <button type="button" className="btn btn-primary btn-sm" onClick={() => setView('explore')}>
+            <Btn kind="bare" type="button" className="btn btn-primary btn-sm" onClick={() => setView('explore')}>
               去探索
-            </button>
+            </Btn>
           </div>
         </Empty>
       ) : (

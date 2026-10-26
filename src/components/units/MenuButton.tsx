@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
+import { Btn } from '@components/units/Btn';
 
 /**
  * 点击展开的命令菜单（通用单元）：触发按钮 + 弹层。
@@ -108,7 +109,8 @@ export function MenuButton({
       {trigger ? (
         trigger({ open, toggle })
       ) : (
-        <button
+        <Btn
+          kind="bare"
           type="button"
           ref={btnRef}
           className={cls}
@@ -122,7 +124,7 @@ export function MenuButton({
           {label}
           {badge ? <span className="ui-menu-badge">{badge}</span> : null}
           <ChevronDown size={13} />
-        </button>
+        </Btn>
       )}
       {open && pos
         ? createPortal(
@@ -160,7 +162,8 @@ export function MenuItem({
   onClick: () => void;
 }) {
   return (
-    <button
+    <Btn
+      kind="bare"
       type="button"
       className={danger ? 'ui-menu-item is-danger' : 'ui-menu-item'}
       role="menuitem"
@@ -173,6 +176,6 @@ export function MenuItem({
         {label}
         {sub ? <span className="ui-menu-sub">{sub}</span> : null}
       </span>
-    </button>
+    </Btn>
   );
 }

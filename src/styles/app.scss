@@ -1096,8 +1096,13 @@ html[data-theme='dark'] .nav-item:hover {
 }
 
 html[data-theme='dark'] .btn-primary {
-  /* 深色主题下主色是浅雾蓝，实心按钮上的文字要用「主色压暗」而不是另起一个写死的深色 */
-  color: color-mix(in srgb, var(--miao-primary) 22%, #000);
+  /*
+   * 🔴 文字颜色**固定白色**（2026-10-26 用户要求），不在暗色主题里另算深色。
+   *    此前这里写的是「主色压暗」= 深字压在浅雾蓝底上，读起来像"禁用"，
+   *    而 `primary` 这一档的语义恰恰是"推进"。
+   *    只保留描边的提亮（深色主题下白字需要更实的边）。
+   */
+  color: #fff;
   border-color: color-mix(in srgb, var(--miao-primary) 72%, #fff);
 }
 

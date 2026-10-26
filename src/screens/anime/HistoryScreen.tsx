@@ -8,7 +8,7 @@
  */
 import { useMemo, useState } from 'react';
 import { Play } from 'lucide-react';
-import { Empty } from '@components/units';
+import { Empty, Btn } from '@components/units';
 import { useAnimeStore } from '@anime/store';
 import { historyFrom } from '@anime/selectors';
 import { fmtClock } from '@anime/convert';
@@ -52,27 +52,30 @@ export function HistoryScreen() {
         </div>
 
         <div className="an-filters">
-          <button
+          <Btn
+            kind="bare"
             type="button"
             className={filter === 'all' ? 'an-fchip is-on' : 'an-fchip'}
             onClick={() => setFilter('all')}
           >
             全部 {rows.length}
-          </button>
-          <button
+          </Btn>
+          <Btn
+            kind="bare"
             type="button"
             className={filter === 'pending' ? 'an-fchip is-on' : 'an-fchip'}
             onClick={() => setFilter('pending')}
           >
             待同步 {pendingCount}
-          </button>
-          <button
+          </Btn>
+          <Btn
+            kind="bare"
             type="button"
             className={filter === 'conflict' ? 'an-fchip is-on' : 'an-fchip'}
             onClick={() => setFilter('conflict')}
           >
             待合并 {conflictCount}
-          </button>
+          </Btn>
         </div>
 
         {list.length === 0 ? (
@@ -90,9 +93,15 @@ export function HistoryScreen() {
                 : 'synced';
             return (
               <div key={episode.id} className={state === 'conflict' ? 'an-hist-row is-dashed' : 'an-hist-row'}>
-                <button type="button" className="an-hist-cover" onClick={() => select(subject.id)} title="查看条目">
+                <Btn
+                  kind="bare"
+                  type="button"
+                  className="an-hist-cover"
+                  onClick={() => select(subject.id)}
+                  title="查看条目"
+                >
                   <Cover subject={subject} size="sm" />
-                </button>
+                </Btn>
                 <span className="an-hist-tx">
                   <b>{subject.title}</b>
                   <span className="an-hist-ep">
@@ -102,13 +111,14 @@ export function HistoryScreen() {
                   <ProgressBar value={pct} tone={episode.watched ? 'ok' : undefined} />
                 </span>
                 <span className="an-hist-rt">
-                  <button
+                  <Btn
+                    kind="bare"
                     type="button"
                     className="btn btn-primary btn-sm"
                     onClick={() => openPlayer(subject.id, episode.id)}
                   >
                     <Play size={12} /> 继续看
-                  </button>
+                  </Btn>
                 </span>
               </div>
             );

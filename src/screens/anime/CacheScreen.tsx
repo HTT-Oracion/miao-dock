@@ -80,7 +80,8 @@ export function CacheScreen() {
 
       <div className="an-filters">
         {FILTERS.map((f) => (
-          <button
+          <Btn
+            kind="bare"
             key={f.id}
             type="button"
             className={filter === f.id ? 'an-fchip is-on' : 'an-fchip'}
@@ -88,7 +89,7 @@ export function CacheScreen() {
           >
             {f.label}
             {f.id === 'all' ? ` ${cache.length}` : ''}
-          </button>
+          </Btn>
         ))}
       </div>
 

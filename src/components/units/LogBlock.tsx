@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
-import { Btn } from '@components/units/atoms';
+import { Btn } from '@components/units/Btn';
 
 /**
  * 日志块（通用单元）—— 深底等宽正文 + **悬停浮现的复制按钮**。
@@ -82,9 +82,10 @@ export function LogBlock({
   return (
     <div className={['log-block', `is-${variant}`, className ?? ''].filter(Boolean).join(' ')}>
       {/*
-        复制按钮：`kind="bare"` —— 它只借单元保证"是 <button type="button">、有 disabled/title 语义"，
-        外观全部由 `.log-copy` 决定（这枚按钮是日志块右上角的一颗 24×24 半透明方块，
-        与 `.btn` 的任何一档都不一样）。`ariaLabel` 必填：可见内容只有图标。
+        复制按钮：`kind="bare"` —— 它只借单元保证"是个 button、有 disabled/title 语义、
+        可挂 ref"，外观全部由 `.log-copy` 决定（这枚按钮是日志块右上角的一颗
+        24×24 半透明方块，与 `.btn` 的任何一档都不一样）。
+        `ariaLabel` 必填：可见内容只有图标。
       */}
       <Btn
         kind="bare"

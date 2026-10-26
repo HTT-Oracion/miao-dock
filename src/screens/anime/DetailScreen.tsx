@@ -67,9 +67,14 @@ export function DetailScreen() {
         <div className="an-detail-cover">
           <Cover subject={subject} size="lg" />
         </div>
-        <button type="button" className="btn btn-primary an-detail-play" onClick={() => openPlayer(subject.id)}>
+        <Btn
+          kind="bare"
+          type="button"
+          className="btn btn-primary an-detail-play"
+          onClick={() => openPlayer(subject.id)}
+        >
           <Play size={15} /> {watched > 0 ? `继续观看 第 ${watched + 1} 话` : '开始观看'}
-        </button>
+        </Btn>
         <Btn
           kind="ghost"
           size="sm"
@@ -87,14 +92,15 @@ export function DetailScreen() {
 
         <div className="an-detail-coll">
           {COLLECTION_ORDER.map((c) => (
-            <button
+            <Btn
+              kind="bare"
               key={c}
               type="button"
               className={subject.collection === c ? 'an-chip is-hot' : 'an-chip is-plain'}
               onClick={() => void setCollection(subject.id, subject.collection === c ? null : c)}
             >
               {COLLECTION_LABELS[c]}
-            </button>
+            </Btn>
           ))}
         </div>
 
@@ -136,9 +142,9 @@ export function DetailScreen() {
 
       <div className="an-detail-main an-scroll">
         <div className="an-detail-top">
-          <button type="button" className="an-back" onClick={() => setView('collection')} title="返回追番">
+          <Btn kind="bare" type="button" className="an-back" onClick={() => setView('collection')} title="返回追番">
             <ArrowLeft size={15} /> 返回
-          </button>
+          </Btn>
           <h2>{displayTitle(subject, titleMode)}</h2>
           {subject.titleOriginal && subject.titleOriginal !== subject.title ? (
             <div className="an-detail-sub">{subject.titleOriginal}</div>
@@ -158,9 +164,9 @@ export function DetailScreen() {
               title="选择要补全的条目"
               count={metaCandidates.list.length}
               action={
-                <button type="button" className="an-link" onClick={clearMetaCandidates}>
+                <Btn kind="bare" type="button" className="an-link" onClick={clearMetaCandidates}>
                   取消
-                </button>
+                </Btn>
               }
             />
             <div className="an-cand-list">
@@ -255,9 +261,14 @@ export function DetailScreen() {
             count={extra?.characters.length}
             action={
               subject.bgmId ? (
-                <button type="button" className="an-link" onClick={() => void loadDetailExtra(subject.bgmId as number)}>
+                <Btn
+                  kind="bare"
+                  type="button"
+                  className="an-link"
+                  onClick={() => void loadDetailExtra(subject.bgmId as number)}
+                >
                   刷新
-                </button>
+                </Btn>
               ) : null
             }
           />
@@ -322,7 +333,8 @@ export function DetailScreen() {
               {extra.related.map((r) => {
                 const local = subjects.find((x) => x.bgmId === r.bgmId);
                 return (
-                  <button
+                  <Btn
+                    kind="bare"
                     key={r.bgmId}
                     type="button"
                     className="an-cand an-cand-mini"
@@ -348,7 +360,7 @@ export function DetailScreen() {
                       <b>{r.nameCn || r.name}</b>
                       <span>{r.relation || '关联'}</span>
                     </span>
-                  </button>
+                  </Btn>
                 );
               })}
             </div>

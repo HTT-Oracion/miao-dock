@@ -131,7 +131,8 @@ export function AccountScreen() {
                 <p className="an-note">登录后收藏与进度可以跨设备同步；不登录也能正常用，只是数据只在这台机器上。</p>
                 <div className="an-login-grid">
                   {LOGIN_WAYS.map((w) => (
-                    <button
+                    <Btn
+                      kind="bare"
                       key={w.id}
                       type="button"
                       className={mode === w.id ? 'an-login-way is-on' : 'an-login-way'}
@@ -143,7 +144,7 @@ export function AccountScreen() {
                       <w.icon size={20} />
                       <b>{w.label}</b>
                       <span>{w.hint}</span>
-                    </button>
+                    </Btn>
                   ))}
                 </div>
 

@@ -47,7 +47,13 @@ function CandidateCard({
     .join(' · ');
   return (
     <article className="an-card an-cand">
-      <button type="button" className="an-card-cover" onClick={onOpen} title={inLibrary ? '查看条目' : '加入番剧库'}>
+      <Btn
+        kind="bare"
+        type="button"
+        className="an-card-cover"
+        onClick={onOpen}
+        title={inLibrary ? '查看条目' : '加入番剧库'}
+      >
         {item.cover && !broken ? (
           <img src={item.cover} alt="" loading="lazy" onError={() => setBroken(true)} />
         ) : (
@@ -56,18 +62,18 @@ function CandidateCard({
           </span>
         )}
         {item.rating ? <span className="an-card-score">{item.rating.toFixed(1)}</span> : null}
-      </button>
+      </Btn>
       <div className="an-card-body">
-        <button type="button" className="an-card-name" onClick={onOpen} title={title}>
+        <Btn kind="bare" type="button" className="an-card-name" onClick={onOpen} title={title}>
           {title}
-        </button>
+        </Btn>
         <div className="an-card-meta">
           <span className={inLibrary ? 'an-dot is-live' : 'an-dot'} />
           <span className="an-note">{inLibrary ? '已在库' : '未入库'}</span>
         </div>
         {meta ? <div className="an-note">{meta}</div> : null}
         <div className="an-card-prog">
-          <button type="button" className="an-card-play" onClick={onOpen}>
+          <Btn kind="bare" type="button" className="an-card-play" onClick={onOpen}>
             {inLibrary ? (
               '查看'
             ) : (
@@ -75,7 +81,7 @@ function CandidateCard({
                 <Plus size={12} /> 加入追番
               </>
             )}
-          </button>
+          </Btn>
         </div>
       </div>
     </article>
@@ -221,7 +227,8 @@ export function DiscoverScreen() {
     <div className="an-screen an-pad">
       <div className="an-discover-hd">
         <div className="an-modes" role="tablist" aria-label="入口模式">
-          <button
+          <Btn
+            kind="bare"
             type="button"
             role="tab"
             aria-selected={mode === 'explore'}
@@ -229,8 +236,9 @@ export function DiscoverScreen() {
             onClick={() => setMode('explore')}
           >
             探索
-          </button>
-          <button
+          </Btn>
+          <Btn
+            kind="bare"
             type="button"
             role="tab"
             aria-selected={mode === 'search'}
@@ -238,7 +246,7 @@ export function DiscoverScreen() {
             onClick={() => setMode('search')}
           >
             搜索
-          </button>
+          </Btn>
         </div>
 
         <label className="an-search">
@@ -250,9 +258,9 @@ export function DiscoverScreen() {
             onFocus={() => setMode('search')}
           />
           {query ? (
-            <button type="button" onClick={() => setQuery('')} title="清空">
+            <Btn kind="bare" type="button" onClick={() => setQuery('')} title="清空">
               ✕
-            </button>
+            </Btn>
           ) : null}
         </label>
 
@@ -343,77 +351,84 @@ function FilterBar({
     <>
       <div className="an-chips">
         <span className="an-note">年份</span>
-        <button
+        <Btn
+          kind="bare"
           type="button"
           className={filters.year == null ? 'an-chip is-ok' : 'an-chip is-plain'}
           onClick={() => setFilter('year', null)}
         >
           全部
-        </button>
+        </Btn>
         {years.map((y) => (
-          <button
+          <Btn
+            kind="bare"
             key={y}
             type="button"
             className={filters.year === y ? 'an-chip is-ok' : 'an-chip is-plain'}
             onClick={() => setFilter('year', filters.year === y ? null : y)}
           >
             {y}
-          </button>
+          </Btn>
         ))}
         <span className="an-note">季度</span>
-        <button
+        <Btn
+          kind="bare"
           type="button"
           className={filters.quarter == null ? 'an-chip is-ok' : 'an-chip is-plain'}
           onClick={() => setFilter('quarter', null)}
         >
           全年
-        </button>
+        </Btn>
         {QUARTERS.map((q) => (
-          <button
+          <Btn
+            kind="bare"
             key={q}
             type="button"
             className={filters.quarter === q ? 'an-chip is-ok' : 'an-chip is-plain'}
             onClick={() => setFilter('quarter', filters.quarter === q ? null : q)}
           >
             Q{q}
-          </button>
+          </Btn>
         ))}
         <span className="an-note">排序</span>
         {SORTS.map((o) => (
-          <button
+          <Btn
+            kind="bare"
             key={o.key}
             type="button"
             className={filters.sort === o.key ? 'an-chip is-ok' : 'an-chip is-plain'}
             onClick={() => setFilter('sort', o.key)}
           >
             {o.label}
-          </button>
+          </Btn>
         ))}
         <span className="an-sp" />
-        <button type="button" className="an-chip is-plain" onClick={resetFilters}>
+        <Btn kind="bare" type="button" className="an-chip is-plain" onClick={resetFilters}>
           清筛选
-        </button>
-        <button
+        </Btn>
+        <Btn
+          kind="bare"
           type="button"
           className="an-chip is-plain"
           title="切换结果布局"
           onClick={() => setFilter('layout', filters.layout === 'grid' ? 'list' : 'grid')}
         >
           {filters.layout === 'grid' ? '列表' : '网格'}
-        </button>
+        </Btn>
       </div>
       {topTags.length ? (
         <div className="an-chips">
           <span className="an-note">标签</span>
           {topTags.map((t) => (
-            <button
+            <Btn
+              kind="bare"
               key={t}
               type="button"
               className={filters.tag === t ? 'an-chip is-ok' : 'an-chip is-plain'}
               onClick={() => setFilter('tag', filters.tag === t ? null : t)}
             >
               {t}
-            </button>
+            </Btn>
           ))}
         </div>
       ) : null}
@@ -643,9 +658,9 @@ function ExploreBody({
         count={resume.length}
         action={
           resume.length ? (
-            <button type="button" className="an-link" onClick={onGoHistory}>
+            <Btn kind="bare" type="button" className="an-link" onClick={onGoHistory}>
               全部历史
-            </button>
+            </Btn>
           ) : null
         }
       />
@@ -656,7 +671,8 @@ function ExploreBody({
           {resume.map(({ subject, episode }) => {
             const pct = episode.durationMs ? Math.round((episode.positionMs / episode.durationMs) * 100) : 0;
             return (
-              <button
+              <Btn
+                kind="bare"
                 key={episode.id}
                 type="button"
                 className="an-resume-card"
@@ -670,7 +686,7 @@ function ExploreBody({
                   </span>
                   <ProgressBar value={pct} />
                 </span>
-              </button>
+              </Btn>
             );
           })}
         </div>
@@ -689,9 +705,9 @@ function ExploreBody({
         title="新番时间表"
         count={[...airingByDay.values()].reduce((n, list) => n + list.length, 0)}
         action={
-          <button type="button" className="an-link" onClick={onRefreshExplore}>
+          <Btn kind="bare" type="button" className="an-link" onClick={onRefreshExplore}>
             {exploreLoading ? '刷新中…' : '刷新'}
-          </button>
+          </Btn>
         }
       />
       {exploreLoading && airingByDay.size === 0 ? (
@@ -709,7 +725,8 @@ function ExploreBody({
                   <div className="an-week-none">—</div>
                 ) : (
                   list.map((c) => (
-                    <button
+                    <Btn
+                      kind="bare"
                       key={candidateKey(c)}
                       type="button"
                       className={localByBgm.has(candidateKey(c)) ? 'an-week-item is-in' : 'an-week-item'}
@@ -721,7 +738,7 @@ function ExploreBody({
                       title={localByBgm.has(candidateKey(c)) ? '已在库，打开条目' : '加入追番'}
                     >
                       {c.nameCn || c.name}
-                    </button>
+                    </Btn>
                   ))
                 )}
               </div>

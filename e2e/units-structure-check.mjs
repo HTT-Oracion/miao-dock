@@ -83,6 +83,7 @@ const F = {
  *  Segmented 是 2026-10-23 收敛设计稿 `.seg`（设置页两档选择 + 桌面歌词行数各写过一套，D-353） */
 const MANIFEST = [
   'atoms.tsx',
+  'Btn.tsx',
   'Skeleton.tsx',
   'ErrorState.tsx',
   'Select.tsx',

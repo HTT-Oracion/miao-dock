@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Btn } from '@components/units/atoms';
+import { Btn } from '@components/units/Btn';
 
 /** 一个分段选项：`value` 是写回 store 的值，`label` 是按钮上显示的字。 */
 export type SegOption<T extends string | number> = { value: T; label: ReactNode };

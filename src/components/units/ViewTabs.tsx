@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Btn } from '@components/units/atoms';
+import { Btn } from '@components/units/Btn';
 
 /** 一个视图页签：`id` 是写回的值，`label` 是页签上的字。 */
 export interface ViewTabItem<T extends string> {

@@ -18,7 +18,8 @@
  * - 只在单一屏内成立的排版件（设置页的 `Row` / `SubTitle` / `PendingRow`）→ 留在该屏目录
  * - 音乐语义的行（`SongRow` / `Cover`）→ 留在 `screens/music/shared.tsx`
  */
-export { Badge, Btn, Dot, MagicCircle, Pill } from '@components/units/atoms';
+export { Badge, Dot, MagicCircle, Pill } from '@components/units/atoms';
+export { Btn, type BtnKind, type BtnOwnProps, type BtnProps } from '@components/units/Btn';
 export { ContextMenu, MenuSeparator } from '@components/units/ContextMenu';
 export { ColorPicker } from '@components/units/ColorPicker';
 export { Empty } from '@components/units/Empty';

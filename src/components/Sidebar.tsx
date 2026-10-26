@@ -141,7 +141,8 @@ export function Sidebar({
          * 避免"鼠标移开后浮层还挂着"的第二份真相。
          */}
         <div className="nav-wrap">
-          <button
+          <Btn
+            kind="bare"
             type="button"
             className={screen === 'anime' ? 'nav-item is-app is-active' : 'nav-item is-app'}
             style={{ width: appItem.w, height: appItem.h }}
@@ -154,7 +155,7 @@ export function Sidebar({
               <Clapperboard size={20} />
             </i>
             {labels ? <span className="nav-label">{APP_LABEL.anime}</span> : null}
-          </button>
+          </Btn>
 
           <div className="nav-pop" role="menu" aria-label="番剧导航">
             <div className="nav-pop-hd">
@@ -169,7 +170,8 @@ export function Sidebar({
                 { view: 'history', label: '播放历史', hint: '续播位置 · 同步状态', Icon: Clock },
               ] as { view: AnimeView; label: string; hint: string; Icon: typeof Search }[]
             ).map(({ view, label, hint, Icon }) => (
-              <button
+              <Btn
+                kind="bare"
                 key={view}
                 type="button"
                 role="menuitem"
@@ -183,10 +185,11 @@ export function Sidebar({
                   <b>{label}</b>
                   <span>{hint}</span>
                 </span>
-              </button>
+              </Btn>
             ))}
             <div className="nav-pop-sep" />
-            <button
+            <Btn
+              kind="bare"
               type="button"
               role="menuitem"
               className={screen === 'anime' && animeView === 'states' ? 'nav-pop-item is-on' : 'nav-pop-item'}
@@ -199,7 +202,7 @@ export function Sidebar({
                 <b>三态与示例</b>
                 <span>骨架 / 空态 / 错误态</span>
               </span>
-            </button>
+            </Btn>
           </div>
         </div>
       </div>
@@ -220,7 +223,8 @@ export function Sidebar({
        */}
       <div className="sidebar-global">
         {downloadEntry !== 'hidden' ? (
-          <button
+          <Btn
+            kind="bare"
             type="button"
             className="nav-item is-global is-download"
             /*
@@ -235,14 +239,15 @@ export function Sidebar({
             onClick={onOpenDownload}
           >
             <i className="nav-ico">{DOWNLOAD_META[downloadEntry].icon()}</i>
-          </button>
+          </Btn>
         ) : null}
 
         {/*
          * 全局层设置：纯图标，所以 `title` 不是锦上添花而是唯一的可发现性线索；
          * 但 `title` 单独兜不住无障碍，故 `aria-label` 给名称、`title` 给悬停提示。
          */}
-        <button
+        <Btn
+          kind="bare"
           type="button"
           className={screen === 'settings' ? 'nav-item is-global is-active' : 'nav-item is-global'}
           style={{ width: SIDEBAR.globalItem.w, height: SIDEBAR.globalItem.h }}
@@ -254,7 +259,7 @@ export function Sidebar({
           <i className="nav-ico">
             <Settings size={20} />
           </i>
-        </button>
+        </Btn>
       </div>
     </nav>
   );
