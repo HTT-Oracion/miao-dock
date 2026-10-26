@@ -1938,12 +1938,29 @@
 
 /* ================================================================ X-D2 原文 / 译文对照 */
 
+/*
+ * 对照页（设计稿 `.compare`）：**整屏覆盖** `position: fixed; inset: 0`。
+ * 底色是页面板底（设计稿 `theme.css:462` 的 `background: var(--bg)`）。
+ *
+ * 🔴 必须 fixed，不能只写 `height: 100%`：它渲染在 `.content` 里，而 `.content`
+ *    有 `padding: 14px 22px 18px` ⇒ 100% 只到 630（窗口 780），上下各留一条 14/18 的缝，
+ *    整屏的对照页看起来像"卡片"而不是"进入了另一屏"。
+ * ⚠️ 本屏祖先目前**没有** `transform`/`filter`（那会把 fixed 的包含块换成祖先，
+ *    见 `units/Modal.tsx` 文件头的同类坑）；若日后给 `.content` 或 `.translate-view`
+ *    加入场动画的 `transform`，这里会立刻退回"只有内容区大小"，届时改回 `100%` 并在
+ *    屏装配件里让 `.content` 去掉内边距。
+ *
+ * 三段：`.compare-head`(58) / `.compare-panes`(1fr) / `.compare-foot`(36)；
+ * 段间不加 gap —— 分隔由两段的 1px 边线表达，再叠 gap 会出现双线夹缝。
+ */
 .compare {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  height: 100%;
-  min-height: 0;
+  gap: 0;
+  background: var(--miao-bg);
 }
 /*
  * 对照页头部（设计稿 `.cmp-head`）：**平条**不是卡片 —— 58 高 + 一条下分隔线。
@@ -2015,11 +2032,14 @@
   font-weight: 400;
   color: var(--miao-muted);
 }
+/* 设计稿 `.cmp-panes`：`grid 1fr 1fr` / gap 12 / padding 14px 18px */
 .compare-panes {
   flex: 1;
   min-height: 0;
-  display: flex;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 14px 18px;
 }
 .pane {
   flex: 1;
