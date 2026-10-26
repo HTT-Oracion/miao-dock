@@ -478,15 +478,27 @@ const judgeDownloadEntry = (src) => {
   // 🔴 按文件实际 EOL 拼锚点：本仓文件是 CRLF，手写 `\n` 会找不到边界
   //    （同类坑在 settings-media / launch-gate 的变异里都记过）。
   const eol = SIDEBAR_TSX.includes('\r\n') ? '\r\n' : '\n';
-  const anchor = [
-    '        <Btn kind="bare"',
-    '          type="button"',
-    "          className={screen === 'settings' ? 'nav-item is-global is-active' : 'nav-item is-global'}",
-  ].join(eol);
-  const injected = ['      <div className="sidebar-status">{stateView(\'running\').text}</div>', anchor].join(eol);
+  /*
+   * 🔴 不写死整段标签文本（2026-10-26 改）：`<Btn kind="bare"` 一旦被 prettier
+   *    按行宽拆成三行，写死三行的锚点就静默失配 ⇒ 整条反证变成"无法反证"。
+   *    改成**按语义定位**：先找「设置按钮的 className 行」，再向上回溯到最近的
+   *    `<Btn` 起始行，在那之前插入状态点。格式化怎么拆行都不影响。
+   */
+  const lines = SIDEBAR_TSX.split(eol);
+  const clsLine = lines.findIndex((l) => l.includes("screen === 'settings' ? 'nav-item is-global is-active'"));
+  let tagLine = -1;
+  for (let i = clsLine; i >= 0; i--) {
+    if (lines[i].trim().startsWith('<Btn')) {
+      tagLine = i;
+      break;
+    }
+  }
+
   const fileUrl = new URL('../src/components/Sidebar.tsx', import.meta.url);
-  if (SIDEBAR_TSX.includes(anchor)) {
-    writeFileSync(fileUrl, SIDEBAR_TSX.replace(anchor, injected));
+  if (clsLine > 0 && tagLine > 0) {
+    const mutated = [...lines];
+    mutated.splice(tagLine, 0, '      <div className="sidebar-status">{stateView(\'running\').text}</div>');
+    writeFileSync(fileUrl, mutated.join(eol));
     const j = judgeProductSidebar(readFileSync(fileUrl, 'utf8'));
     console.log('🔴 反证 · 产品镜像：把服务状态点加回侧栏');
     ok(j.C8e === false, `C8e 在此破坏下**变红**（实测 ${j.C8e === false ? '红' : '仍绿 ← 假阳性!'}）`);
@@ -494,7 +506,7 @@ const judgeDownloadEntry = (src) => {
     writeFileSync(fileUrl, SIDEBAR_TSX);
     ok(readFileSync(fileUrl, 'utf8') === SIDEBAR_TSX, 'Sidebar.tsx 已按字节还原');
   } else {
-    ok(false, '反证锚点未找到（Sidebar.tsx 的设置按钮写法变了？）—— 本条无法反证');
+    ok(false, '反证锚点未找到（Sidebar.tsx 里找不到设置按钮的 className 行或其 <Btn 起始行）—— 本条无法反证');
   }
   console.log('');
 }

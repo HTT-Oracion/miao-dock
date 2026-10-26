@@ -7,7 +7,7 @@
 // ⚠️ `check:units` 的 ZOOM 组读的是「`LibraryScreen.tsx` + 本文件」的**拼接源码**，
 // 故 `zoomAt` / `onWheel` / `.lightbox-zoom-btn` 这些锚点仍可命中 —— 别把缩放再拆到第三个文件去。
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Copy, RotateCcw, Search, X } from 'lucide-react';
+import { ArrowLeft, Copy, RotateCcw, Search } from 'lucide-react';
 import { Btn, IconButton, MenuButton, MenuItem } from '@components/units';
 import { errorText } from '@/ipc';
 import { toastBus } from '@/stores/toastBus';
@@ -348,51 +348,27 @@ function Lightbox({
 
   return (
     <div className="lightbox" onClick={onClose} role="dialog" aria-modal="true" aria-label="全屏查看">
-      <div className="lightbox-stage" ref={stageRef} onClick={(e) => e.stopPropagation()}>
-        {blob.kind === 'ready' ? (
-          <img
-            src={blob.url}
-            alt={`第 ${seq} 页${label} 全屏`}
-            draggable={false}
-            className={zoomed ? 'is-zoomed' : undefined}
-            style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom / 100})` }}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
-            title={
-              zoomed ? '拖动或双指滑动可调整显示区域 · 点一下隐藏工具栏' : 'Ctrl/⌘ + 滚轮（向上放大）· 点一下隐藏工具栏'
-            }
-          />
-        ) : (
-          <span className="lightbox-msg">{blob.kind === 'loading' ? '加载中…' : '该侧文件缺失'}</span>
-        )}
-      </div>
-
-      {/* 隐藏后留一条极窄的提示带：否则用户不知道还能点回来 */}
-      {barHidden ? <div className="lightbox-hint">点图显示工具栏</div> : null}
-
       {/*
-        工具栏**常驻挂载、只淡出**（设计稿 `.lightbox .lb-head/.lb-foot { transition: opacity … }`）。
-        旧写法是 `{!barHidden ? <bar/> : null}` —— 每次显隐都整块卸载重建：
-        点一下图，工具栏"啪"地消失而不是淡出，回来时也没有过渡。
+        顶部工具带（设计稿 `.lb-head`：58px / 左右 20 / 底部一条 10% 白线）：
+        标题在左、缩放在中、翻页与关闭在右。
+        常驻挂载、只淡出（`is-hidden`）—— 点一下图时工具栏是"淡出"，
+        整块卸载会让它"啪"地消失、回来也没有过渡。
       */}
       <div
         className={barHidden ? 'lightbox-bar is-hidden' : 'lightbox-bar'}
         aria-hidden={barHidden}
         onClick={(e) => e.stopPropagation()}
       >
-        <span className="compare-seq">
-          {/* 主行按设计稿 `.lb-title`：`第 N 页 · 原图|译文`；次行 `.lb-sub` 给书名与页文件名 */}
+        <span className="lb-title">
           <span>
             第 <span className="num">{seq}</span> 页 · {label}
           </span>
-          <span className="muted">
+          <small>
             {title} · {pageFileName(seq)}
-          </span>
+          </small>
         </span>
         {/*
-            缩放控件：− / 百分比 / + 三段。
+            缩放控件：− / 百分比 / + 三段（设计稿 `.lb-zoom`：28 高 / r8）。
             ⚠️ 这条是**不依赖任何手势**的保底路径 —— 触控板捏合在 macOS 上被 WebKit
             自己吃掉成页面缩放，Tauri 没有任何开关能关掉它（wry 的 macOS 后端根本没接
             `zoom_hotkeys_enabled`），所以绝不能把缩放只做成手势。
@@ -429,9 +405,39 @@ function Lightbox({
         </Btn>
       </div>
 
-      <Btn kind="bare" className="lightbox-x" onClick={onClose} ariaLabel="关闭全屏">
-        <X size={18} />
-      </Btn>
+      <div className="lightbox-stage" ref={stageRef} onClick={(e) => e.stopPropagation()}>
+        {blob.kind === 'ready' ? (
+          <img
+            src={blob.url}
+            alt={`第 ${seq} 页${label} 全屏`}
+            draggable={false}
+            className={zoomed ? 'is-zoomed' : undefined}
+            style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom / 100})` }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+            title={
+              zoomed ? '拖动或双指滑动可调整显示区域 · 点一下隐藏工具栏' : 'Ctrl/⌘ + 滚轮（向上放大）· 点一下隐藏工具栏'
+            }
+          />
+        ) : (
+          <span className="lightbox-msg">{blob.kind === 'loading' ? '加载中…' : '该侧文件缺失'}</span>
+        )}
+      </div>
+
+      {/*
+        底部窄带（设计稿 `.lb-foot`：34px）：一行的操作提示。
+        隐藏工具栏时整条一起淡出 —— 但**保留一条极窄的提示**告诉用户还能点回来，
+        所以这里的内容在隐藏态换成「点图显示工具栏」。
+      */}
+      <div
+        className={barHidden ? 'lightbox-foot is-hidden' : 'lightbox-foot'}
+        aria-hidden={barHidden}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {barHidden ? '点图显示工具栏' : '点图隐藏工具栏 · Esc 关闭 · ← → 翻页 · Ctrl/⌘ + 滚轮缩放'}
+      </div>
     </div>
   );
 }

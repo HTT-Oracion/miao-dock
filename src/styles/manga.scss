@@ -2119,16 +2119,14 @@
   z-index: 70;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  /* 收紧外框：省下的纵向空间全给图（工具栏越矮、图越大） */
-  gap: 8px;
-  padding: 12px;
-  /* 遮罩是"浮起的层"，允许玻璃：底色取主题墨色 + 一层模糊，
-     不再写死某一套深紫（旧值在深色主题下与界面脱节） */
-  background: color-mix(in srgb, var(--miao-ink) 86%, transparent);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  /* 三段铺满（头 58 / 舞台 1fr / 脚 34），不再"居中一张卡片"式排布 */
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 0;
+  /* 设计稿 `theme.css:470` 的 `.lightbox { background: rgba(14,22,29,.94) }` —— 深底白字 */
+  background: rgba(14, 22, 29, 0.94);
+  color: #e9e7e1;
   cursor: zoom-out;
   animation: miao-fade-in var(--miao-dur-base) var(--miao-ease-out);
 }
@@ -2184,28 +2182,23 @@
 .lightbox-stage img.is-zoomed:active {
   cursor: grabbing;
 }
-/* 工具栏隐藏后的提示带：极窄、不抢画面，但得让人知道还能点回来 */
-.lightbox-hint {
-  flex: 0 0 auto;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  user-select: none;
-}
-/* 当前缩放比 + −/+ 按钮：与工具栏同底色，避免读起来像另一个层级 */
+/*
+ * 当前缩放比 + −/+ 按钮（设计稿 `.lb-zoom`：28 高 / padding 0 4 / r8 / 10px；
+ * 按钮 `.lb-zoom-btn`：22×22 / r5 / 13px 图标）。
+ * 深色底上用 14% 白描边，与 `.lb-head` 的分隔线同一族色阶。
+ */
 .lightbox-zoom {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  padding: 2px 4px;
-  border-radius: 999px;
+  height: 28px;
+  padding: 0 4px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
   font-family: var(--md-font-numeric);
-  font-size: 12px;
-  color: var(--miao-muted);
-  background: var(--miao-surface-2);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.72);
+  background: transparent;
   /* 控件本身是个复合控件，按钮可点 ⇒ 给默认光标，别让整条都像纯文本 */
   cursor: default;
 }
@@ -2217,13 +2210,13 @@
 .lightbox-zoom-btn {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border: none;
-  border-radius: 50%;
+  border-radius: 5px;
   font-size: 13px;
   line-height: 1;
-  color: var(--miao-ink);
+  color: rgba(255, 255, 255, 0.7);
   background: transparent;
   cursor: pointer;
   transition:
@@ -2231,7 +2224,8 @@
     transform var(--miao-dur-fast) var(--miao-ease-spring);
 }
 .lightbox-zoom-btn:hover:not(:disabled) {
-  background: var(--miao-surface-3);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
 }
 .lightbox-zoom-btn:active:not(:disabled) {
   transform: scale(0.9);
@@ -2246,66 +2240,83 @@
   color: rgba(255, 255, 255, 0.72);
   font-size: 12px;
 }
-/* 底部控制条：作"看得清"的底，而不是半透明浮字；压矮压紧，把纵向空间让给图 */
+/* 顶部工具带（设计稿 `.lb-head`：58 高 / 左右 20 / 底部一条 10% 白线）。
+   它是**三段布局的第一段**（头 / 舞台 / 脚），不再是一枚浮在底部的胶囊 ——
+   浮层胶囊会把舞台让出的空间又吃掉一块，且与设计稿的层级不同。 */
 .lightbox-bar {
+  flex: 0 0 58px;
+  height: 58px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: var(--miao-surface);
-  border: 1px solid var(--miao-line);
-  box-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.6);
+  padding: 0 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
   cursor: default;
   animation: miao-rise-in var(--miao-dur-base) var(--miao-ease-spring);
-  /* 显隐走淡出（设计稿 `.lightbox .lb-foot { transition: opacity var(--dur-base) var(--ease-out) }`）：
-     工具栏常驻挂载，只切透明度与位移 —— 点击图片时是"淡走"，不是"啪一下没了" */
-  transition:
-    opacity var(--miao-dur-base) var(--miao-ease-out),
-    transform var(--miao-dur-base) var(--miao-ease-out);
+  /* 显隐走淡出（设计稿 `.lightbox .lb-head/.lb-foot { transition: opacity var(--dur-base) }`）：
+     工具栏常驻挂载，只切透明度 —— 点击图片时是"淡走"，不是"啪一下没了" */
+  transition: opacity var(--miao-dur-base) var(--miao-ease-out);
 }
 .lightbox-bar.is-hidden {
   opacity: 0;
-  transform: translateY(6px);
   pointer-events: none;
 }
 @keyframes miao-rise-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(-8px);
   }
   to {
     opacity: 1;
     transform: none;
   }
 }
-/* 漫画名过长会把工具栏整条撑宽（看着更"挡"）⇒ 超过 30vw 就省略 */
-.lightbox-bar .compare-seq > span:last-child {
-  max-width: 30vw;
+/* 深色头带里的次级按钮（设计稿 `.lb-tools .btn-ghost`）：
+   透明底 + 16% 白描边 + 72% 白字 —— 沿用全局 ghost 的浅底会在深色条上变成亮块。 */
+.lightbox-bar .btn-ghost {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.lightbox-bar .btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+/* 标题两行（设计稿 `.lb-title` / `.lb-title small`）：主行是页号与侧别，次行是书名与文件名 */
+.lb-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-right: auto;
+  font-size: 12px;
+  color: #e9e7e1;
+}
+.lb-title small {
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.45);
+  max-width: 40vw;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-/* 右上角关闭键 */
-.lightbox-x {
-  position: fixed;
-  top: 16px;
-  right: 18px;
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--miao-surface);
-  border: 1px solid var(--miao-line);
-  color: var(--miao-ink);
-  transition:
-    border-color var(--miao-dur-fast) ease,
-    transform var(--miao-dur-fast) var(--miao-ease-spring);
+/* 底部窄带（设计稿 `.lb-foot`：34 高）：一行的操作提示 */
+.lightbox-foot {
+  flex: 0 0 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.45);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: default;
+  transition: opacity var(--miao-dur-base) var(--miao-ease-out);
 }
-.lightbox-x:hover {
-  border-color: var(--miao-primary);
-  transform: rotate(90deg) scale(1.04);
+.lightbox-foot.is-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* ================================================================ 删除 / 隐藏弹窗的补充行 */
