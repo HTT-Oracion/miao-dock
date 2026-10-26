@@ -523,10 +523,16 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
   // ⚠️ 刻意**校验顺序**而非只校验存在 —— 文档明写「顺序错即红，不只查存在」。
   // 上一轮就有个反面教训：断言只查"存在"时，把三个 Tab 排成任何顺序都全绿。
   {
-    // Tab 行仅在翻译应用内渲染。故先确认它此刻在 DOM 里；不在就跳过而不是判红 ——
-    // 「当前没进翻译应用」不是「Tab 顺序错了」，混为一谈会让断言变成噪声。
-    const tabs = Array.from(document.querySelectorAll('.viewtabs .viewtab'));
-    if (tabs.length === 0) {
+    /*
+     * 🔴 2026-10-26：页签改成通用单元 `.ui-vtab`（漫画/音乐共用）。
+     *    原来这里选的是 `.viewtabs .viewtab` —— 改名后**一个都选不到**，
+     *    于是 `tabs.length === 0` 走"跳过"分支、判绿：C9 从那一刻起就没在检查任何东西。
+     *    现在按**容器**判断"是否在翻译应用内"，按**页签**判断顺序：
+     *    · 容器 `.ui-vtabs` 不在 ⇒ 确实没进翻译应用，跳过（不是失败）；
+     *    · 容器在但页签一个都没有 ⇒ 渲染坏了，**判红**（不能拿"跳过"当通过）。
+     */
+    const bar = document.querySelector('.ui-vtabs');
+    if (!bar) {
       add(
         'C9',
         '视图 Tab 顺序恒为「投放 → 队列 → 漫画库」',
@@ -534,6 +540,7 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
         '当前不在翻译应用内，Tab 未渲染（跳过，非通过依据）',
       );
     } else {
+      const tabs = Array.from(bar.querySelectorAll('.ui-vtab'));
       const texts = tabs.map((e) => (e.textContent ?? '').trim());
       const want = TRANSLATE_VIEWS.map((v) => v.label);
       const orderOk = texts.length === want.length && texts.every((t, i) => t === want[i]);

@@ -1072,7 +1072,13 @@ html[data-theme='dark'] .nav-item:hover {
   align-items: center;
   gap: 12px;
   height: 48px;
-  padding: 0 clamp(20px, 2vw, 34px);
+  /*
+   * 左右内距固定 20。
+   * ⚠️ 原写法是 `clamp(20px, 2vw, 0px)` —— 那是个**无效 clamp**（上限 0 < 下限 20），
+   *    按规范 `max(20px, min(2vw, 0px))` 恒等于 **20px**：能跑，但读的人会以为它随窗口变。
+   *    这里直接写实际生效值。若本意是"随窗口增大、不设上限"，应写 `max(20px, 2vw)`。
+   */
+  padding: 0 20px;
   background: transparent;
   position: relative;
   z-index: 14;

@@ -530,7 +530,6 @@ export function App() {
         subtitle: meta.sub,
         actions: (
           <>
-            <Badge>独立服务 · 零 Node</Badge>
             <Btn kind="ghost" size="sm" onClick={() => void useAnimeStore.getState().refreshLibrary()}>
               刷新番剧库
             </Btn>
@@ -559,7 +558,6 @@ export function App() {
       case 'library':
         return {
           title: '本地漫画库',
-          subtitle: libSummary,
           /*
            * 设计稿 §7.1.1 的**顺序**：服务胶囊 → 打开根目录 → 新建漫画。
            *
@@ -607,7 +605,6 @@ export function App() {
     animeView,
     appVersion,
     libRoot,
-    libSummary,
     platform,
     push,
     queueDepth,
