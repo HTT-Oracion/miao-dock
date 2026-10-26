@@ -358,6 +358,19 @@
   font-size: 12px;
 }
 /*
+ * 队列状态徽标的尺寸（设计稿 `theme-music.css:250/383` 的生效值 ——
+ * 它在 `theme.css` 之后加载，覆盖了 `.queue-status .chip { height: 23px }`）：
+ * 24px 高 / 左右 9 / **最小宽 84 且居中**。
+ * 最小宽是为了让「进行中」「全部失败」「部分失败 · 3 页」这些长短不一的词
+ * 在列里**左缘对齐**，否则每行徽标宽度随文案跳动，扫视时找不到列。
+ */
+.qt-row .qt-c-status .st-badge {
+  height: 24px;
+  padding: 0 9px;
+  min-width: 84px;
+  justify-content: center;
+}
+/*
  * 操作列：主动作 + [更多]，右对齐。
  * ⚠️ 宽度以 `flex-basis`（128px）为准 —— 它压过行内 width，故改宽必须**同步改**
  * `QUEUE_TABLE.colAction` 与这里两处，否则 C2a（实测宽 == 令牌）会红。
