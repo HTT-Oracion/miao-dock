@@ -1450,6 +1450,75 @@ ServicePill `服务运行中:5180` + 标题 + 4 项、无「查看引擎下载�
 
 ---
 
+## D-404 · 漫画库一比一：右栏话卡/页卡与左栏缩略图按设计稿补齐（2026-10-26）
+
+第三轮第 3 项「漫画库样式一比一还原设计稿」的收尾。此前只对齐了容器与书架行，
+本轮把**右栏话卡/页卡**与**左栏缩略图**逐个值对到 `theme.css` 的生效值。
+
+### 右栏（`theme.css:412-442` 的生效值）
+
+| 项 | 改前 | 改后（设计稿） |
+|---|---|---|
+| `.chapter-grid` | `minmax(148px,1fr)` / gap 9 | `minmax(clamp(162px,11.5vw,188px),1fr)` / **gap 11** |
+| `.chapter-card` 圆角 | 11px | **14px** |
+| `.chapter-card:hover` | `-1px` + `line-strong` + `shadow-1` | **`-3px`** + `primary-line` + `0 14px 26px -24px` |
+| `.cc-bar` | 3px / margin-top 8 | **4px / margin-top 3** |
+| `.page-card` 圆角 | 8px | **12px** |
+| `.page-card:hover` 阴影 | `shadow-2` | **`shadow-1`** |
+| `.book-hero` gap | 18px | **`clamp(16px,1.8vw,24px)`** |
+| `.book-big-cover` | 96×130 / r9 / `aspect:auto` | **`clamp(96px,8vw,124px)` + `aspect-ratio:3/4.1` + r12** |
+| 大封面阴影 | `0 10px 20px -14px` | **`0 18px 36px -24px`**（同设计稿） |
+
+### 左栏（`theme.css:403-410`）
+
+| 项 | 改前 | 改后 |
+|---|---|---|
+| `.lib-left`（= `.shelf`）圆角 | `r-lg`（20） | **`r-xl`（26）** |
+| 缩略图（= `.book-thumb`） | 36×48 / r5 | **38×50 / r7** |
+| `.shelf-count` 颜色 | `muted` | **`faint`** |
+
+### 🔴 关键坑：缩略图尺寸改了 CSS 却不生效
+
+`.cover-thumb` 的 CSS 改成 38×50/r7 后，**真机实测仍是 36×48/r5**。
+
+根因：`CoverThumb` 的 `w`/`h`/`radius` 三个 prop 来自 `LIBRARY.cover.thumb`，
+被写成**行内样式**；行内样式优先级高于样式表 ⇒ CSS 那份只是兜底。
+
+> 这是本仓库**第二次**踩同一类坑（第一次是左栏宽度的 `--lib-left-w` 把 `clamp()`
+> 与全部媒体查询压掉，见 D-401）。判据：**看到"改了样式没反应"，先搜同一个值
+> 有没有在 TSX 里被行内注入。**
+>
+> 连带处置：`LIBRARY.cover.head`（56×76 r8）已无任何引用、且与 CSS 的
+> `clamp + aspect-ratio` 冲突 ⇒ **删除**；`LIBRARY.gridGap: 12` 同理删除
+> （CSS 是 14）。留着的死键会变成"第二事实源"，冲突时没人会想到去查令牌。
+
+### 判据跟改
+
+`spec-check.ts` 的 C5 断言原写「页卡 r8」——页卡圆角按设计稿改 12 后它会红。
+已同步成 `near(cr, 12)`，并把标签文案改成「页卡 r12 / 缩略区 3:4.16」。
+
+### 真机取证（1180 宽）
+
+```
+.lib          236px | gap 14 | padding 14 22 18   （≤1180 档，同设计稿）
+.lib-left     r26
+.cover-thumb  38×50 r7
+.shelf-count  9.025px | rgb(107,125,138)=faint | tabular-nums
+.shelf-head   padding 14 14 8
+.lib-item     padding 8 | r12
+.lib-search   padding 0 12 8
+.book-hero    gap 21.24  (=clamp 1.8vw@1180)
+.book-big-cover  aspect 3/4.1 | r12 | width 96
+.page-card    r12
+.page-grid    gap 12
+```
+
+### 门
+
+`npm run check` **20/20** · `tsc` 干净。
+
+---
+
 ## G-01 · 待裁定：下载前检查的「磁盘剩余」与「模型源延迟」
 
 设计稿 `.ed-preflight` 的第三、四格是这两项，服务端**没有出口**

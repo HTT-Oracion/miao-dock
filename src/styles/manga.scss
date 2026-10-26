@@ -1016,7 +1016,9 @@
 .shelf-count {
   font-family: var(--md-font-numeric);
   font-size: 9.5px;
-  color: var(--miao-muted);
+  /* 设计稿 `styles.css:1044`：部数是**次要计数**，用 faint（比 muted 更淡一档） */
+  color: var(--miao-faint);
+  font-variant-numeric: tabular-nums;
 }
 
 /*
@@ -1174,7 +1176,8 @@
   min-height: 0;
   background: var(--miao-surface);
   border: 1px solid var(--miao-line);
-  border-radius: var(--miao-r-lg);
+  /* 设计稿 `theme.css:403` 的 `.shelf { border-radius: var(--r-xl) }` = 26px（不是 lg 的 20） */
+  border-radius: var(--miao-r-xl);
   box-shadow: var(--miao-shadow-1);
   overflow: hidden;
 }
@@ -2853,15 +2856,19 @@
   flex-direction: column;
   gap: 2px;
 }
-/* 书架缩略图（设计稿 .book-thumb）：36x48 / r5 */
+/*
+ * 书架缩略图（设计稿 `theme.css:410` 的 `.book-thumb`：38×50 / r7）。
+ * ⚠️ 真实尺寸由 `LIBRARY.cover.thumb` 以**行内样式**注入（`CoverThumb` 的 w/h/radius），
+ *    本块的 width/height 只是无 JS 时的兜底 —— 改这里不会改变实际渲染。
+ */
 .cover-thumb {
   flex: none;
-  width: 36px;
-  height: 48px;
+  width: 38px;
+  height: 50px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 5px;
+  border-radius: 7px;
   background: var(--miao-surface-2);
   overflow: hidden;
 }

@@ -265,8 +265,9 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     const cr = card ? px(getComputedStyle(card).borderTopLeftRadius) : -1;
     add(
       'C5',
-      `漫画库：左栏 ${LIBRARY.leftColumnWidth}；页卡 r8 / 缩略区 3:4.16`,
-      near(lw, LIBRARY.leftColumnWidth) && near(cr, 8) && cw > 0 && Math.abs(ch / cw - 4.16 / 3) < 0.08,
+      `漫画库：左栏 ${LIBRARY.leftColumnWidth}；页卡 r12 / 缩略区 3:4.16`,
+      // 🔴 页卡圆角 2026-10-26 按设计稿 `theme.css` 的 `.page-card { border-radius: 12px }` 由 8 改 12
+      near(lw, LIBRARY.leftColumnWidth) && near(cr, 12) && cw > 0 && Math.abs(ch / cw - 4.16 / 3) < 0.08,
       `左栏 ${lw.toFixed(0)} / 缩略区 ${cw.toFixed(0)}×${ch.toFixed(0)} r${cr}`,
     );
   }
