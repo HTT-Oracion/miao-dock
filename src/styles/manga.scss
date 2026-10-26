@@ -302,34 +302,48 @@
   text-overflow: ellipsis;
 }
 /*
- * 设计稿 `.queue-progress`：**两行** —— 上排「N / M 页」与百分比/失败数分列两端，
- * 下面一条通栏 rail。旧写法把它们挤成一行 flex-wrap，进度条只能缩在一角。
- * 数字仍是独立文本节点（C7c 量的就是这两个节点为直接子元素）。
+ * 进度格（设计稿 `.queue-progress` / `theme.css:374-375`）：**两行** ——
+ * 上排「N / M 页」与「失败数 / 百分比」分列两端，下排一条通栏 rail。
+ *
+ * 🔴 2026-10-26 修：此前是 `grid-template-columns: 1fr auto` 的**两列**网格，
+ *    而 ProgressCell 有 5 个文本节点 + 1 条 rail ⇒ 每个节点各占一格，
+ *    实际渲染成 **4 行 / 67px**（行高只有 58，直接溢出）：
+ *    第一行「0」被拉成 151px、第二行「1」、第三行「1 页失败」、第四行才是 rail。
+ *    真机读起来是竖着堆的四个片段，不是一句「0 / 1 页」。
+ *    改成 **5 列单行**（auto×4 + 1fr），rail 用 `grid-column: 1/-1` 落到第二行。
+ *
+ * ⚠️ 不能给这些节点加外层 wrapper 去凑布局：规格自检 C7c 量的是
+ *    `.num` 是否为 `.qt-c-progress` 的**直接子元素**（拆两个文本节点是为了
+ *    数字走 Inter、其余走正文体）。所以只能靠网格**定位**，不能靠**嵌套**。
  */
-.qt-c-progress {
+.qt-row .qt-c-progress {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-auto-rows: auto;
+  grid-template-columns: auto auto auto auto minmax(0, 1fr);
   align-items: center;
   column-gap: 0;
-  row-gap: 4px;
-  font-size: 11px;
-  color: var(--miao-text);
-}
-/* rail 独占第二行通栏（实际类名是 `.bar`，见 QueueScreen 的 barClass） */
-.qt-c-progress > .bar {
-  grid-column: 1 / -1;
-  width: 100%;
-}
-/* 页数单位：设计稿「12 / 19 页」—— 数字与「页」之间留一个窄空格，读数才不像两串数 */
-.qt-unit {
-  font-size: 9.5px;
-  color: var(--miao-faint);
-}
-.qt-pct {
-  margin-left: auto;
+  row-gap: 3px;
+  /* 设计稿 `styles.css:1018`：整行 9.5px / muted；右侧注记（`b`）用 text 色 */
   font-size: 9.5px;
   color: var(--miao-muted);
+  font-variant-numeric: tabular-nums;
+}
+/* rail 独占第二行通栏（实际类名是 `.bar`，见 QueueScreen 的 barClass） */
+.qt-row .qt-c-progress > .bar {
+  grid-column: 1 / -1;
+  width: 100%;
+  /* 设计稿 `theme.css:375` 的 `.queue-row .rail { height: 6px }` */
+  height: 6px;
+  margin-top: 0;
+}
+/* 页数单位：设计稿「12 / 19 页」整句同色，不单独提亮或压暗 */
+.qt-unit {
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+.qt-pct {
+  /* 设计稿 `.queue-progress-top` 是 `justify-content: space-between` ⇒ 右端贴边 */
+  justify-self: end;
+  color: var(--miao-text);
 }
 .qt-pct.is-warn {
   color: var(--miao-warning);

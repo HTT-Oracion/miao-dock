@@ -1519,6 +1519,92 @@ ServicePill `服务运行中:5180` + 标题 + 4 项、无「查看引擎下载�
 
 ---
 
+## D-405 · 队列【进度】格被拆成 4 行：网格列数少于子节点数（2026-10-26）
+
+第三轮第 1 项「队列表格的【进度】【状态】跟设计稿保持一致」的真正根因。
+此前只改了**文案**（`1 张失败` → `1 页失败`、状态改 `.st-badge`），
+但**布局**一直是坏的 —— 用户说的「队列显示错误」有一半指这个。
+
+### 症状（真机实测，改动前）
+
+`.qt-row .qt-c-progress` 渲染成 **160×67**，而所在行高只有 **58** ⇒ 直接溢出：
+
+```
+行1: "0"（被拉伸成 151px） │ "/"（9px）
+行2: "1"                   │ "页"
+行3: "1 页失败"
+行4: bar
+```
+
+读起来是**竖着堆的四个片段**，而不是一句「0 / 1 页」。
+
+### 根因
+
+CSS 写的是两列网格 `grid-template-columns: minmax(0,1fr) auto`，
+而 `ProgressCell` 有 **5 个文本节点 + 1 条 rail**：
+
+```jsx
+<span className="num">{done}</span><span> / </span>
+<span className="num">{total}</span><span className="qt-unit"> 页</span>
+<span className="qt-pct">{progressNote(t)}</span>
+<div className="bar">…</div>
+```
+
+网格里每个子节点各占一格 ⇒ 5 个文本节点排成 3 行，rail 才是第 4 行。
+
+> 注释当时写的正是「两行 —— 上排 N/M 页与百分比分列两端，下面一条通栏 rail」，
+> **意图是对的，实现却按"节点会自己挤在同一格"来写** —— 而 grid 的默认行为恰恰是
+> 一个节点一格。这条属于"注释描述的目标形态与代码实际形态不一致"。
+
+### 修法
+
+保持 DOM 不变（**不能加 wrapper**，见下），把网格改成 **5 列单行**：
+
+```css
+.qt-row .qt-c-progress {
+  grid-template-columns: auto auto auto auto minmax(0, 1fr);
+}
+.qt-row .qt-c-progress > .bar {
+  grid-column: 1 / -1;   /* rail 落到第二行并通栏 */
+  height: 6px;           /* 设计稿 theme.css:375 */
+}
+.qt-pct { justify-self: end; }   /* 右端贴边 = 设计稿的 space-between */
+```
+
+同时按设计稿 `styles.css:1018` 把整行字号/颜色改为 **9.5px / muted**、
+右侧注记（设计稿的 `<b>`）用 `--text` 色。
+
+### 🔴 为什么不能加 wrapper
+
+规格自检 **C7c** 量的是 `.num` 是否为 `.qt-c-progress` 的**直接子元素**
+（拆两个文本节点是为了「数字走 Inter、其余走正文体」）。
+加一层 `.qt-progress-top` 会让 C7c 直接红 —— 布局要靠在网格里**定位**，
+不能靠**嵌套**。
+
+### 🔴 同时把规则限定到 `.qt-row`
+
+表头也有一个同名 `.qt-c-progress`（只写着「进度」两个字，没有子节点）。
+不加限定的话，9.5px/muted 会盖掉 `.qt-head` 的 10px/faint/uppercase，
+表头这一列与「来源/状态/操作」不一致。
+
+### 真机取证（改动后）
+
+```
+cell   160 × 23   rows: 13.98px 6px   cols: auto×4 + 141px
+"0"    left 0    w 5
+"/"    left 5    w 4
+"1"    left 9    w 5
+"页"   left 14   w 9
+"1 页失败" left 126 w 34   → 右缘 = 160（贴边）
+bar    top 17  left 0  w 160  h 6   → 第二行通栏
+```
+
+### 门
+
+`npm run check` **20/20** · `tsc` 干净 · C7c 仍绿（`.num` 仍是直接子元素，共 3 个）。
+
+---
+
 ## G-01 · 待裁定：下载前检查的「磁盘剩余」与「模型源延迟」
 
 设计稿 `.ed-preflight` 的第三、四格是这两项，服务端**没有出口**
