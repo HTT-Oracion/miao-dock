@@ -1605,6 +1605,108 @@ bar    top 17  left 0  w 160  h 6   → 第二行通栏
 
 ---
 
+## D-406 · 全仓按钮统一走 `Btn`；`Btn` 拆成独立单元；主按钮固定白字（2026-10-26）
+
+### ① `Btn` 从 `atoms.tsx` 拆到 `units/Btn.tsx`
+
+`atoms.tsx` 是"最小积木"合集（状态点 / 药丸 / 徽章 / 魔法阵），而 `Btn` 有自己的
+prop 表面积（权重 / 尺寸 / 6 个 aria / ref 透传）与 ~90 行文档 —— 混在一起时改按钮
+得先在 200 行里找它。拆出后 `units/` 一个文件一个组件，桶文件出口不变。
+
+### ② `Btn` 改成 `forwardRef` + 原生属性透传
+
+以前只开放 12 个自有 prop，`ref` / `onMouseDown` / `aria-controls` / `data-*` 一律没有
+⇒ 那些位置只能写裸 `<button>`，于是"同一件事两套写法"（86 处 / 24 文件）。
+
+改法：`BtnProps = BtnOwnProps & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'|'role'|'children'|'style'>`，
+`forwardRef` 把 `ref` 真挂到 DOM 上。
+
+🔴 一个必须踩过才知道的细节：aria 属性**只能注入已定义的值**。
+直接写 `aria-label={ariaLabel}` 时，`ariaLabel` 未传奇值是 `undefined`，
+而 JSX 里后写的 `undefined` 会把 `...rest` 里调用方给的原生 `aria-label` **一起抹掉** ——
+"换个组件名"就把无障碍名丢了，且不报错。所以改成按需拼 `aria` 对象。
+
+### ③ 全仓替换
+
+86 处裸 `<button>` → `<Btn kind="bare">`（`bare` 让 `className` 成为唯一类名，
+视觉零变化：全局 `button` 复位样式本来就在 `base.scss`）。
+替换脚本逐行跳过注释行 —— 注释里讨论 `<button>` 的段落（`atoms` / `LogBlock` /
+`chapters` / `LeftPanel` / `parts` 等）不能被改。
+
+### ④ `btn-primary` 文字固定白色
+
+暗色主题曾把它改成"主色压暗"的深字（深字压在浅雾蓝实心底上），读起来像**禁用**，
+而 `primary` 的语义恰恰是"推进"。现在基础档与暗色档都是 `#fff`。
+真机实测六个屏 `.btn-primary` 的 `color` 均为 `rgb(255,255,255)`。
+
+### 连带修的判据
+
+- `units-structure-check` 的 `MANIFEST` 加 `Btn.tsx`；`BARREL_EXPORTS` 已有 `Btn`。
+- `ia-structure-check` 的反证锚点原本写死 `'        <button'` + 后续两行 ——
+  换成 `<Btn>` 后 prettier 又把标签拆成多行 ⇒ 锚点静默失配（整条反证变成"无法反证"）。
+  改成**按语义定位**：先找设置按钮的 `className` 行，再向上回溯到最近的 `<Btn` 起始行。
+  格式化怎么拆行都不影响。
+
+---
+
+## D-407 · 看图链路按设计稿还原：全屏三段 + 对照页铺满（2026-10-26）
+
+### ① 全屏看图：三段布局
+
+设计稿 `.lightbox` 是 **58 头 / 舞台 1fr / 34 脚** 的三段（`styles.css:1252-1290`），
+我们原来是一枚"浮在底部的胶囊工具条 + 居中内容 + 12px 外框"。
+
+| 项 | 改前 | 改后（设计稿） |
+|---|---|---|
+| 结构 | 舞台 + 浮动工具条 + 右上角圆形关闭键 | **58 头 + 舞台 + 34 脚** |
+| 底色 | `color-mix(ink 86%)` + `blur(6px)` | **`rgba(14,22,29,.94)`**（`theme.css:470`） |
+| 外框 | `padding 12 / gap 8 / 居中` | **`padding 0 / gap 0 / stretch`** |
+| 缩放控件 | 24 高 / r999 胶囊 | **28 高 / r8 / 1px 14% 白描边**（`.lb-zoom`） |
+| 缩放按钮 | 20×20 / r50% | **22×22 / r5**（`.lb-zoom-btn`） |
+| 标题 | 单行 | **两行**（`.lb-title` + `small`：页号·侧别 / 书名·文件名） |
+| 关闭 | 右上角浮键 + 「关闭」按钮 | 只保留头带里的「关闭」（设计稿就是这样） |
+
+深色头带里的 ghost 按钮也按 `.lb-tools .btn-ghost` 改成透明底 + 16% 白描边 + 72% 白字 ——
+沿用全局 ghost 的浅底会在深色条上变成亮块。
+
+真机取证：`head 58 / stage flex / foot 34`、`bg rgba(14,22,29,0.94)`、`padding 0`、
+`zoom 28 / r8`、`无 .lightbox-x`、标题两行。
+
+### ② 对照页：铺满整屏 + 三段 + 面板网格
+
+| 项 | 改前 | 改后（设计稿） |
+|---|---|---|
+| 根 | `height:100%` + `gap:12`（在 `.content` 里只有 630，上下漏缝） | **`position:fixed; inset:0`** → 780 = 整窗 |
+| 底色 | 透明 | **`var(--miao-bg)`**（`theme.css:462`） |
+| 段间距 | `gap: 12` | **0**（分隔靠两段的 1px 边线，再叠 gap 会双线） |
+| 面板区 | `flex` / gap 14 / padding 0 | **`grid 1fr 1fr` / gap 12 / padding 14px 18px** |
+
+> 🔴 `position: fixed` 在这里能用，是因为 `.content` 链路**当前没有** `transform`
+> （有的话 fixed 的包含块会变成祖先，退回"只有内容区大小"——同一个坑在
+> `units/Modal.tsx` 文件头记过）。这条依赖写进了 CSS 注释：日后给 `.content`
+> 或 `.translate-view` 加带 `transform` 的入场动画时，这里会立刻退化。
+
+### ③ 画板与页签行内距
+
+- `.lib-right`（= 设计稿 `.book-panel`）：`r-lg(20)` → **`r-xl(26)`**，
+  `padding: 18px 20px 26px` → **`clamp(18px, 1.8vw, 28px)`**（1180 下 21.24）。
+- `.viewtabs` 在 ≤1180 / ≤1040 两档被单独收窄到 18 / 14 —— 设计稿这一条**没有**响应式档，
+  恒为 `clamp(20px, 2vw, 34px)`（1180 下 23.6）。已删掉两处覆盖：留着会让胶囊条比工具条
+  更贴边，两条栏的左右缘对不齐。
+
+### 门
+
+`npm run check` **20/20** · `tsc` 干净 · `eslint` 0 error。
+
+### 仍未做（下一轮）
+
+- **单话详情页的「话列表」分支**（`.lib-head` + `.cv-head/.cv-info/.cv-foot`）：
+  本机库里只有 1 话，`.chapter-card` 不渲染，无法真机取证其对拍结果。
+  样式值已按 `theme.css` 改过（`.chapter-grid` / `.chapter-card` / `.cc-bar`），
+  但**没有实际渲染过**，属于"改了没验证"。
+
+---
+
 ## G-01 · 待裁定：下载前检查的「磁盘剩余」与「模型源延迟」
 
 设计稿 `.ed-preflight` 的第三、四格是这两项，服务端**没有出口**
