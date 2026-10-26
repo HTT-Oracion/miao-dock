@@ -1,4 +1,4 @@
-﻿// 屏 B 的「话卡」（设计稿 §7.3）。
+// 屏 B 的「话卡」（设计稿 §7.3）。
 //
 // ## 为什么单独一个文件
 // `LibraryScreen.tsx` 被断言脚本按路径写死并读源码（`e2e/units-structure-check.mjs:71`、
@@ -73,8 +73,13 @@ export function chapterStatusOf(c: {
   // `translatedCount` 可能大于 imageCount（译文在、原图被外部拿掉了），故钳到 0
   const pending = Math.max(0, c.imageCount - c.translatedCount - missing);
   const parts: string[] = [];
-  if (missing > 0) parts.push(`${CHAPTER_STATE_LABEL.missing} ${missing}`);
-  if (pending > 0) parts.push(`${CHAPTER_STATE_LABEL.pending} ${pending}`);
+  /*
+   * 文案逐字对齐设计稿 `js/manga-library.js::chapterMeta`：`待译 N 页` / `缺 N 页`。
+   * 🔴 必须带「页」字：不带时卡片上会读成「待译 1」紧挨着「0 / 1 页已译」，
+   *    两个数黏在一起，看不出哪个才是"还差几页"。
+   */
+  if (missing > 0) parts.push(`${CHAPTER_STATE_LABEL.missing} ${missing} 页`);
+  if (pending > 0) parts.push(`${CHAPTER_STATE_LABEL.pending} ${pending} 页`);
   if (parts.length === 0) return { state: 'done', text: CHAPTER_STATE_LABEL.done };
   return { state: missing > 0 ? 'missing' : 'pending', text: parts.join(' · ') };
 }
