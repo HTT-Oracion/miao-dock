@@ -1758,6 +1758,73 @@ else → bar.querySelectorAll('.ui-vtab') 为空 ⇒ 判红
 
 ---
 
+## D-409 · 话列表分支终于能取证了：造多话夹具 + 一处文案偏差（2026-10-27）
+
+### 为什么之前验不了
+
+D-407 末尾记着「单话详情页的话列表分支没渲染过」—— 本机库只有一本**单话**漫画
+（`驯兽师01/001.webp`，扁平结构），`.chapter-card` 一个都不渲染。
+
+造夹具才验得了，且造法有讲究：服务端**只认 `manifest.json` 的 `episodes`**
+（`library.rs::read_manifest`），光建 `NN_第N话` 子目录不够 —— 首轮就是这么造的，
+服务端 `/library` 返回 `chapterCount: 0`，界面上「共 0 页」。
+
+正确造法（三步都要）：
+1. 建 `01_第1话` / `02_第2话` / `03_第3话` 子目录（名字必须匹配
+   `^(\d{1,3}(?:\.[1-9])?)_第(\d{1,3}(?:\.[1-9])?)话$`）；
+2. 各放一张真图；
+3. **写 `manifest.json`**，`episodes: [{ no, dir }]`。
+
+还有一步容易漏：前端库数据是 `useLibrary` 缓存的，**必须点右栏「刷新」**才会重扫 ——
+只切路由回来读到的仍是旧快照（首轮就是这样，服务端已返回 3 话而界面仍是 0）。
+
+### 取证结果（1180 宽）
+
+```
+cards        3
+.chapter-grid  gap 11px / 3 列 × 219.4px
+.chapter-card  r14 / padding 10 11
+.cc-bar        h4 / margin-top 3
+.cc-no         12.35px
+```
+
+与设计稿 `theme.css:412-442` 一致：gap 11 ✓、r14 ✓、cc-bar 4/3 ✓。
+列宽 219 是 `auto-fill + 1fr` 在 700 宽右栏里的自然结果（设计稿同一写法同样如此），不是偏离。
+
+### 修掉一处文案偏差
+
+`chapterStatusOf` 拼的是 `待译 ${N}` / `缺 ${N}`，设计稿 `chapterMeta` 是
+**`待译 ${N} 页` / `缺 ${N} 页`**（带「页」字）。
+
+不带时的真机读法：「待译 1」紧挨着「0 / 1 页已译」⇒ 两个数黏成 `10 / 1`，
+看不出哪个是"还差几页"。已补「页」字，实测 `state: "待译 1 页"`。
+
+### 仍未做：话卡的**结构**与设计稿不同（需拍板）
+
+设计稿的话卡是「封面 + 正文三段」：
+
+```html
+<div class="cc-cover"><span class="st-badge">待译 1 页</span><button class="cc-menu">…</button></div>
+<div class="cc-body">
+  <div class="cc-row"><strong>第 01 话</strong><span>0 / 1 页</span></div>
+  <div class="cc-row cc-row-meta"><span>更新于 …</span><b class="cc-missing">缺 N 页</b></div>
+  <div class="cc-bar"><i style="width:0%"></i></div>
+</div>
+```
+
+本仓是**纯文字卡**：`.cc-no` / `.cc-state`（圆点+文字）/ `.cc-pages` / `.cc-bar`。
+
+差的是：**话封面（`cc-cover`，4/5 比例）**、`更新于 …`、`缺 N 页` 独立成 `<b>`、
+状态用 `.st-badge` 而非「圆点 + 文字」。
+
+数据面：`modifiedAt` 服务端**有**（`/library` 的 chapters 里带），
+话封面**没有**（服务端只有整本的 `cover`，没有逐话封面）。
+
+⇒ 要么给服务端加"每话取第 1 页当封面"的能力，要么话卡改用整本封面。
+这是产品决定，不是样式问题，**留给拍板**。
+
+---
+
 ## G-01 · 待裁定：下载前检查的「磁盘剩余」与「模型源延迟」
 
 设计稿 `.ed-preflight` 的第三、四格是这两项，服务端**没有出口**
