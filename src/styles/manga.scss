@@ -1821,7 +1821,8 @@
   object-fit: cover;
   display: block;
 }
-/* 状态角标（设计稿 .page-stamp）：右上角一枚小标签，颜色按状态区分 */
+/* 状态角标（设计稿 `.page-stamp`：右上 / 18 高 / padding 0 5 / r4 / 8.5px·700，
+   底是 92% 白 + **blur 4px**，默认字色 success、边框 30% success） */
 .page-stamp {
   position: absolute;
   top: 5px;
@@ -1834,19 +1835,24 @@
   font-size: 8.5px;
   font-weight: 700;
   background: color-mix(in srgb, var(--miao-surface) 92%, transparent);
-  border: 1px solid var(--miao-line);
-  backdrop-filter: blur(6px);
+  color: var(--miao-success);
+  border: 1px solid color-mix(in srgb, var(--miao-success) 30%, transparent);
+  backdrop-filter: blur(4px);
 }
 .page-stamp.is-done {
   color: color-mix(in srgb, var(--miao-success) 82%, #000);
   border-color: color-mix(in srgb, var(--miao-success) 30%, transparent);
 }
 .page-stamp.is-pending {
-  color: var(--miao-muted);
+  /* 设计稿 `.page-stamp.is-pending { color: var(--accent-deep); border-color: var(--accent-line) }`
+     本仓对应令牌是 `--miao-accent-ink` / `--miao-accent-line`（没有 accent-deep 这个名字） */
+  color: var(--miao-accent-ink);
+  border-color: var(--miao-accent-line);
 }
 .page-stamp.is-missing {
-  color: color-mix(in srgb, var(--miao-danger) 82%, #000);
-  border-color: color-mix(in srgb, var(--miao-danger) 30%, transparent);
+  /* 设计稿 `.page-stamp.is-missing` 用 faint 而不是 danger —— 缺页是"没有原图"，不是错误 */
+  color: var(--miao-faint);
+  border-color: var(--miao-line);
 }
 /* 底部标签行（设计稿 .page-label）：左「第 N 页」、右文件名 */
 .page-label {
@@ -1857,7 +1863,8 @@
   padding: 5px 7px;
   border-top: 1px solid var(--miao-line);
   background: var(--miao-surface);
-  font-size: 10px;
+  /* 设计稿 `.page-label { font-size: 9px }`（不是 10） */
+  font-size: 9px;
   color: var(--miao-muted);
 }
 .page-label b {
@@ -3038,27 +3045,65 @@
 
 /* ── 屏 B：话列表（§7.3）────────────────────────────────────────────── */
 /*
- * 话卡（设计稿 .chapter-card）：文字卡 —— 上排「第 N 话 + 状态」、中排页数、
- * 下排进度条，右上角操作菜单。
+ * 话卡（设计稿 `styles.css:1135-1167` + `theme.css:429-442` 的生效值）：
+ * **封面 + 正文三段**，不是纯文字卡。
+ *
+ * 🔴 封面用**整本封面**（服务端没有逐话封面）：`manifest.cover` 可在「编辑信息」里配，
+ *    没配就画虚线占位（`.cc-cover.is-empty`）—— 不给"看起来像有封面"的灰块。
  */
 .chapter-card {
   position: relative;
-  padding: 10px 11px;
+  padding: 0;
   border: 1px solid var(--miao-line);
   border-radius: 14px;
-  background: var(--miao-surface-2);
+  background: var(--miao-surface);
   text-align: left;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   transition:
-    background var(--miao-dur-fast) ease,
     border-color var(--miao-dur-fast) ease,
     box-shadow var(--miao-dur-base) ease,
     transform var(--miao-dur-fast) var(--miao-ease-out);
 }
 .chapter-card:hover {
-  background: var(--miao-surface);
   border-color: var(--miao-primary-line);
   transform: translateY(-3px);
   box-shadow: 0 14px 26px -24px rgba(45, 59, 70, 0.45);
+}
+/* 状态描边（设计稿 `.is-done` / `.is-partial`）：只换边色，不换底色 */
+.chapter-card.is-done {
+  border-color: color-mix(in srgb, var(--miao-success) 26%, var(--miao-line));
+}
+.chapter-card.is-pending {
+  border-color: color-mix(in srgb, var(--miao-warning) 26%, var(--miao-line));
+}
+.chapter-card.is-missing {
+  border-style: dashed;
+  opacity: 0.84;
+}
+/* 封面（设计稿 `.cc-cover`：4/5 比例 / center-top / surface-3 底） */
+.cc-cover {
+  position: relative;
+  aspect-ratio: 4 / 5;
+  background-color: var(--miao-surface-3);
+  background-size: cover;
+  background-position: center top;
+  box-shadow: inset 0 0 0 1px rgba(45, 59, 70, 0.04);
+}
+/* 没配封面：虚线占位，明确"这里本来可以有一张图" */
+.cc-cover.is-empty {
+  border-bottom: 1px dashed var(--miao-line-strong);
+}
+/* 状态徽标（设计稿 `.cc-status`：左上 5/5，最大宽度留出右上菜单的位置） */
+.cc-status {
+  position: absolute;
+  left: 5px;
+  top: 5px;
+  max-width: calc(100% - 40px);
+  height: 18px;
+  font-size: 8.5px;
+  box-shadow: 0 3px 10px -7px rgba(45, 59, 70, 0.5);
 }
 .cc-main {
   display: block;
@@ -3070,47 +3115,59 @@
   cursor: default;
   opacity: 0.6;
 }
-.cc-top {
+/* 正文三段（设计稿 `.cc-body`：gap 3 / padding 7 8 8 / 顶部一条线 / 白面） */
+.cc-body {
+  display: grid;
+  gap: 3px;
+  padding: 7px 8px 8px;
+  border-top: 1px solid var(--miao-line);
+  background: var(--miao-surface);
+}
+.cc-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 5px;
+  min-width: 0;
 }
-.cc-no {
-  font-size: 13px;
-  font-weight: 700;
+.cc-row strong {
+  font-size: 10.5px;
   color: var(--miao-ink);
   font-variant-numeric: tabular-nums;
-}
-.cc-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 9.5px;
-  color: var(--miao-muted);
   white-space: nowrap;
 }
-.cc-pages {
-  font-size: 11px;
+.cc-row > span {
+  font-size: 8.5px;
   color: var(--miao-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* 次行（设计稿 `.cc-row-meta`）：更新于 / 缺 N 页，再小一档、再淡一档 */
+.cc-row-meta {
+  font-size: 7.5px;
+  color: var(--miao-faint);
+}
+.cc-missing {
+  color: var(--miao-danger);
+  font-weight: 700;
 }
 .cc-bar {
   height: 4px;
   margin-top: 3px;
-  border-radius: 2px;
+  border-radius: 99px;
   background: var(--miao-surface-3);
   overflow: hidden;
 }
 .cc-bar i {
   display: block;
   height: 100%;
-  border-radius: 2px;
+  border-radius: inherit;
   background: var(--miao-primary);
 }
 /*
  * 进度条按状态换色（设计稿 `.is-done` → success / `.is-partial` → accent）。
  * 本仓的状态比设计稿细一档（pending 与 missing 分开），两者都是"没译完" ⇒ 同取 accent；
- * 颜色只做辅助，状态词在 `.cc-state` 里始终有文字（颜色不是唯一信息载体）。
+ * 颜色只做辅助，状态词在 `.cc-status` 里始终有文字（颜色不是唯一信息载体）。
  */
 .chapter-card.is-done .cc-bar i {
   background: var(--miao-success);
@@ -3119,11 +3176,11 @@
 .chapter-card.is-missing .cc-bar i {
   background: var(--miao-accent);
 }
-/* 右上角操作菜单：悬停才浮现，不占卡片正文宽度 */
+/* 右上角操作菜单（设计稿 `.cc-menu`：right 5 / top 5）：悬停才浮现，不占正文宽度 */
 .cc-menu {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 5px;
+  right: 5px;
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--miao-dur-fast) ease;
@@ -3134,12 +3191,6 @@
   pointer-events: auto;
 }
 /* 脚注右侧的状态点 + 文字：颜色只是辅助，文字与点同现（《02》§5.2 色不作唯一载体） */
-.chapter-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
 
 /* ============================================================
  * 引擎下载页（`.engine-download-page` / `.ed-*`）—— 对齐设计稿 `.engine-download` 一屏

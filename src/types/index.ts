@@ -154,6 +154,11 @@ export interface ChapterEntry {
   merged: boolean;
   /** 已归并时的归属；未归并为 `null` */
   mergedTo?: { bookName: string; no: number } | null;
+  /**
+   * 话目录最后修改时间（ISO 秒级，服务端 `modifiedAt`）。
+   * 设计稿话卡的「更新于 …」用它；**可选**：旧服务端不返回。
+   */
+  modifiedAt?: string | null;
 }
 
 export interface LibraryResponse {

@@ -1825,6 +1825,70 @@ cards        3
 
 ---
 
+## D-410 · 话卡改成「封面 + 正文三段」，页卡数值对齐（2026-10-27）
+
+D-409 留的"结构待拍板"已定：**话封面用整本封面**（`manifest.cover`，可在「编辑信息」里配），
+没配就不画。
+
+### 话卡：结构重写（`chapters.tsx` + `manga.scss`）
+
+| 项 | 改前 | 改后（设计稿 `styles.css:1135-1167`） |
+|---|---|---|
+| 卡片 | `padding 10 11` / `surface-2` 底 / 纯文字 | **`padding 0` / `surface` 底 / `flex column` / `overflow hidden`** |
+| 封面 | **无** | **`.cc-cover` 4/5 比例**（`background-size: cover` / `center top`） |
+| 状态 | `.cc-state` = 圆点 + 文字 | **`.cc-status` = `.st-badge`**（`is-ok/is-warn/is-bad/is-idle`），左上 5/5、18 高、8.5px |
+| 正文 | `.cc-no` + `.cc-pages` | **`.cc-body`（gap 3 / padding 7 8 8 / 顶线）**：`第 N 话` + `N / M 页` + `更新于 …` + `缺 N 页` + bar |
+| 菜单 | `top 4 / right 4` | **`top 5 / right 5`**（落进封面右上） |
+| 状态描边 | 无 | **`.is-done` → 26% success 边 / `.is-pending` → 26% warning 边 / `.is-missing` → 虚线 + .84 透明** |
+
+删掉的：`CHAPTER_STATE_DOT`（状态色并入 `.st-badge`，不再维护第二份点色表）、
+`.cc-top` / `.cc-no` / `.cc-state` / `.cc-pages` / `.chapter-state` 五条样式。
+
+`ChapterEntry` 补 `modifiedAt?: string | null`（服务端 `/library` 的 chapters 本来就带，
+只是前端类型没用）—— `更新于 …` 用它。
+
+### 封面：整本，没配就不画
+
+- 判据是 `BookEntry.coverPath`（**文件名**，不是 URL；`null` = 没配）。
+- 配了才传 `coverPath(bookName, modifiedAt)` 给 `useBlobUrl`（`modifiedAt` 当缓存破版键）。
+- 没配 → `null` → 卡上走 `.cc-cover.is-empty`（**虚线**占位），
+  **不发**一次必然 404 的请求（"对确定没有的东西发请求"会把"不存在"伪装成"还没到"）。
+
+### 页卡：数值对齐（`manga.scss`）
+
+| 项 | 改前 | 改后（设计稿） |
+|---|---|---|
+| `.page-label` font-size | 10px | **9px** |
+| `.page-stamp` backdrop blur | 6px | **4px** |
+| `.page-stamp` 默认色 | 无（只有边框） | **success 字 + 30% success 边** |
+| `.page-stamp.is-pending` | `muted` | **`accent-ink` 字 + `accent-line` 边** |
+| `.page-stamp.is-missing` | `danger` 字 | **`faint` 字**（缺页是"没有原图"，不是错误） |
+
+> 🔴 令牌名踩了一下：设计稿写 `--accent-deep`，本仓对应的是 **`--miao-accent-ink`**
+> （只有 `accent / accent-soft / accent-line / accent-ink` 四个）。写错名会让
+> `STYLE.tokensDefined` 当场红 —— 那条断言就是干这个的。
+
+### 真机取证（1180 宽，3 话夹具）
+
+```
+.chapter-card   r14 / padding 0 / flex column / 白底 / h331
+.cc-cover       aspect 4/5 / is-empty（未配封面）
+.cc-status      st-badge is-warn / h18 / 8.075px
+.cc-body        gap 3 / padding 7 8 8 / border-top 1 / h57
+.cc-row strong  9.975px
+.cc-row > span  8.075px
+.cc-row-meta    7.125px / faint
+.cc-bar         h4 / margin-top 3
+.cc-menu        top 5 / right 5 / opacity 0（悬停浮现）
+文案            「待译 1 页 / 第 1 话 / 0 / 1 页 / 更新于 26 分钟前」
+```
+
+### 门
+
+`npm run check` **20/20** · `tsc` 干净 · `eslint` 0 error。
+
+---
+
 ## G-01 · 待裁定：下载前检查的「磁盘剩余」与「模型源延迟」
 
 设计稿 `.ed-preflight` 的第三、四格是这两项，服务端**没有出口**

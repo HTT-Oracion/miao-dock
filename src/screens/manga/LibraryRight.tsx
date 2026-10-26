@@ -22,6 +22,7 @@ import type { ChapterState } from '@screens/manga/chapters';
 import { EmptyArt, GRID_HINT, GRID_LABEL, Highlight, Thumb } from '@screens/manga/cards';
 import type { GridState } from '@screens/manga/cards';
 import { AUTHOR_FALLBACK } from '@screens/manga/libModel';
+import { coverPath } from '@screens/manga/blob';
 import type { PageView } from '@screens/manga/blob';
 import type { BookEntry, ChapterEntry, ComicEntry } from '@/types';
 import { errorText } from '@/ipc';
@@ -411,6 +412,15 @@ export function LibraryRight({
                     key={ch.dirName}
                     bookName={currentBook.bookName}
                     chapter={ch}
+                    /*
+                     * 话卡封面用**整本封面**（服务端没有逐话封面）。
+                     * `BookEntry.coverPath` 非 null 才表示"配了封面" —— 它是书籍目录内的**文件名**，
+                     * 不是可渲染 URL；取字节仍走 `GET /library/{book}/cover`（`coverPath()` 拼的那个）。
+                     * 没配就传 `null`，卡片走虚线占位，不发必然 404 的请求。
+                     */
+                    coverUrlPath={
+                      currentBook.coverPath ? coverPath(currentBook.bookName, currentBook.modifiedAt) : null
+                    }
                     busy={
                       // 整本有任务在跑 ⇒ 它的话也在被写，本话再返工会互相覆盖
                       reworkingComics.has(currentBook.dirName) ||

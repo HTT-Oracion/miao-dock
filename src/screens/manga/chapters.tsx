@@ -13,7 +13,9 @@
 // 左栏与头部没刷"的半刷新。
 import { FolderUp, Pencil, Play, RotateCcw, Trash2 } from 'lucide-react';
 
-import { Btn, Dot, MenuButton, MenuItem } from '@components/units';
+import { Btn, MenuButton, MenuItem } from '@components/units';
+import { relativeTime } from '@tools';
+import { useBlobUrl } from '@screens/manga/blob';
 import type { ChapterEntry } from '@/types';
 
 // ------------------------------------------------------------------ 状态
@@ -34,18 +36,11 @@ const CHAPTER_STATE_LABEL: Record<ChapterState, string> = {
   empty: '空话',
 };
 
-/**
- * 状态点色（设计稿 §7.3：已译完 success / 待译 blue / 缺页 warning / 空话 muted）。
- *
- * 颜色只是**辅助**：每种状态在脚注里都有文字（`.chapter-state` 同时渲染点与字），
- * 所以色盲用户不会丢信息 —— 这也是《02》§5.2「颜色不得作为唯一信息载体」的落地。
+/*
+ * 状态色已并入 `.st-badge` 的 `is-ok / is-warn / is-bad / is-idle`（设计稿
+ * `js/manga-library.js::chapterMeta` 的第二项），不再单独维护一份"点色"表 ——
+ * 同一语义两套色值，改一处忘一处时表现是"话卡徽标与页卡角标同状态不同色"。
  */
-const CHAPTER_STATE_DOT: Record<ChapterState, string> = {
-  done: '--md-success',
-  pending: '--md-blue',
-  missing: '--md-warning',
-  empty: '--md-muted',
-};
 
 export interface ChapterStatus {
   state: ChapterState;
@@ -113,6 +108,7 @@ export function ChapterCard({
   onResume,
   onRetranslate,
   onEditNo,
+  coverUrlPath,
 }: {
   bookName: string;
   chapter: ChapterEntry;
@@ -125,9 +121,25 @@ export function ChapterCard({
   onRetranslate: () => void;
   /** 编辑话数（改号 = 服务端给话目录改名，弹窗收集新号） */
   onEditNo: () => void;
+  /** 整本封面地址（`coverPath(bookName, modifiedAt)`）；没配封面时传 `null` */
+  coverUrlPath?: string | null;
 }) {
   const no = chapter.no;
   const status = chapterStatusOf(chapter);
+  /*
+   * 状态徽标形态（设计稿 `js/manga-library.js::chapterMeta` 的第二项）：
+   * 已译完 → is-ok / 空话 → is-idle / 缺页 → is-bad / 待译 → is-warn。
+   * 与 `.st-badge` 的颜色族一一对应，**不再**自己画圆点（设计稿用的是行内徽标）。
+   */
+  const badge = {
+    done: { cls: 'is-ok' },
+    empty: { cls: 'is-idle' },
+    missing: { cls: 'is-bad' },
+    pending: { cls: 'is-warn' },
+  }[status.state];
+  // 整本封面：没配就返回 missing，`.cc-cover.is-empty` 走虚线占位
+  const cover = useBlobUrl(coverUrlPath ?? null);
+  const coverUrl = cover.kind === 'ready' ? cover.url : null;
   // 空话（一张原图都没有）不取图：对"确定没有"的东西发一次必然 404 的请求，
   // 表现是缩略图先停在「加载中…」再变成失败 —— 把"不存在"伪装成"还没到"。
   // 本话待续做张数（有原图、缺译文的页数；集合判定，不用张数倒推 —— G-10）
@@ -159,26 +171,40 @@ export function ChapterCard({
         ariaLabel={no === null ? '未编号的目录' : `第 ${no} 话`}
         title={no === null ? '该目录没有话号，无法作为话打开' : `第 ${no} 话 · 点开看这一话的页`}
       >
-        <div className="cc-top">
-          <span className="cc-no">{no === null ? '未编号' : `第 ${no} 话`}</span>
-          <span className="cc-state" title={status.text}>
-            <Dot colorVar={CHAPTER_STATE_DOT[status.state]} />
+        {/*
+          话封面（设计稿 `.cc-cover`，4/5 比例）：用**整本封面**。
+          🔴 服务端没有"逐话封面"——`manifest.cover` 只有整本一张，而它可以在
+             「编辑信息」里手动配置。没配就不画封面（走 `.cc-cover.is-empty` 的虚线占位）。
+        */}
+        <div
+          className={coverUrl ? 'cc-cover' : 'cc-cover is-empty'}
+          style={coverUrl ? { backgroundImage: `url(${coverUrl})` } : undefined}
+        >
+          <span className={`cc-status st-badge ${badge.cls}`} title={status.text}>
             {status.text}
           </span>
         </div>
-        <div className="cc-pages">
-          <span className="num">{chapter.translatedCount}</span> / <span className="num">{chapter.imageCount}</span>{' '}
-          页已译
-          {chapter.missingSeqs.length > 0 ? ` · 缺 ${chapter.missingSeqs.length} 页` : ''}
-        </div>
-        <div className="cc-bar">
-          <i
-            style={{
-              width: `${
-                chapter.imageCount > 0 ? Math.round((chapter.translatedCount / chapter.imageCount) * 100) : 0
-              }%`,
-            }}
-          />
+        <div className="cc-body">
+          <div className="cc-row">
+            <strong>{no === null ? '未编号' : `第 ${no} 话`}</strong>
+            <span>
+              <span className="num">{chapter.translatedCount}</span> / <span className="num">{chapter.imageCount}</span>{' '}
+              页
+            </span>
+          </div>
+          <div className="cc-row cc-row-meta">
+            <span>{chapter.modifiedAt ? `更新于 ${relativeTime(chapter.modifiedAt)}` : '未记录更新时间'}</span>
+            {chapter.missingSeqs.length > 0 ? <b className="cc-missing">缺 {chapter.missingSeqs.length} 页</b> : null}
+          </div>
+          <div className="cc-bar">
+            <i
+              style={{
+                width: `${
+                  chapter.imageCount > 0 ? Math.round((chapter.translatedCount / chapter.imageCount) * 100) : 0
+                }%`,
+              }}
+            />
+          </div>
         </div>
       </Btn>
 
