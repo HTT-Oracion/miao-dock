@@ -1325,8 +1325,12 @@ html[data-theme='dark'] .chip-bad {
   .content {
     padding: 20px 18px 18px;
   }
-  .toolbar,
-  .viewtabs {
+  /*
+   * ⚠️ 只收工具条，**不动 `.viewtabs`**：页签行的左右内距在设计稿里
+   * 恒为 `clamp(20px, 2vw, 34px)`（`theme.css:148`），没有窄窗收窄档 ——
+   * 在这里给它单独写 18 会让胶囊条比工具条更贴边，两条栏的左右缘对不齐。
+   */
+  .toolbar {
     padding-right: 18px;
     padding-left: 18px;
   }
@@ -1397,10 +1401,6 @@ html[data-theme='dark'] .chip-bad {
     width: 60px !important;
   }
   .toolbar,
-  .viewtabs {
-    padding-right: 14px;
-    padding-left: 14px;
-  }
   .content {
     padding: 14px 14px 18px;
   }
