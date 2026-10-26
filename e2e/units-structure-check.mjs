@@ -223,6 +223,14 @@ const listFiles = (dir) =>
         .filter((e) => e.isFile())
         .map((e) => e.name)
     : [];
+/** 递归收集**全路径**（`listFiles` 只给一层文件名，扫断言语料要跨目录） */
+const walkPaths = (dir) =>
+  existsSync(dir)
+    ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+        const p = path.join(dir, e.name);
+        return e.isDirectory() ? walkPaths(p) : [p];
+      })
+    : [];
 
 /**
  * 去掉 // 与 /\\* *\\/ 注释（带字符串状态机）——**必须在取字符串字面量/导入语句前先做**。
@@ -1795,6 +1803,52 @@ add('STYLE.noScssSyntax', 'STYLE', (s) => {
   return { ok: hits.length === 0, detail: hits.length ? hits.join('；') : '' };
 });
 
+/*
+ * STYLE.noRetiredSelectors —— **退役类名不许再被断言引用**。
+ *
+ * 为什么需要这条：类名一改，断言里的 `querySelector('.旧名')` 就选不到东西，
+ * 而多数判据的写法是「选不到就跳过」⇒ **永久假绿**。这个坑本仓踩了两次：
+ *   · `spec-check.ts` 的 C9：`.viewtabs .viewtab` 在页签改成 `.ui-vtab` 后选空，
+ *     C9 从此没在检查任何东西（D-408）；
+ *   · `ia-structure-check` 的 C9：同一个选择器，同样是"空集合 return true"。
+ *
+ * 判据是**禁用词**而不是"扫描所有选择器是否都存在"：后者要区分"合成夹具自造的类名"
+ * 与"产品真实类名"，误报面太大；而退役名单是**有限且明确**的，零误报。
+ * 新增退役类名时把它加进 RETIRED 即可。
+ */
+add('STYLE.noRetiredSelectors', 'STYLE', () => {
+  const RETIRED = [
+    'viewtab', // → ui-vtab（通用单元）
+    'tab-ink', // 分段控件不用滑动下划线
+    'lightbox-x', // 关闭键并入头带
+    'lightbox-hint', // 提示并入 34px 脚带
+    'view-tab-aside', // → ui-vtab-aside
+    'ms-tabs', // → ui-vtabs
+    'ms-tab', // → ui-vtab
+  ];
+  const roots = [path.join(APP, 'e2e'), path.join(SRC, 'tools')];
+  const files = roots.flatMap((r) => walkPaths(r)).filter((f) => !f.endsWith('units-structure-check.mjs'));
+  const hits = [];
+  for (const f of files) {
+    if (!/\.(mjs|ts)$/.test(f)) continue;
+    const code = stripComments(readMaybe(f));
+    /*
+     * 只扫**选择器实参**（`querySelector*` / `closest` / `matches` 的第一个字符串字面量），
+     * 不扫整个文件：`stripComments` 是状态机（反引号会让它失同步，见 D-110），
+     * 全文件扫会把**说明文字里的旧名**也算进来 —— 那是合理的历史叙述，不该判红。
+     */
+    const args = [...code.matchAll(/(?:querySelector(?:All)?|closest|matches)\(\s*(['"`])([^'"`]*)\1/g)].map(
+      (m) => m[2],
+    );
+    for (const name of RETIRED) {
+      // 词边界：`.viewtabs` 不能命中 `viewtab`
+      const re = new RegExp(`\\.${name}(?![\\w-])`);
+      if (args.some((a) => re.test(a))) hits.push(`${path.relative(APP, f)} 的选择器仍引用退役类名 .${name}`);
+    }
+  }
+  return { ok: hits.length === 0, detail: hits.length ? hits.join('；') : '' };
+});
+
 // ── 执行器 ────────────────────────────────────────────────────────────────
 function runAll(s, ids) {
   const res = {};
@@ -1809,7 +1863,6 @@ function runAll(s, ids) {
   }
   return res;
 }
-
 const GROUPS = [
   'LAYOUT',
   'PURITY',

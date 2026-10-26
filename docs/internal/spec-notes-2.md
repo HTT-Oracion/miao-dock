@@ -1707,6 +1707,57 @@ prop 表面积（权重 / 尺寸 / 6 个 aria / ref 透传）与 ~90 行文档 �
 
 ---
 
+## D-408 · 「改名 ⇒ 选择器选空 ⇒ 永久假绿」：两处 C9 都中招，并加机器判据（2026-10-27）
+
+### 症状
+
+页签从 `.viewtab` 改成通用单元的 `.ui-vtab` 之后，**两条**声称"钉页签顺序"的断言同时失效：
+
+| 位置 | 原选择器 | 失效方式 |
+|---|---|---|
+| `src/tools/spec-check.ts` C9（应用内自检） | `.viewtabs .viewtab` | 选不到 ⇒ `tabs.length === 0` ⇒ 走"跳过"分支 ⇒ **判绿** |
+| `e2e/ia-structure-check.mjs` C9 | 正则 `/viewtab…/` | 匹配不到 ⇒ `tabs.length === 0` ⇒ `return true` ⇒ **判绿** |
+
+两处都是同一个写法：**「空集合 = 通过」**。它们的说明文字还都写着"顺序错即红，不只查存在" ——
+但真正被检查的从来不是顺序，而是"有没有选到东西"。
+
+### 修法
+
+**① 选择器跟到新类名**，并把「跳过」与「坏掉」分开：
+
+```ts
+const bar = document.querySelector('.ui-vtabs');   // 容器在不在 = 在不在翻译应用内
+if (!bar) → 跳过（非通过依据）
+else → bar.querySelectorAll('.ui-vtab') 为空 ⇒ 判红
+```
+
+判"在不在翻译应用内"要用**容器**，判"渲染对不对"要用**页签** —— 用一个选择器同时回答两个问题，
+就会在"没进这屏"和"这屏坏了"之间二选一，而两者都表现成"选不到"。
+
+**② 加机器判据 `STYLE.noRetiredSelectors`**（`check:units`，58 → **59** 条）
+
+扫 `e2e/**` 与 `src/tools/**` 里**选择器实参**（`querySelector*` / `closest` / `matches` 的第一个
+字符串字面量），凡引用退役类名即红。退役名单：`viewtab` / `tab-ink` / `lightbox-x` /
+`lightbox-hint` / `view-tab-aside` / `ms-tabs` / `ms-tab`。
+
+设计取舍：
+- **只扫选择器实参**，不扫全文件 —— `stripComments` 是状态机（反引号会失同步，D-110），
+  全文件扫会把"注释里叙述旧名"也算进来，那是合理的历史说明，不该判红。
+- **用禁用名单而不是"校验所有选择器都存在"** —— 后者要区分"合成夹具自造的类名"与
+  "产品真实类名"，误报面太大；退役名单有限且明确，零误报。
+- 词边界 `\.viewtab(?![\w-])`：`.viewtabs`（容器仍用）与 `ViewTabs`（组件名）都不命中。
+
+### 反证（按纪律必须做）
+
+把 `spec-check.ts` 的 `.ui-vtabs` 改回 `.viewtab` ⇒ `STYLE.noRetiredSelectors` **变红**；
+随后按字节还原并复核一致。改回即绿。
+
+### 门
+
+`npm run check` **20/20** · `check:units` **59/59** · `tsc` 干净。
+
+---
+
 ## G-01 · 待裁定：下载前检查的「磁盘剩余」与「模型源延迟」
 
 设计稿 `.ed-preflight` 的第三、四格是这两项，服务端**没有出口**
