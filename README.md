@@ -230,37 +230,17 @@ npm run check:nightly  # 含真引擎 / 模型与全部反证轮（定期）
 **不为凑覆盖率新增低价值脚本**。
 
 
-## 状态总览（截至 2026-10-16）
+## 项目状态
 
-> 逐条留痕见 `docs/internal/spec-notes.md`（D-01~D-136）与 `docs/internal/spec-notes-1.md`（最新 **D-221**）·
-> 里程碑逐项见 `docs/internal/engine-integration-plan.md`。
-> **类型检查 + 断言通过 ≠ 功能可用** —— 下列「未验证」项即按此口径如实标注。
+当前进度、里程碑、已知缺口与**未验证项**（含"类型检查 + 断言通过 ≠ 功能可用"的口径）
+见决策台账与计划文档：
 
-**✅ 已完成**
+- `docs/internal/spec-notes.md`（D-01~D-136）+ `docs/internal/spec-notes-1.md`（D-137 起）
+- `docs/internal/dev-plan.md` · `docs/internal/engine-integration-plan.md`
+- `docs/internal/engine-e2e-acceptance-report.md`（真机取证逐项总表）
 
-- **ver1.0 · 漫画翻译**：本机投放 · 串行队列（多选删除 / 重试**复用同一 taskId** / 继续翻译 / 单张返工重译）· 漫画库（搜索 + 分页 + 隐藏删除）· 设置页 + **引擎诊断视图** · 全屏看图（`Ctrl/⌘ + 滚轮`锚点缩放 + 拖拽，含**非手势兜底按钮**）。
-- **翻译引擎接入 S0–S8 全部完成**：S1 适配层（D-62）· S2 三进程生命周期（D-64…D-70，`ServiceManager` 管 `Children{service, engine}`，就绪为**三重判定**：进程存活 + 端口 + HTTP）· S3 模型管理（D-72，断点续传 + store 硬链接）· S4 档位 / 加速后端 / 降档重试 / 两级空闲卸载（D-73，**③ 的归属权从 Rust 移交服务端** 的 `mangasvc::engine::supervisor`）· S5 契约增量 9 键 sidecar + 三个 503 分流 + 需鉴权的 `GET /engine/status`（D-74）· **S6 Box UI 诊断视图 + X-C3「准备中」时间线**（D-75）· **S7 真机端到端 E1–E11**（D-76，逐项总表 `docs/internal/engine-e2e-acceptance-report.md`）· **S8 插件串联 P-1…P-4**（D-77）。
-- **ver2.0 · 音乐模块**：网易云 / 酷狗 / QQ / 咪咕**四平台**（登录 / 搜索分页 / 歌单 / 播放 / 评论 · 歌手详情——后两者**仅网易云**）+ 音频代理 + 加密 + 歌词；心动模式 · **桌面歌词（独立置顶窗）** · 逐字歌词（卡拉OK）· 翻译歌词 · 演唱行 · 六皮肤 · 歌曲右键菜单 · 灵动岛歌词卡 · 音乐缓存 · 搜索虚拟滚动 · 音乐快捷键。
-- **ver2.0 · 设置页与 IA**：两级侧栏 · 两栏设置壳 · 「播放·媒体」/「翻译服务」分组 · 侧栏标签开关 / 存储占用 / 第三方许可（D-26…D-38、D-81…D-84）。
-- **Windows 10**：真引擎装配已平台化 + S1 真机已出真译文（D-85）；`[Errno 22]` 日志风暴（D-88）与重启后孤儿执行器占 8001（D-89）已修。
-
-**🚧 未做 / 未验证（如实登记）**
-
-- 🟡 **打包分发（G-13）：服务栈已能随包，A4 起**第一次在真实安装产物上冒烟过**。
-  **Windows 侧已能产出 NSIS 安装包**（`tauri.windows.conf.json` 平台分叉，`npm run task -- check:bundle` 钉住；macOS 包型仍是 `app` + `dmg`，未动）。
-  服务栈侧：F 组已把服务全部搬进 Rust（`bundle.resources` **不需要** `service/` —— W5 明确禁止），
-  A1 让 Rust 按资源目录寻址（`paths::resource_dir()`，release 构建生效）、A2 把必需的引擎资产
-  （`models.manifest.json`）打进包 —— 两者由 `npm run task -- check:resources` 三环境取证、`check:bundle` W6 钉住。
-  **A4 冒烟**（`npm run task -- check:packaged`，nightly 层）：对 `npm run app:build` 产出的**真实安装包**做
-  NSIS 静默安装 → `mangasvc --check-assets` → 起服务打 `/health` + mock 替身 + 启动配方，三层取证 9 条。
-  ⚠️ **仍未验证**：macOS 真机安装（本机只有 Windows）；引擎运行时本身**不随包**（用户自装，B1/B2）。
-- **Windows 进程树回收三项仍 `unverified`**：Job Object / 无孤儿 `llama-server.exe` / `taskkill /T`（Rust 侧，D-85 只跑了引擎侧 S1）。
-- **汽水音乐平台延后**（PD-1 / D-23）：Windows-only 平台耦合 + 依赖仓外二进制签名器；代码保留、不排首批。
-- **音乐模块真机未验证项**：Radix 弹层观感 · 音频代理播放 · 皮肤观感（断言只覆盖结构与接线）。
-- **G-18 遗留**：Windows 无 macOS `Transparent` 标题栏等价物（本机走 `backgroundColor`），**未装机验证**。
-- **引擎 `pydensecrf` 的 GitHub 直链未钉到具体 commit**（移动靶，见上「快速开始」②）。
-
-> 🔴 **引擎栈模式默认 `real`**：`npm run app` 起的**已经是真引擎**（`python main.py` + `llama-server`，需要 `<appData>/MiaoDock/manga/runtimes/manga-translator/`，见 `engine/VERSIONS.lock`）。模拟引擎只在测试里被显式注入（`selftest.mjs` / `e2e.mjs` / `lifespan-selftest.mjs` / `capture.mjs` / `check:e5e6` / `check:contract`）。**本机没拉引擎（运行时目录不在）时产品链路起不起来** —— 缺哪一项由 `GET /api/v1/engine/runtime` 逐项报出（B2）。
+> 本 README 不再维护一份"截至某日期"的状态快照 —— 它必然过期，
+> 而过期的快照比没有快照更糟（读者会以为那就是现状）。
 
 ## 许可
 
