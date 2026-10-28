@@ -1057,7 +1057,11 @@
   align-items: flex-start;
   gap: clamp(16px, 1.8vw, 24px);
   padding-bottom: 18px;
-  border-bottom: 1px dashed color-mix(in srgb, var(--miao-line) 70%, var(--miao-muted));
+  /*
+   * 设计稿 `theme.css:417` 把底边从 styles.css 的 **dashed** 改成 **solid**（颜色 line）——
+   * 详情头是"资料区/内容区"的硬分界，虚线会让它读成"可拖动的分隔条"。
+   */
+  border-bottom: 1px solid var(--miao-line);
 }
 /* 大封面（设计稿 `theme.css:414-419` 的生效值）：
    `clamp(96px, 8vw, 124px)` 宽 + `aspect-ratio: 3/4.1` + r12 ——
@@ -1103,12 +1107,13 @@
   left: 7px;
   top: 8px;
   bottom: 8px;
-  width: 18px;
+  /* 设计稿 `theme.css:425` 的生效值：宽 20（styles.css 是 18）、92% 白底 */
+  width: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.92);
   color: var(--miao-ink);
   font-family: var(--md-font-display);
   font-size: 8px;
@@ -1116,6 +1121,28 @@
   letter-spacing: 0.18em;
   writing-mode: vertical-rl;
   z-index: 1;
+}
+/*
+ * 无封面时的字形（设计稿 `coverGlyph()`：`<span>${glyph}</span>`）：
+ * 书名首字，24px·700（设计稿 `.book-big-cover { font-size: 24px; font-weight: 700; letter-spacing: .08em }`）。
+ * **只有没配封面时才渲染** —— 有真图时再叠一个字会读成"图上贴了个字"。
+ */
+.book-big-cover .glyph {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  /* 给左侧竖排书脊让出位置，字居中在剩余区域而不是整张封面的几何中心 */
+  padding-left: 18px;
+  line-height: 1.1;
+}
+/*
+ * 配了真封面的封面（设计稿 `coverStyle()` 的 `background-image` 分支）：
+ * 渐变底被真图盖住，`::after` 的高光仍叠在上面（它让平面图读成"有厚度"）。
+ */
+.book-big-cover.has-image {
+  background: none;
+  background-size: cover;
+  background-position: center;
 }
 .book-info {
   min-width: 0;
@@ -1127,7 +1154,8 @@
 }
 .book-info h2 {
   font-family: var(--md-font-display);
-  font-size: 22px;
+  /* 设计稿 `theme.css:426` 的生效值：`clamp(22px, 1.9vw, 30px)`（覆盖 styles.css 的 22） */
+  font-size: clamp(22px, 1.9vw, 30px);
   font-weight: 700;
   line-height: 1.25;
   margin-bottom: 3px;
@@ -1144,7 +1172,8 @@
 }
 .book-author {
   margin-top: 3px;
-  font-size: 12px;
+  /* 设计稿 `.book-info .book-author { font-size: calc(11.5px * var(--ui-scale)) }` */
+  font-size: 11.5px;
   color: var(--miao-muted);
 }
 .book-meta-chips {
@@ -1158,7 +1187,9 @@
   max-width: 100%;
   font-family: var(--miao-font-mono);
   font-size: 9.5px;
-  color: var(--miao-faint);
+  /* 设计稿 `theme.css:427`：`color: var(--muted)`（覆盖 styles.css 的 faint）——
+     路径是"这本书在哪"的正文信息，faint 太淡、在长路径上几乎读不出来 */
+  color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1499,6 +1530,25 @@
   position: relative;
 }
 /*
+ * 右上角网点装饰（设计稿 `.book-panel::before`：90×40 / 6px 点阵 / 135° 渐隐遮罩 / 45% 不透明）。
+ * 它给这张大白卡一点"印刷品"的质感；`pointer-events: none` 保证它不挡点击。
+ */
+.lib-right::before {
+  content: '';
+  position: absolute;
+  right: 22px;
+  top: 18px;
+  width: 90px;
+  height: 40px;
+  color: var(--miao-line);
+  opacity: 0.45;
+  background-image: radial-gradient(currentColor 1px, transparent 1.2px);
+  background-size: 6px 6px;
+  -webkit-mask-image: linear-gradient(135deg, #000, transparent);
+  mask-image: linear-gradient(135deg, #000, transparent);
+  pointer-events: none;
+}
+/*
  * 空库（设计稿的空分支）：**单栏**，整页只留一块居中空态。
  * 左栏让位而不是渲染一张空面板 —— 两个都在说"没有东西"时，用户不知道该看哪一个。
  */
@@ -1709,7 +1759,8 @@
   border-radius: 8px;
   background: transparent;
   font-family: var(--md-font-display);
-  font-size: 11px;
+  /* 设计稿 `.cv-back { font-size: calc(10.5px * var(--ui-scale)) }` */
+  font-size: 10.5px;
   font-weight: 700;
   color: var(--miao-muted);
   cursor: pointer;
@@ -1729,7 +1780,8 @@
 }
 .cv-title strong {
   font-family: var(--md-font-display);
-  font-size: 13px;
+  /* 设计稿 `theme.css:453` 的生效值：`clamp(17px, 1.5vw, 22px)`（覆盖 styles.css 的 16） */
+  font-size: clamp(17px, 1.5vw, 22px);
   font-weight: 700;
   color: var(--miao-ink);
   white-space: nowrap;
@@ -1744,7 +1796,8 @@
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 6px;
+  /* 设计稿 `.cv-actions { gap: 5px }` */
+  gap: 5px;
 }
 .cv-info {
   display: flex;

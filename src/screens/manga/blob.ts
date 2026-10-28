@@ -159,6 +159,23 @@ export function chapterImagePath(bookName: string, ch: { no: number | null } & P
 }
 
 /**
+ * **话卡封面**路径：该话的**第 1 页原图**（不是"第一张译文"）。
+ *
+ * 与 `chapterImagePath` 的差别是刻意的：
+ * - `chapterImagePath` 回答"翻过这一话大概会看到什么"⇒ 优先译文图，让"已译"看得出来；
+ * - 本函数回答"这一话长什么样"⇒ 恒取**第 1 页**，同一本书里每张话卡的封面因此是
+ *   "各自的第一页"，能互相区分；拿译文图当封面会让"译完的话"与"没译的话"封面来自
+ *   不同页码，同一本里看着像两本书。
+ *
+ * 空话（一张原图都没有）⇒ `null`，调用方走虚线占位，**不发**必然 404 的请求。
+ */
+export function chapterCoverPath(bookName: string, ch: { no: number | null } & PageSet): string | null {
+  if (ch.no === null) return null; // 话号都没有 ⇒ 它不是话目录，拼不出路径
+  const seq = firstPageOf(ch);
+  return seq === null ? null : chapterFilePath(bookName, ch.no, seq, 'original');
+}
+
+/**
  * 取图结果的 blob URL 缓存（**跨组件、跨卸载**）。
  *
  * ## 为什么必须有它

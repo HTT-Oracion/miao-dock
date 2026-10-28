@@ -15,14 +15,14 @@ import {
   RefreshCw,
   RotateCcw,
 } from 'lucide-react';
-import { Btn, ContextMenu, Empty, IconButton, MenuItem } from '@components/units';
-import { groupSearchResults } from '@tools';
+import { Btn, ContextMenu, Empty, MenuItem } from '@components/units';
+import { groupSearchResults, relativeTime } from '@tools';
 import { ChapterCard, chapterStatusOf } from '@screens/manga/chapters';
 import type { ChapterState } from '@screens/manga/chapters';
 import { EmptyArt, GRID_HINT, GRID_LABEL, Highlight, Thumb } from '@screens/manga/cards';
 import type { GridState } from '@screens/manga/cards';
 import { AUTHOR_FALLBACK } from '@screens/manga/libModel';
-import { coverPath } from '@screens/manga/blob';
+import { chapterCoverPath, coverPath, useBlobUrl } from '@screens/manga/blob';
 import type { PageView } from '@screens/manga/blob';
 import type { BookEntry, ChapterEntry, ComicEntry } from '@/types';
 import { errorText } from '@/ipc';
@@ -159,6 +159,15 @@ export function LibraryRight({
     return currentBook?.outputDir ?? '';
   })();
 
+  /*
+   * 整本封面（设计稿 `.book-big-cover` 的 `coverStyle(book)`）：
+   * 只有 `BookEntry.coverPath` 非 null 才表示「配了封面」—— 它是书籍目录内的**文件名**，
+   * 不是可渲染 URL；取字节仍走 `GET /library/{book}/cover`（`coverPath()` 拼的那个，
+   * 带上 `modifiedAt` 当破缓存键）。
+   */
+  const bookCover = useBlobUrl(currentBook?.coverPath ? coverPath(currentBook.bookName, currentBook.modifiedAt) : null);
+  const bookCoverUrl = bookCover.kind === 'ready' ? bookCover.url : null;
+
   return (
     <section className="lib-right">
       {searching ? (
@@ -293,22 +302,35 @@ export function LibraryRight({
             用户看不出"这是哪部作品、译到什么程度"。
           */}
           <div className="book-hero">
-            <div className="book-big-cover" aria-hidden="true">
+            {/*
+              大封面（设计稿 `styles.css:1100-1120` + `js/manga-library.js::coverStyle/coverGlyph`）：
+              **配了封面就显示真图**（`background-size: cover` / `center`），没配才是渐变底；
+              `obi`（竖排书脊）恒在，`glyph`（书名首字）**只在没配封面时**出现 ——
+              有真图时再叠一个字会读成"图上贴了个字"。
+            */}
+            <div
+              className={bookCoverUrl ? 'book-big-cover has-image' : 'book-big-cover'}
+              aria-hidden="true"
+              style={bookCoverUrl ? { backgroundImage: `url(${bookCoverUrl})` } : undefined}
+            >
               <span className="obi">{Array.from(headName).slice(0, 4).join('')}</span>
+              {bookCoverUrl ? null : <span className="glyph">{Array.from(headName)[0] ?? ''}</span>}
             </div>
             <div className="book-info">
-              {inChapter ? (
-                <IconButton title="返回这一部的话列表" onClick={onExitChapter}>
-                  <ArrowLeft size={20} />
-                </IconButton>
-              ) : null}
-              <span className="kicker">BOOK / {inChapter ? 'CHAPTER' : 'LIBRARY'}</span>
+              {/*
+                🔴 这里**不放返回键**（2026-10-27 按设计稿还原）：
+                设计稿是两屏互斥 —— `renderBookHome` 出 `.book-hero`、`renderChapterView` 出
+                `.cv-head`（返回键在 `.cv-back` 里）。本组件同样只在**整本**分支渲染 `.book-hero`，
+                所以原来那段 `inChapter ? <IconButton 返回/> : null` 是**进不去的死代码**，
+                而且它把返回键塞进 info 列，与设计稿的"返回在话内头部"不是一处。
+              */}
+              <span className="kicker">BOOK / {currentBook ? currentBook.bookName.toUpperCase() : ''}</span>
               <h2 title={headName}>{headName}</h2>
               {currentBook ? (
                 <p className="book-author">
-                  {inChapter
-                    ? `《${currentBook.bookName}》 · 更新于 ${currentBook.modifiedAt ?? '—'}`
-                    : `${currentBook.author || AUTHOR_FALLBACK} · 更新于 ${currentBook.modifiedAt ?? '—'}`}
+                  {`${currentBook.author || AUTHOR_FALLBACK} · 更新于 ${
+                    currentBook.modifiedAt ? relativeTime(currentBook.modifiedAt) : '—'
+                  }`}
                 </p>
               ) : null}
               {currentBook && !inChapter ? (
@@ -385,7 +407,8 @@ export function LibraryRight({
               <div className="book-section-head">
                 <h3>章节</h3>
                 <span className="count">
-                  共 <span className="num">{currentBook.chapters.length}</span> 话 · 点卡片进入页列表
+                  {/* 设计稿 `js/manga-library.js::renderBookHome` 的原句：「共 N 话 · 封面取自本话第 1 页」 */}共{' '}
+                  <span className="num">{currentBook.chapters.length}</span> 话 · 封面取自本话第 1 页
                 </span>
                 {/*
                   整本重译（设计稿「重译整本」）：与话卡的「重译本话」是同一个端点，
@@ -413,14 +436,12 @@ export function LibraryRight({
                     bookName={currentBook.bookName}
                     chapter={ch}
                     /*
-                     * 话卡封面用**整本封面**（服务端没有逐话封面）。
-                     * `BookEntry.coverPath` 非 null 才表示"配了封面" —— 它是书籍目录内的**文件名**，
-                     * 不是可渲染 URL；取字节仍走 `GET /library/{book}/cover`（`coverPath()` 拼的那个）。
-                     * 没配就传 `null`，卡片走虚线占位，不发必然 404 的请求。
+                     * 话卡封面 = **该话第 1 页原图**（不是整本封面）。
+                     * 整本封面是「编辑信息」手动配的，只有一本书一张；拿它当每张话卡的封面
+                     * 会让同一本里所有话长得一模一样，扫一眼分不出是哪话。
+                     * 空话（一张原图都没有）返回 null ⇒ 走虚线占位，不发必然 404 的请求。
                      */
-                    coverUrlPath={
-                      currentBook.coverPath ? coverPath(currentBook.bookName, currentBook.modifiedAt) : null
-                    }
+                    coverUrlPath={chapterCoverPath(currentBook.bookName, ch)}
                     busy={
                       // 整本有任务在跑 ⇒ 它的话也在被写，本话再返工会互相覆盖
                       reworkingComics.has(currentBook.dirName) ||
