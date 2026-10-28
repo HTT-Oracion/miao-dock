@@ -213,112 +213,22 @@ node engine/src/server.mjs
 
 ## 验收
 
-```bash
-npm run selftest              # A 组服务契约 + 引擎自测
-npm run task -- selftest:app          # B 组应用生命周期 16 条（程序化，不依赖人点；含 S2 五态轨迹/参数快照/崩溃分级）
-npm run task -- selftest:app:refute   # 上一项的反证——它必须**变红**，绿的那轮才作数
-npm run task -- selftest:app:e11      # E11 三进程树回收（mock）：SIGKILL 主进程 → 13 端口全释放
-npm run task -- selftest:app:e11:real # 同上但真进程（python+执行器+llama-server）；分钟级，按需手动跑
-npm run task -- selftest:app:guide    # D-229 未装配时 ① 必须可用：服务起得来 + 下载端点能落地 + ②/③ 一个不起（要 release 构建）
-npm run task -- check:launch-plan     # S2 启动配方契约 24 条（含 ③ 归属移交后的 P-llm-* 断言）
-npm run task -- check:child-watch     # 外部二进制父死看守**双靶**取证（Node 原版 + A3c Rust 移植，Rust 靶用产品同源 Rust 父 `mangasvc --child-watch-parent`；含接线错误防护 W2；反证轮只判 Rust 靶，Node 靶按结构跳过并标注原因）
-npm run task -- check:child-watch-kill # child-watch Windows killTree 无条件 /F **双靶源码钉**（Node `child-watch.mjs` + Rust `child_watch.rs`，源码级不起进程；反证 2 条）
-npm run task -- fetch:models          # S3 模型下载器 **Node 对照端**（--check 只校验不联网 / --link 只重建引擎树里的链接；反证：check:models:refute）。⚠️ 产品运行期跑的是 `mangasvc --fetch-models`
-npm run task -- e2e                   # D1–D5 端到端（真实 engine + 真实 service，真落盘）
-npm run task -- capture               # 截图取证（需屏幕解锁；不满足条件会拒绝出图而非交假证据）
-
-# 结构断言（每条都带反证轮，见 docs/internal/spec-notes.md 与 AGENTS.md §3）
-npm run task -- check:ia              # IA 结构 37 条（侧栏两级 / 视图 Tab / 设置两栏壳 / 小节分层 / 侧栏两套几何 C8d / 侧栏不渲染服务状态点 C8e / 下载入口 C8f）
-npm run task -- check:tls             # 依赖链 TLS 14 条（配置层 / 锁文件层 / 源码层）
-npm run task -- check:quit            # 「退出喵坞」根因钉子 5 条 / 反证 5 条（源码级：quit_app 必须 async / reap 有界 / CREATE_NO_WINDOW / 前端不静默 / Windows signal_tree 无条件 /F）
-npm run task -- check:autostart       # 翻译服务「自动启动 / 手动启停」根因钉子 21 条 / 反证 23 条（源码级：start_once 幂等 / service_stop 必须 async 且补发 emit / main.rs 启动收进测试通道 / effect 依赖不含 status / stopped 给「启动」/ 服务实现默认档 = Rust / default-run 指向真实 bin；不起进程）
-npm run task -- check:engine-parity   # 引擎耦合点纯函数 24 条（Rust `--engine-selftest` ⟷ 冻结 golden；real/mock 两档）
-npm run task -- check:engine-http     # 引擎 HTTP 运行期 18 条（真发 HTTP 打伪引擎：请求体 / 错误归一 / 三重就绪 / 超时带走证据）
-# ⚠️ `engine-client 那组钉子` 已退役（D-203）：它测的是 Node 侧 `engine-client.mjs` 的 60 条断言，
-#    契约面由上面两组 golden 等价覆盖；Node 产品源码随 F5 删除后它也没有对象了。
-npm run task -- check:models          # S3 模型下载器 **双靶** 38×2 = 76 条 / 反证 7×2 = 14 条（本地 Range 夹具源：中断续传 / 服务端不支持 Range / 篡改一字节 / 换版本重链 / HF 缓存布局 / **清单原 `url` 不许被 `sources` 挤掉**（H2 · D-217），秒级）。A3d 两靶同跑：Node 对照端 + Rust `mangasvc --fetch-models`（产品主路径）；反证开关走子进程 env
-npm run task -- check:profile         # S4 档位映射 / 加速后端 / 降档 / 空闲卸载（判定层）43 条 / 反证 14 条（起真进程，约 10s）
-npm run task -- check:e5e6            # S4 端到端 E5/E6：真服务 + 真引擎 + 真 ③，16 条 / 逃生开关反证 3 条（约 60s）
-npm run task -- check:contract        # S5 契约增量：9 键 sidecar / 未就绪 vs 不可用 / 模型缺失 / /engine/status 77 条（反证：check:contract:refute）
-npm run task -- check:music           # 音乐平台 / 播放模式五档 / 心动模式 / 播放列表入口与抽屉 / 桌面歌词 / 逐字歌词 / 逐字整行模式 / 翻译歌词 / 演唱行 / 高亮同步 / 滑块填充 / 音频图 / 音乐缓存 / 六皮肤 / 队列 / 歌曲右键菜单 / 灵动岛歌词卡 / 启动恢复 / 音乐快捷键 / 窗口 WebView2 参数 + 未登录时「换一批」走登录框 251 条（反证：check:music:refute，250 条）
-npm run task -- check:anime-module    # 番剧模块接线：@anime 别名双同步 / /anime 路由与 IA / 屏装配件 / 十屏分派 / IPC 命令名与 handler 注册 / animesvc manifest 端点 / 播放契约 PlaybackCore 与 selftest / 播放器接线（anime_play_source → ArtPlayer + hls.js / 内核轨说明 / 续看回写）/ Bangumi 元数据（UA 四段 / 镜像列表与图片镜像 / 检索 / 落 manifest / 详情页入口）/ 扁平落盘目录合成剧集 / 设置接线（库根 / 代理真正生效）/ M3 源契约、本机导入与 RSS 适配器 / 媒体服务器适配器（Jellyfin / Emby，api_key 只走请求头）/ 远程播放中继（anime_play_remote → 带票中继 → 播放器远程态）/ 内核轨（animesvc/kernel：mpv JSON IPC、独立窗口、轨道 / 音量 / 统计）/ 进度条悬停帧预览 / 字幕语言优先级接线 / 探索页在线数据（Bangumi 时间表 / 热度 / 条目建库）/ 番剧设置分组 / 样式注册 / 运行期零 Node / 文档同步 54 条（反证：check:anime-module:refute，49 条）
-npm run task -- check:settings        # 设置页「播放·媒体」+「翻译服务」+ ② 分组简洁化 + 运行状态卡（日志零点击可见）+ X-C3 裁定结果 + ④ 功能梳理（侧栏标签 / 存储占用 / 第三方许可 / def）+ 盒式提示内边距 + 正文首选字体（源柔ゴシックP）+ 组说明/blurb 缺省不渲染 + **C5 许可清单的引擎/模型段** + **D4 运行时实况行** + **③「音乐账号」四格卡** + **两档选择的 `.seg` 分段控件** 184 条（反证：check:settings:refute，144 条）
-npm run task -- check:units           # 前端分层 / hooks / 别名 / 状态 / 屏装配件分派 / 灵动岛 / 看图缩放 / 样式分层 / 令牌真的被定义（CSS 与 TSX 两层）/ 共用控件形状（图标钮、色点）/ 控件注解单一事实源与生效值 / 档位文案单一事实源 / 动效只走令牌 / 弹窗与抽屉的设计稿生效值（含文字按钮几何）/ 两个弹窗必须复用 Modal 单元 / 播放队列抽屉必须复用 SideDrawer 单元 / 日志块必须复用 LogBlock 单元（图标-only 复制 + 悬停与聚焦都浮现） 59 条（反证：check:units:refute）
-npm run task -- check:stall           # U10② 引擎卡死：「静默有上界 + 每次尝试留痕 + 进行中落盘」7 条 / 反证 3 条（mock 引擎对指定 seq「永不回包」）
-npm run task -- check:retry           # 队列「重试」任务身份：复用**同一** taskId / 不冒历史行 + 翻译方向贯通 10 条 / 反证 7 条（mock 引擎 + 真服务子进程）
-npm run task -- check:lib-manage      # 队列多选删除 + 漫画库隐藏/删除/新建/归并/封面/改号：仅终端态可删 / deleteFiles 勾选 / 越界名 403 / 前端接线 23 条 / 反证 12 条（反证锚点在 **Rust** 源码：check:lib-manage:refute）
-npm run task -- check:retranslate     # 单张漫画返工重译 + 全屏缩放：覆盖译文 / 不碰原图 / 与 resume 分工 / 缩放不抢音量键 12 条 / 反证 5 条（反证：check:retranslate:refute）
-npm run task -- check:engine-settings # S6 引擎设置面：档位 / 后端 / 空闲 / 模型目录 + 模型下载状态 61 条（反证：check:engine-settings:refute）
-npm run task -- check:translate      # ver2.2 在线翻译服务（有道智云）：签名 v3 / 四层超时 / 限流 / 三层设置 / 密钥隔离 / 契约适配器 / 5 路由端到端 54 条（反证：check:translate:refute，8 开关；假上游默认发真 SSE 帧，零网络秒级）
-npm run task -- check:docs            # 文档 ↔ 实现一致性 21 条：条数对账 / 两种形态的命令存在（`npm run <入口>` 对 package.json、`npm run task -- <id>` 对命令清单）/ 禁词 0 命中 / 分组覆盖
-npm run task -- check:bundle          # 打包配置钉子 13 条 / 反证 18 条（平台分叉：Windows 走 nsis、基座仍 macOS 专有；W5 判据取**配置**：`bundle.resources` 不得含 `service/` 与 `node.zip`；**W6** 必需资产条目在且 src 真实存在；**W7/W7b（C5）** 随包 **0 个模型权重**（后缀黑名单 + 与 `engine/models.manifest.json` 逐条交叉）；**W8–W11（E2/E3）** NSIS 安装器钩子：长路径**只读提示**（不替用户改 `HKLM`）+ 卸载**默认保留**引擎运行时且不碰作品目录 + 引导写明 SmartScreen + **每个弹窗都有 `IfSilent` 守卫**（否则静默安装/卸载会被弹窗挂死，不是变红是不返回）；源码级，不起进程）
-npm run task -- check:resources       # 随包资源寻址 **A1/A2** 三环境取证 8 条 / 反证 4 条（dev 态不误报 · 打包齐备取资源目录 · 打包缺失报 `RESOURCE_MISSING` · 优先级 · 必需资产交叉验证 · 源码钉）
-npm run task -- check:packaged        # **A4 打包后冒烟**：真实安装包三层取证 12 条（nightly 层；NSIS 静默安装 → `--check-assets` + `--engine-crf-plan` 命中包内 wheel → 起服务打 `/health` + mock 替身 + 启动配方）
-npm run task -- check:runtime-probe   # **B2/B5 引擎运行时七项只读检测** 78 条 / 反证 5 条（`GET /api/v1/engine/runtime`；`venvRoot`/`python`/`source`/`deps`/`patches`/`llm`/`weights` 逐项独立翻转 + `detail` 必带绝对路径 + 缺补丁点名到 patch id + mock 档不 warn + junction 场景三项 env 判定穿过链接。末两项属**模型链**（D-231③），前五项全绿但缺它们时 `ready` 仍为 false）
-npm run task -- check:path-single-source # **B3 检测与启动同源** 5 条 / 反证 1 条（`/engine/runtime` 的 `python.path` vs `--print-launch-plan` 的 `engine.cmd[0]` 逐字节比对）
-npm run task -- check:launch-gate    # **D6 real 档启动前预检闸门** 10 条 / 反证 4 条（real+未就绪 ⇒ **②/③ 一个不起、① 照常起**（D-229）并逐项点名七项；mock 档不过闸；含三条源码钉：「`gate_message(` 早于 `spawn_spec(&plan.engine`」+「闸门不得连 ① 一起挡」+「`wait_probe` 先查子进程存活再谈超时（D-231②）」）
-npm run task -- check:install-guide  # **D5 安装引导与产品对拍** 18 条 / 反证 6 条（两份引导的落点模板代入本机后 == `mangasvc --print-paths` 推出的落点、体积标记 == 清单按平台求和、七项就绪项 · 三条落点纪律 · 平台形态互不串 · 两种命令形态都存在）
-npm run task -- check:notready-state # **D1「运行时未装配」独立成态** 21 条 / 反证 10 条（两条链路都带 `runtime` 块 · 七项判据含模型链的 `llm`/`weights`（D-231③）· **装配五段取代 L1–L4**（D-233，承 D-231⑥）：五句文案逐字冻结 + 旧阶段表真的删干净 + 段号只来自 `download.step`、第五段「就绪」由 `runtime.ready` 收尾而不是第五个事件 + 引导页与时间线共用同一个 `AssemblyTimeline` · 新分支不混进服务失败 · 「约 X GB」来自服务端 `requiredBytes`）
-npm run task -- check:models-guide   # **D8 模型引导清单（渲染而非编写）** 14 条 / 反证 4 条（逐条目标绝对路径 ⟷ Node 独立算 · 就绪 = 在位且大小一致 · 改清单副本 ⇒ 输出跟着变）
-npm run task -- check:size-guide     # **C1 体积与落点如实告知** 16 条 / 反证 3 条（`guidance.totalBytes` == 本平台清单 `sizeBytes` 求和且与 D1 同数 · 分档之和恒等于总量 · 与安装引导文档三方闭环 · 界面无写死 GB）
-npm run task -- check:model-runner   # **C2 执行体随包定位** 12 条 / 反证 3 条（默认执行体 == 当前可执行文件的**绝对路径** · verify 跑得起来、不是 INTERNAL · 不在盘上时报路径 · 跨卷单独记账）
-npm run task -- check:platform-guide # **C3 `llama-server` 按平台分化** 12 条 / 反证 3 条（`MIAO_PLATFORM` 接缝下两个方向都真跑：Windows 只出 `win32-x64` 的 runtime 条目、macOS 只出 mac 条目；引导侧与下载器**给同一个答案**）
-npm run task -- check:offline-fallback # **C4 离线兜底** 9 条 / 反证 3 条（权重在盘才注入 `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`；`--link` 在**不可达地址**下零网络重建引擎真要打开的那条路径（含 HF 的 `snapshots`+`refs/main`）；清掉链接 ⇒ 引擎树那一路立刻红，而 **store 那一路始终全绿** —— 两层判据真的分层）
-npm run task -- check:progress-truth # **D2 进度只来自真实来源** 10 条 / 反证 3 条（数据源只推**读到的行** · `lastLogLine` 没有就不显示 · 没有行时整块不渲染，代码里不存在占位数字）
-npm run task -- check:extract-atomic # **D3 原子解包** 6 条 / 反证 3 条（真 `tar` + 夹具：解包失败时 `destDir` **一个字节都不动**、不留 `.part`；旧的「先删后解」一旦还原回去就变红）
-npm run task -- check:pydensecrf-wheel # **B4 预编译 wheel 通道** 11 条 / 反证 6 条（`--print-plan` 四态判定：命中且 sha256 对得上 ⇒ 走 wheel；哈希不符 ⇒ **拒绝并回退**；文件不在盘上 / 只有别的平台条目 ⇒ 回退。🔴 回退是**前提**：清单为空仍能装。清单条目 `local` 与 `url` **二选一互斥**；`--print-plan` 与 `--wheel-entry` 是只读模式，非 Windows 下也能用）
-npm run task -- check:pydensecrf-wheel-install # **B4 真装一次**（nightly）：`pip install --no-index --no-deps` 成功（**自足、不联网、不编译**）+ 真二进制 + 构造 `DenseCRF(10,10)`。硬前置是有 `--build-wheel` 产出的 wheel
-npm run task -- check:offline-real   # **C4 真引擎离线加载**（nightly，分钟级，要真权重）：离线旗标生效下 ②③ 都到 running + 真跑一张英译中（走 nllb 的 HF 缓存）并落盘
-npm run task -- check:uninstall-keep # **E3 真卸载一次**（nightly，要安装包 + 本机有引擎运行时）：静默卸载不挂住 · 卸载真生效 · 引擎运行时与作品目录**原封不动**
-npm run task -- check:macos-compat   # **D7 macOS 兼容** 11 条 / 反证 4 条（解释器两个平台形态都在 + 实跑不串 + 检测与启动逐字节同源；**Windows 专用脚本在非 Windows 下 exit 2 并指向 macOS 引导**（不是 `ENOENT python.exe`）；文档分平台；`unverified` 记账）
-npm run task -- check:macos-signing  # **E1 macOS 签名 + 公证** 8 条 / 反证 4 条（entitlements 四项为 true 且无 app-sandbox · `hardenedRuntime` + entitlements 接线 · 打包前自检：缺变量非零退出并点名 / `MIAO_NOTARIZE=0` 放行但告警 / 变量齐放行 · `app:build:mac` 串上自检）
-```
-
-**F 组「服务 Rust 化」的契约钉子**（F0–F5 已全部完成，见 `docs/internal/packaging-local-engine-dev-plan.md`）——
-D-209 起**靶子只剩一个**（`target/debug/mangasvc`）：对照端逐块改成**冻结 golden**
-（`e2e/service/golden/*.json`）或 Rust 自证出口（`mangasvc --*-selftest` / `--print-paths`），
-`MIAO_SERVICE_IMPL=node` 现在**抛错**（退役门，静默落回 = 假绿）：
+> 🔴 **命令全表只在一处**：[`docs/internal/commands.md`](docs/internal/commands.md)
+> —— 每条命令 + 一句话用途 + 断言条数。本节不复制那张表。
 
 ```bash
-npm run task -- check:paths          # F2 路径解析与 config.mjs 逐字节对拍 5 条 / 反证 5 条（13 键快照 + B1 的 appData 落点 + B1 收尾的装配脚本同源）
-npm run task -- check:store# F3  任务库内核对拍 24 条 / 反证 24 条（serde 字段声明序须逐字复刻 Node 键序）
-npm run task -- check:store-exec     # F3-b 执行/队列对拍 74 条 / 反证（7 场景连定义都单源）
-npm run task -- check:engine-parity  # F4 引擎协议/配方层对拍 24 条 / 反证
-npm run task -- check:engine-http    # F4-b1 引擎 HTTP 运行期对拍 18 条 / 反证（伪引擎喂帧）
-npm run task -- check:llm-supervisor # F4-b2 ③ supervisor 对拍 4 条 / 反证（起真 mock-llm 子进程）
-npm run task -- check:harness        # F0 双靶子 harness 7 条 / 反证（未知 IMPL 取值必须吵一声）
-npm run task -- check:routes         # F5 路由表/转发计数 9 条（--final 10 条 = 完成门）/ 反证 4 条（转发数必须 0）
+npm run check          # static 快闸门（每次提交）
+npm run check:changed  # 只跑与 git 变更相关的（日常）
+npm run check:full     # static + service 全量（push / PR 前）
+npm run check:nightly  # 含真引擎 / 模型与全部反证轮（定期）
 ```
 
-> ⚠️ **仓库里那份 Node 服务实现（`service/`）已整目录删除**（D-209）：它先被摘出
-> **产品运行时与随包**（F5.8），随后逐块失去对照对象 —— 同源对拍改**冻结 golden**、
-> 取证改读 Rust 自证出口、反证锚点搬进 Rust 源码 —— 于是整目录退场。
-> 留在仓库里的 Node 只有**测试替身**（`engine/src/*`）与**开发/装配脚本**（`engine/scripts/*`），
-> 两者都不进包、不在产品运行时里。
+跑单条：`npm run task -- <id>`（如 `check:units`）· 列清单：`npm run task`。
 
-**S7 真机端到端 E1–E11**（逐项取证总表：`docs/internal/engine-e2e-acceptance-report.md`）—— 这几条**不进常规门**，按需手动跑：
+**自测怎么写、什么时候该写**见 [`docs/internal/test-policy.md`](docs/internal/test-policy.md)。
+核心：逻辑改动必须有自动化验证；纯文案 / 样式改动以实际界面检查为主，
+**不为凑覆盖率新增低价值脚本**。
 
-```bash
-npm run task -- check:e3:real            # E3  真引擎全链路 31 张              （真权重，分钟级）
-npm run task -- check:e4[:refute]        # E4  档位：引擎真在用的那一档        6 条 / 反证 4 条
-npm run task -- check:e7:real[:refute]   # E7  3.6 GB 真权重 sha256 + 篡改必检出 6 条 / 反证 3 条
-npm run task -- check:e8[:refute]        # E8  加速后端 3 轮真服务             6 条 / 反证 4 条
-npm run task -- check:e10[:refute]       # E10 安全：回环 / 非图片字节 / 403    7 条 / 反证 4 条
-npm run task -- selftest:app:e11:real    # E11 三进程树回收 + E1 生效参数快照 （真进程，分钟级）
-```
-
-> **E9（与插件联调）不在本仓**：在 `miao-trans` 仓跑 `node e2e/e9-real-engine.mjs`（先构建扩展）——
-> 真实漫画站 31 张 + 真引擎，19 条断言，约 10 分钟；产物落该仓 `.temp-translate-test/`（已 gitignore）。
-> 脚本自己拉起并收尾 manga-service / 引擎 / ③ / `:8001` 执行器（**孙进程**，漏杀会让下一轮全 `engine_engine_error`）。
-
-各组判据与「为什么这么测」见 `docs/internal/dev-plan.md` §4；一路踩过的环境陷阱见 `docs/internal/spec-notes.md`。
-
-> **在代理（沙箱）里跑 e2e 时，请把临时目录挪到系统临时区**：
-> ```bash
-> MIAO_E2E_TMP="$(node -e 'console.log(require("os").tmpdir())')/miao-e2e" npm run task -- e2e
-> ```
-> 运行时的「安全删除守卫」会拦截仓库内 `.tmp/e2e/` 的批量删除（连开头那次清理都起不来），
-> 而它对系统临时目录下的路径整条绕过。一件事两样症状、排查全过程见 `docs/internal/spec-notes.md` D-19。
 
 ## 状态总览（截至 2026-10-16）
 
