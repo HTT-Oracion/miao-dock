@@ -3791,3 +3791,23 @@
     flex-direction: column;
   }
 }
+
+/* 表头里的筛选触发器：收起时看起来就是表头文字，悬停才有按钮感 */
+.qt-head .qt-c-source .btn,
+.qt-head .qt-c-status .btn {
+  height: 22px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--miao-faint);
+}
+.qt-head .qt-c-source .btn:hover,
+.qt-head .qt-c-status .btn:hover {
+  color: var(--miao-text);
+  background: var(--miao-surface-3);
+}
+.qt-filter-menu {
+  min-width: 150px;
+}

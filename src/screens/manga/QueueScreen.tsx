@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FolderOpen, RefreshCw, Trash2 } from 'lucide-react';
 import { QUEUE_TABLE } from '@/themes/tokens';
-import { STATUS_LABEL, SOURCE_LABEL, isTerminal, type TaskRow, type TaskStatus } from '@/types';
+import { STATUS_LABEL, SOURCE_LABEL, isTerminal, type TaskRow, type TaskSource, type TaskStatus } from '@/types';
+/** 筛选下拉里列出的状态 / 来源（顺序即展示顺序） */
+const STATUS_OPTIONS: TaskStatus[] = ['queued', 'running', 'done', 'partial_failed', 'failed', 'canceled'];
+const SOURCE_OPTIONS = Object.keys(SOURCE_LABEL) as TaskSource[];
+
 import { pageCount, pageSlice, pageWindow, relativeTime } from '@tools';
 import { Btn, IconButton, MagicCircle, MenuButton, MenuItem } from '@components/units';
 
@@ -342,14 +346,26 @@ export function QueueTable({
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(false);
+  /** 状态 / 来源筛选：`null` = 不筛 */
+  const [statusFilter, setStatusFilter] = useState<TaskStatus | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<TaskSource | null>(null);
 
-  const totalPages = pageCount(rows.length, PAGE_SIZE);
+  const filteredRows = useMemo(
+    () =>
+      rows.filter(
+        (r) =>
+          (statusFilter === null || r.status === statusFilter) && (sourceFilter === null || r.source === sourceFilter),
+      ),
+    [rows, statusFilter, sourceFilter],
+  );
+
+  const totalPages = pageCount(filteredRows.length, PAGE_SIZE);
   // 行数变少（删完一批、或别处取消）时把页码夹回合法区间，否则会停在空白页
   useEffect(() => {
     setPage((p) => (p > totalPages ? totalPages : p));
   }, [totalPages]);
 
-  const pageRows = useMemo(() => pageSlice(rows, page, PAGE_SIZE), [rows, page]);
+  const pageRows = useMemo(() => pageSlice(filteredRows, page, PAGE_SIZE), [filteredRows, page]);
 
   /** 汇总：四个状态各多少条，全部算自当前 rows */
   const stats = useMemo(() => {
@@ -497,9 +513,69 @@ export function QueueTable({
             <div className="qt-name">
               <div className="qt-name-col">任务 / 漫画名</div>
             </div>
-            <div className="qt-c-source">来源</div>
+            <div className="qt-c-source">
+              <MenuButton
+                size="sm"
+                menuClass="qt-filter-menu"
+                label={sourceFilter ? SOURCE_LABEL[sourceFilter] : '来源'}
+                ariaLabel="按来源筛选"
+                title="按来源筛选"
+              >
+                {(close) => (
+                  <>
+                    <MenuItem
+                      label="全部来源"
+                      onClick={() => {
+                        setSourceFilter(null);
+                        close();
+                      }}
+                    />
+                    {SOURCE_OPTIONS.map((s) => (
+                      <MenuItem
+                        key={s}
+                        label={SOURCE_LABEL[s]}
+                        onClick={() => {
+                          setSourceFilter(s);
+                          close();
+                        }}
+                      />
+                    ))}
+                  </>
+                )}
+              </MenuButton>
+            </div>
             <div className="qt-c-progress">进度</div>
-            <div className="qt-c-status">状态</div>
+            <div className="qt-c-status">
+              <MenuButton
+                size="sm"
+                menuClass="qt-filter-menu"
+                label={statusFilter ? STATUS_LABEL[statusFilter] : '状态'}
+                ariaLabel="按状态筛选"
+                title="按状态筛选"
+              >
+                {(close) => (
+                  <>
+                    <MenuItem
+                      label="全部状态"
+                      onClick={() => {
+                        setStatusFilter(null);
+                        close();
+                      }}
+                    />
+                    {STATUS_OPTIONS.map((s) => (
+                      <MenuItem
+                        key={s}
+                        label={STATUS_LABEL[s]}
+                        onClick={() => {
+                          setStatusFilter(s);
+                          close();
+                        }}
+                      />
+                    ))}
+                  </>
+                )}
+              </MenuButton>
+            </div>
             <div className="qt-c-action">操作</div>
           </div>
           <div className="qt-body">
