@@ -88,7 +88,7 @@ cd src-tauri && cargo check
 | `docs/refs/engine/02-e9-panel-18.png` | **E9** 面板在真实漫画站上扫到 18 格的截图 |
 | `docs/refs/engine/02-e9-page-translated.png` | **E9** 页面**就地**换上中文译文的截图（肉眼可辨） |
 | `docs/refs/engine/02-e9-plugin-real-engine.stdout.log` | E9 的完整 stdout（含预热轮数、心跳、逐条断言） |
-| `docs/refs/e2e/01-queue.png` … `06-settings-diag.png` | Box 端 6 张界面取证（队列 / 漫画库 / 对比 / 深色设置 / ②翻译服务 / 引擎诊断） |
+| `.tmp/capture/01-queue.png` … `06-settings-diag.png` | Box 端 6 张界面取证（队列 / 漫画库 / 对比 / 深色设置 / ②翻译服务 / 引擎诊断）。**2026-10-30 起不入库**：它们是 `npm run task -- capture` 的产物，落 `.tmp/capture/`（仓库外）；需要看图请重跑该命令 |
 
 ---
 

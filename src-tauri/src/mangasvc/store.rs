@@ -154,7 +154,9 @@ impl Default for EnvConfig {
 }
 
 /// `envBool` 语义：未设/空 ⇒ 默认；`0|false|no|off`（不区分大小写）⇒ false；其余 ⇒ true。
-fn env_bool(key: &str, def: bool) -> bool {
+/// 读 bool 型 env（`pub(crate)`：`handlers.rs::assert_root_writable` 的反证开关也用它，
+/// 保持与 `EnvConfig` 同一套"什么算真"的口径 —— `0/false/no/off` 为假，空串走默认）。
+pub(crate) fn env_bool(key: &str, def: bool) -> bool {
     match std::env::var(key) {
         Ok(v) if !v.is_empty() => {
             !matches!(v.to_ascii_lowercase().as_str(), "0" | "false" | "no" | "off")

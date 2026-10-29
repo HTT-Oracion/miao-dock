@@ -1889,6 +1889,80 @@ D-409 留的"结构待拍板"已定：**话封面用整本封面**（`manifest.c
 
 ---
 
+## D-411 · 两条长期恒红的 service 断言与"截图入库"的收尾（2026-10-30）
+
+### ① `check:routes` —— 独立预言漏了一条端点
+
+`ROUTES.coverage` 报 `表多：POST /api/v1/engine/models/download/pause`。
+
+`EXPECTED`（`e2e/service/routes-check.mjs` 里**手写**的独立预言，注释明写"不从 Rust 读 ——
+它是另一双眼"）漏了 D-237 加的暂停端点。`routes.rs:79` 与 `handlers.rs:385` 都是真的，
+**端点活着，是预言过时了**。
+
+它藏了很久的原因值得记：`check:routes` 在 **service 层**（约 4 分钟），
+日常跑的是 static 快闸门（约 25s）⇒ 没人看见。
+
+> 教训：**手写预言必须与"加端点"这个动作绑在一起**。
+
+### ② `check:svc-selftest` A21 —— 夹具在 Windows 上双重失效
+
+4 条红，拆开是**两个独立缺陷**：
+
+| 组 | 症状 | 真因 |
+|---|---|---|
+| ① 根目录只读 → 507 | 返回 **201**（任务建成了） | `fs.chmodSync(roRoot, 0o500)`：**POSIX mode 对目录不生效**，Windows 更不用它拦写 ⇒ 探测照常成功 |
+| ① `reason === 'EACCES'` | 断言过时 | `handlers.rs:284` 回的是 **`e.to_string()`**（`拒绝访问。(os error 5)`），不是 Node 时代的 `err.code` |
+| ② 非 fs 错误不得伪装 507 | 返回 **201**（开关没生效） | 用 `NODE_OPTIONS=--import` 挂 **Node** 钩子，而 F5 起服务靶子是 `mangasvc` **二进制** ⇒ 钩子根本不加载 |
+
+**② 组是从 F5 起就恒红的死断言** —— 它测的东西（"非文件系统错误不得伪装成 507"）是对的，
+但夹具再也造不出那个错误。
+
+### 修法
+
+**Rust 侧加原生反证开关**（`handlers.rs::assert_root_writable`）：
+
+```rust
+if crate::mangasvc::store::env_bool("MIAO_PROBE_NO_ERRNO", false) {
+    let why = "injected: 写入被外部策略层拦下（刻意不带 errno）".to_string();
+    return Err(StoreError::new("INTERNAL", "落盘根目录探测失败（非文件系统错误）",
+        json!({ "root": …, "reason": why })));
+}
+```
+
+`store.rs::env_bool` 从 `fn` 改 `pub(crate)`（与 `EnvConfig` 共用"什么算真"的口径）。
+
+**测试侧**（`e2e/service/selftest.mjs`）：
+
+- ① 组：只在 **POSIX 非 root** 上真造只读（`chmod 0o500` 确实有效）；
+  其余平台**显式打印跳过原因**并跳过 —— **跳过 ≠ 通过**。
+- ① 的 reason 断言：`=== 'EACCES'` → `/permission|denied|os error (1|13|5)/i`。
+- ② 组：**删掉整个 Node 钩子**，改传 `MIAO_PROBE_NO_ERRNO: '1'`。
+
+### 反证
+
+把 `if env_bool(...)` 改成 `if false` → 重编译 → A21② 变红（154/2）→ 还原 → 重编译 → 156/0。
+字节一致。
+
+### ③ 界面截图不再入库（B 方案）
+
+`docs/refs/` 里 8 个界面图（`e2e/` 6 张 + `design/` 2 张，共 2.2 MB）删除，
+`e2e/capture.mjs` 的 `OUT` 从 `docs/refs/e2e` 改到 **`.tmp/capture`**。
+
+判据是"**跑一次就会重新生成的东西不该进版本库**"：它们每轮 diff 都是几 MB 二进制，
+而真正的取证记录以文字与判据形式留在 `docs/internal/engine-e2e-acceptance-report.md`。
+
+**保留的**：`docs/refs/engine/`（5 个，真引擎/插件联调一次性证据）与
+`docs/refs/manga-ocr/`（2 个，OCR 对比）—— 要真权重、真模型才能复现，删了无法重来。
+
+Rust 侧**不需要改**：`selftest/capture.rs` 早就由 `MIAO_CAPTURE_DIR` 驱动（`capture.mjs` 传的），
+没有硬编码 `docs/refs`。
+
+### 门
+
+`check` **20/20** · `check:routes` **9/9** · `check:svc-selftest` **156/0** · `check:music` **251/251**
+
+---
+
 ## G-01 · 待裁定：下载前检查的「磁盘剩余」与「模型源延迟」
 
 设计稿 `.ed-preflight` 的第三、四格是这两项，服务端**没有出口**
