@@ -47,8 +47,10 @@
 - **manifest**：删 `sakura_1_5b_fp16` / `detect_ctd` / `ocr_48px_ctc` 三条，18 条资产全走 `hf-mirror.com`。
 - 验证：`npm run check` 20/20 · `cargo test --lib` 318/318 · 真机 `config = {detector:default, ocr:mocr, inpainter:lama_large}`、`llm.model = Sakura-Galtransl-7B-v3.7-IQ4_XS`。
 
-### ⚠️ 已知取舍：`use_mocr_merge` 未开启
+### ‼️ `use_mocr_merge` 刻意关闭（用户实测否决）
 
-实测同图改动面积：`48px` 3.69% · `mocr` 3.95% · **`mocr`+`use_mocr_merge` 14.27%**。
-即 mocr 单独的收益接近零，真正解决「日文少检」的是 merge。当前按需求**不开 merge**，
-若少检复现，这是第一个要打开的开关。
+机器指标曾显示它把改动面积从 3.95% 拉到 14.27%，但**用户实测文本质量明显变差** ——
+指标高只说明「改了更多像素」，不等于「改得对」：merge 会把本不该合并的相邻文本框并成一段，
+译文顺序与断句随之错乱。
+
+⇒ **不启用**。这是"机器指标好看但人眼不可接受"的典型，记在此以免后来者只看数字就打开它。
