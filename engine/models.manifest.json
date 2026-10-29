@@ -15,8 +15,8 @@
       "files": ["detect_default", "inpainter_lama_large", "ocr_48px", "ocr_alphabet_v7", "font_lxgw_wenkai_gb", "font_zen_maru_gothic"]
     },
     "llm": {
-      "desc": "Sakura LLM 权重（经 llama-server 以 OpenAI 兼容接口提供）。⚠️ CC BY-NC-SA 4.0，禁止商用；对外分发前必须先有法务结论（VERSIONS.lock §6）",
-      "files": ["sakura_1_5b_fp16"]
+      "desc": "翻译 LLM 权重 Sakura-Galtransl-7B-v3.7（经 llama-server 以 OpenAI 兼容接口提供）。⚠️ CC BY-NC-SA 4.0，禁止商用；对外分发前必须先有法务结论（VERSIONS.lock §6）",
+      "files": ["llm_galtransl_7b_v37_iq4xs"]
     },
     "runtime": {
       "desc": "外部二进制（llama-server）。严格说不是「模型」，但它与模型同性质：外部资产 + 需镜像通道 + 需要校验，故复用同一套下载与校验机制。🔴 这里**按平台分化**：条目带 `platform` 字段（`darwin-arm64` / `win32-x64`），selectFiles 按当前平台过滤 ⇒ 在 Windows 上只会下 Windows 的那两条（llama+cudart），不会去下 macos 的。",
@@ -122,18 +122,18 @@
       "note": "译文渲染的**首选**字体（`rendering/text_render.py` 的 FALLBACK_FONTS[0]，见补丁 D-105）。落盘到引擎 `src/fonts/`。✅ 走 GB18030 简体全覆盖（与 Zen Maru Gothic 的 JIS 汉字集不同，简中译文基本同源、不再混排），楷体。⚠️ 霞鹜文楷**无 Bold 字重**（上游仅 Light / Regular / Medium）⇒ 取 **Medium** 档（笔画更饱满、≈ 500）充当加粗观感。它不是上游引擎包自带的 ⇒ 必须靠本条目注入；缺失时渲染会**静默回退**到紧随的 Zen / msyh（不报错）。release 资产自带 tag（非 git 树文件），url/sources 钉 v1.522 以保证字节可复现。"
     },
     {
-      "id": "sakura_1_5b_fp16",
+      "id": "llm_galtransl_7b_v37_iq4xs",
       "set": "llm",
+      "dest": "models/sakura/Sakura-Galtransl-7B-v3.7-IQ4_XS.gguf",
+      "sha256": "8f515bf4769f279a7fcf43e57446455a9d4de7f65b1bc9eddee76717e1ff7919",
       "stage": 2,
-      "dest": "models/sakura/sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
-      "sha256": "eb0f76c7d52710329c4071d8fbbef5c51f9a4f047c066472e6c7063a53e45764",
-      "sizeBytes": 3560416256,
-      "url": "https://hf-mirror.com/SakuraLLM/Sakura-1.5B-Qwen2.5-v1.0-GGUF/resolve/main/sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
+      "sizeBytes": 4250296192,
+      "url": "https://hf-mirror.com/SakuraLLM/Sakura-GalTransl-7B-v3.7/resolve/main/Sakura-Galtransl-7B-v3.7-IQ4_XS.gguf",
       "sources": [
-        "https://hf-mirror.com/SakuraLLM/Sakura-1.5B-Qwen2.5-v1.0-GGUF/resolve/main/sakura-1.5b-qwen2.5-v1.0-fp16.gguf"
+        "https://hf-mirror.com/SakuraLLM/Sakura-GalTransl-7B-v3.7/resolve/main/Sakura-Galtransl-7B-v3.7-IQ4_XS.gguf"
       ],
       "license": "CC BY-NC-SA 4.0 —— 🔴 禁止任何形式的商用",
-      "note": "3.3 GB（fp16）。该仓库只有 fp16 一份，计划里写的 Tiny「≈1.1 GB」指 4-bit 量化，官方仓库里不存在。备选档 8B / 14B 更慢，暂不用。"
+      "note": "档位 tiny 的翻译权重（2026-10-30 起）。上游只发 IQ4_XS 与未量化两档，**没有 Q4_K_M**；IQ4_XS 是同一档 4-bit 量化。"
     },
     {
       "id": "llama_cpp_macos_arm64",

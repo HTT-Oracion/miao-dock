@@ -993,11 +993,11 @@ mod tests {
     fn model_id_takes_basename_of_explicit_model() {
         // 真档：model 是**绝对路径** ⇒ 必须 basename + 去 .gguf（否则整个路径泄出去）
         let l = spec(
-            Some("/runtimes/manga-translator/models/sakura/sakura-1.5b-qwen2.5-v1.0-fp16.gguf"),
+            Some("/runtimes/manga-translator/models/sakura/Sakura-Galtransl-7B-v3.7-IQ4_XS.gguf"),
             vec!["llama-server", "-m", "/x/y.gguf"],
             vec![],
         );
-        assert_eq!(model_id_of(&l).as_deref(), Some("sakura-1.5b-qwen2.5-v1.0-fp16"));
+        assert_eq!(model_id_of(&l).as_deref(), Some("Sakura-Galtransl-7B-v3.7-IQ4_XS"));
     }
 
     #[test]

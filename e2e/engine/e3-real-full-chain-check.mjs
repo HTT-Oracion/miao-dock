@@ -41,7 +41,7 @@ const VENV_PY =
   process.platform === 'win32'
     ? path.join(RT, 'venv', 'Scripts', 'python.exe')
     : path.join(RT, 'venv', 'bin', 'python');
-const SAKURA_GGUF = path.join(RT, 'models', 'sakura', 'sakura-1.5b-qwen2.5-v1.0-fp16.gguf');
+const SAKURA_GGUF = path.join(RT, 'models', 'sakura', 'Sakura-Galtransl-7B-v3.7-IQ4_XS.gguf');
 const TEST_IMAGE = path.join(ROOT, 'test-manga', 'test_0.webp');
 
 const KEEP = process.argv.includes('--keep');

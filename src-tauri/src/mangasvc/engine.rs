@@ -65,10 +65,13 @@ pub const STAGE_TEXT_MAX: usize = 120;
 /// 结果流单帧文本上限（随错误详情进响应体，不设限时话多的引擎能把回包撑到几百 KB）。
 pub const FRAME_TEXT_MAX: usize = 200;
 
-/// 档位 → Sakura 权重文件名。**只有 Tiny 被固化进 manifest**；small/medium 显式 `None`，
+/// 档位 → 翻译 LLM 权重文件名。**只有 Tiny 被固化进 manifest**；small/medium 显式 `None`，
 /// 调用方必须报错，**绝不回落成 tiny**（回落会让用户以为在跑 7B、实际 1.5B，且追溯不到根因）。
+///
+/// 2026-10-30 起 tiny 换成 **GalTransl-7B-v3.7（IQ4_XS）**：
+/// 上游仓库只发 `IQ4_XS` 与未量化两档，**没有 Q4_K_M** —— IQ4_XS 是同一档 4-bit 量化（3.96 GB）。
 pub const TIER_LLM_MODELS: &[(&str, Option<&str>)] = &[
-    ("tiny", Some("sakura-1.5b-qwen2.5-v1.0-fp16.gguf")),
+    ("tiny", Some("Sakura-Galtransl-7B-v3.7-IQ4_XS.gguf")),
     ("small", None),
     ("medium", None),
 ];
@@ -250,6 +253,10 @@ pub fn placeholder_fields() -> Value {
 // ================================================================ 生效参数快照（§5.2 的 config 块）
 
 /// 按 env 合成 `config.engineConfig`（《04》§4.2 参数基线，发给引擎用 snake_case）。
+///
+/// 2026-10-30 只换了两处：③ 的翻译权重（见 `TIER_LLM_MODELS`）与 `ocr`（`48px` → `mocr`）。
+/// 「文本检测 / 图像修复」保持产品原值 `default` / `lama_large` —— 实测 `ctd` 在本机漫画上
+/// 反而少检（改动面积 3.23% vs default 3.94%），故不采纳。
 pub fn engine_config() -> Value {
     let mut translator = serde_json::Map::new();
     translator.insert(
@@ -280,7 +287,11 @@ pub fn engine_config() -> Value {
     );
 
     let mut ocr = serde_json::Map::new();
-    ocr.insert("ocr".into(), json!(env_str("MIAO_ENGINE_OCR").unwrap_or_else(|| "48px".into())));
+    /*
+     * `mocr`（manga-ocr-base）替代通用的 `48px`：日文漫画上对竖排假名与拟声词的召回更好。
+     * 🔴 刻意**不开** `use_mocr_merge` —— 由产品侧决定合并策略，不在本层预设。
+     */
+    ocr.insert("ocr".into(), json!(env_str("MIAO_ENGINE_OCR").unwrap_or_else(|| "mocr".into())));
 
     json!({
         "translator": translator,

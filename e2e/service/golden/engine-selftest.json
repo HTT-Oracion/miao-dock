@@ -7,7 +7,7 @@
       "TIER_LLM_MODELS": {
         "medium": null,
         "small": null,
-        "tiny": "sakura-1.5b-qwen2.5-v1.0-fp16.gguf"
+        "tiny": "Sakura-Galtransl-7B-v3.7-IQ4_XS.gguf"
       }
     },
     "engineVersion": "441d07c",
@@ -41,7 +41,7 @@
       ],
       "llmLaunchByTier": [
         {
-          "model": "<HOME>\\AppData\\Local\\MiaoDock\\manga\\runtimes\\manga-translator\\models\\sakura\\sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
+          "model": "<HOME>\\AppData\\Local\\MiaoDock\\manga\\runtimes\\manga-translator\\models\\sakura\\Sakura-Galtransl-7B-v3.7-IQ4_XS.gguf",
           "ok": true,
           "tier": "tiny"
         },
@@ -163,7 +163,7 @@
       ],
       "tierModelPath": [
         {
-          "path": "<HOME>\\AppData\\Local\\MiaoDock\\manga\\runtimes\\manga-translator\\models\\sakura\\sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
+          "path": "<HOME>\\AppData\\Local\\MiaoDock\\manga\\runtimes\\manga-translator\\models\\sakura\\Sakura-Galtransl-7B-v3.7-IQ4_XS.gguf",
           "tier": "tiny"
         },
         {
@@ -234,7 +234,7 @@
       "cmd": [
         "/bin/llama-server",
         "-m",
-        "<HOME>\\AppData\\Local\\MiaoDock\\manga\\runtimes\\manga-translator\\models\\sakura\\sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
+        "<HOME>\\AppData\\Local\\MiaoDock\\manga\\runtimes\\manga-translator\\models\\sakura\\Sakura-Galtransl-7B-v3.7-IQ4_XS.gguf",
         "--port",
         "8080",
         "-c",
@@ -244,7 +244,7 @@
       ],
       "cwd": null,
       "label": "llm",
-      "model": "<HOME>\\AppData\\Local\\MiaoDock\\manga\\runtimes\\manga-translator\\models\\sakura\\sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
+      "model": "<HOME>\\AppData\\Local\\MiaoDock\\manga\\runtimes\\manga-translator\\models\\sakura\\Sakura-Galtransl-7B-v3.7-IQ4_XS.gguf",
       "probes": [
         {
           "kind": "tcp",
@@ -306,7 +306,7 @@
       "TIER_LLM_MODELS": {
         "medium": null,
         "small": null,
-        "tiny": "sakura-1.5b-qwen2.5-v1.0-fp16.gguf"
+        "tiny": "Sakura-Galtransl-7B-v3.7-IQ4_XS.gguf"
       }
     },
     "engineVersion": "mock",
@@ -454,7 +454,7 @@
       ],
       "tierModelPath": [
         {
-          "path": "<HOME>\\AppData\\Local\\MiaoDock\\manga\\runtimes\\manga-translator\\models\\sakura\\sakura-1.5b-qwen2.5-v1.0-fp16.gguf",
+          "path": "<HOME>\\AppData\\Local\\MiaoDock\\manga\\runtimes\\manga-translator\\models\\sakura\\Sakura-Galtransl-7B-v3.7-IQ4_XS.gguf",
           "tier": "tiny"
         },
         {

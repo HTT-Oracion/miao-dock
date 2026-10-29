@@ -344,7 +344,7 @@ function engineSourceShape() {
     const m = JSON.parse(fs.readFileSync(MODELS_MANIFEST, 'utf8'));
     const st = (f) => (f.stage === undefined ? 1 : f.stage);
     const llama = m.files.filter((f) => f.set === 'runtime');
-    const sakura = m.files.find((f) => f.id === 'sakura_1_5b_fp16');
+    const sakura = m.files.find((f) => f.id === 'llm_galtransl_7b_v37_iq4xs');
     stageOk = llama.length > 0 && llama.every((f) => st(f) === 1) && !!sakura && st(sakura) === 2;
     stageDetail = { runtimeStage: llama.map((f) => [f.id, st(f)]), sakuraStage: sakura ? st(sakura) : null };
   } catch (e) {

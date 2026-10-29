@@ -38,3 +38,17 @@
 - 同类任务另有 `service_restarted`（`store.rs:359`：服务重启把非终态 item 判失败），本条不同因。
 - 清进程后用完整桌面端重跑同一页 **9.2s 成功**；原日志已滚动，detail 丢失。
 - **2026-10-30 用户实测通过，确认已解决。**
+## D-414 翻译权重换 GalTransl-7B、OCR 换 mocr ✅ 已完成
+
+- **③ 权重**：`sakura-1.5b-qwen2.5-v1.0-fp16.gguf` → `Sakura-Galtransl-7B-v3.7-IQ4_XS.gguf`。
+  上游无 Q4_K_M，只有 IQ4_XS（3.96 GB）与未量化（5.82 GB）→ 取 IQ4_XS。
+- **OCR**：`48px` → `mocr`（manga-ocr-base，423 MB，落用户级 HF 缓存，两份 runtime 共用）。
+- **检测器 / 修复器**：保持 `default` / `lama_large`。实测 `ctd` 反而少检（改动面积 3.23% vs 3.94%），不采纳。
+- **manifest**：删 `sakura_1_5b_fp16` / `detect_ctd` / `ocr_48px_ctc` 三条，18 条资产全走 `hf-mirror.com`。
+- 验证：`npm run check` 20/20 · `cargo test --lib` 318/318 · 真机 `config = {detector:default, ocr:mocr, inpainter:lama_large}`、`llm.model = Sakura-Galtransl-7B-v3.7-IQ4_XS`。
+
+### ⚠️ 已知取舍：`use_mocr_merge` 未开启
+
+实测同图改动面积：`48px` 3.69% · `mocr` 3.95% · **`mocr`+`use_mocr_merge` 14.27%**。
+即 mocr 单独的收益接近零，真正解决「日文少检」的是 merge。当前按需求**不开 merge**，
+若少检复现，这是第一个要打开的开关。
