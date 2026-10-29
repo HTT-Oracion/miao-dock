@@ -4,6 +4,7 @@ import { useToasts } from '@hooks';
 import type { ServiceStatus } from '@/ipc';
 import { stateView } from '@/stores/nav';
 import { useEngineState } from '@screens/settings/engine-state';
+import { ServiceStatusButton } from '@components/ServiceStatusButton';
 import { ACCEL_LABEL, TIER_LABEL } from '@screens/settings/engine-api';
 import { errorText, openPath, serviceStart, serviceStop } from '@/ipc';
 import { Btn, Dot, Notice, NumberInput, Select, Switch } from '@components/units';
@@ -458,6 +459,7 @@ export function TranslateSection({
                 <Dot colorVar={state.colorVar} pulse={status?.state === 'starting'} />
                 <span className="set-state-text">{STATUS_TEXT[status?.state ?? 'stopped']}</span>
               </span>
+              <ServiceStatusButton children={status?.children ?? []} mode={status?.mode ?? null} />
               <span className="set-pnum">服务 :{status?.port ?? '—'}</span>
               <span className="set-pnum">引擎 :{status?.sidecar_port ?? '—'}</span>
             </>

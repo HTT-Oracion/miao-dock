@@ -296,110 +296,141 @@ export function LibraryRight({
       ) : current ? (
         <>
           {/*
-            详情头（设计稿 `.book-hero`）：左侧大封面 96×130 + 右侧信息列
-            （kicker / 标题 / 作者与更新时间 / 状态徽标 / 路径 / 动作）。
-            旧写法是一行「标题 + 路径 + 刷新」，没有封面也没有状态徽标 ——
-            用户看不出"这是哪部作品、译到什么程度"。
+            详情头（设计稿 `.book-hero`）：**只有整本（有 manifest）才显示**。
+            单话（`currentBook === null` 的未归并单话目录）不显示 —— 那一屏的主体是页网格，
+            再叠一层大封面 + 标题 + 作者只会把真正的操作挤到折叠线以下。
+            整本里点进某一话时同样不显示（那一屏由下面的 `.cv-head` 承担）。
           */}
-          <div className="book-hero">
-            {/*
+          {inChapter || !currentBook ? null : (
+            <div className="book-hero">
+              {/*
               大封面（设计稿 `styles.css:1100-1120` + `js/manga-library.js::coverStyle/coverGlyph`）：
               **配了封面就显示真图**（`background-size: cover` / `center`），没配才是渐变底；
               `obi`（竖排书脊）恒在，`glyph`（书名首字）**只在没配封面时**出现 ——
               有真图时再叠一个字会读成"图上贴了个字"。
             */}
-            <div
-              className={bookCoverUrl ? 'book-big-cover has-image' : 'book-big-cover'}
-              aria-hidden="true"
-              style={bookCoverUrl ? { backgroundImage: `url(${bookCoverUrl})` } : undefined}
-            >
-              <span className="obi">{Array.from(headName).slice(0, 4).join('')}</span>
-              {bookCoverUrl ? null : <span className="glyph">{Array.from(headName)[0] ?? ''}</span>}
-            </div>
-            <div className="book-info">
-              {/*
+              <div
+                className={bookCoverUrl ? 'book-big-cover has-image' : 'book-big-cover'}
+                aria-hidden="true"
+                style={bookCoverUrl ? { backgroundImage: `url(${bookCoverUrl})` } : undefined}
+              >
+                <span className="obi">{Array.from(headName).slice(0, 4).join('')}</span>
+                {bookCoverUrl ? null : <span className="glyph">{Array.from(headName)[0] ?? ''}</span>}
+              </div>
+              <div className="book-info">
+                {/*
                 🔴 这里**不放返回键**（2026-10-27 按设计稿还原）：
                 设计稿是两屏互斥 —— `renderBookHome` 出 `.book-hero`、`renderChapterView` 出
                 `.cv-head`（返回键在 `.cv-back` 里）。本组件同样只在**整本**分支渲染 `.book-hero`，
                 所以原来那段 `inChapter ? <IconButton 返回/> : null` 是**进不去的死代码**，
                 而且它把返回键塞进 info 列，与设计稿的"返回在话内头部"不是一处。
               */}
-              <span className="kicker">BOOK / {currentBook ? currentBook.bookName.toUpperCase() : ''}</span>
-              <h2 title={headName}>{headName}</h2>
-              {currentBook ? (
-                <p className="book-author">
-                  {`${currentBook.author || AUTHOR_FALLBACK} · 更新于 ${
-                    currentBook.modifiedAt ? relativeTime(currentBook.modifiedAt) : '—'
-                  }`}
+                <span className="kicker">BOOK / {currentBook ? currentBook.bookName.toUpperCase() : ''}</span>
+                <h2 title={headName}>{headName}</h2>
+                {currentBook ? (
+                  <p className="book-author">
+                    {`${currentBook.author || AUTHOR_FALLBACK} · 更新于 ${
+                      currentBook.modifiedAt ? relativeTime(currentBook.modifiedAt) : '—'
+                    }`}
+                  </p>
+                ) : null}
+                {currentBook && !inChapter ? (
+                  <div className="book-meta-chips">
+                    <span className="st-badge is-idle">{currentBook.chapterCount} 话</span>
+                    <span className="st-badge is-idle">{currentBook.totalPages} 页</span>
+                    <span
+                      className={
+                        currentBook.totalPages > 0 &&
+                        currentBook.chapters.reduce((s, c) => s + c.translatedCount, 0) >= currentBook.totalPages
+                          ? 'st-badge is-ok'
+                          : 'st-badge is-idle'
+                      }
+                    >
+                      已译{' '}
+                      {currentBook.totalPages > 0
+                        ? Math.round(
+                            (currentBook.chapters.reduce((s, c) => s + c.translatedCount, 0) / currentBook.totalPages) *
+                              100,
+                          )
+                        : 0}
+                      %
+                    </span>
+                    <span className="st-badge is-ok">在书架</span>
+                  </div>
+                ) : null}
+                <p className="book-path" title={headPath}>
+                  {headPath}
                 </p>
-              ) : null}
-              {currentBook && !inChapter ? (
-                <div className="book-meta-chips">
-                  <span className="st-badge is-idle">{currentBook.chapterCount} 话</span>
-                  <span className="st-badge is-idle">{currentBook.totalPages} 页</span>
-                  <span
-                    className={
-                      currentBook.totalPages > 0 &&
-                      currentBook.chapters.reduce((s, c) => s + c.translatedCount, 0) >= currentBook.totalPages
-                        ? 'st-badge is-ok'
-                        : 'st-badge is-idle'
-                    }
-                  >
-                    已译{' '}
-                    {currentBook.totalPages > 0
-                      ? Math.round(
-                          (currentBook.chapters.reduce((s, c) => s + c.translatedCount, 0) / currentBook.totalPages) *
-                            100,
-                        )
-                      : 0}
-                    %
-                  </span>
-                  <span className="st-badge is-ok">在书架</span>
-                </div>
-              ) : null}
-              <p className="book-path" title={headPath}>
-                {headPath}
-              </p>
-              <div className="book-actions">
-                {/*
+                <div className="book-actions">
+                  {/*
                   详情头的三个动作（设计稿 `.book-actions`）：继续翻译（primary）/ 编辑信息 / 刷新。
                   「继续翻译」与「编辑信息」此前**只**在左栏右键菜单里 —— 详情头是用户看这本书
                   时最自然的落点，把主行动藏进右键菜单等于让他先猜。
                 */}
+                  <Btn
+                    kind="primary"
+                    size="sm"
+                    disabled={!currentBook || reworkingComics.has(currentBook.dirName)}
+                    title={
+                      currentBook && reworkingComics.has(currentBook.dirName)
+                        ? '这本书已有任务在跑'
+                        : '把还没译的页加进队列（已完成的页不动）'
+                    }
+                    onClick={() => {
+                      if (!currentBook) return;
+                      onResume(`/library/${encodeURIComponent(currentBook.bookName)}`, `《${currentBook.bookName}》`);
+                    }}
+                  >
+                    继续翻译
+                  </Btn>
+                  <Btn
+                    kind="ghost"
+                    size="sm"
+                    disabled={!currentBook}
+                    title="改封面（本地图片 / 取第 1 话首图 / 移除）与作者"
+                    onClick={() => {
+                      if (currentBook) onEditBook(currentBook);
+                    }}
+                  >
+                    编辑信息
+                  </Btn>
+                  <Btn kind="ghost" size="sm" onClick={onRefresh} title="重新扫描漫画库">
+                    <RefreshCw size={14} />
+                    刷新
+                  </Btn>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 单话（无 manifest）的头部：标题 + 进度 + 动作，不放大封面 */}
+          {!inChapter && !currentBook && current ? (
+            <div className="cv-head">
+              <div className="cv-title">
+                <strong>{current.comicName}</strong>
+                <span>
+                  <span className="num">{current.imageCount}</span> 页 · 单话
+                </span>
+              </div>
+              <div className="cv-actions">
                 <Btn
                   kind="primary"
                   size="sm"
-                  disabled={!currentBook || reworkingComics.has(currentBook.dirName)}
-                  title={
-                    currentBook && reworkingComics.has(currentBook.dirName)
-                      ? '这本书已有任务在跑'
-                      : '把还没译的页加进队列（已完成的页不动）'
+                  disabled={reworkingComics.has(current.dirName)}
+                  title="把还没译的页加进队列（已完成的页不动）"
+                  onClick={() =>
+                    onResume(`/library/${encodeURIComponent(current.comicName)}`, `《${current.comicName}》`)
                   }
-                  onClick={() => {
-                    if (!currentBook) return;
-                    onResume(`/library/${encodeURIComponent(currentBook.bookName)}`, `《${currentBook.bookName}》`);
-                  }}
                 >
                   继续翻译
                 </Btn>
-                <Btn
-                  kind="ghost"
-                  size="sm"
-                  disabled={!currentBook}
-                  title="改封面（本地图片 / 取第 1 话首图 / 移除）与作者"
-                  onClick={() => {
-                    if (currentBook) onEditBook(currentBook);
-                  }}
-                >
-                  编辑信息
-                </Btn>
                 <Btn kind="ghost" size="sm" onClick={onRefresh} title="重新扫描漫画库">
-                  <RefreshCw size={14} />
+                  <RefreshCw size={13} />
                   刷新
                 </Btn>
               </div>
             </div>
-          </div>
+          ) : null}
 
           {currentBook && !inChapter ? (
             /* ── 屏 B：话列表（设计稿 §7.3）── 话卡是文字卡（第 N 话 / 页数 / 进度条） */

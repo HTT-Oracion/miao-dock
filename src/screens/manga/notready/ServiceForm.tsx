@@ -1,5 +1,6 @@
 import { AlertTriangle, Download, Info, Play, RefreshCw, Settings, Terminal } from 'lucide-react';
 import { Btn, LogBlock } from '@components/units';
+import { ServiceStatusButton } from '@components/ServiceStatusButton';
 import { errorText, type ServiceStatus } from '@/ipc';
 import { copyText } from '@tools';
 import { toastBus } from '@/stores/toastBus';
@@ -50,7 +51,6 @@ export function ServiceForm({
   const state = status?.state ?? 'starting';
   const err = status?.last_error ?? null;
   const failed = state === 'error';
-  const degraded = !!status?.degraded;
   const l2Failed = isL2Failure(status);
 
   const logBtn = (
@@ -137,12 +137,7 @@ export function ServiceForm({
       {/* 一行 meta：正常时它是"都活着"，不值得占三行；异常时才转红 */}
       <div className="nr-meta">
         <span className="mchip">引擎模式 {status?.mode ?? '—'}</span>
-        <span className={degraded ? 'mchip is-bad' : 'mchip'}>
-          三进程{' '}
-          {(status?.children ?? [])
-            .map((c) => `${c.name}${c.alive ? '✓' : '✗'}${c.pid ? `(${c.pid})` : ''}`)
-            .join(' · ') || '—'}
-        </span>
+        <ServiceStatusButton children={status?.children ?? []} mode={status?.mode ?? null} />
         {status?.port ? <span className="mchip">服务 :{status.port}</span> : null}
         {status?.sidecar_port ? <span className="mchip">引擎 :{status.sidecar_port}</span> : null}
         {status?.llm_port ? <span className="mchip">③ :{status.llm_port}</span> : null}

@@ -56,8 +56,23 @@ function Pane({
             title="点击全屏查看"
           />
         ) : (
-          // 取图中 / 确实没有，是两件事：前者会换成图，后者不会
-          <span className="muted pane-msg">{blob.kind === 'loading' ? '加载中…' : '该侧文件缺失'}</span>
+          /*
+           * 取图中 / 确实没有，是两件事：前者会换成图，后者不会。
+           * 译文侧再细分一层：「还没译」不是「文件缺失」——说成缺失会让人去查磁盘，
+           * 而它其实只是没跑过翻译。
+           */
+          <span className={blob.kind === 'loading' ? 'muted pane-msg' : 'pane-empty'}>
+            {blob.kind === 'loading' ? (
+              '加载中…'
+            ) : variant === 'translated' ? (
+              <>
+                <span className="pane-empty-title">这一页还没有译文</span>
+                <span className="pane-empty-sub">点上方「重新翻译本页」，或回列表用「继续翻译」补齐</span>
+              </>
+            ) : (
+              <span className="muted pane-msg">该侧文件缺失</span>
+            )}
+          </span>
         )}
       </div>
     </div>

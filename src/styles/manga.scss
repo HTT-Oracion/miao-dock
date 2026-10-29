@@ -71,6 +71,9 @@
 .qs-legend .is-failed {
   background: var(--miao-danger);
 }
+.qs-legend .is-done {
+  background: var(--miao-success);
+}
 .qs-actions {
   margin-left: auto;
   display: flex;
@@ -130,6 +133,10 @@
   background: var(--miao-surface);
   box-shadow: var(--miao-shadow-1);
   overflow: hidden;
+  /* 表头固定、表体滚动：整表 overflow:hidden 会把子元素的滚动一起裁掉 */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /*
@@ -162,6 +169,10 @@
 .qt-body {
   display: flex;
   flex-direction: column;
+  /* 表体独立滚动，表头与汇总条保持可见 */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .qt-row {
@@ -232,39 +243,11 @@
   font-size: 10px;
 }
 
-/* 任务名列：多选时左边多一个复选框，故整格是「行」；文字仍竖排两行由 .qt-name-col 承担。
-   这样加复选框不会挤动后面几列的固定宽（120/160/150/128 一个都不动）。 */
+/* 任务名列：多选时左边多一个复选框，故整格是「行」；文字仍竖排两行由 .qt-name-col 承担。 */
 .qt-name {
-  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-/*
- * 行内封面占位：队列契约里没有封面字段，所以这里**不猜图** ——
- * 只把漫画名首字落在中性面上，与漫画库的 `cover-ph` 同一口径。
- */
-/* 设计稿 .queue-cover：34x44 / r6 / 渐变底 + 白字 + 一层浅投影
-   —— 旧写法是描边 + 浅渐变底，读起来像"占位框"而不是一枚封面。 */
-.qt-cover {
-  flex: 0 0 34px;
-  width: 34px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  background: linear-gradient(145deg, var(--miao-primary), var(--miao-accent));
-  color: rgba(255, 255, 255, 0.94);
-  font-family: var(--md-font-display);
-  font-size: 12px;
-  font-weight: 700;
-  box-shadow: 0 2px 5px rgba(45, 59, 70, 0.12);
-}
-.qt-cover-ghost {
-  border-color: transparent;
-  background: transparent;
 }
 .qt-name-col {
   flex: 1;
@@ -468,17 +451,6 @@
   padding: 0 2px;
   font-size: 10px;
   color: var(--miao-faint);
-}
-.pager-top {
-  margin-left: 0;
-}
-.pager-top .pager-info {
-  font-size: 9.5px;
-}
-.pager-top button {
-  min-width: 24px;
-  height: 24px;
-  font-size: 10px;
 }
 
 /* 复选框：原生 input 各平台外观差异大，统一压成 15×15 圆角方块 + 语义色勾选。
@@ -2147,6 +2119,25 @@
 /* 取图中 / 缺失的占位文案：比标题小一档 */
 .pane-msg {
   font-size: 12px;
+}
+/* 未译缺省页：一眼看出"这页还没译"，并给出下一步 */
+.pane-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--miao-muted);
+}
+.pane-empty-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--miao-text);
+}
+.pane-empty-sub {
+  font-size: 11px;
+  color: var(--miao-faint);
 }
 /*
  * 与 `.lightbox-stage` 同理：**必须 flex 居中，不能用 grid + place-items:center**

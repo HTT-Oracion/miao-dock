@@ -1653,3 +1653,91 @@
   outline: 2px solid var(--miao-primary);
   outline-offset: 2px;
 }
+
+/* ── 三进程状态按钮（ServiceStatusButton）────────────────────────────
+ * 收起只显示首个进程；有失败时右侧多一枚红色警告。展开后逐项列出。
+ */
+.svc-st-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.svc-st {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--miao-line);
+  border-radius: 999px;
+  background: var(--miao-surface-2);
+  font-size: 9.5px;
+  color: var(--miao-muted);
+  cursor: pointer;
+}
+.svc-st.is-ok {
+  color: var(--miao-success);
+  border-color: color-mix(in srgb, var(--miao-success) 30%, transparent);
+}
+.svc-st.is-bad {
+  color: var(--miao-danger);
+  border-color: color-mix(in srgb, var(--miao-danger) 34%, transparent);
+}
+.svc-st.is-idle {
+  color: var(--miao-faint);
+}
+.svc-st:hover {
+  background: var(--miao-surface-3);
+}
+.svc-st-port {
+  font-variant-numeric: tabular-nums;
+}
+.svc-st-chev {
+  opacity: 0.6;
+}
+.svc-st-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--miao-danger) 14%, transparent);
+  color: var(--miao-danger);
+  font-size: 9px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.svc-st-menu {
+  min-width: 190px;
+}
+.svc-st-head {
+  padding: 6px 10px 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--miao-faint);
+  text-transform: uppercase;
+}
+.svc-st-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 10.5px;
+}
+.svc-st-row.is-ok {
+  color: var(--miao-success);
+}
+.svc-st-row.is-bad {
+  color: var(--miao-danger);
+}
+.svc-st-name {
+  color: var(--miao-text);
+}
+.svc-st-pid {
+  margin-left: auto;
+  font-size: 9.5px;
+  color: var(--miao-faint);
+  font-variant-numeric: tabular-nums;
+}

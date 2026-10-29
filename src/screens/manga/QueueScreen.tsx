@@ -84,17 +84,6 @@ function rowSubText(t: TaskRow): string {
 }
 
 /**
- * 封面占位字。
- *
- * 队列行**没有封面数据**（`GET /tasks` 只回任务元信息），所以这里不猜图、也不外链任何地址：
- * 取漫画名的首字作占位，颜色走主题的中性面，与漫画库 `cover-ph` 同一口径。
- */
-function coverInitial(name: string): string {
-  const chars = Array.from(name.trim());
-  return chars.length ? chars[0] : '?';
-}
-
-/**
  * 进度单元格。
  *
  * 《02》§5.8「中英混排」要求「N / M」型计数**拆两个文本节点**：数字走显示体、
@@ -218,9 +207,6 @@ function Row({
       </div>
 
       <div className="qt-name">
-        <span className="qt-cover" aria-hidden="true">
-          {coverInitial(t.comicName)}
-        </span>
         <div className="qt-name-col">
           <div className="qt-name-main" title={t.comicName}>
             {t.comicName}
@@ -281,19 +267,9 @@ function Row({
  * 翻页器藏起来或只留「上一页 / 下一页」会让用户不知道自己看的是第几页。
  * 只有一页时仍露出（上一页 / 下一页置灰），因为"只有 1 页"本身也是信息。
  */
-function QueuePager({
-  page,
-  total,
-  onPage,
-  compact,
-}: {
-  page: number;
-  total: number;
-  onPage: (p: number) => void;
-  compact?: boolean;
-}) {
+function QueuePager({ page, total, onPage }: { page: number; total: number; onPage: (p: number) => void }) {
   return (
-    <div className={compact ? 'pager pager-top' : 'pager'}>
+    <div className="pager">
       <span className="pager-info">
         第 <span className="num">{page}</span> / <span className="num">{total}</span> 页
       </span>
@@ -456,10 +432,12 @@ export function QueueTable({
               <i className="is-failed" />
               需要处理 {stats.failed}
             </span>
+            <span>
+              <i className="is-done" />
+              已完成 {stats.done}
+            </span>
           </div>
           <div className="qs-actions">
-            <span className="chip chip-soft">{stats.done} 条已完成</span>
-            <QueuePager page={page} total={totalPages} onPage={setPage} compact />
             {onRefresh ? (
               <IconButton title="刷新任务列表" onClick={() => onRefresh()}>
                 <RefreshCw size={14} />
@@ -517,7 +495,6 @@ export function QueueTable({
               )}
             </div>
             <div className="qt-name">
-              <span className="qt-cover qt-cover-ghost" aria-hidden="true" />
               <div className="qt-name-col">任务 / 漫画名</div>
             </div>
             <div className="qt-c-source">来源</div>
