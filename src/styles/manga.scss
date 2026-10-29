@@ -932,6 +932,8 @@
  * 旧写法是 flex + gap，页面本身不留白 —— 两侧栏会贴到窗口边缘。
  */
 .lib {
+  /* 卡片网格的统一间距：话卡与页卡同用，两屏切换时节奏一致 */
+  --miao-card-gap: 12px;
   display: grid;
   /*
    * 左栏宽度取设计稿 `theme.css:398-402`（它覆盖 styles.css:1039 的 `296px`）：
@@ -1698,7 +1700,8 @@
 .chapter-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(clamp(162px, 11.5vw, 188px), 1fr));
-  gap: 11px;
+  /* 与 .page-grid 同一档间距：两个详情页并排看时卡片节奏一致 */
+  gap: var(--miao-card-gap);
 }
 /*
  * 页网格（设计稿 `.page-grid`）：每列至少 112px —— 比话卡更窄，一屏能看更多页。
@@ -1707,7 +1710,7 @@
 .page-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(clamp(114px, 9.4vw, 154px), 1fr));
-  gap: 12px;
+  gap: var(--miao-card-gap);
 }
 
 /*
