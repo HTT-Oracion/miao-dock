@@ -172,6 +172,8 @@ export interface MusicState {
   currentQuality: string;
   currentBitrate: number;
   proxyPort: number;
+  /** 首屏数据是否已拉过（`init` 挂在音乐屏上，切屏回来不重复请求） */
+  inited: boolean;
   playHistoryList: PlayHistoryEntry[];
   /**
    * 换音质时的**续播位置**（毫秒，0 表示无需续播）。
@@ -725,6 +727,7 @@ export const useMusicStore = create<MusicState>()((set, get) => ({
   currentQuality: '',
   currentBitrate: 0,
   proxyPort: 0,
+  inited: false,
   playHistoryList: [],
   resumeAtMs: 0,
   // 启动恢复：默认都不在恢复态

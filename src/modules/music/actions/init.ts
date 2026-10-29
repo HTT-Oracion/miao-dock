@@ -148,10 +148,18 @@ export const createInitSlice = (
     // 恢复偏好（与启动时那次水合是同一份实现，重复调用无副作用）
     get().hydratePrefs();
 
-    // 恢复播放历史 + 本地曲库
+    // 恢复播放历史 + 本地曲库（纯本地，每次进屏都做，成本可忽略）
     const history = readLS<PlayHistoryEntry[]>(LS_HISTORY, []);
     set({ playHistoryList: Array.isArray(history) ? history : [] });
     get().loadLocalSongs();
+
+    /*
+     * 防重入：`init` 挂在音乐屏上，切走再切回会重跑。
+     * 首屏数据（榜单 / 推荐 / 歌单 / 喜欢）**只拉一次** —— 重复拉会看到骨架屏闪一下，
+     * 也会在用户不知情时打一串接口。刷新走各区块自己的「刷新 / 换一批」。
+     */
+    if (get().inited) return;
+    set({ inited: true });
 
     // 代理端口（懒启动，失败不阻断）
     try {
