@@ -39,6 +39,18 @@ function progressNote(t: TaskRow): string {
 }
 
 /**
+ * 失败页的原始原因摘要（行的 `title`）。
+ *
+ * 队列行原本只有「N 页失败」，看不出为什么 —— 引擎返回的具体错误此前根本没透到前端。
+ * 优先展示引擎原话；没有就退回 reason 码。
+ */
+function failureDetail(t: TaskRow): string | undefined {
+  const items = t.failedItems;
+  if (!items || items.length === 0) return undefined;
+  return items.map((i) => `第 ${i.seq} 页：${i.errorMessage ?? i.reason ?? '原因未记录'}`).join('\n');
+}
+
+/**
  * 状态列文案 + 徽标形态（设计稿 `js/manga.js:82-87` 的 `meta` 表）。
  *
  * 🔴 与 `STATUS_LABEL` **不是**同一套：那是给读屏与提示用的通用词（「失败」），
@@ -104,7 +116,9 @@ function ProgressCell({ t }: { t: TaskRow }) {
       <span> / </span>
       <span className="num">{total}</span>
       <span className="qt-unit"> 页</span>
-      <span className={noteCls}>{progressNote(t)}</span>
+      <span className={noteCls} title={failureDetail(t)}>
+        {progressNote(t)}
+      </span>
       <div className={barClass(t.status)}>
         <i style={{ width: `${pct}%` }} />
       </div>

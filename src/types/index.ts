@@ -38,6 +38,13 @@ export interface TaskRow {
   outputDir: string;
   createdAt: string;
   finishedAt: string | null;
+  /**
+   * 失败页的原始原因（只含失败项）。
+   *
+   * 队列行原本只显示「N 页失败」，看不出**为什么**。这个字段带引擎原话，
+   * 供行的 `title` / 失败提示直接展示。**可选**：旧任务快照没有它。
+   */
+  failedItems?: { seq: number; reason: string | null; errorMessage: string | null }[];
 }
 
 export interface TaskListResponse {
