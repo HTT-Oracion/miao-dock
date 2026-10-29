@@ -24,3 +24,19 @@
 - **注释**：此后新增/修改的注释只写核心信息（跨文件契约、易踩坑、反直觉处），不写流水账。
 - 已同步 `AGENTS.md` §4 的两条纪律。
 - 验证：`npm run check` 20/20。
+## D-413 队列失败行带出引擎原始原因 ⏸ 挂起（第 5 项待定位）
+
+- `ItemBrief` / `ListView` 新增 `errorMessage` / `failedItems`：此前 `error_message` 只在内存里设，
+  `#[serde(skip_serializing)]` 不落盘、view 也不投影 ⇒ 失败原因对前端是黑箱。
+- 队列行 `.qt-pct` 的 `title` 现在显示「第 N 页：<引擎原话>」。
+- 验证：`/tasks` 返回 `failedItems`；队列行 title 实测 `第 2 页：engine_engine_error`。
+
+### 第 5 项调查结论（未定位到根因）
+
+- 现场：`哥布林21` 2 页，第 1 张 success 84.8s，第 2 张 **470ms** 失败 `engine_engine_error`，retry=1 仍失败。
+- **无法复现**：清干净进程后用完整桌面端跑同一页，**9.2s 成功**。
+- 470ms 远小于正常推理（9–85s）⇒ 不是算不动，是引擎在两次调用之间状态变了。
+- 另一条任务记录了 `service_restarted`（`store.rs:359`：服务重启会把非终态 item 判失败），
+  但本条是 `engine_engine_error`（引擎返回 500），两者不同因。
+- **原始日志已被覆盖**（10-29 的 app log 已滚动），detail 永久丢失 —— 这正是本次补 `errorMessage` 的原因。
+- 待办：下次复现时从 `failedItems[].errorMessage` 直接读引擎原话。
