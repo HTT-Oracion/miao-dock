@@ -54,3 +54,16 @@
 译文顺序与断句随之错乱。
 
 ⇒ **不启用**。这是"机器指标好看但人眼不可接受"的典型，记在此以免后来者只看数字就打开它。
+
+## D-415 暂时隐藏番剧入口 ✅ 已完成
+
+- `Sidebar.tsx` 加 `SHOW_ANIME_ENTRY: boolean = false` 包住番剧入口与 popover；`Screen`/路由/设置第 6 组不动。
+- 🔴 **不能用 JSX 注释**隐藏：注释后 `Clapperboard`/`Search`/`Star`/`Clock`/`Sparkles` 与 `animeView`/`onAnimeView` 变未使用，`tsc --noEmit` 报 7 个 TS6133；`npm run build` 会红，而日常 `npm run check` 抓不到（它不跑 tsc）。
+- 断言同步：`spec-check.ts` C8a 与 `e2e/ia-structure-check.mjs`（`BASE.apps` + `judgeC8`）从 3 项改 **2 项**，条数仍 37。
+- 验证：`tsc` 0 · `check` 20/20 · `check:ia` 37/37（含反证轮）· 真机侧栏实测 2 项 `[漫画翻译 58×52, 音乐 58×52]`、无 `nav-wrap`。
+
+### ‼️ 同轮修掉一处假绿（`check:ia` 基线从未真正判定）
+
+`e2e/ia-structure-check.mjs` 基线循环写的是 `ok(v === true, …)`，`v` 取自 `want`（恒真）⇒
+**基线永远不会失败**，只在文案里打印"红 ← 误报"。改成实测值 `j[id]` 后立刻暴露
+`TRANS` 夹具漏了第 6 组「番剧设置」（已补）。反证验证：塞回番剧入口 ⇒ 35 通过 / 2 失败、exit 1。

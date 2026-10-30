@@ -427,13 +427,14 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
      * 换成可访问名称后，两种形态下判据都成立，口径也与读屏一致。
      */
     const names = appItems.map((e) => (e.getAttribute('aria-label') ?? e.getAttribute('title') ?? '').trim());
+    /*
+     * ⚠️ 2026-10-30：番剧入口暂时隐藏（`Sidebar.tsx` 的 `SHOW_ANIME_ENTRY`），应用层回到 2 项。
+     * 这条判据**恒与真实入口数同值** —— 恢复番剧入口时必须同步改回 3，否则自检会红。
+     */
     add(
       'C8a',
       '侧栏应用层恒为 2 项且顺序为「漫画翻译 → 音乐」（按可访问名称判，与是否显示文字无关）',
-      appItems.length === 3 &&
-        names[0] === APP_LABEL.translate &&
-        names[1] === APP_LABEL.music &&
-        names[2] === APP_LABEL.anime,
+      appItems.length === 2 && names[0] === APP_LABEL.translate && names[1] === APP_LABEL.music,
       `实际 ${appItems.length} 项：${names.join(' / ') || '无'}`,
     );
 

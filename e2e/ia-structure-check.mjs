@@ -206,7 +206,7 @@ function judgeC8(html, domSpec) {
   });
 
   return {
-    C8a: appCount === 3 && names[0] === '漫画翻译' && names[1] === '音乐' && names[2] === '番剧',
+    C8a: appCount === 2 && names[0] === '漫画翻译' && names[1] === '音乐',
     C8b: globalItems === 1 && !globalWithText,
     C8c: di >= 0 && appIdx.length > 0 && gIdx.length > 0 && appIdx.every((i) => i < di) && gIdx.every((i) => i > di),
     C8d:
@@ -259,7 +259,7 @@ function judgeC11(html) {
 // ── 用例 ───────────────────────────────────────────────────────────────────
 const BASE = {
   screens: { app: 'translate' },
-  apps: ['translate', 'music', 'anime'],
+  apps: ['translate', 'music'],
   divider: true,
   appLabels: { translate: '漫画翻译', music: '音乐', anime: '番剧' },
   /** 侧栏应用入口带文字标签（与升级前的界面一致；关掉后用 44×44 纯图标） */
@@ -271,7 +271,14 @@ const BASE = {
 };
 const TRANS = {
   ...BASE,
-  settings: { groups: ['通用', '翻译服务', '播放·媒体', '资源与投放', '关于'], title: '翻译服务' },
+  /*
+   * 🔴 分组是**全局同一组**（6 组），切组只换高亮的 `title`，不是"翻译服务页只有 5 组"。
+   * 原来这里漏了第 6 组「番剧设置」；因基线计数曾用 `want` 而非实测值（假绿），一直没被发现。
+   */
+  settings: {
+    groups: ['通用', '翻译服务', '播放·媒体', '资源与投放', '关于', '番剧设置'],
+    title: '翻译服务',
+  },
   subs: ['服务与配对', '推理引擎', '模型与诊断'],
 };
 
@@ -420,8 +427,15 @@ for (const c of cases) {
       ok(j[id] === false, `${id} 在此破坏下**变红**（实测 ${j[id] === false ? '红' : '仍绿 ← 假阳性!'}）`);
     }
   } else {
-    for (const [id, v] of Object.entries(c.want))
-      ok(v === true, `${id} 在正确实现下保持绿（实测 ${j[id] ? '绿' : '红 ← 误报!'}）`);
+    /*
+     * 🔴 判据必须是**实测值** `j[id]`，不能是 `want` 里的期望值 `v`。
+     *    2026-10-30 修：原来写 `ok(v === true, …)`，而 `v` 恒为 `true`（来自 `c.want`）
+     *    ⇒ 基线**永远通过**，只在文案里打印"红 ← 误报"。实测症状：把番剧入口塞回夹具、
+     *    C8a 确实变红，脚本仍报「37 通过 / 0 失败」—— 典型假绿。
+     */
+    for (const id of Object.keys(c.want)) {
+      ok(j[id] === true, `${id} 在正确实现下保持绿（实测 ${j[id] ? '绿' : '红 ← 误报!'}）`);
+    }
   }
   console.log('');
 }
