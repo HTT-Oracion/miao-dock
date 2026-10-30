@@ -67,3 +67,14 @@
 `e2e/ia-structure-check.mjs` 基线循环写的是 `ok(v === true, …)`，`v` 取自 `want`（恒真）⇒
 **基线永远不会失败**，只在文案里打印"红 ← 误报"。改成实测值 `j[id]` 后立刻暴露
 `TRANS` 夹具漏了第 6 组「番剧设置」（已补）。反证验证：塞回番剧入口 ⇒ 35 通过 / 2 失败、exit 1。
+
+## D-416 `check:docpaths` 改按 `.gitignore` 判，修掉本地绿/CI 红 ✅ 已完成
+
+- 现场：CI 上 `spec-notes-1.md` 引用的 `src-tauri/gen/schemas/acl-manifests.json` 被判不存在，本地却绿。
+  根因：该目录被 `.gitignore` 忽略、构建时才生成 ⇒ `existsSync` 在跑过构建的机器上为真。
+- 文档侧：D-235 那条证据改为引用**目录** `src-tauri/gen/schemas/`（不再是仓库文件路径）。
+- 检查侧：新增"被 gitignore 忽略 ⇒ 判红"（`git check-ignore --stdin`，一次调用判完全部引用）。
+  判据来自仓库配置而非文件名白名单，本地与 CI 从此同结论。
+- 同轮修掉**失效的反证锚点**：两条 mutation 找的 `npm run task -- check:docs` 在 AGENTS.md 已不存在，
+  一直静默跳过（`跳过 ≠ 通过`，反证轮实为红）。改用 `npm run check:full` / `check:nightly`。
+- 验证：`check:docpaths` 5/5 · 反证 3/3 · `npm run check` 20/20 · 反证挪走 `src-tauri/gen` 后仍 5/5。
