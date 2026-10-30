@@ -36,6 +36,17 @@ jobs:
       - name: 安装前端依赖
         run: npm ci
 
+      # ── Rust 工具链：判定层与契约自测（selftest:service / check:e8·e4·e10）
+      #    都要 spawn 真靶子 mangasvc —— 没有它，这些检查在 CI 必挂（本地绿是因为
+      #    target/debug 里已有构建产物）。缓存后增量构建约几十秒。
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: 构建 mangasvc
+        run: cargo build --bin mangasvc
+        working-directory: src-tauri
+
       # ── 源码级检查：只读源码/配置，零依赖、秒级、不起进程 ──────────────
       # check:docs 内部会跑 music/units/settings/autostart 四个套件对账，故一并覆盖。
       # 命令收束后逐条命令住 e2eScripts.json：`npm run task -- <id>`（npm run task 看清单）。
