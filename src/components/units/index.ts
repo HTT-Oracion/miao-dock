@@ -18,20 +18,29 @@
  * - 只在单一屏内成立的排版件（设置页的 `Row` / `SubTitle` / `PendingRow`）→ 留在该屏目录
  * - 音乐语义的行（`SongRow` / `Cover`）→ 留在 `screens/music/shared.tsx`
  */
-export { Badge, Btn, Dot, MagicCircle, Pill } from '@components/units/atoms';
+export { Badge, Dot, MagicCircle, Pill } from '@components/units/atoms';
+export { Btn, type BtnKind, type BtnOwnProps, type BtnProps } from '@components/units/Btn';
 export { ContextMenu, MenuSeparator } from '@components/units/ContextMenu';
 export { ColorPicker } from '@components/units/ColorPicker';
 export { Empty } from '@components/units/Empty';
+export { ErrorState } from '@components/units/ErrorState';
+export { Mascot } from '@components/units/Mascot';
 export { IconButton } from '@components/units/IconButton';
+export { LogBlock } from '@components/units/LogBlock';
 export { MenuButton, MenuItem } from '@components/units/MenuButton';
 export { Modal } from '@components/units/Modal';
 export { Notice } from '@components/units/Notice';
 export { NumberInput } from '@components/units/NumberInput';
-export { PlayModeButton } from '@components/units/PlayModeButton';
+export { OverlayScrollbar, type OverlayThumb } from '@components/units/OverlayScrollbar';
+export { PlayModeButton, playModeLabel } from '@components/units/PlayModeButton';
 export { ProgressRing } from '@components/units/ProgressRing';
 export { Range } from '@components/units/Range';
 export { Select } from '@components/units/Select';
+export { Segmented, type SegOption } from '@components/units/Segmented';
+export { SideDrawer } from '@components/units/SideDrawer';
+export { Skeleton } from '@components/units/Skeleton';
 export { Swatches } from '@components/units/Swatches';
 export { Switch } from '@components/units/Switch';
 export { Tooltip } from '@components/units/Tooltip';
+export { ViewTabs, type ViewTabItem } from '@components/units/ViewTabs';
 export { ROW_GAP, ROW_H, VirtualList } from '@components/units/VirtualList';

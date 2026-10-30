@@ -5,7 +5,7 @@
    规则与判据见《09-技术方案-ver2.0-最终版》§2.2；`npm run task -- check:units` 会核查命名与依赖。
 
    外观一律自绘，不用系统原生外观：原生 select / range 的高度、圆角、箭头形状、拇指尺寸
-   都由系统（且随系统版本）决定，塞进行内 24px 的控件位会与同行的 .set-ro / .switch
+   都由系统（且随系统版本）决定，塞进行内 28px 的控件位会与同行的 .set-ro / .switch
    凑出三种高度、两套圆角、两套配色。下拉的行为（键盘、typeahead、读屏、焦点）不在 CSS 里
    —— 那是 Radix 的事，见 `units/Select.tsx`；这里只描述它长什么样。
 
@@ -13,14 +13,136 @@
    · `.music-exp .ui-cbtn` / `.music-exp .ui-empty` —— 展开播放器的深色皮肤覆盖；
    · `.ui-vlist.is-drawer` —— 队列抽屉的行容器留白。 */
 
+/* ---- 视图页签（ViewTabs，设计稿 `.view-tabs` / `.ms-tabs`）----
+ *
+ * 一排互斥页签，整条读作**一枚胶囊**（外壳与每一格都是 `--miao-r-full`）。
+ * 设计稿 `theme.css:152-176` 用同一套选择器管漫画与音乐两处 ——
+ * 所以它必须是**一个**单元，而不是各屏各写一份。
+ *
+ * 与 `.ui-seg`（分段选择）的区别不是尺寸而是**语义**：
+ * 那边是 `role="group"` + `aria-pressed`（选项），这边是 `role="tablist"` + `aria-selected`（换视图）。
+ * 视觉上刻意也不同：`.ui-seg` 是内凹灰轨道 + 白面浮起，这边是**白面外壳 + 淡主色选中格**。 */
+.ui-vtabbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+.ui-vtabs {
+  display: grid;
+  /* 页签等分：文案长短不同时不至于让某格窄到贴字 */
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  height: 40px;
+  padding: 4px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-full);
+  background: var(--miao-surface);
+  box-shadow: 0 8px 22px -18px rgba(45, 59, 70, 0.35);
+}
+.ui-vtab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 16px;
+  border-radius: var(--miao-r-full);
+  font-family: var(--md-font-display);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  transition:
+    background var(--miao-dur-base) var(--miao-ease-spring),
+    color var(--miao-dur-base),
+    transform var(--miao-dur-base) var(--miao-ease-spring);
+}
+.ui-vtab:hover {
+  background: var(--miao-surface-2);
+}
+.ui-vtab:active {
+  transform: scale(0.96);
+}
+/*
+ * 选中格用**淡主色**而不是白面：外壳已经是白面，白面选中会在上面"消失"。
+ * 设计稿 `theme.css:171` 也是这样。
+ */
+.ui-vtab.is-active {
+  background: var(--miao-primary-soft);
+  color: var(--miao-primary-ink);
+}
+.ui-vtab-count {
+  min-width: 17px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 99px;
+  background: var(--miao-surface-2);
+  color: var(--miao-muted);
+  font-family: var(--md-font-numeric);
+  font-size: 9.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ui-vtab.is-active .ui-vtab-count {
+  background: var(--miao-primary);
+  color: #fff;
+}
+.ui-vtab-aside {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* ---- 分段选择（Segmented，设计稿 `.seg`）----
+ * 一条内凹轨道 + 若干颗平铺按钮，选中项**浮起来**（surface 底 + 一道浅投影），
+ * 未选中的只靠颜色分层 —— 于是"当前是哪一颗"不用点开就看得见。
+ * 尺寸逐值取设计稿：轨道 padding 3 / gap 2 / r10，按钮 27 高 / padding 0 10 / r7 / 11.5px·700。
+ * 按钮本体靠 `base.scss` 的全局 button 复位（无边框、无背景、padding 归零）。 */
+.ui-seg {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--miao-line);
+  border-radius: 10px;
+  background: var(--miao-surface-2);
+}
+.ui-seg-btn {
+  height: 27px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  transition:
+    background var(--miao-dur-fast),
+    color var(--miao-dur-fast),
+    box-shadow var(--miao-dur-fast);
+}
+.ui-seg-btn:hover {
+  color: var(--miao-ink);
+}
+.ui-seg-btn.is-on {
+  background: var(--miao-surface);
+  color: var(--miao-ink);
+  box-shadow: 0 1px 3px rgba(43, 47, 55, 0.09);
+}
+
 /* ---- ① 下拉（Select）----
- * 触发按钮与 .set-ro 同高 24、同圆角。min-width 132px 是**设置页右列**的取值：
- * 别处需要不同宽度时由调用方传 className 覆盖，不要改这里（会连带动设置页）。
+ * 单元自身高 32（设计稿设置页行内的 `.select` 就是 186×32；`.readonly` 是 28 ——
+ * 两者在**设计稿里本来就差 4px**，不是要凑同高）。186 那个宽度由设置页在
+ * `settings.scss` 里按行覆盖（`--ui-select` 在播放条、弹窗里还要用别的宽度），
+ * 单元默认只给 min-width 120：别处需要不同宽度时由调用方覆盖，不要改这里（会连带动设置页）。
  * 文本与箭头用 flex 两端对齐，于是选项文字长短不同时箭头仍钉在同一列
  * —— 原生 select 做不到（它的箭头位置由系统画，宽度变化时会跟着文字跑）。 */
 
 /*
- * 触发按钮 —— 类名仍是 .ui-select：与 .set-ro 同高 24、同圆角，
+ * 触发按钮 —— 类名仍是 .ui-select：高 32、r11，
  * min-width 让三个下拉的左边缘对齐成一条。
  *
  * 文本与箭头用 flex 两端对齐（`justify-content: space-between`），
@@ -32,41 +154,43 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  height: 24px;
-  min-width: 132px;
-  padding: 0 7px 0 9px;
+  height: 32px;
+  min-width: 120px;
+  padding: 0 10px;
   font-family: var(--md-font-body);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1;
-  color: var(--md-ink);
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-xs);
+  color: var(--miao-ink);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  /* 圆角取设计稿输入控件的**生效值** 12（基础表写 10，后加载层改成 12 —— 与 `.input` 同档） */
+  border-radius: 12px;
   cursor: pointer;
   transition:
-    background 0.15s,
-    border-color 0.15s,
-    box-shadow 0.15s;
+    border-color var(--miao-dur-fast) ease,
+    box-shadow var(--miao-dur-fast) ease;
 }
 /* hover 走 surface-2（与 .btn-ghost 同一语汇）；pink 只留给"打开 / 聚焦" ——
    焦点用「pink 边框 + pink-soft ring」，与 .ui-swatch.is-on 同一套形状语汇，
    于是"被选中"和"被聚焦"在全页只表达成一种样子 */
 .ui-select:hover {
   background: var(--md-surface-2);
+  border-color: var(--miao-line-strong);
 }
 .ui-select:focus {
   outline: none;
 }
 .ui-select:focus-visible,
 .ui-select[data-state='open'] {
-  border-color: var(--md-pink);
-  box-shadow: 0 0 0 2px var(--md-pink-soft);
+  border-color: var(--miao-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--miao-primary) 12%, transparent);
+  outline: none;
 }
 /* 箭头随展开翻转 —— 打开的方向要看得出来，否则点了没点的区别只剩边框颜色 */
 .ui-select-ico {
   display: inline-flex;
-  color: var(--md-muted);
-  transition: transform 0.15s;
+  color: var(--miao-muted);
+  transition: transform var(--miao-dur-fast) var(--miao-ease-spring);
 }
 .ui-select[data-state='open'] .ui-select-ico {
   transform: rotate(180deg);
@@ -82,16 +206,20 @@
      低于模态层(80+)：菜单可以盖住播放器，但不该盖住确认对话框。
      取 75 而不是 60，是因为"音质档位"下拉要放在播放条里，而展开播放器是 fixed z-index:70 —— 60 会被它压住。 */
   z-index: 75;
-  min-width: var(--radix-select-trigger-width); /* Radix 注入：与触发按钮同宽 */
+  min-width: var(--radix-select-trigger-width);
+  /* Radix 注入：与触发按钮同宽 */
   padding: 4px;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-sm);
-  box-shadow: 0 8px 22px rgba(20, 15, 41, 0.14);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: 14px;
+  box-shadow: var(--miao-shadow-2);
   font-family: var(--md-font-body);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--md-ink);
   overflow: hidden;
+  padding: 5px;
+  z-index: 90;
+  animation: miao-pop-in var(--miao-dur-fast) var(--miao-ease-spring);
 }
 
 /*
@@ -103,25 +231,31 @@
   display: flex;
   align-items: center;
   height: 26px;
-  padding: 0 8px 0 22px;
-  border-radius: var(--md-radius-xs);
+  padding: 7px 9px;
+  border-radius: 9px;
   cursor: pointer;
   outline: none;
   user-select: none;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--miao-text);
 }
 /* data-highlighted 由 Radix 给（鼠标悬停与键盘 ↑↓ 是同一个状态）——
    自己写 :hover 会让键盘操作时没有高亮 */
 .ui-select-item[data-highlighted] {
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
+  outline: none;
+  color: var(--miao-ink);
 }
 .ui-select-item[data-state='checked'] {
-  color: var(--md-pink);
+  color: var(--miao-primary-ink);
+  background: var(--miao-primary-soft);
 }
 .ui-select-ok {
   position: absolute;
   left: 6px;
   display: inline-flex;
-  color: var(--md-pink);
+  color: var(--miao-primary);
 }
 
 /* ---- ② 命令菜单（MenuButton）----
@@ -157,13 +291,14 @@
   align-items: center;
   gap: 8px;
   padding: 7px 9px;
-  border-radius: var(--md-radius-xs);
-  color: var(--md-ink);
+  border-radius: 9px;
+  color: var(--miao-text);
   font-size: 12px;
   text-align: left;
 }
 .ui-menu-item:hover:not(:disabled) {
-  background: var(--md-line-soft);
+  background: var(--miao-surface-2);
+  color: var(--miao-ink);
 }
 .ui-menu-item:disabled {
   color: var(--md-muted);
@@ -177,7 +312,8 @@
   z-index: 78;
 }
 .ui-menu-item.is-danger:hover:not(:disabled) {
-  color: var(--md-error);
+  color: var(--miao-danger);
+  background: var(--miao-danger-soft);
 }
 .ui-menu-label {
   display: flex;
@@ -186,20 +322,36 @@
   min-width: 0;
 }
 .ui-menu-sub {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--md-muted);
 }
 
 /* 右键菜单与 MenuButton 弹层同壳（.ui-menu），只补锚点差异：左上对齐光标 */
 .ui-ctx {
   min-width: 176px;
+  /*
+   * 进场动画单独一条（设计稿 `.ctx-menu { animation: ctx-in var(--dur-fast) var(--ease-out) }`）。
+   * 下拉菜单用的是"从左滑入"（`miao-pop-in`），但右键菜单锚在**光标**处：
+   * 它该从光标位置往下掉一点再落定，横向滑进来会让"菜单是从哪儿冒出来的"读错。
+   */
+  animation: miao-ctx-in var(--miao-dur-fast) var(--miao-ease-out);
+}
+@keyframes miao-ctx-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* 菜单分组线（ContextMenu 的 MenuSeparator）：比"空一项"更明确是分组 */
 .ui-menu-sep {
   height: 1px;
   margin: 4px 6px;
-  background: var(--md-line-soft);
+  background: var(--miao-line);
 }
 
 /* ---- 悬停提示（Tooltip）----
@@ -214,12 +366,12 @@
   z-index: 70;
   transform: translate(-50%, -100%);
   max-width: 360px;
-  padding: 5px 9px;
-  border-radius: var(--md-radius-xs);
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  box-shadow: 0 8px 22px rgba(12, 9, 24, 0.18);
-  color: var(--md-ink);
+  padding: 6px 9px;
+  border-radius: 9px;
+  background: var(--miao-ink);
+  border: 1px solid var(--miao-line);
+  box-shadow: var(--miao-shadow-2);
+  color: var(--miao-surface);
   font-size: 11px;
   line-height: 1.5;
   white-space: nowrap;
@@ -246,27 +398,26 @@
   width: 116px;
   height: 12px;
   background: transparent;
-  accent-color: var(--md-pink); /* 自绘未生效时的兜底，不是主样式 */
+  accent-color: var(--miao-primary);
+  /* 自绘未生效时的兜底，不是主样式 */
   cursor: pointer;
 }
 .ui-range::-webkit-slider-runnable-track {
   height: 5px;
-  border-radius: 3px;
-  background: linear-gradient(
-    to right,
-    var(--md-pink-soft) 0 var(--ui-range-fill, 0%),
-    var(--md-line) var(--ui-range-fill, 0%) 100%
-  );
+  border-radius: 999px;
+  background: var(--miao-surface-3);
 }
 .ui-range::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 11px;
   height: 11px;
-  margin-top: -3px; /* (11 - 5) / 2：让拇指在轨道上居中 */
+  margin-top: -3px;
+  /* (11 - 5) / 2：让拇指在轨道上居中 */
   border-radius: 50%;
-  background: var(--md-pink);
-  transition: transform 0.12s;
+  background: var(--miao-primary);
+  transition: transform var(--miao-dur-fast) var(--miao-ease-out);
+  box-shadow: 0 0 0 3px var(--miao-surface);
 }
 .ui-range:hover::-webkit-slider-thumb {
   transform: scale(1.1);
@@ -284,14 +435,16 @@
 .ui-range-val {
   min-width: 38px;
   font-family: var(--md-font-numeric);
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums; /* 数字等宽，拖动时读数不会左右跳 */
   color: var(--md-ink-2);
   text-align: right;
 }
 
 /*
- * 数字输入框（`.ui-num`）—— 与 `.ui-select` / `.set-ro` 同高 24、同圆角、同描边，
+ * 数字输入框（`.ui-num`）—— 64×24 的紧凑档：它住在 ②「空闲卸载」那张**合卡**里
+ * （两栏并排，设计稿 `.s-row-control .input` 的 210 宽会撑破卡片），
+ * 同描边同语汇但尺寸自成一体；设置页单行形态才吃设计稿的 210×34。
  * 于是「下拉 / 只读值 / 数字框」在设置页右列里是同一排对齐的三个东西。
  *
  * 宽度 64：够放 `1440`（分钟上限）与光标，又不至于让标题列被挤窄。
@@ -304,29 +457,30 @@
   height: 24px;
   padding: 0 7px 0 9px;
   font-family: var(--md-font-numeric);
-  font-size: 11.5px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   line-height: 1;
-  color: var(--md-ink);
+  color: var(--miao-ink);
   text-align: right;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-xs);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: 12px;
   transition:
-    background 0.15s,
-    border-color 0.15s,
-    box-shadow 0.15s;
+    background var(--miao-dur-fast),
+    border-color var(--miao-dur-fast),
+    box-shadow var(--miao-dur-fast);
 }
 .ui-num:hover {
   background: var(--md-surface-2);
+  border-color: var(--miao-line-strong);
 }
 .ui-num:focus {
   outline: none;
 }
 /* 焦点与 `.ui-select[data-state='open']` 用同一套「pink 边框 + pink-soft ring」语汇 */
 .ui-num:focus-visible {
-  border-color: var(--md-pink);
-  box-shadow: 0 0 0 2px var(--md-pink-soft);
+  border-color: var(--miao-primary);
+  box-shadow: 0 0 0 2px var(--miao-primary-soft);
 }
 .ui-num:disabled {
   cursor: default;
@@ -334,7 +488,7 @@
 }
 /* 单位（如「分钟」）跟在本框右侧，比读数浅一档以示它不是可编辑内容 */
 .ui-num-suffix {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--md-muted);
 }
 /* 预设色点：选中态用 ring 而不是换颜色 —— 色点本身的颜色就是信息，不能再被选中态覆盖 */
@@ -344,23 +498,30 @@
   gap: 5px;
 }
 .ui-swatch {
-  width: 16px;
-  height: 16px;
+  /* 设计稿 `.color-dot`：17×17、正圆、2px surface 内描边 + 1px line 外环
+     （那圈 2px 白边是把色点从底色里"抠"出来的关键 —— 用 1px line 描边会得到另一种读感）。
+     此前是 16×16 / r9 / 1px line：小 1px、不是正圆、也没有那层抠边。 */
+  width: 17px;
+  height: 17px;
   padding: 0;
-  border: 1px solid var(--md-line);
+  border: 2px solid var(--miao-surface);
   border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--miao-line);
   cursor: pointer;
   transition:
-    transform 0.12s,
-    box-shadow 0.12s;
+    transform var(--miao-dur-fast) var(--miao-ease-out),
+    box-shadow var(--miao-dur-fast) ease;
 }
 .ui-swatch:hover {
   transform: scale(1.12);
 }
+/* 选中态**刻意不照搬**设计稿的 `0 0 0 2px var(--ink)`：本行里 `.ui-select` / `.ui-num` /
+   色点共用一套"被选中 / 被聚焦 = primary 环"的形状语汇（见上面的焦点规则），
+   换成墨色环会让同一行出现两种"选中"。偏离登记于台账。 */
 .ui-swatch.is-on {
   box-shadow:
-    0 0 0 2px var(--md-pink-soft),
-    0 0 0 1px var(--md-pink);
+    0 0 0 2px var(--miao-surface),
+    0 0 0 4px var(--miao-primary);
 }
 /* 取色器：原生 input[type=color] 各平台外观差异大，统一压成 24×24 方块 */
 .ui-color {
@@ -372,16 +533,16 @@
   background: var(--md-surface-2); /* 色块外留一圈衬底，边缘不再与背景直接相接 */
   cursor: pointer;
   transition:
-    border-color 0.15s,
-    box-shadow 0.15s;
+    border-color var(--miao-dur-fast),
+    box-shadow var(--miao-dur-fast);
 }
 .ui-color:hover:not(:disabled) {
-  border-color: var(--md-pink);
+  border-color: var(--miao-primary);
 }
 .ui-color:focus-visible {
   outline: none;
-  border-color: var(--md-pink);
-  box-shadow: 0 0 0 2px var(--md-pink-soft);
+  border-color: var(--miao-primary);
+  box-shadow: 0 0 0 2px var(--miao-primary-soft);
 }
 .ui-color:disabled {
   cursor: default;
@@ -394,34 +555,153 @@
   border: none;
   border-radius: 3px;
 }
+/*
+ * ---- 侧抽屉（SideDrawer）----
+ *
+ * 设计稿 `.drawer-layer` / `.drawer-mask` / `.side-drawer`：右侧滑入、宽 `min(480px, 100vw)`、
+ * 高度吃满窗口，标题区（眉标 + 标题 + 说明）固定，正文自己滚动。
+ *
+ * z-index 92：**低于**弹窗层（95）—— 抽屉里点「清除全部」这类动作会开居中弹窗，
+ * 弹窗必须压在抽屉之上；高于展开播放器（70）与队列抽屉（72）。
+ */
+.ui-drawer-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 92;
+}
+.ui-drawer-mask {
+  position: absolute;
+  inset: 0;
+  /* 生效值同 `.modal-mask`（设计稿 `theme.css` 把蒙层统一改成 .28 + blur 9 + saturate 1.1，
+     基础表里那套 `blur(2px)` 在界面上不存在 —— D-363） */
+  background: rgba(33, 47, 58, 0.28);
+  backdrop-filter: blur(9px) saturate(1.1);
+  -webkit-backdrop-filter: blur(9px) saturate(1.1);
+  animation: miao-fade-in var(--miao-dur-fast) var(--miao-ease-out);
+}
+.ui-drawer {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(480px, 100vw);
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--miao-surface) 97%, transparent);
+  border-left: 1px solid var(--miao-line);
+  box-shadow: -24px 0 60px -32px rgba(30, 32, 36, 0.4);
+  animation: ui-drawer-in var(--miao-dur-base) var(--miao-ease-out);
+}
+/* 设计稿 `drawer-in`：只滑 24px 并同时从 .6 淡到 1 —— 是"抽出来"而不是"横穿一屏" */
+@keyframes ui-drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0.6;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.ui-drawer-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px 18px 10px;
+  border-bottom: 1px solid var(--miao-line);
+}
+.ui-drawer-titles {
+  min-width: 0;
+  flex: 1;
+}
+.ui-drawer-kicker {
+  display: block;
+  font-family: var(--miao-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--miao-faint);
+  margin-bottom: 3px;
+}
+.ui-drawer-head h2 {
+  font-family: var(--md-font-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--miao-ink);
+  /* 浏览器默认的 `h2` 上下 `.83em` 边距会把头部撑高——设计稿这里是 0（实测 108 vs 73） */
+  margin: 0;
+}
+.ui-drawer-head p {
+  font-size: 9.5px;
+  color: var(--miao-muted);
+  margin: 2px 0 0;
+}
+.ui-drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 18px 22px;
+}
+/* 标题右侧的动作区（设计稿 `.qd-head-actions`）：贴住关闭键，间距 2 */
+.ui-drawer-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.ui-drawer-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--miao-line);
+}
+
 /* ---- ② 图标按钮（IconButton）---- */
+/* 几何与动效取设计稿 `.icon-btn`：34×34 / 圆角 10 / 140ms 过渡，位移走 `--ease-out` */
 .ui-cbtn {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   border: none;
   background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--md-ink-2);
+  color: var(--miao-muted);
   cursor: pointer;
   flex-shrink: 0;
+  transition:
+    background var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-out);
 }
 .ui-cbtn:hover {
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
+  color: var(--miao-ink);
+}
+/* 按下缩到 .94（设计稿 `.icon-btn:active`）—— 没有这一下，点图标按钮"手感是死的" */
+.ui-cbtn:active:not(:disabled) {
+  transform: scale(0.94);
 }
 .ui-cbtn.main {
-  background: var(--md-pink);
-  color: #fff;
-  width: 32px;
-  height: 32px;
+  /* 主按钮（播放/暂停）：设计稿 `.pb-play` 是**墨色实心**，不是主题粉色 ——
+     粉在本项目里是禁用主色（《01》§1），且播放键该是"最实"的那一枚 */
+  background: var(--miao-ink);
+  color: var(--miao-surface);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
 }
 .ui-cbtn.main:hover {
   filter: brightness(1.05);
 }
+.ui-cbtn.main:active:not(:disabled) {
+  transform: scale(0.95);
+}
 .ui-cbtn.is-on {
-  color: var(--md-pink);
+  color: var(--miao-primary-ink);
+  background: var(--miao-primary-soft);
 }
 .ui-cbtn:disabled {
   opacity: 0.45;
@@ -430,23 +710,169 @@
 
 /* ---- ③ 空态 / 短提示（Empty）---- */
 /* 空态 / 错误 / 行内提示 */
+
+/* ---- 覆盖式滚动条滑块（配合 useOverlayScrollbar）----
+ * 绝对定位、6px 宽、半透明 —— **不参与内容布局**，所以不会挤占盒子宽度。
+ * 淡入 160ms / 淡出 240ms（淡出慢一点，滚到底时不会"啪"地消失）。
+ */
+.ui-osb {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  width: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--miao-ink) 26%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--miao-dur-base) ease;
+  z-index: 5;
+}
+.ui-osb.is-on {
+  opacity: 1;
+  transition-duration: var(--miao-dur-fast);
+}
 .ui-empty {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 12px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   text-align: center;
-  padding: 20px;
+  padding: 34px 18px;
   line-height: 1.6;
+  flex-direction: column;
+  gap: 7px;
 }
 .ui-empty.is-bad {
-  color: var(--md-error);
+  color: var(--miao-danger);
 }
 .ui-empty.is-inline {
-  flex: 0 0 auto;
-  padding: 12px;
+  flex: none;
+  padding: 8px 0;
+}
+/*
+ * 空态的三层结构（设计稿 `.empty h3` / `.empty p` / `.empty-actions`）。
+ * 🔴 `.ui-empty-title` 此前**只有类名、没有规则**：标题只能继承 `.ui-empty` 的 12px muted，
+ *    于是"标题"和"说明"实际是同一层，全靠 1.5px 差勉强区分 —— 组件在用的类名
+ *    不等于样式表里存在它（这一条已写成对账探针，见台账 D-345）。
+ */
+.ui-empty-title {
+  font-family: var(--md-font-display);
+  font-size: 14.5px;
+  line-height: 1.35;
+  color: var(--miao-ink);
+}
+/* 空态插画（设计稿 `.empty-art`）：88×74、九成不透明 —— 它是装饰，不该比文案更抢眼 */
+.ui-empty-art {
+  width: 88px;
+  height: 74px;
+  margin-bottom: 4px;
+  opacity: 0.9;
+}
+.ui-empty-art .mascot-svg {
+  width: 100%;
+  height: 100%;
+}
+.mascot-svg {
+  overflow: visible;
+}
+.ui-empty-sub {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--miao-muted);
+  max-width: 320px;
+}
+.ui-empty-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 4px;
+}
+/* 空态可能不止一句：标题 / 说明 / 动作三行竖排（单句调用方不受影响） */
+.ui-empty {
+  flex-direction: column;
+  gap: 7px;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 34px 18px;
+  color: var(--miao-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ---- ④ 骨架（Skeleton）----
+ * 微光扫过而不是整块脉冲：脉冲会让整屏同时呼吸，读起来像"页面在闪"；
+ * 扫光只在一小块内移动，注意力仍留在结构上。 */
+.ui-skel {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+    100deg,
+    var(--miao-surface-2) 20%,
+    color-mix(in srgb, var(--miao-surface-2) 62%, var(--miao-surface)) 40%,
+    var(--miao-surface-2) 60%
+  );
+  border-radius: var(--miao-r-xs);
+  background-size: 220% 100%;
+  animation: miao-skel 1.25s ease-in-out infinite;
+}
+.ui-skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  animation: ui-skel-weave 1.4s ease-in-out infinite;
+}
+[data-theme='dark'] .ui-skel::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+}
+@keyframes ui-skel-weave {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* ---- ⑤ 错误态（ErrorState）---- */
+.ui-err {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 13px 15px;
+  border-radius: 15px;
+  border: 1px solid color-mix(in srgb, var(--miao-danger) 24%, transparent);
+  background: var(--miao-danger-soft);
+  color: color-mix(in srgb, var(--miao-danger) 86%, #000);
+}
+.ui-err-hd {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--md-error);
+  font-size: 12px;
+}
+.ui-err-hd b {
+  font-size: 12px;
+}
+.ui-err-msg {
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--md-ink-2);
+  word-break: break-word;
+  opacity: 0.86;
+}
+.ui-err-acts {
+  display: flex;
+  gap: 7px;
+  margin-top: 2px;
+  flex-wrap: wrap;
 }
 
 /* ---- ④ 定高虚拟列表（VirtualList）---- */
@@ -468,20 +894,27 @@
   left: 0;
   right: 0;
 }
-/* 控件旁的小字注解（例如「仅在固定颜色时生效」） */
-.set-ctl-note {
-  font-size: 10.5px;
-  color: var(--md-muted);
-}
+/* 控件旁的小字注解（`分钟 · 0–1440` / `仅在固定颜色时生效`）的样式只写在 settings.scss：
+   这里曾是同一选择器的第二份定义（9px + faint），而 components 分片在 settings 之后，
+   于是**它才是生效的那份** —— settings.scss 里写的值被静默盖掉。
+   一个选择器只留一处定义，改值才不会改错文件。 */
 
-/* 只读值：端口 / 目录 / 版本号 */
+/* 只读值：端口 / 目录 / 版本号（设计稿 `.readonly`：28 高胶囊、r8、surface-2 + line 描边、10.5px）。
+   之前是 23 高的"行内代码"观感（r=radius-xs、`--md-line-soft` 描边），
+   在同一条右列里比旁边的 `.btn-sm`（28）矮一截 —— 设计稿这两者是同高的一档。
+   `max-width` + 省略号是产品的加强（路径可能很长），保留；`user-select: text` 让用户能选中抄走。 */
 .set-ro {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
   font-family: var(--md-font-numeric);
   font-size: 11px;
-  background: var(--md-surface-2);
-  border: 1px solid var(--md-line-soft);
-  border-radius: var(--md-radius-xs);
-  padding: 2px 7px;
+  color: var(--miao-text);
+  background: var(--miao-surface-2);
+  border: 1px solid var(--miao-line);
+  border-radius: 8px;
+  padding: 0 9px;
   max-width: 340px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -511,13 +944,13 @@
 }
 .set-state-text {
   font-family: var(--md-font-numeric);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--md-ink);
 }
 /* 端口 chip：与状态 chip 同高同形状，数字走等宽 —— 纵向对齐可扫 */
 .set-pnum {
   font-family: var(--md-font-numeric);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--md-ink-2);
   background: var(--md-surface-2);
   border: 1px solid var(--md-line);
@@ -526,59 +959,12 @@
   white-space: nowrap;
 }
 
-/*
- * 令牌字段：**只读输入框**（`X-Box-Token` + `<input readOnly>` + 「只读」标）。
- *
- * 为什么不是 `<code>`：行内元素超长会**折行**（`word-break` 一开就断在任意字符处），
- * 而且周围没有任何"这是一份可选中复制的值"的暗示。输入框给到单行不折 + 一次点击全选
- * + 形状本身在说"这是一份值"。
- * ⚠️ 组件侧必须是 `readOnly` 而非 `disabled` —— `disabled` 的输入框不可选中/复制，
- * 那就把"让用户看得见还能拿走"做反了（详见 sections.tsx 的注释）。
- */
-.set-token {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 0 0 10px;
-  font-size: 11px;
-}
-.set-token-k {
-  flex: 0 0 auto;
-  font-family: var(--md-font-numeric);
-  font-size: 10.5px;
-  color: var(--md-muted);
-}
-.set-token-in {
-  flex: 1;
-  min-width: 0;
-  background: var(--md-surface-2);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-xs);
-  padding: 5px 9px;
-  font-family: var(--md-font-numeric);
-  font-size: 11px;
-  color: var(--md-ink-2);
-  letter-spacing: 0.02em;
-}
-/* 选中态用蓝底：默认的系统蓝在这套浅紫语汇里显得像另一个应用的控件 */
-.set-token-in::selection {
-  background: var(--md-blue-soft);
-}
-.set-token-ro {
-  flex: 0 0 auto;
-  font-size: 10px;
-  color: var(--md-muted);
-  border: 1px solid var(--md-line);
-  border-radius: 999px;
-  padding: 1px 7px;
-  background: var(--md-surface);
-}
-
-/* 行下通栏附注：接在某一行的 1px 分隔线之下，读作"这一行的补充" */
+/* 行下通栏附注：接在某一行的 1px 分隔线之下，读作"这一行的补充"。
+   刻意**不带盒式**（padding 只留下方 10px），这样它与所属行左对齐、不额外起一个盒子。 */
 .set-row-note {
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.7;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   padding: 0 0 10px;
 }
 .set-row-note code {
@@ -588,7 +974,7 @@
 
 /* 🔴 盒式提示叠上本类时，把盒子的四周留白还回去。
  *
- * 冲突成因：`.notice` 是盒式（`padding: 9px 11px`，四周留白才托得住边框与底色），
+ * 冲突成因：`.notice` 是盒式（四周留白才托得住边框与底色），
  * `.set-row-note` 是**无边附注**（`padding: 0 0 10px`，故意把上/左/右清零，好让文字与
  * 所在行左对齐）。两者同时挂到一条 div（`.notice.is-bad.set-row-note`，见 sections.tsx
  * 三处）时，都是单个类 ⇒ 特异性打平 ⇒ 胜负只由 `index.scss` 的 `@use` 顺序决定；
@@ -602,11 +988,11 @@
  * **选择器权重**取胜，而不是靠书写形式。
  *
  * 值只覆盖 padding，不碰 `.notice` 的字号/配色 —— 盒式提示仍是盒式提示。⚠️ 这里与
- * `.notice` 的 `9px 11px` 是**有意重复**：两处若各自变动会静默漂移，改动 `.notice` 的
- * 内边距时务必同步本行（`check:settings` 不盯样式，靠代码评审）。不带 `.notice` 的纯附注
- * （如自检说明）不受影响。 */
+ * `.notice` 的 `10px 13px` 是**有意重复**：两处若各自变动会静默漂移，改动 `.notice` 的
+ * 内边距时务必同步本行（`check:settings` 的 ENGINE.css.noticePadding 会逐字比对两处）。
+ * 不带 `.notice` 的纯附注（如自检说明）不受影响。 */
 .notice.set-row-note {
-  padding: 9px 11px;
+  padding: 10px 13px;
 }
 
 /* 自检说明与运行器之间的分隔：这里不是"某行的补充"，要自己起一条线 */
@@ -624,10 +1010,10 @@
   padding-bottom: 8px;
 }
 .set-spec-count {
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .set-spec-hint {
-  font-size: 11px;
+  font-size: 12px;
 }
 .set-spec-failed {
   color: var(--md-error);
@@ -648,7 +1034,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .kv > b {
   font-weight: 500;
@@ -657,7 +1043,7 @@
 }
 .kv > code {
   font-family: var(--md-font-numeric);
-  font-size: 11px;
+  font-size: 12px;
   background: var(--md-surface-2);
   border: 1px solid var(--md-line-soft);
   border-radius: var(--md-radius-xs);
@@ -676,7 +1062,7 @@
   display: flex;
   gap: 8px;
   align-items: baseline;
-  font-size: 11px;
+  font-size: 12px;
   padding: 3px 0;
   border-bottom: 1px dashed var(--md-line-soft);
 }
@@ -698,40 +1084,61 @@
   margin-left: auto;
   color: var(--md-muted);
   font-family: var(--md-font-numeric);
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 .switch {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--md-ink-2);
-}
-.switch-track {
-  width: 34px;
-  height: 19px;
+  justify-content: flex-start;
+  width: 38px;
+  height: 22px;
+  padding: 0;
+  border: none;
   border-radius: 999px;
-  background: var(--md-line);
-  position: relative;
-  transition: background 0.15s;
+  background: none;
+  transition:
+    background var(--miao-dur-base) var(--miao-ease-spring),
+    border-color var(--miao-dur-base) ease;
 }
+/* 视觉只画在轨道上（设计稿那颗带边框的胶囊就是 `.switch-track`），外层 `.switch` 只剩点击区域。
+   之前边框与底色画在外层、轨道又叠一层 `--md-line`，一圈套两色，外框也比设计稿大 2×1。 */
+.switch-track {
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  border: 1px solid var(--miao-line);
+  background: var(--miao-surface-3);
+  padding: 2px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  transition:
+    background var(--miao-dur-base),
+    border-color var(--miao-dur-base);
+}
+/* 圆点 16²（设计稿 `.switch-dot`）；轨道内容区正好 32×16，所以 is-on 的位移是 16px */
 .switch-track > i {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: var(--md-surface);
-  box-shadow: 0 1px 3px rgba(59, 51, 82, 0.25);
-  transition: transform 0.15s;
+  background: var(--miao-surface);
+  box-shadow: 0 1px 3px rgba(43, 47, 55, 0.18);
+  transition: transform var(--miao-dur-base) var(--miao-ease-spring);
+  display: block;
 }
 .switch.is-on .switch-track {
-  background: var(--md-pink);
+  background: var(--miao-primary);
 }
 .switch.is-on .switch-track > i {
-  transform: translateX(15px);
+  transform: translateX(16px);
+  background: #fff;
 }
 
 /* ================================================================ 弹层 */
@@ -745,39 +1152,592 @@
  * 展开播放器 70 · 队列抽屉 71/72 · Select 弹层 75 · 右键菜单 78 · 歌词设置/登录 80 ·
  * 肤色菜单 81 · 轻提示 90。95 是当前最大值之上留一档，不是"随手取的大数"。
  */
-.modal-mask {
+.modal-layer {
   position: fixed;
   inset: 0;
-  background: rgba(20, 15, 41, 0.42);
+  z-index: 95;
   display: grid;
   place-items: center;
-  z-index: 95;
 }
-.modal {
-  width: 400px;
-  max-width: calc(100vw - 48px);
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
-  padding: 18px;
+.modal-mask {
+  position: absolute;
+  inset: 0;
+  /* 生效值取自设计稿的**后加载层**（`theme.css` 覆盖了基础表）：`.28` + blur 9 + saturate 1.1。
+     基础表里那套 `.34` / blur 5 是被覆盖掉的旧值 —— 只读基础表会照抄一个界面上不存在的数字。 */
+  background: rgba(33, 47, 58, 0.28);
+  backdrop-filter: blur(9px) saturate(1.1);
+  -webkit-backdrop-filter: blur(9px) saturate(1.1);
+  animation: miao-fade-in var(--miao-dur-fast) var(--miao-ease-out);
+}
+/* 卡片：默认 520 宽，`is-wide` 760 / `is-narrow` 440（设计稿 `theme.css` 的覆盖值）；
+   32 圆角 + 单层弥散阴影 + 实底（设计稿这一层把玻璃底换成了 `var(--surface)`） */
+.modal-card {
+  position: relative;
+  width: min(520px, 100%);
+  max-height: min(86vh, 780px);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  box-shadow: 0 18px 48px rgba(20, 15, 41, 0.22);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-2xl);
+  box-shadow: 0 36px 80px -36px rgba(33, 47, 58, 0.5);
+  backdrop-filter: blur(22px) saturate(1.1);
+  -webkit-backdrop-filter: blur(22px) saturate(1.1);
+  animation: miao-modal-in var(--miao-dur-slow) var(--miao-ease-spring);
+  overflow: hidden;
 }
-.modal-title {
+.modal-card.is-wide {
+  width: min(760px, calc(100vw - 40px));
+}
+.modal-card.is-narrow {
+  width: min(440px, 100%);
+}
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px 20px 0;
+}
+.modal-head > div {
+  flex: 1;
+  min-width: 0;
+}
+.modal-kicker {
+  display: block;
+  margin-bottom: 4px;
   font-family: var(--md-font-display);
+  font-size: 10px;
   font-weight: 700;
-  font-size: 14px;
+  letter-spacing: 0.16em;
+  color: var(--miao-accent-ink);
+}
+.modal-head h2 {
+  font-family: var(--md-font-display);
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--miao-ink);
+}
+.modal-head p {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--miao-muted);
 }
 .modal-body {
+  padding: 16px 20px 18px;
+  overflow: auto;
+  min-height: 0;
   font-size: 12px;
-  color: var(--md-ink-2);
+  color: var(--miao-text);
   line-height: 1.65;
 }
-.modal-actions {
+.modal-foot {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 7px;
+  padding: 12px 20px;
+}
+.modal-foot .grow {
+  flex: 1;
+}
+/* 弹窗右上角的关闭键（设计稿 `.icon-btn`）：无底、悬停才浮出一层浅底 */
+.icon-btn {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  /* 设计稿 `.icon-btn` 是 34×34 / r10（`.icon-btn-sm` 才是 28×28 / r8）。
+     本仓此前把"小的那一档"当成了默认值 —— 模态框右上角的关闭钮因此比设计稿小一圈，
+     和同一行里 34 高的标题字块对不齐。目前全站只有模态框在用这个类，所以直接改成设计稿的默认档；
+     真出现需要 28 的紧凑容器时，再按设计稿补 `.icon-btn-sm`，不要把它设回默认。 */
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--miao-muted);
+  cursor: pointer;
+  transition:
+    background var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-out);
+}
+.icon-btn:hover:not(:disabled) {
+  background: var(--miao-surface-2);
+  color: var(--miao-ink);
+}
+/* 设计稿 `.icon-btn:active { transform: scale(.94) }` —— 按下要有反馈，此前没有 */
+.icon-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* 轻确认行（设计稿 `.confirm-line`）：图标 + 一句主文案 + 可选补充，整块是一枚浅色提示 */
+.confirm-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: var(--miao-danger-soft);
+  color: color-mix(in srgb, var(--miao-danger) 82%, #000);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.confirm-line > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.confirm-line > div {
+  min-width: 0;
+}
+.confirm-line span {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  opacity: 0.82;
+}
+.confirm-line.is-warning {
+  background: var(--miao-warning-soft);
+  color: color-mix(in srgb, var(--miao-warning) 80%, #000);
+}
+/*
+ * 退出层的补充说明（`span`）：上边距 12px 与上面那条 `.confirm-line` 拉开一档呼吸。
+ * 比主文案浅一档、小一档 —— 它是"另外补充一句"，不该和告警框抢注意力。
+ */
+.quit-hint {
+  display: block;
+  margin-top: 12px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--miao-muted);
+}
+
+/* ================================================================
+ * 空色日和 · 控件与浮层
+ * 表单、菜单、弹窗、通知、空态 / 骨架 / 错误，以及控件层的窄屏形态。
+ * ================================================================ */
+
+/* ---------------- 表单控件 ---------------- */
+
+.input,
+.select,
+.textarea,
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid var(--miao-line);
+  border-radius: 12px;
+  background: var(--miao-surface);
+  color: var(--miao-ink);
+  font-family: var(--md-font-body);
+  font-size: 12px;
+  /* 桌面壳全局禁选，但输入框必须可选中 */
+  -webkit-user-select: text;
+  user-select: text;
+  transition:
+    border-color var(--miao-dur-fast) ease,
+    box-shadow var(--miao-dur-fast) ease,
+    background var(--miao-dur-fast) ease;
+}
+
+.input:hover,
+.select:hover,
+.textarea:hover,
+.field input:hover,
+.field select:hover,
+.field textarea:hover {
+  border-color: var(--miao-line-strong);
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus,
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: var(--miao-primary);
+  background: var(--miao-surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--miao-primary) 14%, transparent);
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--miao-faint);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--miao-muted);
+}
+
+.field-hint {
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--miao-faint);
+}
+
+.field-hint.is-error {
+  color: var(--miao-danger);
+}
+
+/* 文字按钮：行内/卡内的弱动作（清空、全选本页、展开日志）。
+   它不是「次级框按钮」，所以不带边框与底色，靠悬停底色与色彩变化表态。
+   几何取自设计稿 `.text-btn`：28 高 / 左右 8 / 11.5px·700 —— 与伴它出现的
+   34×34 关闭键同处一行时，23 高会显得"塌下去"（实测过 23 vs 28）。 */
+.text-btn {
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-family: var(--md-font-display);
+  font-size: 12px;
+  /* 与 `.btn` 同一条纪律：按钮文字不加粗（色与底已经表达了"可点"） */
+  font-weight: 400;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  transition:
+    background var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease;
+}
+
+.text-btn:hover:not(:disabled) {
+  background: var(--miao-surface-2);
+  color: var(--miao-ink);
+}
+
+.text-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.text-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.switch.is-on {
+  border-color: var(--miao-primary);
+  background: var(--miao-primary);
+}
+
+.ui-num:focus,
+.ui-num:focus-visible {
+  border-color: var(--miao-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--miao-primary) 12%, transparent);
+}
+
+/* ---------------- 菜单 / 右键 / 提示 ---------------- */
+
+.ui-menu,
+.ui-ctx {
+  padding: 6px;
+  border: 1px solid var(--miao-line);
+  border-radius: 14px;
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-2);
+  animation: miao-pop-in var(--miao-dur-fast) var(--miao-ease-spring);
+}
+
+.modal-actions .btn-danger {
+  border-color: transparent;
+  background: var(--miao-danger);
+  color: #fff;
+}
+
+.modal-actions .btn-danger:hover {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--miao-danger) 86%, #000);
+  color: #fff;
+}
+
+.notice {
+  padding: 10px 13px;
+  border: 1px solid var(--miao-line);
+  border-radius: 14px;
+  background: var(--miao-surface);
+  color: var(--miao-text);
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.notice.bad,
+.notice.is-bad {
+  border-color: color-mix(in srgb, var(--miao-danger) 26%, transparent);
+  background: var(--miao-danger-soft);
+  color: color-mix(in srgb, var(--miao-danger) 84%, #000);
+}
+
+.notice.info,
+.notice.is-info {
+  border-color: var(--miao-primary-line);
+  background: var(--miao-primary-soft);
+  color: var(--miao-primary-ink);
+}
+
+.ui-empty .ico,
+.ui-empty svg {
+  color: var(--miao-faint);
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
-  margin-top: 6px;
+  color: var(--miao-muted);
+  text-align: center;
+}
+
+.empty-title {
+  font-family: var(--md-font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+
+.empty-sub {
+  max-width: 380px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--miao-muted);
+}
+
+.empty-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+@keyframes miao-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.965);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes miao-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes miao-toast-out {
+  to {
+    opacity: 0;
+    transform: translateX(16px) scale(0.97);
+  }
+}
+
+@keyframes miao-skel {
+  from {
+    background-position: 180% 0;
+  }
+  to {
+    background-position: -20% 0;
+  }
+}
+
+/* ---------------- 响应式（控件层） ----------------
+ * 这里只放**跨模块公共件**的窄屏形态；壳层断点在 app.scss、设置页断点在 settings.scss。 */
+
+/* 760：设置页右栏内的控件占满整行（`.set-row-ctl` 的堆叠在 settings.scss）。 */
+@media (max-width: 760px) {
+  .set-row-ctl .ui-select,
+  .set-row-ctl .ui-num,
+  .set-row-ctl .input {
+    width: 100%;
+  }
+}
+
+/* ================================================================ 日志块（通用单元）
+ *
+ * 两处日志（引导页 `.nr-log` / 下载页 `.ed-log`）此前各写一套：底色、圆角、行高、
+ * 最大高度都不相同 —— 同一件东西两套皮。现在统一到这里，调用方只给 `is-compact` /
+ * `is-tall` 两档高度。
+ *
+ * ## 复制按钮的显隐
+ * 默认 `opacity: 0` + `pointer-events: none`，`:hover` 与 `:focus-within` 才浮现。
+ * 🔴 `:focus-within` 那一支不能省：只写 `:hover` 等于"键盘用户拿不到复制"，
+ *    而这枚按钮只有图标，读屏用户本来就只能靠 `aria-label` 找到它。
+ */
+
+.log-block {
+  position: relative;
+  margin-top: 10px;
+  border-radius: var(--miao-r-xs);
+  background: #23252a;
+  color: #d9d7cf;
+  overflow: hidden;
+  border: 1px solid var(--miao-line);
+}
+/* 两档高度：引导页那处矮（设计稿 `.nr-log` max-height 94），下载页那处高（220） */
+.log-block.is-compact .log-body {
+  max-height: 94px;
+}
+.log-block.is-tall .log-body {
+  max-height: 220px;
+}
+.log-body {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: var(--miao-font-mono);
+  font-size: 10.5px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow: auto;
+  -webkit-user-select: text;
+  user-select: text;
+}
+/* 复制按钮：右上角、只有图标、悬停/聚焦才浮现（理由见文件头） */
+.log-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--miao-r-xs);
+  background: rgba(255, 255, 255, 0.1);
+  color: #d9d7cf;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--miao-dur-fast) ease,
+    background var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-spring);
+}
+.log-block:hover .log-copy,
+.log-block:focus-within .log-copy {
+  opacity: 1;
+  pointer-events: auto;
+}
+.log-copy:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+.log-copy:active {
+  transform: scale(0.92);
+}
+.log-copy:focus-visible {
+  outline: 2px solid var(--miao-primary);
+  outline-offset: 2px;
+}
+
+/* ── 三进程状态按钮（ServiceStatusButton）────────────────────────────
+ * 收起只显示首个进程；有失败时右侧多一枚红色警告。展开后逐项列出。
+ */
+.svc-st-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.svc-st {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--miao-line);
+  border-radius: 999px;
+  background: var(--miao-surface-2);
+  font-size: 9.5px;
+  color: var(--miao-muted);
+  cursor: pointer;
+}
+.svc-st.is-ok {
+  color: var(--miao-success);
+  border-color: color-mix(in srgb, var(--miao-success) 30%, transparent);
+}
+.svc-st.is-bad {
+  color: var(--miao-danger);
+  border-color: color-mix(in srgb, var(--miao-danger) 34%, transparent);
+}
+.svc-st.is-idle {
+  color: var(--miao-faint);
+}
+.svc-st:hover {
+  background: var(--miao-surface-3);
+}
+.svc-st-port {
+  font-variant-numeric: tabular-nums;
+}
+.svc-st-chev {
+  opacity: 0.6;
+}
+.svc-st-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--miao-danger) 14%, transparent);
+  color: var(--miao-danger);
+  font-size: 9px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.svc-st-menu {
+  min-width: 190px;
+}
+.svc-st-head {
+  padding: 6px 10px 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--miao-faint);
+  text-transform: uppercase;
+}
+.svc-st-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 10.5px;
+}
+.svc-st-row.is-ok {
+  color: var(--miao-success);
+}
+.svc-st-row.is-bad {
+  color: var(--miao-danger);
+}
+.svc-st-name {
+  color: var(--miao-text);
+}
+.svc-st-pid {
+  margin-left: auto;
+  font-size: 9.5px;
+  color: var(--miao-faint);
+  font-variant-numeric: tabular-nums;
 }

@@ -40,7 +40,7 @@ export function ModelManageBlock({ item, eng }: { item: SettingItem; eng: Engine
   const rest = (v?.problems.length ?? 0) - shown.length;
 
   return (
-    <div className="set-manage">
+    <div className="set-manage" data-setting-id={item.id}>
       <div className="set-manage-top">
         <div className="set-manage-label">
           <div className="set-manage-name">{item.label}</div>

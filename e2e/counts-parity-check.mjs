@@ -35,7 +35,18 @@ import { cachedReadText, overrideFile, clearOverrides } from './_file-cache.mjs'
 import { buildCommands } from './_commands.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+/*
+ * 🔴 2026-10-28 起，条数声明的**唯一事实源**是 `docs/internal/commands.md`。
+ *
+ * 原来它读 `AGENTS.md` §3 —— 那份文件同时承担入口、分层规范、工程纪律、命令参考、
+ * 决策台账、环境陷阱六件事，120 行的命令区里有 48 行超 200 字符、31 行是历史/根因叙述。
+ * 把命令表搬出去之后，AGENTS 只写"跑哪四条"，本脚本跟着改读新文件。
+ *
+ * ⚠️ 扫描目标变了，但**判据没变**：文档写的 N 条仍须 == 脚本自报数。
+ */
+const COMMANDS_DOC = path.join(ROOT, 'docs', 'internal', 'commands.md');
 const AGENTS = path.join(ROOT, 'AGENTS.md');
+const README = path.join(ROOT, 'README.md');
 
 /** `check:docs` 已经机器对账过条数的套件（本脚本不重复跑，理由见文件头③） */
 const DOCS_COVERED = new Set(['check:music', 'check:units', 'check:settings', 'check:autostart']);
@@ -87,28 +98,49 @@ function runScript(cmd) {
   }
 }
 
-/** §3 里每个 static 项的「声明条数」；没声明返回 null */
-function declaredCount(agentsText, id) {
-  // 形态：`npm run task -- check:xxx[:refute]   # 说明 … N 条 …`（[:refute] 方括号在内）
-  const m = agentsText.match(new RegExp(`npm run task -- ${id}(?:\\[:refute\\])?\\s*#([^\\n]*)`));
+/** 每个 static 项的「声明条数」；没声明返回 null */
+function declaredCount(docText, id) {
+  /*
+   * 形态（`docs/internal/commands.md` 的表格）：
+   *   | `npm run task -- check:xxx[:refute]` | 说明 … · **N 条** |
+   * 与旧版（`AGENTS.md` §3 的 `命令 # 说明`）的差别只是分隔符从 `#` 变成 `|`。
+   * 两种都认，免得文档再改一次排版就静默失配。
+   */
+  const esc = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`npm run task -- ${esc}(?:\\[:refute\\])?[\`\\s|]*(?:\\||#)([^\\n|]*)`);
+  const m = docText.match(re);
   if (!m) return null;
-  const note = m[1];
-  const n = note.match(/(\d+)\s*\**\s*条/);
+  const n = m[1].match(/(\d+)\s*\**\s*条/);
   return n ? Number(n[1]) : null;
 }
 
-/** §3 正文（`## 3.` 到下一个 `## `） */
+/** 条数声明所在的正文（`commands.md` 全表；它本身就是"§3"那份内容的唯一事实源） */
 function section3(text) {
-  const start = text.indexOf('## 3.');
-  if (start < 0) return '';
-  const rest = text.slice(start);
-  const end = rest.indexOf('\n## ', 3);
-  return end < 0 ? rest : rest.slice(0, end);
+  return text;
+}
+
+/**
+ * 防回退：`AGENTS.md` / `README.md` 里**不许**再出现「check 命令 + N 条」的声明。
+ *
+ * 两张表必然漂移（2026-10 首次核对就抓到五处）。命令表搬进 `commands.md` 之后，
+ * 这两份文件只允许指向它；谁再抄一行带条数的命令说明，这条就红。
+ */
+function strayDeclarations(agents, readme) {
+  const bad = [];
+  for (const [name, text] of [
+    ['AGENTS.md', agents],
+    ['README.md', readme],
+  ]) {
+    for (const m of text.matchAll(/^.*npm run task -- check:[^\s|]*.*$/gm)) {
+      if (/(\d+)\s*\**\s*条/.test(m[0])) bad.push(`${name}: ${m[0].trim().slice(0, 60)}…`);
+    }
+  }
+  return bad;
 }
 
 function runAll() {
-  const agents = cachedReadText(AGENTS);
-  const s3 = section3(agents);
+  const doc = cachedReadText(COMMANDS_DOC);
+  const s3 = section3(doc);
 
   const missing = [];
   const drifted = [];
@@ -132,9 +164,19 @@ function runAll() {
   add(
     'COUNTS.staticDeclared',
     missing.length === 0,
-    missing.length ? `§3 没写条数：${missing.join('、')}` : `${STATIC.length} 项全部声明`,
+    missing.length ? `commands.md 没写条数：${missing.join('、')}` : `${STATIC.length} 项全部声明`,
   );
   add('COUNTS.staticParity', drifted.length === 0, drifted.length ? drifted.join('；') : `${checked} 项与脚本自报一致`);
+
+  // 防回退：命令表只许有一份
+  const stray = strayDeclarations(cachedReadText(AGENTS), cachedReadText(README));
+  add(
+    'COUNTS.singleSource',
+    stray.length === 0,
+    stray.length
+      ? `命令条数只许写在 docs/internal/commands.md：${stray.join('；')}`
+      : 'AGENTS / README 未再声明 check 条数',
+  );
 }
 
 const REFUTE = process.argv.includes('--refute');

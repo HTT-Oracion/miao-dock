@@ -820,11 +820,14 @@ pub fn ensure_models(
                 result.reused.push(file.id.clone());
                 records.insert(file.id.clone(), marker_record(&dest_rel, None, &st));
                 log(logger, &format!("  [复用] {}（⚠️ 未校验）", file.id));
+                // 复用即"这条已满"：不发事件它就不会进账本（见 emit_reused 的说明）
+                emit_reused(file, st.size, &mut on_progress);
                 continue;
             }
             if integrity == "cached" && marker_matches(prev.as_ref().and_then(|p| p.get("files")?.get(&file.id)), &dest_rel, &st, &file.sha256) {
                 result.reused.push(file.id.clone());
                 log(logger, &format!("  [复用] {}（.ready 记录与盘上大小/mtime 一致）", file.id));
+                emit_reused(file, st.size, &mut on_progress);
                 continue;
             }
             emit_verifying(file, st.size, &mut on_progress);
@@ -835,6 +838,7 @@ pub fn ensure_models(
                 result.reused.push(file.id.clone());
                 records.insert(file.id.clone(), marker_record(&dest_rel, Some(got), &st));
                 log(logger, &format!("  [复用] {}（sha256 校验通过）", file.id));
+                emit_reused(file, st.size, &mut on_progress);
                 continue;
             }
             log(
@@ -937,12 +941,37 @@ fn marker_record(dest: &str, sha256: Option<String>, st: &Stat) -> MarkerRecord 
     }
 }
 
+/// 复用某条已就绪的文件时补发的事件：**received == total**（"这条已满"）。
+///
+/// 🔴 为什么必须发：`ingest` 只认事件。不发的条目对账本**完全不可见** ——
+///    分母里没有它、分子里也没有它，于是 `percent` 永远算不到 100%。
+///    真机症状：下载显示完成、进度却停在 45%（用户 2026-10-25 报）。
+///    发 `received: 0` 更糟：它占着分母却不贡献分子，等于把"已完成"记成"零字节"。
+fn emit_reused(file: &FileEntry, total: u64, on_progress: &mut Option<&mut dyn FnMut(ProgressEvent)>) {
+    if let Some(cb) = on_progress {
+        cb(ProgressEvent {
+            id: file.id.clone(),
+            phase: "reused".to_string(),
+            received: total,
+            total: Some(total),
+            url: None,
+            resumed: false,
+            msg: None,
+        });
+    }
+}
+
+/// 校验一条**已存在**的文件时发的事件。
+///
+/// 🔴 `received` 必须是 `total` 而不是 0：校验的对象是**盘上那份完整的文件**，
+///    不是"从 0 开始下"。发 0 会把它记成"零字节"，占着分母不贡献分子 ——
+///    那就是"下载完成、进度不到 100%"的直接成因（2026-10-25）。
 fn emit_verifying(file: &FileEntry, total: u64, on_progress: &mut Option<&mut dyn FnMut(ProgressEvent)>) {
     if let Some(cb) = on_progress {
         cb(ProgressEvent {
             id: file.id.clone(),
             phase: "verifying".to_string(),
-            received: 0,
+            received: total,
             total: Some(total),
             url: None,
             resumed: false,

@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
-import { apiPost, errorText, openPath, quitApp, serviceRestart, serviceStart } from '@/ipc';
-import type { ServiceState } from '@/ipc';
-import { useLibrary, useQuitRequest, useService, useTasks, useToasts, useTranslateSource } from '@hooks';
+import { Terminal } from 'lucide-react';
+import { apiPost, errorText, hideWindow, openPath, quitApp, serviceRestart, serviceStart } from '@/ipc';
+import { toastBus } from '@/stores/toastBus';
+import {
+  useAppVersion,
+  useLibrary,
+  useNav,
+  useQuitRequest,
+  useService,
+  useTasks,
+  useToasts,
+  useTranslateSource,
+} from '@hooks';
+import { SETTINGS_SECTIONS, SECTION_ITEM_TOTAL } from '@screens/settings/catalog';
 import { initialMode, persistMode, useThemeTokens } from '@/themes/apply';
 import {
   initialServiceAutoStart,
@@ -11,24 +22,31 @@ import {
   persistSidebarLabels,
 } from '@/stores/shell-prefs';
 import type { ThemeMode } from '@/themes/tokens';
-import { Badge, Btn, Notice, Pill } from '@components/units';
+import { Badge, Btn } from '@components/units';
+import { DemoPanel } from '@components/DemoPanel';
 import { DynamicIsland } from '@components/DynamicIsland';
 import { NotificationStack } from '@components/NotificationStack';
 import { MusicKernel } from '@components/MusicKernel';
 import { QuitConfirm } from '@components/QuitConfirm';
+import { ServicePill } from '@components/ServicePill';
 import { Sidebar } from '@components/Sidebar';
 import { Toolbar } from '@components/Toolbar';
 import { ViewTabs } from '@components/ViewTabs';
 // 展开播放器挂在**应用根**（不在 MusicScreen 内）—— 判据见渲染处注释：
 // 它是 `position: fixed; inset: 0` 的全屏浮层，数据全部来自 store，本就不依赖任何一屏的 DOM。
 import { ExpandedPlayer } from '@screens/music/ExpandedPlayer';
+import { LogConsole } from '@screens/settings/LogConsole';
 import { useMusicStore } from '@music/store';
-import { isBlockedWhenNotReady, stateView } from '@/stores/nav';
-import { useNav } from '@/router/use-nav';
+import { ToolbarAccount } from '@screens/music/ToolbarAccount';
+import { useAnimeStore } from '@anime/store';
+import { ANIME_VIEW_META } from '@anime/player-options';
+import { isBlockedWhenNotReady } from '@/stores/nav';
 import type { EngineProcessView, ShellCtx } from '@/router/panes/shell-context';
 import type { TranslateSource } from '@screens/settings/translate-api';
 import { engineStatus, type ModelDownloadView } from '@screens/settings/engine-api';
 import { downloadEntryState } from '@/ipc/engine-download';
+import { useDemoOverride } from '@/stores/demo-override';
+import { demoDownload, demoStatus } from '@screens/manga/demo';
 import { initialDismissedDownload, persistDismissedDownload } from '@/stores/download-dismiss';
 import type { CancelResponse, DeleteTasksResponse, LibraryResponse, TaskRow } from '@/types';
 import { formatBytes } from '@tools';
@@ -48,7 +66,7 @@ const EMPTY_ENGINE_PROCESS: EngineProcessView = { engine: null, llm: null, warme
  * 判定集中在 `isBlockedWhenNotReady` 一处，避免拦截纪律散落到多处失效。
  */
 export function App() {
-  const { screen, view, overlay, setScreen, setView } = useNav();
+  const { screen, view, overlay, setScreen, setScreenSection, setView } = useNav();
   const navigate = useNavigate();
   const [mode, setMode] = useState<ThemeMode>(() => initialMode());
   /**
@@ -67,6 +85,8 @@ export function App() {
    */
   const [autoStart, setAutoStart] = useState(() => initialServiceAutoStart());
   const [quitOpen, setQuitOpen] = useState(false);
+  /** 运行日志抽屉（设计稿：设置页工具条上的「运行日志」按钮） */
+  const [logsOpen, setLogsOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   /**
    * 正在取消中的任务 id（乐观标记）。
@@ -94,7 +114,7 @@ export function App() {
    */
   const [dismissedDownload, setDismissedDownload] = useState<string | null>(() => initialDismissedDownload());
   /** `/engine/status` 的 `modelDownload` —— 工具条芯片、侧栏入口与下载页的唯一真实来源。 */
-  const [download, setDownload] = useState<ModelDownloadView | null>(null);
+  const [realDownload, setDownload] = useState<ModelDownloadView | null>(null);
   /** ②/③ 进程运行态快照（`/engine/status` 的 `engine.state` / `llm.state` / `warmed`）。 */
   const [engineProcess, setEngineProcess] = useState<EngineProcessView>(EMPTY_ENGINE_PROCESS);
 
@@ -103,10 +123,10 @@ export function App() {
     navigate('/engine-download');
   }, [navigate, overlay]);
   const dismissDownload = useCallback(() => {
-    const key = download?.startedAt ?? 'done';
+    const key = realDownload?.startedAt ?? 'done';
     setDismissedDownload(key);
     persistDismissedDownload(key);
-  }, [download?.startedAt]);
+  }, [realDownload?.startedAt]);
   /** 发起下载后立刻把返回的视图写回壳层：下载页不必等下一次 1.5s 轮询才有内容。 */
   const applyDownload = useCallback((view: ModelDownloadView | null) => {
     if (view) setDownload(view);
@@ -114,7 +134,16 @@ export function App() {
 
   useThemeTokens(mode);
 
-  const { status, ipcError } = useService();
+  const { status: realStatus, ipcError } = useService();
+  /*
+   * 演示态覆盖（仅开发态、且只在用户点了演示面板时存在）。
+   *
+   * 🔴 覆盖只发生在**派生层**：屏层读到的仍是同一个 `ServiceStatus`，走同一条渲染路径；
+   *    演示夹具只换状态机的输入（`screens/manga/demo.ts`），不造界面、不改判定。
+   */
+  const demoActive = useDemoOverride((s) => s.active);
+  const status = demoStatus(realStatus, demoActive);
+  const download = demoDownload(realDownload, demoActive);
   const running = status?.state === 'running';
 
   /*
@@ -242,6 +271,13 @@ export function App() {
   const musicExpanded = useMusicStore((s) => s.expanded);
   const closeMusicExpanded = useMusicStore((s) => s.closeExpanded);
 
+  // 番剧模块内视图：popover 与工具条标题都读这一份（与音乐的 store 同一套口径）
+  const animeView = useAnimeStore((s) => s.view);
+  const setAnimeView = useAnimeStore((s) => s.setView);
+
+  /** 构建版本号（真值来自宿主；取不到就不出徽标，见 hook 注释） */
+  const appVersion = useAppVersion();
+
   // Esc 收起展开播放器：与音乐屏内那条同源，但**只判 expanded**。
   // 队列抽屉仍归音乐屏（它只在那一屏存在，Esc 连带关它才是对的）。
   useEffect(() => {
@@ -361,6 +397,8 @@ export function App() {
   const rows = tasks?.tasks ?? [];
   const hasRows = rows.length > 0;
   const queueDepth = (tasks?.running ?? 0) + (tasks?.queued ?? 0);
+  /** 队列总条数（含历史）：标题徽标「共 N 条」用，与汇总条同一个数 */
+  const queueTotal = tasks?.total ?? rows.length;
   const libRoot = (lib as LibraryResponse | null)?.root ?? status?.root_dir ?? '';
 
   /**
@@ -461,7 +499,9 @@ export function App() {
     if (showNotReady) {
       return {
         title: '服务未就绪',
-        subtitle: '本地翻译服务还没起来；起来之后这里会显示任务队列',
+        subtitle: '本地翻译服务没有运行 · 已完成的作品与任务不会丢失',
+        // 设计稿在标题旁挂「离线」徽标：一眼说明"现在为什么什么都点不了"
+        badge: '离线',
         actions: (
           <>
             <Badge>{sourceChipLabel(source, platform)}</Badge>
@@ -474,30 +514,67 @@ export function App() {
     if (screen === 'music') {
       return {
         title: '音乐',
-        subtitle: '本地音乐与在线音源 · 网易云 / 酷狗 / QQ / 咪咕四平台（汽水延后）',
-        actions: null,
+        subtitle: '本地音乐与在线音源 · 网易云 / 酷狗 / QQ / 咪咕',
+        // 账号是**全应用级**身份状态：放工具条右侧动作组，切 Tab / 切屏位置都不动
+        actions: <ToolbarAccount />,
+      };
+    }
+    /*
+     * 番剧屏：标题随模块内视图变（十屏共用壳层工具条）。
+     * 与翻译应用的区别：那边切的是 Tab（壳层 `view`），这边切的是模块内 `view`。
+     */
+    if (screen === 'anime') {
+      const meta = ANIME_VIEW_META[animeView];
+      return {
+        title: meta.title,
+        subtitle: meta.sub,
+        actions: (
+          <>
+            <Btn kind="ghost" size="sm" onClick={() => void useAnimeStore.getState().refreshLibrary()}>
+              刷新番剧库
+            </Btn>
+          </>
+        ),
       };
     }
     if (screen === 'settings') {
-      return { title: '设置', subtitle: '应用外观、翻译服务、媒体与资源', actions: null };
+      return {
+        title: '设置',
+        // 设计稿工具条：分组数 / 项数都算自 catalog，界面里没有写死的 5 与 34
+        subtitle: `${SETTINGS_SECTIONS.length} 组 · ${SECTION_ITEM_TOTAL} 项 · 改动即时保存在本机`,
+        actions: (
+          <>
+            {appVersion ? <Badge>v{appVersion}</Badge> : null}
+            <Btn kind="ghost" size="sm" onClick={() => setLogsOpen(true)}>
+              <Terminal size={13} />
+              运行日志
+            </Btn>
+          </>
+        ),
+      };
     }
     // 翻译应用内：工具条随视图切换（与 ver1.0 同一套文案，只是判定源从 screen 变成 view）
     switch (view) {
       case 'library':
         return {
           title: '本地漫画库',
-          subtitle: libSummary,
+          /*
+           * 设计稿 §7.1.1 的**顺序**：服务胶囊 → 打开根目录 → 新建漫画。
+           *
+           * 🔴 来源 `Badge` 已去掉（2026-10-25）：用户在库里要的是"往库里做什么"，
+           *    「本地/在线」是服务的设置项、已经住在设置页与胶囊菜单里 ——
+           *    再在工具条占一格只会把两个真动作挤到边缘。
+           *    「新建漫画」是**库级动作**（作用于整个库，不是某一项），故与「打开根目录」同层
+           *    （不放左栏底部，免得与分页器抢位置）。
+           */
           actions: (
             <>
-              {/* 来源 chip：翻译三视图 + 未就绪工具条一致（P-D1：来源是服务的设置，常亮） */}
-              <Badge>{sourceChipLabel(source, platform)}</Badge>
-              {/* 「新建漫画」是**库级动作**（作用于整个库，不是某一项），故与「打开根目录」同层
-                  （设计稿 §7.1.1 的位置裁决：不放左栏底部，免得与分页器抢位置） */}
-              <Btn kind="primary" onClick={() => setNewBookRequest(true)}>
-                新建漫画
-              </Btn>
+              <ServicePill status={status?.state ?? 'starting'} />
               <Btn kind="ghost" onClick={() => openPath(libRoot).catch((e: unknown) => push(errorText(e), 'bad'))}>
                 打开根目录
+              </Btn>
+              <Btn kind="primary" onClick={() => setNewBookRequest(true)}>
+                新建漫画
               </Btn>
             </>
           ),
@@ -505,28 +582,39 @@ export function App() {
       case 'drop':
         return {
           title: '本机投放',
-          subtitle: '拖入图片或文件夹 · 与插件共用同一条队列',
-          actions: (
-            <>
-              <Badge>{sourceChipLabel(source, platform)}</Badge>
-              <Badge>每批 20 张 · 自动排队</Badge>
-            </>
-          ),
+          subtitle: '拖入图片或文件夹 · 每批 20 张 · 超出的部分自动排队',
+          /*
+           * 设计稿：投放页工具条**只留服务胶囊**。
+           * 「来源」与「每批 20 张」两条 Badge 已去掉 —— 前者是服务的设置项
+           * （住在设置页与胶囊菜单里），后者是**规则**不是参数，副标题里已经写明了。
+           * 两条真动作（选图 / 提交）在投放区里，不该再占工具条。
+           */
+          actions: <ServicePill status={status?.state ?? 'starting'} />,
         };
       default:
         return {
           title: '任务队列',
-          subtitle: `串行执行 · 同一时刻只跑 1 个任务 · 队内 ${queueDepth} 个`,
-          actions: (
-            <>
-              <Badge>{sourceChipLabel(source, platform)}</Badge>
-              <Badge>每批 20 张 · 自动排队</Badge>
-              <ServicePill status={status?.state ?? 'starting'} />
-            </>
-          ),
+          subtitle: `串行执行 · 同一时刻只跑 1 个 · 队内 ${queueDepth} 个等待`,
+          // 设计稿的标题徽标「共 N 条」：与汇总条同一个数，都来自 /tasks
+          badge: `共 ${queueTotal} 条`,
+          // 设计稿：队列页工具条只留服务胶囊（同上，两条 Badge 是不在场的信息）
+          actions: <ServicePill status={status?.state ?? 'starting'} />,
         };
     }
-  }, [libRoot, libSummary, platform, push, queueDepth, screen, showNotReady, source, status?.state, view]);
+  }, [
+    animeView,
+    appVersion,
+    libRoot,
+    platform,
+    push,
+    queueDepth,
+    queueTotal,
+    screen,
+    showNotReady,
+    source,
+    status?.state,
+    view,
+  ]);
 
   // 翻译应用的视图 Tab 行；音乐屏不加（《09》§3.3），设置页是全局页也不加；
   // 下载页是覆盖层，也不该顶着翻译视图 Tab。
@@ -543,6 +631,7 @@ export function App() {
     screen,
     view,
     setScreen,
+    setScreenSection,
     setView,
     status,
     source,
@@ -555,6 +644,7 @@ export function App() {
     restart,
     rows,
     hasRows,
+    tasksError,
     queueDepth,
     cancelingIds,
     cancel,
@@ -563,6 +653,7 @@ export function App() {
     openTaskDir,
     deleteTasks,
     lib,
+    libError,
     libRoot,
     libSummary,
     libraryFocus,
@@ -587,33 +678,44 @@ export function App() {
   };
 
   return (
-    <div className="shell">
+    <div className="app" data-screen={screen}>
       <Sidebar
         screen={screen}
         onScreen={setScreen}
         labels={sidebarLabels}
         downloadEntry={downloadEntry}
         onOpenDownload={openEngineDownload}
+        animeView={animeView}
+        onAnimeView={(v) => {
+          setAnimeView(v);
+          setScreen('anime');
+        }}
       />
 
-      <div className="main">
-        <Toolbar title={toolbar.title} subtitle={toolbar.subtitle} actions={toolbar.actions} />
+      <div className="shell">
+        <Toolbar title={toolbar.title} subtitle={toolbar.subtitle} badge={toolbar.badge} actions={toolbar.actions} />
 
-        {showViewTabs ? <ViewTabs view={view} onView={setView} /> : null}
+        {showViewTabs ? <ViewTabs view={view} onView={setView} queueCount={queueDepth} rootDir={libRoot} /> : null}
 
         <div className="content">
+          {/*
+           * IPC 不可用（浏览器里跑 vite dev / 主进程还没起来）**不占内容区**。
+           *
+           * 原先是 `.content` 顶部一块 `Notice kind="bad"`，于是无论什么屏、什么状态，
+           * 内容区永久挂着一条红条 —— 它把真正的屏内容往下挤，而这条信息本身
+           * 是"壳层与主进程之间"的事，不属于任何一屏。改成右下角的轻提示（.shell-ipc-warn）：
+           * 不占布局、不遮挡内容，且只在真的连不上时出现一次。
+           */}
           {ipcError ? (
-            <Notice kind="bad">
-              <b>无法与桌面端主进程通信。</b> {ipcError}
-            </Notice>
+            <div className="shell-ipc-warn" role="status">
+              <b>桌面端主进程未就绪</b>
+              <span>{ipcError}</span>
+            </div>
           ) : null}
 
           {/* 下载页走独立路由（`/engine-download`），由 `DownloadPane` 渲染；
               切页 / 返回不卸载壳层，下载继续在后台跑。 */}
           <Outlet context={shell} />
-
-          {tasksError ? <Notice kind="bad">任务列表读取失败：{tasksError}</Notice> : null}
-          {libError ? <Notice kind="bad">漫画库读取失败：{libError}</Notice> : null}
         </div>
       </div>
 
@@ -636,7 +738,27 @@ export function App() {
 
       {quitOpen ? (
         <QuitConfirm
-          onStay={() => setQuitOpen(false)}
+          // × / 蒙层：只收起弹窗，**不动窗口**（"我再想想"不该把窗口收进托盘）
+          onDismiss={() => setQuitOpen(false)}
+          onStay={() => {
+            setQuitOpen(false);
+            /*
+             * 「留在后台」= **真的收进托盘**，不是只关掉弹窗。
+             *
+             * 按钮文案承诺的是"留在后台"，而托盘图标常驻、服务照跑 —— 若只关弹窗、
+             * 窗口原样停在屏幕上，用户会觉得这个按钮什么都没做（此前正是如此）。
+             * `hide_window` 在 Rust 侧就是 `w.hide()`（契约 §2.1：关闭窗口仅隐藏，服务照跑）。
+             */
+            void hideWindow().catch(() => {
+              // 隐藏失败（窗口已不在 / IPC 被拒）要说出来：静默失败会让用户以为已经收进托盘
+              toastBus.push('收起窗口失败', 'bad', '可从托盘菜单重新打开');
+            });
+            /*
+             * 成功后**不发提示**：窗口这时已经收进托盘，提示渲染在窗口里 ——
+             * 用户看不到，等于白推一条。此前那句「已留到后台」就是这种情况。
+             * "到底留下了没有"由**窗口消失**本身回答，比一条看不见的 toast 直接。
+             */
+          }}
           onQuit={() => {
             // 失败**不再静默**：旧版写的是 `void quitApp()`，一旦这条 IPC 被拒
             //（命令报错、主线程上 `exit` 没生效…）就什么都不发生 —— 用户看到的是
@@ -648,6 +770,14 @@ export function App() {
       ) : null}
 
       {/*
+        运行日志抽屉：由设置页工具条的「运行日志」打开（设计稿 `.side-drawer`）。
+        数据取**本地服务**自己的输出（`status.log`），不是引擎阶段日志 —— 两者在排障时
+        回答的是不同的问题（服务起没起 / 翻译跑到哪一步）。
+      */}
+      {/* 按需挂载：抽屉关闭时整块不渲染，读屏不会念到日志内容 */}
+      {logsOpen ? <LogConsole log={status?.log ?? []} onClose={() => setLogsOpen(false)} /> : null}
+
+      {/*
         灵动岛：只承载**音乐播放态**（2026-10-11 起，轻提示的承载已剥离给 NotificationStack ——
         一条胶囊一次只能显示一条提示、且会被播放态顶掉，批量操作的反馈会互相覆盖）。
         右上角 `<NotificationStack />` 是轻提示的**唯一**渲染层（antd notification 形态）。
@@ -655,6 +785,8 @@ export function App() {
       */}
       <DynamicIsland />
       <NotificationStack />
+      {/* 演示面板：开发态专用（生产构建整块不渲染），见 `components/DemoPanel` */}
+      <DemoPanel />
     </div>
   );
 }
@@ -677,13 +809,4 @@ function sourceChipLabel(source: TranslateSource | null, platform: string | null
   if (source !== 'online') return '本地引擎';
   if (!platform) return '在线';
   return `在线 · ${PLATFORM_LABELS[platform] ?? platform}`;
-}
-
-/**
- * 状态胶囊。参数类型直接用 `ServiceState`（而不是再抄一份字面量联合）——
- * 抄一份的代价是 Rust 加第五态 `stopping` 时这里静默漏掉，`tsc` 反而报不出来。
- */
-function ServicePill({ status }: { status: ServiceState }) {
-  const v = stateView(status);
-  return <Pill colorVar={v.colorVar}>{v.text}</Pill>;
 }

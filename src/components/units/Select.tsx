@@ -49,7 +49,8 @@ export function Select<T extends string>({
       <RSelect.Trigger className={className ? `ui-select ${className}` : 'ui-select'} aria-label={label}>
         <RSelect.Value>{current?.label ?? value}</RSelect.Value>
         <RSelect.Icon className="ui-select-ico">
-          <ChevronDown size={13} />
+          {/* 12 = 设计稿 `.select` 那颗箭头（background SVG 的 width/height 都是 12） */}
+          <ChevronDown size={12} />
         </RSelect.Icon>
       </RSelect.Trigger>
       <RSelect.Portal>

@@ -27,6 +27,13 @@ path = "src/main.rs"
 name = "mangasvc"
 path = "src/bin/mangasvc.rs"
 
+# 动漫域的服务进程（D-242）。与 mangasvc **同构但相互隔离**：
+# 自己一份 state/令牌/库根/运行时根，端口在 5180–5190 内探测 ⇒ 两个 exe 可同时运行。
+# 不并进 mangasvc 的子命令：动漫将来要自带引擎栈与数据源，依赖集与漫画翻译互不相干。
+[[bin]]
+name = "animesvc"
+path = "src/bin/animesvc.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -62,6 +69,8 @@ num-bigint = "0.4"
 hex = "0.4"
 rand = "0.8"
 regex = "1"                        # QQ 音乐歌词 HTML 清洗
+quick-xml = "0.37"                 # 番剧数据源 RSS / Atom 读取（M3；1 个 crate，MIT，只读流式解析，不引序列化）
+scraper = { version = "0.27", default-features = false }  # 番剧通用网页源：CSS 选择器抓列表/详情（R2）。代价：1 个直接依赖 + ego-tree/precomputed-hash；html5ever/selectors/cssparser/tendril 已在锁里（版本与 0.27 要求一致，不新增副本）
 sha1 = "0.10"                      # QQ 音乐签名
 sha2 = "0.10"                      # store 落盘的 item.sha256（Node crypto.createHash('sha256')）
 unicode-normalization = "0.1"      # 漫画名规范化（复刻 JS String.normalize('NFKC')）
@@ -69,6 +78,8 @@ chrono = "0.4"                     # QQ 音乐 searchid 时间戳
 urlencoding = "2"                  # QQ/酷狗 搜索参数编码
 encoding_rs = "0.8"                # QQ 音乐 GB18030 解码
 uuid = { version = "1", features = ["v4"] }  # 咪咕 cookie id
+librqbit = "9.0.1"
+tauri-plugin-clipboard-manager = "2"
 
 # ── S2 三进程生命周期：进程**组**信号（`kill(-pgid, …)`）──
 # 为什么需要：回收时必须连孙进程一起带走（真引擎会自拉一个执行器子进程，
@@ -81,7 +92,7 @@ libc = "0.2"
 # A3c：父死看守器在 Windows 上要装控制台 Ctrl+C handler（否则看守器被直接终止、
 # 被看守的 llama-server 留在原地占着 8080）。版本与锁文件里已有的传递依赖对齐。
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading", "Win32_Storage_FileSystem", "Win32_System_SystemServices"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading", "Win32_Storage_FileSystem", "Win32_System_SystemServices", "Win32_System_Pipes", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_UI_HiDpi", "Win32_System_LibraryLoader"] }
 
 
 [profile.release]

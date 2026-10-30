@@ -9,10 +9,8 @@
  */
 import { useOutletContext } from 'react-router-dom';
 import type { ShellCtx } from '@/router/panes/shell-context';
-import { NotReadyScreen } from '@screens/library/NotReadyScreen';
-import { QueueEmpty, QueueTable } from '@screens/QueueScreen';
-import { LibraryScreen } from '@screens/LibraryScreen';
-import { DropScreen } from '@screens/DropScreen';
+import { Btn, ErrorState } from '@components/units';
+import { DropScreen, LibraryScreen, NotReadyScreen, QueueEmpty, QueueTable } from '@screens/manga';
 
 export function TranslatePane() {
   const {
@@ -23,11 +21,13 @@ export function TranslatePane() {
     startService,
     restart,
     setScreen,
+    setScreenSection,
     openEngineDownload,
     applyDownload,
     view,
     setView,
     hasRows,
+    tasksError,
     rows,
     cancelingIds,
     cancel,
@@ -36,6 +36,7 @@ export function TranslatePane() {
     openTaskDir,
     deleteTasks,
     lib,
+    libError,
     libraryFocus,
     setLibraryFocus,
     newBookRequest,
@@ -55,8 +56,10 @@ export function TranslatePane() {
         download={download}
         onStart={() => void startService()}
         onRestart={() => void restart()}
-        // D1：「运行时未装配」态上的指引入口 —— 送到设置页（翻译服务组里有引擎诊断与装法）
-        onOpenGuide={() => setScreen('settings')}
+        // D1：「运行时未装配」态上的指引入口 —— 送到设置页的**翻译链路**组
+        // （引擎诊断与装法住那一组；只 `setScreen('settings')` 会落到「① 通用」，
+        //   等于把用户丢在错误的页面上，还得自己再去左栏找一次）
+        onOpenGuide={() => setScreenSection('settings', 'translate')}
         // G5：点「开始下载」⇒ 发起下载并切到独立下载页。
         onOpenDownload={openEngineDownload}
         onDownloadStarted={applyDownload}
@@ -65,6 +68,19 @@ export function TranslatePane() {
   }
 
   if (view === 'queue') {
+    if (tasksError) {
+      return (
+        <ErrorState
+          title="任务列表读取失败"
+          message={tasksError}
+          actions={
+            <Btn kind="primary" size="sm" onClick={refreshAll}>
+              重试
+            </Btn>
+          }
+        />
+      );
+    }
     return hasRows ? (
       <QueueTable
         rows={rows}
@@ -74,6 +90,7 @@ export function TranslatePane() {
         onViewComic={viewComic}
         onOpenDir={openTaskDir}
         onDelete={deleteTasks}
+        onRefresh={refreshAll}
       />
     ) : (
       <QueueEmpty onGoSettings={() => setScreen('settings')} onGoDrop={() => setView('drop')} />
@@ -91,9 +108,20 @@ export function TranslatePane() {
         onNewBookHandled={() => setNewBookRequest(false)}
         onRefresh={refreshAll}
         refreshKey={refreshKey}
+        error={libError}
+        onGoDrop={() => setView('drop')}
       />
     );
   }
 
-  return <DropScreen rootDir={rootDir} onSubmitted={refreshAll} onGoLibrary={() => setView('library')} />;
+  return (
+    <DropScreen
+      rootDir={rootDir}
+      tasks={rows}
+      source={source}
+      onSubmitted={refreshAll}
+      onGoLibrary={() => setView('library')}
+      onGoQueue={() => setView('queue')}
+    />
+  );
 }

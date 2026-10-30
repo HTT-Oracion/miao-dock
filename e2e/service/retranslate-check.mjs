@@ -68,9 +68,9 @@ const CARGO_DIR = path.join(ROOT, 'src-tauri');
 /// `exec.rs` 管执行态（幂等短路豁免 / overwrite 落标 / 译文写回），`store.rs` 管计划取数口径。
 const RUST_EXEC_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'store', 'exec.rs');
 const RUST_STORE_SRC = path.join(CARGO_DIR, 'src', 'mangasvc', 'store.rs');
-const LIB_SRC = path.join(ROOT, 'src', 'screens', 'LibraryScreen.tsx');
-// D-148：缩放的实现从 `LibraryScreen.tsx` 搬到 `screens/library/viewer.tsx`（Lightbox）。
-const VIEWER_SRC = path.join(ROOT, 'src', 'screens', 'library', 'viewer.tsx');
+const LIB_SRC = path.join(ROOT, 'src', 'screens', 'manga', 'LibraryScreen.tsx');
+// D-148：缩放的实现从 `LibraryScreen.tsx` 搬到 `screens/manga/viewer.tsx`（Lightbox）。
+const VIEWER_SRC = path.join(ROOT, 'src', 'screens', 'manga', 'viewer.tsx');
 
 const REFUTE = process.argv.includes('--refute');
 /// 起的是模拟引擎；不声明会让服务按 real 协议去打替身。
@@ -334,8 +334,8 @@ async function runAll() {
       {
         MIAO_ENGINE_PORT: String(engineInfo.port),
         MIAO_ENGINE_PROTOCOL: ENGINE_PROTOCOL,
-        MIAO_ROOT: ROOT_DIR,
-        MIAO_STATE_DIR: STATE_DIR,
+        MIAO_MANGA_ROOT_DIR: ROOT_DIR,
+        MIAO_MANGA_STATE_DIR: STATE_DIR,
       },
       'service',
     );

@@ -62,9 +62,11 @@ const sleep = (ms) =>
 /** 产品默认落点（`<appData>/runtimes/manga-translator`）—— 不覆盖任何 `MIAO_*`，测的就是**默认路径**。 */
 const RT =
   process.platform === 'darwin'
-    ? path.join(os.homedir(), 'Library', 'Application Support', 'runtimes', 'manga-translator')
+    ? path.join(os.homedir(), 'Library', 'Application Support', 'MiaoDock', 'manga', 'runtimes', 'manga-translator')
     : path.join(
         process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
+        'MiaoDock',
+        'manga',
         'runtimes',
         'manga-translator',
       );
@@ -73,7 +75,7 @@ const VENV_PY = path.join(
   'venv',
   process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python'),
 );
-const SAKURA_GGUF = path.join(RT, 'models', 'sakura', 'sakura-1.5b-qwen2.5-v1.0-fp16.gguf');
+const SAKURA_GGUF = path.join(RT, 'models', 'sakura', 'Sakura-Galtransl-7B-v3.7-IQ4_XS.gguf');
 
 /**
  * 验收素材：**英文**页（`test-manga/en/`）。
@@ -305,8 +307,8 @@ const ENV_COMMON = {
   MIAO_LLM_PORT: String(LLM_PORT),
   MIAO_ENGINE_TIMEOUT_MS: '180000',
   MIAO_TOKEN: TOKEN,
-  MIAO_ROOT: OUT_ROOT,
-  MIAO_STATE_DIR: STATE_DIR,
+  MIAO_MANGA_ROOT_DIR: OUT_ROOT,
+  MIAO_MANGA_STATE_DIR: STATE_DIR,
   PYTHONIOENCODING: 'utf-8',
 };
 log(`端口：服务 ${SERVICE_PORT} · 引擎 ${ENGINE_PORT} · ③ ${LLM_PORT}`);
@@ -389,7 +391,7 @@ if (engine) {
 }
 
 // 🔴 不设 `MIAO_NO_LLM_AUTOSTART`：③ **必须**由服务按配方拉起 ——
-//    「断网也能加载」这句话里最重的一块就是 3.3 GB 的 Sakura 权重。
+//    「断网也能加载」这句话里最重的一块就是 4.0 GB 的 GalTransl 权重。
 const svc = spawn(RUST_BIN, [], {
   env: { ...cleanEnv(), ...ENV_COMMON },
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -454,7 +456,7 @@ try {
 
   /*
    * W4：② 与 ③ 都要在**离线键生效**的前提下起来。
-   * 🔴 ③（`llama-server` + 3.3 GB Sakura 权重）是这句话里最重的一块：
+   * 🔴 ③（`llama-server` + 4.0 GB GalTransl 权重）是这句话里最重的一块：
    *    视觉模型与 nllb 走 HuggingFace 的缓存解析，而 Sakura 是**本地 gguf 文件** ——
    *    两条路都不该有任何联网动作。
    */

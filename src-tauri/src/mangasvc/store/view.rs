@@ -39,6 +39,13 @@ pub struct ItemBrief {
     pub retry_count: i64,
     pub reason: Option<String>,
     pub sha256: Option<String>,
+    /**
+     * 引擎返回的**原始错误文本**。
+     *
+     * `reason` 只有 `engine_engine_error` 这类笼统码；2026-10-29「哥布林21 第 2 张失败」
+     * 就是只剩一个码、detail 全丢，无法定位。运行期专属（不落盘），但必须透给前端。
+     */
+    pub error_message: Option<String>,
 }
 
 pub fn item_brief(i: &Item) -> ItemBrief {
@@ -51,6 +58,7 @@ pub fn item_brief(i: &Item) -> ItemBrief {
         retry_count: i.retry_count,
         reason: i.reason.clone(),
         sha256: i.sha256.clone(),
+        error_message: i.error_message.clone(),
     }
 }
 
@@ -189,6 +197,16 @@ pub struct ListView {
     pub output_dir: String,
     pub created_at: String,
     pub finished_at: Option<String>,
+    /**
+     * 失败页的原始原因（只含失败项，通常是 0–N 条）。
+     *
+     * 队列行只显示「N 页失败」，用户没有任何办法知道**为什么**失败 ——
+     * 2026-10-29「哥布林21 第 2 张」就只剩一个 `engine_engine_error`。
+     * 这个字段把引擎的原话带到列表页，不必再点进详情。
+     *
+     * 加在**末尾**：`list_view_json_shape_matches_node_key_order` 钉着键序。
+     */
+    pub failed_items: Vec<ItemBrief>,
 }
 
 pub fn list_view(task: &Task) -> ListView {
@@ -203,6 +221,13 @@ pub fn list_view(task: &Task) -> ListView {
         output_dir: task.output_dir.clone(),
         created_at: task.created_at.clone(),
         finished_at: task.finished_at.clone(),
+        failed_items: task
+            .batches
+            .iter()
+            .flat_map(|b| b.items.iter())
+            .filter(|i| i.status == "failed")
+            .map(item_brief)
+            .collect(),
     }
 }
 

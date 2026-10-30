@@ -44,6 +44,20 @@ const SUITES = [
 // 台账（spec-notes）**不参与**条数比对：它记录的是**历史**（"当时 86 条（反证 16）"
 // 恰恰是有价值的痕迹），拿它跟现状比会逼得人去改历史。
 // 参与比对的只有"声明当前状态"的三处入口。
+/*
+ * 🔴 条数声明的**唯一事实源**是 `docs/internal/commands.md`（2026-10-28 起）。
+ *
+ * 原先这里对 `AGENTS.md` / `README.md` / `.trae/rules/project_rules.md` 三处逐个扫「N 条」，
+ * 而那三份文件都已精简 —— 它们不再维护命令表（两张表必然漂移，2026-10 首次核对抓到五处）。
+ * 若沿用旧清单，精简后**每个 doc 都扫不到条数** ⇒ `hits.length === 0` ⇒ `continue`
+ * ⇒ COUNT 组静默全跳过：文档写的数字对不上了，却没有任何一行会红。
+ *
+ * 所以只扫 commands.md；`AGENTS.md` / `README.md` 若**又**出现带条数的 check 命令，
+ * 由 `check:counts` 的 `COUNTS.singleSource` 判红（两份表不许并存）。
+ */
+const COUNT_DOC = 'docs/internal/commands.md';
+
+/** 参与「命令是否存在 / 禁词」检查的文档（与条数比对解耦：一份精简 ≠ 一份不查） */
 const DOCS = ['AGENTS.md', 'README.md', '.trae/rules/project_rules.md'];
 // 参与其它检查（命令存在 / 禁词）的文档 —— 台账也要查，它同样不该出现失效命令。
 // 🔴 台账已分流为两份（D-137 起新条目写 docs/internal/spec-notes-1.md），**两份都要列**：
@@ -103,9 +117,12 @@ for (const suite of SUITES) {
     continue;
   }
 
-  for (const doc of DOCS) {
+  for (const doc of [COUNT_DOC]) {
     const text = read(path.join(ROOT, doc));
-    if (!text) continue;
+    if (!text) {
+      add('COUNT', `${doc} 存在`, false, `找不到 ${doc} —— 条数声明必须落在唯一事实源里`);
+      continue;
+    }
     const re = new RegExp(`${suite.cmd.replace(':', '[:\\:]')}[^\\n]*?(\\d+)\\s*条`, 'g');
     const hits = [...text.matchAll(re)];
     if (hits.length === 0) continue;

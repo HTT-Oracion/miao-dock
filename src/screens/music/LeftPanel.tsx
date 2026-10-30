@@ -1,18 +1,20 @@
-import { ChevronDown, ChevronLeft, Play } from 'lucide-react';
-import { providerLabel } from '@music/platform';
+import { useState } from 'react';
 import { useMusicStore } from '@music/store';
-import { coverProxyUrl, songKey } from '@music/convert';
+import { coverProxyUrl } from '@music/convert';
 import type { LeftView } from '@music/store';
 import type { Playlist } from '@music/types';
 import { HistoryView } from '@screens/music/HistoryView';
 import { LocalView } from '@screens/music/LocalView';
-import { Empty, VirtualList } from '@components/units';
-import { Cover, SongRow } from '@screens/music/shared';
+import { Btn, Empty, ViewTabs, type ViewTabItem } from '@components/units';
+import { PlaylistListSkeleton } from '@screens/music/skeletons';
+import { Cover } from '@screens/music/shared';
 
-const TABS: { id: LeftView; label: string }[] = [
-  { id: 'playlists', label: '我的歌单' },
+// Tab 文案与设计稿左栏一致：`歌单 / 本地 / 历史`（不写"我的歌单 / 播放历史"的长名，
+// 三个 Tab 并排时短名才排得下且不换行）
+const TABS: readonly ViewTabItem<LeftView>[] = [
+  { id: 'playlists', label: '歌单' },
   { id: 'local', label: '本地' },
-  { id: 'history', label: '播放历史' },
+  { id: 'history', label: '历史' },
 ];
 
 /**
@@ -28,34 +30,34 @@ export function LeftPanel() {
   const active: LeftView = leftView === 'tracks' ? 'playlists' : leftView;
 
   return (
-    <section className="music-card">
-      <div className="ltabs">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={active === t.id ? 'ltab is-on' : 'ltab'}
-            onClick={() => {
-              // 点「我的歌单」时若正处在曲目下钻态，要一路退回去，不能只切高亮
-              if (t.id === 'playlists') backToPlaylists();
-              else setLeftView(t.id);
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+    <>
+      {/*
+        三枚 Tab 走**通用单元** `ViewTabs`（与漫画屏的投放/队列/漫画库同一个控件）：
+        设计稿 `theme.css:152-176` 本来就用同一套选择器管这两处。
+        此前这里是手写的一套 `.ms-tabs` / `.ms-tab`，与漫画屏各写一份 ⇒ 圆角与选中态各自漂移。
+      */}
+      <ViewTabs
+        value={active}
+        items={TABS}
+        label="音乐左栏视图"
+        onChange={(id) => {
+          // 点「我的歌单」时若正处在曲目下钻态，要一路退回去，不能只切高亮
+          if (id === 'playlists') backToPlaylists();
+          else setLeftView(id);
+        }}
+      />
 
-      {leftView === 'playlists' ? (
-        <PlaylistsView />
-      ) : leftView === 'tracks' ? (
-        <LeftTracksView />
-      ) : leftView === 'local' ? (
-        <LocalView />
-      ) : (
-        <HistoryView />
-      )}
-    </section>
+      {/* 视图区自带滚动（设计稿 `.ms-scroll`）：滚动条只出现在这一层，
+          而不是整张左卡一起滚（那样 Tab 会跟着滚走） */}
+      <div className="ms-scroll">
+        {/*
+         * 左栏只渲染「列表」这一类视图：歌单 / 本地 / 历史。
+         * `tracks`（歌单曲目）**不在这里渲染** —— 设计稿把歌单详情放在右侧主体，
+         * 点歌单时左栏保持列表不动（否则屏幕上两个区域同时变，且左栏回不去）。
+         */}
+        {leftView === 'local' ? <LocalView /> : leftView === 'history' ? <HistoryView /> : <PlaylistsView />}
+      </div>
+    </>
   );
 }
 
@@ -68,16 +70,31 @@ function PlaylistsView() {
   const error = useMusicStore((s) => s.userPlaylistsError);
   const proxyPort = useMusicStore((s) => s.proxyPort);
   const openLeftPlaylist = useMusicStore((s) => s.openLeftPlaylist);
-  const loadUserPlaylists = useMusicStore((s) => s.loadUserPlaylists);
-  const groupOpen = useMusicStore((s) => s.playlistGroupOpen);
-  const setGroupOpen = useMusicStore((s) => s.setPlaylistGroupOpen);
+
+  /*
+   * 组头折叠态（#16）—— 必须在任何早返回**之前**声明：
+   * React Hook 的调用顺序在一次渲染里必须恒定，放在 early return 之后会直接报错。
+   */
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const toggle = (label: string) => setCollapsed((c) => ({ ...c, [label]: !c[label] }));
 
   const logged = !!loginInfos[playbackSource]?.logged_in;
+  const loaded = useMusicStore((s) => s.userPlaylistsLoaded);
 
   if (!logged) return <Empty>登录后查看我的歌单</Empty>;
   if (error) return <Empty bad>歌单读取失败：{error}</Empty>;
-  if (loading && userPlaylists.length === 0) return <Empty>加载歌单中…</Empty>;
-  if (userPlaylists.length === 0) return <Empty>这个平台账号下还没有歌单</Empty>;
+  /*
+   * 🔴 **三态**判断，缺一就会闪空态。
+   *
+   * 此前只有 `loading && 空` 这一条 —— 而 `loading` 要等请求真正发出才置 true。
+   * 进音乐屏时 `init()` 先等代理端口 + 4 个平台登录态探测，才轮到拉歌单；
+   * 在那之前 `loading=false`、列表为空，于是**先显示「还没有创建歌单」**再跳骨架屏。
+   * 中间隔着两三次网络往返，肉眼可见，不是"闪一帧"。
+   *
+   * 现在：没拉过 → 骨架屏；正在拉 → 骨架屏；拉完了确实空 → 才显示空态。
+   */
+  if (!loaded || loading) return <PlaylistListSkeleton rows={6} />;
+  if (userPlaylists.length === 0) return <Empty>还没有创建歌单</Empty>;
 
   /*
    * 分组：按 `subscribed` 分——false = 用户自己创建的（含统一改名后的「我喜欢的音乐」），
@@ -88,162 +105,62 @@ function PlaylistsView() {
   const created = userPlaylists.filter((pl) => pl.subscribed !== true);
   const subscribed = userPlaylists.filter((pl) => pl.subscribed === true);
 
-  type Row =
-    | {
-        kind: 'group';
-        key: string;
-        group: 'created' | 'subscribed';
-        label: string;
-        count: number;
-        open: boolean;
-      }
-    | { kind: 'pl'; key: string; pl: Playlist };
-
-  const rows: Row[] = [];
-  if (created.length > 0) {
-    rows.push({
-      kind: 'group',
-      key: 'g-created',
-      group: 'created',
-      label: '创建的歌单',
-      count: created.length,
-      open: groupOpen.created,
-    });
-    if (groupOpen.created) for (const pl of created) rows.push({ kind: 'pl', key: pl.id, pl });
-  }
-  if (subscribed.length > 0) {
-    rows.push({
-      kind: 'group',
-      key: 'g-subscribed',
-      group: 'subscribed',
-      label: '收藏的歌单',
-      count: subscribed.length,
-      open: groupOpen.subscribed,
-    });
-    if (groupOpen.subscribed) for (const pl of subscribed) rows.push({ kind: 'pl', key: pl.id, pl });
-  }
-
-  return (
-    <div className="music-body">
-      <div className="music-card-hd">
-        <span className="music-card-sub">{userPlaylists.length} 个歌单</span>
-        <div className="grow" />
-        <button type="button" className="music-btn out" disabled={loading} onClick={() => void loadUserPlaylists()}>
-          刷新
-        </button>
-      </div>
+  /*
+   * 渲染方式：**不用 `VirtualList`**（与曲目列表不同）。
+   *
+   * 设计稿这里的两类行**不等高** —— 组头 32、歌单行 46 —— 而定高虚拟列表要求
+   * 所有行同高（`itemHeight`），套上去要么把组头撑到 46、要么把行压到 32，
+   * 两种都与设计稿不符。歌单数量是"几十条"量级（曲目才是上千），
+   * 全量渲染的节点数完全可控，因此这里按分组直接铺。
+   *
+   * ## 组头可折叠（#16）
+   * 歌单一多起来，「收藏的歌单」常常有上百条，把「创建的歌单」顶到看不见。
+   * 于是组头本身可点：点一下收起 / 展开。
+   * ⚠️ **不画额外图标**：设计稿的 `.ms-caption` 里没有箭头，折叠态只靠
+   * "行不见了"表达 —— 加一枚箭头会让组头从"一行小标签"变成"一个按钮"。
+   */
+  const renderGroup = (label: string, items: Playlist[]) => (
+    <div className="ms-group" key={label}>
       {/*
-        分组头与歌单行**合成同一个虚拟列表**（而不是两个各自滚动的列表）：
-        一个面板里出现两个滚动条会让用户以为上面那块是钉住的。合成一列之后，
-        分组头只是另一种行，收起/展开只改变 rows 的内容，滚动条始终只有一条。
-        resetKey 带上两个开合状态 ⇒ 收起/展开时回到顶部，
-        否则收起上面的组会让下面整批内容"往上跳"而滚动位置没变，看起来像列表自己窜位。
-      */}
-      <VirtualList
-        items={rows}
-        resetKey={`left-playlists:${playbackSource}:${groupOpen.created}:${groupOpen.subscribed}`}
-        itemKey={(r) => r.key}
-        renderItem={(row) =>
-          row.kind === 'group' ? (
-            <div
-              className={`music-plgroup${row.open ? '' : ' is-shut'}`}
-              onClick={() => setGroupOpen(row.group, !row.open)}
-            >
-              {/* 纯文字行：无背景、无圆角、无图标、无分隔线 —— 识别靠标题文字本身 */}
-              <div className="music-plgroup-pill">
-                <b className="music-plgroup-lb">{row.label}</b>
-                <span className="music-plgroup-ct">{row.count}</span>
-                <ChevronDown size={13} className="music-plgroup-chev" />
-              </div>
+       * 组头走 `Btn`（kind="bare"）而不是裸 `<button>`：`type="button"`、disabled 语义、
+       * 无障碍属性都由这个单元统一给，屏内各处不再手写一遍原生按钮。
+       * `kind="bare"` 时 className 是唯一类名，所以 `ms-caption` 原样生效。
+       *
+       * ⚠️ 组头右侧**不放刷新按钮**：设计稿的 `.ms-caption` 里没有它，
+       * 而且左栏顶部的页签切换时整组会重拉一次，单组刷新是重复入口。
+       */}
+      <Btn
+        kind="bare"
+        className={collapsed[label] ? 'ms-caption is-collapsed' : 'ms-caption'}
+        ariaExpanded={!collapsed[label]}
+        onClick={() => toggle(label)}
+      >
+        {label}
+      </Btn>
+      {collapsed[label] ? null : items.length > 0 ? (
+        items.map((pl) => (
+          <div className="music-row" key={pl.id} onClick={() => void openLeftPlaylist(pl)}>
+            <Cover url={coverProxyUrl(pl.cover, proxyPort)} className="ms-row-cover" />
+            <div className="music-row-tx">
+              <b>{pl.name}</b>
+              {/* 第二行按设计稿 `.ms-row-meta small`：作者 · N 首（平台由当前账号决定，不必每行重复） */}
+              <span>
+                {pl.creator ? `${pl.creator} · ` : ''}
+                {pl.track_count} 首
+              </span>
             </div>
-          ) : (
-            <div className="music-row" onClick={() => void openLeftPlaylist(row.pl)}>
-              <Cover url={coverProxyUrl(row.pl.cover, proxyPort)} />
-              <div className="music-row-tx">
-                <b>{row.pl.name}</b>
-                <span>
-                  {row.pl.track_count} 首 · {providerLabel(row.pl.provider)}
-                </span>
-              </div>
-            </div>
-          )
-        }
-      />
-    </div>
-  );
-}
-
-/**
- * 歌单曲目：定高虚拟列表 + 滚动接近底部自动续拉下一页（loadMoreLeft）。
- * 触发交给 VirtualList 的 onNearEnd（距底两行）—— 到底才触发会白等一个 RTT，
- * 用阈值把网络耗时藏在滚动里；分页仍由 store 负责（本组件只负责「什么时候要」）。
- */
-function LeftTracksView() {
-  const meta = useMusicStore((s) => s.leftPlaylistMeta);
-  const tracks = useMusicStore((s) => s.leftPlaylistTracks);
-  const loading = useMusicStore((s) => s.loadingLeftTracks);
-  const loadingMore = useMusicStore((s) => s.loadingMoreLeft);
-  const loadMore = useMusicStore((s) => s.loadMoreLeft);
-  const back = useMusicStore((s) => s.backToPlaylists);
-  const playPlaylist = useMusicStore((s) => s.playPlaylist);
-  const currentSong = useMusicStore((s) => s.currentSong);
-  const proxyPort = useMusicStore((s) => s.proxyPort);
-
-  const total = meta?.track_count ?? 0;
-
-  return (
-    <div className="music-body">
-      <div className="music-card-hd">
-        <button type="button" className="music-btn out" onClick={back}>
-          <ChevronLeft size={12} /> 返回
-        </button>
-        <span className="music-card-title">{meta?.name ?? '歌单'}</span>
-        <span className="music-card-sub">
-          {tracks.length}
-          {total ? ` / ${total}` : ''} 首
-        </span>
-        <div className="grow" />
-        <button
-          type="button"
-          className="music-btn pri"
-          disabled={tracks.length === 0}
-          onClick={() => void playPlaylist(tracks, { playlist: meta ?? undefined })}
-        >
-          <Play size={12} /> 播放全部
-        </button>
-      </div>
-
-      {loading ? (
-        <Empty>加载曲目中…</Empty>
-      ) : tracks.length === 0 ? (
-        <Empty>这个歌单是空的</Empty>
+          </div>
+        ))
       ) : (
-        <>
-          <VirtualList
-            items={tracks}
-            resetKey={meta?.id ?? 'left-tracks'}
-            itemKey={(s, i) => `${s.provider}:${s.id}:${i}`}
-            onNearEnd={loadingMore ? undefined : () => void loadMore()}
-            renderItem={(s, i) => {
-              // 「播放」在歌单曲目里的语义是"把整个歌单设为队列并从这一首开始" ——
-              // 左键点行与右键菜单的「播放」必须是同一个回调，否则两处行为会各走各的
-              const play = () => void playPlaylist(tracks, { playlist: meta ?? undefined, index: i });
-              return (
-                <SongRow
-                  song={s}
-                  cover={coverProxyUrl(s.cover, proxyPort)}
-                  active={currentSong ? songKey(currentSong) === songKey(s) : false}
-                  onClick={play}
-                  onPlay={play}
-                />
-              );
-            }}
-          />
-          {total > 0 && tracks.length < total ? (
-            <div className="music-more">{loadingMore ? '加载中…' : '上滑加载更多'}</div>
-          ) : null}
-        </>
+        <div className="ms-empty">还没有创建歌单</div>
       )}
     </div>
+  );
+
+  return (
+    <>
+      {created.length > 0 ? renderGroup('创建的歌单', created) : null}
+      {subscribed.length > 0 ? renderGroup('收藏的歌单', subscribed) : null}
+    </>
   );
 }

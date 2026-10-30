@@ -44,9 +44,11 @@ const ROOT = path.resolve(path.dirname(SELF), '..', '..');
 const RT =
   process.env.MIAO_MODEL_ROOT ||
   (process.platform === 'darwin'
-    ? path.join(os.homedir(), 'Library', 'Application Support', 'runtimes', 'manga-translator')
+    ? path.join(os.homedir(), 'Library', 'Application Support', 'MiaoDock', 'manga', 'runtimes', 'manga-translator')
     : path.join(
         process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
+        'MiaoDock',
+        'manga',
         'runtimes',
         'manga-translator',
       ));

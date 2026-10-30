@@ -14,7 +14,7 @@ export function itemOf(g: SettingGroup, id: string): SettingItem {
 export function Group({ group, render }: { group: SettingGroup; render?: (item: SettingItem) => ReactNode }) {
   return (
     <div className="set-group">
-      {group.title ? <SubTitle>{group.title}</SubTitle> : null}
+      {group.title ? <SubTitle head={group.head}>{group.title}</SubTitle> : null}
       {group.items.map((item) => {
         // 没给 render 的组就是"整组待接入"（③/④）。这里不做兜底渲染控件 ——
         // 想要控件就在 render 里显式写，写漏了只会看到 PendingRow，不会静默出假控件。

@@ -1,7 +1,7 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import raw from '@/generated/licenses.json';
 import type { SettingItem } from '@screens/settings/catalog';
-import { Notice } from '@components/units';
+import { Btn, Notice } from '@components/units';
 
 /**
  * 设置页 ⑤ 关于 ·「第三方许可」项的块（台账 D-84）。
@@ -117,12 +117,13 @@ export function LicensesBlock({ item }: { item: SettingItem }) {
   const ncScopes = Object.keys(DATA.engine.bySpdx).filter((k) => /(^|[-\s])NC([-\s]|$)/.test(k));
 
   return (
-    <div className="set-lic">
+    <div className="set-lic" data-setting-id={item.id}>
       <div className="set-lic-head">
         <div className="set-lic-name">{item.label}</div>
-        <button type="button" className="set-lic-fold" aria-expanded={open} onClick={() => setOpen(!open)}>
-          {open ? '收起清单' : '查看清单'}
-        </button>
+        <Btn kind="bare" className="set-lic-fold" ariaExpanded={open} onClick={() => setOpen(!open)}>
+          {/* 设计稿的 `<summary>` 是固定文案「查看完整许可清单」，展开/收起由状态本身表达 */}
+          查看完整许可清单
+        </Btn>
       </div>
 
       <div className="set-lic-scopes">

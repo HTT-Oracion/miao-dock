@@ -180,38 +180,120 @@ fn app_data_dir() -> PathBuf {
     home.join(".local").join("share")
 }
 
-/// 任务清单等运行期状态的位置：平台应用数据目录下的 `Box/state`。
+// ------------------------------------------------------------------ 数据根（D-241）
+//
+// 产品自有的落点全部挂在一棵树下面，按域分子目录：
+//   <数据根>/manga/state      漫画服务状态（队列 / 令牌 / 幂等表 / 暂存 / 隐藏清单）
+//   <数据根>/manga/runtimes   漫画引擎运行时（venv / 源码 / 模型）
+//   <数据根>/anime/…          未来
+//   <数据根>/music/…          未来（本轮不动音乐）
+// 漫画**作品库**是唯一例外：它是用户成果，留在 `~/Pictures`（见 `manga_root_dir`）。
+
+/// 数据根默认值：`<appData>/MiaoDock`。
+///
+/// 🔴 为什么不是 `Box`：`Box/state` 是历史遗留名，同一产品曾有三个名字（`Box/state`、
+///    `Box 漫画`、`MiaoDock/music_profiles.json`）。收束到一个产品级名字，卸载器 /
+///    备份 / 迁移才有一处可指。
+fn default_data_root() -> PathBuf {
+    app_data_dir().join("MiaoDock")
+}
+
+/// 生效的**数据根**（`MIAO_ROOT` 覆盖）。
+///
+/// 🔴 语义是「产品数据树的家」，**不是**任何单个域的落点。旧版本里 `MIAO_ROOT` 指漫画库根，
+///    本次改指数据根：库的位置改用 `MIAO_MANGA_ROOT_DIR`（见下）。
+/// 🔴 **旧落点不做自动迁移**：升级后新目录从空开始，旧数据原样留在原处，需要时由用户自行搬。
+///    不做自动 rename 是刻意的 —— 单人使用场景下，静默搬动用户成果目录的代价大于收益。
+pub fn data_root() -> PathBuf {
+    resolve(env_path("MIAO_ROOT").unwrap_or_else(default_data_root))
+}
+
+// ------------------------------------------------------------------ 漫画域落点（D-241）
+
+/// 漫画服务状态目录（`MIAO_MANGA_STATE_DIR` 覆盖）：`<数据根>/manga/state`。
+///
 /// 契约 §7.5：**不放漫画目录内**（否则会被库扫描误读为用户内容）。
-pub fn default_state_dir() -> PathBuf {
-    app_data_dir().join("Box").join("state")
+/// 🔴 令牌与队列同居于此 ⇒ **手工搬迁时要整目录搬**：令牌一变，miao-trans 扩展存的旧令牌全部 401。
+pub fn manga_state_dir() -> PathBuf {
+    resolve(env_path("MIAO_MANGA_STATE_DIR").unwrap_or_else(|| data_root().join("manga").join("state")))
 }
 
-/// 🔴 B1：引擎运行时的**落点**（`<appData>/runtimes`）。
+/// 漫画作品库默认位置：`~/Pictures/MiaoDock Mangas`。
 ///
-/// 为什么从仓库根搬到 appData：打包后 `repo_root()` 向上找不到同时含 `e2e/` 与 `engine/`
-/// 的目录（两者都不进包，见 A1/A2）⇒ 退回 cwd ⇒ 引擎路径算错。而 appData **始终可写**
-/// 且与安装位置无关 —— 这正是「引擎由用户自装」唯一稳定的锚点。
-pub fn default_runtime_root() -> PathBuf {
-    app_data_dir().join("runtimes")
+/// 🔴 刻意**不**挂进数据根：这是用户可见、可备份、可当相册管理的**成果目录**；
+///    藏进 `%LOCALAPPDATA%` 既找不到，也会被清理工具扫到。产品数据与用户成果分属两处。
+pub fn default_manga_root_dir() -> PathBuf {
+    home_dir().join("Pictures").join("MiaoDock Mangas")
 }
 
-/// 生效的**运行时根**（`MIAO_RUNTIME_ROOT` 覆盖）。
+/// 生效的**漫画库根**（`MIAO_MANGA_ROOT_DIR` 覆盖）。契约 §7.1。总是绝对化。
+pub fn manga_root_dir() -> PathBuf {
+    resolve(env_path("MIAO_MANGA_ROOT_DIR").unwrap_or_else(default_manga_root_dir))
+}
+
+/// 生效的**漫画引擎运行时根**（`MIAO_MANGA_RUNTIME_ROOT` 覆盖）：`<数据根>/manga/runtimes`。
 ///
-/// 🔴 为什么必须可覆盖：`runtime_probe`（B2）要把 venvRoot / site-packages 判到临时目录上，
-///    否则验收会去 `stat` 用户真实 appData —— 而"读用户目录"的验收夹具本身就是缺陷
-///    （同 `MIAO_ROOT` / `MIAO_STATE_DIR` 一律指 TMP）。默认值与 `config.mjs` 逐字节对齐。
-pub fn runtime_root() -> PathBuf {
-    resolve(env_path("MIAO_RUNTIME_ROOT").unwrap_or_else(default_runtime_root))
+/// 🔴 为什么必须可覆盖：`runtime_probe` 要把 venv / site-packages 判到临时目录上，
+///    否则验收会去 `stat` 用户真实 appData —— "读用户目录"的验收夹具本身就是缺陷。
+pub fn manga_runtime_root() -> PathBuf {
+    resolve(env_path("MIAO_MANGA_RUNTIME_ROOT").unwrap_or_else(|| data_root().join("manga").join("runtimes")))
 }
 
-/// 引擎运行时根（`<runtimeRoot>/manga-translator`）。
+/// 引擎运行时根（`<mangaRuntimeRoot>/manga-translator`）。
 pub fn runtimes_dir() -> PathBuf {
-    runtime_root().join("manga-translator")
+    manga_runtime_root().join("manga-translator")
 }
 
-/// 落盘根目录默认值：契约 §7.1 —— `~/Pictures/Box 漫画`。
-pub fn default_root_dir() -> PathBuf {
-    home_dir().join("Pictures").join("Box 漫画")
+// ------------------------------------------------------------------ 动漫域落点（D-242）
+//
+// 与漫画域同构（state / 作品库 / 运行时都挂 `<数据根>/anime/`），但**三样都不共用**：
+// 🔴 漫画库扫描（`mangasvc/library.rs`）会把根下**每个顶层目录**都当成漫画，且不要求
+//    manifest。两个域若共用根，番剧会出现在漫画库里、`totalBytes` 也算错 —— 这不是
+//    "显示上的小瑕疵"，而是数据被另一域误读。隔离由 `check:anime` 的 A4 断言把守。
+
+/// 动漫服务状态目录（`MIAO_ANIME_STATE_DIR` 覆盖）：`<数据根>/anime/state`。
+///
+/// 与漫画 state 分开是**必须**的：令牌各自一份（漫画令牌不能调动漫端点），
+/// 队列/幂等表也各有一套 schema。
+pub fn anime_state_dir() -> PathBuf {
+    resolve(env_path("MIAO_ANIME_STATE_DIR").unwrap_or_else(|| data_root().join("anime").join("state")))
+}
+
+/// 动漫作品库默认位置：`<数据根>/anime/resources`。
+///
+/// 与漫画库（`~/Pictures/MiaoDock Mangas`）不同：漫画译文是用户成果，动漫库是产品数据。
+pub fn default_anime_root_dir() -> PathBuf {
+    data_root().join("anime").join("resources")
+}
+
+/// 生效的**动漫库根**（`MIAO_ANIME_ROOT_DIR` 覆盖）。总是绝对化。
+pub fn anime_root_dir() -> PathBuf {
+    resolve(env_path("MIAO_ANIME_ROOT_DIR").unwrap_or_else(default_anime_root_dir))
+}
+
+/// 动漫引擎运行时根（`MIAO_ANIME_RUNTIME_ROOT` 覆盖）：`<数据根>/anime/runtimes`。
+pub fn anime_runtime_root() -> PathBuf {
+    resolve(env_path("MIAO_ANIME_RUNTIME_ROOT").unwrap_or_else(|| data_root().join("anime").join("runtimes")))
+}
+
+/// 动漫服务令牌文件：`<animeStateDir>/token`。
+pub fn anime_token_file() -> PathBuf {
+    anime_state_dir().join("token")
+}
+
+/// 动漫侧路径快照（`animesvc --print-paths`）。
+///
+/// 🔴 **单独一份**，不并进 `snapshot()`：后者的键集是 `check:paths` 的 golden 断言对象，
+///    把两个服务的落点混进同一条金标，会让"漫画路径漂移"与"动漫路径漂移"互相掩盖。
+pub fn anime_snapshot() -> serde_json::Value {
+    let s = |p: PathBuf| p.to_string_lossy().into_owned();
+    serde_json::json!({
+        "dataRoot": s(data_root()),
+        "animeStateDir": s(anime_state_dir()),
+        "animeRootDir": s(anime_root_dir()),
+        "animeRuntimeRoot": s(anime_runtime_root()),
+        "animeTokenFile": s(anime_token_file()),
+    })
 }
 
 fn home_dir() -> PathBuf {
@@ -234,19 +316,9 @@ pub fn venv_python_rel() -> PathBuf {
 }
 
 // ------------------------------------------------------------------ 生效路径（env 覆盖 ⊕ 平台默认）
-
-/// 生效的**状态目录**（`MIAO_STATE_DIR` 覆盖）。
-///
-/// 🔴 复刻 Node `path.resolve(env || default)`：**总是绝对化**。env 给相对路径时，Node 会相对
-///    cwd 展开、Rust 不会 —— 不补这一步，用户设一个相对 `MIAO_STATE_DIR` 就会让两边指向不同目录。
-pub fn state_dir() -> PathBuf {
-    resolve(env_path("MIAO_STATE_DIR").unwrap_or_else(default_state_dir))
-}
-
-/// 生效的**落盘根目录**（`MIAO_ROOT` 覆盖）。契约 §7.1。同 `state_dir`，总是绝对化。
-pub fn root_dir() -> PathBuf {
-    resolve(env_path("MIAO_ROOT").unwrap_or_else(default_root_dir))
-}
+//
+// 规则统一：`resolve(env || default)` —— env 给相对路径时按 cwd 展开再词法归一，
+// 保证「检测到的路径」与「启动用的路径」是同一条字符串（R1 的失效形态就是两边各推一份）。
 
 /// 近似 `path.resolve`：相对路径按 cwd 展开，再做**词法归一**（统一分隔符、去 `.`、消 `..`）。
 ///
@@ -309,9 +381,7 @@ pub fn model_root() -> PathBuf {
     if let Some(dir) = settings_model_dir() {
         return resolve(PathBuf::from(dir));
     }
-    let parent = engine_dir().parent().map(PathBuf::from).unwrap_or_else(|| {
-        state_dir().join("runtimes").join("manga-translator")
-    });
+    let parent = engine_dir().parent().map(PathBuf::from).unwrap_or_else(runtimes_dir);
     resolve(parent)
 }
 
@@ -320,7 +390,7 @@ pub fn model_root() -> PathBuf {
 /// 读不到 / 不是 JSON / 键缺失 一律 `None` —— 坏文件由 `mangasvc::engine::settings` 另行上报，
 /// 这里**不重复喊**（同一个坏文件喊两遍只会淹没日志）。
 fn settings_model_dir() -> Option<String> {
-    let text = std::fs::read_to_string(state_dir().join("engine-settings.json")).ok()?;
+    let text = std::fs::read_to_string(manga_state_dir().join("engine-settings.json")).ok()?;
     let v: serde_json::Value = serde_json::from_str(&text).ok()?;
     let s = v.get("modelDir")?.as_str()?.trim();
     if s.is_empty() {
@@ -408,27 +478,27 @@ pub fn pkg_dir() -> PathBuf {
 
 /// 任务清单目录 `state/tasks`（Node `TASKS_STATE_DIR`）。
 pub fn tasks_state_dir() -> PathBuf {
-    state_dir().join("tasks")
+    manga_state_dir().join("tasks")
 }
 
 /// 幂等表 `state/idempotency.json`（Node `IDEMPOTENCY_FILE`）。
 pub fn idempotency_file() -> PathBuf {
-    state_dir().join("idempotency.json")
+    manga_state_dir().join("idempotency.json")
 }
 
 /// 令牌文件 `state/token`（Node `TOKEN_FILE`）。
 pub fn token_file() -> PathBuf {
-    state_dir().join("token")
+    manga_state_dir().join("token")
 }
 
 /// 上传字节暂存区 `state/pending`（Node `PENDING_DIR`，G-12）。
 pub fn pending_dir() -> PathBuf {
-    state_dir().join("pending")
+    manga_state_dir().join("pending")
 }
 
 /// 「已从漫画库隐藏」清单 `state/hidden-comics.json`（Node `HIDDEN_COMICS_FILE`）。
 pub fn hidden_comics_file() -> PathBuf {
-    state_dir().join("hidden-comics.json")
+    manga_state_dir().join("hidden-comics.json")
 }
 
 /// 引擎主进程目录（`MIAO_ENGINE_SERVER_DIR` 覆盖，默认 `engineDir/server`）。
@@ -436,20 +506,23 @@ pub fn engine_server_dir() -> PathBuf {
     env_path("MIAO_ENGINE_SERVER_DIR").unwrap_or_else(|| engine_dir().join("server"))
 }
 
-/// 全部路径的 **JSON 快照** —— 供 e2e「Rust 与 Node 同源」逐字节比对（`mangasvc --print-paths`）。
+/// 全部路径的 **JSON 快照** —— 供 e2e 取证（`mangasvc --print-paths`）。
 ///
-/// 键名与 `config.mjs` 的导出**一一对应**，比对脚本按同名键逐条比 —— 少一个键就是漏一条断言。
+/// 🔴 键名是**断言对象**：`e2e/service/golden/paths-selftest.json` 与 `paths-parity-check`
+///    的 M1–M6 变异都按同名键逐条比。改键必须同时重冻 golden 并回改变异锚点 ——
+///    否则「键名漂移」会表现成一条**静默跳过**，而不是变红。
 pub fn snapshot() -> serde_json::Value {
     let s = |p: PathBuf| p.to_string_lossy().into_owned();
     serde_json::json!({
         "repoRoot": s(repo_root()),
         "pkgDir": s(pkg_dir()),
-        "stateDir": s(state_dir()),
+        "dataRoot": s(data_root()),
+        "mangaStateDir": s(manga_state_dir()),
         "tasksStateDir": s(tasks_state_dir()),
         "idempotencyFile": s(idempotency_file()),
         "tokenFile": s(token_file()),
-        "rootDir": s(root_dir()),
-        "runtimeRoot": s(runtime_root()),
+        "mangaRootDir": s(manga_root_dir()),
+        "mangaRuntimeRoot": s(manga_runtime_root()),
         "engineDir": s(engine_dir()),
         "engineServerDir": s(engine_server_dir()),
         "enginePython": s(engine_python()),
@@ -601,11 +674,49 @@ mod tests {
         }
     }
 
+    /// 四个落点各认各的 env；数据根是 state / runtime 的默认父级（库例外）。
+    ///
+    /// 🔴 所有 env 变异放同一条测试：`cargo test` 默认多线程，拆成多条会互相踩环境变量。
     #[test]
-    fn env_override_wins() {
-        std::env::set_var("MIAO_ROOT", "Z:/tmp/root-probe");
-        assert_eq!(root_dir(), PathBuf::from("Z:/tmp/root-probe"));
+    fn path_env_overrides_are_independent() {
+        std::env::set_var("MIAO_MANGA_ROOT_DIR", "Z:/tmp/manga-root");
+        assert_eq!(manga_root_dir(), PathBuf::from("Z:/tmp/manga-root"));
+        std::env::remove_var("MIAO_MANGA_ROOT_DIR");
+
+        std::env::set_var("MIAO_ROOT", "Z:/tmp/data-root");
+        assert_eq!(data_root(), PathBuf::from("Z:/tmp/data-root"));
+        std::env::remove_var("MIAO_MANGA_STATE_DIR");
+        std::env::remove_var("MIAO_MANGA_RUNTIME_ROOT");
+        assert_eq!(
+            manga_state_dir(),
+            PathBuf::from("Z:/tmp/data-root").join("manga").join("state")
+        );
+        assert_eq!(
+            manga_runtime_root(),
+            PathBuf::from("Z:/tmp/data-root").join("manga").join("runtimes")
+        );
         std::env::remove_var("MIAO_ROOT");
+
+        std::env::set_var("MIAO_MANGA_STATE_DIR", "Z:/tmp/state");
+        assert_eq!(manga_state_dir(), PathBuf::from("Z:/tmp/state"));
+        std::env::remove_var("MIAO_MANGA_STATE_DIR");
+
+        std::env::set_var("MIAO_MANGA_RUNTIME_ROOT", "Z:/tmp/rt");
+        assert_eq!(manga_runtime_root(), PathBuf::from("Z:/tmp/rt"));
+        assert_eq!(
+            runtimes_dir(),
+            PathBuf::from("Z:/tmp/rt").join("manga-translator")
+        );
+        std::env::remove_var("MIAO_MANGA_RUNTIME_ROOT");
+    }
+
+    /// 漫画库默认落点在 `~/Pictures`（用户可见的成果目录），**不得**藏进 appData。
+    #[test]
+    fn default_manga_root_is_user_visible_not_appdata() {
+        let p = default_manga_root_dir();
+        assert!(p.starts_with(home_dir()), "库默认落点应在 home 下：{p:?}");
+        assert!(p.to_string_lossy().contains("Pictures"), "库默认落点应在 Pictures 下：{p:?}");
+        assert!(!p.starts_with(app_data_dir()), "库是用户成果，不得藏进 appData：{p:?}");
     }
 
     #[test]

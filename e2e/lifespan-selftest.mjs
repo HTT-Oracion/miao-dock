@@ -59,7 +59,7 @@ const TMP = mkdtempSync(path.join(os.tmpdir(), 'miao-e11-'));
 ///    这里换成 `mkdtempSync` 只为让 E11 专心考"树回收"，不掺别的变量。
 /// ⚠️ 落点选 `os.tmpdir()`（`/var/folders/…`）而不是仓库内，除了不污染工作树，还因为
 ///    本机沙箱对 `fs.rmSync` 加了"单轮批量删除 > 50 条需确认"的守卫，递归清空仓库内
-///    那个目录会**直接抛 `SAFE_DELETE_BULK_CONFIRM_REQUIRED`**。`MIAO_ROOT` 另有黑名单
+///    那个目录会**直接抛 `SAFE_DELETE_BULK_CONFIRM_REQUIRED`**。`MIAO_MANGA_ROOT_DIR` 另有黑名单
 ///    挡住系统 `/tmp`，而 `os.tmpdir()` 不在其中（`check:e5e6` 是同款做法）。
 /// 服务端口段（契约 §1）+ 引擎端口 + LLM 端口（S2 起 ③ 是独立进程）
 const SERVICE_PORTS = Array.from({ length: 11 }, (_, i) => 5180 + i);
@@ -102,8 +102,8 @@ function spawnApp(env) {
     env: {
       ...process.env,
       MIAO_ENGINE_PROTOCOL: MODE,
-      MIAO_ROOT: path.join(TMP, 'root'),
-      MIAO_STATE_DIR: path.join(TMP, 'state'),
+      MIAO_MANGA_ROOT_DIR: path.join(TMP, 'root'),
+      MIAO_MANGA_STATE_DIR: path.join(TMP, 'state'),
       ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -372,9 +372,9 @@ async function runGuide() {
   const child = spawnApp({
     MIAO_SELFTEST: '1',
     MIAO_ENGINE_PROTOCOL: 'real',
-    MIAO_RUNTIME_ROOT: runtimeRoot,
-    MIAO_STATE_DIR: stateDir,
-    MIAO_ROOT: rootDir,
+    MIAO_MANGA_RUNTIME_ROOT: runtimeRoot,
+    MIAO_MANGA_STATE_DIR: stateDir,
+    MIAO_MANGA_ROOT_DIR: rootDir,
     MIAO_MODEL_DOWNLOAD_RUNNER: runner,
   });
   let out = '';

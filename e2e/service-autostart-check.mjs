@@ -117,7 +117,10 @@ const COMMANDS_MOD = path.join(ROOT, 'src-tauri', 'src', 'commands', 'mod.rs');
 const SERVICE_RS = path.join(ROOT, 'src-tauri', 'src', 'service', 'mod.rs');
 const MAIN_RS = path.join(ROOT, 'src-tauri', 'src', 'main.rs');
 const APP_TSX = path.join(ROOT, 'src', 'App.tsx');
-const NOT_READY = path.join(ROOT, 'src', 'screens', 'library', 'NotReadyScreen.tsx');
+const NOT_READY = path.join(ROOT, 'src', 'screens', 'manga', 'NotReadyScreen.tsx');
+// 引导页拆形态（2026-10-24）：动作行住在 `notready/ServiceForm.tsx`，
+// 判据语料必须跟着过去 —— 否则 D1 会"读不到分支"而恒红（或被人改成恒绿）。
+const NOT_READY_SERVICE = path.join(ROOT, 'src', 'screens', 'manga', 'notready', 'ServiceForm.tsx');
 const MANGASVC_RS = path.join(ROOT, 'src-tauri', 'src', 'mangasvc.rs');
 // D-150：`sections.tsx` 已按 Section 拆到 `sections/*.tsx`。A9/D2 只看"代码里有没有这些调用"，
 // 故读全部 Section 的**拼接**；D2 的变异锚落到 TranslateSection（服务启停 UI 在那儿）。
@@ -174,7 +177,7 @@ function runAll() {
   const svc = read(SERVICE_RS);
   const main = read(MAIN_RS);
   const app = read(APP_TSX);
-  const nrs = read(NOT_READY);
+  const nrs = read(NOT_READY) + '\n' + read(NOT_READY_SERVICE);
   const sec = readSections(); // D-150：每次重读（反证轮改了磁盘上的文件）
   const ipc = read(IPC_TS);
   const cargoToml = read(CARGO_TOML);
@@ -342,28 +345,37 @@ function runAll() {
 
   // ---- D1：未就绪屏 stopped 给「启动」、其余给「重启」 ----
   {
-    const anchor = "{state === 'stopped' ? (";
-    const i = nrs.indexOf(anchor);
-    const sep = i >= 0 ? nrs.indexOf(') : (', i) : -1;
-    const endAll = sep >= 0 ? nrs.indexOf(')}', sep) : -1;
-    const trueBr = i >= 0 && sep > i ? nrs.slice(i, sep) : '';
-    const falseBr = sep >= 0 && endAll > sep ? nrs.slice(sep, endAll) : '';
+    /*
+     * 🔴 2026-10-24 拆形态后，动作行从内联三元改成 `if` 分派（四支互斥，见 ServiceForm）。
+     *    判据因此钉**语义**而不是某一种写法：
+     *      ① `stopped` 分支里必须出现 onStart 与「启动本地服务」；
+     *      ② 其余分支必须出现 onRestart 与「重启本地服务」；
+     *      ③ 这两件事**不许**混在同一支里（对停止的服务说"重启"是错的，还多走一次阻塞 stop）。
+     *    钉三元写法时，一次合法重构就会假红 —— D-379 已记过这条教训。
+     */
+    const stoppedBranch = (() => {
+      const i = nrs.indexOf("if (state === 'stopped')");
+      if (i < 0) return '';
+      const ret = nrs.indexOf('return (', i);
+      if (ret < 0) return '';
+      const end = nrs.indexOf(');', ret);
+      return end > ret ? nrs.slice(ret, end) : '';
+    })();
     const ok =
-      i >= 0 &&
-      sep > i &&
-      endAll > sep &&
-      /onStart/.test(trueBr) &&
-      /启动本地服务/.test(trueBr) &&
-      /onRestart/.test(falseBr) &&
-      /重启本地服务/.test(falseBr) &&
+      stoppedBranch.length > 0 &&
+      /onStart/.test(stoppedBranch) &&
+      /启动本地服务/.test(stoppedBranch) &&
+      !/onRestart/.test(stoppedBranch) &&
+      /onRestart/.test(nrs) &&
+      /重启本地服务/.test(nrs) &&
       /onStart: \(\) => void;/.test(nrs);
     check(
       'D1',
       '未就绪屏（X-C3）：`stopped` 态给「启动本地服务」(onStart)，其余态给「重启本地服务」(onRestart)',
       ok,
-      i < 0
-        ? "未定位到 state === 'stopped' 的三元分支"
-        : `真分支含 onStart=${/onStart/.test(trueBr)} 假分支含 onRestart=${/onRestart/.test(falseBr)}`,
+      stoppedBranch.length === 0
+        ? "未定位到 state === 'stopped' 的分派支"
+        : `该支含 onStart=${/onStart/.test(stoppedBranch)} 不含 onRestart=${!/onRestart/.test(stoppedBranch)}`,
     );
   }
 
@@ -591,7 +603,8 @@ const MUTATIONS = [
   },
   {
     name: 'D1 未就绪屏 stopped 态退回「重启本地服务」(onRestart)（对停止的服务说"重启"是错的）',
-    file: NOT_READY,
+    // 动作行拆进 ServiceForm.tsx 后，锚点跟着过去
+    file: NOT_READY_SERVICE,
     find: 'onClick={onStart}',
     replace: 'onClick={onRestart}',
     expect: ['D1'],

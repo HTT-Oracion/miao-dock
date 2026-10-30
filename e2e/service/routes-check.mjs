@@ -101,6 +101,11 @@ export const EXPECTED = [
   'POST /api/v1/engine/unload',
   'POST /api/v1/engine/models/verify',
   'POST /api/v1/engine/models/download',
+  // 🔴 2026-10-30 补：D-237 加的「暂停下载」（routes.rs:79 / handlers.rs:385）
+  //    这条端点从加上起就一直漏在 EXPECTED 外 ⇒ check:routes 的 ROUTES.coverage
+  //    报「表多」而红。它藏了很久是因为 check:routes 在 service 层（约 4 分钟），
+  //    日常跑的是 static 快闸门。
+  'POST /api/v1/engine/models/download/pause',
   // translate
   'POST /api/v1/translate/text',
   'POST /api/v1/translate/stream',
@@ -199,8 +204,8 @@ function startPureRust(extraEnv = {}) {
     env: {
       ...process.env,
       MIAO_TOKEN: TOKEN,
-      MIAO_ROOT: root,
-      MIAO_STATE_DIR: state,
+      MIAO_MANGA_ROOT_DIR: root,
+      MIAO_MANGA_STATE_DIR: state,
       MIAO_ENGINE_PROTOCOL: 'mock',
       ...extraEnv,
     },

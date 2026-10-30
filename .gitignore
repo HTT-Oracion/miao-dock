@@ -63,3 +63,7 @@ uninstaller/public/fonts/
 # 安装器的内嵌载荷：构建期产物（主程序 exe + 资源 + 卸载器 exe），按版本变、体积在 100 MB 量级。
 # 由 scripts/pack-install-payload.mjs 生成；缺失时 installer/build.rs 会补单字节占位让编译能过。
 installer/src-tauri/payload/
+
+# 内核轨的 mpv 二进制：第三方可执行（~115 MB）、按平台不同，不入库。
+# 由 `npm run task -- fetch:mpv` 放到 src-tauri/resources/mpv/<平台>/（locate_mpv 的第 3 顺位）
+src-tauri/resources/mpv/

@@ -1,5 +1,5 @@
-import { useState } from 'react';
 import type { ReactNode } from 'react';
+import { Info } from 'lucide-react';
 import { SETTINGS } from '@/themes/tokens';
 import { Badge } from '@components/units';
 import type { SettingItem } from '@screens/settings/catalog';
@@ -24,7 +24,7 @@ import type { SettingItem } from '@screens/settings/catalog';
  */
 
 /** 小节标题：10.5px / 700 / uppercase / .05em（《09》§4.1「组内分层的关键」） */
-export function SubTitle({ children }: { children: string }) {
+export function SubTitle({ children, head }: { children: string; head?: string }) {
   return (
     <div
       className="set-subtitle"
@@ -33,7 +33,11 @@ export function SubTitle({ children }: { children: string }) {
         letterSpacing: SETTINGS.sectionTitleTracking,
       }}
     >
-      {children}
+      <div className="set-subtitle-text">
+        <span className="set-subtitle-name">{children}</span>
+        {/* 卡头副标题（设计稿 `.s-card-head p`）：缺省不渲染，不占位 */}
+        {head ? <span className="set-subtitle-head">{head}</span> : null}
+      </div>
     </div>
   );
 }
@@ -98,17 +102,11 @@ export function humanBytes(n: number): string {
 }
 
 /**
- * 组级说明：**一行摘要 + 「为什么」抽屉**（catalog 的 `note` / `noteSummary`）。
+ * 组级说明：设计稿 `.s-note` —— 一枚虚线小盒，**全文直出**，没有折叠也没有按钮。
  *
- * ## 折叠的不是信息，是占位
- * `note` 是写给维护者的 —— 两个服务端视角为何缺一不可、两个阈值待遇为何不同。
- * 它对用户的任务只有一条：**告诉他改哪些要重启**。这一段的默认形态是 6 行，
- * 于是三小节的标题与主要控件被顶出首屏。折叠后默认只显示 `noteSummary` 那一行，
- * 全文**一字不删**地留在抽屉里。
- *
- * ## 折叠与否由**数据**决定，不在这里猜长度
- * 给了 `noteSummary` 才折叠；没给就原样铺全文（`note` 本来就短，加个抽屉只多一次点击）。
- * 按字符数猜阈值是"没人能解释、也没法被断言"的写法，所以阈值留在 catalog。
+ * 设计稿给的就是"13px 图标 + 9.5px 正文、虚线描边、贴在本组卡片上方"这一种形态；
+ * 产品此前那套「一行摘要 + 『为什么 ?』抽屉」是自造的第二形态，与设计稿并存只会
+ * 让人在两套排版语言之间来回切换，因此整套删掉（数据侧的 `noteSummary` 一并移除）。
  *
  * ## 缺组说明 ⇒ 整块不渲染（自守，不靠调用处记得删）
  * 显隐由**数据**决定：catalog 给了 `note` 才出现这一块，没给就 `return null`。
@@ -118,30 +116,14 @@ export function humanBytes(n: number): string {
  * 🔴 这一守同时是**崩溃防线**：`children` 为 `undefined` 时 `emphasis(undefined)`
  * 会抛 `TypeError`。类型上 `{X.note as string}` 把 `string | undefined` 硬掰成了
  * `string`，`tsc --noEmit` 放行 —— 只看编译期发现不了（本页已因此崩过两次）。
- *
- * ## `emphasis(children)` 只在展开态求值
- * 折叠态显示的是 `summary`（纯文本，按 catalog 的硬约束它不含标记）；
- * 全文始终走 `emphasis()` —— 它是 `**` 唯一的渲染点之一。
  */
-export function GroupNote({ children, summary }: { children?: string; summary?: string }) {
-  const [open, setOpen] = useState(false);
+export function GroupNote({ children }: { children?: string }) {
   // 没有组说明：整块不渲染（读屏也不念）
   if (!children) return null;
-  if (!summary) return <div className="set-note">{emphasis(children)}</div>;
   return (
-    <div className={open ? 'set-note is-open' : 'set-note'}>
-      <div className="set-note-row">
-        <div
-          className={open ? 'set-note-sum is-full' : 'set-note-sum'}
-          // 折叠态悬停可读全文：摘要是一行的下限，不是唯一入口
-          title={open ? undefined : plain(children)}
-        >
-          {open ? emphasis(children) : summary}
-        </div>
-        <button type="button" className="set-note-more" aria-expanded={open} onClick={() => setOpen(!open)}>
-          {open ? '收起' : '为什么 ?'}
-        </button>
-      </div>
+    <div className="set-note-inline">
+      <Info size={13} />
+      <span>{emphasis(children)}</span>
     </div>
   );
 }
@@ -149,12 +131,15 @@ export function GroupNote({ children, summary }: { children?: string; summary?: 
 /**
  * 一行设置的骨架 —— 标题 + 说明在左，控件在右。
  *
+ * 几何（`min-height:56` / `padding:12px 16px`）由 CSS 承载，组件不再内联注入：
+ * 行内注入会盖掉卡片内的左右留白，让每一行都贴着卡片边缘。
+ *
  * `children` 为空时右侧什么都不渲染（只读项就是这种）。**不给「不可点」的假控件
  * 留位置**：没有能力时右侧要么是只读文本，要么整个换成 `PendingRow`。
  */
 export function Row({ item, children }: { item: SettingItem; children?: ReactNode }) {
   return (
-    <div className="set-row" style={{ minHeight: SETTINGS.rowMinHeight, padding: `${SETTINGS.rowPaddingY}px 0` }}>
+    <div className="set-row" data-setting-id={item.id}>
       <div className="set-row-label">
         <div className="set-row-title">
           <span className="set-row-name">{item.label}</span>
@@ -193,8 +178,8 @@ export function Row({ item, children }: { item: SettingItem; children?: ReactNod
  */
 function DefaultChip({ value }: { value: string }) {
   return (
-    <span className="set-row-def" title={`出厂默认：${value} —— 这不是你当前的设置`}>
-      默认：{value}
+    <span className="set-row-def" title={`出厂默认：${value}——这不是你当前的设置`}>
+      默认 {value}
     </span>
   );
 }
@@ -208,10 +193,7 @@ function DefaultChip({ value }: { value: string }) {
  */
 export function PendingRow({ item }: { item: SettingItem }) {
   return (
-    <div
-      className="set-row is-pending"
-      style={{ minHeight: SETTINGS.rowMinHeight, padding: `${SETTINGS.rowPaddingY}px 0` }}
-    >
+    <div className="set-row is-pending" data-setting-id={item.id}>
       <div className="set-row-label">
         <div className="set-row-title">{item.label}</div>
         {item.why ? (

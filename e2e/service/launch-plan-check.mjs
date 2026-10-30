@@ -201,7 +201,7 @@ check(
 //    这条会立刻红。
 const probeState = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-launch-plan-'));
 await run(RUST_BIN, ['--print-launch-plan', 'mock'], {
-  MIAO_STATE_DIR: probeState,
+  MIAO_MANGA_STATE_DIR: probeState,
   MIAO_NODE_EXEC: process.execPath,
 });
 const strayFiles = fs.readdirSync(probeState);

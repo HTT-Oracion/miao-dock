@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * G5 · 「本地引擎开箱即用」引导链门 —— 一键下载编排 / 阶段顺序 / 中断可续 / 百分比来源真实 / 不出现命令行字样
  * =============================================================================
@@ -64,12 +64,14 @@ const ENGINE_DOWNLOAD_TS = path.join(ROOT, 'src', 'ipc', 'engine-download.ts');
 const MODELS_MANIFEST = path.join(ROOT, 'engine', 'models.manifest.json');
 /// W12：下载视图（第 1/第 2 阶段文案）。
 const DOWNLOAD_PANEL_TSX = path.join(ROOT, 'src', 'screens', 'engine', 'DownloadPanel.tsx');
+/// W12：五段阶段文案住在文案层（`download/copy.ts`）—— 判据必须读**文案层**，
+/// 读组件文件只会拿到空串，而那会让这条断言永远绿（空串里当然不含"即可开始翻译"）。
+const DOWNLOAD_COPY_TS = path.join(ROOT, 'src', 'screens', 'engine', 'download', 'copy.ts');
 /// W16：版本锁（人读的事实源）—— `engine_source` 的 owner/repo/commit 以它为准。
 const VERSIONS_LOCK = path.join(ROOT, 'engine', 'VERSIONS.lock');
 const UI_FILES = [
-  path.join(ROOT, 'src', 'screens', 'library', 'NotReadyScreen.tsx'),
+  path.join(ROOT, 'src', 'screens', 'manga', 'NotReadyScreen.tsx'),
   path.join(ROOT, 'src', 'screens', 'engine', 'DownloadPanel.tsx'),
-  path.join(ROOT, 'src', 'screens', 'settings', 'OnlineApiForm.tsx'),
   path.join(ROOT, 'src', 'components', 'units', 'ProgressRing.tsx'),
 ];
 
@@ -234,12 +236,22 @@ function engineSourceShape() {
   const stageMap =
     state.includes('"prepare" | "runtime" | "visual" => Some("stage1"') &&
     state.includes('"llm" | "models" => Some("stage2"');
+  /*
+   * 五段 step 映射（2026-10-25 改形）：从"逐阶段赋值"改成**单调水位线**
+   * —— 五个阶段名仍各有映射，但只有 rank 更高时才落值。
+   * 🔴 这条必须连"单调"一起钉：装配是**两个进程**（--stage 1 / --stage 2），
+   *    每轮都从阶段 0 重走。无条件覆写会让第 2 轮把 step 从 llm 拉回 prepare，
+   *    前端五段时间线于是"从翻译模型跳回视觉模型"（真机用户报）。
+   */
   const stepMap =
-    state.includes('"prepare" => Some("prepare".to_string())') &&
-    state.includes('"runtime" => Some("runtime".to_string())') &&
-    state.includes('"visual" => Some("visual".to_string())') &&
-    state.includes('"llm" => Some("llm".to_string())') &&
-    state.includes('"models" => Some("models".to_string())');
+    state.includes('"prepare" => Some("prepare")') &&
+    state.includes('"runtime" => Some("runtime")') &&
+    state.includes('"visual" => Some("visual")') &&
+    state.includes('"llm" => Some("llm")') &&
+    state.includes('"models" => Some("models")') &&
+    // 只进不退：rank 比较 + "严格更高才改"
+    /if rank\(next\) > cur/.test(state) &&
+    /d\.step = Some\(next\.to_string\(\)\)/.test(state);
   // 装配侧必须真的发出 `prepare` 段（发不出来 ⇒ 五段时间线的第 1 段永远不亮）；
   // `visual` 由 bootstrap 发，`llm` 由第 2 轮的 fetch-models 发 —— 两侧各缺一条都会让流程停住。
   const emitsPrepare = /on_phase\("prepare",\s*"[^"]+"\)/.test(setupForPhases);
@@ -332,7 +344,7 @@ function engineSourceShape() {
     const m = JSON.parse(fs.readFileSync(MODELS_MANIFEST, 'utf8'));
     const st = (f) => (f.stage === undefined ? 1 : f.stage);
     const llama = m.files.filter((f) => f.set === 'runtime');
-    const sakura = m.files.find((f) => f.id === 'sakura_1_5b_fp16');
+    const sakura = m.files.find((f) => f.id === 'llm_galtransl_7b_v37_iq4xs');
     stageOk = llama.length > 0 && llama.every((f) => st(f) === 1) && !!sakura && st(sakura) === 2;
     stageDetail = { runtimeStage: llama.map((f) => [f.id, st(f)]), sakuraStage: sakura ? st(sakura) : null };
   } catch (e) {
@@ -346,7 +358,8 @@ function engineSourceShape() {
 
   // ---- W12：阶段文案必须与两轮实现一致（不许承诺"1 分钟就能翻译"）----
   //     stage1 不含任何 LLM ⇒ 翻译必须等 stage2。文案不实 = 欺骗性进度。
-  const panel = fs.readFileSync(DOWNLOAD_PANEL_TSX, 'utf8');
+  // 文案在 copy.ts（拆层后），组件文件里只剩引用 —— 读文案层才拿得到 stage1 那段
+  const panel = fs.readFileSync(DOWNLOAD_COPY_TS, 'utf8');
   // D-233：两轮指示器仍在，但文案按五段 `step` 取；stage1 对应 `visual` 段。
   const stage1Text = /visual:\s*\{[\s\S]*?\}/.exec(panel);
   const stage1Body = stage1Text ? stage1Text[0] : '';
@@ -626,8 +639,9 @@ if (REFUTE) {
 
   // ---- M8：visual 文案承诺"即可开始翻译"（stage1 无 LLM，是假承诺）⇒ W12 红 ----
   {
+    // 文案住在 `download/copy.ts`（拆层后）—— 锚点跟着搬，否则这条反证会静默跳过
     const restore = mutateFile(
-      DOWNLOAD_PANEL_TSX,
+      DOWNLOAD_COPY_TS,
       "sub: '检测 / OCR / 抹字 / 字体，以及 llama.cpp 与 CUDA 运行库。',",
       "sub: '下载并解包 Python 运行时、引擎源码与视觉模型 —— 这一步完成即可开始翻译。',",
     );
@@ -728,7 +742,7 @@ if (REFUTE) {
 
   // ---- M15（D-233）：`step` 映射不接 visual（五段时间线永远停在 runtime）⇒ W4 红 ----
   {
-    const restore = mutateFile(STATE_RS, '"visual" => Some("visual".to_string()),', '"visual" => d.step.take(),');
+    const restore = mutateFile(STATE_RS, '"visual" => Some("visual"),', '"visual" => None,');
     const r = await runForward();
     const red = r.code !== 0 && hasRed(r.out, 'W4');
     check('M15 `step` 不映射 visual 段（五段时间线永远停在第 2 段）⇒ W4 红', red, { code: r.code, redOn: red });
@@ -835,7 +849,7 @@ if (REFUTE) {
         .includes('"stage": 2,\n      "platform": "win32-x64",\n      "dest": "bin/llama')
     )
       bad.push('models.manifest.json 残留 M7');
-    if (!fs.readFileSync(DOWNLOAD_PANEL_TSX, 'utf8').includes('检测 / OCR / 抹字 / 字体'))
+    if (!fs.readFileSync(DOWNLOAD_COPY_TS, 'utf8').includes('检测 / OCR / 抹字 / 字体'))
       bad.push('DownloadPanel.tsx 残留 M8');
     if (!fs.readFileSync(RUNTIME_SETUP_RS, 'utf8').includes('"longPath": longpath.map'))
       bad.push('runtime_setup.rs 残留 M9');
@@ -847,8 +861,8 @@ if (REFUTE) {
       bad.push('runtime_setup.rs 残留 M11');
     if (!fs.readFileSync(STATE_RS, 'utf8').includes('"prepare" | "runtime" | "visual" => Some("stage1"'))
       bad.push('state.rs 残留 M14');
-    if (!fs.readFileSync(STATE_RS, 'utf8').includes('"models" => Some("models".to_string())'))
-      bad.push('state.rs 残留 M15');
+    // 2026-10-25：step 改单调水位线，映射字面量不带 .to_string 了
+    if (!fs.readFileSync(STATE_RS, 'utf8').includes('"models" => Some("models")')) bad.push('state.rs 残留 M15');
     if (!fs.readFileSync(STATE_RS, 'utf8').includes('if std::fs::write(&tmp, &s).is_err() {'))
       bad.push('state.rs 残留 M16');
     if (!fs.readFileSync(ENGINE_DOWNLOAD_TS, 'utf8').includes("view.state === 'idle' && view.startedAt != null"))

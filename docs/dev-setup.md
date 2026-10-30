@@ -38,7 +38,7 @@ npm run app                         # ③ 起 dev（tauri dev）
 （`AGENTS.md` §3 有清单），对不上就说明基线已经被动过。
 
 > **真引擎不在仓库里**：`npm run app` 默认走 `MIAO_ENGINE_PROTOCOL=real`，要的是
-> `<appData>/runtimes/manga-translator/`（macOS `~/Library/Application Support/`、Windows `%LOCALAPPDATA%\`、
+> `<appData>/MiaoDock/manga/runtimes/manga-translator/`（macOS `~/Library/Application Support/`、Windows `%LOCALAPPDATA%\`、
 > Linux `~/.local/share/`）下的 Python venv + 依赖 + 模型权重 —— **与装到哪个盘无关**（B1）。
 > 装配：`npm run task -- setup:engine && npm run task -- deps:engine && npm run task -- fetch:models && npm run task -- extract:models`
 > （README §二）。不想碰引擎就用 `MIAO_ENGINE_PROTOCOL=mock npm run app` 跑替身快回路。
@@ -97,12 +97,12 @@ check:packaged          # 静默安装 → 资产自检 → 起服务打 /health
 |---|---|
 | `src-tauri/src/mangasvc/store/` | 队列落盘：`exec`（执行体）· `view`（视图）· `pure`（纯函数）· `atomic`（原子写） |
 | `src-tauri/src/mangasvc/` 根 | 服务外壳与域模块：`mangasvc.rs`（鉴权/装配）· `routes.rs`（44 条路由）· `handlers.rs`（端点）· `library.rs` · `translate/` · `engine/` |
-| `src/screens/` | 各屏；屏内复用件放 `screens/<域>/`（如 `screens/library/`） |
+| `src/screens/` | 屏层；一个应用一组屏（屏入口 + 屏内件同目录，如 `screens/manga/`） |
 | `src/components/units/` | 跨屏通用 UI（`Btn`/`Notice`/`MenuButton`/`Modal`…），新通用件必须落这里 |
 | `src/components/` | 业务组件（非通用） |
 | `src/hooks/` | **所有 `use*` 文件必须住这里**（`check:units` 硬断言，无豁免） |
 | `src/tools/` | 跨屏复用的**纯函数**（不 import 业务层） |
-| `src/music/` | 音乐：`store.ts`（装配）· `actions/*.ts`（12 段切片）· `convert.ts` · `prefs.ts` · `persist.ts` · `slice.ts` |
+| `src/modules/music/` | 音乐：`store.ts`（装配）· `actions/*.ts`（12 段切片）· `convert.ts` · `prefs.ts` · `persist.ts` · `slice.ts` |
 | `e2e/` | 全部验收断言（`*-check.mjs`）；`e2e/service/` 是起真服务的判定层 |
 
 ## 6. 规范与台账在哪

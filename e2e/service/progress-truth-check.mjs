@@ -45,9 +45,13 @@ const REFUTE = process.argv.includes('--refute');
 const SELF = fileURLToPath(import.meta.url);
 const TOKEN = 'a'.repeat(64);
 const STATE_RS = path.join(REPO_ROOT, 'src-tauri', 'src', 'mangasvc', 'engine', 'state.rs');
-const NOT_READY_TSX = path.join(REPO_ROOT, 'src', 'screens', 'library', 'NotReadyScreen.tsx');
+const NOT_READY_TSX = path.join(REPO_ROOT, 'src', 'screens', 'manga', 'NotReadyScreen.tsx');
+/// 引导页拆形态（2026-10-24）：`lastLogLine` 与它的调用点分居两处 ——
+/// 函数在 derive.ts、渲染在 ServiceForm.tsx。判据必须同时覆盖，否则一拆就变成空断言。
+const NOTREADY_DERIVE_TS = path.join(REPO_ROOT, 'src', 'screens', 'manga', 'notready', 'derive.ts');
+const NOTREADY_SERVICE_TSX = path.join(REPO_ROOT, 'src', 'screens', 'manga', 'notready', 'ServiceForm.tsx');
 /// D-233：明细渲染搬进时间线组件（`detail` 的守卫也一起搬了）。
-const TIMELINE_TSX = path.join(REPO_ROOT, 'src', 'screens', 'library', 'AssemblyTimeline.tsx');
+const TIMELINE_TSX = path.join(REPO_ROOT, 'src', 'screens', 'manga', 'AssemblyTimeline.tsx');
 const ENGINE_DIAG = path.join(REPO_ROOT, 'src', 'screens', 'settings', 'EngineDiag.tsx');
 const SRC_TAURI = path.join(REPO_ROOT, 'src-tauri');
 const CARGO = process.env.CARGO || 'cargo';
@@ -220,8 +224,8 @@ function startService(extraEnv) {
     env: {
       ...process.env,
       MIAO_TOKEN: TOKEN,
-      MIAO_ROOT: path.join(tmp, 'library'),
-      MIAO_STATE_DIR: path.join(tmp, 'state'),
+      MIAO_MANGA_ROOT_DIR: path.join(tmp, 'library'),
+      MIAO_MANGA_STATE_DIR: path.join(tmp, 'state'),
       MIAO_ENGINE_PROTOCOL: 'mock',
       ...extraEnv,
     },
@@ -370,8 +374,10 @@ function evalFn(text, name, params = ['log']) {
 }
 
 {
+  // 函数体在 derive.ts（拆形态后），调用点在分派文件 —— 两处都要读
+  const derive = fs.readFileSync(NOTREADY_DERIVE_TS, 'utf8');
   const tsx = fs.readFileSync(NOT_READY_TSX, 'utf8');
-  const fn = evalFn(tsx, 'lastLogLine');
+  const fn = evalFn(derive, 'lastLogLine');
   const src = fn ? `function lastLogLine ${fn.toString().slice(fn.toString().indexOf('{'))}` : null;
 
   check('W4 前端：`lastLogLine` 存在且可求值（判据作用在真函数上，不是"读源码相信"）', typeof fn === 'function', {
@@ -417,12 +423,12 @@ function evalFn(text, name, params = ['log']) {
   check(
     'W7 调用点：末行取自**真实日志**（`status?.log`），且渲染处只渲染它本身、无兜底常量',
     /const detail = lastLogLine\(status\?\.log\);/.test(tsx) &&
-      /const showDetail = !!detail && \(note === 'active' \|\| note === 'failed'\);/.test(timeline) &&
-      /\{showDetail \? <div className="tl-detail">\{detail\}<\/div> : null\}/.test(timeline),
+      /const failed = notes\.some\(\(n\) => n === 'failed'\);/.test(timeline) &&
+      /\{detail && failed \? <div className="timeline-detail">\{detail\}<\/div> : null\}/.test(timeline),
     {
       call: /const detail = lastLogLine\(status\?\.log\);/.test(tsx),
-      guard: /const showDetail = !!detail/.test(timeline),
-      render: /\{showDetail \? <div className="tl-detail">\{detail\}<\/div> : null\}/.test(timeline),
+      guard: /const failed = notes\.some/.test(timeline),
+      render: /\{detail && failed \? <div className="timeline-detail">\{detail\}<\/div> : null\}/.test(timeline),
     },
   );
 }

@@ -13,8 +13,8 @@
  */
 import type { ServiceState } from '@/ipc';
 
-/** 应用层：两个独立应用。顺序即侧栏渲染顺序。 */
-export type AppId = 'translate' | 'music';
+/** 应用层：三个独立应用（漫画翻译 / 音乐 / 番剧）。顺序即侧栏渲染顺序。 */
+export type AppId = 'translate' | 'music' | 'anime';
 
 /**
  * 壳层屏 = 应用层 + 全局层。
@@ -43,12 +43,18 @@ export const TRANSLATE_VIEWS: { id: TranslateView; label: string; hint: string }
 export const APP_LABEL: Record<AppId, string> = {
   translate: '漫画翻译',
   music: '音乐',
+  // 代码标识符一律 anime；中文只作界面文案（模块命名硬约束）
+  anime: '番剧',
 };
 
-/** 应用名 → 它有哪些视图（音乐为 null：内部自成一个工作区，不加 Tab，见《09》§3.3） */
+/**
+ * 应用名 → 它有哪些视图（音乐 / 番剧为 null：内部自成一个工作区，不加 Tab，见《09》§3.3）。
+ * 番剧的十屏是**模块内视图**，住在 `modules/anime/store.ts` 的 `view` 里，不进壳层路由。
+ */
 export const APP_VIEWS: Record<AppId, TranslateView[] | null> = {
   translate: TRANSLATE_VIEWS.map((v) => v.id),
   music: null,
+  anime: null,
 };
 
 /**
@@ -60,7 +66,7 @@ export const APP_VIEWS: Record<AppId, TranslateView[] | null> = {
  */
 const STATE_VIEW: Record<ServiceState, { text: string; colorVar: string }> = {
   stopped: { text: '服务未启动', colorVar: '--md-muted' },
-  starting: { text: '启动中', colorVar: '--md-blue' },
+  starting: { text: '正在启动', colorVar: '--md-blue' },
   running: { text: '服务运行中', colorVar: '--md-success' },
   stopping: { text: '正在停止', colorVar: '--md-muted' },
   error: { text: '服务异常', colorVar: '--md-error' },
@@ -79,6 +85,8 @@ export function stateView(s: ServiceState) {
  * - 音乐屏：**不让位**（ver2.0 新增）。引擎是翻译的专属依赖，与音乐无关 ——
  *   沿用 ver1.0 的拦截纪律时若忘了开这个例外，音乐会在引擎未就绪时整片不可用，
  *   而这与「音乐是独立应用」的立意直接矛盾。
+ * - 番剧屏：**不让位**（同一理由）。番剧的数据来自独立进程 `animesvc`，
+ *   与翻译引擎零依赖；翻译没装好不该让人看不了番。
  */
 export function isBlockedWhenNotReady(s: Screen): boolean {
   return s === 'translate';

@@ -1,7 +1,9 @@
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { MIAO_MOTION } from '@/themes/tokens';
 import { toastBus, useToastList } from '@/stores/toastBus';
 import type { BusToast, ToastKind } from '@/stores/toastBus';
+import { Btn } from '@components/units';
 
 /**
  * 通知堆叠（topRight）—— 轻提示的**唯一**渲染层（2026-10-11 改版）。
@@ -39,8 +41,11 @@ const KIND_TO_COLOR: Record<ToastKind, string> = {
   blue: 'var(--md-blue)',
 };
 
-/** 手动关闭的退场时长 —— 必须与 app.scss `.ntf.is-leaving` 的 animation 时长一致 */
-const LEAVE_MS = 180;
+/**
+ * 手动关闭的退场时长 —— 取自动效令牌，必须与 app.scss `.ntf.is-leaving` 的 transition 一致。
+ * 写死数字的旧写法（180）比设计稿的 140ms 慢一拍，且改令牌时不会跟着动。
+ */
+const LEAVE_MS = Number.parseInt(MIAO_MOTION.fast, 10);
 
 export function NotificationStack() {
   const list = useToastList();
@@ -89,12 +94,17 @@ function NotificationCard({
 
   return (
     <div className={leaving ? 'ntf is-leaving' : 'ntf'} role="status" aria-live="polite">
+      {/* 设计稿 `.toast-dot`：7px 语义色圆点，是这一条的"类型指示"，不承载文字 */}
       <span className="ntf-dot" style={{ background: KIND_TO_COLOR[toast.kind] }} aria-hidden="true" />
-      <span className="ntf-text">{toast.text}</span>
+      {/* 设计稿 `.toast-body`：strong 标题 + span 说明两级（说明为空则不渲染） */}
+      <span className="ntf-body">
+        <strong>{toast.text}</strong>
+        {toast.detail ? <span>{toast.detail}</span> : null}
+      </span>
       <span className="ntf-close">
-        <button type="button" className="ui-cbtn" title="关闭通知" aria-label="关闭通知" onClick={close}>
+        <Btn kind="bare" type="button" className="ui-cbtn" title="关闭通知" aria-label="关闭通知" onClick={close}>
           <X size={13} />
-        </button>
+        </Btn>
       </span>
     </div>
   );

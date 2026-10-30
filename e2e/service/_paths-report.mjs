@@ -8,7 +8,7 @@
  * （`paths-parity-check.mjs`）必须用同一份规则 —— 两边各写一遍 = 又一处会走散的契约。
  *
  * ## 归一化（只抹「换机器就不同」的量）
- *   · 临时目录（override 场景的 6 个 `MIAO_*` 覆盖目标）→ `<TMP>`
+ *   · 临时目录（override 场景的 8 个 `MIAO_*` 覆盖目标）→ `<TMP>`
  *   · 仓库根 → `<REPO>`
  *   · 用户 home（`<盘>:\Users\<name>` 任意分隔符）→ `<HOME>`
  *   顺序固定为「先精确后模糊」：TMP → REPO → HOME。反过来的话，仓库若落在 home 之下，
@@ -27,8 +27,8 @@ const TOKEN = 'a'.repeat(64);
 
 /**
  * 两个取证场景（与原双靶对拍的 `SCENARIOS` 逐字同物）：
- *   · `default`  无覆盖 —— 13 个路径的默认落点
- *   · `override` 6 个 `MIAO_*` 全覆盖 —— 覆盖后仍须逐字节可推
+ *   · `default`  无覆盖 —— 14 个路径的默认落点
+ *   · `override` 8 个 `MIAO_*` 全覆盖 —— 覆盖后仍须逐字节可推
  * `override` 的覆盖目标落在**每次新建的临时目录**里（⇒ 必须归一化，否则跨运行假红）。
  */
 export function buildScenarios() {
@@ -39,8 +39,10 @@ export function buildScenarios() {
       id: 'override',
       tmp,
       env: {
-        MIAO_STATE_DIR: path.join(tmp, 'state'),
-        MIAO_ROOT: path.join(tmp, 'root', 'Box 漫画'),
+        MIAO_ROOT: path.join(tmp, 'data'),
+        MIAO_MANGA_STATE_DIR: path.join(tmp, 'state'),
+        MIAO_MANGA_ROOT_DIR: path.join(tmp, 'root', 'manga'),
+        MIAO_MANGA_RUNTIME_ROOT: path.join(tmp, 'rt'),
         MIAO_ENGINE_DIR: path.join(tmp, 'eng', 'src'),
         MIAO_ENGINE_PYTHON: path.join(tmp, 'eng', 'venv', 'Scripts', 'python.exe'),
         MIAO_ENGINE_SERVER_DIR: path.join(tmp, 'eng', 'src', 'server'),

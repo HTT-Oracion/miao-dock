@@ -23,10 +23,24 @@
  * 也不要留一条永远"待接入"。
  */
 
-/** 分组 id —— 同时是深链 `?section=` 的取值集合（《09》§4.1） */
-export type SectionId = 'general' | 'translate' | 'media' | 'resource' | 'about';
+/**
+ * 分组 id —— 同时是深链 `?section=` 的取值集合（《09》§4.1）。
+ *
+ * `anime` 是**域内设置**：30 项数据住在 `modules/anime/settings-catalog.ts`，
+ * 不并进本文件的 `SETTINGS_SECTIONS`（那份合计被 C10/COUNT 双门钉着，
+ * 把另一域 30 项塞进来会让"设置页 34 项"这个数字失去意义）。
+ * 本表只负责"有这一组、深链能进来"，渲染由 `AnimeSettingsSection` 自己承担。
+ */
+export type SectionId = 'general' | 'translate' | 'media' | 'resource' | 'about' | 'anime';
 
-export const SECTION_IDS: readonly SectionId[] = ['general', 'translate', 'media', 'resource', 'about'] as const;
+export const SECTION_IDS: readonly SectionId[] = [
+  'general',
+  'translate',
+  'media',
+  'resource',
+  'about',
+  'anime',
+] as const;
 
 /** 能力状态：`live` 有真实能力；`pending` 引擎/音乐 M1 之后才有 */
 export type ItemState = 'live' | 'pending';
@@ -83,6 +97,13 @@ export interface SettingGroup {
    * 抹平它 C11 会红。
    */
   title: string | null;
+  /**
+   * 卡头副标题（设计稿 `.s-card-head p`）：标题下那行 10px 说明。
+   *
+   * 缺省 = 不渲染。它回答的是"这张卡在管什么"，与逐项的 `why`（管"这一项是什么"）
+   * 不同层级 —— 四项各自写 why 之后，用户仍然不知道"为什么这四项被放在一起"。
+   */
+  head?: string;
   items: SettingItem[];
 }
 
@@ -97,27 +118,6 @@ export interface SettingSection {
    * 逐项的 `why` 解释单个项，这句解释**共同的那部分**（同一个上游依赖）。
    */
   note?: string;
-  /**
-   * 组说明的**一行摘要** —— 折叠态显示的就是它，点「为什么 ?」才铺开 `note` 全文。
-   *
-   * ## 为什么是"抽几句事实"，而不是让组件截 `note` 的前 N 字
-   * 截取会把句子切在半句上（`…（四小节：翻译来源 1 · 服务与配…`），读起来像坏了。
-   * 而这一段要给用户的只有一条：**改哪些东西要重启**。其余是写给维护者的背景论证
-   * （两个服务端视角为何缺一不可、两个阈值待遇为何不同），默认不该占 6 行。
-   *
-   * ## 🔴 硬约束：摘要的**每一段都必须能在 `note` 原文里逐字找到**
-   * 按 ` · ` 切段；把 `note` 与每一段都**去掉空白与 `**` 标记**后，每段必须是 `note` 的
-   * 子串。这是"**摘要不得成为新的承诺**"这条纪律的可执行形式：
-   *   · 摘要里出现 `note` 没写过的说法（例如把「10 项」说成「全部已实现」）⇒ 变红；
-   *   · `note` 改了而摘要没跟着改 ⇒ 变红；
-   *   · 摘要写成空串、或一段都切不出来（空转）⇒ 变红。
-   * 项数也由此被间接钉住：`note` 里的「本组 N 项」已被 `NOTE.count` 对着数据验过。
-   *
-   * ## 缺省 = 不折叠
-   * 不给 `noteSummary` 就不折叠（原样铺全文）。折叠与否是**数据**说了算，
-   * 不在组件里按字符数猜 —— 猜出来的阈值没人能解释，也没法被断言。
-   */
-  noteSummary?: string;
 }
 
 /** ① 通用 —— 跨应用 */
@@ -125,24 +125,47 @@ export const GENERAL: SettingSection = {
   id: 'general',
   name: '通用',
   blurb: '外观、生命周期与本机自检等',
+  /*
+   * 两张卡（设计稿 `.s-card`）：外观 / 行为与自检。
+   *
+   * 分成两张而不是一张四行，是设计稿的层级：前三项都在回答"界面长什么样"，
+   * 第四项是"去核对界面是否与规格一致"。混在一张卡里，自检那行的按钮看起来
+   * 与前两项的开关同级，用户会以为它也是一个偏好。
+   */
   groups: [
     {
-      id: 'main',
-      title: null,
+      id: 'appearance',
+      title: '外观',
+      head: '让界面更像你的房间',
       items: [
-        { id: 'dark-mode', label: '深色模式', state: 'live', def: '浅色' },
-        {
-          id: 'close-window',
-          label: '关闭窗口行为',
-          state: 'live',
-          def: '收起到托盘',
-        },
-        { id: 'spec-check', label: '规格自检', state: 'live' },
+        { id: 'dark-mode', label: '深色模式', state: 'live', why: '柔和的夜色，长时间使用不刺眼', def: '浅色' },
         {
           id: 'sidebar-labels',
           label: '侧栏图标标签',
           state: 'live',
+          why: '在应用图标下显示名称；关闭后只留图标',
           def: '显示',
+        },
+      ],
+    },
+    {
+      id: 'behavior',
+      title: '行为与自检',
+      head: '窗口生命周期与规格核对',
+      items: [
+        {
+          id: 'close-window',
+          label: '关闭窗口行为',
+          state: 'live',
+          why: '由系统窗口按钮触发；翻译服务会在后台留驻',
+          def: '收起到托盘',
+        },
+        {
+          id: 'spec-check',
+          label: '规格自检',
+          state: 'live',
+          // 设计稿这行的渲染原句（`specRow` 那块）—— 检查的对象是「设置项」而不是「设置页」
+          why: '核对设置项、模块目录与运行契约的完整性',
         },
       ],
     },
@@ -160,90 +183,97 @@ export const TRANSLATE: SettingSection = {
     '改档位/后端/模型目录要重启引擎才生效，所以界面上「已配置」与「已生效」分开显示。' +
     '两个空闲卸载阈值生效时机不同：LLM 档保存后立刻生效，视觉档必须重启引擎 —— ' +
     '提示条因此只挂在真正需要它的那一小节下方。',
-  noteSummary: '本组 13 项 · 改档位/后端/模型目录要重启引擎才生效 · 两个空闲卸载阈值生效时机不同',
   groups: [
     {
       id: 'source',
-      title: '翻译来源',
+      title: '翻译链路',
+      head: '二选一 · 下一次翻译生效',
       items: [
         {
           id: 'translate-source',
           label: '翻译来源',
           state: 'live',
           def: '本地引擎',
-          why:
-            '本地引擎在本机完成翻译；在线 API 把原文发给第三方平台。' +
-            '切换来源对，下一次翻译生效，进行中的任务按发起时的来源跑完。',
+          // 设计稿渲染层原句（含"外发"这层如实告知，比原来的「二选一」更有信息量）
+          why: '本地引擎在本机完成翻译；在线 API 会把原文发给第三方平台',
         },
       ],
     },
     {
       id: 'pairing',
       title: '服务与配对',
+      head: '本地服务由喵坞托管，可随时启停',
       items: [
-        { id: 'service-endpoint', label: '服务状态与端口', state: 'live' },
+        { id: 'service-endpoint', label: '服务状态与端口', state: 'live', why: '本地翻译服务与引擎端口' },
         {
           id: 'service-auto-start',
           label: '自动启动翻译服务',
           state: 'live',
           def: '开',
-          why: '开：启动喵坞时自动拉起本地服务（默认）。' + '关：通过「启动本地服务」手动拉起 —— ',
+          // 原句说的是"进入喵坞"，实际范围是进入漫画翻译屏；设计稿渲染层那句更准确（D-94）
+          why: '进入「漫画翻译」时自动拉起本地服务；关闭后可在未就绪屏手动启动',
         },
-        { id: 'token-pairing', label: '令牌配对', state: 'live' },
-        { id: 'root-dir', label: '落盘根目录', state: 'live' },
+        { id: 'token-pairing', label: '令牌配对', state: 'live', why: '服务与引擎之间的本地鉴权令牌' },
+        { id: 'root-dir', label: '落盘根目录', state: 'live', why: '漫画原图与译文的保存位置' },
       ],
     },
     {
       id: 'inference',
       title: '推理引擎',
+      head: '改档位 / 后端 / 模型目录需要重启引擎才生效',
       items: [
         {
           id: 'translate-direction',
           label: '翻译方向',
           state: 'live',
           def: '日译中',
-          why: '英译中走**离线 nllb**，日译中走 Sakura；未指定方向的任务落默认「日译中」。',
+          why: '英译中走 nllb，日译中走 Sakura；方向逐任务下发，界面不设控件',
         },
         {
           id: 'tier',
           label: '翻译档位',
           state: 'live',
           def: '按硬件探测',
-          why: '物理不可行的档位**不出现**；标「不推荐」并在选中时强警告。' + '改它要**重启引擎**才生效',
+          // `feasible_tiers()` 按本机内存筛（不可行的不进列表），`settings-options` 里
+          // 可行但非推荐档带 warning ⇒ 这句在设计稿渲染层、在产品行为里，两头都对得上
+          why: '物理不可行的档位不会出现；标「不推荐」的会在切换时强警告',
         },
         {
           id: 'backend',
           label: '加速后端',
           state: 'live',
           def: '自动',
-          why: '「自动」按硬件探测；下拉只列本机**真的能用**的后端。' + '改它要重启引擎。',
+          why: '「自动」按硬件探测；本机可用的后端才会出现在列表中',
         },
         {
           id: 'idle-llm',
           label: '空闲卸载 LLM',
           state: 'live',
           def: '5 分钟',
-          why: 'Sakura LLM 空闲多久后释放（分钟，**0 = 从不卸载**）。' + '保存后**立刻生效**，不需要重启引擎。',
+          // 阈值 0 = 从不卸载是 `idle_policy.rs` 的硬语义（`REASON_NEVER`），必须写进界面
+          why: 'Sakura 空闲多久后释放（0 = 从不）· 保存后立刻生效',
         },
         {
           id: 'idle-vision',
           label: '空闲卸载视觉',
           state: 'live',
           def: '30 分钟',
-          why:
-            '视觉模型空闲多久后释放（分钟，0 = 从不卸载）。' + '参数在拉开引擎进程时就固化，**必须重启引擎**才生效。',
+          why: '视觉模型空闲释放（0 = 从不）· 参数在拉起引擎时固化，必须重启引擎',
         },
       ],
     },
     {
       id: 'model',
       title: '模型与诊断',
+      head: '权重与引擎的现场',
       items: [
         {
           id: 'model-dir',
           label: '模型目录',
           state: 'live',
-          why: '权重放在哪。服务只在启动时读这个路径，' + '改它需要重启引擎。',
+          // 界面下方已经会把"已配置 X、服务仍在用旧目录 —— 需重启才切换"说出来，
+          // 这句渲染原句正是同一事实的短版
+          why: '服务只在启动时读取这个路径',
         },
         {
           id: 'model-manage',
@@ -251,9 +281,7 @@ export const TRANSLATE: SettingSection = {
           state: 'live',
           // 通栏块：校验结果是一份"哪几个不符/缺失"的清单，塞不进 Row 的窄右列
           layout: 'block',
-          why:
-            '模型缺失或校验不符时的补救入口：「校验完整性」逐个重算 SHA256（不是"看一眼文件在不在"），' +
-            '「重新下载模型」补齐缺失与不符的权重 —— 已就绪的文件会复用，不会重新下载',
+          why: '校验完整性、补齐缺失与重新下载',
         },
         {
           id: 'engine-diag',
@@ -268,7 +296,7 @@ export const TRANSLATE: SettingSection = {
            * ⚠️ why 是**重写**不是删除（《03》§7.1）：ver2.0 那句「默认收起、点开即见」描述的
            * 是"日志也被折叠"的旧形态，本版日志已摘出折叠范围，那句话留着就是错的。
            */
-          why: '进程、参数、模型与阶段日志的现场。',
+          why: '进程、参数、模型与阶段日志现场',
         },
       ],
     },
@@ -290,49 +318,49 @@ export const TRANSLATE: SettingSection = {
  */
 export const MEDIA: SettingSection = {
   id: 'media',
-  name: '播放·媒体',
-  blurb: '播放、歌词等设置',
+  name: '播放 · 媒体',
+  blurb: '播放、歌词与彩胶等设置',
   groups: [
     {
       id: 'playback',
       title: '播放',
+      head: '这些默认值会同步到播放条和展开播放器',
       items: [
-        { id: 'quality', label: '音质档位', state: 'live', def: '高清臻音' },
-        { id: 'skin', label: '展开播放器皮肤', state: 'live', def: '现代' },
+        {
+          id: 'quality',
+          label: '音质档位',
+          state: 'live',
+          def: '高清臻音',
+          // 设计稿渲染进界面的那句（不是它内部索引表里的「标准 / 极高 / …」）
+          why: '更高档位需要平台会员；不可用的音质会自动降级',
+        },
+        { id: 'skin', label: '展开播放器皮肤', state: 'live', def: '现代', why: '六套皮肤，随时切换' },
         {
           id: 'dynamic-bg',
           label: '动态背景',
           state: 'live',
           def: '关',
-          why: '让「现代 / 沉浸」两种皮肤的渐变缓慢流动；另外四种皮肤没有可流动的渐变。',
+          why: '让「现代 / 沉浸」两种皮肤的渐变缓慢流动',
         },
         {
           id: 'disc-mode',
           label: '碟片模式',
           state: 'live',
           def: '关',
-          why: '把展开播放器的封面显示成旋转唱片（播放时转、暂停时停）。',
-        },
-        {
-          id: 'music-cache',
-          label: '音乐缓存',
-          state: 'live',
-          // 四格块：塞不进 Row 的窄右列（见 SettingItem.layout 的注释）
-          layout: 'block',
-          why:
-            '在线播放的歌词与整首歌会落盘缓存，这里能看占用、按平台清除、打开缓存目录。' +
-            '只统计**在线歌曲**的缓存 —— 你自己导入的本地文件不在其中。',
+          why: '展开播放器的封面显示成旋转唱片，播放时转、暂停时停',
         },
       ],
     },
     {
       id: 'lyrics',
       title: '歌词',
+      head: '作用于展开播放器与桌面歌词窗口',
       items: [
         {
           id: 'lyrics-mode',
           label: '歌词高亮方式',
           state: 'live',
+          why: '整行一次性点亮，或卡拉 OK 式逐字推进',
           def: '逐字',
         },
         {
@@ -340,48 +368,51 @@ export const MEDIA: SettingSection = {
           label: '歌词字号',
           state: 'live',
           def: '19px',
-          why: '作用于「展开播放器」的歌词区',
+          // 设计稿自己两层写法不同（索引表 `17–48 px` / 渲染 `17 – 48 px`）：
+          // 数字与单位一致，只有区间连字符的空格差异 ⇒ 随全仓排版用无空格形态
+          why: '17–48 px，实时预览',
         },
         {
           id: 'lyrics-color',
           label: '歌词高亮色',
           state: 'live',
           def: '#FFE066',
-          why: '作用于「展开播放器」里正在唱的那一行',
+          why: '正在唱的那一行',
         },
         {
           id: 'lyrics-window',
           label: '桌面歌词窗口',
           state: 'live',
           def: '关',
-          why: '独立的置顶小窗，浮在所有应用之上跟随播放；与播放条上的那个开关是同一份状态。',
+          why: '独立悬浮窗，浮在所有应用之上跟随播放',
         },
         {
           id: 'lyrics-locked',
           label: '锁定歌词窗口',
           state: 'live',
           def: '未锁定',
-          why: '锁定后歌词窗不可拖动。macOS 上没有「点击穿透」能力，锁定只表示「不会被误拖走」。',
+          why: '锁定后不会被误拖走 · 下次打开窗口时生效',
         },
       ],
     },
     {
       id: 'vinyl',
       title: '透明彩胶',
+      head: '「透明彩胶」皮肤专用的唱片底色',
       items: [
         {
           id: 'vinyl-color-mode',
           label: '彩胶配色',
           state: 'live',
           def: '跟随封面',
-          why: '「透明彩胶」皮肤整张唱片底色：跟随封面主色（本地取色）或固定一个颜色。',
+          why: '跟随封面主色，或固定一个颜色',
         },
         {
           id: 'vinyl-color',
           label: '彩胶自定义色',
           state: 'live',
           def: '#E8B04B',
-          why: '仅在「彩胶配色 = 固定颜色」时生效；跟随封面主色时本项不可用。',
+          why: '仅在「彩胶配色 = 固定颜色」时生效',
         },
       ],
     },
@@ -392,7 +423,7 @@ export const MEDIA: SettingSection = {
 export const RESOURCE: SettingSection = {
   id: 'resource',
   name: '资源与投放',
-  blurb: '磁盘占用与清理。投放规则（每批 20 张、其余自动排队）不在设置里 —— 那是规则，不是参数。',
+  blurb: '磁盘占用与清理',
   groups: [
     {
       id: 'main',
@@ -402,14 +433,15 @@ export const RESOURCE: SettingSection = {
           id: 'storage-usage',
           label: '存储占用',
           state: 'live',
-          // 通栏块：三行「名称 / 值 / 来源」塞不进 Row 的窄右列（会同 CacheBlock 的理由）
+          why: '译文库、音乐缓存与模型占用',
+          /*
+           * 通栏块：三行「名称 / 值 / 来源」塞不进 Row 的窄右列。
+           * 「音乐缓存」原先是本组里的第二个 block 项（`CacheBlock` 独立成卡），
+           * 2026-10-25 收进这一项的音乐缓存行内（行内两行 + 「删除」下拉）——
+           * 用户来这一组先看到的是"占了多少"，清理是顺带做的事，
+           * 独立卡会把"怎么清"铺得比"占了多少"还大。
+           */
           layout: 'block',
-        },
-        {
-          id: 'temp-files',
-          label: '临时文件',
-          state: 'pending',
-          why: '上传暂存在服务侧管理，目前没有可用的列举与清理接口，暂不可用。',
         },
       ],
     },
@@ -420,13 +452,20 @@ export const RESOURCE: SettingSection = {
 export const ABOUT: SettingSection = {
   id: 'about',
   name: '关于',
-  blurb: '版本、许可与反馈渠道。',
+  blurb: '版本、许可与反馈渠道',
   groups: [
     {
       id: 'main',
       title: null,
       items: [
-        { id: 'version', label: '版本号', state: 'live' },
+        {
+          id: 'version',
+          label: '版本号',
+          state: 'live',
+          // 设计稿渲染层那句是「当前安装的版本 · 2026-10-21 构建」—— 后半截是演示日期，
+          // 产品没有可信的构建时刻来源（版本号由宿主注入），所以只取前半截，不编一个日期
+          why: '当前安装的版本',
+        },
         {
           id: 'licenses',
           label: '第三方许可',
@@ -434,16 +473,13 @@ export const ABOUT: SettingSection = {
           // 通栏块：聚合 + 可展开的完整清单，塞不进 Row 的窄右列
           // （⑤ 组由 `AboutSection` 手工渲染，不经过 `Group`；这个字段仍如实描述形态）
           layout: 'block',
-          why:
-            '清单枚举自 npm 与 Rust 两侧依赖，**列的是各包自己声明的许可**，' +
-            '不是我们核准过的结论 —— 所以下方带有免责声明。' +
-            'Rust 侧部分 crate 本机取不到声明，覆盖数会如实标出，不删掉充数。',
+          why: 'npm / Rust / 引擎与模型许可清单',
         },
         {
           id: 'oss-feedback',
           label: '开源反馈',
           state: 'pending',
-          why: '项目尚未公开发布，没有可指向的仓库地址。',
+          why: '项目尚未公开发布，没有可指向的仓库地址',
         },
       ],
     },
@@ -478,11 +514,15 @@ export const SECTION_ITEM_TOTAL = SETTINGS_SECTIONS.reduce((n, s) => n + section
  *     这件事实写进界面 —— 否则引擎诊断里的「源语言：按任务方向」没有一处能自答（ver2.1）。
  *   → **34**（② 加「翻译来源」小节 1 项，ver2.2）：在线翻译并入 ② 作为第一个小节
  *     （P-D2）—— 来源二选一（本地引擎 / 在线 API），是**服务的设置**不是任务属性（P-D1）。
+ *   → **33**（④ 删「音乐缓存」项，2026-10-25）：它不再独立成项，
+ *     收进「存储占用」的音乐缓存行（行内两个读数 + 「删除」下拉）。
+ *   → **32**（④ 再删「临时文件」项，同日）：那一行至今 `pending`
+ *     （服务侧没有列举与清理接口），留着只占位；「清理」卡与投放规则脚注一并去掉。
  *
  * ⚠️ 改这个数之前必须先核对 `SECTION_ITEM_TOTAL`（由数据算出，不手写）：
  * 两者不一致时下面的自校会报错 —— 那正是它存在的意义（防止"加了一项忘了改总数"）。
  */
-export const SPEC_ITEM_TOTAL = 34;
+export const SPEC_ITEM_TOTAL = 32;
 
 /**
  * 启动期自校：合计不等于 32 就在控制台报错。

@@ -1,8 +1,8 @@
-import { Plus, Trash2, X } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { providerColor } from '@music/platform';
 import { useMusicStore } from '@music/store';
 import { coverProxyUrl, songKey } from '@music/convert';
-import { Empty, IconButton, VirtualList } from '@components/units';
+import { Btn, Empty, VirtualList } from '@components/units';
 import { SongRow, providerName, relTime } from '@screens/music/shared';
 
 /**
@@ -14,8 +14,6 @@ export function HistoryView() {
   const proxyPort = useMusicStore((s) => s.proxyPort);
   const currentSong = useMusicStore((s) => s.currentSong);
   const playPlaylist = useMusicStore((s) => s.playPlaylist);
-  const appendToQueue = useMusicStore((s) => s.appendToQueue);
-  const removeEntry = useMusicStore((s) => s.removePlayHistoryEntry);
   const clear = useMusicStore((s) => s.clearPlayHistoryList);
 
   /*
@@ -28,18 +26,18 @@ export function HistoryView() {
 
   return (
     <div className="music-body">
-      <div className="music-card-hd">
-        <span className="music-card-sub">{history.length} 条 · 跨平台</span>
-        <div className="grow" />
+      {/* 组头（设计稿 `.ms-caption`）：「最近播放」+ 清空（有记录时才出现） */}
+      <div className="ms-caption">
+        最近播放
         {history.length > 0 ? (
-          <button type="button" className="music-btn out" onClick={clear}>
-            <Trash2 size={12} /> 清空
-          </button>
+          <Btn kind="bare" className="text-btn" ariaLabel="清空播放历史" title="清空播放历史" onClick={clear}>
+            <Trash2 size={11} />
+          </Btn>
         ) : null}
       </div>
 
       {history.length === 0 ? (
-        <Empty>还没有播放记录 —— 播一首歌就会记在这里（跨平台同一条时间线）。</Empty>
+        <Empty sub="播放一首歌之后，这里会留下脚印。">还没有播放记录</Empty>
       ) : (
         <VirtualList
           items={history}
@@ -56,38 +54,19 @@ export function HistoryView() {
                 song={s}
                 cover={coverProxyUrl(s.cover, proxyPort)}
                 active={currentSong ? songKey(currentSong) === songKey(s) : false}
-                // 来源标签：圆点取平台品牌色 + 平台名，避免只靠颜色传达信息
-                leading={
-                  <span className="his-src">
+                /*
+                 * 元信息（设计稿 `.ms-row-meta small`）：**平台色点 + 平台名 + 相对时间**，
+                 * 都收在第二行里。此前平台名是一枚独立的 leading 徽标（排在封面之前），
+                 * 那一列会把每一行的封面整体右推、与其它列表对不齐 —— 来源是"第二行的事"。
+                 */
+                meta={
+                  <span className="his-meta">
                     <i className="his-dot" style={{ background: providerColor(s.provider) }} />
-                    {providerName(s.provider)}
+                    {providerName(s.provider)} · {relTime(entry.playedAt)}
                   </span>
                 }
-                meta={`${s.artist} · ${relTime(entry.playedAt)}`}
                 onClick={play}
                 onPlay={play}
-                actions={
-                  <>
-                    <IconButton
-                      title="加入队列"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        appendToQueue([s]);
-                      }}
-                    >
-                      <Plus size={13} />
-                    </IconButton>
-                    <IconButton
-                      title="从历史移除"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeEntry(s.provider, s.id);
-                      }}
-                    >
-                      <X size={13} />
-                    </IconButton>
-                  </>
-                }
               />
             );
           }}

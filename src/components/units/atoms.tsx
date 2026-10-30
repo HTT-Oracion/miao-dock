@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { QUEUE_EMPTY } from '@/themes/tokens';
 
 /*
@@ -37,35 +37,6 @@ export function Pill({ children, colorVar }: { children: ReactNode; colorVar?: s
 
 export function Badge({ children }: { children: ReactNode }) {
   return <span className="badge">{children}</span>;
-}
-
-// ------------------------------------------------------------------ 按钮
-
-type BtnKind = 'primary' | 'ghost' | 'danger';
-
-export function Btn({
-  children,
-  kind = 'ghost',
-  size,
-  onClick,
-  disabled,
-  title,
-  style,
-}: {
-  children: ReactNode;
-  kind?: BtnKind;
-  size?: 'sm';
-  onClick?: () => void;
-  disabled?: boolean;
-  title?: string;
-  style?: CSSProperties;
-}) {
-  const cls = ['btn', `btn-${kind}`, size === 'sm' ? 'btn-sm' : ''].filter(Boolean).join(' ');
-  return (
-    <button type="button" className={cls} onClick={onClick} disabled={disabled} title={title} style={style}>
-      {children}
-    </button>
-  );
 }
 
 // ------------------------------------------------------------------ X-C2 魔法阵

@@ -133,10 +133,7 @@ function dom({
     ${
       viewOrder
         ? `<div class="viewtabs">${viewOrder
-            .map(
-              (v) =>
-                `<button class="viewtab${v === viewOrder[0] ? ' is-active' : ''}"><svg></svg><span>${v}</span></button>`,
-            )
+            .map((v) => `<button class="ui-vtab${v === viewOrder[0] ? ' is-active' : ''}"><span>${v}</span></button>`)
             .join('')}</div>`
         : ''
     }
@@ -220,13 +217,19 @@ function judgeC8(html, domSpec) {
 }
 
 function judgeC9(html) {
-  // ⚠️ 不能写成 `viewtab[^>]*><span>`：真实 DOM 里 Tab 是 `<svg/>` 在前、`<span>` 在后，
-  // 那种写法只在自己理想化的脚手架 HTML 上成立，对真实输出恒不匹配 → C9 恒绿（假阳性）。
-  // 这里用「不跨出当前 button」的惰性匹配，等价于浏览器里取 button 内的 span。
-  const tabs = [...html.matchAll(/viewtab[^>]*>(?:(?!<\/button>)[\s\S])*?<span>([^<]*)<\/span>/g)].map((m) =>
+  // 🔴 2026-10-26：页签改为通用单元 `.ui-vtab`（漫画/音乐共用，见 units/ViewTabs.tsx）。
+  // 判据锚在 `ui-vtab` 上；`<span>` 仍是文案载体（图标已按设计稿去掉）。
+  // ⚠️ 不能写成 `ui-vtab[^>]*><span>`：那种写法只在自己理想化的脚手架 HTML 上成立，
+  // 对真实输出恒不匹配 → C9 恒绿（假阳性）。这里用「不跨出当前 button」的惰性匹配。
+  const tabs = [...html.matchAll(/ui-vtab[^>]*>(?:(?!<\/button>)[\s\S])*?<span>([^<]*)<\/span>/g)].map((m) =>
     m[1].trim(),
   );
-  if (tabs.length === 0) return true;
+  /*
+   * 🔴 `tabs.length === 0` **不能** return true（2026-10-26 一并修掉）：
+   *    那是「夹具里没有页签 ⇒ 判它合格」—— 类名一改，这条断言会**静默变绿**，
+   *    而它声称钉的正是"三个页签按 投放→队列→漫画库 排"。空集合必须判失败。
+   */
+  if (tabs.length === 0) return false;
   const want = ['投放', '队列', '漫画库'];
   return tabs.length === want.length && tabs.every((t, i) => t === want[i]);
 }
@@ -240,7 +243,7 @@ function judgeC10(html) {
   return {
     C10a: navOk && mainOk,
     C10b: heads === 1,
-    C10c: groups === 5,
+    C10c: groups === 6,
   };
 }
 
@@ -258,17 +261,24 @@ const BASE = {
   screens: { app: 'translate' },
   apps: ['translate', 'music'],
   divider: true,
-  appLabels: { translate: '漫画翻译', music: '音乐' },
+  appLabels: { translate: '漫画翻译', music: '音乐', anime: '番剧' },
   /** 侧栏应用入口带文字标签（与升级前的界面一致；关掉后用 44×44 纯图标） */
   sidebarLabels: true,
   globalHasText: false,
   viewOrder: ['投放', '队列', '漫画库'],
-  settings: { groups: ['通用', '翻译服务', '播放·媒体', '资源与投放', '关于'], title: '通用' },
+  settings: { groups: ['通用', '翻译服务', '播放·媒体', '资源与投放', '关于', '番剧设置'], title: '通用' },
   subs: [],
 };
 const TRANS = {
   ...BASE,
-  settings: { groups: ['通用', '翻译服务', '播放·媒体', '资源与投放', '关于'], title: '翻译服务' },
+  /*
+   * 🔴 分组是**全局同一组**（6 组），切组只换高亮的 `title`，不是"翻译服务页只有 5 组"。
+   * 原来这里漏了第 6 组「番剧设置」；因基线计数曾用 `want` 而非实测值（假绿），一直没被发现。
+   */
+  settings: {
+    groups: ['通用', '翻译服务', '播放·媒体', '资源与投放', '关于', '番剧设置'],
+    title: '翻译服务',
+  },
   subs: ['服务与配对', '推理引擎', '模型与诊断'],
 };
 
@@ -356,8 +366,8 @@ const cases = [
     refute: ['C10c'],
   },
   {
-    name: '反证 C10c：分组变 6 个',
-    spec: { ...BASE, settings: { groups: ['a', 'b', 'c', 'd', 'e', 'f'], title: '通用' } },
+    name: '反证 C10c：分组变 7 个',
+    spec: { ...BASE, settings: { groups: ['a', 'b', 'c', 'd', 'e', 'f', 'g'], title: '通用' } },
     refute: ['C10c'],
   },
   {
@@ -417,8 +427,15 @@ for (const c of cases) {
       ok(j[id] === false, `${id} 在此破坏下**变红**（实测 ${j[id] === false ? '红' : '仍绿 ← 假阳性!'}）`);
     }
   } else {
-    for (const [id, v] of Object.entries(c.want))
-      ok(v === true, `${id} 在正确实现下保持绿（实测 ${j[id] ? '绿' : '红 ← 误报!'}）`);
+    /*
+     * 🔴 判据必须是**实测值** `j[id]`，不能是 `want` 里的期望值 `v`。
+     *    2026-10-30 修：原来写 `ok(v === true, …)`，而 `v` 恒为 `true`（来自 `c.want`）
+     *    ⇒ 基线**永远通过**，只在文案里打印"红 ← 误报"。实测症状：把番剧入口塞回夹具、
+     *    C8a 确实变红，脚本仍报「37 通过 / 0 失败」—— 典型假绿。
+     */
+    for (const id of Object.keys(c.want)) {
+      ok(j[id] === true, `${id} 在正确实现下保持绿（实测 ${j[id] ? '绿' : '红 ← 误报!'}）`);
+    }
   }
   console.log('');
 }
@@ -475,15 +492,27 @@ const judgeDownloadEntry = (src) => {
   // 🔴 按文件实际 EOL 拼锚点：本仓文件是 CRLF，手写 `\n` 会找不到边界
   //    （同类坑在 settings-media / launch-gate 的变异里都记过）。
   const eol = SIDEBAR_TSX.includes('\r\n') ? '\r\n' : '\n';
-  const anchor = [
-    '        <button',
-    '          type="button"',
-    "          className={screen === 'settings' ? 'nav-item is-global is-active' : 'nav-item is-global'}",
-  ].join(eol);
-  const injected = ['      <div className="sidebar-status">{stateView(\'running\').text}</div>', anchor].join(eol);
+  /*
+   * 🔴 不写死整段标签文本（2026-10-26 改）：`<Btn kind="bare"` 一旦被 prettier
+   *    按行宽拆成三行，写死三行的锚点就静默失配 ⇒ 整条反证变成"无法反证"。
+   *    改成**按语义定位**：先找「设置按钮的 className 行」，再向上回溯到最近的
+   *    `<Btn` 起始行，在那之前插入状态点。格式化怎么拆行都不影响。
+   */
+  const lines = SIDEBAR_TSX.split(eol);
+  const clsLine = lines.findIndex((l) => l.includes("screen === 'settings' ? 'nav-item is-global is-active'"));
+  let tagLine = -1;
+  for (let i = clsLine; i >= 0; i--) {
+    if (lines[i].trim().startsWith('<Btn')) {
+      tagLine = i;
+      break;
+    }
+  }
+
   const fileUrl = new URL('../src/components/Sidebar.tsx', import.meta.url);
-  if (SIDEBAR_TSX.includes(anchor)) {
-    writeFileSync(fileUrl, SIDEBAR_TSX.replace(anchor, injected));
+  if (clsLine > 0 && tagLine > 0) {
+    const mutated = [...lines];
+    mutated.splice(tagLine, 0, '      <div className="sidebar-status">{stateView(\'running\').text}</div>');
+    writeFileSync(fileUrl, mutated.join(eol));
     const j = judgeProductSidebar(readFileSync(fileUrl, 'utf8'));
     console.log('🔴 反证 · 产品镜像：把服务状态点加回侧栏');
     ok(j.C8e === false, `C8e 在此破坏下**变红**（实测 ${j.C8e === false ? '红' : '仍绿 ← 假阳性!'}）`);
@@ -491,7 +520,7 @@ const judgeDownloadEntry = (src) => {
     writeFileSync(fileUrl, SIDEBAR_TSX);
     ok(readFileSync(fileUrl, 'utf8') === SIDEBAR_TSX, 'Sidebar.tsx 已按字节还原');
   } else {
-    ok(false, '反证锚点未找到（Sidebar.tsx 的设置按钮写法变了？）—— 本条无法反证');
+    ok(false, '反证锚点未找到（Sidebar.tsx 里找不到设置按钮的 className 行或其 <Btn 起始行）—— 本条无法反证');
   }
   console.log('');
 }

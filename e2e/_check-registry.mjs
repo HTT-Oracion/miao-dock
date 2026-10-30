@@ -55,6 +55,34 @@ const CHECKS = [
     watch: ['src/**', 'src-tauri/src/mangasvc/engine/state.rs', 'e2e/engine-download-entry-check.mjs'],
   },
   {
+    id: 'anime-module',
+    script: 'e2e/anime-module-check.mjs',
+    tier: 'static',
+    refute: true,
+    // 断言面 = 前端域 + 屏层 + 壳层挂点 + Rust 桥接 + animesvc manifest + 文档
+    watch: [
+      'src/modules/anime/**',
+      'src/screens/anime/**',
+      'src/screens/AnimeScreen.tsx',
+      'src/components/Sidebar.tsx',
+      'src/stores/nav.ts',
+      'src/router/**',
+      'src/App.tsx',
+      'src/screens/SettingsScreen.tsx',
+      'src/screens/settings/**',
+      'src/styles/anime.scss',
+      'src/styles/index.scss',
+      'src-tauri/src/anime/**',
+      'src-tauri/src/animesvc.rs',
+      'src-tauri/src/animesvc/**',
+      'src-tauri/src/commands/mod.rs',
+      'src-tauri/src/main.rs',
+      'README.md',
+      'AGENTS.md',
+      'e2e/anime-module-check.mjs',
+    ],
+  },
+  {
     id: 'music',
     script: 'e2e/music-platform-check.mjs',
     tier: 'static',
@@ -100,6 +128,16 @@ const CHECKS = [
     tier: 'static',
     refute: true,
     watch: ['src-tauri/**', 'src/App.tsx', 'e2e/quit-command-check.mjs'],
+  },
+  {
+    id: 'ui-scale',
+    script: 'e2e/ui-scale-check.mjs',
+    tier: 'static',
+    refute: true,
+    // 断言面 = 构建配置（换算的两个钩子）+ 令牌档位（base.scss 的 `:root` 与 `.an-root` 隔离）
+    // + 各分片仍写纯 px。**为什么必须有门**：源码不再等于产物，改坏 `vite.config.ts`
+    // 后界面会静默退回不缩放，而读源码的判据一条都不会红（见台账 D-347）。
+    watch: ['src/styles/**', 'vite.config.ts', 'e2e/ui-scale-check.mjs'],
   },
   {
     id: 'docpaths',
@@ -189,6 +227,21 @@ const CHECKS = [
   // ---- service：起真实子进程，串行（端口竞争，见文件头）----
   { id: 'e2e', script: 'e2e/e2e.mjs', tier: 'service', watch: ['src-tauri/src/**', 'engine/src/**', 'e2e/**'] },
   {
+    id: 'anime',
+    script: 'e2e/service/anime-service-check.mjs',
+    tier: 'service',
+    refute: true,
+    // 断言面 = 动漫落点（paths）+ 安全闸（root_guard）+ 进程本体与入口 + 打包目标
+    watch: [
+      'src-tauri/src/animesvc.rs',
+      'src-tauri/src/bin/animesvc.rs',
+      'src-tauri/src/platform/paths.rs',
+      'src-tauri/src/platform/root_guard.rs',
+      'src-tauri/Cargo.toml',
+      'e2e/service/anime-service-check.mjs',
+    ],
+  },
+  {
     id: 'paths',
     script: 'e2e/service/paths-parity-check.mjs',
     tier: 'service',
@@ -262,7 +315,8 @@ const CHECKS = [
     watch: [
       'src-tauri/src/service/mod.rs',
       'src-tauri/src/mangasvc/engine/state.rs',
-      'src/screens/library/NotReadyScreen.tsx',
+      'src/screens/manga/NotReadyScreen.tsx',
+      'src/screens/manga/notready/**',
       'src/ipc/index.ts',
       'src/router/**',
       'e2e/service/notready-state-check.mjs',
@@ -369,7 +423,8 @@ const CHECKS = [
     // （原先还挂着 `src/App.tsx` / `src/router/**` / `src/ipc/index.ts` —— 脚本一处都不读，
     //   改了只会白跑一个起真进程的 service 检查；`--changed` 的命中精度就是这么被稀释的。）
     watch: [
-      'src/screens/library/NotReadyScreen.tsx',
+      'src/screens/manga/NotReadyScreen.tsx',
+      'src/screens/manga/notready/**',
       'src/screens/settings/EngineDiag.tsx',
       'src-tauri/src/mangasvc/engine/state.rs',
       'engine/models.manifest.json',
@@ -614,7 +669,7 @@ const CHECKS = [
     script: 'e2e/service/retranslate-check.mjs',
     tier: 'service',
     refute: true,
-    // 源码断言读 `screens/LibraryScreen.tsx` 与 `screens/library/viewer.tsx`
+    // 源码断言读 `screens/manga/LibraryScreen.tsx` 与 `screens/manga/viewer.tsx`
     watch: ['src-tauri/src/**', 'src/screens/**'],
   },
   {
@@ -730,9 +785,9 @@ const CHECKS = [
       'src-tauri/src/mangasvc/engine/state.rs',
       'src-tauri/src/mangasvc/engine/runtime_setup.rs',
       'src/ipc/engine-download.ts',
-      'src/screens/library/NotReadyScreen.tsx',
+      'src/screens/manga/NotReadyScreen.tsx',
+      'src/screens/manga/notready/**',
       'src/screens/engine/DownloadPanel.tsx',
-      'src/screens/settings/OnlineApiForm.tsx',
       'src/components/units/ProgressRing.tsx',
       'e2e/service/engine-bootstrap-check.mjs',
     ],
@@ -751,6 +806,16 @@ const CHECKS = [
     tier: 'nightly',
     refute: true,
     watch: ['engine/**', 'src-tauri/src/**'],
+  },
+  // D-251：内核轨的**真机半边** —— 拿真 mpv 跑 `--kernel-selftest`（17 例）。
+  // 硬前置：`resources/mpv/<平台>/` 有二进制（`npm run task -- fetch:mpv`）+ `cargo build --bin animesvc`；
+  // 缺一即失败并点名（跳过 ≠ 通过）。`check:anime` 的 A8 用的是假 mpv 夹具，回答不了"真内核认不认这些命令"。
+  {
+    id: 'anime-kernel-real',
+    script: 'e2e/service/anime-kernel-real-check.mjs',
+    tier: 'nightly',
+    refute: true,
+    watch: ['src-tauri/src/animesvc/kernel/**', 'e2e/service/anime-kernel-real-check.mjs'],
   },
   {
     id: 'e11',

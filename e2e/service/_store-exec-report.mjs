@@ -9,7 +9,7 @@
  *
  * ## 规则（只抹「每跑必变」的量，其余一律保真）
  *   · 时间 / 墙钟：`createdAt` / `finishedAt` / `startedAt` / `updatedAt` / `durationMs` → `null`
- *   · 运行目录：`<ROOT>`（MIAO_ROOT）/ `<STATE>`（MIAO_STATE_DIR）/ `<TMP>`（其父临时目录）
+ *   · 运行目录：`<ROOT>`（MIAO_MANGA_ROOT_DIR）/ `<STATE>`（MIAO_MANGA_STATE_DIR）/ `<TMP>`（其父临时目录）
  *     —— 含 JSON 转义层级；任意用户 home 兜底 → `<HOME>`
  *   · 本场景 `taskId`（ULID，每跑必变）→ `<TID>`
  *   · 事件 `id` **保留原始值**（不再拉平 —— 拉平会掩盖缺号，见 `normEvents` 的注释）
@@ -25,7 +25,7 @@ import path from 'node:path';
 /** 每次运行必然不同的「墙钟量」键 —— 一律抹平（键保留，值置 null）。 */
 const TIME_KEYS = new Set(['createdAt', 'finishedAt', 'startedAt', 'updatedAt', 'durationMs']);
 
-/** 建一对干净目录（root = `MIAO_ROOT`、state = `MIAO_STATE_DIR`），realpath 化以对齐 Rust 侧。 */
+/** 建一对干净目录（root = `MIAO_MANGA_ROOT_DIR`、state = `MIAO_MANGA_STATE_DIR`），realpath 化以对齐 Rust 侧。 */
 export function freshDirs(tag) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), `miao-se-${tag}-`));
   const root = path.join(base, 'root');

@@ -1,4 +1,4 @@
-import {
+﻿import {
   Aperture,
   AudioWaveform,
   ChevronDown,
@@ -27,12 +27,13 @@ import { canUseHeartbeat } from '@music/actions/playback';
 import { coverProxyUrl, fmtTime, songKey } from '@music/convert';
 import type { PlayerSkin } from '@music/store';
 import type { MusicComment } from '@music/types';
-import { ColorPicker, Empty, IconButton, PlayModeButton, Select, Switch } from '@components/units';
+import { Btn, ColorPicker, Empty, IconButton, PlayModeButton, Select, Switch } from '@components/units';
 // 六皮肤的封面取色基础设施（useCoverColor / useCoverEdgeColor / makeVividColor）。
 // 注意：按本项目 D-41 收口，use* 命名的文件必须住 src/hooks/，故该模块文件名为 coverColor.ts。
 import { makeVividColor, useCoverColor, useCoverEdgeColor } from '@hooks/useCoverColor';
 import { SpectrumScene } from '@screens/music/SpectrumScene';
 import { VinylDisc } from '@screens/music/VinylDisc';
+import { providerName } from '@screens/music/shared';
 // 逐字歌词渲染组件（双层叠加 + RAF 推进）。歌词的"定位当前行 / 滚动跟随 / 逐字进度"
 // 全部由它内部承担 —— 所以本文件不再自己算 activeLine、不再持有 activeRef。
 import { KaraokeLyrics } from '@screens/music/KaraokeLyrics';
@@ -99,6 +100,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const expanded = useMusicStore((s) => s.expanded);
   const expandedClosing = useMusicStore((s) => s.expandedClosing);
   const currentSong = useMusicStore((s) => s.currentSong);
+  const currentIndex = useMusicStore((s) => s.currentIndex);
   const isPlaying = useMusicStore((s) => s.isPlaying);
   const progressMs = useMusicStore((s) => s.progressMs);
   const durationMs = useMusicStore((s) => s.durationMs);
@@ -114,6 +116,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const parsedLyrics = useMusicStore((s) => s.parsedLyrics);
   const comments = useMusicStore((s) => s.comments);
   const loadingComments = useMusicStore((s) => s.loadingComments);
+  const commentsError = useMusicStore((s) => s.commentsError);
   const commentTab = useMusicStore((s) => s.commentTab);
   const playbackSource = useMusicStore((s) => s.playbackSource);
   const proxyPort = useMusicStore((s) => s.proxyPort);
@@ -204,6 +207,8 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
   const setQueueOpen = useMusicStore((s) => s.setQueueOpen);
 
   const [styleMenuOpen, setStyleMenuOpen] = useState(false);
+  /** 歌词译文显隐（设计稿「译」开关）：只影响渲染，不重新取歌词 */
+  const [showTranslation, setShowTranslation] = useState(true);
   const loadedKeyRef = useRef('');
 
   const caps = capsOf(playbackSource);
@@ -463,7 +468,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
       <SpectrumScene active={isSpectrum} isPlaying={isPlaying} deep={vivid.deep} light={vivid.light} />
 
       <div className="music-exp-topbar">
-        <IconButton title="收起" onClick={() => closeExpanded()}>
+        <IconButton title="收起播放器" onClick={() => closeExpanded()}>
           {/*
             收起用 ChevronDown（向下）而不是 ChevronLeft —— 展开播放器是从**底部上滑**铺满的，
             "收起"对应的是**向下**退回去；向左的箭头会让人以为"返回上一页"。
@@ -471,6 +476,12 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
           */}
           <ChevronDown size={22} />
         </IconButton>
+        {/* 头部中央（设计稿 `.xp-head-center`）：一行「正在播放」+ 专辑名。
+            展开播放器铺满整屏，没有它用户会短暂失去"我在哪一首上"的定位 */}
+        <div className="music-exp-topcenter">
+          <span>正在播放</span>
+          {currentSong?.album ? <small>{currentSong.album}</small> : null}
+        </div>
       </div>
 
       <div className={bodyClass}>
@@ -479,6 +490,11 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
           <div className="music-exp-left">
             <div className="music-exp-cover">{coverUrl ? <img src={coverUrl} alt="" /> : null}</div>
             <div className="music-exp-info">
+              {/* 眉标（设计稿 `.xp-kicker`）：`TRACK 03 · 网易云音乐` —— 队列里的第几首 + 来源 */}
+              <span className="music-exp-kicker">
+                TRACK {String(currentIndex + 1).padStart(2, '0')}
+                {currentSong ? ` · ${providerName(currentSong.provider)}` : ''}
+              </span>
               <b>{currentSong?.name ?? '未在播放'}</b>
               <span>{currentSong?.artist ?? ''}</span>
               <em>{currentSong?.album || ''}</em>
@@ -499,47 +515,70 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
 
             {/* Tab 只在「现代 / 通透」出现 */}
             {showTabs ? (
-              <div className="music-exp-ltabs">
-                <button
-                  type="button"
+              <div className="music-exp-ltabs" role="tablist">
+                <Btn
+                  kind="bare"
+                  role="tab"
+                  ariaSelected={!showComments}
                   className={showComments ? 'music-exp-ltab' : 'music-exp-ltab is-on'}
                   onClick={() => setCommentTab('lyric')}
                 >
                   歌词
-                </button>
+                </Btn>
                 {caps.comments ? (
-                  <button
-                    type="button"
+                  <Btn
+                    kind="bare"
+                    role="tab"
+                    ariaSelected={showComments}
                     className={showComments ? 'music-exp-ltab is-on' : 'music-exp-ltab'}
                     onClick={() => setCommentTab('comments')}
                   >
                     评论
-                  </button>
+                  </Btn>
                 ) : null}
+                {/*
+                  「译」开关（设计稿 `.xp-tab-tools` 的 chip）：只控制**译文行**的显隐，
+                  不重新拉歌词 —— 译文在 `loadLyrics` 时已按时间轴合并进每一行，
+                  关掉只是不渲染那一行，切换是即时的。
+                */}
+                <Btn
+                  kind="bare"
+                  className={showTranslation ? 'music-exp-trans chip chip-soft is-on' : 'music-exp-trans chip'}
+                  title="显示 / 隐藏歌词翻译"
+                  ariaPressed={showTranslation}
+                  onClick={() => setShowTranslation(!showTranslation)}
+                >
+                  译
+                </Btn>
               </div>
             ) : null}
 
             {showComments ? (
               !caps.comments ? (
-                <Empty>当前平台暂不支持评论</Empty>
+                <Empty>该平台暂不支持评论</Empty>
               ) : loadingComments ? (
                 <Empty>加载评论中…</Empty>
+              ) : commentsError ? (
+                /* 读失败与「暂无评论」分开说：前者切走再切回来能重试，后者重试也没用 */
+                <Empty bad sub={commentsError}>
+                  评论读取失败
+                </Empty>
               ) : !comments || (comments.comments.length === 0 && comments.hot_comments.length === 0) ? (
                 <Empty>暂无评论</Empty>
               ) : (
                 <div className="music-exp-comments">
-                  {comments.hot_comments.length > 0 ? <div className="music-exp-cm-sec">热门评论</div> : null}
+                  {comments.hot_comments.length > 0 ? <div className="music-exp-cm-sec">热门</div> : null}
                   {comments.hot_comments.map((c) => (
                     <CommentRow key={`h${c.comment_id}`} c={c} />
                   ))}
-                  {comments.comments.length > 0 ? <div className="music-exp-cm-sec">最新评论</div> : null}
+                  {comments.comments.length > 0 ? <div className="music-exp-cm-sec">最新</div> : null}
                   {comments.comments.map((c) => (
                     <CommentRow key={`n${c.comment_id}`} c={c} />
                   ))}
                 </div>
               )
             ) : parsedLyrics.length === 0 ? (
-              <Empty>暂无歌词</Empty>
+              <Empty>这首歌没有可用的歌词文件</Empty>
             ) : (
               <>
                 {/* 逐字歌词：组件自己承担"定位当前行 / 滚动跟随 / RAF 逐字推进"，
@@ -552,7 +591,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
                   lines={parsedLyrics}
                   fontPx={lyricsFontSize}
                   align={isVinyl || isCover ? 'left' : 'center'}
-                  showTranslation
+                  showTranslation={showTranslation}
                   seeking={seeking}
                   headerLine={currentSong?.artist ? `演唱：${currentSong.artist}` : undefined}
                 />
@@ -569,7 +608,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
             {/* 红心：仅登录后显示（未登录点了也写不进去），已红心时填充红色 */}
             {logged ? (
               <IconButton
-                title={isLiked ? '取消红心' : '红心'}
+                title="喜欢"
                 onClick={() => {
                   if (currentSong) void toggleLike(currentSong);
                 }}
@@ -583,27 +622,23 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
                 再叠一层碟片模式要么无意义、要么与样式自身的封面处理冲突（彩胶自己就是唱片）。
                 只有「现代 / 通透」这种标准方形封面才需要它。 */}
             {isPlainLayout ? (
-              <IconButton
-                title={discMode ? '关闭碟片模式' : '开启碟片模式'}
-                active={discMode}
-                onClick={() => setDiscMode(!discMode)}
-              >
+              <IconButton title="碟片模式" active={discMode} onClick={() => setDiscMode(!discMode)}>
                 <Film size={18} />
               </IconButton>
             ) : null}
 
             {/* 切换样式：触发器是**带文字标签的按钮**（不是图标按钮），点击打开图片预览弹层 */}
             <div className="music-exp-stylewrap">
-              <button
-                type="button"
+              <Btn
+                kind="bare"
                 className="music-exp-stylebtn"
-                title="切换样式"
+                title="播放器皮肤"
                 onClick={() => setStyleMenuOpen((v) => !v)}
               >
                 <StyleIcon size={16} />
                 <span>{skinMeta.label}</span>
                 <span className="music-exp-new">NEW</span>
-              </button>
+              </Btn>
 
               {styleMenuOpen ? (
                 <>
@@ -611,10 +646,11 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
                   <div className="music-style-backdrop" onClick={() => setStyleMenuOpen(false)} />
                   <div className="music-style-pop">
                     {styleCards.map((s) => (
-                      <button
+                      <Btn
                         key={s.id}
-                        type="button"
+                        kind="bare"
                         className={s.id === skin ? 'music-style-card is-on' : 'music-style-card'}
+                        ariaPressed={s.id === skin}
                         onClick={() => {
                           // 点击即切换并关闭弹层（不是单击循环切换）
                           setSkin(s.id);
@@ -623,7 +659,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
                       >
                         <img className="music-style-thumb" src={s.preview} alt={s.label} />
                         <span className="music-style-lb">{s.label}</span>
-                      </button>
+                      </Btn>
                     ))}
                   </div>
                 </>
@@ -651,7 +687,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
             <IconButton title="上一首" onClick={() => prev()}>
               <SkipBack size={22} />
             </IconButton>
-            <IconButton title={isPlaying ? '暂停' : '播放'} primary onClick={() => togglePlay()}>
+            <IconButton title="播放/暂停" primary onClick={() => togglePlay()}>
               {isPlaying ? <Pause size={20} /> : <Play size={20} />}
             </IconButton>
             <IconButton title="下一首" onClick={() => next()}>
@@ -721,7 +757,7 @@ export function ExpandedPlayer({ onSeek }: { onSeek: (ms: number) => void }) {
             {/* 桌面歌词窗口开关：本平台不提供该窗口时整块不渲染 */}
             {desktopLyricsSupported && (
               <IconButton
-                title={lyricsWindowOpen ? '关闭桌面歌词' : '开启桌面歌词'}
+                title="桌面歌词"
                 active={lyricsWindowOpen}
                 onClick={() => void setLyricsWindowOpen(!lyricsWindowOpen)}
               >

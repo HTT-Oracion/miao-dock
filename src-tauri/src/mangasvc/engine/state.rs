@@ -16,6 +16,7 @@
 //      —— 要么显示旧档（用户以为没保存上），要么显示新档（用户以为已经在跑 7B 了）。
 //   ③ **反证开关集中登记**（[`Refutes`] / [`ContractRefutes`]），不散在各自代码旁。
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -199,20 +200,60 @@ impl DownloadProgressState {
         // 阶段标记事件（total=None，phase="stage"）：只更新当前阶段，不动字节账。
         if e.phase == "stage" {
             self.last_event_ms = now_ms;
-            let total: u64 = self.entries.values().filter_map(|(_, t)| *t).sum();
-            let received: u64 = self.entries.values().filter_map(|(r, t)| t.map(|_| *r)).sum();
-            return (received, total, None);
+            return self.aggregate();
         }
         let total = e.total.unwrap_or_else(|| {
             // 复用该条目已知总量；未知则记 None（聚合时总量缺失 ⇒ percent 为 null）
             self.entries.get(&e.id).and_then(|(_, t)| *t).unwrap_or(0)
         });
         let entry_total = if e.total.is_some() { Some(total) } else { self.entries.get(&e.id).and_then(|(_, t)| *t) };
-        self.entries.insert(e.id.clone(), (e.received, entry_total));
+        /*
+         * 🔴 **同一批文件里"下完一个"不该让进度往下掉**（B 方案，2026-10-25）：
+         *
+         * 根因：`received` 是"所有在列条目的已收之和"，而下载器换文件时新条目从 0 起算
+         * ⇒ 聚合百分比周期性回退。`assemblyPercent` 把它线性映射到 `[45, 100]`，
+         * 于是一换文件环就落回 45%（用户实测"老是跳回 45%"）。
+         *
+         * 修法（口径改对，不动 UI）：
+         *   ① **已收记历史最高**（`max`）：同一条目重试 / 换源把 received 清零时，
+         *      不承认这次回退 —— 它已经下过的字节仍然在盘上（`.part` 续传）。
+         *   ② **条目完成即按总量计满**：`received >= total` 时后续事件无论报什么，
+         *      该条目都按 `total` 参与分子 —— 它已经下完了，不该因为"移到下一个文件"
+         *      而把已完成的份额退回去。
+         *
+         * 两条合起来保证 `received` **单调不减**，`percent` 与 `assemblyPercent` 随之单调。
+         * ⚠️ 代价：真正"换源从头重下"时进度不会倒退。那是可接受的 ——
+         *    用户看到的是"还在 80%"，而不是"从 80% 掉回 45%、像丢了数据"。
+         */
+        let prev = self.entries.get(&e.id).copied();
+        let best = match prev {
+            Some((r, t)) => {
+                // 条目已下满 ⇒ 按 total 计满；否则取历史最高
+                let capped = t.filter(|tt| *tt > 0 && r >= *tt).map(|tt| tt).unwrap_or(r);
+                capped.max(e.received)
+            }
+            None => e.received,
+        };
+        self.entries.insert(e.id.clone(), (best, entry_total));
         self.last_event_ms = now_ms;
-        let total: u64 = self.entries.values().filter_map(|(_, t)| *t).sum();
-        let received: u64 = self.entries.values().filter_map(|(r, t)| t.map(|_| *r)).sum();
-        (received, total, e.total)
+        let (received, total, opt) = self.aggregate();
+        (received, total, opt.or(e.total))
+    }
+
+    /// 聚合成 `(received, total, 事件自带 total)`。
+    ///
+    /// 🔴 分子只统计**总量已知**的条目（否则分数会破 100%，实测出现过 111%）；
+    ///    且**已下满的条目按 `total` 计入**（不按它最后一次报的 received）——
+    ///    换文件后它可能不再发事件，最后那次的值就是终值，不必再猜。
+    fn aggregate(&self) -> (u64, u64, Option<u64>) {
+        let mut received = 0u64;
+        let mut total = 0u64;
+        for (r, t) in self.entries.values() {
+            let Some(tt) = *t else { continue };
+            total += tt;
+            received += if *r >= tt { tt } else { *r };
+        }
+        (received, total, None)
     }
 }
 
@@ -257,6 +298,12 @@ pub struct EngineState {
     /// G5：进度聚合内部态（与 `download` 同生命周期，不进契约）。
     download_progress: Arc<Mutex<DownloadProgressState>>,
     download_child: Arc<Mutex<Option<std::process::Child>>>,
+    /// 输出读取线程的停止闸（暂停时合闸，见 `spawn_tail_reader` 的说明）。
+    ///
+    /// 🔴 为什么必须有：`child.kill()` 只让**后续**输出消失，管道里**已缓冲**的数据仍可读。
+    ///    不设闸时读取线程会把缓冲读完并继续 push 进内存 tail，而那些 push 不落盘
+    ///    ⇒ 界面日志"暂停了还在刷"，而盘上文件静止（2026-10-25 真机实测）。
+    download_stop: Arc<AtomicBool>,
     /// 档位降档控制器（《04》§8）—— 进程级单例 ⇒ 天然是"服务级"作用域。
     pub tier_ctl: Arc<TierDowngrade>,
 }
@@ -265,7 +312,7 @@ impl EngineState {
     /// 从环境变量装配。与 Node `config.mjs` 一样：**取值非法直接失败**（不静默回退）。
     pub fn from_env() -> Result<Self, String> {
         let protocol = super::engine_protocol();
-        let settings_file = paths::state_dir().join("engine-settings.json");
+        let settings_file = paths::manga_state_dir().join("engine-settings.json");
 
         let refutes = Refutes {
             no_whitelist: esettings::env_bool("MIAO_SETTINGS_NO_WHITELIST", false),
@@ -356,6 +403,7 @@ impl EngineState {
             download: Arc::new(Mutex::new(ModelDownload::load_persisted())),
             download_progress: Arc::new(Mutex::new(DownloadProgressState::new())),
             download_child: Arc::new(Mutex::new(None)),
+            download_stop: Arc::new(AtomicBool::new(false)),
             tier_ctl: Arc::new(TierDowngrade::new(&effective_tier, esettings::env_bool("MIAO_NO_TIER_DOWNGRADE", false))),
         })
     }
@@ -696,7 +744,14 @@ impl EngineState {
             "runner": self.download_runner.to_string_lossy(),
             "runnerExists": self.download_runner.exists(),
             // ---- G5：结构化进度（全部来自 `--progress-log`，null = 无真实来源）----
-            "percent": d.percent,
+            // 🔴 完成态一律 100%：`done` = 子进程退出码 0 + 全部校验通过，
+            //    此时字节账必然已满。让百分比自己走到 100 是不成立的 ——
+            //    复用/校验命中的条目在过去不发事件，账本压根不知道它们已经齐了。
+            "percent": if d.state == "done" {
+                Some(100.0)
+            } else {
+                d.percent
+            },
             "receivedBytes": d.received_bytes,
             "totalBytes": d.total_bytes,
             "speedBps": d.speed_bps,
@@ -708,10 +763,19 @@ impl EngineState {
             "currentId": d.current_id,
             // 整体装配进度（段加权）：段内只有"有字节账"的两段才细分，其余停在段首。
             // 🔴 为什么不在前端算：权重是产品判断（哪一段更费时），两处各写一份必然漂移。
-            "assemblyPercent": assembly_percent(d.step.as_deref(), d.percent),
-            // 当前段**没有可测字节进度**（prepare / runtime 的 venv、pip、补丁）⇒ 界面配旋转弧，
-            // 而不是把上一段留下的数字当成本段在走。
-            "assemblyIndeterminate": matches!(d.step.as_deref(), Some("prepare") | Some("runtime")),
+            // 🔴 **完成态一律 100%**：`done` 是"子进程退出码 0、全部校验通过"的终态，
+            //    此时百分比必然已经走完。可它读的是字节账，而**复用/校验命中的条目
+            //    过去根本不发事件**（本轮已修，但历史存档里可能仍是旧账）⇒
+            //    真机上出现过"下载显示完成、环卡在 45%"（2026-10-25 用户报）。
+            //    完成与否是**状态**事实，不该由百分比反推。
+            "assemblyPercent": if d.state == "done" {
+                Some(100.0)
+            } else {
+                assembly_percent(d.step.as_deref(), d.percent)
+            },
+            // 完成态的环不再"转圈"——它已经不在进行中了
+            "assemblyIndeterminate": d.state != "done"
+                && matches!(d.step.as_deref(), Some("prepare") | Some("runtime")),
             // ---- G5：中断 / 续传 ----
             // 🔴 `canResume` 在视图时**现算**（不存）：盘上有 `.part` 或 `.ready` 未覆盖全部选中条目
             //    ⇒ true。这样即使进程重启、内存态清空，也能如实告诉界面「有东西可续」。
@@ -747,13 +811,25 @@ impl EngineState {
             d.state = "interrupted".to_string();
             d.interrupted_reason =
                 Some("已暂停（你点了「暂停下载」）；已下的部分不会丢失，可继续".to_string());
-            // 瞬时速度 / 剩余时间是上一段的读数，暂停后继续显示等于编造
+            /*
+             * 瞬时量一律清零 —— 暂停后继续显示等于编造。
+             *
+             * 🔴 `current_id` 必须清：它是 progress 事件持续覆写的"当前文件"，
+             *    暂停后壳层每 1.5 s 轮询仍拿到同一个旧值 ⇒ 界面上那一行
+             *    "看起来还在动"（真机实测：用户会以为下载没停）。
+             *    与 `speed_bps` / `eta_ms` 同等对待，不是可选项。
+             */
             d.speed_bps = None;
             d.eta_ms = None;
+            d.current_id = None;
             d.persist();
         }
         let _ = child.kill();
         let _ = child.wait();
+        // 合闸：让输出读取线程把管道里已缓冲的数据**丢掉**而不是读完。
+        // 必须在 `kill()` 之后 —— 早合只会让最后几行真实日志消失，晚合则缓冲已被读走。
+        self.download_stop
+            .store(true, Ordering::Relaxed);
         println!("[manga-service] 模型下载已暂停（用户操作）");
         Ok(self.model_download_view())
     }
@@ -789,10 +865,35 @@ impl EngineState {
             ));
         }
 
-        // 「重新下载」：清掉续传断点与已聚合进度，让本次从零开始。
+        /*
+         * 「重新下载」：清掉续传断点、**已解包的目标目录**与已聚合进度，让本次从零开始。
+         *
+         * 🔴 为什么必须连解包目标一起清：解包是 `tar -xf … -C out` 原地覆盖，
+         *    目标目录里已有文件时逐个撞占用 ⇒ `Can't stat existing object: Permission denied`
+         *    （真机实测，`python-3.11/` 上一轮已解出一部分时就必现）。
+         *    只清 `.part` 会让「重新下载」在同一处**再失败一次** —— 界面说的是
+         *    「从头下载全部文件」，用户据此理解成"重来一遍"，不能只兑现有下载那一半。
+         *
+         * 🔴 只清**有 extractTo 的条目的目标**，不清整个 runtime_root / model_root：
+         *    那两棵树下还有 `.download-cache`（48 MB 归档，清了要重走一遍网络）
+         *    与用户自己的模型权重，一刀切下去代价完全不对等。
+         */
         if fresh {
             clear_part_files(&self.model_root);
             clear_part_files(&paths::runtimes_dir());
+            // 🔴 `model_manifest` 存的是**路径**不是 Manifest —— 用前先读盘。
+            //    读不到就跳过一次清理：归档/解包阶段自己会报"清单读不到"，
+            //    在这里再报一次同样的错只会把两条信息叠在一起。
+            for (manifest_path, root) in [
+                (self.model_manifest.clone(), self.model_root.clone()),
+                (paths::runtime_manifest(), paths::runtimes_dir()),
+            ] {
+                if let Some(m) = load_manifest_quietly(&manifest_path) {
+                    for dir in extract_targets(&m, &root) {
+                        remove_dir_quietly(&dir);
+                    }
+                }
+            }
             {
                 let mut p = self.download_progress.lock().unwrap_or_else(|p| p.into_inner());
                 *p = DownloadProgressState::new();
@@ -807,6 +908,7 @@ impl EngineState {
             &self.download,
             &self.download_progress,
             &self.download_child,
+            &self.download_stop,
         )?;
 
         Ok(self.model_download_view())
@@ -905,6 +1007,7 @@ fn spawn_download_round(
     dl: &Arc<Mutex<ModelDownload>>,
     dp: &Arc<Mutex<DownloadProgressState>>,
     child_slot: &Arc<Mutex<Option<std::process::Child>>>,
+    stop: &Arc<AtomicBool>,
 ) -> Result<(), StoreError> {
     // 终态线程要在第 1 轮成功后**递归起第 2 轮**，而 `spawn` 要求 `'static` ⇒
     // 那两个路径参数必须先拿到 owned 副本（借用会逃逸，E0521）。
@@ -924,7 +1027,7 @@ fn spawn_download_round(
     cmd.arg("--root").arg(model_root);
     cmd.arg("--manifest").arg(model_manifest);
     // G5：结构化进度（百分比/速度/剩余/阶段）走这里，不靠解析 stdout 文本（违反"不编造进度"纪律）。
-    let progress_log = paths::state_dir().join("engine-download-progress.jsonl");
+    let progress_log = paths::manga_state_dir().join("engine-download-progress.jsonl");
     cmd.arg("--progress-log").arg(&progress_log);
     cmd.env("MIAO_MODEL_ROOT", model_root);
     cmd.stdin(std::process::Stdio::null())
@@ -973,16 +1076,18 @@ fn spawn_download_round(
         model_root.display()
     );
 
+    // 新一轮先把闸打开：上一轮暂停时合上的闸不能留着，否则新下载一行日志都不出。
+    stop.store(false, Ordering::Relaxed);
     if let Some(out) = child.stdout.take() {
-        spawn_tail_reader(out, dl.clone());
+        spawn_tail_reader(out, dl.clone(), stop.clone());
     }
     if let Some(err) = child.stderr.take() {
-        spawn_tail_reader(err, dl.clone());
+        spawn_tail_reader(err, dl.clone(), stop.clone());
     }
     // G5：进度解析线程（独立线程，与 `spawn_tail_reader` 同一范式）：增量聚合 `.part` 进度
     //    JSONL → `ModelDownload` 的 `percent` / `received_bytes` / `total_bytes` / `speed_bps` / `eta_ms`。
     //    HTTP 侧只读聚合后的结构体，不阻塞；每条事件 O(1) 更新。
-    spawn_progress_reader(progress_log, dl.clone(), dp.clone());
+    spawn_progress_reader(progress_log, dl.clone(), dp.clone(), stop.clone());
 
     // 超时看护：到点**真杀**（只改状态不杀的话进程会一直在后台写盘，下次点重下就会和它撞）。
     // 🔴 杀与等待**分工**：本线程只 `kill()`（`&mut self`，不需要等它退出）；终态由下面的
@@ -1033,6 +1138,8 @@ fn spawn_download_round(
 
     // 终态轮询线程：`try_wait()` 不阻塞，故超时看护随时能拿到锁去 `kill()`。
     let child_slot_wait = child_slot.clone();
+    // 第 2 轮要重开闸（新一轮会把 stop 置回 false），故这里把同一个 Arc 传进去。
+    let stop_wait = stop.clone();
     let dl_wait = dl.clone();
     let dp_wait = dp.clone();
     let model_root_wait = model_root.to_path_buf();
@@ -1081,6 +1188,7 @@ fn spawn_download_round(
                                 &dl_wait,
                                 &dp_wait,
                                 &child_slot_wait,
+                                &stop_wait,
                             ) {
                                 Ok(()) => return,
                                 Err(e) => {
@@ -1155,7 +1263,7 @@ impl ModelDownload {
     ///    `isDownloadActive` 为假 ⇒ 下载视图被卸载、用户被弹回引导页。
     ///    `rename` 在同目录同卷上是原子的，读者要么看到旧文件要么看到新文件，看不到中间态。
     fn persist(&self) {
-        let p = paths::state_dir().join("engine-download.json");
+        let p = paths::manga_state_dir().join("engine-download.json");
         let Ok(s) = serde_json::to_string(self) else {
             return;
         };
@@ -1177,7 +1285,7 @@ impl ModelDownload {
     ///    原样读回会让 `start_model_download` 的 409 单飞守卫把「继续下载」也挡掉。
     ///    这里只把 `running` 校正为 `interrupted`，`done / interrupted / idle` 一律不动。
     fn load_persisted() -> ModelDownload {
-        let p = paths::state_dir().join("engine-download.json");
+        let p = paths::manga_state_dir().join("engine-download.json");
         let d = match std::fs::read_to_string(&p) {
             Ok(s) => serde_json::from_str(&s).unwrap_or_else(|_| ModelDownload::default()),
             Err(_) => ModelDownload::default(),
@@ -1283,17 +1391,69 @@ impl DownloadProgressState {
     }
 }
 
-/// 递归扫描 `root`：发现 `.part` 续传断点 ⇒ 返回 true（不清除）。
+/// 读清单，失败返回 `None`（**不炸**）。
+///
+/// 🔴 为什么不当错误返回：调用方是「重新下载前的清理」，清单读不到时
+///    归档 / 解包那两个阶段自己会报「清单读不到」并带绝对路径。
+///    在这里也报一次，只会把两条一样的信息叠在一起，用户反而看不出该看哪条。
+fn load_manifest_quietly(p: &Path) -> Option<super::model_store::Manifest> {
+    let text = std::fs::read_to_string(p).ok()?;
+    serde_json::from_str::<super::model_store::Manifest>(&text).ok()
+}
+
+/// 清单里所有**适用于当前平台**且带 `extractTo` 的条目的解包目标目录（绝对路径）。
+///
+/// 只收"当前平台"：把别的平台的 `extractTo` 也算进来会去删一个本机从来不创建的目录
+/// （无害但莫名），且在多平台共库根时可能误删别人那份。
+fn extract_targets(manifest: &super::model_store::Manifest, root: &Path) -> Vec<PathBuf> {
+    let key = super::model_store::platform_key();
+    manifest
+        .files
+        .iter()
+        .filter(|f| f.extract_to.is_some() && super::model_store::matches_platform(f, &key))
+        .map(|f| root.join(f.extract_to.as_deref().unwrap_or_default()))
+        .collect()
+}
+
+/// 删目录，失败**不炸**（留着让 tar 去报，或者下一次 fresh 再试）。
+///
+/// 🔴 为什么不当致命错误：删不掉往往是"文件正被占用"——而占用它的常常就是
+///    我们自己的引擎 / ③（它们刚被停掉，句柄还没松）。此刻失败并终止，
+///    用户拿到的是"重新下载失败"，比"接着解包、让 tar 报具体哪个文件"更难动手。
+fn remove_dir_quietly(dir: &Path) {
+    if !dir.exists() {
+        return;
+    }
+    if let Err(e) = std::fs::remove_dir_all(dir) {
+        println!(
+            "[manga-service] 重新下载：清理解包目标失败（将接着解包）：{}：{e}",
+            dir.display()
+        );
+    }
+}
+
+/// 扫描 `root` 及其**一级子目录**：发现 `.part` 续传断点 ⇒ 返回 true（不清除）。
+///
+/// 🔴 **不做全树递归**：这个函数在每次 `/engine/status` 都被调用（`canResume` 字段），
+///    而模型根 + 运行时根是 15 GB 级、上万文件的树 —— 全树走一遍在冷缓存下实测 **94 秒**，
+///    用户打开下载页要等一分半。`.part` 只会落在归档落点与模型落点（清单 `dest` 最多一层），
+///    所以扫两层就够；判据仍是"文件名以 `.part` 结尾"，没有放宽。
 fn has_part_files(root: &Path) -> bool {
-    walk_parts(root, false)
+    walk_parts(root, 0, MAX_PART_DEPTH, false)
 }
 
-/// 递归扫描 `root`：发现 `.part` 即删除（「重新下载」清断点）。
+/// `.part` 可能出现的最大目录深度（0 = 只扫 `root` 本身）。
+///
+/// 依据：模型清单的 `dest` 形如 `visual/detector.safetensors`（一层），
+/// 归档缓存在 `.download-cache/`（一层）。留一层余量 ⇒ 2。
+const MAX_PART_DEPTH: u32 = 2;
+
+/// 扫描 `root` 及其一级子目录：发现 `.part` 即删除（「重新下载」清断点）。
 fn clear_part_files(root: &Path) {
-    walk_parts(root, true);
+    walk_parts(root, 0, MAX_PART_DEPTH, true);
 }
 
-fn walk_parts(root: &Path, clear: bool) -> bool {
+fn walk_parts(root: &Path, depth: u32, max_depth: u32, clear: bool) -> bool {
     let mut found = false;
     let entries = match std::fs::read_dir(root) {
         Ok(e) => e,
@@ -1306,7 +1466,8 @@ fn walk_parts(root: &Path, clear: bool) -> bool {
             Err(_) => false,
         };
         if is_dir {
-            if walk_parts(&p, clear) {
+            // 超过深度就不再往下钻（`.part` 不会在更深的层级出现，见 MAX_PART_DEPTH）
+            if depth < max_depth && walk_parts(&p, depth + 1, max_depth, clear) {
                 found = true;
                 if !clear {
                     return true;
@@ -1331,15 +1492,24 @@ fn walk_parts(root: &Path, clear: bool) -> bool {
 ///
 /// 与 `spawn_tail_reader` 同一范式：独立线程，只写聚合后的结构体，不阻塞下载侧。
 /// 文件被 truncate 重写（新一轮下载 / fresh 重下）时 `offset` 自动归零，从新内容起读。
+///
+/// 🔴 **同样受 `stop` 闸约束**：子进程被杀后 JSONL 停止增长，本线程会因
+///    \`len == offset\` 自然空转 —— 但"暂停后读到残留事件"仍会把
+///    \`pause_download()\` 刚清掉的 \`current_id\` / \`speed_bps\` 写回去（第 1514/1516 行
+///    是无条件覆写）。所以这里跟 tail reader 一样，合闸即退。
 fn spawn_progress_reader(
     path: PathBuf,
     dl: Arc<Mutex<ModelDownload>>,
     dp: Arc<Mutex<DownloadProgressState>>,
+    stop: Arc<AtomicBool>,
 ) {
     std::thread::spawn(move || {
         use std::io::{Read, Seek, SeekFrom};
         let mut offset: u64 = 0;
         loop {
+            if stop.load(Ordering::Relaxed) {
+                return;
+            }
             std::thread::sleep(std::time::Duration::from_millis(200));
             let len = match std::fs::metadata(&path) {
                 Ok(m) => m.len(),
@@ -1389,14 +1559,42 @@ fn spawn_progress_reader(
                     //   · `step` 是未就绪屏**五段**时间线的数据源，值域是闭集
                     //     （prepare / runtime / visual / llm，外加全量 CLI 的兼容值 models）；
                     //     **未知阶段名不猜**，保持上一段，否则界面会拿到一个它不认识的段号。
-                    d.step = match e.id.as_str() {
-                        "prepare" => Some("prepare".to_string()),
-                        "runtime" => Some("runtime".to_string()),
-                        "visual" => Some("visual".to_string()),
-                        "llm" => Some("llm".to_string()),
-                        "models" => Some("models".to_string()),
-                        _ => d.step.take(),
+                    /*
+                     * 🔴 **`step` 只进不退**（2026-10-25）。
+                     *
+                     * 为什么必须加这条：装配是**两个进程**（`--stage 1` / `--stage 2`），
+                     * 而每一轮都从阶段 0 重新走一遍 `prepare → runtime → visual/llm`。
+                     * 无条件覆写的话，第 2 轮一开始就把 `step` 从 `llm` 拉回 `prepare` ——
+                     * 前端五段时间线是按 step 推进的，于是"装配进度从翻译模型跳回视觉模型"。
+                     * 另外 `runtime_setup` 收尾写就绪标记时也会报一次 `runtime`（已单独修掉）。
+                     *
+                     * 语义：段号是**单调水位线**，只允许升高。真需要回到早段（例如换了引擎
+                     * 版本重装）时由 `start_model_download` 把 step 清成 None 重来 ——
+                     * 那是"新一轮"，不是"同一轮里回退"。
+                     */
+                    let next = match e.id.as_str() {
+                        "prepare" => Some("prepare"),
+                        "runtime" => Some("runtime"),
+                        "visual" => Some("visual"),
+                        "llm" => Some("llm"),
+                        "models" => Some("models"),
+                        // 未知阶段名不猜，保持上一段
+                        _ => None,
                     };
+                    if let Some(next) = next {
+                        let rank = |s: &str| match s {
+                            "prepare" => 0,
+                            "runtime" => 1,
+                            "visual" => 2,
+                            "llm" | "models" => 3,
+                            _ => -1,
+                        };
+                        let cur = d.step.as_deref().map_or(-1, rank);
+                        // 只在**严格更高**时才改：同段重复事件不必动，回退一律忽略
+                        if rank(next) > cur {
+                            d.step = Some(next.to_string());
+                        }
+                    }
                     // `visual` 属第 1 轮（视觉模型与 llama.cpp 同轮），不能错标成 stage2；
                     // `llm` 才是第 2 轮（Sakura + nllb）。
                     d.stage = match e.id.as_str() {
@@ -1431,11 +1629,25 @@ fn spawn_progress_reader(
 }
 
 /// 下载子进程输出 → 环形 tail（按行拆；`\r` 覆盖式进度也算分隔符）。
-fn spawn_tail_reader<R: std::io::Read + Send + 'static>(mut r: R, dl: Arc<Mutex<ModelDownload>>) {
+///
+/// 🔴 **暂停后必须停止读**：`pause_download()` 调 `child.kill()` 只会让**后续**输出消失，
+///    管道里**已缓冲**的数据仍然可读 —— 不设闸这个线程会把缓冲全读完并 push 进内存 tail，
+///    而暂停后那些 push **不落盘**（`persist()` 只在状态跃迁时调）。
+///    真机症状：界面日志"暂停了还在刷"（读的是内存 tail），
+///    而盘上 `engine-download.json` 的 mtime 与长度都不变（2026-10-25 实测）。
+///    所以这里每轮读之前先看闸：闸一合就退，把剩下的缓冲留给下一次下载重头写。
+fn spawn_tail_reader<R: std::io::Read + Send + 'static>(
+    mut r: R,
+    dl: Arc<Mutex<ModelDownload>>,
+    stop: Arc<AtomicBool>,
+) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         let mut carry = String::new();
         loop {
+            if stop.load(Ordering::Relaxed) {
+                return;
+            }
             let n = match r.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => n,
@@ -1596,6 +1808,63 @@ mod tests {
         assert!(eta.is_none());
     }
 
+    /// 🔴 **换文件时聚合进度不许回退**（B 方案，2026-10-25）。
+    ///
+    /// 真实场景：a 下完（100/100）→ 下载器转去 b（0/100）。旧实现里 `received` 是
+    /// "在列条目已收之和"，b 的 0 会把 a 已贡献的 100 顶掉 ⇒ 200 → 100，
+    /// 界面上的环从 72.5% 掉回 45%（`assemblyPercent` 的段首）。
+    /// 新口径：a 已下满 ⇒ 按 total 计满，b 从 0 起算 ⇒ 200 单调不减。
+    #[test]
+    fn aggregate_never_goes_backwards_when_switching_files() {
+        let mut p = DownloadProgressState::new();
+        let ev = |id: &str, received: u64, total: u64| ProgressEvent {
+            id: id.to_string(),
+            phase: "file".to_string(),
+            received,
+            total: Some(total),
+            url: None,
+            resumed: false,
+            msg: None,
+        };
+
+        let (r1, t1, _) = p.ingest(&ev("a", 100, 100), 1000);
+        assert_eq!((r1, t1), (100, 100), "a 下满");
+
+        // 换文件：b 从 0 起 —— 旧实现这里会掉回 (0, 200)
+        let (r2, t2, _) = p.ingest(&ev("b", 0, 100), 1100);
+        assert_eq!(t2, 200, "分母是全体之和");
+        assert_eq!(r2, 100, "a 的份额不许被 b 的 0 顶掉（{r2} 应 >= {r1}）");
+        assert!(r2 >= r1, "聚合进度回退了：{r1} → {r2}");
+
+        // b 下到一半：a 满 + b 半
+        let (r3, _, _) = p.ingest(&ev("b", 50, 100), 1200);
+        assert_eq!(r3, 150, "a 满 100 + b 半 50");
+        assert!(r3 >= r2);
+    }
+
+    /// 同一条目重试把 received 清零时，也不许把已下过的字节退掉
+    #[test]
+    fn aggregate_keeps_peak_when_one_entry_retries() {
+        let mut p = DownloadProgressState::new();
+        let ev = |received: u64| ProgressEvent {
+            id: "x".to_string(),
+            phase: "file".to_string(),
+            received,
+            total: Some(1000),
+            url: None,
+            resumed: false,
+            msg: None,
+        };
+        let (r1, _, _) = p.ingest(&ev(600), 1000);
+        assert_eq!(r1, 600);
+        // 重试 / 换源：同一条目报 0 —— 盘上 .part 还在，不承认这次回退
+        let (r2, _, _) = p.ingest(&ev(0), 1100);
+        assert_eq!(r2, 600, "重试清零不该把已下字节退掉");
+        // 续传继续涨
+        let (r3, _, _) = p.ingest(&ev(800), 1200);
+        assert_eq!(r3, 800);
+    }
+
     /// 荒谬速度一律不报（上限兜底），免得 ETA 也算成天文数字
     #[test]
     fn speed_is_capped_at_a_plausible_rate() {
@@ -1603,5 +1872,50 @@ mod tests {
         p.samples.push((0, 0));
         let (speed, _) = p.recompute(1, 10_000_000_000, 0); // 10 GB / 1 ms
         assert!(speed.is_none(), "超过 100 GB/s 不报：{speed:?}");
+    }
+
+    /// 🔴 全部条目都"复用"时，进度必须正好 100%（2026-10-25）。
+    ///
+    /// 真实场景：第二次点「继续下载」，所有文件都在盘上且校验通过 ⇒
+    /// 下载器只打 `[复用]` 日志、一个字节都不下。旧实现里 `[复用]` 分支
+    /// **不发事件** ⇒ 账本空 ⇒ `percent` 是 `None` ⇒ 界面「准备中」，
+    /// 而 `state` 是 `done` ⇒ "下载完成但进度 45%"。
+    /// 新实现给每条复用补 `received == total` ⇒ 聚合正好满。
+    #[test]
+    fn all_reused_yields_full_percent() {
+        let mut p = DownloadProgressState::new();
+        let reused = |id: &str, total: u64| ProgressEvent {
+            id: id.to_string(),
+            phase: "reused".to_string(),
+            received: total,
+            total: Some(total),
+            url: None,
+            resumed: false,
+            msg: None,
+        };
+        p.ingest(&reused("a", 100), 1000);
+        let (r, t, _) = p.ingest(&reused("b", 300), 1100);
+        assert_eq!((r, t), (400, 400), "两条都复用 ⇒ 分子分母相等");
+        let pct = (r as f64 / t as f64) * 100.0;
+        assert_eq!(pct, 100.0, "全复用必须是 100%，不是 0 或 None");
+    }
+
+    /// 校验命中（`verifying`）也按"已满"计入，不是从 0 开始
+    #[test]
+    fn verifying_counts_as_full_not_zero() {
+        let mut p = DownloadProgressState::new();
+        let (r, t, _) = p.ingest(
+            &ProgressEvent {
+                id: "x".to_string(),
+                phase: "verifying".to_string(),
+                received: 500,
+                total: Some(500),
+                url: None,
+                resumed: false,
+                msg: None,
+            },
+            1000,
+        );
+        assert_eq!((r, t), (500, 500), "校验中的文件是完整文件，不是零字节");
     }
 }

@@ -260,8 +260,8 @@ async function round({ env = {}, settings = null } = {}) {
     MIAO_ENGINE_PROBE_MS: '300',
     MIAO_PORT: String(svcPort),
     MIAO_TOKEN: TOKEN,
-    MIAO_STATE_DIR: stateDir,
-    MIAO_ROOT: path.join(TMP, `root-${tag}`),
+    MIAO_MANGA_STATE_DIR: stateDir,
+    MIAO_MANGA_ROOT_DIR: path.join(TMP, `root-${tag}`),
     MIAO_NO_LLM_AUTOSTART: '1',
     ...env,
   });

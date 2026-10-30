@@ -12,7 +12,7 @@
  * ⇒ **不为凑数重造这些断言**（§5.3：不许把同一件事写成两条）。
  *
  * 夹具验不到的是**规模**：夹具里的"文件"是几 KB 的合成字节，而产线上被校验的是
- * **3.6 GB 的 Sakura 权重**。两者差的不是数量，是**能不能跑完**：
+ * **4.0 GB 的 GalTransl 权重**。两者差的不是数量，是**能不能跑完**：
  *   · 流式哈希写错（一次性 `readFileSync`）在夹具上照样过，在 3.6 G 上直接 OOM；
  *   · 只校验头部 / 只看文件大小，在夹具的小文件上也照样过；
  *   · 大文件在真盘上的 mtime / inode 语义（硬链接、apfs 克隆）与夹具不同。
@@ -52,7 +52,7 @@ const REFUTE = process.argv.includes('--refute');
 const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8'));
 
 /** 大盘权重（3.6 G）：用来证明"流式哈希在真实规模上跑得完且对得上" */
-const BIG_ID = 'sakura_1_5b_fp16';
+const BIG_ID = 'llm_galtransl_7b_v37_iq4xs';
 /** 小文件（186 KB）：篡改实验用它 —— 快、且 sha256 语义与大盘文件完全同一条代码路径 */
 const SMALL_ID = 'ocr_alphabet_v7';
 

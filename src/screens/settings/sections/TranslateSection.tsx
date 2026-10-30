@@ -4,7 +4,8 @@ import { useToasts } from '@hooks';
 import type { ServiceStatus } from '@/ipc';
 import { stateView } from '@/stores/nav';
 import { useEngineState } from '@screens/settings/engine-state';
-import { ACCEL_LABEL } from '@screens/settings/engine-api';
+import { ServiceStatusButton } from '@components/ServiceStatusButton';
+import { ACCEL_LABEL, TIER_LABEL } from '@screens/settings/engine-api';
 import { errorText, openPath, serviceStart, serviceStop } from '@/ipc';
 import { Btn, Dot, Notice, NumberInput, Select, Switch } from '@components/units';
 import { CtlNote, GroupNote, ReadOnly, Row, RowNote, SubTitle } from '@screens/settings/parts';
@@ -17,12 +18,17 @@ import { saveTranslateCredentials, saveTranslateSettings, translateOptions } fro
 import type { TranslateOptions, TranslateSettingsPatch, TranslateSource } from '@screens/settings/translate-api';
 import { itemOf } from './shared';
 
+/**
+ * 「服务状态与端口」那行的只读值。设计稿这一行用的就是全站那一份 `Miao.serviceLabel`，
+ * 所以字与 `stores/nav.ts` 的 `STATE_VIEW` 一致（此前这里是另一套短词，同一个状态三种叫法）。
+ * 诊断面板里的三枚进程 chip 仍然用短词（那里带 ①②③ 前缀，长词会撑爆），是刻意的两处不同。
+ */
 const STATUS_TEXT: Record<ServiceStatus['state'], string> = {
-  stopped: '未启动',
-  starting: '启动中',
-  running: '运行中',
+  stopped: '服务未启动',
+  starting: '正在启动',
+  running: '服务运行中',
   stopping: '正在停止',
-  error: '异常',
+  error: '服务异常',
 };
 
 /**
@@ -281,9 +287,14 @@ export function TranslateSection({
   const o = eng.options;
   const busy = eng.action !== null;
 
-  /** 档位下拉的取值 = **已配置**（盘上那份）；没配过就回落到硬件推荐档 */
-  const tierValue: EngineTier = o?.tier.configured ?? o?.tier.hardwareRecommended ?? 'tiny';
-  const tierFeasible = o?.tier.options ?? [];
+  /**
+   * 档位下拉的取值 = **已配置**（盘上那份）；没配过就回落到硬件推荐档。
+   *
+   * 🔴 整条链都要可选（`o?.tier?.…`）：`o` 非空但 `tier` 缺失时，`o?.tier.configured`
+   * 会在 `.configured` 上抛异常 —— 一个字段不全的响应足以把整个「翻译服务」分组打成空白。
+   */
+  const tierValue: EngineTier = o?.tier?.configured ?? o?.tier?.hardwareRecommended ?? 'tiny';
+  const tierFeasible = o?.tier?.options ?? [];
   const tierSelectable = tierFeasible.filter((t) => t.weightsReady);
   /*
    * 权重未纳入清单的档位**不出现**（与"物理不可行的档位不出现"同一把尺子：
@@ -301,20 +312,19 @@ export function TranslateSection({
   /** 当前配的那档的可行性信息 —— 「不推荐」的强警告与预估内存都从这里来 */
   const tierInfo = tierFeasible.find((t) => t.tier === tierValue) ?? null;
 
-  const accelValue: EngineAccel = o?.accel.choice ?? 'auto';
+  // 与 `tierValue` 同一条纪律：字段缺失时降级到默认值，不让整组设置因一个字段变空白
+  const accelValue: EngineAccel = o?.accel?.choice ?? 'auto';
 
   /** 值 → 中文名（后端候选缺失时也要能显示已配置的那一个，不能露出 `mps` 这种裸 id） */
-  const accelLabel = (v: EngineAccel) => o?.accel.options.find((x) => x.value === v)?.label ?? ACCEL_LABEL[v];
+  const accelLabel = (v: EngineAccel) => o?.accel?.options?.find((x) => x.value === v)?.label ?? ACCEL_LABEL[v];
 
   const pending = pendingRestart(o);
 
   return (
     <>
-      <GroupNote summary={TRANSLATE.noteSummary}>{TRANSLATE.note as string}</GroupNote>
-
       {/* 小节一：翻译来源（1）—— ver2.2 在线翻译并入 ② 的第一个小节（P-D2） */}
       <div className="set-group">
-        <SubTitle>翻译来源</SubTitle>
+        <SubTitle head="二选一 · 下一次翻译生效">翻译链路</SubTitle>
         {/* 定位说明常驻（视觉没就位时转告警色）：免得用户以为「切了在线就不用装引擎」 */}
         <Notice kind={onlineBlocked ? 'bad' : undefined} className="set-row-note">
           {srcNote}
@@ -432,7 +442,7 @@ export function TranslateSection({
 
       {/* 小节二：服务与配对（4） */}
       <div className="set-group">
-        <SubTitle>服务与配对</SubTitle>
+        <SubTitle head="本地服务由喵坞托管，可随时启停">服务与配对</SubTitle>
 
         <Row item={itemOf(pairing, 'service-endpoint')}>
           {state ? (
@@ -449,6 +459,7 @@ export function TranslateSection({
                 <Dot colorVar={state.colorVar} pulse={status?.state === 'starting'} />
                 <span className="set-state-text">{STATUS_TEXT[status?.state ?? 'stopped']}</span>
               </span>
+              <ServiceStatusButton children={status?.children ?? []} mode={status?.mode ?? null} />
               <span className="set-pnum">服务 :{status?.port ?? '—'}</span>
               <span className="set-pnum">引擎 :{status?.sidecar_port ?? '—'}</span>
             </>
@@ -488,7 +499,13 @@ export function TranslateSection({
         </Row>
 
         <Row item={itemOf(pairing, 'token-pairing')}>
-          <Btn kind="primary" disabled={!status?.token} onClick={() => void copyToken()}>
+          {/*
+            设计稿这里是「只读值 + 一颗小图标钮」，不是主行动按钮；本行同排的其他动作
+            （校验完整性 / 重新下载模型 / 打开目录）也都是 `ghost · sm · 28` 高。
+            此前用 `primary` 33 高，令牌那一颗比"重启引擎"还抢眼，读起来主次颠倒。
+            可见文字保留（设计稿把它放在 aria-label 里，产品摊到明面上更清楚）。
+          */}
+          <Btn kind="ghost" size="sm" disabled={!status?.token} onClick={() => void copyToken()}>
             复制令牌
           </Btn>
         </Row>
@@ -522,12 +539,28 @@ export function TranslateSection({
 
         <Row item={itemOf(pairing, 'root-dir')}>
           <ReadOnly title={status?.root_dir ?? undefined}>{status?.root_dir ?? '—'}</ReadOnly>
+          {/*
+            设计稿这一行是「只读路径 + 一个打开按钮」，产品此前只有路径 ——
+            用户看到路径却拿不到目录，只能自己复制到资源管理器里拼。
+            与 ④「模型目录」那行同一个动作、同一个形状（`打开` + 说明性 title）。
+          */}
+          <Btn
+            size="sm"
+            disabled={!status?.root_dir}
+            title={status?.root_dir ? '在系统文件管理器里打开落盘根目录' : '根目录还没读到'}
+            onClick={() => {
+              if (!status?.root_dir) return;
+              openPath(status.root_dir).catch((e: unknown) => onToast(errorText(e), 'bad'));
+            }}
+          >
+            打开
+          </Btn>
         </Row>
       </div>
 
       {/* 小节三：推理引擎（5）—— 方向 / 档位 / 后端 / 两个空闲卸载阈值 */}
       <div className="set-group">
-        <SubTitle>推理引擎</SubTitle>
+        <SubTitle head="改档位 / 后端 / 模型目录需要重启引擎才生效">推理引擎</SubTitle>
         {eng.loadError ? (
           <Notice kind="bad" className="set-row-note">
             读不到引擎选项：{eng.loadError}
@@ -629,82 +662,62 @@ export function TranslateSection({
         ) : null}
 
         {/*
-         * R3：两个空闲卸载阈值**合成一张卡**。
+         * 两个空闲卸载阈值 = **两条普通行**（设计稿 `idle-llm` / `idle-vision`）。
          *
-         * 原来是两行 + 两段 `RowNote`，把"待遇不同"这件事讲了两遍；而两项唯一的区别
-         * 就是**何时生效**。合成一卡后，那个区别变成右端两枚对齐的 chip —— 一眼能横着比，
-         * 不必读完两段散文再自己比出来。
-         *
-         * ⚠️ 两项在 catalog 里**各自还在**（`idle-llm` / `idle-vision`）：这是**渲染分组**，
-         * 不是合并数据项，项数合计因此不变（动它 C10 会红）。
-         * ⚠️ 卡内标题**不用** `<SubTitle>`：② 的「恰 4 个小节」是 C11 逐字盯着的判据，
-         * 这里再加一个 `.set-subtitle` 会让那条断言从 4 变 5、彻底失效。
+         * 此前把两项合成一张「空闲卸载」卡（R3），理由是"两段散文在讲同一件事"。
+         * 但那一步改的是**结构**：设计稿这里是推理引擎卡里的第五、第六条行，
+         * 合成卡片后行序、行数、右列控件的关系全变了 —— 于是这一组读起来与设计稿
+         * 不是同一份东西。现在拆回两行，共用的那句话交回 catalog 的行内说明（`why`）。
          */}
-        <div className="set-idle">
-          <div className="set-idle-head">
-            <span className="set-idle-name">空闲卸载</span>
-            {/*
-              两档**共用**这一句「0 = 从不卸载」—— 它是卡片级的说明（排在两个阈值之前），
-              而不是某一行的附注。分开在两行各写一遍，正是 R3 要收掉的那份重复。
-            */}
-            <span className="set-idle-sub">0 = 从不卸载</span>
-          </div>
+        <Row item={itemOf(inference, 'idle-llm')}>
+          {o ? (
+            <NumberInput
+              label={itemOf(inference, 'idle-llm').label}
+              value={o.idle.llm.min}
+              min={0}
+              max={IDLE_MIN_MAX}
+              disabled={busy}
+              onChange={(v) => void eng.save({ idleLlmMin: v })}
+            />
+          ) : (
+            <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
+          )}
+          {/* 设计稿这一行带 `分钟 · 0–1440` 的附注 —— 上界必须写出来，
+              输入框本身只在越界时静默退回上一合法值，用户看不见 1440 这个天花板 */}
+          <CtlNote>分钟 · 0–1440</CtlNote>
+        </Row>
 
-          <div className="set-idle-line">
-            <span className="set-idle-k">LLM</span>
-            {o ? (
-              <NumberInput
-                label={itemOf(inference, 'idle-llm').label}
-                value={o.idle.llm.min}
-                min={0}
-                max={IDLE_MIN_MAX}
-                suffix="分钟"
-                disabled={busy}
-                onChange={(v) => void eng.save({ idleLlmMin: v })}
-              />
-            ) : (
-              <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
-            )}
-            <span className="set-idle-tag is-now">保存后立刻生效</span>
-          </div>
+        <Row item={itemOf(inference, 'idle-vision')}>
+          {o ? (
+            <NumberInput
+              label={itemOf(inference, 'idle-vision').label}
+              value={o.idle.vision.min}
+              min={0}
+              max={IDLE_MIN_MAX}
+              disabled={busy}
+              onChange={(v) => void eng.save({ idleVisionMin: v })}
+            />
+          ) : (
+            <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
+          )}
+          <CtlNote>分钟 · 0–1440</CtlNote>
+          {/* 「需重启」是这一行与上一行唯一的差别，设计稿用 warning chip 说出来 */}
+          <span className="chip chip-warning">需重启</span>
+        </Row>
 
-          <div className="set-idle-line">
-            <span className="set-idle-k">视觉</span>
-            {o ? (
-              <NumberInput
-                label={itemOf(inference, 'idle-vision').label}
-                value={o.idle.vision.min}
-                min={0}
-                max={IDLE_MIN_MAX}
-                suffix="分钟"
-                disabled={busy}
-                onChange={(v) => void eng.save({ idleVisionMin: v })}
-              />
-            ) : (
-              <ReadOnly>{eng.loadError ? '读取失败' : '读取中…'}</ReadOnly>
-            )}
-            <span className="set-idle-tag is-restart">需重启引擎</span>
-          </div>
-
-          {/*
-            两档待遇差异的**共用注解**（原来两段散文各讲一遍）。「必须重启引擎」五个字
-            必须留着 —— 它是这两档唯一的区别在界面上的落点。
-          */}
-          <div className="set-idle-foot">
-            LLM 档保存后<b>即时</b>生效；视觉档的参数在拉开引擎进程时就固化，
-            <b>必须重启引擎</b>才生效。这是刻意的差别，不是遗漏。
-            {o && !o.idle.llm.minIsExact
-              ? `（当前 LLM 阈值 ${o.idle.llm.ms} 毫秒 —— 不是整分钟，界面显示的是四舍五入后的分钟数，由环境变量覆盖所致）`
-              : ''}
-          </div>
-        </div>
+        {/* 阈值不是整分钟时的诚实说明（环境变量覆盖所致）—— 只在需要时出现 */}
+        {o && !o.idle.llm.minIsExact ? (
+          <RowNote>
+            {`当前 LLM 阈值 ${o.idle.llm.ms} 毫秒 —— 不是整分钟，界面显示的是四舍五入后的分钟数，由环境变量覆盖所致。`}
+          </RowNote>
+        ) : null}
 
         <RestartHint title="推理引擎" keys={['翻译档位', '加速后端', '空闲卸载视觉']} pending={pending} />
       </div>
 
       {/* 小节四：模型与诊断（3） */}
       <div className="set-group">
-        <SubTitle>模型与诊断</SubTitle>
+        <SubTitle head="权重与引擎的现场">模型与诊断</SubTitle>
 
         <Row item={itemOf(model, 'model-dir')}>
           {o ? (
@@ -752,6 +765,9 @@ export function TranslateSection({
         */}
         <EngineDiag item={itemOf(model, 'engine-diag')} eng={eng} service={status} />
       </div>
+
+      {/* 组说明（设计稿 `.s-note`）：在所有卡片之后收尾 */}
+      <GroupNote>{TRANSLATE.note as string}</GroupNote>
     </>
   );
 }
@@ -792,15 +808,14 @@ function RestartHint({ title, keys, pending }: { title: string; keys: string[]; 
 function pendingRestart(o: EngineOptions | null): string[] {
   if (!o) return [];
   const out: string[] = [];
-  if (o.tier.configured && o.tier.effective && o.tier.configured !== o.tier.effective) out.push('翻译档位');
+  // 每个子块都按「可能缺失」处理：契约字段缺一个只会让这一项判不出来，
+  // 不该把整个分组打成空白（见 tierValue / accelValue 处的同一纪律）。
+  if (o.tier?.configured && o.tier?.effective && o.tier.configured !== o.tier.effective) out.push('翻译档位');
   // `choice` 是"用户选的"，`effective` 是"实际跑的"；硬件探测（auto）之外的不一致就是没生效
-  if (o.accel.choice !== 'auto' && o.accel.choice !== o.accel.effective) out.push('加速后端');
-  if (o.modelDir.configured && o.modelDir.configured !== o.modelDir.current) out.push('模型目录');
+  if (o.accel?.choice !== 'auto' && o.accel?.choice !== o.accel?.effective) out.push('加速后端');
+  if (o.modelDir?.configured && o.modelDir?.configured !== o.modelDir?.current) out.push('模型目录');
   return out;
 }
-
-/** 档位的中文名（catalog 用 Tiny/Small/Medium 的写法，这里只做一处映射，不散落字面量） */
-const TIER_LABEL: Record<EngineTier, string> = { tiny: 'Tiny', small: 'Small', medium: 'Medium' };
 
 /** 空闲卸载阈值的上限（与服务端 `IDLE_MIN_MAX` 同值：24h；再大就不像"空闲卸载"而像输错了） */
 const IDLE_MIN_MAX = 1440;
