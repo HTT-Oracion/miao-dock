@@ -22,11 +22,21 @@ import {
   Star,
 } from 'lucide-react';
 
-/** 应用层入口（《09》§3.1）—— 三项：翻译 / 音乐 / 番剧（番剧自带 popover）。C8 断言的判据之一。 */
+/** 应用层入口（《09》§3.1）—— 翻译 / 音乐；番剧自带 popover，见下方 `SHOW_ANIME_ENTRY`。 */
 const APPS: { id: AppId; label: string; icon: () => ReactElement }[] = [
   { id: 'translate', label: APP_LABEL.translate, icon: () => <Languages size={20} /> },
   { id: 'music', label: APP_LABEL.music, icon: () => <Music4 size={20} /> },
 ];
+
+/**
+ * 番剧入口开关 —— 模块后续继续开发，先隐藏入口（`Screen`/路由/设置组都还在）。
+ *
+ * 🔴 必须写成**显式 `boolean` 常量**而不是 JSX 注释：注释掉整块会让
+ * `Clapperboard`/`Search`/`Star`/`Clock`/`Sparkles` 与 `animeView`/`onAnimeView`
+ * 变成未使用，`tsc --noEmit` 报 7 个 TS6133（`npm run build` 会红，日常 `check` 抓不到）。
+ * 恢复：改成 `true` 即可，下方代码与导入原样保留。
+ */
+const SHOW_ANIME_ENTRY: boolean = false;
 
 /**
  * 侧边导航 —— ver2.0 两级结构，ver3.0 换上玻璃底板与弹簧微动效。
@@ -140,71 +150,73 @@ export function Sidebar({
          * 浮层用纯 CSS hover（`app.scss` 的 `.nav-wrap:hover .nav-pop`）——不额外持 state，
          * 避免"鼠标移开后浮层还挂着"的第二份真相。
          */}
-        {/* <div className="nav-wrap">
-          <Btn
-            kind="bare"
-            type="button"
-            className={screen === 'anime' ? 'nav-item is-app is-active' : 'nav-item is-app'}
-            style={{ width: appItem.w, height: appItem.h }}
-            aria-current={screen === 'anime' ? 'page' : undefined}
-            aria-label={APP_LABEL.anime}
-            title={APP_LABEL.anime}
-            onClick={() => onScreen('anime')}
-          >
-            <i className="nav-ico">
-              <Clapperboard size={20} />
-            </i>
-            {labels ? <span className="nav-label">{APP_LABEL.anime}</span> : null}
-          </Btn>
-
-          <div className="nav-pop" role="menu" aria-label="番剧导航">
-            <div className="nav-pop-hd">
-              <b>番剧</b>
-              <span>工作区</span>
-            </div>
-            {(
-              [
-                { view: 'explore', label: '搜索', hint: '探索 · 搜索 · 全网聚合', Icon: Search },
-                { view: 'collection', label: '追番', hint: '五状态收藏 · 观看进度', Icon: Star },
-                { view: 'cache', label: '缓存', hint: '下载管理 · 边下边播', Icon: Download },
-                { view: 'history', label: '播放历史', hint: '续播位置 · 同步状态', Icon: Clock },
-              ] as { view: AnimeView; label: string; hint: string; Icon: typeof Search }[]
-            ).map(({ view, label, hint, Icon }) => (
-              <Btn
-                kind="bare"
-                key={view}
-                type="button"
-                role="menuitem"
-                className={screen === 'anime' && animeView === view ? 'nav-pop-item is-on' : 'nav-pop-item'}
-                onClick={() => onAnimeView(view)}
-              >
-                <span className="npi-ic">
-                  <Icon size={15} />
-                </span>
-                <span className="npi-tx">
-                  <b>{label}</b>
-                  <span>{hint}</span>
-                </span>
-              </Btn>
-            ))}
-            <div className="nav-pop-sep" />
+        {SHOW_ANIME_ENTRY && (
+          <div className="nav-wrap">
             <Btn
               kind="bare"
               type="button"
-              role="menuitem"
-              className={screen === 'anime' && animeView === 'states' ? 'nav-pop-item is-on' : 'nav-pop-item'}
-              onClick={() => onAnimeView('states')}
+              className={screen === 'anime' ? 'nav-item is-app is-active' : 'nav-item is-app'}
+              style={{ width: appItem.w, height: appItem.h }}
+              aria-current={screen === 'anime' ? 'page' : undefined}
+              aria-label={APP_LABEL.anime}
+              title={APP_LABEL.anime}
+              onClick={() => onScreen('anime')}
             >
-              <span className="npi-ic">
-                <Sparkles size={15} />
-              </span>
-              <span className="npi-tx">
-                <b>三态与示例</b>
-                <span>骨架 / 空态 / 错误态</span>
-              </span>
+              <i className="nav-ico">
+                <Clapperboard size={20} />
+              </i>
+              {labels ? <span className="nav-label">{APP_LABEL.anime}</span> : null}
             </Btn>
+
+            <div className="nav-pop" role="menu" aria-label="番剧导航">
+              <div className="nav-pop-hd">
+                <b>番剧</b>
+                <span>工作区</span>
+              </div>
+              {(
+                [
+                  { view: 'explore', label: '搜索', hint: '探索 · 搜索 · 全网聚合', Icon: Search },
+                  { view: 'collection', label: '追番', hint: '五状态收藏 · 观看进度', Icon: Star },
+                  { view: 'cache', label: '缓存', hint: '下载管理 · 边下边播', Icon: Download },
+                  { view: 'history', label: '播放历史', hint: '续播位置 · 同步状态', Icon: Clock },
+                ] as { view: AnimeView; label: string; hint: string; Icon: typeof Search }[]
+              ).map(({ view, label, hint, Icon }) => (
+                <Btn
+                  kind="bare"
+                  key={view}
+                  type="button"
+                  role="menuitem"
+                  className={screen === 'anime' && animeView === view ? 'nav-pop-item is-on' : 'nav-pop-item'}
+                  onClick={() => onAnimeView(view)}
+                >
+                  <span className="npi-ic">
+                    <Icon size={15} />
+                  </span>
+                  <span className="npi-tx">
+                    <b>{label}</b>
+                    <span>{hint}</span>
+                  </span>
+                </Btn>
+              ))}
+              <div className="nav-pop-sep" />
+              <Btn
+                kind="bare"
+                type="button"
+                role="menuitem"
+                className={screen === 'anime' && animeView === 'states' ? 'nav-pop-item is-on' : 'nav-pop-item'}
+                onClick={() => onAnimeView('states')}
+              >
+                <span className="npi-ic">
+                  <Sparkles size={15} />
+                </span>
+                <span className="npi-tx">
+                  <b>三态与示例</b>
+                  <span>骨架 / 空态 / 错误态</span>
+                </span>
+              </Btn>
+            </div>
           </div>
-        </div> */}
+        )}
       </div>
 
       {/* ── 分隔线：应用层与全局层的分界 ──
