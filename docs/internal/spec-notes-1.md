@@ -5103,7 +5103,9 @@ installTitleOf / install / running` 等只服务于被移除模块的死代码�
   html/body 置透明、卡片自带圆角 + 投影，窗口形状才等于卡片形状。
 - **`core:window:default` 不含 `allow-start-dragging`**：标题栏 `data-tauri-drag-region` 配了却拖不动，
   **且不报任何错**；必须显式加 `core:window:allow-start-dragging`
-  （依据 `src-tauri/gen/schemas/acl-manifests.json`，该权限不在 `core:default` 内）。
+  （依据 Tauri 构建时在 `src-tauri/gen/schemas/` 下生成的 ACL 清单，该权限不在 `core:default` 内）。
+  ⚠️ 那里**不是仓库路径**：`src-tauri/gen/` 被 .gitignore 忽略、构建时才生成 —— 写成文件名会让
+  `check:docpaths` 在全新克隆上判它不存在（本机有文件所以本地永远绿，CI 必红）。
 - **flex 列里 `height` 不防收缩**：标题行被压扁到看不清文字 ⇒ 非主体行写 `flex: 0 0 auto`，
   主体写 `flex: 1 1 auto; min-height: 0`（`min-height: 0` 是让 `overflow-y: auto` 生效的前提）。
 - **本机「安全删除垫」会拦截批量删目录**（`trash operation: Some operations were aborted`），
