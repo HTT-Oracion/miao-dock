@@ -140,7 +140,7 @@ export function Sidebar({
          * 浮层用纯 CSS hover（`app.scss` 的 `.nav-wrap:hover .nav-pop`）——不额外持 state，
          * 避免"鼠标移开后浮层还挂着"的第二份真相。
          */}
-        <div className="nav-wrap">
+        {/* <div className="nav-wrap">
           <Btn
             kind="bare"
             type="button"
@@ -204,7 +204,7 @@ export function Sidebar({
               </span>
             </Btn>
           </div>
-        </div>
+        </div> */}
       </div>
 
       {/* ── 分隔线：应用层与全局层的分界 ──
